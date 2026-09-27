@@ -590,7 +590,7 @@ mount_external(const char *wanted_backend, char fspec[32])
 	    index++) {
 		memset(&arguments, 0, sizeof(arguments));
 		arguments.size = sizeof(arguments);
-		arguments.version = ZEDBSD_MOUNT_ARGS_VERSION;
+		arguments.version = KERN_MOUNT_ARGS_VERSION;
 		strcpy(arguments.fspec, candidates[index]);
 		if (mount(wanted_backend, EXTERNAL_MOUNT, 0, &arguments) != 0) {
 			printf("WS001-P015 DETAIL mount=%s errno=%d\n",
@@ -622,7 +622,7 @@ remount_external(const char *fspec, const char *type)
 
 	memset(&arguments, 0, sizeof(arguments));
 	arguments.size = sizeof(arguments);
-	arguments.version = ZEDBSD_MOUNT_ARGS_VERSION;
+	arguments.version = KERN_MOUNT_ARGS_VERSION;
 	strcpy(arguments.fspec, fspec);
 	return mount(type, EXTERNAL_MOUNT, 0, &arguments);
 }

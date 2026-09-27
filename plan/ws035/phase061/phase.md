@@ -14,7 +14,7 @@ Queue: q462-i01
 - 壁紙: ユーザーの絵を host で 16:10 に切り（中央）、1280x800 にし、median 7・Gaussian 3.5 px・彩度 0.85・contrast 0.85・明るさ 1.06 で抽象度を上げる（`build/ws035-wallpaper/`、git に入れない）。署名は消さない。
 - zwl `--wallpaper=PATH`（binary PPM、P6、255）。出力と大きさが違えば最近傍で合わせる。読めなければ今の手続きの壁紙。すりガラスの縮小ぼかしはこの壁紙から作る。
 - zwl `--window-opacity=N`（1〜100 %、既定 100）: glass の look で、窓の本体をすりガラスの面の上に N % の不透明度で描く（ユーザーの「90% 透過」は N=10）。
-- 画像は image へ試験の追加 file（`/usr/share/zdesktop/wallpaper.ppm`）で入れる。
+- 画像は image へ試験の追加 file（`/usr/share/keiland/wallpaper.ppm`）で入れる。
 
 範囲外: 画像の format（PNG 等）の decoder、背後の窓のぼかし（p057）。
 

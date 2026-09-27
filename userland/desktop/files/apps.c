@@ -11,7 +11,7 @@
  *
  * The ways to open a file come from three lists, the first match of the
  * earliest list being the default: the user's
- * $XDG_CONFIG_HOME/zdesktop/open-with, the system's /etc/zdesktop/open-with,
+ * $XDG_CONFIG_HOME/keiland/open-with, the system's /etc/keiland/open-with,
  * and the built-in table below.  A list's line is
  *
  *	PATTERNS<TAB>NAME<TAB>COMMAND
@@ -40,8 +40,8 @@
 #include <unistd.h>
 
 /* The system's list, and the user's under the configuration folder. */
-#define APPS_SYSTEM_LIST	"/etc/zdesktop/open-with"
-#define APPS_USER_LIST		"zdesktop/open-with"
+#define APPS_SYSTEM_LIST	"/etc/keiland/open-with"
+#define APPS_USER_LIST		"keiland/open-with"
 
 /* The terminal a "@terminal" command runs in, and the words that mark the two special commands. */
 #define APPS_TERMINAL		"/bin/terminal"

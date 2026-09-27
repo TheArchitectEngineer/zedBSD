@@ -290,9 +290,9 @@ eglQueryString(
 	(void)egl_succeed();
 	switch (name) {
 	case EGL_VENDOR:
-		return "zedBSD";
+		return "Kei";
 	case EGL_VERSION:
-		return "1.5 zedBSD";
+		return "1.5 Kei";
 	case EGL_CLIENT_APIS:
 		return "OpenGL_ES";
 	case EGL_EXTENSIONS:

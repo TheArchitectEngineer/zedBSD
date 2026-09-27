@@ -13,7 +13,7 @@ Status: 設計（2026-09-27、ws070-p001）。仕様案は [spec.md](spec.md)（
   visible・checked・role・icon_name・shortcut、activation は `activated(item_id, seat, serial)`、更新は begin_update/commit の
   transaction、描くのは全部 zdesktop（浮いたタイトルバー／docked のシステムバー、popup、keyboard、外の click で閉じる）、
   active menu は focus の toplevel に従う。zdesktop の非標準の拡張なので client は **libkeiland の API** だけを使い、protocol の
-  client header は非公開（`zed_gpu_buffer_v1` と同じ扱い）。
+  client header は非公開（`keiland_gpu_buffer_v1` と同じ扱い）。
 - 最初の使い手は terminal（Shell・Edit・View・Session・Help）。後で GTK4（GMenuModel）・Qt6（QMenuBar）の native menubar の
   backend が libkeiland の API を使う。
 - 範囲外（v1）: icon の描画（zedBSD に icon theme が無い。role と icon_name は受けて保持し、log に出す）、touch mode（zdesktop は
@@ -24,7 +24,7 @@ Status: 設計（2026-09-27、ws070-p001）。仕様案は [spec.md](spec.md)（
 
 ```
 application / toolkit backend
-   │  libkeiland: zdesktop_menu_*（model の鏡と局所の検査、transaction）
+   │  libkeiland: keiland_menu_*（model の鏡と局所の検査、transaction）
    ▼
 libwayland-client: xdg_menu_manager_v1 / xdg_menu_v1 / xdg_toplevel_menu_v1（非公開 header）
    ▼  Wayland の socket
@@ -133,49 +133,49 @@ version 1 だけ。以後の追加（mnemonic、icon の画素でない指定、
 - export: `exports.map` の `xdg_*` が既に覆う（関数名は `xdg_menu_manager_v1_*` 等）。libkeiland.so は libwayland-client.so に
   動的に link する（platform/amd64/vmunix.mk の libkeiland の規則に `-l:libwayland-client.so` を足す）。
 
-## 4. libkeiland の API（`include/libc/zdesktop.h`）
+## 4. libkeiland の API（`include/libc/keiland.h`）
 
 toolkit の model（GMenuModel の木と action 名、QMenuBar の QMenu・QAction）へ素直に写ることを優先した。
 
 ```c
-struct zdesktop_menu_service;   /* 接続ごとの menu の窓口（xdg_menu_manager_v1 の binding） */
-struct zdesktop_menu;           /* menu model（xdg_menu_v1）と、その ID の鏡 */
-struct zdesktop_window_menu;    /* 窓の表示先（xdg_toplevel_menu_v1） */
+struct keiland_menu_service;   /* 接続ごとの menu の窓口（xdg_menu_manager_v1 の binding） */
+struct keiland_menu;           /* menu model（xdg_menu_v1）と、その ID の鏡 */
+struct keiland_window_menu;    /* 窓の表示先（xdg_toplevel_menu_v1） */
 
-struct zdesktop_menu_service *zdesktop_menu_service_open(struct wl_display *display);   /* 無ければ NULL・ENOTSUP */
-void zdesktop_menu_service_close(struct zdesktop_menu_service *service);
+struct keiland_menu_service *keiland_menu_service_open(struct wl_display *display);   /* 無ければ NULL・ENOTSUP */
+void keiland_menu_service_close(struct keiland_menu_service *service);
 
-struct zdesktop_menu *zdesktop_menu_create(struct zdesktop_menu_service *service);
-void zdesktop_menu_destroy(struct zdesktop_menu *menu);
-int zdesktop_menu_begin(struct zdesktop_menu *menu);
-int zdesktop_menu_commit(struct zdesktop_menu *menu);
-int zdesktop_menu_append(struct zdesktop_menu *menu, uint32_t id, uint32_t parent, unsigned type, const char *label, uint32_t action);
-int zdesktop_menu_insert(struct zdesktop_menu *menu, uint32_t id, uint32_t parent, uint32_t before, unsigned type, const char *label, uint32_t action);
-int zdesktop_menu_remove(struct zdesktop_menu *menu, uint32_t id);
-int zdesktop_menu_set_label / set_action / set_enabled / set_visible / set_checked / set_role / set_icon_name / set_shortcut(...);
+struct keiland_menu *keiland_menu_create(struct keiland_menu_service *service);
+void keiland_menu_destroy(struct keiland_menu *menu);
+int keiland_menu_begin(struct keiland_menu *menu);
+int keiland_menu_commit(struct keiland_menu *menu);
+int keiland_menu_append(struct keiland_menu *menu, uint32_t id, uint32_t parent, unsigned type, const char *label, uint32_t action);
+int keiland_menu_insert(struct keiland_menu *menu, uint32_t id, uint32_t parent, uint32_t before, unsigned type, const char *label, uint32_t action);
+int keiland_menu_remove(struct keiland_menu *menu, uint32_t id);
+int keiland_menu_set_label / set_action / set_enabled / set_visible / set_checked / set_role / set_icon_name / set_shortcut(...);
 
-struct zdesktop_window_menu *zdesktop_window_menu_create(struct zdesktop_menu_service *service, struct xdg_toplevel *toplevel,
-	const struct zdesktop_window_menu_listener *listener, void *data);
-int zdesktop_window_menu_set(struct zdesktop_window_menu *window_menu, struct zdesktop_menu *menu);
-void zdesktop_window_menu_destroy(struct zdesktop_window_menu *window_menu);
+struct keiland_window_menu *keiland_window_menu_create(struct keiland_menu_service *service, struct xdg_toplevel *toplevel,
+	const struct keiland_window_menu_listener *listener, void *data);
+int keiland_window_menu_set(struct keiland_window_menu *window_menu, struct keiland_menu *menu);
+void keiland_window_menu_destroy(struct keiland_window_menu *window_menu);
 
-struct zdesktop_window_menu_listener {
-	void (*activated)(void *data, struct zdesktop_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
-	void (*opened)(void *data, struct zdesktop_window_menu *window_menu, uint32_t item);
-	void (*closed)(void *data, struct zdesktop_window_menu *window_menu, uint32_t item);
+struct keiland_window_menu_listener {
+	void (*activated)(void *data, struct keiland_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
+	void (*opened)(void *data, struct keiland_window_menu *window_menu, uint32_t item);
+	void (*closed)(void *data, struct keiland_window_menu *window_menu, uint32_t item);
 };
 ```
 
-- `ZDESKTOP_VERSION` は 2（System Menu を足した版）。
-- 定数: `ZDESKTOP_MENU_ITEM_NORMAL`…`SUBMENU`、`ZDESKTOP_MENU_ROLE_*`、`ZDESKTOP_MENU_SHIFT`・`CTRL`・`ALT`・`SUPER`、
-  `ZDESKTOP_MENU_ROOT`（0）。値は protocol の enum と同じ。
+- `KEILAND_VERSION` は 2（System Menu を足した版）。
+- 定数: `KEILAND_MENU_ITEM_NORMAL`…`SUBMENU`、`KEILAND_MENU_ROLE_*`、`KEILAND_MENU_SHIFT`・`CTRL`・`ALT`・`SUPER`、
+  `KEILAND_MENU_ROOT`（0）。値は protocol の enum と同じ。
 - **戻り値**: 0 か errno の値。**局所の検査**: libkeiland は ID・parent・型・transaction の鏡を持ち、protocol error になる呼び出し
   （重複 ID、無い parent、transaction の外の変更、checkbox 以外への checked…）を送らずに `EINVAL`・`EEXIST`・`ENOENT`・`EBUSY`・
   `E2BIG` で返す。protocol error は接続ごと client を殺すので、toolkit の backend の誤りを 1 つの呼び出しの失敗に留める。
 - **event の queue**: service は global の発見だけを自分の queue（`wl_display_create_queue`、display の wrapper）で roundtrip し、
   manager・menu・表示先は application の既定の queue に置く。activated は application が自分の queue を dispatch したときに listener
   で届く（toolkit の event loop のまま）。
-- **fallback**（仕様案 §22）: `zdesktop_menu_service_open` が NULL（`ENOTSUP`）なら、toolkit は client 側の menu を使う。
+- **fallback**（仕様案 §22）: `keiland_menu_service_open` が NULL（`ENOTSUP`）なら、toolkit は client 側の menu を使う。
 - **写し方**: GMenuModel は item（section は separator と子の並び、submenu は `submenu` 型）を ID の木に、`action` と `target` を
   action の番号に（backend が名前との表を持つ）、`items-changed` を transaction の中の insert・remove に写す。action の
   enabled・state の変化は `set_enabled`・`set_checked`。QMenuBar は QMenu を submenu、QAction を normal・checkbox（checkable）・
@@ -300,7 +300,7 @@ activated は `ZTERM MENU item=I action=A` を log に出す。
   zdesktop の外の program なので重なりは小さいが、zwl.h の object・server の field の追加は merge で並びがずれうる。
 - `userland/desktop/libwayland/`（protocol.c、event.c）: WS069 の xserver が新しい interface を足すなら同じ file。
 - `platform/amd64/vmunix.mk`（libkeiland の link、terminal の link）: WS068・WS069 も規則を足す file。
-- `include/libc/zdesktop.h`、`userland/desktop/libkeiland/`: WS069 の xserver が libkeiland に何か足すなら重なる。
+- `include/libc/keiland.h`、`userland/desktop/libkeiland/`: WS069 の xserver が libkeiland に何か足すなら重なる。
 
 ## 11. 決定（2026-09-27 ユーザーが既定を確定。以前は未決として既定で進めていた）
 
@@ -330,7 +330,7 @@ context menu（Open、Open With、Cut、Copy、Paste、Rename、Duplicate、Move
   ものかを確かめ、surface の座標 (x, y) に根の子の popup を開く。`xdg_context_menu_v1` の event は `activated(item_id, action,
   serial)` と `done()`（選ばれても閉じられても最後に 1 回。client はその後 destroy する）、request は `destroy`（開いていれば閉じる）。
   menubar と同じ `xdg_menu_v1` を渡してもよい（その場合は根の子＝top-level が行になる）。libkeiland には
-  `zdesktop_menu_popup(service, menu, surface, x, y, seat, serial, listener, data)` のような 1 つの呼び出しで包む。
+  `keiland_menu_popup(service, menu, surface, x, y, seat, serial, listener, data)` のような 1 つの呼び出しで包む。
 - **2026-09-27 実装（ws071-p009）**: 上の version 2 の案のとおり（`bad_surface` の error は作らず、窓でない surface・古い serial は開かずに
   `done`）。記録は [ws071 phase009](../ws071/ws.md)。
 - **zdesktop 側の変更の見込み**: menu-shell.c の state に「menubar からでない popup」（hit の無い anchor、parent = 根）を足し、

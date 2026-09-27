@@ -16,8 +16,8 @@
  * written by hand while the interfaces are few.
  */
 
-#ifndef ZDESKTOP_BROWSER_BIND_INTERNAL_H
-#define ZDESKTOP_BROWSER_BIND_INTERNAL_H
+#ifndef KEILAND_BROWSER_BIND_INTERNAL_H
+#define KEILAND_BROWSER_BIND_INTERNAL_H
 
 #include "bind/bind.h"
 

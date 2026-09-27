@@ -25,7 +25,7 @@ egltest の OpenGL ES 3 の場面 targets・blits・queries・feedback を実機
 
 最初に 4 場面を今の実行器で実機に走らせ、log の CHECK と executor の拒否（`i915: vk: ... refused`・`XXX unimplemented`）から
 不足を並べ、場面ごとに直す。11 場面は 1 回の capture に収まらないので、4 場面は別の runner
-`plan/ws031/tests/zdesktop/run-egltest6.sh`（`ZDESKTOP_APP=egltest6`、`vkloop-hw.sh` に足した）で走らせる。
+`plan/ws031/tests/zdesktop/run-egltest6.sh`（`KEILAND_APP=egltest6`、`vkloop-hw.sh` に足した）で走らせる。
 
 基準の run（`build/ws075-p006/base-egltest6`）の不足: 4 つの colour attachment の render pass の拒否（MRT）、opcode 47
 （vkCreateQueryPool）の未実装、vertex shader の SPIR-V の BufferBlock の拒否（transform feedback の capture の storage buffer）、

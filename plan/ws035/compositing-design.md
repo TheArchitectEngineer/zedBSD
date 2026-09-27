@@ -73,7 +73,7 @@ Status: **承認済み**（2026-09-25 ユーザー「承認します」。§10 �
 | GPU 画像の共有 | `VK_KHR_external_memory_fd` の OPAQUE_FD（同じ deviceUUID/driverUUID の範囲）、linear・buffer・optimal（WS014 p007） |
 | 完了の通知 | `KERNEL_HANDLE_FENCE` の fd を `poll(POLLIN)` で待てる。`VK_KHR_external_fence_fd`（WS014 p007） |
 | scanout | `GPU_DISPLAY_PRESENT`（`BLOB`）で、共有した linear 画像をそのまま出す。`include/uapi/gpu-display.h` に cursor の plane の interface は**無い** |
-| zwl の protocol | `wl_compositor` 4、`xdg_wm_base` 1、`zed_gpu_buffer_v1` 1（fd と画像の記述）、`wl_output` 2、`wl_seat` 5。**`wl_shm` は無い** |
+| zwl の protocol | `wl_compositor` 4、`xdg_wm_base` 1、`keiland_gpu_buffer_v1` 1（fd と画像の記述）、`wl_output` 2、`wl_seat` 5。**`wl_shm` は無い** |
 | event loop | `poll()` 1 本の single thread（epoll は使わない。ws034-p050 で POSIX の範囲を確かめる） |
 
 ## 3. 決定の提案
@@ -127,7 +127,7 @@ zdesktop は表示の出し方を 2 つ持ち、状態で切り替える（Steam
 
 ### D2. client の画像: GPU の画像（主要、copy 0）と `wl_shm`（補助、CPU の copy あり）
 
-**GPU の画像**（`zed_gpu_buffer_v1`、libwayland の WSI が使う主要な経路）:
+**GPU の画像**（`keiland_gpu_buffer_v1`、libwayland の WSI が使う主要な経路）:
 
 - ウィンドウモードでは Vulkan で sampling するので、fd を **`vkAllocateMemory`（`VkImportMemoryFdInfoKHR`、OPAQUE_FD）＋
   `vkCreateImage` / `vkBindImageMemory`** で import する。画像の記述（幅・高さ・format・tiling・stride）は protocol の record にある。
@@ -158,7 +158,7 @@ zdesktop は表示の出し方を 2 つ持ち、状態で切り替える（Steam
 ### D3. 同期と寿命
 
 - **client の描画の完了**: GPU の画像は、commit のときに client の描画がまだ終わっていないことがある。
-  `zed_gpu_buffer_v1` に **acquire fence（`KERNEL_HANDLE_FENCE` の fd）を commit と一緒に渡す request** を足す
+  `keiland_gpu_buffer_v1` に **acquire fence（`KERNEL_HANDLE_FENCE` の fd）を commit と一緒に渡す request** を足す
   （Linux の `linux-explicit-synchronization` 相当を最小限で）。zdesktop はその fd を poll に入れ、
   signal されてから、その commit を「使える状態」にする。**CPU で wait はしない**（event loop が止まる）。
   fence を渡さない client は今までどおり、commit の時点で描画が終わっている前提（今の WSI の動き）。
@@ -234,8 +234,8 @@ cursor が隠れている」などの条件を frame ごとに調べて自動で
   窓ごとに render pass を区切る必要があるので、効果のある窓の数だけ pass が増える。
 - **影・角の丸め**: 窓の quad の外側に影の quad、fragment shader で角を切る。背後を読まないので pass を区切らない。
 - **タイル表示の縮小**（p014）: 窓の quad を縮小して並べるだけ（D1 の quad で足りる）。
-- 2026-09-27（ws035-p083）: client が窓の中の「すりガラスの card」を `zed_glass_v1` で名指しし、窓の alpha を Vulkan の PRE_MULTIPLIED
-  （`zed_gpu_buffer_v1` revision 3）で渡す仕組みを足した。ガラスの見た目は zdesktop が決める（[glass-design.md](glass-design.md)）。
+- 2026-09-27（ws035-p083）: client が窓の中の「すりガラスの card」を `keiland_glass_v1` で名指しし、窓の alpha を Vulkan の PRE_MULTIPLIED
+  （`keiland_gpu_buffer_v1` revision 3）で渡す仕組みを足した。ガラスの見た目は zdesktop が決める（[glass-design.md](glass-design.md)）。
   ガラスの中身は今はぼかした壁紙で、上の「背後のぼかし」は p057 の残り。
 - 効果は窓の属性（zdesktop の設定、または将来の protocol）で決め、client は関与しない。damage（D4 の 2 回目）では、
   すりガラスの窓の背後が変わったらその窓の範囲も描き直す（ぼかしの半径の分だけ広げる）。
@@ -247,7 +247,7 @@ cursor が隠れている」などの条件を frame ごとに調べて自動で
 | file | 役割 |
 | --- | --- |
 | `compose.c` | Vulkan の初期化、display の surface と swapchain（作成・破棄）、pipeline 2 本、frame を描く（quad の列を作って submit） |
-| `import.c` | `zed_gpu_buffer_v1` の OPAQUE_FD の import（buffer ごとに 1 回）と寿命、acquire fence |
+| `import.c` | `keiland_gpu_buffer_v1` の OPAQUE_FD の import（buffer ごとに 1 回）と寿命、acquire fence |
 | `shm.c` | `wl_shm`・`wl_shm_pool`、damage の範囲の copy と upload |
 | `scene.c` | 窓の列（z-order）、位置・大きさ、damage、モード（D0）の判定と切替 |
 | `display.c` | 全画面モードの表示（claim・import・present・release）、モードの切替の手順、frame の間隔 |
@@ -317,7 +317,7 @@ cursor が隠れている」などの条件を frame ごとに調べて自動で
    切替の隙間に console が一瞬出るなら、同じ process の claim が lease を引き継ぐ interface を GPU の UAPI に足す点（p052 で設計）。
 2. **D1**: ウィンドウモードは `VK_KHR_display` の swapchain で出し、全画面モードでは swapchain と surface を破棄する（2 回目のレビューを反映）。
 3. **D2**: GPU の画像を主要な経路として copy 0・import 1 回などの最適化を入れ、`wl_shm` は damage の範囲の CPU の copy で補助として持つ（2 回目のレビューを反映）。
-4. **D3**: `zed_gpu_buffer_v1` に acquire fence を渡す request を足す（最小限の explicit sync）。
+4. **D3**: `keiland_gpu_buffer_v1` に acquire fence を渡す request を足す（最小限の explicit sync）。
 5. **D7**: 装飾は server-side を既定にする。
 6. **D8・D10**: 既定の cursor は zdesktop が持ち、`set_cursor` は shm・GPU の surface を受ける。効果（すりガラス・影）は構造だけ p052 で用意し、p057 で作る。
 7. **§5**: p052 → p053（`wl_shm`・cursor）→ p054 → p011 → p055 → p057 の順序。

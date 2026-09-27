@@ -641,7 +641,7 @@ shell_titlebar_input(
 	if (event->kind == SHELL_TITLEBAR_DONE) {
 		if (event->id != SHELL_CONTROL_LOCATION)
 			return;
-		if (event->detail != ZDESKTOP_TEXT_SUBMITTED)
+		if (event->detail != KEILAND_TEXT_SUBMITTED)
 			return;
 		shell_follow(state, event->text);
 		return;

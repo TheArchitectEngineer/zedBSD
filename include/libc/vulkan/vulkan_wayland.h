@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  * Selected VK_KHR_wayland_surface ABI; no upstream implementation code.
  */
-#ifndef ZEDBSD_VULKAN_WAYLAND_H
-#define ZEDBSD_VULKAN_WAYLAND_H
+#ifndef KERN_VULKAN_WAYLAND_H
+#define KERN_VULKAN_WAYLAND_H
 
 #include "vulkan_core.h"
 

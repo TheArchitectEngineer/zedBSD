@@ -62,10 +62,10 @@
 #define MENU_KEY_PAGE_DOWN	0xff56U
 
 /* The modifiers of the shortcuts. */
-#define MENU_CTRL		ZDESKTOP_MENU_CTRL
-#define MENU_CTRL_SHIFT		(ZDESKTOP_MENU_CTRL | ZDESKTOP_MENU_SHIFT)
-#define MENU_CTRL_ALT		(ZDESKTOP_MENU_CTRL | ZDESKTOP_MENU_ALT)
-#define MENU_ALT		ZDESKTOP_MENU_ALT
+#define MENU_CTRL		KEILAND_MENU_CTRL
+#define MENU_CTRL_SHIFT		(KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT)
+#define MENU_CTRL_ALT		(KEILAND_MENU_CTRL | KEILAND_MENU_ALT)
+#define MENU_ALT		KEILAND_MENU_ALT
 
 /* The list columns the View menu names, after the name (which is always shown). */
 #define MENU_COLUMN_COUNT	6
@@ -91,73 +91,73 @@ struct menu_item {
  * menu_build.
  */
 static const struct menu_item menu_items[] = {
-	{ MENU_FILE, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "File", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_NEW_WINDOW), MENU_FILE, ZDESKTOP_MENU_ITEM_NORMAL, "New Window", FM_ACTION_NEW_WINDOW, ZDESKTOP_MENU_ROLE_NEW, MENU_CTRL, 'n' },
-	{ MENU_ACTION_ID(FM_ACTION_NEW_TAB), MENU_FILE, ZDESKTOP_MENU_ITEM_NORMAL, "New Tab", FM_ACTION_NEW_TAB, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, 't' },
-	{ MENU_ACTION_ID(FM_ACTION_NEW_FOLDER), MENU_FILE, ZDESKTOP_MENU_ITEM_NORMAL, "New Folder", FM_ACTION_NEW_FOLDER, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'n' },
-	{ MENU_ACTION_ID(FM_ACTION_OPEN), MENU_FILE, ZDESKTOP_MENU_ITEM_NORMAL, "Open", FM_ACTION_OPEN, ZDESKTOP_MENU_ROLE_OPEN, MENU_CTRL, 'o' },
-	{ MENU_OPEN_WITH, MENU_FILE, ZDESKTOP_MENU_ITEM_SUBMENU, "Open With", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_LINE, MENU_FILE, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_GET_INFO), MENU_FILE, ZDESKTOP_MENU_ITEM_NORMAL, "Get Info", FM_ACTION_GET_INFO, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, 'i' },
-	{ MENU_ACTION_ID(FM_ACTION_TRASH), MENU_FILE, ZDESKTOP_MENU_ITEM_NORMAL, "Move to Trash", FM_ACTION_TRASH, ZDESKTOP_MENU_ROLE_DELETE, 0U, 0U },
-	{ MENU_LINE + 1U, MENU_FILE, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_CLOSE_TAB), MENU_FILE, ZDESKTOP_MENU_ITEM_NORMAL, "Close Tab", FM_ACTION_CLOSE_TAB, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, 'w' },
-	{ MENU_ACTION_ID(FM_ACTION_CLOSE_WINDOW), MENU_FILE, ZDESKTOP_MENU_ITEM_NORMAL, "Close Window", FM_ACTION_CLOSE_WINDOW, ZDESKTOP_MENU_ROLE_CLOSE, MENU_CTRL_SHIFT, 'w' },
-	{ MENU_EDIT, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "Edit", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_UNDO), MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Undo", FM_ACTION_UNDO, ZDESKTOP_MENU_ROLE_UNDO, MENU_CTRL, 'z' },
-	{ MENU_ACTION_ID(FM_ACTION_REDO), MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Redo", FM_ACTION_REDO, ZDESKTOP_MENU_ROLE_REDO, MENU_CTRL_SHIFT, 'z' },
-	{ MENU_LINE + 2U, MENU_EDIT, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_CUT), MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Cut", FM_ACTION_CUT, ZDESKTOP_MENU_ROLE_CUT, MENU_CTRL, 'x' },
-	{ MENU_ACTION_ID(FM_ACTION_COPY), MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Copy", FM_ACTION_COPY, ZDESKTOP_MENU_ROLE_COPY, MENU_CTRL, 'c' },
-	{ MENU_ACTION_ID(FM_ACTION_PASTE), MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Paste", FM_ACTION_PASTE, ZDESKTOP_MENU_ROLE_PASTE, MENU_CTRL, 'v' },
-	{ MENU_ACTION_ID(FM_ACTION_DUPLICATE), MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Duplicate", FM_ACTION_DUPLICATE, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, 'd' },
-	{ MENU_ACTION_ID(FM_ACTION_SELECT_ALL), MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Select All", FM_ACTION_SELECT_ALL, ZDESKTOP_MENU_ROLE_SELECT_ALL, MENU_CTRL, 'a' },
-	{ MENU_LINE + 3U, MENU_EDIT, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_RENAME), MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Rename", FM_ACTION_RENAME, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_TAGS, MENU_EDIT, ZDESKTOP_MENU_ITEM_SUBMENU, "Tags", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_VIEW, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "View", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_VIEW_ICONS), MENU_VIEW, ZDESKTOP_MENU_ITEM_RADIO, "Icons", FM_ACTION_VIEW_ICONS, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, '1' },
-	{ MENU_ACTION_ID(FM_ACTION_VIEW_LIST), MENU_VIEW, ZDESKTOP_MENU_ITEM_RADIO, "List", FM_ACTION_VIEW_LIST, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, '2' },
-	{ MENU_VIEW_COLUMNS, MENU_VIEW, ZDESKTOP_MENU_ITEM_RADIO, "Columns", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_VIEW_GALLERY, MENU_VIEW, ZDESKTOP_MENU_ITEM_RADIO, "Gallery", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_LINE + 4U, MENU_VIEW, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_SORT, MENU_VIEW, ZDESKTOP_MENU_ITEM_SUBMENU, "Sort By", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_SORT_NAME), MENU_SORT, ZDESKTOP_MENU_ITEM_RADIO, "Name", FM_ACTION_SORT_NAME, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_SORT_KIND), MENU_SORT, ZDESKTOP_MENU_ITEM_RADIO, "Kind", FM_ACTION_SORT_KIND, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_SORT_SIZE), MENU_SORT, ZDESKTOP_MENU_ITEM_RADIO, "Size", FM_ACTION_SORT_SIZE, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_SORT_MODIFIED), MENU_SORT, ZDESKTOP_MENU_ITEM_RADIO, "Date Modified", FM_ACTION_SORT_MODIFIED, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_COLUMNS, MENU_VIEW, ZDESKTOP_MENU_ITEM_SUBMENU, "List Columns", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_LINE + 5U, MENU_VIEW, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_SHOW_SIDEBAR), MENU_VIEW, ZDESKTOP_MENU_ITEM_CHECKBOX, "Show Sidebar", FM_ACTION_SHOW_SIDEBAR, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL_ALT, 's' },
-	{ MENU_ACTION_ID(FM_ACTION_SHOW_PREVIEW), MENU_VIEW, ZDESKTOP_MENU_ITEM_CHECKBOX, "Show Preview", FM_ACTION_SHOW_PREVIEW, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL_ALT, 'p' },
-	{ MENU_ACTION_ID(FM_ACTION_SHOW_HIDDEN), MENU_VIEW, ZDESKTOP_MENU_ITEM_CHECKBOX, "Show Hidden Files", FM_ACTION_SHOW_HIDDEN, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, 'h' },
-	{ MENU_GO, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "Go", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_BACK), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Back", FM_ACTION_BACK, ZDESKTOP_MENU_ROLE_NONE, MENU_ALT, MENU_KEY_LEFT },
-	{ MENU_ACTION_ID(FM_ACTION_FORWARD), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Forward", FM_ACTION_FORWARD, ZDESKTOP_MENU_ROLE_NONE, MENU_ALT, MENU_KEY_RIGHT },
-	{ MENU_ACTION_ID(FM_ACTION_ENCLOSING), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Enclosing Folder", FM_ACTION_ENCLOSING, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, MENU_KEY_UP },
-	{ MENU_LINE + 6U, MENU_GO, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_GO_HOME), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Home", FM_ACTION_GO_HOME, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'h' },
-	{ MENU_ACTION_ID(FM_ACTION_GO_DESKTOP), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Desktop", FM_ACTION_GO_DESKTOP, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'd' },
-	{ MENU_ACTION_ID(FM_ACTION_GO_DOCUMENTS), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Documents", FM_ACTION_GO_DOCUMENTS, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'o' },
-	{ MENU_ACTION_ID(FM_ACTION_GO_DOWNLOADS), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Downloads", FM_ACTION_GO_DOWNLOADS, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'l' },
-	{ MENU_ACTION_ID(FM_ACTION_GO_RECENTS), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Recents", FM_ACTION_GO_RECENTS, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'r' },
-	{ MENU_ACTION_ID(FM_ACTION_GO_COMPUTER), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Computer", FM_ACTION_GO_COMPUTER, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'c' },
-	{ MENU_GO_NETWORK, MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Network", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_GO_TRASH), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Trash", FM_ACTION_GO_TRASH, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_LINE + 7U, MENU_GO, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_GO_LOCATION), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Go to Location...", FM_ACTION_GO_LOCATION, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, 'l' },
-	{ MENU_ACTION_ID(FM_ACTION_FIND), MENU_GO, ZDESKTOP_MENU_ITEM_NORMAL, "Find", FM_ACTION_FIND, ZDESKTOP_MENU_ROLE_FIND, MENU_CTRL, 'f' },
-	{ MENU_WINDOW, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "Window", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_MINIMIZE), MENU_WINDOW, ZDESKTOP_MENU_ITEM_NORMAL, "Minimize", FM_ACTION_MINIMIZE, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, 'm' },
-	{ MENU_ACTION_ID(FM_ACTION_ZOOM), MENU_WINDOW, ZDESKTOP_MENU_ITEM_NORMAL, "Zoom", FM_ACTION_ZOOM, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_LINE + 9U, MENU_WINDOW, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_PREVIOUS_TAB), MENU_WINDOW, ZDESKTOP_MENU_ITEM_NORMAL, "Previous Tab", FM_ACTION_PREVIOUS_TAB, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, MENU_KEY_PAGE_UP },
-	{ MENU_ACTION_ID(FM_ACTION_NEXT_TAB), MENU_WINDOW, ZDESKTOP_MENU_ITEM_NORMAL, "Next Tab", FM_ACTION_NEXT_TAB, ZDESKTOP_MENU_ROLE_NONE, MENU_CTRL, MENU_KEY_PAGE_DOWN },
-	{ MENU_HELP, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "Help", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_HELP), MENU_HELP, ZDESKTOP_MENU_ITEM_NORMAL, "File Manager Help", FM_ACTION_HELP, ZDESKTOP_MENU_ROLE_HELP, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_SHORTCUTS), MENU_HELP, ZDESKTOP_MENU_ITEM_NORMAL, "Keyboard Shortcuts", FM_ACTION_SHORTCUTS, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_LINE + 8U, MENU_HELP, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(FM_ACTION_ABOUT), MENU_HELP, ZDESKTOP_MENU_ITEM_NORMAL, "About Files", FM_ACTION_ABOUT, ZDESKTOP_MENU_ROLE_ABOUT, 0U, 0U }
+	{ MENU_FILE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "File", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_NEW_WINDOW), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "New Window", FM_ACTION_NEW_WINDOW, KEILAND_MENU_ROLE_NEW, MENU_CTRL, 'n' },
+	{ MENU_ACTION_ID(FM_ACTION_NEW_TAB), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "New Tab", FM_ACTION_NEW_TAB, KEILAND_MENU_ROLE_NONE, MENU_CTRL, 't' },
+	{ MENU_ACTION_ID(FM_ACTION_NEW_FOLDER), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "New Folder", FM_ACTION_NEW_FOLDER, KEILAND_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'n' },
+	{ MENU_ACTION_ID(FM_ACTION_OPEN), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Open", FM_ACTION_OPEN, KEILAND_MENU_ROLE_OPEN, MENU_CTRL, 'o' },
+	{ MENU_OPEN_WITH, MENU_FILE, KEILAND_MENU_ITEM_SUBMENU, "Open With", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_LINE, MENU_FILE, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_GET_INFO), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Get Info", FM_ACTION_GET_INFO, KEILAND_MENU_ROLE_NONE, MENU_CTRL, 'i' },
+	{ MENU_ACTION_ID(FM_ACTION_TRASH), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Move to Trash", FM_ACTION_TRASH, KEILAND_MENU_ROLE_DELETE, 0U, 0U },
+	{ MENU_LINE + 1U, MENU_FILE, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_CLOSE_TAB), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Close Tab", FM_ACTION_CLOSE_TAB, KEILAND_MENU_ROLE_NONE, MENU_CTRL, 'w' },
+	{ MENU_ACTION_ID(FM_ACTION_CLOSE_WINDOW), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Close Window", FM_ACTION_CLOSE_WINDOW, KEILAND_MENU_ROLE_CLOSE, MENU_CTRL_SHIFT, 'w' },
+	{ MENU_EDIT, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Edit", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_UNDO), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Undo", FM_ACTION_UNDO, KEILAND_MENU_ROLE_UNDO, MENU_CTRL, 'z' },
+	{ MENU_ACTION_ID(FM_ACTION_REDO), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Redo", FM_ACTION_REDO, KEILAND_MENU_ROLE_REDO, MENU_CTRL_SHIFT, 'z' },
+	{ MENU_LINE + 2U, MENU_EDIT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_CUT), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Cut", FM_ACTION_CUT, KEILAND_MENU_ROLE_CUT, MENU_CTRL, 'x' },
+	{ MENU_ACTION_ID(FM_ACTION_COPY), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Copy", FM_ACTION_COPY, KEILAND_MENU_ROLE_COPY, MENU_CTRL, 'c' },
+	{ MENU_ACTION_ID(FM_ACTION_PASTE), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Paste", FM_ACTION_PASTE, KEILAND_MENU_ROLE_PASTE, MENU_CTRL, 'v' },
+	{ MENU_ACTION_ID(FM_ACTION_DUPLICATE), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Duplicate", FM_ACTION_DUPLICATE, KEILAND_MENU_ROLE_NONE, MENU_CTRL, 'd' },
+	{ MENU_ACTION_ID(FM_ACTION_SELECT_ALL), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Select All", FM_ACTION_SELECT_ALL, KEILAND_MENU_ROLE_SELECT_ALL, MENU_CTRL, 'a' },
+	{ MENU_LINE + 3U, MENU_EDIT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_RENAME), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Rename", FM_ACTION_RENAME, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_TAGS, MENU_EDIT, KEILAND_MENU_ITEM_SUBMENU, "Tags", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_VIEW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "View", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_VIEW_ICONS), MENU_VIEW, KEILAND_MENU_ITEM_RADIO, "Icons", FM_ACTION_VIEW_ICONS, KEILAND_MENU_ROLE_NONE, MENU_CTRL, '1' },
+	{ MENU_ACTION_ID(FM_ACTION_VIEW_LIST), MENU_VIEW, KEILAND_MENU_ITEM_RADIO, "List", FM_ACTION_VIEW_LIST, KEILAND_MENU_ROLE_NONE, MENU_CTRL, '2' },
+	{ MENU_VIEW_COLUMNS, MENU_VIEW, KEILAND_MENU_ITEM_RADIO, "Columns", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_VIEW_GALLERY, MENU_VIEW, KEILAND_MENU_ITEM_RADIO, "Gallery", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_LINE + 4U, MENU_VIEW, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_SORT, MENU_VIEW, KEILAND_MENU_ITEM_SUBMENU, "Sort By", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_SORT_NAME), MENU_SORT, KEILAND_MENU_ITEM_RADIO, "Name", FM_ACTION_SORT_NAME, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_SORT_KIND), MENU_SORT, KEILAND_MENU_ITEM_RADIO, "Kind", FM_ACTION_SORT_KIND, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_SORT_SIZE), MENU_SORT, KEILAND_MENU_ITEM_RADIO, "Size", FM_ACTION_SORT_SIZE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_SORT_MODIFIED), MENU_SORT, KEILAND_MENU_ITEM_RADIO, "Date Modified", FM_ACTION_SORT_MODIFIED, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_COLUMNS, MENU_VIEW, KEILAND_MENU_ITEM_SUBMENU, "List Columns", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_LINE + 5U, MENU_VIEW, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_SHOW_SIDEBAR), MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Show Sidebar", FM_ACTION_SHOW_SIDEBAR, KEILAND_MENU_ROLE_NONE, MENU_CTRL_ALT, 's' },
+	{ MENU_ACTION_ID(FM_ACTION_SHOW_PREVIEW), MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Show Preview", FM_ACTION_SHOW_PREVIEW, KEILAND_MENU_ROLE_NONE, MENU_CTRL_ALT, 'p' },
+	{ MENU_ACTION_ID(FM_ACTION_SHOW_HIDDEN), MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Show Hidden Files", FM_ACTION_SHOW_HIDDEN, KEILAND_MENU_ROLE_NONE, MENU_CTRL, 'h' },
+	{ MENU_GO, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Go", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_BACK), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Back", FM_ACTION_BACK, KEILAND_MENU_ROLE_NONE, MENU_ALT, MENU_KEY_LEFT },
+	{ MENU_ACTION_ID(FM_ACTION_FORWARD), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Forward", FM_ACTION_FORWARD, KEILAND_MENU_ROLE_NONE, MENU_ALT, MENU_KEY_RIGHT },
+	{ MENU_ACTION_ID(FM_ACTION_ENCLOSING), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Enclosing Folder", FM_ACTION_ENCLOSING, KEILAND_MENU_ROLE_NONE, MENU_CTRL, MENU_KEY_UP },
+	{ MENU_LINE + 6U, MENU_GO, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_GO_HOME), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Home", FM_ACTION_GO_HOME, KEILAND_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'h' },
+	{ MENU_ACTION_ID(FM_ACTION_GO_DESKTOP), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Desktop", FM_ACTION_GO_DESKTOP, KEILAND_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'd' },
+	{ MENU_ACTION_ID(FM_ACTION_GO_DOCUMENTS), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Documents", FM_ACTION_GO_DOCUMENTS, KEILAND_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'o' },
+	{ MENU_ACTION_ID(FM_ACTION_GO_DOWNLOADS), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Downloads", FM_ACTION_GO_DOWNLOADS, KEILAND_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'l' },
+	{ MENU_ACTION_ID(FM_ACTION_GO_RECENTS), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Recents", FM_ACTION_GO_RECENTS, KEILAND_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'r' },
+	{ MENU_ACTION_ID(FM_ACTION_GO_COMPUTER), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Computer", FM_ACTION_GO_COMPUTER, KEILAND_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'c' },
+	{ MENU_GO_NETWORK, MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Network", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_GO_TRASH), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Trash", FM_ACTION_GO_TRASH, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_LINE + 7U, MENU_GO, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_GO_LOCATION), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Go to Location...", FM_ACTION_GO_LOCATION, KEILAND_MENU_ROLE_NONE, MENU_CTRL, 'l' },
+	{ MENU_ACTION_ID(FM_ACTION_FIND), MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Find", FM_ACTION_FIND, KEILAND_MENU_ROLE_FIND, MENU_CTRL, 'f' },
+	{ MENU_WINDOW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Window", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_MINIMIZE), MENU_WINDOW, KEILAND_MENU_ITEM_NORMAL, "Minimize", FM_ACTION_MINIMIZE, KEILAND_MENU_ROLE_NONE, MENU_CTRL, 'm' },
+	{ MENU_ACTION_ID(FM_ACTION_ZOOM), MENU_WINDOW, KEILAND_MENU_ITEM_NORMAL, "Zoom", FM_ACTION_ZOOM, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_LINE + 9U, MENU_WINDOW, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_PREVIOUS_TAB), MENU_WINDOW, KEILAND_MENU_ITEM_NORMAL, "Previous Tab", FM_ACTION_PREVIOUS_TAB, KEILAND_MENU_ROLE_NONE, MENU_CTRL, MENU_KEY_PAGE_UP },
+	{ MENU_ACTION_ID(FM_ACTION_NEXT_TAB), MENU_WINDOW, KEILAND_MENU_ITEM_NORMAL, "Next Tab", FM_ACTION_NEXT_TAB, KEILAND_MENU_ROLE_NONE, MENU_CTRL, MENU_KEY_PAGE_DOWN },
+	{ MENU_HELP, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Help", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_HELP), MENU_HELP, KEILAND_MENU_ITEM_NORMAL, "File Manager Help", FM_ACTION_HELP, KEILAND_MENU_ROLE_HELP, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_SHORTCUTS), MENU_HELP, KEILAND_MENU_ITEM_NORMAL, "Keyboard Shortcuts", FM_ACTION_SHORTCUTS, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_LINE + 8U, MENU_HELP, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(FM_ACTION_ABOUT), MENU_HELP, KEILAND_MENU_ITEM_NORMAL, "About Files", FM_ACTION_ABOUT, KEILAND_MENU_ROLE_ABOUT, 0U, 0U }
 };
 
 /* The list columns the View menu names, in the list's order. */
@@ -180,25 +180,25 @@ static const char *const menu_column_labels[MENU_COLUMN_COUNT] = {
 	"Owner"
 };
 
-static void menu_activated(void *data, struct zdesktop_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
-static void menu_context_activated(void *data, struct zdesktop_context_menu *context_menu, uint32_t item, uint32_t action, uint32_t serial);
-static void menu_context_done(void *data, struct zdesktop_context_menu *context_menu);
+static void menu_activated(void *data, struct keiland_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
+static void menu_context_activated(void *data, struct keiland_context_menu *context_menu, uint32_t item, uint32_t action, uint32_t serial);
+static void menu_context_done(void *data, struct keiland_context_menu *context_menu);
 static int menu_context_build(struct fm_menu *menu, const struct fm_context *context);
 static void menu_context_drop(struct fm_menu *menu);
 static int menu_build(struct fm_menu *menu);
 static int menu_add(struct fm_menu *menu, const struct menu_item *item);
 static int menu_add_slots(struct fm_menu *menu);
 static int menu_state(struct fm_menu *menu, const struct fm_menu_state *state);
-static int menu_state_items(struct zdesktop_menu *model, const struct fm_menu_state *state);
-static int menu_state_slots(struct zdesktop_menu *model, const struct fm_menu_state *state);
+static int menu_state_items(struct keiland_menu *model, const struct fm_menu_state *state);
+static int menu_state_slots(struct keiland_menu *model, const struct fm_menu_state *state);
 
 /* What the window menu tells the window: only the choices. */
-static const struct zdesktop_window_menu_listener menu_listener = {
+static const struct keiland_window_menu_listener menu_listener = {
 	menu_activated, NULL, NULL
 };
 
 /* A context menu's choice and its end. */
-static const struct zdesktop_context_menu_listener menu_context_listener = {
+static const struct keiland_context_menu_listener menu_context_listener = {
 	menu_context_activated, menu_context_done
 };
 
@@ -221,19 +221,19 @@ fm_menu_open(
 	menu->window = window;
 
 	/* The connection's menu service; a compositor without one leaves the window without menus. */
-	menu->service = zdesktop_menu_service_open(window->display);
+	menu->service = keiland_menu_service_open(window->display);
 	if (menu->service == NULL) {
 		fm_log("MENU none errno=%d", errno);
 		return 0;
 	}
 
 	/* The menu, empty until it is built. */
-	menu->menu = zdesktop_menu_create(menu->service);
+	menu->menu = keiland_menu_create(menu->service);
 	if (menu->menu == NULL)
 		return errno;
 
 	/* The window's place for a menu, which tells the window what is chosen. */
-	menu->window_menu = zdesktop_window_menu_create(menu->service, window->toplevel, &menu_listener, menu);
+	menu->window_menu = keiland_window_menu_create(menu->service, window->toplevel, &menu_listener, menu);
 	if (menu->window_menu == NULL)
 		return errno;
 
@@ -243,7 +243,7 @@ fm_menu_open(
 		return error;
 
 	/* The window shows the menu from now on. */
-	error = zdesktop_window_menu_set(menu->window_menu, menu->menu);
+	error = keiland_window_menu_set(menu->window_menu, menu->menu);
 	if (error != 0)
 		return error;
 
@@ -289,7 +289,7 @@ fm_menu_context(
 	serial = menu->window->button_serial;
 	if (context_serial != 0U)
 		serial = context_serial;
-	menu->context = zdesktop_menu_popup(menu->service, menu->context_model, menu->window->surface, x, y, menu->window->seat, serial, &menu_context_listener, menu);
+	menu->context = keiland_menu_popup(menu->service, menu->context_model, menu->window->surface, x, y, menu->window->seat, serial, &menu_context_listener, menu);
 	if (menu->context == NULL) {
 		fm_log("CONTEXT-MENU none errno=%d", errno);
 		return;
@@ -339,11 +339,11 @@ fm_menu_close(
 	/* A context menu, the window's place, the menu, then the service. */
 	menu_context_drop(menu);
 	if (menu->window_menu != NULL)
-		zdesktop_window_menu_destroy(menu->window_menu);
+		keiland_window_menu_destroy(menu->window_menu);
 	if (menu->menu != NULL)
-		zdesktop_menu_destroy(menu->menu);
+		keiland_menu_destroy(menu->menu);
 	if (menu->service != NULL)
-		zdesktop_menu_service_close(menu->service);
+		keiland_menu_service_close(menu->service);
 
 	/* Nothing is left. */
 	memset(menu, 0, sizeof(*menu));
@@ -353,7 +353,7 @@ fm_menu_close(
 static void
 menu_activated(
 	void *data,
-	struct zdesktop_window_menu *window_menu,
+	struct keiland_window_menu *window_menu,
 	uint32_t item,
 	uint32_t action,
 	struct wl_seat *seat,
@@ -377,7 +377,7 @@ menu_activated(
 static void
 menu_context_activated(
 	void *data,
-	struct zdesktop_context_menu *context_menu,
+	struct keiland_context_menu *context_menu,
 	uint32_t item,
 	uint32_t action,
 	uint32_t serial)
@@ -397,7 +397,7 @@ menu_context_activated(
 static void
 menu_context_done(
 	void *data,
-	struct zdesktop_context_menu *context_menu)
+	struct keiland_context_menu *context_menu)
 {
 	struct fm_menu *menu;
 
@@ -415,48 +415,48 @@ menu_context_build(
 	const struct fm_context *context)
 {
 	static const unsigned types[] = {
-		ZDESKTOP_MENU_ITEM_NORMAL,
-		ZDESKTOP_MENU_ITEM_SEPARATOR,
-		ZDESKTOP_MENU_ITEM_CHECKBOX,
-		ZDESKTOP_MENU_ITEM_NORMAL,
-		ZDESKTOP_MENU_ITEM_SUBMENU
+		KEILAND_MENU_ITEM_NORMAL,
+		KEILAND_MENU_ITEM_SEPARATOR,
+		KEILAND_MENU_ITEM_CHECKBOX,
+		KEILAND_MENU_ITEM_NORMAL,
+		KEILAND_MENU_ITEM_SUBMENU
 	};
 	const struct fm_context_row *row;
 	unsigned index;
 	int error;
 
 	/* A new model. */
-	menu->context_model = zdesktop_menu_create(menu->service);
+	menu->context_model = keiland_menu_create(menu->service);
 	if (menu->context_model == NULL)
 		return errno;
 
 	/* The transaction. */
-	error = zdesktop_menu_begin(menu->context_model);
+	error = keiland_menu_begin(menu->context_model);
 	if (error != 0)
 		return error;
 
 	/* Each row: its kind, label and action, whether it can be chosen, whether it is checked. */
 	for (index = 0; index < context->count; index++) {
 		row = &context->rows[index];
-		error = zdesktop_menu_append(menu->context_model, row->id, row->parent, types[row->kind], row->label, row->action);
+		error = keiland_menu_append(menu->context_model, row->id, row->parent, types[row->kind], row->label, row->action);
 		if (error != 0)
 			return error;
 		if (row->enabled == 0) {
-			error = zdesktop_menu_set_enabled(menu->context_model, row->id, 0);
+			error = keiland_menu_set_enabled(menu->context_model, row->id, 0);
 			if (error != 0)
 				return error;
 		}
 
 		/* A checked row's mark. */
 		if (row->checked != 0) {
-			error = zdesktop_menu_set_checked(menu->context_model, row->id, 1);
+			error = keiland_menu_set_checked(menu->context_model, row->id, 1);
 			if (error != 0)
 				return error;
 		}
 	}
 
 	/* The rows are shown together. */
-	error = zdesktop_menu_commit(menu->context_model);
+	error = keiland_menu_commit(menu->context_model);
 	if (error != 0)
 		return error;
 
@@ -470,11 +470,11 @@ menu_context_drop(
 	struct fm_menu *menu)
 {
 	/* The context menu (closing it if it is still open), then its model. */
-	zdesktop_context_menu_destroy(menu->context);
+	keiland_context_menu_destroy(menu->context);
 	menu->context = NULL;
 	menu->context_done = 0;
 	if (menu->context_model != NULL)
-		zdesktop_menu_destroy(menu->context_model);
+		keiland_menu_destroy(menu->context_model);
 	menu->context_model = NULL;
 }
 
@@ -487,7 +487,7 @@ menu_build(
 	int error;
 
 	/* The transaction. */
-	error = zdesktop_menu_begin(menu->menu);
+	error = keiland_menu_begin(menu->menu);
 	if (error != 0)
 		return error;
 
@@ -504,7 +504,7 @@ menu_build(
 		return error;
 
 	/* The items are shown together. */
-	error = zdesktop_menu_commit(menu->menu);
+	error = keiland_menu_commit(menu->menu);
 	if (error != 0)
 		return error;
 
@@ -521,20 +521,20 @@ menu_add(
 	int error;
 
 	/* The item. */
-	error = zdesktop_menu_append(menu->menu, item->id, item->parent, item->type, item->label, item->action);
+	error = keiland_menu_append(menu->menu, item->id, item->parent, item->type, item->label, item->action);
 	if (error != 0)
 		return error;
 
 	/* Its role, when it has one. */
-	if (item->role != ZDESKTOP_MENU_ROLE_NONE) {
-		error = zdesktop_menu_set_role(menu->menu, item->id, item->role);
+	if (item->role != KEILAND_MENU_ROLE_NONE) {
+		error = keiland_menu_set_role(menu->menu, item->id, item->role);
 		if (error != 0)
 			return error;
 	}
 
 	/* Its shortcut, when it has one. */
 	if (item->keysym != 0U) {
-		error = zdesktop_menu_set_shortcut(menu->menu, item->id, item->modifiers, item->keysym);
+		error = keiland_menu_set_shortcut(menu->menu, item->id, item->modifiers, item->keysym);
 		if (error != 0)
 			return error;
 	}
@@ -561,7 +561,7 @@ menu_add_slots(
 	for (index = 0; index < FM_OPENERS; index++) {
 		item.id = MENU_ACTION_ID(FM_ACTION_OPEN_WITH_FIRST + index);
 		item.parent = MENU_OPEN_WITH;
-		item.type = ZDESKTOP_MENU_ITEM_NORMAL;
+		item.type = KEILAND_MENU_ITEM_NORMAL;
 		item.label = "-";
 		item.action = FM_ACTION_OPEN_WITH_FIRST + index;
 		error = menu_add(menu, &item);
@@ -573,7 +573,7 @@ menu_add_slots(
 	for (index = 0; index < FM_TAGS; index++) {
 		item.id = MENU_ACTION_ID(FM_ACTION_TAG_FIRST + index);
 		item.parent = MENU_TAGS;
-		item.type = ZDESKTOP_MENU_ITEM_CHECKBOX;
+		item.type = KEILAND_MENU_ITEM_CHECKBOX;
 		item.label = "-";
 		item.action = FM_ACTION_TAG_FIRST + index;
 		error = menu_add(menu, &item);
@@ -585,7 +585,7 @@ menu_add_slots(
 	for (index = 0; index < MENU_COLUMN_COUNT; index++) {
 		item.id = MENU_ACTION_ID(FM_ACTION_COLUMN_FIRST + menu_columns[index]);
 		item.parent = MENU_COLUMNS;
-		item.type = ZDESKTOP_MENU_ITEM_CHECKBOX;
+		item.type = KEILAND_MENU_ITEM_CHECKBOX;
 		item.label = menu_column_labels[index];
 		item.action = FM_ACTION_COLUMN_FIRST + menu_columns[index];
 		error = menu_add(menu, &item);
@@ -606,7 +606,7 @@ menu_state(
 	int error;
 
 	/* The transaction. */
-	error = zdesktop_menu_begin(menu->menu);
+	error = keiland_menu_begin(menu->menu);
 	if (error != 0)
 		return error;
 
@@ -620,12 +620,12 @@ menu_state(
 	 * left open for changes; the refusal is reported.
 	 */
 	if (error != 0) {
-		(void)zdesktop_menu_commit(menu->menu);
+		(void)keiland_menu_commit(menu->menu);
 		return error;
 	}
 
 	/* The state is shown together. */
-	error = zdesktop_menu_commit(menu->menu);
+	error = keiland_menu_commit(menu->menu);
 	if (error != 0)
 		return error;
 
@@ -638,7 +638,7 @@ menu_state(
 /* Sets which fixed items do something now and which are checked; returns 0 or the first refusal. */
 static int
 menu_state_items(
-	struct zdesktop_menu *model,
+	struct keiland_menu *model,
 	const struct fm_menu_state *state)
 {
 	int selected;
@@ -677,71 +677,71 @@ menu_state_items(
 	}
 
 	/* File. */
-	error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_NEW_FOLDER), state->folder);
+	error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_NEW_FOLDER), state->folder);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_OPEN), selected);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_OPEN), selected);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_OPEN_WITH, state->opener_count > 0);
+		error = keiland_menu_set_enabled(model, MENU_OPEN_WITH, state->opener_count > 0);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_TRASH), editable);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_TRASH), editable);
 
 	/* Edit: the histories, the clipboard and the selection, none of them inside a text field. */
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_UNDO), undo);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_UNDO), undo);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_REDO), redo);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_REDO), redo);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_CUT), editable);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_CUT), editable);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_COPY), selected);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_COPY), selected);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_PASTE), paste);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_PASTE), paste);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_DUPLICATE), editable);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_DUPLICATE), editable);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_RENAME), renamable);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_RENAME), renamable);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_TAGS, tags);
+		error = keiland_menu_set_enabled(model, MENU_TAGS, tags);
 
 	/* View: the view and the sort as radio items, the panels as checkboxes; the views of later versions off. */
 	if (error == 0)
-		error = zdesktop_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_VIEW_ICONS), state->view == FM_VIEW_ICONS);
+		error = keiland_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_VIEW_ICONS), state->view == FM_VIEW_ICONS);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_VIEW_LIST), state->view == FM_VIEW_LIST);
+		error = keiland_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_VIEW_LIST), state->view == FM_VIEW_LIST);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_VIEW_COLUMNS, 0);
+		error = keiland_menu_set_enabled(model, MENU_VIEW_COLUMNS, 0);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_VIEW_GALLERY, 0);
+		error = keiland_menu_set_enabled(model, MENU_VIEW_GALLERY, 0);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SORT_NAME), state->sort == FM_SORT_NAME);
+		error = keiland_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SORT_NAME), state->sort == FM_SORT_NAME);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SORT_KIND), state->sort == FM_SORT_KIND);
+		error = keiland_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SORT_KIND), state->sort == FM_SORT_KIND);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SORT_SIZE), state->sort == FM_SORT_SIZE);
+		error = keiland_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SORT_SIZE), state->sort == FM_SORT_SIZE);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SORT_MODIFIED), state->sort == FM_SORT_MODIFIED);
+		error = keiland_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SORT_MODIFIED), state->sort == FM_SORT_MODIFIED);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SHOW_SIDEBAR), state->sidebar);
+		error = keiland_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SHOW_SIDEBAR), state->sidebar);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SHOW_PREVIEW), state->preview);
+		error = keiland_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SHOW_PREVIEW), state->preview);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SHOW_HIDDEN), state->hidden);
+		error = keiland_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_SHOW_HIDDEN), state->hidden);
 
 	/* Go: the history's steps and the folder above; the network of later versions off. */
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_BACK), state->can_back);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_BACK), state->can_back);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_FORWARD), state->can_forward);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_FORWARD), state->can_forward);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_NEW_TAB), state->tabs < FM_TABS);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_NEW_TAB), state->tabs < FM_TABS);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_PREVIOUS_TAB), state->tabs > 1);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_PREVIOUS_TAB), state->tabs > 1);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_NEXT_TAB), state->tabs > 1);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_NEXT_TAB), state->tabs > 1);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_ENCLOSING), state->can_enclose);
+		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_ENCLOSING), state->can_enclose);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(model, MENU_GO_NETWORK, 0);
+		error = keiland_menu_set_enabled(model, MENU_GO_NETWORK, 0);
 
 	/* Reports the first refusal, or none. */
 	if (error != 0)
@@ -754,7 +754,7 @@ menu_state_items(
 /* Names, shows and checks the variable items; returns 0 or the first refusal. */
 static int
 menu_state_slots(
-	struct zdesktop_menu *model,
+	struct keiland_menu *model,
 	const struct fm_menu_state *state)
 {
 	uint32_t id;
@@ -767,26 +767,26 @@ menu_state_slots(
 	for (index = 0; index < FM_OPENERS && error == 0; index++) {
 		id = MENU_ACTION_ID(FM_ACTION_OPEN_WITH_FIRST + (unsigned)index);
 		if (index < state->opener_count)
-			error = zdesktop_menu_set_label(model, id, state->openers[index]);
+			error = keiland_menu_set_label(model, id, state->openers[index]);
 		if (error == 0)
-			error = zdesktop_menu_set_visible(model, id, index < state->opener_count);
+			error = keiland_menu_set_visible(model, id, index < state->opener_count);
 	}
 
 	/* The tags, each checked when every selected item has it, the rest hidden. */
 	for (index = 0; index < FM_TAGS && error == 0; index++) {
 		id = MENU_ACTION_ID(FM_ACTION_TAG_FIRST + (unsigned)index);
 		if (index < state->tag_count)
-			error = zdesktop_menu_set_label(model, id, state->tags[index]);
+			error = keiland_menu_set_label(model, id, state->tags[index]);
 		if (error == 0)
-			error = zdesktop_menu_set_visible(model, id, index < state->tag_count);
+			error = keiland_menu_set_visible(model, id, index < state->tag_count);
 		if (error == 0)
-			error = zdesktop_menu_set_checked(model, id, (state->tags_checked & (1U << index)) != 0U);
+			error = keiland_menu_set_checked(model, id, (state->tags_checked & (1U << index)) != 0U);
 	}
 
 	/* The list columns shown. */
 	for (index = 0; index < MENU_COLUMN_COUNT && error == 0; index++) {
 		bit = 1U << menu_columns[index];
-		error = zdesktop_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_COLUMN_FIRST + menu_columns[index]), (state->columns & bit) != 0U);
+		error = keiland_menu_set_checked(model, MENU_ACTION_ID(FM_ACTION_COLUMN_FIRST + menu_columns[index]), (state->columns & bit) != 0U);
 	}
 
 	/* Reports the first refusal, or none. */

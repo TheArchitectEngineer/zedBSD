@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p003 は cleared（main）。次は Venus での graphical な確認、BUG-080 の Desktop の分類、p006・p002・p004
+Resume point: p002・p003・p006 は cleared（main）、p004 は logo と一部の文字列まで。次は Venus での graphical な確認（login・`/bin/wayland`・App Home）、BUG-080 の Desktop の分類、p002、p004 の残り
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザーの決定、要旨）
@@ -54,16 +54,19 @@ Resume point: p003 は cleared（main）。次は Venus での graphical な確�
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws078-p001 | 棚卸しと対応表（識別子・path・見える文字列・protocol 名を分類し、新しい名前を決める。判断が要る点を列挙） | planning | なし |
-| ws078-p002 | kernel・driver・UAPI・libc・bootloader の識別子の改名（`KERN_` 等。機械的。build の warning 0 と boot test） | planning | p001 |
+| ws078-p002 | kernel・driver・UAPI・libc・bootloader の識別子の改名（`KERN_` 等。機械的。build の warning 0 と boot test） | cleared（2026-09-28、main。`__ZEDBSD_*`→`__KERN_*`、`__zedbsd_*`→`__kern_*`、`ZEDBSD_*`→`KERN_*`（header の guard・UAPI の古い名前・試験）、`zbl_uefi_zedbsd_config*`→`zbl_uefi_kern_config*`、`ZBL_ZEDBSD_CONFIG_*`→`ZBL_KERN_CONFIG_*`、`zedbsd_peercred`→`kern_peercred` 等。make の変数・`__ZEDBSD__`・file 名（zedbsd.cfg、bootloader/uefi/zedbsd-config.c）・toolchain の target は残す。amd64 の image と boot test PASS、pcat・rpi4 の build は未実施） | — |
 | [ws078-p003](phase003/phase.md) | 実行ファイルと source の directory の改名（userland/desktop/、`/bin/wayland` 等）と参照 | cleared（2026-09-28、6d8ca152。Venus の graphical な確認は未実施） | — |
-| ws078-p006 | データの path（/etc/zdesktop、/usr/share/zdesktop、font、zdesktop-x11）、API・protocol（`zdesktop_`→、`zed_*`→`keiland_*`）の改名 | planning | p003 |
-| ws078-p004 | 見える文字列: boot の logo（Kei）・greeter・lock・banner・os-release 等 | planning | p001 |
+| ws078-p006 | データの path（/etc/keiland、/usr/share/keiland、font の keiland*.ttf、/usr/libexec/keiland-x11）、API・protocol（`keiland_`・`KEILAND_`・`keiland.h`、`zed_*_v1` → `keiland_*_v1`）の改名 | cleared（2026-09-28、main、35177e46。image の build と boot test PASS。Venus の graphical な確認は未実施） | p003 |
+| ws078-p004 | 見える文字列: boot の logo（Kei）・greeter・lock・banner・os-release 等 | incomplete（2026-09-28: boot の logo を Kei の印・語・「powered by zedBSD」に描き直した（b3f5c5f9、[kei-identity-design.md](../ws035/kei-identity-design.md) の段階 1）。graphical な起動での表示の確認は未実施。File Manager の help・terminal の About・システムバーの名前・tool の `--version` の「(Kei)」・fetch と browser の User-Agent・EGL・GLES・GLX・X server の vendor・installer の文言と SVG・service console・既定の hostname `kei` を Kei に。user の data の path（`~/.local/share/keiland`、`~/.config/keiland`、xattr `user.keiland.tags`）、menu の label、試験の process 名の pattern も（Venus: zdesktop-p062 PASS、files-p012 PASS（lean image）、システムバーに Kei）。残し: uname の sysname と version（kernel の名前）、disk の format の印（UFS・FAT）、GPT の partition 名、kernel と loader の文言、source の copyright の header。残り: 全画面の起動画面、注釈と log の名前（`zdesktop.log` 等、内部）、X11 の retro の program（zterm・zwm・zgears・zshell・Xzed）と installer（zedinst）の名前はユーザーの判断待ち） | p001 |
 | ws078-p005 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
 
 改名は作業中の agent と衝突しやすい。p002・p003 は他の agent が merge を終えた静かな時点で main か 1 つの agent が一度に行い、
 その後に各 agent へ新しい名前を知らせる。
 
 ## ユーザーの判断（2026-09-28）
+
+0. 「"Keiland's System Menu"はSystem Menuで十分です。Keilandは内部コードネームです。」→ Keiland（と libkeiland）は内部のコードネームであり、
+   画面に出る文字列には使わない（System Menu、File Manager のように機能の名前で呼ぶ）。
 
 1. make の `ZEDBSD_` 変数（`ZEDBSD_CONFIG`・rootfs の option 等）: **今は残す**。
 2. `__ZEDBSD__`（toolchain の target `zedbsd` が定義する OS の識別子）: **残す**（カーネルの内部名）。他の `__ZEDBSD_*`・`__zedbsd_*` の補助の識別子は改める。

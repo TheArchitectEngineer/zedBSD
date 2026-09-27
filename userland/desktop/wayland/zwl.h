@@ -281,7 +281,7 @@ struct zwl_object {
 	/* A window told its frame is done whose next commit the next frame waits for a moment. */
 	unsigned awaited;
 	/*
-	 * Acquire fences (zed_gpu_buffer_v1 revision two): those for the next
+	 * Acquire fences (keiland_gpu_buffer_v1 revision two): those for the next
 	 * commit, and the committed ones the queued image waits for.
 	 */
 	struct zwl_fence acquire[ZWL_FENCE_MAX];
@@ -302,7 +302,7 @@ struct zwl_object {
 	struct zwl_object *shown_menu;
 	/*
 	 * The Titlebar Presentation (titlebar.c, WS070 p008): a
-	 * zed_titlebar_v1's model, and a toplevel's zed_titlebar_v1 (whose own
+	 * keiland_titlebar_v1's model, and a toplevel's keiland_titlebar_v1 (whose own
 	 * top names the toplevel back).  Each link is cleared from both ends
 	 * when either object goes.
 	 */
@@ -414,7 +414,7 @@ struct zwl_object {
 	int32_t destination[2];
 	unsigned viewport_changed;
 	/*
-	 * ws035-p083 (panels.c): a surface's zed_glass_v1 (whose own surface
+	 * ws035-p083 (panels.c): a surface's keiland_glass_v1 (whose own surface
 	 * field names it back; each cleared from both ends when either goes),
 	 * and the record of its glass panels, pending and applied by the
 	 * commit, which the surface owns from its first glass to its end.

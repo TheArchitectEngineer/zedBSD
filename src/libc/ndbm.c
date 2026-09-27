@@ -31,7 +31,7 @@
 
 struct dbm_record { unsigned char *key, *value; uint32_t key_size, value_size; };
 
-struct __zedbsd_dbm {
+struct __kern_dbm {
 	char *base;
 	struct dbm_record *records;
 	size_t count, capacity, iteration;

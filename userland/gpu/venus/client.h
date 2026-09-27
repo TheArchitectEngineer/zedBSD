@@ -9,8 +9,8 @@
 
 /* Bounded, independent Venus wire-format-1 client shared by GPU programs. */
 
-#ifndef ZEDBSD_VENUS_CLIENT_H
-#define ZEDBSD_VENUS_CLIENT_H
+#ifndef KERN_VENUS_CLIENT_H
+#define KERN_VENUS_CLIENT_H
 
 #include <stdint.h>
 #include <uapi/gpu.h>

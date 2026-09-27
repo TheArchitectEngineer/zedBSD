@@ -29,7 +29,7 @@ extern "C" {
 
 #include <uapi/ioctl.h>
 
-#if __ZEDBSD_LEGACY_VISIBLE
+#if __KERN_LEGACY_VISIBLE
 int ioctl(int descriptor, unsigned long request, ...);
 #endif
 

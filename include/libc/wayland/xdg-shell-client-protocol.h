@@ -7,8 +7,8 @@
 
 /* Declares the selected xdg protocol objects and typed requests. */
 
-#ifndef ZEDBSD_XDG_SHELL_CLIENT_PROTOCOL_H
-#define ZEDBSD_XDG_SHELL_CLIENT_PROTOCOL_H
+#ifndef KERN_XDG_SHELL_CLIENT_PROTOCOL_H
+#define KERN_XDG_SHELL_CLIENT_PROTOCOL_H
 
 #include <wayland/wayland-client-core.h>
 #include <wayland/wayland-client-protocol.h>

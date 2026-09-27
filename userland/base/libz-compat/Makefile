@@ -6,4 +6,4 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 LIBZ_COMPAT_SOURCES := userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c
 
 LIBZ_COMPAT_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libz-compat.so=$(BUILD)/dynamic/libz-compat.so)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libz-compat,zlib interface for base programs,amd64,y,library,$(LIBZ_COMPAT_SOURCES),y,base,base/libz-compat,,,shared-library,$(LIBZ_COMPAT_IMAGE_DATA),,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libz-compat,zlib interface for base programs,amd64,y,library,$(LIBZ_COMPAT_SOURCES),y,desktop,base/libz-compat,,,shared-library,$(LIBZ_COMPAT_IMAGE_DATA),,lib))

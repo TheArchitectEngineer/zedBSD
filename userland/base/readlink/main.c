@@ -189,7 +189,7 @@ read_options(
 			options->end = '\0';
 			break;
 		case OPTION_VERSION:
-			printf("readlink (zedBSD) 1.0\n");
+			printf("readlink (Kei) 1.0\n");
 			exit(0);
 		default:
 			usage();

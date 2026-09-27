@@ -14,8 +14,8 @@
  * zdesktop window.
  */
 
-#ifndef ZDESKTOP_BROWSER_PAGE_H
-#define ZDESKTOP_BROWSER_PAGE_H
+#ifndef KEILAND_BROWSER_PAGE_H
+#define KEILAND_BROWSER_PAGE_H
 
 #include "bind/bind.h"
 #include "css/css.h"

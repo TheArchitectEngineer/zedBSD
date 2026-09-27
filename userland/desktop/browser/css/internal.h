@@ -11,8 +11,8 @@
  * property table.
  */
 
-#ifndef ZDESKTOP_BROWSER_CSS_INTERNAL_H
-#define ZDESKTOP_BROWSER_CSS_INTERNAL_H
+#ifndef KEILAND_BROWSER_CSS_INTERNAL_H
+#define KEILAND_BROWSER_CSS_INTERNAL_H
 
 #include "css/css.h"
 

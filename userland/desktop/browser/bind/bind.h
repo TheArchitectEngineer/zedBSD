@@ -19,8 +19,8 @@
  * script, callback and event.
  */
 
-#ifndef ZDESKTOP_BROWSER_BIND_H
-#define ZDESKTOP_BROWSER_BIND_H
+#ifndef KEILAND_BROWSER_BIND_H
+#define KEILAND_BROWSER_BIND_H
 
 #include "dom/dom.h"
 #include "js/js.h"

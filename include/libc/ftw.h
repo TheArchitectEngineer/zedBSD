@@ -33,7 +33,7 @@ extern "C" {
 #define FTW_CHDIR 0x08
 
 struct FTW { int base; int level; };
-#if __ZEDBSD_LEGACY_VISIBLE
+#if __KERN_LEGACY_VISIBLE
 int ftw(const char *, int (*)(const char *, const struct stat *, int), int);
 #endif
 int nftw(const char *, int (*)(const char *, const struct stat *, int,

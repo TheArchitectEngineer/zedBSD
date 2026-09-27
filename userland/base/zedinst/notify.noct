@@ -2,6 +2,6 @@
 // Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 func instNotifyStage(context, title) {
     if (context == 0 || !Dict.hasKey(context, "ui")) { return; }
-    if (context.ui == 0) { print("Install zedBSD: " + title); }
+    if (context.ui == 0) { print("Install Kei: " + title); }
     else { context.ui.stage(context.ui, title); }
 }

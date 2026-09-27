@@ -11,15 +11,15 @@
  * The version of the desktop's system library.
  */
 
-#include <zdesktop.h>
+#include <keiland.h>
 
 /*
  * Reports the interface version of this library.
  */
 unsigned
-zdesktop_version(
+keiland_version(
 	void)
 {
 	/* Returns the version this library was built as. */
-	return ZDESKTOP_VERSION;
+	return KEILAND_VERSION;
 }

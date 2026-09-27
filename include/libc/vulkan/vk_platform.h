@@ -9,8 +9,8 @@
 
 /* Defines the standard Vulkan calling convention on supported UNIX targets. */
 
-#ifndef ZEDBSD_VK_PLATFORM_H
-#define ZEDBSD_VK_PLATFORM_H
+#ifndef KERN_VK_PLATFORM_H
+#define KERN_VK_PLATFORM_H
 
 #ifndef VK_NO_STDDEF_H
 #include <stddef.h>

@@ -1455,17 +1455,17 @@ fixed_string(
 	/* An OpenGL 3.1 context's, with GLSL 1.40, and a 3.0 one's, with GLSL 1.30. */
 	version = glx_version(&flags);
 	if (version == 31U && name == GL_VERSION)
-		return (const GLubyte *)"3.1 zedBSD (OpenGL ES 3.0 on Vulkan)";
+		return (const GLubyte *)"3.1 Kei (OpenGL ES 3.0 on Vulkan)";
 	if (version == 31U && name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"1.40";
 	if (version == 30U && name == GL_VERSION)
-		return (const GLubyte *)"3.0 zedBSD (OpenGL ES 3.0 on Vulkan)";
+		return (const GLubyte *)"3.0 Kei (OpenGL ES 3.0 on Vulkan)";
 	if (version == 30U && name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"1.30";
 
 	/* An OpenGL 3.2 context's, with GLSL 1.50. */
 	if (version == 32U && name == GL_VERSION)
-		return (const GLubyte *)"3.2 zedBSD (OpenGL ES 3.0 on Vulkan)";
+		return (const GLubyte *)"3.2 Kei (OpenGL ES 3.0 on Vulkan)";
 	if (version == 32U && name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"1.50";
 
@@ -1477,7 +1477,7 @@ fixed_string(
 
 	/* An OpenGL 1.4 context's; the rest are OpenGL ES's. */
 	if (name == GL_VERSION)
-		return (const GLubyte *)"1.4 zedBSD (fixed function on OpenGL ES 2.0 on Vulkan)";
+		return (const GLubyte *)"1.4 Kei (fixed function on OpenGL ES 2.0 on Vulkan)";
 	if (name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"";
 	return NULL;

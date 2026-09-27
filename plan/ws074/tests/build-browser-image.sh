@@ -13,13 +13,13 @@ build=${1:-build/amd64}
 extra=$(python3 plan/tools/guest/guest.py extra-files | sed -n "s/^ZEDBSD_TEST_EXTRA_FILES='\(.*\)'$/\1/p")
 [ -n "$extra" ] || { echo "build-browser-image: no guest files (plan/tools/guest/guest.py keys?)"; exit 1; }
 fonts=build/ws035-fonts
-[ -f $fonts/Inter.ttf ] && extra="$extra --file /usr/share/fonts/zdesktop.ttf=$fonts/Inter.ttf"
-[ -f $fonts/OFL.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-OFL.txt=$fonts/OFL.txt"
-[ -f $fonts/JetBrainsMono-Regular.ttf ] && extra="$extra --file /usr/share/fonts/zdesktop-mono.ttf=$fonts/JetBrainsMono-Regular.ttf"
-[ -f $fonts/JetBrainsMono-OFL.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-mono-OFL.txt=$fonts/JetBrainsMono-OFL.txt"
-[ -f $fonts/DroidSansFallbackFull.ttf ] && extra="$extra --file /usr/share/fonts/zdesktop-fallback.ttf=$fonts/DroidSansFallbackFull.ttf"
-[ -f $fonts/DroidSansFallback-LICENSE.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-fallback-LICENSE.txt=$fonts/DroidSansFallback-LICENSE.txt"
-[ -f build/ws035-wallpaper/wallpaper.ppm ] && extra="$extra --file /usr/share/zdesktop/wallpaper.ppm=build/ws035-wallpaper/wallpaper.ppm"
+[ -f $fonts/Inter.ttf ] && extra="$extra --file /usr/share/fonts/keiland.ttf=$fonts/Inter.ttf"
+[ -f $fonts/OFL.txt ] && extra="$extra --file /usr/share/fonts/keiland-OFL.txt=$fonts/OFL.txt"
+[ -f $fonts/JetBrainsMono-Regular.ttf ] && extra="$extra --file /usr/share/fonts/keiland-mono.ttf=$fonts/JetBrainsMono-Regular.ttf"
+[ -f $fonts/JetBrainsMono-OFL.txt ] && extra="$extra --file /usr/share/fonts/keiland-mono-OFL.txt=$fonts/JetBrainsMono-OFL.txt"
+[ -f $fonts/DroidSansFallbackFull.ttf ] && extra="$extra --file /usr/share/fonts/keiland-fallback.ttf=$fonts/DroidSansFallbackFull.ttf"
+[ -f $fonts/DroidSansFallback-LICENSE.txt ] && extra="$extra --file /usr/share/fonts/keiland-fallback-LICENSE.txt=$fonts/DroidSansFallback-LICENSE.txt"
+[ -f build/ws035-wallpaper/wallpaper.ppm ] && extra="$extra --file /usr/share/keiland/wallpaper.ppm=build/ws035-wallpaper/wallpaper.ppm"
 # The File Manager tests' home maker, as the files image has it (the desktop regressions run on this image too).
 extra="$extra --file /usr/share/files-tests/make-home.sh=plan/tools/files/make-home.sh"
 if [ -d plan/ws074/tests/pages ]; then

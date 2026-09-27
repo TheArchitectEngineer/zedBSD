@@ -1093,7 +1093,7 @@ version(
 	void)
 {
 	/* The name and where it comes from. */
-	printf("grep (zedBSD) 1.0\n");
+	printf("grep (Kei) 1.0\n");
 	exit(0);
 }
 

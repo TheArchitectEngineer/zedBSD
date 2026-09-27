@@ -14,8 +14,8 @@
  * temporary folders.
  */
 
-#ifndef ZDESKTOP_FILES_OPS_H
-#define ZDESKTOP_FILES_OPS_H
+#ifndef KEILAND_FILES_OPS_H
+#define KEILAND_FILES_OPS_H
 
 #include <stddef.h>
 #include <stdint.h>

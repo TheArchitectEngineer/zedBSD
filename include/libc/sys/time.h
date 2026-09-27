@@ -51,7 +51,7 @@ extern "C" {
 } while (0)
 
 int utimes(const char *, const struct timeval [2]);
-#if __ZEDBSD_LEGACY_VISIBLE
+#if __KERN_LEGACY_VISIBLE
 int gettimeofday(struct timeval *, void *);
 int getitimer(int, struct itimerval *);
 int setitimer(int, const struct itimerval *, struct itimerval *);

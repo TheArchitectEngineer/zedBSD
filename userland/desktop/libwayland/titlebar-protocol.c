@@ -9,8 +9,8 @@
  * Describes and marshals zdesktop's Titlebar Presentation protocol (WS070
  * p008).
  *
- * zed_titlebar_manager_v1 gives a window (xdg_toplevel) its titlebar's
- * presentation (zed_titlebar_v1): a mode and the model of controls or tabs
+ * keiland_titlebar_manager_v1 gives a window (xdg_toplevel) its titlebar's
+ * presentation (keiland_titlebar_v1): a mode and the model of controls or tabs
  * that zdesktop draws in the window's floating titlebar or, docked, in the
  * system bar.  The protocol is zdesktop's own; its header is private and
  * applications use it through libkeiland.  plan/ws070/titlebar-design.md
@@ -33,25 +33,25 @@ static const struct wl_interface *titlebar_plain_types[] = {
 	NULL,
 };
 
-/* The arguments of zed_titlebar_manager_v1.get_titlebar: the new titlebar, and the window. */
+/* The arguments of keiland_titlebar_manager_v1.get_titlebar: the new titlebar, and the window. */
 static const struct wl_interface *titlebar_manager_get_types[] = {
-	&zed_titlebar_v1_interface,
+	&keiland_titlebar_v1_interface,
 	&xdg_toplevel_interface,
 };
 
-/* The requests of zed_titlebar_manager_v1, in wire order. */
+/* The requests of keiland_titlebar_manager_v1, in wire order. */
 static const struct wl_message titlebar_manager_requests[] = {
 	{ "destroy", "", NULL },
 	{ "get_titlebar", "no", titlebar_manager_get_types },
 };
 
 /* Describes the global that gives windows their titlebar's presentation. */
-const struct wl_interface zed_titlebar_manager_v1_interface = {
-	"zed_titlebar_manager_v1", 2, 2, titlebar_manager_requests,
+const struct wl_interface keiland_titlebar_manager_v1_interface = {
+	"keiland_titlebar_manager_v1", 2, 2, titlebar_manager_requests,
 	0, NULL
 };
 
-/* The requests of zed_titlebar_v1, in wire order. */
+/* The requests of keiland_titlebar_v1, in wire order. */
 static const struct wl_message titlebar_requests[] = {
 	{ "destroy", "", NULL },
 	{ "begin_update", "u", titlebar_plain_types },
@@ -71,7 +71,7 @@ static const struct wl_message titlebar_requests[] = {
 	{ "focus_control", "uu", titlebar_plain_types },
 };
 
-/* The arguments of zed_titlebar_v1.control_activated: control, detail, the seat (or none), serial. */
+/* The arguments of keiland_titlebar_v1.control_activated: control, detail, the seat (or none), serial. */
 static const struct wl_interface *titlebar_activated_types[] = {
 	NULL,
 	NULL,
@@ -79,7 +79,7 @@ static const struct wl_interface *titlebar_activated_types[] = {
 	NULL,
 };
 
-/* The events of zed_titlebar_v1, in wire order. */
+/* The events of keiland_titlebar_v1, in wire order. */
 static const struct wl_message titlebar_events[] = {
 	{ "control_activated", "uu?ou", titlebar_activated_types },
 	{ "text_changed", "us", titlebar_plain_types },
@@ -92,28 +92,28 @@ static const struct wl_message titlebar_events[] = {
 };
 
 /* Describes one window's titlebar presentation. */
-const struct wl_interface zed_titlebar_v1_interface = {
-	"zed_titlebar_v1", 2, 16, titlebar_requests,
+const struct wl_interface keiland_titlebar_v1_interface = {
+	"keiland_titlebar_v1", 2, 16, titlebar_requests,
 	8, titlebar_events
 };
 
 /*
- * Sends zed_titlebar_manager_v1.destroy; the titlebars it gave stay.
+ * Sends keiland_titlebar_manager_v1.destroy; the titlebars it gave stay.
  */
 void
-zed_titlebar_manager_v1_destroy(
-	struct zed_titlebar_manager_v1 *object)
+keiland_titlebar_manager_v1_destroy(
+	struct keiland_titlebar_manager_v1 *object)
 {
 	/* Queues the destructor and retires the proxy. */
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_MANAGER_V1_DESTROY, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_MANAGER_V1_DESTROY, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
 }
 
 /*
- * Sends zed_titlebar_manager_v1.get_titlebar and returns the window's new titlebar.
+ * Sends keiland_titlebar_manager_v1.get_titlebar and returns the window's new titlebar.
  */
-struct zed_titlebar_v1 *
-zed_titlebar_manager_v1_get_titlebar(
-	struct zed_titlebar_manager_v1 *object,
+struct keiland_titlebar_v1 *
+keiland_titlebar_manager_v1_get_titlebar(
+	struct keiland_titlebar_manager_v1 *object,
 	struct xdg_toplevel *toplevel)
 {
 	union wl_argument arguments[2];
@@ -128,20 +128,20 @@ zed_titlebar_manager_v1_get_titlebar(
 	version = wl_proxy_get_version((struct wl_proxy *)object);
 
 	/* Queues the request together with the new proxy. */
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_MANAGER_V1_GET_TITLEBAR, &zed_titlebar_v1_interface, version, 0, arguments);
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_MANAGER_V1_GET_TITLEBAR, &keiland_titlebar_v1_interface, version, 0, arguments);
 	if (created == NULL)
 		return NULL;
 
 	/* Succeeded: the caller owns the new titlebar. */
-	return (struct zed_titlebar_v1 *)created;
+	return (struct keiland_titlebar_v1 *)created;
 }
 
 /*
- * Associates client state with the zed_titlebar_manager_v1 proxy.
+ * Associates client state with the keiland_titlebar_manager_v1 proxy.
  */
 void
-zed_titlebar_manager_v1_set_user_data(
-	struct zed_titlebar_manager_v1 *object,
+keiland_titlebar_manager_v1_set_user_data(
+	struct keiland_titlebar_manager_v1 *object,
 	void *data)
 {
 	/* The common proxy keeps the pointer. */
@@ -149,11 +149,11 @@ zed_titlebar_manager_v1_set_user_data(
 }
 
 /*
- * Obtains client state from the zed_titlebar_manager_v1 proxy.
+ * Obtains client state from the keiland_titlebar_manager_v1 proxy.
  */
 void *
-zed_titlebar_manager_v1_get_user_data(
-	struct zed_titlebar_manager_v1 *object)
+keiland_titlebar_manager_v1_get_user_data(
+	struct keiland_titlebar_manager_v1 *object)
 {
 	void *data;
 
@@ -165,11 +165,11 @@ zed_titlebar_manager_v1_get_user_data(
 }
 
 /*
- * Obtains the negotiated version of the zed_titlebar_manager_v1 proxy.
+ * Obtains the negotiated version of the keiland_titlebar_manager_v1 proxy.
  */
 uint32_t
-zed_titlebar_manager_v1_get_version(
-	struct zed_titlebar_manager_v1 *object)
+keiland_titlebar_manager_v1_get_version(
+	struct keiland_titlebar_manager_v1 *object)
 {
 	uint32_t version;
 
@@ -184,9 +184,9 @@ zed_titlebar_manager_v1_get_version(
  * Installs the typed listener of a titlebar's events.
  */
 int
-zed_titlebar_v1_add_listener(
-	struct zed_titlebar_v1 *object,
-	const struct zed_titlebar_v1_listener *listener,
+keiland_titlebar_v1_add_listener(
+	struct keiland_titlebar_v1 *object,
+	const struct keiland_titlebar_v1_listener *listener,
 	void *data)
 {
 	int error;
@@ -201,67 +201,67 @@ zed_titlebar_v1_add_listener(
 }
 
 /*
- * Sends zed_titlebar_v1.destroy; the window's titlebar shows its menu again.
+ * Sends keiland_titlebar_v1.destroy; the window's titlebar shows its menu again.
  */
 void
-zed_titlebar_v1_destroy(
-	struct zed_titlebar_v1 *object)
+keiland_titlebar_v1_destroy(
+	struct keiland_titlebar_v1 *object)
 {
 	/* Queues the destructor and retires the proxy. */
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_DESTROY, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_DESTROY, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
 }
 
 /*
- * Sends zed_titlebar_v1.begin_update: the changes that follow wait for the commit of the same serial.
+ * Sends keiland_titlebar_v1.begin_update: the changes that follow wait for the commit of the same serial.
  */
 void
-zed_titlebar_v1_begin_update(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_begin_update(
+	struct keiland_titlebar_v1 *object,
 	uint32_t serial)
 {
 	union wl_argument arguments[1];
 
 	/* The serial the commit will name. */
 	arguments[0].u = serial;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_BEGIN_UPDATE, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_BEGIN_UPDATE, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.commit: the changes since begin_update are shown together.
+ * Sends keiland_titlebar_v1.commit: the changes since begin_update are shown together.
  */
 void
-zed_titlebar_v1_commit(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_commit(
+	struct keiland_titlebar_v1 *object,
 	uint32_t serial)
 {
 	union wl_argument arguments[1];
 
 	/* The serial begin_update named. */
 	arguments[0].u = serial;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_COMMIT, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_COMMIT, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.set_mode: the model the titlebar shows (menu, controls or tabs).
+ * Sends keiland_titlebar_v1.set_mode: the model the titlebar shows (menu, controls or tabs).
  */
 void
-zed_titlebar_v1_set_mode(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_set_mode(
+	struct keiland_titlebar_v1 *object,
 	uint32_t mode)
 {
 	union wl_argument arguments[1];
 
 	/* The mode. */
 	arguments[0].u = mode;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_SET_MODE, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_SET_MODE, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.add_control: a new last control of a role.
+ * Sends keiland_titlebar_v1.add_control: a new last control of a role.
  */
 void
-zed_titlebar_v1_add_control(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_add_control(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id,
 	uint32_t role,
 	uint32_t priority,
@@ -276,30 +276,30 @@ zed_titlebar_v1_add_control(
 	arguments[2].u = priority;
 	arguments[3].u = group;
 	arguments[4].s = label;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_ADD_CONTROL, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_ADD_CONTROL, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.remove_control.
+ * Sends keiland_titlebar_v1.remove_control.
  */
 void
-zed_titlebar_v1_remove_control(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_remove_control(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id)
 {
 	union wl_argument arguments[1];
 
 	/* The control. */
 	arguments[0].u = id;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_REMOVE_CONTROL, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_REMOVE_CONTROL, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.set_control_label.
+ * Sends keiland_titlebar_v1.set_control_label.
  */
 void
-zed_titlebar_v1_set_control_label(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_set_control_label(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id,
 	const char *label)
 {
@@ -308,15 +308,15 @@ zed_titlebar_v1_set_control_label(
 	/* The control and its new label. */
 	arguments[0].u = id;
 	arguments[1].s = label;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_SET_CONTROL_LABEL, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_SET_CONTROL_LABEL, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.set_control_state: whether a control works now and whether it is checked.
+ * Sends keiland_titlebar_v1.set_control_state: whether a control works now and whether it is checked.
  */
 void
-zed_titlebar_v1_set_control_state(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_set_control_state(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id,
 	uint32_t enabled,
 	uint32_t checked)
@@ -327,15 +327,15 @@ zed_titlebar_v1_set_control_state(
 	arguments[0].u = id;
 	arguments[1].u = enabled;
 	arguments[2].u = checked;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_SET_CONTROL_STATE, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_SET_CONTROL_STATE, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.set_control_value: a progress control's share done, in thousandths.
+ * Sends keiland_titlebar_v1.set_control_value: a progress control's share done, in thousandths.
  */
 void
-zed_titlebar_v1_set_control_value(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_set_control_value(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id,
 	uint32_t value)
 {
@@ -344,15 +344,15 @@ zed_titlebar_v1_set_control_value(
 	/* The control and its value. */
 	arguments[0].u = id;
 	arguments[1].u = value;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_SET_CONTROL_VALUE, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_SET_CONTROL_VALUE, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.set_control_text: a text control's text and what it shows when empty.
+ * Sends keiland_titlebar_v1.set_control_text: a text control's text and what it shows when empty.
  */
 void
-zed_titlebar_v1_set_control_text(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_set_control_text(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id,
 	const char *text,
 	const char *placeholder)
@@ -363,15 +363,15 @@ zed_titlebar_v1_set_control_text(
 	arguments[0].u = id;
 	arguments[1].s = text;
 	arguments[2].s = placeholder;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_SET_CONTROL_TEXT, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_SET_CONTROL_TEXT, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.set_breadcrumb: a breadcrumb's parts, NUL-separated.
+ * Sends keiland_titlebar_v1.set_breadcrumb: a breadcrumb's parts, NUL-separated.
  */
 void
-zed_titlebar_v1_set_breadcrumb(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_set_breadcrumb(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id,
 	struct wl_array *segments)
 {
@@ -380,15 +380,15 @@ zed_titlebar_v1_set_breadcrumb(
 	/* The control and its parts. */
 	arguments[0].u = id;
 	arguments[1].a = segments;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_SET_BREADCRUMB, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_SET_BREADCRUMB, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.add_tab: a new last tab.
+ * Sends keiland_titlebar_v1.add_tab: a new last tab.
  */
 void
-zed_titlebar_v1_add_tab(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_add_tab(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id,
 	const char *title)
 {
@@ -397,30 +397,30 @@ zed_titlebar_v1_add_tab(
 	/* The tab's ID and title. */
 	arguments[0].u = id;
 	arguments[1].s = title;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_ADD_TAB, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_ADD_TAB, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.remove_tab.
+ * Sends keiland_titlebar_v1.remove_tab.
  */
 void
-zed_titlebar_v1_remove_tab(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_remove_tab(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id)
 {
 	union wl_argument arguments[1];
 
 	/* The tab. */
 	arguments[0].u = id;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_REMOVE_TAB, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_REMOVE_TAB, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.set_tab: a tab's title and flags (active, attention, closable).
+ * Sends keiland_titlebar_v1.set_tab: a tab's title and flags (active, attention, closable).
  */
 void
-zed_titlebar_v1_set_tab(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_set_tab(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id,
 	const char *title,
 	uint32_t flags)
@@ -431,30 +431,30 @@ zed_titlebar_v1_set_tab(
 	arguments[0].u = id;
 	arguments[1].s = title;
 	arguments[2].u = flags;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_SET_TAB, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_SET_TAB, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.set_tabs_options: whether the tab strip has a new-tab button.
+ * Sends keiland_titlebar_v1.set_tabs_options: whether the tab strip has a new-tab button.
  */
 void
-zed_titlebar_v1_set_tabs_options(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_set_tabs_options(
+	struct keiland_titlebar_v1 *object,
 	uint32_t options)
 {
 	union wl_argument arguments[1];
 
 	/* The options. */
 	arguments[0].u = options;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_SET_TABS_OPTIONS, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_SET_TABS_OPTIONS, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends zed_titlebar_v1.focus_control: the keyboard goes to a text control.
+ * Sends keiland_titlebar_v1.focus_control: the keyboard goes to a text control.
  */
 void
-zed_titlebar_v1_focus_control(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_focus_control(
+	struct keiland_titlebar_v1 *object,
 	uint32_t id,
 	uint32_t mode)
 {
@@ -463,15 +463,15 @@ zed_titlebar_v1_focus_control(
 	/* The control and how it takes the keyboard. */
 	arguments[0].u = id;
 	arguments[1].u = mode;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_V1_FOCUS_CONTROL, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_FOCUS_CONTROL, NULL, 0, 0, arguments);
 }
 
 /*
- * Associates client state with the zed_titlebar_v1 proxy.
+ * Associates client state with the keiland_titlebar_v1 proxy.
  */
 void
-zed_titlebar_v1_set_user_data(
-	struct zed_titlebar_v1 *object,
+keiland_titlebar_v1_set_user_data(
+	struct keiland_titlebar_v1 *object,
 	void *data)
 {
 	/* The common proxy keeps the pointer. */
@@ -479,11 +479,11 @@ zed_titlebar_v1_set_user_data(
 }
 
 /*
- * Obtains client state from the zed_titlebar_v1 proxy.
+ * Obtains client state from the keiland_titlebar_v1 proxy.
  */
 void *
-zed_titlebar_v1_get_user_data(
-	struct zed_titlebar_v1 *object)
+keiland_titlebar_v1_get_user_data(
+	struct keiland_titlebar_v1 *object)
 {
 	void *data;
 
@@ -495,11 +495,11 @@ zed_titlebar_v1_get_user_data(
 }
 
 /*
- * Obtains the negotiated version of the zed_titlebar_v1 proxy.
+ * Obtains the negotiated version of the keiland_titlebar_v1 proxy.
  */
 uint32_t
-zed_titlebar_v1_get_version(
-	struct zed_titlebar_v1 *object)
+keiland_titlebar_v1_get_version(
+	struct keiland_titlebar_v1 *object)
 {
 	uint32_t version;
 
@@ -511,7 +511,7 @@ zed_titlebar_v1_get_version(
 }
 
 /*
- * Calls the typed listener of a zed_titlebar_v1 event.
+ * Calls the typed listener of a keiland_titlebar_v1 event.
  *
  * Returns 0 when the event was delivered or deliberately ignored, EPROTO for
  * an opcode the interface does not have.
@@ -522,13 +522,13 @@ wlc_titlebar_dispatch(
 	const void *listener,
 	void *data)
 {
-	const struct zed_titlebar_v1_listener *callbacks;
-	struct zed_titlebar_v1 *object;
+	const struct keiland_titlebar_v1_listener *callbacks;
+	struct keiland_titlebar_v1 *object;
 	union wl_argument *arguments;
 
 	/* The listener, the proxy and the decoded arguments. */
 	callbacks = listener;
-	object = (struct zed_titlebar_v1 *)event->proxy;
+	object = (struct keiland_titlebar_v1 *)event->proxy;
 	arguments = event->arguments;
 
 	/* Selects the callback by the event's opcode. */

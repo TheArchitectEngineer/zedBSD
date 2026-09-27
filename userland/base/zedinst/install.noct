@@ -18,7 +18,7 @@ func instInstallRevalidate(context) {
 }
 func instInstallSummary(context) {
     var selected = context.discovered.selected;
-    var text = "Install zedBSD\r\nSource disk: " + context.discovered.source.disk.name +
+    var text = "Install Kei\r\nSource disk: " + context.discovered.source.disk.name +
         "\r\nDestination disk: " + selected.disk.name +
         "\r\nESP: " + selected.esp.device.name + " PARTUUID=" + selected.esp.partition.guid +
         "\r\nPayload: " + selected.payload.device.name + " PARTUUID=" + selected.payload.partition.guid;

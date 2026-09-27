@@ -201,7 +201,7 @@ inline の中の text は、white-space の処理 → 改行の機会（UAX #14 
 - **font の一覧**: `/usr/share/fonts/` の TTF を起動のときに走査し、`name`・`OS/2` の表から family・weight・italic を読む。CSS の
   generic family（`serif`・`sans-serif`・`monospace`・`system-ui`・`cursive`・`fantasy`）は設定の file
   （`/etc/browser/fonts.conf`、無ければ組み込みの既定）で具体的な font の file へ対応させる。fallback は文字の cmap で選ぶ
-  （日本語は zdesktop-fallback.ttf）。`@font-face` の font も同じ一覧に入る。
+  （日本語は keiland-fallback.ttf）。`@font-face` の font も同じ一覧に入る。
 - **libtruetype**: 今の API は整数の pixel の大きさと整数の advance だけで、kerning・名前の表・`unitsPerEm` を返さない。browser には
   小数の大きさ（13.333px など）、1/64 px の advance、`kern`・`GPOS` の kerning、名前と `OS/2` の値、design unit の outline が要る。
   **libtruetype に関数を足す**（既存の関数は変えない追加だけ。p010。§17 の D8: main に伝えてから）。
@@ -244,16 +244,16 @@ page の変更 → 次の frame callback（`wl_surface.frame`）で rAF → styl
 ### 8.4 窓（shell）
 
 - **提示は Wayland の上の Vulkan**（libvulkan の Wayland WSI の `VkSurfaceKHR` と swapchain）。files の `window.c`・
-  `present.c` の方式（premultiplied alpha、glass を使うなら zed_glass_v1）に倣うが、canvas を 1 枚貼るのではなく display list を
+  `present.c` の方式（premultiplied alpha、glass を使うなら keiland_glass_v1）に倣うが、canvas を 1 枚貼るのではなく display list を
   §8.2 の GPU の描画で直接 swapchain の image へ描く。
-- **titlebar**: WS070 の titlebar の拡張（libkeiland の `zdesktop_titlebar_*`）。
+- **titlebar**: WS070 の titlebar の拡張（libkeiland の `keiland_titlebar_*`）。
   - ws070-p011（TABS の presentation）の前: **CONTROLS** mode（戻る・進む・再読み込み／中止・URL の text field・menu）。タブは
     無し（1 窓 1 タブ、Ctrl+T は新しい窓）。
   - ws070-p011 の後: **TABS** mode（タブの strip と `+`）と、窓の中の toolbar（戻る・進む・再読み込み・URL の欄）を browser が描く
     （titlebar-spec §4.3 の用途: browser が TABS の最初の本格的な使い手）。CONTROLS と TABS は排他（仕様 §5）なので、URL の欄は
     窓の中へ移る（§17 の D3）。
 - **menu**: System Menu（WS070）で File（New Tab・New Window・Open File…・Close Tab）、Edit（Copy・Paste・Find）、View（Reload・
-  Zoom・View Source）、History（Back・Forward）、Window、Help。link の上の右 click は `zdesktop_menu_popup`。
+  Zoom・View Source）、History（Back・Forward）、Window、Help。link の上の右 click は `keiland_menu_popup`。
 - 入力: pointer（hover・click・wheel・drag の選択）、keyboard（focus の移動、scroll、form の入力）。日本語の IME は zdesktop の
   text-input の対応の後（§16）。
 

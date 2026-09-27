@@ -43,13 +43,13 @@ shot() {
 # The home as the demo session makes it (plan/ws035/demo/run-zdesktop.sh): /root with the usual folders.  (Home's
 # applications get the passwd home, not zdesktop's HOME: they lose zdesktop's environment, BUG-079.)
 guest "$stop_all" >/dev/null
-guest 'for folder in Desktop Documents Downloads Pictures Music Movies; do mkdir -p /root/$folder; done; rm -f /etc/zdesktop/apps.conf' >/dev/null
+guest 'for folder in Desktop Documents Downloads Pictures Music Movies; do mkdir -p /root/$folder; done; rm -f /etc/keiland/apps.conf' >/dev/null
 if [ "$list" = demo ]; then
-	guest 'mkdir -p /etc/zdesktop' >/dev/null
-	timeout 60 python3 plan/tools/guest/guest.py put plan/ws035/demo/apps.conf /etc/zdesktop/apps.conf >/dev/null 2>&1 </dev/null
+	guest 'mkdir -p /etc/keiland' >/dev/null
+	timeout 60 python3 plan/tools/guest/guest.py put plan/ws035/demo/apps.conf /etc/keiland/apps.conf >/dev/null 2>&1 </dev/null
 fi
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /tmp/x11server.pid; rmdir /tmp/x11server.lock 2>/dev/null
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 
 # Home, and its icons.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
@@ -85,6 +85,6 @@ shot 99-all.png
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
 guest 'grep -E "ZWL (MAP|HOME|TITLE|CLIENT|BOUNDS|ERROR)|ZWL GLASS (placed|moved)" /tmp/zdesktop.log' > "$out/zdesktop.log"
-guest "$stop_all; rm -f /etc/zdesktop/apps.conf" >/dev/null
+guest "$stop_all; rm -f /etc/keiland/apps.conf" >/dev/null
 [ $status = 0 ] && echo "zdesktop-p090: PASS (and judge the sheet)" || echo "zdesktop-p090: FAIL"
 exit $status

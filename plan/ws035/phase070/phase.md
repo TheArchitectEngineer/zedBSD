@@ -17,7 +17,7 @@ X11 の app（zterm、GLX の zgears）は Xzed --rootless を先に起動しな
 
 ## 範囲
 
-1. `/usr/libexec/zdesktop-x11`（sh の script、zwl の package の data）: `$XDG_RUNTIME_DIR/xzed.pid` の Xzed が生きていなければ
+1. `/usr/libexec/keiland-x11`（sh の script、zwl の package の data）: `$XDG_RUNTIME_DIR/xzed.pid` の Xzed が生きていなければ
    `Xzed --rootless` を起動して socket（`/tmp/.X11-unix/X0`）を待ち（lock は mkdir）、`DISPLAY=:0` で app を exec する。
 2. zwl の App Home の既定の一覧に「X terminal」（zterm）と「Gears」（zgears、閉じるまで回る）。zgears の `--frames=0` は無限。
 3. demo image（i915 実機用）に Xzed・zterm・libgl・zgears。
@@ -36,7 +36,7 @@ cleared。受け入れ 1〜3 を満たした（3 の実機は未実施、demo im
 
 ### 実装
 
-- `userland/base/zwl/zdesktop-x11`（zwl の package の data、`/usr/libexec/zdesktop-x11`。ZEDBSD_PACKAGE_INPUTS に入れて image を
+- `userland/base/zwl/zdesktop-x11`（zwl の package の data、`/usr/libexec/keiland-x11`。ZEDBSD_PACKAGE_INPUTS に入れて image を
   作り直させる）: `$XDG_RUNTIME_DIR/xzed.pid` の Xzed が生きていなければ（`ps -o comm` は `/bin/Xzed` と path で出るので
   basename で比べる）古い socket を消して `Xzed --rootless` を起動し、socket を待つ（最大 10 秒、mkdir の lock）。そして
   `DISPLAY=:0` で app を exec。

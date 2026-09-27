@@ -902,7 +902,7 @@ load_config_file:
 	test byte ptr [file_attributes], 0x10
 	jnz fatal_config_invalid
 	mov eax, dword ptr [file_size]
-	cmp eax, ZBL_ZEDBSD_CONFIG_FILE_MAX
+	cmp eax, ZBL_KERN_CONFIG_FILE_MAX
 	ja fatal_config_too_long
 	mov dword ptr [config_size], eax
 	mov dword ptr [config_remaining], eax
@@ -1180,13 +1180,13 @@ parse_bootzbsd_config:
 	push eax
 	mov eax, offset parsed_configuration
 	push eax
-	call zbl_uefi_zedbsd_config_parse
+	call zbl_uefi_kern_config_parse
 	add esp, 20
 	.code16
 	test eax, eax
 	jnz fatal_config_invalid
 	mov si, offset parsed_configuration + \
-		ZBL_ZEDBSD_CONFIG_PARAMETER_RECORD_OFFSET
+		ZBL_KERN_CONFIG_PARAMETER_RECORD_OFFSET
 	mov di, offset pc98_handoff + KERN_PC98_PARAMETER_RECORD_OFFSET
 	mov cx, KERN_BOOT_PARAMETER_RECORD_SIZE / 4
 1:	mov eax, dword ptr [si]
@@ -2139,8 +2139,8 @@ fat_cache: .space 1024
 
 .balign 4
 selected_uuid: .space 10
-config_source: .space ZBL_ZEDBSD_CONFIG_FILE_MAX
+config_source: .space ZBL_KERN_CONFIG_FILE_MAX
 parsed_configuration:
-	.space ZBL_ZEDBSD_CONFIG_RESULT_SIZE
+	.space ZBL_KERN_CONFIG_RESULT_SIZE
 directory_sector_buffer: .space 512
 fat_directory_state: .space ZBL_BIOS_FAT_DIRECTORY_STATE_SIZE

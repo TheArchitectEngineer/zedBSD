@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws035-glass-design -->
 
-# WS035 設計: 窓の中のすりガラスの card（`zed_glass_v1`）と see-through の Vulkan swapchain
+# WS035 設計: 窓の中のすりガラスの card（`keiland_glass_v1`）と see-through の Vulkan swapchain
 
 Parent: [WS035](ws.md) / Phase: ws035-p083（ws071-p015 と一緒に実装）
 Status: 実装済み（2026-09-27、サブエージェント）。背後の窓のぼかし（本当の backdrop blur）は ws035-p057 の残り。
@@ -20,8 +20,8 @@ Status: 実装済み（2026-09-27、サブエージェント）。背後の窓�
 
 | 論点 | 決定 | 理由 |
 | --- | --- | --- |
-| client の窓の alpha | Vulkan の `VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR` を WSI（libvulkan の wsi-wayland）が広告し、選ばれたら buffer ごとに `zed_gpu_buffer_v1.set_alpha(buffer, premultiplied)`（revision 3）で zdesktop に伝える | Vulkan の swapchain の標準の意味（OPAQUE なら alpha を無視）を守る。uapi（`include/uapi/gpu.h` の format）を変えない。Wayland の shm の ARGB と同じ premultiplied の約束 |
-| どこをすりガラスにするか | zdesktop の新しい拡張 `zed_glass_v1`: client は「この surface の中の card（角丸の矩形）はすりガラスの上に立つ」と言う | titlebar の仕様と同じく client は**意味**を渡し、ガラスの見た目（ぼかし・白さ・縁・影）は zdesktop が決める。窓ごとに見た目がばらつかない。後の本当の backdrop blur（p057）で client を変えずに見た目が上がる |
+| client の窓の alpha | Vulkan の `VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR` を WSI（libvulkan の wsi-wayland）が広告し、選ばれたら buffer ごとに `keiland_gpu_buffer_v1.set_alpha(buffer, premultiplied)`（revision 3）で zdesktop に伝える | Vulkan の swapchain の標準の意味（OPAQUE なら alpha を無視）を守る。uapi（`include/uapi/gpu.h` の format）を変えない。Wayland の shm の ARGB と同じ premultiplied の約束 |
+| どこをすりガラスにするか | zdesktop の新しい拡張 `keiland_glass_v1`: client は「この surface の中の card（角丸の矩形）はすりガラスの上に立つ」と言う | titlebar の仕様と同じく client は**意味**を渡し、ガラスの見た目（ぼかし・白さ・縁・影）は zdesktop が決める。窓ごとに見た目がばらつかない。後の本当の backdrop blur（p057）で client を変えずに見た目が上がる |
 | 既存の仕組みの再利用 | `wl_surface.set_opaque_region` は「不透明」を言うだけで「ガラス」を言えない。wayland-protocols の ext-background-effect（staging）は矩形の region だけで角丸を言えず、ここで版を確かめられない（offline）。**採らない**（Future Work: 標準の拡張が固まれば zdesktop が両方を受ける） | 角丸の card と意味（card の影）を 1 request で言える方が小さい |
 | ガラスの中身 | 今は zdesktop が起動時に作る**ぼかした壁紙**（title bar と同じ `MODE_GLASS`）。背後の他の窓はぼけて見えない | ws035-p057（背後のぼかし）を分けた: p083 が要る部分（client の card とガラスの合成）を先に。p057 の残りで `MODE_GLASS` の標本を毎 frame の backdrop に替えると title bar と card の両方が良くなる |
 | 影 | card の影は zdesktop が描く（`MODE_SHADOW`、全部の card の影を先に、ガラスを後に） | 影が隣の card のガラスに落ちない。client は影を描かない（半透明の card の下の影は透けて汚れる） |
@@ -30,7 +30,7 @@ Status: 実装済み（2026-09-27、サブエージェント）。背後の窓�
 
 ## 2. Protocol
 
-### 2.1 `zed_gpu_buffer_v1` revision 3
+### 2.1 `keiland_gpu_buffer_v1` revision 3
 
 | opcode | request | 引数 | 意味 |
 | --- | --- | --- | --- |
@@ -41,12 +41,12 @@ Status: 実装済み（2026-09-27、サブエージェント）。背後の窓�
   「advertise された 1 bit」の alpha を受け、OPAQUE 以外は platform の新しい任意の op `composite_alpha(lease, alpha)` を呼ぶ（display の platform は NULL
   で、今まで通り OPAQUE だけ）。wayland の lease は `premultiplied` を覚え、`wayland_import` が buffer を作るたびに `set_alpha(…, 1)` を送る。
 
-### 2.2 `zed_glass_manager_v1`（global name 17、version 1）/ `zed_glass_v1`
+### 2.2 `keiland_glass_manager_v1`（global name 17、version 1）/ `keiland_glass_v1`
 
 | interface | opcode | request | 引数 |
 | --- | --- | --- | --- |
 | manager | 0 | `destroy` | — |
-| manager | 1 | `get_glass` | `new_id<zed_glass_v1> id`、`object<wl_surface> surface` |
+| manager | 1 | `get_glass` | `new_id<keiland_glass_v1> id`、`object<wl_surface> surface` |
 | glass | 0 | `destroy` | —（surface の次の commit から panel 無し） |
 | glass | 1 | `set_panels` | `array panels`: panel ごとに int32 × 6（x, y, width, height, radius, kind）、surface の座標 |
 
@@ -59,13 +59,13 @@ Status: 実装済み（2026-09-27、サブエージェント）。背後の窓�
   `struct zwl_panels`、最初の get_glass で確保）を解放。
 - log（試験が読む）: `ZWL GLASS client=C surface=S panels=N card:x,y,w,h,r ...`（commit で変わったとき）。
 
-### 2.3 libkeiland（`ZDESKTOP_VERSION` 5）
+### 2.3 libkeiland（`KEILAND_VERSION` 5）
 
 ```c
-struct zdesktop_glass_panel { int32_t x, y, width, height, radius; unsigned kind; };   /* ZDESKTOP_GLASS_CARD */
-struct zdesktop_glass *zdesktop_glass_create(struct wl_display *display, struct wl_surface *surface);  /* NULL・ENOTSUP */
-int zdesktop_glass_set_panels(struct zdesktop_glass *glass, const struct zdesktop_glass_panel *panels, size_t count); /* EINVAL・E2BIG */
-void zdesktop_glass_destroy(struct zdesktop_glass *glass);
+struct keiland_glass_panel { int32_t x, y, width, height, radius; unsigned kind; };   /* KEILAND_GLASS_CARD */
+struct keiland_glass *keiland_glass_create(struct wl_display *display, struct wl_surface *surface);  /* NULL・ENOTSUP */
+int keiland_glass_set_panels(struct keiland_glass *glass, const struct keiland_glass_panel *panels, size_t count); /* EINVAL・E2BIG */
+void keiland_glass_destroy(struct keiland_glass *glass);
 ```
 
 局所の検査で protocol error になる list を送らない（menu・titlebar の API と同じ）。header は非公開（`zed-glass-v1-client-protocol.h`）。

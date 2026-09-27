@@ -50,7 +50,7 @@ Resume point: なし（完了）
 
 - Venus では Vulkan の窓の道が wl_shm より約 3 倍遅い（zgears 2.4 fps と 7.8 fps。命令ごとの同期の往復）→ F-021。
 - GLX の画像は CPU で読み戻して PutImage で渡す。GPU の buffer のまま渡す段（DRI3/Present に当たる、libkeiland の
-  `zed_gpu_buffer_v1`）→ F-030。
+  `keiland_gpu_buffer_v1`）→ F-030。
 - X の screen の大きさは `--size`（既定 1280x800）で、wl_output に合わせない → F-024。
 - zdesktop への内蔵はしていない（API はその形）。
 - BUG-056（zdesktop が App Home の後や client の後片付けで終わる）・BUG-058（zgears が最初の frame の前に黙って終わる、1 回）は再発時に調べる。

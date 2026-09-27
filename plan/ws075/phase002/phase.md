@@ -23,7 +23,7 @@ p001 で今の zdesktop（glass、backdrop、Wiseview、docking）と mview は�
 ## 設計
 
 - 実機の run は `plan/ws075/tests/capture-hw.sh SCENARIO MODE OUTDIR`（`flock /tmp/i915-hw.lock` の下で `vkloop-hw.sh`）。
-  `zdesktop-home`・`zdesktop-menu` は `ZDESKTOP_APP=home`、`zdesktop-x11` は p006 の記録の形（`run-home.sh`）。
+  `zdesktop-home`・`zdesktop-menu` は `KEILAND_APP=home`、`zdesktop-x11` は p006 の記録の形（`run-home.sh`）。
 - 結果の画像は `/home/awe/zedBSD-rpi4/build/ws031-shots/ws075-p002-20260927-<scenario>-hw.png`。
 
 ## 判断が要る点（既定を選んで進める）
@@ -42,7 +42,7 @@ p001 で今の zdesktop（glass、backdrop、Wiseview、docking）と mview は�
 
 1 回目の home（検査は PASS だが terminal は起動していない）と menu（FAIL）は道具の誤りだった（i915 の不足ではない）: `vkloop-hw.sh` は入力の file が image より新しい時だけ image を
 作り直すので、p001 の `zdesktop` の image（run-mview.sh と、terminal の font 無し）がそのまま使われた（terminal が
-`ZTERM FAILED ... terminal_font_open errno=6`（ENOENT））。`plan/ws075/tests/capture-hw.sh` が `ZDESKTOP_APP` ごとに build の
+`ZTERM FAILED ... terminal_font_open errno=6`（ENOENT））。`plan/ws075/tests/capture-hw.sh` が `KEILAND_APP` ごとに build の
 directory を分ける（`build/resident-zdesktop-<app>`）ように直した。新しい image の 1 回目の `zdesktop-x11` は Home の Gears の
 click が効かず（`ZWL HOME launch` が無い）落ちたが、同じ image の 2 回目は PASS。間欠の入力の取りこぼしで、GPU の不足ではない
 （再現したら desktop の側へ）。

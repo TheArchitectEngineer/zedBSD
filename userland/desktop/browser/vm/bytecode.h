@@ -20,8 +20,8 @@
  * low 32 bits), since Wasm's types are known when it is compiled.
  */
 
-#ifndef ZDESKTOP_BROWSER_VM_BYTECODE_H
-#define ZDESKTOP_BROWSER_VM_BYTECODE_H
+#ifndef KEILAND_BROWSER_VM_BYTECODE_H
+#define KEILAND_BROWSER_VM_BYTECODE_H
 
 #include "vm/vm.h"
 

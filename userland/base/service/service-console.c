@@ -99,7 +99,7 @@ service_console_run(
 
 	/* Handles a failed fprintf operation. */
 	if (fprintf(context->output,
-		    "zedBSD Service Console\nType '?' for help.\n") < 0)
+		    "Kei Service Console\nType '?' for help.\n") < 0)
 
 		/* Reports operation failure. */
 		return 1;

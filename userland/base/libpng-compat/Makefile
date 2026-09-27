@@ -6,4 +6,4 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 LIBPNG_COMPAT_SOURCES := userland/base/libpng-compat/read.c
 
 LIBPNG_COMPAT_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libpng-compat.so=$(BUILD)/dynamic/libpng-compat.so)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libpng-compat,PNG interface for base programs,amd64,y,library,$(LIBPNG_COMPAT_SOURCES),y,base,base/libpng-compat,base/libz-compat,,shared-library,$(LIBPNG_COMPAT_IMAGE_DATA),,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libpng-compat,PNG interface for base programs,amd64,y,library,$(LIBPNG_COMPAT_SOURCES),y,desktop,base/libpng-compat,base/libz-compat,,shared-library,$(LIBPNG_COMPAT_IMAGE_DATA),,lib))

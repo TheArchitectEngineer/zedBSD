@@ -9,8 +9,8 @@
 
 /* Exposes the platform-independent Vulkan and direct-display declarations. */
 
-#ifndef ZEDBSD_VULKAN_H
-#define ZEDBSD_VULKAN_H
+#ifndef KERN_VULKAN_H
+#define KERN_VULKAN_H
 
 #include "vulkan_core.h"
 

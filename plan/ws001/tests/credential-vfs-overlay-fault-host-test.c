@@ -27,14 +27,14 @@
 struct fixture_overlay_identity {
 	ino_t ino;
 	uint8_t state;
-	char path[ZEDBSD_PATH_MAX];
+	char path[KERN_PATH_MAX];
 };
 
 struct fixture_overlay_metadata {
 	uint8_t used;
 	uint8_t flags;
 	uint64_t sequence;
-	char path[ZEDBSD_PATH_MAX];
+	char path[KERN_PATH_MAX];
 };
 
 struct fixture_overlay_mount_state {
@@ -58,7 +58,7 @@ struct fixture_overlay_inode_info {
 	struct path upper;
 	struct path lower;
 	unsigned identity_index;
-	char path[ZEDBSD_PATH_MAX];
+	char path[KERN_PATH_MAX];
 };
 
 static unsigned checks;

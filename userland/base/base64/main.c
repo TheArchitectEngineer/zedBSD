@@ -129,7 +129,7 @@ main(
 			/* The wrap is taken. */
 			break;
 		case OPTION_VERSION:
-			printf("base64 (zedBSD) 1.0\n");
+			printf("base64 (Kei) 1.0\n");
 			return 0;
 		default:
 			usage();

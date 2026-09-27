@@ -11,8 +11,8 @@
  * (menu.c).  The host tests build the rest of the program without them.
  */
 
-#ifndef ZDESKTOP_FILES_WINDOW_H
-#define ZDESKTOP_FILES_WINDOW_H
+#ifndef KEILAND_FILES_WINDOW_H
+#define KEILAND_FILES_WINDOW_H
 
 #include "files.h"
 
@@ -20,7 +20,7 @@
 #include <vulkan/vulkan.h>
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
-#include <zdesktop.h>
+#include <keiland.h>
 
 /* How many inputs wait for the main loop at most. */
 #define FM_WINDOW_EVENTS	256U
@@ -109,9 +109,9 @@ struct fm_window {
  * showed, and the window whose inputs the choices join (FM_EVENT_ACTION).
  */
 struct fm_menu {
-	struct zdesktop_menu_service *service;
-	struct zdesktop_menu *menu;
-	struct zdesktop_window_menu *window_menu;
+	struct keiland_menu_service *service;
+	struct keiland_menu *menu;
+	struct keiland_window_menu *window_menu;
 	struct fm_menu_state shown;
 	struct fm_window *window;
 
@@ -121,8 +121,8 @@ struct fm_menu {
 	 * closed it, so that it goes at the next refresh (not inside its own
 	 * event).
 	 */
-	struct zdesktop_menu *context_model;
-	struct zdesktop_context_menu *context;
+	struct keiland_menu *context_model;
+	struct keiland_context_menu *context;
 	int context_done;
 };
 
@@ -137,7 +137,7 @@ struct fm_menu {
  */
 struct fm_titlebar {
 	struct fm_window *window;
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 	struct fm_titlebar_state shown;
 	int sent;
 	struct fm_titlebar_event events[FM_TITLEBAR_EVENTS];
@@ -249,7 +249,7 @@ void fm_titlebar_close(struct fm_titlebar *titlebar);
  * when the window is not glass) and the panels it last sent.
  */
 struct fm_glass {
-	struct zdesktop_glass *glass;
+	struct keiland_glass *glass;
 	struct fm_panel shown[FM_PANELS];
 	size_t shown_count;
 	int sent;

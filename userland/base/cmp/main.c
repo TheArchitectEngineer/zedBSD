@@ -358,7 +358,7 @@ cmp_parse_options(
 			options->limited = 1;
 			break;
 		case CMP_OPTION_VERSION:
-			printf("cmp (zedBSD) 1.0\n");
+			printf("cmp (Kei) 1.0\n");
 			exit(0);
 		default:
 			return -1;

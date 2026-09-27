@@ -9,8 +9,8 @@
  * Provides the selected Wayland public utility and protocol-description ABI.
  */
 
-#ifndef ZEDBSD_WAYLAND_UTIL_H
-#define ZEDBSD_WAYLAND_UTIL_H
+#ifndef KERN_WAYLAND_UTIL_H
+#define KERN_WAYLAND_UTIL_H
 
 #include <stddef.h>
 #include <stdint.h>

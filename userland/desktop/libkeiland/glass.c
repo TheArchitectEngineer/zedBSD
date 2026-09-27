@@ -7,7 +7,7 @@
 
 /*
  * The glass panels (ws035-p083, plan/ws035/glass-design.md): the wrapper
- * of zdesktop's zed_glass_v1 protocol.
+ * of zdesktop's keiland_glass_v1 protocol.
  *
  * A list of panels is checked here against the compositor's bounds before
  * it is sent, so that a list the compositor would refuse -- with a
@@ -15,7 +15,7 @@
  * failed call instead.  The protocol has no events.
  */
 
-#include <zdesktop.h>
+#include <keiland.h>
 
 #include <wayland-client.h>
 #include "userland/desktop/libwayland/zed-glass-v1-client-protocol.h"
@@ -31,10 +31,10 @@
 #define GLASS_PANEL_WORDS	6U
 
 /*
- * One surface's glass: its zed_glass_v1.
+ * One surface's glass: its keiland_glass_v1.
  */
-struct zdesktop_glass {
-	struct zed_glass_v1 *proxy;
+struct keiland_glass {
+	struct keiland_glass_v1 *proxy;
 };
 
 /* What the registry search found: the manager's global name, 0 for none. */
@@ -42,10 +42,10 @@ struct glass_search {
 	uint32_t name;
 };
 
-static struct zed_glass_manager_v1 *glass_bind(struct wl_display *display);
+static struct keiland_glass_manager_v1 *glass_bind(struct wl_display *display);
 static void glass_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void glass_global_remove(void *data, struct wl_registry *registry, uint32_t name);
-static int glass_check(const struct zdesktop_glass_panel *panel);
+static int glass_check(const struct keiland_glass_panel *panel);
 
 /* The registry's callbacks while the manager is looked for. */
 static const struct wl_registry_listener glass_registry_listener = {
@@ -57,13 +57,13 @@ static const struct wl_registry_listener glass_registry_listener = {
  * set: ENOTSUP for a compositor without glass, ENOMEM when the objects
  * cannot be made.
  */
-struct zdesktop_glass *
-zdesktop_glass_create(
+struct keiland_glass *
+keiland_glass_create(
 	struct wl_display *display,
 	struct wl_surface *surface)
 {
-	struct zed_glass_manager_v1 *manager;
-	struct zdesktop_glass *glass;
+	struct keiland_glass_manager_v1 *manager;
+	struct keiland_glass *glass;
 
 	/* zdesktop's manager, bound for this surface. */
 	manager = glass_bind(display);
@@ -73,14 +73,14 @@ zdesktop_glass_create(
 	/* The record. */
 	glass = calloc(1, sizeof(*glass));
 	if (glass == NULL) {
-		zed_glass_manager_v1_destroy(manager);
+		keiland_glass_manager_v1_destroy(manager);
 		errno = ENOMEM;
 		return NULL;
 	}
 
 	/* The protocol object; the binding is not needed after it (the glass stays). */
-	glass->proxy = zed_glass_manager_v1_get_glass(manager, surface);
-	zed_glass_manager_v1_destroy(manager);
+	glass->proxy = keiland_glass_manager_v1_get_glass(manager, surface);
+	keiland_glass_manager_v1_destroy(manager);
 	if (glass->proxy == NULL) {
 		free(glass);
 		errno = ENOMEM;
@@ -95,18 +95,18 @@ zdesktop_glass_create(
  * Sets the surface's panels for its next commit.
  */
 int
-zdesktop_glass_set_panels(
-	struct zdesktop_glass *glass,
-	const struct zdesktop_glass_panel *panels,
+keiland_glass_set_panels(
+	struct keiland_glass *glass,
+	const struct keiland_glass_panel *panels,
 	size_t count)
 {
-	int32_t words[ZDESKTOP_GLASS_PANELS_MAX * GLASS_PANEL_WORDS];
+	int32_t words[KEILAND_GLASS_PANELS_MAX * GLASS_PANEL_WORDS];
 	struct wl_array array;
 	size_t index;
 	int error;
 
 	/* No more panels than the compositor keeps. */
-	if (count > ZDESKTOP_GLASS_PANELS_MAX)
+	if (count > KEILAND_GLASS_PANELS_MAX)
 		return E2BIG;
 
 	/* Each panel checked and laid out as its six words. */
@@ -126,7 +126,7 @@ zdesktop_glass_set_panels(
 	array.size = count * GLASS_PANEL_WORDS * sizeof(words[0]);
 	array.alloc = array.size;
 	array.data = words;
-	zed_glass_v1_set_panels(glass->proxy, &array);
+	keiland_glass_v1_set_panels(glass->proxy, &array);
 
 	/* Succeeded: the panels go with the next commit. */
 	return 0;
@@ -136,24 +136,24 @@ zdesktop_glass_set_panels(
  * Takes the glass away; the surface's next commit shows it without panels.
  */
 void
-zdesktop_glass_destroy(
-	struct zdesktop_glass *glass)
+keiland_glass_destroy(
+	struct keiland_glass *glass)
 {
 	/* No glass, nothing to destroy. */
 	if (glass == NULL)
 		return;
 
 	/* The protocol object, then the record. */
-	zed_glass_v1_destroy(glass->proxy);
+	keiland_glass_v1_destroy(glass->proxy);
 	free(glass);
 }
 
 /* Binds zdesktop's glass manager through a registry of the library's own. */
-static struct zed_glass_manager_v1 *
+static struct keiland_glass_manager_v1 *
 glass_bind(
 	struct wl_display *display)
 {
-	struct zed_glass_manager_v1 *manager;
+	struct keiland_glass_manager_v1 *manager;
 	struct glass_search search;
 	struct wl_event_queue *queue;
 	struct wl_display *wrapper;
@@ -190,7 +190,7 @@ glass_bind(
 	/* The manager, bound when announced, is moved to the application's default queue. */
 	manager = NULL;
 	if (registry != NULL && search.name != 0U) {
-		manager = wl_registry_bind(registry, search.name, &zed_glass_manager_v1_interface, GLASS_VERSION);
+		manager = wl_registry_bind(registry, search.name, &keiland_glass_manager_v1_interface, GLASS_VERSION);
 		if (manager != NULL)
 			wl_proxy_set_queue((struct wl_proxy *)manager, NULL);
 	}
@@ -233,7 +233,7 @@ glass_global(
 	(void)registry;
 	(void)version;
 	search = data;
-	match = strcmp(interface, "zed_glass_manager_v1");
+	match = strcmp(interface, "keiland_glass_manager_v1");
 	if (match == 0)
 		search->name = name;
 }
@@ -254,18 +254,18 @@ glass_global_remove(
 /* Checks one panel against the compositor's bounds. */
 static int
 glass_check(
-	const struct zdesktop_glass_panel *panel)
+	const struct keiland_glass_panel *panel)
 {
 	/* An empty panel. */
 	if (panel->width <= 0 || panel->height <= 0)
 		return EINVAL;
 
 	/* A radius that is negative or past the largest. */
-	if (panel->radius < 0 || panel->radius > ZDESKTOP_GLASS_RADIUS_MAX)
+	if (panel->radius < 0 || panel->radius > KEILAND_GLASS_RADIUS_MAX)
 		return EINVAL;
 
 	/* A kind that does not exist. */
-	if (panel->kind != ZDESKTOP_GLASS_CARD)
+	if (panel->kind != KEILAND_GLASS_CARD)
 		return EINVAL;
 
 	/* Succeeded. */

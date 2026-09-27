@@ -5,7 +5,7 @@ require wizard;
 func instTextMenuDraw(menu) {
     Term.clear();
     Term.moveTo(0, 0);
-    Term.write("Install zedBSD\r\n" + menu.title + "\r\n\r\n" + menu.description + "\r\n\r\n");
+    Term.write("Install Kei\r\n" + menu.title + "\r\n\r\n" + menu.description + "\r\n\r\n");
     var first = menu.selected / 8 * 8;
     var end = first + 8;
     if (end > Array.size(menu.options)) { end = Array.size(menu.options); }
@@ -59,7 +59,7 @@ func instTextNativeReview(ui, plan, measured) {
         "\r\nThis cannot be undone. Select YES only to erase this destination.";
     return instTextMenu("Review dedicated installation", description, ["NO - Cancel", "YES - Erase and install"]) == 1;
 }
-func instTextStage(ui, title) { print("\nInstall zedBSD\n" + title); }
+func instTextStage(ui, title) { print("\nInstall Kei\n" + title); }
 func instTextChoose(ui, kind, title, description, options) {
     return instTextMenu(title, description, options);
 }

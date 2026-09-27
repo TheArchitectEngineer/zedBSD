@@ -8,7 +8,7 @@
 /*
  * The test client of ws035-p075, built with zedBSD's libwayland-client.
  *
- * It knows zed_generic_test_v1 only through the code wayland-scanner makes,
+ * It knows keiland_generic_test_v1 only through the code wayland-scanner makes,
  * so libwayland has no typed table for it and every event goes through the
  * generic dispatch.  Two rounds: each checks every argument of values, the
  * server-created child (its listener, a ping answered by a pong, then its
@@ -40,8 +40,8 @@
  * whether its pong came, the rounds done, and the failed checks.
  */
 struct client_state {
-	struct zed_generic_test_v1 *test;
-	struct zed_generic_child_v1 *child;
+	struct keiland_generic_test_v1 *test;
+	struct keiland_generic_child_v1 *child;
 	uint32_t child_tag;
 	uint32_t pong;
 	unsigned data;
@@ -54,13 +54,13 @@ struct client_state {
 static void check(struct client_state *state, int passed, const char *what);
 static void registry_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void registry_global_remove(void *data, struct wl_registry *registry, uint32_t name);
-static void test_values(void *data, struct zed_generic_test_v1 *test, int32_t i, uint32_t u, wl_fixed_t f, const char *s, const char *n, struct wl_array *a, int32_t h);
-static void test_child(void *data, struct zed_generic_test_v1 *test, struct zed_generic_child_v1 *child, uint32_t tag);
-static void test_reference(void *data, struct zed_generic_test_v1 *test, struct zed_generic_child_v1 *child);
-static void test_many(void *data, struct zed_generic_test_v1 *test, int32_t a0, uint32_t a1, int32_t a2, uint32_t a3, int32_t a4, uint32_t a5, int32_t a6, wl_fixed_t a7, const char *a8, int32_t a9, uint32_t a10, int32_t a11);
-static void test_round_done(void *data, struct zed_generic_test_v1 *test, uint32_t round);
-static void child_pong(void *data, struct zed_generic_child_v1 *child, uint32_t value);
-static void child_data(void *data, struct zed_generic_child_v1 *child, int32_t h);
+static void test_values(void *data, struct keiland_generic_test_v1 *test, int32_t i, uint32_t u, wl_fixed_t f, const char *s, const char *n, struct wl_array *a, int32_t h);
+static void test_child(void *data, struct keiland_generic_test_v1 *test, struct keiland_generic_child_v1 *child, uint32_t tag);
+static void test_reference(void *data, struct keiland_generic_test_v1 *test, struct keiland_generic_child_v1 *child);
+static void test_many(void *data, struct keiland_generic_test_v1 *test, int32_t a0, uint32_t a1, int32_t a2, uint32_t a3, int32_t a4, uint32_t a5, int32_t a6, wl_fixed_t a7, const char *a8, int32_t a9, uint32_t a10, int32_t a11);
+static void test_round_done(void *data, struct keiland_generic_test_v1 *test, uint32_t round);
+static void child_pong(void *data, struct keiland_generic_child_v1 *child, uint32_t value);
+static void child_data(void *data, struct keiland_generic_child_v1 *child, int32_t h);
 static int client_fds(void);
 static int client_round(struct client_state *state, struct wl_display *display, unsigned round);
 
@@ -71,7 +71,7 @@ static const struct wl_registry_listener registry_listener = {
 };
 
 /* The test global's callbacks (generic: libwayland has no table for them). */
-static const struct zed_generic_test_v1_listener test_listener = {
+static const struct keiland_generic_test_v1_listener test_listener = {
 	test_values,
 	test_child,
 	test_reference,
@@ -80,7 +80,7 @@ static const struct zed_generic_test_v1_listener test_listener = {
 };
 
 /* A child's callback (generic too). */
-static const struct zed_generic_child_v1_listener child_listener = {
+static const struct keiland_generic_child_v1_listener child_listener = {
 	child_pong,
 	child_data
 };
@@ -122,7 +122,7 @@ main(
 	check(&state, status >= 0 && state.test != NULL, "bind");
 	if (state.test == NULL)
 		return 1;
-	zed_generic_test_v1_add_listener(state.test, &test_listener, &state);
+	keiland_generic_test_v1_add_listener(state.test, &test_listener, &state);
 
 	/* Each round: every event, then the child's ping and pong, then the child goes. */
 	for (round = 1; round <= CLIENT_ROUNDS; round++) {
@@ -131,12 +131,12 @@ main(
 			break;
 
 		/* The child is a proxy of its own: its requests and events work. */
-		zed_generic_child_v1_ping(state.child, 99U);
+		keiland_generic_child_v1_ping(state.child, 99U);
 		status = wl_display_roundtrip(display);
 		check(&state, status >= 0 && state.pong == 100U && state.data == 1U, "child pong");
 
 		/* The client destroys it; the next round's child may reuse its identity. */
-		zed_generic_child_v1_destroy(state.child);
+		keiland_generic_child_v1_destroy(state.child);
 		status = wl_display_roundtrip(display);
 		check(&state, status >= 0, "child destroyed");
 	}
@@ -146,8 +146,8 @@ main(
 	if (status == 0) {
 		zombie = wl_proxy_get_id((struct wl_proxy *)state.child);
 		fds = client_fds();
-		zed_generic_child_v1_ping(state.child, 7U);
-		zed_generic_child_v1_destroy(state.child);
+		keiland_generic_child_v1_ping(state.child, 7U);
+		keiland_generic_child_v1_destroy(state.child);
 		status = wl_display_roundtrip(display);
 		check(&state, status >= 0, "zombie events keep the connection");
 		check(&state, state.pong == 0U && state.data == 0U, "zombie events dropped");
@@ -158,10 +158,10 @@ main(
 		status = client_round(&state, display, CLIENT_ROUNDS + 2U);
 		if (status == 0) {
 			printf("CLIENT reused=%d\n", wl_proxy_get_id((struct wl_proxy *)state.child) == zombie);
-			zed_generic_child_v1_ping(state.child, 99U);
+			keiland_generic_child_v1_ping(state.child, 99U);
 			status = wl_display_roundtrip(display);
 			check(&state, status >= 0 && state.pong == 100U && state.data == 1U, "child after zombie");
-			zed_generic_child_v1_destroy(state.child);
+			keiland_generic_child_v1_destroy(state.child);
 			status = wl_display_roundtrip(display);
 			check(&state, status >= 0, "child after zombie destroyed");
 		}
@@ -171,7 +171,7 @@ main(
 	check(&state, state.references == CLIENT_ROUNDS + 2U && state.null_references == CLIENT_ROUNDS + 2U, "references");
 
 	/* The end. */
-	zed_generic_test_v1_destroy(state.test);
+	keiland_generic_test_v1_destroy(state.test);
 	wl_registry_destroy(registry);
 	(void)wl_display_roundtrip(display);
 	wl_display_disconnect(display);
@@ -216,9 +216,9 @@ registry_global(
 	/* Only the test global is bound. */
 	(void)version;
 	state = data;
-	same = strcmp(interface, zed_generic_test_v1_interface.name);
+	same = strcmp(interface, keiland_generic_test_v1_interface.name);
 	if (same == 0)
-		state->test = wl_registry_bind(registry, name, &zed_generic_test_v1_interface, 1);
+		state->test = wl_registry_bind(registry, name, &keiland_generic_test_v1_interface, 1);
 }
 
 /* No global goes in the test. */
@@ -237,7 +237,7 @@ registry_global_remove(
 static void
 test_values(
 	void *data,
-	struct zed_generic_test_v1 *test,
+	struct keiland_generic_test_v1 *test,
 	int32_t i,
 	uint32_t u,
 	wl_fixed_t f,
@@ -276,8 +276,8 @@ test_values(
 static void
 test_child(
 	void *data,
-	struct zed_generic_test_v1 *test,
-	struct zed_generic_child_v1 *child,
+	struct keiland_generic_test_v1 *test,
+	struct keiland_generic_child_v1 *child,
 	uint32_t tag)
 {
 	struct client_state *state;
@@ -295,8 +295,8 @@ test_child(
 static void
 test_reference(
 	void *data,
-	struct zed_generic_test_v1 *test,
-	struct zed_generic_child_v1 *child)
+	struct keiland_generic_test_v1 *test,
+	struct keiland_generic_child_v1 *child)
 {
 	struct client_state *state;
 
@@ -317,7 +317,7 @@ test_reference(
 static void
 test_many(
 	void *data,
-	struct zed_generic_test_v1 *test,
+	struct keiland_generic_test_v1 *test,
 	int32_t a0,
 	uint32_t a1,
 	int32_t a2,
@@ -347,7 +347,7 @@ test_many(
 static void
 test_round_done(
 	void *data,
-	struct zed_generic_test_v1 *test,
+	struct keiland_generic_test_v1 *test,
 	uint32_t round)
 {
 	struct client_state *state;
@@ -362,7 +362,7 @@ test_round_done(
 static void
 child_pong(
 	void *data,
-	struct zed_generic_child_v1 *child,
+	struct keiland_generic_child_v1 *child,
 	uint32_t value)
 {
 	struct client_state *state;
@@ -377,7 +377,7 @@ child_pong(
 static void
 child_data(
 	void *data,
-	struct zed_generic_child_v1 *child,
+	struct keiland_generic_child_v1 *child,
 	int32_t h)
 {
 	struct client_state *state;
@@ -432,7 +432,7 @@ client_round(
 	state->child = NULL;
 	state->pong = 0;
 	state->data = 0;
-	zed_generic_test_v1_emit(state->test, round);
+	keiland_generic_test_v1_emit(state->test, round);
 	status = wl_display_roundtrip(display);
 	check(state, status >= 0 && state->rounds_done == round, "round events");
 	check(state, state->child != NULL && state->child_tag == 40U + round, "child");
@@ -440,6 +440,6 @@ client_round(
 		return -1;
 
 	/* The child's events come to the state. */
-	zed_generic_child_v1_add_listener(state->child, &child_listener, state);
+	keiland_generic_child_v1_add_listener(state->child, &child_listener, state);
 	return 0;
 }

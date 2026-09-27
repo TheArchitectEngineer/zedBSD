@@ -243,7 +243,7 @@ zwl_keymap_open(void)
 	int reader;
 
 	/* A file of this process's own. */
-	(void)snprintf(path, sizeof(path), "/tmp/zdesktop-keymap-%ld", (long)getpid());
+	(void)snprintf(path, sizeof(path), "/tmp/keiland-keymap-%ld", (long)getpid());
 	writer = open(path, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
 	if (writer < 0)
 		return errno;

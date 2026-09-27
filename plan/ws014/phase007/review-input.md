@@ -60,7 +60,7 @@
 
 - `present_submit` → `vkWaitForFences(job->fence)` (wsi-swapchain.c:1751) を `present_native` の前に行う。アプリの `vkQueueSubmit` 直後の present で CPU が GPU 完了までブロックし、swapchain 2〜3 枚の意味が無い。
 - wltest/vkdemo はさらにその後 `vkWaitForFences` するので実質シングルバッファ、フレームレートは「GPU 時間 + P2 の記録時間 + P4 のコピー時間 + vblank」の直列和。
-- Wayland 経路も同じ: fence 完了後に `wl_surface_commit` (wsi-wayland.c:700)。本来は semaphore 待ちを GPU/compositor 側に任せ、commit は即時で良い (zed_gpu_buffer_v1 に fence/sync fd を付けるか、zwl 側 present が fenced なので「GPU 順序が守られる」前提で attach して問題ない)。
+- Wayland 経路も同じ: fence 完了後に `wl_surface_commit` (wsi-wayland.c:700)。本来は semaphore 待ちを GPU/compositor 側に任せ、commit は即時で良い (keiland_gpu_buffer_v1 に fence/sync fd を付けるか、zwl 側 present が fenced なので「GPU 順序が守られる」前提で attach して問題ない)。
 
 **推奨**: P1 の通知があれば、present は「submit 後に fence を登録して即 return、完了時にワーカーまたは次の `vkAcquireNextImageKHR` で native present」にできる。
 
@@ -92,7 +92,7 @@
 
 ### P10. libwayland の互換性上限
 
-- 型付きリスナの dispatch (event.c) はライブラリが知っている固定インターフェース群 (wl_display/registry/callback/compositor/surface/region/buffer/output, xdg_wm_base/positioner/surface/toplevel/popup, zed_gpu_buffer_v1) の signature に対する分岐。**未知のプロトコル (wp_presentation, xdg_decoration, wp_linux_dmabuf など) は `wl_proxy_add_dispatcher` 経由でしか使えない**。libffi 相当の汎用呼び出しが無いのが将来の互換性ボトルネック。
+- 型付きリスナの dispatch (event.c) はライブラリが知っている固定インターフェース群 (wl_display/registry/callback/compositor/surface/region/buffer/output, xdg_wm_base/positioner/surface/toplevel/popup, keiland_gpu_buffer_v1) の signature に対する分岐。**未知のプロトコル (wp_presentation, xdg_decoration, wp_linux_dmabuf など) は `wl_proxy_add_dispatcher` 経由でしか使えない**。libffi 相当の汎用呼び出しが無いのが将来の互換性ボトルネック。
 - wl_shm / wl_seat / wl_data_device 系の interface 定義が無いので、既存 Wayland アプリのビルドがまず通らない (ヘッダ `wayland-client-protocol.h` の網羅範囲次第)。
 - `wlc_proxy_lookup` がリスト線形走査 → オブジェクト数が増えると O(n²)。今は無害。
 - 良い点: prepare_read/read_events/cancel_read のリーダ調停、SCM_RIGHTS のフレーム境界跨ぎ処理、private queue、wrapper は本家と同じ意味論で実装されており、libvulkan の private queue と wltest の default queue が正しく分離できている。

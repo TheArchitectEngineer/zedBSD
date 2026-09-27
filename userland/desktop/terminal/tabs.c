@@ -23,14 +23,14 @@
 #include <stdio.h>
 #include <string.h>
 
-static void tabs_activated(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t serial);
-static void tabs_close(void *data, struct zdesktop_titlebar *titlebar, uint32_t id);
-static void tabs_new(void *data, struct zdesktop_titlebar *titlebar, uint32_t serial);
+static void tabs_activated(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t serial);
+static void tabs_close(void *data, struct keiland_titlebar *titlebar, uint32_t id);
+static void tabs_new(void *data, struct keiland_titlebar *titlebar, uint32_t serial);
 static void tabs_queue(struct terminal_window *window, unsigned kind, uint32_t id);
 static int tabs_same(const struct terminal_window *window, const struct terminal_tab_view *tabs, unsigned count, uint32_t active);
 
 /* What the titlebar tells the terminal: a tab chosen, a tab to close, "+". */
-static const struct zdesktop_titlebar_listener tabs_listener = {
+static const struct keiland_titlebar_listener tabs_listener = {
 	NULL, NULL, NULL, tabs_activated, tabs_close, tabs_new, NULL, NULL
 };
 
@@ -44,7 +44,7 @@ terminal_tabs_open(
 	struct terminal_window *window)
 {
 	/* zdesktop's titlebar for the window (NULL without it). */
-	window->titlebar = zdesktop_titlebar_create(window->display, window->toplevel, &tabs_listener, window);
+	window->titlebar = keiland_titlebar_create(window->display, window->toplevel, &tabs_listener, window);
 	window->tabs_sent = 0;
 	window->tab_request_count = 0;
 }
@@ -60,7 +60,7 @@ terminal_tabs_show(
 	unsigned count,
 	uint32_t active)
 {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 	unsigned index;
 	unsigned shown;
 	unsigned flags;
@@ -78,7 +78,7 @@ terminal_tabs_show(
 		return;
 
 	/* One transaction. */
-	error = zdesktop_titlebar_begin(titlebar);
+	error = keiland_titlebar_begin(titlebar);
 	if (error != 0)
 		return;
 
@@ -94,7 +94,7 @@ terminal_tabs_show(
 
 		/* Gone: removed. */
 		if (!found)
-			(void)zdesktop_titlebar_remove_tab(titlebar, window->tabs_shown[shown].id);
+			(void)keiland_titlebar_remove_tab(titlebar, window->tabs_shown[shown].id);
 	}
 
 	/* Each tab now, added when it is new, with its title and whether it is active. */
@@ -109,22 +109,22 @@ terminal_tabs_show(
 
 		/* A new one is added. */
 		if (!found)
-			(void)zdesktop_titlebar_add_tab(titlebar, tabs[index].id, tabs[index].title);
+			(void)keiland_titlebar_add_tab(titlebar, tabs[index].id, tabs[index].title);
 
 		/* Its title and flags. */
-		flags = ZDESKTOP_TAB_CLOSABLE;
+		flags = KEILAND_TAB_CLOSABLE;
 		if (tabs[index].id == active)
-			flags |= ZDESKTOP_TAB_ACTIVE;
-		(void)zdesktop_titlebar_set_tab(titlebar, tabs[index].id, tabs[index].title, flags);
+			flags |= KEILAND_TAB_ACTIVE;
+		(void)keiland_titlebar_set_tab(titlebar, tabs[index].id, tabs[index].title, flags);
 	}
 
 	/* "+", and the mode: the menus with one tab, the tabs from two. */
-	(void)zdesktop_titlebar_set_tabs_options(titlebar, ZDESKTOP_TABS_NEW_BUTTON);
-	mode = ZDESKTOP_TITLEBAR_MENU;
+	(void)keiland_titlebar_set_tabs_options(titlebar, KEILAND_TABS_NEW_BUTTON);
+	mode = KEILAND_TITLEBAR_MENU;
 	if (count >= 2U)
-		mode = ZDESKTOP_TITLEBAR_TABS;
-	(void)zdesktop_titlebar_set_mode(titlebar, mode);
-	(void)zdesktop_titlebar_commit(titlebar);
+		mode = KEILAND_TITLEBAR_TABS;
+	(void)keiland_titlebar_set_mode(titlebar, mode);
+	(void)keiland_titlebar_commit(titlebar);
 
 	/* What was shown, to send only changes. */
 	for (index = 0; index < count && index < TERMINAL_TABS; index++)
@@ -165,7 +165,7 @@ terminal_tabs_close(
 {
 	/* The titlebar goes (the window shows its menus again). */
 	if (window->titlebar != NULL)
-		zdesktop_titlebar_destroy(window->titlebar);
+		keiland_titlebar_destroy(window->titlebar);
 	window->titlebar = NULL;
 }
 
@@ -173,7 +173,7 @@ terminal_tabs_close(
 static void
 tabs_activated(
 	void *data,
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	uint32_t serial)
 {
@@ -187,7 +187,7 @@ tabs_activated(
 static void
 tabs_close(
 	void *data,
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	uint32_t id)
 {
 	/* The request. */
@@ -199,7 +199,7 @@ tabs_close(
 static void
 tabs_new(
 	void *data,
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	uint32_t serial)
 {
 	/* The request. */

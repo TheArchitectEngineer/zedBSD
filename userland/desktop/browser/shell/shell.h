@@ -13,8 +13,8 @@
  * without this directory and supply their own shell_run that refuses.
  */
 
-#ifndef ZDESKTOP_BROWSER_SHELL_H
-#define ZDESKTOP_BROWSER_SHELL_H
+#ifndef KEILAND_BROWSER_SHELL_H
+#define KEILAND_BROWSER_SHELL_H
 
 #include "text/text.h"
 

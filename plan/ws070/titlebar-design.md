@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws070-titlebar-design -->
 
-# WS070 設計: Titlebar Presentation（`zed_titlebar_v1`）
+# WS070 設計: Titlebar Presentation（`keiland_titlebar_v1`）
 
 Parent: [WS070](ws.md) / Phase: ws070-p007
 Status: 設計（2026-09-27、ws070-p007）。仕様案は [titlebar-spec.md](titlebar-spec.md)（ユーザー提供、§番号は仕様案の節）。既存の
@@ -26,9 +26,9 @@ System Menu は [design.md](design.md)（`xdg_toplevel_menu_v1`、p001〜p005）
 
 ```
 application（files 等）
-   │  libkeiland: zdesktop_titlebar_*（mode・controls・tabs の鏡と局所の検査、transaction）
+   │  libkeiland: keiland_titlebar_*（mode・controls・tabs の鏡と局所の検査、transaction）
    ▼
-libwayland-client: zed_titlebar_manager_v1 / zed_titlebar_v1（非公開 header）
+libwayland-client: keiland_titlebar_manager_v1 / keiland_titlebar_v1（非公開 header）
    ▼
 zdesktop
    protocol.c ─▶ titlebar.c（request、model、transaction、寿命、event）
@@ -41,19 +41,19 @@ zdesktop
 
 ## 2. Protocol（version 1）
 
-**決定: 新しい global `zed_titlebar_manager_v1`**（既存の `xdg_menu_manager_v1` の version を上げない）。理由: mode・controls・tabs は
-menu と独立した model で、menu だけを使う client（terminal）は変えずに済む。名前は zedBSD 固有の拡張の慣例（`zed_gpu_buffer_v1`）。
+**決定: 新しい global `keiland_titlebar_manager_v1`**（既存の `xdg_menu_manager_v1` の version を上げない）。理由: mode・controls・tabs は
+menu と独立した model で、menu だけを使う client（terminal）は変えずに済む。名前は zedBSD 固有の拡張の慣例（`keiland_gpu_buffer_v1`）。
 
-### 2.1 `zed_titlebar_manager_v1`（global、version 1）
+### 2.1 `keiland_titlebar_manager_v1`（global、version 1）
 
 | opcode | request | 引数 |
 | --- | --- | --- |
 | 0 | `destroy` | — |
-| 1 | `get_titlebar` | `new_id<zed_titlebar_v1> id`、`object<xdg_toplevel> toplevel` |
+| 1 | `get_titlebar` | `new_id<keiland_titlebar_v1> id`、`object<xdg_toplevel> toplevel` |
 
-error: `already_exists = 0`（その toplevel に生きた `zed_titlebar_v1` がある）。
+error: `already_exists = 0`（その toplevel に生きた `keiland_titlebar_v1` がある）。
 
-### 2.2 `zed_titlebar_v1`（窓の titlebar の presentation）
+### 2.2 `keiland_titlebar_v1`（窓の titlebar の presentation）
 
 request（変更は `begin_update`〜`commit` の間だけ。menu と同じ transaction の規則）:
 
@@ -99,7 +99,7 @@ event:
   shortcut を失わない（files の File・Edit・View・Go・Window・Help、p008）。§13-1 でユーザーに示す。
 - **MENU との関係**（仕様案 §23）: menu の model は今まで通り `xdg_toplevel_menu_v1.set_menu` で窓に付ける。mode が `menu` なら
   top-level の項目を Presentation に並べ（今と同じ）、`controls`・`tabs` なら overflow の popup に入れる。**shortcut は mode によらず
-  効く**（menu-shell.c の照合はそのまま）。`zed_titlebar_v1` を持たない窓は `menu` mode（terminal は何も変えない）。
+  効く**（menu-shell.c の照合はそのまま）。`keiland_titlebar_v1` を持たない窓は `menu` mode（terminal は何も変えない）。
 - **決定（仕様案 §21 の「不整合は error としてもよい」）: error にしない**。controls と tabs の model は mode によらず持て、表示は
   active な mode のものだけ。理由: client が次の mode の model を先に作り、1 つの transaction で `set_mode` だけ変えられる（§22 の
   atomic な切替が簡単になる）。
@@ -120,39 +120,39 @@ zdesktop の object の退場の hook（menu.c と同じ `zwl_object_destroy` �
 `zed-titlebar-v1-client-protocol.h`（install しない。`xdg-toplevel-menu-v1-client-protocol.h` と同じ扱い）。`exports.map` に
 `zed_titlebar_*`。
 
-## 4. libkeiland の API（`include/libc/zdesktop.h`、`ZDESKTOP_VERSION` を 4 に）
+## 4. libkeiland の API（`include/libc/keiland.h`、`KEILAND_VERSION` を 4 に）
 
 ```c
-struct zdesktop_titlebar;
-struct zdesktop_titlebar_listener {
-	void (*control_activated)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-	void (*text_changed)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text);
-	void (*text_done)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
-	void (*tab_activated)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t serial);
-	void (*tab_close_requested)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id);
-	void (*new_tab_requested)(void *data, struct zdesktop_titlebar *titlebar, uint32_t serial);
-	void (*overflow_menu_opened)(void *data, struct zdesktop_titlebar *titlebar);
+struct keiland_titlebar;
+struct keiland_titlebar_listener {
+	void (*control_activated)(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+	void (*text_changed)(void *data, struct keiland_titlebar *titlebar, uint32_t id, const char *text);
+	void (*text_done)(void *data, struct keiland_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
+	void (*tab_activated)(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t serial);
+	void (*tab_close_requested)(void *data, struct keiland_titlebar *titlebar, uint32_t id);
+	void (*new_tab_requested)(void *data, struct keiland_titlebar *titlebar, uint32_t serial);
+	void (*overflow_menu_opened)(void *data, struct keiland_titlebar *titlebar);
 };
-struct zdesktop_titlebar *zdesktop_titlebar_create(struct wl_display *display, struct xdg_toplevel *toplevel,
-	const struct zdesktop_titlebar_listener *listener, void *data);			/* 無ければ NULL・ENOTSUP */
-void zdesktop_titlebar_destroy(struct zdesktop_titlebar *titlebar);
-int zdesktop_titlebar_begin(struct zdesktop_titlebar *titlebar);
-int zdesktop_titlebar_commit(struct zdesktop_titlebar *titlebar);
-int zdesktop_titlebar_set_mode(struct zdesktop_titlebar *titlebar, unsigned mode);
-int zdesktop_titlebar_add_control(struct zdesktop_titlebar *titlebar, uint32_t id, unsigned role, unsigned priority, unsigned group, const char *label);
-int zdesktop_titlebar_remove_control / set_control_label / set_control_state / set_control_value / set_control_text(...);
-int zdesktop_titlebar_set_breadcrumb(struct zdesktop_titlebar *titlebar, uint32_t id, const char *const *segments, size_t count);
-int zdesktop_titlebar_add_tab / remove_tab / set_tab / set_tabs_options(...);
-int zdesktop_titlebar_focus_control(struct zdesktop_titlebar *titlebar, uint32_t id, unsigned mode);
+struct keiland_titlebar *keiland_titlebar_create(struct wl_display *display, struct xdg_toplevel *toplevel,
+	const struct keiland_titlebar_listener *listener, void *data);			/* 無ければ NULL・ENOTSUP */
+void keiland_titlebar_destroy(struct keiland_titlebar *titlebar);
+int keiland_titlebar_begin(struct keiland_titlebar *titlebar);
+int keiland_titlebar_commit(struct keiland_titlebar *titlebar);
+int keiland_titlebar_set_mode(struct keiland_titlebar *titlebar, unsigned mode);
+int keiland_titlebar_add_control(struct keiland_titlebar *titlebar, uint32_t id, unsigned role, unsigned priority, unsigned group, const char *label);
+int keiland_titlebar_remove_control / set_control_label / set_control_state / set_control_value / set_control_text(...);
+int keiland_titlebar_set_breadcrumb(struct keiland_titlebar *titlebar, uint32_t id, const char *const *segments, size_t count);
+int keiland_titlebar_add_tab / remove_tab / set_tab / set_tabs_options(...);
+int keiland_titlebar_focus_control(struct keiland_titlebar *titlebar, uint32_t id, unsigned mode);
 ```
 
-- 定数 `ZDESKTOP_TITLEBAR_MODE_*`、`ZDESKTOP_CONTROL_*`（role）、`ZDESKTOP_PRIORITY_*`、`ZDESKTOP_TAB_*`、`ZDESKTOP_TEXT_*`（how）。
+- 定数 `KEILAND_TITLEBAR_MODE_*`、`KEILAND_CONTROL_*`（role）、`KEILAND_PRIORITY_*`、`KEILAND_TAB_*`、`KEILAND_TEXT_*`（how）。
 - menu の API と同じく、戻り値は 0 か errno、鏡で局所に検査して protocol error になる呼び出しを送らない（`EINVAL`・`EEXIST`・
   `ENOENT`・`EBUSY`・`E2BIG`）。service は display ごとに 1 つを内部に持つ（menu の service と同じ発見の queue）。
 
 ## 5. zdesktop の model（titlebar.c）
 
-- object の種類 `ZWL_TITLEBAR_MANAGER`・`ZWL_TITLEBAR`、globals に `zed_titlebar_manager_v1`、`zwl_object` の toplevel に
+- object の種類 `ZWL_TITLEBAR_MANAGER`・`ZWL_TITLEBAR`、globals に `keiland_titlebar_manager_v1`、`zwl_object` の toplevel に
   `titlebar`（→ ZWL_TITLEBAR）。model は mode、control の配列（id、role、priority、group、label、enabled、checked、value、text、
   placeholder、段の列）、tab の配列（id、title、flags）、options。transaction は menu.c と同じ写しの差し替えと `generation`。
 - log（試験が読む）: `ZWL TITLEBAR commit client=C surface=S mode=M controls=N tabs=T generation=G`、
@@ -196,7 +196,7 @@ int zdesktop_titlebar_focus_control(struct zdesktop_titlebar *titlebar, uint32_t
   files の窓の中のパンくずは fallback font で日本語を描けていたので、CONTROLS へ移すと**後退**になる。
 - **決定: CONTROLS へ移す前に glass に動的な glyph cache を足す**: `glass_draw_text` が UTF-8 を復号し、ASCII 以外の文字を
   (face, 大きさ, codepoint) の cache（atlas の空き領域の slot、LRU）で引き、無ければ libtruetype で描いて atlas の slot に upload。
-  face は Inter の次に fallback font（`/usr/share/fonts/zdesktop-fallback.ttf`、無ければ □）。glass.c は WS035 の file なので、
+  face は Inter の次に fallback font（`/usr/share/fonts/keiland-fallback.ttf`、無ければ □）。glass.c は WS035 の file なので、
   Phase を始める前に main に file の一覧を知らせて merge の順を決める。
 
 ## 9. 入力（仕様案 §19、§20、§26）
@@ -236,7 +236,7 @@ bar の配置から docked の配置へ動かす: control ごとに両方の配�
 
 - 窓の中の toolbar（design §3 の浮いた pill）と、その描画・hit・入力（`ui.c` の toolbar、`ui-field.c` の location と検索の欄の描画）は
   消す。content・sidebar・preview の panel は窓の上端の余白 12 から始まる。検索の scope の chip と task の一覧は窓の中のまま。
-- 起動: `zdesktop_titlebar_create` が NULL なら `ZFILES FAILED operation=titlebar errno=…` で終わる（fallback なし、ユーザーの指示）。
+- 起動: `keiland_titlebar_create` が NULL なら `ZFILES FAILED operation=titlebar errno=…` で終わる（fallback なし、ユーザーの指示）。
 - File・Edit・View・Go・Window・Help の menu（p008）は overflow の popup に入り、shortcut はそのまま効く。
 - タブ（WS071 p013）は CONTROLS と排他の TABS には出さず、窓の中の tab bar（2 つ以上のとき）のまま。
 - host の試験（`host-render`）は toolbar が無くなるので、titlebar の model（`fm_ui_titlebar_state` のような関数が作る control の列と
@@ -273,7 +273,7 @@ bar の配置から docked の配置へ動かす: control ごとに両方の配�
 
 | Phase | 内容 | 主な file |
 | --- | --- | --- |
-| ws070-p008 | protocol と model: libwayland の `zed_titlebar_*`（表・wrapper・listener・非公開 header）、zdesktop の titlebar.c（request、model、transaction、error、寿命、log）、libkeiland の `zdesktop_titlebar_*`（鏡と検査）、titlebar-probe（error と検査の試験）。描画は変えない | libwayland/titlebar-protocol.c、zdesktop/titlebar.c・protocol.c・zwl.h・objects.c、libkeiland/titlebar.c、include/libc/zdesktop.h |
+| ws070-p008 | protocol と model: libwayland の `zed_titlebar_*`（表・wrapper・listener・非公開 header）、zdesktop の titlebar.c（request、model、transaction、error、寿命、log）、libkeiland の `keiland_titlebar_*`（鏡と検査）、titlebar-probe（error と検査の試験）。描画は変えない | libwayland/titlebar-protocol.c、zdesktop/titlebar.c・protocol.c・zwl.h・objects.c、libkeiland/titlebar.c、include/libc/keiland.h |
 | ws070-p009 | glass の UTF-8 と動的 glyph cache（fallback font）と role の icon の rasterize（atlas に足す）。窓の題名・menu の label が日本語でも描ける | zdesktop/glass.c・compose.c・glass.h（**WS035 と調整**） |
 | ws070-p010 | CONTROLS の presentation: 配置と縮退、描画（button・segment・欄・パンくず・輪）、pointer（click・hover）、SEARCH・BREADCRUMB の欄と keyboard、overflow の popup（隠れた control と menu）、docked の Application Zone、animation の補間、log。titlebar-probe の CONTROLS の場面 | zdesktop/titlebar-shell.c（新規）・shell.c・menu-shell.c・seat.c（**WS035 と調整**） |
 | ws071-p014 | files: 窓の中の toolbar → CONTROLS の titlebar（toolbar の描画・入力を消す、control の model と event、Ctrl+F・Ctrl+L の focus、起動の失敗、host の試験の model の text、guest の試験の座標を log から） | files（ui.c・ui-input.c・ui-search.c・main.c・新規 titlebar.c）、plan/tools/files |

@@ -32,7 +32,7 @@
 /* The defaults of the options. */
 #define SERVER_SOCKET_PATH	"/tmp/.X11-unix/X0"
 #define SERVER_SOCKET_DIR	"/tmp/.X11-unix"
-#define SERVER_FONT_PATH	"/usr/share/fonts/zdesktop-mono.ttf"
+#define SERVER_FONT_PATH	"/usr/share/fonts/keiland-mono.ttf"
 #define SERVER_WIDTH		1280U
 #define SERVER_HEIGHT		800U
 
