@@ -932,6 +932,21 @@ zwl_menu_open_context(
 }
 
 /*
+ * Tells whether a menu (a window's, a titlebar's "..." or a context menu)
+ * is open.
+ */
+int
+zwl_menu_is_open(void)
+{
+	/* A menu open has its window. */
+	if (shell_menu.surface != NULL)
+		return 1;
+
+	/* None. */
+	return 0;
+}
+
+/*
  * Records a titlebar's "..." (titlebar-shell.c) as the menus' overflow at a
  * place of the area, holding rows for its hidden controls (their IDs and
  * labels) before the window's menu.

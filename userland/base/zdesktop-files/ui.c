@@ -33,6 +33,14 @@
 /* The frame's measurements, in pixels. */
 #define UI_MARGIN		12
 #define UI_GAP			10
+
+/*
+ * On glass (ws071-p017) the cards reach the window's edges, so that their
+ * outer edges line up with the floating titlebar's, and stand apart by
+ * zdesktop's gap between the titlebar and the window; docked, they keep
+ * that gap from the screen's edges too.
+ */
+#define UI_GLASS_GAP		8
 #define UI_SIDEBAR_WIDTH	212
 #define UI_PREVIEW_WIDTH	264
 #define UI_PANEL_RADIUS		16.0f
@@ -778,16 +786,28 @@ ui_layout(
 	struct fm_app *app)
 {
 	struct fm_layout *layout;
+	int margin;
+	int gap;
 	int top;
 	int left;
 	int right;
 	int row;
 
+	/* The margin around the panels and the gap between them: on glass, the titlebar's (see UI_GLASS_GAP). */
+	margin = UI_MARGIN;
+	gap = UI_GAP;
+	if (app->glass != 0) {
+		margin = 0;
+		if (app->docked != 0)
+			margin = UI_GLASS_GAP;
+		gap = UI_GLASS_GAP;
+	}
+
 	/* The panels start at the top margin (the titlebar is zdesktop's, above the window). */
 	layout = &app->layout;
-	top = UI_MARGIN;
-	left = UI_MARGIN;
-	right = app->width - UI_MARGIN;
+	top = margin;
+	left = margin;
+	right = app->width - margin;
 
 	/* The sidebar on the left, when shown. */
 	memset(&layout->sidebar, 0, sizeof(layout->sidebar));
@@ -795,8 +815,8 @@ ui_layout(
 		layout->sidebar.x = left;
 		layout->sidebar.y = top;
 		layout->sidebar.width = UI_SIDEBAR_WIDTH;
-		layout->sidebar.height = app->height - top - UI_MARGIN;
-		left += UI_SIDEBAR_WIDTH + UI_GAP;
+		layout->sidebar.height = app->height - top - margin;
+		left += UI_SIDEBAR_WIDTH + gap;
 	}
 
 	/* The preview on the right, when shown. */
@@ -805,15 +825,15 @@ ui_layout(
 		layout->preview.width = UI_PREVIEW_WIDTH;
 		layout->preview.x = right - UI_PREVIEW_WIDTH;
 		layout->preview.y = top;
-		layout->preview.height = app->height - top - UI_MARGIN;
-		right -= UI_PREVIEW_WIDTH + UI_GAP;
+		layout->preview.height = app->height - top - margin;
+		right -= UI_PREVIEW_WIDTH + gap;
 	}
 
 	/* The content's card between the sidebar and the preview. */
 	layout->card.x = left;
 	layout->card.y = top;
 	layout->card.width = right - left;
-	layout->card.height = app->height - top - UI_MARGIN;
+	layout->card.height = app->height - top - margin;
 
 	/* The content in the card, under the row of tabs while the window has two tabs or more (ui-tabs.c). */
 	layout->content = layout->card;

@@ -123,6 +123,12 @@ enum shell_hit {
 	HIT_BODY
 };
 
+/*
+ * How far the glass's blur (backdrop.c) and a window's shadow reach from
+ * a change: a window above that comes this near sees it through its glass.
+ */
+#define DAMAGE_REACH		96
+
 /* A rectangle in output pixels. */
 struct shell_rect {
 	int32_t x;
@@ -174,6 +180,7 @@ static int desktop_picture_at(struct zwl_server *server, int32_t x, int32_t y);
 static void floating_title(const struct shell_rect *body, struct shell_rect *panel);
 static void bar_title_slot(struct zwl_server *server, const struct shell_bar *bar, struct shell_rect *slot);
 static void window_size(const struct zwl_object *surface, int32_t *width, int32_t *height);
+static int damage_near(struct zwl_server *server, struct zwl_object *surface, const struct shell_rect *near);
 static enum shell_hit window_hit(struct zwl_server *server, const struct zwl_object *surface, int32_t x, int32_t y);
 static int button_at(const struct zwl_object *surface, int32_t x, int32_t y);
 static void button_centre(const struct zwl_object *surface, int button, int32_t *x, int32_t *y);
@@ -489,9 +496,12 @@ zwl_glass_motion(
 	int32_t y;
 	int32_t dx;
 	int taken;
+	int calm;
 
-	/* The hover of buttons, the dock hint and the moves are redrawn. */
-	server->dirty = 1;
+	/* The hover of buttons, the dock hint and the moves are redrawn (over a window's own area only the cursor is, damage.c). */
+	calm = zwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
+	if (!calm)
+		server->dirty = 1;
 
 	/* Wiseview follows the gesture, and hears the pointer while it is open; a pressed tile that moves is dragged. */
 	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
@@ -621,6 +631,131 @@ zwl_glass_window_at(
 
 	/* Succeeded: the window, or NULL. */
 	return surface;
+}
+
+/*
+ * Tells whether the glass look is still (ws035-p055): nothing moves or
+ * fades by itself -- no window animation, move, pull or drag, no Home or
+ * Wiseview, no desktop sliding, no see-through bodies -- so that a change
+ * can be drawn in a rectangle of its own.
+ */
+int
+zwl_glass_still(
+	struct zwl_server *server)
+{
+	struct zwl_object *popups[1];
+	float home;
+	unsigned open;
+
+	/* Something moves. */
+	if (server->anim != NULL || server->drag != NULL || server->pull != NULL)
+		return 0;
+	if (server->desktop_moving || server->desktop_dragging)
+		return 0;
+	if (server->wiseview > 0.0f || server->wiseview_gesture || server->wiseview_moving)
+		return 0;
+
+	/* Home, even closing. */
+	home = zwl_home_progress(server);
+	if (home > 0.0f)
+		return 0;
+
+	/* A see-through body shows what is under it through its glass. */
+	if (server->window_opacity < 1.0f)
+		return 0;
+
+	/* A popup or a menu open over the windows. */
+	open = zwl_popup_collect(server, popups, 1U);
+	if (open > 0U)
+		return 0;
+	open = zwl_menu_is_open();
+	if (open)
+		return 0;
+
+	/* Still. */
+	return 1;
+}
+
+/*
+ * Finds the rectangle (left, top, right, bottom) a window's body alone
+ * covers, when a change of its image can be drawn there alone: the look is
+ * still, the window is shown, and no window above it comes near enough
+ * for its glass to blur the change in (ws035-p055).  Returns 1 with the
+ * rectangle, 0 when the whole output must be drawn.
+ */
+int
+zwl_glass_body_damage(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	int32_t *rect)
+{
+	struct zwl_client *client;
+	struct zwl_object *other;
+	struct shell_rect body;
+	struct shell_rect near;
+	int still;
+	int close;
+
+	/* A still look, and a window on the desktop shown. */
+	still = zwl_glass_still(server);
+	if (!still || !surface->mapped || surface->minimized || surface->desktop != server->desktop)
+		return 0;
+
+	/* The body, and the reach of the glass's blur around it. */
+	body_rect(server, surface, &body);
+	near.x = body.x - DAMAGE_REACH;
+	near.y = body.y - DAMAGE_REACH;
+	near.width = body.width + 2 * DAMAGE_REACH;
+	near.height = body.height + 2 * DAMAGE_REACH;
+
+	/* No window above it within the reach (its body and its title bar). */
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (other = client->objects; other != NULL; other = other->next) {
+			if (other == surface || other->kind != ZWL_SURFACE || !other->mapped)
+				continue;
+			if (other->map_order < surface->map_order || other->minimized || other->desktop != server->desktop)
+				continue;
+			close = damage_near(server, other, &near);
+			if (close)
+				return 0;
+		}
+	}
+
+	/* Succeeded: the body alone. */
+	rect[0] = body.x;
+	rect[1] = body.y;
+	rect[2] = body.x + body.width;
+	rect[3] = body.y + body.height;
+	return 1;
+}
+
+/*
+ * Tells whether the pointer at a point is over a window's body (its
+ * client's own area) in a still look, where zdesktop draws nothing that
+ * follows the pointer but the cursor (ws035-p055).
+ */
+int
+zwl_glass_pointer_calm(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y)
+{
+	struct zwl_object *surface;
+	enum shell_hit hit;
+	int still;
+
+	/* A still look. */
+	still = zwl_glass_still(server);
+	if (!still)
+		return 0;
+
+	/* Over a body. */
+	surface = window_at(server, x, y, &hit);
+	if (surface == NULL || hit != HIT_BODY)
+		return 0;
+
+	/* Calm. */
+	return 1;
 }
 
 /*
@@ -1771,6 +1906,32 @@ lerp_rect(
 	result->y = from->y + (int32_t)((float)(to->y - from->y) * t);
 	result->width = from->width + (int32_t)((float)(to->width - from->width) * t);
 	result->height = from->height + (int32_t)((float)(to->height - from->height) * t);
+}
+
+/* Tells whether a window (its body and floating title bar) comes into a rectangle. */
+static int
+damage_near(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	const struct shell_rect *near)
+{
+	struct shell_rect body;
+	int32_t top;
+
+	/* The body, with its floating title bar above it. */
+	body_rect(server, surface, &body);
+	top = body.y;
+	if (!surface->maximized)
+		top = body.y - ZWL_GLASS_TITLE - ZWL_GLASS_GAP;
+
+	/* Apart across or down. */
+	if (body.x + body.width <= near->x || near->x + near->width <= body.x)
+		return 0;
+	if (body.y + body.height <= near->y || near->y + near->height <= top)
+		return 0;
+
+	/* It comes in. */
+	return 1;
 }
 
 /* Where a window's body is drawn: on its way while animated, the docked space, or its own place and size. */

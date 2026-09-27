@@ -507,6 +507,13 @@ struct zwl_server {
 	struct zwl_compose *compose;
 	unsigned windowed;
 	unsigned dirty;
+	/*
+	 * The damage (damage.c, ws035-p055): whether only a part of the output
+	 * changed since the last frame, and that part (left, top, right,
+	 * bottom).  dirty, set by any other change, draws the whole output.
+	 */
+	unsigned damaged;
+	int32_t damage[4];
 	int frame_fd;
 	uint64_t map_order;
 	uint32_t windows;
@@ -738,6 +745,11 @@ void zwl_cursor_default(struct zwl_server *server);
 int zwl_arrow_create(struct zwl_server *server);
 void zwl_arrow_destroy(struct zwl_server *server);
 struct zwl_object *zwl_top_window(struct zwl_server *server);
+int zwl_glass_still(struct zwl_server *server);
+int zwl_glass_body_damage(struct zwl_server *server, struct zwl_object *surface, int32_t *rect);
+int zwl_glass_pointer_calm(struct zwl_server *server, int32_t x, int32_t y);
+void zwl_damage_pointer(struct zwl_server *server, int32_t old_x, int32_t old_y);
+void zwl_damage_commit(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *previous);
 int zwl_window_send_configure(struct zwl_object *surface);
 int zwl_fence_ready(struct zwl_server *server, struct zwl_object *surface);
 int zwl_compose_waiting(struct zwl_server *server);

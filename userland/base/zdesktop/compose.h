@@ -85,7 +85,7 @@ struct zwl_backdrop_target {
  * The backdrop of the glass (backdrop.c, ws035-p057): the scene under a
  * window drawn small and blurred.  state says whether it was tried, is
  * ready or cannot be made on this device; the two images take turns in the
- * blur; pass draws them, resume takes the output's pass up again.  It is
+ * blur; pass draws them (compose->pass_load takes the output's pass up again).  It is
  * made the first time a frame needs it and lives as long as the output.
  */
 struct zwl_backdrop {
@@ -93,9 +93,11 @@ struct zwl_backdrop {
 	uint32_t width;
 	uint32_t height;
 	VkRenderPass pass;
-	VkRenderPass resume;
 	struct zwl_backdrop_target targets[2];
 };
+
+/* How many frames' damage is kept, for images that missed that many frames. */
+#define ZWL_DAMAGE_HISTORY	8U
 
 /* The Vulkan device, the display output and the frame in flight. */
 struct zwl_compose {
@@ -156,6 +158,18 @@ struct zwl_compose {
 	struct zwl_backdrop backdrop;
 	VkFramebuffer framebuffer_now;
 	VkDescriptorSet backdrop_set;
+	/*
+	 * The damage (ws035-p055): the frame number each swapchain image was
+	 * last drawn in (0: never since the output opened); each recent
+	 * frame's damage (left, top, right, bottom) or the whole output; the
+	 * output's pass that keeps the image's pixels (made the first time it
+	 * is needed); and the scissor the frame being recorded draws within.
+	 */
+	uint64_t image_frames[ZWL_SWAPCHAIN_MAX];
+	int32_t history[ZWL_DAMAGE_HISTORY][4];
+	unsigned history_whole[ZWL_DAMAGE_HISTORY];
+	VkRenderPass pass_load;
+	VkRect2D scissor_now;
 };
 
 /* Host-written images (shm.c), sampled with the given sampler. */
@@ -173,6 +187,9 @@ void zwl_compose_set_put(struct zwl_compose *compose, VkDescriptorSet set);
 
 /* Gives an image a second, linearly sampled descriptor set (compose.c). */
 VkResult zwl_compose_linear_set(struct zwl_compose *compose, struct zwl_import *import);
+
+/* The output's pass that keeps its pixels (backdrop.c). */
+VkResult zwl_compose_load_pass(struct zwl_compose *compose);
 
 /* The backdrop of the glass (backdrop.c). */
 int zwl_backdrop_begin(struct zwl_server *server, VkCommandBuffer command);

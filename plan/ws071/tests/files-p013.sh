@@ -70,7 +70,7 @@ expect_log /tmp/f.log 'ZFILES TABS new index=2 count=3'
 shot three.png
 
 # 3. The first tab clicked, then Ctrl+Tab and Ctrl+PageDown.
-click 350 27
+click 350 15
 expect_log /tmp/f.log 'ZFILES TABS select index=0 count=3'
 keys '<ctrl-tab>'
 expect_log /tmp/f.log 'ZFILES TABS select index=1 count=3'
@@ -80,7 +80,7 @@ expect_log /tmp/f.log 'ZFILES TABS select index=2 count=3'
 # 4. Ctrl+W, then the first tab's close button.
 keys '<ctrl-w>'
 expect_log /tmp/f.log 'ZFILES TABS close index=2 count=2 shown=1'
-click 595 27
+click 594 15
 expect_log /tmp/f.log 'ZFILES TABS close index=0 count=1 shown=0'
 shot closed.png
 

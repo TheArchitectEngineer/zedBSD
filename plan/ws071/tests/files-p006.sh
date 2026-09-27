@@ -88,7 +88,7 @@ expect_log /tmp/f.log 'ZFILES SELECT count=1 '
 
 # 5. Show all.
 control 3
-click 920 247
+click 932 235
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome items=7 error=0'
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
