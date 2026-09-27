@@ -356,7 +356,9 @@ zwl_menu_draw_bar(
 	 * window docks or fades.
 	 */
 	recording = 0;
-	if (!server->layer_on && server->anim == NULL && fade >= 1.0f)
+	if (!server->layer_on &&
+	    server->anim == NULL &&
+	    fade >= 1.0f)
 		recording = 1;
 
 	/* The pills sit in the middle of the bar. */
@@ -380,7 +382,9 @@ zwl_menu_draw_bar(
 
 		/* Whether its popup is open. */
 		open = 0;
-		if (shell_menu.surface == surface && shell_menu.docked == docked && shell_menu.depth > 0U) {
+		if (shell_menu.surface == surface &&
+		    shell_menu.docked == docked &&
+		    shell_menu.depth > 0U) {
 			if (index < shown && shell_menu.popups[0].parent == tops[index]->id)
 				open = 1;
 			if (index == shown && shell_menu.popups[0].parent == SHELL_OVERFLOW)
@@ -515,7 +519,9 @@ zwl_menu_button(
 
 	/* A press on a top-level item of the open menu closes it, or opens that item's popup. */
 	hit = shell_hit_at(server, server->pointer_x, server->pointer_y);
-	if (hit != NULL && hit->surface == shell_menu.surface && hit->docked == shell_menu.docked) {
+	if (hit != NULL &&
+	    hit->surface == shell_menu.surface &&
+	    hit->docked == shell_menu.docked) {
 		if (hit->item == shell_menu.popups[0].parent) {
 			shell_close_from(server, 0U, 1U);
 			return 1;
@@ -624,7 +630,9 @@ zwl_menu_grab_key(
 	struct zwl_object *place;
 
 	/* The release of a key the menus took is theirs too. */
-	if (state == 0U && shell_menu.eaten_key != 0U && key == shell_menu.eaten_key) {
+	if (state == 0U &&
+	    shell_menu.eaten_key != 0U &&
+	    key == shell_menu.eaten_key) {
 		shell_menu.eaten_key = 0;
 		return 1;
 	}
@@ -759,7 +767,10 @@ zwl_menu_tick(
 			continue;
 		item = zwl_menu_item(model, shell_menu.popups[level].parent);
 		found = 0;
-		if (item != NULL && item->visible && item->enabled && item->type == ZWL_MENU_SUBMENU)
+		if (item != NULL &&
+		    item->visible &&
+		    item->enabled &&
+		    item->type == ZWL_MENU_SUBMENU)
 			found = 1;
 
 		/* A submenu popup's item is one of the rows above it. */
@@ -855,7 +866,8 @@ zwl_menu_forget(
 	mine = 0;
 	if (object == surface || object == toplevel)
 		mine = 1;
-	if (place != NULL && (object == place || object == place->shown_menu))
+	if (place != NULL &&
+	    (object == place || object == place->shown_menu))
 		mine = 1;
 
 	/* The menu closes without telling the window; a context menu of it is told done. */
@@ -1015,7 +1027,9 @@ zwl_menu_keysym(
 		return 0;
 
 	/* A letter typed with Shift is its capital. */
-	if ((modifiers & ZWL_MENU_SHIFT) != 0U && *keysym >= 'a' && *keysym <= 'z')
+	if ((modifiers & ZWL_MENU_SHIFT) != 0U &&
+	    *keysym >= 'a' &&
+	    *keysym <= 'z')
 		*keysym -= 'a' - 'A';
 
 	/* Succeeded: the keysym. */
@@ -1117,7 +1131,9 @@ shell_close_from(
 	while (shell_menu.depth > level) {
 		shell_menu.depth--;
 		parent = shell_menu.popups[shell_menu.depth].parent;
-		if (notify && place != NULL && parent != SHELL_OVERFLOW)
+		if (notify &&
+		    place != NULL &&
+		    parent != SHELL_OVERFLOW)
 			zwl_menu_send_popup(place, parent, 0U);
 		printf("ZWL MENU close client=%llu surface=%u item=%u depth=%u\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id, parent, shell_menu.depth);
 	}
@@ -1654,7 +1670,9 @@ shell_menu_key(
 	default:
 		/* A letter or a digit selects the next row starting with it. */
 		known = shell_keysym(key, 0U, &keysym, &modifiers);
-		if (known && ((keysym >= 'a' && keysym <= 'z') || (keysym >= '0' && keysym <= '9')))
+		if (known &&
+		    ((keysym >= 'a' && keysym <= 'z') ||
+		     (keysym >= '0' && keysym <= '9')))
 			shell_select_letter(server, model, keysym);
 		break;
 	}
@@ -2228,7 +2246,9 @@ shell_model(
 	const struct zwl_object *menu;
 
 	/* An open context menu's model, with no place (its choice goes to the context menu). */
-	if (surface != NULL && surface == shell_menu.surface && shell_menu.context != NULL) {
+	if (surface != NULL &&
+	    surface == shell_menu.surface &&
+	    shell_menu.context != NULL) {
 		*place = NULL;
 		menu = shell_menu.context->shown_menu;
 		if (menu == NULL || menu->dead)
@@ -2242,7 +2262,9 @@ shell_model(
 		return model;
 
 	/* A "..." open with hidden controls and no menu reads the empty model. */
-	if (surface != NULL && surface == shell_menu.surface && shell_menu.open_extra_count > 0U)
+	if (surface != NULL &&
+	    surface == shell_menu.surface &&
+	    shell_menu.open_extra_count > 0U)
 		return &shell_empty_model;
 
 	/* The window has no menu. */

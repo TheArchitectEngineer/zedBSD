@@ -93,7 +93,7 @@ static int model_remove(struct zwl_object *menu, uint32_t id);
 static int model_set_number(struct zwl_object *menu, uint32_t opcode, uint32_t id, uint32_t value);
 static int model_set_text(struct zwl_object *menu, uint32_t opcode, uint32_t id, const char *text);
 static int model_set_shortcut(struct zwl_object *menu, uint32_t id, uint32_t modifiers, uint32_t keysym);
-static int model_fail(struct zwl_object *menu, uint32_t code, const char *reason);
+static void model_fail(struct zwl_object *menu, uint32_t code, const char *reason);
 static void model_free(struct zwl_menu_model *model);
 static int pending_index(const struct zwl_menu_model *model, uint32_t id);
 static unsigned pending_depth(const struct zwl_menu_model *model, uint32_t id);
@@ -228,7 +228,9 @@ zwl_menu_of_surface(
 	*place = NULL;
 
 	/* The surface's xdg_surface and its toplevel. */
-	if (surface == NULL || surface->dead || surface->role == NULL)
+	if (surface == NULL ||
+	    surface->dead ||
+	    surface->role == NULL)
 		return NULL;
 	toplevel = surface->role->top;
 	if (toplevel == NULL || toplevel->dead)
@@ -238,7 +240,9 @@ zwl_menu_of_surface(
 	if (toplevel->toplevel_menu == NULL)
 		return NULL;
 	menu = toplevel->toplevel_menu->shown_menu;
-	if (menu == NULL || menu->dead || menu->menu_model == NULL)
+	if (menu == NULL ||
+	    menu->dead ||
+	    menu->menu_model == NULL)
 		return NULL;
 
 	/* Succeeded: the model and where its activations go. */
@@ -520,6 +524,8 @@ manager_request(
 	if (opcode == MANAGER_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
+
+		/* Succeeded: the binding is gone. */
 		zwl_object_destroy(manager);
 		return 0;
 	}
@@ -557,7 +563,8 @@ manager_request(
 		return EPROTO;
 
 	/* The window must be one of the client's toplevels. */
-	toplevel = zwl_find(manager->client, menu_word(bytes, 4U));
+	id = menu_word(bytes, 4U);
+	toplevel = zwl_find(manager->client, id);
 	if (toplevel == NULL || toplevel->kind != ZWL_TOPLEVEL)
 		return EPROTO;
 
@@ -587,12 +594,15 @@ model_request(
 	const unsigned char *bytes,
 	size_t size)
 {
+	uint32_t serial;
 	int error;
 
 	/* The menu goes; windows showing it show nothing (zwl_menu_object_gone). */
 	if (opcode == MENU_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
+
+		/* Succeeded: the menu is gone. */
 		zwl_object_destroy(menu);
 		return 0;
 	}
@@ -601,24 +611,38 @@ model_request(
 	if (opcode == MENU_BEGIN_UPDATE) {
 		if (size != 4U)
 			return EPROTO;
-		error = model_begin(menu, menu_word(bytes, 0U));
-		return error;
+		serial = menu_word(bytes, 0U);
+		error = model_begin(menu, serial);
+
+		/* Reports a refused transaction. */
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the transaction is open. */
+		return 0;
 	}
 
 	/* A transaction is shown. */
 	if (opcode == MENU_COMMIT) {
 		if (size != 4U)
 			return EPROTO;
-		error = model_commit(menu, menu_word(bytes, 0U));
-		return error;
+		serial = menu_word(bytes, 0U);
+		error = model_commit(menu, serial);
+
+		/* Reports a refused commit. */
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the new model is shown. */
+		return 0;
 	}
 
 	/* Every other request changes the model, which only a transaction may. */
 	if (opcode > MENU_SET_SHORTCUT)
 		return EPROTO;
 	if (!menu->menu_model->updating) {
-		error = model_fail(menu, MENU_ERROR_NOT_UPDATING, "a change outside begin_update and commit");
-		return error;
+		model_fail(menu, MENU_ERROR_NOT_UPDATING, "a change outside begin_update and commit");
+		return EPROTO;
 	}
 
 	/* The change itself. */
@@ -639,6 +663,13 @@ model_edit(
 	size_t size)
 {
 	const char *text;
+	uint32_t id;
+	uint32_t parent;
+	uint32_t before;
+	uint32_t type;
+	uint32_t action;
+	uint32_t first;
+	uint32_t second;
 	size_t next;
 	int error;
 
@@ -649,20 +680,30 @@ model_edit(
 		error = menu_string(bytes, size, 12U, &text, &next);
 		if (error != 0 || next + 4U != size)
 			return EPROTO;
-		error = model_add(menu, menu_word(bytes, 0U), menu_word(bytes, 4U), 0U, menu_word(bytes, 8U), text, menu_word(bytes, next));
+		id = menu_word(bytes, 0U);
+		parent = menu_word(bytes, 4U);
+		type = menu_word(bytes, 8U);
+		action = menu_word(bytes, next);
+		error = model_add(menu, id, parent, 0U, type, text, action);
 		break;
 	case MENU_INSERT_ITEM:
 		/* id, parent, the sibling it goes before, type, label, action. */
 		error = menu_string(bytes, size, 16U, &text, &next);
 		if (error != 0 || next + 4U != size)
 			return EPROTO;
-		error = model_add(menu, menu_word(bytes, 0U), menu_word(bytes, 4U), menu_word(bytes, 8U), menu_word(bytes, 12U), text, menu_word(bytes, next));
+		id = menu_word(bytes, 0U);
+		parent = menu_word(bytes, 4U);
+		before = menu_word(bytes, 8U);
+		type = menu_word(bytes, 12U);
+		action = menu_word(bytes, next);
+		error = model_add(menu, id, parent, before, type, text, action);
 		break;
 	case MENU_REMOVE_ITEM:
 		/* The item. */
 		if (size != 4U)
 			return EPROTO;
-		error = model_remove(menu, menu_word(bytes, 0U));
+		id = menu_word(bytes, 0U);
+		error = model_remove(menu, id);
 		break;
 	case MENU_SET_LABEL:
 	case MENU_SET_ICON_NAME:
@@ -670,19 +711,25 @@ model_edit(
 		error = menu_string(bytes, size, 4U, &text, &next);
 		if (error != 0 || next != size)
 			return EPROTO;
-		error = model_set_text(menu, opcode, menu_word(bytes, 0U), text);
+		id = menu_word(bytes, 0U);
+		error = model_set_text(menu, opcode, id, text);
 		break;
 	case MENU_SET_SHORTCUT:
 		/* The item, the modifiers and the keysym. */
 		if (size != 12U)
 			return EPROTO;
-		error = model_set_shortcut(menu, menu_word(bytes, 0U), menu_word(bytes, 4U), menu_word(bytes, 8U));
+		id = menu_word(bytes, 0U);
+		first = menu_word(bytes, 4U);
+		second = menu_word(bytes, 8U);
+		error = model_set_shortcut(menu, id, first, second);
 		break;
 	default:
 		/* The item and one number: action, enabled, visible, checked, role. */
 		if (size != 8U)
 			return EPROTO;
-		error = model_set_number(menu, opcode, menu_word(bytes, 0U), menu_word(bytes, 4U));
+		id = menu_word(bytes, 0U);
+		first = menu_word(bytes, 4U);
+		error = model_set_number(menu, opcode, id, first);
 		break;
 	}
 
@@ -709,6 +756,8 @@ place_request(
 	if (opcode == PLACE_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
+
+		/* Succeeded: the place is gone, and the window is drawn without its menu. */
 		place->client->server->dirty = 1;
 		zwl_object_destroy(place);
 		return 0;
@@ -824,8 +873,8 @@ model_begin(
 	/* One transaction at a time. */
 	model = menu->menu_model;
 	if (model->updating) {
-		error = model_fail(menu, MENU_ERROR_ALREADY_UPDATING, "begin_update inside a transaction");
-		return error;
+		model_fail(menu, MENU_ERROR_ALREADY_UPDATING, "begin_update inside a transaction");
+		return EPROTO;
 	}
 
 	/* The copy has room for the shown items and a few more. */
@@ -860,19 +909,18 @@ model_commit(
 	uint32_t serial)
 {
 	struct zwl_menu_model *model;
-	int error;
 
 	/* Only an open transaction, under the serial it was opened with. */
 	model = menu->menu_model;
 	if (!model->updating) {
-		error = model_fail(menu, MENU_ERROR_NOT_UPDATING, "commit without begin_update");
-		return error;
+		model_fail(menu, MENU_ERROR_NOT_UPDATING, "commit without begin_update");
+		return EPROTO;
 	}
 
 	/* The serial pairs the commit with its begin_update. */
 	if (serial != model->update_serial) {
-		error = model_fail(menu, MENU_ERROR_BAD_SERIAL, "commit names another serial than begin_update");
-		return error;
+		model_fail(menu, MENU_ERROR_BAD_SERIAL, "commit names another serial than begin_update");
+		return EPROTO;
 	}
 
 	/* The old model goes and the copy takes its place. */
@@ -922,31 +970,33 @@ model_add(
 	model = menu->menu_model;
 	found = pending_index(model, id);
 	if (id == 0U || found >= 0) {
-		error = model_fail(menu, MENU_ERROR_INVALID_ID, "an item ID that is zero or already in use");
-		return error;
+		model_fail(menu, MENU_ERROR_INVALID_ID, "an item ID that is zero or already in use");
+		return EPROTO;
 	}
 
 	/* One of the five types. */
 	if (type > ZWL_MENU_SUBMENU) {
-		error = model_fail(menu, MENU_ERROR_INVALID_TYPE, "an unknown item type");
-		return error;
+		model_fail(menu, MENU_ERROR_INVALID_TYPE, "an unknown item type");
+		return EPROTO;
 	}
 
 	/* The parent is the top level or a submenu. */
 	if (parent != ZWL_MENU_ROOT) {
 		found = pending_index(model, parent);
 		if (found < 0 || model->pending[found].type != ZWL_MENU_SUBMENU) {
-			error = model_fail(menu, MENU_ERROR_INVALID_PARENT, "a parent that is not a submenu");
-			return error;
+			model_fail(menu, MENU_ERROR_INVALID_PARENT, "a parent that is not a submenu");
+			return EPROTO;
 		}
 	}
 
 	/* The model stays within its bounds. */
 	depth = pending_depth(model, parent) + 1U;
 	length = strlen(label);
-	if (model->pending_count >= MENU_ITEMS_MAX || depth > MENU_DEPTH_MAX || length > MENU_TEXT_MAX) {
-		error = model_fail(menu, MENU_ERROR_TOO_LARGE, "too many items, too deep, or too long a label");
-		return error;
+	if (model->pending_count >= MENU_ITEMS_MAX ||
+	    depth > MENU_DEPTH_MAX ||
+	    length > MENU_TEXT_MAX) {
+		model_fail(menu, MENU_ERROR_TOO_LARGE, "too many items, too deep, or too long a label");
+		return EPROTO;
 	}
 
 	/* The sibling it goes before, or the end. */
@@ -954,8 +1004,8 @@ model_add(
 	if (before != 0U) {
 		position = pending_index(model, before);
 		if (position < 0 || model->pending[position].parent != parent) {
-			error = model_fail(menu, MENU_ERROR_INVALID_PARENT, "before_id is not a child of the parent");
-			return error;
+			model_fail(menu, MENU_ERROR_INVALID_PARENT, "before_id is not a child of the parent");
+			return EPROTO;
 		}
 	}
 
@@ -977,9 +1027,13 @@ model_add(
 	item->enabled = 1;
 	item->visible = 1;
 	item->label = text_copy(label);
-	item->icon_name = text_copy("");
 	model->pending_count++;
-	if (item->label == NULL || item->icon_name == NULL)
+	if (item->label == NULL)
+		return EPROTO;
+
+	/* No icon's name yet (an empty one). */
+	item->icon_name = text_copy("");
+	if (item->icon_name == NULL)
 		return EPROTO;
 
 	/* Succeeded: the item is in the pending copy. */
@@ -998,14 +1052,13 @@ model_remove(
 	unsigned kept;
 	unsigned more;
 	int found;
-	int error;
 
 	/* The item must be there. */
 	model = menu->menu_model;
 	found = pending_index(model, id);
 	if (found < 0) {
-		error = model_fail(menu, MENU_ERROR_INVALID_ID, "remove_item names no item");
-		return error;
+		model_fail(menu, MENU_ERROR_INVALID_ID, "remove_item names no item");
+		return EPROTO;
 	}
 
 	/* A mark for each item that goes. */
@@ -1059,13 +1112,12 @@ model_set_number(
 {
 	struct zwl_menu_item *item;
 	int found;
-	int error;
 
 	/* The item must be there. */
 	found = pending_index(menu->menu_model, id);
 	if (found < 0) {
-		error = model_fail(menu, MENU_ERROR_INVALID_ID, "a change names no item");
-		return error;
+		model_fail(menu, MENU_ERROR_INVALID_ID, "a change names no item");
+		return EPROTO;
 	}
 
 	/* The action is any number the client chooses. */
@@ -1078,8 +1130,8 @@ model_set_number(
 	/* A role is one of those the protocol names. */
 	if (opcode == MENU_SET_ROLE) {
 		if (value > MENU_ROLE_LAST) {
-			error = model_fail(menu, MENU_ERROR_INVALID_VALUE, "an unknown role");
-			return error;
+			model_fail(menu, MENU_ERROR_INVALID_VALUE, "an unknown role");
+			return EPROTO;
 		}
 
 		/* Succeeded: the role is kept (v1 draws nothing from it). */
@@ -1089,8 +1141,8 @@ model_set_number(
 
 	/* The rest are true or false. */
 	if (value > 1U) {
-		error = model_fail(menu, MENU_ERROR_INVALID_VALUE, "a boolean that is not 0 or 1");
-		return error;
+		model_fail(menu, MENU_ERROR_INVALID_VALUE, "a boolean that is not 0 or 1");
+		return EPROTO;
 	}
 
 	/* enabled, visible, or checked (which only a checkbox or a radio item has). */
@@ -1100,8 +1152,8 @@ model_set_number(
 		item->visible = value;
 	} else {
 		if (item->type != ZWL_MENU_CHECKBOX && item->type != ZWL_MENU_RADIO) {
-			error = model_fail(menu, MENU_ERROR_INVALID_TYPE, "set_checked on an item that cannot be checked");
-			return error;
+			model_fail(menu, MENU_ERROR_INVALID_TYPE, "set_checked on an item that cannot be checked");
+			return EPROTO;
 		}
 
 		/* The client's state of the item. */
@@ -1124,20 +1176,19 @@ model_set_text(
 	char *copy;
 	size_t length;
 	int found;
-	int error;
 
 	/* The item must be there. */
 	found = pending_index(menu->menu_model, id);
 	if (found < 0) {
-		error = model_fail(menu, MENU_ERROR_INVALID_ID, "a change names no item");
-		return error;
+		model_fail(menu, MENU_ERROR_INVALID_ID, "a change names no item");
+		return EPROTO;
 	}
 
 	/* The text must be within bounds. */
 	length = strlen(text);
 	if (length > MENU_TEXT_MAX) {
-		error = model_fail(menu, MENU_ERROR_TOO_LARGE, "too long a string");
-		return error;
+		model_fail(menu, MENU_ERROR_TOO_LARGE, "too long a string");
+		return EPROTO;
 	}
 
 	/* The item keeps its own copy. */
@@ -1169,19 +1220,18 @@ model_set_shortcut(
 {
 	struct zwl_menu_item *item;
 	int found;
-	int error;
 
 	/* The item must be there. */
 	found = pending_index(menu->menu_model, id);
 	if (found < 0) {
-		error = model_fail(menu, MENU_ERROR_INVALID_ID, "a change names no item");
-		return error;
+		model_fail(menu, MENU_ERROR_INVALID_ID, "a change names no item");
+		return EPROTO;
 	}
 
 	/* Only the four modifiers the protocol names. */
 	if ((modifiers & ~MENU_MODIFIERS_ALL) != 0U) {
-		error = model_fail(menu, MENU_ERROR_INVALID_VALUE, "an unknown modifier");
-		return error;
+		model_fail(menu, MENU_ERROR_INVALID_VALUE, "an unknown modifier");
+		return EPROTO;
 	}
 
 	/* The shortcut, or none. */
@@ -1196,19 +1246,14 @@ model_set_shortcut(
 }
 
 /* Queues a menu's protocol error with its code and returns EPROTO. */
-static int
+static void
 model_fail(
 	struct zwl_object *menu,
 	uint32_t code,
 	const char *reason)
 {
-	int error;
-
-	/* The error names the menu and the xdg_menu_v1 error code. */
-	error = zwl_error_code(menu->client, menu->id, code, reason);
-
-	/* Reports the refusal. */
-	return error;
+	/* The error names the menu and the xdg_menu_v1 error code; the caller refuses the request with EPROTO. */
+	(void)zwl_error_code(menu->client, menu->id, code, reason);
 }
 
 /* Frees a model: its shown items and any pending copy. */
@@ -1312,9 +1357,16 @@ items_copy(
 	/* Each item, then its own copies of its strings. */
 	for (index = 0; index < count; index++) {
 		to[index] = from[index];
+		to[index].icon_name = NULL;
 		to[index].label = text_copy(from[index].label);
+		if (to[index].label == NULL) {
+			items_free(to, index + 1U);
+			return ENOMEM;
+		}
+
+		/* Its icon's name. */
 		to[index].icon_name = text_copy(from[index].icon_name);
-		if (to[index].label == NULL || to[index].icon_name == NULL) {
+		if (to[index].icon_name == NULL) {
 			items_free(to, index + 1U);
 			return ENOMEM;
 		}
