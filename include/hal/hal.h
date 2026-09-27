@@ -512,6 +512,35 @@ hal_pmem_free(
 	hal_physaddr_t *block,
 	size_t size);
 
+/*
+ * Map managed RAM into kernel space a second time, without caching.
+ *
+ * This is for memory that a device which does not snoop the CPU caches
+ * reads and writes.  The range must be page-aligned managed RAM that the
+ * caller owns.  Before returning the new address the HAL writes back and
+ * discards every cached line of the range, so no dirty line of the direct
+ * map can later overwrite what the device or the uncached mapping stored.
+ * While the uncached mapping exists the caller must not touch the range
+ * through its direct-map address.  A port whose devices snoop the caches
+ * need not provide it; the kernel calls it only where such devices exist.
+ */
+int
+hal_pmem_map_uncached(
+	hal_physaddr_t paddr,
+	size_t size,
+	void **vaddr);
+
+/*
+ * Remove a mapping made by hal_pmem_map_uncached().
+ *
+ * The range is afterwards reachable through the direct map only, and the
+ * HAL discards its cached lines so the direct map reads what is in RAM.
+ */
+int
+hal_pmem_unmap_uncached(
+	void *vaddr,
+	size_t size);
+
 
 /*
  * Space
