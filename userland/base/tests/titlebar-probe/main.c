@@ -19,11 +19,17 @@
  *
  *   titlebar-probe
  *   titlebar-probe --show=TITLE [--seconds=N] [--mode=menu|controls|tabs] [--width=N]
+ *                  [--tabs=N] [--switch=SECONDS]
  *
  * --show instead shows a plain window with a title (the tests give it
  * Japanese to see the glyph cache) for some seconds, with a titlebar model
  * of the mode given (a file manager's controls, or three tabs), and prints
- * TITLEBARPROBE event lines for what zdesktop tells it.
+ * TITLEBARPROBE event lines for what zdesktop tells it.  Its tabs behave
+ * like an editor's (WS070 p011): a chosen tab becomes the active one, a
+ * closed one goes (its neighbour becomes active), "+" adds "Untitled N".
+ * --tabs gives more tabs ("Document N" after the first three); --switch
+ * keeps both the controls and the tabs and switches the mode between them
+ * every so many seconds, each switch one transaction.
  */
 
 #include <wayland-client.h>
@@ -47,6 +53,10 @@
 
 /* How many calls the library case checks. */
 #define PROBE_CALLS		20
+
+/* The most tabs the shown window has, and a tab title's longest. */
+#define PROBE_TABS		64
+#define PROBE_TAB_TITLE		64
 
 /* The shown window's size (its width may be given with --width). */
 #define PROBE_WIDTH		800
@@ -107,6 +117,9 @@ static int probe_show(const char *title, unsigned seconds, const char *mode);
 static int probe_show_window(struct probe_connection *connection, const char *title);
 static int probe_show_buffer(struct probe_connection *connection);
 static void probe_show_model(struct zdesktop_titlebar *titlebar, const char *mode);
+static void probe_tabs_start(struct zdesktop_titlebar *titlebar);
+static int probe_tab_find(uint32_t id);
+static void probe_tab_activate(struct zdesktop_titlebar *titlebar, int index);
 static void probe_configure(void *data, struct xdg_surface *role, uint32_t serial);
 static void probe_activated(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
 static void probe_text_changed(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text);
@@ -121,6 +134,20 @@ static void probe_overflow(void *data, struct zdesktop_titlebar *titlebar);
  * once from the command line.
  */
 static int probe_width = PROBE_WIDTH;
+
+/*
+ * The shown window's tabs as the probe keeps them: each one's ID, flags
+ * and title, how many there are, how many to start with (--tabs), the next
+ * ID "+" gives, and the seconds between mode switches (--switch, 0 for
+ * none).  They live for the whole run.
+ */
+static uint32_t probe_tab_ids[PROBE_TABS];
+static uint32_t probe_tab_flags[PROBE_TABS];
+static char probe_tab_titles[PROBE_TABS][PROBE_TAB_TITLE];
+static unsigned probe_tab_count;
+static unsigned probe_tabs_wanted = 3U;
+static uint32_t probe_tab_next = 1U;
+static unsigned probe_switch;
 
 /* The registry's callbacks while a connection binds its globals. */
 static const struct wl_registry_listener probe_registry_listener = {
@@ -194,7 +221,17 @@ main(
 		match = strncmp(argv[index], "--width=", 8);
 		if (match == 0)
 			probe_width = atoi(argv[index] + 8);
+		match = strncmp(argv[index], "--tabs=", 7);
+		if (match == 0)
+			probe_tabs_wanted = (unsigned)atoi(argv[index] + 7);
+		match = strncmp(argv[index], "--switch=", 9);
+		if (match == 0)
+			probe_switch = (unsigned)atoi(argv[index] + 9);
 	}
+
+	/* As many tabs as the probe keeps. */
+	if (probe_tabs_wanted > PROBE_TABS)
+		probe_tabs_wanted = PROBE_TABS;
 
 	/* A width the probe can show. */
 	if (probe_width < 160 || probe_width > PROBE_WIDTH_MAX)
@@ -733,6 +770,8 @@ probe_show(
 	struct probe_connection connection;
 	struct zdesktop_titlebar *titlebar;
 	struct pollfd poll_entry;
+	unsigned tabs_shown;
+	time_t switched;
 	time_t end;
 	time_t now;
 	int status;
@@ -760,10 +799,41 @@ probe_show(
 
 	/* The events, until the time is up. */
 	end = time(NULL) + (time_t)seconds;
+	switched = time(NULL);
+	tabs_shown = 0;
+	status = strcmp(mode, "tabs");
+	if (status == 0)
+		tabs_shown = 1;
 	for (;;) {
 		now = time(NULL);
 		if (now >= end)
 			break;
+
+		/* The mode switched now and then, in one transaction. */
+		if (probe_switch > 0U && now - switched >= (time_t)probe_switch) {
+			tabs_shown = !tabs_shown;
+			(void)zdesktop_titlebar_begin(titlebar);
+			if (tabs_shown != 0U) {
+				(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_TABS);
+				printf("TITLEBARPROBE switch mode=tabs\n");
+			} else {
+				(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_CONTROLS);
+				printf("TITLEBARPROBE switch mode=controls\n");
+			}
+
+			/* One commit for the switch. */
+			(void)zdesktop_titlebar_commit(titlebar);
+			switched = now;
+			fflush(stdout);
+		}
+
+		/* The events already read run first, then the connection is reserved for reading. */
+		for (;;) {
+			status = wl_display_prepare_read(connection.display);
+			if (status == 0)
+				break;
+			(void)wl_display_dispatch_pending(connection.display);
+		}
 
 		/* What was sent goes out; a second's wait for what comes in. */
 		(void)wl_display_flush(connection.display);
@@ -771,11 +841,21 @@ probe_show(
 		poll_entry.events = POLLIN;
 		poll_entry.revents = 0;
 		status = poll(&poll_entry, 1, 1000);
-		if (status <= 0)
-			continue;
 
-		/* The events that came. */
-		status = wl_display_dispatch(connection.display);
+		/* The events that came are read, or the reservation is given back. */
+		if (status > 0 && (poll_entry.revents & POLLIN) != 0) {
+			status = wl_display_read_events(connection.display);
+		} else {
+			wl_display_cancel_read(connection.display);
+			status = 0;
+		}
+
+		/* A broken connection ends the wait. */
+		if (status < 0)
+			break;
+
+		/* They run. */
+		status = wl_display_dispatch_pending(connection.display);
 		if (status < 0)
 			break;
 	}
@@ -899,14 +979,13 @@ probe_show_model(
 	int controls;
 	int tabs;
 
-	/* Which mode. */
+	/* Which mode; switching keeps both models. */
 	controls = strcmp(mode, "controls");
 	tabs = strcmp(mode, "tabs");
 
 	/* One transaction for the whole model. */
 	(void)zdesktop_titlebar_begin(titlebar);
-	if (controls == 0) {
-		(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_CONTROLS);
+	if (controls == 0 || probe_switch > 0U) {
 		(void)zdesktop_titlebar_add_control(titlebar, 1U, ZDESKTOP_CONTROL_BACK, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Back");
 		(void)zdesktop_titlebar_add_control(titlebar, 2U, ZDESKTOP_CONTROL_FORWARD, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Forward");
 		(void)zdesktop_titlebar_add_control(titlebar, 3U, ZDESKTOP_CONTROL_HOME, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Home");
@@ -919,18 +998,93 @@ probe_show_model(
 		(void)zdesktop_titlebar_add_control(titlebar, 7U, ZDESKTOP_CONTROL_VIEW_LIST, ZDESKTOP_PRIORITY_SECONDARY, 1U, "List");
 		(void)zdesktop_titlebar_add_control(titlebar, 8U, ZDESKTOP_CONTROL_PREVIEW, ZDESKTOP_PRIORITY_SECONDARY, 0U, "Preview");
 		(void)zdesktop_titlebar_set_control_state(titlebar, 2U, 0, 0);
-	} else if (tabs == 0) {
-		(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_TABS);
-		(void)zdesktop_titlebar_add_tab(titlebar, 1U, "README.md");
-		(void)zdesktop_titlebar_add_tab(titlebar, 2U, "main.c");
-		(void)zdesktop_titlebar_add_tab(titlebar, 3U, "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e.txt");
-		(void)zdesktop_titlebar_set_tab(titlebar, 2U, "main.c", ZDESKTOP_TAB_ACTIVE | ZDESKTOP_TAB_CLOSABLE);
-		(void)zdesktop_titlebar_set_tab(titlebar, 3U, "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e.txt", ZDESKTOP_TAB_ATTENTION | ZDESKTOP_TAB_CLOSABLE);
-		(void)zdesktop_titlebar_set_tabs_options(titlebar, ZDESKTOP_TABS_NEW_BUTTON);
 	}
+
+	/* The tabs. */
+	if (tabs == 0 || probe_switch > 0U)
+		probe_tabs_start(titlebar);
+
+	/* The mode. */
+	if (controls == 0)
+		(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_CONTROLS);
+	if (tabs == 0)
+		(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_TABS);
 
 	/* The model is shown at once. */
 	(void)zdesktop_titlebar_commit(titlebar);
+}
+
+/*
+ * Adds the first tabs to a titlebar being updated: README.md, main.c
+ * (active) and a Japanese name that wants attention, then "Document N" up
+ * to --tabs; all but README.md closable; "+" shown.
+ */
+static void
+probe_tabs_start(
+	struct zdesktop_titlebar *titlebar)
+{
+	static const char *const titles[] = { "README.md", "main.c", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e.txt" };
+	static const uint32_t flags[] = { 0U, ZDESKTOP_TAB_ACTIVE | ZDESKTOP_TAB_CLOSABLE, ZDESKTOP_TAB_ATTENTION | ZDESKTOP_TAB_CLOSABLE };
+	unsigned index;
+
+	/* Each tab, the probe's copy first. */
+	for (index = 0; index < probe_tabs_wanted; index++) {
+		probe_tab_ids[index] = probe_tab_next;
+		probe_tab_next++;
+		probe_tab_flags[index] = ZDESKTOP_TAB_CLOSABLE;
+		if (index < 3U) {
+			probe_tab_flags[index] = flags[index];
+			(void)snprintf(probe_tab_titles[index], PROBE_TAB_TITLE, "%s", titles[index]);
+		} else {
+			(void)snprintf(probe_tab_titles[index], PROBE_TAB_TITLE, "Document %u", index + 1U);
+		}
+
+		/* The titlebar's. */
+		(void)zdesktop_titlebar_add_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index]);
+		(void)zdesktop_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], probe_tab_flags[index]);
+	}
+
+	/* How many, and "+". */
+	probe_tab_count = probe_tabs_wanted;
+	(void)zdesktop_titlebar_set_tabs_options(titlebar, ZDESKTOP_TABS_NEW_BUTTON);
+}
+
+/* Finds a tab's place among the probe's by its ID, or -1. */
+static int
+probe_tab_find(
+	uint32_t id)
+{
+	unsigned index;
+
+	/* Each tab. */
+	for (index = 0; index < probe_tab_count; index++) {
+		if (probe_tab_ids[index] == id)
+			return (int)index;
+	}
+
+	/* No such tab. */
+	return -1;
+}
+
+/* Makes a tab the active one (it no longer wants attention), in a titlebar being updated. */
+static void
+probe_tab_activate(
+	struct zdesktop_titlebar *titlebar,
+	int chosen)
+{
+	unsigned index;
+	uint32_t flags;
+
+	/* Each tab's flags: only the chosen one active. */
+	for (index = 0; index < probe_tab_count; index++) {
+		flags = probe_tab_flags[index] & ~(uint32_t)ZDESKTOP_TAB_ACTIVE;
+		if ((int)index == chosen)
+			flags = (flags | ZDESKTOP_TAB_ACTIVE) & ~(uint32_t)ZDESKTOP_TAB_ATTENTION;
+		if (flags == probe_tab_flags[index])
+			continue;
+		probe_tab_flags[index] = flags;
+		(void)zdesktop_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], flags);
+	}
 }
 
 /* Notes the window's configure (answered once the window is set up). */
@@ -1006,11 +1160,20 @@ probe_tab_activated(
 	uint32_t id,
 	uint32_t serial)
 {
+	int index;
+
 	/* The event's line. */
 	(void)data;
-	(void)titlebar;
 	printf("TITLEBARPROBE event=tab id=%u serial=%u\n", id, serial);
 	fflush(stdout);
+
+	/* The tab becomes the active one. */
+	index = probe_tab_find(id);
+	if (index < 0)
+		return;
+	(void)zdesktop_titlebar_begin(titlebar);
+	probe_tab_activate(titlebar, index);
+	(void)zdesktop_titlebar_commit(titlebar);
 }
 
 /* Prints a tab's close button. */
@@ -1020,11 +1183,35 @@ probe_tab_close(
 	struct zdesktop_titlebar *titlebar,
 	uint32_t id)
 {
+	unsigned active;
+	int index;
+
 	/* The event's line. */
 	(void)data;
-	(void)titlebar;
 	printf("TITLEBARPROBE event=close id=%u\n", id);
 	fflush(stdout);
+
+	/* The tab goes from the probe's copy. */
+	index = probe_tab_find(id);
+	if (index < 0)
+		return;
+	active = probe_tab_flags[index] & ZDESKTOP_TAB_ACTIVE;
+	memmove(&probe_tab_ids[index], &probe_tab_ids[index + 1], (probe_tab_count - (unsigned)index - 1U) * sizeof(probe_tab_ids[0]));
+	memmove(&probe_tab_flags[index], &probe_tab_flags[index + 1], (probe_tab_count - (unsigned)index - 1U) * sizeof(probe_tab_flags[0]));
+	memmove(probe_tab_titles[index], probe_tab_titles[index + 1], (probe_tab_count - (unsigned)index - 1U) * sizeof(probe_tab_titles[0]));
+	probe_tab_count--;
+
+	/* And from the titlebar; its neighbour becomes active when it was. */
+	(void)zdesktop_titlebar_begin(titlebar);
+	(void)zdesktop_titlebar_remove_tab(titlebar, id);
+	if (active != 0U && probe_tab_count > 0U) {
+		if ((unsigned)index == probe_tab_count)
+			index--;
+		probe_tab_activate(titlebar, index);
+	}
+
+	/* Shown at once. */
+	(void)zdesktop_titlebar_commit(titlebar);
 }
 
 /* Prints the new-tab button. */
@@ -1034,11 +1221,29 @@ probe_new_tab(
 	struct zdesktop_titlebar *titlebar,
 	uint32_t serial)
 {
+	unsigned index;
+
 	/* The event's line. */
 	(void)data;
-	(void)titlebar;
 	printf("TITLEBARPROBE event=new serial=%u\n", serial);
 	fflush(stdout);
+
+	/* A new tab at the end, when there is room; it becomes the active one. */
+	if (probe_tab_count == PROBE_TABS)
+		return;
+	index = probe_tab_count;
+	probe_tab_ids[index] = probe_tab_next;
+	probe_tab_next++;
+	probe_tab_flags[index] = ZDESKTOP_TAB_CLOSABLE;
+	(void)snprintf(probe_tab_titles[index], PROBE_TAB_TITLE, "Untitled %u", probe_tab_ids[index]);
+	probe_tab_count++;
+
+	/* The titlebar's. */
+	(void)zdesktop_titlebar_begin(titlebar);
+	(void)zdesktop_titlebar_add_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index]);
+	(void)zdesktop_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], probe_tab_flags[index]);
+	probe_tab_activate(titlebar, (int)index);
+	(void)zdesktop_titlebar_commit(titlebar);
 }
 
 /* Prints the overflow popup's opening. */
