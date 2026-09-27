@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: p001（調査）cleared（2026-09-27）。desktop は実機で動く。p002 cleared（desktop の新しい機能も実機で動く）。p003（topology）cleared。p004（GLES 2 の compiler）in-progress（増分 1 の Flat・Centroid を commit、実機は未実施）
+Resume point: p001（調査）cleared（2026-09-27）。desktop は実機で動く。p002 cleared（desktop の新しい機能も実機で動く）。p003（topology）cleared。p004（GLES 2 の compiler）in-progress: 増分 1〜4 を commit（host 試験と実機の vkx・vke2・vkc 回帰 PASS）。2026-09-27 21 時に rate limit の wrap-up で停止。再開は [phase004](phase004/phase.md) の「再開の手順」から（未 commit の作業なし）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -53,7 +53,7 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p001](phase001/phase.md) | 調査: shader の全ての不足（host の survey、122 module）、client ごとの実行器の command（静的）、今の zdesktop の実機の capture | cleared（2026-09-27。実機の zdesktop 6/6 PASS、client の shader・command は全て通る。不足は GL/GLES の側） | — |
 | [ws075-p002](phase002/phase.md) | desktop の新しい機能を実機で確かめる: tab、System Menu（`plan/ws070/tests/menu-hw.sh`）、zdesktop-files・zdesktop-terminal（App Home）。出た不足を直す（zdesktop は直さず i915 の側で） | cleared（2026-09-27。実機で home 4/4・menu 11/11・x11 6/6。zdesktop-files の scenario は desktop の変更が落ち着いてから） | p001 |
 | [ws075-p003](phase003/phase.md) | 実行器: primitive topology（triangle strip・fan、line list・strip、point list。今は triangle list だけ）、幅 1 以外の線、index の型、vkFreeDescriptorSets（F-023）。GL の app の大半が要る | cleared（2026-09-27。strip・fan・line・point を描く、実機の vkx 9/9。幅・PointSize・vkFreeDescriptorSets は後） | p001 |
-| [ws075-p004](phase004/phase.md) | compiler（GLES 2 の核）: 補間の Flat・NoPerspective・Centroid（ws031-p038）、input builtin（FragCoord・FrontFacing・PointCoord・VertexIndex・InstanceIndex）、output PointSize、texture() の bias・offset と textureLod、local の配列・struct・配列の定数（ws031-p040）、OpFwidth、Determinant・MatrixInverse・pack half | in-progress（2026-09-27 着手。増分 1: Flat・Centroid） | p001 |
+| [ws075-p004](phase004/phase.md) | compiler（GLES 2 の核）: 補間の Flat・NoPerspective・Centroid（ws031-p038）、input builtin（FragCoord・FrontFacing・PointCoord・VertexIndex・InstanceIndex）、output PointSize、texture() の bias・offset と textureLod、local の配列・struct・配列の定数（ws031-p040）、OpFwidth、Determinant・MatrixInverse・pack half | in-progress（2026-09-27 着手。増分 1〜4: Flat・Centroid、整数の入力、VertexIndex・InstanceIndex、FrontFacing。2026-09-27 21 時に wrap-up で停止、再開の手順は phase004） | p001 |
 | ws075-p005 | texture の種類: compiler の texelFetch（OpImage・OpImageFetch）・textureSize、shadow（Dref）、integer sampler、cube・配列・3D の sampler。実行器の cube・配列・3D の image、mip level・layer への描画（ws031-p030）、depth の copy、sampler の compare 等（ws031-p034）、descriptor 配列（ws031-p035） | planning | p004 |
 | ws075-p006 | 実行器と compiler: MRT（ws031-p031）、occlusion query（sync の module）、texel buffer（buffer view）、storage buffer（transform feedback の VS の store）、multisample の image と resolve | planning | p005 |
 | ws075-p007 | GL 3.2 の stage: geometry shader（compiler の stage と 3DSTATE_GS）、gl_Layer と layered の描画、PrimitiveId。着手前に分ける | planning | p006 |

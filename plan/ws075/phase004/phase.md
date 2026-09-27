@@ -51,6 +51,26 @@ p001 の survey（`plan/ws075/tests/shader-survey/run.sh`）で libGLESv2 の生
   その element の x に書く（gen80.xml の 3DSTATE_VF_SGVS）。vertex buffer の binding が無い pipeline（index だけで描く shader）も受ける。
 - 制限: gl_InstanceIndex は firstInstance を足さない（HW の InstanceID。libGLESv2 は firstInstance 0 で描く）。
 
+### 増分 4: gl_FrontFacing（2026-09-27、bd5a5f42）
+
+- compiler: fragment shader の BuiltIn FrontFacing を location `I915_SHADER_LOCATION_FRONT_FACING`（66）の input にし、補間の
+  input には数えない。`compile.c` は payload の r1.0 の bit 31（r1.1 の word の bit 15、裏面で 1）を ASR 31 して NOT する
+  （Mesa brw の Gen12 の読み方）。
+
+## 再開の手順（2026-09-27 21 時過ぎ、rate limit の wrap-up で停止。未 commit・未 build の作業は無い、wip.patch 無し）
+
+1. main を merge した後、`plan/ws075/tests/shader-survey/run.sh`（先に `plan/ws068/tests/glsl-host/run.sh` で
+   `build/ws068-glsl-host` を作る）で今の不足を見る（33 module、compiler と一致）。
+2. 次の増分: FragCoord（r1 の subspan の x・y、UW の region と V の即値が EU の encoder に要る。z・w は PS_EXTRA の source depth・w
+   で payload がずれる）、PointCoord（SBE dword 2 の point sprite）、PointSize、NoPerspective の fragment input（線形の barycentric）、
+   textureLod・bias・offset（sampler の message の種類）、local の配列・struct と配列の定数、OpFwidth、Determinant 等、
+   8・16 bit の vertex format。
+3. 検証: `plan/ws031/tests/run-vk-host-tests.sh "lower spirv compile pipe"`、kernel の build（`make -j16 BUILD=build/resident-vkx
+   ZEDBSD_CONFIG=plan/ws075/tests/config-test-hw.mk I915_TESTS=y I915_TEST_VBT=y vmunix`）、実機の suite
+   （`BUILD=build/resident-vkx ZEDBSD_CONFIG=plan/ws075/tests/config-test-hw.mk flock /tmp/i915-hw.lock plan/ws031/tests/vkloop-hw.sh test vkx`、
+   vke2・vkc も）。Flat・整数・VertexIndex・FrontFacing の画素の確認は GL の client の実機の run（egltest・glxtest の capture の
+   scenario をこの Phase か p005 で足す）で。
+
 残り（この Phase）: input builtin（FragCoord・FrontFacing・PointCoord）、PointSize、NoPerspective の
 fragment の input、texture() の bias・offset と textureLod、local の配列・struct と配列の定数、OpFwidth、Determinant 等。
 8 bit・16 bit の属性（normalized を含む）の format も GL の app が使う（p001 の静的な検査は作成時の parameter を数えないので
@@ -71,3 +91,5 @@ fragment の input、texture() の bias・offset と textureLod、local の配�
 | style-check | 変えた file の数は前と同じ |
 | 実機 | 未実施（Flat の画素の確認は GL の client の run で） |
 | 増分 2: build・host（lower・spirv・compile）・survey | PASS、PASS、38 module（compiler と一致） |
+| 増分 3・4: build・host（lower・spirv・compile・pipe）・survey | PASS、PASS、33 module（compiler と一致） |
+| 実機（i915、5330）の回帰 vkx・vke2・vkc（増分 1〜4 の後。vke2・vkc は FrontFacing の後の tree、vkx はその直前か直後の tree） | 3 つとも **PASS 9/9**（`build/ws075-p004/`） |
