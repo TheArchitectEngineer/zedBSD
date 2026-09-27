@@ -42,5 +42,10 @@ cleared。
   **PASS**。
 - build warning 0（変えた file）、style: 新しい file 0、glass.c 0→0・shell.c 0→0・main.c 8→8。
 - 実機（i915）: 未実施。
+- fallback font: **Droid Sans Fallback Full**（Apache-2.0、Google。Debian の fonts-droid-fallback の
+  `/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf`、license は同 package の copyright file）。git には入れない。試験の image
+  には WS071 の `build/ws071-fonts/`（`plan/ws071/tests/build-files-image.sh`、WS071 p002 から）から入れた。2026-09-27 main の依頼で
+  main の `build/ws035-fonts/` にも `DroidSansFallbackFull.ttf` と `DroidSansFallback-LICENSE.txt` を置き（足しただけ）、
+  `plan/ws035/tests/build-zdesktop-image.sh` があれば `/usr/share/fonts/zdesktop-fallback.ttf`（と license）として入れるようにした。
 - 制限: cache の cell を追い出すとき、前の frame がまだその cell を読んでいれば 1 frame だけ乱れうる（zdesktop は frame ごとに
   待つので起きにくい）。1 つの文字列に 512 を超える種類の文字は描けない（cell が足りない）。
