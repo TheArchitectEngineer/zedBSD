@@ -15,7 +15,10 @@
  * context's query pool, begun before the run's first draw and ended
  * before the pass ends (gles_queries_suspend, which every place that ends
  * a pass calls first).  The query's result is whether any segment saw a
- * sample pass.  A slot is reset by the upload queue when it is taken.
+ * sample pass (desktop GL's GL_SAMPLES_PASSED in libGL: the sum of the
+ * segments' counts).  A slot is reset by the upload queue when it is
+ * taken.  Conditional rendering (desktop GL 3.0) waits for its query's
+ * result when it starts, and draws and clears check it.
  *
  * A fence sync is the frame being recorded when it was made: it is
  * signalled once that frame is done (state->frame has moved past it);
@@ -57,6 +60,7 @@ static struct gles_query **query_active(struct gles_queries *queries, GLenum tar
 static int query_slot_take(struct gles_state *state, struct gles_queries *queries, uint32_t *slot);
 static void query_slots_free(struct gles_queries *queries, struct gles_query *query);
 static int query_finish(struct zegl_context *context, struct gles_state *state, uint64_t frame);
+static int query_result(struct zegl_context *context, struct gles_state *state, struct gles_query *query, GLuint *result);
 static struct gles_sync *query_sync(struct gles_state *state, GLsync sync);
 static int query_signalled(struct zegl_context *context, struct gles_state *state, const struct gles_sync *fence);
 
@@ -74,6 +78,7 @@ gles_queries_draw(
 	uint32_t *slots;
 	uint64_t *frames;
 	uint32_t slot;
+	VkQueryControlFlags control;
 	int status;
 
 	/* An active occlusion query without a segment open. */
@@ -100,8 +105,11 @@ gles_queries_draw(
 	if (status != 0)
 		return;
 
-	/* Begun in the pass, and kept with the frame that records it. */
-	vkCmdBeginQuery(target->command, queries->pool, slot, 0U);
+	/* Begun in the pass (counting exactly for desktop GL's count when the device can), and kept with the frame that records it. */
+	control = 0U;
+	if (query->target == GL_SAMPLES_PASSED && state->display->features.occlusionQueryPrecise)
+		control = VK_QUERY_CONTROL_PRECISE_BIT;
+	vkCmdBeginQuery(target->command, queries->pool, slot, control);
 	query->slots[query->slot_count] = slot;
 	query->frames[query->slot_count] = state->frame;
 	query->slot_count++;
@@ -471,10 +479,7 @@ glGetQueryObjectuiv(
 	struct gles_state *state;
 	struct gles_queries *queries;
 	struct gles_query *query;
-	uint64_t latest;
-	uint32_t result;
-	unsigned index;
-	VkResult status;
+	GLuint result;
 	int finished;
 
 	/* A context with the queries' state, and a parameter. */
@@ -498,15 +503,8 @@ glGetQueryObjectuiv(
 		return;
 	}
 
-	/* The frames that recorded its segments, done (the one being recorded is submitted and waited for). */
-	latest = 0U;
-	for (index = 0U; index < query->slot_count; index++) {
-		if (query->frames[index] > latest)
-			latest = query->frames[index];
-	}
-
-	/* The latest of them submitted and waited for when it is the one being recorded. */
-	finished = query_finish(context, state, latest);
+	/* The result, once the frames that recorded it are done. */
+	finished = query_result(context, state, query, &result);
 	if (finished != 0)
 		return;
 
@@ -516,21 +514,86 @@ glGetQueryObjectuiv(
 		return;
 	}
 
-	/* A transform feedback query's count. */
-	if (query->target == GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN) {
-		*params = query->primitives;
+	/* Succeeded: the result. */
+	*params = result;
+}
+
+/*
+ * Starts conditional rendering (desktop GL 3.0, libGL): while it is on,
+ * draws and clears do nothing when an ended occlusion query saw no sample
+ * pass.  Every mode waits for the query's result.
+ */
+GL_APICALL void GL_APIENTRY
+glBeginConditionalRender(
+	GLuint id,
+	GLenum mode)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_queries *queries;
+	struct gles_query *query;
+	GLuint result;
+	int status;
+
+	/* A context with the queries' state, and a mode. */
+	context = gles_context();
+	state = gles_state(context);
+	queries = query_state(context, state);
+	if (queries == NULL)
+		return;
+	if (mode != GL_QUERY_WAIT &&
+	    mode != GL_QUERY_NO_WAIT &&
+	    mode != GL_QUERY_BY_REGION_WAIT &&
+	    mode != GL_QUERY_BY_REGION_NO_WAIT) {
+		gles_error(context, GL_INVALID_ENUM);
 		return;
 	}
 
-	/* An occlusion query: whether any segment saw a sample pass. */
-	*params = GL_FALSE;
-	for (index = 0U; index < query->slot_count; index++) {
-		result = 0U;
-		status = vkGetQueryPoolResults(state->device, queries->pool, query->slots[index], 1U, sizeof(result), &result,
-					       sizeof(result), VK_QUERY_RESULT_WAIT_BIT);
-		if (status == VK_SUCCESS && result != 0U)
-			*params = GL_TRUE;
+	/* Not on already, and an occlusion query begun and not active. */
+	query = gles_names_get(&state->query_objects, id);
+	if (state->conditional_active ||
+	    query == NULL ||
+	    query->target == 0U ||
+	    query->target == GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN ||
+	    query == queries->occlusion) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
 	}
+
+	/* Its result, waited for. */
+	status = query_result(context, state, query, &result);
+	if (status != 0)
+		return;
+
+	/* Succeeded: on, skipping what follows when nothing passed. */
+	state->conditional_active = 1;
+	state->conditional_skip = 0;
+	if (result == 0U)
+		state->conditional_skip = 1;
+}
+
+/*
+ * Ends conditional rendering.
+ */
+GL_APICALL void GL_APIENTRY
+glEndConditionalRender(void)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state, rendering conditionally. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (!state->conditional_active) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Off. */
+	state->conditional_active = 0;
+	state->conditional_skip = 0;
 }
 
 /*
@@ -851,6 +914,11 @@ query_active(
 		return &queries->occlusion;
 	case GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN:
 		return &queries->feedback;
+	case GL_SAMPLES_PASSED:
+		/* Desktop GL's count of samples (libGL). */
+		if (gles_fixed == NULL)
+			return NULL;
+		return &queries->occlusion;
 	default:
 		break;
 	}
@@ -947,6 +1015,60 @@ query_finish(
 	gles_collect(state);
 
 	/* Succeeded: the frame is done. */
+	return 0;
+}
+
+/*
+ * Finds an ended query's result, the frames that recorded it done first:
+ * the primitives a transform feedback query counted, the samples that
+ * passed for desktop GL's GL_SAMPLES_PASSED (exact when the device counts
+ * exactly), or whether any passed.  Returns 0, or -1 with the error
+ * recorded.
+ */
+static int
+query_result(
+	struct zegl_context *context,
+	struct gles_state *state,
+	struct gles_query *query,
+	GLuint *result)
+{
+	uint64_t latest;
+	uint32_t samples;
+	unsigned index;
+	VkResult status;
+	int finished;
+
+	/* The latest frame that recorded a segment. */
+	latest = 0U;
+	for (index = 0U; index < query->slot_count; index++) {
+		if (query->frames[index] > latest)
+			latest = query->frames[index];
+	}
+
+	/* That frame done: submitted and waited for when it is the one being recorded. */
+	finished = query_finish(context, state, latest);
+	if (finished != 0)
+		return -1;
+
+	/* A transform feedback query's count. */
+	if (query->target == GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN) {
+		*result = query->primitives;
+		return 0;
+	}
+
+	/* An occlusion query: the samples of every segment. */
+	*result = 0U;
+	for (index = 0U; index < query->slot_count; index++) {
+		samples = 0U;
+		status = vkGetQueryPoolResults(state->device, state->queries->pool, query->slots[index], 1U, sizeof(samples),
+					       &samples, sizeof(samples), VK_QUERY_RESULT_WAIT_BIT);
+		if (status == VK_SUCCESS)
+			*result += samples;
+	}
+
+	/* Succeeded: a count, or whether any passed. */
+	if (query->target != GL_SAMPLES_PASSED && *result != 0U)
+		*result = GL_TRUE;
 	return 0;
 }
 

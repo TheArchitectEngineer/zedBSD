@@ -12,7 +12,8 @@
  * checked when compiled, made SPIR-V when the program links, so that the
  * uniform block has one layout in both stages), or SPIR-V given by
  * glShaderBinary.  Linking reads both shaders' interfaces, applies the
- * attribute locations glBindAttribLocation gave, gives each fragment
+ * attribute locations glBindAttribLocation gave (and the output locations
+ * desktop GL's glBindFragDataLocation gave, libGL), gives each fragment
  * input the location of the vertex output of the same name, rewrites the
  * vertex shader's gl_Position for Vulkan, merges the two uniform blocks
  * by name, numbers the uniform locations, and makes the Vulkan shaders
@@ -1032,6 +1033,61 @@ glGetAttribLocation(
 
 	/* None. */
 	return -1;
+}
+
+/*
+ * Gives a fragment shader output a draw buffer for the program's next
+ * link (desktop GL 3.0, libGL).
+ */
+GL_APICALL void GL_APIENTRY
+glBindFragDataLocation(
+	GLuint name,
+	GLuint color,
+	const GLchar *output)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	unsigned slot;
+	int differs;
+
+	/* The program, and a draw buffer. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	if (color >= GLES_DRAW_BUFFERS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A name that is not a built-in's. */
+	differs = strncmp(output, "gl_", 3U);
+	if (differs == 0) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The name's earlier binding, else a new one. */
+	for (slot = 0U; slot < program->frag_bound_count; slot++) {
+		differs = strcmp(program->frag_bound_names[slot], output);
+		if (differs == 0)
+			break;
+	}
+
+	/* A new binding when the name had none. */
+	if (slot == program->frag_bound_count) {
+		if (program->frag_bound_count == GLES_DRAW_BUFFERS) {
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return;
+		}
+
+		/* One more binding. */
+		program->frag_bound_count++;
+	}
+
+	/* Recorded for the next link. */
+	(void)snprintf(program->frag_bound_names[slot], GLES_NAME, "%s", output);
+	program->frag_bound_locations[slot] = color;
 }
 
 /*
@@ -2542,14 +2598,6 @@ program_link_code(
 		return -1;
 	}
 
-	/* The fragment shader's outputs, by name and location. */
-	program->output_count = 0U;
-	for (index = 0U; index < fragment.output_count && program->output_count < GLES_DRAW_BUFFERS; index++) {
-		(void)snprintf(program->output_names[program->output_count], GLES_NAME, "%s", fragment.outputs[index].name);
-		program->output_locations[program->output_count] = (GLint)fragment.outputs[index].location;
-		program->output_count++;
-	}
-
 	/* Copies of the code that the link may change. */
 	vertex_code = malloc(vertex_words * sizeof(uint32_t));
 	fragment_code = malloc(fragment_words * sizeof(uint32_t));
@@ -2565,6 +2613,25 @@ program_link_code(
 	/* The codes copied. */
 	memcpy(vertex_code, vertex_input, vertex_words * sizeof(uint32_t));
 	memcpy(fragment_code, fragment_input, fragment_words * sizeof(uint32_t));
+
+	/* The locations glBindFragDataLocation gave the fragment shader's outputs (libGL). */
+	for (index = 0U; index < fragment.output_count; index++) {
+		for (other = 0U; other < program->frag_bound_count; other++) {
+			differs = strcmp(fragment.outputs[index].name, program->frag_bound_names[other]);
+			if (differs != 0 || fragment.outputs[index].location_word == 0U)
+				continue;
+			fragment.outputs[index].location = program->frag_bound_locations[other];
+			fragment_code[fragment.outputs[index].location_word] = program->frag_bound_locations[other];
+		}
+	}
+
+	/* The fragment shader's outputs, by name and location. */
+	program->output_count = 0U;
+	for (index = 0U; index < fragment.output_count && program->output_count < GLES_DRAW_BUFFERS; index++) {
+		(void)snprintf(program->output_names[program->output_count], GLES_NAME, "%s", fragment.outputs[index].name);
+		program->output_locations[program->output_count] = (GLint)fragment.outputs[index].location;
+		program->output_count++;
+	}
 
 	/* The attribute locations glBindAttribLocation gave. */
 	for (index = 0U; index < vertex.input_count; index++) {

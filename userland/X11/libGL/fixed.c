@@ -998,14 +998,32 @@ glPolygonMode(
 }
 
 /*
- * Selects the buffer draws go to: the window's back buffer always.
+ * Selects the one buffer draws go to: of the window, its one colour
+ * buffer (GL_BACK, whichever of the front and back buffers is named) or
+ * none; of a framebuffer object, a colour attachment or none.
  */
 GL_APICALL void GL_APIENTRY
 glDrawBuffer(
 	GLenum mode)
 {
-	/* There is one colour buffer. */
-	(void)mode;
+	GLenum buffer;
+
+	/* The window's names of its colour buffer are GL_BACK. */
+	buffer = mode;
+	switch (mode) {
+	case GL_FRONT:
+	case GL_FRONT_LEFT:
+	case GL_BACK_LEFT:
+	case GL_LEFT:
+	case GL_FRONT_AND_BACK:
+		buffer = GL_BACK;
+		break;
+	default:
+		break;
+	}
+
+	/* As the draw buffer list of one. */
+	glDrawBuffers(1, &buffer);
 }
 
 /*
@@ -1258,6 +1276,8 @@ fixed_get(
 	struct zegl_context *current;
 	struct fixed_state *fixed;
 	struct gles_state *state;
+	unsigned version;
+	GLint flags;
 
 	/* The state. */
 	state = gles_state(context);
@@ -1267,6 +1287,18 @@ fixed_get(
 
 	/* The state asked for. */
 	switch (pname) {
+	case GL_MAJOR_VERSION:
+		version = glx_version(&flags);
+		values[0] = (GLfloat)(version / 10U);
+		return 1U;
+	case GL_MINOR_VERSION:
+		version = glx_version(&flags);
+		values[0] = (GLfloat)(version % 10U);
+		return 1U;
+	case GL_CONTEXT_FLAGS:
+		(void)glx_version(&flags);
+		values[0] = (GLfloat)flags;
+		return 1U;
 	case GL_MODELVIEW_MATRIX:
 		memcpy(values, fixed->modelview[fixed->modelview_top], 16U * sizeof(GLfloat));
 		return 16U;
@@ -1341,12 +1373,22 @@ fixed_get(
 	return 0U;
 }
 
-/* Returns the strings that are desktop GL's rather than OpenGL ES's: the version. */
+/* Returns the strings that are desktop GL's rather than OpenGL ES's: the versions of the context's GL (glx.c) and GLSL. */
 static const GLubyte *
 fixed_string(
 	GLenum name)
 {
-	/* The version, in desktop GL's form; the rest are OpenGL ES's. */
+	unsigned version;
+	GLint flags;
+
+	/* An OpenGL 3.0 context's, with GLSL 1.30. */
+	version = glx_version(&flags);
+	if (version >= 30U && name == GL_VERSION)
+		return (const GLubyte *)"3.0 zedBSD (OpenGL ES 3.0 on Vulkan)";
+	if (version >= 30U && name == GL_SHADING_LANGUAGE_VERSION)
+		return (const GLubyte *)"1.30";
+
+	/* An OpenGL 1.4 context's; the rest are OpenGL ES's. */
 	if (name == GL_VERSION)
 		return (const GLubyte *)"1.4 zedBSD (fixed function on OpenGL ES 2.0 on Vulkan)";
 	if (name == GL_SHADING_LANGUAGE_VERSION)

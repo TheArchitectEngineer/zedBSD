@@ -41,6 +41,7 @@
 		glClearStencil;
 		glClientWaitSync;
 		glColorMask;
+		glColorMaski;
 		glCompileShader;
 		glCompressedTexImage2D;
 		glCompressedTexImage3D;
@@ -70,6 +71,7 @@
 		glDetachShader;
 		glDisable;
 		glDisableVertexAttribArray;
+		glDisablei;
 		glDrawArrays;
 		glDrawArraysInstanced;
 		glDrawBuffers;
@@ -78,6 +80,7 @@
 		glDrawRangeElements;
 		glEnable;
 		glEnableVertexAttribArray;
+		glEnablei;
 		glEndQuery;
 		glEndTransformFeedback;
 		glFenceSync;
@@ -104,6 +107,7 @@
 		glGetActiveUniformsiv;
 		glGetAttachedShaders;
 		glGetAttribLocation;
+		glGetBooleani_v;
 		glGetBooleanv;
 		glGetBufferParameteri64v;
 		glGetBufferParameteriv;
@@ -151,6 +155,7 @@
 		glInvalidateSubFramebuffer;
 		glIsBuffer;
 		glIsEnabled;
+		glIsEnabledi;
 		glIsFramebuffer;
 		glIsProgram;
 		glIsQuery;
