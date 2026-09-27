@@ -1327,6 +1327,7 @@ draw_primitives(
 	struct gles_state *state;
 	struct gles_program *program;
 	int flat;
+	int core;
 
 	/* A context with its state, not in a conditional rendering whose query saw nothing. */
 	context = gles_context();
@@ -1350,6 +1351,13 @@ draw_primitives(
 		    state->provoking_vertex != GL_FIRST_VERTEX_CONVENTION)
 			flat = 1;
 		draw_program(mode, first, count, type, indices, instances, flat);
+		return;
+	}
+
+	/* A core profile has no fixed function (desktop GL 3.2). */
+	core = gles_fixed->core_profile();
+	if (core) {
+		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
 
@@ -1436,6 +1444,15 @@ draw_program(
 	if (state->program == NULL || !state->program->linked) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
+	}
+
+	/* A core profile draws from a vertex array object of the application's (desktop GL 3.2). */
+	if (gles_fixed != NULL && state->vertex_array == 0U) {
+		status = gles_fixed->core_profile();
+		if (status) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
 	}
 
 	/* A mode the geometry shader takes as its input primitive. */
@@ -2567,6 +2584,10 @@ draw_sampler_shape(
 	case GL_INT_SAMPLER_BUFFER:
 	case GL_UNSIGNED_INT_SAMPLER_BUFFER:
 		return GLES_SHAPE_BUFFER;
+	case GL_SAMPLER_2D_MULTISAMPLE:
+	case GL_INT_SAMPLER_2D_MULTISAMPLE:
+	case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE:
+		return GLES_SHAPE_MS;
 	default:
 		break;
 	}
@@ -2588,6 +2609,7 @@ draw_sampler_kind(
 	case GL_INT_SAMPLER_2D_ARRAY:
 	case GL_INT_SAMPLER_2D_RECT:
 	case GL_INT_SAMPLER_BUFFER:
+	case GL_INT_SAMPLER_2D_MULTISAMPLE:
 		return 1U;
 	case GL_UNSIGNED_INT_SAMPLER_2D:
 	case GL_UNSIGNED_INT_SAMPLER_CUBE:
@@ -2595,6 +2617,7 @@ draw_sampler_kind(
 	case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY:
 	case GL_UNSIGNED_INT_SAMPLER_2D_RECT:
 	case GL_UNSIGNED_INT_SAMPLER_BUFFER:
+	case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE:
 		return 2U;
 	case GL_SAMPLER_2D_SHADOW:
 	case GL_SAMPLER_CUBE_SHADOW:
@@ -2717,6 +2740,11 @@ draw_raster(
 	/* Depth clamping, when the device has it. */
 	if (state->depth_clamp && state->display->features.depthClamp)
 		raster->depth_clamp = 1U;
+
+	/* Every sample, or those the sample mask keeps. */
+	raster->sample_mask = 0xffffffffU;
+	if (state->sample_mask)
+		raster->sample_mask = (uint32_t)state->sample_mask_value;
 
 	/* A device that blends every colour attachment alike blends none when they differ. */
 	if (!state->display->features.independentBlend &&
@@ -2892,6 +2920,7 @@ draw_pipeline(
 	if (target->samples > 1U)
 		multisample.rasterizationSamples = (VkSampleCountFlagBits)target->samples;
 	multisample.alphaToCoverageEnable = (VkBool32)state->sample_alpha_to_coverage;
+	multisample.pSampleMask = &raster->sample_mask;
 
 	/* Depth and stencil (GL's compare functions are Vulkan's in the same order). */
 	memset(&depth, 0, sizeof(depth));
@@ -3144,6 +3173,8 @@ draw_descriptors(
 				texture = state->array_units[unit];
 			if (shape == GLES_SHAPE_RECT)
 				texture = state->rect_units[unit];
+			if (shape == GLES_SHAPE_MS)
+				texture = state->ms_units[unit];
 			if (state->unit_samplers[unit] != NULL)
 				sampling = &state->unit_samplers[unit]->sampling;
 		}
@@ -3154,10 +3185,17 @@ draw_descriptors(
 			status = draw_texture_matches(texture, kind);
 		if (!status && shape == GLES_SHAPE_RECT)
 			shape = GLES_SHAPE_2D;
-		if (!status) {
+		if (!status && shape == GLES_SHAPE_MS) {
+			texture = gles_texture_black_ms(state, kind);
+			sampling = NULL;
+		} else if (!status) {
 			texture = gles_texture_black(state, shape, kind);
 			sampling = NULL;
 		}
+
+		/* A multisample sampler reads a multisample texture only. */
+		if (shape == GLES_SHAPE_MS && texture != NULL && texture->samples <= 1U)
+			texture = gles_texture_black_ms(state, kind);
 
 		/* The texture's image, up to date. */
 		if (texture == NULL)

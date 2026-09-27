@@ -22,6 +22,7 @@
  *   p sampler2DArrayShadow  q samplerCubeShadow
  *   F a rectangle sampler of any texel type  r sampler2DRectShadow
  *   Q a buffer sampler of any texel type
+ *   Z a multisample sampler of any texel type
  *   v void (a result only)
  *
  * Every generic code of one signature takes the same size, so a
@@ -276,12 +277,14 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "textureSize", "jF", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
 	{ "textureSize", "jr", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
 	{ "textureSize", "iQ", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
+	{ "textureSize", "jZ", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_150_UP },
 	{ "texelFetch", "TAii", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
 	{ "texelFetch", "TDji", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
 	{ "texelFetch", "TEki", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
 	{ "texelFetch", "TRki", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
 	{ "texelFetch", "TFj", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
 	{ "texelFetch", "TQi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
+	{ "texelFetch", "TZji", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_150_UP },
 
 
 	/* Derivatives (OpenGL ES needs OES_standard_derivatives). */
@@ -766,6 +769,10 @@ builtins_sampler_code(
 		break;
 	case 'Q':
 		sampler = GLSL_SAMPLER_BUFFER;
+		any_base = 1;
+		break;
+	case 'Z':
+		sampler = GLSL_SAMPLER_MS;
 		any_base = 1;
 		break;
 	default:

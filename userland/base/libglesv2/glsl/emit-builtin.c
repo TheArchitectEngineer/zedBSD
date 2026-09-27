@@ -428,8 +428,8 @@ builtin_texture_query(
 	level = 0U;
 	if (sampler->sampler == GLSL_SAMPLER_RECT) {
 		level = glsl_emit_int(state, 0);
-	} else if (sampler->sampler == GLSL_SAMPLER_BUFFER) {
-		/* A buffer has no levels. */
+	} else if (sampler->sampler == GLSL_SAMPLER_BUFFER || sampler->sampler == GLSL_SAMPLER_MS) {
+		/* A buffer and a multisample image have no levels. */
 		level = 0U;
 	} else if (node->builtin->number == GLSL_SPECIAL_TEXTURE_SIZE) {
 		/* textureSize's level is its second argument. */
@@ -455,9 +455,17 @@ builtin_texture_query(
 		return result;
 	}
 
-	/* texelFetch of a buffer: the texel at the index. */
+	/* texelFetch of a multisample image: the sample of the texel. */
 	operands[0] = image;
 	operands[1] = arguments[1].id;
+	if (sampler->sampler == GLSL_SAMPLER_MS) {
+		operands[2] = SPV_IMAGE_OPERAND_SAMPLE;
+		operands[3] = arguments[2].id;
+		result = builtin_value(glsl_emit_op(state, SPV_OP_IMAGE_FETCH, glsl_emit_type(state, node->type), operands, 4U), node->type);
+		return result;
+	}
+
+	/* texelFetch of a buffer: the texel at the index. */
 	if (level == 0U) {
 		result = builtin_value(glsl_emit_op(state, SPV_OP_IMAGE_FETCH, glsl_emit_type(state, node->type), operands, 2U), node->type);
 		return result;

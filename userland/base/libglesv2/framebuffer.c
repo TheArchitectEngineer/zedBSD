@@ -601,8 +601,8 @@ gles_texture_fetch(
 			written = 1;
 	}
 
-	/* Nothing to read back. */
-	if (!written || texture->image == VK_NULL_HANDLE) {
+	/* Nothing to read back (a multisample texture's samples stay on the device). */
+	if (!written || texture->image == VK_NULL_HANDLE || texture->samples > 1U) {
 		memset(texture->gpu_levels, 0, sizeof(texture->gpu_levels));
 		return 0;
 	}
@@ -996,9 +996,11 @@ glFramebufferTexture2D(
 		return;
 	}
 
-	/* A 2D texture, a face of a cube map, or (desktop GL, libGL) a rectangle texture's one level. */
+	/* A 2D texture, a face of a cube map, or (desktop GL, libGL) a rectangle or multisample texture's one level. */
 	rectangle = 0;
 	if (textarget == GL_TEXTURE_RECTANGLE && gles_fixed != NULL)
+		rectangle = 1;
+	if (textarget == GL_TEXTURE_2D_MULTISAMPLE && gles_fixed != NULL)
 		rectangle = 1;
 	if (textarget != GL_TEXTURE_2D &&
 	    !rectangle &&
@@ -1030,7 +1032,7 @@ glFramebufferTexture2D(
 	face = 0U;
 	kind = GL_TEXTURE_2D;
 	if (rectangle) {
-		kind = GL_TEXTURE_RECTANGLE;
+		kind = textarget;
 	} else if (textarget != GL_TEXTURE_2D) {
 		face = textarget - GL_TEXTURE_CUBE_MAP_POSITIVE_X;
 		kind = GL_TEXTURE_CUBE_MAP;
@@ -1803,6 +1805,24 @@ glGetRenderbufferParameteriv(
 }
 
 /*
+ * Returns the sample count the device has of the ones framebuffers take
+ * that is at least a count asked for (1 when none is).
+ */
+uint32_t
+gles_samples_for(
+	struct gles_state *state,
+	uint32_t samples)
+{
+	uint32_t count;
+
+	/* The device's. */
+	count = framebuffer_samples_for(state, samples);
+
+	/* Succeeded: the count. */
+	return count;
+}
+
+/*
  * Returns the most samples per pixel a renderbuffer may have
  * (GL_MAX_SAMPLES): the device's most for every kind of attachment, 1
  * when it multisamples nothing.
@@ -2269,8 +2289,10 @@ framebuffer_image_of(
 	if ((features & wanted) == 0U)
 		return GL_FRAMEBUFFER_UNSUPPORTED;
 
-	/* Succeeded: the level and layer (a cube map's face is its layer), resting to be sampled (a 3D slice's image as an attachment). */
+	/* Succeeded: the level and layer (a cube map's face is its layer), resting to be sampled (a 3D slice's image as an attachment; a multisample texture's samples). */
 	image->samples = 1U;
+	if (image->texture->samples > 1U)
+		image->samples = image->texture->samples;
 	image->format = level->format;
 	image->vk = level->format->vk;
 	image->face = point->face;

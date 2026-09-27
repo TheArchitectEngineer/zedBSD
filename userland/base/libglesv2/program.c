@@ -2482,6 +2482,12 @@ program_sampler_type(
 		if (info->base == GLSL_INFO_UINT)
 			return GL_UNSIGNED_INT_SAMPLER_BUFFER;
 		return GL_SAMPLER_BUFFER;
+	case GLSL_SAMPLER_MS:
+		if (info->base == GLSL_INFO_INT)
+			return GL_INT_SAMPLER_2D_MULTISAMPLE;
+		if (info->base == GLSL_INFO_UINT)
+			return GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE;
+		return GL_SAMPLER_2D_MULTISAMPLE;
 	case GLSL_SAMPLER_CUBE:
 		if (info->base == GLSL_INFO_INT)
 			return GL_INT_SAMPLER_CUBE;

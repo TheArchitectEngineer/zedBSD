@@ -1213,6 +1213,15 @@ spirv_sampler_type(
 			base = 1U;
 	}
 
+	/* A multisample image. */
+	if (code[image + 6U] != 0U) {
+		if (base == 1U)
+			return GL_INT_SAMPLER_2D_MULTISAMPLE;
+		if (base == 2U)
+			return GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE;
+		return GL_SAMPLER_2D_MULTISAMPLE;
+	}
+
 	/* A buffer texture's texels. */
 	if (dimension == SPIRV_DIM_BUFFER) {
 		if (base == 1U)
