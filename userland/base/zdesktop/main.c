@@ -11,6 +11,7 @@
 
 #include "zwl.h"
 #include "toplevel.h"
+#include "keymap.h"
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -48,6 +49,7 @@ main(
 	struct zwl_server server;
 	void (*previous_handler)(int);
 	int error;
+	int keymap_error;
 	int cleanup_failed;
 
 	/* Every descriptor starts invalid so partial initialization can use ordinary cleanup. */
@@ -99,6 +101,16 @@ main(
 	/* Input devices are found before READY; a seat without devices is still valid. */
 	if (error == 0)
 		zwl_input_scan(&server);
+
+	/* The keyboards' XKB keymap (keymap.c); without it they say there is none. */
+	if (error == 0) {
+		keymap_error = zwl_keymap_open();
+		if (keymap_error == 0) {
+			printf("ZWL KEYMAP format=xkb_v1 errno=0\n");
+		} else {
+			printf("ZWL KEYMAP format=none errno=%d\n", keymap_error);
+		}
+	}
 
 	/* The endpoint is published last. */
 	if (error == 0)
