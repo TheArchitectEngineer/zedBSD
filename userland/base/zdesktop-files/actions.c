@@ -1020,6 +1020,25 @@ actions_error(
 }
 
 /*
+ * Copies, moves or links paths into a folder (a drop of items, ui-drag.c).
+ * Returns 0, or why the task could not start.
+ */
+int
+fm_action_transfer(
+	struct fm_app *app,
+	unsigned kind,
+	char *const *paths,
+	size_t count,
+	const char *destination)
+{
+	int error;
+
+	/* A task like the paste's, recorded for undo when it ends. */
+	error = actions_start(app, kind, paths, count, destination, 0);
+	return error;
+}
+
+/*
  * Turns a tag on for the selected items, or off when they all have it
  * (Alt+1 to Alt+9); recorded for undo.
  */

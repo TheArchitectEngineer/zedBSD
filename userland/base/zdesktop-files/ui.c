@@ -94,6 +94,9 @@ fm_app_init(
 	app->dirty = 1;
 	app->hover_index = -1;
 	app->press_index = -1;
+	app->drag_hit_index = -1;
+	app->drag_tag = -1;
+	app->drag_place = -1;
 	snprintf(app->wallpaper, sizeof(app->wallpaper), "%s", FM_WALLPAPER);
 	app->click_index = -1;
 
@@ -316,6 +319,9 @@ fm_ui_draw(
 	fm_info_draw(app, canvas);
 	fm_help_draw(app, canvas);
 	fm_overlay_draw(app, canvas);
+
+	/* Items being dragged, over everything. */
+	fm_drag_draw(app, canvas);
 
 	/* The frame is up to date. */
 	app->dirty = 0;
@@ -891,6 +897,11 @@ ui_draw_sidebar(
 			if (index > 0)
 				y += 8;
 			(void)fm_text_draw(app->text, canvas, panel->x + 16, y + UI_SIDEBAR_HEADER - 10, titles[section], strlen(titles[section]), UI_TEXT_HEADER, 1, header);
+			row.x = panel->x + 8;
+			row.y = y;
+			row.width = panel->width - 16;
+			row.height = UI_SIDEBAR_HEADER;
+			fm_ui_hit(app, &row, FM_HIT_SECTION, (int)section);
 			y += UI_SIDEBAR_HEADER;
 		}
 

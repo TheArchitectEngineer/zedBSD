@@ -375,7 +375,8 @@ enum fm_hit_kind {
 	FM_HIT_TAB_CLOSE,
 	FM_HIT_SCOPE,
 	FM_HIT_OVERLAY,
-	FM_HIT_BUTTON
+	FM_HIT_BUTTON,
+	FM_HIT_SECTION
 };
 
 /*
@@ -739,6 +740,16 @@ enum fm_request {
 #define FM_CONTEXT_EMPTY	1U
 #define FM_CONTEXT_PLACE	2U
 
+/* What a drag of items is over (ui-drag.c): nothing that takes them, a folder, a tag's place, the Trash. */
+#define FM_DRAG_NONE		0U
+#define FM_DRAG_FOLDER		1U
+#define FM_DRAG_TAG		2U
+#define FM_DRAG_TRASH		3U
+
+/* Also: the Favorites' title (the dragged folders are added), and a favorite that a dragged favorite goes to. */
+#define FM_DRAG_FAVORITES	4U
+#define FM_DRAG_REORDER		5U
+
 /* The kinds of a context menu's row. */
 #define FM_ROW_ITEM		0U
 #define FM_ROW_LINE		1U
@@ -967,6 +978,28 @@ struct fm_app {
 	int band_x1;
 	int band_y1;
 
+	/*
+	 * A drag of the selected items (ui-drag.c): where the left press was;
+	 * a press on a selected item leaves its selection change for the
+	 * release (press_deferred, with the modifiers of the press) so that the
+	 * whole selection can be dragged; whether the drag has started, how many
+	 * items it carries (or the favorite dragged in the sidebar, else -1),
+	 * and its target (FM_DRAG_*) with the region under the pointer and the
+	 * folder or tag it stands for.
+	 */
+	int press_x;
+	int press_y;
+	int press_deferred;
+	uint32_t press_deferred_modifiers;
+	int drag;
+	size_t drag_count;
+	int drag_place;
+	unsigned drag_target;
+	unsigned drag_hit_kind;
+	int drag_hit_index;
+	int drag_tag;
+	char drag_folder[FM_PATH_MAX];
+
 	/* What was typed to find an item by its name, and when it was typed last. */
 	char typed[64];
 	size_t typed_length;
@@ -1173,6 +1206,7 @@ void fm_action_undo(struct fm_app *app, int redo);
 void fm_action_cancel_task(struct fm_app *app, int index);
 void fm_action_toggle_tag(struct fm_app *app, int tag);
 void fm_action_add_favorite(struct fm_app *app);
+int fm_action_transfer(struct fm_app *app, unsigned kind, char *const *paths, size_t count, const char *destination);
 void fm_action_remove_favorite(struct fm_app *app, int place);
 int fm_actions_tick(struct fm_app *app);
 void fm_actions_release(struct fm_app *app);
@@ -1261,6 +1295,12 @@ void fm_ui_menu_state(struct fm_app *app, struct fm_menu_state *state);
 void fm_ui_context(struct fm_app *app, struct fm_context *context);
 int fm_ui_context_action(struct fm_app *app, unsigned action);
 
+/* Dragging the selected items within the window (ui-drag.c). */
+int fm_drag_motion(struct fm_app *app, int x, int y);
+int fm_drag_release(struct fm_app *app);
+void fm_drag_cancel(struct fm_app *app);
+void fm_drag_draw(struct fm_app *app, struct fm_canvas *canvas);
+
 /* The tabs (ui-tabs.c). */
 void fm_tabs_new(struct fm_app *app, const struct fm_location *location);
 void fm_tabs_duplicate(struct fm_app *app);
@@ -1283,6 +1323,7 @@ void fm_help_draw(struct fm_app *app, struct fm_canvas *canvas);
 void fm_places_init(struct fm_places *places, const char *home, const struct fm_tags *tags);
 int fm_places_add_favorite(struct fm_places *places, const char *path);
 int fm_places_remove_favorite(struct fm_places *places, int removed);
+int fm_places_move_favorite(struct fm_places *places, int moved, int to);
 const char *fm_location_name(const struct fm_location *location, const char *home);
 void fm_tags_text(struct fm_app *app, unsigned tags, char *text, size_t length);
 

@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-27: p075〜p081・p083・p057・p055 cleared。2026-09-27 p083（窓の中のすりガラスの card、ws071-p015 と一緒）cleared。合わせた順序（WS035・WS070・WS071 を 1 つのサブエージェントで、2026-09-27 承認）: ~~ws035-p081~~ → ~~ws071-p013~~ → ~~ws071-p016・p015 / ws035-p083~~ → ws071-p009（context menu）→ ~~ws071-p009~~ → ~~ws035-p057 の残り（背後の窓のぼかし）~~ → ~~ws035-p055（damage）~~ → ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）→ ws070-p011（TABS）→ ws035-p082（ログインマネージャの検討、設計のみ）→ ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
+Resume point: 2026-09-27: p075〜p081・p083・p057・p055 cleared。ws071-p010 で p040・p041 の decode の半分（inflate・PNG の読み）を作った。2026-09-27 p083（窓の中のすりガラスの card、ws071-p015 と一緒）cleared。合わせた順序（WS035・WS070・WS071 を 1 つのサブエージェントで、2026-09-27 承認）: ~~ws035-p081~~ → ~~ws071-p013~~ → ~~ws071-p016・p015 / ws035-p083~~ → ws071-p009（context menu）→ ~~ws071-p009~~ → ~~ws035-p057 の残り（背後の窓のぼかし）~~ → ~~ws035-p055（damage）~~ → ~~ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）~~ → ws070-p011（TABS）→ ws035-p082（ログインマネージャの検討、設計のみ）→ ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標

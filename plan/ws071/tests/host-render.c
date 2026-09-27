@@ -153,6 +153,13 @@ main(
 			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_RIGHT, 0, 0, 0, &now);
 		} else if (sscanf(argv[index], "press=%d,%d", &x, &y) == 2) {
 			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 1, 0, app.modifiers, &now);
+		} else if (sscanf(argv[index], "mods=%u", &modifiers) == 1) {
+			app.modifiers = modifiers;
+		} else if (sscanf(argv[index], "drag=%d,%d", &x, &y) == 2) {
+			host_event(&app, FM_EVENT_MOTION, x, y, 0, 0, 0, app.modifiers, &now);
+		} else if (strcmp(argv[index], "items") == 0) {
+			for (x = 0; (size_t)x < fm_ui_tab(&app)->listing.count; x++)
+				printf("item %d %s selected=%d\n", x, fm_ui_tab(&app)->listing.entries[x].name, fm_ui_tab(&app)->listing.entries[x].selected);
 		} else if (sscanf(argv[index], "release=%d,%d", &x, &y) == 2) {
 			host_event(&app, FM_EVENT_MOTION, x, y, 0, 0, 0, app.modifiers, &now);
 			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 0, 0, app.modifiers, &now);
