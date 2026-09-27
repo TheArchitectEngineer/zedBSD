@@ -20,6 +20,8 @@ fonts=build/ws035-fonts
 [ -f $fonts/DroidSansFallbackFull.ttf ] && extra="$extra --file /usr/share/fonts/zdesktop-fallback.ttf=$fonts/DroidSansFallbackFull.ttf"
 [ -f $fonts/DroidSansFallback-LICENSE.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-fallback-LICENSE.txt=$fonts/DroidSansFallback-LICENSE.txt"
 [ -f build/ws035-wallpaper/wallpaper.ppm ] && extra="$extra --file /usr/share/zdesktop/wallpaper.ppm=build/ws035-wallpaper/wallpaper.ppm"
+# The File Manager tests' home maker, as the files image has it (the desktop regressions run on this image too).
+extra="$extra --file /usr/share/zdesktop-files-tests/make-home.sh=plan/tools/files/make-home.sh"
 if [ -d plan/ws074/tests/pages ]; then
 	for page in plan/ws074/tests/pages/*; do
 		[ -f "$page" ] && extra="$extra --file /usr/share/zdesktop-browser-tests/$(basename "$page")=$page"
