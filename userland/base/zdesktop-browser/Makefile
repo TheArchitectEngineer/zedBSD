@@ -60,6 +60,7 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_function.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_array.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_string.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/builtin_json.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_number.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_math.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_global.c \
