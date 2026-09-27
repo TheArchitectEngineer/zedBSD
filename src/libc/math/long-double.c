@@ -670,3 +670,20 @@ log1pl(
 	/* Succeeded: the double result stands for the long double one. */
 	return (long double)result;
 }
+
+/*
+ * Returns x raised to the power y.
+ */
+long double
+powl(
+	long double x,
+	long double y)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = pow((double)x, (double)y);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
