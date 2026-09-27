@@ -20,7 +20,7 @@ are independently expressed source, with no production generator.
 
 Selected wire descriptions: wl_display/registry/callback/region/buffer v1,
 wl_compositor/surface/output v4, wl_seat/wl_pointer/wl_keyboard v5,
-xdg_wm_base/positioner/surface/toplevel/popup v1.
+xdg_wm_base/positioner/surface/toplevel/popup v3 (v1 until WS035 p076).
 This library does not claim a complete Wayland SDK. It does not supply wl_touch,
 wl_shm, wl_subcompositor, EGL, a public server library, or general C callback
 FFI.
@@ -56,6 +56,14 @@ compositor use this factory. No linux-dmabuf-v1 interface is advertised. Its cli
 (`userland/base/libwayland/zed-gpu-buffer-v1-client-protocol.h`), and only
 libwayland and libvulkan's WSI include it. Other zdesktop clients that need a
 non-standard zdesktop extension use libzdesktop (`<zdesktop.h>`).
+
+xdg-shell version 3 (added for WS035 p076) was checked against the same pinned
+wayland-protocols 1.36 description: xdg_positioner requests set_reactive (7,
+``), set_parent_size (8, `ii`) and set_parent_configure (9, `u`), and
+xdg_popup request reposition (2, `ou`) and event repositioned (2, `u`), all
+since 3. Version 2 adds only the tiled toplevel states (enum values). The
+wrappers, the `repositioned` listener member and the `_SINCE_VERSION` names
+follow the upstream client header; no scanner output was copied.
 
 ## Protocol description license notices
 

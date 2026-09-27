@@ -448,6 +448,15 @@ wlc_event_dispatch(
 			event->delivered = 1;
 			xdg_popup_callbacks->popup_done(data, (struct xdg_popup *)proxy);
 			return 0;
+		case 2:
+			/* Version 3's repositioned; an optional listener slot deliberately ignores it. */
+			if (xdg_popup_callbacks->repositioned == NULL)
+				return 0;
+
+			/* Delivers the token of the reposition the next configure answers. */
+			event->delivered = 1;
+			xdg_popup_callbacks->repositioned(data, (struct xdg_popup *)proxy, arguments[0].u);
+			return 0;
 		default:
 			return EPROTO;
 		}

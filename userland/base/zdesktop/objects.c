@@ -11,6 +11,8 @@
 
 #include "zwl.h"
 #include "menu.h"
+#include "popup.h"
+#include "toplevel.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -222,9 +224,17 @@ zwl_object_destroy(
 	if (object == NULL || object->dead)
 		return;
 
-	/* Seat leave events must name the surface before its identity is retired. */
-	if (object->kind == ZWL_SURFACE)
+	/* Seat leave events must name the surface before its identity is retired; a resize of it ends. */
+	if (object->kind == ZWL_SURFACE) {
 		zwl_seat_surface_gone(object);
+		zwl_toplevel_surface_gone(object);
+	}
+
+	/* The popups stop naming this one: a positioner's rules go, a popup's grab ends, a parent's popups close (popup.c). */
+	if (object->kind == ZWL_SURFACE ||
+	    object->kind == ZWL_POSITIONER ||
+	    object->kind == ZWL_POPUP)
+		zwl_popup_object_gone(object);
 
 	/* The System Menu's objects stop naming this one, and a menu open on it closes. */
 	if (object->kind == ZWL_SURFACE ||
@@ -362,11 +372,13 @@ zwl_client_destroy(
 		zwl_object_destroy(surface);
 	}
 
-	/* Toplevel backreferences must retire before their xdg_surface storage. */
+	/* Toplevel and popup backreferences must retire before their xdg_surface storage. */
 	while (1) {
 		/* Find the next child before allowing any shell parent to retire. */
 		object = client->objects;
-		while (object != NULL && object->kind != ZWL_TOPLEVEL)
+		while (object != NULL &&
+		       object->kind != ZWL_TOPLEVEL &&
+		       object->kind != ZWL_POPUP)
 			object = object->next;
 
 		/* All remaining shell parents can retire once no child points at them. */

@@ -11,6 +11,8 @@
  */
 
 #include "zwl.h"
+#include "popup.h"
+#include "toplevel.h"
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -581,6 +583,16 @@ adopt_commit(
 		return;
 	}
 
+	/* Nor is a popup (popup.c): its first image shows it with its parent, a null one hides it. */
+	if (surface->role->top != NULL && surface->role->top->kind == ZWL_POPUP) {
+		if (previous == NULL && surface->current != NULL)
+			zwl_popup_mapped(server, surface);
+		if (previous != NULL && surface->current == NULL)
+			zwl_callbacks_done(&surface->committed_callbacks);
+		zwl_buffer_put(previous);
+		return;
+	}
+
 	/* A first image maps the window on top; a null one unmaps it. */
 	if (surface->current != NULL && !surface->mapped) {
 		surface->mapped = 1;
@@ -595,6 +607,9 @@ adopt_commit(
 		zwl_callbacks_done(&surface->committed_callbacks);
 		printf("ZWL UNMAP client=%llu surface=%u\n", (unsigned long long)surface->client->number, surface->id);
 	}
+
+	/* A window resized from its left or top edge keeps its other edges where they were (toplevel.c). */
+	zwl_toplevel_committed(server, surface);
 
 	/* The replaced image. */
 	zwl_buffer_put(previous);
