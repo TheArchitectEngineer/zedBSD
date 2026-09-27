@@ -365,6 +365,7 @@ static void clear_loader_error(void);
 static void set_loader_error(const char *message);
 static struct rtld_handle *allocate_handle(struct rtld_object *object, int main_scope);
 static const char *dlopen_bare_name(const char *path);
+static const char *object_basename(const char *path);
 static int preflight_dlopen_file(int fd);
 static int valid_elf_header(const Elf_Ehdr *header, int expected_type);
 static int validate_file_programs(const Elf_Ehdr *header, const Elf_Phdr *phdr, off_t file_size);
@@ -910,10 +911,13 @@ __rtld_dlopen(
 	struct rtld_object *object;
 	struct rtld_handle *handle;
 	const char *name;
+	const char *loaded_name;
 	char full_path[RTLD_PATH_MAX];
 	intptr_t fd;
 	size_t length;
 	unsigned i;
+	int same_path;
+	int same_name;
 
 	clear_loader_error();
 
@@ -952,21 +956,19 @@ __rtld_dlopen(
 		return NULL;
 	}
 
-	/* Process each remaining element. */
+	/* An object already loaded under the path or the name (from /lib or /usr/lib) is shared. */
 	for (i = 0; i < object_count; i++) {
-		/* Handles a failed rtld strcmp operation. */
-		if (objects[i].active && !objects[i].unloading &&
-		    (rtld_strcmp(objects[i].path, path) == 0 ||
-		     (objects[i].path[0] == '/' &&
-		      rtld_strcmp(objects[i].path + 5, name) == 0))) {
+		loaded_name = object_basename(objects[i].path);
+		same_path = rtld_strcmp(objects[i].path, path) == 0;
+		same_name = rtld_strcmp(loaded_name, name) == 0;
+		if (objects[i].active && !objects[i].unloading && (same_path || same_name)) {
 			object = &objects[i];
 			goto loaded;
 		}
 	}
-	rtld_memcpy(full_path, "/lib/", 5);
-	rtld_memcpy(full_path + 5, name, length + 1U);
-	fd = syscall6(KERN_SYS_open, (uintptr_t)full_path, O_RDONLY, 0, 0, 0,
-		      0);
+
+	/* The file, found where a DT_NEEDED name is (/lib, then /usr/lib for packages; BUG-083). */
+	fd = open_dependency(name, length, NULL, full_path);
 
 	/* Handles an operation failure. */
 	if (raw_error(fd)) {
@@ -2009,6 +2011,25 @@ dlopen_bare_name(
 
 	/* Returns the computed result. */
 	return path;
+}
+
+/* Returns the file name of an object's path: what follows its last slash, or the whole path. */
+static const char *
+object_basename(
+	const char *path)
+{
+	const char *cursor;
+	const char *name;
+
+	/* The part after the last slash. */
+	name = path;
+	for (cursor = path; *cursor != '\0'; cursor++) {
+		if (*cursor == '/')
+			name = cursor + 1;
+	}
+
+	/* The name found. */
+	return name;
 }
 
 /* Supports the preflight dlopen file operation. */
