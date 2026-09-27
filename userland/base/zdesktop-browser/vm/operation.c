@@ -13,11 +13,10 @@
  * throws.
  *
  * An object becomes a primitive through its valueOf and toString methods
- * (Symbol.toPrimitive arrives with the symbols of ws074-p028).  A double's
- * string is the shortest that reads back, in C's %g form, until the
- * Number-to-String algorithm arrives with the built-ins (ws074-p026).  The
- * errors are thrown as strings ("TypeError: ...") until the Error objects
- * exist.
+ * (Symbol.toPrimitive arrives with the symbols of ws074-p028).  Numbers
+ * and their text convert exactly (number.c).  The errors are Error objects
+ * of the realm once its built-ins are installed, strings ("TypeError:
+ * ...") before.
  */
 
 #include "vm/internal.h"
@@ -28,8 +27,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The longest numeral a string is read as (longer strings are not numerals anyway). */
-#define OPERATION_NUMERAL_MAX	400U
+/* The longest numeral a string is read as (a longer string reads as NaN). */
+#define OPERATION_NUMERAL_MAX	2000U
 
 /*
  * The types of the language, as the equality and typeof tell them apart.
@@ -48,7 +47,6 @@ static int operation_type(vm_value value);
 static int operation_call_method(struct vm_realm *realm, vm_value object, const char *name, int *done, vm_value *result);
 static int operation_number_string(struct vm_realm *realm, double number, struct vm_string **string);
 static double operation_parse_number(const struct vm_string *string);
-static int operation_is_space(uint16_t unit);
 static double operation_parse_radix(const char *text, unsigned radix);
 static int operation_is_decimal(const char *text);
 static double operation_int32_of(double number);
@@ -808,58 +806,132 @@ vm_typeof(
 }
 
 /*
- * Throws a TypeError with a message (a string until Error objects exist).
+ * Throws an error of a kind with a message: an Error object of the realm
+ * (a string "Name: message" while the realm has no Error objects yet).
+ */
+int
+vm_throw_error(
+	struct vm_realm *realm,
+	int kind,
+	const char *message)
+{
+	static const char *const names[] = {
+		"Error", "TypeError", "RangeError", "ReferenceError", "SyntaxError", "EvalError", "URIError"
+	};
+	struct vm_object *prototype;
+	vm_value error_value;
+	char text[256];
+	int status;
+
+	/* Without the realm's Error objects, a string. */
+	prototype = realm->intrinsics[VM_INTRINSIC_ERROR_PROTOTYPE + kind];
+	if (prototype == NULL) {
+		snprintf(text, sizeof(text), "%s: %s", names[kind], message);
+		status = operation_throw_text(realm, text);
+		return status;
+	}
+
+	/* The error object, thrown (without memory, undefined is thrown). */
+	status = vm_error_create(realm, kind, message, &error_value);
+	if (status != 0) {
+		status = vm_throw(realm, VM_VALUE_UNDEFINED);
+		return status;
+	}
+
+	/* The error becomes the realm's exception. */
+	status = vm_throw(realm, error_value);
+
+	/* Reports the throw. */
+	return status;
+}
+
+/*
+ * Makes an Error object of a kind with a message (its message property;
+ * none for an empty message).
+ */
+int
+vm_error_create(
+	struct vm_realm *realm,
+	int kind,
+	const char *message,
+	vm_value *error_value)
+{
+	struct vm_object *error_object;
+	struct vm_string *text;
+	vm_value key;
+	int status;
+
+	/* The object, from the kind's prototype. */
+	error_object = vm_object_create(realm->heap, realm->intrinsics[VM_INTRINSIC_ERROR_PROTOTYPE + kind]);
+	if (error_object == NULL)
+		return ENOMEM;
+	error_object->kind = VM_KIND_ERROR;
+
+	/* The message: writable and configurable, not enumerable. */
+	if (message[0] != '\0') {
+		text = vm_string_from_utf8(realm->heap, message, strlen(message));
+		if (text == NULL)
+			return ENOMEM;
+		key = vm_key_from_ascii(realm->heap, "message");
+		if (key == VM_VALUE_EMPTY)
+			return ENOMEM;
+		status = vm_object_define(realm->heap, error_object, key, vm_value_cell(text),
+		    VM_PROPERTY_WRITABLE | VM_PROPERTY_CONFIGURABLE);
+		if (status != 0)
+			return status;
+	}
+
+	/* Succeeded: the error. */
+	*error_value = vm_value_cell(error_object);
+	return 0;
+}
+
+/*
+ * Throws a TypeError with a message.
  */
 int
 vm_throw_type_error(
 	struct vm_realm *realm,
 	const char *message)
 {
-	char text[256];
 	int status;
 
-	/* The error's name and message. */
-	snprintf(text, sizeof(text), "TypeError: %s", message);
-	status = operation_throw_text(realm, text);
+	/* The error of that kind. */
+	status = vm_throw_error(realm, VM_ERROR_TYPE, message);
 
 	/* Reports the throw. */
 	return status;
 }
 
 /*
- * Throws a RangeError with a message (a string until Error objects exist).
+ * Throws a RangeError with a message.
  */
 int
 vm_throw_range_error(
 	struct vm_realm *realm,
 	const char *message)
 {
-	char text[256];
 	int status;
 
-	/* The error's name and message. */
-	snprintf(text, sizeof(text), "RangeError: %s", message);
-	status = operation_throw_text(realm, text);
+	/* The error of that kind. */
+	status = vm_throw_error(realm, VM_ERROR_RANGE, message);
 
 	/* Reports the throw. */
 	return status;
 }
 
 /*
- * Throws a ReferenceError with a message (a string until Error objects
- * exist).
+ * Throws a ReferenceError with a message.
  */
 int
 vm_throw_reference_error(
 	struct vm_realm *realm,
 	const char *message)
 {
-	char text[256];
 	int status;
 
-	/* The error's name and message. */
-	snprintf(text, sizeof(text), "ReferenceError: %s", message);
-	status = operation_throw_text(realm, text);
+	/* The error of that kind. */
+	status = vm_throw_error(realm, VM_ERROR_REFERENCE, message);
 
 	/* Reports the throw. */
 	return status;
@@ -898,6 +970,30 @@ vm_throw_not_defined(
 
 	/* Reports the throw. */
 	return status;
+}
+
+/*
+ * Tells whether a code unit is white space or a line terminator
+ * (StringToNumber's and parseInt's blanks).
+ */
+int
+vm_is_space(
+	uint16_t unit)
+{
+	/* The ASCII blanks and line terminators. */
+	if (unit == 0x09U || unit == 0x0AU || unit == 0x0BU || unit == 0x0CU || unit == 0x0DU || unit == 0x20U)
+		return 1;
+
+	/* NBSP, the BOM, LS and PS. */
+	if (unit == 0xA0U || unit == 0xFEFFU || unit == 0x2028U || unit == 0x2029U)
+		return 1;
+
+	/* The other Unicode space separators (Zs). */
+	if (unit == 0x1680U || (unit >= 0x2000U && unit <= 0x200AU) || unit == 0x202FU || unit == 0x205FU || unit == 0x3000U)
+		return 1;
+
+	/* Anything else. */
+	return 0;
 }
 
 /* Reports the language type of a value. */
@@ -1050,45 +1146,27 @@ operation_int32_of(
 	return wrapped;
 }
 
-/* Makes a number's string: the int32 digits, or the shortest %g form that reads back. */
+/* Makes a number's string (Number::toString in radix 10). */
 static int
 operation_number_string(
 	struct vm_realm *realm,
 	double number,
 	struct vm_string **string)
 {
-	char text[40];
-	double read_back;
-	int precision;
-	int whole;
+	struct wb_buffer text;
+	int error;
 
-	/* Whether the number is a whole number in int32's range. */
-	whole = 0;
-	if (number >= -2147483648.0 && number <= 2147483647.0 && (double)(int32_t)number == number)
-		whole = 1;
-
-	/* The special numbers, a whole number, or the fewest %g digits that read back as the same double. */
-	if (number != number) {
-		snprintf(text, sizeof(text), "NaN");
-	} else if (number == INFINITY) {
-		snprintf(text, sizeof(text), "Infinity");
-	} else if (number == -INFINITY) {
-		snprintf(text, sizeof(text), "-Infinity");
-	} else if (number == 0.0) {
-		snprintf(text, sizeof(text), "0");
-	} else if (whole) {
-		snprintf(text, sizeof(text), "%d", (int)(int32_t)number);
-	} else {
-		for (precision = 1; precision <= 17; precision++) {
-			snprintf(text, sizeof(text), "%.*g", precision, number);
-			read_back = strtod(text, NULL);
-			if (read_back == number)
-				break;
-		}
+	/* The digits. */
+	wb_buffer_init(&text);
+	error = vm_number_to_text(number, 10, &text);
+	if (error != 0) {
+		wb_buffer_release(&text);
+		return error;
 	}
 
-	/* The digits as a string. */
-	*string = vm_string_from_utf8(realm->heap, text, strlen(text));
+	/* As a string. */
+	*string = vm_string_from_utf8(realm->heap, wb_buffer_string(&text), text.length);
+	wb_buffer_release(&text);
 	if (*string == NULL)
 		return ENOMEM;
 
@@ -1115,20 +1193,21 @@ operation_parse_number(
 	int blank;
 	int decimal;
 	int differs;
+	double number;
 
 	/* The blanks at both ends are not part of the numeral. */
 	start = 0;
 	end = string->length;
 	while (start < end) {
 		unit = vm_string_at(string, start);
-		blank = operation_is_space(unit);
+		blank = vm_is_space(unit);
 		if (!blank)
 			break;
 		start++;
 	}
 	while (end > start) {
 		unit = vm_string_at(string, end - 1U);
-		blank = operation_is_space(unit);
+		blank = vm_is_space(unit);
 		if (!blank)
 			break;
 		end--;
@@ -1174,34 +1253,26 @@ operation_parse_number(
 	if (prefix == 'b')
 		return operation_parse_radix(text + 2, 2);
 
-	/* A decimal numeral, checked before C reads it (strtod takes forms the language does not). */
+	/* A decimal numeral, checked before it is read. */
 	decimal = operation_is_decimal(text);
 	if (!decimal)
 		return NAN;
 
-	/* The number read. */
-	return strtod(text, NULL);
-}
+	/* The number read exactly, with its sign. */
+	if (text[0] == '-') {
+		number = vm_number_parse(text + 1, length - 1U);
+		return -number;
+	}
 
-/* Tells whether a code unit is white space or a line terminator for StringToNumber. */
-static int
-operation_is_space(
-	uint16_t unit)
-{
-	/* The ASCII blanks and line terminators. */
-	if (unit == 0x09U || unit == 0x0AU || unit == 0x0BU || unit == 0x0CU || unit == 0x0DU || unit == 0x20U)
-		return 1;
+	/* A plus sign. */
+	if (text[0] == '+') {
+		number = vm_number_parse(text + 1, length - 1U);
+		return number;
+	}
 
-	/* NBSP, the BOM, LS and PS. */
-	if (unit == 0xA0U || unit == 0xFEFFU || unit == 0x2028U || unit == 0x2029U)
-		return 1;
-
-	/* The other Unicode space separators (Zs). */
-	if (unit == 0x1680U || (unit >= 0x2000U && unit <= 0x200AU) || unit == 0x202FU || unit == 0x205FU || unit == 0x3000U)
-		return 1;
-
-	/* Anything else. */
-	return 0;
+	/* No sign. */
+	number = vm_number_parse(text, length);
+	return number;
 }
 
 /* Reads the digits of a prefixed integer in a radix; NaN when there are none or one is not a digit. */
@@ -1210,20 +1281,18 @@ operation_parse_radix(
 	const char *text,
 	unsigned radix)
 {
-	double number;
+	const char *digit_text;
 	unsigned digit;
 	char character;
+	double number;
 
 	/* At least one digit. */
 	if (*text == '\0')
 		return NAN;
 
-	/* Each digit, the number growing in the radix. */
-	number = 0.0;
-	for (;
-	     *text != '\0';
-	     text++) {
-		character = *text;
+	/* Each character must be a digit of the radix. */
+	for (digit_text = text; *digit_text != '\0'; digit_text++) {
+		character = *digit_text;
 		if (character >= '0' && character <= '9') {
 			digit = (unsigned)(character - '0');
 		} else if ((character | 0x20) >= 'a' && (character | 0x20) <= 'z') {
@@ -1235,10 +1304,10 @@ operation_parse_radix(
 		/* A digit outside the radix makes no numeral. */
 		if (digit >= radix)
 			return NAN;
-		number = number * (double)radix + (double)digit;
 	}
 
-	/* The number read. */
+	/* The number, read exactly and rounded once. */
+	number = vm_number_parse_radix(text, strlen(text), (int)radix);
 	return number;
 }
 

@@ -155,6 +155,8 @@ host_js_run(
 	vm_heap_set_stack_base(heap, stack_base);
 	status = vm_realm_create(heap, &realm);
 	if (status == 0)
+		status = js_install_builtins(realm);
+	if (status == 0)
 		status = host_js_define_print(realm);
 	if (status != 0) {
 		vm_heap_destroy(heap);

@@ -71,6 +71,7 @@ struct interpreter {
 
 static int interpreter_push(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, uint32_t caller, uint32_t return_pc, uint64_t result_slot, uint32_t *base);
 static int interpreter_arguments(struct vm_realm *realm, struct vm_function *function, const vm_value *args, unsigned count, vm_value *arguments);
+static int interpreter_enter(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, uint64_t result_slot, vm_value *result);
 static int interpreter_run(struct interpreter *run);
 static int interpreter_step(struct interpreter *run);
 static int interpreter_step_js(struct interpreter *run, const uint32_t *words, vm_value *registers);
@@ -104,6 +105,53 @@ vm_interpret(
 	unsigned count,
 	vm_value *result)
 {
+	int status;
+
+	/* An ordinary call. */
+	status = interpreter_enter(realm, function, this_value, args, count, 0, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the function's result. */
+	return 0;
+}
+
+/*
+ * Runs a bytecode function as a construction on the object new made (this
+ * value), entering the interpreter from C: the result is that object
+ * unless the function returns another object.
+ */
+int
+vm_interpret_construct(
+	struct vm_realm *realm,
+	struct vm_function *function,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* A call whose frame is marked as a construction. */
+	status = interpreter_enter(realm, function, this_value, args, count, FRAME_CONSTRUCT, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the object. */
+	return 0;
+}
+
+/* Enters the interpreter from C with an entry frame for a function; the result slot says whether it is a construction. */
+static int
+interpreter_enter(
+	struct vm_realm *realm,
+	struct vm_function *function,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	uint64_t result_slot,
+	vm_value *result)
+{
 	struct interpreter run;
 	int status;
 
@@ -118,7 +166,7 @@ vm_interpret(
 	memset(&run, 0, sizeof(run));
 	run.realm = realm;
 	run.entry = realm->stack_top;
-	status = interpreter_push(realm, function, this_value, args, count, 0, 0, 0, &run.base);
+	status = interpreter_push(realm, function, this_value, args, count, 0, 0, result_slot, &run.base);
 	if (status != 0)
 		return status;
 	run.code = function->code;
@@ -221,7 +269,9 @@ interpreter_arguments(
 	vm_value *arguments)
 {
 	struct vm_object *object;
+	struct vm_accessor *accessor;
 	vm_value key;
+	vm_value thrower;
 	unsigned index;
 	int error;
 
@@ -229,6 +279,7 @@ interpreter_arguments(
 	object = vm_object_create(realm->heap, realm->object_prototype);
 	if (object == NULL)
 		return ENOMEM;
+	object->kind = VM_KIND_ARGUMENTS;
 
 	/* Each argument as an element. */
 	for (index = 0; index < count; index++) {
@@ -246,13 +297,21 @@ interpreter_arguments(
 	if (error != 0)
 		return error;
 
-	/* Sloppy code's callee: the function (strict code's throwing accessor comes with the built-ins). */
+	/* callee: the function for sloppy code, an accessor that throws for strict code (once the realm has one). */
+	key = vm_key_from_ascii(realm->heap, "callee");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
 	if ((function->code->flags & VM_CODE_STRICT) == 0U) {
-		key = vm_key_from_ascii(realm->heap, "callee");
-		if (key == VM_VALUE_EMPTY)
-			return ENOMEM;
 		error = vm_object_define(realm->heap, object, key, vm_value_cell(function),
 		    VM_PROPERTY_WRITABLE | VM_PROPERTY_CONFIGURABLE);
+		if (error != 0)
+			return error;
+	} else if (realm->intrinsics[VM_INTRINSIC_THROW_TYPE_ERROR] != NULL) {
+		thrower = vm_value_cell(realm->intrinsics[VM_INTRINSIC_THROW_TYPE_ERROR]);
+		accessor = vm_accessor_create(realm->heap, thrower, thrower);
+		if (accessor == NULL)
+			return ENOMEM;
+		error = vm_object_define(realm->heap, object, key, vm_value_cell(accessor), VM_PROPERTY_ACCESSOR);
 		if (error != 0)
 			return error;
 	}
@@ -826,11 +885,16 @@ interpreter_scope(
 		status = 0;
 		break;
 	case VM_OP_LOAD_THIS:
-		/* Sloppy code sees the global object for undefined and null. */
+		/* Sloppy code sees the global object for undefined and null, and an object for a primitive. */
 		value = frame[FRAME_THIS];
-		if (!strict && (value == VM_VALUE_UNDEFINED || value == VM_VALUE_NULL))
-			value = vm_value_cell(realm->global);
 		status = 0;
+		if (!strict && (value == VM_VALUE_UNDEFINED || value == VM_VALUE_NULL)) {
+			value = vm_value_cell(realm->global);
+		} else if (!strict) {
+			status = vm_to_object(realm, value, &value);
+		}
+
+		/* The value. */
 		break;
 	case VM_OP_LOAD_CALLEE:
 		value = vm_value_cell(function);
@@ -1030,7 +1094,9 @@ interpreter_call(
 		return 0;
 	}
 
-	/* A native function runs now, in its own realm. */
+	/* A native function runs now, in its own realm (which tells it which function it is). */
+	function->realm->callee = callee;
+	function->realm->new_target = VM_VALUE_UNDEFINED;
 	status = function->native(function->realm, registers[words[3]], &registers[words[4]], words[5], &value);
 	if (status != 0)
 		return status;
@@ -1059,7 +1125,6 @@ interpreter_construct(
 	vm_value value;
 	uint32_t base;
 	int constructor;
-	int is_object;
 	int status;
 
 	/* Only constructors can be used with new. */
@@ -1070,14 +1135,12 @@ interpreter_construct(
 		return status;
 	}
 
-	/* The new object. */
-	status = vm_construct_this(run->realm, callee, &this_value);
-	if (status != 0)
-		return status;
-
-	/* A bytecode constructor: its frame, marked as a construction. */
+	/* A bytecode constructor: the new object, then its frame, marked as a construction. */
 	function = (struct vm_function *)vm_value_as_cell(callee);
 	if (function->code != NULL) {
+		status = vm_construct_this(run->realm, registers[words[3]], &this_value);
+		if (status != 0)
+			return status;
 		status = interpreter_push(run->realm, function, this_value, &registers[words[4]], words[5], run->base + 1U, next,
 		    words[1] | FRAME_CONSTRUCT, &base);
 		if (status != 0)
@@ -1088,13 +1151,12 @@ interpreter_construct(
 		return 0;
 	}
 
-	/* A native constructor runs now; an object it returns replaces the new one. */
-	status = function->native(function->realm, this_value, &registers[words[4]], words[5], &value);
+	/* A native constructor runs now and makes its own object from new.target. */
+	function->realm->callee = callee;
+	function->realm->new_target = registers[words[3]];
+	status = function->construct(function->realm, VM_VALUE_UNDEFINED, &registers[words[4]], words[5], &value);
 	if (status != 0)
 		return status;
-	is_object = vm_value_is_object(value);
-	if (!is_object)
-		value = this_value;
 
 	/* Succeeded: the object is in the register and the caller goes on. */
 	registers[words[1]] = value;

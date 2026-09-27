@@ -120,7 +120,7 @@ js_compile(
 
 /*
  * Parses, compiles and runs a script with the global object as this;
- * stores its completion (undefined for now).  Returns 0, VM_THROWN with
+ * stores its completion value (its last expression statement's).  Returns 0, VM_THROWN with
  * the realm's exception set, EINVAL with *error describing a syntax error
  * or what is not supported, or ENOMEM.
  */
@@ -258,10 +258,14 @@ js_compile_function(
 		js_compile_statements(fc, node->second);
 	}
 
-	/* Falling off the end returns undefined. */
-	result = js_temp(fc);
-	js_load_value(fc, result, VM_VALUE_UNDEFINED);
-	js_emit1(fc, VM_OP_RETURN, result);
+	/* Falling off the end returns undefined (the program its completion value). */
+	if (info->program) {
+		js_emit1(fc, VM_OP_RETURN, fc->completion_register);
+	} else {
+		result = js_temp(fc);
+		js_load_value(fc, result, VM_VALUE_UNDEFINED);
+		js_emit1(fc, VM_OP_RETURN, result);
+	}
 
 	/* The name: the one given, or the node's own. */
 	if (name == NULL && node->text != NULL) {
@@ -385,7 +389,10 @@ compile_prepare(
 			compile_place_binding(fc, binding, &env_count);
 	}
 
-	/* The environment's register, then the temporaries. */
+	/* The program's completion value (the last expression statement's), the environment's register, then the temporaries. */
+	fc->completion_register = fc->local_count;
+	if (info->program)
+		fc->local_count++;
 	fc->env_register = fc->local_count;
 	fc->local_count++;
 	fc->register_count = fc->local_count;
@@ -660,10 +667,12 @@ compile_expression_statement(
 	uint32_t mark;
 	uint32_t value;
 
-	/* The expression into a temporary register given back after. */
+	/* The expression into a temporary register given back after (the program keeps it as its completion value). */
 	mark = fc->temp_top;
 	value = js_temp(fc);
 	js_compile_expression(fc, node->first, value);
+	if (fc->info->program)
+		js_emit2(fc, VM_OP_MOV, fc->completion_register, value);
 	fc->temp_top = mark;
 }
 

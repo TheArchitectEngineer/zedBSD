@@ -127,6 +127,7 @@ int vm_string_equal_ascii(const struct vm_string *string, const char *ascii);
 int vm_string_equal_units(const struct vm_string *string, const uint16_t *units, size_t length);
 int vm_string_compare(const struct vm_string *left, const struct vm_string *right);
 int vm_string_to_utf8(const struct vm_string *string, struct wb_buffer *buffer);
+int vm_string_append_units(const struct vm_string *string, struct wb_units *units);
 
 /* Atoms (atom.c). */
 struct vm_string *vm_atom(struct vm_heap *heap, struct vm_string *string);
@@ -404,6 +405,38 @@ enum vm_relation {
 	VM_RELATION_GREATER_EQUAL
 };
 
+/*
+ * The objects of a realm that the engine itself uses, beyond the three
+ * prototypes every realm has: the built-ins fill them (js_install_builtins),
+ * and until then they are NULL (errors are then thrown as strings).
+ */
+enum vm_intrinsic {
+	VM_INTRINSIC_ERROR_PROTOTYPE,
+	VM_INTRINSIC_TYPE_ERROR_PROTOTYPE,
+	VM_INTRINSIC_RANGE_ERROR_PROTOTYPE,
+	VM_INTRINSIC_REFERENCE_ERROR_PROTOTYPE,
+	VM_INTRINSIC_SYNTAX_ERROR_PROTOTYPE,
+	VM_INTRINSIC_EVAL_ERROR_PROTOTYPE,
+	VM_INTRINSIC_URI_ERROR_PROTOTYPE,
+	VM_INTRINSIC_BOOLEAN_PROTOTYPE,
+	VM_INTRINSIC_NUMBER_PROTOTYPE,
+	VM_INTRINSIC_STRING_PROTOTYPE,
+	VM_INTRINSIC_SYMBOL_PROTOTYPE,
+	VM_INTRINSIC_THROW_TYPE_ERROR,
+	VM_INTRINSICS
+};
+
+/* The error kinds of vm_throw_error, in the order of their intrinsic prototypes. */
+enum vm_error_kind {
+	VM_ERROR_PLAIN,
+	VM_ERROR_TYPE,
+	VM_ERROR_RANGE,
+	VM_ERROR_REFERENCE,
+	VM_ERROR_SYNTAX,
+	VM_ERROR_EVAL,
+	VM_ERROR_URI
+};
+
 struct vm_shape;
 struct vm_realm;
 struct vm_code;
@@ -419,6 +452,24 @@ struct vm_symbol {
 };
 
 /*
+ * The kinds of object the built-ins tell apart (Object.prototype.toString,
+ * the methods that need a Boolean, a Number, a String or an Error).
+ */
+enum vm_object_kind {
+	VM_KIND_OBJECT,
+	VM_KIND_ARRAY,
+	VM_KIND_FUNCTION,
+	VM_KIND_ARGUMENTS,
+	VM_KIND_ERROR,
+	VM_KIND_BOOLEAN,
+	VM_KIND_NUMBER,
+	VM_KIND_STRING,
+	VM_KIND_SYMBOL,
+	VM_KIND_DATE,
+	VM_KIND_REGEXP
+};
+
+/*
  * An object: its shape (which names its properties and where each one's
  * value is), its prototype (NULL for none), the values of its named
  * properties, and its elements (the values of its index properties with
@@ -426,8 +477,10 @@ struct vm_symbol {
  *
  * The slots and the elements are malloc'd and freed with the cell.  For an
  * array, length is the array's length; for other objects it is one past
- * the highest element in use.  Every kind of object (functions, and later
- * DOM nodes and Wasm instances) begins with this structure.
+ * the highest element in use.  kind is an enum vm_object_kind, and
+ * internal the value a wrapper holds (a Boolean's, Number's or String's
+ * primitive).  Every kind of object (functions, and later DOM nodes and
+ * Wasm instances) begins with this structure.
  */
 struct vm_object {
 	struct vm_cell cell;
@@ -439,6 +492,9 @@ struct vm_object {
 	vm_value *elements;
 	uint32_t length;
 	uint32_t element_capacity;
+	uint32_t kind;
+	uint32_t reserved;
+	vm_value internal;
 };
 
 /*
@@ -461,6 +517,29 @@ struct vm_property {
 	uint32_t attributes;
 };
 
+/* Which fields a property descriptor has. */
+#define VM_HAS_VALUE			0x01U
+#define VM_HAS_WRITABLE			0x02U
+#define VM_HAS_GET			0x04U
+#define VM_HAS_SET			0x08U
+#define VM_HAS_ENUMERABLE		0x10U
+#define VM_HAS_CONFIGURABLE		0x20U
+
+/*
+ * A property descriptor (Object.defineProperty's argument, or what
+ * getOwnPropertyDescriptor reports): the fields present (VM_HAS_*), the
+ * value or the getter and setter, and the attributes among
+ * VM_PROPERTY_WRITABLE, VM_PROPERTY_ENUMERABLE and VM_PROPERTY_CONFIGURABLE
+ * (meaningful where present).
+ */
+struct vm_descriptor {
+	uint32_t has;
+	uint32_t attributes;
+	vm_value value;
+	vm_value getter;
+	vm_value setter;
+};
+
 /*
  * A native function: what it does when called, with the this value and
  * the arguments; it stores its result, and returns 0, VM_THROWN with the
@@ -471,14 +550,19 @@ typedef int (*vm_native)(struct vm_realm *realm, vm_value this_value, const vm_v
 /*
  * A function: an object that can be called, with its realm and what runs
  * when it is called: a code unit of bytecode (with the environment of the
- * code it was made in, NULL for none), or a native function.
+ * code it was made in, NULL for none), or a native function.  A native
+ * constructor also has what runs for new (it makes its own object from
+ * the realm's new_target); data is what a native function keeps for
+ * itself (a bound function's target, this and arguments).
  */
 struct vm_function {
 	struct vm_object object;
 	struct vm_realm *realm;
 	vm_native native;
+	vm_native construct;
 	struct vm_code *code;
 	struct vm_env *env;
+	vm_value data;
 };
 
 /*
@@ -498,7 +582,10 @@ struct vm_realm {
 	struct vm_object *object_prototype;
 	struct vm_object *function_prototype;
 	struct vm_object *array_prototype;
+	struct vm_object *intrinsics[VM_INTRINSICS];
 	vm_value exception;
+	vm_value callee;
+	vm_value new_target;
 	vm_value *stack;
 	uint32_t stack_capacity;
 	uint32_t stack_top;
@@ -547,12 +634,22 @@ struct vm_function *vm_function_create_native(struct vm_realm *realm, const char
 int vm_value_is_callable(vm_value value);
 int vm_value_is_constructor(vm_value value);
 int vm_construct_this(struct vm_realm *realm, vm_value constructor, vm_value *object);
+int vm_construct_prototype(struct vm_realm *realm, vm_value new_target, struct vm_object *fallback, struct vm_object **prototype);
+int vm_construct(struct vm_realm *realm, vm_value constructor, const vm_value *args, unsigned count, vm_value new_target, vm_value *result);
 int vm_call(struct vm_realm *realm, vm_value callee, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int vm_throw(struct vm_realm *realm, vm_value exception);
 
 /* Realms (realm.c). */
 int vm_realm_create(struct vm_heap *heap, struct vm_realm **realm);
 void vm_realm_destroy(struct vm_realm *realm);
+
+/* Numbers and their decimal text (number.c). */
+int vm_number_to_text(double number, int radix, struct wb_buffer *out);
+int vm_number_to_fixed(double number, int fraction_digits, struct wb_buffer *out);
+int vm_number_to_exponential(double number, int fraction_digits, struct wb_buffer *out);
+int vm_number_to_precision(double number, int precision, struct wb_buffer *out);
+double vm_number_parse(const char *text, size_t length);
+double vm_number_parse_radix(const char *text, size_t length, int radix);
 
 /* JavaScript's operations on values (operation.c). */
 int vm_to_boolean(vm_value value);
@@ -569,10 +666,13 @@ int vm_numeric(struct vm_realm *realm, int operator, vm_value left, vm_value rig
 int vm_less(struct vm_realm *realm, vm_value left, vm_value right, vm_value *result);
 int vm_relation(struct vm_realm *realm, int relation, vm_value left, vm_value right, vm_value *result);
 int vm_typeof(struct vm_realm *realm, vm_value value, vm_value *result);
+int vm_throw_error(struct vm_realm *realm, int kind, const char *message);
+int vm_error_create(struct vm_realm *realm, int kind, const char *message, vm_value *error_value);
 int vm_throw_type_error(struct vm_realm *realm, const char *message);
 int vm_throw_range_error(struct vm_realm *realm, const char *message);
 int vm_throw_reference_error(struct vm_realm *realm, const char *message);
 int vm_throw_not_defined(struct vm_realm *realm, vm_value key);
+int vm_is_space(uint16_t unit);
 
 /* Properties of any value, globals and enumeration (access.c). */
 int vm_get(struct vm_realm *realm, vm_value base, vm_value key, vm_value *result);
@@ -588,10 +688,15 @@ int vm_put_global(struct vm_realm *realm, vm_value key, vm_value value, int stri
 int vm_define_global_var(struct vm_realm *realm, vm_value key);
 int vm_define_global_function(struct vm_realm *realm, vm_value key, vm_value function);
 int vm_delete_global(struct vm_realm *realm, vm_value key, vm_value *result);
+int vm_to_object(struct vm_realm *realm, vm_value value, vm_value *object);
+int vm_get_own_descriptor(struct vm_object *object, vm_value key, struct vm_descriptor *descriptor);
+int vm_define_own_property(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor, int *done);
+int vm_same_value(vm_value left, vm_value right);
 int vm_for_in_start(struct vm_realm *realm, vm_value value, vm_value *iterator);
 int vm_for_in_next(struct vm_realm *realm, vm_value iterator, vm_value *key, int *done);
 
 /* The interpreter (interpreter.c). */
 int vm_interpret(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int vm_interpret_construct(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
 #endif
