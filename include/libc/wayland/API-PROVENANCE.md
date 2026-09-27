@@ -24,7 +24,10 @@ xdg_wm_base/positioner/surface/toplevel/popup v3 (v1 until WS035 p076),
 wl_subcompositor/wl_subsurface v1 (WS035 p077: requests destroy and
 get_subsurface `noo`; destroy, set_position `ii`, place_above `o`, place_below
 `o`, set_sync, set_desync; no events; checked against the pinned Wayland 1.23.1
-description).
+description), wl_data_device_manager/wl_data_source/wl_data_device/wl_data_offer
+v3 (WS035 p079; the requests, events, `since` versions and dnd_action values of
+the same pinned description; their events reach listeners through the generic
+dispatch, and wl_data_device.data_offer creates the server's wl_data_offer).
 This library does not claim a complete Wayland SDK. It does not supply wl_touch,
 wl_shm, EGL, a public server library, or general C callback FFI.
 

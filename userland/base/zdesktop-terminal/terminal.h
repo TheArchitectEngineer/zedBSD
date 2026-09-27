@@ -324,7 +324,34 @@ struct terminal_window {
 	struct terminal_menu_state menu_state;
 	uint32_t actions[TERMINAL_ACTIONS];
 	unsigned action_count;
+
+	/*
+	 * The clipboard (clipboard.c, WS035 p079): the data device manager and
+	 * the seat's data device (NULL without them), the terminal's source
+	 * while its text is the selection, the selection's offer and whether it
+	 * has text, whether the offer being described has text, the serial of
+	 * the last key (a selection is set with it), and the text the source
+	 * sends (the terminal's copy, owned by main.c).
+	 */
+	struct wl_data_device_manager *data_manager;
+	struct wl_data_device *data_device;
+	struct wl_data_source *data_source;
+	struct wl_data_offer *data_offer;
+	int offer_text;
+	int pending_text;
+	uint32_t serial;
+	const char *clipboard;
+	size_t clipboard_length;
 };
+
+/* The clipboard through zdesktop's (clipboard.c). */
+void terminal_clipboard_bind(struct terminal_window *window, struct wl_registry *registry, uint32_t name, uint32_t version);
+void terminal_clipboard_start(struct terminal_window *window);
+void terminal_clipboard_set(struct terminal_window *window, const char *text, size_t length);
+int terminal_clipboard_own(const struct terminal_window *window);
+int terminal_clipboard_has_text(const struct terminal_window *window);
+size_t terminal_clipboard_receive(struct terminal_window *window, char *text, size_t size);
+void terminal_clipboard_close(struct terminal_window *window);
 
 /* The character grid (screen.c). */
 void terminal_screen_init(struct terminal_screen *screen, unsigned columns, unsigned rows);

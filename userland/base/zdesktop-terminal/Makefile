@@ -5,5 +5,6 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 ZDESKTOP_TERMINAL_SOURCES := userland/base/zdesktop-terminal/main.c \
 	userland/base/zdesktop-terminal/screen.c userland/base/zdesktop-terminal/keys.c \
 	userland/base/zdesktop-terminal/font.c userland/base/zdesktop-terminal/render.c \
-	userland/base/zdesktop-terminal/window.c userland/base/zdesktop-terminal/menu.c
+	userland/base/zdesktop-terminal/window.c userland/base/zdesktop-terminal/menu.c \
+	userland/base/zdesktop-terminal/clipboard.c
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-terminal,Wayland terminal,amd64,y,basic,$(ZDESKTOP_TERMINAL_SOURCES),y,base,base/zdesktop-terminal,base/libvulkan base/libwayland base/libzdesktop base/libtruetype,0755,program,,,bin))

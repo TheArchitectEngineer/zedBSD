@@ -14,6 +14,7 @@
 #include "popup.h"
 #include "toplevel.h"
 #include "subsurface.h"
+#include "data.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -42,6 +43,7 @@ static const struct zwl_global globals[] = {
 	{ 6, "wl_shm", 1, ZWL_SHM },
 	{ 7, "xdg_menu_manager_v1", 1, ZWL_MENU_MANAGER },
 	{ 8, "wl_subcompositor", 1, ZWL_SUBCOMPOSITOR },
+	{ 9, "wl_data_device_manager", 3, ZWL_DATA_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -188,6 +190,13 @@ zwl_dispatch(
 		}
 
 		/* Any other output request stays refused. */
+		break;
+	case ZWL_DATA_MANAGER:
+	case ZWL_DATA_SOURCE:
+	case ZWL_DATA_DEVICE:
+	case ZWL_DATA_OFFER:
+		/* The clipboard (data.c). */
+		error = zwl_data_request(object, opcode, bytes, size);
 		break;
 	case ZWL_SUBCOMPOSITOR:
 		/* wl_subcompositor (subsurface.c). */
