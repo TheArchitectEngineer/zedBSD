@@ -701,7 +701,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo wltest wlshm mview zdesktop zdesktop-terminal zdesktop-files zdesktop-x11server egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe popup-probe subsurface-probe,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest wlshm mview zdesktop zdesktop-terminal zdesktop-files zdesktop-x11server egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe titlebar-probe popup-probe subsurface-probe,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
@@ -966,6 +966,23 @@ $(BUILD)/bin/menu-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_MENU_PROBE_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libwayland-client.so -l:libzdesktop.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libwayland-client.so --needed libzdesktop.so --needed libc.so $@
+
+# The Titlebar Presentation probe (WS070 p008): Wayland, libzdesktop and the C library.
+DYNAMIC_TITLEBAR_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,titlebar-probe)
+
+$(BUILD)/bin/titlebar-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_TITLEBAR_PROBE_OBJS) $(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libzdesktop.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_TITLEBAR_PROBE_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
  -l:libwayland-client.so -l:libzdesktop.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \

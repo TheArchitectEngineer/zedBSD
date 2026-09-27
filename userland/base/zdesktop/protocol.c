@@ -11,6 +11,7 @@
 
 #include "zwl.h"
 #include "menu.h"
+#include "titlebar.h"
 #include "popup.h"
 #include "toplevel.h"
 #include "subsurface.h"
@@ -38,6 +39,7 @@ static const struct zwl_global globals[] = {
 	{ 6, "wl_shm", 1, ZWL_SHM },
 	{ 7, "xdg_menu_manager_v1", 1, ZWL_MENU_MANAGER },
 	{ 8, "wl_subcompositor", 1, ZWL_SUBCOMPOSITOR },
+	{ 16, "zed_titlebar_manager_v1", 1, ZWL_TITLEBAR_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -169,6 +171,11 @@ zwl_dispatch(
 	case ZWL_TOPLEVEL_MENU:
 		/* The System Menu (menu.c). */
 		error = zwl_menu_request(object, opcode, bytes, size);
+		break;
+	case ZWL_TITLEBAR_MANAGER:
+	case ZWL_TITLEBAR:
+		/* The Titlebar Presentation (titlebar.c). */
+		error = zwl_titlebar_request(object, opcode, bytes, size);
 		break;
 	case ZWL_POSITIONER:
 	case ZWL_POPUP:
