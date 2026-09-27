@@ -57,8 +57,8 @@ double click の対称、transaction の atomic な mode の切り替え、clien
 zdesktop-files（WS071、仕様の §14 の File Manager の例）、`TABS` は WS071 の tab（p013）や zdesktop-terminal の候補。
 同日のユーザーの補足:「つまり、今のファイラーのはウィンドウ内部の上部にナビゲーションバーを持っていますが、これをウィンドウのフローティングタイトルバーにマージします。」
 → 具体的な受け入れの一つ: zdesktop-files の窓の中の上部のナビゲーションバー（戻る・進む・ホーム・path・検索・表示の切り替え等）を
-`CONTROLS` の model として浮いたタイトルバー（最大化ではシステムバーの Application Zone）へ移し、窓の中の bar は拡張の無い compositor の
-fallback（§27）としてだけ残す。
+`CONTROLS` の model として浮いたタイトルバー（最大化ではシステムバーの Application Zone）へ移し、窓の中の bar は消す。
+さらにユーザー:「ファイラーはこのcompositorでしか使えなくてOKです。」→ zdesktop-files には fallback（§27）を持たせない（拡張が無ければ起動時にはっきり失敗してよい）。
 Phase の分け方・順序・受け入れは p007（設計）で決める。WS071 の Phase と組み合わせて WS071 のサブエージェントが計画する。
 
 ## Future Work の候補（main の session が future-work.md へ）
