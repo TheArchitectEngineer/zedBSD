@@ -123,6 +123,7 @@ uint16_t vm_string_at(const struct vm_string *string, size_t index);
 uint32_t vm_string_hash(struct vm_string *string);
 int vm_string_equal(const struct vm_string *left, const struct vm_string *right);
 int vm_string_equal_ascii(const struct vm_string *string, const char *ascii);
+int vm_string_equal_units(const struct vm_string *string, const uint16_t *units, size_t length);
 int vm_string_compare(const struct vm_string *left, const struct vm_string *right);
 int vm_string_to_utf8(const struct vm_string *string, struct wb_buffer *buffer);
 

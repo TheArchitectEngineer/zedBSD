@@ -305,6 +305,34 @@ vm_string_equal_ascii(
 }
 
 /*
+ * Tells whether a string holds exactly length UTF-16 units.
+ */
+int
+vm_string_equal_units(
+	const struct vm_string *string,
+	const uint16_t *units,
+	size_t length)
+{
+	uint16_t unit;
+	size_t index;
+
+	/* The lengths must agree. */
+	if (length != string->length)
+		return 0;
+
+	/* Compares unit by unit. */
+	for (index = 0; index < length; index++) {
+		/* One differing unit settles it. */
+		unit = vm_string_at(string, index);
+		if (unit != units[index])
+			return 0;
+	}
+
+	/* Every unit matched. */
+	return 1;
+}
+
+/*
  * Compares two strings by their UTF-16 units, as JavaScript's < does.
  *
  * Returns a negative number, zero or a positive number.

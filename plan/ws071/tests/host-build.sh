@@ -17,6 +17,7 @@ mkdir -p "$out/include" "$out/obj"
 ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
 ln -sf "$(pwd)/include/libc/zdesktop.h" "$out/include/zdesktop.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
 flags="-O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src"
 
@@ -32,6 +33,12 @@ done
 # The C library's SHA-2 (the information's checksum), which the host's C library does not have.
 "$cc" $flags -c src/libc/openbsd-sha2.c -o "$out/obj/libc-sha2.o"
 objects="$objects $out/obj/libc-sha2.o"
+# libz-compat and libpng-compat (the PNG thumbnails).
+for file in userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c; do
+	object="$out/obj/compat-$(basename "$file" .c).o"
+	"$cc" $flags -c "$file" -o "$object"
+	objects="$objects $object"
+done
 if [ -f userland/base/libzdesktop/recent.c ]; then
 	"$cc" $flags -c userland/base/libzdesktop/recent.c -o "$out/obj/zdesktop-recent.o"
 	objects="$objects $out/obj/zdesktop-recent.o"

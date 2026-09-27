@@ -148,6 +148,9 @@ struct html_tokenizer {
 	int failed;
 };
 
+struct dom_document;
+struct html_parser;
+
 /* The input stream (input.c). */
 void html_input_init(struct html_input *input);
 int html_input_append(struct html_input *input, const uint16_t *units, size_t length);
@@ -161,5 +164,12 @@ void html_tokenizer_set_state(struct html_tokenizer *tokenizer, enum html_tokeni
 int html_tokenizer_set_last_start_tag(struct html_tokenizer *tokenizer, const uint16_t *name, size_t length);
 enum html_token_type html_tokenizer_next(struct html_tokenizer *tokenizer, const struct html_token **token);
 const char *html_error_name(int error);
+
+/* The tree builder (parser.c). */
+int html_parser_create(struct html_parser **parser, struct dom_document *document, int scripting);
+void html_parser_destroy(struct html_parser *parser);
+int html_parser_feed(struct html_parser *parser, const uint16_t *units, size_t length);
+int html_parser_finish(struct html_parser *parser);
+size_t html_parser_errors(const struct html_parser *parser);
 
 #endif

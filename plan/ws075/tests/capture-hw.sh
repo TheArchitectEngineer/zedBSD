@@ -20,6 +20,13 @@ mkdir -p "$out"
 I915_HOST=${I915_HOST:-awe@10.0.30.3}
 export I915_HOST
 
+# A zdesktop run builds one image per ZDESKTOP_APP: vkloop-hw.sh rebuilds only when an input file is newer than the
+# image, so a changed file list (run-home.sh in place of run-mview.sh, the terminal's font) would keep the old image.
+if [ "$mode" = zdesktop ] && [ -z "${BUILD:-}" ]; then
+	BUILD=build/resident-zdesktop-${ZDESKTOP_APP:-mview}
+	export BUILD
+fi
+
 # The machine, for the whole run; what the run left in /tmp is copied before the lock goes.
 exec 9>/tmp/i915-hw.lock
 flock 9

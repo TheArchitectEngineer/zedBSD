@@ -10,7 +10,8 @@
  * plan/ws070/titlebar-design.md sections 6, 7, 9 and 10).
  *
  * A window's titlebar shows, after its mark and title, the presentation its
- * client chose: its menu (menu-shell.c, the default) or its controls.  The
+ * client chose: its menu (menu-shell.c, the default), its controls or its
+ * tabs.  The
  * controls are laid out in the room there is -- in the floating titlebar,
  * or in the system bar's application zone while the window is docked --
  * the navigation buttons on the left, the breadcrumb stretching after them,
@@ -18,6 +19,13 @@
  * at the right end.  When the room runs short the breadcrumb loses its
  * leading parts, the search field becomes a button, and then the controls
  * give way to the "..." popup, the least important first.
+ *
+ * Tabs are pills in a strip (WS070 p011): the active one white, the others
+ * pale, a dot on one that wants attention, a close button on the active
+ * one and on the one under the pointer, and "+" after them when the client
+ * asks for it.  When the room runs short the tabs narrow to a least width
+ * (their titles end in an ellipsis), then the strip scrolls between two
+ * arrows, and "..." lists the tabs out of sight.
  *
  * A press on a control is taken here and the control acts on the release
  * over it.  The search field, and the breadcrumb when the client asks for
@@ -57,6 +65,17 @@
 /* A text label's padding (generic and primary controls). */
 #define LABEL_PADDING		12
 
+/* A tab's widest and least width, its title's padding, its close button's room, and the gap between tabs. */
+#define TAB_MOST		200
+#define TAB_LEAST		96
+#define TAB_PADDING		12
+#define TAB_CLOSE		20
+#define TAB_ATTENTION		10
+#define TAB_GAP			4
+
+/* The most tabs one window lays out. */
+#define SHELL_TABS		ZWL_TITLEBAR_TABS_MAX
+
 /* The keys a field knows (evdev codes). */
 #define FIELD_KEY_ESC		1U
 #define FIELD_KEY_BACKSPACE	14U
@@ -92,7 +111,11 @@ enum shell_kind {
 	KIND_BUTTON,
 	KIND_FACE,
 	KIND_CRUMB,
-	KIND_FIELD
+	KIND_FIELD,
+	KIND_TAB,
+	KIND_TAB_CLOSE,
+	KIND_NEW_TAB,
+	KIND_SCROLL
 };
 
 /*
@@ -134,6 +157,32 @@ struct shell_item {
 	unsigned shown;
 	int32_t width;
 	int32_t x;
+};
+
+/*
+ * One tab as a frame lays it out: the tab, the width it would like, whether
+ * it is shown, and where it is and how wide.
+ */
+struct shell_tab {
+	const struct zwl_titlebar_tab *tab;
+	int32_t natural;
+	unsigned shown;
+	int32_t x;
+	int32_t width;
+};
+
+/*
+ * A tab strip as a frame lays it out: whether it scrolls (with its arrows),
+ * the first tab shown and how many, whether "+" and "..." are there, and
+ * where the tabs start.
+ */
+struct shell_strip {
+	unsigned scrolling;
+	unsigned first;
+	unsigned shown;
+	unsigned new_button;
+	unsigned overflow;
+	int32_t start;
 };
 
 /*
@@ -192,6 +241,11 @@ static void shell_draw_search(struct zwl_server *server, VkCommandBuffer command
 static void shell_draw_crumbs(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned docked, const struct zwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
 static void shell_draw_field_text(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t baseline, int32_t width, const float *ink, float fade);
 static void shell_draw_progress(struct zwl_server *server, VkCommandBuffer command, const struct zwl_titlebar_control *control, int32_t x, int32_t y, int32_t size, float fade);
+static unsigned shell_tabs_layout(struct zwl_server *server, struct zwl_titlebar_model *model, const struct zwl_menu_area *area, int32_t size, unsigned has_menu, struct shell_tab *tabs, struct shell_strip *strip);
+static void shell_draw_tabs(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned docked, const struct zwl_menu_area *area, const float *ink, float fade);
+static void shell_draw_tab(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned docked, const struct shell_tab *tab, int32_t y, int32_t size, const float *ink, float fade, unsigned recording, int32_t *close_x);
+static void shell_act_tabs(struct zwl_server *server, const struct shell_hit *hit, struct zwl_titlebar_model *model, struct zwl_object *titlebar);
+static void shell_log_strip(struct zwl_object *surface, unsigned docked, const struct shell_tab *tabs, unsigned count, const int32_t *closes, int32_t y, int32_t size, const int32_t *buttons, uint32_t checksum);
 static unsigned shell_icon(uint32_t role);
 static int shell_hovered(struct zwl_server *server, int32_t x, int32_t y, int32_t width, int32_t height);
 static void shell_add_hit(struct zwl_object *surface, unsigned docked, unsigned kind, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t height);
@@ -275,15 +329,22 @@ zwl_titlebar_draw(
 		model->focus_id = 0;
 	}
 
+	/* A field of a window that shows no controls any more stops being edited. */
+	if (mode != ZWL_TITLEBAR_CONTROLS && shell_titlebar.field.surface == surface)
+		shell_field_done(server, ZWL_TEXT_LEFT);
+
 	/* The menu mode is the menus' to draw. */
 	if (mode == ZWL_TITLEBAR_MENU) {
 		zwl_menu_draw_bar(server, command, surface, docked, area, ink, fade);
 		return;
 	}
 
-	/* The controls. */
-	if (mode == ZWL_TITLEBAR_CONTROLS)
+	/* The controls, or the tabs. */
+	if (mode == ZWL_TITLEBAR_CONTROLS) {
 		shell_draw_controls(server, command, surface, docked, area, ink, fade);
+	} else if (mode == ZWL_TITLEBAR_TABS) {
+		shell_draw_tabs(server, command, surface, docked, area, ink, fade);
+	}
 }
 
 /*
@@ -472,9 +533,22 @@ zwl_titlebar_overflow_chosen(
 	struct zwl_object *titlebar;
 	uint32_t detail;
 	unsigned mode;
+	unsigned index;
+
+	/* A tab out of sight of a tab strip is chosen as its click would. */
+	mode = shell_mode(surface, &model, &titlebar);
+	if (mode == ZWL_TITLEBAR_TABS) {
+		for (index = 0; index < model->shown.tab_count; index++) {
+			if (model->shown.tabs[index].id == id)
+				zwl_titlebar_send_tab(titlebar, id, ZWL_TAB_EVENT_ACTIVATED);
+		}
+
+		/* The tab is shown by the client's next commit. */
+		server->dirty = 1;
+		return;
+	}
 
 	/* The window's controls, and the control. */
-	mode = shell_mode(surface, &model, &titlebar);
 	if (mode != ZWL_TITLEBAR_CONTROLS)
 		return;
 	control = zwl_titlebar_control(&model->shown, id);
@@ -1305,6 +1379,422 @@ shell_draw_progress(
 	glass_draw_solid(server, command, (float)x + 4.0f, (float)(y + size / 2 - 3), ((float)size - 8.0f) * share, 6.0f, 3.0f, colour);
 }
 
+/*
+ * Lays out a window's tabs in an area: each tab's width and whether it is
+ * shown, and the strip's arrows, "+" and "...".  The tabs get the width
+ * they would like when all fit, the same narrower width (not below the
+ * least) when they do not, and otherwise the strip scrolls: as many least
+ * tabs as fit, from the first the arrows chose, brought to the active tab
+ * once after each commit.  Returns how many tabs there are.
+ */
+static unsigned
+shell_tabs_layout(
+	struct zwl_server *server,
+	struct zwl_titlebar_model *model,
+	const struct zwl_menu_area *area,
+	int32_t size,
+	unsigned has_menu,
+	struct shell_tab *tabs,
+	struct shell_strip *strip)
+{
+	const struct zwl_titlebar_state *state;
+	const struct zwl_titlebar_tab *tab;
+	unsigned count;
+	unsigned index;
+	unsigned active;
+	int32_t room;
+	int32_t total;
+	int32_t width;
+	int32_t x;
+
+	/* Each tab and the width it would like: its title, its padding, its close button and its dot. */
+	state = &model->shown;
+	count = state->tab_count;
+	active = count;
+	total = 0;
+	for (index = 0; index < count; index++) {
+		tab = &state->tabs[index];
+		width = glass_text_width(server, SIZE_BAR, tab->title) + 2 * TAB_PADDING;
+		if ((tab->flags & ZWL_TAB_CLOSABLE) != 0U)
+			width += TAB_CLOSE;
+		if ((tab->flags & ZWL_TAB_ATTENTION) != 0U)
+			width += TAB_ATTENTION;
+		if (width > TAB_MOST)
+			width = TAB_MOST;
+		if (width < TAB_LEAST)
+			width = TAB_LEAST;
+		tabs[index].tab = tab;
+		tabs[index].natural = width;
+		tabs[index].shown = 1;
+		tabs[index].width = width;
+		tabs[index].x = 0;
+		total += width + TAB_GAP;
+		if ((tab->flags & ZWL_TAB_ACTIVE) != 0U && active == count)
+			active = index;
+	}
+
+	/* The room for the tabs: the area without "+" and "..." (when the window has a menu). */
+	memset(strip, 0, sizeof(*strip));
+	strip->shown = count;
+	room = area->right - area->x;
+	if ((state->options & ZWL_TABS_NEW_BUTTON) != 0U) {
+		strip->new_button = 1;
+		room -= size + TAB_GAP;
+	}
+
+	/* "..." for the window's menu. */
+	if (has_menu != 0U) {
+		strip->overflow = 1;
+		room -= size + SIDE_GAP;
+	}
+
+	/* All fit as they would like. */
+	strip->start = area->x;
+	if (total <= room + TAB_GAP)
+		return count;
+
+	/* All fit narrower, the same width each (none wider than it would like). */
+	if (count > 0U && (int32_t)count * (TAB_LEAST + TAB_GAP) <= room + TAB_GAP) {
+		width = (room + TAB_GAP) / (int32_t)count - TAB_GAP;
+		for (index = 0; index < count; index++) {
+			if (tabs[index].width > width)
+				tabs[index].width = width;
+		}
+
+		/* The narrowed tabs. */
+		return count;
+	}
+
+	/* Otherwise the strip scrolls between its arrows, and "..." holds the tabs out of sight. */
+	strip->scrolling = 1;
+	if (strip->overflow == 0U) {
+		strip->overflow = 1;
+		room -= size + SIDE_GAP;
+	}
+
+	/* The arrows at both ends, and as many least tabs as fit between them. */
+	room -= 2 * (size + TAB_GAP);
+	strip->start = area->x + size + TAB_GAP;
+	strip->shown = 1;
+	if (room > TAB_LEAST)
+		strip->shown = (unsigned)((room + TAB_GAP) / (TAB_LEAST + TAB_GAP));
+	if (strip->shown > count)
+		strip->shown = count;
+
+	/* The active tab comes into sight once after each commit; the arrows choose otherwise. */
+	if (model->tab_seen != model->generation && active < count) {
+		if (active < model->tab_first)
+			model->tab_first = active;
+		if (active >= model->tab_first + strip->shown)
+			model->tab_first = active + 1U - strip->shown;
+	}
+
+	/* The commit is seen, and the strip does not scroll past its last tab. */
+	model->tab_seen = model->generation;
+	if (model->tab_first + strip->shown > count)
+		model->tab_first = count - strip->shown;
+	strip->first = model->tab_first;
+
+	/* The tabs in sight share the room; the others are hidden. */
+	width = TAB_LEAST;
+	if (strip->shown > 0U)
+		width = (room + TAB_GAP) / (int32_t)strip->shown - TAB_GAP;
+	x = strip->start;
+	for (index = 0; index < count; index++) {
+		tabs[index].shown = 0;
+		if (index < strip->first || index >= strip->first + strip->shown)
+			continue;
+		tabs[index].shown = 1;
+		tabs[index].width = width;
+		if (tabs[index].natural < width)
+			tabs[index].width = tabs[index].natural;
+		tabs[index].x = x;
+		x += tabs[index].width + TAB_GAP;
+	}
+
+	/* The tabs of the scrolled strip. */
+	return count;
+}
+
+/* Draws a window's tabs in an area, with the strip's arrows, "+" and "...", and records where they are. */
+static void
+shell_draw_tabs(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	struct zwl_object *surface,
+	unsigned docked,
+	const struct zwl_menu_area *area,
+	const float *ink,
+	float fade)
+{
+	static struct shell_tab tabs[SHELL_TABS];
+	static int32_t closes[SHELL_TABS];
+	static uint32_t ids[SHELL_TABS];
+	static const char *labels[SHELL_TABS];
+	struct zwl_titlebar_control button;
+	const struct zwl_menu_item *tops[1];
+	const struct zwl_menu_model *menu;
+	struct zwl_titlebar_model *model;
+	struct zwl_object *titlebar;
+	struct zwl_object *place;
+	struct shell_strip strip;
+	uint32_t checksum;
+	unsigned has_menu;
+	unsigned recording;
+	unsigned count;
+	unsigned index;
+	unsigned hidden;
+	int32_t buttons[4];
+	int32_t size;
+	int32_t right;
+	int32_t x;
+	int32_t y;
+
+	/* The model, and whether the window has a menu for "...". */
+	(void)shell_mode(surface, &model, &titlebar);
+	has_menu = 0;
+	menu = zwl_menu_of_surface(surface, &place);
+	if (menu != NULL)
+		has_menu = zwl_menu_children(menu, ZWL_MENU_ROOT, tops, 1U);
+
+	/* Places are recorded only where they are seen as they are (as for the controls). */
+	recording = 0;
+	if (!server->layer_on && server->anim == NULL && fade >= 1.0f)
+		recording = 1;
+
+	/* The layout. */
+	size = CONTROL_SIZE;
+	if (docked != 0U)
+		size = CONTROL_SIZE_DOCKED;
+	y = area->top + (area->height - size) / 2;
+	count = shell_tabs_layout(server, model, area, size, has_menu, tabs, &strip);
+
+	/* The tabs one after another from the strip's start (a scrolled strip placed them already). */
+	x = strip.start;
+	for (index = 0; index < count && strip.scrolling == 0U; index++) {
+		tabs[index].x = x;
+		x += tabs[index].width + TAB_GAP;
+	}
+
+	/* Each tab in sight. */
+	checksum = shell_mix(2166136261U, docked);
+	checksum = shell_mix(checksum, 0x7ab5U);
+	for (index = 0; index < count; index++) {
+		closes[index] = -1;
+		checksum = shell_mix(checksum, tabs[index].tab->id);
+		checksum = shell_mix(checksum, tabs[index].shown);
+		if (tabs[index].shown == 0U)
+			continue;
+		shell_draw_tab(server, command, surface, docked, &tabs[index], y, size, ink, fade, recording, &closes[index]);
+		checksum = shell_mix(checksum, (uint32_t)(tabs[index].x - area->origin));
+		checksum = shell_mix(checksum, (uint32_t)tabs[index].width);
+		checksum = shell_mix(checksum, tabs[index].tab->flags);
+		checksum = shell_mix(checksum, (uint32_t)(closes[index] + 1));
+	}
+
+	/* The buttons drawn as controls without events of their own: an arrow, "+". */
+	memset(&button, 0, sizeof(button));
+	button.enabled = 1;
+	buttons[0] = -1;
+	buttons[1] = -1;
+	buttons[2] = -1;
+	buttons[3] = -1;
+
+	/* The arrows of a scrolled strip, pale at its ends. */
+	if (strip.scrolling != 0U) {
+		button.role = ZWL_CONTROL_BACK;
+		button.enabled = 0;
+		if (strip.first > 0U)
+			button.enabled = 1;
+		buttons[0] = area->x;
+		shell_draw_button(server, command, surface, docked, &button, buttons[0], y, size, size, KIND_SCROLL, ink, fade, 0U);
+		if (recording != 0U && button.enabled != 0U)
+			shell_add_hit(surface, docked, KIND_SCROLL, 0U, 0U, buttons[0], y, size, size);
+
+		/* The right arrow after the last tab's room. */
+		button.role = ZWL_CONTROL_FORWARD;
+		button.enabled = 0;
+		if (strip.first + strip.shown < count)
+			button.enabled = 1;
+		right = area->right;
+		if (strip.overflow != 0U)
+			right -= size + SIDE_GAP;
+		if (strip.new_button != 0U)
+			right -= size + TAB_GAP;
+		buttons[1] = right - size;
+		shell_draw_button(server, command, surface, docked, &button, buttons[1], y, size, size, KIND_SCROLL, ink, fade, 0U);
+		if (recording != 0U && button.enabled != 0U)
+			shell_add_hit(surface, docked, KIND_SCROLL, 0U, 1U, buttons[1], y, size, size);
+		checksum = shell_mix(checksum, strip.first);
+	}
+
+	/* "+" after the tabs (after the right arrow of a scrolled strip). */
+	if (strip.new_button != 0U) {
+		button.role = ZWL_CONTROL_PRIMARY_ACTION;
+		button.enabled = 1;
+		buttons[2] = x;
+		if (strip.scrolling != 0U)
+			buttons[2] = buttons[1] + size + TAB_GAP;
+		shell_draw_button(server, command, surface, docked, &button, buttons[2], y, size, size, KIND_NEW_TAB, ink, fade, 0U);
+		if (recording != 0U)
+			shell_add_hit(surface, docked, KIND_NEW_TAB, 0U, 0U, buttons[2], y, size, size);
+		checksum = shell_mix(checksum, (uint32_t)(buttons[2] - area->origin));
+	}
+
+	/* The tabs out of sight, for "...". */
+	hidden = 0;
+	for (index = 0; index < count; index++) {
+		if (tabs[index].shown != 0U)
+			continue;
+		ids[hidden] = tabs[index].tab->id;
+		labels[hidden] = tabs[index].tab->title;
+		hidden++;
+	}
+
+	/* "..." at the right end: the tabs out of sight, then the window's menu (menu-shell.c). */
+	if (strip.overflow != 0U) {
+		buttons[3] = area->right - size;
+		shell_draw_button(server, command, surface, docked, NULL, buttons[3], y, size, size, KIND_BUTTON, ink, fade, 0U);
+		if (recording != 0U)
+			zwl_menu_add_overflow(surface, docked, area, buttons[3], size, ids, labels, hidden);
+		checksum = shell_mix(checksum, 0xffffffffU);
+	}
+
+	/* A new layout is logged for the tests that click the tabs. */
+	if (recording != 0U)
+		shell_log_strip(surface, docked, tabs, count, closes, y, size, buttons, checksum);
+}
+
+/*
+ * Draws one tab: a white face when active, pale otherwise and lit under the
+ * pointer, a dot when it wants attention, its title (cut with an ellipsis),
+ * and its close button when it is closable and active or under the
+ * pointer; records it and its close button (where that is drawn).
+ */
+static void
+shell_draw_tab(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	struct zwl_object *surface,
+	unsigned docked,
+	const struct shell_tab *tab,
+	int32_t y,
+	int32_t size,
+	const float *ink,
+	float fade,
+	unsigned recording,
+	int32_t *close_x)
+{
+	static const float accent[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	float ground[4];
+	float colour[4];
+	unsigned active;
+	unsigned closable;
+	int32_t text_x;
+	int32_t text_room;
+	int32_t close;
+	int hovered;
+	int over_close;
+
+	/* The tab's state, and whether the pointer is on it. */
+	active = 0;
+	if ((tab->tab->flags & ZWL_TAB_ACTIVE) != 0U)
+		active = 1;
+	closable = 0;
+	if ((tab->tab->flags & ZWL_TAB_CLOSABLE) != 0U)
+		closable = 1;
+	hovered = shell_hovered(server, tab->x, y, tab->width, size);
+
+	/* Its face: white when active, lit under the pointer, pale otherwise. */
+	ground[0] = 1.0f;
+	ground[1] = 1.0f;
+	ground[2] = 1.0f;
+	ground[3] = 0.22f * fade;
+	if (hovered != 0)
+		ground[3] = 0.55f * fade;
+	if (active != 0U)
+		ground[3] = 0.95f * fade;
+	glass_draw_solid(server, command, (float)tab->x, (float)y, (float)tab->width, (float)size, (float)(size / 2), ground);
+
+	/* A dot before the title of a tab that wants attention. */
+	text_x = tab->x + TAB_PADDING;
+	if ((tab->tab->flags & ZWL_TAB_ATTENTION) != 0U) {
+		memcpy(colour, accent, sizeof(colour));
+		colour[3] *= fade;
+		glass_draw_solid(server, command, (float)text_x, (float)(y + size / 2 - 3), 6.0f, 6.0f, 3.0f, colour);
+		text_x += TAB_ATTENTION;
+	}
+
+	/* The title, cut before the close button's room. */
+	text_room = tab->x + tab->width - TAB_PADDING - text_x;
+	if (closable != 0U)
+		text_room -= TAB_CLOSE - TAB_PADDING / 2;
+	shell_colour(colour, ink, fade);
+	if (active == 0U)
+		colour[3] *= 0.75f;
+	glass_draw_text(server, command, SIZE_BAR, text_x, y + size / 2 + 5, tab->tab->title, text_room, colour);
+
+	/* The tab can be pressed. */
+	if (recording != 0U)
+		shell_add_hit(surface, docked, KIND_TAB, tab->tab->id, 0U, tab->x, y, tab->width, size);
+
+	/* The close button of a closable tab that is active or under the pointer, recorded over the tab. */
+	*close_x = -1;
+	if (closable == 0U || (active == 0U && hovered == 0))
+		return;
+	close = tab->x + tab->width - TAB_CLOSE - 2;
+	over_close = shell_hovered(server, close, y + (size - TAB_CLOSE) / 2, TAB_CLOSE, TAB_CLOSE);
+	if (over_close != 0) {
+		ground[3] = 0.9f * fade;
+		ground[0] = 0.85f;
+		ground[1] = 0.87f;
+		ground[2] = 0.9f;
+		glass_draw_solid(server, command, (float)close, (float)(y + (size - TAB_CLOSE) / 2), (float)TAB_CLOSE, (float)TAB_CLOSE, (float)(TAB_CLOSE / 2), ground);
+	}
+
+	/* The cross, recorded over the tab. */
+	shell_colour(colour, ink, fade);
+	glass_draw_icon(server, command, GLASS_ICON_CLOSE, close + (TAB_CLOSE - 12) / 2, y + (size - 12) / 2, 12U, colour);
+	if (recording != 0U)
+		shell_add_hit(surface, docked, KIND_TAB_CLOSE, tab->tab->id, 0U, close, y + (size - TAB_CLOSE) / 2, TAB_CLOSE, TAB_CLOSE);
+	*close_x = close;
+}
+
+/* Carries out a released region of a tab strip: a tab, its close button, "+", or an arrow. */
+static void
+shell_act_tabs(
+	struct zwl_server *server,
+	const struct shell_hit *hit,
+	struct zwl_titlebar_model *model,
+	struct zwl_object *titlebar)
+{
+	/* Each region's event, or the arrows' scroll. */
+	switch (hit->kind) {
+	case KIND_TAB:
+		zwl_titlebar_send_tab(titlebar, hit->id, ZWL_TAB_EVENT_ACTIVATED);
+		break;
+	case KIND_TAB_CLOSE:
+		zwl_titlebar_send_tab(titlebar, hit->id, ZWL_TAB_EVENT_CLOSE);
+		break;
+	case KIND_NEW_TAB:
+		zwl_titlebar_send_tab(titlebar, 0U, ZWL_TAB_EVENT_NEW);
+		break;
+	case KIND_SCROLL:
+		/* The strip moves one tab (the layout keeps it within the tabs). */
+		if (hit->detail == 0U && model->tab_first > 0U)
+			model->tab_first--;
+		if (hit->detail != 0U)
+			model->tab_first++;
+		printf("ZWL TITLEBAR strip scroll client=%llu surface=%u first=%u\n", (unsigned long long)hit->surface->client->number, hit->surface->id, model->tab_first);
+		break;
+	default:
+		break;
+	}
+
+	/* A new frame shows it. */
+	server->dirty = 1;
+}
+
 /* Returns the icon of a role. */
 static unsigned
 shell_icon(
@@ -1432,8 +1922,14 @@ shell_act(
 	struct zwl_object *titlebar;
 	unsigned mode;
 
-	/* The control, as the window shows it now. */
+	/* The tabs have their own regions. */
 	mode = shell_mode(hit->surface, &model, &titlebar);
+	if (mode == ZWL_TITLEBAR_TABS) {
+		shell_act_tabs(server, hit, model, titlebar);
+		return;
+	}
+
+	/* The control, as the window shows it now. */
 	if (mode != ZWL_TITLEBAR_CONTROLS)
 		return;
 	control = zwl_titlebar_control(&model->shown, hit->id);
@@ -1678,6 +2174,69 @@ shell_log_layout(
 	if (overflow_x >= 0) {
 		printf("ZWL TITLEBAR control client=%llu surface=%u where=%s id=0 x=%d y=%d width=%d height=%d shown=1\n",
 		       (unsigned long long)surface->client->number, surface->id, where[docked], overflow_x, y, size, size);
+	}
+}
+
+/* Logs a window's tab strip when it changed: each tab's place (or that it is hidden) and the strip's buttons. */
+static void
+shell_log_strip(
+	struct zwl_object *surface,
+	unsigned docked,
+	const struct shell_tab *tabs,
+	unsigned count,
+	const int32_t *closes,
+	int32_t y,
+	int32_t size,
+	const int32_t *buttons,
+	uint32_t checksum)
+{
+	static const char *const where[] = { "floating", "docked" };
+	static const char *const names[] = { "left", "right", "new", "overflow" };
+	struct shell_logged *logged;
+	unsigned index;
+	unsigned slot;
+	unsigned free_slot;
+
+	/* The window's entry, or a free one (shared with the controls' layouts). */
+	logged = NULL;
+	free_slot = SHELL_LOGGED;
+	for (slot = 0; slot < SHELL_LOGGED; slot++) {
+		if (shell_titlebar.logged[slot].surface == surface && shell_titlebar.logged[slot].docked == docked) {
+			logged = &shell_titlebar.logged[slot];
+			break;
+		}
+
+		/* The first free entry, for a window logged for the first time. */
+		if (shell_titlebar.logged[slot].surface == NULL && free_slot == SHELL_LOGGED)
+			free_slot = slot;
+	}
+
+	/* A window new to the table takes the free entry. */
+	if (logged == NULL && free_slot != SHELL_LOGGED) {
+		logged = &shell_titlebar.logged[free_slot];
+		logged->surface = surface;
+		logged->docked = docked;
+		logged->checksum = 0;
+	}
+
+	/* The same layout is not logged again. */
+	if (logged == NULL || logged->checksum == checksum)
+		return;
+	logged->checksum = checksum;
+
+	/* Each tab. */
+	for (index = 0; index < count; index++) {
+		printf("ZWL TITLEBAR strip client=%llu surface=%u where=%s id=%u x=%d y=%d width=%d height=%d shown=%u flags=%u close=%d\n",
+		       (unsigned long long)surface->client->number, surface->id, where[docked], tabs[index].tab->id,
+		       tabs[index].x, y, tabs[index].width, size, tabs[index].shown, tabs[index].tab->flags, closes[index]);
+	}
+
+	/* The arrows, "+" and "...", when they are there. */
+	for (index = 0; index < 4U; index++) {
+		if (buttons[index] < 0)
+			continue;
+		printf("ZWL TITLEBAR strip client=%llu surface=%u where=%s button=%s x=%d y=%d width=%d height=%d\n",
+		       (unsigned long long)surface->client->number, surface->id, where[docked], names[index], buttons[index], y, size, size);
 	}
 }
 

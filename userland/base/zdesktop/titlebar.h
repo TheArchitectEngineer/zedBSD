@@ -112,7 +112,9 @@ struct zwl_titlebar_state {
  * shown, the state being built between begin_update and commit, the
  * transaction's serial, and how many commits there were.  A control the
  * client asked the keyboard for (focus_control) waits in focus_id (0 when
- * none) until the presentation takes it.
+ * none) until the presentation takes it.  The presentation keeps the first
+ * tab its scrolled strip shows (tab_first) and the commit it last showed
+ * (tab_seen), to bring the active tab into sight once after a change.
  */
 struct zwl_titlebar_model {
 	struct zwl_titlebar_state shown;
@@ -122,6 +124,8 @@ struct zwl_titlebar_model {
 	uint64_t generation;
 	uint32_t focus_id;
 	uint32_t focus_mode;
+	unsigned tab_first;
+	uint64_t tab_seen;
 };
 
 /* The protocol and the model (titlebar.c). */
