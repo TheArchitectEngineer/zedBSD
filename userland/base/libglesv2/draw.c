@@ -47,7 +47,7 @@ static int draw_format_ok(struct gles_state *state, VkFormat format);
 static unsigned draw_attribute_base(GLenum type);
 static float draw_component(const unsigned char *element, GLenum type, GLboolean normalized, GLint component);
 static uint32_t draw_integer(const unsigned char *element, GLenum type, GLint component);
-static int draw_sampler_cube(GLenum type);
+static unsigned draw_sampler_shape(GLenum type);
 static unsigned draw_sampler_kind(GLenum type);
 static int draw_texture_matches(const struct gles_texture *texture, unsigned kind);
 static void draw_raster(struct gles_state *state, uint32_t topology, struct gles_raster *raster);
@@ -504,9 +504,10 @@ glReadPixels(
 	struct zegl_context *context;
 	struct gles_state *state;
 	unsigned char *rows;
+	unsigned char *base;
 	size_t stride;
-	size_t alignment;
 	GLsizei row;
+	GLenum error;
 	int status;
 
 	/* A context with its state, RGBA bytes, and a size. */
@@ -543,11 +544,17 @@ glReadPixels(
 		return;
 	}
 
-	/* Each row at the pack alignment. */
-	alignment = (size_t)state->pack_alignment;
-	stride = ((size_t)width * 4U + alignment - 1U) / alignment * alignment;
+	/* Where the rows go: the application's memory or the pack buffer, by the pack alignment and the pixel store. */
+	error = gles_pack_target(state, format, type, width, height, pixels, &base, &stride);
+	if (error != GL_NO_ERROR) {
+		free(rows);
+		gles_error(context, error);
+		return;
+	}
+
+	/* Each row into place. */
 	for (row = 0; row < height; row++)
-		memcpy((unsigned char *)pixels + (size_t)row * stride, rows + (size_t)row * (size_t)width * 4U, (size_t)width * 4U);
+		memcpy(base + (size_t)row * stride, rows + (size_t)row * (size_t)width * 4U, (size_t)width * 4U);
 	free(rows);
 }
 
@@ -2273,24 +2280,33 @@ draw_integer(
 	return word;
 }
 
-/* Reports whether a sampler type reads a cube map. */
-static int
-draw_sampler_cube(
+/* Returns the shape of texture a sampler type reads (GLES_SHAPE_*). */
+static unsigned
+draw_sampler_shape(
 	GLenum type)
 {
-	/* The cube map samplers of every kind. */
+	/* The cube map, 3D and 2D array samplers of every kind. */
 	switch (type) {
 	case GL_SAMPLER_CUBE:
 	case GL_SAMPLER_CUBE_SHADOW:
 	case GL_INT_SAMPLER_CUBE:
 	case GL_UNSIGNED_INT_SAMPLER_CUBE:
-		return 1;
+		return GLES_SHAPE_CUBE;
+	case GL_SAMPLER_3D:
+	case GL_INT_SAMPLER_3D:
+	case GL_UNSIGNED_INT_SAMPLER_3D:
+		return GLES_SHAPE_3D;
+	case GL_SAMPLER_2D_ARRAY:
+	case GL_SAMPLER_2D_ARRAY_SHADOW:
+	case GL_INT_SAMPLER_2D_ARRAY:
+	case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY:
+		return GLES_SHAPE_ARRAY;
 	default:
 		break;
 	}
 
 	/* A 2D texture's. */
-	return 0;
+	return GLES_SHAPE_2D;
 }
 
 /* Returns the kind of texels a sampler type reads: 0 floats, 1 ints, 2 unsigned ints, 3 depth compared (a shadow sampler). */
@@ -2730,7 +2746,7 @@ draw_descriptors(
 	unsigned index;
 	int status;
 	int unit;
-	int cube;
+	unsigned shape;
 	unsigned kind;
 	int same;
 	int differs;
@@ -2757,7 +2773,7 @@ draw_descriptors(
 	for (index = 0U; index < program->uniform_count && samplers < GLES_UNITS; index++) {
 		if (!program->uniforms[index].sampler)
 			continue;
-		cube = draw_sampler_cube(program->uniforms[index].type);
+		shape = draw_sampler_shape(program->uniforms[index].type);
 		kind = draw_sampler_kind(program->uniforms[index].type);
 
 		/* The unit's texture of the sampler's target, and the unit's sampler object's sampling (NULL: the texture's own). */
@@ -2766,8 +2782,12 @@ draw_descriptors(
 		unit = program->uniforms[index].unit;
 		if (unit >= 0 && (unsigned)unit < GLES_UNITS) {
 			texture = state->units[unit];
-			if (cube)
+			if (shape == GLES_SHAPE_CUBE)
 				texture = state->cube_units[unit];
+			if (shape == GLES_SHAPE_3D)
+				texture = state->volume_units[unit];
+			if (shape == GLES_SHAPE_ARRAY)
+				texture = state->array_units[unit];
 			if (state->unit_samplers[unit] != NULL)
 				sampling = &state->unit_samplers[unit]->sampling;
 		}
@@ -2777,7 +2797,7 @@ draw_descriptors(
 		if (status)
 			status = draw_texture_matches(texture, kind);
 		if (!status) {
-			texture = gles_texture_black(state, cube, kind);
+			texture = gles_texture_black(state, shape, kind);
 			sampling = NULL;
 		}
 
