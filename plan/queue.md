@@ -1,12 +1,12 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# Queue: q495 active
+# Queue: なし（サブエージェントの運用）
 
 <!-- awesome-plan-current:start -->
-Status: active（2026-09-27）
-Active Queue: [q495](history/queue-q495.md)（ws068-p024: GLES 3.0 の API（1））
-Last finished Queue: [q494](history/queue-q494.md)（ws068-p023 cleared。cube map）
-Executor: メインセッション（サブエージェントは使わない）
+Status: なし（2026-09-27 11:52 から、ユーザーの指示でサブエージェントが worktree の branch で Phase を実行し、メインは計画と merge）
+Active Queue: なし
+Last finished Queue: [q495](history/queue-q495.md)（ws068-p024 cleared。GLES 3.0 の API（1））
+Executor: 作業用のサブエージェント N=3（WS071・WS073・WS035）と、今回限りの salvage の片付けのサブエージェント（WS001・WS056・WS049・WS048・WS068 の `salvage/*`）
 <!-- awesome-plan-current:end -->
 
-Upcoming Work Outlook: ws068-p024〜p027（GLES 3.0 の API）→ p013（desktop GL 3.0）→ p014、デモの残り（fg010）。並行: サブエージェントの WS068（GLSL）・WS070（System Menu）・WS049・WS045・WS048・WS001（2026-09-27 ユーザーの例外）、終わり次第 merge。BUG-056・BUG-058 は再発時。
+Upcoming Work Outlook: WS071 p007〜（File Manager）、WS035 p076〜p080 → p055・p057・p058（compositor）、WS073 p003〜（バグ）。salvage の片付けの後、枠が空けば WS068 p025〜（GLES 3.0 の API）→ p013（desktop GL）を作業用のサブエージェントへ。ACPI（WS049）と Arm64（WS044・WS048）はデスクトップが片付くかリミットが余るとき、WS001 はユーザーの指示のときだけ。

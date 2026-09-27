@@ -42,6 +42,7 @@ static const struct mount_flag_option mount_flag_options[] = {
 
 static void print_mount_options(const struct kern_mount_info *entry);
 static int option_flag(const char *option);
+static int apply_command_options(char *options, int *flags, const char **source);
 static const char *program_name(const char *path);
 static int run_unmount(int argc, char **argv);
 static int mount_all(void);
@@ -94,11 +95,10 @@ main(
 	char **argv)
 {
 	int function_result;
-	const char *option;
 	struct mount_args arguments;
 	const char *type, *source, *target;
 	int flags, i;
-	int flag;
+	int error;
 
 	type = NULL;
 	source = NULL;
@@ -137,22 +137,12 @@ main(
 		} else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
 			type = argv[++i];
 		} else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
-			option = argv[++i];
+			i++;
 
-			/* Takes the flag the option names, or the disk it names. */
-			flag = option_flag(option);
-			if (flag != 0) {
-				flags |= flag;
-			} else if (strncmp(option, "fspec=", 6) == 0) {
-				source = option + 6;
-			} else {
-				fprintf(stderr,
-					"mount: unsupported option: %s\n",
-					option);
-
-				/* Reports operation failure. */
+			/* Applies each option of the comma-separated list. */
+			error = apply_command_options(argv[i], &flags, &source);
+			if (error != 0)
 				return 2;
-			}
 		} else if (argv[i][0] == '-') {
 			fprintf(stderr, "mount: unknown option: %s\n", argv[i]);
 
@@ -172,7 +162,7 @@ main(
 	/* Handles the type availability. */
 	if (type == NULL || target == NULL) {
 		fprintf(stderr,
-			"usage: mount -t type [-r] [-o ro|nosuid|writethru|nojournal|fspec=disk] "
+			"usage: mount -t type [-r] [-o ro|rw|nosuid|writethru|nojournal|fspec=disk[,...]] "
 			"[disk] directory\n");
 
 		/* Reports operation failure. */
@@ -232,6 +222,63 @@ print_mount_options(
 	/* Marks a bind mount. */
 	if ((entry->kind & KERN_MOUNT_INFO_BIND) != 0)
 		fputs(",bind", stdout);
+}
+
+/*
+ * Applies a comma-separated list of options from the command line.
+ *
+ * Each flag option sets its flag; "rw" clears the read-only flag that "-r" or
+ * an earlier "ro" set, so the last of them wins; "defaults" sets nothing; and
+ * "fspec=disk" names the disk.  The list is split in place, so a disk named by
+ * fspec stays in the argument it came from.  Reports 0, or -1 after printing
+ * the option it does not know.
+ */
+static int
+apply_command_options(
+	char *options,
+	int *flags,
+	const char **source)
+{
+	char *option;
+	int flag, differs;
+
+	/* Walks the options between the commas. */
+	for (option = strtok(options, ",");
+	     option != NULL;
+	     option = strtok(NULL, ",")) {
+		/* Takes the flag the option names, if it names one. */
+		flag = option_flag(option);
+		if (flag != 0) {
+			*flags |= flag;
+			continue;
+		}
+
+		/* "rw" asks for a writable mount. */
+		differs = strcmp(option, "rw");
+		if (differs == 0) {
+			*flags &= ~MNT_RDONLY;
+			continue;
+		}
+
+		/* "defaults" asks for nothing beyond the defaults. */
+		differs = strcmp(option, "defaults");
+		if (differs == 0)
+			continue;
+
+		/* "fspec=disk" names the disk to mount. */
+		differs = strncmp(option, "fspec=", 6);
+		if (differs == 0) {
+			*source = option + 6;
+			continue;
+		}
+
+		/* Refuses an option the command does not know. */
+		fprintf(stderr, "mount: unsupported option: %s\n", option);
+		return -1;
+	}
+
+	/* Succeeded: every option was applied. */
+	return 0;
 }
 
 /* Finds the mount(2) flag an option names; reports 0 when it names none. */
