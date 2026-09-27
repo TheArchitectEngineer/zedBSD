@@ -57,6 +57,7 @@ int js_builtin_install_error(struct vm_realm *realm);
 int js_builtin_install_object(struct vm_realm *realm);
 int js_builtin_install_function(struct vm_realm *realm);
 int js_builtin_install_array(struct vm_realm *realm);
+int js_builtin_install_string(struct vm_realm *realm);
 int js_builtin_install_boolean(struct vm_realm *realm);
 int js_builtin_install_number(struct vm_realm *realm);
 int js_builtin_install_math(struct vm_realm *realm);
