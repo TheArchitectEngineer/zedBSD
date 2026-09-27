@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は main の session）
-Resume point: p014（toolbar → CONTROLS）・p013（窓の中のタブ、メインのセッション）・p016（タブを content のペインへ、タブらしい見た目）cleared 2026-09-27。次は p015（すりガラスの付箋、ws035-p083 と一緒）。合わせた順序（2026-09-27 承認）: ws035-p081（窓の body の viewporter、コードは書いた・未 build・未試験、plan/ws035/phase081/wip.patch）→ ~~ws071-p013~~（済み）→ ws071-p009（context menu）→ ws035-p057（ぼかしと影）→ ws035-p055（damage）→ ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）→ ws070-p011（TABS）→ ws035-p082（ログインマネージャの検討）→ ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
+Resume point: p014（toolbar → CONTROLS）・p013（窓の中のタブ、メインのセッション）・p016（タブを content のペインへ、タブらしい見た目）cleared 2026-09-27。・p015（すりガラスの付箋とタブの作り直し、ws035-p083 と一緒）cleared 2026-09-27。次は ws035-p081 → p009。合わせた順序（2026-09-27 承認）: ws035-p081（窓の body の viewporter、コードは書いた・未 build・未試験、plan/ws035/phase081/wip.patch）→ ~~ws071-p013~~（済み）→ ws071-p009（context menu）→ ws035-p057（ぼかしと影）→ ws035-p055（damage）→ ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）→ ws070-p011（TABS）→ ws035-p082（ログインマネージャの検討）→ ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -68,6 +68,16 @@ libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先
 
 「今のファイラーのはウィンドウ内部の上部にナビゲーションバーを持っていますが、これをウィンドウのフローティングタイトルバーにマージします。」「ファイラーはこのcompositorでしか使えなくてOKです。」 → design §3 の toolbar（戻る・進む・Home・パンくず・検索・表示の切替・preview・進みの輪）は WS070 の titlebar 仕様（[titlebar-spec.md](../ws070/titlebar-spec.md)）の CONTROLS model で浮いたタイトルバー（最大化では System Bar の Application Zone）に移し、窓の中の bar は無くす。fallback（仕様 §27）は持たない: zdesktop の titlebar の拡張が無ければ起動で明示的に失敗してよい。設計は [ws070 titlebar-design.md](../ws070/titlebar-design.md)（ws070-p007、§11 が zdesktop-files）、実装は ws070-p008〜p010 と ws071-p014。タブ（p013）は CONTROLS と排他の TABS に出さず窓の中のまま。
 
+## 2026-09-27 ユーザーの指示: タブと付箋のすりガラス
+
+「ファイラーのタブは、右側のコンテントペインが所有するのがいいと思うなあ。あと、左側のペインと右側のペインで、背景をなくして、付箋メモのようなフローティングにして、
+すりガラスエフェクトで合成する、っていう指示、すでに出してあるけど、この2つを実装してみてくれる？」「タブは複数あるときだけ表示することにしよう。」
+「タブのデザインが若干ボタンっぽいので、タブっぽくしてほしいですね。もっとも、主観的なものですが。」→ p016。
+p016 を見て:「タブはこんな感じで、文字の高さの2.2倍くらいで、選択されたタブには青いアンダーラインと、青い文字、明るくする、にしましょう。文字は中央揃えに
+しましょう。…右側のペインは、すりガラスで透過するので、白く背景を塗りつぶす必要はないです。」（参考画像は著作権のためどこにも保存しない。main の言葉での
+要約: content の card の上端を横切る等幅のタブの行、名前は中央、選ばれたタブは青い文字・青い短い下線・他より少し明るい地、他は枠なしの灰の文字、
+タブの高さは文字の約 2.2 倍）→ p015 に含めた（タブの行は content の card の中、content も白で塗らないすりガラス）。
+
 ## Phase 一覧
 
 | Phase | 内容 | Status | 依存 |
@@ -85,7 +95,7 @@ libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先
 | [ws071-p014](phase014/phase.md) | zdesktop-files の窓の中の toolbar → WS070 の CONTROLS の titlebar（toolbar を消す、control の model と event、Ctrl+F・Ctrl+L の focus、拡張が無ければ起動で失敗、host の試験は model の text、guest の試験は control の位置を zdesktop の log から）。[ws070 titlebar-design.md §11](../ws070/titlebar-design.md) | cleared | WS070-p010 |
 | [ws071-p016](phase016/phase.md) | （2026-09-27 ユーザー指示）タブを content（メイン）のペインが持つ（ペインの上端に付く tab bar、sidebar と preview は動かない）、タブらしい見た目（表示中のタブはペインと同じ面で縁なしに繋がる、他は静かな label と細い区切り、× 付き）。2 つ以上のときだけ | cleared（2026-09-27、host-p013・files-p013・files-regress・boot test PASS） | p013 |
 | ws071-p009 | context menu: WS070 protocol version 2（libwayland、zdesktop、libzdesktop `zdesktop_menu_popup`）と file manager の context menu | planned | p013 |
-| ws071-p015 | （2026-09-27 ユーザー指示）左・中央・右の pane を窓の本体の中で浮いた付箋（card）の見た目に: 各 pane が角丸・影で浮き、すりガラスで背後のデスクトップが透ける。ユーザー:「ファイルマネージャですが、左ペイン、メインペイン、右ペインを分けてくれていますよね。これらはウィンドウボディの中でフローティングの見た目にして、それぞれが付箋のように浮いて見えようにしてほしいです。添付がイメージですが、これはウィンドウ内の要素が付箋のように浮いていて、すりガラスのエフェクトでデスクトップが透けている、と言いたいだけで、こういうレイアウトにしてほしいという意味ではないです。」（参考画像は著作権のためどこにも保存しない。言葉だけで表す: 窓の中の要素が付箋のように浮き、すりガラスでデスクトップが透けて見える）。client の透過（alpha）の窓と、zdesktop の背後のぼかし（ws035-p057）と、client が「どこをすりガラスにするか」を渡す方法（例: blur の region の protocol）の設計が要る。layout は今のまま | planning | ws035-p057、ws070-p010 |
+| [ws071-p015](phase015/phase.md) | （2026-09-27 ユーザー指示）左・中央・右の pane を付箋のように浮いたすりガラスの card に（窓の地は透明、card の間はデスクトップ、card の中はぼかした壁紙のガラス、影と縁は zdesktop）。p016 を見た指示でタブを content の card の中の行に作り直し（等幅・中央・選択は青い文字と下線と明るい地、× は選択と hover だけ）、content も白で塗らない。compositor は ws035-p083 | cleared（2026-09-27、files-p015・menu-regress 16・files-regress・boot test） | p016、ws035-p083 |
 | ws071-p010 | サムネイル（libz-compat の inflate、libpng-compat の decode）と窓の中の DnD | planned | p007 |
 | ws071-p011 | App Home の項目、規約の全文との照合、回帰、boot test、i915 実機（任意） | planned | p002〜p010、p012〜p014 |
 

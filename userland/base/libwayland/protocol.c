@@ -861,16 +861,23 @@ static const struct wl_interface *zed_gpu_buffer_v1_requests_2_types[] = {
 	NULL,
 };
 
+/* Identifies the buffer argument of zed_gpu_buffer_v1.set_alpha (version 3). */
+static const struct wl_interface *zed_gpu_buffer_v1_requests_3_types[] = {
+	&wl_buffer_interface,
+	NULL,
+};
+
 /* Preserves the wire opcode order for zed_gpu_buffer_v1 requests. */
 static const struct wl_message zed_gpu_buffer_v1_requests[] = {
 	{ "destroy", "", NULL },
 	{ "create_buffer", "nha", zed_gpu_buffer_v1_requests_1_types },
 	{ "set_acquire_fence", "2ohuu", zed_gpu_buffer_v1_requests_2_types },
+	{ "set_alpha", "3ou", zed_gpu_buffer_v1_requests_3_types },
 };
 
 /* Exposes the immutable selected zed_gpu_buffer_v1 protocol description. */
 const struct wl_interface zed_gpu_buffer_v1_interface = {
-	"zed_gpu_buffer_v1", 2, 3, zed_gpu_buffer_v1_requests,
+	"zed_gpu_buffer_v1", 3, 4, zed_gpu_buffer_v1_requests,
 	0, NULL
 };
 
@@ -3398,6 +3405,25 @@ zed_gpu_buffer_v1_set_acquire_fence(
 	arguments[2].u = (uint32_t)(generation >> 32);
 	arguments[3].u = (uint32_t)generation;
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, 2U, NULL, 0, 0, arguments);
+}
+
+/*
+ * Sends the zed_gpu_buffer_v1.set_alpha request (version 3): how the
+ * compositor reads the buffer's alpha channel, ignored (opaque, 0) or as
+ * premultiplied alpha (1).
+ */
+void
+zed_gpu_buffer_v1_set_alpha(
+	struct zed_gpu_buffer_v1 *object,
+	struct wl_buffer *buffer,
+	uint32_t alpha)
+{
+	union wl_argument arguments[2];
+
+	/* The buffer and how its alpha is read. */
+	arguments[0].o = (struct wl_object *)buffer;
+	arguments[1].u = alpha;
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, 3U, NULL, 0, 0, arguments);
 }
 
 /*

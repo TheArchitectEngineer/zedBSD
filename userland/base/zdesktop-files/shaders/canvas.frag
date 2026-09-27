@@ -1,4 +1,5 @@
-// zedBSD zdesktop-files: the canvas drawn by the CPU, texel for pixel.
+// zedBSD zdesktop-files: the canvas drawn by the CPU, texel for pixel, with its
+// premultiplied alpha (a see-through swapchain shows the desktop where it is clear).
 // Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #version 450
 
@@ -9,5 +10,5 @@ layout(location = 0) out vec4 color;
 
 void main()
 {
-	color = vec4(texture(canvas, texcoord).rgb, 1.0);
+	color = texture(canvas, texcoord);
 }

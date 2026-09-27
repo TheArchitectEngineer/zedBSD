@@ -66,6 +66,14 @@
 #define FM_COLOR_PANEL			FM_RGB(0xffffff)
 #define FM_COLOR_PANEL_EDGE		FM_RGB(0xe2e7ef)
 #define FM_COLOR_SIDEBAR		FM_RGBA(0xffffff, 120)
+
+/*
+ * The tints a glass window lays over zdesktop's frosted glass: the
+ * sidebar's light veil, and the content's and the preview's a little
+ * whiter one (the glass shows through; the items stay easy to read).
+ */
+#define FM_COLOR_GLASS_SIDEBAR		FM_RGBA(0xffffff, 40)
+#define FM_COLOR_GLASS_CONTENT		FM_RGBA(0xffffff, 60)
 #define FM_COLOR_SHADOW			FM_RGBA(0x1f3a66, 34)
 #define FM_COLOR_TEXT			FM_RGB(0x1e2632)
 #define FM_COLOR_TEXT_SECONDARY		FM_RGB(0x6b7585)
@@ -380,12 +388,33 @@ struct fm_hit {
 	int index;
 };
 
+/* How many glass panels a frame has at most: the sidebar, the content (with its tabs) and the preview. */
+#define FM_PANELS		3
+
+/* The kind of glass panel the window has: a card floating in the window. */
+#define FM_PANEL_CARD		0U
+
 /*
- * The panels of the last frame, where the drawing put them.
+ * One part of the window that stands on zdesktop's frosted glass: its
+ * rectangle in the window, its corners' radius and its kind.  The frame's
+ * panels are worked out from its layout (fm_ui_panels) and handed to
+ * zdesktop with the frame.
+ */
+struct fm_panel {
+	struct fm_rect rect;
+	int radius;
+	unsigned kind;
+};
+
+/*
+ * The panels of the last frame, where the drawing put them.  The content's
+ * card holds the row of tabs (when there are two or more) over the
+ * content, whose items are drawn under the row.
  */
 struct fm_layout {
 	struct fm_rect tabbar;
 	struct fm_rect sidebar;
+	struct fm_rect card;
 	struct fm_rect content;
 	struct fm_rect preview;
 	struct fm_rect items;
@@ -822,6 +851,14 @@ struct fm_app {
 	int dirty;
 	int focused;
 
+	/*
+	 * Whether the window is glass: zdesktop draws frosted glass under the
+	 * panels and shows the desktop between them, so the frame leaves its
+	 * ground clear and tints the panels only lightly.  Set once, before the
+	 * first frame, when zdesktop can show the window see-through.
+	 */
+	int glass;
+
 	/* The user's home folder and name. */
 	char home[FM_PATH_MAX];
 	char user[64];
@@ -992,6 +1029,7 @@ void fm_ui_event(struct fm_app *app, const struct fm_event *event);
 void fm_ui_tick(struct fm_app *app, uint64_t now);
 void fm_ui_draw(struct fm_app *app, struct fm_canvas *canvas);
 void fm_ui_hit(struct fm_app *app, const struct fm_rect *rect, unsigned kind, int index);
+size_t fm_ui_panels(struct fm_app *app, struct fm_panel *panels, size_t capacity);
 struct fm_tab *fm_ui_tab(struct fm_app *app);
 void fm_ui_go(struct fm_app *app, const struct fm_location *location);
 void fm_log(const char *format, ...);

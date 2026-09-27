@@ -41,6 +41,11 @@ struct wl_buffer *zed_gpu_buffer_v1_create_buffer(struct zed_gpu_buffer_v1 *obje
 #define ZED_GPU_BUFFER_V1_SET_ACQUIRE_FENCE 2U
 #define ZED_GPU_BUFFER_V1_SET_ACQUIRE_FENCE_SINCE_VERSION 2U
 void zed_gpu_buffer_v1_set_acquire_fence(struct zed_gpu_buffer_v1 *object, struct wl_surface *surface, int fd, uint64_t generation);
+#define ZED_GPU_BUFFER_V1_SET_ALPHA 3U
+#define ZED_GPU_BUFFER_V1_SET_ALPHA_SINCE_VERSION 3U
+#define ZED_GPU_BUFFER_V1_ALPHA_OPAQUE 0U
+#define ZED_GPU_BUFFER_V1_ALPHA_PREMULTIPLIED 1U
+void zed_gpu_buffer_v1_set_alpha(struct zed_gpu_buffer_v1 *object, struct wl_buffer *buffer, uint32_t alpha);
 void zed_gpu_buffer_v1_set_user_data(struct zed_gpu_buffer_v1 *object, void *data);
 void *zed_gpu_buffer_v1_get_user_data(struct zed_gpu_buffer_v1 *object);
 uint32_t zed_gpu_buffer_v1_get_version(struct zed_gpu_buffer_v1 *object);

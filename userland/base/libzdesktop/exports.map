@@ -13,6 +13,7 @@
 		zdesktop_window_menu_*;
 		zdesktop_recent_*;
 		zdesktop_titlebar_*;
+		zdesktop_glass_*;
 	local:
 		*;
 };

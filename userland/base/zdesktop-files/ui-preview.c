@@ -60,7 +60,7 @@
 #define LOOK_TEXT_BODY		13U
 #define LOOK_TEXT_LINE		19
 
-static void preview_panel(struct fm_canvas *canvas, const struct fm_rect *area);
+static void preview_panel(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
 static void preview_place(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
 static void preview_many(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area, size_t count, uint64_t bytes);
 static void preview_one(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area, struct fm_entry *entry);
@@ -93,7 +93,7 @@ fm_preview_draw(
 	int item;
 
 	/* The panel, and nothing drawn outside it. */
-	preview_panel(canvas, area);
+	preview_panel(app, canvas, area);
 	fm_canvas_clip_push(canvas, area);
 
 	/* How many items are selected, and the one shown. */
@@ -299,12 +299,19 @@ fm_preview_item(
 	return -1;
 }
 
-/* Draws the pane's white panel with its shadow and edge. */
+/* Draws the pane's white panel with its shadow and edge, or its tint on zdesktop's glass. */
 static void
 preview_panel(
+	struct fm_app *app,
 	struct fm_canvas *canvas,
 	const struct fm_rect *area)
 {
+	/* On glass, zdesktop draws the card: only the content's white tint. */
+	if (app->glass != 0) {
+		fm_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, PREVIEW_RADIUS, FM_COLOR_GLASS_CONTENT);
+		return;
+	}
+
 	/* The shadow, the panel and its thin edge, as the content's. */
 	fm_canvas_shadow(canvas, (float)area->x, (float)area->y + 4.0f, (float)area->width, (float)area->height, PREVIEW_RADIUS, 14.0f, FM_COLOR_SHADOW);
 	fm_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, PREVIEW_RADIUS, FM_COLOR_PANEL);

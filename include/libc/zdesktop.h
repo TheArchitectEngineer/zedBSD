@@ -38,8 +38,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files). */
-#define ZDESKTOP_VERSION	4U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels). */
+#define ZDESKTOP_VERSION	5U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -444,6 +444,63 @@ int zdesktop_recent_list(struct zdesktop_recent_item *items, size_t capacity, si
  * Takes a file off the recent list.
  */
 int zdesktop_recent_remove(const char *path);
+
+/*
+ * The glass panels (ws035-p083).
+ *
+ * A window whose Vulkan swapchain is see-through
+ * (VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) names the parts of itself
+ * that stand on the system's frosted glass: cards floating in the window.
+ * zdesktop draws the glass under them -- the desktop behind, blurred and
+ * lightened, a bright rim, the card's shadow --
+ * and the window's image over it by its alpha; between the panels the
+ * desktop shows as it is.  The window says what its parts are, not how
+ * the glass looks.
+ *
+ * The panels, in the surface's coordinates, take effect with the surface's
+ * next commit (a Vulkan present), so they move with the frame drawn for
+ * them.  Every call returns 0 or an errno value, and a refused call sends
+ * nothing: EINVAL (an empty panel, a radius past the largest, an unknown
+ * kind), E2BIG (too many panels).
+ */
+struct wl_surface;
+struct zdesktop_glass;
+
+/* The kind of panel (the only one so far): a card floating in the window. */
+#define ZDESKTOP_GLASS_CARD		0U
+
+/* The most panels a surface has, and the largest corner radius. */
+#define ZDESKTOP_GLASS_PANELS_MAX	32U
+#define ZDESKTOP_GLASS_RADIUS_MAX	64
+
+/*
+ * One panel: its rectangle in the surface's coordinates, the radius of
+ * its corners and its kind.
+ */
+struct zdesktop_glass_panel {
+	int32_t x;
+	int32_t y;
+	int32_t width;
+	int32_t height;
+	int32_t radius;
+	unsigned kind;
+};
+
+/*
+ * Gives a surface its glass, with no panels yet.  Returns NULL with errno
+ * set: ENOTSUP for a compositor without glass, ENOMEM.
+ */
+struct zdesktop_glass *zdesktop_glass_create(struct wl_display *display, struct wl_surface *surface);
+
+/*
+ * Sets the surface's panels for its next commit (count 0: none).
+ */
+int zdesktop_glass_set_panels(struct zdesktop_glass *glass, const struct zdesktop_glass_panel *panels, size_t count);
+
+/*
+ * Takes the glass away: the surface's next commit shows it without panels.
+ */
+void zdesktop_glass_destroy(struct zdesktop_glass *glass);
 
 #ifdef __cplusplus
 }

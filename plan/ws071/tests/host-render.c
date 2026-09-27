@@ -16,6 +16,8 @@
  *   --size=WxH                    the window's size (default 1120x720)
  *   --start=PATH                  the folder shown first (default: the home dashboard)
  *   --wallpaper=PATH              the dashboard's picture (default /usr/share/zdesktop/wallpaper.ppm)
+ *   --glass=PATH                  a glass window (ws071-p015): the pictures show it on this
+ *                                 wallpaper with zdesktop's glass under its panels (host-glass.c)
  *
  * Actions, run in order (each one 150 ms after the one before):
  *   move=X,Y  click=X,Y[:MODS]  double=X,Y  right=X,Y  press=X,Y  release=X,Y  scroll=PIXELS
@@ -42,6 +44,8 @@
 static const char host_keys[] = "\0\0" "1234567890-=\0\0" "qwertyuiop[]\0\0" "asdfghjkl;'`\0\\" "zxcvbnm,./";
 
 static int host_write_ppm(const char *path, const uint32_t *pixels, int width, int height);
+int host_glass_compose(struct fm_app *app, const uint32_t *frame, uint32_t *out, int width, int height, const char *wallpaper);
+static int host_picture(struct fm_app *app, const char *path, const uint32_t *pixels, uint32_t *composed, int width, int height, const char *glass);
 static void host_event(struct fm_app *app, unsigned type, int x, int y, uint32_t button, int pressed, uint32_t key, uint32_t modifiers, uint64_t *now);
 static void host_type(struct fm_app *app, const char *text, uint64_t *now);
 
@@ -58,7 +62,9 @@ main(
 	const char *fallback;
 	const char *start;
 	const char *wallpaper;
+	const char *glass;
 	uint32_t *pixels;
+	uint32_t *composed;
 	uint64_t now;
 	unsigned code;
 	unsigned modifiers;
@@ -73,6 +79,7 @@ main(
 	fallback = NULL;
 	start = NULL;
 	wallpaper = NULL;
+	glass = NULL;
 	width = FM_WIDTH;
 	height = FM_HEIGHT;
 	for (index = 1; index < argc && strncmp(argv[index], "--", 2) == 0; index++) {
@@ -84,6 +91,8 @@ main(
 			start = argv[index] + 8;
 		else if (strncmp(argv[index], "--wallpaper=", 12) == 0)
 			wallpaper = argv[index] + 12;
+		else if (strncmp(argv[index], "--glass=", 8) == 0)
+			glass = argv[index] + 8;
 		else if (sscanf(argv[index], "--size=%dx%d", &width, &height) != 2) {
 			fprintf(stderr, "files-render: unknown option %s\n", argv[index]);
 			return 2;
@@ -106,6 +115,11 @@ main(
 	app.height = height;
 	if (wallpaper != NULL)
 		snprintf(app.wallpaper, sizeof(app.wallpaper), "%s", wallpaper);
+	if (glass != NULL)
+		app.glass = 1;
+	composed = calloc((size_t)width * (size_t)height, sizeof(uint32_t));
+	if (composed == NULL)
+		return 1;
 	fm_ui_draw(&app, &canvas);
 
 	/* The actions. */
@@ -214,7 +228,7 @@ main(
 		} else if (strncmp(argv[index], "draw=", 5) == 0) {
 			fm_ui_tick(&app, now);
 			fm_ui_draw(&app, &canvas);
-			if (host_write_ppm(argv[index] + 5, pixels, width, height) != 0) {
+			if (host_picture(&app, argv[index] + 5, pixels, composed, width, height, glass) != 0) {
 				fprintf(stderr, "files-render: cannot write %s\n", argv[index] + 5);
 				return 1;
 			}
@@ -232,6 +246,7 @@ main(
 	fm_canvas_release(&canvas);
 	fm_text_close(&text);
 	free(pixels);
+	free(composed);
 	return 0;
 }
 
@@ -303,6 +318,40 @@ host_type(
 		host_event(app, FM_EVENT_KEY, 0, 0, 0, 1, code, modifiers, now);
 		host_event(app, FM_EVENT_KEY, 0, 0, 0, 0, code, modifiers, now);
 	}
+}
+
+/*
+ * Writes the frame as a picture: as it is, or laid on the wallpaper with
+ * zdesktop's glass under its panels for a glass window (glass is the
+ * wallpaper's path, NULL for none).  Returns 0, or -1 when it cannot.
+ */
+static int
+host_picture(
+	struct fm_app *app,
+	const char *path,
+	const uint32_t *pixels,
+	uint32_t *composed,
+	int width,
+	int height,
+	const char *glass)
+{
+	int error;
+
+	/* The frame itself, or the frame on the desktop. */
+	memcpy(composed, pixels, sizeof(pixels[0]) * (size_t)width * (size_t)height);
+	if (glass != NULL) {
+		error = host_glass_compose(app, pixels, composed, width, height, glass);
+		if (error != 0)
+			return -1;
+	}
+
+	/* The picture's file. */
+	error = host_write_ppm(path, composed, width, height);
+	if (error != 0)
+		return -1;
+
+	/* Succeeded. */
+	return 0;
 }
 
 static int

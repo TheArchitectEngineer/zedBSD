@@ -17,6 +17,7 @@
 #include "subsurface.h"
 #include "data.h"
 #include "extras.h"
+#include "panels.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -303,6 +304,10 @@ zwl_object_destroy(
 		zwl_cursor_shape_object_gone(object);
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_VIEWPORT)
 		zwl_viewport_object_gone(object);
+
+	/* A surface and its glass panels (panels.c). */
+	if (object->kind == ZWL_SURFACE || object->kind == ZWL_GLASS)
+		zwl_panels_object_gone(object);
 
 	/* A data source leaves the clipboard and its offers (data.c). */
 	if (object->kind == ZWL_DATA_SOURCE)

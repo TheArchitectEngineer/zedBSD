@@ -37,10 +37,10 @@ if [ -f userland/base/libzdesktop/recent.c ]; then
 	objects="$objects $out/obj/zdesktop-recent.o"
 fi
 
-# zdesktop-files without the window, the presenter, the menus and the titlebar.
+# zdesktop-files without the window, the presenter, the menus, the titlebar and the glass.
 for file in $src/*.c; do
 	case $(basename "$file") in
-	main.c|window.c|present.c|menu.c|titlebar.c) continue ;;
+	main.c|window.c|present.c|menu.c|titlebar.c|glass.c) continue ;;
 	esac
 	object="$out/obj/files-$(basename "$file" .c).o"
 	"$cc" $flags -c "$file" -o "$object"
@@ -51,7 +51,12 @@ done
 for test in render model; do
 	if [ -f "plan/ws071/tests/host-$test.c" ]; then
 		"$cc" $flags -c "plan/ws071/tests/host-$test.c" -o "$out/obj/host-$test.o"
-		"$cc" -o "$out/files-$test" "$out/obj/host-$test.o" $objects -lm
+		extra=
+		if [ "$test" = render ]; then
+			"$cc" $flags -c plan/ws071/tests/host-glass.c -o "$out/obj/host-glass.o"
+			extra="$out/obj/host-glass.o"
+		fi
+		"$cc" -o "$out/files-$test" "$out/obj/host-$test.o" $extra $objects -lm
 		echo "built $out/files-$test"
 	fi
 done
