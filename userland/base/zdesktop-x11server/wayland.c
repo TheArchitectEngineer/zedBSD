@@ -613,8 +613,9 @@ x11_wayland_close(
 }
 
 /*
- * Opens a desktop window for an X window: an xdg toplevel with a title,
- * configured, and two buffers of a size.  Returns NULL when it cannot be
+ * Opens a desktop window for an X window: an xdg toplevel with a title and
+ * an application ID (NULL for the server's own), configured, and two
+ * buffers of a size.  Returns NULL when it cannot be
  * made.
  */
 struct x11_wayland_window *
@@ -622,6 +623,7 @@ x11_wayland_window_open(
 	struct x11_wayland *wayland,
 	uint32_t id,
 	const char *title,
+	const char *app_id,
 	unsigned width,
 	unsigned height)
 {
@@ -666,9 +668,11 @@ x11_wayland_window_open(
 	/* Its sizes and close requests are heard. */
 	(void)xdg_toplevel_add_listener(window->toplevel, &wayland_toplevel_listener, window);
 
-	/* The title, the identity, and the first configure waited for. */
+	/* The title, the identity (the X client's class, else the server's), and the first configure waited for. */
 	xdg_toplevel_set_title(window->toplevel, title);
-	xdg_toplevel_set_app_id(window->toplevel, WAYLAND_APP_ID);
+	if (app_id == NULL)
+		app_id = WAYLAND_APP_ID;
+	xdg_toplevel_set_app_id(window->toplevel, app_id);
 	wl_surface_commit(window->surface);
 	status = wl_display_roundtrip(wayland->display);
 	if (status < 0 || !window->configured) {

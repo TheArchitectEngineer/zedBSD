@@ -12,6 +12,7 @@
  */
 
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include "userland/X11/libX11/Xzed.h"
 #include <X11/keysym.h>
 #include <errno.h>
@@ -950,6 +951,47 @@ XStoreName(
 
 	/* Returns the computed result. */
 	return function_result;
+}
+
+/*
+ * Sets a window's WM_CLASS: the instance's name and the class, each ended
+ * by a NUL, as one 8-bit STRING (ws035-p092).  Returns 0 when it could not
+ * be sent.
+ */
+int
+XSetClassHint(
+	Display *d,
+	Window w,
+	XClassHint *hint)
+{
+	unsigned char data[256];
+	const char *name;
+	const char *class_name;
+	size_t name_length;
+	size_t class_length;
+	int result;
+
+	/* Both strings, an empty one for a NULL. */
+	name = hint->res_name;
+	if (name == NULL)
+		name = "";
+	class_name = hint->res_class;
+	if (class_name == NULL)
+		class_name = "";
+	name_length = strlen(name);
+	class_length = strlen(class_name);
+	if (name_length + class_length + 2U > sizeof(data))
+		return 0;
+
+	/* The instance, a NUL, the class, a NUL. */
+	memcpy(data, name, name_length + 1U);
+	memcpy(data + name_length + 1U, class_name, class_length + 1U);
+
+	/* Obtains the change property result. */
+	result = XChangeProperty(d, w, XA_WM_CLASS, XA_STRING, 8, PropModeReplace, data, (int)(name_length + class_length + 2U));
+
+	/* Returns the computed result. */
+	return result;
 }
 
 /*

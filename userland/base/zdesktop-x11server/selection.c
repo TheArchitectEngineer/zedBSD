@@ -79,7 +79,8 @@ static const struct selection_atom selection_predefined[] = {
 	{ 19U, "INTEGER" },
 	{ 31U, "STRING" },
 	{ 33U, "WINDOW" },
-	{ 39U, "WM_NAME" }
+	{ 39U, "WM_NAME" },
+	{ 67U, "WM_CLASS" }
 };
 
 static struct x11_property *selection_property(struct x11server *server, uint32_t window, uint32_t atom);
@@ -715,6 +716,47 @@ x11_selection_send(
 	x11_write32(event + 20, server->atom_utf8, owner->order);
 	x11_write32(event + 24, server->atom_bridge, owner->order);
 	selection_event(server, entry->owner, event);
+}
+
+/*
+ * Gives the class of a window from its WM_CLASS (two strings, the instance
+ * and the class; the instance when there is no class).  Returns 0, or
+ * ENOENT when the window has none.
+ */
+int
+x11_window_class(
+	struct x11server *server,
+	uint32_t window,
+	char *name,
+	size_t size)
+{
+	struct x11_property *property;
+	const char *data;
+	size_t instance;
+	size_t used;
+
+	/* An 8-bit WM_CLASS with some text. */
+	property = selection_property(server, window, X11_ATOM_WM_CLASS);
+	if (property == NULL || property->format != 8U || property->length == 0U || size == 0U)
+		return ENOENT;
+	data = (const char *)property->data;
+
+	/* The class after the instance's NUL, else the instance. */
+	instance = strnlen(data, property->length);
+	if (instance + 1U < property->length && data[instance + 1U] != '\0') {
+		data += instance + 1U;
+		instance = strnlen(data, property->length - (size_t)(data - (const char *)property->data));
+	}
+
+	/* Succeeded: as much as fits. */
+	used = instance;
+	if (used > size - 1U)
+		used = size - 1U;
+	memcpy(name, data, used);
+	name[used] = '\0';
+	if (used == 0U)
+		return ENOENT;
+	return 0;
 }
 
 /* Finds a window's kept property; NULL when it has none of the name. */
