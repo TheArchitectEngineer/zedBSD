@@ -969,7 +969,9 @@ menu_check_add(
 	int found;
 
 	/* Only inside a transaction, with a new ID of a known type. */
-	if (!menu->updating || id == 0U || type > ZDESKTOP_MENU_ITEM_SUBMENU)
+	if (!menu->updating ||
+	    id == 0U ||
+	    type > ZDESKTOP_MENU_ITEM_SUBMENU)
 		return EINVAL;
 	found = menu_find(menu, id);
 	if (found >= 0)
@@ -996,7 +998,9 @@ menu_check_add(
 	/* The menu stays within the compositor's bounds. */
 	depth = menu_depth(menu, parent) + 1U;
 	length = strlen(label);
-	if (menu->count >= MENU_ITEMS_MAX || depth > MENU_DEPTH_MAX || length > MENU_TEXT_MAX)
+	if (menu->count >= MENU_ITEMS_MAX ||
+	    depth > MENU_DEPTH_MAX ||
+	    length > MENU_TEXT_MAX)
 		return E2BIG;
 
 	/* Succeeded: the compositor will take it. */

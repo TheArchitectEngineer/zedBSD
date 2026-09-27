@@ -503,6 +503,38 @@ drv_i915_gfx_emit_context_setup(
 }
 
 /*
+ * Returns the GEN primitive type (GEN12_3DPRIM_*) of a pipeline's Vulkan
+ * topology: the point, line and triangle lists, the line and triangle
+ * strips and the triangle fan; 0 for a topology with adjacency or of
+ * patches, which the draw path does not take.
+ */
+uint32_t
+drv_i915_gfx_topology(
+	const struct i915_gfx_pipeline *pipeline)
+{
+	/* Vulkan's topology, as GEN names it. */
+	switch (pipeline->topology) {
+	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
+		return GEN12_3DPRIM_POINTLIST;
+	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
+		return GEN12_3DPRIM_LINELIST;
+	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
+		return GEN12_3DPRIM_LINESTRIP;
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+		return GEN12_3DPRIM_TRILIST;
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+		return GEN12_3DPRIM_TRISTRIP;
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+		return GEN12_3DPRIM_TRIFAN;
+	default:
+		break;
+	}
+
+	/* A topology the draw path does not take. */
+	return 0U;
+}
+
+/*
  * Emits the vertex buffers and vertex elements of a draw.
  *
  * One vertex element feeds each attribute the vertex kernel reads, in the
@@ -531,6 +563,7 @@ drv_i915_gfx_emit_vertex_input(
 	uint32_t component_y;
 	uint32_t component_z;
 	uint32_t component_w;
+	uint32_t topology;
 	uint64_t va;
 	int error;
 
@@ -642,15 +675,16 @@ drv_i915_gfx_emit_vertex_input(
 		drv_i915_batch_emit(batch, 0U);
 	}
 
-	/* Refuses a topology other than a triangle list. */
-	if (pipeline->topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
+	/* Refuses a topology the draw path does not take (adjacency and patches). */
+	topology = drv_i915_gfx_topology(pipeline);
+	if (topology == 0U) {
 		kern_logf("i915: vk: XXX unimplemented path: primitive topology %u\n", pipeline->topology);
 		return ENOTSUP;
 	}
 
-	/* Draws triangle lists. */
+	/* Draws the pipeline's topology. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VF_TOPOLOGY, GEN12_3DSTATE_VF_TOPOLOGY_DWORDS));
-	drv_i915_batch_emit(batch, GEN12_3DPRIM_TRILIST);
+	drv_i915_batch_emit(batch, topology);
 
 	/* Succeeded: the vertex fetcher is programmed. */
 	return 0;
@@ -845,23 +879,26 @@ drv_i915_gfx_emit_raster(
 
 	/*
 	 * Clips with statistics, early cull and 8-bit subpixel precision; the
-	 * D3D API mode (z in [0, 1]), viewport XY test and guardband; point
-	 * widths 0.125 .. 255.875.
+	 * D3D API mode (z in [0, 1]), viewport XY test and guardband; a fan's
+	 * provoking vertex is the second of each triangle (Vulkan's first-vertex
+	 * convention); point widths 0.125 .. 255.875.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_CLIP, GEN12_3DSTATE_CLIP_DWORDS));
 	drv_i915_batch_emit(batch, (1U << 10) | (1U << 18));
-	drv_i915_batch_emit(batch, (1U << 31) | (1U << 30) | (1U << 28) | (1U << 26));
+	drv_i915_batch_emit(batch,
+			    (1U << 31) | (1U << 30) | (1U << 28) | (1U << 26) |
+			    (GEN12_FAN_PROVOKING_SECOND << GEN12_CLIP_FAN_PROVOKING_SHIFT));
 	drv_i915_batch_emit(batch, (1U << 17) | (2047U << 6));
 
 	/*
 	 * Sets up with the viewport transform, statistics and line width 1.0;
-	 * the URB deref block; point width 1.0 from state and the AA line
-	 * distance.
+	 * the URB deref block; point width 1.0 from state, the AA line
+	 * distance and the fan's provoking vertex as the clipper's.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SF, GEN12_3DSTATE_SF_DWORDS));
 	drv_i915_batch_emit(batch, (1U << 1) | (1U << 10) | (128U << 12));
 	drv_i915_batch_emit(batch, GEN12_URB_DEREF_BLOCK_SIZE_32 << 29);
-	drv_i915_batch_emit(batch, 8U | (1U << 11) | (1U << 14));
+	drv_i915_batch_emit(batch, 8U | (1U << 11) | (1U << 14) | (GEN12_FAN_PROVOKING_SECOND << GEN12_SF_FAN_PROVOKING_SHIFT));
 
 	/* Translates the pipeline's cull mode; front and back together cull both. */
 	switch (pipeline->cull_mode) {
