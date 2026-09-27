@@ -260,7 +260,7 @@ read_options(
 			options->target = scan.value;
 			break;
 		case OPTION_VERSION:
-			printf("install (zedBSD) 1.0\n");
+			printf("install (Kei) 1.0\n");
 			exit(0);
 			break;
 		default:

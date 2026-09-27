@@ -230,7 +230,7 @@ read_options(
 			options->target_directory = scan.value;
 			break;
 		case OPTION_VERSION:
-			printf("ln (zedBSD) 1.0\n");
+			printf("ln (Kei) 1.0\n");
 			exit(0);
 		default:
 			usage();

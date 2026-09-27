@@ -185,7 +185,7 @@ read_options(
 			options->format = iso_format(scan.value);
 			break;
 		case OPTION_VERSION:
-			printf("date (zedBSD) 1.0\n");
+			printf("date (Kei) 1.0\n");
 			exit(0);
 			break;
 		default:

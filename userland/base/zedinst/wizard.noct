@@ -21,7 +21,7 @@ func instWizard(ui, unused) {
             if (pc98.action == "cancel") { return instWizardCancelled(); }
             return pc98.result;
         }
-        var mode = ui.choose(ui, "mode", "Installation mode", "Choose how to install zedBSD.",
+        var mode = ui.choose(ui, "mode", "Installation mode", "Choose how to install Kei.",
             ["Coexist with an existing FAT filesystem", "Dedicated disk (erase all contents)", "Open shell"]);
         if (mode < 0) { return instWizardCancelled(); }
         if (mode == 2) { ui.shell(ui); continue; }

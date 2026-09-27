@@ -234,7 +234,7 @@ glXGetClientString(
 	(void)dpy;
 	switch (name) {
 	case GLX_VENDOR:
-		return "zedBSD";
+		return "Kei";
 	case GLX_VERSION:
 		return "1.4";
 	case GLX_EXTENSIONS:

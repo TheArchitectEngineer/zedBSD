@@ -82,7 +82,7 @@ main(
 			end = '\0';
 			break;
 		case OPTION_VERSION:
-			printf("dirname (zedBSD) 1.0\n");
+			printf("dirname (Kei) 1.0\n");
 			return 0;
 		default:
 			usage();

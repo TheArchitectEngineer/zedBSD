@@ -710,7 +710,7 @@ version(
 	void)
 {
 	/* The name and where it comes from. */
-	printf("tr (zedBSD) 1.0\n");
+	printf("tr (Kei) 1.0\n");
 	exit(0);
 }
 

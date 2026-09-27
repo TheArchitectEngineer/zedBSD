@@ -250,7 +250,7 @@ read_letter(
 	case OPTION_IGNORED:
 		break;
 	case OPTION_VERSION:
-		printf("mv (zedBSD) 1.0\n");
+		printf("mv (Kei) 1.0\n");
 		exit(0);
 		break;
 	default:

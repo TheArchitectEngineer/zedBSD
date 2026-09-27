@@ -181,7 +181,7 @@ main(
 			have_file = 1;
 			break;
 		case OPTION_VERSION:
-			printf("awk (zedBSD) 1.0\n");
+			printf("awk (Kei) 1.0\n");
 			exit(0);
 		case OPTION_POSIX:
 			awk.posix = 1;

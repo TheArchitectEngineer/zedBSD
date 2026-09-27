@@ -188,7 +188,7 @@ read_options(
 			options->escapes = 0;
 			break;
 		case OPTION_VERSION:
-			printf("stat (zedBSD) 1.0\n");
+			printf("stat (Kei) 1.0\n");
 			exit(0);
 		default:
 			usage();

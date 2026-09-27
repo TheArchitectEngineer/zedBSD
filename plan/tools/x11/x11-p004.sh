@@ -58,7 +58,7 @@ pointer move 1250 780 sleep 400
 check "$out/glx.png" $(scene_expect "$wx" "$wy" 640 400) || status=1
 guest 'cat /tmp/glx.log' > "$out/glx.txt"
 grep -vE "PIXEL.*ok$" "$out/glx.txt"
-expect_log /tmp/glx.log 'GLXTEST GLX run=g version=1.4 server_vendor="zedBSD" server_version="1.4"'
+expect_log /tmp/glx.log 'GLXTEST GLX run=g version=1.4 server_vendor="Kei" server_version="1.4"'
 expect_log /tmp/glx.log 'GLXTEST START run=g .* direct=1'
 expect_log /tmp/glx.log 'EGLTEST CHECK run=g failures=0 glerror=0x0'
 
