@@ -370,6 +370,8 @@ tabs_draw_one(
 			ground = TABS_COLOR_HOVER_GLASS;
 		ink = FM_COLOR_TEXT;
 	}
+
+	/* The ground, when the tab has one. */
 	if (ground != 0)
 		fm_canvas_round(canvas, (float)tab->x + 2.0f, (float)tab->y, (float)tab->width - 4.0f, (float)tab->height, TABS_RADIUS, ground);
 

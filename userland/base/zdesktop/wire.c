@@ -88,6 +88,7 @@ zwl_emit_fd(
 		if (descriptor >= 0)
 			close(descriptor);
 
+		/* Refuses the malformed event. */
 		return EPROTO;
 	}
 
@@ -97,6 +98,7 @@ zwl_emit_fd(
 		if (descriptor >= 0)
 			close(descriptor);
 
+		/* Refuses the event: the client reads too little. */
 		return ENOBUFS;
 	}
 
@@ -106,6 +108,7 @@ zwl_emit_fd(
 		if (descriptor >= 0)
 			close(descriptor);
 
+		/* Refuses the event: no memory for it. */
 		return ENOMEM;
 	}
 
@@ -405,6 +408,7 @@ receive_rights(
 	struct cmsghdr *header;
 	size_t offset;
 	size_t length;
+	size_t least;
 	size_t bytes;
 	size_t index;
 	int descriptor;
@@ -417,7 +421,8 @@ receive_rights(
 		/* A record may be read only within the kernel-returned ancillary span. */
 		header = (struct cmsghdr *)((unsigned char *)message->msg_control + offset);
 		length = header->cmsg_len;
-		if (length < CMSG_LEN(0) || length > message->msg_controllen - offset)
+		least = CMSG_LEN(0);
+		if (length < least || length > message->msg_controllen - offset)
 			return EPROTO;
 
 		/* This protocol uses only ordinary SCM_RIGHTS capability transfer. */

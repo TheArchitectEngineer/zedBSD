@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は main の session）
-Resume point: p014（toolbar → CONTROLS）・p013（窓の中のタブ、メインのセッション）・p016（タブを content のペインへ、タブらしい見た目）cleared 2026-09-27。・p015（すりガラスの付箋とタブの作り直し、ws035-p083 と一緒）cleared 2026-09-27。ws035-p081・p009（context menu）も cleared。ws035-p057・p055・ws071-p017・p010（PNG・DnD）も cleared。次は ws070-p011（TABS）。合わせた順序（2026-09-27 承認）: ws035-p081（窓の body の viewporter、コードは書いた・未 build・未試験、plan/ws035/phase081/wip.patch）→ ~~ws071-p013~~（済み）→ ws071-p009（context menu）→ ws035-p057（ぼかしと影）→ ws035-p055（damage）→ ~~ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）~~ → ws070-p011（TABS）→ ws035-p082（ログインマネージャの検討）→ ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
+Resume point: p014（toolbar → CONTROLS）・p013（窓の中のタブ、メインのセッション）・p016（タブを content のペインへ、タブらしい見た目）cleared 2026-09-27。・p015（すりガラスの付箋とタブの作り直し、ws035-p083 と一緒）cleared 2026-09-27。ws035-p081・p009（context menu）も cleared。ws035-p057・p055・ws071-p017・p010（PNG・DnD）・p011（締め）も cleared。全 Phase cleared。WS の完了の書き直しと補強（p011 の「残り」）の扱いは main の判断待ち。合わせた順序（2026-09-27 承認）: ws035-p081（窓の body の viewporter、コードは書いた・未 build・未試験、plan/ws035/phase081/wip.patch）→ ~~ws071-p013~~（済み）→ ws071-p009（context menu）→ ws035-p057（ぼかしと影）→ ws035-p055（damage）→ ~~ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）~~ → ws070-p011（TABS）→ ws035-p082（ログインマネージャの検討）→ ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -98,7 +98,7 @@ p016 を見て:「タブはこんな感じで、文字の高さの2.2倍くら�
 | [ws071-p015](phase015/phase.md) | （2026-09-27 ユーザー指示）左・中央・右の pane を付箋のように浮いたすりガラスの card に（窓の地は透明、card の間はデスクトップ、card の中はぼかした壁紙のガラス、影と縁は zdesktop）。p016 を見た指示でタブを content の card の中の行に作り直し（等幅・中央・選択は青い文字と下線と明るい地、× は選択と hover だけ）、content も白で塗らない。compositor は ws035-p083 | cleared（2026-09-27、files-p015・menu-regress 16・files-regress・boot test） | p016、ws035-p083 |
 | [ws071-p017](phase017/phase.md) | （2026-09-27 ユーザー指示）card の外側の端を浮いたタイトルバーの幅に揃える（glass の余白 0、card の間とタイトルバーの間を 8 px、docked は画面の端から 8 px）、zdesktop-files の CONTROLS の docking と戻しを確かめる | cleared（2026-09-27、files-p017・files-regress・boot test） | p015、p014 |
 | [ws071-p010](phase010/phase.md) | サムネイル（libz-compat の inflate、libpng-compat の decode）と窓の中の DnD（folder・sidebar の folder・タグ・Trash・tab、Ctrl で copy・Ctrl+Shift で link、Favorites へ足す・並べ替え） | cleared（2026-09-27、host-png・host-p010・files-p010・files-regress・boot test） | p007 |
-| ws071-p011 | App Home の項目、規約の全文との照合、回帰、boot test、i915 実機（任意） | planned | p002〜p010、p012〜p014 |
+| [ws071-p011](phase011/phase.md) | App Home の項目、規約の全文との照合、回帰（締め。boot test は 2026-09-27 のユーザーの指示で無し）、i915 実機（任意、未実施） | cleared（2026-09-27、files-p011・files-regress 14・titlebar・menu・zdesktop の回帰） | p002〜p010、p012〜p017 |
 
 ## Future Work の候補（main session が future-work.md へ）
 

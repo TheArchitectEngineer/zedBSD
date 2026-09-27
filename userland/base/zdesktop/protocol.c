@@ -121,6 +121,7 @@ zwl_dispatch(
 			zwl_callbacks_done(&created);
 			error = 0;
 		}
+
 		break;
 	case ZWL_REGISTRY:
 		/* bind is the sole registry request. */
@@ -155,6 +156,7 @@ zwl_dispatch(
 			/* Damage and input regions do not alter the single opaque scanout plane. */
 			error = 0;
 		}
+
 		break;
 	case ZWL_BUFFER:
 		/* Buffer destruction keeps any active GPU use alive independently. */
@@ -162,6 +164,7 @@ zwl_dispatch(
 			zwl_object_destroy(object);
 			error = 0;
 		}
+
 		break;
 	case ZWL_FACTORY:
 		error = factory_request(object, opcode, bytes, size);
@@ -1013,6 +1016,7 @@ shell_request(
 			surface->title[sizeof(surface->title) - 1U] = '\0';
 			object->client->server->dirty = 1;
 		}
+
 		break;
 	case 11:
 		/* A fullscreen target is one nullable output identity. */
@@ -1050,6 +1054,7 @@ shell_request(
 					return error;
 			}
 		}
+
 		break;
 	case 12:
 		/* Leaving fullscreen has no payload. */

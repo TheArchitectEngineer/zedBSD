@@ -339,9 +339,11 @@ event_node_name(
 	const char *name)
 {
 	const char *cursor;
+	int prefix;
 
 	/* The name starts with "event" and has at least one more character. */
-	if (strncmp(name, "event", 5) != 0 || name[5] == '\0')
+	prefix = strncmp(name, "event", 5);
+	if (prefix != 0 || name[5] == '\0')
 		return 0;
 
 	/* Everything after the prefix is a decimal digit. */
@@ -655,6 +657,7 @@ apply_frame(
 		y = scale_absolute(device->abs_y, device->abs_y_minimum, device->abs_y_maximum, server->height);
 	}
 
+	/* The relative movement, kept on the output. */
 	x = clamp_position((int64_t)x + delta_x, server->width);
 	y = clamp_position((int64_t)y + delta_y, server->height);
 

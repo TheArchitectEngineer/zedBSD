@@ -497,6 +497,7 @@ event_loop(
 	uint32_t presents;
 	int timeout;
 	int ready;
+	int flushed;
 	int error;
 	int remove;
 
@@ -723,7 +724,10 @@ event_loop(
 		 */
 		for (client = server->clients; client != NULL; client = client->next) {
 			/* A connection that cannot take its events is retired on the next pass. */
-			if (!client->fatal && zwl_flush(client) != 0) {
+			if (client->fatal)
+				continue;
+			flushed = zwl_flush(client);
+			if (flushed != 0) {
 				client->fatal = 1;
 				client->fatal_time = zwl_milliseconds();
 			}
@@ -794,6 +798,7 @@ zwl_cycles(
 	uint32_t low;
 	uint32_t high;
 
+	/* The time stamp counter's two halves. */
 	__asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
 
 	/* Succeeded: the counter as one value. */
@@ -809,19 +814,34 @@ zwl_perf_report(
 	struct zwl_perf *perf;
 	uint64_t cycles;
 	double per_ms;
+	double present_ms;
+	double flush_ms;
 
+	/* The first call starts the window. */
 	perf = &server->perf;
 	if (perf->window_start_ms == 0) {
 		perf->window_start_ms = now;
 		perf->window_start_cycles = zwl_cycles();
 		return;
 	}
+
+	/* A window shorter than five seconds is not reported yet. */
 	if (now - perf->window_start_ms < 5000U)
 		return;
 
 	/* The window's length in cycles scales the counters to milliseconds. */
 	cycles = zwl_cycles() - perf->window_start_cycles;
 	per_ms = (double)cycles / (double)(now - perf->window_start_ms);
+
+	/* A present's costs, when there were presents. */
+	present_ms = 0.0;
+	flush_ms = 0.0;
+	if (perf->presents != 0U) {
+		present_ms = (double)perf->present_cycles / per_ms / (double)perf->presents;
+		flush_ms = (double)perf->present_to_flush_cycles / per_ms / (double)perf->presents;
+	}
+
+	/* The loop's line. */
 	printf("ZWL PERF %llums: passes=%u timeouts=%u presents=%u | poll %.1f%% work %.1f%% | per present ms: ioctl %.2f wake-to-flush %.2f\n",
 	    (unsigned long long)(now - perf->window_start_ms),
 	    perf->passes,
@@ -829,8 +849,8 @@ zwl_perf_report(
 	    perf->presents,
 	    100.0 * (double)perf->poll_cycles / (double)cycles,
 	    100.0 * (double)perf->work_cycles / (double)cycles,
-	    perf->presents ? (double)perf->present_cycles / per_ms / (double)perf->presents : 0.0,
-	    perf->presents ? (double)perf->present_to_flush_cycles / per_ms / (double)perf->presents : 0.0);
+	    present_ms,
+	    flush_ms);
 
 	/* Window mode's frames: how many, the CPU time to record and submit one, and the time until its fence. */
 	if (perf->compose_frames != 0) {
@@ -848,8 +868,9 @@ zwl_perf_report(
 		    perf->shm_copies,
 		    (double)perf->shm_copy_cycles / per_ms / (double)perf->shm_copies);
 	}
-	fflush(stdout);
 
+	/* The lines go out, and a new window starts. */
+	fflush(stdout);
 	memset(perf, 0, sizeof(*perf));
 	perf->window_start_ms = now;
 	perf->window_start_cycles = zwl_cycles();
