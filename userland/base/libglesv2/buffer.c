@@ -331,7 +331,8 @@ gles_buffer_sync(
 	/* A new device buffer (for any use a draw makes of a buffer object), the old one kept for the frame. */
 	status = gles_device_buffer(state, buffer->size,
 				    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-				    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+				    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+				    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 				    &device_buffer, &memory, &mapped);
 	if (status != 0)
 		return -1;
@@ -669,12 +670,13 @@ glBufferData(
 	if (data != NULL)
 		memcpy(bytes, data, (size_t)size);
 
-	/* Succeeded: they replace the old ones, and the device copy is stale. */
+	/* Succeeded: they replace the old ones (what the device wrote too), and the device copy is stale. */
 	free(buffer->data);
 	buffer->data = bytes;
 	buffer->size = (size_t)size;
 	buffer->usage = usage;
 	buffer->dirty = 1;
+	buffer->gpu_written = 0;
 	buffer->map_active = 0;
 	buffer->map_access = 0U;
 	buffer->map_offset = 0U;
@@ -691,9 +693,9 @@ glBufferSubData(
 	GLsizeiptr size,
 	const void *data)
 {
-
 	struct zegl_context *context;
 	struct gles_buffer *buffer;
+	int status;
 
 	/* The bound buffer and a range inside it. */
 	context = gles_context();
@@ -710,6 +712,11 @@ glBufferSubData(
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
+
+	/* What the device wrote into it (transform feedback) read back first. */
+	status = gles_buffer_fetch(context, buffer);
+	if (status != 0)
+		return;
 
 	/* The bytes change; the device copy is stale. */
 	if (size != 0 && data != NULL)
@@ -803,6 +810,7 @@ glMapBufferRange(
 	struct zegl_context *context;
 	struct gles_buffer *buffer;
 	GLbitfield known;
+	int status;
 
 	/* The bound buffer. */
 	context = gles_context();
@@ -839,6 +847,11 @@ glMapBufferRange(
 		gles_error(context, GL_INVALID_OPERATION);
 		return NULL;
 	}
+
+	/* What the device wrote into it (transform feedback) read back first. */
+	status = gles_buffer_fetch(context, buffer);
+	if (status != 0)
+		return NULL;
 
 	/*
 	 * The mapping is the CPU bytes: the device copy is made from them
@@ -976,6 +989,7 @@ glCopyBufferSubData(
 	size_t from;
 	size_t to;
 	size_t length;
+	int status;
 
 	/* The two bound buffers. */
 	context = gles_context();
@@ -1016,6 +1030,13 @@ glCopyBufferSubData(
 		gles_error(context, GL_INVALID_VALUE);
 		return;
 	}
+
+	/* What the device wrote into either (transform feedback) read back first. */
+	status = gles_buffer_fetch(context, source);
+	if (status == 0)
+		status = gles_buffer_fetch(context, destination);
+	if (status != 0)
+		return;
 
 	/* The bytes are copied on the CPU; the destination's device copy is stale. */
 	if (length != 0U)
@@ -1474,6 +1495,12 @@ buffer_bind_range(
 		range = &state->uniform_ranges[index];
 		alignment = (size_t)state->limits.minUniformBufferOffsetAlignment;
 	} else if (target == GL_TRANSFORM_FEEDBACK_BUFFER) {
+		if (state->feedback->active) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+
+		/* A binding point there is. */
 		if (index >= GLES_FEEDBACK_BINDINGS) {
 			gles_error(context, GL_INVALID_VALUE);
 			return;
@@ -1633,7 +1660,7 @@ buffer_chunk(
 	status = gles_device_buffer(state, chunk->size,
 				    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
 				    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-				    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+				    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 				    &chunk->buffer, &chunk->memory, &mapped);
 	if (status != 0) {
 		free(chunk);

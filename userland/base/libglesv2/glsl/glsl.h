@@ -96,6 +96,37 @@ struct glsl_block_info {
 };
 
 /*
+ * The storage buffer a vertex shader writes the outputs it captures into
+ * (transform feedback), at descriptor set 0: words of 32 bits, the first
+ * GLSL_CAPTURE_HEADER a header whose word 0 is how many vertices each
+ * instance has, then each vertex's record (instance * vertices + vertex)
+ * of the captured outputs one after another, each component a word (a
+ * float's or an int's bits).
+ */
+#define GLSL_CAPTURE_BINDING	48U
+#define GLSL_CAPTURE_HEADER	4U
+
+/*
+ * One output a linked program's vertex shader captures, as the API
+ * reports it (glGetTransformFeedbackVarying) and where its words are in a
+ * vertex's record.
+ */
+struct glsl_capture_info {
+	/* The name, allocated with the program. */
+	char *name;
+
+	/* GLSL_INFO_*, the components of a column, the columns (1 unless a matrix), the elements (1 unless an array). */
+	unsigned base;
+	unsigned components;
+	unsigned columns;
+	unsigned size;
+
+	/* Its first word in a vertex's record, and how many words it has. */
+	unsigned offset;
+	unsigned words;
+};
+
+/*
  * A linked program: the SPIR-V of both stages and what the API says of
  * the uniforms.  glsl_program_free releases it.
  */
@@ -111,6 +142,11 @@ struct glsl_program {
 	/* The active named uniform blocks, in the order of their bindings. */
 	struct glsl_block_info *blocks;
 	unsigned block_count;
+
+	/* The outputs the vertex shader captures (transform feedback), and the words of a vertex's record (0: none). */
+	struct glsl_capture_info *captures;
+	unsigned capture_count;
+	unsigned capture_stride;
 };
 
 /*
@@ -147,6 +183,14 @@ unsigned glsl_shader_version(const struct glsl_shader *shader, int *es);
  * *program, or -1 with *log a malloc'ed info log saying why.
  */
 int glsl_link(const struct glsl_shader *vertex, const struct glsl_shader *fragment, const struct glsl_binding *bindings, unsigned binding_count, struct glsl_program *program, char **log);
+
+/*
+ * Links as glsl_link does, with the vertex shader capturing the outputs
+ * of the names given (transform feedback, GLSL_CAPTURE_BINDING) in that
+ * order.  Returns 0 and fills *program, or -1 with *log a malloc'ed info
+ * log saying why.
+ */
+int glsl_link_captured(const struct glsl_shader *vertex, const struct glsl_shader *fragment, const struct glsl_binding *bindings, unsigned binding_count, const char *const *captures, unsigned capture_count, struct glsl_program *program, char **log);
 
 /* Frees what a successful link gave. */
 void glsl_program_free(struct glsl_program *program);

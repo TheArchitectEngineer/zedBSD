@@ -41,6 +41,7 @@
 #define SPV_OP_TYPE_IMAGE		25U
 #define SPV_OP_TYPE_SAMPLED_IMAGE	27U
 #define SPV_OP_TYPE_ARRAY		28U
+#define SPV_OP_TYPE_RUNTIME_ARRAY	29U
 #define SPV_OP_TYPE_STRUCT		30U
 #define SPV_OP_TYPE_POINTER		32U
 #define SPV_OP_TYPE_FUNCTION		33U
@@ -134,6 +135,7 @@
 
 /* Decorations. */
 #define SPV_DECORATION_BLOCK		2U
+#define SPV_DECORATION_BUFFER_BLOCK	3U
 #define SPV_DECORATION_ROW_MAJOR	4U
 #define SPV_DECORATION_COL_MAJOR	5U
 #define SPV_DECORATION_ARRAY_STRIDE	6U
@@ -307,6 +309,15 @@ struct glsl_link_uniform {
 };
 
 /*
+ * One output a vertex shader captures (transform feedback): its variable,
+ * and its first word in a vertex's record.
+ */
+struct glsl_link_capture {
+	struct glsl_symbol *symbol;
+	unsigned offset;
+};
+
+/*
  * The emitter's state for one stage.
  */
 struct emit_state {
@@ -341,6 +352,18 @@ struct emit_state {
 
 	/* Whether the shader writes gl_FragDepth. */
 	unsigned depth_written;
+
+	/*
+	 * The outputs a vertex shader captures (none: 0), the words of a
+	 * vertex's record, the storage buffer they go into, and the vertex's
+	 * and the instance's numbers they are placed by.
+	 */
+	const struct glsl_link_capture *captures;
+	unsigned capture_count;
+	unsigned capture_stride;
+	uint32_t capture_buffer;
+	struct glsl_symbol *vertex_id;
+	struct glsl_symbol *instance_id;
 };
 
 /* module.c: building a module. */
@@ -359,7 +382,7 @@ void glsl_module_member_name(struct glsl_module *module, uint32_t target, uint32
 uint32_t *glsl_module_finish(struct glsl_module *module, size_t *words);
 
 /* emit.c: the emitter. */
-uint32_t *glsl_emit(struct glsl_shader *shader, struct glsl_arena *arena, struct glsl_link_uniform *uniforms, unsigned uniform_count, size_t *words);
+uint32_t *glsl_emit(struct glsl_shader *shader, struct glsl_arena *arena, struct glsl_link_uniform *uniforms, unsigned uniform_count, const struct glsl_link_capture *captures, unsigned capture_count, unsigned capture_stride, size_t *words);
 uint32_t glsl_emit_type(struct emit_state *state, const struct glsl_type *type);
 uint32_t glsl_emit_pointer(struct emit_state *state, unsigned storage, uint32_t type);
 uint32_t glsl_emit_image_type(struct emit_state *state, const struct glsl_type *type);

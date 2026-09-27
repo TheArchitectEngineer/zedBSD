@@ -1089,6 +1089,10 @@ spirv_variable(
 		return 0;
 	}
 
+	/* The storage buffer a vertex shader captures outputs into (transform feedback) is the link's, not the interface's. */
+	if (storage == STORAGE_UNIFORM && module->bindings[id] == GLES_CAPTURE_BINDING)
+		return 0;
+
 	/* A uniform block other than the default one (binding 0): its binding and its type's name are recorded. */
 	if (storage == STORAGE_UNIFORM && module->bindings[id] != SPIRV_NONE && module->bindings[id] != 0U) {
 		if (!module->blocks[pointee] || out->named_count == GLES_NAMED_BLOCKS)

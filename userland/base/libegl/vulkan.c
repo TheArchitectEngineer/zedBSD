@@ -67,6 +67,7 @@ zegl_vulkan_open(
 	VkQueueFamilyProperties families[16];
 	VkDeviceQueueCreateInfo queue;
 	VkDeviceCreateInfo device;
+	VkPhysicalDeviceFeatures available;
 	const char *extensions[3];
 	const char *device_extension;
 	float priority;
@@ -120,7 +121,31 @@ zegl_vulkan_open(
 	/* That family's queue draws every frame. */
 	display->family = family;
 
-	/* The device with one queue of that family and the swapchain extension. */
+	/*
+	 * The optional features GL's translation uses, those the device has:
+	 * blending that differs between colour attachments, stores from
+	 * vertex shaders (transform feedback) and fragment shaders, wide
+	 * lines and large points, geometry and tessellation shaders, clip
+	 * distances, depth clamping, fill modes, cube map arrays and sample
+	 * shading (desktop GL).
+	 */
+	memset(&available, 0, sizeof(available));
+	vkGetPhysicalDeviceFeatures(display->physical, &available);
+	memset(&display->features, 0, sizeof(display->features));
+	display->features.independentBlend = available.independentBlend;
+	display->features.vertexPipelineStoresAndAtomics = available.vertexPipelineStoresAndAtomics;
+	display->features.fragmentStoresAndAtomics = available.fragmentStoresAndAtomics;
+	display->features.wideLines = available.wideLines;
+	display->features.largePoints = available.largePoints;
+	display->features.geometryShader = available.geometryShader;
+	display->features.tessellationShader = available.tessellationShader;
+	display->features.shaderClipDistance = available.shaderClipDistance;
+	display->features.depthClamp = available.depthClamp;
+	display->features.fillModeNonSolid = available.fillModeNonSolid;
+	display->features.imageCubeArray = available.imageCubeArray;
+	display->features.sampleRateShading = available.sampleRateShading;
+
+	/* The device with one queue of that family, the swapchain extension and those features. */
 	priority = 1.0f;
 	memset(&queue, 0, sizeof(queue));
 	queue.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -134,6 +159,7 @@ zegl_vulkan_open(
 	device.pQueueCreateInfos = &queue;
 	device.enabledExtensionCount = 1U;
 	device.ppEnabledExtensionNames = &device_extension;
+	device.pEnabledFeatures = &display->features;
 	result = vkCreateDevice(display->physical, &device, NULL, &display->device);
 	if (result != VK_SUCCESS) {
 		zegl_vulkan_close(display);

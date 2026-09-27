@@ -84,6 +84,17 @@
 #define GLES_UNIFORM_BINDINGS	24U
 #define GLES_FEEDBACK_BINDINGS	4U
 
+/*
+ * Transform feedback: the most outputs a program captures, the binding of
+ * the storage buffer its vertex shader writes them into and the words of
+ * that buffer's header (glsl.h's GLSL_CAPTURE_BINDING and _HEADER), and
+ * the most components captured into one buffer.
+ */
+#define GLES_CAPTURES		16U
+#define GLES_CAPTURE_BINDING	48U
+#define GLES_CAPTURE_HEADER	4U
+#define GLES_CAPTURE_COMPONENTS	64U
+
 /* The longest name of an attribute or a uniform, with its terminator. */
 #define GLES_NAME		64U
 
@@ -106,6 +117,9 @@ struct gles_buffer {
 
 	/* Nonzero when the bytes changed since the device copy was written. */
 	int dirty;
+
+	/* Nonzero when the device wrote the device copy (transform feedback) since the bytes were read back from it. */
+	int gpu_written;
 
 	/* The device copy (host visible), its size, where it is mapped, and the frame that last drew from it. */
 	VkBuffer buffer;
@@ -585,6 +599,37 @@ struct gles_block {
 };
 
 /*
+ * One output a linked program's vertex shader captures (transform
+ * feedback): what glGetTransformFeedbackVarying reports, and its words in
+ * a vertex's record of the capture buffer.
+ */
+struct gles_capture {
+	char name[GLES_NAME];
+	GLenum type;
+	GLint size;
+	unsigned offset;
+	unsigned words;
+};
+
+/*
+ * A transform feedback object: whether it is active or paused, the
+ * primitive mode and program of the capture, the binding points' ranges
+ * (kept here while another object is bound; the bound one's are the
+ * context's), the bytes written into each range so far, and the
+ * primitives written.
+ */
+struct gles_feedback {
+	GLuint name;
+	int bound;
+	int active;
+	int paused;
+	GLenum primitive_mode;
+	struct gles_program *program;
+	struct gles_buffer_range ranges[GLES_FEEDBACK_BINDINGS];
+	size_t written[GLES_FEEDBACK_BINDINGS];
+};
+
+/*
  * One uniform location: the uniform and the element of it.
  */
 struct gles_location {
@@ -627,6 +672,17 @@ struct gles_program {
 	/* The attributes. */
 	struct gles_attribute attributes[GLES_ATTRIBS];
 	unsigned attribute_count;
+
+	/* The outputs glTransformFeedbackVaryings named for the next link, and the buffer mode. */
+	char feedback_names[GLES_CAPTURES][GLES_NAME];
+	unsigned feedback_count;
+	GLenum feedback_mode;
+
+	/* The outputs the linked vertex shader captures, the words of a vertex's record (0: none), and the link's buffer mode. */
+	struct gles_capture captures[GLES_CAPTURES];
+	unsigned capture_count;
+	unsigned capture_stride;
+	GLenum capture_mode;
 
 	/* The fragment shader's outputs, by name and location (glGetFragDataLocation). */
 	char output_names[GLES_DRAW_BUFFERS][GLES_NAME];
@@ -781,6 +837,9 @@ struct gles_raster {
 
 	/* The polygon offset: on. */
 	uint32_t polygon_offset;
+
+	/* Rasterization discarded (GL_RASTERIZER_DISCARD). */
+	uint32_t discard;
 };
 
 /*
@@ -915,6 +974,12 @@ struct gles_state {
 	/* The query objects' namespace, and the queries' and fence syncs' shared state (query.c; NULL until the first). */
 	struct gles_names query_objects;
 	struct gles_queries *queries;
+
+	/* The transform feedback objects' namespace, the default one, the one bound (never NULL), and GL_RASTERIZER_DISCARD. */
+	struct gles_names feedbacks;
+	struct gles_feedback default_feedback;
+	struct gles_feedback *feedback;
+	int rasterizer_discard;
 
 	/* Blending. */
 	int blend;
@@ -1135,10 +1200,29 @@ void gles_framebuffers_forget(struct gles_state *state, int kind, GLuint name);
 void gles_framebuffers_release(struct gles_state *state);
 int gles_texture_fetch(struct zegl_context *context, struct gles_texture *texture);
 
+/*
+ * A draw's capture buffer (transform feedback): a range of the stream the
+ * vertex shader writes vertices' records into, and how many vertices an
+ * instance has there.
+ */
+struct gles_capture_target {
+	VkDescriptorBufferInfo buffer;
+	uint32_t vertices;
+};
+
+/* feedback.c: transform feedback objects and the draws that capture. */
+int gles_feedback_check(struct zegl_context *context, struct gles_state *state, GLenum mode, GLenum type, int *capturing);
+int gles_feedback_prepare(struct zegl_context *context, struct gles_state *state, int capturing, GLint first, GLsizei count, GLsizei instances, uint32_t expanded, struct gles_capture_target *capture);
+void gles_feedback_record(struct zegl_context *context, struct gles_state *state, const struct gles_capture_target *capture, GLint first, GLsizei instances, const uint32_t *list, uint32_t expanded);
+int gles_buffer_fetch(struct zegl_context *context, struct gles_buffer *buffer);
+void gles_feedbacks_release(struct gles_state *state);
+
 /* query.c: query objects and fence syncs. */
 void gles_queries_draw(struct gles_state *state, const struct gles_target *target);
 void gles_queries_suspend(struct gles_state *state);
 void gles_queries_release(struct gles_state *state);
+int gles_frame_wait(struct zegl_context *context, struct gles_state *state, uint64_t frame);
+void gles_query_primitives(struct gles_state *state, GLuint primitives);
 
 /* program.c: shaders and programs. */
 void gles_program_release(struct gles_state *state, struct gles_program *program);

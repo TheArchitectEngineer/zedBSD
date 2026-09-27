@@ -56,6 +56,7 @@ static struct gles_program *program_get(struct zegl_context *context, GLuint nam
 static int program_link(struct gles_state *state, struct gles_program *program, char *log);
 static int program_link_code(struct gles_state *state, struct gles_program *program, const uint32_t *vertex_input, size_t vertex_words, const uint32_t *fragment_input, size_t fragment_words, char *log);
 static int program_link_glsl(struct gles_program *program, struct glsl_program *linked, char *log);
+static void program_glsl_captures(struct gles_program *program, const struct glsl_program *linked);
 static void program_glsl_types(struct gles_program *program, const struct glsl_program *linked);
 static GLenum program_sampler_type(const struct glsl_uniform_info *info);
 static int program_glsl_blocks(struct gles_program *program, const struct glsl_program *linked, char *log);
@@ -564,8 +565,9 @@ glCreateProgram(void)
 		return 0U;
 	}
 
-	/* The program under the name. */
+	/* The program under the name, capturing interleaved outputs by default. */
 	program->kind = GLES_KIND_PROGRAM;
+	program->feedback_mode = GL_INTERLEAVED_ATTRIBS;
 	program->name = gles_names_free(&state->objects);
 	status = gles_names_add(&state->objects, program->name, program);
 	if (status != 0) {
@@ -825,9 +827,18 @@ glGetProgramiv(
 	case GL_ACTIVE_UNIFORM_BLOCKS:
 		*params = (GLint)program->block_count;
 		return;
+	case GL_TRANSFORM_FEEDBACK_VARYINGS:
+		*params = (GLint)program->capture_count;
+		return;
+	case GL_TRANSFORM_FEEDBACK_BUFFER_MODE:
+		*params = (GLint)program->capture_mode;
+		if (program->capture_count == 0U)
+			*params = (GLint)program->feedback_mode;
+		return;
 	case GL_ACTIVE_ATTRIBUTE_MAX_LENGTH:
 	case GL_ACTIVE_UNIFORM_MAX_LENGTH:
 	case GL_ACTIVE_UNIFORM_BLOCK_MAX_NAME_LENGTH:
+	case GL_TRANSFORM_FEEDBACK_VARYING_MAX_LENGTH:
 		break;
 	default:
 		gles_error(context, GL_INVALID_ENUM);
@@ -836,7 +847,13 @@ glGetProgramiv(
 
 	/* The longest name with its terminator (and "[0]" for arrays). */
 	longest = 0;
-	if (pname == GL_ACTIVE_ATTRIBUTE_MAX_LENGTH) {
+	if (pname == GL_TRANSFORM_FEEDBACK_VARYING_MAX_LENGTH) {
+		for (index = 0U; index < program->capture_count; index++) {
+			length = (GLint)strlen(program->captures[index].name) + 1;
+			if (length > longest)
+				longest = length;
+		}
+	} else if (pname == GL_ACTIVE_ATTRIBUTE_MAX_LENGTH) {
 		for (index = 0U; index < program->attribute_count; index++) {
 			length = (GLint)strlen(program->attributes[index].name) + 1;
 			if (length > longest)
@@ -1129,6 +1146,102 @@ glProgramBinary(
 	if (program == NULL)
 		return;
 	gles_error(context, GL_INVALID_ENUM);
+}
+
+/*
+ * Names the outputs the program's vertex shader captures at its next link
+ * (transform feedback), and whether they go into one buffer interleaved
+ * or each into its own.
+ */
+GL_APICALL void GL_APIENTRY
+glTransformFeedbackVaryings(
+	GLuint name,
+	GLsizei count,
+	const GLchar *const *varyings,
+	GLenum bufferMode)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	GLsizei index;
+
+	/* A program, a buffer mode, and no more names than there are places for. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	if (bufferMode != GL_INTERLEAVED_ATTRIBS && bufferMode != GL_SEPARATE_ATTRIBS) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* No more names than there are places for. */
+	if (count < 0 || count > (GLsizei)GLES_CAPTURES) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Separate outputs each have a binding point. */
+	if (bufferMode == GL_SEPARATE_ATTRIBS && count > (GLsizei)GLES_FEEDBACK_BINDINGS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Kept for the next link. */
+	for (index = 0; index < count; index++)
+		(void)snprintf(program->feedback_names[index], GLES_NAME, "%s", varyings[index]);
+	program->feedback_count = (unsigned)count;
+	program->feedback_mode = bufferMode;
+}
+
+/*
+ * Reports one of the outputs a linked program captures.
+ */
+GL_APICALL void GL_APIENTRY
+glGetTransformFeedbackVarying(
+	GLuint name,
+	GLuint index,
+	GLsizei bufSize,
+	GLsizei *length,
+	GLsizei *size,
+	GLenum *type,
+	GLchar *varying)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	const struct gles_capture *capture;
+	size_t written;
+
+	/* A linked program and one of its captured outputs. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	if (!program->linked) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* One of its captured outputs. */
+	if (index >= program->capture_count) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Its size and type. */
+	capture = &program->captures[index];
+	*size = capture->size;
+	*type = capture->type;
+
+	/* Its name, cut to the room given. */
+	written = 0U;
+	if (bufSize > 0 && varying != NULL) {
+		(void)snprintf(varying, (size_t)bufSize, "%s", capture->name);
+		written = strlen(varying);
+	}
+
+	/* The name's length. */
+	if (length != NULL)
+		*length = (GLsizei)written;
 }
 
 /*
@@ -2049,10 +2162,11 @@ program_link(
 		return status;
 	}
 
-	/* GLSL is made SPIR-V by the compiler's link first. */
+	/* GLSL is made SPIR-V by the compiler's link first, with what its vertex shader captures. */
 	status = program_link_glsl(program, &linked, log);
 	if (status != 0)
 		return -1;
+	program_glsl_captures(program, &linked);
 
 	/* The SPIR-V linked, then the uniforms' GL types the SPIR-V does not tell, then the named blocks' members. */
 	status = program_link_code(state, program, linked.code[0], linked.words[0], linked.code[1], linked.words[1], log);
@@ -2081,6 +2195,7 @@ program_link_glsl(
 	char *log)
 {
 	struct glsl_binding bindings[GLES_ATTRIBS];
+	const char *captures[GLES_CAPTURES];
 	unsigned index;
 	char *glsl_log;
 	int status;
@@ -2097,8 +2212,13 @@ program_link_glsl(
 		bindings[index].location = program->bound_locations[index];
 	}
 
+	/* The outputs transform feedback captures, by name. */
+	for (index = 0U; index < program->feedback_count; index++)
+		captures[index] = program->feedback_names[index];
+
 	/* The compiler's link. */
-	status = glsl_link(program->vertex->glsl, program->fragment->glsl, bindings, program->bound_count, linked, &glsl_log);
+	status = glsl_link_captured(program->vertex->glsl, program->fragment->glsl, bindings, program->bound_count, captures,
+				    program->feedback_count, linked, &glsl_log);
 	if (status != 0) {
 		if (glsl_log != NULL) {
 			(void)snprintf(log, PROGRAM_LOG, "%s", glsl_log);
@@ -2113,6 +2233,34 @@ program_link_glsl(
 
 	/* Succeeded: the SPIR-V of both stages. */
 	return 0;
+}
+
+/* Keeps what the linked vertex shader captures (transform feedback): each output's name, GL type, size and place, and the link's buffer mode. */
+static void
+program_glsl_captures(
+	struct gles_program *program,
+	const struct glsl_program *linked)
+{
+	const struct glsl_capture_info *info;
+	struct gles_capture *capture;
+	unsigned index;
+
+	/* Each captured output. */
+	program->capture_count = 0U;
+	for (index = 0U; index < linked->capture_count && index < GLES_CAPTURES; index++) {
+		info = &linked->captures[index];
+		capture = &program->captures[index];
+		(void)snprintf(capture->name, GLES_NAME, "%s", info->name);
+		capture->type = gles_gl_type(info->base, info->components, info->columns);
+		capture->size = (GLint)info->size;
+		capture->offset = info->offset;
+		capture->words = info->words;
+		program->capture_count = index + 1U;
+	}
+
+	/* The record's words and the buffer mode the link was made with. */
+	program->capture_stride = linked->capture_stride;
+	program->capture_mode = program->feedback_mode;
 }
 
 /*
@@ -2611,7 +2759,7 @@ program_layout(
 	struct gles_state *state,
 	struct gles_program *program)
 {
-	VkDescriptorSetLayoutBinding bindings[GLES_UNITS + 1U + GLES_NAMED_BLOCKS];
+	VkDescriptorSetLayoutBinding bindings[GLES_UNITS + 2U + GLES_NAMED_BLOCKS];
 	VkDescriptorSetLayoutCreateInfo set;
 	VkPipelineLayoutCreateInfo layout;
 	uint32_t count;
@@ -2639,6 +2787,15 @@ program_layout(
 		bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		bindings[count].descriptorCount = 1U;
 		bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		count++;
+	}
+
+	/* The storage buffer the vertex shader writes captured outputs into (transform feedback). */
+	if (program->capture_count != 0U) {
+		bindings[count].binding = GLES_CAPTURE_BINDING;
+		bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		bindings[count].descriptorCount = 1U;
+		bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 		count++;
 	}
 
@@ -2742,6 +2899,8 @@ program_unlink(
 	program->linked = 0;
 	memset(program->blocks, 0, sizeof(program->blocks));
 	program->block_count = 0U;
+	program->capture_count = 0U;
+	program->capture_stride = 0U;
 }
 
 /*
