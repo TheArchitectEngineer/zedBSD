@@ -407,7 +407,12 @@ i915_instance_limits(
 	limits->nonCoherentAtomSize = 64U;
 }
 
-/* vkGetPhysicalDeviceFeatures: [physical][present] -> [present][VkPhysicalDeviceFeatures]; no optional feature is claimed. */
+/*
+ * vkGetPhysicalDeviceFeatures: [physical][present] -> [present][VkPhysicalDeviceFeatures].
+ * The one optional feature claimed is vertexPipelineStoresAndAtomics: a
+ * vertex shader stores to and loads from storage buffers (ws075-p006).
+ * XXX: its atomics are not compiled.
+ */
 static int
 i915_instance_features(
 	struct i915_render_session *session,
@@ -422,10 +427,11 @@ i915_instance_features(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Takes a zeroed record from the arena: every feature is off. */
+	/* Takes a zeroed record from the arena: every feature is off but the vertex stage's stores. */
 	features = i915_vkc_array(reader, &session->arena, 1U, sizeof(*features));
 	if (features == NULL)
 		return ENOMEM;
+	features->vertexPipelineStoresAndAtomics = VK_TRUE;
 
 	/* Replies the present word and the record. */
 	drv_i915_wire_reply_u64(reply, 1U);

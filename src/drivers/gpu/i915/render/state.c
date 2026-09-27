@@ -742,13 +742,18 @@ drv_i915_gfx_emit_context_setup(
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, 0U);
 
-	/* Invalidates the caches that may hold state from before the new bases. */
+	/*
+	 * Invalidates the caches that may hold state from before the new bases,
+	 * and the vertex fetch cache, which may hold a buffer an earlier draw's
+	 * shader wrote (transform feedback) or a copy filled.
+	 */
 	drv_i915_batch_pipe_control(batch,
 				    PIPE_CONTROL_CS_STALL |
 				    PIPE_CONTROL_STATE_CACHE_INVALIDATE |
 				    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
 				    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
-				    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
+				    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
+				    PIPE_CONTROL_VF_CACHE_INVALIDATE);
 
 	/* Clears the state anv clears once per context. */
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_WM_HZ_OP, GEN12_3DSTATE_WM_HZ_OP_DWORDS);
