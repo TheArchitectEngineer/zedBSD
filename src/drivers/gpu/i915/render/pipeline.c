@@ -568,6 +568,7 @@ i915_gfx_decode_blend(
 {
 	VkPipelineColorBlendStateCreateInfo blend;
 	const VkPipelineColorBlendAttachmentState *attachment;
+	uint32_t index;
 
 	/* Decodes the record. */
 	kern_memset(&blend, 0, sizeof(blend));
@@ -607,6 +608,14 @@ i915_gfx_decode_blend(
 
 	/* Keeps the components the attachment does not write. */
 	pipeline->color_write_disable = ~(uint32_t)attachment->colorWriteMask & 0xfU;
+
+	/* Keeps the other attachments' masks, and which of them do not blend (the factors are attachment 0's). */
+	for (index = 1U; index < blend.attachmentCount && index < I915_GFX_MAX_COLOR_ATTACHMENTS; index++) {
+		pipeline->extra_write_disable[index - 1U] = ~(uint32_t)blend.pAttachments[index].colorWriteMask & 0xfU;
+		pipeline->extra_blend_off[index - 1U] = 0U;
+		if (blend.pAttachments[index].blendEnable == VK_FALSE)
+			pipeline->extra_blend_off[index - 1U] = 1U;
+	}
 }
 
 /*

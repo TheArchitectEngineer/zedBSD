@@ -306,7 +306,12 @@ struct i915_image_range {
 };
 
 static int i915_image_surface_write(uint32_t *rss, const struct i915_gfx_image *image, const struct i915_image_range *range, uint32_t mocs);
-static void i915_state_target_range(const struct i915_gfx_draw_state *state, struct i915_image_range *range);
+static void i915_state_target_range(const struct i915_gfx_draw_state *state, uint32_t slot, struct i915_image_range *range);
+static const struct i915_gfx_view *i915_state_target_view(const struct i915_gfx_draw_state *state, uint32_t slot);
+static int i915_state_target_integer(const struct i915_gfx_draw_state *state, uint32_t slot);
+static uint32_t i915_blend_write_disables(uint32_t disable);
+static void i915_state_null_surface_write(uint32_t *rss, uint32_t width, uint32_t height);
+static int i915_state_write_targets(uint32_t *surface, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *target, uint32_t mocs);
 static uint32_t i915_state_dynamic_offset(const struct i915_gfx_draw_state *state, uint32_t set, uint32_t binding);
 static uint32_t i915_sampler_mip_filter(uint32_t mipmap_mode);
 static int i915_state_write_surfaces(uint32_t *surface, uint32_t *dynamic, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs);
@@ -1961,10 +1966,10 @@ i915_image_surface_write(
  * Writes the binding table, the render target and texture surfaces and the
  * samplers of a draw.
  *
- * Binding table entry 0 is the render target and entry 1 + n the n-th
+ * Binding table entry 0 is the first render target and entry 1 + n the n-th
  * sampled image of the pixel kernel, with sampler n, as the compiler numbers
  * them; each is the view and the sampler bound at the (set, binding) the
- * kernel names.
+ * kernel names.  The other render targets are at I915_SHADER_RT_BTI().
  */
 static int
 i915_state_write_surfaces(
@@ -1986,10 +1991,8 @@ i915_state_write_surfaces(
 	uint32_t border;
 	int error;
 
-	/* Points binding table entry 0 at the render target and describes the level and layer its view writes. */
-	surface[I915_GFX_BINDING_TABLE / 4U] = I915_GFX_RSS_TARGET;
-	i915_state_target_range(state, &range);
-	error = i915_image_surface_write(&surface[I915_GFX_RSS_TARGET / 4U], target, &range, mocs);
+	/* Points the render targets' binding table entries at the levels and layers their views write. */
+	error = i915_state_write_targets(surface, state, target, mocs);
 	if (error != 0)
 		return error;
 
@@ -2071,13 +2074,14 @@ i915_state_dynamic_offset(
 }
 
 /*
- * Finds what the draw's render target writes: the level and the layer (a
- * 3D image's slice) its colour attachment view starts at; level 0 of layer
- * 0 when the draw has no framebuffer (a test's state).
+ * Finds what render target `slot` of the draw writes: the level and the
+ * layer (a 3D image's slice) its colour attachment view starts at; level 0
+ * of layer 0 when the draw has no framebuffer (a test's state).
  */
 static void
 i915_state_target_range(
 	const struct i915_gfx_draw_state *state,
+	uint32_t slot,
 	struct i915_image_range *range)
 {
 	const struct i915_gfx_view *view;
@@ -2090,15 +2094,108 @@ i915_state_target_range(
 	range->render_target = 1;
 
 	/* The colour attachment view names the level and the layer. */
-	if (state->framebuffer == NULL || state->pass == NULL)
-		return;
-	if (state->pass->color_attachment >= state->framebuffer->view_count)
-		return;
-	view = state->framebuffer->views[state->pass->color_attachment];
+	view = i915_state_target_view(state, slot);
 	if (view == NULL)
 		return;
 	range->base_level = view->base_level;
 	range->base_layer = view->base_layer;
+}
+
+/* Finds the view colour slot `slot` of the draw's subpass draws into; NULL for none. */
+static const struct i915_gfx_view *
+i915_state_target_view(
+	const struct i915_gfx_draw_state *state,
+	uint32_t slot)
+{
+	uint32_t attachment;
+
+	/* A draw without a framebuffer (a test's) has none. */
+	if (state->framebuffer == NULL || state->pass == NULL)
+		return NULL;
+
+	/* The slot's attachment, when the framebuffer has a view for it. */
+	attachment = drv_i915_gfx_pass_color(state->pass, slot);
+	if (attachment >= state->framebuffer->view_count)
+		return NULL;
+
+	/* Succeeded: the view, or NULL for an attachment without one. */
+	return state->framebuffer->views[attachment];
+}
+
+/*
+ * Writes the render targets: slot n's view at binding table entry
+ * I915_SHADER_RT_BTI(n), and a null surface of the draw's extent for a slot
+ * the subpass does not draw into (a fragment shader may still write that
+ * location; the write goes nowhere, as isl's null surface state makes it).
+ * A draw without a framebuffer (a test's) writes `target` as slot 0.
+ */
+static int
+i915_state_write_targets(
+	uint32_t *surface,
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_image *target,
+	uint32_t mocs)
+{
+	const struct i915_gfx_view *view;
+	struct i915_image_range range;
+	uint32_t slot;
+	uint32_t rss;
+	int error;
+
+	/* Every slot a fragment shader may write. */
+	for (slot = 0U; slot < I915_SHADER_MAX_COLOR_OUTPUTS; slot++) {
+		/* The slot's surface state and its binding table entry. */
+		rss = I915_GFX_RSS_TARGET;
+		if (slot != 0U)
+			rss = I915_GFX_RSS_EXTRA_TARGET + (slot - 1U) * I915_GFX_RSS_BYTES;
+		surface[I915_GFX_BINDING_TABLE / 4U + I915_SHADER_RT_BTI(slot)] = rss;
+
+		/* The slot's view, or for a test's state the given target as slot 0. */
+		view = i915_state_target_view(state, slot);
+		i915_state_target_range(state, slot, &range);
+		if (view != NULL) {
+			error = i915_image_surface_write(&surface[rss / 4U], view->image, &range, mocs);
+		} else if (slot == 0U && state->framebuffer == NULL) {
+			error = i915_image_surface_write(&surface[rss / 4U], target, &range, mocs);
+		} else {
+			i915_state_null_surface_write(&surface[rss / 4U], target->width, target->height);
+			error = 0;
+		}
+
+		/* Refuses a view the surface state cannot describe. */
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every render target slot is described. */
+	return 0;
+}
+
+/*
+ * Writes the RENDER_SURFACE_STATE of a null surface: SURFTYPE_NULL,
+ * B8G8R8A8_UNORM, Y-tiled, of the given extent (isl_null_fill_state() for
+ * Gen9+).  Writes to it are dropped.
+ */
+static void
+i915_state_null_surface_write(
+	uint32_t *rss,
+	uint32_t width,
+	uint32_t height)
+{
+	/* A null surface still names an extent of at least one texel. */
+	if (width == 0U)
+		width = 1U;
+	if (height == 0U)
+		height = 1U;
+
+	/* The type, the format, the alignment and the tiling; the extent. */
+	kern_memset(rss, 0, GEN12_RENDER_SURFACE_STATE_DWORDS * 4U);
+	rss[0] = (GEN12_SURFTYPE_NULL << 29) |
+	    (I915_GFX_SURFACE_B8G8R8A8_UNORM << 18) |
+	    (GEN12_SURFACE_ALIGN_4 << 16) |
+	    (GEN12_SURFACE_ALIGN_4 << 14) |
+	    (GEN12_TILEMODE_YMAJOR << 12);
+	rss[2] = (width - 1U) | ((height - 1U) << 16);
 }
 
 /*
@@ -2326,23 +2423,17 @@ i915_state_write_blend(
 	uint32_t *words;
 	uint32_t entry;
 	uint32_t index;
+	uint32_t slot;
+	uint32_t disable;
+	int integer;
+	int blends;
 
 	/* Works out the hardware blend of attachment 0. */
 	pipeline = state->pipeline;
 	i915_blend_equation(pipeline, &equation);
 
-	/* The components attachment 0 leaves as they are. */
-	entry = 0U;
-	if ((pipeline->color_write_disable & VK_COLOR_COMPONENT_R_BIT) != 0U)
-		entry |= GEN12_BLEND_WRITE_DISABLE_RED;
-	if ((pipeline->color_write_disable & VK_COLOR_COMPONENT_G_BIT) != 0U)
-		entry |= GEN12_BLEND_WRITE_DISABLE_GREEN;
-	if ((pipeline->color_write_disable & VK_COLOR_COMPONENT_B_BIT) != 0U)
-		entry |= GEN12_BLEND_WRITE_DISABLE_BLUE;
-	if ((pipeline->color_write_disable & VK_COLOR_COMPONENT_A_BIT) != 0U)
-		entry |= GEN12_BLEND_WRITE_DISABLE_ALPHA;
-
 	/* A blending entry names its factors and functions. */
+	entry = 0U;
 	if (equation.enable != 0U) {
 		entry |= GEN12_BLEND_ENABLE |
 		    (equation.src_color << GEN12_BLEND_SRC_FACTOR_SHIFT) |
@@ -2353,13 +2444,33 @@ i915_state_write_blend(
 		    (equation.alpha_function << GEN12_BLEND_ALPHA_FUNCTION_SHIFT);
 	}
 
-	/* Fills BLEND_STATE: the independent alpha, then the entry and its clamps. */
+	/*
+	 * Fills BLEND_STATE: the independent alpha, then an entry and its clamps
+	 * for every render target (the pipeline's one equation for all of them,
+	 * as without independent blending), except that an integer target does
+	 * not blend.
+	 */
 	words = &dynamic[I915_GFX_DYN_BLEND / 4U];
 	words[0] = 0U;
 	if (equation.independent_alpha != 0U)
 		words[0] = GEN12_BLEND_INDEPENDENT_ALPHA;
-	words[1] = entry;
-	words[2] = 1U | (1U << 1) | (GEN12_COLORCLAMP_RTFORMAT << 2);
+	for (slot = 0U; slot < I915_SHADER_MAX_COLOR_OUTPUTS; slot++) {
+		/* The slot's own write mask; the blend only where the slot blends. */
+		disable = pipeline->color_write_disable;
+		blends = 1;
+		if (slot != 0U) {
+			disable = pipeline->extra_write_disable[slot - 1U];
+			if (pipeline->extra_blend_off[slot - 1U] != 0U)
+				blends = 0;
+		}
+		integer = i915_state_target_integer(state, slot);
+		if (integer != 0)
+			blends = 0;
+		words[1U + 2U * slot] = i915_blend_write_disables(disable);
+		if (blends != 0)
+			words[1U + 2U * slot] |= entry;
+		words[2U + 2U * slot] = 1U | (1U << 1) | (GEN12_COLORCLAMP_RTFORMAT << 2);
+	}
 
 	/* Takes the pipeline's blend constants, or the dynamic ones vkCmdSetBlendConstants set. */
 	constants = pipeline->blend_constants;
@@ -2532,4 +2643,52 @@ i915_state_binding_instanced(
 
 	/* Succeeded: a binding the pipeline does not describe steps per vertex. */
 	return 0U;
+}
+
+/* Reports 1 when colour slot `slot` of the draw draws into an integer format, which does not blend. */
+static int
+i915_state_target_integer(
+	const struct i915_gfx_draw_state *state,
+	uint32_t slot)
+{
+	const struct i915_gfx_view *view;
+
+	/* A slot without a view blends nothing either way. */
+	view = i915_state_target_view(state, slot);
+	if (view == NULL)
+		return 0;
+
+	/* The integer formats the executor lays out. */
+	switch (view->image->format) {
+	case VK_FORMAT_R8G8B8A8_UINT:
+	case VK_FORMAT_R8G8B8A8_SINT:
+	case VK_FORMAT_R32_UINT:
+	case VK_FORMAT_R32_SINT:
+		return 1;
+	default:
+		/* Succeeded: a normalized or float format blends. */
+		return 0;
+	}
+}
+
+/* Reports a BLEND_STATE entry's write disable bits for the components a VkColorComponentFlags complement names. */
+static uint32_t
+i915_blend_write_disables(
+	uint32_t disable)
+{
+	uint32_t bits;
+
+	/* One bit a component. */
+	bits = 0U;
+	if ((disable & VK_COLOR_COMPONENT_R_BIT) != 0U)
+		bits |= GEN12_BLEND_WRITE_DISABLE_RED;
+	if ((disable & VK_COLOR_COMPONENT_G_BIT) != 0U)
+		bits |= GEN12_BLEND_WRITE_DISABLE_GREEN;
+	if ((disable & VK_COLOR_COMPONENT_B_BIT) != 0U)
+		bits |= GEN12_BLEND_WRITE_DISABLE_BLUE;
+	if ((disable & VK_COLOR_COMPONENT_A_BIT) != 0U)
+		bits |= GEN12_BLEND_WRITE_DISABLE_ALPHA;
+
+	/* Succeeded: the entry's disable bits. */
+	return bits;
 }

@@ -1117,8 +1117,8 @@ i915_record_begin_pass(
  * value}[count][count]{VkClearRect}.
  *
  * Every attachment and rectangle pair is one operation.  The pass has one
- * subpass, so a colour clear names the subpass's colour attachment and a
- * depth clear its depth attachment.  The layers are not acted on.
+ * subpass, so a colour clear names one of the subpass's colour attachments
+ * and a depth clear its depth attachment.  The layers are not acted on.
  */
 static int
 i915_record_clear_attachments(
@@ -1129,6 +1129,7 @@ i915_record_clear_attachments(
 	struct i915_gfx_op *op;
 	VkClearRect rects[I915_GFX_MAX_CLEAR_RECTS];
 	uint32_t is_depth[I915_GFX_MAX_ATTACHMENTS];
+	uint32_t color_index[I915_GFX_MAX_ATTACHMENTS];
 	uint32_t words[I915_GFX_MAX_ATTACHMENTS][4];
 	uint64_t attachments;
 	uint64_t count;
@@ -1143,11 +1144,11 @@ i915_record_clear_attachments(
 	if (reader->error != 0 || attachments > I915_GFX_MAX_ATTACHMENTS)
 		return EINVAL;
 
-	/* Decodes every attachment's value: a depth and stencil pair, or four colour words. */
+	/* Decodes every attachment's colour index and value: a depth and stencil pair, or four colour words. */
 	for (index = 0U; index < attachments; index++) {
 		kern_memset(words[index], 0, sizeof(words[index]));
 		(void)drv_i915_wire_read_u32(reader);
-		(void)drv_i915_wire_read_u32(reader);
+		color_index[index] = drv_i915_wire_read_u32(reader);
 		is_depth[index] = drv_i915_wire_read_u32(reader);
 		if (is_depth[index] != 0U) {
 			words[index][0] = drv_i915_wire_read_u32(reader);
@@ -1177,6 +1178,7 @@ i915_record_clear_attachments(
 		for (rect = 0U; rect < count; rect++) {
 			op = i915_command_op(cmdbuf, I915_GFX_OP_CLEAR_ATTACHMENT);
 			op->u.clear_attachment.is_depth = is_depth[index];
+			op->u.clear_attachment.color_index = color_index[index];
 			kern_memcpy(op->u.clear_attachment.words, words[index], sizeof(words[index]));
 			op->u.clear_attachment.rect.x = rects[rect].rect.offset.x;
 			op->u.clear_attachment.rect.y = rects[rect].rect.offset.y;
@@ -1976,7 +1978,7 @@ i915_execute_clear_attachment(
 		return EINVAL;
 
 	/* Finds the attachment the clear names; one the subpass does not use clears nothing. */
-	attachment = state->pass->color_attachment;
+	attachment = drv_i915_gfx_pass_color(state->pass, op->u.clear_attachment.color_index);
 	if (op->u.clear_attachment.is_depth != 0U)
 		attachment = state->pass->depth_attachment;
 	if (attachment >= framebuffer->view_count || framebuffer->views[attachment] == NULL)

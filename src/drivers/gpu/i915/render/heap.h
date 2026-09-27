@@ -45,7 +45,7 @@
 
 /*
  * The surface state base, and the offsets from it: the binding table, the
- * render target's surface state, and texture n's at RSS_TEXTURE + n *
+ * first render target's surface state, and texture n's at RSS_TEXTURE + n *
  * RSS_BYTES for the MAX_TEXTURES textures a pixel kernel may sample.
  */
 #define I915_GFX_SURFACE_HEAP		0x0000U
@@ -54,6 +54,9 @@
 #define I915_GFX_RSS_TEXTURE		0x00c0U
 #define I915_GFX_RSS_BYTES		0x0040U
 #define I915_GFX_MAX_TEXTURES		16U
+
+/* The surface states of render targets 1 to 3 (I915_SHADER_RT_BTI), after the textures'. */
+#define I915_GFX_RSS_EXTRA_TARGET	0x04c0U
 
 /* The dynamic state base, and the offsets from it. */
 #define I915_GFX_DYNAMIC_HEAP		0x1000U
