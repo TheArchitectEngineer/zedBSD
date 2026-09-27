@@ -988,12 +988,14 @@ offer_set_actions(
 
 	/*
 	 * After a drop with "ask", the target says the action the user chose;
-	 * the source hears it.  The offer is not told: the target chose it and
-	 * usually destroys the offer right after finish.
+	 * the offer and the source hear it (a target that destroyed the offer
+	 * at once drops the offer's event).
 	 */
 	if (offer->dnd_dropped && offer->dnd_action == ACTION_ASK && preferred != ACTION_NONE && preferred != ACTION_ASK) {
 		offer->dnd_action = preferred;
 		printf("ZWL DATA drag chosen client=%llu action=%u\n", (unsigned long long)offer->client->number, preferred);
+		if (offer->version >= DATA_ACTIONS_VERSION)
+			(void)zwl_emit(offer->client, offer->id, OFFER_ACTION, &preferred, sizeof(preferred));
 		if (offer->data_source != NULL && !offer->data_source->dead && offer->data_source->version >= DATA_ACTIONS_VERSION)
 			(void)zwl_emit(offer->data_source->client, offer->data_source->id, SOURCE_ACTION, &preferred, sizeof(preferred));
 		return 0;
