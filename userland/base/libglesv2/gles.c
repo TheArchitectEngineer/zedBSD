@@ -937,31 +937,69 @@ glPixelStorei(
 {
 	struct zegl_context *context;
 	struct gles_state *state;
+	GLint *value;
+	int alignment;
 
-	/* An alignment of 1, 2, 4 or 8. */
+	/* A context with its state. */
 	context = gles_context();
 	state = gles_state(context);
 	if (state == NULL)
 		return;
-	if (param != 1 && param != 2 && param != 4 && param != 8) {
+
+	/* The parameter's place: the alignments, and OpenGL ES 3's lengths and skips. */
+	alignment = 0;
+	switch (pname) {
+	case GL_UNPACK_ALIGNMENT:
+		value = &state->unpack_alignment;
+		alignment = 1;
+		break;
+	case GL_PACK_ALIGNMENT:
+		value = &state->pack_alignment;
+		alignment = 1;
+		break;
+	case GL_UNPACK_ROW_LENGTH:
+		value = &state->unpack_row_length;
+		break;
+	case GL_UNPACK_SKIP_ROWS:
+		value = &state->unpack_skip_rows;
+		break;
+	case GL_UNPACK_SKIP_PIXELS:
+		value = &state->unpack_skip_pixels;
+		break;
+	case GL_UNPACK_IMAGE_HEIGHT:
+		value = &state->unpack_image_height;
+		break;
+	case GL_UNPACK_SKIP_IMAGES:
+		value = &state->unpack_skip_images;
+		break;
+	case GL_PACK_ROW_LENGTH:
+		value = &state->pack_row_length;
+		break;
+	case GL_PACK_SKIP_ROWS:
+		value = &state->pack_skip_rows;
+		break;
+	case GL_PACK_SKIP_PIXELS:
+		value = &state->pack_skip_pixels;
+		break;
+	default:
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* An alignment of 1, 2, 4 or 8. */
+	if (alignment && param != 1 && param != 2 && param != 4 && param != 8) {
 		gles_error(context, GL_INVALID_VALUE);
 		return;
 	}
 
-	/* The parameter. */
-	switch (pname) {
-	case GL_UNPACK_ALIGNMENT:
-		state->unpack_alignment = param;
+	/* A length or a skip that is not negative. */
+	if (param < 0) {
+		gles_error(context, GL_INVALID_VALUE);
 		return;
-	case GL_PACK_ALIGNMENT:
-		state->pack_alignment = param;
-		return;
-	default:
-		break;
 	}
 
-	/* Any other is an error. */
-	gles_error(context, GL_INVALID_ENUM);
+	/* Succeeded: the parameter. */
+	*value = param;
 }
 
 /*
@@ -1286,6 +1324,7 @@ gles_release(
 	struct gles_shader *shader;
 	GLuint name;
 	unsigned kind;
+	unsigned shape;
 
 	/* The state, when there is one; nothing may still run. */
 	state = context->gles.state;
@@ -1326,12 +1365,12 @@ gles_release(
 			gles_texture_free(state, state->textures.objects[name]);
 	}
 
-	/* The black textures of each kind, 2D and cube maps. */
-	for (kind = 0U; kind < GLES_BLACK_KINDS; kind++) {
-		if (state->blacks[0][kind] != NULL)
-			gles_texture_free(state, state->blacks[0][kind]);
-		if (state->blacks[1][kind] != NULL)
-			gles_texture_free(state, state->blacks[1][kind]);
+	/* The black textures of each shape and kind. */
+	for (shape = 0U; shape < GLES_SHAPES; shape++) {
+		for (kind = 0U; kind < GLES_BLACK_KINDS; kind++) {
+			if (state->blacks[shape][kind] != NULL)
+				gles_texture_free(state, state->blacks[shape][kind]);
+		}
 	}
 
 	/* The sampler objects. */
@@ -1525,6 +1564,28 @@ gles_integers(
 		if (texture != NULL)
 			values[0] = (GLint)texture->name;
 		return 1U;
+	case GL_TEXTURE_BINDING_3D:
+		texture = state->volume_units[state->active_unit];
+		values[0] = 0;
+		if (texture != NULL)
+			values[0] = (GLint)texture->name;
+		return 1U;
+	case GL_TEXTURE_BINDING_2D_ARRAY:
+		texture = state->array_units[state->active_unit];
+		values[0] = 0;
+		if (texture != NULL)
+			values[0] = (GLint)texture->name;
+		return 1U;
+	case GL_MAX_3D_TEXTURE_SIZE:
+		values[0] = (GLint)state->limits.maxImageDimension3D;
+		if (values[0] > GLES_MAX_3D_SIZE)
+			values[0] = GLES_MAX_3D_SIZE;
+		return 1U;
+	case GL_MAX_ARRAY_TEXTURE_LAYERS:
+		values[0] = (GLint)state->limits.maxImageArrayLayers;
+		if (values[0] > GLES_MAX_LAYERS)
+			values[0] = GLES_MAX_LAYERS;
+		return 1U;
 	case GL_FRAMEBUFFER_BINDING:
 		values[0] = (GLint)state->framebuffer;
 		return 1U;
@@ -1565,6 +1626,30 @@ gles_integers(
 		return 1U;
 	case GL_PACK_ALIGNMENT:
 		values[0] = state->pack_alignment;
+		return 1U;
+	case GL_UNPACK_ROW_LENGTH:
+		values[0] = state->unpack_row_length;
+		return 1U;
+	case GL_UNPACK_SKIP_ROWS:
+		values[0] = state->unpack_skip_rows;
+		return 1U;
+	case GL_UNPACK_SKIP_PIXELS:
+		values[0] = state->unpack_skip_pixels;
+		return 1U;
+	case GL_UNPACK_IMAGE_HEIGHT:
+		values[0] = state->unpack_image_height;
+		return 1U;
+	case GL_UNPACK_SKIP_IMAGES:
+		values[0] = state->unpack_skip_images;
+		return 1U;
+	case GL_PACK_ROW_LENGTH:
+		values[0] = state->pack_row_length;
+		return 1U;
+	case GL_PACK_SKIP_ROWS:
+		values[0] = state->pack_skip_rows;
+		return 1U;
+	case GL_PACK_SKIP_PIXELS:
+		values[0] = state->pack_skip_pixels;
 		return 1U;
 	case GL_NUM_SHADER_BINARY_FORMATS:
 		values[0] = 1;
