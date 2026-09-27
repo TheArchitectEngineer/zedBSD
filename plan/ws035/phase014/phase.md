@@ -45,13 +45,13 @@ cleared。
 - UAPI（`include/uapi/input.h`）に key code の名前 2 つを足した。値は Linux の evdev と同じ標準の code で、新しい interface ではない
   ので既定として足した。不要なら名前を消し、driver に数字で書く形に戻せる。
 
-### 確認（2026-09-27、QEMU・Venus、lean image `plan/ws070/tests/build-menu-image.sh`）
+### 確認（2026-09-27、QEMU・Venus、lean image `plan/tools/titlebar/build-menu-image.sh`）
 
 - `plan/ws035/tests/zdesktop-p014.sh` PASS（build/ws035-p014/）: Super+Tab で開き（`opening key`、`open windows=3`）、Tab・Shift+Tab・→ で
   current が s→b→s、Enter で s を選び（`select surface=8 via=key`、`closed`、s の色が中央に）、Super+Tab と Esc、Super+Tab 2 回で閉じ、
   閉じた後の Tab は Wiseview に取られない。moved.png（wl_shm のタイルが青い縁で現在）を見た。1 回目は Super key が届かず FAIL
   （上の driver の欠け）。
-- 回帰: `plan/ws070/tests/menu-p003.sh` PASS、`plan/ws070/tests/menu-regress.sh` で p059・p062〜p065・p068〜p072 すべて PASS。boot test PASS
+- 回帰: `plan/tools/titlebar/menu-p003.sh` PASS、`plan/tools/titlebar/menu-regress.sh` で p059・p062〜p065・p068〜p072 すべて PASS。boot test PASS
   （build/ws035-p014-boot/login.png）。
 - build warning 0（kernel と zdesktop。外部 package の既存の warning は別）。style-check: shell.c 0、変えた既存の driver の file は変更前と同数
   （usb-hid.c 137、ps2-8042.c 32、input.c 163、input.h 3）。

@@ -60,7 +60,7 @@ cleared。
 
 ### 確認（QEMU・Venus、lean image）
 
-libwayland は全 client が使うので広く回した（zedbsd7 の toolchain、merge `41cec40e` の後の tree）: `plan/ws070/tests/menu-p002.sh` PASS、
+libwayland は全 client が使うので広く回した（zedbsd7 の toolchain、merge `41cec40e` の後の tree）: `plan/tools/titlebar/menu-p002.sh` PASS、
 `menu-p003.sh` PASS、`menu-regress.sh` で WS035 の p059・p062〜p065・p068〜p072 すべて PASS（mview・wltest・wlshm・zdesktop-terminal・
 zdesktop-x11server の X の app を含む）。build warning 0（libwayland-client）。
 

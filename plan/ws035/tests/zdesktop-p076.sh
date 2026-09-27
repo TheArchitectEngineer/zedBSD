@@ -18,7 +18,7 @@
 #     for 5 s, the client is not responding (its title says so: unresponsive.png); p again answers.
 # 10. Keys m, u, n: maximize (docks), unmaximize (undocks), minimize.
 #
-#   plan/ws035/tests/zdesktop-guest.sh start     (the guest must be up; plan/ws070/tests/menu-guest.sh for the lean image)
+#   plan/ws035/tests/zdesktop-guest.sh start     (the guest must be up; plan/tools/titlebar/menu-guest.sh for the lean image)
 #   plan/ws035/tests/zdesktop-p076.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
