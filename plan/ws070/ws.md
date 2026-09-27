@@ -9,7 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none（p001〜p004 は 2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: p006（WS071 と共有する menu の file への規約の直し。WS071 の merge の後）。p001〜p005 cleared（p005: i915 実機と回帰、共有しない file の規約）
+Resume point: p006（WS071 と共有する menu の file への規約の直し。WS071 の merge の後）。p001〜p005 cleared（p005: i915 実機と回帰、共有しない file の規約）。2026-09-27 に Titlebar Presentation の仕様を追加（p007 の設計から。WS071 のサブエージェントが計画・実行）
+Executor: WS071 の作業用のサブエージェント（2026-09-27 ユーザー「WS071のサブエージェントでスケジューリングするのがいいと思います。」）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -41,6 +42,21 @@ Wayland のクライアントがメニューの意味（階層・ラベル・状
 
 設計は [design.md](design.md)（§11 の 5 点は 2026-09-27 ユーザーが既定のまま確定: F10、shortcut は zdesktop が実行、外の click は閉じるだけ、icon なし、ASCII の label。§12 の context menu の余地）。
 
+## 追加の目標: Titlebar Presentation（2026-09-27）
+
+ユーザー:「WS070に仕様追加します。WS071のサブエージェントでスケジューリングするのがいいと思います。」と
+「zedBSD Titlebar Presentation Specification」のたたき台（原文は [titlebar-spec.md](titlebar-spec.md)）。
+
+タイトルバーを system-owned な presentation surface とし、client は意味（identity・menu・controls・tabs の model）だけを渡し、
+zdesktop が浮いたタイトルバー（通常）とシステムバーの Application Zone（最大化）に描く。主の内容は `MENU`・`CONTROLS`・`TABS` の
+どれか 1 つ（排他）。幅の不足の段階的な縮退、docking と restore の animation（200〜300 ms）、docked からの下への drag・swipe で restore、
+double click の対称、transaction の atomic な mode の切り替え、client は pixel・font・色を指定しない、pointer と touch の適応、
+未対応の compositor では client 側の装飾へ fallback。
+
+既存の System Menu（p001〜p005 の `xdg_toplevel_menu_v1`）はこの仕様の `MENU` mode の model になる。`CONTROLS` の最初の使い手は
+zdesktop-files（WS071、仕様の §14 の File Manager の例）、`TABS` は WS071 の tab（p013）や zdesktop-terminal の候補。
+Phase の分け方・順序・受け入れは p007（設計）で決める。WS071 の Phase と組み合わせて WS071 のサブエージェントが計画する。
+
 ## Future Work の候補（main の session が future-work.md へ）
 
 - menu の item の icon（`icon_name`・role の icon を描く）。2026-09-27 ユーザー「アイコンはあとで追加を考えましょう」。icon theme が要る。
@@ -55,6 +71,7 @@ Wayland のクライアントがメニューの意味（階層・ラベル・状
 | [ws070-p003](phase003/phase.md) | zdesktop の描画と操作: 浮いたタイトルバーとシステムバーの項目、popup、keyboard、shortcut、activation | cleared | p002 |
 | [ws070-p004](phase004/phase.md) | libzdesktop の API と zdesktop-terminal のメニュー（Shell・Edit・View・Session・Help） | cleared | p002、p003 |
 | [ws070-p005](phase005/phase.md) | i915 実機、規約の全文との照合（WS071 と共有しない file）と回帰。libwayland の flush の EPIPE で protocol error を読み落とす不具合を直した | cleared | p001〜p004 |
+| ws070-p007 | （2026-09-27 追加）Titlebar Presentation の設計: protocol（mode・controls・tabs の model、transaction、error、MENU と既存の menu の model の関係）、libzdesktop の API、zdesktop の layout（Identity・Presentation・Window Management、System Bar の 5 zone）、縮退、docking と restore の animation、drag・swipe・double click、pointer と touch、fallback、試験。後の Phase の分割 | planning | p005、[titlebar-spec.md](titlebar-spec.md) |
 | ws070-p006 | 規約の全文との照合の残り: WS071 と共有する file（`zdesktop/menu.c`・`menu-shell.c`・`menu.h`、`libzdesktop/menu.c`、`zdesktop.h`、`libwayland/menu-protocol.c`）への p005 の指摘の直しと回帰（最後） | planned | p005、WS071 の menu の変更の merge（衝突を避ける分割、2026-09-27） |
 
 ## 試験の道具（plan/ws070/tests/）
