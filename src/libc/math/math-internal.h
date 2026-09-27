@@ -18,7 +18,10 @@
 #ifndef LIBC_MATH_INTERNAL_H
 #define LIBC_MATH_INTERNAL_H
 
+#include <math.h>
 #include <stdint.h>
+
+#include "src/libc/math/math-constants.h"
 
 /*
  * The error-free transformations below depend on every product being
@@ -104,6 +107,18 @@ struct libm_unpacked {
 	uint64_t significand;
 };
 
+/*
+ * A double-double: an unevaluated sum of two doubles.
+ *
+ * The low part is at most half an ulp of the high part, so the pair holds
+ * about 106 bits.  The functions of group B compute their results in this
+ * form and round high + low once at the end.
+ */
+struct libm_dd {
+	double high;
+	double low;
+};
+
 LIBM_HIDDEN double __libm_invalid(void);
 LIBM_HIDDEN double __libm_pole(unsigned int sign);
 LIBM_HIDDEN double __libm_overflow(unsigned int sign);
@@ -112,6 +127,19 @@ LIBM_HIDDEN double __libm_check_underflow(double value);
 LIBM_HIDDEN float __libm_narrow(double value);
 LIBM_HIDDEN double __libm_pack(unsigned int sign, int exponent, uint64_t significand);
 LIBM_HIDDEN void __libm_unpack(double value, struct libm_unpacked *unpacked);
+LIBM_HIDDEN double __libm_scale(struct libm_dd value, int exponent);
+LIBM_HIDDEN struct libm_dd __libm_exp_reduced(int index, struct libm_dd reduced);
+LIBM_HIDDEN struct libm_dd __libm_expm1_kernel(struct libm_dd reduced);
+LIBM_HIDDEN struct libm_dd __libm_exp_dd(struct libm_dd x, int *exponent);
+LIBM_HIDDEN struct libm_dd __libm_log_parts(double x, int *exponent);
+LIBM_HIDDEN struct libm_dd __libm_log_dd(double x);
+
+/* The tables of src/libc/math/tables.c; their comments say what they hold. */
+LIBM_HIDDEN extern const struct libm_dd __libm_exp_table[128];
+LIBM_HIDDEN extern const double __libm_exp_coefficients[5];
+LIBM_HIDDEN extern const double __libm_log_inverse[128];
+LIBM_HIDDEN extern const struct libm_dd __libm_log_table[128];
+LIBM_HIDDEN extern const double __libm_log_coefficients[8];
 
 /*
  * Returns the encoding of a binary64 value.
@@ -175,6 +203,245 @@ libm_float_from_bits(
 
 	/* The value is the other view of the same storage. */
 	return shape.value;
+}
+
+
+/*
+ * Returns a + b as a double-double, exactly (Knuth's TwoSum).
+ *
+ * The rounding error of the sum is recovered from the two operands without
+ * any assumption about their order.
+ */
+static __inline struct libm_dd
+libm_two_sum(
+	double a,
+	double b)
+{
+	struct libm_dd sum;
+	double b_part;
+	double a_part;
+
+	/* Rounds the sum and splits it back into the parts of a and b. */
+	sum.high = a + b;
+	b_part = sum.high - a;
+	a_part = sum.high - b_part;
+
+	/* What each part lost to the rounding adds up to the error. */
+	sum.low = (a - a_part) + (b - b_part);
+
+	/* Succeeded: high + low equals a + b exactly. */
+	return sum;
+}
+
+/*
+ * Returns a + b as a double-double for |a| >= |b| (Dekker's Fast2Sum).
+ */
+static __inline struct libm_dd
+libm_fast_two_sum(
+	double a,
+	double b)
+{
+	struct libm_dd sum;
+
+	/* With a the larger, the error is what b lost in the rounding. */
+	sum.high = a + b;
+	sum.low = b - (sum.high - a);
+
+	/* Succeeded: high + low equals a + b exactly. */
+	return sum;
+}
+
+/*
+ * Returns a * b as a double-double, exactly.
+ *
+ * Where the target has a fused multiply-add, the error of the product is
+ * one fused operation.  Elsewhere each factor is split into two halves of
+ * 26 bits (Veltkamp) whose partial products are exact, and the error is
+ * summed from them (Dekker).  The split needs |a| and |b| below 2^995.
+ */
+static __inline struct libm_dd
+libm_two_product(
+	double a,
+	double b)
+{
+	struct libm_dd product;
+#ifndef __FP_FAST_FMA
+	double a_split;
+	double a_high;
+	double a_low;
+	double b_split;
+	double b_high;
+	double b_low;
+#endif
+
+	/* Rounds the product. */
+	product.high = a * b;
+
+#ifdef __FP_FAST_FMA
+	/* The fused operation computes the rounding error directly. */
+	product.low = __builtin_fma(a, b, -product.high);
+#else
+	/* Splits each factor into a high and a low half. */
+	a_split = 134217729.0 * a;
+	a_high = a_split - (a_split - a);
+	a_low = a - a_high;
+	b_split = 134217729.0 * b;
+	b_high = b_split - (b_split - b);
+	b_low = b - b_high;
+
+	/* The four partial products are exact and sum to the error. */
+	product.low = ((a_high * b_high - product.high) + a_high * b_low +
+	    a_low * b_high) + a_low * b_low;
+#endif
+
+	/* Succeeded: high + low equals a * b exactly. */
+	return product;
+}
+
+/*
+ * Adds two double-doubles.
+ *
+ * Both the high and the low parts are summed without error before the
+ * result is renormalized, so the sum is accurate even when the operands
+ * cancel.
+ */
+static __inline struct libm_dd
+libm_dd_add(
+	struct libm_dd a,
+	struct libm_dd b)
+{
+	struct libm_dd high;
+	struct libm_dd low;
+
+	/* Sums the high parts and the low parts, each exactly. */
+	high = libm_two_sum(a.high, b.high);
+	low = libm_two_sum(a.low, b.low);
+
+	/* Folds the low sum into the high one, renormalizing twice. */
+	high.low += low.high;
+	high = libm_fast_two_sum(high.high, high.low);
+	high.low += low.low;
+	high = libm_fast_two_sum(high.high, high.low);
+
+	/* Succeeded: the renormalized sum. */
+	return high;
+}
+
+/*
+ * Adds a double to a double-double.
+ */
+static __inline struct libm_dd
+libm_dd_add_double(
+	struct libm_dd a,
+	double b)
+{
+	struct libm_dd sum;
+
+	/* Sums the high part and b exactly, then folds in the low part. */
+	sum = libm_two_sum(a.high, b);
+	sum.low += a.low;
+	sum = libm_fast_two_sum(sum.high, sum.low);
+
+	/* Succeeded: the renormalized sum. */
+	return sum;
+}
+
+/*
+ * Multiplies two double-doubles.
+ */
+static __inline struct libm_dd
+libm_dd_multiply(
+	struct libm_dd a,
+	struct libm_dd b)
+{
+	struct libm_dd product;
+
+	/* The product of the high parts exactly, plus the cross terms. */
+	product = libm_two_product(a.high, b.high);
+	product.low += a.high * b.low + a.low * b.high;
+	product = libm_fast_two_sum(product.high, product.low);
+
+	/* Succeeded: the renormalized product. */
+	return product;
+}
+
+/*
+ * Multiplies a double-double by a double.
+ */
+static __inline struct libm_dd
+libm_dd_multiply_double(
+	struct libm_dd a,
+	double b)
+{
+	struct libm_dd product;
+
+	/* The product of the high part exactly, plus that of the low part. */
+	product = libm_two_product(a.high, b);
+	product.low += a.low * b;
+	product = libm_fast_two_sum(product.high, product.low);
+
+	/* Succeeded: the renormalized product. */
+	return product;
+}
+
+/*
+ * Divides one double-double by another.
+ *
+ * The first quotient digit is corrected once with the exact remainder,
+ * which gives about 104 bits.
+ */
+static __inline struct libm_dd
+libm_dd_divide(
+	struct libm_dd a,
+	struct libm_dd b)
+{
+	struct libm_dd remainder;
+	struct libm_dd product;
+	struct libm_dd quotient;
+	double first;
+	double second;
+
+	/* The quotient of the high parts is the first approximation. */
+	first = a.high / b.high;
+
+	/* Takes first * b away from a, keeping the difference exact enough. */
+	product = libm_dd_multiply_double(b, first);
+	remainder = libm_two_sum(a.high, -product.high);
+	remainder.low += a.low - product.low;
+
+	/* The remainder divided by b corrects the first approximation. */
+	second = (remainder.high + remainder.low) / b.high;
+	quotient = libm_fast_two_sum(first, second);
+
+	/* Succeeded: the two digits of the quotient. */
+	return quotient;
+}
+
+/*
+ * Returns the square root of a positive double-double.
+ *
+ * One Newton step from the correctly rounded root of the high part doubles
+ * its precision.
+ */
+static __inline struct libm_dd
+libm_dd_sqrt(
+	struct libm_dd a)
+{
+	struct libm_dd square;
+	struct libm_dd corrected;
+	double root;
+	double correction;
+
+	/* The root of the high part, correctly rounded. */
+	root = sqrt(a.high);
+
+	/* (a - root^2) / (2 root) is what the root is short by. */
+	square = libm_two_product(root, root);
+	correction = ((a.high - square.high) - square.low + a.low) / (2.0 * root);
+	corrected = libm_fast_two_sum(root, correction);
+
+	/* Succeeded: the corrected root. */
+	return corrected;
 }
 
 #endif

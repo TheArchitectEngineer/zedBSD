@@ -11,8 +11,9 @@ ZEDBSD_LIBC_OBJDUMP ?= $(if $(OBJDUMP),$(OBJDUMP),objdump)
 ZEDBSD_LIBM_SOURCES := src/libc/math/support.c src/libc/math/classify.c \
 	src/libc/math/rounding.c src/libc/math/remainder.c src/libc/math/fma.c \
 	src/libc/math/sqrt.c src/libc/math/float.c src/libc/math/long-double.c \
+	src/libc/math/tables.c src/libc/math/exp.c src/libc/math/log.c \
 	src/libc/math/legacy.c
-ZEDBSD_LIBM_HEADERS := src/libc/math/math-internal.h
+ZEDBSD_LIBM_HEADERS := src/libc/math/math-internal.h src/libc/math/math-constants.h
 
 ZEDBSD_REGEX_SOURCES := src/libc/regex/regcomp.c src/libc/regex/regexec.c \
 	src/libc/regex/regerror.c src/libc/regex/tre-mem.c
