@@ -75,6 +75,14 @@ enum css_position {
 	CSS_POSITION_STICKY
 };
 
+/* The values of float, and the sides clear clears (both is the two together). */
+enum css_float {
+	CSS_FLOAT_NONE,
+	CSS_FLOAT_LEFT,
+	CSS_FLOAT_RIGHT,
+	CSS_CLEAR_BOTH
+};
+
 /* The values of text-align. */
 enum css_text_align {
 	CSS_TEXT_ALIGN_START,
@@ -128,6 +136,7 @@ struct css_style {
 	int display;
 	int position;
 	int float_side;
+	int clear;
 	int visibility;
 	struct css_length width;
 	struct css_length height;

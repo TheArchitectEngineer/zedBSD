@@ -881,6 +881,9 @@ cascade_apply(
 	case CSS_PROP_FLOAT:
 		style->float_side = value->keyword;
 		break;
+	case CSS_PROP_CLEAR:
+		style->clear = value->keyword;
+		break;
 	case CSS_PROP_VISIBILITY:
 		style->visibility = value->keyword;
 		break;
@@ -1028,6 +1031,9 @@ cascade_inherit(
 		break;
 	case CSS_PROP_FLOAT:
 		style->float_side = parent->float_side;
+		break;
+	case CSS_PROP_CLEAR:
+		style->clear = parent->clear;
 		break;
 	case CSS_PROP_VISIBILITY:
 		style->visibility = parent->visibility;

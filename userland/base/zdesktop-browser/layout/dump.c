@@ -151,7 +151,7 @@ dump_lines(
 	}
 }
 
-/* Writes the boxes out of the flow found among a block's inline content, in tree order. */
+/* Writes the boxes out of the flow and the floats found among a block's inline content, in tree order. */
 static int
 dump_out_of_flow(
 	const struct layout_box *box,
@@ -161,9 +161,9 @@ dump_out_of_flow(
 	const struct layout_box *child;
 	int error;
 
-	/* Inline boxes are searched through; a box out of the flow is written with its own content. */
+	/* Inline boxes are searched through; a box out of the flow or a float is written with its own content. */
 	for (child = box->first_child; child != NULL; child = child->next) {
-		if (child->out_of_flow) {
+		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE) {
 			error = dump_box(child, depth, out);
 		} else {
 			error = dump_out_of_flow(child, depth, out);

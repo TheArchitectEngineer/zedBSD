@@ -243,6 +243,7 @@ box_build_element(
 	struct css_style *style;
 	struct layout_box *box;
 	int out_of_flow;
+	int floating;
 	int kind;
 	int error;
 
@@ -289,12 +290,20 @@ box_build_element(
 		out_of_flow = 1;
 	}
 
+	/* A float that is not out of the flow is a block beside the flow. */
+	floating = CSS_FLOAT_NONE;
+	if (parent != NULL && !out_of_flow && style->float_side != CSS_FLOAT_NONE) {
+		kind = LAYOUT_BLOCK;
+		floating = style->float_side;
+	}
+
 	/* Makes the box and places it in the tree. */
 	box = box_new(tree, kind, &element->node, style);
 	free(style);
 	if (box == NULL)
 		return ENOMEM;
 	box->out_of_flow = out_of_flow;
+	box->floating = floating;
 	if (parent == NULL) {
 		tree->root = box;
 	} else {
@@ -464,11 +473,11 @@ box_fix_children(
 	int inline_level;
 	int whitespace;
 
-	/* Looks at the kinds of children (those out of the flow count as neither). */
+	/* Looks at the kinds of children (those out of the flow and floats count as neither). */
 	has_block = 0;
 	has_inline = 0;
 	for (child = box->first_child; child != NULL; child = child->next) {
-		if (child->out_of_flow)
+		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE)
 			continue;
 		inline_level = box_is_inline_level(child);
 		whitespace = box_is_whitespace(child);
@@ -499,8 +508,8 @@ box_fix_children(
 		child->next = NULL;
 		inline_level = box_is_inline_level(child);
 
-		/* A box out of the flow stays where it is among the others, and ends nothing. */
-		if (child->out_of_flow) {
+		/* A box out of the flow or a float stays where it is among the others, and ends nothing. */
+		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE) {
 			if (anonymous != NULL) {
 				box_append(anonymous, child);
 			} else {
@@ -678,7 +687,11 @@ box_relative_offset(
 	}
 }
 
-/* Gives the boxes out of the flow inside a block's inline content their static position: the content's top left. */
+/*
+ * Gives the boxes out of the flow inside a block's inline content their
+ * static position (the content's top left), and makes the floats there
+ * absolute (they were placed relative to the content box).
+ */
 static void
 box_static_inline(
 	struct layout_box *box,
@@ -687,11 +700,17 @@ box_static_inline(
 {
 	struct layout_box *child;
 
-	/* The inline boxes are searched through; a box out of the flow is not entered. */
+	/* The inline boxes are searched through; a box out of the flow or a float is not entered. */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->out_of_flow) {
 			child->static_x = x;
 			child->static_y = y;
+			continue;
+		}
+
+		/* A float moves with the content box. */
+		if (child->floating != CSS_FLOAT_NONE) {
+			layout_absolute(child, x, y);
 			continue;
 		}
 
