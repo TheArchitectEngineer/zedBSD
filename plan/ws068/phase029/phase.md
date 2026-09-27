@@ -64,7 +64,14 @@ Phase disposition: normal
 | style-check（`framebuffer.c`・`draw.c`・`gles.c`・`gles.h`、libEGL の `vulkan.c`・`zegl.h`、egltest の `blits.c`・`.h`・`main.c`） | 0 |
 | egl-p029 | **PASS**: API の検査 13 件 failures=0、readback 10 点 failures=0（display と Wayland）、画面の点 11 点が全て期待どおり（画面を目で確かめた: resolve の斜めの縁が階段状に混ざる） |
 
-（回帰の実行中。結果を書く）
+| 回帰 egl-p008・egl-p019・egl-p020・egl-p022・egl-p023・egl-p024・egl-p025・egl-p028（新しく起こした guest） | 全て PASS |
+| 回帰 egl-p026 | 最初は FAIL（p026 の場面が 3D の slice の取り付けに GL_FRAMEBUFFER_UNSUPPORTED を期待していた。p029 で取り付けられるようになったので期待を COMPLETE に直した）。直した後 p027 の回帰の中で PASS |
+| 回帰 x11-p005 | PASS（gears.png を目で確かめた） |
+| GLSL の host 試験 | PASS |
+| boot test（`build/ws068-p029-regress/boot/login.png`） | PASS（PNG を目で確かめた） |
+| i915 実機 | 未実施 |
+
+画面: `build/ws068-shots/p029-20260927-blits-display.png`、`build/ws068-shots/p029-20260927-blits-wayland.png`（main の tree）。
 
 ### 制限・移管
 

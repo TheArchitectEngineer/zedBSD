@@ -58,7 +58,13 @@ Phase disposition: normal
 | style-check（`query.c`・`program.c`・`framebuffer.c`・`draw.c`・`gles.c`・`gles.h`、egltest の `queries.c`・`.h`・`main.c`） | 0 |
 | egl-p027 | **PASS**: API の検査 18 件 failures=0、5 つの四角が display と Wayland で緑 |
 
-（回帰の実行中。結果を書く）
+| 回帰 egl-p026・egl-p029・egl-p008・egl-p022・egl-p024（新しく起こした guest） | 全て PASS |
+| 回帰 x11-p005 | PASS（gears.png を目で確かめた） |
+| GLSL の host 試験 | PASS |
+| boot test（`build/ws068-p027-regress/boot/login.png`） | PASS（PNG を目で確かめた） |
+| i915 実機 | 未実施 |
+
+画面: `build/ws068-shots/p027-20260927-queries-display.png`、`build/ws068-shots/p027-20260927-queries-wayland.png`（main の tree）。
 
 ### 制限・移管
 
