@@ -52,3 +52,5 @@ Future Work は実行を許可しない。
 | F-043 | TABS の残り: tab の drag での並べ替え、scroll の矢印の長押し、touch の大きさ、scroll する strip の 1 tab の幅（短い tab で右に空き） | ws070-p011・p013 の残り | ws070-p013 | deferred | tab を使う 2 つ目の app ができたとき | [WS070](ws070/ws.md)、[titlebar-design](ws070/titlebar-design.md) |
 | F-044 | 他の client も `configure_bounds` を守る（zdesktop-terminal、zdesktop-x11server の窓、mview） | 今は version 1 で bind するので大きい窓は画面の下にはみ出しうる（zdesktop-files だけが守る、ws071-p018） | ws071-p018 | deferred | 大きい既定の窓で困ったとき | [WS071](ws071/ws.md) |
 | F-045 | GTK4・Qt6 の native menubar の backend | libzdesktop の System Menu・titlebar の API を GTK4・Qt6 から使う（2026-09-27 ユーザー「あとでGTK4やQt6のネイティブメニューバーとしても利用可能にするつもりです」） | ws070 | deferred | GTK4・Qt6 を port するとき | [WS070](ws070/ws.md) |
+| F-046 | long double の binary128 の精度（arm64・sparcv9） | WS076 の libm の l の関数は今 double で計算する（amd64・i386 は long double = double で問題なし）。binary128 の platform で本当の精度を出すには quad の演算と表が要る | ws076-p006 | deferred | arm64 で long double の精度が要るとき | [WS076](ws076/ws.md) |
+| F-047 | Bessel 関数の零点の近くの相対精度 | j0・j1・jn の絶対誤差は 1.1e-16 以下だが、零点の近くの相対誤差は大きい（glibc と同じ）。WS076 の目標の外 | ws076-p006 | deferred | 科学計算の用途の要求 | [WS076](ws076/ws.md) |

@@ -63,6 +63,7 @@ enum test_kind {
 	TEST_D_DD,
 	TEST_D_DDD,
 	TEST_D_DI,
+	TEST_D_ID,
 	TEST_F_F,
 	TEST_F_FF,
 	TEST_F_FFF,
@@ -84,11 +85,13 @@ struct test_function {
 	const char *name;
 	enum test_kind kind;
 	void (*function)(void);
+	int bounded;
 	unsigned long count;
 	unsigned long exact_failures;
 	unsigned long over_half;
 	double max_ulp;
 	double sum_ulp;
+	double max_absolute;
 	double worst_args[3];
 };
 
@@ -117,6 +120,12 @@ struct test_record {
 
 int feclearexcept(int);
 int fetestexcept(int);
+double j0(double);
+double j1(double);
+double jn(int, double);
+double y0(double);
+double y1(double);
+double yn(int, double);
 
 static struct test_function *find_function(const char *name);
 static void run_record(const struct test_record *record);
@@ -132,85 +141,104 @@ static void decode(const unsigned char *bytes, struct test_record *record);
  * back to the shape the kind names.
  */
 static struct test_function test_functions[] = {
-	{ "fmod", TEST_D_DD, (void (*)(void))fmod, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "remainder", TEST_D_DD, (void (*)(void))remainder, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "remquo", TEST_REMQUO, (void (*)(void))remquo, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "fmodf", TEST_F_FF, (void (*)(void))fmodf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "remainderf", TEST_F_FF, (void (*)(void))remainderf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "remquof", TEST_REMQUOF, (void (*)(void))remquof, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "fma", TEST_D_DDD, (void (*)(void))fma, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "fmaf", TEST_F_FFF, (void (*)(void))fmaf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "sqrt", TEST_D_D, (void (*)(void))sqrt, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "sqrtf", TEST_F_F, (void (*)(void))sqrtf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "trunc", TEST_D_D, (void (*)(void))trunc, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "floor", TEST_D_D, (void (*)(void))floor, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "ceil", TEST_D_D, (void (*)(void))ceil, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "round", TEST_D_D, (void (*)(void))round, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "rint", TEST_D_D, (void (*)(void))rint, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "nearbyint", TEST_D_D, (void (*)(void))nearbyint, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "lrint", TEST_L_D, (void (*)(void))lrint, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "llrint", TEST_LL_D, (void (*)(void))llrint, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "lround", TEST_L_D, (void (*)(void))lround, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "llround", TEST_LL_D, (void (*)(void))llround, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "rintf", TEST_F_F, (void (*)(void))rintf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "truncf", TEST_F_F, (void (*)(void))truncf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "floorf", TEST_F_F, (void (*)(void))floorf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "frexp", TEST_FREXP, (void (*)(void))frexp, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "frexpf", TEST_FREXPF, (void (*)(void))frexpf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "ldexp", TEST_D_DI, (void (*)(void))ldexp, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "ldexpf", TEST_F_FI, (void (*)(void))ldexpf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "scalbn", TEST_D_DI, (void (*)(void))scalbn, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "ilogb", TEST_I_D, (void (*)(void))ilogb, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "logb", TEST_D_D, (void (*)(void))logb, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "modf", TEST_MODF, (void (*)(void))modf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "nextafter", TEST_D_DD, (void (*)(void))nextafter, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "nextafterf", TEST_F_FF, (void (*)(void))nextafterf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "fmin", TEST_D_DD, (void (*)(void))fmin, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "fmax", TEST_D_DD, (void (*)(void))fmax, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "fdim", TEST_D_DD, (void (*)(void))fdim, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "exp", TEST_D_D, (void (*)(void))exp, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "exp2", TEST_D_D, (void (*)(void))exp2, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "expm1", TEST_D_D, (void (*)(void))expm1, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "expf", TEST_F_F, (void (*)(void))expf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "exp2f", TEST_F_F, (void (*)(void))exp2f, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "expm1f", TEST_F_F, (void (*)(void))expm1f, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "log", TEST_D_D, (void (*)(void))log, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "log2", TEST_D_D, (void (*)(void))log2, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "log10", TEST_D_D, (void (*)(void))log10, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "log1p", TEST_D_D, (void (*)(void))log1p, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "logf", TEST_F_F, (void (*)(void))logf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "log2f", TEST_F_F, (void (*)(void))log2f, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "log10f", TEST_F_F, (void (*)(void))log10f, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "log1pf", TEST_F_F, (void (*)(void))log1pf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "pow", TEST_D_DD, (void (*)(void))pow, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "powf", TEST_F_FF, (void (*)(void))powf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "sin", TEST_D_D, (void (*)(void))sin, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "cos", TEST_D_D, (void (*)(void))cos, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "tan", TEST_D_D, (void (*)(void))tan, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "sinf", TEST_F_F, (void (*)(void))sinf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "cosf", TEST_F_F, (void (*)(void))cosf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "tanf", TEST_F_F, (void (*)(void))tanf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "asin", TEST_D_D, (void (*)(void))asin, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "acos", TEST_D_D, (void (*)(void))acos, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "atan", TEST_D_D, (void (*)(void))atan, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "atan2", TEST_D_DD, (void (*)(void))atan2, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "asinf", TEST_F_F, (void (*)(void))asinf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "acosf", TEST_F_F, (void (*)(void))acosf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "atanf", TEST_F_F, (void (*)(void))atanf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "atan2f", TEST_F_FF, (void (*)(void))atan2f, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "sinh", TEST_D_D, (void (*)(void))sinh, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "cosh", TEST_D_D, (void (*)(void))cosh, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "tanh", TEST_D_D, (void (*)(void))tanh, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "asinh", TEST_D_D, (void (*)(void))asinh, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "acosh", TEST_D_D, (void (*)(void))acosh, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "atanh", TEST_D_D, (void (*)(void))atanh, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "sinhf", TEST_F_F, (void (*)(void))sinhf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "coshf", TEST_F_F, (void (*)(void))coshf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "tanhf", TEST_F_F, (void (*)(void))tanhf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "asinhf", TEST_F_F, (void (*)(void))asinhf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "acoshf", TEST_F_F, (void (*)(void))acoshf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ "atanhf", TEST_F_F, (void (*)(void))atanhf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
-	{ NULL, TEST_D_D, NULL, 0, 0, 0, 0, 0, { 0, 0, 0 } }
+	{ "fmod", TEST_D_DD, (void (*)(void))fmod, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "remainder", TEST_D_DD, (void (*)(void))remainder, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "remquo", TEST_REMQUO, (void (*)(void))remquo, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "fmodf", TEST_F_FF, (void (*)(void))fmodf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "remainderf", TEST_F_FF, (void (*)(void))remainderf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "remquof", TEST_REMQUOF, (void (*)(void))remquof, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "fma", TEST_D_DDD, (void (*)(void))fma, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "fmaf", TEST_F_FFF, (void (*)(void))fmaf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "sqrt", TEST_D_D, (void (*)(void))sqrt, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "sqrtf", TEST_F_F, (void (*)(void))sqrtf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "trunc", TEST_D_D, (void (*)(void))trunc, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "floor", TEST_D_D, (void (*)(void))floor, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "ceil", TEST_D_D, (void (*)(void))ceil, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "round", TEST_D_D, (void (*)(void))round, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "rint", TEST_D_D, (void (*)(void))rint, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "nearbyint", TEST_D_D, (void (*)(void))nearbyint, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "lrint", TEST_L_D, (void (*)(void))lrint, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "llrint", TEST_LL_D, (void (*)(void))llrint, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "lround", TEST_L_D, (void (*)(void))lround, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "llround", TEST_LL_D, (void (*)(void))llround, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "rintf", TEST_F_F, (void (*)(void))rintf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "truncf", TEST_F_F, (void (*)(void))truncf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "floorf", TEST_F_F, (void (*)(void))floorf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "frexp", TEST_FREXP, (void (*)(void))frexp, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "frexpf", TEST_FREXPF, (void (*)(void))frexpf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "ldexp", TEST_D_DI, (void (*)(void))ldexp, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "ldexpf", TEST_F_FI, (void (*)(void))ldexpf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "scalbn", TEST_D_DI, (void (*)(void))scalbn, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "ilogb", TEST_I_D, (void (*)(void))ilogb, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "logb", TEST_D_D, (void (*)(void))logb, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "modf", TEST_MODF, (void (*)(void))modf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "nextafter", TEST_D_DD, (void (*)(void))nextafter, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "nextafterf", TEST_F_FF, (void (*)(void))nextafterf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "fmin", TEST_D_DD, (void (*)(void))fmin, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "fmax", TEST_D_DD, (void (*)(void))fmax, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "fdim", TEST_D_DD, (void (*)(void))fdim, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "exp", TEST_D_D, (void (*)(void))exp, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "exp2", TEST_D_D, (void (*)(void))exp2, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "expm1", TEST_D_D, (void (*)(void))expm1, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "expf", TEST_F_F, (void (*)(void))expf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "exp2f", TEST_F_F, (void (*)(void))exp2f, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "expm1f", TEST_F_F, (void (*)(void))expm1f, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log", TEST_D_D, (void (*)(void))log, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log2", TEST_D_D, (void (*)(void))log2, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log10", TEST_D_D, (void (*)(void))log10, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log1p", TEST_D_D, (void (*)(void))log1p, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "logf", TEST_F_F, (void (*)(void))logf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log2f", TEST_F_F, (void (*)(void))log2f, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log10f", TEST_F_F, (void (*)(void))log10f, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log1pf", TEST_F_F, (void (*)(void))log1pf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "pow", TEST_D_DD, (void (*)(void))pow, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "powf", TEST_F_FF, (void (*)(void))powf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "sin", TEST_D_D, (void (*)(void))sin, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "cos", TEST_D_D, (void (*)(void))cos, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "tan", TEST_D_D, (void (*)(void))tan, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "sinf", TEST_F_F, (void (*)(void))sinf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "cosf", TEST_F_F, (void (*)(void))cosf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "tanf", TEST_F_F, (void (*)(void))tanf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "asin", TEST_D_D, (void (*)(void))asin, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "acos", TEST_D_D, (void (*)(void))acos, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "atan", TEST_D_D, (void (*)(void))atan, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "atan2", TEST_D_DD, (void (*)(void))atan2, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "asinf", TEST_F_F, (void (*)(void))asinf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "acosf", TEST_F_F, (void (*)(void))acosf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "atanf", TEST_F_F, (void (*)(void))atanf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "atan2f", TEST_F_FF, (void (*)(void))atan2f, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "sinh", TEST_D_D, (void (*)(void))sinh, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "cosh", TEST_D_D, (void (*)(void))cosh, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "tanh", TEST_D_D, (void (*)(void))tanh, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "asinh", TEST_D_D, (void (*)(void))asinh, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "acosh", TEST_D_D, (void (*)(void))acosh, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "atanh", TEST_D_D, (void (*)(void))atanh, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "sinhf", TEST_F_F, (void (*)(void))sinhf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "coshf", TEST_F_F, (void (*)(void))coshf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "tanhf", TEST_F_F, (void (*)(void))tanhf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "asinhf", TEST_F_F, (void (*)(void))asinhf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "acoshf", TEST_F_F, (void (*)(void))acoshf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "atanhf", TEST_F_F, (void (*)(void))atanhf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "cbrt", TEST_D_D, (void (*)(void))cbrt, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "cbrtf", TEST_F_F, (void (*)(void))cbrtf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "hypot", TEST_D_DD, (void (*)(void))hypot, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "hypotf", TEST_F_FF, (void (*)(void))hypotf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "erf", TEST_D_D, (void (*)(void))erf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "erfc", TEST_D_D, (void (*)(void))erfc, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "erff", TEST_F_F, (void (*)(void))erff, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "erfcf", TEST_F_F, (void (*)(void))erfcf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "tgamma", TEST_D_D, (void (*)(void))tgamma, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "tgammaf", TEST_F_F, (void (*)(void))tgammaf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "lgamma", TEST_D_D, (void (*)(void))lgamma, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "lgammaf", TEST_F_F, (void (*)(void))lgammaf, 1, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "lgamma~zero", TEST_D_D, (void (*)(void))lgamma, 0, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "j0", TEST_D_D, (void (*)(void))j0, 0, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "j1", TEST_D_D, (void (*)(void))j1, 0, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "y0", TEST_D_D, (void (*)(void))y0, 0, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "y1", TEST_D_D, (void (*)(void))y1, 0, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "jn", TEST_D_ID, (void (*)(void))jn, 0, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "yn", TEST_D_ID, (void (*)(void))yn, 0, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ NULL, TEST_D_D, NULL, 0, 0, 0, 0, 0, 0, 0, { 0, 0, 0 } }
 };
 
 /*
@@ -370,6 +398,35 @@ static const struct test_special test_specials[] = {
 	{ "atanh", { -1.0, 0, 0 }, -INFINITY, TEST_ERANGE, TEST_FE_DIVBYZERO },
 	{ "atanh", { 1.5, 0, 0 }, NAN, TEST_EDOM, TEST_FE_INVALID },
 	{ "atanh", { -0.0, 0, 0 }, -0.0, 0, 0 },
+	{ "cbrt", { -27.0, 0, 0 }, -3.0, 0, 0 },
+	{ "cbrt", { -0.0, 0, 0 }, -0.0, 0, 0 },
+	{ "cbrt", { -INFINITY, 0, 0 }, -INFINITY, 0, 0 },
+	{ "hypot", { INFINITY, NAN, 0 }, INFINITY, 0, 0 },
+	{ "hypot", { NAN, -INFINITY, 0 }, INFINITY, 0, 0 },
+	{ "hypot", { 3.0, 4.0, 0 }, 5.0, 0, 0 },
+	{ "hypot", { -0.0, 0.0, 0 }, 0.0, 0, 0 },
+	{ "hypot", { 1.7976931348623157e308, 1.7976931348623157e308, 0 }, INFINITY, TEST_ERANGE, TEST_FE_OVERFLOW },
+	{ "erf", { -0.0, 0, 0 }, -0.0, 0, 0 },
+	{ "erf", { INFINITY, 0, 0 }, 1.0, 0, 0 },
+	{ "erf", { -INFINITY, 0, 0 }, -1.0, 0, 0 },
+	{ "erfc", { INFINITY, 0, 0 }, 0.0, 0, 0 },
+	{ "erfc", { -INFINITY, 0, 0 }, 2.0, 0, 0 },
+	{ "erfc", { 30.0, 0, 0 }, 0.0, TEST_ERANGE, TEST_FE_UNDERFLOW },
+	{ "tgamma", { 0.0, 0, 0 }, INFINITY, TEST_ERANGE, TEST_FE_DIVBYZERO },
+	{ "tgamma", { -0.0, 0, 0 }, -INFINITY, TEST_ERANGE, TEST_FE_DIVBYZERO },
+	{ "tgamma", { -2.0, 0, 0 }, NAN, TEST_EDOM, TEST_FE_INVALID },
+	{ "tgamma", { -INFINITY, 0, 0 }, NAN, TEST_EDOM, TEST_FE_INVALID },
+	{ "tgamma", { INFINITY, 0, 0 }, INFINITY, 0, 0 },
+	{ "tgamma", { 200.0, 0, 0 }, INFINITY, TEST_ERANGE, TEST_FE_OVERFLOW },
+	{ "tgamma", { 5.0, 0, 0 }, 24.0, 0, 0 },
+	{ "lgamma", { 1.0, 0, 0 }, 0.0, 0, 0 },
+	{ "lgamma", { 2.0, 0, 0 }, 0.0, 0, 0 },
+	{ "lgamma", { 0.0, 0, 0 }, INFINITY, TEST_ERANGE, TEST_FE_DIVBYZERO },
+	{ "lgamma", { -3.0, 0, 0 }, INFINITY, TEST_ERANGE, TEST_FE_DIVBYZERO },
+	{ "lgamma", { -INFINITY, 0, 0 }, INFINITY, 0, 0 },
+	{ "y0", { 0.0, 0, 0 }, -INFINITY, TEST_ERANGE, TEST_FE_DIVBYZERO },
+	{ "y0", { -1.0, 0, 0 }, NAN, TEST_EDOM, TEST_FE_INVALID },
+	{ "j0", { INFINITY, 0, 0 }, 0.0, 0, 0 },
 	{ NULL, { 0, 0, 0 }, 0, 0, 0 }
 };
 
@@ -499,6 +556,7 @@ run_record(
 	int exponent;
 	int quotient;
 	double error;
+	double absolute;
 	int correct;
 	int matches;
 
@@ -522,6 +580,9 @@ run_record(
 		break;
 	case TEST_D_DI:
 		result = ((double (*)(double, int))function->function)(record->args[0], (int)record->args[1]);
+		break;
+	case TEST_D_ID:
+		result = ((double (*)(int, double))function->function)((int)record->args[0], record->args[1]);
 		break;
 	case TEST_F_F:
 		result = ((float (*)(float))function->function)((float)record->args[0]);
@@ -603,6 +664,9 @@ run_record(
 	error = ulp_error(result, record->ref_hi, record->ref_lo,
 	    record->mode == TEST_MODE_ULP_FLOAT);
 	function->sum_ulp += error;
+	absolute = fabs((result - record->ref_hi) - record->ref_lo);
+	if (absolute > function->max_absolute)
+		function->max_absolute = absolute;
 	if (error > 0.5)
 		function->over_half++;
 	if (error > function->max_ulp) {
@@ -704,6 +768,7 @@ report(
 	int found;
 	double host;
 	char host_text[32];
+	char measured_text[96];
 	const char *verdict;
 
 	/* One line per function that ran. */
@@ -715,9 +780,20 @@ report(
 		if (function->count == 0)
 			continue;
 
-		/* A function fails on any exact mismatch or an error at the bound. */
+		/*
+		 * A function fails on any exact mismatch or, when it is held to the
+		 * bound, an error at the bound.  The others are measured only.
+		 */
 		verdict = "";
-		if (function->exact_failures != 0 || function->max_ulp >= TEST_ULP_BOUND) {
+		snprintf(measured_text, sizeof(measured_text),
+		    "  (measured, largest absolute error %.3g)",
+		    function->max_absolute);
+		if (!function->bounded)
+			verdict = measured_text;
+		if (function->exact_failures != 0) {
+			verdict = "  FAIL";
+			failures++;
+		} else if (function->bounded && function->max_ulp >= TEST_ULP_BOUND) {
 			verdict = "  FAIL";
 			failures++;
 		}
