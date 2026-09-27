@@ -54,7 +54,7 @@ Resume point: p003・p006 は cleared（main）、p004 は logo まで。次は 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws078-p001 | 棚卸しと対応表（識別子・path・見える文字列・protocol 名を分類し、新しい名前を決める。判断が要る点を列挙） | planning | なし |
-| ws078-p002 | kernel・driver・UAPI・libc・bootloader の識別子の改名（`KERN_` 等。機械的。build の warning 0 と boot test） | planning | p001 |
+| ws078-p002 | kernel・driver・UAPI・libc・bootloader の識別子の改名（`KERN_` 等。機械的。build の warning 0 と boot test） | cleared（2026-09-28、main。`__ZEDBSD_*`→`__KERN_*`、`__zedbsd_*`→`__kern_*`、`ZEDBSD_*`→`KERN_*`（header の guard・UAPI の古い名前・試験）、`zbl_uefi_zedbsd_config*`→`zbl_uefi_kern_config*`、`ZBL_ZEDBSD_CONFIG_*`→`ZBL_KERN_CONFIG_*`、`zedbsd_peercred`→`kern_peercred` 等。make の変数・`__ZEDBSD__`・file 名（zedbsd.cfg、bootloader/uefi/zedbsd-config.c）・toolchain の target は残す。amd64 の image と boot test PASS、pcat・rpi4 の build は未実施） | — |
 | [ws078-p003](phase003/phase.md) | 実行ファイルと source の directory の改名（userland/desktop/、`/bin/wayland` 等）と参照 | cleared（2026-09-28、6d8ca152。Venus の graphical な確認は未実施） | — |
 | ws078-p006 | データの path（/etc/keiland、/usr/share/keiland、font の keiland*.ttf、/usr/libexec/keiland-x11）、API・protocol（`keiland_`・`KEILAND_`・`keiland.h`、`zed_*_v1` → `keiland_*_v1`）の改名 | cleared（2026-09-28、main、35177e46。image の build と boot test PASS。Venus の graphical な確認は未実施） | p003 |
 | ws078-p004 | 見える文字列: boot の logo（Kei）・greeter・lock・banner・os-release 等 | incomplete（2026-09-28: boot の logo を Kei の印・語・「powered by zedBSD」に描き直した（b3f5c5f9、[kei-identity-design.md](../ws035/kei-identity-design.md) の段階 1）。graphical な起動での表示の確認は未実施。残り: 全画面の起動画面・文字列） | p001 |
