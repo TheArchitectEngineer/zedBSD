@@ -66,7 +66,10 @@
  *                          register c / 2 as [d/d bary1, d/d bary2, -, value at the origin].
  *                          Gen11+ has no PLN: value = origin + d1 * bary1 + d2 * bary2, written out,
  *                          with the linear barycentrics for an input without perspective.
- * Fragment shader output:  location 0 in r124..r127, the render-target write that ends the thread.
+ * Fragment shader output:  location n (0 to 3) in r(124 - 4 n)..r(127 - 4 n); one render-target write for
+ *                          each location the shader stores, in ascending order, to binding table entry
+ *                          I915_SHADER_RT_BTI(n) with render target index n in the extended descriptor
+ *                          (Mesa's lower_fb_write_logical_send() on Gen11+); the last one ends the thread.
  * Texture:                 one SIMD8 "sample" message, u and v each its own payload run, the reply
  *                          four registers; binding table entry 1 + n, sampler n for the n-th
  *                          sampled image of the shader (entry 0 is the render target).
@@ -214,7 +217,9 @@
 #define COMPILE_DESC_URB_WRITE(slot)	(0x02080007U | ((uint32_t)(slot) << 4))
 #define COMPILE_DESC_SAMPLE(bti, smp)	(0x02420000U | ((uint32_t)(smp) << 8) | (uint32_t)(bti))
 #define COMPILE_DESC_RT_WRITE		0x08031400U
+#define COMPILE_DESC_RT_LAST		0x00001000U
 #define COMPILE_EX_MLEN(n)		((uint32_t)(n) << 6)
+#define COMPILE_EX_RT_INDEX(n)		((uint32_t)(n) << 12)
 
 /*
  * The scratch messages (Mesa's emit_spill() and emit_unspill() before LSC):
@@ -315,6 +320,9 @@ struct i915_compile_state {
 
 	/* Fragment: nonzero when the shader discards, so f1.0 holds the live pixels. */
 	int uses_kill;
+
+	/* The colour locations a fragment shader stores (bit n for location n). */
+	uint32_t fs_outputs;
 
 	/*
 	 * Fragment: nonzero when the kernel reads an input without perspective,
@@ -426,6 +434,7 @@ static void i915_compile_frag_coord(struct i915_compile_state *state, const stru
 static void i915_compile_blocks(struct i915_compile_state *state);
 static void i915_compile_prologue(struct i915_compile_state *state);
 static void i915_compile_terminate(struct i915_compile_state *state);
+static uint32_t i915_compile_fs_outputs(const struct i915_compile_state *state);
 static void i915_compile_terminate_vertex(struct i915_compile_state *state);
 static void i915_compile_terminate_gathered(struct i915_compile_state *state);
 static void i915_compile_gather(struct i915_compile_state *state, uint32_t first, uint32_t count);
@@ -2014,11 +2023,11 @@ i915_compile_store_output(
 			return;
 		}
 		grf = state->vue_grf + 8U + 4U * rank;
-	} else if (inst->location == 0U) {
-		/* The colour goes to r124..r127. */
-		grf = COMPILE_MAX_GRF - 3U;
+	} else if (inst->location < I915_SHADER_MAX_COLOR_OUTPUTS) {
+		/* Colour location n goes to r(124 - 4 n)..r(127 - 4 n). */
+		grf = COMPILE_MAX_GRF - 3U - 4U * inst->location;
 	} else {
-		/* XXX: one colour output; Position belongs to a vertex shader. */
+		/* XXX: a colour location past the render targets; Position belongs to a vertex shader. */
 		state->unsupported = 1;
 		return;
 	}
@@ -3253,6 +3262,9 @@ i915_compile_interface(
 		    state->ir->stage == I915_STAGE_VERTEX &&
 		    inst->location != I915_IR_LOCATION_POSITION) {
 			i915_compile_note(state, state->varyings, &state->varying_count, COMPILE_MAX_VARYINGS, inst->location);
+		} else if (inst->op == I915_IR_STORE_OUTPUT && inst->location < I915_SHADER_MAX_COLOR_OUTPUTS) {
+			/* A fragment shader's colour location gets a render-target write. */
+			state->fs_outputs |= 1U << inst->location;
 		} else if (inst->op == I915_IR_KILL) {
 			state->uses_kill = 1;
 		}
@@ -3409,16 +3421,22 @@ i915_compile_prologue(
 	struct i915_compile_state *state)
 {
 	struct i915_eu_reg header;
+	uint32_t outputs;
 	uint32_t grf;
 
 	/* A shader that spills builds its scratch header before anything else. */
 	if (state->header_grf != COMPILE_NO_GRF)
 		i915_compile_scratch_header(state);
 
-	/* A fragment shader's colour starts as zeros. */
+	/* A fragment shader's colours start as zeros. */
 	if (state->ir->stage != I915_STAGE_VERTEX) {
-		for (grf = COMPILE_MAX_GRF - 3U; grf <= COMPILE_MAX_GRF; grf++)
+		outputs = i915_compile_fs_outputs(state);
+		for (grf = COMPILE_MAX_GRF - 4U * I915_SHADER_MAX_COLOR_OUTPUTS + 1U; grf <= COMPILE_MAX_GRF; grf++) {
+			/* Only the registers of a location the shader writes. */
+			if ((outputs & (1U << ((COMPILE_MAX_GRF - grf) / 4U))) == 0U)
+				continue;
 			drv_i915_eu_mov(&state->code, drv_i915_eu_grf(grf), drv_i915_eu_imm_f(0U));
+		}
 
 		/* One that discards starts with every dispatched pixel live in f1.0. */
 		if (state->uses_kill != 0)
@@ -3448,6 +3466,11 @@ i915_compile_terminate(
 	struct i915_compile_state *state)
 {
 	struct i915_eu_buf *code;
+	struct i915_eu_reg payload;
+	uint32_t descriptor;
+	uint32_t location;
+	uint32_t outputs;
+	int last;
 
 	/* Emits into the shader's encoder buffer. */
 	code = &state->code;
@@ -3462,31 +3485,64 @@ i915_compile_terminate(
 		return;
 	}
 
-	/* A shader that discards writes the colour only to the pixels f1.0 still holds. */
-	if (state->uses_kill != 0) {
-		drv_i915_eu_send_masked(code,
-					I915_EU_FLAG_F1_0,
-					drv_i915_eu_null(),
-					drv_i915_eu_grf(COMPILE_MAX_GRF - 3U),
-					drv_i915_eu_null(),
-					COMPILE_SFID_RENDER_CACHE,
-					COMPILE_DESC_RT_WRITE,
-					0U,
-					1,
-					1);
-		return;
-	}
+	/* Each colour location to its render target, in ascending order; the last write ends the thread. */
+	outputs = i915_compile_fs_outputs(state);
+	for (location = 0U; location < I915_SHADER_MAX_COLOR_OUTPUTS; location++) {
+		if ((outputs & (1U << location)) == 0U)
+			continue;
 
-	/* The colour in r124..r127 to the render target: SENDC, as a render-target write must be. */
-	drv_i915_eu_send(code,
-			 drv_i915_eu_null(),
-			 drv_i915_eu_grf(COMPILE_MAX_GRF - 3U),
-			 drv_i915_eu_null(),
-			 COMPILE_SFID_RENDER_CACHE,
-			 COMPILE_DESC_RT_WRITE,
-			 0U,
-			 1,
-			 1);
+		/* The target's entry and index; only the last write names the last target and ends the thread. */
+		last = 0;
+		if ((outputs >> (location + 1U)) == 0U)
+			last = 1;
+		descriptor = (COMPILE_DESC_RT_WRITE & ~COMPILE_DESC_RT_LAST) | I915_SHADER_RT_BTI(location);
+		if (last != 0)
+			descriptor |= COMPILE_DESC_RT_LAST;
+		payload = drv_i915_eu_grf(COMPILE_MAX_GRF - 3U - 4U * location);
+
+		/* A shader that discards writes the colour only to the pixels f1.0 still holds. */
+		if (state->uses_kill != 0) {
+			drv_i915_eu_send_masked(code,
+						I915_EU_FLAG_F1_0,
+						drv_i915_eu_null(),
+						payload,
+						drv_i915_eu_null(),
+						COMPILE_SFID_RENDER_CACHE,
+						descriptor,
+						COMPILE_EX_RT_INDEX(location),
+						1,
+						last);
+			continue;
+		}
+
+		/* The colour to the render target: SENDC, as a render-target write must be. */
+		drv_i915_eu_send(code,
+				 drv_i915_eu_null(),
+				 payload,
+				 drv_i915_eu_null(),
+				 COMPILE_SFID_RENDER_CACHE,
+				 descriptor,
+				 COMPILE_EX_RT_INDEX(location),
+				 1,
+				 last);
+	}
+}
+
+/*
+ * Reports the colour locations a fragment shader writes: the ones it
+ * stores, or location 0 alone for a shader that stores none (its thread
+ * still ends with a render-target write, of zeros).
+ */
+static uint32_t
+i915_compile_fs_outputs(
+	const struct i915_compile_state *state)
+{
+	/* A shader with no colour store writes zeros to location 0. */
+	if (state->fs_outputs == 0U)
+		return 1U;
+
+	/* Succeeded: the locations the shader stores. */
+	return state->fs_outputs;
 }
 
 /*

@@ -36,7 +36,7 @@ static int i915_gfx_render_pass_supported(const VkRenderPassCreateInfo *info);
 /*
  * Creates a VkRenderPass: vkCreateRenderPass, a generic create.
  *
- * XXX: one subpass, at most one colour attachment and one depth
+ * XXX: one subpass, at most four colour attachments and one depth
  * attachment.  Anything else is refused by name.  The pass keeps each
  * attachment's format and load operation, and which attachments the
  * subpass writes.
@@ -94,13 +94,14 @@ drv_i915_gfx_create_render_pass(
 			pass->attachments[index].load_op = info.pAttachments[index].loadOp;
 		}
 
-		/* Records the colour attachment the subpass writes, if any. */
+		/* Records the colour attachments the subpass writes, if any. */
 		subpass = &info.pSubpasses[0];
-		if (subpass->colorAttachmentCount != 0U) {
+		pass->color_count = subpass->colorAttachmentCount;
+		for (index = 0U; index < subpass->colorAttachmentCount; index++)
+			pass->color_attachments[index] = subpass->pColorAttachments[index].attachment;
+		pass->color_attachment = VK_ATTACHMENT_UNUSED;
+		if (subpass->colorAttachmentCount != 0U)
 			pass->color_attachment = subpass->pColorAttachments[0].attachment;
-		} else {
-			pass->color_attachment = VK_ATTACHMENT_UNUSED;
-		}
 
 		/* Records the depth attachment the subpass writes, if any. */
 		if (subpass->pDepthStencilAttachment != NULL) {
@@ -187,10 +188,32 @@ i915_gfx_render_pass_supported(
 	if (info->attachmentCount > I915_GFX_MAX_ATTACHMENTS)
 		return 0;
 
-	/* Only at most one colour attachment in the one subpass. */
-	if (info->pSubpasses[0].colorAttachmentCount > 1U)
+	/* Only as many colour attachments in the one subpass as there are render targets. */
+	if (info->pSubpasses[0].colorAttachmentCount > I915_GFX_MAX_COLOR_ATTACHMENTS)
 		return 0;
 
 	/* Succeeded: the pass has the supported shape. */
 	return 1;
+}
+
+/*
+ * Reports the attachment colour slot `slot` of a pass draws into, or
+ * VK_ATTACHMENT_UNUSED.  Slot 0 is color_attachment, so a pass filled by
+ * hand with only that field (a test's) has its one colour attachment.
+ */
+uint32_t
+drv_i915_gfx_pass_color(
+	const struct i915_gfx_pass *pass,
+	uint32_t slot)
+{
+	/* The first slot is the pass's first colour attachment. */
+	if (slot == 0U)
+		return pass->color_attachment;
+
+	/* A later slot the subpass does not have draws nothing. */
+	if (slot >= pass->color_count || slot >= I915_GFX_MAX_COLOR_ATTACHMENTS)
+		return VK_ATTACHMENT_UNUSED;
+
+	/* Succeeded: the subpass's attachment of the slot. */
+	return pass->color_attachments[slot];
 }

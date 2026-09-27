@@ -17,6 +17,18 @@
  * The session ends when the script ends (zdesktop's Log Out).  Whatever of
  * it is left is ended too: its process group, and every process of the
  * user (not for root, whose processes are the system's).
+ *
+ * The hand-over of the display (ws035-p101): the script is given one end of
+ * a socket pair as descriptor 3 and the option --control-fd=3 for zdesktop.
+ * The greeter stays on the screen while the session starts; zdesktop says
+ * READY when it is about to take the display, zsessiond then has the
+ * greeter give it back and answers GO.  A session that never says READY
+ * (another script) has the greeter ended after SESSION_READY_SECONDS.  The
+ * session's requests on the socket, one line each:
+ *
+ *   LOGOUT   Log Out with the display handed to a new greeter: QUIT comes
+ *            once the greeter is ready; the session answers RELEASED when
+ *            it has given the display back, and ends
  */
 
 #include "zsessiond.h"
@@ -24,9 +36,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -39,9 +53,15 @@
 /* The utmpx line of the graphical seat. */
 #define SESSION_LINE		"seat0"
 
+/* How long the greeter stays on the screen for a session that does not say READY (seconds). */
+#define SESSION_READY_SECONDS	30
+
 static int session_runtime(struct zsessiond_account *account, char *directory, size_t size);
 static void session_runtime_clean(const char *directory);
-static void session_child(struct zsessiond *daemon, struct zsessiond_account *account, const char *directory);
+static void session_child(struct zsessiond *daemon, struct zsessiond_account *account, const char *directory, int control);
+static void session_handoff(struct zsessiond *daemon, int control);
+static int session_request(struct zsessiond *daemon, struct zsessiond_account *account, int control);
+static void session_logout(struct zsessiond *daemon, int control);
 static void session_record(int type, pid_t pid, const char *user);
 static void session_sweep(struct zsessiond_account *account, pid_t leader);
 static void session_signal_user(uid_t uid, int signal_number);
@@ -54,37 +74,67 @@ zsessiond_session_run(
 	struct zsessiond *daemon,
 	struct zsessiond_account *account)
 {
+	struct pollfd entry;
 	char directory[64];
 	pid_t child;
 	pid_t waited;
+	int pair[2];
+	int control;
+	int leaving;
+	int ready;
 	int status;
 	int error;
 
-	/* The seat is the user's now. */
+	/* The seat is the user's now (the greeter keeps what it has open until it ends). */
 	zsessiond_seat_give(account->passwd.pw_uid, account->passwd.pw_gid);
 
-	/* The user's runtime directory. */
+	/* The user's runtime directory (without it, the greeter left on the screen goes). */
 	error = session_runtime(account, directory, sizeof(directory));
-	if (error != 0)
+	if (error != 0) {
+		zsessiond_greeter_finish(daemon);
 		return error;
+	}
+
+	/* The socket the session talks to zsessiond on. */
+	error = socketpair(AF_UNIX, SOCK_STREAM, 0, pair);
+	if (error != 0) {
+		error = errno;
+		zsessiond_log("ZSESSIOND SESSION socketpair errno=%d", error);
+		zsessiond_greeter_finish(daemon);
+		return error;
+	}
 
 	/* The session's process. */
 	child = fork();
 	if (child < 0) {
 		zsessiond_log("ZSESSIOND SESSION fork errno=%d", errno);
+		(void)close(pair[0]);
+		(void)close(pair[1]);
+		zsessiond_greeter_finish(daemon);
 		return EAGAIN;
 	}
 
 	/* The child becomes the session and does not come back. */
-	if (child == 0)
-		session_child(daemon, account, directory);
+	if (child == 0) {
+		(void)close(pair[0]);
+		session_child(daemon, account, directory, pair[1]);
+	}
+
+	/* zsessiond keeps its own end. */
+	(void)close(pair[1]);
+	control = pair[0];
+	(void)fcntl(control, F_SETFD, FD_CLOEXEC);
 
 	/* The login is on record while the session runs. */
 	session_record(USER_PROCESS, child, account->passwd.pw_name);
 	zsessiond_log("ZSESSIOND SESSION start user=%s uid=%u pid=%ld runtime=%s", account->passwd.pw_name, (unsigned)account->passwd.pw_uid, (long)child, directory);
 
-	/* Waits for it to end, giving a new input device to the user every second. */
+	/* The display goes from the greeter to the session. */
+	session_handoff(daemon, control);
+
+	/* Waits for it to end, answering it, and giving a new input device to the user every second. */
 	status = 0;
+	leaving = 0;
 	for (;;) {
 		waited = waitpid(child, &status, WNOHANG);
 		if (waited == child)
@@ -98,12 +148,33 @@ zsessiond_session_run(
 			(void)kill(child, SIGTERM);
 		}
 
-		/* A second, then any new input device is the user's too. */
-		sleep(1);
-		zsessiond_seat_give(account->passwd.pw_uid, account->passwd.pw_gid);
+		/* A request of the session, or a second. */
+		entry.fd = control;
+		entry.events = POLLIN;
+		entry.revents = 0;
+		ready = 0;
+		if (control >= 0)
+			ready = poll(&entry, 1, 1000);
+		else
+			sleep(1);
+		if (ready > 0) {
+			leaving |= session_request(daemon, account, control);
+
+			/* A session that closed its end says nothing more. */
+			if ((entry.revents & (POLLHUP | POLLERR)) != 0 && (entry.revents & POLLIN) == 0) {
+				(void)close(control);
+				control = -1;
+			}
+		}
+
+		/* Any new input device is the user's too, until the session hands the seat to the greeter. */
+		if (!leaving)
+			zsessiond_seat_give(account->passwd.pw_uid, account->passwd.pw_gid);
 	}
 
 	/* The session has ended: what is left of it goes, and the record says so. */
+	if (control >= 0)
+		(void)close(control);
 	zsessiond_log("ZSESSIOND SESSION end user=%s pid=%ld status=%d", account->passwd.pw_name, (long)child, status);
 	session_sweep(account, child);
 	session_record(DEAD_PROCESS, child, "");
@@ -111,6 +182,133 @@ zsessiond_session_run(
 
 	/* Succeeded: the session ran and ended. */
 	return 0;
+}
+
+/*
+ * Hands the display from the greeter to the session: waits for the
+ * session's READY (at most SESSION_READY_SECONDS, or until it closes its
+ * end), has the greeter give the display back, and answers GO; the
+ * greeter's process is then reaped.
+ */
+static void
+session_handoff(
+	struct zsessiond *daemon,
+	int control)
+{
+	long long started;
+	long long waited;
+	char line[ZSESSIOND_LINE_MAX];
+	ssize_t count;
+	int ready;
+	int got;
+	int match;
+
+	/* READY, a line of its own (anything before it is not the session's to say yet). */
+	started = zsessiond_milliseconds();
+	ready = 0;
+	while (!ready && !zsessiond_stopping) {
+		/* The time left. */
+		waited = zsessiond_milliseconds() - started;
+		if (waited >= SESSION_READY_SECONDS * 1000LL)
+			break;
+
+		/* A line, or the end of the wait. */
+		got = zsessiond_read_line(control, line, sizeof(line), (int)(SESSION_READY_SECONDS * 1000LL - waited));
+		if (got <= 0)
+			break;
+		match = strcmp(line, "READY");
+		if (match == 0)
+			ready = 1;
+	}
+
+	/* The greeter gives the display back. */
+	waited = zsessiond_milliseconds() - started;
+	zsessiond_log("ZSESSIOND HANDOFF session ready=%d waited_ms=%lld", ready, waited);
+	zsessiond_greeter_release(daemon);
+
+	/* The session may take the display. */
+	if (ready) {
+		count = write(control, "GO\n", 3U);
+		zsessiond_log("ZSESSIOND HANDOFF go written=%ld at_ms=%lld", (long)count, zsessiond_milliseconds());
+	}
+
+	/* The greeter's process goes after. */
+	zsessiond_greeter_finish(daemon);
+}
+
+/*
+ * Answers one request of the session (a line on its socket).  Returns 1
+ * when the session has handed the seat to the greeter (LOGOUT).
+ */
+static int
+session_request(
+	struct zsessiond *daemon,
+	struct zsessiond_account *account,
+	int control)
+{
+	char line[ZSESSIOND_LINE_MAX];
+	int got;
+	int match;
+
+	/* The line (a short wait: it came whole or nearly). */
+	(void)account;
+	got = zsessiond_read_line(control, line, sizeof(line), 500);
+	if (got <= 0)
+		return 0;
+
+	/* Log Out, handing the display to a new greeter. */
+	match = strcmp(line, "LOGOUT");
+	if (match == 0) {
+		session_logout(daemon, control);
+		return 1;
+	}
+
+	/* Anything else. */
+	(void)write(control, "ERROR\n", 6U);
+	return 0;
+}
+
+/*
+ * Log Out with the display handed over (ws035-p101): the greeter starts
+ * while the session still shows, and says READY when it is about to take
+ * the display; the session is then told QUIT, gives the display back
+ * (RELEASED) and ends, and the greeter is told GO.  main() then carries on
+ * with that greeter (zsessiond_greeter_run adopts it).
+ */
+static void
+session_logout(
+	struct zsessiond *daemon,
+	int control)
+{
+	char line[ZSESSIOND_LINE_MAX];
+	ssize_t count;
+	int released;
+	int got;
+	int match;
+	int error;
+
+	/* The greeter, given the seat, until it is ready for the display. */
+	zsessiond_log("ZSESSIOND HANDOFF logout at_ms=%lld", zsessiond_milliseconds());
+	error = zsessiond_greeter_prepare(daemon);
+
+	/* The session gives the display back. */
+	count = write(control, "QUIT\n", 5U);
+	released = 0;
+	while (count == 5 && !released) {
+		got = zsessiond_read_line(control, line, sizeof(line), 5000);
+		if (got <= 0)
+			break;
+		match = strcmp(line, "RELEASED");
+		if (match == 0)
+			released = 1;
+	}
+
+	/* What came of it. */
+	zsessiond_log("ZSESSIOND HANDOFF session released=%d at_ms=%lld", released, zsessiond_milliseconds());
+
+	/* The greeter takes it. */
+	if (error == 0)
+		zsessiond_greeter_go(daemon);
 }
 
 /* Makes the user's runtime directory: 0700, the user's, and a directory (not a link someone left). */
@@ -179,9 +377,10 @@ static void
 session_child(
 	struct zsessiond *daemon,
 	struct zsessiond_account *account,
-	const char *directory)
+	const char *directory,
+	int control)
 {
-	char *arguments[3];
+	char *arguments[4];
 	char *environment[8];
 	char home[320];
 	char user[96];
@@ -214,8 +413,14 @@ session_child(
 		(void)dup2(descriptor, STDERR_FILENO);
 	}
 
-	/* No descriptor of zsessiond's goes with it. */
-	for (descriptor = 3; descriptor < 256; descriptor++)
+	/* The socket to zsessiond as descriptor 3, and no other descriptor of zsessiond's. */
+	if (control != ZSESSIOND_CONTROL_FD) {
+		(void)dup2(control, ZSESSIOND_CONTROL_FD);
+		(void)close(control);
+	}
+
+	/* Nothing above it. */
+	for (descriptor = ZSESSIOND_CONTROL_FD + 1; descriptor < 256; descriptor++)
 		(void)close(descriptor);
 
 	/* The home directory, or / when it cannot be entered. */
@@ -236,10 +441,11 @@ session_child(
 	environment[5] = runtime;
 	environment[6] = NULL;
 
-	/* The session script; only a failed exec comes back. */
+	/* The session script, told the descriptor; only a failed exec comes back. */
 	arguments[0] = "sh";
 	arguments[1] = (char *)daemon->session;
-	arguments[2] = NULL;
+	arguments[2] = "--control-fd=3";
+	arguments[3] = NULL;
 	(void)execve("/bin/sh", arguments, environment);
 	_exit(127);
 }

@@ -132,6 +132,9 @@ int drv_i915_gfx_window(struct i915_render_session *session, struct i915_gfx_ses
 int drv_i915_gfx_op_begin(struct i915_render_session *session, struct i915_gfx_session *work, struct i915_gfx_op_space *space);
 int drv_i915_gfx_op_end(struct i915_render_session *session, struct i915_gfx_session *work, int error);
 int drv_i915_gfx_flush(struct i915_render_session *session, struct i915_gfx_session *work);
+struct i915_gem_object;
+int drv_i915_gfx_object_create(struct i915_render_session *session, uint64_t bytes, struct i915_gem_object **result);
+void drv_i915_gfx_object_destroy(struct i915_render_session *session, struct i915_gem_object *object);
 int drv_i915_gfx_draw(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_draw_args *args);
 
 #endif
