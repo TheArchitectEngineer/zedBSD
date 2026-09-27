@@ -22,7 +22,8 @@
  * --scene=cube draws cube.c's squares, each sampling a cube map's face;
  * --scene=es3 draws es3.c's shapes with OpenGL ES 3.0's vertex array
  * objects, instancing, integer attributes and uniform buffers in an
- * OpenGL ES 3 context.
+ * OpenGL ES 3 context, and --scene=formats formats.c's squares, each
+ * sampling a texture of one of OpenGL ES 3.0's formats.
  *
  * Every outcome is one line: EGLTEST DONE on a clean end, EGLTEST FAILED
  * naming what failed otherwise.
@@ -36,6 +37,7 @@
 
 #include "cube.h"
 #include "es3.h"
+#include "formats.h"
 #include "scene.h"
 
 #include <stdio.h>
@@ -146,7 +148,7 @@ main(
 	/* The command line. */
 	status = egltest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo|cube|es3] [--token=NAME]\n");
+		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo|cube|es3|formats] [--token=NAME]\n");
 		return 2;
 	}
 
@@ -259,7 +261,7 @@ egltest_start(
 
 	/* An OpenGL ES 2 context (OpenGL ES 3 for the GLSL ES 3.00 and OpenGL ES 3.0 API scenes). */
 	egl->operation = "eglCreateContext";
-	if (options->scene == 3 || options->scene == 6)
+	if (options->scene == 3 || options->scene >= 6)
 		context_attributes[1] = 3;
 	egl->context = eglCreateContext(egl->display, egl->config, EGL_NO_CONTEXT, context_attributes);
 	if (egl->context == EGL_NO_CONTEXT)
@@ -283,7 +285,9 @@ egltest_start(
 	/* The scene's program, buffers and texture. */
 	egl->operation = "scene";
 	if (options->scene) {
-		if (options->scene == 6) {
+		if (options->scene == 7) {
+			status = egltest_formats_start();
+		} else if (options->scene == 6) {
 			status = egltest_es3_start();
 		} else if (options->scene == 5) {
 			status = egltest_cube_start();
@@ -352,7 +356,11 @@ egltest_frames(
 			}
 
 			/* The scene, through the framebuffer object for --scene=fbo, the cube map's squares, or the OpenGL ES 3.0 API scene. */
-			if (options->scene == 6) {
+			if (options->scene == 7) {
+				egltest_formats_draw(width, height);
+				if (frame == 1U)
+					egl->failures = egltest_formats_check(width, height, options->token);
+			} else if (options->scene == 6) {
 				egltest_es3_draw(width, height);
 				if (frame == 1U)
 					egl->failures = egltest_es3_check(width, height, options->token);
@@ -511,6 +519,9 @@ egltest_parse(
 			differs = strcmp(value, "es3");
 			if (differs == 0)
 				options->scene = 6;
+			differs = strcmp(value, "formats");
+			if (differs == 0)
+				options->scene = 7;
 			differs = strcmp(value, "draw");
 			if (differs != 0 && options->scene == 1)
 				return -1;

@@ -1139,6 +1139,12 @@ framebuffer_status(
 		level = &(*texture)->levels[fbo->color.face * GLES_LEVELS];
 		if (level->width <= 0 || level->height <= 0)
 			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+
+		/* Drawn into: RGBA8 kept texels whose image starts at level 0 (other formats are ws068-p026's). */
+		if (level->format == NULL ||
+		    level->format->vk != VK_FORMAT_R8G8B8A8_UNORM ||
+		    (*texture)->base_level != 0)
+			return GL_FRAMEBUFFER_UNSUPPORTED;
 		width = level->width;
 		height = level->height;
 	} else if (fbo->color.kind == GLES_ATTACH_RENDERBUFFER) {

@@ -1285,6 +1285,7 @@ gles_release(
 	struct gles_program *program;
 	struct gles_shader *shader;
 	GLuint name;
+	unsigned kind;
 
 	/* The state, when there is one; nothing may still run. */
 	state = context->gles.state;
@@ -1325,11 +1326,16 @@ gles_release(
 			gles_texture_free(state, state->textures.objects[name]);
 	}
 
-	/* The black textures. */
-	if (state->black != NULL)
-		gles_texture_free(state, state->black);
-	if (state->black_cube != NULL)
-		gles_texture_free(state, state->black_cube);
+	/* The black textures of each kind, 2D and cube maps. */
+	for (kind = 0U; kind < GLES_BLACK_KINDS; kind++) {
+		if (state->blacks[0][kind] != NULL)
+			gles_texture_free(state, state->blacks[0][kind]);
+		if (state->blacks[1][kind] != NULL)
+			gles_texture_free(state, state->blacks[1][kind]);
+	}
+
+	/* The sampler objects. */
+	gles_samplers_release(state);
 
 	/* The framebuffer objects and renderbuffers, and the vertex array objects. */
 	gles_framebuffers_release(state);
@@ -1670,6 +1676,11 @@ gles_integers_es3(
 	switch (pname) {
 	case GL_VERTEX_ARRAY_BINDING:
 		values[0] = (GLint)state->vertex_array;
+		return 1U;
+	case GL_SAMPLER_BINDING:
+		values[0] = 0;
+		if (state->unit_samplers[state->active_unit] != NULL)
+			values[0] = (GLint)state->unit_samplers[state->active_unit]->name;
 		return 1U;
 	case GL_COPY_READ_BUFFER_BINDING:
 		values[0] = gles_buffer_name(state->copy_read_buffer);

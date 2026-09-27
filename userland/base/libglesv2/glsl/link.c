@@ -965,6 +965,7 @@ link_leaves(
 	info->columns = leaf->columns;
 	info->sampler = leaf->sampler;
 	info->shadow = leaf->shadow;
+	info->arrayed = leaf->arrayed;
 	switch (leaf->base) {
 	case GLSL_BASE_INT:
 		info->base = GLSL_INFO_INT;
