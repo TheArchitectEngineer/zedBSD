@@ -4,6 +4,7 @@
 
 	.text
 	.globl zbl_transition_start
+	.globl zbl_transition_quiet
 	.globl zbl_transition_end
 zbl_transition_start:
 	cli
@@ -37,6 +38,18 @@ zbl_transition_start:
 	decl %ecx
 	jnz .Ltransition_stage_row
 	sfence
+.Ltransition_enter:
 	movq %r8, %rdi
 	jmp *%r9
+	/*
+	 * A quiet boot (kmsg=quiet, ws035-p096) enters here: the same switch
+	 * without the stage-3 block, so the boot logo stays on the screen.
+	 */
+zbl_transition_quiet:
+	cli
+	movq %rdx, %rsp
+	andq $-16, %rsp
+	xorq %rbp, %rbp
+	movq %rcx, %cr3
+	jmp .Ltransition_enter
 zbl_transition_end:

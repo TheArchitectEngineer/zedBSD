@@ -59,4 +59,37 @@
 /* 1/3 as a double-double: the low part. */
 #define LIBM_THIRD_LOW 1.850371707708594e-17
 
+/* pi/2 to 33 bits, so k times it is exact for k < 2^20. */
+#define LIBM_HALF_PI_1 1.5707963267341256
+
+/* The next 33 bits of pi/2. */
+#define LIBM_HALF_PI_2 6.077100506303966e-11
+
+/* The next 33 bits of pi/2. */
+#define LIBM_HALF_PI_3 2.0222662487111665e-21
+
+/* The next 53 bits of pi/2. */
+#define LIBM_HALF_PI_4 8.4784276603689e-32
+
+/* 2/pi, which counts the quarter turns in x. */
+#define LIBM_TWO_OVER_PI 0.6366197723675814
+
+/* pi/2 as a double-double: the high part. */
+#define LIBM_HALF_PI_HIGH 1.5707963267948966
+
+/* pi/2 as a double-double: the low part. */
+#define LIBM_HALF_PI_LOW 6.123233995736766e-17
+
+/* pi as a double-double: the high part. */
+#define LIBM_PI_HIGH 3.141592653589793
+
+/* pi as a double-double: the low part. */
+#define LIBM_PI_LOW 1.2246467991473532e-16
+
+/* pi/4 rounded to the nearest double. */
+#define LIBM_QUARTER_PI 0.7853981633974483
+
+/* 3pi/4 rounded to the nearest double. */
+#define LIBM_THREE_QUARTER_PI 2.356194490192345
+
 #endif

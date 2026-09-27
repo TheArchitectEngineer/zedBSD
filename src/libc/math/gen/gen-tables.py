@@ -113,6 +113,14 @@ class Output:
 		lines.append("};\n")
 		self.tables.append("\n".join(lines))
 
+	def word_table(self, name: str, values, comment: str) -> None:
+		lines = [f"/*\n * {comment}\n */\nconst uint32_t {name}[{len(values)}] = {{"]
+		for index in range(0, len(values), 4):
+			chunk = ", ".join(f"UINT32_C(0x{value:08x})" for value in values[index:index + 4])
+			lines.append(f"\t{chunk},")
+		lines.append("};\n")
+		self.tables.append("\n".join(lines))
+
 	def double_table(self, name: str, values, comment: str) -> None:
 		lines = [f"/*\n * {comment}\n */\nconst double {name}[{len(values)}] = {{"]
 		for value in values:
@@ -199,10 +207,68 @@ def log_section(out: Output) -> None:
 	print(f"log: largest |r| = 2^{float(mpmath.log(worst, 2)):.3f}")
 
 
+def trig_section(out: Output) -> None:
+	"""The trigonometric functions: the reduction and the tables of i/64."""
+	pi = mpmath.pi
+	half_pi = pi / 2
+	pieces = []
+	rest = half_pi
+	for bits in (33, 33, 33):
+		piece = truncate_bits(rest, bits)
+		assert significant_bits(piece) <= bits
+		pieces.append(piece)
+		rest = rest - mpf(piece)
+	pieces.append(nearest(rest))
+	for index, piece in enumerate(pieces):
+		comment = "pi/2 to 33 bits, so k times it is exact for k < 2^20." if index == 0 else \
+			("The next 33 bits of pi/2." if index < 3 else "The next 53 bits of pi/2.")
+		out.constant(f"LIBM_HALF_PI_{index + 1}", piece, comment)
+	out.constant("LIBM_TWO_OVER_PI", nearest(2 / pi), "2/pi, which counts the quarter turns in x.")
+	high, low = dd(half_pi)
+	out.constant("LIBM_HALF_PI_HIGH", high, "pi/2 as a double-double: the high part.")
+	out.constant("LIBM_HALF_PI_LOW", low, "pi/2 as a double-double: the low part.")
+	high, low = dd(pi)
+	out.constant("LIBM_PI_HIGH", high, "pi as a double-double: the high part.")
+	out.constant("LIBM_PI_LOW", low, "pi as a double-double: the low part.")
+	out.constant("LIBM_QUARTER_PI", nearest(pi / 4), "pi/4 rounded to the nearest double.")
+	out.constant("LIBM_THREE_QUARTER_PI", nearest(3 * pi / 4), "3pi/4 rounded to the nearest double.")
+	# The bits of 2/pi after the binary point, 32 to a word, most significant first.
+	words = []
+	with mpmath.workprec(1400):
+		value = 2 / mpmath.pi
+		for _ in range(40):
+			value *= 2 ** 32
+			word = int(mpmath.floor(value))
+			words.append(word)
+			value -= word
+	out.word_table("__libm_two_over_pi_bits", words,
+		"The first 1280 bits of 2/pi after the binary point, 32 to a word, most significant first (Payne-Hanek reduction).")
+	pairs = []
+	for index in range(52):
+		point = mpf(index) / 64
+		pairs.append(dd(mpmath.sin(point)))
+		pairs.append(dd(mpmath.cos(point)))
+	out.dd_table("__libm_sin_cos_table", pairs,
+		"sin(i/64) and cos(i/64) for i = 0 .. 51, as double-doubles, interleaved.")
+	sine = [nearest(mpf((-1) ** n) / mpmath.factorial(2 * n + 1)) for n in range(1, 5)]
+	out.double_table("__libm_sin_coefficients", sine,
+		"(-1)^n/(2n+1)! for n = 1 .. 4: the Taylor coefficients of sin(d) after d.")
+	cosine = [nearest(mpf((-1) ** n) / mpmath.factorial(2 * n)) for n in range(1, 5)]
+	out.double_table("__libm_cos_coefficients", cosine,
+		"(-1)^n/(2n)! for n = 1 .. 4: the Taylor coefficients of cos(d) - 1.")
+	pairs = [dd(mpmath.atan(mpf(index) / 64)) for index in range(65)]
+	out.dd_table("__libm_atan_table", pairs,
+		"atan(i/64) for i = 0 .. 64, as double-doubles.")
+	arctangent = [nearest(mpf((-1) ** n) / (2 * n + 1)) for n in range(1, 7)]
+	out.double_table("__libm_atan_coefficients", arctangent,
+		"(-1)^n/(2n+1) for n = 1 .. 6: the Taylor coefficients of atan(t) after t.")
+
+
 def main() -> None:
 	out = Output()
 	exp_section(out)
 	log_section(out)
+	trig_section(out)
 	tables = HEADER + """/*
  * The tables of the mathematical library.
  *
