@@ -66,6 +66,12 @@ zwl_gpu_open(
 	if (error != 0)
 		return errno;
 
+	/* Without --width and --height the output takes the display's preferred size (a login's session and screen). */
+	if (!server->size_given && server->display.preferred_width != 0 && server->display.preferred_height != 0) {
+		server->width = server->display.preferred_width;
+		server->height = server->display.preferred_height;
+	}
+
 	/* Blob support is explicit rather than inferred from ordinary pixel presentation. */
 	if ((server->display.flags & (GPU_DISPLAY_CONNECTED | GPU_DISPLAY_BLOB)) != (GPU_DISPLAY_CONNECTED | GPU_DISPLAY_BLOB))
 		return ENOTSUP;
