@@ -26,11 +26,56 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The longest list of the extensions' names, spaces between them. */
+#define FIXED_EXTENSIONS_LENGTH	1024U
+
+/*
+ * The extensions an OpenGL 3.x context names (WS068 p031): the ARB
+ * extensions of what the translation does (GL_ARB_compatibility from
+ * 3.1, the first entry).  An OpenGL 1.4 context names OpenGL ES's.
+ */
+static const char *const fixed_extensions[] = {
+	"GL_ARB_compatibility",
+	"GL_ARB_copy_buffer",
+	"GL_ARB_depth_buffer_float",
+	"GL_ARB_depth_clamp",
+	"GL_ARB_draw_elements_base_vertex",
+	"GL_ARB_draw_instanced",
+	"GL_ARB_framebuffer_object",
+	"GL_ARB_half_float_vertex",
+	"GL_ARB_instanced_arrays",
+	"GL_ARB_map_buffer_range",
+	"GL_ARB_occlusion_query2",
+	"GL_ARB_provoking_vertex",
+	"GL_ARB_sampler_objects",
+	"GL_ARB_seamless_cube_map",
+	"GL_ARB_sync",
+	"GL_ARB_texture_buffer_object",
+	"GL_ARB_texture_float",
+	"GL_ARB_texture_rectangle",
+	"GL_ARB_texture_rg",
+	"GL_ARB_texture_storage",
+	"GL_ARB_texture_swizzle",
+	"GL_ARB_uniform_buffer_object",
+	"GL_ARB_vertex_array_object"
+};
+
+/*
+ * The names of fixed_extensions joined with spaces, for an OpenGL 3.1
+ * context and (without the first) a 3.0 one; made at the first
+ * glGetString(GL_EXTENSIONS) and kept for the process.
+ */
+static char fixed_extensions_joined[FIXED_EXTENSIONS_LENGTH];
+
 static int fixed_capability(struct zegl_context *context, GLenum cap, int **flag);
 static struct gles_program *fixed_program(struct zegl_context *context, int *flat);
 static unsigned fixed_get(struct zegl_context *context, GLenum pname, GLfloat *values);
 static const GLubyte *fixed_string(GLenum name);
 static void fixed_release(struct gles_state *state);
+static unsigned fixed_glsl_version(void);
+static int fixed_extension_count(void);
+static const char *fixed_extension(GLuint index);
+static const GLubyte *fixed_extension_string(unsigned version);
 static struct fixed_state *fixed_new(struct gles_state *state);
 static GLuint fixed_make_program(unsigned which, struct fixed_uniforms *uniforms);
 static GLuint fixed_shader(GLenum type, const uint32_t *code, size_t size);
@@ -48,7 +93,10 @@ static const struct gles_fixed_hooks fixed_hooks = {
 	fixed_program,
 	fixed_get,
 	fixed_string,
-	fixed_release
+	fixed_release,
+	fixed_glsl_version,
+	fixed_extension_count,
+	fixed_extension
 };
 
 /*
@@ -1378,15 +1426,26 @@ static const GLubyte *
 fixed_string(
 	GLenum name)
 {
+	const GLubyte *extensions;
 	unsigned version;
 	GLint flags;
 
-	/* An OpenGL 3.0 context's, with GLSL 1.30. */
+	/* An OpenGL 3.1 context's, with GLSL 1.40, and a 3.0 one's, with GLSL 1.30. */
 	version = glx_version(&flags);
-	if (version >= 30U && name == GL_VERSION)
+	if (version == 31U && name == GL_VERSION)
+		return (const GLubyte *)"3.1 zedBSD (OpenGL ES 3.0 on Vulkan)";
+	if (version == 31U && name == GL_SHADING_LANGUAGE_VERSION)
+		return (const GLubyte *)"1.40";
+	if (version == 30U && name == GL_VERSION)
 		return (const GLubyte *)"3.0 zedBSD (OpenGL ES 3.0 on Vulkan)";
-	if (version >= 30U && name == GL_SHADING_LANGUAGE_VERSION)
+	if (version == 30U && name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"1.30";
+
+	/* Their extensions. */
+	if (version >= 30U && name == GL_EXTENSIONS) {
+		extensions = fixed_extension_string(version);
+		return extensions;
+	}
 
 	/* An OpenGL 1.4 context's; the rest are OpenGL ES's. */
 	if (name == GL_VERSION)
@@ -1394,6 +1453,97 @@ fixed_string(
 	if (name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"";
 	return NULL;
+}
+
+/* Returns the latest desktop GLSL version the current context takes: its GL's (1.30 for 3.0, 1.40 for 3.1), no limit for 1.4. */
+static unsigned
+fixed_glsl_version(void)
+{
+	unsigned version;
+	GLint flags;
+
+	/* The context's GL version. */
+	version = glx_version(&flags);
+	if (version == 30U)
+		return 130U;
+	if (version == 31U)
+		return 140U;
+
+	/* An OpenGL 1.4 context takes any. */
+	return 0U;
+}
+
+/* Returns how many extensions the current context names: an OpenGL 3.x context its own (3.0 without GL_ARB_compatibility), -1 for OpenGL ES's list. */
+static int
+fixed_extension_count(void)
+{
+	unsigned version;
+	GLint flags;
+	int count;
+
+	/* An OpenGL 1.4 context names OpenGL ES's. */
+	version = glx_version(&flags);
+	if (version < 30U)
+		return -1;
+
+	/* All of them, but GL_ARB_compatibility before 3.1. */
+	count = (int)(sizeof(fixed_extensions) / sizeof(fixed_extensions[0]));
+	if (version < 31U)
+		count--;
+
+	/* Succeeded: the count. */
+	return count;
+}
+
+/* Returns the name of the current OpenGL 3.x context's extension of an index below fixed_extension_count's. */
+static const char *
+fixed_extension(
+	GLuint index)
+{
+	unsigned version;
+	GLint flags;
+
+	/* A 3.0 context's list starts after GL_ARB_compatibility. */
+	version = glx_version(&flags);
+	if (version < 31U)
+		index++;
+
+	/* Succeeded: the name. */
+	return fixed_extensions[index];
+}
+
+/* Returns the extensions of an OpenGL 3.x context of a version joined with spaces (the joined list is made once). */
+static const GLubyte *
+fixed_extension_string(
+	unsigned version)
+{
+	size_t length;
+	size_t used;
+	unsigned index;
+
+	/* The joined names, made at the first call. */
+	if (fixed_extensions_joined[0] == '\0') {
+		used = 0U;
+		for (index = 0U; index < sizeof(fixed_extensions) / sizeof(fixed_extensions[0]); index++) {
+			length = strlen(fixed_extensions[index]);
+			if (used + length + 2U > sizeof(fixed_extensions_joined))
+				break;
+			if (used != 0U)
+				fixed_extensions_joined[used++] = ' ';
+			memcpy(fixed_extensions_joined + used, fixed_extensions[index], length);
+			used += length;
+		}
+
+		/* The end of the list. */
+		fixed_extensions_joined[used] = '\0';
+	}
+
+	/* A 3.0 context's list starts after the first name and its space. */
+	if (version < 31U)
+		return (const GLubyte *)(fixed_extensions_joined + strlen(fixed_extensions[0]) + 1U);
+
+	/* Succeeded: the whole list. */
+	return (const GLubyte *)fixed_extensions_joined;
 }
 
 /* Frees a context's fixed-function state (its programs go with the context's objects). */

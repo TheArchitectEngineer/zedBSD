@@ -36,6 +36,8 @@
 static void draw_primitives(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices, GLsizei instances);
 static int draw_indices(struct zegl_context *context, GLsizei count, GLenum type, const void *indices, uint32_t **out, uint32_t *largest, int *restarted);
 static uint32_t *draw_restart(GLenum mode, const uint32_t *indices, GLsizei count, uint32_t restart, int rotate, uint32_t *expanded);
+static uint32_t draw_restart_index(const struct gles_state *state, GLenum type);
+static void draw_base_vertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instances, GLint basevertex);
 static void draw_program(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices, GLsizei instances, int flat);
 static int draw_topology(GLenum mode, uint32_t *topology, int *strip);
 static int draw_vertices(struct gles_state *state, uint32_t vertices, uint32_t instances, struct gles_vertex_layout *layout, VkBuffer *buffers, VkDeviceSize *offsets);
@@ -382,6 +384,67 @@ glDrawElementsInstanced(
 	if (type == GL_NONE)
 		type = GL_INVALID_ENUM;
 	draw_primitives(mode, 0, count, type, indices, instancecount);
+}
+
+/*
+ * Draws primitives from the enabled arrays with count indices, each
+ * added to a base vertex (desktop GL 3.2, libGL).
+ */
+GL_APICALL void GL_APIENTRY
+glDrawElementsBaseVertex(
+	GLenum mode,
+	GLsizei count,
+	GLenum type,
+	const void *indices,
+	GLint basevertex)
+{
+	/* One instance. */
+	draw_base_vertex(mode, count, type, indices, 1, basevertex);
+}
+
+/*
+ * Draws primitives from the enabled arrays with count indices that lie
+ * between start and end (a hint), each added to a base vertex.
+ */
+GL_APICALL void GL_APIENTRY
+glDrawRangeElementsBaseVertex(
+	GLenum mode,
+	GLuint start,
+	GLuint end,
+	GLsizei count,
+	GLenum type,
+	const void *indices,
+	GLint basevertex)
+{
+	struct zegl_context *context;
+
+	/* A range that does not end before it starts. */
+	if (end < start) {
+		context = gles_context();
+		if (context != NULL)
+			gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* One instance. */
+	draw_base_vertex(mode, count, type, indices, 1, basevertex);
+}
+
+/*
+ * Draws instances of primitives from the enabled arrays with count
+ * indices, each added to a base vertex.
+ */
+GL_APICALL void GL_APIENTRY
+glDrawElementsInstancedBaseVertex(
+	GLenum mode,
+	GLsizei count,
+	GLenum type,
+	const void *indices,
+	GLsizei instancecount,
+	GLint basevertex)
+{
+	/* The instances. */
+	draw_base_vertex(mode, count, type, indices, instancecount, basevertex);
 }
 
 /*
@@ -1270,9 +1333,21 @@ draw_primitives(
 	if (state == NULL || state->conditional_skip)
 		return;
 
-	/* A program the application made draws as it is (OpenGL ES has nothing else). */
+	/*
+	 * A program the application made draws as it is (OpenGL ES has
+	 * nothing else); its flat inputs take GL's provoking vertex, the last
+	 * of each primitive unless desktop GL's glProvokingVertex chose the
+	 * first (Vulkan's).  A program that captures outputs keeps GL's order
+	 * of the vertices instead (transform feedback records them so).
+	 */
 	if (state->program != NULL || gles_fixed == NULL) {
-		draw_program(mode, first, count, type, indices, instances, 0);
+		flat = 0;
+		if (state->program != NULL &&
+		    state->program->flat_inputs &&
+		    state->program->capture_count == 0U &&
+		    state->provoking_vertex != GL_FIRST_VERTEX_CONVENTION)
+			flat = 1;
+		draw_program(mode, first, count, type, indices, instances, flat);
 		return;
 	}
 
@@ -1386,12 +1461,8 @@ draw_program(
 			return;
 	}
 
-	/* The restart index of the type (the largest it holds). */
-	restart = 0xffffffffU;
-	if (type == GL_UNSIGNED_BYTE)
-		restart = 0xffU;
-	if (type == GL_UNSIGNED_SHORT)
-		restart = 0xffffU;
+	/* The restart index (the largest of the type, or desktop GL's own). */
+	restart = draw_restart_index(state, type);
 
 	/*
 	 * Indices the restart index splits become a list of the pieces; a
@@ -1543,6 +1614,7 @@ draw_indices(
 	size_t size;
 	size_t offset;
 	GLsizei index;
+	int restarts;
 
 	/* The index size. */
 	state = gles_state(context);
@@ -1558,12 +1630,11 @@ draw_indices(
 		return -1;
 	}
 
-	/* The restart index: the largest of the type, when restarts are on. */
-	restart = 0xffffffffU;
-	if (size == 1U)
-		restart = 0xffU;
-	if (size == 2U)
-		restart = 0xffffU;
+	/* The restart index: the largest of the type, or desktop GL's own, when restarts are on. */
+	restart = draw_restart_index(state, type);
+	restarts = 0;
+	if (state->primitive_restart || state->primitive_restart_any)
+		restarts = 1;
 	*restarted = 0;
 
 	/* Where they are: an offset into the element buffer, or a pointer. */
@@ -1605,10 +1676,13 @@ draw_indices(
 		}
 
 		/* A restart index splits the primitives and names no vertex. */
-		if (state->primitive_restart && read[index] == restart) {
+		if (restarts && read[index] == restart) {
 			*restarted = 1;
 			continue;
 		}
+
+		/* The base vertex of glDrawElementsBaseVertex added. */
+		read[index] += (uint32_t)state->base_vertex;
 
 		/* The largest. */
 		if (read[index] > *largest)
@@ -2455,6 +2529,15 @@ draw_sampler_shape(
 	case GL_INT_SAMPLER_2D_ARRAY:
 	case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY:
 		return GLES_SHAPE_ARRAY;
+	case GL_SAMPLER_2D_RECT:
+	case GL_SAMPLER_2D_RECT_SHADOW:
+	case GL_INT_SAMPLER_2D_RECT:
+	case GL_UNSIGNED_INT_SAMPLER_2D_RECT:
+		return GLES_SHAPE_RECT;
+	case GL_SAMPLER_BUFFER:
+	case GL_INT_SAMPLER_BUFFER:
+	case GL_UNSIGNED_INT_SAMPLER_BUFFER:
+		return GLES_SHAPE_BUFFER;
 	default:
 		break;
 	}
@@ -2474,15 +2557,20 @@ draw_sampler_kind(
 	case GL_INT_SAMPLER_CUBE:
 	case GL_INT_SAMPLER_3D:
 	case GL_INT_SAMPLER_2D_ARRAY:
+	case GL_INT_SAMPLER_2D_RECT:
+	case GL_INT_SAMPLER_BUFFER:
 		return 1U;
 	case GL_UNSIGNED_INT_SAMPLER_2D:
 	case GL_UNSIGNED_INT_SAMPLER_CUBE:
 	case GL_UNSIGNED_INT_SAMPLER_3D:
 	case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY:
+	case GL_UNSIGNED_INT_SAMPLER_2D_RECT:
+	case GL_UNSIGNED_INT_SAMPLER_BUFFER:
 		return 2U;
 	case GL_SAMPLER_2D_SHADOW:
 	case GL_SAMPLER_CUBE_SHADOW:
 	case GL_SAMPLER_2D_ARRAY_SHADOW:
+	case GL_SAMPLER_2D_RECT_SHADOW:
 		return 3U;
 	default:
 		break;
@@ -2596,6 +2684,10 @@ draw_raster(
 	/* Polygon offset, and whether rasterization is discarded. */
 	raster->polygon_offset = (uint32_t)state->polygon_offset;
 	raster->discard = (uint32_t)state->rasterizer_discard;
+
+	/* Depth clamping, when the device has it. */
+	if (state->depth_clamp && state->display->features.depthClamp)
+		raster->depth_clamp = 1U;
 
 	/* A device that blends every colour attachment alike blends none when they differ. */
 	if (!state->display->features.independentBlend &&
@@ -2749,6 +2841,7 @@ draw_pipeline(
 		rasterization.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	rasterization.depthBiasEnable = raster->polygon_offset;
 	rasterization.rasterizerDiscardEnable = raster->discard;
+	rasterization.depthClampEnable = raster->depth_clamp;
 	rasterization.lineWidth = 1.0f;
 
 	/* One sample, alpha to coverage as GL has it. */
@@ -2931,12 +3024,13 @@ draw_descriptors(
 	const VkDescriptorBufferInfo *capture,
 	uint32_t *offset)
 {
-	VkDescriptorPoolSize sizes[4];
+	VkDescriptorPoolSize sizes[5];
 	VkDescriptorPoolCreateInfo create;
 	VkDescriptorSetAllocateInfo allocate;
 	VkWriteDescriptorSet writes[GLES_UNITS + 2U + GLES_NAMED_BLOCKS];
 	VkDescriptorBufferInfo block;
 	VkDescriptorImageInfo images[GLES_UNITS];
+	VkBufferView texel_views[GLES_UNITS];
 	uint32_t bindings[GLES_UNITS];
 	struct gles_set_cache *cache;
 	struct gles_program *program;
@@ -2972,19 +3066,33 @@ draw_descriptors(
 		block.range = program->uniform_size;
 	}
 
-	/* Each sampler's texture, up to date, with its sampler. */
+	/* Each sampler's texture, up to date, with its sampler (a buffer texture's view of its texels). */
 	samplers = 0U;
 	memset(images, 0, sizeof(images));
+	memset(texel_views, 0, sizeof(texel_views));
 	for (index = 0U; index < program->uniform_count && samplers < GLES_UNITS; index++) {
 		if (!program->uniforms[index].sampler)
 			continue;
 		shape = draw_sampler_shape(program->uniforms[index].type);
 		kind = draw_sampler_kind(program->uniforms[index].type);
+		unit = program->uniforms[index].unit;
+
+		/* A buffer texture: the view of its buffer's texels (zeros without one). */
+		if (shape == GLES_SHAPE_BUFFER) {
+			texture = NULL;
+			if (unit >= 0 && (unsigned)unit < GLES_UNITS)
+				texture = state->buffer_units[unit];
+			texel_views[samplers] = gles_texture_buffer_view(state, texture, kind);
+			if (texel_views[samplers] == VK_NULL_HANDLE)
+				return VK_NULL_HANDLE;
+			bindings[samplers] = program->uniforms[index].binding;
+			samplers++;
+			continue;
+		}
 
 		/* The unit's texture of the sampler's target, and the unit's sampler object's sampling (NULL: the texture's own). */
 		texture = NULL;
 		sampling = NULL;
-		unit = program->uniforms[index].unit;
 		if (unit >= 0 && (unsigned)unit < GLES_UNITS) {
 			texture = state->units[unit];
 			if (shape == GLES_SHAPE_CUBE)
@@ -2993,14 +3101,18 @@ draw_descriptors(
 				texture = state->volume_units[unit];
 			if (shape == GLES_SHAPE_ARRAY)
 				texture = state->array_units[unit];
+			if (shape == GLES_SHAPE_RECT)
+				texture = state->rect_units[unit];
 			if (state->unit_samplers[unit] != NULL)
 				sampling = &state->unit_samplers[unit]->sampling;
 		}
 
-		/* One that cannot be sampled so, or holds texels of another kind than the sampler reads, reads as black. */
+		/* One that cannot be sampled so, or holds texels of another kind than the sampler reads, reads as black (a rectangle's as a 2D texture's). */
 		status = gles_texture_complete(texture, sampling);
 		if (status)
 			status = draw_texture_matches(texture, kind);
+		if (!status && shape == GLES_SHAPE_RECT)
+			shape = GLES_SHAPE_2D;
 		if (!status) {
 			texture = gles_texture_black(state, shape, kind);
 			sampling = NULL;
@@ -3032,6 +3144,13 @@ draw_descriptors(
 	differs = 0;
 	if (same && samplers != 0U)
 		differs = memcmp(cache->images, images, samplers * sizeof(images[0]));
+	if (differs != 0)
+		same = 0;
+
+	/* And the same buffer textures' views. */
+	differs = 0;
+	if (same && samplers != 0U)
+		differs = memcmp(cache->texel_views, texel_views, samplers * sizeof(texel_views[0]));
 	if (differs != 0)
 		same = 0;
 
@@ -3071,10 +3190,12 @@ draw_descriptors(
 		sizes[2].descriptorCount = DRAW_POOL_SETS * GLES_NAMED_BLOCKS;
 		sizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		sizes[3].descriptorCount = DRAW_POOL_SETS;
+		sizes[4].type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+		sizes[4].descriptorCount = DRAW_POOL_SETS * GLES_UNITS;
 		memset(&create, 0, sizeof(create));
 		create.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		create.maxSets = DRAW_POOL_SETS;
-		create.poolSizeCount = 4U;
+		create.poolSizeCount = 5U;
 		create.pPoolSizes = sizes;
 		result = vkCreateDescriptorPool(state->device, &create, NULL, &pool->pool);
 		if (result != VK_SUCCESS) {
@@ -3104,14 +3225,21 @@ draw_descriptors(
 		count++;
 	}
 
-	/* The samplers. */
+	/* The samplers (a buffer texture's texels as a texel buffer). */
 	for (index = 0U; index < samplers; index++) {
 		writes[count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		writes[count].dstSet = set;
 		writes[count].dstBinding = bindings[index];
 		writes[count].descriptorCount = 1U;
-		writes[count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		writes[count].pImageInfo = &images[index];
+		if (texel_views[index] != VK_NULL_HANDLE) {
+			writes[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+			writes[count].pTexelBufferView = &texel_views[index];
+		} else {
+			writes[count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			writes[count].pImageInfo = &images[index];
+		}
+
+		/* Counted. */
 		count++;
 	}
 
@@ -3149,6 +3277,7 @@ draw_descriptors(
 	cache->block = block.buffer;
 	cache->count = samplers;
 	memcpy(cache->images, images, sizeof(images));
+	memcpy(cache->texel_views, texel_views, sizeof(texel_views));
 	cache->block_count = program->block_count;
 	memcpy(cache->blocks, blocks, GLES_NAMED_BLOCKS * sizeof(blocks[0]));
 	return set;
@@ -3447,4 +3576,55 @@ draw_stencil_op(
 
 	/* GL_KEEP. */
 	return VK_STENCIL_OP_KEEP;
+}
+
+/*
+ * Returns the index that restarts primitives for indices of a type: the
+ * largest of the type with GL_PRIMITIVE_RESTART_FIXED_INDEX on (which
+ * takes precedence), else desktop GL's GL_PRIMITIVE_RESTART_INDEX.
+ */
+static uint32_t
+draw_restart_index(
+	const struct gles_state *state,
+	GLenum type)
+{
+	/* Desktop GL's own index, when only its restarts are on. */
+	if (!state->primitive_restart && state->primitive_restart_any)
+		return state->restart_index;
+
+	/* The largest of the type. */
+	if (type == GL_UNSIGNED_BYTE)
+		return 0xffU;
+	if (type == GL_UNSIGNED_SHORT)
+		return 0xffffU;
+
+	/* Succeeded: the largest 32-bit index. */
+	return 0xffffffffU;
+}
+
+/* Draws indexed primitives with a base vertex added to each index (restart indices left as they are). */
+static void
+draw_base_vertex(
+	GLenum mode,
+	GLsizei count,
+	GLenum type,
+	const void *indices,
+	GLsizei instances,
+	GLint basevertex)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+
+	/* The draw, with the base vertex for its indices only. */
+	if (type == GL_NONE)
+		type = GL_INVALID_ENUM;
+	state->base_vertex = basevertex;
+	draw_primitives(mode, 0, count, type, indices, instances);
+	state->base_vertex = 0;
 }

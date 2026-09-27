@@ -67,6 +67,41 @@
 #define GL_CONTEXT_FLAGS	0x821E
 #endif
 
+/* Desktop GL 3.1 and 3.2's rectangle and buffer textures, primitive restart, depth clamp, seamless cube maps and provoking vertex (libGL). */
+#ifndef GL_TEXTURE_RECTANGLE
+#define GL_TEXTURE_RECTANGLE		0x84F5
+#define GL_TEXTURE_BINDING_RECTANGLE	0x84F6
+#define GL_MAX_RECTANGLE_TEXTURE_SIZE	0x84F8
+#define GL_SAMPLER_2D_RECT		0x8B63
+#define GL_SAMPLER_2D_RECT_SHADOW	0x8B64
+#define GL_INT_SAMPLER_2D_RECT		0x8DCD
+#define GL_UNSIGNED_INT_SAMPLER_2D_RECT	0x8DD5
+#endif
+#ifndef GL_TEXTURE_BUFFER
+#define GL_TEXTURE_BUFFER		0x8C2A
+#define GL_MAX_TEXTURE_BUFFER_SIZE	0x8C2B
+#define GL_TEXTURE_BINDING_BUFFER	0x8C2C
+#define GL_TEXTURE_BUFFER_DATA_STORE_BINDING 0x8C2D
+#define GL_SAMPLER_BUFFER		0x8DC2
+#define GL_INT_SAMPLER_BUFFER		0x8DD0
+#define GL_UNSIGNED_INT_SAMPLER_BUFFER	0x8DD8
+#endif
+#ifndef GL_PRIMITIVE_RESTART
+#define GL_PRIMITIVE_RESTART		0x8F9D
+#define GL_PRIMITIVE_RESTART_INDEX	0x8F9E
+#endif
+#ifndef GL_DEPTH_CLAMP
+#define GL_DEPTH_CLAMP			0x864F
+#endif
+#ifndef GL_TEXTURE_CUBE_MAP_SEAMLESS
+#define GL_TEXTURE_CUBE_MAP_SEAMLESS	0x884F
+#endif
+#ifndef GL_PROVOKING_VERTEX
+#define GL_FIRST_VERTEX_CONVENTION	0x8E4D
+#define GL_LAST_VERTEX_CONVENTION	0x8E4E
+#define GL_PROVOKING_VERTEX		0x8E4F
+#endif
+
 /* How many vertex attributes, texture units and texture levels a context has. */
 #define GLES_ATTRIBS		16U
 #define GLES_UNITS		16U
@@ -81,6 +116,15 @@
 #define GLES_SHAPE_3D		2U
 #define GLES_SHAPE_ARRAY	3U
 #define GLES_SHAPES		4U
+
+/*
+ * Desktop GL's shapes (libGL): a rectangle texture (a 2D image read with
+ * coordinates in texels, black as a 2D texture) and a buffer texture (a
+ * buffer object read as texels).  They come after the shapes of the black
+ * textures.
+ */
+#define GLES_SHAPE_RECT		4U
+#define GLES_SHAPE_BUFFER	5U
 
 /* The largest 3D texture side and the most layers of a 2D array texture (at most the device's). */
 #define GLES_MAX_3D_SIZE	2048
@@ -314,6 +358,22 @@ struct gles_texture {
 	uint32_t level_count;
 	uint64_t used;
 	const struct gles_format *image_format;
+
+	/*
+	 * A buffer texture's buffer object and texel format (glTexBuffer: the
+	 * internal format, its Vulkan format, bytes and kind, 0 float, 1 int,
+	 * 2 unsigned), and the view of the buffer's device copy draws read,
+	 * with the device buffer and range it was made for (made again when
+	 * they change).
+	 */
+	struct gles_buffer *texel_buffer;
+	GLenum texel_internal;
+	VkFormat texel_vk;
+	unsigned texel_bytes;
+	unsigned texel_kind;
+	VkBufferView texel_view;
+	VkBuffer texel_view_buffer;
+	VkDeviceSize texel_view_range;
 
 	/*
 	 * The views of single levels and layers framebuffer objects draw
@@ -705,6 +765,9 @@ struct gles_program {
 	GLuint frag_bound_locations[GLES_DRAW_BUFFERS];
 	unsigned frag_bound_count;
 
+	/* Whether the fragment shader has an input interpolated flat, which takes GL's provoking vertex. */
+	int flat_inputs;
+
 	/* The fragment shader's outputs, by name and location (glGetFragDataLocation). */
 	char output_names[GLES_DRAW_BUFFERS][GLES_NAME];
 	GLint output_locations[GLES_DRAW_BUFFERS];
@@ -790,11 +853,12 @@ struct gles_chunk {
  * A Vulkan object that waits for the frame that uses it to be done.
  */
 struct gles_garbage {
-	/* A buffer or an image with its view, and their memory. */
+	/* A buffer or an image with its view, and their memory; a view of a buffer's texels. */
 	VkBuffer buffer;
 	VkImage image;
 	VkImageView view;
 	VkDeviceMemory memory;
+	VkBufferView buffer_view;
 
 	/* A pipeline, or what a program's link made. */
 	VkPipeline pipeline;
@@ -861,6 +925,9 @@ struct gles_raster {
 
 	/* Rasterization discarded (GL_RASTERIZER_DISCARD). */
 	uint32_t discard;
+
+	/* Depths clamped rather than clipped (desktop GL's GL_DEPTH_CLAMP, when the device can). */
+	uint32_t depth_clamp;
 };
 
 /*
@@ -906,6 +973,9 @@ struct gles_set_cache {
 	VkBuffer block;
 	uint32_t count;
 	VkDescriptorImageInfo images[GLES_UNITS];
+
+	/* The views of the buffer textures' texels read in place of images (desktop GL; VK_NULL_HANDLE for an image). */
+	VkBufferView texel_views[GLES_UNITS];
 
 	/* The named blocks' buffers. */
 	uint32_t block_count;
@@ -957,6 +1027,9 @@ struct gles_state {
 	struct gles_buffer *uniform_buffer;
 	struct gles_buffer *pixel_pack_buffer;
 	struct gles_buffer *pixel_unpack_buffer;
+
+	/* The buffer bound to desktop GL's GL_TEXTURE_BUFFER target (libGL; glTexBuffer names its buffer itself). */
+	struct gles_buffer *texture_buffer;
 	struct gles_buffer *feedback_buffer;
 
 	/* The indexed binding points of uniform buffers and of transform feedback buffers. */
@@ -978,6 +1051,18 @@ struct gles_state {
 	/* Whether the largest index of its type restarts strips, loops and fans (GL_PRIMITIVE_RESTART_FIXED_INDEX). */
 	int primitive_restart;
 
+	/* Desktop GL's primitive restart (libGL): whether it is on, and the index that restarts (GL_PRIMITIVE_RESTART_INDEX). */
+	int primitive_restart_any;
+	GLuint restart_index;
+
+	/* Desktop GL's depth clamping, seamless cube maps (always seamless) and provoking vertex (libGL). */
+	int depth_clamp;
+	int cube_seamless;
+	GLenum provoking_vertex;
+
+	/* The base vertex added to each index of the draw being made (glDrawElementsBaseVertex; 0 otherwise). */
+	GLint base_vertex;
+
 	/* The current program. */
 	struct gles_program *program;
 
@@ -987,6 +1072,10 @@ struct gles_state {
 	struct gles_texture *cube_units[GLES_UNITS];
 	struct gles_texture *volume_units[GLES_UNITS];
 	struct gles_texture *array_units[GLES_UNITS];
+
+	/* Each unit's rectangle texture and buffer texture (desktop GL, libGL). */
+	struct gles_texture *rect_units[GLES_UNITS];
+	struct gles_texture *buffer_units[GLES_UNITS];
 
 	/* Each unit's sampler object (NULL: its textures' own sampling), and their namespace. */
 	struct gles_sampler_object *unit_samplers[GLES_UNITS];
@@ -1148,6 +1237,15 @@ struct gles_state {
 
 	/* The textures sampled where a unit has no complete texture (black), by [shape][float, int, uint, depth], made at their first use. */
 	struct gles_texture *blacks[GLES_SHAPES][GLES_BLACK_KINDS];
+
+	/*
+	 * The texel buffer read where a unit has no buffer texture (four zero
+	 * words), its memory, and its views as float, signed and unsigned
+	 * texels, made at the first use.
+	 */
+	VkBuffer black_buffer;
+	VkDeviceMemory black_buffer_memory;
+	VkBufferView black_buffer_views[3];
 };
 
 /*
@@ -1167,8 +1265,16 @@ struct gles_fixed_hooks {
 	/* A string that is the layer's (GL_VERSION), or NULL. */
 	const GLubyte *(*string)(GLenum name);
 
+
 	/* Frees a context's fixed-function state. */
 	void (*release)(struct gles_state *state);
+
+	/* The latest desktop GLSL version the context's shaders may have (130 for OpenGL 3.0), 0 for no limit. */
+	unsigned (*glsl_version)(void);
+
+	/* How many extensions the context names (-1: OpenGL ES's list), and each one's name (glGetStringi). */
+	int (*extension_count)(void);
+	const char *(*extension)(GLuint index);
 };
 
 /* The fixed-function layer, NULL without one (gles.c; libGL sets it). */
@@ -1203,6 +1309,7 @@ int gles_texture_sync(struct gles_state *state, struct gles_texture *texture);
 int gles_texture_complete(struct gles_texture *texture, const struct gles_sampling *sampling);
 VkSampler gles_sampler_get(struct gles_state *state, struct gles_texture *texture, const struct gles_sampling *sampling);
 struct gles_texture *gles_texture_black(struct gles_state *state, unsigned shape, unsigned kind);
+VkBufferView gles_texture_buffer_view(struct gles_state *state, struct gles_texture *texture, unsigned kind);
 void gles_texture_free(struct gles_state *state, struct gles_texture *texture);
 void gles_texture_define(struct gles_texture *texture, unsigned face, GLint level, int width, int height, unsigned char *pixels, const struct gles_format *format);
 void gles_texture_define_volume(struct gles_texture *texture, GLint level, int width, int height, int depth, unsigned char *pixels, const struct gles_format *format);
