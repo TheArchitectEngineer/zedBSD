@@ -65,6 +65,7 @@ sinh(
 	double magnitude;
 	double result;
 	int exponent;
+	double rounded;
 
 	/* A NaN is passed on, and an infinity is its own result. */
 	bits = libm_bits(x) & LIBM_DOUBLE_MAGNITUDE;
@@ -108,8 +109,11 @@ sinh(
 	value.high *= 0.5;
 	value.low *= 0.5;
 
-	/* Succeeded: sinh is odd. */
-	return libm_signed_result(value, x);
+	/* Rounds the pair and gives it the sign of x. */
+	rounded = libm_signed_result(value, x);
+
+	/* Succeeded: the signed result. */
+	return rounded;
 }
 
 /*
@@ -177,6 +181,7 @@ tanh(
 	struct libm_dd value;
 	uint64_t bits;
 	double magnitude;
+	double rounded;
 
 	/* A NaN is passed on. */
 	if (x != x)
@@ -202,8 +207,11 @@ tanh(
 	denominator = libm_dd_add_double(growth, 2.0);
 	value = libm_dd_divide(growth, denominator);
 
-	/* Succeeded: tanh is odd. */
-	return libm_signed_result(value, x);
+	/* Rounds the pair and gives it the sign of x. */
+	rounded = libm_signed_result(value, x);
+
+	/* Succeeded: the signed result. */
+	return rounded;
 }
 
 /*
@@ -219,6 +227,7 @@ asinh(
 	struct libm_dd value;
 	uint64_t bits;
 	double magnitude;
+	double rounded;
 
 	/* A NaN is passed on, and an infinity is its own result. */
 	bits = libm_bits(x) & LIBM_DOUBLE_MAGNITUDE;
@@ -248,8 +257,11 @@ asinh(
 	sum = libm_dd_add_double(root, magnitude);
 	value = libm_log_of_dd(sum);
 
-	/* Succeeded: asinh is odd. */
-	return libm_signed_result(value, x);
+	/* Rounds the pair and gives it the sign of x. */
+	rounded = libm_signed_result(value, x);
+
+	/* Succeeded: the signed result. */
+	return rounded;
 }
 
 /*
@@ -309,6 +321,7 @@ atanh(
 	struct libm_dd value;
 	uint64_t bits;
 	double magnitude;
+	double rounded;
 
 	/* A NaN is passed on. */
 	if (x != x)
@@ -339,8 +352,11 @@ atanh(
 	value.high *= 0.5;
 	value.low *= 0.5;
 
-	/* Succeeded: atanh is odd. */
-	return libm_signed_result(value, x);
+	/* Rounds the pair and gives it the sign of x. */
+	rounded = libm_signed_result(value, x);
+
+	/* Succeeded: the signed result. */
+	return rounded;
 }
 
 /*
@@ -351,12 +367,16 @@ sinhf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = sinh((double)x);
 
-	/* Succeeded: the narrowing reports the float range. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -367,12 +387,16 @@ coshf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = cosh((double)x);
 
-	/* Succeeded: the narrowing reports the float range. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -383,12 +407,16 @@ tanhf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = tanh((double)x);
 
-	/* Succeeded: the narrowing reports a tiny result. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -399,12 +427,16 @@ asinhf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = asinh((double)x);
 
-	/* Succeeded: the narrowing reports a tiny result. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -416,7 +448,7 @@ acoshf(
 {
 	double value;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = acosh((double)x);
 
 	/* Succeeded: an inverse cosine of a float is inside the float range. */
@@ -431,12 +463,16 @@ atanhf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = atanh((double)x);
 
-	/* Succeeded: the narrowing reports a tiny result. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*

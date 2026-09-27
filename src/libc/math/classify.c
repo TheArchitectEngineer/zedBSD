@@ -205,6 +205,8 @@ nextafter(
 	double x,
 	double y)
 {
+	double neighbour;
+
 	/* A NaN in either argument, unequal to itself, is passed on. */
 	if (x != x || y != y)
 		return x + y;
@@ -217,8 +219,11 @@ nextafter(
 	if (x < y)
 		return libm_step(x, 1);
 
-	/* Succeeded: y lies below x. */
-	return libm_step(x, 0);
+	/* y lies below x, so the step goes downwards. */
+	neighbour = libm_step(x, 0);
+
+	/* Succeeded: the neighbour below x. */
+	return neighbour;
 }
 
 /*
@@ -229,6 +234,8 @@ nextafterf(
 	float x,
 	float y)
 {
+	float neighbour;
+
 	/* A NaN in either argument, unequal to itself, is passed on. */
 	if (x != x || y != y)
 		return x + y;
@@ -241,8 +248,11 @@ nextafterf(
 	if (x < y)
 		return libm_step_float(x, 1);
 
-	/* Succeeded: y lies below x. */
-	return libm_step_float(x, 0);
+	/* y lies below x, so the step goes downwards. */
+	neighbour = libm_step_float(x, 0);
+
+	/* Succeeded: the neighbour below x. */
+	return neighbour;
 }
 
 /*
@@ -254,6 +264,8 @@ nexttoward(
 	double x,
 	long double y)
 {
+	double neighbour;
+
 	/* A NaN in either argument is passed on. */
 	if (x != x)
 		return x + x;
@@ -268,8 +280,11 @@ nexttoward(
 	if ((long double)x < y)
 		return libm_step(x, 1);
 
-	/* Succeeded: y lies below x. */
-	return libm_step(x, 0);
+	/* y lies below x, so the step goes downwards. */
+	neighbour = libm_step(x, 0);
+
+	/* Succeeded: the neighbour below x. */
+	return neighbour;
 }
 
 /*
@@ -281,6 +296,8 @@ nexttowardf(
 	float x,
 	long double y)
 {
+	float neighbour;
+
 	/* A NaN in either argument is passed on. */
 	if (x != x)
 		return x + x;
@@ -295,8 +312,11 @@ nexttowardf(
 	if ((long double)x < y)
 		return libm_step_float(x, 1);
 
-	/* Succeeded: y lies below x. */
-	return libm_step_float(x, 0);
+	/* y lies below x, so the step goes downwards. */
+	neighbour = libm_step_float(x, 0);
+
+	/* Succeeded: the neighbour below x. */
+	return neighbour;
 }
 
 /*
@@ -471,6 +491,7 @@ fdimf(
 	float y)
 {
 	double difference;
+	float narrowed;
 
 	/* A NaN in either argument, unequal to itself, is passed on. */
 	if (x != x || y != y)
@@ -483,8 +504,11 @@ fdimf(
 	/* The double difference is exact and rounds to float once. */
 	difference = (double)x - (double)y;
 
-	/* Succeeded: the narrowed difference reports its own overflow. */
-	return __libm_narrow(difference);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(difference);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -679,6 +703,7 @@ scalbnf(
 	int distance;
 	double scaled;
 	uint32_t magnitude;
+	float narrowed;
 
 	/* Zero, infinity and NaN are unchanged by scaling. */
 	magnitude = libm_float_bits(x) & LIBM_FLOAT_MAGNITUDE;
@@ -697,8 +722,11 @@ scalbnf(
 		distance = -400;
 	scaled = scalbn((double)x, distance);
 
-	/* Succeeded: the narrowing rounds and reports the float range. */
-	return __libm_narrow(scaled);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(scaled);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*

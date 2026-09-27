@@ -372,12 +372,16 @@ j0f(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = j0((double)x);
 
-	/* Succeeded: the narrowing reports a tiny result. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -388,12 +392,16 @@ j1f(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = j1((double)x);
 
-	/* Succeeded: the narrowing reports a tiny result. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -405,12 +413,16 @@ jnf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = jn(n, (double)x);
 
-	/* Succeeded: the narrowing reports a tiny result. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -421,12 +433,16 @@ y0f(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = y0((double)x);
 
-	/* Succeeded: the narrowing reports the float range. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -437,12 +453,16 @@ y1f(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = y1((double)x);
 
-	/* Succeeded: the narrowing reports the float range. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -454,12 +474,16 @@ ynf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = yn(n, (double)x);
 
-	/* Succeeded: the narrowing reports the float range. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*

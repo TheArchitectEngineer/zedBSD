@@ -163,6 +163,7 @@ fmaf(
 	double partial;
 	uint64_t bits;
 	uint64_t magnitude;
+	float narrowed;
 
 	/*
 	 * The product of two floats is exact in double.  A product that is
@@ -196,8 +197,11 @@ fmaf(
 		bits--;
 	}
 
-	/* Succeeded: the odd sum narrows to the correctly rounded float. */
-	return __libm_narrow(libm_from_bits(bits));
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(libm_from_bits(bits));
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*

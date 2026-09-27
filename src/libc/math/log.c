@@ -267,7 +267,7 @@ logf(
 {
 	double value;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = log((double)x);
 
 	/* Succeeded: every float logarithm is inside the float range. */
@@ -283,7 +283,7 @@ log2f(
 {
 	double value;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = log2((double)x);
 
 	/* Succeeded: every float logarithm is inside the float range. */
@@ -299,7 +299,7 @@ log10f(
 {
 	double value;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = log10((double)x);
 
 	/* Succeeded: every float logarithm is inside the float range. */
@@ -314,12 +314,16 @@ log1pf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = log1p((double)x);
 
-	/* Succeeded: the narrowing reports a tiny result. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
