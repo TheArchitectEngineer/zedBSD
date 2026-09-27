@@ -8,9 +8,11 @@
 /*
  * The single wl_seat: pointer and keyboard objects, focus and event delivery.
  *
- * Focus follows the display: the surface currently scanned out is the one
- * that receives pointer and keyboard events, and only that surface's client
- * hears them.  A client that never asks for a pointer or keyboard receives
+ * Focus follows the display: the surface currently scanned out has the
+ * keyboard, and only that surface's client hears it.  The pointer goes to
+ * the same window, or to the sub-surface of it under the pointer (p077);
+ * while a popup's grab has the pointer, to the surface of the grab's chain
+ * under it (p076).  A client that never asks for a pointer or keyboard receives
  * nothing.  Coordinates are surface-local integers carried as wl_fixed, the
  * surface being the whole output of --width by --height pixels.
  */
@@ -19,6 +21,7 @@
 #include "menu.h"
 #include "popup.h"
 #include "toplevel.h"
+#include "subsurface.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -168,14 +171,17 @@ zwl_seat_request(
 			if (surface_id != 0) {
 				/* A foreign object, or a surface with a window role, cannot become a cursor. */
 				surface = zwl_find(object->client, surface_id);
-				if (surface == NULL || surface->kind != ZWL_SURFACE || surface->role != NULL)
+				if (surface == NULL ||
+				    surface->kind != ZWL_SURFACE ||
+				    surface->role != NULL ||
+				    surface->sub_role != NULL)
 					error = EPROTO;
 			}
 
 			/* Only the client the pointer is over sets the cursor (design D8). */
 			if (error == 0 &&
-			    object->client->server->focus != NULL &&
-			    object->client->server->focus->client == object->client)
+			    object->client->server->pointer_surface != NULL &&
+			    object->client->server->pointer_surface->client == object->client)
 				set_cursor(object->client->server, surface, bytes);
 		} else if (opcode == 1U && size == 0 && object->version >= RELEASE_VERSION) {
 			/* release exists from version 3. */
@@ -239,26 +245,62 @@ zwl_seat_focus(
 	/* A popup holding the grab has the keyboard of its client's window (popup.c). */
 	target = zwl_popup_focus(server, target);
 
-	/* An unchanged focus sends nothing. */
-	if (target == server->focus)
+	/* A new focus: the old surface's keyboards hear leave before the new one's hear enter; the arrow comes back. */
+	if (target != server->focus) {
+		if (server->focus != NULL)
+			send_leave(server->focus);
+		zwl_cursor_default(server);
+
+		/*
+		 * The focus names the surface whose client's keyboard objects have
+		 * all been told enter; it is cleared before that surface is freed.
+		 */
+		server->focus = target;
+		if (target != NULL)
+			send_enter(target);
+	}
+
+	/* Succeeded: the pointer follows (the focused window, or the surface of it under the pointer). */
+	zwl_seat_pointer_update(server);
+}
+
+/*
+ * Moves the pointer to the surface that should hear it now: while a
+ * popup's grab has the pointer, the surface of the grab's chain under it
+ * (none outside the chain); otherwise the focused window.  Either way the
+ * topmost sub-surface of that surface under the pointer takes it instead
+ * (subsurface.c).  The surface it leaves hears leave, the new one enter.
+ */
+void
+zwl_seat_pointer_update(
+	struct zwl_server *server)
+{
+	struct zwl_object *base;
+	struct zwl_object *target;
+	struct zwl_object *deeper;
+
+	/* The surface the pointer belongs to: the grab's chain, or the focus. */
+	if (server->pointer_grabbed) {
+		base = zwl_popup_chain_at(server);
+	} else {
+		base = server->focus;
+	}
+
+	/* Its sub-surface under the pointer, when there is one. */
+	target = base;
+	if (base != NULL) {
+		deeper = zwl_subsurface_at(base, server->pointer_x, server->pointer_y);
+		if (deeper != NULL)
+			target = deeper;
+	}
+
+	/* An unchanged surface hears nothing. */
+	if (target == server->pointer_surface)
 		return;
 
-	/* The old surface hears leave before the new one hears enter; the arrow comes back. */
-	if (server->focus != NULL)
-		send_leave(server->focus);
-	zwl_cursor_default(server);
-
-	/*
-	 * The focus pointer names the surface whose client's pointer and keyboard
-	 * objects have all been told enter; it is cleared before that surface is
-	 * freed.
-	 */
-	server->focus = target;
-	if (target != NULL)
-		send_enter(target);
-
-	/* Succeeded: focus follows the display. */
-	return;
+	/* Succeeded: the last surface hears leave, the new one enter. */
+	zwl_seat_pointer_move(server, server->pointer_surface, target);
+	server->pointer_surface = target;
 }
 
 /*
@@ -270,8 +312,14 @@ zwl_seat_surface_gone(
 {
 	struct zwl_server *server;
 
-	/* Only the focused surface has anything to withdraw. */
+	/* The surface the pointer is on: its pointers hear leave while the surface is still named. */
 	server = surface->client->server;
+	if (server->pointer_surface == surface) {
+		zwl_seat_pointer_move(server, surface, NULL);
+		server->pointer_surface = NULL;
+	}
+
+	/* Only the focused surface has a keyboard to withdraw. */
 	if (server->focus != surface)
 		return;
 
@@ -375,11 +423,6 @@ zwl_seat_motion(
 	if (taken)
 		return;
 
-	/* While a popup holds the grab, the pointer goes to the surface of its chain it is over (popup.c). */
-	taken = zwl_popup_motion(server);
-	if (taken)
-		return;
-
 	/* In the glass look a window being moved takes the motion (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
 		taken = zwl_glass_motion(server);
@@ -387,8 +430,9 @@ zwl_seat_motion(
 			return;
 	}
 
-	/* Nobody hears motion while no surface has focus. */
-	target = zwl_popup_pointer_target(server);
+	/* The surface under the pointer hears it (enter and leave as it changes); nobody without one. */
+	zwl_seat_pointer_update(server);
+	target = server->pointer_surface;
 	if (target == NULL)
 		return;
 
@@ -452,8 +496,9 @@ zwl_seat_button(
 			return;
 	}
 
-	/* A button without focus reaches nobody. */
-	target = zwl_popup_pointer_target(server);
+	/* The button goes to the surface under the pointer; without one it reaches nobody. */
+	zwl_seat_pointer_update(server);
+	target = server->pointer_surface;
 	if (target == NULL)
 		return;
 
@@ -505,8 +550,8 @@ zwl_seat_axis(
 	if (taken)
 		return;
 
-	/* Scrolling without focus reaches nobody. */
-	target = zwl_popup_pointer_target(server);
+	/* Scrolling goes to the surface the pointer is on; without one it reaches nobody. */
+	target = server->pointer_surface;
 	if (target == NULL)
 		return;
 
@@ -569,8 +614,8 @@ zwl_seat_frame(
 	struct zwl_object *object;
 	struct zwl_object *target;
 
-	/* A frame without focus reaches nobody. */
-	target = zwl_popup_pointer_target(server);
+	/* A frame goes to the surface the pointer is on; without one it reaches nobody. */
+	target = server->pointer_surface;
 	if (target == NULL)
 		return;
 
@@ -715,16 +760,21 @@ create_device(
 		}
 	}
 
-	/* A device created while its client has focus is entered at once. */
+	/* A pointer created while the pointer is on one of its client's surfaces is entered there at once. */
 	server = seat->client->server;
-	if (server->focus != NULL && server->focus->client == seat->client) {
-		/* The new object alone hears this enter; the others already did. */
+	if (kind == ZWL_POINTER &&
+	    server->pointer_surface != NULL &&
+	    server->pointer_surface->client == seat->client) {
 		serial = zwl_next_serial(server);
-		if (kind == ZWL_POINTER) {
-			pointer_enter(device, server->focus, serial);
-		} else {
-			keyboard_enter(device, server->focus, serial);
-		}
+		pointer_enter(device, server->pointer_surface, serial);
+	}
+
+	/* A keyboard created while its client has the focus is entered at once (the others already were). */
+	if (kind == ZWL_KEYBOARD &&
+	    server->focus != NULL &&
+	    server->focus->client == seat->client) {
+		serial = zwl_next_serial(server);
+		keyboard_enter(device, server->focus, serial);
 	}
 
 	/* The test log records which input objects each client holds. */
@@ -835,7 +885,7 @@ keyboard_modifiers(
 	return;
 }
 
-/* Tells every pointer and keyboard of a surface's client that focus left it. */
+/* Tells every keyboard of a surface's client that the focus left it (the pointer is zwl_seat_pointer_update's). */
 static void
 send_leave(
 	struct zwl_object *surface)
@@ -843,33 +893,20 @@ send_leave(
 	struct zwl_object *object;
 	uint32_t words[2];
 
-	/* Leave carries one serial and the surface for every device object. */
+	/* Leave carries one serial and the surface. */
 	words[0] = zwl_next_serial(surface->client->server);
 	words[1] = surface->id;
 	for (object = surface->client->objects; object != NULL; object = object->next) {
-		/* A dead object has already been told it is gone. */
-		if (object->dead)
+		/* Only live keyboards. */
+		if (object->dead || object->kind != ZWL_KEYBOARD)
 			continue;
 
-		/* Pointers hear leave and, from version 5, a frame closing it (not while a popup's grab has the pointer). */
-		if (object->kind == ZWL_POINTER && !surface->client->server->pointer_grabbed) {
-			deliver(object->client, object->id, POINTER_LEAVE, words, sizeof(words));
-
-			/* Version 5 pointers see leave as a group of its own. */
-			if (object->version >= POINTER_FRAME_VERSION)
-				deliver(object->client, object->id, POINTER_FRAME, NULL, 0);
-		}
-
-		/* Keyboards hear leave with the same serial. */
-		if (object->kind == ZWL_KEYBOARD)
-			deliver(object->client, object->id, KEYBOARD_LEAVE, words, sizeof(words));
+		/* The keyboard hears leave. */
+		deliver(object->client, object->id, KEYBOARD_LEAVE, words, sizeof(words));
 	}
-
-	/* Succeeded: the client no longer has input focus. */
-	return;
 }
 
-/* Tells every pointer and keyboard of a surface's client that focus arrived. */
+/* Tells every keyboard of a surface's client that the focus arrived (the pointer is zwl_seat_pointer_update's). */
 static void
 send_enter(
 	struct zwl_object *surface)
@@ -877,24 +914,16 @@ send_enter(
 	struct zwl_object *object;
 	uint32_t serial;
 
-	/* One serial covers the enter on every device object of the client. */
+	/* One serial covers the enter on every keyboard of the client. */
 	serial = zwl_next_serial(surface->client->server);
 	for (object = surface->client->objects; object != NULL; object = object->next) {
-		/* A dead object cannot be entered. */
-		if (object->dead)
+		/* Only live keyboards. */
+		if (object->dead || object->kind != ZWL_KEYBOARD)
 			continue;
 
-		/* Pointers and keyboards each have their own enter event (the pointer is popup.c's while a grab has it). */
-		if (object->kind == ZWL_POINTER) {
-			if (!surface->client->server->pointer_grabbed)
-				pointer_enter(object, surface, serial);
-		} else if (object->kind == ZWL_KEYBOARD) {
-			keyboard_enter(object, surface, serial);
-		}
+		/* The keyboard hears enter, with the keys and modifiers held. */
+		keyboard_enter(object, surface, serial);
 	}
-
-	/* Succeeded: the client has input focus. */
-	return;
 }
 
 /* Prints which input objects one client currently holds. */

@@ -19,6 +19,7 @@
 #include "compose.h"
 #include "shaders.h"
 #include "popup.h"
+#include "subsurface.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -192,6 +193,7 @@ zwl_compose_draw(
 	uint32_t image;
 	unsigned count;
 	unsigned popups;
+	unsigned subsurfaces;
 	VkResult result;
 
 	/* One frame at a time, and only with an output. */
@@ -206,6 +208,9 @@ zwl_compose_draw(
 
 	/* The popups follow the windows in the list the frame holds (popup.c draws them). */
 	popups = zwl_popup_collect(server, windows + count, ZWL_FRAME_WINDOWS - count);
+
+	/* The sub-surfaces follow them, held and told like them (subsurface.c draws them with their parents). */
+	subsurfaces = zwl_subsurface_collect(server, windows + count + popups, ZWL_FRAME_WINDOWS - count - popups);
 
 	/* The next swapchain image (the wait for it is measured apart). */
 	mark = zwl_cycles();
@@ -235,8 +240,8 @@ zwl_compose_draw(
 	/* The CPU time of recording and submitting the frame. */
 	server->perf.compose_draw_cycles += zwl_cycles() - compose->frame_start_cycles;
 
-	/* The frame holds what it sampled until its fence signals, the popups too. */
-	compose_hold(server, windows, count + popups);
+	/* The frame holds what it sampled until its fence signals, the popups and sub-surfaces too. */
+	compose_hold(server, windows, count + popups + subsurfaces);
 	server->dirty = 0;
 	server->frame++;
 	if (server->log_frames)
@@ -1317,8 +1322,14 @@ compose_record(
 	if (server->glass) {
 		zwl_glass_draw(server, compose->command, windows, count);
 	} else {
-		for (index = 0; index < count; index++)
+		for (index = 0; index < count; index++) {
+			/* A window between its sub-surfaces below and above it (subsurface.c). */
+			zwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 0U);
 			compose_quad(server, compose->command, surface_image(windows[index]), windows[index]->x, windows[index]->y);
+			zwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 1U);
+		}
+
+		/* The popups over the windows. */
 		zwl_popup_draw(server, compose->command);
 	}
 
