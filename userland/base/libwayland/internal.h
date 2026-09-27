@@ -16,6 +16,7 @@
 #include <wayland/xdg-shell-client-protocol.h>
 #include "userland/base/libwayland/zed-gpu-buffer-v1-client-protocol.h"
 #include "userland/base/libwayland/xdg-toplevel-menu-v1-client-protocol.h"
+#include "userland/base/libwayland/zed-titlebar-v1-client-protocol.h"
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
@@ -127,5 +128,6 @@ void wlc_packet_destroy(struct wlc_packet *packet);
 void wlc_event_destroy(struct wlc_event *event);
 int wlc_event_dispatch(struct wlc_event *event);
 int wlc_menu_dispatch(struct wlc_event *event, const void *listener, void *data);
+int wlc_titlebar_dispatch(struct wlc_event *event, const void *listener, void *data);
 
 #endif

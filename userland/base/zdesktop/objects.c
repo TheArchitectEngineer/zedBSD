@@ -11,6 +11,7 @@
 
 #include "zwl.h"
 #include "menu.h"
+#include "titlebar.h"
 #include "popup.h"
 #include "toplevel.h"
 #include "subsurface.h"
@@ -317,6 +318,10 @@ zwl_object_destroy(
 	    object->kind == ZWL_TOPLEVEL_MENU ||
 	    object->kind == ZWL_MENU)
 		zwl_menu_object_gone(object);
+
+	/* The Titlebar Presentation's objects stop naming this one (titlebar.c). */
+	if (object->kind == ZWL_TOPLEVEL || object->kind == ZWL_TITLEBAR)
+		zwl_titlebar_object_gone(object);
 
 	/*
 	 * Destroyed IDs become reusable only through ordered delete_id
