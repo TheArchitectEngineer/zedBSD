@@ -254,6 +254,7 @@ box_build_children(
 				ordinal++;
 				box_marker(box->last_child, ordinal);
 			}
+
 			continue;
 		}
 
@@ -314,6 +315,8 @@ box_append(
 	} else {
 		parent->first_child = child;
 	}
+
+	/* The child is the parent's last one now. */
 	parent->last_child = child;
 }
 
@@ -421,6 +424,8 @@ box_fix_children(
 			child = next;
 			continue;
 		}
+
+		/* Inline content after a block starts a new anonymous block. */
 		if (anonymous == NULL) {
 			anonymous = box_new(tree, LAYOUT_ANONYMOUS_BLOCK, NULL, &style);
 			if (anonymous == NULL)
@@ -428,6 +433,8 @@ box_fix_children(
 			anonymous->children_inline = 1;
 			box_append(box, anonymous);
 		}
+
+		/* The inline content goes into the anonymous block. */
 		box_append(anonymous, child);
 		child = next;
 	}
@@ -447,6 +454,7 @@ box_anonymous_style(
 	style->display = CSS_DISPLAY_BLOCK;
 	style->color = parent->color;
 	style->font_size = parent->font_size;
+	style->font_size_keyword = parent->font_size_keyword;
 	style->font_weight = parent->font_weight;
 	style->font_italic = parent->font_italic;
 	style->generic_family = parent->generic_family;
@@ -492,6 +500,8 @@ box_marker(
 			ordinal /= 10;
 			length++;
 		}
+
+		/* The digits were gathered from the lowest; the marker reads from the highest. */
 		for (index = 0; index < length; index++)
 			box->marker[index] = (uint16_t)digits[length - 1U - index];
 		box->marker[length] = '.';

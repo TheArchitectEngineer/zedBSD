@@ -20,6 +20,13 @@
 /* The font size of the root before any style sets it, in pixels. */
 #define CASCADE_DEFAULT_FONT_SIZE	16.0f
 
+/*
+ * The size medium stands for in the monospace family, as in Chromium: a
+ * size on the keyword scale is scaled by it over the default size when the
+ * family becomes monospace alone.
+ */
+#define CASCADE_MONOSPACE_FONT_SIZE	13.0f
+
 /* The viewport the vw and vh units measure until the layout sets one. */
 #define CASCADE_DEFAULT_VIEWPORT_WIDTH	1024.0f
 #define CASCADE_DEFAULT_VIEWPORT_HEIGHT	768.0f
@@ -71,7 +78,10 @@ static void cascade_apply(struct css_engine *engine, struct css_style *style, co
 static void cascade_inherit(struct css_style *style, const struct css_style *parent, int property);
 static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
 static float cascade_font_size(struct css_engine *engine, const struct css_value *value, float parent_size);
+static int cascade_font_size_keyword(const struct css_value *value, int parent_keyword);
 static void cascade_families(struct css_style *style, const struct css_value *value);
+static int cascade_monospace_only(const struct css_style *style);
+static void cascade_monospace_size(struct css_style *style, const struct css_style *parent, const struct css_declaration *font_size);
 
 /*
  * Makes an engine with the user agent's style sheet.
@@ -231,6 +241,7 @@ css_engine_compute(
 	struct wb_vector list;
 	struct wb_arena scratch;
 	const struct css_declaration *font_size;
+	const struct css_declaration *font_family;
 	size_t index;
 	int is_root;
 	int error;
@@ -241,6 +252,7 @@ css_engine_compute(
 	if (parent != NULL) {
 		style->color = parent->color;
 		style->font_size = parent->font_size;
+		style->font_size_keyword = parent->font_size_keyword;
 		style->font_weight = parent->font_weight;
 		style->font_italic = parent->font_italic;
 		style->generic_family = parent->generic_family;
@@ -264,24 +276,40 @@ css_engine_compute(
 		return error;
 	}
 
-	/* Sorts them into cascade order. */
+	/* Sorts them into cascade order (an empty list has no storage to sort). */
 	matches = list.items;
-	qsort(matches, list.count, sizeof(*matches), cascade_compare);
+	if (list.count > 1)
+		qsort(matches, list.count, sizeof(*matches), cascade_compare);
 
-	/* The font size comes first: the other lengths in em depend on it. */
+	/*
+	 * The font size and family come first: the other lengths in em depend on
+	 * the size, and the monospace family rescales a size on the keyword scale.
+	 */
 	font_size = NULL;
+	font_family = NULL;
 	for (index = 0; index < list.count; index++) {
 		if (matches[index].declaration->property == CSS_PROP_FONT_SIZE)
 			font_size = matches[index].declaration;
+		if (matches[index].declaration->property == CSS_PROP_FONT_FAMILY)
+			font_family = matches[index].declaration;
 	}
 
 	/* Applies the winning font size. */
 	if (font_size != NULL)
 		cascade_apply(engine, style, parent, font_size);
 
-	/* Then every declaration in order, the later winning. */
+	/* Applies the winning font family. */
+	if (font_family != NULL)
+		cascade_apply(engine, style, parent, font_family);
+
+	/* Rescales a keyword-scale size for a change to or from the monospace family. */
+	cascade_monospace_size(style, parent, font_size);
+
+	/* Then every other declaration in order, the later winning. */
 	for (index = 0; index < list.count; index++) {
 		if (matches[index].declaration->property == CSS_PROP_FONT_SIZE)
+			continue;
+		if (matches[index].declaration->property == CSS_PROP_FONT_FAMILY)
 			continue;
 		cascade_apply(engine, style, parent, matches[index].declaration);
 	}
@@ -343,6 +371,7 @@ css_initial_style(
 	style->color = 0xff000000U;
 	style->background_color = 0;
 	style->font_size = CASCADE_DEFAULT_FONT_SIZE;
+	style->font_size_keyword = 1;
 	style->font_weight = 400;
 	style->generic_family = CSS_FAMILY_SERIF;
 	style->line_height.unit = CSS_UNIT_NORMAL;
@@ -814,6 +843,7 @@ cascade_apply(
 	struct css_style initial;
 	int property;
 	int inherited;
+	int parent_keyword;
 	float parent_size;
 
 	/* The CSS-wide keywords. */
@@ -914,10 +944,17 @@ cascade_apply(
 		style->background_color = value->color;
 		break;
 	case CSS_PROP_FONT_SIZE:
+		/* The root measures against the default size, on the keyword scale. */
 		parent_size = CASCADE_DEFAULT_FONT_SIZE;
-		if (parent != NULL)
+		parent_keyword = 1;
+		if (parent != NULL) {
 			parent_size = parent->font_size;
+			parent_keyword = parent->font_size_keyword;
+		}
+
+		/* The size, and whether it still follows the keyword scale. */
 		style->font_size = cascade_font_size(engine, value, parent_size);
+		style->font_size_keyword = cascade_font_size_keyword(value, parent_keyword);
 		break;
 	case CSS_PROP_FONT_WEIGHT:
 		style->font_weight = value->keyword;
@@ -1035,6 +1072,7 @@ cascade_inherit(
 		break;
 	case CSS_PROP_FONT_SIZE:
 		style->font_size = parent->font_size;
+		style->font_size_keyword = parent->font_size_keyword;
 		break;
 	case CSS_PROP_FONT_WEIGHT:
 		style->font_weight = parent->font_weight;
@@ -1143,6 +1181,11 @@ cascade_font_size(
 	/* em and percentages measure the parent's size. */
 	if (value->kind == CSS_VALUE_LENGTH && value->unit == CSS_DUNIT_PERCENT)
 		return parent_size * value->number / 100.0f;
+
+	/* A keyword is its size at the default size. */
+	if (value->kind == CSS_VALUE_LENGTH && value->unit == CSS_DUNIT_FONT_KEYWORD)
+		return value->number;
+
 	length = cascade_length(engine, value, parent_size);
 	if (length.unit != CSS_UNIT_PX)
 		return parent_size;
@@ -1176,5 +1219,89 @@ cascade_families(
 		} else if (serif) {
 			style->generic_family = CSS_FAMILY_SERIF;
 		}
+	}
+}
+
+/* Tells whether a declared font size keeps a size on the keyword scale. */
+static int
+cascade_font_size_keyword(
+	const struct css_value *value,
+	int parent_keyword)
+{
+	/* A keyword is on the scale by definition. */
+	if (value->kind == CSS_VALUE_LENGTH && value->unit == CSS_DUNIT_FONT_KEYWORD)
+		return 1;
+
+	/* An em or a percentage keeps the parent's scale. */
+	if (value->kind == CSS_VALUE_LENGTH && value->unit == CSS_DUNIT_EM)
+		return parent_keyword;
+	if (value->kind == CSS_VALUE_LENGTH && value->unit == CSS_DUNIT_PERCENT)
+		return parent_keyword;
+
+	/* Any other length is absolute. */
+	return 0;
+}
+
+/* Tells whether a style's font family is the monospace family and nothing else. */
+static int
+cascade_monospace_only(
+	const struct css_style *style)
+{
+	int monospace;
+
+	/* Only a list of one name can be monospace alone. */
+	if (style->family_count != 1)
+		return 0;
+
+	/* That name must be the generic monospace. */
+	monospace = vm_string_equal_ascii(style->families[0], "monospace");
+	if (!monospace)
+		return 0;
+
+	/* The family is monospace alone. */
+	return 1;
+}
+
+/*
+ * Rescales a font size on the keyword scale when the family becomes, or
+ * stops being, the monospace family alone.
+ *
+ * Chromium's default monospace size is 13 pixels against 16 for the other
+ * families, and a size that follows the keywords follows that default: a
+ * keyword declared here was sized for the other families, and an inherited
+ * or relative size for the parent's family.
+ */
+static void
+cascade_monospace_size(
+	struct css_style *style,
+	const struct css_style *parent,
+	const struct css_declaration *font_size)
+{
+	int reference_monospace;
+	int monospace;
+
+	/* An absolute size is not rescaled. */
+	if (!style->font_size_keyword)
+		return;
+
+	/* The family the size was measured for: the parent's, or the others' for a keyword declared here. */
+	reference_monospace = 0;
+	if (parent != NULL)
+		reference_monospace = cascade_monospace_only(parent);
+	if (font_size != NULL &&
+	    font_size->value.kind == CSS_VALUE_LENGTH &&
+	    font_size->value.unit == CSS_DUNIT_FONT_KEYWORD)
+		reference_monospace = 0;
+
+	/* Nothing changes while the family stays on the same side. */
+	monospace = cascade_monospace_only(style);
+	if (monospace == reference_monospace)
+		return;
+
+	/* Scales the size by the ratio of the two defaults. */
+	if (monospace) {
+		style->font_size = style->font_size * CASCADE_MONOSPACE_FONT_SIZE / CASCADE_DEFAULT_FONT_SIZE;
+	} else {
+		style->font_size = style->font_size * CASCADE_DEFAULT_FONT_SIZE / CASCADE_MONOSPACE_FONT_SIZE;
 	}
 }

@@ -47,6 +47,8 @@ layout_block(
 	} else {
 		error = block_children(tree, box);
 	}
+
+	/* Propagates a content that could not be laid out. */
 	if (error != 0)
 		return error;
 
@@ -55,11 +57,15 @@ layout_block(
 		height = layout_from_px(box->style.height.value);
 		box->height = height;
 	}
+
+	/* min-height raises a shorter box. */
 	if (box->style.min_height.unit == CSS_UNIT_PX) {
 		height = layout_from_px(box->style.min_height.value);
 		if (box->height < height)
 			box->height = height;
 	}
+
+	/* max-height lowers a taller box. */
 	if (box->style.max_height.unit == CSS_UNIT_PX) {
 		height = layout_from_px(box->style.max_height.value);
 		if (box->height > height)
@@ -135,6 +141,8 @@ block_width(
 		if (width > room)
 			width = room;
 	}
+
+	/* min-width wins over max-width, and no width is negative. */
 	room = block_resolve(&box->style.min_width, containing_width);
 	if (width < room)
 		width = room;
@@ -143,8 +151,12 @@ block_width(
 	box->width = width;
 
 	/* Auto margins share what is left of a sized box: both center it, one takes it all. */
-	left_auto = box->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO;
-	right_auto = box->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO;
+	left_auto = 0;
+	if (box->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO)
+		left_auto = 1;
+	right_auto = 0;
+	if (box->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO)
+		right_auto = 1;
 	room = containing_width - width - frame;
 	if (room < 0)
 		room = 0;
@@ -210,8 +222,18 @@ block_children(
 		    child->padding[CSS_TOP] == 0 && child->padding[CSS_BOTTOM] == 0)
 			empty = 1;
 		if (empty) {
+			/*
+			 * Its border edge sits where the margins met so far and its own top
+			 * margin put it, as if a bottom border held its bottom margin back.
+			 */
+			if (first && collapse_top) {
+				child->y = 0;
+			} else {
+				child->y = cursor + block_collapse(pending, child_top);
+			}
+
+			/* All of its margins join the margin carried on. */
 			pending = block_collapse(pending, block_collapse(child_top, child_bottom));
-			child->y = cursor;
 			continue;
 		}
 
@@ -222,6 +244,8 @@ block_children(
 		} else {
 			child->y = cursor + block_collapse(pending, child_top);
 		}
+
+		/* The children after this one are not the first to meet the box's top margin. */
 		first = 0;
 
 		/* The cursor moves past the child's border box; its bottom margin is carried to the next. */
