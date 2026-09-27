@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（調査と設計）から。着手の時期は main が決める（デスクトップ・グラフィックの後）
+Resume point: p001（調査と設計）から。2026-09-28 ユーザー「Bug024は優先度を下げます。」→ 低い優先度、着手は未定
 <!-- awesome-plan-current:end -->
 
 ## 目標
