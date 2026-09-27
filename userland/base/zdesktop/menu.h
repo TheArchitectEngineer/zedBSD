@@ -99,6 +99,7 @@ void zwl_menu_send_popup(struct zwl_object *place, uint32_t item, unsigned opene
 void zwl_menu_send_context_activated(struct zwl_object *context, const struct zwl_menu_item *item, const char *via);
 void zwl_menu_send_context_done(struct zwl_object *context);
 int zwl_menu_open_context(struct zwl_server *server, struct zwl_object *context, struct zwl_object *surface, int32_t x, int32_t y);
+int zwl_menu_is_open(void);
 
 /* The menus zdesktop draws and operates (menu-shell.c). */
 void zwl_menu_frame(struct zwl_server *server);

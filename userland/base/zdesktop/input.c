@@ -601,6 +601,8 @@ apply_frame(
 	int32_t horizontal_wheel;
 	int32_t x;
 	int32_t y;
+	int32_t old_x;
+	int32_t old_y;
 	unsigned absolute_seen;
 	unsigned pointer_activity;
 	unsigned index;
@@ -659,12 +661,14 @@ apply_frame(
 	/* A changed position is reported as motion before any button of the same report. */
 	pointer_activity = 0;
 	if (x != server->pointer_x || y != server->pointer_y) {
+		old_x = server->pointer_x;
+		old_y = server->pointer_y;
 		server->pointer_x = x;
 		server->pointer_y = y;
 		zwl_seat_motion(server, time);
 
-		/* Window mode draws the cursor at its new place. */
-		server->dirty = 1;
+		/* Window mode draws the cursor at its new place (and where it was, damage.c). */
+		zwl_damage_pointer(server, old_x, old_y);
 		pointer_activity = 1;
 	}
 

@@ -448,8 +448,8 @@ zwl_schedule(
 	if (server->awaiting != 0 && now - server->frame_done_ms < server->frame_wait_ms)
 		return;
 
-	/* Window mode draws when something changed and no frame is in flight. */
-	if (server->dirty) {
+	/* Window mode draws when something changed (all of it, or a part) and no frame is in flight. */
+	if (server->dirty || server->damaged) {
 		error = zwl_compose_draw(server);
 		if (error != 0) {
 			printf("ZWL FAILED site=compose_draw errno=%d\n", error);
@@ -569,13 +569,13 @@ adopt_commit(
 {
 	struct zwl_object *previous;
 
-	/* The queued image becomes current; a wl_shm image is copied before the next frame. */
+	/* The queued image becomes current; a wl_shm image is copied before the next frame; its window is drawn again (damage.c). */
 	previous = surface->current;
 	surface->current = surface->queued;
 	surface->queued = NULL;
+	zwl_damage_commit(server, surface, previous);
 	surface->ready = 0;
 	surface->fresh = 1;
-	server->dirty = 1;
 	if (surface->current != NULL && surface->current->shm != NULL)
 		surface->shm_upload = 1;
 
