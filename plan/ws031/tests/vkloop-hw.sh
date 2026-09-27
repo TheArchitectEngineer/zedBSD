@@ -189,6 +189,10 @@ if [ "$ZDESKTOP_RUN" = 1 ]; then
 	if [ "${ZDESKTOP_APP:-mview}" = egltest ]; then
 		FILES="$FILES --file /etc/zdesktop/run-mview.sh=plan/ws031/tests/zdesktop/run-egltest.sh"
 	fi
+	# ZDESKTOP_APP=egltest6 (ws075-p006): the MRT, blit, query and transform feedback scenes the same way
+	if [ "${ZDESKTOP_APP:-mview}" = egltest6 ]; then
+		FILES="$FILES --file /etc/zdesktop/run-mview.sh=plan/ws031/tests/zdesktop/run-egltest6.sh"
+	fi
 	FILES="$FILES --file /usr/share/fonts/zdesktop.ttf=build/ws035-fonts/Inter.ttf"
 	FILES="$FILES --file /usr/share/zdesktop/wallpaper.ppm=build/ws035-wallpaper/wallpaper-1080.ppm"
 	RC_CONF=plan/ws031/tests/zdesktop/rc.conf

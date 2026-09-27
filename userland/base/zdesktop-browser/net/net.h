@@ -6,10 +6,11 @@
  */
 
 /*
- * The network side of zdesktop-browser (plan/ws074/design.md §9).  The
- * first part is the URL: the WHATWG URL Standard's parser and serializer
- * (url.c), its hosts (host.c: domains, IPv4 and IPv6 addresses, the
- * punycode of internationalized domains), and data: URLs (data.c).
+ * The network side of zdesktop-browser (plan/ws074/design.md §9): the
+ * URL (the WHATWG URL Standard's parser and serializer, url.c), its hosts
+ * (host.c: domains, IPv4 and IPv6 addresses, the punycode of
+ * internationalized domains), data: URLs (data.c), HTTP/1.1 (http.c) and
+ * cookies (cookie.c).
  *
  * A URL's parts are kept as they are serialized: ASCII strings, already
  * percent-encoded, which the caller owns through the URL and frees with
@@ -69,6 +70,18 @@ struct net_data {
 	struct wb_buffer body;
 };
 
+/*
+ * The response of an HTTP fetch: the final URL (after the redirects), the
+ * status, the Content-Type header's value, and the body (decoded from
+ * chunks).
+ */
+struct net_response {
+	struct wb_buffer url;
+	int status;
+	struct wb_buffer content_type;
+	struct wb_buffer body;
+};
+
 /* URLs (url.c). */
 int net_url_parse(const char *input, size_t length, const struct net_url *base, struct net_url *url);
 void net_url_release(struct net_url *url);
@@ -82,6 +95,14 @@ int net_percent_decode(const char *text, size_t length, struct wb_buffer *out);
 
 /* Hosts (host.c). */
 int net_host_parse(const char *input, size_t length, int opaque, struct wb_buffer *out);
+
+/* HTTP (http.c). */
+int net_http_fetch(const char *url, struct net_response *response);
+void net_response_release(struct net_response *response);
+
+/* Cookies (cookie.c). */
+int net_cookie_store(const struct net_url *url, const char *header, size_t length);
+int net_cookie_header(const struct net_url *url, struct wb_buffer *out);
 
 /* data: URLs (data.c). */
 int net_data_parse(const struct net_url *url, struct net_data *data);

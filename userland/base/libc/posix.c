@@ -84,7 +84,7 @@ int optreset;
 const struct in6_addr in6addr_any = IN6ADDR_ANY_INIT;
 const struct in6_addr in6addr_loopback = IN6ADDR_LOOPBACK_INIT;
 
-#define ENVIRONMENT_MAX 64U
+#define ENVIRONMENT_MAX 256U
 static char *environment_entries[ENVIRONMENT_MAX + 1U];
 static unsigned char environment_owned[ENVIRONMENT_MAX];
 static unsigned secure_execution;
@@ -149,7 +149,10 @@ static struct timezone_rule timezone_end = {TZ_RULE_MONTH, 11, 1, 0, 2 * 3600};
 static struct heap_allocator user_heap;
 
 static void environment_lock(void);
+static void environment_adopt(void);
 static int environment_name(const char *entry, const char *name);
+static unsigned environment_slot(const char *name, size_t name_length, int *found);
+static void environment_store(unsigned slot, int found, char *entry, unsigned char owned);
 static void environment_unlock(void);
 static void environment_value_replace(char *replacement);
 static intptr_t call(uint32_t number, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
@@ -397,9 +400,8 @@ setenv(
 {
 	size_t name_length, value_length;
 	char *entry;
-	unsigned i, empty;
-
-	empty = ENVIRONMENT_MAX;
+	unsigned slot;
+	int found;
 
 	/* Handles a failed strchr operation. */
 	if (name == NULL || value == NULL || name[0] == '\0' ||
@@ -409,43 +411,35 @@ setenv(
 		/* Reports operation failure. */
 		return -1;
 	}
-	environment_lock();
 
-	/* Process each element required by the operation. */
-	for (i = 0; i < ENVIRONMENT_MAX; i++) {
-		/* Handles the environ condition. */
-		if (environ[i] == NULL && empty == ENVIRONMENT_MAX)
-			empty = i;
-
-		/* Handles the environment name condition. */
-		if (environment_name(environ[i], name)) {
-			/* Handles the overwrite condition. */
-			if (!overwrite) {
-				environment_unlock();
-
-				/* Reports successful completion. */
-				return 0;
-			}
-			empty = i;
-			break;
-		}
-	}
-
-	/* Handles the empty condition. */
-	if (empty == ENVIRONMENT_MAX) {
-		environment_unlock();
-		errno = ENOSPC;
-
-		/* Reports operation failure. */
-		return -1;
-	}
+	/* The entry is NAME=VALUE with its terminator. */
 	name_length = strlen(name);
 	value_length = strlen(value);
 
 	/* Handles the name length condition. */
 	if (name_length > SIZE_MAX - value_length - 2U) {
-		environment_unlock();
 		errno = ENOMEM;
+
+		/* Reports operation failure. */
+		return -1;
+	}
+
+	/* The variable's own slot, or the end of the environment. */
+	environment_lock();
+	slot = environment_slot(name, name_length, &found);
+
+	/* An existing variable is kept unless the caller overwrites it. */
+	if (found && !overwrite) {
+		environment_unlock();
+
+		/* Reports successful completion. */
+		return 0;
+	}
+
+	/* Handles the full environment condition. */
+	if (slot == ENVIRONMENT_MAX) {
+		environment_unlock();
+		errno = ENOSPC;
 
 		/* Reports operation failure. */
 		return -1;
@@ -463,13 +457,7 @@ setenv(
 	memcpy(entry, name, name_length);
 	entry[name_length] = '=';
 	memcpy(entry + name_length + 1U, value, value_length + 1U);
-
-	/* Handles the environment owned condition. */
-	if (environment_owned[empty])
-		free(environ[empty]);
-	environ[empty] = entry;
-	environment_owned[empty] = 1U;
-	environ[empty + 1U] = NULL;
+	environment_store(slot, found, entry, 1U);
 	environment_unlock();
 	environment_value_replace(NULL);
 
@@ -495,6 +483,7 @@ unsetenv(
 		return -1;
 	}
 	environment_lock();
+	environment_adopt();
 
 	/* Process each element required by the operation. */
 	for (i = 0; i < ENVIRONMENT_MAX && environ[i] != NULL;) {
@@ -531,10 +520,8 @@ putenv(
 	char *entry)
 {
 	char *equal;
-	size_t name_length;
-	unsigned i, empty;
-
-	empty = ENVIRONMENT_MAX;
+	unsigned slot;
+	int found;
 
 	/* Handles a failed strchr operation. */
 	if (entry == NULL || entry[0] == '\0' ||
@@ -544,26 +531,11 @@ putenv(
 		/* Reports operation failure. */
 		return -1;
 	}
-	name_length = (size_t)(equal - entry);
 	environment_lock();
+	slot = environment_slot(entry, (size_t)(equal - entry), &found);
 
-	/* Process each element required by the operation. */
-	for (i = 0; i < ENVIRONMENT_MAX; i++) {
-		/* Handles the environ condition. */
-		if (environ[i] == NULL && empty == ENVIRONMENT_MAX)
-			empty = i;
-
-		/* Handles the environ condition. */
-		if (environ[i] != NULL &&
-		    !strncmp(environ[i], entry, name_length) &&
-		    environ[i][name_length] == '=') {
-			empty = i;
-			break;
-		}
-	}
-
-	/* Handles the empty condition. */
-	if (empty == ENVIRONMENT_MAX) {
+	/* Handles the full environment condition. */
+	if (slot == ENVIRONMENT_MAX) {
 		environment_unlock();
 		errno = ENOSPC;
 
@@ -571,12 +543,8 @@ putenv(
 		return -1;
 	}
 
-	/* Handles the environment owned condition. */
-	if (environment_owned[empty])
-		free(environ[empty]);
-	environ[empty] = entry;
-	environment_owned[empty] = 0;
-	environ[empty + 1U] = NULL;
+	/* The caller's string itself becomes the entry. */
+	environment_store(slot, found, entry, 0U);
 	environment_unlock();
 	environment_value_replace(NULL);
 
@@ -595,15 +563,20 @@ clearenv(
 
 	environment_lock();
 
-	/* Process each element required by the operation. */
-	for (i = 0; i < ENVIRONMENT_MAX && environ[i] != NULL; i++) {
+	/*
+	 * libc frees only the entries it allocated into its own array; a
+	 * program that assigned environ may still use the strings it copied.
+	 */
+	for (i = 0; i < ENVIRONMENT_MAX; i++) {
 		/* Handles the environment owned condition. */
-		if (environment_owned[i])
-			free(environ[i]);
-		environ[i] = NULL;
+		if (environ == environment_entries && environment_owned[i])
+			free(environment_entries[i]);
+		environment_entries[i] = NULL;
 		environment_owned[i] = 0;
 	}
-	environment_entries[0] = NULL;
+
+	/* libc's own array, empty. */
+	environment_entries[ENVIRONMENT_MAX] = NULL;
 	environ = environment_entries;
 	environment_unlock();
 	environment_value_replace(NULL);
@@ -8170,6 +8143,100 @@ environment_lock(
 	/* Handles the libc environment lock availability. */
 	if (__libc_environment_lock != NULL)
 		__libc_environment_lock();
+}
+
+/*
+ * Makes environ libc's own array, with the environment lock held.  A
+ * program may assign environ an array of its own (POSIX); its entries are
+ * copied, not freed later, and the array itself is left as it is.
+ */
+static void
+environment_adopt(
+	void)
+{
+	char **source;
+	unsigned i;
+
+	/* libc's own array needs nothing. */
+	if (environ == environment_entries)
+		return;
+	source = environ;
+
+	/* The program's entries, as far as libc's array holds them. */
+	for (i = 0; source != NULL && i < ENVIRONMENT_MAX && source[i] != NULL;
+	     i++) {
+		environment_entries[i] = source[i];
+		environment_owned[i] = 0U;
+	}
+
+	/* Nothing past the terminator. */
+	for (; i < ENVIRONMENT_MAX; i++) {
+		environment_entries[i] = NULL;
+		environment_owned[i] = 0U;
+	}
+
+	/* The terminator of the full array, and the array itself. */
+	environment_entries[ENVIRONMENT_MAX] = NULL;
+	environ = environment_entries;
+}
+
+/*
+ * Finds the slot for the variable NAME of NAME_LENGTH bytes, with the
+ * environment lock held: the index of its entry (*found is 1), or the
+ * terminator's index where a new entry goes (*found is 0).  Returns
+ * ENVIRONMENT_MAX when a new entry has no room.
+ */
+static unsigned
+environment_slot(
+	const char *name,
+	size_t name_length,
+	int *found)
+{
+	unsigned i;
+	int same;
+
+	/* libc's own array, and nothing found yet. */
+	environment_adopt();
+	*found = 0;
+
+	/* The entries before the terminator only. */
+	for (i = 0; i < ENVIRONMENT_MAX && environ[i] != NULL; i++) {
+		same = strncmp(environ[i], name, name_length) == 0;
+
+		/* Handles the matching name condition. */
+		if (same && environ[i][name_length] == '=') {
+			*found = 1;
+
+			/* Succeeded: the variable's own entry. */
+			return i;
+		}
+	}
+
+	/* Succeeded: the terminator, or ENVIRONMENT_MAX when full. */
+	return i;
+}
+
+/*
+ * Stores ENTRY at SLOT from environment_slot, with the environment lock
+ * held.  A replaced entry keeps every other variable; a new one moves the
+ * terminator.  OWNED says whether libc allocated ENTRY.
+ */
+static void
+environment_store(
+	unsigned slot,
+	int found,
+	char *entry,
+	unsigned char owned)
+{
+	/* Handles the replaced entry condition. */
+	if (found && environment_owned[slot])
+		free(environ[slot]);
+	environ[slot] = entry;
+	environment_owned[slot] = owned;
+
+	/* Handles the new entry condition. */
+	if (!found)
+		environ[slot + 1U] = NULL;
 }
 
 /* Supports the environment name operation. */

@@ -55,8 +55,9 @@ struct i915_wire_writer;
 #define I915_GFX_MAX_LAYOUT_BINDINGS	32U
 #define I915_GFX_MAX_DYNAMIC_BUFFERS	8U
 
-/* How many attachments one render pass and one framebuffer hold. */
-#define I915_GFX_MAX_ATTACHMENTS	4U
+/* How many attachments one render pass and one framebuffer hold, and how many of them one subpass draws colour into. */
+#define I915_GFX_MAX_ATTACHMENTS	8U
+#define I915_GFX_MAX_COLOR_ATTACHMENTS	4U
 
 /* How many rectangles one vkCmdClearAttachments records. */
 #define I915_GFX_MAX_CLEAR_RECTS	16U
@@ -99,8 +100,14 @@ enum i915_gfx_op_kind {
 	I915_GFX_OP_SET_VIEWPORT,
 	I915_GFX_OP_SET_SCISSOR,
 	I915_GFX_OP_COPY_BUFFER,
-	I915_GFX_OP_SET_BLEND_CONSTANTS
+	I915_GFX_OP_SET_BLEND_CONSTANTS,
+	I915_GFX_OP_QUERY_BEGIN,
+	I915_GFX_OP_QUERY_END,
+	I915_GFX_OP_QUERY_RESET
 };
+
+/* An occlusion query pool (fence.c). */
+struct i915_gfx_query_pool;
 
 /*
  * One VkDeviceMemory.
@@ -286,8 +293,8 @@ struct i915_gfx_dset {
 };
 
 /*
- * One VkRenderPass: one subpass with at most one colour and one depth
- * attachment.
+ * One VkRenderPass: one subpass with at most four colour attachments and one
+ * depth attachment.
  */
 struct i915_gfx_pass {
 	/* The format and the load operation of each attachment. */
@@ -297,9 +304,16 @@ struct i915_gfx_pass {
 		uint32_t load_op;
 	} attachments[I915_GFX_MAX_ATTACHMENTS];
 
-	/* The attachment indexes the subpass writes, or VK_ATTACHMENT_UNUSED. */
+	/*
+	 * The attachment indexes the subpass writes, or VK_ATTACHMENT_UNUSED:
+	 * the first colour attachment, the depth attachment, and every colour
+	 * attachment (color_count of them; a pass filled by hand with none
+	 * has only color_attachment, see drv_i915_gfx_pass_color()).
+	 */
 	uint32_t color_attachment;
 	uint32_t depth_attachment;
+	uint32_t color_count;
+	uint32_t color_attachments[I915_GFX_MAX_COLOR_ATTACHMENTS];
 };
 
 /*
@@ -407,6 +421,15 @@ struct i915_gfx_pipeline {
 	 */
 	uint32_t color_write_disable;
 
+	/*
+	 * Colour attachments 1 to 3 (index n - 1): the components each does NOT
+	 * write, and nonzero for one that does not blend while attachment 0
+	 * does.  Zero, as a pipeline filled by hand leaves them, writes every
+	 * component with attachment 0's blend.
+	 */
+	uint32_t extra_write_disable[I915_GFX_MAX_COLOR_ATTACHMENTS - 1U];
+	uint32_t extra_blend_off[I915_GFX_MAX_COLOR_ATTACHMENTS - 1U];
+
 	/* Nonzero once the kernels are prepared. */
 	int kernels_ready;
 
@@ -466,6 +489,13 @@ struct i915_gfx_op {
 	enum i915_gfx_op_kind kind;
 
 	union {
+		/* A query begin or end (count 1), or a reset of `count` queries from `first`. */
+		struct {
+			struct i915_gfx_query_pool *pool;
+			uint32_t first;
+			uint32_t count;
+		} query;
+
 		/* A copy between a buffer and an image, in either direction. */
 		struct {
 			struct i915_gfx_buffer *buffer;
@@ -582,6 +612,9 @@ struct i915_gfx_op {
 		struct {
 			uint32_t is_depth;
 
+			/* The subpass's colour attachment a colour clear names (VkClearAttachment.colorAttachment). */
+			uint32_t color_index;
+
 			/* A colour clear is RGBA float bits; a depth clear is word 0. */
 			uint32_t words[4];
 			struct i915_gfx_rect rect;
@@ -690,6 +723,13 @@ int drv_i915_gfx_image_layout(struct i915_gfx_image *image);
 int drv_i915_gfx_image_level(const struct i915_gfx_image *image, uint32_t level, struct i915_gfx_surface *surface);
 int drv_i915_gfx_image_slice(const struct i915_gfx_image *image, uint32_t level, uint32_t slice, struct i915_gfx_surface *surface);
 uint32_t drv_i915_gfx_format_bytes(uint32_t format);
+
+/* The attachment a render pass's colour slot draws into, VK_ATTACHMENT_UNUSED for none (render-pass.c). */
+uint32_t drv_i915_gfx_pass_color(const struct i915_gfx_pass *pass, uint32_t slot);
+
+/* The view whose level a draw covers: the first colour attachment's, or the depth's (draw.c). */
+struct i915_gfx_draw_state;
+const struct i915_gfx_view *drv_i915_gfx_draw_extent_view(const struct i915_gfx_draw_state *state);
 uint32_t drv_i915_gfx_image_slices(const struct i915_gfx_image *image, uint32_t level);
 uint32_t drv_i915_gfx_depth_clear_word(uint32_t format, uint32_t depth);
 

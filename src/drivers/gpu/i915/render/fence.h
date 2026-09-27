@@ -23,4 +23,10 @@ int drv_i915_render_fence_dispatch(struct i915_render_session *session, uint32_t
 void drv_i915_fence_signal(struct i915_vk_fence *fence);
 void drv_i915_fence_free(struct i915_vk_fence *fence);
 
+/* Occlusion queries: a pool's teardown, and a recorded query command's batch commands. */
+struct i915_gfx_op;
+struct i915_gfx_query_pool;
+void drv_i915_gfx_query_pool_free(struct i915_render_session *session, struct i915_gfx_query_pool *pool);
+int drv_i915_gfx_query_execute(struct i915_render_session *session, const struct i915_gfx_op *op);
+
 #endif
