@@ -69,6 +69,15 @@ void xdg_positioner_set_gravity(struct xdg_positioner *object, uint32_t gravity)
 void xdg_positioner_set_constraint_adjustment(struct xdg_positioner *object, uint32_t constraint_adjustment);
 #define XDG_POSITIONER_SET_OFFSET 6U
 void xdg_positioner_set_offset(struct xdg_positioner *object, int32_t x, int32_t y);
+#define XDG_POSITIONER_SET_REACTIVE 7U
+#define XDG_POSITIONER_SET_REACTIVE_SINCE_VERSION 3U
+void xdg_positioner_set_reactive(struct xdg_positioner *object);
+#define XDG_POSITIONER_SET_PARENT_SIZE 8U
+#define XDG_POSITIONER_SET_PARENT_SIZE_SINCE_VERSION 3U
+void xdg_positioner_set_parent_size(struct xdg_positioner *object, int32_t parent_width, int32_t parent_height);
+#define XDG_POSITIONER_SET_PARENT_CONFIGURE 9U
+#define XDG_POSITIONER_SET_PARENT_CONFIGURE_SINCE_VERSION 3U
+void xdg_positioner_set_parent_configure(struct xdg_positioner *object, uint32_t serial);
 void xdg_positioner_set_user_data(struct xdg_positioner *object, void *data);
 void *xdg_positioner_get_user_data(struct xdg_positioner *object);
 uint32_t xdg_positioner_get_version(struct xdg_positioner *object);
@@ -145,6 +154,7 @@ extern const struct wl_interface xdg_popup_interface;
 struct xdg_popup_listener {
 	void (*configure)(void *data, struct xdg_popup *object, int32_t x, int32_t y, int32_t width, int32_t height);
 	void (*popup_done)(void *data, struct xdg_popup *object);
+	void (*repositioned)(void *data, struct xdg_popup *object, uint32_t token);
 };
 
 int xdg_popup_add_listener(struct xdg_popup *object, const struct xdg_popup_listener *listener, void *data);
@@ -152,6 +162,9 @@ int xdg_popup_add_listener(struct xdg_popup *object, const struct xdg_popup_list
 void xdg_popup_destroy(struct xdg_popup *object);
 #define XDG_POPUP_GRAB 1U
 void xdg_popup_grab(struct xdg_popup *object, struct wl_seat *seat, uint32_t serial);
+#define XDG_POPUP_REPOSITION 2U
+#define XDG_POPUP_REPOSITION_SINCE_VERSION 3U
+void xdg_popup_reposition(struct xdg_popup *object, struct xdg_positioner *positioner, uint32_t token);
 void xdg_popup_set_user_data(struct xdg_popup *object, void *data);
 void *xdg_popup_get_user_data(struct xdg_popup *object);
 uint32_t xdg_popup_get_version(struct xdg_popup *object);

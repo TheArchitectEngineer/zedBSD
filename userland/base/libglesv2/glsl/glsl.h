@@ -61,9 +61,10 @@ struct glsl_uniform_info {
 	unsigned columns;
 	unsigned size;
 
-	/* GLSL_SAMPLER_* for a sampler, and whether it compares depth (a shadow sampler). */
+	/* GLSL_SAMPLER_* for a sampler, whether it compares depth (a shadow sampler), and whether it reads an array of layers. */
 	unsigned sampler;
 	unsigned shadow;
+	unsigned arrayed;
 
 	/* The named block a block member is in (its index among the program's blocks), -1 for the default block and samplers. */
 	int block;

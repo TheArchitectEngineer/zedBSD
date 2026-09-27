@@ -11,6 +11,8 @@
 
 #include "zwl.h"
 #include "menu.h"
+#include "popup.h"
+#include "toplevel.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -28,7 +30,7 @@ struct zwl_global {
 /* Stable global names are scoped to one compositor process generation. */
 static const struct zwl_global globals[] = {
 	{ 1, "wl_compositor", 4, ZWL_COMPOSITOR },
-	{ 2, "xdg_wm_base", 1, ZWL_WM },
+	{ 2, "xdg_wm_base", 3, ZWL_WM },
 	{ 3, "zed_gpu_buffer_v1", 2, ZWL_FACTORY },
 	{ 4, "wl_output", 2, ZWL_OUTPUT },
 	{ 5, "wl_seat", 5, ZWL_SEAT },
@@ -165,6 +167,11 @@ zwl_dispatch(
 	case ZWL_TOPLEVEL_MENU:
 		/* The System Menu (menu.c). */
 		error = zwl_menu_request(object, opcode, bytes, size);
+		break;
+	case ZWL_POSITIONER:
+	case ZWL_POPUP:
+		/* xdg_positioner and xdg_popup (popup.c). */
+		error = zwl_popup_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
@@ -594,14 +601,27 @@ surface_commit(
 	if (role->top == NULL)
 		return EPROTO;
 
+	/* A window geometry set since the last commit applies from this one. */
+	if (surface->pending_geometry_set) {
+		memcpy(surface->geometry, surface->pending_geometry, sizeof(surface->geometry));
+		surface->geometry_set = 1;
+		surface->pending_geometry_set = 0;
+	}
+
 	/* The first empty commit requests the compositor's configure state. */
 	if (!surface->configured) {
 		/* Initial configure must precede every buffer-bearing map or remap. */
 		if (surface->pending != NULL)
 			return EPROTO;
 
-		/* A window chooses its size; a fullscreen one gets the output's. */
-		error = zwl_window_send_configure(surface);
+		/* A popup gets its place and size (popup.c); a window chooses its size, a fullscreen one gets the output's. */
+		if (role->top->kind == ZWL_POPUP) {
+			error = zwl_popup_send_configure(surface);
+		} else {
+			error = zwl_window_send_configure(surface);
+		}
+
+		/* A client that cannot take the configure is failed. */
 		if (error != 0)
 			return error;
 
@@ -680,6 +700,8 @@ shell_request(
 	const char *text;
 	size_t offset;
 	uint32_t id;
+	uint32_t parent;
+	uint32_t positioner;
 	uint32_t serial;
 	int32_t width;
 	int32_t height;
@@ -701,11 +723,23 @@ shell_request(
 			return 0;
 		}
 
-		/* Unsolicited pong replies have no effect on the fullscreen policy. */
-		if (opcode == 3U && size == 4U)
+		/* The answer to a ping (toplevel.c); one to no ping is ignored. */
+		if (opcode == 3U && size == 4U) {
+			serial = word_at(bytes, 0);
+			zwl_ping_pong(object->client, serial);
 			return 0;
+		}
 
-		/* Positioners and popups were not included in this minimal fullscreen policy. */
+		/* A positioner, for the popups (popup.c). */
+		if (opcode == 1U && size == 4U) {
+			id = word_at(bytes, 0);
+			error = zwl_positioner_create(object, id);
+			if (error != 0)
+				return error;
+			return 0;
+		}
+
+		/* Only get_xdg_surface is left. */
 		if (opcode != 2U || size != 8U)
 			return EPROTO;
 
@@ -717,7 +751,7 @@ shell_request(
 
 		/* Publish both directions only after the role identity is allocated. */
 		id = word_at(bytes, 0);
-		created = zwl_create(object->client, id, ZWL_XDG_SURFACE, 1);
+		created = zwl_create(object->client, id, ZWL_XDG_SURFACE, object->version);
 		if (created == NULL)
 			return EPROTO;
 
@@ -744,7 +778,7 @@ shell_request(
 		if (opcode == 1U && size == 4U && object->top == NULL) {
 			/* Allocate the child before publishing either shell backreference. */
 			id = word_at(bytes, 0);
-			created = zwl_create(object->client, id, ZWL_TOPLEVEL, 1);
+			created = zwl_create(object->client, id, ZWL_TOPLEVEL, object->version);
 			if (created == NULL)
 				return EPROTO;
 
@@ -752,6 +786,17 @@ shell_request(
 			created->surface = surface;
 			created->role = object;
 			object->top = created;
+			return 0;
+		}
+
+		/* The popup role (popup.c): its id, a nullable parent xdg_surface and a positioner. */
+		if (opcode == 2U && size == 12U) {
+			id = word_at(bytes, 0);
+			parent = word_at(bytes, 4);
+			positioner = word_at(bytes, 8);
+			error = zwl_popup_create(object, id, parent, positioner);
+			if (error != 0)
+				return error;
 			return 0;
 		}
 
@@ -763,7 +808,12 @@ shell_request(
 			if (width <= 0 || height <= 0)
 				return EPROTO;
 
-			/* Fullscreen output extent remains the compositor's configured geometry. */
+			/* The geometry applies from the next commit (popups are placed from it). */
+			surface->pending_geometry[0] = (int32_t)word_at(bytes, 0);
+			surface->pending_geometry[1] = (int32_t)word_at(bytes, 4);
+			surface->pending_geometry[2] = width;
+			surface->pending_geometry[3] = height;
+			surface->pending_geometry_set = 1;
 			return 0;
 		}
 
@@ -774,12 +824,13 @@ shell_request(
 			if (!surface->configured || serial == 0 || serial > surface->configure_serial)
 				return EPROTO;
 
-			/* Buffer-bearing commits may now publish this configured surface. */
+			/* Buffer-bearing commits may now publish this configured surface; a resize's end waits for this serial. */
 			surface->acknowledged = 1;
+			surface->acked_serial = serial;
 			return 0;
 		}
 
-		/* Popup construction and unknown requests have no fullscreen implementation. */
+		/* No other xdg_surface request exists. */
 		return EPROTO;
 	}
 
@@ -844,32 +895,6 @@ shell_request(
 			}
 		}
 		break;
-	case 1:
-		/* This fullscreen policy supports independent toplevels only. */
-		if (size != 4U)
-			return EPROTO;
-
-		/* A nonzero parent would require a transient window hierarchy. */
-		id = word_at(bytes, 0);
-		if (id != 0)
-			return EPROTO;
-
-		/* The existing toplevel stays independent from other windows. */
-		break;
-	case 7:
-	case 8:
-		/* Size hints contain exactly one nonnegative width and height. */
-		if (size != 8U)
-			return EPROTO;
-
-		/* Advisory limits cannot encode negative extents. */
-		width = (int32_t)word_at(bytes, 0);
-		height = (int32_t)word_at(bytes, 4);
-		if (width < 0 || height < 0)
-			return EPROTO;
-
-		/* The client still receives the compositor's fixed fullscreen configure. */
-		break;
 	case 12:
 		/* Leaving fullscreen has no payload. */
 		if (size != 0)
@@ -890,18 +915,12 @@ shell_request(
 
 		/* Succeeded: the window left fullscreen. */
 		break;
-	case 9:
-	case 10:
-	case 13:
-		/* Maximize and minimize have no payload or effect yet (p011). */
-		if (size != 0)
-			return EPROTO;
-
-		/* The request is valid and has no effect. */
-		break;
 	default:
-		/* Interactive moves, resizing and window menus have no implementation in this fullscreen policy. */
-		return EPROTO;
+		/* The requests of the window manager (toplevel.c): parent, window menu, move, resize, limits, maximize, minimize. */
+		error = zwl_toplevel_request(object, surface, opcode, bytes, size);
+		if (error != 0)
+			return error;
+		break;
 	}
 
 	/* Succeeded: the supported toplevel request is valid for this fullscreen role. */
@@ -989,11 +1008,13 @@ zwl_window_send_configure(
 	struct zwl_object *role;
 	uint32_t configure[5];
 	size_t size;
+	unsigned resizing;
 	int error;
 
-	/* The size and states. */
+	/* The size and states; a window being resized (toplevel.c) has the resizing state too. */
 	server = surface->client->server;
 	role = surface->role;
+	resizing = zwl_toplevel_resizing(server, surface);
 	if (surface->fullscreen) {
 		configure[0] = server->width;
 		configure[1] = server->height;
@@ -1006,6 +1027,13 @@ zwl_window_send_configure(
 		configure[1] = surface->window_height;
 		configure[2] = 8;
 		configure[3] = 1;
+		configure[4] = 4;
+		size = 5U * sizeof(uint32_t);
+	} else if (resizing) {
+		configure[0] = surface->window_width;
+		configure[1] = surface->window_height;
+		configure[2] = 8;
+		configure[3] = 3;
 		configure[4] = 4;
 		size = 5U * sizeof(uint32_t);
 	} else {

@@ -270,6 +270,13 @@ int zdesktop_recent_remove(const char *path);
 
 - 起動は `fork` と `setsid` と `execl("/bin/sh", "sh", "-c", command)`（zdesktop の App Home と同じ）、Terminal は
   `/bin/zdesktop-terminal --command=...`。開いた file は recent に足す（§6.2）。
+- **変更（p012、2026-09-27）**: 一覧の優先は利用者 → system → 内蔵（同じ名前は先のもの）。PATTERNS は `,` で区切った MIME の glob
+  （`fnmatch`）。command の先頭の `@terminal ` は残りを新しい zdesktop-terminal の `--command=` で（shell の quote が 2 重にならない）、
+  `@quicklook` は Quick Look。`%f` が無い command は末尾に path を足す。一覧は開くたびに読む（編集がすぐ効く）。起動は fork を 2 段に
+  して孫が走らせる（file manager が待つ子を残さない、stdin・stdout・stderr は `/dev/null`）。内蔵の表は Quick Look（`image/*`）、
+  Terminal (less)（text と source）、Remacs・Terminal (ed)（`/bin`・`/usr/bin`・`/usr/local/bin` に実行 file があるとき）、
+  最後に全部に Terminal (less)。`mview` は変換済みの model の directory しか読まない（`--model=DIR`）ので内蔵の表に入れない
+  （model の file は Terminal (less) で開く）。`/bin/vi` は base に無いので出さない。
 
 ## 8. 検索（spec §7）
 

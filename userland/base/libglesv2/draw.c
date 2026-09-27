@@ -47,7 +47,9 @@ static int draw_format_ok(struct gles_state *state, VkFormat format);
 static unsigned draw_attribute_base(GLenum type);
 static float draw_component(const unsigned char *element, GLenum type, GLboolean normalized, GLint component);
 static uint32_t draw_integer(const unsigned char *element, GLenum type, GLint component);
-static float draw_half(uint16_t half);
+static int draw_sampler_cube(GLenum type);
+static unsigned draw_sampler_kind(GLenum type);
+static int draw_texture_matches(const struct gles_texture *texture, unsigned kind);
 static void draw_raster(struct gles_state *state, uint32_t topology, struct gles_raster *raster);
 static VkPipeline draw_pipeline(struct gles_state *state, const struct gles_target *target, const struct gles_raster *raster, const struct gles_vertex_layout *layout);
 static int draw_blocks(struct zegl_context *context, struct gles_state *state, VkDescriptorBufferInfo *blocks);
@@ -2179,7 +2181,7 @@ draw_component(
 		return value;
 	case GL_HALF_FLOAT:
 		memcpy(&unsigned_short, element + component * 2, 2U);
-		value = draw_half(unsigned_short);
+		value = gles_half_float(unsigned_short);
 		return value;
 	case GL_INT:
 		memcpy(&signed_int, element + component * 4, 4U);
@@ -2271,40 +2273,89 @@ draw_integer(
 	return word;
 }
 
-/* Converts a half float (IEEE binary16) to a float. */
-static float
-draw_half(
-	uint16_t half)
+/* Reports whether a sampler type reads a cube map. */
+static int
+draw_sampler_cube(
+	GLenum type)
 {
-	uint32_t sign;
-	uint32_t exponent;
-	uint32_t mantissa;
-	uint32_t bits;
-	float value;
-
-	/* The three fields. */
-	sign = (uint32_t)(half >> 15) << 31;
-	exponent = (half >> 10) & 0x1fU;
-	mantissa = half & 0x3ffU;
-
-	/* Zero and the subnormals: the mantissa scaled by 2^-24. */
-	if (exponent == 0U) {
-		value = (float)mantissa / 16777216.0f;
-		if (sign != 0U)
-			value = -value;
-		return value;
+	/* The cube map samplers of every kind. */
+	switch (type) {
+	case GL_SAMPLER_CUBE:
+	case GL_SAMPLER_CUBE_SHADOW:
+	case GL_INT_SAMPLER_CUBE:
+	case GL_UNSIGNED_INT_SAMPLER_CUBE:
+		return 1;
+	default:
+		break;
 	}
 
-	/* Infinity and NaN keep their mantissa; the rest move the exponent's bias from 15 to 127. */
-	if (exponent == 0x1fU) {
-		bits = sign | 0x7f800000U | (mantissa << 13);
-	} else {
-		bits = sign | ((exponent + 112U) << 23) | (mantissa << 13);
+	/* A 2D texture's. */
+	return 0;
+}
+
+/* Returns the kind of texels a sampler type reads: 0 floats, 1 ints, 2 unsigned ints, 3 depth compared (a shadow sampler). */
+static unsigned
+draw_sampler_kind(
+	GLenum type)
+{
+	/* The kinds other than floats. */
+	switch (type) {
+	case GL_INT_SAMPLER_2D:
+	case GL_INT_SAMPLER_CUBE:
+	case GL_INT_SAMPLER_3D:
+	case GL_INT_SAMPLER_2D_ARRAY:
+		return 1U;
+	case GL_UNSIGNED_INT_SAMPLER_2D:
+	case GL_UNSIGNED_INT_SAMPLER_CUBE:
+	case GL_UNSIGNED_INT_SAMPLER_3D:
+	case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY:
+		return 2U;
+	case GL_SAMPLER_2D_SHADOW:
+	case GL_SAMPLER_CUBE_SHADOW:
+	case GL_SAMPLER_2D_ARRAY_SHADOW:
+		return 3U;
+	default:
+		break;
 	}
 
-	/* The float of those bits. */
-	memcpy(&value, &bits, 4U);
-	return value;
+	/* Floats. */
+	return 0U;
+}
+
+/*
+ * Reports whether a texture holds texels a sampler of a kind reads: ints
+ * and unsigned ints their own formats, a shadow sampler a depth format,
+ * a float sampler any other (a depth texture reads its depth).
+ */
+static int
+draw_texture_matches(
+	const struct gles_texture *texture,
+	unsigned kind)
+{
+	unsigned texel;
+	unsigned wanted;
+
+	/* The kind of the base level's format. */
+	texel = texture->levels[texture->base_level].format->kind;
+
+	/* A float sampler reads anything but integers. */
+	if (kind == 0U) {
+		if (texel == GLES_TEXEL_INT || texel == GLES_TEXEL_UINT)
+			return 0;
+		return 1;
+	}
+
+	/* The others read one kind: signed or unsigned integers, or depth for a shadow sampler. */
+	wanted = GLES_TEXEL_DEPTH;
+	if (kind == 1U)
+		wanted = GLES_TEXEL_INT;
+	if (kind == 2U)
+		wanted = GLES_TEXEL_UINT;
+	if (texel != wanted)
+		return 0;
+
+	/* The texture's texels are the sampler's kind. */
+	return 1;
 }
 
 /* Fills the fixed-function part of a pipeline's key from the state. */
@@ -2669,6 +2720,7 @@ draw_descriptors(
 	struct gles_set_cache *cache;
 	struct gles_program *program;
 	struct gles_texture *texture;
+	const struct gles_sampling *sampling;
 	struct gles_pool *pool;
 	VkDescriptorSet set;
 	VkDeviceSize place;
@@ -2679,6 +2731,7 @@ draw_descriptors(
 	int status;
 	int unit;
 	int cube;
+	unsigned kind;
 	int same;
 	int differs;
 	VkResult result;
@@ -2704,23 +2757,31 @@ draw_descriptors(
 	for (index = 0U; index < program->uniform_count && samplers < GLES_UNITS; index++) {
 		if (!program->uniforms[index].sampler)
 			continue;
-		cube = 0;
-		if (program->uniforms[index].type == GL_SAMPLER_CUBE)
-			cube = 1;
+		cube = draw_sampler_cube(program->uniforms[index].type);
+		kind = draw_sampler_kind(program->uniforms[index].type);
 
-		/* The unit's texture of the sampler's kind, or black. */
+		/* The unit's texture of the sampler's target, and the unit's sampler object's sampling (NULL: the texture's own). */
 		texture = NULL;
+		sampling = NULL;
 		unit = program->uniforms[index].unit;
 		if (unit >= 0 && (unsigned)unit < GLES_UNITS) {
 			texture = state->units[unit];
 			if (cube)
 				texture = state->cube_units[unit];
+			if (state->unit_samplers[unit] != NULL)
+				sampling = &state->unit_samplers[unit]->sampling;
 		}
 
-		/* One that cannot be sampled reads as black. */
-		status = gles_texture_complete(texture);
-		if (!status)
-			texture = gles_texture_black(state, cube);
+		/* One that cannot be sampled so, or holds texels of another kind than the sampler reads, reads as black. */
+		status = gles_texture_complete(texture, sampling);
+		if (status)
+			status = draw_texture_matches(texture, kind);
+		if (!status) {
+			texture = gles_texture_black(state, cube, kind);
+			sampling = NULL;
+		}
+
+		/* The texture's image, up to date. */
 		if (texture == NULL)
 			return VK_NULL_HANDLE;
 		status = gles_texture_sync(state, texture);
@@ -2729,7 +2790,7 @@ draw_descriptors(
 		texture->used = state->frame;
 
 		/* The image and its sampler. */
-		images[samplers].sampler = gles_sampler_get(state, texture);
+		images[samplers].sampler = gles_sampler_get(state, texture, sampling);
 		images[samplers].imageView = texture->view;
 		images[samplers].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		bindings[samplers] = program->uniforms[index].binding;

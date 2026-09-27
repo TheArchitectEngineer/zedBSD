@@ -40,6 +40,8 @@
  */
 
 #include "menu.h"
+#include "popup.h"
+#include "toplevel.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -146,6 +148,7 @@ static void draw_body(struct zwl_server *server, VkCommandBuffer command, struct
 static void draw_title_bar(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
 static void draw_title(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
 static int32_t title_end(struct zwl_server *server, struct zwl_object *surface, int32_t limit);
+static void shown_title(const struct zwl_object *surface, char *title, size_t size);
 static void draw_sign(struct zwl_server *server, VkCommandBuffer command, int button, int32_t cx, int32_t cy, unsigned restore, unsigned over, float fade, const float *ink);
 static void draw_system_bar(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
 static void draw_desktops(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *line);
@@ -297,6 +300,10 @@ zwl_glass_draw(
 			draw_dock_hint(server, command);
 		draw_window(server, command, windows[index], focused, &bar);
 	}
+
+	/* The windows' popups over all the windows (popup.c). */
+	server->layer_on = 0;
+	zwl_popup_draw(server, command);
 
 	/* The system bar over everything but the cursor, where it always is. */
 	server->layer_on = 0;
@@ -601,6 +608,75 @@ zwl_glass_window_at(
 
 	/* Succeeded: the window, or NULL. */
 	return surface;
+}
+
+/*
+ * Finds where a window's body (its image) is drawn now: at its place, in
+ * the docked space, or on its way while animated (for its popups, popup.c).
+ * Returns 0.
+ */
+int
+zwl_glass_body_origin(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	int32_t *x,
+	int32_t *y)
+{
+	struct shell_rect body;
+
+	/* The rectangle the body is drawn in. */
+	body_rect(server, surface, &body);
+
+	/* Succeeded: its top-left corner. */
+	*x = body.x;
+	*y = body.y;
+	return 0;
+}
+
+/*
+ * Carries out what a toplevel asks of the shell (ws035-p076): a move the
+ * client started from its own title bar, maximize (dock) and unmaximize,
+ * and minimize.
+ */
+void
+zwl_glass_toplevel_request(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	int request)
+{
+	/* Only a shown window of the desktop shown. */
+	if (surface->dead || !surface->mapped || surface->desktop != server->desktop)
+		return;
+
+	/* What was asked. */
+	switch (request) {
+	case ZWL_TOPLEVEL_MOVE:
+		/* A move as a press on the title bar starts one, until the button is let go (a docked window stays). */
+		if (surface->maximized || server->drag != NULL)
+			break;
+		window_raise(server, surface);
+		server->drag = surface;
+		server->drag_dx = server->pointer_x - surface->x;
+		server->drag_dy = server->pointer_y - surface->y;
+		server->drag_start_x = surface->x;
+		server->drag_start_y = surface->y;
+		printf("ZWL GLASS request move surface=%u\n", surface->id);
+		break;
+	case ZWL_TOPLEVEL_MAXIMIZE:
+		/* Docked where it is. */
+		window_dock(server, surface, surface->x, surface->y, "request");
+		break;
+	case ZWL_TOPLEVEL_UNMAXIMIZE:
+		/* Back to its place before it docked. */
+		window_undock(server, surface, surface->restore_x, surface->restore_y, "request");
+		break;
+	case ZWL_TOPLEVEL_MINIMIZE:
+		/* Hidden until Wiseview brings it back. */
+		window_minimize(server, surface);
+		break;
+	default:
+		break;
+	}
 }
 
 /*
@@ -1054,14 +1130,12 @@ draw_title(
 {
 	static const float mark[4] = { 0.29f, 0.55f, 1.0f, 1.0f };
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	const char *title;
+	char title[ZWL_TITLE_MAX + 24];
 	char letter[2];
 	int32_t width;
 
-	/* A window without a title is called "Window". */
-	title = surface->title;
-	if (title[0] == '\0')
-		title = "Window";
+	/* The title as the title bar shows it. */
+	shown_title(surface, title, sizeof(title));
 
 	/* The mark with the first letter, in capitals. */
 	glass_draw_solid(server, command, (float)x, (float)(middle - 10), 20.0f, 20.0f, 6.0f, mark);
@@ -1083,13 +1157,11 @@ title_end(
 	struct zwl_object *surface,
 	int32_t limit)
 {
-	const char *title;
+	char title[ZWL_TITLE_MAX + 24];
 	int32_t width;
 
 	/* The title as draw_title shows it. */
-	title = surface->title;
-	if (title[0] == '\0')
-		title = "Window";
+	shown_title(surface, title, sizeof(title));
 
 	/* Its width, or the limit it is cut at. */
 	width = glass_text_width(server, SIZE_TITLE, title);
@@ -1098,6 +1170,33 @@ title_end(
 
 	/* Succeeded: where the title ends. */
 	return width;
+}
+
+/*
+ * Makes the title a title bar shows: the client's ("Window" without one),
+ * saying so when the client is not responding to pings (toplevel.c).
+ */
+static void
+shown_title(
+	const struct zwl_object *surface,
+	char *title,
+	size_t size)
+{
+	const char *name;
+
+	/* A window without a title is called "Window". */
+	name = surface->title;
+	if (name[0] == '\0')
+		name = "Window";
+
+	/* A client that does not answer its pings. */
+	if (surface->client->unresponsive) {
+		(void)snprintf(title, size, "%s (not responding)", name);
+		return;
+	}
+
+	/* Otherwise the name alone. */
+	(void)snprintf(title, size, "%s", name);
 }
 
 /*

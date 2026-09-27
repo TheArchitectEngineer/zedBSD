@@ -126,13 +126,80 @@ struct gles_buffer_range {
 	size_t size;
 };
 
+/* The kinds of texels a texture format holds, which decide how a shader samples it. */
+#define GLES_TEXEL_NORM		0U
+#define GLES_TEXEL_FLOAT	1U
+#define GLES_TEXEL_INT		2U
+#define GLES_TEXEL_UINT		3U
+#define GLES_TEXEL_DEPTH	4U
+
+/* How many kinds of black textures there are: float, int, uint and depth ones, for 2D textures and cube maps. */
+#define GLES_BLACK_KINDS	4U
+
 /*
- * One level of a texture, as RGBA8 rows from the bottom up (GL's order).
+ * A format a texture level is kept in (format.c): the internal format the
+ * application named, and the Vulkan format whose buffer-copy layout the
+ * level's texels have on the CPU.  The entries are static and never
+ * change.
+ */
+struct gles_format {
+	/* The internal format, and its base format (GL_RED ... GL_RGBA, GL_*_INTEGER, GL_DEPTH_COMPONENT, GL_DEPTH_STENCIL, or the unsized one). */
+	GLenum internal;
+	GLenum base;
+
+	/* The Vulkan format, the bytes of one kept texel, and the components kept. */
+	VkFormat vk;
+	unsigned bytes;
+	unsigned components;
+
+	/* GLES_TEXEL_*, whether a linear filter may read it, whether it is OpenGL ES 2's RGBA8 (texture.c converts), and whether it has stencil. */
+	unsigned kind;
+	int filterable;
+	int legacy;
+	int stencil;
+};
+
+/*
+ * One level of a texture, as rows from the bottom up (GL's order) in the
+ * kept form of its format.
  */
 struct gles_level {
 	int width;
 	int height;
 	unsigned char *pixels;
+
+	/* The format the texels are kept in (NULL when the level is not specified). */
+	const struct gles_format *format;
+};
+
+/*
+ * The state that decides how a texture is sampled: a texture's own, or a
+ * sampler object's that a unit has bound in its place.
+ */
+struct gles_sampling {
+	/* The filters and the wrap modes. */
+	GLenum min_filter;
+	GLenum mag_filter;
+	GLenum wrap_s;
+	GLenum wrap_t;
+	GLenum wrap_r;
+
+	/* The levels of detail sampled between. */
+	float min_lod;
+	float max_lod;
+
+	/* The depth comparison: GL_NONE or GL_COMPARE_REF_TO_TEXTURE, and its function. */
+	GLenum compare_mode;
+	GLenum compare_func;
+};
+
+/*
+ * A sampler object (glGenSamplers): sampling state a unit uses instead of
+ * its texture's own while it is bound there.
+ */
+struct gles_sampler_object {
+	GLuint name;
+	struct gles_sampling sampling;
 };
 
 /*
@@ -148,21 +215,28 @@ struct gles_texture {
 	/* The levels of each face, face * GLES_LEVELS + level (a 2D texture has face 0 only; width 0 when a level is not specified). */
 	struct gles_level levels[GLES_FACES * GLES_LEVELS];
 
-	/* The filters and the wrap modes. */
-	GLenum min_filter;
-	GLenum mag_filter;
-	GLenum wrap_s;
-	GLenum wrap_t;
+	/* The sampling state. */
+	struct gles_sampling sampling;
+
+	/* The levels the image is made of (the base level and the most), and the channels each read channel comes from (GL_RED ... GL_ONE). */
+	GLint base_level;
+	GLint max_level;
+	GLenum swizzle[4];
+
+	/* Whether glTexStorage2D fixed the levels, and how many it made. */
+	int immutable;
+	GLint immutable_levels;
 
 	/* Nonzero when the levels changed since the image was made. */
 	int dirty;
 
-	/* The device image, its memory and view, how many levels it has, and the frame that last sampled it. */
+	/* The device image, its memory and view, how many levels it has, the frame that last sampled it, and its format. */
 	VkImage image;
 	VkDeviceMemory memory;
 	VkImageView view;
 	uint32_t level_count;
 	uint64_t used;
+	const struct gles_format *image_format;
 
 	/* The views of each face's level 0 a framebuffer object draws into, made with the image. */
 	VkImageView attach_views[GLES_FACES];
@@ -598,13 +672,10 @@ struct gles_set_cache {
 };
 
 /*
- * A sampler made for one set of sampling state.
+ * A Vulkan sampler made for one set of sampling state and level count.
  */
 struct gles_sampler {
-	GLenum min_filter;
-	GLenum mag_filter;
-	GLenum wrap_s;
-	GLenum wrap_t;
+	struct gles_sampling sampling;
 	uint32_t levels;
 	VkSampler sampler;
 	struct gles_sampler *next;
@@ -674,6 +745,10 @@ struct gles_state {
 	struct gles_texture *units[GLES_UNITS];
 	struct gles_texture *cube_units[GLES_UNITS];
 
+	/* Each unit's sampler object (NULL: its textures' own sampling), and their namespace. */
+	struct gles_sampler_object *unit_samplers[GLES_UNITS];
+	struct gles_names sampler_objects;
+
 	/* Blending. */
 	int blend;
 	GLenum blend_src_rgb;
@@ -734,6 +809,10 @@ struct gles_state {
 	/* Whether the device fetches vertices of each core format: 0 not asked yet, 1 yes, 2 no. */
 	unsigned char vertex_formats[GLES_FORMATS];
 
+	/* The device's optimal-tiling features of each core format, and whether it has been asked (format.c). */
+	uint32_t image_features[GLES_FORMATS];
+	unsigned char image_asked[GLES_FORMATS];
+
 	/* The frame being recorded, counted from 1; objects a draw of it used carry its number. */
 	uint64_t frame;
 
@@ -778,9 +857,8 @@ struct gles_state {
 	/* The fixed-function layer's state (libGL), NULL until it is made. */
 	void *fixed;
 
-	/* The textures sampled where a unit has no complete texture (black), a 2D one and a cube map, made at their first use. */
-	struct gles_texture *black;
-	struct gles_texture *black_cube;
+	/* The textures sampled where a unit has no complete texture (black), by [cube][float, int, uint, depth], made at their first use. */
+	struct gles_texture *blacks[2][GLES_BLACK_KINDS];
 };
 
 /*
@@ -831,13 +909,23 @@ void gles_vertex_arrays_release(struct gles_state *state);
 int gles_upload_begin(struct gles_state *state);
 int gles_upload_end(struct gles_state *state);
 
-/* texture.c: textures and samplers. */
+/* texture.c: textures, samplers and sampler objects. */
 int gles_texture_sync(struct gles_state *state, struct gles_texture *texture);
-int gles_texture_complete(struct gles_texture *texture);
-VkSampler gles_sampler_get(struct gles_state *state, struct gles_texture *texture);
-struct gles_texture *gles_texture_black(struct gles_state *state, int cube);
+int gles_texture_complete(struct gles_texture *texture, const struct gles_sampling *sampling);
+VkSampler gles_sampler_get(struct gles_state *state, struct gles_texture *texture, const struct gles_sampling *sampling);
+struct gles_texture *gles_texture_black(struct gles_state *state, int cube, unsigned kind);
 void gles_texture_free(struct gles_state *state, struct gles_texture *texture);
-void gles_texture_define(struct gles_texture *texture, unsigned face, GLint level, int width, int height, unsigned char *pixels);
+void gles_texture_define(struct gles_texture *texture, unsigned face, GLint level, int width, int height, unsigned char *pixels, const struct gles_format *format);
+void gles_samplers_release(struct gles_state *state);
+
+/* format.c: texture formats and texel conversions. */
+const struct gles_format *gles_format_find(struct gles_state *state, GLenum internal, GLenum type);
+const struct gles_format *gles_format_rgba8(void);
+uint32_t gles_image_features(struct gles_state *state, VkFormat format);
+GLenum gles_texels_convert(const struct gles_format *storage, GLenum format, GLenum type, GLsizei width, GLsizei height, GLint alignment, const void *pixels, unsigned char **out);
+GLenum gles_texels_from_rgba8(const struct gles_format *storage, const unsigned char *rgba, size_t count, unsigned char **out);
+int gles_texels_halve(const struct gles_format *format, const unsigned char *source, int source_width, int source_height, unsigned char **out, int *width, int *height);
+float gles_half_float(uint16_t half);
 
 /* framebuffer.c: framebuffer objects, renderbuffers, and the target of a draw. */
 int gles_target_open(struct zegl_context *context, struct gles_state *state, const VkClearValue *clear, struct gles_target *target);

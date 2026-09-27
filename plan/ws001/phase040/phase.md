@@ -1,6 +1,6 @@
 # ws001-p040: mesg
 
-Status: uncleared（2026-09-27。mesg の実装と host の試験は通り commit した。guest の console での確認が devfs の chmod の未対応で通らない）
+Status: cleared（2026-09-27。1 回目は devfs の chmod の未対応（[BUG-067](../../bugs/BUG-067.md)）で guest の case が通らず uncleared。BUG-067 の修正（main 7956ee55）の後に case を戻し、guest で PASS）
 Parent: [WS001](../ws.md)
 Queue: なし（2026-09-27 の rate limit で止まったサブエージェントの作業を、片付けのサブエージェントが検証して commit した。`salvage/ws001` 4b59f03e、親 9b9f8d9c）
 
@@ -51,3 +51,13 @@ st=2
 - devfs の端末の node が chmod（少なくとも group・other の write bit）を受けること。kernel の変更で、WS001 の範囲の外（[BUG-067](../../bugs/BUG-067.md) で追跡）。
 - それが出来たら、上の guest の case を `pinned/guest.sh` に戻して `guest-run.sh ... pinned` で PASS を確かめ、この Phase を clear する。
 - WS001 はユーザーの指示があるときだけ進める（2026-09-27）。
+
+## 再確認（2026-09-27、BUG-067 の修正の後）
+
+main（BUG-067 の修正 7956ee55: devfs が文字 device の node の chmod・chown を保つ）を merge し、上の case を `plan/ws001/tests/pinned/guest.sh` の末尾に戻した。
+
+| 確認 | 結果 |
+| --- | --- |
+| amd64 guest（lean、serial）`DUMP=1 sh plan/ws001/tests/guest-run.sh build/ws001/guest-p040b.out pinned` | **31/31**（「mesg on the console」を含む。`mesg n` で group と other の write が外れ、`mesg y` で group の write が付き、端末でない標準入力では 2） |
+| host の試験 | 9/9（1 回目のまま。mesg は変えていない） |
+| 実機 | 未実施 |
