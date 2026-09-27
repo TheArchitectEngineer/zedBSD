@@ -13,6 +13,9 @@
  *
  * The first pass sets every piece on the baseline; inline boxes contribute
  * their style (through the text they hold) but no borders or padding yet.
+ * The floats among the content are placed first, at the content's top
+ * (not at the line they are on, in this pass), and each line is as wide
+ * as the floats beside it leave.
  */
 
 #include "layout/layout.h"
@@ -67,7 +70,9 @@ static void inline_flush_word(struct inline_cutter *cutter);
 static void inline_add_piece(struct inline_cutter *cutter, const uint16_t *text, size_t length, layout_unit width, int space, int forced_break);
 static layout_unit inline_advance(struct inline_cutter *cutter, uint32_t code_point);
 static int inline_build_lines(struct layout_tree *tree, struct layout_box *box, const struct inline_piece *pieces, size_t count);
-static int inline_finish_line(struct layout_tree *tree, struct layout_box *box, const struct inline_piece *pieces, size_t start, size_t end, layout_unit *cursor, struct wb_vector *lines, int first_line);
+static int inline_finish_line(struct layout_tree *tree, struct layout_box *box, const struct inline_piece *pieces, size_t start, size_t end, layout_unit *cursor, struct wb_vector *lines, int first_line, layout_unit line_left, layout_unit line_width);
+static int inline_place_floats(struct layout_tree *tree, struct layout_box *content, struct layout_box *box, int depth);
+static void inline_room(struct layout_tree *tree, struct layout_box *box, layout_unit cursor, layout_unit *left, layout_unit *width);
 static void inline_line_height(struct layout_tree *tree, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_font_extent(struct layout_tree *tree, const struct text_font *font, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_piece_extent(struct layout_tree *tree, const struct inline_piece *piece, layout_unit *above, layout_unit *below);
@@ -84,6 +89,11 @@ layout_inline(
 	struct inline_cutter cutter;
 	struct layout_box *child;
 	int error;
+
+	/* The floats among the content go to their sides first. */
+	error = inline_place_floats(tree, box, box, 0);
+	if (error != 0)
+		return error;
 
 	/* Cuts the content into pieces. */
 	memset(&cutter, 0, sizeof(cutter));
@@ -115,6 +125,10 @@ inline_collect(
 	struct layout_box *box)
 {
 	struct layout_box *child;
+
+	/* A box out of the flow, or a float, is no part of the lines. */
+	if (box->out_of_flow || box->floating != CSS_FLOAT_NONE)
+		return;
 
 	/* Text is cut into words and spaces. */
 	if (box->kind == LAYOUT_TEXT) {
@@ -321,6 +335,9 @@ inline_build_lines(
 	struct wb_vector lines;
 	layout_unit cursor;
 	layout_unit x;
+	layout_unit line_left;
+	layout_unit line_width;
+	layout_unit below;
 	size_t start;
 	size_t index;
 	int wrap_lines;
@@ -337,6 +354,7 @@ inline_build_lines(
 	start = 0;
 	x = 0;
 	index = 0;
+	inline_room(tree, box, cursor, &line_left, &line_width);
 	while (index < count) {
 		/* Spaces at the start of a line are dropped. */
 		if (pieces[index].space && index == start) {
@@ -345,9 +363,19 @@ inline_build_lines(
 			continue;
 		}
 
+		/* A word that does not fit beside the floats at a line's start moves the line below the next one to end. */
+		if (wrap_lines && index == start && pieces[index].width > line_width && line_width < box->width) {
+			below = layout_below_float(tree, cursor);
+			if (below > cursor) {
+				cursor = below;
+				inline_room(tree, box, cursor, &line_left, &line_width);
+				continue;
+			}
+		}
+
 		/* A forced break ends the line with what came before it. */
 		if (pieces[index].forced_break) {
-			error = inline_finish_line(tree, box, pieces, start, index, &cursor, &lines, lines.count == 0);
+			error = inline_finish_line(tree, box, pieces, start, index, &cursor, &lines, lines.count == 0, line_left, line_width);
 			if (error != 0) {
 				wb_vector_release(&lines);
 				return error;
@@ -357,12 +385,13 @@ inline_build_lines(
 			index++;
 			start = index;
 			x = 0;
+			inline_room(tree, box, cursor, &line_left, &line_width);
 			continue;
 		}
 
 		/* A word that overflows a line that has something ends the line before it. */
-		if (wrap_lines && !pieces[index].space && x + pieces[index].width > box->width && index > start) {
-			error = inline_finish_line(tree, box, pieces, start, index, &cursor, &lines, lines.count == 0);
+		if (wrap_lines && !pieces[index].space && x + pieces[index].width > line_width && index > start) {
+			error = inline_finish_line(tree, box, pieces, start, index, &cursor, &lines, lines.count == 0, line_left, line_width);
 			if (error != 0) {
 				wb_vector_release(&lines);
 				return error;
@@ -371,6 +400,7 @@ inline_build_lines(
 			/* The next line starts with the word. */
 			start = index;
 			x = 0;
+			inline_room(tree, box, cursor, &line_left, &line_width);
 			continue;
 		}
 
@@ -381,7 +411,7 @@ inline_build_lines(
 
 	/* The last line. */
 	if (start < count) {
-		error = inline_finish_line(tree, box, pieces, start, count, &cursor, &lines, lines.count == 0);
+		error = inline_finish_line(tree, box, pieces, start, count, &cursor, &lines, lines.count == 0, line_left, line_width);
 		if (error != 0) {
 			wb_vector_release(&lines);
 			return error;
@@ -422,7 +452,9 @@ inline_finish_line(
 	size_t end,
 	layout_unit *cursor,
 	struct wb_vector *lines,
-	int first_line)
+	int first_line,
+	layout_unit line_left,
+	layout_unit line_width)
 {
 	struct layout_line line;
 	struct layout_fragment *fragment;
@@ -536,13 +568,13 @@ inline_finish_line(
 		fragment->descent = (layout_unit)metrics.descent * LAYOUT_UNIT;
 	}
 
-	/* Aligns the line in the block. */
-	room = box->width - x;
-	line.left = 0;
+	/* Aligns the line in the room the floats leave it. */
+	room = line_width - x;
+	line.left = line_left;
 	if (room > 0 && box->style.text_align == CSS_TEXT_ALIGN_CENTER)
-		line.left = room / 2;
+		line.left = line_left + room / 2;
 	if (room > 0 && box->style.text_align == CSS_TEXT_ALIGN_RIGHT)
-		line.left = room;
+		line.left = line_left + room;
 
 	/* Stacks the line under the ones before. */
 	line.y = *cursor;
@@ -650,4 +682,71 @@ inline_font_extent(
 	leading = height - content;
 	*above = (layout_unit)metrics.ascent * LAYOUT_UNIT + leading / 2;
 	*below = height - *above;
+}
+
+/* Lays out and places the floats among a block's inline content (not inside boxes out of the flow or other floats). */
+static int
+inline_place_floats(
+	struct layout_tree *tree,
+	struct layout_box *content,
+	struct layout_box *box,
+	int depth)
+{
+	struct layout_box *child;
+	layout_unit origin_x;
+	layout_unit origin_y;
+	int error;
+
+	/* Stops at the depth the layout stops at. */
+	if (depth > LAYOUT_DEPTH_MAX)
+		return 0;
+
+	/* Each float shrinks to fit and goes to its side at the content's top; inline boxes are searched through. */
+	origin_x = tree->origin_x;
+	origin_y = tree->origin_y;
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow)
+			continue;
+		if (child->floating == CSS_FLOAT_NONE) {
+			error = inline_place_floats(tree, content, child, depth + 1);
+			if (error != 0)
+				return error;
+			continue;
+		}
+
+		/* The float's own layout, then its place. */
+		error = layout_shrink_to_fit(tree, child, content->width);
+		tree->origin_x = origin_x;
+		tree->origin_y = origin_y;
+		if (error == 0)
+			error = layout_place_float(tree, child, 0, content->width);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the floats are placed. */
+	return 0;
+}
+
+/* Finds the room of a line starting at cursor: its left edge and width between the floats beside a line's height. */
+static void
+inline_room(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	layout_unit cursor,
+	layout_unit *left,
+	layout_unit *width)
+{
+	layout_unit above;
+	layout_unit below;
+	layout_unit right;
+
+	/* The band of a line of the block's own font. */
+	inline_line_height(tree, &box->style, &above, &below);
+	layout_line_room(tree, cursor, cursor + above + below, box->width, left, &right);
+
+	/* The width between the edges. */
+	*width = right - *left;
+	if (*width < 0)
+		*width = 0;
 }

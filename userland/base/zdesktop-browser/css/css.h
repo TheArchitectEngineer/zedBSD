@@ -66,6 +66,32 @@ enum css_display {
 	CSS_DISPLAY_CONTENTS
 };
 
+/* The values of position. */
+enum css_position {
+	CSS_POSITION_STATIC,
+	CSS_POSITION_RELATIVE,
+	CSS_POSITION_ABSOLUTE,
+	CSS_POSITION_FIXED,
+	CSS_POSITION_STICKY
+};
+
+/* The values of float, and the sides clear clears (both is the two together). */
+enum css_float {
+	CSS_FLOAT_NONE,
+	CSS_FLOAT_LEFT,
+	CSS_FLOAT_RIGHT,
+	CSS_CLEAR_BOTH
+};
+
+/* The values of overflow-x and overflow-y. */
+enum css_overflow {
+	CSS_OVERFLOW_VISIBLE,
+	CSS_OVERFLOW_HIDDEN,
+	CSS_OVERFLOW_CLIP,
+	CSS_OVERFLOW_SCROLL,
+	CSS_OVERFLOW_AUTO
+};
+
 /* The values of text-align. */
 enum css_text_align {
 	CSS_TEXT_ALIGN_START,
@@ -119,6 +145,9 @@ struct css_style {
 	int display;
 	int position;
 	int float_side;
+	int clear;
+	int overflow_x;
+	int overflow_y;
 	int visibility;
 	struct css_length width;
 	struct css_length height;
@@ -128,6 +157,9 @@ struct css_style {
 	struct css_length max_height;
 	struct css_length margin[4];
 	struct css_length padding[4];
+	struct css_length offset[4];
+	int z_index;
+	int z_index_auto;
 	float border_width[4];
 	int border_style[4];
 	uint32_t border_color[4];

@@ -19,6 +19,7 @@
 #include <uapi/errno.h>
 #include <kern/device-io.h>
 #include <kern/text-display.h>
+#include <kern/klog.h>
 #include <kern/lock.h>
 #include <kern/pmem.h>
 #include <stddef.h>
@@ -75,6 +76,16 @@ static int text_ready;
 static enum text_surface text_surface;
 static volatile uint16_t *text_vram;
 
+/*
+ * A quiet console (the boot parameter kmsg=quiet, ws035-p097): the cells
+ * are kept but not drawn, so the boot logo stays on the screen, until the
+ * console is revealed (a reader on it, a diagnostic that bypasses the log).
+ * The framebuffer's height is kept to clear the logo then.  Protected by
+ * text_lock.
+ */
+static int text_hidden;
+static unsigned text_framebuffer_height;
+
 /* The standard VGA palette the attribute byte indexes. */
 static const uint32_t text_palette[16] = {
 	0x000000U, 0x0000aaU, 0x00aa00U, 0x00aaaaU,
@@ -110,6 +121,7 @@ drv_pcat_text_snapshot(
 	size_t required;
 	int previous_rgbx;
 	int previous_ready;
+	int previous_hidden;
 
 	/* Rejects an absent request before acquiring the renderer's state lock. */
 	if (snapshot == NULL)
@@ -154,6 +166,7 @@ drv_pcat_text_snapshot(
 	previous_origin_y = text_origin_y;
 	previous_rgbx = text_rgbx;
 	previous_ready = text_ready;
+	previous_hidden = text_hidden;
 
 	/* Redirects the already initialized glyph renderer to tightly packed BGRA8888 RAM. */
 	text_pixels = snapshot->pixels;
@@ -163,6 +176,7 @@ drv_pcat_text_snapshot(
 	text_origin_y = 0U;
 	text_rgbx = 0;
 	text_ready = 1;
+	text_hidden = 0;
 	redraw_locked();
 	draw_cell_locked(text_cursor_row, text_cursor_column, text_cursor_visible);
 
@@ -174,6 +188,7 @@ drv_pcat_text_snapshot(
 	text_origin_y = previous_origin_y;
 	text_rgbx = previous_rgbx;
 	text_ready = previous_ready;
+	text_hidden = previous_hidden;
 
 	spin_unlock_irqrestore(&text_lock, irq);
 
@@ -227,6 +242,10 @@ draw_cell_locked(
 
 	/* Rejects a cell outside the live geometry. */
 	if (!text_ready || row >= text_rows || column >= text_columns)
+		return;
+
+	/* A quiet console keeps its cells off the screen. */
+	if (text_hidden)
 		return;
 
 	/* Decodes the stored character and attribute. */
@@ -408,7 +427,8 @@ static const struct kern_text_ops pcat_text_ops = {
 	.update_cursor = drv_pcat_text_update_cursor,
 	.suspend = drv_pcat_text_suspend,
 	.resume = drv_pcat_text_resume,
-	.snapshot = drv_pcat_text_snapshot
+	.snapshot = drv_pcat_text_snapshot,
+	.reveal = drv_pcat_text_reveal
 };
 
 /*
@@ -438,6 +458,7 @@ drv_pcat_text_init(
 		text_surface = TEXT_SURFACE_FRAMEBUFFER;
 
 		/* Derives the grid from the framebuffer and cell size. */
+		text_framebuffer_height = height;
 		text_columns = width / TEXT_GLYPH_WIDTH;
 		text_rows = height / TEXT_GLYPH_HEIGHT;
 		if (text_columns > TEXT_MAX_COLUMNS)
@@ -467,6 +488,9 @@ drv_pcat_text_init(
 	text_cursor_column = 0;
 	text_cursor_visible = 1;
 	text_ready = 1;
+
+	/* A quiet boot leaves the screen (the boot logo) as it is; otherwise the empty grid is drawn. */
+	text_hidden = kern_log_quiet();
 	redraw_locked();
 	vga_cursor_locked();
 	spin_unlock_irqrestore(&text_lock, irq);
@@ -517,8 +541,8 @@ vga_cursor_locked(
 {
 	unsigned offset;
 
-	/* Leaves the hardware alone unless text memory is the surface. */
-	if (text_surface != TEXT_SURFACE_VGA_TEXT || !text_ready)
+	/* Leaves the hardware alone unless text memory is the surface (and shown). */
+	if (text_surface != TEXT_SURFACE_VGA_TEXT || !text_ready || text_hidden)
 		return;
 
 	/* Disables the cursor scan lines while it is hidden. */
@@ -767,5 +791,43 @@ drv_pcat_text_resume(
 				 text_cursor_visible);
 		vga_cursor_locked();
 	}
+	spin_unlock_irqrestore(&text_lock, irq);
+}
+
+/*
+ * Shows a quiet console: the screen is cleared (the boot logo goes) and the
+ * retained cells and the cursor are drawn.
+ */
+void
+drv_pcat_text_reveal(
+	void)
+{
+	volatile uint32_t *pixels;
+	unsigned long irq;
+	size_t count;
+	size_t index;
+
+	/* Clears the logo and draws the retained text, once. */
+	irq = spin_lock_irqsave(&text_lock);
+
+	/* A console already shown is left as it is. */
+	if (text_hidden) {
+		text_hidden = 0;
+
+		/* The whole framebuffer black, then the text, while the surface is drawn to. */
+		if (text_ready && text_surface == TEXT_SURFACE_FRAMEBUFFER && text_pixels != NULL) {
+			pixels = text_pixels;
+			count = (size_t)text_stride * text_framebuffer_height;
+			for (index = 0; index < count; index++)
+				pixels[index] = 0U;
+		}
+
+		/* The cells, the cursor, and the hardware cursor of text memory. */
+		redraw_locked();
+		draw_cell_locked(text_cursor_row, text_cursor_column, text_cursor_visible);
+		vga_cursor_locked();
+	}
+
+	/* Lets the other console writers draw again. */
 	spin_unlock_irqrestore(&text_lock, irq);
 }

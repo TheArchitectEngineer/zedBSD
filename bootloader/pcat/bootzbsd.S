@@ -22,6 +22,8 @@
 #include "bootloader/include/amd64-handoff.h"
 #include "bootloader/include/boot-parameter-record.inc"
 #include "bootloader/bios/fat-directory.h"
+#include "bootloader/bios/logo.h"
+#include "bootloader/common/logo-path.h"
 #include "bootloader/uefi/zedbsd-config.h"
 
 .set PH_RECORD_SIZE, 28
@@ -1338,6 +1340,141 @@ sample_vga_font:
 
 #include "bootloader/pcat/vbe.inc"
 
+/*
+ * The boot logo (ws035-p096 follow-up): the file zedbsd.cfg names with
+ * logo=PATH, a binary PPM on the boot FAT, drawn on the VBE framebuffer the
+ * way the UEFI loader draws it (the screen in the first pixel's colour, the
+ * logo in the middle).  Sectors are read one at a time and decoded in C
+ * (bootloader/bios/logo.c); the writes it gives are stored through GS.  A
+ * missing or bad logo, or a broken chain in its file, only ends the drawing:
+ * fatal_path and fatal_fat_chain come back to bios_logo_abort while
+ * path_role is 2.
+ */
+bios_draw_logo:
+	test word ptr [long_handoff + ZBL6_HANDOFF_FLAGS_OFFSET], 0x0008
+	jnz 1f
+	ret16
+1:	pushad
+	push es
+	mov word ptr [bios_logo_sp], sp
+
+	/* The logo's path among the parameters. */
+	.code16gcc
+	/* LLVM IAS does not apply .code16gcc to immediate pushes. */
+	.byte 0x66, 0x68
+	.long ZBL_LOGO_PATH_MAX + 1
+	mov eax, offset bios_logo_path
+	push eax
+	movzx eax, word ptr [bios_configuration + ZBL_ZEDBSD_CONFIG_PARAMETER_RECORD_OFFSET + KERN_BOOT_PARAMETER_RECORD_LENGTH_OFFSET]
+	push eax
+	mov eax, offset bios_configuration + ZBL_ZEDBSD_CONFIG_PARAMETER_RECORD_OFFSET + KERN_BOOT_PARAMETER_RECORD_TEXT_OFFSET
+	push eax
+	call zbl_logo_path
+	add esp, 16
+	.code16
+	cmp eax, 1
+	jne bios_logo_abort
+
+	/* The file, not fatally. */
+	mov byte ptr [path_role], 2
+	mov si, offset bios_logo_path
+	call16 fat_find_path
+	mov eax, dword ptr [file_size]
+	add eax, 511
+	shr eax, 9
+	mov dword ptr [bios_logo_sectors], eax
+	mov dword ptr [bios_logo_sector], 0
+
+	/* The decoder, for the mode VBE set. */
+	.code16gcc
+	push dword ptr [vbe_best_format]
+	push dword ptr [vbe_best_stride]
+	movzx eax, word ptr [vbe_best_height]
+	push eax
+	movzx eax, word ptr [vbe_best_width]
+	push eax
+	mov eax, offset bios_logo_state
+	push eax
+	call zbl_bios_logo_begin
+	add esp, 20
+	.code16
+
+bios_logo_next_sector:
+	mov eax, dword ptr [bios_logo_sector]
+	cmp eax, dword ptr [bios_logo_sectors]
+	jae bios_logo_abort
+	call16 fat16_read_file_sector
+	xor bx, bx
+	mov di, offset bios_logo_sector_bytes
+	mov cx, 512 / 4
+1:	mov eax, dword ptr es:[bx]
+	mov dword ptr [di], eax
+	add bx, 4
+	add di, 4
+	loop 1b
+
+	/* The bytes of this sector that are the file's. */
+	mov eax, dword ptr [bios_logo_sector]
+	shl eax, 9
+	mov edx, dword ptr [file_size]
+	sub edx, eax
+	cmp edx, 512
+	jbe 2f
+	mov edx, 512
+2:	inc dword ptr [bios_logo_sector]
+	.code16gcc
+	push edx
+	mov eax, offset bios_logo_sector_bytes
+	push eax
+	mov eax, offset bios_logo_state
+	push eax
+	call zbl_bios_logo_feed
+	add esp, 12
+	.code16
+	mov dword ptr [bios_logo_result], eax
+	cmp eax, -1
+	je bios_logo_abort
+
+	/* GS reaches the framebuffer (a BIOS call may have reloaded it). */
+	call16 unreal_gs
+
+	/* The background over the whole screen, once. */
+	cmp dword ptr [bios_logo_state + ZBL_BIOS_LOGO_FILL_NOW], 0
+	je 4f
+	mov dword ptr [bios_logo_state + ZBL_BIOS_LOGO_FILL_NOW], 0
+	mov edi, dword ptr [vbe_best_base]
+	mov ecx, dword ptr [vbe_best_size]
+	shr ecx, 2
+	mov eax, dword ptr [bios_logo_state + ZBL_BIOS_LOGO_BACKGROUND]
+3:	mov dword ptr gs:[edi], eax
+	add edi, 4
+	dec ecx
+	jnz 3b
+
+	/* The writes of this sector. */
+4:	mov ecx, dword ptr [bios_logo_state + ZBL_BIOS_LOGO_COUNT]
+	xor si, si
+5:	test ecx, ecx
+	jz 6f
+	mov edi, dword ptr [bios_logo_state + ZBL_BIOS_LOGO_OFFSETS + si]
+	add edi, dword ptr [vbe_best_base]
+	mov eax, dword ptr [bios_logo_state + ZBL_BIOS_LOGO_PIXELS + si]
+	mov dword ptr gs:[edi], eax
+	add si, 4
+	dec ecx
+	jmp 5b
+
+	/* The next sector, until the logo is complete. */
+6:	cmp dword ptr [bios_logo_result], 1
+	jne bios_logo_next_sector
+
+bios_logo_abort:
+	mov sp, word ptr [bios_logo_sp]
+	mov byte ptr [path_role], 1
+	pop es
+	popad
+	ret16
+
 /* Give GS a flat hidden descriptor while returning to real mode. */
 unreal_gs:
 	cli
@@ -1488,6 +1625,7 @@ enter_long_mode:
 	cmp edx, 0x20100000
 	jne fatal_elf64
 	call16 vbe_setup_framebuffer
+	call16 bios_draw_logo
 	mov si, offset msg_go
 	call16 puts
 	cmp byte ptr [boot_uuid_valid], 0
@@ -1631,8 +1769,14 @@ putc:
 fatal_mbr:       mov al, 'M'; jmp fatal
 fatal_partition: mov al, 'P'; jmp fatal
 fatal_fat:       mov al, 'F'; jmp fatal
-fatal_fat_chain: mov al, 'K'; jmp fatal
+fatal_fat_chain:
+	cmp byte ptr [path_role], 2
+	je bios_logo_abort
+	mov al, 'K'
+	jmp fatal
 fatal_path:
+	cmp byte ptr [path_role], 2
+	je bios_logo_abort
 	cmp byte ptr [path_role], 0
 	je fatal_config
 	mov al, 'V'
@@ -1814,6 +1958,16 @@ e820_ranges: .space ZBL6_MAX_MEMORY_RANGES * ZBL6_MEMORY_RANGE_V6_SIZE
 fat_cache: .space 1024
 directory_state: .space ZBL_BIOS_FAT_DIRECTORY_STATE_SIZE
 directory_sector: .space 512
+.balign 4
+bios_logo_state: .space ZBL_BIOS_LOGO_SIZE
+bios_logo_sector_bytes: .space 512
+bios_logo_path: .space ZBL_LOGO_PATH_MAX + 1
+.balign 4
+bios_logo_sectors: .long 0
+bios_logo_sector: .long 0
+bios_logo_result: .long 0
+bios_logo_sp: .word 0
+.balign 4
 bios_configuration:
 	.space ZBL_ZEDBSD_CONFIG_RESULT_SIZE
 config_source: .space ZBL_ZEDBSD_CONFIG_FILE_MAX

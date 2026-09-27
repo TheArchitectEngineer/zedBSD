@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p005`
 Parent: [WS075](../ws.md)
-Status: in-progress（2026-09-28〜。増分 1〜3 済み。egltest の fbo・cube の不一致と、BUG-077 で届かない es3・formats・volumes が残り）
+Status: cleared（2026-09-28。増分 1〜5。実機の egltest の 7 場面が全て failures 0、vke1 6/6・vke2 17/17・vkx 9/9・vkc 9/9、capture の zdesktop・zdesktop-files PASS）
 Phase disposition: normal
 承認: 2026-09-27 ユーザー「…i915の高度化に進んでください。」、WS075 の計画（main の登録）。
 
@@ -84,6 +84,30 @@ Phase disposition: normal
   R16_UNORM・R32_FLOAT の surface として rect で読み書き、texel の byte 数を format から）、egltest cube の
   COPY_BUFFER_TO_IMAGE の EINVAL、fbo の D16 の縞、GL_OUT_OF_MEMORY の元。
 
+### 増分 5: depth の copy、形式、blend の feature、swizzle、instance rate（2026-09-28）
+
+- depth の image の copy（buffer ↔ image）: `drv_i915_gfx_surface_write()` が D32・D16 の surface を Y tile の R32_FLOAT・R16_UNORM
+  として書く（pitch は 128 byte の倍数、address は 4 KiB 揃え）。buffer の側は線形の R32_FLOAT・R16_UNORM。copy の texel の byte 数は
+  形式から（今までは 4 固定）。D16・D32 に TRANSFER_SRC・DST の feature。image と image の copy も同じ surface で動く。
+- 形式: R8_UNORM・R8G8_UNORM・R16G16B16A16_SFLOAT・B10G11R11_UFLOAT_PACK32（filter 可）、R32G32B32A32_SFLOAT（filter 不可、
+  GLES と同じ）。`drv_i915_gfx_format_bytes()`（image.c、公開）、1・2 byte の形式の行は 4 byte に揃える（`i915_gfx_row_pitch()`）。
+  level・layer の起点と subresource layout の横の offset も texel の byte 数で。egltest formats の GL_OUT_OF_MEMORY（14 件）の元は
+  この形式の不足（vkCreateImage の拒否）。
+- blend: 色の形式に `VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT` が無く、libGLESv2（framebuffer.c）は FBO の attachment を
+  blend しない（opaque_mask）にしていた。egltest fbo の blend の不一致の元。filter 可の色の形式と RGBA32F に付けた。
+- view の component swizzle を surface state の shader channel select に（`i915_gfx_view.channel_select`、render target は identity）。
+  egltest formats の rg8-swizzle。
+- instance rate の vertex binding: pipeline が binding の inputRate を持ち、3DSTATE_VF_INSTANCING で instancing enable・step rate 1
+  （anv と同じ）。egltest es3 の D0〜D3（divisor 1・2。divisor 2 は libGLESv2 が stream に展開する）。
+- depth の clear: D16 の word（1.0 は 0xffffffff）は float として NaN で、R32_FLOAT の view の fill では値が保たれない。egltest fbo の
+  D16 の縞と depth の不一致の元。D16 の clear は Y tile の R16_UNORM の target へ depth を色として描く。D32 は従来どおり slice の
+  R32_FLOAT の view を埋める（複数 layer の image で slice の行だけ、今までは image 全体の行で layer 0 以外は image の後ろへはみ出した）。
+  一部の矩形の clear（vkCmdClearAttachments）は D32 も Y tile の surface へ描く（線形の view は tile の配置と合わない）。
+- libGLESv2（texture.c）: まだ指定されていない level（cube の後の面）は copy の region にしない（extent 0 の region は Vulkan で無効）。
+  egltest cube の COPY_BUFFER_TO_IMAGE の EINVAL の元。
+- 実機の試験の kernel が AMD64_KERNEL_MAX_BYTES（16 MiB）を 28 KiB 超えた（.bss が 14 MB）。vkx の場面の state（約 240 KiB）を
+  kernel の image の static から heap（kern_calloc）へ（`tests/render/executor.c`）。
+
 ## 検証
 
 | 確認 | 結果 |
@@ -96,9 +120,17 @@ Phase disposition: normal
 | 実機 vke2・vkx・vkc（`build/ws075-p005/r1-*`） | **PASS 17/17・9/9・9/9** |
 | 実機 capture zdesktop（`r1-zdesktop`） | FAIL: BUG-077（mview の接続の直後に render engine の停止、device lost） |
 | 実機 capture zdesktop-egltest（`hw-egltest-1`・`-2`） | glsl・glsl3 は CHECK failures=0（実機の i915 で GLES 2・3 の場面が初めて通った）。fbo: run 1 は FBO が incomplete（D16 が無かった）→ D16 を足した run 2 は complete、ただし depth と blend の 3 画素が違う。cube: `CUBE setup glerror=0x506`。es3・formats・volumes は BUG-077 の停止で未到達 |
+| host の vk の fixture spirv・lower・resdispatch・eu・compile・pipe（増分 5 の後） | PASS（resdispatch は depth の TRANSFER・blend・RGBA16F・RGBA32F の feature に合わせた） |
+| 実機 capture zdesktop-egltest（`build/ws075-p005/fix-egltest1`〜`3`） | run 1（増分 5 の途中）: cube 0・formats 1・volumes 0・es3 4・fbo 6。run 2: es3・formats・volumes・cube 0、fbo 4（D16 の depth）。**run 3: glsl・glsl3・fbo・cube・es3・formats・volumes の全てが failures 0・glerror 0**。画面 `build/ws031-shots/ws075-p005-20260928-{fix-egltest1,egltest2,egltest3}-sheet.png`。capture の検査 `scenes_shown` は FAIL（desktop の shot に既に egltest の窓があり、差分が出ない: 場面の判定は log の CHECK 行で行う。harness の follow-up） |
+| 実機 vke1・vke2・vkx・vkc（`build/ws075-p005/fix-*`、増分 5 の後） | **PASS 6/6・17/17・9/9・9/9** |
+| 実機 capture zdesktop（`build/ws075-bug077/fix-zdesktop1`）・zdesktop-files（`fix-files1`〜`3`） | PASS（6/6、9/9）。BUG-077 の停止なし |
 | QEMU | 未実施（i915 の実機の変更） |
 
 ## Follow-up
+
+- 2026-09-28 の clear の時点: 下の egltest fbo・cube の follow-up は増分 5 で解決。残り: descriptor 配列と VS の sampled image
+  （ws031-p035、survey の module に使うものが無い）、mipmap の depth の image、D16 の mip の halign 8、capture の `scenes_shown` の
+  判定（harness）。
 
 - egltest fbo: D16 の FBO で depth の試験が全部落ちる（depth-front・behind が背景）、blend が効かない。cube: FBO の setup で
   GL_INVALID_FRAMEBUFFER_OPERATION。BUG-077 の後に調べる。

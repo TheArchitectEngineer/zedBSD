@@ -10,7 +10,9 @@
  *
  * Log records are appended to a fixed ring buffer that drops its oldest
  * bytes when full and counts what it dropped, and every record is mirrored
- * to the platform debug console.  kern_logf() renders a record with the
+ * to the platform debug console, and to the kernel console unless the log is
+ * quiet (the boot parameter kmsg=quiet: the records are kept for dmesg only,
+ * until the console is revealed).  kern_logf() renders a record with the
  * kcrt printf subset (kern_vsnprintf()) without a heap or floating point.
  */
 
@@ -48,6 +50,13 @@ static uint64_t klog_dropped;
  */
 static volatile unsigned klog_mirror_owner;
 
+/*
+ * Nonzero while the log is quiet: set from the boot parameters before the
+ * first driver logs, cleared when the console is revealed (a reader on the
+ * console, a diagnostic that bypasses the log).  Read without the lock.
+ */
+static volatile int klog_quiet;
+
 static void append_locked(const char *bytes, size_t length);
 static int mirror_enter(void);
 static void mirror_leave(int owned);
@@ -80,6 +89,7 @@ kern_log_write(
 	size_t at;
 	size_t n;
 	int owned;
+	int quiet;
 
 	/* Ignores an empty record. */
 	if (bytes == NULL || length == 0)
@@ -100,7 +110,8 @@ kern_log_write(
 	 * driver diagnostic is visible on screen and not only in the ring.
 	 */
 	console_output = __atomic_load_n(&kernel_putc, __ATOMIC_ACQUIRE);
-	if (console_output != NULL) {
+	quiet = __atomic_load_n(&klog_quiet, __ATOMIC_ACQUIRE);
+	if (console_output != NULL && !quiet) {
 		for (at = 0; at < length; at++)
 			console_output((unsigned char)bytes[at]);
 	}
@@ -119,6 +130,31 @@ kern_log_write(
 
 	/* Lets another CPU's record reach the consoles. */
 	mirror_leave(owned);
+}
+
+/*
+ * Makes the log quiet (records for dmesg only) or loud again.
+ */
+void
+kern_log_set_quiet(
+	int quiet)
+{
+	/* The next record sees it. */
+	__atomic_store_n(&klog_quiet, quiet != 0, __ATOMIC_RELEASE);
+}
+
+/*
+ * Reports whether the log is quiet.
+ */
+int
+kern_log_quiet(
+	void)
+{
+	int quiet;
+
+	/* The current state. */
+	quiet = __atomic_load_n(&klog_quiet, __ATOMIC_ACQUIRE);
+	return quiet;
 }
 
 /*

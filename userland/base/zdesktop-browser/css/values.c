@@ -114,6 +114,15 @@ static const struct values_name values_names[] = {
 	{ "white-space", CSS_PROP_WHITE_SPACE },
 	{ "text-decoration-line", CSS_PROP_TEXT_DECORATION_LINE },
 	{ "list-style-type", CSS_PROP_LIST_STYLE_TYPE },
+	{ "top", CSS_PROP_TOP },
+	{ "right", CSS_PROP_RIGHT },
+	{ "bottom", CSS_PROP_BOTTOM },
+	{ "left", CSS_PROP_LEFT },
+	{ "z-index", CSS_PROP_Z_INDEX },
+	{ "clear", CSS_PROP_CLEAR },
+	{ "overflow", CSS_PROP_OVERFLOW },
+	{ "overflow-x", CSS_PROP_OVERFLOW_X },
+	{ "overflow-y", CSS_PROP_OVERFLOW_Y },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -155,21 +164,45 @@ static const struct values_keyword values_display[] = {
 	{ NULL, 0 }
 };
 
-/* The keywords of position (only static is laid out in this pass). */
+/* The keywords of position. */
 static const struct values_keyword values_position[] = {
-	{ "static", 0 },
-	{ "relative", 1 },
-	{ "absolute", 2 },
-	{ "fixed", 3 },
-	{ "sticky", 4 },
+	{ "static", CSS_POSITION_STATIC },
+	{ "relative", CSS_POSITION_RELATIVE },
+	{ "absolute", CSS_POSITION_ABSOLUTE },
+	{ "fixed", CSS_POSITION_FIXED },
+	{ "sticky", CSS_POSITION_STICKY },
 	{ NULL, 0 }
 };
 
 /* The keywords of float. */
 static const struct values_keyword values_float[] = {
-	{ "none", 0 },
-	{ "left", 1 },
-	{ "right", 2 },
+	{ "none", CSS_FLOAT_NONE },
+	{ "left", CSS_FLOAT_LEFT },
+	{ "right", CSS_FLOAT_RIGHT },
+	{ "inline-start", CSS_FLOAT_LEFT },
+	{ "inline-end", CSS_FLOAT_RIGHT },
+	{ NULL, 0 }
+};
+
+/* The keywords of overflow (one value for both axes in this pass). */
+static const struct values_keyword values_overflow[] = {
+	{ "visible", CSS_OVERFLOW_VISIBLE },
+	{ "hidden", CSS_OVERFLOW_HIDDEN },
+	{ "clip", CSS_OVERFLOW_CLIP },
+	{ "scroll", CSS_OVERFLOW_SCROLL },
+	{ "auto", CSS_OVERFLOW_AUTO },
+	{ "overlay", CSS_OVERFLOW_AUTO },
+	{ NULL, 0 }
+};
+
+/* The keywords of clear. */
+static const struct values_keyword values_clear[] = {
+	{ "none", CSS_FLOAT_NONE },
+	{ "left", CSS_FLOAT_LEFT },
+	{ "right", CSS_FLOAT_RIGHT },
+	{ "both", CSS_CLEAR_BOTH },
+	{ "inline-start", CSS_FLOAT_LEFT },
+	{ "inline-end", CSS_FLOAT_RIGHT },
 	{ NULL, 0 }
 };
 
@@ -925,6 +958,7 @@ values_single(
 {
 	const struct values_keyword *table;
 	int keyword;
+	int is_auto;
 	int found;
 	int error;
 
@@ -967,6 +1001,14 @@ values_single(
 	case CSS_PROP_FLOAT:
 		table = values_float;
 		break;
+	case CSS_PROP_CLEAR:
+		table = values_clear;
+		break;
+	case CSS_PROP_OVERFLOW:
+	case CSS_PROP_OVERFLOW_X:
+	case CSS_PROP_OVERFLOW_Y:
+		table = values_overflow;
+		break;
 	case CSS_PROP_VISIBILITY:
 		table = values_visibility;
 		break;
@@ -1002,6 +1044,23 @@ values_single(
 			return EINVAL;
 		value->kind = CSS_VALUE_KEYWORD;
 		value->keyword = keyword;
+		return 0;
+	}
+
+	/* z-index: auto or an integer. */
+	if (property == CSS_PROP_Z_INDEX) {
+		is_auto = css_ident_equal(&tokens[0], "auto");
+		if (is_auto) {
+			value->kind = CSS_VALUE_KEYWORD;
+			value->keyword = 0;
+			return 0;
+		}
+
+		/* An integer (a number token without a fraction). */
+		if (tokens[0].type != CSS_TOKEN_NUMBER || !tokens[0].integer)
+			return EINVAL;
+		value->kind = CSS_VALUE_NUMBER;
+		value->number = (float)tokens[0].number;
 		return 0;
 	}
 

@@ -362,6 +362,7 @@ css_initial_style(
 	for (side = 0; side < 4; side++) {
 		style->margin[side].unit = CSS_UNIT_PX;
 		style->padding[side].unit = CSS_UNIT_PX;
+		style->offset[side].unit = CSS_UNIT_AUTO;
 		style->border_width[side] = 3;
 		style->border_style[side] = CSS_BORDER_NONE;
 		style->border_color[side] = CSS_CURRENT_COLOR;
@@ -378,6 +379,7 @@ css_initial_style(
 	style->text_align = CSS_TEXT_ALIGN_START;
 	style->white_space = CSS_WHITE_SPACE_NORMAL;
 	style->list_style = CSS_LIST_DISC;
+	style->z_index_auto = 1;
 }
 
 /* Gathers every declaration that applies to an element: the matching rules' and the style attribute's. */
@@ -879,6 +881,19 @@ cascade_apply(
 	case CSS_PROP_FLOAT:
 		style->float_side = value->keyword;
 		break;
+	case CSS_PROP_CLEAR:
+		style->clear = value->keyword;
+		break;
+	case CSS_PROP_OVERFLOW:
+		style->overflow_x = value->keyword;
+		style->overflow_y = value->keyword;
+		break;
+	case CSS_PROP_OVERFLOW_X:
+		style->overflow_x = value->keyword;
+		break;
+	case CSS_PROP_OVERFLOW_Y:
+		style->overflow_y = value->keyword;
+		break;
 	case CSS_PROP_VISIBILITY:
 		style->visibility = value->keyword;
 		break;
@@ -911,6 +926,20 @@ cascade_apply(
 	case CSS_PROP_PADDING_BOTTOM:
 	case CSS_PROP_PADDING_LEFT:
 		style->padding[property - CSS_PROP_PADDING_TOP] = cascade_length(engine, value, style->font_size);
+		break;
+	case CSS_PROP_TOP:
+	case CSS_PROP_RIGHT:
+	case CSS_PROP_BOTTOM:
+	case CSS_PROP_LEFT:
+		style->offset[property - CSS_PROP_TOP] = cascade_length(engine, value, style->font_size);
+		break;
+	case CSS_PROP_Z_INDEX:
+		style->z_index_auto = 1;
+		style->z_index = 0;
+		if (value->kind == CSS_VALUE_NUMBER)
+			style->z_index_auto = 0;
+		if (value->kind == CSS_VALUE_NUMBER)
+			style->z_index = (int)value->number;
 		break;
 	case CSS_PROP_BORDER_TOP_WIDTH:
 	case CSS_PROP_BORDER_RIGHT_WIDTH:
@@ -1013,6 +1042,19 @@ cascade_inherit(
 	case CSS_PROP_FLOAT:
 		style->float_side = parent->float_side;
 		break;
+	case CSS_PROP_CLEAR:
+		style->clear = parent->clear;
+		break;
+	case CSS_PROP_OVERFLOW:
+		style->overflow_x = parent->overflow_x;
+		style->overflow_y = parent->overflow_y;
+		break;
+	case CSS_PROP_OVERFLOW_X:
+		style->overflow_x = parent->overflow_x;
+		break;
+	case CSS_PROP_OVERFLOW_Y:
+		style->overflow_y = parent->overflow_y;
+		break;
 	case CSS_PROP_VISIBILITY:
 		style->visibility = parent->visibility;
 		break;
@@ -1045,6 +1087,16 @@ cascade_inherit(
 	case CSS_PROP_PADDING_BOTTOM:
 	case CSS_PROP_PADDING_LEFT:
 		style->padding[property - CSS_PROP_PADDING_TOP] = parent->padding[property - CSS_PROP_PADDING_TOP];
+		break;
+	case CSS_PROP_TOP:
+	case CSS_PROP_RIGHT:
+	case CSS_PROP_BOTTOM:
+	case CSS_PROP_LEFT:
+		style->offset[property - CSS_PROP_TOP] = parent->offset[property - CSS_PROP_TOP];
+		break;
+	case CSS_PROP_Z_INDEX:
+		style->z_index = parent->z_index;
+		style->z_index_auto = parent->z_index_auto;
 		break;
 	case CSS_PROP_BORDER_TOP_WIDTH:
 	case CSS_PROP_BORDER_RIGHT_WIDTH:

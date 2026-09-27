@@ -669,6 +669,9 @@ console_read(
 	unsigned vt;
 	ssize_t result;
 
+	/* A reader (a login prompt) shows a quiet console (ws035-p097). */
+	kern_text_reveal();
+
 	/* Canonical and noncanonical reads share the same terminal owner. */
 	vt = console_file_vt(file);
 	result = tty_vt_read(vt, file, buffer, size);

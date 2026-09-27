@@ -514,8 +514,14 @@ func main(args) {
     rejectFatFile(payloadVolume,"EFI/BOOT/BOOTX64.EFI");
     requireFatListing(image, "hybrid-esp", espVolume,
         "::/EFI/\n::/EFI/BOOT/\n::/EFI/BOOT/BOOTX64.EFI\n");
+    // ws035-p096: the boot logo the BIOS loader draws (logo=logo.ppm) may be on the payload FAT too.
+    var logoListing = "";
+    if (System.shell("mdir -i " + zbShellQuote(payloadVolume) + " " +
+                     zbShellQuote("::/logo.ppm") + " >/dev/null 2>&1") == 0) {
+        logoListing = "::/logo.ppm\n";
+    }
     requireFatListing(image, "hybrid-payload", payloadVolume,
-        "::/BOOTZBSD.EXE\n::/vmunix\n::/zedbsd.cfg\n::/rootfs.img\n" +
+        "::/BOOTZBSD.EXE\n::/vmunix\n::/zedbsd.cfg\n" + logoListing + "::/rootfs.img\n" +
         "::/data.img\n::/swapfile\n");
     print("amd64 GPT image check: PASS");
 }

@@ -195,7 +195,7 @@ $(BUILD)/bootloader/partition-pbr.bin: $(BUILD)/bootloader/partition-pbr.elf
 
 $(BUILD)/bootloader/bootzbsd.o: $(BIOS_LOADER)/bootzbsd.S \
 	$(BIOS_LOADER)/vbe.inc \
-	bootloader/bios/fat-directory.h \
+	bootloader/bios/fat-directory.h bootloader/bios/logo.h bootloader/common/logo-path.h \
 	bootloader/include/disk-layout.inc bootloader/include/stage2-header.inc \
 	bootloader/include/mbr.inc bootloader/include/fat16.inc \
 	bootloader/include/elf.inc bootloader/include/amd64-handoff.h \
@@ -220,7 +220,20 @@ $(BUILD)/bootloader/bios-fat-directory.i386.o: \
  -fno-stack-protector -fno-asynchronous-unwind-tables \
  -fno-unwind-tables -fno-builtin -Wall -Wextra -Werror -I. \
  -c $< -o $@
+$(BUILD)/bootloader/bios-logo.i386.o: bootloader/bios/logo.c bootloader/bios/logo.h
+	@mkdir -p $(dir $@)
+	$(CC) -m16 -march=i386 -mtune=i386 -Os -ffreestanding -fno-pic -fno-pie \
+ -fno-stack-protector -fno-asynchronous-unwind-tables \
+ -fno-unwind-tables -fno-builtin -Wall -Wextra -Werror -I. \
+ -c $< -o $@
+$(BUILD)/bootloader/common-logo-path.i386.o: bootloader/common/logo-path.c bootloader/common/logo-path.h
+	@mkdir -p $(dir $@)
+	$(CC) -m16 -march=i386 -mtune=i386 -Os -ffreestanding -fno-pic -fno-pie \
+ -fno-stack-protector -fno-asynchronous-unwind-tables \
+ -fno-unwind-tables -fno-builtin -Wall -Wextra -Werror -I. \
+ -c $< -o $@
 PCAT_BOOTZBSD_HELPERS := $(BUILD)/bootloader/bios-zedbsd-config.i386.o \
+	$(BUILD)/bootloader/bios-logo.i386.o $(BUILD)/bootloader/common-logo-path.i386.o \
 	$(BUILD)/bootloader/bios-fat-directory.i386.o \
 	$(BUILD)/bootloader/bios-memory-map.i386.o $(BUILD)/bootloader/common-memory-map.i386.o
 $(BUILD)/bootloader/bootzbsd.elf: $(BUILD)/bootloader/bootzbsd.o \

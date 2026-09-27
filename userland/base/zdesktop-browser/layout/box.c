@@ -8,7 +8,8 @@
 /*
  * The box tree: built from the DOM and the computed styles, with anonymous
  * blocks where a block holds both block and inline children, then laid out
- * from the root and given absolute positions.
+ * from the root and given absolute positions (relatively positioned boxes
+ * shifted by their offsets), and its out-of-flow boxes placed.
  */
 
 #include "layout/layout.h"
@@ -31,7 +32,8 @@ static int box_is_whitespace(const struct layout_box *box);
 static int box_fix_children(struct layout_tree *tree, struct layout_box *box);
 static void box_anonymous_style(const struct css_style *parent, struct css_style *style);
 static void box_marker(struct layout_box *box, int ordinal);
-static void box_absolute(struct layout_box *box, layout_unit x, layout_unit y);
+static void box_relative_offset(const struct layout_box *box, layout_unit *dx, layout_unit *dy);
+static void box_static_inline(struct layout_box *box, layout_unit x, layout_unit y);
 
 /*
  * Builds and lays out the box tree of a document for a viewport of width
@@ -82,12 +84,17 @@ layout_build(
 		return error;
 	root->x = root->margin[CSS_LEFT];
 	root->y = root->margin[CSS_TOP];
-	box_absolute(root, 0, 0);
+	layout_absolute(root, 0, 0);
 
 	/* The document is as tall as the root's margin box. */
 	total = root->margin[CSS_TOP] + root->border[CSS_TOP] + root->padding[CSS_TOP] + root->height +
 	    root->padding[CSS_BOTTOM] + root->border[CSS_BOTTOM] + root->margin[CSS_BOTTOM];
 	tree->document_height = total;
+
+	/* The boxes out of the flow go to their containing blocks (the document grows to hold them). */
+	error = layout_position(tree);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the tree is laid out. */
 	return 0;
@@ -135,6 +142,114 @@ layout_to_px(
 }
 
 /*
+ * Turns positions relative to the parent's content box into absolute ones
+ * for a box placed at x and y (its parent's content origin) and its
+ * descendants: a relatively positioned box moves by its offsets, and a
+ * box out of the flow gets its absolute static position (it is placed
+ * later).
+ */
+void
+layout_absolute(
+	struct layout_box *box,
+	layout_unit x,
+	layout_unit y)
+{
+	struct layout_box *child;
+	layout_unit content_x;
+	layout_unit content_y;
+	layout_unit dx;
+	layout_unit dy;
+
+	/* The box's border box moves by the parent's content origin, and by its offsets when it is relative. */
+	box_relative_offset(box, &dx, &dy);
+	box->x += x + dx;
+	box->y += y + dy;
+
+	/* Its children are relative to its content box. */
+	content_x = box->x + box->border[CSS_LEFT] + box->padding[CSS_LEFT];
+	content_y = box->y + box->border[CSS_TOP] + box->padding[CSS_TOP];
+
+	/* The lines are relative to the block; boxes out of the flow among them start at its content's top. */
+	if (box->children_inline) {
+		box_static_inline(box, content_x, content_y);
+		return;
+	}
+
+	/* A block child moves with the box; one out of the flow only learns where its static position is. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow) {
+			child->static_x += content_x;
+			child->static_y += content_y;
+			continue;
+		}
+
+		/* A child in the flow. */
+		layout_absolute(child, content_x, content_y);
+	}
+}
+
+/*
+ * Tells whether a box is positioned for the painting order: relative,
+ * absolute or fixed (sticky is laid out as static in this pass).
+ */
+int
+layout_is_positioned(
+	const struct layout_box *box)
+{
+	/* Only blocks are painted as positioned boxes. */
+	if (box->kind != LAYOUT_BLOCK)
+		return 0;
+
+	/* The three positioned schemes. */
+	if (box->style.position == CSS_POSITION_RELATIVE)
+		return 1;
+	if (box->style.position == CSS_POSITION_ABSOLUTE)
+		return 1;
+	if (box->style.position == CSS_POSITION_FIXED)
+		return 1;
+
+	/* Static and sticky boxes. */
+	return 0;
+}
+
+/*
+ * Tells whether a box clips its content to its padding box: its overflow
+ * is not visible, and is not the viewport's (the root's overflow, or the
+ * body's when the root's is visible, goes to the viewport).
+ */
+int
+layout_clips(
+	const struct layout_box *box)
+{
+	const struct dom_element *element;
+	int is_body;
+
+	/* Visible on both axes clips nothing. */
+	if (box->style.overflow_x == CSS_OVERFLOW_VISIBLE && box->style.overflow_y == CSS_OVERFLOW_VISIBLE)
+		return 0;
+
+	/* The root's overflow is the viewport's. */
+	if (box->parent == NULL)
+		return 0;
+
+	/* So is the body's, when the root leaves its own visible. */
+	is_body = 0;
+	if (box->node != NULL && box->node->type == DOM_ELEMENT && box->parent->parent == NULL) {
+		element = (const struct dom_element *)box->node;
+		is_body = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_BODY);
+	}
+
+	/* The body gives its overflow to the viewport when the root keeps visible. */
+	if (is_body &&
+	    box->parent->style.overflow_x == CSS_OVERFLOW_VISIBLE &&
+	    box->parent->style.overflow_y == CSS_OVERFLOW_VISIBLE)
+		return 0;
+
+	/* Any other box clips. */
+	return 1;
+}
+
+/*
  * Picks the font a style draws text with.
  */
 void
@@ -164,6 +279,8 @@ box_build_element(
 {
 	struct css_style *style;
 	struct layout_box *box;
+	int out_of_flow;
+	int floating;
 	int kind;
 	int error;
 
@@ -203,11 +320,27 @@ box_build_element(
 	if (parent == NULL)
 		kind = LAYOUT_BLOCK;
 
+	/* An absolutely positioned or fixed box is a block out of the flow (the root stays in it). */
+	out_of_flow = 0;
+	if (parent != NULL && (style->position == CSS_POSITION_ABSOLUTE || style->position == CSS_POSITION_FIXED)) {
+		kind = LAYOUT_BLOCK;
+		out_of_flow = 1;
+	}
+
+	/* A float that is not out of the flow is a block beside the flow. */
+	floating = CSS_FLOAT_NONE;
+	if (parent != NULL && !out_of_flow && style->float_side != CSS_FLOAT_NONE) {
+		kind = LAYOUT_BLOCK;
+		floating = style->float_side;
+	}
+
 	/* Makes the box and places it in the tree. */
 	box = box_new(tree, kind, &element->node, style);
 	free(style);
 	if (box == NULL)
 		return ENOMEM;
+	box->out_of_flow = out_of_flow;
+	box->floating = floating;
 	if (parent == NULL) {
 		tree->root = box;
 	} else {
@@ -377,10 +510,12 @@ box_fix_children(
 	int inline_level;
 	int whitespace;
 
-	/* Looks at the kinds of children. */
+	/* Looks at the kinds of children (those out of the flow and floats count as neither). */
 	has_block = 0;
 	has_inline = 0;
 	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE)
+			continue;
 		inline_level = box_is_inline_level(child);
 		whitespace = box_is_whitespace(child);
 		if (!inline_level)
@@ -409,6 +544,19 @@ box_fix_children(
 		next = child->next;
 		child->next = NULL;
 		inline_level = box_is_inline_level(child);
+
+		/* A box out of the flow or a float stays where it is among the others, and ends nothing. */
+		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE) {
+			if (anonymous != NULL) {
+				box_append(anonymous, child);
+			} else {
+				box_append(box, child);
+			}
+
+			/* On to the next child. */
+			child = next;
+			continue;
+		}
 
 		/* A block ends the anonymous block before it. */
 		if (!inline_level) {
@@ -535,26 +683,75 @@ box_marker(
 	}
 }
 
-/* Turns positions relative to the parent's content box into absolute ones. */
+/* Resolves a relatively positioned box's offsets: left (or minus right), top (or minus bottom); zero otherwise. */
 static void
-box_absolute(
+box_relative_offset(
+	const struct layout_box *box,
+	layout_unit *dx,
+	layout_unit *dy)
+{
+	const struct css_length *offset;
+	layout_unit width;
+
+	/* Only a relative box moves. */
+	*dx = 0;
+	*dy = 0;
+	if (box->style.position != CSS_POSITION_RELATIVE)
+		return;
+
+	/* Percentages are of the containing block's width (and the height's are left at zero in this pass). */
+	width = 0;
+	if (box->parent != NULL)
+		width = box->parent->width;
+	offset = box->style.offset;
+
+	/* Horizontally: left wins over right. */
+	if (offset[CSS_LEFT].unit == CSS_UNIT_PX) {
+		*dx = layout_from_px(offset[CSS_LEFT].value);
+	} else if (offset[CSS_LEFT].unit == CSS_UNIT_PERCENT) {
+		*dx = (layout_unit)((float)width * offset[CSS_LEFT].value / 100.0f);
+	} else if (offset[CSS_RIGHT].unit == CSS_UNIT_PX) {
+		*dx = -layout_from_px(offset[CSS_RIGHT].value);
+	} else if (offset[CSS_RIGHT].unit == CSS_UNIT_PERCENT) {
+		*dx = -(layout_unit)((float)width * offset[CSS_RIGHT].value / 100.0f);
+	}
+
+	/* Vertically: top wins over bottom. */
+	if (offset[CSS_TOP].unit == CSS_UNIT_PX) {
+		*dy = layout_from_px(offset[CSS_TOP].value);
+	} else if (offset[CSS_BOTTOM].unit == CSS_UNIT_PX) {
+		*dy = -layout_from_px(offset[CSS_BOTTOM].value);
+	}
+}
+
+/*
+ * Gives the boxes out of the flow inside a block's inline content their
+ * static position (the content's top left), and makes the floats there
+ * absolute (they were placed relative to the content box).
+ */
+static void
+box_static_inline(
 	struct layout_box *box,
 	layout_unit x,
 	layout_unit y)
 {
 	struct layout_box *child;
-	layout_unit content_x;
-	layout_unit content_y;
 
-	/* The box's border box moves by the parent's content origin. */
-	box->x += x;
-	box->y += y;
+	/* The inline boxes are searched through; a box out of the flow or a float is not entered. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow) {
+			child->static_x = x;
+			child->static_y = y;
+			continue;
+		}
 
-	/* Its children are relative to its content box. */
-	content_x = box->x + box->border[CSS_LEFT] + box->padding[CSS_LEFT];
-	content_y = box->y + box->border[CSS_TOP] + box->padding[CSS_TOP];
-	if (box->children_inline)
-		return;
-	for (child = box->first_child; child != NULL; child = child->next)
-		box_absolute(child, content_x, content_y);
+		/* A float moves with the content box. */
+		if (child->floating != CSS_FLOAT_NONE) {
+			layout_absolute(child, x, y);
+			continue;
+		}
+
+		/* An inline box's content. */
+		box_static_inline(child, x, y);
+	}
 }

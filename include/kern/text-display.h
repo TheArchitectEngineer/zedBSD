@@ -99,6 +99,12 @@ struct kern_text_ops {
 
 	/* Optionally renders retained text into an independent caller-owned RAM image. */
 	int (*snapshot)(struct kern_text_snapshot *snapshot);
+
+	/*
+	 * Optionally shows a console that has been kept off the screen (a quiet
+	 * boot, ws035-p097): the screen is cleared and the retained text drawn.
+	 */
+	void (*reveal)(void);
 };
 
 /*
@@ -125,6 +131,14 @@ void kern_text_show_cursor(int visible);
 void kern_text_update_cursor(void);
 void kern_text_suspend(void);
 void kern_text_resume(void);
+
+/*
+ * The quiet console (ws035-p097): reveal shows it and makes the log loud;
+ * kernel_putc is the kernel's own character path (the HAL's lines, a fatal
+ * error), which goes to the log while the console is quiet.
+ */
+void kern_text_reveal(void);
+void kern_text_kernel_putc(int character);
 
 /* Renders or queries an optional retained-cell snapshot, without reading display memory. */
 int kern_text_snapshot(struct kern_text_snapshot *snapshot);

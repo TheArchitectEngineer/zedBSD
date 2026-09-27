@@ -1,0 +1,125 @@
+diff --git a/src/hal/amd64/bsp-pcat/cons.c b/src/hal/amd64/bsp-pcat/cons.c
+index 671e7fdd..3879d465 100644
+--- a/src/hal/amd64/bsp-pcat/cons.c
++++ b/src/hal/amd64/bsp-pcat/cons.c
+@@ -111,6 +111,8 @@ static void newline_locked(void);
+ static void put_graphic_locked(int character);
+ static void putc_locked(int character);
+ static void write_n_locked(const char *string, unsigned length);
++static int quiet_boot(void);
++static void quiet_panel_locked(void);
+ 
+ /*
+  * Acquires recursive console-output ownership.
+@@ -337,6 +339,7 @@ prekern_pcat_cons_init(
+ 	uint64_t offset;
+ 	uint64_t pixel;
+ 	uint64_t pixel_count;
++	int quiet;
+ 
+ 	/* Acquires output ownership before selecting the rendering backend. */
+ 	token = console_output_lock();
+@@ -360,6 +363,21 @@ prekern_pcat_cons_init(
+ 		framebuffer_y = (framebuffer->height - PCAT_CONS_ROWS *
+ 		    PCAT_VGAFONT_HEIGHT) / 2U;
+ 
++		/*
++		 * A quiet boot (kmsg=quiet, ws035-p097) keeps the loader's logo:
++		 * the early console draws nothing (the debug port still has every
++		 * line), and the progress block the kernel's entry drew over the
++		 * logo is painted over.  The kernel's own console takes over from
++		 * here, quiet as well.
++		 */
++		quiet = quiet_boot();
++		if (quiet) {
++			quiet_panel_locked();
++			console_suspended = 1;
++			console_output_unlock(token);
++			return;
++		}
++
+ 		/* Clears every visible firmware framebuffer pixel. */
+ 		pixel_count = (uint64_t)framebuffer->stride *
+ 		    framebuffer->height;
+@@ -373,6 +391,81 @@ prekern_pcat_cons_init(
+ 
+ }
+ 
++/* Reports whether the boot parameters have the whole token kmsg=quiet. */
++static int
++quiet_boot(
++	void)
++{
++	static const char token[] = "kmsg=quiet";
++	const char *text;
++	unsigned position;
++	unsigned index;
++	int same;
++
++	/* The parameters the loader handed over. */
++	text = hal_get_arch_handoff("boot.command-line");
++	if (text == NULL)
++		return 0;
++
++	/* Each space-separated token, compared whole. */
++	position = 0;
++	while (position < KERN_BOOT_PARAMETERS_STORAGE_SIZE && text[position] != '\0') {
++		/* A separator. */
++		if (text[position] == ' ' || text[position] == '\t' || text[position] == '\n' || text[position] == '\r') {
++			position++;
++			continue;
++		}
++
++		/* The token against kmsg=quiet. */
++		same = 1;
++		for (index = 0; index + 1U < sizeof(token); index++) {
++			if (position + index >= KERN_BOOT_PARAMETERS_STORAGE_SIZE || text[position + index] != token[index]) {
++				same = 0;
++				break;
++			}
++		}
++		if (same) {
++			position += index;
++			if (position >= KERN_BOOT_PARAMETERS_STORAGE_SIZE || text[position] == '\0' || text[position] == ' ' || text[position] == '\t' || text[position] == '\n' || text[position] == '\r')
++				return 1;
++		}
++
++		/* The rest of the token. */
++		while (position < KERN_BOOT_PARAMETERS_STORAGE_SIZE && text[position] != '\0' && text[position] != ' ' && text[position] != '\t' && text[position] != '\n' && text[position] != '\r')
++			position++;
++	}
++
++	/* Not a quiet boot. */
++	return 0;
++}
++
++/*
++ * Paints the progress panel at the top right (136x40, where the loader's
++ * stages and the kernel's entry draw their blocks) with the colour just left
++ * of it, which is the logo's background on a quiet boot.
++ */
++static void
++quiet_panel_locked(
++	void)
++{
++	uint32_t background;
++	unsigned x;
++	unsigned y;
++	unsigned left;
++
++	/* Too narrow a screen has no panel. */
++	if (framebuffer->width <= 137U || framebuffer->height < 40U)
++		return;
++
++	/* The colour beside the panel, over the whole panel. */
++	left = framebuffer->width - 136U;
++	background = framebuffer_pixels[left - 1U];
++	for (y = 0; y < 40U; y++) {
++		for (x = left; x < framebuffer->width; x++)
++			framebuffer_pixels[(uint64_t)y * framebuffer->stride + x] = background;
++	}
++}
++
+ /*
+  * Leaves the PC/AT keyboard line to the kernel-side 8042 driver.
+  *

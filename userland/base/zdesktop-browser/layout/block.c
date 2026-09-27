@@ -9,7 +9,8 @@
  * Block layout: the widths of CSS 2's visual formatting model, block boxes
  * stacked in normal flow, and the collapsing of their vertical margins
  * (between siblings, through empty blocks, and between a block and its
- * first and last children).
+ * first and last children).  Boxes out of the flow are passed by, with the
+ * static position they would have had.
  */
 
 #include "layout/layout.h"
@@ -20,11 +21,14 @@ static void block_width(struct layout_box *box, layout_unit containing_width);
 static int block_children(struct layout_tree *tree, struct layout_box *box);
 static layout_unit block_collapse(layout_unit first, layout_unit second);
 static layout_unit block_outer_height(const struct layout_box *box);
+static int block_owns_context(const struct layout_box *box);
+static int block_content(struct layout_tree *tree, struct layout_box *box);
 
 /*
  * Lays out a block box in a containing block of a width: its box model,
  * its content (lines or blocks) and its height.  The box's position is
- * set by its parent.
+ * set by its parent, which puts the tree's origin at the box's margin box
+ * left and border box top in the block formatting context first (float.c).
  */
 int
 layout_block(
@@ -32,21 +36,42 @@ layout_block(
 	struct layout_box *box,
 	layout_unit containing_width)
 {
+	struct layout_context context;
+	struct wb_vector floats;
+	layout_unit saved_x;
+	layout_unit saved_y;
 	layout_unit height;
+	int own_context;
 	int error;
 
 	/* The margins, borders, paddings and the content width. */
 	block_box_model(box, containing_width);
 	block_width(box, containing_width);
 
-	/* Lays out the content: lines of inline content, or the child blocks. */
-	box->collapsed_top = box->margin[CSS_TOP];
-	box->collapsed_bottom = box->margin[CSS_BOTTOM];
-	if (box->children_inline) {
-		error = layout_inline(tree, box);
+	/* A box that starts a formatting context lays its content out in it; another moves the origin to its content box. */
+	saved_x = tree->origin_x;
+	saved_y = tree->origin_y;
+	own_context = block_owns_context(box);
+	if (own_context) {
+		layout_context_begin(tree, &context, &floats);
 	} else {
-		error = block_children(tree, box);
+		tree->origin_x += box->margin[CSS_LEFT] + box->border[CSS_LEFT] + box->padding[CSS_LEFT];
+		tree->origin_y += box->border[CSS_TOP] + box->padding[CSS_TOP];
 	}
+
+	/* The content; a formatting context of its own holds its floats too. */
+	error = block_content(tree, box);
+	if (error == 0 && own_context) {
+		height = layout_floats_bottom(tree);
+		if (height > box->height)
+			box->height = height;
+	}
+
+	/* The formatting context and the origin are the caller's again. */
+	if (own_context)
+		layout_context_end(tree, &context);
+	tree->origin_x = saved_x;
+	tree->origin_y = saved_y;
 
 	/* Propagates a content that could not be laid out. */
 	if (error != 0)
@@ -73,6 +98,65 @@ layout_block(
 	}
 
 	/* Succeeded: the box has its size. */
+	return 0;
+}
+
+/* Lays out a block's content: lines of inline content, or the child blocks. */
+static int
+block_content(
+	struct layout_tree *tree,
+	struct layout_box *box)
+{
+	int error;
+
+	/* The margins the content may collapse with. */
+	box->collapsed_top = box->margin[CSS_TOP];
+	box->collapsed_bottom = box->margin[CSS_BOTTOM];
+
+	/* The lines, or the children. */
+	if (box->children_inline) {
+		error = layout_inline(tree, box);
+	} else {
+		error = block_children(tree, box);
+	}
+
+	/* Propagates a content that could not be laid out. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the content is laid out. */
+	return 0;
+}
+
+/* Tells whether a box starts a block formatting context of its own (the root, floats, boxes out of the flow, clipping boxes, inline blocks, cells, flex). */
+static int
+block_owns_context(
+	const struct layout_box *box)
+{
+	int clips;
+
+	/* The root, a float, a box out of the flow. */
+	if (box->parent == NULL)
+		return 1;
+	if (box->floating != CSS_FLOAT_NONE)
+		return 1;
+	if (box->out_of_flow)
+		return 1;
+
+	/* A box that clips its overflow. */
+	clips = layout_clips(box);
+	if (clips)
+		return 1;
+
+	/* The displays that make a formatting context (laid out as blocks in this pass). */
+	if (box->style.display == CSS_DISPLAY_INLINE_BLOCK)
+		return 1;
+	if (box->style.display == CSS_DISPLAY_TABLE_CELL)
+		return 1;
+	if (box->style.display == CSS_DISPLAY_FLEX)
+		return 1;
+
+	/* A block in its parent's context. */
 	return 0;
 }
 
@@ -150,12 +234,12 @@ block_width(
 		width = 0;
 	box->width = width;
 
-	/* Auto margins share what is left of a sized box: both center it, one takes it all. */
+	/* Auto margins share what is left of a sized box: both center it, one takes it all (a float's are zero). */
 	left_auto = 0;
-	if (box->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO)
+	if (box->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO && box->floating == CSS_FLOAT_NONE)
 		left_auto = 1;
 	right_auto = 0;
-	if (box->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO)
+	if (box->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO && box->floating == CSS_FLOAT_NONE)
 		right_auto = 1;
 	room = containing_width - width - frame;
 	if (room < 0)
@@ -184,6 +268,14 @@ block_children(
 	layout_unit pending;
 	layout_unit child_top;
 	layout_unit child_bottom;
+	layout_unit origin_x;
+	layout_unit origin_y;
+	layout_unit estimate;
+	layout_unit clearance;
+	layout_unit room_left;
+	layout_unit room_right;
+	layout_unit room_width;
+	int own_context;
 	int collapse_top;
 	int collapse_bottom;
 	int first;
@@ -207,12 +299,60 @@ block_children(
 	cursor = 0;
 	pending = 0;
 	first = 1;
+	origin_x = tree->origin_x;
+	origin_y = tree->origin_y;
 	for (child = box->first_child; child != NULL; child = child->next) {
-		/* Lays the child out in this box's content width. */
-		error = layout_block(tree, child, box->width);
+		/* A box out of the flow takes no room; its static position is where the next block would start. */
+		if (child->out_of_flow) {
+			child->static_x = 0;
+			child->static_y = cursor + pending;
+			if (first && collapse_top)
+				child->static_y = 0;
+			continue;
+		}
+
+		/* A float shrinks to fit and goes to its side, no higher than where the next block would start. */
+		if (child->floating != CSS_FLOAT_NONE) {
+			tree->origin_x = origin_x;
+			tree->origin_y = origin_y + cursor + pending;
+			error = layout_shrink_to_fit(tree, child, box->width);
+			tree->origin_x = origin_x;
+			tree->origin_y = origin_y;
+			if (error == 0)
+				error = layout_place_float(tree, child, cursor + pending, box->width);
+			if (error != 0)
+				return error;
+			continue;
+		}
+
+		/* The child's border box starts about here (before its margin collapses with its first child's). */
+		estimate = cursor + block_collapse(pending, block_resolve(&child->style.margin[CSS_TOP], box->width));
+		if (first && collapse_top)
+			estimate = 0;
+		clearance = layout_clearance(tree, child->style.clear);
+		if (estimate < clearance)
+			estimate = clearance;
+
+		/* A child with its own formatting context keeps out of the floats beside its top: it gets the room between them. */
+		room_left = 0;
+		room_width = box->width;
+		own_context = block_owns_context(child);
+		if (own_context) {
+			layout_line_room(tree, estimate, estimate + 1, box->width, &room_left, &room_right);
+			room_width = room_right - room_left;
+			if (room_width < 0)
+				room_width = 0;
+		}
+
+		/* Lays the child out in that width, where the floats beside it are. */
+		tree->origin_x = origin_x + room_left;
+		tree->origin_y = origin_y + estimate;
+		error = layout_block(tree, child, room_width);
+		tree->origin_x = origin_x;
+		tree->origin_y = origin_y;
 		if (error != 0)
 			return error;
-		child->x = child->margin[CSS_LEFT];
+		child->x = room_left + child->margin[CSS_LEFT];
 		child_top = child->collapsed_top;
 		child_bottom = child->collapsed_bottom;
 
@@ -243,6 +383,13 @@ block_children(
 			child->y = 0;
 		} else {
 			child->y = cursor + block_collapse(pending, child_top);
+		}
+
+		/* A child that clears floats starts below them (its margins then no longer collapse through). */
+		if (child->y < clearance) {
+			child->y = clearance;
+			if (first && collapse_top)
+				box->collapsed_top = box->margin[CSS_TOP];
 		}
 
 		/* The children after this one are not the first to meet the box's top margin. */

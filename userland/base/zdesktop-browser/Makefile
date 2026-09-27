@@ -80,6 +80,8 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/box.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/block.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/inline.c \
+	$(ZDESKTOP_BROWSER_DIR)/layout/float.c \
+	$(ZDESKTOP_BROWSER_DIR)/layout/position.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/dump.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/hit.c \
 	$(ZDESKTOP_BROWSER_DIR)/paint/list.c \
