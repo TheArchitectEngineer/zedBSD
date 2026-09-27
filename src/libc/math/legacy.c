@@ -87,9 +87,6 @@ float cbrtf(float x){return (float)cbrt(x);} long double cbrtl(long double x){re
 double hypot(double x,double y){x=fabs(x);y=fabs(y);if(x<y){double t=x;x=y;y=t;}if(isinf(x))return x;if(x==0)return 0;y/=x;return x*sqrt(1+y*y);}
 float hypotf(float x,float y){return (float)hypot(x,y);} long double hypotl(long double x,long double y){return (long double)hypot((double)x,(double)y);}
 
-static int integer_value(double y,long long *value){double t=trunc(y);if(t!=y||fabs(y)>9.22e18)return 0;*value=(long long)t;return 1;}
-double pow(double x,double y){long long n;if(y==0)return 1;if(x==0)return y<0?INFINITY:x;if(x<0){if(!integer_value(y,&n)){errno=EDOM;return NAN;}return (n&1)?-exp(y*log(-x)):exp(y*log(-x));}return exp(y*log(x));}
-float powf(float x,float y){return (float)pow(x,y);} long double powl(long double x,long double y){return (long double)pow((double)x,(double)y);}
 
 /* Abramowitz-Stegun 7.1.26, maximum error about 1.5e-7. */
 double erf(double x){double s=x<0?-1:1,t,a;x=fabs(x);t=1/(1+0.3275911*x);a=1-(((((1.061405429*t-1.453152027)*t+1.421413741)*t-0.284496736)*t+0.254829592)*t)*exp(-x*x);return s*a;}

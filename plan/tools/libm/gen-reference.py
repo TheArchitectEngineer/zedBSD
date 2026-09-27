@@ -91,6 +91,11 @@ def high(function, *args):
 		return function(*[mpfr(a) for a in args])
 
 
+def power(base, exponent):
+	"""MPFR's pow, through the operator of gmpy2."""
+	return base ** exponent
+
+
 def random_double(rng: random.Random, low: int, high: int) -> float:
 	"""A double with a uniformly chosen binade in [low, high] and sign."""
 	exponent = rng.randint(low, high)
@@ -203,6 +208,12 @@ class Writer:
 	def ulp(self, name: str, args, value, host_function=None, is_float: bool = False) -> None:
 		"""Adds an ulp case with the true value, and measures the host on it."""
 		high, low = split(value)
+		if is_float:
+			# A value past the float range rounds to an infinite float.
+			with gmpy2.context(IEEE32):
+				narrowed = float(+value)
+			if math.isinf(narrowed):
+				high, low = narrowed, 0.0
 		self.add(name, ULP_FLOAT if is_float else ULP_DOUBLE, args, high, low)
 		if host_function is not None:
 			try:
@@ -466,6 +477,63 @@ def gen_log(w: Writer, rng: random.Random, count: int) -> None:
 			w.ulp("log1pf", (y,), high(gmpy2.log1p, y), host_function("log1pf", 1, True), True)
 
 
+def gen_pow(w: Writer, rng: random.Random, count: int) -> None:
+	"""pow and powf: general, near one, integral exponents, exact results."""
+	host_pow = host_function("pow", 2)
+	cases = []
+	for _ in range(count // 2):
+		x = abs(random_double(rng, -1074, 1023))
+		limit = 1080.0 / max(abs(math.log2(x)), 1e-300)
+		y = rng.uniform(-limit, limit)
+		cases.append((x, y))
+	for _ in range(count // 8):
+		x = 1.0 + random_double(rng, -52, -8)
+		y = rng.uniform(-700.0, 700.0) / abs(math.log(x))
+		cases.append((x, y))
+	for _ in range(count // 8):
+		x = random_double(rng, -30, 30)
+		y = float(rng.randint(-30, 30))
+		cases.append((x, y))
+	for _ in range(count // 8):
+		x = abs(random_double(rng, -1074, 1023))
+		y = random_double(rng, -40, 3)
+		cases.append((x, y))
+	for _ in range(count // 8):
+		x = rng.uniform(0.0, 10.0)
+		y = rng.uniform(-10.0, 10.0)
+		cases.append((x, y))
+	for x, y in cases:
+		if x == 0.0:
+			continue
+		w.ulp("pow", (x, y), high(power, x, y), host_pow)
+	# Exactly representable results must come out exactly.
+	for base in range(2, 200):
+		for n in range(-3, 60):
+			value = Fraction(base) ** n
+			if value.denominator & (value.denominator - 1):
+				continue
+			if value.numerator >= 2 ** 53:
+				continue
+			w.add("pow", EXACT, (float(base), float(n)), float(value))
+			if n & 1:
+				w.add("pow", EXACT, (float(-base), float(n)), -float(value))
+			else:
+				w.add("pow", EXACT, (float(-base), float(n)), float(value))
+	for n in range(0, 23):
+		w.add("pow", EXACT, (10.0, float(n)), float(10 ** n))
+	for n in range(-1074, 1024):
+		w.add("pow", EXACT, (2.0, float(n)), math.ldexp(1.0, n))
+		w.add("pow", EXACT, (0.5, float(-n)), math.ldexp(1.0, n))
+	for x in (4.0, 9.0, 16.0, 2.25, 0.25, 1e300):
+		w.add("pow", EXACT, (x, 0.5), math.sqrt(x))
+	host_powf = host_function("powf", 2, True)
+	for _ in range(count):
+		x = abs(random_float(rng, -149, 127))
+		limit = 150.0 / max(abs(math.log2(x)), 1e-30)
+		y = to_float32(rng.uniform(-limit, limit))
+		w.ulp("powf", (x, y), high(power, x, y), host_powf, True)
+
+
 GENERATORS = {
 	"remainders": gen_remainders,
 	"fma": gen_fma,
@@ -474,6 +542,7 @@ GENERATORS = {
 	"exponent": gen_exponent,
 	"exp": gen_exp,
 	"log": gen_log,
+	"pow": gen_pow,
 }
 
 
