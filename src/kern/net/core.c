@@ -322,6 +322,33 @@ net_get_stats(
 }
 
 /*
+ * Takes a reference on the loopback device while it is live.
+ *
+ * A packet for one of this host's own addresses is sent round this device.
+ * Reports NULL before the device exists or once it is going away; the
+ * caller releases a reference it was given.
+ */
+struct net_device *
+net_loopback_ref(void)
+{
+	struct net_device *device;
+	int referenced;
+
+	/* Reads the device, which net_init sets once. */
+	device = loopback_device;
+	if (device == NULL)
+		return NULL;
+
+	/* References it only while it is live. */
+	referenced = net_device_ref_live(device);
+	if (!referenced)
+		return NULL;
+
+	/* Succeeded: the caller now holds the loopback device. */
+	return device;
+}
+
+/*
  * Runs the WLAN station retirement poll.
  *
  * A persistent bounded poll avoids lost wakeups and works while interfaces

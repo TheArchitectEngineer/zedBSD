@@ -159,6 +159,59 @@ inet_interface_address(
 }
 
 /*
+ * Tells whether an address is configured on a live interface of this host.
+ *
+ * A packet for such an address is delivered here, round the loopback
+ * device, rather than sent out of the interface that carries the address.
+ */
+int
+inet_address_is_local(
+	uint32_t address)
+{
+	struct net_device *device;
+	bool enabled;
+	unsigned index;
+	int live;
+	int local;
+
+	/* No interface carries the address until one is found. */
+	local = 0;
+
+	/* The unspecified address belongs to no interface. */
+	if (address == INADDR_ANY)
+		return 0;
+
+	/* Looks for a live interface that carries the address. */
+	enabled = interface_lock();
+
+	/* Scans every interface slot; the lock keeps the table still. */
+	for (index = 0; index < NET_DEVICE_MAX; index++) {
+		device = interfaces[index].device;
+
+		/* Skips an empty slot and an interface with another address. */
+		if (device == NULL)
+			continue;
+		if (interfaces[index].address != address)
+			continue;
+
+		/* An interface that is going away no longer owns its address. */
+		live = net_device_is_live(device);
+		if (!live)
+			continue;
+
+		/* Found: the address is this host's own. */
+		local = 1;
+		break;
+	}
+
+	/* Lets the interface table change again. */
+	interface_unlock(enabled);
+
+	/* Succeeded: reports whether the address is this host's own. */
+	return local;
+}
+
+/*
  * Initializes the internet part of a socket object.
  */
 void

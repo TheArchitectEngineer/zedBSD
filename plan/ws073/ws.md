@@ -39,8 +39,9 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p002](phase002/phase.md) | BUG-065 | 同じ block device の 2 度目の mount を EBUSY に（優先度 高） | cleared |
 | [ws073-p003](phase003/phase.md) | BUG-062 | i386 pcat の vmunix の `sched.c` の -Watomic-alignment（main の ws036-p021 の修正を build で確認） | cleared |
 | [ws073-p004](phase004/phase.md) | BUG-063 | `truncate -s N` が無い file を作る、`mount -o rw` を受ける | cleared |
-| ws073-p005 | BUG-028 | 閉じた loopback の port への connect が返らない | planned |
+| [ws073-p005](phase005/phase.md) | BUG-028 | 閉じた port への connect を ECONNREFUSED に、自分の interface の address への packet を lo0 で届ける | cleared |
 | ws073-p006 | BUG-067 | devfs の tty の node の chmod（`mesg n`）が EOPNOTSUPP | planned |
+| ws073-p007 | BUG-068 | console の POSIX-R2.ELF が SIGEV_THREAD の worker の生きている間の自分自身への execve の後に止まる | planned |
 
 ## 判断が要る点
 
