@@ -302,15 +302,16 @@ activated は `ZTERM MENU item=I action=A` を log に出す。
 - `platform/amd64/vmunix.mk`（libzdesktop の link、zdesktop-terminal の link）: WS068・WS069 も規則を足す file。
 - `include/libc/zdesktop.h`、`userland/base/libzdesktop/`: WS069 の zdesktop-x11server が libzdesktop に何か足すなら重なる。
 
-## 11. 未決（人間の判断があれば変える。既定で進める）
+## 11. 決定（2026-09-27 ユーザーが既定を確定。以前は未決として既定で進めていた）
 
-1. **menu を開く key**: 既定は F10（GTK・Windows・KDE と gnome-terminal の既定）。terminal の中の program（mc の終了等）は F10 を
-   受け取れなくなる（menu のある窓だけ）。代案: Alt+F10、Ctrl+Alt+M、設定で切る。
-2. **zdesktop が shortcut を実行する**（仕様案 §13 の「持たせることができる」を「持たせる」にした）: toolkit が自分でも accelerator を
-   扱う場合、zdesktop が key を取るので二重にはならないが、client はその key を見ない。代案: 表示だけにして実行は client。
-3. **menu の外の click を client に渡さない**: 閉じるだけ。代案: 閉じてから下の窓にも渡す（Windows 風）。
-4. **icon を描かない**（icon theme が無い）。role の icon を zdesktop の図形で描くかは icon theme の WS で決める。
-5. **非 ASCII の label**: atlas が ASCII だけ。日本語の label は glyph の cache（WS035 の libtruetype の拡張）が要る。
+2026-09-27、ユーザーは以下の既定をそのまま確定した（main の session の伝達）。icon については「アイコンはあとで追加を考えましょう」。
+
+1. **menu を開く key**: F10（GTK・Windows・KDE と gnome-terminal の既定）。terminal の中の program（mc の終了等）は F10 を
+   受け取れなくなる（menu のある窓だけ）。
+2. **zdesktop が shortcut を実行する**（仕様案 §13 の「持たせることができる」を「持たせる」にした）。client はその key を見ない。
+3. **menu の外の click は client に渡さない**: 閉じるだけ。
+4. **icon を描かない**（icon theme が無い）。icon は後で考える（ws.md の Future Work の候補）。
+5. **label は ASCII**: atlas が ASCII だけ。日本語の label は glyph の cache（WS035 の libtruetype の拡張）が要る。
 
 ## 12. 右 click の context menu（WS071 のための余地、2026-09-27 coordinator の連絡）
 
