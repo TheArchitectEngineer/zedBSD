@@ -45,7 +45,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p008](phase008/phase.md) | BUG-069 | 端末と pty の読み書きが waitq_sleep の EAGAIN を失敗として返す（console の POSIX-R2 10 回連続 status 0） | cleared |
 | [ws073-p009](phase009/phase.md) | — | kernel の boot の FAT を公開する: BOOT を /boot、ESP を /boot/esp（ユーザーの判断 2026-09-27） | cleared |
 | [ws073-p010](phase010/phase.md) | BUG-071 | FAT に普通の道具で file を作れる（mount の見せる mode で見せる） | cleared |
-| ws073-p012 | BUG-072 | FAT の metadata の誤り（最上位の directory の `..`、FSInfo の空き数、新しい entry の日時 0） | planned |
+| [ws073-p012](phase012/phase.md) | BUG-072 | FAT32 の metadata を仕様どおりに（`..`、FSInfo、日時）、boot の FAT の sync | cleared |
 | ws073-p011 | BUG-070 | USB HID の keyboard が keypad・NumLock・PrintScreen などの usage を持たない | planned |
 
 ## 判断が要る点
