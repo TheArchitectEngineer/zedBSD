@@ -9,7 +9,7 @@ Related Milestones: MG004, MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Executor: WS073 のサブエージェント（branch `worktree-agent-a4f5b29b09938aa63`。p001・p002 は `worktree-agent-aefedcaf4a52a0507`）。main が merge する
-Resume point: 「残りの bug」の表（2026-09-27 21 時、p018 まで cleared。次は BUG-075 の設計）
+Resume point: 「残りの bug」の表（2026-09-28、p019 まで cleared。次は BUG-075 の設計）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -53,6 +53,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p018](phase018/phase.md) | BUG-026 | 共有の file の mapping への store が munmap・exit で dirty にならず書き戻されない（ld.lld の出力が disk で空）を修正 | cleared |
 | [ws073-p017](phase017/phase.md) | BUG-036・BUG-031（030・041） | 起動時の USB の root port の列挙を ETIMEDOUT・EIO で 3 回まで再試行、kernel の console への写しを record 単位で排他、間欠の bug の再現の試み | cleared |
 | [ws073-p016](phase016/phase.md) | BUG-074・BUG-076 | FAT の readdir の位置を record の番号にし走査中の unlink で entry を飛ばさない（`rm -r`）。FAT の inode の pool が満ちたら cache だけの inode を追い出す | cleared |
+| [ws073-p019](phase019/phase.md) | BUG-079 | libc の setenv・putenv が既存の変数の置き換えで後ろの変数を落とす（App Home の app が zdesktop の環境を失う）を修正 | cleared |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 
