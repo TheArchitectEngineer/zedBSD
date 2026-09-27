@@ -58,6 +58,8 @@
 #define DEVFS_FD_INO_BASE 0x400000000ULL
 /* The three standard descriptors, named in the root. */
 #define DEVFS_STD_INO_BASE 0x500000000ULL
+/* The number of character devices whose ownership or mode can be changed. */
+#define DEVFS_CDEV_ATTRIBUTES_MAX 32U
 #define DEVFS_HIGH __attribute__((section(".hightext")))
 #ifdef KERN_STORAGE_HOST_TEST
 #undef DEVFS_HIGH
@@ -95,10 +97,42 @@ struct devfs_block_io_range {
 	size_t length;
 };
 
+/*
+ * The ownership and mode that chown or chmod gave one character device.
+ *
+ * A character device node is made afresh by every lookup, so a change is
+ * kept here, keyed by the device number, and every later node of that
+ * device starts from it.  An entry is never removed: a device registered
+ * again under the same number keeps what was set until the system restarts.
+ */
+struct devfs_cdev_attributes {
+	dev_t rdev;
+	uid_t uid;
+	gid_t gid;
+	mode_t mode;
+	int used;
+};
+
+/*
+ * The changed attributes of character devices, one slot per device.
+ *
+ * devfs_attributes_lock protects every slot; a slot whose used is 0 is free
+ * and its other fields mean nothing.  Slots are filled by chown and chmod
+ * and live for the kernel's lifetime.
+ */
+static struct devfs_cdev_attributes devfs_attributes[DEVFS_CDEV_ATTRIBUTES_MAX];
+
+/* Serializes the changes and reads of devfs_attributes. */
+static struct spinlock devfs_attributes_lock = {
+	{ 0 }, LOCK_RANK_DEVICE, "devfs attributes", 0, 0
+};
+
 static DEVFS_HIGH int component_equal(const struct componentname *component, const char *text);
 static DEVFS_HIGH int component_copy(const struct componentname *component, char *name, size_t capacity);
 static DEVFS_HIGH int event_name(const char *name);
 static DEVFS_HIGH int devfs_cdev_inode(struct inode *directory, struct cdev *device, struct inode **result);
+static DEVFS_HIGH void devfs_cdev_attributes_apply(struct inode *inode);
+static DEVFS_HIGH int devfs_cdev_setattr(struct inode *inode, const struct stat *attributes, unsigned mask);
 static DEVFS_HIGH int devfs_fixed_inode(struct inode *directory, ino_t number, struct inode **result);
 static DEVFS_HIGH int devfs_lookup(struct inode *directory, const struct componentname *component, struct inode **result);
 static DEVFS_HIGH int devfs_getattr(struct inode *inode, struct stat *status);
@@ -135,12 +169,14 @@ static const struct file_ops devfs_block_ops = {
 };
 
 /*
- * Changes the ownership of a pseudo terminal.
+ * Changes the ownership or the mode of a character device or a pseudo
+ * terminal.
  *
- * This is the one metadata change devfs accepts, and only on a terminal,
- * because handing a terminal to whoever has just logged in is what a login
- * server does and there is nowhere else to record it.  Everything else in
- * /dev is what the driver says it is.
+ * These are the metadata changes devfs accepts: handing a terminal to
+ * whoever has just logged in is what a login server does, and turning off
+ * a terminal's group write bit is what mesg does.  A pseudo terminal keeps
+ * them in the terminal table, a character device in devfs_attributes.
+ * Block devices and the directories are what the kernel says they are.
  */
 static DEVFS_HIGH int
 devfs_setattr(
@@ -153,6 +189,17 @@ devfs_setattr(
 	mode_t mode;
 	uint64_t index;
 	int error;
+
+	/* A character device keeps its changes in devfs. */
+	if (inode != NULL && attributes != NULL &&
+	    inode->i_fop == &cdev_file_ops) {
+		error = devfs_cdev_setattr(inode, attributes, mask);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: later nodes of the device start from the change. */
+		return 0;
+	}
 
 	/* Refuses anything that is not a terminal under /dev/pts. */
 	if (inode == NULL || attributes == NULL ||
@@ -374,6 +421,9 @@ devfs_cdev_inode(
 	inode->i_rdev = device->rdev;
 	inode->i_flags = INODE_DEAD;
 
+	/* Starts from any ownership and mode chown or chmod gave the device. */
+	devfs_cdev_attributes_apply(inode);
+
 	/* Closes allocation/unpublish races before exposing the ephemeral inode. */
 	if (!cdev_is_published(device)) {
 		devfs_release_inode(inode);
@@ -383,6 +433,118 @@ devfs_cdev_inode(
 	*result = inode;
 
 	/* Reports the created inode. */
+	return 0;
+}
+
+/* Gives a character device node the ownership and mode recorded for it. */
+static DEVFS_HIGH void
+devfs_cdev_attributes_apply(
+	struct inode *inode)
+{
+	struct devfs_cdev_attributes *record;
+	unsigned long irq;
+	unsigned index;
+
+	/* Copies the device's record, if it has one, into the node. */
+	irq = spin_lock_irqsave(&devfs_attributes_lock);
+
+	/* Looks through the slots for the device's number. */
+	for (index = 0; index < DEVFS_CDEV_ATTRIBUTES_MAX; index++) {
+		record = &devfs_attributes[index];
+
+		/* Skips a free slot and the slot of another device. */
+		if (!record->used)
+			continue;
+		if (record->rdev != inode->i_rdev)
+			continue;
+
+		/* Found: the node takes what chown and chmod set. */
+		inode->i_uid = record->uid;
+		inode->i_gid = record->gid;
+		inode->i_mode = S_IFCHR | record->mode;
+		break;
+	}
+
+	/* Lets chown and chmod change the records again. */
+	spin_unlock_irqrestore(&devfs_attributes_lock, irq);
+}
+
+/*
+ * Records a change of ownership or mode of a character device.
+ *
+ * The record starts from the node's present attributes the first time the
+ * device changes, so a chmod keeps the owner and a chown keeps the mode.
+ * The node itself takes the change at once; other nodes of the device take
+ * it when they are next looked up or described.
+ */
+static DEVFS_HIGH int
+devfs_cdev_setattr(
+	struct inode *inode,
+	const struct stat *attributes,
+	unsigned mask)
+{
+	struct devfs_cdev_attributes *record;
+	struct devfs_cdev_attributes *free_slot;
+	unsigned long irq;
+	unsigned index;
+
+	/* Refuses a change to anything but the ownership and the mode. */
+	if ((mask & ~(unsigned)(INODE_ATTR_MODE | INODE_ATTR_UID |
+	    INODE_ATTR_GID)) != 0)
+		return EOPNOTSUPP;
+
+	/* Finds the device's record, or a free slot for a new one. */
+	record = NULL;
+	free_slot = NULL;
+	irq = spin_lock_irqsave(&devfs_attributes_lock);
+
+	/* Looks through the slots for the device's number. */
+	for (index = 0; index < DEVFS_CDEV_ATTRIBUTES_MAX; index++) {
+		/* Remembers the first free slot in case the device has none. */
+		if (!devfs_attributes[index].used) {
+			if (free_slot == NULL)
+				free_slot = &devfs_attributes[index];
+			continue;
+		}
+
+		/* Stops at the device's own record. */
+		if (devfs_attributes[index].rdev == inode->i_rdev) {
+			record = &devfs_attributes[index];
+			break;
+		}
+	}
+
+	/* Starts a new record from what the node shows now. */
+	if (record == NULL && free_slot != NULL) {
+		record = free_slot;
+		record->rdev = inode->i_rdev;
+		record->uid = inode->i_uid;
+		record->gid = inode->i_gid;
+		record->mode = inode->i_mode & 07777U;
+		record->used = 1;
+	}
+
+	/* Refuses the change when every slot belongs to another device. */
+	if (record == NULL) {
+		spin_unlock_irqrestore(&devfs_attributes_lock, irq);
+		return ENOSPC;
+	}
+
+	/* Records the requested fields and shows them on this node. */
+	if ((mask & INODE_ATTR_UID) != 0)
+		record->uid = (uid_t)attributes->st_uid;
+	if ((mask & INODE_ATTR_GID) != 0)
+		record->gid = (gid_t)attributes->st_gid;
+	if ((mask & INODE_ATTR_MODE) != 0)
+		record->mode = (mode_t)attributes->st_mode & 07777U;
+	inode->i_uid = record->uid;
+	inode->i_gid = record->gid;
+	inode->i_mode = S_IFCHR | record->mode;
+
+	/* Lets other changes and lookups read the records again. */
+	spin_unlock_irqrestore(&devfs_attributes_lock, irq);
+
+	/* Succeeded: the device carries the new ownership and mode. */
 	return 0;
 }
 
@@ -791,6 +953,10 @@ devfs_getattr(
 	struct inode *inode,
 	struct stat *status)
 {
+	/* A character device node shows a change made through another node. */
+	if (inode->i_fop == &cdev_file_ops)
+		devfs_cdev_attributes_apply(inode);
+
 	kern_memset(status, 0, sizeof(*status));
 	status->st_dev = mount_device_number(inode->i_mount);
 	status->st_ino = inode->i_ino;
