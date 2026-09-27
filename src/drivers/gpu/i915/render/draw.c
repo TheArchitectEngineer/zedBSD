@@ -487,13 +487,6 @@ drv_i915_gfx_draw(
 	    state->framebuffer->views[state->pass->depth_attachment] != NULL)
 		depth = state->framebuffer->views[state->pass->depth_attachment]->image;
 
-	/* Refuses a colour attachment view of another level than 0.  XXX: a draw writes level 0. */
-	if (state->framebuffer->views[state->pass->color_attachment]->base_level != 0U) {
-		kern_logf("i915: vk: XXX unimplemented path: a draw into mip level %u\n",
-			  state->framebuffer->views[state->pass->color_attachment]->base_level);
-		return ENOTSUP;
-	}
-
 	/* Takes the session's objects, making them on the first draw. */
 	work = drv_i915_gfx_session_get(session);
 	if (work == NULL)
@@ -815,6 +808,9 @@ i915_draw_build_batch(
 	uint64_t state_va;
 	uint32_t slots;
 	uint32_t entry_size;
+	uint32_t level;
+	uint32_t width;
+	uint32_t height;
 	int error;
 
 	/* Switches to 3D, programs the state bases and the once-per-context state. */
@@ -907,8 +903,15 @@ i915_draw_build_batch(
 	primitive.start_instance = args->first_instance;
 	primitive.base_vertex = args->vertex_offset;
 
-	/* Draws the triangle list over the target and flushes what it wrote. */
-	drv_i915_gfx_emit_draw(batch, target->width, target->height, &primitive);
+	/* Draws the triangle list over the level of the target its view writes and flushes what it wrote. */
+	level = state->framebuffer->views[state->pass->color_attachment]->base_level;
+	width = target->width >> level;
+	if (width == 0U)
+		width = 1U;
+	height = target->height >> level;
+	if (height == 0U)
+		height = 1U;
+	drv_i915_gfx_emit_draw(batch, width, height, &primitive);
 
 	/* Succeeded: the draw's commands are in the batch. */
 	return 0;

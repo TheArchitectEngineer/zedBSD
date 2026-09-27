@@ -152,6 +152,13 @@ run_ir(const struct i915_shader_ir *ir, struct machine *m)
 			sources = 2U; break;
 		case I915_IR_SELECT: sources = 3U; break;
 		case I915_IR_SAMPLE: sources = 2U; results = 4U; break;
+		case I915_IR_TEXTURE:
+			/* a run of src[1] parameters from src[0], each defined before */
+			assert(inst->src[1] >= 1U && inst->src[1] <= I915_IR_TEXTURE_MAX_PARAMS);
+			for (k = 0U; k < inst->src[1]; k++)
+				assert(inst->src[0] + k < ir->value_count && defined[inst->src[0] + k] != 0U);
+			results = 4U;
+			break;
 		case I915_IR_CONST: case I915_IR_BOOL: case I915_IR_ICONST: case I915_IR_LOAD_INPUT: case I915_IR_LOAD_PUSH:
 		case I915_IR_LOAD_UBO:
 			break;
@@ -306,6 +313,11 @@ run_ir(const struct i915_shader_ir *ir, struct machine *m)
 			fake_texture(inst->location, inst->immediate, fa, fb, rgba);
 			for (k = 0U; k < 4U; k++)
 				value[inst->dst + k] = float_to_bits(rgba[k]);
+			break;
+		case I915_IR_TEXTURE:
+			/* the interpreter has no image: the reply is the message type and the parameters' first word */
+			for (k = 0U; k < 4U; k++)
+				value[inst->dst + k] = (inst->component & 0x1fU) + value[inst->src[0]];
 			break;
 		default: break;
 		}

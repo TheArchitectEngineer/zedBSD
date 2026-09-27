@@ -44,10 +44,21 @@ BODY = {'OpReturn', 'OpUnreachable', 'OpBranch', 'OpBranchConditional', 'OpSelec
         'OpOuterProduct', 'OpFNegate', 'OpDot', 'OpCompositeConstruct', 'OpCompositeExtract', 'OpCompositeInsert',
         'OpCopyObject', 'OpVectorShuffle', 'OpExtInst',
         'OpImageSampleImplicitLod', 'OpImageSampleExplicitLod', 'OpLabel', 'OpFunction', 'OpFunctionEnd', 'OpNop', 'OpLine',
-        'OpNoLine', 'OpDPdx', 'OpDPdy', 'OpFwidth', 'OpDPdxFine', 'OpDPdxCoarse', 'OpDPdyCoarse', 'OpFwidthCoarse'}
+        'OpNoLine', 'OpDPdx', 'OpDPdy', 'OpFwidth', 'OpDPdxFine', 'OpDPdxCoarse', 'OpDPdyCoarse', 'OpFwidthCoarse',
+        'OpDPdyFine', 'OpFwidthFine', 'OpImageSampleDrefImplicitLod', 'OpImageSampleDrefExplicitLod',
+        'OpImageSampleProjImplicitLod', 'OpImageSampleProjExplicitLod', 'OpImageSampleProjDrefImplicitLod',
+        'OpImageSampleProjDrefExplicitLod', 'OpImageFetch', 'OpImage', 'OpImageQuerySizeLod', 'OpImageQuerySize',
+        'OpImageQueryLevels'}
 
-# i915_spirv_lower_sample: the image operands of a sample that are lowered.
-SAMPLE_OPERANDS = {'Bias', 'Lod', 'ConstOffset'}
+# i915_spirv_lower_sample and i915_spirv_lower_texture: the image operands of a sample that are lowered.
+SAMPLE_OPERANDS = {'Bias', 'Lod', 'Grad', 'ConstOffset'}
+
+# i915_spirv_lower_fetch: the image operands of a fetch that are lowered.
+FETCH_OPERANDS = {'Lod', 'ConstOffset'}
+
+# The image kinds a sample, a fetch and a query take (i915_spirv_image_type() and its callers): not multisampled.
+SAMPLE_DIMS = {'1D', '2D', '3D', 'Cube'}
+FETCH_DIMS = {'1D', '2D', '3D'}
 
 # i915_spirv_lower_extended: GLSL.std.450.
 EXTENDED = {'Round', 'RoundEven', 'Trunc', 'FAbs', 'SAbs', 'FSign', 'SSign', 'Floor', 'Ceil', 'Fract', 'Radians', 'Degrees',
@@ -192,18 +203,30 @@ def survey(path):
 			gap('GLSL.std.450 %s' % operands[2])
 		if opcode == 'OpLoad':
 			loads[result] = operands[0]
-		if opcode in ('OpImageSampleImplicitLod', 'OpImageSampleExplicitLod'):
-			# i915_spirv_lower_sample: texture(sampler2D, vec2) of four floats, with a Bias, a Lod and a ConstOffset.
-			if len(operands) > 3 and not set(operands[3].split('|')) <= SAMPLE_OPERANDS:
-				gap('texture() with operands (%s)' % operands[3])
+		if opcode == 'OpImage':
+			# i915_spirv_lower_image: the image of a loaded sampler names its binding.
+			loads[result] = loads.get(operands[1], '')
+		if opcode.startswith('OpImageSample'):
+			# i915_spirv_lower_sample and _texture: 1D, 2D, 3D and cube images, arrays, of floats or integers;
+			# Bias, Lod, Grad and ConstOffset (the operand mask after a Dref's reference).
+			mask = 4 if 'Dref' in opcode else 3
+			if len(operands) > mask and not set(operands[mask].split('|')) <= SAMPLE_OPERANDS:
+				gap('texture() with operands (%s)' % operands[mask])
 			sampled = types.get(loads.get(operands[1], ''), ['?', ''])
 			image = types.get(sampled[1], ['?', '', '?', '0', '0', '0'])
-			if image[0] == 'OpTypeImage' and (image[2] != '2D' or image[3] != '0' or image[4] != '0' or image[5] != '0'):
-				gap('texture() of a sampler%s%s%s%s' % (image[2], 'Shadow' if image[3] != '0' else '',
-				                                         'Array' if image[4] != '0' else '', 'MS' if image[5] != '0' else ''))
-			vector = types.get(operands[0], ['?', '', '0'])
-			if vector[0] != 'OpTypeVector' or types.get(vector[1], ['?'])[0] != 'OpTypeFloat':
-				gap('texture() of an integer sampler')
+			if image[0] == 'OpTypeImage' and (image[2] not in SAMPLE_DIMS or image[5] != '0'):
+				gap('texture() of a sampler%s%s' % (image[2], 'MS' if image[5] != '0' else ''))
+		if opcode in ('OpImageFetch', 'OpImageQuerySizeLod', 'OpImageQuerySize', 'OpImageQueryLevels'):
+			# i915_spirv_lower_fetch and _query: 1D, 2D and 3D images (a query also a cube), not multisampled.
+			image = types.get(loads.get(operands[1], ''), ['?', '', '?', '0', '0', '0'])
+			if image[0] == 'OpTypeSampledImage':
+				image = types.get(image[1], ['?', '', '?', '0', '0', '0'])
+			dims = FETCH_DIMS if opcode == 'OpImageFetch' else SAMPLE_DIMS
+			if image[0] == 'OpTypeImage' and (image[2] not in dims or image[5] != '0'):
+				gap('%s of a sampler%s%s' % ('texelFetch()' if opcode == 'OpImageFetch' else 'textureSize()', image[2],
+				                             'MS' if image[5] != '0' else ''))
+			if opcode == 'OpImageFetch' and len(operands) > 3 and not set(operands[3].split('|')) <= FETCH_OPERANDS:
+				gap('texelFetch() with operands (%s)' % operands[3])
 		if opcode == 'OpVariable':
 			# i915_spirv_lower_variable: scalars, vectors, matrices, and arrays and structures of them.
 			if len(operands) > 2:

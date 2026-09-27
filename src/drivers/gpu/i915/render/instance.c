@@ -537,12 +537,16 @@ i915_instance_format_features(
 	kern_memset(properties, 0, sizeof(*properties));
 
 	/*
-	 * XXX: the three formats the executor lays out; nothing else is claimed.
-	 * Every image is linear, so both tilings have the same features.
+	 * XXX: the formats the executor lays out (image.c); nothing else is
+	 * claimed.  Every colour image is linear, so both tilings have the same
+	 * features.
 	 */
 	switch (format) {
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_B8G8R8A8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_B8G8R8A8_SRGB:
+	case VK_FORMAT_R32_SFLOAT:
 		/*
 		 * Colour targets, sampled images read nearest or linear (between
 		 * texels and between mip levels), and GPU rectangle copies and
@@ -557,9 +561,22 @@ i915_instance_format_features(
 			VK_FORMAT_FEATURE_BLIT_DST_BIT;
 		properties->linearTilingFeatures = properties->optimalTilingFeatures;
 		break;
+	case VK_FORMAT_R8G8B8A8_UINT:
+	case VK_FORMAT_R8G8B8A8_SINT:
+	case VK_FORMAT_R32_UINT:
+	case VK_FORMAT_R32_SINT:
+		/* Integer colour targets and sampled images, read nearest, copied bit for bit (no blit, which filters). */
+		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+			VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+			VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+			VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+		properties->linearTilingFeatures = properties->optimalTilingFeatures;
+		break;
 	case VK_FORMAT_D32_SFLOAT:
-		/* A depth target only. */
-		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	case VK_FORMAT_D16_UNORM:
+		/* A depth target, which may also be sampled (and compared against); Y-tiled, so optimal only. */
+		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
+			VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
 		break;
 	default:
 		break;
@@ -649,6 +666,7 @@ i915_instance_image_format_properties(
 	uint32_t usage;
 	uint32_t features;
 	uint32_t required;
+	int depth;
 
 	/* Reads the format, the type, the tiling and the usage, and skips the create flags. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -672,12 +690,17 @@ i915_instance_image_format_properties(
 	required = i915_instance_usage_features(usage);
 
 	/*
-	 * A format without features in that tiling, an image that is not 2D and
-	 * a usage the features do not cover reply VK_ERROR_FORMAT_NOT_SUPPORTED.
-	 * XXX: the create flags are not consulted.
+	 * A format without features in that tiling, an image that is not 1D, 2D
+	 * or 3D (a depth image 2D) and a usage the features do not cover reply
+	 * VK_ERROR_FORMAT_NOT_SUPPORTED.  XXX: the create flags are not
+	 * consulted; a cube compatible image is a 2D one.
 	 */
+	depth = 0;
+	if (format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D16_UNORM)
+		depth = 1;
 	if (features == 0U ||
-	    type != VK_IMAGE_TYPE_2D ||
+	    (type != VK_IMAGE_TYPE_1D && type != VK_IMAGE_TYPE_2D && type != VK_IMAGE_TYPE_3D) ||
+	    (depth != 0 && type != VK_IMAGE_TYPE_2D) ||
 	    (features & required) != required) {
 		drv_i915_wire_reply_u32(reply, (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
 		drv_i915_wire_reply_u64(reply, 1U);
@@ -686,16 +709,28 @@ i915_instance_image_format_properties(
 	}
 
 	/*
-	 * Describes a 2D image of one layer and one sample: a colour image has
-	 * its levels down to one texel (15 for 16384), a depth image one level.
+	 * Describes an image of one sample (image.c): a 1D image is one texel
+	 * high, a 3D one up to 2048 deep with one layer, the others up to 2048
+	 * layers; a colour image has its levels down to one texel (15 for
+	 * 16384), a depth image one level and one layer.
 	 */
 	image.maxExtent.width = 16384U;
 	image.maxExtent.height = 16384U;
+	if (type == VK_IMAGE_TYPE_1D)
+		image.maxExtent.height = 1U;
 	image.maxExtent.depth = 1U;
+	if (type == VK_IMAGE_TYPE_3D)
+		image.maxExtent.depth = 2048U;
 	image.maxMipLevels = 15U;
-	if (format == VK_FORMAT_D32_SFLOAT)
+	image.maxArrayLayers = 2048U;
+	if (type == VK_IMAGE_TYPE_3D)
+		image.maxArrayLayers = 1U;
+	if (depth != 0) {
 		image.maxMipLevels = 1U;
-	image.maxArrayLayers = 1U;
+		image.maxArrayLayers = 1U;
+	}
+
+	/* One sample, and a resource of up to 1 GiB. */
 	image.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
 	image.maxResourceSize = 1ULL << 30;
 

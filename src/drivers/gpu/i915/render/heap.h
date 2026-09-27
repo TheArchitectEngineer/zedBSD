@@ -68,6 +68,10 @@
 #define I915_GFX_DYN_SAMPLER		0x0200U
 #define I915_GFX_SAMPLER_BYTES		16U
 
+/* The samplers' border colours, BORDER_BYTES apart (64-byte aligned), one per texture. */
+#define I915_GFX_DYN_BORDER		0x0400U
+#define I915_GFX_BORDER_BYTES		64U
+
 /*
  * The push data of the vertex and of the pixel stage, addressed absolutely
  * by 3DSTATE_CONSTANT_VS and _PS, at most PUSH_DATA_BYTES each.

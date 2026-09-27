@@ -58,7 +58,7 @@
 #define FIXTURE_CMD_BIND_PIPELINE		93U
 #define FIXTURE_CMD_SET_VIEWPORT		94U
 #define FIXTURE_CMD_SET_SCISSOR			95U
-#define FIXTURE_CMD_SET_LINE_WIDTH		96U
+#define FIXTURE_CMD_SET_DEPTH_BOUNDS		99U
 #define FIXTURE_CMD_SET_BLEND_CONSTANTS		98U
 #define FIXTURE_CMD_BIND_DESCRIPTOR_SETS	103U
 #define FIXTURE_CMD_BIND_INDEX_BUFFER		104U
@@ -970,15 +970,16 @@ test_recording_limits(void)
 
 	/* An unimplemented recording fails the stream: nothing after it runs and no reply is published. */
 	stub_wire_begin(&fixture_wire);
-	stub_put32(&fixture_wire, FIXTURE_CMD_SET_LINE_WIDTH);
+	stub_put32(&fixture_wire, FIXTURE_CMD_SET_DEPTH_BOUNDS);
 	stub_put32(&fixture_wire, 0U);
 	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put32(&fixture_wire, 0U);
 	stub_put32(&fixture_wire, 0x3f800000U);
 	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
 	error = stub_execute(&fixture_wire, &reply_bytes);
 	assert(error == ENOTSUP);
 	assert(reply_bytes == STUB_REPLY_BYTES);
-	assert(strcmp(stub_log, "i915: vk: XXX unimplemented opcode 96 (recording)\n") == 0);
+	assert(strcmp(stub_log, "i915: vk: command refused at opcode 99: error 95\n") == 0);
 
 	/* vkDestroyCommandPool frees the buffer still allocated from it. */
 	stub_wire_begin(&fixture_wire);

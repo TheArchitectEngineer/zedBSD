@@ -732,13 +732,14 @@ test_mip_images(void)
 
 	/*
 	 * Its SAMPLER_STATE: OpenGL pre-clamp, MIPFILTER_LINEAR, linear filters
-	 * and bias 384/256; Max LOD clamped to 14 (3584) and Min LOD 64; address
-	 * rounding and WRAP along u and v.
+	 * and bias 384/256; Max LOD clamped to 14 (3584) and Min LOD 64, the cube
+	 * override and no comparison (PREFILTEROP_ALWAYS 0); address rounding and
+	 * WRAP along u, v and w.
 	 */
 	drv_i915_gfx_sampler_write(words, sampler);
 	assert(words[0] == ((2U << 27) | (3U << 20) | (1U << 17) | (1U << 14) | (384U << 1)));
-	assert(words[1] == ((3584U << 8) | (64U << 20)));
-	assert(words[3] == (0x0007e000U | 2U));
+	assert(words[1] == ((3584U << 8) | (64U << 20) | 1U));
+	assert(words[3] == 0x0007e000U);
 
 	/* A nearest-level sampler with bias -2 and LOD range [0, 0.5]: MIPFILTER_NEAREST, bias 0x1e00. */
 	sampler->mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
@@ -747,7 +748,7 @@ test_mip_images(void)
 	sampler->max_lod = 0x3f000000U;
 	drv_i915_gfx_sampler_write(words, sampler);
 	assert(words[0] == ((2U << 27) | (1U << 20) | (1U << 17) | (1U << 14) | (0x1e00U << 1)));
-	assert(words[1] == (128U << 8));
+	assert(words[1] == ((128U << 8) | 1U));
 
 	/* Describes a draw that samples the view through the sampler into the target. */
 	memset(&pipeline, 0, sizeof(pipeline));

@@ -252,6 +252,7 @@
 
 /* Exec size: log2 of the channel count. */
 #define EU_EXEC_SIZE_1			0U
+#define EU_EXEC_SIZE_4			2U
 #define EU_EXEC_SIZE_8			3U
 #define EU_EXEC_SIZE_16			4U
 
@@ -310,6 +311,7 @@
  */
 #define EU_SAMPLER_INDEX_SHIFT		8
 #define EU_SAMPLER_TYPE_SHIFT		12
+#define EU_SAMPLER_TYPE_MASK		0x1FU
 #define EU_SAMPLER_SIMD_SHIFT		17
 #define EU_SAMPLER_SIMD8		1U
 #define EU_SAMPLER_MESSAGE_SAMPLE	0U
