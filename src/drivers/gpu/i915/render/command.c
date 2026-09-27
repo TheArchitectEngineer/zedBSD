@@ -43,6 +43,9 @@
  */
 #define I915_GFX_MAX_OPS	65536U
 
+/* The most queries one recorded reset clears (six dwords each, within one operation's room). */
+#define I915_QUERY_RESET_CHUNK	64U
+
 /* How many operations the list of a command buffer holds when it is first allocated. */
 #define I915_GFX_FIRST_OPS	64U
 
@@ -147,6 +150,7 @@ static int i915_record_image_copy(struct i915_render_session *session, struct i9
 static int i915_record_clear_image(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_barrier(struct i915_render_session *session, struct i915_wire_reader *reader);
 static int i915_record_buffer_image_copy(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader, int to_image);
+static int i915_record_query(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader, uint32_t opcode);
 static int i915_record_begin_pass(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_vertex(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_descriptor_sets(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
@@ -1029,6 +1033,72 @@ i915_record_buffer_image_copy(
 }
 
 /*
+ * vkCmdBeginQuery: [pool][query][flags]; vkCmdEndQuery: [pool][query];
+ * vkCmdResetQueryPool: [pool][first][count].
+ *
+ * A begin and an end are one operation each; a reset is one operation for
+ * every I915_QUERY_RESET_CHUNK queries.  The control flags (precise) are
+ * not acted on: the count is exact.
+ */
+static int
+i915_record_query(
+	struct i915_render_session *session,
+	struct i915_gfx_cmdbuf *cmdbuf,
+	struct i915_wire_reader *reader,
+	uint32_t opcode)
+{
+	struct i915_gfx_query_pool *pool;
+	struct i915_gfx_op *op;
+	uint64_t identity;
+	uint32_t first;
+	uint32_t count;
+	uint32_t chunk;
+
+	/* Decodes the pool and the query, or the range of a reset. */
+	identity = drv_i915_wire_read_u64(reader);
+	first = drv_i915_wire_read_u32(reader);
+	count = 1U;
+	if (opcode == 127U || opcode == 129U)
+		count = drv_i915_wire_read_u32(reader);
+	if (opcode == 127U)
+		count = 1U;
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Refuses an unknown pool. */
+	pool = drv_i915_object_lookup(session, I915_VK_OBJ_QUERY_POOL, identity);
+	if (pool == NULL)
+		return EINVAL;
+
+	/* A begin or an end. */
+	if (opcode != 129U) {
+		op = i915_command_op(cmdbuf, I915_GFX_OP_QUERY_BEGIN);
+		if (opcode == 128U)
+			op->kind = I915_GFX_OP_QUERY_END;
+		op->u.query.pool = pool;
+		op->u.query.first = first;
+		op->u.query.count = 1U;
+		return 0;
+	}
+
+	/* A reset, in chunks that fit one operation's room of the batch. */
+	while (count != 0U) {
+		chunk = count;
+		if (chunk > I915_QUERY_RESET_CHUNK)
+			chunk = I915_QUERY_RESET_CHUNK;
+		op = i915_command_op(cmdbuf, I915_GFX_OP_QUERY_RESET);
+		op->u.query.pool = pool;
+		op->u.query.first = first;
+		op->u.query.count = chunk;
+		first += chunk;
+		count -= chunk;
+	}
+
+	/* Succeeded: the query commands are recorded. */
+	return 0;
+}
+
+/*
  * vkCmdBeginRenderPass (libvulkan commands.c command_encode_render_begin):
  * [present][sType][pNext][renderPass][framebuffer][VkRect2D][present][count]
  * {clear}[contents].  A clear is [0][tag][4][4 words] for a colour and
@@ -1769,6 +1839,12 @@ i915_record_command(
 	case 126U:
 		/* vkCmdPipelineBarrier */
 		error = i915_record_barrier(session, reader);
+		return error;
+	case 127U:
+	case 128U:
+	case 129U:
+		/* vkCmdBeginQuery, vkCmdEndQuery, vkCmdResetQueryPool */
+		error = i915_record_query(session, cmdbuf, reader, opcode);
 		return error;
 	case 132U:
 		/* vkCmdPushConstants */
@@ -2687,6 +2763,11 @@ i915_command_buffer_execute(
 			break;
 		case I915_GFX_OP_COPY_BUFFER:
 			error = i915_execute_buffer_copy(session, op);
+			break;
+		case I915_GFX_OP_QUERY_BEGIN:
+		case I915_GFX_OP_QUERY_END:
+		case I915_GFX_OP_QUERY_RESET:
+			error = drv_i915_gfx_query_execute(session, op);
 			break;
 		default:
 			error = EINVAL;

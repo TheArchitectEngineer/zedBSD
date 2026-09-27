@@ -326,6 +326,16 @@ drv_i915_gfx_objects_release(
 		drv_i915_fence_free(fence);
 	}
 
+	/* The query pools, with their counters' objects. */
+	for (;;) {
+		object = drv_i915_object_take(session, I915_VK_OBJ_QUERY_POOL, NULL, NULL);
+		if (object == NULL)
+			break;
+
+		/* Frees the one taken. */
+		drv_i915_gfx_query_pool_free(session, object);
+	}
+
 	/* The allocations, which leave the list the blob attach searches. */
 	for (;;) {
 		memory = drv_i915_object_take(session, I915_VK_OBJ_MEMORY, NULL, NULL);

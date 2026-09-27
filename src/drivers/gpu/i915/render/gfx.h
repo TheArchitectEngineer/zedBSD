@@ -100,8 +100,14 @@ enum i915_gfx_op_kind {
 	I915_GFX_OP_SET_VIEWPORT,
 	I915_GFX_OP_SET_SCISSOR,
 	I915_GFX_OP_COPY_BUFFER,
-	I915_GFX_OP_SET_BLEND_CONSTANTS
+	I915_GFX_OP_SET_BLEND_CONSTANTS,
+	I915_GFX_OP_QUERY_BEGIN,
+	I915_GFX_OP_QUERY_END,
+	I915_GFX_OP_QUERY_RESET
 };
+
+/* An occlusion query pool (fence.c). */
+struct i915_gfx_query_pool;
 
 /*
  * One VkDeviceMemory.
@@ -483,6 +489,13 @@ struct i915_gfx_op {
 	enum i915_gfx_op_kind kind;
 
 	union {
+		/* A query begin or end (count 1), or a reset of `count` queries from `first`. */
+		struct {
+			struct i915_gfx_query_pool *pool;
+			uint32_t first;
+			uint32_t count;
+		} query;
+
 		/* A copy between a buffer and an image, in either direction. */
 		struct {
 			struct i915_gfx_buffer *buffer;

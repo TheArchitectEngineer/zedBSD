@@ -950,3 +950,27 @@ drv_i915_gfx_draw_extent_view(
 	/* Succeeded: the pass has no attachment to draw. */
 	return NULL;
 }
+
+/* Makes a GPU object of `bytes` bound into the session's address space (a query pool's counters). */
+int
+drv_i915_gfx_object_create(
+	struct i915_render_session *session,
+	uint64_t bytes,
+	struct i915_gem_object **result)
+{
+	int error;
+
+	/* As the session's own objects are made. */
+	error = i915_draw_object_create(session, bytes, result);
+	return error;
+}
+
+/* Unbinds and destroys an object drv_i915_gfx_object_create() made. */
+void
+drv_i915_gfx_object_destroy(
+	struct i915_render_session *session,
+	struct i915_gem_object *object)
+{
+	/* As the session's own objects are destroyed. */
+	i915_draw_object_destroy(session, object);
+}
