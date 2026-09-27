@@ -3,10 +3,10 @@
 # of the kind the firmware passes (/chosen/bootargs, from cmdline.txt) and
 # checks, in the guest, which parameters the kernel took and which root it
 # mounted.
-#   sh plan/ws036/tests/bootargs-rpi4.sh build/rpi4/hdd-image.img
+#   sh plan/tools/rpi4/bootargs-rpi4.sh build/rpi4/hdd-image.img
 set -e
 IMAGE=${1:?image}
-T=plan/ws044/tests/rpi4-serial.sh
+T=plan/tools/guest/rpi4-serial.sh
 TAB=$(printf '\t')
 NL=$(printf '\nx')
 NL=${NL%x}

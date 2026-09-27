@@ -1,9 +1,9 @@
 #!/bin/sh
-# ws044: boots an amd64 image (UEFI, NVMe, 8 GiB) in QEMU, logs in on the
+# Boots an amd64 image (UEFI, NVMe, 8 GiB) in QEMU, logs in on the
 # serial console and runs each argument as one command, printing its output.
 # The image must be built with CONFIG_PCAT_SERIAL_MIRROR=y.  The disk is
 # opened with snapshot=on, so the image is left as it was.
-#   sh plan/ws044/tests/amd64-serial.sh build/amd64/hdd-image.img 'uname -a'
+#   sh plan/tools/guest/amd64-serial.sh build/amd64/hdd-image.img 'uname -a'
 # RUN is the work directory (default build/amd64-serial-run).
 set -e
 IMAGE=${1:?image}

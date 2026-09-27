@@ -34,6 +34,6 @@ kernel は変えていない。FAT の driver（`src/drivers/fs/fat.c`）は FAT
 | --- | --- |
 | image の生成と検査（`make disk-image` の中の `check-rpi4-hdd-image.py`） | PASS。`minfo` で FAT32、cluster 2 sector、hidden 2048 |
 | QEMU raspi4b の起動（`BOOT_MODE=raspi4b plan/tools/boot-test.sh`）、FAT32 の image | PASS（`build/boot-rpi4-fat32/login.png`、p026 の image `build/boot-rpi4-p026/login.png` も FAT32） |
-| guest で FAT32 の boot partition を mount（`mount -t fat /dev/mmcblk0p1 /mnt/boot`、`plan/ws044/tests/rpi4-serial.sh`） | mount でき、長い名前（`bcm2711-rpi-4-b.dtb`、`LICENCE.broadcom`）も読める。`config.txt` を読める |
+| guest で FAT32 の boot partition を mount（`mount -t fat /dev/mmcblk0p1 /mnt/boot`、`plan/tools/guest/rpi4-serial.sh`） | mount でき、長い名前（`bcm2711-rpi-4-b.dtb`、`LICENCE.broadcom`）も読める。`config.txt` を読める |
 | 同じ guest での file の作成 | `Operation not supported`。FAT16 の旧 image でも同じ（この mount の経路は作成を持たない）ので回帰ではない |
 | 実機（firmware が FAT32 から `start4.elf`・`config.txt`・`vmunix` を読んで起動） | **未実施**（ユーザー。QEMU は firmware を動かさない） |
