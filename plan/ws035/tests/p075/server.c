@@ -126,15 +126,26 @@ child_destroy(
 	wl_resource_destroy(resource);
 }
 
-/* A child answers a ping with the value plus one. */
+/* A child answers a ping with the value plus one, and a pipe. */
 static void
 child_ping(
 	struct wl_client *client,
 	struct wl_resource *resource,
 	uint32_t value)
 {
+	int descriptors[2];
+	int status;
+
+	/* The answer, then a pipe whose read end holds "fd-ok". */
 	(void)client;
 	zed_generic_child_v1_send_pong(resource, value + 1U);
+	status = pipe(descriptors);
+	if (status != 0)
+		return;
+	(void)write(descriptors[1], "fd-ok", 5);
+	close(descriptors[1]);
+	zed_generic_child_v1_send_data(resource, descriptors[0]);
+	close(descriptors[0]);
 }
 
 /* Nothing to free for a child. */
