@@ -108,6 +108,11 @@ int zwl_menu_grab_key(struct zwl_server *server, uint32_t key, uint32_t state);
 int zwl_menu_key(struct zwl_server *server, uint32_t key, uint32_t state);
 void zwl_menu_tick(struct zwl_server *server);
 void zwl_menu_forget(struct zwl_server *server, struct zwl_object *object);
+void zwl_menu_add_overflow(struct zwl_object *surface, unsigned docked, const struct zwl_menu_area *area, int32_t x, int32_t width, const uint32_t *ids, const char *const *labels, unsigned count);
+int zwl_menu_keysym(uint32_t key, uint32_t seat_modifiers, uint32_t *keysym);
+
+/* The IDs of the rows "..." holds for a titlebar's hidden controls: the control's ID with these bits. */
+#define ZWL_MENU_EXTRA_BASE	0xf0000000U
 
 /* The glass look's shell, for the menus (shell.c). */
 void zwl_glass_raise(struct zwl_server *server, struct zwl_object *surface);

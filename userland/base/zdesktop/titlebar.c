@@ -18,7 +18,6 @@
  * control or a tab comes back as zed_titlebar_v1's events.
  */
 
-#include "menu.h"
 #include "titlebar.h"
 
 #include <errno.h>
@@ -154,6 +153,9 @@ zwl_titlebar_object_gone(
 	struct zwl_object *object)
 {
 	struct zwl_titlebar_model *model;
+
+	/* The presentation forgets it: a press, a field and its places (titlebar-shell.c). */
+	zwl_titlebar_forget(object->client->server, object);
 
 	/* A window's titlebar is left without the window. */
 	if (object->kind == ZWL_TOPLEVEL) {

@@ -27,6 +27,7 @@
  */
 
 #include "menu.h"
+#include "titlebar.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -41,6 +42,15 @@
 
 /* The "..." item that holds the top-level items the bar has no room for. */
 #define SHELL_OVERFLOW		0xffffffffU
+
+/*
+ * The rows a titlebar's "..." holds for its hidden controls (WS070 p010):
+ * how many one frame records for all windows, how many an open popup holds,
+ * and the longest label kept of one.
+ */
+#define SHELL_EXTRAS		128U
+#define SHELL_OPEN_EXTRAS	64U
+#define SHELL_EXTRA_LABEL	64U
 
 /* A top-level item: its padding on each side, the gap between two, and the gap after the title. */
 #define ITEM_PADDING		10
@@ -79,6 +89,8 @@ struct shell_hit {
 	uint32_t item;
 	unsigned docked;
 	unsigned first_hidden;
+	unsigned extra_start;
+	unsigned extra_count;
 	int32_t x;
 	int32_t y;
 	int32_t width;
@@ -120,6 +132,11 @@ struct shell_logged {
  * or entered the menu is still down, so that its release on a row chooses
  * it.  eaten_key is a key whose press zdesktop took, so that its release is
  * taken too.  The hits are rebuilt every frame (zwl_menu_frame).
+ *
+ * A titlebar's "..." (titlebar-shell.c) records the rows of its hidden
+ * controls with its hit, in extras (rebuilt every frame too); the popup it
+ * opens keeps its own copy in open_extras, whose rows come before the
+ * window's menu.  A row's label is kept with it.
  */
 struct shell_menu {
 	struct zwl_object *surface;
@@ -131,6 +148,12 @@ struct shell_menu {
 	unsigned hit_count;
 	struct shell_hit hits[SHELL_HITS];
 	struct shell_logged logged[SHELL_LOGGED];
+	struct zwl_menu_item extras[SHELL_EXTRAS];
+	char extra_labels[SHELL_EXTRAS][SHELL_EXTRA_LABEL];
+	unsigned extra_count;
+	struct zwl_menu_item open_extras[SHELL_OPEN_EXTRAS];
+	char open_extra_labels[SHELL_OPEN_EXTRAS][SHELL_EXTRA_LABEL];
+	unsigned open_extra_count;
 };
 
 /*
@@ -139,6 +162,17 @@ struct shell_menu {
  * drawn yet".
  */
 static struct shell_menu shell_menu;
+
+/*
+ * The model of a window without a menu whose "..." holds only hidden
+ * controls: empty, so the popups have a model to read.  It never changes.
+ */
+static const struct zwl_menu_model shell_empty_model;
+
+/* The line between the hidden controls' rows and the menu's in "...". */
+static const struct zwl_menu_item shell_extra_line = {
+	0xefffffffU, ZWL_MENU_ROOT, ZWL_MENU_SEPARATOR, 0U, 1U, 1U, 0U, 0U, 0U, 0U, (char *)"", NULL
+};
 
 /*
  * The XKB keysyms of the US layout's keys by evdev code, plain and with
@@ -193,6 +227,8 @@ static void shell_shortcut_text(const struct zwl_menu_item *item, char *text, si
 static void shell_key_name(uint32_t keysym, char *text, size_t size);
 static void shell_draw_popup(struct zwl_server *server, VkCommandBuffer command, const struct zwl_menu_model *model, unsigned level);
 static void shell_draw_row(struct zwl_server *server, VkCommandBuffer command, const struct shell_popup *popup, const struct zwl_menu_item *row, int32_t row_y);
+static const struct zwl_menu_model *shell_model(struct zwl_object *surface, struct zwl_object **place);
+static const struct zwl_menu_item *shell_item(const struct zwl_menu_model *model, uint32_t id);
 
 /*
  * Starts a frame: the top-level items are hit-tested where this frame draws them.
@@ -204,8 +240,9 @@ zwl_menu_frame(
 	/* The server is the one this file's state belongs to. */
 	(void)server;
 
-	/* The last frame's places are forgotten. */
+	/* The last frame's places, and the rows of the hidden controls, are forgotten. */
 	shell_menu.hit_count = 0;
+	shell_menu.extra_count = 0;
 }
 
 /*
@@ -402,7 +439,7 @@ zwl_menu_draw_popups(
 		return;
 
 	/* The window's model, which may have changed since the popups opened. */
-	model = zwl_menu_of_surface(shell_menu.surface, &place);
+	model = shell_model(shell_menu.surface, &place);
 	if (model == NULL)
 		return;
 
@@ -448,7 +485,7 @@ zwl_menu_button(
 	}
 
 	/* The model of the open menu; a menu whose model went is closed. */
-	model = zwl_menu_of_surface(shell_menu.surface, &place);
+	model = shell_model(shell_menu.surface, &place);
 	if (model == NULL) {
 		shell_close_from(server, 0U, 0U);
 		return 1;
@@ -516,7 +553,7 @@ zwl_menu_motion(
 	/* Only menu mode takes the pointer. */
 	if (shell_menu.surface == NULL)
 		return 0;
-	model = zwl_menu_of_surface(shell_menu.surface, &place);
+	model = shell_model(shell_menu.surface, &place);
 	if (model == NULL)
 		return 1;
 
@@ -594,7 +631,7 @@ zwl_menu_grab_key(
 	shell_menu.eaten_key = key;
 
 	/* The model of the open menu; a menu whose model went is closed. */
-	model = zwl_menu_of_surface(shell_menu.surface, &place);
+	model = shell_model(shell_menu.surface, &place);
 	if (model == NULL) {
 		shell_close_from(server, 0U, 0U);
 		return 1;
@@ -689,7 +726,7 @@ zwl_menu_tick(
 		return;
 
 	/* The window, its state and what covers it. */
-	model = zwl_menu_of_surface(surface, &place);
+	model = shell_model(surface, &place);
 	home = zwl_home_progress(server);
 	top = zwl_top_window(server);
 	if (model == NULL ||
@@ -735,7 +772,7 @@ zwl_menu_tick(
 
 	/* A selection that can no longer be chosen goes. */
 	for (level = 0; level < shell_menu.depth; level++) {
-		item = zwl_menu_item(model, shell_menu.popups[level].selected);
+		item = shell_item(model, shell_menu.popups[level].selected);
 		found = 0;
 		if (item != NULL)
 			found = shell_usable(model, item);
@@ -804,6 +841,77 @@ zwl_menu_forget(
 }
 
 /*
+ * Records a titlebar's "..." (titlebar-shell.c) as the menus' overflow at a
+ * place of the area, holding rows for its hidden controls (their IDs and
+ * labels) before the window's menu.
+ */
+void
+zwl_menu_add_overflow(
+	struct zwl_object *surface,
+	unsigned docked,
+	const struct zwl_menu_area *area,
+	int32_t x,
+	int32_t width,
+	const uint32_t *ids,
+	const char *const *labels,
+	unsigned count)
+{
+	struct zwl_menu_item *extra;
+	struct shell_hit *hit;
+	unsigned start;
+	unsigned index;
+
+	/* The overflow's place, from the menu's first top-level item. */
+	shell_add_hit(surface, SHELL_OVERFLOW, docked, 0U, area, x, width);
+	if (shell_menu.hit_count == 0U)
+		return;
+	hit = &shell_menu.hits[shell_menu.hit_count - 1U];
+	if (hit->surface != surface || hit->item != SHELL_OVERFLOW)
+		return;
+
+	/* The rows of the hidden controls, as many as the frame's table holds. */
+	start = shell_menu.extra_count;
+	for (index = 0; index < count && shell_menu.extra_count < SHELL_EXTRAS; index++) {
+		extra = &shell_menu.extras[shell_menu.extra_count];
+		memset(extra, 0, sizeof(*extra));
+		extra->id = ZWL_MENU_EXTRA_BASE | ids[index];
+		extra->parent = ZWL_MENU_ROOT;
+		extra->type = ZWL_MENU_NORMAL;
+		extra->enabled = 1;
+		extra->visible = 1;
+		(void)snprintf(shell_menu.extra_labels[shell_menu.extra_count], SHELL_EXTRA_LABEL, "%s", labels[index]);
+		extra->label = shell_menu.extra_labels[shell_menu.extra_count];
+		shell_menu.extra_count++;
+	}
+
+	/* The hit names its rows. */
+	hit->extra_start = start;
+	hit->extra_count = shell_menu.extra_count - start;
+}
+
+/*
+ * Finds the keysym a key types with the seat's modifiers on the US layout;
+ * returns 1, or 0 for a key without one.
+ */
+int
+zwl_menu_keysym(
+	uint32_t key,
+	uint32_t seat_modifiers,
+	uint32_t *keysym)
+{
+	uint32_t modifiers;
+	int known;
+
+	/* The menus' own table. */
+	known = shell_keysym(key, seat_modifiers, keysym, &modifiers);
+	if (known == 0)
+		return 0;
+
+	/* Succeeded: the keysym. */
+	return 1;
+}
+
+/*
  * Opens a top-level item's popup (closing any other), or chooses a
  * top-level item that has no children.  From the keyboard the first row
  * that can be chosen is selected.
@@ -818,9 +926,12 @@ shell_open(
 	const struct zwl_menu_item *item;
 	struct shell_popup *popup;
 	struct zwl_object *place;
+	unsigned index;
 
-	/* The window's model and the item. */
+	/* The window's model; a "..." holding only hidden controls reads the empty one. */
 	model = zwl_menu_of_surface(hit->surface, &place);
+	if (model == NULL && hit->extra_count > 0U)
+		model = &shell_empty_model;
 	if (model == NULL)
 		return;
 	item = NULL;
@@ -832,6 +943,15 @@ shell_open(
 
 	/* Whatever was open closes. */
 	shell_close_from(server, 0U, 1U);
+
+	/* The rows of the hidden controls come with the popup, kept (with their labels) while it is open. */
+	shell_menu.open_extra_count = 0;
+	for (index = 0; index < hit->extra_count && index < SHELL_OPEN_EXTRAS; index++) {
+		shell_menu.open_extras[index] = shell_menu.extras[hit->extra_start + index];
+		memcpy(shell_menu.open_extra_labels[index], shell_menu.extra_labels[hit->extra_start + index], SHELL_EXTRA_LABEL);
+		shell_menu.open_extras[index].label = shell_menu.open_extra_labels[index];
+		shell_menu.open_extra_count++;
+	}
 
 	/* An item with no children is chosen at once. */
 	if (item != NULL && item->type != ZWL_MENU_SUBMENU) {
@@ -851,9 +971,11 @@ shell_open(
 	popup->anchor_y = hit->popup_y;
 	shell_layout(server, model, 0U);
 
-	/* The client hears that the submenu opened; the log gives the rows. */
+	/* The client hears that the submenu (or a titlebar's "...") opened; the log gives the rows. */
 	if (item != NULL)
 		zwl_menu_send_popup(place, item->id, 1U);
+	if (item == NULL)
+		zwl_titlebar_overflow_opened(hit->surface);
 	shell_log_popup(server, model, 0U);
 
 	/* From the keyboard the first row that can be chosen is selected. */
@@ -908,12 +1030,21 @@ shell_activate(
 {
 	struct zwl_object *surface;
 	struct zwl_object *place;
+	uint32_t id;
 
 	/* The place the choice goes to, found before the menu closes. */
 	surface = shell_menu.surface;
 	if (surface == NULL)
 		surface = zwl_top_window(server);
 	(void)zwl_menu_of_surface(surface, &place);
+
+	/* A hidden control's row goes to the titlebar (its row is gone once the menu closes). */
+	if ((item->id & ZWL_MENU_EXTRA_BASE) == ZWL_MENU_EXTRA_BASE && item->id != shell_extra_line.id) {
+		id = item->id & ~ZWL_MENU_EXTRA_BASE;
+		shell_close_from(server, 0U, 1U);
+		zwl_titlebar_overflow_chosen(server, surface, id);
+		return;
+	}
 
 	/* The menu closes first (its submenus say so), then the choice is sent. */
 	shell_close_from(server, 0U, 1U);
@@ -940,10 +1071,22 @@ shell_rows(
 		return count;
 	}
 
+	/* A titlebar's "..." holds its hidden controls first, a line after them when the menu follows. */
+	kept = 0;
+	for (index = 0; index < shell_menu.open_extra_count; index++) {
+		rows[kept] = &shell_menu.open_extras[index];
+		kept++;
+	}
+
 	/* The overflow holds the top-level items from the first the bar had no room for. */
 	count = zwl_menu_children(model, ZWL_MENU_ROOT, tops, SHELL_ROWS);
+	if (kept > 0U && count > 0U) {
+		rows[kept] = &shell_extra_line;
+		kept++;
+	}
+
+	/* The top-level items the bar counted. */
 	seen = 0;
-	kept = 0;
 	for (index = 0; index < count; index++) {
 		/* The bar skips separators, and so does the count of what it showed. */
 		if (tops[index]->type == ZWL_MENU_SEPARATOR)
@@ -1946,4 +2089,45 @@ shell_draw_row(
 		width = glass_text_width(server, SIZE_BAR, shortcut);
 		glass_draw_text(server, command, SIZE_BAR, right - width, baseline, shortcut, width + 8, hint);
 	}
+}
+
+/* Finds the model of a window's open menu: its own, or the empty one while "..." holds only hidden controls. */
+static const struct zwl_menu_model *
+shell_model(
+	struct zwl_object *surface,
+	struct zwl_object **place)
+{
+	const struct zwl_menu_model *model;
+
+	/* The window's menu. */
+	model = zwl_menu_of_surface(surface, place);
+	if (model != NULL)
+		return model;
+
+	/* A "..." open with hidden controls and no menu reads the empty model. */
+	if (surface != NULL && surface == shell_menu.surface && shell_menu.open_extra_count > 0U)
+		return &shell_empty_model;
+
+	/* The window has no menu. */
+	return NULL;
+}
+
+/* Finds a row by its ID: a hidden control's row of the open "...", or an item of the model. */
+static const struct zwl_menu_item *
+shell_item(
+	const struct zwl_menu_model *model,
+	uint32_t id)
+{
+	const struct zwl_menu_item *item;
+	unsigned index;
+
+	/* The open "..."'s rows of the hidden controls. */
+	for (index = 0; index < shell_menu.open_extra_count; index++) {
+		if (shell_menu.open_extras[index].id == id)
+			return &shell_menu.open_extras[index];
+	}
+
+	/* The model's items. */
+	item = zwl_menu_item(model, id);
+	return item;
 }

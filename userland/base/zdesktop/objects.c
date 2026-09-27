@@ -311,7 +311,7 @@ zwl_object_destroy(
 		zwl_menu_object_gone(object);
 
 	/* The Titlebar Presentation's objects stop naming this one (titlebar.c). */
-	if (object->kind == ZWL_TOPLEVEL || object->kind == ZWL_TITLEBAR)
+	if (object->kind == ZWL_SURFACE || object->kind == ZWL_TOPLEVEL || object->kind == ZWL_TITLEBAR)
 		zwl_titlebar_object_gone(object);
 
 	/*

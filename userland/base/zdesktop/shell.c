@@ -41,6 +41,7 @@
 
 #include "menu.h"
 #include "popup.h"
+#include "titlebar.h"
 #include "toplevel.h"
 #include "subsurface.h"
 
@@ -220,8 +221,9 @@ zwl_glass_draw(
 	float position;
 	float shift;
 
-	/* The menus' places are those this frame draws them at (menu-shell.c). */
+	/* The menus' and the controls' places are those this frame draws them at (menu-shell.c, titlebar-shell.c). */
 	zwl_menu_frame(server);
+	zwl_titlebar_frame(server);
 
 	/*
 	 * App Home, opening, open or closing, lies under the desktop layer,
@@ -349,6 +351,11 @@ zwl_glass_button(
 
 	/* The menus take a press on a window's menu, and every button while one is open (menu-shell.c). */
 	pressed = zwl_menu_button(server, button, state);
+	if (pressed)
+		return 1;
+
+	/* A titlebar's controls take a press on one, and its release (titlebar-shell.c). */
+	pressed = zwl_titlebar_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -1102,17 +1109,17 @@ draw_title_bar(
 	if (focused)
 		ink = dark;
 	available = panel->width - 44 - BUTTON_SPACING * BUTTON_COUNT - 12;
-	limit = zwl_menu_title_limit(server, surface, available);
+	limit = zwl_titlebar_title_limit(server, surface, available);
 	draw_title(server, command, surface, panel->x + 14, panel->y + panel->height / 2, limit, ink);
 
-	/* The window's menu after the title, faded with the buttons (menu-shell.c). */
+	/* The window's presentation after the title (its menu or its controls), faded with the buttons (titlebar-shell.c). */
 	end = title_end(server, surface, limit);
 	area.x = panel->x + 44 + end + 18;
 	area.top = panel->y;
 	area.right = panel->x + 44 + available;
 	area.height = panel->height;
 	area.origin = panel->x;
-	zwl_menu_draw_bar(server, command, surface, 0, &area, ink, buttons);
+	zwl_titlebar_draw(server, command, surface, 0, &area, ink, buttons);
 
 	/* The buttons, as they fade. */
 	if (buttons <= 0.0f)
@@ -1386,17 +1393,17 @@ draw_system_bar(
 
 		/* The title shares the room before the buttons with the window's menu. */
 		available = bar->buttons[BUTTON_MINIMIZE] - 24 - bar->title_x - 30;
-		limit = zwl_menu_title_limit(server, docked, available);
+		limit = zwl_titlebar_title_limit(server, docked, available);
 		draw_title(server, command, docked, bar->title_x, ZWL_GLASS_BAR / 2, limit, dark);
 
-		/* The menu after the title (menu-shell.c). */
+		/* The presentation after the title: its menu or its controls (titlebar-shell.c). */
 		end = title_end(server, docked, limit);
 		area.x = bar->title_x + 30 + end + 18;
 		area.top = 0;
 		area.right = bar->title_x + 30 + available;
 		area.height = ZWL_GLASS_BAR;
 		area.origin = 0;
-		zwl_menu_draw_bar(server, command, docked, 1, &area, dark, 1.0f);
+		zwl_titlebar_draw(server, command, docked, 1, &area, dark, 1.0f);
 
 		/* The buttons, the one under the pointer lit. */
 		over = bar_button_at(bar, server->pointer_x, server->pointer_y);

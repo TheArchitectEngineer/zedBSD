@@ -18,7 +18,7 @@
  * or FAIL, and the run ends with TITLEBARPROBE DONE failures=N.
  *
  *   titlebar-probe
- *   titlebar-probe --show=TITLE [--seconds=N] [--mode=menu|controls|tabs]
+ *   titlebar-probe --show=TITLE [--seconds=N] [--mode=menu|controls|tabs] [--width=N]
  *
  * --show instead shows a plain window with a title (the tests give it
  * Japanese to see the glyph cache) for some seconds, with a titlebar model
@@ -48,9 +48,10 @@
 /* How many calls the library case checks. */
 #define PROBE_CALLS		20
 
-/* The shown window's size. */
+/* The shown window's size (its width may be given with --width). */
 #define PROBE_WIDTH		800
 #define PROBE_HEIGHT		480
+#define PROBE_WIDTH_MAX		1600
 
 /*
  * One connection of a case: the display, the globals it bound, and a
@@ -114,6 +115,12 @@ static void probe_tab_activated(void *data, struct zdesktop_titlebar *titlebar, 
 static void probe_tab_close(void *data, struct zdesktop_titlebar *titlebar, uint32_t id);
 static void probe_new_tab(void *data, struct zdesktop_titlebar *titlebar, uint32_t serial);
 static void probe_overflow(void *data, struct zdesktop_titlebar *titlebar);
+
+/*
+ * The shown window's width, PROBE_WIDTH unless --width gives another; set
+ * once from the command line.
+ */
+static int probe_width = PROBE_WIDTH;
 
 /* The registry's callbacks while a connection binds its globals. */
 static const struct wl_registry_listener probe_registry_listener = {
@@ -184,7 +191,14 @@ main(
 		match = strncmp(argv[index], "--mode=", 7);
 		if (match == 0)
 			mode = argv[index] + 7;
+		match = strncmp(argv[index], "--width=", 8);
+		if (match == 0)
+			probe_width = atoi(argv[index] + 8);
 	}
+
+	/* A width the probe can show. */
+	if (probe_width < 160 || probe_width > PROBE_WIDTH_MAX)
+		probe_width = PROBE_WIDTH;
 
 	/* A shown window instead of the cases. */
 	if (title != NULL) {
@@ -839,7 +853,7 @@ probe_show_buffer(
 	int error;
 
 	/* Shared memory for one picture, named only until it is unlinked. */
-	bytes = (size_t)PROBE_WIDTH * PROBE_HEIGHT * 4U;
+	bytes = (size_t)probe_width * PROBE_HEIGHT * 4U;
 	snprintf(name, sizeof(name), "/titlebar-probe-%ld", (long)getpid());
 	descriptor = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
 	if (descriptor < 0)
@@ -859,16 +873,16 @@ probe_show_buffer(
 	}
 
 	/* A pale blue-grey picture. */
-	for (index = 0; index < (size_t)PROBE_WIDTH * PROBE_HEIGHT; index++)
+	for (index = 0; index < (size_t)probe_width * PROBE_HEIGHT; index++)
 		pixels[index] = 0xffeef2f7U;
 
 	/* The buffer, attached and shown. */
 	pool = wl_shm_create_pool(connection->shm, descriptor, (int32_t)bytes);
 	close(descriptor);
-	buffer = wl_shm_pool_create_buffer(pool, 0, PROBE_WIDTH, PROBE_HEIGHT, PROBE_WIDTH * 4, WL_SHM_FORMAT_XRGB8888);
+	buffer = wl_shm_pool_create_buffer(pool, 0, probe_width, PROBE_HEIGHT, probe_width * 4, WL_SHM_FORMAT_XRGB8888);
 	wl_shm_pool_destroy(pool);
 	wl_surface_attach(connection->surface, buffer, 0, 0);
-	wl_surface_damage(connection->surface, 0, 0, PROBE_WIDTH, PROBE_HEIGHT);
+	wl_surface_damage(connection->surface, 0, 0, probe_width, PROBE_HEIGHT);
 	wl_surface_commit(connection->surface);
 
 	/* Succeeded: the picture is on its way. */
