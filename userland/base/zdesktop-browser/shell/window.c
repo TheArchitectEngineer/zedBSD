@@ -559,7 +559,7 @@ window_seat_name(
 	UNUSED_PARAMETER(name);
 }
 
-/* The pointer's place is not used yet (links come in ws074-p045). */
+/* The pointer comes over the window: its place is kept. */
 static void
 window_pointer_enter(
 	void *data,
@@ -569,13 +569,16 @@ window_pointer_enter(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	/* Nothing to do. */
-	UNUSED_PARAMETER(data);
+	struct shell_window *window;
+
 	UNUSED_PARAMETER(pointer);
 	UNUSED_PARAMETER(serial);
 	UNUSED_PARAMETER(surface);
-	UNUSED_PARAMETER(x);
-	UNUSED_PARAMETER(y);
+
+	/* The place the buttons are pressed at. */
+	window = data;
+	window->pointer_x = wl_fixed_to_int(x);
+	window->pointer_y = wl_fixed_to_int(y);
 }
 
 /* The pointer leaving is not used yet. */
@@ -593,7 +596,7 @@ window_pointer_leave(
 	UNUSED_PARAMETER(surface);
 }
 
-/* The pointer's motion is not used yet. */
+/* The pointer moves over the window: its place is kept. */
 static void
 window_pointer_motion(
 	void *data,
@@ -602,15 +605,18 @@ window_pointer_motion(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	/* Nothing to do. */
-	UNUSED_PARAMETER(data);
+	struct shell_window *window;
+
 	UNUSED_PARAMETER(pointer);
 	UNUSED_PARAMETER(time);
-	UNUSED_PARAMETER(x);
-	UNUSED_PARAMETER(y);
+
+	/* The place the buttons are pressed at. */
+	window = data;
+	window->pointer_x = wl_fixed_to_int(x);
+	window->pointer_y = wl_fixed_to_int(y);
 }
 
-/* The buttons are not used yet (links come in ws074-p045). */
+/* A pointer button is pressed or let go, at the pointer's place. */
 static void
 window_pointer_button(
 	void *data,
@@ -620,13 +626,26 @@ window_pointer_button(
 	uint32_t button,
 	uint32_t state)
 {
-	/* Nothing to do. */
-	UNUSED_PARAMETER(data);
+	struct shell_window *window;
+	struct shell_event *event;
+
 	UNUSED_PARAMETER(pointer);
 	UNUSED_PARAMETER(serial);
 	UNUSED_PARAMETER(time);
-	UNUSED_PARAMETER(button);
-	UNUSED_PARAMETER(state);
+
+	/* The input; a full queue drops it. */
+	window = data;
+	event = window_push(window, SHELL_EVENT_BUTTON);
+	if (event == NULL)
+		return;
+
+	/* The button, whether it went down, and where. */
+	event->button = button;
+	event->pressed = 0;
+	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
+		event->pressed = 1;
+	event->x = window->pointer_x;
+	event->y = window->pointer_y;
 }
 
 /* The wheel turns: vertical scrolling in pixels. */

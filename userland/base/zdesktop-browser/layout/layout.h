@@ -134,13 +134,14 @@ struct layout_tree {
 	layout_unit document_height;
 };
 
-/* The layout (box.c, block.c, inline.c, dump.c). */
+/* The layout (box.c, block.c, inline.c, dump.c, hit.c). */
 int layout_build(struct layout_tree *tree, struct css_engine *css, struct text_system *text, struct dom_document *document, int width, int height);
 void layout_release(struct layout_tree *tree);
 int layout_block(struct layout_tree *tree, struct layout_box *box, layout_unit containing_width);
 int layout_inline(struct layout_tree *tree, struct layout_box *box);
 void layout_font_of(struct layout_tree *tree, const struct css_style *style, struct text_font *font);
 int layout_dump(const struct layout_tree *tree, struct wb_buffer *out);
+const struct layout_box *layout_hit(const struct layout_tree *tree, layout_unit x, layout_unit y);
 layout_unit layout_from_px(float px);
 float layout_to_px(layout_unit value);
 

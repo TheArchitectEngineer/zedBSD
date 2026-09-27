@@ -39,12 +39,14 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/css/cascade.c \
 	$(ZDESKTOP_BROWSER_DIR)/css/ua.c \
 	$(ZDESKTOP_BROWSER_DIR)/page/page.c \
+	$(ZDESKTOP_BROWSER_DIR)/page/link.c \
 	$(ZDESKTOP_BROWSER_DIR)/text/font.c \
 	$(ZDESKTOP_BROWSER_DIR)/text/linebreak.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/box.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/block.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/inline.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/dump.c \
+	$(ZDESKTOP_BROWSER_DIR)/layout/hit.c \
 	$(ZDESKTOP_BROWSER_DIR)/paint/list.c \
 	$(ZDESKTOP_BROWSER_DIR)/paint/software.c \
 	$(ZDESKTOP_BROWSER_DIR)/paint/vulkan.c \

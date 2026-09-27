@@ -23,13 +23,16 @@
 #include "paint/gpu.h"
 #include "shell/shell.h"
 
+#include <zdesktop.h>
+
 /* How many inputs wait for the main loop at most. */
 #define SHELL_WINDOW_EVENTS	256U
 
 /* The kinds of input the window queues. */
 enum shell_event_type {
 	SHELL_EVENT_KEY,
-	SHELL_EVENT_SCROLL
+	SHELL_EVENT_SCROLL,
+	SHELL_EVENT_BUTTON
 };
 
 /* The modifier bits of an input. */
@@ -38,13 +41,19 @@ enum shell_event_type {
 #define SHELL_MOD_ALT		0x04U
 
 /*
- * One input for the main loop: a key pressed (its evdev code), or a
- * scroll of some pixels (positive is down), with the modifiers held.
+ * One input for the main loop: a key pressed (its evdev code), a scroll of
+ * some pixels (positive is down), or a pointer button pressed or let go
+ * (its evdev code), with the pointer's place in the window and the
+ * modifiers held.
  */
 struct shell_event {
 	int type;
 	uint32_t key;
 	int scroll;
+	uint32_t button;
+	int pressed;
+	int x;
+	int y;
 	uint32_t modifiers;
 };
 
@@ -78,8 +87,10 @@ struct shell_window {
 	int configured;
 	int closed;
 
-	/* The modifiers held (SHELL_MOD_*). */
+	/* The modifiers held (SHELL_MOD_*), and the pointer's place in the window. */
 	uint32_t modifiers;
+	int pointer_x;
+	int pointer_y;
 
 	/* The key held for repeating (0 when none), when it repeats next, and the repeat's delay and interval. */
 	uint32_t repeat_key;
@@ -136,6 +147,45 @@ struct shell_present {
 	const char *operation;
 };
 
+/* The titlebar's controls. */
+#define SHELL_CONTROL_BACK	1U
+#define SHELL_CONTROL_FORWARD	2U
+#define SHELL_CONTROL_RELOAD	3U
+#define SHELL_CONTROL_LOCATION	4U
+
+/* How many things done with the titlebar wait for the main loop at most, and the longest text kept. */
+#define SHELL_TITLEBAR_EVENTS	16U
+#define SHELL_TITLEBAR_TEXT	1024U
+
+/* The kinds of thing done with the titlebar. */
+enum shell_titlebar_kind {
+	SHELL_TITLEBAR_ACTIVATED,
+	SHELL_TITLEBAR_DONE
+};
+
+/*
+ * One thing done with the titlebar: a control chosen (detail is a
+ * breadcrumb's part), or a text control's editing ended (detail is how,
+ * ZDESKTOP_TEXT_*, and text is its text).
+ */
+struct shell_titlebar_event {
+	int kind;
+	uint32_t id;
+	uint32_t detail;
+	char text[SHELL_TITLEBAR_TEXT];
+};
+
+/*
+ * The window's titlebar as given to zdesktop (titlebar.c): zdesktop's
+ * titlebar object (NULL when the compositor has none) and what the user did
+ * with it and the main loop has not yet carried out, oldest first.
+ */
+struct shell_titlebar {
+	struct zdesktop_titlebar *titlebar;
+	struct shell_titlebar_event events[SHELL_TITLEBAR_EVENTS];
+	unsigned event_count;
+};
+
 /* The window (window.c). */
 int shell_window_open(struct shell_window *window, const char *display, uint32_t width, uint32_t height, const char *title);
 int shell_window_dispatch(struct shell_window *window, int timeout);
@@ -144,6 +194,13 @@ int shell_window_repeat(struct shell_window *window, uint64_t now);
 void shell_window_title(struct shell_window *window, const char *title);
 void shell_window_close(struct shell_window *window);
 uint64_t shell_clock(void);
+
+/* The titlebar (titlebar.c). */
+int shell_titlebar_open(struct shell_titlebar *titlebar, struct shell_window *window);
+int shell_titlebar_show(struct shell_titlebar *titlebar, int can_back, int can_forward, const char *path);
+int shell_titlebar_edit_location(struct shell_titlebar *titlebar);
+int shell_titlebar_take(struct shell_titlebar *titlebar, struct shell_titlebar_event *event);
+void shell_titlebar_close(struct shell_titlebar *titlebar);
 
 /* The presenter (present.c). */
 VkResult shell_present_open(struct shell_present *present, struct shell_window *window);
