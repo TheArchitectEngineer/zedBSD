@@ -8,7 +8,7 @@
 # BUILD is the build directory (default build/ws076-amd64) and RUN the
 # emulator's work directory (default build/ws076-serial-run).  The runner is
 # linked against the image's own libc.so, so it measures the library the
-# guest really has.  The image config is plan/ws076/tests/config-amd64-libm.mk
+# guest really has.  The image config is plan/tools/libm/config-amd64-libm.mk
 # (the lean base image with the serial mirror).
 #
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -22,7 +22,7 @@ if [ "${1:-}" = "--count" ]; then
 	count=$2
 	shift 2
 fi
-config=plan/ws076/tests/config-amd64-libm.mk
+config=plan/tools/libm/config-amd64-libm.mk
 out=build/ws076-libm-guest
 mkdir -p "$out"
 

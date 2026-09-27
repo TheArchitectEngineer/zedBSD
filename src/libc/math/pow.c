@@ -159,12 +159,16 @@ powf(
 	float y)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = pow((double)x, (double)y);
 
-	/* Succeeded: the narrowing reports the float range. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -221,6 +225,7 @@ libm_pow_special(
 	uint64_t y_magnitude;
 	unsigned int x_sign;
 	unsigned int odd_sign;
+	double signed_value;
 
 	/* Reads the classes the table depends on. */
 	x_magnitude = libm_bits(x) & LIBM_DOUBLE_MAGNITUDE;
@@ -256,8 +261,11 @@ libm_pow_special(
 	if (y < 0.0)
 		return libm_signed(0.0, odd_sign);
 
+	/* Gives the infinity the sign an odd y keeps. */
+	signed_value = libm_signed(HUGE_VAL, odd_sign);
+
 	/* Succeeded: infinity to a positive power. */
-	return libm_signed(HUGE_VAL, odd_sign);
+	return signed_value;
 }
 
 /*
