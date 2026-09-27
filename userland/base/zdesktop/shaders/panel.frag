@@ -23,7 +23,7 @@ layout(location = 0) out vec4 result;
 
 // The modes are whole numbers in a float, compared in ranges (an integer
 // chain of comparisons becomes an OpSwitch, which i915's native compiler
-// does not take): 0 glass, 1 shadow, 2 image, 3 solid, 4 ring, 5 text.
+// does not take): 0 glass, 1 shadow, 2 image, 3 solid, 4 ring, 5 text, 6 blur.
 
 // Signed distance from a pixel to the rounded rectangle (negative inside).
 float rounded(vec2 point, vec4 box, float radius)
@@ -74,10 +74,19 @@ void main()
 		// An outline of the given thickness.
 		cover = cover - clamp(0.5 - (distance + panel.shape.z), 0.0, 1.0);
 		colour = vec4(panel.color.rgb, 1.0) * panel.color.a * cover;
-	} else {
+	} else if (mode < 5.5) {
 		// Text: the glyph's coverage in the atlas.
 		cover = texture(image, texcoord).a;
 		colour = vec4(panel.color.rgb, 1.0) * panel.color.a * cover;
+	} else {
+		// One pass of a Gaussian blur along a step (color.xy, a texel across or down): nine taps, read as five.
+		vec2 step = panel.color.xy;
+
+		colour = texture(image, texcoord) * 0.227027;
+		colour += texture(image, texcoord + step * 1.384615) * 0.316216;
+		colour += texture(image, texcoord - step * 1.384615) * 0.316216;
+		colour += texture(image, texcoord + step * 3.230769) * 0.070270;
+		colour += texture(image, texcoord - step * 3.230769) * 0.070270;
 	}
 
 	// The whole shape faded by its opacity.

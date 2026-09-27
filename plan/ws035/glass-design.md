@@ -96,7 +96,7 @@ zdesktop の起動の仕事は増やしていない（global の表に 1 行、p
 
 ## 6. 後回し（Future Work の候補）
 
-- G-a: 背後の窓のぼかし（ws035-p057 の残り: 毎 frame の backdrop の copy・縮小・2 pass のぼかし、damage で広げる）。
+- G-a: 背後の窓のぼかし → **ws035-p057 で実装（2026-09-27）**: 下の scene を 1/8 に描き直して 2 回ぼかす（[phase057](phase057/phase.md)）。damage で広げるのは p055。
 - G-b: wayland-protocols の ext-background-effect を確かめて受ける（標準の toolkit の窓のため）。
 - G-c: 他の kind（例: 窓の中の浮いた toolbar、popover）と、kind ごとの白さ・影の深さ。
 - G-d: zdesktop-terminal 等の他の client の see-through。
