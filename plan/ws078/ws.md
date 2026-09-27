@@ -36,6 +36,19 @@ Resume point: p001（名前の棚卸しと対応表）から。ユーザーの�
 - userland: 1,118 file に 3,456（zdesktop 等の名前、Wayland の protocol の `zed_titlebar_v1`・`zed_glass_v1`・`zed_gpu_buffer_v1` 等）。
   `zwp_`・`zxdg_` は upstream の Wayland の接頭辞であり、改めない。
 
+## 対応表の案（p001 で確定。★ は未決）
+
+| 今 | 新しい source | 実行ファイル・library |
+| --- | --- | --- |
+| userland/base/zdesktop | userland/desktop/wayland | /bin/wayland |
+| userland/base/zdesktop-x11server | userland/desktop/xserver | /bin/xserver |
+| userland/base/zdesktop-browser | userland/desktop/browser | /bin/browser |
+| userland/base/zdesktop-terminal | userland/desktop/terminal ★ | /bin/terminal ★ |
+| userland/base/zdesktop-files | userland/desktop/files ★ | /bin/files ★ |
+| userland/base/zsessiond | userland/desktop/sessiond ★ | /bin/sessiond ★ |
+| userland/base/libzdesktop | userland/desktop/libkeiland | libkeiland.so |
+| libvulkan・libegl・libglesv2・libwayland・libwayland-egl・libtruetype・mview・egltest・wltest・wlshm・vkdemo | ★ base に残すか desktop へ | 名前は今のまま |
+
 ## Phase（案）
 
 | Phase | 目的 | Status | 依存 |
@@ -53,6 +66,8 @@ Resume point: p001（名前の棚卸しと対応表）から。ユーザーの�
 
 1. make の `ZEDBSD_` 変数（`ZEDBSD_CONFIG`・rootfs の option 等）: **今は残す**。
 2. `__ZEDBSD__`（toolchain の target `zedbsd` が定義する OS の識別子）: **残す**（カーネルの内部名）。他の `__ZEDBSD_*`・`__zedbsd_*` の補助の識別子は改める。
-3. source の directory: **実行ファイルと一緒に改名する**（例 `userland/base/zdesktop` → Keiland の名前の directory。p001 で対応表を決める）。
+3. source の directory: **実行ファイルと一緒に改名する**。さらに 2026-09-28 ユーザー:「baseを分離して、userland/desktop/という階層を
+   作ってください。そこに userland/desktop/wayland のように置いてください。」→ Keiland の部品は `userland/base` から出して
+   `userland/desktop/<name>` に置く（`userland/desktop/wayland` 等）。menuconfig の Desktop の分類（BUG-080）はこの階層と揃える。
 4. Keiland の Wayland の protocol と library: 接頭辞は **`keiland_`**（`zed_titlebar_v1` → `keiland_titlebar_v1` 等、`libzdesktop` → `libkeiland`）。
    `zwp_`・`zxdg_` は upstream の名前であり改めない。
