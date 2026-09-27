@@ -317,6 +317,10 @@ zwl_object_destroy(
 	    object->kind == ZWL_TITLEBAR)
 		zwl_data_object_gone(object);
 
+	/* A primary selection source leaves the selection and its offers (primary.c). */
+	if (object->kind == ZWL_PRIMARY_SOURCE)
+		zwl_primary_object_gone(object);
+
 	/* A sub-surface leaves its parent, a parent's sub-surfaces lose it (subsurface.c). */
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_SUBSURFACE)
 		zwl_subsurface_object_gone(object);

@@ -170,6 +170,9 @@ static unsigned main_anchor_row;
 /* The window's title as last set: the active tab's (OSC 0 or 2), or "Terminal" (ws035-p091). */
 static char main_window_title[TERMINAL_TITLE];
 static size_t main_paste_length;
+
+/* The text selected with the pointer, which the primary selection sends (primary.c keeps a pointer to it). */
+static char main_primary[MAIN_CLIPBOARD_MAX];
 static size_t main_paste_written;
 
 static int main_parse(int argc, char **argv, struct main_options *options);
@@ -199,6 +202,7 @@ static void main_tabs_show(void);
 static void main_title_copy(char *to, size_t size, const char *from);
 static void main_pointer(void);
 static void main_pointer_press(const struct terminal_pointer_event *event);
+static void main_primary_paste(void);
 static void main_pointer_motion(const struct terminal_pointer_event *event);
 static void main_pointer_release(void);
 static void main_cell(int32_t x, int32_t y, unsigned *column, unsigned *row);
@@ -1101,6 +1105,36 @@ main_start_paste(void)
 }
 
 /*
+ * Pastes the primary selection into the shell (a middle click, ws035-p100):
+ * line breaks become carriage returns, as the Enter key sends them.
+ */
+static void
+main_primary_paste(void)
+{
+	size_t length;
+	size_t index;
+
+	/* A paste still being written is not interrupted. */
+	if (main_paste_written < main_paste_length)
+		return;
+
+	/* The primary selection's text (the terminal's own, or another client's). */
+	length = terminal_primary_receive(&main_window, main_paste, sizeof(main_paste));
+
+	/* Line breaks are what Enter sends. */
+	for (index = 0; index < length; index++) {
+		if (main_paste[index] == '\n')
+			main_paste[index] = '\r';
+	}
+
+	/* The main loop writes it as the shell takes it. */
+	main_paste_length = length;
+	main_paste_written = 0;
+	printf("ZTERM PASTE primary bytes=%lu\n", (unsigned long)length);
+	fflush(stdout);
+}
+
+/*
  * Opens a new tab with a shell of its own, at the grid's size, and makes it
  * the active one.  Returns 0, or -1 when the shell cannot be started (a
  * full window has no new tab and returns 0).
@@ -1386,7 +1420,9 @@ main_pointer(void)
 	/* Each event, oldest first. */
 	for (index = 0U; index < main_window.pointer_event_count; index++) {
 		event = &main_window.pointer_events[index];
-		if (event->kind == TERMINAL_POINTER_PRESS)
+		if (event->kind == TERMINAL_POINTER_MIDDLE)
+			main_primary_paste();
+		else if (event->kind == TERMINAL_POINTER_PRESS)
 			main_pointer_press(event);
 		else if (event->kind == TERMINAL_POINTER_MOTION)
 			main_pointer_motion(event);
@@ -1626,4 +1662,10 @@ main_selected_log(
 	length = terminal_screen_text(main_screen, text, sizeof(text));
 	printf("ZTERM SELECT how=%s from=%u,%u to=%u,%u bytes=%lu\n", how, main_screen->range_from[0], main_screen->range_from[1], main_screen->range_to[0], main_screen->range_to[1], (unsigned long)length);
 	fflush(stdout);
+
+	/* The selected text is the primary selection (ws035-p100). */
+	if (length > sizeof(main_primary))
+		length = sizeof(main_primary);
+	memcpy(main_primary, text, length);
+	terminal_primary_set(&main_window, main_primary, length, main_window.serial);
 }

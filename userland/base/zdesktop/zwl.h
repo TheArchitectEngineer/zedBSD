@@ -123,6 +123,10 @@ enum zwl_kind {
 	ZWL_DATA_SOURCE,
 	ZWL_DATA_DEVICE,
 	ZWL_DATA_OFFER,
+	ZWL_PRIMARY_MANAGER,
+	ZWL_PRIMARY_SOURCE,
+	ZWL_PRIMARY_DEVICE,
+	ZWL_PRIMARY_OFFER,
 	ZWL_DECORATION_MANAGER,
 	ZWL_DECORATION,
 	ZWL_CURSOR_SHAPE_MANAGER,
@@ -709,6 +713,13 @@ struct zwl_server {
 	 */
 	struct zwl_object *selection;
 	uint64_t selection_client;
+	/*
+	 * The primary selection (primary.c, ws035-p100): the source set as it
+	 * (NULL for none), and the number of the client last told it (0 for
+	 * none), kept like the clipboard's.
+	 */
+	struct zwl_object *primary;
+	uint64_t primary_client;
 	/*
 	 * The bounds last sent to windows (xdg_toplevel.configure_bounds,
 	 * protocol.c): when the space for bodies no longer matches, the windows

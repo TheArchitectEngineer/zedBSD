@@ -52,6 +52,7 @@ static const struct zwl_global globals[] = {
 	{ 12, "wp_viewporter", 1, ZWL_VIEWPORTER },
 	{ 16, "zed_titlebar_manager_v1", 2, ZWL_TITLEBAR_MANAGER },
 	{ 17, "zed_glass_manager_v1", 1, ZWL_GLASS_MANAGER },
+	{ 18, "zwp_primary_selection_device_manager_v1", 1, ZWL_PRIMARY_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -217,6 +218,13 @@ zwl_dispatch(
 	case ZWL_DATA_OFFER:
 		/* The clipboard (data.c). */
 		error = zwl_data_request(object, opcode, bytes, size);
+		break;
+	case ZWL_PRIMARY_MANAGER:
+	case ZWL_PRIMARY_SOURCE:
+	case ZWL_PRIMARY_DEVICE:
+	case ZWL_PRIMARY_OFFER:
+		/* The primary selection (primary.c). */
+		error = zwl_primary_request(object, opcode, bytes, size);
 		break;
 	case ZWL_DECORATION_MANAGER:
 	case ZWL_DECORATION:

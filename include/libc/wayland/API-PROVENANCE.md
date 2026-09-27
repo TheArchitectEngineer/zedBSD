@@ -11,6 +11,7 @@ against the following pinned primary interface descriptions on 2026-09-13:
 | --- | --- | --- |
 | [Wayland core protocol](https://gitlab.freedesktop.org/wayland/wayland/-/raw/1.23.1/protocol/wayland.xml) | Wayland 1.23.1 | `0c371e9c31f8178008a7ddecf431cbe12ec4b29ef7714803ecd3e20af925e7ed` |
 | [xdg-shell protocol](https://gitlab.freedesktop.org/wayland/wayland-protocols/-/raw/1.36/stable/xdg-shell/xdg-shell.xml) | wayland-protocols 1.36 | `454c96a942bfd7b21acdceb74d189cee85858afb7e7d2274964c94f13616f69f` |
+| primary-selection-unstable-v1.xml (`unstable/primary-selection/`, the Debian package wayland-protocols 1.44-1 on the build host, 2026-09-28) | wayland-protocols 1.44 | `d568482ba84df6e531698b1f531810860995ca24d69495427fe43aee6017f52c` |
 
 The [client ABI](https://gitlab.freedesktop.org/wayland/wayland/-/blob/1.23.1/src/wayland-client-core.h),
 [client API contract](https://wayland.freedesktop.org/docs/html/apb.html), and
@@ -70,6 +71,16 @@ xdg_popup request reposition (2, `ou`) and event repositioned (2, `u`), all
 since 3. Version 2 adds only the tiled toplevel states (enum values). The
 wrappers, the `repositioned` listener member and the `_SINCE_VERSION` names
 follow the upstream client header; no scanner output was copied.
+
+The primary selection (added for WS035 p100) was checked against the pinned
+primary-selection-unstable-v1 description: zwp_primary_selection_device_manager_v1
+v1 requests create_source (`n`), get_device (`no`), destroy; zwp_primary_selection_device_v1
+requests set_selection (`?ou`), destroy and events data_offer (`n`), selection (`?o`);
+zwp_primary_selection_offer_v1 requests receive (`sh`), destroy and event offer (`s`);
+zwp_primary_selection_source_v1 requests offer (`s`), destroy and events send (`sh`),
+cancelled.  The header `wayland/primary-selection-unstable-v1-client-protocol.h`
+follows the upstream client header's names; its events reach listeners through the
+generic dispatch.
 
 ## Protocol description license notices
 
@@ -132,4 +143,29 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+```
+
+primary-selection-unstable-v1:
+
+```
+Copyright © 2015, 2016 Red Hat
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 ```
