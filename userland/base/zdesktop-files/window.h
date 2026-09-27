@@ -20,6 +20,7 @@
 #include <vulkan/vulkan.h>
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
+#include <zdesktop.h>
 
 /* How many inputs wait for the main loop at most. */
 #define FM_WINDOW_EVENTS	256U
@@ -72,6 +73,24 @@ struct fm_window {
 	struct fm_event events[FM_WINDOW_EVENTS];
 	unsigned event_first;
 	unsigned event_count;
+};
+
+/* How many menu choices wait for the main loop at most. */
+#define FM_MENU_ACTIONS		16U
+
+/*
+ * The window's menus as given to zdesktop (menu.c): the connection's menu
+ * service (NULL when the compositor has none, and the window then has no
+ * menus), the menu and the window's place for it, the state the menus last
+ * showed, and the actions chosen and not yet carried out, oldest first.
+ */
+struct fm_menu {
+	struct zdesktop_menu_service *service;
+	struct zdesktop_menu *menu;
+	struct zdesktop_window_menu *window_menu;
+	struct fm_menu_state shown;
+	uint32_t actions[FM_MENU_ACTIONS];
+	unsigned action_count;
 };
 
 /*
@@ -147,7 +166,15 @@ int fm_window_dispatch(struct fm_window *window, int timeout);
 int fm_window_take(struct fm_window *window, struct fm_event *event);
 int fm_window_repeat(struct fm_window *window, uint64_t now);
 void fm_window_close(struct fm_window *window);
+void fm_window_minimize(struct fm_window *window);
+void fm_window_zoom(struct fm_window *window);
 uint64_t fm_clock(void);
+
+/* The menus (menu.c). */
+int fm_menu_open(struct fm_menu *menu, struct fm_window *window, const struct fm_menu_state *state);
+void fm_menu_refresh(struct fm_menu *menu, const struct fm_menu_state *state);
+unsigned fm_menu_take(struct fm_menu *menu);
+void fm_menu_close(struct fm_menu *menu);
 
 /* The presenter (present.c). */
 VkResult fm_present_open(struct fm_present *present, struct fm_window *window);

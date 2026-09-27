@@ -342,6 +342,37 @@ fm_window_repeat(
 }
 
 /*
+ * Asks the compositor to minimize the window.
+ */
+void
+fm_window_minimize(
+	struct fm_window *window)
+{
+	/* The request, sent with the next flush. */
+	xdg_toplevel_set_minimized(window->toplevel);
+	fm_log("WINDOW minimize");
+}
+
+/*
+ * Asks the compositor to maximize the window, or to bring a maximized one
+ * back to its size (Window > Zoom).
+ */
+void
+fm_window_zoom(
+	struct fm_window *window)
+{
+	/* A maximized window comes back; another one is maximized. */
+	if (window->maximized != 0) {
+		xdg_toplevel_unset_maximized(window->toplevel);
+	} else {
+		xdg_toplevel_set_maximized(window->toplevel);
+	}
+
+	/* The log line the tests wait for. */
+	fm_log("WINDOW zoom maximized=%d", !window->maximized);
+}
+
+/*
  * Destroys the window's objects and disconnects.
  */
 void

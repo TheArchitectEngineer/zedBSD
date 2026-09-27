@@ -17,5 +17,7 @@ ZDESKTOP_FILES_SOURCES := userland/base/zdesktop-files/main.c \
 	userland/base/zdesktop-files/ui-search.c userland/base/zdesktop-files/ui-home.c \
 	userland/base/zdesktop-files/thumb.c userland/base/zdesktop-files/peek.c \
 	userland/base/zdesktop-files/ui-preview.c userland/base/zdesktop-files/apps.c \
-	userland/base/zdesktop-files/info.c userland/base/zdesktop-files/ui-info.c
+	userland/base/zdesktop-files/info.c userland/base/zdesktop-files/ui-info.c \
+	userland/base/zdesktop-files/ui-menu.c userland/base/zdesktop-files/ui-help.c \
+	userland/base/zdesktop-files/menu.c
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-files,File manager,amd64,y,basic,$(ZDESKTOP_FILES_SOURCES),y,base,base/zdesktop-files,base/libvulkan base/libwayland base/libzdesktop base/libtruetype,0755,program,,,bin))

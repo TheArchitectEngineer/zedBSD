@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は main の session）
-Resume point: p008（menubar・New Window・shortcut・Help）。p007 は 2026-09-27 に大きさで 2 つに分けた（Get Info と開くは p012）
+Resume point: WS070 の titlebar 仕様の設計（ws070-p007）の後に p013（タブ、TABS model との関係を設計で決める）。2026-09-27 に大きさで分けた: p007 から Get Info と開く（p012）、p008 からタブ（p013）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -64,6 +64,10 @@ Finder の操作モデル（左のサイドバー、浮いたツールバー、�
 protocol の version 2（**WS070 の protocol の拡張を WS071 の p009 として実装**）、PNG は WS035 の D2〜D4 に従う libz-compat・
 libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先に作る）、DnD は窓の中だけ、Quick Look は窓の中の overlay。
 
+## 2026-09-27 ユーザーの指示: toolbar を浮いたタイトルバーへ
+
+「今のファイラーのはウィンドウ内部の上部にナビゲーションバーを持っていますが、これをウィンドウのフローティングタイトルバーにマージします。」「ファイラーはこのcompositorでしか使えなくてOKです。」 → design §3 の toolbar（戻る・進む・Home・パンくず・検索・表示の切替・preview・進みの輪）は WS070 の titlebar 仕様（[titlebar-spec.md](../ws070/titlebar-spec.md)）の CONTROLS model で浮いたタイトルバー（最大化では System Bar の Application Zone）に移し、窓の中の bar は無くす。fallback（仕様 §27）は持たない: zdesktop の titlebar の拡張が無ければ起動で明示的に失敗してよい。設計は ws070-p007、実装は WS070 の Phase と WS071 の「navigation bar → CONTROLS titlebar」の Phase（ws070-p007 の Phase 分けで決める）。
+
 ## Phase 一覧
 
 | Phase | 内容 | Status | 依存 |
@@ -76,10 +80,11 @@ libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先
 | [ws071-p006](phase006/phase.md) | Home の dashboard（hero、folder cards、recent files・folders） | cleared | p005 |
 | [ws071-p007](phase007/phase.md) | preview pane、Quick Look、サムネイル（PPM・PGM、thumb.c の cache）、MIME の中身の判定を preview に | cleared | p005 |
 | [ws071-p012](phase012/phase.md) | Get Info（owner・権限・checksum・xattr）、開く・別のアプリで開く（apps.c の関連付けと起動） | cleared | p007 |
-| ws071-p008 | menubar（System Menu）、タブ、New Window、keyboard の shortcut の全体、Help | planned | p012、WS070-p004 |
-| ws071-p009 | context menu: WS070 protocol version 2（libwayland、zdesktop、libzdesktop `zdesktop_menu_popup`）と file manager の context menu | planned | p008 |
+| [ws071-p008](phase008/phase.md) | menubar（System Menu: File・Edit・View・Go・Window・Help、状態の反映）、New Window・Close Window・Minimize・Zoom、keyboard の shortcut の全体（spec §35）、Help の card | cleared | p012、WS070-p004 |
+| ws071-p013 | タブ（2 つ以上のときだけの tab bar、New Tab・Close Tab・Previous/Next Tab、Open in New Tab、menu の Window のタブの項目） | planned | p008 |
+| ws071-p009 | context menu: WS070 protocol version 2（libwayland、zdesktop、libzdesktop `zdesktop_menu_popup`）と file manager の context menu | planned | p013 |
 | ws071-p010 | サムネイル（libz-compat の inflate、libpng-compat の decode）と窓の中の DnD | planned | p007 |
-| ws071-p011 | App Home の項目、規約の全文との照合、回帰、boot test、i915 実機（任意） | planned | p002〜p010、p012 |
+| ws071-p011 | App Home の項目、規約の全文との照合、回帰、boot test、i915 実機（任意） | planned | p002〜p010、p012、p013 |
 
 ## Future Work の候補（main session が future-work.md へ）
 
