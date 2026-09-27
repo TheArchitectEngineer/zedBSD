@@ -3,7 +3,7 @@
 # The test protocol (generic-test.xml) goes through the host's wayland-scanner; the server is built on the
 # host's libwayland-server, the client on zedBSD's libwayland-client (userland/base/libwayland, compiled
 # for the host with only its Wayland headers on the include path).  Both run in a private
-# XDG_RUNTIME_DIR under /tmp; the client must print CLIENT DONE failures=0 and the server SERVER DONE children_destroyed=2.
+# XDG_RUNTIME_DIR under /tmp; the client must print CLIENT DONE failures=0 and the server SERVER DONE children_destroyed=4.
 #
 #   plan/ws035/tests/p075/run-host.sh [OUTDIR]     (default build/ws035-p075-host)
 #   LIBWAYLAND_ROOT=DIR ...   builds the client on DIR/userland/base/libwayland (another revision's copy)
@@ -57,6 +57,6 @@ timeout 30 "$out/client" wayland-p075 > "$out/client.log" 2>&1 || status=1
 wait $server || status=1
 cat "$out/client.log" "$out/server.log"
 grep -q 'CLIENT DONE failures=0' "$out/client.log" || status=1
-grep -q 'SERVER DONE children_destroyed=2 client_gone=1' "$out/server.log" || status=1
+grep -q 'SERVER DONE children_destroyed=4 client_gone=1' "$out/server.log" || status=1
 [ $status -eq 0 ] && echo "p075-host: PASS" || echo "p075-host: FAIL"
 exit $status
