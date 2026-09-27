@@ -216,3 +216,4 @@ entire production overlay/UFS translation units.
 | `ws001-p036` | `stty-host-test.py [--bin DIR]`（pty の上で zedBSD stty を試し、termios と GNU stty で読み戻す）、`pinned/guest.sh` の stty（console に設定して戻す） |
 | `ws001-p037` | `dirname-test.sh`（複数の operand と `-z` に更新）、case `dirname` |
 | `ws001-p038` | cases `mktemp`・`base64`・`install`（GNU coreutils と比べる） |
+| `ws001-p039` | case `xargs-gnu`（GNU の option）、`util-diff.py --gnu --only xargs-gnu`、`plan/tools/utils/configure-diff.sh build/ws001/bin`（`DISTFILES=/home/awe/zedBSD-rpi4/build/distfiles`） |

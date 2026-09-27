@@ -31,8 +31,21 @@
  * 123 in the end; one that exits with 255 or is killed by a signal stops
  * xargs at once with 124 or 125.  A utility that cannot be found gives 127
  * and one that cannot be run 126.
+ *
+ * GNU's extensions are taken too (the user's decision for WS045,
+ * 2026-09-27): -d delim (--delimiter) separates arguments by one
+ * character (a character, or \n, \t, \\, \0, \xHH or \ooo) with no quoting,
+ * as -0 (--null) does with the null byte, and neither has an end string;
+ * -P n (--max-procs) runs up to n utilities at once (0: no limit); -a
+ * file (--arg-file) reads the arguments from the file, leaving standard
+ * input to the utility; -o (--open-tty) gives the utility /dev/tty as its
+ * standard input; -e[eof], -i[replace] and -l[lines] are the old forms of
+ * -E, -I and -L; and the long options --eof, --replace, --max-lines,
+ * --max-args, --interactive, --no-run-if-empty, --max-chars, --verbose
+ * and --exit.  The options end at the utility.
  */
 
+#include "userland/base/common/command.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -63,17 +76,54 @@
 /* The status when the utility could not be found. */
 #define XARGS_STATUS_NOT_FOUND 127
 
+/* The codes of the long options that have no letter. */
+#define OPTION_HELP 256
+#define OPTION_VERSION 257
+
+/*
+ * The options written in full, read by the scan of the command line; a
+ * long option shares its code with its letter.
+ */
+static const struct command_long_option xargs_long_options[] = {
+	{"arg-file", COMMAND_VALUE_REQUIRED, 'a'},
+	{"delimiter", COMMAND_VALUE_REQUIRED, 'd'},
+	{"eof", COMMAND_VALUE_OPTIONAL, 'e'},
+	{"exit", COMMAND_VALUE_NONE, 'x'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"interactive", COMMAND_VALUE_NONE, 'p'},
+	{"max-args", COMMAND_VALUE_REQUIRED, 'n'},
+	{"max-chars", COMMAND_VALUE_REQUIRED, 's'},
+	{"max-lines", COMMAND_VALUE_OPTIONAL, 'l'},
+	{"max-procs", COMMAND_VALUE_REQUIRED, 'P'},
+	{"no-run-if-empty", COMMAND_VALUE_NONE, 'r'},
+	{"null", COMMAND_VALUE_NONE, '0'},
+	{"open-tty", COMMAND_VALUE_NONE, 'o'},
+	{"replace", COMMAND_VALUE_OPTIONAL, 'i'},
+	{"verbose", COMMAND_VALUE_NONE, 't'},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{NULL, 0, 0}
+};
+
+/* Where the arguments are read from: standard input, or -a's file. */
+static FILE *xargs_input;
+
 /*
  * The options given on the command line.
  *
  * One instance lives for the whole run.  A zero limit means that the
  * option was not given; max_size is always set, to -s or to the default.
+ * delimiter is -d's character, or -1; null_separated is -0 (and -d).
+ * max_procs is -P's count, LONG_MAX for no limit.
  * system_room is what the system leaves for one command line counted as
  * the kernel counts it, with a pointer for every string; it bounds the
  * command line whatever -s says.
  */
 struct xargs_options {
 	int null_separated;
+	int delimiter;
+	int argument_file;
+	int open_tty;
+	long max_procs;
 	const char *eof_string;
 	const char *replace_string;
 	long max_lines;
@@ -129,20 +179,24 @@ struct xargs_command {
  * status is the exit status xargs reports when it reaches the end of the
  * input; ran says whether the utility has been invoked at least once, so
  * that input without arguments still runs it once without -r.  answers is
- * /dev/tty for -p, opened on the first question.
+ * /dev/tty for -p, opened on the first question.  running counts the
+ * utilities started and not yet waited for (-P); name is the utility's.
  */
 struct xargs_run {
 	int status;
 	int ran;
 	FILE *answers;
+	long running;
+	const char *name;
 };
 
 static int read_options(int argc, char **argv, struct xargs_options *options);
 static int parse_count(const char *text, long *count);
+static int parse_delimiter(const char *text, int *delimiter);
 static size_t largest_size(void);
 static int read_token(const struct xargs_options *options, struct xargs_token *token);
 static int read_quoted(struct xargs_token *token, int quote);
-static int read_null_token(struct xargs_token *token);
+static int read_null_token(struct xargs_token *token, int delimiter);
 static int read_line_token(struct xargs_token *token);
 static int read_blank_token(struct xargs_token *token);
 static int append_byte(struct xargs_token *token, int byte);
@@ -154,6 +208,8 @@ static void command_reset(struct xargs_command *command);
 static int run_arguments(const struct xargs_options *options, struct xargs_command *command, struct xargs_run *run);
 static int run_insert(const struct xargs_options *options, struct xargs_command *command, struct xargs_run *run);
 static int run_command(const struct xargs_options *options, char **argv, struct xargs_run *run);
+static int reap_child(struct xargs_run *run);
+static int reap_all(struct xargs_run *run, int status);
 static int confirm(const struct xargs_options *options, char **argv, struct xargs_run *run);
 static int ask(struct xargs_run *run);
 static char *replace_all(const char *template, const char *pattern, const char *replacement, size_t *size);
@@ -174,11 +230,11 @@ main(
 	int error;
 	int status;
 
-	/* Reads the options; the utility and its arguments follow them. */
+	/* Reads the options; the utility and its arguments are left from argv[1] on. */
 	first = read_options(argc, argv, &options);
 
 	/* Starts the command line with the utility and its initial arguments. */
-	error = command_init(&command, argc, argv, first);
+	error = command_init(&command, first + 1, argv, 1);
 	if (error != 0) {
 		fprintf(stderr, "xargs: out of memory\n");
 		return 1;
@@ -194,6 +250,8 @@ main(
 	run.status = 0;
 	run.ran = 0;
 	run.answers = NULL;
+	run.running = 0;
+	run.name = command.argv[0];
 
 	/* -I runs once per line; otherwise the arguments are gathered. */
 	if (options.replace_string != NULL)
@@ -201,7 +259,8 @@ main(
 	else
 		status = run_arguments(&options, &command, &run);
 
-	/* Reports a run that had to stop early. */
+	/* Waits for the utilities still running (-P); an early stop wins. */
+	status = reap_all(&run, status);
 	if (status != 0)
 		return status;
 
@@ -210,8 +269,9 @@ main(
 }
 
 /*
- * Reads the options and returns the index of the utility operand.  An
- * invalid option ends xargs with a usage message.
+ * Reads the options and returns the number of operands (the utility and
+ * its arguments), which are left in argv from argv[1] on.  An invalid
+ * option ends xargs with a usage message.
  */
 static int
 read_options(
@@ -219,54 +279,110 @@ read_options(
 	char **argv,
 	struct xargs_options *options)
 {
+	struct command_options scan;
+	const char *file;
 	size_t largest;
 	long size;
 	int option;
 	int valid;
+	int compare;
 
 	/* No option given: blanks separate, no end string, no limit. */
 	memset(options, 0, sizeof(*options));
+	options->delimiter = -1;
+	options->max_procs = 1;
 	largest = largest_size();
 	options->system_room = largest;
 	options->max_size = XARGS_DEFAULT_SIZE;
 	if (options->max_size > largest)
 		options->max_size = largest;
+	file = NULL;
 
-	/* Takes each option; the utility operand ends them. */
+	/* Takes each option; the utility operand ends them in any order. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "xargs";
+	scan.letters = "0a:d:E:e::I:i::L:l::n:oP:prs:tx";
+	scan.names = xargs_long_options;
+	command_options_start(&scan);
+	scan.permute = 0;
 	for (;;) {
-		option = getopt(argc, argv, "0E:I:L:n:prs:tx");
-		if (option == -1)
+		option = command_options_next(&scan);
+		if (option == COMMAND_OPTION_END)
 			break;
 
 		/* Records what the option asks for. */
 		switch (option) {
 		case '0':
 			options->null_separated = 1;
+			options->delimiter = '\0';
+			break;
+		case 'a':
+			file = scan.value;
+			break;
+		case 'd':
+			valid = parse_delimiter(scan.value, &options->delimiter);
+			if (!valid) {
+				fprintf(stderr, "xargs: invalid delimiter '%s'\n", scan.value);
+				exit(1);
+			}
+
+			/* -d separates as -0 does. */
+			options->null_separated = 1;
 			break;
 		case 'E':
-			options->eof_string = optarg;
+			options->eof_string = scan.value;
+			break;
+		case 'e':
+			/* The old form: no value turns the end string off. */
+			options->eof_string = scan.value;
+			if (scan.value == NULL)
+				options->eof_string = "";
 			break;
 		case 'I':
+		case 'i':
 			/* -I runs once per line and implies -x; it replaces -L and -n. */
-			options->replace_string = optarg;
+			options->replace_string = scan.value;
+			if (scan.value == NULL)
+				options->replace_string = "{}";
 			options->exit_on_overflow = 1;
 			options->max_lines = 0;
 			options->max_arguments = 0;
 			break;
 		case 'L':
+		case 'l':
 			/* The last of -I, -L and -n given is the one that counts. */
-			valid = parse_count(optarg, &options->max_lines);
-			if (!valid)
-				usage();
+			options->max_lines = 1;
+			if (scan.value != NULL) {
+				valid = parse_count(scan.value, &options->max_lines);
+				if (!valid)
+					usage();
+			}
+
+			/* -L replaces -I and -n. */
 			options->replace_string = NULL;
 			options->max_arguments = 0;
 			break;
 		case 'n':
-			valid = parse_count(optarg, &options->max_arguments);
+			valid = parse_count(scan.value, &options->max_arguments);
 			if (!valid)
 				usage();
 			options->replace_string = NULL;
 			options->max_lines = 0;
+			break;
+		case 'o':
+			options->open_tty = 1;
+			break;
+		case 'P':
+			/* 0 is no limit. */
+			compare = strcmp(scan.value, "0");
+			options->max_procs = LONG_MAX;
+			valid = 1;
+			if (compare != 0)
+				valid = parse_count(scan.value, &options->max_procs);
+			if (!valid)
+				usage();
 			break;
 		case 'p':
 			/* Asking shows the command line, as -t does. */
@@ -278,7 +394,7 @@ read_options(
 			break;
 		case 's':
 			/* A size larger than the system allows is lowered to it. */
-			valid = parse_count(optarg, &size);
+			valid = parse_count(scan.value, &size);
 			if (!valid)
 				usage();
 			options->max_size = (size_t)size;
@@ -291,18 +407,91 @@ read_options(
 		case 'x':
 			options->exit_on_overflow = 1;
 			break;
+		case OPTION_VERSION:
+			printf("xargs (zedBSD) 1.0\n");
+			exit(0);
+			break;
 		default:
 			usage();
 			break;
 		}
 	}
 
-	/* An empty end string turns the end string off. */
+	/* An empty end string turns the end string off, as -0 and -d do. */
 	if (options->eof_string != NULL && options->eof_string[0] == '\0')
 		options->eof_string = NULL;
+	if (options->null_separated)
+		options->eof_string = NULL;
 
-	/* Reports where the utility operand starts. */
-	return optind;
+	/* -a: the arguments come from the file; standard input stays the utility's. */
+	xargs_input = stdin;
+	if (file != NULL) {
+		xargs_input = fopen(file, "r");
+		if (xargs_input == NULL) {
+			fprintf(stderr, "xargs: %s: %s\n", file, strerror(errno));
+			exit(1);
+		}
+
+		/* The utility keeps standard input. */
+		options->argument_file = 1;
+	}
+
+	/* Reports how many operands there are. */
+	return scan.operand_count;
+}
+
+/*
+ * Reads -d's delimiter: one character, or an escape: \n, \t, \r, \f, \v,
+ * \a, \b, \\, \xHH (hexadecimal) or \ooo (octal, \0 for the null byte).
+ * Returns whether it was one.
+ */
+static int
+parse_delimiter(
+	const char *text,
+	int *delimiter)
+{
+	static const char escapes[] = "n\nt\tr\rf\fv\va\ab\b\\\\";
+	const char *found;
+	char *end;
+	unsigned long value;
+	size_t index;
+
+	/* One character. */
+	if (text[0] != '\0' && text[1] == '\0') {
+		*delimiter = (unsigned char)text[0];
+		return 1;
+	}
+
+	/* Otherwise an escape. */
+	if (text[0] != '\\')
+		return 0;
+
+	/* A letter escape: the letters are at the even places of the table. */
+	if (text[1] != '\0' && text[2] == '\0') {
+		for (index = 0; escapes[index] != '\0'; index += 2) {
+			if (escapes[index] == text[1]) {
+				*delimiter = (unsigned char)escapes[index + 1];
+				return 1;
+			}
+		}
+	}
+
+	/* A number: \xHH in hexadecimal, or octal digits. */
+	found = text + 1;
+	if (text[1] == 'x') {
+		found = text + 2;
+		value = strtoul(found, &end, 16);
+	} else {
+		value = strtoul(found, &end, 8);
+	}
+
+	/* The digits, all of them, of a byte. */
+	if (*found < '0' || *found > 'f' || end == found || *end != '\0' || value > 255)
+		return 0;
+
+	/* Succeeded: the byte. */
+	*delimiter = (int)value;
+	return 1;
 }
 
 /* Parses a positive decimal count; returns whether it was one. */
@@ -385,7 +574,7 @@ read_token(
 
 	/* Reads it by the rules the options select. */
 	if (options->null_separated)
-		status = read_null_token(token);
+		status = read_null_token(token, options->delimiter);
 	else if (options->replace_string != NULL)
 		status = read_line_token(token);
 	else
@@ -405,13 +594,14 @@ read_token(
 }
 
 /*
- * Reads one argument ended by a null byte.  Every null byte ends one, so
- * two in a row give an empty argument; bytes after the last null byte are
- * the last argument.
+ * Reads one argument ended by the delimiter (the null byte for -0).  Every
+ * delimiter ends one, so two in a row give an empty argument; bytes after
+ * the last delimiter are the last argument.
  */
 static int
 read_null_token(
-	struct xargs_token *token)
+	struct xargs_token *token,
+	int delimiter)
 {
 	int byte;
 	int started;
@@ -420,13 +610,13 @@ read_null_token(
 	/* Collects the bytes up to the null byte. */
 	started = 0;
 	for (;;) {
-		byte = getchar();
+		byte = getc(xargs_input);
 		if (byte == EOF)
 			break;
 		started = 1;
 
-		/* The null byte ends the argument and its line. */
-		if (byte == '\0') {
+		/* The delimiter ends the argument and its line. */
+		if (byte == delimiter) {
 			token->line_end = 1;
 			break;
 		}
@@ -463,7 +653,7 @@ read_line_token(
 	/* Skips blank lines and the blanks that start a line. */
 	started = 0;
 	for (;;) {
-		byte = getchar();
+		byte = getc(xargs_input);
 		if (byte == EOF)
 			return 0;
 
@@ -485,7 +675,7 @@ read_line_token(
 			if (error != 0)
 				return -1;
 		} else if (byte == '\\') {
-			byte = getchar();
+			byte = getc(xargs_input);
 			if (byte == EOF)
 				break;
 			error = append_byte(token, byte);
@@ -499,7 +689,7 @@ read_line_token(
 
 		/* The line holds something; goes on with the next byte. */
 		started = 1;
-		byte = getchar();
+		byte = getc(xargs_input);
 	}
 
 	/* Reports a line that turned out to hold nothing. */
@@ -528,7 +718,7 @@ read_blank_token(
 
 	/* Skips the separators before the argument. */
 	for (;;) {
-		byte = getchar();
+		byte = getc(xargs_input);
 		if (byte == EOF)
 			return 0;
 
@@ -551,7 +741,7 @@ read_blank_token(
 			if (error != 0)
 				return -1;
 		} else if (byte == '\\') {
-			byte = getchar();
+			byte = getc(xargs_input);
 			if (byte == EOF)
 				break;
 			error = append_byte(token, byte);
@@ -564,7 +754,7 @@ read_blank_token(
 		}
 
 		/* Goes on with the next byte. */
-		byte = getchar();
+		byte = getc(xargs_input);
 	}
 
 	/* Reads the blanks after the argument to learn how its line ends. */
@@ -574,7 +764,7 @@ read_blank_token(
 		if (!blank)
 			break;
 		trailing_blank = 1;
-		byte = getchar();
+		byte = getc(xargs_input);
 	}
 
 	/*
@@ -588,7 +778,7 @@ read_blank_token(
 		if (!trailing_blank)
 			token->line_end = 1;
 	} else {
-		ungetc(byte, stdin);
+		ungetc(byte, xargs_input);
 	}
 
 	/* Succeeded: one argument. */
@@ -609,7 +799,7 @@ read_quoted(
 
 	/* Keeps each byte up to the matching quote. */
 	for (;;) {
-		byte = getchar();
+		byte = getc(xargs_input);
 		if (byte == quote)
 			break;
 
@@ -1094,9 +1284,8 @@ run_command(
 	int descriptor;
 	int error;
 	int wait_status;
-	int signaled;
-	int exit_status;
 	int accepted;
+	int status;
 	ssize_t got;
 	pid_t child;
 	pid_t waited;
@@ -1108,6 +1297,13 @@ run_command(
 	run->ran = 1;
 	if (!accepted)
 		return 0;
+
+	/* -P: waits for one utility when as many as allowed are running. */
+	if (run->running >= options->max_procs) {
+		status = reap_child(run);
+		if (status != 0)
+			return status;
+	}
 
 	/*
 	 * A pipe closed on exec tells whether the utility started: it carries
@@ -1134,11 +1330,16 @@ run_command(
 
 	/*
 	 * The child reads nothing of xargs's input: its standard input is
-	 * /dev/null.  It reports a failed exec through the pipe.
+	 * /dev/null, /dev/tty with -o, or xargs's own with -a.  It reports a
+	 * failed exec through the pipe.
 	 */
 	if (child == 0) {
 		close(report[0]);
-		descriptor = open("/dev/null", O_RDONLY);
+		descriptor = -1;
+		if (options->open_tty)
+			descriptor = open("/dev/tty", O_RDONLY);
+		else if (!options->argument_file)
+			descriptor = open("/dev/null", O_RDONLY);
 		if (descriptor >= 0) {
 			dup2(descriptor, STDIN_FILENO);
 			if (descriptor != STDIN_FILENO)
@@ -1161,34 +1362,65 @@ run_command(
 	} while (got < 0 && errno == EINTR);
 	close(report[0]);
 
-	/* Waits for the child to finish. */
-	do {
-		waited = waitpid(child, &wait_status, 0);
-	} while (waited < 0 && errno == EINTR);
-	if (waited < 0) {
-		fprintf(stderr, "xargs: wait: %s\n", strerror(errno));
-		return 1;
-	}
-
 	/* A utility that could not be run stops xargs. */
 	if (got == (ssize_t)sizeof(exec_error)) {
+		do {
+			waited = waitpid(child, &wait_status, 0);
+		} while (waited < 0 && errno == EINTR);
 		fprintf(stderr, "xargs: %s: %s\n", argv[0], strerror(exec_error));
 		if (exec_error == ENOENT)
 			return XARGS_STATUS_NOT_FOUND;
 		return XARGS_STATUS_NOT_RUNNABLE;
 	}
 
+	/* It runs; without -P it is waited for now. */
+	run->running++;
+	if (options->max_procs == 1) {
+		status = reap_child(run);
+		return status;
+	}
+
+	/* Succeeded: xargs goes on with the input. */
+	return 0;
+}
+
+/*
+ * Waits for one utility to end and takes its status: 255 and a signal
+ * stop xargs (124 and 125); another failure is remembered as 123.
+ */
+static int
+reap_child(
+	struct xargs_run *run)
+{
+	int wait_status;
+	int signaled;
+	int exit_status;
+	pid_t waited;
+
+	/* Any of the utilities running. */
+	do {
+		waited = waitpid(-1, &wait_status, 0);
+	} while (waited < 0 && errno == EINTR);
+	if (waited < 0) {
+		fprintf(stderr, "xargs: wait: %s\n", strerror(errno));
+		run->running = 0;
+		return 1;
+	}
+
+	/* One fewer running. */
+	run->running--;
+
 	/* A utility killed by a signal stops xargs. */
 	signaled = WIFSIGNALED(wait_status);
 	if (signaled) {
-		fprintf(stderr, "xargs: %s: terminated by signal %d\n", argv[0], WTERMSIG(wait_status));
+		fprintf(stderr, "xargs: %s: terminated by signal %d\n", run->name, WTERMSIG(wait_status));
 		return XARGS_STATUS_UTILITY_KILLED;
 	}
 
 	/* A utility that exits with 255 stops xargs. */
 	exit_status = WEXITSTATUS(wait_status);
 	if (exit_status == 255) {
-		fprintf(stderr, "xargs: %s: exited with status 255; aborting\n", argv[0]);
+		fprintf(stderr, "xargs: %s: exited with status 255; aborting\n", run->name);
 		return XARGS_STATUS_UTILITY_ABORTED;
 	}
 
@@ -1196,8 +1428,30 @@ run_command(
 	if (exit_status != 0)
 		run->status = XARGS_STATUS_UTILITY_FAILED;
 
-	/* Succeeded: xargs goes on with the input. */
+	/* Succeeded: the utility ended. */
 	return 0;
+}
+
+/*
+ * Waits for every utility still running.  Returns the status xargs stops
+ * with: the one given, or the first a utility's end calls for.
+ */
+static int
+reap_all(
+	struct xargs_run *run,
+	int status)
+{
+	int result;
+
+	/* Each utility; the first reason to stop is kept. */
+	while (run->running > 0) {
+		result = reap_child(run);
+		if (status == 0)
+			status = result;
+	}
+
+	/* The first reason to stop, or none. */
+	return status;
 }
 
 /*

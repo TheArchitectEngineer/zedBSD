@@ -10,6 +10,8 @@
 # default is expat-2.8.5 and coreutils-9.12.  Paths that differ only because of the
 # two trees or the two tool locations are made the same before comparing;
 # config.log is not compared.  Exits 1 when any package differs.
+# ws001: any other tool configure finds in BIN_DIR (install, dd ...) is
+# written as the host's /usr/bin one too.
 set -eu
 root=$(pwd)
 bin=$(cd "${1:-build/ws043/bin}" && pwd)
@@ -44,6 +46,7 @@ for package in $packages; do
 					-e "s|$bin/awk|/usr/bin/gawk|g" \
 					-e "s|$bin/sed|/usr/bin/sed|g" \
 					-e "s|$bin/grep|/usr/bin/grep|g" \
+					-e "s|$bin/|/usr/bin/|g" \
 					-e "s|$bin:||g" "$side/$file"
 			done
 		done)

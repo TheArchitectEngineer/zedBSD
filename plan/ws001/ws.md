@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p024〜p031 cleared（2026-09-27）。p032〜p038 cleared、main を merge（2026-09-27、phase034 の記録）。次はユーザーの決めた WS045 の残り 1 件（xargs の GNU option と host の build 一覧、p039）、その後 §12 の残り（mesg・tabs・find・ls）
+Resume point: p024〜p031 cleared（2026-09-27）。p032〜p039 cleared、main を merge（2026-09-27、phase034 の記録）。ユーザーの決めた WS045 の 3 件は p037〜p039 で済んだ。次は §12 の残りの P1/P2（mesg・tabs・find・ls ほか）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -58,6 +58,7 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p036` | [stty](phase036/phase.md) | cleared（2026-09-27） | 全 operand・`-a`・`-g`・窓の大きさ、`<termios.h>` に XSI の遅延、`<unistd.h>` に `_POSIX_VDISABLE`、host pty 89/89・amd64 guest 30/30、style 0 |
 | `ws001-p037` | [dirname の複数の operand](phase037/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。各結果を 1 行ずつ、`-z`、dirname-test PASS・host 5/5・amd64 guest 28/28、style 0 |
 | `ws001-p038` | [mktemp・install・base64](phase038/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。3 つの base utility を新設し package の一覧へ、host 11/11・11/11・13/13（GNU と）・amd64 guest 35/35、style 0 |
+| `ws001-p039` | [xargs の GNU の option](phase039/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。`-d`・`-P`・`-a`・`-o`・旧い形・long option、host の build 一覧に xargs、host 54/54・11/11（POSIX と GNU の mode）・全 case 1080/1080・WS045 515/515・configure の比較 same・amd64 guest 65/65、style 0 |
 
 ### q042 pre-merge identifier migration
 
@@ -118,6 +119,7 @@ Phase に分けた。範囲の境界:
 | p036 | #116 stty（p035 の後に追加） | 全 operand、`-a`・`-g`、設定の読み戻し、窓の大きさ |
 | p037 | #35 dirname（ユーザーの決定、WS045 から） | 複数の operand、`-z`、dirname-test の更新 |
 | p038 | 台帳の外（POSIX でない）: mktemp・install・base64（ユーザーの決定、WS045 から） | GNU の option、image に入れる、GNU と比べる case |
+| p039 | #152 xargs（ユーザーの決定、WS045 から） | GNU の `-d`・`-P`・`-a`・`-o`・旧い形・long option、host の build 一覧 |
 
 ## 1. Project objective
 
@@ -561,7 +563,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 148 | [wc](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/wc.html) | implemented-unreviewed (WS043) | Rewritten by WS043 against the GNU POSIX-mode differential cases (`plan/tools/utils/cases/`), which pass on the host and on the amd64 guest (ws001-p031 rerun: 948/948 with the WS001 cases). `-m` multibyte counting remains (LIBC-CTYPE-01). |
 | 149 | [what](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/what.html) | P2 incomplete proof | Identification scanning and `-s` exist; binary/NUL/chunk-boundary markers, stdin/multiple files, malformed/long text, read/write errors, and exact no-match status need review. |
 | 150 | [who](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/who.html) | implemented-unreviewed (`ws001-p035`) | Every option (`-abdHlmpqrstTu`), `am i`, the file operand, `%b %e %H:%M` local times, terminal state and idle time, headings, `-q`, and diagnostics pass host cases against GNU who on generated records, a pinned case, and guest cases on the live database; `<utmpx.h>` gained NEW_TIME/OLD_TIME/INIT_PROCESS, and nothing on zedBSD writes boot, clock or init records yet. |
-| 152 | [xargs](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/xargs.html) | implemented-unreviewed (`ws001-p024`) | All options (`-0 -E -I -L -n -p -r -s -t -x`), quoting, logical lines, `-I` replacement, size limits counted both as `-s` and as the kernel counts, and statuses 123/124/125/126/127 pass 54 host cases, the `-p` pty case, and the amd64 guest. LC_MESSAGES yesexpr remains. |
+| 152 | [xargs](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/xargs.html) | implemented-unreviewed (`ws001-p024`, `ws001-p039`) | All options (`-0 -E -I -L -n -p -r -s -t -x`), quoting, logical lines, `-I` replacement, size limits counted both as `-s` and as the kernel counts, and statuses 123/124/125/126/127 pass 54 host cases, the `-p` pty case, and the amd64 guest. LC_MESSAGES yesexpr remains. GNU `-d`, `-P`, `-a`, `-o`, `-e`/`-i`/`-l` and the long options were added by the user's decision for WS045 (`ws001-p039`); host cases match GNU in POSIX and GNU mode and the guest. |
 | 155 | [zcat](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/zcat.html) | P2 incomplete proof | `.Z` stdout decoding exists; multiple operands, suffix lookup, stdin, malformed/truncated streams, read/write interruption, broken pipe, diagnostics/status, and compatibility vectors remain. |
 
 ## 13. Update protocol
