@@ -26,6 +26,21 @@ write cached の UFS（ws061-p006・WS063 の既定）と、host の負荷の下
 
 build は amd64・rpi4 の vmunix で warning 0。boot test PASS（NVMe）。規約: style-check の数は main（この WS の前）と比べて `file.c` 200 → 200、`buf.c` 137 → 136、`ufs.c` 579 → 579、`pci-nvme.c` 336 → 335、変えた行の指摘 0。各 Phase で規約の全文で読んだ（WS が小さいので別の規約の Phase は置かなかった）。QEMU だけ、実機は未実施。
 
+## 追記（2026-09-27）: BUG-066 は ws072-p001 の退行
+
+ws072-p001 は `buf_writeback_context` の全ての書き込み（遅延した書き戻しと、書き手の中のその場の書き込みの両方）を filesystem の guard で包んだ。
+その場の書き込みは書き手の guard の中にあり、特に loop device の file（FAT の上の `data.img`）の書き込みでは、新しい guard が loop の claim の
+持ち主を継承して cache の line（claim の extent より広い）の書き込みを EBUSY（17）で拒んだ。hybrid の layout（amd64 の USB・pcat）の
+overlay の data の mount が失敗して起動が止まる（[BUG-066](../bugs/BUG-066.md)）。
+
+直し: filesystem の guard は遅延した書き戻し（`buf_writeback`: flusher・sync・reclaim）だけが取る。書き手の中の書き込み
+（`buf_writeback_context`）は前のとおり書き手の guard を継承する（`src/kern/buf.c` の `writeback_line`）。
+
+確認（QEMU）: amd64 の hybrid の image（`ZEDBSD_VARIANT=hybrid`、UEFI・USB）で、直す前の `buf.c`（16802c61）は画面に
+`loop1: write block=128 count=16 flags=2 error=17`・`VFS initialization failed (17)`、直した後は boot test PASS
+（`build/ws072/boot-hybrid/login.png`）。native の image で BUG-060 の `mkfs -t ufs` と sync は直した後も成功。pcat の image は
+BUG-062（i386 の `sched.c`）で build できず未実施。
+
 ## Phase 一覧
 
 | Phase | 内容 | Status |
