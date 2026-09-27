@@ -547,14 +547,19 @@ i915_instance_format_features(
 	case VK_FORMAT_R8G8B8A8_SRGB:
 	case VK_FORMAT_B8G8R8A8_SRGB:
 	case VK_FORMAT_R32_SFLOAT:
+	case VK_FORMAT_R8_UNORM:
+	case VK_FORMAT_R8G8_UNORM:
+	case VK_FORMAT_R16G16B16A16_SFLOAT:
+	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
 		/*
-		 * Colour targets, sampled images read nearest or linear (between
-		 * texels and between mip levels), and GPU rectangle copies and
-		 * blits, a linear blit included.
+		 * Colour targets that blend, sampled images read nearest or linear
+		 * (between texels and between mip levels), and GPU rectangle copies
+		 * and blits, a linear blit included.
 		 */
 		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
 			VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
 			VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+			VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT |
 			VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
 			VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
 			VK_FORMAT_FEATURE_BLIT_SRC_BIT |
@@ -572,11 +577,31 @@ i915_instance_format_features(
 			VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
 		properties->linearTilingFeatures = properties->optimalTilingFeatures;
 		break;
+	case VK_FORMAT_R32G32B32A32_SFLOAT:
+		/*
+		 * A float colour target that blends, and a sampled image read
+		 * nearest (as OpenGL ES reads it: not filterable), copied and
+		 * blitted nearest.
+		 */
+		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+			VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+			VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT |
+			VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+			VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+			VK_FORMAT_FEATURE_BLIT_SRC_BIT |
+			VK_FORMAT_FEATURE_BLIT_DST_BIT;
+		properties->linearTilingFeatures = properties->optimalTilingFeatures;
+		break;
 	case VK_FORMAT_D32_SFLOAT:
 	case VK_FORMAT_D16_UNORM:
-		/* A depth target, which may also be sampled (and compared against); Y-tiled, so optimal only. */
+		/*
+		 * A depth target, which may also be sampled (and compared against)
+		 * and copied to and from buffers; Y-tiled, so optimal only.
+		 */
 		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
-			VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+			VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+			VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+			VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
 		break;
 	default:
 		break;

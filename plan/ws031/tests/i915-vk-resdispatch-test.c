@@ -455,6 +455,7 @@ static void
 test_format_properties(void)
 {
 	uint32_t colour_features;
+	uint32_t depth_features;
 	uint32_t features;
 	uint32_t result;
 	uint32_t levels;
@@ -466,6 +467,7 @@ test_format_properties(void)
 	colour_features = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
 	    VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
 	    VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+	    VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT |
 	    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
 	    VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
 	    VK_FORMAT_FEATURE_BLIT_SRC_BIT |
@@ -477,14 +479,24 @@ test_format_properties(void)
 	features = fixture_format_features(VK_FORMAT_B8G8R8A8_UNORM, 1);
 	assert(features == colour_features);
 
-	/* D32 and D16 are optimal-tiled depth attachments that may be sampled (ws075-p005); an unknown format has nothing. */
+	/*
+	 * D32 and D16 are optimal-tiled depth attachments that may be sampled and
+	 * copied (ws075-p005); RGBA16F is a filterable colour format, RGBA32F an
+	 * unfilterable one; an unknown format has nothing.
+	 */
+	depth_features = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+	    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
 	features = fixture_format_features(VK_FORMAT_D32_SFLOAT, 1);
-	assert(features == (VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT));
+	assert(features == depth_features);
 	features = fixture_format_features(VK_FORMAT_D32_SFLOAT, 0);
 	assert(features == 0U);
 	features = fixture_format_features(VK_FORMAT_D16_UNORM, 1);
-	assert(features == (VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT));
+	assert(features == depth_features);
 	features = fixture_format_features(VK_FORMAT_R16G16B16A16_SFLOAT, 1);
+	assert(features == colour_features);
+	features = fixture_format_features(VK_FORMAT_R32G32B32A32_SFLOAT, 1);
+	assert(features == (colour_features & ~(uint32_t)VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT));
+	features = fixture_format_features(VK_FORMAT_R16G16_SFLOAT, 1);
 	assert(features == 0U);
 
 	/* The display's optimal colour and transfer image, and its linear sampled copy, are supported with 15 levels. */

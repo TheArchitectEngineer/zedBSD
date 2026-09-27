@@ -142,6 +142,7 @@ int layout_inline(struct layout_tree *tree, struct layout_box *box);
 void layout_font_of(struct layout_tree *tree, const struct css_style *style, struct text_font *font);
 int layout_dump(const struct layout_tree *tree, struct wb_buffer *out);
 const struct layout_box *layout_hit(const struct layout_tree *tree, layout_unit x, layout_unit y);
+struct dom_node *layout_hit_node(const struct layout_tree *tree, layout_unit x, layout_unit y);
 layout_unit layout_from_px(float px);
 float layout_to_px(layout_unit value);
 

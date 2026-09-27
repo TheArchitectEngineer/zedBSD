@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010〜p012・p014・p022〜p026・p045・p046 cleared。次は p030（JS の接続、実行の順）。p030 の依存の p029 は未 clear: main の指示（2026-09-28）で、次の agent が p029 を先に行うか、p030 が p029 の一部だけを要るなら縮めた依存と理由をこの表に記録して進める（正常系のワンパスを先に: JS を page に接続する）
+Resume point: p001〜p005・p007・p010〜p012・p014・p022〜p026・p030・p045・p046 cleared。次は p013（layout 2、実行の順）。p030 の依存は p014・p046 に縮めた（理由は p030 の phase.md、WPT の runner は p047 へ）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -59,6 +59,8 @@ Wasm を base の中に自前で書く（外部の browser engine は取り込�
 
 design.md §17 の D1〜D11（process の構成、TLS の `dlopen`、titlebar、仕様・Unicode の表の commit、GIF の置き場、wl_shm、
 libpng-compat の `from_memory`、libtruetype の拡張、libjpeg-compat の API、既定の font、段階の目標値）。どれも戻せる既定で進める。
+2026-09-28 ユーザー:「ブラウザは、現在の方法で進めてください。文字の表は、生成した表をコミットしていいてす。」→ D1〜D3・D5・D9〜D11 は
+今の既定のまま。D4 は生成した表を commit する（2026-09-28 に切り替えた、p030 の phase.md）。
 
 ## Phase 一覧
 
@@ -67,7 +69,7 @@ p001 で分け直した（2026-09-27。p002〜p013 の案は実行前の案だ�
 
 **実行の順**（2026-09-27 ユーザー「正常系でワンパス通すのを優先する」、design.md §18）: p005 → p007 → p010 → p011 → p012 → p014（窓に
 実際の page）→ p045（URL の欄と link）→ p022 → p023 → p024 → p025 → p026 → p046 → p030（JS の接続）→ p013 → p015 → p016 → p017 → p019 → p020 → p021 → p006 → p008 →
-p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 → p035 以降。各 Phase は最小の範囲で通し、残りは phase.md の「後回し」へ。
+p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 → p034 → p035 以降。各 Phase は最小の範囲で通し、残りは phase.md の「後回し」へ。
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
@@ -100,7 +102,7 @@ p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 →
 | ws074-p027 | RegExp の engine と String の regex の method | planned | p026 |
 | ws074-p028 | ES2015 の意味 1: let・const・TDZ、arrow、class、destructuring、spread、template、Symbol、iterator、for-of、Map・Set・Weak* | planned | p026 |
 | ws074-p029 | ES2015 の意味 2: generator、Promise と microtask、async・await、Proxy・Reflect、TypedArray・ArrayBuffer・DataView、Date、BigInt | planned | p028 |
-| ws074-p030 | WebIDL の binding の生成器、window・document・Node・Element の基本、console、`<script>` の実行、timer、event loop、WPT の testharness の runner | planned | p014、p029 |
+| [ws074-p030](phase030/phase.md) | DOM の binding（interface の表、生成器は後回し）、window・document・Node・Element・Event の基本、console、`<script>` の実行、timer、event loop と microtask の queue（2026-09-28 に WPT の testharness の runner を p047 へ分けた） | cleared | p014、p046（p029 から縮めた: microtask の queue はこの Phase で作った） |
 | ws074-p031 | event（dispatch・入力）、innerHTML、querySelector、classList、CSSOM の inline style、getComputedStyle、geometry、変更の後の再計算 | planned | p030 |
 | ws074-p032 | fetch・XHR（same-origin・CORS）、Location・History、form（control の描画と入力、送信）、localStorage | planned | p017、p031 |
 | ws074-p033 | Wasm: decoder・validator・共通 bytecode への compiler、JS API、spec test の runner（wabt の wast2json） | planned | p029 |
@@ -117,6 +119,7 @@ p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 →
 | ws074-p044 | 変更した source の規約の全文との照合、fuzz（時間を区切って）、回帰、boot test（最後） | planned | 全て |
 | [ws074-p046](phase046/phase.md) | 組み込み 1b（p026 から分けた）: Array・String（正規表現の要らない method、UCD 16.0.0 から生成する大文字・小文字の表）・JSON（14255/47792、ES5 6786/8087） | cleared | p026 |
 | [ws074-p045](phase045/phase.md) | 窓 2（p014 から分けた）: CONTROLS の titlebar の URL の欄、link の click（`file:`）、戻る・進む・再読み込み | cleared | p014 |
+| ws074-p047 | WPT の testharness の runner（p030 から分けた: testharness.js は arrow・let・const・class と Promise を使う）、WPT dom/nodes の計測（M2 の目標 ≥ 40%） | planned | p028、p029、p030 |
 
 ## 後の WS・Future Work の候補
 

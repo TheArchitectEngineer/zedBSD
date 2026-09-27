@@ -456,7 +456,7 @@ $(BUILD)/bootloader/BOOTZBSD.EXE: $(BUILD)/bootloader/bootzbsd.bin \
 
 $(BUILD)/uefi/bootx64.o: $(UEFI_LOADER)/bootx64.c \
 	$(UEFI_LOADER)/include/uefi.h $(UEFI_LOADER)/elf64.h \
-	$(UEFI_LOADER)/framebuffer.h $(UEFI_LOADER)/video.h $(UEFI_LOADER)/memory-map.h \
+	$(UEFI_LOADER)/framebuffer.h $(UEFI_LOADER)/video.h $(UEFI_LOADER)/logo.h $(UEFI_LOADER)/memory-map.h \
 	$(UEFI_LOADER)/volume-discovery.h \
 	$(UEFI_LOADER)/zedbsd-config.h \
 	bootloader/include/amd64-handoff.h \
@@ -473,6 +473,11 @@ $(BUILD)/uefi/volume-discovery.o: $(UEFI_LOADER)/volume-discovery.c \
 
 $(BUILD)/uefi/framebuffer.o: $(UEFI_LOADER)/framebuffer.c \
 	$(UEFI_LOADER)/framebuffer.h
+	@mkdir -p $(dir $@)
+	$(EFI_CC) $(EFI_CFLAGS) -c $< -o $@
+
+$(BUILD)/uefi/logo.o: $(UEFI_LOADER)/logo.c $(UEFI_LOADER)/logo.h \
+	bootloader/include/amd64-handoff.h
 	@mkdir -p $(dir $@)
 	$(EFI_CC) $(EFI_CFLAGS) -c $< -o $@
 
@@ -504,12 +509,12 @@ $(BUILD)/src/hal/amd64/locore.o: bootloader/include/amd64-handoff.h \
 	bootloader/include/boot-parameter-handoff.h \
 	include/kern/boot.h
 
-$(BUILD)/uefi/transition.o: $(UEFI_LOADER)/transition.S
+$(BUILD)/uefi/transition.o: $(UEFI_LOADER)/transition.S bootloader/include/amd64-handoff.h
 	@mkdir -p $(dir $@)
 	$(EFI_CC) -m64 -mno-red-zone -c $< -o $@
 
 $(BUILD)/uefi/BOOTX64.EFI: $(BUILD)/uefi/bootx64.o \
-	$(BUILD)/uefi/elf64.o $(BUILD)/uefi/framebuffer.o $(BUILD)/uefi/video.o \
+	$(BUILD)/uefi/elf64.o $(BUILD)/uefi/framebuffer.o $(BUILD)/uefi/video.o $(BUILD)/uefi/logo.o \
 	$(BUILD)/uefi/memory-map.o $(BUILD)/uefi/memory-map-v6.o $(BUILD)/uefi/common-memory-map.o \
 	$(BUILD)/uefi/volume-discovery.o $(BUILD)/uefi/zedbsd-config.o \
 	$(BUILD)/uefi/transition.o \
@@ -1509,19 +1514,27 @@ $(AMD64_NATIVE_SWAP_IMAGE): $(BUILD_TOOLS_DIR)/make-swapfile.noct
 	$(NOCT) --path=$(BUILD_TOOLS_DIR) $(BUILD_TOOLS_DIR)/make-swapfile.noct \
  --size-mib $(AMD64_NATIVE_SWAP_MIB) --output $@
 
+# ws035-p096: the boot logo on the ESP (/logo.ppm), drawn by the UEFI loader when zedbsd.cfg names it
+# (logo=logo.ppm).  It is made from shapes by a script, so no picture from elsewhere is in the tree.
+AMD64_BOOT_LOGO := $(BUILD)/boot-logo.ppm
+
+$(AMD64_BOOT_LOGO): tools/build/make-boot-logo.py
+	@mkdir -p $(dir $@)
+	$(PYTHON) tools/build/make-boot-logo.py $@
+
 $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/uefi/BOOTX64.EFI \
 	$(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG) $(AMD64_NATIVE_ROOT_IMAGE) \
-	$(AMD64_NATIVE_SWAP_IMAGE) $(ZEDBSD_IMAGE_HOST) \
+	$(AMD64_NATIVE_SWAP_IMAGE) $(ZEDBSD_IMAGE_HOST) $(AMD64_BOOT_LOGO) \
 	$(AMD64_IMAGE_CONTRACT_STAMP) \
 	platform/amd64/tools/check-amd64-native-image.py
 	$(ZEDBSD_IMAGE_HOST) disk --machine pcat --layout native \
  --kernel $(BUILD)/vmunix --bootx64 $(BUILD)/uefi/BOOTX64.EFI \
- --zedbsd-config $(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG) \
+ --zedbsd-config $(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG) --logo $(AMD64_BOOT_LOGO) \
  --ufs-root $(AMD64_NATIVE_ROOT_IMAGE) --swapfile $(AMD64_NATIVE_SWAP_IMAGE) \
  $@.unchecked
 	$(PYTHON) platform/amd64/tools/check-amd64-native-image.py \
  --kernel $(BUILD)/vmunix --bootx64 $(BUILD)/uefi/BOOTX64.EFI \
- --zedbsd-config $(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG) \
+ --zedbsd-config $(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG) --logo $(AMD64_BOOT_LOGO) \
  --ufs-root $(AMD64_NATIVE_ROOT_IMAGE) --swap $(AMD64_NATIVE_SWAP_IMAGE) \
  $@.unchecked
 	mv -f $@.unchecked $@
