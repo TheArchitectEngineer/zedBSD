@@ -86,11 +86,9 @@ paint_software(
 
 	/* The canvas: its color laid over white, so the bitmap starts opaque. */
 	count = (size_t)bitmap->width * (size_t)bitmap->height;
+	canvas = paint_canvas_pixel(list->canvas_color);
 	for (index = 0; index < count; index++)
-		bitmap->pixels[index] = SOFTWARE_BACKDROP;
-	canvas = list->canvas_color;
-	for (index = 0; index < count; index++)
-		software_blend(bitmap, (int)(index % (size_t)bitmap->width), (int)(index / (size_t)bitmap->width), canvas, 1.0f);
+		bitmap->pixels[index] = canvas;
 
 	/* Draws each item in painting order. */
 	for (index = 0; index < list->items.count; index++) {
@@ -110,6 +108,28 @@ paint_software(
 
 	/* Succeeded: the bitmap shows the page. */
 	return 0;
+}
+
+/*
+ * Reports the opaque pixel a canvas color makes over white: the color the
+ * CPU renderer starts from and the GPU renderer clears to.
+ */
+uint32_t
+paint_canvas_pixel(
+	uint32_t color)
+{
+	struct paint_bitmap pixel;
+	uint32_t value;
+
+	/* A one-pixel bitmap, white, with the color blended over it. */
+	value = SOFTWARE_BACKDROP;
+	pixel.pixels = &value;
+	pixel.width = 1;
+	pixel.height = 1;
+	software_blend(&pixel, 0, 0, color, 1.0f);
+
+	/* Reports the blended pixel. */
+	return value;
 }
 
 /*

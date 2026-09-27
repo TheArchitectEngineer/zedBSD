@@ -16,14 +16,18 @@
 #ifndef ZDESKTOP_BROWSER_SHELL_H
 #define ZDESKTOP_BROWSER_SHELL_H
 
+#include "text/text.h"
+
 /*
- * What the command line asked of the window.
+ * What the command line asked of the window: the display, the page to
+ * open, the window's size and the fonts.
  */
 struct shell_options {
 	const char *display;
 	const char *start;
 	unsigned width;
 	unsigned height;
+	const struct text_font_paths *fonts;
 };
 
 int shell_run(const struct shell_options *options);
