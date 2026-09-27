@@ -51,6 +51,10 @@ printf 'archive' > Downloads/tools.tar.gz
 printf '#!/bin/sh\necho hi\n' > Downloads/install.sh
 chmod +x Downloads/install.sh
 printf 'hidden' > .profile-sample
+# The tests open PDFs and plain text by writing their paths to ~/.opened, so no window appears (p012);
+# other kinds keep the built-in ways (a terminal, Quick Look).
+mkdir -p .config/zdesktop
+printf '# ws071 tests\napplication/pdf,text/plain\tRecord\techo %%f >> "$HOME/.opened"\n' > .config/zdesktop/open-with
 # Fixed times (2026-09-27 16:20 and earlier) so that the pictures do not change.
 touch -t 202609271620 "Documents/Plan v3.key"
 touch -t 202609271403 Pictures/Design.fig

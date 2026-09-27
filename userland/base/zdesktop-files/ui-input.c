@@ -58,6 +58,7 @@
 #define INPUT_KEY_F		33U
 #define INPUT_KEY_T		20U
 #define INPUT_KEY_P		25U
+#define INPUT_KEY_I		23U
 #define INPUT_KEY_SPACE		57U
 
 /*
@@ -88,6 +89,7 @@ static void input_report(struct fm_app *app);
 static int input_operation_key(struct fm_app *app, const struct fm_event *event);
 static void input_button(struct fm_app *app, int index);
 static void input_look_key(struct fm_app *app, const struct fm_event *event);
+static void input_info_key(struct fm_app *app, const struct fm_event *event);
 
 /*
  * Follows the pointer: the region under it is lit, and a rubber band being
@@ -235,6 +237,12 @@ fm_input_key(
 			fm_action_confirm(app, 1);
 		else if (event->key == INPUT_KEY_ESC)
 			fm_action_confirm(app, 0);
+		return;
+	}
+
+	/* The information card takes the keys while it is open. */
+	if (app->info_open != 0) {
+		input_info_key(app, event);
 		return;
 	}
 
@@ -470,6 +478,8 @@ input_click(
 	case FM_HIT_OVERLAY:
 		if (index == FM_OVERLAY_LOOK_GROUND)
 			fm_look_close(app);
+		if (index == FM_OVERLAY_INFO_GROUND)
+			fm_info_close(app);
 		break;
 	default:
 		break;
@@ -1030,6 +1040,8 @@ input_operation_key(
 		fm_action_add_favorite(app);
 	} else if (event->key == INPUT_KEY_P && event->modifiers == (FM_MOD_CTRL | FM_MOD_ALT)) {
 		app->show_preview = !app->show_preview;
+	} else if (event->key == INPUT_KEY_I && event->modifiers == FM_MOD_CTRL) {
+		fm_info_open(app);
 	} else if (event->key == INPUT_KEY_F && event->modifiers == FM_MOD_CTRL) {
 		fm_search_focus(app);
 	} else if (event->key >= INPUT_KEY_1 && event->key <= INPUT_KEY_1 + 8U && event->modifiers == FM_MOD_ALT) {
@@ -1088,6 +1100,10 @@ input_button(
 		fm_action_empty_trash(app);
 	} else if (index == FM_BUTTON_LOOK_CLOSE) {
 		fm_look_close(app);
+	} else if (index == FM_BUTTON_INFO_CLOSE || index == FM_BUTTON_INFO_CHECKSUM) {
+		fm_info_button(app, index);
+	} else if (index >= FM_BUTTON_OPENER && index < FM_BUTTON_OPENER + FM_OPENERS) {
+		fm_info_button(app, index);
 	} else if (index >= FM_BUTTON_REMOVE_PLACE) {
 		fm_action_remove_favorite(app, index - FM_BUTTON_REMOVE_PLACE);
 	} else if (index >= FM_BUTTON_TASK_CANCEL) {
@@ -1130,4 +1146,17 @@ input_look_key(
 
 	/* The selection the key left. */
 	input_report(app);
+}
+
+/* Handles a key while the information card is open: Esc and Ctrl+I close it. */
+static void
+input_info_key(
+	struct fm_app *app,
+	const struct fm_event *event)
+{
+	/* Esc alone, or Ctrl+I again. */
+	if (event->key == INPUT_KEY_ESC && event->modifiers == 0U)
+		fm_info_close(app);
+	else if (event->key == INPUT_KEY_I && event->modifiers == FM_MOD_CTRL)
+		fm_info_close(app);
 }

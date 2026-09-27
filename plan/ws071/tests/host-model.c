@@ -349,6 +349,71 @@ main(
 		fm_peek_release(&pictures.peek);
 	}
 
+	/* 17. Opening (p012): the lists' order, the executable first, the quoting; the information and its checksum. */
+	{
+		static struct fm_info info;
+		static struct fm_tags no_tags;
+		struct fm_opener openers[FM_OPENERS];
+		char output[FM_PATH_MAX + 64];
+		char config[2 * FM_PATH_MAX];
+		char text[64];
+		int count;
+		int tries;
+
+		snprintf(config, sizeof(config), "%s/config", root);
+		mkdir(config, 0755);
+		setenv("XDG_CONFIG_HOME", config, 1);
+		snprintf(path, sizeof(path), "%s/config/zdesktop", root);
+		mkdir(path, 0755);
+		snprintf(output, sizeof(output), "%s/opened", root);
+		snprintf(path, sizeof(path), "%s/config/zdesktop/open-with", root);
+		{
+			FILE *file = fopen(path, "w");
+			fprintf(file, "# a comment\nmalformed line\ntext/plain, text/csv\tRecord\techo %%f > '%s'\nimage/png\tViewer\tview\n", output);
+			fclose(file);
+		}
+		count = fm_apps_for("/x/a.txt", fm_mime_guess("a.txt", 0100644), 0100644, openers, FM_OPENERS);
+		check(count >= 2 && strcmp(openers[0].name, "Record") == 0 && strcmp(openers[1].name, "Terminal (less)") == 0, "open: the user's list first, then the built-in viewer");
+		count = fm_apps_for("/x/run", fm_mime_guess("run", 0100755), 0100755, openers, FM_OPENERS);
+		check(count >= 2 && strcmp(openers[0].name, "Run in Terminal") == 0, "open: a program runs in a terminal first");
+		count = fm_apps_for("/x/a.ppm", fm_mime_guess("a.ppm", 0100644), 0100644, openers, FM_OPENERS);
+		check(count >= 1 && fm_apps_is_quicklook(&openers[0]) == 1, "open: a picture opens in Quick Look");
+		count = fm_apps_for("/x/a.png", fm_mime_guess("a.png", 0100644), 0100644, openers, FM_OPENERS);
+		check(count >= 2 && strcmp(openers[0].name, "Viewer") == 0 && fm_apps_is_quicklook(&openers[1]) == 1, "open: a list's line comes before the built-in way");
+
+		snprintf(path, sizeof(path), "%s/it's a file.txt", root);
+		make_file(path, "x");
+		count = fm_apps_for(path, fm_mime_guess("it's a file.txt", 0100644), 0100644, openers, FM_OPENERS);
+		check(fm_apps_launch(&openers[0], path) == 0, "open: launched");
+		for (tries = 0; tries < 100 && !exists(output); tries++)
+			usleep(20000);
+		usleep(50000);
+		snprintf(text, sizeof(text), "%s", "");
+		{
+			char expected[2 * FM_PATH_MAX + 2];
+			snprintf(expected, sizeof(expected), "%s\n", path);
+			check(file_is(output, expected), "open: the command got the path with its quote and spaces");
+		}
+
+		fm_mode_text(0104755, text, sizeof(text));
+		check(strcmp(text, "-rwsr-xr-x (4755)") == 0, "info: set-user-ID shown as s");
+		fm_mode_text(041777, text, sizeof(text));
+		check(strcmp(text, "drwxrwxrwt (1777)") == 0, "info: a sticky folder shown as t");
+
+		snprintf(path, sizeof(path), "%s/abc", root);
+		make_file(path, "abc");
+		setxattr(path, "user.note", "hello", 5, 0);
+		fm_info_release(&info);
+		check(fm_info_gather(&info, path, &no_tags) == 0 && info.size == 3 && info.attribute_count == 1 && strcmp(info.attributes[0].name, "user.note") == 0 && info.attributes[0].size == 5, "info: gathered, with the attribute and its size");
+		check(fm_info_checksum_start(&info) == 0 && info.checksum_state == FM_CHECKSUM_RUNNING, "info: checksum started");
+		for (tries = 0; tries < 10 && info.checksum_state == FM_CHECKSUM_RUNNING; tries++)
+			fm_info_checksum_step(&info, 10);
+		check(info.checksum_state == FM_CHECKSUM_DONE && strcmp(info.checksum, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0, "info: SHA-256 of abc");
+		snprintf(path, sizeof(path), "%s/no-such", root);
+		check(fm_info_gather(&info, path, &no_tags) == ENOENT, "info: a missing path says ENOENT");
+		fm_info_release(&info);
+	}
+
 	printf("files-model: %s\n", failures == 0 ? "PASS" : "FAIL");
 	return failures != 0;
 }

@@ -10,6 +10,7 @@ out=${1:-build/ws071-regress}
 [ $# -gt 0 ] && shift
 phases=${*:-p002 p003 p004 p005 p006 p007}
 failed=0
+mkdir -p "$(dirname -- "$out")"
 for phase in $phases; do
 	timeout 600 sh "plan/ws071/tests/files-$phase.sh" "$out/$phase" > "$out-$phase.log" 2>&1
 	grep -E "MISSING|FAIL|PASS" "$out-$phase.log"
