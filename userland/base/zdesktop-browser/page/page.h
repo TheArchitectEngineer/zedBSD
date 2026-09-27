@@ -20,6 +20,8 @@
 #include "css/css.h"
 #include "dom/dom.h"
 #include "html/html.h"
+#include "layout/layout.h"
+#include "text/text.h"
 
 /*
  * A loaded page.
@@ -31,6 +33,10 @@ struct page {
 	struct vm_heap *heap;
 	struct dom_document *document;
 	struct css_engine *css;
+	struct text_system text;
+	int text_open;
+	struct layout_tree layout;
+	int laid_out;
 };
 
 /* Pages (page.c). */
@@ -40,5 +46,7 @@ int page_load_html(struct page *page, const unsigned char *bytes, size_t length)
 int page_load_file(struct page *page, const char *path);
 int page_dump_dom(const struct page *page, struct wb_buffer *out);
 int page_dump_style(struct page *page, struct wb_buffer *out);
+int page_open_fonts(struct page *page, const struct text_font_paths *paths);
+int page_layout(struct page *page, int width, int height);
 
 #endif
