@@ -42,7 +42,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p005](phase005/phase.md) | BUG-028 | 閉じた port への connect を ECONNREFUSED に、自分の interface の address への packet を lo0 で届ける | cleared |
 | [ws073-p006](phase006/phase.md) | BUG-067 | devfs の文字 device の node が chmod・chown を受ける（`mesg n`） | cleared |
 | [ws073-p007](phase007/phase.md) | BUG-068 | 多 thread の process の execve が、joiner に先に reap された兄弟を待ち続ける | cleared |
-| ws073-p008 | BUG-069 | pty の master の read・slave の write が waitq_sleep の EAGAIN を失敗として返す（POSIX-R2 の pty の back-pressure） | planned |
+| [ws073-p008](phase008/phase.md) | BUG-069 | 端末と pty の読み書きが waitq_sleep の EAGAIN を失敗として返す（console の POSIX-R2 10 回連続 status 0） | cleared |
 | ws073-p009 | — | kernel の boot の FAT を公開する: BOOT を /boot、ESP を /boot/esp（ユーザーの判断 2026-09-27） | planned |
 
 ## 判断が要る点
