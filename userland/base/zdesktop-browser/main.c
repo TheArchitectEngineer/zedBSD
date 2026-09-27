@@ -136,6 +136,7 @@ main(
 	}
 
 	/* Opens the window and stays in it until it closes. */
+	options.shell.fonts = &options.fonts;
 	status = shell_run(&options.shell);
 	if (status != 0)
 		return status;

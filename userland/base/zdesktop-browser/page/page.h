@@ -52,5 +52,6 @@ int page_dump_style(struct page *page, struct wb_buffer *out);
 int page_open_fonts(struct page *page, const struct text_font_paths *paths);
 int page_layout(struct page *page, int width, int height);
 int page_paint(struct page *page);
+int page_title(const struct page *page, struct wb_buffer *out);
 
 #endif
