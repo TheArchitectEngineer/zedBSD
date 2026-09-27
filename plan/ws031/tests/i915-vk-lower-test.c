@@ -1530,8 +1530,8 @@ test_p004_fragment_shaders(void)
 	} steps[4] = {
 		{ "agg.frag", i915_vke2_agg_frag, sizeof(i915_vke2_agg_frag), i915_vke2_agg_expected },
 		{ "matfn.frag", i915_vke2_matfn_frag, sizeof(i915_vke2_matfn_frag), i915_vke2_matfn_expected },
-		{ "coord.frag", i915_vke2_coord_frag, sizeof(i915_vke2_coord_frag), i915_vke2_coord_expected },
-		{ "vformat.frag", i915_vke2_vformat_frag, sizeof(i915_vke2_vformat_frag), i915_vke2_vformat_expected },
+		{ "coord.frag", i915_vke2_coord_frag, sizeof(i915_vke2_coord_frag), NULL },
+		{ "vformat.frag", i915_vke2_vformat_frag, sizeof(i915_vke2_vformat_frag), NULL },
 	};
 	struct i915_shader_ir *ir;
 	struct machine m;
@@ -1553,11 +1553,17 @@ test_p004_fragment_shaders(void)
 				if (step == 3U) {
 					/* the flat array: word k of the twelve at location k / 4, component k % 4 */
 					for (k = 0U; k < 12U; k++)
-						m.input[k / 4U][k % 4U] = bits_to_float(i915_vke2_vformat_expected[k]);
+						m.input[k / 4U][k % 4U] = bits_to_float(i915_vke2_vformat_words[k]);
 				}
 				run_ir(ir, &m);
 				got = target_word(&m);
-				want = steps[step].expected[y * 64U + x];
+				/* coord: x, y and five check bits; vformat: word x % 12 (the kernel test's rules) */
+				if (step == 2U)
+					want = x | (y << 8) | (0x1fU << 16);
+				else if (step == 3U)
+					want = i915_vke2_vformat_words[x % 12U];
+				else
+					want = steps[step].expected[y * 64U + x];
 				/* a zero of either sign is the same result (the kernel test compares matfn as floats) */
 				if (step == 1U && (got & 0x7fffffffU) == 0U && (want & 0x7fffffffU) == 0U)
 					continue;

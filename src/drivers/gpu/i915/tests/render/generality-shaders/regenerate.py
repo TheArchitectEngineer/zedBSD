@@ -577,6 +577,16 @@ def persp_pixel(x, y):
 POINTS = ((8, 8, 4, 1), (24, 10, 8, 2), (40, 40, 8, 3), (56, 20, 4, 4), (12, 50, 6, 5), (48, 56, 2, 6))
 
 
+def point_word(x, y):
+    """point_pixel() in whole numbers, as the kernel test computes it: 16 s = 8 + 8 (2 x + 1 - 2 cx) / size, rounded."""
+    for cx, cy, size, number in POINTS:
+        u = 8 * size + 8 * (2 * x + 1 - 2 * cx)
+        v = 8 * size + 8 * (2 * y + 1 - 2 * cy)
+        if 0 <= u < 16 * size and 0 <= v < 16 * size:
+            return ((2 * u + size) // (2 * size)) | (((2 * v + size) // (2 * size)) << 8) | (number << 16) | (1 << 24)
+    return 0
+
+
 def point_pixel(x, y):
     """point.frag: gl_PointCoord in sixteenths and the point's number where a point covers the pixel's centre."""
     for cx, cy, size, number in POINTS:
@@ -752,16 +762,18 @@ def main():
         points.extend([bits(cx / 32.0 - 1.0), bits(cy / 32.0 - 1.0), 0, bits(float(size)), bits(float(number)), 0, 0, 0])
     c_words(lines, 'i915_vke2_point_vertices', points, per_line=8)
     lines.append(f'#define I915_VKE2_POINT_COUNT {len(POINTS)}U')
+    lines.extend(['', '/* The same points as whole numbers: the centre\'s pixel corner x and y, the size, the number. */'])
+    c_words(lines, 'i915_vke2_points', [v for point in POINTS for v in point], per_line=4, fmt='{}U')
+    lines.extend(['', '/* The twelve words vformat.vert makes of the attributes, which pixel column x shows word x % 12 of. */'])
+    c_words(lines, 'i915_vke2_vformat_words', vformat_words(), per_line=4)
     lines.extend(['', '/* The format step\'s attribute bytes 16 .. 63 of every vertex (after its position). */'])
     c_words(lines, 'i915_vke2_vformat_attributes', vformat_attributes(), per_line=4)
+    # The coord, deriv, nopersp, point and vformat steps' words are simple enough for the kernel test to make them
+    # (i915_vke2_expect_p004()); these functions say the same and check the data they are made from.
+    assert all(point_pixel(x, y) == point_word(x, y) for y in range(SIZE) for x in range(SIZE))
     for name, function, what in (('agg', agg_pixel, 'its 32-bit result'),
                                  ('matfn', matfn_pixel, 'the bits of its determinant, inverse element or halves'),
-                                 ('coord', coord_pixel, 'its position and the position checks'),
-                                 ('deriv', deriv_pixel, 'its derivatives as bit fields'),
-                                 ('nopersp', nopersp_pixel, 'its x without perspective and the flat number'),
-                                 ('persp', persp_pixel, 'the bits of x + 3 with perspective'),
-                                 ('point', point_pixel, 'its point coordinate and number, or 0 outside the points'),
-                                 ('vformat', vformat_pixel, 'the word of its column')):
+                                 ('persp', persp_pixel, 'the bits of x + 3 with perspective')):
         lines.extend(['', f'/* Every pixel of the {name} step: {what}. */'])
         c_words(lines, f'i915_vke2_{name}_expected', image(function), per_line=8)
     lines.append('')

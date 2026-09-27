@@ -353,6 +353,8 @@ static void i915_vke2_step_draw(struct i915_vke2 *x, const char *what, uint32_t 
 static void i915_vke2_step_matrix(struct i915_vke2 *x);
 static void i915_vke2_step_points(struct i915_vke2 *x);
 static void i915_vke2_vformat_layout(struct i915_gfx_pipeline *pipeline);
+static void i915_vke2_expect_p004(struct i915_vke2 *x, uint32_t pipeline);
+static uint32_t i915_vke2_point_word(uint32_t column, uint32_t row);
 
 /*
  * Starts the generality scenario.
@@ -1640,7 +1642,7 @@ i915_vke2_step_draw(
 		return;
 	}
 
-	/* Picks the step's words: generated for the arithmetic steps, sums for the interface steps. */
+	/* Picks the step's words: generated for the arithmetic steps, sums for the interface steps, a rule for some ws075-p004 ones. */
 	generated = NULL;
 	twice = 0U;
 	switch (pipeline) {
@@ -1662,20 +1664,14 @@ i915_vke2_step_draw(
 	case I915_VKE2_PIPE_MATFN:
 		generated = i915_vke2_matfn_expected;
 		break;
-	case I915_VKE2_PIPE_COORD:
-		generated = i915_vke2_coord_expected;
-		break;
-	case I915_VKE2_PIPE_DERIV:
-		generated = i915_vke2_deriv_expected;
-		break;
-	case I915_VKE2_PIPE_NOPERSP:
-		generated = i915_vke2_nopersp_expected;
-		break;
 	case I915_VKE2_PIPE_PERSP:
 		generated = i915_vke2_persp_expected;
 		break;
+	case I915_VKE2_PIPE_COORD:
+	case I915_VKE2_PIPE_DERIV:
+	case I915_VKE2_PIPE_NOPERSP:
 	case I915_VKE2_PIPE_VFORMAT:
-		generated = i915_vke2_vformat_expected;
+		/* Made by rule below. */
 		break;
 	case I915_VKE2_PIPE_VIO16:
 		twice = I915_VKE2_VIO16_TWICE;
@@ -1694,6 +1690,8 @@ i915_vke2_step_draw(
 	/* Fills the expected words and compares. */
 	if (generated != NULL) {
 		kern_memcpy(x->expected, generated, sizeof(x->expected));
+	} else if (pipeline >= I915_VKE2_PIPE_AGG) {
+		i915_vke2_expect_p004(x, pipeline);
 	} else {
 		i915_vke2_expect_sums(x, twice);
 	}
@@ -1776,7 +1774,7 @@ i915_vke2_step_points(
 	/* Runs it and compares every word with the generated ones. */
 	error = i915_vke2_finish(x, "POINT");
 	if (error == 0) {
-		kern_memcpy(x->expected, i915_vke2_point_expected, sizeof(x->expected));
+		i915_vke2_expect_p004(x, I915_VKE2_PIPE_POINT);
 		error = i915_vke2_compare(x, "POINT", I915_VKE2_COMPARE_EXACT);
 	}
 
@@ -1816,5 +1814,97 @@ i915_vke2_vformat_layout(
 		pipeline->attributes[index + 1U].offset = layout[index].offset;
 	}
 	pipeline->attribute_count = I915_VKE2_FORMAT_ATTRIBUTES;
+}
+
+/*
+ * Makes the words of the ws075-p004 steps that follow a rule simple enough
+ * to state here rather than generate (regenerate.py states the same and
+ * checks it): COORD the pixel's x and y and five check bits; DERIV 3, 5
+ * and 8, then twice the coarse x, fine x and coarse y derivatives of x y
+ * (the quad's first row's y, the row's own y, the quad's first column's x,
+ * each doubled plus one); NOPERSP 16 x + 8 and the first corner's number 2;
+ * VFORMAT word x % 12 of the twelve; POINT the point coordinate in
+ * sixteenths and the number where a point covers the pixel's centre.
+ */
+static void
+i915_vke2_expect_p004(
+	struct i915_vke2 *x,
+	uint32_t pipeline)
+{
+	uint32_t column;
+	uint32_t row;
+	uint32_t word;
+
+	/* Every pixel by the step's rule. */
+	for (row = 0U; row < I915_VKE2_SIZE; row++) {
+		for (column = 0U; column < I915_VKE2_SIZE; column++) {
+			/* The step decides the word. */
+			switch (pipeline) {
+			case I915_VKE2_PIPE_COORD:
+				word = column | (row << 8) | (0x1fU << 16);
+				break;
+
+			case I915_VKE2_PIPE_DERIV:
+				word = 3U | (5U << 2) | (8U << 5);
+				word |= (2U * (row & ~1U) + 1U) << 9;
+				word |= (2U * row + 1U) << 16;
+				word |= (2U * (column & ~1U) + 1U) << 23;
+				break;
+
+			case I915_VKE2_PIPE_NOPERSP:
+				word = (16U * column + 8U) | (2U << 30);
+				break;
+
+			case I915_VKE2_PIPE_VFORMAT:
+				word = i915_vke2_vformat_words[column % 12U];
+				break;
+
+			default:
+				word = i915_vke2_point_word(column, row);
+				break;
+			}
+			x->expected[row * I915_VKE2_SIZE + column] = word;
+		}
+	}
+}
+
+/*
+ * Returns the POINT step's word of a pixel: for the point that covers its
+ * centre, 16 s = 8 + 8 (2 x + 1 - 2 cx) / size (and t alike) rounded, the
+ * number and the marker byte 1; 0 where no point covers it.
+ */
+static uint32_t
+i915_vke2_point_word(
+	uint32_t column,
+	uint32_t row)
+{
+	const uint32_t *point;
+	int32_t u;
+	int32_t v;
+	int32_t size;
+	uint32_t index;
+
+	/* Tries each point. */
+	for (index = 0U; index < I915_VKE2_POINT_COUNT; index++) {
+		point = &i915_vke2_points[index * 4U];
+		size = (int32_t)point[2];
+		u = 8 * size + 8 * (2 * (int32_t)column + 1 - 2 * (int32_t)point[0]);
+		v = 8 * size + 8 * (2 * (int32_t)row + 1 - 2 * (int32_t)point[1]);
+
+		/* A centre outside the point's square is not covered by it. */
+		if (u < 0 || u >= 16 * size)
+			continue;
+		if (v < 0 || v >= 16 * size)
+			continue;
+
+		/* Succeeded: the coordinate, the number and the marker. */
+		return (uint32_t)((2 * u + size) / (2 * size)) |
+		       ((uint32_t)((2 * v + size) / (2 * size)) << 8) |
+		       (point[3] << 16) |
+		       (1U << 24);
+	}
+
+	/* No point covers the centre: the clear colour. */
+	return 0U;
 }
 
