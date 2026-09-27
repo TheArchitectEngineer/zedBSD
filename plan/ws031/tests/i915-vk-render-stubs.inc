@@ -417,6 +417,85 @@ drv_i915_gfx_submit_end(
 }
 
 /*
+ * Stand in for the query pools' GPU objects and batch (ws075-p006): the
+ * host has no GPU, so creating a pool's counters fails and a recorded query
+ * command cannot take a batch.
+ */
+int
+drv_i915_gfx_object_create(
+	struct i915_render_session *session,
+	uint64_t bytes,
+	struct i915_gem_object **result)
+{
+	UNUSED_PARAMETER(session);
+	UNUSED_PARAMETER(bytes);
+
+	/* No object on the host. */
+	*result = NULL;
+	return ENOMEM;
+}
+
+/* Stands in for destroying a GPU object: none was made. */
+void
+drv_i915_gfx_object_destroy(
+	struct i915_render_session *session,
+	struct i915_gem_object *object)
+{
+	UNUSED_PARAMETER(session);
+	UNUSED_PARAMETER(object);
+}
+
+/* Stands in for the session's draw objects: none on the host. */
+struct i915_gfx_session *
+drv_i915_gfx_session_get(
+	struct i915_render_session *session)
+{
+	UNUSED_PARAMETER(session);
+
+	/* No objects. */
+	return NULL;
+}
+
+/* Stands in for taking the batch: never reached without the session's objects. */
+int
+drv_i915_gfx_op_begin(
+	struct i915_render_session *session,
+	struct i915_gfx_session *work,
+	struct i915_gfx_op_space *space)
+{
+	UNUSED_PARAMETER(session);
+	UNUSED_PARAMETER(work);
+	UNUSED_PARAMETER(space);
+
+	/* No batch. */
+	return ENOMEM;
+}
+
+/* Stands in for ending an operation: never reached. */
+int
+drv_i915_gfx_op_end(
+	struct i915_render_session *session,
+	struct i915_gfx_session *work,
+	int error)
+{
+	UNUSED_PARAMETER(session);
+	UNUSED_PARAMETER(work);
+
+	/* Reports the operation's own outcome. */
+	return error;
+}
+
+/* Stands in for flushing CPU cache lines: host memory needs none. */
+void
+drv_i915_gt_clflush(
+	const volatile void *address,
+	size_t bytes)
+{
+	UNUSED_PARAMETER(address);
+	UNUSED_PARAMETER(bytes);
+}
+
+/*
  * Stands in for releasing the session's draw state: the stand-in draw
  * keeps none, so it only counts the call.
  */

@@ -38,6 +38,15 @@
  * generated values (3DSTATE_VF_SGVS) instead of a vertex buffer.
  */
 #define I915_SHADER_LOCATION_VERTEX_INDEX	64U
+
+/*
+ * The colour locations a fragment shader may write, one render target each,
+ * and the binding table entry of render target n: entry 0 for the first
+ * (the textures follow it at 1 + m), 16 + n past the sixteen textures for
+ * the others.
+ */
+#define I915_SHADER_MAX_COLOR_OUTPUTS		4U
+#define I915_SHADER_RT_BTI(n)			((uint32_t)(n) + 16U * (uint32_t)((n) != 0U))
 #define I915_SHADER_LOCATION_INSTANCE_INDEX	65U
 
 /*

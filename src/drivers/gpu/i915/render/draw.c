@@ -451,6 +451,7 @@ drv_i915_gfx_draw(
 	struct i915_gfx_kernels kernels;
 	const struct i915_gfx_image *target;
 	const struct i915_gfx_image *depth;
+	const struct i915_gfx_view *extent;
 	const char *counted;
 	uint64_t target_va;
 	uint32_t mocs;
@@ -458,8 +459,9 @@ drv_i915_gfx_draw(
 	int refused;
 	int error;
 
-	/* Refuses a draw with no prepared pipeline, render pass or colour attachment bound. */
+	/* Refuses a draw with no prepared pipeline, render pass or attachment bound. */
 	refused = 0;
+	extent = NULL;
 	if (state->pipeline == NULL) {
 		refused = 1;
 	} else if (state->pipeline->kernels_ready == 0) {
@@ -468,20 +470,24 @@ drv_i915_gfx_draw(
 		refused = 1;
 	} else if (state->framebuffer == NULL) {
 		refused = 1;
-	} else if (state->pass->color_attachment >= state->framebuffer->view_count) {
-		refused = 1;
-	} else if (state->framebuffer->views[state->pass->color_attachment] == NULL) {
-		refused = 1;
+	} else {
+		extent = drv_i915_gfx_draw_extent_view(state);
+		if (extent == NULL)
+			refused = 1;
 	}
 
 	/* Says why the draw is refused. */
 	if (refused != 0) {
-		kern_logf("i915: vk: draw refused: no pipeline, render pass or colour attachment is bound\n");
+		kern_logf("i915: vk: draw refused: no pipeline, render pass or attachment is bound\n");
 		return EINVAL;
 	}
 
-	/* Takes the colour target, and the depth target when the pass has one. */
-	target = state->framebuffer->views[state->pass->color_attachment]->image;
+	/*
+	 * Takes the image whose extent the draw covers (the first colour
+	 * attachment, or the depth attachment of a pass without colour), and
+	 * the depth target when the pass has one.
+	 */
+	target = extent->image;
 	depth = NULL;
 	if (state->pass->depth_attachment < state->framebuffer->view_count &&
 	    state->framebuffer->views[state->pass->depth_attachment] != NULL)
@@ -904,7 +910,7 @@ i915_draw_build_batch(
 	primitive.base_vertex = args->vertex_offset;
 
 	/* Draws the triangle list over the level of the target its view writes and flushes what it wrote. */
-	level = state->framebuffer->views[state->pass->color_attachment]->base_level;
+	level = drv_i915_gfx_draw_extent_view(state)->base_level;
 	width = target->width >> level;
 	if (width == 0U)
 		width = 1U;
@@ -915,4 +921,56 @@ i915_draw_build_batch(
 
 	/* Succeeded: the draw's commands are in the batch. */
 	return 0;
+}
+
+/*
+ * Finds the view whose level a draw covers: the first colour slot that has
+ * a view, or the depth attachment's view for a pass that draws no colour;
+ * NULL when the framebuffer has neither.
+ */
+const struct i915_gfx_view *
+drv_i915_gfx_draw_extent_view(
+	const struct i915_gfx_draw_state *state)
+{
+	uint32_t attachment;
+	uint32_t slot;
+
+	/* The first colour slot with a view. */
+	for (slot = 0U; slot < I915_GFX_MAX_COLOR_ATTACHMENTS; slot++) {
+		attachment = drv_i915_gfx_pass_color(state->pass, slot);
+		if (attachment < state->framebuffer->view_count && state->framebuffer->views[attachment] != NULL)
+			return state->framebuffer->views[attachment];
+	}
+
+	/* Else the depth attachment. */
+	attachment = state->pass->depth_attachment;
+	if (attachment < state->framebuffer->view_count)
+		return state->framebuffer->views[attachment];
+
+	/* Succeeded: the pass has no attachment to draw. */
+	return NULL;
+}
+
+/* Makes a GPU object of `bytes` bound into the session's address space (a query pool's counters). */
+int
+drv_i915_gfx_object_create(
+	struct i915_render_session *session,
+	uint64_t bytes,
+	struct i915_gem_object **result)
+{
+	int error;
+
+	/* As the session's own objects are made. */
+	error = i915_draw_object_create(session, bytes, result);
+	return error;
+}
+
+/* Unbinds and destroys an object drv_i915_gfx_object_create() made. */
+void
+drv_i915_gfx_object_destroy(
+	struct i915_render_session *session,
+	struct i915_gem_object *object)
+{
+	/* As the session's own objects are destroyed. */
+	i915_draw_object_destroy(session, object);
 }
