@@ -39,7 +39,7 @@ ZEDBSD_SYSROOT_LIBC_SOURCES := \
 ZEDBSD_SYSROOT_COMPILER_RT_SOURCES := \
 	src/libc/softfloat.c \
 	src/libc/compiler-runtime.c \
-	src/libc/math.c src/libc/float-parse.c
+	$(ZEDBSD_LIBM_SOURCES) src/libc/float-parse.c
 
 # AArch64 differs from x86 in two places.  clang has no __builtin_setjmp
 # there, so the C library carries setjmp in assembly; and long double is
@@ -97,7 +97,7 @@ ZEDBSD_SYSROOT_LINKER_SCRIPTS := \
 	bootloader/pcat/bootzbsd.ld \
 	bootloader/pc98/stage1.ld bootloader/pc98/stage2.ld
 ZEDBSD_SYSROOT_INPUTS := $(ZEDBSD_SYSROOT_LIBC_SOURCES) \
-	$(ZEDBSD_SYSROOT_COMPILER_RT_SOURCES) \
+	$(ZEDBSD_SYSROOT_COMPILER_RT_SOURCES) $(ZEDBSD_LIBM_HEADERS) \
 	$(ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES) \
 	$(ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES) \
 	$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) \
