@@ -14,6 +14,10 @@
  * answers the requests for it); Ctrl+Shift+V pastes CLIPBOARD's text into
  * the shell.  Through zdesktop-x11server's bridge the desktop's clipboard is
  * CLIPBOARD too (ws035-p087).
+ *
+ * A double click selects the word under the pointer as PRIMARY, and the
+ * middle button pastes PRIMARY's text; through the bridge that is the
+ * desktop's primary selection (ws035-p103).
  */
 
 #include <X11/Xlib.h>
@@ -35,6 +39,11 @@
 
 #define CELL_WIDTH 8U
 #define CELL_HEIGHT 16U
+
+/* The pointer's buttons as the event's detail has them, and a double click's longest gap (ms). */
+#define BUTTON_LEFT 1U
+#define BUTTON_MIDDLE 2U
+#define DOUBLE_CLICK_MS 400UL
 #define MAX_COLUMNS 160U
 #define MAX_ROWS 64U
 #define CSI_PARAMETERS 8
@@ -85,6 +94,13 @@ struct terminal {
 	Atom atom_paste;
 	char *clip;
 	size_t clip_length;
+
+	/* PRIMARY (ws035-p103): the word zterm owns it with (NULL when it does not), and the last left press (for a double click). */
+	char *primary;
+	size_t primary_length;
+	Time click_time;
+	unsigned click_column;
+	unsigned click_row;
 };
 
 static const uint32_t ansi_colors[16] = {
@@ -120,6 +136,9 @@ static void clip_paste(struct terminal *terminal);
 static void clip_request(struct terminal *terminal, const XSelectionRequestEvent *request);
 static void clip_notify(struct terminal *terminal, const XSelectionEvent *notify);
 static size_t clip_utf8(uint32_t codepoint, char *out);
+static void button_press(struct terminal *terminal, const XButtonEvent *event);
+static void primary_select(struct terminal *terminal, unsigned column, unsigned row);
+static int word_cell(struct terminal *terminal, unsigned column, unsigned row);
 
 /*
  * Runs the zterm command: zterm [-geometry COLUMNSxROWS] (without it, the
@@ -212,10 +231,16 @@ main(
 					redraw(&terminal);
 			} else if (event.type == KeyPress) {
 				(void)send_key(&terminal, &event.xkey);
+			} else if (event.type == ButtonPress) {
+				button_press(&terminal, &event.xbutton);
 			} else if (event.type == SelectionRequest) {
 				clip_request(&terminal, &event.xselectionrequest);
 			} else if (event.type == SelectionNotify) {
 				clip_notify(&terminal, &event.xselection);
+			} else if (event.type == SelectionClear && event.xselectionclear.selection == XA_PRIMARY) {
+				free(terminal.primary);
+				terminal.primary = NULL;
+				terminal.primary_length = 0;
 			} else if (event.type == SelectionClear) {
 				free(terminal.clip);
 				terminal.clip = NULL;
@@ -1315,10 +1340,23 @@ clip_request(
 	Atom targets[3];
 	Atom property;
 	unsigned long given;
+	const char *text;
+	size_t length;
 
-	/* No text, or another selection: refused. */
+	/* The selection's text: CLIPBOARD's or PRIMARY's; none, or another selection, is refused. */
 	property = request->property;
-	if (terminal->clip == NULL || request->selection != terminal->atom_clipboard)
+	text = NULL;
+	length = 0;
+	if (request->selection == terminal->atom_clipboard) {
+		text = terminal->clip;
+		length = terminal->clip_length;
+	} else if (request->selection == XA_PRIMARY) {
+		text = terminal->primary;
+		length = terminal->primary_length;
+	}
+
+	/* No text is refused. */
+	if (text == NULL)
 		property = None;
 
 	/* TARGETS: the types given. */
@@ -1329,7 +1367,7 @@ clip_request(
 		(void)XChangeProperty(terminal->display, request->requestor, property, XA_ATOM, 32, PropModeReplace, (const unsigned char *)targets, 3);
 	} else if (property != None && (request->target == terminal->atom_utf8 || request->target == XA_STRING)) {
 		/* The text, as the type asked. */
-		(void)XChangeProperty(terminal->display, request->requestor, property, request->target, 8, PropModeReplace, (const unsigned char *)terminal->clip, (int)terminal->clip_length);
+		(void)XChangeProperty(terminal->display, request->requestor, property, request->target, 8, PropModeReplace, (const unsigned char *)text, (int)length);
 	} else {
 		/* Another type is refused. */
 		property = None;
@@ -1348,7 +1386,7 @@ clip_request(
 	/* The log line the tests read (the bytes given, 0 when refused). */
 	given = 0;
 	if (property != None)
-		given = (unsigned long)terminal->clip_length;
+		given = (unsigned long)length;
 	printf("ZTERM-X SELECTION answered requestor=0x%x bytes=%lu\n", (unsigned)request->requestor, given);
 	fflush(stdout);
 }
@@ -1401,6 +1439,134 @@ clip_notify(
 	printf("ZTERM-X PASTE bytes=%lu\n", count);
 	fflush(stdout);
 	XFree(data);
+}
+
+/*
+ * A pointer button in the window: a double click of the left one selects
+ * the word under it as PRIMARY, the middle one pastes PRIMARY.  The event's
+ * detail (its keycode field in this Xlib) is the button.
+ */
+static void
+button_press(
+	struct terminal *terminal,
+	const XButtonEvent *event)
+{
+	unsigned column;
+	unsigned row;
+	int twice;
+
+	/* The middle button asks for PRIMARY's text; its SelectionNotify pastes it. */
+	if (event->keycode == BUTTON_MIDDLE) {
+		(void)XConvertSelection(terminal->display, XA_PRIMARY, terminal->atom_utf8, terminal->atom_paste, terminal->window, CurrentTime);
+		printf("ZTERM-X PRIMARY paste asked\n");
+		fflush(stdout);
+		return;
+	}
+
+	/* Only the left button selects, inside the grid. */
+	if (event->keycode != BUTTON_LEFT || event->x < 0 || event->y < 0)
+		return;
+	column = (unsigned)event->x / CELL_WIDTH;
+	row = (unsigned)event->y / CELL_HEIGHT;
+	if (column >= terminal->columns || row >= terminal->rows)
+		return;
+
+	/* The second press on the same cell soon after the first selects its word. */
+	twice = 0;
+	if (terminal->click_time != 0 && event->time - terminal->click_time <= DOUBLE_CLICK_MS &&
+	    column == terminal->click_column && row == terminal->click_row)
+		twice = 1;
+	terminal->click_time = event->time;
+	terminal->click_column = column;
+	terminal->click_row = row;
+	if (twice) {
+		terminal->click_time = 0;
+		primary_select(terminal, column, row);
+	}
+}
+
+/* Owns PRIMARY with the word (the run of non-blank characters) at a cell. */
+static void
+primary_select(
+	struct terminal *terminal,
+	unsigned column,
+	unsigned row)
+{
+	struct cell *cell;
+	unsigned first;
+	unsigned last;
+	unsigned index;
+	size_t used;
+	char *text;
+	int word;
+
+	/* A blank cell selects nothing. */
+	word = word_cell(terminal, column, row);
+	if (!word)
+		return;
+
+	/* The word's first cell. */
+	first = column;
+	while (first > 0U) {
+		word = word_cell(terminal, first - 1U, row);
+		if (!word)
+			break;
+		first--;
+	}
+
+	/* Its last. */
+	last = column;
+	while (last + 1U < terminal->columns) {
+		word = word_cell(terminal, last + 1U, row);
+		if (!word)
+			break;
+		last++;
+	}
+
+	/* Its characters as UTF-8. */
+	text = malloc((size_t)(last - first + 1U) * 4U + 1U);
+	if (text == NULL)
+		return;
+	used = 0;
+	for (index = first; index <= last; index++) {
+		/* A wide character's second cell adds nothing. */
+		cell = cell_at(terminal, index, row);
+		if (!cell->continuation)
+			used += clip_utf8(cell->codepoint, text + used);
+	}
+
+	/* A NUL ends it. */
+	text[used] = '\0';
+
+	/* Succeeded: zterm owns PRIMARY with it. */
+	free(terminal->primary);
+	terminal->primary = text;
+	terminal->primary_length = used;
+	(void)XSetSelectionOwner(terminal->display, XA_PRIMARY, terminal->window, CurrentTime);
+	printf("ZTERM-X PRIMARY set bytes=%lu\n", (unsigned long)used);
+	fflush(stdout);
+}
+
+/* Reports whether a cell is part of a word (neither blank nor a space; a wide character's second cell is). */
+static int
+word_cell(
+	struct terminal *terminal,
+	unsigned column,
+	unsigned row)
+{
+	struct cell *cell;
+
+	/* The cell. */
+	cell = cell_at(terminal, column, row);
+	if (cell->continuation)
+		return 1;
+
+	/* A blank or a space is not. */
+	if (cell->codepoint == 0U || cell->codepoint == ' ')
+		return 0;
+
+	/* Anything else is. */
+	return 1;
 }
 
 /* Writes a code point as UTF-8; returns how many bytes (at most four). */

@@ -38,5 +38,5 @@ Queue: なし（2026-09-28 main の割り当て「the terminal PRIMARY selection
 
 ## 残り
 
-- X11 の PRIMARY（zdesktop-x11server の橋）と zterm の中 button。
+- X11 の PRIMARY（zdesktop-x11server の橋）と zterm の中 button。→ [p103](../phase103/phase.md) で済み。
 - 選択を消したとき（click）に NULL の source を set しない（X と同じく最後の選択が残る）。
