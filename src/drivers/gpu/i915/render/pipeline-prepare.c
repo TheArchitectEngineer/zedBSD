@@ -164,8 +164,9 @@ drv_i915_gfx_pipeline_kernels(
 	for (index = 0U; index < kernels->vs_input_count && index < I915_GFX_MAX_VERTEX_ATTRIBUTES; index++)
 		kernels->vs_inputs[index] = vertex->input_locations[index];
 
-	/* Takes the varyings and the pixel kernel's payload start and sampled images. */
+	/* Takes the varyings, and whether the vertex kernel writes the point size. */
 	kernels->varyings = vertex->varying_count;
+	kernels->vs_point_size = vertex->writes_point_size;
 
 	/*
 	 * Finds the VUE slot of each fragment input; the fit check made sure the

@@ -882,7 +882,7 @@ i915_draw_build_batch(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
 
 	/* Programs the clipper, setup and rasterizer, then the pixel stage. */
-	drv_i915_gfx_emit_raster(batch, state->pipeline);
+	drv_i915_gfx_emit_raster(batch, state->pipeline, kernels);
 	drv_i915_gfx_emit_pixel_shader(batch, kernels);
 
 	/* Declares a writeable render target and how it blends. */

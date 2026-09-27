@@ -137,6 +137,9 @@
 /* Vertex, gathered VUE: the two slots of each write, and the handles of the last one in r127. */
 #define COMPILE_GATHER_GRF	119U
 
+/* Vertex: the point size is dword 3 of the VUE header (component 3 of slot 0). */
+#define COMPILE_VUE_POINT_SIZE	3U
+
 /* The spilled values one instruction reads at most (three sources), and defines at most (a sample's four). */
 #define COMPILE_MAX_FILLS	3U
 #define COMPILE_MAX_SPILLS	4U
@@ -291,6 +294,9 @@ struct i915_compile_state {
 	/* Fragment: nonzero when the shader discards, so f1.0 holds the live pixels. */
 	int uses_kill;
 
+	/* Vertex: nonzero when the shader writes the point size into its VUE header. */
+	int writes_point_size;
+
 	int error;
 
 	/* The IR asks for something this compiler cannot lower. */
@@ -368,6 +374,7 @@ static void i915_compile_loop_end(struct i915_compile_state *state, const struct
 static int i915_compile_rank(const uint32_t *list, uint32_t count, uint32_t location, uint32_t *rank);
 static uint32_t i915_compile_flat_mask(const struct i915_compile_state *state);
 static int i915_compile_input_flat(const struct i915_compile_state *state, uint32_t location);
+static int i915_compile_input_linear(const struct i915_compile_state *state, uint32_t location);
 static void i915_compile_note(struct i915_compile_state *state, uint32_t *list, uint32_t *count, uint32_t limit, uint32_t location);
 static void i915_compile_interface(struct i915_compile_state *state);
 static void i915_compile_blocks(struct i915_compile_state *state);
@@ -1570,6 +1577,7 @@ i915_compile_load_input(
 	struct i915_eu_reg facing;
 	int found;
 	int flat;
+	int linear;
 
 	/* Emits into the shader's encoder buffer. */
 	code = &state->code;
@@ -1607,6 +1615,13 @@ i915_compile_load_input(
 	/* An attribute component of a vertex is a payload register of its own. */
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		drv_i915_eu_mov(code, drv_i915_eu_grf(dst), drv_i915_eu_grf(payload_inputs + 4U * rank + inst->component));
+		return;
+	}
+
+	/* XXX: an input interpolated without perspective needs the linear barycentrics. */
+	linear = i915_compile_input_linear(state, inst->location);
+	if (linear) {
+		state->unsupported = 1;
 		return;
 	}
 
@@ -1728,8 +1743,20 @@ i915_compile_store_output(
 		return;
 	}
 
+	/* The point size is the vertex's only: component 3 of the VUE header. */
+	if (inst->location == I915_IR_LOCATION_POINT_SIZE && state->ir->stage != I915_STAGE_VERTEX) {
+		state->unsupported = 1;
+		return;
+	}
+
 	/* A gathered VUE only remembers the value; the end of the shader writes it. */
 	if (state->ir->stage == I915_STAGE_VERTEX && state->late_vue != 0) {
+		/* The point size is slot 0's (the header's) last component. */
+		if (inst->location == I915_IR_LOCATION_POINT_SIZE) {
+			state->output_value[COMPILE_VUE_POINT_SIZE] = inst->src[0];
+			return;
+		}
+
 		/* The position is slot 1; a varying follows it, in ascending location order. */
 		if (inst->location == I915_IR_LOCATION_POSITION) {
 			rank = 0U;
@@ -1744,6 +1771,13 @@ i915_compile_store_output(
 
 		/* The last store in program order is the one the end writes. */
 		state->output_value[4U * (1U + rank) + inst->component] = inst->src[0];
+		return;
+	}
+
+	/* The point size is the staged header's last dword. */
+	if (inst->location == I915_IR_LOCATION_POINT_SIZE) {
+		source_grf = i915_compile_grf(state, inst->src[0]);
+		drv_i915_eu_mov(&state->code, drv_i915_eu_grf(state->vue_grf + COMPILE_VUE_POINT_SIZE), drv_i915_eu_grf(source_grf));
 		return;
 	}
 
@@ -2512,6 +2546,24 @@ i915_compile_input_flat(
 	return 0;
 }
 
+/* Reports whether the IR input of a location is interpolated without perspective. */
+static int
+i915_compile_input_linear(
+	const struct i915_compile_state *state,
+	uint32_t location)
+{
+	uint32_t index;
+
+	/* The input of the location. */
+	for (index = 0U; index < state->ir->input_count; index++) {
+		if (state->ir->inputs[index].location == location && state->ir->inputs[index].noperspective != 0U)
+			return 1;
+	}
+
+	/* With perspective. */
+	return 0;
+}
+
 /* Returns the Flat inputs of a kernel: bit n for its n-th input in payload order whose IR input is Flat. */
 static uint32_t
 i915_compile_flat_mask(
@@ -2610,8 +2662,15 @@ i915_compile_interface(
 		if (inst->op == I915_IR_LOAD_INPUT && inst->location == I915_SHADER_LOCATION_FRONT_FACING) {
 			/* The facing bit is in the payload's fixed registers, not an input of its own. */
 			continue;
+		} else if (inst->op == I915_IR_LOAD_INPUT &&
+		    (inst->location == I915_SHADER_LOCATION_FRAG_COORD || inst->location == I915_SHADER_LOCATION_POINT_COORD)) {
+			/* XXX: the pixel position and the point sprite coordinate are not delivered yet. */
+			state->unsupported = 1;
 		} else if (inst->op == I915_IR_LOAD_INPUT) {
 			i915_compile_note(state, state->inputs, &state->input_count, COMPILE_MAX_INPUTS, inst->location);
+		} else if (inst->op == I915_IR_STORE_OUTPUT && inst->location == I915_IR_LOCATION_POINT_SIZE) {
+			/* The point size is in the VUE header, not a varying of its own. */
+			state->writes_point_size = 1;
 		} else if (inst->op == I915_IR_STORE_OUTPUT &&
 		    state->ir->stage == I915_STAGE_VERTEX &&
 		    inst->location != I915_IR_LOCATION_POSITION) {
@@ -2939,8 +2998,9 @@ i915_compile_gather(
 		for (component = 0U; component < 4U; component++) {
 			grf = COMPILE_GATHER_GRF + 4U * (slot - first) + component;
 
-			/* The header (point size, layer, viewport index) is integer zeros. */
-			if (slot == 0U) {
+			/* The header (layer, viewport index, and a point size never stored) is integer zeros. */
+			value = state->output_value[4U * slot + component];
+			if (slot == 0U && value == COMPILE_NO_VALUE) {
 				header = drv_i915_eu_grf_ud(grf);
 				header.type = COMPILE_TYPE_D;
 				drv_i915_eu_mov(&state->code, header, drv_i915_eu_imm_d(0U));
@@ -2948,7 +3008,6 @@ i915_compile_gather(
 			}
 
 			/* A component never stored is zero, as a staged one starts. */
-			value = state->output_value[4U * slot + component];
 			if (value == COMPILE_NO_VALUE) {
 				drv_i915_eu_mov(&state->code, drv_i915_eu_grf(grf), drv_i915_eu_imm_f(0U));
 				continue;
@@ -3050,6 +3109,10 @@ i915_compile_describe(
 	/* A fragment kernel that discards has the draw say so. */
 	if (state->uses_kill != 0)
 		binary->uses_kill = 1U;
+
+	/* A vertex kernel that writes the point size has the setup read it from the VUE. */
+	if (state->writes_point_size != 0)
+		binary->writes_point_size = 1U;
 
 	/* A vertex shader passes its varyings on; a fragment shader's varyings are its inputs. */
 	if (state->ir->stage == I915_STAGE_VERTEX) {

@@ -122,8 +122,11 @@
 #define OP_VECTOR_SHUFFLE 79U
 #define OP_COMPOSITE_CONSTRUCT 80U
 #define OP_COMPOSITE_EXTRACT 81U
+#define OP_COMPOSITE_INSERT 82U
+#define OP_COPY_OBJECT 83U
 #define OP_TRANSPOSE 84U
 #define OP_IMAGE_SAMPLE_IMPLICIT_LOD 87U
+#define OP_IMAGE_SAMPLE_EXPLICIT_LOD 88U
 #define OP_CONVERT_F_TO_U 109U
 #define OP_CONVERT_F_TO_S 110U
 #define OP_CONVERT_S_TO_F 111U
@@ -187,6 +190,15 @@
 #define OP_BITWISE_XOR 198U
 #define OP_BITWISE_AND 199U
 #define OP_NOT 200U
+#define OP_DPDX 207U
+#define OP_DPDY 208U
+#define OP_FWIDTH 209U
+#define OP_DPDX_FINE 210U
+#define OP_DPDY_FINE 211U
+#define OP_FWIDTH_FINE 212U
+#define OP_DPDX_COARSE 213U
+#define OP_DPDY_COARSE 214U
+#define OP_FWIDTH_COARSE 215U
 #define OP_PHI 245U
 #define OP_LOOP_MERGE 246U
 #define OP_SELECTION_MERGE 247U
@@ -226,6 +238,9 @@
 
 /* BuiltIn values (SPIR-V spec, section 3.21). */
 #define BUILTIN_POSITION 0U
+#define BUILTIN_POINT_SIZE 1U
+#define BUILTIN_FRAG_COORD 15U
+#define BUILTIN_POINT_COORD 16U
 #define BUILTIN_FRONT_FACING 17U
 #define BUILTIN_VERTEX_INDEX 42U
 #define BUILTIN_INSTANCE_INDEX 43U
@@ -257,6 +272,8 @@
 #define GLSL_LOG2 30U
 #define GLSL_SQRT 31U
 #define GLSL_INVERSE_SQRT 32U
+#define GLSL_DETERMINANT 33U
+#define GLSL_MATRIX_INVERSE 34U
 #define GLSL_FMIN 37U
 #define GLSL_UMIN 38U
 #define GLSL_SMIN 39U
@@ -269,6 +286,8 @@
 #define GLSL_FMIX 46U
 #define GLSL_STEP 48U
 #define GLSL_SMOOTH_STEP 49U
+#define GLSL_PACK_HALF_2X16 58U
+#define GLSL_UNPACK_HALF_2X16 62U
 #define GLSL_LENGTH 66U
 #define GLSL_DISTANCE 67U
 #define GLSL_CROSS 68U
@@ -316,6 +335,18 @@
 
 /* The most elements an array read through a dynamic index may have. */
 #define MAX_DYNAMIC_ELEMENTS 16U
+
+/*
+ * The most scalars a local variable holds, and the most interface slots (four
+ * to a location) an output holds: what the parser keeps stored for them.
+ */
+#define MAX_VARIABLE_SLOTS 256U
+
+/* The deepest nesting of arrays and structures a type may have. */
+#define MAX_TYPE_DEPTH 8U
+
+/* The interface locations a shader's own inputs and outputs may use: below the generated ones. */
+#define MAX_USER_LOCATION I915_SHADER_LOCATION_VERTEX_INDEX
 
 /* The OpVectorShuffle component index that means "undefined". */
 #define SHUFFLE_UNDEFINED 0xFFFFFFFFU
@@ -416,6 +447,9 @@ struct i915_spirv_id {
 	/* A variable decorated Flat: a fragment input the draw sets up as its provoking vertex's value. */
 	uint8_t flat;
 
+	/* A variable decorated NoPerspective: a fragment input interpolated linearly in screen space. */
+	uint8_t noperspective;
+
 	/* Pointer type or variable storage class. */
 	uint16_t storage;
 
@@ -450,8 +484,20 @@ struct i915_spirv_id {
 
 	uint8_t member_has_offset[MAX_MEMBERS];
 
-	/* Values; locals keep their CURRENT stored scalars here too. */
+	/* An interface block member decorated Flat, or NoPerspective (see `flat`). */
+	uint8_t member_flat[MAX_MEMBERS];
+	uint8_t member_noperspective[MAX_MEMBERS];
+
+	/* The scalars of a value (a label's predicate, a constant's first use). */
 	uint32_t comp[MAX_COMPONENTS];
+
+	/*
+	 * A local variable or an output: the run of the parser's slots that holds
+	 * what is currently stored in it -- a local's scalars in order, an
+	 * output's four slots to a location (see i915_spirv_variable_slot()).
+	 */
+	uint32_t first_slot;
+	uint32_t slot_count;
 
 	/* Pointers (variables and access chains): the OpVariable the pointer leads to. */
 	uint32_t var;
@@ -640,6 +686,18 @@ struct i915_spirv_parser {
 	uint32_t zero_value;
 	uint32_t one_value;
 	uint32_t true_value;
+
+	/*
+	 * What the local variables and the outputs currently hold, one IR value
+	 * (or NO_VALUE, nothing stored) to a slot; each variable owns a run of
+	 * it from its declaration to the end of the parse.
+	 */
+	uint32_t *slots;
+	uint32_t slot_count;
+	uint32_t slot_capacity;
+
+	/* The entries the interface lists (ir->inputs, ir->outputs) have room for. */
+	uint32_t io_capacity;
 };
 
 static int i915_spirv_pass_declarations(struct i915_spirv_parser *parser);
@@ -652,20 +710,27 @@ static int i915_spirv_declare_constant(struct i915_spirv_parser *parser, const u
 static int i915_spirv_declare_constant_bool(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode);
 static int i915_spirv_declare_constant_composite(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_declare_variable(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
-static int i915_spirv_decoration_ignored(struct i915_spirv_parser *parser, uint32_t decoration);
-static void i915_spirv_add_io(struct i915_spirv_parser *parser, uint32_t id, int is_input);
+static int i915_spirv_decoration_ignored(uint32_t decoration);
+static int i915_spirv_add_io(struct i915_spirv_parser *parser, uint32_t id, int is_input, uint32_t opcode, uint32_t offset);
+static int i915_spirv_add_io_run(struct i915_spirv_parser *parser, int is_input, uint32_t location, uint32_t count, uint32_t components, uint32_t flat, uint32_t noperspective);
 static void i915_spirv_add_uniform(struct i915_spirv_parser *parser, uint32_t id, uint32_t kind);
 static int i915_spirv_pass_body(struct i915_spirv_parser *parser);
 static int i915_spirv_lower(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_variable(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_access_chain(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_chain_block(struct i915_spirv_parser *parser, struct i915_spirv_id *record, struct i915_spirv_id *pointee, struct i915_spirv_id *index_record, uint32_t index_id, uint32_t opcode, uint32_t offset);
-static int i915_spirv_chain_scalars(struct i915_spirv_parser *parser, struct i915_spirv_id *record, struct i915_spirv_id *pointee, struct i915_spirv_id *index_record, uint32_t opcode, uint32_t offset);
+static int i915_spirv_chain_scalars(struct i915_spirv_parser *parser, struct i915_spirv_id *record, struct i915_spirv_id *pointee, struct i915_spirv_id *index_record, uint32_t index_id, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_load(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_load_local(struct i915_spirv_parser *parser, const uint32_t *word, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t components, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_load_output(struct i915_spirv_parser *parser, const uint32_t *word, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t components, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_load_input(struct i915_spirv_parser *parser, const uint32_t *word, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t components, uint32_t opcode, uint32_t offset);
+static int i915_spirv_input_flat(struct i915_spirv_parser *parser, uint32_t location);
+static uint32_t i915_spirv_index_is(struct i915_spirv_parser *parser, uint32_t index, uint32_t number);
 static int i915_spirv_lower_load_block(struct i915_spirv_parser *parser, const uint32_t *word, struct i915_spirv_id *pointer, struct i915_spirv_id *variable, uint32_t opcode, uint32_t offset);
 static uint32_t i915_spirv_load_word(struct i915_spirv_parser *parser, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t byte);
 static int i915_spirv_lower_store(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
-static int i915_spirv_lower_store_output(struct i915_spirv_parser *parser, struct i915_spirv_id *pointer, struct i915_spirv_id *variable, const uint32_t *scalars, uint32_t count, uint32_t first, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_store_local(struct i915_spirv_parser *parser, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, const uint32_t *scalars, uint32_t components);
+static int i915_spirv_lower_store_output(struct i915_spirv_parser *parser, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, const uint32_t *scalars, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_arithmetic(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_integer(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static uint32_t i915_spirv_lower_integer_component(struct i915_spirv_parser *parser, uint32_t opcode, uint32_t left, uint32_t right);
@@ -683,6 +748,9 @@ static int i915_spirv_lower_dot(struct i915_spirv_parser *parser, const uint32_t
 static uint32_t i915_spirv_dot_value(struct i915_spirv_parser *parser, const uint32_t *left, const uint32_t *right, uint32_t components);
 static int i915_spirv_lower_construct(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_extract(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_insert(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_copy(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_composite_part(struct i915_spirv_parser *parser, uint32_t type_id, const uint32_t *word, uint32_t count, uint32_t first_index, uint32_t *first, uint32_t *length, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_shuffle(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_extended(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static uint32_t i915_spirv_lower_extended_component(struct i915_spirv_parser *parser, uint32_t function, uint32_t operand[3][4], uint32_t component);
@@ -727,7 +795,12 @@ static uint32_t i915_spirv_bool_components(struct i915_spirv_parser *parser, uin
 static uint32_t i915_spirv_value_components(struct i915_spirv_parser *parser, uint32_t type_id);
 static uint32_t i915_spirv_matrix_components(struct i915_spirv_parser *parser, uint32_t type_id);
 static uint32_t i915_spirv_float_components_wide(struct i915_spirv_parser *parser, uint32_t type_id);
-static uint32_t i915_spirv_value_components_wide(struct i915_spirv_parser *parser, uint32_t type_id);
+static int i915_spirv_type_size(struct i915_spirv_parser *parser, uint32_t type_id, uint32_t depth, uint32_t *scalars, uint32_t *locations);
+static uint32_t i915_spirv_aggregate_scalars(struct i915_spirv_parser *parser, uint32_t type_id);
+static int i915_spirv_type_step(struct i915_spirv_parser *parser, uint32_t type_id, uint32_t index, uint32_t *next_type, uint32_t *scalar_offset, uint32_t *io_offset, uint32_t opcode, uint32_t offset);
+static int i915_spirv_io_map(struct i915_spirv_parser *parser, uint32_t type_id, uint32_t depth, uint32_t base, uint32_t *map, uint32_t *count, uint32_t capacity);
+static int i915_spirv_variable_slots(struct i915_spirv_parser *parser, struct i915_spirv_id *variable, uint32_t count);
+static uint32_t *i915_spirv_variable_slot(struct i915_spirv_parser *parser, const struct i915_spirv_id *variable, uint32_t index);
 static uint32_t i915_spirv_operand_type(struct i915_spirv_parser *parser, uint32_t id);
 static uint32_t i915_spirv_operand_int_components(struct i915_spirv_parser *parser, uint32_t id);
 static uint32_t i915_spirv_operand_float_components(struct i915_spirv_parser *parser, uint32_t id);
@@ -802,8 +875,12 @@ drv_i915_shader_parse(
 		return ENOMEM;
 	}
 
-	/* Interface lists are bounded by the id count. */
-	slots = parser.bound;
+	/*
+	 * Interface lists are bounded by the id count and the locations a
+	 * shader's own interface may take (an array or a block takes several).
+	 */
+	slots = parser.bound + MAX_USER_LOCATION;
+	parser.io_capacity = slots;
 
 	/* Allocates the input list. */
 	ir->inputs = kern_calloc(slots, sizeof(*ir->inputs));
@@ -860,11 +937,13 @@ drv_i915_shader_parse(
 	if (error == 0 && parser.error != 0)
 		error = parser.error;
 
-	/* The edge and carried lists are only needed while parsing. */
+	/* The edge and carried lists and the variables' slots are only needed while parsing. */
 	if (parser.edges != NULL)
 		kern_free(parser.edges);
 	if (parser.carried != NULL)
 		kern_free(parser.carried);
+	if (parser.slots != NULL)
+		kern_free(parser.slots);
 
 	/* A failed parse reports the refused instruction and releases everything. */
 	if (error != 0) {
@@ -1074,13 +1153,13 @@ i915_spirv_declare_entry_point(
  * Interprets one decoration.
  *
  * Interpreted: Location, Binding, DescriptorSet, BuiltIn, Block,
- * ArrayStride and Flat (kept for the draw's constant interpolation).
- * Without effect on this lowering: RelaxedPrecision (a permission to lose
- * precision, never used here), Centroid (a draw has one sample per pixel,
- * whose centre is the centroid) and NoPerspective on a vertex shader's
- * output (the fragment shader's input interpolates).  Anything else could
- * place or qualify data -- components, a fragment input without
- * perspective, buffer blocks -- and is refused.
+ * ArrayStride, Flat (kept for the draw's constant interpolation) and
+ * NoPerspective (a fragment input interpolated linearly; a vertex shader's
+ * output only carries it).  Without effect on this lowering:
+ * RelaxedPrecision (a permission to lose precision, never used here) and
+ * Centroid (a draw has one sample per pixel, whose centre is the centroid).
+ * Anything else could place or qualify data -- components, buffer blocks --
+ * and is refused.
  */
 static int
 i915_spirv_declare_decoration(
@@ -1117,9 +1196,11 @@ i915_spirv_declare_decoration(
 		record->stride = word[3];
 	} else if (word[2] == DEC_FLAT) {
 		record->flat = 1U;
+	} else if (word[2] == DEC_NO_PERSPECTIVE) {
+		record->noperspective = 1U;
 	} else {
 		/* A decoration without effect, or one that is refused. */
-		ignored = i915_spirv_decoration_ignored(parser, word[2]);
+		ignored = i915_spirv_decoration_ignored(word[2]);
 		if (ignored == 0)
 			return i915_spirv_refuse(parser, opcode, offset, "decoration that is not interpreted");
 	}
@@ -1130,21 +1211,15 @@ i915_spirv_declare_decoration(
 
 /*
  * Reports whether a decoration has no effect on this lowering: Block,
- * RelaxedPrecision, Centroid (one sample per pixel) and NoPerspective on a
- * vertex shader's output (the fragment shader's input says how it is
- * interpolated).
+ * RelaxedPrecision and Centroid (one sample per pixel, whose centre is the
+ * centroid).
  */
 static int
 i915_spirv_decoration_ignored(
-	struct i915_spirv_parser *parser,
 	uint32_t decoration)
 {
 	/* Those without effect in every stage. */
 	if (decoration == DEC_BLOCK || decoration == DEC_RELAXED_PRECISION || decoration == DEC_CENTROID)
-		return 1;
-
-	/* A vertex shader's output without perspective. */
-	if (decoration == DEC_NO_PERSPECTIVE && parser->ir->stage == I915_STAGE_VERTEX)
 		return 1;
 
 	/* Anything else has an effect. */
@@ -1154,8 +1229,9 @@ i915_spirv_decoration_ignored(
 /*
  * Interprets one structure member decoration.
  *
- * Interpreted: Offset, BuiltIn, MatrixStride, ColMajor and RowMajor;
- * RelaxedPrecision has no effect; anything else is refused.
+ * Interpreted: Offset, BuiltIn, MatrixStride, ColMajor and RowMajor, and
+ * an interface block member's Flat and NoPerspective; RelaxedPrecision and
+ * Centroid have no effect; anything else is refused.
  */
 static int
 i915_spirv_declare_member_decoration(
@@ -1193,7 +1269,11 @@ i915_spirv_declare_member_decoration(
 		record->member_row_major[member] = 1U;
 	} else if (word[3] == DEC_COL_MAJOR) {
 		record->member_row_major[member] = 0U;
-	} else if (word[3] != DEC_RELAXED_PRECISION) {
+	} else if (word[3] == DEC_FLAT) {
+		record->member_flat[member] = 1U;
+	} else if (word[3] == DEC_NO_PERSPECTIVE) {
+		record->member_noperspective[member] = 1U;
+	} else if (word[3] != DEC_RELAXED_PRECISION && word[3] != DEC_CENTROID) {
 		return i915_spirv_refuse(parser, opcode, offset, "member decoration that is not interpreted");
 	}
 
@@ -1392,8 +1472,10 @@ i915_spirv_declare_constant_bool(
 }
 
 /*
- * Records a vector constant made of scalar constants, or a matrix constant
- * made of vector constants; any other composite is refused.
+ * Records a composite constant: a vector of scalar constants, a matrix of
+ * vector constants, or an array or a structure of constants.  Its scalars
+ * are its constituents' in order, as a value's are (see
+ * i915_spirv_type_size()).
  */
 static int
 i915_spirv_declare_constant_composite(
@@ -1414,17 +1496,17 @@ i915_spirv_declare_constant_composite(
 	if (record == NULL)
 		return EINVAL;
 
-	/* A vector or a matrix has two to four constituents; a structure or an array constant is not lowered. */
-	if (count - 3U < 2U || count - 3U > 4U)
-		return i915_spirv_refuse(parser, opcode, offset, "constant composite that is not a vector or a matrix");
+	/* A composite has one constituent at least, and no more than a structure has members. */
+	if (count < 4U || count - 3U > MAX_MEMBERS)
+		return i915_spirv_refuse(parser, opcode, offset, "constant composite of more constituents than supported");
 
-	/* Every constituent must be a constant declared before: a scalar, or a vector of a matrix. */
+	/* Every constituent must be a constant declared before. */
 	for (index = 3U; index < count; index++) {
 		constituent = i915_spirv_id(parser, word[index]);
 		if (constituent == NULL)
 			return EINVAL;
 		if (constituent->kind != ID_CONSTANT && constituent->kind != ID_CONSTANT_COMPOSITE)
-			return i915_spirv_refuse(parser, opcode, offset, "constant composite that is not a vector or a matrix");
+			return i915_spirv_refuse(parser, opcode, offset, "constant composite of something that is not a constant");
 	}
 
 	/* Records the type and the constituents; each becomes IR the first time it is used. */
@@ -1450,7 +1532,9 @@ i915_spirv_declare_variable(
 	struct i915_spirv_id *record;
 	struct i915_spirv_id *type;
 	uint32_t storage;
-	uint32_t index;
+	uint32_t scalars;
+	uint32_t locations;
+	int error;
 
 	/* Resolves the variable and its pointer type. */
 	record = NULL;
@@ -1481,14 +1565,6 @@ i915_spirv_declare_variable(
 	record->component_stride = 4U;
 	record->dynamic_index = NO_VALUE;
 
-	/*
-	 * An output remembers what was last stored to each component, for a
-	 * store under a predicate to keep where the predicate is false; nothing
-	 * is stored yet.
-	 */
-	for (index = 0U; index < MAX_COMPONENTS; index++)
-		record->comp[index] = NO_VALUE;
-
 	/* A vertex shader's gl_VertexIndex and gl_InstanceIndex are inputs at the locations the draw fills them at. */
 	if (storage == SC_INPUT && record->has_builtin != 0U && parser->ir->stage == I915_STAGE_VERTEX) {
 		if (record->builtin == BUILTIN_VERTEX_INDEX) {
@@ -1500,20 +1576,35 @@ i915_spirv_declare_variable(
 		}
 	}
 
-	/* A fragment shader's gl_FrontFacing is an input at the location of the payload's facing bit. */
-	if (storage == SC_INPUT && record->has_builtin != 0U && record->builtin == BUILTIN_FRONT_FACING &&
-	    parser->ir->stage == I915_STAGE_FRAGMENT) {
-		record->has_location = 1U;
-		record->location = I915_SHADER_LOCATION_FRONT_FACING;
+	/*
+	 * A fragment shader's gl_FrontFacing, gl_FragCoord and gl_PointCoord are
+	 * inputs at the locations of the payload's facing bit and pixel position
+	 * and of the point sprite's coordinate.
+	 */
+	if (storage == SC_INPUT && record->has_builtin != 0U && parser->ir->stage == I915_STAGE_FRAGMENT) {
+		if (record->builtin == BUILTIN_FRONT_FACING) {
+			record->has_location = 1U;
+			record->location = I915_SHADER_LOCATION_FRONT_FACING;
+		} else if (record->builtin == BUILTIN_FRAG_COORD) {
+			record->has_location = 1U;
+			record->location = I915_SHADER_LOCATION_FRAG_COORD;
+		} else if (record->builtin == BUILTIN_POINT_COORD) {
+			record->has_location = 1U;
+			record->location = I915_SHADER_LOCATION_POINT_COORD;
+		}
 	}
 
 	/* The storage class, and a location, decide what the variable is to the shader. */
 	if (storage == SC_INPUT && record->has_location != 0U) {
 		record->ptr_kind = PTR_INPUT;
-		i915_spirv_add_io(parser, word[2], 1);
+		error = i915_spirv_add_io(parser, word[2], 1, opcode, offset);
+		if (error != 0)
+			return error;
 	} else if (storage == SC_OUTPUT && record->has_location != 0U) {
 		record->ptr_kind = PTR_OUTPUT;
-		i915_spirv_add_io(parser, word[2], 0);
+		error = i915_spirv_add_io(parser, word[2], 0, opcode, offset);
+		if (error != 0)
+			return error;
 	} else if (storage == SC_OUTPUT) {
 		record->ptr_kind = PTR_OUTPUT_BLOCK;
 	} else if (storage == SC_PUSH_CONSTANT) {
@@ -1529,41 +1620,157 @@ i915_spirv_declare_variable(
 		return i915_spirv_refuse(parser, opcode, offset, "variable in a storage class that is not lowered");
 	}
 
+	/* Only an output remembers what is stored in it. */
+	if (record->ptr_kind != PTR_OUTPUT && record->ptr_kind != PTR_OUTPUT_BLOCK)
+		return 0;
+
+	/*
+	 * An output remembers what was last stored to each of its interface
+	 * slots, four to a location, for a store under a predicate to keep where
+	 * the predicate is false; nothing is stored yet.
+	 */
+	error = i915_spirv_type_size(parser, record->pointee, 0U, &scalars, &locations);
+	if (error != 0)
+		return i915_spirv_refuse(parser, opcode, offset, "output that is not made of scalars");
+	error = i915_spirv_variable_slots(parser, record, 4U * locations);
+	if (error == ENOMEM)
+		return error;
+	if (error != 0)
+		return i915_spirv_refuse(parser, opcode, offset, "output larger than supported");
+
 	/* Succeeded: the variable is part of the interface. */
 	return 0;
 }
 
-/* Adds an input or output interface slot for a variable id. */
-static void
+/*
+ * Adds the interface locations of an input or an output variable: one entry
+ * to each location its type takes, from its own location on -- a scalar or a
+ * vector one, a matrix one to a column, an array its elements', an
+ * interface block its members' in order -- each Flat or NoPerspective as
+ * the variable or its block member is.  Refuses a variable whose locations
+ * run into the ones the draw generates.
+ */
+static int
 i915_spirv_add_io(
 	struct i915_spirv_parser *parser,
 	uint32_t id,
-	int is_input)
+	int is_input,
+	uint32_t opcode,
+	uint32_t offset)
 {
-	struct i915_shader_ir_io *slot;
+	struct i915_spirv_id *variable;
+	struct i915_spirv_id *type;
+	uint32_t location;
+	uint32_t scalars;
+	uint32_t locations;
 	uint32_t components;
+	uint32_t member;
+	int error;
 
-	/* Counts the float components of what the variable holds. */
-	components = i915_spirv_float_components(parser, parser->ids[id].pointee);
+	/* Resolves the variable and what it holds. */
+	variable = &parser->ids[id];
+	type = i915_spirv_id(parser, variable->pointee);
+	if (type == NULL)
+		return EINVAL;
 
-	/* Takes the next slot of the input or the output list. */
+	/* A scalar or a vector counts its float components, one when it holds none. */
+	components = i915_spirv_float_components(parser, variable->pointee);
+	if (components == 0U)
+		components = 1U;
+
+	/* A location the draw generates is one entry of its own. */
+	if (variable->location >= MAX_USER_LOCATION) {
+		error = i915_spirv_add_io_run(parser, is_input, variable->location, 1U, components, variable->flat, variable->noperspective);
+		if (error != 0)
+			return i915_spirv_refuse(parser, opcode, offset, "more interface locations than supported");
+		return 0;
+	}
+
+	/* A variable that is not an interface block takes its locations with its own interpolation. */
+	location = variable->location;
+	if (type->kind != ID_TYPE_STRUCT) {
+		error = i915_spirv_type_size(parser, variable->pointee, 0U, &scalars, &locations);
+		if (error != 0)
+			return i915_spirv_refuse(parser, opcode, offset, "interface variable that is not made of scalars");
+		if (location + locations > MAX_USER_LOCATION)
+			return i915_spirv_refuse(parser, opcode, offset, "interface location past the ones supported");
+
+		/* A matrix or an array counts four components to each of its locations. */
+		if (locations > 1U)
+			components = 4U;
+		error = i915_spirv_add_io_run(parser, is_input, location, locations, components, variable->flat, variable->noperspective);
+		if (error != 0)
+			return i915_spirv_refuse(parser, opcode, offset, "more interface locations than supported");
+		return 0;
+	}
+
+	/* An interface block takes its members' locations in order, each with its own interpolation. */
+	for (member = 0U; member < type->count; member++) {
+		error = i915_spirv_type_size(parser, type->member_type[member], 1U, &scalars, &locations);
+		if (error != 0)
+			return i915_spirv_refuse(parser, opcode, offset, "interface block member that is not made of scalars");
+		if (location + locations > MAX_USER_LOCATION)
+			return i915_spirv_refuse(parser, opcode, offset, "interface location past the ones supported");
+		error = i915_spirv_add_io_run(parser,
+					      is_input,
+					      location,
+					      locations,
+					      4U,
+					      variable->flat | type->member_flat[member],
+					      variable->noperspective | type->member_noperspective[member]);
+		if (error != 0)
+			return i915_spirv_refuse(parser, opcode, offset, "more interface locations than supported");
+		location += locations;
+	}
+
+	/* Succeeded: every location of the block is listed. */
+	return 0;
+}
+
+/*
+ * Appends `count` locations from `location` on to the input or the output
+ * list, each of `components` components with the interpolation given.
+ * Returns ENOSPC when the list has no room for them.
+ */
+static int
+i915_spirv_add_io_run(
+	struct i915_spirv_parser *parser,
+	int is_input,
+	uint32_t location,
+	uint32_t count,
+	uint32_t components,
+	uint32_t flat,
+	uint32_t noperspective)
+{
+	struct i915_shader_ir_io *list;
+	uint32_t *used;
+	uint32_t index;
+
+	/* Picks the input or the output list. */
 	if (is_input != 0) {
-		slot = &parser->ir->inputs[parser->ir->input_count];
-		parser->ir->input_count++;
+		list = parser->ir->inputs;
+		used = &parser->ir->input_count;
 	} else {
-		slot = &parser->ir->outputs[parser->ir->output_count];
-		parser->ir->output_count++;
+		list = parser->ir->outputs;
+		used = &parser->ir->output_count;
 	}
 
-	/* Records the location and the interpolation; a variable that is not a float vector counts as one component. */
-	slot->location = parser->ids[id].location;
-	slot->flat = parser->ids[id].flat;
-	if (components != 0U) {
-		slot->components = components;
-	} else {
-		slot->components = 1U;
+	/* A list without room for the run refuses it. */
+	if (*used + count > parser->io_capacity)
+		return ENOSPC;
+
+	/* Records each location of the run. */
+	for (index = 0U; index < count; index++) {
+		list[*used].location = location + index;
+		list[*used].components = components;
+		list[*used].type = 0U;
+		list[*used].flat = flat;
+		list[*used].noperspective = noperspective;
+		(*used)++;
 	}
-	slot->type = 0U;
+
+	/* Succeeded: the run is listed. */
+	return 0;
 }
 
 /*
@@ -1844,6 +2051,12 @@ i915_spirv_lower(
 	case OP_COMPOSITE_EXTRACT:
 		return i915_spirv_lower_extract(parser, word, count, opcode, offset);
 
+	case OP_COMPOSITE_INSERT:
+		return i915_spirv_lower_insert(parser, word, count, opcode, offset);
+
+	case OP_COPY_OBJECT:
+		return i915_spirv_lower_copy(parser, word, count, opcode, offset);
+
 	case OP_VECTOR_SHUFFLE:
 		return i915_spirv_lower_shuffle(parser, word, count, opcode, offset);
 
@@ -1862,9 +2075,9 @@ i915_spirv_lower(
 }
 
 /*
- * Lowers a local variable: not memory, a set of "currently stored" scalars
- * (none yet).  Only float, integer or Boolean scalars and vectors, and float
- * matrices; a struct or array local is refused.
+ * Lowers a local variable: not memory, a run of "currently stored" scalars
+ * (none yet) -- a scalar, a vector, a matrix, or an array or a structure of
+ * them, flattened (see i915_spirv_type_size()).
  */
 static int
 i915_spirv_lower_variable(
@@ -1877,7 +2090,7 @@ i915_spirv_lower_variable(
 	struct i915_spirv_id *record;
 	struct i915_spirv_id *type;
 	uint32_t components;
-	uint32_t index;
+	int error;
 
 	/* Resolves the variable and its pointer type. */
 	record = NULL;
@@ -1897,12 +2110,12 @@ i915_spirv_lower_variable(
 	if (word[3] != SC_FUNCTION || count > 4U)
 		return i915_spirv_refuse(parser, opcode, offset, "local variable with an initializer or a non-Function storage class");
 
-	/* Only scalars, vectors and matrices can be tracked as scalars. */
-	components = i915_spirv_value_components_wide(parser, type->type);
+	/* Only what is made of scalars can be tracked as scalars. */
+	components = i915_spirv_aggregate_scalars(parser, type->type);
 	if (components == 0U)
-		return i915_spirv_refuse(parser, opcode, offset, "local variable that is not a scalar, a vector or a matrix");
+		return i915_spirv_refuse(parser, opcode, offset, "local variable that is not made of scalars");
 
-	/* Records the local as a pointer to itself with nothing stored yet. */
+	/* Records the local as a pointer to itself. */
 	record->kind = ID_VARIABLE;
 	record->storage = SC_FUNCTION;
 	record->ptr_kind = PTR_LOCAL;
@@ -1911,12 +2124,14 @@ i915_spirv_lower_variable(
 	record->pointee = type->type;
 	record->member = -1;
 	record->component = -1;
-	record->count = (uint8_t)components;
 	record->dynamic_index = NO_VALUE;
 
-	/* No component holds a value until it is stored. */
-	for (index = 0U; index < MAX_COMPONENTS; index++)
-		record->comp[index] = NO_VALUE;
+	/* Gives it its scalars, none stored until a store. */
+	error = i915_spirv_variable_slots(parser, record, components);
+	if (error == ENOMEM)
+		return error;
+	if (error != 0)
+		return i915_spirv_refuse(parser, opcode, offset, "local variable larger than supported");
 
 	/* Succeeded: the local is ready for stores. */
 	return 0;
@@ -1927,9 +2142,9 @@ i915_spirv_lower_variable(
  *
  * Into push constants and uniform blocks: struct members, array elements
  * (one dynamic index at most), matrix columns and vector components, as a
- * byte offset.  Into locals, inputs and outputs: an output block's member,
- * a matrix column and a vector component, with constant indices only, as
- * the first scalar addressed.
+ * byte offset.  Into locals, inputs and outputs: structure members, array
+ * elements, matrix columns and vector components, as the first scalar or
+ * interface slot addressed (one dynamic index into a local array at most).
  */
 static int
 i915_spirv_lower_access_chain(
@@ -1976,7 +2191,7 @@ i915_spirv_lower_access_chain(
 		if (record->ptr_kind == PTR_PUSH || record->ptr_kind == PTR_UBO) {
 			error = i915_spirv_chain_block(parser, record, pointee, index_record, word[index], opcode, offset);
 		} else {
-			error = i915_spirv_chain_scalars(parser, record, pointee, index_record, opcode, offset);
+			error = i915_spirv_chain_scalars(parser, record, pointee, index_record, word[index], opcode, offset);
 		}
 		if (error != 0)
 			return error;
@@ -2095,8 +2310,15 @@ i915_spirv_chain_block(
 }
 
 /*
- * Steps a pointer into a local, an input or an output one index down: an
- * output block's member, a matrix column (a local's), a vector component.
+ * Steps a pointer into a local, an input or an output one index down.
+ *
+ * A local is addressed by its scalars in order, an input or an output by
+ * its interface slots, four to a location (i915_spirv_io_map()), so
+ * `component` is the first scalar or slot the pointer addresses.  A
+ * structure member, an array element, a matrix column or a vector component
+ * is selected by a constant index; an element of a local array may also be
+ * selected at run time, by one index of the chain, which the load or the
+ * store then resolves.
  */
 static int
 i915_spirv_chain_scalars(
@@ -2104,45 +2326,71 @@ i915_spirv_chain_scalars(
 	struct i915_spirv_id *record,
 	struct i915_spirv_id *pointee,
 	struct i915_spirv_id *index_record,
+	uint32_t index_id,
 	uint32_t opcode,
 	uint32_t offset)
 {
-	struct i915_spirv_id *column;
+	uint32_t scalars[MAX_COMPONENTS];
+	uint32_t scalar_count;
+	uint32_t element_scalars;
+	uint32_t element_locations;
+	uint32_t next_type;
+	uint32_t scalar_offset;
+	uint32_t io_offset;
 	uint32_t first;
-	uint32_t selected;
+	int error;
 
-	/* Only a constant index names one scalar at parse time. */
-	if (index_record->kind != ID_CONSTANT)
-		return i915_spirv_refuse(parser, opcode, offset, "access chain with a dynamic index");
-	selected = index_record->constant;
-
-	/* The first scalar addressed so far. */
+	/* The first scalar or slot addressed so far. */
 	first = 0U;
 	if (record->component >= 0)
 		first = (uint32_t)record->component;
 
-	/* Selects a structure member first (an output block), then a column, then a component. */
-	if (pointee->kind == ID_TYPE_STRUCT && record->member < 0 && record->component < 0) {
-		if (selected >= pointee->count)
-			return EINVAL;
-		record->member = (int32_t)selected;
-		record->pointee = pointee->member_type[selected];
-	} else if (pointee->kind == ID_TYPE_MATRIX) {
-		column = i915_spirv_id(parser, pointee->type);
-		if (column == NULL || selected >= pointee->count)
-			return EINVAL;
-		record->component = (int32_t)(first + selected * column->count);
+	/* A dynamic index selects an element of a local array, once in a chain; nothing else is selected at run time. */
+	if (index_record->kind != ID_CONSTANT) {
+		if (record->ptr_kind != PTR_LOCAL || pointee->kind != ID_TYPE_ARRAY)
+			return i915_spirv_refuse(parser, opcode, offset, "access chain with a dynamic index into something that is not a local array");
+		if (record->dynamic_index != NO_VALUE)
+			return i915_spirv_refuse(parser, opcode, offset, "access chain with more than one dynamic index");
+		if (pointee->length == 0U || pointee->length > MAX_DYNAMIC_ELEMENTS)
+			return i915_spirv_refuse(parser, opcode, offset, "dynamic index into an array longer than supported");
+
+		/* The elements are a run of scalars apart. */
+		error = i915_spirv_type_size(parser, pointee->type, 1U, &element_scalars, &element_locations);
+		if (error != 0)
+			return i915_spirv_refuse(parser, opcode, offset, "array of elements that are not made of scalars");
+
+		/* The index is one integer. */
+		scalar_count = i915_spirv_operand(parser, index_id, scalars);
+		if (scalar_count != 1U)
+			return i915_spirv_refuse(parser, opcode, offset, "dynamic index that is not an integer scalar");
+
+		/* The pointer addresses the first element's part; the index picks the element. */
+		record->dynamic_index = scalars[0];
+		record->dynamic_stride = element_scalars;
+		record->dynamic_length = pointee->length;
+		record->component = (int32_t)first;
 		record->pointee = pointee->type;
-	} else if (pointee->kind == ID_TYPE_VECTOR) {
-		if (selected >= pointee->count)
-			return EINVAL;
-		record->component = (int32_t)(first + selected);
-		record->pointee = pointee->type;
-	} else {
-		return i915_spirv_refuse(parser, opcode, offset, "access chain into an array or nested aggregate");
+		return 0;
 	}
 
-	/* Succeeded: the pointer names one member, column or component. */
+	/* The first structure member selected is the one an output block's builtin is on. */
+	if (pointee->kind == ID_TYPE_STRUCT && record->member < 0)
+		record->member = (int32_t)index_record->constant;
+
+	/* Finds the part the constant index selects. */
+	error = i915_spirv_type_step(parser, record->pointee, index_record->constant, &next_type, &scalar_offset, &io_offset, opcode, offset);
+	if (error != 0)
+		return error;
+
+	/* A local counts scalars; an input or an output interface slots. */
+	if (record->ptr_kind == PTR_LOCAL) {
+		record->component = (int32_t)(first + scalar_offset);
+	} else {
+		record->component = (int32_t)(first + io_offset);
+	}
+	record->pointee = next_type;
+
+	/* Succeeded: the pointer names the selected part. */
 	return 0;
 }
 
@@ -2158,13 +2406,8 @@ i915_spirv_lower_load(
 	struct i915_spirv_id *base;
 	struct i915_spirv_id *variable;
 	struct i915_spirv_id *record;
-	struct i915_shader_ir_inst *inst;
 	uint32_t components;
 	uint32_t loaded;
-	uint32_t floats;
-	uint32_t first;
-	uint32_t index;
-	int raw;
 	int error;
 
 	/* Resolves the pointer loaded through. */
@@ -2192,77 +2435,258 @@ i915_spirv_lower_load(
 		return 0;
 	}
 
-	/* Anything else must load a scalar, a vector or a matrix of the pointee's size. */
-	components = i915_spirv_value_components_wide(parser, base->pointee);
-	if (components == 0U)
-		return i915_spirv_refuse(parser, opcode, offset, "load of something that is not a scalar, a vector or a matrix");
-	loaded = i915_spirv_value_components_wide(parser, word[1]);
+	/* Anything else must load what is made of scalars, no more than a value holds, as much as the pointee holds. */
+	components = i915_spirv_aggregate_scalars(parser, base->pointee);
+	if (components == 0U || components > MAX_COMPONENTS)
+		return i915_spirv_refuse(parser, opcode, offset, "load of something that is not made of scalars, or larger than a value");
+	loaded = i915_spirv_aggregate_scalars(parser, word[1]);
 	if (components != loaded)
-		return i915_spirv_refuse(parser, opcode, offset, "load of something that is not a scalar, a vector or a matrix");
-
-	/* A component access chain loads from its component onward. */
-	first = 0U;
-	if (base->component >= 0)
-		first = (uint32_t)base->component;
+		return i915_spirv_refuse(parser, opcode, offset, "load of something that is not made of scalars, or larger than a value");
 
 	/* Loads by what the pointer addresses. */
-	if (base->ptr_kind == PTR_LOCAL ||
-	    base->ptr_kind == PTR_OUTPUT ||
-	    base->ptr_kind == PTR_OUTPUT_BLOCK) {
-		/*
-		 * Store-to-load forwarding: the scalars currently stored in the local,
-		 * or last written to the output (a shader may read back what it
-		 * wrote).
-		 */
-		record = i915_spirv_result(parser, word[2], word[1], components, 0);
-		if (record == NULL)
-			return EINVAL;
-
-		/* Each component must have been stored before it is read. */
-		for (index = 0U; index < components; index++) {
-			if (first + index >= MAX_COMPONENTS || variable->comp[first + index] == NO_VALUE)
-				return i915_spirv_refuse(parser, opcode, offset, "load of a local or output component that was never stored");
-			record->comp[index] = variable->comp[first + index];
-		}
+	if (base->ptr_kind == PTR_LOCAL) {
+		error = i915_spirv_lower_load_local(parser, word, base, variable, components, opcode, offset);
+	} else if (base->ptr_kind == PTR_OUTPUT || base->ptr_kind == PTR_OUTPUT_BLOCK) {
+		error = i915_spirv_lower_load_output(parser, word, base, variable, components, opcode, offset);
 	} else if (base->ptr_kind == PTR_INPUT) {
-		/*
-		 * An input is floats (a vertex attribute or an interpolated input), or
-		 * integers moved bit for bit: a vertex attribute, or a Flat fragment
-		 * input (the setup's constant, not interpolated).
-		 */
-		floats = i915_spirv_float_components(parser, word[1]);
-		raw = 0;
-		if (parser->ir->stage == I915_STAGE_VERTEX || variable->flat != 0U)
-			raw = 1;
-		if (variable->location == I915_SHADER_LOCATION_FRONT_FACING)
-			raw = 1;
-		if (floats != components && raw == 0)
-			return i915_spirv_refuse(parser, opcode, offset, "load of an input that is not a float scalar or vector");
-
-		/* Each component is a fresh value read from the input location. */
-		record = i915_spirv_result(parser, word[2], word[1], components, 1);
-		if (record == NULL)
-			return EINVAL;
-
-		/* Emits one input load per component. */
-		for (index = 0U; index < components; index++) {
-			inst = i915_spirv_emit(parser, I915_IR_LOAD_INPUT, record->comp[index], 0U, 0U);
-			if (inst != NULL) {
-				inst->location = variable->location;
-				inst->component = first + index;
-			}
-		}
+		error = i915_spirv_lower_load_input(parser, word, base, variable, components, opcode, offset);
 	} else if (base->ptr_kind == PTR_PUSH || base->ptr_kind == PTR_UBO) {
-		/* Push constants and uniform blocks are read word by word at the chain's offsets. */
 		error = i915_spirv_lower_load_block(parser, word, base, variable, opcode, offset);
-		if (error != 0)
-			return error;
 	} else {
 		return i915_spirv_refuse(parser, opcode, offset, "load through a pointer that is not an input, push constant, uniform block, sampler or local");
 	}
 
+	/* Reports why the load could not be lowered. */
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the loaded value names its scalars. */
 	return 0;
+}
+
+/*
+ * Lowers a load from a local: store-to-load forwarding, the scalars
+ * currently stored in it.  Through a dynamic array index every element's
+ * scalars are read and the ones the index names are selected channel by
+ * channel, as a block load selects (i915_spirv_lower_load_block()).
+ */
+static int
+i915_spirv_lower_load_local(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	const struct i915_spirv_id *pointer,
+	const struct i915_spirv_id *variable,
+	uint32_t components,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	uint32_t selects[MAX_DYNAMIC_ELEMENTS];
+	uint32_t *slot;
+	uint32_t first;
+	uint32_t elements;
+	uint32_t element;
+	uint32_t index;
+	uint32_t value;
+
+	/* The first scalar the pointer addresses. */
+	first = 0U;
+	if (pointer->component >= 0)
+		first = (uint32_t)pointer->component;
+
+	/* Under a dynamic index, compares the index with each element number past the first once. */
+	elements = 1U;
+	if (pointer->dynamic_index != NO_VALUE) {
+		elements = pointer->dynamic_length;
+		for (element = 1U; element < elements; element++)
+			selects[element] = i915_spirv_index_is(parser, pointer->dynamic_index, element);
+	}
+
+	/* The loaded value names scalars already made. */
+	record = i915_spirv_result(parser, word[2], word[1], components, 0);
+	if (record == NULL)
+		return EINVAL;
+
+	/* Reads each scalar: the first element's, then each later element's where the index names it. */
+	for (index = 0U; index < components; index++) {
+		slot = i915_spirv_variable_slot(parser, variable, first + index);
+		if (slot == NULL || *slot == NO_VALUE)
+			return i915_spirv_refuse(parser, opcode, offset, "load of a local or output component that was never stored");
+		value = *slot;
+		for (element = 1U; element < elements; element++) {
+			slot = i915_spirv_variable_slot(parser, variable, first + element * pointer->dynamic_stride + index);
+			if (slot == NULL || *slot == NO_VALUE)
+				return i915_spirv_refuse(parser, opcode, offset, "load of a local or output component that was never stored");
+			value = i915_spirv_select_value(parser, selects[element], *slot, value);
+		}
+		record->comp[index] = value;
+	}
+
+	/* Succeeded: the load names the stored scalars. */
+	return 0;
+}
+
+/*
+ * Lowers a load from an output: the value last written to each of its
+ * interface slots (a shader may read back what it wrote).
+ */
+static int
+i915_spirv_lower_load_output(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	const struct i915_spirv_id *pointer,
+	const struct i915_spirv_id *variable,
+	uint32_t components,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	uint32_t map[MAX_COMPONENTS];
+	uint32_t map_count;
+	uint32_t *slot;
+	uint32_t first;
+	uint32_t index;
+	int error;
+
+	/* The first interface slot the pointer addresses. */
+	first = 0U;
+	if (pointer->component >= 0)
+		first = (uint32_t)pointer->component;
+
+	/* Finds the slot of each scalar loaded. */
+	map_count = 0U;
+	error = i915_spirv_io_map(parser, pointer->pointee, 0U, first, map, &map_count, MAX_COMPONENTS);
+	if (error != 0 || map_count != components)
+		return i915_spirv_refuse(parser, opcode, offset, "load of an output that is not made of scalars");
+
+	/* The loaded value names scalars already made. */
+	record = i915_spirv_result(parser, word[2], word[1], components, 0);
+	if (record == NULL)
+		return EINVAL;
+
+	/* Each slot must have been written before it is read. */
+	for (index = 0U; index < components; index++) {
+		slot = i915_spirv_variable_slot(parser, variable, map[index]);
+		if (slot == NULL || *slot == NO_VALUE)
+			return i915_spirv_refuse(parser, opcode, offset, "load of a local or output component that was never stored");
+		record->comp[index] = *slot;
+	}
+
+	/* Succeeded: the load names the written scalars. */
+	return 0;
+}
+
+/*
+ * Lowers a load from an input: one input load to each scalar, at the
+ * location and component of its interface slot.  An input is floats (a
+ * vertex attribute or an interpolated input), or integers or Booleans moved
+ * bit for bit: a vertex attribute, a Flat fragment input (the setup's
+ * constant, not interpolated) or gl_FrontFacing.  An aggregate is not
+ * checked member by member: Vulkan has every integer fragment input Flat.
+ */
+static int
+i915_spirv_lower_load_input(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	const struct i915_spirv_id *pointer,
+	const struct i915_spirv_id *variable,
+	uint32_t components,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	struct i915_shader_ir_inst *inst;
+	uint32_t map[MAX_COMPONENTS];
+	uint32_t map_count;
+	uint32_t vector;
+	uint32_t floats;
+	uint32_t first;
+	uint32_t index;
+	int raw;
+	int flat;
+	int error;
+
+	/* The first interface slot the pointer addresses. */
+	first = 0U;
+	if (pointer->component >= 0)
+		first = (uint32_t)pointer->component;
+
+	/* Finds the slot of each scalar loaded. */
+	map_count = 0U;
+	error = i915_spirv_io_map(parser, pointer->pointee, 0U, first, map, &map_count, MAX_COMPONENTS);
+	if (error != 0 || map_count != components)
+		return i915_spirv_refuse(parser, opcode, offset, "load of an input that is not made of scalars");
+
+	/* A vertex attribute, a Flat fragment input and gl_FrontFacing are moved bit for bit. */
+	raw = 0;
+	if (parser->ir->stage == I915_STAGE_VERTEX)
+		raw = 1;
+	if (variable->location == I915_SHADER_LOCATION_FRONT_FACING)
+		raw = 1;
+	flat = i915_spirv_input_flat(parser, variable->location + map[0] / 4U);
+	if (flat != 0)
+		raw = 1;
+
+	/* A scalar or a vector interpolated must be floats. */
+	vector = i915_spirv_value_components(parser, word[1]);
+	floats = i915_spirv_float_components(parser, word[1]);
+	if (vector != 0U && floats != components && raw == 0)
+		return i915_spirv_refuse(parser, opcode, offset, "load of an input that is not a float scalar or vector");
+
+	/* Each scalar is a fresh value read from its location. */
+	record = i915_spirv_result(parser, word[2], word[1], components, 1);
+	if (record == NULL)
+		return EINVAL;
+
+	/* Emits one input load to each scalar. */
+	for (index = 0U; index < components; index++) {
+		inst = i915_spirv_emit(parser, I915_IR_LOAD_INPUT, record->comp[index], 0U, 0U);
+		if (inst != NULL) {
+			inst->location = variable->location + map[index] / 4U;
+			inst->component = map[index] % 4U;
+		}
+	}
+
+	/* Succeeded: the load names the input's scalars. */
+	return 0;
+}
+
+/* Reports whether the input of a location is Flat. */
+static int
+i915_spirv_input_flat(
+	struct i915_spirv_parser *parser,
+	uint32_t location)
+{
+	uint32_t index;
+
+	/* Looks the location up among the inputs. */
+	for (index = 0U; index < parser->ir->input_count; index++) {
+		if (parser->ir->inputs[index].location != location)
+			continue;
+		if (parser->ir->inputs[index].flat != 0U)
+			return 1;
+	}
+
+	/* Succeeded: the input is interpolated, or there is none. */
+	return 0;
+}
+
+/* Emits the Boolean of an integer value being equal to a constant number, and returns it. */
+static uint32_t
+i915_spirv_index_is(
+	struct i915_spirv_parser *parser,
+	uint32_t index,
+	uint32_t number)
+{
+	uint32_t constant;
+	uint32_t equal;
+
+	/* The number as an integer constant. */
+	constant = i915_spirv_integer_constant(parser, number);
+
+	/* Succeeded: the comparison. */
+	equal = i915_spirv_emit_value(parser, I915_IR_IEQ, index, constant);
+	return equal;
 }
 
 /*
@@ -2314,6 +2738,10 @@ i915_spirv_lower_load_block(
 		columns = type->count;
 		rows = column->count;
 	}
+
+	/* A structure or an array is loaded member by member, element by element, through its own chains. */
+	if (type->kind == ID_TYPE_STRUCT || type->kind == ID_TYPE_ARRAY)
+		return i915_spirv_refuse(parser, opcode, offset, "load of a structure or an array from a block");
 
 	/* A matrix needs its stride to be read. */
 	if (columns > 1U && pointer->matrix_stride == 0U)
@@ -2444,8 +2872,6 @@ i915_spirv_lower_store(
 	uint32_t scalars[MAX_COMPONENTS];
 	uint32_t components;
 	uint32_t stored;
-	uint32_t first;
-	uint32_t index;
 	int error;
 
 	/* Resolves the pointer stored through. */
@@ -2463,72 +2889,132 @@ i915_spirv_lower_store(
 	 * checked.
 	 */
 	variable = i915_spirv_id(parser, base->var);
-	components = i915_spirv_value_components_wide(parser, base->pointee);
+	components = i915_spirv_aggregate_scalars(parser, base->pointee);
 	stored = i915_spirv_operand_wide(parser, word[2], scalars);
 	if (variable == NULL)
 		return EINVAL;
 
-	/* The stored value must be a scalar, a vector or a matrix of the pointee's size. */
+	/* The stored value must be made of scalars, as many as the pointee holds. */
 	if (components == 0U || stored != components)
-		return i915_spirv_refuse(parser, opcode, offset, "store of something that is not a scalar, a vector or a matrix of the pointee's size");
-
-	/* A component access chain stores from its component onward. */
-	first = 0U;
-	if (base->component >= 0)
-		first = (uint32_t)base->component;
-	if (first + components > MAX_COMPONENTS)
-		return EINVAL;
+		return i915_spirv_refuse(parser, opcode, offset, "store of something that is not made of scalars, or not of the pointee's size");
 
 	/* Stores by what the pointer addresses. */
 	if (base->ptr_kind == PTR_LOCAL) {
-		/*
-		 * A local only remembers which scalars it now holds; under a
-		 * predicate, the new scalar where it is true and the old one where
-		 * it is false (a component never stored has no old value to keep).
-		 */
-		for (index = 0U; index < components; index++) {
-			if (variable->comp[first + index] == NO_VALUE) {
-				variable->comp[first + index] = scalars[index];
-			} else {
-				variable->comp[first + index] = i915_spirv_predicated_value(parser, scalars[index], variable->comp[first + index]);
-			}
-		}
+		error = i915_spirv_lower_store_local(parser, base, variable, scalars, components);
 	} else if (base->ptr_kind == PTR_OUTPUT || base->ptr_kind == PTR_OUTPUT_BLOCK) {
-		/* An output store becomes one output write per component. */
-		if (components > 4U)
-			return i915_spirv_refuse(parser, opcode, offset, "store of a matrix to an output");
-		error = i915_spirv_lower_store_output(parser, base, variable, scalars, components, first, opcode, offset);
-		if (error != 0)
-			return error;
+		error = i915_spirv_lower_store_output(parser, base, variable, scalars, components, opcode, offset);
 	} else {
 		return i915_spirv_refuse(parser, opcode, offset, "store through a pointer that is not an output or a local");
 	}
+
+	/* Reports why the store could not be lowered. */
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the store is lowered. */
 	return 0;
 }
 
-/* Lowers a store to a located output or to the Position builtin. */
+/*
+ * Lowers a store to a local, which only remembers which scalars it now
+ * holds.  Under the block's predicate a scalar is the new one where the
+ * predicate holds and the old one elsewhere (a scalar never stored has no
+ * old one to keep).  Through a dynamic array index each element takes the
+ * new scalars where the index names it and keeps its own elsewhere; a
+ * scalar never stored then starts as zero bits, which no channel reads
+ * before it stores it.
+ */
+static int
+i915_spirv_lower_store_local(
+	struct i915_spirv_parser *parser,
+	const struct i915_spirv_id *pointer,
+	const struct i915_spirv_id *variable,
+	const uint32_t *scalars,
+	uint32_t components)
+{
+	uint32_t *slot;
+	uint32_t first;
+	uint32_t element;
+	uint32_t index;
+	uint32_t hit;
+	uint32_t old;
+	uint32_t value;
+
+	/* The first scalar the pointer addresses. */
+	first = 0U;
+	if (pointer->component >= 0)
+		first = (uint32_t)pointer->component;
+
+	/* Without a dynamic index the one run of scalars takes the new ones. */
+	if (pointer->dynamic_index == NO_VALUE) {
+		for (index = 0U; index < components; index++) {
+			slot = i915_spirv_variable_slot(parser, variable, first + index);
+			if (slot == NULL)
+				return EINVAL;
+			value = scalars[index];
+			if (*slot != NO_VALUE)
+				value = i915_spirv_predicated_value(parser, value, *slot);
+			*slot = value;
+		}
+		return 0;
+	}
+
+	/* Through a dynamic index each element takes the new scalars on the channels whose index names it. */
+	for (element = 0U; element < pointer->dynamic_length; element++) {
+		hit = i915_spirv_index_is(parser, pointer->dynamic_index, element);
+		hit = i915_spirv_predicate_and(parser, parser->predicate, hit);
+		for (index = 0U; index < components; index++) {
+			slot = i915_spirv_variable_slot(parser, variable, first + element * pointer->dynamic_stride + index);
+			if (slot == NULL)
+				return EINVAL;
+			old = *slot;
+			if (old == NO_VALUE)
+				old = i915_spirv_shared_constant(parser, &parser->zero_value, I915_IR_CONST, FLOAT_ZERO_BITS);
+			*slot = i915_spirv_select_value(parser, hit, scalars[index], old);
+		}
+	}
+
+	/* Succeeded: the local holds the stored scalars. */
+	return 0;
+}
+
+/*
+ * Lowers a store to an output: one output write to each scalar, at the
+ * location and component of its interface slot -- a located output's own,
+ * or the Position or the PointSize builtin of an output block or of a
+ * builtin variable.  Under the block's predicate a slot keeps what it held
+ * where the predicate is false: the last value stored, or the zero every
+ * output starts as.
+ */
 static int
 i915_spirv_lower_store_output(
 	struct i915_spirv_parser *parser,
-	struct i915_spirv_id *pointer,
-	struct i915_spirv_id *variable,
+	const struct i915_spirv_id *pointer,
+	const struct i915_spirv_id *variable,
 	const uint32_t *scalars,
 	uint32_t count,
-	uint32_t first,
 	uint32_t opcode,
 	uint32_t offset)
 {
 	struct i915_spirv_id *type;
 	struct i915_shader_ir_inst *inst;
+	uint32_t map[MAX_COMPONENTS];
+	uint32_t map_count;
+	uint32_t *slot;
+	uint32_t first;
 	uint32_t previous;
 	uint32_t value;
 	uint32_t builtin;
 	uint32_t index;
 	int is_builtin;
+	int error;
 
-	/* An output block is written only through its Position builtin. */
+	/* The first interface slot the pointer addresses. */
+	first = 0U;
+	if (pointer->component >= 0)
+		first = (uint32_t)pointer->component;
+
+	/* An output that is not located is written only through its Position or PointSize builtin. */
 	builtin = 0U;
 	is_builtin = 0;
 	if (pointer->ptr_kind == PTR_OUTPUT_BLOCK) {
@@ -2546,38 +3032,48 @@ i915_spirv_lower_store_output(
 		}
 
 		/* Any other builtin, or an unlocated plain output, is refused. */
-		if (is_builtin == 0 || builtin != BUILTIN_POSITION)
-			return i915_spirv_refuse(parser, opcode, offset, "store to an output that is neither located nor the Position builtin");
+		if (is_builtin == 0 || (builtin != BUILTIN_POSITION && builtin != BUILTIN_POINT_SIZE))
+			return i915_spirv_refuse(parser, opcode, offset, "store to an output that is neither located nor the Position or PointSize builtin");
 	}
 
-	/* Emits one output write per component. */
+	/* Finds the interface slot of each scalar stored. */
+	map_count = 0U;
+	error = i915_spirv_io_map(parser, pointer->pointee, 0U, first, map, &map_count, MAX_COMPONENTS);
+	if (error != 0 || map_count != count)
+		return i915_spirv_refuse(parser, opcode, offset, "store to an output of something that is not made of scalars");
+
+	/* Emits one output write to each scalar. */
 	for (index = 0U; index < count; index++) {
-		/*
-		 * Under a predicate the component keeps what it held where the
-		 * predicate is false: the last value stored, or the zero every output
-		 * starts as.
-		 */
+		slot = i915_spirv_variable_slot(parser, variable, map[index]);
+		if (slot == NULL)
+			return EINVAL;
+
+		/* Under a predicate the slot keeps what it held where the predicate is false. */
 		value = scalars[index];
 		if (parser->predicate != PREDICATE_ALWAYS) {
-			previous = variable->comp[first + index];
+			previous = *slot;
 			if (previous == NO_VALUE)
 				previous = i915_spirv_shared_constant(parser, &parser->zero_value, I915_IR_CONST, FLOAT_ZERO_BITS);
 			value = i915_spirv_predicated_value(parser, value, previous);
 		}
-		variable->comp[first + index] = value;
+		*slot = value;
 
-		/* Writes the component. */
+		/* Writes the scalar. */
 		inst = i915_spirv_emit(parser, I915_IR_STORE_OUTPUT, 0U, value, 0U);
 		if (inst == NULL)
 			continue;
 
-		/* The Position builtin is written to its own location. */
-		if (is_builtin != 0) {
+		/* The builtins are written to their own locations; a located output to its slot's. */
+		if (is_builtin != 0 && builtin == BUILTIN_POSITION) {
 			inst->location = I915_IR_LOCATION_POSITION;
+			inst->component = map[index] % 4U;
+		} else if (is_builtin != 0) {
+			inst->location = I915_IR_LOCATION_POINT_SIZE;
+			inst->component = 0U;
 		} else {
-			inst->location = variable->location;
+			inst->location = variable->location + map[index] / 4U;
+			inst->component = map[index] % 4U;
 		}
-		inst->component = first + index;
 	}
 
 	/* Succeeded: the output is written. */
@@ -3358,8 +3854,9 @@ i915_spirv_dot_value(
 }
 
 /*
- * Lowers OpCompositeConstruct of a vector (of floats, integers or
- * Booleans) or of a matrix (of columns): no IR, only naming.
+ * Lowers OpCompositeConstruct of a vector, a matrix, an array or a
+ * structure: no IR, only naming.  The composite's scalars are its
+ * constituents' in order (see i915_spirv_type_size()).
  */
 static int
 i915_spirv_lower_construct(
@@ -3381,10 +3878,10 @@ i915_spirv_lower_construct(
 	if (count < 3U)
 		return EINVAL;
 
-	/* Only a vector or a matrix is constructed. */
-	components = i915_spirv_value_components_wide(parser, word[1]);
-	if (components < 2U)
-		return i915_spirv_refuse(parser, opcode, offset, "composite that is not a vector or a matrix");
+	/* Only what is made of scalars, no more than a value holds, is constructed. */
+	components = i915_spirv_aggregate_scalars(parser, word[1]);
+	if (components == 0U || components > MAX_COMPONENTS)
+		return i915_spirv_refuse(parser, opcode, offset, "composite that is not made of scalars, or larger than a value");
 
 	/* Declares the result; its scalars are named by the constituents. */
 	record = i915_spirv_result(parser, word[2], word[1], components, 0);
@@ -3396,7 +3893,7 @@ i915_spirv_lower_construct(
 	for (index = 3U; index < count; index++) {
 		constituent_count = i915_spirv_operand_wide(parser, word[index], constituent);
 		if (constituent_count == 0U)
-			return i915_spirv_refuse(parser, opcode, offset, "composite constituent that is not a scalar or a vector");
+			return i915_spirv_refuse(parser, opcode, offset, "composite constituent that is not made of scalars");
 		if (filled + constituent_count > components)
 			return EINVAL;
 
@@ -3415,8 +3912,9 @@ i915_spirv_lower_construct(
 }
 
 /*
- * Lowers OpCompositeExtract of a component from a vector, or of a column
- * or a component from a matrix: no IR, only naming.
+ * Lowers OpCompositeExtract: the scalars of the part the indices select,
+ * down through members, elements, columns and components -- no IR, only
+ * naming.
  */
 static int
 i915_spirv_lower_extract(
@@ -3429,45 +3927,32 @@ i915_spirv_lower_extract(
 	struct i915_spirv_id *record;
 	uint32_t composite[MAX_COMPONENTS];
 	uint32_t composite_count;
+	uint32_t composite_type;
 	uint32_t components;
-	uint32_t columns;
-	uint32_t rows;
-	uint32_t first;
 	uint32_t length;
+	uint32_t first;
 	uint32_t index;
+	int error;
 
-	/* The instruction must carry the composite and one or two indices. */
+	/* The instruction must carry the composite and at least one index. */
 	if (count < 5U)
 		return EINVAL;
-	if (count > 6U)
-		return i915_spirv_refuse(parser, opcode, offset, "extract from a nested aggregate");
 
-	/* Resolves the composite and its shape; it may emit a constant. */
+	/* Resolves the composite; it may emit a constant. */
 	composite_count = i915_spirv_operand_wide(parser, word[3], composite);
-	i915_spirv_operand_shape(parser, word[3], &columns, &rows);
-	if (composite_count < 2U)
-		return i915_spirv_refuse(parser, opcode, offset, "extract from something that is not a vector or a matrix");
+	if (composite_count == 0U)
+		return i915_spirv_refuse(parser, opcode, offset, "extract from something that is not made of scalars");
 
-	/* Finds the scalars the indices select: a component of a vector, a column or a component of a matrix. */
-	if (columns == 1U) {
-		if (count != 5U || word[4] >= rows)
-			return EINVAL;
-		first = word[4];
-		length = 1U;
-	} else if (count == 5U) {
-		if (word[4] >= columns)
-			return EINVAL;
-		first = word[4] * rows;
-		length = rows;
-	} else {
-		if (word[4] >= columns || word[5] >= rows)
-			return EINVAL;
-		first = word[4] * rows + word[5];
-		length = 1U;
-	}
+	/* Finds the scalars the indices select. */
+	composite_type = i915_spirv_operand_type(parser, word[3]);
+	error = i915_spirv_composite_part(parser, composite_type, word, count, 4U, &first, &length, opcode, offset);
+	if (error != 0)
+		return error;
+	if (first + length > composite_count)
+		return EINVAL;
 
 	/* The result must be what the indices select. */
-	components = i915_spirv_value_components(parser, word[1]);
+	components = i915_spirv_aggregate_scalars(parser, word[1]);
 	if (components != length)
 		return i915_spirv_refuse(parser, opcode, offset, "extract whose result is not what the indices select");
 
@@ -3479,6 +3964,136 @@ i915_spirv_lower_extract(
 		record->comp[index] = composite[first + index];
 
 	/* Succeeded: the scalars are named. */
+	return 0;
+}
+
+/*
+ * Lowers OpCompositeInsert: the composite's scalars with the part the
+ * indices select replaced by the object's -- no IR, only naming.
+ */
+static int
+i915_spirv_lower_insert(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	uint32_t object[MAX_COMPONENTS];
+	uint32_t composite[MAX_COMPONENTS];
+	uint32_t object_count;
+	uint32_t composite_count;
+	uint32_t length;
+	uint32_t first;
+	uint32_t index;
+	int error;
+
+	/* The instruction must carry the object, the composite and at least one index. */
+	if (count < 6U)
+		return EINVAL;
+
+	/* Resolves the object and the composite; either may emit a constant. */
+	object_count = i915_spirv_operand_wide(parser, word[3], object);
+	composite_count = i915_spirv_operand_wide(parser, word[4], composite);
+	if (object_count == 0U || composite_count == 0U)
+		return i915_spirv_refuse(parser, opcode, offset, "insert of something that is not made of scalars");
+
+	/* Finds the scalars the indices select; the object must fill them exactly. */
+	error = i915_spirv_composite_part(parser, word[1], word, count, 5U, &first, &length, opcode, offset);
+	if (error != 0)
+		return error;
+	if (first + length > composite_count || length != object_count)
+		return i915_spirv_refuse(parser, opcode, offset, "insert of an object that is not the size of the part it replaces");
+
+	/* Declares the result as the composite's scalars, the part replaced by the object's. */
+	record = i915_spirv_result(parser, word[2], word[1], composite_count, 0);
+	if (record == NULL)
+		return EINVAL;
+	for (index = 0U; index < composite_count; index++)
+		record->comp[index] = composite[index];
+	for (index = 0U; index < length; index++)
+		record->comp[first + index] = object[index];
+
+	/* Succeeded: the new composite names its scalars. */
+	return 0;
+}
+
+/* Lowers OpCopyObject of a value: the same scalars under a new id -- no IR, only naming. */
+static int
+i915_spirv_lower_copy(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	uint32_t scalars[MAX_COMPONENTS];
+	uint32_t scalar_count;
+	uint32_t components;
+	uint32_t index;
+
+	/* The instruction must carry the operand. */
+	if (count != 4U)
+		return EINVAL;
+
+	/* Only a value made of scalars is copied. */
+	scalar_count = i915_spirv_operand_wide(parser, word[3], scalars);
+	components = i915_spirv_aggregate_scalars(parser, word[1]);
+	if (scalar_count == 0U || scalar_count != components)
+		return i915_spirv_refuse(parser, opcode, offset, "copy of something that is not a value made of scalars");
+
+	/* Declares the result as the operand's scalars. */
+	record = i915_spirv_result(parser, word[2], word[1], scalar_count, 0);
+	if (record == NULL)
+		return EINVAL;
+	for (index = 0U; index < scalar_count; index++)
+		record->comp[index] = scalars[index];
+
+	/* Succeeded: the copy names the scalars. */
+	return 0;
+}
+
+/*
+ * Walks the literal indices word[first_index] .. word[count - 1] down a
+ * composite type and reports the part they select: its first scalar and how
+ * many scalars it has.
+ */
+static int
+i915_spirv_composite_part(
+	struct i915_spirv_parser *parser,
+	uint32_t type_id,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t first_index,
+	uint32_t *first,
+	uint32_t *length,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	uint32_t next_type;
+	uint32_t scalar_offset;
+	uint32_t io_offset;
+	uint32_t index;
+	int error;
+
+	/* Steps down one level to each index. */
+	*first = 0U;
+	for (index = first_index; index < count; index++) {
+		error = i915_spirv_type_step(parser, type_id, word[index], &next_type, &scalar_offset, &io_offset, opcode, offset);
+		if (error != 0)
+			return error;
+		*first += scalar_offset;
+		type_id = next_type;
+	}
+
+	/* The part is as long as its type. */
+	*length = i915_spirv_aggregate_scalars(parser, type_id);
+	if (*length == 0U)
+		return i915_spirv_refuse(parser, opcode, offset, "composite part that is not made of scalars");
+
+	/* Succeeded: the part is found. */
 	return 0;
 }
 
@@ -4704,6 +5319,7 @@ i915_spirv_loop_open(
 	struct i915_spirv_loop *loop;
 	struct i915_spirv_construct *construct;
 	struct i915_spirv_id *variable;
+	uint32_t *slot;
 	uint32_t entry;
 	uint32_t id;
 	uint32_t component;
@@ -4741,12 +5357,13 @@ i915_spirv_loop_open(
 		    variable->ptr_kind != PTR_OUTPUT_BLOCK)
 			continue;
 
-		/* Moves each held component into its loop variable and remembers it. */
-		for (component = 0U; component < MAX_COMPONENTS; component++) {
-			if (variable->comp[component] == NO_VALUE)
+		/* Moves each held slot into its loop variable and remembers it. */
+		for (component = 0U; component < variable->slot_count; component++) {
+			slot = i915_spirv_variable_slot(parser, variable, component);
+			if (slot == NULL || *slot == NO_VALUE)
 				continue;
-			carried = i915_spirv_move_value(parser, NO_VALUE, variable->comp[component]);
-			variable->comp[component] = carried;
+			carried = i915_spirv_move_value(parser, NO_VALUE, *slot);
+			*slot = carried;
 			error = i915_spirv_carry(parser, id, component, carried);
 			if (error != 0)
 				return error;
@@ -4831,6 +5448,7 @@ i915_spirv_loop_back_edge(
 	struct i915_spirv_id *record;
 	struct i915_spirv_id *variable;
 	struct i915_spirv_carried *carried;
+	uint32_t *slot;
 	uint32_t back[4];
 	uint32_t updated[MAX_LOOP_PHIS][4];
 	uint32_t back_count;
@@ -4860,14 +5478,17 @@ i915_spirv_loop_back_edge(
 			updated[phi][component] = i915_spirv_select_value(parser, condition, back[component], record->comp[component]);
 	}
 
-	/* Makes a copy of each carried component that changed in the pass. */
+	/* Makes a copy of each carried slot that changed in the pass. */
 	for (index = loop->carried_first; index < parser->carried_count; index++) {
 		carried = &parser->carried[index];
 		variable = &parser->ids[carried->variable];
-		current = variable->comp[carried->component];
+		slot = i915_spirv_variable_slot(parser, variable, carried->component);
+		if (slot == NULL)
+			return EINVAL;
+		current = *slot;
 		if (current == carried->value)
 			continue;
-		variable->comp[carried->component] = i915_spirv_move_value(parser, NO_VALUE, current);
+		*slot = i915_spirv_move_value(parser, NO_VALUE, current);
 	}
 
 	/* Moves the phis' new values into their loop variables. */
@@ -4877,15 +5498,18 @@ i915_spirv_loop_back_edge(
 			(void)i915_spirv_move_value(parser, record->comp[component], updated[phi][component]);
 	}
 
-	/* Moves the carried components' copies into their loop variables, which the variables hold again. */
+	/* Moves the carried slots' copies into their loop variables, which the variables hold again. */
 	for (index = loop->carried_first; index < parser->carried_count; index++) {
 		carried = &parser->carried[index];
 		variable = &parser->ids[carried->variable];
-		current = variable->comp[carried->component];
+		slot = i915_spirv_variable_slot(parser, variable, carried->component);
+		if (slot == NULL)
+			return EINVAL;
+		current = *slot;
 		if (current == carried->value)
 			continue;
 		(void)i915_spirv_move_value(parser, carried->value, current);
-		variable->comp[carried->component] = carried->value;
+		*slot = carried->value;
 	}
 
 	/* The channels in the loop are the ones that go round again. */
@@ -5788,22 +6412,359 @@ i915_spirv_float_components_wide(
 	return components;
 }
 
-/* Returns the scalar count of a scalar, vector or float matrix type; 0 for anything else. */
+/*
+ * Measures a type made of 32-bit scalars: how many scalars it holds, its
+ * aggregates flattened member after member and element after element, and
+ * how many interface locations it takes (a scalar or a vector one, a matrix
+ * one per column).  Returns ENOTSUP for any other type, one nested deeper
+ * than MAX_TYPE_DEPTH or one larger than the parser follows.
+ */
+static int
+i915_spirv_type_size(
+	struct i915_spirv_parser *parser,
+	uint32_t type_id,
+	uint32_t depth,
+	uint32_t *scalars,
+	uint32_t *locations)
+{
+	struct i915_spirv_id *type;
+	uint32_t member_scalars;
+	uint32_t member_locations;
+	uint32_t components;
+	uint32_t member;
+	int error;
+
+	/* A type nested too deep, or not declared, is not measured. */
+	if (depth > MAX_TYPE_DEPTH)
+		return ENOTSUP;
+	type = i915_spirv_id(parser, type_id);
+	if (type == NULL)
+		return ENOTSUP;
+
+	/* A scalar or a vector is one location of its components. */
+	components = i915_spirv_value_components(parser, type_id);
+	if (components != 0U) {
+		*scalars = components;
+		*locations = 1U;
+		return 0;
+	}
+
+	/* A matrix is a location to a column. */
+	components = i915_spirv_matrix_components(parser, type_id);
+	if (components != 0U) {
+		*scalars = components;
+		*locations = type->count;
+		return 0;
+	}
+
+	/* An array is its elements, one after another. */
+	if (type->kind == ID_TYPE_ARRAY) {
+		if (type->length == 0U || type->length > MAX_VARIABLE_SLOTS)
+			return ENOTSUP;
+		error = i915_spirv_type_size(parser, type->type, depth + 1U, &member_scalars, &member_locations);
+		if (error != 0)
+			return error;
+		*scalars = type->length * member_scalars;
+		*locations = type->length * member_locations;
+		if (*scalars > MAX_VARIABLE_SLOTS)
+			return ENOTSUP;
+		return 0;
+	}
+
+	/* Anything else but a structure is not made of scalars. */
+	if (type->kind != ID_TYPE_STRUCT)
+		return ENOTSUP;
+
+	/* A structure is its members in order. */
+	*scalars = 0U;
+	*locations = 0U;
+	for (member = 0U; member < type->count; member++) {
+		error = i915_spirv_type_size(parser, type->member_type[member], depth + 1U, &member_scalars, &member_locations);
+		if (error != 0)
+			return error;
+		*scalars += member_scalars;
+		*locations += member_locations;
+	}
+
+	/* A structure larger than a variable holds is not followed. */
+	if (*scalars > MAX_VARIABLE_SLOTS)
+		return ENOTSUP;
+
+	/* Succeeded: the structure's scalars and locations. */
+	return 0;
+}
+
+/*
+ * Returns how many scalars a scalar, vector, matrix, array or structure
+ * type holds (see i915_spirv_type_size()); 0 for any other type.
+ */
 static uint32_t
-i915_spirv_value_components_wide(
+i915_spirv_aggregate_scalars(
 	struct i915_spirv_parser *parser,
 	uint32_t type_id)
 {
+	uint32_t scalars;
+	uint32_t locations;
+	int error;
+
+	/* Measures the type. */
+	error = i915_spirv_type_size(parser, type_id, 0U, &scalars, &locations);
+	if (error != 0)
+		return 0U;
+
+	/* Succeeded: the type's scalars. */
+	return scalars;
+}
+
+/*
+ * Selects one part of an aggregate type by a constant index: a structure's
+ * member, an array's element, a matrix's column or a vector's component.
+ * Reports the part's type, the first of its scalars among the aggregate's
+ * (see i915_spirv_type_size()) and the first of its interface slots, four
+ * to a location (see i915_spirv_io_map()).  Returns EINVAL for an index
+ * past the aggregate, ENOTSUP (with the refusal named) for a scalar or a
+ * type that is not made of scalars.
+ */
+static int
+i915_spirv_type_step(
+	struct i915_spirv_parser *parser,
+	uint32_t type_id,
+	uint32_t index,
+	uint32_t *next_type,
+	uint32_t *scalar_offset,
+	uint32_t *io_offset,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *type;
+	struct i915_spirv_id *column;
+	uint32_t scalars;
+	uint32_t locations;
+	uint32_t member;
+	int error;
+
+	/* Resolves the aggregate. */
+	type = i915_spirv_id(parser, type_id);
+	if (type == NULL)
+		return EINVAL;
+
+	/* Steps by what the aggregate is. */
+	switch (type->kind) {
+	case ID_TYPE_STRUCT:
+		/* A member: after every member before it. */
+		if (index >= type->count)
+			return EINVAL;
+		*scalar_offset = 0U;
+		*io_offset = 0U;
+		for (member = 0U; member < index; member++) {
+			error = i915_spirv_type_size(parser, type->member_type[member], 1U, &scalars, &locations);
+			if (error != 0)
+				return i915_spirv_refuse(parser, opcode, offset, "structure with a member that is not made of scalars");
+			*scalar_offset += scalars;
+			*io_offset += 4U * locations;
+		}
+		*next_type = type->member_type[index];
+		break;
+
+	case ID_TYPE_ARRAY:
+		/* An element: after every element before it. */
+		if (type->length == 0U || index >= type->length)
+			return EINVAL;
+		error = i915_spirv_type_size(parser, type->type, 1U, &scalars, &locations);
+		if (error != 0)
+			return i915_spirv_refuse(parser, opcode, offset, "array of elements that are not made of scalars");
+		*scalar_offset = index * scalars;
+		*io_offset = 4U * index * locations;
+		*next_type = type->type;
+		break;
+
+	case ID_TYPE_MATRIX:
+		/* A column: after every column before it, each a location of its own. */
+		column = i915_spirv_id(parser, type->type);
+		if (column == NULL || index >= type->count)
+			return EINVAL;
+		*scalar_offset = index * column->count;
+		*io_offset = 4U * index;
+		*next_type = type->type;
+		break;
+
+	case ID_TYPE_VECTOR:
+		/* A component of the vector's one location. */
+		if (index >= type->count)
+			return EINVAL;
+		*scalar_offset = index;
+		*io_offset = index;
+		*next_type = type->type;
+		break;
+
+	default:
+		return i915_spirv_refuse(parser, opcode, offset, "index into a scalar");
+	}
+
+	/* Succeeded: the part is found. */
+	return 0;
+}
+
+/*
+ * Lists the interface slot of each scalar of a type, four slots to a
+ * location, from slot `base` on, in the order i915_spirv_type_size()
+ * flattens the scalars: a vector's components in its one location, a
+ * matrix's columns a location each, an array's elements and a structure's
+ * members each from the location after the one before.  Returns ENOTSUP for
+ * a type that is not made of scalars or has more than `capacity`.
+ */
+static int
+i915_spirv_io_map(
+	struct i915_spirv_parser *parser,
+	uint32_t type_id,
+	uint32_t depth,
+	uint32_t base,
+	uint32_t *map,
+	uint32_t *count,
+	uint32_t capacity)
+{
+	struct i915_spirv_id *type;
+	uint32_t scalars;
+	uint32_t locations;
 	uint32_t components;
+	uint32_t rows;
+	uint32_t index;
+	uint32_t row;
+	int error;
 
-	/* A matrix counts its scalars. */
-	components = i915_spirv_matrix_components(parser, type_id);
-	if (components != 0U)
-		return components;
+	/* A type nested too deep, or not declared, has no slots. */
+	if (depth > MAX_TYPE_DEPTH)
+		return ENOTSUP;
+	type = i915_spirv_id(parser, type_id);
+	if (type == NULL)
+		return ENOTSUP;
 
-	/* Succeeded: a scalar or a vector counts its components. */
+	/* A scalar or a vector takes the components of its location. */
 	components = i915_spirv_value_components(parser, type_id);
-	return components;
+	if (components != 0U) {
+		if (*count + components > capacity)
+			return ENOTSUP;
+		for (index = 0U; index < components; index++) {
+			map[*count] = base + index;
+			(*count)++;
+		}
+		return 0;
+	}
+
+	/* A matrix takes a location to a column. */
+	components = i915_spirv_matrix_components(parser, type_id);
+	if (components != 0U) {
+		if (*count + components > capacity)
+			return ENOTSUP;
+		rows = components / type->count;
+		for (index = 0U; index < type->count; index++) {
+			for (row = 0U; row < rows; row++) {
+				map[*count] = base + 4U * index + row;
+				(*count)++;
+			}
+		}
+		return 0;
+	}
+
+	/* An array takes the run of locations of each element in turn. */
+	if (type->kind == ID_TYPE_ARRAY) {
+		error = i915_spirv_type_size(parser, type->type, depth + 1U, &scalars, &locations);
+		if (error != 0 || type->length == 0U)
+			return ENOTSUP;
+		for (index = 0U; index < type->length; index++) {
+			error = i915_spirv_io_map(parser, type->type, depth + 1U, base + 4U * index * locations, map, count, capacity);
+			if (error != 0)
+				return error;
+		}
+		return 0;
+	}
+
+	/* Anything else but a structure has no slots. */
+	if (type->kind != ID_TYPE_STRUCT)
+		return ENOTSUP;
+
+	/* A structure takes the run of locations of each member in turn. */
+	for (index = 0U; index < type->count; index++) {
+		error = i915_spirv_io_map(parser, type->member_type[index], depth + 1U, base, map, count, capacity);
+		if (error != 0)
+			return error;
+		error = i915_spirv_type_size(parser, type->member_type[index], depth + 1U, &scalars, &locations);
+		if (error != 0)
+			return error;
+		base += 4U * locations;
+	}
+
+	/* Succeeded: every scalar has its slot. */
+	return 0;
+}
+
+/*
+ * Gives a local variable or an output `count` slots of the parser's store,
+ * each holding nothing yet; the store grows as needed.  Returns ENOMEM, or
+ * ENOTSUP for more slots than a variable may have.
+ */
+static int
+i915_spirv_variable_slots(
+	struct i915_spirv_parser *parser,
+	struct i915_spirv_id *variable,
+	uint32_t count)
+{
+	uint32_t *grown;
+	uint32_t capacity;
+	uint32_t index;
+
+	/* A variable larger than the parser follows is refused. */
+	if (count > MAX_VARIABLE_SLOTS)
+		return ENOTSUP;
+
+	/* A full store grows: to 256 slots at first, doubling after, until the run fits. */
+	if (parser->slot_count + count > parser->slot_capacity) {
+		capacity = parser->slot_capacity;
+		if (capacity == 0U)
+			capacity = MAX_VARIABLE_SLOTS;
+		while (capacity < parser->slot_count + count)
+			capacity *= 2U;
+
+		/* Allocates the larger store and moves the slots into it. */
+		grown = kern_calloc(capacity, sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		if (parser->slots != NULL) {
+			kern_memcpy(grown, parser->slots, parser->slot_count * sizeof(*grown));
+			kern_free(parser->slots);
+		}
+		parser->slots = grown;
+		parser->slot_capacity = capacity;
+	}
+
+	/* Takes the run; nothing is stored in it yet. */
+	variable->first_slot = parser->slot_count;
+	variable->slot_count = count;
+	for (index = 0U; index < count; index++)
+		parser->slots[parser->slot_count + index] = NO_VALUE;
+	parser->slot_count += count;
+
+	/* Succeeded: the variable has its slots. */
+	return 0;
+}
+
+/*
+ * Returns where slot `index` of a variable's run is kept, or NULL for an
+ * index past the run.  The address is good until the next variable is
+ * given slots.
+ */
+static uint32_t *
+i915_spirv_variable_slot(
+	struct i915_spirv_parser *parser,
+	const struct i915_spirv_id *variable,
+	uint32_t index)
+{
+	/* An index past the run has no slot. */
+	if (index >= variable->slot_count)
+		return NULL;
+
+	/* Succeeded: the slot in the store. */
+	return &parser->slots[variable->first_slot + index];
 }
 
 /* Returns the type id of a value or constant operand; 0 for any other id. */

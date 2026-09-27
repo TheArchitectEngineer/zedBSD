@@ -917,14 +917,19 @@ drv_i915_gfx_emit_constants(
 /*
  * Emits 3DSTATE_CLIP, SF and RASTER of an ordinary Vulkan pipeline, as anv
  * programs them.
+ *
+ * A vertex kernel that writes the point size has the setup take the point
+ * width from each vertex; any other draws its points one pixel wide.
  */
 void
 drv_i915_gfx_emit_raster(
 	struct i915_gfx_batch *batch,
-	const struct i915_gfx_pipeline *pipeline)
+	const struct i915_gfx_pipeline *pipeline,
+	const struct i915_gfx_kernels *kernels)
 {
 	uint32_t cull;
 	uint32_t counter_clockwise;
+	uint32_t point_width;
 	uint32_t index;
 
 	/*
@@ -940,15 +945,20 @@ drv_i915_gfx_emit_raster(
 			    (GEN12_FAN_PROVOKING_SECOND << GEN12_CLIP_FAN_PROVOKING_SHIFT));
 	drv_i915_batch_emit(batch, (1U << 17) | (2047U << 6));
 
+	/* The point width comes from the vertices when the vertex kernel writes it, else it is 1.0 from state. */
+	point_width = GEN12_SF_POINT_WIDTH_ONE | GEN12_SF_POINT_WIDTH_FROM_STATE;
+	if (kernels->vs_point_size != 0U)
+		point_width = GEN12_SF_POINT_WIDTH_ONE;
+
 	/*
 	 * Sets up with the viewport transform, statistics and line width 1.0;
-	 * the URB deref block; point width 1.0 from state, the AA line
-	 * distance and the fan's provoking vertex as the clipper's.
+	 * the URB deref block; the point width, the AA line distance and the
+	 * fan's provoking vertex as the clipper's.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SF, GEN12_3DSTATE_SF_DWORDS));
 	drv_i915_batch_emit(batch, (1U << 1) | (1U << 10) | (128U << 12));
 	drv_i915_batch_emit(batch, GEN12_URB_DEREF_BLOCK_SIZE_32 << 29);
-	drv_i915_batch_emit(batch, 8U | (1U << 11) | (1U << 14) | (GEN12_FAN_PROVOKING_SECOND << GEN12_SF_FAN_PROVOKING_SHIFT));
+	drv_i915_batch_emit(batch, point_width | (1U << 14) | (GEN12_FAN_PROVOKING_SECOND << GEN12_SF_FAN_PROVOKING_SHIFT));
 
 	/* Translates the pipeline's cull mode; front and back together cull both. */
 	switch (pipeline->cull_mode) {

@@ -46,6 +46,12 @@
 #define I915_IR_LOCATION_POSITION	0xFFFFFFFFU
 
 /*
+ * The STORE_OUTPUT location of the PointSize builtin, component 0: the
+ * point width of the VUE header.
+ */
+#define I915_IR_LOCATION_POINT_SIZE	0xFFFFFFFEU
+
+/*
  * The kinds of bound resource (struct i915_shader_ir_uniform.kind): a
  * combined image sampler, or a uniform buffer block whose words the shader
  * reads at constant offsets.
@@ -263,10 +269,11 @@ enum i915_shader_ir_op {
 };
 
 /*
- * One input or output slot of a shader's interface.
+ * One input or output location of a shader's interface.
  *
- * The parser records one per located interface variable; the list lives as
- * long as the IR that owns it.
+ * The parser records one per location a located interface variable takes
+ * (an array or a block several); the list lives as long as the IR that owns
+ * it.
  */
 struct i915_shader_ir_io {
 	uint32_t location;
@@ -275,6 +282,9 @@ struct i915_shader_ir_io {
 
 	/* Nonzero for a Flat input: the draw sets it up as the provoking vertex's value. */
 	uint32_t flat;
+
+	/* Nonzero for a NoPerspective input: interpolated linearly in screen space. */
+	uint32_t noperspective;
 };
 
 /*

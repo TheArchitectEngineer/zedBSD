@@ -227,6 +227,44 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_CLIP_FAN_PROVOKING_SHIFT		0U
 #define GEN12_FAN_PROVOKING_SECOND		1U
 
+/*
+ * The point fields of 3DSTATE_SF dword 3 (gen120.xml above): Point Width in
+ * bits 10:0 as u8.3 (8 is 1.0), Point Width Source in bit 11 (0 the
+ * vertex's, from dword 3 of its VUE header; 1 the Point Width field).
+ */
+#define GEN12_SF_POINT_WIDTH_ONE		8U
+#define GEN12_SF_POINT_WIDTH_FROM_STATE		(1U << 11)
+
+/*
+ * 3DSTATE_WM dword 1 bits 16:11, Barycentric Interpolation Mode (gen80.xml
+ * above): one bit to each of Mesa's enum intel_barycentric_mode, and the
+ * payload carries the barycentrics of each mode set in that order
+ * (brw_fs_thread_payload.cpp): the perspective ones at the pixel centre,
+ * then the linear ones.
+ */
+#define GEN12_WM_BARYCENTRIC_PERSPECTIVE_PIXEL	(1U << 11)
+#define GEN12_WM_BARYCENTRIC_LINEAR_PIXEL	(1U << 14)
+
+/*
+ * 3DSTATE_PS_EXTRA dword 1 (gen110.xml below): bit 23 Pixel Shader Uses
+ * Source W and bit 24 Pixel Shader Uses Source Depth, which put the
+ * interpolated w and depth of each pixel into the thread payload after the
+ * barycentrics.
+ */
+#define GEN12_3DSTATE_PS_EXTRA_USES_SOURCE_W	(1U << 23)
+#define GEN12_3DSTATE_PS_EXTRA_USES_SOURCE_DEPTH	(1U << 24)
+
+/*
+ * 3DSTATE_SBE (Mesa 25.0.7 gen90.xml, imported by gen120.xml through
+ * gen110.xml; sha256
+ * d86fb566b9292280e2d6a385107711fb7ee8008e5c54bb3ba70a2c0343262ddb): dword 1
+ * bit 20 Point Sprite Texture Coordinate Origin (0 the upper left, Vulkan's),
+ * dword 2 Point Sprite Texture Coordinate Enable, one bit to an attribute
+ * the setup replaces with the point's texture coordinate.
+ */
+#define GEN12_SBE_POINT_SPRITE_ORIGIN_SHIFT		20U
+#define GEN12_SBE_POINT_SPRITE_ORIGIN_UPPER_LEFT	0U
+
 /* 3D_Vertex_Component_Control. */
 #define GEN12_VFCOMP_NOSTORE			0U
 #define GEN12_VFCOMP_STORE_SRC			1U
