@@ -253,8 +253,9 @@ struct zwl_object {
 	int32_t window_y;
 	/* A surface whose current image has not been shown yet. */
 	unsigned fresh;
-	/* The glass look: the toplevel's title, and a maximized window's place and size to go back to. */
+	/* The glass look: the toplevel's title and application ID, and a maximized window's place and size to go back to. */
 	char title[ZWL_TITLE_MAX];
+	char app_id[64];
 	unsigned maximized;
 	int32_t restore_x;
 	int32_t restore_y;

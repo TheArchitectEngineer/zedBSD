@@ -207,6 +207,8 @@ rootless_track(
 	struct x11_window *window)
 {
 	const char *title;
+	const char *app_id;
+	char class_name[64];
 	uint32_t *composite;
 	size_t bytes;
 	int differs;
@@ -230,7 +232,11 @@ rootless_track(
 		if (composite == NULL)
 			return;
 		window->composite = composite;
-		window->surface = x11_wayland_window_open(server->wayland, window->id, title, window->width, window->height);
+		app_id = NULL;
+		failed = x11_window_class(server, window->id, class_name, sizeof(class_name));
+		if (failed == 0)
+			app_id = class_name;
+		window->surface = x11_wayland_window_open(server->wayland, window->id, title, app_id, window->width, window->height);
 		if (window->surface == NULL)
 			return;
 		window->surface_width = window->width;

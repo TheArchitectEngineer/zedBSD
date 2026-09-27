@@ -58,6 +58,16 @@ static void window_keyboard_leave(void *data, struct wl_keyboard *keyboard, uint
 static void window_keyboard_key(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state);
 static void window_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
 static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
+static void window_pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y);
+static void window_pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface);
+static void window_pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t x, wl_fixed_t y);
+static void window_pointer_button(void *data, struct wl_pointer *pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state);
+static void window_pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis, wl_fixed_t value);
+static void window_pointer_frame(void *data, struct wl_pointer *pointer);
+static void window_pointer_axis_source(void *data, struct wl_pointer *pointer, uint32_t source);
+static void window_pointer_axis_stop(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis);
+static void window_pointer_axis_discrete(void *data, struct wl_pointer *pointer, uint32_t axis, int32_t discrete);
+static void window_pointer_event(struct terminal_window *window, unsigned kind, uint32_t time, uint32_t serial);
 static void window_press(struct terminal_window *window, uint32_t key);
 static int window_state_fullscreen(struct wl_array *states);
 static int window_modifier_key(uint32_t key);
@@ -80,6 +90,13 @@ static const struct xdg_surface_listener surface_listener = {
 /* The size the compositor gives the window, and its request to close. */
 static const struct xdg_toplevel_listener toplevel_listener = {
 	window_toplevel_configure, window_toplevel_close, window_toplevel_bounds
+};
+
+/* The pointer's events of versions 1 to 5 (ws035-p093: the left button selects). */
+static const struct wl_pointer_listener pointer_listener = {
+	window_pointer_enter, window_pointer_leave, window_pointer_motion,
+	window_pointer_button, window_pointer_axis, window_pointer_frame,
+	window_pointer_axis_source, window_pointer_axis_stop, window_pointer_axis_discrete, NULL, NULL
 };
 
 /* The seat's devices and name. */
@@ -311,9 +328,11 @@ terminal_window_close(
 	terminal_menu_close(window);
 	terminal_clipboard_close(window);
 
-	/* The keyboard and the seat. */
+	/* The keyboard, the pointer and the seat. */
 	if (window->keyboard != NULL)
 		wl_keyboard_destroy(window->keyboard);
+	if (window->pointer != NULL)
+		wl_pointer_destroy(window->pointer);
 	if (window->seat != NULL)
 		wl_seat_destroy(window->seat);
 
@@ -580,6 +599,13 @@ window_seat_capabilities(
 		if (window->keyboard != NULL)
 			(void)wl_keyboard_add_listener(window->keyboard, &keyboard_listener, window);
 	}
+
+	/* A pointer, once (ws035-p093). */
+	if ((capabilities & WL_SEAT_CAPABILITY_POINTER) != 0U && window->pointer == NULL) {
+		window->pointer = wl_seat_get_pointer(seat);
+		if (window->pointer != NULL)
+			(void)wl_pointer_add_listener(window->pointer, &pointer_listener, window);
+	}
 }
 
 /* The seat's name is not used. */
@@ -791,4 +817,193 @@ window_modifier_key(
 
 	/* Every other key is typed and repeats. */
 	return 0;
+}
+
+/* The pointer comes over the window: where it is. */
+static void
+window_pointer_enter(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t serial,
+	struct wl_surface *surface,
+	wl_fixed_t x,
+	wl_fixed_t y)
+{
+	struct terminal_window *window;
+
+	/* Its place. */
+	(void)pointer;
+	(void)serial;
+	(void)surface;
+	window = data;
+	window->pointer_x = wl_fixed_to_int(x);
+	window->pointer_y = wl_fixed_to_int(y);
+}
+
+/* The pointer leaves the window: nothing to do (a drag keeps its press). */
+static void
+window_pointer_leave(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t serial,
+	struct wl_surface *surface)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)pointer;
+	(void)serial;
+	(void)surface;
+}
+
+/* The pointer moves: its place, and a motion for the main loop (the last one replaces one not yet taken). */
+static void
+window_pointer_motion(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t time,
+	wl_fixed_t x,
+	wl_fixed_t y)
+{
+	struct terminal_window *window;
+	struct terminal_pointer_event *last;
+
+	/* Its place. */
+	(void)pointer;
+	window = data;
+	window->pointer_x = wl_fixed_to_int(x);
+	window->pointer_y = wl_fixed_to_int(y);
+
+	/* A motion after a motion replaces it. */
+	if (window->pointer_event_count > 0U) {
+		last = &window->pointer_events[window->pointer_event_count - 1U];
+		if (last->kind == TERMINAL_POINTER_MOTION) {
+			last->x = window->pointer_x;
+			last->y = window->pointer_y;
+			last->time = time;
+			return;
+		}
+	}
+
+	/* Otherwise it is added. */
+	window_pointer_event(window, TERMINAL_POINTER_MOTION, time, 0U);
+}
+
+/* The left button pressed or released, for the main loop. */
+static void
+window_pointer_button(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t serial,
+	uint32_t time,
+	uint32_t button,
+	uint32_t state)
+{
+	struct terminal_window *window;
+	unsigned kind;
+
+	/* Only the left button (BTN_LEFT). */
+	(void)pointer;
+	window = data;
+	if (button != 0x110U)
+		return;
+
+	/* Pressed or released. */
+	kind = TERMINAL_POINTER_RELEASE;
+	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
+		kind = TERMINAL_POINTER_PRESS;
+	window_pointer_event(window, kind, time, serial);
+}
+
+/* The wheel is not used. */
+static void
+window_pointer_axis(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t time,
+	uint32_t axis,
+	wl_fixed_t value)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)pointer;
+	(void)time;
+	(void)axis;
+	(void)value;
+}
+
+/* A frame groups nothing the terminal needs. */
+static void
+window_pointer_frame(
+	void *data,
+	struct wl_pointer *pointer)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)pointer;
+}
+
+/* The wheel is not used. */
+static void
+window_pointer_axis_source(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t source)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)pointer;
+	(void)source;
+}
+
+/* The wheel is not used. */
+static void
+window_pointer_axis_stop(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t time,
+	uint32_t axis)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)pointer;
+	(void)time;
+	(void)axis;
+}
+
+/* The wheel is not used. */
+static void
+window_pointer_axis_discrete(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t axis,
+	int32_t discrete)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)pointer;
+	(void)axis;
+	(void)discrete;
+}
+
+/* Adds a pointer event at the pointer's place for the main loop (a full queue drops it). */
+static void
+window_pointer_event(
+	struct terminal_window *window,
+	unsigned kind,
+	uint32_t time,
+	uint32_t serial)
+{
+	struct terminal_pointer_event *event;
+
+	/* Room for it. */
+	if (window->pointer_event_count >= TERMINAL_POINTER_EVENTS)
+		return;
+
+	/* Succeeded: kept. */
+	event = &window->pointer_events[window->pointer_event_count++];
+	event->kind = kind;
+	event->x = window->pointer_x;
+	event->y = window->pointer_y;
+	event->time = time;
+	event->serial = serial;
 }

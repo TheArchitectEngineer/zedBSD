@@ -17,6 +17,7 @@
  */
 
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include "userland/X11/libX11/Xzed.h"
 #include <X11/keysym.h>
 
@@ -266,6 +267,7 @@ initialize(
 {
 	char message_local[96];
 	char message_local1[96];
+	XClassHint class_hint;
 	int saved;
 	Window root_return;
 	Window root;
@@ -319,6 +321,11 @@ initialize(
 	terminal->window = XCreateSimpleWindow(terminal->display, root, 20, 8,
 					       width, height, 0, 0, 0x000000);
 	XStoreName(terminal->display, terminal->window, "zterm");
+
+	/* The class the desktop knows the window's application by. */
+	class_hint.res_name = "zterm";
+	class_hint.res_class = "XTerminal";
+	(void)XSetClassHint(terminal->display, terminal->window, &class_hint);
 	XzedSetIconPath(terminal->display, terminal->window,
 			"/usr/share/zterm/icons/app-icon.xpm");
 	terminal->gc = XCreateGC(terminal->display, terminal->window, 0, NULL);

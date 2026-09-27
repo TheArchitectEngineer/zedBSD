@@ -29,6 +29,7 @@
 #define XA_ATOM ((Atom)4)
 #define XA_STRING ((Atom)31)
 #define XA_WM_NAME ((Atom)39)
+#define XA_WM_CLASS ((Atom)67)
 #define KeyPress 2
 #define KeyRelease 3
 #define ButtonPress 4

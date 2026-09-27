@@ -4,8 +4,8 @@
 # less the system bar, a floating title bar and the margins, 1256x690) and keeps the cascade inside it:
 #  1. one.png: zdesktop-files at its own size (1120x720) takes the bounds' height (ZWL BOUNDS ... width=1256
 #     height=690, ZFILES READY width=1120 height=690) and maps under the title bar (y=98).
-#  2. two.png: a second zdesktop-files of 1000x640 cascades one step (x=172) but is moved up so that it ends
-#     inside the space (y=148 instead of 155).
+#  2. two.png: a second zdesktop-files of 1000x640 would hide the first one's title at the centre, so it goes a
+#     cascade step (48) down and right of it (x=128 y=146, ws035-p092) and ends inside the space.
 #  3. home.png: zdesktop-files started from App Home fits too (the case of files-p011's files.png).
 #
 #   plan/tools/files/files-guest.sh start     (the guest must be up)
@@ -60,7 +60,7 @@ shot one.png
 # 2. A second window, cascaded and kept inside.
 guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/zdesktop-files --token=f2 --timeout-s=200 --width=1000 --height=640 > /tmp/f2.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 expect_log /tmp/f2.log 'ZFILES READY width=1000 height=640'
-expect_log /tmp/zdesktop.log 'ZWL MAP client=2 surface=[0-9]+ x=172 y=148'
+expect_log /tmp/zdesktop.log 'ZWL MAP client=2 surface=[0-9]+ x=128 y=146'
 shot two.png
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
