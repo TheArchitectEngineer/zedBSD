@@ -84,6 +84,7 @@ libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先
 | ws071-p013 | タブ（2 つ以上のときだけの tab bar、New Tab・Close Tab・Previous/Next Tab、Open in New Tab、menu の Window のタブの項目） | planned | p008 |
 | [ws071-p014](phase014/phase.md) | zdesktop-files の窓の中の toolbar → WS070 の CONTROLS の titlebar（toolbar を消す、control の model と event、Ctrl+F・Ctrl+L の focus、拡張が無ければ起動で失敗、host の試験は model の text、guest の試験は control の位置を zdesktop の log から）。[ws070 titlebar-design.md §11](../ws070/titlebar-design.md) | cleared | WS070-p010 |
 | ws071-p009 | context menu: WS070 protocol version 2（libwayland、zdesktop、libzdesktop `zdesktop_menu_popup`）と file manager の context menu | planned | p013 |
+| ws071-p015 | （2026-09-27 ユーザー指示）左・中央・右の pane を窓の本体の中で浮いた付箋（card）の見た目に: 各 pane が角丸・影で浮き、すりガラスで背後のデスクトップが透ける。ユーザー:「ファイルマネージャですが、左ペイン、メインペイン、右ペインを分けてくれていますよね。これらはウィンドウボディの中でフローティングの見た目にして、それぞれが付箋のように浮いて見えようにしてほしいです。添付がイメージですが、これはウィンドウ内の要素が付箋のように浮いていて、すりガラスのエフェクトでデスクトップが透けている、と言いたいだけで、こういうレイアウトにしてほしいという意味ではないです。」（参考画像は git に入れず `build/ws071-refs/floating-panes-reference.webp`）。client の透過（alpha）の窓と、zdesktop の背後のぼかし（ws035-p057）と、client が「どこをすりガラスにするか」を渡す方法（例: blur の region の protocol）の設計が要る。layout は今のまま | planning | ws035-p057、ws070-p010 |
 | ws071-p010 | サムネイル（libz-compat の inflate、libpng-compat の decode）と窓の中の DnD | planned | p007 |
 | ws071-p011 | App Home の項目、規約の全文との照合、回帰、boot test、i915 実機（任意） | planned | p002〜p010、p012〜p014 |
 
