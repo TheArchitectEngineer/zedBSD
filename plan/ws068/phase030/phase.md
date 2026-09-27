@@ -66,7 +66,13 @@ Phase disposition: normal
 | style-check（上の C の file） | 0 |
 | egl-p030 | **PASS**: API の検査 10 件 failures=0、7 つの四角が display と Wayland で緑、GL_VERSION「OpenGL ES 3.0 zedBSD」。最初の実行は libGLESv2 の SPIR-V の反射が capture の storage buffer を拒んで link に失敗、反射で飛ばすように直して PASS |
 
-（回帰の実行中。結果を書く）
+| 回帰 egl-p008・p019・p020・p022・p023・p024・p025・p026・p027・p028・p029（新しく起こした guest） | 全て PASS |
+| 回帰 x11-p005 | PASS（gears.png を目で確かめた） |
+| GLSL の host 試験 | PASS |
+| boot test（`build/ws068-p030-regress/boot/login.png`） | PASS |
+| i915 実機 | 未実施 |
+
+画面: `build/ws068-shots/p030-20260927-feedback-display.png`、`build/ws068-shots/p030-20260927-feedback-wayland.png`（main の tree）。
 
 ### 制限・移管
 
