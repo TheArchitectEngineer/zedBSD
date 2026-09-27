@@ -39,6 +39,13 @@
 #define USB_PORT_RESET_MS 50U
 #define USB_CANCEL_TIMEOUT_MS 1000U
 #define USB_CONTROL_TIMEOUT_MS 1000U
+/*
+ * How many times a root port is reset and enumerated when a step times
+ * out or fails on the wire.  A device that misses one request at boot
+ * (BUG-036: the network adapter, error 42) was otherwise left unused until
+ * it was plugged in again; other systems retry the same way.
+ */
+#define USB_ENUMERATE_TRIES 3U
 
 #define USB_DEVICE_LIFECYCLE_DISCONNECTING (1U << 31)
 #define USB_DEVICE_LIFECYCLE_FINALIZING (1U << 30)
@@ -274,6 +281,7 @@ static void free_configurations(struct drv_usb_device *device);
 static void free_configuration(struct drv_usb_configuration *configuration);
 static void device_publish_configuration(struct drv_usb_device *device, struct drv_usb_configuration *configuration);
 static int legacy_root_port_reset(struct drv_usb_hcd *hcd, unsigned port);
+static int root_port_enumerate(struct drv_usb_bus *bus, struct drv_usb_hcd *hcd, unsigned port);
 static void usb_delay_ms(uint64_t milliseconds);
 static int enumerate_port(struct drv_usb_bus *bus, struct drv_usb_device *parent, struct usb_port_state *state, unsigned port, uint32_t status);
 static int ep0_packet_size(enum drv_usb_speed speed, uint8_t encoded, unsigned *packet);
@@ -764,6 +772,7 @@ drv_usb_hcd_root_hub_changed(
 	int error;
 	struct drv_usb_bus *bus;
 	unsigned port;
+	unsigned attempt;
 
 	usb_topology_lock();
 
@@ -850,22 +859,19 @@ drv_usb_hcd_root_hub_changed(
 		    !replace_generation)
 			continue;
 
-		/* Handles the root port reset availability. */
-		if (hcd->ops->root_port_reset != NULL)
-			error = hcd->ops->root_port_reset(hcd, port);
-		else
-			error = legacy_root_port_reset(hcd, port);
-		if (error == 0)
-			error = root_port_status(hcd, port, &status);
-		if (error == 0) {
-			bus->ports[port].connected = (status & 1U) != 0;
-			bus->ports[port].enabled = (status & 2U) != 0;
+		/* Resets and enumerates the port, again after a transient failure. */
+		for (attempt = 1; attempt <= USB_ENUMERATE_TRIES; attempt++) {
+			error = root_port_enumerate(bus, hcd, port);
+			if (error == 0)
+				break;
 
-			/* Checks the operation status. */
-			if ((status & 3U) == 3U)
-				error = enumerate_port(bus, bus->root_hub, &bus->ports[port], port, status);
-			else
-				error = ENODEV;
+			/* Only a timeout or a wire error is worth another try. */
+			if (error != ETIMEDOUT && error != EIO)
+				break;
+			if (attempt == USB_ENUMERATE_TRIES)
+				break;
+			kern_logf("usb%u: port %u enumeration failed (%d); "
+				   "retrying\n", bus->number, port, error);
 		}
 		if (error != 0) {
 			kern_logf("usb%u: port %u enumeration failed (%d)\n",
@@ -5657,6 +5663,46 @@ usb_delay_ms(
 	/* Continue while the operation condition remains true. */
 	while (sched_ticks() < deadline)
 		kern_compiler_barrier();
+}
+
+/*
+ * Resets one root port and enumerates what is attached to it.
+ *
+ * A failed enumeration releases the device it began, so the port can be
+ * reset and enumerated again.
+ */
+static int
+root_port_enumerate(
+	struct drv_usb_bus *bus,
+	struct drv_usb_hcd *hcd,
+	unsigned port)
+{
+	uint32_t status;
+	int error;
+
+	/* Resets the port, through the controller's own operation if it has one. */
+	status = 0;
+	if (hcd->ops->root_port_reset != NULL)
+		error = hcd->ops->root_port_reset(hcd, port);
+	else
+		error = legacy_root_port_reset(hcd, port);
+	if (error == 0)
+		error = root_port_status(hcd, port, &status);
+	if (error != 0)
+		return error;
+
+	/* Records what the reset left. */
+	bus->ports[port].connected = (status & 1U) != 0;
+	bus->ports[port].enabled = (status & 2U) != 0;
+
+	/* Only a connected and enabled port has a device to enumerate. */
+	if ((status & 3U) != 3U)
+		return ENODEV;
+
+	/* Reports how the enumeration went. */
+	error = enumerate_port(bus, bus->root_hub, &bus->ports[port], port,
+			       status);
+	return error;
 }
 
 /* Enumerates whatever has just been attached to one port. */
