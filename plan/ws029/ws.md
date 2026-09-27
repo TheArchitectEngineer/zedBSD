@@ -215,3 +215,8 @@ Latitude 5330（`awe@10.0.10.25`）の IGD（`0000:00:02.0`、`8086:46a8` rev 0c
 ## q314完了: WS029 i915ネイティブGPU driver（2026-09-14）
 
 q314 finished、ws029-p001..p007 全 cleared。実機（Latitude 5330、IGD 8086:46a8、VFIO passthrough）で attach → selftest（BCS0 が store を実行し user interrupt）→ /dev/gpu0 公開まで到達し、userland /bin/gpu-i915-test が copy/fill/store/job を実行、host が QMP pmemsave で guest RAM を独立照合して PASS（test-002）。Linux i915（MIT）の定義/テーブルは出典付き .inc へ転記、driver 論理は zedBSD 規約で新規実装。HAL/UAPI 不変。静的解析 gcc -fanalyzer / clang --analyze 0 件、規約 §14 確認、host fixture・GPU core 回帰・build 3 構成 PASS。制限: cold VFIO attach の bring-up 間欠ハング（最優先の後続）、hang 注入の実機 peer 継続未達、display/scanout は対象外。後続は WS029 registry の planning 行に列挙。source/doc の git add/commit/push はユーザー担当。
+## i915 の高度化（2026-09-27）
+
+ユーザーの指示で WS068 の GL 3.3 以降を保留し、i915 の高度化へ進む。計画の案は [WS031 の「i915 の高度化の計画」](../ws031/ws.md)。
+driver の基盤の不足（kernel の fence `GPU_CAP_FENCE`、allocation の共有 `GPU_CAP_ALLOCATION_SHARE`、完了の割込み）が出たら、
+その計画の Phase で扱い、この WS の後続（f001〜f004）との関係をそこに書く。
