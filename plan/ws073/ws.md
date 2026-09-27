@@ -43,7 +43,10 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p006](phase006/phase.md) | BUG-067 | devfs の文字 device の node が chmod・chown を受ける（`mesg n`） | cleared |
 | [ws073-p007](phase007/phase.md) | BUG-068 | 多 thread の process の execve が、joiner に先に reap された兄弟を待ち続ける | cleared |
 | [ws073-p008](phase008/phase.md) | BUG-069 | 端末と pty の読み書きが waitq_sleep の EAGAIN を失敗として返す（console の POSIX-R2 10 回連続 status 0） | cleared |
-| ws073-p009 | — | kernel の boot の FAT を公開する: BOOT を /boot、ESP を /boot/esp（ユーザーの判断 2026-09-27） | planned |
+| [ws073-p009](phase009/phase.md) | — | kernel の boot の FAT を公開する: BOOT を /boot、ESP を /boot/esp（ユーザーの判断 2026-09-27） | cleared |
+| [ws073-p010](phase010/phase.md) | BUG-071 | FAT に普通の道具で file を作れる（mount の見せる mode で見せる） | cleared |
+| [ws073-p012](phase012/phase.md) | BUG-072 | FAT32 の metadata を仕様どおりに（`..`、FSInfo、日時）、boot の FAT の sync | cleared |
+| [ws073-p011](phase011/phase.md) | BUG-070 | USB HID の keyboard が keypad・Num Lock・Print Screen・日本語の key などを出す | cleared |
 
 ## 判断が要る点
 
@@ -51,3 +54,5 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
   kernel の mount を公開する案（[phase](phase002/phase.md)）。ユーザーの判断（原文）: 「ESPは/boot/espにします。/bootはBOOTという名前のFATパーティションですね。
   UEFIのみのイメージでBOOTパーティションがない場合もあります。」→ BOOT の FAT を `/boot`、ESP を `/boot/esp` に公開する。BOOT が無い UEFI だけの image では
   `/boot` はただの directory で ESP は `/boot/esp`。ws073-p009 で行う。
+- ws073-p010（既定を選んだ、可逆）: FAT での file の作成は要求の mode を捨て、mount が見せる mode（0755 root:wheel）で見せる（msdosfs と同じ）。
+  以前の「一致しなければ EOPNOTSUPP」に戻すなら fat.c の 2 つの関数を戻す（[phase](phase010/phase.md)）。

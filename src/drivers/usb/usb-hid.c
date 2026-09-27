@@ -1825,6 +1825,10 @@ keyboard_code(
 		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5,
 		KEY_6, KEY_7, KEY_8, KEY_9, KEY_0,
 	};
+	static const uint16_t keypad_digits[10] = {
+		KEY_KP1, KEY_KP2, KEY_KP3, KEY_KP4, KEY_KP5,
+		KEY_KP6, KEY_KP7, KEY_KP8, KEY_KP9, KEY_KP0,
+	};
 
 	/* Handles the usage condition. */
 	if (usage >= 0x04U && usage <= 0x1dU)
@@ -1837,7 +1841,16 @@ keyboard_code(
 	/* Handles the usage condition. */
 	if (usage >= 0x3aU && usage <= 0x43U)
 		return (uint16_t)(KEY_F1 + usage - 0x3aU);
-	/* Dispatch the selected operation case. */
+
+	/* Keypad 1 to 9 and 0 follow each other from usage 0x59. */
+	if (usage >= 0x59U && usage <= 0x62U)
+		return keypad_digits[usage - 0x59U];
+
+	/* F13 to F24 follow each other from usage 0x68. */
+	if (usage >= 0x68U && usage <= 0x73U)
+		return (uint16_t)(KEY_F13 + usage - 0x68U);
+
+	/* Maps each remaining usage the HID usage tables name for a keyboard. */
 	switch (usage) {
 	case 0x28:
 		/* Returns the computed result. */
@@ -1869,6 +1882,9 @@ keyboard_code(
 	case 0x31:
 		/* Returns the computed result. */
 		return KEY_BACKSLASH;
+	case 0x32:
+		/* The non-US # key, which evdev also calls backslash. */
+		return KEY_BACKSLASH;
 	case 0x33:
 		/* Returns the computed result. */
 		return KEY_SEMICOLON;
@@ -1896,6 +1912,15 @@ keyboard_code(
 	case 0x45:
 		/* Returns the computed result. */
 		return KEY_F12;
+	case 0x46:
+		/* Print Screen, which evdev calls SysRq. */
+		return KEY_SYSRQ;
+	case 0x47:
+		/* Scroll Lock. */
+		return KEY_SCROLLLOCK;
+	case 0x48:
+		/* Pause. */
+		return KEY_PAUSE;
 	case 0x49:
 		/* Returns the computed result. */
 		return KEY_INSERT;
@@ -1926,6 +1951,75 @@ keyboard_code(
 	case 0x52:
 		/* Returns the computed result. */
 		return KEY_UP;
+	case 0x53:
+		/* Num Lock. */
+		return KEY_NUMLOCK;
+	case 0x54:
+		/* Keypad slash. */
+		return KEY_KPSLASH;
+	case 0x55:
+		/* Keypad asterisk. */
+		return KEY_KPASTERISK;
+	case 0x56:
+		/* Keypad minus. */
+		return KEY_KPMINUS;
+	case 0x57:
+		/* Keypad plus. */
+		return KEY_KPPLUS;
+	case 0x58:
+		/* Keypad Enter. */
+		return KEY_KPENTER;
+	case 0x63:
+		/* Keypad dot (Delete with Num Lock off). */
+		return KEY_KPDOT;
+	case 0x64:
+		/* The non-US backslash key next to the left Shift (<> on ISO). */
+		return KEY_102ND;
+	case 0x65:
+		/* Application (Menu), which evdev calls Compose. */
+		return KEY_COMPOSE;
+	case 0x66:
+		/* Power. */
+		return KEY_POWER;
+	case 0x67:
+		/* Keypad equals. */
+		return KEY_KPEQUAL;
+	case 0x85:
+		/* Keypad comma. */
+		return KEY_KPCOMMA;
+	case 0x87:
+		/* International 1: the Japanese backslash-underscore (Ro) key. */
+		return KEY_RO;
+	case 0x88:
+		/* International 2: Japanese Katakana/Hiragana. */
+		return KEY_KATAKANAHIRAGANA;
+	case 0x89:
+		/* International 3: the Japanese Yen key. */
+		return KEY_YEN;
+	case 0x8a:
+		/* International 4: Japanese Henkan (convert). */
+		return KEY_HENKAN;
+	case 0x8b:
+		/* International 5: Japanese Muhenkan (no convert). */
+		return KEY_MUHENKAN;
+	case 0x8c:
+		/* International 6: the Japanese keypad comma. */
+		return KEY_KPJPCOMMA;
+	case 0x90:
+		/* LANG1: Korean Hangul/English. */
+		return KEY_HANGEUL;
+	case 0x91:
+		/* LANG2: Korean Hanja. */
+		return KEY_HANJA;
+	case 0x92:
+		/* LANG3: Japanese Katakana. */
+		return KEY_KATAKANA;
+	case 0x93:
+		/* LANG4: Japanese Hiragana. */
+		return KEY_HIRAGANA;
+	case 0x94:
+		/* LANG5: Japanese Zenkaku/Hankaku. */
+		return KEY_ZENKAKUHANKAKU;
 	case 0xe0:
 		/* Returns the computed result. */
 		return KEY_LEFTCTRL;

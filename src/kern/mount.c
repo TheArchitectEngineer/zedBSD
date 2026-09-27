@@ -95,6 +95,8 @@ static void link_child(struct mount *parent, struct mount *child);
 static void link_global(struct mount *mountp);
 static int set_mount_path(struct mount *mountp, const struct path *directory, const char *name);
 static MOUNT_HIGH int valid_private_path(const char *path);
+static void mount_info_private_source(struct kern_mount_info *info, const struct mount *source);
+static struct mount *mount_sync_target(struct mount *mountp);
 static void unlink_child(struct mount *mountp);
 static int prepare_filesystem_destroy(struct mount *mountp, unsigned expected_refs);
 static void finalize_filesystem_destroy(struct mount *mountp);
@@ -909,8 +911,10 @@ mount_sync_all(
 	unsigned index;
 	unsigned long irq;
 	struct mount *mountp;
+	struct mount *target;
 	int first_error;
 	int error;
+	int taken;
 
 	count = 0;
 	first_error = 0;
@@ -919,11 +923,24 @@ mount_sync_all(
 	/* References keep the snapshot valid while slow filesystem sync runs. */
 	for (mountp = mount_head; mountp != NULL && count < MOUNT_MAX;
 	     mountp = mountp->m_next) {
-		if (mountp->m_state != MOUNT_STATE_LIVE ||
-		    mountp->m_bind_source != NULL)
+		if (mountp->m_state != MOUNT_STATE_LIVE)
 			continue;
-		mount_ref(mountp);
-		snapshot[count++] = mountp;
+
+		/* Picks the filesystem this entry stands for, once. */
+		target = mount_sync_target(mountp);
+		if (target == NULL)
+			continue;
+		taken = 0;
+		for (index = 0; index < count; index++) {
+			if (snapshot[index] == target)
+				taken = 1;
+		}
+
+		/* Skips a filesystem an earlier entry already stands for. */
+		if (taken)
+			continue;
+		mount_ref(target);
+		snapshot[count++] = target;
 	}
 
 	spin_unlock_irqrestore(&namespace_lock, irq);
@@ -1652,7 +1669,7 @@ mount_info_snapshot(
 		if (source != NULL) {
 			info->kind = KERN_MOUNT_INFO_BIND;
 			if (mount_is_private(source))
-				kern_strcpy(info->source, "(private)");
+				mount_info_private_source(info, source);
 			else
 				path_set(&sources[count - 1], source, mountp->m_root);
 		} else {
@@ -2219,6 +2236,64 @@ set_mount_path(
 
 	/* Reports the recorded path. */
 	return 0;
+}
+
+/*
+ * Tells which filesystem a namespace entry stands for when everything is
+ * synced; the caller holds the namespace lock.
+ *
+ * A mount stands for itself.  A bind of a public mount stands for nothing,
+ * because its source is an entry of its own.  A bind of a private mount
+ * (the kernel's boot filesystems shown at /boot and /boot/esp) stands for
+ * that private mount, which no other entry reaches.
+ */
+static struct mount *
+mount_sync_target(
+	struct mount *mountp)
+{
+	struct mount *source;
+	int private;
+
+	/* A mount that is no bind is its own filesystem. */
+	source = mountp->m_bind_source;
+	if (source == NULL)
+		return mountp;
+
+	/* A bind of a public mount is synced through that mount. */
+	private = mount_is_private(source);
+	if (!private)
+		return NULL;
+
+	/* Succeeded: the bind stands for the private mount behind it. */
+	return source;
+}
+
+/*
+ * Names the source of a bind of a private mount in a mount listing.
+ *
+ * The kernel's own boot filesystems are private mounts shown through a
+ * bind (/boot, /boot/esp); their disk is what a reader wants to see.  A
+ * private mount without a disk stays "(private)".
+ */
+static void
+mount_info_private_source(
+	struct kern_mount_info *info,
+	const struct mount *source)
+{
+	size_t length;
+
+	/* A private mount without a disk has no name to show. */
+	if (source->m_disk == NULL) {
+		kern_strcpy(info->source, "(private)");
+		return;
+	}
+
+	/* Names the disk as its /dev path, cut to the field. */
+	kern_strcpy(info->source, "/dev/");
+	length = kern_strlen(info->source);
+	kern_strncpy(info->source + length, source->m_disk->d_name,
+	    sizeof(info->source) - length - 1U);
+	info->source[sizeof(info->source) - 1U] = '\0';
 }
 
 /* Tests that a private-mount path is relative with no empty, dot, or dot-dot components. */
