@@ -129,6 +129,13 @@ struct vm_heap {
 
 	/* The heap's atoms. */
 	struct vm_atom_table atoms;
+
+	/*
+	 * The root of the shape tree (no properties), made by the first
+	 * object and a registered root from then on, which keeps every shape
+	 * made from it.
+	 */
+	struct vm_shape *root_shape;
 };
 
 /* The atom table (atom.c). */

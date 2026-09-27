@@ -1,0 +1,1096 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Objects (plan/ws074/design.md §11.4): properties found through shapes,
+ * elements kept densely, prototypes, arrays and their length, and the
+ * order of an object's own keys.
+ *
+ * A property key is a value: an atom (a string key), a symbol, or an int32
+ * index (the keys of array indices below 2^31; larger indices are atoms
+ * for now).  An index property with the default attributes lives in the
+ * elements, unless the elements would be too sparse; every other property
+ * lives in a slot the shape names.  An array's length is its first named
+ * property, kept equal to the length field.
+ *
+ * The functions that only need data properties are here; calling an
+ * accessor's getter or setter needs the interpreter (ws074-p023), so a
+ * get reports an accessor's cell and a set refuses to write through one.
+ */
+
+#include "vm/internal.h"
+
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* The fewest slots or elements an object's arrays are made for. */
+#define OBJECT_ARRAY_MIN	4U
+
+/* How far past the elements in use a new index may go and still be kept densely. */
+#define OBJECT_SPARSE_GAP	1024U
+
+/* The largest index kept as an int32 key. */
+#define OBJECT_INDEX_MAX	0x7FFFFFFFU
+
+static void object_symbol_trace(struct vm_heap *heap, struct vm_cell *cell);
+static void object_accessor_trace(struct vm_heap *heap, struct vm_cell *cell);
+static int object_grow_slots(struct vm_object *object, uint32_t count);
+static int object_grow_elements(struct vm_object *object, uint32_t index);
+static int object_store_named(struct vm_heap *heap, struct vm_object *object, vm_value key, vm_value value, uint32_t attributes);
+static int object_reshape(struct vm_heap *heap, struct vm_object *object, vm_value skip, vm_value change, uint32_t attributes);
+static int object_is_length(struct vm_heap *heap, struct vm_object *object, vm_value key);
+static void object_sync_length(struct vm_heap *heap, struct vm_object *object);
+static int object_key_compare(const void *left, const void *right);
+
+/* The cell type of plain objects: they hold their shape, prototype, slots and elements. */
+const struct vm_cell_type vm_object_type = {
+	"object", vm_object_trace, vm_object_finalize
+};
+
+/* The cell type of arrays: plain objects whose length follows their elements. */
+const struct vm_cell_type vm_array_type = {
+	"array", vm_object_trace, vm_object_finalize
+};
+
+/* The cell type of symbols: they hold their description. */
+const struct vm_cell_type vm_symbol_type = {
+	"symbol", object_symbol_trace, NULL
+};
+
+/* The cell type of accessor pairs: they hold their getter and setter. */
+const struct vm_cell_type vm_accessor_type = {
+	"accessor", object_accessor_trace, NULL
+};
+
+/*
+ * Marks the cell a value refers to, if it refers to one.
+ */
+void
+vm_heap_mark_value(
+	struct vm_heap *heap,
+	vm_value value)
+{
+	int is_cell;
+
+	/* Numbers and constants refer to nothing. */
+	is_cell = vm_value_is_cell(value);
+	if (!is_cell)
+		return;
+
+	/* The cell. */
+	vm_heap_mark(heap, vm_value_as_cell(value));
+}
+
+/*
+ * Tells whether a key is an array index (an int32 key that is not
+ * negative) and reports the index.
+ */
+int
+vm_value_is_array_index(
+	vm_value key,
+	uint32_t *index)
+{
+	int32_t number;
+	int is_int32;
+
+	/* Only int32 keys are indices. */
+	is_int32 = vm_value_is_int32(key);
+	if (!is_int32)
+		return 0;
+
+	/* A negative int32 is no index. */
+	number = vm_value_as_int32(key);
+	if (number < 0)
+		return 0;
+
+	/* Reports the index. */
+	*index = (uint32_t)number;
+	return 1;
+}
+
+/*
+ * Makes the property key of a string: an int32 when the string is an array
+ * index in canonical form ("0", "17", never "017") below 2^31, its atom
+ * otherwise.
+ */
+int
+vm_key_from_string(
+	struct vm_heap *heap,
+	struct vm_string *string,
+	vm_value *key)
+{
+	struct vm_string *atom;
+	uint64_t number;
+	uint32_t index;
+	uint16_t unit;
+	uint16_t first;
+	int canonical;
+
+	/* Digits only, without a leading zero (but "0" itself), below 2^31. */
+	canonical = 0;
+	if (string->length != 0 && string->length <= 10U)
+		canonical = 1;
+	number = 0;
+	for (index = 0; canonical && index < string->length; index++) {
+		unit = vm_string_at(string, index);
+		if (unit < '0' || unit > '9')
+			canonical = 0;
+		number = number * 10U + (uint64_t)(unit - '0');
+	}
+
+	/* A leading zero makes a string that is not the index's canonical form. */
+	first = 0;
+	if (string->length != 0)
+		first = vm_string_at(string, 0);
+	if (canonical && string->length > 1U && first == '0')
+		canonical = 0;
+
+	/* An index past int32 stays a string. */
+	if (canonical && number > OBJECT_INDEX_MAX)
+		canonical = 0;
+
+	/* An index is its int32. */
+	if (canonical) {
+		*key = vm_value_int32((int32_t)number);
+		return 0;
+	}
+
+	/* Any other string is its atom. */
+	atom = vm_atom(heap, string);
+	if (atom == NULL)
+		return ENOMEM;
+
+	/* Succeeded: the key is the atom. */
+	*key = vm_value_cell(atom);
+	return 0;
+}
+
+/*
+ * Makes the property key of an ASCII name that is not an index (the
+ * engine's own names); VM_VALUE_EMPTY when out of memory.
+ */
+vm_value
+vm_key_from_ascii(
+	struct vm_heap *heap,
+	const char *ascii)
+{
+	struct vm_string *atom;
+
+	/* The name's atom. */
+	atom = vm_atom_from_ascii(heap, ascii);
+	if (atom == NULL)
+		return VM_VALUE_EMPTY;
+
+	/* Reports its value. */
+	return vm_value_cell(atom);
+}
+
+/*
+ * Makes a plain object with a prototype (NULL for none); NULL when out of
+ * memory.
+ */
+struct vm_object *
+vm_object_create(
+	struct vm_heap *heap,
+	struct vm_object *prototype)
+{
+	struct vm_object *object;
+	int error;
+
+	/* The cell. */
+	object = vm_heap_alloc(heap, &vm_object_type, sizeof(*object));
+	if (object == NULL)
+		return NULL;
+
+	/* No properties yet. */
+	error = vm_object_init(heap, object, prototype);
+	if (error != 0)
+		return NULL;
+
+	/* Succeeded: the object. */
+	return object;
+}
+
+/*
+ * Makes an empty array with a prototype; NULL when out of memory.
+ */
+struct vm_object *
+vm_array_create(
+	struct vm_heap *heap,
+	struct vm_object *prototype)
+{
+	struct vm_object *array;
+	vm_value key;
+	int error;
+
+	/* The cell, an object whose length follows its elements. */
+	array = vm_heap_alloc(heap, &vm_array_type, sizeof(*array));
+	if (array == NULL)
+		return NULL;
+
+	/* No properties yet. */
+	error = vm_object_init(heap, array, prototype);
+	if (error != 0)
+		return NULL;
+	array->flags |= VM_OBJECT_ARRAY;
+
+	/* Its length, the first named property: writable, neither enumerable nor configurable. */
+	key = vm_key_from_ascii(heap, "length");
+	if (key == VM_VALUE_EMPTY)
+		return NULL;
+	error = object_store_named(heap, array, key, vm_value_int32(0), VM_PROPERTY_WRITABLE);
+	if (error != 0)
+		return NULL;
+
+	/* Succeeded: the array. */
+	return array;
+}
+
+/*
+ * Gives an object made by another file (a function, later a DOM node) its
+ * empty shape and its prototype.
+ */
+int
+vm_object_init(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	struct vm_object *prototype)
+{
+	struct vm_shape *root;
+
+	/* The root shape: no properties. */
+	root = vm_shape_root(heap);
+	if (root == NULL)
+		return ENOMEM;
+
+	/* The object's layout and prototype; the cell came zeroed, so there are no slots or elements. */
+	object->shape = root;
+	object->prototype = prototype;
+
+	/* Succeeded: the object is ready for properties. */
+	return 0;
+}
+
+/*
+ * Makes a symbol with a description (a string value or undefined).
+ */
+struct vm_symbol *
+vm_symbol_create(
+	struct vm_heap *heap,
+	vm_value description)
+{
+	struct vm_symbol *symbol;
+
+	/* The cell and its description. */
+	symbol = vm_heap_alloc(heap, &vm_symbol_type, sizeof(*symbol));
+	if (symbol == NULL)
+		return NULL;
+	symbol->description = description;
+
+	/* Succeeded: the symbol. */
+	return symbol;
+}
+
+/*
+ * Makes an accessor pair (the getter and setter are functions or
+ * undefined).
+ */
+struct vm_accessor *
+vm_accessor_create(
+	struct vm_heap *heap,
+	vm_value getter,
+	vm_value setter)
+{
+	struct vm_accessor *accessor;
+
+	/* The cell and its functions. */
+	accessor = vm_heap_alloc(heap, &vm_accessor_type, sizeof(*accessor));
+	if (accessor == NULL)
+		return NULL;
+	accessor->getter = getter;
+	accessor->setter = setter;
+
+	/* Succeeded: the pair. */
+	return accessor;
+}
+
+/*
+ * Finds an object's own property of a key; zero when it has none.
+ */
+int
+vm_object_get_own(
+	struct vm_object *object,
+	vm_value key,
+	struct vm_property *property)
+{
+	uint32_t index;
+	uint32_t slot;
+	uint32_t attributes;
+	int is_index;
+	int found;
+
+	/* An index with a value in the elements. */
+	is_index = vm_value_is_array_index(key, &index);
+	if (is_index &&
+	    index < object->element_capacity &&
+	    object->elements[index] != VM_VALUE_EMPTY) {
+		property->holder = object;
+		property->value = &object->elements[index];
+		property->attributes = VM_PROPERTY_DEFAULT;
+		return 1;
+	}
+
+	/* Otherwise a slot the shape names. */
+	found = vm_shape_find(object->shape, key, &slot, &attributes);
+	if (!found)
+		return 0;
+
+	/* The property in its slot. */
+	property->holder = object;
+	property->value = &object->slots[slot];
+	property->attributes = attributes;
+	return 1;
+}
+
+/*
+ * Finds a property of a key on an object or its prototypes; zero when
+ * none has it.
+ */
+int
+vm_object_find(
+	struct vm_object *object,
+	vm_value key,
+	struct vm_property *property)
+{
+	int found;
+
+	/* Each object of the chain, from the object itself. */
+	while (object != NULL) {
+		found = vm_object_get_own(object, key, property);
+		if (found)
+			return 1;
+
+		/* Its prototype next. */
+		object = object->prototype;
+	}
+
+	/* No object of the chain has the key. */
+	return 0;
+}
+
+/*
+ * Defines (or redefines) an own property with a value and attributes; for
+ * an accessor property the value is its vm_accessor's cell.
+ */
+int
+vm_object_define(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	vm_value key,
+	vm_value value,
+	uint32_t attributes)
+{
+	uint32_t index;
+	uint32_t slot;
+	uint32_t old_attributes;
+	int32_t length;
+	int is_index;
+	int is_length;
+	int is_int32;
+	int dense;
+	int named;
+	int error;
+
+	/* An array's length is set through its own rules (a length that is not an int32 is not taken yet). */
+	is_length = object_is_length(heap, object, key);
+	if (is_length) {
+		is_int32 = vm_value_is_int32(value);
+		if (!is_int32)
+			return EINVAL;
+		length = vm_value_as_int32(value);
+		if (length < 0)
+			return EINVAL;
+		error = vm_array_set_length(heap, object, (uint32_t)length);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* An index with the default attributes goes into the elements, unless a slot has it or it is far past them. */
+	is_index = vm_value_is_array_index(key, &index);
+	named = vm_shape_find(object->shape, key, &slot, &old_attributes);
+	dense = 0;
+	if (is_index &&
+	    !named &&
+	    attributes == VM_PROPERTY_DEFAULT &&
+	    index <= object->length + OBJECT_SPARSE_GAP)
+		dense = 1;
+	if (dense) {
+		/* A new property of an object that takes none is refused. */
+		if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U &&
+		    (index >= object->element_capacity || object->elements[index] == VM_VALUE_EMPTY))
+			return EPERM;
+
+		/* Room for the index. */
+		error = object_grow_elements(object, index);
+		if (error != 0)
+			return error;
+
+		/* Stores the value; the length reaches past the index. */
+		object->elements[index] = value;
+		if (index >= object->length)
+			object->length = index + 1U;
+		object_sync_length(heap, object);
+		return 0;
+	}
+
+	/* An index in the elements that takes other attributes leaves them for a slot. */
+	if (is_index && index < object->element_capacity)
+		object->elements[index] = VM_VALUE_EMPTY;
+
+	/* A property the shape has keeps its slot, with new attributes when they differ. */
+	if (named) {
+		if (old_attributes != attributes) {
+			error = object_reshape(heap, object, VM_VALUE_EMPTY, key, attributes);
+			if (error != 0)
+				return error;
+		}
+
+		/* The value in its slot. */
+		object->slots[slot] = value;
+		return 0;
+	}
+
+	/* A new property of an object that takes none is refused. */
+	if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
+		return EPERM;
+
+	/* A new named property. */
+	error = object_store_named(heap, object, key, value, attributes);
+	if (error != 0)
+		return error;
+
+	/* An array's length reaches past an index kept in a slot. */
+	if (is_index && index >= object->length) {
+		object->length = index + 1U;
+		object_sync_length(heap, object);
+	}
+
+	/* Succeeded: the property is defined. */
+	return 0;
+}
+
+/*
+ * Reads a property through the prototype chain: a data property's value,
+ * an accessor's vm_accessor cell (its getter is called by the caller), or
+ * undefined when no object has it.
+ */
+int
+vm_object_get(
+	struct vm_object *object,
+	vm_value key,
+	vm_value *value)
+{
+	struct vm_property property;
+	int found;
+
+	/* The property, wherever on the chain. */
+	found = vm_object_find(object, key, &property);
+	if (!found) {
+		*value = VM_VALUE_UNDEFINED;
+		return 0;
+	}
+
+	/* Succeeded: its value. */
+	*value = *property.value;
+	return 0;
+}
+
+/*
+ * Writes a property as assignment does (the ordinary [[Set]] for data
+ * properties): an own writable property takes the value, and otherwise a
+ * new own property is made unless a non-writable property or an accessor
+ * on the chain forbids it.  *done says whether the value was written.
+ */
+int
+vm_object_set(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	vm_value key,
+	vm_value value,
+	int *done)
+{
+	struct vm_property property;
+	int found;
+	int error;
+
+	/* Nothing is written until the rules allow it. */
+	*done = 0;
+	found = vm_object_find(object, key, &property);
+
+	/* An accessor's setter is called by the caller; a non-writable property refuses. */
+	if (found && (property.attributes & VM_PROPERTY_ACCESSOR) != 0U)
+		return 0;
+	if (found && (property.attributes & VM_PROPERTY_WRITABLE) == 0U)
+		return 0;
+
+	/* An own data property takes the value in place (an array's length by its rules). */
+	if (found && property.holder == object) {
+		error = vm_object_define(heap, object, key, value, property.attributes);
+		if (error != 0)
+			return error;
+		*done = 1;
+		return 0;
+	}
+
+	/* Otherwise a new own property; an object that takes none refuses. */
+	if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
+		return 0;
+	error = vm_object_define(heap, object, key, value, VM_PROPERTY_DEFAULT);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the value is written. */
+	*done = 1;
+	return 0;
+}
+
+/*
+ * Deletes an own property; *deleted is 0 when it is not configurable (the
+ * object keeps it) and 1 otherwise (including when there was none).
+ */
+int
+vm_object_delete(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	vm_value key,
+	int *deleted)
+{
+	uint32_t index;
+	uint32_t slot;
+	uint32_t attributes;
+	int is_index;
+	int named;
+	int error;
+
+	/* A missing property is deleted already. */
+	*deleted = 1;
+	is_index = vm_value_is_array_index(key, &index);
+	if (is_index &&
+	    index < object->element_capacity &&
+	    object->elements[index] != VM_VALUE_EMPTY) {
+		/* An element becomes a hole (an array keeps its length). */
+		object->elements[index] = VM_VALUE_EMPTY;
+		return 0;
+	}
+
+	/* A named property. */
+	named = vm_shape_find(object->shape, key, &slot, &attributes);
+	if (!named)
+		return 0;
+
+	/* One that is not configurable stays. */
+	if ((attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
+		*deleted = 0;
+		return 0;
+	}
+
+	/* The shape is made again without it. */
+	error = object_reshape(heap, object, key, VM_VALUE_EMPTY, 0U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the property is gone. */
+	return 0;
+}
+
+/*
+ * Sets an array's length: a shorter length deletes the index properties
+ * from the new length on.
+ */
+int
+vm_array_set_length(
+	struct vm_heap *heap,
+	struct vm_object *array,
+	uint32_t length)
+{
+	struct wb_vector keys;
+	uint32_t index;
+	size_t item;
+	vm_value *key;
+	int is_index;
+	int deleted;
+	int error;
+
+	/* The elements past the new length become holes. */
+	for (index = length; index < array->element_capacity; index++)
+		array->elements[index] = VM_VALUE_EMPTY;
+
+	/* And the index properties in slots from the new length on are deleted. */
+	if (length < array->length) {
+		wb_vector_init(&keys, sizeof(vm_value));
+		error = vm_object_own_keys(heap, array, &keys);
+		for (item = 0; error == 0 && item < keys.count; item++) {
+			/* An index below the new length stays. */
+			key = wb_vector_at(&keys, item);
+			is_index = vm_value_is_array_index(*key, &index);
+			if (!is_index || index < length)
+				continue;
+
+			/* One at or past it goes. */
+			error = vm_object_delete(heap, array, *key, &deleted);
+		}
+
+		/* The list of keys is no longer needed. */
+		wb_vector_release(&keys);
+		if (error != 0)
+			return error;
+	}
+
+	/* The length and its property. */
+	array->length = length;
+	object_sync_length(heap, array);
+
+	/* Succeeded: the array has its new length. */
+	return 0;
+}
+
+/*
+ * Lists an object's own keys in the order of ES2015's OrdinaryOwnPropertyKeys:
+ * the indices ascending, then the strings and then the symbols in the order
+ * they were added.
+ */
+int
+vm_object_own_keys(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	struct wb_vector *keys)
+{
+	struct vm_cell *cell;
+	vm_value *named_keys;
+	uint32_t *slots;
+	uint32_t *attributes;
+	uint32_t count;
+	uint32_t index;
+	uint32_t first;
+	vm_value key;
+	int pass;
+	int is_index;
+	int is_symbol;
+	int error;
+
+	UNUSED_PARAMETER(heap);
+
+	/* The shape's keys in the order they were added. */
+	count = vm_shape_count(object->shape);
+	named_keys = calloc(count + 1U, sizeof(*named_keys));
+	slots = calloc(count + 1U, sizeof(*slots));
+	attributes = calloc(count + 1U, sizeof(*attributes));
+	if (named_keys == NULL || slots == NULL || attributes == NULL) {
+		free(named_keys);
+		free(slots);
+		free(attributes);
+		return ENOMEM;
+	}
+
+	/* Fills them from the shape. */
+	vm_shape_keys(object->shape, named_keys, slots, attributes);
+
+	/* The indices: the elements' first. */
+	error = 0;
+	first = (uint32_t)keys->count;
+	for (index = 0; error == 0 && index < object->element_capacity; index++) {
+		if (object->elements[index] == VM_VALUE_EMPTY)
+			continue;
+
+		/* The element's index as its key. */
+		key = vm_value_int32((int32_t)index);
+		error = wb_vector_push(keys, &key);
+	}
+
+	/* Then the ones kept in slots. */
+	for (index = 0; error == 0 && index < count; index++) {
+		is_index = vm_value_is_int32(named_keys[index]);
+		if (!is_index)
+			continue;
+		error = wb_vector_push(keys, &named_keys[index]);
+	}
+
+	/* All the indices sorted together. */
+	if (error == 0 && keys->count - first > 1U)
+		qsort((vm_value *)keys->items + first, keys->count - first, sizeof(vm_value), object_key_compare);
+
+	/* Then the strings, then the symbols, each in the order added. */
+	for (pass = 0; error == 0 && pass < 2; pass++) {
+		for (index = 0; error == 0 && index < count; index++) {
+			/* The indices are listed already. */
+			is_index = vm_value_is_int32(named_keys[index]);
+			if (is_index)
+				continue;
+
+			/* Strings in the first pass, symbols in the second. */
+			cell = vm_value_as_cell(named_keys[index]);
+			is_symbol = 0;
+			if (cell->type == &vm_symbol_type)
+				is_symbol = 1;
+			if (is_symbol != pass)
+				continue;
+			error = wb_vector_push(keys, &named_keys[index]);
+		}
+	}
+
+	/* The shape's lists are no longer needed. */
+	free(named_keys);
+	free(slots);
+	free(attributes);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the keys are listed. */
+	return 0;
+}
+
+/*
+ * Marks what an object refers to: its shape, its prototype, the values in
+ * its slots and in its elements.
+ */
+void
+vm_object_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct vm_object *object;
+	uint32_t count;
+	uint32_t index;
+
+	/* The layout and the prototype. */
+	object = (struct vm_object *)cell;
+	if (object->shape != NULL)
+		vm_heap_mark(heap, (struct vm_cell *)object->shape);
+	if (object->prototype != NULL)
+		vm_heap_mark(heap, &object->prototype->cell);
+
+	/* The slots in use. */
+	count = 0;
+	if (object->shape != NULL)
+		count = vm_shape_count(object->shape);
+	for (index = 0; index < count && index < object->slot_capacity; index++)
+		vm_heap_mark_value(heap, object->slots[index]);
+
+	/* The elements. */
+	for (index = 0; index < object->element_capacity; index++)
+		vm_heap_mark_value(heap, object->elements[index]);
+}
+
+/*
+ * Frees a dead object's slots and elements.
+ */
+void
+vm_object_finalize(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct vm_object *object;
+
+	UNUSED_PARAMETER(heap);
+
+	/* The two arrays the object owns. */
+	object = (struct vm_object *)cell;
+	free(object->slots);
+	free(object->elements);
+	object->slots = NULL;
+	object->elements = NULL;
+}
+
+/* Marks a symbol's description. */
+static void
+object_symbol_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	/* The description, a string or undefined. */
+	vm_heap_mark_value(heap, ((struct vm_symbol *)cell)->description);
+}
+
+/* Marks an accessor pair's getter and setter. */
+static void
+object_accessor_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct vm_accessor *accessor;
+
+	/* The two functions, where set. */
+	accessor = (struct vm_accessor *)cell;
+	vm_heap_mark_value(heap, accessor->getter);
+	vm_heap_mark_value(heap, accessor->setter);
+}
+
+/* Makes room for a number of slots, keeping the values in them. */
+static int
+object_grow_slots(
+	struct vm_object *object,
+	uint32_t count)
+{
+	vm_value *slots;
+	uint32_t capacity;
+	uint32_t index;
+
+	/* Room enough already. */
+	if (count <= object->slot_capacity)
+		return 0;
+
+	/* Twice the room, at least the count. */
+	capacity = object->slot_capacity * 2U;
+	if (capacity < OBJECT_ARRAY_MIN)
+		capacity = OBJECT_ARRAY_MIN;
+	if (capacity < count)
+		capacity = count;
+	slots = realloc(object->slots, capacity * sizeof(*slots));
+	if (slots == NULL)
+		return ENOMEM;
+
+	/* The new slots hold nothing yet. */
+	for (index = object->slot_capacity; index < capacity; index++)
+		slots[index] = VM_VALUE_EMPTY;
+	object->slots = slots;
+	object->slot_capacity = capacity;
+
+	/* Succeeded: the slots fit. */
+	return 0;
+}
+
+/* Makes room in the elements for an index, the new ones holes. */
+static int
+object_grow_elements(
+	struct vm_object *object,
+	uint32_t index)
+{
+	vm_value *elements;
+	uint32_t capacity;
+	uint32_t item;
+
+	/* Room enough already. */
+	if (index < object->element_capacity)
+		return 0;
+
+	/* Twice the room, at least past the index. */
+	capacity = object->element_capacity * 2U;
+	if (capacity < OBJECT_ARRAY_MIN)
+		capacity = OBJECT_ARRAY_MIN;
+	if (capacity <= index)
+		capacity = index + 1U;
+	elements = realloc(object->elements, capacity * sizeof(*elements));
+	if (elements == NULL)
+		return ENOMEM;
+
+	/* The new elements are holes. */
+	for (item = object->element_capacity; item < capacity; item++)
+		elements[item] = VM_VALUE_EMPTY;
+	object->elements = elements;
+	object->element_capacity = capacity;
+
+	/* Succeeded: the index fits. */
+	return 0;
+}
+
+/* Adds a new named property: the shape one property longer and its slot. */
+static int
+object_store_named(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	vm_value key,
+	vm_value value,
+	uint32_t attributes)
+{
+	struct vm_shape *shape;
+	uint32_t slot;
+	int error;
+
+	/* The shape with the property (the object is on this frame, so a collection keeps its old shape). */
+	shape = vm_shape_add(heap, object->shape, key, attributes);
+	if (shape == NULL)
+		return ENOMEM;
+
+	/* The slot, whose number is the count of properties before it. */
+	slot = vm_shape_count(shape) - 1U;
+	error = object_grow_slots(object, slot + 1U);
+	if (error != 0)
+		return error;
+
+	/* The value, then the shape that names it. */
+	object->slots[slot] = value;
+	object->shape = shape;
+
+	/* Succeeded: the property is added. */
+	return 0;
+}
+
+/*
+ * Makes an object's shape again from the root: without the key skip, and
+ * with the key change given new attributes (VM_VALUE_EMPTY for neither),
+ * moving the values to their new slots.
+ */
+static int
+object_reshape(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	vm_value skip,
+	vm_value change,
+	uint32_t attributes)
+{
+	struct vm_shape *shape;
+	vm_value *keys;
+	vm_value *slots;
+	uint32_t *old_slots;
+	uint32_t *old_attributes;
+	uint32_t count;
+	uint32_t kept;
+	uint32_t index;
+	uint32_t wanted;
+	int error;
+
+	/* The old layout, and the values in the order they were added. */
+	count = vm_shape_count(object->shape);
+	keys = calloc(count + 1U, sizeof(*keys));
+	old_slots = calloc(count + 1U, sizeof(*old_slots));
+	old_attributes = calloc(count + 1U, sizeof(*old_attributes));
+	slots = calloc(count + 1U, sizeof(*slots));
+	if (keys == NULL ||
+	    old_slots == NULL ||
+	    old_attributes == NULL ||
+	    slots == NULL) {
+		free(keys);
+		free(old_slots);
+		free(old_attributes);
+		free(slots);
+		return ENOMEM;
+	}
+
+	/* Fills them from the shape. */
+	vm_shape_keys(object->shape, keys, old_slots, old_attributes);
+
+	/* The new path from the root, each value moving to its new slot. */
+	error = 0;
+	shape = vm_shape_root(heap);
+	if (shape == NULL)
+		error = ENOMEM;
+	kept = 0;
+	for (index = 0; error == 0 && index < count; index++) {
+		/* The key deleted is left out. */
+		if (keys[index] == skip)
+			continue;
+
+		/* The key changed takes its new attributes. */
+		wanted = old_attributes[index];
+		if (keys[index] == change)
+			wanted = attributes;
+		shape = vm_shape_add(heap, shape, keys[index], wanted);
+		if (shape == NULL) {
+			error = ENOMEM;
+			break;
+		}
+
+		/* The value keeps its place in the order. */
+		slots[kept] = object->slots[old_slots[index]];
+		kept++;
+	}
+
+	/* The lists of the old layout are no longer needed. */
+	free(keys);
+	free(old_slots);
+	free(old_attributes);
+	if (error != 0) {
+		free(slots);
+		return error;
+	}
+
+	/* The new slots and shape replace the old ones. */
+	free(object->slots);
+	object->slots = slots;
+	object->slot_capacity = count + 1U;
+	for (index = kept; index < object->slot_capacity; index++)
+		object->slots[index] = VM_VALUE_EMPTY;
+	object->shape = shape;
+
+	/* Succeeded: the object has its new layout. */
+	return 0;
+}
+
+/* Tells whether a key is an array's length. */
+static int
+object_is_length(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	vm_value key)
+{
+	struct vm_string *name;
+	struct vm_cell *cell;
+	int is_cell;
+
+	/* Only arrays have the special length. */
+	if ((object->flags & VM_OBJECT_ARRAY) == 0U)
+		return 0;
+
+	/* A key that is not a string is not "length". */
+	is_cell = vm_value_is_cell(key);
+	if (!is_cell)
+		return 0;
+	cell = vm_value_as_cell(key);
+	if (cell->type != &vm_string_type)
+		return 0;
+
+	/* The atom "length" (atoms compare by pointer). */
+	name = vm_atom_from_ascii(heap, "length");
+	if (name == NULL)
+		return 0;
+	if (cell != &name->cell)
+		return 0;
+
+	/* The key is the array's length. */
+	return 1;
+}
+
+/* Copies an array's length field into its length property (slot 0). */
+static void
+object_sync_length(
+	struct vm_heap *heap,
+	struct vm_object *object)
+{
+	UNUSED_PARAMETER(heap);
+
+	/* Only arrays have the property. */
+	if ((object->flags & VM_OBJECT_ARRAY) == 0U)
+		return;
+
+	/* The length as a number (an int32 while it fits). */
+	object->slots[0] = vm_value_number((double)object->length);
+}
+
+/* Orders two int32 keys by their index, for qsort. */
+static int
+object_key_compare(
+	const void *left,
+	const void *right)
+{
+	int32_t first;
+	int32_t second;
+
+	/* The two indices. */
+	first = vm_value_as_int32(*(const vm_value *)left);
+	second = vm_value_as_int32(*(const vm_value *)right);
+
+	/* The smaller first. */
+	if (first < second)
+		return -1;
+	if (first > second)
+		return 1;
+
+	/* Equal keys. */
+	return 0;
+}
