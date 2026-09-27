@@ -91,7 +91,8 @@ static const uint32_t ansi_colors[16] = {
     0x00aaaa, 0xc0c0c0, 0x555555, 0xff5555, 0x55ff55, 0xffff55,
     0x5555ff, 0xff55ff, 0x55ffff, 0xffffff};
 
-static int initialize(struct terminal *terminal);
+static int initialize(struct terminal *terminal, unsigned want_columns, unsigned want_rows);
+static int geometry(int argc, char **argv, unsigned *columns, unsigned *rows);
 static void clear_screen(struct terminal *terminal);
 static void erase_range(struct terminal *terminal, unsigned row, unsigned first, unsigned last);
 static void blank_cell(struct terminal *terminal, unsigned column, unsigned row);
@@ -120,11 +121,13 @@ static void clip_notify(struct terminal *terminal, const XSelectionEvent *notify
 static size_t clip_utf8(uint32_t codepoint, char *out);
 
 /*
- * Runs the zterm command.
+ * Runs the zterm command: zterm [-geometry COLUMNSxROWS] (without it, the
+ * root window's size less a margin).
  */
 int
 main(
-	void)
+	int argc,
+	char **argv)
 {
 	ssize_t i;
 	int received;
@@ -136,12 +139,21 @@ main(
 	ssize_t count;
 	struct terminal terminal;
 	struct pollfd descriptors[2];
+	unsigned want_columns;
+	unsigned want_rows;
 	int running;
 
 	running = 1;
 
+	/* The size asked for, if any. */
+	status = geometry(argc, argv, &want_columns, &want_rows);
+	if (status != 0) {
+		fprintf(stderr, "usage: zterm [-geometry COLUMNSxROWS]\n");
+		return 2;
+	}
+
 	/* Handles a failed initialize operation. */
-	if (initialize(&terminal) != 0) {
+	if (initialize(&terminal, want_columns, want_rows) != 0) {
 		fprintf(stderr, "zterm: initialization failed: %s\n",
 			strerror(errno));
 
@@ -248,7 +260,9 @@ main(
 /* Supports the initialize operation. */
 static int
 initialize(
-	struct terminal *terminal)
+	struct terminal *terminal,
+	unsigned want_columns,
+	unsigned want_rows)
 {
 	char message_local[96];
 	char message_local1[96];
@@ -293,6 +307,12 @@ initialize(
 	/* Checks the terminal state. */
 	if (terminal->rows > MAX_ROWS)
 		terminal->rows = MAX_ROWS;
+
+	/* The size asked for (-geometry), within the root. */
+	if (want_columns != 0U && want_columns < terminal->columns)
+		terminal->columns = want_columns;
+	if (want_rows != 0U && want_rows < terminal->rows)
+		terminal->rows = want_rows;
 	width = terminal->columns * CELL_WIDTH;
 	height = terminal->rows * CELL_HEIGHT;
 	clear_screen(terminal);
@@ -1409,4 +1429,41 @@ clip_utf8(
 	out[2] = (char)(0x80U | ((codepoint >> 6) & 0x3fU));
 	out[3] = (char)(0x80U | (codepoint & 0x3fU));
 	return 4;
+}
+
+/*
+ * Reads -geometry COLUMNSxROWS from the arguments (0 and 0 without it).
+ * Returns 0, or -1 for arguments zterm does not know.
+ */
+static int
+geometry(
+	int argc,
+	char **argv,
+	unsigned *columns,
+	unsigned *rows)
+{
+	char extra;
+	int same;
+	int read;
+
+	/* Without arguments, the root's size. */
+	*columns = 0U;
+	*rows = 0U;
+	if (argc == 1)
+		return 0;
+
+	/* Only -geometry and its value. */
+	if (argc != 3)
+		return -1;
+	same = strcmp(argv[1], "-geometry");
+	if (same != 0)
+		return -1;
+
+	/* Two numbers joined by an x, both at least 1. */
+	read = sscanf(argv[2], "%ux%u%c", columns, rows, &extra);
+	if (read != 2 || *columns == 0U || *rows == 0U)
+		return -1;
+
+	/* Succeeded. */
+	return 0;
 }

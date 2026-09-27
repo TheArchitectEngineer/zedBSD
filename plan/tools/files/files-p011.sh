@@ -1,7 +1,8 @@
 #!/bin/sh
 # ws071-p011: zdesktop-files from App Home on the Venus guest (the lean image, build-files-image.sh).
-# zdesktop --glass at 1280x800 with no /etc/zdesktop/apps.conf (the built-in list, Files last):
-#  1. home.png: the launcher opens Home with 7 applications, Files among them.
+# zdesktop --glass at 1280x800 with no /etc/zdesktop/apps.conf (the built-in list):
+#  1. home.png: the launcher opens Home with 7 applications, Files among them (8 with the Browser, shown when
+#     the image has zdesktop-browser and its start page).
 #  2. files.png: the Files icon starts zdesktop-files (HOME LAUNCH name=Files), which maps its window and gives
 #     its titlebar the controls (ZWL TITLEBAR control ... where=floating id=1 ... shown=1).
 #
@@ -52,7 +53,7 @@ picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/s
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
 pointer move 700 500 sleep 400
 check "$out/home.png" >/dev/null
-expect_log 'ZWL HOME opened apps=7'
+expect_log 'ZWL HOME opened apps=[78] '
 expect_log 'ZWL HOME icon name="Files"'
 
 # 2. Files.
