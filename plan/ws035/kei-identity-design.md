@@ -3,8 +3,9 @@
 2026-09-28 ユーザー:「起動画面、この画像を使えますか？そのままでなく加工や生成をしてもいいです。」「デスクトップの壁紙とか、
 ファイラーのWelcomeなどにも、これをデザインベースにして進めていきませんか。」
 
-添付の画像は source tree に入れない（2026-09-27 の決定: 参考の画像は言葉だけで表す）。以下はその言葉による記述であり、
-部品は script が図形から描くか、git の外の利用者の絵（`build/ws035-wallpaper/`）を build の時に加工して作る。
+2026-09-28 ユーザー:「この画像に限って言えば、ソースツリーに入れてしまってOKです！」→ この画像は
+[`userland/desktop/artwork/kei-boot-splash.png`](../../userland/desktop/artwork/kei-boot-splash.png)（1672x941）として tree に入れた。
+他の参考の画像は今までどおり tree に入れない。部品は、この画像を加工するか、script が図形から描く。
 
 ## 起動画面の構成（中央揃え、上から）
 
@@ -27,5 +28,5 @@
 
 - 段階 1（main、2026-09-28）: `tools/build/make-boot-logo.py` を Kei の印・語・副題に描き直す（淡い背景の単色、loader は左上の
   画素の色で画面を塗る）。
-- 段階 2（Keiland の agent）: 全画面の起動画面（git の外の壁紙をぼかして背景に、無ければ淡い gradient）、spinner を kernel の
+- 段階 2（Keiland の agent）: 全画面の起動画面（`kei-boot-splash.png` を画面の大きさに合わせて PPM にし、loader が全画面に描く。spinner は kernel の進みで動かす）、spinner を kernel の
   進みの枠へ、greeter・lock・壁紙・Welcome に反映。
