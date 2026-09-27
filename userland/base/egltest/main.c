@@ -141,7 +141,7 @@ static const struct xdg_surface_listener egltest_surface_listener = {
 
 /* The toplevel's size and close request. */
 static const struct xdg_toplevel_listener egltest_toplevel_listener = {
-	egltest_toplevel_configure, egltest_toplevel_close
+	egltest_toplevel_configure, egltest_toplevel_close, NULL
 };
 
 /*

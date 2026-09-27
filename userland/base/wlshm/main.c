@@ -104,7 +104,7 @@ static void pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time, 
 static const struct wl_registry_listener registry_listener = { registry_global, registry_remove };
 static const struct xdg_wm_base_listener shell_listener = { shell_ping };
 static const struct xdg_surface_listener role_listener = { role_configure };
-static const struct xdg_toplevel_listener toplevel_listener = { toplevel_configure, toplevel_close };
+static const struct xdg_toplevel_listener toplevel_listener = { toplevel_configure, toplevel_close, NULL };
 static const struct wl_buffer_listener buffer_listener = { buffer_release };
 static const struct wl_callback_listener frame_listener = { frame_done };
 static const struct wl_seat_listener seat_listener = { seat_capabilities, seat_name };

@@ -112,7 +112,11 @@ extern const struct wl_interface xdg_toplevel_interface;
 struct xdg_toplevel_listener {
 	void (*configure)(void *data, struct xdg_toplevel *object, int32_t width, int32_t height, struct wl_array *states);
 	void (*close)(void *data, struct xdg_toplevel *object);
+
+	/* Version 4: the largest size the window should choose for itself (0 means unknown); sent before a configure. */
+	void (*configure_bounds)(void *data, struct xdg_toplevel *object, int32_t width, int32_t height);
 };
+#define XDG_TOPLEVEL_CONFIGURE_BOUNDS_SINCE_VERSION 4U
 
 int xdg_toplevel_add_listener(struct xdg_toplevel *object, const struct xdg_toplevel_listener *listener, void *data);
 #define XDG_TOPLEVEL_DESTROY 0U

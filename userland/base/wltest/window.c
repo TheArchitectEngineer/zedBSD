@@ -39,7 +39,7 @@ static const struct xdg_surface_listener surface_listener = {
 
 /* The immutable toplevel callbacks update only this application's window state. */
 static const struct xdg_toplevel_listener toplevel_listener = {
-	window_toplevel_configure, window_toplevel_close
+	window_toplevel_configure, window_toplevel_close, NULL
 };
 
 /*

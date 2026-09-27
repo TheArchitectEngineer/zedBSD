@@ -345,8 +345,12 @@ zwl_menu_draw_bar(
 		/* The last one needs no room for "..." after it. */
 		if (shown + 1U == count && x + widths[shown] <= area->right)
 			continue;
+
+		/* Any other needs room for "..." after it too, or it and those after it go under "...". */
 		if (x + widths[shown] + ITEM_GAP + more > area->right)
 			break;
+
+		/* The next one starts after it. */
 		x += widths[shown] + ITEM_GAP;
 	}
 
@@ -376,7 +380,7 @@ zwl_menu_draw_bar(
 		if (index == shown && shown == count)
 			break;
 
-		/* The item's width. */
+		/* The overflow is as wide as "..." with its padding. */
 		if (index == shown)
 			widths[index] = more;
 
@@ -404,27 +408,34 @@ zwl_menu_draw_bar(
 			glass_draw_solid(server, command, (float)x, (float)pill_y, (float)widths[index], (float)pill_height, 7.0f, pill);
 		}
 
-		/* The label, paler when it cannot be chosen. */
+		/* The label's ink: paler when the item cannot be chosen, and faded with the bar. */
 		memcpy(colour, ink, sizeof(colour));
 		if (index < shown && !tops[index]->enabled)
 			colour[3] *= 0.4f;
 		colour[3] *= fade;
-		if (index < shown)
-			glass_draw_text(server, command, SIZE_BAR, x + ITEM_PADDING, baseline, tops[index]->label, widths[index], colour);
-		else
-			glass_draw_text(server, command, SIZE_BAR, x + ITEM_PADDING, baseline, "...", widths[index], colour);
 
-		/* Its place, for the pointer. */
+		/* The item's label, or "..." for the overflow. */
+		if (index < shown) {
+			glass_draw_text(server, command, SIZE_BAR, x + ITEM_PADDING, baseline, tops[index]->label, widths[index], colour);
+		} else {
+			glass_draw_text(server, command, SIZE_BAR, x + ITEM_PADDING, baseline, "...", widths[index], colour);
+		}
+
+		/* An item's place, for the pointer. */
 		if (recording && index < shown)
 			shell_add_hit(surface, tops[index]->id, docked, 0U, area, x, widths[index]);
+
+		/* The overflow's, with the first top-level item it holds. */
 		if (recording && index == shown)
 			shell_add_hit(surface, SHELL_OVERFLOW, docked, shown, area, x, widths[index]);
 
-		/* The layout's checksum, for the log. */
+		/* The layout's checksum, for the log: the item (none for the overflow), its offset and its width. */
 		if (index < shown)
 			checksum = shell_mix(checksum, tops[index]->id);
 		checksum = shell_mix(checksum, (uint32_t)(x - area->origin));
 		checksum = shell_mix(checksum, (uint32_t)widths[index]);
+
+		/* The next item starts after it. */
 		x += widths[index] + ITEM_GAP;
 	}
 
@@ -482,15 +493,20 @@ zwl_menu_button(
 
 	/* With no menu open only a left press on a top-level item is the menus'. */
 	if (shell_menu.surface == NULL) {
+		/* A release, or another button, goes on. */
 		if (state == 0U || button != ZWL_BUTTON_LEFT)
 			return 0;
+
+		/* So does a press off every top-level item. */
 		hit = shell_hit_at(server, server->pointer_x, server->pointer_y);
 		if (hit == NULL)
 			return 0;
 
-		/* The window comes to the top (a floating one), and its menu opens. */
+		/* A floating window comes to the top. */
 		if (!hit->docked)
 			zwl_glass_raise(server, hit->surface);
+
+		/* Its menu opens, and the press's release may choose a row. */
 		shell_open(server, hit, 0);
 		shell_menu.pressing = 1;
 		return 1;
@@ -505,12 +521,17 @@ zwl_menu_button(
 
 	/* A release chooses the row under it, when the press was the menus'. */
 	if (state == 0U) {
+		/* The release of a press the menus did not take is only swallowed. */
 		if (!shell_menu.pressing)
 			return 1;
+
+		/* The press ends; a release off every popup chooses nothing. */
 		shell_menu.pressing = 0;
 		level = shell_popup_at(server->pointer_x, server->pointer_y);
 		if (level < 0)
 			return 1;
+
+		/* The row under the release is chosen (the padding is no row). */
 		row = shell_row_at(server, model, (unsigned)level, server->pointer_x, server->pointer_y, &row_y);
 		if (row != NULL)
 			shell_choose_row(server, model, row, row_y, (unsigned)level, "pointer");
@@ -522,6 +543,7 @@ zwl_menu_button(
 	if (hit != NULL &&
 	    hit->surface == shell_menu.surface &&
 	    hit->docked == shell_menu.docked) {
+		/* The open item's own press closes its menu. */
 		if (hit->item == shell_menu.popups[0].parent) {
 			shell_close_from(server, 0U, 1U);
 			return 1;
@@ -567,6 +589,8 @@ zwl_menu_motion(
 	/* Only menu mode takes the pointer. */
 	if (shell_menu.surface == NULL)
 		return 0;
+
+	/* The open menu's model; while it has gone (the tick closes the menu) the motion is only taken. */
 	model = shell_model(shell_menu.surface, &place);
 	if (model == NULL)
 		return 1;
@@ -597,14 +621,20 @@ zwl_menu_motion(
 		return 1;
 	}
 
-	/* The row under the pointer is selected when it can be chosen; deeper popups than its own close. */
+	/* Deeper popups than the row's own close, and its popup's selection goes. */
 	shell_close_from(server, (unsigned)level + 1U, 1U);
 	shell_menu.popups[level].selected = 0;
+
+	/* On the padding nothing is selected. */
 	if (row == NULL)
 		return 1;
+
+	/* Nor is a row that cannot be chosen. */
 	selectable = shell_selectable(row);
 	if (!selectable)
 		return 1;
+
+	/* The row under the pointer is selected. */
 	shell_menu.popups[level].selected = row->id;
 
 	/* A submenu's popup opens beside its row. */
@@ -641,9 +671,11 @@ zwl_menu_grab_key(
 	if (shell_menu.surface == NULL)
 		return 0;
 
-	/* In menu mode every release is the menus', and a press is acted on. */
+	/* In menu mode every release is the menus'. */
 	if (state == 0U)
 		return 1;
+
+	/* A press is acted on, and its release will be the menus' too. */
 	shell_menu.eaten_key = key;
 
 	/* The model of the open menu; a menu whose model went is closed. */
@@ -680,27 +712,34 @@ zwl_menu_key(
 	uint32_t modifiers;
 	int known;
 
-	/* Only a press, on a focused window with a menu. */
+	/* Only a press, on a focused window. */
 	if (state == 0U || server->focus == NULL)
 		return 0;
+
+	/* The window's menu; a window without one leaves its keys to the others. */
 	model = zwl_menu_of_surface(server->focus, &place);
 	if (model == NULL)
 		return 0;
 
 	/* F10 alone opens the first menu from the keyboard, where it was last drawn. */
 	if (key == KEY_F10 && (server->modifiers & (SEAT_SHIFT | SEAT_CTRL | SEAT_ALT | SEAT_META)) == 0U) {
+		/* A menu that was not drawn (the window is covered or hidden) cannot open. */
 		hit = shell_first_hit(server->focus);
 		if (hit == NULL)
 			return 0;
+
+		/* It opens with its first row selected, and F10's release is the menus'. */
 		shell_open(server, hit, 1);
 		shell_menu.eaten_key = key;
 		return 1;
 	}
 
-	/* A shortcut of a usable item chooses it. */
+	/* The key's symbol and modifiers; a key the table does not know is no shortcut. */
 	known = shell_keysym(key, server->modifiers, &keysym, &modifiers);
 	if (!known)
 		return 0;
+
+	/* The usable item whose shortcut it is; without one the key goes on. */
 	item = shell_shortcut_item(model, keysym, modifiers);
 	if (item == NULL)
 		return 0;
@@ -760,11 +799,15 @@ zwl_menu_tick(
 
 	/* Each popup's submenu must still be a row of the popup above it (the top-level one, a visible submenu). */
 	for (level = 0; level < shell_menu.depth; level++) {
-		/* The overflow's rows are the top level's, and so are a context menu's first popup's. */
+		/* The overflow's rows are the top level's, and need no submenu. */
 		if (shell_menu.popups[level].parent == SHELL_OVERFLOW)
 			continue;
+
+		/* Nor do a context menu's first popup's. */
 		if (shell_menu.popups[level].parent == ZWL_MENU_ROOT && shell_menu.context != NULL)
 			continue;
+
+		/* The popup's item must still be a visible, enabled submenu. */
 		item = zwl_menu_item(model, shell_menu.popups[level].parent);
 		found = 0;
 		if (item != NULL &&
@@ -793,10 +836,13 @@ zwl_menu_tick(
 
 	/* A selection that can no longer be chosen goes. */
 	for (level = 0; level < shell_menu.depth; level++) {
+		/* The selected row, still there and usable up to the top. */
 		item = shell_item(model, shell_menu.popups[level].selected);
 		found = 0;
 		if (item != NULL)
 			found = shell_usable(model, item);
+
+		/* And still one that can be chosen. */
 		if (found)
 			found = shell_selectable(item);
 
@@ -826,8 +872,11 @@ zwl_menu_forget(
 	/* The window's hits and its logged layout go. */
 	kept = 0;
 	for (index = 0; index < shell_menu.hit_count; index++) {
+		/* The window's own are dropped. */
 		if (shell_menu.hits[index].surface == object)
 			continue;
+
+		/* The others are kept, in order. */
 		shell_menu.hits[kept] = shell_menu.hits[index];
 		kept++;
 	}
@@ -858,14 +907,18 @@ zwl_menu_forget(
 		return;
 	}
 
-	/* The open menu's window, toplevel, place and menu. */
+	/* The open menu's place, and its window's toplevel. */
 	(void)zwl_menu_of_surface(surface, &place);
 	toplevel = NULL;
 	if (surface->role != NULL)
 		toplevel = surface->role->top;
+
+	/* The object is the open menu's when it is the window or its toplevel. */
 	mine = 0;
 	if (object == surface || object == toplevel)
 		mine = 1;
+
+	/* Or the menu's place, or the menu shown there. */
 	if (place != NULL &&
 	    (object == place || object == place->shown_menu))
 		mine = 1;
@@ -902,15 +955,17 @@ zwl_menu_open_context(
 	int32_t top;
 	unsigned count;
 
-	/* The menu's committed model, and its rows. */
+	/* A context menu without a committed menu has nothing to show. */
 	if (context->shown_menu == NULL || context->shown_menu->menu_model == NULL)
 		return ENOENT;
+
+	/* Nor has one whose menu has no rows. */
 	model = context->shown_menu->menu_model;
 	count = zwl_menu_children(model, ZWL_MENU_ROOT, rows, SHELL_ROWS);
 	if (count == 0U)
 		return ENOENT;
 
-	/* Whatever was open closes. */
+	/* Whatever was open closes, and no hidden controls' rows come with this popup. */
 	shell_close_from(server, 0U, 1U);
 	shell_menu.open_extra_count = 0;
 
@@ -979,10 +1034,14 @@ zwl_menu_add_overflow(
 	unsigned start;
 	unsigned index;
 
-	/* The overflow's place, from the menu's first top-level item. */
+	/* The overflow's place, holding the menu from its first top-level item. */
 	shell_add_hit(surface, SHELL_OVERFLOW, docked, 0U, area, x, width);
+
+	/* No hit could be recorded at all. */
 	if (shell_menu.hit_count == 0U)
 		return;
+
+	/* The last hit is the overflow's unless the table was full; the rows then have no hit to go with. */
 	hit = &shell_menu.hits[shell_menu.hit_count - 1U];
 	if (hit->surface != surface || hit->item != SHELL_OVERFLOW)
 		return;
@@ -990,6 +1049,7 @@ zwl_menu_add_overflow(
 	/* The rows of the hidden controls, as many as the frame's table holds. */
 	start = shell_menu.extra_count;
 	for (index = 0; index < count && shell_menu.extra_count < SHELL_EXTRAS; index++) {
+		/* A plain row, told apart from the menu's items by ZWL_MENU_EXTRA_BASE, with a copy of its label. */
 		extra = &shell_menu.extras[shell_menu.extra_count];
 		memset(extra, 0, sizeof(*extra));
 		extra->id = ZWL_MENU_EXTRA_BASE | ids[index];
@@ -1057,8 +1117,12 @@ shell_open(
 	model = zwl_menu_of_surface(hit->surface, &place);
 	if (model == NULL && hit->extra_count > 0U)
 		model = &shell_empty_model;
+
+	/* A window with neither has nothing to open. */
 	if (model == NULL)
 		return;
+
+	/* The top-level item (none for the overflow); one that went or is disabled does not open. */
 	item = NULL;
 	if (hit->item != SHELL_OVERFLOW) {
 		item = zwl_menu_item(model, hit->item);
@@ -1072,6 +1136,7 @@ shell_open(
 	/* The rows of the hidden controls come with the popup, kept (with their labels) while it is open. */
 	shell_menu.open_extra_count = 0;
 	for (index = 0; index < hit->extra_count && index < SHELL_OPEN_EXTRAS; index++) {
+		/* The row and its label, the row naming the copied label. */
 		shell_menu.open_extras[index] = shell_menu.extras[hit->extra_start + index];
 		memcpy(shell_menu.open_extra_labels[index], shell_menu.extra_labels[hit->extra_start + index], SHELL_EXTRA_LABEL);
 		shell_menu.open_extras[index].label = shell_menu.open_extra_labels[index];
@@ -1096,16 +1161,21 @@ shell_open(
 	popup->anchor_y = hit->popup_y;
 	shell_layout(server, model, 0U);
 
-	/* The client hears that the submenu (or a titlebar's "...") opened; the log gives the rows. */
-	if (item != NULL)
+	/* The client hears that the submenu opened, or that a titlebar's "..." did (a chance to update its menu). */
+	if (item != NULL) {
 		zwl_menu_send_popup(place, item->id, 1U);
-	if (item == NULL)
+	} else {
 		zwl_titlebar_overflow_opened(hit->surface);
+	}
+
+	/* The log gives the popup and its rows. */
 	shell_log_popup(server, model, 0U);
 
 	/* From the keyboard the first row that can be chosen is selected. */
 	if (keyboard)
 		shell_select_step(server, model, 1);
+
+	/* The output shows the popup. */
 	server->dirty = 1;
 }
 
@@ -1129,19 +1199,27 @@ shell_close_from(
 	/* The deepest first, as they were opened in reverse. */
 	place = shell_place(shell_menu.surface);
 	while (shell_menu.depth > level) {
+		/* The deepest open popup goes. */
 		shell_menu.depth--;
 		parent = shell_menu.popups[shell_menu.depth].parent;
+
+		/* The client hears that its submenu closed (the overflow is zdesktop's own). */
 		if (notify &&
 		    place != NULL &&
 		    parent != SHELL_OVERFLOW)
 			zwl_menu_send_popup(place, parent, 0U);
+
+		/* The log line the tests read. */
 		printf("ZWL MENU close client=%llu surface=%u item=%u depth=%u\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id, parent, shell_menu.depth);
 	}
 
 	/* The whole menu closed: menu mode ends, and a context menu is told it is done. */
 	if (shell_menu.depth == 0U) {
+		/* A context menu is told it is done. */
 		if (shell_menu.context != NULL && notify)
 			zwl_menu_send_context_done(shell_menu.context);
+
+		/* Menu mode ends: no context menu, no window, no press. */
 		shell_menu.context = NULL;
 		shell_menu.surface = NULL;
 		shell_menu.pressing = 0;
@@ -1171,10 +1249,12 @@ shell_activate(
 		return;
 	}
 
-	/* The place the choice goes to, found before the menu closes. */
+	/* The window of the choice: the open menu's, or the one on top for a shortcut. */
 	surface = shell_menu.surface;
 	if (surface == NULL)
 		surface = zwl_top_window(server);
+
+	/* The place the choice goes to, found before the menu closes. */
 	(void)zwl_menu_of_surface(surface, &place);
 
 	/* A hidden control's row goes to the titlebar (its row is gone once the menu closes). */
@@ -1185,8 +1265,10 @@ shell_activate(
 		return;
 	}
 
-	/* The menu closes first (its submenus say so), then the choice is sent. */
+	/* The menu closes first (its submenus say so). */
 	shell_close_from(server, 0U, 1U);
+
+	/* Then the choice is sent to the window's menu. */
 	if (place != NULL)
 		zwl_menu_send_activated(place, item, via);
 }
@@ -1219,6 +1301,8 @@ shell_rows(
 
 	/* The overflow holds the top-level items from the first the bar had no room for. */
 	count = zwl_menu_children(model, ZWL_MENU_ROOT, tops, SHELL_ROWS);
+
+	/* A line between the hidden controls' rows and the menu's. */
 	if (kept > 0U && count > 0U) {
 		rows[kept] = &shell_extra_line;
 		kept++;
@@ -1230,6 +1314,8 @@ shell_rows(
 		/* The bar skips separators, and so does the count of what it showed. */
 		if (tops[index]->type == ZWL_MENU_SEPARATOR)
 			continue;
+
+		/* One the bar had no room for is a row of the overflow. */
 		if (seen >= popup->first_hidden) {
 			rows[kept] = tops[index];
 			kept++;
@@ -1278,14 +1364,18 @@ shell_layout(
 			continue;
 		}
 
-		/* The gutter, the label, a gap, the shortcut and the arrow. */
+		/* A row's height, and its width: the gutter, the label, a gap and the shortcut. */
 		height += ROW_HEIGHT;
 		shell_shortcut_text(rows[index], shortcut, sizeof(shortcut));
 		label = glass_text_width(server, SIZE_BAR, rows[index]->label);
 		hint = glass_text_width(server, SIZE_BAR, shortcut);
 		width = POPUP_GUTTER + label + 40 + hint + 14;
+
+		/* A submenu's row has its arrow too. */
 		if (rows[index]->type == ZWL_MENU_SUBMENU)
 			width += 16;
+
+		/* The popup is as wide as its widest row. */
 		if (width > popup->width)
 			popup->width = width;
 	}
@@ -1298,7 +1388,10 @@ shell_layout(
 	popup->y = popup->anchor_y;
 	right = (int32_t)server->width - POPUP_MARGIN;
 	if (popup->x + popup->width > right) {
+		/* Back inside the output. */
 		popup->x = right - popup->width;
+
+		/* A submenu goes to the left of its parent instead. */
 		if (level > 0U)
 			popup->x = popup->flip_x - popup->width + 4;
 	}
@@ -1307,10 +1400,12 @@ shell_layout(
 	if (popup->x < POPUP_MARGIN)
 		popup->x = POPUP_MARGIN;
 
-	/* And from the bottom, never over the system bar. */
+	/* And from the bottom. */
 	bottom = (int32_t)server->height - POPUP_MARGIN;
 	if (popup->y + popup->height > bottom)
 		popup->y = bottom - popup->height;
+
+	/* Never over the system bar. */
 	if (popup->y < ZWL_GLASS_BAR + 4)
 		popup->y = ZWL_GLASS_BAR + 4;
 }
@@ -1335,6 +1430,8 @@ shell_row_at(
 	/* The popup where it is now. */
 	shell_layout(server, model, level);
 	popup = &shell_menu.popups[level];
+
+	/* A point beside it is on none of its rows. */
 	if (x < popup->x || x >= popup->x + popup->width)
 		return NULL;
 
@@ -1342,6 +1439,7 @@ shell_row_at(
 	count = shell_rows(model, popup, rows);
 	top = popup->y + POPUP_PADDING;
 	for (index = 0; index < count; index++) {
+		/* The row's height: a separator is thinner. */
 		height = ROW_HEIGHT;
 		if (rows[index]->type == ZWL_MENU_SEPARATOR)
 			height = SEPARATOR_HEIGHT;
@@ -1371,11 +1469,16 @@ shell_popup_at(
 
 	/* The deepest popup is drawn over the others. */
 	for (level = (int)shell_menu.depth - 1; level >= 0; level--) {
+		/* A point beside the popup is not on it. */
 		popup = &shell_menu.popups[level];
 		if (x < popup->x || x >= popup->x + popup->width)
 			continue;
+
+		/* Nor is one above or below it. */
 		if (y < popup->y || y >= popup->y + popup->height)
 			continue;
+
+		/* The point is on this popup. */
 		return level;
 	}
 
@@ -1398,11 +1501,13 @@ shell_select_step(
 	int at;
 	int index;
 
-	/* The deepest popup's rows, and where the selection is. */
+	/* The deepest popup's rows; a popup without rows has nothing to select. */
 	popup = &shell_menu.popups[shell_menu.depth - 1U];
 	count = shell_rows(model, popup, rows);
 	if (count == 0U)
 		return;
+
+	/* Where the selection is among them (-1 for nowhere). */
 	at = -1;
 	for (index = 0; index < (int)count; index++) {
 		/* The selected row. */
@@ -1426,6 +1531,8 @@ shell_select_step(
 	/* The selection moves there, when there is such a row. */
 	if (selectable)
 		popup->selected = rows[at]->id;
+
+	/* The output shows the new selection. */
 	server->dirty = 1;
 }
 
@@ -1445,9 +1552,11 @@ shell_select_letter(
 	int index;
 	int first;
 
-	/* The deepest popup's rows, and where the selection is. */
+	/* The deepest popup's rows. */
 	popup = &shell_menu.popups[shell_menu.depth - 1U];
 	count = shell_rows(model, popup, rows);
+
+	/* Where the selection is among them (-1 for nowhere). */
 	at = -1;
 	for (index = 0; index < (int)count; index++) {
 		/* The selected row. */
@@ -1457,10 +1566,13 @@ shell_select_letter(
 
 	/* The next row after the selection whose first letter, in lower case, is the key's. */
 	for (tried = 0; tried < count; tried++) {
+		/* The next row's first letter, in lower case. */
 		at = (at + 1) % (int)count;
 		first = (unsigned char)rows[at]->label[0];
 		if (first >= 'A' && first <= 'Z')
 			first = first - 'A' + 'a';
+
+		/* A row starting with another letter is passed. */
 		if ((uint32_t)first != keysym)
 			continue;
 
@@ -1490,14 +1602,18 @@ shell_open_child(
 	struct shell_popup *popup;
 	struct zwl_object *place;
 
-	/* It is open already, or there is no deeper level. */
+	/* It is open already. */
 	if (shell_menu.depth > level + 1U && shell_menu.popups[level + 1U].parent == item->id)
 		return;
+
+	/* No popup opens past the deepest level. */
 	if (level + 1U >= SHELL_DEPTH)
 		return;
 
-	/* Deeper popups close; the new one goes beside the row. */
+	/* Deeper popups close. */
 	shell_close_from(server, level + 1U, 1U);
+
+	/* The new one goes beside the row (or, where it does not fit, to the left of the row's popup). */
 	parent = &shell_menu.popups[level];
 	popup = &shell_menu.popups[level + 1U];
 	memset(popup, 0, sizeof(*popup));
@@ -1508,13 +1624,19 @@ shell_open_child(
 	shell_menu.depth = level + 2U;
 	shell_layout(server, model, level + 1U);
 
-	/* The client hears it, the log gives the rows, and the keyboard selects the first. */
+	/* The client hears that the submenu opened. */
 	place = shell_place(shell_menu.surface);
 	if (place != NULL)
 		zwl_menu_send_popup(place, item->id, 1U);
+
+	/* The log gives the popup and its rows. */
 	shell_log_popup(server, model, level + 1U);
+
+	/* From the keyboard the first row that can be chosen is selected. */
 	if (keyboard)
 		shell_select_step(server, model, 1);
+
+	/* The output shows the popup. */
 	server->dirty = 1;
 }
 
@@ -1564,17 +1686,24 @@ shell_step_top(
 	count = 0;
 	at = 0;
 	for (index = 0; index < shell_menu.hit_count; index++) {
+		/* Only the open bar's items. */
 		if (shell_menu.hits[index].surface != shell_menu.surface || shell_menu.hits[index].docked != shell_menu.docked)
 			continue;
+
+		/* The open item's place among them. */
 		if (shell_menu.hits[index].item == shell_menu.popups[0].parent)
 			at = (int)count;
+
+		/* The item, in order. */
 		tops[count] = &shell_menu.hits[index];
 		count++;
 	}
 
-	/* The neighbour opens from the keyboard. */
+	/* A bar that was not drawn has no neighbour to open. */
 	if (count == 0U)
 		return;
+
+	/* The neighbour, around the ends, opens from the keyboard. */
 	at = (at + step + (int)count) % (int)count;
 	shell_open(server, tops[at], 1);
 }
@@ -1605,6 +1734,7 @@ shell_menu_key(
 	row = NULL;
 	row_y = popup->y + POPUP_PADDING;
 	for (index = 0; index < count; index++) {
+		/* The selected row, at the top reached so far. */
 		if (rows[index]->id == popup->selected) {
 			row = rows[index];
 			break;
@@ -1705,10 +1835,15 @@ shell_usable(
 
 	/* Up the parents; the model is at most eight deep. */
 	for (depth = 0; item != NULL && depth <= SHELL_DEPTH; depth++) {
+		/* A hidden or disabled level makes the item unusable. */
 		if (!item->visible || !item->enabled)
 			return 0;
+
+		/* The top is reached with every level usable. */
 		if (item->parent == ZWL_MENU_ROOT)
 			return 1;
+
+		/* Up to the submenu it is in. */
 		item = zwl_menu_item(model, item->parent);
 	}
 
@@ -1733,9 +1868,12 @@ shell_hit_at(
 
 	/* Drawn later is drawn over, so the last one wins. */
 	for (index = shell_menu.hit_count; index > 0U; index--) {
+		/* A point beside the item is not on it. */
 		hit = &shell_menu.hits[index - 1U];
 		if (x < hit->x || x >= hit->x + hit->width)
 			continue;
+
+		/* Nor is one above or below its bar. */
 		if (y < hit->y || y >= hit->y + hit->height)
 			continue;
 
@@ -1800,6 +1938,8 @@ shell_add_hit(
 	hit->width = width;
 	hit->height = area->height;
 	hit->popup_y = area->top + area->height + 6;
+
+	/* One more is recorded this frame. */
 	shell_menu.hit_count++;
 }
 
@@ -1820,6 +1960,7 @@ shell_log_bar(
 	/* The window's entry, or a free one (the first when the table is full). */
 	entry = &shell_menu.logged[0];
 	for (index = 0; index < SHELL_LOGGED; index++) {
+		/* The window's own entry. */
 		if (shell_menu.logged[index].surface == surface) {
 			entry = &shell_menu.logged[index];
 			break;
@@ -1833,6 +1974,8 @@ shell_log_bar(
 	/* The same layout was logged already. */
 	if (entry->surface == surface && entry->checksum == checksum)
 		return;
+
+	/* The entry remembers this layout. */
 	entry->surface = surface;
 	entry->checksum = checksum;
 
@@ -1843,12 +1986,17 @@ shell_log_bar(
 
 	/* Each item of the window in this frame, from the bar's left edge (the overflow as item 0). */
 	for (index = 0; index < shell_menu.hit_count; index++) {
+		/* Only this window's items in this bar. */
 		hit = &shell_menu.hits[index];
 		if (hit->surface != surface || hit->docked != docked)
 			continue;
+
+		/* The overflow is logged as item 0. */
 		item = hit->item;
 		if (item == SHELL_OVERFLOW)
 			item = 0U;
+
+		/* The log line the tests read. */
 		printf("ZWL MENU bar client=%llu surface=%u where=%s item=%u offset=%d top=%d width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id,
 		       where, item, hit->x - area->origin, hit->y, hit->width, hit->height);
 	}
@@ -1887,12 +2035,16 @@ shell_log_popup(
 	int32_t top;
 	int32_t height;
 
-	/* The popup (the overflow's as item 0). */
+	/* The popup where it is now. */
 	shell_layout(server, model, level);
 	popup = &shell_menu.popups[level];
+
+	/* Its item (the overflow's as item 0). */
 	parent = popup->parent;
 	if (parent == SHELL_OVERFLOW)
 		parent = 0U;
+
+	/* The log line the tests read. */
 	printf("ZWL MENU open client=%llu surface=%u item=%u depth=%u x=%d y=%d width=%d height=%d\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id,
 	       parent, level + 1U, popup->x, popup->y, popup->width, popup->height);
 
@@ -1900,9 +2052,12 @@ shell_log_popup(
 	count = shell_rows(model, popup, rows);
 	top = popup->y + POPUP_PADDING;
 	for (index = 0; index < count; index++) {
+		/* The row's height: a separator is thinner. */
 		height = ROW_HEIGHT;
 		if (rows[index]->type == ZWL_MENU_SEPARATOR)
 			height = SEPARATOR_HEIGHT;
+
+		/* Its line, and the next row under it. */
 		printf("ZWL MENU row item=%u depth=%u y=%d height=%d\n", rows[index]->id, level + 1U, top, height);
 		top += height;
 	}
@@ -1924,9 +2079,11 @@ shell_keysym(
 	uint32_t plain;
 	uint32_t shifted;
 
-	/* The key's plain symbol. */
+	/* A key past the table has no symbol here. */
 	if (key > SHELL_KEY_LAST)
 		return 0;
+
+	/* The key's plain symbol (0 is none). */
 	plain = shell_plain_keysyms[key];
 	if (plain == 0U)
 		return 0;
@@ -1968,18 +2125,25 @@ shell_shortcut_item(
 
 	/* Every item with a shortcut; a capital letter is the same key as its small one. */
 	for (index = 0; index < model->count; index++) {
+		/* An item without a shortcut, or with other modifiers, is passed. */
 		item = &model->items[index];
 		if (item->keysym == 0U || item->modifiers != modifiers)
 			continue;
+
+		/* Its key in lower case, as the key's symbol is. */
 		wanted = item->keysym;
 		if (wanted >= 'A' && wanted <= 'Z')
 			wanted = wanted - 'A' + 'a';
+
+		/* An item with another key is passed. */
 		if (wanted != keysym)
 			continue;
 
-		/* A submenu or a separator is not chosen by a key, nor an item that cannot be chosen now. */
+		/* A submenu or a separator is not chosen by a key. */
 		if (item->type == ZWL_MENU_SUBMENU || item->type == ZWL_MENU_SEPARATOR)
 			continue;
+
+		/* Nor an item that cannot be chosen now (it, or a submenu above it, hidden or disabled). */
 		usable = shell_usable(model, item);
 		if (usable)
 			return item;
@@ -1998,7 +2162,7 @@ shell_shortcut_text(
 {
 	char name[16];
 
-	/* No shortcut. */
+	/* The text starts empty, and an item without a shortcut keeps it so. */
 	text[0] = '\0';
 	if (item->keysym == 0U)
 		return;
@@ -2147,6 +2311,7 @@ shell_draw_popup(
 	count = shell_rows(model, popup, rows);
 	top = popup->y + POPUP_PADDING;
 	for (index = 0; index < count; index++) {
+		/* A separator is a thin line across the popup. */
 		if (rows[index]->type == ZWL_MENU_SEPARATOR) {
 			glass_draw_solid(server, command, (float)(popup->x + 12), (float)(top + SEPARATOR_HEIGHT / 2), (float)(popup->width - 24), 1.0f, 0.0f, line);
 			top += SEPARATOR_HEIGHT;
@@ -2225,6 +2390,8 @@ shell_draw_row(
 			glass_draw_glyph(server, command, SIZE_BAR, GLASS_ARROW_GLYPH, right - present, baseline, hint);
 		else
 			glass_draw_text(server, command, SIZE_BAR, right - 8, baseline, ">", 16, hint);
+
+		/* The shortcut goes before the arrow. */
 		right -= 16;
 	}
 
@@ -2253,6 +2420,8 @@ shell_model(
 		menu = shell_menu.context->shown_menu;
 		if (menu == NULL || menu->dead)
 			return NULL;
+
+		/* Succeeded: the context menu's model. */
 		return menu->menu_model;
 	}
 

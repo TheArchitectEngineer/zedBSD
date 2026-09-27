@@ -133,10 +133,12 @@ zdesktop_menu_service_open(
 	struct menu_search search;
 	int status;
 
-	/* The search's own queue, and the display as seen from it. */
+	/* The search's own queue. */
 	queue = wl_display_create_queue(display);
 	if (queue == NULL)
 		return NULL;
+
+	/* The display as seen from it (a wrapper, whose requests make objects on that queue). */
 	wrapper = wl_proxy_create_wrapper(display);
 	if (wrapper == NULL) {
 		wl_event_queue_destroy(queue);
@@ -156,23 +158,29 @@ zdesktop_menu_service_open(
 			(void)wl_display_roundtrip_queue(display, queue);
 	}
 
-	/* The manager, bound when announced, is moved to the application's default queue. */
+	/* The service's record, when the manager was announced. */
 	service = NULL;
 	if (search.name != 0U)
 		service = calloc(1, sizeof(*service));
+
+	/* The manager, bound at the newest version both sides speak, is moved to the application's default queue. */
 	if (service != NULL) {
 		service->display = display;
 		service->version = MENU_VERSION;
 		if (search.version >= MENU_VERSION_CONTEXT)
 			service->version = MENU_VERSION_CONTEXT;
+
+		/* The binding; a failed one is reported below. */
 		service->manager = wl_registry_bind(registry, search.name, &xdg_menu_manager_v1_interface, service->version);
 		if (service->manager != NULL)
 			wl_proxy_set_queue((struct wl_proxy *)service->manager, NULL);
 	}
 
-	/* The search's objects go. */
+	/* The search's registry goes. */
 	if (registry != NULL)
 		wl_registry_destroy(registry);
+
+	/* And so do its wrapper and its queue. */
 	wl_proxy_wrapper_destroy(wrapper);
 	wl_event_queue_destroy(queue);
 
@@ -265,9 +273,11 @@ zdesktop_menu_begin(
 	if (menu->updating)
 		return EBUSY;
 
-	/* A new serial names the transaction. */
+	/* A new serial names the transaction, which is open until its commit. */
 	menu->serial++;
 	menu->updating = 1;
+
+	/* The compositor hears it begin. */
 	xdg_menu_v1_begin_update(menu->proxy, menu->serial);
 
 	/* Succeeded: changes may follow. */
@@ -285,8 +295,10 @@ zdesktop_menu_commit(
 	if (!menu->updating)
 		return EINVAL;
 
-	/* The commit names the transaction's serial. */
+	/* The transaction is closed. */
 	menu->updating = 0;
+
+	/* The commit names its serial. */
 	xdg_menu_v1_commit(menu->proxy, menu->serial);
 
 	/* Succeeded: the changes are shown together. */
@@ -354,10 +366,11 @@ zdesktop_menu_insert(
 	menu->count++;
 
 	/* The request: an append when nothing is named to go before. */
-	if (before == 0U)
+	if (before == 0U) {
 		xdg_menu_v1_append_item(menu->proxy, id, parent, type, label, action);
-	else
+	} else {
 		xdg_menu_v1_insert_item(menu->proxy, id, parent, before, type, label, action);
+	}
 
 	/* Succeeded: the item is in the transaction. */
 	return 0;
@@ -383,10 +396,12 @@ zdesktop_menu_remove(
 	if (error != 0)
 		return error;
 
-	/* A mark for each entry that goes, starting with the item. */
+	/* A mark for each entry that goes. */
 	doomed = calloc(menu->count, 1);
 	if (doomed == NULL)
 		return ENOMEM;
+
+	/* The item goes first (menu_change found it). */
 	found = menu_find(menu, id);
 	doomed[found] = 1;
 
@@ -395,9 +410,11 @@ zdesktop_menu_remove(
 	while (more) {
 		more = 0;
 		for (index = 0; index < menu->count; index++) {
-			/* A child of a doomed entry goes too. */
+			/* An entry already marked is passed. */
 			if (doomed[index])
 				continue;
+
+			/* A child of a doomed entry goes too, and another pass follows. */
 			found = menu_find(menu, menu->entries[index].parent);
 			if (found >= 0 && doomed[found]) {
 				doomed[index] = 1;
@@ -412,13 +429,17 @@ zdesktop_menu_remove(
 		/* A doomed entry is dropped. */
 		if (doomed[index])
 			continue;
+
+		/* The others are kept, in order. */
 		menu->entries[kept] = menu->entries[index];
 		kept++;
 	}
 
-	/* The mirror and the request. */
+	/* The mirror keeps the rest, and the marks go. */
 	menu->count = kept;
 	free(doomed);
+
+	/* The compositor removes the item and its subtree too. */
 	xdg_menu_v1_remove_item(menu->proxy, id);
 
 	/* Succeeded: the item and its subtree are gone. */
@@ -442,9 +463,11 @@ zdesktop_menu_set_label(
 	if (error != 0)
 		return error;
 
-	/* No label is an empty one, and a label has a bound. */
+	/* No label is an empty one. */
 	if (label == NULL)
 		label = "";
+
+	/* A label has a bound. */
 	length = strlen(label);
 	if (length > MENU_TEXT_MAX)
 		return E2BIG;
@@ -606,9 +629,11 @@ zdesktop_menu_set_icon_name(
 	if (error != 0)
 		return error;
 
-	/* No name is an empty one, and a name has a bound. */
+	/* No name is an empty one. */
 	if (icon_name == NULL)
 		icon_name = "";
+
+	/* A name has a bound. */
 	length = strlen(icon_name);
 	if (length > MENU_TEXT_MAX)
 		return E2BIG;
@@ -943,9 +968,12 @@ menu_depth(
 	/* Up the parents; the bound keeps a broken chain from looping. */
 	depth = 0;
 	while (id != ZDESKTOP_MENU_ROOT && depth <= MENU_DEPTH_MAX) {
+		/* An ID the mirror does not have ends the chain. */
 		found = menu_find(menu, id);
 		if (found < 0)
 			break;
+
+		/* One level more, and up to its parent. */
 		depth++;
 		id = menu->entries[found].parent;
 	}
@@ -968,29 +996,35 @@ menu_check_add(
 	size_t length;
 	int found;
 
-	/* Only inside a transaction, with a new ID of a known type. */
+	/* Only inside a transaction, with an ID (0 is none) of a known type. */
 	if (!menu->updating ||
 	    id == 0U ||
 	    type > ZDESKTOP_MENU_ITEM_SUBMENU)
 		return EINVAL;
+
+	/* The ID must be new. */
 	found = menu_find(menu, id);
 	if (found >= 0)
 		return EEXIST;
 
-	/* The parent is the top level or a submenu that is there. */
+	/* The parent is the top level or an item that is there... */
 	if (parent != ZDESKTOP_MENU_ROOT) {
 		found = menu_find(menu, parent);
 		if (found < 0)
 			return ENOENT;
+
+		/* ...and a submenu. */
 		if (menu->entries[found].type != ZDESKTOP_MENU_ITEM_SUBMENU)
 			return EINVAL;
 	}
 
-	/* The sibling it goes before is the parent's child. */
+	/* The sibling it goes before is there... */
 	if (before != 0U) {
 		found = menu_find(menu, before);
 		if (found < 0)
 			return ENOENT;
+
+		/* ...and the parent's child. */
 		if (menu->entries[found].parent != parent)
 			return EINVAL;
 	}
@@ -1019,10 +1053,12 @@ menu_room(
 	if (menu->count < menu->capacity)
 		return 0;
 
-	/* The array doubles. */
+	/* The array doubles (from 16 entries). */
 	capacity = menu->capacity * 2U;
 	if (capacity < 16U)
 		capacity = 16U;
+
+	/* The larger array, the entries kept. */
 	grown = realloc(menu->entries, capacity * sizeof(*grown));
 	if (grown == NULL)
 		return ENOMEM;
@@ -1065,9 +1101,11 @@ menu_context_activated(
 {
 	struct zdesktop_context_menu *context_menu;
 
-	/* The application's callback, when it has one. */
+	/* The context menu the event is for. */
 	(void)proxy;
 	context_menu = data;
+
+	/* The application's callback, when it has one. */
 	if (context_menu->listener != NULL && context_menu->listener->activated != NULL)
 		context_menu->listener->activated(context_menu->data, context_menu, item, action, serial);
 }
@@ -1080,9 +1118,11 @@ menu_context_done(
 {
 	struct zdesktop_context_menu *context_menu;
 
-	/* The application's callback, when it has one. */
+	/* The context menu the event is for. */
 	(void)proxy;
 	context_menu = data;
+
+	/* The application's callback, when it has one. */
 	if (context_menu->listener != NULL && context_menu->listener->done != NULL)
 		context_menu->listener->done(context_menu->data, context_menu);
 }
