@@ -51,6 +51,22 @@
 #define GL_POLYGON		0x0009
 #endif
 
+/* Desktop GL's occlusion query that counts samples, and GL 3.0's conditional rendering modes (libGL). */
+#ifndef GL_SAMPLES_PASSED
+#define GL_SAMPLES_PASSED	0x8914
+#endif
+#ifndef GL_QUERY_WAIT
+#define GL_QUERY_WAIT		0x8E13
+#define GL_QUERY_NO_WAIT	0x8E14
+#define GL_QUERY_BY_REGION_WAIT	0x8E15
+#define GL_QUERY_BY_REGION_NO_WAIT 0x8E16
+#endif
+
+/* Desktop GL 3.0's context state (libGL answers them). */
+#ifndef GL_CONTEXT_FLAGS
+#define GL_CONTEXT_FLAGS	0x821E
+#endif
+
 /* How many vertex attributes, texture units and texture levels a context has. */
 #define GLES_ATTRIBS		16U
 #define GLES_UNITS		16U
@@ -684,6 +700,11 @@ struct gles_program {
 	unsigned capture_stride;
 	GLenum capture_mode;
 
+	/* The locations glBindFragDataLocation gave fragment shader outputs, by name, for the next link (libGL). */
+	char frag_bound_names[GLES_DRAW_BUFFERS][GLES_NAME];
+	GLuint frag_bound_locations[GLES_DRAW_BUFFERS];
+	unsigned frag_bound_count;
+
 	/* The fragment shader's outputs, by name and location (glGetFragDataLocation). */
 	char output_names[GLES_DRAW_BUFFERS][GLES_NAME];
 	GLint output_locations[GLES_DRAW_BUFFERS];
@@ -975,6 +996,13 @@ struct gles_state {
 	struct gles_names query_objects;
 	struct gles_queries *queries;
 
+	/*
+	 * Conditional rendering (desktop GL 3.0, libGL): whether it is on, and
+	 * whether its query saw no sample pass, so draws and clears do nothing.
+	 */
+	int conditional_active;
+	int conditional_skip;
+
 	/* The transform feedback objects' namespace, the default one, the one bound (never NULL), and GL_RASTERIZER_DISCARD. */
 	struct gles_names feedbacks;
 	struct gles_feedback default_feedback;
@@ -993,6 +1021,16 @@ struct gles_state {
 
 	/* The colour mask. */
 	GLboolean color_mask[4];
+
+	/*
+	 * Each draw buffer's own colour mask (glColorMaski) and blending
+	 * (glEnablei), used once one was set so (indexed nonzero); glColorMask,
+	 * glEnable and glDisable make every buffer alike again.
+	 */
+	GLboolean indexed_masks[GLES_DRAW_BUFFERS][4];
+	int indexed_masked;
+	unsigned blend_buffers;
+	int blend_indexed;
 
 	/* The depth test and buffer. */
 	int depth_test;

@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none
-Resume point: p030（transform feedback、GL_VERSION「OpenGL ES 3.0」）cleared（2026-09-27、Venus で egl-p030 PASS、回帰 PASS）。GLES 3.0 の API は揃った。p013（desktop GL 3.0 の context）は 2026-09-27 に着手して中断（途中の差分は phase013/wip.patch、再開の手順は phase013/phase.md）。その後 p014、p009、p004、p007（最後）
+Resume point: p013（desktop GL 3.0 の context、GLX）cleared（2026-09-27、Venus で glx-p013 PASS、回帰 PASS）。次は p014（desktop GL 3.3〜4.6。着手前に ws.md で分ける）、その後 p009、p004、p007（最後）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -58,7 +58,7 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | ws068-p012 | GLSL 3.30・ES 3.00（in/out、layout、UBO、整数） | 分割（2026-09-27、p020・p021 に分けた。両方 cleared（2026-09-27）。[glsl-design.md](glsl-design.md) §11） | p003（p019） |
 | [ws068-p020](phase020/phase.md) | GLSL 1.40〜3.30・ES 3.00 の言語（`#version`、`layout(location)`、in/out の block、整数の varying、複数の出力、新しい sampler と built-in） | cleared（2026-09-27。host の試験 PASS、Venus で egl-p020 PASS（ES 3 の context）。i915 実機は未実施） | p019 |
 | [ws068-p021](phase021/phase.md) | GLSL の uniform block（std140、row_major、binding の約束）と libGLESv2 の反射の対応（API は p005・p013） | cleared（2026-09-27。host で std140 の offset を lavapipe で確認。libGLESv2 は API（p005）まで断る） | p020 |
-| [ws068-p013](phase013/phase.md) | desktop GL 3.0 の context（`glXCreateContextAttribsARB`、core と compatibility の profile、VAO、GL 3.0 の API） | in-progress（2026-09-27 中断。ソースは未変更、差分は wip.patch） | p003、ws069-p008 |
+| [ws068-p013](phase013/phase.md) | desktop GL 3.0 の context（`glXCreateContextAttribsARB`、core と compatibility の profile、VAO、GL 3.0 の API） | cleared（2026-09-27。Venus で glx-p013 PASS、回帰 x11-p004・p005・egl-p022〜p030・boot test PASS。i915 実機は未実施） | p003、ws069-p008 |
 | ws068-p014 | desktop GL 3.3〜4.6 の出来る範囲（Venus 先。geometry・tessellation・compute・SSBO は device の feature で。i915 の不足は F-023） | planning | p012、p013 |
 | ws068-p004 | GLES 2.0 の残りと試験の充実 | planning | p003 |
 | ws068-p005 | GLES 3.0 | 2026-09-27 に p024〜p027 に分けた | p004 |

@@ -126,8 +126,8 @@ zegl_vulkan_open(
 	 * blending that differs between colour attachments, stores from
 	 * vertex shaders (transform feedback) and fragment shaders, wide
 	 * lines and large points, geometry and tessellation shaders, clip
-	 * distances, depth clamping, fill modes, cube map arrays and sample
-	 * shading (desktop GL).
+	 * distances, depth clamping, fill modes, cube map arrays, sample
+	 * shading and exact occlusion query counts (desktop GL).
 	 */
 	memset(&available, 0, sizeof(available));
 	vkGetPhysicalDeviceFeatures(display->physical, &available);
@@ -144,6 +144,7 @@ zegl_vulkan_open(
 	display->features.fillModeNonSolid = available.fillModeNonSolid;
 	display->features.imageCubeArray = available.imageCubeArray;
 	display->features.sampleRateShading = available.sampleRateShading;
+	display->features.occlusionQueryPrecise = available.occlusionQueryPrecise;
 
 	/* The device with one queue of that family, the swapchain extension and those features. */
 	priority = 1.0f;

@@ -6,15 +6,16 @@
  */
 
 /*
- * zedBSD's desktop OpenGL header (WS069): libGL.so has the OpenGL ES 2.0
- * functions (their declarations and types come from GLES2/gl2.h) and the
- * fixed-function part of OpenGL 1.x (WS069 p005) declared here.
+ * zedBSD's desktop OpenGL header (WS069): libGL.so has the OpenGL ES 3.0
+ * functions (their declarations and types come from GLES3/gl3.h), the
+ * fixed-function part of OpenGL 1.x (WS069 p005) and the calls of
+ * OpenGL 3.0 that OpenGL ES 3.0 does not have (WS068 p013) declared here.
  */
 
 #ifndef LIBC_GL_GL_H
 #define LIBC_GL_GL_H
 
-#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
 
 #ifndef APIENTRY
 #define APIENTRY GL_APIENTRY
@@ -128,6 +129,7 @@ extern "C" {
 #define GL_FILL				0x1B02
 #define GL_FRONT_LEFT			0x0400
 #define GL_BACK_LEFT			0x0402
+#define GL_LEFT				0x0406
 
 /* The texture environment. */
 #define GL_TEXTURE_ENV			0x2300
@@ -148,6 +150,26 @@ extern "C" {
 #define GL_TRANSFORM_BIT		0x00001000
 #define GL_ENABLE_BIT			0x00002000
 #define GL_ALL_ATTRIB_BITS		0x000FFFFF
+
+/* OpenGL 1.5 to 3.0's names that OpenGL ES 3.0 does not have. */
+#define GL_SAMPLES_PASSED		0x8914
+#define GL_QUERY_COUNTER_BITS		0x8864
+#define GL_READ_ONLY			0x88B8
+#define GL_WRITE_ONLY			0x88B9
+#define GL_READ_WRITE			0x88BA
+#define GL_BUFFER_ACCESS		0x88BB
+#define GL_TEXTURE_BORDER_COLOR		0x1004
+#define GL_CLAMP_TO_BORDER		0x812D
+#define GL_CONTEXT_FLAGS		0x821E
+#define GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT 0x00000001
+#define GL_CLAMP_VERTEX_COLOR		0x891A
+#define GL_CLAMP_FRAGMENT_COLOR		0x891B
+#define GL_CLAMP_READ_COLOR		0x891C
+#define GL_FIXED_ONLY			0x891D
+#define GL_QUERY_WAIT			0x8E13
+#define GL_QUERY_NO_WAIT		0x8E14
+#define GL_QUERY_BY_REGION_WAIT		0x8E15
+#define GL_QUERY_BY_REGION_NO_WAIT	0x8E16
 
 /* Matrices. */
 GLAPI void APIENTRY glMatrixMode(GLenum mode);
@@ -250,6 +272,43 @@ GLAPI void APIENTRY glReadBuffer(GLenum mode);
 GLAPI void APIENTRY glPushAttrib(GLbitfield mask);
 GLAPI void APIENTRY glPopAttrib(void);
 GLAPI void APIENTRY glGetDoublev(GLenum pname, GLdouble *params);
+
+/* OpenGL 1.5 to 3.0's calls that OpenGL ES 3.0 does not have. */
+GLAPI void *APIENTRY glMapBuffer(GLenum target, GLenum access);
+GLAPI void APIENTRY glGetBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, void *data);
+GLAPI void APIENTRY glGetQueryObjectiv(GLuint id, GLenum pname, GLint *params);
+GLAPI void APIENTRY glGetTexImage(GLenum target, GLint level, GLenum format, GLenum type, void *pixels);
+GLAPI void APIENTRY glColorMaski(GLuint index, GLboolean r, GLboolean g, GLboolean b, GLboolean a);
+GLAPI void APIENTRY glEnablei(GLenum target, GLuint index);
+GLAPI void APIENTRY glDisablei(GLenum target, GLuint index);
+GLAPI GLboolean APIENTRY glIsEnabledi(GLenum target, GLuint index);
+GLAPI void APIENTRY glGetBooleani_v(GLenum target, GLuint index, GLboolean *data);
+GLAPI void APIENTRY glBindFragDataLocation(GLuint program, GLuint color, const GLchar *name);
+GLAPI void APIENTRY glBeginConditionalRender(GLuint id, GLenum mode);
+GLAPI void APIENTRY glEndConditionalRender(void);
+GLAPI void APIENTRY glClampColor(GLenum target, GLenum clamp);
+GLAPI void APIENTRY glTexParameterIiv(GLenum target, GLenum pname, const GLint *params);
+GLAPI void APIENTRY glTexParameterIuiv(GLenum target, GLenum pname, const GLuint *params);
+GLAPI void APIENTRY glGetTexParameterIiv(GLenum target, GLenum pname, GLint *params);
+GLAPI void APIENTRY glGetTexParameterIuiv(GLenum target, GLenum pname, GLuint *params);
+GLAPI void APIENTRY glFramebufferTexture1D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
+GLAPI void APIENTRY glFramebufferTexture3D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLint zoffset);
+GLAPI void APIENTRY glVertexAttribI1i(GLuint index, GLint x);
+GLAPI void APIENTRY glVertexAttribI2i(GLuint index, GLint x, GLint y);
+GLAPI void APIENTRY glVertexAttribI3i(GLuint index, GLint x, GLint y, GLint z);
+GLAPI void APIENTRY glVertexAttribI1ui(GLuint index, GLuint x);
+GLAPI void APIENTRY glVertexAttribI2ui(GLuint index, GLuint x, GLuint y);
+GLAPI void APIENTRY glVertexAttribI3ui(GLuint index, GLuint x, GLuint y, GLuint z);
+GLAPI void APIENTRY glVertexAttribI1iv(GLuint index, const GLint *v);
+GLAPI void APIENTRY glVertexAttribI2iv(GLuint index, const GLint *v);
+GLAPI void APIENTRY glVertexAttribI3iv(GLuint index, const GLint *v);
+GLAPI void APIENTRY glVertexAttribI1uiv(GLuint index, const GLuint *v);
+GLAPI void APIENTRY glVertexAttribI2uiv(GLuint index, const GLuint *v);
+GLAPI void APIENTRY glVertexAttribI3uiv(GLuint index, const GLuint *v);
+GLAPI void APIENTRY glVertexAttribI4bv(GLuint index, const GLbyte *v);
+GLAPI void APIENTRY glVertexAttribI4sv(GLuint index, const GLshort *v);
+GLAPI void APIENTRY glVertexAttribI4ubv(GLuint index, const GLubyte *v);
+GLAPI void APIENTRY glVertexAttribI4usv(GLuint index, const GLushort *v);
 
 #ifdef __cplusplus
 }

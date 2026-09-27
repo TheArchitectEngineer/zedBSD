@@ -201,6 +201,9 @@ struct fixed_state *fixed_current(struct zegl_context **context);
 void fixed_install(void);
 GLfloat *fixed_matrix(struct fixed_state *fixed);
 
+/* glx.c: the desktop GL version of the calling thread's context (major * 10 + minor) and its GL_CONTEXT_FLAGS. */
+unsigned glx_version(GLint *flags);
+
 /* immediate.c: recording into the list being compiled, and freeing the lists. */
 int fixed_record(struct fixed_state *fixed, enum fixed_op op, GLenum e0, GLenum e1, const GLfloat *f, unsigned count);
 void fixed_lists_free(struct fixed_state *fixed);

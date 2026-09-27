@@ -13,6 +13,12 @@
  * texture, blend, depth and culling; SPIR-V shaders) each frame, following
  * the window's size.  The first frame's colours are read back.
  *
+ * With --gl3 (WS068 p013) the context is an OpenGL 3.0 one from
+ * glXCreateContextAttribsARB, after checking that a later version is
+ * refused, that an OpenGL 1.4 context from glXCreateNewContext reports
+ * its own version, and that a forward-compatible 3.0 context reports its
+ * flag; the scene is gl3.c's.
+ *
  * Every outcome is one line: GLXTEST DONE on a clean end, GLXTEST FAILED
  * naming what failed otherwise.
  */
@@ -20,6 +26,7 @@
 #include <GL/glx.h>
 
 #include "../../base/egltest/scene.h"
+#include "gl3.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,11 +42,13 @@ struct glxtest_options {
 	unsigned height;
 	unsigned frames;
 	unsigned delay_ms;
+	int gl3;
 };
 
 static int glxtest_parse(int argc, char **argv, struct glxtest_options *options);
 static int glxtest_number(const char *text, const char *name, unsigned long maximum, unsigned long *value);
 static void glxtest_sleep(unsigned milliseconds);
+static GLXContext glxtest_gl3_context(Display *display, Window window, int *checks);
 
 /*
  * Runs the test.
@@ -71,6 +80,7 @@ main(
 	int major;
 	int minor;
 	int failures;
+	int checks;
 	int status;
 	int pending;
 	Bool done;
@@ -78,7 +88,7 @@ main(
 	/* The command line. */
 	status = glxtest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: glxtest [--size=WxH] [--frames=N] [--delay-ms=N] [--token=NAME]\n");
+		fprintf(stderr, "usage: glxtest [--size=WxH] [--frames=N] [--delay-ms=N] [--token=NAME] [--gl3]\n");
 		return 2;
 	}
 
@@ -127,12 +137,22 @@ main(
 	(void)XSelectInput(display, window, ExposureMask | StructureNotifyMask | KeyPressMask);
 	(void)XMapWindow(display, window);
 
-	/* A context, current on the window. */
-	context = glXCreateContext(display, visual, NULL, True);
-	XFree(visual);
-	if (context == NULL) {
-		printf("GLXTEST FAILED run=%s operation=glXCreateContext\n", options.token);
-		return 1;
+	/* An OpenGL 3.0 context current on the window, the contexts' checks done. */
+	checks = 0;
+	if (options.gl3) {
+		XFree(visual);
+		context = glxtest_gl3_context(display, window, &checks);
+		if (context == NULL) {
+			printf("GLXTEST FAILED run=%s operation=glXCreateContextAttribsARB\n", options.token);
+			return 1;
+		}
+	} else {
+		context = glXCreateContext(display, visual, NULL, True);
+		XFree(visual);
+		if (context == NULL) {
+			printf("GLXTEST FAILED run=%s operation=glXCreateContext\n", options.token);
+			return 1;
+		}
 	}
 
 	/* Current on the window. */
@@ -148,8 +168,14 @@ main(
 	       (const char *)glGetString(GL_VERSION), (int)glXIsDirect(display, context));
 	fflush(stdout);
 
-	/* The scene's program, buffers and texture. */
-	status = egltest_scene_start();
+	/* The scene's program, buffers and texture (OpenGL 3.0's checks). */
+	if (options.gl3) {
+		status = glxtest_gl3_start();
+	} else {
+		status = egltest_scene_start();
+	}
+
+	/* A scene that could not start ends the run. */
 	if (status != 0) {
 		printf("GLXTEST FAILED run=%s operation=scene\n", options.token);
 		return 1;
@@ -170,10 +196,20 @@ main(
 		height = options.height;
 		(void)XGetGeometry(display, window, &root, &x, &y, &width, &height, &border, &depth);
 
-		/* The scene, its colours read back at the first frame, and shown. */
-		egltest_scene_draw((int)width, (int)height);
-		if (frame == 1U)
+		/* The scene. */
+		if (options.gl3) {
+			glxtest_gl3_draw((int)width, (int)height);
+		} else {
+			egltest_scene_draw((int)width, (int)height);
+		}
+
+		/* The first frame's colours read back. */
+		if (frame == 1U && options.gl3)
+			failures = glxtest_gl3_check((int)width, (int)height, options.token) + checks;
+		if (frame == 1U && !options.gl3)
 			failures = egltest_scene_check((int)width, (int)height, options.token);
+
+		/* Shown. */
 		glXSwapBuffers(display, window);
 
 		/* The delay between frames. */
@@ -208,6 +244,7 @@ glxtest_parse(
 	options->height = 400U;
 	options->frames = 600U;
 	options->delay_ms = 30U;
+	options->gl3 = 0;
 
 	/* Each option. */
 	for (index = 1; index < argc; index++) {
@@ -233,6 +270,13 @@ glxtest_parse(
 		status = glxtest_number(argv[index], "--delay-ms=", 10000UL, &number);
 		if (status == 0) {
 			options->delay_ms = (unsigned)number;
+			continue;
+		}
+
+		/* An OpenGL 3.0 context and its scene. */
+		differs = strcmp(argv[index], "--gl3");
+		if (differs == 0) {
+			options->gl3 = 1;
 			continue;
 		}
 
@@ -295,4 +339,106 @@ glxtest_sleep(
 	delay.tv_sec = (time_t)(milliseconds / 1000U);
 	delay.tv_nsec = (long)(milliseconds % 1000U) * 1000000L;
 	(void)nanosleep(&delay, NULL);
+}
+
+/*
+ * Makes the OpenGL 3.0 context of --gl3 (compatibility profile) with
+ * glXCreateContextAttribsARB, found by glXGetProcAddress, after checking
+ * the other contexts: OpenGL 3.3 is refused, an OpenGL 1.4 context from
+ * glXCreateNewContext reports 1.4, a forward-compatible 3.0 context
+ * reports its flag.  Adds the checks that failed to *checks; NULL when
+ * the context cannot be made.
+ */
+static GLXContext
+glxtest_gl3_context(
+	Display *display,
+	Window window,
+	int *checks)
+{
+	static const int config_attributes[] = { GLX_DEPTH_SIZE, 24, None };
+	static const int later_attributes[] = {
+		GLX_CONTEXT_MAJOR_VERSION_ARB, 3, GLX_CONTEXT_MINOR_VERSION_ARB, 3,
+		GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB, None
+	};
+	static const int forward_attributes[] = {
+		GLX_CONTEXT_MAJOR_VERSION_ARB, 3, GLX_CONTEXT_MINOR_VERSION_ARB, 0,
+		GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB, None
+	};
+	static const int attributes[] = {
+		GLX_CONTEXT_MAJOR_VERSION_ARB, 3, GLX_CONTEXT_MINOR_VERSION_ARB, 0,
+		GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB, None
+	};
+	PFNGLXCREATECONTEXTATTRIBSARBPROC create;
+	GLXFBConfig *configs;
+	GLXFBConfig config;
+	GLXContext context;
+	GLXContext other;
+	const char *legacy_version;
+	GLint legacy_major;
+	GLint forward_flags;
+	int later_refused;
+	int count;
+	int differs;
+
+	/* The config with a depth buffer, and the call, found as applications find it. */
+	count = 0;
+	configs = glXChooseFBConfig(display, DefaultScreen(display), config_attributes, &count);
+	if (configs == NULL || count < 1)
+		return NULL;
+	config = configs[0];
+	XFree(configs);
+	create = (PFNGLXCREATECONTEXTATTRIBSARBPROC)glXGetProcAddress((const GLubyte *)"glXCreateContextAttribsARB");
+	if (create == NULL)
+		return NULL;
+
+	/* OpenGL 3.3 is refused. */
+	other = create(display, config, NULL, True, later_attributes);
+	later_refused = 0;
+	if (other == NULL)
+		later_refused = 1;
+	if (other != NULL)
+		glXDestroyContext(display, other);
+
+	/* An OpenGL 1.4 context reports its version. */
+	legacy_version = "";
+	legacy_major = 0;
+	other = glXCreateNewContext(display, config, GLX_RGBA_TYPE, NULL, True);
+	if (other != NULL) {
+		(void)glXMakeCurrent(display, window, other);
+		legacy_version = (const char *)glGetString(GL_VERSION);
+		glGetIntegerv(GL_MAJOR_VERSION, &legacy_major);
+		(void)glXMakeCurrent(display, None, NULL);
+		glXDestroyContext(display, other);
+	}
+
+	/* A forward-compatible OpenGL 3.0 context reports its flag. */
+	forward_flags = -1;
+	other = create(display, config, NULL, True, forward_attributes);
+	if (other != NULL) {
+		(void)glXMakeCurrent(display, window, other);
+		glGetIntegerv(GL_CONTEXT_FLAGS, &forward_flags);
+		(void)glXMakeCurrent(display, None, NULL);
+		glXDestroyContext(display, other);
+	}
+
+	/* The checks' line; each that failed counts. */
+	printf("GLXTEST GL3 contexts later-refused=%d legacy-version=\"%s\" legacy-major=%d forward-flags=%d\n",
+	       later_refused, legacy_version, (int)legacy_major, (int)forward_flags);
+	differs = strncmp(legacy_version, "1.4 ", 4U);
+	if (!later_refused)
+		(*checks)++;
+	if (differs != 0)
+		(*checks)++;
+	if (legacy_major != 1)
+		(*checks)++;
+	if (forward_flags != GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT)
+		(*checks)++;
+
+	/* The context of the scene. */
+	context = create(display, config, NULL, True, attributes);
+	if (context == NULL)
+		return NULL;
+
+	/* Succeeded: the OpenGL 3.0 context. */
+	return context;
 }
