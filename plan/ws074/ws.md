@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007 cleared（2026-09-27）。次は p010（font と text の最小）、実行の順は下の表の上
+Resume point: p001〜p005・p007・p010 cleared（2026-09-27）。次は p011（layout の最小）、実行の順は下の表の上
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -80,7 +80,7 @@ p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 →
 | [ws074-p007](phase007/phase.md) | CSS の最小（ワンパス）: tokenizer・parser、selector（type・class・id・子孫・子・属性の基本）、cascade（origin・specificity・継承）、約 30 の property、UA stylesheet、`<style>`・`style` 属性 | cleared | p003 |
 | ws074-p008 | CSS 2（後回し）: selector の残り（構造・状態・`:is`/`:not`/`:has`、pseudo-element）、rule の索引 | planned | p006、p007 |
 | ws074-p009 | CSS 3（後回し）: property の表の拡張、`var()`・`calc()`、`@media`、file の `<link>`、shorthand の全部 | planned | p008 |
-| ws074-p010 | font と text の最小: font の一覧（Inter、日本語は Droid の fallback）、libtruetype（関数を足すなら main に先に伝える）、advance、空白と CJK での改行 | planned | p002 |
+| [ws074-p010](phase010/phase.md) | font と text の最小: font の一覧（Inter、日本語は Droid の fallback）、libtruetype（関数を足すなら main に先に伝える）、advance、空白と CJK での改行 | cleared | p002 |
 | ws074-p011 | layout の最小: box tree（anonymous box）、block（幅・高さ・margin の基本）、inline（line box・text run・baseline）、`--dump=layout` | planned | p009、p010 |
 | ws074-p012 | 描画の最小: display list（背景・border の solid・text）、CPU の参照の描画、`--render`（PPM → PNG）、画面の撮影 | planned | p011 |
 | ws074-p013 | layout 2: float・clear、position（relative・absolute・fixed）、overflow と clip、list と marker、replaced の大きさ、単位（em・rem・vw・%） | planned | p012 |
