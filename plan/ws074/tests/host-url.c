@@ -38,15 +38,25 @@ main(void)
 	char *command;
 	char *first;
 	char *second;
-	char *save;
+	char *tab;
 
-	/* Each command. */
+	/* Each command: its fields between tabs. */
 	while (fgets(line, sizeof(line), stdin) != NULL) {
 		line[strcspn(line, "\n")] = '\0';
-		command = strtok_r(line, "\t", &save);
-		first = strtok_r(NULL, "\t", &save);
-		second = strtok_r(NULL, "\t", &save);
-		if (command == NULL || first == NULL) {
+		command = line;
+		first = NULL;
+		second = NULL;
+		tab = strchr(command, '\t');
+		if (tab != NULL) {
+			*tab = '\0';
+			first = tab + 1;
+			tab = strchr(first, '\t');
+		}
+		if (tab != NULL) {
+			*tab = '\0';
+			second = tab + 1;
+		}
+		if (first == NULL) {
 			printf("failure\n");
 			continue;
 		}
