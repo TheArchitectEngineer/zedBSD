@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p003（exp・log の族、double-double、表の生成）から
+Resume point: p006（cbrt・hypot・erf・erfc・lgamma・tgamma、Bessel の扱い、legacy.c の削除）から
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -34,8 +34,8 @@ Resume point: p003（exp・log の族、double-double、表の生成）から
 | --- | --- | --- |
 | [ws076-p001](phase001/phase.md) | 設計: 対象の関数の一覧と今の実装の状態、精度の目標、方式（引数の縮約・多項式近似・表・double-double）、試験（host の高精度の参照、ulp の計測）→ [design.md](design.md) | cleared |
 | [ws076-p002](phase002/phase.md) | `src/libc/math/` への分割と build、共通の header、正確な関数: sqrt・fma・fmod・remainder・remquo・frexp/ldexp 系・丸め系、試験の道具（MPFR の参照、runner、host） | cleared |
-| ws076-p003 | exp・exp2・expm1・log・log2・log10・log1p | planned |
-| ws076-p004 | pow（整数の冪の正確な経路と一般の場合） | planned |
-| ws076-p005 | 三角関数と逆三角関数（大きな引数の縮約）、双曲線関数 | planned |
+| [ws076-p003](phase003/phase.md) | exp・exp2・expm1・log・log2・log10・log1p | cleared |
+| [ws076-p004](phase004/phase.md) | pow（整数の冪の正確な経路と一般の場合） | cleared |
+| [ws076-p005](phase005/phase.md) | 三角関数と逆三角関数（大きな引数の縮約）、双曲線関数 | cleared |
 | ws076-p006 | その他（cbrt・hypot・erf・erfc・lgamma・tgamma ほか）と float・long double の版 | planned |
 | ws076-p007 | 規約の全文の照合と回帰 | planned |

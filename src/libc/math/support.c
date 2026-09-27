@@ -285,3 +285,74 @@ __libm_unpack(
 	/* The shifted fraction now carries its leading bit where the hidden bit is. */
 	unpacked->significand = fraction;
 }
+
+/*
+ * Returns (value.high + value.low) * 2^exponent rounded once.
+ *
+ * The value is a nonzero double-double near one, the result of a kernel
+ * that works on a reduced argument.  A normal result is the rounded pair
+ * with its exponent moved, which is exact.  A subnormal result has fewer
+ * bits, and rounding the pair first would round twice; instead the pair
+ * is lifted into [0, 1) and added to one, whose binade has the same last
+ * bit as the subnormal range, so the one rounding lands on the right grid.
+ */
+double
+__libm_scale(
+	struct libm_dd value,
+	int exponent)
+{
+	struct libm_dd lifted;
+	struct libm_dd sum;
+	double rounded;
+	double factor;
+	double anchor;
+	double result;
+	uint64_t bits;
+	unsigned int sign;
+	int binade;
+
+	/* Rounds the pair and reads the binade of the rounded value. */
+	rounded = value.high + value.low;
+	bits = libm_bits(rounded);
+	sign = (unsigned int)(bits >> 63);
+	binade = (int)((bits >> 52) & 0x7ffU) - LIBM_DOUBLE_BIAS;
+
+	/* Past the largest finite binade the result overflows. */
+	if (binade + exponent > LIBM_DOUBLE_BIAS)
+		return __libm_overflow(sign);
+
+	/* Inside the normal range moving the exponent is exact. */
+	if (binade + exponent >= 1 - LIBM_DOUBLE_BIAS)
+		return libm_from_bits(bits + ((uint64_t)exponent << 52));
+
+	/* Far below the subnormal range the result is zero. */
+	if (binade + exponent < -1080)
+		return __libm_underflow(sign);
+
+	/* Lifts the pair by 2^(exponent + 1022), which keeps both parts exact. */
+	factor = libm_from_bits((uint64_t)(exponent + 1022 + LIBM_DOUBLE_BIAS) << 52);
+	lifted.high = value.high * factor;
+	lifted.low = value.low * factor;
+
+	/*
+	 * Adds the lifted pair to one of its sign.  The sum lies in [1, 2),
+	 * whose last bit is worth 2^-52, as 2^-1074 is in the subnormal range
+	 * lifted by 2^1022; the addition of the low parts rounds once.
+	 */
+	anchor = 1.0;
+	if (sign != 0U)
+		anchor = -1.0;
+	sum = libm_two_sum(anchor, lifted.high);
+	sum.low += lifted.low;
+	rounded = sum.high + sum.low;
+
+	/* Takes the one away again, exactly, and lowers the result back. */
+	result = (rounded - anchor) * 2.2250738585072014e-308;
+
+	/* A sum that needed no rounding is an exact subnormal. */
+	if (sum.low == 0.0)
+		return result;
+
+	/* Succeeded: an inexact tiny result is an underflow. */
+	return __libm_check_underflow(result);
+}

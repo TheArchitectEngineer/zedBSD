@@ -36,6 +36,7 @@ void drv_pcat_text_show_cursor(int visible);
 void drv_pcat_text_update_cursor(void);
 void drv_pcat_text_suspend(void);
 void drv_pcat_text_resume(void);
+void drv_pcat_text_reveal(void);
 
 int drv_pcat_text_snapshot(struct kern_text_snapshot *snapshot);
 

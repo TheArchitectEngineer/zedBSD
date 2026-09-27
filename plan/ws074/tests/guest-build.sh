@@ -23,8 +23,7 @@ mkdir -p "$out"
 
 # The engine's objects, from the package's list (without main.c and the window).
 engine=""
-for file in $(sh plan/ws074/tests/list-sources.sh) build/amd64/zdesktop-browser-gen/html-entities.c \
-    build/amd64/zdesktop-browser-gen/unicode-case.c; do
+for file in $(sh plan/ws074/tests/list-sources.sh); do
 	case $file in
 	*/main.c|*/shell/*) continue ;;
 	esac

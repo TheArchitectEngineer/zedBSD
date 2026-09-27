@@ -17,6 +17,7 @@
 static int dump_box(const struct layout_box *box, int depth, struct wb_buffer *out);
 static void dump_indent(struct wb_buffer *out, int depth);
 static void dump_lines(const struct layout_box *box, int depth, struct wb_buffer *out);
+static int dump_out_of_flow(const struct layout_box *box, int depth, struct wb_buffer *out);
 
 /* The names of the box kinds, in enum layout_box_kind order. */
 static const char *const dump_kinds[] = {
@@ -83,10 +84,11 @@ dump_box(
 	wb_buffer_printf(out, " %.2f %.2f %.2f %.2f\n", (double)layout_to_px(box->x), (double)layout_to_px(box->y),
 	    (double)layout_to_px(width), (double)layout_to_px(height));
 
-	/* Its lines, or its children. */
+	/* Its lines, and the boxes out of the flow among its inline content; or its children. */
 	if (box->children_inline) {
 		dump_lines(box, depth + 1, out);
-		return 0;
+		error = dump_out_of_flow(box, depth + 1, out);
+		return error;
 	}
 
 	/* The child boxes, one level deeper. */
@@ -147,4 +149,31 @@ dump_lines(
 			wb_buffer_append_string(out, "\"\n");
 		}
 	}
+}
+
+/* Writes the boxes out of the flow found among a block's inline content, in tree order. */
+static int
+dump_out_of_flow(
+	const struct layout_box *box,
+	int depth,
+	struct wb_buffer *out)
+{
+	const struct layout_box *child;
+	int error;
+
+	/* Inline boxes are searched through; a box out of the flow is written with its own content. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow) {
+			error = dump_box(child, depth, out);
+		} else {
+			error = dump_out_of_flow(child, depth, out);
+		}
+
+		/* A failure stops the dump. */
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the boxes are written. */
+	return 0;
 }

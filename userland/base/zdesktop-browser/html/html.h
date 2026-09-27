@@ -149,7 +149,15 @@ struct html_tokenizer {
 };
 
 struct dom_document;
+struct dom_element;
 struct html_parser;
+
+/*
+ * What the parser calls when a script element's end tag is parsed (the
+ * standard's "prepare the script element" from the parser): the page runs
+ * the script there, while the parser waits.
+ */
+typedef void (*html_script_hook)(void *context, struct dom_element *script);
 
 /* The input stream (input.c). */
 void html_input_init(struct html_input *input);
@@ -167,6 +175,7 @@ const char *html_error_name(int error);
 
 /* The tree builder (parser.c). */
 int html_parser_create(struct html_parser **parser, struct dom_document *document, int scripting);
+void html_parser_set_script_hook(struct html_parser *parser, html_script_hook hook, void *context);
 void html_parser_destroy(struct html_parser *parser);
 int html_parser_feed(struct html_parser *parser, const uint16_t *units, size_t length);
 int html_parser_finish(struct html_parser *parser);

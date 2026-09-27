@@ -9,11 +9,12 @@
  * The display list: a laid out page walked in painting order into
  * rectangles and runs of glyphs, and its text dump for the tests.
  *
- * The walk is CSS 2's painting order reduced to normal flow: the canvas,
- * then each block's background and borders before its content, a block's
- * children in document order, and a block's lines after its own
- * background.  Without floats or positioning nothing overlaps, so this
- * order draws what the full order would.
+ * The walk is CSS 2's painting order simplified: the canvas, then each
+ * block's background and borders before its content, a block's children
+ * in document order, and a block's lines after its own background.  The
+ * positioned boxes are painted apart, each with its descendants that are
+ * not positioned, in the order layout_stacking_order gives: those with a
+ * negative z-index before the normal flow, the others after it.
  */
 
 #include "paint/paint.h"
@@ -43,7 +44,7 @@ struct list_walk {
 };
 
 static const struct layout_box *list_canvas(const struct layout_tree *tree, uint32_t *color);
-static void list_box(struct list_walk *walk, const struct layout_box *box, int depth);
+static void list_box(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_borders(struct list_walk *walk, const struct layout_box *box);
 static void list_lines(struct list_walk *walk, const struct layout_box *box);
 static void list_fragment(struct list_walk *walk, const struct layout_fragment *fragment, layout_unit x, layout_unit baseline);
@@ -59,6 +60,11 @@ paint_build(
 	const struct layout_tree *tree)
 {
 	struct list_walk walk;
+	struct wb_vector order;
+	const struct layout_box *layer;
+	size_t flow_index;
+	size_t index;
+	int error;
 
 	/* Starts an empty list the size of the document, at least the viewport. */
 	memset(list, 0, sizeof(*list));
@@ -79,8 +85,27 @@ paint_build(
 	if (tree->root == NULL)
 		return 0;
 
-	/* Walks the boxes from the root. */
-	list_box(&walk, tree->root, 0);
+	/* The positioned boxes in painting order, and where the normal flow goes among them. */
+	wb_vector_init(&order, sizeof(const struct layout_box *));
+	error = layout_stacking_order(tree, &order, &flow_index);
+	if (error != 0) {
+		wb_vector_release(&order);
+		paint_release(list);
+		return error;
+	}
+
+	/* The positioned boxes below the flow, the flow from the root, then the ones above it. */
+	for (index = 0; index < order.count; index++) {
+		if (index == flow_index)
+			list_box(&walk, tree->root, NULL, 0);
+		layer = *(const struct layout_box **)wb_vector_at(&order, index);
+		list_box(&walk, layer, layer, 0);
+	}
+
+	/* The flow is last when no box is above it. */
+	if (flow_index == order.count)
+		list_box(&walk, tree->root, NULL, 0);
+	wb_vector_release(&order);
 	if (walk.error != 0) {
 		paint_release(list);
 		return walk.error;
@@ -200,16 +225,18 @@ list_canvas(
 	return body;
 }
 
-/* Adds a box's painting and its descendants' to the list. */
+/* Adds a box's painting and its descendants' to the list; positioned boxes other than the layer being painted wait for their turn. */
 static void
 list_box(
 	struct list_walk *walk,
 	const struct layout_box *box,
+	const struct layout_box *layer,
 	int depth)
 {
 	const struct layout_box *child;
 	layout_unit width;
 	layout_unit height;
+	int positioned;
 	int visible;
 
 	/* Stops at the depth the layout stops at, or after an error. */
@@ -218,6 +245,11 @@ list_box(
 
 	/* Only blocks paint a box of their own; inline content is painted through their lines. */
 	if (box->kind != LAYOUT_BLOCK && box->kind != LAYOUT_ANONYMOUS_BLOCK)
+		return;
+
+	/* A positioned box (not the root) is painted in its own turn. */
+	positioned = layout_is_positioned(box);
+	if (positioned && box != layer && box->parent != NULL)
 		return;
 
 	/* A hidden box paints nothing of its own, but its children may be visible. */
@@ -243,7 +275,7 @@ list_box(
 
 	/* A block of blocks paints its children in order. */
 	for (child = box->first_child; child != NULL; child = child->next)
-		list_box(walk, child, depth + 1);
+		list_box(walk, child, layer, depth + 1);
 }
 
 /*

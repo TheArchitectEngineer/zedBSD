@@ -87,6 +87,20 @@ html_parser_create(
 }
 
 /*
+ * Sets what runs each script element when the parser reaches its end tag.
+ */
+void
+html_parser_set_script_hook(
+	struct html_parser *p,
+	html_script_hook hook,
+	void *context)
+{
+	/* The hook and what it is given. */
+	p->script_hook = hook;
+	p->script_context = context;
+}
+
+/*
  * Destroys a parser (the document stays).
  */
 void

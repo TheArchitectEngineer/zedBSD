@@ -18,6 +18,7 @@
 #include <drivers/gpu/gpu-fence.h>
 #include <kern/cdev.h>
 #include <kern/cred.h>
+#include <kern/tty.h>
 #include <kern/file.h>
 #include <kern/filedesc.h>
 #include <kern/fd-object.h>
@@ -222,6 +223,13 @@ struct gpu_session {
 	/* The registry lock protects per-open observation and successful acknowledgement. */
 	uint64_t topology_observed;
 	uint64_t topology_acknowledged;
+
+	/*
+	 * The display leases this open holds, each holding the keyboard away
+	 * from the text console (ws035-p097); the close gives back what is left.
+	 * Changed only by this open's ioctls and its final close.
+	 */
+	unsigned display_claims;
 };
 
 /*
@@ -1250,6 +1258,12 @@ gpu_close(
 	/* File reference ownership excludes concurrent ioctls at final close. */
 	file->f_data = NULL;
 	device = session->device;
+
+	/* The leases the close gives back give the keyboard back to the text console. */
+	while (session->display_claims != 0U) {
+		session->display_claims--;
+		tty_console_input_unhold();
+	}
 
 	/*
 	 * A graceful producer close stops new admission and keeps every committed
@@ -3113,6 +3127,10 @@ gpu_display_ioctl(
 			return error;
 		}
 
+		/* The display is this open's: the keyboard is not the text console's while it is. */
+		session->display_claims++;
+		tty_console_input_hold();
+
 		/* Succeeded: this exact open now owns the returned native lease. */
 		return 0;
 	case GPU_DISPLAY_RELEASE:
@@ -3124,6 +3142,12 @@ gpu_display_ioctl(
 		error = ops->release(device->private_data, session->backend, &request.release);
 		if (error != 0)
 			return error;
+
+		/* The keyboard goes back to the text console with the display. */
+		if (session->display_claims != 0U) {
+			session->display_claims--;
+			tty_console_input_unhold();
+		}
 
 		/* Succeeded: the native display no longer retains the released lease. */
 		return 0;

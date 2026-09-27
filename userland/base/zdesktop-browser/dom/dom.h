@@ -222,6 +222,11 @@ enum dom_tag {
 /*
  * The part every node shares: its kind, its document and its place in the
  * tree.
+ *
+ * wrapper is the script's object for the node once a script has seen it,
+ * and listeners the cell of its event listeners once one is added (both
+ * the DOM binding's; the node keeps them alive, so a script's properties
+ * and listeners on a node live as long as the node).
  */
 struct dom_node {
 	struct vm_cell cell;
@@ -234,6 +239,8 @@ struct dom_node {
 	struct dom_node *last_child;
 	struct dom_node *previous;
 	struct dom_node *next;
+	struct vm_object *wrapper;
+	struct vm_cell *listeners;
 };
 
 /*
@@ -250,7 +257,9 @@ struct dom_attribute {
 /*
  * An element: its name, namespace and tag number, and its attributes (a
  * malloc'd array the element owns; the strings are traced through it).
- * content is a template's contents, a document fragment.
+ * content is a template's contents, a document fragment.  created is the
+ * document's generation when the element was made, which orders its
+ * content attributes' event handlers among the listeners scripts added.
  */
 struct dom_element {
 	struct dom_node node;
@@ -258,7 +267,7 @@ struct dom_element {
 	struct vm_string *prefix;
 	uint16_t ns;
 	uint16_t tag;
-	uint32_t reserved;
+	uint32_t created;
 	struct dom_attribute *attributes;
 	size_t attribute_count;
 	size_t attribute_capacity;
@@ -286,11 +295,16 @@ struct dom_doctype {
 
 /*
  * A document: the root of a tree, the heap its nodes live in and its mode.
+ *
+ * generation grows with every change to a tree of the document (a node
+ * inserted or removed, text or an attribute changed), so the page can tell
+ * that its style and layout are out of date.
  */
 struct dom_document {
 	struct dom_node node;
 	struct vm_heap *heap;
 	enum dom_quirks quirks;
+	uint32_t generation;
 };
 
 /* Documents and nodes (node.c). */
@@ -307,6 +321,11 @@ int dom_text_append(struct dom_node *node, const uint16_t *units, size_t length)
 int dom_element_add_attribute(struct dom_element *element, int ns, struct vm_string *prefix, struct vm_string *name, struct vm_string *value);
 struct dom_attribute *dom_element_find_attribute(const struct dom_element *element, int ns, const struct vm_string *name);
 int dom_element_is(const struct dom_node *node, int ns, int tag);
+int dom_is_node(const struct vm_cell *cell);
+int dom_element_set_attribute(struct dom_element *element, struct vm_string *name, struct vm_string *value);
+int dom_element_remove_attribute(struct dom_element *element, struct vm_string *name);
+int dom_text_set(struct dom_node *node, const uint16_t *units, size_t length);
+int dom_is_inclusive_ancestor(const struct dom_node *ancestor, const struct dom_node *node);
 
 /* Names (names.c). */
 int dom_tag_lookup(const uint16_t *units, size_t length);

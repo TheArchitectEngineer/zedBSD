@@ -114,7 +114,8 @@ close_page
 open_page first.html
 set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
-pointer move $((wx + 310)) $((wy - 30)) sleep 300 down sleep 200 move $((wx + 360)) $((wy)) sleep 200 move $((wx + 410)) $((wy + 30)) sleep 300 up sleep 800
+# (The drag starts on the title: since ws074-p045 the middle of the titlebar holds the location's control.)
+pointer move $((wx + 150)) $((wy - 30)) sleep 300 down sleep 200 move $((wx + 200)) $((wy)) sleep 200 move $((wx + 250)) $((wy + 30)) sleep 300 up sleep 800
 expect_log /tmp/zdesktop.log "ZWL GLASS moved surface=[0-9]* x=$((wx + 100)) y=$((wy + 60))"
 pointer move 1270 790 sleep 400
 check "$out/moved.png" >/dev/null

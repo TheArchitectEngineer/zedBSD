@@ -11,10 +11,12 @@
  * painting reads.
  *
  * Positions are in layout units, 1/64 of a pixel, so lengths add up without
- * the drift of floating point.  The first pass lays out normal flow: block
- * boxes stacked with their margins collapsing, and inline content broken
- * into line boxes.  Floats, positioning, tables, flex and grid come later;
- * until then their boxes are laid out as blocks.
+ * the drift of floating point.  Normal flow stacks block boxes with their
+ * margins collapsing and breaks inline content into line boxes; then
+ * relatively positioned boxes are shifted, and absolutely positioned and
+ * fixed boxes, taken out of the flow, are placed in their containing
+ * blocks (position.c).  Floats, tables, flex and grid come later; until
+ * then their boxes are laid out as blocks.
  */
 
 #ifndef ZDESKTOP_BROWSER_LAYOUT_H
@@ -83,7 +85,10 @@ struct layout_line {
  * x and y are the border box's position relative to the parent's content
  * box until the final pass makes them absolute; width and height are the
  * content box's.  A block whose children are inline has lines instead of
- * laid out children.
+ * laid out children.  An absolutely positioned or fixed box is out of the
+ * flow: its parent's layout passes it by and records its static position
+ * (where it would have been, relative to the parent's content box, then
+ * absolute), and position.c places it.
  */
 struct layout_box {
 	int kind;
@@ -94,6 +99,9 @@ struct layout_box {
 	struct layout_box *last_child;
 	struct layout_box *next;
 	int children_inline;
+	int out_of_flow;
+	layout_unit static_x;
+	layout_unit static_y;
 
 	/* The box model, resolved. */
 	layout_unit x;
@@ -134,14 +142,19 @@ struct layout_tree {
 	layout_unit document_height;
 };
 
-/* The layout (box.c, block.c, inline.c, dump.c, hit.c). */
+/* The layout (box.c, block.c, inline.c, position.c, dump.c, hit.c). */
 int layout_build(struct layout_tree *tree, struct css_engine *css, struct text_system *text, struct dom_document *document, int width, int height);
+void layout_absolute(struct layout_box *box, layout_unit x, layout_unit y);
+int layout_is_positioned(const struct layout_box *box);
+int layout_position(struct layout_tree *tree);
+int layout_stacking_order(const struct layout_tree *tree, struct wb_vector *boxes, size_t *flow_index);
 void layout_release(struct layout_tree *tree);
 int layout_block(struct layout_tree *tree, struct layout_box *box, layout_unit containing_width);
 int layout_inline(struct layout_tree *tree, struct layout_box *box);
 void layout_font_of(struct layout_tree *tree, const struct css_style *style, struct text_font *font);
 int layout_dump(const struct layout_tree *tree, struct wb_buffer *out);
 const struct layout_box *layout_hit(const struct layout_tree *tree, layout_unit x, layout_unit y);
+struct dom_node *layout_hit_node(const struct layout_tree *tree, layout_unit x, layout_unit y);
 layout_unit layout_from_px(float px);
 float layout_to_px(layout_unit value);
 

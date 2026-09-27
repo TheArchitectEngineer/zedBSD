@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Loop</title>
+<script>
+console.log("head script", document.readyState, document.body);
+document.addEventListener("DOMContentLoaded", function () { console.log("DOMContentLoaded", document.readyState); });
+window.addEventListener("load", function (e) { console.log("load", document.readyState, e.target === document); });
+</script>
+</head>
+<body onload="console.log('body onload')">
+<p id="late">late</p>
+<script src="loop-external.js"></script>
+<script type="text/plain">console.log("not javascript");</script>
+<script type="TEXT/JavaScript">console.log("javascript in capitals");</script>
+<script>
+console.log("body script", document.getElementById("late").textContent, document.getElementById("later"));
+window.addEventListener("load", start);
+queueMicrotask(function () {
+  console.log("microtask 1");
+  queueMicrotask(function () { console.log("microtask nested"); });
+});
+queueMicrotask(function () { console.log("microtask 2"); });
+try {
+  queueMicrotask(5);
+} catch (e) {
+  console.log("queueMicrotask type", e instanceof TypeError);
+}
+console.log("end of body script");
+
+// The timers start at load: a browser may run a timer while the parser waits, so they would race it.
+function start() {
+console.log("start");
+setTimeout(function () { console.log("timeout 0"); Promise_like(); }, 0);
+setTimeout(function (a, b) { console.log("timeout 20", a, b); }, 20, "x", 2);
+setTimeout(function () { console.log("timeout 10"); }, 10);
+var cleared = setTimeout(function () { console.log("never"); }, 5);
+clearTimeout(cleared);
+function Promise_like() {
+  queueMicrotask(function () { console.log("microtask after timeout 0"); });
+  console.log("end of timeout 0");
+}
+var ticks = 0;
+var interval = setInterval(function () {
+  ticks++;
+  console.log("interval", ticks);
+  if (ticks === 3)
+    clearInterval(interval);
+}, 30);
+setTimeout("console.log('string timer')", 15);
+// Headless Chromium draws no frames, so a frame's callback is not logged.
+var frame = requestAnimationFrame(function (time) { window.frameTime = time; });
+var cancelled = requestAnimationFrame(function () { console.log("cancelled frame"); });
+cancelAnimationFrame(cancelled);
+setTimeout(function () {
+  setTimeout(function () { console.log("nested timeout"); }, 0);
+  console.log("outer of nested");
+}, 200);
+setTimeout(function () { throw new Error("timer error"); }, 250);
+setTimeout(function () { console.log("after the error"); }, 260);
+console.log("ids", typeof cleared, cleared > 0, typeof frame);
+onload = function () { console.log("replaced onload"); };
+console.log("end of start");
+}
+</script>
+<p id="later">later</p>
+</body>
+</html>

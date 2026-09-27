@@ -47,19 +47,8 @@ for file in userland/base/libtruetype/face.c userland/base/libtruetype/cmap.c us
 	objects="$objects $object"
 done
 
-# The tables generated from downloaded lists, made the way the package's Makefile makes them.
-mkdir -p "$out/gen"
-sh plan/ws074/tests/fetch-distfiles.sh
-if [ ! -f "$out/gen/html-entities.c" ] || [ "$src/tools/gen-entities.py" -nt "$out/gen/html-entities.c" ]; then
-	python3 "$src/tools/gen-entities.py" "$src/distfiles/entities.json" "$out/gen/html-entities.c"
-fi
-if [ ! -f "$out/gen/unicode-case.c" ] || [ "$src/tools/gen-unicode-case.py" -nt "$out/gen/unicode-case.c" ]; then
-	python3 "$src/tools/gen-unicode-case.py" "$src/distfiles/UnicodeData-16.0.0.txt" \
-	    "$src/distfiles/SpecialCasing-16.0.0.txt" "$out/gen/unicode-case.c"
-fi
-sources="$sources $out/gen/html-entities.c $out/gen/unicode-case.c"
 for file in $sources; do
-	object=$out/obj/$(printf '%s' "${file#$src/}" | sed "s|^$out/||" | tr '/' '_' | sed 's/\.c$/.o/')
+	object=$out/obj/$(printf '%s' "${file#$src/}" | tr '/' '_' | sed 's/\.c$/.o/')
 	if [ ! -f "$object" ] || [ "$file" -nt "$object" ] || [ -n "$(find "$src" -name '*.h' -newer "$object" | head -1)" ]; then
 		"$cc" $flags -c "$file" -o "$object"
 	fi

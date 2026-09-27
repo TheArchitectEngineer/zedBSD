@@ -2,7 +2,7 @@
 # Builds the libm test runner on the host against src/libc/math and runs it
 # (WS076).
 #
-#   plan/tools/libm/host-test.sh [--count N] [NAME...]
+#   [GENERATORS=exp,log] plan/tools/libm/host-test.sh [--count N] [NAME...]
 #
 # The library is compiled against zedBSD's headers, the runner against the
 # host's, and they meet through errno-shim.c.  libm of the host is not
@@ -42,9 +42,12 @@ $cc -std=c11 -O2 -Wall -Wextra -Werror -c plan/tools/libm/errno-shim.c \
 $cc -o "$out/libm-test" "$out/obj/libm-test.o" "$out/obj/errno-shim.o" $objects
 
 # The reference cases.
-reference="$out/reference-$count.bin"
+# GENERATORS (for example exp,log) limits the cases to some families.
+generators=${GENERATORS:-}
+reference="$out/reference-$count${generators:+-$generators}.bin"
 if [ ! -f "$reference" ] || [ plan/tools/libm/gen-reference.py -nt "$reference" ]; then
-	python3 plan/tools/libm/gen-reference.py "$reference" --count "$count"
+	python3 plan/tools/libm/gen-reference.py "$reference" --count "$count" \
+		${generators:+--only "$generators"}
 fi
 
 exec "$out/libm-test" "$reference" "$@"

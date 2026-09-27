@@ -8,13 +8,16 @@
 /*
  * The window mode of zdesktop-browser: a page loaded from a file, laid out
  * at the window's width, and drawn by the GPU renderer into the window's
- * swapchain.  The wheel and the keys scroll it, a click on a link opens the
- * link's file, and zdesktop's titlebar holds back, forward, reload and the
- * location, whose URL can be edited.
+ * swapchain.  The wheel and the keys scroll it, a click goes to the page's
+ * scripts as a click event and then, unless they cancel it, opens the link
+ * under it, and zdesktop's titlebar holds back, forward, reload and the
+ * location, whose URL can be edited.  The page's timers run on the real
+ * clock between the compositor's events, and a page its scripts changed
+ * is laid out and drawn again.
  *
  * The program writes lines to standard output that the guest tests read
- * (ZBROWSER READY, FRAME, LINK, NAVIGATE, TITLEBAR, ERROR); they are its
- * diagnostic interface.
+ * (ZBROWSER READY, FRAME, LINK, NAVIGATE, TITLEBAR, CONSOLE, ERROR); they
+ * are its diagnostic interface.
  */
 
 #include "shell/internal.h"
@@ -64,8 +67,10 @@ enum shell_step {
  * What the window mode holds while it runs: the page and its file's
  * absolute path, the history of paths (index is the one shown), the
  * window with its titlebar and presenter, how far the page is scrolled (in
- * layout units), where the left button went down, and the frame of the
- * run whose stack the pages' heaps scan.
+ * layout units), where the left button went down, the frame of the run
+ * whose stack the pages' heaps scan, the size a page is loaded at, and the
+ * clock's time when the page shown (page_epoch) and the page being opened
+ * (open_epoch) began, which their timers count from.
  */
 struct shell_state {
 	struct page *page;
@@ -83,6 +88,10 @@ struct shell_state {
 	int pressed;
 	const struct text_font_paths *fonts;
 	const void *stack_base;
+	unsigned width;
+	unsigned height;
+	uint64_t page_epoch;
+	uint64_t open_epoch;
 };
 
 static int shell_absolute(const char *start, struct wb_buffer *path);
@@ -98,6 +107,9 @@ static void shell_follow(struct shell_state *state, const char *target);
 static void shell_scroll_by(struct shell_state *state, layout_unit distance);
 static int shell_frame(struct shell_state *state);
 static void shell_release(struct shell_state *state);
+static int shell_wait(struct shell_state *state, uint64_t now);
+static void shell_run_page(struct shell_state *state);
+static void shell_console(void *context, int level, const char *text, size_t length);
 
 /*
  * Runs the browser in a zdesktop window until it is closed.
@@ -125,6 +137,8 @@ shell_run(
 	memset(&state, 0, sizeof(state));
 	state.fonts = options->fonts;
 	state.stack_base = __builtin_frame_address(0);
+	state.width = options->width;
+	state.height = options->height;
 	if (options->start == NULL) {
 		fprintf(stderr, "zdesktop-browser: a page to open is needed (a file or a file: URL)\n");
 		return 2;
@@ -220,9 +234,9 @@ shell_run(
 			state.dirty = 0;
 		}
 
-		/* Waits for the compositor, or for a held key's next repeat. */
+		/* Waits for the compositor, a held key's next repeat, or the page's next timer. */
 		now = shell_clock();
-		timeout = shell_window_repeat(&state.window, now);
+		timeout = shell_wait(&state, now);
 		status = shell_window_dispatch(&state.window, timeout);
 		if (status != 0) {
 			fprintf(stderr, "zdesktop-browser: the connection to the compositor was lost\n");
@@ -244,6 +258,9 @@ shell_run(
 				break;
 			shell_titlebar_input(&state, &titlebar_event);
 		}
+
+		/* The page's timers, and the layout its scripts changed. */
+		shell_run_page(&state);
 	}
 
 	/* Closes everything. */
@@ -297,6 +314,13 @@ shell_open_page(
 		return error;
 	}
 
+	/* Its scripts see the window's size, write their console as CONSOLE lines, and count time from now. */
+	bind_window_set_viewport(loaded->window, (int)state->width, (int)state->height);
+	if (state->present.extent.width != 0U)
+		bind_window_set_viewport(loaded->window, (int)state->present.extent.width, (int)state->present.extent.height);
+	loaded->console = shell_console;
+	state->open_epoch = shell_clock();
+
 	/* The file. */
 	error = page_load_file(loaded, path);
 	if (error == 0)
@@ -346,10 +370,11 @@ shell_navigate(
 		return ENOMEM;
 	}
 
-	/* The new page replaces the old one, from its top. */
+	/* The new page replaces the old one, from its top, with its own clock. */
 	if (page != state->page)
 		page_destroy(state->page);
 	state->page = page;
+	state->page_epoch = state->open_epoch;
 	free(state->path);
 	state->path = copy;
 	state->scroll_y = 0;
@@ -542,6 +567,9 @@ shell_click(
 	struct wb_buffer href;
 	int distance_x;
 	int distance_y;
+	int page_y;
+	int canceled;
+	int changed;
 	int found;
 	int error;
 
@@ -566,9 +594,24 @@ shell_click(
 	if (distance_x > SHELL_CLICK_SLOP || distance_y > SHELL_CLICK_SLOP)
 		return;
 
+	/* The page's scripts get the click first; a canceled click opens no link. */
+	page_y = event->y + (int)(state->scroll_y / LAYOUT_UNIT);
+	error = page_click(state->page, event->x, page_y, event->x, event->y, &canceled);
+	if (error != 0 || canceled)
+		return;
+
+	/* A page the listeners changed is laid out again before its link is looked for. */
+	changed = page_needs_layout(state->page);
+	if (changed) {
+		error = shell_lay_out(state);
+		if (error != 0)
+			return;
+		state->dirty = 1;
+	}
+
 	/* The link under the release, in the document's coordinates. */
 	wb_buffer_init(&href);
-	error = page_link_at(state->page, event->x, event->y + (int)(state->scroll_y / LAYOUT_UNIT), &href, &found);
+	error = page_link_at(state->page, event->x, page_y, &href, &found);
 	if (error != 0 || !found) {
 		wb_buffer_release(&href);
 		return;
@@ -760,4 +803,86 @@ shell_release(
 	for (index = 0; index < state->history_count; index++)
 		free(state->history[index]);
 	state->history_count = 0;
+}
+
+/* Reports how long to wait for the compositor: until a held key repeats or the page's next timer is due (-1: no limit). */
+static int
+shell_wait(
+	struct shell_state *state,
+	uint64_t now)
+{
+	double due;
+	double page_now;
+	double wait;
+	int timeout;
+	int found;
+
+	/* A held key's repeat. */
+	timeout = shell_window_repeat(&state->window, now);
+
+	/* The page's next timer, in the page's own time. */
+	found = page_next_timer(state->page, &due);
+	if (!found)
+		return timeout;
+	page_now = (double)(now - state->page_epoch);
+	wait = due - page_now;
+	if (wait < 0.0)
+		wait = 0.0;
+	if (wait > 60000.0)
+		wait = 60000.0;
+
+	/* The sooner of the two. */
+	if (timeout < 0 || (int)wait < timeout)
+		timeout = (int)wait;
+	return timeout;
+}
+
+/* Runs the page's timers that are due, then lays the page out again and redraws it when its scripts changed it. */
+static void
+shell_run_page(
+	struct shell_state *state)
+{
+	struct wb_buffer title;
+	uint64_t now;
+	int changed;
+	int error;
+
+	/* The timers due by now, in the page's own time. */
+	now = shell_clock();
+	error = page_set_time(state->page, (double)(now - state->page_epoch));
+	if (error != 0) {
+		printf("ZBROWSER ERROR script error=%s\n", strerror(error));
+		fflush(stdout);
+	}
+
+	/* A page the scripts left as it was needs nothing more. */
+	changed = page_needs_layout(state->page);
+	if (!changed)
+		return;
+
+	/* The layout and the frame, and the title the scripts may have set. */
+	error = shell_lay_out(state);
+	if (error != 0)
+		return;
+	state->dirty = 1;
+	wb_buffer_init(&title);
+	error = page_title(state->page, &title);
+	if (error == 0 && title.length != 0)
+		shell_window_title(&state->window, wb_buffer_string(&title));
+	wb_buffer_release(&title);
+}
+
+/* Writes a page's console line as a CONSOLE line of the diagnostic interface. */
+static void
+shell_console(
+	void *context,
+	int level,
+	const char *text,
+	size_t length)
+{
+	UNUSED_PARAMETER(context);
+
+	/* The level's number and the text. */
+	printf("ZBROWSER CONSOLE level=%d %.*s\n", level, (int)length, text);
+	fflush(stdout);
 }
