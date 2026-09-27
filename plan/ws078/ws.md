@@ -49,9 +49,10 @@ Resume point: p001（名前の棚卸しと対応表）から。ユーザーの�
 改名は作業中の agent と衝突しやすい。p002・p003 は他の agent が merge を終えた静かな時点で main か 1 つの agent が一度に行い、
 その後に各 agent へ新しい名前を知らせる。
 
-## 判断が要る点（ユーザーへ）
+## ユーザーの判断（2026-09-28）
 
-1. make の `ZEDBSD_` 変数（`ZEDBSD_CONFIG`、rootfs の option `ZEDBSD_GRAPHICAL_BOOT` 等）も改めるか。
-2. `__ZEDBSD__`（compiler が定義する OS の識別子、toolchain の target の名前 `zedbsd`）はカーネルの内部名として残すか。
-3. source の directory（`userland/base/zdesktop` 等）も改名するか、実行ファイルの名前だけか。
-4. `zed_*` の Wayland の protocol と `libzdesktop` 等の名前。
+1. make の `ZEDBSD_` 変数（`ZEDBSD_CONFIG`・rootfs の option 等）: **今は残す**。
+2. `__ZEDBSD__`（toolchain の target `zedbsd` が定義する OS の識別子）: **残す**（カーネルの内部名）。他の `__ZEDBSD_*`・`__zedbsd_*` の補助の識別子は改める。
+3. source の directory: **実行ファイルと一緒に改名する**（例 `userland/base/zdesktop` → Keiland の名前の directory。p001 で対応表を決める）。
+4. Keiland の Wayland の protocol と library: 接頭辞は **`keiland_`**（`zed_titlebar_v1` → `keiland_titlebar_v1` 等、`libzdesktop` → `libkeiland`）。
+   `zwp_`・`zxdg_` は upstream の名前であり改めない。
