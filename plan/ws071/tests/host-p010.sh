@@ -13,6 +13,9 @@
 #  8. Esc gives up a drag: nothing moves.
 #  9. Without a drag, a click on one of two selected items selects it alone; a drag of a folder onto the
 #     empty part of the folder shown drops nothing.
+# 10. The folder docs dragged onto the Favorites' title is added to the sidebar (favorite.png).
+# 11. A favorite dragged onto another moves there in the list (reorder.png); a click on a favorite still goes.
+# (A press soon after a click on the same item would be a double click: the cases wait first.)
 #
 #   plan/ws071/tests/host-p010.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -124,6 +127,25 @@ expect plain "^item 2 Makefile selected=1$"
 expect plain "^item 3 README.md selected=0$"
 expect plain "DRAG target kind=none$"
 expect plain "DRAG drop operation=none$"
+
+# 10. The folder docs dragged onto the Favorites' title: added to the sidebar (its list file).
+sidebar=$home/.config/zdesktop-files/sidebar
+run favorite press=$docs drag=360,132 drag=118,35 draw="$out/favorite.ppm" release=118,35
+expect favorite "DRAG target kind=favorites$"
+expect favorite "FAVORITE add path=$project/docs$"
+expect favorite "DRAG drop operation=favorites added=1$"
+holds favorite "tail -1 '$sidebar' | grep -qx '$project/docs'"
+
+# 11. Pictures (the fifth place) dragged onto Desktop (the second): first in the list; a click on the fourth
+#     place, Documents now, still goes there (at the release).
+run reorder press=118,185 drag=118,170 drag=118,95 draw="$out/reorder.ppm" release=118,95 click=118,155
+expect reorder "DRAG start place=4 path=$home/Pictures$"
+expect reorder "DRAG target kind=place place=1$"
+expect reorder "DRAG drop operation=reorder place=4 to=1 error=0$"
+expect reorder "LOCATION kind=folder path=$home/Documents "
+refuse reorder "LOCATION kind=folder path=$home/Pictures "
+holds reorder "head -1 '$sidebar' | grep -qx '$home/Pictures'"
+holds reorder "sed -n 2p '$sidebar' | grep -qx '$home/Desktop'"
 
 # The pictures as PNG next to the text.
 ls "$out"/*.png >/dev/null 2>&1 || status=1

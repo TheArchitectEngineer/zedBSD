@@ -149,8 +149,8 @@ fm_input_motion(
 	app->pointer_y = event->y;
 	app->pointer_inside = 1;
 
-	/* A press on an item drags the selection once the pointer moves away from it. */
-	if (app->pressing != 0 && app->press_kind == FM_HIT_ITEM) {
+	/* A press on an item (or a favorite) drags the selection (or the favorite) once the pointer moves away from it. */
+	if (app->pressing != 0 && (app->press_kind == FM_HIT_ITEM || app->press_kind == FM_HIT_PLACE)) {
 		dragging = fm_drag_motion(app, event->x, event->y);
 		if (dragging != 0)
 			return;
@@ -684,8 +684,16 @@ input_click(
 	/* What each region does. */
 	switch (kind) {
 	case FM_HIT_PLACE:
-		if (index >= 0 && index < app->places.count)
-			fm_ui_go(app, &app->places.items[index].location);
+		/* A place goes there; a favorite folder at the release, as it may be dragged to another place in the list. */
+		if (index < 0 || index >= app->places.count)
+			break;
+		if (app->places.items[index].section == FM_SECTION_FAVORITES && app->places.items[index].location.kind == FM_LOCATION_FOLDER) {
+			app->press_deferred = 1;
+			break;
+		}
+
+		/* Any other place at once. */
+		fm_ui_go(app, &app->places.items[index].location);
 		break;
 	case FM_HIT_TAB:
 		fm_tabs_select(app, index);
@@ -793,11 +801,17 @@ input_release(
 
 	/* Without a drag, the selection change the press left. */
 	tab = fm_ui_tab(app);
-	if (dropped == 0 && app->press_deferred != 0 && app->pressing != 0) {
+	if (dropped == 0 && app->press_deferred != 0 && app->pressing != 0 && app->press_kind == FM_HIT_ITEM) {
 		if (app->press_index >= 0 && (size_t)app->press_index < tab->listing.count) {
 			input_select_item(tab, app->press_index, app->press_deferred_modifiers);
 			input_report(app);
 		}
+	}
+
+	/* Or the favorite the press was on is gone to. */
+	if (dropped == 0 && app->press_deferred != 0 && app->pressing != 0 && app->press_kind == FM_HIT_PLACE) {
+		if (app->press_index >= 0 && app->press_index < app->places.count)
+			fm_ui_go(app, &app->places.items[app->press_index].location);
 	}
 
 	/* A rubber band's selection is reported. */

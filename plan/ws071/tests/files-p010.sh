@@ -8,6 +8,8 @@
 #     with the button still held), the release moves the file there (TASK move done, the file in Pictures).
 #  3. Opened on Projects/zedBSD: README.md dragged onto the folder docs moves it into docs; Makefile dragged
 #     toward src and Esc pressed before the release: DRAG cancel, nothing moves.
+#  4. The favorite Pictures dragged onto Desktop in the sidebar goes first in the list (drag-place.png,
+#     reordered.png).
 #
 #   plan/ws071/tests/files-guest.sh start     (the guest must be up)
 #   plan/ws071/tests/files-p010.sh [OUTDIR]
@@ -120,6 +122,15 @@ expect_log /tmp/f.log 'ZFILES DRAG cancel$'
 cancelled=$(guest "grep -c 'DRAG drop' /tmp/f.log" | tail -1)
 [ "${cancelled:-0}" = 1 ] && echo "cancel: no second drop ok" || { echo "cancel: drops $cancelled MISSING"; status=1; }
 expect_guest '[ -f /tmp/fhome/Projects/zedBSD/Makefile ] && [ ! -e /tmp/fhome/Projects/zedBSD/src/Makefile ]' 'Makefile stayed'
+
+# 4. Pictures (the fifth place) dragged onto Desktop (the second) in the sidebar: first of the Favorites.
+drag 100 173 100 83
+expect_log /tmp/f.log 'ZFILES DRAG target kind=place place=1$'
+check "$out/drag-place.png" >/dev/null
+release
+expect_log /tmp/f.log 'ZFILES DRAG drop operation=reorder place=4 to=1 error=0$'
+expect_guest 'head -1 /tmp/fhome/.config/zdesktop-files/sidebar | grep -qx /tmp/fhome/Pictures' 'Pictures first in the sidebar list'
+shot reordered.png
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }

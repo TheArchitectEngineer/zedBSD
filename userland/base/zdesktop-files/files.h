@@ -375,7 +375,8 @@ enum fm_hit_kind {
 	FM_HIT_TAB_CLOSE,
 	FM_HIT_SCOPE,
 	FM_HIT_OVERLAY,
-	FM_HIT_BUTTON
+	FM_HIT_BUTTON,
+	FM_HIT_SECTION
 };
 
 /*
@@ -745,6 +746,10 @@ enum fm_request {
 #define FM_DRAG_TAG		2U
 #define FM_DRAG_TRASH		3U
 
+/* Also: the Favorites' title (the dragged folders are added), and a favorite that a dragged favorite goes to. */
+#define FM_DRAG_FAVORITES	4U
+#define FM_DRAG_REORDER		5U
+
 /* The kinds of a context menu's row. */
 #define FM_ROW_ITEM		0U
 #define FM_ROW_LINE		1U
@@ -978,8 +983,9 @@ struct fm_app {
 	 * a press on a selected item leaves its selection change for the
 	 * release (press_deferred, with the modifiers of the press) so that the
 	 * whole selection can be dragged; whether the drag has started, how many
-	 * items it carries, and its target (FM_DRAG_*) with the region under
-	 * the pointer and the folder or tag it stands for.
+	 * items it carries (or the favorite dragged in the sidebar, else -1),
+	 * and its target (FM_DRAG_*) with the region under the pointer and the
+	 * folder or tag it stands for.
 	 */
 	int press_x;
 	int press_y;
@@ -987,6 +993,7 @@ struct fm_app {
 	uint32_t press_deferred_modifiers;
 	int drag;
 	size_t drag_count;
+	int drag_place;
 	unsigned drag_target;
 	unsigned drag_hit_kind;
 	int drag_hit_index;
@@ -1316,6 +1323,7 @@ void fm_help_draw(struct fm_app *app, struct fm_canvas *canvas);
 void fm_places_init(struct fm_places *places, const char *home, const struct fm_tags *tags);
 int fm_places_add_favorite(struct fm_places *places, const char *path);
 int fm_places_remove_favorite(struct fm_places *places, int removed);
+int fm_places_move_favorite(struct fm_places *places, int moved, int to);
 const char *fm_location_name(const struct fm_location *location, const char *home);
 void fm_tags_text(struct fm_app *app, unsigned tags, char *text, size_t length);
 

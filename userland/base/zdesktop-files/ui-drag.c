@@ -11,7 +11,9 @@
  * selection.  Under the pointer a folder among the items, a place of the
  * sidebar or a tab is the target; the release moves the items there (on the
  * same device, else copies them), Ctrl copies, Ctrl+Shift makes links; a
- * tag's place tags them and the Trash throws them away.  Esc gives up.
+ * tag's place tags them, the Trash throws them away, and the Favorites'
+ * title adds the dragged folders to the Favorites.  A favorite folder
+ * dragged onto another one moves to its place in the list.  Esc gives up.
  *
  * The items travel as their paths inside this window only; a drag to
  * another window is not offered (it needs Wayland's data device).
@@ -41,15 +43,22 @@
 #define DRAG_COLOR_BADGE_TEXT	FM_RGB(0xffffff)
 
 static void drag_start(struct fm_app *app);
+static void drag_start_place(struct fm_app *app);
 static void drag_find(struct fm_app *app, int x, int y);
+static void drag_find_place(struct fm_app *app, int x, int y);
+static void drag_target(struct fm_app *app, unsigned target, unsigned kind, int index, int tag, const char *folder);
+static int drag_favorite(const struct fm_app *app, int index);
 static unsigned drag_operation(struct fm_app *app);
 static const char *drag_first(struct fm_app *app);
 static const char *drag_verb(unsigned operation);
 static void drag_drop_folder(struct fm_app *app);
 static void drag_drop_tag(struct fm_app *app);
+static void drag_drop_favorites(struct fm_app *app);
+static void drag_drop_reorder(struct fm_app *app);
 static void drag_end(struct fm_app *app);
 static void drag_draw_target(struct fm_app *app, struct fm_canvas *canvas);
 static void drag_draw_badges(struct fm_app *app, struct fm_canvas *canvas, float x, float y);
+static void drag_draw_place(struct fm_app *app, struct fm_canvas *canvas);
 
 /*
  * Follows the pointer while the left button holds an item: the drag starts
@@ -68,7 +77,13 @@ fm_drag_motion(
 
 	/* A drag in progress follows the pointer. */
 	if (app->drag != 0) {
-		drag_find(app, x, y);
+		if (app->drag_place >= 0) {
+			drag_find_place(app, x, y);
+		} else {
+			drag_find(app, x, y);
+		}
+
+		/* A new frame shows it. */
 		app->dirty = 1;
 		return 1;
 	}
@@ -79,7 +94,17 @@ fm_drag_motion(
 	if (dx * dx + dy * dy <= DRAG_START * DRAG_START)
 		return 0;
 
-	/* The selection is dragged from here on. */
+	/* A favorite is dragged within the sidebar from here on. */
+	if (app->press_kind == FM_HIT_PLACE) {
+		drag_start_place(app);
+		if (app->drag == 0)
+			return 0;
+		drag_find_place(app, x, y);
+		app->dirty = 1;
+		return 1;
+	}
+
+	/* Otherwise the selection is. */
 	drag_start(app);
 	if (app->drag == 0)
 		return 0;
@@ -112,6 +137,12 @@ fm_drag_release(
 	case FM_DRAG_TRASH:
 		fm_log("DRAG drop operation=trash items=%lu", (unsigned long)app->drag_count);
 		fm_action_trash(app);
+		break;
+	case FM_DRAG_FAVORITES:
+		drag_drop_favorites(app);
+		break;
+	case FM_DRAG_REORDER:
+		drag_drop_reorder(app);
 		break;
 	default:
 		fm_log("DRAG drop operation=none");
@@ -158,6 +189,12 @@ fm_drag_draw(
 	if (app->drag == 0)
 		return;
 
+	/* A favorite: its own look. */
+	if (app->drag_place >= 0) {
+		drag_draw_place(app, canvas);
+		return;
+	}
+
 	/* The target. */
 	drag_draw_target(app, canvas);
 
@@ -197,6 +234,7 @@ drag_start(
 	/* The drag, with no target yet; the selection stays as it is. */
 	app->drag = 1;
 	app->drag_count = count;
+	app->drag_place = -1;
 	app->drag_target = FM_DRAG_NONE;
 	app->drag_hit_kind = FM_HIT_NONE;
 	app->drag_hit_index = -1;
@@ -207,7 +245,32 @@ drag_start(
 	fm_log("DRAG start items=%lu", (unsigned long)count);
 }
 
-/* Finds the target under a point: a folder, a tag or the Trash; logged when it changes. */
+/* Starts dragging a favorite folder of the sidebar (the others stay). */
+static void
+drag_start_place(
+	struct fm_app *app)
+{
+	int favorite;
+
+	/* Only a favorite folder. */
+	favorite = drag_favorite(app, app->press_index);
+	if (favorite == 0)
+		return;
+
+	/* The drag, with no target yet; the press no longer goes to the place. */
+	app->drag = 1;
+	app->drag_count = 0;
+	app->drag_place = app->press_index;
+	app->drag_target = FM_DRAG_NONE;
+	app->drag_hit_kind = FM_HIT_NONE;
+	app->drag_hit_index = -1;
+	app->drag_tag = -1;
+	app->drag_folder[0] = '\0';
+	app->press_deferred = 0;
+	fm_log("DRAG start place=%d path=%s", app->press_index, app->places.items[app->press_index].location.path);
+}
+
+/* Finds the target under a point: a folder, a tag, the Trash or the Favorites' title; logged when it changes. */
 static void
 drag_find(
 	struct fm_app *app,
@@ -224,6 +287,7 @@ drag_find(
 	int index;
 	int tag;
 	int same;
+	size_t entry_index;
 	char folder[FM_PATH_MAX];
 
 	/* The region under the point, and no target yet. */
@@ -278,6 +342,19 @@ drag_find(
 		}
 
 		break;
+	case FM_HIT_SECTION:
+		/* The Favorites' title takes the dragged folders (the other items are left out). */
+		if (index != FM_SECTION_FAVORITES)
+			break;
+		for (entry_index = 0; entry_index < tab->listing.count; entry_index++) {
+			entry = &tab->listing.entries[entry_index];
+			if (entry->selected != 0 && entry->folder != 0) {
+				target = FM_DRAG_FAVORITES;
+				break;
+			}
+		}
+
+		break;
 	default:
 		break;
 	}
@@ -290,24 +367,102 @@ drag_find(
 			target = FM_DRAG_NONE;
 	}
 
+	/* The target. */
+	drag_target(app, target, kind, index, tag, folder);
+}
+
+/* Finds the target of a dragged favorite under a point: another favorite folder. */
+static void
+drag_find_place(
+	struct fm_app *app,
+	int x,
+	int y)
+{
+	unsigned target;
+	unsigned kind;
+	int index;
+	int favorite;
+
+	/* The region under the point. */
+	(void)fm_input_hit_at(app, x, y, &kind, &index);
+
+	/* Another favorite folder is the target. */
+	target = FM_DRAG_NONE;
+	if (kind == FM_HIT_PLACE && index != app->drag_place) {
+		favorite = drag_favorite(app, index);
+		if (favorite != 0)
+			target = FM_DRAG_REORDER;
+	}
+
+	/* The target. */
+	drag_target(app, target, kind, index, -1, "");
+}
+
+/* Keeps a new target and logs it; an unchanged one is left alone. */
+static void
+drag_target(
+	struct fm_app *app,
+	unsigned target,
+	unsigned kind,
+	int index,
+	int tag,
+	const char *folder)
+{
 	/* Unchanged: nothing more to do. */
 	if (target == app->drag_target && kind == app->drag_hit_kind && index == app->drag_hit_index)
 		return;
 
-	/* The new target, logged. */
+	/* The new target. */
 	app->drag_target = target;
 	app->drag_hit_kind = kind;
 	app->drag_hit_index = index;
 	app->drag_tag = tag;
 	snprintf(app->drag_folder, sizeof(app->drag_folder), "%s", folder);
-	if (target == FM_DRAG_FOLDER)
+
+	/* Logged by its kind. */
+	switch (target) {
+	case FM_DRAG_FOLDER:
 		fm_log("DRAG target kind=folder path=%s", folder);
-	else if (target == FM_DRAG_TAG)
+		break;
+	case FM_DRAG_TAG:
 		fm_log("DRAG target kind=tag tag=%s", app->tags.items[tag].name);
-	else if (target == FM_DRAG_TRASH)
+		break;
+	case FM_DRAG_TRASH:
 		fm_log("DRAG target kind=trash");
-	else
+		break;
+	case FM_DRAG_FAVORITES:
+		fm_log("DRAG target kind=favorites");
+		break;
+	case FM_DRAG_REORDER:
+		fm_log("DRAG target kind=place place=%d", index);
+		break;
+	default:
 		fm_log("DRAG target kind=none");
+		break;
+	}
+}
+
+/* Tells whether a place is a favorite folder (Home and the other sections are not). */
+static int
+drag_favorite(
+	const struct fm_app *app,
+	int index)
+{
+	const struct fm_place *place;
+
+	/* A place that is there. */
+	if (index < 0 || index >= app->places.count)
+		return 0;
+
+	/* In the Favorites, and a folder. */
+	place = &app->places.items[index];
+	if (place->section != FM_SECTION_FAVORITES)
+		return 0;
+	if (place->location.kind != FM_LOCATION_FOLDER)
+		return 0;
+
+	/* A favorite folder. */
+	return 1;
 }
 
 /*
@@ -443,6 +598,68 @@ drag_drop_tag(
 	fm_action_toggle_tag(app, app->drag_tag);
 }
 
+/* Drops folders on the Favorites' title: each dragged folder that is not there yet is added. */
+static void
+drag_drop_favorites(
+	struct fm_app *app)
+{
+	const struct fm_entry *entry;
+	struct fm_tab *tab;
+	size_t index;
+	int added;
+	int error;
+	char message[64];
+
+	/* Each dragged folder. */
+	tab = fm_ui_tab(app);
+	added = 0;
+	for (index = 0; index < tab->listing.count; index++) {
+		entry = &tab->listing.entries[index];
+		if (entry->selected == 0 || entry->folder == 0)
+			continue;
+		error = fm_places_add_favorite(&app->places, entry->path);
+		if (error != 0)
+			continue;
+
+		/* The sidebar with it (the next folder is added after it). */
+		fm_places_init(&app->places, app->home, &app->tags);
+		fm_log("FAVORITE add path=%s", entry->path);
+		added++;
+	}
+
+	/* Said and logged. */
+	fm_log("DRAG drop operation=favorites added=%d", added);
+	if (added == 0) {
+		fm_ui_message(app, "It is already in the sidebar");
+		return;
+	}
+
+	/* How many were added. */
+	snprintf(message, sizeof(message), "Added %d to the sidebar", added);
+	fm_ui_message(app, message);
+}
+
+/* Drops a favorite on another: it moves to that one's place in the list. */
+static void
+drag_drop_reorder(
+	struct fm_app *app)
+{
+	int moved;
+	int error;
+
+	/* The list written in the new order, and the sidebar filled again. */
+	moved = app->drag_place;
+	error = fm_places_move_favorite(&app->places, moved, app->drag_hit_index);
+	fm_log("DRAG drop operation=reorder place=%d to=%d error=%d", moved, app->drag_hit_index, error);
+	if (error != 0) {
+		fm_ui_message(app, "Couldn't change the sidebar");
+		return;
+	}
+
+	/* The sidebar in its new order. */
+	fm_places_init(&app->places, app->home, &app->tags);
+}
+
 /* Ends a drag: no target, no ghost. */
 static void
 drag_end(
@@ -451,6 +668,7 @@ drag_end(
 	/* Nothing is dragged any more. */
 	app->drag = 0;
 	app->drag_count = 0;
+	app->drag_place = -1;
 	app->drag_target = FM_DRAG_NONE;
 	app->drag_hit_kind = FM_HIT_NONE;
 	app->drag_hit_index = -1;
@@ -537,4 +755,52 @@ drag_draw_badges(
 		fm_canvas_line(canvas, cx - 1.0f, cy - 4.0f, cx + 4.0f, cy - 4.0f, 2.0f, DRAG_COLOR_BADGE_TEXT);
 		fm_canvas_line(canvas, cx + 4.0f, cy - 4.0f, cx + 4.0f, cy + 1.0f, 2.0f, DRAG_COLOR_BADGE_TEXT);
 	}
+}
+
+/*
+ * Draws a dragged favorite: a line where it will go (above the target when
+ * it moves up, below when it moves down) and its name in a small pill
+ * under the pointer.
+ */
+static void
+drag_draw_place(
+	struct fm_app *app,
+	struct fm_canvas *canvas)
+{
+	const struct fm_place *place;
+	const struct fm_rect *rect;
+	float line;
+	int width;
+	int hit;
+	int x;
+	int y;
+
+	/* The target's row, the last drawn. */
+	rect = NULL;
+	if (app->drag_target == FM_DRAG_REORDER) {
+		for (hit = app->hit_count - 1; hit >= 0; hit--) {
+			if (app->hits[hit].kind == FM_HIT_PLACE && app->hits[hit].index == app->drag_hit_index) {
+				rect = &app->hits[hit].rect;
+				break;
+			}
+		}
+	}
+
+	/* The line where the favorite will go. */
+	if (rect != NULL) {
+		line = (float)rect->y;
+		if (app->drag_hit_index > app->drag_place)
+			line = (float)(rect->y + rect->height);
+		fm_canvas_round(canvas, (float)rect->x + 4.0f, line - 1.5f, (float)rect->width - 8.0f, 3.0f, 1.5f, FM_COLOR_ACCENT);
+		fm_canvas_circle(canvas, (float)rect->x + 4.0f, line, 4.0f, FM_COLOR_ACCENT);
+	}
+
+	/* The favorite's name in a pill beside the pointer. */
+	place = &app->places.items[app->drag_place];
+	width = fm_text_width(app->text, place->label, strlen(place->label), 13U, 0) + 24;
+	x = app->pointer_x + DRAG_OFFSET_X + 8;
+	y = app->pointer_y + DRAG_OFFSET_Y;
+	fm_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, 26.0f, 13.0f, 8.0f, FM_COLOR_SHADOW);
+	fm_canvas_round(canvas, (float)x, (float)y, (float)width, 26.0f, 13.0f, FM_RGBA(0xffffff, 235));
+	(void)fm_text_draw(app->text, canvas, x + 12, fm_text_center(13U, y, 26), place->label, strlen(place->label), 13U, 0, FM_COLOR_TEXT);
 }

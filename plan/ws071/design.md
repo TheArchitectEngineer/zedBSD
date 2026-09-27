@@ -391,6 +391,9 @@ void zdesktop_context_menu_destroy(struct zdesktop_context_menu *popup);
   device）か copy（違う device）、Ctrl = copy、Ctrl+Shift = link（Finder の Option・Cmd+Option の代わり）。drag の間は項目の小さい
   絵と「+」の印が pointer に付く。sidebar の Favorites へ folder を落とすと足す、Favorites の中の drag で並べ替え（spec §9）。
 - 窓の間・アプリ・デスクトップへの DnD は zdesktop の data device が要る（Future Work 候補 F-i）。
+- 実装（ws071-p010、2026-09-27）: パンくずは p014 から zdesktop の titlebar（CONTROLS）にあり窓の外なので、その段への drop は
+  F-i と一緒に残す。Favorites へ足すのは Favorites の題への drop（favorite の folder の上は「その中へ move」のまま）。
+  favorite の folder の click は drag できるように release で移る。
 
 ## 13. 装置と mount（spec §25）
 
