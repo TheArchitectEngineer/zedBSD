@@ -74,3 +74,11 @@ RGBA32 を読む・書くだけならこれで足り、構造体も1つで済む
 
 **いつ入れるか**: zdesktop が PNG の画像（アイコン等）を扱う段（p013 のタスクバー、
 p025 のフレーム描画あたり）に着手するときに、p040 と一緒に前へ入れる（D6）。
+
+## 2026-09-27: decode は ws071-p010 で
+
+[ws071-p010](../../ws071/phase010/phase.md) で読む側を先に作った: `include/libc/compat/png.h`、`userland/base/libpng-compat/read.c`、
+`/lib/libpng-compat.so`。libpng 1.6 の simplified API（`png_image_begin_read_from_memory`・`_from_file`・`png_image_finish_read`・
+`png_image_free`）。上の案より広く、全部の色型と bit 深度 1〜16・`tRNS`・filter 5 種・CRC。Adam7 は読まない（失敗）。host の試験
+`plan/ws071/tests/host-png.sh`（PIL と比べる）。WS074 の browser も使う。**この Phase に残るのは encode**（と p040 の deflate）。
+Status は planning のまま。

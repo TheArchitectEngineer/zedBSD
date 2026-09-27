@@ -525,7 +525,8 @@ surface_upload(
 	server->perf.shm_copies++;
 	server->perf.shm_copy_cycles += zwl_cycles() - mark;
 	surface->committed_damaged = 0;
-	server->dirty = 1;
+
+	/* The commit that brought the image marked what is drawn again (damage.c); the log follows. */
 	if (server->log_frames) {
 		/* With the sum of every sixteenth row copied, so that changing pictures can be told from still ones. */
 		sum = 2166136261U;

@@ -3,13 +3,13 @@
 # WS074: zedBSD の Web ブラウザ（`userland/base/zdesktop-browser`）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: なし
-Resume point: p001（全体の設計）から。着手の時期は main の計画で決める（2026-09-27 時点では未着手）
+Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
+Resume point: p001〜p005 cleared（2026-09-27）。次は p007（CSS の最小）、実行の順は下の表の上
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -37,38 +37,84 @@ Wasm を base の中に自前で書く（外部の browser engine は取り込�
 5. **TLS**: 最初は OpenSSL のライブラリ（既存の package）。最終的に base に libssl・libcrypto の互換品を入れる（別の Phase か WS）。
 6. **後回し**: 動画（driver が無い）、音声（ogg vorbis なら `libvorbis-compat` で作れそう）、WebP、JIT。
 
-## 完了の条件（案、p001 で確定）
+## 完了の条件（p001 で確定）
 
-- zdesktop で zdesktop-browser が起動し、URL を開き、HTML・CSS・画像・JavaScript を含む一般的な静的・動的な page を描いて操作できる（段階の目標は p001）。
-- CSS の準拠試験と Chrome との描画の比較で、段階ごとに決めた目標値を満たす。
-- JavaScript と Wasm が共通の実行 engine の上で動く。
+- zdesktop で zdesktop-browser が起動し、URL を開き、HTML・CSS・画像・JavaScript を含む一般的な静的・動的な page を描いて操作できる
+  （使える page の目安は [design.md](design.md) §15）。
+- CSS の準拠試験と Chrome との描画の比較で、段階 M4 までの目標値（design.md §15）を満たす。M5 以降の数は後の WS か Phase で決める。
+- JavaScript と Wasm が共通の実行 engine（値・GC・bytecode・interpreter・呼び出し規約、design.md §11）の上で動く。
+- `libjpeg-compat` が base の library として入り、browser が使う。
 - 変更した source の規約の全文の確認（最後の Phase）。
 
 ## 制約と依存
 
-- 新しい code は `plan/coding-style.md` の全文。外部の試験 suite（WPT、html5lib-tests、test262 等）は source tree に取り込まず、取得・検証して使う
-  （ライセンスを確認）。Chrome の参照の描画は host で取る（host への導入は sudo で可。未導入）。
-- 画面・窓: zdesktop の titlebar（WS070 の CONTROLS・TABS の presentation。browser は TABS mode の最初の本格的な使い手）、glass（zed_glass_v1）。
-- 画像: `libpng-compat`・`libz-compat`（WS035 p040・p041 の範囲、WS071 p010）、`libjpeg-compat`（この WS）。
+- 新しい code は `plan/coding-style.md` の全文。外部の試験 suite（WPT、html5lib-tests、test262、Wasm の spec test）は source tree に
+  取り込まず、commit の SHA を固定して取得・検証して使う（ライセンスを確認、design.md §14.2）。Chrome の参照の描画は host の Debian の
+  `chromium`（2026-09-27 に導入、153.0.8010.52）。
+- 画面・窓: zdesktop の titlebar（WS070 の CONTROLS、ws070-p011 の後は TABS）。提示は wl_shm（design.md §8.4）。
+- 画像: `libpng-compat`・`libz-compat`（ws071-p010、ws035-p040）、`libjpeg-compat`（この WS）。
 - 関係: WS035 の p029〜p032（Chromium の port の計画）とは別の到達目標（自前の engine）。両方を残す。
 
-## Phase 一覧（案。p001 で分け直す）
+## 判断が要る点（既定で進めた）
+
+design.md §17 の D1〜D11（process の構成、TLS の `dlopen`、titlebar、仕様・Unicode の表の commit、GIF の置き場、wl_shm、
+libpng-compat の `from_memory`、libtruetype の拡張、libjpeg-compat の API、既定の font、段階の目標値）。どれも戻せる既定で進める。
+
+## Phase 一覧
+
+p001 で分け直した（2026-09-27。p002〜p013 の案は実行前の案だったので、同じ番号を新しい分割に使う）。各 Phase は 1〜3 時間を目標にし、
+着手の時に大きすぎれば分ける。
+
+**実行の順**（2026-09-27 ユーザー「正常系でワンパス通すのを優先する」、design.md §18）: p005 → p007 → p010 → p011 → p012 → p014（窓に
+実際の page）→ p022 → p023 → p024 → p025 → p026 → p030（JS の接続）→ p013 → p015 → p016 → p017 → p019 → p020 → p021 → p006 → p008 →
+p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 → p035 以降。各 Phase は最小の範囲で通し、残りは phase.md の「後回し」へ。
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws074-p001 | 全体の設計: 構成（process・thread、module の分け方）、HTML の tokenizer・tree builder・DOM、CSS の parser・cascade・computed style、layout（block・inline・text、後で flex・grid・table）、描画（canvas → zdesktop）、network（URL、HTTP/1.1、TLS は OpenSSL、cache、cookie）、画像、JS・Wasm の共通の実行 engine（IR・bytecode・GC・値）、試験の戦略（html5lib-tests・WPT・test262・Wasm spec test の取得と実行、Chrome との描画の比較の仕組み）、段階の目標値、Phase の分割 | planning | — |
-| ws074-p002 | HTML5 の tokenizer・tree builder と DOM（html5lib-tests の通過率の目標） | planning | p001 |
-| ws074-p003 | CSS の parser・cascade・computed style | planning | p002 |
-| ws074-p004 | layout（block・inline・text）と描画、zdesktop の窓（titlebar の TABS・CONTROLS）と操作（scroll、link） | planning | p003、WS070 の TABS |
-| ws074-p005 | network: URL、HTTP/1.1、TLS（OpenSSL）、redirect、cache、cookie | planning | p001 |
-| ws074-p006 | 画像: `libjpeg-compat`（新）と `libpng-compat` の使用 | planning | p004、WS071 p010 |
-| ws074-p007 | JS・Wasm の共通の実行 engine の中核（IR・bytecode・値・GC・呼び出し） | planning | p001 |
-| ws074-p008 | JavaScript: parser、bytecode への変換、interpreter、組み込み（test262 の部分集合の目標） | planning | p007 |
-| ws074-p009 | DOM の binding、event、JS と DOM の接続 | planning | p004、p008 |
-| ws074-p010 | Wasm: 共通の engine の上の decoder・validator・実行（spec test の目標） | planning | p007 |
-| ws074-p011 | CSS の準拠の段階の目標（WPT の CSS の部分集合、目標値を段階的に上げる。複数の Phase に分ける） | planning | p004、p009 |
-| ws074-p012 | `-webkit-` の拡張と Chrome との描画の比較（host の Chrome の参照と差分、目標値を段階的に） | planning | p011 |
-| ws074-p013 | 変更した source の規約の全文との照合と回帰（最後） | planning | 全て |
+| [ws074-p001](phase001/phase.md) | 全体の設計（[design.md](design.md)）、Chromium の導入、Phase の分割 | cleared | — |
+| [ws074-p002](phase002/phase.md) | 骨組み: directory、build の登録（amd64）、`base/`（arena・配列・文字列 buffer・UTF-8/16・hash）、headless の mode の入口、host の build（ASan の組）、suite の取得の script（固定 SHA とライセンスの確認） | cleared | p001 |
+| [ws074-p003](phase003/phase.md) | GC heap の核（非移動の mark-sweep、大きさの class の block、保守的な stack の走査、trace）、VM の string と atom | cleared | p002 |
+| [ws074-p004](phase004/phase.md) | HTML tokenizer（全状態、文字参照の表の生成）、html5lib の tokenizer の runner。目標 ≥ 98% | cleared | p003 |
+| [ws074-p005](phase005/phase.md) | DOM の核（GC の cell の Node・Element・Text・Comment・Document・DocumentType、属性）と tree builder 1（initial〜in body、adoption agency）、html5lib の tree の runner | cleared | p004 |
+| ws074-p006 | tree builder 2（table・select・template・frameset・foreign content）、fragment parsing、serializer。目標 script-off ≥ 90% | planned | p005 |
+| ws074-p007 | CSS の最小（ワンパス）: tokenizer・parser、selector（type・class・id・子孫・子・属性の基本）、cascade（origin・specificity・継承）、約 30 の property、UA stylesheet、`<style>`・`style` 属性 | planned | p003 |
+| ws074-p008 | CSS 2（後回し）: selector の残り（構造・状態・`:is`/`:not`/`:has`、pseudo-element）、rule の索引 | planned | p006、p007 |
+| ws074-p009 | CSS 3（後回し）: property の表の拡張、`var()`・`calc()`、`@media`、file の `<link>`、shorthand の全部 | planned | p008 |
+| ws074-p010 | font と text の最小: font の一覧（Inter、日本語は Droid の fallback）、libtruetype（関数を足すなら main に先に伝える）、advance、空白と CJK での改行 | planned | p002 |
+| ws074-p011 | layout の最小: box tree（anonymous box）、block（幅・高さ・margin の基本）、inline（line box・text run・baseline）、`--dump=layout` | planned | p009、p010 |
+| ws074-p012 | 描画の最小: display list（背景・border の solid・text）、CPU の参照の描画、`--render`（PPM → PNG）、画面の撮影 | planned | p011 |
+| ws074-p013 | layout 2: float・clear、position（relative・absolute・fixed）、overflow と clip、list と marker、replaced の大きさ、単位（em・rem・vw・%） | planned | p012 |
+| ws074-p014 | 窓: Wayland と Vulkan（swapchain、display list の GPU の描画: instance の四角と SDF、glyph の atlas）、CONTROLS の titlebar（URL）、scroll、link（file:）、guest で実際の page を表示。GPU と CPU の描画の比較の試験 | planned | p013 |
+| ws074-p015 | URL（WHATWG）、`data:`、WPT の urltestdata の runner | planned | p002 |
+| ws074-p016 | HTTP/1.1（非同期、持続接続、chunked、redirect）、resolver の thread、loader、cookie、memory の cache、host の test server、guest の http | planned | p014、p015 |
+| ws074-p017 | TLS（OpenSSL の `dlopen`、D2）、https、自前の CA の host の server、guest で実在の site | planned | p016 |
+| ws074-p018 | encoding: 判定（BOM・HTTP・meta の prescan）、UTF-16・legacy の single-byte、Shift_JIS・EUC-JP・ISO-2022-JP（表の生成、D4） | planned | p006 |
+| ws074-p019 | `libjpeg-compat` 1: baseline（huffman、任意の subsampling、restart、grayscale・YCbCr）、library の登録、host の試験（Pillow と比較） | planned | p002 |
+| ws074-p020 | `libjpeg-compat` 2: progressive、CMYK/YCCK、`jpeg_save_markers`（EXIF の向き）、`JCS_EXT_BGRA` | planned | p019 |
+| ws074-p021 | browser の画像: `<img>`、CSS の背景画像、JPEG・PNG（libpng-compat）・GIF、画像の cache、固有の大きさ | planned | p016、p020、ws071-p010 |
+| ws074-p022 | VM の核 2: 値（NaN-boxing）、object と shape、配列の elements、関数、realm の骨組み | planned | p003 |
+| ws074-p023 | 共通の bytecode と interpreter、呼び出し規約、例外の unwind、native 関数（手で組んだ JS 型と Wasm 型の命令の試験） | planned | p022 |
+| ws074-p024 | JS の lexer と parser（ES2024 の構文 → AST）、test262 の構文の試験（parse だけ） | planned | p023 |
+| ws074-p025 | JS の compiler（ES5 の核）、`--js` の shell、test262 の runner。最初の数 | planned | p024 |
+| ws074-p026 | 組み込み 1: Object・Function・Array・String・Number（最短の十進表記）・Boolean・Math・Error・JSON | planned | p025 |
+| ws074-p027 | RegExp の engine と String の regex の method | planned | p026 |
+| ws074-p028 | ES2015 の意味 1: let・const・TDZ、arrow、class、destructuring、spread、template、Symbol、iterator、for-of、Map・Set・Weak* | planned | p026 |
+| ws074-p029 | ES2015 の意味 2: generator、Promise と microtask、async・await、Proxy・Reflect、TypedArray・ArrayBuffer・DataView、Date、BigInt | planned | p028 |
+| ws074-p030 | WebIDL の binding の生成器、window・document・Node・Element の基本、console、`<script>` の実行、timer、event loop、WPT の testharness の runner | planned | p014、p029 |
+| ws074-p031 | event（dispatch・入力）、innerHTML、querySelector、classList、CSSOM の inline style、getComputedStyle、geometry、変更の後の再計算 | planned | p030 |
+| ws074-p032 | fetch・XHR（same-origin・CORS）、Location・History、form（control の描画と入力、送信）、localStorage | planned | p017、p031 |
+| ws074-p033 | Wasm: decoder・validator・共通 bytecode への compiler、JS API、spec test の runner（wabt の wast2json） | planned | p029 |
+| ws074-p034 | Wasm の MVP の後: bulk memory、reference types、multi-value、sign-ext、非 trap の変換、SIMD。**M2 の計測** | planned | p033、p032 |
+| ws074-p035 | flexbox | planned | p013 |
+| ws074-p036 | CSS の段階 M3-1: WPT CSS2・flexbox・backgrounds・values・selectors を測り、失敗の多い塊を直す | planned | p034、p035 |
+| ws074-p037 | table の layout（CSS2 の table、border-collapse） | planned | p036 |
+| ws074-p038 | transform（2D）、transition・animation、gradient、box-shadow、角丸の clip、opacity、`@font-face`（TTF/OTF） | planned | p036 |
+| ws074-p039 | grid | planned | p036 |
+| ws074-p040 | Chrome との比較の拡大（corpus と実在の site の保存、box と画素の指標）、`-webkit-` の表（別名、`-webkit-box`、`-webkit-line-clamp` 等）。**M3 の計測** | planned | p037〜p039 |
+| ws074-p041 | shell 2: TABS の titlebar と窓の中の toolbar、System Menu、context menu、履歴、ページ内検索、zoom、view-source | planned | p032、ws070-p011 |
+| ws074-p042 | CSS の段階 M4: 失敗の塊から機能を選んで直す | planned | p040 |
+| ws074-p043 | JS・Chrome の段階 M4: test262 と比較の失敗の塊を直す。**M4 の計測** | planned | p042 |
+| ws074-p044 | 変更した source の規約の全文との照合、fuzz（時間を区切って）、回帰、boot test（最後） | planned | 全て |
 
 ## 後の WS・Future Work の候補
 

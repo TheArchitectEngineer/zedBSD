@@ -20,6 +20,7 @@
 
 #include "files.h"
 
+#include <compat/png.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -40,6 +41,7 @@
 
 static int thumb_read_file(const char *path, unsigned char **data, size_t *size);
 static int thumb_ppm(const unsigned char *data, size_t size, struct fm_image *image);
+static int thumb_png(const unsigned char *data, size_t size, struct fm_image *image);
 static int thumb_number(const unsigned char *data, size_t size, size_t *at);
 static int thumb_space(unsigned char byte);
 static struct fm_thumb *thumb_find(struct fm_app *app, const char *path, time_t modified);
@@ -66,12 +68,16 @@ fm_image_load(
 	if (error != 0)
 		return error;
 
-	/* A binary PPM or PGM is decoded; any other format is not read. */
+	/* A binary PPM or PGM, or a PNG (libpng-compat), is decoded; any other format is not read. */
 	error = ENOTSUP;
 	if (size > 2U && data[0] == 'P') {
 		if (data[1] == '6' || data[1] == '5')
 			error = thumb_ppm(data, size, image);
 	}
+
+	/* A PNG by its signature. */
+	if (size > 8U && data[0] == 0x89U && data[1] == 'P' && data[2] == 'N' && data[3] == 'G')
+		error = thumb_png(data, size, image);
 
 	/* The file's bytes are not needed any more. */
 	free(data);
@@ -408,6 +414,80 @@ thumb_ppm(
 			at += (size_t)channels;
 		}
 	}
+
+	/* Succeeded: the picture. */
+	return 0;
+}
+
+/*
+ * Decodes a PNG (libpng-compat's simplified API) into a picture: straight
+ * BGRA, multiplied by its alpha into the canvas's premultiplied pixels.
+ */
+static int
+thumb_png(
+	const unsigned char *data,
+	size_t size,
+	struct fm_image *image)
+{
+	png_image png;
+	unsigned char *pixels;
+	const unsigned char *pixel;
+	uint32_t *row;
+	uint32_t alpha;
+	int x;
+	int y;
+	int ok;
+	int error;
+
+	/* The header: a size the thumbnails take. */
+	memset(&png, 0, sizeof(png));
+	png.version = PNG_IMAGE_VERSION;
+	ok = png_image_begin_read_from_memory(&png, data, size);
+	if (!ok)
+		return EINVAL;
+	if (png.width == 0U || png.height == 0U || png.width > THUMB_SIDE_MAX || png.height > THUMB_SIDE_MAX ||
+	    (unsigned long)png.width * png.height > THUMB_PIXELS_MAX) {
+		png_image_free(&png);
+		return EFBIG;
+	}
+
+	/* The pixels, 8-bit BGRA. */
+	png.format = PNG_FORMAT_BGRA;
+	pixels = malloc(PNG_IMAGE_SIZE(png));
+	if (pixels == NULL) {
+		png_image_free(&png);
+		return ENOMEM;
+	}
+
+	/* Decode. */
+	ok = png_image_finish_read(&png, NULL, pixels, 0, NULL);
+	if (!ok) {
+		free(pixels);
+		return EINVAL;
+	}
+
+	/* The picture. */
+	error = fm_image_create(image, (int)png.width, (int)png.height);
+	if (error != 0) {
+		free(pixels);
+		return error;
+	}
+
+	/* Each pixel, its colour multiplied by its alpha. */
+	for (y = 0; y < image->height; y++) {
+		row = image->pixels + (size_t)y * image->stride;
+		for (x = 0; x < image->width; x++) {
+			pixel = pixels + ((size_t)y * png.width + (size_t)x) * 4U;
+			alpha = pixel[3];
+			row[x] = (alpha << 24) |
+			    (((uint32_t)pixel[2] * alpha / 255U) << 16) |
+			    (((uint32_t)pixel[1] * alpha / 255U) << 8) |
+			    ((uint32_t)pixel[0] * alpha / 255U);
+		}
+	}
+
+	/* The decoded bytes go. */
+	free(pixels);
 
 	/* Succeeded: the picture. */
 	return 0;

@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws071: runs the guest tests of the phases given (default p002 to p008, p012 to p015) one after another and
+# ws071: runs the guest tests of the phases given (default p002 to p009, p012 to p015, p017, p010) one after another and
 # prints each one's verdict and its failed checks.  The guest must be up (files-guest.sh start).
 #
 #   plan/ws071/tests/files-regress.sh [OUTDIR] [PHASE...]      (PHASE like p003)
@@ -8,7 +8,7 @@ set -u
 cd "$(dirname -- "$0")/../../.."
 out=${1:-build/ws071-regress}
 [ $# -gt 0 ] && shift
-phases=${*:-p002 p003 p004 p005 p006 p007 p012 p008 p014 p013 p015}
+phases=${*:-p002 p003 p004 p005 p006 p007 p012 p008 p014 p013 p015 p009 p017 p010}
 failed=0
 mkdir -p "$(dirname -- "$out")"
 for phase in $phases; do

@@ -109,9 +109,9 @@ sleep 1
 keys '<ctrl-alt-t>'
 sleep 1
 expect_log /tmp/f.log 'ZFILES FAVORITE add path=/tmp/fhome/Projects'
-pointer move $((wx + 100)) $((wy + 275)) sleep 500
+pointer move $((wx + 100)) $((wy + 263)) sleep 500
 check "$out/favorite.png" >/dev/null
-click 200 275
+click 188 263
 expect_log /tmp/f.log 'ZFILES FAVORITE remove path=/tmp/fhome/Projects'
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)

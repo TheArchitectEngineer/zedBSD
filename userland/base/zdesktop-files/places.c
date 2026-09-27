@@ -178,6 +178,62 @@ fm_places_remove_favorite(
 }
 
 /*
+ * Moves a favorite folder (by its place's index) to where another one is
+ * (before it when it moves up, after it when it moves down) and keeps the
+ * list.  Returns 0, EINVAL for a place that is not a favorite folder, or an
+ * errno value.
+ */
+int
+fm_places_move_favorite(
+	struct fm_places *places,
+	int moved,
+	int to)
+{
+	char file[FM_PATH_MAX];
+	FILE *out;
+	int index;
+	int ends[2];
+	int end;
+
+	/* Both are favorite folders (not Home). */
+	ends[0] = moved;
+	ends[1] = to;
+	for (end = 0; end < 2; end++) {
+		if (ends[end] < 0 || ends[end] >= places->count)
+			return EINVAL;
+		if (places->items[ends[end]].section != FM_SECTION_FAVORITES || places->items[ends[end]].location.kind != FM_LOCATION_FOLDER)
+			return EINVAL;
+	}
+
+	/* The list written again in the new order. */
+	places_file(file, sizeof(file));
+	out = fopen(file, "w");
+	if (out == NULL)
+		return errno;
+	for (index = 0; index < places->count; index++) {
+		if (index == moved)
+			continue;
+		if (places->items[index].section != FM_SECTION_FAVORITES || places->items[index].location.kind != FM_LOCATION_FOLDER)
+			continue;
+
+		/* Moving up: the moved folder comes before the one it was dropped on. */
+		if (index == to && to < moved)
+			fprintf(out, "%s\n", places->items[moved].location.path);
+		fprintf(out, "%s\n", places->items[index].location.path);
+
+		/* Moving down: after it. */
+		if (index == to && to > moved)
+			fprintf(out, "%s\n", places->items[moved].location.path);
+	}
+
+	/* The list is written. */
+	fclose(out);
+
+	/* Succeeded: the caller fills the sidebar again. */
+	return 0;
+}
+
+/*
  * Reports the name a place is shown by: the dashboard is Home, the home
  * folder is Home, the root is Computer, and a folder is its last part.
  */

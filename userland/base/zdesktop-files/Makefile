@@ -22,5 +22,5 @@ ZDESKTOP_FILES_SOURCES := userland/base/zdesktop-files/main.c \
 	userland/base/zdesktop-files/ui-menu.c userland/base/zdesktop-files/ui-help.c \
 	userland/base/zdesktop-files/menu.c userland/base/zdesktop-files/titlebar.c \
 	userland/base/zdesktop-files/ui-titlebar.c userland/base/zdesktop-files/glass.c \
-	userland/base/zdesktop-files/ui-context.c
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-files,File manager,amd64,y,basic,$(ZDESKTOP_FILES_SOURCES),y,base,base/zdesktop-files,base/libvulkan base/libwayland base/libzdesktop base/libtruetype,0755,program,,,bin))
+	userland/base/zdesktop-files/ui-context.c userland/base/zdesktop-files/ui-drag.c
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-files,File manager,amd64,y,basic,$(ZDESKTOP_FILES_SOURCES),y,base,base/zdesktop-files,base/libvulkan base/libwayland base/libzdesktop base/libtruetype base/libz-compat base/libpng-compat,0755,program,,,bin))
