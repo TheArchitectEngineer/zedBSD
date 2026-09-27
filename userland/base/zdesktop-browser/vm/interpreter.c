@@ -442,6 +442,7 @@ interpreter_step_js(
 	case VM_OP_ARRAY_PUSH:
 	case VM_OP_ARRAY_HOLE:
 	case VM_OP_FOR_IN_START:
+	case VM_OP_TO_PROPERTY_KEY:
 		status = interpreter_property(run, words, registers);
 		return status;
 	default:
@@ -734,6 +735,9 @@ interpreter_property(
 		return status;
 	case VM_OP_FOR_IN_START:
 		status = vm_for_in_start(realm, registers[words[2]], &value);
+		break;
+	case VM_OP_TO_PROPERTY_KEY:
+		status = vm_to_key(realm, registers[words[2]], &value);
 		break;
 	default:
 		return EINVAL;

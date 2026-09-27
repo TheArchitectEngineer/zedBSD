@@ -21,6 +21,12 @@ var key = "computed";
 var literal = { b: 1, "a-b": 2, 3: "three", 1.5: "one and a half", [key]: 4, a: 5 };
 print("literal", keys(literal), literal["a-b"], literal[3], literal["1.5"], literal.computed);
 
+// A computed key is converted before its value is computed.
+var steps = "";
+var keyObject = { toString: function () { steps += "key "; return "k"; } };
+var ordered = { [keyObject]: (steps += "value ", 1) };
+print("key-order", steps, ordered.k);
+
 // Shorthand properties and methods.
 var shortValue = 7;
 var short = { shortValue, twice(n) { return n * 2; } };

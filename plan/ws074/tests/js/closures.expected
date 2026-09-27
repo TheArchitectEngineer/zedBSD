@@ -5,6 +5,7 @@ loop 3 3 3
 callee 120 undefined
 hoisted yes undefined undefined
 arguments 4:a:c:true 0:undefined:undefined:true
+var-arguments object:assigned
 nested arguments 3
 catch outer inner
 this true undefined true

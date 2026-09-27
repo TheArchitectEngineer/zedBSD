@@ -1,4 +1,5 @@
 literal 3,b,a-b,1.5,computed,a, 2 three one and a half 4
+key-order key value  1
 short 7 42
 accessor 40 4 g value,onlyGetter,
 proto from base derived shadowed,own,inherited,

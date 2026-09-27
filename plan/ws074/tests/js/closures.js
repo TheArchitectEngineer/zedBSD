@@ -57,6 +57,14 @@ function args() {
 }
 print("arguments", args("a", "b", "c", "d"), args());
 
+// A var named arguments is the arguments object until it is assigned.
+function varArguments() {
+	var before = typeof arguments;
+	var arguments = "assigned";
+	return before + ":" + arguments;
+}
+print("var-arguments", varArguments(1));
+
 // arguments captured by a nested function.
 function outerArguments() {
 	return (function (arguments_holder) { return arguments_holder.length; })(arguments) + (function () { return arguments.length; })();

@@ -28,6 +28,14 @@
 
 #include <string.h>
 
+/* The length of the name arguments. */
+#define SCOPE_ARGUMENTS_LENGTH	9U
+
+/* The name arguments, as the tree's texts are written (a constant for the life of the program). */
+static const uint16_t scope_arguments_name[SCOPE_ARGUMENTS_LENGTH] = {
+	'a', 'r', 'g', 'u', 'm', 'e', 'n', 't', 's'
+};
+
 static struct js_function_info *scope_function(struct js_compiler *compiler, struct js_scope *parent, struct js_node *node, int program);
 static struct js_scope *scope_new(struct js_compiler *compiler, struct js_scope *parent, struct js_function_info *function, int kind);
 static struct js_binding *scope_find(const struct js_scope *scope, const uint16_t *name, size_t length);
@@ -41,6 +49,7 @@ static void scope_visit(struct js_compiler *compiler, struct js_scope *scope, st
 static void scope_visit_try(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
 static void scope_reference(struct js_compiler *compiler, struct js_scope *scope, const uint16_t *name, size_t length);
 static int scope_has_own_arguments(const struct js_function_info *info);
+static void scope_arguments_var(struct js_function_info *info);
 
 /*
  * Runs the scope pass over a program: every function node, the program
@@ -167,6 +176,7 @@ scope_function(
 		scope_visit_list(compiler, info->scope, node->first);
 	} else {
 		scope_declarations(compiler, info, node->second);
+		scope_arguments_var(info);
 		scope_visit_list(compiler, info->scope, node->second);
 	}
 
@@ -546,6 +556,31 @@ scope_reference(
 			return;
 		}
 	}
+}
+
+/*
+ * Makes a var named arguments the function's arguments object: the var
+ * does not replace it (a parameter or a function declaration of that name
+ * does, and keeps its binding).
+ */
+static void
+scope_arguments_var(
+	struct js_function_info *info)
+{
+	struct js_binding *binding;
+	int own_arguments;
+
+	/* A var of that name, in a function that has an arguments object. */
+	binding = scope_find(info->scope, scope_arguments_name, SCOPE_ARGUMENTS_LENGTH);
+	if (binding == NULL || binding->kind != JS_BINDING_VAR)
+		return;
+	own_arguments = scope_has_own_arguments(info);
+	if (!own_arguments)
+		return;
+
+	/* The var is the arguments object's binding. */
+	binding->kind = JS_BINDING_ARGUMENTS;
+	info->arguments = binding;
 }
 
 /* Tells whether a function has an arguments object of its own (the program and arrow functions do not). */

@@ -366,6 +366,7 @@ expr_object(
 		constant = 0;
 		if (computed) {
 			js_compile_expression(fc, key_node, key);
+			js_emit2(fc, VM_OP_TO_PROPERTY_KEY, key, key);
 		} else {
 			constant = expr_property_key(fc, key_node);
 			js_emit2(fc, VM_OP_LOAD_CONST, key, constant);
