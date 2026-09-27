@@ -1464,6 +1464,11 @@ draw_program(
 				dynamic_count, &dynamic_offset);
 	if (layout.count != 0U)
 		vkCmdBindVertexBuffers(target.command, 0U, layout.count, buffers, offsets);
+
+	/* An active occlusion query counts the draw (a segment of it open in the pass). */
+	gles_queries_draw(state, &target);
+
+	/* Indexed, or not. */
 	if (index_buffer != VK_NULL_HANDLE) {
 		vkCmdBindIndexBuffer(target.command, index_buffer, index_offset, VK_INDEX_TYPE_UINT32);
 		vkCmdDrawIndexed(target.command, expanded, (uint32_t)instances, 0U, 0, 0U);

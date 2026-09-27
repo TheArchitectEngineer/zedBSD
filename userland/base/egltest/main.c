@@ -27,8 +27,10 @@
  * --scene=volumes volumes.c's squares of 3D and 2D array textures and
  * texels given through the pixel store and pixel buffers, and
  * --scene=targets targets.c's squares of what framebuffer objects with
- * several attachments of several formats drew, and --scene=blits
- * blits.c's squares of blits, multisampling and a 3D slice drawn into.
+ * several attachments of several formats drew, --scene=blits blits.c's
+ * squares of blits, multisampling and a 3D slice drawn into, and
+ * --scene=queries queries.c's squares of occlusion queries and a fence
+ * sync.
  *
  * Every outcome is one line: EGLTEST DONE on a clean end, EGLTEST FAILED
  * naming what failed otherwise.
@@ -43,6 +45,7 @@
 #include "cube.h"
 #include "es3.h"
 #include "formats.h"
+#include "queries.h"
 #include "scene.h"
 #include "blits.h"
 #include "targets.h"
@@ -156,7 +159,7 @@ main(
 	/* The command line. */
 	status = egltest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo|cube|es3|formats|volumes|targets|blits] [--token=NAME]\n");
+		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo|cube|es3|formats|volumes|targets|blits|queries] [--token=NAME]\n");
 		return 2;
 	}
 
@@ -293,7 +296,9 @@ egltest_start(
 	/* The scene's program, buffers and texture. */
 	egl->operation = "scene";
 	if (options->scene) {
-		if (options->scene == 10) {
+		if (options->scene == 11) {
+			status = egltest_queries_start();
+		} else if (options->scene == 10) {
 			status = egltest_blits_start();
 		} else if (options->scene == 9) {
 			status = egltest_targets_start();
@@ -370,7 +375,11 @@ egltest_frames(
 			}
 
 			/* The scene, through the framebuffer object for --scene=fbo, the cube map's squares, or the OpenGL ES 3.0 API scene. */
-			if (options->scene == 10) {
+			if (options->scene == 11) {
+				egltest_queries_draw(width, height);
+				if (frame == 1U)
+					egl->failures = egltest_queries_check(width, height, options->token);
+			} else if (options->scene == 10) {
 				egltest_blits_draw(width, height);
 				if (frame == 1U)
 					egl->failures = egltest_blits_check(width, height, options->token);
@@ -557,6 +566,9 @@ egltest_parse(
 			differs = strcmp(value, "blits");
 			if (differs == 0)
 				options->scene = 10;
+			differs = strcmp(value, "queries");
+			if (differs == 0)
+				options->scene = 11;
 			differs = strcmp(value, "draw");
 			if (differs != 0 && options->scene == 1)
 				return -1;

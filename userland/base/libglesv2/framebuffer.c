@@ -116,6 +116,7 @@ static GLenum framebuffer_status(struct gles_state *state, struct gles_framebuff
 static GLenum framebuffer_build(struct gles_state *state, struct gles_framebuffer *fbo, struct framebuffer_images *images);
 static void framebuffer_mark(struct gles_state *state, struct framebuffer_images *images);
 static void framebuffer_forget_views(struct gles_state *state, struct gles_framebuffer *fbo);
+static void framebuffer_leave(struct gles_state *state, struct zegl_surface *surface);
 static VkImageView framebuffer_slice(struct gles_state *state, struct gles_slice_image *slice, const struct framebuffer_image *image);
 static void framebuffer_slices_copy(struct gles_state *state, struct gles_framebuffer *fbo, VkCommandBuffer command, int back);
 static void framebuffer_slices_free(struct gles_state *state, struct gles_framebuffer *fbo);
@@ -214,7 +215,7 @@ gles_target_open(
 	/* Its pass entered, unless it is the one open: the surface's pass or another object's ends first, the 3D slices it draws are copied in. */
 	if (state->open_fbo != fbo) {
 		gles_target_close(state);
-		zegl_frame_leave_pass(surface);
+		framebuffer_leave(state, surface);
 		framebuffer_slices_copy(state, fbo, surface->command, 0);
 		memset(&begin, 0, sizeof(begin));
 		begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -280,6 +281,9 @@ gles_target_close(
 	if (state->open_fbo == NULL)
 		return;
 
+	/* An occlusion query's segment in the pass ends first. */
+	gles_queries_suspend(state);
+
 	/* The pass ends in the frame it was opened in; the images rest in their layouts again, the 3D slices drawn are copied back. */
 	vkCmdEndRenderPass(state->open_surface->command);
 	framebuffer_slices_copy(state, state->open_fbo, state->open_surface->command, 1);
@@ -335,7 +339,7 @@ gles_read_source(
 
 		/* The pass ends so the image can be copied. */
 		zegl_frame_pass(surface, NULL);
-		zegl_frame_leave_pass(surface);
+		framebuffer_leave(state, surface);
 
 		/* Succeeded: the surface's image, with rows from the top, as RGBA8 (or BGRA8). */
 		read->surface = surface;
@@ -389,7 +393,7 @@ gles_read_source(
 
 	/* No pass open in it. */
 	gles_target_close(state);
-	zegl_frame_leave_pass(surface);
+	framebuffer_leave(state, surface);
 
 	/* Succeeded: the attachment's image (a renderbuffer's or a texture's), level and layer, with GL's rows. */
 	read->surface = surface;
@@ -602,7 +606,7 @@ gles_texture_fetch(
 	}
 
 	/* Nor the surface's. */
-	zegl_frame_leave_pass(surface);
+	framebuffer_leave(state, surface);
 
 	/* A depth format is copied from its depth aspect; a barrier names every aspect it has. */
 	format = texture->image_format;
@@ -2454,6 +2458,17 @@ framebuffer_mark(
 	}
 }
 
+/* Ends the surface's own render pass, if one is open, an occlusion query's segment in it first. */
+static void
+framebuffer_leave(
+	struct gles_state *state,
+	struct zegl_surface *surface)
+{
+	/* The segment, then the pass. */
+	gles_queries_suspend(state);
+	zegl_frame_leave_pass(surface);
+}
+
 /* Lets a framebuffer object's render pass and framebuffer go (they wait for the frame), and forgets what they were made for. */
 static void
 framebuffer_forget_views(
@@ -2831,7 +2846,7 @@ framebuffer_sides(
 	gles_target_close(state);
 	if (read_fbo == NULL || draw_fbo == NULL)
 		zegl_frame_pass(surface, NULL);
-	zegl_frame_leave_pass(surface);
+	framebuffer_leave(state, surface);
 
 	/* The read side: the surface's image and depth buffer, or the object's read buffer and depth attachment. */
 	if (read_fbo == NULL) {

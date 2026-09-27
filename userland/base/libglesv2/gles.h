@@ -212,6 +212,34 @@ struct gles_sampling {
 };
 
 /*
+ * A query object (glGenQueries): its target once begun, the query pool's
+ * slots its segments were recorded in (one per run of draws in one render
+ * pass) with the frames that recorded them, and a transform feedback
+ * query's count of primitives.
+ */
+struct gles_query {
+	GLuint name;
+	GLenum target;
+	int ended;
+	uint32_t *slots;
+	uint64_t *frames;
+	unsigned slot_count;
+	unsigned slot_capacity;
+	GLuint primitives;
+};
+
+/*
+ * A fence sync (glFenceSync): the frame being recorded when it was made,
+ * in the context's list of them.
+ */
+struct gles_sync {
+	uint64_t frame;
+	struct gles_sync *next;
+};
+
+struct gles_queries;
+
+/*
  * A sampler object (glGenSamplers): sampling state a unit uses instead of
  * its texture's own while it is bound there.
  */
@@ -600,6 +628,11 @@ struct gles_program {
 	struct gles_attribute attributes[GLES_ATTRIBS];
 	unsigned attribute_count;
 
+	/* The fragment shader's outputs, by name and location (glGetFragDataLocation). */
+	char output_names[GLES_DRAW_BUFFERS][GLES_NAME];
+	GLint output_locations[GLES_DRAW_BUFFERS];
+	unsigned output_count;
+
 	/* The uniforms and the locations of their elements. */
 	struct gles_uniform *uniforms;
 	unsigned uniform_count;
@@ -879,6 +912,10 @@ struct gles_state {
 	struct gles_sampler_object *unit_samplers[GLES_UNITS];
 	struct gles_names sampler_objects;
 
+	/* The query objects' namespace, and the queries' and fence syncs' shared state (query.c; NULL until the first). */
+	struct gles_names query_objects;
+	struct gles_queries *queries;
+
 	/* Blending. */
 	int blend;
 	GLenum blend_src_rgb;
@@ -1097,6 +1134,11 @@ VkImageView gles_texture_attach_view(struct gles_state *state, struct gles_textu
 void gles_framebuffers_forget(struct gles_state *state, int kind, GLuint name);
 void gles_framebuffers_release(struct gles_state *state);
 int gles_texture_fetch(struct zegl_context *context, struct gles_texture *texture);
+
+/* query.c: query objects and fence syncs. */
+void gles_queries_draw(struct gles_state *state, const struct gles_target *target);
+void gles_queries_suspend(struct gles_state *state);
+void gles_queries_release(struct gles_state *state);
 
 /* program.c: shaders and programs. */
 void gles_program_release(struct gles_state *state, struct gles_program *program);

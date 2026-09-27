@@ -5,5 +5,5 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 EGLTEST_SOURCES := userland/base/egltest/main.c userland/base/egltest/scene.c userland/base/egltest/cube.c \
 	userland/base/egltest/es3.c userland/base/egltest/formats.c \
 	userland/base/egltest/volumes.c userland/base/egltest/targets.c \
-	userland/base/egltest/blits.c
+	userland/base/egltest/blits.c userland/base/egltest/queries.c
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,egltest,EGL test,amd64,y,basic,$(EGLTEST_SOURCES),y,base,base/egltest,base/libegl base/libglesv2 base/libwayland-egl base/libwayland,0755,program,,,bin))

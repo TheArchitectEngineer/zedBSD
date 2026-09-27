@@ -1314,7 +1314,8 @@ gles_frame_closing(
 	if (state == NULL)
 		return;
 
-	/* The pass, if one is open. */
+	/* An occlusion query's segment, and the pass, if one is open. */
+	gles_queries_suspend(state);
 	gles_target_close(state);
 }
 
@@ -1381,8 +1382,9 @@ gles_release(
 		}
 	}
 
-	/* The sampler objects. */
+	/* The sampler objects, and the query objects and fence syncs. */
 	gles_samplers_release(state);
+	gles_queries_release(state);
 
 	/* The framebuffer objects and renderbuffers, and the vertex array objects. */
 	gles_framebuffers_release(state);
@@ -1690,6 +1692,9 @@ gles_integers(
 		return 1U;
 	case GL_NUM_SHADER_BINARY_FORMATS:
 		values[0] = 1;
+		return 1U;
+	case GL_NUM_PROGRAM_BINARY_FORMATS:
+		values[0] = 0;
 		return 1U;
 	case GL_SHADER_BINARY_FORMATS:
 		values[0] = GL_SHADER_BINARY_FORMAT_SPIR_V;

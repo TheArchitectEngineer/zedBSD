@@ -10,7 +10,7 @@ LIBGLESV2_GLSL_SOURCES := userland/base/libglesv2/glsl/arena.c userland/base/lib
 	userland/base/libglesv2/glsl/emit-builtin.c userland/base/libglesv2/glsl/link.c
 LIBGLESV2_SOURCES := userland/base/libglesv2/gles.c userland/base/libglesv2/buffer.c userland/base/libglesv2/texture.c \
 	userland/base/libglesv2/spirv.c userland/base/libglesv2/program.c userland/base/libglesv2/draw.c \
-	userland/base/libglesv2/framebuffer.c userland/base/libglesv2/format.c userland/base/libglesv2/pixels.c $(LIBGLESV2_GLSL_SOURCES)
+	userland/base/libglesv2/framebuffer.c userland/base/libglesv2/format.c userland/base/libglesv2/pixels.c userland/base/libglesv2/query.c $(LIBGLESV2_GLSL_SOURCES)
 
 # The public SONAME follows the standard spelling.
 LIBGLESV2_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libGLESv2.so=$(BUILD)/dynamic/libGLESv2.so)
