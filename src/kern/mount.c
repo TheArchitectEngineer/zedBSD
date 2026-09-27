@@ -85,6 +85,10 @@ static int identity_text_valid(const char *text, size_t capacity, uint32_t flags
 static int filesystem_identity_valid(const struct block_identity *identity);
 static const struct filesystem_type * find_type(const char *name, struct disk *disk, int *probe_error);
 static int mount_filesystem_on_disk(struct mount *mountp, const char *type_name, struct disk *disk, int flags, void *data);
+static int mount_disk_reserve(struct mount *mountp, struct disk *disk, unsigned flags);
+static void mount_disk_unreserve(struct mount *mountp);
+static int disk_shares_blocks(struct disk *left, struct disk *right);
+static int disk_leaf_extent(struct disk *disk, struct disk **leaf, uint64_t *first, uint64_t *last);
 static int mount_filesystem(struct mount *mountp, const char *type_name, int flags, void *data);
 static int valid_component(const char *name);
 static void link_child(struct mount *parent, struct mount *child);
@@ -2027,6 +2031,13 @@ mount_filesystem_on_disk(
 	if (!(type->fs_flags & FILESYSTEM_NODEV) && disk == NULL)
 		return ENXIO;
 
+	/* Refuses a disk that another mount already uses (BUG-065). */
+	if (disk != NULL) {
+		error = mount_disk_reserve(mountp, disk, (unsigned)flags);
+		if (error != 0)
+			return error;
+	}
+
 	/* Guards a writable disk against other claims and opens it. */
 	if (disk != NULL) {
 		if ((flags & MOUNT_READ_ONLY) == 0 &&
@@ -2034,8 +2045,10 @@ mount_filesystem_on_disk(
 			error = backing_mutation_begin_disk(
 			    disk, 0, disk->d_block_count, NULL,
 			    &mountp->m_backing_guard);
-			if (error != 0)
+			if (error != 0) {
+				mount_disk_unreserve(mountp);
 				return error;
+			}
 		}
 
 		check_flags = (unsigned)flags;
@@ -2044,12 +2057,14 @@ mount_filesystem_on_disk(
 		error = backing_claim_check_mount(disk, check_flags);
 		if (error != 0) {
 			backing_mutation_end(&mountp->m_backing_guard);
+			mount_disk_unreserve(mountp);
 			return error;
 		}
 
 		error = disk_open(disk);
 		if (error != 0) {
 			backing_mutation_end(&mountp->m_backing_guard);
+			mount_disk_unreserve(mountp);
 			return error;
 		}
 	}
@@ -2066,6 +2081,7 @@ mount_filesystem_on_disk(
 		if (disk != NULL)
 			disk_close(disk);
 		backing_mutation_end(&mountp->m_backing_guard);
+		mount_disk_unreserve(mountp);
 		if (error != 0)
 			return error;
 		return EIO;
@@ -2775,5 +2791,183 @@ unmount_owned(
 	mount_free(mountp);
 
 	/* Reports the unmounted filesystem. */
+	return 0;
+}
+
+/*
+ * Records a disk as a mount's disk unless another mount already uses it.
+ *
+ * Two mounts of one volume keep two independent copies of the filesystem's
+ * state -- its allocation maps, its journal, its caches -- and each writes
+ * its own copy back, which corrupts the volume (BUG-065).  So a disk whose
+ * blocks overlap another mount's disk is refused with EBUSY when either of
+ * the two mounts can write; two read-only mounts only read, and may share
+ * it.  A mount still being prepared or being torn down counts, since its
+ * filesystem state is live.  The test and the recording are one critical
+ * section, so of two mounts racing for one disk only one gets it.
+ */
+static int
+mount_disk_reserve(
+	struct mount *mountp,
+	struct disk *disk,
+	unsigned flags)
+{
+	struct mount *other;
+	unsigned mount_flags;
+	unsigned index;
+	unsigned long irq;
+	int shared;
+	int busy;
+
+	/* The flags the mount will have; a read-only disk makes it read-only. */
+	mount_flags = flags;
+	if ((disk->d_flags & DISK_READ_ONLY) != 0)
+		mount_flags |= MOUNT_READ_ONLY;
+
+	/* Compares the disk with every other mount's, and takes it when free. */
+	busy = 0;
+	irq = spin_lock_irqsave(&namespace_lock);
+
+	/* Stops at the first other mount that shares the blocks. */
+	for (index = 0; index < MOUNT_MAX; index++) {
+		/* Skips a free slot, this mount, and a mount without a disk. */
+		other = &mounts[index];
+		if (!mount_used[index] || other == mountp)
+			continue;
+		if (other->m_disk == NULL)
+			continue;
+
+		/* Skips a mount that is gone or not yet started. */
+		if (other->m_state != MOUNT_STATE_PREPARING &&
+		    other->m_state != MOUNT_STATE_LIVE &&
+		    other->m_state != MOUNT_STATE_DYING)
+			continue;
+
+		/* Two read-only mounts may share the blocks. */
+		if ((mount_flags & MOUNT_READ_ONLY) != 0 &&
+		    (other->m_flags & MOUNT_READ_ONLY) != 0)
+			continue;
+
+		/* Any other sharing of the blocks is refused. */
+		shared = disk_shares_blocks(disk, other->m_disk);
+		if (shared) {
+			busy = 1;
+			break;
+		}
+	}
+
+	/*
+	 * The recorded disk is what makes a later mount of the same blocks
+	 * see this one, from now until the unmount or the failure clears it.
+	 */
+	if (!busy) {
+		mountp->m_disk = disk;
+		mountp->m_flags = mount_flags;
+	}
+
+	/* Leaves the section with the verdict made. */
+	spin_unlock_irqrestore(&namespace_lock, irq);
+
+	/* Refuses a disk another mount uses. */
+	if (busy)
+		return EBUSY;
+
+	/* Succeeded: the mount holds the disk. */
+	return 0;
+}
+
+/* Gives a disk back after a mount failed before it went live. */
+static void
+mount_disk_unreserve(
+	struct mount *mountp)
+{
+	unsigned long irq;
+
+	/* Clears the disk under the lock the reservation reads it under. */
+	irq = spin_lock_irqsave(&namespace_lock);
+
+	/* No disk means a later mount of the blocks is not refused. */
+	mountp->m_disk = NULL;
+
+	/* Leaves the section with the disk given back. */
+	spin_unlock_irqrestore(&namespace_lock, irq);
+}
+
+/*
+ * Reports whether two disks reach any of the same blocks.
+ *
+ * A partition and the disk it is on share blocks, as do two names for one
+ * partition.  A disk whose blocks cannot be placed on one device is taken to
+ * share only with itself.
+ */
+static int
+disk_shares_blocks(
+	struct disk *left,
+	struct disk *right)
+{
+	struct disk *left_leaf;
+	struct disk *right_leaf;
+	uint64_t left_first;
+	uint64_t left_last;
+	uint64_t right_first;
+	uint64_t right_last;
+	int error;
+
+	/* One disk always shares its own blocks. */
+	if (left == right)
+		return 1;
+
+	/* Places each disk on the device that holds its blocks. */
+	error = disk_leaf_extent(left, &left_leaf, &left_first, &left_last);
+	if (error != 0)
+		return 0;
+	error = disk_leaf_extent(right, &right_leaf, &right_first,
+	    &right_last);
+	if (error != 0)
+		return 0;
+
+	/* Disks on different devices share nothing. */
+	if (left_leaf != right_leaf)
+		return 0;
+
+	/* Extents that end before the other begins do not overlap. */
+	if (left_last < right_first)
+		return 0;
+	if (right_last < left_first)
+		return 0;
+
+	/* The extents overlap. */
+	return 1;
+}
+
+/* Finds the device that holds a disk's blocks and their first and last block there. */
+static int
+disk_leaf_extent(
+	struct disk *disk,
+	struct disk **leaf,
+	uint64_t *first,
+	uint64_t *last)
+{
+	struct disk *last_leaf;
+	int error;
+
+	/* An empty disk has no blocks to place. */
+	if (disk->d_block_count == 0)
+		return EINVAL;
+
+	/* Places the first block. */
+	error = disk_resolve_range(disk, 0, 1, leaf, first);
+	if (error != 0)
+		return error;
+
+	/* Places the last block, which must be on the same device. */
+	error = disk_resolve_range(disk, disk->d_block_count - 1U, 1,
+	    &last_leaf, last);
+	if (error != 0)
+		return error;
+	if (last_leaf != *leaf)
+		return EINVAL;
+
+	/* Succeeded: the disk is one extent of one device. */
 	return 0;
 }

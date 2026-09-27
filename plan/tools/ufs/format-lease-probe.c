@@ -6,11 +6,11 @@
  */
 
 /*
- * ws072-p001 (BUG-060): takes a formatter's lease on FILE the way mkfs does,
+ * ws072 (BUG-060): takes a formatter's lease on FILE the way mkfs does,
  * writes a sector, fsyncs, reads it back through a second descriptor, and
  * prints each step's result.  Build with the cross toolchain:
  *   build/amd64/packages/toolchain/bin/zedbsd-clang -O1 THIS -o format-lease-probe
- * Run in the guest: format-lease-probe FILE (a fully written regular file).
+ * Run in the guest (plan/tools/guest): format-lease-probe FILE (a fully written regular file).
  */
 
 #include <errno.h>

@@ -23,9 +23,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The extensions this library offers. */
+/* The extensions this library offers (glGetString's list; gles_extension_names has the same names one by one). */
 #define GLES_EXTENSIONS \
 	"GL_OES_element_index_uint GL_OES_texture_npot GL_EXT_texture_format_BGRA8888 GL_EXT_blend_minmax"
+
+/* The largest uniform block a program may read, in bytes (OpenGL ES 3's minimum). */
+#define GLES_UNIFORM_BLOCK_SIZE	16384
+
+/*
+ * The extensions this library offers, one name each, for glGetStringi.
+ * They are the names of GLES_EXTENSIONS in the same order, and never
+ * change.
+ */
+static const char *const gles_extension_names[] = {
+	"GL_OES_element_index_uint",
+	"GL_OES_texture_npot",
+	"GL_EXT_texture_format_BGRA8888",
+	"GL_EXT_blend_minmax"
+};
 
 /* The fixed-function layer, NULL without one (libGL sets it before its first context). */
 const struct gles_fixed_hooks *gles_fixed;
@@ -38,6 +53,8 @@ static void gles_frame_closing(struct zegl_context *context);
 static void gles_release(struct zegl_context *context);
 static int gles_capability(struct gles_state *state, GLenum cap, int **flag);
 static unsigned gles_integers(struct zegl_context *context, struct gles_state *state, GLenum pname, GLint *values);
+static unsigned gles_integers_es3(struct gles_state *state, GLenum pname, GLint *values);
+static GLint gles_buffer_name(const struct gles_buffer *buffer);
 static unsigned gles_floats(struct zegl_context *context, struct gles_state *state, GLenum pname, GLfloat *values);
 
 /*
@@ -118,15 +135,21 @@ gles_state(
 	state->front_face = GL_CCW;
 	memcpy(state->scissor, context->gles.viewport, sizeof(state->scissor));
 
-	/* Lines one wide, dithering on, rows aligned to 4, attributes (0, 0, 0, 1). */
+	/* Lines one wide, dithering on, rows aligned to 4. */
 	state->line_width = 1.0f;
 	state->dither = 1;
 	state->sample_coverage_value = 1.0f;
 	state->unpack_alignment = 4;
 	state->pack_alignment = 4;
 	state->mipmap_hint = GL_DONT_CARE;
-	for (index = 0U; index < GLES_ATTRIBS; index++)
+
+	/* Every array four floats and disabled, every current value the floats (0, 0, 0, 1). */
+	for (index = 0U; index < GLES_ATTRIBS; index++) {
+		state->attribs[index].size = 4;
+		state->attribs[index].type = GL_FLOAT;
 		state->attribs[index].value[3] = 1.0f;
+		state->attribs[index].value_type = GL_FLOAT;
+	}
 
 	/* Succeeded: the first frame, and the callbacks libEGL makes. */
 	state->frame = 1U;
@@ -975,6 +998,54 @@ glGetIntegerv(
 }
 
 /*
+ * Reports integer states as 64-bit integers.
+ */
+GL_APICALL void GL_APIENTRY
+glGetInteger64v(
+	GLenum pname,
+	GLint64 *data)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	GLint integers[16];
+	GLfloat floats[16];
+	unsigned count;
+	unsigned index;
+
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL || data == NULL)
+		return;
+
+	/* The states only 64 bits hold: the largest index and wait. */
+	if (pname == GL_MAX_ELEMENT_INDEX) {
+		data[0] = (GLint64)state->limits.maxDrawIndexedIndexValue;
+		return;
+	}
+
+	/* A server wait (glClientWaitSync) is never refused for its length. */
+	if (pname == GL_MAX_SERVER_WAIT_TIMEOUT) {
+		data[0] = INT64_MAX;
+		return;
+	}
+
+	/* An integer state. */
+	count = gles_integers(context, state, pname, integers);
+	for (index = 0U; index < count; index++)
+		data[index] = integers[index];
+	if (count != 0U)
+		return;
+
+	/* A float state, rounded. */
+	count = gles_floats(context, state, pname, floats);
+	for (index = 0U; index < count; index++)
+		data[index] = (GLint64)(floats[index] + 0.5f);
+	if (count == 0U)
+		gles_error(context, GL_INVALID_ENUM);
+}
+
+/*
  * Reports float states.
  */
 GL_APICALL void GL_APIENTRY
@@ -1094,6 +1165,37 @@ glGetString(
 	/* Any other name is an error. */
 	gles_error(context, GL_INVALID_ENUM);
 	return NULL;
+}
+
+/*
+ * Returns one of the extensions' names (the only indexed string).
+ */
+GL_APICALL const GLubyte *GL_APIENTRY
+glGetStringi(
+	GLenum name,
+	GLuint index)
+{
+	struct zegl_context *context;
+
+	/* Without a current context there are no strings. */
+	context = gles_context();
+	if (context == NULL)
+		return NULL;
+
+	/* The extensions are the only list. */
+	if (name != GL_EXTENSIONS) {
+		gles_error(context, GL_INVALID_ENUM);
+		return NULL;
+	}
+
+	/* An index inside it. */
+	if (index >= sizeof(gles_extension_names) / sizeof(gles_extension_names[0])) {
+		gles_error(context, GL_INVALID_VALUE);
+		return NULL;
+	}
+
+	/* Succeeded: the name. */
+	return (const GLubyte *)gles_extension_names[index];
 }
 
 /*
@@ -1229,8 +1331,9 @@ gles_release(
 	if (state->black_cube != NULL)
 		gles_texture_free(state, state->black_cube);
 
-	/* The framebuffer objects and renderbuffers. */
+	/* The framebuffer objects and renderbuffers, and the vertex array objects. */
 	gles_framebuffers_release(state);
+	gles_vertex_arrays_release(state);
 
 	/* The garbage, which the frees above added to. */
 	gles_collect(state);
@@ -1316,6 +1419,9 @@ gles_capability(
 	case GL_STENCIL_TEST:
 		*flag = &state->stencil_test;
 		return 0;
+	case GL_PRIMITIVE_RESTART_FIXED_INDEX:
+		*flag = &state->primitive_restart;
+		return 0;
 	default:
 		break;
 	}
@@ -1338,6 +1444,7 @@ gles_integers(
 	struct zegl_config *config;
 	struct gles_texture *texture;
 	int *flag;
+	unsigned count;
 	int status;
 
 	/* A capability is an integer 0 or 1. */
@@ -1547,8 +1654,101 @@ gles_integers(
 		break;
 	}
 
+	/* One of OpenGL ES 3's, or not an integer state. */
+	count = gles_integers_es3(state, pname, values);
+	return count;
+}
+
+/* Writes one of OpenGL ES 3's integer states (buffers, vertex arrays, uniform blocks, limits); returns how many, 0 when the name is not one. */
+static unsigned
+gles_integers_es3(
+	struct gles_state *state,
+	GLenum pname,
+	GLint *values)
+{
+	/* The states, one by one. */
+	switch (pname) {
+	case GL_VERTEX_ARRAY_BINDING:
+		values[0] = (GLint)state->vertex_array;
+		return 1U;
+	case GL_COPY_READ_BUFFER_BINDING:
+		values[0] = gles_buffer_name(state->copy_read_buffer);
+		return 1U;
+	case GL_COPY_WRITE_BUFFER_BINDING:
+		values[0] = gles_buffer_name(state->copy_write_buffer);
+		return 1U;
+	case GL_UNIFORM_BUFFER_BINDING:
+		values[0] = gles_buffer_name(state->uniform_buffer);
+		return 1U;
+	case GL_PIXEL_PACK_BUFFER_BINDING:
+		values[0] = gles_buffer_name(state->pixel_pack_buffer);
+		return 1U;
+	case GL_PIXEL_UNPACK_BUFFER_BINDING:
+		values[0] = gles_buffer_name(state->pixel_unpack_buffer);
+		return 1U;
+	case GL_TRANSFORM_FEEDBACK_BUFFER_BINDING:
+		values[0] = gles_buffer_name(state->feedback_buffer);
+		return 1U;
+	case GL_MAX_UNIFORM_BUFFER_BINDINGS:
+		values[0] = (GLint)GLES_UNIFORM_BINDINGS;
+		return 1U;
+	case GL_MAX_UNIFORM_BLOCK_SIZE:
+		values[0] = GLES_UNIFORM_BLOCK_SIZE;
+		if ((GLint64)state->limits.maxUniformBufferRange > GLES_UNIFORM_BLOCK_SIZE)
+			values[0] = (GLint)state->limits.maxUniformBufferRange;
+		return 1U;
+	case GL_MAX_VERTEX_UNIFORM_BLOCKS:
+	case GL_MAX_FRAGMENT_UNIFORM_BLOCKS:
+		values[0] = (GLint)GLES_STAGE_BLOCKS;
+		return 1U;
+	case GL_MAX_COMBINED_UNIFORM_BLOCKS:
+		values[0] = (GLint)GLES_NAMED_BLOCKS;
+		return 1U;
+	case GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT:
+		values[0] = (GLint)state->limits.minUniformBufferOffsetAlignment;
+		return 1U;
+	case GL_MAX_VERTEX_UNIFORM_COMPONENTS:
+	case GL_MAX_FRAGMENT_UNIFORM_COMPONENTS:
+		values[0] = 1024;
+		return 1U;
+	case GL_MAX_VERTEX_OUTPUT_COMPONENTS:
+	case GL_MAX_FRAGMENT_INPUT_COMPONENTS:
+		values[0] = 64;
+		return 1U;
+	case GL_MAX_VARYING_COMPONENTS:
+		values[0] = 60;
+		return 1U;
+	case GL_MAX_ELEMENTS_VERTICES:
+	case GL_MAX_ELEMENTS_INDICES:
+		values[0] = 1048576;
+		return 1U;
+	case GL_MAX_ELEMENT_INDEX:
+		values[0] = INT32_MAX;
+		if (state->limits.maxDrawIndexedIndexValue < (uint32_t)INT32_MAX)
+			values[0] = (GLint)state->limits.maxDrawIndexedIndexValue;
+		return 1U;
+	case GL_NUM_EXTENSIONS:
+		values[0] = (GLint)(sizeof(gles_extension_names) / sizeof(gles_extension_names[0]));
+		return 1U;
+	default:
+		break;
+	}
+
 	/* Not an integer state. */
 	return 0U;
+}
+
+/* Returns a buffer's name, 0 for none. */
+static GLint
+gles_buffer_name(
+	const struct gles_buffer *buffer)
+{
+	/* No buffer. */
+	if (buffer == NULL)
+		return 0;
+
+	/* The buffer's name. */
+	return (GLint)buffer->name;
 }
 
 /* Writes a float state's values; returns how many, 0 when the name is not a float state. */

@@ -11,7 +11,7 @@ if [ $# -gt 0 ]; then
 fi
 list="$*"
 if [ -z "$list" ]; then
-	list="env xargs cp mv id chown chgrp date time expand unexpand fold nl split csplit pr comm diff patch uname sleep mkdir mkfifo rmdir pathchk kill df du who tty logname strings file link unlink cksum cat tee cmp dd mesg nohup pwd"
+	list="env xargs cp mv id chown chgrp date time expand unexpand fold nl split csplit pr comm diff patch uname sleep mkdir mkfifo rmdir pathchk kill df du who tty logname strings file link unlink cksum cat tee cmp dd mesg nohup pwd stty dirname mktemp install base64 who"
 fi
 mkdir -p "$out"
 failed=
@@ -28,7 +28,7 @@ for utility in $list; do
 	fi
 	# mkdir and mkfifo share chmod's mode operand (ws001-p026).
 	case $utility in
-	mkdir|mkfifo)
+	mkdir|mkfifo|install)
 		extra=userland/base/chmod/mode.c
 		;;
 	chgrp)

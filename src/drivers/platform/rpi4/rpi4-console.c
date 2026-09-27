@@ -49,8 +49,7 @@
 
 static void console_get_size(unsigned *columns, unsigned *rows);
 static void console_putc(int character);
-static void console_write(unsigned row, unsigned column, uint8_t attribute,
-			  const char *utf8);
+static void console_write(unsigned row, unsigned column, uint8_t attribute, const char *utf8);
 static void console_clear(void);
 static int console_set_cursor(unsigned row, unsigned column);
 static void console_get_cursor(unsigned *row, unsigned *column, int *visible);
@@ -59,6 +58,11 @@ static void console_nothing(void);
 static uint32_t uart_read(unsigned offset);
 static void console_input_worker(void *argument);
 
+/*
+ * The console's text operations, registered once at start-up and never
+ * changed.  Everything but a character goes nowhere, because the console is
+ * a teletype.
+ */
 static const struct kern_text_ops rpi4_console_ops = {
 	.get_size = console_get_size,
 	.putc = console_putc,
@@ -72,6 +76,11 @@ static const struct kern_text_ops rpi4_console_ops = {
 	.resume = console_nothing
 };
 
+/*
+ * The kernel thread that reads the serial port, or NULL before input was
+ * started.  It is created once and runs for the life of the system; the
+ * pointer only keeps a second start from creating another.
+ */
 static struct thread *input_worker;
 
 /*
@@ -81,6 +90,7 @@ void
 drv_rpi4_console_init(
 	void)
 {
+	/* Makes the teletype the console's text output. */
 	kern_text_register(&rpi4_console_ops);
 }
 
@@ -93,16 +103,17 @@ drv_rpi4_console_start_input(
 {
 	int error;
 
-	/* Handles a second start. */
+	/* A second start finds the reader already running. */
 	if (input_worker != NULL)
 		return 0;
 
+	/* Creates the reader; without it the console stays output only. */
 	error = kthread_create(console_input_worker, NULL,
 	    SCHED_PRIORITY_DEFAULT, &input_worker);
-	if (error != 0) {
-		/* Failed: the console stays output only. */
+	if (error != 0)
 		return error;
-	}
+
+	/* Lets the reader run. */
 	thread_start(input_worker);
 
 	/* Succeeded. */
@@ -115,8 +126,11 @@ console_get_size(
 	unsigned *columns,
 	unsigned *rows)
 {
+	/* Reports the width when the caller asked for it. */
 	if (columns != NULL)
 		*columns = RPI4_CONSOLE_COLUMNS;
+
+	/* Reports the height when the caller asked for it. */
 	if (rows != NULL)
 		*rows = RPI4_CONSOLE_ROWS;
 }
@@ -126,6 +140,7 @@ static void
 console_putc(
 	int character)
 {
+	/* Writes the character wherever the hardware layer shows the console. */
 	hal_putc(character);
 }
 
@@ -156,8 +171,16 @@ console_set_cursor(
 	unsigned row,
 	unsigned column)
 {
-	/* Succeeded when the position is inside the grid. */
-	return row < RPI4_CONSOLE_ROWS && column < RPI4_CONSOLE_COLUMNS;
+	/* Refuses a row below the grid. */
+	if (row >= RPI4_CONSOLE_ROWS)
+		return 0;
+
+	/* Refuses a column right of the grid. */
+	if (column >= RPI4_CONSOLE_COLUMNS)
+		return 0;
+
+	/* Succeeded: the position is inside the grid. */
+	return 1;
 }
 
 /* Reports the home position and a shown cursor. */
@@ -167,10 +190,15 @@ console_get_cursor(
 	unsigned *column,
 	int *visible)
 {
+	/* Reports the home row when the caller asked for it. */
 	if (row != NULL)
 		*row = 0;
+
+	/* Reports the home column when the caller asked for it. */
 	if (column != NULL)
 		*column = 0;
+
+	/* Reports a shown cursor when the caller asked for it. */
 	if (visible != NULL)
 		*visible = 1;
 }
@@ -195,9 +223,14 @@ static uint32_t
 uart_read(
 	unsigned offset)
 {
-	/* Succeeded: the register value. */
-	return kern_mmio_read32((const volatile void *)(uintptr_t)
+	uint32_t value;
+
+	/* Reads the register through the kernel's map of the device. */
+	value = kern_mmio_read32((const volatile void *)(uintptr_t)
 	    (RPI4_DIRECT_BASE + RPI4_UART_BASE + offset));
+
+	/* Succeeded: the register value. */
+	return value;
 }
 
 /*
@@ -211,20 +244,36 @@ console_input_worker(
 	void *argument)
 {
 	unsigned drained;
+	uint32_t flags;
 	uint8_t byte;
+	uint64_t wake;
 
+	/* The worker is given no argument. */
 	(void)argument;
+
+	/* Reads the port for the life of the system. */
 	for (;;) {
+		/* Moves at most one batch of received bytes into the console. */
 		for (drained = 0; drained < RPI4_CONSOLE_DRAIN; drained++) {
-			if ((uart_read(RPI4_UART_FR) & RPI4_UART_FR_RXFE) != 0)
+			/* Stops when the receive FIFO is empty. */
+			flags = uart_read(RPI4_UART_FR);
+			if ((flags & RPI4_UART_FR_RXFE) != 0)
 				break;
+
+			/* Takes the byte and translates Enter and backspace. */
 			byte = (uint8_t)uart_read(RPI4_UART_DR);
-			if (byte == (uint8_t)'\r')
+			if (byte == (uint8_t)'\r') {
 				byte = (uint8_t)'\n';
-			else if (byte == 0x7fU)
+			} else if (byte == 0x7fU) {
 				byte = 8U;
+			}
+
+			/* Hands the byte to the console's line discipline. */
 			tty_console_input_byte(byte);
 		}
-		sched_sleep(sched_ticks() + kern_ms_to_ticks(RPI4_CONSOLE_POLL_MS));
+
+		/* Waits until the next look at the port. */
+		wake = sched_ticks() + kern_ms_to_ticks(RPI4_CONSOLE_POLL_MS);
+		sched_sleep(wake);
 	}
 }

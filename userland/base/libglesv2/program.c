@@ -18,6 +18,13 @@
  * by name, numbers the uniform locations, and makes the Vulkan shaders
  * and layouts.  The uniform values live in a copy of the block that each
  * draw hands to the GPU.
+ *
+ * Named uniform blocks (OpenGL ES 3, WS068 p024) are read from buffers:
+ * the link lists each block at its binding (32 on) with its name, std140
+ * size and members (from the GLSL compiler; a SPIR-V binary's blocks have
+ * their type's name and no size or members), and a draw hands each block
+ * the buffer range bound to the binding point glUniformBlockBinding gave
+ * it.
  */
 
 #include "gles.h"
@@ -51,13 +58,18 @@ static int program_link(struct gles_state *state, struct gles_program *program, 
 static int program_link_code(struct gles_state *state, struct gles_program *program, const uint32_t *vertex_input, size_t vertex_words, const uint32_t *fragment_input, size_t fragment_words, char *log);
 static int program_link_glsl(struct gles_program *program, struct glsl_program *linked, char *log);
 static void program_glsl_types(struct gles_program *program, const struct glsl_program *linked);
+static int program_glsl_blocks(struct gles_program *program, const struct glsl_program *linked, char *log);
+static int program_spirv_blocks(struct gles_program *program, const struct gles_spirv *spirv, unsigned stage, char *log);
 static int program_merge(struct gles_program *program, struct gles_spirv *spirv, char *log);
 static int program_layout(struct gles_state *state, struct gles_program *program);
 static int program_module(struct gles_state *state, const uint32_t *code, size_t words, VkShaderModule *module);
 static void program_unlink(struct gles_state *state, struct gles_program *program);
 static void program_uniform(GLint location, GLsizei count, unsigned components, const void *values, int integers);
-static void program_matrix(GLint location, GLsizei count, GLboolean transpose, const GLfloat *values, unsigned size);
+static void program_matrix(GLint location, GLsizei count, GLboolean transpose, const GLfloat *values, unsigned columns, unsigned rows);
 static struct gles_uniform *program_location(struct zegl_context *context, GLint location, unsigned *element);
+static void program_get_uniform(GLuint name, GLint location, int kind, void *params);
+static struct gles_block *program_block(struct zegl_context *context, struct gles_program *program, GLuint index);
+static int program_uniform_property(const struct gles_uniform *uniform, GLenum pname, GLint *value);
 static void program_copy_string(const char *text, GLsizei size, GLsizei *length, GLchar *out);
 static void program_log(char **log, const char *text);
 
@@ -810,8 +822,12 @@ glGetProgramiv(
 	case GL_ACTIVE_UNIFORMS:
 		*params = (GLint)program->uniform_count;
 		return;
+	case GL_ACTIVE_UNIFORM_BLOCKS:
+		*params = (GLint)program->block_count;
+		return;
 	case GL_ACTIVE_ATTRIBUTE_MAX_LENGTH:
 	case GL_ACTIVE_UNIFORM_MAX_LENGTH:
+	case GL_ACTIVE_UNIFORM_BLOCK_MAX_NAME_LENGTH:
 		break;
 	default:
 		gles_error(context, GL_INVALID_ENUM);
@@ -826,9 +842,15 @@ glGetProgramiv(
 			if (length > longest)
 				longest = length;
 		}
-	} else {
+	} else if (pname == GL_ACTIVE_UNIFORM_MAX_LENGTH) {
 		for (index = 0U; index < program->uniform_count; index++) {
 			length = (GLint)strlen(program->uniforms[index].name) + 4;
+			if (length > longest)
+				longest = length;
+		}
+	} else {
+		for (index = 0U; index < program->block_count; index++) {
+			length = (GLint)strlen(program->blocks[index].name) + 1;
 			if (length > longest)
 				longest = length;
 		}
@@ -1109,9 +1131,11 @@ glGetUniformLocation(
 	memcpy(base, uniform, length);
 	base[length] = '\0';
 
-	/* The uniform of that name, and an element it has. */
+	/* The uniform of that name (a named block's members have no location), and an element it has. */
 	for (index = 0U; index < program->uniform_count; index++) {
 		entry = &program->uniforms[index];
+		if (entry->block >= 0)
+			continue;
 		differs = strcmp(entry->name, base);
 		if (differs != 0)
 			continue;
@@ -1321,6 +1345,103 @@ glUniform4iv(
 }
 
 GL_APICALL void GL_APIENTRY
+glUniform1ui(
+	GLint location,
+	GLuint v0)
+{
+	/* One unsigned int. */
+	program_uniform(location, 1, 1U, &v0, 2);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniform2ui(
+	GLint location,
+	GLuint v0,
+	GLuint v1)
+{
+	GLuint values[2];
+
+	/* Two unsigned ints. */
+	values[0] = v0;
+	values[1] = v1;
+	program_uniform(location, 1, 2U, values, 2);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniform3ui(
+	GLint location,
+	GLuint v0,
+	GLuint v1,
+	GLuint v2)
+{
+	GLuint values[3];
+
+	/* Three unsigned ints. */
+	values[0] = v0;
+	values[1] = v1;
+	values[2] = v2;
+	program_uniform(location, 1, 3U, values, 2);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniform4ui(
+	GLint location,
+	GLuint v0,
+	GLuint v1,
+	GLuint v2,
+	GLuint v3)
+{
+	GLuint values[4];
+
+	/* Four unsigned ints. */
+	values[0] = v0;
+	values[1] = v1;
+	values[2] = v2;
+	values[3] = v3;
+	program_uniform(location, 1, 4U, values, 2);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniform1uiv(
+	GLint location,
+	GLsizei count,
+	const GLuint *value)
+{
+	/* Unsigned ints, one per element. */
+	program_uniform(location, count, 1U, value, 2);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniform2uiv(
+	GLint location,
+	GLsizei count,
+	const GLuint *value)
+{
+	/* Unsigned ints, two per element. */
+	program_uniform(location, count, 2U, value, 2);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniform3uiv(
+	GLint location,
+	GLsizei count,
+	const GLuint *value)
+{
+	/* Unsigned ints, three per element. */
+	program_uniform(location, count, 3U, value, 2);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniform4uiv(
+	GLint location,
+	GLsizei count,
+	const GLuint *value)
+{
+	/* Unsigned ints, four per element. */
+	program_uniform(location, count, 4U, value, 2);
+}
+
+GL_APICALL void GL_APIENTRY
 glUniformMatrix2fv(
 	GLint location,
 	GLsizei count,
@@ -1328,7 +1449,7 @@ glUniformMatrix2fv(
 	const GLfloat *value)
 {
 	/* 2x2 matrices. */
-	program_matrix(location, count, transpose, value, 2U);
+	program_matrix(location, count, transpose, value, 2U, 2U);
 }
 
 GL_APICALL void GL_APIENTRY
@@ -1339,7 +1460,7 @@ glUniformMatrix3fv(
 	const GLfloat *value)
 {
 	/* 3x3 matrices. */
-	program_matrix(location, count, transpose, value, 3U);
+	program_matrix(location, count, transpose, value, 3U, 3U);
 }
 
 GL_APICALL void GL_APIENTRY
@@ -1350,7 +1471,73 @@ glUniformMatrix4fv(
 	const GLfloat *value)
 {
 	/* 4x4 matrices. */
-	program_matrix(location, count, transpose, value, 4U);
+	program_matrix(location, count, transpose, value, 4U, 4U);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniformMatrix2x3fv(
+	GLint location,
+	GLsizei count,
+	GLboolean transpose,
+	const GLfloat *value)
+{
+	/* Two columns of three rows. */
+	program_matrix(location, count, transpose, value, 2U, 3U);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniformMatrix3x2fv(
+	GLint location,
+	GLsizei count,
+	GLboolean transpose,
+	const GLfloat *value)
+{
+	/* Three columns of two rows. */
+	program_matrix(location, count, transpose, value, 3U, 2U);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniformMatrix2x4fv(
+	GLint location,
+	GLsizei count,
+	GLboolean transpose,
+	const GLfloat *value)
+{
+	/* Two columns of four rows. */
+	program_matrix(location, count, transpose, value, 2U, 4U);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniformMatrix4x2fv(
+	GLint location,
+	GLsizei count,
+	GLboolean transpose,
+	const GLfloat *value)
+{
+	/* Four columns of two rows. */
+	program_matrix(location, count, transpose, value, 4U, 2U);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniformMatrix3x4fv(
+	GLint location,
+	GLsizei count,
+	GLboolean transpose,
+	const GLfloat *value)
+{
+	/* Three columns of four rows. */
+	program_matrix(location, count, transpose, value, 3U, 4U);
+}
+
+GL_APICALL void GL_APIENTRY
+glUniformMatrix4x3fv(
+	GLint location,
+	GLsizei count,
+	GLboolean transpose,
+	const GLfloat *value)
+{
+	/* Four columns of three rows. */
+	program_matrix(location, count, transpose, value, 4U, 3U);
 }
 
 /*
@@ -1362,48 +1549,8 @@ glGetUniformfv(
 	GLint location,
 	GLfloat *params)
 {
-	struct zegl_context *context;
-	struct gles_program *program;
-	struct gles_uniform *uniform;
-	struct gles_location *place;
-	const unsigned char *data;
-	unsigned column;
-	unsigned component;
-	int32_t integer;
-
-	/* A linked program and one of its locations. */
-	context = gles_context();
-	program = program_get(context, name);
-	if (program == NULL)
-		return;
-	if (!program->linked || location < 0 || (unsigned)location >= program->location_count) {
-		gles_error(context, GL_INVALID_OPERATION);
-		return;
-	}
-
-	/* The uniform and element of the location. */
-	place = &program->locations[location];
-	uniform = &program->uniforms[place->uniform];
-
-	/* A sampler's value is its unit. */
-	if (uniform->sampler) {
-		params[0] = (GLfloat)uniform->unit;
-		return;
-	}
-
-	/* Each component of each column. */
-	data = program->uniform_data + uniform->offset + place->element * uniform->array_stride;
-	for (column = 0U; column < uniform->columns; column++) {
-		for (component = 0U; component < uniform->components; component++) {
-			if (uniform->base == 0U) {
-				memcpy(&params[column * uniform->components + component],
-				       data + column * uniform->matrix_stride + component * 4U, 4U);
-			} else {
-				memcpy(&integer, data + column * uniform->matrix_stride + component * 4U, 4U);
-				params[column * uniform->components + component] = (GLfloat)integer;
-			}
-		}
-	}
+	/* Floats. */
+	program_get_uniform(name, location, 0, params);
 }
 
 /*
@@ -1415,14 +1562,282 @@ glGetUniformiv(
 	GLint location,
 	GLint *params)
 {
-	GLfloat values[16];
-	unsigned index;
+	/* Ints. */
+	program_get_uniform(name, location, 1, params);
+}
 
-	/* The floats, converted. */
-	memset(values, 0, sizeof(values));
-	glGetUniformfv(name, location, values);
-	for (index = 0U; index < 16U; index++)
-		params[index] = (GLint)values[index];
+/*
+ * Reads a uniform's value of the given program as unsigned ints.
+ */
+GL_APICALL void GL_APIENTRY
+glGetUniformuiv(
+	GLuint name,
+	GLint location,
+	GLuint *params)
+{
+	/* Unsigned ints. */
+	program_get_uniform(name, location, 2, params);
+}
+
+/*
+ * Returns the index of a program's named uniform block, or
+ * GL_INVALID_INDEX.
+ */
+GL_APICALL GLuint GL_APIENTRY
+glGetUniformBlockIndex(
+	GLuint name,
+	const GLchar *block)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	unsigned index;
+	int differs;
+
+	/* The program (an unlinked one has no blocks). */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return GL_INVALID_INDEX;
+
+	/* The block of that name. */
+	for (index = 0U; index < program->block_count; index++) {
+		if (program->blocks[index].stages == 0U)
+			continue;
+		differs = strcmp(program->blocks[index].name, block);
+		if (differs == 0)
+			return index;
+	}
+
+	/* None. */
+	return GL_INVALID_INDEX;
+}
+
+/*
+ * Reports a property of one of a program's named uniform blocks.
+ */
+GL_APICALL void GL_APIENTRY
+glGetActiveUniformBlockiv(
+	GLuint name,
+	GLuint index,
+	GLenum pname,
+	GLint *params)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	struct gles_block *block;
+	unsigned uniform;
+	unsigned found;
+
+	/* The program and the block. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	block = program_block(context, program, index);
+	if (block == NULL)
+		return;
+
+	/* The property asked for. */
+	switch (pname) {
+	case GL_UNIFORM_BLOCK_BINDING:
+		*params = (GLint)block->buffer_binding;
+		return;
+	case GL_UNIFORM_BLOCK_DATA_SIZE:
+		*params = (GLint)block->size;
+		return;
+	case GL_UNIFORM_BLOCK_NAME_LENGTH:
+		*params = (GLint)strlen(block->name) + 1;
+		return;
+	case GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS:
+		*params = (GLint)block->member_count;
+		return;
+	case GL_UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER:
+		*params = (GLint)(block->stages & 1U);
+		return;
+	case GL_UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER:
+		*params = (GLint)((block->stages >> 1) & 1U);
+		return;
+	case GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES:
+		break;
+	default:
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* The indices of its members among the program's uniforms. */
+	found = 0U;
+	for (uniform = 0U; uniform < program->uniform_count; uniform++) {
+		if (program->uniforms[uniform].block != (GLint)index)
+			continue;
+		params[found] = (GLint)uniform;
+		found++;
+	}
+}
+
+/*
+ * Copies the name of one of a program's named uniform blocks.
+ */
+GL_APICALL void GL_APIENTRY
+glGetActiveUniformBlockName(
+	GLuint name,
+	GLuint index,
+	GLsizei bufSize,
+	GLsizei *length,
+	GLchar *uniformBlockName)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	struct gles_block *block;
+
+	/* The program and the block. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	block = program_block(context, program, index);
+	if (block == NULL)
+		return;
+
+	/* Its name. */
+	program_copy_string(block->name, bufSize, length, uniformBlockName);
+}
+
+/*
+ * Makes one of a program's named uniform blocks read the buffer bound to
+ * an indexed uniform buffer binding point.
+ */
+GL_APICALL void GL_APIENTRY
+glUniformBlockBinding(
+	GLuint name,
+	GLuint index,
+	GLuint binding)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	struct gles_block *block;
+
+	/* The program and the block. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	block = program_block(context, program, index);
+	if (block == NULL)
+		return;
+
+	/* A binding point there is. */
+	if (binding >= GLES_UNIFORM_BINDINGS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The next draws read that binding point's buffer. */
+	block->buffer_binding = binding;
+}
+
+/*
+ * Finds the indices of a program's active uniforms by name
+ * (GL_INVALID_INDEX for a name that is not one).
+ */
+GL_APICALL void GL_APIENTRY
+glGetUniformIndices(
+	GLuint name,
+	GLsizei count,
+	const GLchar *const *names,
+	GLuint *indices)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	const char *wanted;
+	size_t length;
+	size_t own;
+	unsigned index;
+	GLsizei which;
+	int differs;
+
+	/* The program, and a count. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	if (count < 0) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Each name: a uniform's own, or an array's with "[0]". */
+	for (which = 0; which < count; which++) {
+		wanted = names[which];
+		length = strlen(wanted);
+		indices[which] = GL_INVALID_INDEX;
+		for (index = 0U; index < program->uniform_count; index++) {
+			own = strlen(program->uniforms[index].name);
+			differs = strncmp(program->uniforms[index].name, wanted, own);
+			if (differs != 0)
+				continue;
+
+			/* The whole name, or the array's with "[0]". */
+			if (length == own) {
+				indices[which] = index;
+				break;
+			}
+
+			/* An array's first element names the array. */
+			differs = strcmp(wanted + own, "[0]");
+			if (differs == 0 && program->uniforms[index].size > 1) {
+				indices[which] = index;
+				break;
+			}
+		}
+	}
+}
+
+/*
+ * Reports a property of each of a list of a program's active uniforms.
+ */
+GL_APICALL void GL_APIENTRY
+glGetActiveUniformsiv(
+	GLuint name,
+	GLsizei count,
+	const GLuint *indices,
+	GLenum pname,
+	GLint *params)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	GLint value;
+	GLsizei which;
+	int status;
+
+	/* The program, a count, and indices of its uniforms. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	if (count < 0) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Every index must be one of the program's uniforms. */
+	for (which = 0; which < count; which++) {
+		if (indices[which] >= program->uniform_count) {
+			gles_error(context, GL_INVALID_VALUE);
+			return;
+		}
+	}
+
+	/* Each uniform's property. */
+	for (which = 0; which < count; which++) {
+		status = program_uniform_property(&program->uniforms[indices[which]], pname, &value);
+		if (status != 0) {
+			gles_error(context, GL_INVALID_ENUM);
+			return;
+		}
+
+		/* The value. */
+		params[which] = value;
+	}
 }
 
 /* Returns the shader of a name, recording the error when the name is not one. */
@@ -1525,10 +1940,12 @@ program_link(
 	if (status != 0)
 		return -1;
 
-	/* The SPIR-V linked, then the uniforms' GL types the SPIR-V does not tell. */
+	/* The SPIR-V linked, then the uniforms' GL types the SPIR-V does not tell, then the named blocks' members. */
 	status = program_link_code(state, program, linked.code[0], linked.words[0], linked.code[1], linked.words[1], log);
 	if (status == 0)
 		program_glsl_types(program, &linked);
+	if (status == 0)
+		status = program_glsl_blocks(program, &linked, log);
 	glsl_program_free(&linked);
 
 	/* Reports why the link failed. */
@@ -1637,6 +2054,130 @@ program_glsl_types(
 }
 
 /*
+ * Gives the named uniform blocks what the GLSL compiler knows of them
+ * (their names, sizes and stages, which the SPIR-V's reflection gave only
+ * in part) and adds their members to the uniforms, without locations.
+ * Returns 0, or -1 with the log when there is no memory.
+ */
+static int
+program_glsl_blocks(
+	struct gles_program *program,
+	const struct glsl_program *linked,
+	char *log)
+{
+	const struct glsl_block_info *info;
+	const struct glsl_uniform_info *member;
+	struct gles_uniform *uniforms;
+	struct gles_uniform *uniform;
+	struct gles_block *block;
+	unsigned members;
+	unsigned index;
+
+	/* Each block the compiler listed, at its index. */
+	for (index = 0U; index < linked->block_count && index < GLES_NAMED_BLOCKS; index++) {
+		info = &linked->blocks[index];
+		if (info->name == NULL)
+			continue;
+		block = &program->blocks[index];
+		(void)snprintf(block->name, sizeof(block->name), "%s", info->name);
+		block->binding = info->binding;
+		block->size = info->size;
+		block->stages = info->stages;
+		block->member_count = info->member_count;
+		if (index + 1U > program->block_count)
+			program->block_count = index + 1U;
+	}
+
+	/* How many members there are. */
+	members = 0U;
+	for (index = 0U; index < linked->uniform_count; index++) {
+		if (linked->uniforms[index].block >= 0)
+			members++;
+	}
+
+	/* No members: nothing to add. */
+	if (members == 0U)
+		return 0;
+
+	/* Room for them after the other uniforms. */
+	uniforms = realloc(program->uniforms, (program->uniform_count + members) * sizeof(*uniforms));
+	if (uniforms == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "out of memory\n");
+		return -1;
+	}
+
+	/* The larger table is the program's. */
+	program->uniforms = uniforms;
+
+	/* Each member, with its block, offset and strides and no location. */
+	for (index = 0U; index < linked->uniform_count; index++) {
+		member = &linked->uniforms[index];
+		if (member->block < 0)
+			continue;
+		uniform = &program->uniforms[program->uniform_count];
+		memset(uniform, 0, sizeof(*uniform));
+		(void)snprintf(uniform->name, sizeof(uniform->name), "%s", member->name);
+		uniform->type = gles_gl_type(member->base, member->components, member->columns);
+		uniform->size = (GLint)member->size;
+		uniform->base = member->base;
+		uniform->components = member->components;
+		uniform->columns = member->columns;
+		uniform->offset = member->offset;
+		uniform->array_stride = member->array_stride;
+		uniform->matrix_stride = member->matrix_stride;
+		uniform->binding = GLES_FIRST_BLOCK_BINDING + (uint32_t)member->block;
+		uniform->location = -1;
+		uniform->block = member->block;
+		uniform->row_major = (int)member->row_major;
+		program->uniform_count++;
+	}
+
+	/* Succeeded: the members are in. */
+	return 0;
+}
+
+/*
+ * Records the named uniform blocks a stage's SPIR-V reads, at their
+ * bindings (32 on): the block's type name, and the stage.  Returns 0, or
+ * -1 with the log for a binding outside the ones a program has.
+ */
+static int
+program_spirv_blocks(
+	struct gles_program *program,
+	const struct gles_spirv *spirv,
+	unsigned stage,
+	char *log)
+{
+	struct gles_block *block;
+	uint32_t binding;
+	unsigned index;
+	unsigned slot;
+
+	/* Each named block of the stage. */
+	for (index = 0U; index < spirv->named_count; index++) {
+		binding = spirv->named_bindings[index];
+		slot = binding - GLES_FIRST_BLOCK_BINDING;
+		if (binding < GLES_FIRST_BLOCK_BINDING || slot >= GLES_NAMED_BLOCKS) {
+			(void)snprintf(log, PROGRAM_LOG, "a uniform block is at binding %u, outside %u to %u\n", (unsigned)binding,
+				       GLES_FIRST_BLOCK_BINDING, GLES_FIRST_BLOCK_BINDING + GLES_NAMED_BLOCKS - 1U);
+			return -1;
+		}
+
+		/* The block at the binding: named by the first stage that has it, read by each. */
+		block = &program->blocks[slot];
+		if (block->stages == 0U)
+			(void)snprintf(block->name, sizeof(block->name), "%s", spirv->named_names[index]);
+		block->binding = binding;
+		block->stages |= 1U << stage;
+		if (slot + 1U > program->block_count)
+			program->block_count = slot + 1U;
+	}
+
+	/* Succeeded: the stage's blocks are recorded. */
+	return 0;
+}
+
+/*
  * Links SPIR-V of the two stages: the interfaces, the attribute and
  * varying locations, gl_Position made Vulkan's, the uniforms, the shader
  * modules and the layouts.  Returns 0, or -1 with the log.
@@ -1675,9 +2216,11 @@ program_link_code(
 		return -1;
 	}
 
-	/* Uniform blocks of their own need the uniform buffers of OpenGL ES 3.0's API (WS068 p005). */
-	if (vertex.named_count != 0U || fragment.named_count != 0U) {
-		(void)snprintf(log, PROGRAM_LOG, "uniform blocks need the OpenGL ES 3.0 API, which is not there yet\n");
+	/* The named uniform blocks of both stages, at their bindings. */
+	status = program_spirv_blocks(program, &vertex, 0U, log);
+	if (status == 0)
+		status = program_spirv_blocks(program, &fragment, 1U, log);
+	if (status != 0) {
 		gles_spirv_free(&vertex);
 		gles_spirv_free(&fragment);
 		return -1;
@@ -1861,8 +2404,10 @@ program_merge(
 			program->location_count++;
 		}
 
-		/* The uniform. */
+		/* The uniform, a leaf of the default block or a sampler. */
 		program->uniforms[program->uniform_count] = *uniform;
+		program->uniforms[program->uniform_count].block = -1;
+		program->uniforms[program->uniform_count].row_major = 0;
 		program->uniform_count++;
 
 		/* A leaf of the block makes the block at least that large. */
@@ -1892,13 +2437,13 @@ program_merge(
 	return 0;
 }
 
-/* Makes a program's descriptor set layout (the block and each sampler) and pipeline layout; nonzero on failure. */
+/* Makes a program's descriptor set layout (the default block, each sampler, each named block) and pipeline layout; nonzero on failure. */
 static int
 program_layout(
 	struct gles_state *state,
 	struct gles_program *program)
 {
-	VkDescriptorSetLayoutBinding bindings[GLES_UNITS + 1U];
+	VkDescriptorSetLayoutBinding bindings[GLES_UNITS + 1U + GLES_NAMED_BLOCKS];
 	VkDescriptorSetLayoutCreateInfo set;
 	VkPipelineLayoutCreateInfo layout;
 	uint32_t count;
@@ -1924,6 +2469,17 @@ program_layout(
 			return -1;
 		bindings[count].binding = program->uniforms[index].binding;
 		bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		bindings[count].descriptorCount = 1U;
+		bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		count++;
+	}
+
+	/* Each named block a stage reads: a buffer range of its own (not dynamic). */
+	for (index = 0U; index < program->block_count; index++) {
+		if (program->blocks[index].stages == 0U)
+			continue;
+		bindings[count].binding = program->blocks[index].binding;
+		bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		bindings[count].descriptorCount = 1U;
 		bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 		count++;
@@ -2016,6 +2572,8 @@ program_unlink(
 	program->attribute_count = 0U;
 	program->serial = 0U;
 	program->linked = 0;
+	memset(program->blocks, 0, sizeof(program->blocks));
+	program->block_count = 0U;
 }
 
 /*
@@ -2037,6 +2595,7 @@ program_uniform(
 	unsigned component;
 	GLsizei index;
 	GLint integer;
+	GLuint unsigned_integer;
 	GLfloat number;
 	uint32_t word;
 
@@ -2054,9 +2613,9 @@ program_uniform(
 		return;
 	}
 
-	/* A sampler takes one texture unit. */
+	/* A sampler takes one texture unit, as an int. */
 	if (uniform->sampler) {
-		if (!integers || components != 1U) {
+		if (integers != 1 || components != 1U) {
 			gles_error(context, GL_INVALID_OPERATION);
 			return;
 		}
@@ -2076,13 +2635,19 @@ program_uniform(
 	for (index = 0; index < count && element + (unsigned)index < (unsigned)uniform->size; index++) {
 		data = gles_state(context)->program->uniform_data + uniform->offset + (element + (unsigned)index) * uniform->array_stride;
 		for (component = 0U; component < components; component++) {
-			/* The value given. */
-			if (integers) {
+			/* The value given: an int, an unsigned int, or a float. */
+			if (integers == 1) {
 				integer = ((const GLint *)values)[(size_t)index * components + component];
 				number = (GLfloat)integer;
+			} else if (integers == 2) {
+				unsigned_integer = ((const GLuint *)values)[(size_t)index * components + component];
+				integer = (GLint)unsigned_integer;
+				number = (GLfloat)unsigned_integer;
 			} else {
 				number = ((const GLfloat *)values)[(size_t)index * components + component];
 				integer = (GLint)number;
+				if (uniform->base == 2U)
+					integer = (GLint)(GLuint)number;
 			}
 
 			/* As a float, an int, or a bool (0 or 1). */
@@ -2103,8 +2668,10 @@ program_uniform(
 }
 
 /*
- * Writes square matrices of a size into the current program's uniform at a
- * location, column by column at the block's matrix stride.
+ * Writes matrices of columns x rows into the current program's uniform at
+ * a location, column by column at the block's matrix stride (the values
+ * given row by row when transpose is set, which OpenGL ES 2 does not
+ * allow).
  */
 static void
 program_matrix(
@@ -2112,14 +2679,18 @@ program_matrix(
 	GLsizei count,
 	GLboolean transpose,
 	const GLfloat *values,
-	unsigned size)
+	unsigned columns,
+	unsigned rows)
 {
 	struct zegl_context *context;
 	struct gles_uniform *uniform;
+	const GLfloat *matrix;
 	unsigned char *data;
 	unsigned element;
 	unsigned column;
+	unsigned row;
 	GLsizei index;
+	GLfloat value;
 
 	/* Location -1 is ignored. */
 	if (location == -1)
@@ -2130,22 +2701,40 @@ program_matrix(
 	uniform = program_location(context, location, &element);
 	if (uniform == NULL)
 		return;
-	if (count < 0 || transpose != GL_FALSE) {
+	if (count < 0) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Transposed values need OpenGL ES 3 (or desktop GL). */
+	if (transpose != GL_FALSE &&
+	    gles_fixed == NULL &&
+	    context->version < 3) {
 		gles_error(context, GL_INVALID_VALUE);
 		return;
 	}
 
 	/* A matrix of that size. */
-	if (uniform->sampler || uniform->columns != size || uniform->components != size || (count > 1 && uniform->size == 1)) {
+	if (uniform->sampler ||
+	    uniform->columns != columns ||
+	    uniform->components != rows ||
+	    (count > 1 && uniform->size == 1)) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
 
-	/* Each matrix, each column at the stride. */
+	/* Each matrix, each column at the stride, each row of it a float. */
 	for (index = 0; index < count && element + (unsigned)index < (unsigned)uniform->size; index++) {
 		data = gles_state(context)->program->uniform_data + uniform->offset + (element + (unsigned)index) * uniform->array_stride;
-		for (column = 0U; column < size; column++)
-			memcpy(data + column * uniform->matrix_stride, values + ((size_t)index * size + column) * size, size * sizeof(GLfloat));
+		matrix = values + (size_t)index * columns * rows;
+		for (column = 0U; column < columns; column++) {
+			for (row = 0U; row < rows; row++) {
+				value = matrix[column * rows + row];
+				if (transpose != GL_FALSE)
+					value = matrix[row * columns + column];
+				memcpy(data + column * uniform->matrix_stride + row * 4U, &value, sizeof(value));
+			}
+		}
 	}
 }
 
@@ -2172,6 +2761,150 @@ program_location(
 	/* Succeeded: the uniform and the element. */
 	*element = program->locations[location].element;
 	return &program->uniforms[program->locations[location].uniform];
+}
+
+/*
+ * Reads a uniform's value of a program into the application's array: as
+ * floats (kind 0), ints (1) or unsigned ints (2), each component converted
+ * from the uniform's own type.
+ */
+static void
+program_get_uniform(
+	GLuint name,
+	GLint location,
+	int kind,
+	void *params)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	struct gles_uniform *uniform;
+	struct gles_location *place;
+	const unsigned char *data;
+	unsigned column;
+	unsigned component;
+	unsigned slot;
+	uint32_t word;
+	GLfloat number;
+	GLint integer;
+
+	/* A linked program and one of its locations. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	if (!program->linked ||
+	    location < 0 ||
+	    (unsigned)location >= program->location_count) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The uniform and element of the location. */
+	place = &program->locations[location];
+	uniform = &program->uniforms[place->uniform];
+
+	/* A sampler's value is its unit. */
+	if (uniform->sampler) {
+		if (kind == 0)
+			((GLfloat *)params)[0] = (GLfloat)uniform->unit;
+		else
+			((GLint *)params)[0] = uniform->unit;
+		return;
+	}
+
+	/* Each component of each column, from the uniform's type into the kind asked for. */
+	data = program->uniform_data + uniform->offset + place->element * uniform->array_stride;
+	for (column = 0U; column < uniform->columns; column++) {
+		for (component = 0U; component < uniform->components; component++) {
+			slot = column * uniform->components + component;
+			memcpy(&word, data + column * uniform->matrix_stride + component * 4U, 4U);
+
+			/* The value as a float and as an int: a float's, an int's, or an unsigned int's (a bool's is 0 or 1). */
+			if (uniform->base == 0U) {
+				memcpy(&number, &word, 4U);
+				integer = (GLint)number;
+			} else if (uniform->base == 1U) {
+				integer = (GLint)word;
+				number = (GLfloat)integer;
+			} else {
+				integer = (GLint)word;
+				number = (GLfloat)word;
+			}
+
+			/* Written as the kind asked for. */
+			if (kind == 0) {
+				((GLfloat *)params)[slot] = number;
+			} else {
+				((GLint *)params)[slot] = integer;
+			}
+		}
+	}
+}
+
+/* Returns a program's named uniform block of an index, recording the error when there is none. */
+static struct gles_block *
+program_block(
+	struct zegl_context *context,
+	struct gles_program *program,
+	GLuint index)
+{
+	/* An index among the blocks the link found. */
+	if (index >= program->block_count) {
+		gles_error(context, GL_INVALID_VALUE);
+		return NULL;
+	}
+
+	/* Succeeded: the block. */
+	return &program->blocks[index];
+}
+
+/* Reads one property glGetActiveUniformsiv asks for of a uniform; nonzero for a name that is not one. */
+static int
+program_uniform_property(
+	const struct gles_uniform *uniform,
+	GLenum pname,
+	GLint *value)
+{
+	/* The property: a default-block uniform or sampler has no block, offset or strides (-1). */
+	switch (pname) {
+	case GL_UNIFORM_TYPE:
+		*value = (GLint)uniform->type;
+		return 0;
+	case GL_UNIFORM_SIZE:
+		*value = uniform->size;
+		return 0;
+	case GL_UNIFORM_NAME_LENGTH:
+		*value = (GLint)strlen(uniform->name) + 1;
+		if (uniform->size > 1)
+			*value += 3;
+		return 0;
+	case GL_UNIFORM_BLOCK_INDEX:
+		*value = uniform->block;
+		return 0;
+	case GL_UNIFORM_OFFSET:
+		*value = -1;
+		if (uniform->block >= 0)
+			*value = (GLint)uniform->offset;
+		return 0;
+	case GL_UNIFORM_ARRAY_STRIDE:
+		*value = -1;
+		if (uniform->block >= 0)
+			*value = (GLint)uniform->array_stride;
+		return 0;
+	case GL_UNIFORM_MATRIX_STRIDE:
+		*value = -1;
+		if (uniform->block >= 0)
+			*value = (GLint)uniform->matrix_stride;
+		return 0;
+	case GL_UNIFORM_IS_ROW_MAJOR:
+		*value = uniform->row_major;
+		return 0;
+	default:
+		break;
+	}
+
+	/* Not a property. */
+	return -1;
 }
 
 /* Copies a string into an application's buffer of a size, reporting the length copied. */

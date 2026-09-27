@@ -197,6 +197,59 @@ namecache_enter(
 }
 
 /*
+ * Finds a directory and a name that a child was last looked up by.
+ *
+ * A file other than a directory has no way up to its parent, so this is
+ * the one record of where it was found.  Only an entry whose directory has
+ * not changed since counts.  A hit returns a referenced parent and copies
+ * the name into name, which holds NAME_MAX + 1 bytes; a miss reports ENOENT.
+ */
+int
+namecache_parent(
+	struct inode *child,
+	struct inode **parent,
+	char *name)
+{
+	struct namecache_entry *entry;
+	uint64_t sequence;
+	unsigned i;
+	unsigned long irq;
+
+	/* Rejects a missing operand. */
+	if (child == NULL || parent == NULL || name == NULL)
+		return EINVAL;
+
+	/* Looks for a current entry that resolved to the child. */
+	irq = spin_lock_irqsave(&namecache_lock);
+
+	/* Visits every slot, stopping at the first current match. */
+	for (i = 0; i < NAMECACHE_MAX; i++) {
+		/* Skips a free slot and an entry for another child. */
+		entry = &entries[i];
+		if (entry->parent == NULL || entry->child != child)
+			continue;
+
+		/* Skips an entry whose directory changed since the lookup. */
+		sequence = atomic_u64_load_acquire(&entry->parent->i_dirseq);
+		if (entry->parent_dirseq != sequence)
+			continue;
+
+		/* Hands out a referenced parent and the name it holds. */
+		inode_ref(entry->parent);
+		*parent = entry->parent;
+		kern_memcpy(name, entry->name, entry->length + 1U);
+		spin_unlock_irqrestore(&namecache_lock, irq);
+		return 0;
+	}
+
+	/* Leaves the section without a match. */
+	spin_unlock_irqrestore(&namecache_lock, irq);
+
+	/* No recent lookup names the child. */
+	return ENOENT;
+}
+
+/*
  * Forgets every entry for a name in a directory.
  */
 void

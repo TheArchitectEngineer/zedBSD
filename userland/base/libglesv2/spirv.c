@@ -130,6 +130,57 @@ static uint32_t spirv_find_type(struct spirv_module *module, uint32_t opcode, ui
 static void spirv_emit(uint32_t *out, size_t *count, uint32_t opcode, uint32_t words, const uint32_t *operands);
 
 /*
+ * Returns GL's name of the type of a scalar, a vector or a matrix of a
+ * scalar kind (0 float, 1 int, 2 unsigned, 3 bool), components per column
+ * and columns.
+ */
+GLenum
+gles_gl_type(
+	unsigned base,
+	unsigned components,
+	unsigned columns)
+{
+	static const GLenum floats[4] = { GL_FLOAT, GL_FLOAT_VEC2, GL_FLOAT_VEC3, GL_FLOAT_VEC4 };
+	static const GLenum ints[4] = { GL_INT, GL_INT_VEC2, GL_INT_VEC3, GL_INT_VEC4 };
+	static const GLenum unsigneds[4] = { GL_UNSIGNED_INT, GL_UNSIGNED_INT_VEC2, GL_UNSIGNED_INT_VEC3, GL_UNSIGNED_INT_VEC4 };
+	static const GLenum bools[4] = { GL_BOOL, GL_BOOL_VEC2, GL_BOOL_VEC3, GL_BOOL_VEC4 };
+	static const GLenum matrices[3][3] = {
+		{ GL_FLOAT_MAT2, GL_FLOAT_MAT2x3, GL_FLOAT_MAT2x4 },
+		{ GL_FLOAT_MAT3x2, GL_FLOAT_MAT3, GL_FLOAT_MAT3x4 },
+		{ GL_FLOAT_MAT4x2, GL_FLOAT_MAT4x3, GL_FLOAT_MAT4 }
+	};
+
+	/* Outside the shapes GL names: a float. */
+	if (components < 1U ||
+	    components > 4U ||
+	    columns < 1U ||
+	    columns > 4U)
+		return GL_FLOAT;
+
+	/* A matrix: by its columns and rows. */
+	if (columns > 1U) {
+		if (components < 2U)
+			return GL_FLOAT;
+		return matrices[columns - 2U][components - 2U];
+	}
+
+	/* A scalar or a vector of its kind. */
+	switch (base) {
+	case 1U:
+		return ints[components - 1U];
+	case 2U:
+		return unsigneds[components - 1U];
+	case 3U:
+		return bools[components - 1U];
+	default:
+		break;
+	}
+
+	/* Floats. */
+	return floats[components - 1U];
+}
+
+/*
  * Reads a shader's interface out of its SPIR-V.  Returns 0, or -1 with a
  * line in the log when the module is not one this library can use.
  */
@@ -759,10 +810,6 @@ spirv_leaf(
 	uint32_t type,
 	struct gles_uniform *uniform)
 {
-	static const GLenum floats[4] = { GL_FLOAT, GL_FLOAT_VEC2, GL_FLOAT_VEC3, GL_FLOAT_VEC4 };
-	static const GLenum ints[4] = { GL_INT, GL_INT_VEC2, GL_INT_VEC3, GL_INT_VEC4 };
-	static const GLenum bools[4] = { GL_BOOL, GL_BOOL_VEC2, GL_BOOL_VEC3, GL_BOOL_VEC4 };
-	static const GLenum matrices[4] = { GL_FLOAT_MAT2, GL_FLOAT_MAT2, GL_FLOAT_MAT3, GL_FLOAT_MAT4 };
 	const uint32_t *code;
 	size_t at;
 	size_t image;
@@ -790,7 +837,7 @@ spirv_leaf(
 			uniform->base = 2U;
 		uniform->components = 1U;
 		uniform->columns = 1U;
-		uniform->type = GL_INT;
+		uniform->type = gles_gl_type(uniform->base, 1U, 1U);
 		return 0;
 	case OP_TYPE_BOOL:
 		uniform->base = 3U;
@@ -803,18 +850,14 @@ spirv_leaf(
 		if (status != 0 || code[at + 3U] < 2U || code[at + 3U] > 4U)
 			return -1;
 		uniform->components = code[at + 3U];
-		uniform->type = floats[uniform->components - 1U];
-		if (uniform->base == 1U || uniform->base == 2U)
-			uniform->type = ints[uniform->components - 1U];
-		if (uniform->base == 3U)
-			uniform->type = bools[uniform->components - 1U];
+		uniform->type = gles_gl_type(uniform->base, uniform->components, 1U);
 		return 0;
 	case OP_TYPE_MATRIX:
 		status = spirv_leaf(module, code[at + 2U], uniform);
 		if (status != 0 || code[at + 3U] < 2U || code[at + 3U] > 4U)
 			return -1;
 		uniform->columns = code[at + 3U];
-		uniform->type = matrices[uniform->columns - 1U];
+		uniform->type = gles_gl_type(0U, uniform->components, uniform->columns);
 		return 0;
 	case OP_TYPE_SAMPLED_IMAGE:
 		uniform->sampler = 1;
@@ -1046,11 +1089,14 @@ spirv_variable(
 		return 0;
 	}
 
-	/* A uniform block other than the default one (binding 0): its binding is recorded. */
+	/* A uniform block other than the default one (binding 0): its binding and its type's name are recorded. */
 	if (storage == STORAGE_UNIFORM && module->bindings[id] != SPIRV_NONE && module->bindings[id] != 0U) {
 		if (!module->blocks[pointee] || out->named_count == GLES_NAMED_BLOCKS)
 			return -1;
 		out->named_bindings[out->named_count] = module->bindings[id];
+		out->named_names[out->named_count][0] = '\0';
+		if (module->names[pointee] != NULL)
+			(void)snprintf(out->named_names[out->named_count], GLES_NAME, "%s", module->names[pointee]);
 		out->named_count++;
 		return 0;
 	}

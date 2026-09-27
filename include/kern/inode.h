@@ -46,6 +46,12 @@
 #define S_ISVTX		0001000U
 #endif
 
+/* An i_descriptor_alias value: /dev/fd/N, a link to what N holds. */
+#define INODE_DESCRIPTOR_ALIAS_NUMBER	1U
+
+/* An i_descriptor_alias value: /dev/stdin and the like, links to fd/N. */
+#define INODE_DESCRIPTOR_ALIAS_STANDARD	2U
+
 struct componentname;
 struct file_ops;
 struct mount;
@@ -206,6 +212,14 @@ struct inode {
 	 * a reserved errno and leave the number in a per-thread field, which
 	 * their own comments call a kludge.  Here it is a property of the
 	 * node, decided when the node is made and never changed.
+	 *
+	 * The value also says how lstat and readlink present the node, which
+	 * is as a symbolic link, the way Linux does (BUG-061): a walk that
+	 * does not follow links must not see /dev/fd/N as the directory the
+	 * descriptor holds, or it enters a cycle.  INODE_DESCRIPTOR_ALIAS_NUMBER
+	 * marks /dev/fd/N, a link to the file the descriptor holds, and
+	 * INODE_DESCRIPTOR_ALIAS_STANDARD marks /dev/stdin, /dev/stdout and
+	 * /dev/stderr, links to fd/N.  Zero means an ordinary node.
 	 */
 	unsigned i_descriptor_alias;
 	refcount_t i_refs;

@@ -872,7 +872,7 @@ run_program(
 	}
 
 	/* The vertex stage's gl_Position rewritten. */
-	patched = gles_spirv_position(program->code[0], program->words[0], &patched_words);
+	patched = gles_spirv_position(program->code[0], program->words[0], 1, &patched_words);
 	if (patched == NULL) {
 		printf("%s: FAIL (position)\n", name);
 		return -1;

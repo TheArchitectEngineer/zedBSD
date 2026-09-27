@@ -7,10 +7,39 @@
 
 /*
  * Dispatches the selected typed listeners without a foreign-function dependency.
+ *
+ * A listener of an interface without a typed table here (the code
+ * wayland-scanner makes for a toolkit's protocols) is called through one
+ * generic call that passes every argument as one machine word (see
+ * wlc_generic_callback).
  */
 
 #include "internal.h"
 #include <unistd.h>
+
+/* The most arguments an event called through the generic path may carry. */
+#define WLC_GENERIC_ARGUMENTS	20U
+
+/*
+ * A listener callback as the generic path calls it.
+ *
+ * Every Wayland argument (int, uint, fixed, fd, string, object, new_id,
+ * array) is an integer or a pointer.  On the ABIs zedBSD builds for (amd64,
+ * i386, AArch64's AAPCS64, SPARC V9) such an argument takes one register or
+ * one word-sized stack slot, extended to the word, in the same place
+ * whatever the argument's declared integer or pointer type.  A callback
+ * declared with its own, possibly narrower, parameters of those kinds
+ * therefore reads exactly its arguments from a call that passes each as one
+ * word, and ignores the words after them.  This is what lets the library
+ * call listeners of protocols it has no table for without libffi.
+ */
+typedef void (*wlc_generic_callback)(void *, void *,
+	uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
+	uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
+	uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
+	uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+
+static int wlc_event_generic(struct wlc_event *event, const void *listener, void *data);
 
 /*
  * Releases payload, undelivered rights and object references held by one event.
@@ -34,6 +63,12 @@ wlc_event_destroy(
 		if (type == 'h' && !event->delivered) {
 			if (event->arguments[index].h >= 0)
 				close(event->arguments[index].h);
+		}
+
+		/* A server-created object no listener received is destroyed: nobody else can. */
+		if (type == 'n' && !event->delivered) {
+			if (event->objects != NULL && event->objects[index] != NULL)
+				wlc_proxy_destroy(event->objects[index]);
 		}
 
 		/* Object holds remain independent of any nulled listener argument. */
@@ -614,6 +649,87 @@ wlc_event_dispatch(
 		return error;
 	}
 
-	/* Unknown typed listeners require an explicit generic dispatcher binding. */
-	return ENOTSUP;
+	/* Any other interface's listener is called through the generic path. */
+	error = wlc_event_generic(event, listener, data);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the listener has run. */
+	return 0;
+}
+
+/* Calls a listener of an interface without a typed table here, passing each argument as one word. */
+static int
+wlc_event_generic(
+	struct wlc_event *event,
+	const void *listener,
+	void *data)
+{
+	void (*const *callbacks)(void);
+	wlc_generic_callback callback;
+	uintptr_t words[WLC_GENERIC_ARGUMENTS];
+	union wl_argument *argument;
+	const char *signature;
+	uint32_t version;
+	size_t index;
+	char type;
+	int nullable;
+
+	/* An event with more arguments than the call passes cannot be delivered. */
+	if (event->argument_count > WLC_GENERIC_ARGUMENTS)
+		return EPROTO;
+
+	/* The listener is the callbacks in event order; an empty slot ignores its event. */
+	callbacks = listener;
+	if (callbacks[event->opcode] == NULL)
+		return 0;
+
+	/* The callback, through a plain function pointer to the one-word-per-argument type. */
+	callback = (wlc_generic_callback)(void (*)(void))callbacks[event->opcode];
+
+	/* Each argument as one word; the signed kinds (int, fixed, fd) are extended with their sign. */
+	memset(words, 0, sizeof(words));
+	signature = wlc_signature_start(event->message->signature, &version);
+	for (index = 0; index < event->argument_count; index++) {
+		signature = wlc_signature_next(signature, &type, &nullable);
+		argument = &event->arguments[index];
+
+		/* The word for the argument's kind. */
+		switch (type) {
+		case 'i':
+			words[index] = (uintptr_t)(intptr_t)argument->i;
+			break;
+		case 'f':
+			words[index] = (uintptr_t)(intptr_t)argument->f;
+			break;
+		case 'h':
+			words[index] = (uintptr_t)(intptr_t)argument->h;
+			break;
+		case 'u':
+			words[index] = (uintptr_t)argument->u;
+			break;
+		case 's':
+			words[index] = (uintptr_t)argument->s;
+			break;
+		case 'a':
+			words[index] = (uintptr_t)argument->a;
+			break;
+		default:
+			/* An object or a new object: its proxy (NULL for a null object). */
+			words[index] = (uintptr_t)argument->o;
+			break;
+		}
+	}
+
+	/* The listener takes the payload's ownership (fds, new objects) as a typed listener does. */
+	(void)nullable;
+	event->delivered = 1;
+	callback(data, event->proxy,
+		 words[0], words[1], words[2], words[3], words[4],
+		 words[5], words[6], words[7], words[8], words[9],
+		 words[10], words[11], words[12], words[13], words[14],
+		 words[15], words[16], words[17], words[18], words[19]);
+
+	/* Succeeded: the callback has run. */
+	return 0;
 }

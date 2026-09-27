@@ -473,7 +473,10 @@ devfs_fixed_inode(
  * directories keep their children out of the name cache.  (Listing every
  * number up to KERN_OPEN_MAX for everyone, as SunOS does, made a node for
  * each and so ran the shared inode pool dry: BUG-054.)  stat of a node
- * reports the file the descriptor holds, not the node (see the stat path).
+ * reports the file the descriptor holds, not the node, and lstat and readdir
+ * report a symbolic link to it, as Linux does, so that a walk which does not
+ * follow links never enters the directory a descriptor holds (BUG-061; see
+ * the stat path).
  */
 static DEVFS_HIGH int
 devfs_descriptor_open(
@@ -539,13 +542,15 @@ static const struct file_ops devfs_descriptor_file_ops = {
  * Makes one node that stands for a descriptor of the calling process.
  *
  * The descriptor number is kept in the minor, which is where the open path
- * reads it from; i_descriptor_alias is what tells it to look.
+ * reads it from; i_descriptor_alias is what tells it to look, and alias says
+ * whether the node is /dev/fd/N or one of the standard names.
  */
 static DEVFS_HIGH int
 devfs_descriptor_inode(
 	struct inode *directory,
 	uint64_t descriptor,
 	ino_t number,
+	unsigned alias,
 	struct inode **result)
 {
 	enum inode_type type;
@@ -571,7 +576,7 @@ devfs_descriptor_inode(
 
 		/* The minor is the descriptor the open hands back. */
 		inode->i_rdev = (dev_t)(0x00030000U + descriptor);
-		inode->i_descriptor_alias = 1U;
+		inode->i_descriptor_alias = alias;
 	}
 
 	*result = inode;
@@ -676,7 +681,8 @@ devfs_lookup(
 			number = 2;
 		if (number != UINT64_MAX) {
 			error = devfs_descriptor_inode(directory, number,
-			    (ino_t)(DEVFS_STD_INO_BASE + number), result);
+			    (ino_t)(DEVFS_STD_INO_BASE + number),
+			    INODE_DESCRIPTOR_ALIAS_STANDARD, result);
 			return error;
 		}
 	}
@@ -698,7 +704,8 @@ devfs_lookup(
 
 		/* Returns the node for that descriptor number. */
 		error = devfs_descriptor_inode(directory, number,
-		    (ino_t)(DEVFS_FD_INO_BASE + number), result);
+		    (ino_t)(DEVFS_FD_INO_BASE + number),
+		    INODE_DESCRIPTOR_ALIAS_NUMBER, result);
 		return error;
 	}
 
@@ -1008,7 +1015,7 @@ devfs_dir_open(
 			state->count++;
 		}
 	} else if (file->f_inode->i_ino == DEVFS_FD_INO) {
-		/* The descriptors the caller holds, with the types they hold. */
+		/* The descriptors the caller holds, each a link to what it holds. */
 		for (index = 0; index < (unsigned)KERN_OPEN_MAX; index++) {
 			/* Skips a number the caller does not hold. */
 			held = devfs_descriptor_held(index, &descriptor_type);
@@ -1032,7 +1039,7 @@ devfs_dir_open(
 
 			entry->name[used] = '\0';
 			entry->ino = (ino_t)(DEVFS_FD_INO_BASE + index);
-			entry->type = descriptor_type;
+			entry->type = INODE_SYMLINK;
 			state->count++;
 		}
 	} else if (file->f_inode->i_ino == DEVFS_INPUT_INO) {
@@ -1076,7 +1083,7 @@ devfs_dir_open(
 			entry = &state->entries[state->count];
 			kern_strcpy(entry->name, standard[index]);
 			entry->ino = (ino_t)(DEVFS_STD_INO_BASE + index);
-			entry->type = INODE_CHAR;
+			entry->type = INODE_SYMLINK;
 			state->count++;
 		}
 

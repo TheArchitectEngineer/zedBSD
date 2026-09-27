@@ -6,16 +6,23 @@
  */
 
 /*
- * Drawing in zedBSD's OpenGL ES (WS068 p008): vertex arrays, pipelines,
- * glDrawArrays and glDrawElements, glClear and glReadPixels, recorded
- * into the draw surface's frame (libEGL, vulkan.c).
+ * Drawing in zedBSD's OpenGL ES (WS068 p008, p024): vertex arrays,
+ * pipelines, glDrawArrays and glDrawElements and their instanced forms,
+ * glClear and glReadPixels, recorded into the draw surface's frame
+ * (libEGL, vulkan.c).
  *
  * A draw reads its indices on the CPU (buffer objects keep their bytes
  * there): triangle strips and fans, line strips and loops become lists,
- * byte indices become 32-bit ones, and the largest index bounds the
- * client arrays copied into the stream.  An attribute whose format the
- * device cannot fetch is converted to floats.  Each draw gets a
- * descriptor set with a copy of the uniform block and the samplers.
+ * byte indices become 32-bit ones, the fixed restart index splits them
+ * when GL_PRIMITIVE_RESTART_FIXED_INDEX is on, and the largest index
+ * bounds the client arrays copied into the stream.  An attribute whose
+ * format the device cannot fetch is converted to floats (or to 32-bit
+ * integers for glVertexAttribIPointer's arrays).  An array with a divisor
+ * is read per instance: divisor 1 is Vulkan's instance rate as it is, a
+ * larger divisor is spread into the stream so that each instance has its
+ * element.  Each draw gets a descriptor set with a copy of the default
+ * uniform block, the samplers, and the ranges of the buffers bound to
+ * the named uniform blocks' binding points.
  */
 
 #include "gles.h"
@@ -26,17 +33,26 @@
 /* The descriptor sets and descriptors of one pool. */
 #define DRAW_POOL_SETS		256U
 
-static void draw_primitives(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices);
-static int draw_indices(struct zegl_context *context, GLsizei count, GLenum type, const void *indices, uint32_t **out, uint32_t *largest);
-static void draw_program(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices, int flat);
+static void draw_primitives(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices, GLsizei instances);
+static int draw_indices(struct zegl_context *context, GLsizei count, GLenum type, const void *indices, uint32_t **out, uint32_t *largest, int *restarted);
+static uint32_t *draw_restart(GLenum mode, const uint32_t *indices, GLsizei count, uint32_t restart, int rotate, uint32_t *expanded);
+static void draw_program(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices, GLsizei instances, int flat);
 static int draw_topology(GLenum mode, uint32_t *topology, int *strip);
-static int draw_vertices(struct gles_state *state, uint32_t vertices, struct gles_vertex_layout *layout, VkBuffer *buffers, VkDeviceSize *offsets);
-static VkFormat draw_format(GLint size, GLenum type, GLboolean normalized, size_t *bytes);
+static int draw_vertices(struct gles_state *state, uint32_t vertices, uint32_t instances, struct gles_vertex_layout *layout, VkBuffer *buffers, VkDeviceSize *offsets);
+static int draw_current(struct gles_state *state, const struct gles_attrib *attrib, GLenum attribute_type, VkBuffer *buffer, VkDeviceSize *offset, uint32_t *format);
+static int draw_spread(struct gles_state *state, const struct gles_attrib *attrib, unsigned base, const unsigned char *source, size_t stride, uint32_t elements, uint32_t repeat, int fetchable, VkBuffer *buffer, VkDeviceSize *offset, uint32_t *format, uint32_t *element_size);
+static int draw_signed(GLenum type);
+static VkFormat draw_format(GLint size, GLenum type, GLboolean normalized, int integer, size_t *bytes);
 static int draw_format_ok(struct gles_state *state, VkFormat format);
-static float draw_component(const unsigned char *source, GLenum type, GLboolean normalized);
+static unsigned draw_attribute_base(GLenum type);
+static float draw_component(const unsigned char *element, GLenum type, GLboolean normalized, GLint component);
+static uint32_t draw_integer(const unsigned char *element, GLenum type, GLint component);
+static float draw_half(uint16_t half);
 static void draw_raster(struct gles_state *state, uint32_t topology, struct gles_raster *raster);
 static VkPipeline draw_pipeline(struct gles_state *state, const struct gles_target *target, const struct gles_raster *raster, const struct gles_vertex_layout *layout);
-static VkDescriptorSet draw_descriptors(struct gles_state *state, uint32_t *offset);
+static int draw_blocks(struct zegl_context *context, struct gles_state *state, VkDescriptorBufferInfo *blocks);
+static VkDescriptorSet draw_descriptors(struct gles_state *state, const VkDescriptorBufferInfo *blocks, uint32_t *offset);
+static void draw_vertex_attrib_integer(GLuint index, GLenum type, const uint32_t *values);
 static void draw_dynamic(struct gles_state *state, struct zegl_context *context, const struct gles_target *target);
 static VkRect2D draw_scissor_rect(struct gles_state *state, const struct gles_target *target);
 static VkBlendFactor draw_blend_factor(GLenum factor);
@@ -286,8 +302,8 @@ glDrawArrays(
 	GLint first,
 	GLsizei count)
 {
-	/* No indices. */
-	draw_primitives(mode, first, count, GL_NONE, NULL);
+	/* No indices, one instance. */
+	draw_primitives(mode, first, count, GL_NONE, NULL, 1);
 }
 
 /*
@@ -300,10 +316,72 @@ glDrawElements(
 	GLenum type,
 	const void *indices)
 {
+	/* The indices of the type, one instance. */
+	if (type == GL_NONE)
+		type = GL_INVALID_ENUM;
+	draw_primitives(mode, 0, count, type, indices, 1);
+}
+
+/*
+ * Draws primitives from the enabled arrays with count indices that lie
+ * between start and end (the range is only a hint).
+ */
+GL_APICALL void GL_APIENTRY
+glDrawRangeElements(
+	GLenum mode,
+	GLuint start,
+	GLuint end,
+	GLsizei count,
+	GLenum type,
+	const void *indices)
+{
+	struct zegl_context *context;
+
+	/* A range that does not end before it starts. */
+	if (end < start) {
+		context = gles_context();
+		if (context != NULL)
+			gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The indices of the type, one instance. */
+	if (type == GL_NONE)
+		type = GL_INVALID_ENUM;
+	draw_primitives(mode, 0, count, type, indices, 1);
+}
+
+/*
+ * Draws instances of primitives from the enabled arrays, vertices first
+ * to first + count - 1.
+ */
+GL_APICALL void GL_APIENTRY
+glDrawArraysInstanced(
+	GLenum mode,
+	GLint first,
+	GLsizei count,
+	GLsizei instancecount)
+{
+	/* No indices. */
+	draw_primitives(mode, first, count, GL_NONE, NULL, instancecount);
+}
+
+/*
+ * Draws instances of primitives from the enabled arrays with count
+ * indices.
+ */
+GL_APICALL void GL_APIENTRY
+glDrawElementsInstanced(
+	GLenum mode,
+	GLsizei count,
+	GLenum type,
+	const void *indices,
+	GLsizei instancecount)
+{
 	/* The indices of the type. */
 	if (type == GL_NONE)
 		type = GL_INVALID_ENUM;
-	draw_primitives(mode, 0, count, type, indices);
+	draw_primitives(mode, 0, count, type, indices, instancecount);
 }
 
 /*
@@ -492,26 +570,50 @@ glVertexAttribPointer(
 	state = gles_state(context);
 	if (state == NULL)
 		return;
-	if (index >= GLES_ATTRIBS || size < 1 || size > 4 || stride < 0) {
+	if (index >= GLES_ATTRIBS ||
+	    size < 1 ||
+	    size > 4 ||
+	    stride < 0) {
 		gles_error(context, GL_INVALID_VALUE);
 		return;
 	}
 
-	/* A type OpenGL ES 2 has. */
+	/* A type OpenGL ES 3 has (the packed ones hold four components). */
 	switch (type) {
 	case GL_BYTE:
 	case GL_UNSIGNED_BYTE:
 	case GL_SHORT:
 	case GL_UNSIGNED_SHORT:
+	case GL_INT:
+	case GL_UNSIGNED_INT:
 	case GL_FIXED:
 	case GL_FLOAT:
+	case GL_HALF_FLOAT:
+		break;
+	case GL_INT_2_10_10_10_REV:
+	case GL_UNSIGNED_INT_2_10_10_10_REV:
+		if (size != 4) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+
+		/* Four packed components. */
 		break;
 	default:
 		gles_error(context, GL_INVALID_ENUM);
 		return;
 	}
 
-	/* The array, in the bound array buffer or the application's memory. */
+	/* OpenGL ES 3 has a vertex array object other than the default one read buffer objects only. */
+	if (gles_fixed == NULL &&
+	    state->vertex_array != 0U &&
+	    state->array_buffer == NULL &&
+	    pointer != NULL) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The array, in the bound array buffer or the application's memory, read as floats. */
 	attrib = &state->attribs[index];
 	attrib->size = size;
 	attrib->type = type;
@@ -519,6 +621,96 @@ glVertexAttribPointer(
 	attrib->stride = stride;
 	attrib->pointer = pointer;
 	attrib->buffer = state->array_buffer;
+	attrib->integer = 0;
+}
+
+/*
+ * Describes a vertex attribute's array of integers, which the shader
+ * reads as they are (an int or uint input).
+ */
+GL_APICALL void GL_APIENTRY
+glVertexAttribIPointer(
+	GLuint index,
+	GLint size,
+	GLenum type,
+	GLsizei stride,
+	const void *pointer)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_attrib *attrib;
+
+	/* A context with its state, an attribute, a size and a stride. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (index >= GLES_ATTRIBS ||
+	    size < 1 ||
+	    size > 4 ||
+	    stride < 0) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* An integer type. */
+	switch (type) {
+	case GL_BYTE:
+	case GL_UNSIGNED_BYTE:
+	case GL_SHORT:
+	case GL_UNSIGNED_SHORT:
+	case GL_INT:
+	case GL_UNSIGNED_INT:
+		break;
+	default:
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* A vertex array object other than the default one reads buffer objects only. */
+	if (gles_fixed == NULL &&
+	    state->vertex_array != 0U &&
+	    state->array_buffer == NULL &&
+	    pointer != NULL) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The array, in the bound array buffer or the application's memory, read as integers. */
+	attrib = &state->attribs[index];
+	attrib->size = size;
+	attrib->type = type;
+	attrib->normalized = GL_FALSE;
+	attrib->stride = stride;
+	attrib->pointer = pointer;
+	attrib->buffer = state->array_buffer;
+	attrib->integer = 1;
+}
+
+/*
+ * Makes an attribute's array advance once every divisor instances
+ * instead of once per vertex (0: per vertex again).
+ */
+GL_APICALL void GL_APIENTRY
+glVertexAttribDivisor(
+	GLuint index,
+	GLuint divisor)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state and an attribute. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (index >= GLES_ATTRIBS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The divisor. */
+	state->attribs[index].divisor = divisor;
 }
 
 /*
@@ -594,11 +786,135 @@ glVertexAttrib4f(
 		return;
 	}
 
-	/* The value. */
+	/* The value, floats. */
 	state->attribs[index].value[0] = x;
 	state->attribs[index].value[1] = y;
 	state->attribs[index].value[2] = z;
 	state->attribs[index].value[3] = w;
+	state->attribs[index].value_type = GL_FLOAT;
+}
+
+/*
+ * Sets an attribute's current value from four ints.
+ */
+GL_APICALL void GL_APIENTRY
+glVertexAttribI4i(
+	GLuint index,
+	GLint x,
+	GLint y,
+	GLint z,
+	GLint w)
+{
+	uint32_t values[4];
+
+	/* The ints' bits. */
+	values[0] = (uint32_t)x;
+	values[1] = (uint32_t)y;
+	values[2] = (uint32_t)z;
+	values[3] = (uint32_t)w;
+	draw_vertex_attrib_integer(index, GL_INT, values);
+}
+
+/*
+ * Sets an attribute's current value from four unsigned ints.
+ */
+GL_APICALL void GL_APIENTRY
+glVertexAttribI4ui(
+	GLuint index,
+	GLuint x,
+	GLuint y,
+	GLuint z,
+	GLuint w)
+{
+	uint32_t values[4];
+
+	/* The unsigned ints. */
+	values[0] = x;
+	values[1] = y;
+	values[2] = z;
+	values[3] = w;
+	draw_vertex_attrib_integer(index, GL_UNSIGNED_INT, values);
+}
+
+GL_APICALL void GL_APIENTRY
+glVertexAttribI4iv(
+	GLuint index,
+	const GLint *v)
+{
+	/* Four ints. */
+	glVertexAttribI4i(index, v[0], v[1], v[2], v[3]);
+}
+
+GL_APICALL void GL_APIENTRY
+glVertexAttribI4uiv(
+	GLuint index,
+	const GLuint *v)
+{
+	/* Four unsigned ints. */
+	glVertexAttribI4ui(index, v[0], v[1], v[2], v[3]);
+}
+
+/*
+ * Reports an attribute's array state, or its current value as ints.
+ */
+GL_APICALL void GL_APIENTRY
+glGetVertexAttribIiv(
+	GLuint index,
+	GLenum pname,
+	GLint *params)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_attrib *attrib;
+	float value;
+	int32_t integer;
+	unsigned component;
+
+	/* A context with its state and an attribute. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (index >= GLES_ATTRIBS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Anything but the current value is the array's state. */
+	if (pname != GL_CURRENT_VERTEX_ATTRIB) {
+		glGetVertexAttribiv(index, pname, params);
+		return;
+	}
+
+	/* The current value: integers' bits as they are, floats converted. */
+	attrib = &state->attribs[index];
+	for (component = 0U; component < 4U; component++) {
+		value = attrib->value[component];
+		memcpy(&integer, &attrib->value[component], 4U);
+		if (attrib->value_type != GL_INT && attrib->value_type != GL_UNSIGNED_INT)
+			integer = (int32_t)value;
+		params[component] = integer;
+	}
+}
+
+/*
+ * Reports an attribute's array state, or its current value as unsigned
+ * ints.
+ */
+GL_APICALL void GL_APIENTRY
+glGetVertexAttribIuiv(
+	GLuint index,
+	GLenum pname,
+	GLuint *params)
+{
+	GLint values[4];
+	unsigned component;
+
+	/* The ints' bits, as unsigned. */
+	memset(values, 0, sizeof(values));
+	glGetVertexAttribIiv(index, pname, values);
+	for (component = 0U; component < 4U; component++)
+		params[component] = (GLuint)values[component];
 }
 
 GL_APICALL void GL_APIENTRY
@@ -751,6 +1067,12 @@ glGetVertexAttribiv(
 		if (attrib->buffer != NULL)
 			*params = (GLint)attrib->buffer->name;
 		return;
+	case GL_VERTEX_ATTRIB_ARRAY_INTEGER:
+		*params = attrib->integer;
+		return;
+	case GL_VERTEX_ATTRIB_ARRAY_DIVISOR:
+		*params = (GLint)attrib->divisor;
+		return;
 	case GL_CURRENT_VERTEX_ATTRIB:
 		for (component = 0U; component < 4U; component++)
 			params[component] = (GLint)attrib->value[component];
@@ -805,7 +1127,8 @@ draw_primitives(
 	GLint first,
 	GLsizei count,
 	GLenum type,
-	const void *indices)
+	const void *indices,
+	GLsizei instances)
 {
 	struct zegl_context *context;
 	struct gles_state *state;
@@ -820,7 +1143,7 @@ draw_primitives(
 
 	/* A program the application made draws as it is (OpenGL ES has nothing else). */
 	if (state->program != NULL || gles_fixed == NULL) {
-		draw_program(mode, first, count, type, indices, 0);
+		draw_program(mode, first, count, type, indices, instances, 0);
 		return;
 	}
 
@@ -835,7 +1158,7 @@ draw_primitives(
 
 	/* Current for this draw only. */
 	state->program = program;
-	draw_program(mode, first, count, type, indices, flat);
+	draw_program(mode, first, count, type, indices, instances, flat);
 	state->program = NULL;
 }
 
@@ -853,6 +1176,7 @@ draw_program(
 	GLsizei count,
 	GLenum type,
 	const void *indices,
+	GLsizei instances,
 	int flat)
 {
 	struct zegl_context *context;
@@ -862,6 +1186,7 @@ draw_program(
 	struct gles_vertex_layout layout;
 	VkBuffer buffers[GLES_ATTRIBS];
 	VkDeviceSize offsets[GLES_ATTRIBS];
+	VkDescriptorBufferInfo blocks[GLES_NAMED_BLOCKS];
 	VkBuffer index_buffer;
 	VkDeviceSize index_offset;
 	VkPipeline pipeline;
@@ -874,6 +1199,8 @@ draw_program(
 	uint32_t largest;
 	uint32_t expanded;
 	uint32_t topology;
+	uint32_t restart;
+	int restarted;
 	int strip;
 	int status;
 
@@ -882,7 +1209,9 @@ draw_program(
 	state = gles_state(context);
 	if (state == NULL)
 		return;
-	if (first < 0 || count < 0) {
+	if (first < 0 ||
+	    count < 0 ||
+	    instances < 0) {
 		gles_error(context, GL_INVALID_VALUE);
 		return;
 	}
@@ -907,22 +1236,42 @@ draw_program(
 	}
 
 	/* Nothing to draw. */
-	if (count == 0)
+	if (count == 0 || instances == 0)
 		return;
 
-	/* The indices: read for glDrawElements, the range for glDrawArrays. */
+	/* The indices: read for glDrawElements (whether the restart index splits them), the range for glDrawArrays. */
 	read = NULL;
+	restarted = 0;
 	largest = (uint32_t)first + (uint32_t)count - 1U;
 	if (type != GL_NONE) {
-		status = draw_indices(context, count, type, indices, &read, &largest);
+		status = draw_indices(context, count, type, indices, &read, &largest, &restarted);
 		if (status != 0)
 			return;
 	}
 
-	/* A strip, loop or fan (or any mode, shaded flat) becomes a list; indices that were read become 32-bit ones. */
+	/* The restart index of the type (the largest it holds). */
+	restart = 0xffffffffU;
+	if (type == GL_UNSIGNED_BYTE)
+		restart = 0xffU;
+	if (type == GL_UNSIGNED_SHORT)
+		restart = 0xffffU;
+
+	/*
+	 * Indices the restart index splits become a list of the pieces; a
+	 * strip, loop or fan (or any mode, shaded flat) becomes a list;
+	 * indices that were read become 32-bit ones.
+	 */
 	list = read;
 	expanded = (uint32_t)count;
-	if (strip || flat) {
+	if (restarted) {
+		list = draw_restart(mode, read, count, restart, flat, &expanded);
+		free(read);
+		read = NULL;
+		if (list == NULL) {
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return;
+		}
+	} else if (strip || flat) {
 		list = gles_expand(mode, read, (uint32_t)first, count, flat, &expanded);
 		free(read);
 		read = NULL;
@@ -954,13 +1303,18 @@ draw_program(
 		free(list);
 	}
 
-	/* The vertices each attribute reads. */
-	status = draw_vertices(state, largest + 1U, &layout, buffers, offsets);
+	/* The vertices (and instances) each attribute reads. */
+	status = draw_vertices(state, largest + 1U, (uint32_t)instances, &layout, buffers, offsets);
 	if (status != 0) {
 		gles_report("the vertices", status);
 		gles_error(context, GL_OUT_OF_MEMORY);
 		return;
 	}
+
+	/* The buffer ranges the named uniform blocks read. */
+	status = draw_blocks(context, state, blocks);
+	if (status != 0)
+		return;
 
 	/* The frame, open and in the target's pass (the surface's or the framebuffer object's). */
 	status = gles_target_open(context, state, NULL, &target);
@@ -976,7 +1330,7 @@ draw_program(
 	}
 
 	/* The descriptors. */
-	set = draw_descriptors(state, &dynamic_offset);
+	set = draw_descriptors(state, blocks, &dynamic_offset);
 	if (set == VK_NULL_HANDLE) {
 		gles_report("the descriptors", -1);
 		gles_error(context, GL_OUT_OF_MEMORY);
@@ -995,16 +1349,18 @@ draw_program(
 		vkCmdBindVertexBuffers(target.command, 0U, layout.count, buffers, offsets);
 	if (index_buffer != VK_NULL_HANDLE) {
 		vkCmdBindIndexBuffer(target.command, index_buffer, index_offset, VK_INDEX_TYPE_UINT32);
-		vkCmdDrawIndexed(target.command, expanded, 1U, 0U, 0, 0U);
+		vkCmdDrawIndexed(target.command, expanded, (uint32_t)instances, 0U, 0, 0U);
 	} else {
-		vkCmdDraw(target.command, (uint32_t)count, 1U, (uint32_t)first, 0U);
+		vkCmdDraw(target.command, (uint32_t)count, (uint32_t)instances, (uint32_t)first, 0U);
 	}
 }
 
 /*
  * Reads glDrawElements' indices (from the element buffer, or the
- * application's memory) as 32-bit ones, and the largest.  Returns 0, or
- * -1 with the error recorded.
+ * application's memory) as 32-bit ones, and the largest; with
+ * GL_PRIMITIVE_RESTART_FIXED_INDEX on, the largest index of the type is
+ * the restart index, left out of the largest and reported in *restarted
+ * when there is one.  Returns 0, or -1 with the error recorded.
  */
 static int
 draw_indices(
@@ -1013,11 +1369,13 @@ draw_indices(
 	GLenum type,
 	const void *indices,
 	uint32_t **out,
-	uint32_t *largest)
+	uint32_t *largest,
+	int *restarted)
 {
 	struct gles_state *state;
 	const unsigned char *bytes;
 	uint32_t *read;
+	uint32_t restart;
 	uint16_t half;
 	size_t size;
 	size_t offset;
@@ -1036,6 +1394,14 @@ draw_indices(
 		gles_error(context, GL_INVALID_ENUM);
 		return -1;
 	}
+
+	/* The restart index: the largest of the type, when restarts are on. */
+	restart = 0xffffffffU;
+	if (size == 1U)
+		restart = 0xffU;
+	if (size == 2U)
+		restart = 0xffffU;
+	*restarted = 0;
 
 	/* Where they are: an offset into the element buffer, or a pointer. */
 	bytes = indices;
@@ -1073,6 +1439,12 @@ draw_indices(
 			read[index] = half;
 		} else {
 			memcpy(&read[index], bytes + (size_t)index * 4U, 4U);
+		}
+
+		/* A restart index splits the primitives and names no vertex. */
+		if (state->primitive_restart && read[index] == restart) {
+			*restarted = 1;
+			continue;
 		}
 
 		/* The largest. */
@@ -1227,6 +1599,65 @@ gles_expand(
 	return list;
 }
 
+/*
+ * Turns indices that the restart index splits into one list: each piece
+ * between two restarts is expanded as a draw of its own (gles_expand,
+ * rotated for flat shading when rotate is set) and the lists are joined.
+ * Returns the list and its length, or NULL when there is no memory.
+ */
+static uint32_t *
+draw_restart(
+	GLenum mode,
+	const uint32_t *indices,
+	GLsizei count,
+	uint32_t restart,
+	int rotate,
+	uint32_t *expanded)
+{
+	uint32_t *list;
+	uint32_t *piece;
+	uint32_t total;
+	uint32_t length;
+	GLsizei start;
+	GLsizei index;
+
+	/* At most six indices per index, as gles_expand makes. */
+	list = malloc(((size_t)count * 6U + 6U) * sizeof(uint32_t));
+	if (list == NULL)
+		return NULL;
+
+	/* Each piece: the indices up to the next restart (or the end). */
+	total = 0U;
+	start = 0;
+	for (index = 0; index <= count; index++) {
+		if (index < count && indices[index] != restart)
+			continue;
+
+		/* An empty piece (two restarts in a row) adds nothing. */
+		if (index == start) {
+			start = index + 1;
+			continue;
+		}
+
+		/* The piece as a list of its own. */
+		piece = gles_expand(mode, indices + start, 0U, index - start, rotate, &length);
+		if (piece == NULL) {
+			free(list);
+			return NULL;
+		}
+
+		/* Joined to the others. */
+		memcpy(list + total, piece, (size_t)length * sizeof(uint32_t));
+		total += length;
+		free(piece);
+		start = index + 1;
+	}
+
+	/* Succeeded: the joined list. */
+	*expanded = total;
+	return list;
+}
+
 /* Returns Vulkan's topology for a GL mode, and whether the mode must become a list first; nonzero for a mode that is not one. */
 static int
 draw_topology(
@@ -1272,15 +1703,18 @@ draw_topology(
 }
 
 /*
- * Puts each active attribute's vertices (0 to vertices - 1) where the GPU
+ * Puts each active attribute's vertices (0 to vertices - 1, or for an
+ * array with a divisor the elements its instances read) where the GPU
  * reads them, and describes the layout: a buffer object's device copy as
- * it is, client arrays and unfetchable formats copied into the stream,
- * and a disabled array's current value as one vertex with stride 0.
+ * it is, client arrays copied into the stream, unfetchable formats and
+ * divisors above 1 spread into the stream element by element, and a
+ * disabled array's current value as one vertex with stride 0.
  */
 static int
 draw_vertices(
 	struct gles_state *state,
 	uint32_t vertices,
+	uint32_t instances,
 	struct gles_vertex_layout *layout,
 	VkBuffer *buffers,
 	VkDeviceSize *offsets)
@@ -1289,15 +1723,17 @@ draw_vertices(
 	struct gles_attrib *attrib;
 	const unsigned char *source;
 	unsigned char *target;
-	float *converted;
 	VkFormat format;
 	size_t bytes;
 	size_t stride;
 	size_t needed;
-	uint32_t vertex;
+	uint32_t elements;
+	uint32_t repeat;
+	uint32_t element_size;
 	uint32_t index;
-	GLint component;
+	unsigned base;
 	int fetchable;
+	int is_signed;
 	int status;
 
 	/* One binding per active attribute. */
@@ -1306,31 +1742,63 @@ draw_vertices(
 	for (index = 0U; index < program->attribute_count; index++) {
 		attrib = &state->attribs[program->attributes[index].location];
 		layout->locations[index] = program->attributes[index].location;
+		layout->rates[index] = VK_VERTEX_INPUT_RATE_VERTEX;
 
 		/* A disabled array: the current value, the same for every vertex. */
 		if (!attrib->enabled) {
-			target = gles_stream(state, 4U * sizeof(float), 16U, &buffers[index], &offsets[index]);
-			if (target == NULL)
+			status = draw_current(state, attrib, program->attributes[index].type, &buffers[index], &offsets[index],
+					      &layout->formats[index]);
+			if (status != 0)
 				return -1;
-			memcpy(target, attrib->value, 4U * sizeof(float));
-			layout->formats[index] = VK_FORMAT_R32G32B32A32_SFLOAT;
 			layout->strides[index] = 0U;
 			continue;
 		}
 
 		/* The array's format and stride. */
-		format = draw_format(attrib->size, attrib->type, attrib->normalized, &bytes);
+		format = draw_format(attrib->size, attrib->type, attrib->normalized, attrib->integer, &bytes);
 		fetchable = draw_format_ok(state, format);
 		stride = (size_t)attrib->stride;
 		if (stride == 0U)
 			stride = bytes;
-		needed = (size_t)(vertices - 1U) * stride + bytes;
+
+		/*
+		 * Integers of the other signedness than the shader's input are
+		 * converted to the input's kind (Vulkan fetches a format only
+		 * into an input of its own kind).
+		 */
+		base = draw_attribute_base(program->attributes[index].type);
+		is_signed = draw_signed(attrib->type);
+		if (attrib->integer &&
+		    base == 1U &&
+		    !is_signed)
+			fetchable = 0;
+		if (attrib->integer &&
+		    base == 2U &&
+		    is_signed)
+			fetchable = 0;
+
+		/*
+		 * The elements it has to supply: one per vertex, or with a
+		 * divisor one per divisor instances (repeat: how many instances
+		 * of the stream read each one when it is spread).
+		 */
+		elements = vertices;
+		repeat = 1U;
+		if (attrib->divisor != 0U) {
+			layout->rates[index] = VK_VERTEX_INPUT_RATE_INSTANCE;
+			elements = (instances + attrib->divisor - 1U) / attrib->divisor;
+			if (attrib->divisor > 1U)
+				repeat = attrib->divisor;
+		}
+
+		/* The bytes those elements span. */
+		needed = (size_t)(elements - 1U) * stride + bytes;
 
 		/* A buffer object the device can fetch from as it is. */
 		if (attrib->buffer != NULL) {
 			if ((size_t)(uintptr_t)attrib->pointer + needed > attrib->buffer->size)
 				return -1;
-			if (fetchable) {
+			if (fetchable && repeat == 1U) {
 				status = gles_buffer_sync(state, attrib->buffer);
 				if (status != 0)
 					return -1;
@@ -1350,8 +1818,8 @@ draw_vertices(
 		if (source == NULL)
 			return -1;
 
-		/* Fetchable: copied as they are. */
-		if (fetchable) {
+		/* Fetchable and one element per vertex or instance: copied as they are. */
+		if (fetchable && repeat == 1U) {
 			target = gles_stream(state, needed, 16U, &buffers[index], &offsets[index]);
 			if (target == NULL)
 				return -1;
@@ -1361,21 +1829,12 @@ draw_vertices(
 			continue;
 		}
 
-		/* Not fetchable (fixed point, three bytes, ...): converted to floats. */
-		converted = gles_stream(state, (size_t)vertices * (size_t)attrib->size * sizeof(float), 16U, &buffers[index], &offsets[index]);
-		if (converted == NULL)
+		/* Otherwise spread into the stream element by element (converted when the device cannot fetch them). */
+		status = draw_spread(state, attrib, base, source, stride, elements * repeat, repeat, fetchable, &buffers[index],
+				     &offsets[index], &layout->formats[index], &element_size);
+		if (status != 0)
 			return -1;
-		for (vertex = 0U; vertex < vertices; vertex++) {
-			for (component = 0; component < attrib->size; component++) {
-				converted[(size_t)vertex * (size_t)attrib->size + (size_t)component] =
-					draw_component(source + (size_t)vertex * stride + (size_t)component * (bytes / (size_t)attrib->size),
-						       attrib->type, attrib->normalized);
-			}
-		}
-
-		/* The floats' format. */
-		layout->formats[index] = (uint32_t)draw_format(attrib->size, GL_FLOAT, GL_FALSE, &bytes);
-		layout->strides[index] = (uint32_t)((size_t)attrib->size * sizeof(float));
+		layout->strides[index] = element_size;
 	}
 
 	/* Succeeded: every attribute has its vertices. */
@@ -1383,15 +1842,140 @@ draw_vertices(
 	return 0;
 }
 
-/* Returns the Vulkan format of an array's components and the bytes of one vertex's; VK_FORMAT_UNDEFINED for fixed point. */
+/*
+ * Puts a disabled array's current value into the stream, in the format
+ * the shader's input reads (floats, or ints or unsigned ints for an
+ * integer input).  Returns 0, or -1 when there is no memory.
+ */
+static int
+draw_current(
+	struct gles_state *state,
+	const struct gles_attrib *attrib,
+	GLenum attribute_type,
+	VkBuffer *buffer,
+	VkDeviceSize *offset,
+	uint32_t *format)
+{
+	unsigned char *target;
+	unsigned base;
+
+	/* Four words for the value. */
+	target = gles_stream(state, 4U * sizeof(float), 16U, buffer, offset);
+	if (target == NULL)
+		return -1;
+
+	/* The value's bits (an integer value keeps its integers there). */
+	memcpy(target, attrib->value, 4U * sizeof(float));
+
+	/* The format of the shader's input. */
+	base = draw_attribute_base(attribute_type);
+	*format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	if (base == 1U)
+		*format = VK_FORMAT_R32G32B32A32_SINT;
+	if (base == 2U)
+		*format = VK_FORMAT_R32G32B32A32_UINT;
+
+	/* Succeeded: the value is in the stream. */
+	return 0;
+}
+
+/*
+ * Spreads count elements of an array into the stream, element k taken
+ * from the array's element k / repeat: as they are when the device can
+ * fetch them, else each component converted (to a float, or for an
+ * integer array to a 32-bit integer of the kind the shader's input reads,
+ * base: 1 ints, 2 unsigned ints).  Returns 0 with the stream place, the
+ * format and the size of one element, or -1 when there is no memory.
+ */
+static int
+draw_spread(
+	struct gles_state *state,
+	const struct gles_attrib *attrib,
+	unsigned base,
+	const unsigned char *source,
+	size_t stride,
+	uint32_t count,
+	uint32_t repeat,
+	int fetchable,
+	VkBuffer *buffer,
+	VkDeviceSize *offset,
+	uint32_t *format,
+	uint32_t *element_size)
+{
+	const unsigned char *element;
+	unsigned char *target;
+	float number;
+	uint32_t integer;
+	size_t bytes;
+	size_t size;
+	uint32_t index;
+	GLint component;
+	GLenum converted;
+
+	/* The size of one element in the stream: as it is, or four bytes a component. */
+	*format = (uint32_t)draw_format(attrib->size, attrib->type, attrib->normalized, attrib->integer, &bytes);
+	size = bytes;
+	if (!fetchable) {
+		size = (size_t)attrib->size * 4U;
+		converted = GL_FLOAT;
+		if (attrib->integer && base == 2U) {
+			converted = GL_UNSIGNED_INT;
+		} else if (attrib->integer) {
+			converted = GL_INT;
+		}
+
+		/* The format of the converted components. */
+		*format = (uint32_t)draw_format(attrib->size, converted, GL_FALSE, attrib->integer, &bytes);
+	}
+
+	/* The room. */
+	target = gles_stream(state, (size_t)count * size, 16U, buffer, offset);
+	if (target == NULL)
+		return -1;
+
+	/* Each element, from the one of the array it repeats. */
+	for (index = 0U; index < count; index++) {
+		element = source + (size_t)(index / repeat) * stride;
+
+		/* As it is, when the device fetches it. */
+		if (fetchable) {
+			memcpy(target + (size_t)index * size, element, size);
+			continue;
+		}
+
+		/* Each component converted: an integer array's to 32-bit integers, any other's to floats. */
+		for (component = 0; component < attrib->size; component++) {
+			if (attrib->integer) {
+				integer = draw_integer(element, attrib->type, component);
+				memcpy(target + (size_t)index * size + (size_t)component * 4U, &integer, 4U);
+			} else {
+				number = draw_component(element, attrib->type, attrib->normalized, component);
+				memcpy(target + (size_t)index * size + (size_t)component * 4U, &number, 4U);
+			}
+		}
+	}
+
+	/* Succeeded: the elements are in the stream. */
+	*element_size = (uint32_t)size;
+	return 0;
+}
+
+/*
+ * Returns the Vulkan format of an array's components (integers read as
+ * they are for an integer array) and the bytes of one vertex's;
+ * VK_FORMAT_UNDEFINED for arrays Vulkan has no format for (fixed point,
+ * 32-bit integers read as floats), which are converted.
+ */
 static VkFormat
 draw_format(
 	GLint size,
 	GLenum type,
 	GLboolean normalized,
+	int integer,
 	size_t *bytes)
 {
 	static const VkFormat floats[4] = { VK_FORMAT_R32_SFLOAT, VK_FORMAT_R32G32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT };
+	static const VkFormat halves[4] = { VK_FORMAT_R16_SFLOAT, VK_FORMAT_R16G16_SFLOAT, VK_FORMAT_R16G16B16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT };
 	static const VkFormat ubyte_norm[4] = { VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8_UNORM, VK_FORMAT_R8G8B8_UNORM, VK_FORMAT_R8G8B8A8_UNORM };
 	static const VkFormat ubyte[4] = { VK_FORMAT_R8_USCALED, VK_FORMAT_R8G8_USCALED, VK_FORMAT_R8G8B8_USCALED, VK_FORMAT_R8G8B8A8_USCALED };
 	static const VkFormat byte_norm[4] = { VK_FORMAT_R8_SNORM, VK_FORMAT_R8G8_SNORM, VK_FORMAT_R8G8B8_SNORM, VK_FORMAT_R8G8B8A8_SNORM };
@@ -1400,12 +1984,48 @@ draw_format(
 	static const VkFormat ushort[4] = { VK_FORMAT_R16_USCALED, VK_FORMAT_R16G16_USCALED, VK_FORMAT_R16G16B16_USCALED, VK_FORMAT_R16G16B16A16_USCALED };
 	static const VkFormat short_norm[4] = { VK_FORMAT_R16_SNORM, VK_FORMAT_R16G16_SNORM, VK_FORMAT_R16G16B16_SNORM, VK_FORMAT_R16G16B16A16_SNORM };
 	static const VkFormat shorts[4] = { VK_FORMAT_R16_SSCALED, VK_FORMAT_R16G16_SSCALED, VK_FORMAT_R16G16B16_SSCALED, VK_FORMAT_R16G16B16A16_SSCALED };
+	static const VkFormat byte_int[4] = { VK_FORMAT_R8_SINT, VK_FORMAT_R8G8_SINT, VK_FORMAT_R8G8B8_SINT, VK_FORMAT_R8G8B8A8_SINT };
+	static const VkFormat ubyte_int[4] = { VK_FORMAT_R8_UINT, VK_FORMAT_R8G8_UINT, VK_FORMAT_R8G8B8_UINT, VK_FORMAT_R8G8B8A8_UINT };
+	static const VkFormat short_int[4] = { VK_FORMAT_R16_SINT, VK_FORMAT_R16G16_SINT, VK_FORMAT_R16G16B16_SINT, VK_FORMAT_R16G16B16A16_SINT };
+	static const VkFormat ushort_int[4] = { VK_FORMAT_R16_UINT, VK_FORMAT_R16G16_UINT, VK_FORMAT_R16G16B16_UINT, VK_FORMAT_R16G16B16A16_UINT };
+	static const VkFormat int_int[4] = { VK_FORMAT_R32_SINT, VK_FORMAT_R32G32_SINT, VK_FORMAT_R32G32B32_SINT, VK_FORMAT_R32G32B32A32_SINT };
+	static const VkFormat uint_int[4] = { VK_FORMAT_R32_UINT, VK_FORMAT_R32G32_UINT, VK_FORMAT_R32G32B32_UINT, VK_FORMAT_R32G32B32A32_UINT };
+
+	/* An integer array: the integer formats, read as they are. */
+	if (integer) {
+		switch (type) {
+		case GL_BYTE:
+			*bytes = (size_t)size;
+			return byte_int[size - 1];
+		case GL_UNSIGNED_BYTE:
+			*bytes = (size_t)size;
+			return ubyte_int[size - 1];
+		case GL_SHORT:
+			*bytes = (size_t)size * 2U;
+			return short_int[size - 1];
+		case GL_UNSIGNED_SHORT:
+			*bytes = (size_t)size * 2U;
+			return ushort_int[size - 1];
+		case GL_INT:
+			*bytes = (size_t)size * 4U;
+			return int_int[size - 1];
+		default:
+			break;
+		}
+
+		/* GL_UNSIGNED_INT. */
+		*bytes = (size_t)size * 4U;
+		return uint_int[size - 1];
+	}
 
 	/* The type's table. */
 	switch (type) {
 	case GL_FLOAT:
 		*bytes = (size_t)size * 4U;
 		return floats[size - 1];
+	case GL_HALF_FLOAT:
+		*bytes = (size_t)size * 2U;
+		return halves[size - 1];
 	case GL_UNSIGNED_BYTE:
 		*bytes = (size_t)size;
 		if (normalized)
@@ -1426,11 +2046,21 @@ draw_format(
 		if (normalized)
 			return short_norm[size - 1];
 		return shorts[size - 1];
+	case GL_INT_2_10_10_10_REV:
+		*bytes = 4U;
+		if (normalized)
+			return VK_FORMAT_A2B10G10R10_SNORM_PACK32;
+		return VK_FORMAT_A2B10G10R10_SSCALED_PACK32;
+	case GL_UNSIGNED_INT_2_10_10_10_REV:
+		*bytes = 4U;
+		if (normalized)
+			return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+		return VK_FORMAT_A2B10G10R10_USCALED_PACK32;
 	default:
 		break;
 	}
 
-	/* GL_FIXED: four bytes a component, no Vulkan format. */
+	/* GL_FIXED, GL_INT and GL_UNSIGNED_INT: four bytes a component, converted. */
 	*bytes = (size_t)size * 4U;
 	return VK_FORMAT_UNDEFINED;
 }
@@ -1464,53 +2094,216 @@ draw_format_ok(
 	return 1;
 }
 
-/* Converts one component of an array to a float, as GL reads it. */
+/* Reports whether an array type's integers are signed. */
+static int
+draw_signed(
+	GLenum type)
+{
+	/* The signed integer types. */
+	if (type == GL_BYTE ||
+	    type == GL_SHORT ||
+	    type == GL_INT)
+		return 1;
+
+	/* The others. */
+	return 0;
+}
+
+/* Returns the scalar kind a shader input of a GL type reads: 0 floats, 1 ints, 2 unsigned ints. */
+static unsigned
+draw_attribute_base(
+	GLenum type)
+{
+	/* The integer types. */
+	switch (type) {
+	case GL_INT:
+	case GL_INT_VEC2:
+	case GL_INT_VEC3:
+	case GL_INT_VEC4:
+		return 1U;
+	case GL_UNSIGNED_INT:
+	case GL_UNSIGNED_INT_VEC2:
+	case GL_UNSIGNED_INT_VEC3:
+	case GL_UNSIGNED_INT_VEC4:
+		return 2U;
+	default:
+		break;
+	}
+
+	/* Anything else reads floats. */
+	return 0U;
+}
+
+/* Converts one component of an array's element to a float, as GL reads it. */
 static float
 draw_component(
-	const unsigned char *source,
+	const unsigned char *element,
 	GLenum type,
-	GLboolean normalized)
+	GLboolean normalized,
+	GLint component)
 {
 	int8_t signed_byte;
 	uint16_t unsigned_short;
 	int16_t signed_short;
+	int32_t signed_int;
+	uint32_t unsigned_int;
 	int32_t fixed;
+	uint32_t packed;
+	int32_t field;
 	float value;
 
 	/* The component's type. */
 	switch (type) {
 	case GL_UNSIGNED_BYTE:
-		value = (float)source[0];
+		value = (float)element[component];
 		if (normalized)
 			value /= 255.0f;
 		return value;
 	case GL_BYTE:
-		memcpy(&signed_byte, source, 1U);
+		memcpy(&signed_byte, element + component, 1U);
 		value = (float)signed_byte;
 		if (normalized)
 			value = (value * 2.0f + 1.0f) / 255.0f;
 		return value;
 	case GL_UNSIGNED_SHORT:
-		memcpy(&unsigned_short, source, 2U);
+		memcpy(&unsigned_short, element + component * 2, 2U);
 		value = (float)unsigned_short;
 		if (normalized)
 			value /= 65535.0f;
 		return value;
 	case GL_SHORT:
-		memcpy(&signed_short, source, 2U);
+		memcpy(&signed_short, element + component * 2, 2U);
 		value = (float)signed_short;
 		if (normalized)
 			value = (value * 2.0f + 1.0f) / 65535.0f;
 		return value;
+	case GL_HALF_FLOAT:
+		memcpy(&unsigned_short, element + component * 2, 2U);
+		value = draw_half(unsigned_short);
+		return value;
+	case GL_INT:
+		memcpy(&signed_int, element + component * 4, 4U);
+		value = (float)signed_int;
+		if (normalized)
+			value = (float)((double)signed_int / 2147483647.0);
+		if (normalized && value < -1.0f)
+			value = -1.0f;
+		return value;
+	case GL_UNSIGNED_INT:
+		memcpy(&unsigned_int, element + component * 4, 4U);
+		value = (float)unsigned_int;
+		if (normalized)
+			value = (float)((double)unsigned_int / 4294967295.0);
+		return value;
 	case GL_FIXED:
-		memcpy(&fixed, source, 4U);
+		memcpy(&fixed, element + component * 4, 4U);
 		return (float)fixed / 65536.0f;
 	default:
 		break;
 	}
 
+	/* A packed type: x, y and z are 10 bits from bit 0, 10 and 20, w is 2 bits from bit 30. */
+	if (type == GL_INT_2_10_10_10_REV || type == GL_UNSIGNED_INT_2_10_10_10_REV) {
+		memcpy(&packed, element, 4U);
+		field = (int32_t)((packed >> (10 * component)) & 0x3ffU);
+		if (component == 3)
+			field = (int32_t)(packed >> 30);
+
+		/* The unsigned kind: as it is, or over the field's largest. */
+		if (type == GL_UNSIGNED_INT_2_10_10_10_REV) {
+			value = (float)field;
+			if (normalized && component == 3)
+				value /= 3.0f;
+			else if (normalized)
+				value /= 1023.0f;
+			return value;
+		}
+
+		/* The signed kind: the field's top bit is its sign. */
+		if (component < 3 && field >= 512)
+			field -= 1024;
+		if (component == 3 && field >= 2)
+			field -= 4;
+		value = (float)field;
+		if (normalized && component < 3)
+			value /= 511.0f;
+		if (normalized && value < -1.0f)
+			value = -1.0f;
+		return value;
+	}
+
 	/* A float. */
-	memcpy(&value, source, 4U);
+	memcpy(&value, element + component * 4, 4U);
+	return value;
+}
+
+/* Reads one component of an integer array's element as a 32-bit integer (sign-extended for the signed types). */
+static uint32_t
+draw_integer(
+	const unsigned char *element,
+	GLenum type,
+	GLint component)
+{
+	int8_t signed_byte;
+	uint16_t unsigned_short;
+	int16_t signed_short;
+	uint32_t word;
+
+	/* The component's type. */
+	switch (type) {
+	case GL_UNSIGNED_BYTE:
+		return element[component];
+	case GL_BYTE:
+		memcpy(&signed_byte, element + component, 1U);
+		return (uint32_t)(int32_t)signed_byte;
+	case GL_UNSIGNED_SHORT:
+		memcpy(&unsigned_short, element + component * 2, 2U);
+		return unsigned_short;
+	case GL_SHORT:
+		memcpy(&signed_short, element + component * 2, 2U);
+		return (uint32_t)(int32_t)signed_short;
+	default:
+		break;
+	}
+
+	/* GL_INT and GL_UNSIGNED_INT: the word as it is. */
+	memcpy(&word, element + component * 4, 4U);
+	return word;
+}
+
+/* Converts a half float (IEEE binary16) to a float. */
+static float
+draw_half(
+	uint16_t half)
+{
+	uint32_t sign;
+	uint32_t exponent;
+	uint32_t mantissa;
+	uint32_t bits;
+	float value;
+
+	/* The three fields. */
+	sign = (uint32_t)(half >> 15) << 31;
+	exponent = (half >> 10) & 0x1fU;
+	mantissa = half & 0x3ffU;
+
+	/* Zero and the subnormals: the mantissa scaled by 2^-24. */
+	if (exponent == 0U) {
+		value = (float)mantissa / 16777216.0f;
+		if (sign != 0U)
+			value = -value;
+		return value;
+	}
+
+	/* Infinity and NaN keep their mantissa; the rest move the exponent's bias from 15 to 127. */
+	if (exponent == 0x1fU) {
+		bits = sign | 0x7f800000U | (mantissa << 13);
+	} else {
+		bits = sign | ((exponent + 112U) << 23) | (mantissa << 13);
+	}
+
+	/* The float of those bits. */
+	memcpy(&value, &bits, 4U);
 	return value;
 }
 
@@ -1637,13 +2430,13 @@ draw_pipeline(
 	stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 	stages[1].module = state->program->fragment_module;
 
-	/* One binding per attribute, the attribute at offset 0 of it. */
+	/* One binding per attribute at its rate (per vertex or per instance), the attribute at offset 0 of it. */
 	memset(bindings, 0, sizeof(bindings));
 	memset(attributes, 0, sizeof(attributes));
 	for (index = 0U; index < layout->count; index++) {
 		bindings[index].binding = index;
 		bindings[index].stride = layout->strides[index];
-		bindings[index].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		bindings[index].inputRate = (VkVertexInputRate)layout->rates[index];
 		attributes[index].location = layout->locations[index];
 		attributes[index].binding = index;
 		attributes[index].format = (VkFormat)layout->formats[index];
@@ -1774,22 +2567,102 @@ draw_pipeline(
 }
 
 /*
+ * Finds the buffer range each named uniform block of the current program
+ * reads (the one bound to the block's binding point, or its whole buffer
+ * from the offset), brings the buffer's device copy up to date, and
+ * describes it.  Returns 0, or -1 with the error recorded when a block's
+ * binding point has no buffer, or a range smaller than the block.
+ */
+static int
+draw_blocks(
+	struct zegl_context *context,
+	struct gles_state *state,
+	VkDescriptorBufferInfo *blocks)
+{
+	struct gles_program *program;
+	struct gles_block *block;
+	struct gles_buffer_range *range;
+	struct gles_buffer *buffer;
+	size_t available;
+	size_t length;
+	unsigned index;
+	int status;
+
+	/* Each block (a binding no stage reads has no descriptor). */
+	program = state->program;
+	memset(blocks, 0, GLES_NAMED_BLOCKS * sizeof(*blocks));
+	for (index = 0U; index < program->block_count; index++) {
+		block = &program->blocks[index];
+		if (block->stages == 0U)
+			continue;
+
+		/* The buffer bound to its binding point. */
+		range = &state->uniform_ranges[block->buffer_binding];
+		buffer = range->buffer;
+		if (buffer == NULL) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return -1;
+		}
+
+		/* The range: the bound size, or the rest of the buffer, within what the buffer has. */
+		available = 0U;
+		if (range->offset < buffer->size)
+			available = buffer->size - range->offset;
+		length = available;
+		if (range->size != 0U && range->size < available)
+			length = range->size;
+
+		/* A range the block does not fit in is an error. */
+		if (length == 0U || length < block->size) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return -1;
+		}
+
+		/* The device reads at most its largest uniform buffer range. */
+		if (length > state->limits.maxUniformBufferRange)
+			length = state->limits.maxUniformBufferRange;
+
+		/*
+		 * The buffer's device copy, up to date; the frame's use of it
+		 * keeps a later change from writing it in place.
+		 */
+		status = gles_buffer_sync(state, buffer);
+		if (status != 0) {
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return -1;
+		}
+
+		/* This frame reads it. */
+		buffer->used = state->frame;
+
+		/* The descriptor's range. */
+		blocks[index].buffer = buffer->buffer;
+		blocks[index].offset = range->offset;
+		blocks[index].range = length;
+	}
+
+	/* Succeeded: every block has its range. */
+	return 0;
+}
+
+/*
  * Returns a descriptor set for the current program: its uniform block
  * (dynamic: the offset of this draw's copy in the stream is returned in
- * *offset), and each sampler's texture (black when the unit has none that
- * can be sampled).  A draw with the same program, stream buffer and
- * textures as the one before reuses its set.  VK_NULL_HANDLE when there is
- * no memory.
+ * *offset), each sampler's texture (black when the unit has none that
+ * can be sampled), and the named blocks' buffer ranges.  A draw with the
+ * same program, stream buffer, textures and ranges as the one before
+ * reuses its set.  VK_NULL_HANDLE when there is no memory.
  */
 static VkDescriptorSet
 draw_descriptors(
 	struct gles_state *state,
+	const VkDescriptorBufferInfo *blocks,
 	uint32_t *offset)
 {
-	VkDescriptorPoolSize sizes[2];
+	VkDescriptorPoolSize sizes[3];
 	VkDescriptorPoolCreateInfo create;
 	VkDescriptorSetAllocateInfo allocate;
-	VkWriteDescriptorSet writes[GLES_UNITS + 1U];
+	VkWriteDescriptorSet writes[GLES_UNITS + 1U + GLES_NAMED_BLOCKS];
 	VkDescriptorBufferInfo block;
 	VkDescriptorImageInfo images[GLES_UNITS];
 	uint32_t bindings[GLES_UNITS];
@@ -1875,6 +2748,13 @@ draw_descriptors(
 		differs = memcmp(cache->images, images, samplers * sizeof(images[0]));
 	if (differs != 0)
 		same = 0;
+
+	/* The same blocks' ranges too. */
+	differs = 0;
+	if (same && program->block_count != 0U)
+		differs = memcmp(cache->blocks, blocks, program->block_count * sizeof(blocks[0]));
+	if (differs != 0)
+		same = 0;
 	if (same)
 		return cache->set;
 
@@ -1901,10 +2781,12 @@ draw_descriptors(
 		sizes[0].descriptorCount = DRAW_POOL_SETS;
 		sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		sizes[1].descriptorCount = DRAW_POOL_SETS * GLES_UNITS;
+		sizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		sizes[2].descriptorCount = DRAW_POOL_SETS * GLES_NAMED_BLOCKS;
 		memset(&create, 0, sizeof(create));
 		create.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		create.maxSets = DRAW_POOL_SETS;
-		create.poolSizeCount = 2U;
+		create.poolSizeCount = 3U;
 		create.pPoolSizes = sizes;
 		result = vkCreateDescriptorPool(state->device, &create, NULL, &pool->pool);
 		if (result != VK_SUCCESS) {
@@ -1945,6 +2827,19 @@ draw_descriptors(
 		count++;
 	}
 
+	/* The named blocks' ranges. */
+	for (index = 0U; index < program->block_count; index++) {
+		if (program->blocks[index].stages == 0U)
+			continue;
+		writes[count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writes[count].dstSet = set;
+		writes[count].dstBinding = program->blocks[index].binding;
+		writes[count].descriptorCount = 1U;
+		writes[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		writes[count].pBufferInfo = &blocks[index];
+		count++;
+	}
+
 	/* Written. */
 	if (count != 0U)
 		vkUpdateDescriptorSets(state->device, count, writes, 0U, NULL);
@@ -1955,7 +2850,34 @@ draw_descriptors(
 	cache->block = block.buffer;
 	cache->count = samplers;
 	memcpy(cache->images, images, sizeof(images));
+	cache->block_count = program->block_count;
+	memcpy(cache->blocks, blocks, GLES_NAMED_BLOCKS * sizeof(blocks[0]));
 	return set;
+}
+
+/* Sets an attribute's current value from four integers' bits of a type (GL_INT or GL_UNSIGNED_INT). */
+static void
+draw_vertex_attrib_integer(
+	GLuint index,
+	GLenum type,
+	const uint32_t *values)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state and an attribute. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (index >= GLES_ATTRIBS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The integers' bits, kept where the floats would be, and their type. */
+	memcpy(state->attribs[index].value, values, 4U * sizeof(uint32_t));
+	state->attribs[index].value_type = type;
 }
 
 /* Records the dynamic state: viewport (GL's, turned over), scissor, line width, depth bias, blend colour, stencil values. */

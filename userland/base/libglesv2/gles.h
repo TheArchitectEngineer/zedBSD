@@ -20,7 +20,9 @@
  * GL_SHADER_BINARY_FORMAT_SPIR_V), both in the form
  * plan/ws068/phase008/phase.md gives: the uniforms other than
  * samplers in one uniform block at set 0 binding 0, the samplers at set 0
- * from binding 1, attributes and varyings by location.  Linking reads the
+ * from binding 1, the named uniform blocks of OpenGL ES 3 (WS068 p024,
+ * read from buffer objects) at set 0 from binding 32, attributes and
+ * varyings by location.  Linking reads the
  * names and locations out of the SPIR-V and rewrites the vertex shader so
  * that its gl_Position becomes Vulkan's (y turned over, z from [-w, w] to
  * [0, w]).
@@ -31,7 +33,7 @@
 
 #include "../libegl/zegl.h"
 
-#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
 #include <GLES2/gl2ext.h>
 
 #include <stddef.h>
@@ -60,8 +62,16 @@
 /* How many of Vulkan's core formats the vertex format cache covers. */
 #define GLES_FORMATS		192U
 
-/* The most uniform blocks besides the default one a shader's reflection records. */
-#define GLES_NAMED_BLOCKS	16U
+/* The most uniform blocks besides the default one a program has (at bindings 32 on), and a stage reads. */
+#define GLES_NAMED_BLOCKS	24U
+#define GLES_STAGE_BLOCKS	12U
+
+/* The binding of a program's first named uniform block (the default block is 0, the samplers 1 to 16). */
+#define GLES_FIRST_BLOCK_BINDING 32U
+
+/* How many indexed uniform buffer binding points a context has, and transform feedback buffer ones. */
+#define GLES_UNIFORM_BINDINGS	24U
+#define GLES_FEEDBACK_BINDINGS	4U
 
 /* The longest name of an attribute or a uniform, with its terminator. */
 #define GLES_NAME		64U
@@ -92,6 +102,28 @@ struct gles_buffer {
 	size_t device_size;
 	void *mapped;
 	uint64_t used;
+
+	/*
+	 * The application's mapping (glMapBufferRange): nonzero while the
+	 * bytes are mapped, the access bits, and the range.  The mapping is
+	 * the CPU bytes themselves; unmapping (or flushing a range) marks the
+	 * device copy stale.
+	 */
+	int map_active;
+	GLbitfield map_access;
+	size_t map_offset;
+	size_t map_length;
+};
+
+/*
+ * A range of a buffer bound to an indexed binding point
+ * (glBindBufferBase, glBindBufferRange).
+ */
+struct gles_buffer_range {
+	/* The buffer (NULL: none), and the range: size 0 is the whole buffer from the offset (glBindBufferBase). */
+	struct gles_buffer *buffer;
+	size_t offset;
+	size_t size;
 };
 
 /*
@@ -273,8 +305,9 @@ struct gles_attribute {
 
 /*
  * One active uniform of a linked program: a leaf of the default uniform
- * block (a scalar, a vector or a matrix, or an array of one of those), or
- * a sampler.
+ * block (a scalar, a vector or a matrix, or an array of one of those), a
+ * sampler, or a leaf of a named uniform block (which has no location:
+ * the application writes it into a buffer).
  */
 struct gles_uniform {
 	/* The GL name (arrays without "[0]"), its GL type and how many elements it has. */
@@ -297,8 +330,29 @@ struct gles_uniform {
 	uint32_t binding;
 	GLint unit;
 
-	/* The location of its first element. */
+	/* The location of its first element (-1 for a named block's member). */
 	GLint location;
+
+	/* The named block a member is in (its index among the program's blocks, -1 for the default block), and whether its matrices are row-major. */
+	GLint block;
+	int row_major;
+};
+
+/*
+ * One active named uniform block of a linked program.
+ */
+struct gles_block {
+	/* The block's name, its binding at descriptor set 0 (32 on), and its std140 size (0 when unknown: a SPIR-V binary's). */
+	char name[GLES_NAME];
+	uint32_t binding;
+	uint32_t size;
+
+	/* The stages that read it (bit 0 vertex, bit 1 fragment), and how many of the program's uniforms are its members. */
+	unsigned stages;
+	unsigned member_count;
+
+	/* The indexed uniform buffer binding point it reads (glUniformBlockBinding; 0 after the link). */
+	GLuint buffer_binding;
 };
 
 /*
@@ -356,6 +410,10 @@ struct gles_program {
 	uint32_t uniform_size;
 	uint32_t uniform_binding;
 
+	/* The named uniform blocks, by their bindings less 32. */
+	struct gles_block blocks[GLES_NAMED_BLOCKS];
+	unsigned block_count;
+
 	/* Whether glDeleteProgram waits for the program to stop being current. */
 	int delete_pending;
 };
@@ -375,8 +433,33 @@ struct gles_attrib {
 	const void *pointer;
 	struct gles_buffer *buffer;
 
-	/* The value an attribute without an enabled array has. */
+	/* The value an attribute without an enabled array has (a glVertexAttribI value keeps its integers' bits here). */
 	float value[4];
+
+	/* Nonzero when the array's values are integers the shader reads as they are (glVertexAttribIPointer). */
+	int integer;
+
+	/* How many instances share one element of the array (0: every vertex has its own). */
+	GLuint divisor;
+
+	/* The type of the current value: GL_FLOAT, or GL_INT or GL_UNSIGNED_INT from glVertexAttribI. */
+	GLenum value_type;
+};
+
+/*
+ * A vertex array object: the attributes' arrays and the element buffer
+ * that a bind makes the context's.  The one bound lives in the context's
+ * state (gles_state.attribs, element_buffer); the others keep theirs
+ * here until they are bound again.
+ */
+struct gles_vertex_array {
+	/* The GL name, and whether it has been bound (glIsVertexArray is false before its first bind). */
+	GLuint name;
+	int bound;
+
+	/* The arrays and the element buffer, while another vertex array is bound. */
+	struct gles_attrib attribs[GLES_ATTRIBS];
+	struct gles_buffer *element_buffer;
 };
 
 /*
@@ -474,6 +557,9 @@ struct gles_vertex_layout {
 	uint32_t locations[GLES_ATTRIBS];
 	uint32_t formats[GLES_ATTRIBS];
 	uint32_t strides[GLES_ATTRIBS];
+
+	/* Each binding's input rate: VK_VERTEX_INPUT_RATE_VERTEX, or _INSTANCE for an array with a divisor. */
+	uint32_t rates[GLES_ATTRIBS];
 };
 
 /*
@@ -505,6 +591,10 @@ struct gles_set_cache {
 	VkBuffer block;
 	uint32_t count;
 	VkDescriptorImageInfo images[GLES_UNITS];
+
+	/* The named blocks' buffers. */
+	uint32_t block_count;
+	VkDescriptorBufferInfo blocks[GLES_NAMED_BLOCKS];
 };
 
 /*
@@ -545,12 +635,36 @@ struct gles_state {
 	struct gles_names textures;
 	struct gles_names objects;
 
-	/* The buffers bound to GL_ARRAY_BUFFER and GL_ELEMENT_ARRAY_BUFFER. */
+	/* The buffers bound to GL_ARRAY_BUFFER and GL_ELEMENT_ARRAY_BUFFER (the latter the bound vertex array's). */
 	struct gles_buffer *array_buffer;
 	struct gles_buffer *element_buffer;
 
-	/* The vertex attributes. */
+	/* The buffers bound to OpenGL ES 3's other targets: copies' source and destination, uniforms, pixels, transform feedback. */
+	struct gles_buffer *copy_read_buffer;
+	struct gles_buffer *copy_write_buffer;
+	struct gles_buffer *uniform_buffer;
+	struct gles_buffer *pixel_pack_buffer;
+	struct gles_buffer *pixel_unpack_buffer;
+	struct gles_buffer *feedback_buffer;
+
+	/* The indexed binding points of uniform buffers and of transform feedback buffers. */
+	struct gles_buffer_range uniform_ranges[GLES_UNIFORM_BINDINGS];
+	struct gles_buffer_range feedback_ranges[GLES_FEEDBACK_BINDINGS];
+
+	/* The vertex attributes (the bound vertex array's). */
 	struct gles_attrib attribs[GLES_ATTRIBS];
+
+	/*
+	 * The vertex array bound (0: the default one), the vertex array
+	 * objects' namespace, and the default one's arrays while another is
+	 * bound.
+	 */
+	GLuint vertex_array;
+	struct gles_names vertex_arrays;
+	struct gles_vertex_array default_array;
+
+	/* Whether the largest index of its type restarts strips, loops and fans (GL_PRIMITIVE_RESTART_FIXED_INDEX). */
+	int primitive_restart;
 
 	/* The current program. */
 	struct gles_program *program;
@@ -703,7 +817,7 @@ GLuint gles_names_free(struct gles_names *names);
 void *gles_names_get(struct gles_names *names, GLuint name);
 void gles_names_remove(struct gles_names *names, GLuint name);
 
-/* buffer.c: device memory, the stream, the garbage, buffer objects. */
+/* buffer.c: device memory, the stream, the garbage, buffer objects, vertex array objects. */
 uint32_t gles_memory_type(struct gles_state *state, uint32_t bits, VkMemoryPropertyFlags flags);
 int gles_device_buffer(struct gles_state *state, size_t size, VkBufferUsageFlags usage, VkBuffer *buffer, VkDeviceMemory *memory, void **mapped);
 void *gles_stream(struct gles_state *state, size_t size, size_t alignment, VkBuffer *buffer, VkDeviceSize *offset);
@@ -713,6 +827,7 @@ void gles_garbage_destroy(struct gles_state *state, const struct gles_garbage *o
 void gles_collect(struct gles_state *state);
 int gles_buffer_sync(struct gles_state *state, struct gles_buffer *buffer);
 void gles_buffer_free(struct gles_state *state, struct gles_buffer *buffer);
+void gles_vertex_arrays_release(struct gles_state *state);
 int gles_upload_begin(struct gles_state *state);
 int gles_upload_end(struct gles_state *state);
 
@@ -770,12 +885,14 @@ struct gles_spirv {
 	uint32_t block_size;
 	int has_block;
 
-	/* The bindings of the uniform blocks other than the default one (GLSL's named blocks). */
+	/* The bindings of the uniform blocks other than the default one (GLSL's named blocks), and their blocks' type names. */
 	uint32_t named_bindings[GLES_NAMED_BLOCKS];
+	char named_names[GLES_NAMED_BLOCKS][GLES_NAME];
 	unsigned named_count;
 };
 
-/* spirv.c: reading SPIR-V and rewriting it. */
+/* spirv.c: reading SPIR-V and rewriting it, GL's names of types. */
+GLenum gles_gl_type(unsigned base, unsigned components, unsigned columns);
 int gles_spirv_reflect(const uint32_t *code, size_t words, struct gles_spirv *out, char *log, size_t log_size);
 void gles_spirv_free(struct gles_spirv *spirv);
 uint32_t *gles_spirv_position(const uint32_t *code, size_t words, int flip, size_t *out_words);
