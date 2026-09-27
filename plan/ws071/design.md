@@ -322,6 +322,13 @@ Delete 等が効かなくなるのを避ける）。Ctrl+C・X・V・A・Z は m
 選択・clipboard・undo・タブの数に合わせて enabled・checked を 1 transaction で更新する（WS070 の terminal と同じ）。
 Help の 3 つは Quick Look と同じ overlay の card に text を出す。
 
+**実装（p008、2026-09-27）**: タブの項目（New Tab、Close Tab、Previous/Next Tab）は p013 で足す。menu の action は
+`enum fm_action` の値で、実行は `fm_ui_action`・状態は `fm_ui_menu_state`（`ui-menu.c`、Wayland を知らないので host で試せる）、
+zdesktop とのやり取りは `menu.c`。Open With（8）・Tags（16）・List Columns（6）は枠を先に作り、状態で名前・visible・checked を
+変える。text の欄に focus があれば Cut・Copy・Paste・Undo・Redo は無効（zdesktop は無効な item の shortcut を取らないので key が
+欄に届く）、Select All は欄の全選択。menu の無い compositor では `ui-input.c` の表が同じ key を同じ action にする。Move to Trash と
+Rename は shortcut を登録しない（Delete・F2 は client が扱う）。
+
 ### 10.2 context menu（WS070 protocol の version 2、p009）
 
 - protocol（ws070 design.md §12 の案を確定）:
