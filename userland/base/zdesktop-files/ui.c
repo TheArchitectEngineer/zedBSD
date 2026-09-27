@@ -285,7 +285,8 @@ fm_ui_draw(
 	whole.height = canvas->height;
 	fm_canvas_gradient(canvas, &whole, FM_COLOR_BACKGROUND_TOP, FM_COLOR_BACKGROUND_BOTTOM);
 
-	/* The sidebar, when shown. */
+	/* The tab bar, when there is one, and the sidebar, when shown. */
+	fm_tabs_draw(app, canvas);
 	if (app->show_sidebar != 0)
 		ui_draw_sidebar(app, canvas);
 
@@ -745,6 +746,9 @@ ui_layout(
 	top = UI_MARGIN;
 	left = UI_MARGIN;
 	right = app->width - UI_MARGIN;
+
+	/* The tab bar across the top while the window has two tabs or more (ui-tabs.c). */
+	top += fm_tabs_layout(app, top, left, right);
 
 	/* The sidebar on the left, when shown. */
 	memset(&layout->sidebar, 0, sizeof(layout->sidebar));

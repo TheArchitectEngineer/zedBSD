@@ -124,6 +124,14 @@ main(
 			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 0, 0, 0, &now);
 			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 1, 0, 0, &now);
 			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 0, 0, 0, &now);
+		} else if (sscanf(argv[index], "middle=%d,%d", &x, &y) == 2) {
+			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_MIDDLE, 1, 0, 0, &now);
+			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_MIDDLE, 0, 0, 0, &now);
+		} else if (strcmp(argv[index], "tabs") == 0) {
+			printf("tabs count=%d shown=%d", app.tab_count, app.tab_index);
+			for (x = 0; x < app.tab_count; x++)
+				printf(" %d=%s", x, app.tabs[x]->history[app.tabs[x]->history_index].location.path);
+			printf("\n");
 		} else if (sscanf(argv[index], "right=%d,%d", &x, &y) == 2) {
 			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_RIGHT, 1, 0, 0, &now);
 			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_RIGHT, 0, 0, 0, &now);
@@ -153,9 +161,9 @@ main(
 		} else if (strcmp(argv[index], "state") == 0) {
 			struct fm_menu_state state;
 			fm_ui_menu_state(&app, &state);
-			printf("state selection=%d folder=%d trash=%d field=%d paste=%d undo=%d redo=%d back=%d forward=%d enclose=%d view=%u sort=%u columns=%u sidebar=%d preview=%d hidden=%d openers=%d first=%s tags=%d checked=%u\n",
+			printf("state selection=%d folder=%d trash=%d field=%d paste=%d undo=%d redo=%d back=%d forward=%d enclose=%d view=%u sort=%u columns=%u sidebar=%d preview=%d hidden=%d openers=%d first=%s tags=%d checked=%u tabs=%d\n",
 			    state.selection, state.folder, state.trash, state.field, state.can_paste, state.can_undo, state.can_redo, state.can_back, state.can_forward, state.can_enclose,
-			    state.view, state.sort, state.columns, state.sidebar, state.preview, state.hidden, state.opener_count, state.opener_count > 0 ? state.openers[0] : "-", state.tag_count, state.tags_checked);
+			    state.view, state.sort, state.columns, state.sidebar, state.preview, state.hidden, state.opener_count, state.opener_count > 0 ? state.openers[0] : "-", state.tag_count, state.tags_checked, state.tabs);
 		} else if (strcmp(argv[index], "titlebar") == 0) {
 			static struct fm_titlebar_state bar;
 			fm_ui_titlebar_state(&app, &bar);

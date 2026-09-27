@@ -6,6 +6,7 @@ ZDESKTOP_FILES_SOURCES := userland/base/zdesktop-files/main.c \
 	userland/base/zdesktop-files/window.c userland/base/zdesktop-files/present.c \
 	userland/base/zdesktop-files/canvas.c userland/base/zdesktop-files/text.c \
 	userland/base/zdesktop-files/icons.c userland/base/zdesktop-files/ui.c \
+	userland/base/zdesktop-files/ui-tabs.c \
 	userland/base/zdesktop-files/ui-grid.c userland/base/zdesktop-files/dir.c \
 	userland/base/zdesktop-files/mime.c userland/base/zdesktop-files/places.c \
 	userland/base/zdesktop-files/ui-input.c userland/base/zdesktop-files/ui-list.c \

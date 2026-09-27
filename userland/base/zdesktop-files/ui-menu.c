@@ -198,6 +198,18 @@ fm_ui_action(
 	case FM_ACTION_ABOUT:
 		fm_help_open(app, FM_HELP_ABOUT);
 		break;
+	case FM_ACTION_NEW_TAB:
+		fm_tabs_duplicate(app);
+		break;
+	case FM_ACTION_CLOSE_TAB:
+		fm_tabs_close(app, app->tab_index);
+		break;
+	case FM_ACTION_NEXT_TAB:
+		fm_tabs_step(app, 1);
+		break;
+	case FM_ACTION_PREVIOUS_TAB:
+		fm_tabs_step(app, -1);
+		break;
 	default:
 		break;
 	}
@@ -248,6 +260,9 @@ fm_ui_menu_state(
 		state->can_back = 1;
 	if (tab->history_index + 1 < tab->history_count)
 		state->can_forward = 1;
+
+	/* How many tabs the window has (the tab items need two, or room for one more). */
+	state->tabs = app->tab_count;
 	if (state->folder != 0 && location->path[1] != '\0')
 		state->can_enclose = 1;
 

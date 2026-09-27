@@ -672,6 +672,10 @@ enum fm_action {
 	FM_ACTION_HELP,
 	FM_ACTION_SHORTCUTS,
 	FM_ACTION_ABOUT,
+	FM_ACTION_NEW_TAB,
+	FM_ACTION_CLOSE_TAB,
+	FM_ACTION_NEXT_TAB,
+	FM_ACTION_PREVIOUS_TAB,
 	FM_ACTION_COLUMN_FIRST = 100,
 	FM_ACTION_OPEN_WITH_FIRST = 200,
 	FM_ACTION_TAG_FIRST = 300
@@ -713,6 +717,7 @@ struct fm_menu_state {
 	int sidebar;
 	int preview;
 	int hidden;
+	int tabs;
 	int opener_count;
 	char openers[FM_OPENERS][FM_OPENER_NAME];
 	int tag_count;
@@ -1156,6 +1161,15 @@ void fm_open_with(struct fm_app *app, const struct fm_opener *opener, const char
 /* The menus' actions and state (ui-menu.c). */
 void fm_ui_action(struct fm_app *app, unsigned action);
 void fm_ui_menu_state(struct fm_app *app, struct fm_menu_state *state);
+
+/* The tabs (ui-tabs.c). */
+void fm_tabs_new(struct fm_app *app, const struct fm_location *location);
+void fm_tabs_duplicate(struct fm_app *app);
+void fm_tabs_close(struct fm_app *app, int index);
+void fm_tabs_select(struct fm_app *app, int index);
+void fm_tabs_step(struct fm_app *app, int step);
+int fm_tabs_layout(struct fm_app *app, int top, int left, int right);
+void fm_tabs_draw(struct fm_app *app, struct fm_canvas *canvas);
 
 /* The titlebar's state and what is done with it (ui-titlebar.c). */
 void fm_ui_titlebar_state(struct fm_app *app, struct fm_titlebar_state *state);

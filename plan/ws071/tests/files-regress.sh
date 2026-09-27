@@ -8,7 +8,7 @@ set -u
 cd "$(dirname -- "$0")/../../.."
 out=${1:-build/ws071-regress}
 [ $# -gt 0 ] && shift
-phases=${*:-p002 p003 p004 p005 p006 p007 p012 p008 p014}
+phases=${*:-p002 p003 p004 p005 p006 p007 p012 p008 p014 p013}
 failed=0
 mkdir -p "$(dirname -- "$out")"
 for phase in $phases; do

@@ -64,6 +64,7 @@
 #define INPUT_KEY_S		31U
 #define INPUT_KEY_R		19U
 #define INPUT_KEY_M		50U
+#define INPUT_KEY_TAB		15U
 
 /*
  * A key of the menus that the other key handlers do not know, and the
@@ -88,7 +89,13 @@ static const struct input_shortcut input_shortcuts[] = {
 	{ INPUT_KEY_L, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_GO_DOWNLOADS },
 	{ INPUT_KEY_R, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_GO_RECENTS },
 	{ INPUT_KEY_C, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_GO_COMPUTER },
-	{ INPUT_KEY_M, FM_MOD_CTRL, FM_ACTION_MINIMIZE }
+	{ INPUT_KEY_M, FM_MOD_CTRL, FM_ACTION_MINIMIZE },
+	{ INPUT_KEY_T, FM_MOD_CTRL, FM_ACTION_NEW_TAB },
+	{ INPUT_KEY_W, FM_MOD_CTRL, FM_ACTION_CLOSE_TAB },
+	{ INPUT_KEY_TAB, FM_MOD_CTRL, FM_ACTION_NEXT_TAB },
+	{ INPUT_KEY_TAB, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_PREVIOUS_TAB },
+	{ INPUT_KEY_PAGEDOWN, FM_MOD_CTRL, FM_ACTION_NEXT_TAB },
+	{ INPUT_KEY_PAGEUP, FM_MOD_CTRL, FM_ACTION_PREVIOUS_TAB }
 };
 #define INPUT_KEY_SPACE		57U
 
@@ -102,6 +109,7 @@ static int input_reported_cursor = -1;
 
 static int input_contains(const struct fm_rect *rect, int x, int y);
 static void input_press(struct fm_app *app, const struct fm_event *event);
+static void input_middle(struct fm_app *app, const struct fm_event *event);
 static void input_click(struct fm_app *app, unsigned kind, int index, int double_click, uint32_t modifiers);
 static void input_press_item(struct fm_app *app, int index, int double_click, uint32_t modifiers);
 static void input_band_start(struct fm_app *app, int x, int y, uint32_t modifiers);
@@ -173,6 +181,13 @@ fm_input_button(
 			fm_select_only(tab, index);
 		fm_log("CONTEXT kind=%u index=%d", kind, index);
 		app->dirty = 1;
+		return;
+	}
+
+	/* The middle button opens a folder or a place of the sidebar in a new tab. */
+	if (event->button == FM_BUTTON_MIDDLE) {
+		if (event->pressed != 0)
+			input_middle(app, event);
 		return;
 	}
 
@@ -555,6 +570,40 @@ input_press(
 	input_click(app, kind, index, double_click, event->modifiers);
 }
 
+/* Handles a press of the middle button: a folder or a place of the sidebar under it opens in a new tab. */
+static void
+input_middle(
+	struct fm_app *app,
+	const struct fm_event *event)
+{
+	struct fm_location location;
+	struct fm_entry *entry;
+	struct fm_tab *tab;
+	unsigned kind;
+	int index;
+
+	/* A place of the sidebar. */
+	(void)fm_input_hit_at(app, event->x, event->y, &kind, &index);
+	if (kind == FM_HIT_PLACE && index >= 0 && index < app->places.count) {
+		fm_tabs_new(app, &app->places.items[index].location);
+		return;
+	}
+
+	/* Otherwise only a folder among the items. */
+	tab = fm_ui_tab(app);
+	if (kind != FM_HIT_ITEM || index < 0 || (size_t)index >= tab->listing.count)
+		return;
+	entry = &tab->listing.entries[index];
+	if (entry->folder == 0)
+		return;
+
+	/* The folder, in a tab of its own. */
+	memset(&location, 0, sizeof(location));
+	location.kind = FM_LOCATION_FOLDER;
+	snprintf(location.path, sizeof(location.path), "%s", entry->path);
+	fm_tabs_new(app, &location);
+}
+
 /* Carries out a click on a region. */
 static void
 input_click(
@@ -569,6 +618,12 @@ input_click(
 	case FM_HIT_PLACE:
 		if (index >= 0 && index < app->places.count)
 			fm_ui_go(app, &app->places.items[index].location);
+		break;
+	case FM_HIT_TAB:
+		fm_tabs_select(app, index);
+		break;
+	case FM_HIT_TAB_CLOSE:
+		fm_tabs_close(app, index);
 		break;
 	case FM_HIT_HEADER:
 		input_sort(app, index);
