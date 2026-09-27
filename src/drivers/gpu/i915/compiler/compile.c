@@ -409,6 +409,7 @@ static void i915_compile_divide(struct i915_compile_state *state, const struct i
 static void i915_compile_convert(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_integer_compare(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_move(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static void i915_compile_derivative(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_loop_begin(struct i915_compile_state *state);
 static void i915_compile_loop_end(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static int i915_compile_rank(const uint32_t *list, uint32_t count, uint32_t location, uint32_t *rank);
@@ -732,6 +733,9 @@ i915_compile_sources(
 	case I915_IR_F2U:
 	case I915_IR_MOVE:
 	case I915_IR_LOOP_END:
+	case I915_IR_DDX:
+	case I915_IR_DDX_FINE:
+	case I915_IR_DDY:
 		return 1U;
 
 	case I915_IR_FADD:
@@ -1643,6 +1647,12 @@ i915_compile_instruction(
 
 	case I915_IR_LOOP_END:
 		i915_compile_loop_end(state, inst);
+		break;
+
+	case I915_IR_DDX:
+	case I915_IR_DDX_FINE:
+	case I915_IR_DDY:
+		i915_compile_derivative(state, inst);
 		break;
 
 	default:
@@ -2777,6 +2787,52 @@ i915_compile_move(
 
 	/* Moves the bits. */
 	drv_i915_eu_mov(&state->code, drv_i915_eu_grf_ud(dst), drv_i915_eu_grf_ud(source_grf));
+}
+
+/*
+ * Lowers a derivative as Mesa does (generate_ddx() and generate_ddy(),
+ * brw_generator.cpp): one ADD of two regions of the source that pick, in
+ * each 2x2 quad of pixels, the right and the left pixel (x) or the bottom
+ * and the top one (y) -- the quad's top row for all four pixels (coarse),
+ * or each row its own (fine x).  A vertex shader has no quads.
+ */
+static void
+i915_compile_derivative(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	struct i915_eu_reg minuend;
+	struct i915_eu_reg subtrahend;
+	uint32_t source_grf;
+	uint32_t dst;
+
+	/* Only pixels come in quads. */
+	if (state->ir->stage != I915_STAGE_FRAGMENT) {
+		state->unsupported = 1;
+		return;
+	}
+
+	/* Reads the source and gives the result its register. */
+	source_grf = i915_compile_grf(state, inst->src[0]);
+	dst = i915_compile_define(state, inst->dst, 1U);
+
+	/* Picks the two pixels of each quad. */
+	if (inst->op == I915_IR_DDX_FINE) {
+		/* Each row: its right pixel (one float on) less its left one, <2;2,0>. */
+		minuend = drv_i915_eu_grf_region(source_grf, 4U, EU_TYPE_F, EU_VSTRIDE_2, EU_WIDTH_2, EU_HSTRIDE_0);
+		subtrahend = drv_i915_eu_grf_region(source_grf, 0U, EU_TYPE_F, EU_VSTRIDE_2, EU_WIDTH_2, EU_HSTRIDE_0);
+	} else if (inst->op == I915_IR_DDX) {
+		/* The top row: its right pixel less its left one, <4;4,0>. */
+		minuend = drv_i915_eu_grf_region(source_grf, 4U, EU_TYPE_F, EU_VSTRIDE_4, EU_WIDTH_4, EU_HSTRIDE_0);
+		subtrahend = drv_i915_eu_grf_region(source_grf, 0U, EU_TYPE_F, EU_VSTRIDE_4, EU_WIDTH_4, EU_HSTRIDE_0);
+	} else {
+		/* The left column: its bottom pixel (two floats on) less its top one, <4;4,0>. */
+		minuend = drv_i915_eu_grf_region(source_grf, 8U, EU_TYPE_F, EU_VSTRIDE_4, EU_WIDTH_4, EU_HSTRIDE_0);
+		subtrahend = drv_i915_eu_grf_region(source_grf, 0U, EU_TYPE_F, EU_VSTRIDE_4, EU_WIDTH_4, EU_HSTRIDE_0);
+	}
+
+	/* Emits the difference. */
+	drv_i915_eu_alu2(&state->code, I915_EU_ADD, drv_i915_eu_grf(dst), minuend, drv_i915_eu_negate(subtrahend));
 }
 
 /* Lowers the start of a loop: remembers where the WHILE at its end jumps back to. */

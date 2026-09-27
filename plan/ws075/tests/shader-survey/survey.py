@@ -44,7 +44,7 @@ BODY = {'OpReturn', 'OpUnreachable', 'OpBranch', 'OpBranchConditional', 'OpSelec
         'OpOuterProduct', 'OpFNegate', 'OpDot', 'OpCompositeConstruct', 'OpCompositeExtract', 'OpCompositeInsert',
         'OpCopyObject', 'OpVectorShuffle', 'OpExtInst',
         'OpImageSampleImplicitLod', 'OpImageSampleExplicitLod', 'OpLabel', 'OpFunction', 'OpFunctionEnd', 'OpNop', 'OpLine',
-        'OpNoLine'}
+        'OpNoLine', 'OpDPdx', 'OpDPdy', 'OpFwidth', 'OpDPdxFine', 'OpDPdxCoarse', 'OpDPdyCoarse', 'OpFwidthCoarse'}
 
 # i915_spirv_lower_sample: the image operands of a sample that are lowered.
 SAMPLE_OPERANDS = {'Bias', 'Lod', 'ConstOffset'}

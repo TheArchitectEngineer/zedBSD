@@ -768,6 +768,7 @@ static int i915_spirv_lower_integer_compare(struct i915_spirv_parser *parser, co
 static int i915_spirv_lower_logical(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_select(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_sample(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_derivative(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_texel_offset(struct i915_spirv_parser *parser, uint32_t id, uint32_t *bits, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_label(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_find_loop_merge(struct i915_spirv_parser *parser, uint32_t offset, uint32_t *merge, uint32_t *continue_target);
@@ -2072,6 +2073,17 @@ i915_spirv_lower(
 	case OP_IMAGE_SAMPLE_IMPLICIT_LOD:
 	case OP_IMAGE_SAMPLE_EXPLICIT_LOD:
 		return i915_spirv_lower_sample(parser, word, count, opcode, offset);
+
+	case OP_DPDX:
+	case OP_DPDY:
+	case OP_FWIDTH:
+	case OP_DPDX_FINE:
+	case OP_DPDY_FINE:
+	case OP_FWIDTH_FINE:
+	case OP_DPDX_COARSE:
+	case OP_DPDY_COARSE:
+	case OP_FWIDTH_COARSE:
+		return i915_spirv_lower_derivative(parser, word, count, opcode, offset);
 
 	default:
 		break;
@@ -5226,6 +5238,81 @@ i915_spirv_texel_offset(
 	}
 
 	/* Succeeded: the offset bits. */
+	return 0;
+}
+
+/*
+ * Lowers the derivatives per component: OpDPdx, OpDPdy and their Coarse
+ * forms to the coarse differences, OpDPdxFine to the fine one, and
+ * OpFwidth (and its Coarse form) to |dx| + |dy|, as Mesa lowers it
+ * (vtn_alu.c: fabs(ddx) + fabs(ddy)); an unqualified derivative may be
+ * coarse (the Vulkan specification), and anv asks for coarse ones.  The
+ * fine y derivative, and so OpDPdyFine and OpFwidthFine, is refused.
+ */
+static int
+i915_spirv_lower_derivative(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	uint32_t operand[4];
+	uint32_t operand_count;
+	uint32_t components;
+	uint32_t index;
+	uint32_t across;
+	uint32_t down;
+
+	/* The instruction must carry its operand. */
+	if (count != 4U)
+		return EINVAL;
+
+	/* Only a fragment shader has neighbouring pixels. */
+	if (parser->ir->stage != I915_STAGE_FRAGMENT)
+		return i915_spirv_refuse(parser, opcode, offset, "derivative outside a fragment shader");
+
+	/* The fine y derivative needs the quads' rows apart, which is not lowered. */
+	if (opcode == OP_DPDY_FINE || opcode == OP_FWIDTH_FINE)
+		return i915_spirv_refuse(parser, opcode, offset, "fine y derivative is not lowered");
+
+	/* The operand and the result are float scalars or vectors of one size. */
+	operand_count = i915_spirv_operand(parser, word[3], operand);
+	components = i915_spirv_float_components(parser, word[1]);
+	if (components == 0U || operand_count != components)
+		return i915_spirv_refuse(parser, opcode, offset, "derivative of something that is not a float scalar or vector");
+
+	/* Declares the result; its scalars are named below. */
+	record = i915_spirv_result(parser, word[2], word[1], components, 0);
+	if (record == NULL)
+		return EINVAL;
+
+	/* Lowers each component on its own. */
+	for (index = 0U; index < components; index++) {
+		/* A derivative along one axis is one difference. */
+		if (opcode == OP_DPDX || opcode == OP_DPDX_COARSE) {
+			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_DDX, operand[index], 0U);
+			continue;
+		}
+		if (opcode == OP_DPDX_FINE) {
+			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_DDX_FINE, operand[index], 0U);
+			continue;
+		}
+		if (opcode == OP_DPDY || opcode == OP_DPDY_COARSE) {
+			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_DDY, operand[index], 0U);
+			continue;
+		}
+
+		/* The width is the sum of the two differences' magnitudes. */
+		across = i915_spirv_emit_value(parser, I915_IR_DDX, operand[index], 0U);
+		across = i915_spirv_emit_value(parser, I915_IR_FABS, across, 0U);
+		down = i915_spirv_emit_value(parser, I915_IR_DDY, operand[index], 0U);
+		down = i915_spirv_emit_value(parser, I915_IR_FABS, down, 0U);
+		record->comp[index] = i915_spirv_emit_value(parser, I915_IR_FADD, across, down);
+	}
+
+	/* Succeeded: the derivative is lowered. */
 	return 0;
 }
 

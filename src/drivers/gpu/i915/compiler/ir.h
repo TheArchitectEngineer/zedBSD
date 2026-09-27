@@ -276,6 +276,16 @@ enum i915_shader_ir_op {
 	/* As SAMPLE, at the level of detail src[2]. */
 	I915_IR_SAMPLE_LOD,
 
+	/*
+	 * dst = the difference of src[0] across the pixel's 2x2 quad (fragment
+	 * only): right minus left, bottom minus top.  DDX and DDY take the quad's
+	 * top left pixel's difference for all four (coarse); DDX_FINE each
+	 * row's own.
+	 */
+	I915_IR_DDX,
+	I915_IR_DDX_FINE,
+	I915_IR_DDY,
+
 	I915_IR_OP_COUNT
 };
 
