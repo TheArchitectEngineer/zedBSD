@@ -199,6 +199,8 @@ json_stringify(
 		if (wrapper == NULL)
 			status = ENOMEM;
 	}
+
+	/* The key "". */
 	if (status == 0)
 		status = js_builtin_string(realm, "", &key);
 	if (status == 0)
@@ -218,6 +220,8 @@ json_stringify(
 		else
 			*result = vm_value_cell(text);
 	}
+
+	/* The writer's buffers are no longer needed. */
 	wb_units_release(&writer.gap);
 	wb_units_release(&writer.indent);
 	wb_units_release(&writer.out);
@@ -305,8 +309,12 @@ json_value(
 		} else {
 			status = json_fail(parser, "Unexpected token in JSON");
 		}
+
+		/* The value is read. */
 		break;
 	}
+
+	/* Reports whether it was read. */
 	return status;
 }
 
@@ -320,6 +328,7 @@ json_object(
 	vm_value name;
 	vm_value key;
 	vm_value member;
+	uint16_t unit;
 	int status;
 
 	/* Too deep. */
@@ -336,7 +345,8 @@ json_object(
 	parser->position++;
 	parser->depth++;
 	json_skip_space(parser);
-	if (json_peek(parser) == '}') {
+	unit = json_peek(parser);
+	if (unit == '}') {
 		parser->position++;
 		parser->depth--;
 		return 0;
@@ -345,13 +355,15 @@ json_object(
 	/* Each "name": value, separated by commas. */
 	for (;;) {
 		json_skip_space(parser);
-		if (json_peek(parser) != '"')
+		unit = json_peek(parser);
+		if (unit != '"')
 			return json_fail(parser, "Expected a property name in JSON");
 		status = json_string(parser, &name);
 		if (status != 0)
 			return status;
 		json_skip_space(parser);
-		if (json_peek(parser) != ':')
+		unit = json_peek(parser);
+		if (unit != ':')
 			return json_fail(parser, "Expected ':' in JSON");
 		parser->position++;
 		json_skip_space(parser);
@@ -363,15 +375,21 @@ json_object(
 		if (status != 0)
 			return status;
 		json_skip_space(parser);
-		if (json_peek(parser) == ',') {
+		unit = json_peek(parser);
+		if (unit == ',') {
 			parser->position++;
 			continue;
 		}
-		if (json_peek(parser) == '}') {
+
+		/* The end of the object. */
+		unit = json_peek(parser);
+		if (unit == '}') {
 			parser->position++;
 			parser->depth--;
 			return 0;
 		}
+
+		/* Anything else is not JSON. */
 		return json_fail(parser, "Expected ',' or '}' in JSON");
 	}
 }
@@ -384,6 +402,7 @@ json_array(
 {
 	struct vm_object *array;
 	vm_value member;
+	uint16_t unit;
 	int status;
 
 	/* Too deep. */
@@ -400,7 +419,8 @@ json_array(
 	parser->position++;
 	parser->depth++;
 	json_skip_space(parser);
-	if (json_peek(parser) == ']') {
+	unit = json_peek(parser);
+	if (unit == ']') {
 		parser->position++;
 		parser->depth--;
 		return 0;
@@ -415,15 +435,21 @@ json_array(
 		if (status != 0)
 			return status;
 		json_skip_space(parser);
-		if (json_peek(parser) == ',') {
+		unit = json_peek(parser);
+		if (unit == ',') {
 			parser->position++;
 			continue;
 		}
-		if (json_peek(parser) == ']') {
+
+		/* The end of the array. */
+		unit = json_peek(parser);
+		if (unit == ']') {
 			parser->position++;
 			parser->depth--;
 			return 0;
 		}
+
+		/* Anything else is not JSON. */
 		return json_fail(parser, "Expected ',' or ']' in JSON");
 	}
 }
@@ -451,6 +477,8 @@ json_string(
 			status = json_fail(parser, "Unterminated string in JSON");
 			break;
 		}
+
+		/* The next unit. */
 		unit = vm_string_at(parser->text, parser->position);
 		parser->position++;
 		if (unit == '"')
@@ -459,6 +487,8 @@ json_string(
 			status = json_fail(parser, "Bad control character in string literal in JSON");
 			break;
 		}
+
+		/* A plain unit. */
 		if (unit != '\\') {
 			status = wb_units_append(&units, &unit, 1);
 			if (status != 0)
@@ -504,6 +534,8 @@ json_string(
 				decoded = (uint16_t)(decoded * 16U + (unsigned)hex);
 				parser->position++;
 			}
+
+			/* Four hex digits are needed. */
 			if (digit < 4U)
 				status = json_fail(parser, "Bad Unicode escape in JSON");
 			break;
@@ -511,6 +543,8 @@ json_string(
 			status = json_fail(parser, "Bad escaped character in JSON");
 			break;
 		}
+
+		/* The decoded unit. */
 		if (status == 0)
 			status = wb_units_append(&units, &decoded, 1);
 		if (status != 0)
@@ -525,6 +559,8 @@ json_string(
 		else
 			*value = vm_value_cell(string);
 	}
+
+	/* The list is no longer needed. */
 	wb_units_release(&units);
 	return status;
 }
@@ -545,7 +581,8 @@ json_number(
 	/* The sign. */
 	length = 0;
 	negative = 0;
-	if (json_peek(parser) == '-') {
+	unit = json_peek(parser);
+	if (unit == '-') {
 		negative = 1;
 		parser->position++;
 	}
@@ -564,6 +601,8 @@ json_number(
 			break;
 		unit = json_peek(parser);
 	}
+
+	/* A leading 0 is alone. */
 	unit = json_peek(parser);
 	if (digits == 1U && numeral[0] == '0' && unit >= '0' && unit <= '9')
 		return json_fail(parser, "Unexpected number in JSON");
@@ -596,6 +635,8 @@ json_number(
 			parser->position++;
 			unit = json_peek(parser);
 		}
+
+		/* The exponent needs digits. */
 		if (unit < '0' || unit > '9')
 			return json_fail(parser, "Exponent part is missing a number in JSON");
 		while (unit >= '0' && unit <= '9') {
@@ -623,10 +664,12 @@ json_word(
 	vm_value *value)
 {
 	size_t index;
+	uint16_t unit;
 
 	/* Each letter. */
 	for (index = 0; word[index] != '\0'; index++) {
-		if (json_peek(parser) != (uint16_t)word[index])
+		unit = json_peek(parser);
+		if (unit != (uint16_t)word[index])
 			return json_fail(parser, "Unexpected token in JSON");
 		parser->position++;
 	}
@@ -658,6 +701,8 @@ json_internalize(
 	uint32_t index;
 	size_t item;
 	int is_object;
+	int is_index;
+	int is_string;
 	int found;
 	int done;
 	int status;
@@ -667,6 +712,8 @@ json_internalize(
 		status = vm_throw_range_error(realm, "JSON nested too deeply");
 		return status;
 	}
+
+	/* The value at the key. */
 	status = vm_get(realm, holder, key, &value);
 	if (status != 0)
 		return status;
@@ -686,15 +733,21 @@ json_internalize(
 		} else {
 			status = vm_object_own_keys(realm->heap, object, &keys);
 		}
+
+		/* Each member revived. */
 		for (item = 0; status == 0 && item < keys.count; item++) {
 			element = *(vm_value *)wb_vector_at(&keys, item);
-			if (!vm_value_is_int32(element) && !vm_value_is_string(element))
+			is_index = vm_value_is_int32(element);
+			is_string = vm_value_is_string(element);
+			if (!is_index && !is_string)
 				continue;
 			if ((object->flags & VM_OBJECT_ARRAY) == 0U) {
 				found = vm_get_own_descriptor(object, element, &descriptor);
 				if (!found || (descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
 					continue;
 			}
+
+			/* The member revived. */
 			status = json_internalize(realm, reviver, value, element, &name, depth + 1U);
 			if (status != 0)
 				break;
@@ -708,6 +761,8 @@ json_internalize(
 				status = vm_define_own_property(realm, object, element, &descriptor, &done);
 			}
 		}
+
+		/* The list is no longer needed. */
 		wb_vector_release(&keys);
 		if (status != 0)
 			return status;
@@ -740,6 +795,9 @@ json_property(
 	vm_value key_value;
 	double number;
 	int is_object;
+	int is_string;
+	int is_number;
+	int infinite;
 	int callable;
 	int status;
 
@@ -766,6 +824,8 @@ json_property(
 				return status;
 		}
 	}
+
+	/* The replacer. */
 	if (writer->replacer != VM_VALUE_UNDEFINED) {
 		status = json_key_value(realm, key, &call_args[0]);
 		call_args[1] = value;
@@ -800,25 +860,44 @@ json_property(
 		status = json_text(writer, "null");
 		return status;
 	}
-	if (value == VM_VALUE_TRUE || value == VM_VALUE_FALSE) {
-		status = json_text(writer, value == VM_VALUE_TRUE ? "true" : "false");
+
+	/* true and false. */
+	if (value == VM_VALUE_TRUE) {
+		status = json_text(writer, "true");
 		return status;
 	}
-	if (vm_value_is_string(value)) {
+
+	/* false. */
+	if (value == VM_VALUE_FALSE) {
+		status = json_text(writer, "false");
+		return status;
+	}
+
+	/* A string. */
+	is_string = vm_value_is_string(value);
+	if (is_string) {
 		status = json_quote(writer, (struct vm_string *)vm_value_as_cell(value));
 		return status;
 	}
-	if (vm_value_is_number(value)) {
+
+	/* A number. */
+	is_number = vm_value_is_number(value);
+	if (is_number) {
 		number = vm_value_as_number(value);
-		if (number != number || isinf(number)) {
+		infinite = isinf(number);
+		if (number != number || infinite) {
 			status = json_text(writer, "null");
 			return status;
 		}
+
+		/* Its numeral. */
 		status = vm_to_string(realm, value, &string);
 		if (status == 0)
 			status = vm_string_append_units(string, &writer->out);
 		return status;
 	}
+
+	/* An object that is not a function. */
 	is_object = vm_value_is_object(value);
 	callable = vm_value_is_callable(value);
 	if (is_object && !callable) {
@@ -890,6 +969,8 @@ json_quote(
 		} else if (unit >= 0xDC00U && unit <= 0xDFFFU) {
 			lone = 1;
 		}
+
+		/* A lone surrogate's escape. */
 		if (lone)
 			snprintf(escape, sizeof(escape), "\\u%04x", unit);
 
@@ -923,9 +1004,12 @@ json_serialize_object(
 	uint32_t index;
 	vm_value key;
 	vm_value name;
+	const char *colon;
 	int first;
 	int found;
 	int written;
+	int is_index;
+	int is_string;
 	int status;
 
 	/* A cycle is an error. */
@@ -949,7 +1033,10 @@ json_serialize_object(
 		status = vm_object_own_keys(writer->realm->heap, source, &keys);
 	}
 
-	/* Each property with a text: "key": value. */
+	/* Each property with a text: "key": value (a space after the colon when indenting). */
+	colon = ":";
+	if (writer->gap.length > 0)
+		colon = ": ";
 	indent_length = writer->indent.length;
 	if (status == 0)
 		status = wb_units_append(&writer->indent, writer->gap.data, writer->gap.length);
@@ -958,13 +1045,17 @@ json_serialize_object(
 	first = 1;
 	for (item = 0; status == 0 && item < keys.count; item++) {
 		key = *(vm_value *)wb_vector_at(&keys, item);
-		if (!vm_value_is_int32(key) && !vm_value_is_string(key))
+		is_index = vm_value_is_int32(key);
+		is_string = vm_value_is_string(key);
+		if (!is_index && !is_string)
 			continue;
 		if (writer->keys == VM_VALUE_UNDEFINED) {
 			found = vm_get_own_descriptor(source, key, &descriptor);
 			if (!found || (descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
 				continue;
 		}
+
+		/* Where the member starts, to take it back when it has no text. */
 		mark = writer->out.length;
 		if (!first)
 			status = json_text(writer, ",");
@@ -975,15 +1066,19 @@ json_serialize_object(
 		if (status == 0)
 			status = json_quote(writer, (struct vm_string *)vm_value_as_cell(name));
 		if (status == 0)
-			status = json_text(writer, writer->gap.length > 0 ? ": " : ":");
+			status = json_text(writer, colon);
 		if (status == 0)
 			status = json_property(writer, object, key, &written);
 		if (status == 0 && !written) {
 			writer->out.length = mark;
 			continue;
 		}
+
+		/* The next member follows a comma. */
 		first = 0;
 	}
+
+	/* The indentation back, and the end. */
 	writer->indent.length = indent_length;
 	if (status == 0 && !first)
 		status = json_newline(writer);
@@ -1029,6 +1124,8 @@ json_serialize_array(
 		if (status == 0 && !written)
 			status = json_text(writer, "null");
 	}
+
+	/* The indentation back, and the end. */
 	writer->indent.length = indent_length;
 	if (status == 0 && length > 0)
 		status = json_newline(writer);
@@ -1045,16 +1142,20 @@ json_enter(
 	struct json_writer *writer,
 	vm_value object)
 {
+	vm_value entered;
 	size_t index;
 	int status;
 
 	/* The objects being written. */
 	for (index = 0; index < writer->stack.count; index++) {
-		if (*(vm_value *)wb_vector_at(&writer->stack, index) == object) {
+		entered = *(vm_value *)wb_vector_at(&writer->stack, index);
+		if (entered == object) {
 			status = vm_throw_type_error(writer->realm, "Converting circular structure to JSON");
 			return status;
 		}
 	}
+
+	/* Too deep. */
 	if (writer->stack.count >= JSON_DEPTH_MAX) {
 		status = vm_throw_range_error(writer->realm, "JSON nested too deeply");
 		return status;
@@ -1080,6 +1181,8 @@ json_text(
 		unit = (uint16_t)(unsigned char)*text;
 		status = wb_units_append(&writer->out, &unit, 1);
 	}
+
+	/* Reports whether it was pushed. */
 	return status;
 }
 
@@ -1109,13 +1212,17 @@ json_key_value(
 	vm_value *value)
 {
 	struct vm_string *string;
+	int is_index;
 	int status;
 
 	/* A string is itself; an index its numeral. */
-	if (!vm_value_is_int32(key)) {
+	is_index = vm_value_is_int32(key);
+	if (!is_index) {
 		*value = key;
 		return 0;
 	}
+
+	/* An index's numeral. */
 	status = vm_to_string(realm, key, &string);
 	if (status != 0)
 		return status;
@@ -1139,7 +1246,10 @@ json_property_list(
 	uint32_t index;
 	uint32_t other;
 	int is_object;
+	int is_string;
+	int is_number;
 	int duplicate;
+	int same;
 	int status;
 
 	/* Only an array. */
@@ -1165,23 +1275,33 @@ json_property_list(
 			object = (struct vm_object *)vm_value_as_cell(element);
 			if (object->kind != VM_KIND_STRING && object->kind != VM_KIND_NUMBER)
 				continue;
-		} else if (!vm_value_is_string(element) && !vm_value_is_number(element)) {
-			continue;
+		} else {
+			is_string = vm_value_is_string(element);
+			is_number = vm_value_is_number(element);
+			if (!is_string && !is_number)
+				continue;
 		}
+
+		/* As a string. */
 		status = vm_to_string(writer->realm, element, &string);
 		if (status != 0)
 			break;
 		duplicate = 0;
 		for (other = 0; other < list->length; other++) {
 			listed = list->elements[other];
-			if (vm_string_equal((struct vm_string *)vm_value_as_cell(listed), string))
+			same = vm_string_equal((struct vm_string *)vm_value_as_cell(listed), string);
+			if (same)
 				duplicate = 1;
 		}
+
+		/* A name listed already is skipped. */
 		if (duplicate)
 			continue;
 		key = vm_value_cell(string);
 		status = vm_object_define(writer->realm->heap, list, vm_value_int32((int32_t)list->length), key, VM_PROPERTY_DEFAULT);
 	}
+
+	/* Reports whether the list was made. */
 	return status;
 }
 
@@ -1197,6 +1317,8 @@ json_space(
 	uint32_t index;
 	uint16_t unit;
 	int is_object;
+	int is_number;
+	int is_string;
 	int status;
 
 	/* A wrapper stands for its primitive. */
@@ -1217,7 +1339,8 @@ json_space(
 	}
 
 	/* A number: that many spaces (at most 10). */
-	if (vm_value_is_number(space)) {
+	is_number = vm_value_is_number(space);
+	if (is_number) {
 		status = js_builtin_integer(writer->realm, space, &number);
 		if (status != 0)
 			return status;
@@ -1229,11 +1352,14 @@ json_space(
 			if (status != 0)
 				return status;
 		}
+
+		/* The spaces. */
 		return 0;
 	}
 
 	/* A string: its first 10 units. */
-	if (vm_value_is_string(space)) {
+	is_string = vm_value_is_string(space);
+	if (is_string) {
 		string = (struct vm_string *)vm_value_as_cell(space);
 		for (index = 0; index < string->length && index < 10U; index++) {
 			unit = vm_string_at(string, index);
@@ -1242,5 +1368,7 @@ json_space(
 				return status;
 		}
 	}
+
+	/* Anything else: no gap. */
 	return 0;
 }

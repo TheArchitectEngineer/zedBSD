@@ -38,6 +38,8 @@ wb_case_map(
 	} else {
 		full = unicode_find_full(wb_case_lower_full, wb_case_lower_full_count, code_point);
 	}
+
+	/* Found: its code points. */
 	if (full != NULL) {
 		for (index = 0; index < full->count; index++)
 			mapped[index] = full->points[index];
@@ -50,6 +52,8 @@ wb_case_map(
 	} else {
 		simple = unicode_find_simple(wb_case_lower, wb_case_lower_count, code_point);
 	}
+
+	/* Found: its one code point. */
 	if (simple != NULL) {
 		mapped[0] = simple->mapping;
 		return 1;
