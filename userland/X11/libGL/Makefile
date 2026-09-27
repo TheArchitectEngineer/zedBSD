@@ -14,7 +14,7 @@ LIBGL_SOURCES := userland/X11/libGL/glx.c userland/X11/libGL/fixed.c userland/X1
 	userland/X11/libX11/xlib.c \
 	userland/base/libglesv2/gles.c userland/base/libglesv2/buffer.c userland/base/libglesv2/texture.c \
 	userland/base/libglesv2/spirv.c userland/base/libglesv2/program.c userland/base/libglesv2/draw.c \
-	userland/base/libglesv2/framebuffer.c userland/base/libglesv2/format.c userland/base/libglesv2/pixels.c $(LIBGL_GLSL_SOURCES)
+	userland/base/libglesv2/framebuffer.c userland/base/libglesv2/format.c userland/base/libglesv2/pixels.c userland/base/libglesv2/query.c $(LIBGL_GLSL_SOURCES)
 
 # The public SONAME follows the standard spelling.
 LIBGL_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libGL.so=$(BUILD)/dynamic/libGL.so)

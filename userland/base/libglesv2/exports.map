@@ -10,6 +10,7 @@
 	global:
 		glActiveTexture;
 		glAttachShader;
+		glBeginQuery;
 		glBindAttribLocation;
 		glBindBuffer;
 		glBindBufferBase;
@@ -24,6 +25,7 @@
 		glBlendEquationSeparate;
 		glBlendFunc;
 		glBlendFuncSeparate;
+		glBlitFramebuffer;
 		glBufferData;
 		glBufferSubData;
 		glCheckFramebufferStatus;
@@ -35,6 +37,7 @@
 		glClearColor;
 		glClearDepthf;
 		glClearStencil;
+		glClientWaitSync;
 		glColorMask;
 		glCompileShader;
 		glCompressedTexImage2D;
@@ -51,9 +54,11 @@
 		glDeleteBuffers;
 		glDeleteFramebuffers;
 		glDeleteProgram;
+		glDeleteQueries;
 		glDeleteRenderbuffers;
 		glDeleteSamplers;
 		glDeleteShader;
+		glDeleteSync;
 		glDeleteTextures;
 		glDeleteVertexArrays;
 		glDepthFunc;
@@ -70,6 +75,8 @@
 		glDrawRangeElements;
 		glEnable;
 		glEnableVertexAttribArray;
+		glEndQuery;
+		glFenceSync;
 		glFinish;
 		glFlush;
 		glFlushMappedBufferRange;
@@ -79,6 +86,7 @@
 		glFrontFace;
 		glGenBuffers;
 		glGenFramebuffers;
+		glGenQueries;
 		glGenRenderbuffers;
 		glGenSamplers;
 		glGenTextures;
@@ -97,13 +105,18 @@
 		glGetBufferPointerv;
 		glGetError;
 		glGetFloatv;
+		glGetFragDataLocation;
 		glGetFramebufferAttachmentParameteriv;
 		glGetInteger64i_v;
 		glGetInteger64v;
 		glGetIntegeri_v;
 		glGetIntegerv;
+		glGetInternalformativ;
+		glGetProgramBinary;
 		glGetProgramInfoLog;
 		glGetProgramiv;
+		glGetQueryObjectuiv;
+		glGetQueryiv;
 		glGetRenderbufferParameteriv;
 		glGetSamplerParameterfv;
 		glGetSamplerParameteriv;
@@ -113,6 +126,7 @@
 		glGetShaderiv;
 		glGetString;
 		glGetStringi;
+		glGetSynciv;
 		glGetTexParameterfv;
 		glGetTexParameteriv;
 		glGetUniformBlockIndex;
@@ -133,9 +147,11 @@
 		glIsEnabled;
 		glIsFramebuffer;
 		glIsProgram;
+		glIsQuery;
 		glIsRenderbuffer;
 		glIsSampler;
 		glIsShader;
+		glIsSync;
 		glIsTexture;
 		glIsVertexArray;
 		glLineWidth;
@@ -143,10 +159,13 @@
 		glMapBufferRange;
 		glPixelStorei;
 		glPolygonOffset;
+		glProgramBinary;
+		glProgramParameteri;
 		glReadBuffer;
 		glReadPixels;
 		glReleaseShaderCompiler;
 		glRenderbufferStorage;
+		glRenderbufferStorageMultisample;
 		glSampleCoverage;
 		glSamplerParameterf;
 		glSamplerParameterfv;
@@ -224,6 +243,7 @@
 		glVertexAttribIPointer;
 		glVertexAttribPointer;
 		glViewport;
+		glWaitSync;
 	local:
 		*;
 };

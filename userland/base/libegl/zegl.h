@@ -131,8 +131,9 @@ struct zegl_surface {
 	VkDeviceMemory depth_memory;
 	VkImageView depth_view;
 
-	/* Nonzero when the swapchain's images can be copied from (glReadPixels). */
+	/* Nonzero when the swapchain's images can be copied from (glReadPixels), and copied into (glBlitFramebuffer). */
 	int readable;
+	int writable;
 
 	/*
 	 * The layout the colour image rests in outside a pass: ready to

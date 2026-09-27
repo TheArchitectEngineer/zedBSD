@@ -212,6 +212,34 @@ struct gles_sampling {
 };
 
 /*
+ * A query object (glGenQueries): its target once begun, the query pool's
+ * slots its segments were recorded in (one per run of draws in one render
+ * pass) with the frames that recorded them, and a transform feedback
+ * query's count of primitives.
+ */
+struct gles_query {
+	GLuint name;
+	GLenum target;
+	int ended;
+	uint32_t *slots;
+	uint64_t *frames;
+	unsigned slot_count;
+	unsigned slot_capacity;
+	GLuint primitives;
+};
+
+/*
+ * A fence sync (glFenceSync): the frame being recorded when it was made,
+ * in the context's list of them.
+ */
+struct gles_sync {
+	uint64_t frame;
+	struct gles_sync *next;
+};
+
+struct gles_queries;
+
+/*
  * A sampler object (glGenSamplers): sampling state a unit uses instead of
  * its texture's own while it is bound there.
  */
@@ -308,10 +336,11 @@ struct gles_renderbuffer {
 	int height;
 	int depth;
 
-	/* The format its image has, and the aspects of that image. */
+	/* The format its image has, the aspects of that image, and its samples per pixel (1: not multisampled). */
 	const struct gles_format *kept;
 	VkFormat vk;
 	VkImageAspectFlags aspects;
+	uint32_t samples;
 
 	/* The device image, its memory and view, and the frame that last drew into it. */
 	VkImage image;
@@ -343,6 +372,27 @@ struct gles_pass_format {
 	uint32_t color_count;
 	uint32_t colors[GLES_COLOR_ATTACHMENTS];
 	uint32_t depth;
+	uint32_t samples;
+};
+
+/*
+ * A 2D image a framebuffer object draws into in place of a slice of a 3D
+ * texture (Vulkan 1.0 cannot view a 3D image's slice as a 2D image): the
+ * slice is copied in before the object's pass and back after it.
+ */
+struct gles_slice_image {
+	/* The 3D texture (by name), the level and the slice (none: texture 0). */
+	GLuint texture;
+	GLint level;
+	uint32_t slice;
+
+	/* The image, its memory and view, its format and size. */
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView view;
+	VkFormat format;
+	int width;
+	int height;
 };
 
 /*
@@ -386,6 +436,9 @@ struct gles_framebuffer {
 	/* Each colour attachment's format, and the depth image's aspects (0: none). */
 	const struct gles_format *color_formats[GLES_COLOR_ATTACHMENTS];
 	VkImageAspectFlags depth_aspects;
+
+	/* The images drawn into in place of 3D textures' slices, by colour attachment. */
+	struct gles_slice_image slices[GLES_COLOR_ATTACHMENTS];
 };
 
 /*
@@ -415,8 +468,9 @@ struct gles_target {
 	unsigned integer_mask;
 	unsigned opaque_mask;
 
-	/* The aspects of the depth and stencil image (0: none). */
+	/* The aspects of the depth and stencil image (0: none), and the samples per pixel of every image. */
 	VkImageAspectFlags depth_aspects;
+	uint32_t samples;
 };
 
 /*
@@ -429,6 +483,7 @@ struct gles_read {
 	struct zegl_surface *surface;
 	VkImage image;
 	uint32_t layer;
+	uint32_t slice;
 	uint32_t level;
 	VkImageLayout layout;
 	const struct gles_format *format;
@@ -572,6 +627,11 @@ struct gles_program {
 	/* The attributes. */
 	struct gles_attribute attributes[GLES_ATTRIBS];
 	unsigned attribute_count;
+
+	/* The fragment shader's outputs, by name and location (glGetFragDataLocation). */
+	char output_names[GLES_DRAW_BUFFERS][GLES_NAME];
+	GLint output_locations[GLES_DRAW_BUFFERS];
+	unsigned output_count;
 
 	/* The uniforms and the locations of their elements. */
 	struct gles_uniform *uniforms;
@@ -852,6 +912,10 @@ struct gles_state {
 	struct gles_sampler_object *unit_samplers[GLES_UNITS];
 	struct gles_names sampler_objects;
 
+	/* The query objects' namespace, and the queries' and fence syncs' shared state (query.c; NULL until the first). */
+	struct gles_names query_objects;
+	struct gles_queries *queries;
+
 	/* Blending. */
 	int blend;
 	GLenum blend_src_rgb;
@@ -1064,10 +1128,17 @@ int gles_target_open(struct zegl_context *context, struct gles_state *state, con
 void gles_target_close(struct gles_state *state);
 int gles_read_source(struct zegl_context *context, struct gles_state *state, struct gles_read *read);
 const struct gles_format *gles_read_buffer_format(struct gles_state *state);
+uint32_t gles_framebuffer_samples(struct gles_state *state, GLuint name);
+uint32_t gles_samples_max(struct gles_state *state);
 VkImageView gles_texture_attach_view(struct gles_state *state, struct gles_texture *texture, uint32_t level, uint32_t layer);
 void gles_framebuffers_forget(struct gles_state *state, int kind, GLuint name);
 void gles_framebuffers_release(struct gles_state *state);
 int gles_texture_fetch(struct zegl_context *context, struct gles_texture *texture);
+
+/* query.c: query objects and fence syncs. */
+void gles_queries_draw(struct gles_state *state, const struct gles_target *target);
+void gles_queries_suspend(struct gles_state *state);
+void gles_queries_release(struct gles_state *state);
 
 /* program.c: shaders and programs. */
 void gles_program_release(struct gles_state *state, struct gles_program *program);

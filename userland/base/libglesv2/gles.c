@@ -1314,7 +1314,8 @@ gles_frame_closing(
 	if (state == NULL)
 		return;
 
-	/* The pass, if one is open. */
+	/* An occlusion query's segment, and the pass, if one is open. */
+	gles_queries_suspend(state);
 	gles_target_close(state);
 }
 
@@ -1381,8 +1382,9 @@ gles_release(
 		}
 	}
 
-	/* The sampler objects. */
+	/* The sampler objects, and the query objects and fence syncs. */
 	gles_samplers_release(state);
+	gles_queries_release(state);
 
 	/* The framebuffer objects and renderbuffers, and the vertex array objects. */
 	gles_framebuffers_release(state);
@@ -1496,6 +1498,7 @@ gles_integers(
 {
 	struct zegl_config *config;
 	struct gles_texture *texture;
+	uint32_t samples;
 	int *flag;
 	unsigned count;
 	int status;
@@ -1641,8 +1644,18 @@ gles_integers(
 	case GL_SUBPIXEL_BITS:
 		values[0] = 4;
 		return 1U;
-	case GL_SAMPLE_BUFFERS:
 	case GL_SAMPLES:
+		values[0] = (GLint)gles_framebuffer_samples(state, state->framebuffer);
+		return 1U;
+	case GL_SAMPLE_BUFFERS:
+		samples = gles_framebuffer_samples(state, state->framebuffer);
+		values[0] = 0;
+		if (samples > 1U)
+			values[0] = 1;
+		return 1U;
+	case GL_MAX_SAMPLES:
+		values[0] = (GLint)gles_samples_max(state);
+		return 1U;
 	case GL_NUM_COMPRESSED_TEXTURE_FORMATS:
 	case GL_COMPRESSED_TEXTURE_FORMATS:
 		values[0] = 0;
@@ -1679,6 +1692,9 @@ gles_integers(
 		return 1U;
 	case GL_NUM_SHADER_BINARY_FORMATS:
 		values[0] = 1;
+		return 1U;
+	case GL_NUM_PROGRAM_BINARY_FORMATS:
+		values[0] = 0;
 		return 1U;
 	case GL_SHADER_BINARY_FORMATS:
 		values[0] = GL_SHADER_BINARY_FORMAT_SPIR_V;

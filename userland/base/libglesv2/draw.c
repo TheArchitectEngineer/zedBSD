@@ -237,6 +237,7 @@ gles_read_pixels(
 	copy.imageSubresource.layerCount = 1U;
 	copy.imageOffset.x = left;
 	copy.imageOffset.y = bottom;
+	copy.imageOffset.z = (int32_t)read.slice;
 	if (read.flip)
 		copy.imageOffset.y = (int32_t)read.extent.height - top;
 	copy.imageExtent.width = (uint32_t)(right - left);
@@ -1463,6 +1464,11 @@ draw_program(
 				dynamic_count, &dynamic_offset);
 	if (layout.count != 0U)
 		vkCmdBindVertexBuffers(target.command, 0U, layout.count, buffers, offsets);
+
+	/* An active occlusion query counts the draw (a segment of it open in the pass). */
+	gles_queries_draw(state, &target);
+
+	/* Indexed, or not. */
 	if (index_buffer != VK_NULL_HANDLE) {
 		vkCmdBindIndexBuffer(target.command, index_buffer, index_offset, VK_INDEX_TYPE_UINT32);
 		vkCmdDrawIndexed(target.command, expanded, (uint32_t)instances, 0U, 0, 0U);
@@ -2673,6 +2679,8 @@ draw_pipeline(
 	memset(&multisample, 0, sizeof(multisample));
 	multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	if (target->samples > 1U)
+		multisample.rasterizationSamples = (VkSampleCountFlagBits)target->samples;
 	multisample.alphaToCoverageEnable = (VkBool32)state->sample_alpha_to_coverage;
 
 	/* Depth and stencil (GL's compare functions are Vulkan's in the same order). */

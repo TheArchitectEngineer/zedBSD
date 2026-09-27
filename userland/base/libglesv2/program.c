@@ -1018,6 +1018,120 @@ glGetAttribLocation(
 }
 
 /*
+ * Returns the location of a fragment shader output of a linked program,
+ * or -1.
+ */
+GL_APICALL GLint GL_APIENTRY
+glGetFragDataLocation(
+	GLuint name,
+	const GLchar *output)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	unsigned index;
+	int differs;
+
+	/* A linked program. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return -1;
+	if (!program->linked) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return -1;
+	}
+
+	/* The output of that name. */
+	for (index = 0U; index < program->output_count; index++) {
+		differs = strcmp(program->output_names[index], output);
+		if (differs == 0)
+			return program->output_locations[index];
+	}
+
+	/* None. */
+	return -1;
+}
+
+/*
+ * Sets a program parameter: GL_PROGRAM_BINARY_RETRIEVABLE_HINT is taken
+ * and has no effect (no binary format is offered).
+ */
+GL_APICALL void GL_APIENTRY
+glProgramParameteri(
+	GLuint name,
+	GLenum pname,
+	GLint value)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+
+	/* A program, the one parameter, and a boolean. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	if (pname != GL_PROGRAM_BINARY_RETRIEVABLE_HINT) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* A boolean. */
+	if (value != GL_FALSE && value != GL_TRUE)
+		gles_error(context, GL_INVALID_VALUE);
+}
+
+/*
+ * Refuses to give a program's binary: GL_NUM_PROGRAM_BINARY_FORMATS is 0.
+ */
+GL_APICALL void GL_APIENTRY
+glGetProgramBinary(
+	GLuint name,
+	GLsizei bufSize,
+	GLsizei *length,
+	GLenum *binaryFormat,
+	void *binary)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+
+	/* A program; its binary has no bytes. */
+	(void)bufSize;
+	(void)binaryFormat;
+	(void)binary;
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	if (length != NULL)
+		*length = 0;
+	gles_error(context, GL_INVALID_OPERATION);
+}
+
+/*
+ * Refuses a program binary: no binary format is offered.
+ */
+GL_APICALL void GL_APIENTRY
+glProgramBinary(
+	GLuint name,
+	GLenum binaryFormat,
+	const void *binary,
+	GLsizei length)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+
+	/* A program; no format is one. */
+	(void)binaryFormat;
+	(void)binary;
+	(void)length;
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return;
+	gles_error(context, GL_INVALID_ENUM);
+}
+
+/*
  * Reports one of a program's active attributes.
  */
 GL_APICALL void GL_APIENTRY
@@ -2278,6 +2392,14 @@ program_link_code(
 		gles_spirv_free(&vertex);
 		gles_spirv_free(&fragment);
 		return -1;
+	}
+
+	/* The fragment shader's outputs, by name and location. */
+	program->output_count = 0U;
+	for (index = 0U; index < fragment.output_count && program->output_count < GLES_DRAW_BUFFERS; index++) {
+		(void)snprintf(program->output_names[program->output_count], GLES_NAME, "%s", fragment.outputs[index].name);
+		program->output_locations[program->output_count] = (GLint)fragment.outputs[index].location;
+		program->output_count++;
 	}
 
 	/* Copies of the code that the link may change. */
