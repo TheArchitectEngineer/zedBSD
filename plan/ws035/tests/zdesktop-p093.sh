@@ -79,8 +79,9 @@ sleep 1
 pointer move "$(cx 2)" "$(cy 0)" sleep 300 down sleep 50 up sleep 120 down sleep 50 up sleep 120 down sleep 50 up sleep 800
 expect_log /tmp/t.log 'ZTERM SELECT how=line from=0,0 to=[0-9]+,0 bytes=22'
 
-# 3. A press moved: "alpha".
+# 3. A click inside the line clears it; then a press moved: "alpha".
 sleep 1
+pointer move "$(cx 20)" "$(cy 0)" sleep 300 down sleep 50 up sleep 800
 pointer move "$(cx 0)" "$(cy 0)" sleep 300 down sleep 100 move "$(cx 2)" "$(cy 0)" sleep 100 move "$(cx 4)" "$(cy 0)" sleep 200 up sleep 800
 expect_log /tmp/t.log 'ZTERM SELECT how=drag from=0,0 to=4,0 bytes=5'
 shot drag.png

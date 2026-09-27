@@ -936,7 +936,7 @@ main_menu_state(
 {
 	/* The selection, the clipboard, the font's size, and fullscreen. */
 	memset(state, 0, sizeof(*state));
-	state->selection = main_screen->selected;
+	state->selection = main_screen->selected || main_screen->range;
 	state->clipboard = terminal_clipboard_has_text(&main_window);
 	state->pixels = run->pixels;
 	state->fullscreen = main_window.fullscreen;

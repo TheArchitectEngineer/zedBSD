@@ -279,9 +279,18 @@ terminal_clipboard_drop(
 	if (window->drop_offer == NULL)
 		return 0;
 
-	/* File names, or text. */
+	/*
+	 * The terminal's own drag's text is taken as it is: reading it through
+	 * the pipe would wait for the send this same loop has not dispatched
+	 * yet (ws035-p093).  Otherwise file names, or text.
+	 */
 	length = 0;
-	if (window->drop_uris) {
+	if (window->drag_source != NULL && window->drop_text) {
+		length = window->drag_length;
+		if (length > size)
+			length = size;
+		memcpy(text, window->drag_text, length);
+	} else if (window->drop_uris) {
 		length = clipboard_read(window->display, window->drop_offer, CLIPBOARD_TYPE_URIS, text, size);
 		length = clipboard_paths(text, length, size);
 	} else if (window->drop_text) {
