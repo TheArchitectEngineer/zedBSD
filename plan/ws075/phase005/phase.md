@@ -76,6 +76,10 @@ Phase disposition: normal
 - 2D の depth の image の複数の layer（shadow の配列の texture）: layer ごとに Y tile の行（32 行）に揃えて置き、QPitch は
   その行数。3DSTATE_DEPTH_BUFFER は view の layer（Minimum Array Element）と Depth と QPitch を持つ。egl-d2 の
   `vkCreateImage refused: type 1 format 126 2x1x1 levels 1 layers 2` の対処。
+- 実機: hw-egltest-3（binding 64 の直後）は compositor が最初の draw の前に止まった（draw state が実行の stack で 1368 byte に
+  膨らんだのが疑い → dynamic offset を組で持って 616 byte に、ca4cab33）。hw-egltest-4: compositor は正常、es3 は failures
+  9 → 4・glerror 0（UBO の binding 32 が通った）、formats は 14（GL_OUT_OF_MEMORY）、cube は setup の 0x506 のまま、volumes の
+  行は出ず（場面の終わりが capture の終わりより後）。hang（BUG-077）は出ず。
 - 未着手（次の再開点）: depth の image の copy（buffer ↔ Y tile。案: `i915_gfx_surface` の format が D16・D32 なら Y tile の
   R16_UNORM・R32_FLOAT の surface として rect で読み書き、texel の byte 数を format から）、egltest cube の
   COPY_BUFFER_TO_IMAGE の EINVAL、fbo の D16 の縞、GL_OUT_OF_MEMORY の元。
