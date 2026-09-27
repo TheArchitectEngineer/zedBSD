@@ -310,6 +310,8 @@ static void i915_state_target_range(const struct i915_gfx_draw_state *state, uin
 static const struct i915_gfx_view *i915_state_target_view(const struct i915_gfx_draw_state *state, uint32_t slot);
 static int i915_state_target_integer(const struct i915_gfx_draw_state *state, uint32_t slot);
 static uint32_t i915_blend_write_disables(uint32_t disable);
+static void i915_state_stencil(const struct i915_gfx_draw_state *state, uint32_t *depth_state, uint32_t *masks, uint32_t *references);
+static int i915_state_stencil_buffer(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *image, uint32_t mocs);
 static void i915_state_null_surface_write(uint32_t *rss, uint32_t width, uint32_t height);
 static int i915_state_write_targets(uint32_t *surface, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *target, uint32_t mocs);
 static uint32_t i915_state_dynamic_offset(const struct i915_gfx_draw_state *state, uint32_t set, uint32_t binding);
@@ -425,10 +427,15 @@ drv_i915_gfx_surface_write(
 	texel_bytes = 4U;
 	tile = GEN12_TILEMODE_LINEAR;
 	unorm = 1U << 31;
-	if (surface->format == VK_FORMAT_D32_SFLOAT) {
+	if (surface->format == VK_FORMAT_D32_SFLOAT || surface->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
 		format = I915_GFX_SURFACE_R32_FLOAT;
 		tile = GEN12_TILEMODE_YMAJOR;
 		unorm = 0U;
+	} else if (surface->format == VK_FORMAT_S8_UINT) {
+		/* A stencil plane: its bytes as Y-tiled R8_UNORM (a clear writes value / 255). */
+		format = I915_GFX_SURFACE_R8_UNORM;
+		tile = GEN12_TILEMODE_YMAJOR;
+		texel_bytes = 1U;
 	} else if (surface->format == VK_FORMAT_D16_UNORM) {
 		format = I915_GFX_SURFACE_R16_UNORM;
 		tile = GEN12_TILEMODE_YMAJOR;
@@ -1285,6 +1292,8 @@ drv_i915_gfx_emit_depth(
 {
 	const struct i915_gfx_pipeline *pipeline;
 	uint32_t depth_state;
+	uint32_t stencil_masks;
+	uint32_t stencil_references;
 	uint32_t write_enable;
 	uint32_t test_enable;
 	uint32_t format;
@@ -1292,11 +1301,18 @@ drv_i915_gfx_emit_depth(
 	uint32_t rows;
 	uint32_t index;
 	uint64_t va;
+	int has_depth;
+	int error;
 
 	/* Packs the depth write, the depth test and its compare function when there is a depth buffer. */
 	pipeline = state->pipeline;
 	depth_state = 0U;
-	if (depth != NULL) {
+	stencil_masks = 0U;
+	stencil_references = 0U;
+	has_depth = 0;
+	if (depth != NULL && depth->format != VK_FORMAT_S8_UINT)
+		has_depth = 1;
+	if (has_depth != 0) {
 		write_enable = 0U;
 		if (pipeline->depth_write != 0U)
 			write_enable = 1U;
@@ -1306,20 +1322,24 @@ drv_i915_gfx_emit_depth(
 		depth_state = write_enable | (test_enable << 1) | (i915_gfx_compare_functions[pipeline->depth_compare & 7U] << 5);
 	}
 
-	/* Programs the depth test. */
+	/* Adds the stencil test when the depth attachment has stencil and the pipeline tests it. */
+	if (depth != NULL && depth->stencil != 0U && pipeline->stencil_test != 0U)
+		i915_state_stencil(state, &depth_state, &stencil_masks, &stencil_references);
+
+	/* Programs the depth and stencil tests. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_WM_DEPTH_STENCIL, GEN12_3DSTATE_WM_DEPTH_STENCIL_DWORDS));
 	drv_i915_batch_emit(batch, depth_state);
-	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, stencil_masks);
+	drv_i915_batch_emit(batch, stencil_references);
 
 	/* Describes the depth buffer, or a null one. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_DEPTH_BUFFER, GEN12_3DSTATE_DEPTH_BUFFER_DWORDS));
-	if (depth != NULL) {
+	if (has_depth != 0) {
 		/* Refuses a depth image with no storage or in another format. */
 		va = drv_i915_gfx_memory_va(depth->memory, depth->offset);
 		if (va == 0U)
 			return EINVAL;
-		if (depth->format == VK_FORMAT_D32_SFLOAT) {
+		if (depth->format == VK_FORMAT_D32_SFLOAT || depth->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
 			format = GEN12_DEPTH_FORMAT_D32_FLOAT;
 		} else if (depth->format == VK_FORMAT_D16_UNORM) {
 			format = GEN12_DEPTH_FORMAT_D16_UNORM;
@@ -1358,11 +1378,12 @@ drv_i915_gfx_emit_depth(
 			drv_i915_batch_emit(batch, 0U);
 	}
 
-	/* Describes a null stencil buffer, and clears the hierarchical depth and the clear values. */
-	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_STENCIL_BUFFER, GEN12_3DSTATE_STENCIL_BUFFER_DWORDS));
-	drv_i915_batch_emit(batch, GEN12_SURFTYPE_NULL << 29);
-	for (index = 2U; index < GEN12_3DSTATE_STENCIL_BUFFER_DWORDS; index++)
-		drv_i915_batch_emit(batch, 0U);
+	/* Describes the stencil buffer of an attachment with stencil, or a null one. */
+	error = i915_state_stencil_buffer(batch, state, depth, mocs);
+	if (error != 0)
+		return error;
+
+	/* Clears the hierarchical depth and the clear values. */
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_HIER_DEPTH_BUFFER, GEN12_3DSTATE_HIER_DEPTH_BUFFER_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_CLEAR_PARAMS, GEN12_3DSTATE_CLEAR_PARAMS_DWORDS);
 
@@ -1871,7 +1892,7 @@ i915_image_surface_write(
 	 * (isl samples a D32 surface as R32_FLOAT).
 	 */
 	tile = GEN12_TILEMODE_LINEAR;
-	if (image->format == VK_FORMAT_D32_SFLOAT) {
+	if (image->format == VK_FORMAT_D32_SFLOAT || image->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
 		format = I915_GFX_SURFACE_R32_FLOAT;
 		tile = GEN12_TILEMODE_YMAJOR;
 	} else if (image->format == VK_FORMAT_D16_UNORM) {
@@ -2711,4 +2732,121 @@ i915_blend_write_disables(
 
 	/* Succeeded: the entry's disable bits. */
 	return bits;
+}
+
+/*
+ * The 3D_Stencil_Operation of each VkStencilOp: KEEP, ZERO, REPLACE,
+ * INCRSAT, DECRSAT, INVERT (7), INCR (5) and DECR (6).
+ */
+static const uint32_t i915_gfx_stencil_ops[8] = {
+	0U,
+	1U,
+	2U,
+	3U,
+	4U,
+	7U,
+	5U,
+	6U,
+};
+
+/*
+ * Adds the stencil test to 3DSTATE_WM_DEPTH_STENCIL's words, both faces
+ * (double-sided): write and test enable, the functions and operations in
+ * dword 1, the test and write masks in dword 2, the references in dword 3.
+ * A dynamic mask or reference is the one vkCmdSetStencil* recorded.
+ */
+static void
+i915_state_stencil(
+	const struct i915_gfx_draw_state *state,
+	uint32_t *depth_state,
+	uint32_t *masks,
+	uint32_t *references)
+{
+	const struct i915_gfx_pipeline *pipeline;
+	uint32_t compare[2];
+	uint32_t write[2];
+	uint32_t reference[2];
+	uint32_t face;
+
+	/* The masks and references, from the pipeline or the command buffer. */
+	pipeline = state->pipeline;
+	for (face = 0U; face < 2U; face++) {
+		compare[face] = pipeline->stencil_compare_mask[face];
+		if (pipeline->dynamic_stencil_compare != 0)
+			compare[face] = state->stencil_compare_mask[face];
+		write[face] = pipeline->stencil_write_mask[face];
+		if (pipeline->dynamic_stencil_write != 0)
+			write[face] = state->stencil_write_mask[face];
+		reference[face] = pipeline->stencil_reference[face];
+		if (pipeline->dynamic_stencil_reference != 0)
+			reference[face] = state->stencil_reference[face];
+	}
+
+	/* Write and test enable, double-sided; the front face's function and operations, then the back face's. */
+	*depth_state |= (1U << 2) | (1U << 3) | (1U << 4) |
+	    (i915_gfx_compare_functions[pipeline->stencil_compare[0] & 7U] << 8) |
+	    (i915_gfx_stencil_ops[pipeline->stencil_pass[1] & 7U] << 11) |
+	    (i915_gfx_stencil_ops[pipeline->stencil_depth_fail[1] & 7U] << 14) |
+	    (i915_gfx_stencil_ops[pipeline->stencil_fail[1] & 7U] << 17) |
+	    (i915_gfx_compare_functions[pipeline->stencil_compare[1] & 7U] << 20) |
+	    (i915_gfx_stencil_ops[pipeline->stencil_pass[0] & 7U] << 23) |
+	    (i915_gfx_stencil_ops[pipeline->stencil_depth_fail[0] & 7U] << 26) |
+	    (i915_gfx_stencil_ops[pipeline->stencil_fail[0] & 7U] << 29);
+
+	/* The back write and test masks, then the front ones; the back reference, then the front one. */
+	*masks = (write[1] & 0xffU) | ((compare[1] & 0xffU) << 8) | ((write[0] & 0xffU) << 16) | ((compare[0] & 0xffU) << 24);
+	*references = (reference[1] & 0xffU) | ((reference[0] & 0xffU) << 8);
+}
+
+/*
+ * Emits 3DSTATE_STENCIL_BUFFER: for an attachment with stencil its stencil
+ * plane (2D, write enable, the pitch; the address; the extent; MOCS, the
+ * layer the depth view writes and the layers less one; Y tiles; the
+ * QPitch), a null buffer otherwise.  Returns EINVAL for a plane with no
+ * storage.
+ */
+static int
+i915_state_stencil_buffer(
+	struct i915_gfx_batch *batch,
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_image *image,
+	uint32_t mocs)
+{
+	uint64_t va;
+	uint32_t layer;
+	uint32_t index;
+
+	/* A null stencil buffer when the attachment has none. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_STENCIL_BUFFER, GEN12_3DSTATE_STENCIL_BUFFER_DWORDS));
+	if (image == NULL || image->stencil == 0U) {
+		drv_i915_batch_emit(batch, GEN12_SURFTYPE_NULL << 29);
+		for (index = 2U; index < GEN12_3DSTATE_STENCIL_BUFFER_DWORDS; index++)
+			drv_i915_batch_emit(batch, 0U);
+		return 0;
+	}
+
+	/* The plane's address. */
+	va = drv_i915_gfx_memory_va(image->memory, image->offset + image->stencil_offset);
+	if (va == 0U)
+		return EINVAL;
+
+	/* The layer the pass's depth view writes. */
+	layer = 0U;
+	if (state->framebuffer != NULL && state->pass != NULL &&
+	    state->pass->depth_attachment < state->framebuffer->view_count &&
+	    state->framebuffer->views[state->pass->depth_attachment] != NULL)
+		layer = state->framebuffer->views[state->pass->depth_attachment]->base_layer;
+
+	/* The plane. */
+	drv_i915_batch_emit(batch, (GEN12_SURFTYPE_2D << 29) | (1U << 28) | (image->stencil_pitch - 1U));
+	drv_i915_batch_emit(batch, (uint32_t)va);
+	drv_i915_batch_emit(batch, (uint32_t)(va >> 32));
+	drv_i915_batch_emit(batch, ((image->width - 1U) << 1) | ((image->height - 1U) << 17));
+	drv_i915_batch_emit(batch, mocs | ((layer & GEN12_RSS_DEPTH_MASK) << 8) |
+	    (((drv_i915_gfx_image_slices(image, 0U) - 1U) & GEN12_RSS_DEPTH_MASK) << 20));
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, image->stencil_slice_rows / 4U);
+
+	/* Succeeded: the stencil buffer is described. */
+	return 0;
 }
