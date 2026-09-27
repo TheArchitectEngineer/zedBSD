@@ -39,18 +39,21 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/css/cascade.c \
 	$(ZDESKTOP_BROWSER_DIR)/css/ua.c \
 	$(ZDESKTOP_BROWSER_DIR)/page/page.c \
+	$(ZDESKTOP_BROWSER_DIR)/page/link.c \
 	$(ZDESKTOP_BROWSER_DIR)/text/font.c \
 	$(ZDESKTOP_BROWSER_DIR)/text/linebreak.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/box.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/block.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/inline.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/dump.c \
+	$(ZDESKTOP_BROWSER_DIR)/layout/hit.c \
 	$(ZDESKTOP_BROWSER_DIR)/paint/list.c \
 	$(ZDESKTOP_BROWSER_DIR)/paint/software.c \
 	$(ZDESKTOP_BROWSER_DIR)/paint/vulkan.c \
 	$(ZDESKTOP_BROWSER_DIR)/shell/shell.c \
 	$(ZDESKTOP_BROWSER_DIR)/shell/window.c \
-	$(ZDESKTOP_BROWSER_DIR)/shell/present.c
+	$(ZDESKTOP_BROWSER_DIR)/shell/present.c \
+	$(ZDESKTOP_BROWSER_DIR)/shell/titlebar.c
 
 ifdef ZEDBSD_TOPLEVEL_BUILD
 ZDESKTOP_BROWSER_SOURCES += $(ZDESKTOP_BROWSER_ENTITIES_C)
@@ -69,4 +72,4 @@ $(ZDESKTOP_BROWSER_ENTITIES_C): $(ZDESKTOP_BROWSER_ENTITIES_JSON) $(ZDESKTOP_BRO
 ZEDBSD_USERLAND_DOWNLOAD_TARGETS += $(ZDESKTOP_BROWSER_ENTITIES_JSON)
 endif
 
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-browser,Web browser,amd64,n,basic,$(ZDESKTOP_BROWSER_SOURCES),y,base,base/zdesktop-browser,base/libtruetype base/libvulkan base/libwayland,0755,program,,,bin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-browser,Web browser,amd64,n,basic,$(ZDESKTOP_BROWSER_SOURCES),y,base,base/zdesktop-browser,base/libtruetype base/libvulkan base/libwayland base/libzdesktop,0755,program,,,bin))

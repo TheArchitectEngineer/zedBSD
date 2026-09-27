@@ -54,4 +54,8 @@ int page_layout(struct page *page, int width, int height);
 int page_paint(struct page *page);
 int page_title(const struct page *page, struct wb_buffer *out);
 
+/* Links (link.c). */
+int page_link_at(struct page *page, int x, int y, struct wb_buffer *href, int *found);
+int page_resolve_file(const char *base, const char *href, struct wb_buffer *out);
+
 #endif
