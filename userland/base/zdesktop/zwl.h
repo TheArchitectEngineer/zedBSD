@@ -110,6 +110,8 @@ enum zwl_kind {
 	ZWL_POPUP,
 	ZWL_SUBCOMPOSITOR,
 	ZWL_SUBSURFACE,
+	ZWL_TITLEBAR_MANAGER,
+	ZWL_TITLEBAR,
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -273,6 +275,14 @@ struct zwl_object {
 	struct zwl_menu_model *menu_model;
 	struct zwl_object *toplevel_menu;
 	struct zwl_object *shown_menu;
+	/*
+	 * The Titlebar Presentation (titlebar.c, WS070 p008): a
+	 * zed_titlebar_v1's model, and a toplevel's zed_titlebar_v1 (whose own
+	 * top names the toplevel back).  Each link is cleared from both ends
+	 * when either object goes.
+	 */
+	struct zwl_titlebar_model *titlebar_model;
+	struct zwl_object *titlebar;
 	/*
 	 * xdg_popup (popup.c, ws035-p076): an xdg_positioner's rules; a popup's
 	 * parent surface (NULL once the parent has gone), its place relative to
