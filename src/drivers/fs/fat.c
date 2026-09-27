@@ -603,7 +603,7 @@ static FAT_MUTATION void fat_raw_rename_rollback_destination(struct fat_mount_st
 static int fat_raw_canonical_basename(struct fat_mount_state *filesystem,
 	const char *path, char basename[KERN_PATH_MAX]);
 static int fat_raw_readdir(struct fat_mount_state *filesystem, const char *path,
-	unsigned wanted, struct fat_dir_entry *entry);
+			   uint32_t start, struct fat_dir_entry *entry, uint32_t *next);
 static int fat_stat_location_mode(struct fat_mount_state *filesystem,
 	const char *path, struct fat_dir_entry *entry, uint32_t *lba,
 	uint16_t *offset, uint32_t *first_cluster, uint8_t *attributes,
@@ -7658,13 +7658,22 @@ fat_raw_read(
 	return error;
 }
 
-/* Reads one visible entry of a directory by its position. */
+/*
+ * Reads the first visible entry of a directory at or after a record.
+ *
+ * The position is the index of a 32-byte record in the directory, not a
+ * count of the entries seen so far: an entry removed while the directory
+ * is read leaves an erased record in its place, so the entries after it
+ * keep their positions and none is skipped (BUG-074).  *next receives the
+ * record after the entry found, where the next read starts.
+ */
 static int
 fat_raw_readdir(
 	struct fat_mount_state *filesystem,
 	const char *path,
-	unsigned wanted,
-	struct fat_dir_entry *entry)
+	uint32_t start,
+	struct fat_dir_entry *entry,
+	uint32_t *next)
 {
 	struct fat_directory directory;
 	uint32_t parent_lba;
@@ -7678,7 +7687,6 @@ fat_raw_readdir(
 	struct fat_mount_state *fat = filesystem;
 	struct fat_lfn_state lfn;
 	uint32_t limit;
-	unsigned visible = 0;
 	uint32_t index;
 	int valid;
 
@@ -7723,8 +7731,8 @@ fat_raw_readdir(
 	}
 	fat_lfn_reset(&lfn);
 
-	/* Walks the directory one record at a time. */
-	for (index = 0; index < limit; index++) {
+	/* Walks the directory one record at a time from the position. */
+	for (index = start; index < limit; index++) {
 		/* Reads the record at this index. */
 		error = fat_raw_directory_entry(filesystem,
 							&directory,
@@ -7767,11 +7775,8 @@ fat_raw_readdir(
 			continue;
 		}
 
-		/* Counts the visible entries until the wanted one. */
-		if (visible++ != wanted) {
-			fat_lfn_reset(&lfn);
-			continue;
-		}
+		/* This is the first visible entry at or after the position. */
+		*next = index + 1U;
 
 		/*
 		 * A long name is only available on FAT32, and only if complete.
@@ -9961,13 +9966,23 @@ fat_readdir_unlocked(
 	char child_path[KERN_PATH_MAX];
 	struct componentname component;
 	struct inode *child;
+	uint32_t next;
 	int result;
 	int error;
 
+	/* A position past any directory's records is its end. */
+	if (file->f_offset < 0 || file->f_offset > (off_t)UINT32_MAX) {
+		*eof = 1;
+		return 0;
+	}
+
+	/* The position is the index of the record the read starts at. */
+	next = 0;
 	result = fat_raw_readdir(state,
 				 fat_path(file->f_inode),
-				 (unsigned)file->f_offset,
-				 &decoded);
+				 (uint32_t)file->f_offset,
+				 &decoded,
+				 &next);
 	if (result == ENOENT) {
 		*eof = 1;
 
@@ -10001,7 +10016,8 @@ fat_readdir_unlocked(
 
 	inode_release(child);
 
-	file->f_offset++;
+	/* The next read starts at the record after this entry. */
+	file->f_offset = (off_t)next;
 	*eof = 0;
 
 	/* Succeeded. */
