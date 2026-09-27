@@ -68,6 +68,7 @@
 
 /* The command of a login session's Log Out, which zdesktop carries out itself. */
 #define HOME_LOGOUT		"@logout"
+#define HOME_LOCK		"@lock"
 
 /* The page the built-in list's browser opens (shown only when the page is there). */
 #define HOME_BROWSER_START	"/usr/share/zdesktop-browser/start.html"
@@ -725,7 +726,9 @@ home_read_apps(
 		home_add_app("Browser", "/bin/zdesktop-browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U);
 	}
 
-	/* A login's session ends with Log Out (ws035-p095), the last icon. */
+	/* A login's session locks (ws035-p102) and ends with Log Out (ws035-p095), the last icons. */
+	if (server->session && server->control_fd >= 0)
+		home_add_app("Lock Screen", HOME_LOCK, "lock screen away", 0x5a6aa0U);
 	if (server->session)
 		home_add_app("Log Out", HOME_LOGOUT, "logout log out sign out exit session end", 0x6a7488U);
 }
@@ -1213,6 +1216,14 @@ home_launch(
 	 * login screen again (started first, when zsessiond started zdesktop,
 	 * so the display goes straight to it: handoff.c).
 	 */
+	/* Lock Screen locks the session (App Home closes behind it). */
+	logout = strcmp(home_apps[app].command, HOME_LOCK);
+	if (logout == 0) {
+		(void)zwl_lock(server, "home");
+		return;
+	}
+
+	/* Log Out. */
 	logout = strcmp(home_apps[app].command, HOME_LOGOUT);
 	if (logout == 0) {
 		printf("ZWL SESSION logout\n");

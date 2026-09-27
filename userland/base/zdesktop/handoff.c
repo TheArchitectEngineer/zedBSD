@@ -36,7 +36,7 @@
 #define HANDOFF_WAIT_MS		20000U
 #define HANDOFF_LOGOUT_MS	30000U
 
-/* What the session has read of zsessiond's next line. */
+/* What the session has read of zsessiond's next line (answers to the lock screen too, ws035-p102). */
 static char handoff_line[64];
 static size_t handoff_used;
 
@@ -259,6 +259,12 @@ handoff_answered(
 		zwl_handoff_release(server);
 		server->logout_ms = 0U;
 		zwl_request_stop();
+		return;
+	}
+
+	/* The answers to the lock screen's UNLOCK (greeter.c). */
+	if (server->locked) {
+		zwl_lock_answer(server, line);
 		return;
 	}
 
