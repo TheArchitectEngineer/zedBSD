@@ -59,6 +59,7 @@ static GLint gles_buffer_name(const struct gles_buffer *buffer);
 static GLenum gles_draw_buffer(struct gles_state *state, GLenum index);
 static GLenum gles_read_buffer(struct gles_state *state);
 static GLenum gles_read_pair(struct gles_state *state, GLenum pname);
+static int gles_version_three(struct zegl_context *context);
 static unsigned gles_floats(struct zegl_context *context, struct gles_state *state, GLenum pname, GLfloat *values);
 
 /*
@@ -150,6 +151,10 @@ gles_state(
 	/* The surfaces' framebuffer draws into and reads its one colour buffer. */
 	state->default_draw_buffer = GL_BACK;
 	state->default_read_buffer = GL_BACK;
+
+	/* The default transform feedback object is bound. */
+	state->default_feedback.bound = 1;
+	state->feedback = &state->default_feedback;
 
 	/* Every array four floats and disabled, every current value the floats (0, 0, 0, 1). */
 	for (index = 0U; index < GLES_ATTRIBS; index++) {
@@ -1179,6 +1184,7 @@ glGetString(
 {
 	struct zegl_context *context;
 	const GLubyte *layer;
+	int three;
 
 	/* Without a current context there are no strings. */
 	context = gles_context();
@@ -1192,15 +1198,20 @@ glGetString(
 			return layer;
 	}
 
-	/* The string asked for. */
+	/* The string asked for (OpenGL ES 3.0's when the device captures outputs). */
+	three = gles_version_three(context);
 	switch (name) {
 	case GL_VENDOR:
 		return (const GLubyte *)"zedBSD";
 	case GL_RENDERER:
 		return (const GLubyte *)"zedBSD OpenGL ES on Vulkan";
 	case GL_VERSION:
+		if (three)
+			return (const GLubyte *)"OpenGL ES 3.0 zedBSD";
 		return (const GLubyte *)"OpenGL ES 2.0 zedBSD";
 	case GL_SHADING_LANGUAGE_VERSION:
+		if (three)
+			return (const GLubyte *)"OpenGL ES GLSL ES 3.00";
 		return (const GLubyte *)"OpenGL ES GLSL ES 1.00";
 	case GL_EXTENSIONS:
 		return (const GLubyte *)GLES_EXTENSIONS;
@@ -1382,9 +1393,10 @@ gles_release(
 		}
 	}
 
-	/* The sampler objects, and the query objects and fence syncs. */
+	/* The sampler objects, the query objects and fence syncs, and the transform feedback objects. */
 	gles_samplers_release(state);
 	gles_queries_release(state);
+	gles_feedbacks_release(state);
 
 	/* The framebuffer objects and renderbuffers, and the vertex array objects. */
 	gles_framebuffers_release(state);
@@ -1476,6 +1488,9 @@ gles_capability(
 		return 0;
 	case GL_PRIMITIVE_RESTART_FIXED_INDEX:
 		*flag = &state->primitive_restart;
+		return 0;
+	case GL_RASTERIZER_DISCARD:
+		*flag = &state->rasterizer_discard;
 		return 0;
 	default:
 		break;
@@ -1825,6 +1840,24 @@ gles_integers_es3(
 	case GL_TRANSFORM_FEEDBACK_BUFFER_BINDING:
 		values[0] = gles_buffer_name(state->feedback_buffer);
 		return 1U;
+	case GL_TRANSFORM_FEEDBACK_BINDING:
+		values[0] = (GLint)state->feedback->name;
+		return 1U;
+	case GL_TRANSFORM_FEEDBACK_ACTIVE:
+		values[0] = state->feedback->active;
+		return 1U;
+	case GL_TRANSFORM_FEEDBACK_PAUSED:
+		values[0] = state->feedback->paused;
+		return 1U;
+	case GL_MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS:
+		values[0] = (GLint)GLES_CAPTURE_COMPONENTS;
+		return 1U;
+	case GL_MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS:
+		values[0] = (GLint)GLES_FEEDBACK_BINDINGS;
+		return 1U;
+	case GL_MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS:
+		values[0] = 4;
+		return 1U;
 	case GL_MAX_UNIFORM_BUFFER_BINDINGS:
 		values[0] = (GLint)GLES_UNIFORM_BINDINGS;
 		return 1U;
@@ -1941,6 +1974,24 @@ gles_read_pair(
 
 	/* Succeeded: the type. */
 	return read_type;
+}
+
+/* Reports whether the context offers OpenGL ES 3.0: its device can capture outputs (transform feedback writes from vertex shaders). */
+static int
+gles_version_three(
+	struct zegl_context *context)
+{
+	struct gles_state *state;
+
+	/* A context's state with the device's features. */
+	state = gles_state(context);
+	if (state == NULL)
+		return 0;
+	if (!state->display->features.vertexPipelineStoresAndAtomics)
+		return 0;
+
+	/* Succeeded: OpenGL ES 3.0. */
+	return 1;
 }
 
 /* Returns a buffer's name, 0 for none. */

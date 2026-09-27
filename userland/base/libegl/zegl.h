@@ -86,6 +86,9 @@ struct zegl_display {
 	VkQueue queue;
 	uint32_t family;
 
+	/* The optional device features enabled (those of the ones GL's translation uses the device has). */
+	VkPhysicalDeviceFeatures features;
+
 	/* The configs offered. */
 	struct zegl_config configs[ZEGL_CONFIGS];
 	unsigned config_count;

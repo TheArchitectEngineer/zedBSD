@@ -11,6 +11,7 @@
 		glActiveTexture;
 		glAttachShader;
 		glBeginQuery;
+		glBeginTransformFeedback;
 		glBindAttribLocation;
 		glBindBuffer;
 		glBindBufferBase;
@@ -19,6 +20,7 @@
 		glBindRenderbuffer;
 		glBindSampler;
 		glBindTexture;
+		glBindTransformFeedback;
 		glBindVertexArray;
 		glBlendColor;
 		glBlendEquation;
@@ -60,6 +62,7 @@
 		glDeleteShader;
 		glDeleteSync;
 		glDeleteTextures;
+		glDeleteTransformFeedbacks;
 		glDeleteVertexArrays;
 		glDepthFunc;
 		glDepthMask;
@@ -76,6 +79,7 @@
 		glEnable;
 		glEnableVertexAttribArray;
 		glEndQuery;
+		glEndTransformFeedback;
 		glFenceSync;
 		glFinish;
 		glFlush;
@@ -90,6 +94,7 @@
 		glGenRenderbuffers;
 		glGenSamplers;
 		glGenTextures;
+		glGenTransformFeedbacks;
 		glGenVertexArrays;
 		glGenerateMipmap;
 		glGetActiveAttrib;
@@ -129,6 +134,7 @@
 		glGetSynciv;
 		glGetTexParameterfv;
 		glGetTexParameteriv;
+		glGetTransformFeedbackVarying;
 		glGetUniformBlockIndex;
 		glGetUniformIndices;
 		glGetUniformLocation;
@@ -153,10 +159,12 @@
 		glIsShader;
 		glIsSync;
 		glIsTexture;
+		glIsTransformFeedback;
 		glIsVertexArray;
 		glLineWidth;
 		glLinkProgram;
 		glMapBufferRange;
+		glPauseTransformFeedback;
 		glPixelStorei;
 		glPolygonOffset;
 		glProgramBinary;
@@ -166,6 +174,7 @@
 		glReleaseShaderCompiler;
 		glRenderbufferStorage;
 		glRenderbufferStorageMultisample;
+		glResumeTransformFeedback;
 		glSampleCoverage;
 		glSamplerParameterf;
 		glSamplerParameterfv;
@@ -190,6 +199,7 @@
 		glTexStorage3D;
 		glTexSubImage2D;
 		glTexSubImage3D;
+		glTransformFeedbackVaryings;
 		glUniform1f;
 		glUniform1fv;
 		glUniform1i;

@@ -53,7 +53,7 @@ static int draw_texture_matches(const struct gles_texture *texture, unsigned kin
 static void draw_raster(struct gles_state *state, const struct gles_target *target, uint32_t topology, struct gles_raster *raster);
 static VkPipeline draw_pipeline(struct gles_state *state, const struct gles_target *target, const struct gles_raster *raster, const struct gles_vertex_layout *layout);
 static int draw_blocks(struct zegl_context *context, struct gles_state *state, VkDescriptorBufferInfo *blocks);
-static VkDescriptorSet draw_descriptors(struct gles_state *state, const VkDescriptorBufferInfo *blocks, uint32_t *offset);
+static VkDescriptorSet draw_descriptors(struct gles_state *state, const VkDescriptorBufferInfo *blocks, const VkDescriptorBufferInfo *capture, uint32_t *offset);
 static void draw_vertex_attrib_integer(GLuint index, GLenum type, const uint32_t *values);
 static void draw_dynamic(struct gles_state *state, struct zegl_context *context, const struct gles_target *target);
 static VkRect2D draw_scissor_rect(struct gles_state *state, const struct gles_target *target);
@@ -415,6 +415,10 @@ glClear(
 		gles_error(context, GL_INVALID_VALUE);
 		return;
 	}
+
+	/* Discarded rasterization clears nothing. */
+	if (state->rasterizer_discard)
+		return;
 
 	/* A draw surface, whose frame records the clear. */
 	surface = context->draw;
@@ -1317,7 +1321,10 @@ draw_program(
 	uint32_t expanded;
 	uint32_t topology;
 	uint32_t restart;
+	struct gles_capture_target capture;
+	const VkDescriptorBufferInfo *capture_buffer;
 	int restarted;
+	int capturing;
 	int strip;
 	int status;
 
@@ -1345,6 +1352,11 @@ draw_program(
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
+
+	/* A draw transform feedback allows while it is active (glDrawArrays of its kind), and whether it captures. */
+	status = gles_feedback_check(context, state, mode, type, &capturing);
+	if (status != 0)
+		return;
 
 	/* A draw surface. */
 	if (context->draw == NULL) {
@@ -1415,9 +1427,12 @@ draw_program(
 			return;
 		}
 
-		/* Copied. */
+		/* Copied (a capturing draw keeps the list: it is the order vertices are written in). */
 		memcpy(stream, list, expanded * sizeof(uint32_t));
-		free(list);
+		if (!capturing) {
+			free(list);
+			list = NULL;
+		}
 	}
 
 	/* The vertices (and instances) each attribute reads. */
@@ -1446,8 +1461,21 @@ draw_program(
 		return;
 	}
 
+	/* A program that captures outputs writes them into a capture buffer of the draw's (copied on only while capturing). */
+	capture_buffer = NULL;
+	if (state->program->capture_count != 0U) {
+		status = gles_feedback_prepare(context, state, capturing, first, count, instances, expanded, &capture);
+		if (status != 0) {
+			free(list);
+			return;
+		}
+
+		/* The capture buffer is described with the draw's descriptors. */
+		capture_buffer = &capture.buffer;
+	}
+
 	/* The descriptors. */
-	set = draw_descriptors(state, blocks, &dynamic_offset);
+	set = draw_descriptors(state, blocks, capture_buffer, &dynamic_offset);
 	if (set == VK_NULL_HANDLE) {
 		gles_report("the descriptors", -1);
 		gles_error(context, GL_OUT_OF_MEMORY);
@@ -1475,6 +1503,11 @@ draw_program(
 	} else {
 		vkCmdDraw(target.command, (uint32_t)count, (uint32_t)instances, (uint32_t)first, 0U);
 	}
+
+	/* What a capturing draw wrote goes into the transform feedback buffers. */
+	if (capturing)
+		gles_feedback_record(context, state, &capture, first, instances, list, expanded);
+	free(list);
 }
 
 /*
@@ -2551,8 +2584,15 @@ draw_raster(
 		raster->cull_mode = state->cull_mode;
 	}
 
-	/* Polygon offset. */
+	/* Polygon offset, and whether rasterization is discarded. */
 	raster->polygon_offset = (uint32_t)state->polygon_offset;
+	raster->discard = (uint32_t)state->rasterizer_discard;
+
+	/* A device that blends every colour attachment alike blends none when they differ. */
+	if (!state->display->features.independentBlend &&
+	    raster->blend != 0U &&
+	    raster->blend != (1U << target->color_count) - 1U)
+		raster->blend = 0U;
 }
 
 /* Returns the pipeline for the program, the target's pass, the state and the vertex layout, making it the first time. */
@@ -2673,6 +2713,7 @@ draw_pipeline(
 	if (clockwise)
 		rasterization.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	rasterization.depthBiasEnable = raster->polygon_offset;
+	rasterization.rasterizerDiscardEnable = raster->discard;
 	rasterization.lineWidth = 1.0f;
 
 	/* One sample, alpha to coverage as GL has it. */
@@ -2852,12 +2893,13 @@ static VkDescriptorSet
 draw_descriptors(
 	struct gles_state *state,
 	const VkDescriptorBufferInfo *blocks,
+	const VkDescriptorBufferInfo *capture,
 	uint32_t *offset)
 {
-	VkDescriptorPoolSize sizes[3];
+	VkDescriptorPoolSize sizes[4];
 	VkDescriptorPoolCreateInfo create;
 	VkDescriptorSetAllocateInfo allocate;
-	VkWriteDescriptorSet writes[GLES_UNITS + 1U + GLES_NAMED_BLOCKS];
+	VkWriteDescriptorSet writes[GLES_UNITS + 2U + GLES_NAMED_BLOCKS];
 	VkDescriptorBufferInfo block;
 	VkDescriptorImageInfo images[GLES_UNITS];
 	uint32_t bindings[GLES_UNITS];
@@ -2958,11 +3000,11 @@ draw_descriptors(
 	if (differs != 0)
 		same = 0;
 
-	/* The same blocks' ranges too. */
+	/* The same blocks' ranges too; a draw's capture buffer is its own. */
 	differs = 0;
 	if (same && program->block_count != 0U)
 		differs = memcmp(cache->blocks, blocks, program->block_count * sizeof(blocks[0]));
-	if (differs != 0)
+	if (differs != 0 || capture != NULL)
 		same = 0;
 	if (same)
 		return cache->set;
@@ -2992,10 +3034,12 @@ draw_descriptors(
 		sizes[1].descriptorCount = DRAW_POOL_SETS * GLES_UNITS;
 		sizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		sizes[2].descriptorCount = DRAW_POOL_SETS * GLES_NAMED_BLOCKS;
+		sizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		sizes[3].descriptorCount = DRAW_POOL_SETS;
 		memset(&create, 0, sizeof(create));
 		create.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		create.maxSets = DRAW_POOL_SETS;
-		create.poolSizeCount = 3U;
+		create.poolSizeCount = 4U;
 		create.pPoolSizes = sizes;
 		result = vkCreateDescriptorPool(state->device, &create, NULL, &pool->pool);
 		if (result != VK_SUCCESS) {
@@ -3033,6 +3077,17 @@ draw_descriptors(
 		writes[count].descriptorCount = 1U;
 		writes[count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		writes[count].pImageInfo = &images[index];
+		count++;
+	}
+
+	/* The capture buffer (transform feedback). */
+	if (capture != NULL) {
+		writes[count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writes[count].dstSet = set;
+		writes[count].dstBinding = GLES_CAPTURE_BINDING;
+		writes[count].descriptorCount = 1U;
+		writes[count].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		writes[count].pBufferInfo = capture;
 		count++;
 	}
 

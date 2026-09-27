@@ -58,6 +58,9 @@ static void emit_loop(struct emit_state *state, struct glsl_node *node);
 static void emit_switch(struct emit_state *state, struct glsl_node *node);
 static uint32_t emit_case_condition(struct emit_state *state, struct glsl_node *label, uint32_t selector, uint32_t fallen, uint32_t matched_any);
 static void emit_return(struct emit_state *state, struct glsl_node *node);
+static void emit_capture_buffer(struct emit_state *state);
+static void emit_capture(struct emit_state *state);
+static void emit_capture_value(struct emit_state *state, uint32_t value, const struct glsl_type *type, uint32_t base, unsigned *offset);
 static void emit_push_target(struct emit_state *state, unsigned kind, uint32_t merge, uint32_t continue_label);
 static void emit_pop_target(struct emit_state *state);
 static void emit_returned_check(struct emit_state *state);
@@ -99,6 +102,9 @@ glsl_emit(
 	struct glsl_arena *arena,
 	struct glsl_link_uniform *uniforms,
 	unsigned uniform_count,
+	const struct glsl_link_capture *captures,
+	unsigned capture_count,
+	unsigned capture_stride,
 	size_t *words)
 {
 	struct emit_state *state;
@@ -122,6 +128,11 @@ glsl_emit(
 	for (index = 0U; index < uniform_count; index++)
 		state->members[index] = -1;
 
+	/* The outputs a vertex shader captures (transform feedback). */
+	state->captures = captures;
+	state->capture_count = capture_count;
+	state->capture_stride = capture_stride;
+
 	/* main's type and its first instructions. */
 	void_type = glsl_emit_type(state, glsl_type_void());
 	operands[0] = 0U;
@@ -135,13 +146,19 @@ glsl_emit(
 	glsl_words_add(module, &module->body, SPV_OP_FUNCTION, operands, 4U);
 	emit_label(state, glsl_module_id(module));
 
-	/* The globals the code uses, then main's body. */
+	/* The globals the code uses (with the buffer captured outputs go into), then main's body. */
 	emit_globals(state);
+	if (state->capture_count != 0U)
+		emit_capture_buffer(state);
 	emit_statements(state, shader->main->body->child[0]);
 
-	/* main ends with a return when its last block is still open. */
-	if (!state->terminated)
+	/* main ends with a return when its last block is still open, having captured its outputs. */
+	if (!state->terminated) {
+		emit_capture(state);
 		glsl_words_add(module, &module->body, SPV_OP_RETURN, NULL, 0U);
+	}
+
+	/* The function ends. */
 	glsl_words_add(module, &module->body, SPV_OP_FUNCTION_END, NULL, 0U);
 
 	/* The entry point with its interface. */
@@ -1678,9 +1695,10 @@ emit_return(
 	struct emit_frame *frame;
 	uint32_t operands[2];
 
-	/* main returns. */
+	/* main returns, having captured its outputs. */
 	frame = state->frame;
 	if (frame == NULL) {
+		emit_capture(state);
 		glsl_words_add(state->module, &state->module->body, SPV_OP_RETURN, NULL, 0U);
 		state->terminated = 1;
 		return;
@@ -1703,6 +1721,188 @@ emit_return(
 	operands[1] = glsl_module_bool(state->module, glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_BOOL)), 1);
 	glsl_words_add(state->module, &state->module->body, SPV_OP_STORE, operands, 2U);
 	emit_branch(state, state->targets[state->target_count - 1U].merge);
+}
+
+/*
+ * Declares the storage buffer a vertex shader writes the outputs it
+ * captures into (transform feedback): a buffer block of words at
+ * descriptor set 0 and GLSL_CAPTURE_BINDING, and finds the vertex's and
+ * the instance's numbers.
+ */
+static void
+emit_capture_buffer(
+	struct emit_state *state)
+{
+	struct glsl_symbol *symbol;
+	uint32_t operands[3];
+	uint32_t word_type;
+	uint32_t words;
+	uint32_t structure;
+	uint32_t pointer;
+	uint32_t value;
+
+	/* A run of words, four bytes apart, the block's one member at offset 0. */
+	word_type = glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_UINT));
+	operands[0] = 0U;
+	operands[1] = word_type;
+	words = glsl_module_declare(state->module, SPV_OP_TYPE_RUNTIME_ARRAY, operands, 2U, 1);
+	value = 4U;
+	glsl_module_decorate(state->module, words, SPV_DECORATION_ARRAY_STRIDE, &value, 1U);
+	operands[0] = 0U;
+	operands[1] = words;
+	structure = glsl_module_declare(state->module, SPV_OP_TYPE_STRUCT, operands, 2U, 1);
+	glsl_module_decorate(state->module, structure, SPV_DECORATION_BUFFER_BLOCK, NULL, 0U);
+	glsl_module_member_decorate(state->module, structure, 0U, SPV_DECORATION_OFFSET, 0U);
+
+	/* The variable, at its descriptor set and binding. */
+	pointer = glsl_emit_pointer(state, SPV_STORAGE_UNIFORM, structure);
+	state->capture_buffer = glsl_module_id(state->module);
+	operands[0] = pointer;
+	operands[1] = state->capture_buffer;
+	operands[2] = SPV_STORAGE_UNIFORM;
+	glsl_words_add(state->module, &state->module->globals, SPV_OP_VARIABLE, operands, 3U);
+	value = 0U;
+	glsl_module_decorate(state->module, state->capture_buffer, SPV_DECORATION_DESCRIPTOR_SET, &value, 1U);
+	value = GLSL_CAPTURE_BINDING;
+	glsl_module_decorate(state->module, state->capture_buffer, SPV_DECORATION_BINDING, &value, 1U);
+
+	/* The vertex's and the instance's numbers (the link made them used). */
+	for (symbol = state->shader->globals; symbol != NULL; symbol = symbol->next_global) {
+		if (symbol->builtin == GLSL_BUILTIN_VERTEX_ID)
+			state->vertex_id = symbol;
+		if (symbol->builtin == GLSL_BUILTIN_INSTANCE_ID)
+			state->instance_id = symbol;
+	}
+}
+
+/*
+ * Writes the outputs a vertex shader captures into its record in the
+ * storage buffer (instance * vertices + vertex, after the header), before
+ * main returns.
+ */
+static void
+emit_capture(
+	struct emit_state *state)
+{
+	struct glsl_symbol *symbol;
+	uint32_t operands[3];
+	uint32_t word_type;
+	uint32_t int_type;
+	uint32_t word_pointer;
+	uint32_t vertices;
+	uint32_t vertex;
+	uint32_t instance;
+	uint32_t record;
+	uint32_t base;
+	uint32_t value;
+	unsigned offset;
+	unsigned index;
+
+	/* Nothing captured, or the numbers missing. */
+	if (state->capture_count == 0U || state->vertex_id == NULL || state->instance_id == NULL)
+		return;
+
+	/* The vertices each instance has: header word 0. */
+	word_type = glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_UINT));
+	int_type = glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_INT));
+	word_pointer = glsl_emit_pointer(state, SPV_STORAGE_UNIFORM, word_type);
+	operands[0] = state->capture_buffer;
+	operands[1] = glsl_emit_int(state, 0);
+	operands[2] = glsl_emit_int(state, 0);
+	value = glsl_emit_op(state, SPV_OP_ACCESS_CHAIN, word_pointer, operands, 3U);
+	vertices = glsl_emit_op(state, SPV_OP_LOAD, word_type, &value, 1U);
+
+	/* The vertex's and the instance's numbers as words. */
+	value = glsl_emit_op(state, SPV_OP_LOAD, int_type, &state->vertex_id->id, 1U);
+	vertex = glsl_emit_op(state, SPV_OP_BITCAST, word_type, &value, 1U);
+	value = glsl_emit_op(state, SPV_OP_LOAD, int_type, &state->instance_id->id, 1U);
+	instance = glsl_emit_op(state, SPV_OP_BITCAST, word_type, &value, 1U);
+
+	/* The record: instance * vertices + vertex, its first word after the header. */
+	operands[0] = instance;
+	operands[1] = vertices;
+	value = glsl_emit_op(state, SPV_OP_I_MUL, word_type, operands, 2U);
+	operands[0] = value;
+	operands[1] = vertex;
+	record = glsl_emit_op(state, SPV_OP_I_ADD, word_type, operands, 2U);
+	operands[0] = record;
+	operands[1] = glsl_module_constant(state->module, word_type, state->capture_stride);
+	value = glsl_emit_op(state, SPV_OP_I_MUL, word_type, operands, 2U);
+	operands[0] = value;
+	operands[1] = glsl_module_constant(state->module, word_type, GLSL_CAPTURE_HEADER);
+	base = glsl_emit_op(state, SPV_OP_I_ADD, word_type, operands, 2U);
+
+	/* Each output's value, component by component, at its place. */
+	for (index = 0U; index < state->capture_count; index++) {
+		symbol = state->captures[index].symbol;
+		offset = state->captures[index].offset;
+		value = glsl_emit_op(state, SPV_OP_LOAD, glsl_emit_type(state, symbol->type), &symbol->id, 1U);
+		emit_capture_value(state, value, symbol->type, base, &offset);
+	}
+}
+
+/* Writes a captured value of a type (a number, vector, matrix or array of them) word by word from a place in the record on. */
+static void
+emit_capture_value(
+	struct emit_state *state,
+	uint32_t value,
+	const struct glsl_type *type,
+	uint32_t base,
+	unsigned *offset)
+{
+	const struct glsl_type *part;
+	uint32_t operands[3];
+	uint32_t word_type;
+	uint32_t word;
+	uint32_t index;
+	uint32_t pointer;
+	unsigned count;
+	unsigned item;
+
+	/* An array's elements, a matrix's columns, a vector's components, each in turn. */
+	count = 0U;
+	part = NULL;
+	if (type->kind == GLSL_KIND_ARRAY) {
+		count = type->length;
+		part = type->element;
+	} else if (type->kind == GLSL_KIND_MATRIX) {
+		count = type->columns;
+		part = glsl_type_vector(type->base, type->components);
+	} else if (type->kind == GLSL_KIND_VECTOR) {
+		count = type->components;
+		part = glsl_type_scalar(type->base);
+	}
+
+	/* Each part in turn. */
+	for (item = 0U; item < count; item++) {
+		operands[0] = value;
+		operands[1] = item;
+		word = glsl_emit_op(state, SPV_OP_COMPOSITE_EXTRACT, glsl_emit_type(state, part), operands, 2U);
+		emit_capture_value(state, word, part, base, offset);
+	}
+
+	/* A composite is written through its parts. */
+	if (count != 0U)
+		return;
+
+	/* A number's bits as a word (a float's and an int's bit cast). */
+	word_type = glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_UINT));
+	word = value;
+	if (type->base != GLSL_BASE_UINT)
+		word = glsl_emit_op(state, SPV_OP_BITCAST, word_type, &value, 1U);
+
+	/* Stored at the record's word. */
+	operands[0] = base;
+	operands[1] = glsl_module_constant(state->module, word_type, *offset);
+	index = glsl_emit_op(state, SPV_OP_I_ADD, word_type, operands, 2U);
+	operands[0] = state->capture_buffer;
+	operands[1] = glsl_emit_int(state, 0);
+	operands[2] = index;
+	pointer = glsl_emit_op(state, SPV_OP_ACCESS_CHAIN, glsl_emit_pointer(state, SPV_STORAGE_UNIFORM, word_type), operands, 3U);
+	operands[0] = pointer;
+	operands[1] = word;
+	glsl_words_add(state->module, &state->module->body, SPV_OP_STORE, operands, 2U);
+	(*offset)++;
 }
 
 /* Pushes a break target (a loop, a switch, or an inlined function's once-loop). */

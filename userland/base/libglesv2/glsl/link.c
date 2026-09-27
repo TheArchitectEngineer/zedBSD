@@ -28,6 +28,9 @@
 #define LINK_MAX_UNIFORMS	256U
 #define LINK_MAX_LOCATIONS	32U
 
+/* The most outputs a vertex shader captures (transform feedback). */
+#define LINK_MAX_CAPTURES	64U
+
 /* The binding of the first uniform block (the default block is 0, the samplers 1 to 16). */
 #define LINK_FIRST_BLOCK_BINDING 32U
 
@@ -50,6 +53,11 @@ struct link_state {
 	/* The uniforms in the order they are laid out. */
 	struct glsl_link_uniform uniforms[LINK_MAX_UNIFORMS];
 	unsigned uniform_count;
+
+	/* The outputs the vertex shader captures, and the words of a vertex's record. */
+	struct glsl_link_capture captures[LINK_MAX_CAPTURES];
+	unsigned capture_count;
+	unsigned capture_stride;
 };
 
 static void link_error(struct link_state *state, const char *format, ...);
@@ -67,6 +75,9 @@ static void link_info(struct link_state *state, struct glsl_program *program);
 static void link_leaves(struct link_state *state, const struct glsl_type *type, const char *name, struct glsl_uniform_info *out, unsigned *count, unsigned capacity);
 static void link_block_infos(struct link_state *state, struct glsl_shader *shader, unsigned stage, struct glsl_program *program);
 static void link_member_leaves(struct link_state *state, const struct glsl_type *type, const char *name, unsigned offset, unsigned row_major, int block, struct glsl_program *program);
+static void link_captures(struct link_state *state, struct glsl_shader *vertex, const char *const *captures, unsigned capture_count);
+static unsigned link_capture_words(const struct glsl_type *type);
+static void link_capture_infos(struct link_state *state, struct glsl_program *program);
 static char *link_name(struct link_state *state, const char *name);
 static uint32_t *link_copy(const uint32_t *code, size_t words);
 
@@ -79,6 +90,32 @@ glsl_link(
 	const struct glsl_shader *fragment_shader,
 	const struct glsl_binding *bindings,
 	unsigned binding_count,
+	struct glsl_program *program,
+	char **log)
+{
+	int status;
+
+	/* A link that captures nothing. */
+	status = glsl_link_captured(vertex_shader, fragment_shader, bindings, binding_count, NULL, 0U, program, log);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Links a vertex and a fragment shader into SPIR-V, the vertex shader
+ * capturing the outputs of the names given.
+ */
+int
+glsl_link_captured(
+	const struct glsl_shader *vertex_shader,
+	const struct glsl_shader *fragment_shader,
+	const struct glsl_binding *bindings,
+	unsigned binding_count,
+	const char *const *captures,
+	unsigned capture_count,
 	struct glsl_program *program,
 	char **log)
 {
@@ -130,23 +167,26 @@ glsl_link(
 	link_attributes(state, vertex, bindings, binding_count);
 	link_varyings(state, vertex, fragment);
 	link_outputs(state, fragment);
+	link_captures(state, vertex, captures, capture_count);
 	if (state->errors != 0U)
 		longjmp(state->failure, 1);
 
-	/* Each stage's SPIR-V, copied out of the arena. */
-	code = glsl_emit(vertex, &state->arena, state->uniforms, state->uniform_count, &words);
+	/* Each stage's SPIR-V (the vertex stage's capturing), copied out of the arena. */
+	code = glsl_emit(vertex, &state->arena, state->uniforms, state->uniform_count, state->captures, state->capture_count,
+			 state->capture_stride, &words);
 	program->code[0] = link_copy(code, words);
 	program->words[0] = words;
-	code = glsl_emit(fragment, &state->arena, state->uniforms, state->uniform_count, &words);
+	code = glsl_emit(fragment, &state->arena, state->uniforms, state->uniform_count, NULL, 0U, 0U, &words);
 	program->code[1] = link_copy(code, words);
 	program->words[1] = words;
 	if (program->code[0] == NULL || program->code[1] == NULL)
 		longjmp(state->failure, 1);
 
-	/* What the API reports of the uniforms and the uniform blocks. */
+	/* What the API reports of the uniforms, the uniform blocks and the captured outputs. */
 	link_info(state, program);
 	link_block_infos(state, vertex, 0U, program);
 	link_block_infos(state, fragment, 1U, program);
+	link_capture_infos(state, program);
 
 	/* Succeeded: the program. */
 	glsl_arena_free(&state->arena);
@@ -183,6 +223,14 @@ glsl_program_free(
 	free(program->blocks);
 	program->blocks = NULL;
 	program->block_count = 0U;
+
+	/* The captured outputs' names and the list. */
+	for (index = 0U; index < program->capture_count; index++)
+		free(program->captures[index].name);
+	free(program->captures);
+	program->captures = NULL;
+	program->capture_count = 0U;
+	program->capture_stride = 0U;
 }
 
 /* Reports a link error in the log. */
@@ -881,6 +929,150 @@ link_member_leaves(
 		info->matrix_stride = 16U;
 		info->row_major = row_major;
 	}
+}
+
+/*
+ * Finds the vertex shader's outputs of the names a program captures
+ * (transform feedback), in order, and lays out a vertex's record of
+ * them; the shader's vertex and instance numbers, which place the
+ * records, are used too.  Errors go to the log.
+ */
+static void
+link_captures(
+	struct link_state *state,
+	struct glsl_shader *vertex,
+	const char *const *captures,
+	unsigned capture_count)
+{
+	struct glsl_symbol *symbol;
+	struct glsl_symbol *vertex_id;
+	struct glsl_symbol *instance_id;
+	unsigned index;
+	unsigned other;
+	unsigned words;
+
+	/* Nothing captured. */
+	state->capture_count = 0U;
+	state->capture_stride = 0U;
+	if (capture_count == 0U)
+		return;
+	if (capture_count > LINK_MAX_CAPTURES) {
+		link_error(state, "too many transform feedback varyings");
+		return;
+	}
+
+	/* The vertex's and the instance's numbers (GLSL ES 3.00 and GLSL 1.30 on have them). */
+	vertex_id = link_find(vertex, "gl_VertexID", GLSL_VAR_INPUT);
+	instance_id = link_find(vertex, "gl_InstanceID", GLSL_VAR_INPUT);
+	if (vertex_id == NULL || instance_id == NULL) {
+		link_error(state, "transform feedback needs a vertex shader of GLSL ES 3.00 or GLSL 1.30 on");
+		return;
+	}
+
+	/* Emitted: the records are placed by them. */
+	vertex_id->used = 1;
+	instance_id->used = 1;
+
+	/* Each name: an output of the vertex shader of numbers, named once. */
+	for (index = 0U; index < capture_count; index++) {
+		symbol = link_find(vertex, captures[index], GLSL_VAR_OUTPUT);
+		if (symbol == NULL) {
+			link_error(state, "transform feedback varying '%s' is not an output of the vertex shader", captures[index]);
+			continue;
+		}
+
+		/* The words it takes. */
+		words = link_capture_words(symbol->type);
+		if (words == 0U) {
+			link_error(state, "transform feedback varying '%s' cannot be captured", captures[index]);
+			continue;
+		}
+
+		/* Named once. */
+		for (other = 0U; other < state->capture_count; other++) {
+			if (state->captures[other].symbol == symbol)
+				link_error(state, "transform feedback varying '%s' is named twice", captures[index]);
+		}
+
+		/* Its place in the record; it is emitted even when the shader does not write it. */
+		symbol->used = 1;
+		state->captures[state->capture_count].symbol = symbol;
+		state->captures[state->capture_count].offset = state->capture_stride;
+		state->capture_count++;
+		state->capture_stride += words;
+	}
+}
+
+/* Returns the words a captured output of a type takes (a scalar, vector or matrix of numbers, or an array of one), 0 for a type that cannot be captured. */
+static unsigned
+link_capture_words(
+	const struct glsl_type *type)
+{
+	unsigned words;
+
+	/* An array: its elements' words. */
+	if (type->kind == GLSL_KIND_ARRAY) {
+		if (type->element->kind == GLSL_KIND_ARRAY)
+			return 0U;
+		words = link_capture_words(type->element);
+		return words * type->length;
+	}
+
+	/* Numbers only: floats, ints and unsigned ints. */
+	if (type->kind != GLSL_KIND_SCALAR && type->kind != GLSL_KIND_VECTOR && type->kind != GLSL_KIND_MATRIX)
+		return 0U;
+	if (type->base != GLSL_BASE_FLOAT && type->base != GLSL_BASE_INT && type->base != GLSL_BASE_UINT)
+		return 0U;
+
+	/* Succeeded: a word per component. */
+	return type->components * type->columns;
+}
+
+/* Lists the captured outputs as the API reports them, with their places in a vertex's record. */
+static void
+link_capture_infos(
+	struct link_state *state,
+	struct glsl_program *program)
+{
+	struct glsl_capture_info *info;
+	const struct glsl_type *type;
+	unsigned index;
+
+	/* Nothing captured. */
+	if (state->capture_count == 0U)
+		return;
+
+	/* The list. */
+	program->captures = calloc(state->capture_count, sizeof(*program->captures));
+	if (program->captures == NULL)
+		longjmp(state->failure, 1);
+
+	/* Each output: its name, its type (an array's element's, with the length), and its place. */
+	for (index = 0U; index < state->capture_count; index++) {
+		info = &program->captures[index];
+		type = state->captures[index].symbol->type;
+		info->size = 1U;
+		if (type->kind == GLSL_KIND_ARRAY) {
+			info->size = type->length;
+			type = type->element;
+		}
+
+		/* Its name. */
+		info->name = link_name(state, state->captures[index].symbol->name);
+		program->capture_count = index + 1U;
+		info->base = GLSL_INFO_FLOAT;
+		if (type->base == GLSL_BASE_INT)
+			info->base = GLSL_INFO_INT;
+		if (type->base == GLSL_BASE_UINT)
+			info->base = GLSL_INFO_UINT;
+		info->components = type->components;
+		info->columns = type->columns;
+		info->offset = state->captures[index].offset;
+		info->words = type->components * type->columns * info->size;
+	}
+
+	/* The record's words. */
+	program->capture_stride = state->capture_stride;
 }
 
 /* Copies a name into memory of its own, which glsl_program_free frees. */

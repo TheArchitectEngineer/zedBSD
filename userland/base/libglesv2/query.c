@@ -131,6 +131,45 @@ gles_queries_suspend(
 }
 
 /*
+ * Makes sure a frame is done, submitting and waiting for the frame being
+ * recorded when it is that frame (glReadPixels's way).  Returns 0, or -1
+ * with the error recorded.
+ */
+int
+gles_frame_wait(
+	struct zegl_context *context,
+	struct gles_state *state,
+	uint64_t frame)
+{
+	int status;
+
+	/* The frame done. */
+	status = query_finish(context, state, frame);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: it is done. */
+	return 0;
+}
+
+/*
+ * Counts primitives a draw wrote into transform feedback buffers for the
+ * active GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN query, if there is one.
+ */
+void
+gles_query_primitives(
+	struct gles_state *state,
+	GLuint primitives)
+{
+	/* The active query of the target. */
+	if (state->queries == NULL || state->queries->feedback == NULL)
+		return;
+
+	/* Its count. */
+	state->queries->feedback->primitives += primitives;
+}
+
+/*
  * Frees a context's queries, fence syncs and query pool (nothing may
  * still run).
  */
