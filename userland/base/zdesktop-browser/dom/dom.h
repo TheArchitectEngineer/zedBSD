@@ -257,7 +257,9 @@ struct dom_attribute {
 /*
  * An element: its name, namespace and tag number, and its attributes (a
  * malloc'd array the element owns; the strings are traced through it).
- * content is a template's contents, a document fragment.
+ * content is a template's contents, a document fragment.  created is the
+ * document's generation when the element was made, which orders its
+ * content attributes' event handlers among the listeners scripts added.
  */
 struct dom_element {
 	struct dom_node node;
@@ -265,7 +267,7 @@ struct dom_element {
 	struct vm_string *prefix;
 	uint16_t ns;
 	uint16_t tag;
-	uint32_t reserved;
+	uint32_t created;
 	struct dom_attribute *attributes;
 	size_t attribute_count;
 	size_t attribute_capacity;

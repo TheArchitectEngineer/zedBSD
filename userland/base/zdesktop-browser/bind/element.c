@@ -120,6 +120,8 @@ bind_element_has_class(
 	size_t length;
 	size_t offset;
 	uint16_t unit;
+	uint16_t word_unit;
+	uint16_t name_unit;
 	int space;
 	int same;
 
@@ -151,6 +153,8 @@ bind_element_has_class(
 			if (unit == 0x20U || unit == 0x09U || unit == 0x0aU || unit == 0x0cU || unit == 0x0dU)
 				space = 1;
 		}
+
+		/* A character of a word goes on to the next. */
 		if (!space)
 			continue;
 
@@ -160,9 +164,13 @@ bind_element_has_class(
 		if (length == name->length && length != 0)
 			same = 1;
 		for (offset = 0; same && offset < length; offset++) {
-			if (vm_string_at(classes, start + offset) != vm_string_at(name, offset))
+			word_unit = vm_string_at(classes, start + offset);
+			name_unit = vm_string_at(name, offset);
+			if (word_unit != name_unit)
 				same = 0;
 		}
+
+		/* The word is the class, or the next word starts after the space. */
 		if (same)
 			return 1;
 		start = index + 1U;
@@ -225,6 +233,8 @@ element_tag_name(
 		if (status == 0)
 			status = wb_units_append_code_point(&units, ':');
 	}
+
+	/* Then the local name. */
 	if (status == 0)
 		status = vm_string_append_units(element->local_name, &units);
 
@@ -458,6 +468,8 @@ element_hidden_set(
 	} else {
 		status = element_remove_attribute(realm, this_value, pair, 1, result);
 	}
+
+	/* Either may have thrown. */
 	if (status != 0)
 		return status;
 
@@ -595,9 +607,11 @@ element_has_attribute(
 
 	/* Whether the element has it. */
 	attribute = dom_element_find_attribute(element, DOM_NS_NONE, name);
+	*result = VM_VALUE_FALSE;
+	if (attribute != NULL)
+		*result = VM_VALUE_TRUE;
 
 	/* Succeeded: the answer is reported. */
-	*result = vm_value_boolean(attribute != NULL);
 	return 0;
 }
 

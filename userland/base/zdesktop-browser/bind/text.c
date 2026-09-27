@@ -365,6 +365,8 @@ text_make(
 	} else {
 		node = dom_comment_create(window->document, units.data, units.length);
 	}
+
+	/* The characters are in the node now. */
 	wb_units_release(&units);
 	if (node == NULL)
 		return ENOMEM;

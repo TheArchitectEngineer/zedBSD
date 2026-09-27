@@ -85,10 +85,11 @@ dom_element_create(
 	if (element == NULL)
 		return NULL;
 
-	/* Records the names. */
+	/* Records the names, and when the element was made. */
 	element->local_name = local_name;
 	element->prefix = prefix;
 	element->ns = (uint16_t)ns;
+	element->created = document->generation;
 
 	/* Finds the tag number from the name folded to lower case (SVG names keep their case). */
 	wb_units_init(&lower);

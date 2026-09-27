@@ -135,15 +135,19 @@ struct bind_window {
 };
 
 /*
- * The event listeners of one event target: a cell the target keeps (a
- * node's listeners field, or the window's), with the listeners in the
- * order they were added.
+ * One event listener of a target: its type, its callback (a function or
+ * an object with handleEvent), its flags, and the document's generation
+ * when it was added.  An event handler (onclick and the like) is a
+ * listener too, marked handler, placed where it was first set; its
+ * callback is null while the handler is null.
  */
 struct bind_listener {
 	struct vm_string *type;
 	vm_value callback;
 	int capture;
 	int once;
+	int handler;
+	uint32_t generation;
 };
 
 /*
@@ -251,7 +255,13 @@ struct bind_event *bind_event_of(vm_value value);
 int bind_event_create(struct bind_window *window, int interface, struct vm_string *type, vm_value *value, struct bind_event **event);
 int bind_dispatch(struct bind_window *window, vm_value target, vm_value event_value, int *canceled);
 int bind_listeners_of(struct bind_window *window, vm_value target, int create, struct bind_listeners **listeners);
-void bind_listeners_trace(struct vm_heap *heap, struct bind_listeners *listeners);
+int bind_listeners_add(struct bind_listeners *listeners, const struct bind_listener *listener, size_t position);
+int bind_listeners_find(const struct bind_listeners *listeners, const struct vm_string *type, vm_value callback, int capture, int handler, size_t *index);
+int bind_listeners_find_handler(const struct bind_listeners *listeners, const struct vm_string *type, size_t *index);
+
+/* Event handlers (handler.c). */
+int bind_define_handlers(struct bind_window *window, struct vm_object *prototype);
+int bind_handler_prepare(struct bind_window *window, vm_value current, struct vm_string *type);
 
 /* The timers (timer.c). */
 void bind_timers_trace(struct vm_heap *heap, struct bind_window *window);

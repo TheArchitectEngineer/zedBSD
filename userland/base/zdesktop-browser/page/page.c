@@ -146,6 +146,8 @@ page_load_html(
 		wb_units_release(&units);
 		return error;
 	}
+
+	/* The page runs the scripts the parser reaches. */
 	html_parser_set_script_hook(parser, page_run_script_element, page);
 
 	/* Feeds it all and finishes. */

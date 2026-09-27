@@ -592,6 +592,13 @@ window_make_interface(
 			return error;
 	}
 
+	/* HTML elements, the document and the window have the event handler attributes. */
+	if (index == BIND_HTML_ELEMENT || index == BIND_DOCUMENT || index == BIND_WINDOW) {
+		error = bind_define_handlers(window, prototype);
+		if (error != 0)
+			return error;
+	}
+
 	/* The interface object: new runs the interface's constructor, or throws like a call does. */
 	construct = table->construct;
 	if (construct == NULL)

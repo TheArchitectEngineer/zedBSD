@@ -412,6 +412,8 @@ timer_run(
 		realm->exception = VM_VALUE_UNDEFINED;
 		status = 0;
 	}
+
+	/* Running out of memory stops the page. */
 	if (status != 0)
 		return status;
 

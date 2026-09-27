@@ -84,6 +84,7 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/bind/text.c \
 	$(ZDESKTOP_BROWSER_DIR)/bind/document.c \
 	$(ZDESKTOP_BROWSER_DIR)/bind/event.c \
+	$(ZDESKTOP_BROWSER_DIR)/bind/handler.c \
 	$(ZDESKTOP_BROWSER_DIR)/bind/timer.c \
 	$(ZDESKTOP_BROWSER_DIR)/page/page.c \
 	$(ZDESKTOP_BROWSER_DIR)/page/link.c \

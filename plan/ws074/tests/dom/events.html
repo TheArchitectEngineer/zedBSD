@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head><title>Events</title></head>
+<body>
+<div id="outer"><p id="inner" onclick="console.log('attribute handler', event.type, this.id); return false;">click me</p></div>
+<script>
+var outer = document.getElementById("outer");
+var inner = document.getElementById("inner");
+function log(where) {
+  return function (e) {
+    console.log(where, e.type, e.eventPhase, e.target.id, e.currentTarget === this, e.currentTarget.nodeName || "window");
+  };
+}
+window.addEventListener("click", log("window capture"), true);
+document.addEventListener("click", log("document capture"), true);
+outer.addEventListener("click", log("outer capture"), true);
+outer.addEventListener("click", log("outer bubble"));
+inner.addEventListener("click", log("inner bubble"));
+inner.addEventListener("click", log("inner capture"), true);
+document.addEventListener("click", log("document bubble"));
+window.addEventListener("click", log("window bubble"));
+inner.click();
+
+console.log("--- stopPropagation");
+var stopper = function (e) { console.log("stopper"); e.stopPropagation(); };
+outer.addEventListener("click", stopper);
+inner.click();
+outer.removeEventListener("click", stopper);
+
+console.log("--- stopImmediatePropagation");
+var a = function (e) { console.log("a"); e.stopImmediatePropagation(); };
+var b = function () { console.log("b (not reached)"); };
+inner.addEventListener("custom", a);
+inner.addEventListener("custom", b);
+inner.dispatchEvent(new Event("custom", { bubbles: true }));
+
+console.log("--- once and duplicates");
+var count = 0;
+var counter = function () { count++; };
+inner.addEventListener("ping", counter, { once: true });
+inner.addEventListener("ping", counter, { once: true });
+inner.dispatchEvent(new Event("ping"));
+inner.dispatchEvent(new Event("ping"));
+console.log("count", count);
+
+console.log("--- handleEvent and cancel");
+var handler = { handleEvent: function (e) { console.log("handleEvent", this === handler, e.cancelable); e.preventDefault(); } };
+inner.addEventListener("go", handler);
+var result = inner.dispatchEvent(new Event("go", { cancelable: true }));
+var e2 = new Event("go");
+var result2 = inner.dispatchEvent(e2);
+console.log("results", result, result2, e2.defaultPrevented, e2.isTrusted, e2.eventPhase, e2.currentTarget, e2.target === inner);
+
+console.log("--- CustomEvent and property handler");
+inner.onhello = null;
+var custom = new CustomEvent("hello", { detail: { n: 42 } });
+inner.addEventListener("hello", function (e) { console.log("detail", e.detail.n, e instanceof Event, e instanceof CustomEvent); });
+inner.dispatchEvent(custom);
+outer.onclick = function (e) { console.log("property handler", e.target.id); };
+inner.click();
+outer.onclick = null;
+
+console.log("--- EventTarget of its own");
+var target = new EventTarget();
+target.addEventListener("x", function (e) { console.log("own target", e.type, e.target === target); });
+target.dispatchEvent(new Event("x"));
+
+console.log("--- errors");
+inner.addEventListener("boom", function () { throw new Error("listener failed"); });
+inner.addEventListener("boom", function () { console.log("after the error"); });
+inner.dispatchEvent(new Event("boom"));
+try {
+  new Event();
+} catch (err) {
+  console.log("no type", err instanceof TypeError);
+}
+try {
+  inner.dispatchEvent({});
+} catch (err) {
+  console.log("not an event", err instanceof TypeError);
+}
+var mouse = new MouseEvent("click", { clientX: 5, clientY: 7, button: 1 });
+console.log("mouse", mouse.clientX, mouse.clientY, mouse.button, mouse instanceof UIEvent, mouse.bubbles);
+console.log("phases", Event.NONE, Event.CAPTURING_PHASE, Event.AT_TARGET, Event.BUBBLING_PHASE);
+</script>
+</body>
+</html>

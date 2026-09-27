@@ -12,9 +12,9 @@
  * Dispatch follows the DOM standard's shape: the path from the target up
  * to the document and the window (not the window for a load event), the
  * capture phase down the path, the target, and the bubble phase up it for
- * an event that bubbles.  An event handler (an onclick property, or the
- * onclick attribute compiled the first time it is needed) runs before the
- * listeners of its target in the target and bubble phases.  A microtask
+ * an event that bubbles.  An event handler (onclick and the like,
+ * handler.c) is one of its target's listeners, in the place it was first
+ * set, and cancels the event when it returns false.  A microtask
  * checkpoint follows each listener when no script is running (an event the
  * page fires), and not inside a script's dispatchEvent.
  */
@@ -41,7 +41,6 @@ static int event_add_listener(struct vm_realm *realm, vm_value this_value, const
 static int event_remove_listener(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_dispatch_method(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_listener_options(struct vm_realm *realm, vm_value options, int *capture, int *once);
-static int event_find_listener(const struct bind_listeners *listeners, const struct vm_string *type, vm_value callback, int capture, size_t *index);
 static void event_forget_listener(struct bind_listeners *listeners, size_t index);
 static int event_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_mouse(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -67,17 +66,8 @@ static int event_button(struct vm_realm *realm, vm_value this_value, const vm_va
 static int event_detail(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_build_path(struct bind_window *window, vm_value target, const struct bind_event *event, struct vm_object *path);
 static int event_invoke(struct bind_window *window, vm_value current, vm_value event_value, int phase, unsigned kinds);
-static int event_run_handler(struct bind_window *window, vm_value current, vm_value event_value);
-static int event_find_handler(struct bind_window *window, vm_value current, const struct bind_event *event, vm_value *handler);
-static int event_compile_handler(struct bind_window *window, const struct vm_string *source, vm_value *handler);
 static int event_call_listener(struct bind_window *window, vm_value callback, vm_value current, vm_value event_value, vm_value *returned);
 static int event_fire(struct bind_window *window, struct dom_node *target, int interface, const char *type, unsigned flags, const struct bind_mouse *mouse, int *canceled);
-
-/*
- * The prefix of an event handler's name (on and the event's type), in
- * UTF-16.  The array is constant for the life of the program.
- */
-static const uint16_t event_on[2] = { 'o', 'n' };
 
 /* The state of an event, which refers to its type, targets and detail. */
 static const struct vm_cell_type event_type_cell = { "event", event_trace, NULL };
@@ -349,15 +339,18 @@ bind_listeners_of(
 	struct vm_object *object;
 	struct vm_cell *cell;
 	struct vm_cell **slot;
+	vm_value global;
 	int is_object;
+	int is_cell;
 
 	/* A node keeps its listeners, and so does the window. */
 	*listeners = NULL;
 	slot = NULL;
 	node = bind_node_of(target);
+	global = vm_value_cell(window->realm->global);
 	if (node != NULL) {
 		slot = &node->listeners;
-	} else if (target == vm_value_cell(window->realm->global)) {
+	} else if (target == global) {
 		slot = &window->listeners;
 	}
 
@@ -365,7 +358,8 @@ bind_listeners_of(
 	is_object = vm_value_is_object(target);
 	if (slot == NULL && is_object) {
 		object = (struct vm_object *)vm_value_as_cell(target);
-		if (object->kind == VM_KIND_PLATFORM && vm_value_is_cell(object->internal)) {
+		is_cell = vm_value_is_cell(object->internal);
+		if (object->kind == VM_KIND_PLATFORM && is_cell) {
 			cell = vm_value_as_cell(object->internal);
 			if (cell->type == &listeners_type) {
 				*listeners = (struct bind_listeners *)cell;
@@ -387,6 +381,103 @@ bind_listeners_of(
 
 	/* Succeeded: the listeners (or NULL) are found. */
 	*listeners = (struct bind_listeners *)*slot;
+	return 0;
+}
+
+/*
+ * Adds a listener to a target's listeners at a position (the count for
+ * the end), the listeners from there on moving up one place.
+ */
+int
+bind_listeners_add(
+	struct bind_listeners *listeners,
+	const struct bind_listener *listener,
+	size_t position)
+{
+	struct bind_listener *items;
+	size_t capacity;
+
+	/* The array grows when it is full. */
+	if (listeners->count == listeners->capacity) {
+		capacity = listeners->capacity * 2U;
+		if (capacity < 4U)
+			capacity = 4U;
+		items = realloc(listeners->items, capacity * sizeof(*items));
+		if (items == NULL)
+			return ENOMEM;
+		listeners->items = items;
+		listeners->capacity = capacity;
+	}
+
+	/* The listener at its position, the ones after it moved up one place. */
+	if (position > listeners->count)
+		position = listeners->count;
+	memmove(&listeners->items[position + 1U], &listeners->items[position], (listeners->count - position) * sizeof(listeners->items[0]));
+	listeners->items[position] = *listener;
+
+	/* Succeeded: the target has one listener more. */
+	listeners->count++;
+	return 0;
+}
+
+/*
+ * Finds a listener by its type, callback, capture flag and whether it is
+ * an event handler; nonzero when found.
+ */
+int
+bind_listeners_find(
+	const struct bind_listeners *listeners,
+	const struct vm_string *type,
+	vm_value callback,
+	int capture,
+	int handler,
+	size_t *index)
+{
+	const struct bind_listener *listener;
+	size_t item;
+
+	/* Compares each listener. */
+	for (item = 0; item < listeners->count; item++) {
+		listener = &listeners->items[item];
+		if (listener->type != type)
+			continue;
+		if (listener->callback != callback)
+			continue;
+		if (listener->capture != capture)
+			continue;
+		if (listener->handler != handler)
+			continue;
+		*index = item;
+		return 1;
+	}
+
+	/* No such listener. */
+	return 0;
+}
+
+/*
+ * Finds a target's event handler listener for a type; nonzero when
+ * found.
+ */
+int
+bind_listeners_find_handler(
+	const struct bind_listeners *listeners,
+	const struct vm_string *type,
+	size_t *index)
+{
+	size_t item;
+
+	/* The listener marked as the type's handler. */
+	for (item = 0; item < listeners->count; item++) {
+		if (!listeners->items[item].handler)
+			continue;
+		if (listeners->items[item].type != type)
+			continue;
+		*index = item;
+		return 1;
+	}
+
+	/* The target has no handler for the type. */
 	return 0;
 }
 
@@ -551,12 +642,11 @@ event_add_listener(
 {
 	struct bind_window *window;
 	struct bind_listeners *listeners;
-	struct bind_listener *items;
+	struct bind_listener listener;
 	struct vm_string *type;
 	vm_value target;
 	vm_value callback;
 	size_t index;
-	size_t capacity;
 	int capture;
 	int once;
 	int found;
@@ -587,33 +677,25 @@ event_add_listener(
 	if (status == EINVAL) {
 		status = bind_throw_illegal(realm);
 		return status;
-	}
-	if (status != 0)
+	} else if (status != 0) {
 		return status;
+	}
 
 	/* The same listener is added once. */
-	found = event_find_listener(listeners, type, callback, capture, &index);
+	found = bind_listeners_find(listeners, type, callback, capture, 0, &index);
 	if (found)
 		return 0;
 
-	/* The array grows when it is full. */
-	if (listeners->count == listeners->capacity) {
-		capacity = listeners->capacity * 2U;
-		if (capacity < 4U)
-			capacity = 4U;
-		items = realloc(listeners->items, capacity * sizeof(*items));
-		if (items == NULL)
-			return ENOMEM;
-		listeners->items = items;
-		listeners->capacity = capacity;
-	}
-
 	/* The listener at the end. */
-	listeners->items[listeners->count].type = type;
-	listeners->items[listeners->count].callback = callback;
-	listeners->items[listeners->count].capture = capture;
-	listeners->items[listeners->count].once = once;
-	listeners->count++;
+	listener.type = type;
+	listener.callback = callback;
+	listener.capture = capture;
+	listener.once = once;
+	listener.handler = 0;
+	listener.generation = window->document->generation;
+	status = bind_listeners_add(listeners, &listener, listeners->count);
+	if (status != 0)
+		return status;
 
 	/* Succeeded: the listener is added. */
 	return 0;
@@ -658,14 +740,14 @@ event_remove_listener(
 	if (status == EINVAL) {
 		status = bind_throw_illegal(realm);
 		return status;
-	}
-	if (status != 0)
+	} else if (status != 0) {
 		return status;
+	}
 
 	/* The listener, if the target has it. */
 	if (listeners == NULL)
 		return 0;
-	found = event_find_listener(listeners, type, js_argument(args, count, 1), capture, &index);
+	found = bind_listeners_find(listeners, type, js_argument(args, count, 1), capture, 0, &index);
 	if (found)
 		event_forget_listener(listeners, index);
 
@@ -698,17 +780,16 @@ event_dispatch_method(
 	if (status == EINVAL) {
 		status = bind_throw_illegal(realm);
 		return status;
-	}
-	if (status != 0)
+	} else if (status != 0) {
 		return status;
+	}
 
 	/* The event, which must not be in a dispatch already. */
 	event = bind_event_of(js_argument(args, count, 0));
 	if (event == NULL) {
 		status = vm_throw_type_error(realm, "Failed to execute 'dispatchEvent': parameter 1 is not of type 'Event'.");
 		return status;
-	}
-	if (event->dispatching) {
+	} else if (event->dispatching) {
 		status = bind_throw_dom(realm, "InvalidStateError", "The event is already being dispatched.");
 		return status;
 	}
@@ -719,8 +800,12 @@ event_dispatch_method(
 	if (status != 0)
 		return status;
 
-	/* Succeeded: true unless a listener canceled it. */
-	*result = vm_value_boolean(!canceled);
+	/* True unless a listener canceled it. */
+	*result = VM_VALUE_TRUE;
+	if (canceled)
+		*result = VM_VALUE_FALSE;
+
+	/* Succeeded: the event is dispatched. */
 	return 0;
 }
 
@@ -757,35 +842,6 @@ event_listener_options(
 	*once = vm_to_boolean(value);
 
 	/* Succeeded: the options are read. */
-	return 0;
-}
-
-/* Finds a listener by its type, callback and capture flag; nonzero when found. */
-static int
-event_find_listener(
-	const struct bind_listeners *listeners,
-	const struct vm_string *type,
-	vm_value callback,
-	int capture,
-	size_t *index)
-{
-	const struct bind_listener *listener;
-	size_t item;
-
-	/* Compares each listener. */
-	for (item = 0; item < listeners->count; item++) {
-		listener = &listeners->items[item];
-		if (listener->type != type)
-			continue;
-		if (listener->callback != callback)
-			continue;
-		if (listener->capture != capture)
-			continue;
-		*index = item;
-		return 1;
-	}
-
-	/* No such listener. */
 	return 0;
 }
 
@@ -858,6 +914,8 @@ event_construct_mouse(
 		event->mouse.client_x = number;
 		event->mouse.page_x = number;
 	}
+
+	/* The same for the vertical place. */
 	if (status == 0)
 		status = bind_get_option(realm, init, "clientY", &present, &value);
 	if (status == 0 && present)
@@ -935,6 +993,8 @@ event_construct_as(
 		status = vm_throw_type_error(realm, "Failed to construct the event: 1 argument required, but only 0 present.");
 		return status;
 	}
+
+	/* The type's atom. */
 	status = bind_to_atom(realm, args[0], 0, &type);
 	if (status != 0)
 		return status;
@@ -1461,7 +1521,7 @@ event_build_path(
 	return 0;
 }
 
-/* Runs the listeners of one target of the path, of the kinds a phase invokes, and its handler for the bubble kinds. */
+/* Runs the listeners of one target of the path, of the kinds a phase invokes (handlers are of the bubble kind). */
 static int
 event_invoke(
 	struct bind_window *window,
@@ -1480,6 +1540,7 @@ event_invoke(
 	size_t found;
 	uint32_t item;
 	int capture;
+	int handler;
 	int present;
 	int status;
 
@@ -1490,14 +1551,14 @@ event_invoke(
 	event->current_target = current;
 	event->phase = phase;
 
-	/* The handler runs with the target's other listeners. */
+	/* A handler attribute (onclick="...") becomes the target's handler before the listeners run. */
 	if ((kinds & EVENT_INVOKE_BUBBLE) != 0) {
-		status = event_run_handler(window, current, event_value);
+		status = bind_handler_prepare(window, current, event->type);
 		if (status != 0)
 			return status;
 	}
 
-	/* The listeners as they are now: ones added while they run wait for the next dispatch. */
+	/* The listeners of the event's type and the phase's kind as they are now (ones added while they run wait). */
 	status = bind_listeners_of(window, current, 0, &listeners);
 	if (status == EINVAL || listeners == NULL)
 		return 0;
@@ -1508,215 +1569,52 @@ event_invoke(
 		listener = &listeners->items[index];
 		if (listener->type != event->type)
 			continue;
-		capture = listener->capture;
-		if (capture && (kinds & EVENT_INVOKE_CAPTURE) == 0)
+		if (listener->capture && (kinds & EVENT_INVOKE_CAPTURE) == 0)
 			continue;
-		if (!capture && (kinds & EVENT_INVOKE_BUBBLE) == 0)
+		if (!listener->capture && (kinds & EVENT_INVOKE_BUBBLE) == 0)
 			continue;
+		if (listener->callback == VM_VALUE_NULL)
+			continue;
+
+		/* Each is kept as its callback and whether it is a handler. */
 		status = vm_object_define(window->realm->heap, snapshot, vm_value_int32((int32_t)snapshot->length), listener->callback, VM_PROPERTY_DEFAULT);
+		if (status == 0)
+			status = vm_object_define(window->realm->heap, snapshot, vm_value_int32((int32_t)snapshot->length), vm_value_boolean(listener->handler), VM_PROPERTY_DEFAULT);
 	}
+
+	/* The copy may have run out of memory. */
 	if (status != 0)
 		return status;
 
 	/* Each one that is still there, in order, until a listener stops the event at once. */
-	for (item = 0; item < snapshot->length && !event->stop_immediate; item++) {
+	capture = 0;
+	if ((kinds & EVENT_INVOKE_CAPTURE) != 0)
+		capture = 1;
+	for (item = 0; item + 1U < snapshot->length && !event->stop_immediate; item += 2U) {
 		callback = snapshot->elements[item];
-		capture = 0;
-		if ((kinds & EVENT_INVOKE_CAPTURE) != 0)
-			capture = 1;
+		handler = 0;
+		if (snapshot->elements[item + 1U] == VM_VALUE_TRUE)
+			handler = 1;
 
 		/* A listener removed by an earlier one does not run; a once listener is removed before it runs. */
 		status = bind_listeners_of(window, current, 0, &listeners);
 		if (status != 0)
 			return status;
-		present = event_find_listener(listeners, event->type, callback, capture, &found);
+		present = bind_listeners_find(listeners, event->type, callback, capture, handler, &found);
 		if (!present)
 			continue;
 		if (listeners->items[found].once)
 			event_forget_listener(listeners, found);
 
-		/* The call. */
+		/* The call; a handler that returns false cancels the event. */
 		status = event_call_listener(window, callback, current, event_value, &returned);
 		if (status != 0)
 			return status;
+		if (handler && returned == VM_VALUE_FALSE && event->cancelable)
+			event->canceled = 1;
 	}
 
 	/* Succeeded: the target's listeners have run. */
-	return 0;
-}
-
-/* Runs a target's event handler for the event's type (an on<type> property or attribute), if it has one. */
-static int
-event_run_handler(
-	struct bind_window *window,
-	vm_value current,
-	vm_value event_value)
-{
-	struct bind_event *event;
-	vm_value handler;
-	vm_value returned;
-	int status;
-
-	/* The handler, if any. */
-	event = bind_event_of(event_value);
-	status = event_find_handler(window, current, event, &handler);
-	if (status != 0)
-		return status;
-	if (handler == VM_VALUE_UNDEFINED)
-		return 0;
-
-	/* The call; a handler that returns false cancels the event. */
-	status = event_call_listener(window, handler, current, event_value, &returned);
-	if (status != 0)
-		return status;
-	if (returned == VM_VALUE_FALSE && event->cancelable)
-		event->canceled = 1;
-
-	/* Succeeded: the handler has run. */
-	return 0;
-}
-
-/* Finds a target's handler for an event: its on<type> function property, or its on<type> attribute compiled. */
-static int
-event_find_handler(
-	struct bind_window *window,
-	vm_value current,
-	const struct bind_event *event,
-	vm_value *handler)
-{
-	struct vm_realm *realm;
-	struct vm_object *holder;
-	struct vm_string *name;
-	struct dom_node *node;
-	struct dom_node *body;
-	struct dom_attribute *attribute;
-	struct vm_property property;
-	struct wb_units units;
-	vm_value key;
-	int callable;
-	int found;
-	int status;
-
-	/* The handler's name: on and the type. */
-	*handler = VM_VALUE_UNDEFINED;
-	realm = window->realm;
-	wb_units_init(&units);
-	status = wb_units_append(&units, event_on, 2);
-	if (status == 0)
-		status = vm_string_append_units(event->type, &units);
-	name = NULL;
-	if (status == 0)
-		name = vm_atom_from_units(realm->heap, units.data, units.length);
-	wb_units_release(&units);
-	if (name == NULL)
-		return ENOMEM;
-	key = vm_value_cell(name);
-
-	/* The object that would hold the property: the window, or a node's object if it has one. */
-	holder = NULL;
-	node = bind_node_of(current);
-	if (current == vm_value_cell(realm->global)) {
-		holder = realm->global;
-	} else if (node != NULL) {
-		holder = node->wrapper;
-	}
-
-	/* A function in the property is the handler. */
-	if (holder != NULL) {
-		found = vm_object_get_own(holder, key, &property);
-		if (found && (property.attributes & VM_PROPERTY_ACCESSOR) == 0) {
-			callable = vm_value_is_callable(*property.value);
-			if (callable) {
-				*handler = *property.value;
-				return 0;
-			}
-			return 0;
-		}
-	}
-
-	/* The window's handlers of the body's attributes (<body onload>) are the window's. */
-	if (holder == realm->global) {
-		for (body = bind_following(&window->document->node, &window->document->node);
-		     body != NULL;
-		     body = bind_following(body, &window->document->node)) {
-			found = dom_element_is(body, DOM_NS_HTML, DOM_TAG_BODY);
-			if (found)
-				break;
-		}
-		node = body;
-	}
-
-	/* An element's attribute of the name is compiled into the handler, kept in the property. */
-	if (node == NULL || node->type != DOM_ELEMENT)
-		return 0;
-	attribute = dom_element_find_attribute((struct dom_element *)node, DOM_NS_NONE, name);
-	if (attribute == NULL)
-		return 0;
-	status = event_compile_handler(window, attribute->value, handler);
-	if (status != 0)
-		return status;
-	if (*handler == VM_VALUE_UNDEFINED || holder == NULL)
-		return 0;
-	status = vm_object_define(realm->heap, holder, key, *handler, VM_PROPERTY_DEFAULT);
-	if (status != 0)
-		return status;
-
-	/* Succeeded: the handler is found. */
-	return 0;
-}
-
-/* Compiles an event handler attribute's text into a function of event; undefined when it does not compile. */
-static int
-event_compile_handler(
-	struct bind_window *window,
-	const struct vm_string *source,
-	vm_value *handler)
-{
-	static const char prefix[] = "(function (event) {\n";
-	static const char suffix[] = "\n})";
-	struct js_syntax_error syntax;
-	struct wb_units units;
-	struct wb_buffer line;
-	size_t index;
-	int status;
-
-	/* The function's source: the attribute's text as its body. */
-	*handler = VM_VALUE_UNDEFINED;
-	wb_units_init(&units);
-	status = 0;
-	for (index = 0; status == 0 && prefix[index] != '\0'; index++)
-		status = wb_units_append_code_point(&units, (unsigned char)prefix[index]);
-	if (status == 0)
-		status = vm_string_append_units(source, &units);
-	for (index = 0; status == 0 && suffix[index] != '\0'; index++)
-		status = wb_units_append_code_point(&units, (unsigned char)suffix[index]);
-	if (status != 0) {
-		wb_units_release(&units);
-		return status;
-	}
-
-	/* The function, or the report of why it does not compile. */
-	status = js_run_script(window->realm, units.data, units.length, 0, handler, &syntax);
-	wb_units_release(&units);
-	if (status == EINVAL) {
-		*handler = VM_VALUE_UNDEFINED;
-		wb_buffer_init(&line);
-		status = wb_buffer_printf(&line, "Uncaught SyntaxError: %s (an event handler attribute)", syntax.message);
-		if (status == 0)
-			bind_console(window, BIND_CONSOLE_ERROR, wb_buffer_string(&line));
-		wb_buffer_release(&line);
-		return 0;
-	}
-	if (status == VM_THROWN) {
-		*handler = VM_VALUE_UNDEFINED;
-		bind_report_exception(window, window->realm->exception);
-		window->realm->exception = VM_VALUE_UNDEFINED;
-		return 0;
-	}
-	if (status != 0)
-		return status;
-
-	/* Succeeded: the handler is compiled. */
 	return 0;
 }
 
@@ -1768,6 +1666,8 @@ event_call_listener(
 		realm->exception = VM_VALUE_UNDEFINED;
 		status = 0;
 	}
+
+	/* Running out of memory stops the dispatch. */
 	if (status != 0)
 		return status;
 

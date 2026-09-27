@@ -131,6 +131,8 @@ page_run_script_element(
 		data = (const struct dom_character_data *)child;
 		error = wb_units_append(&text, data->data.data, data->data.length);
 	}
+
+	/* The text runs, named after the page's file. */
 	name = "(inline)";
 	if (page->base != NULL)
 		name = page->base;
@@ -414,6 +416,8 @@ script_run_file(
 		data += 3;
 		length -= 3;
 	}
+
+	/* The text as UTF-16. */
 	if (error == 0)
 		error = wb_utf8_to_units(data, length, &units);
 
@@ -446,10 +450,12 @@ script_ascii_equal_folded(
 	const char *ascii)
 {
 	uint16_t unit;
+	size_t length;
 	size_t index;
 
 	/* The lengths must match. */
-	if (string->length != strlen(ascii))
+	length = strlen(ascii);
+	if (string->length != length)
 		return 0;
 
 	/* Then every unit, folded. */

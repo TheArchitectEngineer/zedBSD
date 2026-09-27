@@ -291,6 +291,7 @@ bind_insert(
 	struct dom_node *reference)
 {
 	struct dom_node *child;
+	struct dom_element *existing;
 	int ancestor;
 	int status;
 
@@ -324,7 +325,8 @@ bind_insert(
 	}
 
 	/* A document has one element child at most. */
-	if (parent->type == DOM_DOCUMENT && node->type == DOM_ELEMENT && bind_first_element_child(parent) != NULL) {
+	existing = bind_first_element_child(parent);
+	if (parent->type == DOM_DOCUMENT && node->type == DOM_ELEMENT && existing != NULL) {
 		status = bind_throw_dom(realm, "HierarchyRequestError", "Only one element on document allowed.");
 		return status;
 	}
@@ -724,6 +726,8 @@ node_text_content_set(
 			wb_units_release(&units);
 			return ENOMEM;
 		}
+
+		/* The node holds the text. */
 		dom_append_child(node, text);
 	}
 
@@ -1197,8 +1201,12 @@ node_has_child_nodes(
 	if (status != 0)
 		return status;
 
-	/* Succeeded: whether it has a first child. */
-	*result = vm_value_boolean(node->first_child != NULL);
+	/* Whether it has a first child. */
+	*result = VM_VALUE_FALSE;
+	if (node->first_child != NULL)
+		*result = VM_VALUE_TRUE;
+
+	/* Succeeded: the answer is reported. */
 	return 0;
 }
 
@@ -1333,6 +1341,8 @@ node_clone_tree(
 			if (status != 0)
 				return status;
 		}
+
+		/* The copy with its attributes. */
 		*clone = &copy->node;
 		break;
 	case DOM_TEXT:

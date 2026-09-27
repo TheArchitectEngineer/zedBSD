@@ -395,6 +395,8 @@ document_title_set(
 		if (text == NULL)
 			status = ENOMEM;
 	}
+
+	/* The characters are in the node now; the node goes into the title. */
 	wb_units_release(&units);
 	if (status != 0)
 		return status;
@@ -663,6 +665,8 @@ document_create_character_data(
 	} else {
 		node = dom_comment_create(document, units.data, units.length);
 	}
+
+	/* The characters are in the node now. */
 	wb_units_release(&units);
 	if (node == NULL)
 		return ENOMEM;

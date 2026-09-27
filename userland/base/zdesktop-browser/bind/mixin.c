@@ -496,6 +496,8 @@ mixin_insert_values(
 				if (node == NULL)
 					status = ENOMEM;
 			}
+
+			/* The characters are in the node now. */
 			wb_units_release(&units);
 			if (status != 0)
 				return status;
@@ -589,6 +591,8 @@ mixin_split_classes(
 			if (unit == 0x20U || unit == 0x09U || unit == 0x0aU || unit == 0x0cU || unit == 0x0dU)
 				space = 1;
 		}
+
+		/* A character of a name goes on to the next. */
 		if (!space)
 			continue;
 
@@ -599,12 +603,16 @@ mixin_split_classes(
 				wb_units_release(&units);
 				return ENOMEM;
 			}
+
+			/* The name at the array's end. */
 			status = vm_object_define(realm->heap, names, vm_value_int32((int32_t)names->length), vm_value_cell(atom), VM_PROPERTY_DEFAULT);
 			if (status != 0) {
 				wb_units_release(&units);
 				return status;
 			}
 		}
+
+		/* The next name starts after the space. */
 		start = index + 1U;
 	}
 
