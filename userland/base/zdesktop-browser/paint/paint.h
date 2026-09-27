@@ -31,8 +31,13 @@
  */
 enum paint_kind {
 	PAINT_RECT,
-	PAINT_TEXT
+	PAINT_TEXT,
+	PAINT_CLIP,
+	PAINT_UNCLIP
 };
+
+/* The deepest nesting of clips the renderers keep (deeper clips are ignored). */
+#define PAINT_CLIP_DEPTH	64
 
 /*
  * One glyph of a text item: the code point it draws (the text system
@@ -84,10 +89,42 @@ struct paint_bitmap {
 	int height;
 };
 
+/*
+ * One clip while a list is drawn: its rectangle in the target's pixels
+ * (the document scrolled), and the same rounded to whole pixels, which
+ * glyphs (drawn on whole pixels) are clipped by.
+ */
+struct paint_clip {
+	float left;
+	float top;
+	float right;
+	float bottom;
+	int pixel_left;
+	int pixel_top;
+	int pixel_right;
+	int pixel_bottom;
+};
+
+/*
+ * The clips a renderer is inside while it draws a list: a stack whose top
+ * is the intersection of every clip started and not ended (the first entry
+ * is the whole target).  Clips nested deeper than the stack holds are
+ * counted but do not narrow it.
+ */
+struct paint_clips {
+	struct paint_clip stack[PAINT_CLIP_DEPTH + 1];
+	int depth;
+	int ignored;
+};
+
 /* The display list (list.c). */
 int paint_build(struct paint_list *list, const struct layout_tree *tree);
 void paint_release(struct paint_list *list);
 int paint_dump(const struct paint_list *list, struct wb_buffer *out);
+void paint_clips_init(struct paint_clips *clips, int width, int height);
+void paint_clips_push(struct paint_clips *clips, const struct paint_item *item, layout_unit scroll_y);
+void paint_clips_pop(struct paint_clips *clips);
+const struct paint_clip *paint_clips_top(const struct paint_clips *clips);
 
 /* The CPU reference renderer (software.c). */
 int paint_bitmap_create(struct paint_bitmap *bitmap, int width, int height);

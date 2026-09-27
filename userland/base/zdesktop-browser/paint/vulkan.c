@@ -74,8 +74,8 @@ static VkResult gpu_pipeline(struct paint_gpu *gpu);
 static VkResult gpu_module(struct paint_gpu *gpu, const uint32_t *code, size_t size, VkShaderModule *module);
 static VkResult gpu_commands(struct paint_gpu *gpu);
 static int gpu_stage(struct paint_gpu *gpu, const struct paint_list *list, struct text_system *text, layout_unit scroll_y, VkExtent2D extent);
-static int gpu_stage_rect(struct paint_gpu *gpu, const struct paint_item *item, layout_unit scroll_y, VkExtent2D extent);
-static int gpu_stage_text(struct paint_gpu *gpu, const struct paint_item *item, struct text_system *text, layout_unit scroll_y, VkExtent2D extent);
+static int gpu_stage_rect(struct paint_gpu *gpu, const struct paint_item *item, layout_unit scroll_y, VkExtent2D extent, const struct paint_clip *clip);
+static int gpu_stage_text(struct paint_gpu *gpu, const struct paint_item *item, struct text_system *text, layout_unit scroll_y, VkExtent2D extent, const struct paint_clip *clip);
 static int gpu_place(struct paint_gpu *gpu, const struct text_glyph *glyph, uint32_t *x, uint32_t *y);
 static struct paint_gpu_slot *gpu_slot(struct paint_gpu *gpu, const uint8_t *bitmap);
 static int gpu_slots_grow(struct paint_gpu *gpu);
@@ -1044,26 +1044,40 @@ gpu_stage(
 	VkExtent2D extent)
 {
 	const struct paint_item *item;
+	struct paint_clips clips;
 	size_t index;
 	int status;
 
 	/* Starts the frame's instances empty. */
 	wb_vector_clear(&gpu->staged);
 
-	/* Each item in painting order. */
+	/* Each item in painting order, cut to the clips the list starts and ends. */
+	paint_clips_init(&clips, (int)extent.width, (int)extent.height);
 	for (index = 0; index < list->items.count; index++) {
 		item = wb_vector_at(&list->items, index);
 
+		/* A clip starts. */
+		if (item->kind == PAINT_CLIP) {
+			paint_clips_push(&clips, item, scroll_y);
+			continue;
+		}
+
+		/* The end of a clip. */
+		if (item->kind == PAINT_UNCLIP) {
+			paint_clips_pop(&clips);
+			continue;
+		}
+
 		/* A rectangle is one instance. */
 		if (item->kind == PAINT_RECT) {
-			status = gpu_stage_rect(gpu, item, scroll_y, extent);
+			status = gpu_stage_rect(gpu, item, scroll_y, extent, paint_clips_top(&clips));
 			if (status != 0)
 				return status;
 			continue;
 		}
 
 		/* A text run is one instance a glyph. */
-		status = gpu_stage_text(gpu, item, text, scroll_y, extent);
+		status = gpu_stage_text(gpu, item, text, scroll_y, extent, paint_clips_top(&clips));
 		if (status != 0)
 			return status;
 	}
@@ -1078,7 +1092,8 @@ gpu_stage_rect(
 	struct paint_gpu *gpu,
 	const struct paint_item *item,
 	layout_unit scroll_y,
-	VkExtent2D extent)
+	VkExtent2D extent,
+	const struct paint_clip *clip)
 {
 	struct gpu_instance instance;
 	int error;
@@ -1089,6 +1104,18 @@ gpu_stage_rect(
 	instance.rect[1] = layout_to_px(item->y - scroll_y);
 	instance.rect[2] = layout_to_px(item->x + item->width);
 	instance.rect[3] = layout_to_px(item->y - scroll_y + item->height);
+
+	/* Cut to the clip; a rectangle outside it draws nothing. */
+	if (instance.rect[0] < clip->left)
+		instance.rect[0] = clip->left;
+	if (instance.rect[1] < clip->top)
+		instance.rect[1] = clip->top;
+	if (instance.rect[2] > clip->right)
+		instance.rect[2] = clip->right;
+	if (instance.rect[3] > clip->bottom)
+		instance.rect[3] = clip->bottom;
+	if (instance.rect[2] <= instance.rect[0] || instance.rect[3] <= instance.rect[1])
+		return 0;
 
 	/* A rectangle above or below the target draws nothing. */
 	if (instance.rect[3] <= 0.0f || instance.rect[1] >= (float)extent.height)
@@ -1114,7 +1141,8 @@ gpu_stage_text(
 	const struct paint_item *item,
 	struct text_system *text,
 	layout_unit scroll_y,
-	VkExtent2D extent)
+	VkExtent2D extent,
+	const struct paint_clip *clip)
 {
 	struct gpu_instance instance;
 	struct text_glyph glyph;
@@ -1123,6 +1151,10 @@ gpu_stage_text(
 	int baseline;
 	int origin_x;
 	int origin_y;
+	int left;
+	int top;
+	int right;
+	int bottom;
 	size_t index;
 	int placed;
 	int error;
@@ -1158,13 +1190,29 @@ gpu_stage_text(
 		origin_x = (int)floorf(layout_to_px(item->x + item->glyphs[index].x) + 0.5f) + glyph.left;
 		origin_y = baseline - glyph.top;
 
-		/* The instance. */
-		instance.rect[0] = (float)origin_x;
-		instance.rect[1] = (float)origin_y;
-		instance.rect[2] = (float)(origin_x + glyph.width);
-		instance.rect[3] = (float)(origin_y + glyph.height);
-		instance.atlas[0] = (float)atlas_x;
-		instance.atlas[1] = (float)atlas_y;
+		/* The glyph's pixels inside the clip (on whole pixels); none inside draws nothing. */
+		left = origin_x;
+		top = origin_y;
+		right = origin_x + glyph.width;
+		bottom = origin_y + glyph.height;
+		if (left < clip->pixel_left)
+			left = clip->pixel_left;
+		if (top < clip->pixel_top)
+			top = clip->pixel_top;
+		if (right > clip->pixel_right)
+			right = clip->pixel_right;
+		if (bottom > clip->pixel_bottom)
+			bottom = clip->pixel_bottom;
+		if (right <= left || bottom <= top)
+			continue;
+
+		/* The instance: the cut rectangle, its atlas place moved by the same cut (the shader reads texels from there). */
+		instance.rect[0] = (float)left;
+		instance.rect[1] = (float)top;
+		instance.rect[2] = (float)right;
+		instance.rect[3] = (float)bottom;
+		instance.atlas[0] = (float)(atlas_x + (uint32_t)(left - origin_x));
+		instance.atlas[1] = (float)(atlas_y + (uint32_t)(top - origin_y));
 		error = wb_vector_push(&gpu->staged, &instance);
 		if (error != 0)
 			return error;

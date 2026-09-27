@@ -83,6 +83,15 @@ enum css_float {
 	CSS_CLEAR_BOTH
 };
 
+/* The values of overflow-x and overflow-y. */
+enum css_overflow {
+	CSS_OVERFLOW_VISIBLE,
+	CSS_OVERFLOW_HIDDEN,
+	CSS_OVERFLOW_CLIP,
+	CSS_OVERFLOW_SCROLL,
+	CSS_OVERFLOW_AUTO
+};
+
 /* The values of text-align. */
 enum css_text_align {
 	CSS_TEXT_ALIGN_START,
@@ -137,6 +146,8 @@ struct css_style {
 	int position;
 	int float_side;
 	int clear;
+	int overflow_x;
+	int overflow_y;
 	int visibility;
 	struct css_length width;
 	struct css_length height;

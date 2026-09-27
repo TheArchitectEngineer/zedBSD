@@ -163,6 +163,7 @@ struct layout_context {
 int layout_build(struct layout_tree *tree, struct css_engine *css, struct text_system *text, struct dom_document *document, int width, int height);
 void layout_absolute(struct layout_box *box, layout_unit x, layout_unit y);
 int layout_is_positioned(const struct layout_box *box);
+int layout_clips(const struct layout_box *box);
 int layout_position(struct layout_tree *tree);
 layout_unit layout_content_width(const struct layout_box *box, int depth);
 void layout_context_begin(struct layout_tree *tree, struct layout_context *context, struct wb_vector *floats);
