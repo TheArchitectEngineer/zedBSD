@@ -2,7 +2,7 @@
 
 # WS070 設計: zdesktop の System Menu（`xdg_toplevel_menu_v1`）
 
-Parent: [WS070](ws.md) / Phase: [ws070-p001](phase001/phase.md)
+Parent: [WS070](ws.md) / Phase: ws070-p001（[WS070](ws.md) の Phase 一覧）
 Status: 設計（2026-09-27、ws070-p001）。仕様案は [spec.md](spec.md)（ユーザー提供）。仕様案と違える所・仕様案に無い所は、各節に
 **決定**と理由を書いた。人間の判断が要る点は §11 に「未決」として置き、戻せる既定を選んで先へ進めた。
 
@@ -275,8 +275,8 @@ activated は `ZTERM MENU item=I action=A` を log に出す。
 
 - **build**: zdesktop・libwayland・libzdesktop・zdesktop-terminal が warning 0。新しい file は `plan/tools/style-check.py` 0、既存の
   file は悪化させない。
-- **Venus（QEMU）**: lean な image（`plan/ws070/tests/config-amd64-menu.mk`、`build-menu-image.sh`）で
-  `plan/ws070/tests/menu-p003.sh`（仮称）: zdesktop --glass と terminal。(1) 浮いたタイトルバーの menu の画面、(2) Edit を開いた popup の
+- **Venus（QEMU）**: lean な image（`plan/tools/titlebar/config-amd64-menu.mk`、`build-menu-image.sh`）で
+  `plan/tools/titlebar/menu-p003.sh`（仮称）: zdesktop --glass と terminal。(1) 浮いたタイトルバーの menu の画面、(2) Edit を開いた popup の
   画面、(3) Select All → Copy → Paste の activation（log と画面）、(4) View ▸ Text Size の submenu と radio、(5) keyboard（F10、↓、Enter）、
   (6) shortcut（Ctrl+Shift+A、Ctrl+Shift+C）、(7) 外の click で閉じる、(8) docked のシステムバーの menu と popup、(9) 動的な更新
   （Copy の enabled、Fullscreen の checked、Zoom の限界）の commit が log と画面に出る、(10) 2 つ目の窓（New Window）で focus に
@@ -332,6 +332,6 @@ context menu（Open、Open With、Cut、Copy、Paste、Rename、Duplicate、Move
   menubar と同じ `xdg_menu_v1` を渡してもよい（その場合は根の子＝top-level が行になる）。libzdesktop には
   `zdesktop_menu_popup(service, menu, surface, x, y, seat, serial, listener, data)` のような 1 つの呼び出しで包む。
 - **2026-09-27 実装（ws071-p009）**: 上の version 2 の案のとおり（`bad_surface` の error は作らず、窓でない surface・古い serial は開かずに
-  `done`）。記録は [ws071 phase009](../ws071/phase009/phase.md)。
+  `done`）。記録は [ws071 phase009](../ws071/ws.md)。
 - **zdesktop 側の変更の見込み**: menu-shell.c の state に「menubar からでない popup」（hit の無い anchor、parent = 根）を足し、
   閉じたとき `done` を送る。popup の配置・行・keyboard・外の press の扱いは共有できる。

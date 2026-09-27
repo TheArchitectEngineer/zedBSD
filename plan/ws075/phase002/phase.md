@@ -13,10 +13,10 @@ Phase disposition: normal
 p001 で今の zdesktop（glass、backdrop、Wiseview、docking）と mview は実機で動いた。その後の desktop の機能を実機の capture で確かめる:
 
 1. App Home から zdesktop-terminal と mview（capture の `zdesktop-home`）。
-2. System Menu（`zdesktop-menu`、`plan/ws070/tests/menu-hw.sh` と同じ scenario、11 検査）。
+2. System Menu（`zdesktop-menu`、`plan/tools/titlebar/menu-hw.sh` と同じ scenario、11 検査）。
 3. X11（`zdesktop-x11`: Gears の GLX、X terminal、仮想デスクトップ）。
 4. zdesktop-files（file manager の窓、tab、pane のすりガラス）: capture の scenario が無いので `plan/ws031/tests/i915-capture.py` に
-   `zdesktop-files` を足す（Venus の試験 `plan/ws071/tests/` の操作に倣う）。
+   `zdesktop-files` を足す（Venus の試験 `plan/tools/files/` の操作に倣う）。
 5. 落ちたものは原因を調べ、i915 の側（実行器・compiler・driver）で直す。zdesktop とその client は直さない（desktop の
    サブエージェントの範囲。要るときは main を通す）。
 

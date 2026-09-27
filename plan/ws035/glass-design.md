@@ -87,7 +87,7 @@ void zdesktop_glass_destroy(struct zdesktop_glass *glass);
   `fm_ui_panels`（sidebar・content の card（タブの行を含む）・preview）を比べ、変わったときだけ送る（`ZFILES GLASS panels count=N`）。
 - glass のとき: 地は透明（`fm_canvas_clear`）、sidebar は白 40、content と preview は白 60 の薄い tint だけ（影・縁は描かない）。sidebar の節の
   題は少し濃く（TEXT_SECONDARY）。glass でないとき（host の既定、glass の無い compositor）は今までの不透明な見た目。
-- host の試験: `files-render --glass=WALLPAPER` が zdesktop の合成を CPU で真似る（`plan/ws071/tests/host-glass.c`: 壁紙、card の影、縮めて
+- host の試験: `files-render --glass=WALLPAPER` が zdesktop の合成を CPU で真似る（`plan/tools/files/host-glass.c`: 壁紙、card の影、縮めて
   拡げたぼかし＋白＋縁、frame を alpha で）。
 
 ## 5. 起動の遅れ（Venus の READY）

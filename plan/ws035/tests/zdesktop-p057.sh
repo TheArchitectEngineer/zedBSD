@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws035-p057: the glass shows the windows under it, blurred (backdrop.c), on the Venus guest (the lean
-# image of plan/ws071/tests/build-files-image.sh).  zdesktop --glass at 1280x800 with the wallpaper;
+# image of plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800 with the wallpaper;
 # /bin/extras-probe --body-viewport (a 600x300 window of green and white with a red sub-surface) first,
 # then zdesktop-files (1000x640, glass cards) over it.
 #  1. zdesktop makes the backdrop when a window is over another (ZWL BACKDROP ready).
@@ -9,7 +9,7 @@
 #     window under it shows through; with only the blurred wallpaper both pictures would agree), and it
 #     leans to the probe's red or green by 10 or more.
 #
-#   plan/ws071/tests/files-guest.sh start     (the guest must be up)
+#   plan/tools/files/files-guest.sh start     (the guest must be up)
 #   plan/ws035/tests/zdesktop-p057.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u

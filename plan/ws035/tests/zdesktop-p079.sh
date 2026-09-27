@@ -9,7 +9,7 @@
 #  4. The terminal: its Edit > Copy (ctrl+shift+a, ctrl+shift+c) sets the selection; probe c (started on top) receives it.
 #     c sets "touch /tmp/p079-pasted" and a line break; the terminal's Edit > Paste (ctrl+shift+v) types it into the shell.
 #
-#   plan/ws070/tests/menu-guest.sh start   (the lean image with /bin/data-probe)
+#   plan/tools/titlebar/menu-guest.sh start   (the lean image with /bin/data-probe)
 #   plan/ws035/tests/zdesktop-p079.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u

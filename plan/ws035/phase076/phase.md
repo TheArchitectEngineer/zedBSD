@@ -16,7 +16,7 @@ main の session の伝達による要約）
 残っていた。これを `git cherry-pick -n` で未 commit の変更として取り込み（main の ed1017a1 の上で衝突なし）、読み直してから続けた。
 取り込んだもの: `popup.c`・`popup.h`（xdg_positioner・xdg_popup、grab、popup_done、描画）、`protocol.c`・`seat.c`・`shell.c`・
 `compose.c`・`display.c`・`objects.c`・`zwl.h` の接続、`userland/base/tests/popup-probe/`、`plan/ws035/tests/zdesktop-p076.sh`、
-`platform/amd64/vmunix.mk` と `plan/ws070/tests/config-amd64-menu.mk` の probe の build。
+`platform/amd64/vmunix.mk` と `plan/tools/titlebar/config-amd64-menu.mk` の probe の build。
 
 取り込んだ時点の試験（`build/ws035-p076-salvage/`）は、step 5 の判定（`button other` を log 全体で数えていた試験の誤り）以外は
 通ったが、読み直して次の不具合を見つけた:
@@ -48,7 +48,7 @@ main の session の伝達による要約）
 
 1. Venus の guest で `plan/ws035/tests/zdesktop-p076.sh` が PASS（menu・submenu・flip・dismiss・reposition・move・3 つの resize と
    limits・ping と応答なし・maximize/unmaximize/minimize）。画面を PNG で残す。
-2. 回帰: WS035 の zdesktop の試験（p014・p059・p062〜p065・p068〜p072、`plan/ws070/tests/menu-regress.sh`）、X11 の回帰
+2. 回帰: WS035 の zdesktop の試験（p014・p059・p062〜p065・p068〜p072、`plan/tools/titlebar/menu-regress.sh`）、X11 の回帰
    （`plan/tools/x11/`）、libwayland の host 試験（p075）、boot test。
 3. build warning 0。新しい file は style-check 0、既存の file は悪化させない。
 
@@ -86,7 +86,7 @@ main の session の伝達による要約）
 
 cleared。commit 6d69feb7（code・試験）と、この記録の commit。
 
-### 確認（QEMU・Venus、lean image `plan/ws070/tests/build-menu-image.sh`、runtime `build/ws035-run`）
+### 確認（QEMU・Venus、lean image `plan/tools/titlebar/build-menu-image.sh`、runtime `build/ws035-run`）
 
 - `plan/ws035/tests/zdesktop-p076.sh` PASS（`build/ws035-p076/`: menu.png・submenu.png・chosen.png・flipped.png・dismissed.png・
   repositioned.png・moved.png・resized.png・narrowed.png・widened.png・unresponsive.png）。submenu が開く間 keyboard は menu から
@@ -95,8 +95,8 @@ cleared。commit 6d69feb7（code・試験）と、この記録の commit。
   pong を止めると 5 秒で「(not responding)」がタイトルに出て（unresponsive.png）、pong で戻る。
 - 取り込んだ直後の salvage の版（`build/ws035-p076-salvage/`）は上の不具合 1〜3 を log で示していた（menu → window → submenu の
   focus、submenu の pointer の enter が -260,10）。
-- 回帰（`plan/ws070/tests/menu-regress.sh`、`build/ws035-p076-regress/`）: p059・p062・p063・p064・p065・p068・p069・p070・p071・
-  p072・p014 すべて PASS。`plan/ws070/tests/menu-p002.sh`・`menu-p003.sh` PASS。X11: x11-p003・x11-p005 PASS（`build/ws035-p076-x11/`）。
+- 回帰（`plan/tools/titlebar/menu-regress.sh`、`build/ws035-p076-regress/`）: p059・p062・p063・p064・p065・p068・p069・p070・p071・
+  p072・p014 すべて PASS。`plan/tools/titlebar/menu-p002.sh`・`menu-p003.sh` PASS。X11: x11-p003・x11-p005 PASS（`build/ws035-p076-x11/`）。
   x11-p004 は lean image に `/bin/glxtest` が無いため未実施（FAIL は「not found」。full image での確認は p058 で）。
 - libwayland の host 試験 `plan/ws035/tests/p075/run-host.sh` PASS。
 - boot test PASS（`build/ws035-p076-boot/login.png`、p076 の commit の lean image）。

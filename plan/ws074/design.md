@@ -440,7 +440,7 @@ DataView、BigInt、Iterator の helper（後）、Intl は後（§16）。
 - host: 全件（速い）。ASan・UBSan の組でも同じ runner を回し、crash を 0 にする。
 - guest（amd64、Venus の zdesktop の guest）: 各 suite の決まった部分集合（例 test262 の 1000 件、html5lib の全部、WPT の reftest の
   100 件）を headless の mode で SSH から走らせ、**host と同じ結果**であることを確かめる（libc・libm の差を見つける）。窓の試験は
-  zdesktop の上で browser を起動し、QMP で入力して画面を撮る（`plan/ws071/tests` の方式を真似る）。
+  zdesktop の上で browser を起動し、QMP で入力して画面を撮る（`plan/tools/files` の方式を真似る）。
 - fuzz: host の clang の libFuzzer（HTML tokenizer、CSS parser、JS parser、JPEG・GIF の decoder、Wasm の decoder）。最後の Phase で
   target ごとに時間を区切って回す。
 

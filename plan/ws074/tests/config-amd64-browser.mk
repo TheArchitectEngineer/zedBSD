@@ -2,5 +2,5 @@
 # (zdesktop, System Menu, fonts) with zdesktop-browser.
 # Build:
 #   plan/ws074/tests/build-browser-image.sh [BUILD]
-include plan/ws071/tests/config-amd64-files.mk
+include plan/tools/files/config-amd64-files.mk
 ZEDBSD_USER_PROGRAMS += zdesktop-browser
