@@ -402,6 +402,7 @@ zwl_schedule(
 	top = zwl_top_window(server);
 	fullscreen = 0;
 	if (top != NULL &&
+	    !server->locked &&
 	    top->fullscreen &&
 	    top->current != NULL &&
 	    top->current->scanout &&
@@ -722,6 +723,9 @@ enter_window_mode(
 	if (error != 0)
 		return error;
 
+	/* The first time, zsessiond hands the display over (the greeter goes first). */
+	zwl_handoff_wait(server);
+
 	/* The swapchain over the display. */
 	error = zwl_compose_output_open(server);
 	if (error != 0)
@@ -731,7 +735,7 @@ enter_window_mode(
 	server->windowed = 1;
 	server->dirty = 1;
 	server->mode_switch_ms = zwl_milliseconds() - start;
-	printf("ZWL MODE window switch_ms=%llu\n", (unsigned long long)server->mode_switch_ms);
+	printf("ZWL MODE window switch_ms=%llu at_ms=%llu\n", (unsigned long long)server->mode_switch_ms, (unsigned long long)zwl_milliseconds());
 	return 0;
 }
 
@@ -833,6 +837,9 @@ claim_display(
 	/* Successive frames share the compositor's existing reservation. */
 	if (server->lease != 0)
 		return 0;
+
+	/* The first time, zsessiond hands the display over (the greeter goes first). */
+	zwl_handoff_wait(server);
 
 	/* Claiming does not transfer authority from any client GPU session. */
 	memset(&claim, 0, sizeof(claim));

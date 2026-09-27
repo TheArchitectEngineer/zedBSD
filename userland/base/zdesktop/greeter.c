@@ -13,8 +13,19 @@
  * the display and the input devices given to that account, and answers on
  * the descriptor --auth-fd names:
  *
- *   AUTH name password      OK: the user is in, zdesktop ends; FAIL
+ *   READY                   GO: the display may be taken (handoff.c)
+ *   AUTH name password      OK: the user is in; FAIL
  *   POWER poweroff|reboot   OK
+ *
+ * After OK the screen says "Starting session..." and takes no input until
+ * zsessiond closes the descriptor, once the session is ready to take the
+ * display (ws035-p101); zdesktop then ends.
+ *
+ * The same screen is a session's lock (ws035-p102, zwl_lock): the session's
+ * user only, no power buttons, and the password goes to zsessiond on the
+ * session's descriptor (--control-fd) as UNLOCK password; OK unlocks, FAIL
+ * (after zsessiond's delay) asks again.  Its answers come through
+ * handoff.c, which reads that descriptor.
  *
  * The screen is the blurred wallpaper with the time and the date at the
  * top, a frosted card in the middle with the users (the accounts with a uid
@@ -127,6 +138,7 @@ static char greeter_password[GREETER_PASSWORD];
 static unsigned greeter_password_length;
 static char greeter_message[64];
 static unsigned greeter_waiting;
+static unsigned greeter_starting;
 static char greeter_answer[64];
 static size_t greeter_answer_used;
 
@@ -161,6 +173,7 @@ static void greeter_power(struct zwl_server *server, const char *what);
 static void greeter_send(struct zwl_server *server, const char *line);
 static void greeter_answered(struct zwl_server *server, const char *answer);
 static void greeter_erase(void);
+static int greeter_descriptor(const struct zwl_server *server);
 
 /*
  * Prepares the login screen: the users, and the answers' descriptor.
@@ -197,6 +210,62 @@ zwl_greeter_open(
 }
 
 /*
+ * Locks a session (ws035-p102): the lock screen covers the desktop and
+ * takes every key and button until the user's password unlocks it.
+ * Returns 1 when locked, 0 when this zdesktop cannot be unlocked (no
+ * zsessiond to check the password) and so is not locked.
+ */
+int
+zwl_lock(
+	struct zwl_server *server,
+	const char *reason)
+{
+	struct passwd *entry;
+
+	/* Only a session zsessiond started, and once. */
+	if (server->greeter || server->control_fd < 0)
+		return 0;
+	if (server->locked)
+		return 1;
+
+	/* The session's own user, and nothing typed. */
+	greeter_user_count = 0U;
+	entry = getpwuid(getuid());
+	if (entry != NULL)
+		greeter_add_user(entry->pw_name, entry->pw_gecos);
+	if (greeter_user_count == 0U)
+		greeter_add_user("?", NULL);
+	greeter_selected = 0U;
+	greeter_erase();
+	greeter_message[0] = '\0';
+	greeter_waiting = 0U;
+	greeter_starting = 0U;
+
+	/* Succeeded: the lock screen shows. */
+	server->locked = 1U;
+	server->dirty = 1;
+	printf("ZWL LOCK locked reason=%s user=%s\n", reason, greeter_users[0].name);
+	return 1;
+}
+
+/*
+ * Acts on an answer of zsessiond's to the lock screen's UNLOCK (handoff.c
+ * reads it from the session's descriptor).
+ */
+void
+zwl_lock_answer(
+	struct zwl_server *server,
+	const char *answer)
+{
+	/* Only while the lock screen shows. */
+	if (!server->locked)
+		return;
+
+	/* The same answers as the login screen's. */
+	greeter_answered(server, answer);
+}
+
+/*
  * Draws the login screen over the whole output.
  */
 void
@@ -228,9 +297,11 @@ zwl_greeter_draw(
 	/* The card with the users, the password and Log In. */
 	greeter_draw_card(server, command, &layout);
 
-	/* The power buttons. */
-	greeter_draw_button(server, command, layout.restart, "Restart", 0);
-	greeter_draw_button(server, command, layout.poweroff, "Shut Down", 0);
+	/* The power buttons (not on a session's lock screen). */
+	if (!server->locked) {
+		greeter_draw_button(server, command, layout.restart, "Restart", 0);
+		greeter_draw_button(server, command, layout.poweroff, "Shut Down", 0);
+	}
 }
 
 /*
@@ -246,8 +317,8 @@ zwl_greeter_button(
 	enum greeter_hit hit;
 	unsigned user;
 
-	/* Only the left button's press does anything. */
-	if (button != GREETER_BUTTON_LEFT || state == 0U)
+	/* Only the left button's press does anything, and nothing once the session is starting. */
+	if (button != GREETER_BUTTON_LEFT || state == 0U || greeter_starting)
 		return 1;
 
 	/* What the press is on. */
@@ -264,10 +335,12 @@ zwl_greeter_button(
 		greeter_submit(server);
 		break;
 	case GREETER_HIT_RESTART:
-		greeter_power(server, "reboot");
+		if (!server->locked)
+			greeter_power(server, "reboot");
 		break;
 	case GREETER_HIT_POWEROFF:
-		greeter_power(server, "poweroff");
+		if (!server->locked)
+			greeter_power(server, "poweroff");
 		break;
 	default:
 		break;
@@ -287,8 +360,8 @@ zwl_greeter_key(
 	uint32_t key,
 	uint32_t state)
 {
-	/* Releases do nothing. */
-	if (state == 0U)
+	/* Releases do nothing, and nothing does once the session is starting. */
+	if (state == 0U || greeter_starting)
 		return 1;
 
 	/* Routes the key by its code. */
@@ -349,6 +422,10 @@ zwl_greeter_tick(
 		server->dirty = 1;
 	}
 
+	/* The lock screen's answers come through handoff.c. */
+	if (!server->greeter)
+		return;
+
 	/* What zsessiond has answered. */
 	count = read(server->auth_fd, greeter_answer + greeter_answer_used, sizeof(greeter_answer) - 1U - greeter_answer_used);
 	if (count < 0)
@@ -356,7 +433,8 @@ zwl_greeter_tick(
 
 	/* zsessiond gone: the screen ends. */
 	if (count == 0) {
-		printf("ZWL GREETER closed\n");
+		printf("ZWL GREETER closed at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+		zwl_handoff_release(server);
 		zwl_request_stop();
 		return;
 	}
@@ -666,7 +744,9 @@ greeter_draw_card(
 
 	/* The line under the field: a wrong password, or the wait for the answer. */
 	baseline = layout->field[1] + GREETER_FIELD + 28;
-	if (greeter_waiting) {
+	if (greeter_starting) {
+		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, "Starting session...", GREETER_CARD_WIDTH - 32, faint);
+	} else if (greeter_waiting) {
 		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, "Checking...", GREETER_CARD_WIDTH - 32, faint);
 	} else if (greeter_message[0] != '\0') {
 		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, greeter_message, GREETER_CARD_WIDTH - 32, warning);
@@ -877,8 +957,14 @@ greeter_submit(
 	if (greeter_waiting)
 		return;
 
-	/* The request, sent; then nothing of the password is kept. */
-	snprintf(line, sizeof(line), "AUTH %s %s\n", greeter_users[greeter_selected].name, greeter_password);
+	/* The request (UNLOCK on a session's lock screen), sent; then nothing of the password is kept. */
+	if (server->locked) {
+		snprintf(line, sizeof(line), "UNLOCK %s\n", greeter_password);
+	} else {
+		snprintf(line, sizeof(line), "AUTH %s %s\n", greeter_users[greeter_selected].name, greeter_password);
+	}
+
+	/* Nothing typed is kept once it is in the request. */
 	greeter_erase();
 	greeter_waiting = 1;
 	greeter_message[0] = '\0';
@@ -913,7 +999,7 @@ greeter_send(
 
 	/* The whole line in one write (it is short). */
 	length = strlen(line);
-	written = write(server->auth_fd, line, length);
+	written = write(greeter_descriptor(server), line, length);
 	if (written != (ssize_t)length) {
 		printf("ZWL GREETER send errno=%d\n", errno);
 		greeter_waiting = 0;
@@ -934,11 +1020,21 @@ greeter_answered(
 	server->dirty = 1;
 	printf("ZWL GREETER answer=%s\n", answer);
 
-	/* Logged in: the screen ends and the session starts. */
+	/* Unlocked: the desktop shows again. */
 	match = strcmp(answer, "OK");
+	if (match == 0 && greeter_waiting && server->locked) {
+		greeter_waiting = 0;
+		server->locked = 0U;
+		server->lock_input_ms = zwl_milliseconds();
+		printf("ZWL LOCK unlocked\n");
+		return;
+	}
+
+	/* Logged in: the screen stays until zsessiond closes the descriptor (the session is then ready). */
 	if (match == 0 && greeter_waiting) {
 		greeter_waiting = 0;
-		zwl_request_stop();
+		greeter_starting = 1;
+		printf("ZWL GREETER starting\n");
 		return;
 	}
 
@@ -953,6 +1049,19 @@ greeter_answered(
 
 	/* The next password can be typed. */
 	greeter_waiting = 0;
+}
+
+/* Returns the descriptor to zsessiond: the login screen's, or a session's for its lock screen. */
+static int
+greeter_descriptor(
+	const struct zwl_server *server)
+{
+	/* A session's lock screen asks on the session's descriptor. */
+	if (server->locked)
+		return server->control_fd;
+
+	/* The login screen on its own. */
+	return server->auth_fd;
 }
 
 /* Erases what has been typed. */

@@ -2,6 +2,8 @@
 # The graphical session zsessiond starts after a login, as the user, with HOME, USER, LOGNAME, PATH, SHELL and
 # XDG_RUNTIME_DIR (the user's own directory, /run/user/UID) set.  Installed as /etc/zdesktop/session.  The
 # session lasts as long as zdesktop does: App Home's Log Out ends it, and zsessiond shows the greeter again.
+# zsessiond passes --control-fd=3 (its socket; zdesktop says READY on it before it takes the display from the
+# greeter), which goes to zdesktop with the other arguments.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 # The usual folders, which Files shows in its sidebar and on its Home page (like xdg-user-dirs).
@@ -12,4 +14,4 @@ done
 # zdesktop, with the wallpaper when the image has one; its socket in the runtime directory.
 picture=
 [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-exec /bin/zdesktop --session --glass --socket="$XDG_RUNTIME_DIR/wayland-0" $picture
+exec /bin/zdesktop --session --glass --socket="$XDG_RUNTIME_DIR/wayland-0" $picture "$@"

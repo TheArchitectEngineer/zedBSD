@@ -254,8 +254,8 @@ zwl_glass_draw(
 	float home;
 	float position;
 
-	/* The login screen is all there is to draw (greeter.c). */
-	if (server->greeter) {
+	/* The login screen, or a session's lock screen, is all there is to draw (greeter.c). */
+	if (server->greeter || server->locked) {
 		zwl_greeter_draw(server, command);
 		return;
 	}
@@ -1252,6 +1252,7 @@ zwl_glass_tick(
 	struct zwl_server *server)
 {
 	uint64_t elapsed;
+	uint64_t idle;
 	float progress;
 	time_t now;
 
@@ -1260,6 +1261,20 @@ zwl_glass_tick(
 		zwl_greeter_tick(server);
 		return;
 	}
+
+	/* What zsessiond sent the session (handoff.c). */
+	zwl_handoff_tick(server);
+
+	/* The lock screen has only its clock (its answers came above). */
+	if (server->locked) {
+		zwl_greeter_tick(server);
+		return;
+	}
+
+	/* A session left without input for long enough locks (ws035-p102). */
+	idle = zwl_milliseconds() - server->lock_input_ms;
+	if (server->lock_idle_ms != 0U && idle >= server->lock_idle_ms)
+		(void)zwl_lock(server, "idle");
 
 	/* App Home's animation, and the applications it started that have ended. */
 	zwl_home_tick(server);

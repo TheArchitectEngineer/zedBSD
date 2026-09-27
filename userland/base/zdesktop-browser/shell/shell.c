@@ -22,6 +22,7 @@
 
 #include "shell/internal.h"
 #include "page/page.h"
+#include "net/net.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -287,7 +288,7 @@ shell_absolute(
 	strcat(directory, "/");
 
 	/* The start resolved against it, as a link would be. */
-	error = page_resolve_file(directory, start, path);
+	error = page_resolve_location(directory, start, path);
 	if (error != 0)
 		return error;
 
@@ -303,6 +304,7 @@ shell_open_page(
 	struct page **page)
 {
 	struct page *loaded;
+	const char *reason;
 	int error;
 
 	/* The page, whose heap scans the stack up to the run's frame. */
@@ -322,11 +324,12 @@ shell_open_page(
 	state->open_epoch = shell_clock();
 
 	/* The file. */
-	error = page_load_file(loaded, path);
+	error = page_load_location(loaded, path);
 	if (error == 0)
 		error = page_open_fonts(loaded, state->fonts);
 	if (error != 0) {
-		printf("ZBROWSER ERROR load path=%s error=%s\n", path, strerror(error));
+		reason = net_tls_error();
+		printf("ZBROWSER ERROR load path=%s error=%s tls=%s\n", path, strerror(error), reason);
 		fflush(stdout);
 		page_destroy(loaded);
 		return error;
@@ -362,7 +365,9 @@ shell_navigate(
 			return error;
 	}
 
-	/* The path is kept for the history and for resolving links. */
+	/* The page's own location (a URL's after its redirects) is kept for the history and for resolving links. */
+	if (page->base != NULL)
+		path = page->base;
 	copy = strdup(path);
 	if (copy == NULL) {
 		if (page != state->page)
@@ -703,7 +708,7 @@ shell_follow(
 
 	/* The target's path. */
 	wb_buffer_init(&path);
-	error = page_resolve_file(state->path, target, &path);
+	error = page_resolve_location(state->path, target, &path);
 	if (error != 0) {
 		printf("ZBROWSER ERROR follow target=%s error=%s\n", target, strerror(error));
 		fflush(stdout);

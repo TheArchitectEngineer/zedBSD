@@ -12,9 +12,9 @@
  * the timers driven by the page's clock, and a click turned into a DOM
  * event.
  *
- * The first pass runs classic scripts only, from the page's own files
- * (http arrives with the network, modules later), and runs them while the
- * parser waits, as a browser runs a parser-blocking script.
+ * The first pass runs classic scripts only, from the page's own files and
+ * data: URLs (http arrives with the network, modules later), and runs them
+ * while the parser waits, as a browser runs a parser-blocking script.
  */
 
 #include "page/page.h"
@@ -23,6 +23,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The longest part of a script's src its errors are named by, in bytes. */
+#define SCRIPT_NAME_MAX		200U
 
 /* The most rounds of timers a settling page runs (a page whose timers never stop is cut short). */
 #define SCRIPT_SETTLE_ROUNDS	100000
@@ -393,9 +396,10 @@ script_run_file(
 	struct wb_units units;
 	const unsigned char *data;
 	size_t length;
+	size_t name_length;
 	int error;
 
-	/* The src as UTF-8, and the file it names. */
+	/* The src as UTF-8, and the bytes of the file or data: URL it names. */
 	wb_buffer_init(&href);
 	wb_buffer_init(&path);
 	wb_buffer_init(&bytes);
@@ -405,11 +409,14 @@ script_run_file(
 	if (error == 0 && page->base == NULL)
 		error = EINVAL;
 	if (error == 0)
-		error = page_resolve_file(page->base, wb_buffer_string(&href), &path);
-
-	/* The file's bytes, as UTF-8 text without a byte order mark. */
+		error = page_fetch(page->base, wb_buffer_string(&href), &bytes, NULL);
+	name_length = href.length;
+	if (name_length > SCRIPT_NAME_MAX)
+		name_length = SCRIPT_NAME_MAX;
 	if (error == 0)
-		error = wb_file_read(wb_buffer_string(&path), &bytes);
+		error = wb_buffer_append(&path, href.data, name_length);
+
+	/* The bytes, as UTF-8 text without a byte order mark. */
 	data = bytes.data;
 	length = bytes.length;
 	if (error == 0 && length >= 3 && data[0] == 0xefU && data[1] == 0xbbU && data[2] == 0xbfU) {

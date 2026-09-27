@@ -26,7 +26,6 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 TESTS = os.path.join(ROOT, "plan/ws074/tests/js")
 GUEST_KNOWN = {
-    ("operators", "compound"): "BUG-078 (libc pow is exp(y*log(x)): 14 ** 2 is 195.99999999999994)",
 }
 PAGE = """<!DOCTYPE html>
 <meta charset="utf-8">

@@ -378,12 +378,16 @@ atanf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = atan((double)x);
 
-	/* Succeeded: the narrowing reports a tiny result. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -395,12 +399,16 @@ atan2f(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = atan2((double)y, (double)x);
 
-	/* Succeeded: the narrowing reports a tiny result. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -411,12 +419,16 @@ asinf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = asin((double)x);
 
-	/* Succeeded: the narrowing reports a tiny result. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*
@@ -428,7 +440,7 @@ acosf(
 {
 	double value;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = acos((double)x);
 
 	/* Succeeded: an arccosine is inside the float range. */

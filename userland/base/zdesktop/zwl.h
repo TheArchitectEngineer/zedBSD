@@ -123,6 +123,10 @@ enum zwl_kind {
 	ZWL_DATA_SOURCE,
 	ZWL_DATA_DEVICE,
 	ZWL_DATA_OFFER,
+	ZWL_PRIMARY_MANAGER,
+	ZWL_PRIMARY_SOURCE,
+	ZWL_PRIMARY_DEVICE,
+	ZWL_PRIMARY_OFFER,
 	ZWL_DECORATION_MANAGER,
 	ZWL_DECORATION,
 	ZWL_CURSOR_SHAPE_MANAGER,
@@ -508,11 +512,26 @@ struct zwl_server {
 	 * login screen (greeter.c), opens no socket and asks zsessiond on
 	 * auth_fd; with --session it is a login session, which has no deadline
 	 * and ends with App Home's Log Out.  size_given: --width or --height
-	 * was given, so the display's preferred size is not used.
+	 * was given, so the display's preferred size is not used.  control_fd:
+	 * the session's descriptor to zsessiond (--control-fd, -1 for none);
+	 * handed_over: the display's hand-over (handoff.c, ws035-p101) is done;
+	 * logout_ms: when Log Out asked zsessiond for a greeter (0: it did not).
 	 */
 	unsigned greeter;
 	unsigned session;
 	int auth_fd;
+	int control_fd;
+	unsigned handed_over;
+	uint64_t logout_ms;
+	/*
+	 * The lock screen (ws035-p102): whether it shows, how long without
+	 * input locks the session (--lock-idle, 0: never), and when the last
+	 * input came.
+	 */
+	unsigned locked;
+	uint64_t lock_idle_ms;
+	unsigned lock_idle_given;
+	uint64_t lock_input_ms;
 	unsigned size_given;
 	unsigned failed;
 	struct zwl_input_device inputs[ZWL_INPUT_MAX];
@@ -710,6 +729,13 @@ struct zwl_server {
 	struct zwl_object *selection;
 	uint64_t selection_client;
 	/*
+	 * The primary selection (primary.c, ws035-p100): the source set as it
+	 * (NULL for none), and the number of the client last told it (0 for
+	 * none), kept like the clipboard's.
+	 */
+	struct zwl_object *primary;
+	uint64_t primary_client;
+	/*
 	 * The bounds last sent to windows (xdg_toplevel.configure_bounds,
 	 * protocol.c): when the space for bodies no longer matches, the windows
 	 * hear the new one (0 before any was sent).
@@ -765,6 +791,12 @@ int zwl_greeter_open(struct zwl_server *server);
 int zwl_greeter_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_greeter_key(struct zwl_server *server, uint32_t key, uint32_t state);
 void zwl_greeter_tick(struct zwl_server *server);
+void zwl_handoff_wait(struct zwl_server *server);
+void zwl_handoff_release(struct zwl_server *server);
+int zwl_handoff_logout(struct zwl_server *server);
+void zwl_handoff_tick(struct zwl_server *server);
+int zwl_lock(struct zwl_server *server, const char *reason);
+void zwl_lock_answer(struct zwl_server *server, const char *answer);
 int zwl_emit(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size);
 int zwl_emit_fd(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size, int descriptor);
 void zwl_packet_free(struct zwl_packet *packet);

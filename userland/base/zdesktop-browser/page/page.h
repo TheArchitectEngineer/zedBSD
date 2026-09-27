@@ -36,8 +36,9 @@ typedef void (*page_console)(void *context, int level, const char *text, size_t 
  *
  * The page owns its heap; the document is a root of it for as long as the
  * page lives.  Its realm's global object is the document's window, which
- * runs the page's scripts.  base is the file the page came from (for the
- * scripts' src), now the page's clock in milliseconds, and the two
+ * runs the page's scripts.  base is the page's location: the absolute path
+ * of its file, or its URL (what relative URLs resolve against); now the
+ * page's clock in milliseconds, and the two
  * generations the document's generation when the style sheets were
  * gathered and when the page was last laid out.
  */
@@ -66,6 +67,7 @@ int page_create(struct page **page, const void *stack_base);
 void page_destroy(struct page *page);
 int page_load_html(struct page *page, const unsigned char *bytes, size_t length);
 int page_load_file(struct page *page, const char *path);
+int page_load_location(struct page *page, const char *location);
 int page_dump_dom(const struct page *page, struct wb_buffer *out);
 int page_dump_style(struct page *page, struct wb_buffer *out);
 int page_open_fonts(struct page *page, const struct text_font_paths *paths);
@@ -86,5 +88,7 @@ int page_needs_layout(const struct page *page);
 /* Links (link.c). */
 int page_link_at(struct page *page, int x, int y, struct wb_buffer *href, int *found);
 int page_resolve_file(const char *base, const char *href, struct wb_buffer *out);
+int page_resolve_location(const char *base, const char *href, struct wb_buffer *out);
+int page_fetch(const char *base, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
 
 #endif

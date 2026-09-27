@@ -405,7 +405,7 @@ $(BUILD)/bootloader/partition-pbr.bin: $(BUILD)/bootloader/partition-pbr.elf
 
 $(BUILD)/bootloader/bootzbsd.o: $(BIOS_LOADER)/bootzbsd.S \
 	$(BIOS_LOADER)/vbe.inc \
-	bootloader/bios/fat-directory.h \
+	bootloader/bios/fat-directory.h bootloader/bios/logo.h bootloader/common/logo-path.h \
 	bootloader/include/disk-layout.inc bootloader/include/stage2-header.inc \
 	bootloader/include/mbr.inc bootloader/include/fat16.inc \
 	bootloader/include/elf.inc bootloader/include/amd64-handoff.h \
@@ -434,7 +434,20 @@ $(BUILD)/bootloader/bios-fat-directory.i386.o: \
  -fno-unwind-tables -fno-builtin -Wall -Wextra -Werror -I. \
  -c $< -o $@
 
+$(BUILD)/bootloader/bios-logo.i386.o: bootloader/bios/logo.c bootloader/bios/logo.h
+	@mkdir -p $(dir $@)
+	$(CC) -m16 -march=i386 -mtune=i386 -Os -ffreestanding -fno-pic -fno-pie \
+ -fno-stack-protector -fno-asynchronous-unwind-tables \
+ -fno-unwind-tables -fno-builtin -Wall -Wextra -Werror -I. \
+ -c $< -o $@
+$(BUILD)/bootloader/common-logo-path.i386.o: bootloader/common/logo-path.c bootloader/common/logo-path.h
+	@mkdir -p $(dir $@)
+	$(CC) -m16 -march=i386 -mtune=i386 -Os -ffreestanding -fno-pic -fno-pie \
+ -fno-stack-protector -fno-asynchronous-unwind-tables \
+ -fno-unwind-tables -fno-builtin -Wall -Wextra -Werror -I. \
+ -c $< -o $@
 AMD64_BOOTZBSD_HELPERS := $(BUILD)/bootloader/bios-zedbsd-config.i386.o \
+	$(BUILD)/bootloader/bios-logo.i386.o $(BUILD)/bootloader/common-logo-path.i386.o \
 	$(BUILD)/bootloader/bios-fat-directory.i386.o \
 	$(BUILD)/bootloader/bios-memory-map.i386.o $(BUILD)/bootloader/common-memory-map.i386.o
 
@@ -477,9 +490,13 @@ $(BUILD)/uefi/framebuffer.o: $(UEFI_LOADER)/framebuffer.c \
 	$(EFI_CC) $(EFI_CFLAGS) -c $< -o $@
 
 $(BUILD)/uefi/logo.o: $(UEFI_LOADER)/logo.c $(UEFI_LOADER)/logo.h \
-	bootloader/include/amd64-handoff.h
+	bootloader/common/logo-path.h bootloader/include/amd64-handoff.h
 	@mkdir -p $(dir $@)
 	$(EFI_CC) $(EFI_CFLAGS) -c $< -o $@
+
+$(BUILD)/uefi/common-logo-path.o: bootloader/common/logo-path.c bootloader/common/logo-path.h
+	@mkdir -p $(dir $@)
+	$(EFI_CC) $(EFI_CFLAGS) -I. -c $< -o $@
 
 $(BUILD)/uefi/video.o: $(UEFI_LOADER)/video.c $(UEFI_LOADER)/video.h \
 	$(UEFI_LOADER)/include/uefi.h bootloader/include/boot-parameter-handoff.h \
@@ -514,7 +531,7 @@ $(BUILD)/uefi/transition.o: $(UEFI_LOADER)/transition.S bootloader/include/amd64
 	$(EFI_CC) -m64 -mno-red-zone -c $< -o $@
 
 $(BUILD)/uefi/BOOTX64.EFI: $(BUILD)/uefi/bootx64.o \
-	$(BUILD)/uefi/elf64.o $(BUILD)/uefi/framebuffer.o $(BUILD)/uefi/video.o $(BUILD)/uefi/logo.o \
+	$(BUILD)/uefi/elf64.o $(BUILD)/uefi/framebuffer.o $(BUILD)/uefi/video.o $(BUILD)/uefi/logo.o $(BUILD)/uefi/common-logo-path.o \
 	$(BUILD)/uefi/memory-map.o $(BUILD)/uefi/memory-map-v6.o $(BUILD)/uefi/common-memory-map.o \
 	$(BUILD)/uefi/volume-discovery.o $(BUILD)/uefi/zedbsd-config.o \
 	$(BUILD)/uefi/transition.o \
@@ -1420,10 +1437,29 @@ endif
 $(eval $(call ZEDBSD_ROOTFS_UFS_IMAGE_RULE,$(AMD64_ARCH_UFS_IMAGE),amd64))
 rootfs: $(BUILD)/rootfs/.stamp
 
+# ws035-p096: the boot logo on the boot FAT (/logo.ppm: the ESP of the native layout, the payload FAT of the BIOS image), drawn by the
+# UEFI and the BIOS loaders when zedbsd.cfg names it
+# (logo=logo.ppm).  It is made from shapes by a script, so no picture from elsewhere is in the tree.
+AMD64_BOOT_LOGO := $(BUILD)/boot-logo.ppm
+
+$(AMD64_BOOT_LOGO): tools/build/make-boot-logo.py
+	@mkdir -p $(dir $@)
+	$(PYTHON) tools/build/make-boot-logo.py $@
+
+# The BIOS image's zedbsd.cfg gets the graphical boot's lines too when ZEDBSD_GRAPHICAL_BOOT is y
+# (ws035-p099; the BIOS loader draws the logo on its VBE framebuffer).
+AMD64_BIOS_ZEDBSD_CONFIG := $(BUILD)/zedbsd-bios-graphical-$(ZEDBSD_GRAPHICAL_BOOT).cfg
+
+$(AMD64_BIOS_ZEDBSD_CONFIG): $(AMD64_ZEDBSD_CONFIG)
+	@mkdir -p $(dir $@)
+	cp $< $@.tmp
+	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),printf '%s\n' logo=logo.ppm kmsg=quiet login=graphical >> $@.tmp)
+	mv -f $@.tmp $@
+
 $(BUILD)/bios-hdd-image.img: $(BUILD)/bootloader/stage1.bin \
 	$(BUILD)/bootloader/stage2-chain.bin $(BUILD)/bootloader/partition-pbr.bin \
 	$(BUILD)/bootloader/BOOTZBSD.EXE $(BUILD)/vmunix $(AMD64_ARCH_UFS_IMAGE) \
-	$(DATA_IMAGE) $(SWAP_IMAGE) $(BUILD)/uefi/BOOTX64.EFI \
+	$(DATA_IMAGE) $(SWAP_IMAGE) $(BUILD)/uefi/BOOTX64.EFI $(AMD64_BOOT_LOGO) $(AMD64_BIOS_ZEDBSD_CONFIG) \
 	tools/build/make-bios-hdd-image.noct \
 	platform/amd64/tools/check-amd64-gpt-image.noct
 	$(NOCT) --path=tools/build tools/build/make-bios-hdd-image.noct --backend $(abspath $(ZEDBSD_IMAGE_HOST)) --force --machine pcat --gpt \
@@ -1434,7 +1470,7 @@ $(BUILD)/bios-hdd-image.img: $(BUILD)/bootloader/stage1.bin \
  --partition-pbr $(BUILD)/bootloader/partition-pbr.bin \
  --bootzbsd $(BUILD)/bootloader/BOOTZBSD.EXE --kernel $(BUILD)/vmunix \
  --bootx64 $(BUILD)/uefi/BOOTX64.EFI \
- --zedbsd-config $(AMD64_ZEDBSD_CONFIG) \
+ --zedbsd-config $(AMD64_BIOS_ZEDBSD_CONFIG) --logo $(AMD64_BOOT_LOGO) \
  --arch-profile amd64 --arch-image $(AMD64_ARCH_UFS_IMAGE) \
  --arch-format ufs --data-image $(DATA_IMAGE) \
  --swapfile $(SWAP_IMAGE) $@
@@ -1522,14 +1558,6 @@ $(AMD64_NATIVE_SWAP_IMAGE): $(BUILD_TOOLS_DIR)/make-swapfile.noct
 	@mkdir -p $(dir $@)
 	$(NOCT) --path=$(BUILD_TOOLS_DIR) $(BUILD_TOOLS_DIR)/make-swapfile.noct \
  --size-mib $(AMD64_NATIVE_SWAP_MIB) --output $@
-
-# ws035-p096: the boot logo on the ESP (/logo.ppm), drawn by the UEFI loader when zedbsd.cfg names it
-# (logo=logo.ppm).  It is made from shapes by a script, so no picture from elsewhere is in the tree.
-AMD64_BOOT_LOGO := $(BUILD)/boot-logo.ppm
-
-$(AMD64_BOOT_LOGO): tools/build/make-boot-logo.py
-	@mkdir -p $(dir $@)
-	$(PYTHON) tools/build/make-boot-logo.py $@
 
 $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/uefi/BOOTX64.EFI \
 	$(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG) $(AMD64_NATIVE_ROOT_IMAGE) \

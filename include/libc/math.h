@@ -25,7 +25,7 @@ extern int signgam;
 
 #define MATH_ERRNO 1
 #define MATH_ERREXCEPT 2
-#define math_errhandling MATH_ERREXCEPT
+#define math_errhandling (MATH_ERRNO | MATH_ERREXCEPT)
 
 #define FP_ILOGBNAN (-1 - 0x7fffffff)
 #define FP_ILOGB0 FP_ILOGBNAN

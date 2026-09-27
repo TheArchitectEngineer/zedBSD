@@ -161,6 +161,7 @@ terminal_window_open(
 
 	/* The seat's data device, for the clipboard (clipboard.c). */
 	terminal_clipboard_start(window);
+	terminal_primary_start(window);
 
 	/* The surface and its toplevel role. */
 	window->surface = wl_compositor_create_surface(window->compositor);
@@ -326,6 +327,7 @@ terminal_window_close(
 {
 	/* The menus, before the window they are shown on, and the clipboard before the seat. */
 	terminal_menu_close(window);
+	terminal_primary_close(window);
 	terminal_clipboard_close(window);
 
 	/* The keyboard, the pointer and the seat. */
@@ -455,8 +457,15 @@ window_global(
 
 	/* The data device manager shares the clipboard with other clients (clipboard.c). */
 	match = strcmp(interface, "wl_data_device_manager");
-	if (match == 0 && window->data_manager == NULL)
+	if (match == 0 && window->data_manager == NULL) {
 		terminal_clipboard_bind(window, registry, name, version);
+		return;
+	}
+
+	/* The primary selection manager shares the selected text with other clients (primary.c). */
+	match = strcmp(interface, "zwp_primary_selection_device_manager_v1");
+	if (match == 0 && window->primary_manager == NULL)
+		terminal_primary_bind(window, registry, name);
 }
 
 /* A global going away does not matter to a terminal that already bound what it needs. */
@@ -901,9 +910,16 @@ window_pointer_button(
 	struct terminal_window *window;
 	unsigned kind;
 
-	/* Only the left button (BTN_LEFT). */
+	/* The middle button's press pastes the primary selection (BTN_MIDDLE, ws035-p100). */
 	(void)pointer;
 	window = data;
+	if (button == 0x112U) {
+		if (state == WL_POINTER_BUTTON_STATE_PRESSED)
+			window_pointer_event(window, TERMINAL_POINTER_MIDDLE, time, serial);
+		return;
+	}
+
+	/* Otherwise only the left button (BTN_LEFT). */
 	if (button != 0x110U)
 		return;
 

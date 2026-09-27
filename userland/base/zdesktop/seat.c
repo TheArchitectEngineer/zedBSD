@@ -62,6 +62,10 @@
 
 /* Esc (evdev), which gives up a drag and drop. */
 #define SEAT_KEY_ESC			1U
+
+/* The L key and the Super modifier's bit (ws035-p102: Super+L locks). */
+#define SEAT_KEY_L			38U
+#define SEAT_MODIFIER_SUPER		0x40U
 #define SEAT_NAME_VERSION		2U
 
 /* Protocol enumeration values used on the wire. */
@@ -274,6 +278,7 @@ zwl_seat_focus(
 		server->focus = target;
 		if (target != NULL) {
 			zwl_data_focus(server, target);
+			zwl_primary_focus(server, target);
 			send_enter(target);
 		}
 	}
@@ -436,6 +441,13 @@ zwl_seat_motion(
 	uint32_t words[3];
 	int taken;
 
+	/* The lock screen has the pointer: only its buttons light up (ws035-p102). */
+	server->lock_input_ms = zwl_milliseconds();
+	if (server->locked) {
+		server->dirty = 1;
+		return;
+	}
+
 	/* A drag and drop has the pointer (data.c). */
 	if (server->dnd_active) {
 		zwl_data_drag_motion(server, time);
@@ -501,6 +513,13 @@ zwl_seat_button(
 		server->buttons_down |= bit;
 	} else {
 		server->buttons_down &= ~bit;
+	}
+
+	/* The lock screen takes every button (ws035-p102). */
+	server->lock_input_ms = zwl_milliseconds();
+	if (server->locked) {
+		(void)zwl_greeter_button(server, button, state);
+		return;
 	}
 
 	/* A drag and drop takes the buttons; the release of the last one ends it (data.c). */
@@ -576,8 +595,9 @@ zwl_seat_axis(
 	uint32_t word;
 	int taken;
 
-	/* The wheel does nothing during a drag and drop. */
-	if (server->dnd_active)
+	/* The wheel does nothing during a drag and drop, nor on the lock screen. */
+	server->lock_input_ms = zwl_milliseconds();
+	if (server->dnd_active || server->locked)
 		return;
 
 	/* App Home, while it shows, turns its pages with the wheel. */
@@ -702,6 +722,20 @@ zwl_seat_key(
 	if (server->dnd_active && key == SEAT_KEY_ESC && state != 0U) {
 		zwl_data_drag_cancel(server);
 		return;
+	}
+
+	/* The lock screen takes every key; Super+L locks a session (ws035-p102). */
+	server->lock_input_ms = zwl_milliseconds();
+	if (server->locked) {
+		(void)zwl_greeter_key(server, key, state);
+		return;
+	}
+
+	/* Super+L locks it. */
+	if (key == SEAT_KEY_L && state != 0U && (server->modifiers & SEAT_MODIFIER_SUPER) != 0U) {
+		taken = zwl_lock(server, "key");
+		if (taken)
+			return;
 	}
 
 	/* The login screen takes every key; it has no clients to give one to (greeter.c). */

@@ -9,28 +9,23 @@
  * Links: the <a href> under a point of the laid out page, and a link's
  * target resolved against the file the page came from.
  *
- * Until the URL parser (ws074-p015) and the network arrive, a target is a
- * local file: an absolute path, a file: URL, or a path relative to the
- * page's file.  The query and the fragment are dropped, and %XX escapes
- * are decoded.
+ * A target is resolved as a URL against the page's location (the
+ * absolute path of its file, or its URL) with the WHATWG URL parser
+ * (net/url.c): a file: target becomes a path again; data: and http:
+ * targets stay URLs, and page_fetch reads what any of them names.
  */
 
 #include "page/page.h"
+#include "net/net.h"
 
 #include <errno.h>
 #include <string.h>
 
-/* The scheme of a file URL. */
-#define LINK_FILE_SCHEME	"file://"
-
 /* The deepest element nesting searched for a link (the parser caps nesting too). */
 #define LINK_DEPTH		512
 
-static int link_scheme_length(const char *text, size_t length);
-static int link_is_letter(char character);
-static int link_is_scheme_mark(char character);
-static int link_hex(char digit);
-static int link_normalize(const char *path, size_t length, struct wb_buffer *out);
+static int link_resolve(const char *base, const char *href, struct net_url *target);
+static int link_named(const char *scheme, const char *name);
 
 /*
  * Finds the link under a point of the page (pixels from the top left of
@@ -98,10 +93,12 @@ page_link_at(
 }
 
 /*
- * Resolves a link's target against the absolute path of the page's file
- * and writes the target's absolute path.
+ * Resolves a link's target (a URL, usually relative) against the absolute
+ * path of the page's file and writes the absolute path of the file it
+ * names.
  *
- * Returns EPROTONOSUPPORT for a URL of another scheme than file.
+ * Returns EINVAL for a target that is not a URL, and EPROTONOSUPPORT for a
+ * URL of another scheme than file.
  */
 int
 page_resolve_file(
@@ -109,76 +106,17 @@ page_resolve_file(
 	const char *href,
 	struct wb_buffer *out)
 {
-	struct wb_buffer joined;
-	const char *slash;
-	size_t length;
-	size_t scheme;
-	size_t index;
-	int high;
-	int low;
-	int differs;
+	struct net_url target;
 	int error;
 
-	/* The target without its query and fragment. */
-	length = strcspn(href, "?#");
+	/* The target against the page's file. */
+	error = link_resolve(base, href, &target);
+	if (error != 0)
+		return error;
 
-	/* No target at all is the page itself. */
-	if (length == 0) {
-		error = wb_buffer_append_string(out, base);
-		if (error != 0)
-			return error;
-		return 0;
-	}
-
-	/* A file URL names its path after the scheme (and a host, which is dropped). */
-	differs = strncmp(href, LINK_FILE_SCHEME, strlen(LINK_FILE_SCHEME));
-	if (differs == 0) {
-		href += strlen(LINK_FILE_SCHEME);
-		length -= strlen(LINK_FILE_SCHEME);
-		slash = memchr(href, '/', length);
-		if (slash == NULL)
-			return EINVAL;
-		length -= (size_t)(slash - href);
-		href = slash;
-	}
-
-	/* Any other scheme is not a file. */
-	scheme = (size_t)link_scheme_length(href, length);
-	if (scheme != 0)
-		return EPROTONOSUPPORT;
-
-	/* A relative target starts from the base's directory. */
-	wb_buffer_init(&joined);
-	error = 0;
-	if (href[0] != '/') {
-		slash = strrchr(base, '/');
-		if (slash != NULL)
-			error = wb_buffer_append(&joined, base, (size_t)(slash - base) + 1U);
-	}
-
-	/* The target's characters, with each %XX escape decoded. */
-	for (index = 0; error == 0 && index < length; index++) {
-		/* An escape of two hexadecimal digits is the byte they name. */
-		if (href[index] == '%' && index + 2U < length) {
-			high = link_hex(href[index + 1U]);
-			low = -1;
-			if (high >= 0)
-				low = link_hex(href[index + 2U]);
-			if (low >= 0) {
-				error = wb_buffer_append_byte(&joined, (unsigned char)(high * 16 + low));
-				index += 2U;
-				continue;
-			}
-		}
-
-		/* Any other character stays. */
-		error = wb_buffer_append_byte(&joined, (unsigned char)href[index]);
-	}
-
-	/* The path with its . and .. parts taken out. */
-	if (error == 0)
-		error = link_normalize(wb_buffer_string(&joined), joined.length, out);
-	wb_buffer_release(&joined);
+	/* The file a file: URL names. */
+	error = net_url_file_path(&target, out);
+	net_url_release(&target);
 	if (error != 0)
 		return error;
 
@@ -186,184 +124,168 @@ page_resolve_file(
 	return 0;
 }
 
-/* Reports the length of a URL scheme and its colon at the start of a text (0 when there is none). */
-static int
-link_scheme_length(
-	const char *text,
-	size_t length)
-{
-	size_t index;
-	int letter;
-	int mark;
-
-	/* A scheme starts with a letter. */
-	if (length == 0)
-		return 0;
-	letter = link_is_letter(text[0]);
-	if (!letter)
-		return 0;
-
-	/* Then letters, digits, +, - and . up to the colon. */
-	for (index = 1; index < length; index++) {
-		/* The colon ends the scheme. */
-		if (text[index] == ':')
-			return (int)index + 1;
-
-		/* A letter may follow. */
-		letter = link_is_letter(text[index]);
-		if (letter)
-			continue;
-
-		/* So may a digit, +, - or . */
-		mark = link_is_scheme_mark(text[index]);
-		if (mark)
-			continue;
-
-		/* Anything else means the text is a path. */
-		return 0;
-	}
-
-	/* No colon: a path. */
-	return 0;
-}
-
-/* Tells whether a character is an ASCII letter. */
-static int
-link_is_letter(
-	char character)
-{
-	/* A lower-case letter. */
-	if (character >= 'a' && character <= 'z')
-		return 1;
-
-	/* An upper-case letter. */
-	if (character >= 'A' && character <= 'Z')
-		return 1;
-
-	/* Anything else. */
-	return 0;
-}
-
-/* Tells whether a character may follow the first letter of a scheme without being a letter: a digit, +, - or . */
-static int
-link_is_scheme_mark(
-	char character)
-{
-	/* A digit. */
-	if (character >= '0' && character <= '9')
-		return 1;
-
-	/* The three marks. */
-	if (character == '+')
-		return 1;
-	if (character == '-')
-		return 1;
-	if (character == '.')
-		return 1;
-
-	/* Anything else. */
-	return 0;
-}
-
-/* Reports a hexadecimal digit's value, or -1 for another character. */
-static int
-link_hex(
-	char digit)
-{
-	/* The decimal digits. */
-	if (digit >= '0' && digit <= '9')
-		return digit - '0';
-
-	/* The letters, in either case. */
-	if (digit >= 'a' && digit <= 'f')
-		return digit - 'a' + 10;
-	if (digit >= 'A' && digit <= 'F')
-		return digit - 'A' + 10;
-
-	/* Not a digit. */
-	return -1;
-}
-
 /*
- * Writes a path with its empty and . parts removed and each .. removing
- * the part before it (never above the root).
+ * Resolves a link's target against a page's location (the absolute path
+ * of its file, or its URL) and writes the target's location: the path of
+ * a file: URL, or the URL itself for other schemes.
  */
-static int
-link_normalize(
-	const char *path,
-	size_t length,
+int
+page_resolve_location(
+	const char *base,
+	const char *href,
 	struct wb_buffer *out)
 {
-	size_t starts[256];
-	size_t lengths[256];
-	size_t count;
-	size_t start;
-	size_t end;
-	size_t index;
-	int absolute;
+	struct net_url target;
 	int error;
 
-	/* Whether the path starts at the root. */
-	absolute = 0;
-	if (length != 0 && path[0] == '/')
-		absolute = 1;
-
-	/* Walks the parts between the slashes. */
-	count = 0;
-	start = 0;
-	while (start <= length) {
-		end = start;
-		while (end < length && path[end] != '/')
-			end++;
-
-		/* An empty part changes nothing. */
-		if (end == start) {
-			start = end + 1U;
-			continue;
-		}
-
-		/* Nor does a . part. */
-		if (end - start == 1U && path[start] == '.') {
-			start = end + 1U;
-			continue;
-		}
-
-		/* A .. part takes the last part away. */
-		if (end - start == 2U &&
-		    path[start] == '.' &&
-		    path[start + 1U] == '.') {
-			if (count != 0)
-				count--;
-			start = end + 1U;
-			continue;
-		}
-
-		/* A path of too many parts is refused. */
-		if (count == sizeof(starts) / sizeof(starts[0]))
-			return ENAMETOOLONG;
-
-		/* Any other part is kept. */
-		starts[count] = start;
-		lengths[count] = end - start;
-		count++;
-		start = end + 1U;
-	}
-
-	/* Writes the parts back with slashes between them. */
-	error = 0;
-	if (absolute)
-		error = wb_buffer_append_byte(out, '/');
-	for (index = 0; error == 0 && index < count; index++) {
-		if (index != 0)
-			error = wb_buffer_append_byte(out, '/');
-		if (error == 0)
-			error = wb_buffer_append(out, path + starts[index], lengths[index]);
-	}
-
-	/* Reports a buffer that could not grow. */
+	/* The target against the page's location. */
+	error = link_resolve(base, href, &target);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the path is written. */
+	/* A local file's path, or the URL. */
+	error = net_url_file_path(&target, out);
+	if (error == EPROTONOSUPPORT || error == ENOENT) {
+		wb_buffer_clear(out);
+		error = net_url_serialize(&target, 0, out);
+	}
+
+	/* The target is written. */
+	net_url_release(&target);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the location is written. */
 	return 0;
+}
+
+/*
+ * Reads what a URL (resolved against a page's location) names, as a
+ * script, a stylesheet or an image would: a data: URL's body, a file:
+ * URL's file, or an http: URL's response body.  The final URL (after
+ * redirects) goes to final_url when it is not NULL.  Returns
+ * EPROTONOSUPPORT for a URL of another scheme.
+ */
+int
+page_fetch(
+	const char *base,
+	const char *href,
+	struct wb_buffer *bytes,
+	struct wb_buffer *final_url)
+{
+	struct wb_buffer path;
+	struct wb_buffer text;
+	struct net_url target;
+	struct net_data data;
+	struct net_response response;
+	int is_data;
+	int is_http;
+	int error;
+
+	/* The target against the page's location. */
+	error = link_resolve(base, href, &target);
+	if (error != 0)
+		return error;
+	if (final_url != NULL)
+		error = net_url_serialize(&target, 0, final_url);
+
+	/* A data: URL carries its bytes. */
+	is_data = link_named(target.scheme, "data");
+	is_http = link_named(target.scheme, "http") || link_named(target.scheme, "https");
+	if (error == 0 && is_data) {
+		error = net_data_parse(&target, &data);
+		if (error == 0)
+			error = wb_buffer_append(bytes, data.body.data, data.body.length);
+		if (error == 0)
+			net_data_release(&data);
+		net_url_release(&target);
+		return error;
+	}
+
+	/* An http: URL is fetched; its final URL replaces the one asked for. */
+	if (error == 0 && is_http) {
+		wb_buffer_init(&text);
+		error = net_url_serialize(&target, 0, &text);
+		net_url_release(&target);
+		if (error == 0)
+			error = net_http_fetch(wb_buffer_string(&text), &response);
+		wb_buffer_release(&text);
+		if (error != 0)
+			return error;
+		error = wb_buffer_append(bytes, response.body.data, response.body.length);
+		if (error == 0 && final_url != NULL) {
+			wb_buffer_clear(final_url);
+			error = wb_buffer_append(final_url, response.url.data, response.url.length);
+		}
+
+		/* The response is copied. */
+		net_response_release(&response);
+		return error;
+	}
+
+	/* A file: URL names a file. */
+	wb_buffer_init(&path);
+	if (error == 0)
+		error = net_url_file_path(&target, &path);
+	net_url_release(&target);
+	if (error == 0)
+		error = wb_file_read(wb_buffer_string(&path), bytes);
+	wb_buffer_release(&path);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the bytes are read. */
+	return 0;
+}
+
+/* Parses a target against a location (an absolute path is a file: URL; anything else a URL). */
+static int
+link_resolve(
+	const char *base,
+	const char *href,
+	struct net_url *target)
+{
+	struct wb_buffer base_text;
+	struct net_url base_url;
+	int error;
+
+	/* The base as a URL. */
+	wb_buffer_init(&base_text);
+	error = 0;
+	if (base[0] == '/') {
+		error = net_url_from_file_path(base, &base_text);
+	} else {
+		error = wb_buffer_append_string(&base_text, base);
+	}
+
+	/* The base parsed. */
+	if (error == 0)
+		error = net_url_parse(wb_buffer_string(&base_text), base_text.length, NULL, &base_url);
+	wb_buffer_release(&base_text);
+	if (error != 0)
+		return error;
+
+	/* The target against it. */
+	error = net_url_parse(href, strlen(href), &base_url, target);
+	net_url_release(&base_url);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the target is parsed. */
+	return 0;
+}
+
+/* Tells whether a scheme is a name. */
+static int
+link_named(
+	const char *scheme,
+	const char *name)
+{
+	int differs;
+
+	/* The two strings. */
+	differs = strcmp(scheme, name);
+	if (differs != 0)
+		return 0;
+	return 1;
 }

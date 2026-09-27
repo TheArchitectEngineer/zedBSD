@@ -376,6 +376,52 @@ zwl_data_drag_cancel(
 	drag_end(server);
 }
 
+/*
+ * Sends an event whose only argument is a string, with a descriptor beside
+ * it (-1 for none), for the primary selection too (primary.c).
+ */
+int
+zwl_data_emit_string(
+	struct zwl_client *client,
+	uint32_t id,
+	uint32_t opcode,
+	const char *text,
+	int descriptor)
+{
+	int error;
+
+	/* The clipboard's own way. */
+	error = emit_string(client, id, opcode, text, descriptor);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the event is queued. */
+	return 0;
+}
+
+/*
+ * Reads a string argument at an offset, for the primary selection too
+ * (primary.c).
+ */
+int
+zwl_data_read_string(
+	const unsigned char *bytes,
+	size_t size,
+	size_t offset,
+	const char **text,
+	size_t *next)
+{
+	int error;
+
+	/* The clipboard's own way. */
+	error = read_string(bytes, size, offset, text, next);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the text and where the next argument starts. */
+	return 0;
+}
+
 /* Carries out a request of wl_data_device_manager: a new source, or a seat's data device. */
 static int
 manager_request(

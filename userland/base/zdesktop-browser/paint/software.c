@@ -26,8 +26,8 @@
 /* The color a translucent canvas is laid over: white. */
 #define SOFTWARE_BACKDROP	0xffffffffU
 
-static void software_rect(struct paint_bitmap *bitmap, const struct paint_item *item, layout_unit scroll_y);
-static int software_text(struct paint_bitmap *bitmap, struct text_system *text, const struct paint_item *item, layout_unit scroll_y);
+static void software_rect(struct paint_bitmap *bitmap, const struct paint_item *item, layout_unit scroll_y, const struct paint_clip *clip);
+static int software_text(struct paint_bitmap *bitmap, struct text_system *text, const struct paint_item *item, layout_unit scroll_y, const struct paint_clip *clip);
 static void software_blend(struct paint_bitmap *bitmap, int x, int y, uint32_t color, float coverage);
 static float software_overlap(float start, float end, int pixel);
 
@@ -79,6 +79,7 @@ paint_software(
 	struct paint_bitmap *bitmap)
 {
 	const struct paint_item *item;
+	struct paint_clips clips;
 	uint32_t canvas;
 	size_t count;
 	size_t index;
@@ -90,18 +91,31 @@ paint_software(
 	for (index = 0; index < count; index++)
 		bitmap->pixels[index] = canvas;
 
-	/* Draws each item in painting order. */
+	/* Draws each item in painting order, inside the clips the list starts and ends. */
+	paint_clips_init(&clips, bitmap->width, bitmap->height);
 	for (index = 0; index < list->items.count; index++) {
 		item = wb_vector_at(&list->items, index);
 
+		/* A clip starts. */
+		if (item->kind == PAINT_CLIP) {
+			paint_clips_push(&clips, item, scroll_y);
+			continue;
+		}
+
+		/* The end of a clip. */
+		if (item->kind == PAINT_UNCLIP) {
+			paint_clips_pop(&clips);
+			continue;
+		}
+
 		/* A rectangle. */
 		if (item->kind == PAINT_RECT) {
-			software_rect(bitmap, item, scroll_y);
+			software_rect(bitmap, item, scroll_y, paint_clips_top(&clips));
 			continue;
 		}
 
 		/* A run of glyphs. */
-		error = software_text(bitmap, text, item, scroll_y);
+		error = software_text(bitmap, text, item, scroll_y, paint_clips_top(&clips));
 		if (error != 0)
 			return error;
 	}
@@ -185,7 +199,8 @@ static void
 software_rect(
 	struct paint_bitmap *bitmap,
 	const struct paint_item *item,
-	layout_unit scroll_y)
+	layout_unit scroll_y,
+	const struct paint_clip *clip)
 {
 	float left;
 	float top;
@@ -200,11 +215,21 @@ software_rect(
 	int x;
 	int y;
 
-	/* The rectangle in pixels, scrolled. */
+	/* The rectangle in pixels, scrolled, and cut to the clip. */
 	left = layout_to_px(item->x);
 	top = layout_to_px(item->y - scroll_y);
 	right = layout_to_px(item->x + item->width);
 	bottom = layout_to_px(item->y - scroll_y + item->height);
+	if (left < clip->left)
+		left = clip->left;
+	if (top < clip->top)
+		top = clip->top;
+	if (right > clip->right)
+		right = clip->right;
+	if (bottom > clip->bottom)
+		bottom = clip->bottom;
+	if (right <= left || bottom <= top)
+		return;
 
 	/* The pixels it touches, within the bitmap. */
 	first_x = (int)floorf(left);
@@ -236,7 +261,8 @@ software_text(
 	struct paint_bitmap *bitmap,
 	struct text_system *text,
 	const struct paint_item *item,
-	layout_unit scroll_y)
+	layout_unit scroll_y,
+	const struct paint_clip *clip)
 {
 	struct text_glyph glyph;
 	float coverage;
@@ -265,9 +291,13 @@ software_text(
 		origin_x = (int)floorf(layout_to_px(item->x + item->glyphs[index].x) + 0.5f) + glyph.left;
 		origin_y = baseline - glyph.top;
 
-		/* Each covered pixel takes the text color by its coverage. */
+		/* Each covered pixel inside the clip (on whole pixels) takes the text color by its coverage. */
 		for (row = 0; row < glyph.height; row++) {
+			if (origin_y + row < clip->pixel_top || origin_y + row >= clip->pixel_bottom)
+				continue;
 			for (column = 0; column < glyph.width; column++) {
+				if (origin_x + column < clip->pixel_left || origin_x + column >= clip->pixel_right)
+					continue;
 				coverage = (float)glyph.bitmap[(size_t)row * (size_t)glyph.width + (size_t)column] / 255.0f;
 				if (coverage > 0.0f)
 					software_blend(bitmap, origin_x + column, origin_y + row, item->color, coverage);

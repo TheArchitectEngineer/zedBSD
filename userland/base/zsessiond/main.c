@@ -27,6 +27,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -85,6 +86,7 @@ main(
 	memset(&daemon, 0, sizeof(daemon));
 	daemon.greeter = ZSESSIOND_GREETER;
 	daemon.session = ZSESSIOND_SESSION;
+	daemon.greeter_socket = -1;
 	graphical = 0;
 	console = 0;
 	error = main_options(&daemon, count, arguments, &graphical, &console);
@@ -152,12 +154,13 @@ main(
 		if (end == ZSESSIOND_GREETER_ENDED)
 			continue;
 
-		/* A login: the user's session, and the greeter again when it ends. */
+		/* A login: the user's session (the greeter left on the screen goes once it is ready), and the greeter again when it ends. */
 		(void)zsessiond_session_run(&daemon, &account);
 		memset(&account, 0, sizeof(account));
 	}
 
-	/* Stopped: the devices go back to root. */
+	/* Stopped: a greeter a Log Out left goes, and the devices go back to root. */
+	zsessiond_greeter_finish(&daemon);
 	zsessiond_seat_restore();
 	zsessiond_log("ZSESSIOND STOP");
 
@@ -184,6 +187,82 @@ zsessiond_log(
 	/* Writes it whole. */
 	printf("%lld %s\n", (long long)time(NULL), text);
 	fflush(stdout);
+}
+
+/*
+ * Reads one line from a descriptor, a byte at a time (nothing after it is
+ * taken), waiting at most timeout_ms in all.  Returns 1 with the line (its
+ * line end removed; a line too long is cut), 0 when the time ran out, or
+ * -1 at the end of the stream or on an error.
+ */
+int
+zsessiond_read_line(
+	int descriptor,
+	char *line,
+	size_t size,
+	int timeout_ms)
+{
+	struct pollfd entry;
+	long long deadline;
+	long long left;
+	size_t used;
+	ssize_t count;
+	char byte;
+	int ready;
+
+	/* Byte after byte until the line ends. */
+	deadline = zsessiond_milliseconds() + timeout_ms;
+	used = 0;
+	for (;;) {
+		/* The time left. */
+		left = deadline - zsessiond_milliseconds();
+		if (left <= 0)
+			return 0;
+
+		/* A byte, or the end of the wait. */
+		entry.fd = descriptor;
+		entry.events = POLLIN;
+		entry.revents = 0;
+		ready = poll(&entry, 1, (int)left);
+		if (ready < 0 && errno == EINTR)
+			continue;
+		if (ready < 0)
+			return -1;
+		if (ready == 0)
+			return 0;
+		count = read(descriptor, &byte, 1U);
+		if (count < 0 && (errno == EINTR || errno == EAGAIN))
+			continue;
+		if (count <= 0)
+			return -1;
+
+		/* The line ends, or grows while there is room. */
+		if (byte == '\n')
+			break;
+		if (used + 1U < size)
+			line[used++] = byte;
+	}
+
+	/* Succeeded: a whole line. */
+	line[used] = '\0';
+	return 1;
+}
+
+/* Returns a monotonic time in milliseconds (0 when the clock cannot be read). */
+long long
+zsessiond_milliseconds(
+	void)
+{
+	struct timespec now;
+	int error;
+
+	/* The monotonic clock. */
+	error = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (error != 0)
+		return 0;
+
+	/* Succeeded. */
+	return (long long)now.tv_sec * 1000LL + (long long)(now.tv_nsec / 1000000L);
 }
 
 /* Reads the options: which greeter and session, and whether to go graphical regardless of the boot parameters. */

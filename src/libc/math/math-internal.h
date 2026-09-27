@@ -119,6 +119,21 @@ struct libm_dd {
 	double low;
 };
 
+/*
+ * One interval of a piecewise polynomial approximation.
+ *
+ * On the interval up to upper the polynomial is in t = (x - centre) *
+ * inverse_half_width, and its coefficients start at first in the shared
+ * array: two double-doubles, then degree - 1 doubles.
+ */
+struct libm_polynomial_interval {
+	double upper;
+	double centre;
+	double inverse_half_width;
+	int first;
+	int degree;
+};
+
 LIBM_HIDDEN double __libm_invalid(void);
 LIBM_HIDDEN double __libm_pole(unsigned int sign);
 LIBM_HIDDEN double __libm_overflow(unsigned int sign);
@@ -134,6 +149,7 @@ LIBM_HIDDEN struct libm_dd __libm_exp_dd(struct libm_dd x, int *exponent);
 LIBM_HIDDEN struct libm_dd __libm_log_parts(double x, int *exponent);
 LIBM_HIDDEN struct libm_dd __libm_log_dd(double x);
 LIBM_HIDDEN struct libm_dd __libm_atan_dd(struct libm_dd u);
+LIBM_HIDDEN void __libm_sin_cos_dd(struct libm_dd reduced, struct libm_dd *sine, struct libm_dd *cosine);
 
 /* The tables of src/libc/math/tables.c; their comments say what they hold. */
 LIBM_HIDDEN extern const struct libm_dd __libm_exp_table[128];
@@ -147,6 +163,12 @@ LIBM_HIDDEN extern const double __libm_sin_coefficients[4];
 LIBM_HIDDEN extern const double __libm_cos_coefficients[4];
 LIBM_HIDDEN extern const struct libm_dd __libm_atan_table[65];
 LIBM_HIDDEN extern const double __libm_atan_coefficients[6];
+LIBM_HIDDEN extern const double __libm_stirling_coefficients[12];
+LIBM_HIDDEN extern const double __libm_lgamma_one_coefficients[8];
+LIBM_HIDDEN extern const double __libm_lgamma_two_coefficients[8];
+LIBM_HIDDEN extern const double __libm_erf_coefficients[16];
+LIBM_HIDDEN extern const double __libm_erfc_coefficients[246];
+LIBM_HIDDEN extern const struct libm_polynomial_interval __libm_erfc_intervals[15];
 
 /*
  * Returns the encoding of a binary64 value.
