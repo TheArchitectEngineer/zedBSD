@@ -261,6 +261,7 @@ static struct vm_object *private_file_object(struct file *file);
 static int vmspace_map_file_shared_find_locked(struct vmspace *vm, uintptr_t hint, size_t size, uint32_t prot, struct file *file, off_t offset, size_t data_size, struct vm_object *object, uintptr_t *mapped);
 static void free_vm_page(struct vmspace *vm, struct vm_page *page, int unmap);
 static void detach_vm_page_for_unmap(struct vmspace *vm, struct vm_page *page);
+static void object_mapping_note_dirty(struct vm_page *page);
 static void detach_vm_page(struct vm_page *page);
 static void detach_region_pages_for_unmap(struct vmspace *vm, struct vm_region *region);
 static void release_detached_region_pages(struct vm_region *region);
@@ -5793,6 +5794,7 @@ free_vm_page(
 {
 	/* An object page only drops its reverse mapping. */
 	if (page->object_page != NULL) {
+		object_mapping_note_dirty(page);
 		if (unmap && (page->flags & VM_MAPPING_MAPPED) != 0)
 			(void)hal_space_unmap(vm->space, (void *)page->address, PAGE_SIZE);
 		vm_object_mapping_remove(page->object_page, page);
@@ -5821,6 +5823,7 @@ detach_vm_page_for_unmap(
 	 * held.  It must remove every hardware and reverse mapping before
 	 * the region list publishes the virtual address as free.
 	 */
+	object_mapping_note_dirty(page);
 	if ((page->flags & VM_MAPPING_MAPPED) != 0) {
 		unmapped = hal_space_unmap(vm->space, (void *)page->address, PAGE_SIZE);
 		if (unmapped != HAL_OK)
@@ -5832,6 +5835,46 @@ detach_vm_page_for_unmap(
 
 	/* The reverse mappings. */
 	detach_vm_page(page);
+}
+
+/*
+ * Records that a writable shared mapping may have changed its object page,
+ * before the mapping goes away.
+ *
+ * A store through a shared file mapping sets only the hardware dirty bit;
+ * the object page learns of it when a sync revokes the mapping.  Unmapping
+ * the page, or tearing the whole space down at exit, used to drop the
+ * mapping without looking, so a file written through a mapping and then
+ * unmapped without msync() kept its new contents only in the cache and
+ * never reached the filesystem (BUG-026: ld.lld's output, empty on disk).
+ * The page is taken as dirty whenever the mapping could write it; a page
+ * that was only read is written back once more, which is harmless.
+ */
+static void
+object_mapping_note_dirty(
+	struct vm_page *page)
+{
+	struct vm_region *region;
+
+	/* Only a mapping of an object page can dirty the file's cache. */
+	if (page->object_page == NULL)
+		return;
+	if ((page->flags & VM_MAPPING_MAPPED) == 0)
+		return;
+
+	/* Only a shared writable mapping stores into the object page itself. */
+	region = page->region;
+	if (region == NULL)
+		return;
+	if ((region->flags & VM_REGION_SHARED) == 0)
+		return;
+	if ((region->prot & HAL_SPACE_WRITE) == 0)
+		return;
+	if ((page->flags & VM_MAPPING_COW) != 0)
+		return;
+
+	/* Leaves the page for the next write-back. */
+	vm_object_mark_dirty(page->object_page);
 }
 
 /*
