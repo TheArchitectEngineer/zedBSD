@@ -508,6 +508,51 @@ struct fm_dashboard {
 	char summary[160];
 };
 
+/* How many thumbnails are kept, and the longest side of one. */
+#define FM_THUMBS		64
+#define FM_THUMB_SIDE		256
+
+/*
+ * One kept thumbnail: the file it was made from as the file was then (its
+ * path and modification time), the small picture, and when it was last
+ * drawn.
+ *
+ * failed marks a file that could not be read as a picture, so that it is
+ * not read again every frame; a file changed since is another file.  An
+ * empty path is a free slot.
+ */
+struct fm_thumb {
+	char path[FM_PATH_MAX];
+	time_t modified;
+	struct fm_image image;
+	uint64_t used;
+	int failed;
+};
+
+/* How much of a file is read to preview it, and how many of its lines are kept. */
+#define FM_PEEK_BYTES		16384U
+#define FM_PEEK_LINES		60
+
+/*
+ * What was read of one file to show it in the preview and Quick Look: its
+ * type as its contents tell it, its first lines when it is text, and its
+ * picture when Quick Look shows it large.
+ *
+ * It is kept for one file (its path and modification time) and read again
+ * when another is shown.  text holds up to FM_PEEK_LINES lines and is
+ * allocated with it; NULL when the file is not text.
+ */
+struct fm_peek {
+	char path[FM_PATH_MAX];
+	time_t modified;
+	const struct fm_mime *mime;
+	char *text;
+	size_t text_length;
+	int line_count;
+	struct fm_image picture;
+	int picture_tried;
+};
+
 /*
  * The file manager of one window: its settings, its tabs, what the last
  * frame drew and what the pointer and the keyboard are doing.
@@ -628,6 +673,16 @@ struct fm_app {
 	struct fm_image hero;
 	int hero_tried;
 	char wallpaper[FM_PATH_MAX];
+
+	/* The thumbnails: the kept ones, the clock their use is ordered by, and the file asked for next (empty when none). */
+	struct fm_thumb thumbs[FM_THUMBS];
+	uint64_t thumb_clock;
+	char thumb_wanted[FM_PATH_MAX];
+	time_t thumb_wanted_modified;
+
+	/* What was read of the file the preview and Quick Look show, and whether Quick Look is open. */
+	struct fm_peek peek;
+	int quicklook;
 };
 
 /*
@@ -644,7 +699,12 @@ enum fm_dialog {
 #define FM_BUTTON_CONFIRM	1
 #define FM_BUTTON_PUT_BACK	10
 #define FM_BUTTON_EMPTY_TRASH	11
+#define FM_BUTTON_LOOK_CLOSE	12
 #define FM_BUTTON_TASK_CANCEL	100
+
+/* The indexes of the regions over the window (FM_HIT_OVERLAY): a card that takes clicks, and Quick Look's dimmed ground. */
+#define FM_OVERLAY_CARD		0
+#define FM_OVERLAY_LOOK_GROUND	1
 #define FM_BUTTON_REMOVE_PLACE	200
 
 /* The interface (ui.c). */
@@ -663,6 +723,7 @@ void fm_ui_back(struct fm_app *app);
 void fm_ui_forward(struct fm_app *app);
 void fm_ui_open(struct fm_app *app, int index);
 void fm_ui_message(struct fm_app *app, const char *message);
+int fm_ui_wait(struct fm_app *app);
 
 /* The pointer and the keyboard (ui-input.c). */
 void fm_input_motion(struct fm_app *app, const struct fm_event *event);
@@ -768,6 +829,28 @@ const struct fm_mime *fm_mime_guess(const char *name, mode_t mode);
 const struct fm_mime *fm_mime_sniff(const char *path, const struct fm_mime *guess);
 fm_color fm_mime_color(unsigned category);
 void fm_mime_label(const char *name, char *label, size_t size);
+int fm_mime_text(const unsigned char *bytes, size_t length);
+
+/* The pictures and the thumbnails (thumb.c). */
+int fm_image_load(const char *path, struct fm_image *image);
+int fm_image_thumbnail(const char *path, int side, struct fm_image *thumbnail);
+const struct fm_image *fm_thumb_get(struct fm_app *app, const char *path, time_t modified);
+int fm_thumb_tick(struct fm_app *app);
+void fm_thumb_release(struct fm_app *app);
+void fm_image_fit(int width, int height, int box_width, int box_height, int *fit_width, int *fit_height);
+
+/* What is read of a file to show it (peek.c). */
+void fm_peek_read(struct fm_peek *peek, const struct fm_entry *entry);
+void fm_peek_picture(struct fm_peek *peek, int side);
+void fm_peek_release(struct fm_peek *peek);
+
+/* The preview pane and Quick Look (ui-preview.c). */
+void fm_preview_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
+void fm_look_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_look_toggle(struct fm_app *app);
+void fm_look_close(struct fm_app *app);
+void fm_look_step(struct fm_app *app, int step);
+int fm_preview_item(struct fm_app *app);
 
 /* The sidebar's places (places.c). */
 void fm_places_init(struct fm_places *places, const char *home, const struct fm_tags *tags);

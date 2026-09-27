@@ -27,6 +27,26 @@ printf 'RIFF' > Music/Voice.wav
 printf 'ftyp' > Movies/Trip.mp4
 printf 'P6\n2 2\n255\n\377\000\000\000\377\000\000\000\377\377\377\377' > Pictures/Tiny.ppm
 printf 'placeholder' > Pictures/Design.fig
+# A 256x160 sunset gradient (PPM) and a 64x48 grey ramp (PGM) for the thumbnails and Quick Look (p007).
+# Each row is one colour, built by doubling one pixel's octal escapes up to the width.
+rows() {
+	magic=$1 width=$2 height=$3 doublings=$4
+	printf '%s\n%s %s\n255\n' "$magic" "$width" "$height"
+	y=0
+	while [ "$y" -lt "$height" ]; do
+		if [ "$magic" = P6 ]; then
+			pixel=$(printf '\\%03o\\%03o\\%03o' $((250 - y * 110 / height)) $((150 + y * 50 / height)) $((80 + y * 160 / height)))
+		else
+			pixel=$(printf '\\%03o' $((40 + y * 200 / height)))
+		fi
+		i=0
+		while [ "$i" -lt "$doublings" ]; do pixel=$pixel$pixel; i=$((i + 1)); done
+		printf "$pixel"
+		y=$((y + 1))
+	done
+}
+rows P6 256 160 8 > Pictures/Sunset.ppm
+rows P5 64 48 6 > Pictures/Ramp.pgm
 printf 'archive' > Downloads/tools.tar.gz
 printf '#!/bin/sh\necho hi\n' > Downloads/install.sh
 chmod +x Downloads/install.sh
@@ -36,4 +56,5 @@ touch -t 202609271620 "Documents/Plan v3.key"
 touch -t 202609271403 Pictures/Design.fig
 touch -t 202609271124 "Documents/Meeting notes.txt"
 touch -t 202609262018 Pictures/Tiny.ppm
+touch -t 202609251930 Pictures/Sunset.ppm Pictures/Ramp.pgm
 echo "made $home"
