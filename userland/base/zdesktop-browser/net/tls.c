@@ -156,6 +156,7 @@ static size_t tls_ca_file_count;
 static char tls_reason[TLS_ERROR_MAX];
 
 static int tls_load(void);
+static void *tls_open_library(const char *name, const char *versioned, int flags);
 static int tls_find(void *library, const char *name, void *pointer);
 static int tls_find_all(void *ssl, void *crypto);
 static int tls_make_context(void);
@@ -394,18 +395,12 @@ tls_load(void)
 
 	/* libcrypto first (libssl needs it), then libssl. */
 	tls_loaded = -1;
-	crypto = dlopen(TLS_LIBCRYPTO, RTLD_NOW | RTLD_GLOBAL);
-	if (crypto == NULL)
-		crypto = dlopen(TLS_LIBCRYPTO_VERSIONED, RTLD_NOW | RTLD_GLOBAL);
+	crypto = tls_open_library(TLS_LIBCRYPTO, TLS_LIBCRYPTO_VERSIONED, RTLD_NOW | RTLD_GLOBAL);
 	ssl = NULL;
 	if (crypto != NULL)
-		ssl = dlopen(TLS_LIBSSL, RTLD_NOW);
-	if (crypto != NULL && ssl == NULL)
-		ssl = dlopen(TLS_LIBSSL_VERSIONED, RTLD_NOW);
-	if (ssl == NULL) {
-		snprintf(tls_reason, sizeof(tls_reason), "the OpenSSL package is not installed");
+		ssl = tls_open_library(TLS_LIBSSL, TLS_LIBSSL_VERSIONED, RTLD_NOW);
+	if (ssl == NULL)
 		return EPROTONOSUPPORT;
-	}
 
 	/* The functions, then the context. */
 	error = tls_find_all(ssl, crypto);
@@ -417,6 +412,41 @@ tls_load(void)
 	/* Succeeded: https works from now on (the libraries stay loaded). */
 	tls_loaded = 1;
 	return 0;
+}
+
+/*
+ * Opens a library by its name, or else by its versioned name; when neither
+ * opens, keeps the loader's reason for the first and returns NULL.
+ */
+static void *
+tls_open_library(
+	const char *name,
+	const char *versioned,
+	int flags)
+{
+	const char *reason;
+	char first[TLS_ERROR_MAX / 2U];
+	void *library;
+
+	/* The package's name. */
+	library = dlopen(name, flags);
+	if (library != NULL)
+		return library;
+
+	/* The loader's reason, kept before the second attempt replaces it. */
+	reason = dlerror();
+	if (reason == NULL)
+		reason = "not found";
+	snprintf(first, sizeof(first), "%s", reason);
+
+	/* A host's versioned name. */
+	library = dlopen(versioned, flags);
+	if (library != NULL)
+		return library;
+
+	/* Neither: the package is missing or cannot load. */
+	snprintf(tls_reason, sizeof(tls_reason), "cannot load the OpenSSL package's %s: %s", name, first);
+	return NULL;
 }
 
 /* Finds one function; returns 0 or ENOENT (with the reason kept). */
