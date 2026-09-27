@@ -1919,8 +1919,10 @@ i915_vke1_step_texops(
 			x->tolerance[index] = 0U;
 		}
 
+		/* Compares with the generated image. */
 		error = i915_vke1_compare(x, "TEXOPS");
 	}
 
+	/* Logs the verdict. */
 	i915_vke1_verdict(x, "TEXOPS", error);
 }

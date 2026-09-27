@@ -1019,18 +1019,25 @@ drv_i915_gfx_emit_raster(
 	uint32_t cull;
 	uint32_t counter_clockwise;
 	uint32_t point_width;
+	uint32_t linear;
 	uint32_t index;
+
+	/* The clipper prepares the linear barycentrics when the pixel kernel reads them. */
+	linear = 0U;
+	if (kernels->ps_linear_barycentrics != 0U)
+		linear = GEN12_CLIP_NON_PERSPECTIVE_BARYCENTRIC;
 
 	/*
 	 * Clips with statistics, early cull and 8-bit subpixel precision; the
-	 * D3D API mode (z in [0, 1]), viewport XY test and guardband; a fan's
+	 * D3D API mode (z in [0, 1]), viewport XY test and guardband, and the
+	 * linear barycentrics when asked; a fan's
 	 * provoking vertex is the second of each triangle (Vulkan's first-vertex
 	 * convention); point widths 0.125 .. 255.875.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_CLIP, GEN12_3DSTATE_CLIP_DWORDS));
 	drv_i915_batch_emit(batch, (1U << 10) | (1U << 18));
 	drv_i915_batch_emit(batch,
-			    (1U << 31) | (1U << 30) | (1U << 28) | (1U << 26) |
+			    (1U << 31) | (1U << 30) | (1U << 28) | (1U << 26) | linear |
 			    (GEN12_FAN_PROVOKING_SECOND << GEN12_CLIP_FAN_PROVOKING_SHIFT));
 	drv_i915_batch_emit(batch, (1U << 17) | (2047U << 6));
 

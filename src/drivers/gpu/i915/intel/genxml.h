@@ -246,6 +246,16 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_WM_BARYCENTRIC_LINEAR_PIXEL	(1U << 14)
 
 /*
+ * 3DSTATE_CLIP dword 2 bit 8, Non-Perspective Barycentric Enable (gen80.xml
+ * above): the clipper passes on what the linear barycentrics need, which
+ * anv sets when the pixel kernel interpolates without perspective
+ * (Mesa 25.0.7 src/intel/vulkan/genX_pipeline.c, sha256
+ * 9bf244df1284531767529980909176d09b72db037b6fdaa7f5874d997ebf7545:
+ * uses_nonperspective_interp_modes).
+ */
+#define GEN12_CLIP_NON_PERSPECTIVE_BARYCENTRIC	(1U << 8)
+
+/*
  * 3DSTATE_PS_EXTRA dword 1 (gen110.xml below): bit 23 Pixel Shader Uses
  * Source W and bit 24 Pixel Shader Uses Source Depth, which put the
  * interpolated w and depth of each pixel into the thread payload after the

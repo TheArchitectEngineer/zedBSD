@@ -744,6 +744,8 @@ i915_vke2_objects_init(
 					I915_VKE2_QUAD_STRIDE,
 					2U);
 	}
+
+	/* The point step draws a point list. */
 	x->pipelines[I915_VKE2_PIPE_POINT].topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
 
 	/* The format step: the position, then attributes of their own formats. */
@@ -992,6 +994,8 @@ i915_vke2_data_write(
 				       i915_vke2_matrix_corners[2U * corner + 1U]);
 		i915_vke2_corner_write(words + (I915_VKE2_PLAIN_VERTEX + corner) * 8U, corner, corner_x[corner], corner_y[corner]);
 	}
+
+	/* The interpolation and point steps' vertices as generated. */
 	kern_memcpy(words + I915_VKE2_PERSP_VERTEX * 8U, i915_vke2_persp_vertices, sizeof(i915_vke2_persp_vertices));
 	kern_memcpy(words + I915_VKE2_POINT_VERTEX * 8U, i915_vke2_point_vertices, sizeof(i915_vke2_point_vertices));
 	drv_i915_gt_clflush(words, I915_VKE2_VERTEX_BYTES);
@@ -1005,6 +1009,8 @@ i915_vke2_data_write(
 		words[corner * 16U + 3U] = I915_VKE2_F_1;
 		kern_memcpy(&words[corner * 16U + 4U], i915_vke2_vformat_attributes, sizeof(i915_vke2_vformat_attributes));
 	}
+
+	/* Makes them visible to the fetcher. */
 	drv_i915_gt_clflush(words, I915_VKE2_VERTEX_BYTES);
 
 	/* The seeded quad: the plain corners, then the seed. */
@@ -1778,6 +1784,7 @@ i915_vke2_step_points(
 		error = i915_vke2_compare(x, "POINT", I915_VKE2_COMPARE_EXACT);
 	}
 
+	/* Logs the verdict. */
 	i915_vke2_verdict(x, "POINT", error);
 }
 
@@ -1813,6 +1820,8 @@ i915_vke2_vformat_layout(
 		pipeline->attributes[index + 1U].format = layout[index].format;
 		pipeline->attributes[index + 1U].offset = layout[index].offset;
 	}
+
+	/* The position and the nine. */
 	pipeline->attribute_count = I915_VKE2_FORMAT_ATTRIBUTES;
 }
 
@@ -1863,6 +1872,8 @@ i915_vke2_expect_p004(
 				word = i915_vke2_point_word(column, row);
 				break;
 			}
+
+			/* The pixel holds its word. */
 			x->expected[row * I915_VKE2_SIZE + column] = word;
 		}
 	}

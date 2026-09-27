@@ -2480,6 +2480,8 @@ i915_compile_sample_message(
 		drv_i915_eu_mov(&state->code, drv_i915_eu_grf(next), drv_i915_eu_grf(level_grf));
 		next++;
 	}
+
+	/* u and v after them. */
 	drv_i915_eu_mov(&state->code, drv_i915_eu_grf(next), drv_i915_eu_grf(u_grf));
 	drv_i915_eu_mov(&state->code, drv_i915_eu_grf(next + 1U), drv_i915_eu_grf(v_grf));
 

@@ -1348,6 +1348,8 @@ i915_spirv_declare_type(
 		} else {
 			record->kind = ID_TYPE_FLOAT;
 		}
+
+		/* The width decides which ones are lowered. */
 		record->width = (uint8_t)word[2];
 		break;
 
@@ -2220,6 +2222,8 @@ i915_spirv_lower_access_chain(
 		} else {
 			error = i915_spirv_chain_scalars(parser, record, pointee, index_record, word[index], opcode, offset);
 		}
+
+		/* Reports why the index could not be followed. */
 		if (error != 0)
 			return error;
 	}
@@ -2299,6 +2303,8 @@ i915_spirv_chain_block(
 			record->dynamic_stride = pointee->stride;
 			record->dynamic_length = pointee->length;
 		}
+
+		/* What follows the element is addressed from it. */
 		record->component_stride = 4U;
 		record->pointee = pointee->type;
 		break;
@@ -2317,6 +2323,8 @@ i915_spirv_chain_block(
 			record->byte_offset += selected * record->matrix_stride;
 			record->component_stride = 4U;
 		}
+
+		/* What follows the column is addressed from it. */
 		record->pointee = pointee->type;
 		break;
 
@@ -2391,6 +2399,8 @@ i915_spirv_chain_scalars(
 	} else {
 		record->component = (int32_t)(first + io_offset);
 	}
+
+	/* The pointer now addresses the part. */
 	record->pointee = next_type;
 
 	/* Succeeded: the pointer names the selected part. */
@@ -2456,6 +2466,8 @@ i915_spirv_chain_dynamic(
 	} else {
 		return i915_spirv_refuse(parser, opcode, offset, "dynamic index into a scalar or a structure");
 	}
+
+	/* An aggregate without parts is malformed. */
 	if (length == 0U)
 		return EINVAL;
 
@@ -2617,6 +2629,8 @@ i915_spirv_lower_load_local(
 				return EINVAL;
 			value = i915_spirv_select_value(parser, selects[element], candidate, value);
 		}
+
+		/* The load names the chosen scalar. */
 		record->comp[index] = value;
 	}
 
@@ -2918,6 +2932,8 @@ i915_spirv_lower_load_block(
 					inst->src[2] = value;
 				value = merged;
 			}
+
+			/* The load names the chosen word. */
 			record->comp[column_index * rows + row] = value;
 		}
 	}
@@ -3087,6 +3103,8 @@ i915_spirv_lower_store_local(
 				value = i915_spirv_predicated_value(parser, value, *slot);
 			*slot = value;
 		}
+
+		/* Succeeded: the local holds the stored scalars. */
 		return 0;
 	}
 
@@ -3187,6 +3205,8 @@ i915_spirv_lower_store_output(
 				previous = i915_spirv_shared_constant(parser, &parser->zero_value, I915_IR_CONST, FLOAT_ZERO_BITS);
 			value = i915_spirv_predicated_value(parser, value, previous);
 		}
+
+		/* The slot holds what the output now has. */
 		*slot = value;
 
 		/* Writes the scalar. */
@@ -3504,6 +3524,8 @@ i915_spirv_lower_convert(
 		if (i915_spirv_operand_float_components(parser, word[3]) != operand_count)
 			components = 0U;
 	}
+
+	/* The operand and the result must be integers or floats of one size. */
 	if (components == 0U || operand_count != components)
 		return i915_spirv_refuse(parser, opcode, offset, "conversion between operands of other kinds or sizes");
 
@@ -3626,6 +3648,8 @@ i915_spirv_lower_float_remainder(
 		} else {
 			rounded = i915_spirv_emit_value(parser, I915_IR_FTRUNC, quotient, 0U);
 		}
+
+		/* The remainder is the dividend less the divisor times the rounded quotient. */
 		product = i915_spirv_emit_value(parser, I915_IR_FMUL, right[index], rounded);
 		record->comp[index] = i915_spirv_emit_value(parser, I915_IR_FSUB, left[index], product);
 	}
@@ -3750,8 +3774,12 @@ i915_spirv_lower_matrix_product(
 					sum = i915_spirv_emit_value(parser, I915_IR_FADD, sum, product);
 				}
 			}
+
+			/* The column of the product. */
 			record->comp[column] = sum;
 		}
+
+		/* Succeeded: the vector times the matrix is lowered. */
 		return 0;
 	}
 
@@ -3772,6 +3800,8 @@ i915_spirv_lower_matrix_product(
 					sum = i915_spirv_emit_value(parser, I915_IR_FADD, sum, product);
 				}
 			}
+
+			/* The element of the product. */
 			record->comp[column * left_rows + row] = sum;
 		}
 	}
@@ -4406,6 +4436,8 @@ i915_spirv_lower_extended(
 	} else {
 		components = i915_spirv_float_components(parser, word[1]);
 	}
+
+	/* A result of another kind is refused. */
 	if (components == 0U)
 		return i915_spirv_refuse(parser, opcode, offset, "extended instruction operand");
 
@@ -4723,6 +4755,8 @@ i915_spirv_lower_matrix_function(
 		components = i915_spirv_matrix_components(parser, word[1]);
 		expected = matrix_count;
 	}
+
+	/* A result of another shape is refused. */
 	if (components != expected)
 		return i915_spirv_refuse(parser, opcode, offset, "matrix function whose result is not of the operand's shape");
 
@@ -4731,6 +4765,8 @@ i915_spirv_lower_matrix_function(
 		columns_left[index] = index;
 		rows_left[index] = index;
 	}
+
+	/* The whole matrix's determinant. */
 	determinant = i915_spirv_minor_determinant(parser, matrix, rows, columns_left, rows_left, columns);
 
 	/* Declares the result; its scalars are named below. */
@@ -4761,6 +4797,8 @@ i915_spirv_lower_matrix_function(
 				columns_left[kept] = index;
 				kept++;
 			}
+
+			/* The operand's rows but c. */
 			kept = 0U;
 			for (index = 0U; index < rows; index++) {
 				if (index == column)
@@ -4833,6 +4871,8 @@ i915_spirv_minor_determinant(
 			sub_columns[kept] = columns_kept[index];
 			kept++;
 		}
+
+		/* The element's minor. */
 		other = i915_spirv_minor_determinant(parser, matrix, rows, sub_columns, rows_kept + 1, size - 1U);
 		term = i915_spirv_emit_value(parser, I915_IR_FMUL, matrix[columns_kept[column] * rows + rows_kept[0]], other);
 
@@ -4996,6 +5036,7 @@ i915_spirv_lower_geometric(
 			scale = i915_spirv_emit_value(parser, I915_IR_FMUL, first[(index + 2U) % 3U], second[(index + 1U) % 3U]);
 			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_FSUB, square, scale);
 		}
+
 		break;
 
 	case GLSL_NORMALIZE:
@@ -5015,6 +5056,7 @@ i915_spirv_lower_geometric(
 			square = i915_spirv_emit_value(parser, I915_IR_FMUL, scale, second[index]);
 			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_FSUB, first[index], square);
 		}
+
 		break;
 	}
 
@@ -5648,10 +5690,14 @@ i915_spirv_lower_derivative(
 			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_DDX, operand[index], 0U);
 			continue;
 		}
+
+		/* The fine x derivative takes each row's own difference. */
 		if (opcode == OP_DPDX_FINE) {
 			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_DDX_FINE, operand[index], 0U);
 			continue;
 		}
+
+		/* The y derivative is the coarse one. */
 		if (opcode == OP_DPDY || opcode == OP_DPDY_COARSE) {
 			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_DDY, operand[index], 0U);
 			continue;
@@ -6161,6 +6207,8 @@ i915_spirv_carry(
 			kern_memcpy(grown, parser->carried, parser->carried_count * sizeof(*grown));
 			kern_free(parser->carried);
 		}
+
+		/* Publishes the larger list. */
 		parser->carried = grown;
 		parser->carried_capacity = capacity;
 	}
@@ -6259,6 +6307,8 @@ i915_spirv_lower_phi(
 				inst->src[2] = record->comp[component];
 			record->comp[component] = merged;
 		}
+
+		/* Every later edge's value is taken where its predicate holds. */
 		first = 0;
 	}
 
@@ -6452,6 +6502,8 @@ i915_spirv_lower_branch_conditional(
 		} else {
 			error = i915_spirv_edge_add(parser, word[2], parser->predicate, opcode, offset);
 		}
+
+		/* Reports why the edge could not be recorded. */
 		if (error != 0)
 			return error;
 		parser->terminated = 1;
@@ -6482,6 +6534,8 @@ i915_spirv_lower_branch_conditional(
 			return error;
 		error = i915_spirv_edge_add(parser, word[3], other, opcode, offset);
 	}
+
+	/* Reports why an edge could not be recorded. */
 	if (error != 0)
 		return error;
 	parser->terminated = 1;
@@ -7117,6 +7171,8 @@ i915_spirv_type_step(
 			*scalar_offset += scalars;
 			*io_offset += 4U * locations;
 		}
+
+		/* The member's type. */
 		*next_type = type->member_type[index];
 		break;
 
@@ -7202,6 +7258,8 @@ i915_spirv_io_map(
 			map[*count] = base + index;
 			(*count)++;
 		}
+
+		/* Succeeded: the vector's slots are listed. */
 		return 0;
 	}
 
@@ -7217,6 +7275,8 @@ i915_spirv_io_map(
 				(*count)++;
 			}
 		}
+
+		/* Succeeded: the matrix's slots are listed. */
 		return 0;
 	}
 
@@ -7230,6 +7290,8 @@ i915_spirv_io_map(
 			if (error != 0)
 				return error;
 		}
+
+		/* Succeeded: the array's slots are listed. */
 		return 0;
 	}
 
@@ -7287,6 +7349,8 @@ i915_spirv_variable_slots(
 			kern_memcpy(grown, parser->slots, parser->slot_count * sizeof(*grown));
 			kern_free(parser->slots);
 		}
+
+		/* Publishes the larger store. */
 		parser->slots = grown;
 		parser->slot_capacity = capacity;
 	}
