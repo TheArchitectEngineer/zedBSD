@@ -336,7 +336,11 @@ net_tls_pending(
 
 	/* The bytes OpenSSL holds. */
 	pending = tls_library.pending(tls->ssl);
-	return pending > 0;
+	if (pending > 0)
+		return 1;
+
+	/* Nothing held: the next read waits for the socket. */
+	return 0;
 }
 
 /*
