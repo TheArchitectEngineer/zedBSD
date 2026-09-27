@@ -69,9 +69,22 @@ def command(stream, name, **arguments):
 			return reply
 
 
-def patch_cfg(image, lines, replace):
-	"""Adds lines to (or replaces) the ESP's zedbsd.cfg of the copy."""
-	target = f"{image}@@{ESP_OFFSET}"
+def payload_offset(image):
+	"""The byte offset of the GPT partition named "zedBSD Payload" (the BIOS image's boot FAT)."""
+	with open(image, "rb") as disk:
+		disk.seek(1024)
+		entries = disk.read(128 * 128)
+	for index in range(128):
+		entry = entries[index * 128:(index + 1) * 128]
+		name = entry[56:128].decode("utf-16-le").rstrip("\0")
+		if name == "zedBSD Payload":
+			return int.from_bytes(entry[32:40], "little") * 512
+	raise SystemExit("boot-shots: no zedBSD Payload partition")
+
+
+def patch_cfg(image, lines, replace, offset=ESP_OFFSET):
+	"""Adds lines to (or replaces) the boot FAT's zedbsd.cfg of the copy."""
+	target = f"{image}@@{offset}"
 	if replace is not None:
 		text = Path(replace).read_text()
 	else:
@@ -97,6 +110,7 @@ def main():
 	parser.add_argument("--serial", action="store_true")
 	parser.add_argument("--extra", default="")
 	parser.add_argument("--no-kvm", action="store_true")
+	parser.add_argument("--bios", action="store_true", help="the legacy BIOS (SeaBIOS) and IDE: the BIOS image")
 	parser.add_argument("--pause-at", help="a kernel address (the entry); the screen is taken there, stopped")
 	arguments = parser.parse_args()
 
@@ -108,7 +122,10 @@ def main():
 	monitor = out / "qmp.sock"
 	shutil.copyfile(arguments.image, disk)
 	shutil.copyfile(VARS, nvram)
-	cfg = patch_cfg(disk, arguments.cfg, arguments.replace_cfg)
+	offset = ESP_OFFSET
+	if arguments.bios:
+		offset = payload_offset(disk)
+	cfg = patch_cfg(disk, arguments.cfg, arguments.replace_cfg, offset)
 	(out / "zedbsd.cfg").write_text(cfg)
 
 	qemu = ["qemu-system-x86_64", "-machine", "q35", "-m", "8G", "-smp", "4", "-cpu", "max",
@@ -120,6 +137,11 @@ def main():
 	        "-device", "usb-kbd,bus=xhci.0,port=2",
 	        "-vga", "std", "-display", "none", "-no-reboot",
 	        "-qmp", f"unix:{monitor},server,nowait"]
+	if arguments.bios:
+		qemu = ["qemu-system-x86_64", "-machine", "pc", "-m", "8G", "-smp", "4", "-cpu", "max",
+		        "-drive", f"file={disk},format=raw,if=ide",
+		        "-vga", "std", "-display", "none", "-no-reboot",
+		        "-qmp", f"unix:{monitor},server,nowait"]
 	if not arguments.no_kvm and os.access("/dev/kvm", os.R_OK | os.W_OK):
 		qemu += ["-accel", "kvm"]
 	if arguments.serial:
