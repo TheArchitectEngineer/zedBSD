@@ -24,11 +24,66 @@ egltest の OpenGL ES 3 の場面 targets・blits・queries・feedback を実機
 ## 手順
 
 最初に 4 場面を今の実行器で実機に走らせ、log の CHECK と executor の拒否（`i915: vk: ... refused`・`XXX unimplemented`）から
-不足を並べ、場面ごとに直す。`plan/ws031/tests/zdesktop/run-egltest.sh` に 4 場面を足した（p005 の 7 場面の後）。
+不足を並べ、場面ごとに直す。11 場面は 1 回の capture に収まらないので、4 場面は別の runner
+`plan/ws031/tests/zdesktop/run-egltest6.sh`（`ZDESKTOP_APP=egltest6`、`vkloop-hw.sh` に足した）で走らせる。
+
+基準の run（`build/ws075-p006/base-egltest6`）の不足: 4 つの colour attachment の render pass の拒否（MRT）、opcode 47
+（vkCreateQueryPool）の未実装、vertex shader の SPIR-V の BufferBlock の拒否（transform feedback の capture の storage buffer）、
+D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・queries 18（glerror 0x505）・feedback 9。
+
+## 設計
+
+### 増分 1: MRT（2026-09-28）
+
+- compiler（`compile.c`）: fragment の colour の location n（0〜3）を r(124 − 4n)..r(127 − 4n) に置き、書く location ごとに
+  render-target write を昇順に（最後だけ Last Render Target Select と EOT）。binding table の entry は `I915_SHADER_RT_BTI(n)`
+  （0、または 16 + n: texture の 1〜16 の後）、render target index は extended descriptor の bit 12〜14（Mesa の Gen11+ の
+  `lower_fb_write_logical_send()`）。何も書かない shader は location 0 に 0 を書く。Mesa の brw_disasm が受ける。
+- 実行器: render pass は colour attachment 4 つまで（`I915_GFX_MAX_ATTACHMENTS` 8、`i915_gfx_pass.color_attachments[]`、
+  slot 0 は従来の `color_attachment`、`drv_i915_gfx_pass_color()`）。draw は slot ごとに render target の surface（view の無い slot は
+  null surface、`i915_state_null_surface_write()`）、BLEND_STATE の entry を slot ごとに（書き込み mask は attachment ごと、
+  blend の式は attachment 0 の、integer の target と blendEnable の無い attachment は blend しない）。colour の無い pass
+  （depth だけ）は depth の view の大きさで描く（`drv_i915_gfx_draw_extent_view()`）。vkCmdClearAttachments は colour index の
+  attachment を clear する。
+
+### 増分 2: occlusion query（2026-09-28）
+
+- `fence.c`（sync の module）: vkCreateQueryPool・vkDestroyQueryPool・vkGetQueryPoolResults（opcode 47〜49）。pool は GPU の object
+  （query q の開始・終了の depth count が 16q・16q + 8、availability が 16 count + 8q）。vkCmdBeginQuery・vkCmdEndQuery は PIPE_CONTROL
+  の post-sync の PS depth count（depth stall、anv の emit_ps_depth_count()）、終了の後に availability 1、vkCmdResetQueryPool は
+  availability 0（64 query ずつの操作）。結果は submit が終わってから CPU で読む（clflush の後）。occlusion の pool だけ。
+- 実行器の object の作成を公開（`drv_i915_gfx_object_create()`・`_destroy()`、draw.c）。host の fixture の stub を足した。
+
+### 増分 3: vertex shader の storage buffer（transform feedback）（2026-09-28）
+
+- compiler: BufferBlock の struct の Uniform の変数（と StorageBuffer の class）を storage buffer（`PTR_SSBO`、uniform の種類
+  `I915_IR_UNIFORM_STORAGE`）、OpTypeRuntimeArray、NonWritable・NonReadable は無視。access chain の動的な index は byte offset の
+  IR の整数に。load・store は `I915_IR_LOAD_STORAGE`・`I915_IR_STORE_STORAGE`（store は block の predicate を持つ）。
+- codegen: A64 の untyped surface read・write（1 channel、SIMD8、stateless 253、SFID 12、Mesa の
+  `brw_dp_a64_untyped_surface_rw_desc()`）。buffer の GPU address は push data の block（`i915_shader_block.address`）で渡り、
+  channel ごとの address は low + offset と carry（CMP の −1 を ADD で引く）を payload の 2 register に interleave。predicate の
+  ある store は f0.0 で mask。Mesa の brw_disasm が受ける。
+- 実行器: storage buffer の descriptor を bind（`descriptor.c`）、push data に address を書く（`state.c`）。draw ごとの cache の
+  invalidate に VF cache を足した（shader や copy の書いた vertex buffer）。`vertexPipelineStoresAndAtomics` を報告（libGLESv2 は
+  これで GL_VERSION を 3.0 にする。atomic は未実装）。
 
 ## 検証
 
 | 確認 | 結果 |
 | --- | --- |
-| 実機 capture zdesktop-egltest | 未実施 |
+| host の vk の fixture spirv・lower・resdispatch・eu・compile・pipe | PASS（res・sync・cmdbuf は p005 から既存の失敗） |
+| gentool（Mesa brw_disasm、`BRW_TOOLS=/home/awe/p014-c/mesa/build-asm/src/intel/compiler`） | PASS。MRT の fragment shader（location 0・1・3、discard あり）と storage buffer の vertex shader（load・store・predicate）も受ける（scratch で確認） |
+| 実機 capture egltest6（`build/ws075-p006/`） | mrt1（MRT）: targets 16 → 7。q1（query）: queries 18 → **0**、targets 6。ssbo1: feedback 8 → 2。ssbo2（VF の invalidate と feature）: feedback **1**、targets 6、blits 10、queries 0。画面 `build/ws031-shots/ws075-p006-20260928-{q1,ssbo2}-sheet.png`。hang・fault なし |
 | QEMU | 未実施（i915 の実機の変更） |
+
+## 残り（2026-09-28 の時点）
+
+- stencil: D24S8・D32S8 の形式、separate stencil buffer、3DSTATE_WM_DEPTH_STENCIL の stencil、動的な stencil の state（targets の
+  stencil-complete・stencil-inside/outside・depth-stencil-test）。
+- multisample の image と resolve（blits の 10 件）、sampler2DMS の texelFetch（survey）。
+- texel buffer（samplerBuffer、survey）。
+- feedback の drawn-from-captured: capture した buffer を vertex array にした四角が見えない（原因は未調査）。
+- targets の draw-buffer-other: glDrawBuffers の後の glGetError が GL_INVALID_ENUM（期待は GL_INVALID_OPERATION）。libGLESv2 の
+  glDrawBuffers 自体は INVALID_OPERATION を出すので、その前の呼び出しの残りの error と見られる（WS068 の領域、未調査）。
+- `egltest6` の guest の log: `ufs-cat.py` が zdesktop.log を sparse として読めない run がある（ssbo1）。そのときは mview.log を
+  別に読む（`ufs-cat.py ... /var/log/mview.log`）。
