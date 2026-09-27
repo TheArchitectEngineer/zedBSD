@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: p001（調査）in-progress（2026-09-27 着手）
+Resume point: p001（調査）cleared（2026-09-27）。desktop は実機で動く。次は p002（desktop の新しい機能の実機の確認）、p003（topology）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -50,17 +50,20 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws075-p001](phase001/phase.md) | 調査（host と実機 1 回）: i915 の shader の検査を最初の拒否で止めずに全ての不足を数える（今の zdesktop・client・libGLESv2 の生成する shader、egltest・glxtest の場面）、client ごとの実行器の opcode（Venus で記録し `render/dispatch.c` の表と突き合わせる）、今の zdesktop の実機の capture。不足の一覧と、下の Phase への割り当て | in-progress（2026-09-27 着手） | — |
-| ws075-p002 | zdesktop を実機で: compiler の関数呼出しの inline 化（zdesktop の `panel.frag`。ws031-p041 の一部）と、p001 で出た desktop の不足。受け入れ 1 | planning | p001 |
-| ws075-p003 | F-023 の残り: `gl_VertexIndex`・`gl_FragCoord`、OpSwitch（ws031-p041 の一部）、OpCompositeInsert、triangle strip、vkFreeDescriptorSets、`GPU_CAP_FENCE`・`GPU_CAP_ALLOCATION_SHARE` | planning | p001 |
-| ws075-p004 | GLES の compiler: 整数の varying と Flat（ws031-p038）、local の配列・構造体・動的 index（ws031-p040）、member decoration、struct・配列の定数、OpImage | planning | p001 |
-| ws075-p005 | GLES の実行器: mip level・layer への描画（ws031-p030）、MRT（ws031-p031）、sampler（compare 等、ws031-p034）、descriptor 配列・VS の sampled image（ws031-p035）、3D・配列の texture、vertex の store（transform feedback） | planning | p001 |
-| ws075-p006 | GL 3.0〜3.2 を実機で（texel buffer、geometry の stage、layered、multisample の texture）。着手前に分ける | planning | p004、p005 |
-| ws075-p007 | 性能: 完了待ちを割込みへ（ws031-p044）、非同期の実行器（ws031-p045）、present mode と vsync（ws031-p027） | planning | p002 |
-| ws075-p008 | 安定: BUG-056・BUG-057（実機の zgears の止まり）ほか p001〜p007 で出た bug | planning | p002 |
-| ws075-p009 | 規約の全文との照合、統合回帰（最後） | planning | 全 Phase |
+| [ws075-p001](phase001/phase.md) | 調査: shader の全ての不足（host の survey、122 module）、client ごとの実行器の command（静的）、今の zdesktop の実機の capture | cleared（2026-09-27。実機の zdesktop 6/6 PASS、client の shader・command は全て通る。不足は GL/GLES の側） | — |
+| ws075-p002 | desktop の新しい機能を実機で確かめる: tab、System Menu（`plan/ws070/tests/menu-hw.sh`）、zdesktop-files・zdesktop-terminal（App Home）。出た不足を直す（zdesktop は直さず i915 の側で） | planning | p001 |
+| ws075-p003 | 実行器: primitive topology（triangle strip・fan、line list・strip、point list。今は triangle list だけ）、幅 1 以外の線、index の型、vkFreeDescriptorSets（F-023）。GL の app の大半が要る | planning | p001 |
+| ws075-p004 | compiler（GLES 2 の核）: 補間の Flat・NoPerspective・Centroid（ws031-p038）、input builtin（FragCoord・FrontFacing・PointCoord・VertexIndex・InstanceIndex）、output PointSize、texture() の bias・offset と textureLod、local の配列・struct・配列の定数（ws031-p040）、OpFwidth、Determinant・MatrixInverse・pack half | planning | p001 |
+| ws075-p005 | texture の種類: compiler の texelFetch（OpImage・OpImageFetch）・textureSize、shadow（Dref）、integer sampler、cube・配列・3D の sampler。実行器の cube・配列・3D の image、mip level・layer への描画（ws031-p030）、depth の copy、sampler の compare 等（ws031-p034）、descriptor 配列（ws031-p035） | planning | p004 |
+| ws075-p006 | 実行器と compiler: MRT（ws031-p031）、occlusion query（sync の module）、texel buffer（buffer view）、storage buffer（transform feedback の VS の store）、multisample の image と resolve | planning | p005 |
+| ws075-p007 | GL 3.2 の stage: geometry shader（compiler の stage と 3DSTATE_GS）、gl_Layer と layered の描画、PrimitiveId。着手前に分ける | planning | p006 |
+| ws075-p008 | 性能: 完了待ちを割込みへ（ws031-p044）、非同期の実行器（ws031-p045）、present mode と vsync（ws031-p027） | planning | p002 |
+| ws075-p009 | 安定: BUG-056・BUG-057（実機の zgears の止まり）ほか p002〜p008 で出た bug | planning | p002 |
+| ws075-p010 | 規約の全文との照合、統合回帰（最後） | planning | 全 Phase |
 
-p001 の結果で Phase の範囲と順を直す。
+各 Phase の受け入れは、host の survey（`plan/ws075/tests/shader-survey/run.sh`）の該当の不足が 0 になることと、実機の capture
+（egltest・glxtest の場面の capture の scenario は p003 で足す）。
+
 
 ## WS031 から移した Phase
 
@@ -68,13 +71,13 @@ p001 の結果で Phase の範囲と順を直す。
 
 | WS031 | 移した先 |
 | --- | --- |
-| ws031-p027（present mode・vsync） | p007 |
+| ws031-p027（present mode・vsync） | p008 |
 | ws031-p030（mip level・layer への描画） | p005 |
-| ws031-p031（MRT） | p005 |
+| ws031-p031（MRT） | p006 |
 | ws031-p034（sampler） | p005 |
 | ws031-p035（descriptor 配列・VS の sampled image） | p005 |
 | ws031-p038（整数の varying） | p004 |
 | ws031-p040（local の配列・構造体） | p004 |
-| ws031-p041（OpSwitch・関数呼出し） | p002（関数呼出し）、p003（OpSwitch） |
-| ws031-p044（完了の割込み） | p007 |
-| ws031-p045（非同期の実行器） | p007 |
+| ws031-p041（OpSwitch・関数呼出し） | p004（今の corpus には無い。client は glslc -O で inline 化される。GL の shader で要るとき） |
+| ws031-p044（完了の割込み） | p008 |
+| ws031-p045（非同期の実行器） | p008 |

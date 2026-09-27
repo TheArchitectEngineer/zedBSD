@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p001`
 Parent: [WS075](../ws.md)
-Status: in-progress（2026-09-27 着手）
+Status: cleared（2026-09-27。host の調査と実機の zdesktop の capture PASS）
 Phase disposition: normal
 承認: 2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」、
 main の WS075 の登録（2026-09-27）。試験は amd64 のみ、phase の最後に。
@@ -39,7 +39,7 @@ main の WS075 の登録（2026-09-27）。試験は amd64 のみ、phase の最
     GLSL.std.450 の一部・`OpImageSampleImplicitLod` だけ）。
   - GLSL.std.450: `i915_spirv_lower_extended` の case の一覧。
   - builtin: `compile.c`・`spirv.c` の受ける BuiltIn の一覧。
-- `plan/ws075/tests/shader-survey/run.sh`: 対象の SPIR-V を集めて survey.py に渡し、`build/ws075-p001/` に shader ごとの不足と、
+- `plan/ws075/tests/shader-survey/run.sh`: 対象の SPIR-V（client のものは build と同じ flag か checked-in の SPIR-V） を集めて survey.py に渡し、`build/ws075-p001/` に shader ごとの不足と、
   不足ごとの shader の数の表を書く。egltest・glxtest の shader は C の source の文字列の定数から取り出し、同じ file の
   vertex・fragment（・geometry）を GLSL の host 試験の `glsl-test link` で組にして link する（組にならないものは外して数える）。
 - 実行器の command: `plan/ws075/tests/vk-calls.py` が client の source（と libGLESv2・libEGL）の `vk*` の呼出しを数え、
@@ -51,6 +51,74 @@ main の WS075 の登録（2026-09-27）。試験は amd64 のみ、phase の最
 
 （なし）
 
+## 結果（2026-09-27）
+
+### 1. 実機の出発点（i915、capture。QEMU の Venus ではない）
+
+`plan/ws075/tests/capture-hw.sh zdesktop zdesktop build/ws075-p001/hw-zdesktop`（`CAPTURE=zdesktop plan/ws031/tests/vkloop-hw.sh zdesktop`
+を `flock /tmp/i915-hw.lock` の下で）: **status pass、6 検査全て PASS**（desktop_drawn、dock_changes_view、wiseview_changes_view、
+wiseview_closes、close_ends_viewer、desktop_after_close）。今の main の zdesktop（glass の title bar、backdrop のぼかし
+`ZWL BACKDROP ready width=240 height=135`、Wiseview、docking）と mview・wl_shm の窓が実機の実行器で描けた。executor の拒否・
+`vkCreateGraphicsPipelines failed` の行は無い。画像 `build/ws075-p001/hw-zdesktop/capture/sheet.png`
+（写し `/home/awe/zedBSD-rpi4/build/ws031-shots/ws075-p001-20260927-zdesktop-hw.png`）。
+
+**訂正**: 提案の時（WS031 の節）に「zdesktop の panel.frag は OpFunctionCall で拒まれる」と書いたのは、glslc を `-O` 無しで
+走らせた誤り。client は `regenerate.py` で `glslc -O`（関数を inline 化）で作るので、実際の SPIR-V は通る（下の 2 の検査も
+build の flag で作る形に直した）。
+
+### 2. shader（host、`plan/ws075/tests/shader-survey/run.sh`、出力 `build/ws075-p001/shaders/`）
+
+対象 122 module: client の shader（build と同じ flag か checked-in の SPIR-V）16、GLSL の host 試験の program と libGL の固定機能
+（`build/ws068-glsl-host`）、egltest・glxtest の場面から取り出して zedBSD の GLSL compiler で link した program。
+**i915 の compiler と survey の最初の不足が全 module で一致**（compiler が通す module は survey も不足 0、拒む module は
+survey が同じ opcode の不足を最初に出す。`first.txt`）。
+
+- **client（zdesktop・zdesktop-files・zdesktop-terminal・mview・vkdemo）の shader は全て通る。**
+- 不足のある module 43（全て libGLESv2 の生成する GL/GLES の shader）。不足ごとの module の数（`gaps.txt`）:
+
+| 不足 | module | 種類 |
+| --- | --- | --- |
+| decoration Flat（member の Flat 4 を含む） | 18 | 補間 |
+| NoPerspective・Centroid（member を含む） | 6 | 補間 |
+| OpImageFetch・OpImage（texelFetch）、OpImageQuerySize(Lod)（textureSize） | 9・7・9 | texture |
+| input builtin VertexIndex・InstanceIndex | 6・6 | builtin |
+| OpImageSampleDrefImplicitLod（shadow） | 5 | texture |
+| texture() of an integer sampler・sampler2DArray・samplerCube・sampler3D | 4・4・2・2 | texture |
+| geometry（execution model、EmitVertex・EndPrimitive） | 4 | stage |
+| input builtin FragCoord 3・PrimitiveId 2・PointCoord 1・FrontFacing 1、output builtin Layer 2・PrimitiveId 1・PointSize 1 | | builtin |
+| colour outputs past location 0（MRT） | 3 | output |
+| OpImageSampleExplicitLod（textureLod）、texture() の ConstOffset・Bias | 2・2・1 | texture |
+| local の配列・struct、配列の定数 | 2・1・2 | 変数 |
+| GLSL.std.450 Determinant・MatrixInverse・PackHalf2x16・UnpackHalf2x16、OpFwidth | 2・1・1・1・1 | 算術 |
+
+survey が写さない形の規則（operand の大きさ、入れ子の深さ、動的 index、phi）は、全 module で compiler の最初の拒否と一致したので、
+この corpus では最初の不足の後ろに隠れている分だけが数えられていない（直す Phase で host の i915-shader-check を回して確かめる）。
+
+### 3. 実行器の command（静的、`plan/ws075/tests/vk-calls.py`、出力 `build/ws075-p001/vk-calls.txt`）
+
+client（zdesktop・zdesktop-files・zdesktop-terminal・mview・vkdemo・wltest・zdesktop-x11server・libEGL）の Vulkan の command は
+**全て実行器が受ける**。libGLESv2 だけが受けられない command を使う: query（vkCreateQueryPool・vkCmdBeginQuery・vkCmdEndQuery・
+vkCmdResetQueryPool・vkGetQueryPoolResults・vkDestroyQueryPool。sync の module が未移植）、buffer view（vkCreateBufferView・
+vkDestroyBufferView、texel buffer）、vkCmdResolveImage（multisample）、vkCmdClearDepthStencilImage。
+
+作成時の parameter の不足（静的には数えない。実行器の `XXX` の記録から）: **primitive topology は triangle list だけ**
+（`render/state.c`。strip・fan・line・point は拒否。GL の app の大半が使う）、image は 2D・1 layer・1 sample だけ
+（cube・配列・3D・multisample は拒否）、colour attachment は 1 つ、mip level 0 以外への描画、depth の image の copy、
+buffer の descriptor（storage buffer: transform feedback の VS の store）、logic op、幅 1 以外の線、geometry の stage は走らない。
+
+### 4. Phase への割り当て（ws.md の表を直した）
+
+desktop は今の実機で動くので、p002 は新しい desktop の機能（tab、System Menu、zdesktop-files・terminal）の実機の確認に縮め、
+GL/GLES の不足を先に数の多い順に並べた: p003 topology（全 GL の app）→ p004 GLES 2 の compiler（補間、builtin、texture の
+bias・lod・offset、local の配列、算術）→ p005 texture の種類（texelFetch・size、shadow、integer、cube・配列・3D の image と sampler、
+mip の描画）→ p006 MRT・query・texel buffer・storage buffer・multisample → p007 geometry と layered（GL 3.2）→ p008 性能 →
+p009 安定 → p010 照合と回帰。
+
 ## 検証
 
-未実施。host で survey の run と、i915-shader-check との最初の拒否の一致。実機で zdesktop の capture を 1 回。
+| 確認 | 結果 |
+| --- | --- |
+| 実機（i915、capture）の zdesktop | PASS（6/6）。`build/ws075-p001/hw-zdesktop/` |
+| shader survey（host） | 122 module、不足 43、compiler の最初の拒否と全一致 |
+| 実行器の command（host、静的） | client 全て受ける、libGLESv2 の 10 command が無い |
+| Venus の回帰・boot test | 未実施（製品の source を変えていない。道具だけ） |
