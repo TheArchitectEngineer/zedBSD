@@ -30,8 +30,15 @@
 #define REQUEST_CONFIGURE_WINDOW	12U
 #define REQUEST_GET_GEOMETRY		14U
 #define REQUEST_QUERY_TREE		15U
+#define REQUEST_INTERN_ATOM		16U
+#define REQUEST_GET_ATOM_NAME		17U
 #define REQUEST_CHANGE_PROPERTY		18U
+#define REQUEST_DELETE_PROPERTY		19U
 #define REQUEST_GET_PROPERTY		20U
+#define REQUEST_SET_SELECTION_OWNER	22U
+#define REQUEST_GET_SELECTION_OWNER	23U
+#define REQUEST_CONVERT_SELECTION	24U
+#define REQUEST_SEND_EVENT		25U
 #define REQUEST_QUERY_POINTER		38U
 #define REQUEST_SET_INPUT_FOCUS		42U
 #define REQUEST_GET_INPUT_FOCUS		43U
@@ -269,11 +276,32 @@ x11_request(
 	case REQUEST_QUERY_TREE:
 		code = protocol_query_tree(server, index, request, length);
 		break;
+	case REQUEST_INTERN_ATOM:
+		code = x11_request_intern_atom(server, index, request, length);
+		break;
+	case REQUEST_GET_ATOM_NAME:
+		code = x11_request_get_atom_name(server, index, request, length);
+		break;
 	case REQUEST_CHANGE_PROPERTY:
 		code = protocol_change_property(server, index, request, length);
 		break;
+	case REQUEST_DELETE_PROPERTY:
+		code = x11_request_delete_property(server, index, request, length);
+		break;
 	case REQUEST_GET_PROPERTY:
 		code = protocol_get_property(server, index, request, length);
+		break;
+	case REQUEST_SET_SELECTION_OWNER:
+		code = x11_request_set_selection_owner(server, index, request, length);
+		break;
+	case REQUEST_GET_SELECTION_OWNER:
+		code = x11_request_get_selection_owner(server, index, request, length);
+		break;
+	case REQUEST_CONVERT_SELECTION:
+		code = x11_request_convert_selection(server, index, request, length);
+		break;
+	case REQUEST_SEND_EVENT:
+		code = x11_request_send_event(server, index, request, length);
 		break;
 	case REQUEST_QUERY_POINTER:
 		code = protocol_query_pointer(server, index);
@@ -1037,6 +1065,7 @@ protocol_change_property(
 	size_t capacity;
 	size_t copied;
 	char *target;
+	unsigned code;
 	int msb;
 
 	/* The window must exist. */
@@ -1059,6 +1088,12 @@ protocol_change_property(
 	} else if (property == X11_ATOM_ICON_PATH) {
 		target = window->icon_path;
 		capacity = sizeof(window->icon_path);
+	}
+
+	/* Any other property is kept whole with the window (selection.c). */
+	if (target == NULL) {
+		code = x11_request_change_property(server, index, request, length);
+		return code;
 	}
 
 	/* An 8-bit STRING that fits the request is kept, cut to the room there is. */
@@ -1093,6 +1128,7 @@ protocol_get_property(
 	uint32_t type;
 	size_t count;
 	size_t padded;
+	unsigned code;
 	int msb;
 
 	/* The window must exist. */
@@ -1112,6 +1148,12 @@ protocol_get_property(
 		value = window->name;
 	else if (property == X11_ATOM_ICON_PATH)
 		value = window->icon_path;
+
+	/* Any other property is one kept whole with the window (selection.c). */
+	if (value == NULL) {
+		code = x11_request_get_property(server, index, request, length);
+		return code;
+	}
 
 	/* A set string of any type or STRING is given whole; otherwise the property has no value. */
 	memset(reply, 0, sizeof(reply));

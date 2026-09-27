@@ -243,6 +243,9 @@ x11_window_destroy(
 		server->grab_window = 0U;
 	}
 
+	/* Its properties and the selections it owned (selection.c). */
+	x11_selection_forget_window(server, window->id);
+
 	/* Its pixels, its desktop window, and its slot. */
 	window_remove(server, window);
 }
