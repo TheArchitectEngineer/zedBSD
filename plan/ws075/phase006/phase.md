@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p006`
 Parent: [WS075](../ws.md)
-Status: in-progress（2026-09-28〜）
+Status: in-progress（2026-09-28〜。増分 1〜3 済み（MRT・occlusion query・VS の storage buffer）、増分 4（stencil）は中断して wip.patch）
 Phase disposition: normal
 承認: 2026-09-27 ユーザー「…i915の高度化に進んでください。」、WS075 の計画（main の登録）。p005 の後（依存 p005 cleared）。
 
@@ -75,6 +75,18 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
 | gentool（Mesa brw_disasm、`BRW_TOOLS=/home/awe/p014-c/mesa/build-asm/src/intel/compiler`） | PASS。MRT の fragment shader（location 0・1・3、discard あり）と storage buffer の vertex shader（load・store・predicate）も受ける（scratch で確認） |
 | 実機 capture egltest6（`build/ws075-p006/`） | mrt1（MRT）: targets 16 → 7。q1（query）: queries 18 → **0**、targets 6。ssbo1: feedback 8 → 2。ssbo2（VF の invalidate と feature）: feedback **1**、targets 6、blits 10、queries 0。画面 `build/ws031-shots/ws075-p006-20260928-{q1,ssbo2}-sheet.png`。hang・fault なし |
 | QEMU | 未実施（i915 の実機の変更） |
+
+## 中断（2026-09-28、main の wrap up）: 増分 4 の stencil
+
+- stencil の実装（D32_SFLOAT_S8_UINT・S8_UINT、Y tile の separate stencil plane、3DSTATE_STENCIL_BUFFER、3DSTATE_WM_DEPTH_STENCIL の
+  stencil、vkCmdSetStencil*、pass の stencilLoadOp と ClearAttachments の aspect、stencil の clear は Y tile の R8_UNORM に value/255）は
+  build できる（commit 62a10ad0）が、実機で後退した: st1（`build/ws075-p006/st1`）は wlkill の直後の frame 194 で compositor が
+  止まり、st2 は targets が 6 → 14（glerror 0x505、eglSwapBuffers の失敗、MRT の四角も黒）。原因は未調査。**62a10ad0 は revert し、
+  差分は `plan/ws075/phase006/wip.patch`（show の形）に置いた。**
+- 再開の手順: wip.patch を当てる（または 62a10ad0 を cherry-pick）→ targets の GL_OUT_OF_MEMORY の元を探す（D32S8 の image の
+  作成・view・copy の拒否、image->bytes に stencil plane を足したことの影響（subresource layout、`i915_image_surface_write()` の
+  単一 slice の QPitch が bytes/pitch）、`image_supported()` の D32S8）→ st1 の compositor の停止が再現するか（stencil の変更と
+  無関係の可能性: wlkill の直後、BUG-077 の系統）→ 実機の egltest6。
 
 ## 残り（2026-09-28 の時点）
 

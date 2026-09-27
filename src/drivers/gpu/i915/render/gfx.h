@@ -103,8 +103,7 @@ enum i915_gfx_op_kind {
 	I915_GFX_OP_SET_BLEND_CONSTANTS,
 	I915_GFX_OP_QUERY_BEGIN,
 	I915_GFX_OP_QUERY_END,
-	I915_GFX_OP_QUERY_RESET,
-	I915_GFX_OP_SET_STENCIL
+	I915_GFX_OP_QUERY_RESET
 };
 
 /* An occlusion query pool (fence.c). */
@@ -186,16 +185,6 @@ struct i915_gfx_image {
 
 	/* The rows from one slice to the next (the QPitch). */
 	uint32_t slice_rows;
-
-	/*
-	 * A format with stencil (D32_SFLOAT_S8_UINT, S8_UINT): nonzero, and the
-	 * separate stencil plane's offset from the image's start, its pitch and
-	 * its rows from slice to slice (Y-tiled bytes, as Gen12 wants them).
-	 */
-	uint32_t stencil;
-	uint64_t stencil_offset;
-	uint32_t stencil_pitch;
-	uint32_t stencil_slice_rows;
 
 	/* The allocation and the offset the image is bound at; NULL until bound. */
 	struct i915_gfx_memory *memory;
@@ -308,12 +297,11 @@ struct i915_gfx_dset {
  * depth attachment.
  */
 struct i915_gfx_pass {
-	/* The format and the load operations of each attachment, the stencil's apart. */
+	/* The format and the load operation of each attachment. */
 	uint32_t attachment_count;
 	struct {
 		uint32_t format;
 		uint32_t load_op;
-		uint32_t stencil_load_op;
 	} attachments[I915_GFX_MAX_ATTACHMENTS];
 
 	/*
@@ -403,26 +391,6 @@ struct i915_gfx_pipeline {
 	 * the ones vkCmdSetBlendConstants recorded before it.
 	 */
 	int dynamic_blend_constants;
-
-	/* Nonzero when the stencil compare mask, write mask and reference are dynamic state (vkCmdSetStencil*). */
-	int dynamic_stencil_compare;
-	int dynamic_stencil_write;
-	int dynamic_stencil_reference;
-
-	/*
-	 * The stencil test: whether it is on, then for the front faces [0] and
-	 * the back faces [1] the VkStencilOp of a failed test, of a passed one
-	 * and of a passed one whose depth test failed, the VkCompareOp and the
-	 * compare mask, write mask and reference.
-	 */
-	uint32_t stencil_test;
-	uint32_t stencil_fail[2];
-	uint32_t stencil_pass[2];
-	uint32_t stencil_depth_fail[2];
-	uint32_t stencil_compare[2];
-	uint32_t stencil_compare_mask[2];
-	uint32_t stencil_write_mask[2];
-	uint32_t stencil_reference[2];
 
 	/* The rasterization state. */
 	uint32_t cull_mode;
@@ -633,13 +601,6 @@ struct i915_gfx_op {
 		/* Dynamic blend constants: R, G, B and A as float bits. */
 		uint32_t blend_constants[4];
 
-		/* A dynamic stencil value: which (0 compare mask, 1 write mask, 2 reference), the faces (VkStencilFaceFlags) and the value. */
-		struct {
-			uint32_t which;
-			uint32_t faces;
-			uint32_t value;
-		} stencil;
-
 		/* A copy of one region between two buffers. */
 		struct {
 			struct i915_gfx_buffer *src;
@@ -654,10 +615,7 @@ struct i915_gfx_op {
 			/* The subpass's colour attachment a colour clear names (VkClearAttachment.colorAttachment). */
 			uint32_t color_index;
 
-			/* The aspects a depth / stencil clear clears (VkImageAspectFlags). */
-			uint32_t aspects;
-
-			/* A colour clear is RGBA float bits; a depth / stencil clear is the depth's bits and the stencil. */
+			/* A colour clear is RGBA float bits; a depth clear is word 0. */
 			uint32_t words[4];
 			struct i915_gfx_rect rect;
 		} clear_attachment;
@@ -713,11 +671,6 @@ struct i915_gfx_draw_state {
 	/* The blend constants vkCmdSetBlendConstants set, as float bits; valid once blend_constants_set is nonzero. */
 	uint32_t blend_constants[4];
 	int blend_constants_set;
-
-	/* The stencil masks and references vkCmdSetStencil* set, front [0] and back [1]. */
-	uint32_t stencil_compare_mask[2];
-	uint32_t stencil_write_mask[2];
-	uint32_t stencil_reference[2];
 };
 
 /*
