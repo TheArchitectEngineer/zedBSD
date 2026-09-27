@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p005`
 Parent: [WS075](../ws.md)
-Status: in-progress（2026-09-28〜）
+Status: in-progress（2026-09-28〜。増分 1〜3 済み。egltest の fbo・cube の不一致と、BUG-077 で届かない es3・formats・volumes が残り）
 Phase disposition: normal
 承認: 2026-09-27 ユーザー「…i915の高度化に進んでください。」、WS075 の計画（main の登録）。
 
@@ -72,11 +72,20 @@ Phase disposition: normal
 
 | 確認 | 結果 |
 | --- | --- |
-| host の vk の fixture spirv・lower・eu・compile・pipe・resdispatch | PASS（res は sampler の期待の語を cube override に合わせた） |
-| host の fixture cmd・res・sync・cmdbuf | 既存の失敗（routing・sync・SetLineWidth の log の期待が古い。p005 の変更の前から。p010 へ） |
-| 実機 vke1（TEXKINDS を含む） | 実行中 |
+| host の vk の fixture spirv・lower・eu・compile・pipe・resdispatch | PASS（res は sampler の語を cube override に、resdispatch は D16・depth の sampling・3D の報告に合わせた） |
+| host の fixture cmd・res・sync・cmdbuf | 既存の失敗（routing・sync・記録の log の期待が他の変更で古い。p005 の前から。cmdbuf は SetLineWidth を SetDepthBounds に替えたが、先にまだ古い期待。p010 へ） |
+| gentool（Mesa brw_disasm/brw_asm）: feature の shader を足した 44+ 個 | PASS（texkinds.frag 387 命令、texops.frag 140 命令） |
+| shader survey（`plan/ws075/tests/shader-survey/run.sh`、規則を p005 に合わせた） | 122 module 中 gap は 29 → **13**、残りは MRT・geometry・buffer texture・multisample（p006・p007）。compiler の拒否と survey の gap は一致 |
+| 実機 vke1（`build/ws075-p005/hw-vke1-2`） | **PASS 6/6**（BLEND・UBO・TEX3・TEXOPS・**TEXKINDS**・**LEVELDRAW**） |
+| 実機 vke2・vkx・vkc（`build/ws075-p005/r1-*`） | **PASS 17/17・9/9・9/9** |
+| 実機 capture zdesktop（`r1-zdesktop`） | FAIL: BUG-077（mview の接続の直後に render engine の停止、device lost） |
+| 実機 capture zdesktop-egltest（`hw-egltest-1`・`-2`） | glsl・glsl3 は CHECK failures=0（実機の i915 で GLES 2・3 の場面が初めて通った）。fbo: run 1 は FBO が incomplete（D16 が無かった）→ D16 を足した run 2 は complete、ただし depth と blend の 3 画素が違う。cube: `CUBE setup glerror=0x506`。es3・formats・volumes は BUG-077 の停止で未到達 |
+| QEMU | 未実施（i915 の実機の変更） |
 
 ## Follow-up
+
+- egltest fbo: D16 の FBO で depth の試験が全部落ちる（depth-front・behind が背景）、blend が効かない。cube: FBO の setup で
+  GL_INVALID_FRAMEBUFFER_OPERATION。BUG-077 の後に調べる。
 
 - depth の image（Y tile）の sampling、descriptor 配列、VS の sampled image、mirrored blit、egltest・glxtest の場面。
 - 3D の image の blit は最初の depth だけ。layered rendering（view の複数の layer への描画）は p007。
