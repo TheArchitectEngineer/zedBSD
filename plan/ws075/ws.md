@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: p001〜p004 cleared（2026-09-27。p004: GLES 2 の compiler の核、実機の vke2 17/17・vke1 4/4・vkx・vkc 9/9）。次は zdesktop-files の実機の scenario（main の依頼）、その後 p005（texture の種類）
+Resume point: p001〜p004 cleared（2026-09-27。p004: GLES 2 の compiler の核、実機の vke2 17/17・vke1 4/4・vkx・vkc 9/9）。zdesktop-files の実機の場面を足した（2026-09-28、下の節。BUG-077 の render engine の hang が 4 回中 2 回）。p005（texture の種類）の実装中
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -64,6 +64,22 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 各 Phase の受け入れは、host の survey（`plan/ws075/tests/shader-survey/run.sh`）の該当の不足が 0 になることと、実機の capture
 （egltest・glxtest の場面の capture の scenario は p003 で足す）。
 
+
+## zdesktop-files の実機の場面（main の依頼、2026-09-28）
+
+`plan/ws031/tests/i915-capture.py` の `zdesktop-files`（`ZDESKTOP_APP=home plan/ws075/tests/capture-hw.sh zdesktop-files zdesktop OUTDIR`）:
+Home から Files を起動し、Ctrl+T・Ctrl+Tab・Ctrl+W でタブを開閉・切り替え、title bar の double click で dock、下端からの drag で
+Wiseview を開閉、dock した窓の閉じる button で終える（9 検査）。Files の窓の位置は先に map された窓の数で変わるので、desktop との
+差分から窓を見つける（`changed_box()`）。`config-zdesktop-hw.mk` に zdesktop-files とその library を足した。
+
+| run | 結果 |
+| --- | --- |
+| hw-1 | image に /bin/zdesktop-files が無い（config を直した） |
+| hw-2 | Files の glass・タブ・Wiseview は PASS、dock は固定の座標の誤りで FAIL（窓の検出に替えた） |
+| hw-3・hw-4 | [BUG-077](../bugs/BUG-077.md): render engine の hang（engine_recover 未実装、device lost）で compositor が停止 |
+| hw-5 | 9/9 PASS。画面 `build/ws031-shots/ws075-files-20260928-*.png`（sheet・desktop・files・tab-new・tab-first・tab-closed・docked・wiseview・wiseview-closed・ended） |
+
+Files まで進んだ 4 回のうち 2 回が BUG-077。実機の証拠のみ（QEMU は未実施）。
 
 ## WS031 から移した Phase
 

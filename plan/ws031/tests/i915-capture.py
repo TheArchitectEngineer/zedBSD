@@ -263,6 +263,26 @@ def region_difference(left, right, box):
     return changed / max(1, (x1 - x0) * (y1 - y0))
 
 
+def changed_box(left, right, threshold=40, min_count=400, top_limit=40):
+    """Where a window appeared between two images of one size: the leftmost column and the first and last rows
+    below `top_limit` in which more than `min_count` pixels changed by more than `threshold` in a channel
+    (a window's shadow changes less); None when no row did."""
+    width, height, a = read_ppm(left)
+    other_width, other_height, b = read_ppm(right)
+    if (width, height) != (other_width, other_height):
+        return None
+    rows = []
+    leftmost = width
+    for y in range(top_limit, height):
+        base = y * width * 3
+        columns = [x for x in range(width)
+                   if max(abs(a[base + 3 * x + c] - b[base + 3 * x + c]) for c in range(3)) > threshold]
+        if len(columns) > min_count:
+            rows.append(y)
+            leftmost = min(leftmost, columns[0])
+    return (leftmost, rows[0], rows[-1]) if rows else None
+
+
 def coloured(path):
     """The share of pixels that are neither the most common colour (the clear colour) nor black."""
     width, height, pixels = read_ppm(path)
@@ -350,6 +370,8 @@ def run(args):
             zdesktop_x11(args, qmp, capture, report)
         elif args.scenario == 'zdesktop-menu':
             zdesktop_menu(args, qmp, capture, report)
+        elif args.scenario == 'zdesktop-files':
+            zdesktop_files(args, qmp, capture, report)
         else:
             mview(args, qmp, capture, report, wait, settled)
         report['write_count'] = capture.write_count()
@@ -824,10 +846,130 @@ def zdesktop_menu(args, qmp, capture, report):
     report['sheet'] = str(sheet)
 
 
+def zdesktop_files(args, qmp, capture, report):
+    """The file manager (WS071, WS070 p005, ws075) on the capture display: App Home starts zdesktop-files
+    (the seventh icon, the first of the second row), Ctrl+T opens a second tab and Ctrl+Tab goes back to the
+    first, Ctrl+W closes it, a double click on the title bar docks the window and Wiseview (a drag up from the
+    bottom edge) shows it, then the close button of the docked window ends it."""
+    width, height = 1920, 1080
+    time_limit = time.monotonic() + args.timeout
+    # App Home's grid (userland/base/zdesktop/home.c home_layout): seven applications take two rows of six
+    # columns of 144 x 152, the grid 2/5 of the way down the space under the 34-pixel bar, the icon 72 high
+    # 20 under its cell's top.
+    left = (width - 6 * 144) // 2
+    grid_top = 34 + (height - 34 - 2 * 152) * 2 // 5
+    files_icon = (left + 72, grid_top + 152 + 20 + 36)
+    # Where zdesktop places the file manager depends on the windows mapped before it (a cascade step
+    # each, shell.c zwl_glass_place), so the window is found in the picture instead: what changed from the
+    # desktop, its top left the title bar's (ZWL MAP client=4 x=496 y=319 on the 5330, the title bar
+    # 274 .. 304, found at 496, 267).  The title bar is Files' own (TABS/CONTROLS): the empty stretch
+    # between the path and the search field, 262 .. 644 into it, takes the double click.
+
+    def events(items):
+        qmp.call('input-send-event', {'events': items})
+        time.sleep(0.03)
+
+    def move(x, y):
+        events([{'type': 'abs', 'data': {'axis': 'x', 'value': (int(x) * ABS_MAX + width - 2) // (width - 1)}},
+                {'type': 'abs', 'data': {'axis': 'y', 'value': (int(y) * ABS_MAX + height - 2) // (height - 1)}}])
+
+    def button(down):
+        events([{'type': 'btn', 'data': {'button': 'left', 'down': down}}])
+
+    def click(x, y):
+        move(x, y)
+        time.sleep(0.3)
+        button(True)
+        time.sleep(0.05)
+        button(False)
+
+    def keys(names):
+        for name in names:
+            events([{'type': 'key', 'data': {'down': True, 'key': {'type': 'qcode', 'data': name}}}])
+        for name in reversed(names):
+            events([{'type': 'key', 'data': {'down': False, 'key': {'type': 'qcode', 'data': name}}}])
+
+    def shot(tag, pause):
+        time.sleep(pause)
+        taken = capture.save(tag)
+        report['images'][tag] = taken
+        return Path(taken['path'])
+
+    # The desktop, once the compositor draws and the wl_shm windows are up.
+    while capture.write_count() == 0:
+        if time.monotonic() > time_limit:
+            raise TimeoutError('first frame')
+        time.sleep(0.5)
+    move(width - 40, height - 200)
+    desktop = shot('desktop', 25.0)
+    report['checks']['desktop_drawn'] = coloured(desktop) > 0.02
+
+    # Home, then the Files icon.
+    click(23, 17)
+    time.sleep(1.5)
+    click(*files_icon)
+    move(width - 40, height - 200)
+    files = shot('files', 10.0)
+    report['checks']['files_opens'] = difference(desktop, files) > 0.05
+    box = changed_box(desktop, files)
+    report['files_box'] = box
+    title = (width // 2, height // 2)
+    if box is not None:
+        title = (box[0] + 454, box[1] + 22)
+
+    # A second tab, back to the first, and the second closed again.
+    keys(['ctrl', 't'])
+    tab = shot('tab-new', 2.5)
+    report['checks']['tab_opens'] = difference(files, tab) > 0.0005
+    keys(['ctrl', 'tab'])
+    back = shot('tab-first', 2.5)
+    report['checks']['tab_switches'] = difference(tab, back) > 0.0002
+    keys(['ctrl', 'w'])
+    closed_tab = shot('tab-closed', 2.5)
+    report['checks']['tab_closes'] = difference(back, closed_tab) > 0.0002
+
+    # A double click on the title bar docks the window.
+    move(*title)
+    time.sleep(0.3)
+    for _ in range(2):
+        button(True)
+        time.sleep(0.05)
+        button(False)
+        time.sleep(0.05)
+    move(width - 40, height - 200)
+    docked = shot('docked', 4.0)
+    report['checks']['docks'] = difference(closed_tab, docked) > 0.05
+
+    # Wiseview from a drag up the bottom edge, closed by a click on empty space.
+    move(width // 2, height - 6)
+    button(True)
+    for step in range(1, 13):
+        move(width // 2, height - 6 - step * 30)
+        time.sleep(0.05)
+    button(False)
+    wiseview = shot('wiseview', 4.0)
+    report['checks']['wiseview_shows'] = difference(docked, wiseview) > 0.05
+    click(20, height // 2)
+    move(width - 40, height - 200)
+    unwise = shot('wiseview-closed', 4.0)
+    report['checks']['wiseview_closes'] = difference(wiseview, unwise) > 0.05
+
+    # The docked window's close button (as zdesktop's scenario finds it at 1920 wide) ends the file manager.
+    click(1430, 17)
+    move(width - 40, height - 200)
+    ended = shot('ended', 3.0)
+    report['checks']['close_ends_files'] = difference(unwise, ended) > 0.05
+
+    sheet = Path(args.output) / 'sheet.png'
+    tags = ('desktop', 'files', 'tab-new', 'tab-closed', 'docked', 'wiseview', 'wiseview-closed', 'ended')
+    write_sheet([report['images'][tag]['path'] for tag in tags], sheet, columns=2)
+    report['sheet'] = str(sheet)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('scenario', choices=['vkdemo', 'wayland', 'mview', 'zdesktop', 'zdesktop-home', 'zdesktop-x11',
-                                             'zdesktop-menu'])
+                                             'zdesktop-menu', 'zdesktop-files'])
     parser.add_argument('--output', required=True)
     parser.add_argument('--serial', default='/home/awe/bigbang/run-parity-serial.log')
     parser.add_argument('--qmp', default='/home/awe/bigbang/qmp.sock')
