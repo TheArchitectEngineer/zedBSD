@@ -52,12 +52,12 @@ echo "files: surface $surface at $wx,$wy"
 # 1. Glass, and the two cards.
 expect_log /tmp/f.log 'ZFILES GLASS on'
 expect_log /tmp/f.log 'ZFILES GLASS panels count=2'
-expect_log /tmp/zdesktop.log "ZWL GLASS client=[0-9]+ surface=$surface panels=2 card:12,12,212,616,16 card:234,12,754,616,16\$"
+expect_log /tmp/zdesktop.log "ZWL GLASS client=[0-9]+ surface=$surface panels=2 card:0,0,212,640,16 card:220,0,780,640,16\$"
 shot one.png
 
 # 2. The desktop between the sidebar and the content, as the wallpaper has it.
 wallpaper=build/ws035-wallpaper/wallpaper.ppm   # the file the image installs as /usr/share/zdesktop/wallpaper.ppm
-python3 - "$out/one.png" "$wallpaper" $((wx + 229)) $((wy + 300)) <<'EOF' || status=1
+python3 - "$out/one.png" "$wallpaper" $((wx + 216)) $((wy + 300)) <<'EOF' || status=1
 import sys
 from PIL import Image
 shot = Image.open(sys.argv[1]).convert("RGB")
@@ -80,7 +80,7 @@ EOF
 # 3. The preview (Ctrl+Alt+P): a third card, and the content narrower.
 keys '<ctrl-alt-p>'
 expect_log /tmp/f.log 'ZFILES GLASS panels count=3'
-expect_log /tmp/zdesktop.log "ZWL GLASS client=[0-9]+ surface=$surface panels=3 card:12,12,212,616,16 card:234,12,480,616,16 card:724,12,264,616,16\$"
+expect_log /tmp/zdesktop.log "ZWL GLASS client=[0-9]+ surface=$surface panels=3 card:0,0,212,640,16 card:220,0,508,640,16 card:736,0,264,640,16\$"
 shot preview.png
 
 # 4. A second tab: the row of tabs is inside the content's card, which keeps its place (no new panels).
