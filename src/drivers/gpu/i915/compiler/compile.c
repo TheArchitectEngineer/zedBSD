@@ -366,6 +366,7 @@ static void i915_compile_move(struct i915_compile_state *state, const struct i91
 static void i915_compile_loop_begin(struct i915_compile_state *state);
 static void i915_compile_loop_end(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static int i915_compile_rank(const uint32_t *list, uint32_t count, uint32_t location, uint32_t *rank);
+static uint32_t i915_compile_flat_mask(const struct i915_compile_state *state);
 static void i915_compile_note(struct i915_compile_state *state, uint32_t *list, uint32_t *count, uint32_t limit, uint32_t location);
 static void i915_compile_interface(struct i915_compile_state *state);
 static void i915_compile_blocks(struct i915_compile_state *state);
@@ -2468,6 +2469,28 @@ i915_compile_loop_end(
 	drv_i915_eu_while(&state->code, I915_EU_FLAG_F0_0, state->loop_tops[state->loop_depth]);
 }
 
+
+/* Returns the Flat inputs of a kernel: bit n for its n-th input in payload order whose IR input is Flat. */
+static uint32_t
+i915_compile_flat_mask(
+	const struct i915_compile_state *state)
+{
+	uint32_t mask;
+	uint32_t rank;
+	uint32_t index;
+
+	/* Each input the kernel reads, by the IR input of its location. */
+	mask = 0U;
+	for (rank = 0U; rank < state->input_count; rank++) {
+		for (index = 0U; index < state->ir->input_count; index++) {
+			if (state->ir->inputs[index].location == state->inputs[rank] && state->ir->inputs[index].flat != 0U)
+				mask |= 1U << rank;
+		}
+	}
+
+	/* Succeeded: the mask. */
+	return mask;
+}
 /* Finds the position of `location` in an ascending list. */
 static int
 i915_compile_rank(
@@ -2951,9 +2974,10 @@ i915_compile_describe(
 	binary->push_regs = state->push_regs;
 	binary->push_constant_bytes = state->push_constant_regs * 32U;
 
-	/* The inputs in payload order. */
+	/* The inputs in payload order, and which of them are Flat. */
 	binary->input_count = state->input_count;
 	kern_memcpy(binary->input_locations, state->inputs, sizeof(state->inputs));
+	binary->input_flat_mask = i915_compile_flat_mask(state);
 
 	/* The sampled images in the order the kernel numbers them. */
 	for (index = 0U; index < state->ir->uniform_count; index++) {

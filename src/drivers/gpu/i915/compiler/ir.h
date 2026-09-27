@@ -272,6 +272,9 @@ struct i915_shader_ir_io {
 	uint32_t location;
 	uint32_t components;
 	uint32_t type;
+
+	/* Nonzero for a Flat input: the draw sets it up as the provoking vertex's value. */
+	uint32_t flat;
 };
 
 /*

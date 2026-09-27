@@ -1093,7 +1093,8 @@ drv_i915_gfx_emit_pixel_shader(
 	/*
 	 * Programs SBE: the attribute swizzle and the read offset override, the
 	 * number of attributes, the read length and the read offset of slot 2;
-	 * every attribute with all four components active.
+	 * the Flat inputs' constant interpolation; every attribute with all four
+	 * components active.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SBE, GEN12_3DSTATE_SBE_DWORDS));
 	drv_i915_batch_emit(batch,
@@ -1104,7 +1105,7 @@ drv_i915_gfx_emit_pixel_shader(
 			    (read_length << 11) |
 			    (1U << 5));
 	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, kernels->ps_flat_mask);
 	drv_i915_batch_emit(batch, 0xffffffffU);
 	drv_i915_batch_emit(batch, 0xffffffffU);
 

@@ -12,7 +12,10 @@ import subprocess
 import sys
 
 # i915_spirv_declare_decoration, i915_spirv_declare_member_decoration.
-DECORATIONS = {'Location', 'Binding', 'DescriptorSet', 'BuiltIn', 'ArrayStride', 'Block', 'RelaxedPrecision'}
+DECORATIONS = {'Location', 'Binding', 'DescriptorSet', 'BuiltIn', 'ArrayStride', 'Block', 'RelaxedPrecision', 'Flat',
+               'Centroid'}
+# i915_spirv_decoration_ignored: NoPerspective only on a vertex shader's output.
+VERTEX_DECORATIONS = {'NoPerspective'}
 MEMBER_DECORATIONS = {'Offset', 'BuiltIn', 'MatrixStride', 'RowMajor', 'ColMajor', 'RelaxedPrecision'}
 
 # i915_spirv_declare_variable: module variables of these storage classes (Input and Output with a Location; an Output
@@ -107,7 +110,7 @@ def survey(path):
 
 		# Decorations; the builtins kept for the variables.
 		if opcode == 'OpDecorate':
-			if operands[1] not in DECORATIONS:
+			if operands[1] not in DECORATIONS and not (stage == 'Vertex' and operands[1] in VERTEX_DECORATIONS):
 				gap('decoration %s' % operands[1])
 			if operands[1] == 'BuiltIn':
 				builtins[operands[0]] = operands[2]
@@ -150,6 +153,13 @@ def survey(path):
 					gap('module variable in %s' % storage)
 				elif storage == 'Input' and result in builtins:
 					gap('input builtin %s' % builtins[result])
+				elif storage == 'Input':
+					# i915_spirv_lower_load: an input is a float scalar or vector.
+					pointee = types.get(types.get(operands[0], ['', '', ''])[2], ['?', ''])
+					if pointee[0] == 'OpTypeVector':
+						pointee = types.get(pointee[1], ['?'])
+					if pointee[0] == 'OpTypeInt':
+						gap('integer inputs')
 				# i915_compile_store_output: a fragment shader writes one colour, at location 0.
 				if storage == 'Output' and stage == 'Fragment' and locations.get(result, 0) != 0:
 					gap('colour outputs past location 0 (MRT)')

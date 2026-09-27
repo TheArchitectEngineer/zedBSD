@@ -104,6 +104,9 @@ struct i915_shader_binary {
 	/* The input locations in ascending order: the payload order. */
 	uint32_t input_locations[I915_SHADER_MAX_INPUTS];
 
+	/* Fragment: bit n is set when input n (in payload order) is Flat, set up as the provoking vertex's value. */
+	uint32_t input_flat_mask;
+
 	/* Vertex: VUE slots after the position; fragment: equal to input_count. */
 	uint32_t varying_count;
 
