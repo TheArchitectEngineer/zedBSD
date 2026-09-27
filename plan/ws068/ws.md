@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none
-Resume point: p032（GLSL の geometry shader）cleared（2026-09-27、host の試験 PASS）。次は p033（desktop GL 3.2・3.3: geometry の pipeline、multisample texture、core profile 等）、p034〜p036、その後 p009、p004、p007（最後）
+Resume point: p033（desktop GL 3.2: geometry の pipeline、layered framebuffer、multisample texture、core profile）cleared（2026-09-27、Venus で glx-p033 と回帰 PASS。i915 未実施）。次は p037（GL 3.3）、p034〜p036、その後 p009、p004、p007（最後）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -62,7 +62,7 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | ws068-p014 | desktop GL 3.1〜4.6 の出来る範囲（Venus 先。geometry・tessellation・compute・SSBO は device の feature で。i915 の不足は F-023） | 2026-09-27 に p031〜p037 に分けた（GL_VERSION は実装した版を名乗り、上の版の機能は GL_ARB_* で個別に出す。design.md §6） | p012、p013 |
 | [ws068-p031](phase031/phase.md) | desktop GL 3.1: texture buffer（glTexBuffer、samplerBuffer）、rectangle texture（sampler2DRect）、glPrimitiveRestartIndex、glGetActiveUniformName、GLSL 1.40 と context の版による GLSL の版の上限、3.1 の context（GL_ARB_compatibility）。3.2 の shader の stage の要らない API（glDraw*BaseVertex、glProvokingVertex、GL_DEPTH_CLAMP、GL_TEXTURE_CUBE_MAP_SEAMLESS） | cleared（2026-09-27。Venus で glx-p031 PASS、回帰 PASS。i915 実機は未実施） | p013 |
 | [ws068-p032](phase032/phase.md) | GLSL compiler の geometry shader（`#version 150`、layout の in/out の primitive、EmitVertex・EndPrimitive、`gl_in[]`、`gl_Layer`・`gl_PrimitiveID`）、3 stage の link と SPIR-V、host の試験（spirv-val・lavapipe） | cleared（2026-09-27。host の試験 PASS、Venus の回帰 PASS） | p031 |
-| [ws068-p033](phase033/phase.md) | desktop GL 3.2: libGLESv2・libGL の geometry shader（GL_GEOMETRY_SHADER、3 stage の pipeline、adjacency の mode、draw の mode と入力の primitive の検査）、layered の framebuffer（glFramebufferTexture と gl_Layer）、multisample texture（glTexImage2DMultisample、sampler2DMS、texelFetch、glSampleMaski・GL_SAMPLE_MASK、glGetMultisamplefv）、core と compatibility の profile（core は固定機能を断る）、3.2 の context（GL_VERSION 3.2・GLSL 1.50）（2026-09-27 に 3.3 の API を p037 に分けた） | planning | p032 |
+| [ws068-p033](phase033/phase.md) | desktop GL 3.2: libGLESv2・libGL の geometry shader（GL_GEOMETRY_SHADER、3 stage の pipeline、adjacency の mode、draw の mode と入力の primitive の検査）、layered の framebuffer（glFramebufferTexture と gl_Layer）、multisample texture（glTexImage2DMultisample、sampler2DMS、texelFetch、glSampleMaski・GL_SAMPLE_MASK、glGetMultisamplefv）、core と compatibility の profile（core は固定機能を断る）、3.2 の context（GL_VERSION 3.2・GLSL 1.50）（2026-09-27 に 3.3 の API を p037 に分けた） | cleared（2026-09-27。Venus で glx-p033 PASS、i915 未実施） | p032 |
 | ws068-p037 | desktop GL 3.3: timer query（GL_TIME_ELAPSED・GL_TIMESTAMP・glQueryCounter・glGetQueryObjecti64v）、dual-source blend（glBindFragDataLocationIndexed、SRC1 の factor、layout(index)）、RGB10_A2UI、3.3 の context（GL_VERSION 3.3・GLSL 3.30） | planning | p033 |
 | ws068-p034 | tessellation（GLSL の control・evaluation の stage、patch、glPatchParameteri）: GL_ARB_tessellation_shader | planning | p037 |
 | ws068-p035 | compute shader、SSBO、image load/store、atomic counter（GLSL の compute の stage、glDispatchCompute、glMemoryBarrier）: GL_ARB_compute_shader 等 | planning | p037 |
