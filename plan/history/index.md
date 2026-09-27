@@ -2,12 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: q494（ws068-p023 cleared。cube map）
+Last finished Queue: q495（ws068-p024 cleared。GLES 3.0 の API（1））
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: q443〜q494（2026-09-26〜27）
+## 最新: q443〜q495（2026-09-26〜27）
+
+サブエージェントの運用の再開（2026-09-27 11:52、rate limit の解除の後）: 作業用 N=3（WS071・WS073・WS035）と今回限りの salvage の片付け（WS001・WS056・WS049・WS048・WS068）。[q495](queue-q495.md): ws068-p024 cleared（VAO・buffer の map と copy・instancing・uniform buffer ほか、Venus で egl-p024 PASS）。
 
 [サブエージェントの作業の保全（2026-09-27）](salvage-2026-09-27.md): 8 つのサブエージェントが rate limit で止まった。未 commit の作業を `salvage/<ws>` の 7 branch に保全（未検証、そのまま merge しない）。
 
