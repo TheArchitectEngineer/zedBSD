@@ -60,6 +60,10 @@ prekern_amd64_acpi_discover(
 	struct amd64_acpi_info *result,
 	hal_physaddr_t rsdp_address);
 
+uint64_t *
+amd64_acpi_rsdp_handoff(
+	void);
+
 int
 amd64_acpi_parse_mcfg(
 	const void *table,

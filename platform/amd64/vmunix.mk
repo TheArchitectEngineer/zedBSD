@@ -167,6 +167,10 @@ ifeq ($(I915_TEST_CAPTURE),y)
 AMD64_CPPFLAGS += -DI915_TEST_CAPTURE=1
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/capture.c
 endif
+AMD64_ACPI_SOURCES :=
+ifeq ($(CONFIG_DRIVER_ACPI),y)
+AMD64_ACPI_SOURCES += $(sort $(wildcard src/drivers/acpi/*.c))
+endif
 AMD64_INTEL_WLAN_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_INTEL_AX211),y)
 AMD64_INTEL_WLAN_SOURCES += src/drivers/wifi/intel-ax211/intel-ax211.c \
@@ -231,6 +235,7 @@ AMD64_KERNEL_SOURCES := \
 	$(AMD64_HDA_SOURCES) \
 	$(AMD64_I915_SOURCES) \
 	$(AMD64_INTEL_WLAN_SOURCES) \
+	$(AMD64_ACPI_SOURCES) \
 	src/drivers/platform/pcat/pcat-ide.c src/drivers/ethernet/dp8390.c \
 	src/drivers/isa/ne2000.c src/drivers/platform/pcat/ps2-8042.c \
 	src/drivers/disklabel/mbr.c src/drivers/disklabel/gpt.c \
