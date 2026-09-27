@@ -123,7 +123,8 @@ static void run_record(const struct test_record *record);
 static int same_double(double left, double right);
 static double ulp_error(double value, double high, double low, int is_float);
 static int run_specials(void);
-static int report(void);
+static int report(const char *host_path);
+static int host_error(const char *host_path, const char *name, double *error);
 static void decode(const unsigned char *bytes, struct test_record *record);
 
 /*
@@ -167,6 +168,20 @@ static struct test_function test_functions[] = {
 	{ "fmin", TEST_D_DD, (void (*)(void))fmin, 0, 0, 0, 0, 0, { 0, 0, 0 } },
 	{ "fmax", TEST_D_DD, (void (*)(void))fmax, 0, 0, 0, 0, 0, { 0, 0, 0 } },
 	{ "fdim", TEST_D_DD, (void (*)(void))fdim, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "exp", TEST_D_D, (void (*)(void))exp, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "exp2", TEST_D_D, (void (*)(void))exp2, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "expm1", TEST_D_D, (void (*)(void))expm1, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "expf", TEST_F_F, (void (*)(void))expf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "exp2f", TEST_F_F, (void (*)(void))exp2f, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "expm1f", TEST_F_F, (void (*)(void))expm1f, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log", TEST_D_D, (void (*)(void))log, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log2", TEST_D_D, (void (*)(void))log2, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log10", TEST_D_D, (void (*)(void))log10, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log1p", TEST_D_D, (void (*)(void))log1p, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "logf", TEST_F_F, (void (*)(void))logf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log2f", TEST_F_F, (void (*)(void))log2f, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log10f", TEST_F_F, (void (*)(void))log10f, 0, 0, 0, 0, 0, { 0, 0, 0 } },
+	{ "log1pf", TEST_F_F, (void (*)(void))log1pf, 0, 0, 0, 0, 0, { 0, 0, 0 } },
 	{ NULL, TEST_D_D, NULL, 0, 0, 0, 0, 0, { 0, 0, 0 } }
 };
 
@@ -222,6 +237,33 @@ static const struct test_special test_specials[] = {
 	{ "fmax", { -0.0, 0.0, 0 }, 0.0, 0, 0 },
 	{ "fmin", { 0.0, -0.0, 0 }, -0.0, 0, 0 },
 	{ "fdim", { 1.7976931348623157e308, -1.7976931348623157e308, 0 }, INFINITY, TEST_ERANGE, TEST_FE_OVERFLOW },
+	{ "exp", { INFINITY, 0, 0 }, INFINITY, 0, 0 },
+	{ "exp", { -INFINITY, 0, 0 }, 0.0, 0, 0 },
+	{ "exp", { NAN, 0, 0 }, NAN, 0, 0 },
+	{ "exp", { 710.0, 0, 0 }, INFINITY, TEST_ERANGE, TEST_FE_OVERFLOW },
+	{ "exp", { -750.0, 0, 0 }, 0.0, TEST_ERANGE, TEST_FE_UNDERFLOW },
+	{ "exp", { -0.0, 0, 0 }, 1.0, 0, 0 },
+	{ "exp2", { 1024.0, 0, 0 }, INFINITY, TEST_ERANGE, TEST_FE_OVERFLOW },
+	{ "exp2", { -1075.0, 0, 0 }, 0.0, TEST_ERANGE, TEST_FE_UNDERFLOW },
+	{ "exp2", { -1074.0, 0, 0 }, 4.9406564584124654e-324, 0, 0 },
+	{ "exp2", { 10.0, 0, 0 }, 1024.0, 0, 0 },
+	{ "expm1", { -INFINITY, 0, 0 }, -1.0, 0, 0 },
+	{ "expm1", { 710.0, 0, 0 }, INFINITY, TEST_ERANGE, TEST_FE_OVERFLOW },
+	{ "expm1", { -0.0, 0, 0 }, -0.0, 0, 0 },
+	{ "log", { 0.0, 0, 0 }, -INFINITY, TEST_ERANGE, TEST_FE_DIVBYZERO },
+	{ "log", { -0.0, 0, 0 }, -INFINITY, TEST_ERANGE, TEST_FE_DIVBYZERO },
+	{ "log", { -1.0, 0, 0 }, NAN, TEST_EDOM, TEST_FE_INVALID },
+	{ "log", { -INFINITY, 0, 0 }, NAN, TEST_EDOM, TEST_FE_INVALID },
+	{ "log", { INFINITY, 0, 0 }, INFINITY, 0, 0 },
+	{ "log", { 1.0, 0, 0 }, 0.0, 0, 0 },
+	{ "log2", { 0.0, 0, 0 }, -INFINITY, TEST_ERANGE, TEST_FE_DIVBYZERO },
+	{ "log2", { 1024.0, 0, 0 }, 10.0, 0, 0 },
+	{ "log10", { -1.0, 0, 0 }, NAN, TEST_EDOM, TEST_FE_INVALID },
+	{ "log10", { 1000.0, 0, 0 }, 3.0, 0, 0 },
+	{ "log1p", { -1.0, 0, 0 }, -INFINITY, TEST_ERANGE, TEST_FE_DIVBYZERO },
+	{ "log1p", { -2.0, 0, 0 }, NAN, TEST_EDOM, TEST_FE_INVALID },
+	{ "log1p", { -0.0, 0, 0 }, -0.0, 0, 0 },
+	{ "log1p", { INFINITY, 0, 0 }, INFINITY, 0, 0 },
 	{ NULL, { 0, 0, 0 }, 0, 0, 0 }
 };
 
@@ -241,6 +283,7 @@ main(
 	int index;
 	int wanted;
 	int order;
+	char host_path[1024];
 
 	/* Needs the reference file. */
 	if (argc < 2) {
@@ -278,8 +321,9 @@ main(
 	/* Every record has been read. */
 	fclose(file);
 
-	/* Prints the table and checks the special values. */
-	failures = report();
+	/* Prints the table, with the host's errors when the generator left them. */
+	snprintf(host_path, sizeof(host_path), "%s.host", argv[1]);
+	failures = report(host_path);
 	failures += run_specials();
 
 	/* Reports the verdict. */
@@ -545,17 +589,21 @@ ulp_error(
  * Prints the table and counts the functions outside their bounds.
  */
 static int
-report(void)
+report(
+	const char *host_path)
 {
 	struct test_function *function;
 	int failures;
 	int index;
+	int found;
+	double host;
+	char host_text[32];
 	const char *verdict;
 
 	/* One line per function that ran. */
 	failures = 0;
-	printf("%-12s %8s %10s %10s %8s %6s  %s\n", "function", "cases",
-	    "max ulp", "mean ulp", ">0.5", "exact", "worst input");
+	printf("%-12s %8s %10s %10s %8s %6s %10s  %s\n", "function", "cases",
+	    "max ulp", "mean ulp", ">0.5", "exact", "host max", "worst input");
 	for (index = 0; test_functions[index].name != NULL; index++) {
 		function = &test_functions[index];
 		if (function->count == 0)
@@ -568,11 +616,17 @@ report(void)
 			failures++;
 		}
 
+		/* The host's largest error on the same cases, when it is known. */
+		found = host_error(host_path, function->name, &host);
+		snprintf(host_text, sizeof(host_text), "-");
+		if (found)
+			snprintf(host_text, sizeof(host_text), "%.4f", host);
+
 		/* Prints the line of the function. */
-		printf("%-12s %8lu %10.4f %10.6f %8lu %6lu  %.17g %.17g%s\n",
+		printf("%-12s %8lu %10.4f %10.6f %8lu %6lu %10s  %.17g %.17g%s\n",
 		    function->name, function->count, function->max_ulp,
 		    function->sum_ulp / (double)function->count,
-		    function->over_half, function->exact_failures,
+		    function->over_half, function->exact_failures, host_text,
 		    function->worst_args[0], function->worst_args[1], verdict);
 	}
 
@@ -644,4 +698,52 @@ run_specials(void)
 	/* Reports the count of special cases that failed. */
 	printf("special cases: %d failed\n", failures);
 	return failures;
+}
+
+/*
+ * Looks up the host's largest error for a function in the generator's
+ * side file, whose lines are "name error".
+ */
+static int
+host_error(
+	const char *host_path,
+	const char *name,
+	double *error)
+{
+	FILE *file;
+	char line[128];
+	char line_name[64];
+	double value;
+	int fields;
+	int order;
+	char *got;
+
+	/* Without the side file nothing is known. */
+	file = fopen(host_path, "r");
+	if (file == NULL)
+		return 0;
+
+	/* Scans the lines for the name. */
+	for (;;) {
+		got = fgets(line, sizeof(line), file);
+		if (got == NULL)
+			break;
+
+		/* Parses the line and compares its name. */
+		fields = sscanf(line, "%63s %lf", line_name, &value);
+		if (fields != 2)
+			continue;
+
+		/* The line of the function gives its error. */
+		order = strcmp(line_name, name);
+		if (order == 0) {
+			fclose(file);
+			*error = value;
+			return 1;
+		}
+	}
+
+	/* The function is not in the side file. */
+	fclose(file);
+	return 0;
 }

@@ -27,48 +27,6 @@
 #define ZM_LN2 0.69314718055994530941723212145817657
 
 int signgam;
-/* exp(x) = 2^k exp(r), |r| <= ln(2)/2; exp(r) is evaluated by its
- * absolutely convergent Taylor series. */
-double
-exp(double x)
-{
-	int k, i;
-	double r, term = 1.0, sum = 1.0;
-	if (isnan(x)) return x;
-	if (x > 709.782712893384) { errno=ERANGE; (void)feraiseexcept(FE_OVERFLOW); return INFINITY; }
-	if (x < -745.133219101941) { errno=ERANGE; (void)feraiseexcept(FE_UNDERFLOW); return 0.0; }
-	k = (int)(x / ZM_LN2 + (x >= 0.0 ? 0.5 : -0.5));
-	r = x - k * ZM_LN2;
-	for (i = 1; i <= 18; i++) { term *= r / i; sum += term; }
-	return scalbn(sum, k);
-}
-float expf(float x){return (float)exp(x);} long double expl(long double x){return (long double)exp((double)x);}
-double exp2(double x){return exp(x*ZM_LN2);} float exp2f(float x){return (float)exp2(x);} long double exp2l(long double x){return (long double)exp2((double)x);}
-double expm1(double x){if(fabs(x)<1e-5){double t=x,s=x;int i;for(i=2;i<16;i++){t*=x/i;s+=t;}return s;}return exp(x)-1.0;}
-float expm1f(float x){return (float)expm1(x);} long double expm1l(long double x){return (long double)expm1((double)x);}
-
-/* log(m) = 2*(z + z^3/3 + ...), z=(m-1)/(m+1), with m in
- * [sqrt(1/2),sqrt(2)] after frexp reduction. */
-double
-log(double x)
-{
-	int e, i;
-	double m, z, z2, term, sum;
-	if (x < 0.0) { errno=EDOM; (void)feraiseexcept(FE_INVALID); return NAN; }
-	if (x == 0.0) { errno=ERANGE; (void)feraiseexcept(FE_DIVBYZERO); return -INFINITY; }
-	if (isinf(x) || isnan(x)) return x;
-	m = frexp(x, &e);
-	if (m < 0.7071067811865475244) { m *= 2.0; e--; }
-	z = (m - 1.0) / (m + 1.0); z2 = z*z; term=z; sum=z;
-	for(i=3;i<=39;i+=2){term*=z2;sum+=term/i;}
-	return 2.0*sum + e*ZM_LN2;
-}
-float logf(float x){return (float)log(x);} long double logl(long double x){return (long double)log((double)x);}
-double log2(double x){return log(x)/ZM_LN2;} float log2f(float x){return (float)log2(x);} long double log2l(long double x){return (long double)log2((double)x);}
-double log10(double x){return log(x)/2.30258509299404568402;} float log10f(float x){return (float)log10(x);} long double log10l(long double x){return (long double)log10((double)x);}
-double log1p(double x){if(fabs(x)<1e-4){double t=x,s=0;int i;for(i=1;i<30;i++){s+=(i&1?1.0:-1.0)*t/i;t*=x;}return s;}return log(1.0+x);}
-float log1pf(float x){return (float)log1p(x);} long double log1pl(long double x){return (long double)log1p((double)x);}
-
 static double
 reduce_angle(double x, int *quadrant)
 {

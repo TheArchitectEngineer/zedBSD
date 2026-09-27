@@ -558,3 +558,115 @@ sqrtl(
 	/* Succeeded: the double result stands for the long double one. */
 	return (long double)result;
 }
+
+/*
+ * Returns e raised to the power x.
+ */
+long double
+expl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = exp((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns 2 raised to the power x.
+ */
+long double
+exp2l(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = exp2((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns e raised to the power x, minus one.
+ */
+long double
+expm1l(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = expm1((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the natural logarithm of x.
+ */
+long double
+logl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = log((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the base-2 logarithm of x.
+ */
+long double
+log2l(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = log2((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the base-10 logarithm of x.
+ */
+long double
+log10l(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = log10((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns log(1 + x).
+ */
+long double
+log1pl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = log1p((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}

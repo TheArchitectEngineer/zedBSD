@@ -37,8 +37,22 @@ import struct
 import sys
 from fractions import Fraction
 
+import ctypes
+
 import gmpy2
 from gmpy2 import mpfr
+
+# The host's libm, whose error is reported beside ours for comparison.
+HOST_LIBM = ctypes.CDLL("libm.so.6")
+
+
+def host_function(name: str, arity: int = 1, is_float: bool = False):
+	"""A function of the host's libm, callable with Python floats."""
+	function = getattr(HOST_LIBM, name)
+	kind = ctypes.c_float if is_float else ctypes.c_double
+	function.restype = kind
+	function.argtypes = [kind] * arity
+	return function
 
 RECORD = struct.Struct("<16sii3dddq")
 
@@ -61,6 +75,20 @@ def bits_double(bits: int) -> float:
 def to_float32(value: float) -> float:
 	"""Rounds a double to the nearest float, as a Python float."""
 	return struct.unpack("<f", struct.pack("<f", value))[0]
+
+
+def to_float32_safe(value: float) -> float:
+	"""Rounds a double to float, overflowing to infinity."""
+	try:
+		return to_float32(value)
+	except OverflowError:
+		return math.copysign(math.inf, value)
+
+
+def high(function, *args):
+	"""Evaluates a gmpy2 function at 192 bits on exact double arguments."""
+	with gmpy2.context(HIGH):
+		return function(*[mpfr(a) for a in args])
 
 
 def random_double(rng: random.Random, low: int, high: int) -> float:
@@ -147,12 +175,41 @@ def exact_remainder(x: float, y: float, nearest: bool) -> tuple[float, int]:
 	return result, quotient
 
 
+def ulp_of(value: float, is_float: bool) -> float:
+	"""The ulp of the binade of a true value, as the runner measures it."""
+	exponent = math.frexp(value)[1]
+	minimum, precision = (-125, 24) if is_float else (-1021, 53)
+	return math.ldexp(1.0, max(exponent, minimum) - precision)
+
+
 class Writer:
-	"""Collects records."""
+	"""Collects records, and the error of the host's libm for comparison."""
 
 	def __init__(self) -> None:
 		self.records: list[bytes] = []
 		self.counts: dict[str, int] = {}
+		self.host_error: dict[str, float] = {}
+
+	def host(self, name: str, result: float, high: float, low: float, is_float: bool) -> None:
+		"""Records the error of the host's result for one case."""
+		if math.isinf(high) or math.isnan(high) or high == 0.0:
+			error = 0.0 if result == high else math.inf
+		elif math.isinf(result) or math.isnan(result):
+			error = math.inf
+		else:
+			error = abs((result - high) - low) / ulp_of(high, is_float)
+		self.host_error[name] = max(self.host_error.get(name, 0.0), error)
+
+	def ulp(self, name: str, args, value, host_function=None, is_float: bool = False) -> None:
+		"""Adds an ulp case with the true value, and measures the host on it."""
+		high, low = split(value)
+		self.add(name, ULP_FLOAT if is_float else ULP_DOUBLE, args, high, low)
+		if host_function is not None:
+			try:
+				result = host_function(*args)
+			except (OverflowError, ValueError):
+				result = math.nan
+			self.host(name, result, high, low, is_float)
 
 	def add(self, name: str, mode: int, args, ref_hi: float, ref_lo: float = 0.0,
 		ref_int: int = 0) -> None:
@@ -173,7 +230,7 @@ def gen_remainders(w: Writer, rng: random.Random, count: int) -> None:
 		if rng.random() < 0.5:
 			y = random_double(rng, -1074, 1023)
 		else:
-			e = int(math.frexp(x)[1]) - rng.randint(0, 70)
+			e = min(int(math.frexp(x)[1]) - 1, 1023) - rng.randint(0, 70)
 			y = random_double(rng, max(e, -1074), max(e, -1074))
 		if y != 0.0:
 			pairs.append((x, y))
@@ -345,12 +402,78 @@ def gen_exponent(w: Writer, rng: random.Random, count: int) -> None:
 		w.add("nextafterf", EXACT, (xf, yf), nxt)
 
 
+def exp_inputs(rng: random.Random, count: int, low: float, high_: float) -> list[float]:
+	"""Uniform values in a range, small ones of every binade, and integers."""
+	values = [rng.uniform(low, high_) for _ in range(count // 2)]
+	values += [random_double(rng, -60, 0) for _ in range(count // 4)]
+	values += [float(rng.randint(int(low), int(high_))) for _ in range(count // 8)]
+	values += [rng.uniform(low, low + 40.0) for _ in range(count // 16)]
+	values += [rng.uniform(high_ - 5.0, high_) for _ in range(count // 16)]
+	return values
+
+
+def gen_exp(w: Writer, rng: random.Random, count: int) -> None:
+	"""exp, exp2, expm1 and their float versions."""
+	for x in exp_inputs(rng, count, -745.2, 709.8) + [1.0, -1.0, 0.5, 700.0, -708.5]:
+		w.ulp("exp", (x,), high(gmpy2.exp, x), host_function("exp"))
+	for x in exp_inputs(rng, count, -1075.5, 1024.0):
+		w.ulp("exp2", (x,), high(gmpy2.exp2, x), host_function("exp2"))
+	for n in range(-1074, 1024):
+		w.add("exp2", EXACT, (float(n),), math.ldexp(1.0, n))
+	w.add("exp", EXACT, (0.0,), 1.0)
+	w.add("exp", EXACT, (-0.0,), 1.0)
+	for x in exp_inputs(rng, count, -40.0, 709.7):
+		w.ulp("expm1", (x,), high(gmpy2.expm1, x), host_function("expm1"))
+	for x in [random_double(rng, -1074, -54) for _ in range(count // 10)]:
+		w.ulp("expm1", (x,), high(gmpy2.expm1, x), host_function("expm1"))
+	for x in exp_inputs(rng, count, -103.9, 88.7):
+		x = to_float32(x)
+		w.ulp("expf", (x,), high(gmpy2.exp, x), host_function("expf", 1, True), True)
+		w.ulp("exp2f", (x,), high(gmpy2.exp2, x), host_function("exp2f", 1, True), True)
+		w.ulp("expm1f", (x,), high(gmpy2.expm1, x), host_function("expm1f", 1, True), True)
+
+
+def gen_log(w: Writer, rng: random.Random, count: int) -> None:
+	"""log, log2, log10, log1p and their float versions."""
+	values = [abs(random_double(rng, -1074, 1023)) for _ in range(count // 2)]
+	values += [1.0 + random_double(rng, -60, -3) for _ in range(count // 4)]
+	values += [rng.uniform(0.5, 2.0) for _ in range(count // 4)]
+	values += [bits_double(0x3fefffffffffffff), bits_double(0x3ff0000000000001)]
+	for x in values:
+		w.ulp("log", (x,), high(gmpy2.log, x), host_function("log"))
+		w.ulp("log2", (x,), high(gmpy2.log2, x), host_function("log2"))
+		w.ulp("log10", (x,), high(gmpy2.log10, x), host_function("log10"))
+	for n in range(-1074, 1024):
+		w.add("log2", EXACT, (math.ldexp(1.0, n),), float(n))
+	for n in range(0, 23):
+		w.add("log10", EXACT, (float(10 ** n),), float(n))
+	w.add("log", EXACT, (1.0,), 0.0)
+	values = [abs(random_double(rng, -1074, 1023)) for _ in range(count // 4)]
+	values += [random_double(rng, -60, -1) for _ in range(count // 2)]
+	values += [-rng.uniform(0.5, 1.0) for _ in range(count // 8)]
+	values += [rng.uniform(-0.3, 1.0) for _ in range(count // 8)]
+	for x in values:
+		if x <= -1.0:
+			continue
+		w.ulp("log1p", (x,), high(gmpy2.log1p, x), host_function("log1p"))
+	for _ in range(count):
+		x = abs(random_float(rng, -149, 127))
+		w.ulp("logf", (x,), high(gmpy2.log, x), host_function("logf", 1, True), True)
+		w.ulp("log2f", (x,), high(gmpy2.log2, x), host_function("log2f", 1, True), True)
+		w.ulp("log10f", (x,), high(gmpy2.log10, x), host_function("log10f", 1, True), True)
+		y = random_float(rng, -149, 20)
+		if y > -1.0:
+			w.ulp("log1pf", (y,), high(gmpy2.log1p, y), host_function("log1pf", 1, True), True)
+
+
 GENERATORS = {
 	"remainders": gen_remainders,
 	"fma": gen_fma,
 	"sqrt": gen_sqrt,
 	"rounding": gen_rounding,
 	"exponent": gen_exponent,
+	"exp": gen_exp,
+	"log": gen_log,
 }
 
 
@@ -373,6 +496,10 @@ def main() -> None:
 	total = sum(writer.counts.values())
 	print(f"gen-reference: {total} records, {len(writer.counts)} functions -> {options.out}",
 		file=sys.stderr)
+	if writer.host_error:
+		with open(options.out + ".host", "w") as report:
+			for name, error in writer.host_error.items():
+				report.write(f"{name} {error:.4f}\n")
 
 
 if __name__ == "__main__":
