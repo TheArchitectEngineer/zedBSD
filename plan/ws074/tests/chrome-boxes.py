@@ -28,7 +28,7 @@ SCRIPT = """<script>
   for (var i = 0; i < all.length; i++) {
     var e = all[i];
     var style = getComputedStyle(e);
-    if (style.display === 'none' || style.display === 'inline') continue;
+    if (style.display === 'none' || style.display === 'inline' || style.display === 'contents') continue;
     var r = e.getBoundingClientRect();
     out.push([e.localName, r.left, r.top, r.width, r.height]);
   }

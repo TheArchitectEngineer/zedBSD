@@ -136,8 +136,13 @@ struct css_style {
 	uint32_t color;
 	uint32_t background_color;
 
-	/* The font. */
+	/*
+	 * The font.  font_size_keyword is 1 while the size still follows the
+	 * keyword scale (medium by default, or an em or a percentage of such a
+	 * size), which a change to or from the monospace family rescales.
+	 */
 	float font_size;
+	int font_size_keyword;
 	int font_weight;
 	int font_italic;
 	int generic_family;

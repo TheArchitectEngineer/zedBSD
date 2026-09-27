@@ -35,6 +35,7 @@ struct inline_piece {
 	layout_unit width;
 	int space;
 	int forced_break;
+	int uses_fallback;
 	struct text_font font;
 };
 
@@ -50,6 +51,7 @@ struct inline_cutter {
 	const uint16_t *word;
 	size_t word_length;
 	layout_unit word_width;
+	int word_fallback;
 	uint32_t previous;
 	int after_space;
 	struct text_font font;
@@ -67,6 +69,8 @@ static layout_unit inline_advance(struct inline_cutter *cutter, uint32_t code_po
 static int inline_build_lines(struct layout_tree *tree, struct layout_box *box, const struct inline_piece *pieces, size_t count);
 static int inline_finish_line(struct layout_tree *tree, struct layout_box *box, const struct inline_piece *pieces, size_t start, size_t end, layout_unit *cursor, struct wb_vector *lines, int first_line);
 static void inline_line_height(struct layout_tree *tree, const struct css_style *style, layout_unit *above, layout_unit *below);
+static void inline_font_extent(struct layout_tree *tree, const struct text_font *font, const struct css_style *style, layout_unit *above, layout_unit *below);
+static void inline_piece_extent(struct layout_tree *tree, const struct inline_piece *piece, layout_unit *above, layout_unit *below);
 
 /*
  * Lays out a block's inline content into lines; the block's content
@@ -142,6 +146,7 @@ inline_cut_text(
 	uint32_t code_point;
 	size_t offset;
 	size_t used;
+	int font_changed;
 	int preserve;
 	int wrap_lines;
 	int space;
@@ -157,9 +162,19 @@ inline_cut_text(
 	if (box->style.white_space == CSS_WHITE_SPACE_PRE || box->style.white_space == CSS_WHITE_SPACE_NOWRAP)
 		wrap_lines = 0;
 
-	/* A new font ends the word before it (pieces have one font). */
-	if (cutter->word != NULL && (cutter->box != box || memcmp(&font, &cutter->font, sizeof(font)) != 0))
-		inline_flush_word(cutter);
+	/* A new box or font ends the word before it (pieces have one font). */
+	font_changed = memcmp(&font, &cutter->font, sizeof(font));
+	if (cutter->word != NULL) {
+		if (cutter->box != box) {
+			/* The word so far belongs to the box before. */
+			inline_flush_word(cutter);
+		} else if (font_changed != 0) {
+			/* The word so far is in another font. */
+			inline_flush_word(cutter);
+		}
+	}
+
+	/* The characters that follow belong to this box and font. */
 	cutter->box = box;
 	cutter->font = font;
 
@@ -200,7 +215,10 @@ inline_cut_text(
 			cutter->word = box->text + offset;
 			cutter->word_length = 0;
 			cutter->word_width = 0;
+			cutter->word_fallback = 0;
 		}
+
+		/* The character's advance widens the word. */
 		cutter->word_length += used;
 		tab = 0;
 		if (code_point == 0x09U)
@@ -210,6 +228,8 @@ inline_cut_text(
 		} else {
 			cutter->word_width += inline_advance(cutter, code_point);
 		}
+
+		/* The next character follows a character that is not collapsed whitespace. */
 		cutter->after_space = 0;
 		cutter->previous = code_point;
 		offset += used;
@@ -230,6 +250,7 @@ inline_flush_word(
 	cutter->word = NULL;
 	cutter->word_length = 0;
 	cutter->word_width = 0;
+	cutter->word_fallback = 0;
 }
 
 /* Adds a piece of the current box and font. */
@@ -255,6 +276,10 @@ inline_add_piece(
 	piece.forced_break = forced_break;
 	piece.font = cutter->font;
 
+	/* A word drawn partly in the fallback face remembers it for the line's height. */
+	if (text != NULL && !space)
+		piece.uses_fallback = cutter->word_fallback;
+
 	/* Appends it. */
 	error = wb_vector_push(&cutter->pieces, &piece);
 	if (error != 0)
@@ -276,6 +301,10 @@ inline_advance(
 		cutter->error = error;
 		return 0;
 	}
+
+	/* A glyph the font's own face lacks came from the fallback face. */
+	if (glyph.face != cutter->font.face)
+		cutter->word_fallback = 1;
 
 	/* Reports the advance in layout units. */
 	return (layout_unit)glyph.advance_units;
@@ -323,6 +352,8 @@ inline_build_lines(
 				wb_vector_release(&lines);
 				return error;
 			}
+
+			/* The next line starts after the break. */
 			index++;
 			start = index;
 			x = 0;
@@ -336,6 +367,8 @@ inline_build_lines(
 				wb_vector_release(&lines);
 				return error;
 			}
+
+			/* The next line starts with the word. */
 			start = index;
 			x = 0;
 			continue;
@@ -364,8 +397,12 @@ inline_build_lines(
 			wb_vector_release(&lines);
 			return ENOMEM;
 		}
+
+		/* Copies the lines out of the growing vector. */
 		memcpy(box->lines, lines.items, lines.count * sizeof(struct layout_line));
 	}
+
+	/* The lines now live in the arena. */
 	wb_vector_release(&lines);
 
 	/* The block is as tall as its lines. */
@@ -391,13 +428,13 @@ inline_finish_line(
 	struct layout_fragment *fragment;
 	struct text_metrics metrics;
 	struct text_font font;
+	struct text_glyph glyph;
 	layout_unit above;
 	layout_unit below;
 	layout_unit piece_above;
 	layout_unit piece_below;
 	layout_unit x;
 	layout_unit room;
-	struct text_glyph glyph;
 	size_t count;
 	size_t index;
 	int error;
@@ -409,22 +446,33 @@ inline_finish_line(
 	/* The strut: the block's own font and line height. */
 	inline_line_height(tree, &box->style, &above, &below);
 
-	/* One fragment per piece, set along the line; each raises the line to fit it. */
+	/* Counts the fragments: every piece but the forced breaks. */
 	memset(&line, 0, sizeof(line));
 	count = 0;
 	for (index = start; index < end; index++) {
 		if (!pieces[index].forced_break)
 			count++;
 	}
-	if (count + (first_line ? 1U : 0U) != 0) {
-		line.fragments = wb_arena_zalloc(&tree->arena, (count + 1U) * sizeof(struct layout_fragment));
+
+	/* A list item's first line holds its marker too. */
+	if (first_line)
+		count++;
+
+	/* Allocates the fragments of a line that has any. */
+	if (count != 0) {
+		line.fragments = wb_arena_zalloc(&tree->arena, count * sizeof(struct layout_fragment));
 		if (line.fragments == NULL)
 			return ENOMEM;
 	}
+
+	/* Sets one fragment per piece along the line; each raises the line to fit it. */
 	x = 0;
 	for (index = start; index < end; index++) {
+		/* A forced break has no fragment. */
 		if (pieces[index].forced_break)
 			continue;
+
+		/* The fragment's text, font and place. */
 		fragment = &line.fragments[line.fragment_count];
 		line.fragment_count++;
 		fragment->box = pieces[index].box;
@@ -435,16 +483,22 @@ inline_finish_line(
 		fragment->underline = pieces[index].box->style.underline;
 		fragment->x = x;
 		fragment->width = pieces[index].width;
+
+		/* The font's ascent and descent, which the painting places the glyphs by. */
 		error = text_font_metrics(tree->text, &pieces[index].font, &metrics);
 		if (error != 0)
 			return error;
 		fragment->ascent = (layout_unit)metrics.ascent * LAYOUT_UNIT;
 		fragment->descent = (layout_unit)metrics.descent * LAYOUT_UNIT;
-		inline_line_height(tree, &pieces[index].box->style, &piece_above, &piece_below);
+
+		/* The piece's reach above and below the baseline raises the line. */
+		inline_piece_extent(tree, &pieces[index], &piece_above, &piece_below);
 		if (piece_above > above)
 			above = piece_above;
 		if (piece_below > below)
 			below = piece_below;
+
+		/* The next piece starts where this one ends. */
 		x += pieces[index].width;
 	}
 
@@ -459,16 +513,22 @@ inline_finish_line(
 		fragment->font = font;
 		fragment->color = box->style.color;
 		fragment->width = 0;
+
+		/* The marker is as wide as its characters. */
 		for (index = 0; index < box->marker_length; index++) {
 			error = text_glyph(tree->text, &font, box->marker[index], 0, &glyph);
 			if (error != 0)
 				return error;
 			fragment->width += glyph.advance_units;
 		}
+
+		/* It ends a space's width before the content's left edge. */
 		error = text_glyph(tree->text, &font, 0x20U, 0, &glyph);
 		if (error != 0)
 			return error;
 		fragment->x = -(fragment->width + glyph.advance_units);
+
+		/* The font's ascent and descent, which the painting places the glyphs by. */
 		error = text_font_metrics(tree->text, &font, &metrics);
 		if (error != 0)
 			return error;
@@ -507,21 +567,76 @@ inline_line_height(
 	layout_unit *above,
 	layout_unit *below)
 {
-	struct text_metrics metrics;
 	struct text_font font;
+
+	/* The style's own font under the style's line-height. */
+	layout_font_of(tree, style, &font);
+	inline_font_extent(tree, &font, style, above, below);
+}
+
+/*
+ * Measures how far a piece's line reaches above and below the baseline.
+ *
+ * With line-height: normal, a word drawn partly in the fallback face also
+ * reaches as far as that face's own line does, as in Chromium, where every
+ * font a run uses counts toward a normal line's height.
+ */
+static void
+inline_piece_extent(
+	struct layout_tree *tree,
+	const struct inline_piece *piece,
+	layout_unit *above,
+	layout_unit *below)
+{
+	struct text_font fallback;
+	layout_unit fallback_above;
+	layout_unit fallback_below;
+
+	/* The line of the piece's own style. */
+	inline_line_height(tree, &piece->box->style, above, below);
+
+	/* A given line height is not raised by the fonts used. */
+	if (piece->box->style.line_height.unit != CSS_UNIT_NORMAL)
+		return;
+
+	/* A piece in its own face alone needs nothing more. */
+	if (!piece->uses_fallback)
+		return;
+
+	/* The fallback face at the piece's size raises the extent where it reaches further. */
+	fallback = piece->font;
+	fallback.face = TEXT_FACE_FALLBACK;
+	inline_font_extent(tree, &fallback, &piece->box->style, &fallback_above, &fallback_below);
+	if (fallback_above > *above)
+		*above = fallback_above;
+	if (fallback_below > *below)
+		*below = fallback_below;
+}
+
+/* Measures how far a font's line reaches above and below the baseline under a style's line-height. */
+static void
+inline_font_extent(
+	struct layout_tree *tree,
+	const struct text_font *font,
+	const struct css_style *style,
+	layout_unit *above,
+	layout_unit *below)
+{
+	struct text_metrics metrics;
 	layout_unit content;
 	layout_unit height;
 	layout_unit leading;
 	int error;
 
-	/* The font's measures. */
-	layout_font_of(tree, style, &font);
-	error = text_font_metrics(tree->text, &font, &metrics);
+	/* The font's measures, or the font size when the font cannot be measured. */
+	error = text_font_metrics(tree->text, font, &metrics);
 	if (error != 0) {
 		metrics.ascent = (int)style->font_size;
 		metrics.descent = 0;
 		metrics.line_height = (int)style->font_size;
 	}
+
+	/* The glyphs' own height, from the ascent to the descent. */
 	content = (layout_unit)(metrics.ascent + metrics.descent) * LAYOUT_UNIT;
 
 	/* The used line height: normal, a multiple of the font size, or a length. */
