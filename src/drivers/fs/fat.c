@@ -17,6 +17,7 @@
 #include <kern/io-stats.h>
 #include "kern/namecache.h"
 #include "kern/namei.h"
+#include "kern/clock.h"
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
@@ -156,6 +157,16 @@ struct fat_mount_state {
 	uint16_t sectors_per_cluster;
 	uint16_t fsinfo_sector;
 	uint8_t sector_scale;
+	/*
+	 * The number of free clusters, kept for the FSInfo sector of a FAT32
+	 * volume.  It is counted from the table before this mount first
+	 * changes it (free_clusters_known then becomes 1), moved by every
+	 * committed table change, and written to FSInfo by a sync while
+	 * fsinfo_dirty is 1.  The mount lock protects all three.
+	 */
+	uint32_t free_clusters;
+	uint8_t free_clusters_known;
+	uint8_t fsinfo_dirty;
 	uint8_t number_of_fats;
 	uint8_t type;
 	uint8_t fat16_layout;
@@ -440,6 +451,12 @@ static int fat_raw_set_entry_byte(struct fat_mount_state *filesystem,
 	uint8_t merge_value);
 static int fat_raw_set_cluster_copy(struct fat_mount_state *filesystem,
 	uint32_t cluster, uint32_t value, unsigned copy);
+static int fat_free_count_prepare(struct fat_mount_state *filesystem);
+static void fat_free_count_adjust(struct fat_mount_state *filesystem, uint32_t taken, uint32_t released);
+static int fat_fsinfo_write(struct fat_mount_state *filesystem);
+static int fat_fsinfo_signed(const uint8_t *sector);
+static uint32_t fat_raw_dotdot_cluster(const struct fat_mount_state *fat, uint32_t parent_cluster);
+static FAT_MUTATION void fat_raw_stamp_record(uint8_t raw[32], int created);
 static int fat_raw_set_cluster_immediate(struct fat_mount_state *filesystem,
 	uint32_t cluster, uint32_t value);
 static uint32_t fat_raw_dir_cluster(const struct fat_mount_state *fat,
@@ -3197,6 +3214,8 @@ fat_raw_set_cluster_immediate(
 	uint32_t value)
 {
 	uint32_t old_values[256];
+	uint32_t taken;
+	uint32_t released;
 	unsigned copy;
 	int error;
 	int rollback;
@@ -3208,6 +3227,9 @@ fat_raw_set_cluster_immediate(
 	valid = fat_raw_valid_cluster(filesystem, cluster);
 	if (!valid)
 		return EIO;
+
+	/* Knows the free count before the table changes, for FSInfo. */
+	(void)fat_free_count_prepare(filesystem);
 
 	/* Captures every old entry before changing any copy. */
 	for (copy = 0; copy < filesystem->number_of_fats; copy++) {
@@ -3246,8 +3268,18 @@ fat_raw_set_cluster_immediate(
 		error = disk_sync(filesystem->disk);
 
 	/* Succeeded: every copy carries the new value. */
-	if (error == 0)
+	if (error == 0) {
+		/* Moves the free count if the entry went from free to used or back. */
+		taken = 0;
+		released = 0;
+		if (old_values[0] == 0 && value != 0)
+			taken = 1;
+		else if (old_values[0] != 0 && value == 0)
+			released = 1;
+		fat_free_count_adjust(filesystem, taken, released);
+
 		return 0;
+	}
 
 	/* Restore even the copy whose write or final flush reported failure. */
 	rollback = 0;
@@ -3465,6 +3497,9 @@ fat_table_transaction(
 	unsigned copy;
 	unsigned entry;
 	unsigned bytes;
+	uint32_t old_value;
+	uint32_t taken;
+	uint32_t released;
 	int error;
 	int valid;
 
@@ -3547,6 +3582,9 @@ fat_table_transaction(
 
 	*admitted = 1;
 
+	/* Knows the free count before the table changes, for FSInfo. */
+	(void)fat_free_count_prepare(filesystem);
+
 	/* Nothing cached may survive the sectors being written under it. */
 	error = fat_engine_flush(filesystem);
 	if (error != 0) {
@@ -3578,8 +3616,11 @@ fat_table_transaction(
 
 	/*
 	 * Merge replacements into the private sector images without changing
-	 * neighbors.
+	 * neighbors.  Counts, from the first copy, how many free clusters the
+	 * batch takes and how many it frees.
 	 */
+	taken = 0;
+	released = 0;
 	for (entry = 0; entry < count; entry++) {
 		offset = fat_raw_entry_offset(filesystem,
 			changes[entry].cluster);
@@ -3604,6 +3645,15 @@ fat_table_transaction(
 
 			first += offset & 511U;
 			second += (offset + 1U) & 511U;
+
+			/* A FAT32 entry going from free to used, or back. */
+			if (copy == 0 && filesystem->type == KERN_FAT32) {
+				old_value = fat_engine_get32(first) & 0x0fffffffU;
+				if (old_value == 0 && (value & 0x0fffffffU) != 0)
+					taken++;
+				else if (old_value != 0 && (value & 0x0fffffffU) == 0)
+					released++;
+			}
 
 			/* An entry is as wide as the volume format. */
 			if (filesystem->type == KERN_FAT32) {
@@ -3634,6 +3684,9 @@ fat_table_transaction(
 	/* Reports the failure. */
 	if (error != 0)
 		return error;
+
+	/* Moves the free count by what the committed batch changed. */
+	fat_free_count_adjust(filesystem, taken, released);
 
 	/* Succeeded. */
 	return 0;
@@ -3879,6 +3932,218 @@ fat_raw_dir_cluster(
 
 	/* The cluster number, of which four bits are reserved. */
 	return cluster & 0x0fffffffU;
+}
+
+/*
+ * Counts the free clusters before this mount first changes the table.
+ *
+ * Only a FAT32 volume keeps the count, in its FSInfo sector.  The count
+ * already there may be stale (an earlier driver did not keep it), so it is
+ * counted from the table once per mount.  A count that fails leaves the
+ * count unknown and FSInfo alone; the change itself goes on.
+ */
+static int
+fat_free_count_prepare(
+	struct fat_mount_state *filesystem)
+{
+	uint32_t free_clusters;
+	int error;
+
+	/* Only a FAT32 volume has a count to keep, and it is kept once. */
+	if (filesystem->type != KERN_FAT32)
+		return 0;
+	if (filesystem->free_clusters_known)
+		return 0;
+
+	/* Counts the free entries of the table as it is now. */
+	error = fat_engine_count_free_clusters(filesystem, &free_clusters);
+	if (error != 0)
+		return error;
+
+	/* The count is known from here on, and FSInfo has to learn it. */
+	filesystem->free_clusters = free_clusters;
+	filesystem->free_clusters_known = 1;
+	filesystem->fsinfo_dirty = 1;
+
+	/* Succeeded: the count matches the table. */
+	return 0;
+}
+
+/* Moves the kept free count by what a committed table change did. */
+static void
+fat_free_count_adjust(
+	struct fat_mount_state *filesystem,
+	uint32_t taken,
+	uint32_t released)
+{
+	/* A count that is not known is not kept. */
+	if (!filesystem->free_clusters_known)
+		return;
+
+	/* A change the count cannot follow makes it unknown again. */
+	if (taken > filesystem->free_clusters) {
+		filesystem->free_clusters_known = 0;
+		return;
+	}
+
+	/* Applies the change; FSInfo is written at the next sync. */
+	filesystem->free_clusters -= taken;
+	filesystem->free_clusters += released;
+	if (taken != 0 || released != 0)
+		filesystem->fsinfo_dirty = 1;
+}
+
+/*
+ * Writes the kept free count to the FSInfo sector.
+ *
+ * The next-free hint is written too, from the allocation hint.  A volume
+ * whose FSInfo sector is missing or carries the wrong signatures is left
+ * alone: FSInfo is only a hint, and nothing else depends on it.
+ */
+static int
+fat_fsinfo_write(
+	struct fat_mount_state *filesystem)
+{
+	uint8_t *sector;
+	uint32_t lba;
+	uint32_t next_free;
+	int valid;
+	int error;
+
+	/* Nothing to write without a changed, known count. */
+	if (!filesystem->fsinfo_dirty)
+		return 0;
+	if (!filesystem->free_clusters_known)
+		return 0;
+	if (filesystem->read_only)
+		return 0;
+
+	/* FSInfo lives in a reserved sector after the boot sector. */
+	if (filesystem->fsinfo_sector == 0 ||
+	    filesystem->fsinfo_sector == 0xffffU)
+		return 0;
+	lba = (uint32_t)filesystem->fsinfo_sector * filesystem->sector_scale;
+	if (lba >= filesystem->fat_start)
+		return 0;
+
+	/* Takes the sector for writing. */
+	error = fat_engine_write_sector_result(filesystem, lba, &sector);
+	if (error != 0)
+		return error;
+
+	/* Leaves a sector that is not an FSInfo sector alone. */
+	valid = fat_fsinfo_signed(sector);
+	if (!valid) {
+		filesystem->fsinfo_dirty = 0;
+		return 0;
+	}
+
+	/* The next-free hint is a cluster number, or 0xffffffff for none. */
+	next_free = filesystem->allocation_hint;
+	if (next_free < 2U || next_free >= filesystem->cluster_count + 2U)
+		next_free = 0xffffffffU;
+
+	/* Stores the count and the hint. */
+	put32(sector + 488, filesystem->free_clusters);
+	put32(sector + 492, next_free);
+
+	/* The sector reaches the volume with the sync's flush. */
+	error = fat_engine_mark_sector_dirty(filesystem);
+	if (error != 0)
+		return error;
+
+	/* FSInfo matches the count until the table changes again. */
+	filesystem->fsinfo_dirty = 0;
+
+	/* Succeeded: FSInfo carries the count. */
+	return 0;
+}
+
+/* Tells whether a sector carries the three FSInfo signatures. */
+static int
+fat_fsinfo_signed(
+	const uint8_t *sector)
+{
+	uint32_t lead;
+	uint32_t structure;
+	uint32_t trail;
+
+	/* Reads the three signatures the FAT specification places there. */
+	lead = fat_engine_get32(sector);
+	structure = fat_engine_get32(sector + 484);
+	trail = fat_engine_get32(sector + 508);
+
+	/* Each has to be the one the specification names. */
+	if (lead != 0x41615252U)
+		return 0;
+	if (structure != 0x61417272U)
+		return 0;
+	if (trail != 0xaa550000U)
+		return 0;
+
+	/* Succeeded: the sector is an FSInfo sector. */
+	return 1;
+}
+
+/*
+ * Tells what a dot-dot record stores for a parent directory.
+ *
+ * A directory directly in the root names cluster 0 as its parent, even on
+ * FAT32 where the root has a cluster of its own (the FAT specification);
+ * any other parent is named by its first cluster.
+ */
+static uint32_t
+fat_raw_dotdot_cluster(
+	const struct fat_mount_state *fat,
+	uint32_t parent_cluster)
+{
+	uint32_t root;
+
+	/* The root is named by cluster 0. */
+	root = fat_raw_root_cluster(fat);
+	if (parent_cluster == root)
+		return 0;
+
+	/* Succeeded: any other parent is named by its cluster. */
+	return parent_cluster;
+}
+
+/*
+ * Stamps a directory record with the time now.
+ *
+ * FAT keeps a creation time, a last-write time and a last-access date in
+ * every record.  A new record gets all three; a record whose file was
+ * written gets the last two.  A clock before 1980, which FAT cannot store,
+ * leaves the record as it is.
+ */
+static FAT_MUTATION void
+fat_raw_stamp_record(
+	uint8_t raw[32],
+	int created)
+{
+	time_t seconds;
+	long nanoseconds;
+	uint16_t date;
+	uint16_t time;
+	int error;
+
+	/* Reads the clock and converts it to FAT's date and time. */
+	clock_realtime(&seconds, &nanoseconds);
+	error = fat_encode_time(seconds, &date, &time);
+	if (error != 0)
+		return;
+
+	/* A new record is created now, in whole two-second units. */
+	if (created) {
+		raw[13] = 0;
+		put16(raw + 14, time);
+		put16(raw + 16, date);
+	}
+
+	/* And it is read and written now. */
+	put16(raw + 18, date);
+	put16(raw + 22, time);
+	put16(raw + 24, date);
 }
 
 /* Stores a cluster number into the two halves a record keeps it in. */
@@ -5234,6 +5499,7 @@ fat_raw_flush_file(
 				sector + state->directory_offset,
 				state->first_cluster);
 	put32(sector + state->directory_offset + 28, (uint32_t)file->size);
+	fat_raw_stamp_record(sector + state->directory_offset, 0);
 
 	/* Writes the sector out, and only then calls the entry clean. */
 	error = fat_engine_mark_sector_dirty(file->mount);
@@ -6307,6 +6573,7 @@ fat32_create_entry(
 	fat_raw_put_dir_cluster(filesystem, entries[lfn_count], first_cluster);
 
 	put32(entries[lfn_count] + 28, size);
+	fat_raw_stamp_record(entries[lfn_count], 1);
 
 	/* Writes every record of the name as one transaction. */
 	result = fat_directory_transaction(filesystem,
@@ -6413,6 +6680,7 @@ fat_raw_insert_entry(
 		first_cluster);
 
 	put32(sector + free_offset + 28, size);
+	fat_raw_stamp_record(sector + free_offset, 1);
 
 	/* The record reaches the volume once the sector is written. */
 	result = fat_engine_mark_sector_dirty(filesystem);
@@ -6721,15 +6989,21 @@ fat_raw_initialize_directory(
 	raw[0] = '.';
 	raw[11] = 0x10U;
 	fat_raw_put_dir_cluster(filesystem, raw, cluster);
+	fat_raw_stamp_record(raw, 1);
 
-	/* Writes `..`, which names the directory it was created in. */
+	/*
+	 * Writes `..`, which names the directory it was created in; a
+	 * directory in the root names cluster 0.
+	 */
 	raw += 32;
 	for (index = 0; index < 11; index++)
 		raw[index] = ' ';
 	raw[0] = '.';
 	raw[1] = '.';
 	raw[11] = 0x10U;
+	parent_cluster = fat_raw_dotdot_cluster(filesystem, parent_cluster);
 	fat_raw_put_dir_cluster(filesystem, raw, parent_cluster);
+	fat_raw_stamp_record(raw, 1);
 
 	/* Writes the sector out before anything links the directory in. */
 	error = fat_engine_mark_sector_dirty(filesystem);
@@ -6982,6 +7256,8 @@ fat_raw_update_dotdot(
 	if (result != 0)
 		return result;
 
+	/* Points the record at the new parent; the root is cluster 0. */
+	parent_cluster = fat_raw_dotdot_cluster(filesystem, parent_cluster);
 	fat_raw_put_dir_cluster(filesystem, sector + offset, parent_cluster);
 
 	/* The change reaches the volume once the sector is written. */
@@ -11361,6 +11637,10 @@ fat_sync_mount(
 		if (error == 0)
 			fat_sync_inode_state(owner, file);
 	}
+
+	/* Records the free count in FSInfo before the final flush. */
+	if (error == 0)
+		error = fat_fsinfo_write(state);
 
 	/* The cached sector and the disk are flushed in turn. */
 	if (error == 0)
