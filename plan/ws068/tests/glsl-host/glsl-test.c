@@ -310,9 +310,26 @@ test_link(
 
 	/* The uniforms. */
 	for (index = 0U; index < program.uniform_count; index++) {
-		printf("uniform %s base=%u components=%u columns=%u size=%u sampler=%u\n", program.uniforms[index].name,
+		printf("uniform %s base=%u components=%u columns=%u size=%u sampler=%u", program.uniforms[index].name,
 		       program.uniforms[index].base, program.uniforms[index].components, program.uniforms[index].columns,
 		       program.uniforms[index].size, program.uniforms[index].sampler);
+
+		/* A named block's member: its block, offset and strides. */
+		if (program.uniforms[index].block >= 0) {
+			printf(" block=%d offset=%u array_stride=%u matrix_stride=%u row_major=%u", program.uniforms[index].block,
+			       program.uniforms[index].offset, program.uniforms[index].array_stride,
+			       program.uniforms[index].matrix_stride, program.uniforms[index].row_major);
+		}
+
+		/* The line's end. */
+		printf("\n");
+	}
+
+	/* The named uniform blocks. */
+	for (index = 0U; index < program.block_count; index++) {
+		printf("block %u %s binding=%u size=%u stages=%u members=%u\n", index, program.blocks[index].name,
+		       program.blocks[index].binding, program.blocks[index].size, program.blocks[index].stages,
+		       program.blocks[index].member_count);
 	}
 
 	/* The SPIR-V of both stages. */

@@ -31,6 +31,12 @@
 /* The binding of the first uniform block (the default block is 0, the samplers 1 to 16). */
 #define LINK_FIRST_BLOCK_BINDING 32U
 
+/* The most named uniform blocks a program has (libGLESv2 binds them from 32 up to 55). */
+#define LINK_MAX_BLOCKS		24U
+
+/* The most leaves the API lists of a program's uniforms. */
+#define LINK_MAX_LEAVES		1024U
+
 /*
  * A link in progress: its arena, where failures jump to, its log, and the
  * program's uniforms.
@@ -59,6 +65,9 @@ static struct glsl_symbol *link_find_varying(struct glsl_shader *vertex, struct 
 static int link_take_output(struct link_state *state, struct glsl_symbol *symbol, unsigned char *taken);
 static void link_info(struct link_state *state, struct glsl_program *program);
 static void link_leaves(struct link_state *state, const struct glsl_type *type, const char *name, struct glsl_uniform_info *out, unsigned *count, unsigned capacity);
+static void link_block_infos(struct link_state *state, struct glsl_shader *shader, unsigned stage, struct glsl_program *program);
+static void link_member_leaves(struct link_state *state, const struct glsl_type *type, const char *name, unsigned offset, unsigned row_major, int block, struct glsl_program *program);
+static char *link_name(struct link_state *state, const char *name);
 static uint32_t *link_copy(const uint32_t *code, size_t words);
 
 /*
@@ -134,8 +143,10 @@ glsl_link(
 	if (program->code[0] == NULL || program->code[1] == NULL)
 		longjmp(state->failure, 1);
 
-	/* What the API reports of the uniforms. */
+	/* What the API reports of the uniforms and the uniform blocks. */
 	link_info(state, program);
+	link_block_infos(state, vertex, 0U, program);
+	link_block_infos(state, fragment, 1U, program);
 
 	/* Succeeded: the program. */
 	glsl_arena_free(&state->arena);
@@ -165,6 +176,13 @@ glsl_program_free(
 	free(program->uniforms);
 	program->uniforms = NULL;
 	program->uniform_count = 0U;
+
+	/* The blocks' names and the list. */
+	for (index = 0U; index < program->block_count; index++)
+		free(program->blocks[index].name);
+	free(program->blocks);
+	program->blocks = NULL;
+	program->block_count = 0U;
 }
 
 /* Reports a link error in the log. */
@@ -686,20 +704,203 @@ link_info(
 	struct glsl_program *program)
 {
 	struct glsl_uniform_info *infos;
-	unsigned count;
 	unsigned index;
 
-	/* Room for every leaf (a struct array's leaves are many). */
-	infos = calloc(1024U, sizeof(*infos));
+	/* Room for every leaf (a struct array's leaves are many), the blocks' members included. */
+	infos = calloc(LINK_MAX_LEAVES, sizeof(*infos));
 	if (infos == NULL)
 		longjmp(state->failure, 1);
 	program->uniforms = infos;
 
-	/* Each uniform's leaves. */
-	count = 0U;
+	/* Each uniform's leaves, counted as they are named so that a failure frees every name. */
 	for (index = 0U; index < state->uniform_count; index++)
-		link_leaves(state, state->uniforms[index].type, state->uniforms[index].name, infos, &count, 1024U);
-	program->uniform_count = count;
+		link_leaves(state, state->uniforms[index].type, state->uniforms[index].name, infos, &program->uniform_count, LINK_MAX_LEAVES);
+
+	/* None of them is in a named block. */
+	for (index = 0U; index < program->uniform_count; index++)
+		infos[index].block = -1;
+}
+
+/*
+ * Lists the named uniform blocks a stage reads, with their members: a
+ * block the other stage listed already only gains the stage.  A block's
+ * index among the program's blocks is its binding less the first
+ * block's binding (link_blocks numbered them in this order).
+ */
+static void
+link_block_infos(
+	struct link_state *state,
+	struct glsl_shader *shader,
+	unsigned stage,
+	struct glsl_program *program)
+{
+	struct glsl_block_info *blocks;
+	struct glsl_block_info *block;
+	struct glsl_symbol *symbol;
+	const struct glsl_type *type;
+	unsigned first_member;
+	unsigned index;
+	int differs;
+
+	/* Room for every block, made at the first stage. */
+	if (program->blocks == NULL) {
+		blocks = calloc(LINK_MAX_BLOCKS, sizeof(*blocks));
+		if (blocks == NULL)
+			longjmp(state->failure, 1);
+		program->blocks = blocks;
+	}
+
+	/* Each block the stage reads. */
+	for (symbol = shader->globals; symbol != NULL; symbol = symbol->next_global) {
+		if (!symbol->used || symbol->where != GLSL_VAR_BLOCK)
+			continue;
+
+		/* A binding outside the ones libGLESv2 binds is an error. */
+		index = symbol->binding - LINK_FIRST_BLOCK_BINDING;
+		if (symbol->binding < LINK_FIRST_BLOCK_BINDING || index >= LINK_MAX_BLOCKS) {
+			link_error(state, "more than %u uniform blocks", LINK_MAX_BLOCKS);
+			longjmp(state->failure, 1);
+		}
+
+		/* A block listed already (the vertex stage's) gains the stage. */
+		block = &program->blocks[index];
+		if (block->name != NULL) {
+			block->stages |= 1U << stage;
+			continue;
+		}
+
+		/* A new block: its name, binding and size. */
+		type = symbol->type;
+		block->name = link_name(state, type->name);
+		block->binding = symbol->binding;
+		block->size = glsl_std140_size(type);
+		block->stages = 1U << stage;
+		if (index + 1U > program->block_count)
+			program->block_count = index + 1U;
+
+		/* Its members, named after the block when it has an instance name, else by their own names. */
+		first_member = program->uniform_count;
+		differs = strcmp(symbol->name, type->name);
+		if (differs != 0) {
+			link_member_leaves(state, type, type->name, 0U, 0U, (int)index, program);
+		} else {
+			link_member_leaves(state, type, NULL, 0U, 0U, (int)index, program);
+		}
+
+		/* How many members it has. */
+		block->member_count = program->uniform_count - first_member;
+	}
+}
+
+/*
+ * Adds the leaves of a named block's member of a type at a std140 offset
+ * under a name (NULL: the block itself without an instance name, whose
+ * members take their own names): struct members "name.member", struct
+ * array elements "name[i]", and a leaf with its offset and strides.
+ */
+static void
+link_member_leaves(
+	struct link_state *state,
+	const struct glsl_type *type,
+	const char *name,
+	unsigned offset,
+	unsigned row_major,
+	int block,
+	struct glsl_program *program)
+{
+	struct glsl_uniform_info *info;
+	const struct glsl_type *leaf;
+	char member[256];
+	unsigned alignment;
+	unsigned stride;
+	unsigned index;
+
+	/* A struct: each member at its offset, with its own matrix order. */
+	if (type->kind == GLSL_KIND_STRUCT) {
+		for (index = 0U; index < type->field_count; index++) {
+			alignment = glsl_std140_alignment(type->fields[index].type);
+			offset = (offset + alignment - 1U) & ~(alignment - 1U);
+			if (name != NULL) {
+				(void)snprintf(member, sizeof(member), "%s.%s", name, type->fields[index].name);
+			} else {
+				(void)snprintf(member, sizeof(member), "%s", type->fields[index].name);
+			}
+
+			/* The member, then the next member's offset. */
+			link_member_leaves(state, type->fields[index].type, member, offset, type->fields[index].row_major, block, program);
+			offset += glsl_std140_member_size(type->fields[index].type, type->fields[index].row_major);
+		}
+
+		/* The members are in. */
+		return;
+	}
+
+	/* An array of structs: each element at its stride. */
+	if (type->kind == GLSL_KIND_ARRAY && type->element->kind == GLSL_KIND_STRUCT) {
+		stride = glsl_std140_stride(type);
+		for (index = 0U; index < type->length; index++) {
+			(void)snprintf(member, sizeof(member), "%s[%u]", name, index);
+			link_member_leaves(state, type->element, member, offset + index * stride, row_major, block, program);
+		}
+
+		/* The elements are in. */
+		return;
+	}
+
+	/* A leaf (an array of leaves is one uniform of its length); without room it is left out. */
+	if (program->uniform_count == LINK_MAX_LEAVES)
+		return;
+	info = &program->uniforms[program->uniform_count];
+	info->name = link_name(state, name);
+	program->uniform_count++;
+
+	/* Its size, and the stride of an array's elements. */
+	leaf = type;
+	info->size = 1U;
+	if (type->kind == GLSL_KIND_ARRAY) {
+		leaf = type->element;
+		info->size = type->length;
+		info->array_stride = glsl_std140_member_stride(type, row_major);
+	}
+
+	/* Its kind, as a leaf of the default block has it. */
+	info->components = leaf->components;
+	info->columns = leaf->columns;
+	info->base = GLSL_INFO_FLOAT;
+	if (leaf->base == GLSL_BASE_INT)
+		info->base = GLSL_INFO_INT;
+	if (leaf->base == GLSL_BASE_UINT)
+		info->base = GLSL_INFO_UINT;
+	if (leaf->base == GLSL_BASE_BOOL)
+		info->base = GLSL_INFO_BOOL;
+
+	/* Where it is in the block: its offset, and a matrix's columns (or rows) 16 bytes apart. */
+	info->block = block;
+	info->offset = offset;
+	if (leaf->kind == GLSL_KIND_MATRIX) {
+		info->matrix_stride = 16U;
+		info->row_major = row_major;
+	}
+}
+
+/* Copies a name into memory of its own, which glsl_program_free frees. */
+static char *
+link_name(
+	struct link_state *state,
+	const char *name)
+{
+	char *copy;
+	size_t length;
+
+	/* The copy with its terminator. */
+	length = strlen(name);
+	copy = malloc(length + 1U);
+	if (copy == NULL)
+		longjmp(state->failure, 1);
+	memcpy(copy, name, length + 1U);
+
+	/* Succeeded: the copy. */
+	return copy;
 }
 
 /* Adds the leaves of a uniform of a type under a name: struct members "name.member", struct array elements "name[i]". */

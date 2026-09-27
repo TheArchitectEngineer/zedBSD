@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none
-Resume point: p003（自前の GLSL compiler、方式 A）は p015〜p019、p012（GLSL 1.40〜3.30・ES 3.00）は p020・p021 で cleared（2026-09-27、サブエージェント、Venus で egl-p019・egl-p020 PASS）。次は p005（GLES 3.0 の API: uniform buffer 等）・p013・p014（desktop GL 3.0〜4.6）。p009（frame を重ねる）、p011（FBO）も残る
+Resume point: p024（GLES 3.0 の API（1）: VAO・buffer の map と copy・instancing・整数の属性と uniform・uniform buffer・glGetStringi・primitive restart）cleared（2026-09-27、Venus で egl-p024 PASS）。次は p025（sized の format・glTexStorage・sampler object・depth texture）→ p028（3D・2D 配列の texture・pixel buffer）→ p026 → p027、その後 p013・p014（desktop GL 3.0〜4.6）、p009、p004、p007（最後）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -62,9 +62,10 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | ws068-p014 | desktop GL 3.3〜4.6 の出来る範囲（Venus 先。geometry・tessellation・compute・SSBO は device の feature で。i915 の不足は F-023） | planning | p012、p013 |
 | ws068-p004 | GLES 2.0 の残りと試験の充実 | planning | p003 |
 | ws068-p005 | GLES 3.0 | 2026-09-27 に p024〜p027 に分けた | p004 |
-| [ws068-p024](phase024/phase.md) | GLES 3.0 の API（1）: VAO、buffer の map・copy、instancing、整数の属性と uniform、uniform buffer、glGetStringi | in-progress（q495-i01） | p020、p021、p022 |
-| ws068-p025 | GLES 3.0 の API（2）: sized の format（float・整数を含む）、3D・2D 配列の texture、glTexStorage、sampler object、depth texture と shadow sampler、pixel の pack/unpack buffer | planned | p024 |
-| ws068-p026 | GLES 3.0 の API（3）: 複数の colour attachment（glDrawBuffers）、READ/DRAW の framebuffer、glBlitFramebuffer、glReadBuffer、glClearBuffer*、glInvalidateFramebuffer、depth texture の取り付け | planned | p025 |
+| [ws068-p024](phase024/phase.md) | GLES 3.0 の API（1）: VAO、buffer の map・copy、instancing、整数の属性と uniform、uniform buffer、glGetStringi | cleared（q495-i01、2026-09-27。Venus で egl-p024、回帰 PASS） | p020、p021、p022 |
+| ws068-p025 | GLES 3.0 の API（2）: sized の format（float・整数・depth）の texture の保存と変換、glTexStorage2D、OpenGL ES 3 の texture の parameter（BASE/MAX_LEVEL、MIN/MAX_LOD、WRAP_R、swizzle、compare）、sampler object、depth texture と shadow sampler（2026-09-27 に 3D・配列と pixel buffer を p028 に分けた） | planned | p024 |
+| ws068-p028 | GLES 3.0 の API（2b）: 3D・2D 配列の texture（glTexImage3D・glTexSubImage3D・glCopyTexSubImage3D・glTexStorage3D、sampler3D・sampler2DArray）、pixel の pack/unpack buffer と OpenGL ES 3 の pixel store（ROW_LENGTH・SKIP_*・IMAGE_HEIGHT） | planned | p025 |
+| ws068-p026 | GLES 3.0 の API（3）: 複数の colour attachment（glDrawBuffers）、READ/DRAW の framebuffer、glBlitFramebuffer、glReadBuffer、glClearBuffer*、glInvalidateFramebuffer、depth texture の取り付け、sized の format の renderbuffer と FBO | planned | p028 |
 | ws068-p027 | GLES 3.0 の API（4）: query（occlusion）、sync object（glFenceSync）、transform feedback、GL_VERSION を「OpenGL ES 3.0」に（必須の機能が揃ったとき） | planned | p026 |
 | [ws068-p006](phase006/phase.md) | i915 実機での確認（GLX の zgears、App Home の X11、仮想デスクトップ） | cleared（q484-i01。実機で 6 検査 PASS の run あり、回転の間欠の止まりは BUG-057） | p008、p010、ws069-p005、F-023 |
 | ws068-p007 | 規約の全文との照合と回帰（最後） | planning | 全 Phase |

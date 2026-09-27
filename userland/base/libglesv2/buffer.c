@@ -7,7 +7,8 @@
 
 /*
  * Buffer objects and the device memory under all of zedBSD's OpenGL ES
- * (WS068 p008).
+ * (WS068 p008), and OpenGL ES 3's buffer and vertex array calls (WS068
+ * p024).
  *
  * A buffer object keeps its bytes on the CPU; a draw copies them into a
  * host-visible device buffer when they changed.  The stream is memory for
@@ -16,6 +17,13 @@
  * descriptor pools; the garbage holds device objects a frame still uses.
  * Uploads to images go through one command buffer that is submitted and
  * waited for at once.
+ *
+ * glMapBufferRange hands out the CPU bytes themselves: nothing on the
+ * device has to be read back (the GPU never writes a buffer object), and
+ * unmapping marks the device copy stale like glBufferSubData.  A vertex
+ * array object is a saved copy of the attributes' arrays and the element
+ * buffer: binding one saves the context's into the one bound before and
+ * loads its own.
  */
 
 #include "gles.h"
@@ -26,7 +34,13 @@
 /* How long an upload may take, in nanoseconds. */
 #define GLES_UPLOAD_TIMEOUT	10000000000ULL
 
+static struct gles_buffer **buffer_slot(struct gles_state *state, GLenum target);
 static struct gles_buffer *buffer_bound(struct zegl_context *context, GLenum target);
+static struct gles_buffer *buffer_named(struct zegl_context *context, struct gles_state *state, GLuint name);
+static int buffer_parameter(struct zegl_context *context, GLenum target, GLenum pname, GLint64 *value);
+static void buffer_bind_range(GLenum target, GLuint index, GLuint name, GLintptr offset, GLsizeiptr size, int whole);
+static int buffer_indexed(struct zegl_context *context, GLenum target, GLuint index, GLint64 *value);
+static void buffer_forget(struct gles_attrib *attribs, struct gles_buffer **element_buffer, struct gles_buffer *buffer);
 static struct gles_chunk *buffer_chunk(struct gles_state *state, size_t size);
 
 /*
@@ -314,9 +328,10 @@ gles_buffer_sync(
 		return 0;
 	}
 
-	/* A new device buffer, the old one kept for the frame. */
+	/* A new device buffer (for any use a draw makes of a buffer object), the old one kept for the frame. */
 	status = gles_device_buffer(state, buffer->size,
-				    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+				    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+				    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 				    &device_buffer, &memory, &mapped);
 	if (status != 0)
 		return -1;
@@ -345,6 +360,26 @@ gles_buffer_free(
 	gles_throw_away(state, buffer->buffer, VK_NULL_HANDLE, VK_NULL_HANDLE, buffer->memory);
 	free(buffer->data);
 	free(buffer);
+}
+
+/*
+ * Frees the vertex array objects and their namespace (the context's own
+ * arrays are in its state).
+ */
+void
+gles_vertex_arrays_release(
+	struct gles_state *state)
+{
+	GLuint name;
+
+	/* Each vertex array object. */
+	for (name = 1U; name < state->vertex_arrays.capacity; name++)
+		free(state->vertex_arrays.objects[name]);
+
+	/* The namespace. */
+	free(state->vertex_arrays.objects);
+	state->vertex_arrays.objects = NULL;
+	state->vertex_arrays.capacity = 0U;
 }
 
 /*
@@ -493,11 +528,19 @@ glDeleteBuffers(
 	GLsizei n,
 	const GLuint *buffers)
 {
+	static const GLenum targets[] = {
+		GL_ARRAY_BUFFER, GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, GL_UNIFORM_BUFFER,
+		GL_PIXEL_PACK_BUFFER, GL_PIXEL_UNPACK_BUFFER, GL_TRANSFORM_FEEDBACK_BUFFER
+	};
 	struct zegl_context *context;
 	struct gles_state *state;
 	struct gles_buffer *buffer;
+	struct gles_buffer **slot;
+	struct gles_vertex_array *array;
 	GLsizei index;
-	unsigned attrib;
+	GLuint name;
+	unsigned target;
+	unsigned binding;
 
 	/* A context with its state. */
 	context = gles_context();
@@ -515,14 +558,36 @@ glDeleteBuffers(
 		if (buffer == NULL)
 			continue;
 
-		/* Unbound from the targets and the attributes. */
-		if (state->array_buffer == buffer)
-			state->array_buffer = NULL;
-		if (state->element_buffer == buffer)
-			state->element_buffer = NULL;
-		for (attrib = 0U; attrib < GLES_ATTRIBS; attrib++) {
-			if (state->attribs[attrib].buffer == buffer)
-				state->attribs[attrib].buffer = NULL;
+		/* Unbound from the targets other than the element buffer (a vertex array's, below). */
+		for (target = 0U; target < sizeof(targets) / sizeof(targets[0]); target++) {
+			slot = buffer_slot(state, targets[target]);
+			if (*slot == buffer)
+				*slot = NULL;
+		}
+
+		/* Unbound from the indexed binding points. */
+		for (binding = 0U; binding < GLES_UNIFORM_BINDINGS; binding++) {
+			if (state->uniform_ranges[binding].buffer == buffer)
+				memset(&state->uniform_ranges[binding], 0, sizeof(state->uniform_ranges[binding]));
+		}
+
+		/* And from the transform feedback ones. */
+		for (binding = 0U; binding < GLES_FEEDBACK_BINDINGS; binding++) {
+			if (state->feedback_ranges[binding].buffer == buffer)
+				memset(&state->feedback_ranges[binding], 0, sizeof(state->feedback_ranges[binding]));
+		}
+
+		/*
+		 * Taken out of every vertex array: the bound one's (the
+		 * context's), the default one's while another is bound, and
+		 * every other object's, so none keeps a buffer that is gone.
+		 */
+		buffer_forget(state->attribs, &state->element_buffer, buffer);
+		buffer_forget(state->default_array.attribs, &state->default_array.element_buffer, buffer);
+		for (name = 1U; name < state->vertex_arrays.capacity; name++) {
+			array = state->vertex_arrays.objects[name];
+			if (array != NULL)
+				buffer_forget(array->attribs, &array->element_buffer, buffer);
 		}
 
 		/* The name and the object go. */
@@ -532,8 +597,7 @@ glDeleteBuffers(
 }
 
 /*
- * Binds a buffer object to GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER,
- * making it when the name is new.
+ * Binds a buffer object to a target, making it when the name is new.
  */
 GL_APICALL void GL_APIENTRY
 glBindBuffer(
@@ -543,14 +607,15 @@ glBindBuffer(
 	struct zegl_context *context;
 	struct gles_state *state;
 	struct gles_buffer *buffer;
-	int status;
+	struct gles_buffer **slot;
 
 	/* A context with its state, and a target. */
 	context = gles_context();
 	state = gles_state(context);
 	if (state == NULL)
 		return;
-	if (target != GL_ARRAY_BUFFER && target != GL_ELEMENT_ARRAY_BUFFER) {
+	slot = buffer_slot(state, target);
+	if (slot == NULL) {
 		gles_error(context, GL_INVALID_ENUM);
 		return;
 	}
@@ -558,32 +623,13 @@ glBindBuffer(
 	/* The object: none for name 0, made for a name not yet used. */
 	buffer = NULL;
 	if (name != 0U) {
-		buffer = gles_names_get(&state->buffers, name);
-		if (buffer == NULL) {
-			buffer = calloc(1U, sizeof(*buffer));
-			if (buffer == NULL) {
-				gles_error(context, GL_OUT_OF_MEMORY);
-				return;
-			}
-
-			/* The new buffer takes the name. */
-			buffer->name = name;
-			buffer->usage = GL_STATIC_DRAW;
-			status = gles_names_add(&state->buffers, name, buffer);
-			if (status != 0) {
-				free(buffer);
-				gles_error(context, GL_OUT_OF_MEMORY);
-				return;
-			}
-		}
+		buffer = buffer_named(context, state, name);
+		if (buffer == NULL)
+			return;
 	}
 
 	/* Bound. */
-	if (target == GL_ARRAY_BUFFER) {
-		state->array_buffer = buffer;
-	} else {
-		state->element_buffer = buffer;
-	}
+	*slot = buffer;
 }
 
 /*
@@ -611,7 +657,7 @@ glBufferData(
 		return;
 	}
 
-	/* The new bytes. */
+	/* The new bytes (a mapping of the old ones ends). */
 	bytes = malloc((size_t)size + 1U);
 	if (bytes == NULL) {
 		gles_error(context, GL_OUT_OF_MEMORY);
@@ -629,6 +675,10 @@ glBufferData(
 	buffer->size = (size_t)size;
 	buffer->usage = usage;
 	buffer->dirty = 1;
+	buffer->map_active = 0;
+	buffer->map_access = 0U;
+	buffer->map_offset = 0U;
+	buffer->map_length = 0U;
 }
 
 /*
@@ -652,6 +702,12 @@ glBufferSubData(
 		return;
 	if (offset < 0 || size < 0 || (size_t)offset + (size_t)size > buffer->size) {
 		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A mapped buffer is written through its mapping only. */
+	if (buffer->map_active) {
+		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
 
@@ -686,7 +742,7 @@ glIsBuffer(
 }
 
 /*
- * Reports the size or usage of the buffer bound to a target.
+ * Reports a parameter of the buffer bound to a target as an integer.
  */
 GL_APICALL void GL_APIENTRY
 glGetBufferParameteriv(
@@ -695,28 +751,579 @@ glGetBufferParameteriv(
 	GLint *params)
 {
 	struct zegl_context *context;
+	GLint64 value;
+	int status;
+
+	/* The parameter, which fits in an integer. */
+	context = gles_context();
+	status = buffer_parameter(context, target, pname, &value);
+	if (status != 0)
+		return;
+
+	/* Succeeded: the value. */
+	*params = (GLint)value;
+}
+
+/*
+ * Reports a parameter of the buffer bound to a target as a 64-bit
+ * integer.
+ */
+GL_APICALL void GL_APIENTRY
+glGetBufferParameteri64v(
+	GLenum target,
+	GLenum pname,
+	GLint64 *params)
+{
+	struct zegl_context *context;
+	GLint64 value;
+	int status;
+
+	/* The parameter. */
+	context = gles_context();
+	status = buffer_parameter(context, target, pname, &value);
+	if (status != 0)
+		return;
+
+	/* Succeeded: the value. */
+	*params = value;
+}
+
+/*
+ * Maps a range of the bytes of the buffer bound to a target: the CPU
+ * bytes themselves.  Returns the range's first byte, or NULL with the
+ * error recorded.
+ */
+GL_APICALL void *GL_APIENTRY
+glMapBufferRange(
+	GLenum target,
+	GLintptr offset,
+	GLsizeiptr length,
+	GLbitfield access)
+{
+	struct zegl_context *context;
 	struct gles_buffer *buffer;
+	GLbitfield known;
 
 	/* The bound buffer. */
 	context = gles_context();
 	buffer = buffer_bound(context, target);
 	if (buffer == NULL)
+		return NULL;
+
+	/* A range inside the buffer that is not empty, and only the access bits there are. */
+	known = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT |
+		GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT;
+	if (offset < 0 ||
+	    length <= 0 ||
+	    (size_t)offset + (size_t)length > buffer->size ||
+	    (access & ~known) != 0U) {
+		gles_error(context, GL_INVALID_VALUE);
+		return NULL;
+	}
+
+	/* A buffer mapped already, or access that neither reads nor writes. */
+	if (buffer->map_active || (access & (GL_MAP_READ_BIT | GL_MAP_WRITE_BIT)) == 0U) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return NULL;
+	}
+
+	/* Reading does not go with discarding or with leaving the GPU's use unsynchronized. */
+	if ((access & GL_MAP_READ_BIT) != 0U &&
+	    (access & (GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_UNSYNCHRONIZED_BIT)) != 0U) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return NULL;
+	}
+
+	/* Explicit flushes are of writes. */
+	if ((access & GL_MAP_FLUSH_EXPLICIT_BIT) != 0U && (access & GL_MAP_WRITE_BIT) == 0U) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return NULL;
+	}
+
+	/*
+	 * The mapping is the CPU bytes: the device copy is made from them
+	 * again once the mapping ends (or a range is flushed), and a frame
+	 * that already drew from the old copy keeps it (gles_buffer_sync).
+	 */
+	buffer->map_active = 1;
+	buffer->map_access = access;
+	buffer->map_offset = (size_t)offset;
+	buffer->map_length = (size_t)length;
+
+	/* Succeeded: the range's first byte. */
+	return buffer->data + offset;
+}
+
+/*
+ * Ends the mapping of the buffer bound to a target.  Returns GL_TRUE (the
+ * bytes cannot have been lost), or GL_FALSE with the error recorded when
+ * the buffer was not mapped.
+ */
+GL_APICALL GLboolean GL_APIENTRY
+glUnmapBuffer(
+	GLenum target)
+{
+	struct zegl_context *context;
+	struct gles_buffer *buffer;
+
+	/* The bound buffer, which must be mapped. */
+	context = gles_context();
+	buffer = buffer_bound(context, target);
+	if (buffer == NULL)
+		return GL_FALSE;
+	if (!buffer->map_active) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return GL_FALSE;
+	}
+
+	/* A mapping that wrote without explicit flushes leaves the device copy stale. */
+	if ((buffer->map_access & GL_MAP_WRITE_BIT) != 0U && (buffer->map_access & GL_MAP_FLUSH_EXPLICIT_BIT) == 0U)
+		buffer->dirty = 1;
+
+	/* The mapping ends. */
+	buffer->map_active = 0;
+	buffer->map_access = 0U;
+	buffer->map_offset = 0U;
+	buffer->map_length = 0U;
+
+	/* Succeeded: the bytes are the buffer's. */
+	return GL_TRUE;
+}
+
+/*
+ * Marks a range of a mapping made with GL_MAP_FLUSH_EXPLICIT_BIT as
+ * written.
+ */
+GL_APICALL void GL_APIENTRY
+glFlushMappedBufferRange(
+	GLenum target,
+	GLintptr offset,
+	GLsizeiptr length)
+{
+	struct zegl_context *context;
+	struct gles_buffer *buffer;
+
+	/* The bound buffer, mapped for explicit flushes. */
+	context = gles_context();
+	buffer = buffer_bound(context, target);
+	if (buffer == NULL)
+		return;
+	if (!buffer->map_active || (buffer->map_access & GL_MAP_FLUSH_EXPLICIT_BIT) == 0U) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A range inside the mapping. */
+	if (offset < 0 ||
+	    length < 0 ||
+	    (size_t)offset + (size_t)length > buffer->map_length) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The bytes of the range reach the device with the next draw. */
+	buffer->dirty = 1;
+}
+
+/*
+ * Reports where the buffer bound to a target is mapped (NULL when it is
+ * not).
+ */
+GL_APICALL void GL_APIENTRY
+glGetBufferPointerv(
+	GLenum target,
+	GLenum pname,
+	void **params)
+{
+	struct zegl_context *context;
+	struct gles_buffer *buffer;
+
+	/* The bound buffer and the one name. */
+	context = gles_context();
+	buffer = buffer_bound(context, target);
+	if (buffer == NULL)
+		return;
+	if (pname != GL_BUFFER_MAP_POINTER) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* Not mapped: NULL. */
+	if (!buffer->map_active) {
+		*params = NULL;
+		return;
+	}
+
+	/* The mapping's first byte. */
+	*params = buffer->data + buffer->map_offset;
+}
+
+/*
+ * Copies a range of the bytes of the buffer bound to one target into the
+ * buffer bound to another (or into another place of the same buffer).
+ */
+GL_APICALL void GL_APIENTRY
+glCopyBufferSubData(
+	GLenum readTarget,
+	GLenum writeTarget,
+	GLintptr readOffset,
+	GLintptr writeOffset,
+	GLsizeiptr size)
+{
+	struct zegl_context *context;
+	struct gles_buffer *source;
+	struct gles_buffer *destination;
+	size_t from;
+	size_t to;
+	size_t length;
+
+	/* The two bound buffers. */
+	context = gles_context();
+	source = buffer_bound(context, readTarget);
+	if (source == NULL)
+		return;
+	destination = buffer_bound(context, writeTarget);
+	if (destination == NULL)
 		return;
 
-	/* The parameter asked for. */
-	switch (pname) {
-	case GL_BUFFER_SIZE:
-		*params = (GLint)buffer->size;
+	/* Offsets and a size that are not negative. */
+	if (readOffset < 0 ||
+	    writeOffset < 0 ||
+	    size < 0) {
+		gles_error(context, GL_INVALID_VALUE);
 		return;
-	case GL_BUFFER_USAGE:
-		*params = (GLint)buffer->usage;
+	}
+
+	/* Ranges inside both buffers. */
+	from = (size_t)readOffset;
+	to = (size_t)writeOffset;
+	length = (size_t)size;
+	if (from + length > source->size || to + length > destination->size) {
+		gles_error(context, GL_INVALID_VALUE);
 		return;
+	}
+
+	/* Neither may be mapped. */
+	if (source->map_active || destination->map_active) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Within one buffer the two ranges must not overlap. */
+	if (source == destination &&
+	    from < to + length &&
+	    to < from + length) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The bytes are copied on the CPU; the destination's device copy is stale. */
+	if (length != 0U)
+		memcpy(destination->data + to, source->data + from, length);
+	destination->dirty = 1;
+}
+
+/*
+ * Binds a whole buffer object to an indexed binding point of a target
+ * (and to the target itself).
+ */
+GL_APICALL void GL_APIENTRY
+glBindBufferBase(
+	GLenum target,
+	GLuint index,
+	GLuint buffer)
+{
+	/* The whole buffer, however large it becomes. */
+	buffer_bind_range(target, index, buffer, 0, 0, 1);
+}
+
+/*
+ * Binds a range of a buffer object to an indexed binding point of a
+ * target (and the buffer to the target itself).
+ */
+GL_APICALL void GL_APIENTRY
+glBindBufferRange(
+	GLenum target,
+	GLuint index,
+	GLuint buffer,
+	GLintptr offset,
+	GLsizeiptr size)
+{
+	/* The range. */
+	buffer_bind_range(target, index, buffer, offset, size, 0);
+}
+
+/*
+ * Reports an indexed binding point's buffer, offset or size as integers.
+ */
+GL_APICALL void GL_APIENTRY
+glGetIntegeri_v(
+	GLenum target,
+	GLuint index,
+	GLint *data)
+{
+	struct zegl_context *context;
+	GLint64 value;
+	int status;
+
+	/* The binding point's value, which fits in an integer. */
+	context = gles_context();
+	status = buffer_indexed(context, target, index, &value);
+	if (status != 0)
+		return;
+
+	/* Succeeded: the value. */
+	*data = (GLint)value;
+}
+
+/*
+ * Reports an indexed binding point's buffer, offset or size as 64-bit
+ * integers.
+ */
+GL_APICALL void GL_APIENTRY
+glGetInteger64i_v(
+	GLenum target,
+	GLuint index,
+	GLint64 *data)
+{
+	struct zegl_context *context;
+	GLint64 value;
+	int status;
+
+	/* The binding point's value. */
+	context = gles_context();
+	status = buffer_indexed(context, target, index, &value);
+	if (status != 0)
+		return;
+
+	/* Succeeded: the value. */
+	*data = value;
+}
+
+/*
+ * Makes names for vertex array objects (each an object with the initial
+ * arrays, which glIsVertexArray reports once it has been bound).
+ */
+GL_APICALL void GL_APIENTRY
+glGenVertexArrays(
+	GLsizei n,
+	GLuint *arrays)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_vertex_array *array;
+	GLsizei index;
+	unsigned attrib;
+	int status;
+
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (n < 0) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Each name gets a vertex array with every array disabled, four floats (current values are the context's). */
+	for (index = 0; index < n; index++) {
+		array = calloc(1U, sizeof(*array));
+		if (array == NULL) {
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return;
+		}
+
+		/* The arrays' initial state. */
+		for (attrib = 0U; attrib < GLES_ATTRIBS; attrib++) {
+			array->attribs[attrib].size = 4;
+			array->attribs[attrib].type = GL_FLOAT;
+		}
+
+		/* The first free name. */
+		array->name = gles_names_free(&state->vertex_arrays);
+		status = gles_names_add(&state->vertex_arrays, array->name, array);
+		if (status != 0) {
+			free(array);
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return;
+		}
+
+		/* The name goes back to the application. */
+		arrays[index] = array->name;
+	}
+}
+
+/*
+ * Deletes vertex array objects; deleting the bound one binds the default
+ * one first.
+ */
+GL_APICALL void GL_APIENTRY
+glDeleteVertexArrays(
+	GLsizei n,
+	const GLuint *arrays)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_vertex_array *array;
+	GLsizei index;
+
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (n < 0) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Each name that is a vertex array object. */
+	for (index = 0; index < n; index++) {
+		if (arrays[index] == 0U)
+			continue;
+		array = gles_names_get(&state->vertex_arrays, arrays[index]);
+		if (array == NULL)
+			continue;
+
+		/* The bound one gives way to the default one. */
+		if (state->vertex_array == arrays[index])
+			glBindVertexArray(0U);
+
+		/* The name and the object go. */
+		gles_names_remove(&state->vertex_arrays, arrays[index]);
+		free(array);
+	}
+}
+
+/*
+ * Binds a vertex array object (0: the default one): the context's arrays
+ * and element buffer are saved into the one bound before, and the new
+ * one's become the context's.
+ */
+GL_APICALL void GL_APIENTRY
+glBindVertexArray(
+	GLuint name)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_vertex_array *array;
+	struct gles_vertex_array *previous;
+	float values[GLES_ATTRIBS][4];
+	GLenum value_types[GLES_ATTRIBS];
+	unsigned attrib;
+
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+
+	/* The new one: the default one, or an object glGenVertexArrays made. */
+	array = &state->default_array;
+	if (name != 0U) {
+		array = gles_names_get(&state->vertex_arrays, name);
+		if (array == NULL) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+	}
+
+	/* The one bound before, which keeps the context's arrays. */
+	previous = &state->default_array;
+	if (state->vertex_array != 0U)
+		previous = gles_names_get(&state->vertex_arrays, state->vertex_array);
+
+	/* Rebinding the bound one changes nothing. */
+	if (previous == array)
+		return;
+
+	/* The context's arrays are saved into the one bound before. */
+	if (previous != NULL) {
+		memcpy(previous->attribs, state->attribs, sizeof(state->attribs));
+		previous->element_buffer = state->element_buffer;
+	}
+
+	/* The current values are the context's, not a vertex array's: they stay. */
+	for (attrib = 0U; attrib < GLES_ATTRIBS; attrib++) {
+		memcpy(values[attrib], state->attribs[attrib].value, sizeof(values[attrib]));
+		value_types[attrib] = state->attribs[attrib].value_type;
+	}
+
+	/*
+	 * The new one's arrays become the context's.  Its bound flag makes
+	 * glIsVertexArray report it from now on.
+	 */
+	memcpy(state->attribs, array->attribs, sizeof(state->attribs));
+	state->element_buffer = array->element_buffer;
+	state->vertex_array = name;
+	array->bound = 1;
+
+	/* With the context's current values. */
+	for (attrib = 0U; attrib < GLES_ATTRIBS; attrib++) {
+		memcpy(state->attribs[attrib].value, values[attrib], sizeof(values[attrib]));
+		state->attribs[attrib].value_type = value_types[attrib];
+	}
+}
+
+/*
+ * Reports whether a name is a vertex array object that has been bound.
+ */
+GL_APICALL GLboolean GL_APIENTRY
+glIsVertexArray(
+	GLuint name)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_vertex_array *array;
+
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return GL_FALSE;
+
+	/* The name's object, once bound. */
+	if (name == 0U)
+		return GL_FALSE;
+	array = gles_names_get(&state->vertex_arrays, name);
+	if (array == NULL || !array->bound)
+		return GL_FALSE;
+
+	/* A vertex array object. */
+	return GL_TRUE;
+}
+
+/* Returns where a target's binding is kept, or NULL for a name that is not a target. */
+static struct gles_buffer **
+buffer_slot(
+	struct gles_state *state,
+	GLenum target)
+{
+	/* The targets of OpenGL ES 3. */
+	switch (target) {
+	case GL_ARRAY_BUFFER:
+		return &state->array_buffer;
+	case GL_ELEMENT_ARRAY_BUFFER:
+		return &state->element_buffer;
+	case GL_COPY_READ_BUFFER:
+		return &state->copy_read_buffer;
+	case GL_COPY_WRITE_BUFFER:
+		return &state->copy_write_buffer;
+	case GL_UNIFORM_BUFFER:
+		return &state->uniform_buffer;
+	case GL_PIXEL_PACK_BUFFER:
+		return &state->pixel_pack_buffer;
+	case GL_PIXEL_UNPACK_BUFFER:
+		return &state->pixel_unpack_buffer;
+	case GL_TRANSFORM_FEEDBACK_BUFFER:
+		return &state->feedback_buffer;
 	default:
 		break;
 	}
 
-	/* Any other is an error. */
-	gles_error(context, GL_INVALID_ENUM);
+	/* Not a target. */
+	return NULL;
 }
 
 /* Returns the buffer bound to a target, recording the error when the target is wrong or nothing is bound. */
@@ -726,29 +1333,281 @@ buffer_bound(
 	GLenum target)
 {
 	struct gles_state *state;
+	struct gles_buffer **slot;
 
 	/* A context with its state. */
 	state = gles_state(context);
 	if (state == NULL)
 		return NULL;
 
-	/* The target's buffer. */
-	switch (target) {
-	case GL_ARRAY_BUFFER:
-		if (state->array_buffer == NULL)
-			gles_error(context, GL_INVALID_OPERATION);
-		return state->array_buffer;
-	case GL_ELEMENT_ARRAY_BUFFER:
-		if (state->element_buffer == NULL)
-			gles_error(context, GL_INVALID_OPERATION);
-		return state->element_buffer;
+	/* The target's binding. */
+	slot = buffer_slot(state, target);
+	if (slot == NULL) {
+		gles_error(context, GL_INVALID_ENUM);
+		return NULL;
+	}
+
+	/* Nothing bound. */
+	if (*slot == NULL) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return NULL;
+	}
+
+	/* Succeeded: the buffer. */
+	return *slot;
+}
+
+/* Returns the buffer object of a name (not 0), making it when the name is new; NULL with the error recorded. */
+static struct gles_buffer *
+buffer_named(
+	struct zegl_context *context,
+	struct gles_state *state,
+	GLuint name)
+{
+	struct gles_buffer *buffer;
+	int status;
+
+	/* One made before. */
+	buffer = gles_names_get(&state->buffers, name);
+	if (buffer != NULL)
+		return buffer;
+
+	/* A new empty buffer. */
+	buffer = calloc(1U, sizeof(*buffer));
+	if (buffer == NULL) {
+		gles_error(context, GL_OUT_OF_MEMORY);
+		return NULL;
+	}
+
+	/* The new buffer takes the name. */
+	buffer->name = name;
+	buffer->usage = GL_STATIC_DRAW;
+	status = gles_names_add(&state->buffers, name, buffer);
+	if (status != 0) {
+		free(buffer);
+		gles_error(context, GL_OUT_OF_MEMORY);
+		return NULL;
+	}
+
+	/* Succeeded: the new buffer. */
+	return buffer;
+}
+
+/* Reads a parameter of the buffer bound to a target; nonzero with the error recorded. */
+static int
+buffer_parameter(
+	struct zegl_context *context,
+	GLenum target,
+	GLenum pname,
+	GLint64 *value)
+{
+	struct gles_buffer *buffer;
+
+	/* The bound buffer. */
+	buffer = buffer_bound(context, target);
+	if (buffer == NULL)
+		return -1;
+
+	/* The parameter asked for. */
+	switch (pname) {
+	case GL_BUFFER_SIZE:
+		*value = (GLint64)buffer->size;
+		return 0;
+	case GL_BUFFER_USAGE:
+		*value = (GLint64)buffer->usage;
+		return 0;
+	case GL_BUFFER_MAPPED:
+		*value = buffer->map_active;
+		return 0;
+	case GL_BUFFER_ACCESS_FLAGS:
+		*value = (GLint64)buffer->map_access;
+		return 0;
+	case GL_BUFFER_MAP_OFFSET:
+		*value = (GLint64)buffer->map_offset;
+		return 0;
+	case GL_BUFFER_MAP_LENGTH:
+		*value = (GLint64)buffer->map_length;
+		return 0;
 	default:
 		break;
 	}
 
-	/* Any other target. */
+	/* Any other is an error. */
 	gles_error(context, GL_INVALID_ENUM);
-	return NULL;
+	return -1;
+}
+
+/*
+ * Binds a buffer (0: none) or a range of it to an indexed binding point
+ * of the uniform or transform feedback target, and the buffer to the
+ * target; whole binds all of it (glBindBufferBase).
+ */
+static void
+buffer_bind_range(
+	GLenum target,
+	GLuint index,
+	GLuint name,
+	GLintptr offset,
+	GLsizeiptr size,
+	int whole)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_buffer_range *range;
+	struct gles_buffer *buffer;
+	size_t alignment;
+
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+
+	/* The binding point: a uniform buffer's at the device's offset alignment, a transform feedback buffer's at 4 bytes. */
+	if (target == GL_UNIFORM_BUFFER) {
+		if (index >= GLES_UNIFORM_BINDINGS) {
+			gles_error(context, GL_INVALID_VALUE);
+			return;
+		}
+
+		/* The uniform buffer binding point. */
+		range = &state->uniform_ranges[index];
+		alignment = (size_t)state->limits.minUniformBufferOffsetAlignment;
+	} else if (target == GL_TRANSFORM_FEEDBACK_BUFFER) {
+		if (index >= GLES_FEEDBACK_BINDINGS) {
+			gles_error(context, GL_INVALID_VALUE);
+			return;
+		}
+
+		/* The transform feedback binding point. */
+		range = &state->feedback_ranges[index];
+		alignment = 4U;
+	} else {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* A range of a buffer: at the alignment, not empty. */
+	if (alignment == 0U)
+		alignment = 1U;
+	if (!whole && name != 0U) {
+		if (offset < 0 ||
+		    size <= 0 ||
+		    (size_t)offset % alignment != 0U) {
+			gles_error(context, GL_INVALID_VALUE);
+			return;
+		}
+
+		/* A transform feedback range is whole words. */
+		if (target == GL_TRANSFORM_FEEDBACK_BUFFER && (size_t)size % 4U != 0U) {
+			gles_error(context, GL_INVALID_VALUE);
+			return;
+		}
+	}
+
+	/* The buffer: none for name 0, made for a name not yet used. */
+	buffer = NULL;
+	if (name != 0U) {
+		buffer = buffer_named(context, state, name);
+		if (buffer == NULL)
+			return;
+	}
+
+	/* Bound to the point (size 0: the whole buffer from the offset) and to the target. */
+	range->buffer = buffer;
+	range->offset = 0U;
+	range->size = 0U;
+	if (!whole && buffer != NULL) {
+		range->offset = (size_t)offset;
+		range->size = (size_t)size;
+	}
+
+	/* The target's own binding follows. */
+	if (target == GL_UNIFORM_BUFFER) {
+		state->uniform_buffer = buffer;
+	} else {
+		state->feedback_buffer = buffer;
+	}
+}
+
+/* Reads an indexed binding point's buffer name, offset or size; nonzero with the error recorded. */
+static int
+buffer_indexed(
+	struct zegl_context *context,
+	GLenum target,
+	GLuint index,
+	GLint64 *value)
+{
+	struct gles_state *state;
+	struct gles_buffer_range *range;
+	unsigned count;
+
+	/* A context with its state. */
+	state = gles_state(context);
+	if (state == NULL)
+		return -1;
+
+	/* The binding points of the target the name asks about. */
+	switch (target) {
+	case GL_UNIFORM_BUFFER_BINDING:
+	case GL_UNIFORM_BUFFER_START:
+	case GL_UNIFORM_BUFFER_SIZE:
+		range = state->uniform_ranges;
+		count = GLES_UNIFORM_BINDINGS;
+		break;
+	case GL_TRANSFORM_FEEDBACK_BUFFER_BINDING:
+	case GL_TRANSFORM_FEEDBACK_BUFFER_START:
+	case GL_TRANSFORM_FEEDBACK_BUFFER_SIZE:
+		range = state->feedback_ranges;
+		count = GLES_FEEDBACK_BINDINGS;
+		break;
+	default:
+		gles_error(context, GL_INVALID_ENUM);
+		return -1;
+	}
+
+	/* A point there is. */
+	if (index >= count) {
+		gles_error(context, GL_INVALID_VALUE);
+		return -1;
+	}
+
+	/* The point. */
+	range = &range[index];
+
+	/* The buffer's name, or the range (0 for a whole-buffer binding, as GL reports it). */
+	*value = 0;
+	if (target == GL_UNIFORM_BUFFER_BINDING || target == GL_TRANSFORM_FEEDBACK_BUFFER_BINDING) {
+		if (range->buffer != NULL)
+			*value = (GLint64)range->buffer->name;
+	} else if (target == GL_UNIFORM_BUFFER_START || target == GL_TRANSFORM_FEEDBACK_BUFFER_START) {
+		*value = (GLint64)range->offset;
+	} else {
+		*value = (GLint64)range->size;
+	}
+
+	/* Succeeded: the value. */
+	return 0;
+}
+
+/* Takes a buffer that is being deleted out of a vertex array's arrays and element buffer. */
+static void
+buffer_forget(
+	struct gles_attrib *attribs,
+	struct gles_buffer **element_buffer,
+	struct gles_buffer *buffer)
+{
+	unsigned attrib;
+
+	/* The element buffer. */
+	if (*element_buffer == buffer)
+		*element_buffer = NULL;
+
+	/* Each attribute's array. */
+	for (attrib = 0U; attrib < GLES_ATTRIBS; attrib++) {
+		if (attribs[attrib].buffer == buffer)
+			attribs[attrib].buffer = NULL;
+	}
 }
 
 /* Makes a stream chunk of at least a size and puts it after the others; NULL when there is no memory. */
