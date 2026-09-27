@@ -867,6 +867,13 @@ int zwl_home_launched(struct zwl_server *server, int32_t *rect);
 void zwl_glass_mapped(struct zwl_server *server, struct zwl_object *surface);
 int zwl_glass_key(struct zwl_server *server, uint32_t key, uint32_t state);
 
+/* The network's icon in the system bar and its menu (network.c, ws035-p013; the drawing is in glass.h). */
+void zwl_network_tick(struct zwl_server *server);
+int zwl_network_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_network_key(struct zwl_server *server, uint32_t key, uint32_t state);
+int zwl_network_motion(struct zwl_server *server);
+int zwl_network_is_open(void);
+
 /* What a toplevel asks the glass look's shell to do (xdg_toplevel requests, ws035-p076). */
 #define ZWL_TOPLEVEL_MOVE		1
 #define ZWL_TOPLEVEL_MAXIMIZE		2

@@ -38,8 +38,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar). */
-#define ZDESKTOP_VERSION	7U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network). */
+#define ZDESKTOP_VERSION	8U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -544,6 +544,135 @@ int zdesktop_glass_set_panels(struct zdesktop_glass *glass, const struct zdeskto
  * Takes the glass away: the surface's next commit shows it without panels.
  */
 void zdesktop_glass_destroy(struct zdesktop_glass *glass);
+
+/*
+ * The network (ws035-p013).
+ *
+ * The desktop's view of the network and its Wi-Fi switch, for the system
+ * bar: whether the machine is connected and through what (a wired
+ * interface, or a Wi-Fi network by its SSID), the networks the radio sees,
+ * and the requests a user makes from a menu (join a network, disconnect,
+ * turn Wi-Fi on or off).  The system's network daemon is behind it; the
+ * desktop never speaks the daemon's protocol itself.
+ *
+ * Nothing here waits.  The state arrives when the daemon reports a change;
+ * zdesktop_network_update reads what has arrived and says what changed.  A
+ * request is sent at once and its answer arrives through the same update,
+ * so a scan or a join that takes seconds does not stop the caller.  One
+ * request is outstanding at a time (EBUSY otherwise).
+ *
+ * Every call that can fail returns 0 or an errno value: ENOENT (the daemon
+ * is not running), EACCES or EPERM (the user may not look or act),
+ * EBUSY, EINVAL, ENOMEM.
+ */
+struct zdesktop_network;
+
+/* The longest SSID shown, as printable text with the terminating NUL. */
+#define ZDESKTOP_NETWORK_SSID_MAX	33U
+
+/* The longest interface name, with the terminating NUL. */
+#define ZDESKTOP_NETWORK_NAME_MAX	16U
+
+/* The most networks a scan keeps. */
+#define ZDESKTOP_NETWORK_SCAN_MAX	24U
+
+/* What carries the connection. */
+#define ZDESKTOP_NETWORK_NONE		0U
+#define ZDESKTOP_NETWORK_WIRED		1U
+#define ZDESKTOP_NETWORK_WIFI		2U
+
+/* The Wi-Fi's state. */
+#define ZDESKTOP_WIFI_ABSENT		0U	/* no radio */
+#define ZDESKTOP_WIFI_OFF		1U
+#define ZDESKTOP_WIFI_SEARCHING		2U
+#define ZDESKTOP_WIFI_CONNECTING	3U
+#define ZDESKTOP_WIFI_CONNECTED		4U
+#define ZDESKTOP_WIFI_DISCONNECTED	5U	/* on, and left unconnected by the user */
+
+/* What zdesktop_network_update found (bits). */
+#define ZDESKTOP_NETWORK_CHANGED_STATE	1U
+#define ZDESKTOP_NETWORK_CHANGED_SCAN	2U
+#define ZDESKTOP_NETWORK_CHANGED_DONE	4U
+
+/* The requests. */
+#define ZDESKTOP_NETWORK_REQUEST_NONE		0U
+#define ZDESKTOP_NETWORK_REQUEST_SCAN		1U
+#define ZDESKTOP_NETWORK_REQUEST_JOIN		2U
+#define ZDESKTOP_NETWORK_REQUEST_DISCONNECT	3U
+#define ZDESKTOP_NETWORK_REQUEST_WIFI_ON	4U
+#define ZDESKTOP_NETWORK_REQUEST_WIFI_OFF	5U
+
+/*
+ * The network as last reported: connected (an interface is up with an
+ * address), through what and which interface, the wired interface that is
+ * up with an address (empty when none, even while the Wi-Fi carries the
+ * connection), and the Wi-Fi's state with the SSID of the network it is on
+ * or joining (empty otherwise).  reachable is 0 while the daemon cannot be
+ * reached.
+ */
+struct zdesktop_network_state {
+	unsigned reachable;
+	unsigned connected;
+	unsigned kind;
+	char interface[ZDESKTOP_NETWORK_NAME_MAX];
+	char wired[ZDESKTOP_NETWORK_NAME_MAX];
+	unsigned wifi;
+	char wifi_interface[ZDESKTOP_NETWORK_NAME_MAX];
+	char ssid[ZDESKTOP_NETWORK_SSID_MAX];
+};
+
+/*
+ * One network a scan found: its SSID, its signal in dBm, and whether it
+ * asks for a key.  The strongest of the access points of one SSID stands
+ * for it.
+ */
+struct zdesktop_network_ap {
+	char ssid[ZDESKTOP_NETWORK_SSID_MAX];
+	int rssi;
+	unsigned secured;
+};
+
+/*
+ * Starts watching the network.  Returns NULL with errno set on ENOMEM; a
+ * daemon that is not running yet is tried again by the updates.
+ */
+struct zdesktop_network *zdesktop_network_open(void);
+
+/*
+ * Stops watching and drops an outstanding request.
+ */
+void zdesktop_network_close(struct zdesktop_network *network);
+
+/*
+ * Reads what has arrived without waiting, and reconnects to a daemon that
+ * went away (at most once a second).  *changed gets the
+ * ZDESKTOP_NETWORK_CHANGED_* bits of what changed.
+ */
+int zdesktop_network_update(struct zdesktop_network *network, unsigned *changed);
+
+/*
+ * Copies the network's state as last reported.
+ */
+void zdesktop_network_get_state(const struct zdesktop_network *network, struct zdesktop_network_state *state);
+
+/*
+ * Copies up to capacity networks of the last scan, the strongest first,
+ * and returns how many there are.
+ */
+size_t zdesktop_network_get_scan(const struct zdesktop_network *network, struct zdesktop_network_ap *aps, size_t capacity);
+
+/*
+ * Sends a request (ZDESKTOP_NETWORK_REQUEST_*; a join names the SSID, the
+ * others take NULL).  A join uses the network's saved profile.
+ */
+int zdesktop_network_request(struct zdesktop_network *network, unsigned request, const char *ssid);
+
+/*
+ * Tells the request outstanding (ZDESKTOP_NETWORK_REQUEST_NONE when none),
+ * or, after ZDESKTOP_NETWORK_CHANGED_DONE, the one that finished and its
+ * errno value (0 when it succeeded) through *error.
+ */
+unsigned zdesktop_network_get_request(const struct zdesktop_network *network, int *error);
 
 #ifdef __cplusplus
 }

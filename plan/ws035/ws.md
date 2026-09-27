@@ -213,7 +213,7 @@ p001で確かめる。
 | ws035-p025 | zdesktop: コンポジタでのタイトル・フレーム描画（`/dev/graphics` のASCII glyph） | canceled（2026-09-27: p059・p062 で置き換え済み。glass の look の浮いたタイトルバー・ドッキングのシステムバー・角丸と影を zdesktop が描き、題名は libtruetype の glyph atlas。`/dev/graphics` の glyph の案は使わない。glass でない plain の mode は装飾を持たない試験用の mode のまま） | p011 | zdesktop |
 | [ws035-p018](phase018/phase.md) | networkdの状態push通知（購読）（WS005-p016から移管） | cleared（q325-i01。q323-i07 は uncleared） | p004 | networkd、net |
 | ws035-p012 | zdesktop: X11サーバ機能（Xzedから移植） | canceled（2026-09-27 ユーザーの判断: X11 server は単体の zdesktop-x11server、WS069-p008） | p011 | zdesktop、X11 |
-| ws035-p013 | zdesktop: タスクバーとWiFiの表示・操作。**WiFi の状態は libzdesktop 経由で取る**（p042、networkd と直接話さない） | planning | p059（システムバー。p025 は canceled で置き換え）, p018, p042 | zdesktop、libzdesktop |
+| [ws035-p013](phase013/phase.md) | zdesktop: システムバーの network の表示と操作（有線・Wi-Fi の SSID、menu で join・Wi-Fi の入り切り・disconnect）。**状態は libzdesktop 経由**（`zdesktop_network_*`、networkd の SUBSCRIBE に Wi-Fi の行を追加） | cleared（2026-09-28、zdesktop-p013（Wi-Fi は偽の networkd、QEMU だけ）・p062） | p059, p018, p042 | zdesktop、libzdesktop、networkd |
 | [ws035-p014](phase014/phase.md) | zdesktop: ウィンドウ一覧のタイル表示（Windows+Tab）。タイル表示は p063 の Wiseview、この Phase は Super+Tab と keyboard の操作（USB HID・PS/2 の Super key も足した） | cleared（2026-09-27、Venus） | p063 | zdesktop、input driver |
 | [ws035-p021](phase021/phase.md) | 設計: audioフレームワークと `/dev/dsp`（OSS互換寄りのAPI、driver ops、DMAリング、録音） | cleared（q323-i05） | p001 | 文書 |
 | [ws035-p022](phase022/phase.md) | 設計: hdaドライバ（codec列挙、stream DMA、再生・録音、QEMUとVFIO実機） | cleared（q341-i01） | p021 | 文書（[hda-design.md](hda-design.md)） |

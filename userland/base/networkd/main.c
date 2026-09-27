@@ -299,6 +299,8 @@ static void notify_state_changed(void);
 static void deliver_state_changes(void);
 static int accept_subscriber(int client, enum networkd_client_role role,
     uint32_t request_id);
+static int watch_state(char *state, size_t capacity, size_t *length);
+static int watch_ssid_known(void);
 static int append_interface_status(int descriptor, const char *name, char *output, const size_t capacity, size_t *used);
 static int interface_exists(const char *name);
 static int interface_index(const char *, uint32_t *);
@@ -2172,9 +2174,8 @@ notify_subscribers(
 		return;
 
 	/* Handles a state that cannot be read at all. */
-	if (show_interfaces(NULL, state, sizeof(state)) != 0)
+	if (watch_state(state, sizeof(state), &length) != 0)
 		return;
-	length = strlen(state);
 	slot = 0;
 
 	/* Process each watcher, which may leave its slot to be refilled. */
@@ -2252,13 +2253,107 @@ accept_subscriber(
 	 * not have to ask SHOW once and then watch: what it sees first and
 	 * what it sees later have the same shape.
 	 */
-	length = show_interfaces(NULL, state, sizeof(state)) == 0 ?
-	    strlen(state) : 0U;
+	if (watch_state(state, sizeof(state), &length) != 0)
+		length = 0U;
 	subscriber_send(subscriber_count - 1U, state, length);
 	networkd_protocol_clear(state, sizeof(state));
 
 	/* Succeeded: the connection is a watcher now. */
 	return 1;
+}
+
+/*
+ * Writes the state a watcher is told: the interfaces as "net show" prints
+ * them, and a last line on the Wi-Fi for the desktop's system bar
+ * (ws035-p013):
+ *
+ *     wifi state=NAME interface=IF ssid=HEX radios=N
+ *
+ * The SSID is the network the managed connection is on or joining, in
+ * lower-case hexadecimal because an SSID is bytes, not text ("-" when there
+ * is none); radios counts the WLAN interfaces, so that a machine without
+ * one is told apart from one whose Wi-Fi is off.
+ */
+static int
+watch_state(
+	char *state,
+	size_t capacity,
+	size_t *length)
+{
+	static const char digits[] = "0123456789abcdef";
+	struct networkd_wlan_radio radios[NETWORKD_WLAN_RADIO_MAX];
+	char ssid[WLAN_SSID_MAX * 2U + 1U];
+	const char *interface;
+	size_t radio_count;
+	size_t used;
+	size_t index;
+	int known;
+	int count;
+	int error;
+
+	/* The interfaces. */
+	error = show_interfaces(NULL, state, capacity);
+	if (error != 0)
+		return -1;
+	used = strlen(state);
+
+	/* The SSID of a connection being made or kept, each byte as two digits ("-" for none). */
+	ssid[0] = '-';
+	ssid[1] = '\0';
+	known = watch_ssid_known();
+	if (known) {
+		for (index = 0; index < managed_wlan.connection.ssid_length; index++) {
+			ssid[index * 2U] = digits[managed_wlan.connection.ssid[index] >> 4];
+			ssid[index * 2U + 1U] = digits[managed_wlan.connection.ssid[index] & 0x0fU];
+		}
+
+		/* The digits end after the last byte. */
+		ssid[index * 2U] = '\0';
+	}
+
+	/* How many radios there are (a count that fails is none). */
+	radio_count = 0;
+	error = enumerate_wlan_radios(radios, NETWORKD_WLAN_RADIO_MAX, &radio_count);
+	if (error != 0)
+		radio_count = 0;
+
+	/* The Wi-Fi line after the interfaces. */
+	interface = "-";
+	if (managed_wlan.connection.interface[0] != '\0')
+		interface = managed_wlan.connection.interface;
+	count = snprintf(state + used, capacity - used, "wifi state=%s interface=%s ssid=%s radios=%u\n",
+	    managed_state_name(managed_wlan.state), interface, ssid, (unsigned)radio_count);
+	if (count < 0 || (size_t)count >= capacity - used) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+	/* Succeeded: the state is written, and this long. */
+	*length = used + (size_t)count;
+	return 0;
+}
+
+/* Tells whether the managed connection names a network: one being joined, kept or rejoined, with an SSID. */
+static int
+watch_ssid_known(
+	void)
+{
+	/* An SSID of no length, or one longer than any, names nothing. */
+	if (managed_wlan.connection.ssid_length == 0U)
+		return 0;
+	if (managed_wlan.connection.ssid_length > WLAN_SSID_MAX)
+		return 0;
+
+	/* Only these states have a network. */
+	if (managed_wlan.state == NETWORKD_WLAN_CONNECTING)
+		return 1;
+	if (managed_wlan.state == NETWORKD_WLAN_CONNECTED)
+		return 1;
+	if (managed_wlan.state == NETWORKD_WLAN_RECONNECTING)
+		return 1;
+
+	/* Searching, off, left or leaving. */
+	return 0;
 }
 
 /* Tells the watchers, once, about everything that has moved since last time. */
