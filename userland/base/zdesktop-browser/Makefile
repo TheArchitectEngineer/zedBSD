@@ -90,4 +90,10 @@ $(ZDESKTOP_BROWSER_ENTITIES_C): $(ZDESKTOP_BROWSER_ENTITIES_JSON) $(ZDESKTOP_BRO
 ZEDBSD_USERLAND_DOWNLOAD_TARGETS += $(ZDESKTOP_BROWSER_ENTITIES_JSON)
 endif
 
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-browser,Web browser,amd64,n,basic,$(ZDESKTOP_BROWSER_SOURCES),y,base,base/zdesktop-browser,base/libtruetype base/libvulkan base/libwayland base/libzdesktop,0755,program,,,bin))
+# The pages the browser brings: the start page it opens without an argument (App Home starts it with
+# the same page) and the pages it links to.
+ZDESKTOP_BROWSER_DATA := /usr/share/zdesktop-browser/start.html=$(ZDESKTOP_BROWSER_DIR)/data/start.html \
+	/usr/share/zdesktop-browser/about.html=$(ZDESKTOP_BROWSER_DIR)/data/about.html \
+	/usr/share/zdesktop-browser/text.html=$(ZDESKTOP_BROWSER_DIR)/data/text.html
+
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-browser,Web browser,amd64,n,basic,$(ZDESKTOP_BROWSER_SOURCES),y,base,base/zdesktop-browser,base/libtruetype base/libvulkan base/libwayland base/libzdesktop,0755,program,$(ZDESKTOP_BROWSER_DATA),,bin))

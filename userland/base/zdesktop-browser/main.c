@@ -16,7 +16,8 @@
  *   zdesktop-browser --render|--render-gpu --output=OUT.ppm [--width=N] [--height=N] [--font=PATH] FILE
  *   zdesktop-browser --version | --help
  *
- * Without a headless mode it opens a zdesktop window on URL.  The headless
+ * Without a headless mode it opens a zdesktop window on URL, or on the
+ * start page the package installs (MAIN_START_PAGE).  The headless
  * modes (added with the engine, one per phase) draw or dump a page, or run
  * a script, without a window; the tests use them on the host and in the
  * guest.  Every mode reports failure with a non-zero exit status and one
@@ -45,6 +46,9 @@
 
 /* The largest window size accepted on the command line, in pixels. */
 #define MAIN_MAX_SIZE		16384UL
+
+/* The page the window opens when the command line names none. */
+#define MAIN_START_PAGE		"/usr/share/zdesktop-browser/start.html"
 
 /* The most live bytes a script run by --js may keep in its heap. */
 #define MAIN_SCRIPT_HEAP_LIMIT	((size_t)1024U * 1024U * 1024U)
@@ -161,7 +165,9 @@ main(
 		break;
 	}
 
-	/* Opens the window and stays in it until it closes. */
+	/* Opens the window (on the start page when no page is named) and stays in it until it closes. */
+	if (options.shell.start == NULL)
+		options.shell.start = MAIN_START_PAGE;
 	options.shell.fonts = &options.fonts;
 	status = shell_run(&options.shell);
 	if (status != 0)
