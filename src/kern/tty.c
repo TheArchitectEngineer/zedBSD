@@ -143,6 +143,13 @@ struct pty_handle {
 };
 
 static struct tty console_ttys[TTY_VT_COUNT];
+
+/*
+ * How many graphical owners (GPU display leases) hold the keyboard away from
+ * the console (ws035-p097); the keyboard reaches the console at zero.
+ * Changed and read atomically.
+ */
+static unsigned console_input_holds;
 static struct spinlock console_output_lock;
 static unsigned active_vt;
 static unsigned console_escape_state[TTY_VT_COUNT];
@@ -321,6 +328,12 @@ tty_console_input_event(
 	size_t sequence_length;
 	int accepted;
 	size_t index;
+	unsigned holds;
+
+	/* While a graphical display owns the screen the keyboard is its, not the console's. */
+	holds = __atomic_load_n(&console_input_holds, __ATOMIC_ACQUIRE);
+	if (holds != 0U)
+		return;
 
 	key = event & INPUT_KEY_MASK;
 	sequence = NULL;
@@ -425,6 +438,34 @@ tty_console_input_event(
 
 	/* Runs the line discipline and delivers its echo and signal. */
 	tty_console_input_byte(byte);
+}
+
+/*
+ * Holds the keyboard away from the console (one more graphical owner).
+ */
+void
+tty_console_input_hold(
+	void)
+{
+	/* One more owner; the keyboard's events are dropped while any is there. */
+	(void)__atomic_add_fetch(&console_input_holds, 1U, __ATOMIC_ACQ_REL);
+}
+
+/*
+ * Lets the keyboard reach the console again when the last hold ends.
+ */
+void
+tty_console_input_unhold(
+	void)
+{
+	unsigned holds;
+
+	/* One owner fewer, never below none. */
+	holds = __atomic_load_n(&console_input_holds, __ATOMIC_ACQUIRE);
+	while (holds != 0U) {
+		if (__atomic_compare_exchange_n(&console_input_holds, &holds, holds - 1U, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+			break;
+	}
 }
 
 /*

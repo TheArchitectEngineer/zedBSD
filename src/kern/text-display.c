@@ -18,6 +18,7 @@
 #include <stddef.h>
 
 #include "kern/text-display.h"
+#include "kern/klog.h"
 #include <kern/lock.h>
 #include <kern/waitq.h>
 
@@ -111,6 +112,53 @@ kern_text_putc(
 
 	/* Succeeded: the available backend completed its text operation. */
 	return;
+}
+
+/*
+ * Writes one character of the kernel's own (published as kernel_putc).
+ *
+ * The log does not use this path while it is quiet, so a character here is
+ * one the HAL prints itself (its progress lines, a fatal error): on a quiet
+ * console it goes to the log instead (the ring and the debug port), so that
+ * dmesg has it and the screen stays as it is.
+ */
+void
+kern_text_kernel_putc(
+	int character)
+{
+	char byte;
+	int quiet;
+
+	/* A quiet console: the log keeps the character. */
+	quiet = kern_log_quiet();
+	if (quiet) {
+		byte = (char)character;
+		kern_log_write(&byte, 1U);
+		return;
+	}
+
+	/* The character on the console. */
+	kern_text_putc(character);
+}
+
+/*
+ * Shows a console kept off the screen, and makes the log loud again.
+ */
+void
+kern_text_reveal(
+	void)
+{
+	const struct kern_text_ops *table;
+
+	/* Kernel messages go to the console again. */
+	kern_log_set_quiet(0);
+
+	/* The backend draws what it kept. */
+	table = ops();
+	if (table != NULL && table->reveal != NULL) {
+		table->reveal();
+		text_changed();
+	}
 }
 
 /*
