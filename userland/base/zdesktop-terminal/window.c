@@ -49,6 +49,7 @@ static void window_ping(void *data, struct xdg_wm_base *shell, uint32_t serial);
 static void window_configure(void *data, struct xdg_surface *surface, uint32_t serial);
 static void window_toplevel_configure(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height, struct wl_array *states);
 static void window_toplevel_close(void *data, struct xdg_toplevel *toplevel);
+static void window_toplevel_bounds(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height);
 static void window_seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities);
 static void window_seat_name(void *data, struct wl_seat *seat, const char *name);
 static void window_keyboard_keymap(void *data, struct wl_keyboard *keyboard, uint32_t format, int32_t fd, uint32_t size);
@@ -78,7 +79,7 @@ static const struct xdg_surface_listener surface_listener = {
 
 /* The size the compositor gives the window, and its request to close. */
 static const struct xdg_toplevel_listener toplevel_listener = {
-	window_toplevel_configure, window_toplevel_close, NULL
+	window_toplevel_configure, window_toplevel_close, window_toplevel_bounds
 };
 
 /* The seat's devices and name. */
@@ -110,6 +111,8 @@ terminal_window_open(
 	memset(window, 0, sizeof(*window));
 	window->width = width;
 	window->height = height;
+	window->preferred_width = width;
+	window->preferred_height = height;
 	window->repeat_delay = WINDOW_REPEAT_DELAY;
 	window->repeat_interval = WINDOW_REPEAT_INTERVAL;
 
@@ -199,16 +202,19 @@ terminal_window_open(
 int
 terminal_window_dispatch(
 	struct terminal_window *window,
-	int other,
+	const int *others,
+	unsigned count,
 	int timeout,
-	int *other_ready)
+	int *ready)
 {
-	struct pollfd descriptors[2];
-	int count;
+	struct pollfd descriptors[1U + TERMINAL_TABS];
+	unsigned index;
+	unsigned used;
 	int status;
 
-	/* Runs what is queued until a read of new events can be reserved. */
-	*other_ready = 0;
+	/* Runs what is queued until a read of new events can be reserved (no other descriptor is ready yet). */
+	for (index = 0; index < count; index++)
+		ready[index] = 0;
 	for (;;) {
 		status = wl_display_dispatch_pending(window->display);
 		if (status < 0)
@@ -231,17 +237,20 @@ terminal_window_dispatch(
 		return -1;
 	}
 
-	/* Waits for either descriptor. */
+	/* The compositor's descriptor, then each other one (at most TERMINAL_TABS). */
 	descriptors[0].fd = wl_display_get_fd(window->display);
 	descriptors[0].events = POLLIN;
 	descriptors[0].revents = 0;
-	descriptors[1].fd = other;
-	descriptors[1].events = POLLIN;
-	descriptors[1].revents = 0;
-	count = 1;
-	if (other >= 0)
-		count = 2;
-	status = poll(descriptors, (nfds_t)count, timeout);
+	used = 1;
+	for (index = 0; index < count && index < TERMINAL_TABS; index++) {
+		descriptors[used].fd = others[index];
+		descriptors[used].events = POLLIN;
+		descriptors[used].revents = 0;
+		used++;
+	}
+
+	/* Waits for any of them. */
+	status = poll(descriptors, (nfds_t)used, timeout);
 
 	/* Reads the compositor's events, or gives the reservation back. */
 	if (status > 0 && (descriptors[0].revents & POLLIN) != 0) {
@@ -258,9 +267,12 @@ terminal_window_dispatch(
 			return -1;
 	}
 
-	/* The other descriptor has bytes, or its end has gone. */
-	if (count == 2 && (descriptors[1].revents & (POLLIN | POLLHUP | POLLERR)) != 0)
-		*other_ready = 1;
+	/* Each other descriptor that has bytes, or whose end has gone. */
+	for (index = 1; index < used; index++) {
+		/* A descriptor that is not ready stays not ready. */
+		if ((descriptors[index].revents & (POLLIN | POLLHUP | POLLERR)) != 0)
+			ready[index - 1U] = 1;
+	}
 
 	/* Runs the events read. */
 	status = wl_display_dispatch_pending(window->display);
@@ -403,7 +415,9 @@ window_global(
 	/* The shell gives the surface its window role. */
 	match = strcmp(interface, "xdg_wm_base");
 	if (match == 0 && window->shell == NULL) {
-		window->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, 1U);
+		if (version > 4U)
+			version = 4U;
+		window->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, version);
 		if (window->shell != NULL)
 			(void)xdg_wm_base_add_listener(window->shell, &shell_listener, window);
 		return;
@@ -482,6 +496,20 @@ window_toplevel_configure(
 	window = data;
 	window->fullscreen = window_state_fullscreen(states);
 
+	/* A width left to the window is the one it would like, within the compositor's bounds. */
+	if (width <= 0) {
+		width = (int32_t)window->preferred_width;
+		if (window->bounds_width > 0U && window->preferred_width > window->bounds_width)
+			width = (int32_t)window->bounds_width;
+	}
+
+	/* And so is a height. */
+	if (height <= 0) {
+		height = (int32_t)window->preferred_height;
+		if (window->bounds_height > 0U && window->preferred_height > window->bounds_height)
+			height = (int32_t)window->bounds_height;
+	}
+
 	/* A new width or height marks the window resized. */
 	if (width > 0 && (uint32_t)width != window->width) {
 		window->width = (uint32_t)width;
@@ -493,6 +521,33 @@ window_toplevel_configure(
 		window->height = (uint32_t)height;
 		window->resized = 1;
 	}
+}
+
+/*
+ * Keeps the largest size the compositor lets the window choose (xdg-shell
+ * version 4); the configure that follows applies it.  A zero is a size the
+ * compositor does not know.
+ */
+static void
+window_toplevel_bounds(
+	void *data,
+	struct xdg_toplevel *toplevel,
+	int32_t width,
+	int32_t height)
+{
+	struct terminal_window *window;
+
+	/* The width, when known. */
+	(void)toplevel;
+	window = data;
+	window->bounds_width = 0U;
+	if (width > 0)
+		window->bounds_width = (uint32_t)width;
+
+	/* The height, when known. */
+	window->bounds_height = 0U;
+	if (height > 0)
+		window->bounds_height = (uint32_t)height;
 }
 
 /* The compositor asks the window to close (its close button). */

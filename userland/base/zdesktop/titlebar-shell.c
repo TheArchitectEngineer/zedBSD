@@ -28,8 +28,9 @@
  * least width (their titles cut in the middle), then the strip scrolls
  * between two arrows (and with the wheel), and "..." lists the tabs out of
  * sight.  Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+PageUp and Ctrl+PageDown go
- * between the focused window's tabs, Ctrl+W asks to close its active tab
- * and Ctrl+T for a new one, when its menu has no such shortcut.
+ * between the focused window's tabs when its menu has no such shortcut.
+ * Closing a tab and a new one are the application's keys (its menu's
+ * shortcuts): a terminal's shell needs Ctrl+W and Ctrl+T.
  *
  * A press on a control is taken here and the control acts on the release
  * over it.  The search field, and the breadcrumb when the client asks for
@@ -103,8 +104,6 @@
 
 /* The keys of the tabs (evdev codes). */
 #define TAB_KEY_TAB		15U
-#define TAB_KEY_W		17U
-#define TAB_KEY_T		20U
 #define TAB_KEY_PAGEUP		104U
 #define TAB_KEY_PAGEDOWN	109U
 
@@ -560,9 +559,9 @@ zwl_titlebar_key(
  * Handles the tabs' keys of the focused window when it shows tabs (after
  * its menu's shortcuts, which come first): Ctrl+Tab and Ctrl+PageDown
  * activate the next tab, Ctrl+Shift+Tab and Ctrl+PageUp the one before
- * (around the ends), Ctrl+W asks to close the active tab when it is
- * closable, Ctrl+T asks for a new tab when the strip has "+".  Returns 1
- * when the key was the tabs'.
+ * (around the ends).  Ctrl+W and Ctrl+T stay the application's (a
+ * terminal's shell uses them; its menu gives its own keys for tabs).
+ * Returns 1 when the key was the tabs'.
  */
 int
 zwl_titlebar_tab_key(
@@ -621,22 +620,6 @@ zwl_titlebar_tab_key(
 	case TAB_KEY_PAGEUP:
 		step = -1;
 		break;
-	case TAB_KEY_W:
-		/* The active tab is asked to close, when it can be. */
-		if (shift != 0U || active == count || (shown->tabs[active].flags & ZWL_TAB_CLOSABLE) == 0U)
-			return 0;
-		zwl_titlebar_send_tab(titlebar, shown->tabs[active].id, ZWL_TAB_EVENT_CLOSE);
-		shell_titlebar.eaten_key = key;
-		server->dirty = 1;
-		return 1;
-	case TAB_KEY_T:
-		/* A new tab, when the strip offers one. */
-		if (shift != 0U || (shown->options & ZWL_TABS_NEW_BUTTON) == 0U)
-			return 0;
-		zwl_titlebar_send_tab(titlebar, 0U, ZWL_TAB_EVENT_NEW);
-		shell_titlebar.eaten_key = key;
-		server->dirty = 1;
-		return 1;
 	default:
 		return 0;
 	}

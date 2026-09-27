@@ -14,8 +14,9 @@
  * font.c draws the glyphs of a monospaced TrueType font into an atlas;
  * render.c draws the grid from that atlas; window.c holds the Wayland
  * window and its keyboard; menu.c gives zdesktop the window's menus
- * (Shell, Edit, View, Session, Help) through libzdesktop; main.c runs the
- * shell on a pseudo-terminal and ties them together.
+ * (Shell, Edit, View, Session, Help) through libzdesktop; tabs.c gives it
+ * the window's tabs (the titlebar's TABS mode, ws035-p086); main.c runs a
+ * shell on a pseudo-terminal for each tab and ties them together.
  */
 
 #ifndef ZDESKTOP_TERMINAL_H
@@ -56,8 +57,18 @@
 #define TERMINAL_PIXELS_LARGE	20U
 #define TERMINAL_PIXELS_HUGE	24U
 
-/* How many menu choices wait for the main loop at most. */
+/* How many menu choices, and tab requests, wait for the main loop at most. */
 #define TERMINAL_ACTIONS	16U
+
+/* The most tabs (shells) one window has, and the longest tab title. */
+#define TERMINAL_TABS		8U
+#define TERMINAL_TAB_TITLE	32U
+
+/* What the titlebar asks of the tabs (tabs.c): none, a new tab, one chosen, one to close. */
+#define TERMINAL_TAB_NONE	0U
+#define TERMINAL_TAB_NEW	1U
+#define TERMINAL_TAB_ACTIVATE	2U
+#define TERMINAL_TAB_CLOSE	3U
 
 /*
  * The actions the menus' items report (menu.c); the main loop carries them
@@ -82,7 +93,23 @@ enum terminal_action {
 	TERMINAL_ACTION_END_OF_FILE,
 	TERMINAL_ACTION_CLEAR,
 	TERMINAL_ACTION_RESET,
-	TERMINAL_ACTION_ABOUT
+	TERMINAL_ACTION_ABOUT,
+	TERMINAL_ACTION_NEW_TAB,
+	TERMINAL_ACTION_CLOSE_TAB
+};
+
+/*
+ * One tab as the titlebar shows it: its ID (not 0) and its title.
+ */
+struct terminal_tab_view {
+	uint32_t id;
+	char title[TERMINAL_TAB_TITLE];
+};
+
+/* One thing the titlebar asked of the tabs: its kind (TERMINAL_TAB_*) and the tab (0 for a new one). */
+struct terminal_tab_request {
+	unsigned kind;
+	uint32_t id;
 };
 
 /*
@@ -312,6 +339,26 @@ struct terminal_window {
 	/* Whether the compositor last configured the window fullscreen. */
 	int fullscreen;
 
+	/* The largest size the window may choose (xdg-shell's bounds; 0 when not known), and the size it would like. */
+	uint32_t bounds_width;
+	uint32_t bounds_height;
+	uint32_t preferred_width;
+	uint32_t preferred_height;
+
+	/*
+	 * The tabs in the titlebar (tabs.c): zdesktop's titlebar (NULL without
+	 * the Titlebar Presentation), the tabs and the active one as last shown
+	 * (and whether ever shown), and what the titlebar asked and the main
+	 * loop has not yet carried out, oldest first.
+	 */
+	struct zdesktop_titlebar *titlebar;
+	struct terminal_tab_view tabs_shown[TERMINAL_TABS];
+	unsigned tabs_shown_count;
+	uint32_t tabs_shown_active;
+	int tabs_sent;
+	struct terminal_tab_request tab_requests[TERMINAL_ACTIONS];
+	unsigned tab_request_count;
+
 	/*
 	 * The menus (menu.c): the connection's menu service (NULL when the
 	 * compositor has none), the menu and the window's place for it, the
@@ -378,12 +425,18 @@ void terminal_renderer_close(struct terminal_renderer *renderer);
 
 /* The window (window.c). */
 int terminal_window_open(struct terminal_window *window, const char *display, uint32_t width, uint32_t height);
-int terminal_window_dispatch(struct terminal_window *window, int other, int timeout, int *other_ready);
+int terminal_window_dispatch(struct terminal_window *window, const int *others, unsigned count, int timeout, int *ready);
 void terminal_window_repeat(struct terminal_window *window, uint64_t now);
 void terminal_window_close(struct terminal_window *window);
 void terminal_window_type(struct terminal_window *window, const char *bytes, size_t length);
 void terminal_window_set_fullscreen(struct terminal_window *window, int fullscreen);
 uint64_t terminal_clock(void);
+
+/* The tabs in the titlebar (tabs.c). */
+void terminal_tabs_open(struct terminal_window *window);
+void terminal_tabs_show(struct terminal_window *window, const struct terminal_tab_view *tabs, unsigned count, uint32_t active);
+int terminal_tabs_take(struct terminal_window *window, struct terminal_tab_request *request);
+void terminal_tabs_close(struct terminal_window *window);
 
 /* The menus (menu.c). */
 int terminal_menu_open(struct terminal_window *window, const struct terminal_menu_state *state);

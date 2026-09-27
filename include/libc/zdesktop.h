@@ -338,10 +338,9 @@ struct zdesktop_titlebar;
  *
  * zdesktop gives tabs the keyboard too, when the window's menu has no
  * shortcut for the key: Ctrl+Tab and Ctrl+PageDown activate the next tab,
- * Ctrl+Shift+Tab and Ctrl+PageUp the one before (tab_activated), Ctrl+W
- * asks to close the active tab when it is closable (tab_close_requested),
- * and Ctrl+T asks for a new one when the strip has the new-tab button
- * (new_tab_requested).
+ * Ctrl+Shift+Tab and Ctrl+PageUp the one before (tab_activated).  Closing
+ * a tab and a new tab are the application's keys (its menu's shortcuts),
+ * since a terminal's shell needs Ctrl+W and Ctrl+T.
  *
  * drop_target (ZDESKTOP_VERSION 7): while a drag and drop (wl_data_device)
  * is over a part of a breadcrumb in the titlebar, zdesktop makes the

@@ -13,6 +13,11 @@
  * gives it, and the shell is told the grid's new size.  The terminal ends
  * when the shell exits or the window is closed.
  *
+ * Each tab of the window (tabs.c, ws035-p086: the titlebar's tabs) is a
+ * shell of its own with its own grid; the keys go to the active tab's
+ * shell, and every shell is read so none of them waits.  A tab whose shell
+ * exits closes; the last one ends the terminal.
+ *
  * Its menus (menu.c) are drawn by zdesktop; what they choose is carried out
  * here: a new window (another terminal), closing, the selection and the
  * clipboard (zdesktop's, shared with other clients, clipboard.c), the
@@ -100,10 +105,33 @@ struct main_run {
  * The terminal's parts, for the whole run.  They are file-scope because the
  * grid alone is too large for the stack.
  */
-static struct terminal_screen main_screen;
 static struct terminal_font main_font;
 static struct terminal_window main_window;
 static struct terminal_renderer main_renderer;
+
+/*
+ * One tab: its grid (allocated, too large for the stack), its shell's
+ * process and pseudo-terminal, its ID in the titlebar and its title.
+ */
+struct main_tab {
+	struct terminal_screen *screen;
+	pid_t child;
+	int master;
+	uint32_t id;
+	char title[TERMINAL_TAB_TITLE];
+};
+
+/*
+ * The tabs, in their order, how many there are, the active one (whose grid
+ * is drawn and whose shell takes the keys) and the ID the next tab gets.
+ * main_screen is the active tab's grid; run->child and run->master are the
+ * active tab's shell.  They live as long as the terminal.
+ */
+static struct main_tab main_tabs[TERMINAL_TABS];
+static unsigned main_tab_count;
+static unsigned main_active;
+static uint32_t main_tab_next = 1U;
+static struct terminal_screen *main_screen;
 
 /*
  * The clipboard's text and its length: the terminal's copy (Edit > Copy),
@@ -127,7 +155,7 @@ static int main_resize(const struct main_options *options, struct main_run *run)
 static pid_t main_spawn(const struct main_options *options, int *master);
 static void main_grid(unsigned width, unsigned height, unsigned *columns, unsigned *rows);
 static void main_tell_size(int master, unsigned columns, unsigned rows);
-static int main_read_shell(int master);
+static int main_read_shell(int master, struct terminal_screen *screen);
 static int main_write_shell(int master);
 static int main_menu_actions(const struct main_options *options, struct main_run *run);
 static void main_menu_state(const struct main_run *run, struct terminal_menu_state *state);
@@ -135,6 +163,12 @@ static void main_new_window(const struct main_options *options, const struct mai
 static int main_zoom(const struct main_options *options, struct main_run *run, unsigned pixels);
 static void main_copy(void);
 static void main_start_paste(void);
+static int main_tab_new(const struct main_options *options, struct main_run *run);
+static void main_tab_switch(struct main_run *run, unsigned index);
+static int main_tab_close(const struct main_options *options, struct main_run *run, unsigned index);
+static int main_tab_find(uint32_t id);
+static int main_tab_requests(const struct main_options *options, struct main_run *run);
+static void main_tabs_show(void);
 
 /*
  * Runs the terminal.
@@ -182,13 +216,10 @@ main(
 	/* The line reaches whoever reads the log before the terminal goes. */
 	fflush(stdout);
 
-	/* The shell, if it still runs, is hung up on and reaped. */
-	if (run.master >= 0)
-		(void)close(run.master);
-	if (run.child > 0) {
-		(void)kill(run.child, SIGHUP);
-		(void)waitpid(run.child, &status, 0);
-	}
+	/* Each tab's shell, if it still runs, is hung up on and reaped. */
+	while (main_tab_count > 0U)
+		(void)main_tab_close(&options, &run, main_tab_count - 1U);
+	terminal_tabs_close(&main_window);
 
 	/* The drawing before the window it draws into, then the font. */
 	terminal_renderer_close(&main_renderer);
@@ -363,7 +394,6 @@ main_start(
 	/* The grid that fits the window. */
 	run->pixels = options->pixels;
 	main_grid(main_renderer.extent.width, main_renderer.extent.height, &run->columns, &run->rows);
-	terminal_screen_init(&main_screen, run->columns, run->rows);
 
 	/* The menus, which zdesktop draws (none from a compositor without the System Menu). */
 	main_menu_state(run, &state);
@@ -372,14 +402,14 @@ main_start(
 	if (status != 0)
 		return -1;
 
-	/* The shell on a pseudo-terminal of that size. */
-	run->operation = "forkpty";
-	run->child = main_spawn(options, &run->master);
-	if (run->child < 0)
-		return -1;
+	/* The tabs in the titlebar (none from a compositor without it). */
+	terminal_tabs_open(&main_window);
 
-	/* The shell learns the grid's size. */
-	main_tell_size(run->master, run->columns, run->rows);
+	/* The first tab: a shell on a pseudo-terminal of that size. */
+	run->operation = "forkpty";
+	status = main_tab_new(options, run);
+	if (status != 0)
+		return -1;
 
 	/* Succeeded: the terminal is up. */
 	printf("ZTERM START run=%s columns=%u rows=%u cell=%ux%u window=%ux%u\n",
@@ -399,8 +429,10 @@ main_loop(
 	uint64_t started;
 	uint64_t now;
 	unsigned stale;
+	unsigned index;
+	int masters[TERMINAL_TABS];
+	int ready[TERMINAL_TABS];
 	int status;
-	int ready;
 	int timeout;
 
 	/* One round per event: wait, read the shell, send the keys, redraw what changed. */
@@ -416,9 +448,11 @@ main_loop(
 				timeout = (int)(main_window.repeat_at - now);
 		}
 
-		/* Runs the compositor's events and learns whether the shell wrote. */
+		/* Runs the compositor's events and learns which shells wrote. */
+		for (index = 0; index < main_tab_count; index++)
+			masters[index] = main_tabs[index].master;
 		run->operation = "terminal_window_dispatch";
-		status = terminal_window_dispatch(&main_window, run->master, timeout, &ready);
+		status = terminal_window_dispatch(&main_window, masters, main_tab_count, timeout, ready);
 		if (status != 0)
 			return -1;
 
@@ -428,7 +462,7 @@ main_loop(
 			return 0;
 		}
 
-		/* The menus' choices are carried out; Close Window ends the terminal. */
+		/* The menus' choices are carried out; Close Window (or closing the last tab) ends the terminal. */
 		status = main_menu_actions(options, run);
 		if (status < 0)
 			return -1;
@@ -437,12 +471,29 @@ main_loop(
 			return 0;
 		}
 
-		/* What the shell wrote goes on the grid; its end ends the terminal. */
-		if (ready) {
-			status = main_read_shell(run->master);
+		/* What the titlebar asked of the tabs; closing the last one ends the terminal. */
+		status = main_tab_requests(options, run);
+		if (status < 0)
+			return -1;
+		if (status > 0) {
+			run->reason = "tabs-closed";
+			return 0;
+		}
+
+		/* What each shell wrote goes on its grid, from the last tab so a closed one leaves the others' places; a shell's end closes its tab. */
+		for (index = main_tab_count; index > 0U; index--) {
+			/* A shell that did not write. */
+			if (index - 1U >= TERMINAL_TABS || !ready[index - 1U])
+				continue;
+
+			/* Its bytes on its grid; its end closes its tab, and the last tab's ends the terminal. */
+			status = main_read_shell(main_tabs[index - 1U].master, main_tabs[index - 1U].screen);
 			if (status != 0) {
-				run->reason = "shell-exited";
-				return 0;
+				status = main_tab_close(options, run, index - 1U);
+				if (status != 0) {
+					run->reason = "shell-exited";
+					return 0;
+				}
 			}
 		}
 
@@ -450,9 +501,9 @@ main_loop(
 		terminal_window_repeat(&main_window, terminal_clock());
 
 		/* A key typed ends the selection (Edit > Select All). */
-		if (main_window.input_length != 0U && main_screen.selected) {
-			main_screen.selected = 0;
-			main_screen.changed = 1;
+		if (main_window.input_length != 0U && main_screen->selected) {
+			main_screen->selected = 0;
+			main_screen->changed = 1;
 		}
 
 		/* The keys typed and the text pasted go to the shell. */
@@ -476,16 +527,17 @@ main_loop(
 				return -1;
 		}
 
-		/* The menus show the terminal's state (only a change is sent). */
+		/* The menus show the terminal's state, and the titlebar its tabs (only a change is sent). */
 		main_menu_state(run, &state);
 		terminal_menu_refresh(&main_window, &state);
+		main_tabs_show();
 
 		/* Nothing changed: nothing to draw. */
-		if (!main_screen.changed)
+		if (!main_screen->changed)
 			continue;
 
 		/* Draws the grid; a swapchain out of date is remade and drawn again next round. */
-		run->result = terminal_renderer_draw(&main_renderer, &main_screen, &main_font);
+		run->result = terminal_renderer_draw(&main_renderer, main_screen, &main_font);
 		run->operation = main_renderer.operation;
 		if (run->result == VK_ERROR_OUT_OF_DATE_KHR) {
 			stale++;
@@ -501,7 +553,7 @@ main_loop(
 
 		/* The grid on the window is up to date. */
 		stale = 0U;
-		main_screen.changed = 0;
+		main_screen->changed = 0;
 	}
 }
 
@@ -511,6 +563,8 @@ main_resize(
 	const struct main_options *options,
 	struct main_run *run)
 {
+	unsigned index;
+
 	/* The swapchain at the new size. */
 	main_window.resized = 0;
 	run->result = terminal_renderer_resize(&main_renderer, main_window.width, main_window.height);
@@ -518,11 +572,15 @@ main_resize(
 	if (run->result != VK_SUCCESS)
 		return -1;
 
-	/* The grid that fits it, told to the shell. */
+	/* The grid that fits it, for every tab, told to each shell. */
 	main_grid(main_renderer.extent.width, main_renderer.extent.height, &run->columns, &run->rows);
-	terminal_screen_resize(&main_screen, run->columns, run->rows);
-	main_tell_size(run->master, run->columns, run->rows);
-	main_screen.changed = 1;
+	for (index = 0; index < main_tab_count; index++) {
+		terminal_screen_resize(main_tabs[index].screen, run->columns, run->rows);
+		main_tell_size(main_tabs[index].master, run->columns, run->rows);
+	}
+
+	/* The active grid is drawn again. */
+	main_screen->changed = 1;
 
 	/* Succeeded: the next frame is drawn at the new size. */
 	printf("ZTERM RESIZE run=%s columns=%u rows=%u window=%ux%u\n", options->token, run->columns, run->rows, main_renderer.extent.width, main_renderer.extent.height);
@@ -637,10 +695,11 @@ main_tell_size(
 	(void)status;
 }
 
-/* Reads what the shell wrote and puts it on the grid; returns nonzero once the shell has gone. */
+/* Reads what a shell wrote and puts it on its grid; returns nonzero once the shell has gone. */
 static int
 main_read_shell(
-	int master)
+	int master,
+	struct terminal_screen *screen)
 {
 	unsigned char buffer[8192];
 	ssize_t count;
@@ -650,7 +709,7 @@ main_read_shell(
 	for (rounds = 0; rounds < 16; rounds++) {
 		count = read(master, buffer, sizeof(buffer));
 		if (count > 0) {
-			terminal_screen_write(&main_screen, buffer, (size_t)count);
+			terminal_screen_write(screen, buffer, (size_t)count);
 			continue;
 		}
 
@@ -735,6 +794,16 @@ main_menu_actions(
 		case TERMINAL_ACTION_CLOSE:
 			/* The terminal ends. */
 			return 1;
+		case TERMINAL_ACTION_NEW_TAB:
+			/* Another shell, in a tab of its own. */
+			status = main_tab_new(options, run);
+			break;
+		case TERMINAL_ACTION_CLOSE_TAB:
+			/* The active tab closes; the last one's end ends the terminal. */
+			status = main_tab_close(options, run, main_active);
+			if (status != 0)
+				return 1;
+			break;
 		case TERMINAL_ACTION_COPY:
 			/* The selected text into the terminal's clipboard. */
 			main_copy();
@@ -745,8 +814,8 @@ main_menu_actions(
 			break;
 		case TERMINAL_ACTION_SELECT_ALL:
 			/* The whole screen is selected until a key is typed. */
-			main_screen.selected = 1;
-			main_screen.changed = 1;
+			main_screen->selected = 1;
+			main_screen->changed = 1;
 			break;
 		case TERMINAL_ACTION_ZOOM_IN:
 			/* The text a step larger, or one of the fixed sizes below. */
@@ -787,15 +856,15 @@ main_menu_actions(
 			break;
 		case TERMINAL_ACTION_CLEAR:
 			/* The cursor home and the screen erased. */
-			terminal_screen_write(&main_screen, (const unsigned char *)"\033[H\033[2J", 7U);
+			terminal_screen_write(main_screen, (const unsigned char *)"\033[H\033[2J", 7U);
 			break;
 		case TERMINAL_ACTION_RESET:
 			/* The screen as it started, at its size. */
-			terminal_screen_init(&main_screen, run->columns, run->rows);
+			terminal_screen_init(main_screen, run->columns, run->rows);
 			break;
 		case TERMINAL_ACTION_ABOUT:
 			/* A line about the terminal on the screen (there are no dialogs). */
-			terminal_screen_write(&main_screen, (const unsigned char *)MAIN_ABOUT, sizeof(MAIN_ABOUT) - 1U);
+			terminal_screen_write(main_screen, (const unsigned char *)MAIN_ABOUT, sizeof(MAIN_ABOUT) - 1U);
 			break;
 		default:
 			/* An action this terminal does not have. */
@@ -823,7 +892,7 @@ main_menu_state(
 {
 	/* The selection, the clipboard, the font's size, and fullscreen. */
 	memset(state, 0, sizeof(*state));
-	state->selection = main_screen.selected;
+	state->selection = main_screen->selected;
 	state->clipboard = terminal_clipboard_has_text(&main_window);
 	state->pixels = run->pixels;
 	state->fullscreen = main_window.fullscreen;
@@ -842,6 +911,7 @@ main_new_window(
 	char token[64];
 	char display[128];
 	char *arguments[4];
+	unsigned index;
 	pid_t child;
 	pid_t grandchild;
 	int status;
@@ -856,9 +926,10 @@ main_new_window(
 		if (grandchild != 0)
 			_exit(0);
 
-		/* It keeps nothing of this terminal's: not the shell's pseudo-terminal. */
-		if (run->master >= 0)
-			(void)close(run->master);
+		/* It keeps nothing of this terminal's: not the shells' pseudo-terminals. */
+		(void)run;
+		for (index = 0; index < main_tab_count; index++)
+			(void)close(main_tabs[index].master);
 
 		/* The same program, its log lines named after this run's. */
 		(void)snprintf(token, sizeof(token), "--token=%s-new", options->token);
@@ -893,6 +964,7 @@ main_zoom(
 	struct main_run *run,
 	unsigned pixels)
 {
+	unsigned index;
 	int error;
 
 	/* The size stays within the bounds. */
@@ -920,11 +992,15 @@ main_zoom(
 	/* The size the menus show and Zoom In and Out step from. */
 	run->pixels = pixels;
 
-	/* The grid that fits the window at the new size, told to the shell. */
+	/* The grid that fits the window at the new size, for every tab, told to each shell. */
 	main_grid(main_renderer.extent.width, main_renderer.extent.height, &run->columns, &run->rows);
-	terminal_screen_resize(&main_screen, run->columns, run->rows);
-	main_tell_size(run->master, run->columns, run->rows);
-	main_screen.changed = 1;
+	for (index = 0; index < main_tab_count; index++) {
+		terminal_screen_resize(main_tabs[index].screen, run->columns, run->rows);
+		main_tell_size(main_tabs[index].master, run->columns, run->rows);
+	}
+
+	/* The active grid is drawn again. */
+	main_screen->changed = 1;
 
 	/* Succeeded: the next frame draws at the new size. */
 	printf("ZTERM ZOOM run=%s pixels=%u columns=%u rows=%u\n", options->token, pixels, run->columns, run->rows);
@@ -937,11 +1013,11 @@ static void
 main_copy(void)
 {
 	/* Nothing is copied without a selection. */
-	if (!main_screen.selected)
+	if (!main_screen->selected)
 		return;
 
 	/* The text, as it is on the screen now. */
-	main_clipboard_length = terminal_screen_text(&main_screen, main_clipboard, sizeof(main_clipboard));
+	main_clipboard_length = terminal_screen_text(main_screen, main_clipboard, sizeof(main_clipboard));
 	printf("ZTERM COPY bytes=%lu\n", (unsigned long)main_clipboard_length);
 	fflush(stdout);
 
@@ -978,4 +1054,222 @@ main_start_paste(void)
 	main_paste_written = 0;
 	printf("ZTERM PASTE bytes=%lu\n", (unsigned long)main_paste_length);
 	fflush(stdout);
+}
+
+/*
+ * Opens a new tab with a shell of its own, at the grid's size, and makes it
+ * the active one.  Returns 0, or -1 when the shell cannot be started (a
+ * full window has no new tab and returns 0).
+ */
+static int
+main_tab_new(
+	const struct main_options *options,
+	struct main_run *run)
+{
+	struct main_tab *tab;
+	struct terminal_screen *screen;
+	pid_t child;
+	int master;
+
+	/* A full window has no new tab. */
+	if (main_tab_count == TERMINAL_TABS)
+		return 0;
+
+	/* The tab's grid. */
+	screen = malloc(sizeof(*screen));
+	if (screen == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	/* Empty, at the grid's size. */
+	terminal_screen_init(screen, run->columns, run->rows);
+
+	/* Its shell, told the grid's size. */
+	child = main_spawn(options, &master);
+	if (child < 0) {
+		free(screen);
+		return -1;
+	}
+
+	/* The shell learns the size. */
+	main_tell_size(master, run->columns, run->rows);
+
+	/* The tab, at the end, with its ID and title. */
+	tab = &main_tabs[main_tab_count];
+	tab->screen = screen;
+	tab->child = child;
+	tab->master = master;
+	tab->id = main_tab_next;
+	main_tab_next++;
+	(void)snprintf(tab->title, sizeof(tab->title), "Shell %u", tab->id);
+	main_tab_count++;
+
+	/* Succeeded: it is the active one. */
+	main_tab_switch(run, main_tab_count - 1U);
+	printf("ZTERM TAB new run=%s id=%u count=%u\n", options->token, tab->id, main_tab_count);
+	fflush(stdout);
+	return 0;
+}
+
+/* Makes a tab the active one: its grid is drawn and its shell takes the keys. */
+static void
+main_tab_switch(
+	struct main_run *run,
+	unsigned index)
+{
+	/* Only a tab that is there. */
+	if (index >= main_tab_count)
+		return;
+
+	/* The active tab's grid and shell. */
+	main_active = index;
+	main_screen = main_tabs[index].screen;
+	run->child = main_tabs[index].child;
+	run->master = main_tabs[index].master;
+
+	/* The keys not yet sent belonged to the tab before; its grid is drawn. */
+	main_window.input_length = 0;
+	main_screen->changed = 1;
+	printf("ZTERM TAB active id=%u\n", main_tabs[index].id);
+	fflush(stdout);
+}
+
+/*
+ * Closes a tab: its shell is hung up on and reaped, its grid freed, and a
+ * neighbour becomes active when it was.  Returns 1 when it was the last
+ * tab (the terminal ends), 0 otherwise.
+ */
+static int
+main_tab_close(
+	const struct main_options *options,
+	struct main_run *run,
+	unsigned index)
+{
+	struct main_tab *tab;
+	uint32_t id;
+	int status;
+
+	/* Only a tab that is there. */
+	if (index >= main_tab_count)
+		return main_tab_count == 0U;
+
+	/* Its shell, hung up on and reaped, and its grid. */
+	tab = &main_tabs[index];
+	id = tab->id;
+	(void)close(tab->master);
+	if (tab->child > 0) {
+		(void)kill(tab->child, SIGHUP);
+		(void)waitpid(tab->child, &status, 0);
+	}
+
+	/* Its grid. */
+	free(tab->screen);
+
+	/* The tabs after it move up. */
+	main_tab_count--;
+	memmove(&main_tabs[index], &main_tabs[index + 1U], (main_tab_count - index) * sizeof(main_tabs[0]));
+	printf("ZTERM TAB closed run=%s id=%u count=%u\n", options->token, id, main_tab_count);
+	fflush(stdout);
+
+	/* The last tab: the terminal ends (no shell is active). */
+	if (main_tab_count == 0U) {
+		main_screen = NULL;
+		run->child = -1;
+		run->master = -1;
+		return 1;
+	}
+
+	/* The tab now at its place (or the last one) is active when it was; otherwise the active one may have moved up. */
+	if (index == main_active) {
+		if (index >= main_tab_count)
+			index = main_tab_count - 1U;
+		main_tab_switch(run, index);
+	} else if (index < main_active) {
+		main_tab_switch(run, main_active - 1U);
+	}
+
+	/* Succeeded: tabs remain. */
+	return 0;
+}
+
+/* Finds a tab by its ID; -1 when there is none. */
+static int
+main_tab_find(
+	uint32_t id)
+{
+	unsigned index;
+
+	/* Each tab. */
+	for (index = 0; index < main_tab_count; index++) {
+		/* The tab with the ID. */
+		if (main_tabs[index].id == id)
+			return (int)index;
+	}
+
+	/* None. */
+	return -1;
+}
+
+/*
+ * Carries out what the titlebar asked of the tabs: a new tab, one chosen,
+ * one closed.  Returns 1 when the last tab closed, -1 when a shell could
+ * not be started, 0 otherwise.
+ */
+static int
+main_tab_requests(
+	const struct main_options *options,
+	struct main_run *run)
+{
+	struct terminal_tab_request request;
+	int taken;
+	int found;
+	int status;
+
+	/* Each request in the order it came. */
+	for (;;) {
+		taken = terminal_tabs_take(&main_window, &request);
+		if (taken == 0)
+			break;
+
+		/* A new tab. */
+		status = 0;
+		if (request.kind == TERMINAL_TAB_NEW)
+			status = main_tab_new(options, run);
+		if (status != 0)
+			return -1;
+
+		/* A tab chosen, or closed, that is still there. */
+		found = main_tab_find(request.id);
+		if (found < 0)
+			continue;
+		if (request.kind == TERMINAL_TAB_ACTIVATE)
+			main_tab_switch(run, (unsigned)found);
+		if (request.kind == TERMINAL_TAB_CLOSE) {
+			status = main_tab_close(options, run, (unsigned)found);
+			if (status != 0)
+				return 1;
+		}
+	}
+
+	/* Succeeded: the tabs are as asked. */
+	return 0;
+}
+
+/* Shows the tabs in the titlebar (tabs.c sends only a change). */
+static void
+main_tabs_show(void)
+{
+	struct terminal_tab_view views[TERMINAL_TABS];
+	unsigned index;
+
+	/* Each tab's ID and title. */
+	for (index = 0; index < main_tab_count; index++) {
+		views[index].id = main_tabs[index].id;
+		(void)snprintf(views[index].title, sizeof(views[index].title), "%s", main_tabs[index].title);
+	}
+
+	/* With the active one. */
+	if (main_tab_count > 0U)
+		terminal_tabs_show(&main_window, views, main_tab_count, main_tabs[main_active].id);
 }
