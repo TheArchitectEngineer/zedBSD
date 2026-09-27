@@ -12,8 +12,9 @@
  * It started as zterm's (userland/X11/zterm) and takes the same subset:
  * cursor motion, erasing, colours, UTF-8; with the scrolling region, line
  * and character insertion and deletion, the cursor's visibility, 256 and
- * direct colours, and OSC strings (which are read and dropped) added for
- * the programs a shell runs.
+ * direct colours, and OSC strings added for the programs a shell runs:
+ * OSC 0 and 2 set the title (the tab's, ws035-p091), the others are
+ * dropped.
  */
 
 #include "terminal.h"
@@ -58,6 +59,7 @@ static void screen_utf8(struct terminal_screen *screen, unsigned char byte);
 static void screen_put(struct terminal_screen *screen, uint32_t codepoint);
 static int screen_wide(uint32_t codepoint);
 static void screen_move(struct terminal_screen *screen, unsigned column, unsigned row);
+static void screen_osc(struct terminal_screen *screen);
 
 /*
  * Starts an empty grid of the given size with the cursor at the top left.
@@ -337,18 +339,27 @@ screen_byte(
 		screen_csi_byte(screen, byte);
 		return;
 	case SCREEN_OSC:
-		/* An OSC string (a window title, a colour) ends with BEL or ESC \ and is dropped. */
+		/* An OSC string (a window title, a colour) ends with BEL or ESC \. */
 		if (byte == 0x07U) {
 			screen->parser_state = SCREEN_TEXT;
-		} else if (byte == 0x1bU) {
-			screen->parser_state = SCREEN_OSC_ESCAPE;
+			screen_osc(screen);
+			return;
 		}
 
-		/* Every other byte of the string is dropped. */
+		/* ESC starts its end. */
+		if (byte == 0x1bU) {
+			screen->parser_state = SCREEN_OSC_ESCAPE;
+			return;
+		}
+
+		/* Another byte is kept while there is room. */
+		if (screen->osc_length + 1U < TERMINAL_OSC)
+			screen->osc[screen->osc_length++] = (char)byte;
 		return;
 	case SCREEN_OSC_ESCAPE:
 		/* The byte after ESC ends the string whatever it is. */
 		screen->parser_state = SCREEN_TEXT;
+		screen_osc(screen);
 		return;
 	case SCREEN_CHARSET:
 		/* The character set a G0 or G1 designation names is ignored: UTF-8 is the only one. */
@@ -403,6 +414,7 @@ screen_escape(
 		break;
 	case ']':
 		screen->parser_state = SCREEN_OSC;
+		screen->osc_length = 0U;
 		break;
 	case '(':
 	case ')':
@@ -1052,4 +1064,45 @@ screen_move(
 	/* The new position. */
 	screen->cursor_column = column;
 	screen->cursor_row = row;
+}
+
+/*
+ * Carries out a finished OSC string: "0;TEXT" and "2;TEXT" set the title
+ * (its control characters left out); the others are dropped.
+ */
+static void
+screen_osc(
+	struct terminal_screen *screen)
+{
+	const char *text;
+	size_t used;
+	size_t index;
+	unsigned char byte;
+
+	/* The string, and whether it sets the title. */
+	screen->osc[screen->osc_length] = '\0';
+	text = screen->osc;
+	if ((text[0] != '0' && text[0] != '2') || text[1] != ';')
+		return;
+
+	/* The title's text, without control characters, as far as it fits. */
+	used = 0U;
+	for (index = 2U; text[index] != '\0' && used + 1U < sizeof(screen->title); index++) {
+		byte = (unsigned char)text[index];
+		if (byte < 0x20U || byte == 0x7fU)
+			continue;
+		screen->title[used++] = (char)byte;
+	}
+
+	/* A cut inside a character leaves none of it. */
+	byte = (unsigned char)text[index];
+	if ((byte & 0xc0U) == 0x80U) {
+		while (used > 0U && ((unsigned char)screen->title[used - 1U] & 0xc0U) == 0x80U)
+			used--;
+		if (used > 0U && (unsigned char)screen->title[used - 1U] >= 0xc0U)
+			used--;
+	}
+
+	/* Succeeded: the new title (the main loop shows it). */
+	screen->title[used] = '\0';
 }

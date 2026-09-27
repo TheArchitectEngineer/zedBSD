@@ -10,3 +10,5 @@ CONFIG_DRIVER_PCI_I915 := y
 ZEDBSD_USER_PROGRAMS += libvulkan libwayland-client libwayland-egl libegl libglesv2 libtruetype wltest wlshm mview zdesktop-terminal egltest libgl glxtest zgears zdesktop zdesktop-x11server i915-firmware
 # ws075: App Home's Files (WS071), for the i915 capture scenario zdesktop-files.
 ZEDBSD_USER_PROGRAMS += libz-compat libpng-compat zdesktop-files
+# ws035-p090: the demo image's App Home (Files, Browser; the browser shows when its start page is there).
+ZEDBSD_USER_PROGRAMS += zdesktop-browser

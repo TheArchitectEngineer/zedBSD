@@ -298,9 +298,12 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 
 /* RENDER_SURFACE_STATE surface types and alignments. */
 #define GEN12_SURFTYPE_2D			1U
+#define GEN12_SURFTYPE_3D			2U
+#define GEN12_SURFTYPE_CUBE			3U
 #define GEN12_SURFTYPE_NULL			7U
 #define GEN12_SURFACE_ALIGN_4			1U
 #define GEN12_TILEMODE_LINEAR			0U
+#define GEN12_TILEMODE_YMAJOR			3U
 
 /* BLEND_STATE_ENTRY colour clamp range. */
 #define GEN12_COLORCLAMP_RTFORMAT		2U
@@ -355,6 +358,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  * format and makes the depth unit expect a stencil buffer that is not there.
  */
 #define GEN12_DEPTH_FORMAT_D32_FLOAT		1U
+#define GEN12_DEPTH_FORMAT_D16_UNORM		5U
 
 /* 3DSTATE_SBE attribute component format: all four channels active. */
 #define GEN12_ACF_XYZW				3U
@@ -528,6 +532,22 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_RSS_QPITCH_MASK			0x7fffU
 
 /*
+ * The array fields of RENDER_SURFACE_STATE (gen110.xml, imported by
+ * gen120.xml; Mesa 25.0.7 gen110.xml sha256
+ * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d): dword 0
+ * Surface Array bit 28 and the six Cube Face Enables in bits 5:0; dword 3
+ * Depth in bits 31:21 (the layers less one, the cubes less one, or a 3D
+ * surface's depth less one); dword 4 Minimum Array Element in bits 28:18
+ * and Render Target View Extent in bits 17:7.
+ */
+#define GEN12_RSS_SURFACE_ARRAY			(1U << 28)
+#define GEN12_RSS_CUBE_FACES_ALL		0x3fU
+#define GEN12_RSS_DEPTH_SHIFT			21U
+#define GEN12_RSS_DEPTH_MASK			0x7ffU
+#define GEN12_RSS_MIN_ARRAY_ELEMENT_SHIFT	18U
+#define GEN12_RSS_VIEW_EXTENT_SHIFT		7U
+
+/*
  * SAMPLER_STATE fields (gen120.xml), in dword and bit:
  *   dword 0: Texture LOD Bias 13:1 (s4.8), Min Mode Filter 16:14,
  *            Mag Mode Filter 19:17, Mip Mode Filter 21:20, LOD PreClamp
@@ -549,6 +569,40 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_SAMPLER_MIN_LOD_SHIFT		20U
 #define GEN12_MAPFILTER_NEAREST			0U
 #define GEN12_MAPFILTER_LINEAR			1U
+/*
+ * More SAMPLER_STATE fields (gen110.xml, imported by gen120.xml; Mesa 25.0.7
+ * gen110.xml sha256
+ * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d): dword 0
+ * Anisotropic Algorithm bit 0 (EWA approximation 1); dword 1 Cube Surface
+ * Control Mode bit 0 (OVERRIDE 1) and Shadow Function 3:1 (PREFILTEROP_*);
+ * dword 2 Border Color Pointer 31:6 (the dynamic state offset of a
+ * 64-byte aligned SAMPLER_BORDER_COLOR_STATE, whose first four dwords are
+ * the red, green, blue and alpha, floats or integers as the format
+ * reads); dword 3 Maximum Anisotropy 21:19 (RATIO 2:1 0 .. 16:1 7),
+ * Non-normalized Coordinate Enable bit 10, the address modes TCX 8:6, TCY
+ * 5:3, TCZ 2:0.  Min and Mag Mode Filter take MAPFILTER_ANISOTROPIC 2.
+ */
+#define GEN12_SAMPLER_ANISOTROPIC_EWA		1U
+#define GEN12_SAMPLER_CUBE_OVERRIDE		1U
+#define GEN12_SAMPLER_SHADOW_SHIFT		1U
+#define GEN12_SAMPLER_BORDER_POINTER_MASK	0xffffffc0U
+#define GEN12_SAMPLER_MAX_ANISOTROPY_SHIFT	19U
+#define GEN12_SAMPLER_NON_NORMALIZED		(1U << 10)
+#define GEN12_SAMPLER_TCX_SHIFT			6U
+#define GEN12_SAMPLER_TCY_SHIFT			3U
+#define GEN12_SAMPLER_TCZ_SHIFT			0U
+#define GEN12_MAPFILTER_ANISOTROPIC		2U
+
+/* The PREFILTEROP values of the Shadow Function (gen110.xml). */
+#define GEN12_PREFILTEROP_ALWAYS		0U
+#define GEN12_PREFILTEROP_NEVER			1U
+#define GEN12_PREFILTEROP_LESS			2U
+#define GEN12_PREFILTEROP_EQUAL			3U
+#define GEN12_PREFILTEROP_LEQUAL		4U
+#define GEN12_PREFILTEROP_GREATER		5U
+#define GEN12_PREFILTEROP_NOTEQUAL		6U
+#define GEN12_PREFILTEROP_GEQUAL		7U
+
 #define GEN12_MIPFILTER_NONE			0U
 #define GEN12_MIPFILTER_NEAREST			1U
 #define GEN12_MIPFILTER_LINEAR			3U

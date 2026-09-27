@@ -143,6 +143,9 @@ static struct terminal_screen *main_screen;
 static char main_clipboard[MAIN_CLIPBOARD_MAX];
 static size_t main_clipboard_length;
 static char main_paste[MAIN_CLIPBOARD_MAX];
+
+/* The window's title as last set: the active tab's (OSC 0 or 2), or "Terminal" (ws035-p091). */
+static char main_window_title[TERMINAL_TITLE];
 static size_t main_paste_length;
 static size_t main_paste_written;
 
@@ -170,6 +173,7 @@ static int main_tab_close(const struct main_options *options, struct main_run *r
 static int main_tab_find(uint32_t id);
 static int main_tab_requests(const struct main_options *options, struct main_run *run);
 static void main_tabs_show(void);
+static void main_title_copy(char *to, size_t size, const char *from);
 
 /*
  * Runs the terminal.
@@ -1261,22 +1265,66 @@ main_tab_requests(
 	return 0;
 }
 
-/* Shows the tabs in the titlebar (tabs.c sends only a change). */
+/*
+ * Shows the tabs in the titlebar (tabs.c sends only a change): each tab's
+ * title is the one its shell set (OSC 0 or 2), else "Shell N".  The
+ * window's title follows the active tab's.
+ */
 static void
 main_tabs_show(void)
 {
 	struct terminal_tab_view views[TERMINAL_TABS];
+	const char *title;
 	unsigned index;
+	int same;
 
 	/* Each tab's ID and title. */
 	for (index = 0; index < main_tab_count; index++) {
 		views[index].id = main_tabs[index].id;
-		(void)snprintf(views[index].title, sizeof(views[index].title), "%s", main_tabs[index].title);
+		title = main_tabs[index].title;
+		if (main_tabs[index].screen->title[0] != '\0')
+			title = main_tabs[index].screen->title;
+		main_title_copy(views[index].title, sizeof(views[index].title), title);
 	}
 
 	/* With the active one. */
-	if (main_tab_count > 0U)
-		terminal_tabs_show(&main_window, views, main_tab_count, main_tabs[main_active].id);
+	if (main_tab_count == 0U)
+		return;
+	terminal_tabs_show(&main_window, views, main_tab_count, main_tabs[main_active].id);
+
+	/* The window's title: the active tab's, or the application's name; only a change is sent. */
+	title = "Terminal";
+	if (main_tabs[main_active].screen->title[0] != '\0')
+		title = main_tabs[main_active].screen->title;
+	same = strcmp(title, main_window_title);
+	if (same == 0)
+		return;
+	main_title_copy(main_window_title, sizeof(main_window_title), title);
+	xdg_toplevel_set_title(main_window.toplevel, main_window_title);
+	printf("ZTERM TITLE tab=%u title=%s\n", main_tabs[main_active].id, main_window_title);
+	fflush(stdout);
+}
+
+/* Copies a title as far as it fits, never cutting a UTF-8 character in two. */
+static void
+main_title_copy(
+	char *to,
+	size_t size,
+	const char *from)
+{
+	size_t length;
+
+	/* The bytes that fit, less a character's leading part the cut would leave. */
+	length = strlen(from);
+	if (length >= size) {
+		length = size - 1U;
+		while (length > 0U && ((unsigned char)from[length] & 0xc0U) == 0x80U)
+			length--;
+	}
+
+	/* Succeeded: the copy, ended. */
+	memcpy(to, from, length);
+	to[length] = '\0';
 }
 
 /* Pastes what was dropped on the window into the active shell, as a paste is. */

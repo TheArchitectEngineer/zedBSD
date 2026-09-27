@@ -163,7 +163,7 @@
 #define COMPILE_VUE_POINT_SIZE	3U
 
 /* The spilled values one instruction reads at most (three sources), and defines at most (a sample's four). */
-#define COMPILE_MAX_FILLS	3U
+#define COMPILE_MAX_FILLS	(I915_IR_TEXTURE_MAX_PARAMS + 1U)
 #define COMPILE_MAX_SPILLS	4U
 
 /* A spilled value takes one register of scratch memory: 32 bytes, two OWords. */
@@ -367,6 +367,7 @@ struct i915_compile_state {
 };
 
 static uint32_t i915_compile_sources(const struct i915_shader_ir_inst *inst);
+static uint32_t i915_compile_source(const struct i915_shader_ir_inst *inst, uint32_t index);
 static uint32_t i915_compile_results(const struct i915_shader_ir_inst *inst);
 static int i915_compile_attempt(struct i915_compile_state *state);
 static void i915_compile_reset(struct i915_compile_state *state);
@@ -403,6 +404,7 @@ static void i915_compile_kill(struct i915_compile_state *state, const struct i91
 static void i915_compile_sample(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static int i915_compile_sampler_index(const struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t *sampler);
 static void i915_compile_sample_message(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t sampler);
+static void i915_compile_texture(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_integer(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_multiply(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_divide(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
@@ -737,6 +739,7 @@ i915_compile_sources(
 	case I915_IR_DDX:
 	case I915_IR_DDX_FINE:
 	case I915_IR_DDY:
+	case I915_IR_DDY_FINE:
 	case I915_IR_UNPACK_HALF:
 		return 1U;
 
@@ -779,12 +782,33 @@ i915_compile_sources(
 	case I915_IR_SAMPLE_LOD:
 		return 3U;
 
+	case I915_IR_TEXTURE:
+		/* A texture message reads its run of parameters. */
+		return inst->src[1];
+
 	default:
 		break;
 	}
 
 	/* Constants, loads, loop starts and unknown operations read no value. */
 	return 0U;
+}
+
+/*
+ * Returns the value an instruction reads as its index-th source: src[index],
+ * or for a texture message the index-th value of its run.
+ */
+static uint32_t
+i915_compile_source(
+	const struct i915_shader_ir_inst *inst,
+	uint32_t index)
+{
+	/* A texture message's parameters are consecutive values from src[0]. */
+	if (inst->op == I915_IR_TEXTURE)
+		return inst->src[0] + index;
+
+	/* Succeeded: any other instruction names each source. */
+	return inst->src[index];
 }
 
 /* Returns how many consecutive values an instruction defines from its dst. */
@@ -797,6 +821,7 @@ i915_compile_results(
 	case I915_IR_SAMPLE:
 	case I915_IR_SAMPLE_BIAS:
 	case I915_IR_SAMPLE_LOD:
+	case I915_IR_TEXTURE:
 		return 4U;
 
 	case I915_IR_STORE_OUTPUT:
@@ -864,7 +889,7 @@ i915_compile_liveness(
 
 		/* Notes this instruction as the latest reader of each value it reads. */
 		for (source = 0U; source < i915_compile_sources(inst); source++) {
-			value = inst->src[source];
+			value = i915_compile_source(inst, source);
 			if (value < ir->value_count)
 				state->last_use[value] = index;
 		}
@@ -1260,11 +1285,13 @@ i915_compile_involves(
 	uint32_t source;
 	uint32_t sources;
 	uint32_t results;
+	uint32_t read;
 
 	/* One of its sources. */
 	sources = i915_compile_sources(inst);
 	for (source = 0U; source < sources; source++) {
-		if (inst->src[source] == value)
+		read = i915_compile_source(inst, source);
+		if (read == value)
 			return 1;
 	}
 
@@ -1457,7 +1484,7 @@ i915_compile_release(
 	/* Frees each source whose last reader this is. */
 	sources = i915_compile_sources(inst);
 	for (source = 0U; source < sources; source++) {
-		value = inst->src[source];
+		value = i915_compile_source(inst, source);
 		if (value < state->ir->value_count &&
 		    state->last_use[value] == state->index &&
 		    state->value_grf[value] != COMPILE_NO_GRF)
@@ -1600,6 +1627,10 @@ i915_compile_instruction(
 		i915_compile_sample(state, inst);
 		break;
 
+	case I915_IR_TEXTURE:
+		i915_compile_texture(state, inst);
+		break;
+
 	case I915_IR_IADD:
 	case I915_IR_ISUB:
 	case I915_IR_INEG:
@@ -1655,6 +1686,7 @@ i915_compile_instruction(
 	case I915_IR_DDX:
 	case I915_IR_DDX_FINE:
 	case I915_IR_DDY:
+	case I915_IR_DDY_FINE:
 		i915_compile_derivative(state, inst);
 		break;
 
@@ -2521,6 +2553,111 @@ i915_compile_sample_message(
 }
 
 /*
+ * Lowers a texture message (I915_IR_TEXTURE), as Mesa builds it on Gen12.0
+ * (lower_sampler_logical_send(), brw_lower_logical_sends.cpp): a header
+ * when there is a texel offset (as i915_compile_sample_message() writes
+ * it), then the parameters in the order the IR gives them, each copied
+ * bit for bit into consecutive temporaries, sent as one run with a
+ * four-register reply.  The n-th sampled image of the shader's uniforms
+ * is binding table entry 1 + n and sampler n.
+ */
+static void
+i915_compile_texture(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	struct i915_eu_reg dword;
+	struct i915_eu_reg thread;
+	uint32_t sampler;
+	uint32_t param_count;
+	uint32_t texel_offset;
+	uint32_t payload;
+	uint32_t length;
+	uint32_t header;
+	uint32_t descriptor;
+	uint32_t source_grf;
+	uint32_t next;
+	uint32_t dst;
+	uint32_t index;
+	int found;
+
+	/* Finds the sampled image the instruction names. */
+	found = i915_compile_sampler_index(state, inst, &sampler);
+	if (found == 0) {
+		state->unsupported = 1;
+		return;
+	}
+
+	/* Refuses a message longer than the IR allows. */
+	param_count = inst->src[1];
+	if (param_count == 0U || param_count > I915_IR_TEXTURE_MAX_PARAMS) {
+		state->error = 1;
+		return;
+	}
+
+	/* Gives the four reply values four consecutive registers. */
+	dst = i915_compile_define(state, inst->dst, 4U);
+
+	/* The message: a header for an offset, then the parameters. */
+	texel_offset = inst->component >> 8;
+	header = 0U;
+	if (texel_offset != 0U)
+		header = 1U;
+	length = header + param_count;
+
+	/* Takes the message's registers. */
+	payload = i915_compile_temporaries(state, length);
+	if (state->out_of_registers != 0)
+		return;
+
+	/* Writes the header: zeros, the offset, the sampler state pointer without its low bits. */
+	next = payload;
+	if (header != 0U) {
+		drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(payload), drv_i915_eu_imm_ud(0U));
+		dword = drv_i915_eu_grf_ud(payload);
+		dword.subnr = 4U * EU_SAMPLER_HEADER_OFFSET_DWORD;
+		drv_i915_eu_mov_scalar(&state->code, dword, drv_i915_eu_imm_ud(texel_offset));
+		dword.subnr = 4U * EU_SAMPLER_HEADER_STATE_DWORD;
+		thread = drv_i915_eu_grf_scalar(0U, 4U * EU_SAMPLER_HEADER_STATE_DWORD);
+		thread.type = COMPILE_TYPE_UD;
+		drv_i915_eu_alu2_scalar(&state->code, I915_EU_AND, dword, thread, drv_i915_eu_imm_ud(EU_SAMPLER_STATE_POINTER_MASK));
+		next++;
+	}
+
+	/* Copies each parameter's bits after it: floats and integers alike. */
+	for (index = 0U; index < param_count; index++) {
+		source_grf = i915_compile_grf(state, inst->src[0] + index);
+		drv_i915_eu_mov(&state->code, drv_i915_eu_grf_ud(next), drv_i915_eu_grf_ud(source_grf));
+		next++;
+	}
+
+	/* The descriptor: the message's length, a four-register reply, the header, SIMD8, the type, sampler n and entry 1 + n. */
+	descriptor = (length << EU_DESC_MLEN_SHIFT) |
+		     (4U << EU_DESC_RLEN_SHIFT) |
+		     (EU_SAMPLER_SIMD8 << EU_SAMPLER_SIMD_SHIFT) |
+		     ((inst->component & EU_SAMPLER_TYPE_MASK) << EU_SAMPLER_TYPE_SHIFT) |
+		     (sampler << EU_SAMPLER_INDEX_SHIFT) |
+		     (1U + sampler);
+	if (header != 0U)
+		descriptor |= EU_DESC_HEADER_PRESENT;
+
+	/* Emits the message. */
+	drv_i915_eu_send(&state->code,
+			 drv_i915_eu_grf(dst),
+			 drv_i915_eu_grf(payload),
+			 drv_i915_eu_null(),
+			 COMPILE_SFID_SAMPLER,
+			 descriptor,
+			 0U,
+			 0,
+			 0);
+
+	/* The message's registers are free again. */
+	for (index = 0U; index < length; index++)
+		state->grf_busy[payload + index] = 0U;
+}
+
+/*
  * Lowers integer add, subtract, negate, the bitwise operations and the
  * shifts, each one instruction on signed (or, for a logical right shift,
  * unsigned) words: a subtraction adds the negated second source, a
@@ -2813,8 +2950,10 @@ i915_compile_derivative(
 {
 	struct i915_eu_reg minuend;
 	struct i915_eu_reg subtrahend;
+	struct i915_eu_reg target;
 	uint32_t source_grf;
 	uint32_t dst;
+	uint32_t quad;
 
 	/* Only pixels come in quads. */
 	if (state->ir->stage != I915_STAGE_FRAGMENT) {
@@ -2825,6 +2964,26 @@ i915_compile_derivative(
 	/* Reads the source and gives the result its register. */
 	source_grf = i915_compile_grf(state, inst->src[0]);
 	dst = i915_compile_define(state, inst->dst, 1U);
+
+	/*
+	 * The fine y derivative takes each column's own difference, as Mesa
+	 * does on Gen11+ (generate_ddy(), brw_generator.cpp): per quad, a
+	 * four-channel add of the bottom row less the top row, both read
+	 * <0;2,1> so each row serves its two pixels; outside the channel mask,
+	 * the destination being the value's own.
+	 */
+	if (inst->op == I915_IR_DDY_FINE) {
+		for (quad = 0U; quad < 2U; quad++) {
+			minuend = drv_i915_eu_grf_region(source_grf, 16U * quad + 8U, EU_TYPE_F, EU_VSTRIDE_0, EU_WIDTH_2, EU_HSTRIDE_1);
+			subtrahend = drv_i915_eu_grf_region(source_grf, 16U * quad, EU_TYPE_F, EU_VSTRIDE_0, EU_WIDTH_2, EU_HSTRIDE_1);
+			target = drv_i915_eu_grf(dst);
+			target.subnr = 16U * quad;
+			drv_i915_eu_alu2_four(&state->code, I915_EU_ADD, target, minuend, drv_i915_eu_negate(subtrahend));
+		}
+
+		/* Succeeded: both quads have their differences. */
+		return;
+	}
 
 	/* Picks the two pixels of each quad. */
 	if (inst->op == I915_IR_DDX_FINE) {

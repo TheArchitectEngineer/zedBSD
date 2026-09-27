@@ -33,8 +33,9 @@
  *
  * The applications come from /etc/zdesktop/apps.conf, one a line:
  * name|command|keywords|RRGGBB; without the file, a built-in list.  An
- * application is started with /bin/sh -c and the compositor's socket in
- * its environment.
+ * application whose command names an absolute path that is not there is
+ * not shown.  An application is started with /bin/sh -c and the
+ * compositor's socket in its environment.
  */
 
 #include "glass.h"
@@ -64,6 +65,9 @@
 
 /* The applications' list, and how many it may hold. */
 #define HOME_APPS_PATH		"/etc/zdesktop/apps.conf"
+
+/* The page the built-in list's browser opens (shown only when the page is there). */
+#define HOME_BROWSER_START	"/usr/share/zdesktop-browser/start.html"
 #define HOME_APPS_MAX		48U
 
 /* How long opening and closing take, and the least move of the corner drag. */
@@ -145,6 +149,7 @@ static const char home_characters[HOME_KEYS] = {
 };
 
 static void home_read_apps(void);
+static int home_present(const char *name, const char *command);
 static void home_add_app(const char *name, const char *command, const char *keywords, uint32_t rgb);
 static void home_parse_line(char *line);
 static uint32_t home_hex(const char *text);
@@ -710,9 +715,10 @@ home_read_apps(void)
 		home_add_app("Model viewer", "/bin/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU);
 		home_add_app("Vulkan test", "/bin/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30", "wltest gpu test", 0x5a8de0U);
 		home_add_app("Shared memory", "/bin/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU);
-		home_add_app("X terminal", "/bin/sh /usr/libexec/zdesktop-x11 /bin/zterm", "x11 xterm zterm", 0x4a4a78U);
+		home_add_app("X terminal", "/bin/sh /usr/libexec/zdesktop-x11 /bin/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U);
 		home_add_app("Gears", "/bin/sh /usr/libexec/zdesktop-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU);
 		home_add_app("Files", "/bin/zdesktop-files", "files file manager folder finder browse", 0x2f7cf6U);
+		home_add_app("Browser", "/bin/zdesktop-browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U);
 	}
 }
 
@@ -725,9 +731,15 @@ home_add_app(
 	uint32_t rgb)
 {
 	struct home_app *app;
+	int present;
 
 	/* A full list takes no more. */
 	if (home_app_count >= HOME_APPS_MAX)
+		return;
+
+	/* An application whose program or files are not on this system is not shown. */
+	present = home_present(name, command);
+	if (!present)
 		return;
 
 	/* The application's texts and its colour. */
@@ -740,6 +752,49 @@ home_add_app(
 	app->color[2] = (float)(rgb & 0xffU) / 255.0f;
 	app->color[3] = 1.0f;
 	home_app_count++;
+}
+
+/*
+ * Tells whether every absolute path in a command (its program, a script it
+ * runs, a file it opens) is on this system; a missing one is logged.
+ */
+static int
+home_present(
+	const char *name,
+	const char *command)
+{
+	char path[160];
+	const char *word;
+	size_t operator;
+	size_t length;
+	int missing;
+
+	/* Each word, up to a space; a redirection or another shell operator ends the words that are looked at. */
+	word = command;
+	while (*word != '\0') {
+		/* The word's length, and the next one. */
+		length = strcspn(word, " ");
+		operator = strcspn(word, "<>|;&");
+		if (operator < length)
+			break;
+		if (word[0] == '/' && length < sizeof(path)) {
+			memcpy(path, word, length);
+			path[length] = '\0';
+			missing = access(path, F_OK);
+			if (missing != 0) {
+				printf("ZWL HOME skip name=%s missing=%s\n", name, path);
+				return 0;
+			}
+		}
+
+		/* Past the word and its spaces. */
+		word += length;
+		while (*word == ' ')
+			word++;
+	}
+
+	/* Succeeded: everything it names is there. */
+	return 1;
 }
 
 /* Reads one line of the list: name|command|keywords|RRGGBB (the last two may be left out). */

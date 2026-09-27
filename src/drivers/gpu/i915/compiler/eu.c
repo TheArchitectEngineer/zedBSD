@@ -97,6 +97,12 @@
  */
 #define I915_EU_SCOPE_SIXTEEN		3
 
+/*
+ * Four channels regardless of the mask (a SIMD4 NoMask instruction), for
+ * an operation on one quad of pixels.
+ */
+#define I915_EU_SCOPE_FOUR		4
+
 /* The hardware conditional modifier of each enum i915_eu_cond, in its order. */
 static const uint32_t i915_eu_cond_bits[I915_EU_COND_COUNT] = {
 	EU_COND_Z,
@@ -564,6 +570,26 @@ drv_i915_eu_alu2_sixteen(
 {
 	/* Encodes the instruction for sixteen channels, outside the mask. */
 	i915_eu_alu2_common(buffer, 0, I915_EU_FLAG_F0_0, I915_EU_SCOPE_SIXTEEN, op, dst, src0, src1);
+}
+
+/*
+ * Encodes a two-source instruction on four channels regardless of the
+ * execution mask: a SIMD4 NoMask instruction, the destination's first
+ * dword naming the quad.
+ *
+ * Mesa computes the fine y derivative this way on Gen11+, one add per quad
+ * (generate_ddy(), brw_generator.cpp).
+ */
+void
+drv_i915_eu_alu2_four(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_alu op,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1)
+{
+	/* Encodes the instruction for four channels, outside the mask. */
+	i915_eu_alu2_common(buffer, 0, I915_EU_FLAG_F0_0, I915_EU_SCOPE_FOUR, op, dst, src0, src1);
 }
 
 /*
@@ -1465,6 +1491,8 @@ i915_eu_scope(
 		i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
 	if (scope == I915_EU_SCOPE_SIXTEEN)
 		i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_16);
+	if (scope == I915_EU_SCOPE_FOUR)
+		i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_4);
 
 	/* Both other forms ignore the execution mask. */
 	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);

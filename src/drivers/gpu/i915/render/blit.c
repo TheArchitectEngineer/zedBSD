@@ -73,7 +73,7 @@ static int i915_blit_check_rect(const struct i915_gfx_surface *surface, const st
 static int i915_blit_window(struct i915_render_session *session, struct i915_gfx_session *work, int copy, struct i915_gfx_op_space *space);
 static int i915_blit_record(const struct i915_gfx_op_space *space, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear);
 static int i915_blit_write_state(uint8_t *page, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear, uint32_t mocs);
-static void i915_blit_write_vertices(uint8_t *page, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4]);
+static void i915_blit_write_vertices(uint8_t *page, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int flags);
 static void i915_blit_build_batch(struct i915_gfx_batch *batch, const struct i915_gfx_op_space *space, const struct i915_gfx_surface *dst, const struct i915_gfx_kernels *kernels, uint32_t mocs);
 
 /*
@@ -558,13 +558,14 @@ i915_blit_write_state(
 	 * level of an image being described as a surface of its own.
 	 */
 	filter = VK_FILTER_NEAREST;
-	if (linear)
+	if ((linear & I915_GFX_RECT_LINEAR) != 0)
 		filter = VK_FILTER_LINEAR;
 	kern_memset(&sampler, 0, sizeof(sampler));
 	sampler.mag_filter = filter;
 	sampler.min_filter = filter;
 	sampler.address_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	sampler.address_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.address_w = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	sampler.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 	sampler.lod_bias = 0U;
 	sampler.min_lod = 0U;
@@ -576,7 +577,7 @@ i915_blit_write_state(
 	dynamic[I915_GFX_DYN_CC_VIEWPORT / 4U + 1U] = I915_FLOAT_ONE;
 
 	/* Writes the three corners of the rectangle and their attributes. */
-	i915_blit_write_vertices(page, dst_rect, src, src_rect, clear);
+	i915_blit_write_vertices(page, dst_rect, src, src_rect, clear, linear);
 
 	/* Succeeded: the state object holds everything the batch points at. */
 	return 0;
@@ -589,7 +590,9 @@ i915_blit_write_state(
  * Each vertex is a VUE of twelve floats: a zero header, the position
  * (x, y, 0, 1) and one attribute.  The attribute of a copy is the matching
  * source corner, normalized by the source extent (the sampling form proven
- * on the hardware); that of a fill is the clear value.
+ * on the hardware), the opposite corner along a mirrored direction
+ * (`flags`, I915_GFX_RECT_MIRROR_X and _Y); that of a fill is the clear
+ * value.
  */
 static void
 i915_blit_write_vertices(
@@ -597,7 +600,8 @@ i915_blit_write_vertices(
 	const struct i915_gfx_rect *dst_rect,
 	const struct i915_gfx_surface *src,
 	const struct i915_gfx_rect *src_rect,
-	const uint32_t clear[4])
+	const uint32_t clear[4],
+	int flags)
 {
 	uint32_t attributes[3][4];
 	uint32_t *vertices;
@@ -609,6 +613,8 @@ i915_blit_write_vertices(
 	uint32_t y1;
 	uint32_t source_x;
 	uint32_t source_y;
+	int right;
+	int bottom;
 
 	/* Takes the corners of the destination rectangle. */
 	x0 = (uint32_t)dst_rect->x;
@@ -624,12 +630,18 @@ i915_blit_write_vertices(
 			continue;
 		}
 
-		/* The first corner is at the source's right edge, the first two at its bottom edge. */
+		/* The first corner is at the source's right edge, the first two at its bottom edge, unless mirrored. */
+		right = (index == 0U);
+		if ((flags & I915_GFX_RECT_MIRROR_X) != 0)
+			right = !right;
+		bottom = (index < 2U);
+		if ((flags & I915_GFX_RECT_MIRROR_Y) != 0)
+			bottom = !bottom;
 		source_x = (uint32_t)src_rect->x;
-		if (index == 0U)
+		if (right != 0)
 			source_x += src_rect->w;
 		source_y = (uint32_t)src_rect->y;
-		if (index < 2U)
+		if (bottom != 0)
 			source_y += src_rect->h;
 
 		/* A copy carries the normalized source coordinate. */

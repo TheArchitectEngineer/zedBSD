@@ -60,6 +60,38 @@
 #define I915_IR_UNIFORM_BLOCK		2U
 
 /*
+ * The sampler messages of a TEXTURE instruction, numbered as the message
+ * type field of the descriptor takes them (Mesa brw_eu_defines.h,
+ * GFX5_SAMPLER_MESSAGE_*, HSW_SAMPLER_MESSAGE_SAMPLE_DERIV_COMPARE), each
+ * with the parameters it takes in order ([ref] is the depth reference of
+ * a compare, the coordinate is u [v [r [ai]]]):
+ *
+ *   SAMPLE           u v r ai                 LD       u v lod r (integers)
+ *   SAMPLE_BIAS      bias u v r ai            RESINFO  lod (an integer)
+ *   SAMPLE_LOD       lod u v r ai
+ *   SAMPLE_COMPARE   ref u v r ai
+ *   SAMPLE_DERIVS    u dudx dudy v dvdx dvdy r drdx drdy ai
+ *   SAMPLE_BIAS_COMPARE, SAMPLE_LOD_COMPARE   ref bias/lod u v r ai
+ *   SAMPLE_DERIV_COMPARE                      ref u dudx dudy ...
+ *
+ * A message may stop after its last parameter that matters; the rest read
+ * as zero.
+ */
+#define I915_IR_TEXTURE_SAMPLE			0U
+#define I915_IR_TEXTURE_SAMPLE_BIAS		1U
+#define I915_IR_TEXTURE_SAMPLE_LOD		2U
+#define I915_IR_TEXTURE_SAMPLE_COMPARE		3U
+#define I915_IR_TEXTURE_SAMPLE_DERIVS		4U
+#define I915_IR_TEXTURE_SAMPLE_BIAS_COMPARE	5U
+#define I915_IR_TEXTURE_SAMPLE_LOD_COMPARE	6U
+#define I915_IR_TEXTURE_LD			7U
+#define I915_IR_TEXTURE_RESINFO			10U
+#define I915_IR_TEXTURE_SAMPLE_DERIV_COMPARE	20U
+
+/* The most parameters a TEXTURE instruction passes. */
+#define I915_IR_TEXTURE_MAX_PARAMS		11U
+
+/*
  * The pipeline stage a shader runs in.
  *
  * The parser takes it from the module's entry point; the code generator
@@ -291,6 +323,20 @@ enum i915_shader_ir_op {
 
 	/* dst = the float of the 16-bit float at bits 16 * `component` + 15 .. 16 * `component` of src[0]. */
 	I915_IR_UNPACK_HALF,
+
+	/* As DDY, each column's own difference (fine). */
+	I915_IR_DDY_FINE,
+
+	/*
+	 * dst .. dst + 3 = the reply of one sampler message to the image and
+	 * sampler at set `location`, binding `immediate`: the message's
+	 * parameters are the src[1] consecutive values from src[0] on, in the
+	 * order the message takes them (I915_IR_TEXTURE_*); `component` is the
+	 * message type (bits 4:0) and the constant texel offset of the header
+	 * (bits 23:8: u in 11:8, v in 7:4, r in 3:0 of the offset, shifted by
+	 * 8), no header when the offset is 0.
+	 */
+	I915_IR_TEXTURE,
 
 	I915_IR_OP_COUNT
 };

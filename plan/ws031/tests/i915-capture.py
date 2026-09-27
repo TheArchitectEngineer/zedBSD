@@ -372,6 +372,8 @@ def run(args):
             zdesktop_menu(args, qmp, capture, report)
         elif args.scenario == 'zdesktop-files':
             zdesktop_files(args, qmp, capture, report)
+        elif args.scenario == 'zdesktop-egltest':
+            zdesktop_egltest(args, qmp, capture, report)
         else:
             mview(args, qmp, capture, report, wait, settled)
         report['write_count'] = capture.write_count()
@@ -966,10 +968,55 @@ def zdesktop_files(args, qmp, capture, report):
     report['sheet'] = str(sheet)
 
 
+def zdesktop_egltest(args, qmp, capture, report):
+    """egltest's OpenGL ES scenes (ws075-p005) in a zdesktop window, one after another
+    (plan/ws031/tests/zdesktop/run-egltest.sh, ZDESKTOP_APP=egltest): the desktop, then a picture every five
+    seconds while the scenes run.  The pictures show each scene's window; whether a scene drew what it should is
+    its own EGLTEST CHECK line in the guest's log (vkloop-hw.sh prints them after the run)."""
+    width, height = 1920, 1080
+    time_limit = time.monotonic() + args.timeout
+
+    def move(x, y):
+        qmp.call('input-send-event', {'events': [
+            {'type': 'abs', 'data': {'axis': 'x', 'value': (int(x) * ABS_MAX + width - 2) // (width - 1)}},
+            {'type': 'abs', 'data': {'axis': 'y', 'value': (int(y) * ABS_MAX + height - 2) // (height - 1)}}]})
+
+    def shot(tag, pause):
+        time.sleep(pause)
+        taken = capture.save(tag)
+        report['images'][tag] = taken
+        return Path(taken['path'])
+
+    # The desktop once the compositor draws, with the pointer out of the way.
+    while capture.write_count() == 0:
+        if time.monotonic() > time_limit:
+            raise TimeoutError('first frame')
+        time.sleep(0.5)
+    move(width - 40, height - 200)
+    desktop = shot('desktop', 20.0)
+    report['checks']['desktop_drawn'] = coloured(desktop) > 0.02
+
+    # A picture every five seconds while the scenes run; most show a scene's window over the desktop.
+    tags = []
+    shown = 0
+    for index in range(12):
+        tag = 'scene-%02d' % index
+        picture = shot(tag, 5.0)
+        tags.append(tag)
+        if difference(desktop, picture) > 0.05:
+            shown += 1
+    report['scene_pictures_with_a_window'] = shown
+    report['checks']['scenes_shown'] = shown >= 6
+
+    sheet = Path(args.output) / 'sheet.png'
+    write_sheet([report['images'][tag]['path'] for tag in ['desktop'] + tags], sheet, columns=3)
+    report['sheet'] = str(sheet)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('scenario', choices=['vkdemo', 'wayland', 'mview', 'zdesktop', 'zdesktop-home', 'zdesktop-x11',
-                                             'zdesktop-menu', 'zdesktop-files'])
+                                             'zdesktop-menu', 'zdesktop-files', 'zdesktop-egltest'])
     parser.add_argument('--output', required=True)
     parser.add_argument('--serial', default='/home/awe/bigbang/run-parity-serial.log')
     parser.add_argument('--qmp', default='/home/awe/bigbang/qmp.sock')

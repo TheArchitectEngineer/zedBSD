@@ -38,6 +38,10 @@
 /* How many numeric parameters one control sequence keeps. */
 #define TERMINAL_PARAMETERS	16
 
+/* The longest OSC string kept (the rest is dropped), and the longest title one sets (UTF-8 bytes). */
+#define TERMINAL_OSC		256U
+#define TERMINAL_TITLE		128U
+
 /* The space between the window's edge and the grid, in pixels. */
 #define TERMINAL_PADDING	8U
 
@@ -62,7 +66,7 @@
 
 /* The most tabs (shells) one window has, and the longest tab title. */
 #define TERMINAL_TABS		8U
-#define TERMINAL_TAB_TITLE	32U
+#define TERMINAL_TAB_TITLE	64U
 
 /* What the titlebar asks of the tabs (tabs.c): none, a new tab, one chosen, one to close. */
 #define TERMINAL_TAB_NONE	0U
@@ -183,6 +187,14 @@ struct terminal_screen {
 	int parameters[TERMINAL_PARAMETERS];
 	int parameter_count;
 	int private_mode;
+
+	/*
+	 * The OSC string being read (its first TERMINAL_OSC - 1 bytes), and the
+	 * title OSC 0 or 2 last set (ws035-p091; empty until one is set).
+	 */
+	char osc[TERMINAL_OSC];
+	unsigned osc_length;
+	char title[TERMINAL_TITLE];
 
 	/* A UTF-8 sequence in progress: the value so far, its least legal value and how many bytes remain. */
 	uint32_t utf8_value;
