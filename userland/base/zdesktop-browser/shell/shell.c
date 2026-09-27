@@ -22,6 +22,7 @@
 
 #include "shell/internal.h"
 #include "page/page.h"
+#include "net/net.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -303,6 +304,7 @@ shell_open_page(
 	struct page **page)
 {
 	struct page *loaded;
+	const char *reason;
 	int error;
 
 	/* The page, whose heap scans the stack up to the run's frame. */
@@ -326,7 +328,8 @@ shell_open_page(
 	if (error == 0)
 		error = page_open_fonts(loaded, state->fonts);
 	if (error != 0) {
-		printf("ZBROWSER ERROR load path=%s error=%s\n", path, strerror(error));
+		reason = net_tls_error();
+		printf("ZBROWSER ERROR load path=%s error=%s tls=%s\n", path, strerror(error), reason);
 		fflush(stdout);
 		page_destroy(loaded);
 		return error;

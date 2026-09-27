@@ -9,8 +9,8 @@
  * The network side of zdesktop-browser (plan/ws074/design.md §9): the
  * URL (the WHATWG URL Standard's parser and serializer, url.c), its hosts
  * (host.c: domains, IPv4 and IPv6 addresses, the punycode of
- * internationalized domains), data: URLs (data.c), HTTP/1.1 (http.c) and
- * cookies (cookie.c).
+ * internationalized domains), data: URLs (data.c), HTTP/1.1 (http.c), TLS
+ * (tls.c) and cookies (cookie.c).
  *
  * A URL's parts are kept as they are serialized: ASCII strings, already
  * percent-encoded, which the caller owns through the URL and frees with
@@ -99,6 +99,17 @@ int net_host_parse(const char *input, size_t length, int opaque, struct wb_buffe
 /* HTTP (http.c). */
 int net_http_fetch(const char *url, struct net_response *response);
 void net_response_release(struct net_response *response);
+
+/* TLS for https (tls.c): the OpenSSL package's library, loaded when first needed. */
+struct net_tls;
+int net_tls_add_ca_file(const char *path);
+int net_tls_open(int descriptor, const char *host, struct net_tls **tls);
+int net_tls_read(struct net_tls *tls, unsigned char *bytes, size_t length, size_t *received);
+int net_tls_write(struct net_tls *tls, const unsigned char *bytes, size_t length);
+int net_tls_pending(const struct net_tls *tls);
+void net_tls_close(struct net_tls *tls);
+void net_tls_clear_error(void);
+const char *net_tls_error(void);
 
 /* Cookies (cookie.c). */
 int net_cookie_store(const struct net_url *url, const char *header, size_t length);
