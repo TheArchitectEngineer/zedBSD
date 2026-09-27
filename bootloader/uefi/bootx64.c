@@ -4,6 +4,7 @@
 #include "elf64.h"
 #include "framebuffer.h"
 #include "video.h"
+#include "logo.h"
 #include "memory-map.h"
 #include "volume-discovery.h"
 #include "zedbsd-config.h"
@@ -51,6 +52,7 @@
 #define DIAGNOSTIC_PIXEL 0x00ffffffU
 
 extern uint8_t zbl_transition_start[];
+extern uint8_t zbl_transition_quiet[];
 extern uint8_t zbl_transition_end[];
 
 _Static_assert(ZBL6_HANDOFF_V7_UEFI_SIZE <=
@@ -76,6 +78,8 @@ struct loader_context {
 	EFI_HANDLE image;
 	EFI_SYSTEM_TABLE *system;
 	EFI_BOOT_SERVICES *boot;
+	/* The boot logo is on the screen: progress text stays off it (errors still show). */
+	int quiet_console;
 };
 
 struct discovered_volume {
@@ -165,6 +169,8 @@ console_ascii(struct loader_context *context, const char *string)
 	UINTN used = 0;
 
 	debug_port(string);
+	if (context->quiet_console)
+		return;
 	if (context->system->ConOut == 0 ||
 	    context->system->ConOut->OutputString == 0)
 		return;
@@ -296,6 +302,8 @@ static void __attribute__((noreturn))
 fail_status(struct loader_context *context, const char *operation,
 	    EFI_STATUS status)
 {
+	/* The error that stops the boot is shown even over the boot logo. */
+	context->quiet_console = 0;
 	console_status(context, operation, status);
 	halt();
 }
@@ -449,6 +457,8 @@ read_bounded_file(EFI_FILE_PROTOCOL *file, void *buffer, UINTN capacity,
 	*size = used;
 	return EFI_SUCCESS;
 }
+
+static int show_logo(struct loader_context *context, struct discovered_volume *discovered, const struct zbl_uefi_zedbsd_config *configuration, const struct zbl6_framebuffer *framebuffer);
 
 static int
 kernel_path_utf16(const char *source,
@@ -985,6 +995,82 @@ kernel_placement_parse(const char *text, size_t length,
 }
 
 /* Prints one firmware descriptor as "type start pages" for placement diagnosis. */
+/*
+ * Draws the boot logo zedbsd.cfg names (logo=PATH on the selected volume).
+ *
+ * Returns 1 when the logo is on the screen.  A missing or unreadable logo
+ * is not an error: the boot goes on without it.
+ */
+static int
+show_logo(
+	struct loader_context *context,
+	struct discovered_volume *discovered,
+	const struct zbl_uefi_zedbsd_config *configuration,
+	const struct zbl6_framebuffer *framebuffer)
+{
+	static CHAR16 wide[KERNEL_PATH_CHAR16_STORAGE];
+	char path[ZBL_UEFI_LOGO_PATH_MAX + 1U];
+	EFI_FILE_PROTOCOL *file;
+	EFI_STATUS status;
+	UINT64 size;
+	void *buffer;
+	int found;
+	int drawn;
+	int failed;
+
+	/* The logo's path, when zedbsd.cfg names one. */
+	found = zbl_uefi_logo_path(configuration->parameter_record.text,
+	    configuration->parameter_record.length, path, sizeof(path));
+	if (found < 0)
+		console_ascii(context, "A64 LOGO rejected\n");
+	if (found <= 0)
+		return 0;
+
+	/* The file, on the volume the kernel is on. */
+	found = kernel_path_utf16(path, wide);
+	if (!found || discovered->root == 0)
+		return 0;
+	file = 0;
+	status = discovered->root->Open(discovered->root, &file, wide,
+	    EFI_FILE_MODE_READ, 0U);
+	failed = EFI_ERROR(status);
+	if (failed || file == 0) {
+		console_ascii(context, "A64 LOGO missing\n");
+		return 0;
+	}
+
+	/* Its size, bounded. */
+	status = regular_file_size(file, &size);
+	failed = EFI_ERROR(status);
+	if (failed || size == 0U || size > ZBL_UEFI_LOGO_FILE_MAX) {
+		(void)file->Close(file);
+		return 0;
+	}
+
+	/* Its bytes, in pool storage given back before the memory map is taken. */
+	buffer = 0;
+	status = context->boot->AllocatePool(EfiLoaderData, (UINTN)size, &buffer);
+	failed = EFI_ERROR(status);
+	if (failed || buffer == 0) {
+		(void)file->Close(file);
+		return 0;
+	}
+
+	/* The logo on the screen when the whole file was read. */
+	status = read_exact(file, 0U, buffer, (UINTN)size);
+	failed = EFI_ERROR(status);
+	(void)file->Close(file);
+	drawn = 0;
+	if (!failed)
+		drawn = zbl_uefi_logo_draw(buffer, (size_t)size, framebuffer);
+	(void)context->boot->FreePool(buffer);
+
+	/* Reports whether the logo is on the screen. */
+	if (drawn)
+		debug_port("A64 LOGO shown\n");
+	return drawn;
+}
+
 static void
 console_map_entry(struct loader_context *context,
     const EFI_MEMORY_DESCRIPTOR *descriptor)
@@ -1317,6 +1403,8 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	int kernel_pages_allocated = 0;
 	int low_pages_allocated = 0;
 	int map_allocated = 0;
+	int quiet_boot = 0;
+	int logo_shown;
 	unsigned index, attempt;
 
 	if (system == 0 || system->BootServices == 0)
@@ -1324,6 +1412,7 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	context.image = image;
 	context.system = system;
 	context.boot = system->BootServices;
+	context.quiet_console = 0;
 	boot = context.boot;
 	console_ascii(&context, "A64 UEFI ENTRY\n");
 	status = boot->LocateProtocol(&EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID, 0,
@@ -1359,6 +1448,14 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	/* SetMode can replace the framebuffer base, size, stride, and pixel format. */
 	if (!framebuffer_from_gop(gop, &framebuffer, &framebuffer_mapping))
 		fail_discovered(&context, &discovered, "Validate selected GOP", EFI_UNSUPPORTED);
+
+	/* The boot logo (logo=), and a quiet boot (kmsg=quiet) that draws no progress blocks (ws035-p096). */
+	logo_shown = show_logo(&context, &discovered, &configuration, &framebuffer);
+	if (logo_shown)
+		context.quiet_console = 1;
+	quiet_boot = zbl_uefi_parameter_present(
+	    configuration.parameter_record.text,
+	    configuration.parameter_record.length, "kmsg=quiet");
 
 	if (!kernel_path_utf16(configuration.kernel_path, kernel_file_path))
 		fail_discovered(&context, &discovered,
@@ -1560,7 +1657,8 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 		fail_boot_allocations(&context, "ExitBootServices retries",
 		    status, map, map_allocated, low_address, LOW_BLOCK_PAGES,
 		    low_pages_allocated, kernel_address, kernel_pages);
-	framebuffer_stage(&framebuffer, 1U);
+	if (!quiet_boot)
+		framebuffer_stage(&framebuffer, 1U);
 	debug_port("A64 UEFI BOOT SERVICES EXITED\n");
 	map_result = zbl_uefi_normalize_memory_map_v6(
 	    map, map_size, descriptor_size, ranges, MAX_MEMORY_RANGES,
@@ -1570,10 +1668,18 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 		debug_port("A64 UEFI FINAL MAP REJECTED\n");
 		halt();
 	}
-	framebuffer_stage(&framebuffer, 2U);
+
+	/* Stage two, not on a quiet boot's logo. */
+	if (!quiet_boot)
+		framebuffer_stage(&framebuffer, 2U);
 	handoff_common->memory_range_count = range_count;
 	handoff->memory.range_count = range_count;
 	debug_port("A64 UEFI EXIT\n");
+	if (quiet_boot)
+		((transition_fn)(uintptr_t)(low_address + LOW_TRAMPOLINE_OFFSET +
+		    (uint64_t)(zbl_transition_quiet - zbl_transition_start)))(
+		    handoff_common->bootstrap_cr3, low_address + TRANSITION_STACK_TOP,
+		    low_address + HANDOFF_OFFSET, plan.entry);
 	((transition_fn)(uintptr_t)(low_address + LOW_TRAMPOLINE_OFFSET))(
 	    handoff_common->bootstrap_cr3, low_address + TRANSITION_STACK_TOP,
 	    low_address + HANDOFF_OFFSET, plan.entry);

@@ -102,6 +102,7 @@ def main() -> None:
     parser.add_argument("--kernel", type=Path, required=True)
     parser.add_argument("--bootx64", type=Path, required=True)
     parser.add_argument("--zedbsd-config", type=Path, required=True)
+    parser.add_argument("--logo", type=Path)
     parser.add_argument("--ufs-root", type=Path, required=True)
     parser.add_argument("--swap", type=Path, required=True)
     parser.add_argument("image", type=Path)
@@ -158,6 +159,8 @@ def main() -> None:
     compare_esp_file(arguments.image, esp_offset, "/vmunix", arguments.kernel)
     compare_esp_file(arguments.image, esp_offset, "/zedbsd.cfg",
                      arguments.zedbsd_config)
+    if arguments.logo is not None:
+        compare_esp_file(arguments.image, esp_offset, "/logo.ppm", arguments.logo)
     print(f"check-amd64-native-image: {arguments.image}: OK")
 
 
