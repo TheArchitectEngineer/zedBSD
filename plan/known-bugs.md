@@ -10,7 +10,7 @@ remain as traceable history and are not new implementation work.
 | ID | Area | Status / priority | Observation | Resume and acceptance condition |
 | --- | --- | --- | --- | --- |
 | [BUG-023](bugs/BUG-023.md) | PC98 QEMUで /sbin が空 | reproduced（ユーザー報告） / tracking | 2026-09-27: 最近の PC-98 の staging の /sbin は 26 個（静的）。起動した guest での確認は amd64 だけの方針で未実施 | ws003-p026（削除済み。git の履歴にある）で生成・配置・mountを切り分け。 |
-| [BUG-024](bugs/BUG-024.md) | PC98 menuconfigでPCI/USBを選択できない | reproduced（ユーザー報告・静的確認） / tracking（判断待ち） | menu は正しく kernel に従う: PC-98 の kernel は PCI の backend も USB の host も build しない（2026-09-27 WS073 の静的調査） | ユーザーの判断: A 説明だけ／B PC-98 の PCI・USB の移植の WS。PC-98 の試験は amd64 だけの方針で未実施 |
+| [BUG-024](bugs/BUG-024.md) | PC98 menuconfigでPCI/USBを選択できない（PC-98 の kernel に PCI の backend・USB の host が無い） | reproduced（静的） / scheduled（WS077） | ユーザー報告、WS073 の調査 | 2026-09-28 ユーザー: PCI を有効に（WS077） |
 | [BUG-025](bugs/BUG-025.md) | LX6 USB起動でbootパーティションを判別できない | reproduced（ユーザー報告） / scheduled | init未到達。起動モード/識別子/log未取得。 | ws003-p028（削除済み。git の履歴にある）。BUG-017との同一原因は未証明。 |
 | [BUG-026](bugs/BUG-026.md) | リンカの出力が通常ファイルへは全ゼロで届く | reproduced / resolved（ws073-p018、2026-09-27） | 原因: 共有の file の mapping を munmap・exit で外すとき dirty bit を見ず、書き戻されなかった（lld の OnDiskBuffer）。vmspace.c で修正、tmpfs・UFS で確認 | 残り: clang の package の workaround（`--mmap-output-file`・patch 0003）を外すかは package の判断 |
 | [BUG-027](bugs/BUG-027.md) | ファイル裏付けページのフォルトが 1 ページあたりミリ秒かかる | reproduced / open | `MAP_PRIVATE` のファイルページの読み取りフォルトが 1.8 ms（初回）/0.34 ms（2 回目）で、同じデータの `read()` の 7〜36 倍遅い。LLVM 由来のプログラムの起動が 10〜30 秒になる。 | lldb は packet-timeout 60 秒で回避。フォルト経路の計測とクラスタ読みが次。 |
