@@ -94,6 +94,7 @@ fm_app_init(
 	app->dirty = 1;
 	app->hover_index = -1;
 	app->press_index = -1;
+	snprintf(app->wallpaper, sizeof(app->wallpaper), "%s", FM_WALLPAPER);
 	app->click_index = -1;
 
 	/* The user's account, for the name and the home folder. */
@@ -147,8 +148,10 @@ fm_app_release(
 {
 	int index;
 
-	/* The operations, stopped and let go. */
+	/* The operations, stopped and let go, and the hero's pictures. */
 	fm_actions_release(app);
+	fm_image_release(&app->hero_source);
+	fm_image_release(&app->hero);
 
 	/* Each tab's listing, then the tab. */
 	for (index = 0; index < app->tab_count; index++) {
@@ -337,6 +340,8 @@ fm_ui_go(
 {
 	struct fm_tab *tab;
 	struct fm_visit *visit;
+	int home_folder;
+	int root_folder;
 	int index;
 
 	/* The place being left keeps its scroll and its cursor. */
@@ -359,6 +364,12 @@ fm_ui_go(
 	visit->location = *location;
 	tab->history_index = index;
 	tab->history_count = index + 1;
+
+	/* A folder opened is kept among the recent folders (the home folder and the root are not worth it). */
+	home_folder = strcmp(location->path, app->home);
+	root_folder = strcmp(location->path, "/");
+	if (location->kind == FM_LOCATION_FOLDER && home_folder != 0 && root_folder != 0)
+		fm_home_folder_opened(location->path);
 
 	/* The place's items, from the top, with nothing selected. */
 	tab->scroll = 0;
@@ -517,7 +528,7 @@ fm_ui_reload(
 	visit = &tab->history[tab->history_index];
 	location = &visit->location;
 	path = NULL;
-	if (location->kind == FM_LOCATION_FOLDER || location->kind == FM_LOCATION_HOME)
+	if (location->kind == FM_LOCATION_FOLDER)
 		path = location->path;
 
 	/* The names of the selected items and of the cursor's, taken from the old listing. */
@@ -552,6 +563,8 @@ fm_ui_reload(
 		error = fm_trash_path(trash, sizeof(trash));
 		if (error == 0)
 			(void)fm_dir_read_trash(&tab->listing, trash);
+	} else if (location->kind == FM_LOCATION_HOME) {
+		fm_home_gather(app);
 	} else {
 		fm_search_load(app, tab);
 	}

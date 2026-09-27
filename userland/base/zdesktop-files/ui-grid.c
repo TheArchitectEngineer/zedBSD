@@ -63,8 +63,23 @@ fm_grid_draw(
 	struct fm_tab *tab;
 	char message[128];
 
-	/* The panel and its title. */
+	/* The panel. */
 	grid_panel(app, canvas, area);
+	tab = fm_ui_tab(app);
+
+	/* The home dashboard fills the panel itself. */
+	if (tab->history[tab->history_index].location.kind == FM_LOCATION_HOME) {
+		inner.x = area->x + GRID_PADDING;
+		inner.y = area->y + GRID_PADDING;
+		inner.width = area->width - 2 * GRID_PADDING;
+		inner.height = area->height - 2 * GRID_PADDING;
+		app->layout.items = inner;
+		fm_ui_hit(app, area, FM_HIT_CONTENT, 0);
+		fm_home_draw(app, canvas, &inner);
+		grid_status(app, canvas, area);
+		return;
+	}
+
 
 	/* The whole panel's ground can be clicked (a rubber band starts there); what is drawn on it comes after. */
 	fm_ui_hit(app, area, FM_HIT_CONTENT, 0);
@@ -79,7 +94,6 @@ fm_grid_draw(
 	app->layout.items = inner;
 
 	/* A folder that could not be read says so. */
-	tab = fm_ui_tab(app);
 	if (tab->listing.error != 0) {
 		snprintf(message, sizeof(message), "This folder can't be opened.");
 		grid_message(app, canvas, &inner, message);

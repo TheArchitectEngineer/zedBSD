@@ -237,8 +237,9 @@ int zdesktop_recent_remove(const char *path);
 - 保存: `$XDG_DATA_HOME/zdesktop/recent`（既定 `~/.local/share/zdesktop/recent`）、`time<TAB>application<TAB>path` の行、古い順。
   追加は同じ path を消して末尾へ、256 件まで。書き込みは lock file の `flock` の中で一時 file に書いて `rename`（読み手は常に完全な
   file を見る）。`ZDESKTOP_VERSION` を 3 に上げる（context menu と recent）。
-- zdesktop-files は file を開いたとき `zdesktop_recent_add(path, "zdesktop-files")`、folder を開いたときも同じ（Recents は file だけ、
-  Recent folders は folder だけを出す。表示のときに stat で分ける）。
+- zdesktop-files は file を開いたとき `zdesktop_recent_add(path, "zdesktop-files")`。**変更（p005・p006）**: 最近開いた folder は
+  アプリ横断の list に入れず、file manager の中の list `$XDG_DATA_HOME/zdesktop-files/recent-folders`（新しい順に 12）に置く
+  （folder の移動のたびにアプリ横断の list が folder で埋まるのを避ける）。
 
 ### 6.3 sidebar と設定
 

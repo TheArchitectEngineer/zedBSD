@@ -453,6 +453,11 @@ input_click(
 	case FM_HIT_SCOPE:
 		fm_search_scope(app, (unsigned)index);
 		break;
+	case FM_HIT_CARD:
+	case FM_HIT_RECENT:
+	case FM_HIT_SHOW_ALL:
+		fm_home_click(app, kind, index, double_click);
+		break;
 	default:
 		break;
 	}
