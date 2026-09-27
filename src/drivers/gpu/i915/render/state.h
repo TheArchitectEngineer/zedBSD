@@ -85,6 +85,9 @@ struct i915_gfx_kernels {
 	uint32_t ps_input_count;
 	uint32_t ps_input_slots[I915_GFX_MAX_VARYINGS];
 
+	/* Bit n: fragment input n is Flat, set up as the provoking vertex's value (0 for a rectangle). */
+	uint32_t ps_flat_mask;
+
 	/* The pixel kernel's first payload register and sampled images. */
 	uint32_t ps_grf_start;
 	uint32_t ps_samplers;

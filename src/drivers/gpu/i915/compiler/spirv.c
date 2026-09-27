@@ -216,6 +216,9 @@
 #define DEC_ARRAY_STRIDE 6U
 #define DEC_MATRIX_STRIDE 7U
 #define DEC_BUILTIN 11U
+#define DEC_NO_PERSPECTIVE 13U
+#define DEC_FLAT 14U
+#define DEC_CENTROID 16U
 #define DEC_LOCATION 30U
 #define DEC_BINDING 33U
 #define DEC_DESCRIPTOR_SET 34U
@@ -223,6 +226,9 @@
 
 /* BuiltIn values (SPIR-V spec, section 3.21). */
 #define BUILTIN_POSITION 0U
+#define BUILTIN_FRONT_FACING 17U
+#define BUILTIN_VERTEX_INDEX 42U
+#define BUILTIN_INSTANCE_INDEX 43U
 
 /* Execution models (SPIR-V spec, section 3.3). */
 #define EM_VERTEX 0U
@@ -406,6 +412,9 @@ struct i915_spirv_id {
 	uint8_t has_binding;
 	uint8_t has_set;
 	uint8_t has_builtin;
+
+	/* A variable decorated Flat: a fragment input the draw sets up as its provoking vertex's value. */
+	uint8_t flat;
 
 	/* Pointer type or variable storage class. */
 	uint16_t storage;
@@ -643,6 +652,7 @@ static int i915_spirv_declare_constant(struct i915_spirv_parser *parser, const u
 static int i915_spirv_declare_constant_bool(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode);
 static int i915_spirv_declare_constant_composite(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_declare_variable(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_decoration_ignored(struct i915_spirv_parser *parser, uint32_t decoration);
 static void i915_spirv_add_io(struct i915_spirv_parser *parser, uint32_t id, int is_input);
 static void i915_spirv_add_uniform(struct i915_spirv_parser *parser, uint32_t id, uint32_t kind);
 static int i915_spirv_pass_body(struct i915_spirv_parser *parser);
@@ -1063,11 +1073,14 @@ i915_spirv_declare_entry_point(
 /*
  * Interprets one decoration.
  *
- * Interpreted: Location, Binding, DescriptorSet, BuiltIn, Block and
- * ArrayStride.  Without effect on this lowering: RelaxedPrecision (a
- * permission to lose precision, never used here).  Anything else could
- * place or qualify data -- components, interpolation, buffer blocks -- and
- * is refused.
+ * Interpreted: Location, Binding, DescriptorSet, BuiltIn, Block,
+ * ArrayStride and Flat (kept for the draw's constant interpolation).
+ * Without effect on this lowering: RelaxedPrecision (a permission to lose
+ * precision, never used here), Centroid (a draw has one sample per pixel,
+ * whose centre is the centroid) and NoPerspective on a vertex shader's
+ * output (the fragment shader's input interpolates).  Anything else could
+ * place or qualify data -- components, a fragment input without
+ * perspective, buffer blocks -- and is refused.
  */
 static int
 i915_spirv_declare_decoration(
@@ -1078,6 +1091,7 @@ i915_spirv_declare_decoration(
 	uint32_t offset)
 {
 	struct i915_spirv_id *record;
+	int ignored;
 
 	/* Resolves the decorated id. */
 	record = NULL;
@@ -1101,11 +1115,39 @@ i915_spirv_declare_decoration(
 		record->builtin = word[3];
 	} else if (word[2] == DEC_ARRAY_STRIDE && count >= 4U) {
 		record->stride = word[3];
-	} else if (word[2] != DEC_BLOCK && word[2] != DEC_RELAXED_PRECISION) {
-		return i915_spirv_refuse(parser, opcode, offset, "decoration that is not interpreted");
+	} else if (word[2] == DEC_FLAT) {
+		record->flat = 1U;
+	} else {
+		/* A decoration without effect, or one that is refused. */
+		ignored = i915_spirv_decoration_ignored(parser, word[2]);
+		if (ignored == 0)
+			return i915_spirv_refuse(parser, opcode, offset, "decoration that is not interpreted");
 	}
 
 	/* Succeeded: the decoration is recorded or has no effect. */
+	return 0;
+}
+
+/*
+ * Reports whether a decoration has no effect on this lowering: Block,
+ * RelaxedPrecision, Centroid (one sample per pixel) and NoPerspective on a
+ * vertex shader's output (the fragment shader's input says how it is
+ * interpolated).
+ */
+static int
+i915_spirv_decoration_ignored(
+	struct i915_spirv_parser *parser,
+	uint32_t decoration)
+{
+	/* Those without effect in every stage. */
+	if (decoration == DEC_BLOCK || decoration == DEC_RELAXED_PRECISION || decoration == DEC_CENTROID)
+		return 1;
+
+	/* A vertex shader's output without perspective. */
+	if (decoration == DEC_NO_PERSPECTIVE && parser->ir->stage == I915_STAGE_VERTEX)
+		return 1;
+
+	/* Anything else has an effect. */
 	return 0;
 }
 
@@ -1447,6 +1489,24 @@ i915_spirv_declare_variable(
 	for (index = 0U; index < MAX_COMPONENTS; index++)
 		record->comp[index] = NO_VALUE;
 
+	/* A vertex shader's gl_VertexIndex and gl_InstanceIndex are inputs at the locations the draw fills them at. */
+	if (storage == SC_INPUT && record->has_builtin != 0U && parser->ir->stage == I915_STAGE_VERTEX) {
+		if (record->builtin == BUILTIN_VERTEX_INDEX) {
+			record->has_location = 1U;
+			record->location = I915_SHADER_LOCATION_VERTEX_INDEX;
+		} else if (record->builtin == BUILTIN_INSTANCE_INDEX) {
+			record->has_location = 1U;
+			record->location = I915_SHADER_LOCATION_INSTANCE_INDEX;
+		}
+	}
+
+	/* A fragment shader's gl_FrontFacing is an input at the location of the payload's facing bit. */
+	if (storage == SC_INPUT && record->has_builtin != 0U && record->builtin == BUILTIN_FRONT_FACING &&
+	    parser->ir->stage == I915_STAGE_FRAGMENT) {
+		record->has_location = 1U;
+		record->location = I915_SHADER_LOCATION_FRONT_FACING;
+	}
+
 	/* The storage class, and a location, decide what the variable is to the shader. */
 	if (storage == SC_INPUT && record->has_location != 0U) {
 		record->ptr_kind = PTR_INPUT;
@@ -1495,8 +1555,9 @@ i915_spirv_add_io(
 		parser->ir->output_count++;
 	}
 
-	/* Records the location; a variable that is not a float vector counts as one component. */
+	/* Records the location and the interpolation; a variable that is not a float vector counts as one component. */
 	slot->location = parser->ids[id].location;
+	slot->flat = parser->ids[id].flat;
 	if (components != 0U) {
 		slot->components = components;
 	} else {
@@ -2103,6 +2164,7 @@ i915_spirv_lower_load(
 	uint32_t floats;
 	uint32_t first;
 	uint32_t index;
+	int raw;
 	int error;
 
 	/* Resolves the pointer loaded through. */
@@ -2163,9 +2225,18 @@ i915_spirv_lower_load(
 			record->comp[index] = variable->comp[first + index];
 		}
 	} else if (base->ptr_kind == PTR_INPUT) {
-		/* An input is floats: a vertex attribute or an interpolated input. */
+		/*
+		 * An input is floats (a vertex attribute or an interpolated input), or
+		 * integers moved bit for bit: a vertex attribute, or a Flat fragment
+		 * input (the setup's constant, not interpolated).
+		 */
 		floats = i915_spirv_float_components(parser, word[1]);
-		if (floats != components)
+		raw = 0;
+		if (parser->ir->stage == I915_STAGE_VERTEX || variable->flat != 0U)
+			raw = 1;
+		if (variable->location == I915_SHADER_LOCATION_FRONT_FACING)
+			raw = 1;
+		if (floats != components && raw == 0)
 			return i915_spirv_refuse(parser, opcode, offset, "load of an input that is not a float scalar or vector");
 
 		/* Each component is a fresh value read from the input location. */
