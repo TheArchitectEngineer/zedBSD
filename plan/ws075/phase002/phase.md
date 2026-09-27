@@ -40,7 +40,7 @@ p001 で今の zdesktop（glass、backdrop、Wiseview、docking）と mview は�
 | `zdesktop-menu`（System Menu、ws070 の 11 検査） | **PASS 11/11**（2 回目） | `build/ws075-p002/hw-menu2/` |
 | `zdesktop-x11`（Gears の GLX、X terminal、仮想デスクトップ） | **PASS 6/6**（2 回目）。zgears が実機の実行器で回る | `build/ws075-p002/hw-x11-2/` |
 
-1 回目の 3 つの run は道具の誤りで落ちた（i915 の不足ではない）: `vkloop-hw.sh` は入力の file が image より新しい時だけ image を
+1 回目の home（検査は PASS だが terminal は起動していない）と menu（FAIL）は道具の誤りだった（i915 の不足ではない）: `vkloop-hw.sh` は入力の file が image より新しい時だけ image を
 作り直すので、p001 の `zdesktop` の image（run-mview.sh と、terminal の font 無し）がそのまま使われた（terminal が
 `ZTERM FAILED ... terminal_font_open errno=6`（ENOENT））。`plan/ws075/tests/capture-hw.sh` が `ZDESKTOP_APP` ごとに build の
 directory を分ける（`build/resident-zdesktop-<app>`）ように直した。新しい image の 1 回目の `zdesktop-x11` は Home の Gears の
