@@ -1087,9 +1087,19 @@ i915_worker_wait(
 		/* Applies what the engine reported. */
 		(void)drv_i915_execlists_process_csb(ge, el, &device->gt.mmio);
 
-		/* An event with nothing to apply to fails the request. */
-		if (el->csb_errors != 0U)
+		/* An event with nothing to apply to fails the request; the first few failures say so (BUG-077). */
+		if (el->csb_errors != 0U) {
+			if (worker->failed < 4U) {
+				kern_logf("i915: resident shim: request seqno=%u batch_va=0x%llx fails: %u CSB errors (hwsp=%u)\n",
+				    label,
+				    (unsigned long long)batch_va,
+				    el->csb_errors,
+				    (unsigned)*rq->hwsp_cpu);
+			}
+
+			/* The request did not end. */
 			return EIO;
+		}
 
 		/* Ends once the breadcrumb landed and the engine holds nothing more. */
 		completed = drv_i915_request_completed(rq);

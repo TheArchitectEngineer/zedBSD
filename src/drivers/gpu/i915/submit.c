@@ -47,6 +47,7 @@ static void i915_ring_set_paused(struct i915_gt_engine *ge, int state);
 static void i915_execlists_write(struct i915_gt_engine *ge, struct i915_mmio *mmio, uint32_t reg, uint32_t value);
 static void i915_enable_error_interrupt(struct i915_gt_engine *ge, struct i915_mmio *mmio);
 static int i915_gen12_csb_parse(uint64_t csb);
+static void i915_csb_report(struct i915_gt_engine *ge, struct i915_execlists *el, struct i915_mmio *mmio, const char *what, unsigned head, unsigned tail);
 static int i915_schedule_in(struct i915_gt_engine *ge, struct i915_execlists *el, struct i915_gt_request *rq);
 static void i915_schedule_out(struct i915_execlists *el, struct i915_gt_request *rq);
 static uint64_t i915_update_context(struct i915_gt_request *rq);
@@ -330,6 +331,7 @@ drv_i915_execlists_process_csb(
 	/* A pointer beyond the ring is not something to walk. */
 	if (tail >= ge->csb_size) {
 		el->csb_errors++;
+		i915_csb_report(ge, el, mmio, "write pointer beyond the ring", head, tail);
 		return NULL;
 	}
 
@@ -345,11 +347,13 @@ drv_i915_execlists_process_csb(
 		if (head == ge->csb_size)
 			head = 0U;
 
-		/* Reads the entry and keeps it for the report. */
+		/* Reads the entry and keeps it for the report and the history. */
 		csb = i915_csb_read(ge, el, mmio, head);
 		el->csb_events++;
 		el->last_csb_lo = (uint32_t)csb;
 		el->last_csb_hi = (uint32_t)(csb >> 32);
+		el->csb_history[el->csb_history_next % 8U] = csb;
+		el->csb_history_next++;
 
 		/* Decides between a promotion and a completion. */
 		promote = i915_gen12_csb_parse(csb);
@@ -357,6 +361,7 @@ drv_i915_execlists_process_csb(
 			/* A promotion with nothing pending is an error (ERROR_CSB). */
 			if (el->pending[0] == NULL) {
 				el->csb_errors++;
+				i915_csb_report(ge, el, mmio, "promotion with nothing pending", head, tail);
 				break;
 			}
 
@@ -371,6 +376,7 @@ drv_i915_execlists_process_csb(
 			/* A completion with nothing active is an error (ERROR_CSB). */
 			if (el->have_active == 0 || el->inflight[0] == NULL) {
 				el->csb_errors++;
+				i915_csb_report(ge, el, mmio, "completion with nothing active", head, tail);
 				break;
 			}
 
@@ -456,6 +462,73 @@ i915_enable_error_interrupt(
 	 * masked.
 	 */
 	i915_execlists_write(ge, mmio, RING_EMR(base), ~(uint32_t)I915_ERROR_INSTRUCTION);
+}
+
+/*
+ * Logs the first CSB events that have nothing to apply to (BUG-077): the
+ * event, the walk's head and write pointer, the ports, the counters, the
+ * last eight entries (newest last) and the engine's own view: the
+ * execlist status, the CSB pointers register, the ring head and tail, the
+ * active head and the error registers.  Later errors are only counted.
+ */
+static void
+i915_csb_report(
+	struct i915_gt_engine *ge,
+	struct i915_execlists *el,
+	struct i915_mmio *mmio,
+	const char *what,
+	unsigned head,
+	unsigned tail)
+{
+	uint32_t base;
+	unsigned index;
+	unsigned slot;
+
+	/* Only the first few errors are worth a report. */
+	if (el->csb_errors > 4U)
+		return;
+
+	/* The walk and the ports. */
+	base = ge->info->mmio_base;
+	kern_logf("i915: execlists: CSB error %u (%s): head %u tail %u size %u; pending %d/%d inflight %d/%d active %d; "
+	    "events %u promotes %u completes %u submits %u late %u mmio %u\n",
+	    el->csb_errors,
+	    what,
+	    head,
+	    tail,
+	    ge->csb_size,
+	    el->pending[0] != NULL,
+	    el->pending[1] != NULL,
+	    el->inflight[0] != NULL,
+	    el->inflight[1] != NULL,
+	    el->have_active,
+	    el->csb_events,
+	    el->promotes,
+	    el->completes,
+	    el->submits,
+	    el->csb_late,
+	    el->csb_mmio_fallback);
+
+	/* The last eight entries, oldest first. */
+	for (index = 0U; index < 8U; index++) {
+		slot = (el->csb_history_next + index) % 8U;
+		kern_logf("i915: execlists: CSB history %u: %08x:%08x\n",
+		    index,
+		    (uint32_t)(el->csb_history[slot] >> 32),
+		    (uint32_t)el->csb_history[slot]);
+	}
+
+	/* The engine's registers. */
+	kern_logf("i915: execlists: status %08x:%08x csb_ptr %08x head %08x tail %08x acthd %08x ipehr %08x eir %08x esr %08x\n",
+	    drv_i915_read32(mmio, RING_EXECLIST_STATUS_HI(base)),
+	    drv_i915_read32(mmio, RING_EXECLIST_STATUS_LO(base)),
+	    drv_i915_read32(mmio, RING_CONTEXT_STATUS_PTR(base)),
+	    drv_i915_read32(mmio, RING_HEAD(base)),
+	    drv_i915_read32(mmio, RING_TAIL(base)),
+	    drv_i915_read32(mmio, RING_ACTHD(base)),
+	    drv_i915_read32(mmio, RING_IPEHR(base)),
+	    drv_i915_read32(mmio, RING_EIR(base)),
+	    drv_i915_read32(mmio, RING_ESR(base)));
 }
 
 /* Reports 1 when a Gen12 CSB entry promotes the pending ports, 0 when it completes the active one. */
