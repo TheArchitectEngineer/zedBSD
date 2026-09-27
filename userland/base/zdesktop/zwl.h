@@ -108,6 +108,8 @@ enum zwl_kind {
 	ZWL_TOPLEVEL_MENU,
 	ZWL_POSITIONER,
 	ZWL_POPUP,
+	ZWL_SUBCOMPOSITOR,
+	ZWL_SUBSURFACE,
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -311,6 +313,32 @@ struct zwl_object {
 	int32_t resize_bottom;
 	uint32_t resize_final_serial;
 	uint32_t acked_serial;
+	/*
+	 * Sub-surfaces (subsurface.c, ws035-p077).  A surface with the role has
+	 * its wl_subsurface (whose own surface field names the surface back)
+	 * and its parent; a parent has its children, bottom to top, linked by
+	 * sub_next, each below or above the parent.  The position applied, the
+	 * one set for the parent's next commit and whether one was set, and the
+	 * synchronized mode.  A synchronized sub-surface's commit is cached
+	 * (the buffer and whether one was attached, the frame callbacks) until
+	 * its parent's state is applied.  Each link is cleared from both ends
+	 * when either object goes.
+	 */
+	struct zwl_object *sub_role;
+	struct zwl_object *sub_parent;
+	struct zwl_object *sub_children;
+	struct zwl_object *sub_next;
+	unsigned sub_above;
+	int32_t sub_x;
+	int32_t sub_y;
+	int32_t sub_pending_x;
+	int32_t sub_pending_y;
+	unsigned sub_moved;
+	unsigned sub_sync;
+	unsigned sub_cached;
+	struct zwl_object *sub_cached_buffer;
+	unsigned sub_cached_attached;
+	struct zwl_object *sub_cached_callbacks;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -403,6 +431,8 @@ struct zwl_server {
 	int32_t pointer_y;
 	unsigned modifier_keys;
 	uint32_t modifiers;
+	/* The locked modifiers (Caps Lock 0x2, Num Lock 0x10), each toggled by a press of its key (ws035-p078). */
+	uint32_t locked_modifiers;
 	/* Window mode: the Vulkan output, whether a frame is due, and the fence fd of the frame in flight. */
 	struct zwl_compose *compose;
 	unsigned windowed;
@@ -544,17 +574,21 @@ struct zwl_server {
 	unsigned cursor_hidden;
 	struct zwl_import *arrow;
 	/*
+	 * The surface whose client was told the pointer entered it (seat.c): it
+	 * hears the pointer's events.  It is the focused window, or the
+	 * sub-surface of it under the pointer (ws035-p077); while a popup's grab
+	 * has the pointer, the surface of the grab's chain under it, or none.
+	 * It is cleared before that surface is freed.
+	 */
+	struct zwl_object *pointer_surface;
+	/*
 	 * Popups (popup.c): the topmost popup holding the seat's grab (NULL for
 	 * none); whether the grab has the pointer (from its first popup shown
-	 * until the grab ends: the seat's focus changes then move only the
-	 * keyboard) and the surface of the grab's chain the pointer is over (it
-	 * hears the pointer events; NULL outside the chain); a button whose
-	 * press dismissed the popups (its release is eaten too); the order the
-	 * next popup is made in.
+	 * until the grab ends); a button whose press dismissed the popups (its
+	 * release is eaten too); the order the next popup is made in.
 	 */
 	struct zwl_object *popup_grab;
 	unsigned pointer_grabbed;
-	struct zwl_object *pointer_focus;
 	uint32_t popup_eaten_button;
 	uint64_t popup_order;
 	/*

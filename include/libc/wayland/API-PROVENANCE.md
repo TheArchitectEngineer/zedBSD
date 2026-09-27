@@ -20,10 +20,13 @@ are independently expressed source, with no production generator.
 
 Selected wire descriptions: wl_display/registry/callback/region/buffer v1,
 wl_compositor/surface/output v4, wl_seat/wl_pointer/wl_keyboard v5,
-xdg_wm_base/positioner/surface/toplevel/popup v3 (v1 until WS035 p076).
+xdg_wm_base/positioner/surface/toplevel/popup v3 (v1 until WS035 p076),
+wl_subcompositor/wl_subsurface v1 (WS035 p077: requests destroy and
+get_subsurface `noo`; destroy, set_position `ii`, place_above `o`, place_below
+`o`, set_sync, set_desync; no events; checked against the pinned Wayland 1.23.1
+description).
 This library does not claim a complete Wayland SDK. It does not supply wl_touch,
-wl_shm, wl_subcompositor, EGL, a public server library, or general C callback
-FFI.
+wl_shm, EGL, a public server library, or general C callback FFI.
 
 Input interfaces (added for WS031 p013) were checked against the same pinned
 Wayland 1.23.1 description and client ABI: wl_seat requests get_pointer (0),

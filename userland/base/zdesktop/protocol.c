@@ -13,11 +13,16 @@
 #include "menu.h"
 #include "popup.h"
 #include "toplevel.h"
+#include "subsurface.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+
+/* wl_output's version 4 events: its name and its description. */
+#define OUTPUT_NAME		4U
+#define OUTPUT_DESCRIPTION	5U
 
 /* The registry advertises only implemented interfaces and their actual versions. */
 struct zwl_global {
@@ -32,16 +37,18 @@ static const struct zwl_global globals[] = {
 	{ 1, "wl_compositor", 4, ZWL_COMPOSITOR },
 	{ 2, "xdg_wm_base", 3, ZWL_WM },
 	{ 3, "zed_gpu_buffer_v1", 2, ZWL_FACTORY },
-	{ 4, "wl_output", 2, ZWL_OUTPUT },
+	{ 4, "wl_output", 4, ZWL_OUTPUT },
 	{ 5, "wl_seat", 5, ZWL_SEAT },
 	{ 6, "wl_shm", 1, ZWL_SHM },
 	{ 7, "xdg_menu_manager_v1", 1, ZWL_MENU_MANAGER },
+	{ 8, "wl_subcompositor", 1, ZWL_SUBCOMPOSITOR },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
 static int string_at(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
 static int registry_events(struct zwl_object *registry);
 static int output_events(struct zwl_object *output);
+static int output_names(struct zwl_object *output);
 static int bind_global(struct zwl_object *registry, const unsigned char *bytes, size_t size);
 static int surface_request(struct zwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int surface_commit(struct zwl_object *surface);
@@ -172,6 +179,23 @@ zwl_dispatch(
 	case ZWL_POPUP:
 		/* xdg_positioner and xdg_popup (popup.c). */
 		error = zwl_popup_request(object, opcode, bytes, size);
+		break;
+	case ZWL_OUTPUT:
+		/* release, from version 3, is the only output request. */
+		if (opcode == 0 && size == 0 && object->version >= 3U) {
+			zwl_object_destroy(object);
+			error = 0;
+		}
+
+		/* Any other output request stays refused. */
+		break;
+	case ZWL_SUBCOMPOSITOR:
+		/* wl_subcompositor (subsurface.c). */
+		error = zwl_subcompositor_request(object, opcode, bytes, size);
+		break;
+	case ZWL_SUBSURFACE:
+		/* wl_subsurface (subsurface.c). */
+		error = zwl_subsurface_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
@@ -326,6 +350,13 @@ output_events(
 		if (error != 0)
 			return error;
 
+		/* Version 4 names the output and describes it (ws035-p078). */
+		if (output->version >= 4U) {
+			error = output_names(output);
+			if (error != 0)
+				return error;
+		}
+
 		/* The done event commits all preceding output properties. */
 		error = zwl_emit(output->client, output->id, 2, NULL, 0);
 		if (error != 0)
@@ -333,6 +364,42 @@ output_events(
 	}
 
 	/* Succeeded: output properties are complete for the negotiated version. */
+	return 0;
+}
+
+/*
+ * Sends a version 4 output its name and description: the name stays the
+ * same for the whole run (one output), the description gives its size.
+ */
+static int
+output_names(
+	struct zwl_object *output)
+{
+	char text[64];
+	unsigned char payload[80];
+	uint32_t length;
+	int error;
+
+	/* The name, a string in the wire's padded form. */
+	memset(payload, 0, sizeof(payload));
+	length = (uint32_t)sizeof("ZDESKTOP-1");
+	memcpy(payload, &length, sizeof(length));
+	memcpy(payload + 4, "ZDESKTOP-1", length);
+	error = zwl_emit(output->client, output->id, OUTPUT_NAME, payload, 4U + ((length + 3U) & ~3U));
+	if (error != 0)
+		return error;
+
+	/* The description. */
+	(void)snprintf(text, sizeof(text), "zdesktop output %ux%u", output->client->server->width, output->client->server->height);
+	memset(payload, 0, sizeof(payload));
+	length = (uint32_t)strlen(text) + 1U;
+	memcpy(payload, &length, sizeof(length));
+	memcpy(payload + 4, text, length);
+	error = zwl_emit(output->client, output->id, OUTPUT_DESCRIPTION, payload, 4U + ((length + 3U) & ~3U));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the output is named. */
 	return 0;
 }
 
@@ -566,34 +633,28 @@ surface_commit(
 	uint32_t replaced;
 	int error;
 
+	/* A sub-surface's commit waits for its parent's when it is synchronized (subsurface.c). */
+	if (surface->sub_role != NULL) {
+		error = zwl_subsurface_commit(surface);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
 	/*
 	 * A cursor surface's content is used directly, with no configure; a
 	 * surface with no role yet keeps its content the same way, unshown
 	 * (a client commits its cursor surface before set_cursor names it).
+	 * Its sub-surfaces go with it.
 	 */
 	role = surface->role;
 	server = surface->client->server;
 	attached = surface->attached;
 	if (surface->cursor_role || role == NULL) {
-		previous = surface->queued;
-		if (surface->attached) {
-			surface->queued = surface->pending;
-			surface->pending = NULL;
-		} else {
-			surface->queued = surface->current;
-			zwl_buffer_get(surface->queued);
-		}
-
-		/* The content, its damage and its acquire fence are committed. */
-		surface->attached = 0;
-		surface->ready = 1;
-		if (surface->queued != NULL)
-			surface->queued->busy = 1;
-		commit_damage(surface);
-		commit_fence(surface, attached);
-		zwl_buffer_put(previous);
-		append_callbacks(&surface->committed_callbacks, surface->callbacks);
-		surface->callbacks = NULL;
+		error = zwl_surface_queue(surface);
+		if (error != 0)
+			return error;
+		zwl_subsurface_applied(surface);
 		return 0;
 	}
 
@@ -682,7 +743,49 @@ surface_commit(
 	append_callbacks(&surface->committed_callbacks, surface->callbacks);
 	surface->callbacks = NULL;
 
+	/* The window's sub-surfaces go with its state (subsurface.c). */
+	zwl_subsurface_applied(surface);
+
 	/* Succeeded: the scheduler owns the latest pending image and all frame callbacks. */
+	return 0;
+}
+
+/*
+ * Commits the pending state of a surface without a shell role now (a
+ * cursor, a sub-surface, a surface waiting for its role): the attached
+ * image, or the current one again, with its damage, acquire fences and
+ * frame callbacks, for the scheduler.
+ */
+int
+zwl_surface_queue(
+	struct zwl_object *surface)
+{
+	struct zwl_object *previous;
+	unsigned attached;
+
+	/* The attached image, or the current one kept. */
+	attached = surface->attached;
+	previous = surface->queued;
+	if (surface->attached) {
+		surface->queued = surface->pending;
+		surface->pending = NULL;
+	} else {
+		surface->queued = surface->current;
+		zwl_buffer_get(surface->queued);
+	}
+
+	/* The content, its damage and its acquire fence are committed. */
+	surface->attached = 0;
+	surface->ready = 1;
+	if (surface->queued != NULL)
+		surface->queued->busy = 1;
+	commit_damage(surface);
+	commit_fence(surface, attached);
+	zwl_buffer_put(previous);
+	append_callbacks(&surface->committed_callbacks, surface->callbacks);
+	surface->callbacks = NULL;
+
+	/* Succeeded: the scheduler takes the committed image. */
 	return 0;
 }
 
@@ -746,7 +849,10 @@ shell_request(
 		/* The role cannot be attached to a foreign object or an already assigned surface. */
 		id = word_at(bytes, 4);
 		surface = zwl_find(object->client, id);
-		if (surface == NULL || surface->kind != ZWL_SURFACE || surface->role != NULL)
+		if (surface == NULL ||
+		    surface->kind != ZWL_SURFACE ||
+		    surface->role != NULL ||
+		    surface->sub_role != NULL)
 			return EPROTO;
 
 		/* Publish both directions only after the role identity is allocated. */

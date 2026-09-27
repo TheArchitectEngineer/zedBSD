@@ -93,6 +93,7 @@ static int apps_program_exists(const char *program);
 static int apps_expand(const char *command, const char *path, char *expanded, size_t size);
 static int apps_quote(const char *path, char *quoted, size_t size);
 static void apps_run(const char *command);
+static void apps_exec(char *const arguments[]);
 
 /*
  * Fills the ways a file can be opened, the default first, and reports how
@@ -223,6 +224,37 @@ fm_apps_launch(
 	fm_log("LAUNCH name=%s command=%s", opener->name, expanded);
 
 	/* Succeeded: the command is on its way. */
+	return 0;
+}
+
+/*
+ * Starts a program with its arguments apart from the file manager, as a
+ * launch does, but keeping the standard input, output and error (a new
+ * window of this program writes its log where this one does).
+ *
+ * Returns 0, or the errno value of a failed fork.
+ */
+int
+fm_apps_spawn(
+	char *const arguments[])
+{
+	pid_t child;
+	int status;
+
+	/* A child that starts a grandchild and leaves, as for a launch. */
+	child = fork();
+	if (child < 0)
+		return errno;
+	if (child == 0) {
+		apps_exec(arguments);
+		_exit(0);
+	}
+
+	/* The child leaves at once; it is waited for so it does not linger. */
+	(void)waitpid(child, &status, 0);
+	fm_log("SPAWN program=%s", arguments[0]);
+
+	/* Succeeded: the program is on its way. */
 	return 0;
 }
 
@@ -560,5 +592,28 @@ apps_run(
 
 	/* Anything else runs by the shell. */
 	execl("/bin/sh", "sh", "-c", command, (char *)NULL);
+	_exit(127);
+}
+
+/* Runs a program from the child that fork made: a grandchild in a session of its own, with only the standard descriptors. */
+static void
+apps_exec(
+	char *const arguments[])
+{
+	pid_t grandchild;
+	int descriptor;
+
+	/* The grandchild; the child leaves as soon as it is made. */
+	grandchild = fork();
+	if (grandchild != 0)
+		return;
+
+	/* A session of its own, and none of the window's descriptors but the standard ones. */
+	(void)setsid();
+	for (descriptor = 3; descriptor < APPS_DESCRIPTORS; descriptor++)
+		(void)close(descriptor);
+
+	/* The program; only a failed exec comes back. */
+	execv(arguments[0], arguments);
 	_exit(127);
 }

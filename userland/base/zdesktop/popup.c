@@ -26,6 +26,7 @@
 
 #include "popup.h"
 #include "glass.h"
+#include "subsurface.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -104,7 +105,6 @@ static struct zwl_object *chain_toplevel(struct zwl_object *surface);
 static struct zwl_object *chain_surface_at(struct zwl_server *server, int32_t x, int32_t y);
 static void popup_dismiss(struct zwl_server *server);
 static void popup_grab_end(struct zwl_server *server, struct zwl_object *next);
-static void pointer_update(struct zwl_server *server);
 static struct zwl_object *grab_shown(struct zwl_server *server);
 static uint32_t popup_word(const unsigned char *bytes, size_t offset);
 
@@ -311,21 +311,12 @@ zwl_popup_mapped(
 	if (popup == NULL || server->popup_grab != popup)
 		return;
 
-	/*
-	 * From the first grabbing popup shown, the pointer is popup.c's: it
-	 * starts where the client was told it is (the focus), and the seat's
-	 * focus changes move only the keyboard.
-	 */
-	if (!server->pointer_grabbed &&
-	    server->focus != NULL &&
-	    server->focus->client == popup->client) {
+	/* From the first grabbing popup shown, the pointer goes to the surface of the grab's chain under it. */
+	if (server->focus != NULL && server->focus->client == popup->client)
 		server->pointer_grabbed = 1;
-		server->pointer_focus = server->focus;
-	}
 
 	/* The keyboard goes to the popup (zwl_popup_focus), the pointer to the surface it is over. */
 	zwl_seat_focus(server);
-	pointer_update(server);
 }
 
 /*
@@ -376,12 +367,6 @@ zwl_popup_object_gone(
 	/* Only a surface is left that popups can name. */
 	if (object->kind != ZWL_SURFACE)
 		return;
-
-	/* The pointer is over it no longer; its client hears leave while the surface still exists. */
-	if (server->pointer_focus == object) {
-		zwl_seat_pointer_move(server, object, NULL);
-		server->pointer_focus = NULL;
-	}
 
 	/* Its popups lose their parent and are closed. */
 	for (other = object->client->objects; other != NULL; other = other->next) {
@@ -602,8 +587,10 @@ zwl_popup_draw(
 			glass_shape_draw(server, command, &shape);
 		}
 
-		/* The image itself. */
+		/* The image itself, between its sub-surfaces below and above it (subsurface.c). */
+		zwl_subsurface_draw(server, command, popups[index], (float)x, (float)y, 1.0f, 1.0f, 0U);
 		zwl_compose_quad_image(server, command, image, x, y);
+		zwl_subsurface_draw(server, command, popups[index], (float)x, (float)y, 1.0f, 1.0f, 1U);
 	}
 }
 
@@ -632,32 +619,6 @@ zwl_popup_focus(
 
 	/* Succeeded: the popup has the keyboard. */
 	return grab->surface;
-}
-
-/*
- * Follows the pointer while a popup holds the grab: over a surface of the
- * grab's chain, that surface hears the pointer (enter and leave as it
- * changes); elsewhere the chain hears leave and the motion reaches nobody.
- * Returns 1 when the motion was taken, 0 when it goes to
- * zwl_popup_pointer_target as usual.
- */
-int
-zwl_popup_motion(
-	struct zwl_server *server)
-{
-	/* Without the pointer taken by a grab, it is the shell's and the focus's. */
-	if (!server->pointer_grabbed)
-		return 0;
-
-	/* The surface under the pointer hears enter, the last one leave. */
-	pointer_update(server);
-
-	/* Outside the chain the motion is nobody's. */
-	if (server->pointer_focus == NULL)
-		return 1;
-
-	/* Succeeded: the motion goes to the surface under the pointer. */
-	return 0;
 }
 
 /*
@@ -690,13 +651,10 @@ zwl_popup_button(
 	if (state == 0U)
 		return 0;
 
-	/* A press over the chain goes to the surface under the pointer (which hears enter first when it is new). */
+	/* A press over the chain goes to the surface under the pointer (seat.c). */
 	over = chain_surface_at(server, server->pointer_x, server->pointer_y);
-	if (over != NULL) {
-		if (server->pointer_grabbed)
-			pointer_update(server);
+	if (over != NULL)
 		return 0;
-	}
 
 	/* A press anywhere else closes the popups, and is theirs. */
 	server->popup_eaten_button = button;
@@ -705,19 +663,25 @@ zwl_popup_button(
 }
 
 /*
- * Tells which surface hears the pointer: while a popup holds the grab, the
- * surface of its chain the pointer is over; otherwise the focus.
+ * Finds the surface of the grab's chain under the pointer (the client's
+ * shown popups, the latest first, then the toplevel's body); NULL outside
+ * them all, or without a grab.
  */
 struct zwl_object *
-zwl_popup_pointer_target(
+zwl_popup_chain_at(
 	struct zwl_server *server)
 {
-	/* While a grab has the pointer, the surface of its chain under it (none outside the chain). */
-	if (server->pointer_grabbed)
-		return server->pointer_focus;
+	struct zwl_object *over;
 
-	/* Succeeded: the focus hears the pointer. */
-	return server->focus;
+	/* Without a grab there is no chain. */
+	if (server->popup_grab == NULL)
+		return NULL;
+
+	/* The surface under the pointer. */
+	over = chain_surface_at(server, server->pointer_x, server->pointer_y);
+
+	/* Succeeded: the surface, or none. */
+	return over;
 }
 
 /* Carries out a request of xdg_positioner. */
@@ -1409,57 +1373,22 @@ popup_dismiss(
 
 /*
  * Ends (or passes on) the grab: the keyboard moves to the next grabbing
- * popup, or back to the window; with no grab left, the pointer goes back
- * to the focus (from the surface it was over).
+ * popup, or back to the window; with no grab left, the pointer follows the
+ * focus again (seat.c moves it).
  */
 static void
 popup_grab_end(
 	struct zwl_server *server,
 	struct zwl_object *next)
 {
-	/* The next grab (or none) chooses the keyboard's focus; the pointer is still popup.c's. */
+	/* The next grab, or none (the pointer is the grab's no more). */
 	server->popup_grab = next;
+	if (next == NULL)
+		server->pointer_grabbed = 0;
 	server->dirty = 1;
+
+	/* The keyboard's focus, and the pointer's surface, follow. */
 	zwl_seat_focus(server);
-
-	/* A grab that goes on keeps the pointer on the surface under it. */
-	if (next != NULL) {
-		if (server->pointer_grabbed)
-			pointer_update(server);
-		return;
-	}
-
-	/* Without a grab the pointer follows the focus again, as the seat does. */
-	if (!server->pointer_grabbed)
-		return;
-	server->pointer_grabbed = 0;
-	if (server->pointer_focus != server->focus)
-		zwl_seat_pointer_move(server, server->pointer_focus, server->focus);
-	server->pointer_focus = NULL;
-}
-
-/*
- * Moves the pointer of a grab to the surface of the chain under it: the
- * surface it leaves hears leave, the new one enter (none outside the chain).
- */
-static void
-pointer_update(
-	struct zwl_server *server)
-{
-	struct zwl_object *over;
-
-	/* The surface of the chain under the pointer, or none. */
-	over = NULL;
-	if (server->popup_grab != NULL)
-		over = chain_surface_at(server, server->pointer_x, server->pointer_y);
-
-	/* An unchanged surface hears nothing. */
-	if (over == server->pointer_focus)
-		return;
-
-	/* The last surface hears leave, the new one enter. */
-	zwl_seat_pointer_move(server, server->pointer_focus, over);
-	server->pointer_focus = over;
 }
 
 /*

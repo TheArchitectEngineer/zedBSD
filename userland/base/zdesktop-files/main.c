@@ -35,6 +35,12 @@
 /* A frame that takes longer than this is logged, in milliseconds. */
 #define MAIN_SLOW_FRAME_MS	250U
 
+/* The program a new window runs when this one was not started by its full path. */
+#define MAIN_PROGRAM		"/bin/zdesktop-files"
+
+/* How often the menus' state is checked at most while no input arrives, in milliseconds. */
+#define MAIN_MENU_CHECK_MS	250U
+
 /* The longest the loop sleeps when nothing is due, in milliseconds (folders are checked for changes). */
 #define MAIN_IDLE_MS		500
 
@@ -42,6 +48,7 @@
  * What the command line asked for.
  */
 struct main_options {
+	const char *program;
 	const char *display;
 	const char *font;
 	const char *fallback;
@@ -63,6 +70,12 @@ static struct fm_app main_app;
 static struct fm_text main_text;
 
 /*
+ * The window's menus in zdesktop, opened with the window and closed before
+ * it; its service is NULL when the compositor has no System Menu.
+ */
+static struct fm_menu main_menu;
+
+/*
  * The frame being drawn: ordinary memory the size of the swapchain, and
  * the canvas over it.  They are remade when the window changes size.
  */
@@ -76,6 +89,9 @@ static int main_loop(const struct main_options *options);
 static int main_frame(void);
 static int main_canvas_make(void);
 static int main_timeout(uint64_t now);
+static void main_request(const struct main_options *options);
+static void main_new_window(const struct main_options *options);
+static void main_menu_update(void);
 
 /*
  * Runs the file manager.
@@ -86,6 +102,7 @@ main(
 	char **argv)
 {
 	struct main_options options;
+	struct fm_menu_state state;
 	VkResult result;
 	int status;
 	int error;
@@ -137,10 +154,19 @@ main(
 	if (options.wallpaper != NULL)
 		snprintf(main_app.wallpaper, sizeof(main_app.wallpaper), "%s", options.wallpaper);
 
+	/* The menus; a window whose menus cannot be made goes on without them. */
+	fm_ui_menu_state(&main_app, &state);
+	error = fm_menu_open(&main_menu, &main_window, &state);
+	if (error != 0) {
+		fm_log("MENU failed errno=%d", error);
+		fm_menu_close(&main_menu);
+	}
+
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
-	/* Everything goes, the app before the window it drew into. */
+	/* Everything goes, the menus and the app before the window they belong to. */
+	fm_menu_close(&main_menu);
 	fm_app_release(&main_app);
 	fm_canvas_release(&main_canvas);
 	free(main_pixels);
@@ -167,8 +193,11 @@ main_parse(
 	int status;
 	int index;
 
-	/* The defaults. */
+	/* The defaults; a new window runs this program again when it was started by its full path. */
 	memset(options, 0, sizeof(*options));
+	options->program = MAIN_PROGRAM;
+	if (argc > 0 && argv[0] != NULL && argv[0][0] == '/')
+		options->program = argv[0];
 	options->font = MAIN_FONT;
 	options->fallback = MAIN_FALLBACK_FONT;
 	options->width = FM_WIDTH;
@@ -308,6 +337,9 @@ main_loop(
 	const char *token;
 	uint64_t started;
 	uint64_t now;
+	uint64_t menu_checked_at;
+	unsigned action;
+	int inputs;
 	int taken;
 	int status;
 	int timeout;
@@ -332,6 +364,7 @@ main_loop(
 
 	/* Each round: input, time, and a frame when something changed. */
 	started = fm_clock();
+	menu_checked_at = started;
 	for (;;) {
 		/* Waits for the compositor, or until something is due. */
 		now = fm_clock();
@@ -345,15 +378,35 @@ main_loop(
 		/* The held key's repeat, and every input queued. */
 		now = fm_clock();
 		(void)fm_window_repeat(&main_window, now);
+		inputs = 0;
 		for (;;) {
 			taken = fm_window_take(&main_window, &event);
 			if (taken == 0)
 				break;
 			fm_ui_event(&main_app, &event);
+			inputs++;
 		}
+
+		/* The menus' choices, oldest first. */
+		for (;;) {
+			action = fm_menu_take(&main_menu);
+			if (action == FM_ACTION_NONE)
+				break;
+			fm_ui_action(&main_app, action);
+			inputs++;
+		}
+
+		/* What the window was asked to do: a new window, minimizing, zooming, closing. */
+		main_request(options);
 
 		/* Time passes for the file manager. */
 		fm_ui_tick(&main_app, now);
+
+		/* The menus show the state after input at once, and otherwise now and then (a task's end changes it). */
+		if (inputs != 0 || now - menu_checked_at >= MAIN_MENU_CHECK_MS) {
+			main_menu_update();
+			menu_checked_at = now;
+		}
 
 		/* The close button ends the run. */
 		if (main_window.closed != 0) {
@@ -500,4 +553,127 @@ main_timeout(
 
 	/* Otherwise the limit. */
 	return limit;
+}
+
+/* Carries out what the window was asked to do by an action, once. */
+static void
+main_request(
+	const struct main_options *options)
+{
+	unsigned request;
+
+	/* The request, taken. */
+	request = main_app.request;
+	main_app.request = FM_REQUEST_NONE;
+
+	/* Each request. */
+	switch (request) {
+	case FM_REQUEST_NEW_WINDOW:
+		main_new_window(options);
+		break;
+	case FM_REQUEST_MINIMIZE:
+		fm_window_minimize(&main_window);
+		break;
+	case FM_REQUEST_ZOOM:
+		fm_window_zoom(&main_window);
+		break;
+	case FM_REQUEST_CLOSE:
+		main_window.closed = 1;
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+ * Starts another window of the file manager (a process of its own) on the
+ * folder shown, with this window's display, fonts, size and picture.
+ */
+static void
+main_new_window(
+	const struct main_options *options)
+{
+	char *arguments[12];
+	char display[FM_PATH_MAX + 16];
+	char font[FM_PATH_MAX + 16];
+	char fallback[FM_PATH_MAX + 32];
+	char wallpaper[FM_PATH_MAX + 16];
+	char width[32];
+	char height[32];
+	char token[96];
+	char folder[FM_PATH_MAX];
+	const char *shown;
+	int count;
+	int error;
+
+	/* The folder shown, or the home dashboard when none is. */
+	shown = fm_current_folder(&main_app);
+	folder[0] = '\0';
+	if (shown != NULL)
+		snprintf(folder, sizeof(folder), "%s", shown);
+
+	/* The program, its fonts and its size. */
+	count = 0;
+	arguments[count] = (char *)options->program;
+	count++;
+	snprintf(font, sizeof(font), "--font=%s", options->font);
+	arguments[count] = font;
+	count++;
+	snprintf(fallback, sizeof(fallback), "--fallback-font=%s", options->fallback);
+	arguments[count] = fallback;
+	count++;
+	snprintf(width, sizeof(width), "--width=%d", main_app.width);
+	arguments[count] = width;
+	count++;
+	snprintf(height, sizeof(height), "--height=%d", main_app.height);
+	arguments[count] = height;
+	count++;
+
+	/* The dashboard's picture. */
+	snprintf(wallpaper, sizeof(wallpaper), "--wallpaper=%s", main_app.wallpaper);
+	arguments[count] = wallpaper;
+	count++;
+
+	/* The same display, when this one was given one. */
+	if (options->display != NULL) {
+		snprintf(display, sizeof(display), "--display=%s", options->display);
+		arguments[count] = display;
+		count++;
+	}
+
+	/* Its log lines named after this window's. */
+	if (options->token != NULL) {
+		snprintf(token, sizeof(token), "--token=%s-new", options->token);
+		arguments[count] = token;
+		count++;
+	}
+
+	/* The folder, when one is shown. */
+	if (folder[0] != '\0') {
+		arguments[count] = folder;
+		count++;
+	}
+
+	/* The end of the arguments. */
+	arguments[count] = NULL;
+
+	/* The new window's process. */
+	error = fm_apps_spawn(arguments);
+	if (error != 0)
+		fm_ui_message(&main_app, "A new window can't be opened.");
+}
+
+/* Tells the menus the window's state when it changed. */
+static void
+main_menu_update(void)
+{
+	struct fm_menu_state state;
+
+	/* Without menus there is nothing to tell. */
+	if (main_menu.menu == NULL)
+		return;
+
+	/* The state now, sent when it differs from what the menus show. */
+	fm_ui_menu_state(&main_app, &state);
+	fm_menu_refresh(&main_menu, &state);
 }

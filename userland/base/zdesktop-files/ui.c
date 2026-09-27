@@ -304,9 +304,10 @@ fm_ui_draw(
 	if (app->show_tasks != 0 && app->task_count > 0)
 		fm_tasks_draw(app, canvas, app->layout.toolbar.x + app->layout.toolbar.width - 8, app->layout.toolbar.y + app->layout.toolbar.height + 6);
 
-	/* Quick Look or the information over all of it, and a question over that. */
+	/* Quick Look, the information or Help over all of it, and a question over that. */
 	fm_look_draw(app, canvas);
 	fm_info_draw(app, canvas);
+	fm_help_draw(app, canvas);
 	fm_overlay_draw(app, canvas);
 
 	/* The frame is up to date. */

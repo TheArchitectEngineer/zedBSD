@@ -3,7 +3,7 @@
 # times with standard input /dev/null (the test spawns and execs /bin/sh,
 # which would otherwise read the console), and prints the status and the
 # last result line of each run (BUG-046 is about the timer tests).
-#   [AS_SH=1] sh plan/ws056/tests/console-posix-r2.sh IMAGE ELF [N]
+#   [AS_SH=1] sh plan/tools/posix/console-posix-r2.sh IMAGE ELF [N]
 # With AS_SH=1 the ELF is also installed as /bin/sh (the test spawns and
 # execs /bin/sh expecting itself: R2_SPAWN_CHILD and R2_EXEC_FINAL), so
 # that the whole test can reach status 0; the login shell already running
