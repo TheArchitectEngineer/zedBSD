@@ -16,6 +16,14 @@
  * that libzdesktop refuses the same mistakes itself and sends nothing that
  * would end the connection.  Every case prints TITLEBARPROBE case=NAME ok
  * or FAIL, and the run ends with TITLEBARPROBE DONE failures=N.
+ *
+ *   titlebar-probe
+ *   titlebar-probe --show=TITLE [--seconds=N] [--mode=menu|controls|tabs]
+ *
+ * --show instead shows a plain window with a title (the tests give it
+ * Japanese to see the glyph cache) for some seconds, with a titlebar model
+ * of the mode given (a file manager's controls, or three tabs), and prints
+ * TITLEBARPROBE event lines for what zdesktop tells it.
  */
 
 #include <wayland-client.h>
@@ -25,14 +33,24 @@
 #include "userland/base/libwayland/zed-titlebar-v1-client-protocol.h"
 
 #include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <time.h>
+#include <unistd.h>
 
 /* The case expects no protocol error. */
 #define PROBE_NO_ERROR		0xffffffffU
 
 /* How many calls the library case checks. */
 #define PROBE_CALLS		20
+
+/* The shown window's size. */
+#define PROBE_WIDTH		800
+#define PROBE_HEIGHT		480
 
 /*
  * One connection of a case: the display, the globals it bound, and a
@@ -44,10 +62,13 @@ struct probe_connection {
 	struct wl_compositor *compositor;
 	struct xdg_wm_base *shell;
 	struct zed_titlebar_manager_v1 *manager;
+	struct wl_shm *shm;
 	struct wl_surface *surface;
 	struct xdg_surface *role;
 	struct xdg_toplevel *toplevel;
 	struct zed_titlebar_v1 *titlebar;
+	int configured;
+	uint32_t configure_serial;
 };
 
 /*
@@ -81,10 +102,38 @@ static void send_tab_flags(struct probe_connection *connection);
 static void send_focus_uncommitted(struct probe_connection *connection);
 static void send_exists(struct probe_connection *connection);
 static void send_good(struct probe_connection *connection);
+static int probe_show(const char *title, unsigned seconds, const char *mode);
+static int probe_show_window(struct probe_connection *connection, const char *title);
+static int probe_show_buffer(struct probe_connection *connection);
+static void probe_show_model(struct zdesktop_titlebar *titlebar, const char *mode);
+static void probe_configure(void *data, struct xdg_surface *role, uint32_t serial);
+static void probe_activated(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void probe_text_changed(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text);
+static void probe_text_done(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
+static void probe_tab_activated(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t serial);
+static void probe_tab_close(void *data, struct zdesktop_titlebar *titlebar, uint32_t id);
+static void probe_new_tab(void *data, struct zdesktop_titlebar *titlebar, uint32_t serial);
+static void probe_overflow(void *data, struct zdesktop_titlebar *titlebar);
 
 /* The registry's callbacks while a connection binds its globals. */
 static const struct wl_registry_listener probe_registry_listener = {
 	probe_global, probe_global_remove
+};
+
+/* The shown window's xdg_surface events: only its configure. */
+static const struct xdg_surface_listener probe_role_listener = {
+	probe_configure
+};
+
+/* What zdesktop tells the shown window's titlebar, printed. */
+static const struct zdesktop_titlebar_listener probe_titlebar_listener = {
+	probe_activated,
+	probe_text_changed,
+	probe_text_done,
+	probe_tab_activated,
+	probe_tab_close,
+	probe_new_tab,
+	probe_overflow
 };
 
 /* The server cases, each on its own connection. */
@@ -112,13 +161,36 @@ main(
 	int argc,
 	char **argv)
 {
+	const char *title;
+	const char *mode;
+	unsigned seconds;
 	unsigned index;
 	unsigned failures;
 	int failed;
+	int status;
+	int match;
 
-	/* No options. */
-	(void)argc;
-	(void)argv;
+	/* The options of the shown window. */
+	title = NULL;
+	mode = "menu";
+	seconds = 60;
+	for (index = 1; index < (unsigned)argc; index++) {
+		match = strncmp(argv[index], "--show=", 7);
+		if (match == 0)
+			title = argv[index] + 7;
+		match = strncmp(argv[index], "--seconds=", 10);
+		if (match == 0)
+			seconds = (unsigned)atoi(argv[index] + 10);
+		match = strncmp(argv[index], "--mode=", 7);
+		if (match == 0)
+			mode = argv[index] + 7;
+	}
+
+	/* A shown window instead of the cases. */
+	if (title != NULL) {
+		status = probe_show(title, seconds, mode);
+		return status;
+	}
 
 	/* Each server case. */
 	failures = 0;
@@ -170,6 +242,13 @@ probe_global(
 	same = strcmp(interface, "xdg_wm_base");
 	if (same == 0) {
 		connection->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, 1U);
+		return;
+	}
+
+	/* Shared memory, for the shown window's picture. */
+	same = strcmp(interface, "wl_shm");
+	if (same == 0) {
+		connection->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1U);
 		return;
 	}
 
@@ -624,4 +703,339 @@ probe_library_calls(
 
 	/* Reports whether any answer was wrong. */
 	return failed;
+}
+
+/*
+ * Shows a window with a title and a titlebar model of a mode for some
+ * seconds, printing what zdesktop tells its titlebar.  Returns 0, or 1 when
+ * the window could not be shown.
+ */
+static int
+probe_show(
+	const char *title,
+	unsigned seconds,
+	const char *mode)
+{
+	struct probe_connection connection;
+	struct zdesktop_titlebar *titlebar;
+	struct pollfd poll_entry;
+	time_t end;
+	time_t now;
+	int status;
+
+	/* The window. */
+	status = probe_show_window(&connection, title);
+	if (status != 0) {
+		printf("TITLEBARPROBE show FAIL errno=%d\n", errno);
+		probe_disconnect(&connection);
+		return 1;
+	}
+
+	/* Its titlebar, through the library, with the model of the mode. */
+	titlebar = zdesktop_titlebar_create(connection.display, connection.toplevel, &probe_titlebar_listener, NULL);
+	if (titlebar == NULL) {
+		printf("TITLEBARPROBE show FAIL titlebar errno=%d\n", errno);
+		probe_disconnect(&connection);
+		return 1;
+	}
+
+	/* The model. */
+	probe_show_model(titlebar, mode);
+	printf("TITLEBARPROBE show ready mode=%s\n", mode);
+	fflush(stdout);
+
+	/* The events, until the time is up. */
+	end = time(NULL) + (time_t)seconds;
+	for (;;) {
+		now = time(NULL);
+		if (now >= end)
+			break;
+
+		/* What was sent goes out; a second's wait for what comes in. */
+		(void)wl_display_flush(connection.display);
+		poll_entry.fd = wl_display_get_fd(connection.display);
+		poll_entry.events = POLLIN;
+		poll_entry.revents = 0;
+		status = poll(&poll_entry, 1, 1000);
+		if (status <= 0)
+			continue;
+
+		/* The events that came. */
+		status = wl_display_dispatch(connection.display);
+		if (status < 0)
+			break;
+	}
+
+	/* The titlebar and the connection go. */
+	zdesktop_titlebar_destroy(titlebar);
+	probe_disconnect(&connection);
+	printf("TITLEBARPROBE show done\n");
+	return 0;
+}
+
+/* Connects and shows a window of the probe's size with a title; returns 0 or -1 with errno set. */
+static int
+probe_show_window(
+	struct probe_connection *connection,
+	const char *title)
+{
+	int status;
+
+	/* The connection and its globals. */
+	memset(connection, 0, sizeof(*connection));
+	connection->display = wl_display_connect(NULL);
+	if (connection->display == NULL)
+		return -1;
+	connection->registry = wl_display_get_registry(connection->display);
+	if (connection->registry == NULL)
+		return -1;
+	status = wl_registry_add_listener(connection->registry, &probe_registry_listener, connection);
+	if (status != 0)
+		return -1;
+	status = wl_display_roundtrip(connection->display);
+	if (status < 0)
+		return -1;
+	if (connection->compositor == NULL || connection->shell == NULL || connection->shm == NULL) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	/* The window, its title, and its first configure. */
+	connection->surface = wl_compositor_create_surface(connection->compositor);
+	connection->role = xdg_wm_base_get_xdg_surface(connection->shell, connection->surface);
+	(void)xdg_surface_add_listener(connection->role, &probe_role_listener, connection);
+	connection->toplevel = xdg_surface_get_toplevel(connection->role);
+	xdg_toplevel_set_title(connection->toplevel, title);
+	xdg_toplevel_set_app_id(connection->toplevel, "titlebar-probe");
+	wl_surface_commit(connection->surface);
+	while (connection->configured == 0) {
+		status = wl_display_dispatch(connection->display);
+		if (status < 0)
+			return -1;
+	}
+
+	/* The configure answered, and the picture. */
+	xdg_surface_ack_configure(connection->role, connection->configure_serial);
+	status = probe_show_buffer(connection);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: the window is shown. */
+	return 0;
+}
+
+/* Attaches a pale picture of the probe's size to the window and commits it; returns 0 or -1. */
+static int
+probe_show_buffer(
+	struct probe_connection *connection)
+{
+	struct wl_shm_pool *pool;
+	struct wl_buffer *buffer;
+	uint32_t *pixels;
+	char name[64];
+	size_t bytes;
+	size_t index;
+	int descriptor;
+	int error;
+
+	/* Shared memory for one picture, named only until it is unlinked. */
+	bytes = (size_t)PROBE_WIDTH * PROBE_HEIGHT * 4U;
+	snprintf(name, sizeof(name), "/titlebar-probe-%ld", (long)getpid());
+	descriptor = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
+	if (descriptor < 0)
+		return -1;
+	(void)shm_unlink(name);
+	error = ftruncate(descriptor, (off_t)bytes);
+	if (error != 0) {
+		close(descriptor);
+		return -1;
+	}
+
+	/* Its mapping. */
+	pixels = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, descriptor, 0);
+	if (pixels == MAP_FAILED) {
+		close(descriptor);
+		return -1;
+	}
+
+	/* A pale blue-grey picture. */
+	for (index = 0; index < (size_t)PROBE_WIDTH * PROBE_HEIGHT; index++)
+		pixels[index] = 0xffeef2f7U;
+
+	/* The buffer, attached and shown. */
+	pool = wl_shm_create_pool(connection->shm, descriptor, (int32_t)bytes);
+	close(descriptor);
+	buffer = wl_shm_pool_create_buffer(pool, 0, PROBE_WIDTH, PROBE_HEIGHT, PROBE_WIDTH * 4, WL_SHM_FORMAT_XRGB8888);
+	wl_shm_pool_destroy(pool);
+	wl_surface_attach(connection->surface, buffer, 0, 0);
+	wl_surface_damage(connection->surface, 0, 0, PROBE_WIDTH, PROBE_HEIGHT);
+	wl_surface_commit(connection->surface);
+
+	/* Succeeded: the picture is on its way. */
+	return 0;
+}
+
+/* Gives the shown window's titlebar a model: a file manager's controls, three tabs, or the menu mode alone. */
+static void
+probe_show_model(
+	struct zdesktop_titlebar *titlebar,
+	const char *mode)
+{
+	static const char *const parts[] = { "Home", "Projects", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e" };
+	int controls;
+	int tabs;
+
+	/* Which mode. */
+	controls = strcmp(mode, "controls");
+	tabs = strcmp(mode, "tabs");
+
+	/* One transaction for the whole model. */
+	(void)zdesktop_titlebar_begin(titlebar);
+	if (controls == 0) {
+		(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_CONTROLS);
+		(void)zdesktop_titlebar_add_control(titlebar, 1U, ZDESKTOP_CONTROL_BACK, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Back");
+		(void)zdesktop_titlebar_add_control(titlebar, 2U, ZDESKTOP_CONTROL_FORWARD, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Forward");
+		(void)zdesktop_titlebar_add_control(titlebar, 3U, ZDESKTOP_CONTROL_HOME, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Home");
+		(void)zdesktop_titlebar_add_control(titlebar, 4U, ZDESKTOP_CONTROL_BREADCRUMB, ZDESKTOP_PRIORITY_NORMAL, 0U, "Location");
+		(void)zdesktop_titlebar_set_breadcrumb(titlebar, 4U, parts, 3U);
+		(void)zdesktop_titlebar_add_control(titlebar, 5U, ZDESKTOP_CONTROL_SEARCH, ZDESKTOP_PRIORITY_NORMAL, 0U, "Search");
+		(void)zdesktop_titlebar_set_control_text(titlebar, 5U, "", "Search");
+		(void)zdesktop_titlebar_add_control(titlebar, 6U, ZDESKTOP_CONTROL_VIEW_GRID, ZDESKTOP_PRIORITY_SECONDARY, 1U, "Icons");
+		(void)zdesktop_titlebar_set_control_state(titlebar, 6U, 1, 1);
+		(void)zdesktop_titlebar_add_control(titlebar, 7U, ZDESKTOP_CONTROL_VIEW_LIST, ZDESKTOP_PRIORITY_SECONDARY, 1U, "List");
+		(void)zdesktop_titlebar_add_control(titlebar, 8U, ZDESKTOP_CONTROL_PREVIEW, ZDESKTOP_PRIORITY_SECONDARY, 0U, "Preview");
+		(void)zdesktop_titlebar_set_control_state(titlebar, 2U, 0, 0);
+	} else if (tabs == 0) {
+		(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_TABS);
+		(void)zdesktop_titlebar_add_tab(titlebar, 1U, "README.md");
+		(void)zdesktop_titlebar_add_tab(titlebar, 2U, "main.c");
+		(void)zdesktop_titlebar_add_tab(titlebar, 3U, "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e.txt");
+		(void)zdesktop_titlebar_set_tab(titlebar, 2U, "main.c", ZDESKTOP_TAB_ACTIVE | ZDESKTOP_TAB_CLOSABLE);
+		(void)zdesktop_titlebar_set_tab(titlebar, 3U, "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e.txt", ZDESKTOP_TAB_ATTENTION | ZDESKTOP_TAB_CLOSABLE);
+		(void)zdesktop_titlebar_set_tabs_options(titlebar, ZDESKTOP_TABS_NEW_BUTTON);
+	}
+
+	/* The model is shown at once. */
+	(void)zdesktop_titlebar_commit(titlebar);
+}
+
+/* Notes the window's configure (answered once the window is set up). */
+static void
+probe_configure(
+	void *data,
+	struct xdg_surface *role,
+	uint32_t serial)
+{
+	struct probe_connection *connection;
+
+	/* The serial to answer, and that the first came. */
+	(void)role;
+	connection = data;
+	connection->configure_serial = serial;
+	connection->configured = 1;
+}
+
+/* Prints a chosen control. */
+static void
+probe_activated(
+	void *data,
+	struct zdesktop_titlebar *titlebar,
+	uint32_t id,
+	uint32_t detail,
+	struct wl_seat *seat,
+	uint32_t serial)
+{
+	/* The event's line. */
+	(void)data;
+	(void)titlebar;
+	(void)seat;
+	printf("TITLEBARPROBE event=activated id=%u detail=%u serial=%u\n", id, detail, serial);
+	fflush(stdout);
+}
+
+/* Prints a text control's new text. */
+static void
+probe_text_changed(
+	void *data,
+	struct zdesktop_titlebar *titlebar,
+	uint32_t id,
+	const char *text)
+{
+	/* The event's line. */
+	(void)data;
+	(void)titlebar;
+	printf("TITLEBARPROBE event=text id=%u text=%s\n", id, text);
+	fflush(stdout);
+}
+
+/* Prints the end of a text control's editing. */
+static void
+probe_text_done(
+	void *data,
+	struct zdesktop_titlebar *titlebar,
+	uint32_t id,
+	const char *text,
+	unsigned how)
+{
+	/* The event's line. */
+	(void)data;
+	(void)titlebar;
+	printf("TITLEBARPROBE event=done id=%u how=%u text=%s\n", id, how, text);
+	fflush(stdout);
+}
+
+/* Prints a chosen tab. */
+static void
+probe_tab_activated(
+	void *data,
+	struct zdesktop_titlebar *titlebar,
+	uint32_t id,
+	uint32_t serial)
+{
+	/* The event's line. */
+	(void)data;
+	(void)titlebar;
+	printf("TITLEBARPROBE event=tab id=%u serial=%u\n", id, serial);
+	fflush(stdout);
+}
+
+/* Prints a tab's close button. */
+static void
+probe_tab_close(
+	void *data,
+	struct zdesktop_titlebar *titlebar,
+	uint32_t id)
+{
+	/* The event's line. */
+	(void)data;
+	(void)titlebar;
+	printf("TITLEBARPROBE event=close id=%u\n", id);
+	fflush(stdout);
+}
+
+/* Prints the new-tab button. */
+static void
+probe_new_tab(
+	void *data,
+	struct zdesktop_titlebar *titlebar,
+	uint32_t serial)
+{
+	/* The event's line. */
+	(void)data;
+	(void)titlebar;
+	printf("TITLEBARPROBE event=new serial=%u\n", serial);
+	fflush(stdout);
+}
+
+/* Prints the overflow popup's opening. */
+static void
+probe_overflow(
+	void *data,
+	struct zdesktop_titlebar *titlebar)
+{
+	/* The event's line. */
+	(void)data;
+	(void)titlebar;
+	printf("TITLEBARPROBE event=overflow\n");
+	fflush(stdout);
 }

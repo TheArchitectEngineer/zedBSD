@@ -59,6 +59,7 @@ main(
 	server.frame_fd = -1;
 	server.gpu_path = "/dev/gpu0";
 	server.font_path = "/usr/share/fonts/zdesktop.ttf";
+	server.fallback_font_path = "/usr/share/fonts/zdesktop-fallback.ttf";
 	server.window_opacity = 1.0f;
 	server.width = 320;
 	server.height = 240;
@@ -67,7 +68,7 @@ main(
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: zdesktop [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100]\n");
+		fprintf(stderr, "usage: zdesktop [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100]\n");
 		return 2;
 	}
 
@@ -270,6 +271,16 @@ parse_options(
 			if (argument[7] != '/')
 				return EINVAL;
 			server->font_path = argument + 7;
+			continue;
+		}
+
+		/* The glass look's font for the characters the first font lacks (optional). */
+		match = strncmp(argument, "--fallback-font=", 16);
+		if (match == 0) {
+			/* An absolute path, kept in argv's storage. */
+			if (argument[16] != '/')
+				return EINVAL;
+			server->fallback_font_path = argument + 16;
 			continue;
 		}
 

@@ -1142,16 +1142,30 @@ draw_title(
 	static const float mark[4] = { 0.29f, 0.55f, 1.0f, 1.0f };
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	char title[ZWL_TITLE_MAX + 24];
-	char letter[2];
+	char letter[5];
+	size_t length;
+	size_t index;
 	int32_t width;
 
 	/* The title as the title bar shows it. */
 	shown_title(surface, title, sizeof(title));
 
-	/* The mark with the first letter, in capitals. */
+	/* The mark. */
 	glass_draw_solid(server, command, (float)x, (float)(middle - 10), 20.0f, 20.0f, 6.0f, mark);
-	letter[0] = title[0];
-	letter[1] = '\0';
+
+	/* The title's first character, all its UTF-8 bytes (a lead byte says how many). */
+	length = 1;
+	if (((unsigned char)title[0] & 0xe0U) == 0xc0U)
+		length = 2;
+	else if (((unsigned char)title[0] & 0xf0U) == 0xe0U)
+		length = 3;
+	else if (((unsigned char)title[0] & 0xf8U) == 0xf0U)
+		length = 4;
+	for (index = 0; index < length && title[index] != '\0'; index++)
+		letter[index] = title[index];
+	letter[index] = '\0';
+
+	/* A letter in capitals. */
 	if (letter[0] >= 'a' && letter[0] <= 'z')
 		letter[0] = (char)(letter[0] - 'a' + 'A');
 	width = glass_text_width(server, SIZE_BAR, letter);
