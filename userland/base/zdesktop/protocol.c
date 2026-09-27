@@ -1012,10 +1012,14 @@ shell_request(
 		if (error != 0 || offset != size)
 			return EPROTO;
 
-		/* The title is kept for the glass look's title bar (cut to fit); the application ID is not used. */
+		/* The title is kept for the glass look's title bar (cut to fit); the application ID for the mark's letter. */
 		if (opcode == 2U) {
 			strncpy(surface->title, text, sizeof(surface->title) - 1U);
 			surface->title[sizeof(surface->title) - 1U] = '\0';
+			object->client->server->dirty = 1;
+		} else {
+			strncpy(surface->app_id, text, sizeof(surface->app_id) - 1U);
+			surface->app_id[sizeof(surface->app_id) - 1U] = '\0';
 			object->client->server->dirty = 1;
 		}
 

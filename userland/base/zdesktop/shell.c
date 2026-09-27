@@ -60,6 +60,20 @@
 #define BUTTON_WIDTH		30
 #define BUTTON_HEIGHT		28
 
+/*
+ * Placing a new window (ws035-p092): how far each cascade step moves it
+ * (a title bar and its gap, so the title bar under it shows), how many
+ * steps are tried each way, and how near another window's corner is too
+ * near.
+ */
+#define GLASS_CASCADE		48
+#define GLASS_CASCADE_ROUNDS	8
+#define GLASS_NEAR		32
+
+/* Where a title bar's first letters are, from its left edge (past the mark) and below its middle. */
+#define GLASS_TITLE_START	72
+#define GLASS_TITLE_LOW		8
+
 /* The docked title's buttons in the system bar are further apart. */
 #define BAR_BUTTON_SPACING	46
 
@@ -162,6 +176,11 @@ static void draw_body(struct zwl_server *server, VkCommandBuffer command, struct
 static void draw_title_bar(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
 static void draw_title(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
 static int32_t title_end(struct zwl_server *server, struct zwl_object *surface, int32_t limit);
+static const char *mark_name(const char *app_id);
+static void glass_fit(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
+static int glass_crowd(struct zwl_server *server, struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
+static int glass_top(struct zwl_server *server, struct zwl_object *surface, int32_t *x, int32_t *y);
+static int glass_placed(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *other);
 static void shown_title(const struct zwl_object *surface, char *title, size_t size);
 static void draw_sign(struct zwl_server *server, VkCommandBuffer command, int button, int32_t cx, int32_t cy, unsigned restore, unsigned over, float fade, const float *ink);
 static void draw_system_bar(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
@@ -880,10 +899,13 @@ zwl_glass_toplevel_request(
 }
 
 /*
- * Places a new window in the glass look: centred in the space below the
- * system bar, cascaded like the plain look, and moved back into the space
- * when the cascade would push a window that fits past its right or bottom
- * edge.
+ * Places a new window in the glass look (ws035-p092).  The places tried, in
+ * order: the centre of the space below the system bar, then down and right
+ * of the top window a title bar's height at a time, then from the space's
+ * top-left corner the same way, each kept inside the space.  The first
+ * place that hides no other window's title (the start of its title bar)
+ * and is near no other window's corner is taken; when every place hides
+ * some, the one that hides the fewest.
  */
 void
 zwl_glass_place(
@@ -893,31 +915,200 @@ zwl_glass_place(
 	int32_t height,
 	int32_t step)
 {
+	int32_t places[1 + 2 * GLASS_CASCADE_ROUNDS][2];
+	int32_t space_width;
+	int32_t space_height;
+	int32_t top_x;
+	int32_t top_y;
+	unsigned count;
+	unsigned best;
+	unsigned index;
+	int crowd;
+	int least;
+	int found;
+	int round;
+
+	/* The centre of the space for bodies under the system bar and a title bar (the plain look's cascade step is not used). */
+	(void)step;
+	zwl_glass_space(server, &space_width, &space_height);
+	places[0][0] = ((int32_t)server->width - width) / 2;
+	places[0][1] = ZWL_GLASS_TOP + (space_height - height) / 2;
+	count = 1U;
+
+	/* Down and right of the top window. */
+	found = glass_top(server, surface, &top_x, &top_y);
+	for (round = 1; found && round <= GLASS_CASCADE_ROUNDS; round++) {
+		places[count][0] = top_x + round * GLASS_CASCADE;
+		places[count][1] = top_y + round * GLASS_CASCADE;
+		count++;
+	}
+
+	/* Down and right of the space's top-left corner. */
+	for (round = 0; round < GLASS_CASCADE_ROUNDS; round++) {
+		places[count][0] = ZWL_GLASS_MARGIN + round * GLASS_CASCADE;
+		places[count][1] = ZWL_GLASS_TOP + round * GLASS_CASCADE;
+		count++;
+	}
+
+	/* The first place that hides nothing, else the one that hides least. */
+	best = 0U;
+	least = -1;
+	for (index = 0U; index < count; index++) {
+		glass_fit(server, width, height, &places[index][0], &places[index][1]);
+		crowd = glass_crowd(server, surface, places[index][0], places[index][1], width, height);
+		if (least < 0 || crowd < least) {
+			least = crowd;
+			best = index;
+		}
+
+		/* Nothing hidden: taken. */
+		if (crowd == 0)
+			break;
+	}
+
+	/* Succeeded: the place. */
+	surface->x = places[best][0];
+	surface->y = places[best][1];
+}
+
+/*
+ * Moves a place so that a body of a size ends inside the glass look's
+ * space; a body too large for it starts at the space's top-left corner and
+ * overhangs right and down.
+ */
+static void
+glass_fit(
+	struct zwl_server *server,
+	int32_t width,
+	int32_t height,
+	int32_t *x,
+	int32_t *y)
+{
 	int32_t space_width;
 	int32_t space_height;
 	int32_t right;
 	int32_t bottom;
 
-	/* The space for bodies under the system bar and a title bar. */
+	/* Its right edge inside the space. */
 	zwl_glass_space(server, &space_width, &space_height);
-	surface->x = ((int32_t)server->width - width) / 2 + step;
-	surface->y = ZWL_GLASS_TOP + (space_height - height) / 2 + step;
-
-	/* A window that fits ends inside the space: its right edge. */
 	right = ZWL_GLASS_MARGIN + space_width;
-	if (surface->x + width > right)
-		surface->x = right - width;
+	if (*x + width > right)
+		*x = right - width;
 
 	/* And its bottom edge. */
 	bottom = ZWL_GLASS_TOP + space_height;
-	if (surface->y + height > bottom)
-		surface->y = bottom - height;
+	if (*y + height > bottom)
+		*y = bottom - height;
 
-	/* Never above the space, nor left of it (a window too large for it overhangs right and down). */
-	if (surface->x < ZWL_GLASS_MARGIN)
-		surface->x = ZWL_GLASS_MARGIN;
-	if (surface->y < ZWL_GLASS_TOP)
-		surface->y = ZWL_GLASS_TOP;
+	/* Never above the space, nor left of it. */
+	if (*x < ZWL_GLASS_MARGIN)
+		*x = ZWL_GLASS_MARGIN;
+	if (*y < ZWL_GLASS_TOP)
+		*y = ZWL_GLASS_TOP;
+}
+
+/*
+ * Counts what a new window at a place would hide of the other windows of
+ * the desktop shown: each title whose first letters (right of its mark)
+ * it covers counts one, each corner within GLASS_NEAR of its own counts
+ * four.
+ */
+static int
+glass_crowd(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	int32_t x,
+	int32_t y,
+	int32_t width,
+	int32_t height)
+{
+	struct zwl_client *client;
+	struct zwl_object *other;
+	struct shell_rect body;
+	int32_t title_x;
+	int32_t title_y;
+	int32_t dx;
+	int32_t dy;
+	int placed;
+	int crowd;
+
+	/* Each shown window. */
+	crowd = 0;
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (other = client->objects; other != NULL; other = other->next) {
+			placed = glass_placed(server, surface, other);
+			if (!placed)
+				continue;
+			body_rect(server, other, &body);
+
+			/* Its title's first letters (their lower half), under the new window and its title bar. */
+			title_x = body.x + GLASS_TITLE_START;
+			title_y = body.y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE / 2 + GLASS_TITLE_LOW;
+			if (title_x >= x && title_x < x + width && title_y >= y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE && title_y < y + height)
+				crowd++;
+
+			/* Its corner, near the new one's. */
+			dx = body.x - x;
+			dy = body.y - y;
+			if (dx > -GLASS_NEAR && dx < GLASS_NEAR && dy > -GLASS_NEAR && dy < GLASS_NEAR)
+				crowd += 4;
+		}
+	}
+
+	/* Succeeded: how much is hidden. */
+	return crowd;
+}
+
+/* Gives the corner of the top window of the desktop shown other than surface; 0 when there is none. */
+static int
+glass_top(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	int32_t *x,
+	int32_t *y)
+{
+	struct zwl_client *client;
+	struct zwl_object *other;
+	struct zwl_object *top;
+	struct shell_rect body;
+	int placed;
+
+	/* The shown window mapped or raised last. */
+	top = NULL;
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (other = client->objects; other != NULL; other = other->next) {
+			placed = glass_placed(server, surface, other);
+			if (!placed)
+				continue;
+			if (top == NULL || other->map_order > top->map_order)
+				top = other;
+		}
+	}
+
+	/* Its body's corner. */
+	if (top == NULL)
+		return 0;
+	body_rect(server, top, &body);
+	*x = body.x;
+	*y = body.y;
+	return 1;
+}
+
+/* Tells whether an object is a window placement looks at: shown on the desktop shown, not docked, and not the new one. */
+static int
+glass_placed(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	struct zwl_object *other)
+{
+	/* A mapped window of the desktop shown. */
+	if (other == surface || other->kind != ZWL_SURFACE || other->dead || !other->mapped)
+		return 0;
+	if (other->role == NULL || other->cursor_role || other->minimized || other->maximized || other->fullscreen)
+		return 0;
+
+	/* Succeeded: when on the desktop shown. */
+	return other->desktop == server->desktop;
 }
 
 /*
@@ -1455,7 +1646,7 @@ draw_title_bar(
 	unsigned focused)
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	static const float faint[4] = { 0.40f, 0.46f, 0.56f, 1.0f };
+	static const float faint[4] = { 0.30f, 0.35f, 0.44f, 1.0f };
 	struct zwl_menu_area area;
 	struct glass_shape shape;
 	const float *ink;
@@ -1483,16 +1674,20 @@ draw_title_bar(
 	shape.opacity = fade;
 	glass_shape_draw(server, command, &shape);
 
-	/* The glass, whiter for the focused window. */
+	/*
+	 * The glass, whiter for the focused window; white enough for the
+	 * others that their titles read over a dark window under them
+	 * (ws035-p092).
+	 */
 	glass_shape_init(&shape, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height);
 	shape.mode = MODE_GLASS;
 	shape.radius = GLASS_RADIUS;
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
-	shape.color[3] = 0.38f;
+	shape.color[3] = 0.54f;
 	if (focused)
-		shape.color[3] = 0.55f;
+		shape.color[3] = 0.64f;
 	shape.edge = 0.85f;
 	shape.opacity = fade;
 	glass_shape_draw(server, command, &shape);
@@ -1526,8 +1721,9 @@ draw_title_bar(
 }
 
 /*
- * Draws the application's mark (a blue rounded square with the title's
- * first letter) at x and the title after it, centred on middle.
+ * Draws the application's mark (a blue rounded square with a letter: the
+ * application ID's last word's, else the title's first) at x and the title
+ * after it, centred on middle.
  */
 static void
 draw_title(
@@ -1542,6 +1738,7 @@ draw_title(
 	static const float mark[4] = { 0.29f, 0.55f, 1.0f, 1.0f };
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	char title[ZWL_TITLE_MAX + 24];
+	const char *source;
 	char letter[5];
 	size_t length;
 	size_t index;
@@ -1553,16 +1750,21 @@ draw_title(
 	/* The mark. */
 	glass_draw_solid(server, command, (float)x, (float)(middle - 10), 20.0f, 20.0f, 6.0f, mark);
 
-	/* The title's first character, all its UTF-8 bytes (a lead byte says how many). */
+	/* Its letter: the application ID's (it stays when the title changes), else the title's. */
+	source = mark_name(surface->app_id);
+	if (source == NULL)
+		source = title;
+
+	/* The first character, all its UTF-8 bytes (a lead byte says how many). */
 	length = 1;
-	if (((unsigned char)title[0] & 0xe0U) == 0xc0U)
+	if (((unsigned char)source[0] & 0xe0U) == 0xc0U)
 		length = 2;
-	else if (((unsigned char)title[0] & 0xf0U) == 0xe0U)
+	else if (((unsigned char)source[0] & 0xf0U) == 0xe0U)
 		length = 3;
-	else if (((unsigned char)title[0] & 0xf8U) == 0xf0U)
+	else if (((unsigned char)source[0] & 0xf8U) == 0xf0U)
 		length = 4;
-	for (index = 0; index < length && title[index] != '\0'; index++)
-		letter[index] = title[index];
+	for (index = 0; index < length && source[index] != '\0'; index++)
+		letter[index] = source[index];
 	letter[index] = '\0';
 
 	/* A letter in capitals. */
@@ -1573,6 +1775,36 @@ draw_title(
 
 	/* The title. */
 	glass_draw_text(server, command, SIZE_TITLE, x + 30, middle + 6, title, limit, ink);
+}
+
+/*
+ * Gives the word of an application ID the mark's letter comes from: the
+ * last one after a dot or a hyphen ("zdesktop-files" is "files",
+ * "org.example.Viewer" is "Viewer"), or NULL when there is none that starts
+ * with a letter or a digit.
+ */
+static const char *
+mark_name(
+	const char *app_id)
+{
+	const char *word;
+	const char *at;
+	char first;
+
+	/* The text after the last dot or hyphen. */
+	word = app_id;
+	for (at = app_id; *at != '\0'; at++) {
+		if (*at == '.' || *at == '-')
+			word = at + 1;
+	}
+
+	/* A word that starts with a letter or a digit. */
+	first = word[0];
+	if ((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || (first >= '0' && first <= '9'))
+		return word;
+
+	/* Succeeded: none (the title gives the letter). */
+	return NULL;
 }
 
 /* Tells how far a window's title, drawn by draw_title within a limit, reaches after its start. */
