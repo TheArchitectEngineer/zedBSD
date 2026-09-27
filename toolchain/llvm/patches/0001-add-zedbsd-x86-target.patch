@@ -229,7 +229,7 @@
 +#endif // LLVM_CLANG_LIB_DRIVER_TOOLCHAINS_ZEDBSD_H
 --- /dev/null
 +++ b/clang/lib/Driver/ToolChains/ZedBSD.cpp
-@@ -0,0 +1,146 @@
+@@ -0,0 +1,152 @@
 +//===---- ZedBSD.cpp - zedBSD ToolChain Implementation -------------------===//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -343,6 +343,12 @@
 +  // The shared C library takes __rtld_exports from the loader, which is not
 +  // one of the link's inputs.
 +  CmdArgs.push_back("--allow-shlib-undefined");
++
++  // A version script may name a symbol the link does not define, as GNU ld
++  // allows; ld.lld refuses that by default since LLVM 16, which makes a
++  // configure script (zlib's) decide that shared libraries cannot be built.
++  // -Wl,--no-undefined-version, which comes after this, turns it back on.
++  CmdArgs.push_back("--undefined-version");
 +
 +  if (!IsShared && !IsStatic) {
 +    CmdArgs.push_back("-dynamic-linker");
