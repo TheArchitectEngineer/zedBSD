@@ -128,7 +128,12 @@ text_select_font(
 	if (monospace && system->faces[TEXT_FACE_MONO].open)
 		font->face = TEXT_FACE_MONO;
 
-	/* The size in whole pixels, within what the rasterizer takes. */
+	/* The size in whole pixels, within what the rasterizer takes; the layout keeps the fraction. */
+	if (size < (float)FONT_PIXELS_MIN)
+		size = (float)FONT_PIXELS_MIN;
+	if (size > (float)FONT_PIXELS_MAX)
+		size = (float)FONT_PIXELS_MAX;
+	font->size = size;
 	rounded = size + 0.5f;
 	if (rounded < (float)FONT_PIXELS_MIN)
 		rounded = (float)FONT_PIXELS_MIN;
@@ -151,27 +156,27 @@ text_font_metrics(
 	const struct text_font *font,
 	struct text_metrics *metrics)
 {
-	struct truetype_metrics measured;
+	struct truetype_design_metrics design;
 	struct text_face *face;
+	float scale;
 	int error;
 
-	/* Measures the face at the size. */
+	/* The face's design measures. */
 	face = &system->faces[font->face];
-	error = truetype_set_pixel_size(face->face, font->pixels);
+	error = truetype_design_metrics(face->face, &design);
 	if (error != 0)
 		return error;
-	error = truetype_metrics(face->face, &measured);
-	if (error != 0)
-		return error;
+	if (design.units_per_em == 0)
+		return EINVAL;
 
-	/* Reports the measures (the descent as a positive distance below the baseline). */
-	metrics->ascent = measured.ascent;
-	metrics->descent = measured.descent;
-	if (metrics->descent < 0)
-		metrics->descent = -metrics->descent;
-	metrics->line_height = measured.line_height;
-	if (metrics->line_height < metrics->ascent + metrics->descent)
-		metrics->line_height = metrics->ascent + metrics->descent;
+	/*
+	 * Scales each to the fractional size and rounds each to whole pixels, the
+	 * way Chromium's font code does, so lines are as tall as in Chromium.
+	 */
+	scale = font->size / (float)design.units_per_em;
+	metrics->ascent = (int)((float)design.ascent * scale + 0.5f);
+	metrics->descent = (int)((float)(-design.descent) * scale + 0.5f);
+	metrics->line_height = metrics->ascent + metrics->descent + (int)((float)design.line_gap * scale + 0.5f);
 
 	/* Succeeded: the measures are filled. */
 	return 0;
@@ -235,6 +240,29 @@ text_glyph(
 	return 0;
 }
 
+/*
+ * Reports the advance of a code point's glyph in a font, in pixels.
+ */
+int
+text_glyph_advance(
+	struct text_system *system,
+	const struct text_font *font,
+	uint32_t code_point,
+	int *advance)
+{
+	struct text_glyph glyph;
+	int error;
+
+	/* Measures the glyph without drawing it. */
+	error = text_glyph(system, font, code_point, 0, &glyph);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: reports its advance. */
+	*advance = glyph.advance;
+	return 0;
+}
+
 /* Packs a font and a code point into a cache key. */
 static uint64_t
 font_key(
@@ -243,9 +271,9 @@ font_key(
 {
 	uint64_t key;
 
-	/* The code point, the size, the bold flag and the face, in separate bits. */
+	/* The code point, the size in 1/64 pixels, the bold flag and the face, in separate bits. */
 	key = code_point;
-	key |= (uint64_t)font->pixels << 24;
+	key |= (uint64_t)(uint32_t)(font->size * 64.0f + 0.5f) << 21;
 	key |= (uint64_t)(font->bold & 1) << 40;
 	key |= (uint64_t)font->face << 41;
 
@@ -323,9 +351,11 @@ font_measure(
 	uint32_t code_point,
 	struct text_glyph_entry *entry)
 {
+	struct truetype_design_metrics design;
 	struct truetype_glyph measured;
 	struct text_face *face;
 	unsigned index;
+	int design_advance;
 	int face_index;
 	int error;
 
@@ -346,6 +376,16 @@ font_measure(
 	error = truetype_glyph_metrics(face->face, index, &measured);
 	if (error != 0)
 		return error;
+
+	/* The advance at the fractional size, from the design units. */
+	error = truetype_design_metrics(face->face, &design);
+	if (error != 0)
+		return error;
+	error = truetype_glyph_design_advance(face->face, index, &design_advance);
+	if (error != 0)
+		return error;
+	entry->glyph.advance_units = (int32_t)((float)design_advance * font->size * 64.0f / (float)design.units_per_em + 0.5f);
+	entry->glyph.advance_units += font->bold * 64;
 
 	/* Records it; a bold glyph is a pixel wider. */
 	entry->glyph.face = face_index;

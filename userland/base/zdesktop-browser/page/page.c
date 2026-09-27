@@ -87,7 +87,11 @@ page_destroy(
 	if (page == NULL)
 		return;
 
-	/* Frees the style engine, then every cell with the heap. */
+	/* Frees the layout, the fonts and the style engine, then every cell with the heap. */
+	if (page->laid_out)
+		layout_release(&page->layout);
+	if (page->text_open)
+		text_system_close(&page->text);
 	css_engine_destroy(page->css);
 	vm_heap_destroy(page->heap);
 	free(page);
@@ -177,6 +181,56 @@ page_load_file(
 		return error;
 
 	/* Succeeded: the page is loaded. */
+	return 0;
+}
+
+/*
+ * Opens the fonts the page's text is drawn with.
+ */
+int
+page_open_fonts(
+	struct page *page,
+	const struct text_font_paths *paths)
+{
+	int error;
+
+	/* Opens them once. */
+	if (page->text_open)
+		return 0;
+	error = text_system_open(&page->text, paths);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the fonts are open. */
+	page->text_open = 1;
+	return 0;
+}
+
+/*
+ * Lays the page out for a viewport of width by height pixels (the fonts
+ * must be open).
+ */
+int
+page_layout(
+	struct page *page,
+	int width,
+	int height)
+{
+	int error;
+
+	/* Throws the old layout away. */
+	if (page->laid_out) {
+		layout_release(&page->layout);
+		page->laid_out = 0;
+	}
+
+	/* Builds and lays out the box tree. */
+	error = layout_build(&page->layout, page->css, &page->text, page->document, width, height);
+	page->laid_out = 1;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page is laid out. */
 	return 0;
 }
 

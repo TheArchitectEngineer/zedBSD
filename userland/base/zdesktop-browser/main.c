@@ -9,7 +9,7 @@
  * zdesktop-browser: the Web browser of the zedBSD desktop.
  *
  *   zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]
- *   zdesktop-browser --dump=dom|style FILE
+ *   zdesktop-browser --dump=dom|style|layout [--width=N] [--height=N] [--font=PATH] FILE
  *   zdesktop-browser --version | --help
  *
  * Without a headless mode it opens a zdesktop window on URL.  The headless
@@ -47,7 +47,8 @@ enum main_mode {
 	MAIN_MODE_VERSION,
 	MAIN_MODE_HELP,
 	MAIN_MODE_DUMP_DOM,
-	MAIN_MODE_DUMP_STYLE
+	MAIN_MODE_DUMP_STYLE,
+	MAIN_MODE_DUMP_LAYOUT
 };
 
 /*
@@ -56,6 +57,7 @@ enum main_mode {
 struct main_options {
 	enum main_mode mode;
 	struct shell_options shell;
+	struct text_font_paths fonts;
 };
 
 static int main_parse(int argc, char **argv, struct main_options *options);
@@ -93,6 +95,7 @@ main(
 		return 0;
 	case MAIN_MODE_DUMP_DOM:
 	case MAIN_MODE_DUMP_STYLE:
+	case MAIN_MODE_DUMP_LAYOUT:
 		status = main_dump(&options);
 		return status;
 	case MAIN_MODE_WINDOW:
@@ -138,12 +141,26 @@ main_dump(
 		return 1;
 	}
 
+	/* Lays the page out when the dump shows the layout. */
+	if (options->mode == MAIN_MODE_DUMP_LAYOUT) {
+		error = page_open_fonts(page, &options->fonts);
+		if (error == 0)
+			error = page_layout(page, (int)options->shell.width, (int)options->shell.height);
+		if (error != 0) {
+			fprintf(stderr, "zdesktop-browser: cannot lay out %s: %s\n", options->shell.start, strerror(error));
+			page_destroy(page);
+			return 1;
+		}
+	}
+
 	/* Writes the dump. */
 	wb_buffer_init(&out);
 	if (options->mode == MAIN_MODE_DUMP_DOM) {
 		error = page_dump_dom(page, &out);
-	} else {
+	} else if (options->mode == MAIN_MODE_DUMP_STYLE) {
 		error = page_dump_style(page, &out);
+	} else {
+		error = layout_dump(&page->layout, &out);
 	}
 
 	/* Writes the dump out. */
@@ -177,6 +194,9 @@ main_parse(
 	options->mode = MAIN_MODE_WINDOW;
 	options->shell.width = MAIN_DEFAULT_WIDTH;
 	options->shell.height = MAIN_DEFAULT_HEIGHT;
+	options->fonts.sans = TEXT_DEFAULT_SANS;
+	options->fonts.mono = TEXT_DEFAULT_MONO;
+	options->fonts.fallback = TEXT_DEFAULT_FALLBACK;
 
 	/* Takes each word in turn. */
 	for (index = 1; index < argc; index++) {
@@ -203,6 +223,10 @@ main_parse(
 				differs = strcmp(value, "style");
 				options->mode = MAIN_MODE_DUMP_STYLE;
 			}
+			if (differs != 0) {
+				differs = strcmp(value, "layout");
+				options->mode = MAIN_MODE_DUMP_LAYOUT;
+			}
 
 			/* Anything but dom and style is refused. */
 			if (differs != 0) {
@@ -210,6 +234,27 @@ main_parse(
 				return EINVAL;
 			}
 
+			continue;
+		}
+
+		/* The fonts. */
+		value = main_value(argv[index], "--font=");
+		if (value != NULL) {
+			options->fonts.sans = value;
+			continue;
+		}
+
+		/* The monospace font. */
+		value = main_value(argv[index], "--mono-font=");
+		if (value != NULL) {
+			options->fonts.mono = value;
+			continue;
+		}
+
+		/* The fallback font. */
+		value = main_value(argv[index], "--fallback-font=");
+		if (value != NULL) {
+			options->fonts.fallback = value;
 			continue;
 		}
 
@@ -317,6 +362,7 @@ main_usage(
 	/* Lists the forms of the command line. */
 	fprintf(stream,
 		"usage: zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]\n"
-		"       zdesktop-browser --dump=dom|style FILE\n"
+		"       zdesktop-browser --dump=dom|style|layout [--width=N] [--height=N] [--font=PATH]\n"
+		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
 		"       zdesktop-browser --version | --help\n");
 }

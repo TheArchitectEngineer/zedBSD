@@ -56,11 +56,13 @@ struct text_face {
 };
 
 /*
- * A font as a style selects it: a face, a size in whole pixels and whether
- * it is drawn bold.
+ * A font as a style selects it: a face, its size (in pixels, fractional:
+ * the layout measures with it), the whole pixel size its glyphs are drawn
+ * at, and whether it is drawn bold.
  */
 struct text_font {
 	int face;
+	float size;
 	unsigned pixels;
 	int bold;
 };
@@ -76,13 +78,16 @@ struct text_metrics {
 
 /*
  * One glyph as the layout and the painting use it: the face that has it,
- * its index, its advance and, once drawn, its coverage bitmap (one byte a
- * pixel, width by height, placed left and top from the pen and baseline).
+ * its index, its advance (in whole pixels, and in 1/64 pixels from the
+ * font's design units at the font's fractional size) and, once drawn, its
+ * coverage bitmap (one byte a pixel, width by height, placed left and top
+ * from the pen and baseline).
  */
 struct text_glyph {
 	int face;
 	unsigned index;
 	int advance;
+	int32_t advance_units;
 	int width;
 	int height;
 	int left;
@@ -106,6 +111,7 @@ void text_system_close(struct text_system *system);
 void text_select_font(const struct text_system *system, int monospace, float size, int weight, struct text_font *font);
 int text_font_metrics(struct text_system *system, const struct text_font *font, struct text_metrics *metrics);
 int text_glyph(struct text_system *system, const struct text_font *font, uint32_t code_point, int with_bitmap, struct text_glyph *glyph);
+int text_glyph_advance(struct text_system *system, const struct text_font *font, uint32_t code_point, int *advance);
 
 /* Line breaking (linebreak.c). */
 int text_is_space(uint32_t code_point);

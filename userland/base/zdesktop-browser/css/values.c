@@ -58,6 +58,7 @@ struct values_color {
 };
 
 static int values_keyword(const struct values_keyword *table, const struct css_token *token, int *value);
+static int values_unit(const struct css_token *token, int *unit);
 static int values_length(const struct css_token *token, int allow_keywords, struct css_value *value);
 static int values_single(struct vm_heap *heap, int property, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_families(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct css_value *value);
@@ -842,6 +843,32 @@ values_keyword(
 	return 0;
 }
 
+/* Looks a dimension's unit up; returns 1 and the unit when it is a length unit. */
+static int
+values_unit(
+	const struct css_token *token,
+	int *unit)
+{
+	size_t index;
+	int same;
+
+	/* Only dimensions have units. */
+	if (token->type != CSS_TOKEN_DIMENSION)
+		return 0;
+
+	/* Compares the unit with each length unit. */
+	for (index = 0; values_units[index].name != NULL; index++) {
+		same = css_ident_equal(token, values_units[index].name);
+		if (same) {
+			*unit = values_units[index].value;
+			return 1;
+		}
+	}
+
+	/* The unit is not a length unit. */
+	return 0;
+}
+
 /* Parses a length or percentage (and, when allowed, auto, none and normal). */
 static int
 values_length(
@@ -879,7 +906,7 @@ values_length(
 	if (token->type != CSS_TOKEN_DIMENSION)
 		return EINVAL;
 	value->number = (float)token->number;
-	found = values_keyword(values_units, token, &value->unit);
+	found = values_unit(token, &value->unit);
 	if (!found)
 		return EINVAL;
 

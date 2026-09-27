@@ -36,7 +36,7 @@ engine=""
 mkdir -p build/ws074-host/include
 ln -sf "$(pwd)/include/libc/truetype.h" build/ws074-host/include/truetype.h
 for file in userland/base/libtruetype/face.c userland/base/libtruetype/cmap.c userland/base/libtruetype/outline.c \
-    userland/base/libtruetype/render.c userland/base/libtruetype/glyph.c; do
+    userland/base/libtruetype/render.c userland/base/libtruetype/glyph.c userland/base/libtruetype/design.c; do
 	object=$out/obj/truetype-$(basename "$file" .c).o
 	if [ ! -f "$object" ] || [ "$file" -nt "$object" ]; then
 		"$cc" $flags -Wno-error -Iuserland/base/libtruetype -c "$file" -o "$object"
