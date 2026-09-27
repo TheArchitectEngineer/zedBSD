@@ -18,9 +18,13 @@
  *   EXIT status            ends with that status
  *
  * Without the file it ends with status 1, as a greeter that cannot start.
+ *
+ * Run by root as greeter-probe --open-as=UID PATH it opens PATH read-write
+ * as that user instead, for the GPU's admission test (ws035-p095).
  */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,6 +37,7 @@
 #define PROBE_FD	3
 
 static int probe_send(const char *line);
+static int probe_open_as(uid_t uid, const char *path);
 
 /*
  * Runs the steps.
@@ -48,6 +53,16 @@ main(
 	size_t length;
 	int match;
 	int index;
+	int opened;
+
+	/* Run by root as greeter-probe --open-as=UID PATH: opens PATH as that user (the GPU's admission test). */
+	match = 1;
+	if (count == 3)
+		match = strncmp(arguments[1], "--open-as=", 10);
+	if (match == 0) {
+		opened = probe_open_as((uid_t)atoi(arguments[1] + 10), arguments[2]);
+		return opened;
+	}
 
 	/* The options zsessiond passes (--greeter, --auth-fd, --wallpaper) are logged, not used. */
 	for (index = 1; index < count; index++)
@@ -145,5 +160,36 @@ probe_send(
 	/* Succeeded: the answer is logged. */
 	printf("PROBE send=%s reply=%s\n", shown, reply);
 	fflush(stdout);
+	return 0;
+}
+
+/* Opens a path read-write as a user and says whether it opened (exit 0) or why not (exit 1). */
+static int
+probe_open_as(
+	uid_t uid,
+	const char *path)
+{
+	int descriptor;
+	int error;
+
+	/* The user's ids, from root (the group of the same number). */
+	error = setgid((gid_t)uid);
+	if (error == 0)
+		error = setuid(uid);
+	if (error != 0) {
+		printf("PROBE open-as uid=%u setuid errno=%d\n", (unsigned)uid, errno);
+		return 2;
+	}
+
+	/* The open. */
+	descriptor = open(path, O_RDWR);
+	if (descriptor < 0) {
+		printf("PROBE open-as uid=%u path=%s errno=%d\n", (unsigned)uid, path, errno);
+		return 1;
+	}
+
+	/* Succeeded: the user may open it. */
+	close(descriptor);
+	printf("PROBE open-as uid=%u path=%s ok\n", (unsigned)uid, path);
 	return 0;
 }

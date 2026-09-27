@@ -704,6 +704,12 @@ zwl_seat_key(
 		return;
 	}
 
+	/* The login screen takes every key; it has no clients to give one to (greeter.c). */
+	if (server->greeter) {
+		(void)zwl_greeter_key(server, key, state);
+		return;
+	}
+
 	/* The glass look's own keys, in that order. */
 	if (server->glass) {
 		taken = zwl_home_key(server, key, state);

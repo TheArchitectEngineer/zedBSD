@@ -1115,21 +1115,35 @@ gpu_open(
 	struct ucred *credential;
 	unsigned flags;
 	unsigned long irq;
+	uid_t euid;
 	int root;
+	int owner;
 	int error;
 
-	/* Rejects absent credentials as well as non-root users in ABI version 1. */
+	/* Rejects absent credentials. */
 	device = file->f_data;
 	file->f_data = NULL;
 	credential = cred_current_ref();
 	if (credential == NULL)
 		return EACCES;
 
-	/* Copies authority rather than borrowing mutable process credentials. */
+	/*
+	 * Admits root, and the user the device node belongs to: the graphical
+	 * login gives the node to the seat's user (zsessiond, ws035-p094), and
+	 * devfs's own owner is root, so without a login only root opens it, as
+	 * in ABI version 1.  Authority is copied rather than borrowed from the
+	 * mutable process credentials.
+	 */
 	root = cred_is_superuser(credential);
+	owner = 0;
+	if (file->f_inode != NULL && credential->euid == file->f_inode->i_uid)
+		owner = 1;
+	euid = credential->euid;
 	cred_release(credential);
-	if (root == 0)
+	if (root == 0 && owner == 0) {
+		kern_logf("gpu: open refused: uid %u is neither root nor the device's owner\n", (unsigned)euid);
 		return EACCES;
+	}
 
 	/* Allocates the open description before claiming backend ownership. */
 	session = kern_calloc(1, sizeof(*session));
