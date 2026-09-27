@@ -127,6 +127,7 @@ static int tcp_connect(struct socket *socket, const struct sockaddr *address, so
 static ssize_t tcp_sendto(struct socket *socket, const void *buffer, size_t length, int flags, const struct sockaddr *address, socklen_t address_length);
 static ssize_t tcp_recvfrom(struct socket *socket, void *buffer, size_t length, int flags, struct sockaddr *address, socklen_t *address_length);
 static uint16_t tcp_receive_window(struct tcp_endpoint *endpoint);
+static int tcp_reset_error_locked(const struct tcp_endpoint *endpoint, uint8_t flags, uint32_t acknowledgement);
 static void tcp_send_reset(uint32_t local, uint32_t remote, const struct tcp_wire *segment, size_t payload_length);
 static int tcp_shutdown(struct socket *socket, int how);
 static int tcp_getsockname(struct socket *socket, struct sockaddr *address, socklen_t *length);
@@ -2381,6 +2382,37 @@ tcp_passive_syn(
 	return child;
 }
 
+/*
+ * Tells what error a reset reports to the socket, under the socket lock.
+ *
+ * A connection that is still sending its SYN has not been accepted by
+ * anyone, so a reset there means the peer refused it: connect(2) reports
+ * ECONNREFUSED.  RFC 793 accepts such a reset only when it acknowledges the
+ * SYN, so a stray one cannot end the attempt; 0 means "ignore it".  A reset
+ * in any other state resets a connection that existed.
+ */
+static int
+tcp_reset_error_locked(
+	const struct tcp_endpoint *endpoint,
+	uint8_t flags,
+	uint32_t acknowledgement)
+{
+	/* A connection past the handshake is reset. */
+	if (endpoint->tcp.state != TCP_SYN_SENT)
+		return ECONNRESET;
+
+	/* A reset that acknowledges nothing does not answer the SYN. */
+	if ((flags & TCP_ACK) == 0)
+		return 0;
+
+	/* A reset for another sequence space answers some other SYN. */
+	if (acknowledgement != endpoint->tcp.send_next)
+		return 0;
+
+	/* Succeeded: the peer refused this connection. */
+	return ECONNREFUSED;
+}
+
 /* Handles an incoming TCP segment delivered by IP. */
 static int
 tcp_input(
@@ -2400,6 +2432,7 @@ tcp_input(
 	enum tcp_state state;
 	unsigned long socket_irq;
 	struct tcp_discard retransmit;
+	int reset_error;
 	uint32_t resend_sequence;
 	int resend;
 	int established;
@@ -2466,6 +2499,20 @@ tcp_input(
 		retransmit.count = 0;
 		socket_irq = spin_lock_irqsave(
 		    &endpoint->tcp.inet.socket.lock);
+
+		/* Tells a refused connect from a reset connection. */
+		reset_error = tcp_reset_error_locked(endpoint, flags,
+		    acknowledgement);
+
+		/* Ignores a reset that does not answer this connection's SYN. */
+		if (reset_error == 0) {
+			spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock,
+			    socket_irq);
+			packet_buf_free(packet);
+			socket_release(&endpoint->tcp.inet.socket);
+			return 0;
+		}
+
 		tcp_retransmit_reset(endpoint, &retransmit);
 		endpoint->tcp.state = TCP_CLOSED;
 		endpoint->tcp.active_connect_generation = 0;
@@ -2473,7 +2520,7 @@ tcp_input(
 		tcp_forget_peer(endpoint);
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
 		tcp_discard_free(&retransmit);
-		socket_set_error(&endpoint->tcp.inet.socket, ECONNRESET);
+		socket_set_error(&endpoint->tcp.inet.socket, reset_error);
 		if (endpoint->tcp.listener != NULL) {
 			tcp_listener_remove(endpoint);
 			packet_buf_free(packet);
