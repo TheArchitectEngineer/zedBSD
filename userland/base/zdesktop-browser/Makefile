@@ -39,6 +39,8 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/css/cascade.c \
 	$(ZDESKTOP_BROWSER_DIR)/css/ua.c \
 	$(ZDESKTOP_BROWSER_DIR)/page/page.c \
+	$(ZDESKTOP_BROWSER_DIR)/text/font.c \
+	$(ZDESKTOP_BROWSER_DIR)/text/linebreak.c \
 	$(ZDESKTOP_BROWSER_DIR)/shell/shell.c
 
 ifdef ZEDBSD_TOPLEVEL_BUILD
@@ -58,4 +60,4 @@ $(ZDESKTOP_BROWSER_ENTITIES_C): $(ZDESKTOP_BROWSER_ENTITIES_JSON) $(ZDESKTOP_BRO
 ZEDBSD_USERLAND_DOWNLOAD_TARGETS += $(ZDESKTOP_BROWSER_ENTITIES_JSON)
 endif
 
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-browser,Web browser,amd64,n,basic,$(ZDESKTOP_BROWSER_SOURCES),y,base,base/zdesktop-browser,,0755,program,,,bin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-browser,Web browser,amd64,n,basic,$(ZDESKTOP_BROWSER_SOURCES),y,base,base/zdesktop-browser,base/libtruetype,0755,program,,,bin))
