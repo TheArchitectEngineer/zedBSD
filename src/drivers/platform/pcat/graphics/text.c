@@ -119,6 +119,7 @@ drv_pcat_text_snapshot(
 	unsigned previous_origin_y;
 	unsigned long irq;
 	size_t required;
+	size_t index;
 	int previous_rgbx;
 	int previous_ready;
 	int previous_hidden;
@@ -156,6 +157,18 @@ drv_pcat_text_snapshot(
 	if (snapshot->bytes < required) {
 		spin_unlock_irqrestore(&text_lock, irq);
 		return ENOSPC;
+	}
+
+	/*
+	 * A quiet console shows none of its text (ws035-p101): its image is
+	 * black, so a display given back to the console between two graphical
+	 * owners (the greeter and the session) stays dark until it is revealed.
+	 */
+	if (text_hidden) {
+		for (index = 0; index < required / sizeof(uint32_t); index++)
+			snapshot->pixels[index] = 0U;
+		spin_unlock_irqrestore(&text_lock, irq);
+		return 0;
 	}
 
 	/* Saves the live destination while preserving all authoritative character and cursor state. */

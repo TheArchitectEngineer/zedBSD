@@ -58,6 +58,7 @@ main(
 	server.gpu = -1;
 	server.frame_fd = -1;
 	server.auth_fd = -1;
+	server.control_fd = -1;
 	server.gpu_path = "/dev/gpu0";
 	server.font_path = "/usr/share/fonts/zdesktop.ttf";
 	server.fallback_font_path = "/usr/share/fonts/zdesktop-fallback.ttf";
@@ -69,8 +70,14 @@ main(
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: zdesktop [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--session | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: zdesktop [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--session [--control-fd=N] | --greeter --auth-fd=N]\n");
 		return 2;
+	}
+
+	/* The session's descriptor to zsessiond does not go to the programs zdesktop starts, and is read without waiting. */
+	if (server.control_fd >= 0) {
+		(void)fcntl(server.control_fd, F_SETFD, FD_CLOEXEC);
+		(void)fcntl(server.control_fd, F_SETFL, fcntl(server.control_fd, F_GETFL) | O_NONBLOCK);
 	}
 
 	/* The login screen is the glass look's, and asks zsessiond on a descriptor it was given. */
@@ -146,7 +153,7 @@ main(
 	/* No exit path leaves a lease, imported image or owned socket generation behind. */
 	service_cleanup(&server);
 	cleanup_failed = server.failed;
-	printf("ZWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld input_events=%llu seat_events=%llu\n", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid(), (unsigned long long)server.input_events, (unsigned long long)server.seat_events);
+	printf("ZWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld input_events=%llu seat_events=%llu at_ms=%llu\n", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid(), (unsigned long long)server.input_events, (unsigned long long)server.seat_events, (unsigned long long)zwl_milliseconds());
 	if (error != 0 || cleanup_failed)
 		return 1;
 
@@ -306,6 +313,16 @@ parse_options(
 			if (error != 0)
 				return error;
 			server->auth_fd = (int)number;
+			continue;
+		}
+
+		/* The descriptor a login session says READY to zsessiond on (ws035-p101). */
+		match = strncmp(argument, "--control-fd=", 13);
+		if (match == 0) {
+			error = unsigned_option(argument + 13, 1023, &number);
+			if (error != 0)
+				return error;
+			server->control_fd = (int)number;
 			continue;
 		}
 

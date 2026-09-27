@@ -1208,11 +1208,17 @@ home_launch(
 	int descriptor;
 	int logout;
 
-	/* Log Out ends the session: zdesktop ends, and zsessiond shows the login screen again. */
+	/*
+	 * Log Out ends the session: zdesktop ends, and zsessiond shows the
+	 * login screen again (started first, when zsessiond started zdesktop,
+	 * so the display goes straight to it: handoff.c).
+	 */
 	logout = strcmp(home_apps[app].command, HOME_LOGOUT);
 	if (logout == 0) {
 		printf("ZWL SESSION logout\n");
-		zwl_request_stop();
+		logout = zwl_handoff_logout(server);
+		if (!logout)
+			zwl_request_stop();
 		return;
 	}
 
