@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010〜p012・p014・p022〜p026・p045・p046 cleared。次は p030（JS の接続、実行の順）
+Resume point: p001〜p005・p007・p010〜p012・p014・p022〜p026・p045・p046 cleared。次は p030（JS の接続、実行の順）。p030 の依存の p029 は未 clear: main の指示（2026-09-28）で、次の agent が p029 を先に行うか、p030 が p029 の一部だけを要るなら縮めた依存と理由をこの表に記録して進める（正常系のワンパスを先に: JS を page に接続する）
 <!-- awesome-plan-current:end -->
 
 ## 目標
