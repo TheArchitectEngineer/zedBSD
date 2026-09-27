@@ -43,7 +43,15 @@ p001 の survey（`plan/ws075/tests/shader-survey/run.sh`）で libGLESv2 の生
   整数の format の欠けた w は整数の 1（VFCOMP_STORE_1_INT、gen80.xml）。
 - survey: 整数の入力の規則を compiler に合わせた（不足のある module 38、compiler と全一致）。
 
-残り（この Phase）: input builtin（VertexIndex・InstanceIndex・FragCoord・FrontFacing・PointCoord）、PointSize、NoPerspective の
+### 増分 3: gl_VertexIndex・gl_InstanceIndex（2026-09-27、080c7e05）
+
+- compiler: vertex shader の BuiltIn VertexIndex・InstanceIndex の input を、属性の後ろの location
+  （`I915_SHADER_LOCATION_VERTEX_INDEX` 64・`_INSTANCE_INDEX` 65）の input にする（payload の順で最後、整数のまま読む）。
+- 実行器: その input の vertex element は全 component が 0 の element、3DSTATE_VF_SGVS で fetcher が VertexID・InstanceID を
+  その element の x に書く（gen80.xml の 3DSTATE_VF_SGVS）。vertex buffer の binding が無い pipeline（index だけで描く shader）も受ける。
+- 制限: gl_InstanceIndex は firstInstance を足さない（HW の InstanceID。libGLESv2 は firstInstance 0 で描く）。
+
+残り（この Phase）: input builtin（FragCoord・FrontFacing・PointCoord）、PointSize、NoPerspective の
 fragment の input、texture() の bias・offset と textureLod、local の配列・struct と配列の定数、OpFwidth、Determinant 等。
 8 bit・16 bit の属性（normalized を含む）の format も GL の app が使う（p001 の静的な検査は作成時の parameter を数えないので
 ここで足した）。
