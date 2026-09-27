@@ -92,6 +92,7 @@ static int number_write_exponential(const struct number_digits *digits, int nega
 static char number_digit_char(int digit);
 static int number_digit_value(char character);
 static int number_to_radix(double number, int radix, struct wb_buffer *out);
+static double number_whole_modulo(double whole, uint32_t divisor);
 
 /*
  * Writes a number as Number::toString does in a radix from 2 to 36.
@@ -1448,7 +1449,7 @@ number_to_radix(
 
 	/* The rest, digit by digit. */
 	do {
-		remainder = fmod(integer, (double)radix);
+		remainder = number_whole_modulo(integer, (uint32_t)radix);
 		integer_text[integer_count] = number_digit_char((int)remainder);
 		integer_count++;
 		integer = (integer - remainder) / (double)radix;
@@ -1472,4 +1473,52 @@ number_to_radix(
 
 	/* Succeeded: the text is written. */
 	return 0;
+}
+
+/* Reports a non-negative double modulo a small divisor, exactly as IEEE fmod (the C library's need not be). */
+static double
+number_whole_modulo(
+	double number,
+	uint32_t divisor)
+{
+	struct number_big value;
+	struct number_big modulus;
+	struct number_big quotient;
+	struct number_big remainder;
+	uint64_t fraction;
+	uint64_t top;
+	uint32_t shift;
+	double result;
+	int exponent;
+	int sticky;
+	int zero;
+
+	/* Zero. */
+	if (number == 0.0)
+		return 0.0;
+
+	/* number = fraction * 2^exponent; the modulus is the divisor on the same scale. */
+	number_split(number, &fraction, &exponent);
+	big_set(&value, fraction);
+	big_set(&modulus, divisor);
+	if (exponent >= 0) {
+		big_shift_left(&value, (uint32_t)exponent);
+	} else {
+		big_shift_left(&modulus, (uint32_t)-exponent);
+	}
+
+	/* The remainder on that scale. */
+	big_divide(&value, &modulus, &quotient, &remainder);
+	zero = big_is_zero(&remainder);
+	if (zero)
+		return 0.0;
+
+	/* Back to a double (exact: the remainder has no more bits than the fraction had). */
+	top = big_top64(&remainder, &shift, &sticky);
+	if (exponent >= 0)
+		exponent = 0;
+	result = number_from_parts(top, (int)big_bits(&remainder) - 1 + exponent, sticky);
+
+	/* The remainder. */
+	return result;
 }
