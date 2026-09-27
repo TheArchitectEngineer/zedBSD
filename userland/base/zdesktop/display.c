@@ -402,6 +402,7 @@ zwl_schedule(
 	top = zwl_top_window(server);
 	fullscreen = 0;
 	if (top != NULL &&
+	    !server->locked &&
 	    top->fullscreen &&
 	    top->current != NULL &&
 	    top->current->scanout &&

@@ -26,12 +26,17 @@
  * (another script) has the greeter ended after SESSION_READY_SECONDS.  The
  * session's requests on the socket, one line each:
  *
- *   LOGOUT   Log Out with the display handed to a new greeter: QUIT comes
- *            once the greeter is ready; the session answers RELEASED when
- *            it has given the display back, and ends
+ *   LOGOUT           Log Out with the display handed to a new greeter:
+ *                    QUIT comes once the greeter is ready; the session
+ *                    answers RELEASED when it has given the display back,
+ *                    and ends
+ *   UNLOCK password  the lock screen (ws035-p102): checks the session
+ *                    user's password as a login does; OK, or FAIL after a
+ *                    delay that grows with the failures in a row
  */
 
 #include "zsessiond.h"
+#include "../login/verify.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -42,6 +47,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <syslog.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -56,12 +62,20 @@
 /* How long the greeter stays on the screen for a session that does not say READY (seconds). */
 #define SESSION_READY_SECONDS	30
 
+/* The delay after a wrong password on the lock screen, and the longest it grows to (seconds). */
+#define SESSION_DELAY_SECONDS	2U
+#define SESSION_DELAY_MAX	16U
+
+/* The lock screen's wrong passwords in a row this session. */
+static unsigned session_wrong;
+
 static int session_runtime(struct zsessiond_account *account, char *directory, size_t size);
 static void session_runtime_clean(const char *directory);
 static void session_child(struct zsessiond *daemon, struct zsessiond_account *account, const char *directory, int control);
 static void session_handoff(struct zsessiond *daemon, int control);
 static int session_request(struct zsessiond *daemon, struct zsessiond_account *account, int control);
 static void session_logout(struct zsessiond *daemon, int control);
+static void session_unlock(struct zsessiond_account *account, int control, char *password);
 static void session_record(int type, pid_t pid, const char *user);
 static void session_sweep(struct zsessiond_account *account, pid_t leader);
 static void session_signal_user(uid_t uid, int signal_number);
@@ -84,6 +98,9 @@ zsessiond_session_run(
 	int ready;
 	int status;
 	int error;
+
+	/* No wrong password yet. */
+	session_wrong = 0U;
 
 	/* The seat is the user's now (the greeter keeps what it has open until it ends). */
 	zsessiond_seat_give(account->passwd.pw_uid, account->passwd.pw_gid);
@@ -251,10 +268,17 @@ session_request(
 	int match;
 
 	/* The line (a short wait: it came whole or nearly). */
-	(void)account;
 	got = zsessiond_read_line(control, line, sizeof(line), 500);
 	if (got <= 0)
 		return 0;
+
+	/* The lock screen's password (erased once checked, with the line). */
+	match = strncmp(line, "UNLOCK ", 7);
+	if (match == 0) {
+		session_unlock(account, control, line + 7);
+		memset(line, 0, sizeof(line));
+		return 0;
+	}
 
 	/* Log Out, handing the display to a new greeter. */
 	match = strcmp(line, "LOGOUT");
@@ -266,6 +290,54 @@ session_request(
 	/* Anything else. */
 	(void)write(control, "ERROR\n", 6U);
 	return 0;
+}
+
+/*
+ * Checks the session user's password for the lock screen (ws035-p102): OK,
+ * or FAIL after a delay, 2 seconds, twice as long after every three in a
+ * row, at most 16.  The password is erased by the check.
+ */
+static void
+session_unlock(
+	struct zsessiond_account *account,
+	int control,
+	char *password)
+{
+	struct zsessiond_account checked;
+	unsigned doublings;
+	unsigned delay;
+	int verified;
+
+	/* The check a login makes, for the session's own user only. */
+	memset(&checked, 0, sizeof(checked));
+	verified = login_verify(account->passwd.pw_name, password, &checked.passwd, checked.buffer, sizeof(checked.buffer));
+	if (verified == 0 && checked.passwd.pw_uid != account->passwd.pw_uid)
+		verified = -1;
+	memset(&checked, 0, sizeof(checked));
+
+	/* The right password unlocks. */
+	if (verified == 0) {
+		session_wrong = 0U;
+		syslog(LOG_NOTICE, "unlock %s on the graphical seat", account->passwd.pw_name);
+		zsessiond_log("ZSESSIOND UNLOCK ok user=%s", account->passwd.pw_name);
+		(void)write(control, "OK\n", 3U);
+		return;
+	}
+
+	/* A wrong one: the delay grows with the failures in a row. */
+	session_wrong++;
+	doublings = (session_wrong - 1U) / 3U;
+	delay = SESSION_DELAY_SECONDS;
+	while (doublings > 0U && delay < SESSION_DELAY_MAX) {
+		delay *= 2U;
+		doublings--;
+	}
+
+	/* The failure goes on record, and the answer waits out the delay. */
+	syslog(LOG_WARNING, "failed unlock %s on the graphical seat (%u in a row)", account->passwd.pw_name, session_wrong);
+	zsessiond_log("ZSESSIOND UNLOCK fail user=%s wrong=%u delay=%u", account->passwd.pw_name, session_wrong, delay);
+	sleep(delay);
+	(void)write(control, "FAIL\n", 5U);
 }
 
 /*

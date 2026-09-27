@@ -523,6 +523,15 @@ struct zwl_server {
 	int control_fd;
 	unsigned handed_over;
 	uint64_t logout_ms;
+	/*
+	 * The lock screen (ws035-p102): whether it shows, how long without
+	 * input locks the session (--lock-idle, 0: never), and when the last
+	 * input came.
+	 */
+	unsigned locked;
+	uint64_t lock_idle_ms;
+	unsigned lock_idle_given;
+	uint64_t lock_input_ms;
 	unsigned size_given;
 	unsigned failed;
 	struct zwl_input_device inputs[ZWL_INPUT_MAX];
@@ -786,6 +795,8 @@ void zwl_handoff_wait(struct zwl_server *server);
 void zwl_handoff_release(struct zwl_server *server);
 int zwl_handoff_logout(struct zwl_server *server);
 void zwl_handoff_tick(struct zwl_server *server);
+int zwl_lock(struct zwl_server *server, const char *reason);
+void zwl_lock_answer(struct zwl_server *server, const char *answer);
 int zwl_emit(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size);
 int zwl_emit_fd(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size, int descriptor);
 void zwl_packet_free(struct zwl_packet *packet);
