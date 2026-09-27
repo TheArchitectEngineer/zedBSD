@@ -9,7 +9,7 @@ Related Milestones: MG003, MG006
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザー指示でサブエージェントが worktree の branch で実行。main session が merge する）
-Resume point: **ユーザーの判断待ち**: p004 の hal.h の差分（design.md §6、[proposed/hal-pmem-uncached.diff](proposed/hal-pmem-uncached.diff)）の承認。承認の後、p004 を当てて clear → p005 の config を有効に → p006 → 実機（ユーザー）→ p007
+Resume point: p004 cleared（2026-09-27、承認済みの hal.h の差分 `hal_pmem_map_uncached` を適用、rpi4・amd64 の boot test PASS）。次は p005 の config を有効に → p006 → 実機（ユーザー）→ p007
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -45,7 +45,7 @@ Resume point: **ユーザーの判断待ち**: p004 の hal.h の差分（design
 | [ws048-p001](phase001/phase.md) | 調査と設計 | cleared | — | 不要 |
 | [ws048-p002](phase002/phase.md) | FDT の reader、arm64 の device mapping の実装の修正、brcmstb の host bridge と PCI の backend（VL805 が列挙される） | cleared（実機は未実施） | p001 | 不要 |
 | [ws048-p003](phase003/phase.md) | firmware の mailbox と VL805 の firmware の通知 | cleared（実機は未実施） | p002 | 不要 |
-| [ws048-p004](phase004/phase.md) | 非 coherent な DMA（`hal_pmem_map_uncached` と `dma.c`） | uncleared（`dma.c` は済み。hal.h の差分の承認待ち） | p001 | **要る**（design.md §6） |
+| [ws048-p004](phase004/phase.md) | 非 coherent な DMA（`hal_pmem_map_uncached` と `dma.c`） | cleared（2026-09-27。承認済みの hal.h の差分を適用、host 試験・rpi4 と amd64 の boot test PASS。実機は未実施） | p001 | 済み（Guardrail の表） |
 | [ws048-p005](phase005/phase.md) | xHCI を rpi4 で | uncleared（build と glue の準備は済み。有効にするのは p004 の後） | p002・p003・p004 | 不要 |
 | [ws048-p006](phase006/phase.md) | USB の hub と HID キーボードで console に入力 | planned | p005 | 不要 |
 | [ws048-p007](phase007/phase.md) | 規約の全文の確認と回帰、実機の結果の取りまとめ | planned | p002〜p006 | 不要 |
@@ -55,7 +55,7 @@ Resume point: **ユーザーの判断待ち**: p004 の hal.h の差分（design
 
 ## 2026-09-27 の実行のまとめ（サブエージェント、worktree の branch）
 
-- p001〜p003 cleared（実機の確認は未実施）。p004・p005 は承認を要らない部分まで進め、uncleared（hal.h の差分の承認待ち）。p006・p007 は planned。
+- p001〜p004 cleared（実機の確認は未実施）。p005 は承認を要らない部分まで進め、uncleared（config を有効にするのが残り）。p006・p007 は planned。
 - host 試験: `make -f plan/ws048/tests/host-test.mk run DTB=<firmware の bcm2711-rpi-4-b.dtb>`（FDT・brcmstb の register model・mailbox の model・DMA の 2 通り。ASan・UBSan）。
 - QEMU raspi4b は PCIe を disabled にするので、QEMU で確かめたのは「起動を壊さない」ことだけ。PCIe・VL805・USB の動作は実機だけ。
 - rpi4 の image の `make -j16` はこの branch の起点で userland（`src/rtld/rtld.c` と `include/libc/elf.h` の macro の再定義）で止まる（WS048 の外）。

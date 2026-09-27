@@ -1238,7 +1238,7 @@ fixed_program(
 	 * the colour, and the alpha test (GL_NEVER .. GL_ALWAYS as 1 .. 8, 0 off).
 	 */
 	memset(flags2, 0, sizeof(flags2));
-	complete = gles_texture_complete(state->units[0]);
+	complete = gles_texture_complete(state->units[0], NULL);
 	if (fixed->texture_2d && complete)
 		flags2[0] = 1.0f;
 	if (fixed->texture_env_mode == GL_REPLACE || fixed->texture_env_mode == GL_DECAL)

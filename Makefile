@@ -201,6 +201,9 @@ CONFIG_DRIVER_PCI_I915 ?= n
 # by the menu names it explicitly.
 CONFIG_DRIVER_PCI_HDA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_DRIVER_PCI_INTEL_AX211 ?= n
+# The ACPI driver (WS049) builds on amd64; it stays off at run time when
+# the platform gives no RSDP (hal_get_arch_handoff("acpi.rsdp")).
+CONFIG_DRIVER_ACPI ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_DRIVER_USB_STORAGE ?= y
 CONFIG_DRIVER_USB_CDC_NCM ?= y
 CONFIG_DRIVER_USB_CDC_ECM ?= y
@@ -486,6 +489,7 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_PCI_I915=$(if $(filter y,$(CONFIG_DRIVER_PCI_I915)),1,0) \
 	-DCONFIG_DRIVER_PCI_HDA=$(if $(filter y,$(CONFIG_DRIVER_PCI_HDA)),1,0) \
 	-DCONFIG_DRIVER_PCI_INTEL_AX211=$(if $(filter y,$(CONFIG_DRIVER_PCI_INTEL_AX211)),1,0) \
+	-DCONFIG_DRIVER_ACPI=$(if $(filter y,$(CONFIG_DRIVER_ACPI)),1,0) \
 	-DCONFIG_DRIVER_USB_STORAGE=$(if $(filter y,$(CONFIG_DRIVER_USB_STORAGE)),1,0) \
 	-DCONFIG_DRIVER_USB_CDC_NCM=$(if $(filter y,$(CONFIG_DRIVER_USB_CDC_NCM)),1,0) \
 	-DCONFIG_DRIVER_USB_CDC_ECM=$(if $(filter y,$(CONFIG_DRIVER_USB_CDC_ECM)),1,0) \

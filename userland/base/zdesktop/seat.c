@@ -17,6 +17,8 @@
 
 #include "zwl.h"
 #include "menu.h"
+#include "popup.h"
+#include "toplevel.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -234,6 +236,9 @@ zwl_seat_focus(
 			target = NULL;
 	}
 
+	/* A popup holding the grab has the keyboard of its client's window (popup.c). */
+	target = zwl_popup_focus(server, target);
+
 	/* An unchanged focus sends nothing. */
 	if (target == server->focus)
 		return;
@@ -279,6 +284,51 @@ zwl_seat_surface_gone(
 }
 
 /*
+ * Moves the pointer (only the pointer, not the keyboard) from one surface
+ * to another: the pointers of the first's client hear leave, those of the
+ * second's hear enter at the pointer's place (for the popups, popup.c).
+ */
+void
+zwl_seat_pointer_move(
+	struct zwl_server *server,
+	struct zwl_object *from,
+	struct zwl_object *to)
+{
+	struct zwl_object *object;
+	uint32_t words[2];
+	uint32_t serial;
+
+	/* The surface the pointer leaves, when it was over one. */
+	if (from != NULL && !from->dead) {
+		words[0] = zwl_next_serial(server);
+		words[1] = from->id;
+		for (object = from->client->objects; object != NULL; object = object->next) {
+			/* Only live pointers. */
+			if (object->kind != ZWL_POINTER || object->dead)
+				continue;
+
+			/* Leave, and from version 5 a frame closing it. */
+			deliver(object->client, object->id, POINTER_LEAVE, words, sizeof(words));
+			if (object->version >= POINTER_FRAME_VERSION)
+				deliver(object->client, object->id, POINTER_FRAME, NULL, 0);
+		}
+	}
+
+	/* The surface the pointer enters, when there is one. */
+	if (to == NULL || to->dead)
+		return;
+	serial = zwl_next_serial(server);
+	for (object = to->client->objects; object != NULL; object = object->next) {
+		/* Only live pointers. */
+		if (object->kind != ZWL_POINTER || object->dead)
+			continue;
+
+		/* Enter at the pointer's place on the surface. */
+		pointer_enter(object, to, serial);
+	}
+}
+
+/*
  * Tells every bound seat that the set of open devices changed.
  */
 void
@@ -316,25 +366,37 @@ zwl_seat_motion(
 	uint32_t time)
 {
 	struct zwl_object *object;
+	struct zwl_object *target;
 	uint32_t words[3];
 	int taken;
 
-	/* In the glass look a window being moved takes the motion. */
-	if (server->glass && server->windowed) {
+	/* A window being resized follows the pointer (toplevel.c). */
+	taken = zwl_toplevel_motion(server);
+	if (taken)
+		return;
+
+	/* While a popup holds the grab, the pointer goes to the surface of its chain it is over (popup.c). */
+	taken = zwl_popup_motion(server);
+	if (taken)
+		return;
+
+	/* In the glass look a window being moved takes the motion (not while a popup holds the grab). */
+	if (server->glass && server->windowed && server->popup_grab == NULL) {
 		taken = zwl_glass_motion(server);
 		if (taken)
 			return;
 	}
 
 	/* Nobody hears motion while no surface has focus. */
-	if (server->focus == NULL)
+	target = zwl_popup_pointer_target(server);
+	if (target == NULL)
 		return;
 
 	/* Motion carries a timestamp and the surface-local position in 24.8 fixed point. */
 	words[0] = time;
-	words[1] = (uint32_t)((server->pointer_x - server->focus->x) * 256);
-	words[2] = (uint32_t)((server->pointer_y - server->focus->y) * 256);
-	for (object = server->focus->client->objects; object != NULL; object = object->next) {
+	words[1] = (uint32_t)((server->pointer_x - target->x) * 256);
+	words[2] = (uint32_t)((server->pointer_y - target->y) * 256);
+	for (object = target->client->objects; object != NULL; object = object->next) {
 		/* Only live pointer objects receive motion. */
 		if (object->kind != ZWL_POINTER || object->dead)
 			continue;
@@ -358,18 +420,41 @@ zwl_seat_button(
 	uint32_t state)
 {
 	struct zwl_object *object;
+	struct zwl_object *target;
 	uint32_t words[4];
+	uint32_t bit;
 	int taken;
 
-	/* In the glass look the title bars and the desktop take their buttons. */
-	if (server->glass && server->windowed) {
+	/* The buttons held now, which a move or a resize a client asks for needs (toplevel.c). */
+	bit = 0;
+	if (button >= ZWL_BUTTON_LEFT && button - ZWL_BUTTON_LEFT < 32U)
+		bit = 1U << (button - ZWL_BUTTON_LEFT);
+	if (state != 0U) {
+		server->buttons_down |= bit;
+	} else {
+		server->buttons_down &= ~bit;
+	}
+
+	/* A window being resized takes the buttons until the release ends the resize (toplevel.c). */
+	taken = zwl_toplevel_button(server, state);
+	if (taken)
+		return;
+
+	/* While a popup holds the grab, a press outside its chain closes the popups (popup.c). */
+	taken = zwl_popup_button(server, button, state);
+	if (taken)
+		return;
+
+	/* In the glass look the title bars and the desktop take their buttons (not while a popup holds the grab). */
+	if (server->glass && server->windowed && server->popup_grab == NULL) {
 		taken = zwl_glass_button(server, button, state);
 		if (taken)
 			return;
 	}
 
 	/* A button without focus reaches nobody. */
-	if (server->focus == NULL)
+	target = zwl_popup_pointer_target(server);
+	if (target == NULL)
 		return;
 
 	/* The button event carries a new serial, the time, the Linux BTN_ code and the state. */
@@ -377,13 +462,19 @@ zwl_seat_button(
 	words[1] = time;
 	words[2] = button;
 	words[3] = state;
-	for (object = server->focus->client->objects; object != NULL; object = object->next) {
+	for (object = target->client->objects; object != NULL; object = object->next) {
 		/* Only live pointer objects receive buttons. */
 		if (object->kind != ZWL_POINTER || object->dead)
 			continue;
 
 		/* Queue the button for this pointer. */
 		deliver(object->client, object->id, POINTER_BUTTON, words, sizeof(words));
+	}
+
+	/* A press names the serial a move or a resize must give, and pings its client (toplevel.c). */
+	if (state != 0U) {
+		server->press_serial = words[0];
+		zwl_ping_send(target->client);
 	}
 
 	/* Succeeded: the focused client has heard the button. */
@@ -404,6 +495,7 @@ zwl_seat_axis(
 	int32_t horizontal)
 {
 	struct zwl_object *object;
+	struct zwl_object *target;
 	uint32_t words[3];
 	uint32_t word;
 	int taken;
@@ -414,11 +506,12 @@ zwl_seat_axis(
 		return;
 
 	/* Scrolling without focus reaches nobody. */
-	if (server->focus == NULL)
+	target = zwl_popup_pointer_target(server);
+	if (target == NULL)
 		return;
 
 	/* Each pointer hears the source first, then per-axis discrete steps and values. */
-	for (object = server->focus->client->objects; object != NULL; object = object->next) {
+	for (object = target->client->objects; object != NULL; object = object->next) {
 		/* Only live pointer objects receive scrolling. */
 		if (object->kind != ZWL_POINTER || object->dead)
 			continue;
@@ -474,13 +567,15 @@ zwl_seat_frame(
 	struct zwl_server *server)
 {
 	struct zwl_object *object;
+	struct zwl_object *target;
 
 	/* A frame without focus reaches nobody. */
-	if (server->focus == NULL)
+	target = zwl_popup_pointer_target(server);
+	if (target == NULL)
 		return;
 
 	/* Pointers older than version 5 have no frame event. */
-	for (object = server->focus->client->objects; object != NULL; object = object->next) {
+	for (object = target->client->objects; object != NULL; object = object->next) {
 		/* Only live version 5 pointers are told where a group ends. */
 		if (object->kind != ZWL_POINTER ||
 		    object->dead ||
@@ -756,8 +851,8 @@ send_leave(
 		if (object->dead)
 			continue;
 
-		/* Pointers hear leave and, from version 5, a frame closing it. */
-		if (object->kind == ZWL_POINTER) {
+		/* Pointers hear leave and, from version 5, a frame closing it (not while a popup's grab has the pointer). */
+		if (object->kind == ZWL_POINTER && !surface->client->server->pointer_grabbed) {
 			deliver(object->client, object->id, POINTER_LEAVE, words, sizeof(words));
 
 			/* Version 5 pointers see leave as a group of its own. */
@@ -789,9 +884,10 @@ send_enter(
 		if (object->dead)
 			continue;
 
-		/* Pointers and keyboards each have their own enter event. */
+		/* Pointers and keyboards each have their own enter event (the pointer is popup.c's while a grab has it). */
 		if (object->kind == ZWL_POINTER) {
-			pointer_enter(object, surface, serial);
+			if (!surface->client->server->pointer_grabbed)
+				pointer_enter(object, surface, serial);
 		} else if (object->kind == ZWL_KEYBOARD) {
 			keyboard_enter(object, surface, serial);
 		}

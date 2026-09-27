@@ -454,6 +454,7 @@ icmp_input(
 	struct icmp_wire *icmp;
 	uint16_t checksum;
 	int error;
+	int own;
 
 	/* Drops a short or corrupt message. */
 	if (packet == NULL ||
@@ -474,8 +475,28 @@ icmp_input(
 		icmp->checksum[1] = 0;
 		checksum = net_checksum(packet->data, packet->length);
 		wire_put16(icmp->checksum, checksum);
-		error = ipv4_output(packet->device, source, IPPROTO_ICMP, packet);
-		return error;
+
+		/*
+		 * Answers from the address the request was sent to, so the
+		 * asker recognizes the reply even when it came round the
+		 * loopback device; a broadcast request is answered from the
+		 * device's own address.
+		 */
+		own = inet_address_is_local(destination);
+		if (own) {
+			error = ipv4_output_from(packet->device, source,
+			    IPPROTO_ICMP, destination, packet);
+		} else {
+			error = ipv4_output(packet->device, source, IPPROTO_ICMP,
+			    packet);
+		}
+
+		/* Reports why the reply could not be sent. */
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the reply is on its way. */
+		return 0;
 	}
 
 	/* Drops every other message. */

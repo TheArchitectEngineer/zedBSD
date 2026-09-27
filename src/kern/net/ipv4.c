@@ -40,6 +40,7 @@ static uint16_t next_identification;
 
 static int ipv4_output_common(struct net_device *device, uint32_t destination, uint8_t protocol, uint32_t source, int source_given, int wait_for_neighbor, struct packet_buf *packet);
 static int ipv4_input(struct packet_buf *packet);
+static int ipv4_accepts_destination(struct net_device *device, uint32_t destination);
 
 /*
  * Registers the input function for an IP protocol number.
@@ -149,6 +150,41 @@ ipv4_output_source(
 }
 
 /*
+ * Sends a payload from one of this host's own addresses.
+ *
+ * An answer goes out from the address its question was sent to, which need
+ * not be the address of the device that sends it: a question for another
+ * interface's address arrives round the loopback device.
+ */
+int
+ipv4_output_from(
+	struct net_device *device,
+	uint32_t destination,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *packet)
+{
+	int own;
+	int error;
+
+	/* Refuses a source this host does not own. */
+	own = inet_address_is_local(source);
+	if (!own) {
+		packet_buf_free(packet);
+		return EADDRNOTAVAIL;
+	}
+
+	/* Builds the header with the source and sends the packet. */
+	error = ipv4_output_common(device, destination, protocol, source, 1, 0,
+	    packet);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the packet is on its way. */
+	return 0;
+}
+
+/*
  * Initializes IPv4 and registers it with Ethernet.
  */
 int
@@ -185,12 +221,14 @@ ipv4_output_common(
 	struct packet_buf *packet)
 {
 	struct net_route route;
+	struct net_device *loopback;
 	struct ipv4_wire *header;
 	uint32_t next_hop;
 	uint16_t checksum;
 	uint16_t total;
 	uint8_t hardware[6];
 	int have_route;
+	int local;
 	int error;
 
 	/* Rejects a missing packet. */
@@ -229,15 +267,41 @@ ipv4_output_common(
 		}
 	}
 
+	/*
+	 * A packet for one of this host's own addresses never leaves the host:
+	 * it goes round the loopback device, which hands it straight back to
+	 * input.  The source stays the one the outgoing device gave it, because
+	 * the protocol above has already summed it into its checksum.
+	 */
+	loopback = NULL;
+	local = inet_address_is_local(destination);
+	if (local) {
+		loopback = net_loopback_ref();
+		if (loopback == NULL) {
+			packet_buf_free(packet);
+			if (have_route)
+				route_release(&route);
+			return ENETUNREACH;
+		}
+
+		/* Sends through the loopback device instead of the route's. */
+		device = loopback;
+	}
+
 	/* Resolves the next hop, which is the gateway when the route has one. */
 	if (have_route && route.gateway != 0)
 		next_hop = route.gateway;
 	else
 		next_hop = destination;
-	if (wait_for_neighbor)
+	if (loopback != NULL) {
+		/* The loopback device takes its own hardware address. */
+		kern_memcpy(hardware, loopback->hwaddr, sizeof(hardware));
+		error = 0;
+	} else if (wait_for_neighbor) {
 		error = arp_resolve_wait(device, next_hop, hardware);
-	else
+	} else {
 		error = arp_resolve(device, next_hop, hardware);
+	}
 	if (error != 0) {
 		/* Without waiting, starts the resolution for a later retry. */
 		if (!wait_for_neighbor)
@@ -256,6 +320,8 @@ ipv4_output_common(
 		packet_buf_free(packet);
 		if (have_route)
 			route_release(&route);
+		if (loopback != NULL)
+			net_device_release(loopback);
 		return ENOBUFS;
 	}
 
@@ -278,6 +344,10 @@ ipv4_output_common(
 	if (have_route)
 		route_release(&route);
 
+	/* Drops the hold on the loopback device the packet went round. */
+	if (loopback != NULL)
+		net_device_release(loopback);
+
 	/* Reports why the send failed. */
 	if (error != 0)
 		return error;
@@ -294,8 +364,7 @@ ipv4_input(
 	const struct ipv4_wire *header;
 	uint32_t source;
 	uint32_t destination;
-	uint32_t local;
-	uint32_t broadcast;
+	int accepted;
 	uint16_t total;
 	uint16_t fragment;
 	size_t header_length;
@@ -342,12 +411,13 @@ ipv4_input(
 			packet_buf_free(packet);
 			return 0;
 		}
-	} else if (inet_interface_address(packet->device, &local, NULL,
-	    &broadcast) != 0 ||
-	    (destination != local && destination != broadcast)) {
+	} else {
 		/* ... and packets for the device's own or subnet address. */
-		packet_buf_free(packet);
-		return 0;
+		accepted = ipv4_accepts_destination(packet->device, destination);
+		if (!accepted) {
+			packet_buf_free(packet);
+			return 0;
+		}
 	}
 
 	/* Trims the frame padding and strips the header. */
@@ -372,4 +442,45 @@ ipv4_input(
 
 	/* Reports the dropped packet. */
 	return 0;
+}
+
+/*
+ * Tells whether a device keeps a packet sent to a unicast destination.
+ *
+ * A device keeps packets for its own address and its subnet broadcast.  The
+ * loopback device also keeps packets for the addresses of the other
+ * interfaces, because output sends those round it instead of onto a wire.
+ */
+static int
+ipv4_accepts_destination(
+	struct net_device *device,
+	uint32_t destination)
+{
+	uint32_t local;
+	uint32_t broadcast;
+	unsigned flags;
+	int error;
+	int own;
+
+	/* Keeps a packet for the device's own address or its broadcast. */
+	error = inet_interface_address(device, &local, NULL, &broadcast);
+	if (error == 0) {
+		if (destination == local)
+			return 1;
+		if (destination == broadcast)
+			return 1;
+	}
+
+	/* Any other device keeps nothing else. */
+	flags = net_device_flags_get(device);
+	if ((flags & NET_DEVICE_LOOPBACK) == 0)
+		return 0;
+
+	/* The loopback device keeps what is addressed to this host. */
+	own = inet_address_is_local(destination);
+	if (!own)
+		return 0;
+
+	/* Succeeded: the packet is for this host. */
+	return 1;
 }

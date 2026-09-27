@@ -88,9 +88,14 @@ def main():
 	os.makedirs(output, exist_ok=True)
 	work = tempfile.mkdtemp(prefix="qemu-acpi-")
 	qmp_path = os.path.join(work, "qmp.sock")
-	command = ["qemu-system-x86_64"] + machine + [
-		"-m", "512", "-display", "none", "-monitor", "none", "-serial", "none",
+	# The machine arguments come last, so that they override the defaults
+	# (-m); they may add the serial and parallel ports the defaults leave out.
+	command = ["qemu-system-x86_64",
+		"-m", "512", "-display", "none", "-monitor", "none",
 		"-nodefaults", "-no-reboot", "-qmp", "unix:%s,server=on,wait=off" % qmp_path]
+	if "-serial" not in machine:
+		command += ["-serial", "none"]
+	command += machine
 	process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 	try:
 		for _ in range(100):

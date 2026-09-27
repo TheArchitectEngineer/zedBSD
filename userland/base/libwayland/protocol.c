@@ -589,9 +589,9 @@ static const struct wl_message xdg_wm_base_events[] = {
 	{ "ping", "u", xdg_wm_base_events_0_types },
 };
 
-/* Exposes the immutable selected xdg_wm_base protocol description. */
+/* Exposes the immutable selected xdg_wm_base protocol description (version 3: xdg_popup.reposition). */
 const struct wl_interface xdg_wm_base_interface = {
-	"xdg_wm_base", 1, 4, xdg_wm_base_requests,
+	"xdg_wm_base", 3, 4, xdg_wm_base_requests,
 	1, xdg_wm_base_events
 };
 
@@ -630,6 +630,17 @@ static const struct wl_interface *xdg_positioner_requests_6_types[] = {
 	NULL,
 };
 
+/* Identifies object arguments in xdg_positioner.set_parent_size (version 3) for validation. */
+static const struct wl_interface *xdg_positioner_requests_8_types[] = {
+	NULL,
+	NULL,
+};
+
+/* Identifies object arguments in xdg_positioner.set_parent_configure (version 3) for validation. */
+static const struct wl_interface *xdg_positioner_requests_9_types[] = {
+	NULL,
+};
+
 /* Preserves the wire opcode order for xdg_positioner requests. */
 static const struct wl_message xdg_positioner_requests[] = {
 	{ "destroy", "", NULL },
@@ -639,11 +650,14 @@ static const struct wl_message xdg_positioner_requests[] = {
 	{ "set_gravity", "u", xdg_positioner_requests_4_types },
 	{ "set_constraint_adjustment", "u", xdg_positioner_requests_5_types },
 	{ "set_offset", "ii", xdg_positioner_requests_6_types },
+	{ "set_reactive", "3", NULL },
+	{ "set_parent_size", "3ii", xdg_positioner_requests_8_types },
+	{ "set_parent_configure", "3u", xdg_positioner_requests_9_types },
 };
 
 /* Exposes the immutable selected xdg_positioner protocol description. */
 const struct wl_interface xdg_positioner_interface = {
-	"xdg_positioner", 1, 7, xdg_positioner_requests,
+	"xdg_positioner", 3, 10, xdg_positioner_requests,
 	0, NULL
 };
 
@@ -693,7 +707,7 @@ static const struct wl_message xdg_surface_events[] = {
 
 /* Exposes the immutable selected xdg_surface protocol description. */
 const struct wl_interface xdg_surface_interface = {
-	"xdg_surface", 1, 5, xdg_surface_requests,
+	"xdg_surface", 3, 5, xdg_surface_requests,
 	1, xdg_surface_events
 };
 
@@ -783,7 +797,7 @@ static const struct wl_message xdg_toplevel_events[] = {
 
 /* Exposes the immutable selected xdg_toplevel protocol description. */
 const struct wl_interface xdg_toplevel_interface = {
-	"xdg_toplevel", 1, 14, xdg_toplevel_requests,
+	"xdg_toplevel", 3, 14, xdg_toplevel_requests,
 	2, xdg_toplevel_events
 };
 
@@ -793,10 +807,17 @@ static const struct wl_interface *xdg_popup_requests_1_types[] = {
 	NULL,
 };
 
+/* Identifies object arguments in xdg_popup.reposition (version 3) for validation. */
+static const struct wl_interface *xdg_popup_requests_2_types[] = {
+	&xdg_positioner_interface,
+	NULL,
+};
+
 /* Preserves the wire opcode order for xdg_popup requests. */
 static const struct wl_message xdg_popup_requests[] = {
 	{ "destroy", "", NULL },
 	{ "grab", "ou", xdg_popup_requests_1_types },
+	{ "reposition", "3ou", xdg_popup_requests_2_types },
 };
 
 /* Identifies object arguments in xdg_popup.configure for validation. */
@@ -807,16 +828,22 @@ static const struct wl_interface *xdg_popup_events_0_types[] = {
 	NULL,
 };
 
+/* Identifies object arguments in xdg_popup.repositioned (version 3) for validation. */
+static const struct wl_interface *xdg_popup_events_2_types[] = {
+	NULL,
+};
+
 /* Preserves the wire opcode order for xdg_popup events. */
 static const struct wl_message xdg_popup_events[] = {
 	{ "configure", "iiii", xdg_popup_events_0_types },
 	{ "popup_done", "", NULL },
+	{ "repositioned", "3u", xdg_popup_events_2_types },
 };
 
 /* Exposes the immutable selected xdg_popup protocol description. */
 const struct wl_interface xdg_popup_interface = {
-	"xdg_popup", 1, 2, xdg_popup_requests,
-	2, xdg_popup_events
+	"xdg_popup", 3, 3, xdg_popup_requests,
+	3, xdg_popup_events
 };
 
 /* Identifies object arguments in zed_gpu_buffer_v1.create_buffer for validation. */
@@ -2300,14 +2327,18 @@ struct xdg_positioner *
 xdg_wm_base_create_positioner(
 	struct xdg_wm_base *object)
 {
+	uint32_t version;
 	union wl_argument arguments[1];
 	struct wl_proxy *created;
 
 	/* Preserves argument order and keeps descriptor ownership with the caller. */
 	arguments[0].n = 0;
 
+	/* Inherits the shell version negotiated at registry bind. */
+	version = wl_proxy_get_version((struct wl_proxy *)object);
+
 	/* Queues the wire request atomically with any newly allocated object. */
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, 1U, &xdg_positioner_interface, 1U, 0, arguments);
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, 1U, &xdg_positioner_interface, version, 0, arguments);
 	if (created == NULL)
 		return NULL;
 
@@ -2323,6 +2354,7 @@ xdg_wm_base_get_xdg_surface(
 	struct xdg_wm_base *object,
 	struct wl_surface *surface)
 {
+	uint32_t version;
 	union wl_argument arguments[2];
 	struct wl_proxy *created;
 
@@ -2330,8 +2362,11 @@ xdg_wm_base_get_xdg_surface(
 	arguments[0].n = 0;
 	arguments[1].o = (struct wl_object *)surface;
 
+	/* Inherits the shell version negotiated at registry bind. */
+	version = wl_proxy_get_version((struct wl_proxy *)object);
+
 	/* Queues the wire request atomically with any newly allocated object. */
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, 2U, &xdg_surface_interface, 1U, 0, arguments);
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, 2U, &xdg_surface_interface, version, 0, arguments);
 	if (created == NULL)
 		return NULL;
 
@@ -2552,6 +2587,62 @@ xdg_positioner_set_offset(
 }
 
 /*
+ * Sends the xdg_positioner.set_reactive request (version 3).
+ */
+void
+xdg_positioner_set_reactive(
+	struct xdg_positioner *object)
+{
+	/* Queues the wire request, which has no arguments. */
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, 7U, NULL, 0, 0, NULL);
+
+	/* Succeeded: the display owns the queued request or its fatal error. */
+	return;
+}
+
+/*
+ * Sends the xdg_positioner.set_parent_size request (version 3).
+ */
+void
+xdg_positioner_set_parent_size(
+	struct xdg_positioner *object,
+	int32_t parent_width,
+	int32_t parent_height)
+{
+	union wl_argument arguments[2];
+
+	/* Preserves argument order. */
+	arguments[0].i = parent_width;
+	arguments[1].i = parent_height;
+
+	/* Queues the wire request. */
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, 8U, NULL, 0, 0, arguments);
+
+	/* Succeeded: the display owns the queued request or its fatal error. */
+	return;
+}
+
+/*
+ * Sends the xdg_positioner.set_parent_configure request (version 3).
+ */
+void
+xdg_positioner_set_parent_configure(
+	struct xdg_positioner *object,
+	uint32_t serial)
+{
+	union wl_argument arguments[1];
+
+	/* The parent's configure serial. */
+	arguments[0].u = serial;
+
+	/* Queues the wire request. */
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, 9U, NULL, 0, 0, arguments);
+
+	/* Succeeded: the display owns the queued request or its fatal error. */
+	return;
+}
+
+/*
  * Associates client state with the xdg_positioner proxy.
  */
 void
@@ -2640,14 +2731,18 @@ struct xdg_toplevel *
 xdg_surface_get_toplevel(
 	struct xdg_surface *object)
 {
+	uint32_t version;
 	union wl_argument arguments[1];
 	struct wl_proxy *created;
 
 	/* Preserves argument order and keeps descriptor ownership with the caller. */
 	arguments[0].n = 0;
 
+	/* Inherits the xdg_surface's version. */
+	version = wl_proxy_get_version((struct wl_proxy *)object);
+
 	/* Queues the wire request atomically with any newly allocated object. */
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, 1U, &xdg_toplevel_interface, 1U, 0, arguments);
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, 1U, &xdg_toplevel_interface, version, 0, arguments);
 	if (created == NULL)
 		return NULL;
 
@@ -2664,6 +2759,7 @@ xdg_surface_get_popup(
 	struct xdg_surface *parent,
 	struct xdg_positioner *positioner)
 {
+	uint32_t version;
 	union wl_argument arguments[3];
 	struct wl_proxy *created;
 
@@ -2672,8 +2768,11 @@ xdg_surface_get_popup(
 	arguments[1].o = (struct wl_object *)parent;
 	arguments[2].o = (struct wl_object *)positioner;
 
+	/* Inherits the xdg_surface's version (3 has reposition). */
+	version = wl_proxy_get_version((struct wl_proxy *)object);
+
 	/* Queues the wire request atomically with any newly allocated object. */
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, 2U, &xdg_popup_interface, 1U, 0, arguments);
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, 2U, &xdg_popup_interface, version, 0, arguments);
 	if (created == NULL)
 		return NULL;
 
@@ -3164,6 +3263,28 @@ xdg_popup_grab(
 
 	/* Queues the wire request atomically with any newly allocated object. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, 1U, NULL, 0, 0, arguments);
+
+	/* Succeeded: the display owns the queued request or its fatal error. */
+	return;
+}
+
+/*
+ * Sends the xdg_popup.reposition request (version 3).
+ */
+void
+xdg_popup_reposition(
+	struct xdg_popup *object,
+	struct xdg_positioner *positioner,
+	uint32_t token)
+{
+	union wl_argument arguments[2];
+
+	/* The new positioner and the token the repositioned event names. */
+	arguments[0].o = (struct wl_object *)positioner;
+	arguments[1].u = token;
+
+	/* Queues the wire request. */
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, 2U, NULL, 0, 0, arguments);
 
 	/* Succeeded: the display owns the queued request or its fatal error. */
 	return;

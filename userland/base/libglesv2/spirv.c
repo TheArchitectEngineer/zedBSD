@@ -41,6 +41,7 @@
 #define OP_TYPE_IMAGE		25U
 
 /* OpTypeImage's Dim of a cube map. */
+#define SPIRV_DIM_3D		2U
 #define SPIRV_DIM_CUBE		3U
 #define OP_TYPE_SAMPLED_IMAGE	27U
 #define OP_TYPE_ARRAY		28U
@@ -127,6 +128,7 @@ static int spirv_flatten(struct spirv_module *module, struct gles_spirv *out, ui
 static struct gles_uniform *spirv_add_uniform(struct gles_spirv *out);
 static int spirv_variable(struct spirv_module *module, struct gles_spirv *out, size_t at);
 static uint32_t spirv_find_type(struct spirv_module *module, uint32_t opcode, uint32_t first, uint32_t second, uint32_t operands);
+static GLenum spirv_sampler_type(struct spirv_module *module, size_t image);
 static void spirv_emit(uint32_t *out, size_t *count, uint32_t opcode, uint32_t words, const uint32_t *operands);
 
 /*
@@ -865,14 +867,12 @@ spirv_leaf(
 		uniform->columns = 1U;
 		uniform->type = GL_SAMPLER_2D;
 
-		/* An image of Dim Cube is a cube map's sampler. */
+		/* The image's dimension, comparison, layers and texel kind name the sampler's type. */
 		image = 0U;
 		if (code[at + 2U] < module->bound)
 			image = module->defs[code[at + 2U]];
-		if (image != 0U &&
-		    (code[image] & 0xffffU) == OP_TYPE_IMAGE &&
-		    code[image + 3U] == SPIRV_DIM_CUBE)
-			uniform->type = GL_SAMPLER_CUBE;
+		if (image != 0U && (code[image] & 0xffffU) == OP_TYPE_IMAGE)
+			uniform->type = spirv_sampler_type(module, image);
 		return 0;
 	default:
 		break;
@@ -1137,6 +1137,81 @@ spirv_variable(
 
 	/* Anything else (private variables are not global in shaders of this kind). */
 	return -1;
+}
+
+/*
+ * Returns GL's type of a sampler of an OpTypeImage (at a word of the
+ * module): by its dimension (2D, 3D, cube), whether it is a depth image
+ * compared (a shadow sampler), arrayed, and whether its texels are signed
+ * or unsigned integers.
+ */
+static GLenum
+spirv_sampler_type(
+	struct spirv_module *module,
+	size_t image)
+{
+	const uint32_t *code;
+	size_t sampled;
+	uint32_t dimension;
+	unsigned base;
+
+	/* The image's operands: sampled type, Dim, Depth, Arrayed. */
+	code = module->code;
+	dimension = code[image + 3U];
+
+	/* A depth image compared. */
+	if (code[image + 4U] == 1U) {
+		if (dimension == SPIRV_DIM_CUBE)
+			return GL_SAMPLER_CUBE_SHADOW;
+		if (code[image + 5U] != 0U)
+			return GL_SAMPLER_2D_ARRAY_SHADOW;
+		return GL_SAMPLER_2D_SHADOW;
+	}
+
+	/* The texel kind: 0 floats, 1 signed, 2 unsigned integers. */
+	base = 0U;
+	sampled = 0U;
+	if (code[image + 2U] < module->bound)
+		sampled = module->defs[code[image + 2U]];
+	if (sampled != 0U && (code[sampled] & 0xffffU) == OP_TYPE_INT) {
+		base = 2U;
+		if (code[sampled + 3U] != 0U)
+			base = 1U;
+	}
+
+	/* A cube map. */
+	if (dimension == SPIRV_DIM_CUBE) {
+		if (base == 1U)
+			return GL_INT_SAMPLER_CUBE;
+		if (base == 2U)
+			return GL_UNSIGNED_INT_SAMPLER_CUBE;
+		return GL_SAMPLER_CUBE;
+	}
+
+	/* A 3D texture. */
+	if (dimension == SPIRV_DIM_3D) {
+		if (base == 1U)
+			return GL_INT_SAMPLER_3D;
+		if (base == 2U)
+			return GL_UNSIGNED_INT_SAMPLER_3D;
+		return GL_SAMPLER_3D;
+	}
+
+	/* An array of 2D layers. */
+	if (code[image + 5U] != 0U) {
+		if (base == 1U)
+			return GL_INT_SAMPLER_2D_ARRAY;
+		if (base == 2U)
+			return GL_UNSIGNED_INT_SAMPLER_2D_ARRAY;
+		return GL_SAMPLER_2D_ARRAY;
+	}
+
+	/* A 2D texture. */
+	if (base == 1U)
+		return GL_INT_SAMPLER_2D;
+	if (base == 2U)
+		return GL_UNSIGNED_INT_SAMPLER_2D;
+	return GL_SAMPLER_2D;
 }
 
 /* Returns the id of a type declared with the given operands after its result, or 0 when the module has none. */

@@ -16,6 +16,7 @@
 		glBindBufferRange;
 		glBindFramebuffer;
 		glBindRenderbuffer;
+		glBindSampler;
 		glBindTexture;
 		glBindVertexArray;
 		glBlendColor;
@@ -44,6 +45,7 @@
 		glDeleteFramebuffers;
 		glDeleteProgram;
 		glDeleteRenderbuffers;
+		glDeleteSamplers;
 		glDeleteShader;
 		glDeleteTextures;
 		glDeleteVertexArrays;
@@ -69,6 +71,7 @@
 		glGenBuffers;
 		glGenFramebuffers;
 		glGenRenderbuffers;
+		glGenSamplers;
 		glGenTextures;
 		glGenVertexArrays;
 		glGenerateMipmap;
@@ -93,6 +96,8 @@
 		glGetProgramInfoLog;
 		glGetProgramiv;
 		glGetRenderbufferParameteriv;
+		glGetSamplerParameterfv;
+		glGetSamplerParameteriv;
 		glGetShaderInfoLog;
 		glGetShaderPrecisionFormat;
 		glGetShaderSource;
@@ -118,6 +123,7 @@
 		glIsFramebuffer;
 		glIsProgram;
 		glIsRenderbuffer;
+		glIsSampler;
 		glIsShader;
 		glIsTexture;
 		glIsVertexArray;
@@ -130,6 +136,10 @@
 		glReleaseShaderCompiler;
 		glRenderbufferStorage;
 		glSampleCoverage;
+		glSamplerParameterf;
+		glSamplerParameterfv;
+		glSamplerParameteri;
+		glSamplerParameteriv;
 		glScissor;
 		glShaderBinary;
 		glShaderSource;
@@ -144,6 +154,7 @@
 		glTexParameterfv;
 		glTexParameteri;
 		glTexParameteriv;
+		glTexStorage2D;
 		glTexSubImage2D;
 		glUniform1f;
 		glUniform1fv;

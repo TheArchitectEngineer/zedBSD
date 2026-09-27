@@ -167,6 +167,10 @@ ifeq ($(I915_TEST_CAPTURE),y)
 AMD64_CPPFLAGS += -DI915_TEST_CAPTURE=1
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/capture.c
 endif
+AMD64_ACPI_SOURCES :=
+ifeq ($(CONFIG_DRIVER_ACPI),y)
+AMD64_ACPI_SOURCES += $(sort $(wildcard src/drivers/acpi/*.c))
+endif
 AMD64_INTEL_WLAN_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_INTEL_AX211),y)
 AMD64_INTEL_WLAN_SOURCES += src/drivers/wifi/intel-ax211/intel-ax211.c \
@@ -231,6 +235,7 @@ AMD64_KERNEL_SOURCES := \
 	$(AMD64_HDA_SOURCES) \
 	$(AMD64_I915_SOURCES) \
 	$(AMD64_INTEL_WLAN_SOURCES) \
+	$(AMD64_ACPI_SOURCES) \
 	src/drivers/platform/pcat/pcat-ide.c src/drivers/ethernet/dp8390.c \
 	src/drivers/isa/ne2000.c src/drivers/platform/pcat/ps2-8042.c \
 	src/drivers/disklabel/mbr.c src/drivers/disklabel/gpt.c \
@@ -696,7 +701,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo wltest wlshm mview zdesktop zdesktop-terminal zdesktop-files zdesktop-x11server egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest wlshm mview zdesktop zdesktop-terminal zdesktop-files zdesktop-x11server egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe popup-probe,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
@@ -965,6 +970,23 @@ $(BUILD)/bin/menu-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -l:libwayland-client.so -l:libzdesktop.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libwayland-client.so --needed libzdesktop.so --needed libc.so $@
+
+# The popup probe (WS035 p076): standard Wayland and the C library.
+DYNAMIC_POPUP_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,popup-probe)
+
+$(BUILD)/bin/popup-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_POPUP_PROBE_OBJS) $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_POPUP_PROBE_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libwayland-client.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libwayland-client.so --needed libc.so $@
 
 # The wl_shm test client imports only standard Wayland and C library entry points.
 DYNAMIC_WLSHM_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,wlshm)
