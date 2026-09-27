@@ -10,7 +10,7 @@
  *
  *   zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]
  *   zdesktop-browser --dump=dom|style|layout|paint [--width=N] [--height=N] [--font=PATH] FILE
- *   zdesktop-browser --render --output=OUT.ppm [--width=N] [--height=N] [--font=PATH] FILE
+ *   zdesktop-browser --render|--render-gpu --output=OUT.ppm [--width=N] [--height=N] [--font=PATH] FILE
  *   zdesktop-browser --version | --help
  *
  * Without a headless mode it opens a zdesktop window on URL.  The headless
@@ -22,6 +22,7 @@
 
 #include "base/base.h"
 #include "page/page.h"
+#include "paint/gpu.h"
 #include "shell/shell.h"
 
 #include <errno.h>
@@ -51,7 +52,8 @@ enum main_mode {
 	MAIN_MODE_DUMP_STYLE,
 	MAIN_MODE_DUMP_LAYOUT,
 	MAIN_MODE_DUMP_PAINT,
-	MAIN_MODE_RENDER
+	MAIN_MODE_RENDER,
+	MAIN_MODE_RENDER_GPU
 };
 
 /*
@@ -126,6 +128,7 @@ main(
 		status = main_dump(&options);
 		return status;
 	case MAIN_MODE_RENDER:
+	case MAIN_MODE_RENDER_GPU:
 		status = main_render(&options);
 		return status;
 	case MAIN_MODE_WINDOW:
@@ -183,13 +186,15 @@ main_dump(
 	return 0;
 }
 
-/* Draws the page the command line names with the CPU renderer and writes it as a PPM file. */
+/* Draws the page the command line names with the CPU or the GPU renderer and writes it as a PPM file. */
 static int
 main_render(
 	const struct main_options *options)
 {
 	struct paint_bitmap bitmap;
 	struct page *page;
+	const char *failed;
+	VkResult result;
 	int status;
 	int error;
 
@@ -204,15 +209,34 @@ main_render(
 	if (status != 0)
 		return status;
 
-	/* Draws the viewport's worth of the page from its top. */
+	/* The picture: the viewport's worth of the page from its top. */
 	error = paint_bitmap_create(&bitmap, (int)options->shell.width, (int)options->shell.height);
-	if (error == 0)
-		error = paint_software(&page->paint, &page->text, 0, &bitmap);
 	if (error != 0) {
 		fprintf(stderr, "zdesktop-browser: cannot draw %s: %s\n", options->shell.start, strerror(error));
-		paint_bitmap_release(&bitmap);
 		page_destroy(page);
 		return 1;
+	}
+
+	/* Draws the page with the GPU renderer, read back from an offscreen image. */
+	if (options->mode == MAIN_MODE_RENDER_GPU) {
+		result = paint_gpu_render(&page->paint, &page->text, 0, &bitmap, &failed);
+		if (result != VK_SUCCESS) {
+			fprintf(stderr, "zdesktop-browser: cannot draw %s on the GPU: %s failed (%d)\n", options->shell.start, failed, (int)result);
+			paint_bitmap_release(&bitmap);
+			page_destroy(page);
+			return 1;
+		}
+	}
+
+	/* Or with the CPU renderer. */
+	if (options->mode == MAIN_MODE_RENDER) {
+		error = paint_software(&page->paint, &page->text, 0, &bitmap);
+		if (error != 0) {
+			fprintf(stderr, "zdesktop-browser: cannot draw %s: %s\n", options->shell.start, strerror(error));
+			paint_bitmap_release(&bitmap);
+			page_destroy(page);
+			return 1;
+		}
 	}
 
 	/* Writes the picture. */
@@ -367,6 +391,13 @@ main_parse(
 			continue;
 		}
 
+		/* The same with the GPU renderer. */
+		differs = strcmp(argv[index], "--render-gpu");
+		if (differs == 0) {
+			options->mode = MAIN_MODE_RENDER_GPU;
+			continue;
+		}
+
 		/* The file a drawing goes to. */
 		value = main_value(argv[index], "--output=");
 		if (value != NULL) {
@@ -501,7 +532,7 @@ main_usage(
 		"usage: zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]\n"
 		"       zdesktop-browser --dump=dom|style|layout|paint [--width=N] [--height=N] [--font=PATH]\n"
 		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
-		"       zdesktop-browser --render --output=OUT.ppm [--width=N] [--height=N] [--font=PATH]\n"
+		"       zdesktop-browser --render|--render-gpu --output=OUT.ppm [--width=N] [--height=N] [--font=PATH]\n"
 		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
 		"       zdesktop-browser --version | --help\n");
 }

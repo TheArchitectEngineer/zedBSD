@@ -94,5 +94,6 @@ int paint_bitmap_create(struct paint_bitmap *bitmap, int width, int height);
 void paint_bitmap_release(struct paint_bitmap *bitmap);
 int paint_software(const struct paint_list *list, struct text_system *text, layout_unit scroll_y, struct paint_bitmap *bitmap);
 int paint_write_ppm(const struct paint_bitmap *bitmap, const char *path);
+uint32_t paint_canvas_pixel(uint32_t color);
 
 #endif
