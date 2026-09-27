@@ -77,8 +77,17 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/css/values.c \
 	$(ZDESKTOP_BROWSER_DIR)/css/cascade.c \
 	$(ZDESKTOP_BROWSER_DIR)/css/ua.c \
+	$(ZDESKTOP_BROWSER_DIR)/bind/window.c \
+	$(ZDESKTOP_BROWSER_DIR)/bind/node.c \
+	$(ZDESKTOP_BROWSER_DIR)/bind/mixin.c \
+	$(ZDESKTOP_BROWSER_DIR)/bind/element.c \
+	$(ZDESKTOP_BROWSER_DIR)/bind/text.c \
+	$(ZDESKTOP_BROWSER_DIR)/bind/document.c \
+	$(ZDESKTOP_BROWSER_DIR)/bind/event.c \
+	$(ZDESKTOP_BROWSER_DIR)/bind/timer.c \
 	$(ZDESKTOP_BROWSER_DIR)/page/page.c \
 	$(ZDESKTOP_BROWSER_DIR)/page/link.c \
+	$(ZDESKTOP_BROWSER_DIR)/page/script.c \
 	$(ZDESKTOP_BROWSER_DIR)/text/font.c \
 	$(ZDESKTOP_BROWSER_DIR)/text/linebreak.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/box.c \

@@ -1,0 +1,729 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Elements for scripts: the Element interface (names, attributes and the
+ * mixins' members) and HTMLElement (the reflected attributes the first
+ * pass needs, and click).
+ */
+
+#include "bind/internal.h"
+
+#include <errno.h>
+#include <string.h>
+
+static int element_this(struct vm_realm *realm, vm_value this_value, struct dom_element **element);
+static int element_tag_name(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_local_name(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_id_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_id_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_class_name_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_class_name_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_title_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_title_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_hidden_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_hidden_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_get_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_set_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_remove_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_has_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_click(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_attribute_name(struct vm_realm *realm, const struct dom_element *element, vm_value value, struct vm_string **name);
+static int element_reflect_get(struct vm_realm *realm, vm_value this_value, const char *name, vm_value *result);
+static int element_reflect_set(struct vm_realm *realm, vm_value this_value, const char *name, const vm_value *args, unsigned count);
+
+/*
+ * The attributes of Element, with the members of its mixins.  The table
+ * is constant for the life of the program.
+ */
+static const struct bind_attribute element_attributes[] = {
+	{ "tagName", element_tag_name, NULL },
+	{ "localName", element_local_name, NULL },
+	{ "id", element_id_get, element_id_set },
+	{ "className", element_class_name_get, element_class_name_set },
+	{ "children", bind_children, NULL },
+	{ "firstElementChild", bind_first_element_child_get, NULL },
+	{ "lastElementChild", bind_last_element_child_get, NULL },
+	{ "childElementCount", bind_child_element_count, NULL },
+	{ "previousElementSibling", bind_previous_element_sibling, NULL },
+	{ "nextElementSibling", bind_next_element_sibling, NULL },
+	{ NULL, NULL, NULL }
+};
+
+/*
+ * The operations of Element, with the members of its mixins.  The table
+ * is constant for the life of the program.
+ */
+static const struct bind_operation element_operations[] = {
+	{ "getAttribute", 1, element_get_attribute },
+	{ "setAttribute", 2, element_set_attribute },
+	{ "removeAttribute", 1, element_remove_attribute },
+	{ "hasAttribute", 1, element_has_attribute },
+	{ "getElementsByTagName", 1, bind_get_elements_by_tag_name },
+	{ "getElementsByClassName", 1, bind_get_elements_by_class_name },
+	{ "append", 0, bind_append },
+	{ "prepend", 0, bind_prepend },
+	{ "remove", 0, bind_remove },
+	{ NULL, 0, NULL }
+};
+
+/*
+ * The Element interface.
+ */
+const struct bind_interface bind_element_interface = {
+	"Element", BIND_NODE, 0, NULL, element_attributes, element_operations, NULL
+};
+
+/*
+ * The attributes of HTMLElement.  The table is constant for the life of
+ * the program.
+ */
+static const struct bind_attribute html_element_attributes[] = {
+	{ "title", element_title_get, element_title_set },
+	{ "hidden", element_hidden_get, element_hidden_set },
+	{ NULL, NULL, NULL }
+};
+
+/*
+ * The operations of HTMLElement.  The table is constant for the life of
+ * the program.
+ */
+static const struct bind_operation html_element_operations[] = {
+	{ "click", 0, element_click },
+	{ NULL, 0, NULL }
+};
+
+/*
+ * The HTMLElement interface (every HTML element's, in this pass).
+ */
+const struct bind_interface bind_html_element_interface = {
+	"HTMLElement", BIND_ELEMENT, 0, NULL, html_element_attributes, html_element_operations, NULL
+};
+
+/*
+ * Tells whether an element's class attribute lists a class name (an
+ * atom), as a whole word between ASCII whitespace.
+ */
+int
+bind_element_has_class(
+	const struct dom_element *element,
+	const struct vm_string *name)
+{
+	const struct dom_attribute *attribute;
+	const struct vm_string *classes;
+	size_t index;
+	size_t start;
+	size_t length;
+	size_t offset;
+	uint16_t unit;
+	int space;
+	int same;
+
+	/* The class attribute (its name's atom is found by comparing names). */
+	classes = NULL;
+	for (index = 0; index < element->attribute_count; index++) {
+		attribute = &element->attributes[index];
+		if (attribute->ns != DOM_NS_NONE)
+			continue;
+		same = vm_string_equal_ascii(attribute->name, "class");
+		if (same) {
+			classes = attribute->value;
+			break;
+		}
+	}
+
+	/* No class attribute has no classes. */
+	if (classes == NULL)
+		return 0;
+
+	/* Compares each word of the attribute with the name. */
+	start = 0;
+	for (index = 0; index <= classes->length; index++) {
+		/* The end of the value ends the last word. */
+		space = 1;
+		if (index < classes->length) {
+			unit = vm_string_at(classes, index);
+			space = 0;
+			if (unit == 0x20U || unit == 0x09U || unit == 0x0aU || unit == 0x0cU || unit == 0x0dU)
+				space = 1;
+		}
+		if (!space)
+			continue;
+
+		/* A word of the name's length with the same units is the class. */
+		length = index - start;
+		same = 0;
+		if (length == name->length && length != 0)
+			same = 1;
+		for (offset = 0; same && offset < length; offset++) {
+			if (vm_string_at(classes, start + offset) != vm_string_at(name, offset))
+				same = 0;
+		}
+		if (same)
+			return 1;
+		start = index + 1U;
+	}
+
+	/* No word is the name. */
+	return 0;
+}
+
+/* Finds the element a method's this value stands for, throwing a TypeError otherwise. */
+static int
+element_this(
+	struct vm_realm *realm,
+	vm_value this_value,
+	struct dom_element **element)
+{
+	struct dom_node *node;
+	int status;
+
+	/* The node, which must be an element. */
+	node = bind_node_of(this_value);
+	if (node == NULL || node->type != DOM_ELEMENT) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Succeeded: the element is found. */
+	*element = (struct dom_element *)node;
+	return 0;
+}
+
+/* Reports the element's tag name (tagName): an HTML element's qualified name in upper case. */
+static int
+element_tag_name(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	struct wb_units units;
+	uint16_t unit;
+	size_t index;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The element. */
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+
+	/* The qualified name: the prefix, a colon and the local name. */
+	wb_units_init(&units);
+	status = 0;
+	if (element->prefix != NULL) {
+		status = vm_string_append_units(element->prefix, &units);
+		if (status == 0)
+			status = wb_units_append_code_point(&units, ':');
+	}
+	if (status == 0)
+		status = vm_string_append_units(element->local_name, &units);
+
+	/* An HTML element's is in ASCII upper case. */
+	for (index = 0; status == 0 && element->ns == DOM_NS_HTML && index < units.length; index++) {
+		unit = units.data[index];
+		if (unit >= 'a' && unit <= 'z')
+			units.data[index] = (uint16_t)(unit - 0x20U);
+	}
+
+	/* The string. */
+	if (status == 0)
+		status = bind_units(realm, units.data, units.length, result);
+	wb_units_release(&units);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the tag name is reported. */
+	return 0;
+}
+
+/* Reports the element's local name (localName). */
+static int
+element_local_name(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The element. */
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the name's atom is the string. */
+	*result = vm_value_cell(element->local_name);
+	return 0;
+}
+
+/* Reports the id attribute, or the empty string (id). */
+static int
+element_id_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The reflected attribute. */
+	status = element_reflect_get(realm, this_value, "id", result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the id is reported. */
+	return 0;
+}
+
+/* Sets the id attribute (id). */
+static int
+element_id_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* The reflected attribute. */
+	*result = VM_VALUE_UNDEFINED;
+	status = element_reflect_set(realm, this_value, "id", args, count);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the id is set. */
+	return 0;
+}
+
+/* Reports the class attribute, or the empty string (className). */
+static int
+element_class_name_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The reflected attribute. */
+	status = element_reflect_get(realm, this_value, "class", result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the classes are reported. */
+	return 0;
+}
+
+/* Sets the class attribute (className). */
+static int
+element_class_name_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* The reflected attribute. */
+	*result = VM_VALUE_UNDEFINED;
+	status = element_reflect_set(realm, this_value, "class", args, count);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the classes are set. */
+	return 0;
+}
+
+/* Reports the title attribute, or the empty string (title). */
+static int
+element_title_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The reflected attribute. */
+	status = element_reflect_get(realm, this_value, "title", result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the title is reported. */
+	return 0;
+}
+
+/* Sets the title attribute (title). */
+static int
+element_title_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* The reflected attribute. */
+	*result = VM_VALUE_UNDEFINED;
+	status = element_reflect_set(realm, this_value, "title", args, count);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the title is set. */
+	return 0;
+}
+
+/* Reports whether the element has the hidden attribute (hidden). */
+static int
+element_hidden_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	vm_value name;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The same answer as hasAttribute("hidden"). */
+	status = bind_string(realm, "hidden", &name);
+	if (status != 0)
+		return status;
+	status = element_has_attribute(realm, this_value, &name, 1, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the answer is reported. */
+	return 0;
+}
+
+/* Adds or removes the hidden attribute (hidden). */
+static int
+element_hidden_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	vm_value pair[2];
+	int hidden;
+	int status;
+
+	/* The attribute's name, and an empty value when it is added. */
+	*result = VM_VALUE_UNDEFINED;
+	hidden = vm_to_boolean(js_argument(args, count, 0));
+	status = bind_string(realm, "hidden", &pair[0]);
+	if (status == 0)
+		status = bind_string(realm, "", &pair[1]);
+	if (status != 0)
+		return status;
+
+	/* Added for true, removed for false. */
+	if (hidden) {
+		status = element_set_attribute(realm, this_value, pair, 2, result);
+	} else {
+		status = element_remove_attribute(realm, this_value, pair, 1, result);
+	}
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the attribute follows the value. */
+	return 0;
+}
+
+/* Reports an attribute's value, or null when the element does not have it (getAttribute). */
+static int
+element_get_attribute(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	struct dom_attribute *attribute;
+	struct vm_string *name;
+	int status;
+
+	/* The element and the attribute's name. */
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	status = element_attribute_name(realm, element, js_argument(args, count, 0), &name);
+	if (status != 0)
+		return status;
+
+	/* The attribute, if the element has it. */
+	attribute = dom_element_find_attribute(element, DOM_NS_NONE, name);
+	if (attribute == NULL) {
+		*result = VM_VALUE_NULL;
+		return 0;
+	}
+
+	/* Succeeded: the value is reported. */
+	*result = vm_value_cell(attribute->value);
+	return 0;
+}
+
+/* Sets an attribute's value, adding the attribute when needed (setAttribute). */
+static int
+element_set_attribute(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	struct vm_string *name;
+	struct vm_string *value;
+	int status;
+
+	/* The element, the attribute's name and the value. */
+	*result = VM_VALUE_UNDEFINED;
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	status = element_attribute_name(realm, element, js_argument(args, count, 0), &name);
+	if (status != 0)
+		return status;
+	status = bind_to_string(realm, js_argument(args, count, 1), &value);
+	if (status != 0)
+		return status;
+
+	/* An empty name is not a name. */
+	if (name->length == 0) {
+		status = bind_throw_dom(realm, "InvalidCharacterError", "The attribute name is not a valid name.");
+		return status;
+	}
+
+	/* The element's attribute takes the value. */
+	status = dom_element_set_attribute(element, name, value);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the attribute is set. */
+	return 0;
+}
+
+/* Removes an attribute (removeAttribute). */
+static int
+element_remove_attribute(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	struct vm_string *name;
+	int status;
+
+	/* The element and the attribute's name. */
+	*result = VM_VALUE_UNDEFINED;
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	status = element_attribute_name(realm, element, js_argument(args, count, 0), &name);
+	if (status != 0)
+		return status;
+
+	/* The attribute goes, if the element has it. */
+	status = dom_element_remove_attribute(element, name);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the element does not have the attribute. */
+	return 0;
+}
+
+/* Reports whether the element has an attribute (hasAttribute). */
+static int
+element_has_attribute(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	struct dom_attribute *attribute;
+	struct vm_string *name;
+	int status;
+
+	/* The element and the attribute's name. */
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	status = element_attribute_name(realm, element, js_argument(args, count, 0), &name);
+	if (status != 0)
+		return status;
+
+	/* Whether the element has it. */
+	attribute = dom_element_find_attribute(element, DOM_NS_NONE, name);
+
+	/* Succeeded: the answer is reported. */
+	*result = vm_value_boolean(attribute != NULL);
+	return 0;
+}
+
+/* Dispatches a click event at the element, as a click with the mouse would (click). */
+static int
+element_click(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct dom_element *element;
+	struct bind_mouse mouse;
+	int canceled;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The element. */
+	*result = VM_VALUE_UNDEFINED;
+	window = bind_window_of(realm);
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+
+	/* A click at no particular place with the main button. */
+	memset(&mouse, 0, sizeof(mouse));
+	status = bind_fire_mouse_event(window, &element->node, "click", &mouse, &canceled);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the click is dispatched. */
+	return 0;
+}
+
+/* Converts an attribute name argument to its atom, in lower case for an HTML element. */
+static int
+element_attribute_name(
+	struct vm_realm *realm,
+	const struct dom_element *element,
+	vm_value value,
+	struct vm_string **name)
+{
+	int lower;
+	int status;
+
+	/* HTML elements' attribute names are in lower case. */
+	lower = 0;
+	if (element->ns == DOM_NS_HTML)
+		lower = 1;
+
+	/* The atom. */
+	status = bind_to_atom(realm, value, lower, name);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the name is found. */
+	return 0;
+}
+
+/* Reports a reflected attribute's value, or the empty string when the element does not have it. */
+static int
+element_reflect_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const char *name,
+	vm_value *result)
+{
+	struct dom_element *element;
+	struct dom_attribute *attribute;
+	struct vm_string *atom;
+	int status;
+
+	/* The element and the attribute's atom. */
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	atom = vm_atom_from_ascii(realm->heap, name);
+	if (atom == NULL)
+		return ENOMEM;
+
+	/* An attribute the element does not have reflects as the empty string. */
+	attribute = dom_element_find_attribute(element, DOM_NS_NONE, atom);
+	if (attribute == NULL) {
+		status = bind_string(realm, "", result);
+		return status;
+	}
+
+	/* Succeeded: the value is reported. */
+	*result = vm_value_cell(attribute->value);
+	return 0;
+}
+
+/* Sets a reflected attribute to a value's string. */
+static int
+element_reflect_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const char *name,
+	const vm_value *args,
+	unsigned count)
+{
+	struct dom_element *element;
+	struct vm_string *atom;
+	struct vm_string *value;
+	int status;
+
+	/* The element, the attribute's atom and the value. */
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	atom = vm_atom_from_ascii(realm->heap, name);
+	if (atom == NULL)
+		return ENOMEM;
+	status = bind_to_string(realm, js_argument(args, count, 0), &value);
+	if (status != 0)
+		return status;
+
+	/* The attribute takes it. */
+	status = dom_element_set_attribute(element, atom, value);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the attribute is set. */
+	return 0;
+}

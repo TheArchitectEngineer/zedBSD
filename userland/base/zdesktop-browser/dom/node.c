@@ -240,6 +240,9 @@ dom_insert_before(
 	} else {
 		parent->first_child = child;
 	}
+
+	/* The tree changed: the document's style and layout are out of date. */
+	parent->document->generation++;
 }
 
 /*
@@ -274,6 +277,9 @@ dom_remove(
 	child->parent = NULL;
 	child->previous = NULL;
 	child->next = NULL;
+
+	/* The tree changed: the document's style and layout are out of date. */
+	parent->document->generation++;
 }
 
 /*
@@ -293,6 +299,9 @@ dom_text_append(
 	error = wb_units_append(&text->data, units, length);
 	if (error != 0)
 		return error;
+
+	/* The text changed: the document's layout is out of date. */
+	node->document->generation++;
 
 	/* Succeeded: the node holds the characters. */
 	return 0;
@@ -337,6 +346,9 @@ dom_element_add_attribute(
 	attribute->value = value;
 	attribute->ns = ns;
 	element->attribute_count++;
+
+	/* The attributes changed: the document's style is out of date. */
+	element->node.document->generation++;
 
 	/* Succeeded: the attribute is the element's last. */
 	return 0;
@@ -388,6 +400,137 @@ dom_element_is(
 	return 1;
 }
 
+
+/*
+ * Tells whether a cell is a node of the DOM (of any kind).
+ */
+int
+dom_is_node(
+	const struct vm_cell *cell)
+{
+	/* The node types are the cell types of this file. */
+	if (cell->type == &document_type)
+		return 1;
+	if (cell->type == &fragment_type)
+		return 1;
+	if (cell->type == &element_type)
+		return 1;
+	if (cell->type == &character_data_type)
+		return 1;
+	if (cell->type == &doctype_type)
+		return 1;
+
+	/* Another kind of cell. */
+	return 0;
+}
+
+/*
+ * Sets an element's attribute of no namespace (name is an atom), adding
+ * it when the element does not have it.
+ */
+int
+dom_element_set_attribute(
+	struct dom_element *element,
+	struct vm_string *name,
+	struct vm_string *value)
+{
+	struct dom_attribute *attribute;
+	int error;
+
+	/* An attribute the element has takes the new value, which puts the style out of date. */
+	attribute = dom_element_find_attribute(element, DOM_NS_NONE, name);
+	if (attribute != NULL) {
+		attribute->value = value;
+		element->node.document->generation++;
+		return 0;
+	}
+
+	/* Otherwise the attribute is added at the end. */
+	error = dom_element_add_attribute(element, DOM_NS_NONE, NULL, name, value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the element has the attribute with the value. */
+	return 0;
+}
+
+/*
+ * Removes an element's attribute of no namespace (name is an atom);
+ * nothing happens when it has none.
+ */
+int
+dom_element_remove_attribute(
+	struct dom_element *element,
+	struct vm_string *name)
+{
+	struct dom_attribute *attribute;
+	size_t index;
+	size_t after;
+
+	/* An element without the attribute stays as it is. */
+	attribute = dom_element_find_attribute(element, DOM_NS_NONE, name);
+	if (attribute == NULL)
+		return 0;
+
+	/* The attributes after it move down one place, keeping their order. */
+	index = (size_t)(attribute - element->attributes);
+	after = element->attribute_count - index - 1U;
+	memmove(&element->attributes[index], &element->attributes[index + 1U], after * sizeof(*attribute));
+	element->attribute_count--;
+
+	/* The attributes changed: the document's style is out of date. */
+	element->node.document->generation++;
+
+	/* Succeeded: the attribute is gone. */
+	return 0;
+}
+
+/*
+ * Replaces the characters of a text or comment node.
+ */
+int
+dom_text_set(
+	struct dom_node *node,
+	const uint16_t *units,
+	size_t length)
+{
+	struct dom_character_data *text;
+	int error;
+
+	/* The old characters go, and the new ones take their place. */
+	text = (struct dom_character_data *)node;
+	wb_units_clear(&text->data);
+	error = wb_units_append(&text->data, units, length);
+	if (error != 0)
+		return error;
+
+	/* The text changed: the document's layout is out of date. */
+	node->document->generation++;
+
+	/* Succeeded: the node holds the new text. */
+	return 0;
+}
+
+/*
+ * Tells whether ancestor is node or one of node's ancestors.
+ */
+int
+dom_is_inclusive_ancestor(
+	const struct dom_node *ancestor,
+	const struct dom_node *node)
+{
+	const struct dom_node *walk;
+
+	/* Walks up from the node to its root. */
+	for (walk = node; walk != NULL; walk = walk->parent) {
+		if (walk == ancestor)
+			return 1;
+	}
+
+	/* The ancestor is not on the way up. */
+	return 0;
+}
+
 /* Marks the nodes a node is linked to. */
 static void
 node_trace(
@@ -396,8 +539,14 @@ node_trace(
 {
 	struct dom_node *node;
 
-	/* Marks the document, the parent, the neighbours and the children's ends. */
+	/* Marks the script's object for the node and its listeners. */
 	node = (struct dom_node *)cell;
+	if (node->wrapper != NULL)
+		vm_heap_mark(heap, &node->wrapper->cell);
+	if (node->listeners != NULL)
+		vm_heap_mark(heap, node->listeners);
+
+	/* Marks the document, the parent, the neighbours and the children's ends. */
 	if (node->document != NULL)
 		vm_heap_mark(heap, &node->document->node.cell);
 	if (node->parent != NULL)

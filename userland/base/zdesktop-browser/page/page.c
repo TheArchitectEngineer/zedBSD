@@ -6,8 +6,9 @@
  */
 
 /*
- * Loading a page: bytes to text, text to a DOM, the DOM's <style> elements
- * to the style engine; and the text dumps the tests read.
+ * Loading a page: bytes to text, text to a DOM (running the scripts as the
+ * parser reaches them), the DOM's <style> elements to the style engine;
+ * and the text dumps the tests read.
  */
 
 #include "page/page.h"
@@ -22,6 +23,7 @@
 /* The deepest element nesting the style dump descends (the parser caps nesting too). */
 #define PAGE_DUMP_DEPTH		512
 
+static int page_gather_styles(struct page *page);
 static int page_collect_styles(struct page *page, struct dom_node *node);
 static int page_text_of(const struct dom_node *node, struct wb_units *units);
 static const struct dom_node *page_find_title(const struct dom_node *node, int depth);
@@ -72,6 +74,13 @@ page_create(
 		return error;
 	}
 
+	/* The realm whose global object is the document's window. */
+	error = page_start_scripts(created);
+	if (error != 0) {
+		page_destroy(created);
+		return error;
+	}
+
 	/* Succeeded: the page is empty. */
 	*page = created;
 	return 0;
@@ -96,7 +105,10 @@ page_destroy(
 	if (page->text_open)
 		text_system_close(&page->text);
 	css_engine_destroy(page->css);
+	bind_window_destroy(page->window);
+	vm_realm_destroy(page->realm);
 	vm_heap_destroy(page->heap);
+	free(page->base);
 	free(page);
 }
 
@@ -128,12 +140,13 @@ page_load_html(
 		return error;
 	}
 
-	/* Parses the text into the document. */
-	error = html_parser_create(&parser, page->document, 0);
+	/* Parses the text into the document, with scripting: each script runs when the parser reaches its end. */
+	error = html_parser_create(&parser, page->document, 1);
 	if (error != 0) {
 		wb_units_release(&units);
 		return error;
 	}
+	html_parser_set_script_hook(parser, page_run_script_element, page);
 
 	/* Feeds it all and finishes. */
 	error = html_parser_feed(parser, units.data, units.length);
@@ -144,13 +157,13 @@ page_load_html(
 	if (error != 0)
 		return error;
 
-	/* Makes the style engine and gives it the document's <style> sheets in order. */
-	css_engine_destroy(page->css);
-	page->css = NULL;
-	error = css_engine_create(&page->css, page->heap);
+	/* The document is parsed: DOMContentLoaded, then the window's load. */
+	error = page_fire_load(page);
 	if (error != 0)
 		return error;
-	error = page_collect_styles(page, &page->document->node);
+
+	/* The style sheets of the document as the scripts left it. */
+	error = page_gather_styles(page);
 	if (error != 0)
 		return error;
 
@@ -168,6 +181,12 @@ page_load_file(
 {
 	struct wb_buffer buffer;
 	int error;
+
+	/* The page's scripts find their files from the page's. */
+	free(page->base);
+	page->base = strdup(path);
+	if (page->base == NULL)
+		return ENOMEM;
 
 	/* Reads the file. */
 	wb_buffer_init(&buffer);
@@ -233,9 +252,20 @@ page_layout(
 		page->laid_out = 0;
 	}
 
+	/* The style sheets again when a script changed the document since they were gathered. */
+	if (page->css == NULL || page->styled_generation != page->document->generation) {
+		error = page_gather_styles(page);
+		if (error != 0)
+			return error;
+	}
+
+	/* The window's size for the scripts. */
+	bind_window_set_viewport(page->window, width, height);
+
 	/* Builds and lays out the box tree. */
 	error = layout_build(&page->layout, page->css, &page->text, page->document, width, height);
 	page->laid_out = 1;
+	page->laid_out_generation = page->document->generation;
 	if (error != 0)
 		return error;
 
@@ -376,6 +406,30 @@ page_dump_style(
 	}
 
 	/* Succeeded: the styles are in the buffer. */
+	return 0;
+}
+
+/* Makes the style engine anew with the document's <style> sheets in order. */
+static int
+page_gather_styles(
+	struct page *page)
+{
+	int error;
+
+	/* A new engine with the user agent's sheet. */
+	css_engine_destroy(page->css);
+	page->css = NULL;
+	error = css_engine_create(&page->css, page->heap);
+	if (error != 0)
+		return error;
+
+	/* The document's sheets. */
+	error = page_collect_styles(page, &page->document->node);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the sheets match the document of this generation. */
+	page->styled_generation = page->document->generation;
 	return 0;
 }
 
