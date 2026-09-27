@@ -83,6 +83,7 @@ static int exec_target_revalidate(const struct exec_target *target, const struct
 static void fill_auxv_info(struct exec_auxv_info *aux, const EXEC_IMAGE_INFO *image, uintptr_t interpreter_base, const struct ucred *cred, unsigned secure, const char *path);
 static int setup_standard_files(struct process *parent, struct process *process, const struct ucred *credential);
 static int process_exec_file(struct process *process, const char *path, struct file *provided_file, int reopenable_path, char *const argv[], char *const envp[]);
+static int exec_thread_retired(const struct thread *thread);
 
 /*
  * Parses a #! line at the start of a file.
@@ -1290,6 +1291,7 @@ process_exec_file(
 	unsigned secure;
 	unsigned long process_irq;
 	bool irq_enabled;
+	int retired;
 	int error;
 
 	new_vm = NULL;
@@ -1423,12 +1425,21 @@ process_exec_file(
 		spin_unlock_irqrestore(&process->lock, process_irq);
 		if (other == NULL)
 			break;
-		if (other->state != THREAD_ZOMBIE) {
+		/*
+		 * Waits until the sibling has retired.  A sibling blocked in
+		 * pthread_join on it (libc's detached-thread reaper) may claim
+		 * the zombie first, so REAPING and DEAD also end the wait;
+		 * waiting for ZOMBIE alone never ended once that happened.
+		 */
+		retired = exec_thread_retired(other);
+		if (!retired)
 			sched_interrupt(other);
-			while (other->state != THREAD_ZOMBIE)
-				sched_sleep(sched_ticks() + 1U);
+		while (!retired) {
+			sched_sleep(sched_ticks() + 1U);
+			retired = exec_thread_retired(other);
 		}
 
+		/* Reaps the zombie unless its joiner already did. */
 		(void)thread_wait(other, NULL);
 		thread_release(other);
 	}
@@ -1514,5 +1525,36 @@ out:
 		(void)process_trace_stop(PTRACE_STOP_EXEC, SIGTRAP, NULL);
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Tells whether a sibling thread that exec asked to end has ended.
+ *
+ * A zombie has ended, and so has a thread that a joiner is reaping or has
+ * reaped; only a thread that has not reached its zombie state is still
+ * running user code or on its way out.
+ */
+static int
+exec_thread_retired(
+	const struct thread *thread)
+{
+	enum thread_state state;
+
+	/* Samples the state the retiring thread publishes. */
+	state = (enum thread_state)atomic_raw_load_acquire(
+	    (const volatile unsigned *)&thread->state);
+
+	/* A zombie waits to be reaped. */
+	if (state == THREAD_ZOMBIE)
+		return 1;
+
+	/* A joiner has claimed or finished reaping it. */
+	if (state == THREAD_REAPING)
+		return 1;
+	if (state == THREAD_DEAD)
+		return 1;
+
+	/* Succeeded: the thread has not ended yet. */
 	return 0;
 }

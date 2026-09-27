@@ -41,8 +41,13 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p004](phase004/phase.md) | BUG-063 | `truncate -s N` が無い file を作る、`mount -o rw` を受ける | cleared |
 | [ws073-p005](phase005/phase.md) | BUG-028 | 閉じた port への connect を ECONNREFUSED に、自分の interface の address への packet を lo0 で届ける | cleared |
 | [ws073-p006](phase006/phase.md) | BUG-067 | devfs の文字 device の node が chmod・chown を受ける（`mesg n`） | cleared |
-| ws073-p007 | BUG-068 | console の POSIX-R2.ELF が SIGEV_THREAD の worker の生きている間の自分自身への execve の後に止まる | planned |
+| [ws073-p007](phase007/phase.md) | BUG-068 | 多 thread の process の execve が、joiner に先に reap された兄弟を待ち続ける | cleared |
+| ws073-p008 | BUG-069 | pty の master の read・slave の write が waitq_sleep の EAGAIN を失敗として返す（POSIX-R2 の pty の back-pressure） | planned |
+| ws073-p009 | — | kernel の boot の FAT を公開する: BOOT を /boot、ESP を /boot/esp（ユーザーの判断 2026-09-27） | planned |
 
 ## 判断が要る点
 
-- ws073-p002: kernel が private に持つ boot の FAT（ESP）の公開の mount が EBUSY になった。ESP を running system から触るなら kernel の mount を公開する案（[phase](phase002/phase.md)）。
+- （解決 2026-09-27）ws073-p002: kernel が private に持つ boot の FAT（ESP）の公開の mount が EBUSY になった。ESP を running system から触るなら
+  kernel の mount を公開する案（[phase](phase002/phase.md)）。ユーザーの判断（原文）: 「ESPは/boot/espにします。/bootはBOOTという名前のFATパーティションですね。
+  UEFIのみのイメージでBOOTパーティションがない場合もあります。」→ BOOT の FAT を `/boot`、ESP を `/boot/esp` に公開する。BOOT が無い UEFI だけの image では
+  `/boot` はただの directory で ESP は `/boot/esp`。ws073-p009 で行う。
