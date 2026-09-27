@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p024〜p031 cleared（2026-09-27）。p032〜p039 cleared、main を merge（2026-09-27、phase034 の記録）。ユーザーの決めた WS045 の 3 件は p037〜p039 で済んだ。次は §12 の残りの P1/P2（mesg・tabs・find・ls ほか）
+Resume point: p024〜p039 cleared（2026-09-27）。p040（mesg）は uncleared: 実装と host 試験は commit、guest の console の case は devfs が chmod を受けない（kernel）ため未達（phase040 の記録）。次は §12 の残りの P1/P2（tabs・find・ls ほか）。WS001 はユーザーの指示があるときだけ進める
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -59,6 +59,7 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p037` | [dirname の複数の operand](phase037/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。各結果を 1 行ずつ、`-z`、dirname-test PASS・host 5/5・amd64 guest 28/28、style 0 |
 | `ws001-p038` | [mktemp・install・base64](phase038/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。3 つの base utility を新設し package の一覧へ、host 11/11・11/11・13/13（GNU と）・amd64 guest 35/35、style 0 |
 | `ws001-p039` | [xargs の GNU の option](phase039/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。`-d`・`-P`・`-a`・`-o`・旧い形・long option、host の build 一覧に xargs、host 54/54・11/11（POSIX と GNU の mode）・全 case 1080/1080・WS045 515/515・configure の比較 same・amd64 guest 65/65、style 0 |
+| `ws001-p040` | [mesg](phase040/phase.md) | uncleared（2026-09-27） | 書き直し（最初の端末の descriptor、`y`/`n`/`--`、他の bit を保つ、状態 0/1/2）、host 9/9、style 0。guest の console の case は devfs の chmod の `EOPNOTSUPP` で未達（salvage/ws001 から検証して commit） |
 
 ### q042 pre-merge identifier migration
 
@@ -508,7 +509,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 71 | [logname](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/logname.html) | implemented-unreviewed (`ws001-p030`) | Operands are refused and the missing-login case fails; the host cases and the amd64 guest pass; a real login session in QEMU remains unproved. |
 | 73 | [ls](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/ls.html) | P1 known incompatibility | Several common options exist, but required Issue 8 option/output combinations, locale collation/character display, owner/group/time formats, symlink operands, recursion cycles, and errors are incomplete. |
 | 74 | [m4](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/m4.html) | P1 known incompatibility (P0 resolved 2026-08-24) | The independent local replacement provides scanning/rescanning, positional arguments, definitions, conditionals, includes, common string/arithmetic builtins, quote changes, and memory diversions.  `changecom`, definition stacks/introspection, indirect invocation, wrapping/temp/system/trace builtins, complete checked `eval`, exact quote/comment/locale semantics, signals, and temporary-file diversions remain. |
-| 78 | [mesg](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/mesg.html) | P2 incomplete proof | Basic tty mode query/change exists; no-controlling-terminal, `y`/`n` parsing, unrelated permission-bit preservation, diagnostic/status, and QEMU tty tests remain. |
+| 78 | [mesg](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/mesg.html) | P2 incomplete proof | ws001-p040 (2026-09-27): terminal search over fds 0–2, `y`/`n`/`--` parsing, permission-bit preservation, diagnostics and statuses pass the host pty test (9/9). The QEMU tty test remains: devfs terminal nodes reject chmod (`EOPNOTSUPP`). |
 | 79 | [mkdir](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/mkdir.html) | implemented-unreviewed (`ws001-p026`) | `-m` from a=rwx set exactly, `-p` parents with u+wx, existing directories, slashes, and failures pass 15 host cases and the amd64 guest. |
 | 80 | [mkfifo](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/mkfifo.html) | implemented-unreviewed (`ws001-p026`) | `-m` from a=rw set exactly (permission bits only), umask default, and failures pass 8 host cases and the amd64 guest. |
 | 83 | [mv](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/mv.html) | implemented-unreviewed (`ws001-p025`) | `-i`/`-f` (last wins), the terminal prompt for unwritable destinations, same-file refusal, directory/non-directory rules, and cross-file-system moves (copy as `cp -pRP` keeping hard links, then removal) pass 29 host cases, 3 pty cases, and the amd64 guest. |
