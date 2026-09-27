@@ -3,7 +3,7 @@
 # ws073-p014: amd64 は /boot・/boot/esp を自動で見せず fstab に任せる、fstab の ESP の mount が kernel の hold の上で通る
 
 Status: cleared（2026-09-27）
-Disposition: normal（amd64 の自動の公開を止めた部分は ws073-p015 の最終の layout で置き換わる予定）
+Disposition: normal（amd64 の自動の公開を止めた部分は ws073-p015 の最終の layout で置き換えた。fstab の adoption は残る）
 Parent: [WS073](../ws.md)
 
 ## ユーザーの判断（2026-09-27、原文）
