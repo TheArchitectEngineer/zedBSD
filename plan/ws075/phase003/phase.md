@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p003`
 Parent: [WS075](../ws.md)
-Status: in-progress（2026-09-27 着手）
+Status: cleared（2026-09-27。実機の vkx 9/9 PASS（TOPOLOGY を含む）、boot test PASS）
 Phase disposition: normal
 承認: 2026-09-27 ユーザー「…i915の高度化に進んでください。」、WS075 の計画（main の登録、p003 の計画は main が了承）。
 
@@ -37,4 +37,22 @@ vkFreeDescriptorSets（使う client が今は無い）。
 
 ## 検証
 
-未実施。build（`make vmunix`、-Werror）PASS。実機の `vkx`。
+| 確認 | 結果 |
+| --- | --- |
+| build | `make vmunix`（-Werror、`plan/ws031/tests/config-zdesktop-hw.mk` と I915_TESTS=y の両方）PASS、warning 0。amd64 の image（`plan/ws068/tests/build-glsl-image.sh build/amd64`）PASS |
+| style-check | 変えた file の数は前と同じ（state.c 7、draw.c 10、executor.c 26。新しい行に 0） |
+| 実機（i915、5330 の passthrough）の `vkx` | **PASS 9/9**（`VKX-TOPOLOGY PASS`: strip の赤と fan の緑の四角が INDEX32 と同じ画素。INDEX16・INDEX32・VIEWPORT・COPY・GRID・MIP の 3 つも PASS）。`build/ws075-p003/vkx.log` |
+| boot test（`build/ws075-p003/boot/login.png`） | PASS |
+| Venus の回帰 | 未実施（i915 の driver だけの変更。Venus の guest は i915 を使わない） |
+
+実機の test build は kernel の console を serial に出す構成が要る（worktree に `config.mk` が無く、zdesktop の構成は serial を
+出さないので verdict の行が読めなかった）。`plan/ws075/tests/config-test-hw.mk`（zdesktop の構成 + `CONFIG_PCAT_SERIAL_MIRROR`）を
+足した: `BUILD=build/resident-vkx ZEDBSD_CONFIG=plan/ws075/tests/config-test-hw.mk flock /tmp/i915-hw.lock
+plan/ws031/tests/vkloop-hw.sh test vkx`。
+
+### 制限・移管
+
+- line・point の描画は実機で未確認（vkx は三角形の strip と fan だけ。line の画素は rasterization の規則で端が揺れるので
+  step にしなかった）。GL の client の実機の run（p004 以降）で確かめる。
+- 幅 1 以外の線、PointSize、primitive restart（Vulkan の primitiveRestartEnable、3DSTATE_VF の cut index）は無い
+  （libGLESv2 は restart を CPU で展開する）。
