@@ -57,6 +57,9 @@
 /* The first ID of the range the compositor gives the objects it makes for a client. */
 #define ZWL_SERVER_ID_FIRST	0xff000000U
 
+/* How many cursor images zdesktop draws for the shapes clients ask for (cursor.c). */
+#define ZWL_CURSOR_IMAGES	10U
+
 /* Bound the evdev nodes the seat reads and the events one report may carry. */
 #define ZWL_INPUT_MAX		16U
 #define ZWL_INPUT_FRAME_MAX	64U
@@ -119,6 +122,12 @@ enum zwl_kind {
 	ZWL_DATA_SOURCE,
 	ZWL_DATA_DEVICE,
 	ZWL_DATA_OFFER,
+	ZWL_DECORATION_MANAGER,
+	ZWL_DECORATION,
+	ZWL_CURSOR_SHAPE_MANAGER,
+	ZWL_CURSOR_SHAPE_DEVICE,
+	ZWL_VIEWPORTER,
+	ZWL_VIEWPORT,
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -364,6 +373,25 @@ struct zwl_object {
 	char **mime_types;
 	unsigned mime_count;
 	struct zwl_object *data_source;
+	/*
+	 * ws035-p080: a toplevel's zxdg_toplevel_decoration_v1 and the
+	 * decoration's toplevel (each cleared from both ends when either
+	 * goes); a wp_cursor_shape_device_v1's wl_pointer (NULL once it has
+	 * gone).  A surface's wp_viewport (whose own surface field names it
+	 * back), and the viewport's state, pending and applied by the commit:
+	 * the source rectangle in 24.8 fixed point (x, y, width, height; a
+	 * width of 0 for none) and the destination size (0 for none), and
+	 * whether the pending state changed since the last commit.
+	 */
+	struct zwl_object *decoration;
+	struct zwl_object *decoration_toplevel;
+	struct zwl_object *shape_pointer;
+	struct zwl_object *viewport;
+	int32_t pending_source[4];
+	int32_t source[4];
+	int32_t pending_destination[2];
+	int32_t destination[2];
+	unsigned viewport_changed;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -638,6 +666,14 @@ struct zwl_server {
 	 */
 	struct zwl_object *selection;
 	uint64_t selection_client;
+	/*
+	 * The cursor shape the pointer's client asked for (wp_cursor_shape_v1,
+	 * cursor.c, ws035-p080; 0 for zdesktop's arrow), and the images of the
+	 * shapes zdesktop draws, by the index cursor.c gives them (NULL until
+	 * made).
+	 */
+	uint32_t cursor_shape;
+	struct zwl_import *cursor_images[ZWL_CURSOR_IMAGES];
 	struct zwl_object *resize;
 	int32_t resize_pointer_x;
 	int32_t resize_pointer_y;

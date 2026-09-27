@@ -945,6 +945,22 @@ vfs_publish_boot_filesystems(
 	if (boot_mount == NULL && esp_mount == NULL)
 		return;
 
+	/* Lets an fstab mount of either partition show the kernel's mount. */
+	if (boot_mount != NULL)
+		(void)mount_private_allow_adoption(boot_mount);
+	if (esp_mount != NULL)
+		(void)mount_private_allow_adoption(esp_mount);
+
+#if defined(HAL_ARCH_AMD64)
+	/*
+	 * amd64 images leave /boot and /boot/esp to fstab (user decision,
+	 * 2026-09-27): a distribution image mounts neither, and an installer
+	 * that wants them writes the fstab lines, which adopt the kernel's
+	 * mounts above.
+	 */
+	return;
+#endif
+
 	/* Makes sure /boot exists to cover or to hold esp. */
 	error = vfs_ensure_root_directory(root, "boot", 0755U);
 	if (error != 0) {

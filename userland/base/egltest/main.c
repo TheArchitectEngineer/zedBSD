@@ -25,7 +25,9 @@
  * OpenGL ES 3 context, --scene=formats formats.c's squares, each
  * sampling a texture of one of OpenGL ES 3.0's formats, and
  * --scene=volumes volumes.c's squares of 3D and 2D array textures and
- * texels given through the pixel store and pixel buffers.
+ * texels given through the pixel store and pixel buffers, and
+ * --scene=targets targets.c's squares of what framebuffer objects with
+ * several attachments of several formats drew.
  *
  * Every outcome is one line: EGLTEST DONE on a clean end, EGLTEST FAILED
  * naming what failed otherwise.
@@ -41,6 +43,7 @@
 #include "es3.h"
 #include "formats.h"
 #include "scene.h"
+#include "targets.h"
 #include "volumes.h"
 
 #include <stdio.h>
@@ -151,7 +154,7 @@ main(
 	/* The command line. */
 	status = egltest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo|cube|es3|formats|volumes] [--token=NAME]\n");
+		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo|cube|es3|formats|volumes|targets] [--token=NAME]\n");
 		return 2;
 	}
 
@@ -288,7 +291,9 @@ egltest_start(
 	/* The scene's program, buffers and texture. */
 	egl->operation = "scene";
 	if (options->scene) {
-		if (options->scene == 8) {
+		if (options->scene == 9) {
+			status = egltest_targets_start();
+		} else if (options->scene == 8) {
 			status = egltest_volumes_start();
 		} else if (options->scene == 7) {
 			status = egltest_formats_start();
@@ -361,7 +366,11 @@ egltest_frames(
 			}
 
 			/* The scene, through the framebuffer object for --scene=fbo, the cube map's squares, or the OpenGL ES 3.0 API scene. */
-			if (options->scene == 8) {
+			if (options->scene == 9) {
+				egltest_targets_draw(width, height);
+				if (frame == 1U)
+					egl->failures = egltest_targets_check(width, height, options->token);
+			} else if (options->scene == 8) {
 				egltest_volumes_draw(width, height);
 				if (frame == 1U)
 					egl->failures = egltest_volumes_check(width, height, options->token);
@@ -534,6 +543,9 @@ egltest_parse(
 			differs = strcmp(value, "volumes");
 			if (differs == 0)
 				options->scene = 8;
+			differs = strcmp(value, "targets");
+			if (differs == 0)
+				options->scene = 9;
 			differs = strcmp(value, "draw");
 			if (differs != 0 && options->scene == 1)
 				return -1;

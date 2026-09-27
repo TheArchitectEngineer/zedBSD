@@ -25,7 +25,7 @@
 
 /* The extensions this library offers (glGetString's list; gles_extension_names has the same names one by one). */
 #define GLES_EXTENSIONS \
-	"GL_OES_element_index_uint GL_OES_texture_npot GL_EXT_texture_format_BGRA8888 GL_EXT_blend_minmax"
+	"GL_OES_element_index_uint GL_OES_texture_npot GL_EXT_texture_format_BGRA8888 GL_EXT_blend_minmax GL_EXT_color_buffer_float"
 
 /* The largest uniform block a program may read, in bytes (OpenGL ES 3's minimum). */
 #define GLES_UNIFORM_BLOCK_SIZE	16384
@@ -39,7 +39,8 @@ static const char *const gles_extension_names[] = {
 	"GL_OES_element_index_uint",
 	"GL_OES_texture_npot",
 	"GL_EXT_texture_format_BGRA8888",
-	"GL_EXT_blend_minmax"
+	"GL_EXT_blend_minmax",
+	"GL_EXT_color_buffer_float"
 };
 
 /* The fixed-function layer, NULL without one (libGL sets it before its first context). */
@@ -55,6 +56,9 @@ static int gles_capability(struct gles_state *state, GLenum cap, int **flag);
 static unsigned gles_integers(struct zegl_context *context, struct gles_state *state, GLenum pname, GLint *values);
 static unsigned gles_integers_es3(struct gles_state *state, GLenum pname, GLint *values);
 static GLint gles_buffer_name(const struct gles_buffer *buffer);
+static GLenum gles_draw_buffer(struct gles_state *state, GLenum index);
+static GLenum gles_read_buffer(struct gles_state *state);
+static GLenum gles_read_pair(struct gles_state *state, GLenum pname);
 static unsigned gles_floats(struct zegl_context *context, struct gles_state *state, GLenum pname, GLfloat *values);
 
 /*
@@ -142,6 +146,10 @@ gles_state(
 	state->unpack_alignment = 4;
 	state->pack_alignment = 4;
 	state->mipmap_hint = GL_DONT_CARE;
+
+	/* The surfaces' framebuffer draws into and reads its one colour buffer. */
+	state->default_draw_buffer = GL_BACK;
+	state->default_read_buffer = GL_BACK;
 
 	/* Every array four floats and disabled, every current value the floats (0, 0, 0, 1). */
 	for (index = 0U; index < GLES_ATTRIBS; index++) {
@@ -1589,6 +1597,24 @@ gles_integers(
 	case GL_FRAMEBUFFER_BINDING:
 		values[0] = (GLint)state->framebuffer;
 		return 1U;
+	case GL_READ_FRAMEBUFFER_BINDING:
+		values[0] = (GLint)state->read_framebuffer;
+		return 1U;
+	case GL_MAX_COLOR_ATTACHMENTS:
+		values[0] = (GLint)GLES_COLOR_ATTACHMENTS;
+		return 1U;
+	case GL_MAX_DRAW_BUFFERS:
+		values[0] = (GLint)GLES_DRAW_BUFFERS;
+		return 1U;
+	case GL_DRAW_BUFFER0:
+	case GL_DRAW_BUFFER1:
+	case GL_DRAW_BUFFER2:
+	case GL_DRAW_BUFFER3:
+		values[0] = (GLint)gles_draw_buffer(state, pname - GL_DRAW_BUFFER0);
+		return 1U;
+	case GL_READ_BUFFER:
+		values[0] = (GLint)gles_read_buffer(state);
+		return 1U;
 	case GL_RENDERBUFFER_BINDING:
 		values[0] = (GLint)state->renderbuffer;
 		return 1U;
@@ -1661,10 +1687,8 @@ gles_integers(
 		values[0] = GL_TRUE;
 		return 1U;
 	case GL_IMPLEMENTATION_COLOR_READ_FORMAT:
-		values[0] = GL_RGBA;
-		return 1U;
 	case GL_IMPLEMENTATION_COLOR_READ_TYPE:
-		values[0] = GL_UNSIGNED_BYTE;
+		values[0] = (GLint)gles_read_pair(state, pname);
 		return 1U;
 	case GL_BLEND_SRC_RGB:
 		values[0] = (GLint)state->blend_src_rgb;
@@ -1832,6 +1856,75 @@ gles_integers_es3(
 
 	/* Not an integer state. */
 	return 0U;
+}
+
+/* Returns what draw buffer i of the draw framebuffer writes (GL_BACK, GL_COLOR_ATTACHMENTi or GL_NONE). */
+static GLenum
+gles_draw_buffer(
+	struct gles_state *state,
+	GLenum index)
+{
+	struct gles_framebuffer *fbo;
+
+	/* The surfaces' one buffer. */
+	if (state->framebuffer == 0U) {
+		if (index == 0U)
+			return state->default_draw_buffer;
+		return GL_NONE;
+	}
+
+	/* A framebuffer object's buffer. */
+	fbo = gles_names_get(&state->framebuffers, state->framebuffer);
+	if (fbo == NULL || index >= GLES_DRAW_BUFFERS)
+		return GL_NONE;
+
+	/* Succeeded: the attachment it writes. */
+	return fbo->draw_buffers[index];
+}
+
+/* Returns what the read framebuffer's reads read (GL_BACK, GL_COLOR_ATTACHMENTi or GL_NONE). */
+static GLenum
+gles_read_buffer(
+	struct gles_state *state)
+{
+	struct gles_framebuffer *fbo;
+
+	/* The surfaces' buffer. */
+	if (state->read_framebuffer == 0U)
+		return state->default_read_buffer;
+
+	/* A framebuffer object's. */
+	fbo = gles_names_get(&state->framebuffers, state->read_framebuffer);
+	if (fbo == NULL)
+		return GL_NONE;
+
+	/* Succeeded: the attachment it reads. */
+	return fbo->read_buffer;
+}
+
+/* Returns the format (GL_IMPLEMENTATION_COLOR_READ_FORMAT) or the type glReadPixels reads the read buffer as besides RGBA bytes. */
+static GLenum
+gles_read_pair(
+	struct gles_state *state,
+	GLenum pname)
+{
+	const struct gles_format *format;
+	GLenum read_format;
+	GLenum read_type;
+
+	/* The read buffer's format's pair (RGBA bytes without one). */
+	format = gles_read_buffer_format(state);
+	read_format = GL_RGBA;
+	read_type = GL_UNSIGNED_BYTE;
+	if (format != NULL)
+		gles_read_format(format, &read_format, &read_type);
+
+	/* The format asked for. */
+	if (pname == GL_IMPLEMENTATION_COLOR_READ_FORMAT)
+		return read_format;
+
+	/* Succeeded: the type. */
+	return read_type;
 }
 
 /* Returns a buffer's name, 0 for none. */

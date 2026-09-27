@@ -20,6 +20,7 @@
 #include "shaders.h"
 #include "popup.h"
 #include "subsurface.h"
+#include "extras.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -1354,6 +1355,8 @@ compose_cursor(
 	const struct zwl_import *image;
 	struct zwl_object *surface;
 	struct zwl_import alpha;
+	int32_t hotspot_x;
+	int32_t hotspot_y;
 
 	/* A hidden cursor is not drawn. */
 	if (server->cursor_hidden)
@@ -1368,6 +1371,13 @@ compose_cursor(
 		alpha = *image;
 		alpha.draw = ZWL_DRAW_ALPHA;
 		compose_quad(server, command, &alpha, server->pointer_x - server->cursor_hotspot_x, server->pointer_y - server->cursor_hotspot_y);
+		return;
+	}
+
+	/* A shape the client asked for, its hotspot at the pointer (cursor.c, ws035-p080). */
+	image = zwl_cursor_image(server, &hotspot_x, &hotspot_y);
+	if (image != NULL) {
+		compose_quad(server, command, image, server->pointer_x - hotspot_x, server->pointer_y - hotspot_y);
 		return;
 	}
 

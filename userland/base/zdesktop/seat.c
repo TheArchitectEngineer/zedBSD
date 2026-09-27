@@ -24,6 +24,7 @@
 #include "toplevel.h"
 #include "subsurface.h"
 #include "data.h"
+#include "extras.h"
 #include "keymap.h"
 #include <fcntl.h>
 #include <unistd.h>
@@ -225,11 +226,12 @@ void
 zwl_cursor_default(
 	struct zwl_server *server)
 {
-	/* The arrow, shown. */
+	/* The arrow, shown (no client's surface or shape). */
 	if (server->cursor_surface != NULL)
 		server->cursor_surface->cursor_role = 0;
 	server->cursor_surface = NULL;
 	server->cursor_hidden = 0;
+	server->cursor_shape = 0;
 	server->dirty = 1;
 }
 
@@ -1023,8 +1025,9 @@ set_cursor(
 	if (server->cursor_surface != NULL && server->cursor_surface != surface)
 		server->cursor_surface->cursor_role = 0;
 
-	/* No surface hides the cursor. */
+	/* A cursor surface (or none) replaces a shape the client asked for; no surface hides the cursor. */
 	server->dirty = 1;
+	server->cursor_shape = 0;
 	if (surface == NULL) {
 		server->cursor_surface = NULL;
 		server->cursor_hidden = 1;

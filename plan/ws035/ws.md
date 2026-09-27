@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-27: p014 cleared（Super+Tab の Wiseview）、p025・p027 canceled（p059 で置き換え済み）。p075 cleared（libwayland の汎用 dispatch と event の new_id）。p076 cleared（popup・positioner・toplevel の要求・ping）。p077 cleared（sub-surface）。p078 cleared（XKB keymap・wl_output v4）。p079 cleared（clipboard）。次は p080（toolkit の Wayland の対応範囲、p028 を分けた）→ p055（damage）→ p057（背後のぼかし）→ p058
+Resume point: 2026-09-27: p075〜p080 cleared（toolkit の Wayland: libwayland の汎用 dispatch、popup・positioner・toplevel の要求・ping、sub-surface、XKB keymap・wl_output v4、clipboard、decoration・cursor-shape・sub-surface の viewporter）。次の順: p081（窓の body の viewporter の描画、ws070-p010 の後）→ p082（グラフィカルログインマネージャの検討、設計のみ）→ p055（damage）→ p057（背後のぼかしと影）→ p058（sq001 の規約の照合と回帰）→ p028 の締め（分けた Phase が全て cleared）。2026-09-27 から WS035・WS070・WS071 は 1 つのサブエージェント（WS071 の agent）が進める
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -269,7 +269,9 @@ p001で確かめる。
 | [ws035-p077](phase077/phase.md) | （p028 から分割）zdesktop: `wl_subcompositor`・`wl_subsurface`（位置、上下、sync・desync、親と一緒の合成と入力） | cleared（2026-09-27、Venus。seat の pointer を keyboard の focus から分けた。libwayland に wl_subcompositor） | p075 | zdesktop、libwayland |
 | [ws035-p078](phase078/phase.md) | （p028 から分割）zdesktop: `wl_keyboard` の XKB keymap（US の text keymap を fd で）、`wl_output` v4（name・description・scale・done）、seat・pointer の新しい版（frame 等） | cleared（2026-09-27、host の libxkbcommon と Venus。repeat 25/400、Caps・Num の lock。seat は v5 のまま。Num Lock の key は BUG-070） | p075 | zdesktop |
 | [ws035-p079](phase079/phase.md) | （p028 から分割）zdesktop: `wl_data_device_manager`（client 間の clipboard の selection。drag and drop は最小）と zdesktop-terminal の Copy・Paste をそれへ | cleared（2026-09-27、Venus。probe どうしと terminal の Copy・Paste。drag and drop は start_drag を cancelled に） | p075 | zdesktop、zdesktop-terminal |
-| ws035-p080 | （p028 から分割）zdesktop: `zxdg_decoration_manager_v1`（既定は server-side）、`wp_cursor_shape_v1`、`wp_viewporter` | planned | p075、p076 | zdesktop |
+| [ws035-p080](phase080/phase.md) | （p028 から分割）zdesktop: `zxdg_decoration_manager_v1`（既定は server-side）、`wp_cursor_shape_v1`、`wp_viewporter` | cleared（2026-09-27、Venus。decoration は常に server-side、cursor の shape を zdesktop が描く、viewporter は状態と sub-surface の描画。窓の body は p081） | p075、p076 | zdesktop |
+| ws035-p081 | （p080 から分割、2026-09-27 main の指示）zdesktop: 窓の body の wp_viewporter（source の切り出しと destination の大きさで描く: shell.c の body_rect・window_at・draw_body・配置、compose.c の plain の look の uv 付きの quad、popup の描画）。WS070 の titlebar と shell.c がぶつからないように後に | planned | p080、ws070-p010 | zdesktop |
+| ws035-p082 | （2026-09-27 ユーザー指示「WS035に、グラフィカルログインマネージャの検討を追加してください。Waylandではなくて、Vulkanを直接叩くのかなあ。」）グラフィカルログインマネージャの検討（設計のみ、実装はしない）: Wayland の session の前に VK_KHR_display で直接描く案（zdesktop と同じ）と、最小の zdesktop・Wayland の greeter の案の比較、認証（PAM 無し、zedBSD の login・crypt）、session の開始（user として zdesktop を起動、権限の降格、VT・seat の引き継ぎ、i915 と Venus）、security、ユーザーの仮説（Vulkan 直接）の意味 | planning | p080 | 文書（plan/ws035） |
 | ws035-p055 | （2026-09-25 承認）damage（buffer age と scissor） | planned（sq001） | p011 | 同上 |
 | ws035-p057 | （2026-09-25 承認）効果: すりガラス（背後のぼかし）と影 | planned（sq001） | p055 | 同上 |
 | ws035-p058 | zdesktop（secondary queue で変えた全 source）の規約の全文との照合と回帰（sq001 の締め） | planned（sq001） | sq001 の他の Phase | sq001 で変えた source |
