@@ -35,3 +35,8 @@
 
 `kmsg=quiet` の起動で HAL の早期の行（数十行）が logo の上に出て、kernel の console が隠れた後もそのまま残る。
 完全なグラフィカル起動にはこの差分が要る。
+
+## 適用（2026-09-28）
+
+ユーザー「HALのdiffは承認します。」で適用（commit 3f3a6072）。desktop の image の build と boot test は PASS。boot test の image は
+`kmsg=console` のため、`kmsg=quiet` の経路（logo を残す、進捗の枠、console の停止）の確認は未実施。

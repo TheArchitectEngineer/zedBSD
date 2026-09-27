@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-28: グラフィカルログインと完全なグラフィカル起動（ユーザー承認 2026-09-28）: p094（sessiond）・p095（`zdesktop --greeter`）・p096（loader の logo）・p097（`kmsg=quiet`）・p098（既定）・p099（BIOS の loader の logo）cleared。HAL の早期 console の差分（[proposed/hal-quiet-console.md](proposed/hal-quiet-console.md)）は承認待ち。残り: g4（継ぎ目の無い引き継ぎ）、g5（画面の lock）、kernel の revoke（別 WS）。p100（terminal の PRIMARY selection）cleared、残りは X11 の PRIMARY の橋。p101（g4 の表示の引き継ぎ: 文字 console を出さない、黒 約 1.1 秒）cleared、黒も無くすのは lease の fd の受け渡し（WS075・libvulkan と相談、revoke）。p102（g5 の画面の lock）cleared。p103（X11 の PRIMARY の橋）cleared。
+Resume point: 2026-09-28 の周期の終わり: login manager（p094〜p099）・primary selection（p100・p103）・表示の引き継ぎ（p101）・lock（p102）・システムバーの network（p013）は cleared。次: session の user を `network` の group に（2026-09-28 ユーザーの決定、p013 の残り）→ F-044（configure_bounds）→ F-041 の名前の衝突の dialog。source は WS078 で `userland/desktop/` へ移った（zdesktop → wayland 等）。HAL の quiet console の diff は適用済み（kmsg=quiet の確認は未実施）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
