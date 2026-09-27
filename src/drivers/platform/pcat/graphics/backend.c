@@ -1104,7 +1104,7 @@ text_console_start(
 	if (ready != 0) {
 		__atomic_store_n(
 			&kernel_putc,
-			kern_text_putc,
+			kern_text_kernel_putc,
 			__ATOMIC_RELEASE);
 	}
 

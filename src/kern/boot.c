@@ -44,6 +44,8 @@ static const struct parameter_name parameter_names[KERN_BOOT_PARAMETER_COUNT] = 
 	PARAMETER_NAME("swap2"),
 	PARAMETER_NAME("swap3"),
 	PARAMETER_NAME("init"),
+	PARAMETER_NAME("kmsg"),
+	PARAMETER_NAME("login"),
 };
 
 static char firmware_source[KERN_BOOT_SOURCE_SELECTOR_SIZE];
@@ -61,6 +63,8 @@ static int name_matches(const char *name, size_t length, const struct parameter_
 static int parameter_key(const char *name, size_t length, enum kern_boot_parameter_key *key);
 static void record_unknown(struct kern_boot_parameters *parameters, const char *name, size_t length);
 static int parameter_separator(char character);
+static int parameter_word(enum kern_boot_parameter_key key, const char *value, size_t length);
+static int parameter_text_is(const char *value, size_t length, const char *word);
 static size_t skip_separators(const char *text, size_t position, size_t length);
 static int selector_text(const char *text, size_t maximum, int device_name);
 static int context_fail(struct kern_boot_source_context *context, unsigned slot, enum kern_boot_source_failure_stage stage, int error);
@@ -273,6 +277,15 @@ kern_boot_parameters_parse(
 			}
 		}
 
+		/* kmsg= and login= take one of their two words (ws035-p097). */
+		if (key == KERN_BOOT_PARAMETER_KMSG || key == KERN_BOOT_PARAMETER_LOGIN) {
+			error = parameter_word(key, parameters->storage + value_start, value_length);
+			if (error != 0) {
+				error = parse_error(parameters, error);
+				return error;
+			}
+		}
+
 		/* Terminates the name and the value in place. */
 		if (token_end < length)
 			parameters->storage[token_end] = '\0';
@@ -286,6 +299,57 @@ kern_boot_parameters_parse(
 
 	/* Reports the parsed record. */
 	return 0;
+}
+
+/* Checks the word of kmsg= (quiet or console) or login= (graphical or console). */
+static int
+parameter_word(
+	enum kern_boot_parameter_key key,
+	const char *value,
+	size_t length)
+{
+	int console;
+	int other;
+
+	/* Both take console. */
+	console = parameter_text_is(value, length, "console");
+	if (console)
+		return 0;
+
+	/* kmsg= also takes quiet, login= also takes graphical. */
+	other = 0;
+	if (key == KERN_BOOT_PARAMETER_KMSG)
+		other = parameter_text_is(value, length, "quiet");
+	else if (key == KERN_BOOT_PARAMETER_LOGIN)
+		other = parameter_text_is(value, length, "graphical");
+	if (!other)
+		return EINVAL;
+
+	/* Succeeded: a word the parameter takes. */
+	return 0;
+}
+
+/* Reports whether a counted text is exactly a terminated word. */
+static int
+parameter_text_is(
+	const char *value,
+	size_t length,
+	const char *word)
+{
+	size_t index;
+
+	/* Each character of the text against the word's. */
+	for (index = 0; index < length; index++) {
+		if (word[index] == '\0' || word[index] != value[index])
+			return 0;
+	}
+
+	/* The word ends where the text does. */
+	if (word[length] != '\0')
+		return 0;
+
+	/* Succeeded: the same word. */
+	return 1;
 }
 
 /*
@@ -461,6 +525,59 @@ kern_boot_parameters_unknown_name(
 
 	/* Reports the remembered name. */
 	return parameters->unknown_name;
+}
+
+/*
+ * Reports whether a whole token is in a boot parameter string.
+ *
+ * The string is read up to its terminator or the parameter storage size,
+ * whichever comes first; tokens are separated as the parser separates them.
+ */
+int
+kern_boot_parameters_token_present(
+	const char *text,
+	const char *token)
+{
+	size_t position;
+	size_t start;
+	size_t length;
+	int separator;
+	int same;
+
+	/* No string has no tokens. */
+	if (text == NULL || token == NULL)
+		return 0;
+
+	/* Each token, compared whole. */
+	position = 0;
+	while (position < KERN_BOOT_PARAMETERS_STORAGE_SIZE && text[position] != '\0') {
+		/* Steps over the separators. */
+		separator = parameter_separator(text[position]);
+		if (separator) {
+			position++;
+			continue;
+		}
+
+		/* The token's extent. */
+		start = position;
+		for (;;) {
+			if (position >= KERN_BOOT_PARAMETERS_STORAGE_SIZE || text[position] == '\0')
+				break;
+			separator = parameter_separator(text[position]);
+			if (separator)
+				break;
+			position++;
+		}
+
+		/* The same token, of the same length. */
+		length = position - start;
+		same = parameter_text_is(text + start, length, token);
+		if (same)
+			return 1;
+	}
+
+	/* Not there. */
+	return 0;
 }
 
 /*

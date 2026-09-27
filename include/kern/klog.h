@@ -34,4 +34,15 @@ kern_log_snapshot(
 size_t
 kern_log_capacity(void);
 
+/*
+ * The quiet log (the boot parameter kmsg=quiet, ws035-p097): records go to
+ * the ring (dmesg) and the platform debug port, not to the console.
+ */
+void
+kern_log_set_quiet(
+	int quiet);
+
+int
+kern_log_quiet(void);
+
 #endif
