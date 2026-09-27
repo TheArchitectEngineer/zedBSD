@@ -120,6 +120,9 @@ static const struct values_name values_names[] = {
 	{ "left", CSS_PROP_LEFT },
 	{ "z-index", CSS_PROP_Z_INDEX },
 	{ "clear", CSS_PROP_CLEAR },
+	{ "overflow", CSS_PROP_OVERFLOW },
+	{ "overflow-x", CSS_PROP_OVERFLOW_X },
+	{ "overflow-y", CSS_PROP_OVERFLOW_Y },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -178,6 +181,17 @@ static const struct values_keyword values_float[] = {
 	{ "right", CSS_FLOAT_RIGHT },
 	{ "inline-start", CSS_FLOAT_LEFT },
 	{ "inline-end", CSS_FLOAT_RIGHT },
+	{ NULL, 0 }
+};
+
+/* The keywords of overflow (one value for both axes in this pass). */
+static const struct values_keyword values_overflow[] = {
+	{ "visible", CSS_OVERFLOW_VISIBLE },
+	{ "hidden", CSS_OVERFLOW_HIDDEN },
+	{ "clip", CSS_OVERFLOW_CLIP },
+	{ "scroll", CSS_OVERFLOW_SCROLL },
+	{ "auto", CSS_OVERFLOW_AUTO },
+	{ "overlay", CSS_OVERFLOW_AUTO },
 	{ NULL, 0 }
 };
 
@@ -989,6 +1003,11 @@ values_single(
 		break;
 	case CSS_PROP_CLEAR:
 		table = values_clear;
+		break;
+	case CSS_PROP_OVERFLOW:
+	case CSS_PROP_OVERFLOW_X:
+	case CSS_PROP_OVERFLOW_Y:
+		table = values_overflow;
 		break;
 	case CSS_PROP_VISIBILITY:
 		table = values_visibility;

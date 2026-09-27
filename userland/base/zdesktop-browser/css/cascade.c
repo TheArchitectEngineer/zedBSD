@@ -884,6 +884,16 @@ cascade_apply(
 	case CSS_PROP_CLEAR:
 		style->clear = value->keyword;
 		break;
+	case CSS_PROP_OVERFLOW:
+		style->overflow_x = value->keyword;
+		style->overflow_y = value->keyword;
+		break;
+	case CSS_PROP_OVERFLOW_X:
+		style->overflow_x = value->keyword;
+		break;
+	case CSS_PROP_OVERFLOW_Y:
+		style->overflow_y = value->keyword;
+		break;
 	case CSS_PROP_VISIBILITY:
 		style->visibility = value->keyword;
 		break;
@@ -1034,6 +1044,16 @@ cascade_inherit(
 		break;
 	case CSS_PROP_CLEAR:
 		style->clear = parent->clear;
+		break;
+	case CSS_PROP_OVERFLOW:
+		style->overflow_x = parent->overflow_x;
+		style->overflow_y = parent->overflow_y;
+		break;
+	case CSS_PROP_OVERFLOW_X:
+		style->overflow_x = parent->overflow_x;
+		break;
+	case CSS_PROP_OVERFLOW_Y:
+		style->overflow_y = parent->overflow_y;
 		break;
 	case CSS_PROP_VISIBILITY:
 		style->visibility = parent->visibility;

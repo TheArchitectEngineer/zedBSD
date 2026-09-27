@@ -304,3 +304,21 @@ sched_sleep(
 	/* Succeeded: the next policy observation sees the selected time boundary. */
 	return;
 }
+
+/* The console's input hold (ws035-p097) has no console in the host peer. */
+void
+tty_console_input_hold(
+	void)
+{
+	/* Succeeded: nothing to hold. */
+	return;
+}
+
+/* Releases the host peer's absent console hold. */
+void
+tty_console_input_unhold(
+	void)
+{
+	/* Succeeded: nothing to release. */
+	return;
+}

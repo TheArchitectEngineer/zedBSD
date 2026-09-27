@@ -43,6 +43,7 @@
 #include <drivers/gpu/gpu.h>
 #include <kern/clock.h>
 #include <kern/klog.h>
+#include <kern/kmem.h>
 #include <kern/lock.h>
 #include <kern/sched.h>
 #include <kern/thread.h>
@@ -267,13 +268,6 @@ struct i915_vkx {
 	unsigned failed;
 };
 
-/*
- * The scenario's state.
- *
- * Only the scenario's thread touches it, from its start to its end; the
- * scenario runs once per boot.
- */
-static struct i915_vkx i915_vkx_state;
 
 /* The bits of -1, -0.75 .. 1 in steps of 0.25: NDC coordinate k maps to pixel 8 * k. */
 static const uint32_t i915_vkx_ndc[9] = {
@@ -429,14 +423,23 @@ i915_vkx_thread(
 		return;
 	}
 
+	/*
+	 * The scenario's state, from the heap rather than the kernel image
+	 * (about 240 KiB; the test kernel has to fit AMD64_KERNEL_MAX_BYTES).
+	 */
+	x = kern_calloc(1U, sizeof(*x));
+	if (x == NULL) {
+		kern_logf("i915: vkx: verdict FAIL (no memory for the scenario's state)\n");
+		return;
+	}
+
 	/* Opens the session and makes every object the steps use. */
-	x = &i915_vkx_state;
-	kern_memset(x, 0, sizeof(*x));
 	x->device = device;
 	error = i915_vkx_setup(x);
 	if (error != 0) {
 		kern_logf("i915: vkx: verdict FAIL (setup: %d)\n", error);
 		i915_vkx_teardown(x);
+		kern_free(x);
 		return;
 	}
 
@@ -455,10 +458,12 @@ i915_vkx_thread(
 	i915_vkx_teardown(x);
 	if (x->failed != 0U) {
 		kern_logf("i915: vkx: verdict FAIL (%u of %u steps passed)\n", x->passed, x->passed + x->failed);
+		kern_free(x);
 		return;
 	}
 
 	kern_logf("i915: vkx: verdict PASS (%u of %u steps passed)\n", x->passed, x->passed + x->failed);
+	kern_free(x);
 }
 
 /* Waits until the node is published, sleeping a twentieth of a second at a time; ETIMEDOUT when it never is. */
