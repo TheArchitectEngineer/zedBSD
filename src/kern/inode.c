@@ -48,6 +48,7 @@ extern void vm_object_resize_commit(struct vm_object_resize *resize, off_t size)
     __attribute__((weak));
 extern void vm_object_resize_abort(struct vm_object_resize *resize)
     __attribute__((weak));
+extern int vm_object_cache_discard_inode(struct inode *inode) __attribute__((weak));
 extern int vm_object_discard_mount_refs(struct mount *, struct inode *, unsigned *)
     __attribute__((weak));
 
@@ -1986,6 +1987,16 @@ inode_unlink_locked(
 		inode_release(target);
 		return EBUSY;
 	}
+
+	/*
+	 * A file losing its last name gives its storage back when the last
+	 * holder lets go.  An idle page cache of it holds a read handle of its
+	 * own and would keep the storage until it is evicted (BUG-075), so it
+	 * is dropped first; a failed removal loses only clean cached pages.
+	 */
+	if (target->i_type == INODE_REG && target->i_linkcount <= 1 &&
+	    vm_object_cache_discard_inode != NULL)
+		(void)vm_object_cache_discard_inode(target);
 
 	inode_release(target);
 	if (i->i_op != NULL && i->i_op->unlink != NULL)

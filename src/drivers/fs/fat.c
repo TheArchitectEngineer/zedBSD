@@ -381,6 +381,8 @@ static int fat_create_unlocked(struct inode *directory,
 	const struct componentname *name,
 	const struct inode_creation_request *request, struct inode **result);
 static FAT_MUTATION void fat_release_orphan(struct inode *inode);
+/* The VM is optional in some kernels; without it no cache holds an inode. */
+extern int vm_object_cache_discard_inode(struct inode *inode) __attribute__((weak));
 static FAT_MUTATION int fat_mkdir_unlocked(struct inode *directory,
 	const struct componentname *name,
 	const struct inode_creation_request *request, struct inode **result);
@@ -10453,6 +10455,14 @@ fat_release_orphan(
 	/* A call that names no inode has nothing to release. */
 	if (inode == NULL)
 		return;
+
+	/*
+	 * A page cache of the file holds a read handle of its own, which would
+	 * keep the chain until the cache is evicted (BUG-075); an idle one is
+	 * dropped first.
+	 */
+	if (vm_object_cache_discard_inode != NULL)
+		(void)vm_object_cache_discard_inode(inode);
 
 	/*
 	 * inode_release() owns the transition from the final external
