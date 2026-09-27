@@ -57,6 +57,7 @@ main(
 	server.listener = -1;
 	server.gpu = -1;
 	server.frame_fd = -1;
+	server.auth_fd = -1;
 	server.gpu_path = "/dev/gpu0";
 	server.font_path = "/usr/share/fonts/zdesktop.ttf";
 	server.fallback_font_path = "/usr/share/fonts/zdesktop-fallback.ttf";
@@ -68,8 +69,19 @@ main(
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: zdesktop [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100]\n");
+		fprintf(stderr, "usage: zdesktop [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--session | --greeter --auth-fd=N]\n");
 		return 2;
+	}
+
+	/* The login screen is the glass look's, and asks zsessiond on a descriptor it was given. */
+	if (server.greeter) {
+		if (server.auth_fd < 0) {
+			fprintf(stderr, "zdesktop: --greeter needs --auth-fd=N\n");
+			return 2;
+		}
+
+		/* The glass look draws it. */
+		server.glass = 1;
 	}
 
 	/* Catch normal termination without performing allocation or I/O inside a signal handler. */
@@ -82,12 +94,12 @@ main(
 	if (previous_handler == SIG_ERR)
 		return 1;
 
-	/* The pointer starts in the middle of the configured output. */
+	/* Open an independent GPU context before publishing a usable Wayland endpoint (it may take the display's size). */
+	error = zwl_gpu_open(&server);
+
+	/* The pointer starts in the middle of the output. */
 	server.pointer_x = (int32_t)(server.width / 2U);
 	server.pointer_y = (int32_t)(server.height / 2U);
-
-	/* Open an independent GPU context before publishing a usable Wayland endpoint. */
-	error = zwl_gpu_open(&server);
 
 	/* Window mode's Vulkan device; without one (or with --direct) one surface is shown directly. */
 	if (error == 0 && !server.direct) {
@@ -98,6 +110,10 @@ main(
 			error = 0;
 		}
 	}
+
+	/* The login screen is drawn with Vulkan only: without it there is no login screen. */
+	if (error == 0 && server.greeter && server.compose == NULL)
+		error = ENODEV;
 
 	/* Input devices are found before READY; a seat without devices is still valid. */
 	if (error == 0)
@@ -113,8 +129,12 @@ main(
 		}
 	}
 
-	/* The endpoint is published last. */
-	if (error == 0)
+	/* The login screen's users and zsessiond's answers (greeter.c). */
+	if (error == 0 && server.greeter)
+		error = zwl_greeter_open(&server);
+
+	/* The endpoint is published last; the login screen has none. */
+	if (error == 0 && !server.greeter)
 		error = listen_socket(&server);
 
 	/* READY appears only after the hardware contract and socket namespace are both usable. */
@@ -132,6 +152,18 @@ main(
 
 	/* Succeeded: the finite service run completed and every owned resource was retired. */
 	return 0;
+}
+
+/*
+ * Asks the event loop to end zdesktop in order, as SIGTERM does: the login
+ * screen after a login, a session at its Log Out.
+ */
+void
+zwl_request_stop(
+	void)
+{
+	/* The loop sees this at its next pass. */
+	stop_requested = 1;
 }
 
 /* Requests cleanup from the main loop without touching non-signal-safe state. */
@@ -201,6 +233,7 @@ parse_options(
 
 			/* Publish a positive bounded width only after parsing succeeds. */
 			server->width = (uint32_t)number;
+			server->size_given = 1;
 			continue;
 		}
 
@@ -214,6 +247,7 @@ parse_options(
 
 			/* Publish a positive bounded height only after parsing succeeds. */
 			server->height = (uint32_t)number;
+			server->size_given = 1;
 			continue;
 		}
 
@@ -254,6 +288,32 @@ parse_options(
 		match = strcmp(argument, "--direct");
 		if (match == 0) {
 			server->direct = 1;
+			continue;
+		}
+
+		/* The login screen (ws035-p095): no socket, zsessiond asked on --auth-fd, no deadline. */
+		match = strcmp(argument, "--greeter");
+		if (match == 0) {
+			server->greeter = 1;
+			server->timeout_ms = UINT64_MAX;
+			continue;
+		}
+
+		/* The descriptor zsessiond answers the login screen on. */
+		match = strncmp(argument, "--auth-fd=", 10);
+		if (match == 0) {
+			error = unsigned_option(argument + 10, 1023, &number);
+			if (error != 0)
+				return error;
+			server->auth_fd = (int)number;
+			continue;
+		}
+
+		/* A login session (ws035-p095): no deadline, App Home's Log Out ends it. */
+		match = strcmp(argument, "--session");
+		if (match == 0) {
+			server->session = 1;
+			server->timeout_ms = UINT64_MAX;
 			continue;
 		}
 

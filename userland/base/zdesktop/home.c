@@ -66,6 +66,9 @@
 /* The applications' list, and how many it may hold. */
 #define HOME_APPS_PATH		"/etc/zdesktop/apps.conf"
 
+/* The command of a login session's Log Out, which zdesktop carries out itself. */
+#define HOME_LOGOUT		"@logout"
+
 /* The page the built-in list's browser opens (shown only when the page is there). */
 #define HOME_BROWSER_START	"/usr/share/zdesktop-browser/start.html"
 #define HOME_APPS_MAX		48U
@@ -148,7 +151,7 @@ static const char home_characters[HOME_KEYS] = {
 	'z', 'x', 'c', 'v', 'b', 'n', 'm', 0, '.', '/', 0, 0, 0, ' '
 };
 
-static void home_read_apps(void);
+static void home_read_apps(struct zwl_server *server);
 static int home_present(const char *name, const char *command);
 static void home_add_app(const char *name, const char *command, const char *keywords, uint32_t rgb);
 static void home_parse_line(char *line);
@@ -251,7 +254,7 @@ zwl_home_draw(
 	unsigned slot;
 
 	/* The applications and where they go. */
-	home_read_apps();
+	home_read_apps(server);
 	home_layout(server);
 
 	/*
@@ -674,9 +677,10 @@ zwl_home_launched(
 	return 1;
 }
 
-/* Reads the applications' list once: the file, or the built-in list when there is none. */
+/* Reads the applications' list once: the file, or the built-in list when there is none; a login session adds Log Out. */
 static void
-home_read_apps(void)
+home_read_apps(
+	struct zwl_server *server)
 {
 	char line[320];
 	FILE *file;
@@ -720,6 +724,10 @@ home_read_apps(void)
 		home_add_app("Files", "/bin/zdesktop-files", "files file manager folder finder browse", 0x2f7cf6U);
 		home_add_app("Browser", "/bin/zdesktop-browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U);
 	}
+
+	/* A login's session ends with Log Out (ws035-p095), the last icon. */
+	if (server->session)
+		home_add_app("Log Out", HOME_LOGOUT, "logout log out sign out exit session end", 0x6a7488U);
 }
 
 /* Adds an application to the list, when there is room. */
@@ -1198,6 +1206,15 @@ home_launch(
 	pid_t child;
 	unsigned slot;
 	int descriptor;
+	int logout;
+
+	/* Log Out ends the session: zdesktop ends, and zsessiond shows the login screen again. */
+	logout = strcmp(home_apps[app].command, HOME_LOGOUT);
+	if (logout == 0) {
+		printf("ZWL SESSION logout\n");
+		zwl_request_stop();
+		return;
+	}
 
 	/* The child. */
 	child = fork();

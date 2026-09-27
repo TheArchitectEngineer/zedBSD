@@ -80,6 +80,9 @@ int32_t glass_glyph_advance(struct zwl_server *server, enum glass_size size, uns
 void glass_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned icon, int32_t x, int32_t y, unsigned pixels, const float *color);
 VkDescriptorSet glass_wallpaper_set(struct zwl_server *server);
 
+/* The login screen in place of the desktop (greeter.c). */
+void zwl_greeter_draw(struct zwl_server *server, VkCommandBuffer command);
+
 /* App Home under the desktop layer (home.c). */
 void zwl_home_draw(struct zwl_server *server, VkCommandBuffer command, float progress);
 
