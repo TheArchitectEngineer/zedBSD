@@ -38,7 +38,7 @@ while [ "$i" -le "$count" ]; do
 		i=$((i + 1))
 		continue
 	fi
-	log=$($guest run 'dmesg | grep -E "error=42|error=5 |timed out|ETIMEDOUT|CSW error|BOT data" ; true' 2>&1)
+	log=$($guest run 'dmesg | grep -E "error=42|error=5 |timed out|ETIMEDOUT|CSW error|BOT data|enumeration failed|attach-failed" ; true' 2>&1)
 	if [ -n "$log" ]; then
 		bad_log=$((bad_log + 1))
 	fi
