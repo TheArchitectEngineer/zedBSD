@@ -285,13 +285,17 @@ fm_ui_draw(
 	whole.height = canvas->height;
 	fm_canvas_gradient(canvas, &whole, FM_COLOR_BACKGROUND_TOP, FM_COLOR_BACKGROUND_BOTTOM);
 
-	/* The tab bar, when there is one, and the sidebar, when shown. */
-	fm_tabs_draw(app, canvas);
+	/* The sidebar, when shown. */
 	if (app->show_sidebar != 0)
 		ui_draw_sidebar(app, canvas);
 
-	/* The content panel, drawn by the view of the place, and the preview beside it when shown. */
+	/*
+	 * The content panel, drawn by the view of the place, then its tabs on
+	 * its top edge (the shown tab covers the edge it joins), and the
+	 * preview beside it when shown.
+	 */
 	fm_grid_draw(app, canvas, &app->layout.content);
+	fm_tabs_draw(app, canvas);
 	if (app->show_preview != 0)
 		fm_preview_draw(app, canvas, &app->layout.preview);
 
@@ -747,9 +751,6 @@ ui_layout(
 	left = UI_MARGIN;
 	right = app->width - UI_MARGIN;
 
-	/* The tab bar across the top while the window has two tabs or more (ui-tabs.c). */
-	top += fm_tabs_layout(app, top, left, right);
-
 	/* The sidebar on the left, when shown. */
 	memset(&layout->sidebar, 0, sizeof(layout->sidebar));
 	if (app->show_sidebar != 0) {
@@ -770,7 +771,10 @@ ui_layout(
 		right -= UI_PREVIEW_WIDTH + UI_GAP;
 	}
 
-	/* The content between them. */
+	/* The tab bar on the content's top edge while the window has two tabs or more (ui-tabs.c). */
+	top += fm_tabs_layout(app, top, left, right);
+
+	/* The content between the sidebar and the preview, under its tabs. */
 	layout->content.x = left;
 	layout->content.y = top;
 	layout->content.width = right - left;

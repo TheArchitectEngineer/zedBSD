@@ -8,40 +8,60 @@
 /*
  * The tabs of a window (spec §30, design §3).  A new tab opens beside the
  * one shown, at the place given; closing the last tab closes the window.
- * While the window has two tabs or more, a bar of pill-shaped tabs runs
- * across the top of the window and the panels move down under it.
+ * While the window has two tabs or more, the tabs stand on the top edge of
+ * the content panel, whose place they switch: the shown tab is cut from
+ * the panel's own surface and flows into it, the others are quiet labels
+ * beside it.  The sidebar and the preview do not move.
  */
 
 #include "files.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* The bar's height and the space under it. */
+/* The bar's height, and the room above the tabs inside it. */
 #define TABS_HEIGHT		34
-#define TABS_BELOW		10
+#define TABS_ABOVE		3
 
-/* A tab's widest and narrowest, the gap between tabs, and the corners' radius. */
+/* How far the first tab starts inside the panel's left end (past its rounded corner). */
+#define TABS_INSET		20
+
+/* A tab's widest and narrowest, its top corners' radius and the radius of the feet that join it to the panel. */
 #define TABS_WIDEST		220
-#define TABS_NARROWEST		90
-#define TABS_GAP		6
-#define TABS_RADIUS		12.0f
+#define TABS_NARROWEST		96
+#define TABS_RADIUS		10.0f
+#define TABS_FOOT		7.0f
+
+/* The segments of a quarter circle in a tab's outline. */
+#define TABS_ARC_STEPS		6
+
+/* The most corners a tab's outline has: four quarter circles and the two points under it. */
+#define TABS_OUTLINE_POINTS	(4 * (TABS_ARC_STEPS + 1) + 2)
 
 /* The close button's size and the padding inside a tab. */
 #define TABS_CLOSE		18
-#define TABS_PADDING		12
+#define TABS_PADDING		14
 
 /* The text's size. */
 #define TABS_TEXT		12U
 
-/* The colours of a tab that is not shown and of one under the pointer. */
-#define TABS_COLOR_IDLE		FM_RGBA(0xffffff, 110)
-#define TABS_COLOR_HOVER	FM_RGBA(0xffffff, 170)
+/* A quarter of a turn, in radians. */
+#define TABS_QUARTER		1.57079632679f
+
+/* The colour of a quiet tab under the pointer, and of the separators between quiet tabs. */
+#define TABS_COLOR_HOVER	FM_RGBA(0xffffff, 120)
+#define TABS_COLOR_SEPARATOR	FM_RGBA(0x5a6b85, 60)
 
 static void tabs_leave(struct fm_app *app);
 static void tabs_shown(struct fm_app *app);
-static void tabs_draw_one(struct fm_app *app, struct fm_canvas *canvas, int index, const struct fm_rect *pill);
+static void tabs_place(const struct fm_rect *bar, int width, int index, struct fm_rect *tab);
+static int tabs_quiet(struct fm_app *app, int index);
+static void tabs_draw_separators(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *bar, int width, int count);
+static int tabs_arc(float *points, int count, float cx, float cy, float radius, float from, float to);
+static int tabs_outline(float *points, const struct fm_rect *tab, float grow, float foot);
+static void tabs_draw_one(struct fm_app *app, struct fm_canvas *canvas, int index, const struct fm_rect *tab);
 
 /*
  * Opens a new tab beside the one shown, at a place, and shows it.  A
@@ -186,8 +206,10 @@ fm_tabs_step(
 }
 
 /*
- * Places the tab bar at the top of the window, when the window has two
- * tabs or more, and returns how far the panels move down for it.
+ * Places the tab bar on the top edge of the content panel, when the window
+ * has two tabs or more, and returns how far the content panel moves down
+ * under it.  The sidebar and the preview keep their places: the tabs
+ * belong to the content they switch.
  */
 int
 fm_tabs_layout(
@@ -204,17 +226,19 @@ fm_tabs_layout(
 	if (app->tab_count < 2)
 		return 0;
 
-	/* The bar across the window. */
+	/* The bar over the content panel, its tabs standing on the panel's top edge. */
 	bar->x = left;
 	bar->y = top;
 	bar->width = right - left;
 	bar->height = TABS_HEIGHT;
-	return TABS_HEIGHT + TABS_BELOW;
+	return TABS_HEIGHT;
 }
 
 /*
- * Draws the tab bar, when there is one: the tabs share its width, up to
- * their widest, the shown one white.
+ * Draws the tab bar, when there is one, after the content panel it stands
+ * on.  The tabs share the bar's width up to their widest; the shown one is
+ * of the panel's surface and joins it, the others are quiet labels on the
+ * window's ground with thin separators between them.
  */
 void
 fm_tabs_draw(
@@ -222,8 +246,9 @@ fm_tabs_draw(
 	struct fm_canvas *canvas)
 {
 	const struct fm_rect *bar;
-	struct fm_rect pill;
+	struct fm_rect tab;
 	int width;
+	int count;
 	int index;
 
 	/* No bar for one tab. */
@@ -231,22 +256,33 @@ fm_tabs_draw(
 	if (bar->width <= 0)
 		return;
 
-	/* The tabs share the bar, within their widest and narrowest. */
-	width = (bar->width - TABS_GAP * (app->tab_count - 1)) / app->tab_count;
+	/* The tabs share the bar inside the panel's rounded corners, within their widest and narrowest. */
+	width = (bar->width - 2 * TABS_INSET) / app->tab_count;
 	if (width > TABS_WIDEST)
 		width = TABS_WIDEST;
 	if (width < TABS_NARROWEST)
 		width = TABS_NARROWEST;
 
-	/* Each tab, left to right, as far as the bar goes. */
-	for (index = 0; index < app->tab_count; index++) {
-		pill.x = bar->x + index * (width + TABS_GAP);
-		pill.y = bar->y;
-		pill.width = width;
-		pill.height = bar->height;
-		if (pill.x + pill.width > bar->x + bar->width)
-			break;
-		tabs_draw_one(app, canvas, index, &pill);
+	/* How many tabs the bar has room for. */
+	count = (bar->width - 2 * TABS_INSET) / width;
+	if (count > app->tab_count)
+		count = app->tab_count;
+
+	/* The quiet tabs first, left to right. */
+	for (index = 0; index < count; index++) {
+		if (index == app->tab_index)
+			continue;
+		tabs_place(bar, width, index, &tab);
+		tabs_draw_one(app, canvas, index, &tab);
+	}
+
+	/* The separators between quiet tabs. */
+	tabs_draw_separators(app, canvas, bar, width, count);
+
+	/* The shown tab last, over its neighbours' ends and the panel's top edge. */
+	if (app->tab_index < count) {
+		tabs_place(bar, width, app->tab_index, &tab);
+		tabs_draw_one(app, canvas, app->tab_index, &tab);
 	}
 }
 
@@ -286,51 +322,214 @@ tabs_leave(
 	app->typed_length = 0;
 }
 
+/* Places one tab of the bar, all tabs being the same width. */
+static void
+tabs_place(
+	const struct fm_rect *bar,
+	int width,
+	int index,
+	struct fm_rect *tab)
+{
+	/* The tab's slot, counted from the bar's inset left end, standing on the bar's bottom. */
+	tab->x = bar->x + TABS_INSET + index * width;
+	tab->y = bar->y + TABS_ABOVE;
+	tab->width = width;
+	tab->height = bar->height - TABS_ABOVE;
+}
+
+/* Tells whether a tab is quiet: neither the one shown nor under the pointer. */
+static int
+tabs_quiet(
+	struct fm_app *app,
+	int index)
+{
+	/* The shown tab stands out. */
+	if (index == app->tab_index)
+		return 0;
+
+	/* A tab (or its close button) under the pointer is lit. */
+	if (app->hover_kind == FM_HIT_TAB && app->hover_index == index)
+		return 0;
+	if (app->hover_kind == FM_HIT_TAB_CLOSE && app->hover_index == index)
+		return 0;
+
+	/* The rest are quiet. */
+	return 1;
+}
+
+/* Draws the thin separators between neighbouring quiet tabs. */
+static void
+tabs_draw_separators(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	const struct fm_rect *bar,
+	int width,
+	int count)
+{
+	struct fm_rect tab;
+	struct fm_rect line;
+	int quiet_left;
+	int quiet_right;
+	int index;
+
+	/* Each boundary between one tab and the next. */
+	for (index = 0; index + 1 < count; index++) {
+		/* A separator stands only between two quiet tabs; a lit or shown tab needs none. */
+		quiet_left = tabs_quiet(app, index);
+		quiet_right = tabs_quiet(app, index + 1);
+		if (quiet_left == 0 || quiet_right == 0)
+			continue;
+
+		/* A short line at the start of the right-hand tab, down the middle of its height. */
+		tabs_place(bar, width, index + 1, &tab);
+		line.x = tab.x;
+		line.y = tab.y + 8;
+		line.width = 1;
+		line.height = tab.height - 14;
+		fm_canvas_fill(canvas, &line, TABS_COLOR_SEPARATOR);
+	}
+}
+
 /*
- * Draws one tab: a pill with the name of its place, and a close button.
+ * Adds a quarter circle to an outline, from one angle to another (radians,
+ * y growing downwards), and returns the outline's new count of points.
+ */
+static int
+tabs_arc(
+	float *points,
+	int count,
+	float cx,
+	float cy,
+	float radius,
+	float from,
+	float to)
+{
+	float angle;
+	int step;
+
+	/* The points along the arc, both ends included. */
+	for (step = 0; step <= TABS_ARC_STEPS; step++) {
+		angle = from + (to - from) * (float)step / (float)TABS_ARC_STEPS;
+		points[2 * count] = cx + radius * cosf(angle);
+		points[2 * count + 1] = cy + radius * sinf(angle);
+		count++;
+	}
+
+	/* The outline so far. */
+	return count;
+}
+
+/*
+ * Makes the outline of a tab joined to the panel under it and returns its
+ * count of points.  Its top corners are rounded and its feet curve out
+ * into the panel's top edge.  An inset of one pixel gives the tab's
+ * surface inside its one-pixel edge, reaching one pixel into the panel so
+ * that it covers the panel's own edge under the tab.  A foot of zero
+ * leaves the tab's sides straight.
+ */
+static int
+tabs_outline(
+	float *points,
+	const struct fm_rect *tab,
+	float inset,
+	float foot)
+{
+	float left;
+	float right;
+	float top;
+	float bottom;
+	float radius;
+	int count;
+
+	/* The tab's box, its sides and top moved in by the inset and its foot line moved down by it. */
+	left = (float)tab->x + inset;
+	right = (float)(tab->x + tab->width) - inset;
+	top = (float)tab->y + inset;
+	bottom = (float)(tab->y + tab->height);
+	radius = TABS_RADIUS - inset;
+
+	/* The left foot, curving from the panel's edge up into the tab's left side. */
+	count = 0;
+	count = tabs_arc(points, count, (float)tab->x - foot, bottom - foot, foot + inset, TABS_QUARTER, 0.0f);
+
+	/* The rounded top left and top right corners. */
+	count = tabs_arc(points, count, left + radius, top + radius, radius, 2.0f * TABS_QUARTER, 3.0f * TABS_QUARTER);
+	count = tabs_arc(points, count, right - radius, top + radius, radius, 3.0f * TABS_QUARTER, 4.0f * TABS_QUARTER);
+
+	/* The right foot, curving from the tab's right side down into the panel's edge. */
+	count = tabs_arc(points, count, (float)(tab->x + tab->width) + foot, bottom - foot, foot + inset, 2.0f * TABS_QUARTER, TABS_QUARTER);
+
+	/* The outline, closed along the panel's edge. */
+	return count;
+}
+
+/*
+ * Draws one tab: the shown one of the panel's surface and joined to it,
+ * a quiet one as a label, lit under the pointer; the name of its place
+ * and a close button.
  */
 static void
 tabs_draw_one(
 	struct fm_app *app,
 	struct fm_canvas *canvas,
 	int index,
-	const struct fm_rect *pill)
+	const struct fm_rect *tab)
 {
+	float outline[2 * TABS_OUTLINE_POINTS];
 	const struct fm_location *location;
-	const struct fm_tab *tab;
+	const struct fm_tab *shown;
 	struct fm_rect close;
-	fm_color color;
+	fm_color ink;
+	fm_color cross;
+	int count;
 	int text_width;
 	int baseline;
+	int hovered;
+	int bold;
 
-	/* The shown tab is white and raised, one under the pointer lighter than the rest. */
-	color = TABS_COLOR_IDLE;
+	/* Whether the tab or its close button is under the pointer. */
+	hovered = 0;
 	if (app->hover_kind == FM_HIT_TAB && app->hover_index == index)
-		color = TABS_COLOR_HOVER;
+		hovered = 1;
+	if (app->hover_kind == FM_HIT_TAB_CLOSE && app->hover_index == index)
+		hovered = 1;
+
+	/* The shown tab: its edge, then the panel's surface inside it, flowing into the panel. */
+	ink = FM_COLOR_TEXT_SECONDARY;
+	cross = FM_COLOR_TEXT_FAINT;
+	bold = 0;
 	if (index == app->tab_index) {
-		color = FM_COLOR_PANEL;
-		fm_canvas_shadow(canvas, (float)pill->x, (float)pill->y + 2.0f, (float)pill->width, (float)pill->height, TABS_RADIUS, 8.0f, FM_COLOR_SHADOW);
+		count = tabs_outline(outline, tab, 0.0f, TABS_FOOT);
+		fm_canvas_polygon(canvas, outline, count, FM_COLOR_PANEL_EDGE);
+		count = tabs_outline(outline, tab, 1.0f, TABS_FOOT);
+		fm_canvas_polygon(canvas, outline, count, FM_COLOR_PANEL);
+		ink = FM_COLOR_TEXT;
+		cross = FM_COLOR_TEXT_SECONDARY;
+		bold = 1;
+	} else if (hovered != 0) {
+		count = tabs_outline(outline, tab, 1.0f, 0.0f);
+		fm_canvas_polygon(canvas, outline, count, TABS_COLOR_HOVER);
+		ink = FM_COLOR_TEXT;
+		cross = FM_COLOR_TEXT_SECONDARY;
 	}
 
-	/* The pill and its edge, clickable as the tab. */
-	fm_canvas_round(canvas, (float)pill->x, (float)pill->y, (float)pill->width, (float)pill->height, TABS_RADIUS, color);
-	fm_canvas_round_border(canvas, (float)pill->x, (float)pill->y, (float)pill->width, (float)pill->height, TABS_RADIUS, 1.0f, FM_COLOR_PANEL_EDGE);
-	fm_ui_hit(app, pill, FM_HIT_TAB, index);
+	/* The whole tab is clickable as the tab. */
+	fm_ui_hit(app, tab, FM_HIT_TAB, index);
 
 	/* The name of the tab's place, cut to fit before the close button. */
-	tab = app->tabs[index];
-	location = &tab->history[tab->history_index].location;
-	text_width = pill->width - 2 * TABS_PADDING - TABS_CLOSE - 4;
-	baseline = fm_text_center(TABS_TEXT, pill->y, pill->height);
-	(void)fm_text_draw_fit(app->text, canvas, pill->x + TABS_PADDING, baseline, fm_location_name(location, app->home), TABS_TEXT, index == app->tab_index, text_width, FM_COLOR_TEXT);
+	shown = app->tabs[index];
+	location = &shown->history[shown->history_index].location;
+	text_width = tab->width - 2 * TABS_PADDING - TABS_CLOSE - 4;
+	baseline = fm_text_center(TABS_TEXT, tab->y, tab->height);
+	(void)fm_text_draw_fit(app->text, canvas, tab->x + TABS_PADDING, baseline, fm_location_name(location, app->home), TABS_TEXT, bold, text_width, ink);
 
 	/* The close button at the right end, lit under the pointer. */
-	close.x = pill->x + pill->width - TABS_PADDING - TABS_CLOSE + 4;
-	close.y = pill->y + (pill->height - TABS_CLOSE) / 2;
+	close.x = tab->x + tab->width - TABS_PADDING - TABS_CLOSE + 6;
+	close.y = tab->y + (tab->height - TABS_CLOSE) / 2;
 	close.width = TABS_CLOSE;
 	close.height = TABS_CLOSE;
 	if (app->hover_kind == FM_HIT_TAB_CLOSE && app->hover_index == index)
 		fm_canvas_circle(canvas, (float)close.x + TABS_CLOSE / 2.0f, (float)close.y + TABS_CLOSE / 2.0f, TABS_CLOSE / 2.0f, FM_COLOR_HOVER);
-	fm_icon_draw(canvas, FM_ICON_CLOSE, (float)close.x + 3.0f, (float)close.y + 3.0f, (float)(TABS_CLOSE - 6), FM_COLOR_TEXT_SECONDARY);
+	fm_icon_draw(canvas, FM_ICON_CLOSE, (float)close.x + 4.0f, (float)close.y + 4.0f, (float)(TABS_CLOSE - 8), cross);
 	fm_ui_hit(app, &close, FM_HIT_TAB_CLOSE, index);
 }
