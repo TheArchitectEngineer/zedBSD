@@ -79,28 +79,28 @@ p015〜p018は大きすぎるため、1 Queueのスロットで終わる大き�
 | ws031-p024 | 確認と修正: compilerの境界（0除算・`INT_MIN/-1`、mod・FRem、ループ内discard・sample、shift、入れ子、SBE属性0、spillの組合せ） | planning | 同上 | p015 | `compiler/` |
 | ws031-p025 | 異常系: 範囲外index/offset、command buffer 65536超、descriptor上限、終わらないループ（hangの扱いの記録） | planning | 同上 | p015 | `render/`、`vk/` |
 | ws031-p026 | 小さな欠落: uint8 index、非整列 `vkCmdCopyBuffer`、viewport index>0・負の高さ、compile失敗時のpipeline漏れ、discardのHALT、host試験（ws031のdisplay 6件とws029）が `perf.c` 未linkで `drv_i915_perf_*` のlinkに失敗する件（ws035-p002で発見） | planning | 同上 | p015 | `render/`、`compiler/` |
-| ws031-p027 | present mode（FIFO/MAILBOX/IMMEDIATE）でvsyncを選ぶ。UAPIで運べなければ変更を事前に提示 | planning | 同上 | p015・p018 | `libvulkan`、`zwl`、i915 display |
+| ws031-p027 | present mode（FIFO/MAILBOX/IMMEDIATE）でvsyncを選ぶ。UAPIで運べなければ変更を事前に提示 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p007） | 同上 | p015・p018 | `libvulkan`、`zwl`、i915 display |
 | ws031-p028 | 入力とmview: PS/2 keyboardのkeyがzwlに届かない件、QMP abortの回避記録、mviewの再現性・blend material・pixel shadingのLCD写真 | planning | 同上 | p015 | `zwl`、input |
 | ws031-p029 | WS031の統合回帰（p014の回帰一覧を1回） | planning | p022〜p028 | p015 | 試験のみ |
 | ws031-p019 | 設計: executorの未実装機能（p030〜p037） | planning | p022, p023, p025 | 新規 | 文書 |
 | ws031-p020 | 設計: compilerの未実装機能（p038〜p043） | planning | p024 | 新規 | 文書 |
 | ws031-p021 | 設計: 性能の構造（p044〜p047）。schedulerの扱い（本WSか新WSか）の判断を含む | planning | p029 | 新規 | 文書 |
-| ws031-p030 | executor: mip level 0以外・array layerへの描画とattachment clear | planning | p019 | p016 | `render/` |
-| ws031-p031 | executor: 複数colour attachment（MRT） | planning | p019 | p016 | `render/` |
+| ws031-p030 | executor: mip level 0以外・array layerへの描画とattachment clear | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/` |
+| ws031-p031 | executor: 複数colour attachment（MRT） | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/` |
 | ws031-p032 | executor: blendのlogic op・dual source | planning | p019 | p016 | `render/` |
 | ws031-p033 | executor: image viewのformat読替え（MUTABLE_FORMAT）・component swizzle・usage照合 | planning | p019 | p016 | `render/`、`vk/` |
-| ws031-p034 | executor: sampler（anisotropy、depth compare、border colour、unnormalized座標）、mirrored blit | planning | p019 | p016 | `render/` |
-| ws031-p035 | executor: descriptor配列・`vkUpdateDescriptorSets` のcopy・VSのsampled image | planning | p019 | p016 | `render/`、`vk/` |
+| ws031-p034 | executor: sampler（anisotropy、depth compare、border colour、unnormalized座標）、mirrored blit | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/` |
+| ws031-p035 | executor: descriptor配列・`vkUpdateDescriptorSets` のcopy・VSのsampled image | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/`、`vk/` |
 | ws031-p036 | executor: UBOのdataport読み出し（push dataの上限超え）とdraw間の順序 | planning | p019 | p016 | `render/`、`compiler/` |
 | ws031-p037 | executor: tiling（Y-tile/Tile4のoptimal image、copy・blit・sampling）。設計で更に分けてよい | planning | p019 | p016 | `render/`、gem |
-| ws031-p038 | compiler: 整数varying（Flat）と整数頂点属性 | planning | p020 | p017 | `compiler/`、`render/` |
+| ws031-p038 | compiler: 整数varying（Flat）と整数頂点属性 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/`、`render/` |
 | ws031-p039 | compiler: 16 bit・64 bitの整数と浮動小数 | planning | p020 | p017 | `compiler/` |
-| ws031-p040 | compiler: localの配列・構造体、動的index、行列の`OpPhi`、ループ内で初めてstoreするlocal | planning | p020 | p017 | `compiler/` |
-| ws031-p041 | compiler: `OpSwitch`、関数呼出し（inline化）、ループ内return、trip count 0の形 | planning | p020 | p017 | `compiler/` |
+| ws031-p040 | compiler: localの配列・構造体、動的index、行列の`OpPhi`、ループ内で初めてstoreするlocal | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/` |
+| ws031-p041 | compiler: `OpSwitch`、関数呼出し（inline化）、ループ内return、trip count 0の形 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p002・p003） | p020 | p017 | `compiler/` |
 | ws031-p042 | compiler: SWSBを依存に基づく指定へ、命令の並べ替え | planning | p020, p038〜p041 | p017 | `compiler/` |
 | ws031-p043 | compiler: spillの改善（rematerialization、cost重み付きvictim、再lowerの削減） | planning | p020 | p017 | `compiler/` |
-| ws031-p044 | 性能: 完了待ちをCSBのbusy-pollからuser interruptとwaitqへ | planning | p021 | p018 | engine、request |
-| ws031-p045 | 性能: 非同期executor（submitを即座に返す、fence/semaphoreはGPU完了でsignal、heapの多重化と寿命） | planning | p021, p044, p030〜p037 | p018 | `render/`、`vk/` |
+| ws031-p044 | 性能: 完了待ちをCSBのbusy-pollからuser interruptとwaitqへ | 移した（2026-09-27、[WS075](../ws075/ws.md) の p007） | p021 | p018 | engine、request |
+| ws031-p045 | 性能: 非同期executor（submitを即座に返す、fence/semaphoreはGPU完了でsignal、heapの多重化と寿命） | 移した（2026-09-27、[WS075](../ws075/ws.md) の p007） | p021, p044, p030〜p037 | p018 | `render/`、`vk/` |
 | ws031-p046 | 性能: frame copyの削減（swapchain imageのaliasing、zdesktopの拡大copyをplane scalerかzero-copy flipへ） | planning | p021, p045, p027 | p018 | `libvulkan`、zdesktop、display |
 | ws031-p047 | 性能: scheduler wakeupの遅延（p021で本WSに収まると判断した場合だけ。収まらなければ新WSへ） | planning | p021 | p018 | kern（範囲はp021で決める） |
 | ws031-p048 | 最終確認: 変更したsource全体の全文規約確認・静的確認・統合回帰 | planning | p022〜p047 | 新規 | 全体 |
@@ -235,8 +235,8 @@ p011 の実機ビッグバンで残った **EU スレッド実行ハング**（P
 2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」（main の中継）。
 目標: 今の desktop と graphics（zdesktop の glass・backdrop・tab・menu、zdesktop-files・terminal・mview 等の Vulkan の client、
 EGL/GLES 2・3 の egltest、X11 の GLX と GL 3.0〜3.2）を 5330 の i915 の native 実行器で動かす。WS031 の単一目標（vkdemo）とは
-別の到達目標なので、**新しい WS**（番号は main が決める）に置き、WS031 の planning の Phase のうち同じ範囲のもの
-（p030・p031・p034・p038・p040・p041・p044・p045 等）はその WS へ移す（ここでは移した印を付ける）。
+別の到達目標なので、**新しい WS [WS075](../ws075/ws.md)**（2026-09-27 main が番号を決めた）に置き、WS031 の planning の Phase のうち
+同じ範囲のもの（p027・p030・p031・p034・p035・p038・p040・p041・p044・p045）はその WS へ移した（表に印）。以下の順は提案の時のもので、正本は WS075。
 
 2026-09-27 の host の事実（i915 の compiler を host で走らせる `plan/ws068/tests/i915-shader-check` の道具で、最初の拒否だけ）:
 
