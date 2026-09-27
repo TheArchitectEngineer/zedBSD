@@ -1322,6 +1322,7 @@ i915_record_dynamic_offsets(
 	uint32_t binding;
 	uint32_t entry;
 	uint32_t next;
+	uint32_t count;
 
 	/* Walks the sets in order and each set's bindings by number. */
 	next = 0U;
@@ -1348,7 +1349,18 @@ i915_record_dynamic_offsets(
 					return EINVAL;
 				}
 
-				ops[set]->u.descriptor.dynamic_offsets[binding] = offsets[next];
+				/* Refuses more dynamic buffers in one set than a bind keeps. */
+				count = ops[set]->u.descriptor.dynamic_count;
+				if (count >= I915_GFX_MAX_DYNAMIC_BUFFERS) {
+					kern_logf("i915: vk: XXX vkCmdBindDescriptorSets: more than %u dynamic uniform buffers in one set\n",
+						  I915_GFX_MAX_DYNAMIC_BUFFERS);
+					return ENOTSUP;
+				}
+
+				/* Keeps the binding and its offset. */
+				ops[set]->u.descriptor.dynamic_bindings[count] = binding;
+				ops[set]->u.descriptor.dynamic_offsets[count] = offsets[next];
+				ops[set]->u.descriptor.dynamic_count = count + 1U;
 				next++;
 			}
 		}
@@ -2588,9 +2600,11 @@ i915_command_buffer_execute(
 			/* A set past the tracked ones is ignored; a bound set brings its dynamic offsets. */
 			if (op->u.descriptor.set < I915_GFX_MAX_SETS) {
 				state.dset[op->u.descriptor.set] = op->u.descriptor.dset;
-				kern_memcpy(state.dynamic_offsets[op->u.descriptor.set],
-				       op->u.descriptor.dynamic_offsets,
+				kern_memset(state.dynamic_offsets[op->u.descriptor.set], 0,
 				       sizeof(state.dynamic_offsets[op->u.descriptor.set]));
+				for (index = 0U; index < op->u.descriptor.dynamic_count; index++)
+					state.dynamic_offsets[op->u.descriptor.set][op->u.descriptor.dynamic_bindings[index]] =
+					    op->u.descriptor.dynamic_offsets[index];
 			}
 
 			break;

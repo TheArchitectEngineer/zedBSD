@@ -71,14 +71,19 @@ drv_i915_gfx_create_dsl(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Refuses more bindings than a set holds, and allocates a layout that fits. */
+	/* Refuses more bindings than a layout lists, or a binding number past the ones a set holds. */
 	dsl = NULL;
 	error = 0;
-	if (info.bindingCount > I915_GFX_MAX_BINDINGS) {
+	if (info.bindingCount > I915_GFX_MAX_LAYOUT_BINDINGS)
 		error = ENOTSUP;
-	} else {
-		dsl = kern_calloc(1U, sizeof(*dsl));
+	for (index = 0U; error == 0 && index < info.bindingCount; index++) {
+		if (info.pBindings[index].binding >= I915_GFX_MAX_BINDINGS)
+			error = ENOTSUP;
 	}
+
+	/* Allocates a layout that fits. */
+	if (error == 0)
+		dsl = kern_calloc(1U, sizeof(*dsl));
 
 	/* Keeps each binding's number, descriptor type and stages. */
 	if (dsl != NULL) {

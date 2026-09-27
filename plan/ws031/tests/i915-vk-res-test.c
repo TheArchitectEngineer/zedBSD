@@ -917,9 +917,9 @@ test_descriptors(
 	stub_put32(&fixture_wire, 32U);
 	stub_put64(&fixture_wire, 0U);
 	stub_put32(&fixture_wire, 0U);
-	stub_put32(&fixture_wire, I915_GFX_MAX_BINDINGS + 1U);
-	stub_put64(&fixture_wire, I915_GFX_MAX_BINDINGS + 1U);
-	for (index = 0U; index < I915_GFX_MAX_BINDINGS + 1U; index++) {
+	stub_put32(&fixture_wire, I915_GFX_MAX_LAYOUT_BINDINGS + 1U);
+	stub_put64(&fixture_wire, I915_GFX_MAX_LAYOUT_BINDINGS + 1U);
+	for (index = 0U; index < I915_GFX_MAX_LAYOUT_BINDINGS + 1U; index++) {
 		stub_put32(&fixture_wire, index);
 		stub_put32(&fixture_wire, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 		stub_put32(&fixture_wire, 1U);
