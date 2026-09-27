@@ -172,9 +172,21 @@ struct inode_ops {
 	void (*retire_namespace)(struct inode *);
 };
 
+/*
+ * Where an inode's storage came from, so that it goes back to the same
+ * place.  Zero is storage a filesystem allocated itself (or embedded).
+ */
+enum inode_storage {
+	INODE_STORAGE_FILESYSTEM = 0,
+	INODE_STORAGE_POOL,
+	INODE_STORAGE_HEAP
+};
+
 struct inode {
 	struct io_error_state i_write_error;
 	enum inode_type i_type;
+	/* Set once by inode_alloc; destroy_inode gives the storage back. */
+	enum inode_storage i_storage;
 	ino_t i_ino;
 	struct mount *i_mount;
 	const struct inode_ops *i_op;
@@ -327,6 +339,9 @@ inode_cache_count(void);
 
 void
 inode_cache_reset(void);
+
+unsigned
+inode_cache_capacity(void);
 
 int
 inode_lookup(
