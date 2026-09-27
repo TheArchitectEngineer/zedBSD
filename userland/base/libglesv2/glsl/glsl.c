@@ -15,6 +15,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * GL's names of the geometry shader's primitives by GLSL_PRIMITIVE_*
+ * (GL_POINTS, GL_LINES, GL_LINES_ADJACENCY, GL_TRIANGLES,
+ * GL_TRIANGLES_ADJACENCY, GL_LINE_STRIP, GL_TRIANGLE_STRIP; the compiler
+ * does not include GL's headers).
+ */
+static const unsigned glsl_gl_primitives[8] = { 0U, 0x0000U, 0x0001U, 0x000AU, 0x0004U, 0x000CU, 0x0003U, 0x0005U };
+
 static void glsl_give_log(struct glsl_shader *shader, char **log);
 
 /*
@@ -113,6 +121,30 @@ glsl_shader_version(
 	/* The version #version gave (or the default). */
 	*es = (int)shader->es;
 	return shader->version;
+}
+
+/*
+ * Reports a compiled geometry shader's input and output primitives (GL's
+ * names) and the most vertices it emits; all 0 for another stage.
+ */
+void
+glsl_geometry_layout(
+	const struct glsl_shader *shader,
+	unsigned *input,
+	unsigned *output,
+	unsigned *max_vertices)
+{
+	/* Nothing for another stage. */
+	*input = 0U;
+	*output = 0U;
+	*max_vertices = 0U;
+	if (shader->stage != GLSL_STAGE_GEOMETRY)
+		return;
+
+	/* Succeeded: the layouts it declared. */
+	*input = glsl_gl_primitives[shader->geometry_input];
+	*output = glsl_gl_primitives[shader->geometry_output];
+	*max_vertices = shader->max_vertices;
 }
 
 /* Hands the shader's log to the caller (NULL when empty), leaving the shader without one. */
