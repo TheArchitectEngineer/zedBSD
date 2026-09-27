@@ -32,7 +32,7 @@ console の `POSIX-R2.ELF` が続けて status 0 で終わる（BUG-046 の受�
 
 ## 検証（QEMU、KVM、4 GiB、4 vCPU、NVMe。実機は未実施）
 
-- build: `plan/ws056/tests/config-amd64-serial.mk` の vmunix warning 0、i386 pcat の vmunix warning 0。
+- build: `plan/tools/posix/config-amd64-serial.mk` の vmunix warning 0、i386 pcat の vmunix warning 0。
 - `pty-backpressure 200`（SSH）: 0/200 失敗（修正前 3/50・9/100）。
 - console の `POSIX-R2.ELF`（p007 と同じ手順。`/bin/sh` にも置く）: **10 回続けて status 0**、毎回 `R2:TIMER:PASS`・`R2:01-06:PASS`。
   p007 の exec の修正と合わせて BUG-046 の受け入れの案（5 回連続）を満たす（BUG-046 の判断と ws056-p001 の clear は WS056・ユーザーの側）。
