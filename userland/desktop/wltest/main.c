@@ -23,6 +23,7 @@
 struct wltest_options {
 	const char *token;
 	const char *display;
+	const char *app_id;
 	const char *mode_name;
 	VkPresentModeKHR mode;
 	uint32_t frames;
@@ -75,7 +76,7 @@ main(
 	/* Argument failure starts no connection or GPU namespace. */
 	status = options_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: wltest [--display=NAME] [--frames=1..3600] [--mode=fifo|mailbox] [--verify-session] [--recreate-at=N] [--delay-ms=0..1000] [--token=NAME] [--windowed] [--size=WxH] [--color=RRGGBB] [--fullscreen-at=N] [--unfullscreen-at=N]\n");
+		fprintf(stderr, "usage: wltest [--display=NAME] [--frames=1..3600] [--mode=fifo|mailbox] [--verify-session] [--recreate-at=N] [--delay-ms=0..1000] [--token=NAME] [--windowed] [--size=WxH] [--color=RRGGBB] [--fullscreen-at=N] [--unfullscreen-at=N] [--app-id=NAME]\n");
 		return 2;
 	}
 
@@ -87,7 +88,7 @@ main(
 	completed = 0U;
 	result = VK_SUCCESS;
 	operation = "wltest_window_open";
-	status = wltest_window_open(&window, options.display, options.width, options.height, !options.windowed);
+	status = wltest_window_open(&window, options.display, options.width, options.height, !options.windowed, options.app_id);
 	if (status != 0)
 		goto cleanup;
 
@@ -233,6 +234,7 @@ options_parse(
 	options->frames = 60U;
 	options->delay = 16U;
 	options->token = "manual";
+	options->app_id = "wltest";
 	options->mode_name = "fifo";
 	options->mode = VK_PRESENT_MODE_FIFO_KHR;
 	options->width = 320U;
@@ -339,6 +341,15 @@ options_parse(
 				return -1;
 
 			/* Main normalizes this millisecond value into seconds and nanoseconds. */
+			continue;
+		}
+
+		/* The application identity the window publishes (a stand-in for another application in the tests). */
+		match = strncmp(argv[index], "--app-id=", 9U);
+		if (match == 0) {
+			options->app_id = argv[index] + 9U;
+			if (*options->app_id == '\0')
+				return -1;
 			continue;
 		}
 

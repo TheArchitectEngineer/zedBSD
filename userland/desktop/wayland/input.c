@@ -10,12 +10,14 @@
  *
  * Every /dev/input/eventN node that reports REL_X and REL_Y or ABS_X and
  * ABS_Y is a pointer; one that reports the letter keys is a keyboard; a node
- * may be both.  Nodes are read without blocking.  Events are gathered until
+ * may be both.  A node that reports BTN_TOOL_PEN and ABS_PRESSURE is a pen
+ * tablet instead, whose reports tablet.c applies.  Nodes are read without blocking.  Events are gathered until
  * SYN_REPORT and applied as one group: motion first, then buttons and keys in
  * the order they arrived, then wheel scrolling, then a pointer frame.
  */
 
 #include "zwl.h"
+#include "tablet.h"
 #include <sys/ioctl.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -92,6 +94,7 @@ static int32_t scale_absolute(int32_t value, int32_t minimum, int32_t maximum, u
 static int32_t clamp_position(int64_t position, uint32_t size);
 static uint32_t event_time(const struct input_event *event);
 static void update_capabilities(struct zwl_server *server);
+static int attach_tablet(struct zwl_server *server, int descriptor, const char *path);
 
 /*
  * Opens every evdev pointer and keyboard not already open.
@@ -293,6 +296,10 @@ zwl_input_close(
 	if (!device->live)
 		return;
 
+	/* A pen tablet's clients hear that it and its tools are gone (tablet.c). */
+	if (device->tablet)
+		zwl_tablet_remove(server, device, 1);
+
 	/* The slot is free once its descriptor is closed. */
 	close(device->fd);
 	device->fd = -1;
@@ -319,6 +326,10 @@ zwl_input_cleanup(
 		/* A free slot owns nothing. */
 		if (!server->inputs[index].live)
 			continue;
+
+		/* A pen tablet's state is forgotten without telling anyone (tablet.c). */
+		if (server->inputs[index].tablet)
+			zwl_tablet_remove(server, &server->inputs[index], 0);
 
 		/* Close the descriptor and free the slot. */
 		close(server->inputs[index].fd);
@@ -410,6 +421,19 @@ probe_device(
 	if (error != 0) {
 		close(descriptor);
 		return;
+	}
+
+	/* A pen tablet reports BTN_TOOL_PEN, ABS_PRESSURE and both position axes (tablet.c, WS079 p003). */
+	has_type = bit_is_set(capabilities.event, EV_KEY);
+	has_first = bit_is_set(capabilities.key, BTN_TOOL_PEN);
+	has_second = bit_is_set(capabilities.absolute, ABS_PRESSURE);
+	if (has_type && has_first && has_second) {
+		/* Both position ranges must be readable and nonempty to be mapped. */
+		error = read_ranges(descriptor, &x, &y);
+		if (error == 0) {
+			(void)attach_tablet(server, descriptor, path);
+			return;
+		}
 	}
 
 	/* A keyboard reports key events including the letter keys A and Z. */
@@ -545,6 +569,8 @@ consume_event(
 	struct zwl_input_device *device,
 	const struct input_event *event)
 {
+	uint32_t time;
+
 	/* The kernel dropped events: forget the partial report and skip to the next one. */
 	if (event->type == EV_SYN && event->code == SYN_DROPPED) {
 		device->frame_count = 0;
@@ -561,8 +587,15 @@ consume_event(
 			return;
 		}
 
-		/* An intact report is applied as one group. */
-		apply_frame(server, device, event_time(event));
+		/* An intact report is applied as one group: a pen tablet's by the tablet (tablet.c). */
+		time = event_time(event);
+		if (device->tablet) {
+			zwl_tablet_frame(server, device, time);
+		} else {
+			apply_frame(server, device, time);
+		}
+
+		/* The next report starts empty. */
 		device->frame_count = 0;
 		return;
 	}
@@ -879,8 +912,10 @@ update_capabilities(
 		if (!server->inputs[index].live)
 			continue;
 
-		/* wl_seat's pointer and keyboard capability bits. */
+		/* wl_seat's pointer and keyboard capability bits; a pen tablet is also a pointer (its fallback). */
 		if (server->inputs[index].pointer)
+			capabilities |= 1U;
+		if (server->inputs[index].tablet)
 			capabilities |= 1U;
 		if (server->inputs[index].keyboard)
 			capabilities |= 2U;
@@ -896,4 +931,64 @@ update_capabilities(
 
 	/* Succeeded: every seat binding agrees with the open devices. */
 	return;
+}
+
+/*
+ * Adopts an open evdev descriptor as a pen tablet (tablet.c, WS079 p003).
+ *
+ * The device takes ownership of the descriptor, closing it when no slot is
+ * free or the tablet cannot take another device.
+ */
+static int
+attach_tablet(
+	struct zwl_server *server,
+	int descriptor,
+	const char *path)
+{
+	struct zwl_input_device *device;
+	unsigned index;
+	int error;
+
+	/* Find a free slot in the fixed device table. */
+	device = NULL;
+	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+		/* A slot not in use can hold the new device. */
+		if (!server->inputs[index].live) {
+			device = &server->inputs[index];
+			break;
+		}
+	}
+
+	/* A full table cannot take another device. */
+	if (device == NULL) {
+		close(descriptor);
+		return ENOSPC;
+	}
+
+	/* The slot now describes this node; it is neither a pointer nor a keyboard of its own. */
+	memset(device, 0, sizeof(*device));
+	device->fd = descriptor;
+	device->tablet = 1;
+	snprintf(device->path, sizeof(device->path), "%s", path);
+
+	/* The tablet reads the axes and tells the bound tablet seats (tablet.c). */
+	error = zwl_tablet_add(server, device);
+	if (error != 0) {
+		close(descriptor);
+		device->fd = -1;
+		device->tablet = 0;
+		return error;
+	}
+
+	/* The slot is published only when it is completely filled in. */
+	device->live = 1;
+
+	/* One line lets a test see which devices the seat uses. */
+	printf("ZWL INPUT device=%s kind=tablet abs=1\n", device->path);
+
+	/* Bound seats learn that a pointer (the pen's fallback) is there. */
+	update_capabilities(server);
+
+	/* Succeeded: the event loop now reads this device. */
+	return 0;
 }

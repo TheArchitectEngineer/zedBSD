@@ -74,3 +74,10 @@ H1 は H2 と独立に先に走らせ、結果で H3 の要否（EDID が読め�
 6. H1 の調査で i915 の実機（5330）を**占有してよい**。10 インチの touch LCD を HDMI と USB でつないだ（2026-09-28）。
    touch の HID は HDMI の出力が有効になるまで見えないかもしれない（ユーザー）。H1 で HDMI の前後の USB の device の一覧と、見えれば report descriptor を記録する。
 7. 5330 の IP は電源の入れ直しで 10.0.30.3 に変わった。main が `~/.ssh/config` の `solaris10-man` を 10.0.30.3 に書き直した（ssh で `chaos` を確認）。
+
+## 結果（2026-09-28）
+
+- H1 = [ws075-p011](phase011/phase.md): EDID は読める（JTG S123、native は **1920x1280**@60、164.36 MHz）。pipe B・DVI で
+  1280x720・1920x1080・1920x1280 を出力。touch の USB は 5330 に列挙されない（cable と口の確認が要る）。
+- H2 = [ws075-p012](phase012/phase.md): `display=hdmi`（EDID の mode、`display.mode=` で上書き）で Keiland が HDMI の全画面、
+  `display=auto` は eDP。H3（EDID の mode）の内容は H2 に含めた。残りは LCD の目視、HDMI の無い boot の実機確認、H4。

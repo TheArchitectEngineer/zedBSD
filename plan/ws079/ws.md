@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001 の設計（[design-input-notes.md](design-input-notes.md)・[design-pdf.md](design-pdf.md)）は書けた（2026-09-28）。p002（kernel の pen）・p004（libpdf の writer）が進行中。main の判断: header は `include/libc/pdf.h`（libpdf は独自の API）、保存は非圧縮（deflate は後）、p003 を分けて gesture は p010。ユーザーの判断待ち: design-input-notes §8 の D1〜D8（既定あり）、design-pdf §6 の glyph の outline（p007 の前）
+Resume point: p001 の設計（[design-input-notes.md](design-input-notes.md)・[design-pdf.md](design-pdf.md)）は書けた（2026-09-28）。p002（kernel の pen）が進行中。p004（libpdf の writer・輪郭・自分の形式の読み込み）は cleared（2026-09-28）。main の判断: header は `include/libc/pdf.h`（libpdf は独自の API）、保存は非圧縮（deflate は後）、p003 を分けて gesture は p010。ユーザーの判断待ち: design-input-notes §8 の D1〜D8（既定あり）、design-pdf §6 の glyph の outline（p007 の前）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）
@@ -62,10 +62,10 @@ libtruetypeにはアウトラインを返すAPIを追加しましょう。」
 | --- | --- | --- | --- |
 | ws079-p001 | 設計: pen の入力（USB HID digitizer → kernel の input の event、QEMU の合成の入力）、`zwp_tablet_v2`、スワイプの gesture、Notes の文書 model、PDF の書き方と metadata、libpdf の構成（parser・content stream・描画の list）、PDF Viewer | planning | — |
 | [ws079-p002](phase002/phase.md) | kernel: USB HID の digitizer（筆圧・傾き・消しゴム・button・in-range）と、試験用の合成の入力 | in-progress（2026-09-28: pen の読み取りと host 試験・amd64 の build・boot test まで。注入の device は未着手。main の判断: devfs の /dev/input は event の node だけなので、注入は `/dev/input-inject`（devfs の root、試験専用、CONFIG_INPUT_TEST_INJECT）に置く） | p001 |
-| ws079-p003 | compositor: `zwp_tablet_manager_v2`（pad なし）と tablet を bind しない client への pointer の fallback | planning | p001、p002 |
-| ws079-p010 | compositor: 上の右端からのスワイプ（design-input-notes §4）で Notes を起動・最前面・全画面 | planning | p003 |
-| [ws079-p004](phase004/phase.md) | libpdf: 書き出し（page、ベクタの path、画像、編集の metadata）と自分の形式の読み込み | in-progress（writer・外形・画像・/ID・日付・4 platform の link 済み。自分の形式の読み込みが残り） | p001 |
-| ws079-p005 | Notes v1: 筆圧の線・消しゴム・page・undo・PDF の保存と再編集 | planning | p003、p004 |
+| [ws079-p003](phase003/phase.md) | compositor: `zwp_tablet_manager_v2`（pad なし）と tablet を bind しない client への pointer の fallback | in-progress（2026-09-28 subagent: p002 の注入の device を guest で確認（peninject を userland/base/tests へ、15 件の拒否の確認）。compositor の `tablet.c`・seat.c の shell/配送の分割・libwayland の `tablet-protocol.c`・`tablet-probe` を実装し、QEMU の Venus で tablet・fallback・App Home・terminal の選択と貼り付け・p076 の回帰まで PASS。実機は未実施。clearance は main の判断） | p001、p002 |
+| [ws079-p010](phase010/phase.md) | compositor: 上の右端からのスワイプ（design-input-notes §4）で Notes を起動・最前面・全画面、端のジェスチャーの整理（同文書の追記） | cleared（pointer の範囲、2026-09-28、QEMU。pen の接続は p003 の後、本物の Notes は p005 の後） | p003（pen の部分だけ） |
+| [ws079-p004](phase004/phase.md) | libpdf: 書き出し（page、ベクタの path、画像、編集の metadata）と自分の形式の読み込み | cleared（2026-09-28: writer・画像・/ID・日付、`pdf_outline_stroke()` の Catmull-Rom の平滑化と丸い join、自分の形式の読み込み（page・箱・content の SHA-256・添付・ID・日付）、host 試験（ASan/UBSan・破壊 60,000 回・qpdf）、amd64・pcat・rpi4 の `libpdf.so` warning 0。disk image の全体の build は未実施） | p001 |
+| [ws079-p005](phase005/phase.md) | Notes v1: 筆圧の線・消しゴム・page・undo・PDF の保存と再編集 | cleared（v1 の一通り、2026-09-28、QEMU と host。pen は p003 の tablet で。自動保存 5 秒・journal・Ctrl+N は新しい page。残り: Ctrl+O の選択、他の PDF の背景、部分の消しゴム、描画の cache、PDF の中の名前） | p003、p004 |
 | ws079-p006 | libpdf の読み込み ① と PDF Viewer v1（scroll と page の swipe、Notes で書き込み） | planning | p004 |
 | ws079-p007 | 段階 ②: 一般の PDF の図形・画像（DCT は libjpeg-compat、Flate は libz-compat）・埋め込みの TrueType（libtruetype） | planning | p006 |
 | ws079-p008 | 段階 ③: CFF・Type1・暗号化など | planning | p007 |

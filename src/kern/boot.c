@@ -31,6 +31,10 @@ struct parameter_name {
 
 #define PARAMETER_NAME(value) { value, sizeof(value) - 1U }
 
+/* The largest width or height, and the largest refresh rate, display.mode= takes. */
+#define DISPLAY_MODE_SIZE_MAX		16384U
+#define DISPLAY_MODE_REFRESH_MAX	1000U
+
 static const struct parameter_name parameter_names[KERN_BOOT_PARAMETER_COUNT] = {
 	PARAMETER_NAME("boot0"),
 	PARAMETER_NAME("boot1"),
@@ -46,6 +50,8 @@ static const struct parameter_name parameter_names[KERN_BOOT_PARAMETER_COUNT] = 
 	PARAMETER_NAME("init"),
 	PARAMETER_NAME("kmsg"),
 	PARAMETER_NAME("login"),
+	PARAMETER_NAME("display"),
+	PARAMETER_NAME("display.mode"),
 };
 
 static char firmware_source[KERN_BOOT_SOURCE_SELECTOR_SIZE];
@@ -65,6 +71,7 @@ static void record_unknown(struct kern_boot_parameters *parameters, const char *
 static int parameter_separator(char character);
 static int parameter_word(enum kern_boot_parameter_key key, const char *value, size_t length);
 static int parameter_text_is(const char *value, size_t length, const char *word);
+static int display_mode_number(const char *text, size_t length, size_t *position, uint32_t maximum, uint32_t *value);
 static size_t skip_separators(const char *text, size_t position, size_t length);
 static int selector_text(const char *text, size_t maximum, int device_name);
 static int context_fail(struct kern_boot_source_context *context, unsigned slot, enum kern_boot_source_failure_stage stage, int error);
@@ -142,6 +149,9 @@ kern_boot_parameters_parse(
 	size_t equal;
 	size_t value_start;
 	size_t value_length;
+	uint32_t mode_width;
+	uint32_t mode_height;
+	uint32_t mode_refresh;
 	unsigned char byte;
 	unsigned char token_byte;
 	int terminated;
@@ -277,9 +287,20 @@ kern_boot_parameters_parse(
 			}
 		}
 
-		/* kmsg= and login= take one of their two words (ws035-p097). */
-		if (key == KERN_BOOT_PARAMETER_KMSG || key == KERN_BOOT_PARAMETER_LOGIN) {
+		/* kmsg=, login= and display= take one of their two words (ws035-p097, ws075-p012). */
+		if (key == KERN_BOOT_PARAMETER_KMSG ||
+		    key == KERN_BOOT_PARAMETER_LOGIN ||
+		    key == KERN_BOOT_PARAMETER_DISPLAY) {
 			error = parameter_word(key, parameters->storage + value_start, value_length);
+			if (error != 0) {
+				error = parse_error(parameters, error);
+				return error;
+			}
+		}
+
+		/* display.mode= is a mode written WxH or WxH@R (ws075-p012). */
+		if (key == KERN_BOOT_PARAMETER_DISPLAY_MODE) {
+			error = kern_boot_display_mode_parse(parameters->storage + value_start, value_length, &mode_width, &mode_height, &mode_refresh);
 			if (error != 0) {
 				error = parse_error(parameters, error);
 				return error;
@@ -301,7 +322,7 @@ kern_boot_parameters_parse(
 	return 0;
 }
 
-/* Checks the word of kmsg= (quiet or console) or login= (graphical or console). */
+/* Checks the word of kmsg= (quiet or console), login= (graphical or console) or display= (hdmi or auto). */
 static int
 parameter_word(
 	enum kern_boot_parameter_key key,
@@ -311,7 +332,19 @@ parameter_word(
 	int console;
 	int other;
 
-	/* Both take console. */
+	/* display= takes the automatic choice (the panel) or HDMI. */
+	if (key == KERN_BOOT_PARAMETER_DISPLAY) {
+		other = parameter_text_is(value, length, "auto");
+		if (!other)
+			other = parameter_text_is(value, length, "hdmi");
+		if (!other)
+			return EINVAL;
+
+		/* Succeeded: one of display='s words. */
+		return 0;
+	}
+
+	/* kmsg= and login= both take console. */
 	console = parameter_text_is(value, length, "console");
 	if (console)
 		return 0;
@@ -350,6 +383,45 @@ parameter_text_is(
 
 	/* Succeeded: the same word. */
 	return 1;
+}
+
+/* Reads one decimal number of a display mode: 1 to maximum, at most five digits. */
+static int
+display_mode_number(
+	const char *text,
+	size_t length,
+	size_t *position,
+	uint32_t maximum,
+	uint32_t *value)
+{
+	uint32_t number;
+	unsigned digits;
+
+	/* The digits from the position on. */
+	number = 0U;
+	digits = 0U;
+	while (*position < length &&
+	    text[*position] >= '0' &&
+	    text[*position] <= '9') {
+		/* Refuses a number longer than any size or rate the mode takes. */
+		if (digits == 5U)
+			return EINVAL;
+
+		/* Takes the digit. */
+		number = number * 10U + (uint32_t)(text[*position] - '0');
+		digits++;
+		(*position)++;
+	}
+
+	/* Refuses no digits, zero and a number over the maximum. */
+	if (digits == 0U)
+		return EINVAL;
+	if (number == 0U || number > maximum)
+		return EINVAL;
+
+	/* Succeeded: the number is read. */
+	*value = number;
+	return 0;
 }
 
 /*
@@ -577,6 +649,66 @@ kern_boot_parameters_token_present(
 	}
 
 	/* Not there. */
+	return 0;
+}
+
+/*
+ * Reads a display mode written WxH or WxH@R.
+ *
+ * The width and height are 1 to 16384 pixels and the refresh rate 1 to
+ * 1000 Hz; a mode without @R reports a refresh rate of 0 (the display's
+ * own choice).  Nothing else may follow.
+ */
+int
+kern_boot_display_mode_parse(
+	const char *text,
+	size_t length,
+	uint32_t *width,
+	uint32_t *height,
+	uint32_t *refresh_hz)
+{
+	size_t position;
+	int error;
+
+	/* Refuses a call without its text or its results. */
+	if (text == NULL ||
+	    width == NULL ||
+	    height == NULL ||
+	    refresh_hz == NULL)
+		return EINVAL;
+
+	/* The width, then the x. */
+	position = 0;
+	error = display_mode_number(text, length, &position, DISPLAY_MODE_SIZE_MAX, width);
+	if (error != 0)
+		return error;
+	if (position >= length || text[position] != 'x')
+		return EINVAL;
+
+	/* The height after the x. */
+	position++;
+	error = display_mode_number(text, length, &position, DISPLAY_MODE_SIZE_MAX, height);
+	if (error != 0)
+		return error;
+
+	/* A mode without a refresh rate ends here. */
+	*refresh_hz = 0U;
+	if (position == length)
+		return 0;
+
+	/* Only @R may follow the height. */
+	if (text[position] != '@')
+		return EINVAL;
+
+	/* The refresh rate after the @, and nothing after it. */
+	position++;
+	error = display_mode_number(text, length, &position, DISPLAY_MODE_REFRESH_MAX, refresh_hz);
+	if (error != 0)
+		return error;
+	if (position != length)
+		return EINVAL;
+
+	/* Succeeded: the mode is read. */
 	return 0;
 }
 
