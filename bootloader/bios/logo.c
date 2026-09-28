@@ -16,12 +16,12 @@
  * screen is filled with first, and the logo is drawn in the middle (its
  * middle part when it is larger than the screen).
  *
- * A picture whose header has the comment "fit=cover" (the Kei boot splash,
- * ws035-p107) is scaled to cover the whole screen instead, its proportions
- * kept and its middle on the middle, by nearest pixels.  The decoder only
- * shrinks it (a pixel of the file makes at most one pixel of the screen, so
- * a sector's writes fit); a picture the screen would have to enlarge is
- * drawn in the middle as before.
+ * A picture whose header has the comment "fit=contain" (the Kei boot
+ * splash, 1920x1080, ws035-p112) is drawn whole in the middle of a black
+ * screen: at its own size when the screen holds it, else shrunk by nearest
+ * pixels, its proportions kept, to the largest size the screen holds (a
+ * pixel of the file then makes at most one pixel of the screen, so a
+ * sector's writes fit).  The sides it does not reach stay black bars.
  */
 
 #include "logo.h"
@@ -33,7 +33,7 @@ _Static_assert(offsetof(struct zbl_bios_logo, background) == ZBL_BIOS_LOGO_BACKG
 _Static_assert(offsetof(struct zbl_bios_logo, count) == ZBL_BIOS_LOGO_COUNT, "logo count offset");
 _Static_assert(offsetof(struct zbl_bios_logo, offsets) == ZBL_BIOS_LOGO_OFFSETS, "logo offsets offset");
 _Static_assert(offsetof(struct zbl_bios_logo, pixels) == ZBL_BIOS_LOGO_PIXELS, "logo pixels offset");
-_Static_assert(offsetof(struct zbl_bios_logo, cover) == ZBL_BIOS_LOGO_TAIL, "logo cover offset");
+_Static_assert(offsetof(struct zbl_bios_logo, contain) == ZBL_BIOS_LOGO_TAIL, "logo contain offset");
 _Static_assert(sizeof(struct zbl_bios_logo) == ZBL_BIOS_LOGO_SIZE, "logo size");
 
 /* The largest logo side the loader draws. */
@@ -53,10 +53,10 @@ _Static_assert(sizeof(struct zbl_bios_logo) == ZBL_BIOS_LOGO_SIZE, "logo size");
 static void logo_header_byte(struct zbl_bios_logo *logo, uint8_t byte);
 static void logo_comment_end(struct zbl_bios_logo *logo);
 static void logo_header_done(struct zbl_bios_logo *logo);
-static int logo_cover_fits(struct zbl_bios_logo *logo);
+static void logo_contain_size(struct zbl_bios_logo *logo);
 static void logo_pixel_byte(struct zbl_bios_logo *logo, uint8_t byte);
-static void logo_cover_writes(struct zbl_bios_logo *logo, uint32_t pixel);
-static uint32_t logo_cover_first(uint32_t source, uint32_t scaled, uint32_t size, uint32_t cut);
+static void logo_contain_writes(struct zbl_bios_logo *logo, uint32_t pixel);
+static uint32_t logo_contain_first(uint32_t source, uint32_t scaled, uint32_t size);
 static int logo_space(uint8_t byte);
 
 /*
@@ -204,12 +204,12 @@ logo_header_byte(
 	}
 }
 
-/* Reads a finished header comment: "fit=cover" (blanks around it allowed) asks for a cover. */
+/* Reads a finished header comment: "fit=contain" (blanks around it allowed) asks for black bars. */
 static void
 logo_comment_end(
 	struct zbl_bios_logo *logo)
 {
-	static const char word[] = "fit=cover";
+	static const char word[] = "fit=contain";
 	uint32_t start;
 	uint32_t end;
 	uint32_t index;
@@ -237,8 +237,8 @@ logo_comment_end(
 			return;
 	}
 
-	/* Succeeded: the picture asks to cover the screen. */
-	logo->cover = 1;
+	/* Succeeded: the picture asks for black bars. */
+	logo->contain = 1;
 }
 
 /* Checks the header and works out where the logo goes on the screen. */
@@ -258,13 +258,11 @@ logo_header_done(
 		return;
 	}
 
-	/* A cover the decoder can draw by shrinking needs no more. */
-	if (logo->cover) {
-		logo->cover = (uint32_t)logo_cover_fits(logo);
-		if (logo->cover) {
-			logo->stage = LOGO_STAGE_PIXELS;
-			return;
-		}
+	/* A picture over black bars: its size and place on the screen. */
+	if (logo->contain) {
+		logo_contain_size(logo);
+		logo->stage = LOGO_STAGE_PIXELS;
+		return;
 	}
 
 	/* The part of the logo on the screen, in its middle. */
@@ -288,33 +286,32 @@ logo_header_done(
 }
 
 /*
- * Works out a cover's size on the screen and the part cut from it; returns
- * 1 when the screen does not enlarge the picture (the cover is drawn), 0
- * otherwise (the picture is centred instead).
+ * Works out the size of a picture over black bars on the screen (its own
+ * when the screen holds it, else shrunk with its proportions kept) and
+ * where its top-left corner is.
  */
-static int
-logo_cover_fits(
+static void
+logo_contain_size(
 	struct zbl_bios_logo *logo)
 {
-	/* As wide as the screen when the screen is the wider in proportion, else as tall. */
-	if (logo->screen_width * logo->height >= logo->screen_height * logo->width) {
-		logo->scaled_width = logo->screen_width;
-		logo->scaled_height = logo->height * logo->screen_width / logo->width;
-	} else {
-		logo->scaled_height = logo->screen_height;
-		logo->scaled_width = logo->width * logo->screen_height / logo->height;
+	/* Its own size when it fits. */
+	logo->scaled_width = logo->width;
+	logo->scaled_height = logo->height;
+
+	/* Else as tall as the screen when the screen is the wider in proportion, else as wide. */
+	if (logo->width > logo->screen_width || logo->height > logo->screen_height) {
+		if (logo->screen_width * logo->height >= logo->screen_height * logo->width) {
+			logo->scaled_height = logo->screen_height;
+			logo->scaled_width = logo->width * logo->screen_height / logo->height;
+		} else {
+			logo->scaled_width = logo->screen_width;
+			logo->scaled_height = logo->height * logo->screen_width / logo->width;
+		}
 	}
 
-	/* An enlarged picture would give a sector more writes than there is room for. */
-	if (logo->scaled_width > logo->width || logo->scaled_height > logo->height)
-		return 0;
-
-	/* The part cut on the left and at the top (the middle stays). */
-	logo->cut_x = (logo->scaled_width - logo->screen_width) / 2U;
-	logo->cut_y = (logo->scaled_height - logo->screen_height) / 2U;
-
-	/* Succeeded: the cover is drawn. */
-	return 1;
+	/* The bars on each side are as wide as each other. */
+	logo->origin_x = (logo->screen_width - logo->scaled_width) / 2U;
+	logo->origin_y = (logo->screen_height - logo->scaled_height) / 2U;
 }
 
 /* Takes one byte of a pixel; a whole pixel on the screen becomes a write. */
@@ -345,9 +342,15 @@ logo_pixel_byte(
 	if (logo->format == LOGO_FORMAT_RGBX)
 		pixel = red | (green << 8) | (blue << 16);
 
-	/* A cover's pixel goes to the screen pixels that take it. */
-	if (logo->cover) {
-		logo_cover_writes(logo, pixel);
+	/* A picture over bars fills the screen black first; its pixel goes to the screen pixels that take it. */
+	if (logo->contain) {
+		if (logo->x == 0U && logo->y == 0U) {
+			logo->background = 0U;
+			logo->fill_now = 1;
+		}
+
+		/* Then its pixel. */
+		logo_contain_writes(logo, pixel);
 	} else if (logo->x == 0U && logo->y == 0U) {
 		/* The first pixel's colour is the background, filled before any write. */
 		logo->background = pixel;
@@ -355,7 +358,7 @@ logo_pixel_byte(
 	}
 
 	/* A pixel inside the part on the screen is written. */
-	if (logo->cover == 0U &&
+	if (logo->contain == 0U &&
 	    logo->x >= logo->skip_x && logo->x - logo->skip_x < logo->screen_width &&
 	    logo->y >= logo->skip_y && logo->y - logo->skip_y < logo->screen_height &&
 	    logo->count < (uint32_t)ZBL_BIOS_LOGO_WRITES) {
@@ -377,11 +380,11 @@ logo_pixel_byte(
 }
 
 /*
- * Writes a cover's pixel of the file to the screen pixels whose nearest
- * pixel of the file it is (at most one, the picture being shrunk).
+ * Writes a pixel of a picture over bars to the screen pixels whose nearest
+ * pixel of the file it is (at most one, the picture never being enlarged).
  */
 static void
-logo_cover_writes(
+logo_contain_writes(
 	struct zbl_bios_logo *logo,
 	uint32_t pixel)
 {
@@ -392,22 +395,22 @@ logo_cover_writes(
 	uint32_t row;
 	uint32_t column;
 
-	/* The screen's columns and rows that sample this pixel. */
-	first_x = logo_cover_first(logo->x, logo->scaled_width, logo->width, logo->cut_x);
-	end_x = logo_cover_first(logo->x + 1U, logo->scaled_width, logo->width, logo->cut_x);
-	first_y = logo_cover_first(logo->y, logo->scaled_height, logo->height, logo->cut_y);
-	end_y = logo_cover_first(logo->y + 1U, logo->scaled_height, logo->height, logo->cut_y);
-	if (end_x > logo->screen_width)
-		end_x = logo->screen_width;
-	if (end_y > logo->screen_height)
-		end_y = logo->screen_height;
+	/* The picture's columns and rows on the screen that sample this pixel. */
+	first_x = logo_contain_first(logo->x, logo->scaled_width, logo->width);
+	end_x = logo_contain_first(logo->x + 1U, logo->scaled_width, logo->width);
+	first_y = logo_contain_first(logo->y, logo->scaled_height, logo->height);
+	end_y = logo_contain_first(logo->y + 1U, logo->scaled_height, logo->height);
+	if (end_x > logo->scaled_width)
+		end_x = logo->scaled_width;
+	if (end_y > logo->scaled_height)
+		end_y = logo->scaled_height;
 
-	/* Each of them, while the sector's writes have room. */
+	/* Each of them, after the bars on the left and at the top, while the sector's writes have room. */
 	for (row = first_y; row < end_y; row++) {
 		for (column = first_x; column < end_x; column++) {
 			if (logo->count >= (uint32_t)ZBL_BIOS_LOGO_WRITES)
 				return;
-			logo->offsets[logo->count] = (row * logo->stride + column) * 4U;
+			logo->offsets[logo->count] = ((logo->origin_y + row) * logo->stride + logo->origin_x + column) * 4U;
 			logo->pixels[logo->count] = pixel;
 			logo->count++;
 		}
@@ -415,37 +418,27 @@ logo_cover_writes(
 }
 
 /*
- * The first screen column (or row) whose nearest pixel of the file is at
- * or after a source column: the smallest d with (2(d + cut) + 1) size >=
- * 2 source scaled, the part cut taken off (0 when it falls before the
- * screen).
+ * The first column (or row) of the picture on the screen whose nearest
+ * pixel of the file is at or after a source column: the smallest d with
+ * (2d + 1) size >= 2 source scaled.
  */
 static uint32_t
-logo_cover_first(
+logo_contain_first(
 	uint32_t source,
 	uint32_t scaled,
-	uint32_t size,
-	uint32_t cut)
+	uint32_t size)
 {
 	uint32_t wanted;
-	uint32_t first;
 
 	/* Nothing before the first pixel. */
 	if (source == 0U)
 		return 0U;
 
-	/* The smallest place d + cut, rounded up. */
+	/* Succeeded: the smallest place, rounded up. */
 	wanted = 2U * source * scaled;
-	first = 0U;
-	if (wanted > size)
-		first = (wanted - size + 2U * size - 1U) / (2U * size);
-
-	/* On the screen, after the part cut. */
-	if (first <= cut)
+	if (wanted <= size)
 		return 0U;
-
-	/* Succeeded: the screen's column or row. */
-	return first - cut;
+	return (wanted - size + 2U * size - 1U) / (2U * size);
 }
 
 /* Reports whether a byte is a blank of a PPM header. */

@@ -8,17 +8,17 @@
 /*
  * The Kei boot splash's spinner (ws035-p107).
  *
- * On a quiet boot (kmsg=quiet) the loaders cover the screen with the Kei
- * splash (tools/build/make-boot-splash.py: the picture 16:9, "fit=cover",
- * without its spinner).  The spinner is drawn here instead, eight blue dots
+ * On a quiet boot (kmsg=quiet) the loaders draw the Kei splash in the
+ * middle of the screen over black bars (tools/build/make-boot-splash.py:
+ * the picture 1920x1080, "fit=contain", without its spinner; ws035-p112).  The spinner is drawn here instead, eight blue dots
  * in a ring whose brightness turns one step each time the boot writes a line
  * of its log that nobody sees: the HAL's early console (cons.c) until the
  * kernel's console is up, then the kernel's quiet text console (text.c).
  * So the spinner moves as the boot goes on and stands still while it waits.
  *
  * Where the spinner is comes from the splash's layout, which the build
- * script and this file share: the picture covers the screen with its
- * middle on the middle; in the picture's coordinates the spinner's centre
+ * script and this file share: the picture is at its own size, or shrunk
+ * to fit the screen, with its middle on the middle; in the picture's coordinates the spinner's centre
  * is at the middle of the width and SPLASH_CENTRE_Y below the middle of the
  * height, the ring's radius SPLASH_RING and a dot's radius SPLASH_DOT, all
  * in ten-thousandths of the picture's height.
@@ -39,9 +39,9 @@
 #define SPLASH_RING		308
 #define SPLASH_DOT		64
 
-/* The picture is 16:9. */
-#define SPLASH_ASPECT_WIDTH	16U
-#define SPLASH_ASPECT_HEIGHT	9U
+/* The picture's size (make-boot-splash.py); the loaders never enlarge it. */
+#define SPLASH_PICTURE_WIDTH	1920U
+#define SPLASH_PICTURE_HEIGHT	1080U
 
 /* The picture height the spinner's size stops growing at, so its square fits the kept picture. */
 #define SPLASH_SIZE_HEIGHT_MAX	1200U
@@ -141,10 +141,18 @@ drv_pcat_splash_start(
 	if (pixels == 0 || width == 0U || height == 0U || stride < width)
 		return;
 
-	/* The picture's height on the screen: it covers the screen, so at least the screen's, or the width's 9/16. */
-	picture_height = width * SPLASH_ASPECT_HEIGHT / SPLASH_ASPECT_WIDTH;
-	if (picture_height < height)
-		picture_height = height;
+	/*
+	 * The picture's height on the screen: its own when the screen holds
+	 * it, else shrunk to the screen's height when the screen is the wider
+	 * in proportion, else to the width's (as the loaders draw it).
+	 */
+	picture_height = SPLASH_PICTURE_HEIGHT;
+	if (width < SPLASH_PICTURE_WIDTH || height < SPLASH_PICTURE_HEIGHT) {
+		if ((uint64_t)width * SPLASH_PICTURE_HEIGHT >= (uint64_t)height * SPLASH_PICTURE_WIDTH)
+			picture_height = height;
+		else
+			picture_height = SPLASH_PICTURE_HEIGHT * width / SPLASH_PICTURE_WIDTH;
+	}
 
 	/* The spinner's size follows the picture up to a height, so that its square fits. */
 	size_height = picture_height;

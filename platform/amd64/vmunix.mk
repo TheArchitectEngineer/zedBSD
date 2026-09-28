@@ -204,7 +204,7 @@ ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-cdc-ecm.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c src/drivers/usb/hid-digitizer.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hub.c
@@ -1471,7 +1471,8 @@ rootfs: $(BUILD)/rootfs/.stamp
 
 # ws035-p096: the boot logo on the boot FAT (/logo.ppm: the ESP of the native layout, the payload FAT of the BIOS image), drawn by the
 # UEFI and the BIOS loaders when zedbsd.cfg names it (logo=logo.ppm).  ws035-p107: it is the Kei boot splash
-# (userland/desktop/artwork/kei-boot-splash.png, 1440x810 without its spinner, "fit=cover": the loaders cover the screen with it and the
+# (userland/desktop/artwork/kei-boot-splash.png, 1920x1080 without its spinner, "fit=contain" since ws035-p112: the loaders draw it in the
+# middle over black bars, shrunk only when the screen is smaller, and the
 # kernel's quiet console draws the spinner, src/drivers/platform/pcat/graphics/splash.c).
 AMD64_BOOT_LOGO := $(BUILD)/boot-logo.ppm
 
@@ -1561,7 +1562,8 @@ ifeq ($(ZEDBSD_VARIANT),native)
 # swap are 1 GiB each, a 2 GiB image that CI publishes gzip-compressed
 # (2026-09-26 user direction).
 # ws035-p098: the lines of the graphical boot are added when ZEDBSD_GRAPHICAL_BOOT is y (the value is in
-# the name, so switching it makes the image again).
+# the name, so switching it makes the image again).  ws035-p112: the graphical boot drops video= (640x480), so the UEFI
+# loader asks GOP for 1920x1080, the splash's size, and draws black bars where the mode is another.
 AMD64_NATIVE_UEFI_ZEDBSD_CONFIG := $(BUILD)/zedbsd-native-uefi-graphical-$(ZEDBSD_GRAPHICAL_BOOT).cfg
 AMD64_GRAPHICAL_BOOT_LINES := logo=logo.ppm kmsg=quiet login=graphical
 AMD64_NATIVE_ROOT_MIB ?= 1024
@@ -1585,6 +1587,7 @@ $(AMD64_NATIVE_ROOT_IMAGE): $(BUILD)/rootfs/.stamp $(ARCH_UFS_IMAGE_TOOLS)
 $(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG): $(AMD64_PLATFORM)/zedbsd-native-uefi.cfg
 	@mkdir -p $(dir $@)
 	cp $< $@.tmp
+	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),grep -v '^video=' $< > $@.tmp)
 	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),printf '%s\n' $(AMD64_GRAPHICAL_BOOT_LINES) >> $@.tmp)
 	mv -f $@.tmp $@
 
