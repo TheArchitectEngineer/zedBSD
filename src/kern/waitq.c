@@ -66,6 +66,11 @@ waitq_sequence(
  * sleep is refused with EAGAIN when a wakeup already advanced it.  With
  * WAITQ_INTERRUPTIBLE a pending signal, stop, cancellation, or termination
  * request ends the sleep with EINTR.  A zero deadline waits indefinitely.
+ *
+ * The caller takes condition_lock with interrupts disabled
+ * (spin_lock_irqsave()).  A spinlock does not hold off preemption, so a
+ * thread holding one with interrupts enabled can be preempted by the clock
+ * tick and resume on another CPU, and the release of the lock there traps.
  */
 int
 waitq_sleep(

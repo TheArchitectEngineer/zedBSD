@@ -29,6 +29,14 @@
  */
 #define NOTES_TOOLBAR_HEIGHT	68U
 
+/*
+ * The toolbar's picture reaches below its band by the height of a notice:
+ * a status too long to stand beside the card shows there, centred under
+ * it and over the top of the page, for as long as it lasts (ui.c).  The
+ * rows are transparent otherwise.
+ */
+#define NOTES_TOOLBAR_IMAGE_HEIGHT	(NOTES_TOOLBAR_HEIGHT + 44U)
+
 /* The room around the page, in pixels. */
 #define NOTES_PAGE_MARGIN	16.0f
 
@@ -88,10 +96,15 @@
 /* The floats of one vertex: x, y, then u, v (a fringe's distance or a texture place), then red, green, blue, alpha. */
 #define NOTES_VERTEX_FLOATS	8U
 
-/* The pictures a texture draw shows: the toolbar, and the page with its finished strokes. */
+/*
+ * The pictures a texture draw shows: the toolbar, the page with its
+ * finished strokes, and the page of the PDF the notebook writes on (drawn
+ * into the page's picture under the strokes).
+ */
 #define NOTES_TEXTURE_TOOLBAR	0U
 #define NOTES_TEXTURE_PAGE	1U
-#define NOTES_TEXTURES		2U
+#define NOTES_TEXTURE_BACKGROUND	2U
+#define NOTES_TEXTURES		3U
 
 /*
  * One key press for the main loop: the evdev code and the modifiers held.
@@ -382,6 +395,20 @@ struct notes_renderer {
 	size_t toolbar_pitch;
 	int toolbar_ready;
 
+	/*
+	 * The background's image, like the toolbar's (host-written, linear,
+	 * mapped): the page of the PDF the notebook writes on as the host drew
+	 * it, its size (0: not made) and whether it has left its first layout.
+	 */
+	VkImage background;
+	VkDeviceMemory background_memory;
+	VkImageView background_view;
+	unsigned char *background_pixels;
+	size_t background_pitch;
+	uint32_t background_width;
+	uint32_t background_height;
+	int background_ready;
+
 	/* The vertices of one frame, in host-visible memory mapped for good. */
 	VkBuffer vertices;
 	VkDeviceMemory vertex_memory;
@@ -423,6 +450,7 @@ VkResult notes_renderer_resize(struct notes_renderer *renderer, uint32_t width, 
 VkResult notes_renderer_page(struct notes_renderer *renderer, uint32_t width, uint32_t height);
 VkResult notes_renderer_draw(struct notes_renderer *renderer, const struct notes_frame *frame, const struct notes_frame *page_frame, int page_clear);
 void notes_renderer_toolbar(struct notes_renderer *renderer, unsigned char **pixels, size_t *pitch);
+VkResult notes_renderer_background(struct notes_renderer *renderer, uint32_t width, uint32_t height, unsigned char **pixels, size_t *pitch);
 void notes_renderer_close(struct notes_renderer *renderer);
 
 /* The frame's geometry (geometry.c). */

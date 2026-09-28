@@ -35,7 +35,9 @@
  *   alt 0x8, meta 0x40), and repeat_info rate 0 (no client repeat).
  *   Kernel autorepeat events are not forwarded.
  * - wl_pointer.set_cursor is accepted and ignored; nothing draws a cursor and
- *   a cursor surface cannot be committed.  wl_touch is not offered.
+ *   a cursor surface cannot be committed.
+ * - A touch screen (multitouch protocol B) is offered as wl_touch (touch.c,
+ *   WS079 p013); the compositor's own gestures see its fingers first.
  */
 #ifndef ZWL_H
 #define ZWL_H
@@ -140,6 +142,17 @@ enum zwl_kind {
 	ZWL_TABLET_SEAT,
 	ZWL_TABLET,
 	ZWL_TABLET_TOOL,
+	ZWL_TOUCH,
+};
+
+/*
+ * Where a contact the edge gestures hear comes from (ws079-p010): the
+ * pointer's left button, the tip of a pen, or a finger.
+ */
+enum zwl_contact_source {
+	ZWL_CONTACT_POINTER,
+	ZWL_CONTACT_PEN,
+	ZWL_CONTACT_TOUCH
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -198,6 +211,8 @@ struct zwl_input_device {
 	unsigned absolute;
 	/* A pen tablet (tablet.c, WS079 p003): its reports go to the tablet, not to apply_frame. */
 	unsigned tablet;
+	/* A touch screen (touch.c, WS079 p013): its reports go to the touch screen, not to apply_frame. */
+	unsigned touch;
 	unsigned discarding;
 	int32_t abs_x_minimum;
 	int32_t abs_x_maximum;
@@ -606,6 +621,15 @@ struct zwl_server {
 	int32_t drag_start_y;
 	struct zwl_object *click_surface;
 	uint64_t click_ms;
+	/*
+	 * The presses of the latest run of quick clicks on click_surface's
+	 * floating title bar (1, 2 or 3), and a window whose double click is
+	 * waiting to dock it: it docks at dock_due_ms unless a third press
+	 * comes first and sends it to the back instead (ws079-p013).
+	 */
+	unsigned click_count;
+	struct zwl_object *dock_waiting;
+	uint64_t dock_due_ms;
 	struct zwl_object *pull;
 	int32_t pull_start_y;
 	int32_t pull_distance;
@@ -752,6 +776,14 @@ struct zwl_server {
 	 * measures its speed with it (corner.c).
 	 */
 	uint32_t input_time;
+	/*
+	 * Where the contact the shell's pointer path carries comes from: the
+	 * pointer, except while touch.c passes a finger through the shell as
+	 * the pointer's left button (it sets ZWL_CONTACT_TOUCH around each call
+	 * and puts ZWL_CONTACT_POINTER back), so the edge gestures know the
+	 * finger's contact from the mouse's (corner.c).
+	 */
+	enum zwl_contact_source shell_source;
 	/*
 	 * The clipboard (data.c): the wl_data_source set as the selection (NULL
 	 * for an empty clipboard), and the number of the client last told it
@@ -900,16 +932,6 @@ int zwl_home_launched(struct zwl_server *server, int32_t *rect);
 void zwl_home_dismiss(struct zwl_server *server, const char *via);
 pid_t zwl_spawn(struct zwl_server *server, const char *command);
 
-/*
- * Where a contact the edge gestures hear comes from (ws079-p010): the
- * pointer's left button, the tip of a pen, or a finger.
- */
-enum zwl_contact_source {
-	ZWL_CONTACT_POINTER,
-	ZWL_CONTACT_PEN,
-	ZWL_CONTACT_TOUCH
-};
-
 /* The top-right corner's swipe that brings Notes (corner.c; the drawing is in glass.h). */
 int zwl_corner_contact_begin(struct zwl_server *server, enum zwl_contact_source source, int32_t x, int32_t y, uint32_t time);
 int zwl_corner_contact_move(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
@@ -923,6 +945,8 @@ int zwl_corner_showing(void);
 int zwl_glass_edge_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_glass_edge_motion(struct zwl_server *server);
 int zwl_glass_overlay(struct zwl_server *server);
+struct zwl_object *zwl_glass_title_at(struct zwl_server *server, int32_t x, int32_t y);
+void zwl_glass_lower(struct zwl_server *server, struct zwl_object *surface, const char *via);
 void zwl_glass_mapped(struct zwl_server *server, struct zwl_object *surface);
 int zwl_glass_key(struct zwl_server *server, uint32_t key, uint32_t state);
 

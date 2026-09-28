@@ -19,8 +19,10 @@
  *   plain    draws without the stencil;
  *   texture  draws a picture without the stencil.
  *
- * There are two pictures.  The toolbar's is drawn on the CPU into a linear
- * image.  The page's holds the page and its finished strokes: a second list
+ * There are three pictures.  The toolbar's is drawn on the CPU into a linear
+ * image, and so is the background: the page of the PDF the notebook writes
+ * on, which libpdf draws on the CPU.  The page's holds the page (with its
+ * background) and its finished strokes: a second list
  * of draws, the page frame, is drawn into it with the same pipelines before
  * the frame when the page changed -- from a cleared picture after the page
  * was turned or a stroke was removed, or on top of the last picture when
@@ -64,6 +66,8 @@ static VkResult render_commands(struct notes_renderer *renderer);
 static VkResult render_memory(struct notes_renderer *renderer, const VkMemoryRequirements *requirements, VkMemoryPropertyFlags wanted, VkDeviceMemory *memory);
 static VkResult render_descriptors(struct notes_renderer *renderer);
 static VkResult render_toolbar(struct notes_renderer *renderer);
+static VkResult render_linear(struct notes_renderer *renderer, uint32_t width, uint32_t height, VkDescriptorSet set, VkImage *made, VkDeviceMemory *memory, VkImageView *made_view, unsigned char **pixels, size_t *pitch);
+static void render_background_free(struct notes_renderer *renderer);
 static void render_toolbar_free(struct notes_renderer *renderer);
 static VkResult render_vertices(struct notes_renderer *renderer, size_t count);
 static void render_vertices_free(struct notes_renderer *renderer);
@@ -483,8 +487,67 @@ notes_renderer_draw(
 }
 
 /*
+ * Gives the pixels of the page's background picture (B8G8R8A8) at a size,
+ * and their row pitch, for the host to draw the page of the PDF the
+ * notebook writes on into between frames; the page frame shows it with
+ * NOTES_TEXTURE_BACKGROUND.
+ *
+ * An image of another size is made again (its content is gone); an image
+ * of the size keeps what the host drew into it last.
+ */
+VkResult
+notes_renderer_background(
+	struct notes_renderer *renderer,
+	uint32_t width,
+	uint32_t height,
+	unsigned char **pixels,
+	size_t *pitch)
+{
+	VkResult error;
+
+	/* An image of the size stands. */
+	if (renderer->background != VK_NULL_HANDLE &&
+	    renderer->background_width == width &&
+	    renderer->background_height == height) {
+		*pixels = renderer->background_pixels;
+		*pitch = renderer->background_pitch;
+		return VK_SUCCESS;
+	}
+
+	/* The old image goes once nothing uses it. */
+	renderer->operation = "vkDeviceWaitIdle";
+	error = vkDeviceWaitIdle(renderer->device);
+	if (error != VK_SUCCESS)
+		return error;
+	render_background_free(renderer);
+
+	/* The new image, named in the background's set. */
+	error = render_linear(renderer,
+			      width,
+			      height,
+			      renderer->sets[NOTES_TEXTURE_BACKGROUND],
+			      &renderer->background,
+			      &renderer->background_memory,
+			      &renderer->background_view,
+			      &renderer->background_pixels,
+			      &renderer->background_pitch);
+	if (error != VK_SUCCESS) {
+		render_background_free(renderer);
+		return error;
+	}
+
+	/* Succeeded: the next frame moves the image to the general layout. */
+	renderer->background_width = width;
+	renderer->background_height = height;
+	renderer->background_ready = 0;
+	*pixels = renderer->background_pixels;
+	*pitch = renderer->background_pitch;
+	return VK_SUCCESS;
+}
+
+/*
  * Gives the toolbar's pixels (B8G8R8A8, the swapchain's width by
- * NOTES_TOOLBAR_HEIGHT) and their row pitch, for the toolbar to draw into
+ * NOTES_TOOLBAR_IMAGE_HEIGHT) and their row pitch, for the toolbar to draw into
  * between frames.
  */
 void
@@ -514,6 +577,7 @@ notes_renderer_close(
 		render_page_free(renderer);
 		render_stencil_free(renderer);
 		render_toolbar_free(renderer);
+		render_background_free(renderer);
 		render_vertices_free(renderer);
 
 		/* The pipelines and what they bind. */
@@ -1277,9 +1341,10 @@ render_descriptors(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The sets, both of the one layout. */
+	/* The sets, all of the one layout. */
 	layouts[NOTES_TEXTURE_TOOLBAR] = renderer->set_layout;
 	layouts[NOTES_TEXTURE_PAGE] = renderer->set_layout;
+	layouts[NOTES_TEXTURE_BACKGROUND] = renderer->set_layout;
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocate.descriptorPool = renderer->descriptor_pool;
@@ -1299,6 +1364,44 @@ static VkResult
 render_toolbar(
 	struct notes_renderer *renderer)
 {
+	VkResult error;
+
+	/* The image across the window, as high as the toolbar's band and the notice under it. */
+	error = render_linear(renderer,
+			      renderer->extent.width,
+			      NOTES_TOOLBAR_IMAGE_HEIGHT,
+			      renderer->sets[NOTES_TEXTURE_TOOLBAR],
+			      &renderer->toolbar,
+			      &renderer->toolbar_memory,
+			      &renderer->toolbar_view,
+			      &renderer->toolbar_pixels,
+			      &renderer->toolbar_pitch);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the first frame moves the image to the general layout. */
+	renderer->toolbar_ready = 0;
+	return VK_SUCCESS;
+}
+
+/*
+ * Makes a picture the host draws: a linear B8G8R8A8 image of a size in
+ * host-visible memory, mapped for as long as it lives, with the view the
+ * shader samples, and names it in a set in the general layout it is kept
+ * in.  Gives the mapped rows and their pitch.
+ */
+static VkResult
+render_linear(
+	struct notes_renderer *renderer,
+	uint32_t width,
+	uint32_t height,
+	VkDescriptorSet set,
+	VkImage *made,
+	VkDeviceMemory *memory,
+	VkImageView *made_view,
+	unsigned char **pixels,
+	size_t *pitch)
+{
 	VkImageCreateInfo image;
 	VkMemoryRequirements requirements;
 	VkImageSubresource subresource;
@@ -1314,8 +1417,8 @@ render_toolbar(
 	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image.imageType = VK_IMAGE_TYPE_2D;
 	image.format = VK_FORMAT_B8G8R8A8_UNORM;
-	image.extent.width = renderer->extent.width;
-	image.extent.height = NOTES_TOOLBAR_HEIGHT;
+	image.extent.width = width;
+	image.extent.height = height;
 	image.extent.depth = 1U;
 	image.mipLevels = 1U;
 	image.arrayLayers = 1U;
@@ -1325,66 +1428,86 @@ render_toolbar(
 	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	image.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
 	renderer->operation = "vkCreateImage";
-	error = vkCreateImage(renderer->device, &image, NULL, &renderer->toolbar);
+	error = vkCreateImage(renderer->device, &image, NULL, made);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Its memory, which the host sees. */
-	vkGetImageMemoryRequirements(renderer->device, renderer->toolbar, &requirements);
-	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &renderer->toolbar_memory);
+	vkGetImageMemoryRequirements(renderer->device, *made, &requirements);
+	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memory);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Binds the memory to the image. */
 	renderer->operation = "vkBindImageMemory";
-	error = vkBindImageMemory(renderer->device, renderer->toolbar, renderer->toolbar_memory, 0U);
+	error = vkBindImageMemory(renderer->device, *made, *memory, 0U);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Maps it for the host's writes, for as long as the image lives. */
 	renderer->operation = "vkMapMemory";
-	error = vkMapMemory(renderer->device, renderer->toolbar_memory, 0U, VK_WHOLE_SIZE, 0U, &map);
+	error = vkMapMemory(renderer->device, *memory, 0U, VK_WHOLE_SIZE, 0U, &map);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Where its rows start, which the toolbar needs to draw into it. */
+	/* Where its rows start, which the host needs to draw into it. */
 	memset(&subresource, 0, sizeof(subresource));
 	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	vkGetImageSubresourceLayout(renderer->device, renderer->toolbar, &subresource, &row_layout);
-	renderer->toolbar_pixels = (unsigned char *)map + row_layout.offset;
-	renderer->toolbar_pitch = (size_t)row_layout.rowPitch;
+	vkGetImageSubresourceLayout(renderer->device, *made, &subresource, &row_layout);
+	*pixels = (unsigned char *)map + row_layout.offset;
+	*pitch = (size_t)row_layout.rowPitch;
 
 	/* The view the shader samples. */
 	memset(&view, 0, sizeof(view));
 	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	view.image = renderer->toolbar;
+	view.image = *made;
 	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	view.format = VK_FORMAT_B8G8R8A8_UNORM;
 	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	view.subresourceRange.levelCount = 1U;
 	view.subresourceRange.layerCount = 1U;
 	renderer->operation = "vkCreateImageView";
-	error = vkCreateImageView(renderer->device, &view, NULL, &renderer->toolbar_view);
+	error = vkCreateImageView(renderer->device, &view, NULL, made_view);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* The set names the image in the general layout it is kept in. */
 	memset(&image_info, 0, sizeof(image_info));
 	image_info.sampler = renderer->sampler;
-	image_info.imageView = renderer->toolbar_view;
+	image_info.imageView = *made_view;
 	image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 	memset(&write, 0, sizeof(write));
 	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet = renderer->sets[NOTES_TEXTURE_TOOLBAR];
+	write.dstSet = set;
 	write.dstBinding = 0U;
 	write.descriptorCount = 1U;
 	write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	write.pImageInfo = &image_info;
 	vkUpdateDescriptorSets(renderer->device, 1U, &write, 0U, NULL);
 
-	/* Succeeded: the first frame moves the image to the general layout. */
-	renderer->toolbar_ready = 0;
+	/* Succeeded: the host may draw into the rows. */
 	return VK_SUCCESS;
+}
+
+/* Releases the background's image. */
+static void
+render_background_free(
+	struct notes_renderer *renderer)
+{
+	/* The view, the image and the memory (which unmaps it), where made. */
+	if (renderer->background_view != VK_NULL_HANDLE)
+		vkDestroyImageView(renderer->device, renderer->background_view, NULL);
+	if (renderer->background != VK_NULL_HANDLE)
+		vkDestroyImage(renderer->device, renderer->background, NULL);
+	if (renderer->background_memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, renderer->background_memory, NULL);
+	renderer->background_view = VK_NULL_HANDLE;
+	renderer->background = VK_NULL_HANDLE;
+	renderer->background_memory = VK_NULL_HANDLE;
+	renderer->background_pixels = NULL;
+	renderer->background_pitch = 0;
+	renderer->background_width = 0;
+	renderer->background_height = 0;
 }
 
 /* Releases the toolbar's image. */
@@ -1765,6 +1888,24 @@ render_record(
 		renderer->toolbar_ready = 1;
 	}
 
+	/* So does a new background image. */
+	if (renderer->background != VK_NULL_HANDLE && renderer->background_ready == 0) {
+		memset(&barrier, 0, sizeof(barrier));
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = renderer->background;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.levelCount = 1U;
+		barrier.subresourceRange.layerCount = 1U;
+		vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+		renderer->background_ready = 1;
+	}
+
 	/* The vertices of both lists, the page frame's first. */
 	offset = 0U;
 	vkCmdBindVertexBuffers(renderer->command, 0U, 1U, &renderer->vertices, &offset);
@@ -1872,9 +2013,11 @@ render_draws(
 			bound = draw->pipe;
 		}
 
-		/* A picture's set, for a texture draw (the page's only once it is made). */
+		/* A picture's set, for a texture draw (the page's and the background's only once they are made). */
 		if (draw->pipe == NOTES_PIPE_TEXTURE && draw->texture != bound_texture) {
 			if (draw->texture == NOTES_TEXTURE_PAGE && renderer->page == VK_NULL_HANDLE)
+				continue;
+			if (draw->texture == NOTES_TEXTURE_BACKGROUND && renderer->background == VK_NULL_HANDLE)
 				continue;
 			vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U,
 						&renderer->sets[draw->texture], 0U, NULL);

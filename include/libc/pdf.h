@@ -15,7 +15,10 @@
  * and attached files.  pdf_page_render() interprets a page's content into a
  * display list of fills, images and clips (stage 1 of design-pdf.md: paths,
  * strokes, colours, opacity and the Multiply blend, images), which a program
- * draws itself or has pdf_display_list_rasterize() draw into memory.  The
+ * draws itself or has pdf_display_list_rasterize() draw into memory.  An
+ * update (pdf_writer_create_update()) adds a revision to a document being
+ * read -- pages drawn over, kept or added, an attached file -- and saves it
+ * after the document's own bytes, which stay as they were.  The
  * library depends on the C library, libz-compat and libjpeg-compat, and
  * knows neither the window system nor the renderer.
  *
@@ -45,6 +48,23 @@ extern "C" {
  * library reports an illegal byte sequence.
  */
 #define PDF_EFORMAT EILSEQ
+
+/*
+ * The error an update reports for a signed document, which a new revision
+ * could invalidate.
+ */
+#define PDF_ESIGNED EPERM
+
+/*
+ * How an update draws over a page of the document it adds to.
+ *
+ * OVERLAY keeps the page's own content and draws the new content over it;
+ * REPLACE draws the new content instead of the page's own.
+ */
+enum pdf_page_use {
+	PDF_PAGE_OVERLAY = 0,
+	PDF_PAGE_REPLACE = 1
+};
 
 /*
  * The rule that decides which parts of a self-intersecting path are inside.
@@ -219,6 +239,11 @@ int pdf_writer_set_dates(struct pdf_writer *writer, time_t creation, time_t modi
 int pdf_writer_get_page_content_hash(const struct pdf_writer *writer, size_t index, unsigned char digest[32]);
 int pdf_writer_save(struct pdf_writer *writer, const char *path);
 
+/* A writer that adds a revision to a document being read, and the pages of that document it lists. */
+int pdf_writer_create_update(struct pdf_document *base, struct pdf_writer **writer);
+int pdf_writer_keep_page(struct pdf_writer *writer, size_t index);
+int pdf_writer_begin_page_over(struct pdf_writer *writer, size_t index, enum pdf_page_use use);
+
 int pdf_outline_stroke(const struct pdf_stroke_point *points, size_t count, double width, struct pdf_point **outline, size_t *outline_count);
 void pdf_outline_free(struct pdf_point *outline);
 
@@ -232,6 +257,9 @@ int pdf_document_find_attachment(struct pdf_document *document, const char *name
 int pdf_document_find_attachment_type(struct pdf_document *document, const char *name, const char *mime_type, const void **data, size_t *size);
 int pdf_document_get_id(const struct pdf_document *document, unsigned char id[16]);
 int pdf_document_get_dates(const struct pdf_document *document, time_t *creation, time_t *modification);
+int pdf_document_get_revision(const struct pdf_document *document, size_t *xref_offset, size_t *previous_offset);
+int pdf_document_signed(struct pdf_document *document, int *is_signed);
+int pdf_document_encrypted(const char *path, int *encrypted);
 
 int pdf_page_render(struct pdf_document *document, size_t index, struct pdf_display_list **list);
 void pdf_display_list_destroy(struct pdf_display_list *list);

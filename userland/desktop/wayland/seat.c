@@ -13,7 +13,7 @@
  * the same window, or to the sub-surface of it under the pointer (p077);
  * while a popup's grab has the pointer, to the surface of the grab's chain
  * under it (p076).  A client that never asks for a pointer or keyboard receives
- * nothing.  Coordinates are surface-local integers carried as wl_fixed, the
+ * nothing.  wl_touch objects are made here; the fingers are touch.c's.  Coordinates are surface-local integers carried as wl_fixed, the
  * surface being the whole output of --width by --height pixels.
  */
 
@@ -171,8 +171,11 @@ zwl_seat_request(
 		} else if (opcode == 1U) {
 			/* get_keyboard carries one new_id. */
 			error = create_device(object, ZWL_KEYBOARD, bytes, size);
+		} else if (opcode == 2U) {
+			/* get_touch carries one new_id (the fingers are delivered by touch.c). */
+			error = create_device(object, ZWL_TOUCH, bytes, size);
 		} else if (opcode == 3U && size == 0 && object->version >= SEAT_RELEASE_VERSION) {
-			/* release exists from version 5; get_touch is outside this seat. */
+			/* release exists from version 5. */
 			zwl_object_destroy(object);
 			error = 0;
 		}
@@ -208,7 +211,8 @@ zwl_seat_request(
 
 		break;
 	case ZWL_KEYBOARD:
-		/* release, from version 3, is the only keyboard request. */
+	case ZWL_TOUCH:
+		/* release, from version 3, is the only keyboard or touch request. */
 		if (opcode == 0U && size == 0 && object->version >= RELEASE_VERSION) {
 			zwl_object_destroy(object);
 			error = 0;
@@ -913,7 +917,7 @@ zwl_seat_modifiers(
 	return;
 }
 
-/* Creates a pointer or keyboard object and introduces it to the current focus. */
+/* Creates a pointer, keyboard or touch object and introduces it to the current focus. */
 static int
 create_device(
 	struct zwl_object *seat,
@@ -1127,24 +1131,28 @@ report_seat(
 	struct zwl_object *object;
 	unsigned pointer;
 	unsigned keyboard;
+	unsigned touch;
 
-	/* The client's live objects say whether it holds a pointer and a keyboard. */
+	/* The client's live objects say whether it holds a pointer, a keyboard and a touch. */
 	pointer = 0;
 	keyboard = 0;
+	touch = 0;
 	for (object = client->objects; object != NULL; object = object->next) {
 		/* Retired objects no longer count. */
 		if (object->dead)
 			continue;
 
-		/* Record the two device kinds the log line reports. */
+		/* Record the three device kinds the log line reports. */
 		if (object->kind == ZWL_POINTER)
 			pointer = 1;
 		if (object->kind == ZWL_KEYBOARD)
 			keyboard = 1;
+		if (object->kind == ZWL_TOUCH)
+			touch = 1;
 	}
 
 	/* One line per constructor keeps the test log short. */
-	printf("ZWL SEAT client=%llu pointer=%u keyboard=%u\n", (unsigned long long)client->number, pointer, keyboard);
+	printf("ZWL SEAT client=%llu pointer=%u keyboard=%u touch=%u\n", (unsigned long long)client->number, pointer, keyboard, touch);
 
 	/* Succeeded: the line is printed. */
 	return;

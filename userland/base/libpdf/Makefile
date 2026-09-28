@@ -5,11 +5,13 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 # pressure-width outline of a pen stroke, and the reader of the writer's own documents (pages,
 # boxes, content hashes, the attached file).  ws079-p006: the page content interpreted into a
 # display list (paths, strokes, colours, opacity, Multiply, images through libjpeg-compat, Flate
-# through libz-compat) and the CPU rasterizer of the list.  ws079-p007: text (the text operators, embedded
-# TrueType fonts through libtruetype, substitutes for the others), axial and radial shadings, cross-reference
-# streams, object streams and the repair of broken cross-references.
+# through libz-compat) and the CPU rasterizer of the list.  ws079-p014: the update that adds a
+# revision to another program's PDF (pages drawn over, kept or added, the attached file).  ws079-p007:
+# text (the text operators, embedded TrueType fonts through libtruetype, substitutes for the others),
+# axial and radial shadings, cross-reference streams, object streams and the repair of broken
+# cross-references.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
-LIBPDF_SOURCES := userland/base/libpdf/writer.c userland/base/libpdf/outline.c \
+LIBPDF_SOURCES := userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c \
 	userland/base/libpdf/object.c userland/base/libpdf/reader.c \
 	userland/base/libpdf/filter.c userland/base/libpdf/image.c userland/base/libpdf/display.c \
 	userland/base/libpdf/content.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c \

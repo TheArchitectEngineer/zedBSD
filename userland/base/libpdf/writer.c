@@ -11,7 +11,9 @@
  * Pages are drawn into content streams kept in memory.  Saving numbers
  * every object, writes them in order with a classic cross-reference table,
  * and stores the result in one write of the whole file.  The layout is the
- * one plan/ws079/design-pdf.md section 1 describes.
+ * one plan/ws079/design-pdf.md section 1 describes.  A writer made by
+ * pdf_writer_create_update() lays its file out through update.c instead
+ * (the types they share are in writer.h).
  */
 
 #include <errno.h>
@@ -24,11 +26,7 @@
 
 #include <pdf.h>
 
-/* The largest coordinate the writer accepts, well inside what any reader handles as a real. */
-#define PDF_WRITER_COORDINATE_LIMIT 1000000.0
-
-/* The most distinct fill alphas one document may use, each an ExtGState object. */
-#define PDF_WRITER_ALPHA_MAX 64
+#include "writer.h"
 
 /* The most images one document may hold, each an Image XObject. */
 #define PDF_WRITER_IMAGE_MAX 4096
@@ -42,123 +40,24 @@
 #define PDF_WRITER_OBJECT_INFO 3
 #define PDF_WRITER_OBJECT_FIRST_PAGE 4
 
-/* The bytes of each element of the trailer's file identifier. */
-#define PDF_WRITER_ID_SIZE 16
-
 /* The FNV-1a prime and offset basis of the 32-bit hashes that make the identifier's second element. */
 #define PDF_WRITER_FNV_PRIME 16777619UL
 #define PDF_WRITER_FNV_BASIS 2166136261UL
 
-/*
- * A growable run of bytes.
- *
- * It is used for each page's content stream and for the whole file while it
- * is being saved; the owner frees its data.  error holds the first failure of
- * an append.  Once it is set, later appends do nothing, so a paragraph of
- * appends that writes one PDF object is checked once, at its end, and a page
- * whose content failed stays failed.
- */
-struct pdf_buffer {
-	unsigned char *data;
-	size_t length;
-	size_t capacity;
-	int error;
-};
-
-/*
- * One finished or open page.
- *
- * The page owns its content stream and lives until the writer is destroyed.
- */
-struct pdf_writer_page {
-	double width;
-	double height;
-	struct pdf_buffer content;
-};
-
-/*
- * The file attached to the document, which is Notes' edit data.
- *
- * The writer holds its own copy, so the caller's buffer may go away.
- */
-struct pdf_writer_attachment {
-	char *name;
-	char *mime_type;
-	unsigned char *data;
-	size_t size;
-};
-
-/*
- * One image the document draws.
- *
- * The writer owns the bytes: JPEG data kept as it came (DCTDecode), or 8-bit
- * RGB samples with an 8-bit alpha mask when some pixel is not opaque.
- * object is the image's object number, assigned when the document is laid
- * out; the mask, if any, is the next object.
- */
-struct pdf_writer_image {
-	unsigned char *data;
-	size_t size;
-	unsigned char *alpha;
-	size_t width;
-	size_t height;
-	int is_jpeg;
-	int components;
-	size_t object;
-};
-
-/*
- * A document being written.
- *
- * The page array only grows, and the last page is the open one while
- * page_is_open is set.  The document identifier's first element is chosen
- * once, by the caller or at the first save, and kept by every later save;
- * a zero date means the writer chooses it at the save.
- */
-struct pdf_writer {
-	struct pdf_writer_page **pages;
-	size_t pages_count;
-	size_t pages_capacity;
-	int page_is_open;
-	double current_alpha;
-	double alphas[PDF_WRITER_ALPHA_MAX];
-	size_t alphas_count;
-	struct pdf_writer_image *images;
-	size_t images_count;
-	size_t images_capacity;
-	struct pdf_writer_attachment attachment;
-	int has_attachment;
-	unsigned char document_id[PDF_WRITER_ID_SIZE];
-	int has_document_id;
-	time_t creation_time;
-	time_t modification_time;
-};
-
 static int buffer_reserve(struct pdf_buffer *buffer, size_t extra);
-static void buffer_fail(struct pdf_buffer *buffer, int error);
-static void buffer_append(struct pdf_buffer *buffer, const void *data, size_t length);
-static void buffer_printf(struct pdf_buffer *buffer, const char *format, ...) __attribute__((format(printf, 2, 3)));
-static void buffer_append_number(struct pdf_buffer *buffer, double number);
-static void buffer_append_literal_string(struct pdf_buffer *buffer, const char *text);
-static void buffer_append_hex_string(struct pdf_buffer *buffer, const unsigned char *bytes, size_t length);
-static void buffer_append_date(struct pdf_buffer *buffer, time_t when);
 static int check_coordinate(double value);
 static struct pdf_buffer *open_content(struct pdf_writer *writer);
 static int append_point(struct pdf_writer *writer, double x, double y, const char *operator_name);
 static int find_or_add_alpha(struct pdf_writer *writer, double alpha, size_t *index);
 static int copy_string(const char *source, char **copy);
 static int add_image(struct pdf_writer *writer, struct pdf_writer_image *image, double x, double y, double draw_width, double draw_height);
-static void write_image_objects(struct pdf_writer_image *image, struct pdf_buffer *file, size_t *offsets);
 static int mime_type_is_valid(const char *mime_type);
 static int write_document(struct pdf_writer *writer, struct pdf_buffer *file, time_t now);
 static void write_catalog(struct pdf_writer *writer, struct pdf_buffer *file, size_t spec_object);
 static void write_page_tree(struct pdf_writer *writer, struct pdf_buffer *file);
 static void write_information(struct pdf_writer *writer, struct pdf_buffer *file, time_t now);
 static void write_page_objects(struct pdf_writer *writer, struct pdf_buffer *file, size_t *offsets, size_t page_index);
-static void write_attachment_objects(struct pdf_writer *writer, struct pdf_buffer *file, size_t *offsets, size_t file_object);
-static void write_resources(struct pdf_writer *writer, struct pdf_buffer *file);
 static void write_cross_reference(struct pdf_writer *writer, struct pdf_buffer *file, const size_t *offsets, size_t object_count);
-static void hash_version_id(const struct pdf_buffer *file, unsigned char version_id[PDF_WRITER_ID_SIZE]);
 
 /*
  * Creates an empty document with no pages.
@@ -176,6 +75,9 @@ pdf_writer_create(
 
 	/* A new page starts opaque, so the first translucent fill must select its alpha. */
 	created->current_alpha = 1.0;
+
+	/* A new document's resources have the plain names; an update gives them its own prefix. */
+	created->name_prefix = "";
 
 	/* Succeeded: the caller owns the new document. */
 	*writer = created;
@@ -220,7 +122,8 @@ pdf_writer_destroy(
  * Opens a new page of the given size in points.
  *
  * Drawing uses the page's top-left corner as the origin with y growing
- * downward, as Notes' model does.
+ * downward, as Notes' model does.  In an update (pdf_writer_create_update())
+ * the page is added to the document after the pages listed so far.
  */
 int
 pdf_writer_begin_page(
@@ -229,57 +132,24 @@ pdf_writer_begin_page(
 	double height)
 {
 	struct pdf_writer_page *page;
-	struct pdf_writer_page **grown;
-	size_t capacity;
-
-	/* Refuses a second open page. */
-	if (writer->page_is_open)
-		return EINVAL;
-
-	/* Refuses a page without area or larger than any reader accepts; the negations also refuse a NaN. */
-	if (!(width > 0.0))
-		return EINVAL;
-	if (!(height > 0.0))
-		return EINVAL;
-	if (width > PDF_WRITER_COORDINATE_LIMIT)
-		return EINVAL;
-	if (height > PDF_WRITER_COORDINATE_LIMIT)
-		return EINVAL;
-
-	/* Grows the page array when it is full. */
-	if (writer->pages_count == writer->pages_capacity) {
-		capacity = writer->pages_capacity * 2;
-		if (capacity == 0)
-			capacity = 8;
-		grown = realloc(writer->pages, capacity * sizeof(*grown));
-		if (grown == NULL)
-			return ENOMEM;
-		writer->pages = grown;
-		writer->pages_capacity = capacity;
-	}
-
-	/* Allocates the page with an empty content stream. */
-	page = calloc(1, sizeof(*page));
-	if (page == NULL)
-		return ENOMEM;
-	page->width = width;
-	page->height = height;
+	struct pdf_buffer prologue;
+	int error;
 
 	/* Flips the y axis so the content uses the model's top-left origin. */
-	buffer_printf(&page->content, "1 0 0 -1 0 ");
-	buffer_append_number(&page->content, height);
-	buffer_printf(&page->content, " cm\n");
-	if (page->content.error != 0) {
-		free(page->content.data);
-		free(page);
+	memset(&prologue, 0, sizeof(prologue));
+	pdf_buffer_printf(&prologue, "1 0 0 -1 0 ");
+	pdf_buffer_append_number(&prologue, height);
+	pdf_buffer_printf(&prologue, " cm\n");
+	if (prologue.error != 0) {
+		free(prologue.data);
 		return ENOMEM;
 	}
 
-	/* Publishes the page as the one drawing goes to; its graphics state starts opaque. */
-	writer->pages[writer->pages_count] = page;
-	writer->pages_count++;
-	writer->page_is_open = 1;
-	writer->current_alpha = 1.0;
+	/* Adds the page, which starts with the flip. */
+	error = pdf_writer_add_page(writer, width, height, &prologue, &page);
+	free(prologue.data);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: drawing now goes to the new page. */
 	return 0;
@@ -337,12 +207,12 @@ pdf_writer_set_fill_color(
 		return EINVAL;
 
 	/* Writes the DeviceRGB fill color. */
-	buffer_append_number(content, red);
-	buffer_printf(content, " ");
-	buffer_append_number(content, green);
-	buffer_printf(content, " ");
-	buffer_append_number(content, blue);
-	buffer_printf(content, " rg\n");
+	pdf_buffer_append_number(content, red);
+	pdf_buffer_printf(content, " ");
+	pdf_buffer_append_number(content, green);
+	pdf_buffer_printf(content, " ");
+	pdf_buffer_append_number(content, blue);
+	pdf_buffer_printf(content, " rg\n");
 	if (content->error != 0)
 		return content->error;
 
@@ -356,7 +226,7 @@ pdf_writer_set_fill_color(
 		return error;
 
 	/* Selects that ExtGState. */
-	buffer_printf(content, "/GS%lu gs\n", (unsigned long)alpha_index);
+	pdf_buffer_printf(content, "/%sGS%lu gs\n", writer->name_prefix, (unsigned long)alpha_index);
 	if (content->error != 0)
 		return content->error;
 
@@ -456,7 +326,7 @@ pdf_writer_close_path(
 		return EINVAL;
 
 	/* Writes the close operator. */
-	buffer_printf(content, "h\n");
+	pdf_buffer_printf(content, "h\n");
 	if (content->error != 0)
 		return content->error;
 
@@ -490,7 +360,7 @@ pdf_writer_fill(
 	}
 
 	/* Writes the fill operator. */
-	buffer_printf(content, "%s", operator_text);
+	pdf_buffer_printf(content, "%s", operator_text);
 	if (content->error != 0)
 		return content->error;
 
@@ -828,7 +698,9 @@ pdf_writer_set_dates(
  * index counts the pages from 0.  The hash is the one the reader's
  * pdf_document_page_content_hash() gives for the same page of the saved
  * file, so Notes can record it in its edit data before saving.  A page
- * whose content failed to be recorded reports that failure.
+ * whose content failed to be recorded reports that failure.  In an update,
+ * a page kept or drawn over (whose content includes the base page's own)
+ * reports ENOENT: its hash is not known.
  */
 int
 pdf_writer_get_page_content_hash(
@@ -848,6 +720,12 @@ pdf_writer_get_page_content_hash(
 	if (page->content.error != 0)
 		return page->content.error;
 
+	/* A page of an update kept or drawn over carries the base page's content too, which the writer does not hash. */
+	if (page->placement == PDF_WRITER_PLACE_KEEP)
+		return ENOENT;
+	if (page->placement == PDF_WRITER_PLACE_OVERLAY)
+		return ENOENT;
+
 	/* Hashes the content stream as it will be saved. */
 	SHA256Init(&context);
 	SHA256Update(&context, page->content.data, page->content.length);
@@ -861,7 +739,9 @@ pdf_writer_get_page_content_hash(
  * Saves the document to a file, replacing the file.
  *
  * The open page, if any, is saved as it stands.  The document stays usable,
- * so more pages may be added and the document saved again.
+ * so more pages may be added and the document saved again.  An update
+ * (pdf_writer_create_update()) is saved as the bytes of the document it
+ * adds to, unchanged, followed by the revision it makes.
  */
 int
 pdf_writer_save(
@@ -892,9 +772,15 @@ pdf_writer_save(
 	if (writer->creation_time == 0)
 		writer->creation_time = now;
 
-	/* Lays out the whole file in memory. */
+	/* Lays out the whole file in memory: a new document, or the update of one being read. */
 	memset(&file, 0, sizeof(file));
-	error = write_document(writer, &file, now);
+	if (writer->update_layout != NULL) {
+		error = writer->update_layout(writer, &file, now);
+	} else {
+		error = write_document(writer, &file, now);
+	}
+
+	/* A file that could not be laid out is not written. */
 	if (error != 0) {
 		free(file.data);
 		return error;
@@ -921,6 +807,499 @@ pdf_writer_save(
 
 	/* Succeeded: the file holds the document. */
 	return 0;
+}
+
+/*
+ * Adds a page of a size in points, opens it for drawing and starts its
+ * content with a prologue (copied).
+ *
+ * The page is a new one (PDF_WRITER_PLACE_NEW); an update changes its
+ * placement afterwards.  Returns 0, EINVAL for an open page or a size no
+ * reader accepts, or ENOMEM.
+ */
+int
+pdf_writer_add_page(
+	struct pdf_writer *writer,
+	double width,
+	double height,
+	const struct pdf_buffer *prologue,
+	struct pdf_writer_page **added)
+{
+	struct pdf_writer_page *page;
+	struct pdf_writer_page **grown;
+	size_t capacity;
+
+	/* Refuses a second open page. */
+	if (writer->page_is_open)
+		return EINVAL;
+
+	/* Refuses a page without area or larger than any reader accepts; the negations also refuse a NaN. */
+	if (!(width > 0.0))
+		return EINVAL;
+	if (!(height > 0.0))
+		return EINVAL;
+	if (width > PDF_WRITER_COORDINATE_LIMIT)
+		return EINVAL;
+	if (height > PDF_WRITER_COORDINATE_LIMIT)
+		return EINVAL;
+
+	/* Grows the page array when it is full. */
+	if (writer->pages_count == writer->pages_capacity) {
+		capacity = writer->pages_capacity * 2;
+		if (capacity == 0)
+			capacity = 8;
+		grown = realloc(writer->pages, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		writer->pages = grown;
+		writer->pages_capacity = capacity;
+	}
+
+	/* Allocates the page with an empty content stream. */
+	page = calloc(1, sizeof(*page));
+	if (page == NULL)
+		return ENOMEM;
+	page->width = width;
+	page->height = height;
+	page->placement = PDF_WRITER_PLACE_NEW;
+
+	/* Starts the content with the prologue. */
+	pdf_buffer_append(&page->content, prologue->data, prologue->length);
+	if (page->content.error != 0) {
+		free(page->content.data);
+		free(page);
+		return ENOMEM;
+	}
+
+	/* Publishes the page as the one drawing goes to; its graphics state starts opaque. */
+	writer->pages[writer->pages_count] = page;
+	writer->pages_count++;
+	writer->page_is_open = 1;
+	writer->current_alpha = 1.0;
+
+	/* Succeeded: drawing now goes to the new page. */
+	*added = page;
+	return 0;
+}
+
+/*
+ * Records a buffer's failure, keeping the first one when several occur.
+ */
+void
+pdf_buffer_fail(
+	struct pdf_buffer *buffer,
+	int error)
+{
+	/* An earlier failure is the one the paragraph reports. */
+	if (buffer->error != 0)
+		return;
+
+	/* Later appends to the buffer now do nothing. */
+	buffer->error = error;
+}
+
+/*
+ * Appends bytes to a buffer, or records why they could not be appended.
+ */
+void
+pdf_buffer_append(
+	struct pdf_buffer *buffer,
+	const void *data,
+	size_t length)
+{
+	int error;
+
+	/* A buffer that already failed stays failed and unchanged. */
+	if (buffer->error != 0)
+		return;
+
+	/* Makes room for the bytes. */
+	error = buffer_reserve(buffer, length);
+	if (error != 0) {
+		pdf_buffer_fail(buffer, error);
+		return;
+	}
+
+	/* Copies the bytes to the end. */
+	if (length != 0)
+		memcpy(buffer->data + buffer->length, data, length);
+	buffer->length += length;
+}
+
+/*
+ * Appends formatted text, which is always short, to a buffer.
+ */
+void
+pdf_buffer_printf(
+	struct pdf_buffer *buffer,
+	const char *format,
+	...)
+{
+	char text[256];
+	va_list arguments;
+	int length;
+
+	/* Formats the text. */
+	va_start(arguments, format);
+	length = vsnprintf(text, sizeof(text), format, arguments);
+	va_end(arguments);
+
+	/* Records text that failed or did not fit as a failure; the writer only formats short tokens. */
+	if (length < 0 || (size_t)length >= sizeof(text)) {
+		pdf_buffer_fail(buffer, EINVAL);
+		return;
+	}
+
+	/* Appends the text. */
+	pdf_buffer_append(buffer, text, (size_t)length);
+}
+
+/*
+ * Appends a real number as PDF writes one.
+ *
+ * PDF has no exponent notation, so the number is written with four decimals
+ * and the trailing zeros removed.
+ */
+void
+pdf_buffer_append_number(
+	struct pdf_buffer *buffer,
+	double number)
+{
+	char text[64];
+	int length;
+
+	/* Formats the number with a fixed number of decimals. */
+	length = snprintf(text, sizeof(text), "%.4f", number);
+	if (length < 0 || (size_t)length >= sizeof(text)) {
+		pdf_buffer_fail(buffer, EINVAL);
+		return;
+	}
+
+	/* Removes the trailing zeros, then a trailing point. */
+	while (length > 1 && text[length - 1] == '0')
+		length--;
+	if (length > 1 && text[length - 1] == '.')
+		length--;
+
+	/* A negative number that rounded to zero is written as zero. */
+	if (length == 2 && text[0] == '-' && text[1] == '0') {
+		text[0] = '0';
+		length = 1;
+	}
+
+	/* Appends the number. */
+	pdf_buffer_append(buffer, text, (size_t)length);
+}
+
+/*
+ * Appends text as a PDF literal string, escaping the characters that end or escape one.
+ */
+void
+pdf_buffer_append_literal_string(
+	struct pdf_buffer *buffer,
+	const char *text)
+{
+	const char *character;
+	char escaped[2];
+
+	/* Opens the string. */
+	pdf_buffer_append(buffer, "(", 1);
+
+	/* Copies each character, escaping parentheses and backslashes. */
+	for (character = text; *character != '\0'; character++) {
+		if (*character == '(' || *character == ')' || *character == '\\') {
+			escaped[0] = '\\';
+			escaped[1] = *character;
+			pdf_buffer_append(buffer, escaped, 2);
+		} else {
+			pdf_buffer_append(buffer, character, 1);
+		}
+	}
+
+	/* Closes the string. */
+	pdf_buffer_append(buffer, ")", 1);
+}
+
+/*
+ * Appends bytes as a PDF hexadecimal string.
+ */
+void
+pdf_buffer_append_hex_string(
+	struct pdf_buffer *buffer,
+	const unsigned char *bytes,
+	size_t length)
+{
+	static const char digits[] = "0123456789ABCDEF";
+	char pair[2];
+	size_t index;
+
+	/* Opens the string. */
+	pdf_buffer_append(buffer, "<", 1);
+
+	/* Writes each byte as two digits, the high one first. */
+	for (index = 0; index < length; index++) {
+		pair[0] = digits[bytes[index] >> 4];
+		pair[1] = digits[bytes[index] & 0x0f];
+		pdf_buffer_append(buffer, pair, 2);
+	}
+
+	/* Closes the string. */
+	pdf_buffer_append(buffer, ">", 1);
+}
+
+/*
+ * Appends a time as a PDF date string in universal time, (D:YYYYMMDDHHmmSSZ).
+ */
+void
+pdf_buffer_append_date(
+	struct pdf_buffer *buffer,
+	time_t when)
+{
+	struct tm broken_down;
+	struct tm *converted;
+
+	/* Breaks the time down in universal time. */
+	converted = gmtime_r(&when, &broken_down);
+	if (converted == NULL) {
+		pdf_buffer_fail(buffer, EINVAL);
+		return;
+	}
+
+	/* Writes the date with its fields in the order PDF defines. */
+	pdf_buffer_printf(buffer,
+		      "(D:%04d%02d%02d%02d%02d%02dZ)",
+		      broken_down.tm_year + 1900,
+		      broken_down.tm_mon + 1,
+		      broken_down.tm_mday,
+		      broken_down.tm_hour,
+		      broken_down.tm_min,
+		      broken_down.tm_sec);
+}
+
+/*
+ * Writes the resource dictionary every page shares, which lists the opacities and the images.
+ *
+ * The opacities' objects start at first_alpha_object and each image's
+ * object is numbered, so the layout has numbered the objects already.
+ */
+void
+pdf_writer_write_resources(
+	struct pdf_writer *writer,
+	struct pdf_buffer *file)
+{
+	/* Opens the dictionary; a document without translucent fills or images leaves it empty. */
+	pdf_buffer_printf(file, "<<");
+
+	/* Lists each ExtGState under the name the content streams use. */
+	if (writer->alphas_count != 0) {
+		pdf_buffer_printf(file, " /ExtGState <<");
+		pdf_writer_write_opacity_entries(writer, file);
+		pdf_buffer_printf(file, " >>");
+	}
+
+	/* Lists each image under the name the content streams use. */
+	if (writer->images_count != 0) {
+		pdf_buffer_printf(file, " /XObject <<");
+		pdf_writer_write_image_entries(writer, file);
+		pdf_buffer_printf(file, " >>");
+	}
+
+	/* Closes the dictionary. */
+	pdf_buffer_printf(file, " >>");
+}
+
+/*
+ * Writes the entries of an ExtGState dictionary that name the opacities'
+ * objects by the names the content streams select them with.
+ */
+void
+pdf_writer_write_opacity_entries(
+	struct pdf_writer *writer,
+	struct pdf_buffer *file)
+{
+	size_t index;
+
+	/* Names each opacity's object: the name prefix, GS and the opacity's index. */
+	for (index = 0; index < writer->alphas_count; index++) {
+		pdf_buffer_printf(file,
+				  " /%sGS%lu %lu 0 R",
+				  writer->name_prefix,
+				  (unsigned long)index,
+				  (unsigned long)(writer->first_alpha_object + index));
+	}
+}
+
+/*
+ * Writes the entries of an XObject dictionary that name the images'
+ * objects by the names the content streams draw them with.
+ */
+void
+pdf_writer_write_image_entries(
+	struct pdf_writer *writer,
+	struct pdf_buffer *file)
+{
+	size_t index;
+
+	/* Names each image's object: the name prefix, Im and the image's index. */
+	for (index = 0; index < writer->images_count; index++) {
+		pdf_buffer_printf(file,
+				  " /%sIm%lu %lu 0 R",
+				  writer->name_prefix,
+				  (unsigned long)index,
+				  (unsigned long)writer->images[index].object);
+	}
+}
+
+/*
+ * Writes each opacity's ExtGState object, numbered from first_alpha_object,
+ * and records where each starts in offsets.
+ */
+void
+pdf_writer_write_opacities(
+	struct pdf_writer *writer,
+	struct pdf_buffer *file,
+	size_t *offsets)
+{
+	size_t object;
+	size_t index;
+
+	/* Writes each opacity as the fill alpha of its own graphics state. */
+	for (index = 0; index < writer->alphas_count; index++) {
+		object = writer->first_alpha_object + index;
+		offsets[object] = file->length;
+		pdf_buffer_printf(file, "%lu 0 obj\n<< /Type /ExtGState /ca ", (unsigned long)object);
+		pdf_buffer_append_number(file, writer->alphas[index]);
+		pdf_buffer_printf(file, " >>\nendobj\n");
+	}
+}
+
+/*
+ * Writes one Image XObject and, when it has one, its alpha mask.
+ */
+void
+pdf_writer_write_image_objects(
+	struct pdf_writer_image *image,
+	struct pdf_buffer *file,
+	size_t *offsets)
+{
+	const char *color_space;
+
+	/* Names the color space of the samples. */
+	color_space = "/DeviceRGB";
+	if (image->components == 1)
+		color_space = "/DeviceGray";
+
+	/* Opens the image's dictionary with its size and color space. */
+	offsets[image->object] = file->length;
+	pdf_buffer_printf(file,
+		      "%lu 0 obj\n<< /Type /XObject /Subtype /Image /Width %lu /Height %lu /ColorSpace %s /BitsPerComponent 8",
+		      (unsigned long)image->object,
+		      (unsigned long)image->width,
+		      (unsigned long)image->height,
+		      color_space);
+
+	/* Names the JPEG filter, or the mask that follows the image. */
+	if (image->is_jpeg)
+		pdf_buffer_printf(file, " /Filter /DCTDecode");
+	if (image->alpha != NULL)
+		pdf_buffer_printf(file, " /SMask %lu 0 R", (unsigned long)(image->object + 1));
+
+	/* Writes the samples. */
+	pdf_buffer_printf(file, " /Length %lu >>\nstream\n", (unsigned long)image->size);
+	pdf_buffer_append(file, image->data, image->size);
+	pdf_buffer_printf(file, "\nendstream\nendobj\n");
+
+	/* An opaque image has no mask. */
+	if (image->alpha == NULL)
+		return;
+
+	/* Writes the mask as an 8-bit gray image of the alpha values. */
+	offsets[image->object + 1] = file->length;
+	pdf_buffer_printf(file,
+		      "%lu 0 obj\n<< /Type /XObject /Subtype /Image /Width %lu /Height %lu /ColorSpace /DeviceGray /BitsPerComponent 8 /Length %lu >>\nstream\n",
+		      (unsigned long)(image->object + 1),
+		      (unsigned long)image->width,
+		      (unsigned long)image->height,
+		      (unsigned long)(image->width * image->height));
+	pdf_buffer_append(file, image->alpha, image->width * image->height);
+	pdf_buffer_printf(file, "\nendstream\nendobj\n");
+}
+
+/*
+ * Writes the embedded file stream and the file specification that names it.
+ */
+void
+pdf_writer_write_attachment_objects(
+	struct pdf_writer *writer,
+	struct pdf_buffer *file,
+	size_t *offsets,
+	size_t file_object)
+{
+	const char *character;
+
+	/* Opens the embedded file stream's dictionary. */
+	offsets[file_object] = file->length;
+	pdf_buffer_printf(file, "%lu 0 obj\n<< /Type /EmbeddedFile /Subtype /", (unsigned long)file_object);
+
+	/* Writes the media type as a name, whose slash must be escaped. */
+	for (character = writer->attachment.mime_type; *character != '\0'; character++) {
+		if (*character == '/') {
+			pdf_buffer_append(file, "#2F", 3);
+		} else {
+			pdf_buffer_append(file, character, 1);
+		}
+	}
+
+	/* Writes the size and the file's bytes. */
+	pdf_buffer_printf(file,
+		      " /Params << /Size %lu >> /Length %lu >>\nstream\n",
+		      (unsigned long)writer->attachment.size,
+		      (unsigned long)writer->attachment.size);
+	pdf_buffer_append(file, writer->attachment.data, writer->attachment.size);
+	pdf_buffer_printf(file, "\nendstream\nendobj\n");
+
+	/* Writes the file specification, which marks the file as the source of the drawing. */
+	offsets[file_object + 1] = file->length;
+	pdf_buffer_printf(file, "%lu 0 obj\n<< /Type /Filespec /F ", (unsigned long)(file_object + 1));
+	pdf_buffer_append_literal_string(file, writer->attachment.name);
+	pdf_buffer_printf(file, " /UF ");
+	pdf_buffer_append_literal_string(file, writer->attachment.name);
+	pdf_buffer_printf(file,
+		      " /Desc (Kei Notes edit data) /AFRelationship /Source /EF << /F %lu 0 R >> >>\nendobj\n",
+		      (unsigned long)file_object);
+}
+
+/*
+ * Hashes a laid-out file, from a byte on, into the identifier of its revision.
+ *
+ * Four 32-bit FNV-1a hashes with different starting values fill the sixteen
+ * bytes.  The hash is not cryptographic; it only tells revisions apart.  A
+ * new document hashes all its bytes, an update the bytes of its revision.
+ */
+void
+pdf_writer_hash_version_id(
+	const struct pdf_buffer *file,
+	size_t start,
+	unsigned char version_id[PDF_WRITER_ID_SIZE])
+{
+	unsigned long hash;
+	size_t lane;
+	size_t index;
+
+	/* Hashes the bytes once per four-byte lane of the identifier. */
+	for (lane = 0; lane < PDF_WRITER_ID_SIZE / 4; lane++) {
+		hash = (PDF_WRITER_FNV_BASIS + lane) & 0xffffffffUL;
+		for (index = start; index < file->length; index++) {
+			hash ^= file->data[index];
+			hash = (hash * PDF_WRITER_FNV_PRIME) & 0xffffffffUL;
+		}
+
+		/* Stores the lane's hash with its high byte first. */
+		version_id[lane * 4 + 0] = (unsigned char)(hash >> 24);
+		version_id[lane * 4 + 1] = (unsigned char)(hash >> 16);
+		version_id[lane * 4 + 2] = (unsigned char)(hash >> 8);
+		version_id[lane * 4 + 3] = (unsigned char)hash;
+	}
 }
 
 /* Makes room for extra more bytes in a buffer. */
@@ -956,188 +1335,6 @@ buffer_reserve(
 
 	/* Succeeded: extra bytes fit. */
 	return 0;
-}
-
-/* Records a buffer's failure, keeping the first one when several occur. */
-static void
-buffer_fail(
-	struct pdf_buffer *buffer,
-	int error)
-{
-	/* An earlier failure is the one the paragraph reports. */
-	if (buffer->error != 0)
-		return;
-
-	/* Later appends to the buffer now do nothing. */
-	buffer->error = error;
-}
-
-/* Appends bytes to a buffer, or records why they could not be appended. */
-static void
-buffer_append(
-	struct pdf_buffer *buffer,
-	const void *data,
-	size_t length)
-{
-	int error;
-
-	/* A buffer that already failed stays failed and unchanged. */
-	if (buffer->error != 0)
-		return;
-
-	/* Makes room for the bytes. */
-	error = buffer_reserve(buffer, length);
-	if (error != 0) {
-		buffer_fail(buffer, error);
-		return;
-	}
-
-	/* Copies the bytes to the end. */
-	if (length != 0)
-		memcpy(buffer->data + buffer->length, data, length);
-	buffer->length += length;
-}
-
-/* Appends formatted text, which is always short, to a buffer. */
-static void
-buffer_printf(
-	struct pdf_buffer *buffer,
-	const char *format,
-	...)
-{
-	char text[256];
-	va_list arguments;
-	int length;
-
-	/* Formats the text. */
-	va_start(arguments, format);
-	length = vsnprintf(text, sizeof(text), format, arguments);
-	va_end(arguments);
-
-	/* Records text that failed or did not fit as a failure; the writer only formats short tokens. */
-	if (length < 0 || (size_t)length >= sizeof(text)) {
-		buffer_fail(buffer, EINVAL);
-		return;
-	}
-
-	/* Appends the text. */
-	buffer_append(buffer, text, (size_t)length);
-}
-
-/*
- * Appends a real number as PDF writes one.
- *
- * PDF has no exponent notation, so the number is written with four decimals
- * and the trailing zeros removed.
- */
-static void
-buffer_append_number(
-	struct pdf_buffer *buffer,
-	double number)
-{
-	char text[64];
-	int length;
-
-	/* Formats the number with a fixed number of decimals. */
-	length = snprintf(text, sizeof(text), "%.4f", number);
-	if (length < 0 || (size_t)length >= sizeof(text)) {
-		buffer_fail(buffer, EINVAL);
-		return;
-	}
-
-	/* Removes the trailing zeros, then a trailing point. */
-	while (length > 1 && text[length - 1] == '0')
-		length--;
-	if (length > 1 && text[length - 1] == '.')
-		length--;
-
-	/* A negative number that rounded to zero is written as zero. */
-	if (length == 2 && text[0] == '-' && text[1] == '0') {
-		text[0] = '0';
-		length = 1;
-	}
-
-	/* Appends the number. */
-	buffer_append(buffer, text, (size_t)length);
-}
-
-/* Appends text as a PDF literal string, escaping the characters that end or escape one. */
-static void
-buffer_append_literal_string(
-	struct pdf_buffer *buffer,
-	const char *text)
-{
-	const char *character;
-	char escaped[2];
-
-	/* Opens the string. */
-	buffer_append(buffer, "(", 1);
-
-	/* Copies each character, escaping parentheses and backslashes. */
-	for (character = text; *character != '\0'; character++) {
-		if (*character == '(' || *character == ')' || *character == '\\') {
-			escaped[0] = '\\';
-			escaped[1] = *character;
-			buffer_append(buffer, escaped, 2);
-		} else {
-			buffer_append(buffer, character, 1);
-		}
-	}
-
-	/* Closes the string. */
-	buffer_append(buffer, ")", 1);
-}
-
-/* Appends bytes as a PDF hexadecimal string. */
-static void
-buffer_append_hex_string(
-	struct pdf_buffer *buffer,
-	const unsigned char *bytes,
-	size_t length)
-{
-	static const char digits[] = "0123456789ABCDEF";
-	char pair[2];
-	size_t index;
-
-	/* Opens the string. */
-	buffer_append(buffer, "<", 1);
-
-	/* Writes each byte as two digits, the high one first. */
-	for (index = 0; index < length; index++) {
-		pair[0] = digits[bytes[index] >> 4];
-		pair[1] = digits[bytes[index] & 0x0f];
-		buffer_append(buffer, pair, 2);
-	}
-
-	/* Closes the string. */
-	buffer_append(buffer, ">", 1);
-}
-
-/* Appends a time as a PDF date string in universal time, (D:YYYYMMDDHHmmSSZ). */
-static void
-buffer_append_date(
-	struct pdf_buffer *buffer,
-	time_t when)
-{
-	struct tm broken_down;
-	struct tm *converted;
-
-	/* Breaks the time down in universal time. */
-	converted = gmtime_r(&when, &broken_down);
-	if (converted == NULL) {
-		buffer_fail(buffer, EINVAL);
-		return;
-	}
-
-	/* Writes the date with its fields in the order PDF defines. */
-	buffer_printf(buffer,
-		      "(D:%04d%02d%02d%02d%02d%02dZ)",
-		      broken_down.tm_year + 1900,
-		      broken_down.tm_mon + 1,
-		      broken_down.tm_mday,
-		      broken_down.tm_hour,
-		      broken_down.tm_min,
-		      broken_down.tm_sec);
 }
 
 /* Reports whether a coordinate is finite and inside the writer's limit. */
@@ -1193,10 +1390,10 @@ append_point(
 		return error;
 
 	/* Writes the two coordinates and the operator. */
-	buffer_append_number(content, x);
-	buffer_append(content, " ", 1);
-	buffer_append_number(content, y);
-	buffer_printf(content, "%s", operator_name);
+	pdf_buffer_append_number(content, x);
+	pdf_buffer_append(content, " ", 1);
+	pdf_buffer_append_number(content, y);
+	pdf_buffer_printf(content, "%s", operator_name);
 	if (content->error != 0)
 		return content->error;
 
@@ -1319,15 +1516,15 @@ add_image(
 	 * points down and an image's first row is at the top of its square, so
 	 * the square's y is flipped again: its top edge (y = 1) lands on y.
 	 */
-	buffer_printf(content, "q ");
-	buffer_append_number(content, draw_width);
-	buffer_printf(content, " 0 0 ");
-	buffer_append_number(content, -draw_height);
-	buffer_append(content, " ", 1);
-	buffer_append_number(content, x);
-	buffer_append(content, " ", 1);
-	buffer_append_number(content, y + draw_height);
-	buffer_printf(content, " cm /Im%lu Do Q\n", (unsigned long)writer->images_count);
+	pdf_buffer_printf(content, "q ");
+	pdf_buffer_append_number(content, draw_width);
+	pdf_buffer_printf(content, " 0 0 ");
+	pdf_buffer_append_number(content, -draw_height);
+	pdf_buffer_append(content, " ", 1);
+	pdf_buffer_append_number(content, x);
+	pdf_buffer_append(content, " ", 1);
+	pdf_buffer_append_number(content, y + draw_height);
+	pdf_buffer_printf(content, " cm /%sIm%lu Do Q\n", writer->name_prefix, (unsigned long)writer->images_count);
 	if (content->error != 0)
 		return content->error;
 
@@ -1398,6 +1595,7 @@ write_document(
 
 	/* Numbers the objects after the pages: the opacities, then each image and its mask, then the attachment. */
 	first_alpha_object = PDF_WRITER_OBJECT_FIRST_PAGE + writer->pages_count * 2;
+	writer->first_alpha_object = first_alpha_object;
 	next_object = first_alpha_object + writer->alphas_count;
 	for (index = 0; index < writer->images_count; index++) {
 		writer->images[index].object = next_object;
@@ -1416,7 +1614,7 @@ write_document(
 		return ENOMEM;
 
 	/* Writes the header, whose binary comment marks the file as binary. */
-	buffer_append(file, header, sizeof(header) - 1);
+	pdf_buffer_append(file, header, sizeof(header) - 1);
 
 	/* Writes the catalog, the page tree and the information dictionary. */
 	offsets[PDF_WRITER_OBJECT_CATALOG] = file->length;
@@ -1431,20 +1629,15 @@ write_document(
 		write_page_objects(writer, file, offsets, index);
 
 	/* Writes each opacity's ExtGState. */
-	for (index = 0; index < writer->alphas_count; index++) {
-		offsets[first_alpha_object + index] = file->length;
-		buffer_printf(file, "%lu 0 obj\n<< /Type /ExtGState /ca ", (unsigned long)(first_alpha_object + index));
-		buffer_append_number(file, writer->alphas[index]);
-		buffer_printf(file, " >>\nendobj\n");
-	}
+	pdf_writer_write_opacities(writer, file, offsets);
 
 	/* Writes each image and its mask. */
 	for (index = 0; index < writer->images_count; index++)
-		write_image_objects(&writer->images[index], file, offsets);
+		pdf_writer_write_image_objects(&writer->images[index], file, offsets);
 
 	/* Writes the attachment. */
 	if (writer->has_attachment)
-		write_attachment_objects(writer, file, offsets, file_object);
+		pdf_writer_write_attachment_objects(writer, file, offsets, file_object);
 
 	/* Writes the cross-reference table and the trailer; the offsets are no longer needed. */
 	write_cross_reference(writer, file, offsets, object_count);
@@ -1466,17 +1659,17 @@ write_catalog(
 	size_t spec_object)
 {
 	/* Opens the catalog and names the page tree. */
-	buffer_printf(file, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R");
+	pdf_buffer_printf(file, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R");
 
 	/* Lists the attachment's file specification in the name tree and as an associated file. */
 	if (writer->has_attachment) {
-		buffer_printf(file, " /Names << /EmbeddedFiles << /Names [");
-		buffer_append_literal_string(file, writer->attachment.name);
-		buffer_printf(file, " %lu 0 R] >> >> /AF [%lu 0 R]", (unsigned long)spec_object, (unsigned long)spec_object);
+		pdf_buffer_printf(file, " /Names << /EmbeddedFiles << /Names [");
+		pdf_buffer_append_literal_string(file, writer->attachment.name);
+		pdf_buffer_printf(file, " %lu 0 R] >> >> /AF [%lu 0 R]", (unsigned long)spec_object, (unsigned long)spec_object);
 	}
 
 	/* Closes the catalog. */
-	buffer_printf(file, " >>\nendobj\n");
+	pdf_buffer_printf(file, " >>\nendobj\n");
 }
 
 /* Writes the page tree, which lists every page object. */
@@ -1488,17 +1681,17 @@ write_page_tree(
 	size_t index;
 
 	/* Opens the tree's list of kids. */
-	buffer_printf(file, "2 0 obj\n<< /Type /Pages /Kids [");
+	pdf_buffer_printf(file, "2 0 obj\n<< /Type /Pages /Kids [");
 
 	/* Names each page object; a space separates it from the one before. */
 	for (index = 0; index < writer->pages_count; index++) {
 		if (index != 0)
-			buffer_append(file, " ", 1);
-		buffer_printf(file, "%lu 0 R", (unsigned long)(PDF_WRITER_OBJECT_FIRST_PAGE + index * 2));
+			pdf_buffer_append(file, " ", 1);
+		pdf_buffer_printf(file, "%lu 0 R", (unsigned long)(PDF_WRITER_OBJECT_FIRST_PAGE + index * 2));
 	}
 
 	/* Closes the list with the page count. */
-	buffer_printf(file, "] /Count %lu >>\nendobj\n", (unsigned long)writer->pages_count);
+	pdf_buffer_printf(file, "] /Count %lu >>\nendobj\n", (unsigned long)writer->pages_count);
 }
 
 /* Writes the information dictionary with the producer and both dates. */
@@ -1516,11 +1709,11 @@ write_information(
 		modification = now;
 
 	/* Writes the producer and the two dates. */
-	buffer_printf(file, "3 0 obj\n<< /Producer (Kei Notes) /CreationDate ");
-	buffer_append_date(file, writer->creation_time);
-	buffer_printf(file, " /ModDate ");
-	buffer_append_date(file, modification);
-	buffer_printf(file, " >>\nendobj\n");
+	pdf_buffer_printf(file, "3 0 obj\n<< /Producer (Kei Notes) /CreationDate ");
+	pdf_buffer_append_date(file, writer->creation_time);
+	pdf_buffer_printf(file, " /ModDate ");
+	pdf_buffer_append_date(file, modification);
+	pdf_buffer_printf(file, " >>\nendobj\n");
 }
 
 /* Writes one page object and its content stream. */
@@ -1540,150 +1733,25 @@ write_page_objects(
 
 	/* A page whose content failed to be recorded cannot be saved. */
 	if (page->content.error != 0) {
-		buffer_fail(file, page->content.error);
+		pdf_buffer_fail(file, page->content.error);
 		return;
 	}
 
 	/* Writes the page with its media box and resources. */
 	offsets[page_object] = file->length;
-	buffer_printf(file, "%lu 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ", (unsigned long)page_object);
-	buffer_append_number(file, page->width);
-	buffer_append(file, " ", 1);
-	buffer_append_number(file, page->height);
-	buffer_printf(file, "] /Resources ");
-	write_resources(writer, file);
-	buffer_printf(file, " /Contents %lu 0 R >>\nendobj\n", (unsigned long)(page_object + 1));
+	pdf_buffer_printf(file, "%lu 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ", (unsigned long)page_object);
+	pdf_buffer_append_number(file, page->width);
+	pdf_buffer_append(file, " ", 1);
+	pdf_buffer_append_number(file, page->height);
+	pdf_buffer_printf(file, "] /Resources ");
+	pdf_writer_write_resources(writer, file);
+	pdf_buffer_printf(file, " /Contents %lu 0 R >>\nendobj\n", (unsigned long)(page_object + 1));
 
 	/* Writes the content stream with its exact length. */
 	offsets[page_object + 1] = file->length;
-	buffer_printf(file, "%lu 0 obj\n<< /Length %lu >>\nstream\n", (unsigned long)(page_object + 1), (unsigned long)page->content.length);
-	buffer_append(file, page->content.data, page->content.length);
-	buffer_printf(file, "\nendstream\nendobj\n");
-}
-
-/* Writes the embedded file stream and the file specification that names it. */
-static void
-write_attachment_objects(
-	struct pdf_writer *writer,
-	struct pdf_buffer *file,
-	size_t *offsets,
-	size_t file_object)
-{
-	const char *character;
-
-	/* Opens the embedded file stream's dictionary. */
-	offsets[file_object] = file->length;
-	buffer_printf(file, "%lu 0 obj\n<< /Type /EmbeddedFile /Subtype /", (unsigned long)file_object);
-
-	/* Writes the media type as a name, whose slash must be escaped. */
-	for (character = writer->attachment.mime_type; *character != '\0'; character++) {
-		if (*character == '/') {
-			buffer_append(file, "#2F", 3);
-		} else {
-			buffer_append(file, character, 1);
-		}
-	}
-
-	/* Writes the size and the file's bytes. */
-	buffer_printf(file,
-		      " /Params << /Size %lu >> /Length %lu >>\nstream\n",
-		      (unsigned long)writer->attachment.size,
-		      (unsigned long)writer->attachment.size);
-	buffer_append(file, writer->attachment.data, writer->attachment.size);
-	buffer_printf(file, "\nendstream\nendobj\n");
-
-	/* Writes the file specification, which marks the file as the source of the drawing. */
-	offsets[file_object + 1] = file->length;
-	buffer_printf(file, "%lu 0 obj\n<< /Type /Filespec /F ", (unsigned long)(file_object + 1));
-	buffer_append_literal_string(file, writer->attachment.name);
-	buffer_printf(file, " /UF ");
-	buffer_append_literal_string(file, writer->attachment.name);
-	buffer_printf(file,
-		      " /Desc (Kei Notes edit data) /AFRelationship /Source /EF << /F %lu 0 R >> >>\nendobj\n",
-		      (unsigned long)file_object);
-}
-
-/* Writes one Image XObject and, when it has one, its alpha mask. */
-static void
-write_image_objects(
-	struct pdf_writer_image *image,
-	struct pdf_buffer *file,
-	size_t *offsets)
-{
-	const char *color_space;
-
-	/* Names the color space of the samples. */
-	color_space = "/DeviceRGB";
-	if (image->components == 1)
-		color_space = "/DeviceGray";
-
-	/* Opens the image's dictionary with its size and color space. */
-	offsets[image->object] = file->length;
-	buffer_printf(file,
-		      "%lu 0 obj\n<< /Type /XObject /Subtype /Image /Width %lu /Height %lu /ColorSpace %s /BitsPerComponent 8",
-		      (unsigned long)image->object,
-		      (unsigned long)image->width,
-		      (unsigned long)image->height,
-		      color_space);
-
-	/* Names the JPEG filter, or the mask that follows the image. */
-	if (image->is_jpeg)
-		buffer_printf(file, " /Filter /DCTDecode");
-	if (image->alpha != NULL)
-		buffer_printf(file, " /SMask %lu 0 R", (unsigned long)(image->object + 1));
-
-	/* Writes the samples. */
-	buffer_printf(file, " /Length %lu >>\nstream\n", (unsigned long)image->size);
-	buffer_append(file, image->data, image->size);
-	buffer_printf(file, "\nendstream\nendobj\n");
-
-	/* An opaque image has no mask. */
-	if (image->alpha == NULL)
-		return;
-
-	/* Writes the mask as an 8-bit gray image of the alpha values. */
-	offsets[image->object + 1] = file->length;
-	buffer_printf(file,
-		      "%lu 0 obj\n<< /Type /XObject /Subtype /Image /Width %lu /Height %lu /ColorSpace /DeviceGray /BitsPerComponent 8 /Length %lu >>\nstream\n",
-		      (unsigned long)(image->object + 1),
-		      (unsigned long)image->width,
-		      (unsigned long)image->height,
-		      (unsigned long)(image->width * image->height));
-	buffer_append(file, image->alpha, image->width * image->height);
-	buffer_printf(file, "\nendstream\nendobj\n");
-}
-
-/* Writes the resource dictionary every page shares, which lists the opacities and the images. */
-static void
-write_resources(
-	struct pdf_writer *writer,
-	struct pdf_buffer *file)
-{
-	size_t first_alpha_object;
-	size_t index;
-
-	/* Opens the dictionary; a document without translucent fills or images leaves it empty. */
-	buffer_printf(file, "<<");
-
-	/* Lists each ExtGState under the name the content streams use. */
-	if (writer->alphas_count != 0) {
-		first_alpha_object = PDF_WRITER_OBJECT_FIRST_PAGE + writer->pages_count * 2;
-		buffer_printf(file, " /ExtGState <<");
-		for (index = 0; index < writer->alphas_count; index++)
-			buffer_printf(file, " /GS%lu %lu 0 R", (unsigned long)index, (unsigned long)(first_alpha_object + index));
-		buffer_printf(file, " >>");
-	}
-
-	/* Lists each image under the name the content streams use. */
-	if (writer->images_count != 0) {
-		buffer_printf(file, " /XObject <<");
-		for (index = 0; index < writer->images_count; index++)
-			buffer_printf(file, " /Im%lu %lu 0 R", (unsigned long)index, (unsigned long)writer->images[index].object);
-		buffer_printf(file, " >>");
-	}
-
-	/* Closes the dictionary. */
-	buffer_printf(file, " >>");
+	pdf_buffer_printf(file, "%lu 0 obj\n<< /Length %lu >>\nstream\n", (unsigned long)(page_object + 1), (unsigned long)page->content.length);
+	pdf_buffer_append(file, page->content.data, page->content.length);
+	pdf_buffer_printf(file, "\nendstream\nendobj\n");
 }
 
 /*
@@ -1704,54 +1772,23 @@ write_cross_reference(
 	size_t index;
 
 	/* Derives this revision's identifier from every byte laid out so far. */
-	hash_version_id(file, version_id);
+	pdf_writer_hash_version_id(file, 0, version_id);
 
 	/* Writes the table's header and the free list head. */
 	table_offset = file->length;
-	buffer_printf(file, "xref\n0 %lu\n0000000000 65535 f \n", (unsigned long)object_count);
+	pdf_buffer_printf(file, "xref\n0 %lu\n0000000000 65535 f \n", (unsigned long)object_count);
 
 	/* Writes each object's offset as a twenty-byte entry. */
 	for (index = 1; index < object_count; index++)
-		buffer_printf(file, "%010lu 00000 n \n", (unsigned long)offsets[index]);
+		pdf_buffer_printf(file, "%010lu 00000 n \n", (unsigned long)offsets[index]);
 
 	/* Writes the trailer with the identifier pair. */
-	buffer_printf(file, "trailer\n<< /Size %lu /Root 1 0 R /Info 3 0 R /ID [", (unsigned long)object_count);
-	buffer_append_hex_string(file, writer->document_id, PDF_WRITER_ID_SIZE);
-	buffer_append(file, " ", 1);
-	buffer_append_hex_string(file, version_id, PDF_WRITER_ID_SIZE);
-	buffer_printf(file, "] >>\n");
+	pdf_buffer_printf(file, "trailer\n<< /Size %lu /Root 1 0 R /Info 3 0 R /ID [", (unsigned long)object_count);
+	pdf_buffer_append_hex_string(file, writer->document_id, PDF_WRITER_ID_SIZE);
+	pdf_buffer_append(file, " ", 1);
+	pdf_buffer_append_hex_string(file, version_id, PDF_WRITER_ID_SIZE);
+	pdf_buffer_printf(file, "] >>\n");
 
 	/* Writes the offset of the table and the end marker. */
-	buffer_printf(file, "startxref\n%lu\n%%%%EOF\n", (unsigned long)table_offset);
-}
-
-/*
- * Hashes a laid-out file into the identifier of its revision.
- *
- * Four 32-bit FNV-1a hashes with different starting values fill the sixteen
- * bytes.  The hash is not cryptographic; it only tells revisions apart.
- */
-static void
-hash_version_id(
-	const struct pdf_buffer *file,
-	unsigned char version_id[PDF_WRITER_ID_SIZE])
-{
-	unsigned long hash;
-	size_t lane;
-	size_t index;
-
-	/* Hashes the file once per four-byte lane of the identifier. */
-	for (lane = 0; lane < PDF_WRITER_ID_SIZE / 4; lane++) {
-		hash = (PDF_WRITER_FNV_BASIS + lane) & 0xffffffffUL;
-		for (index = 0; index < file->length; index++) {
-			hash ^= file->data[index];
-			hash = (hash * PDF_WRITER_FNV_PRIME) & 0xffffffffUL;
-		}
-
-		/* Stores the lane's hash with its high byte first. */
-		version_id[lane * 4 + 0] = (unsigned char)(hash >> 24);
-		version_id[lane * 4 + 1] = (unsigned char)(hash >> 16);
-		version_id[lane * 4 + 2] = (unsigned char)(hash >> 8);
-		version_id[lane * 4 + 3] = (unsigned char)hash;
-	}
+	pdf_buffer_printf(file, "startxref\n%lu\n%%%%EOF\n", (unsigned long)table_offset);
 }

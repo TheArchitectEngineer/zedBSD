@@ -186,6 +186,7 @@ zwl_dispatch(
 	case ZWL_SEAT:
 	case ZWL_POINTER:
 	case ZWL_KEYBOARD:
+	case ZWL_TOUCH:
 		error = zwl_seat_request(object, opcode, bytes, size);
 		break;
 	case ZWL_MENU_MANAGER:

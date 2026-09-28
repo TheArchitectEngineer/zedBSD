@@ -14,7 +14,7 @@ mkdir -p "$out/include"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 sources="userland/desktop/notes/document.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c
-	userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/outline.c
+	userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c
 	userland/base/libpdf/object.c userland/base/libpdf/reader.c plan/ws079/tests/host-notes.c"
 for variant in plain asan ubsan; do
 	flags="-std=c99 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include -Iuserland/desktop/notes"
@@ -40,4 +40,13 @@ qpdf --show-attachment=kei-notes.bin "$out/notes-plain.pdf" > "$out/attached.bin
 [ "$(wc -c < "$out/attached.bin")" = "$(wc -c < "$out/notes-plain.pdf.bin")" ]
 pdftoppm -r 60 -png -f 1 -l 1 -singlefile "$out/notes-plain.pdf" "$out/page1"
 pdftoppm -r 60 -png -f 2 -l 2 -singlefile "$out/notes-plain.pdf" "$out/page2"
+# ws079-p014: the notebooks saved as a revision of another program's PDF (the foreign one, the changed notebook and
+# the foreign one with a third-party revision after Notes') are clean for qpdf, carry one kei-notes.bin, and draw.
+for kind in foreign changed third; do
+	qpdf --check "$out/scratch-plain.pdf-$kind.pdf" > "$out/qpdf-$kind.txt" 2>&1 || { cat "$out/qpdf-$kind.txt"; exit 1; }
+	grep -q "No syntax or stream encoding errors found" "$out/qpdf-$kind.txt"
+	! grep -q WARNING "$out/qpdf-$kind.txt"
+	[ "$(qpdf --list-attachments "$out/scratch-plain.pdf-$kind.pdf" | grep -c kei-notes.bin)" = 1 ]
+	pdftoppm -r 60 -png "$out/scratch-plain.pdf-$kind.pdf" "$out/$kind"
+done
 echo "run-notes-host: ok"

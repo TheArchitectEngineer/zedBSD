@@ -22,6 +22,12 @@
  * DOCK_MS: the body's rectangle and the title bar's slide between their
  * places and the title bar's glass fades.
  *
+ * A triple click on a floating title bar sends the window to the back and
+ * gives the focus to the window now on top (ws079-p013, "go away"; a quick
+ * two-finger flick up on it on a touch screen does the same, touch.c).  So that a
+ * triple click never docks first, a double click docks only when the time
+ * a third press has (DOUBLE_CLICK_MS after the second) is over.
+ *
  * The system bar has three zones: on the left the launcher, "Kei" and the
  * docked window; towards the right four virtual desktops; at the right edge
  * the network, the battery and the clock.  The network's icon opens its
@@ -55,6 +61,7 @@
 #include "toplevel.h"
 #include "subsurface.h"
 #include "panels.h"
+#include "touch.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -223,6 +230,9 @@ static void window_dock(struct zwl_server *server, struct zwl_object *surface, i
 static void window_undock(struct zwl_server *server, struct zwl_object *surface, int32_t x, int32_t y, const char *via);
 static void window_configure(struct zwl_object *surface);
 static unsigned double_click(struct zwl_server *server, struct zwl_object *surface);
+static unsigned title_clicks(struct zwl_server *server, struct zwl_object *surface);
+static void dock_when_due(struct zwl_server *server);
+static void window_lower(struct zwl_server *server, struct zwl_object *surface, const char *via);
 static int bar_press(struct zwl_server *server);
 static float wiseview_progress(struct zwl_server *server);
 static void wiseview_settle(struct zwl_server *server, float from, float to);
@@ -378,8 +388,9 @@ zwl_glass_draw(
 
 /*
  * Handles a pointer button in the glass look.  A press raises the window
- * under the pointer; on its title bar it starts a move, presses a button or
- * (twice) docks it; on the system bar it acts on the docked window.  A
+ * under the pointer; on its title bar it starts a move, presses a button,
+ * (twice) docks it or (three times) sends it to the back; on the system bar
+ * it acts on the docked window.  A
  * release ends a move, docking the window when it ends in the system bar.
  * Returns 1 when the button is zdesktop's, 0 when it goes to the client.
  */
@@ -391,7 +402,7 @@ zwl_glass_button(
 {
 	struct zwl_object *surface;
 	enum shell_hit hit;
-	unsigned second;
+	unsigned clicks;
 	int pressed;
 
 	/* The login screen takes every button (greeter.c). */
@@ -524,10 +535,24 @@ zwl_glass_button(
 		return 1;
 	}
 
-	/* A second press on the title bar docks the window. */
-	second = double_click(server, surface);
-	if (second) {
-		window_dock(server, surface, surface->x, surface->y, "double-click");
+	/*
+	 * A second quick press on the title bar is a double click, which docks
+	 * the window once a third press can no longer come (dock_when_due).
+	 */
+	clicks = title_clicks(server, surface);
+	if (clicks == 2U) {
+		server->dock_waiting = surface;
+		server->dock_due_ms = server->click_ms + DOUBLE_CLICK_MS;
+		printf("ZWL GLASS dock waiting surface=%u\n", surface->id);
+		return 1;
+	}
+
+	/* A third quick press sends the window to the back instead. */
+	if (clicks >= 3U) {
+		server->dock_waiting = NULL;
+		server->click_surface = NULL;
+		server->click_count = 0;
+		window_lower(server, surface, "triple-click");
 		return 1;
 	}
 
@@ -869,6 +894,91 @@ zwl_glass_body_at(
 
 	/* Succeeded: the window. */
 	return surface;
+}
+
+/*
+ * Finds the window whose floating title bar a press at a point would reach
+ * (touch.c, which holds a finger on a title bar back a moment to see
+ * whether a second one comes); NULL when the press would go anywhere else:
+ * to a screen or a menu over the windows, to an edge's gesture, to the
+ * system bar, to a body, or to the desktop.
+ */
+struct zwl_object *
+zwl_glass_title_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y)
+{
+	struct zwl_object *surface;
+	enum shell_hit hit;
+	float home;
+	int open;
+
+	/* Only the glass look's window mode has floating title bars. */
+	if (!server->glass || !server->windowed)
+		return NULL;
+
+	/* The login and lock screens, a drag and drop and a popup's grab take every press. */
+	if (server->greeter || server->locked || server->dnd_active)
+		return NULL;
+	if (server->popup_grab != NULL)
+		return NULL;
+
+	/* Wiseview, open or being opened, takes every press. */
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving)
+		return NULL;
+
+	/* App Home takes every press while it shows or follows one. */
+	home = zwl_home_progress(server);
+	if (home > 0.0f || server->home_to > 0.0f)
+		return NULL;
+
+	/* An open menu closes on a press anywhere. */
+	open = zwl_network_is_open();
+	if (open)
+		return NULL;
+	open = zwl_menu_is_open();
+	if (open)
+		return NULL;
+
+	/* The system bar, the desktops' swipe at the side edges and Wiseview's bottom edge come before the windows. */
+	if (y < ZWL_GLASS_BAR)
+		return NULL;
+	if (x < DESKTOP_EDGE || x >= (int32_t)server->width - DESKTOP_EDGE)
+		return NULL;
+	if (y >= (int32_t)server->height - WISEVIEW_EDGE)
+		return NULL;
+
+	/* The topmost window at the point, when the point is on its title bar. */
+	surface = window_at(server, x, y, &hit);
+	if (surface == NULL || hit != HIT_TITLE)
+		return NULL;
+
+	/* Succeeded: the window whose title bar it is. */
+	return surface;
+}
+
+/*
+ * Sends a window to the back and gives the focus to the window now on top,
+ * as a triple click on its title bar does (touch.c's two-finger flick up,
+ * "go away").
+ */
+void
+zwl_glass_lower(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	const char *via)
+{
+	/* A run of clicks or a double click's dock waiting on the window is over. */
+	if (server->dock_waiting == surface)
+		server->dock_waiting = NULL;
+	if (server->click_surface == surface) {
+		server->click_surface = NULL;
+		server->click_count = 0;
+	}
+
+	/* Succeeded: the same as the triple click. */
+	window_lower(server, surface, via);
 }
 
 /*
@@ -1467,6 +1577,12 @@ zwl_glass_tick(
 
 	/* The top-right corner's swipe: its time limit, its hint settling, and Notes being waited for (corner.c). */
 	zwl_corner_tick(server);
+
+	/* A finger on a title bar that has waited long enough for a second one, or two that did not flick in time (touch.c). */
+	zwl_touch_tick(server);
+
+	/* A double click on a title bar docks its window once a third press can no longer come. */
+	dock_when_due(server);
 
 	/* An open menu closes when what it belongs to changed (menu-shell.c). */
 	zwl_menu_tick(server);
@@ -2910,13 +3026,195 @@ double_click(
 	now = zwl_milliseconds();
 	if (server->click_surface == surface && now - server->click_ms < DOUBLE_CLICK_MS) {
 		server->click_surface = NULL;
+		server->click_count = 0;
 		return 1;
 	}
 
 	/* A first press. */
 	server->click_surface = surface;
 	server->click_ms = now;
+	server->click_count = 1;
 	return 0;
+}
+
+/*
+ * Counts this press on a window's floating title bar into the run of quick
+ * presses on it: 1 for a press that starts a run, 2 for the second of a
+ * double click, 3 for the third of a triple click.  A press more than
+ * DOUBLE_CLICK_MS after the one before, or on another window, starts a new
+ * run.
+ */
+static unsigned
+title_clicks(
+	struct zwl_server *server,
+	struct zwl_object *surface)
+{
+	uint64_t now;
+
+	/* A quick press after the one before on the same window goes on the run. */
+	now = zwl_milliseconds();
+	if (server->click_surface == surface && now - server->click_ms < DOUBLE_CLICK_MS) {
+		server->click_count++;
+	} else {
+		server->click_surface = surface;
+		server->click_count = 1;
+	}
+
+	/*
+	 * The time of this press is where the next one is measured from, so
+	 * the third press has DOUBLE_CLICK_MS after the second.
+	 */
+	server->click_ms = now;
+
+	/* Succeeded: how many presses the run has. */
+	return server->click_count;
+}
+
+/*
+ * Docks the window whose double click has waited out the time a third
+ * press had (DOUBLE_CLICK_MS after the second).
+ */
+static void
+dock_when_due(
+	struct zwl_server *server)
+{
+	struct zwl_object *surface;
+	uint64_t now;
+
+	/* Nothing waits to dock. */
+	surface = server->dock_waiting;
+	if (surface == NULL)
+		return;
+
+	/* A third press may still come. */
+	now = zwl_milliseconds();
+	if (now < server->dock_due_ms)
+		return;
+	server->dock_waiting = NULL;
+
+	/* A window that went away, docked, was hidden or left the desktop meanwhile stays as it is. */
+	if (surface->dead ||
+	    !surface->mapped ||
+	    surface->maximized ||
+	    surface->minimized ||
+	    surface->desktop != server->desktop) {
+		printf("ZWL GLASS dock dropped surface=%u\n", surface->id);
+		return;
+	}
+
+	/* The double click docks it; the log says how long after the second press. */
+	printf("ZWL GLASS double-click surface=%u waited_ms=%llu\n", surface->id, (unsigned long long)(now - (server->dock_due_ms - DOUBLE_CLICK_MS)));
+	window_dock(server, surface, surface->x, surface->y, "double-click");
+}
+
+/*
+ * Sends a window to the back of the stacking order and gives the focus to
+ * the window now on top.  Every other window keeps its place relative to
+ * the others.
+ */
+static void
+window_lower(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	const char *via)
+{
+	struct zwl_client *client;
+	struct zwl_object *other;
+	struct zwl_object *top;
+	uint64_t lowest;
+	unsigned found;
+	uint64_t next_client;
+	uint32_t next;
+	uint64_t focus_client;
+	uint32_t focus;
+
+	/* The lowest place any other mapped surface holds. */
+	found = 0;
+	lowest = 0;
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (other = client->objects; other != NULL; other = other->next) {
+			/* Only the other live mapped surfaces. */
+			if (other == surface ||
+			    other->kind != ZWL_SURFACE ||
+			    other->dead ||
+			    !other->mapped)
+				continue;
+
+			/* Below what was found so far. */
+			if (found && other->map_order >= lowest)
+				continue;
+			found = 1;
+			lowest = other->map_order;
+		}
+	}
+
+	/* A window alone stays where it is. */
+	if (!found) {
+		printf("ZWL GLASS lower client=%llu surface=%u via=%s next=none\n", (unsigned long long)surface->client->number, surface->id, via);
+		return;
+	}
+
+	/*
+	 * With no place free under the lowest (map orders start at 1), every
+	 * other mapped surface moves up one place, which keeps their order.
+	 */
+	if (lowest <= 1U) {
+		for (client = server->clients; client != NULL; client = client->next) {
+			for (other = client->objects; other != NULL; other = other->next) {
+				/* Only the other mapped surfaces hold a place. */
+				if (other == surface ||
+				    other->kind != ZWL_SURFACE ||
+				    !other->mapped)
+					continue;
+				other->map_order++;
+			}
+		}
+
+		/* The next window mapped or raised still comes above them all. */
+		server->map_order++;
+		lowest++;
+	}
+
+	/* Under every other window. */
+	surface->map_order = lowest - 1U;
+
+	/* The window now on top takes the focus. */
+	top = zwl_top_window(server);
+	server->front_surface = top;
+	zwl_seat_focus(server);
+	server->dirty = 1;
+
+	/*
+	 * The log names the window that came forward and the surface that has
+	 * the keyboard now, each as client:surface (surface numbers are each
+	 * client's own).
+	 */
+	next_client = 0;
+	next = 0;
+	if (top != NULL) {
+		next_client = top->client->number;
+		next = top->id;
+	}
+
+	/* The keyboard's surface, when there is one. */
+	focus_client = 0;
+	focus = 0;
+	if (server->focus != NULL) {
+		focus_client = server->focus->client->number;
+		focus = server->focus->id;
+	}
+
+	/* Written as one line for the tests. */
+	printf("ZWL GLASS lower client=%llu surface=%u via=%s next=%llu:%u focus=%llu:%u\n",
+	       (unsigned long long)surface->client->number,
+	       surface->id,
+	       via,
+	       (unsigned long long)next_client,
+	       next,
+	       (unsigned long long)focus_client,
+	       focus);
 }
 
 /*

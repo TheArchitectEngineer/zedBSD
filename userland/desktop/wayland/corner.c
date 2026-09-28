@@ -11,9 +11,11 @@
  * towards the bottom left brings Notes, the handwriting application.
  *
  * It is the mirror image of App Home's top-left gesture (home.c) with the
- * same numbers.  A contact is a press of the left pointer button, and later
- * the tip of a pen or a finger; each source feeds the same recogniser
- * through zwl_corner_contact_begin, _move and _end.  A contact that begins
+ * same numbers.  A contact is a press of the left pointer button, a finger
+ * on a touch screen (touch.c passes it through the shell as the pointer's
+ * left button, with server->shell_source saying it is a finger), and later
+ * the tip of a pen; each source feeds the same recogniser through
+ * zwl_corner_contact_begin, _move and _end.  A contact that begins
  * in the corner belongs to the gesture until it ends.  It arms once it has
  * moved left and down by CORNER_ARM each, within CORNER_ARM_MS of the
  * press; it commits when it ends near the diagonal, either far enough along
@@ -367,8 +369,8 @@ zwl_corner_button(
 		return taken;
 	}
 
-	/* Succeeded: a press may begin one. */
-	taken = zwl_corner_contact_begin(server, ZWL_CONTACT_POINTER, server->pointer_x, server->pointer_y, server->input_time);
+	/* Succeeded: a press may begin one (the mouse's, or a finger's passed as the pointer, touch.c). */
+	taken = zwl_corner_contact_begin(server, server->shell_source, server->pointer_x, server->pointer_y, server->input_time);
 	return taken;
 }
 
@@ -382,8 +384,8 @@ zwl_corner_motion(
 {
 	int taken;
 
-	/* Only the pointer's own contact follows the pointer. */
-	if (!corner.contact.active || corner.contact.source != ZWL_CONTACT_POINTER)
+	/* Only the contact of the source moving the pointer now follows it (the mouse's, or a finger's). */
+	if (!corner.contact.active || corner.contact.source != server->shell_source)
 		return 0;
 
 	/* Succeeded: the contact moves with the pointer (at the time of the motion's event). */
@@ -409,11 +411,12 @@ zwl_corner_tick(
 	}
 
 	/*
-	 * The pointer's contact whose release never came (its device went
-	 * away with the button held) ends, so the corner is not held forever.
+	 * The pointer's or a finger's contact whose release never came (its
+	 * device went away with the left button's bit held) ends, so the
+	 * corner is not held forever.
 	 */
 	if (corner.contact.active &&
-	    corner.contact.source == ZWL_CONTACT_POINTER &&
+	    corner.contact.source != ZWL_CONTACT_PEN &&
 	    (server->buttons_down & 1U) == 0U) {
 		corner.contact.active = 0;
 		corner.settling = 0;
