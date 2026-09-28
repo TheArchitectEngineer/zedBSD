@@ -258,6 +258,7 @@ static void main_edge_scroll(uint64_t now);
 static void main_scroll(void);
 static void main_view_log(const char *how);
 static void main_touch_round(void);
+static void main_touch_queue(unsigned kind, const struct terminal_touch_pointer *made);
 
 /*
  * Runs the terminal.
@@ -2024,18 +2025,26 @@ main_view_log(
 /*
  * Runs the fingers for one round (ws081-p011): gives them the screen's
  * view, takes their events, sets the view they moved to, and queues the
- * pointer's presses, releases and motions they made for main_pointer.
+ * pointer's presses, releases and motions they made for main_pointer.  A
+ * long press's hold (ws081-p014) is a press held on the selection (which a
+ * drag then takes out), elsewhere a double click held (the word under the
+ * finger, grown by words).
  */
 static void
 main_touch_round(void)
 {
 	struct terminal_touch_pointer made;
-	struct terminal_pointer_event *event;
+	unsigned kinds[3];
+	unsigned kind_count;
+	unsigned kind;
 	unsigned index;
+	unsigned column;
+	unsigned long line;
 	unsigned view;
 	int offset;
 	int moved;
 	int taken;
+	int inside;
 
 	/* The screen's view, and the fingers' events. */
 	terminal_touch_layout(&main_touch, main_screen, main_font.cell_height, main_screen->history_count,
@@ -2053,20 +2062,53 @@ main_touch_round(void)
 		main_screen->changed = 1;
 	}
 
-	/* The pointer's events they made, after the pointer's own (a full queue drops them). */
+	/* The pointer's events they made, after the pointer's own. */
 	for (;;) {
 		taken = terminal_touch_take_pointer(&main_touch, &made);
 		if (!taken)
 			break;
-		if (main_window.pointer_event_count >= TERMINAL_POINTER_EVENTS)
-			continue;
-		event = &main_window.pointer_events[main_window.pointer_event_count];
-		main_window.pointer_event_count++;
-		event->kind = made.kind;
-		event->x = made.x;
-		event->y = made.y;
-		event->time = made.time;
-		event->serial = made.serial;
-		event->modifiers = main_window.modifiers;
+
+		/* A hold is a press on the selection, or a double click held elsewhere; the rest are what they say. */
+		kinds[0] = made.kind;
+		kind_count = 1U;
+		if (made.kind == TERMINAL_TOUCH_HOLD) {
+			main_cell(made.x, made.y, &column, &line);
+			inside = terminal_screen_in_range(main_screen, column, line);
+			kinds[0] = TERMINAL_POINTER_PRESS;
+			if (!inside) {
+				kinds[1] = TERMINAL_POINTER_RELEASE;
+				kinds[2] = TERMINAL_POINTER_PRESS;
+				kind_count = 3U;
+			}
+			printf("ZTERM TOUCH hold on-selection=%d\n", inside);
+			fflush(stdout);
+		}
+
+		/* Each, queued (a full queue drops it). */
+		for (kind = 0U; kind < kind_count; kind++)
+			main_touch_queue(kinds[kind], &made);
 	}
+}
+
+/* Queues a pointer event the fingers made, at their place and time (a full queue drops it). */
+static void
+main_touch_queue(
+	unsigned kind,
+	const struct terminal_touch_pointer *made)
+{
+	struct terminal_pointer_event *event;
+
+	/* Room for it. */
+	if (main_window.pointer_event_count >= TERMINAL_POINTER_EVENTS)
+		return;
+
+	/* The event, after the others. */
+	event = &main_window.pointer_events[main_window.pointer_event_count];
+	main_window.pointer_event_count++;
+	event->kind = kind;
+	event->x = made->x;
+	event->y = made->y;
+	event->time = made->time;
+	event->serial = made->serial;
+	event->modifiers = main_window.modifiers;
 }

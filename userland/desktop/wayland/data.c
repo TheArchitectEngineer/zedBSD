@@ -31,13 +31,17 @@
  * dnd_finished when the target finishes); otherwise the target hears leave
  * and the source is cancelled.  Esc cancels too.  zdesktop draws the
  * drag's icon surface at the pointer, or a badge of its own when it has
- * none.
+ * none.  ws081-p014: a finger the client hears by wl_touch starts a drag
+ * as a button does (start_drag with its wl_touch.down's serial); the
+ * finger then moves the pointer, and so the drag, and its lift drops
+ * (touch.c).
  */
 
 #include "data.h"
 #include "extras.h"
 #include "popup.h"
 #include "titlebar.h"
+#include "touch.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -869,8 +873,10 @@ start_drag(
 	uint32_t source_id;
 	uint32_t origin_id;
 	uint32_t icon_id;
+	uint32_t serial;
 	uint32_t actions;
 	unsigned types;
+	int held;
 
 	/* The arguments: source (or none), origin, icon (or none), serial. */
 	if (size != 16U)
@@ -900,12 +906,22 @@ start_drag(
 			return EPROTO;
 	}
 
-	/* Without a button held, or while another drag runs, there is no drag: the source is cancelled. */
+	/*
+	 * Without a button held or the client's finger of the serial down
+	 * (ws081-p014), or while another drag runs, there is no drag: the
+	 * source is cancelled.  A finger that starts it is the drag's from here.
+	 */
 	server = device->client->server;
-	if (server->buttons_down == 0U || server->dnd_active) {
+	serial = data_word(bytes, 12U);
+	held = 0;
+	if (!server->dnd_active && server->buttons_down != 0U)
+		held = 1;
+	if (!server->dnd_active && !held)
+		held = zwl_touch_drag_start(server, device->client, serial);
+	if (!held) {
 		if (source != NULL)
 			(void)zwl_emit(source->client, source->id, SOURCE_CANCELLED, NULL, 0U);
-		printf("ZWL DATA drag refused client=%llu buttons=%u\n", (unsigned long long)device->client->number, server->buttons_down);
+		printf("ZWL DATA drag refused client=%llu buttons=%u serial=%u\n", (unsigned long long)device->client->number, server->buttons_down, serial);
 		return 0;
 	}
 

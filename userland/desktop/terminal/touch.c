@@ -532,12 +532,10 @@ touch_gestures(
 			fflush(stdout);
 			break;
 		case KEILAND_GESTURE_LONG_PRESS:
-			/* The word under the finger is selected, held: a double click that stays pressed. */
+			/* The button is held there (the main loop selects the word, or holds the selection to drag it). */
 			if (!touch->caught && touch->followed == 1U) {
 				touch->selecting = 1;
-				touch_pointer(touch, TERMINAL_TOUCH_PRESS, gesture.x, gesture.y, now);
-				touch_pointer(touch, TERMINAL_TOUCH_RELEASE, gesture.x, gesture.y, now);
-				touch_pointer(touch, TERMINAL_TOUCH_PRESS, gesture.x, gesture.y, now);
+				touch_pointer(touch, TERMINAL_TOUCH_HOLD, gesture.x, gesture.y, now);
 				printf("ZTERM TOUCH select x=%.0f y=%.0f\n", gesture.x, gesture.y);
 				fflush(stdout);
 			}

@@ -16,9 +16,10 @@
  * screen's view back each round).  It checks: a flick down shows older
  * lines and glides on, a pixel at a time; a flick past the oldest line
  * rests there; a pull past the live screen stretches and springs back; a
- * tap is a click and a caught glide taps nothing; a long press selects (a
- * double click held) and a drag after it moves the selection, not the
- * view; a view set elsewhere (new output, a key, another tab) stops a
+ * tap is a click and a caught glide taps nothing; a long press holds the
+ * button (the main loop turns the hold into a word selection or a held
+ * press on the selection, ws081-p014) and a drag after it moves the
+ * pointer, not the view; a view set elsewhere (new output, a key, another tab) stops a
  * glide and is taken over.
  */
 
@@ -373,7 +374,7 @@ test_taps(void)
 	check(touch.caught && made_count == 0U, "a tap that caught the glide clicks nothing (%u)", made_count);
 }
 
-/* A long press selects the word (a double click held); a drag after it moves the selection, not the view. */
+/* A long press holds the button (the main loop selects or holds the selection); a drag after it moves the pointer, not the view. */
 static void
 test_select(void)
 {
@@ -386,14 +387,14 @@ test_select(void)
 	before = position();
 	finger(TERMINAL_TOUCH_DOWN, 1, 200.0f, 300.0f);
 	run(600.0);
-	check(made_count == 3U && made[0].kind == TERMINAL_TOUCH_PRESS && made[1].kind == TERMINAL_TOUCH_RELEASE &&
-	      made[2].kind == TERMINAL_TOUCH_PRESS && made[2].time == made[0].time, "a long press is a double click held (%u)", made_count);
+	check(made_count == 1U && made[0].kind == TERMINAL_TOUCH_HOLD && made[0].x == 200 && made[0].y == 300 && made[0].serial == 77U,
+	      "a long press holds the button there (%u)", made_count);
 
 	/* A drag after it: the pointer moves, the view does not. */
 	stroke(1, 200.0f, 300.0f, 120.0f, 200.0f, 0, 1);
 	run(500.0);
 	motions = 0;
-	for (index = 3U; index < made_count; index++) {
+	for (index = 1U; index < made_count; index++) {
 		if (made[index].kind == TERMINAL_TOUCH_POINTER_MOTION)
 			motions++;
 	}
