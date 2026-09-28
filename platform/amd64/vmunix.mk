@@ -261,6 +261,9 @@ AMD64_KERNEL_SOURCES := \
 	src/kern/tty.c \
 	src/drivers/generic/system-device.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
 	src/drivers/platform/pcat/graphics/vgafont.c src/drivers/platform/pcat/graphics/splash.c src/kern/init.c
+ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
+AMD64_KERNEL_SOURCES += src/drivers/generic/input-inject.c
+endif
 ifeq ($(CONFIG_DRIVER_GRAPHICS_DEVICE),y)
 AMD64_KERNEL_SOURCES += \
 	src/drivers/platform/pcat/graphics/pcat-graphics.c \

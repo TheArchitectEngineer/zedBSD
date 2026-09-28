@@ -3,7 +3,7 @@
 # WS079 Phase 002: kernel のペンの入力（USB HID の digitizer）と試験用の合成の入力
 
 <!-- awesome-plan-current:start -->
-Status: in-progress（1 回目の作業の区切り。§2.4 の注入の device は未着手）
+Status: in-progress（2 回目の区切り。注入の device と peninject は書けて amd64 の build が通った。guest での確認は未実施）
 Disposition: normal
 Parent: [WS079](../ws.md)
 Design: [design-input-notes.md](../design-input-notes.md) §2
@@ -51,13 +51,40 @@ HAL の API には触れない。
   書き直しはしていない。
 - queue の溢れ（§2.3、200 Hz × 約 10 event）は測っていない（実機か注入が要る）。
 
+## 2026-09-28 の作業（subagent、2 回目: 注入の device）
+
+main の判断に従い、node は devfs の root の `/dev/input-inject`（devfs の `/dev/input` は `eventN` だけを置くため）。
+
+### 変更
+
+| 場所 | 内容 |
+| --- | --- |
+| `config/kernel-options.list`・`Makefile` | `CONFIG_INPUT_TEST_INJECT|bool|Test pen injector (/dev/input-inject, test builds only)|amd64|n|`、`CONFIG_INPUT_TEST_INJECT ?= n`、y のとき `-DINPUT_TEST_INJECT`（`CONFIG_PCAT_SERIAL_MIRROR` と同じ形） |
+| `platform/amd64/vmunix.mk` | y のときだけ `src/drivers/generic/input-inject.c` を build（arm64・pcat は対象外、option の platforms も amd64） |
+| `include/uapi/input-inject.h`（新） | `struct input_inject_setup { magic, kind, x_max, y_max }`、`INPUT_INJECT_MAGIC`・`INPUT_INJECT_KIND_PEN`（唯一の kind）・範囲の上限・1 回の write の event 上限 64 |
+| `include/uapi/input.h` | `BUS_VIRTUAL` 0x06（Linux の番号） |
+| `include/drivers/generic/input-inject.h`・`src/drivers/generic/input-inject.c`（新） | cdev `input-inject`（rdev 0x000e0000）。open は `cred_is_superuser` でなければ EPERM、同時に 1 つだけ（EBUSY）。最初の write は setup 1 個だけ（大きさ・magic・kind・x_max/y_max 1..65535 を検査）で、固定の形の pen を `drv_input_device_register` で登録: ABS_X/Y 0..max、ABS_PRESSURE 0..4095、ABS_TILT_X/Y −60..60（resolution 57/radian）、BTN_TOOL_PEN・BTN_TOOL_RUBBER・BTN_TOUCH・BTN_STYLUS・BTN_STYLUS2、EV_SYN。以後の write は `struct input_event` の配列（1..64 個、端数は EINVAL）で、全部を先に検査（EV_SYN は SYN_REPORT/0、EV_KEY は 5 つの button で 0/1、EV_ABS は宣言した 5 軸の範囲内。ほかの type・code は拒否）してから `drv_input_device_emit` に渡す（一部だけ通ることは無い）。close で `drv_input_device_unregister`（押されたままの button は input の層が離す）。宣言の ioctl は設けず（設計 §2.4 の `INJECT_IOC_CREATE` から簡略化: 任意の capability を宣言させないため） |
+| `src/kern/devfs.c` | `input-inject` の node の mode を 0600（ほかの非 event の node は従来どおり 0666）。root の検査は open 側にもある |
+| `src/kern/vfs.c` | `INPUT_TEST_INJECT` のときだけ `drv_input_core_init()` の後で `drv_input_inject_register()` |
+| `plan/ws079/tests/peninject/peninject.c`・`stroke.pen`（新） | guest の道具。台本: `size W H`・`tool pen|rubber`・`down X Y P [TX TY]`・`move ...`・`ramp FROM TO STEPS MS`・`button stylus|stylus2 0|1`・`up`（pressure 0 → touch 0 → tool 0 → SYN）・`wait MS`・`hold MS`。1 行を 1 frame（SYN_REPORT 付き）の 1 回の write にする |
+
+### 確認（実行したもの）
+
+| 確認 | 結果 |
+| --- | --- |
+| `make -j16 vmunix CONFIG_INPUT_TEST_INJECT=y`（amd64、worktree の `build/amd64`、main の config.mk の写し、`-Werror`） | exit 0、warning 0。`build/amd64/kern64/src/drivers/generic/input-inject.o` が link された |
+| `make -j16 vmunix`（既定 n） | 下の追記を参照 |
+| peninject の cross compile（`build/llvm/bin/clang --target=x86_64-unknown-zedbsd --sysroot=<共有の build/amd64/sysroot> -Wall -Wextra -Werror -idirafter include`） | compile は warning 0 で通る。link は libc の未定義（`strtod`・`__syscall6`・`__signal_restorer` など、userland の通常の link の仕方をしていないため）で失敗。rootfs の build への組み込みは未実施 |
+
+未実施: guest での実行（試験の image の作成、peninject の rootfs への組み込み、`/dev/input/eventN` の読み取り）、kernel の
+注入の経路の host 試験、QEMU の起動（この kernel で boot test も未実施）、arm64・pcat（option は amd64 だけ）。QEMU・実機の証拠はどちらも無い。
+
 ## 残り（resume の条件）
 
-1. §2.4 の `/dev/input/inject`（`CONFIG_INPUT_TEST_INJECT|bool|Test input injector|amd64|n|`、`include/uapi/input-inject.h`、
-   `src/drivers/generic/input-inject.c`）と guest の道具 `peninject`（`plan/ws079/tests/peninject/`）。未着手。
-   調べて分かったこと: devfs の `/dev/input` は event の device（`eventN` の名前、`src/kern/devfs.c` の `event_name` と
-   「/dev/input holds only the event devices」の判定）しか置かないので、`/dev/input/inject` には devfs の名前の規則の変更が要る
-   （設計の §2.4 に書かれていない依存）。devfs を変えるか、node を `/dev/input-inject` のように root に置くかを先に決める。
+1. 注入の device の guest での確認: `CONFIG_INPUT_TEST_INJECT=y` の image を作り、peninject を userland の通常の規則で build して
+   rootfs（試験の build だけ）に入れ、root で `peninject stroke.pen` を走らせながら既存の道具で `/dev/input/eventN` を読む
+   （名前「Test pen (input-inject)」、pressure 0..4095 の absinfo、ramp の値の列、RUBBER の frame）。非 root の open が EPERM、
+   2 つ目の open が EBUSY、範囲外の値の write が EINVAL であることも確かめる。peninject の link の仕方（userland の Makefile の規則）を先に調べる。
 2. QEMU の `usb-wacom-tablet` を付けて起動し、列挙と解析が壊れないこと（既存の keyboard・`usb-tablet` が動く）を確かめる。
 3. INPUT_PROP を evdev へ出すか（input の層の変更）を決める。
 4. arm64・pcat の build の確認。
