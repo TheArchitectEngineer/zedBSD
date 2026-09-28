@@ -1022,4 +1022,5 @@ window_pointer_event(
 	event->y = window->pointer_y;
 	event->time = time;
 	event->serial = serial;
+	event->modifiers = window->modifiers;
 }
