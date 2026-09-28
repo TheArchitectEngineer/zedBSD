@@ -247,8 +247,8 @@ put_pen(struct descriptor *descriptor)
  * Builds a touch screen of a number of fingers per report: the Touch Screen
  * application collection, report ID 1, the fingers, a Scan Time (which the
  * driver reports as MSC_TIMESTAMP, ws081-p002) and, with WITH_COUNT, a Contact
- * Count 0..16, and a feature
- * report 3 with the Contact Count Maximum (which the driver does not read).
+ * Count 0..16, and a feature report 3 with the Contact Count Maximum (which
+ * the driver does not read).
  */
 static void
 build(struct descriptor *descriptor, unsigned fingers, unsigned flags)
