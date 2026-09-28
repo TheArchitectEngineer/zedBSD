@@ -9,12 +9,17 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: 2026-09-28: p059（Google の調査）cleared。デモの目標の版と Phase の列は [google-goal.md](google-goal.md)。次（デモの順）: p032（form に絞った）→ p060 → p037（最小）→ p027 → p065（結果の page の関門）→ p066 → p035 → p061 → p062 → p063 → p031 → p064。結果の page は Google の bot の判定（`/sorry`）が危険で、ユーザーの判断待ち（google-goal.md §3）
+Resume point: 2026-09-28: p059（Google の調査）・p067（amazon.co.jp の調査）cleared。デモの目標は amazon.co.jp、版と Phase の列は [amazon-goal.md](amazon-goal.md)。次（デモの順）: p032（form、作業中）→ p068 → p061 → p069 → p035 → p060 → p062 → p070 → p071 → p037 → p072 → p027・p065 の一部
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
 
 **変更**: ユーザー「…amazon.co.jpに変更しましょう。」→ デモの目標は amazon.co.jp（トップの page と検索、限定的な CSS・基本的な JS、WebGL・動画なし）。以下の Google の記述は経緯として残す。
+
+- 調査（[p067](phase067/phase.md)、2026-09-28）: 目標の版・足りない機能・Phase の列は [amazon-goal.md](amazon-goal.md)。私たちの UA に
+  desktop の版が challenge なしに返り、配置は CSS だけで決まる（JS なしの Chromium でもほぼ同じ）。検索は普通の GET の form。
+  **デモの順**: p032 → p068 → p061 → p069 → p035 → p060 → p062 → p070 → p071 → p037 → p072 → p027・p065 の一部。下の Google の順と
+  「実行の順」より優先する。
 
 
 「Googleの検索トップページと検索が、レイアウトを崩さずに表示できたら、ゴールにしましょう！限定的なCSSと、基本的なJS、WebGLなし、ビデオなしです。」
@@ -25,7 +30,7 @@ Resume point: 2026-09-28: p059（Google の調査）cleared。デモの目標の
   HTML と足りない機能（form・CSS・JS の API）を調べる Phase を置く。
 - 調査（[p059](phase059/phase.md)、2026-09-28）: 目標の版・足りない機能・Phase の列は [google-goal.md](google-goal.md)。home は私たちの UA に返る
   基本の HTML の版、結果は SearchGuard の JS の challenge を通った後の page（基本の HTML の結果はもう無い）。**デモの順**:
-  p032 → p060 → p037（最小）→ p027 → p065 → p066 → p035 → p061 → p062 → p063 → p031 → p064。下の「実行の順」より優先する。
+  p032 → p060 → p037（最小）→ p027 → p065 → p066 → p035 → p061 → p062 → p063 → p031 → p064（Google の目標の順。amazon.co.jp への変更で上の順に置き換えた）。
 
 ## 目標
 
@@ -124,7 +129,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | ws074-p029 | ES2015 の意味 2: generator、Promise と microtask、async・await、Proxy・Reflect、TypedArray・ArrayBuffer・DataView、Date、BigInt | planned | p028 |
 | [ws074-p030](phase030/phase.md) | DOM の binding（interface の表、生成器は後回し）、window・document・Node・Element・Event の基本、console、`<script>` の実行、timer、event loop と microtask の queue（2026-09-28 に WPT の testharness の runner を p047 へ分けた） | cleared | p014、p046（p029 から縮めた: microtask の queue はこの Phase で作った） |
 | ws074-p031 | event（dispatch・入力）、innerHTML、querySelector、classList、CSSOM の inline style、getComputedStyle、geometry、変更の後の再計算 | planned | p030 |
-| ws074-p032 | form（2026-09-28 に範囲を絞った。fetch・XHR・Location・History・localStorage は p064 へ）: `<input>`（text・submit・hidden・button・checkbox）・`<button>`・`<textarea>` の最小の描画、focus と caret、文字の入力と編集、Enter と submit による送信（GET・POST の urlencoded、page の encoding）、script が有効なときの `noscript` を隠す | planned | p017、p056（focus と key の入力。p031 は要らない） |
+| ws074-p032 | form（2026-09-28 に範囲を絞った。fetch・XHR・Location・History・localStorage は p064 へ。p067 で `<select>` の最小と `box-sizing` を足した）: `<input>`（text・submit・hidden・button・checkbox）・`<button>`・`<textarea>`・`<select>` の最小の描画、focus と caret、文字の入力と編集、Enter と submit による送信（GET・POST の urlencoded、page の encoding）、script が有効なときの `noscript` を隠す | planned | p017、p056（focus と key の入力。p031 は要らない） |
 | ws074-p033 | Wasm: decoder・validator・共通 bytecode への compiler、JS API、spec test の runner（wabt の wast2json） | planned | p029 |
 | ws074-p034 | Wasm の MVP の後: bulk memory、reference types、multi-value、sign-ext、非 trap の変換、SIMD。**M2 の計測** | planned | p033、p032 |
 | ws074-p035 | flexbox | planned | p013 |
@@ -150,10 +155,16 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | ws074-p060 | `inline-block` を atomic な inline に（shrink-to-fit、baseline、`vertical-align` の top・middle・bottom・baseline） | planned | p032 |
 | ws074-p061 | CSS の値と selector（p008・p009 から Google が使う部分）: `@media`、`var()`、`calc()`、`!important`、`:not()`・`:hover`・`:active`・`:focus`・`:visited`、`::before`・`::after`、`box-sizing`、`-webkit-` の別名、`text-overflow`、`letter-spacing`、`text-transform` | planned | p007 |
 | ws074-p062 | 描画（p038 から）: `border-radius`（CPU と GPU）、`opacity`、`box-shadow`、`outline` | planned | p014 |
-| ws074-p063 | inline の SVG の最小（`svg`・`path`・`circle`・`rect`、`viewBox`、`fill`・`currentColor`） | planned | p012 |
+| ws074-p063 | （デモの列から外した: Amazon は sprite の PNG）inline の SVG の最小（`svg`・`path`・`circle`・`rect`、`viewBox`、`fill`・`currentColor`） | planned | p012 |
 | ws074-p064 | fetch・XHR（same-origin・CORS）、Location・History、localStorage（p032 から分けた） | planned | p031、p032 |
-| ws074-p065 | Google の challenge と ES5 bundle の JS の環境: `Date`・`Promise`・`Symbol`・`Map`・`Set`・`WeakMap`・typed array の最小、`encodeURIComponent` の類、`Error.stack`、`atob`・`btoa`、`navigator`・`screen`・`performance`・`sessionStorage`・`CustomEvent`、`document.cookie` の書き込み、`location.replace`。保存した challenge の page が `SG_SS` を置いて開き直すまで | planned | p027 |
-| ws074-p066 | Google の結果の page: 保存（`build/` だけ）、Chromium との比較、足りない CSS と DOM の直し（取得後に分ける） | planned | p065 |
+| ws074-p065 | （Google の目標のため。デモの列から外した、2026-09-28）Google の challenge と ES5 bundle の JS の環境: `Date`・`Promise`・`Symbol`・`Map`・`Set`・`WeakMap`・typed array の最小、`encodeURIComponent` の類、`Error.stack`、`atob`・`btoa`、`navigator`・`screen`・`performance`・`sessionStorage`・`CustomEvent`、`document.cookie` の書き込み、`location.replace`。保存した challenge の page が `SG_SS` を置いて開き直すまで | planned | p027 |
+| ws074-p066 | （Google の目標のため。デモの列から外した）Google の結果の page: 保存（`build/` だけ）、Chromium との比較、足りない CSS と DOM の直し（取得後に分ける） | planned | p065 |
+| [ws074-p067](phase067/phase.md) | amazon.co.jp の調査（デモの目標の変更）: UA ごとの HTML、Chromium との比較、足りない機能、Phase の列（[amazon-goal.md](amazon-goal.md)） | cleared | p059 |
+| ws074-p068 | 外の stylesheet（`<link rel=stylesheet>`・`@import`、非同期の loader、読み終えてからの再計算）と rule の索引（最右の id・class・tag） | planned | p032 |
+| ws074-p069 | selector と pseudo-element: `:not()`・`:is()`・`:where()`・`:has()` の最小、`:root`、構造の pseudo-class、`:hover`・`:focus`・`:disabled`・`:checked`、`::before`・`::after` の `content` | planned | p068 |
+| ws074-p070 | `@font-face`（WOFF、libz-compat）と Amazon Ember | planned | p068 |
+| ws074-p071 | 大きな page の速さ（1.4 MB の HTML、2 MB の CSS）: 測って直す | planned | p068、p061 |
+| ws074-p072 | grid の最小（`repeat(N,1fr)`、`grid-column`） | planned | p035 |
 
 ## 後の WS・Future Work の候補
 

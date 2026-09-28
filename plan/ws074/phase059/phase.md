@@ -25,7 +25,7 @@ Queue: なし（サブエージェントが worktree の branch で実行）
 - 描画: 私たちの `--render`・`--dump=layout`（live の URL）、Chromium 153 の headless（私たちの UA と同じ font）と headful（Xvfb、
   CDP で home に文字を打って Enter）。guest（Venus、`build-browser-image.sh` の image）の `/bin/browser` の窓で live の home。
 - JS の engine の機能: `--js` で 41 の小さな program。
-- 比較の道具: [tests/google-compare.py](../tests/google-compare.py)（新。live の page を私たちと Chromium で描き、白でない画素の一致を出す）。
+- 比較の道具: `tests/google-compare.py`（新。live の page を私たちと Chromium で描き、白でない画素の一致を出す）。p067 で任意の URL と保存した file を取る [tests/live-compare.py](../tests/live-compare.py) に改名した。
 
 ## 結果
 

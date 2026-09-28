@@ -1,5 +1,7 @@
 # WS074 デモの目標: Google の検索（調査と到達の計画）
 
+**2026-09-28: デモの目標は amazon.co.jp に変わった（[amazon-goal.md](amazon-goal.md)）。この文書は経緯として残す。** 比較の道具は `tests/live-compare.py` に改名した。
+
 2026-09-28 ユーザー:「Googleの検索トップページと検索が、レイアウトを崩さずに表示できたら、ゴールにしましょう！限定的なCSSと、基本的なJS、WebGLなし、ビデオなしです。」
 この文書は [ws074-p059](phase059/phase.md) の調査の結果、選んだ目標の形、そこまでの Phase の列。Google の page の内容と画像は
 tree に入れない（取得した HTML・screenshot は `build/ws074-google/`・`build/ws074-shots/` にだけ置く）。
