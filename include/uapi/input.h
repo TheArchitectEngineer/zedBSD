@@ -210,6 +210,15 @@ struct input_absinfo {
 #define BTN_STYLUS	0x14b
 #define BTN_STYLUS2	0x14c
 
+/*
+ * EV_MSC codes.  MSC_TIMESTAMP is a touch screen's own scan time in
+ * microseconds (the HID Scan Time), wrapping at 2^32 and starting again at
+ * 0 after the screen has been silent for a second; it comes before the
+ * SYN_REPORT of each frame of a screen that has one.
+ */
+#define MSC_TIMESTAMP	0x05
+#define MSC_MAX		0x07
+
 #define REL_X		0x00
 #define REL_Y		0x01
 #define REL_HWHEEL	0x06

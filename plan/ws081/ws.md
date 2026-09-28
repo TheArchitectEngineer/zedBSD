@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001・p003 は cleared（2026-09-29、[design.md](design.md)、`userland/desktop/libkeiland/motion.c` と host 試験）。p002 は design §11 の 1・2（範囲の file と注入の拡張）の main の判断の後。p004 以降は main の指示の後。HID の driver・Wayland の compositor・ブラウザ（と Keiland の app）にまたがる計画はこの WS の 1 か所で行う
+Resume point: p001・p002・p003 は cleared（2026-09-29）。次は p004（compositor での使用と library の公開）。HID の driver・Wayland の compositor・ブラウザ（と Keiland の app）にまたがる計画はこの WS の 1 か所で行う
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）
@@ -37,23 +37,24 @@ Waylandコンポジタ、ブラウザの3つに渡る実装と調整が必要な
   library（libkeiland）にする。
 - **試験**: touchinject（WS079 p012）で報告の率・jitter を変えた合成の入力（30・60・90・120 Hz、不揃い）を作り、補間の誤差と見た目を測る。
 
-## Phase（案）
+## Phase
+
+2026-09-29 main の判断（design §8・§11）: p002 の範囲の変更を承認、注入の device と touchinject の Scan Time は p002 に、library の置き場所を承認、
+p005 を scroller・gesture の library と app ごとの適用に分ける、p006 は WS074 に依存。design §10 のユーザーの判断は main が伝え、返事までは既定の案で進める。
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws081-p001](phase001/phase.md) | 設計（上の項目、数式の比較の host の試験を含む）→ [design.md](design.md) | cleared | WS079 p012・p013 |
-| ws081-p002 | kernel: HID の報告の時刻の精度、報告の率の測定と公開（設計で「1 報告 1 時刻と Scan Time の `MSC_TIMESTAMP`」に変える案、率の測定は p003 へ。design §8） | planning | p001、design §11 の 1・2 |
+| [ws081-p002](phase002/phase.md) | kernel: 1 報告 1 時刻（URB の完了の時刻）と Scan Time の `EV_MSC`/`MSC_TIMESTAMP`、input の層の `EV_MSC`、注入の device と touchinject の Scan Time・µs の間隔（率の測定は p003）、WS079 p009 から移管の規約の是正 | cleared | p001 |
 | [ws081-p003](phase003/phase.md) | 補間・予測の library（host で試験、率・jitter ごとの誤差の測定）→ `userland/desktop/libkeiland/motion.c`（公開は p004） | cleared | p001 |
-| ws081-p004 | compositor: resampling・予測の適用、scroll の gesture の判定と app への渡し方、window の drag・Notes の線への適用 | planning | p002、p003 |
-| ws081-p005 | 慣性の scroll の共通の実装（libkeiland）と Files・Terminal・PDF Viewer への適用 | planning | p004 |
-| ws081-p006 | ブラウザ（libbrowser）の慣性の scroll と touch の入力 | planning | p004、WS074 |
+| ws081-p004 | compositor: resampling・予測の適用（window の drag・端のジェスチャー）、wl_touch の時刻（Scan Time の τ）、library の公開（Makefile・exports.map・keiland.h） | planning | p002、p003 |
+| ws081-p005 | 慣性の scroll と touch の gesture の共通の library（libkeiland の scroller・gesture、host 試験） | planning | p004 |
+| ws081-p010 | Files への適用（tap・長押し・scroll と慣性） | planning | p005 |
+| ws081-p011 | Terminal への適用（scroll と慣性、長押しからの選択） | planning | p005 |
+| ws081-p012 | PDF Viewer への適用（scroll と慣性、二本指の拡大） | planning | p005 |
+| ws081-p013 | Notes の指の線（centripetal Catmull-Rom と予測の尾、design §3.8） | planning | p004 |
+| ws081-p006 | ブラウザの慣性の scroll と touch の入力（browser の shell） | planning | p005、WS074（`browser.h` の scroll の範囲・overscroll） |
 | ws081-p007 | 実機の 10 インチの touch LCD での調整（報告の率の実測、係数の調整） | planning | p005、p006、touch の USB |
 | ws081-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
 
-## 設計（p001）からの見直しの案（main の確認待ち、design §8・§11）
-
-- p002 の範囲: 1 報告 1 時刻（完了の時刻）と Scan Time の `MSC_TIMESTAMP`。一覧に無い file（`hid-touch.h`・`hid-report.h`・`include/kern/input-device.h`・
-  `include/kern/input-capability.h`、WS079 の `host-hid-touch.c` の期待値）を含む。率の測定は p003 の library。
-- p005 を分ける: libkeiland の scroller と gesture の補助（host 試験）と、Files・Terminal・PDF Viewer・Notes（指の線。p004 の「Notes の線」をここへ）の適用を 1 つずつ。
-- p004 は touchinject と注入の device の拡張（Scan Time、µs の間隔）に、p006 は WS074 の `browser.h` の変更に依存する。
-- touchpad の二本指の scroll（目標 1）の Phase が無い（design §10 の 4）。
+touchpad の二本指の scroll（目標 1）の Phase は、design §10 の 4 のユーザーの判断の後に置く。

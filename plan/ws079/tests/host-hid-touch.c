@@ -490,7 +490,7 @@ test_ten_fingers(void)
 	/* The device it is published as. */
 	error = drv_hid_touch_describe(&touch, &description);
 	check(error == 0 && description.slots == 10, "ten slots");
-	check(description.capability_count == 8, "eight capabilities");
+	check(description.capability_count == 9, "nine capabilities (MSC_TIMESTAMP for the Scan Time, ws081-p002)");
 	found = 0;
 	for (index = 0; index < description.capability_count; index++) {
 		if (description.capabilities[index].type == EV_KEY &&

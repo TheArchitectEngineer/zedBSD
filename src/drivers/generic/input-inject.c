@@ -15,7 +15,8 @@
  * For a pen, later writes pass checked events to the ordinary input layer.
  * For a touch screen, later writes are frames of fingers, which are split
  * into the reports a USB touch screen sends and run through the USB touch
- * screen's state machine (src/drivers/usb/hid-touch.c).  Either way the
+ * screen's state machine (src/drivers/usb/hid-touch.c).  A touch screen may
+ * be declared with a Scan Time, which its frames then carry.  Either way the
  * device reaches readers as /dev/input/eventN like a USB one.  Closing
  * removes it.
  */
@@ -29,6 +30,7 @@
 #include <drivers/usb/hid-touch.h>
 
 #include "kern/cdev.h"
+#include "kern/clock.h"
 #include "kern/cred.h"
 #include "kern/file.h"
 #include "kern/input-device.h"
@@ -60,6 +62,8 @@ struct inject_open {
 	uint32_t report_contacts;
 	int32_t touch_x_max;
 	int32_t touch_y_max;
+	/* The touch screen's frames carry a Scan Time (the setup said so). */
+	int touch_scan_time;
 	struct hid_touch_description touch_description;
 	struct hid_touch_state touch;
 	struct hid_report_input report;
@@ -68,12 +72,17 @@ struct inject_open {
 
 static int inject_open(struct file *file);
 static int inject_close(struct file *file);
+static void inject_release_node(void);
 static ssize_t inject_write(struct file *file, const void *buffer, size_t size);
+static ssize_t inject_write_pen(struct inject_open *state, const void *buffer, size_t size);
 static int inject_declare(struct inject_open *state, const void *buffer, size_t size);
+static int inject_setup_valid(const struct input_inject_setup *setup);
+static int inject_declare_pen(struct inject_open *state, const struct input_inject_setup *setup);
 static int inject_declare_touch(struct inject_open *state, const struct input_inject_setup *setup);
 static ssize_t inject_write_touch(struct inject_open *state, const void *buffer, size_t size);
 static int inject_frame_valid(const struct inject_open *state, const struct input_inject_touch_frame *frame);
-static int inject_touch_report(struct inject_open *state, const struct input_inject_touch_frame *frame, uint32_t first, uint32_t count);
+static int inject_contact_valid(const struct inject_open *state, const struct input_inject_contact *contact);
+static int inject_touch_report(struct inject_open *state, const struct input_inject_touch_frame *frame, uint32_t first, uint32_t count, uint64_t milliseconds);
 static void inject_report_value(struct hid_report_input *report, uint16_t code, int32_t value);
 static int inject_event_valid(const struct inject_open *state, const struct input_event *event);
 static int inject_key_valid(uint16_t code);
@@ -101,10 +110,19 @@ static const struct input_capability inject_capabilities[] = {
 	{ EV_ABS, ABS_TILT_Y },
 };
 
-/* Guards inject_busy. */
+/*
+ * The lock of inject_busy.
+ *
+ * It is initialized when the node is registered and lives as long as the
+ * kernel.
+ */
 static struct mutex inject_lock;
 
-/* Set while one open holds the node. */
+/*
+ * Whether an open holds the node: set by the open that admits itself, and
+ * cleared when that open closes (or fails to finish opening).  Zero means
+ * the node is free.  inject_lock protects it.
+ */
 static int inject_busy;
 
 /*
@@ -126,82 +144,95 @@ drv_input_inject_register(void)
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the node exists. */
 	return 0;
 }
 
-/* Admits one root open with no pen declared yet. */
+/* Admits one root open with no device declared yet. */
 static int
 inject_open(
 	struct file *file)
 {
 	struct inject_open *state;
+	const struct ucred *credentials;
+	int superuser;
+	int busy;
 	int error;
 
 	/* Refuses anyone but root, whatever the node's mode says. */
-	if (!cred_is_superuser(cred_current()))
+	credentials = cred_current();
+	superuser = cred_is_superuser(credentials);
+	if (!superuser)
 		return EPERM;
 
-	/* Admits one open at a time. */
+	/* Admits one open at a time: the first to find the node free takes it. */
 	mutex_lock(&inject_lock);
-	if (inject_busy) {
-		mutex_unlock(&inject_lock);
-		return EBUSY;
-	}
-	inject_busy = 1;
+	busy = inject_busy;
+	if (!busy)
+		inject_busy = 1;
 	mutex_unlock(&inject_lock);
 
-	/* Allocates the open's state. */
+	/* Refuses an open while another holds the node. */
+	if (busy)
+		return EBUSY;
+
+	/* Allocates the open's state; without it the node is given back. */
 	state = kern_malloc(sizeof(*state));
 	if (state == NULL) {
-		error = ENOMEM;
-		goto fail;
+		inject_release_node();
+		return ENOMEM;
 	}
+
+	/* The state starts with no device and its own write lock. */
 	kern_memset(state, 0, sizeof(*state));
 	error = mutex_init(&state->lock, LOCK_RANK_DEVICE, "input inject open");
 	if (error != 0) {
 		kern_free(state);
-		goto fail;
+		inject_release_node();
+		return error;
 	}
 
 	/* Succeeded: the file holds the state until it closes. */
 	file->f_data = state;
 	return 0;
-
-fail:
-	/* Gives the node back. */
-	mutex_lock(&inject_lock);
-	inject_busy = 0;
-	mutex_unlock(&inject_lock);
-	return error;
 }
 
-/* Removes the pen and gives the node back. */
+/* Removes the declared device and gives the node back. */
 static int
 inject_close(
 	struct file *file)
 {
 	struct inject_open *state;
 
-	/* Removes the pen; the input layer releases its held buttons. */
+	/* Removes the device; the input layer releases its held buttons. */
 	state = file->f_data;
 	if (state != NULL) {
 		if (state->device != NULL)
 			drv_input_device_unregister(state->device);
 		kern_free(state);
 	}
+
+	/* The file holds nothing any more. */
 	file->f_data = NULL;
 
 	/* Gives the node back. */
-	mutex_lock(&inject_lock);
-	inject_busy = 0;
-	mutex_unlock(&inject_lock);
+	inject_release_node();
 
-	/* Succeeded. */
+	/* Succeeded: the node is free. */
 	return 0;
 }
 
-/* Declares the pen on the first write and emits checked events after it. */
+/* Marks the node free for the next open. */
+static void
+inject_release_node(void)
+{
+	/* inject_busy cleared: the next open may take the node. */
+	mutex_lock(&inject_lock);
+	inject_busy = 0;
+	mutex_unlock(&inject_lock);
+}
+
+/* Declares the device on the first write and takes events or frames after it. */
 static ssize_t
 inject_write(
 	struct file *file,
@@ -209,15 +240,14 @@ inject_write(
 	size_t size)
 {
 	struct inject_open *state;
-	struct input_event event;
-	const uint8_t *bytes;
-	size_t count, index;
 	ssize_t written;
 	int error;
 
-	/* Declares the device when none is declared yet. */
+	/* The writes of one open are taken one at a time. */
 	state = file->f_data;
 	mutex_lock(&state->lock);
+
+	/* The first write declares the device; the whole record is taken or refused. */
 	if (state->device == NULL) {
 		error = inject_declare(state, buffer, size);
 		mutex_unlock(&state->lock);
@@ -226,29 +256,56 @@ inject_write(
 		return (ssize_t)size;
 	}
 
-	/* A touch screen takes frames of fingers. */
+	/* A touch screen takes frames of fingers, a pen events. */
 	if (state->kind == INPUT_INJECT_KIND_TOUCH) {
 		written = inject_write_touch(state, buffer, size);
-		mutex_unlock(&state->lock);
-		return written;
+	} else {
+		written = inject_write_pen(state, buffer, size);
 	}
+
+	/* Lets the open's next write in. */
+	mutex_unlock(&state->lock);
+
+	/* Reports a refused write. */
+	if (written < 0)
+		return written;
+
+	/* Succeeded: the whole write was taken. */
+	return written;
+}
+
+/*
+ * Takes a pen's events: checks every one, then emits them all.  Returns the
+ * size taken or a negative error.
+ */
+static ssize_t
+inject_write_pen(
+	struct inject_open *state,
+	const void *buffer,
+	size_t size)
+{
+	struct input_event event;
+	const uint8_t *bytes;
+	size_t count;
+	size_t index;
+	int valid;
 
 	/* Refuses a write that is not a whole, bounded array of events. */
 	count = size / sizeof(event);
-	if (size == 0 || size % sizeof(event) != 0 ||
-	    count > INPUT_INJECT_EVENTS_MAX) {
-		mutex_unlock(&state->lock);
+	if (size == 0)
 		return -EINVAL;
-	}
+	if (size % sizeof(event) != 0)
+		return -EINVAL;
+	if (count > INPUT_INJECT_EVENTS_MAX)
+		return -EINVAL;
 
 	/* Checks every event before any is emitted. */
 	bytes = buffer;
 	for (index = 0; index < count; index++) {
 		kern_memcpy(&event, bytes + index * sizeof(event), sizeof(event));
-		if (!inject_event_valid(state, &event)) {
-			mutex_unlock(&state->lock);
+		valid = inject_event_valid(state, &event);
+		if (!valid)
 			return -EINVAL;
-		}
 	}
 
 	/* Emits the events through the input layer. */
@@ -257,13 +314,12 @@ inject_write(
 		drv_input_device_emit(state->device, event.type, event.code,
 				      event.value);
 	}
-	mutex_unlock(&state->lock);
 
 	/* Succeeded: the whole write was taken. */
 	return (ssize_t)size;
 }
 
-/* Checks the setup record and registers the pen it declares. */
+/* Checks the setup record and registers the device it declares. */
 static int
 inject_declare(
 	struct inject_open *state,
@@ -271,19 +327,15 @@ inject_declare(
 	size_t size)
 {
 	struct input_inject_setup setup;
-	struct input_device_info info;
+	int valid;
 	int error;
 
 	/* Refuses anything but one setup record with sane ranges. */
 	if (size != sizeof(setup))
 		return EINVAL;
 	kern_memcpy(&setup, buffer, sizeof(setup));
-	if (setup.magic != INPUT_INJECT_MAGIC)
-		return EINVAL;
-	if (setup.x_max < 1 || setup.x_max > INPUT_INJECT_AXIS_MAX ||
-	    setup.y_max < 1 || setup.y_max > INPUT_INJECT_AXIS_MAX)
-		return EINVAL;
-	if (setup.reserved != 0U)
+	valid = inject_setup_valid(&setup);
+	if (!valid)
 		return EINVAL;
 
 	/* A touch screen is declared apart. */
@@ -296,16 +348,65 @@ inject_declare(
 		return 0;
 	}
 
-	/* Anything else must be a pen, which reports no fingers. */
-	if (setup.kind != INPUT_INJECT_KIND_PEN)
+	/* Anything else must be a pen. */
+	error = inject_declare_pen(state, &setup);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the pen is registered. */
+	return 0;
+}
+
+/* Tells whether a setup record has the magic, sane ranges and only known bits. */
+static int
+inject_setup_valid(
+	const struct input_inject_setup *setup)
+{
+	/* The record names itself. */
+	if (setup->magic != INPUT_INJECT_MAGIC)
+		return 0;
+
+	/* The area's width lies in the axis range. */
+	if (setup->x_max < 1)
+		return 0;
+	if (setup->x_max > INPUT_INJECT_AXIS_MAX)
+		return 0;
+
+	/* So does its height. */
+	if (setup->y_max < 1)
+		return 0;
+	if (setup->y_max > INPUT_INJECT_AXIS_MAX)
+		return 0;
+
+	/* The reserved word has no bit but the Scan Time's. */
+	if ((setup->reserved & ~INPUT_INJECT_TOUCH_SCAN_TIME) != 0U)
+		return 0;
+
+	/* The record is sane. */
+	return 1;
+}
+
+/* Registers the pen a setup record declares: position, pressure, tilt and buttons. */
+static int
+inject_declare_pen(
+	struct inject_open *state,
+	const struct input_inject_setup *setup)
+{
+	struct input_device_info info;
+	int error;
+
+	/* A pen is the pen kind, reports no fingers and has no Scan Time. */
+	if (setup->kind != INPUT_INJECT_KIND_PEN)
 		return EINVAL;
-	if (setup.report_contacts != 0U)
+	if (setup->report_contacts != 0U)
+		return EINVAL;
+	if (setup->reserved != 0U)
 		return EINVAL;
 	state->kind = INPUT_INJECT_KIND_PEN;
 
 	/* Describes the axes: position, 4096 pressure levels and tilt. */
-	inject_axis(&state->axes[0], ABS_X, 0, setup.x_max, 0);
-	inject_axis(&state->axes[1], ABS_Y, 0, setup.y_max, 0);
+	inject_axis(&state->axes[0], ABS_X, 0, setup->x_max, 0);
+	inject_axis(&state->axes[1], ABS_Y, 0, setup->y_max, 0);
 	inject_axis(&state->axes[2], ABS_PRESSURE, 0,
 		    INPUT_INJECT_PRESSURE_MAX, 0);
 	inject_axis(&state->axes[3], ABS_TILT_X, -INPUT_INJECT_TILT_MAX,
@@ -323,7 +424,12 @@ inject_declare(
 		sizeof(inject_capabilities) / sizeof(inject_capabilities[0]);
 	info.absolute_axes = state->axes;
 	info.absolute_axis_count = INJECT_AXIS_COUNT;
-	return drv_input_device_register(&info, &state->device);
+	error = drv_input_device_register(&info, &state->device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: later writes are the pen's events. */
+	return 0;
 }
 
 /* Tests whether an event is one the declared pen has, within its range. */
@@ -332,24 +438,43 @@ inject_event_valid(
 	const struct inject_open *state,
 	const struct input_event *event)
 {
+	const struct input_absinfo *range;
 	size_t index;
+	int button;
 
-	/* Admits only the report boundary among the synchronization events. */
-	if (event->type == EV_SYN)
-		return event->code == SYN_REPORT && event->value == 0;
+	/* Of the synchronization events only the report boundary, with 0. */
+	if (event->type == EV_SYN) {
+		if (event->code != SYN_REPORT)
+			return 0;
+		if (event->value != 0)
+			return 0;
+		return 1;
+	}
 
-	/* Admits the pen's buttons with 0 or 1. */
-	if (event->type == EV_KEY)
-		return inject_key_valid(event->code) &&
-		       (event->value == 0 || event->value == 1);
+	/* The pen's buttons, pressed or released. */
+	if (event->type == EV_KEY) {
+		button = inject_key_valid(event->code);
+		if (!button)
+			return 0;
+		if (event->value != 0 && event->value != 1)
+			return 0;
+		return 1;
+	}
 
-	/* Admits the pen's axes within their declared ranges. */
+	/* The pen's axes, within their declared ranges. */
 	if (event->type == EV_ABS) {
 		for (index = 0; index < INJECT_AXIS_COUNT; index++) {
+			/* Only the axis the event names. */
 			if (state->axes[index].code != event->code)
 				continue;
-			return event->value >= state->axes[index].info.minimum &&
-			       event->value <= state->axes[index].info.maximum;
+
+			/* Its value lies in the axis's range. */
+			range = &state->axes[index].info;
+			if (event->value < range->minimum)
+				return 0;
+			if (event->value > range->maximum)
+				return 0;
+			return 1;
 		}
 	}
 
@@ -384,18 +509,23 @@ inject_axis(
 	int32_t maximum,
 	int32_t resolution)
 {
-	/* Starts at the minimum with no fuzz or flat zone. */
+	/* The range, with no fuzz or flat zone. */
 	kern_memset(axis, 0, sizeof(*axis));
 	axis->code = code;
-	axis->info.value = minimum < 0 ? 0 : minimum;
 	axis->info.minimum = minimum;
 	axis->info.maximum = maximum;
 	axis->info.resolution = resolution;
+
+	/* The axis rests at its minimum, or at 0 when the range goes below it (tilt). */
+	axis->info.value = minimum;
+	if (minimum < 0)
+		axis->info.value = 0;
 }
 
 /*
  * Registers the touch screen a setup record declares: ten slots, fingers in
- * 0..x_max and 0..y_max, reports of report_contacts fingers each.
+ * 0..x_max and 0..y_max, reports of report_contacts fingers each, and a
+ * Scan Time when the setup asks for one.
  */
 static int
 inject_declare_touch(
@@ -423,12 +553,23 @@ inject_declare_touch(
 	touch.x.maximum = setup->x_max;
 	touch.y.minimum = 0;
 	touch.y.maximum = setup->y_max;
+
+	/* A Scan Time, when the setup asks for one, as a Windows touch screen has it. */
+	if ((setup->reserved & INPUT_INJECT_TOUCH_SCAN_TIME) != 0U) {
+		touch.scan_time_present = 1;
+		touch.scan_time_maximum = (int32_t)INPUT_INJECT_SCAN_TIME_MAX;
+		touch.scan_time_unit_ns = HID_TOUCH_SCAN_TIME_UNIT_NS;
+		state->touch_scan_time = 1;
+	}
+
+	/* The device's capabilities and axes. */
 	error = drv_hid_touch_describe(&touch, &state->touch_description);
 	if (error != 0)
 		return error;
 
-	/* No finger touches yet. */
+	/* No finger touches yet; the state machine counts the Scan Time, if any. */
 	drv_hid_touch_reset(&state->touch, state->touch_description.slots);
+	drv_hid_touch_set_scan_time(&state->touch, &touch);
 	state->report_contacts = setup->report_contacts;
 	state->touch_x_max = setup->x_max;
 	state->touch_y_max = setup->y_max;
@@ -455,7 +596,8 @@ inject_declare_touch(
  * Takes one frame of fingers: checks it whole, then splits it into reports
  * of report_contacts fingers (the first with the frame's Contact Count, the
  * later ones with 0), runs each through the touch state machine and emits
- * what it gives.  Returns the size taken or a negative error.
+ * what it gives, every event with the time of the write.  Returns the size
+ * taken or a negative error.
  */
 static ssize_t
 inject_write_touch(
@@ -465,6 +607,7 @@ inject_write_touch(
 {
 	struct input_inject_touch_frame frame;
 	const struct hid_touch_event *event;
+	uint64_t milliseconds;
 	uint32_t first;
 	uint32_t count;
 	size_t index;
@@ -479,6 +622,9 @@ inject_write_touch(
 	if (!valid)
 		return -EINVAL;
 
+	/* Every report and event of the frame has the time it was written. */
+	milliseconds = clock_milliseconds(NULL);
+
 	/* Sends the frame's fingers a report at a time; a frame of no finger is one report. */
 	first = 0;
 	do {
@@ -488,15 +634,16 @@ inject_write_touch(
 			count = state->report_contacts;
 
 		/* Runs the report through the touch state machine. */
-		error = inject_touch_report(state, &frame, first, count);
+		error = inject_touch_report(state, &frame, first, count, milliseconds);
 		if (error != 0)
 			return -error;
 
 		/* Emits what the report gave, in order. */
 		for (index = 0; index < state->output.event_count; index++) {
 			event = &state->output.events[index];
-			drv_input_device_emit(state->device, event->type,
-					      event->code, event->value);
+			drv_input_device_emit_at(state->device, event->type,
+						 event->code, event->value,
+						 milliseconds);
 		}
 
 		/* The next report starts after these fingers. */
@@ -513,31 +660,56 @@ inject_frame_valid(
 	const struct inject_open *state,
 	const struct input_inject_touch_frame *frame)
 {
-	const struct input_inject_contact *contact;
 	uint32_t index;
+	int valid;
 
-	/* At most a frame of fingers, and nothing in the reserved word. */
+	/* At most a frame of fingers. */
 	if (frame->count > INPUT_INJECT_TOUCH_CONTACTS)
 		return 0;
-	if (frame->reserved != 0U)
-		return 0;
 
-	/* Every finger of the frame names itself, touches or lifts, and lies on the screen. */
+	/* The reserved word is the Scan Time on a screen with one, and 0 on any other. */
+	if (state->touch_scan_time) {
+		if (frame->reserved > INPUT_INJECT_SCAN_TIME_MAX)
+			return 0;
+	} else {
+		if (frame->reserved != 0U)
+			return 0;
+	}
+
+	/* Every finger of the frame is one the screen can take. */
 	for (index = 0; index < frame->count; index++) {
-		contact = &frame->contacts[index];
-		if (contact->contact_id < 0)
-			return 0;
-		if (contact->contact_id > INPUT_INJECT_CONTACT_ID_MAX)
-			return 0;
-		if (contact->tip != 0 && contact->tip != 1)
-			return 0;
-		if (contact->x < 0 || contact->x > state->touch_x_max)
-			return 0;
-		if (contact->y < 0 || contact->y > state->touch_y_max)
+		valid = inject_contact_valid(state, &frame->contacts[index]);
+		if (!valid)
 			return 0;
 	}
 
 	/* The frame is sane. */
+	return 1;
+}
+
+/* Tells whether a finger names itself, touches or lifts, and lies on the screen. */
+static int
+inject_contact_valid(
+	const struct inject_open *state,
+	const struct input_inject_contact *contact)
+{
+	/* Its identifier is one a USB screen could send. */
+	if (contact->contact_id < 0)
+		return 0;
+	if (contact->contact_id > INPUT_INJECT_CONTACT_ID_MAX)
+		return 0;
+
+	/* It touches or lifts. */
+	if (contact->tip != 0 && contact->tip != 1)
+		return 0;
+
+	/* It lies on the screen. */
+	if (contact->x < 0 || contact->x > state->touch_x_max)
+		return 0;
+	if (contact->y < 0 || contact->y > state->touch_y_max)
+		return 0;
+
+	/* The finger is sane. */
 	return 1;
 }
 
@@ -551,7 +723,8 @@ inject_touch_report(
 	struct inject_open *state,
 	const struct input_inject_touch_frame *frame,
 	uint32_t first,
-	uint32_t count)
+	uint32_t count,
+	uint64_t milliseconds)
 {
 	const struct input_inject_contact *contact;
 	struct hid_report_input *report;
@@ -567,6 +740,10 @@ inject_touch_report(
 		contact_count = (int32_t)frame->count;
 	inject_report_value(report, HID_TOUCH_CONTACT_COUNT_CODE, contact_count);
 
+	/* Every report of the frame carries the frame's Scan Time, on a screen with one. */
+	if (state->touch_scan_time)
+		inject_report_value(report, HID_TOUCH_SCAN_TIME_CODE, (int32_t)frame->reserved);
+
 	/* Each finger in its place in the report, confident. */
 	for (finger = 0; finger < count; finger++) {
 		contact = &frame->contacts[first + finger];
@@ -577,8 +754,8 @@ inject_touch_report(
 		inject_report_value(report, HID_TOUCH_CODE(finger, HID_TOUCH_ITEM_Y), contact->y);
 	}
 
-	/* Turns the report into protocol B events. */
-	error = drv_hid_touch_translate(&state->touch, report, &state->output);
+	/* Turns the report into protocol B events, at the time the frame was written. */
+	error = drv_hid_touch_translate_at(&state->touch, report, milliseconds, &state->output);
 	if (error != 0)
 		return error;
 
