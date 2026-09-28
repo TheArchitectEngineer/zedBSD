@@ -201,3 +201,17 @@ program は display list を自分で描く）。libpdf の依存に libz-compat
 SHA-256、`SRC `: page の由来と base の page 番号）。開くときは file の先頭が base の hash と合い、最新の revision が base の直後なら stroke を
 編集可能に戻す。他の program が後から revision を足した file は全体が新しい base になる。libpdf の追加の API: `pdf_writer_create_update()`・
 `pdf_writer_keep_page()`・`pdf_writer_begin_page_over()`・`pdf_document_get_revision()`・`pdf_document_signed()`・`pdf_document_encrypted()`（`update.c`）。
+
+## 10. p007 の 2 回目と p008 の状態（2026-09-28）
+
+経過と確認は [phase007/phase.md](phase007/phase.md) と [phase008/phase.md](phase008/phase.md) が正本。§4 の構成に対して:
+
+- filter: ASCII85・LZW（EarlyChange、predictor）・RunLength を足した。CCITTFax・JBIG2・JPX は SKIPPED のまま。
+- inline image は image XObject と同じ decoder で描く（stream object の `bytes` が content の中を指す）。`/Interpolate` の無い画像の 4 倍以上の拡大は最近傍。
+- font: §4 の `cff.c`・`type1.c` を作り、共通の `charstrings.c`（名前・encoding・CID から glyph、輪郭を ems の path に）で font.c とつないだ。
+  **charstring は libpdf で読む**（libtruetype には輪郭の API だけ（p007）で、CFF・Type 1 は足さない）。Type 3 は glyph の procedure を content の
+  interpreter が走らせる。
+- 暗号: `crypt.c`（標準 security handler、空の user password、RC4・AES-128・AES-256）。reader が object の文字列と stream の data を復号する。
+  開けない暗号は `PDF_EPASSWORD`（EACCES）。update と Notes は暗号化の文書を拒む。
+- PDF Viewer: 描いた page の display list に SKIPPED・DAMAGED・LIMITED があれば「Some content could not be shown」、password の要る文書は
+  「it is protected by a password」。§5 の段階 ② の thumbnail と段階 ③ の password の入力は未着手。

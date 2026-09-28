@@ -177,6 +177,8 @@ pdf_shading_image(
 			pixel[3] = 255;
 		}
 	}
+
+	/* The shading's description goes; the pixels are the caller's. */
 	free(shading);
 
 	/* Places the image on the region: the unit square's corners on the region's. */
@@ -244,6 +246,8 @@ read_shading(
 	} else {
 		error = read_numbers(document, coords, shading->coords, 6);
 	}
+
+	/* Refuses coordinates that are not numbers. */
 	if (error != 0)
 		return error;
 
@@ -258,6 +262,8 @@ read_shading(
 		if (error != 0)
 			return error;
 	}
+
+	/* An empty domain (or one that is not a number) has no colours. */
 	if (!(shading->domain[1] != shading->domain[0]))
 		return PDF_EFORMAT;
 
@@ -342,7 +348,9 @@ read_space(
 
 	/* An ICC-based space by its profile's count; anything else is left for later stages. */
 	is_name = pdf_object_is_name(family, "ICCBased");
-	if (!is_name || space->type != PDF_OBJECT_ARRAY || space->count < 2)
+	if (!is_name)
+		return ENOTSUP;
+	if (space->type != PDF_OBJECT_ARRAY || space->count < 2)
 		return ENOTSUP;
 	error = pdf_reader_resolve(document, space->values[1], &profile);
 	if (error != 0)
@@ -352,7 +360,9 @@ read_space(
 		return error;
 	if (count->type != PDF_OBJECT_INTEGER)
 		return PDF_EFORMAT;
-	if (count->integer != 1 && count->integer != 3 && count->integer != 4)
+	if (count->integer != 1 &&
+	    count->integer != 3 &&
+	    count->integer != 4)
 		return ENOTSUP;
 
 	/* Succeeded: the profile's component count. */
@@ -432,6 +442,8 @@ sample_colors(
 			if (error != 0)
 				return error;
 		}
+
+		/* The sample's colour in RGB. */
 		to_rgb(values, shading->components, shading->colors[sample]);
 	}
 
@@ -490,6 +502,8 @@ evaluate(
 		error = ENOTSUP;
 		break;
 	}
+
+	/* Reports a function that could not be evaluated. */
 	if (error != 0)
 		return error;
 
@@ -512,6 +526,7 @@ evaluate_exponential(
 	double first[SHADING_COMPONENTS_MAX];
 	double last[SHADING_COMPONENTS_MAX];
 	double exponent;
+	double whole;
 	double factor;
 	int index;
 	int error;
@@ -521,6 +536,8 @@ evaluate_exponential(
 		first[index] = 0.0;
 		last[index] = 1.0;
 	}
+
+	/* The function's own C0. */
 	error = pdf_reader_resolve_key(document, function, "C0", &first_object);
 	if (error != 0)
 		return error;
@@ -529,6 +546,8 @@ evaluate_exponential(
 		if (error != 0)
 			return error;
 	}
+
+	/* The function's own C1. */
 	error = pdf_reader_resolve_key(document, function, "C1", &last_object);
 	if (error != 0)
 		return error;
@@ -548,7 +567,8 @@ evaluate_exponential(
 
 	/* The interpolation; a negative input to a fractional power is 0. */
 	factor = 0.0;
-	if (input > 0.0 || exponent == floor(exponent))
+	whole = floor(exponent);
+	if (input > 0.0 || exponent == whole)
 		factor = pow(input, exponent);
 	if (!(factor > -1e9 && factor < 1e9))
 		factor = 0.0;
@@ -620,6 +640,8 @@ evaluate_stitching(
 				return error;
 			high = bound;
 		}
+
+		/* The input falls in this function's part, or this is the last part. */
 		if (input < high || index == count - 1)
 			break;
 		low = high;
@@ -643,6 +665,8 @@ evaluate_stitching(
 		if (error != 0)
 			return error;
 	}
+
+	/* The input mapped from the part onto the function's encoded domain. */
 	mapped = encode[0];
 	if (high != low)
 		mapped = encode[0] + (input - low) * (encode[1] - encode[0]) / (high - low);
@@ -718,7 +742,14 @@ evaluate_sampled(
 	if (bits_object->type != PDF_OBJECT_INTEGER)
 		return PDF_EFORMAT;
 	bits = bits_object->integer;
-	if (bits != 1 && bits != 2 && bits != 4 && bits != 8 && bits != 12 && bits != 16 && bits != 24 && bits != 32)
+	if (bits != 1 &&
+	    bits != 2 &&
+	    bits != 4 &&
+	    bits != 8 &&
+	    bits != 12 &&
+	    bits != 16 &&
+	    bits != 24 &&
+	    bits != 32)
 		return PDF_EFORMAT;
 	error = pdf_reader_resolve_key(document, function, "Domain", &domain_object);
 	if (error != 0)
@@ -789,9 +820,13 @@ evaluate_sampled(
 				high_value = (double)sample;
 			}
 		}
+
+		/* Interpolates between the two samples and maps the result by /Decode. */
 		output[index] = low_value + fraction * (high_value - low_value);
 		output[index] = decode[2 * index] + output[index] * (decode[2 * index + 1] - decode[2 * index]) / maximum;
 	}
+
+	/* The samples' decoded copy goes. */
 	free(owned);
 
 	/* Succeeded: output holds the values. */
@@ -848,7 +883,10 @@ parameter(
 	double s1;
 	double s2;
 	double length;
+	double magnitude;
+	int beyond;
 
+	/* The parameter s by the kind of shading. */
 	c = shading->coords;
 	if (shading->type == 2) {
 		/* Axial: the projection of the point on the axis, in units of its length. */
@@ -872,9 +910,11 @@ parameter(
 		a = dx * dx + dy * dy - dr * dr;
 		b = px * dx + py * dy + c[2] * dr;
 		k = px * px + py * py - c[2] * c[2];
-		if (fabs(a) < 1e-12) {
+		magnitude = fabs(a);
+		if (magnitude < 1e-12) {
 			/* One root: the circles grow as fast as their centres move. */
-			if (fabs(b) < 1e-12)
+			magnitude = fabs(b);
+			if (magnitude < 1e-12)
 				return 0;
 			s = k / (2.0 * b);
 			if (c[2] + s * dr < 0.0)
@@ -892,9 +932,23 @@ parameter(
 				s1 = s2;
 				s2 = s;
 			}
+
+			/* The larger root, unless its radius is negative or it lies past an end that is not extended. */
 			s = s1;
-			if (c[2] + s * dr < 0.0 || (s > 1.0 && !shading->extend[1]) || (s < 0.0 && !shading->extend[0]))
+			beyond = 0;
+			if (c[2] + s * dr < 0.0) {
+				beyond = 1;
+			} else if (s > 1.0 && !shading->extend[1]) {
+				beyond = 1;
+			} else if (s < 0.0 && !shading->extend[0]) {
+				beyond = 1;
+			}
+
+			/* Then the smaller one. */
+			if (beyond)
 				s = s2;
+
+			/* Neither root has a radius that is not negative. */
 			if (c[2] + s * dr < 0.0)
 				return 0;
 		}
@@ -906,6 +960,8 @@ parameter(
 			return 0;
 		s = 0.0;
 	}
+
+	/* Past the far end likewise. */
 	if (s > 1.0) {
 		if (!shading->extend[1])
 			return 0;
@@ -924,10 +980,12 @@ invert(
 	double inverse[6])
 {
 	double determinant;
+	double magnitude;
 
 	/* The linear part's determinant. */
 	determinant = matrix[0] * matrix[3] - matrix[1] * matrix[2];
-	if (!(fabs(determinant) > 1e-12))
+	magnitude = fabs(determinant);
+	if (!(magnitude > 1e-12))
 		return EINVAL;
 
 	/* The inverse. */

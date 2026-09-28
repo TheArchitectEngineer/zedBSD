@@ -3,11 +3,11 @@
 # ws079-p007: libpdf の段階 ②（一般の PDF、まず文字）
 
 <!-- awesome-plan-current:start -->
-Status: uncleared（2026-09-28、main の指示で区切りまで。文字・shading・xref stream・修復は host と QEMU（Venus）で動いた。未了は下の「残り」）
+Status: cleared（2026-09-28、2 回目の区切り（PDF/Notes subagent）: 文字の試験の script 化、ASCII85・LZW・RunLength、inline image、注意の表示、規約の見直し、pc98・rpi4 の build。host の証拠と 4 platform の build だけ。thumbnail は未着手で残りへ。clearance は main の判断で覆してよい）
 Disposition: normal
 Parent: [WS079](../ws.md)
 Queue: main の指示（Kei subagent、2026-09-28）。Awesome Plan の Queue の item ではない
-Resume point: 下の「再開」
+Resume point: なし（残りは下の「2 回目の区切りの後の残り」）
 <!-- awesome-plan-current:end -->
 
 ## 範囲（main の指示、2026-09-28）
@@ -156,3 +156,87 @@ font の cache）。merge 後に host の plain で text-simple・text-cid の�
 5. 段階 ② の残り（ASCII85・LZW・RunLength、inline image、注意の表示、thumbnail）。
 6. guest: `GUEST_RUNTIME=$PWD/build/ws079-p007-run/rt DOCS=build/ws079-p007-host/real-docs sh plan/ws079/tests/pdf-text-guest.sh OUTDIR PREFIX start install simple cid std14 shading faq quilt stop`
    （`IMAGE` は既定で `build/ws079-p007-run/hdd-image.img`、main の zdesktop image の copy）。
+
+## 2 回目の区切り（2026-09-28、PDF/Notes subagent、この worktree）
+
+main の指示: Notes の host 試験の link を直す → p007 の残り（文字の試験の script、ASCII85・LZW・RunLength と inline image、PDF Viewer の
+「Some content could not be shown」、p007 の新しい code の規約の見直し）→ pdftoppm との比較と ASan/UBSan の破壊の loop → cleared。
+
+### 行ったこと
+
+- **Notes の host 試験の link**（p007 の reader が filter.c と libz-compat を要る）: `run-notes-host.sh` と `notes-perf.sh` の host の部分に
+  `filter.c`・libz-compat の object・`include/compat` の link を足した（`run-pdf-reader.sh` と同じ）。`notes-perf.sh` は p014 の `update.c` も足した
+  （save.c が要る）。同じ理由で `run-pdf-update.sh` にも `font.c`・`encoding.c`・`shading.c`・libtruetype を足した（content.c が文字と shading を描く）。
+- **filter**（`filter.c`）: ASCII85Decode（`z`、`~>`、端の組、範囲外の文字でそこまで）、LZWDecode（9〜12 bit、clear・EOD、`/EarlyChange` 0/1、
+  PNG・TIFF の predictor、表が満ちたら clear まで据え置き、壊れた code でそこまで）、RunLengthDecode（128 で終わり）。略名 A85・LZW・RL。
+  出力は既存の上限（`PDF_FILTER_OUTPUT_MAX`）で止める。CCITTFax・JBIG2・JPX は従来どおり ENOTSUP（その画像は SKIPPED）。
+- **inline image**（`content.c`、`skip_inline_image` を `draw_inline_image` に）: BI の辞書を page の arena の stream object に読み、略名の key を
+  正式な名前に（BPC・CS・D・DP・F・H・IM・I・W・L）、CS が resources の名前なら `/ColorSpace` の中身に置き換え、data は content の中の bytes
+  （`struct pdf_object` の stream が `bytes` を持つときは data がそこにある。`filter.c` の起点と `internal.h` の注釈）。filter の無い画像は大きさ
+  （W・H・BPC・成分）から data の長さが分かるので EI の探索をその後ろから始める（binary の標本に " EI " があっても切れない）。描くのは image
+  XObject と同じ `draw_image()`。辞書が読めない画像は SKIPPED にして EI の後へ進む。
+- **拡大した画像の標本化**（`raster.c`）: `/Interpolate` の無い画像を 4 倍以上に拡大するときは最近傍（poppler の Splash の
+  `isImageInterpolationRequired` と pdf.js と同じ）。今までは常に双線形で、小さな画像（inline image の 16x12 など）がぼけて pdftoppm と大きく違った。
+- **PDF Viewer の注意**（`draw.c`・`viewer.h`）: frame に描いた page の display list の flags に SKIPPED・DAMAGED・LIMITED があれば、左下に小さな
+  白い pill（細い縁、琥珀の点、「Some content could not be shown」、13 px）。page の番号の pill（下の中央）と重ならない。出る・消えるときに
+  `PDFVIEWER NOTICE shown flags=N` / `PDFVIEWER NOTICE hidden` を log に出す（試験用）。
+- **文字の試験の script** `plan/ws079/tests/run-pdf-text.sh`（使い捨ての script は前の worktree ごと無くなっていたので作り直した）:
+  host-pdf-render を plain・ASan・UBSan で build（代用 font は Liberation を `OUT/fonts/keiland*.ttf` に link）、`make-text-pdfs.py` の文書
+  （text-simple・text-cid・text-std14・shading、新しく filters）を 100 dpi で 3 build が同じ画素かと pdftoppm との比較（`host-pdf-render
+  blurcompare`: 両方を 5x5 の二項（σ 1 の Gaussian）でぼかした後、埋め込み font は平均 2.5・差 64 超 0.6%、代用 font と拡大した画像は 4.0・1.5%）、
+  qpdf の object stream の copy と startxref を壊した copy（修復）が同じ画素か、/usr/share/doc の 9 文書の全 page を 3 build で、2 page を
+  pdftoppm と比較、破壊の loop（`host-pdf-render fuzzdoc`: 非圧縮の copy と object stream の copy の、stream の中だけの変異と file のどこでもの変異）。
+  `host-pdf-render.c` に `blurcompare` と `fuzzdoc` を足した。`make-text-pdfs.py` に `filters.pdf`（page 1: content stream を ASCII85+Flate・
+  LZW（EarlyChange 1・0）・RunLength・ASCIIHex で、画像 XObject を LZW+PNG Up・RunLength・A85+DCT で。page 2: inline image 9 つ — 標本に
+  " EI " と "\nEI\n" を含む RGB、1 bit の gray と /D、stencil、`/I` の indexed、resources の名前の indexed、AHx+Fl、A85、RL、DCT）。
+- **規約の見直し**（p007 と今回の新しい code）: `plan/tools/style-check.py` の違反のうち p007 の前（`a7e7ffe6^`）に無かったものを全て直した
+  （content.c・reader.c・filter.c・raster.c・draw.c・libtruetype の face.c・cmap.c、shading.c・font.c は全体）。条件の中の呼び出し（memcmp・
+  pdf_font_vertical・pdf_object_get・fabs・floor・truetype_u16）を変数に、3 つ以上・入れ子の `&&`/`||` を分けるか行を分け、閉じ括弧の後の空行と
+  段落の注釈、`make_trailer()` の確保を 1 つずつ検査に、repair の空白・数字の判定を `is_space_byte()`・`is_digit_byte()` に。評価の順序と振る舞いは
+  変えていない（下の試験が同じ画素）。**残り**: font.c の `load_program()`・`read_builtin_encoding()` は p008 が書き換える（CFF・Type 1 の読み込み）
+  ので p008 で直す。
+
+### 確認（2026-09-28、この worktree、host は gcc 14.2.0・poppler 25.03.0・qpdf）
+
+| 確認 | 命令 | 結果 |
+| --- | --- | --- |
+| 文字・shading・filter・inline image と pdftoppm、修復、実文書、破壊の loop | `sh plan/ws079/tests/run-pdf-text.sh 300` | **ok**（下の表。3 build が全 page で同じ画素、object stream と修復の copy が 5 文書とも同じ画素、実文書 9 つの全 page（計 168 page）を 3 build で描いて sanitizer の報告なし、破壊の loop 5 文書 × 2 copy × ASan・UBSan × 変異 300+300 で落ちず sanitizer の報告なし） |
+| p006 の回帰 | `sh plan/ws079/tests/run-pdf-render.sh 300` | ok（最近傍の変更の後も 12 の比較が許容内、Flate の copy が同じ画素、破壊 plain 300・ASan/UBSan 各 100） |
+| p004・p014 の回帰 | `run-pdf-reader.sh`・`run-pdf-writer.sh`・`run-pdf-update.sh`（link を直した後） | 3 つとも ok |
+| Notes の host 試験 | `sh plan/ws079/tests/run-notes-host.sh`（link を直した後） | ok（plain・ASan・UBSan、qpdf・pdftoppm） |
+| notes-perf の host の部分 | `notes-perf.sh` の notes-many の build と実行（guest の部分は未実施） | 500 本の PDF（1,544,410 byte）を作れた |
+| PDF Viewer の host 試験 | `sh plan/ws079/tests/run-pdfviewer-host.sh`（JBIG2 の画像の page を足した） | ok: notes.pdf では注意なし、JBIG2 の page で `NOTICE shown flags=1`（`viewer-plain/13-notice.png`） |
+| amd64 の build | `make -j16 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/ws079-p007-amd64 …/bin/pdfviewer …/bin/notes …/dynamic/libpdf.so …/dynamic/libtruetype.so` | exit 0、warning 0 |
+| pcat・pc98・rpi4 の build | `config/ci/config-{pcat,pc98,rpi4}.mk`、`BUILD=build/ws079-p007-<platform>`、`…/dynamic/libpdf.so` | 3 つとも exit 0・warning 0（pc98・rpi4 は新しい build dir の初回に sysroot の順序で errno.h が無く失敗し、変更なしの再実行で通った。p014 と同じ既知の問題） |
+| 規約（機械的） | `plan/tools/style-check.py` を p007 の前と比べる | 上の files で新しい違反 0（font.c の 2 関数を除く） |
+
+pdftoppm との比較（`blurcompare`、左が libpdf）:
+
+| 文書 | 生 平均 / 64 超 | ぼかし 平均 / 64 超 | 許容 |
+| --- | --- | --- | --- |
+| text-simple（100 dpi） | 2.183 / 1.207% | 1.195 / 0.006% | 埋め込み |
+| text-cid | 1.280 / 0.841% | 0.751 / 0.029% | 埋め込み |
+| text-std14 | 5.433 / 3.060% | 3.045 / 0.698% | 代用 |
+| shading | 2.299 / 0.937% | 2.267 / 1.074% | 代用（CMYK の変換と pattern の ca の既知の差） |
+| filters p1（filter の content と画像） | 1.353 / 0.769% | 0.985 / 0.171% | 画像 |
+| filters p2（inline image 9 つ） | 3.575 / 1.699% | 3.033 / 1.212% | 画像（poppler は画像の矩形を外側の整数 pixel に丸めるので、四角い pixel の縁が 1 px ずれる。中身は 9 つとも同じ） |
+| debian-faq p3（80 dpi） | 7.503 / 4.572% | 2.880 / 0.007% | 代用（CFF の font、p008 まで） |
+| quilt p1（80 dpi） | 4.170 / 2.457% | 1.920 / 0.033% | 代用（Type 1、p008 まで） |
+
+比較の画像: `build/ws079-p007-host/cmp-{text-simple-1,text-cid-1,text-std14-1,shading-1,filters-1,filters-2,debian-faq-3,quilt-1}.png`。
+
+破壊の loop で開けた数（300 のうち、stream の変異 / file の変異）: text-simple 300/299（object stream の copy 287/300）、text-cid 300/300（271/300）、
+text-std14 300/287（86/27: 小さな file で xref stream と object stream に当たる）、shading 300/297（253/288）、filters 300/300（293/299）。
+
+### 未実施と制限
+
+- QEMU の guest: 今回の変更（filter・inline image・注意）は guest で流していない（下の WS079 の demo の確認で PDF Viewer を使う）。実機: 未実施。
+- thumbnail（design-pdf §5 の段階 ② の viewer）: 未着手。main の今回の指示の範囲外。
+- 画像: `/Interpolate` の無い 4 倍未満の拡大は双線形のまま（poppler と同じ）。poppler の画像の外への丸めは真似ていない。
+- LZW の出力は 1 回の decode で `PDF_FILTER_OUTPUT_MAX` まで。JBIG2・CCITTFax・JPX は SKIPPED。
+- 規約: font.c の `load_program()`・`read_builtin_encoding()` は p008 で直す。
+
+### 2 回目の区切りの後の残り
+
+1. thumbnail（PDF Viewer の page の一覧）。
+2. p008（CFF・Type 1・暗号化）で font.c の残りの規約。

@@ -13,6 +13,11 @@
  *   host-pdf-render render IN.pdf PREFIX DPI each page to PREFIX-N.ppm, one line per page
  *   host-pdf-render compare A.ppm B.ppm      the difference of two pictures, within the tolerance or not
  *   host-pdf-render fuzz IN.pdf ITERATIONS   mutated operator content and mutated files, rendered
+ *   host-pdf-render blurcompare A.ppm B.ppm MEAN FRACTION
+ *                                            compare, raw and after a 5x5 binomial blur of both, within
+ *                                            the given tolerance of the blurred pictures (ws079-p007)
+ *   host-pdf-render fuzzdoc IN.pdf ITERATIONS any document: bytes mutated inside its unfiltered streams
+ *                                            (the xref stays valid) and anywhere in the file (ws079-p007)
  *
  * run-pdf-render.sh drives it against pdftoppm.  The hand-built document
  * writes its own xref, a Flate content stream and a Flate image with the
@@ -57,6 +62,11 @@ static int render_document(struct pdf_document *document, const char *prefix, do
 static int compare(const char *first, const char *second);
 static int read_ppm(const char *path, unsigned char **pixels, int *width, int *height);
 static int fuzz(const char *path, long iterations);
+static int blur_compare(const char *first, const char *second, double mean_max, double fraction_max);
+static void measure(const unsigned char *a, int width_a, const unsigned char *b, int width_b, int width, int height, double *mean, double *fraction);
+static unsigned char *blur(const unsigned char *pixels, int width, int height);
+static int fuzz_document(const char *path, long iterations);
+static int read_file(const char *path, unsigned char **data, size_t *size);
 static void append(struct buffer *buffer, const void *data, size_t size);
 static void append_text(struct buffer *buffer, const char *text);
 static void append_stored_deflate(struct buffer *buffer, const unsigned char *data, size_t size);
@@ -119,8 +129,12 @@ main(
 		error = compare(argv[2], argv[3]);
 	else if (argc == 4 && strcmp(argv[1], "fuzz") == 0)
 		error = fuzz(argv[2], atol(argv[3]));
+	else if (argc == 6 && strcmp(argv[1], "blurcompare") == 0)
+		error = blur_compare(argv[2], argv[3], atof(argv[4]), atof(argv[5]));
+	else if (argc == 4 && strcmp(argv[1], "fuzzdoc") == 0)
+		error = fuzz_document(argv[2], atol(argv[3]));
 	else
-		fprintf(stderr, "usage: host-pdf-render notes|ops|render|compare|fuzz ...\n");
+		fprintf(stderr, "usage: host-pdf-render notes|ops|render|compare|fuzz|blurcompare|fuzzdoc ...\n");
 
 	/* Reports the outcome. */
 	if (error != 0)
@@ -789,6 +803,333 @@ fuzz(
 	printf("fuzz file: %ld iterations, %d opened\n", iterations, opened);
 	free(original);
 	free(mutated);
+	return 0;
+}
+
+/*
+ * Compares two pictures raw and after blurring both with a 5x5 binomial
+ * kernel, and succeeds when the blurred ones are within the tolerance.
+ *
+ * poppler aligns glyphs to the pixel grid and libpdf does not, so the
+ * edges of text differ by half a pixel; the blur takes that out, while a
+ * glyph in the wrong place still differs.
+ */
+static int
+blur_compare(
+	const char *first,
+	const char *second,
+	double mean_max,
+	double fraction_max)
+{
+	unsigned char *a;
+	unsigned char *b;
+	unsigned char *blurred_a;
+	unsigned char *blurred_b;
+	int width_a;
+	int height_a;
+	int width_b;
+	int height_b;
+	int width;
+	int height;
+	double raw_mean;
+	double raw_fraction;
+	double mean;
+	double fraction;
+	int within;
+	int error;
+
+	/* Reads both pictures. */
+	error = read_ppm(first, &a, &width_a, &height_a);
+	if (error != 0)
+		return error;
+	error = read_ppm(second, &b, &width_b, &height_b);
+	if (error != 0) {
+		free(a);
+		return error;
+	}
+
+	/* Measures the shared area raw, and blurred. */
+	width = width_a < width_b ? width_a : width_b;
+	height = height_a < height_b ? height_a : height_b;
+	measure(a, width_a, b, width_b, width, height, &raw_mean, &raw_fraction);
+	blurred_a = blur(a, width_a, height_a);
+	blurred_b = blur(b, width_b, height_b);
+	if (blurred_a == NULL || blurred_b == NULL) {
+		free(a);
+		free(b);
+		free(blurred_a);
+		free(blurred_b);
+		return ENOMEM;
+	}
+	measure(blurred_a, width_a, blurred_b, width_b, width, height, &mean, &fraction);
+	free(a);
+	free(b);
+	free(blurred_a);
+	free(blurred_b);
+
+	/* Within the tolerance when the blurred pictures are, and the sizes agree to a pixel. */
+	within = 1;
+	if (mean > mean_max || fraction > fraction_max)
+		within = 0;
+	if (abs(width_a - width_b) > 1 || abs(height_a - height_b) > 1)
+		within = 0;
+	printf("blurcompare %s %s: %dx%d vs %dx%d, raw mean %.3f over %.3f%%, blurred mean %.3f over %.3f%% (max %.2f, %.2f%%) %s\n",
+	    first, second, width_a, height_a, width_b, height_b, raw_mean, raw_fraction * 100.0, mean, fraction * 100.0,
+	    mean_max, fraction_max * 100.0, within ? "ok" : "DIFFERENT");
+	if (!within)
+		return 1;
+	return 0;
+}
+
+/* Measures the mean channel difference and the share of pixels past the threshold. */
+static void
+measure(
+	const unsigned char *a,
+	int width_a,
+	const unsigned char *b,
+	int width_b,
+	int width,
+	int height,
+	double *mean,
+	double *fraction)
+{
+	int x;
+	int y;
+	int channel;
+	int difference;
+	int largest;
+	double total;
+	long over;
+
+	/* Adds up the differences of the shared area. */
+	total = 0.0;
+	over = 0;
+	for (y = 0; y < height; y++) {
+		for (x = 0; x < width; x++) {
+			largest = 0;
+			for (channel = 0; channel < 3; channel++) {
+				difference = abs((int)a[((size_t)y * width_a + x) * 3 + channel] - (int)b[((size_t)y * width_b + x) * 3 + channel]);
+				total += difference;
+				if (difference > largest)
+					largest = difference;
+			}
+			if (largest > COMPARE_THRESHOLD)
+				over++;
+		}
+	}
+	*mean = total / ((double)width * height * 3.0);
+	*fraction = (double)over / ((double)width * height);
+}
+
+/* Blurs a picture with the 5x5 binomial kernel (1 4 6 4 1 each way, a Gaussian of sigma 1), the edges repeated. */
+static unsigned char *
+blur(
+	const unsigned char *pixels,
+	int width,
+	int height)
+{
+	static const int weights[5] = { 1, 4, 6, 4, 1 };
+	unsigned char *blurred;
+	int x;
+	int y;
+	int dx;
+	int dy;
+	int sx;
+	int sy;
+	int channel;
+	int sum;
+
+	/* Allocates the result. */
+	blurred = malloc((size_t)width * height * 3);
+	if (blurred == NULL)
+		return NULL;
+
+	/* Each pixel is the weighted mean of its neighbourhood. */
+	for (y = 0; y < height; y++) {
+		for (x = 0; x < width; x++) {
+			for (channel = 0; channel < 3; channel++) {
+				sum = 0;
+				for (dy = -2; dy <= 2; dy++) {
+					for (dx = -2; dx <= 2; dx++) {
+						sx = x + dx;
+						sy = y + dy;
+						if (sx < 0)
+							sx = 0;
+						if (sx >= width)
+							sx = width - 1;
+						if (sy < 0)
+							sy = 0;
+						if (sy >= height)
+							sy = height - 1;
+						sum += weights[dx + 2] * weights[dy + 2] * pixels[((size_t)sy * width + sx) * 3 + channel];
+					}
+				}
+				blurred[((size_t)y * width + x) * 3 + channel] = (unsigned char)((sum + 128) / 256);
+			}
+		}
+	}
+	return blurred;
+}
+
+/*
+ * Renders mutated copies of any document: bytes changed inside its
+ * unfiltered streams only (the lengths and the xref stay valid, so the
+ * damage reaches the content interpreter, the fonts and the images), and
+ * bytes changed anywhere.
+ */
+static int
+fuzz_document(
+	const char *path,
+	long iterations)
+{
+	static const char alphabet[] = " \n0123456789.-+/[]<>()qQcmlhfSWn*BbreEIgGkKrRdjJwMsvyDoT'\"%";
+	static const char *const tokens[] = { "q ", "Q ", "cm ", "BT ", "ET ", "Tj ", "TJ ", "Tf ", "Tm ", "Td ", "Tr ", "Tz ", "'",
+		"/F1 ", "/F2 99 Tf ", "[(a) -9e9 (b)] TJ ", "<ffff> Tj ", "sh ", "/Sh1 sh ", "BI /W 4 /H 4 /CS /RGB /BPC 8 ID xx EI ",
+		"BI /W 99999 /H 99999 /BPC 16 /CS /G ID ", "1e308 ", "-99999999999 ", "[ ", "] ", "<< ", ">> ", "( ", "99999 w ", "W n " };
+	struct pdf_document *document;
+	unsigned char *original;
+	unsigned char *mutated;
+	size_t *starts;
+	size_t *ends;
+	size_t size;
+	size_t streams;
+	size_t chosen;
+	size_t position;
+	size_t start;
+	size_t end;
+	size_t length;
+	unsigned long random;
+	long iteration;
+	int changes;
+	int change;
+	int opened;
+	const char *token;
+	int error;
+
+	/* Reads the file to mutate. */
+	error = read_file(path, &original, &size);
+	if (error != 0)
+		return error;
+	mutated = malloc(size);
+	starts = malloc(sizeof(*starts) * (size / 16 + 1));
+	ends = malloc(sizeof(*ends) * (size / 16 + 1));
+	if (mutated == NULL || starts == NULL || ends == NULL)
+		return ENOMEM;
+
+	/* Finds the streams' data: from after "stream" and its end of line to "endstream". */
+	streams = 0;
+	for (position = 0; position + 16 < size; position++) {
+		if (memcmp(original + position, "stream", 6) != 0)
+			continue;
+		if (position > 2 && memcmp(original + position - 3, "end", 3) == 0)
+			continue;
+		start = position + 6;
+		if (original[start] == '\r')
+			start++;
+		if (original[start] == '\n')
+			start++;
+		for (end = start; end + 9 <= size; end++) {
+			if (memcmp(original + end, "endstream", 9) == 0)
+				break;
+		}
+		if (end + 9 > size)
+			break;
+		if (end > start + 8) {
+			starts[streams] = start;
+			ends[streams] = end;
+			streams++;
+		}
+		position = end + 9;
+	}
+	printf("fuzzdoc %s: %lu bytes, %lu streams\n", path, (unsigned long)size, (unsigned long)streams);
+
+	/* Mutates bytes inside the streams, keeping every length. */
+	random = 0x2545F4914F6CDD1DUL;
+	opened = 0;
+	for (iteration = 0; iteration < iterations && streams > 0; iteration++) {
+		memcpy(mutated, original, size);
+		changes = 1 + (int)(next_random(&random) % 8);
+		for (change = 0; change < changes; change++) {
+			chosen = next_random(&random) % streams;
+			start = starts[chosen];
+			end = ends[chosen];
+			position = start + next_random(&random) % (end - start);
+			if (next_random(&random) % 2 == 0) {
+				mutated[position] = (unsigned char)alphabet[next_random(&random) % (sizeof(alphabet) - 1)];
+				continue;
+			}
+			token = tokens[next_random(&random) % (sizeof(tokens) / sizeof(tokens[0]))];
+			length = strlen(token);
+			if (length > end - position)
+				length = end - position;
+			memcpy(mutated + position, token, length);
+		}
+		error = pdf_document_open_memory(mutated, size, &document);
+		if (error == 0) {
+			opened++;
+			render_document(document, NULL, 24.0, 1);
+			pdf_document_close(document);
+		}
+	}
+	printf("fuzzdoc streams: %ld iterations, %d opened\n", iteration, opened);
+
+	/* Mutates the file's bytes anywhere. */
+	opened = 0;
+	for (iteration = 0; iteration < iterations; iteration++) {
+		memcpy(mutated, original, size);
+		changes = 1 + (int)(next_random(&random) % 6);
+		for (change = 0; change < changes; change++) {
+			position = next_random(&random) % size;
+			mutated[position] = (unsigned char)alphabet[next_random(&random) % (sizeof(alphabet) - 1)];
+		}
+		error = pdf_document_open_memory(mutated, size, &document);
+		if (error == 0) {
+			opened++;
+			render_document(document, NULL, 24.0, 1);
+			pdf_document_close(document);
+		}
+	}
+	printf("fuzzdoc file: %ld iterations, %d opened\n", iterations, opened);
+	free(original);
+	free(mutated);
+	free(starts);
+	free(ends);
+	return 0;
+}
+
+/* Reads a whole file into a new buffer. */
+static int
+read_file(
+	const char *path,
+	unsigned char **data,
+	size_t *size)
+{
+	FILE *file;
+	long length;
+
+	/* Opens the file and measures it. */
+	*data = NULL;
+	*size = 0;
+	file = fopen(path, "rb");
+	if (file == NULL)
+		return EIO;
+	fseek(file, 0, SEEK_END);
+	length = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	if (length <= 0) {
+		fclose(file);
+		return EINVAL;
+	}
+
+	/* Reads its bytes. */
+	*size = (size_t)length;
+	*data = malloc(*size);
+	if (*data == NULL || fread(*data, 1, *size, file) != *size) {
+		fclose(file);
+		free(*data);
+		return EIO;
+	}
+	fclose(file);
 	return 0;
 }
 

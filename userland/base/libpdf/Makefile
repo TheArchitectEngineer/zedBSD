@@ -9,14 +9,16 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 # revision to another program's PDF (pages drawn over, kept or added, the attached file).  ws079-p007:
 # text (the text operators, embedded TrueType fonts through libtruetype, substitutes for the others),
 # axial and radial shadings, cross-reference streams, object streams and the repair of broken
-# cross-references.
+# cross-references.  ws079-p008: embedded Type 1 and CFF fonts (charstrings.c, type1.c, cff.c,
+# cffdata.c) and the standard security handler's decryption (crypt.c).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 LIBPDF_SOURCES := userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c \
 	userland/base/libpdf/object.c userland/base/libpdf/reader.c \
 	userland/base/libpdf/filter.c userland/base/libpdf/image.c userland/base/libpdf/display.c \
 	userland/base/libpdf/content.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c \
 	userland/base/libpdf/font.c userland/base/libpdf/encoding.c \
-	userland/base/libpdf/shading.c
+	userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c \
+	userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c userland/base/libpdf/crypt.c
 
 LIBPDF_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libpdf.so=$(BUILD)/dynamic/libpdf.so)
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,libpdf,PDF library for base programs,*,y,library,$(LIBPDF_SOURCES),y,base,base/libpdf,base/libz-compat base/libjpeg-compat desktop/libtruetype,,shared-library,$(LIBPDF_IMAGE_DATA),,lib))

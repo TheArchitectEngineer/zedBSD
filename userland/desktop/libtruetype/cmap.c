@@ -356,6 +356,8 @@ truetype_cmap_lookup(
 	uint32_t length;
 	unsigned index;
 	unsigned format;
+	unsigned record_platform;
+	unsigned record_encoding;
 	int usable;
 
 	/* Refuses a missing face or answer. */
@@ -381,9 +383,11 @@ truetype_cmap_lookup(
 		record = face->cmap + 4U + (size_t)index * 8U;
 
 		/* Skips a record of another platform or encoding. */
-		if (truetype_u16(record) != platform)
+		record_platform = truetype_u16(record);
+		if (record_platform != platform)
 			continue;
-		if (truetype_u16(record + 2) != encoding)
+		record_encoding = truetype_u16(record + 2);
+		if (record_encoding != encoding)
 			continue;
 
 		/* Skips a subtable this reader cannot use. */

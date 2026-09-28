@@ -179,10 +179,21 @@ notes_open_pdf(
 		return ENOTSUP;
 	}
 
-	/* Any other file the reader cannot read. */
+	/* Any other file the reader cannot read (one that needs a password is encrypted too). */
 	if (error != 0) {
 		free(data);
 		return error;
+	}
+
+	/* Refuses an encrypted PDF, which the reader opens with its empty user password but Notes does not write on. */
+	encrypted = 0;
+	error = pdf_document_encrypted(path, &encrypted);
+	if (error != 0)
+		encrypted = 0;
+	if (encrypted) {
+		pdf_document_close(file);
+		free(data);
+		return EACCES;
 	}
 
 	/* Refuses a signed PDF, whose signatures a new revision could invalidate. */
