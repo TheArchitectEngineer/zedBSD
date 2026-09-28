@@ -11,6 +11,7 @@
  * USB Human Interface Device input driver
  */
 
+#include <drivers/usb/hid-digitizer.h>
 #include <drivers/usb/hid-report.h>
 #include <drivers/usb/usb-hid.h>
 #include <drivers/usb/usb.h>
@@ -38,6 +39,10 @@
 #define HID_GLOBAL_USAGE_PAGE		0U
 #define HID_GLOBAL_LOGICAL_MINIMUM	1U
 #define HID_GLOBAL_LOGICAL_MAXIMUM	2U
+#define HID_GLOBAL_PHYSICAL_MINIMUM	3U
+#define HID_GLOBAL_PHYSICAL_MAXIMUM	4U
+#define HID_GLOBAL_UNIT_EXPONENT	5U
+#define HID_GLOBAL_UNIT			6U
 #define HID_GLOBAL_REPORT_SIZE		7U
 #define HID_GLOBAL_REPORT_ID		8U
 #define HID_GLOBAL_REPORT_COUNT		9U
@@ -57,6 +62,23 @@
 #define HID_USAGE_PAGE_GENERIC_DESKTOP	0x01U
 #define HID_USAGE_PAGE_KEYBOARD		0x07U
 #define HID_USAGE_PAGE_BUTTON		0x09U
+#define HID_USAGE_PAGE_DIGITIZER	0x0dU
+
+/* The application collections of the Digitizer page that hold a pen. */
+#define HID_USAGE_DIGITIZER		0x000d0001U
+#define HID_USAGE_PEN			0x000d0002U
+#define HID_USAGE_STYLUS		0x000d0020U
+
+/* The Digitizer usages that are absolute axes of a pen. */
+#define HID_USAGE_TIP_PRESSURE		0x30U
+#define HID_USAGE_X_TILT		0x3dU
+#define HID_USAGE_Y_TILT		0x3eU
+
+/* The unit systems of a HID Unit item (its lowest nibble). */
+#define HID_UNIT_SYSTEM_SI_LINEAR	1U
+#define HID_UNIT_SYSTEM_SI_ROTATION	2U
+#define HID_UNIT_SYSTEM_ENGLISH_LINEAR	3U
+#define HID_UNIT_SYSTEM_ENGLISH_ROTATION 4U
 
 #define HID_USAGE_X			0x30U
 #define HID_USAGE_Y			0x31U
@@ -67,6 +89,7 @@
 #define HID_FIELD_KEY			1U
 #define HID_FIELD_AXIS			2U
 #define HID_FIELD_KEYBOARD_ARRAY	3U
+#define HID_FIELD_DIGITIZER		4U
 
 #define HID_LAYOUT_PROFILE_DESCRIPTOR		0U
 #define HID_LAYOUT_PROFILE_BOOT_KEYBOARD	1U
@@ -120,6 +143,8 @@ struct hid_report_layout {
 	size_t absolute_axis_count;
 	int uses_report_ids;
 	uint8_t profile;
+	/* Which kind of pen collection the descriptor has (HID_REPORT_PEN_*). */
+	uint8_t pen;
 };
 
 struct hid_global_state {
@@ -128,6 +153,10 @@ struct hid_global_state {
 	uint32_t report_size;
 	uint32_t report_count;
 	int32_t logical_minimum;
+	int32_t physical_minimum;
+	int32_t physical_maximum;
+	uint32_t unit_exponent;
+	uint32_t unit;
 	uint8_t logical_maximum_size;
 	uint8_t report_id;
 	uint8_t logical_minimum_set;
@@ -154,6 +183,8 @@ struct hid_parser {
 	size_t global_depth;
 	struct hid_local_state local;
 	size_t collection_depth;
+	/* The usage that opened each collection that is still open. */
+	uint32_t collection_usages[HID_REPORT_COLLECTION_DEPTH_MAX];
 	int no_id_report_used;
 	int supported_field_seen;
 };
@@ -179,6 +210,9 @@ struct usb_hid {
 	struct input_abs_axis absolute_axes[ABS_MAX + 1U];
 	struct usb_hid_report_state reports[HID_REPORT_ID_COUNT_MAX];
 	unsigned long held[INPUT_BIT_WORDS(KEY_MAX)];
+	/* What the pen state machine has already told readers (pen devices only). */
+	struct hid_digitizer_state digitizer;
+	unsigned pen;
 	size_t capability_count;
 	size_t absolute_axis_count;
 	size_t report_count;
@@ -240,7 +274,14 @@ static int add_report(struct hid_report_layout *layout, uint8_t id, struct hid_r
 static int add_capability(struct hid_report_layout *layout, uint16_t type, uint16_t code);
 static int add_absolute_axis(struct hid_report_layout *layout, uint16_t code, int32_t minimum, int32_t maximum);
 static uint16_t keyboard_code(uint16_t usage);
-static int usage_to_event(uint32_t usage, unsigned input_flags, uint16_t *type, uint16_t *code, uint8_t *kind);
+static int usage_to_event(uint32_t usage, unsigned input_flags, int in_pen, uint16_t *type, uint16_t *code, uint8_t *kind);
+static int digitizer_to_event(uint16_t usage, uint16_t *type, uint16_t *code, uint8_t *kind);
+static int add_digitizer_capabilities(struct hid_report_layout *layout, uint16_t usage);
+static int parser_in_pen(const struct hid_parser *parser);
+static int32_t unit_exponent_value(uint32_t raw);
+static int32_t axis_resolution(const struct hid_global_state *global, int32_t logical_minimum, int32_t logical_maximum);
+static void set_axis_resolution(struct hid_report_layout *layout, uint16_t code, int32_t resolution);
+static void usb_hid_publish_pen_report(struct usb_hid *hid, const struct hid_report_input *decoded);
 static int logical_maximum(const struct hid_global_state *global, int32_t *result);
 static int logical_range_fits_field(int32_t minimum, int32_t maximum, uint32_t bit_size);
 static int add_field(struct hid_parser *parser, struct hid_report_description *report, uint32_t bit_offset, uint32_t usage_minimum, uint32_t usage_maximum, int32_t logical_minimum, int32_t logical_maximum, uint16_t type, uint16_t code, uint8_t bit_size, uint8_t kind);
@@ -805,6 +846,11 @@ usb_hid_fetch_layout(
 	hid->report_count = info.report_count;
 	hid->capability_count = info.capability_count;
 	hid->absolute_axis_count = info.absolute_axis_count;
+
+	/* A pen device starts with no tool in range. */
+	hid->pen = info.pen;
+	drv_hid_digitizer_reset(&hid->digitizer);
+
 	/* Process each remaining element. */
 	for (index = 0; index < info.report_count; index++) {
 		/* Checks the operation status. */
@@ -947,8 +993,10 @@ usb_hid_identity(
 	if (error == 0 && hid->name[0] != '\0')
 		return;
 
-	/* Handles the usb hid has capability condition. */
-	if (usb_hid_has_capability(hid, EV_ABS, ABS_X))
+	/* Names a device with a pen collection after its pen. */
+	if (hid->pen != HID_REPORT_PEN_NONE)
+		(void)kern_snprintf(hid->name, sizeof(hid->name), "USB HID pen");
+	else if (usb_hid_has_capability(hid, EV_ABS, ABS_X))
 		(void)kern_snprintf(hid->name, sizeof(hid->name), "USB HID tablet");
 	else if (usb_hid_has_capability(hid, EV_REL, REL_X))
 		(void)kern_snprintf(hid->name, sizeof(hid->name), "USB HID mouse");
@@ -1084,6 +1132,7 @@ usb_hid_publish_report(
 	unsigned long aggregate[INPUT_BIT_WORDS(KEY_MAX)];
 	size_t index;
 	unsigned code;
+	int is_pen;
 	int error, emitted = 0;
 
 	/* Checks the operation status. */
@@ -1101,6 +1150,13 @@ usb_hid_publish_report(
 		}
 
 		/* Returns the computed result. */
+		return;
+	}
+
+	/* A pen report goes through the pen state machine instead. */
+	is_pen = drv_hid_digitizer_report_is_pen(&decoded);
+	if (is_pen) {
+		usb_hid_publish_pen_report(hid, &decoded);
 		return;
 	}
 
@@ -2055,6 +2111,7 @@ static int
 usage_to_event(
 	uint32_t usage,
 	unsigned input_flags,
+	int in_pen,
 	uint16_t *type,
 	uint16_t *code,
 	uint8_t *kind)
@@ -2083,6 +2140,20 @@ usage_to_event(
 		*kind = HID_FIELD_KEY;
 		/* Reports operation failure. */
 		return 1;
+	}
+
+	/* A Digitizer usage counts only inside a pen collection. */
+	if (page == HID_USAGE_PAGE_DIGITIZER) {
+		/* Ignores the fingers and touch screens the driver does not handle. */
+		if (!in_pen)
+			return 0;
+
+		/* Reports whether the pen usage is one the driver maps. */
+		if (digitizer_to_event(value, type, code, kind))
+			return 1;
+
+		/* Ignores a pen usage outside the mapping. */
+		return 0;
 	}
 
 	/* Handles the page condition. */
@@ -2230,8 +2301,17 @@ add_field(
 		}
 	}
 
+	/* Declares the tool and button events a pen switch turns into. */
+	if (kind == HID_FIELD_DIGITIZER) {
+		/* Reports a capability table that is full. */
+		error = add_digitizer_capabilities(layout, code);
+		if (error != 0)
+			return error;
+	}
+
 	/* Checks the operation status. */
 	if (kind != HID_FIELD_KEYBOARD_ARRAY &&
+	    kind != HID_FIELD_DIGITIZER &&
 	    (error = add_capability(layout, type, code)) != 0) {
 		/* Failed. */
 		return error;
@@ -2319,12 +2399,17 @@ parse_input(
 	uint32_t accepted_minimum, accepted_maximum;
 	uint32_t accepted_usage_minimum, accepted_usage_maximum;
 	int32_t logical_max;
+	int32_t resolution;
+	int in_pen;
 	int error;
 
 	/* Checks the operation status. */
 	error = local_validate(&parser->local);
 	if (error != 0)
 		return error;
+
+	/* Asks whether the fields of this item belong to a pen. */
+	in_pen = parser_in_pen(parser);
 
 	/* Checks the active flags. */
 	if ((flags & ~HID_INPUT_SUPPORTED_FLAGS) != 0U)
@@ -2481,7 +2566,7 @@ parse_input(
 	for (index = 0; index < count; index++) {
 		/* Checks the local usage at result. */
 		if (!local_usage_at(&parser->local, index, &usage) ||
-		    !usage_to_event(usage, flags, &type, &code, &kind))
+		    !usage_to_event(usage, flags, in_pen, &type, &code, &kind))
 			continue;
 
 		/* Checks the operation status. */
@@ -2492,6 +2577,19 @@ parse_input(
 			type, code, (uint8_t)parser->global.report_size, kind);
 		if (error != 0)
 			return error;
+
+		/* Gives an absolute axis the resolution its physical size implies. */
+		if (type == EV_ABS) {
+			resolution = axis_resolution(&parser->global,
+				parser->global.logical_minimum,
+				logical_max);
+			set_axis_resolution(layout, code, resolution);
+		}
+
+		/* Marks the layout as a pen once it takes a pen switch. */
+		if (kind == HID_FIELD_DIGITIZER &&
+		    layout->pen == HID_REPORT_PEN_NONE)
+			layout->pen = (uint8_t)in_pen;
 	}
 
 advance:
@@ -2538,10 +2636,18 @@ parse_main(
 		} else {
 			/* Checks the parser state. */
 			if (parser->collection_depth >=
-			    HID_REPORT_COLLECTION_DEPTH_MAX)
+			    HID_REPORT_COLLECTION_DEPTH_MAX) {
 				error = E2BIG;
-			else
+			} else {
+				/* Remembers the usage that opens the collection. */
+				parser->collection_usages[parser->collection_depth] = 0;
+				if (parser->local.usage_count != 0U) {
+					parser->collection_usages[parser->collection_depth] =
+						parser->local.usages[0].minimum;
+				}
+
 				parser->collection_depth++;
+			}
 		}
 
 		break;
@@ -2675,13 +2781,42 @@ parse_global(
 
 		/* Succeeded. */
 		return 0;
-	case 3U: /* Physical Minimum */
-	case 4U: /* Physical Maximum */
-	case 5U: /* Unit Exponent */
-	case 6U: /* Unit */
+	case HID_GLOBAL_PHYSICAL_MINIMUM:
+		/* The physical size of the axes that follow, lower end. */
+		error = item_signed(data, size, &parser->global.physical_minimum);
+		if (error != 0)
+			return error;
 
-		/* These globals cannot change supported input decoding. */
-		return size == 1U || size == 2U || size == 4U ? 0 : EINVAL;
+		/* Succeeded: the lower physical end is recorded. */
+		return 0;
+	case HID_GLOBAL_PHYSICAL_MAXIMUM:
+		/* The physical size of the axes that follow, upper end. */
+		error = item_signed(data, size, &parser->global.physical_maximum);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the upper physical end is recorded. */
+		return 0;
+	case HID_GLOBAL_UNIT_EXPONENT:
+		/* Refuses an item with no value or an odd width. */
+		if (size != 1U && size != 2U && size != 4U)
+			return EINVAL;
+
+		/* The power of ten the physical ends are scaled by. */
+		parser->global.unit_exponent = item_unsigned(data, size);
+
+		/* Succeeded: the exponent is recorded. */
+		return 0;
+	case HID_GLOBAL_UNIT:
+		/* Refuses an item with no value or an odd width. */
+		if (size != 1U && size != 2U && size != 4U)
+			return EINVAL;
+
+		/* The unit system and dimensions of the physical ends. */
+		parser->global.unit = item_unsigned(data, size);
+
+		/* Succeeded: the unit is recorded. */
+		return 0;
 	default:
 		/* Failed. */
 		return EOPNOTSUPP;
@@ -3140,6 +3275,7 @@ drv_hid_report_layout_get_info(
 	result->capability_count = layout->capability_count;
 	result->absolute_axis_count = layout->absolute_axis_count;
 	result->uses_report_ids = layout->uses_report_ids;
+	result->pen = layout->pen;
 
 	/* Succeeded. */
 	return 0;
@@ -3502,4 +3638,285 @@ usb_hid_le16(
 {
 	/* Returns the computed result. */
 	return (uint16_t)bytes[0] | (uint16_t)((uint16_t)bytes[1] << 8U);
+}
+
+/* Renders one Digitizer usage of a pen as the event it stands for. */
+static int
+digitizer_to_event(
+	uint16_t usage,
+	uint16_t *type,
+	uint16_t *code,
+	uint8_t *kind)
+{
+	/* Chooses between an absolute axis and a switch of the pen. */
+	switch (usage) {
+	case HID_USAGE_TIP_PRESSURE:
+		/* The pressure, reported raw with its logical range. */
+		*type = EV_ABS;
+		*code = ABS_PRESSURE;
+		*kind = HID_FIELD_AXIS;
+		return 1;
+	case HID_USAGE_X_TILT:
+		/* The tilt towards the positive X axis. */
+		*type = EV_ABS;
+		*code = ABS_TILT_X;
+		*kind = HID_FIELD_AXIS;
+		return 1;
+	case HID_USAGE_Y_TILT:
+		/* The tilt towards the positive Y axis. */
+		*type = EV_ABS;
+		*code = ABS_TILT_Y;
+		*kind = HID_FIELD_AXIS;
+		return 1;
+	case HID_DIGITIZER_USAGE_IN_RANGE:
+	case HID_DIGITIZER_USAGE_INVERT:
+	case HID_DIGITIZER_USAGE_TIP_SWITCH:
+	case HID_DIGITIZER_USAGE_BARREL_SWITCH:
+	case HID_DIGITIZER_USAGE_ERASER:
+	case HID_DIGITIZER_USAGE_SECONDARY_BARREL:
+		/* A switch the pen state machine combines into tool and contact. */
+		*type = HID_REPORT_TYPE_DIGITIZER;
+		*code = usage;
+		*kind = HID_FIELD_DIGITIZER;
+		return 1;
+	default:
+		/* The usage has no pen event. */
+		return 0;
+	}
+}
+
+/* Declares the evdev events one pen switch can produce. */
+static int
+add_digitizer_capabilities(
+	struct hid_report_layout *layout,
+	uint16_t usage)
+{
+	int error;
+
+	/* Chooses the tool or button events the switch turns into. */
+	switch (usage) {
+	case HID_DIGITIZER_USAGE_IN_RANGE:
+		/* In Range brings the writing end into range. */
+		error = add_capability(layout, EV_KEY, BTN_TOOL_PEN);
+		break;
+	case HID_DIGITIZER_USAGE_INVERT:
+		/* Invert brings the eraser end into range instead. */
+		error = add_capability(layout, EV_KEY, BTN_TOOL_RUBBER);
+		break;
+	case HID_DIGITIZER_USAGE_TIP_SWITCH:
+		/* The tip touching the surface is the contact. */
+		error = add_capability(layout, EV_KEY, BTN_TOUCH);
+		break;
+	case HID_DIGITIZER_USAGE_ERASER:
+		/* The eraser end is a tool of its own. */
+		error = add_capability(layout, EV_KEY, BTN_TOOL_RUBBER);
+		if (error != 0)
+			return error;
+
+		/* Its contact is reported as the contact of that tool. */
+		error = add_capability(layout, EV_KEY, BTN_TOUCH);
+		break;
+	case HID_DIGITIZER_USAGE_BARREL_SWITCH:
+		/* The first side button. */
+		error = add_capability(layout, EV_KEY, BTN_STYLUS);
+		break;
+	case HID_DIGITIZER_USAGE_SECONDARY_BARREL:
+		/* The second side button. */
+		error = add_capability(layout, EV_KEY, BTN_STYLUS2);
+		break;
+	default:
+		/* Refuses a switch the pen state machine does not know. */
+		return EINVAL;
+	}
+
+	/* Reports a capability table that is full. */
+	if (error != 0)
+		return error;
+
+	/* A device without In Range still has a pen tool while it touches. */
+	error = add_capability(layout, EV_KEY, BTN_TOOL_PEN);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the switch's events are declared. */
+	return 0;
+}
+
+/* Reports which kind of pen collection the parser is inside, if any. */
+static int
+parser_in_pen(
+	const struct hid_parser *parser)
+{
+	uint32_t usage;
+	size_t depth;
+
+	/* Looks for a pen application collection among the open ones. */
+	for (depth = 0; depth < parser->collection_depth; depth++) {
+		usage = parser->collection_usages[depth];
+
+		/* A Pen collection is a pen on a display. */
+		if (usage == HID_USAGE_PEN)
+			return HID_REPORT_PEN_DISPLAY;
+
+		/* A Digitizer collection is a pen on a separate tablet. */
+		if (usage == HID_USAGE_DIGITIZER)
+			return HID_REPORT_PEN_TABLET;
+	}
+
+	/* Reports that no pen collection is open. */
+	return HID_REPORT_PEN_NONE;
+}
+
+/* Reads a Unit Exponent item, whose low nibble is a signed power of ten. */
+static int32_t
+unit_exponent_value(
+	uint32_t raw)
+{
+	/* A value above the nibble is already a full signed number. */
+	if (raw > 15U)
+		return sign_extend(raw, 32U);
+
+	/* The nibble values 8 to 15 stand for -8 to -1. */
+	if (raw >= 8U)
+		return (int32_t)raw - 16;
+
+	/* The nibble values 0 to 7 stand for themselves. */
+	return (int32_t)raw;
+}
+
+/*
+ * Computes the resolution of an absolute axis from its physical size.
+ *
+ * A linear axis is in units per millimetre and a rotation in units per
+ * radian, as evdev readers expect.  An axis without a physical size or a
+ * known unit has resolution zero.
+ */
+static int32_t
+axis_resolution(
+	const struct hid_global_state *global,
+	int32_t logical_minimum,
+	int32_t logical_maximum)
+{
+	int64_t logical_span;
+	int64_t physical_span;
+	int64_t numerator;
+	int64_t denominator;
+	int32_t exponent;
+	uint32_t system;
+
+	/* The span of the logical values and of the physical size. */
+	logical_span = (int64_t)logical_maximum - (int64_t)logical_minimum;
+	physical_span = (int64_t)global->physical_maximum -
+		(int64_t)global->physical_minimum;
+
+	/* Refuses an axis that declares no physical size. */
+	if (logical_span <= 0 || physical_span <= 0)
+		return 0;
+
+	/* Scales the numerator to the unit readers expect. */
+	system = global->unit & 0x0fU;
+	switch (system) {
+	case HID_UNIT_SYSTEM_SI_LINEAR:
+		/* Centimetres to millimetres. */
+		numerator = logical_span;
+		denominator = physical_span * 10;
+		break;
+	case HID_UNIT_SYSTEM_ENGLISH_LINEAR:
+		/* Inches to millimetres (25.4 mm, kept in tenths). */
+		numerator = logical_span * 10;
+		denominator = physical_span * 254;
+		break;
+	case HID_UNIT_SYSTEM_SI_ROTATION:
+		/* Radians already. */
+		numerator = logical_span;
+		denominator = physical_span;
+		break;
+	case HID_UNIT_SYSTEM_ENGLISH_ROTATION:
+		/* Degrees to radians (180 / pi, kept in thousandths). */
+		numerator = logical_span * 57296;
+		denominator = physical_span * 1000;
+		break;
+	default:
+		/* A unit the driver cannot convert has no resolution. */
+		return 0;
+	}
+
+	/* Applies a positive power of ten, which makes the physical size larger. */
+	exponent = unit_exponent_value(global->unit_exponent);
+	while (exponent > 0 && denominator < INT64_MAX / 10) {
+		denominator *= 10;
+		exponent--;
+	}
+
+	/* Applies a negative power of ten, which makes the physical size smaller. */
+	while (exponent < 0 && numerator < INT64_MAX / 10) {
+		numerator *= 10;
+		exponent++;
+	}
+
+	/* Refuses a resolution that does not fit the absinfo field. */
+	if (numerator / denominator > INT32_MAX)
+		return 0;
+
+	/* Succeeded: the rounded units per millimetre or per radian. */
+	return (int32_t)((numerator + denominator / 2) / denominator);
+}
+
+/* Stores the resolution of an absolute axis the layout already declares. */
+static void
+set_axis_resolution(
+	struct hid_report_layout *layout,
+	uint16_t code,
+	int32_t resolution)
+{
+	struct input_abs_axis *axis;
+	size_t index;
+
+	/* Finds the axis and keeps the first resolution given to it. */
+	for (index = 0; index < layout->absolute_axis_count; index++) {
+		axis = &layout->absolute_axes[index];
+
+		/* Skips the other axes. */
+		if (axis->code != code)
+			continue;
+
+		/* Keeps a resolution an earlier field already set. */
+		if (axis->info.resolution == 0)
+			axis->info.resolution = resolution;
+
+		/* The axis is found: no other entry has its code. */
+		return;
+	}
+}
+
+/* Publishes one pen report through the pen state machine. */
+static void
+usb_hid_publish_pen_report(
+	struct usb_hid *hid,
+	const struct hid_report_input *decoded)
+{
+	struct hid_digitizer_output output;
+	const struct hid_digitizer_event *event;
+	size_t index;
+	int error;
+
+	/* Turns the switches and axes into ordered tool and contact frames. */
+	error = drv_hid_digitizer_translate(&hid->digitizer, decoded, &output);
+	if (error != 0) {
+		/* Leaves a marker for the first reports that did not fit. */
+		if (hid->error_markers < USB_HID_ERROR_MARKERS) {
+			hid->error_markers++;
+			kern_logf("usb-hid: pen report dropped error=%d\n", error);
+		}
+
+		/* The report is dropped; the next one continues the frames. */
+		return;
+	}
+
+	/* Hands every event of the frames to the input layer in order. */
+	for (index = 0; index < output.event_count; index++) {
+		event = &output.events[index];
+		drv_input_device_emit(hid->input, event->type, event->code,
+				      event->value);
+	}
 }
