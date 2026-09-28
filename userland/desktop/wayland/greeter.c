@@ -797,8 +797,8 @@ greeter_draw_field(
 		glass_draw_solid(server, command, x, y, 10.0f, 10.0f, 5.0f, dot);
 	}
 
-	/* Log In: an arrow on the blue button. */
-	greeter_draw_button(server, command, layout->login, ">", 1);
+	/* Log In: a right arrow (U+2192, from the glyph cache and its fallback font) on the blue button (ws035-p116). */
+	greeter_draw_button(server, command, layout->login, "\xe2\x86\x92", 1);
 }
 
 /* Draws one button: frosted, or blue when it is the strong one; lit under the pointer. */

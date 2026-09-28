@@ -744,6 +744,12 @@ struct zwl_server {
 	unsigned cursor_hidden;
 	struct zwl_import *arrow;
 	/*
+	 * Nonzero from the start until the pointer first moves (input.c): the
+	 * cursor is not drawn before, so a touch screen shows no arrow resting
+	 * in the middle of the greeter or the desktop (ws035-p116).
+	 */
+	unsigned pointer_unmoved;
+	/*
 	 * The surface whose client was told the pointer entered it (seat.c): it
 	 * hears the pointer's events.  It is the focused window, or the
 	 * sub-surface of it under the pointer (ws035-p077); while a popup's grab

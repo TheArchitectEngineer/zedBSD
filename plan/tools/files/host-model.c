@@ -8,8 +8,9 @@
 /*
  * ws071: checks files' model on the host in a temporary folder:
  * the tasks (copy, duplicate, move within and across file systems, trash
- * and put back, delete), the free names, the trash's records, the undo
- * history and the clipboard.
+ * and put back, delete), the names taken (skip, replace, merge; replace
+ * with the trash on the other file system), the free names, the trash's
+ * records, the undo history and the clipboard.
  *
  *   files-model TEMPORARY-FOLDER [OTHER-FILE-SYSTEM-FOLDER]
  *
@@ -50,8 +51,10 @@ main(
 	char value[64];
 	char *sources[4];
 	char *targets[4];
+	char *sources_merge[2];
 	char **paths;
 	struct fm_task *task;
+	struct fm_task *folder_task;
 	struct fm_undo history;
 	struct fm_undo_item item;
 	unsigned mode;
@@ -189,6 +192,177 @@ main(
 	check(file_is(path, "moved") && !exists(targets[0]) && task->error_count == 0, "collision: a move replaces the item there");
 	fm_task_free(task);
 	free(targets[0]);
+
+	/*
+	 * 2d. Folders merged (ws035-p115, F-050): a/Photos into b/Photos.  The merge puts the folder's items in its
+	 * place, a sub-folder merges again, and the taken file inside is asked about on its own.
+	 */
+	snprintf(path, sizeof(path), "%s/merge/a/Photos/Sub", root);
+	fm_ops_mkdir_parents(path);
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/Sub", root);
+	fm_ops_mkdir_parents(path);
+	snprintf(path, sizeof(path), "%s/merge/a/Photos/one.txt", root);
+	make_file(path, "one-new");
+	snprintf(path, sizeof(path), "%s/merge/a/Photos/two.txt", root);
+	make_file(path, "two");
+	snprintf(path, sizeof(path), "%s/merge/a/Photos/Sub/deep.txt", root);
+	make_file(path, "deep");
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/one.txt", root);
+	make_file(path, "one-old");
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/three.txt", root);
+	make_file(path, "three");
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/Sub/keep.txt", root);
+	make_file(path, "keep");
+	snprintf(path, sizeof(path), "%s/merge/a/Photos", root);
+	targets[0] = strdup(path);
+	snprintf(path, sizeof(path), "%s/merge/b", root);
+	task = fm_task_new(FM_TASK_COPY, targets, 1, path);
+	check(fm_task_can_merge(task, 0) == 1, "merge: two folders can be merged");
+	check(fm_task_merge(task, 0, &count) == 0 && count == 3 && task->source_count == 3, "merge: the folder's three items take its place");
+	snprintf(path, sizeof(path), "%s/merge/b/Photos", root);
+	check(strcmp(fm_task_folder(task, 0), path) == 0 && strcmp(fm_task_folder(task, 2), path) == 0, "merge: the items go into the merged folder");
+	check(fm_task_can_merge(task, 0) == 1 && fm_task_merge(task, 0, &count) == 0 && count == 1, "merge: the sub-folder merges again");
+	check(fm_task_collides(task, 0) == 0 && fm_task_collides(task, 1) == 1 && fm_task_can_merge(task, 1) == 0 && fm_task_collides(task, 2) == 0, "merge: only one.txt is taken inside, and it is a file");
+	task->collisions[1] = FM_COLLISION_REPLACE;
+	check(run(task) == 0 && task->error_count == 0, "merge: copy, no error");
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/one.txt", root);
+	check(file_is(path, "one-new"), "merge: the taken file is replaced");
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/two.txt", root);
+	snprintf(other, sizeof(other), "%s/merge/b/Photos/three.txt", root);
+	check(file_is(path, "two") && file_is(other, "three"), "merge: the new file joins the one that was there");
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/Sub/deep.txt", root);
+	snprintf(other, sizeof(other), "%s/merge/b/Photos/Sub/keep.txt", root);
+	check(file_is(path, "deep") && file_is(other, "keep"), "merge: the sub-folders' contents are combined");
+	snprintf(path, sizeof(path), "%s/merge/b/Photos 2", root);
+	snprintf(other, sizeof(other), "%s/merge/b/Photos/Sub 2", root);
+	check(!exists(path) && !exists(other), "merge: no second folder is made");
+	snprintf(path, sizeof(path), "%s/merge/a/Photos/Sub/deep.txt", root);
+	check(file_is(path, "deep"), "merge: a copy leaves the source");
+	check(task->replaced[1] != NULL && file_is(task->replaced[1], "one-old"), "merge: the replaced file is in the trash");
+
+	/* Undo of the merged copy: the copies to the trash, the replaced file back. */
+	paths = calloc(4, sizeof(char *));
+	for (count = 0; count < 3; count++)
+		paths[count] = strdup(task->results[count]);
+	targets[1] = strdup(task->replaced[1]);
+	fm_task_free(task);
+	fm_trash_path(trash, sizeof(trash));
+	task = fm_task_new(FM_TASK_TRASH, paths, 3, trash);
+	run(task);
+	fm_task_free(task);
+	task = fm_task_new(FM_TASK_RESTORE, targets + 1, 1, trash);
+	run(task);
+	fm_task_free(task);
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/one.txt", root);
+	snprintf(other, sizeof(other), "%s/merge/b/Photos/two.txt", root);
+	check(file_is(path, "one-old") && !exists(other), "merge: undo puts back what the folder held");
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/Sub/deep.txt", root);
+	snprintf(other, sizeof(other), "%s/merge/b/Photos/Sub/keep.txt", root);
+	check(!exists(path) && file_is(other, "keep"), "merge: undo keeps the merged sub-folder as it was");
+	fm_paths_free(paths, 3);
+	free(targets[1]);
+
+	/* A merged move: one.txt skipped; the emptied sub-folder goes, the folder with one.txt left in it stays. */
+	snprintf(path, sizeof(path), "%s/merge/b", root);
+	task = fm_task_new(FM_TASK_MOVE, targets, 1, path);
+	fm_task_merge(task, 0, &count);
+	fm_task_merge(task, 0, &count);
+	task->collisions[1] = FM_COLLISION_SKIP;
+	check(run(task) == 0 && task->error_count == 0 && task->merged_count == 2, "merge: move, no error");
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/two.txt", root);
+	snprintf(other, sizeof(other), "%s/merge/a/Photos/two.txt", root);
+	check(file_is(path, "two") && !exists(other), "merge: a move moves the items");
+	snprintf(path, sizeof(path), "%s/merge/a/Photos/Sub", root);
+	snprintf(other, sizeof(other), "%s/merge/a/Photos/one.txt", root);
+	check(!exists(path) && file_is(other, "one-new"), "merge: the emptied folder goes, the skipped item stays");
+
+	/* Undo of the merged move, as actions.c does it: each item renamed back, its folder made again. */
+	for (count = 0; count < task->source_count; count++) {
+		if (task->results[count] == NULL)
+			continue;
+		snprintf(path, sizeof(path), "%s", task->sources[count]);
+		*strrchr(path, '/') = '\0';
+		fm_ops_mkdir_parents(path);
+		rename(task->results[count], task->sources[count]);
+	}
+	snprintf(path, sizeof(path), "%s/merge/a/Photos/Sub/deep.txt", root);
+	snprintf(other, sizeof(other), "%s/merge/b/Photos/Sub/deep.txt", root);
+	check(file_is(path, "deep") && !exists(other), "merge: undo of the move puts the items back in their folders");
+
+	/* A redo's pairs: each item into the folder it went to the first time. */
+	sources_merge[0] = task->sources[0];
+	sources_merge[1] = task->sources[2];
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/Sub", root);
+	folder_task = fm_task_new(FM_TASK_COPY, sources_merge, 2, path);
+	snprintf(path, sizeof(path), "%s/merge/b/Photos", root);
+	check(fm_task_set_folder(folder_task, 1, path) == 0, "merge: redo gives an item its own folder");
+	run(folder_task);
+	snprintf(path, sizeof(path), "%s/merge/b/Photos/Sub/deep.txt", root);
+	snprintf(other, sizeof(other), "%s/merge/b/Photos/two.txt", root);
+	check(file_is(path, "deep") && file_is(other, "two") && folder_task->error_count == 0, "merge: a redo puts each item where it went");
+	fm_task_free(folder_task);
+	fm_task_free(task);
+	free(targets[0]);
+
+	/* 2e. Replace with the trash on another file system (ws035-p115): the replaced items are copied there and back. */
+	if (argc > 2) {
+		snprintf(path, sizeof(path), "%s/data-other", argv[2]);
+		setenv("XDG_DATA_HOME", path, 1);
+		snprintf(path, sizeof(path), "%s/xfs/src/Dir", root);
+		fm_ops_mkdir_parents(path);
+		snprintf(path, sizeof(path), "%s/xfs/dst/Dir", root);
+		fm_ops_mkdir_parents(path);
+		snprintf(path, sizeof(path), "%s/xfs/src/Old.txt", root);
+		make_file(path, "new");
+		targets[0] = strdup(path);
+		snprintf(path, sizeof(path), "%s/xfs/src/Dir/y.txt", root);
+		make_file(path, "y");
+		snprintf(path, sizeof(path), "%s/xfs/src/Dir", root);
+		targets[1] = strdup(path);
+		snprintf(path, sizeof(path), "%s/xfs/dst/Old.txt", root);
+		make_file(path, "old");
+		snprintf(path, sizeof(path), "%s/xfs/dst/Dir/x.txt", root);
+		make_file(path, "x");
+		snprintf(path, sizeof(path), "%s/xfs/dst", root);
+		task = fm_task_new(FM_TASK_COPY, targets, 2, path);
+		task->collisions[0] = FM_COLLISION_REPLACE;
+		task->collisions[1] = FM_COLLISION_REPLACE;
+		check(run(task) == 0 && task->error_count == 0, "replace across file systems: no error");
+		snprintf(path, sizeof(path), "%s/data-other/Trash/files/", argv[2]);
+		check(task->replaced[0] != NULL && strncmp(task->replaced[0], path, strlen(path)) == 0 && file_is(task->replaced[0], "old"), "replace across file systems: the file is in the other file system's trash");
+		snprintf(other, sizeof(other), "%s/x.txt", task->replaced[1] != NULL ? task->replaced[1] : "-");
+		check(file_is(other, "x"), "replace across file systems: the folder is in that trash with its contents");
+		snprintf(path, sizeof(path), "%s/xfs/dst/Old.txt", root);
+		snprintf(other, sizeof(other), "%s/xfs/dst/Dir/x.txt", root);
+		check(file_is(path, "new") && !exists(other), "replace across file systems: the sources took their places");
+		paths = calloc(3, sizeof(char *));
+		paths[0] = strdup(task->results[0]);
+		paths[1] = strdup(task->results[1]);
+		free(targets[0]);
+		free(targets[1]);
+		targets[0] = strdup(task->replaced[0]);
+		targets[1] = strdup(task->replaced[1]);
+		fm_task_free(task);
+		fm_trash_path(trash, sizeof(trash));
+		task = fm_task_new(FM_TASK_TRASH, paths, 2, trash);
+		run(task);
+		fm_task_free(task);
+		task = fm_task_new(FM_TASK_RESTORE, targets, 2, trash);
+		run(task);
+		snprintf(path, sizeof(path), "%s/xfs/dst/Old.txt", root);
+		snprintf(other, sizeof(other), "%s/xfs/dst/Dir/x.txt", root);
+		check(file_is(path, "old") && file_is(other, "x") && task->error_count == 0, "replace across file systems: undo copies them back");
+		check(!exists(targets[0]) && !exists(targets[1]), "replace across file systems: undo leaves nothing of them in the trash");
+		fm_task_free(task);
+		fm_paths_free(paths, 2);
+		free(targets[0]);
+		free(targets[1]);
+		snprintf(path, sizeof(path), "%s/data", root);
+		setenv("XDG_DATA_HOME", path, 1);
+		fm_trash_path(trash, sizeof(trash));
+	} else {
+		printf("skip: replace across file systems (no second folder)\n");
+	}
 
 	/* 3. Duplicate beside itself. */
 	snprintf(path, sizeof(path), "%s/src", root);

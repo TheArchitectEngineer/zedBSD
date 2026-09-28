@@ -9,10 +9,13 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: 2026-09-28 の周期の終わり: p016〜p021・p050〜p058 は cleared。ブラウザは部品 `libbrowser.so`（`include/libc/browser.h`、36 の API、`browser-probe` が 2 つ目の使い手）、HTTP・HTTPS・非同期の読み込み・keep-alive・cache・画像・背景画像・DOM の入力。次: p031（focus 等の DOM）→ p032（form の部品と文字の入力）→ システム環境設定・widget で libbrowser を使う
+Resume point: 2026-09-28: p059（Google の調査）cleared。デモの目標の版と Phase の列は [google-goal.md](google-goal.md)。次（デモの順）: p032（form に絞った）→ p060 → p037（最小）→ p027 → p065（結果の page の関門）→ p066 → p035 → p061 → p062 → p063 → p031 → p064。結果の page は Google の bot の判定（`/sorry`）が危険で、ユーザーの判断待ち（google-goal.md §3）
 <!-- awesome-plan-current:end -->
 
-## デモの目標（2026-09-28 ユーザー）
+## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
+
+**変更**: ユーザー「…amazon.co.jpに変更しましょう。」→ デモの目標は amazon.co.jp（トップの page と検索、限定的な CSS・基本的な JS、WebGL・動画なし）。以下の Google の記述は経緯として残す。
+
 
 「Googleの検索トップページと検索が、レイアウトを崩さずに表示できたら、ゴールにしましょう！限定的なCSSと、基本的なJS、WebGLなし、ビデオなしです。」
 - 完了の目安: Google の検索のトップの page と検索の結果の page が、レイアウトを崩さずに表示される。検索の box に文字を入れて検索でき、結果の link を開ける。
@@ -20,6 +23,9 @@ Resume point: 2026-09-28 の周期の終わり: p016〜p021・p050〜p058 は cl
 - touch の慣性の scroll 等は [WS081](../ws081/ws.md)。
 - 注意（main）: Google は User-Agent・cookie（同意の画面）・JS の有無で返す HTML を変える。p031・p032 の前に、今の browser が受け取る
   HTML と足りない機能（form・CSS・JS の API）を調べる Phase を置く。
+- 調査（[p059](phase059/phase.md)、2026-09-28）: 目標の版・足りない機能・Phase の列は [google-goal.md](google-goal.md)。home は私たちの UA に返る
+  基本の HTML の版、結果は SearchGuard の JS の challenge を通った後の page（基本の HTML の結果はもう無い）。**デモの順**:
+  p032 → p060 → p037（最小）→ p027 → p065 → p066 → p035 → p061 → p062 → p063 → p031 → p064。下の「実行の順」より優先する。
 
 ## 目標
 
@@ -118,7 +124,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | ws074-p029 | ES2015 の意味 2: generator、Promise と microtask、async・await、Proxy・Reflect、TypedArray・ArrayBuffer・DataView、Date、BigInt | planned | p028 |
 | [ws074-p030](phase030/phase.md) | DOM の binding（interface の表、生成器は後回し）、window・document・Node・Element・Event の基本、console、`<script>` の実行、timer、event loop と microtask の queue（2026-09-28 に WPT の testharness の runner を p047 へ分けた） | cleared | p014、p046（p029 から縮めた: microtask の queue はこの Phase で作った） |
 | ws074-p031 | event（dispatch・入力）、innerHTML、querySelector、classList、CSSOM の inline style、getComputedStyle、geometry、変更の後の再計算 | planned | p030 |
-| ws074-p032 | fetch・XHR（same-origin・CORS）、Location・History、form（control の描画と入力、送信）、localStorage | planned | p017、p031 |
+| ws074-p032 | form（2026-09-28 に範囲を絞った。fetch・XHR・Location・History・localStorage は p064 へ）: `<input>`（text・submit・hidden・button・checkbox）・`<button>`・`<textarea>` の最小の描画、focus と caret、文字の入力と編集、Enter と submit による送信（GET・POST の urlencoded、page の encoding）、script が有効なときの `noscript` を隠す | planned | p017、p056（focus と key の入力。p031 は要らない） |
 | ws074-p033 | Wasm: decoder・validator・共通 bytecode への compiler、JS API、spec test の runner（wabt の wast2json） | planned | p029 |
 | ws074-p034 | Wasm の MVP の後: bulk memory、reference types、multi-value、sign-ext、非 trap の変換、SIMD。**M2 の計測** | planned | p033、p032 |
 | ws074-p035 | flexbox | planned | p013 |
@@ -140,6 +146,14 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p056](phase056/phase.md) | 部品化 3（p053 の手順 3）: 入力を DOM の key・code・text の形に（evdev の変換は shell）、scroll・link・focus の既定の動作を engine へ。KeyboardEvent・WheelEvent・FocusEvent、Tab の focus と ring。form の欄は無い（p032） | cleared | p055 |
 | [ws074-p057](phase057/phase.md) | 部品化 4（p053 の手順 5）: `libbrowser.so` への分割、公開の header `include/libc/browser.h`、2 つ目の使い手 `browser-probe`（Wayland なしで PPM に描く） | cleared | p056 |
 | ws074-p047 | WPT の testharness の runner（p030 から分けた: testharness.js は arrow・let・const・class と Promise を使う）、WPT dom/nodes の計測（M2 の目標 ≥ 40%） | planned | p028、p029、p030 |
+| [ws074-p059](phase059/phase.md) | Google の調査（デモの目標の前提）: 返る HTML の版（UA ごと）、Chromium との比較、足りない機能、目標の版と Phase の列（[google-goal.md](google-goal.md)） | cleared | p057 |
+| ws074-p060 | `inline-block` を atomic な inline に（shrink-to-fit、baseline、`vertical-align` の top・middle・bottom・baseline） | planned | p032 |
+| ws074-p061 | CSS の値と selector（p008・p009 から Google が使う部分）: `@media`、`var()`、`calc()`、`!important`、`:not()`・`:hover`・`:active`・`:focus`・`:visited`、`::before`・`::after`、`box-sizing`、`-webkit-` の別名、`text-overflow`、`letter-spacing`、`text-transform` | planned | p007 |
+| ws074-p062 | 描画（p038 から）: `border-radius`（CPU と GPU）、`opacity`、`box-shadow`、`outline` | planned | p014 |
+| ws074-p063 | inline の SVG の最小（`svg`・`path`・`circle`・`rect`、`viewBox`、`fill`・`currentColor`） | planned | p012 |
+| ws074-p064 | fetch・XHR（same-origin・CORS）、Location・History、localStorage（p032 から分けた） | planned | p031、p032 |
+| ws074-p065 | Google の challenge と ES5 bundle の JS の環境: `Date`・`Promise`・`Symbol`・`Map`・`Set`・`WeakMap`・typed array の最小、`encodeURIComponent` の類、`Error.stack`、`atob`・`btoa`、`navigator`・`screen`・`performance`・`sessionStorage`・`CustomEvent`、`document.cookie` の書き込み、`location.replace`。保存した challenge の page が `SG_SS` を置いて開き直すまで | planned | p027 |
+| ws074-p066 | Google の結果の page: 保存（`build/` だけ）、Chromium との比較、足りない CSS と DOM の直し（取得後に分ける） | planned | p065 |
 
 ## 後の WS・Future Work の候補
 

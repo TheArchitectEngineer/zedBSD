@@ -1178,6 +1178,7 @@ enum fm_dialog {
 #define FM_BUTTON_SKIP		17
 #define FM_BUTTON_KEEP_BOTH	18
 #define FM_BUTTON_APPLY_ALL	19
+#define FM_BUTTON_MERGE		20
 #define FM_BUTTON_TASK_CANCEL	100
 #define FM_BUTTON_OPENER	180
 
