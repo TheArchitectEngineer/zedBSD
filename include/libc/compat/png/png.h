@@ -10,7 +10,7 @@
  * for its base programs (plan/ws035/ws.md, D1 to D6).  It holds no libpng
  * code; the names and values are libpng's.  Programs of the packages use
  * the real libpng (/usr/include/png.h); base programs include
- * <compat/png.h>.
+ * <compat/png/png.h>.
  *
  * This first part reads (ws071-p010): PNG files of every colour type and
  * bit depth that are not interlaced, into 8-bit gray, gray with alpha, RGB

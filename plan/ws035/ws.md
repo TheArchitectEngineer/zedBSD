@@ -225,7 +225,7 @@ p001で確かめる。
 | ws035-p008 | hdaドライバの実機確認（人間が行う。エージェントは確認用のimageと手順を用意する。HDA は passthrough できないので、ユーザーが後で USB boot のベアメタルで試す。2026-09-24） | planning | p007 | hda |
 | [ws035-p010](phase010/phase.md) | libtruetype（`cmap`・`glyf`・`hmtx`、anti-aliasの描画、`/lib/libtruetype.so`） | cleared（q323-i06） | p004 | libtruetype（新規） |
 | [ws035-p040](phase040/phase.md) | 互換libz（`userland/base/libz-compat`、`/lib/libz-compat.so`）: deflate/inflate を素直に実装する。zlib の全機能は要らない。最適化より読みやすさ。baseのプログラムはこれに依存する | planning | p004。**zdesktop が要るときに入れる** | `userland/base/libz-compat`、`include/libc/compat/zlib.h` |
-| [ws035-p041](phase041/phase.md) | 互換libpng（`userland/base/libpng-compat`、`/lib/libpng-compat.so`）: decode と encode。encode は filter にこだわらない。decode は試験用のRGBA32 PNGが読める正常系まで | planning | p040。**zdesktop が要るときに入れる** | `userland/base/libpng-compat`、`include/libc/compat/png.h` |
+| [ws035-p041](phase041/phase.md) | 互換libpng（`userland/base/libpng-compat`、`/lib/libpng-compat.so`）: decode と encode。encode は filter にこだわらない。decode は試験用のRGBA32 PNGが読める正常系まで | planning | p040。**zdesktop が要るときに入れる** | `userland/base/libpng-compat`、`include/libc/compat/png/png.h` |
 | [ws035-p042](phase042/phase.md) | libkeiland（`userland/desktop/libkeiland`、`/lib/libkeiland.so`）: **Vulkan 以外の OS 依存をここに閉じ込める**。zdesktop は networkd・audiod などと直接話さず、このライブラリを通す。**まずは空の枠だけ** | cleared（q325-i02） | p004 | `userland/desktop/libkeiland`、`include/libc/keiland.h` |
 | ws035-p027 | zdesktop: タイトル等の文字描画をlibtruetypeへ移す | canceled（2026-09-27: p059 で置き換え済み。zdesktop の文字（題名、システムバー、App Home、Wiseview、System Menu）は最初から libtruetype の glyph atlas（`glass.c`）で描く） | p010, p025 | zdesktop |
 | ws035-p028 | zdesktop: toolkit（GTK・Qt）が要るWaylandの対応範囲（xdg-shellの残り、keymap、clipboard、subsurface、wl_output、cursor、xdg-decoration）。**2026-09-27 に p075〜p080 へ分けた**（大きすぎるため）。この行は分けた Phase がすべて cleared になったら閉じる | cleared（2026-09-27、分けた p075〜p080 がすべて cleared） | p059（p025 は canceled） | zdesktop、libwayland |
@@ -601,8 +601,8 @@ ws034-p021（zlib）・p027（libpng）は**そのまま残す**。置き換え�
   （`libc.so`・`libvulkan.so`・`libwayland-client.so`・`libtruetype.so`）に版付き SONAME は無く、
   それに揃える。版は API が名乗る文字列で表す（D1）。
 - **ヘッダは `include/libc/compat/`**（2026-09-23 ユーザー決定、D4）。
-  `include/libc/compat/zlib.h`・`include/libc/compat/png.h` が
-  `/usr/include/compat/zlib.h`・`/usr/include/compat/png.h` に入り、
+  `include/libc/compat/zlib.h`・`include/libc/compat/png/png.h` が
+  `/usr/include/compat/zlib.h`・`/usr/include/compat/png/png.h` に入り、
   base のプログラムは `#include <compat/zlib.h>` と書く。
   本家は package として `/usr/include/zlib.h`・`/usr/include/png.h` を入れるので、
   **同じ場所に置くと衝突する**。ファイル名は本家と同じままで、置き場だけを分ける。

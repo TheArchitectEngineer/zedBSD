@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010〜p017・p022〜p026・p030・p045・p046・p048・p049 cleared。p019 は進行中（host 済み、guest と boot test が残る、手順は p019 の phase.md）。p017 で BUG-083（rtld の dlopen が /usr/lib を探さない）を直した。p016 を 2026-09-28 に同期の HTTP（p016）と非同期の loader（p050）に分けた。p013 を 2026-09-28 に p013（position）・p048（float）・p049（overflow と clip）に分けた。p030 の依存は p014・p046 に縮めた（理由は p030 の phase.md、WPT の runner は p047 へ）
+Resume point: p001〜p005・p007・p010〜p017・p019・p022〜p026・p030・p045・p046・p048・p049 cleared。p019 cleared（2026-09-28）。次は p020 → p051（libgif-compat）→ p021 → p050。p017 で BUG-083（rtld の dlopen が /usr/lib を探さない）を直した。p016 を 2026-09-28 に同期の HTTP（p016）と非同期の loader（p050）に分けた。p013 を 2026-09-28 に p013（position）・p048（float）・p049（overflow と clip）に分けた。p030 の依存は p014・p046 に縮めた（理由は p030 の phase.md、WPT の runner は p047 へ）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -68,7 +68,7 @@ p001 で分け直した（2026-09-27。p002〜p013 の案は実行前の案だ�
 着手の時に大きすぎれば分ける。
 
 **実行の順**（2026-09-27 ユーザー「正常系でワンパス通すのを優先する」、design.md §18）: p005 → p007 → p010 → p011 → p012 → p014（窓に
-実際の page）→ p045（URL の欄と link）→ p022 → p023 → p024 → p025 → p026 → p046 → p030（JS の接続）→ p013 → p048 → p049 → p015 → p016 → p017 → p019 → p020 → p021 → p050 → p006 → p008 →
+実際の page）→ p045（URL の欄と link）→ p022 → p023 → p024 → p025 → p026 → p046 → p030（JS の接続）→ p013 → p048 → p049 → p015 → p016 → p017 → p019 → p020 → p051 → p021 → p050 → p006 → p008 →
 p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 → p034 → p035 以降。各 Phase は最小の範囲で通し、残りは phase.md の「後回し」へ。
 
 | Phase | 内容 | Status | 依存 |
@@ -93,9 +93,10 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p016](phase016/phase.md) | HTTP/1.1 の同期の client（chunked、redirect）、cookie、http の page と script、host の test server、guest の http（2026-09-28 に非同期の loader・resolver の thread・持続接続・memory の cache を p050 へ分けた） | cleared | p014、p015 |
 | [ws074-p017](phase017/phase.md) | TLS（OpenSSL の `dlopen`、D2）、https、自前の CA の host の server、guest で実在の site（BUG-083 の rtld の dlopen の修正を含む） | cleared | p016 |
 | ws074-p018 | encoding: 判定（BOM・HTTP・meta の prescan）、UTF-16・legacy の single-byte、Shift_JIS・EUC-JP・ISO-2022-JP（表の生成、D4） | planned | p006 |
-| [ws074-p019](phase019/phase.md) | `libjpeg-compat` 1: baseline（huffman、任意の subsampling、restart、grayscale・YCbCr）、library の登録、host の試験（Pillow と比較） | in-progress | p002 |
-| ws074-p020 | `libjpeg-compat` 2: progressive、CMYK/YCCK、`jpeg_save_markers`（EXIF の向き）、`JCS_EXT_BGRA` | planned | p019 |
-| ws074-p021 | browser の画像: `<img>`、CSS の背景画像、JPEG・PNG（libpng-compat）・GIF、画像の cache、固有の大きさ | planned | p016、p020、ws071-p010 |
+| [ws074-p019](phase019/phase.md) | `libjpeg-compat` 1: baseline（huffman、任意の subsampling、restart、grayscale・YCbCr）、library の登録、host の試験（Pillow と比較）。2026-09-28 に base の group・全 platform、libpng-compat の header を `compat/png/` へ | cleared | p002 |
+| [ws074-p020](phase020/phase.md) | `libjpeg-compat` 2: progressive、CMYK/YCCK、`jpeg_save_markers`（EXIF の向き）（`JCS_EXT_BGRA` は p019 で済み） | planned | p019 |
+| [ws074-p051](phase051/phase.md) | `libgif-compat`（2026-09-28 ユーザー、D5 の変更）: `userland/base/libgif-compat`、`include/libc/compat/gif_lib.h`（giflib 5.2 の decode の部分集合）、全 platform | planned | p002 |
+| ws074-p021 | browser の画像: `<img>`、CSS の背景画像、JPEG・PNG（libpng-compat）・GIF（libgif-compat）、画像の cache、固有の大きさ | planned | p016、p020、p051、ws071-p010 |
 | [ws074-p022](phase022/phase.md) | VM の核 2: 値（NaN-boxing）、object と shape、配列の elements、関数、realm の骨組み | cleared | p003 |
 | [ws074-p023](phase023/phase.md) | 共通の bytecode と interpreter、呼び出し規約、例外の unwind、native 関数（手で組んだ JS 型と Wasm 型の命令の試験） | cleared | p022 |
 | [ws074-p024](phase024/phase.md) | JS の lexer と parser（ES2024 の構文 → AST）、test262 の構文の試験（parse だけ。46876/47792） | cleared | p023 |
