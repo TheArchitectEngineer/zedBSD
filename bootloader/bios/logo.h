@@ -23,9 +23,9 @@
 #define ZBL_BIOS_LOGO_OFFSETS		96
 #define ZBL_BIOS_LOGO_PIXELS		(ZBL_BIOS_LOGO_OFFSETS + 4 * ZBL_BIOS_LOGO_WRITES)
 #define ZBL_BIOS_LOGO_TAIL		(ZBL_BIOS_LOGO_PIXELS + 4 * ZBL_BIOS_LOGO_WRITES)
-#define ZBL_BIOS_LOGO_SIZE		(ZBL_BIOS_LOGO_TAIL + 40)
+#define ZBL_BIOS_LOGO_SIZE		(ZBL_BIOS_LOGO_TAIL + 32)
 
-/* The longest header comment the decoder keeps to read (fit=cover). */
+/* The longest header comment the decoder keeps to read (fit=contain). */
 #define ZBL_BIOS_LOGO_COMMENT		16
 
 #ifndef __ASSEMBLER__
@@ -34,8 +34,8 @@
 /*
  * The decoder's state between sectors, and the writes the last sector gave:
  * byte offsets into the linear framebuffer and the pixel for each.
- * fill_now is set once, when the background colour (the first pixel's) is
- * known: the caller fills the screen with background before the writes.
+ * fill_now is set once, when the background colour (the first pixel's, or
+ * black for fit=contain) is known: the caller fills the screen with background before the writes.
  */
 struct zbl_bios_logo {
 	uint32_t stage;
@@ -65,19 +65,17 @@ struct zbl_bios_logo {
 	uint32_t pixels[ZBL_BIOS_LOGO_WRITES];
 
 	/*
-	 * A picture that covers the screen (the header comment fit=cover,
-	 * ws035-p107): whether it does, the comment being read, and the size
-	 * the picture is scaled to with the part cut on the left and at the
-	 * top.  Only the loader's C reads these, after the fields bootzbsd.S
+	 * A picture over black bars (the header comment fit=contain,
+	 * ws035-p112): whether it is, the comment being read, and the size
+	 * the picture is drawn at (origin_x and origin_y are its corner).
+	 * Only the loader's C reads these, after the fields bootzbsd.S
 	 * knows.
 	 */
-	uint32_t cover;
+	uint32_t contain;
 	uint32_t comment_length;
 	uint8_t comment[ZBL_BIOS_LOGO_COMMENT];
 	uint32_t scaled_width;
 	uint32_t scaled_height;
-	uint32_t cut_x;
-	uint32_t cut_y;
 };
 
 void zbl_bios_logo_begin(struct zbl_bios_logo *logo, uint32_t screen_width, uint32_t screen_height, uint32_t stride, uint32_t format);

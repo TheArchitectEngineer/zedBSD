@@ -74,7 +74,7 @@ main(
 			fullest = logo.count;
 	}
 	fclose(file);
-	printf("bios-logo-host: result=%d cover=%u fullest=%u of %u\n", result, logo.cover, fullest, (unsigned)ZBL_BIOS_LOGO_WRITES);
+	printf("bios-logo-host: result=%d contain=%u fullest=%u of %u\n", result, logo.contain, fullest, (unsigned)ZBL_BIOS_LOGO_WRITES);
 
 	/* The screen as a PPM. */
 	file = fopen(argv[2], "wb");
