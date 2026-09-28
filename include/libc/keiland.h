@@ -30,7 +30,9 @@
  * It also holds what every program that follows a finger shares, so that
  * a finger feels the same everywhere: where a touch contact is at the time
  * a frame is drawn, and how fast it moved when it lifted (the touch motion,
- * WS081; its first user is zdesktop itself).
+ * WS081; its first user is zdesktop itself), and what content a finger
+ * scrolls does after the finger lets go, and what the fingers mean (the
+ * scroller and the gestures, WS081 p005).
  */
 
 #ifndef KEILAND_H
@@ -43,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion). */
-#define KEILAND_VERSION	9U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures). */
+#define KEILAND_VERSION	10U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -800,6 +802,183 @@ int keiland_motion_velocity(struct keiland_motion *motion, uint64_t lift_us, dou
  * delay, noise) is folded into the device.
  */
 void keiland_motion_end(struct keiland_motion *motion);
+
+/*
+ * The scroller (WS081 p005, plan/ws081/design.md section 5): what content
+ * that a finger scrolls does after the finger lets go, the same in every
+ * program.
+ *
+ * A scroller holds a position on up to two axes within bounds.  A drag
+ * moves it with the finger; past a bound the content resists (rubber
+ * band).  Let go fast enough, it glides on and slows down by
+ * dv/dt = -v/tau - mu sign(v) (tau 0.45 s, mu 300 px/s^2), which stops at a
+ * finite time; past a bound it springs back (critically damped, 16/s).  A
+ * press while it glides catches it (stops it, and the press should not
+ * activate what is under it); a fling within 400 ms of a catch, the same
+ * way within 30 degrees, adds the caught speed.  The position is a pure
+ * function of the time while it glides, so frames may come unevenly.
+ *
+ * Positions are logical pixels of content offset (a larger position shows
+ * content further right or down); a finger moving down by d moves the
+ * position up by d.  Times are CLOCK_MONOTONIC microseconds.
+ */
+struct keiland_scroller;
+
+/* The slowest fling (px/s): a release slower than this only settles. */
+#define KEILAND_SCROLLER_FLING_MIN	300.0
+
+/*
+ * Creates a scroller at position 0 with bounds 0..0 on both axes (it
+ * scrolls nowhere until keiland_scroller_set_bounds).
+ *
+ * Returns NULL when memory is short.
+ */
+struct keiland_scroller *keiland_scroller_create(void);
+
+/* Destroys a scroller. */
+void keiland_scroller_destroy(struct keiland_scroller *scroller);
+
+/*
+ * Sets the bounds of the position on each axis and the viewport's size (the
+ * rubber band's scale).  An axis whose maximum equals its minimum does not
+ * scroll.  A position left outside the new bounds springs back.  Refuses a
+ * maximum below its minimum or a viewport not above zero with EINVAL.
+ */
+int keiland_scroller_set_bounds(struct keiland_scroller *scroller, double minimum_x, double maximum_x, double minimum_y,
+    double maximum_y, double viewport_width, double viewport_height);
+
+/* Moves the position at once (clamped to the bounds), stopping any motion. */
+void keiland_scroller_set_position(struct keiland_scroller *scroller, double x, double y);
+
+/*
+ * A finger touches: starts a drag from the current position.  Returns 1
+ * when it caught moving content (the touch should not tap), otherwise 0.
+ */
+int keiland_scroller_press(struct keiland_scroller *scroller, uint64_t now_us);
+
+/*
+ * The finger has moved by dx, dy since the press (the total, not a step;
+ * keiland_gesture_drag_offset gives it resampled for the frame).  The first
+ * time it has moved 8 px, a drag within 22.5 degrees of one axis locks the
+ * other (on a scroller that scrolls both ways).
+ */
+void keiland_scroller_drag(struct keiland_scroller *scroller, double dx, double dy);
+
+/*
+ * The finger lifts with a velocity (px/s, as the finger moved;
+ * keiland_motion_velocity or the gesture's DRAG_END gives it): a fling
+ * when it is fast enough, otherwise the content settles.
+ */
+void keiland_scroller_release(struct keiland_scroller *scroller, uint64_t now_us, double vx, double vy);
+
+/* The touch was taken away (wl_touch.cancel): no fling; content past a bound springs back. */
+void keiland_scroller_cancel(struct keiland_scroller *scroller, uint64_t now_us);
+
+/*
+ * Gives the position to draw at a time (past a bound, as the rubber band
+ * shows it).  Returns 1 while the content moves by itself (keep drawing
+ * frames), 0 when it rests or follows a finger.
+ */
+int keiland_scroller_step(struct keiland_scroller *scroller, uint64_t now_us, double *x, double *y);
+
+/*
+ * The gestures of a touch surface (WS081 p005, design section 5.6): what
+ * the fingers of one wl_touch surface mean, so that a tap, a long press and
+ * a drag are told apart the same way in every program.
+ *
+ * The program passes the surface's wl_touch events on (in surface-local
+ * pixels, with the event's time and the time it read the event, both in
+ * microseconds) and reads the gestures with keiland_gesture_next, which
+ * also keeps the time (a long press is found by the clock, so the program
+ * calls it at least every frame while a finger is down).
+ *
+ * - TAP: a finger lifted within 8 px of where it touched, before 500 ms.
+ *   DOUBLE_TAP follows a TAP within 300 ms and 16 px of the last TAP.
+ * - LONG_PRESS: a finger held within 8 px for 500 ms (a context menu, or
+ *   the start of a selection); the lift then taps nothing.
+ * - DRAG_BEGIN: the fingers moved 8 px (after_long_press says whether a
+ *   long press came first); while dragging, keiland_gesture_drag_offset
+ *   gives the fingers' centroid's movement since, resampled for a frame.
+ *   DRAG_END: the last finger lifted, with its velocity (for a fling).
+ * - Two fingers: the drag follows their centroid (a finger added or
+ *   lifted does not make it jump), and keiland_gesture_pinch gives the
+ *   change of their distance since the second touched.
+ * - CANCEL: keiland_gesture_cancel was called (wl_touch.cancel): whatever
+ *   was going on ends without its lift.
+ */
+struct keiland_gesture;
+
+#define KEILAND_GESTURE_TAP		1U
+#define KEILAND_GESTURE_DOUBLE_TAP	2U
+#define KEILAND_GESTURE_LONG_PRESS	3U
+#define KEILAND_GESTURE_DRAG_BEGIN	4U
+#define KEILAND_GESTURE_DRAG_END	5U
+#define KEILAND_GESTURE_CANCEL		6U
+
+/*
+ * One gesture: its kind (KEILAND_GESTURE_*), where (the touch's point for a
+ * tap or a long press, the centroid where a drag began), the velocity of a
+ * DRAG_END (px/s), the fingers down, and for a DRAG_BEGIN whether a long
+ * press came first.
+ */
+struct keiland_gesture_event {
+	unsigned kind;
+	double x;
+	double y;
+	double vx;
+	double vy;
+	unsigned fingers;
+	int after_long_press;
+};
+
+/*
+ * Creates the gestures of one surface, with a touch motion device of its
+ * own (the seat's touch screen as the program sees it).
+ *
+ * Returns NULL when memory is short.
+ */
+struct keiland_gesture *keiland_gesture_create(void);
+
+/* Destroys the gestures of a surface. */
+void keiland_gesture_destroy(struct keiland_gesture *gesture);
+
+/*
+ * A finger touches (wl_touch.down): its id, the event's time and the time
+ * the program read it, and its place.  Refuses a sixth finger, and an id
+ * already down, with EBUSY and EEXIST.
+ */
+int keiland_gesture_down(struct keiland_gesture *gesture, int32_t id, uint64_t time_us, uint64_t arrival_us, double x,
+    double y);
+
+/* A finger moves (wl_touch.motion).  Refuses an id that is not down with ENOENT. */
+int keiland_gesture_motion(struct keiland_gesture *gesture, int32_t id, uint64_t time_us, uint64_t arrival_us, double x,
+    double y);
+
+/* A finger lifts (wl_touch.up).  Refuses an id that is not down with ENOENT. */
+int keiland_gesture_up(struct keiland_gesture *gesture, int32_t id, uint64_t time_us);
+
+/* The compositor took the fingers (wl_touch.cancel). */
+void keiland_gesture_cancel(struct keiland_gesture *gesture);
+
+/*
+ * Takes the next gesture, after judging the time now (a long press).
+ * Returns 1 with a gesture in *event, 0 when there is none.
+ */
+int keiland_gesture_next(struct keiland_gesture *gesture, uint64_t now_us, struct keiland_gesture_event *event);
+
+/*
+ * Gives how far the dragging fingers' centroid has moved since the drag
+ * began, resampled for a frame drawn at now_us.  Returns ENOENT when no
+ * drag is going on.
+ */
+int keiland_gesture_drag_offset(struct keiland_gesture *gesture, uint64_t now_us, double *dx, double *dy);
+
+/*
+ * Gives the ratio of two fingers' distance to their distance when the
+ * second touched, and their centroid, for a frame drawn at now_us.
+ * Returns ENOENT unless two fingers are down.
+ */
+int keiland_gesture_pinch(struct keiland_gesture *gesture, uint64_t now_us, double *scale, double *x, double *y);
 
 #ifdef __cplusplus
 }
