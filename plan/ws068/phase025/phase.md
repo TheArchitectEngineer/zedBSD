@@ -48,7 +48,7 @@ pixel buffer を p028 に分けた）
 | `userland/desktop/libglesv2/texture.c`・`gles.h`・`gles.c` | level の texel を format ごとの形で持つ、glTexStorage2D（immutable）、ES 3 の texture の parameter、sampler object（glGenSamplers ほか）、完全性と種類に合う黒 |
 | `userland/desktop/libglesv2/draw.c`・`program.c`・`spirv.c`・`framebuffer.c`・`exports.map` | unit の sampler object、shader の sampler の種類（isampler・usampler・shadow）の反射と view、新しい entry point |
 | `userland/desktop/libglesv2/glsl/glsl.h`・`link.c` | uniform の情報に `arrayed` |
-| `userland/X11/libGL/Makefile`・`fixed.c` | libGL にも `format.c`、`gles_texture_complete()` の引数の追従 |
+| `userland/retro/libGL/Makefile`・`fixed.c` | libGL にも `format.c`、`gles_texture_complete()` の引数の追従 |
 | `userland/desktop/egltest/formats.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=formats`（12 の format の四角と API の検査） |
 | `plan/ws068/tests/egl-p025.sh`（新） | display と Wayland の画面の点、readback、API の検査 |
 

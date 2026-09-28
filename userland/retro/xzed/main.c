@@ -28,8 +28,8 @@
 #include <unistd.h>
 #include <uapi/graphics.h>
 
-#include "userland/X11/xzed/input.h"
-#include "userland/X11/xzed/pointer.h"
+#include "userland/retro/xzed/input.h"
+#include "userland/retro/xzed/pointer.h"
 
 #define MAX_CLIENTS 8
 #define MAX_WINDOWS 64

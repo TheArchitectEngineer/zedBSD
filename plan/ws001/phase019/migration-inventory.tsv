@@ -1,13 +1,13 @@
 path	explanation-source	had-bom	body-sha256	explanation
-userland/X11/libX11/xlib.c	retained	no	27e44aca9bf2776a53a79bb1f6e989a328e7d8924cf9fa3f3d1acc21900a1789	Minimal Xlib-compatible client library for Xzed.
-userland/X11/xzed/input-posix.c	generated	no	7405ed7e2be952cc87090358eb6ff66bd2fe899ebeb35456ffc10c63cc5ef135	Implements the zedBSD X11 input posix component.
-userland/X11/xzed/input.c	generated	no	d63d10ec06c4c9f17fb255881bf55816f39034b54ed6b37376af08331cfebcd8	Implements the zedBSD X11 input component.
-userland/X11/xzed/input.h	generated	no	03ae147670af8f2598e576801a156611b489c46d19b25dcbfa3e14485717914d	Declares the zedBSD X11 input interface.
-userland/X11/xzed/main.c	retained	no	b954d1b5ae9a040d8045afbfead2bc137a7449d8ee6705e1ea829eebd2bd081b	Xzed - small local X11 server for zedBSD Wire constants and layouts follow the public X11 core protocol.
-userland/X11/xzed/pointer.h	generated	no	4be020c211e3f829c09a463ea07337803bc5ecc1f0cc5696755cfed944245fcb	Declares the zedBSD X11 pointer interface.
-userland/X11/zshell/main.c	retained	no	f5a46b387c590014a86cd1fd5e8ede5025980c38d278a611b56933175eccc8ef	zshell - lightweight Xzed desktop taskbar
-userland/X11/zterm/main.c	retained	no	3d925c8ad0f8aeec0d5142646fa4ff7a913cae7408b2b8f8676905a32fcb3729	zterm - compact Unicode VT100 terminal for Xzed
-userland/X11/zwm/main.c	retained	no	8afae85b52c9fa53858e89d834340d05951019c1389c46258c0226ee17722cee	zwm - minimal reparenting window manager.
+userland/retro/libX11/xlib.c	retained	no	27e44aca9bf2776a53a79bb1f6e989a328e7d8924cf9fa3f3d1acc21900a1789	Minimal Xlib-compatible client library for Xzed.
+userland/retro/xzed/input-posix.c	generated	no	7405ed7e2be952cc87090358eb6ff66bd2fe899ebeb35456ffc10c63cc5ef135	Implements the zedBSD X11 input posix component.
+userland/retro/xzed/input.c	generated	no	d63d10ec06c4c9f17fb255881bf55816f39034b54ed6b37376af08331cfebcd8	Implements the zedBSD X11 input component.
+userland/retro/xzed/input.h	generated	no	03ae147670af8f2598e576801a156611b489c46d19b25dcbfa3e14485717914d	Declares the zedBSD X11 input interface.
+userland/retro/xzed/main.c	retained	no	b954d1b5ae9a040d8045afbfead2bc137a7449d8ee6705e1ea829eebd2bd081b	Xzed - small local X11 server for zedBSD Wire constants and layouts follow the public X11 core protocol.
+userland/retro/xzed/pointer.h	generated	no	4be020c211e3f829c09a463ea07337803bc5ecc1f0cc5696755cfed944245fcb	Declares the zedBSD X11 pointer interface.
+userland/retro/zshell/main.c	retained	no	f5a46b387c590014a86cd1fd5e8ede5025980c38d278a611b56933175eccc8ef	zshell - lightweight Xzed desktop taskbar
+userland/retro/zterm/main.c	retained	no	3d925c8ad0f8aeec0d5142646fa4ff7a913cae7408b2b8f8676905a32fcb3729	zterm - compact Unicode VT100 terminal for Xzed
+userland/retro/zwm/main.c	retained	no	8afae85b52c9fa53858e89d834340d05951019c1389c46258c0226ee17722cee	zwm - minimal reparenting window manager.
 userland/base/ar/main.c	generated	no	ac468edee369e500cc87f8afe2abe2f422a71f410cafd0ad92ce6edd1446d220	Implements the zedBSD ar userland command.
 userland/base/at/main.c	generated	no	fc608537d4e996851e8853a9729de4dcaba5a9802ce186fe18360a6699eb9b64	Implements the zedBSD at userland command.
 userland/base/awk/main.c	generated	no	6cfafd5300044a50068481179a94b9f4ff5f9e3ce97f9eb05ff23704f8e5aec8	Implements the zedBSD awk userland command.

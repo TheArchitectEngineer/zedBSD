@@ -9,7 +9,7 @@
 # src/drivers/ device and bus driver implementation
 # userland/base/ base-system programs and libc glue
 # userland/comp/ compilers
-# userland/X11/ X11 servers and applications
+# userland/retro/ X11 servers and applications
 # userland/firmware/ optional device firmware, selected per device
 # userland/packages/ optional language runtimes, editors, and packages
 # libc/ freestanding libc subset
@@ -717,12 +717,12 @@ ZEDBSD_ACCOUNT_FILES := --file /etc/passwd=userland/base/etc/passwd \
 ZEDBSD_BASE_DATA_INPUTS := $(ZEDBSD_USERLAND_DATA_INPUTS)
 ZEDBSD_BASE_DATA_FILES := $(ZEDBSD_USERLAND_DATA_FILES) \
 	$(ZEDBSD_USERLAND_DATA_MODES)
-ZEDBSD_XZED_SESSION_INPUTS := userland/X11/session/startx \
-	userland/X11/session/Xzedrc userland/X11/session/zwm.conf
+ZEDBSD_XZED_SESSION_INPUTS := userland/retro/session/startx \
+	userland/retro/session/Xzedrc userland/retro/session/zwm.conf
 ZEDBSD_XZED_SESSION_FILES := $(if $(filter zwm,$(ZEDBSD_USER_PROGRAMS)),\
-	--file /bin/startx=userland/X11/session/startx \
-	--file /etc/Xzed/Xzedrc=userland/X11/session/Xzedrc \
-	--file /etc/Xzed/zwm.conf=userland/X11/session/zwm.conf \
+	--file /bin/startx=userland/retro/session/startx \
+	--file /etc/Xzed/Xzedrc=userland/retro/session/Xzedrc \
+	--file /etc/Xzed/zwm.conf=userland/retro/session/zwm.conf \
 	--mode /bin/startx=0755 --mode /etc/Xzed/Xzedrc=0755)
 ZEDBSD_PACKAGE_INPUTS += $(ZEDBSD_XZED_SESSION_INPUTS)
 ZEDBSD_PACKAGE_FILES += $(ZEDBSD_XZED_SESSION_FILES)

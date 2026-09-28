@@ -31,7 +31,7 @@ Resume point: なし（完了）
 - **BUG-057**（GLX の間欠の止まり）: kernel の unix socket と socket の packet の待ちが `waitq_sleep` の EAGAIN（眠る前の wakeup）を
   失敗として返し、blocking の send が失敗していた。修正（p010）。
 - libX11 の XPending を MSG_PEEK で 32 byte の event 単位に、`wr()` の失敗の報告。
-- Xzed（`userland/X11/xzed`）は ws069 の前（`cc4433d4`）に戻した（`/dev/graphics` のレトロ用のデモ）。
+- Xzed（`userland/retro/xzed`）は ws069 の前（`cc4433d4`）に戻した（`/dev/graphics` のレトロ用のデモ）。
 - App Home の `zdesktop-x11` が xserver を起動する。
 
 ## 受け入れの確認（p006、2026-09-27）

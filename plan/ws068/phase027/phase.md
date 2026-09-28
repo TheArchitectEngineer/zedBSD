@@ -46,7 +46,7 @@ Phase disposition: normal
 | --- | --- |
 | `userland/desktop/libglesv2/query.c`（新） | query object、segment、query pool、fence sync |
 | `userland/desktop/libglesv2/program.c` | fragment の出力の名前と location、`glGetFragDataLocation`・`glProgramParameteri`・`glGetProgramBinary`・`glProgramBinary` |
-| `userland/desktop/libglesv2/framebuffer.c`・`draw.c`・`gles.c`・`gles.h`・`exports.map`・`Makefile`、`userland/X11/libGL/Makefile` | pass を終える所の segment の終わり、draw の前の segment の始まり、GL_NUM_PROGRAM_BINARY_FORMATS、新しい entry point、`query.c` |
+| `userland/desktop/libglesv2/framebuffer.c`・`draw.c`・`gles.c`・`gles.h`・`exports.map`・`Makefile`、`userland/retro/libGL/Makefile` | pass を終える所の segment の終わり、draw の前の segment の始まり、GL_NUM_PROGRAM_BINARY_FORMATS、新しい entry point、`query.c` |
 | `userland/desktop/egltest/queries.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=queries` |
 | `plan/ws068/tests/egl-p027.sh`（新） | display と Wayland の画面の点、readback、API の検査 |
 

@@ -23,7 +23,7 @@ Queue: q323（q323-i01）
 - 画面の所有者が2系統ある。`/dev/graphics` の `graphics_owner`＋`kern_text_suspend()` と、
   GPUの `GPU_DISPLAY_CLAIM` のlease＋`kern_text_observe()`/`snapshot()`。**互いを知らない。**
 - textの復帰も2種類ある（backendの `leave`＋`resume` と、GPUがsnapshotを描き続ける形）。
-- `/dev/graphics` の利用者は `userland/X11/xzed`（`zwm`・`zterm` はxzed経由）と
+- `/dev/graphics` の利用者は `userland/retro/xzed`（`zwm`・`zterm` はxzed経由）と
   noctのbeui backend。どちらも `KERN_GRAPHICS_GET_CAPS` を見る。
 - rpi4・sun4u・x68k には `/dev/graphics` が無い。
 

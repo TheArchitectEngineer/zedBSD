@@ -10,8 +10,8 @@ LIBGL_GLSL_SOURCES := userland/desktop/libglesv2/glsl/arena.c userland/desktop/l
 	userland/desktop/libglesv2/glsl/builtins.c userland/desktop/libglesv2/glsl/check.c userland/desktop/libglesv2/glsl/fold.c \
 	userland/desktop/libglesv2/glsl/glsl.c userland/desktop/libglesv2/glsl/module.c userland/desktop/libglesv2/glsl/emit.c \
 	userland/desktop/libglesv2/glsl/emit-builtin.c userland/desktop/libglesv2/glsl/link.c
-LIBGL_SOURCES := userland/X11/libGL/glx.c userland/X11/libGL/fixed.c userland/X11/libGL/immediate.c userland/X11/libGL/gl3.c \
-	userland/X11/libX11/xlib.c \
+LIBGL_SOURCES := userland/retro/libGL/glx.c userland/retro/libGL/fixed.c userland/retro/libGL/immediate.c userland/retro/libGL/gl3.c \
+	userland/retro/libX11/xlib.c \
 	userland/desktop/libglesv2/gles.c userland/desktop/libglesv2/buffer.c userland/desktop/libglesv2/texture.c \
 	userland/desktop/libglesv2/spirv.c userland/desktop/libglesv2/program.c userland/desktop/libglesv2/draw.c \
 	userland/desktop/libglesv2/framebuffer.c userland/desktop/libglesv2/format.c userland/desktop/libglesv2/pixels.c userland/desktop/libglesv2/query.c userland/desktop/libglesv2/feedback.c $(LIBGL_GLSL_SOURCES)

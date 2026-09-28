@@ -63,7 +63,7 @@ Phase disposition: normal
 | `userland/desktop/libglesv2/texture.c` | 取り付けの view を必要な時に（`gles_texture_attach_view`）、image は全ての level、2D 配列も取り付けられる usage、RGB の alpha を 1 に |
 | `userland/desktop/libglesv2/format.c` | format ごとの `renderable`、`gles_format_renderable`、`gles_read_format_ok`・`gles_read_format`・`gles_texels_read`、整数の texel の読み |
 | `userland/desktop/libglesv2/gles.h`・`gles.c` | 上の構造、read framebuffer・既定の draw/read buffer、`glGetIntegerv`（READ_FRAMEBUFFER_BINDING、MAX_COLOR_ATTACHMENTS、MAX_DRAW_BUFFERS、DRAW_BUFFERi、READ_BUFFER、IMPLEMENTATION_COLOR_READ_*）、GL_EXT_color_buffer_float |
-| `userland/desktop/libglesv2/exports.map`、`userland/X11/libGL/fixed.c` | 新しい entry point、libGL の `glReadBuffer` の stub を削除 |
+| `userland/desktop/libglesv2/exports.map`、`userland/retro/libGL/fixed.c` | 新しい entry point、libGL の `glReadBuffer` の stub を削除 |
 | `userland/desktop/egltest/targets.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=targets` |
 | `plan/ws068/tests/egl-p026.sh`（新） | display と Wayland の画面の点、readback、API の検査 |
 

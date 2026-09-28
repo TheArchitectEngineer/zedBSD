@@ -1249,10 +1249,10 @@ $(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 DYNAMIC_GL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgl)
 
 $(DYNAMIC_DIR)/libGL.so: $(DYNAMIC_GL_OBJS) $(DYNAMIC_DIR)/libEGL.so $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
-	userland/X11/libGL/exports.map tools/build/check-dynamic-elf.py
+	userland/retro/libGL/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libGL.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
- --version-script=userland/X11/libGL/exports.map \
+ --version-script=userland/retro/libGL/exports.map \
  $(DYNAMIC_GL_OBJS) -L$(DYNAMIC_DIR) -l:libEGL.so -l:libvulkan.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libEGL.so --needed libvulkan.so --needed libc.so --soname libGL.so $@

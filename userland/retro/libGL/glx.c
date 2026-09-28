@@ -33,7 +33,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GL/glx.h>
-#include "userland/X11/libX11/Xzed.h"
+#include "userland/retro/libX11/Xzed.h"
 
 #include <pthread.h>
 #include <stdint.h>

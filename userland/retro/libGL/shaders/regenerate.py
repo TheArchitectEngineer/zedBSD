@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compiles libGL's fixed-function shaders and writes userland/X11/libGL/shaders.h.
+"""Compiles libGL's fixed-function shaders and writes userland/retro/libGL/shaders.h.
 
 The build uses the checked-in header, so no shader compiler is needed to
 build libGL; run this (with glslc and spirv-val on PATH) after changing a

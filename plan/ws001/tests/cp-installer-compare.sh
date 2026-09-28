@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws001-p025: runs the cp invocations the installer (userland/base/zedinst)
+# ws001-p025: runs the cp invocations the installer (userland/retro/zedinst)
 # makes with two cp binaries and compares the trees and the reports they
 # leave, so that the rewritten cp keeps the installer's contract.
 #   sh plan/ws001/tests/cp-installer-compare.sh OLD_CP NEW_CP

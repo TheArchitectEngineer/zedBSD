@@ -9,7 +9,7 @@
 ## R1: GPU backendが `CAP_GLYPH` を落とすと xzed が起動しなくなる（重大）
 
 初版の §5.3 は、GPU backendが `get_glyph` を持たず `CAP_GLYPH` を落とすとしていた。
-一方 `userland/X11/xzed/main.c:468-475` は、
+一方 `userland/retro/xzed/main.c:468-475` は、
 
 ```c
 if (ioctl(s->graphics, KERN_GRAPHICS_GET_CAPS, &caps))

@@ -4970,79 +4970,79 @@ p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2494	libc/	path	p023 c-i
 p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2495	libc/	path	p023 c-include tools/build/zedimage-host.c 13 libc/include/sys/types.h keep-root libc/include->include #include <sys/types.h>
 p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2496	libc/	path	p023 c-include tools/build/zedimage-host.c 14 libc/include/time.h keep-root libc/include->include #include <time.h>
 p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2497	libc/	path	p023 c-include tools/build/zedimage-host.c 15 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2498	libc/	path	p023 c-include userland/X11/libX11/xlib.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2499	libc/	path	p023 c-include userland/X11/libX11/xlib.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2500	libc/	path	p023 c-include userland/X11/libX11/xlib.c 16 libc/include/X11/keysym.h keep-root libc/include->include #include <X11/keysym.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2501	libc/	path	p023 c-include userland/X11/libX11/xlib.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2502	libc/	path	p023 c-include userland/X11/libX11/xlib.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2503	libc/	path	p023 c-include userland/X11/libX11/xlib.c 19 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2504	libc/	path	p023 c-include userland/X11/libX11/xlib.c 20 libc/include/string.h keep-root libc/include->include #include <string.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2505	libc/	path	p023 c-include userland/X11/libX11/xlib.c 21 libc/include/sys/socket.h keep-root libc/include->include #include <sys/socket.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2506	libc/	path	p023 c-include userland/X11/libX11/xlib.c 22 libc/include/sys/un.h keep-root libc/include->include #include <sys/un.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2507	libc/	path	p023 c-include userland/X11/libX11/xlib.c 23 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2508	libc/	path	p023 c-include userland/X11/xzed/input-posix.c 16 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2509	libc/	path	p023 c-include userland/X11/xzed/input-posix.c 17 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2510	libc/	path	p023 c-include userland/X11/xzed/input-posix.c 18 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2511	libc/	path	p023 c-include userland/X11/xzed/input.c 16 libc/include/dirent.h keep-root libc/include->include #include <dirent.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2512	libc/	path	p023 c-include userland/X11/xzed/input.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2513	libc/	path	p023 c-include userland/X11/xzed/input.c 18 libc/include/limits.h keep-root libc/include->include #include <limits.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2514	libc/	path	p023 c-include userland/X11/xzed/input.c 19 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2515	libc/	path	p023 c-include userland/X11/xzed/input.c 20 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2516	libc/	path	p023 c-include userland/X11/xzed/input.c 21 libc/include/string.h keep-root libc/include->include #include <string.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2517	libc/	path	p023 c-include userland/X11/xzed/input.h 17 libc/include/poll.h keep-root libc/include->include #include <poll.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2518	libc/	path	p023 c-include userland/X11/xzed/input.h 18 libc/include/stddef.h keep-root libc/include->include #include <stddef.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2519	libc/	path	p023 c-include userland/X11/xzed/input.h 19 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2520	libc/	path	p023 c-include userland/X11/xzed/input.h 20 libc/include/sys/types.h keep-root libc/include->include #include <sys/types.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2521	libc/	path	p023 c-include userland/X11/xzed/main.c 16 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2522	libc/	path	p023 c-include userland/X11/xzed/main.c 17 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2523	libc/	path	p023 c-include userland/X11/xzed/main.c 18 libc/include/poll.h keep-root libc/include->include #include <poll.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2524	libc/	path	p023 c-include userland/X11/xzed/main.c 19 libc/include/signal.h keep-root libc/include->include #include <signal.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2525	libc/	path	p023 c-include userland/X11/xzed/main.c 20 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2526	libc/	path	p023 c-include userland/X11/xzed/main.c 21 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2527	libc/	path	p023 c-include userland/X11/xzed/main.c 22 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2528	libc/	path	p023 c-include userland/X11/xzed/main.c 23 libc/include/string.h keep-root libc/include->include #include <string.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2529	libc/	path	p023 c-include userland/X11/xzed/main.c 24 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2530	libc/	path	p023 c-include userland/X11/xzed/main.c 25 libc/include/sys/socket.h keep-root libc/include->include #include <sys/socket.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2531	libc/	path	p023 c-include userland/X11/xzed/main.c 26 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2532	libc/	path	p023 c-include userland/X11/xzed/main.c 27 libc/include/sys/un.h keep-root libc/include->include #include <sys/un.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2533	libc/	path	p023 c-include userland/X11/xzed/main.c 28 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2534	libc/	path	p023 c-include userland/X11/xzed/pointer.h 17 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2535	libc/	path	p023 c-include userland/X11/zshell/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2536	libc/	path	p023 c-include userland/X11/zshell/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2537	libc/	path	p023 c-include userland/X11/zshell/main.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2538	libc/	path	p023 c-include userland/X11/zshell/main.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2539	libc/	path	p023 c-include userland/X11/zshell/main.c 19 libc/include/poll.h keep-root libc/include->include #include <poll.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2540	libc/	path	p023 c-include userland/X11/zshell/main.c 20 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2541	libc/	path	p023 c-include userland/X11/zshell/main.c 21 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2542	libc/	path	p023 c-include userland/X11/zshell/main.c 22 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2543	libc/	path	p023 c-include userland/X11/zshell/main.c 23 libc/include/string.h keep-root libc/include->include #include <string.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2544	libc/	path	p023 c-include userland/X11/zshell/main.c 24 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2545	libc/	path	p023 c-include userland/X11/zshell/main.c 25 libc/include/time.h keep-root libc/include->include #include <time.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2546	libc/	path	p023 c-include userland/X11/zshell/main.c 26 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2547	libc/	path	p023 c-include userland/X11/zterm/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2548	libc/	path	p023 c-include userland/X11/zterm/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2549	libc/	path	p023 c-include userland/X11/zterm/main.c 16 libc/include/X11/keysym.h keep-root libc/include->include #include <X11/keysym.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2550	libc/	path	p023 c-include userland/X11/zterm/main.c 18 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2551	libc/	path	p023 c-include userland/X11/zterm/main.c 19 libc/include/poll.h keep-root libc/include->include #include <poll.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2552	libc/	path	p023 c-include userland/X11/zterm/main.c 20 libc/include/pty.h keep-root libc/include->include #include <pty.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2553	libc/	path	p023 c-include userland/X11/zterm/main.c 21 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2554	libc/	path	p023 c-include userland/X11/zterm/main.c 22 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2555	libc/	path	p023 c-include userland/X11/zterm/main.c 23 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2556	libc/	path	p023 c-include userland/X11/zterm/main.c 24 libc/include/string.h keep-root libc/include->include #include <string.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2557	libc/	path	p023 c-include userland/X11/zterm/main.c 25 libc/include/sys/wait.h keep-root libc/include->include #include <sys/wait.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2558	libc/	path	p023 c-include userland/X11/zterm/main.c 26 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2559	libc/	path	p023 c-include userland/X11/zterm/main.c 27 libc/include/termios.h keep-root libc/include->include #include <termios.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2560	libc/	path	p023 c-include userland/X11/zterm/main.c 28 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2561	libc/	path	p023 c-include userland/X11/zwm/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2562	libc/	path	p023 c-include userland/X11/zwm/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2563	libc/	path	p023 c-include userland/X11/zwm/main.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2564	libc/	path	p023 c-include userland/X11/zwm/main.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2565	libc/	path	p023 c-include userland/X11/zwm/main.c 19 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2566	libc/	path	p023 c-include userland/X11/zwm/main.c 20 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2567	libc/	path	p023 c-include userland/X11/zwm/main.c 21 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2568	libc/	path	p023 c-include userland/X11/zwm/main.c 22 libc/include/string.h keep-root libc/include->include #include <string.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2569	libc/	path	p023 c-include userland/X11/zwm/main.c 23 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
-p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2570	libc/	path	p023 c-include userland/X11/zwm/main.c 24 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2498	libc/	path	p023 c-include userland/retro/libX11/xlib.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2499	libc/	path	p023 c-include userland/retro/libX11/xlib.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2500	libc/	path	p023 c-include userland/retro/libX11/xlib.c 16 libc/include/X11/keysym.h keep-root libc/include->include #include <X11/keysym.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2501	libc/	path	p023 c-include userland/retro/libX11/xlib.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2502	libc/	path	p023 c-include userland/retro/libX11/xlib.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2503	libc/	path	p023 c-include userland/retro/libX11/xlib.c 19 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2504	libc/	path	p023 c-include userland/retro/libX11/xlib.c 20 libc/include/string.h keep-root libc/include->include #include <string.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2505	libc/	path	p023 c-include userland/retro/libX11/xlib.c 21 libc/include/sys/socket.h keep-root libc/include->include #include <sys/socket.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2506	libc/	path	p023 c-include userland/retro/libX11/xlib.c 22 libc/include/sys/un.h keep-root libc/include->include #include <sys/un.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2507	libc/	path	p023 c-include userland/retro/libX11/xlib.c 23 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2508	libc/	path	p023 c-include userland/retro/xzed/input-posix.c 16 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2509	libc/	path	p023 c-include userland/retro/xzed/input-posix.c 17 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2510	libc/	path	p023 c-include userland/retro/xzed/input-posix.c 18 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2511	libc/	path	p023 c-include userland/retro/xzed/input.c 16 libc/include/dirent.h keep-root libc/include->include #include <dirent.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2512	libc/	path	p023 c-include userland/retro/xzed/input.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2513	libc/	path	p023 c-include userland/retro/xzed/input.c 18 libc/include/limits.h keep-root libc/include->include #include <limits.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2514	libc/	path	p023 c-include userland/retro/xzed/input.c 19 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2515	libc/	path	p023 c-include userland/retro/xzed/input.c 20 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2516	libc/	path	p023 c-include userland/retro/xzed/input.c 21 libc/include/string.h keep-root libc/include->include #include <string.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2517	libc/	path	p023 c-include userland/retro/xzed/input.h 17 libc/include/poll.h keep-root libc/include->include #include <poll.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2518	libc/	path	p023 c-include userland/retro/xzed/input.h 18 libc/include/stddef.h keep-root libc/include->include #include <stddef.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2519	libc/	path	p023 c-include userland/retro/xzed/input.h 19 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2520	libc/	path	p023 c-include userland/retro/xzed/input.h 20 libc/include/sys/types.h keep-root libc/include->include #include <sys/types.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2521	libc/	path	p023 c-include userland/retro/xzed/main.c 16 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2522	libc/	path	p023 c-include userland/retro/xzed/main.c 17 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2523	libc/	path	p023 c-include userland/retro/xzed/main.c 18 libc/include/poll.h keep-root libc/include->include #include <poll.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2524	libc/	path	p023 c-include userland/retro/xzed/main.c 19 libc/include/signal.h keep-root libc/include->include #include <signal.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2525	libc/	path	p023 c-include userland/retro/xzed/main.c 20 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2526	libc/	path	p023 c-include userland/retro/xzed/main.c 21 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2527	libc/	path	p023 c-include userland/retro/xzed/main.c 22 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2528	libc/	path	p023 c-include userland/retro/xzed/main.c 23 libc/include/string.h keep-root libc/include->include #include <string.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2529	libc/	path	p023 c-include userland/retro/xzed/main.c 24 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2530	libc/	path	p023 c-include userland/retro/xzed/main.c 25 libc/include/sys/socket.h keep-root libc/include->include #include <sys/socket.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2531	libc/	path	p023 c-include userland/retro/xzed/main.c 26 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2532	libc/	path	p023 c-include userland/retro/xzed/main.c 27 libc/include/sys/un.h keep-root libc/include->include #include <sys/un.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2533	libc/	path	p023 c-include userland/retro/xzed/main.c 28 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2534	libc/	path	p023 c-include userland/retro/xzed/pointer.h 17 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2535	libc/	path	p023 c-include userland/retro/zshell/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2536	libc/	path	p023 c-include userland/retro/zshell/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2537	libc/	path	p023 c-include userland/retro/zshell/main.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2538	libc/	path	p023 c-include userland/retro/zshell/main.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2539	libc/	path	p023 c-include userland/retro/zshell/main.c 19 libc/include/poll.h keep-root libc/include->include #include <poll.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2540	libc/	path	p023 c-include userland/retro/zshell/main.c 20 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2541	libc/	path	p023 c-include userland/retro/zshell/main.c 21 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2542	libc/	path	p023 c-include userland/retro/zshell/main.c 22 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2543	libc/	path	p023 c-include userland/retro/zshell/main.c 23 libc/include/string.h keep-root libc/include->include #include <string.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2544	libc/	path	p023 c-include userland/retro/zshell/main.c 24 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2545	libc/	path	p023 c-include userland/retro/zshell/main.c 25 libc/include/time.h keep-root libc/include->include #include <time.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2546	libc/	path	p023 c-include userland/retro/zshell/main.c 26 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2547	libc/	path	p023 c-include userland/retro/zterm/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2548	libc/	path	p023 c-include userland/retro/zterm/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2549	libc/	path	p023 c-include userland/retro/zterm/main.c 16 libc/include/X11/keysym.h keep-root libc/include->include #include <X11/keysym.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2550	libc/	path	p023 c-include userland/retro/zterm/main.c 18 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2551	libc/	path	p023 c-include userland/retro/zterm/main.c 19 libc/include/poll.h keep-root libc/include->include #include <poll.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2552	libc/	path	p023 c-include userland/retro/zterm/main.c 20 libc/include/pty.h keep-root libc/include->include #include <pty.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2553	libc/	path	p023 c-include userland/retro/zterm/main.c 21 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2554	libc/	path	p023 c-include userland/retro/zterm/main.c 22 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2555	libc/	path	p023 c-include userland/retro/zterm/main.c 23 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2556	libc/	path	p023 c-include userland/retro/zterm/main.c 24 libc/include/string.h keep-root libc/include->include #include <string.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2557	libc/	path	p023 c-include userland/retro/zterm/main.c 25 libc/include/sys/wait.h keep-root libc/include->include #include <sys/wait.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2558	libc/	path	p023 c-include userland/retro/zterm/main.c 26 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2559	libc/	path	p023 c-include userland/retro/zterm/main.c 27 libc/include/termios.h keep-root libc/include->include #include <termios.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2560	libc/	path	p023 c-include userland/retro/zterm/main.c 28 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2561	libc/	path	p023 c-include userland/retro/zwm/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2562	libc/	path	p023 c-include userland/retro/zwm/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2563	libc/	path	p023 c-include userland/retro/zwm/main.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2564	libc/	path	p023 c-include userland/retro/zwm/main.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2565	libc/	path	p023 c-include userland/retro/zwm/main.c 19 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2566	libc/	path	p023 c-include userland/retro/zwm/main.c 20 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2567	libc/	path	p023 c-include userland/retro/zwm/main.c 21 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2568	libc/	path	p023 c-include userland/retro/zwm/main.c 22 libc/include/string.h keep-root libc/include->include #include <string.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2569	libc/	path	p023 c-include userland/retro/zwm/main.c 23 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
+p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2570	libc/	path	p023 c-include userland/retro/zwm/main.c 24 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
 p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2571	libc/	path	p023 c-include userland/base/ar/main.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
 p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2572	libc/	path	p023 c-include userland/base/ar/main.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
 p003	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2573	libc/	path	p023 c-include userland/base/ar/main.c 19 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
@@ -10803,79 +10803,79 @@ p023	c-include	tools/build/zedimage-host.c	12	libc/include/sys/stat.h	keep-root 
 p023	c-include	tools/build/zedimage-host.c	13	libc/include/sys/types.h	keep-root libc/include->include	#include <sys/types.h>
 p023	c-include	tools/build/zedimage-host.c	14	libc/include/time.h	keep-root libc/include->include	#include <time.h>
 p023	c-include	tools/build/zedimage-host.c	15	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/X11/libX11/xlib.c	14	libc/include/X11/Xlib.h	keep-root libc/include->include	#include <X11/Xlib.h>
-p023	c-include	userland/X11/libX11/xlib.c	15	libc/include/X11/Xzed.h	keep-root libc/include->include	#include <X11/Xzed.h>
-p023	c-include	userland/X11/libX11/xlib.c	16	libc/include/X11/keysym.h	keep-root libc/include->include	#include <X11/keysym.h>
-p023	c-include	userland/X11/libX11/xlib.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/X11/libX11/xlib.c	18	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/X11/libX11/xlib.c	19	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/X11/libX11/xlib.c	20	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/X11/libX11/xlib.c	21	libc/include/sys/socket.h	keep-root libc/include->include	#include <sys/socket.h>
-p023	c-include	userland/X11/libX11/xlib.c	22	libc/include/sys/un.h	keep-root libc/include->include	#include <sys/un.h>
-p023	c-include	userland/X11/libX11/xlib.c	23	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/X11/xzed/input-posix.c	16	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/X11/xzed/input-posix.c	17	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
-p023	c-include	userland/X11/xzed/input-posix.c	18	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/X11/xzed/input.c	16	libc/include/dirent.h	keep-root libc/include->include	#include <dirent.h>
-p023	c-include	userland/X11/xzed/input.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/X11/xzed/input.c	18	libc/include/limits.h	keep-root libc/include->include	#include <limits.h>
-p023	c-include	userland/X11/xzed/input.c	19	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/X11/xzed/input.c	20	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/X11/xzed/input.c	21	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/X11/xzed/input.h	17	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/X11/xzed/input.h	18	libc/include/stddef.h	keep-root libc/include->include	#include <stddef.h>
-p023	c-include	userland/X11/xzed/input.h	19	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/X11/xzed/input.h	20	libc/include/sys/types.h	keep-root libc/include->include	#include <sys/types.h>
-p023	c-include	userland/X11/xzed/main.c	16	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/X11/xzed/main.c	17	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/X11/xzed/main.c	18	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/X11/xzed/main.c	19	libc/include/signal.h	keep-root libc/include->include	#include <signal.h>
-p023	c-include	userland/X11/xzed/main.c	20	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/X11/xzed/main.c	21	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/X11/xzed/main.c	22	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/X11/xzed/main.c	23	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/X11/xzed/main.c	24	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
-p023	c-include	userland/X11/xzed/main.c	25	libc/include/sys/socket.h	keep-root libc/include->include	#include <sys/socket.h>
-p023	c-include	userland/X11/xzed/main.c	26	libc/include/sys/stat.h	keep-root libc/include->include	#include <sys/stat.h>
-p023	c-include	userland/X11/xzed/main.c	27	libc/include/sys/un.h	keep-root libc/include->include	#include <sys/un.h>
-p023	c-include	userland/X11/xzed/main.c	28	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/X11/xzed/pointer.h	17	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/X11/zshell/main.c	14	libc/include/X11/Xlib.h	keep-root libc/include->include	#include <X11/Xlib.h>
-p023	c-include	userland/X11/zshell/main.c	15	libc/include/X11/Xzed.h	keep-root libc/include->include	#include <X11/Xzed.h>
-p023	c-include	userland/X11/zshell/main.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/X11/zshell/main.c	18	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/X11/zshell/main.c	19	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/X11/zshell/main.c	20	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/X11/zshell/main.c	21	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/X11/zshell/main.c	22	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/X11/zshell/main.c	23	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/X11/zshell/main.c	24	libc/include/sys/stat.h	keep-root libc/include->include	#include <sys/stat.h>
-p023	c-include	userland/X11/zshell/main.c	25	libc/include/time.h	keep-root libc/include->include	#include <time.h>
-p023	c-include	userland/X11/zshell/main.c	26	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/X11/zterm/main.c	14	libc/include/X11/Xlib.h	keep-root libc/include->include	#include <X11/Xlib.h>
-p023	c-include	userland/X11/zterm/main.c	15	libc/include/X11/Xzed.h	keep-root libc/include->include	#include <X11/Xzed.h>
-p023	c-include	userland/X11/zterm/main.c	16	libc/include/X11/keysym.h	keep-root libc/include->include	#include <X11/keysym.h>
-p023	c-include	userland/X11/zterm/main.c	18	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/X11/zterm/main.c	19	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/X11/zterm/main.c	20	libc/include/pty.h	keep-root libc/include->include	#include <pty.h>
-p023	c-include	userland/X11/zterm/main.c	21	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/X11/zterm/main.c	22	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/X11/zterm/main.c	23	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/X11/zterm/main.c	24	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/X11/zterm/main.c	25	libc/include/sys/wait.h	keep-root libc/include->include	#include <sys/wait.h>
-p023	c-include	userland/X11/zterm/main.c	26	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
-p023	c-include	userland/X11/zterm/main.c	27	libc/include/termios.h	keep-root libc/include->include	#include <termios.h>
-p023	c-include	userland/X11/zterm/main.c	28	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/X11/zwm/main.c	14	libc/include/X11/Xlib.h	keep-root libc/include->include	#include <X11/Xlib.h>
-p023	c-include	userland/X11/zwm/main.c	15	libc/include/X11/Xzed.h	keep-root libc/include->include	#include <X11/Xzed.h>
-p023	c-include	userland/X11/zwm/main.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/X11/zwm/main.c	18	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/X11/zwm/main.c	19	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/X11/zwm/main.c	20	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/X11/zwm/main.c	21	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/X11/zwm/main.c	22	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/X11/zwm/main.c	23	libc/include/sys/stat.h	keep-root libc/include->include	#include <sys/stat.h>
-p023	c-include	userland/X11/zwm/main.c	24	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/retro/libX11/xlib.c	14	libc/include/X11/Xlib.h	keep-root libc/include->include	#include <X11/Xlib.h>
+p023	c-include	userland/retro/libX11/xlib.c	15	libc/include/X11/Xzed.h	keep-root libc/include->include	#include <X11/Xzed.h>
+p023	c-include	userland/retro/libX11/xlib.c	16	libc/include/X11/keysym.h	keep-root libc/include->include	#include <X11/keysym.h>
+p023	c-include	userland/retro/libX11/xlib.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/retro/libX11/xlib.c	18	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/retro/libX11/xlib.c	19	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/retro/libX11/xlib.c	20	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/retro/libX11/xlib.c	21	libc/include/sys/socket.h	keep-root libc/include->include	#include <sys/socket.h>
+p023	c-include	userland/retro/libX11/xlib.c	22	libc/include/sys/un.h	keep-root libc/include->include	#include <sys/un.h>
+p023	c-include	userland/retro/libX11/xlib.c	23	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/retro/xzed/input-posix.c	16	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/retro/xzed/input-posix.c	17	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
+p023	c-include	userland/retro/xzed/input-posix.c	18	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/retro/xzed/input.c	16	libc/include/dirent.h	keep-root libc/include->include	#include <dirent.h>
+p023	c-include	userland/retro/xzed/input.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/retro/xzed/input.c	18	libc/include/limits.h	keep-root libc/include->include	#include <limits.h>
+p023	c-include	userland/retro/xzed/input.c	19	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/retro/xzed/input.c	20	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/retro/xzed/input.c	21	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/retro/xzed/input.h	17	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/retro/xzed/input.h	18	libc/include/stddef.h	keep-root libc/include->include	#include <stddef.h>
+p023	c-include	userland/retro/xzed/input.h	19	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/retro/xzed/input.h	20	libc/include/sys/types.h	keep-root libc/include->include	#include <sys/types.h>
+p023	c-include	userland/retro/xzed/main.c	16	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/retro/xzed/main.c	17	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/retro/xzed/main.c	18	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/retro/xzed/main.c	19	libc/include/signal.h	keep-root libc/include->include	#include <signal.h>
+p023	c-include	userland/retro/xzed/main.c	20	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/retro/xzed/main.c	21	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/retro/xzed/main.c	22	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/retro/xzed/main.c	23	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/retro/xzed/main.c	24	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
+p023	c-include	userland/retro/xzed/main.c	25	libc/include/sys/socket.h	keep-root libc/include->include	#include <sys/socket.h>
+p023	c-include	userland/retro/xzed/main.c	26	libc/include/sys/stat.h	keep-root libc/include->include	#include <sys/stat.h>
+p023	c-include	userland/retro/xzed/main.c	27	libc/include/sys/un.h	keep-root libc/include->include	#include <sys/un.h>
+p023	c-include	userland/retro/xzed/main.c	28	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/retro/xzed/pointer.h	17	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/retro/zshell/main.c	14	libc/include/X11/Xlib.h	keep-root libc/include->include	#include <X11/Xlib.h>
+p023	c-include	userland/retro/zshell/main.c	15	libc/include/X11/Xzed.h	keep-root libc/include->include	#include <X11/Xzed.h>
+p023	c-include	userland/retro/zshell/main.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/retro/zshell/main.c	18	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/retro/zshell/main.c	19	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/retro/zshell/main.c	20	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/retro/zshell/main.c	21	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/retro/zshell/main.c	22	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/retro/zshell/main.c	23	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/retro/zshell/main.c	24	libc/include/sys/stat.h	keep-root libc/include->include	#include <sys/stat.h>
+p023	c-include	userland/retro/zshell/main.c	25	libc/include/time.h	keep-root libc/include->include	#include <time.h>
+p023	c-include	userland/retro/zshell/main.c	26	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/retro/zterm/main.c	14	libc/include/X11/Xlib.h	keep-root libc/include->include	#include <X11/Xlib.h>
+p023	c-include	userland/retro/zterm/main.c	15	libc/include/X11/Xzed.h	keep-root libc/include->include	#include <X11/Xzed.h>
+p023	c-include	userland/retro/zterm/main.c	16	libc/include/X11/keysym.h	keep-root libc/include->include	#include <X11/keysym.h>
+p023	c-include	userland/retro/zterm/main.c	18	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/retro/zterm/main.c	19	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/retro/zterm/main.c	20	libc/include/pty.h	keep-root libc/include->include	#include <pty.h>
+p023	c-include	userland/retro/zterm/main.c	21	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/retro/zterm/main.c	22	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/retro/zterm/main.c	23	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/retro/zterm/main.c	24	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/retro/zterm/main.c	25	libc/include/sys/wait.h	keep-root libc/include->include	#include <sys/wait.h>
+p023	c-include	userland/retro/zterm/main.c	26	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
+p023	c-include	userland/retro/zterm/main.c	27	libc/include/termios.h	keep-root libc/include->include	#include <termios.h>
+p023	c-include	userland/retro/zterm/main.c	28	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/retro/zwm/main.c	14	libc/include/X11/Xlib.h	keep-root libc/include->include	#include <X11/Xlib.h>
+p023	c-include	userland/retro/zwm/main.c	15	libc/include/X11/Xzed.h	keep-root libc/include->include	#include <X11/Xzed.h>
+p023	c-include	userland/retro/zwm/main.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/retro/zwm/main.c	18	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/retro/zwm/main.c	19	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/retro/zwm/main.c	20	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/retro/zwm/main.c	21	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/retro/zwm/main.c	22	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/retro/zwm/main.c	23	libc/include/sys/stat.h	keep-root libc/include->include	#include <sys/stat.h>
+p023	c-include	userland/retro/zwm/main.c	24	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
 p023	c-include	userland/base/ar/main.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
 p023	c-include	userland/base/ar/main.c	18	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
 p023	c-include	userland/base/ar/main.c	19	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
@@ -18449,79 +18449,79 @@ p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2494	libc/include/sys/st
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2495	libc/include/sys/types.h	path	p023 c-include tools/build/zedimage-host.c 13 libc/include/sys/types.h keep-root libc/include->include #include <sys/types.h>
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2496	libc/include/time.h	path	p023 c-include tools/build/zedimage-host.c 14 libc/include/time.h keep-root libc/include->include #include <time.h>
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2497	libc/include/unistd.h	path	p023 c-include tools/build/zedimage-host.c 15 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2498	libc/include/X11/Xlib.h	path	p023 c-include userland/X11/libX11/xlib.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2499	libc/include/X11/Xzed.h	path	p023 c-include userland/X11/libX11/xlib.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2500	libc/include/X11/keysym.h	path	p023 c-include userland/X11/libX11/xlib.c 16 libc/include/X11/keysym.h keep-root libc/include->include #include <X11/keysym.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2501	libc/include/errno.h	path	p023 c-include userland/X11/libX11/xlib.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2502	libc/include/fcntl.h	path	p023 c-include userland/X11/libX11/xlib.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2503	libc/include/stdlib.h	path	p023 c-include userland/X11/libX11/xlib.c 19 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2504	libc/include/string.h	path	p023 c-include userland/X11/libX11/xlib.c 20 libc/include/string.h keep-root libc/include->include #include <string.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2505	libc/include/sys/socket.h	path	p023 c-include userland/X11/libX11/xlib.c 21 libc/include/sys/socket.h keep-root libc/include->include #include <sys/socket.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2506	libc/include/sys/un.h	path	p023 c-include userland/X11/libX11/xlib.c 22 libc/include/sys/un.h keep-root libc/include->include #include <sys/un.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2507	libc/include/unistd.h	path	p023 c-include userland/X11/libX11/xlib.c 23 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2508	libc/include/fcntl.h	path	p023 c-include userland/X11/xzed/input-posix.c 16 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2509	libc/include/sys/ioctl.h	path	p023 c-include userland/X11/xzed/input-posix.c 17 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2510	libc/include/unistd.h	path	p023 c-include userland/X11/xzed/input-posix.c 18 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2511	libc/include/dirent.h	path	p023 c-include userland/X11/xzed/input.c 16 libc/include/dirent.h keep-root libc/include->include #include <dirent.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2512	libc/include/errno.h	path	p023 c-include userland/X11/xzed/input.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2513	libc/include/limits.h	path	p023 c-include userland/X11/xzed/input.c 18 libc/include/limits.h keep-root libc/include->include #include <limits.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2514	libc/include/stdio.h	path	p023 c-include userland/X11/xzed/input.c 19 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2515	libc/include/stdlib.h	path	p023 c-include userland/X11/xzed/input.c 20 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2516	libc/include/string.h	path	p023 c-include userland/X11/xzed/input.c 21 libc/include/string.h keep-root libc/include->include #include <string.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2517	libc/include/poll.h	path	p023 c-include userland/X11/xzed/input.h 17 libc/include/poll.h keep-root libc/include->include #include <poll.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2518	libc/include/stddef.h	path	p023 c-include userland/X11/xzed/input.h 18 libc/include/stddef.h keep-root libc/include->include #include <stddef.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2519	libc/include/stdint.h	path	p023 c-include userland/X11/xzed/input.h 19 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2520	libc/include/sys/types.h	path	p023 c-include userland/X11/xzed/input.h 20 libc/include/sys/types.h keep-root libc/include->include #include <sys/types.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2521	libc/include/errno.h	path	p023 c-include userland/X11/xzed/main.c 16 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2522	libc/include/fcntl.h	path	p023 c-include userland/X11/xzed/main.c 17 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2523	libc/include/poll.h	path	p023 c-include userland/X11/xzed/main.c 18 libc/include/poll.h keep-root libc/include->include #include <poll.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2524	libc/include/signal.h	path	p023 c-include userland/X11/xzed/main.c 19 libc/include/signal.h keep-root libc/include->include #include <signal.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2525	libc/include/stdint.h	path	p023 c-include userland/X11/xzed/main.c 20 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2526	libc/include/stdio.h	path	p023 c-include userland/X11/xzed/main.c 21 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2527	libc/include/stdlib.h	path	p023 c-include userland/X11/xzed/main.c 22 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2528	libc/include/string.h	path	p023 c-include userland/X11/xzed/main.c 23 libc/include/string.h keep-root libc/include->include #include <string.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2529	libc/include/sys/ioctl.h	path	p023 c-include userland/X11/xzed/main.c 24 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2530	libc/include/sys/socket.h	path	p023 c-include userland/X11/xzed/main.c 25 libc/include/sys/socket.h keep-root libc/include->include #include <sys/socket.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2531	libc/include/sys/stat.h	path	p023 c-include userland/X11/xzed/main.c 26 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2532	libc/include/sys/un.h	path	p023 c-include userland/X11/xzed/main.c 27 libc/include/sys/un.h keep-root libc/include->include #include <sys/un.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2533	libc/include/unistd.h	path	p023 c-include userland/X11/xzed/main.c 28 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2534	libc/include/stdint.h	path	p023 c-include userland/X11/xzed/pointer.h 17 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2535	libc/include/X11/Xlib.h	path	p023 c-include userland/X11/zshell/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2536	libc/include/X11/Xzed.h	path	p023 c-include userland/X11/zshell/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2537	libc/include/errno.h	path	p023 c-include userland/X11/zshell/main.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2538	libc/include/fcntl.h	path	p023 c-include userland/X11/zshell/main.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2539	libc/include/poll.h	path	p023 c-include userland/X11/zshell/main.c 19 libc/include/poll.h keep-root libc/include->include #include <poll.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2540	libc/include/stdint.h	path	p023 c-include userland/X11/zshell/main.c 20 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2541	libc/include/stdio.h	path	p023 c-include userland/X11/zshell/main.c 21 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2542	libc/include/stdlib.h	path	p023 c-include userland/X11/zshell/main.c 22 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2543	libc/include/string.h	path	p023 c-include userland/X11/zshell/main.c 23 libc/include/string.h keep-root libc/include->include #include <string.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2544	libc/include/sys/stat.h	path	p023 c-include userland/X11/zshell/main.c 24 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2545	libc/include/time.h	path	p023 c-include userland/X11/zshell/main.c 25 libc/include/time.h keep-root libc/include->include #include <time.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2546	libc/include/unistd.h	path	p023 c-include userland/X11/zshell/main.c 26 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2547	libc/include/X11/Xlib.h	path	p023 c-include userland/X11/zterm/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2548	libc/include/X11/Xzed.h	path	p023 c-include userland/X11/zterm/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2549	libc/include/X11/keysym.h	path	p023 c-include userland/X11/zterm/main.c 16 libc/include/X11/keysym.h keep-root libc/include->include #include <X11/keysym.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2550	libc/include/errno.h	path	p023 c-include userland/X11/zterm/main.c 18 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2551	libc/include/poll.h	path	p023 c-include userland/X11/zterm/main.c 19 libc/include/poll.h keep-root libc/include->include #include <poll.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2552	libc/include/pty.h	path	p023 c-include userland/X11/zterm/main.c 20 libc/include/pty.h keep-root libc/include->include #include <pty.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2553	libc/include/stdint.h	path	p023 c-include userland/X11/zterm/main.c 21 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2554	libc/include/stdio.h	path	p023 c-include userland/X11/zterm/main.c 22 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2555	libc/include/stdlib.h	path	p023 c-include userland/X11/zterm/main.c 23 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2556	libc/include/string.h	path	p023 c-include userland/X11/zterm/main.c 24 libc/include/string.h keep-root libc/include->include #include <string.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2557	libc/include/sys/wait.h	path	p023 c-include userland/X11/zterm/main.c 25 libc/include/sys/wait.h keep-root libc/include->include #include <sys/wait.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2558	libc/include/sys/ioctl.h	path	p023 c-include userland/X11/zterm/main.c 26 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2559	libc/include/termios.h	path	p023 c-include userland/X11/zterm/main.c 27 libc/include/termios.h keep-root libc/include->include #include <termios.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2560	libc/include/unistd.h	path	p023 c-include userland/X11/zterm/main.c 28 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2561	libc/include/X11/Xlib.h	path	p023 c-include userland/X11/zwm/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2562	libc/include/X11/Xzed.h	path	p023 c-include userland/X11/zwm/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2563	libc/include/errno.h	path	p023 c-include userland/X11/zwm/main.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2564	libc/include/fcntl.h	path	p023 c-include userland/X11/zwm/main.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2565	libc/include/stdint.h	path	p023 c-include userland/X11/zwm/main.c 19 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2566	libc/include/stdio.h	path	p023 c-include userland/X11/zwm/main.c 20 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2567	libc/include/stdlib.h	path	p023 c-include userland/X11/zwm/main.c 21 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2568	libc/include/string.h	path	p023 c-include userland/X11/zwm/main.c 22 libc/include/string.h keep-root libc/include->include #include <string.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2569	libc/include/sys/stat.h	path	p023 c-include userland/X11/zwm/main.c 23 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2570	libc/include/unistd.h	path	p023 c-include userland/X11/zwm/main.c 24 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2498	libc/include/X11/Xlib.h	path	p023 c-include userland/retro/libX11/xlib.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2499	libc/include/X11/Xzed.h	path	p023 c-include userland/retro/libX11/xlib.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2500	libc/include/X11/keysym.h	path	p023 c-include userland/retro/libX11/xlib.c 16 libc/include/X11/keysym.h keep-root libc/include->include #include <X11/keysym.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2501	libc/include/errno.h	path	p023 c-include userland/retro/libX11/xlib.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2502	libc/include/fcntl.h	path	p023 c-include userland/retro/libX11/xlib.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2503	libc/include/stdlib.h	path	p023 c-include userland/retro/libX11/xlib.c 19 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2504	libc/include/string.h	path	p023 c-include userland/retro/libX11/xlib.c 20 libc/include/string.h keep-root libc/include->include #include <string.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2505	libc/include/sys/socket.h	path	p023 c-include userland/retro/libX11/xlib.c 21 libc/include/sys/socket.h keep-root libc/include->include #include <sys/socket.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2506	libc/include/sys/un.h	path	p023 c-include userland/retro/libX11/xlib.c 22 libc/include/sys/un.h keep-root libc/include->include #include <sys/un.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2507	libc/include/unistd.h	path	p023 c-include userland/retro/libX11/xlib.c 23 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2508	libc/include/fcntl.h	path	p023 c-include userland/retro/xzed/input-posix.c 16 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2509	libc/include/sys/ioctl.h	path	p023 c-include userland/retro/xzed/input-posix.c 17 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2510	libc/include/unistd.h	path	p023 c-include userland/retro/xzed/input-posix.c 18 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2511	libc/include/dirent.h	path	p023 c-include userland/retro/xzed/input.c 16 libc/include/dirent.h keep-root libc/include->include #include <dirent.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2512	libc/include/errno.h	path	p023 c-include userland/retro/xzed/input.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2513	libc/include/limits.h	path	p023 c-include userland/retro/xzed/input.c 18 libc/include/limits.h keep-root libc/include->include #include <limits.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2514	libc/include/stdio.h	path	p023 c-include userland/retro/xzed/input.c 19 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2515	libc/include/stdlib.h	path	p023 c-include userland/retro/xzed/input.c 20 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2516	libc/include/string.h	path	p023 c-include userland/retro/xzed/input.c 21 libc/include/string.h keep-root libc/include->include #include <string.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2517	libc/include/poll.h	path	p023 c-include userland/retro/xzed/input.h 17 libc/include/poll.h keep-root libc/include->include #include <poll.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2518	libc/include/stddef.h	path	p023 c-include userland/retro/xzed/input.h 18 libc/include/stddef.h keep-root libc/include->include #include <stddef.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2519	libc/include/stdint.h	path	p023 c-include userland/retro/xzed/input.h 19 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2520	libc/include/sys/types.h	path	p023 c-include userland/retro/xzed/input.h 20 libc/include/sys/types.h keep-root libc/include->include #include <sys/types.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2521	libc/include/errno.h	path	p023 c-include userland/retro/xzed/main.c 16 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2522	libc/include/fcntl.h	path	p023 c-include userland/retro/xzed/main.c 17 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2523	libc/include/poll.h	path	p023 c-include userland/retro/xzed/main.c 18 libc/include/poll.h keep-root libc/include->include #include <poll.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2524	libc/include/signal.h	path	p023 c-include userland/retro/xzed/main.c 19 libc/include/signal.h keep-root libc/include->include #include <signal.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2525	libc/include/stdint.h	path	p023 c-include userland/retro/xzed/main.c 20 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2526	libc/include/stdio.h	path	p023 c-include userland/retro/xzed/main.c 21 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2527	libc/include/stdlib.h	path	p023 c-include userland/retro/xzed/main.c 22 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2528	libc/include/string.h	path	p023 c-include userland/retro/xzed/main.c 23 libc/include/string.h keep-root libc/include->include #include <string.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2529	libc/include/sys/ioctl.h	path	p023 c-include userland/retro/xzed/main.c 24 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2530	libc/include/sys/socket.h	path	p023 c-include userland/retro/xzed/main.c 25 libc/include/sys/socket.h keep-root libc/include->include #include <sys/socket.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2531	libc/include/sys/stat.h	path	p023 c-include userland/retro/xzed/main.c 26 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2532	libc/include/sys/un.h	path	p023 c-include userland/retro/xzed/main.c 27 libc/include/sys/un.h keep-root libc/include->include #include <sys/un.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2533	libc/include/unistd.h	path	p023 c-include userland/retro/xzed/main.c 28 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2534	libc/include/stdint.h	path	p023 c-include userland/retro/xzed/pointer.h 17 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2535	libc/include/X11/Xlib.h	path	p023 c-include userland/retro/zshell/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2536	libc/include/X11/Xzed.h	path	p023 c-include userland/retro/zshell/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2537	libc/include/errno.h	path	p023 c-include userland/retro/zshell/main.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2538	libc/include/fcntl.h	path	p023 c-include userland/retro/zshell/main.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2539	libc/include/poll.h	path	p023 c-include userland/retro/zshell/main.c 19 libc/include/poll.h keep-root libc/include->include #include <poll.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2540	libc/include/stdint.h	path	p023 c-include userland/retro/zshell/main.c 20 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2541	libc/include/stdio.h	path	p023 c-include userland/retro/zshell/main.c 21 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2542	libc/include/stdlib.h	path	p023 c-include userland/retro/zshell/main.c 22 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2543	libc/include/string.h	path	p023 c-include userland/retro/zshell/main.c 23 libc/include/string.h keep-root libc/include->include #include <string.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2544	libc/include/sys/stat.h	path	p023 c-include userland/retro/zshell/main.c 24 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2545	libc/include/time.h	path	p023 c-include userland/retro/zshell/main.c 25 libc/include/time.h keep-root libc/include->include #include <time.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2546	libc/include/unistd.h	path	p023 c-include userland/retro/zshell/main.c 26 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2547	libc/include/X11/Xlib.h	path	p023 c-include userland/retro/zterm/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2548	libc/include/X11/Xzed.h	path	p023 c-include userland/retro/zterm/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2549	libc/include/X11/keysym.h	path	p023 c-include userland/retro/zterm/main.c 16 libc/include/X11/keysym.h keep-root libc/include->include #include <X11/keysym.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2550	libc/include/errno.h	path	p023 c-include userland/retro/zterm/main.c 18 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2551	libc/include/poll.h	path	p023 c-include userland/retro/zterm/main.c 19 libc/include/poll.h keep-root libc/include->include #include <poll.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2552	libc/include/pty.h	path	p023 c-include userland/retro/zterm/main.c 20 libc/include/pty.h keep-root libc/include->include #include <pty.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2553	libc/include/stdint.h	path	p023 c-include userland/retro/zterm/main.c 21 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2554	libc/include/stdio.h	path	p023 c-include userland/retro/zterm/main.c 22 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2555	libc/include/stdlib.h	path	p023 c-include userland/retro/zterm/main.c 23 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2556	libc/include/string.h	path	p023 c-include userland/retro/zterm/main.c 24 libc/include/string.h keep-root libc/include->include #include <string.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2557	libc/include/sys/wait.h	path	p023 c-include userland/retro/zterm/main.c 25 libc/include/sys/wait.h keep-root libc/include->include #include <sys/wait.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2558	libc/include/sys/ioctl.h	path	p023 c-include userland/retro/zterm/main.c 26 libc/include/sys/ioctl.h keep-root libc/include->include #include <sys/ioctl.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2559	libc/include/termios.h	path	p023 c-include userland/retro/zterm/main.c 27 libc/include/termios.h keep-root libc/include->include #include <termios.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2560	libc/include/unistd.h	path	p023 c-include userland/retro/zterm/main.c 28 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2561	libc/include/X11/Xlib.h	path	p023 c-include userland/retro/zwm/main.c 14 libc/include/X11/Xlib.h keep-root libc/include->include #include <X11/Xlib.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2562	libc/include/X11/Xzed.h	path	p023 c-include userland/retro/zwm/main.c 15 libc/include/X11/Xzed.h keep-root libc/include->include #include <X11/Xzed.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2563	libc/include/errno.h	path	p023 c-include userland/retro/zwm/main.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2564	libc/include/fcntl.h	path	p023 c-include userland/retro/zwm/main.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2565	libc/include/stdint.h	path	p023 c-include userland/retro/zwm/main.c 19 libc/include/stdint.h keep-root libc/include->include #include <stdint.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2566	libc/include/stdio.h	path	p023 c-include userland/retro/zwm/main.c 20 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2567	libc/include/stdlib.h	path	p023 c-include userland/retro/zwm/main.c 21 libc/include/stdlib.h keep-root libc/include->include #include <stdlib.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2568	libc/include/string.h	path	p023 c-include userland/retro/zwm/main.c 22 libc/include/string.h keep-root libc/include->include #include <string.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2569	libc/include/sys/stat.h	path	p023 c-include userland/retro/zwm/main.c 23 libc/include/sys/stat.h keep-root libc/include->include #include <sys/stat.h>
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2570	libc/include/unistd.h	path	p023 c-include userland/retro/zwm/main.c 24 libc/include/unistd.h keep-root libc/include->include #include <unistd.h>
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2571	libc/include/errno.h	path	p023 c-include userland/base/ar/main.c 17 libc/include/errno.h keep-root libc/include->include #include <errno.h>
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2572	libc/include/fcntl.h	path	p023 c-include userland/base/ar/main.c 18 libc/include/fcntl.h keep-root libc/include->include #include <fcntl.h>
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	2573	libc/include/stdio.h	path	p023 c-include userland/base/ar/main.c 19 libc/include/stdio.h keep-root libc/include->include #include <stdio.h>
@@ -20375,7 +20375,7 @@ p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	4420	libc/include/	path	
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	4421	libc/include/	path	p023 plan-tests plan/ws001/tests/directory-fsync-host-test.mk 9 libc/include/ path -I$(REPO)/include/uapi -I$(REPO)/src -I$(REPO)/libc/include -I$(REPO)
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	4422	libc/include/	path	p023 plan-tests plan/ws006/tests/README.md 37 libc/include/ path cc -m64 -nostdinc -Ilibc/include -Iinclude/uapi -Iinclude \
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	4423	libc/include/	path	p023 plan-tests plan/ws006/tests/README.md 40 libc/include/ path cc -m32 -nostdinc -Ilibc/include -Iinclude/uapi -Iinclude \
-p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	4424	libc/include/	path	p023 plan-tests plan/ws006/tests/audit-console-input.py 10 libc/include/ path for directory in ['src', 'include', 'libc/include', 'userland/base', 'userland/X11']:
+p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	4424	libc/include/	path	p023 plan-tests plan/ws006/tests/audit-console-input.py 10 libc/include/ path for directory in ['src', 'include', 'libc/include', 'userland/base', 'userland/retro']:
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	4425	libc/include/	path	p023 plan-tests plan/ws007/tests/README.md 43 libc/include/ path -Iinclude -Iinclude/uapi -Isrc -Isrc/hal/i386 -Ilibc/include \
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	4426	libc/include/	path	p023 plan-tests plan/ws011/tests/overlay-publication-host-test.mk 10 libc/include/ path -I$(REPO)/include/uapi -I$(REPO)/src -I$(REPO)/libc/include -I$(REPO)
 p023	plan-records	plan/ws035/phase002/pre-refs/refs.tsv	4427	libc/include/	path	p023 plan-tests plan/ws011/tests/run-fat-write-cost-host-test.sh 17 libc/include/ path -fdata-sections -Iinclude -Iinclude/uapi -Isrc -Ilibc/include -I. \
@@ -22984,7 +22984,7 @@ p023	plan-tests	plan/ws005/tests/run-wifi-command-test.sh	15	libc/include/	path	
 p023	plan-tests	plan/ws005/tests/wifi-credential-native-qemu.noct	259	libc/include/	path	zbShellQuote(repo + "/libc/include") + " -I" +
 p023	plan-tests	plan/ws006/tests/README.md	37	libc/include/	path	cc -m64 -nostdinc -Ilibc/include -Iinclude/uapi -Iinclude \
 p023	plan-tests	plan/ws006/tests/README.md	40	libc/include/	path	cc -m32 -nostdinc -Ilibc/include -Iinclude/uapi -Iinclude \
-p023	plan-tests	plan/ws006/tests/audit-console-input.py	10	libc/include/	path	for directory in ['src', 'include', 'libc/include', 'userland/base', 'userland/X11']:
+p023	plan-tests	plan/ws006/tests/audit-console-input.py	10	libc/include/	path	for directory in ['src', 'include', 'libc/include', 'userland/base', 'userland/retro']:
 p023	plan-tests	plan/ws006/tests/qemu-usb-hid-acceptance.sh	175	libc/include/	path	-I"$repo/libc/include" -DKERN_UAPI_NATIVE -I"$repo/include/uapi" -fsyntax-only \
 p023	plan-tests	plan/ws006/tests/run-dynamic-cdev-devfs-test.sh	9	libc/include/	path	common="-std=c11 -O2 -D_POSIX_C_SOURCE=200809L -pthread -DKERN_USER_ABI_LP64 -DKERN_DEVFS_HOST_TEST -I$repo/include -I$repo/src -idirafter $repo/libc/include -Wall -Wextra -Werror"
 p023	plan-tests	plan/ws006/tests/run-dynamic-cdev-devfs-test.sh	27	libc/include/sys/ioctl.h	path	input_analyzer="$common -include $repo/libc/include/sys/ioctl.h"

@@ -8,11 +8,11 @@ Status: cleared（q468-i01、2026-09-26）
 Phase disposition: normal
 Queue: q468-i01
 承認: 2026-09-26 ユーザー「userland/base/ztermに、X11のターミナルの実装があります。これをWayland+Vulkanに移植して、userland/desktop/terminalとして実装をお願いします。」
-（zterm の実際の場所は `userland/X11/zterm`）
+（zterm の実際の場所は `userland/retro/zterm`）
 
 ## 範囲
 
-1. `userland/X11/zterm`（Unicode VT100、Xlib）の端末の部分（pty・VT100 の解釈・画面の格子）を保ち、表示を Wayland の窓
+1. `userland/retro/zterm`（Unicode VT100、Xlib）の端末の部分（pty・VT100 の解釈・画面の格子）を保ち、表示を Wayland の窓
    （xdg-shell、Wiseman の浮いたタイトルバーの下）と Vulkan の描画（glyph の atlas を texture にして格子を描く）へ移す。
    文字は libtruetype で等幅の TTF（JetBrains Mono、OFL。Inter と同じく git に入れず、image へは試験の追加 file）を glyph の atlas に描く。
    `/dev/graphics` の font（zterm・Xzed が使うもの）はレガシー用なので使わない（2026-09-26 ユーザー「/dev/graphicsのフォントは使わないでください。それはレガシー用です。」

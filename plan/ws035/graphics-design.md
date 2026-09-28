@@ -36,7 +36,7 @@ rpi4・sun4u・x68k には `/dev/graphics` が無い。
 
 | 系統 | 所有権 | textの扱い | 誰が使うか |
 | --- | --- | --- | --- |
-| `/dev/graphics` | `graphics_owner`（`struct file *`）と `graphics_entered`。openは1つだけ | `KERN_GRAPHICS_ENTER` で `kern_text_suspend()`、closeまたは `drv_graphics_device_restore_text()` で `kern_text_resume()` | `userland/X11/{zwm,xzed,zterm}`、noctのbeui |
+| `/dev/graphics` | `graphics_owner`（`struct file *`）と `graphics_entered`。openは1つだけ | `KERN_GRAPHICS_ENTER` で `kern_text_suspend()`、closeまたは `drv_graphics_device_restore_text()` で `kern_text_resume()` | `userland/retro/{zwm,xzed,zterm}`、noctのbeui |
 | `/dev/gpu0` の display | `GPU_DISPLAY_CLAIM` が返す `lease`（`include/uapi/gpu-display.h`）。openをまたげない | suspendしない。`kern_text_observe()`・`kern_text_snapshot()` でtextを読み、GPUのscanoutへ描く（`src/drivers/gpu/venus/display.c`） | `libvulkan` の直接表示、`zwl` |
 
 **この2つの間に調停が無い。** `/dev/graphics` が `kern_text_suspend()` した状態でGPUが
@@ -73,7 +73,7 @@ rpi4・sun4u・x68k には `/dev/graphics` が無い。
 
 ## 3. UAPIを変えない理由
 
-`/dev/graphics` の11個のioctlは、すでに `userland/X11/{zwm,xzed,zterm}` とnoctのbeui backendが使っている。
+`/dev/graphics` の11個のioctlは、すでに `userland/retro/{zwm,xzed,zterm}` とnoctのbeui backendが使っている。
 描画先がGPUに変わっても、これらのアプリが求めるのは「矩形塗り・線・blit・flush・glyph」であって、
 その実現手段ではない。UAPIを変えれば既存のアプリを全部直すことになり、p005・p024の範囲を超える。
 
@@ -81,7 +81,7 @@ rpi4・sun4u・x68k には `/dev/graphics` が無い。
 
 - `KERN_GRAPHICS_GET_CAPS` の `capabilities`: backendが実際にできることを返す
   （`GRAPHICS_CAPABILITIES` は今はコンパイル時定数だが、共通層ではbackendから取る）。
-  ただし `CAP_GLYPH` は共通層が常に立てる（§4.2、R1）。`userland/X11/xzed/main.c:472` が
+  ただし `CAP_GLYPH` は共通層が常に立てる（§4.2、R1）。`userland/retro/xzed/main.c:472` が
   `CAP_FLUSH`・`CAP_GLYPH`・`CAP_BLIT_RGB24` を必須として検査するためである。
 - `KERN_GRAPHICS_FLUSH`: 機種のframebufferでは「VRAMへの反映」、GPUでは「描いた画像をscanoutへ出す」。
   意味は「ここまでの描画を画面に出せ」で一貫するので、名前も番号も変えない。
@@ -162,7 +162,7 @@ int drv_graphics_unregister(struct drv_graphics_output *output);
 - **`KERN_GRAPHICS_CAP_GLYPH` だけは共通層が常に立てる**（R1）。`src/drivers/platform/pcat/graphics/`
   の `vgafont.c`・`font.c` を `src/drivers/generic/` へ移し、共通層のフォントとする。
   backendが `get_glyph` を持つ場合（pc98のGDCフォントROM）はそちらを優先する。
-  この規則が要るのは、`userland/X11/xzed/main.c:472` が `CAP_FLUSH`・`CAP_GLYPH`・`CAP_BLIT_RGB24` の
+  この規則が要るのは、`userland/retro/xzed/main.c:472` が `CAP_FLUSH`・`CAP_GLYPH`・`CAP_BLIT_RGB24` の
   3つを**必須**として検査し、欠ければ起動しないためである。backendによってxzedが動かなくなってはいけない。
 
 ### 4.3 優先度と差し替え
@@ -335,7 +335,7 @@ CPUで完結する操作で、GPUのcommand streamに載せる利点がflushの�
 7. `KERN_GRAPHICS_GET_CAPS` が返す `capabilities` は、共通層がbackendから取る値になる。
    今はコンパイル時定数なので、**backendによっては返る値が減る**。
    実際の利用者は2つで、どちらもcapabilityを見る（2026-09-23に確認）。
-   `userland/X11/xzed/main.c:468` は `CAP_FLUSH`・`CAP_GLYPH`・`CAP_BLIT_RGB24` を必須として検査し、
+   `userland/retro/xzed/main.c:468` は `CAP_FLUSH`・`CAP_GLYPH`・`CAP_BLIT_RGB24` を必須として検査し、
    noctのbeui（`userland/base/noct/noct/src/api/api-beui-zedbsd.c:4591`）は取得した値を保持して
    機能ごとに判定する。`zwm`・`zterm` は `/dev/graphics` を直接使わず、xzedを経由する。
    `CAP_GLYPH` を共通層が常に立てる規則（§4.2）と合わせて、xzedが動かなくなる経路は塞がれる。

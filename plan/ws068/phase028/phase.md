@@ -46,7 +46,7 @@ Phase disposition: normal
 | `userland/desktop/libglesv2/gles.h`・`gles.c` | `GLES_SHAPE_*`、level の `depth`、unit の `volume_units`・`array_units`、黒い texture を形ごと、pixel store の状態と `glPixelStorei`・`glGetIntegerv` |
 | `userland/desktop/libglesv2/format.c` | `gles_pixel_size`、`gles_texels_halve` に深さ（3D は 8 texel の平均、配列は layer ごと） |
 | `userland/desktop/libglesv2/draw.c` | sampler の形（`draw_sampler_shape`）で unit の texture を選ぶ、`glReadPixels` を pack buffer と pack store に |
-| `userland/desktop/libglesv2/exports.map`・`Makefile`、`userland/X11/libGL/exports.map`・`Makefile` | 新しい entry point と `pixels.c`（libGL も GL 1.2 の glTexImage3D・glTexSubImage3D・glCopyTexSubImage3D を出す） |
+| `userland/desktop/libglesv2/exports.map`・`Makefile`、`userland/retro/libGL/exports.map`・`Makefile` | 新しい entry point と `pixels.c`（libGL も GL 1.2 の glTexImage3D・glTexSubImage3D・glCopyTexSubImage3D を出す） |
 | `userland/desktop/egltest/volumes.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=volumes` |
 | `plan/ws068/tests/egl-p028.sh`（新） | display と Wayland の画面の点、readback、API の検査 |
 

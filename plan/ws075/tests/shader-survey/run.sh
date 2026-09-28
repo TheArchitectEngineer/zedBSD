@@ -46,7 +46,7 @@ for f in "$host"/*.linked.spv "$host"/*.geom.spv; do
 done
 
 # egltest's and glxtest's scenes, linked as libGLESv2 links them.
-python3 "$here/extract.py" "$out/scenes/src" "$root"/userland/desktop/egltest/*.c "$root"/userland/X11/glxtest/*.c > "$out/extracted.txt"
+python3 "$here/extract.py" "$out/scenes/src" "$root"/userland/desktop/egltest/*.c "$root"/userland/retro/glxtest/*.c > "$out/extracted.txt"
 python3 "$here/pair.py" "$out/glsl-test" "$out/scenes" $(cat "$out/extracted.txt") > "$out/unpaired.txt"
 for f in "$out"/scenes/*.vert.spv; do
 	"$out/spirv-test" "$f" "${f%.spv}.linked.spv" > /dev/null 2>&1 && mv "${f%.spv}.linked.spv" "$f"

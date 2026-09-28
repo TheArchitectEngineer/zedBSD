@@ -24,7 +24,7 @@ Phase disposition: normal
 - attachment ごとの colour mask と blend: `gles_state` に `indexed_masks[GLES_DRAW_BUFFERS][4]`・`indexed_masked`・
   `blend_buffers`・`blend_indexed`。glColorMask・glEnable/glDisable(GL_BLEND) は全ての buffer を同じに戻す。`draw_raster` と
   glClear・glClearBuffer* は buffer ごとの mask（`draw_channels`）を使い、channel が一つも書かれない attachment は clear しない。
-- libGL だけの関数は新しい `userland/X11/libGL/gl3.c`（OpenGL ES 3.0 の API の組み合わせ）。libGLESv2 に入れるのは state を
+- libGL だけの関数は新しい `userland/retro/libGL/gl3.c`（OpenGL ES 3.0 の API の組み合わせ）。libGLESv2 に入れるのは state を
   触るもの（indexed の 5 つは libGLESv2 からも export、glBindFragDataLocation・conditional render は libGL からだけ）。
 - glBindFragDataLocation は link の時に fragment の出力の Location の word を書き換える（`program.c`）。
 - conditional render は開始時に query の結果を待って `state->conditional_skip` を決め、draw・glClear・glClearBuffer* が見る

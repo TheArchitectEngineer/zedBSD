@@ -11,7 +11,7 @@
  * Implements the zedBSD X11 input component.
  */
 
-#include "userland/X11/xzed/input.h"
+#include "userland/retro/xzed/input.h"
 
 #include <dirent.h>
 #include <errno.h>

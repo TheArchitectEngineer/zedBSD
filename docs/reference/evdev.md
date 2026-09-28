@@ -224,7 +224,7 @@ incorporated into the zedBSD base system.
 | Per-source physical/momentary input, console subscription, resync, and detach | [`input-device.c`](../../src/drivers/generic/input.c), [`input-subscriber.c`](../../src/drivers/generic/input.c), [`console.c`](../../src/drivers/generic/console.c) | [q044 ownership runner](../../plan/ws006/tests/run-input-ownership-host-test.sh) and [`ws006-p006`](../../plan/ws006/phase006/phase.md) |
 | HID descriptor/report parsing | [`hid-report.c`](../../src/drivers/usb/usb-hid.c) | [IN-T40 fixture](../../plan/ws006/tests/hid-report-test.c) and [`ws006-p007`](../../plan/ws006/phase007/phase.md) |
 | USB HID Report-Protocol producers, hotplug, and generation-safe nodes | [`usb-hid.c`](../../src/drivers/usb/usb-hid.c), [`input-device.c`](../../src/drivers/generic/input.c), [`devfs.c`](../../src/kern/devfs.c) | [IN-T41/IN-T42 definitions](../../plan/ws006/tests/README.md), [`ws006-p008` result](../../plan/ws006/phase008/phase.md) |
-| Xzed evdev-only consumer | [Xzed input owner](../../userland/X11/xzed/input-posix.c) | [`ws018-p007`](../../plan/ws018/phase007/phase.md) and its [host runner](../../plan/ws018/tests/run-xzed-input-host-test.sh) |
+| Xzed evdev-only consumer | [Xzed input owner](../../userland/retro/xzed/input-posix.c) | [`ws018-p007`](../../plan/ws018/phase007/phase.md) and its [host runner](../../plan/ws018/tests/run-xzed-input-host-test.sh) |
 | Noct 2.0.1 BeUI evdev consumer | [zedBSD BeUI backend](../../userland/base/noct/noct/src/api/api-beui-zedbsd.c) | [q063 Noct evidence](../../plan/ws008/tests/q063-noct-2.0.1-evidence.md) |
 
 Registration requires `EV_SYN/SYN_REPORT`; malformed declarations and

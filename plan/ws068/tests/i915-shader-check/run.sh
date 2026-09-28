@@ -12,8 +12,8 @@ cc -std=gnu99 -O0 -g -w -I"$root" -I"$root/include" -DHAL_ARCH_AMD64 -o "$out/ch
 "$root/plan/ws068/tests/spirv-host/run.sh" "$out/host" >/dev/null 2>&1
 for variant in smooth flat; do
 	define=; [ $variant = flat ] && define=-DFLAT
-	glslc --target-env=vulkan1.0 $define -o "$out/fixed-$variant.vert.spv" "$root/userland/X11/libGL/shaders/fixed.vert"
-	glslc --target-env=vulkan1.0 $define -o "$out/fixed-$variant.frag.spv" "$root/userland/X11/libGL/shaders/fixed.frag"
+	glslc --target-env=vulkan1.0 $define -o "$out/fixed-$variant.vert.spv" "$root/userland/retro/libGL/shaders/fixed.vert"
+	glslc --target-env=vulkan1.0 $define -o "$out/fixed-$variant.frag.spv" "$root/userland/retro/libGL/shaders/fixed.frag"
 	"$out/host/spirv-test" "$out/fixed-$variant.vert.spv" "$out/fixed-$variant.vert.linked.spv" >/dev/null
 done
 glslc --target-env=vulkan1.0 -o "$out/scene.vert.spv" "$root/userland/desktop/egltest/shaders/scene.vert"

@@ -22,7 +22,7 @@ Queue: q487-i01
 1. `include/libc/wayland/zed-gpu-buffer-v1-client-protocol.h` → `userland/desktop/libwayland/`（libwayland と libvulkan の WSI の
    非公開の header）。公開の `wayland-client-protocol.h`・`xdg-shell-client-protocol.h` の `struct keiland_gpu_buffer_v1;` を外す。
    libwayland の export（`keiland_gpu_buffer_v1_*`）は libvulkan・libkeiland のため残す。
-2. `include/libc/X11/Xzed.h` → `userland/X11/libX11/Xzed.h`（木の中の X11 の code の非公開の header）。
+2. `include/libc/X11/Xzed.h` → `userland/retro/libX11/Xzed.h`（木の中の X11 の code の非公開の header）。
 3. `include/libc/keiland.h` の説明: libkeiland は zdesktop の非標準の Wayland/xdg 拡張の wrapper と OS・daemon への道の両方。
    GPU の buffer の共有の API は最初の使い手（xserver の GLX の画像の受け渡し）と一緒に足す（それまでは約束しない）。
 
@@ -38,7 +38,7 @@ Queue: q487-i01
 - `zed-gpu-buffer-v1-client-protocol.h` → `userland/desktop/libwayland/`。include するのは libwayland（`internal.h`）、libvulkan の
   WSI（`wsi-wayland.c`）、compositor の protocol の試験 `userland/base/tests/acquire-fence`。公開の `wayland-client-protocol.h`・
   `xdg-shell-client-protocol.h` の `struct keiland_gpu_buffer_v1;` を外し、`API-PROVENANCE.md` に非公開と libkeiland の道を書いた。
-- `X11/Xzed.h` → `userland/X11/libX11/Xzed.h`（libX11・libGL・zterm・zshell・zwm が repo の root からの path で include）。
+- `X11/Xzed.h` → `userland/retro/libX11/Xzed.h`（libX11・libGL・zterm・zshell・zwm が repo の root からの path で include）。
 - `include/libc/keiland.h` の説明を 2 つの役割（非標準の拡張の wrapper、OS・daemon への道）に。API は最初の使い手と一緒に足す。
 - p073 の build の変数の衝突（`DYNAMIC_ZDESKTOP_OBJS`）を直した（p073 に追記）。
 
