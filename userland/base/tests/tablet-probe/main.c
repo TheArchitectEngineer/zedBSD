@@ -13,10 +13,14 @@
  * events, which a pen gives such a client (the touch as BTN_LEFT, the barrel
  * buttons as BTN_RIGHT and BTN_MIDDLE).  A window (light, 640x480) shows
  * each touch as a dot whose size follows the pressure (blue for the pen,
- * red for the eraser; black for the pointer's left button).  Every event is
- * one line: TABLETPROBE <what> ....
+ * red for the eraser; black for the pointer's left button).  With --touch
+ * (WS079 p013) the probe binds wl_touch instead and logs the fingers it is
+ * given (down, motion, up, frame, cancel), painting a green dot where each
+ * finger is.  --color=RRGGBB changes the window's background, so a test can
+ * tell the window on the screen.  Every event is one line:
+ * TABLETPROBE <what> ....
  *
- *   tablet-probe [--timeout-s=N] [--token=NAME] [--pointer]
+ *   tablet-probe [--timeout-s=N] [--token=NAME] [--pointer | --touch] [--color=RRGGBB]
  */
 
 #include <tablet-unstable-v2-client-protocol.h>
@@ -43,6 +47,7 @@
 #define PROBE_PEN_COLOR		0xff1f4fa8U
 #define PROBE_ERASER_COLOR	0xffc0392bU
 #define PROBE_POINTER_COLOR	0xff202020U
+#define PROBE_TOUCH_COLOR	0xff1e8a3aU
 
 /* The largest dot, at full pressure, in pixels of radius. */
 #define PROBE_DOT_MAX		10
@@ -65,6 +70,7 @@ struct probe {
 	struct xdg_wm_base *shell;
 	struct wl_seat *seat;
 	struct wl_pointer *pointer;
+	struct wl_touch *touch;
 	struct zwp_tablet_manager_v2 *tablet_manager;
 	struct zwp_tablet_seat_v2 *tablet_seat;
 	struct wl_surface *surface;
@@ -75,6 +81,8 @@ struct probe {
 	int configured;
 	int closed;
 	int pointer_mode;
+	int touch_mode;
+	uint32_t background;
 	const char *token;
 	struct zwp_tablet_tool_v2 *tools[4];
 	uint32_t tool_types[4];
@@ -134,6 +142,12 @@ static void tool_slider(void *data, struct zwp_tablet_tool_v2 *tool, int32_t pos
 static void tool_wheel(void *data, struct zwp_tablet_tool_v2 *tool, wl_fixed_t degrees, int32_t clicks);
 static void tool_button(void *data, struct zwp_tablet_tool_v2 *tool, uint32_t serial, uint32_t button, uint32_t state);
 static void tool_frame(void *data, struct zwp_tablet_tool_v2 *tool, uint32_t time);
+static void touch_down(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
+static void touch_up(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, int32_t id);
+static void touch_motion(void *data, struct wl_touch *touch, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
+static void touch_frame(void *data, struct wl_touch *touch);
+static void touch_cancel(void *data, struct wl_touch *touch);
+static int probe_color(const char *text, uint32_t *color);
 
 /* The registry's callbacks. */
 static const struct wl_registry_listener registry_listener = {
@@ -175,6 +189,17 @@ static const struct wl_pointer_listener pointer_listener = {
 	NULL,
 	NULL,
 	NULL,
+	NULL,
+	NULL
+};
+
+/* The touch's (--touch only; shape and orientation are version 6). */
+static const struct wl_touch_listener touch_listener = {
+	touch_down,
+	touch_up,
+	touch_motion,
+	touch_frame,
+	touch_cancel,
 	NULL,
 	NULL
 };
@@ -239,7 +264,7 @@ main(
 	memset(&probe, 0, sizeof(probe));
 	error = probe_options(count, arguments, &probe, &timeout);
 	if (error != 0) {
-		fprintf(stderr, "usage: tablet-probe [--timeout-s=N] [--token=NAME] [--pointer]\n");
+		fprintf(stderr, "usage: tablet-probe [--timeout-s=N] [--token=NAME] [--pointer | --touch] [--color=RRGGBB]\n");
 		return 2;
 	}
 
@@ -287,7 +312,7 @@ main(
 	return 0;
 }
 
-/* Reads the options: --timeout-s=N (default 120), --token=NAME and --pointer. */
+/* Reads the options: --timeout-s=N (default 120), --token=NAME, --pointer, --touch and --color=RRGGBB. */
 static int
 probe_options(
 	int count,
@@ -299,9 +324,11 @@ probe_options(
 	unsigned long value;
 	int index;
 	int same;
+	int error;
 
 	/* The defaults. */
 	probe->token = "probe";
+	probe->background = PROBE_BACKGROUND;
 	*timeout = 120U;
 
 	/* Each option. */
@@ -317,6 +344,22 @@ probe_options(
 		same = strcmp(arguments[index], "--pointer");
 		if (same == 0) {
 			probe->pointer_mode = 1;
+			continue;
+		}
+
+		/* wl_touch instead of the tablet. */
+		same = strcmp(arguments[index], "--touch");
+		if (same == 0) {
+			probe->touch_mode = 1;
+			continue;
+		}
+
+		/* The background colour. */
+		same = strncmp(arguments[index], "--color=", 8);
+		if (same == 0) {
+			error = probe_color(arguments[index] + 8, &probe->background);
+			if (error != 0)
+				return -1;
 			continue;
 		}
 
@@ -339,6 +382,7 @@ static int
 probe_connect(
 	struct probe *probe)
 {
+	const char *mode;
 	int status;
 
 	/* The connection. */
@@ -359,10 +403,13 @@ probe_connect(
 	if (probe->seat == NULL)
 		return EOPNOTSUPP;
 
-	/* The pointer, or the tablet seat (which needs the manager). */
+	/* The pointer, the touch, or the tablet seat (which needs the manager). */
 	if (probe->pointer_mode) {
 		probe->pointer = wl_seat_get_pointer(probe->seat);
 		wl_pointer_add_listener(probe->pointer, &pointer_listener, probe);
+	} else if (probe->touch_mode) {
+		probe->touch = wl_seat_get_touch(probe->seat);
+		wl_touch_add_listener(probe->touch, &touch_listener, probe);
 	} else {
 		if (probe->tablet_manager == NULL)
 			return EOPNOTSUPP;
@@ -378,6 +425,8 @@ probe_connect(
 	xdg_toplevel_add_listener(probe->toplevel, &toplevel_listener, probe);
 	if (probe->pointer_mode) {
 		xdg_toplevel_set_title(probe->toplevel, "Pointer probe");
+	} else if (probe->touch_mode) {
+		xdg_toplevel_set_title(probe->toplevel, "Touch probe");
 	} else {
 		xdg_toplevel_set_title(probe->toplevel, "Tablet probe");
 	}
@@ -397,7 +446,12 @@ probe_connect(
 		return status;
 
 	/* Succeeded: the log line the test waits for. */
-	printf("TABLETPROBE ready run=%s mode=%s\n", probe->token, probe->pointer_mode ? "pointer" : "tablet");
+	mode = "tablet";
+	if (probe->pointer_mode)
+		mode = "pointer";
+	if (probe->touch_mode)
+		mode = "touch";
+	printf("TABLETPROBE ready run=%s mode=%s\n", probe->token, mode);
 	fflush(stdout);
 	return 0;
 }
@@ -440,7 +494,7 @@ probe_draw(
 
 	/* Every pixel in the background colour. */
 	for (index = 0; index < bytes / 4U; index++)
-		probe->pixels[index] = PROBE_BACKGROUND;
+		probe->pixels[index] = probe->background;
 
 	/* The buffer. */
 	pool = wl_shm_create_pool(probe->shm, fd, (int32_t)bytes);
@@ -556,11 +610,11 @@ registry_global(
 		wl_seat_add_listener(probe->seat, &seat_listener, probe);
 	}
 
-	/* The tablet manager, which the pointer mode leaves alone. */
+	/* The tablet manager, which the pointer and touch modes leave alone. */
 	same = strcmp(interface, "zwp_tablet_manager_v2");
 	if (same == 0) {
 		printf("TABLETPROBE global zwp_tablet_manager_v2 version=%u\n", version);
-		if (!probe->pointer_mode)
+		if (!probe->pointer_mode && !probe->touch_mode)
 			probe->tablet_manager = wl_registry_bind(registry, name, &zwp_tablet_manager_v2_interface, 1U);
 	}
 }
@@ -1195,4 +1249,130 @@ tool_frame(
 	/* A changed image is committed. */
 	if (probe->dirty)
 		probe_show(probe);
+}
+
+/* Logs a finger touching the window, and paints a dot there. */
+static void
+touch_down(
+	void *data,
+	struct wl_touch *touch,
+	uint32_t serial,
+	uint32_t time,
+	struct wl_surface *surface,
+	int32_t id,
+	wl_fixed_t x,
+	wl_fixed_t y)
+{
+	struct probe *probe;
+
+	UNUSED_PARAMETER(touch);
+	UNUSED_PARAMETER(serial);
+	UNUSED_PARAMETER(time);
+
+	/* One line: the finger, whether the surface is the probe's, and the place. */
+	probe = data;
+	probe->x = (double)x / 256.0;
+	probe->y = (double)y / 256.0;
+	printf("TABLETPROBE touch down id=%d surface=%u x=%.2f y=%.2f\n", id, surface == probe->surface, probe->x, probe->y);
+
+	/* The dot where it touched. */
+	probe_dot(probe, PROBE_TOUCH_COLOR, 8);
+}
+
+/* Logs a finger lifting. */
+static void
+touch_up(
+	void *data,
+	struct wl_touch *touch,
+	uint32_t serial,
+	uint32_t time,
+	int32_t id)
+{
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(touch);
+	UNUSED_PARAMETER(serial);
+	UNUSED_PARAMETER(time);
+
+	/* One line. */
+	printf("TABLETPROBE touch up id=%d\n", id);
+}
+
+/* Logs a finger moving on the window, and paints a dot there. */
+static void
+touch_motion(
+	void *data,
+	struct wl_touch *touch,
+	uint32_t time,
+	int32_t id,
+	wl_fixed_t x,
+	wl_fixed_t y)
+{
+	struct probe *probe;
+
+	UNUSED_PARAMETER(touch);
+	UNUSED_PARAMETER(time);
+
+	/* One line, with the surface-local place to 1/256 pixel. */
+	probe = data;
+	probe->x = (double)x / 256.0;
+	probe->y = (double)y / 256.0;
+	printf("TABLETPROBE touch motion id=%d x=%.2f y=%.2f\n", id, probe->x, probe->y);
+
+	/* The dot where it is. */
+	probe_dot(probe, PROBE_TOUCH_COLOR, 4);
+}
+
+/* Logs the end of a group of finger events, and shows the dots. */
+static void
+touch_frame(
+	void *data,
+	struct wl_touch *touch)
+{
+	struct probe *probe;
+
+	UNUSED_PARAMETER(touch);
+
+	/* One line. */
+	probe = data;
+	printf("TABLETPROBE touch frame\n");
+
+	/* A changed image is committed. */
+	if (probe->dirty)
+		probe_show(probe);
+}
+
+/* Logs the compositor taking the fingers away. */
+static void
+touch_cancel(
+	void *data,
+	struct wl_touch *touch)
+{
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(touch);
+
+	/* One line. */
+	printf("TABLETPROBE touch cancel\n");
+}
+
+/* Reads a colour written RRGGBB into an opaque ARGB pixel; -1 for anything else. */
+static int
+probe_color(
+	const char *text,
+	uint32_t *color)
+{
+	unsigned long value;
+	size_t length;
+	char *end;
+
+	/* Six hexadecimal digits. */
+	length = strlen(text);
+	if (length != 6U)
+		return -1;
+	value = strtoul(text, &end, 16);
+	if (*end != '\0')
+		return -1;
+
+	/* Succeeded: the colour, opaque. */
+	*color = 0xff000000U | (uint32_t)value;
+	return 0;
 }
