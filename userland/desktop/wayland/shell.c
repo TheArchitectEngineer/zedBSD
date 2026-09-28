@@ -211,6 +211,8 @@ static void draw_window_blurred(struct zwl_server *server, VkCommandBuffer comma
 static void draw_body(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *body, unsigned docked, unsigned focused);
 static void draw_title_bar(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
 static void draw_title(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
+static int draw_picture_mark(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, const float *ink);
+static void draw_letter_mark(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const char *title, int32_t x, int32_t middle);
 static int32_t title_end(struct zwl_server *server, struct zwl_object *surface, int32_t limit);
 static const char *mark_name(const char *app_id);
 static void glass_fit(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
@@ -2119,9 +2121,9 @@ draw_title_bar(
 }
 
 /*
- * Draws the application's mark (a blue rounded square with a letter: the
- * application ID's last word's, else the title's first) at x and the title
- * after it, centred on middle.
+ * Draws the application's mark at x and the title after it, centred on
+ * middle: a known application's App Home picture on its colour
+ * (ws035-p124), else a blue rounded square with a letter.
  */
 static void
 draw_title(
@@ -2133,17 +2135,85 @@ draw_title(
 	int32_t limit,
 	const float *ink)
 {
+	char title[ZWL_TITLE_MAX + 24];
+	int drawn;
+
+	/* The title as the title bar shows it. */
+	shown_title(surface, title, sizeof(title));
+
+	/* The mark: the application's picture when it has one, else its letter. */
+	drawn = draw_picture_mark(server, command, surface, x, middle, ink);
+	if (!drawn)
+		draw_letter_mark(server, command, surface, title, x, middle);
+
+	/* The title. */
+	glass_draw_text(server, command, SIZE_TITLE, x + 30, middle + 6, title, limit, ink);
+}
+
+/*
+ * Draws a known application's mark: its App Home picture, white, on a
+ * rounded square of its App Home colour, as faded as the title's ink.
+ * Returns 1, or 0 (drawing nothing) for an application ID without one.
+ */
+static int
+draw_picture_mark(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	struct zwl_object *surface,
+	int32_t x,
+	int32_t middle,
+	const float *ink)
+{
+	float square[4];
+	float white[4];
+	uint32_t rgb;
+	int picture;
+
+	/* The picture and the colour that belong to the window's application ID. */
+	rgb = 0U;
+	picture = zwl_icon_for_app_id(surface->app_id, &rgb);
+	if (picture < 0)
+		return 0;
+
+	/* The square in the application's colour. */
+	square[0] = (float)((rgb >> 16) & 0xffU) / 255.0f;
+	square[1] = (float)((rgb >> 8) & 0xffU) / 255.0f;
+	square[2] = (float)(rgb & 0xffU) / 255.0f;
+	square[3] = ink[3];
+	glass_draw_solid(server, command, (float)x, (float)(middle - 10), 20.0f, 20.0f, 6.0f, square);
+
+	/* The picture in its middle, white. */
+	white[0] = 1.0f;
+	white[1] = 1.0f;
+	white[2] = 1.0f;
+	white[3] = ink[3];
+	glass_draw_icon(server, command, (unsigned)picture, x + 3, middle - 7, 14U, white);
+
+	/* Succeeded: the mark is drawn. */
+	return 1;
+}
+
+/*
+ * Draws the mark of an application without a picture: a blue rounded
+ * square with a letter, the application ID's last word's, else the
+ * title's first.
+ */
+static void
+draw_letter_mark(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	struct zwl_object *surface,
+	const char *title,
+	int32_t x,
+	int32_t middle)
+{
 	static const float mark[4] = { 0.29f, 0.55f, 1.0f, 1.0f };
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	char title[ZWL_TITLE_MAX + 24];
 	const char *source;
 	char letter[5];
 	size_t length;
 	size_t index;
 	int32_t width;
-
-	/* The title as the title bar shows it. */
-	shown_title(surface, title, sizeof(title));
 
 	/* The mark. */
 	glass_draw_solid(server, command, (float)x, (float)(middle - 10), 20.0f, 20.0f, 6.0f, mark);
@@ -2170,9 +2240,6 @@ draw_title(
 		letter[0] = (char)(letter[0] - 'a' + 'A');
 	width = glass_text_width(server, SIZE_BAR, letter);
 	glass_draw_text(server, command, SIZE_BAR, x + 10 - width / 2, middle + 5, letter, 20, white);
-
-	/* The title. */
-	glass_draw_text(server, command, SIZE_TITLE, x + 30, middle + 6, title, limit, ink);
 }
 
 /*

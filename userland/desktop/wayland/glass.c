@@ -24,7 +24,8 @@
  * atlas's cache, the least recently drawn cell making room; text is UTF-8.
  * The titlebar's icons (icons.c) are rendered into the atlas once, at two
  * sizes, App Home's pictures (icons.c, ws035-p123) at the size its tiles
- * draw them, and so are the seven layers of the Kei mark (artwork/mark.c,
+ * draw them and small for the windows' marks (ws035-p124), and so are the
+ * seven layers of the Kei mark (artwork/mark.c,
  * ws035-p108), which the login and lock screens draw.
  */
 
@@ -59,8 +60,12 @@
 /* The icons' two sizes in pixels, and how many there are. */
 #define GLASS_ICON_SIZES	2U
 
-/* App Home's pictures, in pixels a side (on its 72-pixel tiles). */
+/*
+ * App Home's pictures, in pixels a side (on its 72-pixel tiles), and again
+ * small for a window's mark by its title (a 20-pixel square, ws035-p124).
+ */
 #define GLASS_APP_ICON_PIXELS	40U
+#define GLASS_APP_ICON_SMALL	14U
 
 /* A cached glyph's cell in the atlas, in pixels a side, and the most cells there are. */
 #define GLASS_CELL		48U
@@ -112,7 +117,7 @@ struct glass_cached {
 /*
  * The look's images and glyphs: the wallpaper and its blur, the atlas with
  * the ASCII glyphs at each size, the icons at their sizes (App Home's
- * pictures at one size of their own), the Kei mark's
+ * pictures at a size of their own and small), the Kei mark's
  * layers large and at the launcher's size (ws035-p117), and the cache of
  * other characters; the fonts stay open (with their files' bytes) to
  * render the cache's glyphs.  cache_top is the atlas row the cache starts
@@ -126,6 +131,7 @@ struct zwl_glass {
 	struct glass_glyph glyphs[GLASS_SIZES][GLASS_GLYPHS];
 	struct glass_glyph icons[GLASS_ICON_SIZES][GLASS_ICON_COUNT];
 	struct glass_glyph app_icons[GLASS_ICON_APPS];
+	struct glass_glyph app_icons_small[GLASS_ICON_APPS];
 	struct glass_glyph mark[KEILAND_MARK_LAYERS];
 	struct glass_glyph mark_small[KEILAND_MARK_LAYERS];
 	unsigned text;
@@ -1301,6 +1307,8 @@ glass_draw_icon(
 	glyph = &glass->icons[size][icon];
 	if (icon >= GLASS_ICON_FIRST_APP)
 		glyph = &glass->app_icons[icon - GLASS_ICON_FIRST_APP];
+	if (icon >= GLASS_ICON_FIRST_APP && pixels <= GLASS_APP_ICON_SMALL * 3U / 2U)
+		glyph = &glass->app_icons_small[icon - GLASS_ICON_FIRST_APP];
 
 	/* The icon's cell of the atlas, over the square. */
 	glass_shape_init(&shape, (float)x, (float)y, (float)pixels, (float)pixels);
@@ -1484,6 +1492,27 @@ atlas_icons(
 
 		/* The pen moves past it. */
 		pen_x += GLASS_APP_ICON_PIXELS + 1U;
+	}
+
+	/* The small pictures after them in the same row, when they fit. */
+	if (pen_x + GLASS_ICON_APPS * (GLASS_APP_ICON_SMALL + 1U) > GLASS_ATLAS_WIDTH)
+		return ENOSPC;
+
+	/* Each small picture's coverage, into the atlas, and its place. */
+	for (icon = 0; icon < GLASS_ICON_APPS; icon++) {
+		zwl_icon_raster(GLASS_ICON_FIRST_APP + icon, GLASS_APP_ICON_SMALL, bitmap, GLASS_APP_ICON_SMALL);
+		atlas_put(glass, bitmap, pen_x, *pen_y, GLASS_APP_ICON_SMALL, GLASS_APP_ICON_SMALL);
+		glyph = &glass->app_icons_small[icon];
+		glyph->x = pen_x;
+		glyph->y = *pen_y;
+		glyph->width = GLASS_APP_ICON_SMALL;
+		glyph->height = GLASS_APP_ICON_SMALL;
+		glyph->left = 0;
+		glyph->top = 0;
+		glyph->advance = (int32_t)GLASS_APP_ICON_SMALL;
+
+		/* The pen moves past it. */
+		pen_x += GLASS_APP_ICON_SMALL + 1U;
 	}
 
 	/* The row after the pictures. */

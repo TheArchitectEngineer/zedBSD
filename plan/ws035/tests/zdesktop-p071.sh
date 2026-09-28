@@ -18,7 +18,7 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
-stop_all='ps -A -o pid,comm | awk "{ n = \$2; sub(\".*/\", \"\", n) } n == \"zdesktop\" || n == \"wlshm\" || n == \"xserver\" {print \$1}" | while read p; do kill $p; done; sleep 1'
+stop_all='service stop greeter >/dev/null 2>&1; ps -A -o pid,comm | awk "{ n = \$2; sub(\".*/\", \"\", n) } n == \"wayland\" || n == \"wlshm\" || n == \"xserver\" {print \$1}" | while read p; do kill $p; done; sleep 1'
 status=0
 
 # Fails the run unless zdesktop's log has a line matching a pattern.

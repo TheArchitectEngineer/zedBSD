@@ -58,5 +58,6 @@ enum glass_icon {
 
 void zwl_icon_raster(unsigned icon, unsigned pixels, uint8_t *coverage, size_t stride);
 int zwl_icon_named(const char *name);
+int zwl_icon_for_app_id(const char *app_id, uint32_t *rgb);
 
 #endif
