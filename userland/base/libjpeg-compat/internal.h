@@ -11,7 +11,9 @@
  *
  * The decoder reads the whole image when jpeg_start_decompress is called:
  * each component's blocks go through the inverse DCT into a plane of
- * samples (padded to whole MCUs).  jpeg_read_scanlines then upsamples each
+ * samples (padded to whole MCUs).  A progressive image keeps each
+ * component's coefficients until its last scan, and goes through the
+ * inverse DCT then.  jpeg_read_scanlines then upsamples each
  * component's row (libjpeg's "fancy" triangle filter by default) and
  * converts the colour, one row at a time.
  */
@@ -28,8 +30,11 @@
 #define JPEG_STATE_READY	202
 #define JPEG_STATE_SCANNING	205
 
-/* The most components a frame may have in this part (gray, YCbCr or RGB). */
-#define JPEG_COMPONENTS_MAX	3
+/* The most components a frame may have (gray, YCbCr, RGB, CMYK or YCCK). */
+#define JPEG_COMPONENTS_MAX	4
+
+/* The markers jpeg_save_markers can keep: APP0 to APP15, then COM. */
+#define JPEG_SAVED_KINDS	17
 
 /* The bits of the fast Huffman lookup. */
 #define JPEG_FAST_BITS		9
@@ -58,11 +63,11 @@ enum jpeg_compat_message {
 	JERR_NO_TABLE,
 	JERR_BAD_SCAN,
 	JERR_SOS_NO_SOF,
-	JERR_PROGRESSIVE,
 	JERR_ARITHMETIC,
 	JERR_UNSUPPORTED_SOF,
 	JERR_CONVERSION,
 	JERR_TOO_LITTLE_DATA,
+	JERR_UNKNOWN_MARKER,
 	JWRN_JPEG_EOF,
 	JWRN_EXTRANEOUS_DATA,
 	JWRN_HUFF_BAD_CODE,
@@ -88,6 +93,9 @@ struct jpeg_huffman {
 /*
  * One component's decoded samples: the plane (stride bytes a row,
  * padded to whole MCUs), its rows, and the DC prediction of the scan.
+ * A progressive image also keeps the coefficients of each block of the
+ * plane (64 a block, blocks row by row) and the quantization table the
+ * component's first scan found in force (libjpeg latches it there too).
  */
 struct jpeg_plane {
 	JSAMPLE *samples;
@@ -95,6 +103,9 @@ struct jpeg_plane {
 	size_t rows;
 	int prediction;
 	int decoded;
+	JCOEF *coefficients;
+	JQUANT_TBL quant;
+	int quant_latched;
 };
 
 /*
@@ -153,6 +164,17 @@ struct jpeg_decomp_master {
 	unsigned int restarts_left;
 	int next_restart;
 
+	/* The blocks a progressive AC scan still has to skip (an end-of-band run). */
+	unsigned int eobrun;
+
+	/*
+	 * How many bytes of each kind of marker jpeg_save_markers asked to
+	 * keep (APP0 to APP15, then COM; 0 keeps none), and the last marker
+	 * kept, which the next one is linked after.
+	 */
+	unsigned int save_limit[JPEG_SAVED_KINDS];
+	jpeg_saved_marker_ptr last_saved;
+
 	/* The two bytes read when a source has no more (a fake EOI). */
 	JOCTET fake_eoi[2];
 
@@ -186,6 +208,7 @@ int jpeg_compat_next_marker(j_decompress_ptr cinfo);
 /* Entropy decoding (huffman.c). */
 void jpeg_compat_build_huffman(j_decompress_ptr cinfo, const JHUFF_TBL *table, struct jpeg_huffman *huffman);
 void jpeg_compat_decode_scan(j_decompress_ptr cinfo);
+void jpeg_compat_finish_progressive(j_decompress_ptr cinfo);
 
 /* The inverse DCT (idct.c). */
 void jpeg_compat_idct(const JCOEF *coefficients, const UINT16 *quantization, JSAMPLE *out, size_t stride);

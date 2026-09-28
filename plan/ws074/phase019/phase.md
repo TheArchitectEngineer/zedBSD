@@ -61,6 +61,12 @@ Queue: なし（サブエージェントが worktree の branch で実行）
   `/home/awe/zedBSD-rpi4/build/ws074-shots/p019-20260928-files-png-thumbs.png`）、`browser-page.sh first.html` status 0（写真
   `p019-20260928-window-first.png`）。
 - GIF は新しい Phase [ws074-p051](../phase051/phase.md)（`userland/base/libgif-compat`、`include/libc/compat/gif_lib.h`）。
+- 追記（2026-09-28、ユーザーの決定を main 経由）: libz-compat も base の共有 library で全 platform（`*`）、header は
+  `include/libc/compat/zlib.h` から `include/libc/compat/zlib/zlib.h` へ。使い手（libz-compat の `inflate.c`・`checksum.c`・
+  `exports.map`、libpng-compat の `read.c`、`plan/tools/files/host-png.c`、WS035 の記録）を直した。libpng-compat も `*` にし、
+  MAC-T001 の例外の一覧から外した。pcat・pc98・arm64 の `vmunix.mk` に `libz-compat.so`・`libpng-compat.so` の link の規則。
+  確認: `make menuconfig-host-test` PASS、pcat・pc98・rpi4 の CI の構成で `libpng-compat.so`（と `libz-compat.so`）が warning 0
+  で link、`host-png.sh` PASS。desktop（browser）の image の build と guest の確認は p020 の記録。
 
 ## 後回し（follow-up）
 

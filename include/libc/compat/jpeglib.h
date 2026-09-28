@@ -17,11 +17,12 @@
  * real libjpeg (/usr/include/jpeglib.h); base programs include
  * <compat/jpeglib.h>.
  *
- * This first part (ws074-p019) decodes baseline and extended sequential
- * Huffman JPEG (8-bit samples) with any sampling factors, restart
- * intervals, and grayscale, YCbCr and RGB images, into gray, RGB and the
- * JCS_EXT_* orders.  Progressive, CMYK/YCCK and jpeg_save_markers come
- * with ws074-p020; scaling, arithmetic coding, 12-bit samples and
+ * It decodes baseline, extended sequential and progressive Huffman JPEG
+ * (8-bit samples) with any sampling factors and restart intervals:
+ * grayscale, YCbCr and RGB images into gray, RGB and the JCS_EXT_*
+ * orders, and CMYK and YCCK images into CMYK (ws074-p019, p020).  The
+ * APPn and COM markers can be kept (jpeg_save_markers).  Scaling,
+ * buffered-image mode, raw data, arithmetic coding, 12-bit samples and
  * compression are not provided.
  *
  * As in libjpeg, an error calls err->error_exit, which must not return
@@ -131,7 +132,7 @@ typedef enum {
 #define JPOOL_IMAGE			1
 #define JPOOL_NUMPOOLS			2
 
-/* The markers jpeg_save_markers names (ws074-p020). */
+/* The markers jpeg_save_markers names. */
 #define JPEG_RST0			0xD0
 #define JPEG_EOI			0xD9
 #define JPEG_APP0			0xE0
@@ -173,7 +174,7 @@ typedef struct {
 	JQUANT_TBL *quant_table;
 } jpeg_component_info;
 
-/* A saved marker (jpeg_save_markers, ws074-p020). */
+/* A saved marker (jpeg_save_markers): its code, its whole length, and the bytes kept of it. */
 typedef struct jpeg_marker_struct *jpeg_saved_marker_ptr;
 struct jpeg_marker_struct {
 	jpeg_saved_marker_ptr next;
@@ -348,7 +349,7 @@ struct jpeg_decompress_struct {
 	UINT8 Adobe_transform;
 	boolean CCIR601_sampling;
 
-	/* The markers saved by jpeg_save_markers (ws074-p020). */
+	/* The markers saved by jpeg_save_markers, in the file's order (in the image's pool). */
 	jpeg_saved_marker_ptr marker_list;
 
 	/* The frame's sampling and its MCUs. */
@@ -383,6 +384,9 @@ void jpeg_calc_output_dimensions(j_decompress_ptr cinfo);
 boolean jpeg_start_decompress(j_decompress_ptr cinfo);
 JDIMENSION jpeg_read_scanlines(j_decompress_ptr cinfo, JSAMPARRAY scanlines, JDIMENSION max_lines);
 boolean jpeg_finish_decompress(j_decompress_ptr cinfo);
+
+/* Keeps up to length_limit bytes of each APPn or COM marker of a kind in marker_list (0 keeps none). */
+void jpeg_save_markers(j_decompress_ptr cinfo, int marker_code, unsigned int length_limit);
 
 /* The default recovery after a missing restart marker (for a program's own source). */
 boolean jpeg_resync_to_restart(j_decompress_ptr cinfo, int desired);

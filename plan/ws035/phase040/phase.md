@@ -12,8 +12,8 @@ Queue: なし
 ## 範囲
 
 `userland/base/libz-compat` に deflate/inflate の独自実装を置き、`/lib/libz-compat.so` を作る。
-公開ヘッダは `include/libc/compat/zlib.h`（sysroot 経由で `/usr/include/compat/zlib.h`）。
-使う側は `#include <compat/zlib.h>` と書く。本家は package として `/usr/include/zlib.h` へ入るので、
+公開ヘッダは `include/libc/compat/zlib/zlib.h`（sysroot 経由で `/usr/include/compat/zlib/zlib.h`）。
+使う側は `#include <compat/zlib/zlib.h>` と書く。本家は package として `/usr/include/zlib.h` へ入るので、
 ファイル名は同じまま置き場だけを分ける。
 **zlib のコードは使わない**（Zlib ライセンスで独自実装）。
 
@@ -67,7 +67,7 @@ p041（libpng-compat）の前提なので、実際には p041 と一緒に入る
 ## 2026-09-27: decode の半分は ws071-p010 で
 
 files の PNG のサムネイルのために、inflate の側を [ws071-p010](../../ws071/ws.md) で先に作った:
-`include/libc/compat/zlib.h`、`userland/base/libz-compat/`（`inflate.c`・`checksum.c`）、`/lib/libz-compat.so`。
+`include/libc/compat/zlib/zlib.h`、`userland/base/libz-compat/`（`inflate.c`・`checksum.c`）、`/lib/libz-compat.so`。
 `inflateInit`・`inflateInit2`（zlib の stream と raw）・`inflate`・`inflateEnd`・`inflateReset`・`uncompress`・`adler32`・`crc32`・
 `zlibVersion`。host の試験 `plan/tools/files/host-png.sh`（Python の zlib と比べる）。**この Phase に残るのは deflate（圧縮）**。
 Status は planning のまま。

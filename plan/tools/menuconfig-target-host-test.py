@@ -73,9 +73,8 @@ def check_packages() -> None:
     # A base program or a package is chosen by whoever configures the
     # build, not by the platform: only the kernel options, the drivers, the
     # desktop and the firmware are tied to one (BUG-080).  noct and zedinst
-    # need the Noct runtime, which some platforms lack.  libpng-compat needs
-    # libz-compat, which is built for amd64 only so far.
-    platform_tied = {"noct", "zedinst", "libpng-compat"}
+    # need the Noct runtime, which some platforms lack.
+    platform_tied = {"noct", "zedinst"}
     for row in rows:
         if row[0] in platform_tied:
             continue
