@@ -15,7 +15,7 @@ Queue: なし
 `userland/base/libpng-compat` に PNG の読み書きの独自実装を置き、`/lib/libpng-compat.so` を作る。
 公開ヘッダは `include/libc/compat/png/png.h`（`/usr/include/compat/png/png.h`）。
 使う側は `#include <compat/png/png.h>` と書く。
-**libpng のコードは使わない**（Zlib ライセンスで独自実装）。圧縮は p040 の `libz-compat` を使う（`#include <compat/zlib.h>`）。
+**libpng のコードは使わない**（Zlib ライセンスで独自実装）。圧縮は p040 の `libz-compat` を使う（`#include <compat/zlib/zlib.h>`）。
 
 **使うのは base のプログラムだけ**である。GTK・Qt・freetype は本家 libpng（ws034-p027）を使う
 （2026-09-23 ユーザー決定）。`PNG_LIBPNG_VER_STRING` は本家と同じ値

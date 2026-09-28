@@ -22,22 +22,22 @@ $cc -m64 -nostdlib -pie -Wl,--no-relax -Wl,--hash-style=sysv,-z,now,-z,relro,-z,
     -Wl,--dynamic-linker=/lib/ld.so "$sysroot/usr/lib/crt1.o" "$out/host-jpeg.o" \
     -Lbuild/amd64/dynamic -l:libjpeg-compat.so -l:libc.so -o "$out/host-jpeg"
 
-# The files, into the guest one by one (the guest has no tar).
+# The files, into the guest one by one (the guest has no tar), under /root: /tmp is a 32 MiB tmpfs, too small.
 python3 plan/ws074/tests/run-jpeg-tests.py --make-only
-python3 plan/tools/guest/guest.py run 'rm -rf /tmp/jpeg /tmp/jpeg-out; mkdir -p /tmp/jpeg /tmp/jpeg-out' >/dev/null
-python3 plan/tools/guest/guest.py put "$out/host-jpeg" /tmp/host-jpeg >/dev/null
+python3 plan/tools/guest/guest.py run 'rm -rf /root/ws074/jpeg /root/ws074/jpeg-out; mkdir -p /root/ws074 /root/ws074/jpeg /root/ws074/jpeg-out' >/dev/null
+python3 plan/tools/guest/guest.py put "$out/host-jpeg" /root/ws074/host-jpeg >/dev/null
 for file in build/ws074-jpeg/files/*.jpg; do
-	python3 plan/tools/guest/guest.py put "$file" "/tmp/jpeg/$(basename "$file")" >/dev/null
+	python3 plan/tools/guest/guest.py put "$file" "/root/ws074/jpeg/$(basename "$file")" >/dev/null
 done
 
 # Every file decoded there, and the pictures and logs fetched back.
-python3 plan/tools/guest/guest.py run 'chmod 755 /tmp/host-jpeg; cd /tmp/jpeg
-for f in *.jpg; do n=${f%.jpg}; /tmp/host-jpeg "$f" /tmp/jpeg-out/$n.pnm > /tmp/jpeg-out/$n.log 2>&1; done; echo decoded' | tail -1
+python3 plan/tools/guest/guest.py run 'chmod 755 /root/ws074/host-jpeg; cd /root/ws074/jpeg
+for f in *.jpg; do n=${f%.jpg}; /root/ws074/host-jpeg "$f" /root/ws074/jpeg-out/$n.pnm > /root/ws074/jpeg-out/$n.log 2>&1; done; echo decoded' | tail -1
 rm -rf "$out/jpeg-out"
 mkdir -p "$out/jpeg-out"
 for file in build/ws074-jpeg/files/*.jpg; do
 	name=$(basename "$file" .jpg)
-	python3 plan/tools/guest/guest.py get "/tmp/jpeg-out/$name.log" "$out/jpeg-out/$name.log" >/dev/null
-	python3 plan/tools/guest/guest.py get "/tmp/jpeg-out/$name.pnm" "$out/jpeg-out/$name.pnm" >/dev/null 2>&1 || true
+	python3 plan/tools/guest/guest.py get "/root/ws074/jpeg-out/$name.log" "$out/jpeg-out/$name.log" >/dev/null
+	python3 plan/tools/guest/guest.py get "/root/ws074/jpeg-out/$name.pnm" "$out/jpeg-out/$name.pnm" >/dev/null 2>&1 || true
 done
 exec python3 plan/ws074/tests/run-jpeg-tests.py --outputs "$out/jpeg-out"
