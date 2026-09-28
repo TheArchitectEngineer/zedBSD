@@ -38,6 +38,10 @@
 #define I915_F32_32767		0x46fffe00U	/* 32767.0f */
 #define I915_F32_2048		0x45000000U	/* 2048.0f */
 
+/* The sample counts an attachment may have: one, two or four (image.c). */
+#define I915_INSTANCE_ATTACHMENT_SAMPLES \
+	(VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT)
+
 /*
  * What the object table records for an instance, a physical device, a
  * device and a queue.
@@ -373,14 +377,17 @@ i915_instance_limits(
 	limits->maxTexelGatherOffset = 7U;
 	limits->subPixelInterpolationOffsetBits = 4U;
 
-	/* Framebuffers and sample counts: one sample everywhere. */
+	/*
+	 * Framebuffers and sample counts: attachments of one, two or four
+	 * samples (image.c); a sampled or storage image has one.
+	 */
 	limits->maxFramebufferWidth = 16384U;
 	limits->maxFramebufferHeight = 16384U;
 	limits->maxFramebufferLayers = 1U;
-	limits->framebufferColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
-	limits->framebufferDepthSampleCounts = VK_SAMPLE_COUNT_1_BIT;
-	limits->framebufferStencilSampleCounts = VK_SAMPLE_COUNT_1_BIT;
-	limits->framebufferNoAttachmentsSampleCounts = VK_SAMPLE_COUNT_1_BIT;
+	limits->framebufferColorSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
+	limits->framebufferDepthSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
+	limits->framebufferStencilSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
+	limits->framebufferNoAttachmentsSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
 	limits->maxColorAttachments = 4U;
 	limits->sampledImageColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
 	limits->sampledImageIntegerSampleCounts = VK_SAMPLE_COUNT_1_BIT;
@@ -600,8 +607,14 @@ i915_instance_format_features(
 		break;
 	case VK_FORMAT_D32_SFLOAT_S8_UINT:
 	case VK_FORMAT_S8_UINT:
-		/* A depth and stencil, or a stencil, target; the depth plane may be sampled (Y-tiled, optimal only). */
-		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		/*
+		 * A depth and stencil, or a stencil, target whose planes are copied
+		 * to and from buffers; the depth plane may be sampled (Y-tiled,
+		 * optimal only).
+		 */
+		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
+			VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+			VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
 		if (format == VK_FORMAT_D32_SFLOAT_S8_UINT)
 			properties->optimalTilingFeatures |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
 		break;
@@ -767,8 +780,15 @@ i915_instance_image_format_properties(
 	if (depth != 0)
 		image.maxMipLevels = 1U;
 
-	/* One sample, and a resource of up to 1 GiB. */
+	/*
+	 * One sample; two or four for an optimal 2D image that is rendered to
+	 * and neither sampled nor stored; a resource of up to 1 GiB.
+	 */
 	image.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
+	if (type == VK_IMAGE_TYPE_2D && tiling == VK_IMAGE_TILING_OPTIMAL &&
+	    (features & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) != 0U &&
+	    (usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT)) == 0U)
+		image.sampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
 	image.maxResourceSize = 1ULL << 30;
 
 	/* Replies VK_SUCCESS, the present word and the record. */

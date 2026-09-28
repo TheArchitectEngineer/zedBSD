@@ -899,6 +899,10 @@ i915_capture_copy(
 	dst.pitch = stride_bytes;
 	dst.format = src.format;
 
+	/* Both are linear. */
+	src.tiled = 0U;
+	dst.tiled = 0U;
+
 	/* The whole frame, unscaled, at the top-left. */
 	rect.x = 0;
 	rect.y = 0;
