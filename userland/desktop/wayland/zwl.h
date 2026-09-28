@@ -136,6 +136,10 @@ enum zwl_kind {
 	ZWL_GLASS_MANAGER,
 	ZWL_GLASS,
 	ZWL_CONTEXT_MENU,
+	ZWL_TABLET_MANAGER,
+	ZWL_TABLET_SEAT,
+	ZWL_TABLET,
+	ZWL_TABLET_TOOL,
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -192,6 +196,8 @@ struct zwl_input_device {
 	unsigned pointer;
 	unsigned keyboard;
 	unsigned absolute;
+	/* A pen tablet (tablet.c, WS079 p003): its reports go to the tablet, not to apply_frame. */
+	unsigned tablet;
 	unsigned discarding;
 	int32_t abs_x_minimum;
 	int32_t abs_x_maximum;
@@ -421,6 +427,16 @@ struct zwl_object {
 	 */
 	struct zwl_object *glass;
 	struct zwl_panels *panels;
+	/*
+	 * The tablet protocol (tablet.c, WS079 p003): the number of the
+	 * zwp_tablet_seat_v2 a tablet or a tool object was announced on (a
+	 * seat's own number; unique for the compositor's life), and the slot of
+	 * the tablet device and of the tool the object stands for
+	 * (ZWL_TABLET_SLOT_NONE once the device or the tool has gone).
+	 */
+	uint64_t tablet_seat_number;
+	unsigned tablet_slot;
+	unsigned tool_slot;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -930,7 +946,11 @@ void zwl_seat_focus(struct zwl_server *server);
 void zwl_seat_surface_gone(struct zwl_object *surface);
 void zwl_seat_capabilities(struct zwl_server *server);
 void zwl_seat_motion(struct zwl_server *server, uint32_t time);
+int zwl_seat_motion_shell(struct zwl_server *server, uint32_t time);
+void zwl_seat_motion_deliver(struct zwl_server *server, uint32_t time);
 void zwl_seat_button(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
+int zwl_seat_button_shell(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
+void zwl_seat_button_deliver(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
 void zwl_seat_axis(struct zwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal);
 void zwl_seat_frame(struct zwl_server *server);
 void zwl_seat_key(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);

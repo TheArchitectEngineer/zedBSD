@@ -69,6 +69,31 @@
 /* The user the refusal check turns into to be refused as a non-root user. */
 #define PENINJECT_CHECK_UID	1000
 
+/* The commands of a script. */
+enum pen_command {
+	COMMAND_NONE,
+	COMMAND_SIZE,
+	COMMAND_TOOL,
+	COMMAND_DOWN,
+	COMMAND_MOVE,
+	COMMAND_HOVER,
+	COMMAND_RAMP,
+	COMMAND_BUTTON,
+	COMMAND_UP,
+	COMMAND_LIFT,
+	COMMAND_WAIT,
+};
+
+/*
+ * One script word and the command it names.
+ *
+ * The table of them is constant for the program's life.
+ */
+struct pen_command_word {
+	const char *word;
+	enum pen_command command;
+};
+
 /*
  * The pen as a replayed script has left it.
  *
@@ -100,9 +125,33 @@ struct check_result {
 	unsigned failed;
 };
 
+/*
+ * The words a script's commands are written with.
+ *
+ * wait and hold are the same command; hold reads better at a script's end.
+ */
+static const struct pen_command_word pen_commands[] = {
+	{ "size", COMMAND_SIZE },
+	{ "tool", COMMAND_TOOL },
+	{ "down", COMMAND_DOWN },
+	{ "move", COMMAND_MOVE },
+	{ "hover", COMMAND_HOVER },
+	{ "ramp", COMMAND_RAMP },
+	{ "button", COMMAND_BUTTON },
+	{ "up", COMMAND_UP },
+	{ "lift", COMMAND_LIFT },
+	{ "wait", COMMAND_WAIT },
+	{ "hold", COMMAND_WAIT },
+};
+
 static int replay(const char *path);
 static int run_line(struct pen_state *pen, char *line, unsigned number);
-static int run_position(struct pen_state *pen, const char *word, const char *line);
+static int run_command(struct pen_state *pen, enum pen_command command, const char *line);
+static enum pen_command command_of(const char *word);
+static int run_size(struct pen_state *pen, const char *line);
+static int run_tool(struct pen_state *pen, const char *line);
+static int run_wait(const char *line);
+static int run_position(struct pen_state *pen, enum pen_command command, const char *line);
 static int run_ramp(struct pen_state *pen, const char *line);
 static int run_button(struct pen_state *pen, const char *line);
 static int run_up(struct pen_state *pen, int leave);
@@ -128,16 +177,23 @@ main(
 	char **argv)
 {
 	int status;
+	int same;
 	long milliseconds;
 
 	/* -c checks the refusals. */
-	if (argc == 2 && strcmp(argv[1], "-c") == 0) {
+	same = 1;
+	if (argc == 2)
+		same = strcmp(argv[1], "-c");
+	if (same == 0) {
 		status = check();
 		return status;
 	}
 
 	/* -d MS dumps the pen's node. */
-	if (argc == 3 && strcmp(argv[1], "-d") == 0) {
+	same = 1;
+	if (argc == 3)
+		same = strcmp(argv[1], "-d");
+	if (same == 0) {
 		milliseconds = strtol(argv[2], NULL, 10);
 		status = dump(milliseconds);
 		return status;
@@ -227,10 +283,8 @@ run_line(
 	char *line,
 	unsigned number)
 {
+	enum pen_command command;
 	char word[16];
-	char name[16];
-	int values[2];
-	long milliseconds;
 	char *hash;
 	int count;
 	int error;
@@ -245,101 +299,171 @@ run_line(
 	if (count != 1)
 		return 0;
 
-	/* size declares the pen; it must come first. */
-	if (strcmp(word, "size") == 0) {
-		/* A second declaration, or one without both sizes, is refused. */
-		count = sscanf(line, "%*s %d %d", &values[0], &values[1]);
-		if (pen->declared || count != 2)
-			goto bad;
-
-		/* Declares the pen with the script's size. */
-		error = pen_declare(pen, values[0], values[1]);
-		if (error != 0)
-			return -1;
-		return 0;
-	}
-
-	/* Any other first command declares the default pen. */
-	if (!pen->declared) {
+	/* Any first command but size declares the default pen. */
+	command = command_of(word);
+	if (!pen->declared && command != COMMAND_SIZE) {
 		error = pen_declare(pen, PENINJECT_DEFAULT_SIZE, PENINJECT_DEFAULT_SIZE);
 		if (error != 0)
 			return -1;
 	}
 
-	/* tool chooses the tool for the next approach. */
-	if (strcmp(word, "tool") == 0) {
-		/* The tool cannot change while it is in range. */
-		count = sscanf(line, "%*s %15s", name);
-		if (count != 1 || pen->in_range)
-			goto bad;
+	/* Runs the command; a bad line is reported with its number. */
+	error = run_command(pen, command, line);
+	if (error < 0) {
+		fprintf(stderr, "peninject: line %u: bad command\n", number);
+		return -1;
+	}
 
-		/* The pen tip or the eraser end. */
-		if (strcmp(name, "pen") == 0) {
-			pen->tool = BTN_TOOL_PEN;
-		} else if (strcmp(name, "rubber") == 0) {
-			pen->tool = BTN_TOOL_RUBBER;
-		} else {
-			goto bad;
-		}
+	/* A write the kernel refused stops the replay. */
+	if (error > 0)
+		return -1;
+
+	/* Succeeded: the line was run. */
+	return 0;
+}
+
+/* Finds the command a script word names (COMMAND_NONE for none). */
+static enum pen_command
+command_of(
+	const char *word)
+{
+	unsigned index;
+	int same;
+
+	/* Compares the word with every command's. */
+	for (index = 0; index < sizeof(pen_commands) / sizeof(pen_commands[0]); index++) {
+		/* The command whose word it is. */
+		same = strcmp(word, pen_commands[index].word);
+		if (same == 0)
+			return pen_commands[index].command;
+	}
+
+	/* The word names no command. */
+	return COMMAND_NONE;
+}
+
+/*
+ * Runs one command.  Reports -1 for a bad line, 1 for a write the kernel
+ * refused, 0 for success.
+ */
+static int
+run_command(
+	struct pen_state *pen,
+	enum pen_command command,
+	const char *line)
+{
+	int status;
+
+	/* Each command's own runner. */
+	switch (command) {
+	case COMMAND_SIZE:
+		status = run_size(pen, line);
+		break;
+	case COMMAND_TOOL:
+		status = run_tool(pen, line);
+		break;
+	case COMMAND_DOWN:
+	case COMMAND_MOVE:
+	case COMMAND_HOVER:
+		status = run_position(pen, command, line);
+		break;
+	case COMMAND_RAMP:
+		status = run_ramp(pen, line);
+		break;
+	case COMMAND_BUTTON:
+		status = run_button(pen, line);
+		break;
+	case COMMAND_UP:
+		status = run_up(pen, 1);
+		break;
+	case COMMAND_LIFT:
+		status = run_up(pen, 0);
+		break;
+	case COMMAND_WAIT:
+		status = run_wait(line);
+		break;
+	default:
+		status = -1;
+		break;
+	}
+
+	/* Succeeded or failed as the command did. */
+	return status;
+}
+
+/* Runs size: declares the pen; it must be the first command. */
+static int
+run_size(
+	struct pen_state *pen,
+	const char *line)
+{
+	int values[2];
+	int count;
+	int error;
+
+	/* A second declaration, or one without both sizes, is refused. */
+	count = sscanf(line, "%*s %d %d", &values[0], &values[1]);
+	if (pen->declared || count != 2)
+		return -1;
+
+	/* Declares the pen with the script's size. */
+	error = pen_declare(pen, values[0], values[1]);
+	if (error != 0)
+		return 1;
+
+	/* Succeeded: the pen exists. */
+	return 0;
+}
+
+/* Runs tool: chooses the pen tip or the eraser end for the next approach. */
+static int
+run_tool(
+	struct pen_state *pen,
+	const char *line)
+{
+	char name[16];
+	int count;
+	int same;
+
+	/* The tool cannot change while it is in range. */
+	count = sscanf(line, "%*s %15s", name);
+	if (count != 1 || pen->in_range)
+		return -1;
+
+	/* The pen tip. */
+	same = strcmp(name, "pen");
+	if (same == 0) {
+		pen->tool = BTN_TOOL_PEN;
 		return 0;
 	}
 
-	/* down, move and hover set the axes. */
-	if (strcmp(word, "down") == 0 ||
-	    strcmp(word, "move") == 0 ||
-	    strcmp(word, "hover") == 0) {
-		error = run_position(pen, word, line);
-		if (error < 0)
-			goto bad;
-		if (error > 0)
-			return -1;
+	/* The eraser end. */
+	same = strcmp(name, "rubber");
+	if (same == 0) {
+		pen->tool = BTN_TOOL_RUBBER;
 		return 0;
 	}
 
-	/* ramp steps the pressure. */
-	if (strcmp(word, "ramp") == 0) {
-		error = run_ramp(pen, line);
-		if (error < 0)
-			goto bad;
-		if (error > 0)
-			return -1;
-		return 0;
-	}
-
-	/* button presses or releases a barrel button. */
-	if (strcmp(word, "button") == 0) {
-		error = run_button(pen, line);
-		if (error < 0)
-			goto bad;
-		if (error > 0)
-			return -1;
-		return 0;
-	}
-
-	/* up lifts and leaves; lift lifts and stays in range. */
-	if (strcmp(word, "up") == 0 || strcmp(word, "lift") == 0) {
-		error = run_up(pen, strcmp(word, "up") == 0);
-		if (error != 0)
-			return -1;
-		return 0;
-	}
-
-	/* wait and hold sleep. */
-	if (strcmp(word, "wait") == 0 || strcmp(word, "hold") == 0) {
-		/* A negative or missing time is refused. */
-		count = sscanf(line, "%*s %ld", &milliseconds);
-		if (count != 1 || milliseconds < 0)
-			goto bad;
-
-		/* Sleeps between commands. */
-		sleep_ms(milliseconds);
-		return 0;
-	}
-
-bad:
-	/* Reports the line that could not be run. */
-	fprintf(stderr, "peninject: line %u: bad command\n", number);
+	/* Any other tool is refused. */
 	return -1;
+}
+
+/* Runs wait and hold: sleeps between commands. */
+static int
+run_wait(
+	const char *line)
+{
+	long milliseconds;
+	int count;
+
+	/* A negative or missing time is refused. */
+	count = sscanf(line, "%*s %ld", &milliseconds);
+	if (count != 1 || milliseconds < 0)
+		return -1;
+
+	/* Succeeded: the time has passed. */
+	sleep_ms(milliseconds);
+	return 0;
 }
 
 /*
@@ -350,7 +474,7 @@ bad:
 static int
 run_position(
 	struct pen_state *pen,
-	const char *word,
+	enum pen_command command,
 	const char *line)
 {
 	int values[5];
@@ -360,7 +484,7 @@ run_position(
 
 	/* hover has no pressure; down and move have one. */
 	hover = 0;
-	if (strcmp(word, "hover") == 0)
+	if (command == COMMAND_HOVER)
 		hover = 1;
 
 	/* Reads the position, the pressure and the tilt the line gives. */
@@ -399,7 +523,7 @@ run_position(
 	pen_add(pen, EV_ABS, ABS_TILT_Y, pen->tilt_y);
 
 	/* down touches after the axes, as a real pen reports it. */
-	if (strcmp(word, "down") == 0 && !pen->touching) {
+	if (command == COMMAND_DOWN && !pen->touching) {
 		pen_add(pen, EV_KEY, BTN_TOUCH, 1);
 		pen->touching = 1;
 	}
@@ -474,6 +598,8 @@ run_button(
 	char name[16];
 	int state;
 	int count;
+	int code;
+	int same;
 	int error;
 
 	/* Reads the button and its state. */
@@ -481,14 +607,17 @@ run_button(
 	if (count != 2)
 		return -1;
 
-	/* The first or the second barrel button. */
-	if (strcmp(name, "stylus") == 0) {
-		pen_add(pen, EV_KEY, BTN_STYLUS, state);
-	} else if (strcmp(name, "stylus2") == 0) {
-		pen_add(pen, EV_KEY, BTN_STYLUS2, state);
-	} else {
+	/* The first or the second barrel button; any other name is refused. */
+	code = 0;
+	same = strcmp(name, "stylus");
+	if (same == 0)
+		code = BTN_STYLUS;
+	same = strcmp(name, "stylus2");
+	if (same == 0)
+		code = BTN_STYLUS2;
+	if (code == 0)
 		return -1;
-	}
+	pen_add(pen, EV_KEY, code, state);
 
 	/* Writes the frame. */
 	pen_add(pen, EV_SYN, SYN_REPORT, 0);
@@ -681,6 +810,8 @@ check(void)
 		close(second);
 		error = 0;
 	}
+
+	/* Records the second open's answer. */
 	check_expect(&result, "second-open", second, error, EBUSY);
 
 	/* A setup record with an empty area is refused. */
@@ -737,6 +868,8 @@ check(void)
 		events[index].type = EV_SYN;
 		events[index].code = SYN_REPORT;
 	}
+
+	/* Writes them all at once. */
 	written = write(first, events, sizeof(events));
 	check_expect(&result, "too-many-events", written, errno, EINVAL);
 
@@ -795,6 +928,9 @@ check_non_root(void)
 	pid_t child;
 	pid_t waited;
 	int status;
+	int exited;
+	int code;
+	int error;
 	int fd;
 
 	/* The child gives up root and tries the open. */
@@ -803,7 +939,8 @@ check_non_root(void)
 		return errno;
 	if (child == 0) {
 		/* Without the uid change the case means nothing. */
-		if (setuid(PENINJECT_CHECK_UID) != 0)
+		error = setuid(PENINJECT_CHECK_UID);
+		if (error != 0)
 			_exit(255);
 
 		/* The error of the open is the child's exit status. */
@@ -819,13 +956,15 @@ check_non_root(void)
 		return errno;
 
 	/* A child that could not become the user reports that as a failure. */
-	if (!WIFEXITED(status))
+	exited = WIFEXITED(status);
+	if (!exited)
 		return -1;
-	if (WEXITSTATUS(status) == 255)
+	code = WEXITSTATUS(status);
+	if (code == 255)
 		return -1;
 
 	/* Succeeded: the child's error. */
-	return WEXITSTATUS(status);
+	return code;
 }
 
 /* Writes one event and a SYN_REPORT in one batch. */
@@ -905,6 +1044,8 @@ dump(
 		perror(path);
 		return 1;
 	}
+
+	/* The node's path, name and axes. */
 	printf("PENDUMP node=%s name=%s\n", path, PENINJECT_PEN_NAME);
 	dump_axes(fd);
 	fflush(stdout);
@@ -918,6 +1059,8 @@ dump(
 			printf("PENDUMP end events=%lu reason=time\n", total);
 			break;
 		}
+
+		/* Polls the node for the rest of the time. */
 		poller.fd = fd;
 		poller.events = POLLIN;
 		poller.revents = 0;
@@ -940,6 +1083,8 @@ dump(
 			printf("PENDUMP event type=%u code=0x%x value=%d\n", events[index].type, events[index].code, events[index].value);
 			total++;
 		}
+
+		/* The lines leave at once, for a reader of the output file. */
 		fflush(stdout);
 	}
 
@@ -978,7 +1123,8 @@ dump_find(
 			break;
 
 		/* Only eventN nodes speak evdev. */
-		if (strncmp(entry->d_name, "event", 5) != 0)
+		same = strncmp(entry->d_name, "event", 5);
+		if (same != 0)
 			continue;
 
 		/* Opens the node to ask for its name. */
