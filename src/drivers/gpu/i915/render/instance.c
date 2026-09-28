@@ -21,6 +21,7 @@
 #include "instance.h"
 #include "codec.h"
 #include "object.h"
+#include "state.h"
 #include <kern/kcrt.h>
 
 #include "../i915.h"
@@ -546,6 +547,8 @@ i915_instance_format_features(
 	uint32_t format,
 	VkFormatProperties *properties)
 {
+	int supported;
+
 	/* A format not listed below has no feature. */
 	kern_memset(properties, 0, sizeof(*properties));
 
@@ -632,6 +635,15 @@ i915_instance_format_features(
 	default:
 		break;
 	}
+
+	/*
+	 * A format the vertex fetcher reads may be a vertex buffer's.  Without
+	 * the feature a client copies the vertices out of its own bytes, which
+	 * miss what the device wrote into the buffer (transform feedback).
+	 */
+	supported = drv_i915_gfx_vertex_format_supported(format);
+	if (supported != 0)
+		properties->bufferFeatures |= VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
 }
 
 /*

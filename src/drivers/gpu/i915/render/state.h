@@ -154,6 +154,8 @@ struct i915_gfx_primitive {
 	int32_t base_vertex;
 };
 
+int drv_i915_gfx_vertex_format_supported(uint32_t format);
+
 void drv_i915_gfx_pipeline_kernels(const struct i915_gfx_pipeline *pipeline, struct i915_gfx_kernels *kernels);
 
 int drv_i915_gfx_write_state(uint8_t *page, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs);

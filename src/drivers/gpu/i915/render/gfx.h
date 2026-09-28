@@ -441,6 +441,9 @@ struct i915_gfx_pipeline {
 	uint32_t cull_mode;
 	uint32_t front_face;
 
+	/* Nonzero when the draws run the vertex shader only and rasterize nothing (rasterizerDiscardEnable). */
+	uint32_t rasterizer_discard;
+
 	/* The samples the pipeline rasterizes (1, 2 or 4), and which of them it writes. */
 	uint32_t samples;
 	uint32_t sample_mask;

@@ -256,6 +256,15 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_CLIP_NON_PERSPECTIVE_BARYCENTRIC	(1U << 8)
 
 /*
+ * 3DSTATE_STREAMOUT dword 1 bit 30, API Rendering Disable (gen12.xml, start
+ * 62): the primitives go no further than the stream output stage, so the
+ * vertex shader runs and nothing is rasterized.  anv sets it for
+ * rasterizerDiscardEnable whether or not stream output is on (Mesa 25.0.7
+ * src/intel/vulkan/genX_gfx_state.c: so.RenderingDisable).
+ */
+#define GEN12_STREAMOUT_RENDERING_DISABLE	(1U << 30)
+
+/*
  * 3DSTATE_PS_EXTRA dword 1 (gen110.xml below): bit 23 Pixel Shader Uses
  * Source W and bit 24 Pixel Shader Uses Source Depth, which put the
  * interpolated w and depth of each pixel into the thread payload after the

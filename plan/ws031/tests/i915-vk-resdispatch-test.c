@@ -19,6 +19,8 @@
 
 #include "i915-vk-render-stubs.inc"
 
+#include "../../../src/drivers/gpu/i915/render/state.h"
+
 /* The wire opcodes the fixture sends, as libvulkan numbers them. */
 #define FIXTURE_FORMAT_PROPERTIES	4U
 #define FIXTURE_IMAGE_FORMAT_PROPERTIES	5U
@@ -400,7 +402,11 @@ fixture_format_features(
 	assert(reply_bytes == 24U);
 	assert(stub_get32(stub_reply, 0U) == FIXTURE_FORMAT_PROPERTIES);
 	assert(stub_get64(stub_reply, 4U) == 1U);
-	assert(stub_get32(stub_reply, 20U) == 0U);
+	/* The buffer features are the vertex buffer's, for exactly the formats the vertex fetcher reads. */
+	if (drv_i915_gfx_vertex_format_supported(format) != 0)
+		assert(stub_get32(stub_reply, 20U) == (uint32_t)VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT);
+	else
+		assert(stub_get32(stub_reply, 20U) == 0U);
 
 	/* Reports the optimal tiling's features. */
 	if (optimal)
