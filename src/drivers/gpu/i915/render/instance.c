@@ -598,6 +598,13 @@ i915_instance_format_features(
 			VK_FORMAT_FEATURE_BLIT_DST_BIT;
 		properties->linearTilingFeatures = properties->optimalTilingFeatures;
 		break;
+	case VK_FORMAT_D32_SFLOAT_S8_UINT:
+	case VK_FORMAT_S8_UINT:
+		/* A depth and stencil, or a stencil, target; the depth plane may be sampled (Y-tiled, optimal only). */
+		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		if (format == VK_FORMAT_D32_SFLOAT_S8_UINT)
+			properties->optimalTilingFeatures |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+		break;
 	case VK_FORMAT_D32_SFLOAT:
 	case VK_FORMAT_D16_UNORM:
 		/*
@@ -727,7 +734,8 @@ i915_instance_image_format_properties(
 	 * consulted; a cube compatible image is a 2D one.
 	 */
 	depth = 0;
-	if (format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D16_UNORM)
+	if (format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D16_UNORM ||
+	    format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_S8_UINT)
 		depth = 1;
 	if (features == 0U ||
 	    (type != VK_IMAGE_TYPE_1D && type != VK_IMAGE_TYPE_2D && type != VK_IMAGE_TYPE_3D) ||

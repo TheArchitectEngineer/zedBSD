@@ -75,6 +75,13 @@
 /* How many rows one rectangle of a buffer copy covers at most. */
 #define I915_GFX_COPY_MAX_ROWS		4096U
 
+/*
+ * The planes of an image a copy or a blit moves, as bits: the colour or
+ * depth texels, and the separate stencil plane of a format with stencil.
+ */
+#define I915_IMAGE_PLANE_MAIN		1U
+#define I915_IMAGE_PLANE_STENCIL	2U
+
 struct i915_gfx_cmdpool;
 struct i915_vk_fence;
 
@@ -165,9 +172,17 @@ static int i915_record_copy_buffer(struct i915_render_session *session, struct i
 static int i915_record_clear_attachments(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_command(struct i915_render_session *session, uint32_t opcode, struct i915_wire_reader *reader);
 static int i915_image_surface(const struct i915_gfx_image *image, uint32_t level, uint32_t slice, struct i915_gfx_surface *surface);
+static uint32_t i915_image_planes(const struct i915_gfx_image *image, uint32_t aspects);
+static int i915_image_plane_surface(const struct i915_gfx_image *image, uint32_t plane, uint32_t level, uint32_t slice, struct i915_gfx_surface *surface);
+static int i915_image_copy_plane(struct i915_render_session *session, const struct i915_gfx_op *op, uint32_t plane);
+static int i915_image_blit_plane(struct i915_render_session *session, const struct i915_gfx_op *op, uint32_t plane, const struct i915_gfx_rect *src_rect, const struct i915_gfx_rect *dst_rect, int linear);
 static int i915_blit_order(int32_t *first, int32_t *second, int mirror);
 static int i915_attachment_surface(const struct i915_gfx_view *view, struct i915_gfx_surface *surface);
 static void i915_depth_words_surface(const struct i915_gfx_image *image, struct i915_gfx_surface *surface);
+static int i915_clear_stencil(struct i915_render_session *session, const struct i915_gfx_view *view, const struct i915_gfx_rect *area, uint32_t value);
+static uint32_t i915_unorm8_float_bits(uint32_t value);
+static int i915_record_set_stencil(struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader, uint32_t which);
+static void i915_execute_set_stencil(struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static int i915_execute_clear(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_buffer_image_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_clear_image(struct i915_render_session *session, const struct i915_gfx_op *op);
@@ -1033,6 +1048,36 @@ i915_record_buffer_image_copy(
 }
 
 /*
+ * vkCmdSetStencilCompareMask, WriteMask and Reference: [faceMask][value];
+ * `which` is 0, 1 or 2 in that order.
+ */
+static int
+i915_record_set_stencil(
+	struct i915_gfx_cmdbuf *cmdbuf,
+	struct i915_wire_reader *reader,
+	uint32_t which)
+{
+	struct i915_gfx_op *op;
+	uint32_t faces;
+	uint32_t value;
+
+	/* Decodes the faces and the value. */
+	faces = drv_i915_wire_read_u32(reader);
+	value = drv_i915_wire_read_u32(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Records them. */
+	op = i915_command_op(cmdbuf, I915_GFX_OP_SET_STENCIL);
+	op->u.stencil.which = which;
+	op->u.stencil.faces = faces;
+	op->u.stencil.value = value;
+
+	/* Succeeded: the value is recorded. */
+	return 0;
+}
+
+/*
  * vkCmdBeginQuery: [pool][query][flags]; vkCmdEndQuery: [pool][query];
  * vkCmdResetQueryPool: [pool][first][count].
  *
@@ -1200,6 +1245,7 @@ i915_record_clear_attachments(
 	VkClearRect rects[I915_GFX_MAX_CLEAR_RECTS];
 	uint32_t is_depth[I915_GFX_MAX_ATTACHMENTS];
 	uint32_t color_index[I915_GFX_MAX_ATTACHMENTS];
+	uint32_t aspects[I915_GFX_MAX_ATTACHMENTS];
 	uint32_t words[I915_GFX_MAX_ATTACHMENTS][4];
 	uint64_t attachments;
 	uint64_t count;
@@ -1214,15 +1260,15 @@ i915_record_clear_attachments(
 	if (reader->error != 0 || attachments > I915_GFX_MAX_ATTACHMENTS)
 		return EINVAL;
 
-	/* Decodes every attachment's colour index and value: a depth and stencil pair, or four colour words. */
+	/* Decodes every attachment's aspects, colour index and value: a depth and stencil pair, or four colour words. */
 	for (index = 0U; index < attachments; index++) {
 		kern_memset(words[index], 0, sizeof(words[index]));
-		(void)drv_i915_wire_read_u32(reader);
+		aspects[index] = drv_i915_wire_read_u32(reader);
 		color_index[index] = drv_i915_wire_read_u32(reader);
 		is_depth[index] = drv_i915_wire_read_u32(reader);
 		if (is_depth[index] != 0U) {
 			words[index][0] = drv_i915_wire_read_u32(reader);
-			(void)drv_i915_wire_read_u32(reader);
+			words[index][1] = drv_i915_wire_read_u32(reader);
 		} else {
 			(void)drv_i915_wire_read_u32(reader);
 			length = drv_i915_wire_read_u64(reader);
@@ -1249,6 +1295,7 @@ i915_record_clear_attachments(
 			op = i915_command_op(cmdbuf, I915_GFX_OP_CLEAR_ATTACHMENT);
 			op->u.clear_attachment.is_depth = is_depth[index];
 			op->u.clear_attachment.color_index = color_index[index];
+			op->u.clear_attachment.aspects = aspects[index];
 			kern_memcpy(op->u.clear_attachment.words, words[index], sizeof(words[index]));
 			op->u.clear_attachment.rect.x = rects[rect].rect.offset.x;
 			op->u.clear_attachment.rect.y = rects[rect].rect.offset.y;
@@ -1480,13 +1527,12 @@ i915_record_set_blend_constants(
 }
 
 /*
- * vkCmdSetLineWidth: [width]; vkCmdSetDepthBias: [constant][clamp][slope];
- * vkCmdSetStencilCompareMask, vkCmdSetStencilWriteMask and
- * vkCmdSetStencilReference: [faces][value].  The values are decoded and
- * dropped (WS068 p006: OpenGL ES sets them with every pipeline).
+ * vkCmdSetLineWidth: [width]; vkCmdSetDepthBias: [constant][clamp][slope].
+ * The values are decoded and dropped (WS068 p006: OpenGL ES sets them with
+ * every pipeline).
  *
- * XXX: the draws have no stencil test, no depth bias and only one-pixel
- * lines; a width other than 1 is said once.
+ * XXX: the draws have no depth bias and only one-pixel lines; a width other
+ * than 1 is said once.
  */
 static int
 i915_record_set_unused(
@@ -1769,10 +1815,7 @@ i915_record_command(
 		return error;
 	case 96U:
 	case 97U:
-	case 100U:
-	case 101U:
-	case 102U:
-		/* vkCmdSetLineWidth, vkCmdSetDepthBias and the three stencil values, which the draws do not use. */
+		/* vkCmdSetLineWidth and vkCmdSetDepthBias, which the draws do not use. */
 		error = i915_record_set_unused(opcode, reader);
 		return error;
 	case 98U:
@@ -1835,6 +1878,12 @@ i915_record_command(
 	case 116U:
 		/* vkCmdCopyImageToBuffer */
 		error = i915_record_buffer_image_copy(session, cmdbuf, reader, 0);
+		return error;
+	case 100U:
+	case 101U:
+	case 102U:
+		/* vkCmdSetStencilCompareMask, vkCmdSetStencilWriteMask, vkCmdSetStencilReference */
+		error = i915_record_set_stencil(cmdbuf, reader, opcode - 100U);
 		return error;
 	case 126U:
 		/* vkCmdPipelineBarrier */
@@ -1904,6 +1953,92 @@ i915_image_surface(
 }
 
 /*
+ * The planes of an image that an aspect mask names: I915_IMAGE_PLANE_MAIN
+ * for the colour or depth texels, I915_IMAGE_PLANE_STENCIL for the
+ * separate stencil plane.  An image without stencil has only the main
+ * plane, whatever the mask; a stencil-only image only the stencil plane.
+ */
+static uint32_t
+i915_image_planes(
+	const struct i915_gfx_image *image,
+	uint32_t aspects)
+{
+	uint32_t planes;
+
+	/* An image without stencil is its main plane. */
+	if (image->stencil == 0U)
+		return I915_IMAGE_PLANE_MAIN;
+
+	/* A stencil-only image is its stencil plane. */
+	if (image->format == VK_FORMAT_S8_UINT)
+		return I915_IMAGE_PLANE_STENCIL;
+
+	/* The depth aspect (or no aspect at all) names the depth plane. */
+	planes = 0U;
+	if ((aspects & ~(uint32_t)VK_IMAGE_ASPECT_STENCIL_BIT) != 0U)
+		planes |= I915_IMAGE_PLANE_MAIN;
+	if (aspects == 0U)
+		planes |= I915_IMAGE_PLANE_MAIN;
+
+	/* The stencil aspect names the stencil plane. */
+	if ((aspects & VK_IMAGE_ASPECT_STENCIL_BIT) != 0U)
+		planes |= I915_IMAGE_PLANE_STENCIL;
+
+	/* Succeeded: the planes the mask names. */
+	return planes;
+}
+
+/*
+ * Describes one slice of one plane of an image as a surface: the main
+ * plane as i915_image_surface() does, the stencil plane as its Y-tiled
+ * bytes (VK_FORMAT_S8_UINT, which the surface state names Y-tiled
+ * R8_UNORM).  The stencil plane has one level; EINVAL for another level, a
+ * slice the image does not have or an image with no storage.
+ */
+static int
+i915_image_plane_surface(
+	const struct i915_gfx_image *image,
+	uint32_t plane,
+	uint32_t level,
+	uint32_t slice,
+	struct i915_gfx_surface *surface)
+{
+	uint64_t offset;
+	int error;
+
+	/* The main plane is the image as it is laid out. */
+	if (plane != I915_IMAGE_PLANE_STENCIL) {
+		error = i915_image_surface(image, level, slice, surface);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the surface describes the main plane's level. */
+		return 0;
+	}
+
+	/* Refuses a stencil plane the image does not have, and a level or slice outside it. */
+	if (image->stencil == 0U || level != 0U)
+		return EINVAL;
+	if (slice >= drv_i915_gfx_image_slices(image, 0U))
+		return EINVAL;
+
+	/* The slice's rows of the stencil plane, which follows the depth plane. */
+	offset = image->offset + image->stencil_offset + (uint64_t)slice * image->stencil_pitch * image->stencil_slice_rows;
+	surface->va = drv_i915_gfx_memory_va(image->memory, offset);
+	surface->width = image->width;
+	surface->height = image->height;
+	surface->pitch = image->stencil_pitch;
+	surface->format = VK_FORMAT_S8_UINT;
+
+	/* Refuses an image that is not bound to storage. */
+	if (surface->va == 0U)
+		return EINVAL;
+
+	/* Succeeded: the surface describes the stencil plane's slice. */
+	return 0;
+}
+
+/*
  * Describes the image of a render pass attachment: the level and the layer
  * its view starts at.  XXX: a view of several layers is written at its
  * first layer only (no layered rendering).
@@ -1925,6 +2060,86 @@ i915_attachment_surface(
 }
 
 /*
+ * Fills a rectangle of the stencil plane of a view's layer with a stencil
+ * value: the plane's bytes as Y-tiled R8_UNORM (VK_FORMAT_S8_UINT in the
+ * surface), the value as value / 255, which the target stores exactly.
+ * The rectangle is clipped to the image; an empty one fills nothing.
+ */
+static int
+i915_clear_stencil(
+	struct i915_render_session *session,
+	const struct i915_gfx_view *view,
+	const struct i915_gfx_rect *area,
+	uint32_t value)
+{
+	const struct i915_gfx_image *image;
+	struct i915_gfx_surface surface;
+	struct i915_gfx_rect rect;
+	uint32_t words[4];
+	int64_t right;
+	int64_t bottom;
+	int error;
+
+	/* The stencil plane of the view's layer. */
+	image = view->image;
+	kern_memset(&surface, 0, sizeof(surface));
+	error = i915_image_plane_surface(image, I915_IMAGE_PLANE_STENCIL, 0U, view->base_layer, &surface);
+	if (error != 0)
+		return error;
+
+	/* The rectangle, clipped to the plane. */
+	rect = *area;
+	right = (int64_t)rect.x + rect.w;
+	bottom = (int64_t)rect.y + rect.h;
+	if (rect.x < 0)
+		rect.x = 0;
+	if (rect.y < 0)
+		rect.y = 0;
+	if (right > (int64_t)surface.width)
+		right = surface.width;
+	if (bottom > (int64_t)surface.height)
+		bottom = surface.height;
+	if (right <= rect.x || bottom <= rect.y)
+		return 0;
+	rect.w = (uint32_t)(right - rect.x);
+	rect.h = (uint32_t)(bottom - rect.y);
+
+	/* The value's normalized form. */
+	kern_memset(words, 0, sizeof(words));
+	words[0] = i915_unorm8_float_bits(value & 0xffU);
+
+	/* Fills the rectangle. */
+	error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, words, 0);
+	return error;
+}
+
+/*
+ * Returns the float bits of value * 257 / 65536, within a 65536th of
+ * value / 255: the float an 8-bit unorm target rounds back to `value`.
+ * Integer arithmetic only.
+ */
+static uint32_t
+i915_unorm8_float_bits(
+	uint32_t value)
+{
+	uint32_t number;
+	uint32_t top;
+
+	/* Zero is all zero bits. */
+	number = value * 257U;
+	if (number == 0U)
+		return 0U;
+
+	/* The highest set bit of the number, 0 to 15. */
+	top = 15U;
+	while ((number & (1U << top)) == 0U)
+		top--;
+
+	/* The exponent of 2^(top - 16) and the mantissa below the leading one. */
+	return ((127U + top - 16U) << 23) | ((number << (23U - top)) & 0x7fffffU);
+}
+
+/*
  * Turns the surface of a D32 image's slice into the R32_FLOAT view of the
  * slice's bytes, padding rows included: a whole-slice clear writes the same
  * float everywhere, so the Y tiling does not matter.  The slice is the
@@ -1938,10 +2153,12 @@ i915_depth_words_surface(
 	const struct i915_gfx_image *image,
 	struct i915_gfx_surface *surface)
 {
-	/* Every word of the slice, the surface's address kept. */
+	/* Every word of the slice (of the depth plane, before a stencil plane), the surface's address kept. */
 	surface->format = VK_FORMAT_R32_SFLOAT;
 	surface->width = image->pitch / 4U;
 	surface->height = image->slice_rows;
+	if (surface->height == 0U && image->stencil != 0U)
+		surface->height = (uint32_t)(image->stencil_offset / image->pitch);
 	if (surface->height == 0U)
 		surface->height = (uint32_t)(image->bytes / image->pitch);
 }
@@ -1979,27 +2196,35 @@ i915_execute_clear(
 
 	/* Fills every attachment that loads with a clear. */
 	for (index = 0U; index < pass->attachment_count && index < framebuffer->view_count; index++) {
-		/* Skips an attachment that does not load with a clear. */
-		if (pass->attachments[index].load_op != VK_ATTACHMENT_LOAD_OP_CLEAR)
+		/* Skips an attachment the begin gave no clear value, or the framebuffer no view. */
+		if (index >= op->u.begin.clear_count || framebuffer->views[index] == NULL)
 			continue;
 
-		/* Skips an attachment the begin gave no clear value. */
-		if (index >= op->u.begin.clear_count)
-			continue;
+		/* A stencil plane that loads with a clear is filled with the stencil value. */
+		image = framebuffer->views[index]->image;
+		if (image->stencil != 0U && pass->attachments[index].stencil_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR) {
+			rect.x = 0;
+			rect.y = 0;
+			rect.w = image->width;
+			rect.h = image->height;
+			error = i915_clear_stencil(session, framebuffer->views[index], &rect, op->u.begin.clear_words[index][1]);
+			if (error != 0)
+				return error;
+		}
 
-		/* Skips an attachment the framebuffer has no view for. */
-		if (framebuffer->views[index] == NULL)
+		/* Skips an attachment whose colour or depth does not load with a clear, and a stencil-only one. */
+		if (pass->attachments[index].load_op != VK_ATTACHMENT_LOAD_OP_CLEAR || image->format == VK_FORMAT_S8_UINT)
 			continue;
 
 		/* Describes the attachment's image. */
-		image = framebuffer->views[index]->image;
 		error = i915_attachment_surface(framebuffer->views[index], &surface);
 		if (error != 0)
 			return error;
 
 		/* Takes the value: D32 through the R32_FLOAT view, D16 as the target's colour, or the four colour words. */
 		kern_memset(words, 0, sizeof(words));
-		if (op->u.begin.clear_is_depth[index] != 0U && image->format == VK_FORMAT_D32_SFLOAT) {
+		if (op->u.begin.clear_is_depth[index] != 0U &&
+		    (image->format == VK_FORMAT_D32_SFLOAT || image->format == VK_FORMAT_D32_SFLOAT_S8_UINT)) {
 			i915_depth_words_surface(image, &surface);
 			words[0] = drv_i915_gfx_depth_clear_word(image->format, op->u.begin.clear_words[index][0]);
 		} else if (op->u.begin.clear_is_depth[index] != 0U) {
@@ -2060,8 +2285,25 @@ i915_execute_clear_attachment(
 	if (attachment >= framebuffer->view_count || framebuffer->views[attachment] == NULL)
 		return 0;
 
-	/* Describes the attachment's image. */
+	/* A stencil clear fills the rectangle of the stencil plane. */
 	image = framebuffer->views[attachment]->image;
+	rect = op->u.clear_attachment.rect;
+	if (op->u.clear_attachment.is_depth != 0U &&
+	    (op->u.clear_attachment.aspects & VK_IMAGE_ASPECT_STENCIL_BIT) != 0U &&
+	    image->stencil != 0U) {
+		error = i915_clear_stencil(session, framebuffer->views[attachment], &rect, op->u.clear_attachment.words[1]);
+		if (error != 0)
+			return error;
+	}
+
+	/* A depth / stencil clear without the depth aspect (0 reads as depth), or of a stencil-only image, is done. */
+	if (op->u.clear_attachment.is_depth != 0U &&
+	    ((op->u.clear_attachment.aspects != 0U &&
+	      (op->u.clear_attachment.aspects & VK_IMAGE_ASPECT_DEPTH_BIT) == 0U) ||
+	     image->format == VK_FORMAT_S8_UINT))
+		return 0;
+
+	/* Describes the attachment's image. */
 	error = i915_attachment_surface(framebuffer->views[attachment], &surface);
 	if (error != 0)
 		return error;
@@ -2073,8 +2315,8 @@ i915_execute_clear_attachment(
 	 * any D16 one, is drawn into the Y-tiled R32_FLOAT or R16_UNORM
 	 * surface of the depth buffer with the depth as the colour.
 	 */
-	rect = op->u.clear_attachment.rect;
-	if (op->u.clear_attachment.is_depth != 0U && image->format == VK_FORMAT_D32_SFLOAT &&
+	if (op->u.clear_attachment.is_depth != 0U &&
+	    (image->format == VK_FORMAT_D32_SFLOAT || image->format == VK_FORMAT_D32_SFLOAT_S8_UINT) &&
 	    rect.x <= 0 && rect.y <= 0 &&
 	    (int64_t)rect.x + rect.w >= (int64_t)surface.width &&
 	    (int64_t)rect.y + rect.h >= (int64_t)surface.height) {
@@ -2112,8 +2354,9 @@ i915_execute_clear_attachment(
  * copy.
  *
  * The buffer region is a linear surface of the image's format with the
- * region's row length (a depth image's values as R32_FLOAT or R16_UNORM);
- * the image side is the mip level the region names.
+ * region's row length (a depth image's values as R32_FLOAT or R16_UNORM,
+ * a stencil plane's bytes as R8_UNORM); the image side is the mip level of
+ * the plane the region's aspect names.
  */
 static int
 i915_execute_buffer_image_copy(
@@ -2136,6 +2379,7 @@ i915_execute_buffer_image_copy(
 	uint32_t first_slice;
 	uint32_t slice_count;
 	uint32_t slice;
+	uint32_t plane;
 	int error;
 
 	/* Refuses a copy whose buffer or image does not exist. */
@@ -2157,20 +2401,30 @@ i915_execute_buffer_image_copy(
 	if (slice_count == 0U)
 		return EINVAL;
 
-	/* Describes the level of the image the region names, in its first slice. */
-	error = i915_image_surface(image, region->imageSubresource.mipLevel, first_slice, &image_surface);
+	/* The plane the region's one aspect names: the stencil plane, or the colour or depth texels. */
+	plane = i915_image_planes(image, region->imageSubresource.aspectMask);
+	if (plane != I915_IMAGE_PLANE_STENCIL)
+		plane = I915_IMAGE_PLANE_MAIN;
+
+	/* Describes the level of the plane the region names, in its first slice. */
+	error = i915_image_plane_surface(image, plane, region->imageSubresource.mipLevel, first_slice, &image_surface);
 	if (error != 0)
 		return EINVAL;
 
 	/*
-	 * The buffer holds the image's texels in the image's format, or a depth
-	 * image's R32_FLOAT or R16_UNORM values, which the copy moves between
-	 * the linear buffer and the Y-tiled image.
+	 * The buffer holds the image's texels in the image's format, a depth
+	 * plane's R32_FLOAT or R16_UNORM values, or a stencil plane's bytes as
+	 * R8_UNORM, which the copy moves between the linear buffer and the
+	 * Y-tiled image.
 	 */
 	buffer_format = image->format;
 	texel_bytes = drv_i915_gfx_format_bytes(image->format);
-	if (image->format == VK_FORMAT_D32_SFLOAT) {
+	if (plane == I915_IMAGE_PLANE_STENCIL) {
+		buffer_format = VK_FORMAT_R8_UNORM;
+		texel_bytes = 1U;
+	} else if (image->format == VK_FORMAT_D32_SFLOAT || image->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
 		buffer_format = VK_FORMAT_R32_SFLOAT;
+		texel_bytes = 4U;
 	} else if (image->format == VK_FORMAT_D16_UNORM) {
 		buffer_format = VK_FORMAT_R16_UNORM;
 		texel_bytes = 2U;
@@ -2228,7 +2482,7 @@ i915_execute_buffer_image_copy(
 	for (slice = 0U; slice < slice_count; slice++) {
 		/* Describes the slice, and moves the buffer to its rows. */
 		if (slice != 0U) {
-			error = i915_image_surface(image, region->imageSubresource.mipLevel, first_slice + slice, &image_surface);
+			error = i915_image_plane_surface(image, plane, region->imageSubresource.mipLevel, first_slice + slice, &image_surface);
 			if (error != 0)
 				return EINVAL;
 			buffer_surface.va += slice_bytes;
@@ -2325,11 +2579,52 @@ i915_execute_clear_image(
 	return 0;
 }
 
-/* Runs a vkCmdCopyImage region as one GPU copy between the two levels it names. */
+/*
+ * Runs a vkCmdCopyImage region as GPU copies between the two levels it
+ * names, one for each plane its aspects name (the depth and the stencil of
+ * a format with stencil are separate planes).
+ */
 static int
 i915_execute_image_copy(
 	struct i915_render_session *session,
 	const struct i915_gfx_op *op)
+{
+	uint32_t src_planes;
+	uint32_t dst_planes;
+	int error;
+
+	/* Refuses a copy whose images do not exist. */
+	if (op->u.image_copy.src == NULL || op->u.image_copy.dst == NULL)
+		return EINVAL;
+
+	/* The planes each side's aspects name. */
+	src_planes = i915_image_planes(op->u.image_copy.src, op->u.image_copy.region.srcSubresource.aspectMask);
+	dst_planes = i915_image_planes(op->u.image_copy.dst, op->u.image_copy.region.dstSubresource.aspectMask);
+
+	/* Copies the colour or depth texels when both sides name them. */
+	if ((src_planes & dst_planes & I915_IMAGE_PLANE_MAIN) != 0U) {
+		error = i915_image_copy_plane(session, op, I915_IMAGE_PLANE_MAIN);
+		if (error != 0)
+			return error;
+	}
+
+	/* Copies the stencil plane when both sides name it. */
+	if ((src_planes & dst_planes & I915_IMAGE_PLANE_STENCIL) != 0U) {
+		error = i915_image_copy_plane(session, op, I915_IMAGE_PLANE_STENCIL);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the region is copied. */
+	return 0;
+}
+
+/* Copies one plane of a vkCmdCopyImage region, slice by slice. */
+static int
+i915_image_copy_plane(
+	struct i915_render_session *session,
+	const struct i915_gfx_op *op,
+	uint32_t plane)
 {
 	const VkImageCopy *region;
 	struct i915_gfx_surface src_surface;
@@ -2342,12 +2637,8 @@ i915_execute_image_copy(
 	uint32_t slice;
 	int error;
 
-	/* Refuses a copy whose images do not exist. */
-	region = &op->u.image_copy.region;
-	if (op->u.image_copy.src == NULL || op->u.image_copy.dst == NULL)
-		return EINVAL;
-
 	/* The slices on each side: the layers, or a 3D image's depths from its z offset. */
+	region = &op->u.image_copy.region;
 	src_slice = region->srcSubresource.baseArrayLayer;
 	if (op->u.image_copy.src->type == VK_IMAGE_TYPE_3D)
 		src_slice = (uint32_t)region->srcOffset.z;
@@ -2373,12 +2664,12 @@ i915_execute_image_copy(
 	/* Copies the region slice by slice. */
 	for (slice = 0U; slice < slice_count; slice++) {
 		/* Describes the source level of the slice. */
-		error = i915_image_surface(op->u.image_copy.src, region->srcSubresource.mipLevel, src_slice + slice, &src_surface);
+		error = i915_image_plane_surface(op->u.image_copy.src, plane, region->srcSubresource.mipLevel, src_slice + slice, &src_surface);
 		if (error != 0)
 			return EINVAL;
 
 		/* Describes the destination level of the slice. */
-		error = i915_image_surface(op->u.image_copy.dst, region->dstSubresource.mipLevel, dst_slice + slice, &dst_surface);
+		error = i915_image_plane_surface(op->u.image_copy.dst, plane, region->dstSubresource.mipLevel, dst_slice + slice, &dst_surface);
 		if (error != 0)
 			return EINVAL;
 
@@ -2388,7 +2679,7 @@ i915_execute_image_copy(
 			return error;
 	}
 
-	/* Succeeded: the region is copied. */
+	/* Succeeded: the plane of the region is copied. */
 	return 0;
 }
 
@@ -2417,9 +2708,10 @@ i915_blit_order(
 
 /*
  * Runs a vkCmdBlitImage region as one scaled GPU copy between the two
- * levels it names, which may be two levels of the same image (the mip
- * chain a linear blit generates level by level).  An offset pair given in
- * decreasing order on one side mirrors the copy along that direction.
+ * levels it names for each plane its aspects name, which may be two levels
+ * of the same image (the mip chain a linear blit generates level by
+ * level).  An offset pair given in decreasing order on one side mirrors the
+ * copy along that direction.
  */
 static int
 i915_execute_image_blit(
@@ -2427,31 +2719,20 @@ i915_execute_image_blit(
 	const struct i915_gfx_op *op)
 {
 	const VkImageBlit *region;
-	struct i915_gfx_surface src_surface;
-	struct i915_gfx_surface dst_surface;
 	struct i915_gfx_rect src_rect;
 	struct i915_gfx_rect dst_rect;
+	uint32_t src_planes;
+	uint32_t dst_planes;
 	int32_t x0;
 	int32_t y0;
 	int32_t x1;
 	int32_t y1;
-	uint32_t layer;
 	int linear;
 	int error;
 
 	/* Refuses a blit whose images do not exist. */
 	region = &op->u.blit.region;
 	if (op->u.blit.src == NULL || op->u.blit.dst == NULL)
-		return EINVAL;
-
-	/* Describes the source level of the first layer. */
-	error = i915_image_surface(op->u.blit.src, region->srcSubresource.mipLevel, region->srcSubresource.baseArrayLayer, &src_surface);
-	if (error != 0)
-		return EINVAL;
-
-	/* Describes the destination level of the first layer. */
-	error = i915_image_surface(op->u.blit.dst, region->dstSubresource.mipLevel, region->dstSubresource.baseArrayLayer, &dst_surface);
-	if (error != 0)
 		return EINVAL;
 
 	/* Takes the source corners in increasing order, a decreasing pair mirroring; an empty rectangle copies nothing. */
@@ -2491,27 +2772,69 @@ i915_execute_image_blit(
 	if (op->u.blit.filter == VK_FILTER_LINEAR)
 		linear |= I915_GFX_RECT_LINEAR;
 
-	/* Copies the region, scaled, layer by layer (a 3D image's depth is not scaled: XXX, its first depth only). */
-	for (layer = 0U; layer < region->srcSubresource.layerCount; layer++) {
-		/* Describes the layer on both sides after the first. */
-		if (layer != 0U) {
-			error = i915_image_surface(op->u.blit.src, region->srcSubresource.mipLevel,
-						   region->srcSubresource.baseArrayLayer + layer, &src_surface);
-			if (error != 0)
-				return EINVAL;
-			error = i915_image_surface(op->u.blit.dst, region->dstSubresource.mipLevel,
-						   region->dstSubresource.baseArrayLayer + layer, &dst_surface);
-			if (error != 0)
-				return EINVAL;
-		}
+	/* The planes each side's aspects name. */
+	src_planes = i915_image_planes(op->u.blit.src, region->srcSubresource.aspectMask);
+	dst_planes = i915_image_planes(op->u.blit.dst, region->dstSubresource.aspectMask);
 
-		/* Copies the layer. */
-		error = drv_i915_gfx_rect(session, &dst_surface, &dst_rect, &src_surface, &src_rect, NULL, linear);
+	/* Blits the colour or depth texels when both sides name them. */
+	if ((src_planes & dst_planes & I915_IMAGE_PLANE_MAIN) != 0U) {
+		error = i915_image_blit_plane(session, op, I915_IMAGE_PLANE_MAIN, &src_rect, &dst_rect, linear);
+		if (error != 0)
+			return error;
+	}
+
+	/* Blits the stencil plane when both sides name it. */
+	if ((src_planes & dst_planes & I915_IMAGE_PLANE_STENCIL) != 0U) {
+		error = i915_image_blit_plane(session, op, I915_IMAGE_PLANE_STENCIL, &src_rect, &dst_rect, linear);
 		if (error != 0)
 			return error;
 	}
 
 	/* Succeeded: the region is blitted. */
+	return 0;
+}
+
+/*
+ * Blits one plane of a vkCmdBlitImage region, scaled, layer by layer
+ * (a 3D image's depth is not scaled: XXX, its first depth only).
+ */
+static int
+i915_image_blit_plane(
+	struct i915_render_session *session,
+	const struct i915_gfx_op *op,
+	uint32_t plane,
+	const struct i915_gfx_rect *src_rect,
+	const struct i915_gfx_rect *dst_rect,
+	int linear)
+{
+	const VkImageBlit *region;
+	struct i915_gfx_surface src_surface;
+	struct i915_gfx_surface dst_surface;
+	uint32_t layer;
+	int error;
+
+	/* Copies each layer the source names into the matching destination layer. */
+	region = &op->u.blit.region;
+	for (layer = 0U; layer < region->srcSubresource.layerCount; layer++) {
+		/* Describes the source level of the layer. */
+		error = i915_image_plane_surface(op->u.blit.src, plane, region->srcSubresource.mipLevel,
+						 region->srcSubresource.baseArrayLayer + layer, &src_surface);
+		if (error != 0)
+			return EINVAL;
+
+		/* Describes the destination level of the layer. */
+		error = i915_image_plane_surface(op->u.blit.dst, plane, region->dstSubresource.mipLevel,
+						 region->dstSubresource.baseArrayLayer + layer, &dst_surface);
+		if (error != 0)
+			return EINVAL;
+
+		/* Copies the layer. */
+		error = drv_i915_gfx_rect(session, &dst_surface, dst_rect, &src_surface, src_rect, NULL, linear);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the plane of the region is blitted. */
 	return 0;
 }
 
@@ -2769,6 +3092,9 @@ i915_command_buffer_execute(
 		case I915_GFX_OP_QUERY_RESET:
 			error = drv_i915_gfx_query_execute(session, op);
 			break;
+		case I915_GFX_OP_SET_STENCIL:
+			i915_execute_set_stencil(&state, op);
+			break;
 		default:
 			error = EINVAL;
 			break;
@@ -2907,4 +3233,27 @@ i915_queue_submit(
 
 	/* Succeeded: the command was decoded; the reply carries the submission's result. */
 	return 0;
+}
+
+/* Keeps a dynamic stencil mask or reference for the faces it names (bit 0 front, bit 1 back). */
+static void
+i915_execute_set_stencil(
+	struct i915_gfx_draw_state *state,
+	const struct i915_gfx_op *op)
+{
+	uint32_t *values;
+	uint32_t face;
+
+	/* The array the value goes into. */
+	values = state->stencil_compare_mask;
+	if (op->u.stencil.which == 1U)
+		values = state->stencil_write_mask;
+	if (op->u.stencil.which == 2U)
+		values = state->stencil_reference;
+
+	/* Each face named. */
+	for (face = 0U; face < 2U; face++) {
+		if ((op->u.stencil.faces & (1U << face)) != 0U)
+			values[face] = op->u.stencil.value;
+	}
 }

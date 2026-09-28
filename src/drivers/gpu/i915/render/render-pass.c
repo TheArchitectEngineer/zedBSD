@@ -92,6 +92,7 @@ drv_i915_gfx_create_render_pass(
 		for (index = 0U; index < info.attachmentCount; index++) {
 			pass->attachments[index].format = info.pAttachments[index].format;
 			pass->attachments[index].load_op = info.pAttachments[index].loadOp;
+			pass->attachments[index].stencil_load_op = info.pAttachments[index].stencilLoadOp;
 		}
 
 		/* Records the colour attachments the subpass writes, if any. */

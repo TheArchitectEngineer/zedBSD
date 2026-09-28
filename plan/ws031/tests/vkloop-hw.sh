@@ -208,12 +208,17 @@ make -j"$(nproc)" BUILD=$BUILD "I915_TESTS=${I915_TESTS:-n}" "I915_TEST_ORACLE=$
 	"I915_TEST_VBT=$I915_TEST_VBT" "I915_TEST_CAPTURE=$I915_TEST_CAPTURE" \
 	"ZEDBSD_TEST_CPPFLAGS=-DGPU_IOCTL_TRACE=1 $EXTRA" \
 	ZEDBSD_TEST_RC_CONF=$RC_CONF "ZEDBSD_TEST_EXTRA_FILES=$FILES" \
-	ZEDBSD_TEST_IMAGE_TAG=vkprobe disk-image > /tmp/resident-build.log 2>&1 || {
+	ZEDBSD_TEST_IMAGE_TAG=vkprobe disk-image > $BUILD/resident-build.log 2>&1 || {
 	echo "BUILD FAILED (the image on the 5330 is NOT this tree):"
-	grep -E ' error: |Error [0-9]' /tmp/resident-build.log | head
+	grep -E ' error: |Error [0-9]' $BUILD/resident-build.log | head
 	exit 1
 }
 printf '%s' "$FLAGS" > $BUILD/.vkloop-flags
+# VKLOOP_BUILD_ONLY=1: the image only (built outside the machine's lock, so the locked run finds it up to date)
+if [ "${VKLOOP_BUILD_ONLY:-0}" = 1 ]; then
+	echo "vkloop-hw: built $BUILD/hdd-image.img"
+	exit 0
+fi
 # the iGPU goes back to vfio-pci if a Venus run left it on the host i915 driver (bigbang/igpu-mode.sh)
 ssh $I915_HOST bigbang/igpu-mode.sh vfio >/dev/null || { echo "iGPU is not on vfio-pci"; exit 1; }
 scp -q $BUILD/hdd-image.img $I915_HOST:bigbang/guest-parity.img || exit 1
