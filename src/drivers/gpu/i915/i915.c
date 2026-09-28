@@ -17,6 +17,7 @@
 #include "command.h"
 #include "device.h"
 #include "display/display.h"
+#include "display/present.h"
 #include "job.h"
 #include "request-queue.h"
 #include "reset.h"
@@ -43,6 +44,7 @@
 
 static int i915_attach(struct drv_pci_device *pci, const struct drv_pci_id *id);
 static int i915_detach(struct drv_pci_device *pci, unsigned flags);
+static void i915_shutdown(struct drv_pci_device *pci);
 
 /*
  * Registers the i915 PCI driver for the Gen12 Xe graphics devices it covers.
@@ -68,7 +70,7 @@ drv_pci_i915_driver_register(void)
 		NULL,
 		i915_attach,
 		i915_detach,
-		NULL,
+		i915_shutdown,
 		NULL,
 		NULL,
 		{ 0U, 0U, 0U, 0U }
@@ -300,4 +302,24 @@ i915_detach(
 
 	/* Succeeded: PCI may clear the driver binding. */
 	return 0;
+}
+
+/*
+ * Prepares the device for the machine going down: an output that only
+ * holds the last picture of an ended lease is stopped, so the screen does
+ * not keep a picture of nobody after a shutdown.
+ */
+static void
+i915_shutdown(
+	struct drv_pci_device *pci)
+{
+	struct i915_device *device;
+
+	/* An attach that already cleaned up has nothing to prepare. */
+	device = drv_pci_device_driver_data(pci);
+	if (device == NULL)
+		return;
+
+	/* Stops a held picture and refuses later holds. */
+	drv_i915_present_shutdown(device);
 }

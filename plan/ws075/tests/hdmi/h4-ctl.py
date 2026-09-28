@@ -21,6 +21,10 @@ kernel's log (run.log, the debugcon: every record, also on a quiet boot).
     h4-ctl.py load SECONDS PERIOD X0 Y0 X1 Y1
                                   the periodic load: every PERIOD seconds drags from (X0, Y0) to (X1, Y1), the next
                                   time back, for SECONDS; one line per drag in load.log
+    h4-ctl.py watch SECONDS MS    the output's state every MS milliseconds for SECONDS through qmp-load.sock (so the
+                                  other commands can run meanwhile): pipe B's TRANSCONF, PLANE_CTL, PLANE_SURFLIVE and
+                                  frame counter, read with xp through the passthrough BAR; one line per change in
+                                  watch.log (ms since the start, the four values); h4-blank.py reads it
     h4-ctl.py quit                ends QEMU
 """
 import json
@@ -38,6 +42,8 @@ PICTURE = re.compile(rb'resident display: picture up \(buffer A surf 0x([0-9a-f]
 FLIP = re.compile(rb'resident display: flip (\d+): surf 0x([0-9a-f]+) -> 0x([0-9a-f]+)')
 # The primary plane's live surface address (bits 31:12, the GGTT address being scanned out) of pipes A and B.
 SURFLIVE = {'A': 0x701ac, 'B': 0x711ac}
+# Pipe B's transcoder configuration, primary plane control, live surface and frame counter (the HDMI output).
+WATCH = (('transconf', 0x71008), ('plane_ctl', 0x71180), ('surflive', 0x711ac), ('frame', 0x71040))
 # The kernel logs the first three flips of a lease only.
 LOGGED_FLIPS = 3
 PLAIN = {' ': 'spc', '-': 'minus', '=': 'equal', '.': 'dot', '/': 'slash', '\n': 'ret', '\t': 'tab'}
@@ -282,8 +288,39 @@ def load(seconds, period, x0, y0, x1, y1):
     print(f'load: {count} drags in {int(time.time() - start)} s')
 
 
+def watch(seconds, interval_ms):
+    """Samples pipe B's output registers and logs every change of their enable bits and live surface."""
+    f = qmp_open('qmp-load.sock')
+    bar = graphics_bar(f)
+    if bar is None:
+        raise SystemExit('h4-ctl: watch: no passthrough graphics BAR')
+    start = time.time()
+    last = None
+    samples = 0
+    with open(os.path.join(DIR, 'watch.log'), 'a') as log:
+        log.write(f'# watch {time.strftime("%H:%M:%S")} epoch {start:.3f} bar 0x{bar:x} every {interval_ms} ms\n')
+        while time.time() - start < seconds:
+            values = []
+            for name, offset in WATCH:
+                found = re.search(r':\s*(0x[0-9a-f]+)', hmp(f, f'xp /1wx 0x{bar + offset:x}'))
+                values.append(int(found.group(1), 16) if found else -1)
+            samples += 1
+            # The frame counter always moves: a change of the other three is what is logged, with the counter.
+            key = (values[0] >> 31, values[1] >> 31, values[2] & 0xfffff000)
+            if key != last:
+                log.write(f'{int((time.time() - start) * 1000)} ' + ' '.join(f'{v:08x}' for v in values) + '\n')
+                log.flush()
+                last = key
+            time.sleep(interval_ms / 1000.0)
+        log.write(f'# end {samples} samples\n')
+    print(f'watch: {samples} samples in {int(time.time() - start)} s')
+
+
 def main():
     command = sys.argv[1]
+    if command == 'watch':
+        watch(int(sys.argv[2]), int(sys.argv[3]))
+        return 0
     if command == 'load':
         load(*[int(v) for v in sys.argv[2:8]])
         return 0
