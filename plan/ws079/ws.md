@@ -43,6 +43,7 @@ libtruetypeにはアウトラインを返すAPIを追加しましょう。」
 2026-09-28 ユーザー:「ウィンドウのフローティングタイトルバーを二本指でタッチする（叩く）と、Zオーダーが後ろに回って奥に行き、次のウィンドウが表示されるようにしたいです。」
 → p012（kernel の multitouch）と p013（compositor の touch と二本指のタップ）。今の kernel は指の collection を無視し、compositor には wl_touch が無い。
 touch の LCD の USB はまだ見えていない（H1）ので、QEMU の注入の device で先に作る。
+同日のユーザー:「2本指でタッチというより、2本指で軽く短く上方向こすって、「あっちにいけ」というジェスチャー、というのがいいですね。とりあえず3回クリックで実装しつつ、マルチタッチが実現したら実装しましょう。」
 同日のユーザー:「では、マウスで3回クリックすると同じ動作にしましょう。」→ 浮いたタイトルバーの mouse の triple click でも同じ（窓を後ろへ）。
 main の注意: タイトルバーの double click は今ドッキング（ws035-p062）なので、triple click を見分けるために double click の動作を
 click の間隔の上限（今の double click の 400 ms）まで待たせる（ドッキングがその分遅れる）。triple click は p013 で compositor と一緒に作るが、
@@ -78,5 +79,5 @@ mouse の部分は touch を待たずに先に入れてよい。
 | ws079-p007 | 段階 ②: 一般の PDF の図形・画像（DCT は libjpeg-compat、Flate は libz-compat）・埋め込みの TrueType（libtruetype） | planning | p006 |
 | ws079-p008 | 段階 ③: CFF・Type1・暗号化など | planning | p007 |
 | ws079-p012 | kernel の multitouch: USB HID の digitizer の指の collection（Contact ID・Tip Switch・X/Y・Contact Count）→ `ABS_MT_SLOT`・`ABS_MT_TRACKING_ID`・`ABS_MT_POSITION_X/Y`・`BTN_TOUCH`、注入の device の touch の種類（試験用） | planning | p002 |
-| ws079-p013 | compositor の touch: client への `wl_touch`、touch の接触を端のジェスチャー（p010 の `zwl_corner_contact_*` と Home・Wiseview）へ、**浮いたタイトルバーの二本指のタップで窓を z-order の後ろへ回し、次の窓を前に**（2026-09-28 ユーザー） | planning | p012、p003 |
+| ws079-p013 | compositor の touch: client への `wl_touch`、touch の接触を端のジェスチャー（p010 の `zwl_corner_contact_*` と Home・Wiseview）へ、**浮いたタイトルバーの上で二本指を軽く短く上へこする（「あっちにいけ」）と窓を z-order の後ろへ回し、次の窓を前に**（2026-09-28 ユーザー。タップから訂正） | planning | p012、p003 |
 | ws079-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
