@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: p001〜p005 cleared（2026-09-28。p005: texture の種類・depth の copy・形式、実機の egltest の 7 場面が全て failures 0）。BUG-077・BUG-056 は GPU core の close の修正で resolved（2026-09-28）。p006 in-progress: 増分 1〜5（MRT・occlusion query・VS の storage buffer・stencil・multisample）済み、実機 egltest6 で targets 0・blits 0・queries 0・feedback 1。p005 の egltest の fbo 12・es3 4 の後退（増分 5 より前から）を bisect 中
+Resume point: p001〜p005 cleared（2026-09-28。p005: texture の種類・depth の copy・形式、実機の egltest の 7 場面が全て failures 0）。BUG-077・BUG-056 は GPU core の close の修正で resolved（2026-09-28）。p006 in-progress: 増分 1〜5（MRT・occlusion query・VS の storage buffer・stencil・multisample）済み、実機 egltest6 で targets 0・blits 0・queries 0・feedback 1。p005 の egltest の fbo・es3 の後退は op の list の再確保の後の書き込みと分かり直した（実機 7 場面 0）。残りは texel buffer・sampler2DMS・feedback の drawn-from-captured
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -55,7 +55,7 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p003](phase003/phase.md) | 実行器: primitive topology（triangle strip・fan、line list・strip、point list。今は triangle list だけ）、幅 1 以外の線、index の型、vkFreeDescriptorSets（F-023）。GL の app の大半が要る | cleared（2026-09-27。strip・fan・line・point を描く、実機の vkx 9/9。幅・PointSize・vkFreeDescriptorSets は後） | p001 |
 | [ws075-p004](phase004/phase.md) | compiler（GLES 2 の核）: 補間の Flat・NoPerspective・Centroid、input builtin（FragCoord・FrontFacing・PointCoord・VertexIndex・InstanceIndex）、output PointSize、texture() の bias・offset と textureLod、local・interface の配列・struct と配列の定数、微分、Determinant・MatrixInverse・pack half、8・16 bit の vertex format | cleared（2026-09-27。実機 vke2 17/17・vke1 4/4・vkx 9/9・vkc 9/9、zdesktop・x11 の capture 6/6。Grad・fine の y 微分は p005） | p001 |
 | [ws075-p005](phase005/phase.md) | texture の種類: compiler の texelFetch（OpImage・OpImageFetch）・textureSize、shadow（Dref）、integer sampler、cube・配列・3D の sampler。実行器の cube・配列・3D の image、mip level・layer への描画（ws031-p030）、depth の copy、sampler の compare 等（ws031-p034）、descriptor 配列（ws031-p035） | cleared（2026-09-28。実機 egltest の glsl・glsl3・fbo・cube・es3・formats・volumes が failures 0、vke1 6/6・vke2 17/17・vkx 9/9・vkc 9/9、zdesktop・files PASS） | p004 |
-| [ws075-p006](phase006/phase.md) | 実行器と compiler: MRT（ws031-p031）、occlusion query（sync の module）、texel buffer（buffer view）、storage buffer（transform feedback の VS の store）、stencil、multisample の image と resolve | in-progress（増分 1〜5 済み、後退の bisect 中） | p005 |
+| [ws075-p006](phase006/phase.md) | 実行器と compiler: MRT（ws031-p031）、occlusion query（sync の module）、texel buffer（buffer view）、storage buffer（transform feedback の VS の store）、stencil、multisample の image と resolve | in-progress（増分 1〜5 済み、後退を修正） | p005 |
 | ws075-p007 | GL 3.2 の stage: geometry shader（compiler の stage と 3DSTATE_GS）、gl_Layer と layered の描画、PrimitiveId。着手前に分ける | planning | p006 |
 | ws075-p008 | 性能: 完了待ちを割込みへ（ws031-p044）、非同期の実行器（ws031-p045）、present mode と vsync（ws031-p027） | planning | p002 |
 | ws075-p009 | 安定: BUG-056・BUG-057（実機の zgears の止まり）ほか p002〜p008 で出た bug | planning | p002 |

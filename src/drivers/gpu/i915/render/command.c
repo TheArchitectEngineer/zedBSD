@@ -152,6 +152,8 @@ static int i915_command_buffers_free(struct i915_render_session *session, struct
 static int i915_command_buffer_begin(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_command_buffer_end(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static struct i915_gfx_op *i915_command_op(struct i915_gfx_cmdbuf *cmdbuf, enum i915_gfx_op_kind kind);
+static uint32_t i915_command_op_mark(const struct i915_gfx_cmdbuf *cmdbuf);
+static struct i915_gfx_op *i915_command_op_at(struct i915_gfx_cmdbuf *cmdbuf, uint32_t place);
 static int i915_command_grow(struct i915_gfx_cmdbuf *cmdbuf);
 static int i915_record_image_copy(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader, enum i915_gfx_op_kind kind);
 static int i915_record_clear_image(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
@@ -161,7 +163,7 @@ static int i915_record_query(struct i915_render_session *session, struct i915_gf
 static int i915_record_begin_pass(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_vertex(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_descriptor_sets(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
-static int i915_record_dynamic_offsets(struct i915_gfx_op **ops, uint32_t set_count, const uint32_t *offsets, uint32_t offset_count);
+static int i915_record_dynamic_offsets(struct i915_gfx_cmdbuf *cmdbuf, uint32_t first_op, uint32_t set_count, const uint32_t *offsets, uint32_t offset_count);
 static int i915_record_set_blend_constants(struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_push_constants(struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_set_unused(uint32_t opcode, struct i915_wire_reader *reader);
@@ -755,6 +757,43 @@ i915_command_op(
 }
 
 /*
+ * Returns the place in a command buffer's operation list that the next
+ * operation takes (0 for a buffer that does not exist).
+ *
+ * A recorder that comes back to operations it recorded keeps their places,
+ * not pointers: the list may grow, and move, while it records more.
+ */
+static uint32_t
+i915_command_op_mark(
+	const struct i915_gfx_cmdbuf *cmdbuf)
+{
+	/* A missing buffer records nothing. */
+	if (cmdbuf == NULL)
+		return 0U;
+
+	/* Succeeded: the next operation's place. */
+	return cmdbuf->op_count;
+}
+
+/*
+ * Returns the operation recorded at a place of a command buffer's list, or
+ * the discarded operation for a place the list does not hold (an operation
+ * discarded when the recording overflowed).
+ */
+static struct i915_gfx_op *
+i915_command_op_at(
+	struct i915_gfx_cmdbuf *cmdbuf,
+	uint32_t place)
+{
+	/* A place outside the list was discarded. */
+	if (cmdbuf == NULL || place >= cmdbuf->op_count)
+		return &i915_command_discard_op;
+
+	/* Succeeded: the operation at the place. */
+	return &cmdbuf->ops[place];
+}
+
+/*
  * Doubles the room of a command buffer's operation list, keeping what is
  * recorded.
  *
@@ -819,11 +858,11 @@ i915_record_image_copy(
 	struct i915_gfx_image *src;
 	struct i915_gfx_image *dst;
 	struct i915_gfx_op *op;
-	struct i915_gfx_op *ops[I915_GFX_MAX_REGIONS];
 	uint64_t identity;
 	uint64_t count;
 	uint64_t index;
 	uint32_t filter;
+	uint32_t first_op;
 	int blit;
 
 	/* Decodes the two images and the number of regions, at most sixteen. */
@@ -843,10 +882,10 @@ i915_record_image_copy(
 	if (kind == I915_GFX_OP_BLIT_IMAGE)
 		blit = 1;
 
-	/* Records one operation for each region. */
+	/* Records one operation for each region, the first at first_op. */
+	first_op = i915_command_op_mark(cmdbuf);
 	for (index = 0U; index < count; index++) {
 		op = i915_command_op(cmdbuf, kind);
-		ops[index] = op;
 		if (blit) {
 			op->u.blit.src = src;
 			op->u.blit.dst = dst;
@@ -858,11 +897,13 @@ i915_record_image_copy(
 		}
 	}
 
-	/* Gives every region of a blit the filter that follows them. */
+	/* Gives every region of a blit the filter that follows them, found by its place (the list may have moved). */
 	if (blit) {
 		filter = drv_i915_wire_read_u32(reader);
-		for (index = 0U; index < count; index++)
-			ops[index]->u.blit.filter = filter;
+		for (index = 0U; index < count; index++) {
+			op = i915_command_op_at(cmdbuf, first_op + (uint32_t)index);
+			op->u.blit.filter = filter;
+		}
 	}
 
 	/* Refuses a stream that ended inside the regions. */
@@ -1325,12 +1366,13 @@ i915_record_bind_vertex(
 	struct i915_gfx_cmdbuf *cmdbuf,
 	struct i915_wire_reader *reader)
 {
-	struct i915_gfx_op *ops[I915_GFX_MAX_VERTEX_BINDINGS];
+	struct i915_gfx_op *op;
 	uint64_t identity;
 	uint64_t offsets;
 	uint64_t count;
 	uint64_t index;
 	uint32_t first;
+	uint32_t first_op;
 
 	/* Decodes the first binding and the number of buffers. */
 	first = drv_i915_wire_read_u32(reader);
@@ -1339,12 +1381,13 @@ i915_record_bind_vertex(
 	if (reader->error != 0 || count > I915_GFX_MAX_VERTEX_BINDINGS)
 		return EINVAL;
 
-	/* Records the buffer of every binding. */
+	/* Records the buffer of every binding, the first at first_op. */
+	first_op = i915_command_op_mark(cmdbuf);
 	for (index = 0U; index < count; index++) {
-		ops[index] = i915_command_op(cmdbuf, I915_GFX_OP_BIND_VERTEX_BUFFER);
-		ops[index]->u.vertex.binding = first + (uint32_t)index;
+		op = i915_command_op(cmdbuf, I915_GFX_OP_BIND_VERTEX_BUFFER);
+		op->u.vertex.binding = first + (uint32_t)index;
 		identity = drv_i915_wire_read_u64(reader);
-		ops[index]->u.vertex.buffer = drv_i915_object_lookup(session, I915_VK_OBJ_BUFFER, identity);
+		op->u.vertex.buffer = drv_i915_object_lookup(session, I915_VK_OBJ_BUFFER, identity);
 	}
 
 	/* Refuses an offset array of another length. */
@@ -1352,9 +1395,11 @@ i915_record_bind_vertex(
 	if (offsets != count)
 		reader->error = 1;
 
-	/* Records the offset of every binding. */
-	for (index = 0U; reader->error == 0 && index < count; index++)
-		ops[index]->u.vertex.offset = drv_i915_wire_read_u64(reader);
+	/* Records the offset of every binding, each found by its place (the list may have moved). */
+	for (index = 0U; reader->error == 0 && index < count; index++) {
+		op = i915_command_op_at(cmdbuf, first_op + (uint32_t)index);
+		op->u.vertex.offset = drv_i915_wire_read_u64(reader);
+	}
 
 	/* Refuses a stream that ended inside the bindings. */
 	if (reader->error != 0)
@@ -1377,7 +1422,6 @@ i915_record_bind_descriptor_sets(
 	struct i915_gfx_cmdbuf *cmdbuf,
 	struct i915_wire_reader *reader)
 {
-	struct i915_gfx_op *ops[I915_GFX_MAX_SETS];
 	uint32_t offsets[I915_GFX_MAX_DYNAMIC_OFFSETS];
 	struct i915_gfx_op *op;
 	uint64_t identity;
@@ -1385,6 +1429,7 @@ i915_record_bind_descriptor_sets(
 	uint64_t set_count;
 	uint64_t index;
 	uint32_t first;
+	uint32_t first_op;
 	int error;
 
 	/* Decodes the bind point, the layout, the first set and the number of sets, at most four. */
@@ -1396,13 +1441,13 @@ i915_record_bind_descriptor_sets(
 	if (reader->error != 0 || set_count > I915_GFX_MAX_SETS)
 		return EINVAL;
 
-	/* Records every set. */
+	/* Records every set, the first at first_op. */
+	first_op = i915_command_op_mark(cmdbuf);
 	for (index = 0U; index < set_count; index++) {
 		op = i915_command_op(cmdbuf, I915_GFX_OP_BIND_DESCRIPTOR_SET);
 		op->u.descriptor.set = first + (uint32_t)index;
 		identity = drv_i915_wire_read_u64(reader);
 		op->u.descriptor.dset = drv_i915_object_lookup(session, I915_VK_OBJ_DESCRIPTOR_SET, identity);
-		ops[index] = op;
 	}
 
 	/* Decodes the number of dynamic offsets, at most sixty-four. */
@@ -1420,7 +1465,7 @@ i915_record_bind_descriptor_sets(
 		return EINVAL;
 
 	/* Hands the offsets to the dynamic uniform buffers of the sets. */
-	error = i915_record_dynamic_offsets(ops, (uint32_t)set_count, offsets, (uint32_t)count);
+	error = i915_record_dynamic_offsets(cmdbuf, first_op, (uint32_t)set_count, offsets, (uint32_t)count);
 	if (error != 0)
 		return error;
 
@@ -1432,18 +1477,21 @@ i915_record_bind_descriptor_sets(
  * Gives each dynamic uniform buffer of the bound sets its dynamic offset.
  *
  * Vulkan takes the offsets in the order of the sets, and within a set in the
- * order of the binding numbers.  Returns EINVAL when the offsets and the
- * dynamic uniform buffers do not pair up.  XXX: a binding holds one
+ * order of the binding numbers.  The sets' operations are the set_count
+ * ones from place first_op of the command buffer's list.  Returns EINVAL
+ * when the offsets and the dynamic uniform buffers do not pair up.  XXX: a binding holds one
  * descriptor, so an array of dynamic buffers takes one offset.
  */
 static int
 i915_record_dynamic_offsets(
-	struct i915_gfx_op **ops,
+	struct i915_gfx_cmdbuf *cmdbuf,
+	uint32_t first_op,
 	uint32_t set_count,
 	const uint32_t *offsets,
 	uint32_t offset_count)
 {
 	const struct i915_gfx_dsl *layout;
+	struct i915_gfx_op *op;
 	uint32_t set;
 	uint32_t binding;
 	uint32_t entry;
@@ -1454,9 +1502,10 @@ i915_record_dynamic_offsets(
 	next = 0U;
 	for (set = 0U; set < set_count; set++) {
 		/* A set that is unknown or has no layout has no dynamic buffers. */
+		op = i915_command_op_at(cmdbuf, first_op + set);
 		layout = NULL;
-		if (ops[set]->u.descriptor.dset != NULL)
-			layout = ops[set]->u.descriptor.dset->layout;
+		if (op->u.descriptor.dset != NULL)
+			layout = op->u.descriptor.dset->layout;
 		if (layout == NULL)
 			continue;
 
@@ -1476,7 +1525,7 @@ i915_record_dynamic_offsets(
 				}
 
 				/* Refuses more dynamic buffers in one set than a bind keeps. */
-				count = ops[set]->u.descriptor.dynamic_count;
+				count = op->u.descriptor.dynamic_count;
 				if (count >= I915_GFX_MAX_DYNAMIC_BUFFERS) {
 					kern_logf("i915: vk: XXX vkCmdBindDescriptorSets: more than %u dynamic uniform buffers in one set\n",
 						  I915_GFX_MAX_DYNAMIC_BUFFERS);
@@ -1484,9 +1533,9 @@ i915_record_dynamic_offsets(
 				}
 
 				/* Keeps the binding and its offset. */
-				ops[set]->u.descriptor.dynamic_bindings[count] = binding;
-				ops[set]->u.descriptor.dynamic_offsets[count] = offsets[next];
-				ops[set]->u.descriptor.dynamic_count = count + 1U;
+				op->u.descriptor.dynamic_bindings[count] = binding;
+				op->u.descriptor.dynamic_offsets[count] = offsets[next];
+				op->u.descriptor.dynamic_count = count + 1U;
 				next++;
 			}
 		}
