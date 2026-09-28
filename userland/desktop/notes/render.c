@@ -350,6 +350,8 @@ notes_renderer_close(
 			if (renderer->pipes[pipe] != VK_NULL_HANDLE)
 				vkDestroyPipeline(renderer->device, renderer->pipes[pipe], NULL);
 		}
+
+		/* The layout, the set and its sampler. */
 		if (renderer->layout != VK_NULL_HANDLE)
 			vkDestroyPipelineLayout(renderer->device, renderer->layout, NULL);
 		if (renderer->descriptor_pool != VK_NULL_HANDLE)
@@ -1524,11 +1526,15 @@ render_record(
 				scissor.extent.width = (uint32_t)((int32_t)scissor.extent.width + scissor.offset.x);
 				scissor.offset.x = 0;
 			}
+
+			/* And above the top. */
 			if (scissor.offset.y < 0) {
 				scissor.extent.height = (uint32_t)((int32_t)scissor.extent.height + scissor.offset.y);
 				scissor.offset.y = 0;
 			}
 		}
+
+		/* The draw inside its scissor. */
 		vkCmdSetScissor(renderer->command, 0U, 1U, &scissor);
 		vkCmdDraw(renderer->command, draw->count, 1U, draw->first, 0U);
 	}

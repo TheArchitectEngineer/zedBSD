@@ -402,7 +402,9 @@ notes_journal_recover(
 	matched = -1;
 	if (length >= 12U)
 		matched = memcmp(data, JOURNAL_MAGIC, 4U);
-	if (matched != 0 || data[4] != JOURNAL_VERSION || data[5] != 0U) {
+	if (matched != 0 ||
+	    data[4] != JOURNAL_VERSION ||
+	    data[5] != 0U) {
 		free(data);
 		return EINVAL;
 	}
@@ -413,6 +415,8 @@ notes_journal_recover(
 		free(data);
 		return EINVAL;
 	}
+
+	/* The path, and the records after it. */
 	memcpy(document_path, data + 12U, path_length);
 	document_path[path_length] = '\0';
 	offset = 12U + path_length;
@@ -444,6 +448,8 @@ notes_journal_recover(
 				free(data);
 				return error;
 			}
+
+			/* The records that follow change it. */
 			have_snapshot = 1;
 		} else {
 			/* A later record is a change; one that does not apply ends the replay. */
@@ -485,6 +491,7 @@ notes_journal_newest(
 	size_t name_length;
 	size_t suffix_length;
 	time_t newest;
+	int matched;
 	int found;
 	int written;
 	int error;
@@ -506,9 +513,12 @@ notes_journal_newest(
 		if (entry == NULL)
 			break;
 
-		/* Only journals. */
+		/* Only journals: a name longer than the ending, that ends with it. */
 		name_length = strlen(entry->d_name);
-		if (name_length <= suffix_length || strcmp(entry->d_name + name_length - suffix_length, JOURNAL_SUFFIX) != 0)
+		if (name_length <= suffix_length)
+			continue;
+		matched = strcmp(entry->d_name + name_length - suffix_length, JOURNAL_SUFFIX);
+		if (matched != 0)
 			continue;
 
 		/* Its time; the newest wins. */
@@ -526,6 +536,8 @@ notes_journal_newest(
 		newest = status.st_mtime;
 		found = 1;
 	}
+
+	/* The folder is not read again. */
 	(void)closedir(directory);
 
 	/* No journal. */
@@ -587,6 +599,8 @@ journal_start(
 		notes_buffer_free(&file);
 		return error;
 	}
+
+	/* The bytes. */
 	error = write_all(descriptor, file.data, file.length);
 	notes_buffer_free(&file);
 
@@ -596,6 +610,8 @@ journal_start(
 		if (status != 0)
 			error = errno;
 	}
+
+	/* The file is closed whatever happened. */
 	(void)close(descriptor);
 	if (error != 0) {
 		(void)unlink(temporary);
@@ -793,7 +809,9 @@ read_file(
 
 	/* Its size, which must be sane. */
 	error = fstat(descriptor, &status);
-	if (error != 0 || status.st_size < 0 || (unsigned long)status.st_size > JOURNAL_SIZE_MAX) {
+	if (error != 0 ||
+	    status.st_size < 0 ||
+	    (unsigned long)status.st_size > JOURNAL_SIZE_MAX) {
 		(void)close(descriptor);
 		return EINVAL;
 	}
@@ -815,6 +833,8 @@ read_file(
 			break;
 		done += (size_t)got;
 	}
+
+	/* The file is closed whatever happened. */
 	(void)close(descriptor);
 
 	/* Succeeded: what could be read. */
@@ -861,6 +881,7 @@ replay(
 			notes_stroke_free(stroke);
 			return error;
 		}
+
 		break;
 	case JOURNAL_REMOVE_STROKE:
 		/* The page and the number. */
@@ -882,6 +903,7 @@ replay(
 			notes_page_free(page);
 			return error;
 		}
+
 		break;
 	case JOURNAL_REMOVE_PAGE:
 		/* The page at the index. */

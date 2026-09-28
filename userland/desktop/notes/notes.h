@@ -121,11 +121,17 @@ struct notes_stroke {
 
 /*
  * One page: its size, its background and its strokes, bottom first.
+ *
+ * content_hash is the SHA-256 of the page's content stream as the PDF
+ * last saved or opened it (all zero: not known).  The edit data records
+ * it, and opening a PDF compares it with the page in the file to learn
+ * whether another program changed the page (design-pdf.md section 3).
  */
 struct notes_page {
 	float width;
 	float height;
 	unsigned background;
+	unsigned char content_hash[32];
 	struct notes_stroke **strokes;
 	size_t stroke_count;
 	size_t stroke_capacity;

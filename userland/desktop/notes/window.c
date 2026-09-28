@@ -121,6 +121,8 @@ notes_window_open(
 	memset(window, 0, sizeof(*window));
 	window->width = width;
 	window->height = height;
+	window->preferred_width = width;
+	window->preferred_height = height;
 
 	/* The connection. */
 	window->display = wl_display_connect(NULL);
@@ -234,7 +236,9 @@ notes_window_dispatch(
 	}
 
 	/* Nothing to wait for when events are already queued for the main loop. */
-	if (window->input_count != 0U || window->key_count != 0U || window->action_count != 0U)
+	if (window->input_count != 0U ||
+	    window->key_count != 0U ||
+	    window->action_count != 0U)
 		timeout = 0;
 
 	/* Waits for the compositor. */
@@ -479,6 +483,20 @@ window_toplevel_configure(
 		window->resized = 1;
 	}
 
+	/* A width left to the window is the one it would like, within the compositor's bounds. */
+	if (width <= 0) {
+		width = (int32_t)window->preferred_width;
+		if (window->bounds_width > 0U && window->preferred_width > window->bounds_width)
+			width = (int32_t)window->bounds_width;
+	}
+
+	/* And so is a height. */
+	if (height <= 0) {
+		height = (int32_t)window->preferred_height;
+		if (window->bounds_height > 0U && window->preferred_height > window->bounds_height)
+			height = (int32_t)window->bounds_height;
+	}
+
 	/* A new width marks the window resized. */
 	if (width > 0 && (uint32_t)width != window->width) {
 		window->width = (uint32_t)width;
@@ -506,7 +524,11 @@ window_toplevel_close(
 	window->closed = 1;
 }
 
-/* The largest size the window may choose; Notes takes the size it is given. */
+/*
+ * Keeps the largest size the compositor lets the window choose (xdg-shell
+ * version 4); the configure that follows applies it.  A zero is a size the
+ * compositor does not know.
+ */
 static void
 window_toplevel_bounds(
 	void *data,
@@ -514,11 +536,19 @@ window_toplevel_bounds(
 	int32_t width,
 	int32_t height)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct notes_window *window;
+
+	/* The width, when known. */
 	(void)toplevel;
-	(void)width;
-	(void)height;
+	window = data;
+	window->bounds_width = 0U;
+	if (width > 0)
+		window->bounds_width = (uint32_t)width;
+
+	/* The height, when known. */
+	window->bounds_height = 0U;
+	if (height > 0)
+		window->bounds_height = (uint32_t)height;
 }
 
 /* Takes the seat's keyboard and pointer when it has them. */

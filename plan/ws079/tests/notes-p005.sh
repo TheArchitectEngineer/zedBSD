@@ -13,6 +13,8 @@
 #  7. journal: a stroke, and Notes is killed (SIGKILL) at once; a new Notes on the same file recovers it from
 #     the journal (NOTES RECOVER ... strokes=6), recovered.png; the recovered notebook is saved (by the autosave
 #     5 s later, or when Ctrl+W closes it) and nothing is left unsaved (NOTES EXIT ... dirty=0), no journal left.
+#  8. reopened.png: Notes opens the saved PDF again from its edit data (NOTES OPEN pages=2 strokes=6), a stroke
+#     and Ctrl+S save it (strokes=7); final.pdf is copied out.
 #
 #   GUEST_RUNTIME=build/ws079-p005-run plan/ws035/tests/zdesktop-guest.sh start build/amd64/hdd-image.img
 #   plan/ws079/tests/notes-p005.sh [OUTDIR] [SHOTS PREFIX]
@@ -171,6 +173,18 @@ keys '<ctrl-w>'
 expect_log /tmp/notes.log 'NOTES SAVE reason=(autosave|close) pages=2 strokes=6'
 expect_log /tmp/notes.log 'NOTES EXIT pages=2 strokes=6 dirty=0'
 guest 'ls /root/.local/share/keiland/notes/ 2>/dev/null | wc -l' | tail -1 | sed 's/^/journals left: /'
+
+# 8. The saved PDF opens again from its edit data (no journal is left), and editing goes on.
+guest "$start_notes" >/dev/null
+expect_log /tmp/notes.log 'NOTES OPEN pages=2 strokes=6 path=/tmp/notes-test/test.pdf'
+pointer move 1270 790 sleep 300
+shot reopened.png
+drag 120,400 250,380 380,420 480,380
+expect_log /tmp/notes.log 'NOTES STROKE page=0 id=7'
+keys '<ctrl-s>'
+expect_log /tmp/notes.log 'NOTES SAVE reason=request pages=2 strokes=7'
+keys '<ctrl-w>'
+expect_log /tmp/notes.log 'NOTES EXIT pages=2 strokes=7 dirty=0'
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }

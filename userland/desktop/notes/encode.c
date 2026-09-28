@@ -263,7 +263,6 @@ notes_encode_document(
 	struct notes_buffer chunk;
 	const struct notes_page *page;
 	const struct notes_stroke *stroke;
-	unsigned char digest[32];
 	uint64_t first_time;
 	size_t page_index;
 	size_t stroke_index;
@@ -313,17 +312,14 @@ notes_encode_document(
 		notes_buffer_u8(&chunk, 0U);
 		notes_buffer_u8(&chunk, 0U);
 	}
+
+	/* The chunk. */
 	notes_buffer_bytes(buffer, "TOOL", 4U);
 	notes_buffer_u32(buffer, (uint32_t)chunk.length);
 	notes_buffer_bytes(buffer, chunk.data, chunk.length);
 	chunk.length = 0;
 
-	/*
-	 * PAGE, one a page.  The content stream's digest is left zero: the
-	 * writer does not yet tell Notes the bytes it wrote (a zero digest
-	 * means "not recorded" to a reader).
-	 */
-	memset(digest, 0, sizeof(digest));
+	/* PAGE, one a page, with the digest of its content stream as last saved (zero when not known). */
 	for (page_index = 0; page_index < document->page_count; page_index++) {
 		/* The page's number, size, background, digest and stroke count. */
 		page = document->pages[page_index];
@@ -331,7 +327,7 @@ notes_encode_document(
 		notes_buffer_varint(&chunk, (uint64_t)units(page->width));
 		notes_buffer_varint(&chunk, (uint64_t)units(page->height));
 		notes_buffer_u8(&chunk, page->background);
-		notes_buffer_bytes(&chunk, digest, sizeof(digest));
+		notes_buffer_bytes(&chunk, page->content_hash, sizeof(page->content_hash));
 		notes_buffer_varint(&chunk, page->stroke_count);
 
 		/* Each stroke: number, tool, flags, samples. */
@@ -395,6 +391,10 @@ notes_decode_document(
 	size_t end;
 	unsigned major;
 	int seen_doc;
+	int matched;
+	int is_doc;
+	int is_tool;
+	int is_page;
 	int error;
 
 	/* An empty document to fill, and a reader at the start. */
@@ -404,8 +404,11 @@ notes_decode_document(
 	reader.data = data;
 	reader.length = size;
 
-	/* The magic. */
-	if (size < 12U || memcmp(data, "ZNOT", 4U) != 0)
+	/* The magic, after the header's twelve bytes are known to be there. */
+	if (size < 12U)
+		return EINVAL;
+	matched = memcmp(data, "ZNOT", 4U);
+	if (matched != 0)
 		return EINVAL;
 	reader.offset = 4U;
 
@@ -427,6 +430,8 @@ notes_decode_document(
 			error = EINVAL;
 			break;
 		}
+
+		/* The tag, then the length of the body. */
 		memcpy(tag, reader.data + reader.offset, sizeof(tag));
 		reader.offset += 4U;
 		length = read_u32(&reader);
@@ -434,15 +439,20 @@ notes_decode_document(
 			error = EINVAL;
 			break;
 		}
+
+		/* Where the next chunk starts. */
 		end = reader.offset + length;
 
-		/* The chunks this version knows; any other is skipped. */
-		if (memcmp(tag, "DOC ", 4U) == 0 && !seen_doc) {
+		/* The chunks this version knows (DOC once, TOOL once, PAGE after DOC); any other is skipped. */
+		is_doc = memcmp(tag, "DOC ", 4U);
+		is_tool = memcmp(tag, "TOOL", 4U);
+		is_page = memcmp(tag, "PAGE", 4U);
+		if (is_doc == 0 && !seen_doc) {
 			error = decode_doc(&reader, document, &declared);
 			seen_doc = 1;
-		} else if (memcmp(tag, "TOOL", 4U) == 0 && tools.count == 0U) {
+		} else if (is_tool == 0 && tools.count == 0U) {
 			error = decode_tools(&reader, &tools);
-		} else if (memcmp(tag, "PAGE", 4U) == 0 && seen_doc) {
+		} else if (is_page == 0 && seen_doc) {
 			error = decode_page(&reader, document, &tools, pages);
 			pages++;
 		}
@@ -457,7 +467,10 @@ notes_decode_document(
 	free(tools.tools);
 
 	/* A document needs its DOC chunk and the pages it declared, at least one. */
-	if (error == 0 && (!seen_doc || pages != declared || pages == 0U))
+	if (error == 0 &&
+	    (!seen_doc ||
+	     pages != declared ||
+	     pages == 0U))
 		error = EINVAL;
 	if (error != 0) {
 		notes_document_free(document);
@@ -543,7 +556,9 @@ notes_decode_stroke(
 		return EINVAL;
 
 	/* A stroke of no samples, too many, or no width is damaged. */
-	if (count == 0U || count > ENCODE_POINTS_MAX || !(width > 0.0f))
+	if (count == 0U ||
+	    count > ENCODE_POINTS_MAX ||
+	    !(width > 0.0f))
 		return EINVAL;
 
 	/* The stroke. */
@@ -775,7 +790,11 @@ decode_samples(
 			return EINVAL;
 		if (y < -(int64_t)(ENCODE_LENGTH_MAX * NOTES_UNITS_PER_POINT) || y > (int64_t)(ENCODE_LENGTH_MAX * NOTES_UNITS_PER_POINT))
 			return EINVAL;
-		if (tilt_x < -32768 || tilt_x > 32767 || tilt_y < -32768 || tilt_y > 32767 || time > 0xffffffffU)
+		if (tilt_x < -32768 ||
+		    tilt_x > 32767 ||
+		    tilt_y < -32768 ||
+		    tilt_y > 32767 ||
+		    time > 0xffffffffU)
 			return EINVAL;
 
 		/* The sample. */
@@ -817,7 +836,9 @@ decode_doc(
 	/* A count out of range, another pressure range, or a number past 32 bits is not this version's. */
 	if (count == 0U || count > ENCODE_PAGES_MAX)
 		return EINVAL;
-	if (pressure_max != NOTES_PRESSURE_MAX || next == 0U || next > 0xffffffffU)
+	if (pressure_max != NOTES_PRESSURE_MAX ||
+	    next == 0U ||
+	    next > 0xffffffffU)
 		return EINVAL;
 
 	/* Succeeded: the document knows how many pages follow. */
@@ -881,6 +902,7 @@ decode_page(
 	struct notes_page **larger;
 	struct notes_stroke **grown;
 	struct notes_stroke *stroke;
+	unsigned char digest[32];
 	uint64_t number;
 	uint64_t strokes;
 	uint64_t id;
@@ -899,24 +921,32 @@ decode_page(
 	width = read_length(reader);
 	height = read_length(reader);
 	background = read_u8(reader);
-	if (reader->length - reader->offset < 32U)
+	memset(digest, 0, sizeof(digest));
+	if (reader->length - reader->offset < sizeof(digest)) {
 		reader->error = 1;
-	else
-		reader->offset += 32U;
+	} else {
+		memcpy(digest, reader->data + reader->offset, sizeof(digest));
+		reader->offset += sizeof(digest);
+	}
+
+	/* How many strokes follow, which must be read in full. */
 	strokes = read_varint(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
 	/* The page must be the next one, have a size, and hold no more strokes than the data could. */
-	if (number != index || !(width > 0.0f) || !(height > 0.0f))
+	if (number != index ||
+	    !(width > 0.0f) ||
+	    !(height > 0.0f))
 		return EINVAL;
 	if (strokes > reader->length)
 		return EINVAL;
 
-	/* The page. */
+	/* The page, with the digest its content had when it was saved. */
 	page = notes_page_create(width, height, background);
 	if (page == NULL)
 		return ENOMEM;
+	memcpy(page->content_hash, digest, sizeof(digest));
 
 	/* Room for it in the document. */
 	larger = realloc(document->pages, (document->page_count + 1U) * sizeof(document->pages[0]));
@@ -924,6 +954,8 @@ decode_page(
 		notes_page_free(page);
 		return ENOMEM;
 	}
+
+	/* The page is the document's last. */
 	document->pages = larger;
 	document->page_capacity = document->page_count + 1U;
 	document->pages[document->page_count] = page;
@@ -936,7 +968,11 @@ decode_page(
 		tool = read_varint(reader);
 		flags = read_u8(reader);
 		count = read_varint(reader);
-		if (reader->error != 0 || tool >= tools->count || count == 0U || count > ENCODE_POINTS_MAX || id > 0xffffffffU)
+		if (reader->error != 0 ||
+		    tool >= tools->count ||
+		    count == 0U ||
+		    count > ENCODE_POINTS_MAX ||
+		    id > 0xffffffffU)
 			return EINVAL;
 
 		/* The stroke with its tool. */
@@ -951,9 +987,13 @@ decode_page(
 				notes_stroke_free(stroke);
 				return ENOMEM;
 			}
+
+			/* The larger array. */
 			page->strokes = grown;
 			page->stroke_capacity = page->stroke_capacity * 2U + 16U;
 		}
+
+		/* The page owns the stroke from now on. */
 		page->strokes[page->stroke_count] = stroke;
 		page->stroke_count++;
 

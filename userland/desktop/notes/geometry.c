@@ -239,6 +239,8 @@ notes_frame_polygon(
 		vertex = frame_vertex(vertex, xb - nx, yb - ny, -1.0f, 0.0f, colors);
 		vertex = frame_vertex(vertex, xb + nx, yb + ny, 1.0f, 0.0f, colors);
 	}
+
+	/* One draw of the whole fringe. */
 	frame_draw(frame, NOTES_PIPE_FRINGE, first);
 
 	/* The cover: the box, drawn inside and clearing the stencil. */
@@ -357,6 +359,8 @@ frame_reserve(
 			frame->error = 1;
 			return NULL;
 		}
+
+		/* The larger array. */
 		frame->vertices = larger;
 		frame->vertex_capacity = capacity;
 	}
@@ -387,6 +391,8 @@ frame_draw(
 			frame->error = 1;
 			return;
 		}
+
+		/* The larger array. */
 		frame->draws = larger;
 		frame->draw_capacity = capacity;
 	}

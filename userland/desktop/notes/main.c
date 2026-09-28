@@ -26,9 +26,11 @@
  * ~/Documents/Notes/note-YYYYMMDD-HHMMSS.pdf.
  *
  * Ctrl+N adds a page after the current one (one process is one notebook,
- * so a new page is what "new" makes).  Opening a PDF waits for libpdf's
- * reader: FILE is reopened from its journal, and a PDF without one is not
- * read yet (it is not overwritten either: Notes starts a new notebook).
+ * so a new page is what "new" makes).  FILE is opened from the edit data
+ * its PDF carries (save.c); a PDF Notes cannot edit -- another program's,
+ * or one whose pages another program changed -- is left as it is and a
+ * new notebook starts.  Ctrl+O has no file chooser to open another file
+ * with yet, and says so.
  *
  * --timeout-s ends Notes after that many seconds as if it were closed (the
  * tests use it to bound a run).  The lines starting with "NOTES" on the
@@ -163,6 +165,10 @@ main(
 	uint32_t height;
 	unsigned index;
 	int fullscreen;
+	int is_fullscreen;
+	int is_width;
+	int is_height;
+	int is_timeout;
 	int timeout;
 	int status;
 	int error;
@@ -174,17 +180,24 @@ main(
 	width = MAIN_WIDTH;
 	height = MAIN_HEIGHT;
 	for (arg = 1; arg < argc; arg++) {
-		if (strcmp(argv[arg], "--fullscreen") == 0) {
+		/* Which option the argument is, when it is one. */
+		is_fullscreen = strcmp(argv[arg], "--fullscreen");
+		is_width = strncmp(argv[arg], "--width=", 8U);
+		is_height = strncmp(argv[arg], "--height=", 9U);
+		is_timeout = strncmp(argv[arg], "--timeout-s=", 12U);
+
+		/* Each option takes its value; anything else is the file. */
+		if (is_fullscreen == 0) {
 			fullscreen = 1;
-		} else if (strncmp(argv[arg], "--width=", 8U) == 0) {
+		} else if (is_width == 0) {
 			value = strtoul(argv[arg] + 8, NULL, 10);
 			if (value >= 320U && value <= 8192U)
 				width = (uint32_t)value;
-		} else if (strncmp(argv[arg], "--height=", 9U) == 0) {
+		} else if (is_height == 0) {
 			value = strtoul(argv[arg] + 9, NULL, 10);
 			if (value >= 240U && value <= 8192U)
 				height = (uint32_t)value;
-		} else if (strncmp(argv[arg], "--timeout-s=", 12U) == 0) {
+		} else if (is_timeout == 0) {
 			value = strtoul(argv[arg] + 12, NULL, 10);
 			if (value != 0U)
 				app.deadline = notes_clock() + (uint64_t)value * 1000U;
@@ -211,6 +224,8 @@ main(
 		fprintf(stderr, "notes: cannot open a window: %s\n", strerror(errno));
 		return 1;
 	}
+
+	/* Its title names the file. */
 	app_set_title(&app);
 
 	/* The menus; without the System Menu the keys still work. */
@@ -263,6 +278,8 @@ main(
 				fprintf(stderr, "notes: %s failed (%d)\n", app.renderer.operation, error);
 				break;
 			}
+
+			/* Everything is drawn again at the new size. */
 			app.redraw = 1;
 			app.toolbar_dirty = 1;
 		}
@@ -284,7 +301,9 @@ main(
 
 		/* The autosave, once the notebook has been still long enough and nothing is being drawn. */
 		now = notes_clock();
-		if (app.document.dirty && app.contact == MAIN_CONTACT_NONE && now >= app.changed_at + NOTES_AUTOSAVE_IDLE_MS)
+		if (app.document.dirty &&
+		    app.contact == MAIN_CONTACT_NONE &&
+		    now >= app.changed_at + NOTES_AUTOSAVE_IDLE_MS)
 			(void)app_save(&app, "autosave");
 
 		/* A status whose time is up goes. */
@@ -344,8 +363,10 @@ app_start_document(
 	char folder[MAIN_PATH_MAX];
 	struct stat status;
 	const char *slash;
+	const char *cwd;
 	size_t records;
 	int written;
+	int exists;
 	int found;
 	int error;
 
@@ -355,20 +376,27 @@ app_start_document(
 		if (file[0] == '/') {
 			written = snprintf(app->path, sizeof(app->path), "%s", file);
 		} else {
-			if (getcwd(folder, sizeof(folder)) == NULL)
+			/* A relative path is under the current folder. */
+			cwd = getcwd(folder, sizeof(folder));
+			if (cwd == NULL)
 				return errno;
 			written = snprintf(app->path, sizeof(app->path), "%s/%s", folder, file);
 		}
+
+		/* A path that did not fit is refused. */
 		if (written < 0 || (size_t)written >= sizeof(app->path))
 			return ENAMETOOLONG;
 	}
 
-	/* The journal to recover: the file's, or the most recent one. */
+	/* The journal to recover: the file's, when it is there, or the most recent one. */
 	found = 0;
 	if (app->path[0] != '\0') {
 		error = notes_journal_path(app->path, journal_path, sizeof(journal_path));
-		if (error == 0 && stat(journal_path, &status) == 0)
-			found = 1;
+		if (error == 0) {
+			exists = stat(journal_path, &status);
+			if (exists == 0)
+				found = 1;
+		}
 	} else {
 		error = notes_journal_newest(journal_path, sizeof(journal_path));
 		if (error == 0)
@@ -390,15 +418,27 @@ app_start_document(
 		}
 	}
 
-	/* A file that is there but has no journal needs the PDF reader. */
-	if (!found && app->path[0] != '\0' && stat(app->path, &status) == 0) {
+	/* Whether the file is there, when no journal was recovered. */
+	exists = -1;
+	if (!found && app->path[0] != '\0')
+		exists = stat(app->path, &status);
+
+	/* A file that is there but has no journal is opened from its edit data. */
+	if (exists == 0) {
 		error = notes_open_pdf(app->path, &app->document);
 		if (error == 0) {
 			found = 1;
+			printf("NOTES OPEN pages=%lu strokes=%lu path=%s\n", (unsigned long)app->document.page_count,
+			       (unsigned long)notes_document_stroke_total(&app->document), app->path);
 		} else {
-			/* It is left as it is, and a new notebook starts. */
-			printf("NOTES OPEN unsupported error=%d path=%s\n", error, app->path);
-			(void)snprintf(app->status, sizeof(app->status), "Cannot open PDFs yet; started a new note");
+			/* A file Notes cannot edit is left as it is, and a new notebook starts. */
+			printf("NOTES OPEN failed error=%d path=%s\n", error, app->path);
+			if (error == ENOENT)
+				(void)snprintf(app->status, sizeof(app->status), "Not a Notes PDF; started a new note");
+			else if (error == ESTALE)
+				(void)snprintf(app->status, sizeof(app->status), "Changed by another program; started a new note");
+			else
+				(void)snprintf(app->status, sizeof(app->status), "Cannot open the PDF; started a new note");
 			app->status_until = notes_clock() + MAIN_STATUS_MS;
 			app->path[0] = '\0';
 		}
@@ -439,6 +479,7 @@ app_new_path(
 	size_t size)
 {
 	struct tm local;
+	struct tm *converted;
 	const char *home;
 	time_t now;
 	int written;
@@ -448,9 +489,10 @@ app_new_path(
 	if (home == NULL || home[0] != '/')
 		home = "/tmp";
 
-	/* The time the notebook was made names it. */
+	/* The time the notebook was made names it (the epoch when the local time cannot be told). */
 	now = time(NULL);
-	if (localtime_r(&now, &local) == NULL)
+	converted = localtime_r(&now, &local);
+	if (converted == NULL)
 		memset(&local, 0, sizeof(local));
 	written = snprintf(path, size, "%s/Documents/Notes/note-%04d%02d%02d-%02d%02d%02d.pdf", home,
 			   local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec);
@@ -492,7 +534,7 @@ app_make_folders(
 	return 0;
 }
 
-/* Sets the window's title: "Notes — NAME", with a mark while there are unsaved changes. */
+/* Sets the window's title: "Notes", a dash and the file's name. */
 static void
 app_set_title(
 	struct notes_app *app)
@@ -530,9 +572,15 @@ app_state(
 	state->width = app->width;
 	state->page = app->page;
 	state->page_count = app->document.page_count;
-	state->can_undo = app->document.undo_done > 0U;
-	state->can_redo = app->document.undo_done < app->document.undo_count;
 	state->dirty = app->document.dirty;
+
+	/* Undo while a change stands, redo while one was taken back. */
+	if (app->document.undo_done > 0U)
+		state->can_undo = 1;
+	if (app->document.undo_done < app->document.undo_count)
+		state->can_redo = 1;
+
+	/* The window's state and the status line. */
 	state->fullscreen = app->window.fullscreen;
 	state->status = app->status;
 }
@@ -555,6 +603,8 @@ app_action(
 		app->redraw = 1;
 		return;
 	}
+
+	/* A width, by its index. */
 	if (action >= NOTES_ACTION_WIDTH && action < NOTES_ACTION_WIDTH + NOTES_WIDTHS) {
 		app->width = action - NOTES_ACTION_WIDTH;
 		app->toolbar_dirty = 1;
@@ -614,6 +664,8 @@ app_action(
 			app_status(app, "Could not add a page");
 			break;
 		}
+
+		/* The new page is shown. */
 		app->page++;
 		printf("NOTES PAGE current=%lu count=%lu new\n", (unsigned long)app->page, (unsigned long)app->document.page_count);
 		app_changed(app);
@@ -623,9 +675,9 @@ app_action(
 		(void)app_save(app, "request");
 		break;
 	case NOTES_ACTION_OPEN:
-		/* Opening another PDF needs libpdf's reader and a file chooser. */
-		printf("NOTES OPEN unsupported\n");
-		app_status(app, "Opening PDFs is not available yet");
+		/* Opening another notebook needs a file chooser, which Notes does not have yet. */
+		printf("NOTES OPEN chooser unsupported\n");
+		app_status(app, "Opening from Notes is not available yet");
 		break;
 	case NOTES_ACTION_CLOSE:
 		/* The main loop saves and ends. */
@@ -694,6 +746,8 @@ app_key(
 		default:
 			break;
 		}
+
+		/* A key with Control is no tool key. */
 		return;
 	}
 
@@ -744,6 +798,8 @@ app_input(
 			app_sample(app, input);
 		return;
 	}
+
+	/* An end of contact ends it. */
 	if (input->kind == NOTES_INPUT_UP) {
 		app_end_contact(app, input);
 		return;
@@ -818,6 +874,8 @@ app_sample(
 			fflush(stdout);
 			app_changed(app);
 		}
+
+		/* An eraser draws no stroke. */
 		return;
 	}
 
@@ -859,7 +917,9 @@ app_end_contact(
 	int error;
 
 	/* The last sample of a stroke or an eraser drag. */
-	if (input != NULL && (app->contact == MAIN_CONTACT_DRAW || app->contact == MAIN_CONTACT_ERASE))
+	if (input != NULL &&
+	    (app->contact == MAIN_CONTACT_DRAW ||
+	     app->contact == MAIN_CONTACT_ERASE))
 		app_sample(app, input);
 
 	/* A finished stroke goes on top of the page. */
@@ -911,10 +971,13 @@ app_save(
 	size_t bytes;
 	int error;
 
-	/* The file's folder. */
+	/* The file's folder, then the file. */
+	bytes = 0;
 	error = app_make_folders(app->path);
 	if (error == 0)
 		error = notes_save_pdf(&app->document, app->path, &bytes);
+
+	/* A failure is shown and logged, and the journal keeps the changes. */
 	if (error != 0) {
 		printf("NOTES SAVE failed reason=%s error=%d path=%s\n", reason, error, app->path);
 		fflush(stdout);
@@ -956,11 +1019,16 @@ app_draw(
 	/* The page's place; a new place (and the first) is logged for the tests. */
 	page = app->document.pages[app->page];
 	notes_view_layout(&view, app->renderer.extent.width, app->renderer.extent.height, page->width, page->height);
-	if (!app->drawn || view.x != app->view.x || view.y != app->view.y || view.scale != app->view.scale) {
+	if (!app->drawn ||
+	    view.x != app->view.x ||
+	    view.y != app->view.y ||
+	    view.scale != app->view.scale) {
 		printf("NOTES LAYOUT window=%ux%u page=%d,%d,%d,%d scale=%.4f\n", app->renderer.extent.width, app->renderer.extent.height,
 		       (int)view.x, (int)view.y, (int)(page->width * view.scale), (int)(page->height * view.scale), (double)view.scale);
 		fflush(stdout);
 	}
+
+	/* The place the input is measured against. */
 	app->view = view;
 
 	/* The toolbar, drawn again when its state changed; the menus show the same state. */
@@ -979,6 +1047,8 @@ app_draw(
 				printf(" %u:%d,%d,%d,%d", app->ui.buttons[index].action, app->ui.buttons[index].x, app->ui.buttons[index].y,
 				       app->ui.buttons[index].width, app->ui.buttons[index].height);
 			}
+
+			/* The line ends. */
 			printf("\n");
 			fflush(stdout);
 		}
@@ -1014,11 +1084,15 @@ app_draw(
 		printf("NOTES DRAW out of memory\n");
 		return;
 	}
+
+	/* Draws it. */
 	error = (int)notes_renderer_draw(&app->renderer, &app->frame);
 	if (error == (int)VK_ERROR_OUT_OF_DATE_KHR) {
 		app->window.resized = 1;
 		return;
 	}
+
+	/* Any other failure ends Notes. */
 	if (error != (int)VK_SUCCESS) {
 		fprintf(stderr, "notes: %s failed (%d)\n", app->renderer.operation, error);
 		app->quit = 1;
@@ -1030,6 +1104,8 @@ app_draw(
 		printf("NOTES FRAME first draws=%lu\n", (unsigned long)app->frame.draw_count);
 		fflush(stdout);
 	}
+
+	/* Nothing waits to be drawn. */
 	app->drawn = 1;
 	app->redraw = 0;
 }
@@ -1047,9 +1123,13 @@ app_timeout(
 	due = 0;
 	if (app->document.dirty && app->contact == MAIN_CONTACT_NONE)
 		due = app->changed_at + NOTES_AUTOSAVE_IDLE_MS;
-	if (app->status_until != 0U && (due == 0U || app->status_until < due))
+	if (app->status_until != 0U &&
+	    (due == 0U ||
+	     app->status_until < due))
 		due = app->status_until;
-	if (app->deadline != 0U && (due == 0U || app->deadline < due))
+	if (app->deadline != 0U &&
+	    (due == 0U ||
+	     app->deadline < due))
 		due = app->deadline;
 
 	/* A frame waiting to be drawn is due now. */

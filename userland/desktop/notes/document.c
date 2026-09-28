@@ -626,7 +626,9 @@ notes_document_erase_at(
 		entry = NULL;
 		if (document->erasing == 2 && document->undo_done > 0U)
 			entry = &document->undo[document->undo_done - 1U];
-		if (entry == NULL || entry->kind != NOTES_UNDO_REMOVE_STROKES || entry->page != page) {
+		if (entry == NULL ||
+		    entry->kind != NOTES_UNDO_REMOVE_STROKES ||
+		    entry->page != page) {
 			error = undo_push(document, NOTES_UNDO_REMOVE_STROKES, page);
 			if (error != 0)
 				return error;
@@ -916,6 +918,8 @@ undo_revert(
 			(void)notes_document_insert_stroke(document, entry->page, place, stroke);
 			return ENOMEM;
 		}
+
+		/* The entry holds the stroke until it is redone. */
 		entry->strokes[0] = stroke;
 		entry->owned = 1;
 		break;
@@ -928,6 +932,8 @@ undo_revert(
 			if (error != 0)
 				return error;
 		}
+
+		/* The page owns the strokes again. */
 		entry->owned = 0;
 		break;
 	case NOTES_UNDO_ADD_PAGE:
@@ -975,6 +981,8 @@ undo_apply(
 			if (stroke == NULL)
 				return ENOMEM;
 		}
+
+		/* The entry holds the strokes again. */
 		entry->owned = 1;
 		break;
 	case NOTES_UNDO_ADD_PAGE:

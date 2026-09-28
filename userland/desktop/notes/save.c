@@ -15,8 +15,8 @@
  * written under a temporary name, put on the disk and renamed over the old
  * one, so a crash leaves either the old file or the new one.
  *
- * Opening a PDF needs libpdf's reader, which is not there yet: until it is,
- * notes_open_pdf() refuses, and recovery goes through the journal instead.
+ * Opening reads the edit data back with libpdf's reader and rebuilds the
+ * document from it; the PDF's paths are not read (design-pdf.md section 3).
  */
 
 #include "notes.h"
@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -75,6 +76,8 @@ notes_save_pdf(
 			return error;
 		}
 	}
+
+	/* The creation date is the document's; the modification date is the save's. */
 	error = pdf_writer_set_dates(writer, (time_t)(document->time_base / 1000U), 0);
 	if (error != 0) {
 		pdf_writer_destroy(writer);
@@ -84,6 +87,15 @@ notes_save_pdf(
 	/* Each page with its strokes. */
 	for (index = 0; index < document->page_count; index++) {
 		error = save_page(writer, document->pages[index]);
+		if (error != 0) {
+			pdf_writer_destroy(writer);
+			return error;
+		}
+	}
+
+	/* Each page's content hash, which the edit data records for the next opening to compare. */
+	for (index = 0; index < document->page_count; index++) {
+		error = pdf_writer_get_page_content_hash(writer, index, document->pages[index]->content_hash);
 		if (error != 0) {
 			pdf_writer_destroy(writer);
 			return error;
@@ -145,23 +157,94 @@ notes_save_pdf(
 }
 
 /*
- * Opens a PDF that Notes saved.
+ * Opens a PDF that Notes saved, into an empty document.
  *
- * libpdf cannot read PDFs yet (ws079-p004's reader), so this refuses with
- * ENOTSUP; once the reader is there it finds the attachment named
- * NOTES_ATTACHMENT_NAME and decodes it with notes_decode_document().
+ * The edit data attached to the PDF is decoded, and each page's content
+ * hash is compared with the page in the file: a page another program
+ * changed cannot be edited from the edit data (design-pdf.md section 3),
+ * and v1 does not draw such a page as a background yet, so the file is
+ * refused.  Returns 0, the reader's errno value for a file it cannot read
+ * (PDF_EFORMAT for a damaged one, ENOTSUP for one it does not read yet),
+ * ENOENT for a PDF without Notes' edit data, EINVAL for edit data that is
+ * damaged or of a newer major version, ESTALE for a page changed by
+ * another program, or ENOMEM.
  */
 int
 notes_open_pdf(
 	const char *path,
 	struct notes_document *document)
 {
-	/* Nothing can be read yet. */
-	(void)path;
-	(void)document;
+	struct pdf_document *file;
+	unsigned char digest[32];
+	unsigned char zero[32];
+	const void *data;
+	size_t size;
+	size_t pages;
+	size_t index;
+	int differs;
+	int error;
 
-	/* Reports that reading is not supported. */
-	return ENOTSUP;
+	/* The PDF. */
+	error = pdf_document_open(path, &file);
+	if (error != 0)
+		return error;
+
+	/* Its edit data, by the name and the media type Notes gives it. */
+	error = pdf_document_find_attachment_type(file, NOTES_ATTACHMENT_NAME, NOTES_ATTACHMENT_TYPE, &data, &size);
+	if (error != 0) {
+		pdf_document_close(file);
+		return error;
+	}
+
+	/* The document the edit data describes. */
+	error = notes_decode_document(data, size, document);
+	if (error != 0) {
+		pdf_document_close(file);
+		return error;
+	}
+
+	/* The file must have the pages the edit data describes. */
+	pages = pdf_document_page_count(file);
+	if (pages != document->page_count) {
+		notes_document_free(document);
+		pdf_document_close(file);
+		return ESTALE;
+	}
+
+	/* Each page as saved: a recorded hash must match the page in the file. */
+	memset(zero, 0, sizeof(zero));
+	for (index = 0; index < document->page_count; index++) {
+		/* A page whose hash was not recorded is taken as it is. */
+		differs = memcmp(document->pages[index]->content_hash, zero, sizeof(zero));
+		if (differs == 0)
+			continue;
+
+		/* The page's content in the file. */
+		error = pdf_document_page_content_hash(file, index, digest);
+		if (error != 0) {
+			notes_document_free(document);
+			pdf_document_close(file);
+			return error;
+		}
+
+		/* Another program changed the page. */
+		differs = memcmp(document->pages[index]->content_hash, digest, sizeof(digest));
+		if (differs != 0) {
+			notes_document_free(document);
+			pdf_document_close(file);
+			return ESTALE;
+		}
+	}
+
+	/* The file's permanent identifier, which the next save keeps. */
+	error = pdf_document_get_id(file, document->pdf_id);
+	if (error == 0)
+		document->has_pdf_id = 1;
+	pdf_document_close(file);
+
+	/* Succeeded: the document as it was saved, unchanged since. */
+	document->dirty = 0;
+	return 0;
 }
 
 /* Writes one page: each stroke's outline filled in its colour. */

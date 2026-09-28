@@ -12,9 +12,11 @@
  * undo and redo of strokes, eraser drags and pages, checks that the edit
  * data decodes to the same document, that a journal left behind by a
  * "crash" (and one whose last record was cut short) rebuilds it, and saves
- * the PDF the run script checks with qpdf and pdftoppm.
+ * the PDF the run script checks with qpdf and pdftoppm, opens it again
+ * (the same document), and refuses a copy whose page was changed and a PDF
+ * without the edit data.  The edit data is also written to OUTPUT.pdf.bin.
  *
- *   host-notes OUTPUT.pdf EDIT-DATA.bin
+ *   host-notes OUTPUT.pdf SCRATCH.pdf
  */
 
 #include "notes.h"
@@ -32,6 +34,8 @@ static int failures;
 static void check(int condition, const char *what);
 static struct notes_stroke *make_stroke(struct notes_document *document, unsigned tool, uint32_t color, float width, float x0, float y0, float x1, float y1, int wave);
 static int same_document(const struct notes_document *a, const struct notes_document *b);
+static int tamper(const char *from, const char *to);
+static int foreign(const char *path);
 
 int
 main(
@@ -55,7 +59,7 @@ main(
 	int error;
 
 	if (argc != 3) {
-		fprintf(stderr, "usage: host-notes OUTPUT.pdf EDIT-DATA.bin\n");
+		fprintf(stderr, "usage: host-notes OUTPUT.pdf SCRATCH.pdf\n");
 		return 2;
 	}
 
@@ -115,7 +119,8 @@ main(
 	check(notes_decode_document(edit.data, edit.length, &copy) == 0, "decode");
 	check(same_document(&document, &copy), "decoded document is the same");
 	notes_document_free(&copy);
-	file = fopen(argv[2], "wb");
+	snprintf(journal_path, sizeof(journal_path), "%s.bin", argv[1]);
+	file = fopen(journal_path, "wb");
 	if (file != NULL) {
 		fwrite(edit.data, 1U, edit.length, file);
 		fclose(file);
@@ -166,8 +171,20 @@ main(
 	check(notes_document_redo(&document, &page) == 0, "redo after save");
 	check(notes_journal_discard(document.journal) == 0, "discard at the end");
 
-	/* The opener is a stub until libpdf reads PDFs. */
-	check(notes_open_pdf(argv[1], &copy) == ENOTSUP, "open is not there yet");
+	/* The saved PDF opens to the same document, with its identifier. */
+	check(notes_open_pdf(argv[1], &copy) == 0, "open");
+	check(same_document(&document, &copy), "opened document is the same");
+	check(copy.has_pdf_id && memcmp(copy.pdf_id, document.pdf_id, 16U) == 0, "opened identifier");
+	check(copy.dirty == 0, "opened clean");
+	notes_document_free(&copy);
+
+	/* A page another program changed is refused: one number of page 1's content stream is altered. */
+	check(tamper(argv[1], argv[2]) == 0, "tamper");
+	check(notes_open_pdf(argv[2], &copy) == ESTALE, "changed page refused");
+
+	/* A PDF without the edit data is not a Notes PDF. */
+	check(foreign(argv[2]) == 0, "foreign");
+	check(notes_open_pdf(argv[2], &copy) == ENOENT, "foreign PDF refused");
 
 	notes_journal_destroy(document.journal);
 	document.journal = NULL;
@@ -265,4 +282,60 @@ same_document(
 		}
 	}
 	return 1;
+}
+
+/* Copies a PDF, changing one digit before the first line-to operator of page 1: a changed page. */
+static int
+tamper(
+	const char *from,
+	const char *to)
+{
+	static unsigned char buffer[1 << 20];
+	unsigned char *mark;
+	size_t size;
+	FILE *file;
+
+	file = fopen(from, "rb");
+	if (file == NULL)
+		return -1;
+	size = fread(buffer, 1U, sizeof(buffer), file);
+	fclose(file);
+	mark = memchr(buffer + 1, 'l', size - 2U);
+	while (mark != NULL && !(mark[-1] == ' ' && mark[1] == '\n'))
+		mark = memchr(mark + 1, 'l', size - 1U - (size_t)(mark + 1 - buffer));
+	if (mark == NULL)
+		return -1;
+	while (mark > buffer && !(*mark >= '0' && *mark <= '8'))
+		mark--;
+	*mark = (unsigned char)(*mark + 1);
+	file = fopen(to, "wb");
+	if (file == NULL)
+		return -1;
+	fwrite(buffer, 1U, size, file);
+	fclose(file);
+	return 0;
+}
+
+/* Writes a one-page PDF with a filled triangle and no edit data. */
+static int
+foreign(
+	const char *path)
+{
+	struct pdf_writer *writer;
+	int error;
+
+	error = pdf_writer_create(&writer);
+	if (error != 0)
+		return error;
+	pdf_writer_begin_page(writer, 200.0, 200.0);
+	pdf_writer_set_fill_color(writer, 0.2, 0.4, 0.8, 1.0);
+	pdf_writer_move_to(writer, 20.0, 20.0);
+	pdf_writer_line_to(writer, 180.0, 20.0);
+	pdf_writer_line_to(writer, 180.0, 180.0);
+	pdf_writer_close_path(writer);
+	pdf_writer_fill(writer, PDF_FILL_NONZERO);
+	pdf_writer_end_page(writer);
+	error = pdf_writer_save(writer, path);
+	pdf_writer_destroy(writer);
+	return error;
 }

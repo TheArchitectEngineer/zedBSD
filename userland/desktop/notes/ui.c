@@ -59,7 +59,7 @@ static void ui_blend(struct notes_ui *ui, int32_t x, int32_t y, uint32_t rgb, un
 static void ui_dot(struct notes_ui *ui, float cx, float cy, float radius, uint32_t rgb);
 static int32_t ui_text_width(struct notes_ui *ui, const char *text);
 static void ui_text(struct notes_ui *ui, int32_t x, int32_t y, const char *text, uint32_t rgb);
-static int32_t ui_label_button(struct notes_ui *ui, int32_t x, const char *label, uint32_t action, int selected, int enabled);
+static int32_t ui_label_button(struct notes_ui *ui, int32_t x, const char *label, uint32_t action, uint32_t chosen, int enabled);
 static void ui_add_button(struct notes_ui *ui, int32_t x, int32_t y, int32_t width, int32_t height, uint32_t action);
 static uint32_t ui_codepoint(char byte);
 
@@ -103,7 +103,9 @@ notes_ui_open(
 	if (descriptor < 0)
 		return errno;
 	error = fstat(descriptor, &status);
-	if (error != 0 || status.st_size <= 0 || (unsigned long)status.st_size > UI_FONT_MAX) {
+	if (error != 0 ||
+	    status.st_size <= 0 ||
+	    (unsigned long)status.st_size > UI_FONT_MAX) {
 		(void)close(descriptor);
 		return EINVAL;
 	}
@@ -114,6 +116,8 @@ notes_ui_open(
 		(void)close(descriptor);
 		return ENOMEM;
 	}
+
+	/* Reads it all. */
 	done = 0;
 	while (done < (size_t)status.st_size) {
 		got = read(descriptor, (unsigned char *)ui->font_data + done, (size_t)status.st_size - done);
@@ -121,6 +125,8 @@ notes_ui_open(
 			break;
 		done += (size_t)got;
 	}
+
+	/* The file is not needed any more. */
 	(void)close(descriptor);
 	ui->font_size = done;
 
@@ -130,6 +136,8 @@ notes_ui_open(
 		notes_ui_close(ui);
 		return error;
 	}
+
+	/* The labels' size. */
 	error = truetype_set_pixel_size(ui->face, UI_FONT_PIXELS);
 	if (error != 0) {
 		notes_ui_close(ui);
@@ -183,6 +191,8 @@ notes_ui_draw(
 	unsigned index;
 	float radius;
 	int selected;
+	int earlier;
+	int later;
 
 	/* The picture being drawn, and no buttons yet. */
 	ui->pixels = pixels;
@@ -197,11 +207,11 @@ notes_ui_draw(
 	ui_fill(ui, 0, 0, (int32_t)width, (int32_t)height, UI_BACKGROUND);
 	ui_fill(ui, 0, (int32_t)height - 1, (int32_t)width, 1, UI_BORDER);
 
-	/* The tools. */
+	/* The tools, the chosen one marked. */
 	x = UI_PADDING;
-	x = ui_label_button(ui, x, "Pen", NOTES_ACTION_PEN, state->tool == NOTES_ACTION_PEN, 1);
-	x = ui_label_button(ui, x, "Marker", NOTES_ACTION_HIGHLIGHTER, state->tool == NOTES_ACTION_HIGHLIGHTER, 1);
-	x = ui_label_button(ui, x, "Eraser", NOTES_ACTION_ERASER, state->tool == NOTES_ACTION_ERASER, 1);
+	x = ui_label_button(ui, x, "Pen", NOTES_ACTION_PEN, state->tool, 1);
+	x = ui_label_button(ui, x, "Marker", NOTES_ACTION_HIGHLIGHTER, state->tool, 1);
+	x = ui_label_button(ui, x, "Eraser", NOTES_ACTION_ERASER, state->tool, 1);
 	x += UI_GAP;
 
 	/* The colours of the pen, or of the highlighter while it is chosen. */
@@ -211,6 +221,8 @@ notes_ui_draw(
 		colors = ui_marker_colors;
 		widths = ui_marker_widths;
 	}
+
+	/* Each colour, a dot. */
 	for (index = 0; index < NOTES_COLORS; index++) {
 		/* The chosen colour has a frame. */
 		selected = 0;
@@ -222,6 +234,8 @@ notes_ui_draw(
 		ui_add_button(ui, x, UI_BUTTON_TOP, UI_BUTTON_HEIGHT, UI_BUTTON_HEIGHT, NOTES_ACTION_COLOR + index);
 		x += UI_BUTTON_HEIGHT + 2;
 	}
+
+	/* A gap before the next group. */
 	x += UI_GAP;
 
 	/* The widths, each a dot of its size (the chosen one framed). */
@@ -238,25 +252,35 @@ notes_ui_draw(
 		ui_add_button(ui, x, UI_BUTTON_TOP, UI_BUTTON_HEIGHT, UI_BUTTON_HEIGHT, NOTES_ACTION_WIDTH + index);
 		x += UI_BUTTON_HEIGHT + 2;
 	}
+
+	/* A gap before the next group. */
 	x += UI_GAP;
 
 	/* Undo and Redo, pale when there is nothing to take back or make again. */
-	x = ui_label_button(ui, x, "Undo", NOTES_ACTION_UNDO, 0, state->can_undo);
-	x = ui_label_button(ui, x, "Redo", NOTES_ACTION_REDO, 0, state->can_redo);
+	x = ui_label_button(ui, x, "Undo", NOTES_ACTION_UNDO, NOTES_ACTION_NONE, state->can_undo);
+	x = ui_label_button(ui, x, "Redo", NOTES_ACTION_REDO, NOTES_ACTION_NONE, state->can_redo);
 	x += UI_GAP;
 
+	/* Whether there is a page before the current one, and one after. */
+	earlier = 0;
+	if (state->page > 0U)
+		earlier = 1;
+	later = 0;
+	if (state->page + 1U < state->page_count)
+		later = 1;
+
 	/* The pages: previous, "3 / 12", next, and a new page. */
-	x = ui_label_button(ui, x, "<", NOTES_ACTION_PREVIOUS_PAGE, 0, state->page > 0U);
+	x = ui_label_button(ui, x, "<", NOTES_ACTION_PREVIOUS_PAGE, NOTES_ACTION_NONE, earlier);
 	(void)snprintf(page_text, sizeof(page_text), "%lu / %lu", (unsigned long)(state->page + 1U), (unsigned long)state->page_count);
 	text_width = ui_text_width(ui, page_text);
 	ui_text(ui, x + 4, UI_BUTTON_TOP, page_text, UI_TEXT);
 	x += text_width + 8;
-	x = ui_label_button(ui, x, ">", NOTES_ACTION_NEXT_PAGE, 0, state->page + 1U < state->page_count);
-	x = ui_label_button(ui, x, "+ Page", NOTES_ACTION_NEW_PAGE, 0, 1);
+	x = ui_label_button(ui, x, ">", NOTES_ACTION_NEXT_PAGE, NOTES_ACTION_NONE, later);
+	x = ui_label_button(ui, x, "+ Page", NOTES_ACTION_NEW_PAGE, NOTES_ACTION_NONE, 1);
 	x += UI_GAP;
 
 	/* Save. */
-	x = ui_label_button(ui, x, "Save", NOTES_ACTION_SAVE, 0, 1);
+	x = ui_label_button(ui, x, "Save", NOTES_ACTION_SAVE, NOTES_ACTION_NONE, 1);
 
 	/* The status at the right, when there is room for it. */
 	if (state->status != NULL && state->status[0] != '\0') {
@@ -406,7 +430,10 @@ ui_blend(
 	unsigned value;
 
 	/* A pixel outside the picture is not drawn. */
-	if (x < 0 || y < 0 || x >= (int32_t)ui->width || y >= (int32_t)ui->height)
+	if (x < 0 ||
+	    y < 0 ||
+	    x >= (int32_t)ui->width ||
+	    y >= (int32_t)ui->height)
 		return;
 
 	/* Each of blue, green and red moves toward the colour by the coverage. */
@@ -524,18 +551,24 @@ ui_text(
 					ui_blend(ui, x + glyph.left + (int32_t)column, baseline - glyph.top + (int32_t)row, rgb, bitmap[row * UI_GLYPH_MAX + column]);
 			}
 		}
+
+		/* The next character's place. */
 		x += glyph.advance;
 	}
 }
 
-/* Draws a button with a label, selected or pale, adds it, and returns where the next one goes. */
+/*
+ * Draws a button with a label, marked when its action is the chosen one
+ * (a tool's) or pale when it cannot be used, adds it, and returns where the
+ * next one goes.
+ */
 static int32_t
 ui_label_button(
 	struct notes_ui *ui,
 	int32_t x,
 	const char *label,
 	uint32_t action,
-	int selected,
+	uint32_t chosen,
 	int enabled)
 {
 	int32_t width;
@@ -548,10 +581,12 @@ ui_label_button(
 
 	/* The chosen tool's background, and the label's colour. */
 	rgb = UI_TEXT;
-	if (selected) {
+	if (action == chosen) {
 		ui_fill(ui, x, UI_BUTTON_TOP, width, UI_BUTTON_HEIGHT, UI_SELECTED);
 		rgb = UI_SELECTED_TEXT;
 	}
+
+	/* A button that cannot be used is pale. */
 	if (!enabled)
 		rgb = UI_TEXT_DISABLED;
 	ui_text(ui, x + 10, UI_BUTTON_TOP, label, rgb);

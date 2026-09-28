@@ -101,6 +101,7 @@ static const struct menu_item menu_items[] = {
 
 static void menu_activated(void *data, struct keiland_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
 static int menu_build(struct notes_window *window);
+static int menu_is(uint32_t tool, uint32_t action);
 
 /* What the window menu tells Notes: only the choices. */
 static const struct keiland_window_menu_listener menu_listener = {
@@ -168,6 +169,8 @@ notes_menu_refresh(
 	const struct notes_ui_state *state)
 {
 	struct keiland_menu *menu;
+	int earlier;
+	int later;
 	int error;
 
 	/* Nothing to show without a menu. */
@@ -180,16 +183,24 @@ notes_menu_refresh(
 	if (error != 0)
 		return;
 
-	/* Undo and Redo while the history allows, the pages within the document. */
+	/* Undo and Redo while the history allows. */
 	(void)keiland_menu_set_enabled(menu, MENU_UNDO, state->can_undo);
 	(void)keiland_menu_set_enabled(menu, MENU_REDO, state->can_redo);
-	(void)keiland_menu_set_enabled(menu, MENU_PREVIOUS_PAGE, state->page > 0U);
-	(void)keiland_menu_set_enabled(menu, MENU_NEXT_PAGE, state->page + 1U < state->page_count);
+
+	/* The page before and the page after, when there are such pages. */
+	earlier = 0;
+	if (state->page > 0U)
+		earlier = 1;
+	later = 0;
+	if (state->page + 1U < state->page_count)
+		later = 1;
+	(void)keiland_menu_set_enabled(menu, MENU_PREVIOUS_PAGE, earlier);
+	(void)keiland_menu_set_enabled(menu, MENU_NEXT_PAGE, later);
 
 	/* The tool's radio item, and Fullscreen. */
-	(void)keiland_menu_set_checked(menu, MENU_PEN, state->tool == NOTES_ACTION_PEN);
-	(void)keiland_menu_set_checked(menu, MENU_HIGHLIGHTER, state->tool == NOTES_ACTION_HIGHLIGHTER);
-	(void)keiland_menu_set_checked(menu, MENU_ERASER, state->tool == NOTES_ACTION_ERASER);
+	(void)keiland_menu_set_checked(menu, MENU_PEN, menu_is(state->tool, NOTES_ACTION_PEN));
+	(void)keiland_menu_set_checked(menu, MENU_HIGHLIGHTER, menu_is(state->tool, NOTES_ACTION_HIGHLIGHTER));
+	(void)keiland_menu_set_checked(menu, MENU_ERASER, menu_is(state->tool, NOTES_ACTION_ERASER));
 	(void)keiland_menu_set_checked(menu, MENU_FULLSCREEN, state->fullscreen);
 
 	/* The state is shown together. */
@@ -285,5 +296,19 @@ menu_build(
 		return error;
 
 	/* Succeeded: the menus are built. */
+	return 0;
+}
+
+/* Tells whether the tool chosen is the one an item stands for (1) or not (0). */
+static int
+menu_is(
+	uint32_t tool,
+	uint32_t action)
+{
+	/* The item's tool. */
+	if (tool == action)
+		return 1;
+
+	/* Another tool. */
 	return 0;
 }
