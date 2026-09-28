@@ -27,7 +27,7 @@ GPU の描画の先（`browser_target`）は p055、DOM の key の形の入力�
 - draft（[browser_view.h](../phase053/browser_view.h)）との違い: 時計は view が monotonic の clock を自分で読み、`_timeout` は poll の
   ms で返す（draft の `_deadline`・`now_ms` でなく）。`_process` は poll の結果を受ける。`_draw`・`_record`・`_draw_pixels`・入力の
   関数は p055・p056。
-- `shell/shell.c`: view の上に書き直した（1125 → 約 560 行）。shell に残るのは窓・titlebar・presenter、evdev の key と button を view の
+- `shell/shell.c`: view の上に書き直した（1125 → 651 行）。shell に残るのは窓・titlebar・presenter、evdev の key と button を view の
   呼び出しに変えること（click の押しと離しの距離の判定を含む）、ZBROWSER の行（callback から）。最初の page の NAVIGATE は今までどおり
   窓が開いてから（`ready`）。
 - 確認: host の build（-Werror）、amd64 の image の build（warning 0）、style-check（view.c・view.h・shell.c）0。Venus の guest（QEMU）で
@@ -35,7 +35,7 @@ GPU の描画の先（`browser_target`）は p055、DOM の key の形の入力�
   変更なしの再実行で status 0）、`browser-p014.sh`（scroll の key と wheel）status 0、`browser-p030.sh`（scripts の console・timer・
   click）status 0、`browser-p050.sh`（LOADING・Esc の STOPPED・http の画像、guest の HTTP 16/16）status 0、`browser-p017.sh`（https、
   別名の証明書の ERROR）status 0。写真 `/home/awe/zedBSD-rpi4/build/ws074-shots/p054-20260928-window-view-titlebar.png`・
-  `p054-20260928-window-view-scripts.png`。
+  `p054-20260928-window-view-scripts.png`。この時点の boot test PASS（`p054-20260928-boot-login.png`）。実機は未実施。
 
 ## 後半（残り）: main の headless の mode
 
