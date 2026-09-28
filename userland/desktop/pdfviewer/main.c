@@ -512,6 +512,7 @@ main_state(
 	state->page = pv_app_current_page(&main_app);
 	state->mode = (int)main_app.mode;
 	state->fit = (int)main_app.fit;
+	state->thumbnails = main_app.thumbnails;
 }
 
 /* After a document opened: the window's title names it, and it joins the recent files. */

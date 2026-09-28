@@ -20,7 +20,7 @@ ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 # ws079-p007: the reader decodes cross-reference and object streams through filter.c and libz-compat.
 sources="userland/desktop/notes/document.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c
 	userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c
-	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/crypt.c plan/ws079/tests/host-notes.c"
+	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c plan/ws079/tests/host-notes.c"
 for variant in plain asan ubsan; do
 	flags="-std=c99 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include -Iuserland/desktop/notes"
 	if [ "$variant" = asan ]; then

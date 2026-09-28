@@ -158,6 +158,7 @@ struct pv_state {
 	size_t count;
 	int mode;
 	int fit;
+	int thumbnails;
 };
 
 /*

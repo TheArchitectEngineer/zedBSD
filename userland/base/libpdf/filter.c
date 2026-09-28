@@ -8,10 +8,11 @@
 /*
  * The stream filters of libpdf's reader (stages 1 and 2 of design-pdf.md):
  * FlateDecode through libz-compat and LZWDecode, both with the PNG and TIFF
- * predictors, ASCIIHexDecode, ASCII85Decode and RunLengthDecode.  DCTDecode
- * is not decoded here: an image's JPEG bytes are handed to the image
- * decoder (image.c) as they are.  Any other filter (CCITTFax, JBIG2, JPX)
- * is reported as ENOTSUP.
+ * predictors, ASCIIHexDecode, ASCII85Decode, RunLengthDecode and (stage
+ * 3) CCITTFaxDecode through the fax decoder (ccitt.c).  DCTDecode is not
+ * decoded here: an image's JPEG bytes are handed to the image decoder
+ * (image.c) as they are.  Any other filter (JBIG2, JPX) is reported as
+ * ENOTSUP.
  *
  * Every output is bounded by PDF_FILTER_OUTPUT_MAX, which stops a small
  * stream that inflates to gigabytes.  A Flate stream that is cut short or
@@ -52,6 +53,7 @@ enum pdf_filter_kind {
 	PDF_FILTER_ASCII_85,
 	PDF_FILTER_LZW,
 	PDF_FILTER_RUN_LENGTH,
+	PDF_FILTER_CCITT,
 	PDF_FILTER_DCT
 };
 
@@ -105,7 +107,7 @@ struct pdf_predictor {
 static int read_chain(struct pdf_document *document, const struct pdf_object *stream, enum pdf_filter_kind *kinds, struct pdf_object **parameters, size_t *count);
 static int decrypt_stream(struct pdf_document *document, const struct pdf_object *stream, const unsigned char *data, size_t size, unsigned char **plain, size_t *plain_size);
 static enum pdf_filter_kind filter_kind(const struct pdf_object *name);
-static int apply_filter(struct pdf_document *document, enum pdf_filter_kind kind, struct pdf_object *parameters, const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
+static int apply_filter(struct pdf_document *document, const struct pdf_object *stream, enum pdf_filter_kind kind, struct pdf_object *parameters, const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
 static int inflate_bytes(const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
 static int decode_hex(const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
 static int decode_ascii85(const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
@@ -118,6 +120,8 @@ static int decode_run_length(const unsigned char *input, size_t input_size, unsi
 static void output_reserve(struct pdf_filter_output *output, size_t more);
 static int read_predictor(struct pdf_document *document, struct pdf_object *parameters, struct pdf_predictor *predictor);
 static int read_parameter(struct pdf_document *document, struct pdf_object *parameters, const char *key, long fallback, long *value);
+static int read_flag(struct pdf_document *document, struct pdf_object *parameters, const char *key, int fallback, int *value);
+static int read_ccitt(struct pdf_document *document, const struct pdf_object *stream, struct pdf_object *parameters, struct pdf_ccitt_parameters *ccitt);
 static int undo_predictor(const struct pdf_predictor *predictor, unsigned char *data, size_t *size);
 static int undo_png(const struct pdf_predictor *predictor, unsigned char *data, size_t *size);
 static int undo_tiff(const struct pdf_predictor *predictor, unsigned char *data, size_t size);
@@ -187,7 +191,7 @@ pdf_filter_decode(
 
 	/* Applies each filter in order, each one's output the next one's input. */
 	for (index = 0; index < count; index++) {
-		error = apply_filter(document, kinds[index], parameters[index], current, current_size, &output, &output_size);
+		error = apply_filter(document, stream, kinds[index], parameters[index], current, current_size, &output, &output_size);
 		if (error != 0) {
 			free(current_owned);
 			return error;
@@ -378,6 +382,14 @@ filter_kind(
 	if (is_known)
 		return PDF_FILTER_RUN_LENGTH;
 
+	/* The fax names. */
+	is_known = pdf_object_is_name(name, "CCITTFaxDecode");
+	if (is_known)
+		return PDF_FILTER_CCITT;
+	is_known = pdf_object_is_name(name, "CCF");
+	if (is_known)
+		return PDF_FILTER_CCITT;
+
 	/* The JPEG names. */
 	is_dct = pdf_object_is_name(name, "DCTDecode");
 	if (is_dct)
@@ -390,10 +402,15 @@ filter_kind(
 	return PDF_FILTER_UNKNOWN;
 }
 
-/* Applies one filter to a buffer, making a new one. */
+/*
+ * Applies one filter to a buffer, making a new one.  The stream's own
+ * dictionary gives the fax filter the image's height when its parameters
+ * do not.
+ */
 static int
 apply_filter(
 	struct pdf_document *document,
+	const struct pdf_object *stream,
 	enum pdf_filter_kind kind,
 	struct pdf_object *parameters,
 	const unsigned char *input,
@@ -401,6 +418,7 @@ apply_filter(
 	unsigned char **output,
 	size_t *output_size)
 {
+	struct pdf_ccitt_parameters ccitt;
 	struct pdf_predictor predictor;
 	int error;
 
@@ -437,6 +455,13 @@ apply_filter(
 		return error;
 	case PDF_FILTER_RUN_LENGTH:
 		error = decode_run_length(input, input_size, output, output_size);
+		return error;
+	case PDF_FILTER_CCITT:
+		/* Reads the parameters before decoding, so that bad ones cost nothing. */
+		error = read_ccitt(document, stream, parameters, &ccitt);
+		if (error != 0)
+			return error;
+		error = pdf_ccitt_decode(&ccitt, input, input_size, output, output_size);
 		return error;
 	case PDF_FILTER_DCT:
 	case PDF_FILTER_UNKNOWN:
@@ -1135,6 +1160,121 @@ read_parameter(
 
 	/* Succeeded: the parameter's value. */
 	*value = found->integer;
+	return 0;
+}
+
+/* Reads one flag of a parameter dictionary, or a default when it is absent. */
+static int
+read_flag(
+	struct pdf_document *document,
+	struct pdf_object *parameters,
+	const char *key,
+	int fallback,
+	int *value)
+{
+	struct pdf_object *found;
+	int error;
+
+	/* Absent parameters give the default. */
+	*value = fallback;
+	if (parameters == NULL)
+		return 0;
+	if (parameters->type != PDF_OBJECT_DICTIONARY)
+		return 0;
+
+	/* Finds the key's value. */
+	error = pdf_reader_resolve_key(document, parameters, key, &found);
+	if (error != 0)
+		return error;
+
+	/* A missing key gives the default; anything but a boolean is malformed. */
+	if (found->type == PDF_OBJECT_NULL)
+		return 0;
+	if (found->type != PDF_OBJECT_BOOLEAN)
+		return PDF_EFORMAT;
+
+	/* Succeeded: the flag's value. */
+	*value = found->boolean;
+	return 0;
+}
+
+/*
+ * Reads a fax filter's parameters with the defaults of the PDF reference.
+ * Without /Rows the image's /Height (or an inline image's /H) is the
+ * number of rows, so that rows the data lacks come out white rather than
+ * as missing samples.
+ */
+static int
+read_ccitt(
+	struct pdf_document *document,
+	const struct pdf_object *stream,
+	struct pdf_object *parameters,
+	struct pdf_ccitt_parameters *ccitt)
+{
+	struct pdf_object *height;
+	int error;
+
+	/* The coding: negative Group 4, zero Group 3 one-dimensional, positive Group 3 mixed. */
+	error = read_parameter(document, parameters, "K", 0, &ccitt->k);
+	if (error != 0)
+		return error;
+
+	/* The row's width, 1728 (a fax line) by default. */
+	error = read_parameter(document, parameters, "Columns", 1728, &ccitt->columns);
+	if (error != 0)
+		return error;
+
+	/* The rows, 0 (as many as the data holds) by default. */
+	error = read_parameter(document, parameters, "Rows", 0, &ccitt->rows);
+	if (error != 0)
+		return error;
+
+	/* The damaged rows tolerated, none by default. */
+	error = read_parameter(document, parameters, "DamagedRowsBeforeError", 0, &ccitt->damaged_rows);
+	if (error != 0)
+		return error;
+
+	/* Whether rows have end-of-line codes, false by default. */
+	error = read_flag(document, parameters, "EndOfLine", 0, &ccitt->end_of_line);
+	if (error != 0)
+		return error;
+
+	/* Whether rows start on a byte, false by default. */
+	error = read_flag(document, parameters, "EncodedByteAlign", 0, &ccitt->byte_align);
+	if (error != 0)
+		return error;
+
+	/* Whether the data ends with an end-of-block code, true by default. */
+	error = read_flag(document, parameters, "EndOfBlock", 1, &ccitt->end_of_block);
+	if (error != 0)
+		return error;
+
+	/* Whether 1 is black, false by default. */
+	error = read_flag(document, parameters, "BlackIs1", 0, &ccitt->black_is_1);
+	if (error != 0)
+		return error;
+
+	/* Rows given are the image's. */
+	if (ccitt->rows > 0)
+		return 0;
+
+	/* Without them, the image's height: an image XObject's /Height. */
+	error = pdf_reader_resolve_key(document, stream, "Height", &height);
+	if (error != 0)
+		return error;
+
+	/* Or an inline image's /H. */
+	if (height->type == PDF_OBJECT_NULL) {
+		error = pdf_reader_resolve_key(document, stream, "H", &height);
+		if (error != 0)
+			return error;
+	}
+
+	/* A positive height is the number of rows. */
+	if (height->type == PDF_OBJECT_INTEGER && height->integer > 0)
+		ccitt->rows = height->integer;
+
+	/* Succeeded: the parameters are read. */
 	return 0;
 }
 

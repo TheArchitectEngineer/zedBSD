@@ -34,6 +34,8 @@
 		pdf_outline_free;
 		pdf_document_open;
 		pdf_document_open_memory;
+		pdf_document_open_password;
+		pdf_document_open_memory_password;
 		pdf_document_close;
 		pdf_document_page_count;
 		pdf_document_page_box;

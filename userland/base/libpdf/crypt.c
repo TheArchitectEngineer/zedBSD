@@ -7,22 +7,26 @@
 
 /*
  * The standard security handler of libpdf's reader (stage 3 of
- * design-pdf.md): the decryption of a document encrypted with an empty
- * user password, as most documents that only restrict printing or
- * copying are.
+ * design-pdf.md): the decryption of an encrypted document with its user
+ * password or its owner password.  Most documents that only restrict
+ * printing or copying have an empty user password, which is what the
+ * reader tries when it is given none (ws079-p015 added the passwords a
+ * person types).
  *
  * Revisions 2 to 4 (RC4 of 40 to 128 bits, and AES-128 through a crypt
- * filter) derive the file key from the padded empty password, /O, /P and
+ * filter) derive the file key from the padded user password, /O, /P and
  * the first /ID string (PDF 1.7 algorithm 2) and check it against /U
- * (algorithms 4 and 5); each object's key mixes in its number and
- * generation (algorithm 1).  Revisions 5 and 6 (AES-256) check the empty
- * password against /U with SHA-256 (revision 5) or the hash of ISO
- * 32000-2 algorithm 2.B (revision 6) and decrypt /UE into the file key,
- * which every object uses as it is.  Strings and streams follow the crypt
- * filters /StrF and /StmF name (/Identity leaves them as they are).
+ * (algorithms 4 and 5); an owner password first gives the padded user
+ * password by decrypting /O (algorithm 7).  Each object's key mixes in its
+ * number and generation (algorithm 1).  Revisions 5 and 6 (AES-256) check
+ * the password against /U, or with /U against /O, with SHA-256 (revision
+ * 5) or the hash of ISO 32000-2 algorithm 2.B (revision 6), and decrypt
+ * /UE or /OE into the file key, which every object uses as it is.  Strings
+ * and streams follow the crypt filters /StrF and /StmF name (/Identity
+ * leaves them as they are).
  *
- * A document whose user password is not empty is refused (EACCES).  The
- * permissions (/P) are not enforced: the reader only displays.
+ * A password that is neither is refused (EACCES).  The permissions (/P)
+ * are not enforced: the reader only displays.
  */
 
 #include <errno.h>
@@ -44,8 +48,14 @@
 #define CRYPT_ROUNDS_MAX 14
 #define CRYPT_ROUND_KEYS ((CRYPT_ROUNDS_MAX + 1) * 16)
 
-/* The longest input of revision 6's hash round: the password (none), a 64-byte hash and the user data (none), 64 times. */
-#define CRYPT_HASH_INPUT (64 * 64)
+/* The longest password revisions 5 and 6 take, in bytes of UTF-8; a longer one counts its first bytes. */
+#define CRYPT_PASSWORD_MAX 127
+
+/* The user data revision 6's hash of an owner password takes: /U's 48 bytes. */
+#define CRYPT_USER_DATA 48
+
+/* The longest input of revision 6's hash round: the password, a 64-byte hash and the user data, 64 times. */
+#define CRYPT_HASH_INPUT ((CRYPT_PASSWORD_MAX + 64 + CRYPT_USER_DATA) * 64)
 
 /*
  * The ciphers a crypt filter names.
@@ -93,14 +103,19 @@ static const unsigned char crypt_padding[32] = {
 	0x2e, 0x2e, 0x00, 0xb6, 0xd0, 0x68, 0x3e, 0x80, 0x2f, 0x0c, 0xa9, 0xfe, 0x64, 0x53, 0x69, 0x7a
 };
 
-static int read_handler(struct pdf_document *document, struct pdf_object *encrypt, const unsigned char *id, size_t id_length, struct pdf_crypt **crypt);
+static int read_handler(struct pdf_document *document, struct pdf_object *encrypt, const unsigned char *id, size_t id_length, const unsigned char *password, size_t password_length, struct pdf_crypt **crypt);
+static int read_legacy_key(struct pdf_document *document, struct pdf_object *encrypt, struct pdf_crypt *crypt, long permissions, const unsigned char *id, size_t id_length, const unsigned char *password, size_t password_length);
+static int read_aes256_key(struct pdf_document *document, struct pdf_object *encrypt, struct pdf_crypt *crypt, const unsigned char *password, size_t password_length);
 static int read_integer(struct pdf_document *document, struct pdf_object *encrypt, const char *key, long fallback, long *value);
 static int read_string(struct pdf_document *document, struct pdf_object *encrypt, const char *key, size_t minimum, const unsigned char **bytes);
 static int read_methods(struct pdf_document *document, struct pdf_object *encrypt, struct pdf_crypt *crypt);
 static int filter_method(struct pdf_document *document, struct pdf_object *filters, struct pdf_object *name, enum crypt_method *method, size_t *length);
-static int legacy_key(struct pdf_crypt *crypt, const unsigned char *owner, const unsigned char *user, long permissions, const unsigned char *id, size_t id_length);
-static int aes256_key(struct pdf_crypt *crypt, const unsigned char *user, const unsigned char *user_key);
-static void revision6_hash(const struct crypt_tables *tables, const unsigned char *salt, unsigned char hash[32]);
+static void pad_password(const unsigned char *password, size_t length, unsigned char padded[32]);
+static int legacy_key(struct pdf_crypt *crypt, const unsigned char *padded, const unsigned char *owner, const unsigned char *user, long permissions, const unsigned char *id, size_t id_length);
+static void legacy_owner_to_user(const struct pdf_crypt *crypt, const unsigned char *padded_owner, const unsigned char *owner, unsigned char padded_user[32]);
+static int aes256_key(struct pdf_crypt *crypt, const unsigned char *password, size_t password_length, const unsigned char *check, const unsigned char *encrypted_key, const unsigned char *user_data, size_t user_data_length);
+static void aes256_hash(const struct pdf_crypt *crypt, const unsigned char *password, size_t password_length, const unsigned char *salt, const unsigned char *user_data, size_t user_data_length, unsigned char hash[32]);
+static void revision6_hash(const struct crypt_tables *tables, const unsigned char *password, size_t password_length, const unsigned char *salt, const unsigned char *user_data, size_t user_data_length, unsigned char hash[32]);
 static void rc4(const unsigned char *key, size_t key_length, const unsigned char *input, size_t size, unsigned char *output);
 static void make_tables(struct crypt_tables *tables);
 static unsigned char multiply(unsigned char a, unsigned char b);
@@ -111,11 +126,12 @@ static int aes_cbc_decrypt(const struct crypt_tables *tables, const unsigned cha
 
 /*
  * Opens the standard security handler an /Encrypt dictionary describes,
- * with the empty user password.
+ * with a password: the user's or the owner's (an empty one when the
+ * document is opened without).
  *
  * ENOTSUP is a handler or revision the reader does not have, or an
- * encryption dictionary it cannot read; EACCES a document that needs a
- * password.
+ * encryption dictionary it cannot read; EACCES a password that is neither
+ * the user's nor the owner's.
  */
 int
 pdf_crypt_open(
@@ -123,12 +139,14 @@ pdf_crypt_open(
 	struct pdf_object *encrypt,
 	const unsigned char *id,
 	size_t id_length,
+	const unsigned char *password,
+	size_t password_length,
 	struct pdf_crypt **crypt)
 {
 	int error;
 
 	/* Reads the handler. */
-	error = read_handler(document, encrypt, id, id_length, crypt);
+	error = read_handler(document, encrypt, id, id_length, password, password_length, crypt);
 
 	/* A dictionary that cannot be read is an encryption the reader does not have; a password and memory are themselves. */
 	if (error == ENOMEM)
@@ -142,20 +160,19 @@ pdf_crypt_open(
 	return 0;
 }
 
-/* Reads the handler of an /Encrypt dictionary with the empty user password (see pdf_crypt_open()). */
+/* Reads the handler of an /Encrypt dictionary with a password (see pdf_crypt_open()). */
 static int
 read_handler(
 	struct pdf_document *document,
 	struct pdf_object *encrypt,
 	const unsigned char *id,
 	size_t id_length,
+	const unsigned char *password,
+	size_t password_length,
 	struct pdf_crypt **crypt)
 {
 	struct pdf_crypt *created;
 	struct pdf_object *filter;
-	const unsigned char *owner;
-	const unsigned char *user;
-	const unsigned char *user_key;
 	long version;
 	long revision;
 	long length;
@@ -232,19 +249,11 @@ read_handler(
 		}
 	}
 
-	/* /U, and /O or /UE by the revision. */
+	/* The file key from the password, by the revision's algorithms. */
 	if (revision <= 4) {
-		error = read_string(document, encrypt, "O", 32, &owner);
-		if (error == 0)
-			error = read_string(document, encrypt, "U", 32, &user);
-		if (error == 0)
-			error = legacy_key(created, owner, user, permissions, id, id_length);
+		error = read_legacy_key(document, encrypt, created, permissions, id, id_length, password, password_length);
 	} else {
-		error = read_string(document, encrypt, "U", 48, &user);
-		if (error == 0)
-			error = read_string(document, encrypt, "UE", 32, &user_key);
-		if (error == 0)
-			error = aes256_key(created, user, user_key);
+		error = read_aes256_key(document, encrypt, created, password, password_length);
 	}
 
 	/* Reports a key that could not be made or checked. */
@@ -255,6 +264,121 @@ read_handler(
 
 	/* Succeeded: the caller owns the handler. */
 	*crypt = created;
+	return 0;
+}
+
+/*
+ * Makes a revision 2 to 4 file key from a password: as the user's, or
+ * else as the owner's.
+ *
+ * Returns 0, EACCES for a password that is neither, or the error of an
+ * encryption dictionary without /O or /U.
+ */
+static int
+read_legacy_key(
+	struct pdf_document *document,
+	struct pdf_object *encrypt,
+	struct pdf_crypt *crypt,
+	long permissions,
+	const unsigned char *id,
+	size_t id_length,
+	const unsigned char *password,
+	size_t password_length)
+{
+	const unsigned char *owner;
+	const unsigned char *user;
+	unsigned char padded[32];
+	unsigned char padded_user[32];
+	int error;
+
+	/* /O, the owner's check. */
+	error = read_string(document, encrypt, "O", 32, &owner);
+	if (error != 0)
+		return error;
+
+	/* /U, the user's check. */
+	error = read_string(document, encrypt, "U", 32, &user);
+	if (error != 0)
+		return error;
+
+	/* The password as the user's. */
+	pad_password(password, password_length, padded);
+	error = legacy_key(crypt, padded, owner, user, permissions, id, id_length);
+	if (error != EACCES) {
+		memset(padded, 0, sizeof(padded));
+		return error;
+	}
+
+	/* The password as the owner's: /O decrypted with it is the padded user password. */
+	legacy_owner_to_user(crypt, padded, owner, padded_user);
+	error = legacy_key(crypt, padded_user, owner, user, permissions, id, id_length);
+	memset(padded, 0, sizeof(padded));
+	memset(padded_user, 0, sizeof(padded_user));
+
+	/* Reports a password that is neither. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the owner's password gave the file key. */
+	return 0;
+}
+
+/*
+ * Makes a revision 5 or 6 file key from a password: as the user's (/U and
+ * /UE), or else as the owner's (/O and /OE, with /U as the user data).
+ *
+ * Returns 0, EACCES for a password that is neither, or the error of an
+ * encryption dictionary without the strings.
+ */
+static int
+read_aes256_key(
+	struct pdf_document *document,
+	struct pdf_object *encrypt,
+	struct pdf_crypt *crypt,
+	const unsigned char *password,
+	size_t password_length)
+{
+	const unsigned char *user;
+	const unsigned char *user_key;
+	const unsigned char *owner;
+	const unsigned char *owner_key;
+	int error;
+
+	/* A longer password counts its first bytes, as revisions 5 and 6 define. */
+	if (password_length > CRYPT_PASSWORD_MAX)
+		password_length = CRYPT_PASSWORD_MAX;
+
+	/* /U, the user's check and salts. */
+	error = read_string(document, encrypt, "U", 48, &user);
+	if (error != 0)
+		return error;
+
+	/* /UE, the file key encrypted for the user. */
+	error = read_string(document, encrypt, "UE", 32, &user_key);
+	if (error != 0)
+		return error;
+
+	/* The password as the user's. */
+	error = aes256_key(crypt, password, password_length, user, user_key, NULL, 0);
+	if (error != EACCES)
+		return error;
+
+	/* /O, the owner's check and salts. */
+	error = read_string(document, encrypt, "O", 48, &owner);
+	if (error != 0)
+		return error;
+
+	/* /OE, the file key encrypted for the owner. */
+	error = read_string(document, encrypt, "OE", 32, &owner_key);
+	if (error != 0)
+		return error;
+
+	/* The password as the owner's, whose hashes take /U's 48 bytes too. */
+	error = aes256_key(crypt, password, password_length, owner, owner_key, user, CRYPT_USER_DATA);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the owner's password gave the file key. */
 	return 0;
 }
 
@@ -567,13 +691,34 @@ filter_method(
 	return 0;
 }
 
+/* Pads a password to 32 bytes with the padding string (algorithm 2, step a): its first 32 bytes, then the padding. */
+static void
+pad_password(
+	const unsigned char *password,
+	size_t length,
+	unsigned char padded[32])
+{
+	/* The password's bytes, at most 32. */
+	if (length > 32)
+		length = 32;
+	if (length > 0)
+		memcpy(padded, password, length);
+
+	/* The padding's first bytes after them. */
+	memcpy(padded + length, crypt_padding, 32 - length);
+}
+
 /*
- * Computes a revision 2 to 4 file key from the empty user password
+ * Computes a revision 2 to 4 file key from a padded user password
  * (algorithm 2) and checks it against /U (algorithms 4 and 5).
+ *
+ * Returns 0 with the key in the handler, or EACCES when /U says the
+ * password is not the user's.
  */
 static int
 legacy_key(
 	struct pdf_crypt *crypt,
+	const unsigned char *padded,
 	const unsigned char *owner,
 	const unsigned char *user,
 	long permissions,
@@ -591,14 +736,14 @@ legacy_key(
 	int round;
 	int differs;
 
-	/* The padded (empty) password, /O, /P low byte first, the first /ID string, and the metadata flag. */
+	/* The padded password, /O, /P low byte first, the first /ID string, and the metadata flag. */
 	value = (unsigned long)permissions & 0xffffffffUL;
 	bytes[0] = (unsigned char)(value & 0xff);
 	bytes[1] = (unsigned char)((value >> 8) & 0xff);
 	bytes[2] = (unsigned char)((value >> 16) & 0xff);
 	bytes[3] = (unsigned char)((value >> 24) & 0xff);
 	MD5Init(&context);
-	MD5Update(&context, crypt_padding, 32);
+	MD5Update(&context, padded, 32);
 	MD5Update(&context, owner, 32);
 	MD5Update(&context, bytes, 4);
 	if (id != NULL)
@@ -651,109 +796,208 @@ legacy_key(
 }
 
 /*
- * Checks the empty user password against a revision 5 or 6 /U and
- * decrypts /UE into the file key.
+ * Decrypts /O with a padded owner password into the padded user password
+ * (algorithm 7): the key is the MD5 of the owner password (hashed fifty
+ * times more from revision 3), and /O is decrypted with RC4 once
+ * (revision 2) or twenty times with the key changed by 19 down to 0.
+ */
+static void
+legacy_owner_to_user(
+	const struct pdf_crypt *crypt,
+	const unsigned char *padded_owner,
+	const unsigned char *owner,
+	unsigned char padded_user[32])
+{
+	unsigned char digest[MD5_DIGEST_LENGTH];
+	unsigned char step_key[16];
+	MD5_CTX context;
+	size_t index;
+	int round;
+
+	/* The hash of the padded owner password. */
+	MD5Init(&context);
+	MD5Update(&context, padded_owner, 32);
+	MD5Final(digest, &context);
+
+	/* Revision 3 and later hash the whole digest fifty times more. */
+	if (crypt->revision >= 3) {
+		for (round = 0; round < 50; round++) {
+			MD5Init(&context);
+			MD5Update(&context, digest, MD5_DIGEST_LENGTH);
+			MD5Final(digest, &context);
+		}
+	}
+
+	/* Revision 2: /O decrypted once with the key. */
+	if (crypt->revision == 2) {
+		rc4(digest, crypt->key_length, owner, 32, padded_user);
+		memset(digest, 0, sizeof(digest));
+		return;
+	}
+
+	/* Revisions 3 and 4: /O decrypted twenty times, the key changed by 19 down to 0. */
+	memcpy(padded_user, owner, 32);
+	for (round = 19; round >= 0; round--) {
+		for (index = 0; index < crypt->key_length; index++)
+			step_key[index] = (unsigned char)(digest[index] ^ round);
+		rc4(step_key, crypt->key_length, padded_user, 32, padded_user);
+	}
+
+	/* The keys are cleared before the memory is reused. */
+	memset(digest, 0, sizeof(digest));
+	memset(step_key, 0, sizeof(step_key));
+}
+
+/*
+ * Checks a password against a revision 5 or 6 check string (/U, or /O
+ * with /U as the user data) and decrypts the matching encrypted key (/UE
+ * or /OE) into the file key.
+ *
+ * The check string is a 32-byte hash, an 8-byte validation salt and an
+ * 8-byte key salt.  Returns 0 with the key in the handler, or EACCES when
+ * the password's hash with the validation salt is not the check's.
  */
 static int
 aes256_key(
 	struct pdf_crypt *crypt,
-	const unsigned char *user,
-	const unsigned char *user_key)
+	const unsigned char *password,
+	size_t password_length,
+	const unsigned char *check,
+	const unsigned char *encrypted_key,
+	const unsigned char *user_data,
+	size_t user_data_length)
 {
 	unsigned char hash[32];
 	unsigned char plain[32];
 	unsigned char vector[CRYPT_BLOCK];
 	unsigned char block[CRYPT_BLOCK];
 	struct crypt_aes aes;
-	SHA2_CTX context;
 	size_t index;
 	size_t byte;
 	int differs;
 
-	/* The hash of the password (none) and the validation salt, /U's bytes 32 to 40, must be /U's first 32. */
-	if (crypt->revision == 5) {
-		SHA256Init(&context);
-		SHA256Update(&context, user + 32, 8);
-		SHA256Final(hash, &context);
-	} else {
-		revision6_hash(&crypt->tables, user + 32, hash);
-	}
-
-	/* A different hash means another password. */
-	differs = memcmp(hash, user, 32);
+	/* The hash of the password with the validation salt, bytes 32 to 40, must be the check's first 32. */
+	aes256_hash(crypt, password, password_length, check + 32, user_data, user_data_length, hash);
+	differs = memcmp(hash, check, 32);
 	if (differs != 0)
 		return EACCES;
 
-	/* The hash with the key salt, bytes 40 to 48, is the key that decrypts /UE (CBC, a zero vector, no padding). */
-	if (crypt->revision == 5) {
-		SHA256Init(&context);
-		SHA256Update(&context, user + 40, 8);
-		SHA256Final(hash, &context);
-	} else {
-		revision6_hash(&crypt->tables, user + 40, hash);
-	}
+	/* The hash with the key salt, bytes 40 to 48, is the key that decrypts the file key (CBC, a zero vector, no padding). */
+	aes256_hash(crypt, password, password_length, check + 40, user_data, user_data_length, hash);
 
-	/* Decrypts /UE block by block. */
+	/* Decrypts the key block by block. */
 	aes_expand(&crypt->tables, hash, 32, &aes);
 	memset(vector, 0, sizeof(vector));
 	for (index = 0; index < 32; index += CRYPT_BLOCK) {
-		aes_decrypt_block(&crypt->tables, &aes, user_key + index, block);
+		aes_decrypt_block(&crypt->tables, &aes, encrypted_key + index, block);
 		for (byte = 0; byte < CRYPT_BLOCK; byte++)
 			plain[index + byte] = (unsigned char)(block[byte] ^ vector[byte]);
-		memcpy(vector, user_key + index, CRYPT_BLOCK);
+		memcpy(vector, encrypted_key + index, CRYPT_BLOCK);
 	}
 
 	/* Succeeded: the file key. */
 	memcpy(crypt->key, plain, 32);
 	crypt->key_length = 32;
+	memset(plain, 0, sizeof(plain));
+	memset(hash, 0, sizeof(hash));
 	memset(&aes, 0, sizeof(aes));
 	return 0;
 }
 
 /*
- * Computes revision 6's hash of the empty password with a salt (ISO
- * 32000-2 algorithm 2.B): SHA-256 of the salt, then rounds that encrypt
- * the hash repeated 64 times with AES-128 and hash the result with SHA-256,
- * SHA-384 or SHA-512 by its bytes, at least 64 rounds and until the last
- * byte allows.
+ * Hashes a password with a salt and the user data (none for the user's
+ * password): SHA-256 of the three for revision 5, the hash of ISO 32000-2
+ * algorithm 2.B for revision 6.
+ */
+static void
+aes256_hash(
+	const struct pdf_crypt *crypt,
+	const unsigned char *password,
+	size_t password_length,
+	const unsigned char *salt,
+	const unsigned char *user_data,
+	size_t user_data_length,
+	unsigned char hash[32])
+{
+	SHA2_CTX context;
+
+	/* Revision 6's hash. */
+	if (crypt->revision != 5) {
+		revision6_hash(&crypt->tables, password, password_length, salt, user_data, user_data_length, hash);
+		return;
+	}
+
+	/* Revision 5's SHA-256 of the password, the salt and the user data. */
+	SHA256Init(&context);
+	if (password_length > 0)
+		SHA256Update(&context, password, password_length);
+	SHA256Update(&context, salt, 8);
+	if (user_data_length > 0)
+		SHA256Update(&context, user_data, user_data_length);
+	SHA256Final(hash, &context);
+}
+
+/*
+ * Computes revision 6's hash of a password with a salt and the user data
+ * (ISO 32000-2 algorithm 2.B): SHA-256 of the three, then rounds that
+ * encrypt the password, the hash and the user data repeated 64 times with
+ * AES-128 and hash the result with SHA-256, SHA-384 or SHA-512 by its
+ * bytes, at least 64 rounds and until the last byte allows.
  */
 static void
 revision6_hash(
 	const struct crypt_tables *tables,
+	const unsigned char *password,
+	size_t password_length,
 	const unsigned char *salt,
+	const unsigned char *user_data,
+	size_t user_data_length,
 	unsigned char hash[32])
 {
 	unsigned char repeated[CRYPT_HASH_INPUT];
 	unsigned char key[64];
 	unsigned char vector[CRYPT_BLOCK];
 	unsigned char *encrypted;
+	unsigned char *place;
 	struct crypt_aes aes;
 	SHA2_CTX context;
 	size_t key_length;
+	size_t piece;
 	size_t total;
 	size_t index;
 	size_t byte;
 	unsigned sum;
 	int round;
 
-	/* The first hash. */
+	/* The first hash: the password, the salt and the user data. */
 	SHA256Init(&context);
+	if (password_length > 0)
+		SHA256Update(&context, password, password_length);
 	SHA256Update(&context, salt, 8);
+	if (user_data_length > 0)
+		SHA256Update(&context, user_data, user_data_length);
 	SHA256Final(key, &context);
 	key_length = 32;
 
 	/* The rounds. */
 	encrypted = repeated;
 	for (round = 0;; round++) {
-		/* The hash, 64 times (the password and the user data are empty). */
-		total = key_length * 64;
-		for (index = 0; index < 64; index++)
-			memcpy(repeated + index * key_length, key, key_length);
+		/* The password, the hash and the user data, 64 times (a multiple of the block, since the hash is). */
+		piece = password_length + key_length + user_data_length;
+		total = piece * 64;
+		for (index = 0; index < 64; index++) {
+			place = repeated + index * piece;
+			if (password_length > 0)
+				memcpy(place, password, password_length);
+			memcpy(place + password_length, key, key_length);
+			if (user_data_length > 0)
+				memcpy(place + password_length + key_length, user_data, user_data_length);
+		}
 
 		/* Encrypted with AES-128 in CBC, the hash's first half the key and its second the vector. */
 		aes_expand(tables, key, 16, &aes);
 		memcpy(vector, key + 16, CRYPT_BLOCK);
-		for (index = 0; index < total; index += CRYPT_BLOCK) {
+		for (index = 0; index + CRYPT_BLOCK <= total; index += CRYPT_BLOCK) {
 			for (byte = 0; byte < CRYPT_BLOCK; byte++)
 				repeated[index + byte] ^= vector[byte];
 			aes_encrypt_block(tables, &aes, repeated + index, encrypted + index);
@@ -790,6 +1034,8 @@ revision6_hash(
 
 	/* The hash is the first 32 bytes. */
 	memcpy(hash, key, 32);
+	memset(repeated, 0, sizeof(repeated));
+	memset(key, 0, sizeof(key));
 }
 
 /* Encrypts or decrypts with RC4 (the same operation); input and output may be the same. */

@@ -20,6 +20,9 @@
 # 4b. ws079-p008: copies encrypted by qpdf with an empty user password, in each revision of the standard security
 #    handler (RC4 40 and 128 bits, AES-128 with encrypted and clear metadata, AES-256 of revisions 5 and 6, and with
 #    object streams), draw the same pixels; a document with a user password is refused (EACCES, 13).
+# 4c. ws079-p015: copies with a user and an owner password in each revision open with either (renderpassword, the file
+#    and the memory forms) and draw the same pixels in the three builds; a wrong password and none are refused; long
+#    and UTF-8 passwords.
 # 5. The real documents under /usr/share/doc (gunzipped into OUT/real) open and every page renders in the three
 #    builds without a sanitizer report; chosen pages are compared with pdftoppm at 80 dpi.
 # 6. The corruption loop (host-pdf-render fuzzdoc) over each test document's uncompressed copy and its
@@ -56,7 +59,7 @@ done
 
 # 1. The builds.
 libpdf="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
-	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/crypt.c userland/base/libpdf/image.c
+	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c userland/base/libpdf/image.c
 	userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/stroke.c
 	userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/encoding.c
 	userland/base/libpdf/shading.c
@@ -193,6 +196,54 @@ if "$render" render "$out/crypt/password.pdf" "$out/crypt/password" 100 > "$out/
 else
 	grep -q "open error 13" "$out/crypt/password.log" && echo "password: refused (EACCES)" || { cat "$out/crypt/password.log"; status=1; }
 fi
+
+# 4c. ws079-p015: the user and the owner password (pdf_document_open_password() and its memory form) in each revision;
+# a wrong password and none are refused.  Long (over 32 bytes, which revisions 2 to 4 cut) and UTF-8 passwords too.
+long='a long pass phrase, longer than thirty-two bytes'
+for kind in rc4-40 rc4-128 aes-128 aes-256-r5 aes-256; do
+	case $kind in
+	rc4-40) options="--allow-weak-crypto --encrypt --user-password=secret --owner-password=owner --bits=40 --" ;;
+	rc4-128) options="--allow-weak-crypto --encrypt --user-password=secret --owner-password=owner --bits=128 --use-aes=n --" ;;
+	aes-128) options="--encrypt --user-password=secret --owner-password=owner --bits=128 --use-aes=y --" ;;
+	aes-256-r5) options="--encrypt --user-password=secret --owner-password=owner --bits=256 --force-R5 --" ;;
+	*) options="--encrypt --user-password=secret --owner-password=owner --bits=256 --" ;;
+	esac
+	qpdf $options "$out/programs.pdf" "$out/crypt/programs-pw-$kind.pdf"
+	for password in secret owner; do
+		for variant in plain asan ubsan; do
+			rm -f "$out/crypt/pw-$kind-$variant"-*.ppm
+			"$out/host-pdf-render-$variant" renderpassword "$out/crypt/programs-pw-$kind.pdf" "$password" "$out/crypt/pw-$kind-$variant" 100 \
+			    > /dev/null || { echo "password $kind $password: $variant failed"; status=1; }
+			for picture in "$out/programs-100-plain"-*.ppm; do
+				cmp -s "$picture" "$out/crypt/pw-$kind-$variant-${picture##*-}" || { echo "password $kind $password $variant: pixels differ"; status=1; }
+			done
+		done
+		echo "password $kind $password: same pixels"
+	done
+	for password in wrong ""; do
+		if "$render" renderpassword "$out/crypt/programs-pw-$kind.pdf" "$password" "$out/crypt/pw-wrong" 100 > "$out/crypt/pw-wrong.log" 2>&1; then
+			echo "password $kind [$password]: opened"
+			status=1
+		else
+			grep -q "open error 13" "$out/crypt/pw-wrong.log" && echo "password $kind [$password]: refused (EACCES)" ||
+			    { cat "$out/crypt/pw-wrong.log"; status=1; }
+		fi
+	done
+done
+qpdf --encrypt --user-password="$long" --owner-password="$long, the owner's" --bits=256 -- "$out/programs.pdf" "$out/crypt/programs-pw-long-256.pdf"
+qpdf --encrypt --user-password="$long" --owner-password="owner $long" --bits=128 --use-aes=y -- "$out/programs.pdf" "$out/crypt/programs-pw-long-128.pdf"
+qpdf --encrypt --user-password="pässwörd" --owner-password="öwner" --bits=256 -- "$out/programs.pdf" "$out/crypt/programs-pw-utf8.pdf"
+for entry in "long-256:$long" "long-256:$long, the owner's" "long-128:$long" "long-128:owner $long" "utf8:pässwörd" "utf8:öwner"; do
+	file=${entry%%:*}
+	password=${entry#*:}
+	rm -f "$out/crypt/pw-$file"-*.ppm
+	"$render" renderpassword "$out/crypt/programs-pw-$file.pdf" "$password" "$out/crypt/pw-$file" 100 > /dev/null ||
+	    { echo "password $file [$password]: failed"; status=1; }
+	for picture in "$out/programs-100-plain"-*.ppm; do
+		cmp -s "$picture" "$out/crypt/pw-$file-${picture##*-}" || { echo "password $file [$password]: pixels differ"; status=1; }
+	done
+	echo "password $file [$password]: same pixels"
+done
 
 # 5. The real documents.
 for file in /usr/share/doc/zlib1g-dev/crc-doc.1.0.pdf.gz /usr/share/doc/fontconfig/fontconfig-user.pdf.gz \

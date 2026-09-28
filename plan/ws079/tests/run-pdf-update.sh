@@ -26,7 +26,7 @@ ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
 # ws079-p007: the page interpreter draws text (font.c, encoding.c, libtruetype) and shadings (shading.c).
 libpdf="userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c
-	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/crypt.c
+	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
 	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c
 	userland/base/libpdf/stroke.c userland/base/libpdf/raster.c userland/base/libpdf/font.c
 	userland/base/libpdf/encoding.c userland/base/libpdf/shading.c

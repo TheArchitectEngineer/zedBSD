@@ -215,3 +215,14 @@ SHA-256、`SRC `: page の由来と base の page 番号）。開くときは fi
   開けない暗号は `PDF_EPASSWORD`（EACCES）。update と Notes は暗号化の文書を拒む。
 - PDF Viewer: 描いた page の display list に SKIPPED・DAMAGED・LIMITED があれば「Some content could not be shown」、password の要る文書は
   「it is protected by a password」。§5 の段階 ② の thumbnail と段階 ③ の password の入力は未着手。
+
+## 11. p015 の状態（2026-09-29）
+
+経過と確認は [phase015/phase.md](phase015/phase.md) が正本。§4・§5 に対して:
+
+- filter: CCITTFaxDecode（`ccitt.c`、Group 3 の 1 次元・混在、Group 4、EOL・byte 揃え・EOB・BlackIs1・壊れた行）。`/Rows` が無ければ画像の
+  `/Height` まで白で埋める。JBIG2・JPX は SKIPPED のまま。
+- 暗号: user password と owner password（R2〜R6）。公開 API に `pdf_document_open_password()`・`pdf_document_open_memory_password()` を追加
+  （`pdf_document_open()` は空の password のまま）。password は開く間だけ使い、持たない。
+- PDF Viewer: password の card（§5 の段階 ③ の password の入力）と、左の thumbnail の sidebar（§5 の段階 ② の thumbnail。View の
+  「Page Thumbnails」・titlebar の sidebar の control・F9）。

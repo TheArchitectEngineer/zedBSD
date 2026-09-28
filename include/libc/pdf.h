@@ -56,10 +56,11 @@ extern "C" {
 #define PDF_ESIGNED EPERM
 
 /*
- * The error the reader reports for an encrypted document whose user
- * password is not empty (ws079-p008: only the empty password is tried).
- * pdf_document_encrypted() tells it apart from a file the system does not
- * let the program read.
+ * The error the reader reports for an encrypted document opened with a
+ * password that is neither its user password nor its owner password (by
+ * pdf_document_open(), the empty one).  pdf_document_encrypted() tells it
+ * apart from a file the system does not let the program read, and
+ * pdf_document_open_password() takes the password a person types.
  */
 #define PDF_EPASSWORD EACCES
 
@@ -222,7 +223,7 @@ struct pdf_writer;
  * A document being read.
  *
  * It holds the file's bytes and every object read from them, and lives from
- * pdf_document_open() or pdf_document_open_memory() to
+ * pdf_document_open() or pdf_document_open_memory() (or their password forms) to
  * pdf_document_close().  One document is not used by two threads at once.
  */
 struct pdf_document;
@@ -257,6 +258,8 @@ void pdf_outline_free(struct pdf_point *outline);
 
 int pdf_document_open(const char *path, struct pdf_document **document);
 int pdf_document_open_memory(const void *data, size_t size, struct pdf_document **document);
+int pdf_document_open_password(const char *path, const char *password, struct pdf_document **document);
+int pdf_document_open_memory_password(const void *data, size_t size, const char *password, struct pdf_document **document);
 void pdf_document_close(struct pdf_document *document);
 size_t pdf_document_page_count(const struct pdf_document *document);
 int pdf_document_page_box(struct pdf_document *document, size_t index, struct pdf_page_box *box);
