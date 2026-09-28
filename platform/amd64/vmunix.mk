@@ -204,7 +204,7 @@ ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-cdc-ecm.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c src/drivers/usb/hid-digitizer.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hub.c

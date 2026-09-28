@@ -15,6 +15,21 @@
 #define HID_REPORT_BITS_MAX 8192U
 #define HID_REPORT_VALUE_COUNT_MAX HID_REPORT_FIELD_COUNT_MAX
 
+/*
+ * The value type of a pen switch of the Digitizer page (In Range, Invert,
+ * Tip Switch, Eraser, Barrel Switch).  It lies outside the evdev event types:
+ * such a value is reported every time, zero or not, and only the pen state
+ * machine turns it into EV_KEY events.
+ */
+#define HID_REPORT_TYPE_DIGITIZER 0x8000U
+
+/* The layout has no pen collection. */
+#define HID_REPORT_PEN_NONE 0U
+/* The layout has a pen on a separate tablet (Digitizer collection). */
+#define HID_REPORT_PEN_TABLET 1U
+/* The layout has a pen on a display (Pen collection). */
+#define HID_REPORT_PEN_DISPLAY 2U
+
 struct hid_report_layout;
 
 /*
@@ -47,6 +62,7 @@ struct hid_report_layout_info {
 	size_t capability_count;
 	size_t absolute_axis_count;
 	int uses_report_ids;
+	unsigned pen;
 };
 
 struct hid_report_report_info {

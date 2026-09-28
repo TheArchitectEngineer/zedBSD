@@ -92,7 +92,7 @@ ifeq ($(CONFIG_DRIVER_PCI_XHCI),y)
 ARM64_USB_SOURCES += src/drivers/pci/pci-xhci.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-ARM64_USB_SOURCES += src/drivers/usb/usb-hid.c
+ARM64_USB_SOURCES += src/drivers/usb/usb-hid.c src/drivers/usb/hid-digitizer.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 ARM64_USB_SOURCES += src/drivers/usb/usb-hub.c
