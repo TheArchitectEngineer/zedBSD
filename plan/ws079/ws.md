@@ -64,7 +64,7 @@ libtruetypeにはアウトラインを返すAPIを追加しましょう。」
 | [ws079-p002](phase002/phase.md) | kernel: USB HID の digitizer（筆圧・傾き・消しゴム・button・in-range）と、試験用の合成の入力 | in-progress（2026-09-28: pen の読み取りと host 試験・amd64 の build・boot test まで。注入の device は未着手。main の判断: devfs の /dev/input は event の node だけなので、注入は `/dev/input-inject`（devfs の root、試験専用、CONFIG_INPUT_TEST_INJECT）に置く） | p001 |
 | ws079-p003 | compositor: `zwp_tablet_manager_v2`（pad なし）と tablet を bind しない client への pointer の fallback | planning | p001、p002 |
 | ws079-p010 | compositor: 上の右端からのスワイプ（design-input-notes §4）で Notes を起動・最前面・全画面 | planning | p003 |
-| ws079-p004 | libpdf: 書き出し（page、ベクタの path、画像、編集の metadata）と自分の形式の読み込み | planning | p001 |
+| [ws079-p004](phase004/phase.md) | libpdf: 書き出し（page、ベクタの path、画像、編集の metadata）と自分の形式の読み込み | in-progress（writer・外形・画像・/ID・日付・4 platform の link 済み。自分の形式の読み込みが残り） | p001 |
 | ws079-p005 | Notes v1: 筆圧の線・消しゴム・page・undo・PDF の保存と再編集 | planning | p003、p004 |
 | ws079-p006 | libpdf の読み込み ① と PDF Viewer v1（scroll と page の swipe、Notes で書き込み） | planning | p004 |
 | ws079-p007 | 段階 ②: 一般の PDF の図形・画像（DCT は libjpeg-compat、Flate は libz-compat）・埋め込みの TrueType（libtruetype） | planning | p006 |
