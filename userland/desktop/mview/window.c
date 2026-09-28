@@ -25,6 +25,7 @@ static void window_ping(void *data, struct xdg_wm_base *shell, uint32_t serial);
 static void window_configure(void *data, struct xdg_surface *surface, uint32_t serial);
 static void window_toplevel_configure(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height, struct wl_array *states);
 static void window_toplevel_close(void *data, struct xdg_toplevel *toplevel);
+static void window_toplevel_bounds(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height);
 static void window_seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities);
 static void window_seat_name(void *data, struct wl_seat *seat, const char *name);
 static void window_pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y);
@@ -98,6 +99,8 @@ mview_window_open(
 	memset(window, 0, sizeof(*window));
 	window->width = width;
 	window->height = height;
+	window->preferred_width = width;
+	window->preferred_height = height;
 	window->input = input;
 
 	/* The listener tables must be complete before any object can deliver events. */
@@ -323,10 +326,12 @@ window_global(
 		return;
 	}
 
-	/* The fullscreen configure protocol requires only the first stable xdg-shell version. */
+	/* The shell gives the window its role; version 4 tells the largest size the window may choose. */
 	match = strcmp(interface, "xdg_wm_base");
 	if (match == 0 && version >= 1U && window->shell == NULL) {
-		window->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, 1U);
+		if (version > 4U)
+			version = 4U;
+		window->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, version);
 		if (window->shell == NULL)
 			return;
 
@@ -428,13 +433,27 @@ window_toplevel_configure(
 	(void)states;
 	window = data;
 
-	/* A zero width leaves the application's existing choice in place. */
+	/* A width left to the viewer is the one it asked for, within the compositor's bounds. */
+	if (width <= 0) {
+		width = (int32_t)window->preferred_width;
+		if (window->bounds_width > 0U && window->preferred_width > window->bounds_width)
+			width = (int32_t)window->bounds_width;
+	}
+
+	/* And so is a height. */
+	if (height <= 0) {
+		height = (int32_t)window->preferred_height;
+		if (window->bounds_height > 0U && window->preferred_height > window->bounds_height)
+			height = (int32_t)window->bounds_height;
+	}
+
+	/* A new width marks the window resized. */
 	if (width > 0 && (uint32_t)width != window->width) {
 		window->width = (uint32_t)width;
 		window->resized = 1;
 	}
 
-	/* A zero height independently preserves the application's existing choice. */
+	/* And so does a new height. */
 	if (height > 0 && (uint32_t)height != window->height) {
 		window->height = (uint32_t)height;
 		window->resized = 1;
@@ -442,6 +461,33 @@ window_toplevel_configure(
 
 	/* Succeeded: each specified extent is ready for the following role configure. */
 	return;
+}
+
+/*
+ * Keeps the largest size the compositor lets the window choose (xdg-shell
+ * version 4); the configure that follows applies it.  A zero is a size the
+ * compositor does not know.
+ */
+static void
+window_toplevel_bounds(
+	void *data,
+	struct xdg_toplevel *toplevel,
+	int32_t width,
+	int32_t height)
+{
+	struct mview_window *window;
+
+	/* The width, when known. */
+	(void)toplevel;
+	window = data;
+	window->bounds_width = 0U;
+	if (width > 0)
+		window->bounds_width = (uint32_t)width;
+
+	/* The height, when known. */
+	window->bounds_height = 0U;
+	if (height > 0)
+		window->bounds_height = (uint32_t)height;
 }
 
 /* Requests graceful application termination using the compositor's standard close event. */
@@ -868,10 +914,11 @@ static void
 window_listeners_fill(
 	void)
 {
-	/* The first xdg-shell version sends only configure and close to a toplevel. */
+	/* A toplevel hears its size and close, and from xdg-shell version 4 its bounds. */
 	memset(&toplevel_listener, 0, sizeof(toplevel_listener));
 	toplevel_listener.configure = window_toplevel_configure;
 	toplevel_listener.close = window_toplevel_close;
+	toplevel_listener.configure_bounds = window_toplevel_bounds;
 
 	/* The seat reports its devices and, from version 2, its name. */
 	memset(&seat_listener, 0, sizeof(seat_listener));

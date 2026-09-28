@@ -26,6 +26,7 @@
 #include "../irq.h"
 #include "bootloader/include/amd64-handoff.h"
 #include "drivers/platform/pcat/graphics/vgafont.h"
+#include "drivers/platform/pcat/graphics/splash.h"
 
 #define VGA_MEMORY vga_memory
 #define VGA_INDEX	0x3d4U
@@ -340,6 +341,7 @@ prekern_pcat_cons_init(
 	uint64_t pixel;
 	uint64_t pixel_count;
 	int quiet;
+	int rgbx;
 
 	/* Acquires output ownership before selecting the rendering backend. */
 	token = console_output_lock();
@@ -367,12 +369,17 @@ prekern_pcat_cons_init(
 		 * A quiet boot (kmsg=quiet, ws035-p097) keeps the loader's logo:
 		 * the early console draws nothing (the debug port still has every
 		 * line), and the progress block the kernel's entry drew over the
-		 * logo is painted over.  The kernel's own console takes over from
-		 * here, quiet as well.
+		 * logo is painted over.  The Kei splash's spinner starts, and each
+		 * line the early console does not show turns it (ws035-p107).  The
+		 * kernel's own console takes over from here, quiet as well.
 		 */
 		quiet = quiet_boot();
 		if (quiet) {
 			quiet_panel_locked();
+			rgbx = 0;
+			if (framebuffer->format == ZBL6_FRAMEBUFFER_RGBX8888)
+				rgbx = 1;
+			drv_pcat_splash_start(framebuffer_pixels, framebuffer->width, framebuffer->height, framebuffer->stride, rgbx);
 			console_suspended = 1;
 			console_output_unlock(token);
 			return;
@@ -441,28 +448,30 @@ quiet_boot(
 
 /*
  * Paints the progress panel at the top right (136x40, where the loader's
- * stages and the kernel's entry draw their blocks) with the colour just left
- * of it, which is the logo's background on a quiet boot.
+ * stages and the kernel's entry draw their blocks) over with the logo:
+ * each column of the panel takes the colour just under it, so a picture
+ * that covers the screen (the Kei splash's sky, ws035-p107) goes on as
+ * smoothly as a plain background does.
  */
 static void
 quiet_panel_locked(
 	void)
 {
-	uint32_t background;
+	uint32_t under;
 	unsigned x;
 	unsigned y;
 	unsigned left;
 
-	/* Too narrow a screen has no panel. */
-	if (framebuffer->width <= 137U || framebuffer->height < 40U)
+	/* Too narrow or too short a screen has no panel. */
+	if (framebuffer->width <= 137U || framebuffer->height <= 40U)
 		return;
 
-	/* The colour beside the panel, over the whole panel. */
+	/* Each column of the panel in the colour under it. */
 	left = framebuffer->width - 136U;
-	background = framebuffer_pixels[left - 1U];
-	for (y = 0; y < 40U; y++) {
-		for (x = left; x < framebuffer->width; x++)
-			framebuffer_pixels[(uint64_t)y * framebuffer->stride + x] = background;
+	for (x = left; x < framebuffer->width; x++) {
+		under = framebuffer_pixels[(uint64_t)40U * framebuffer->stride + x];
+		for (y = 0; y < 40U; y++)
+			framebuffer_pixels[(uint64_t)y * framebuffer->stride + x] = under;
 	}
 }
 
@@ -1055,8 +1064,10 @@ putc_locked(
 	asm_outb(0xe9U, (uint8_t)character);
 #endif
 
-	/* Handles a newline as a terminal row transition. */
+	/* Handles a newline as a terminal row transition (on a quiet boot it turns the splash's spinner). */
 	if (character == '\n') {
+		if (console_suspended)
+			drv_pcat_splash_step();
 		newline_locked();
 		return;
 	}

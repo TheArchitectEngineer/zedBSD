@@ -1331,6 +1331,14 @@ input_button(
 	/* Each button. */
 	if (index == FM_BUTTON_CANCEL) {
 		fm_action_confirm(app, 0);
+	} else if (index == FM_BUTTON_REPLACE) {
+		fm_action_collision(app, FM_COLLISION_REPLACE);
+	} else if (index == FM_BUTTON_SKIP) {
+		fm_action_collision(app, FM_COLLISION_SKIP);
+	} else if (index == FM_BUTTON_KEEP_BOTH) {
+		fm_action_collision(app, FM_COLLISION_KEEP_BOTH);
+	} else if (index == FM_BUTTON_APPLY_ALL) {
+		fm_action_collision_all(app);
 	} else if (index == FM_BUTTON_CONFIRM) {
 		fm_action_confirm(app, 1);
 	} else if (index == FM_BUTTON_PUT_BACK) {

@@ -1079,6 +1079,16 @@ struct fm_app {
 	char **dialog_paths;
 	size_t dialog_count;
 
+	/*
+	 * A copy or a move held back while the names its destination already
+	 * has are asked about (FM_DIALOG_COLLISION): the task, the source being
+	 * asked about, and whether the next answer is for all the rest.  The
+	 * task is queued once every such source has its answer.
+	 */
+	struct fm_task *collision_task;
+	size_t collision_index;
+	int collision_all;
+
 	/* The paths to select once the folder is read again (a finished task's outcome). */
 	char **select_paths;
 	size_t select_count;
@@ -1144,7 +1154,8 @@ struct fm_app {
 enum fm_dialog {
 	FM_DIALOG_NONE,
 	FM_DIALOG_DELETE,
-	FM_DIALOG_EMPTY_TRASH
+	FM_DIALOG_EMPTY_TRASH,
+	FM_DIALOG_COLLISION
 };
 
 /* The indexes of the buttons (FM_HIT_BUTTON) the frame records. */
@@ -1156,6 +1167,10 @@ enum fm_dialog {
 #define FM_BUTTON_INFO_CLOSE	13
 #define FM_BUTTON_INFO_CHECKSUM	14
 #define FM_BUTTON_HELP_CLOSE	15
+#define FM_BUTTON_REPLACE	16
+#define FM_BUTTON_SKIP		17
+#define FM_BUTTON_KEEP_BOTH	18
+#define FM_BUTTON_APPLY_ALL	19
 #define FM_BUTTON_TASK_CANCEL	100
 #define FM_BUTTON_OPENER	180
 
@@ -1259,6 +1274,10 @@ void fm_action_cancel_task(struct fm_app *app, int index);
 void fm_action_toggle_tag(struct fm_app *app, int tag);
 void fm_action_add_favorite(struct fm_app *app);
 int fm_action_transfer(struct fm_app *app, unsigned kind, char *const *paths, size_t count, const char *destination);
+void fm_action_collision(struct fm_app *app, unsigned answer);
+void fm_action_collision_cancel(struct fm_app *app);
+void fm_action_collision_all(struct fm_app *app);
+size_t fm_action_collision_left(const struct fm_app *app);
 void fm_action_remove_favorite(struct fm_app *app, int place);
 int fm_actions_tick(struct fm_app *app);
 void fm_actions_release(struct fm_app *app);
