@@ -222,6 +222,8 @@ struct zwl_input_device {
 	int32_t abs_y;
 	unsigned frame_count;
 	struct input_event frame[ZWL_INPUT_FRAME_MAX];
+	/* The evdev time of the report being applied (its SYN_REPORT), in microseconds (WS081). */
+	uint64_t frame_time_us;
 	char path[ZWL_INPUT_PATH_MAX];
 };
 

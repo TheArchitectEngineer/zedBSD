@@ -7,6 +7,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 LIBZDESKTOP_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/libkeiland/menu.c \
 	userland/desktop/libkeiland/recent.c userland/desktop/libkeiland/titlebar.c \
 	userland/desktop/libkeiland/glass.c userland/desktop/libkeiland/network.c \
+	userland/desktop/libkeiland/motion.c \
 	userland/base/net/protocol.c
 
 LIBZDESKTOP_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libkeiland.so=$(BUILD)/dynamic/libkeiland.so)
