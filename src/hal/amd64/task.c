@@ -20,7 +20,16 @@
 #include "irq.h"
 #include "percpu.h"
 
-#define running_task (amd64_percpu_current()->running_task)
+/*
+ * The task running on this CPU, read in one GS-relative load by
+ * hal_task_get_current().  Loading the per-CPU state pointer and then its
+ * field is two loads, and a caller preempted and moved to another CPU
+ * between them reads the old CPU's task: another thread's.  A fork did,
+ * and gave its child another thread's page-fault frame (BUG-082).  The
+ * two places that switch the running task write the field directly, with
+ * interrupts off.
+ */
+#define current_task ((struct amd64_task *)hal_task_get_current())
 
 static struct amd64_task *task_list;
 static uint8_t initial_fpregs[512] __attribute__((aligned(16)));
@@ -65,7 +74,7 @@ amd64_task_init_cpu(
 	cpu = hal_cpu_current();
 
 	/* Prevents a second initial-task installation on this CPU. */
-	if (running_task != NULL)
+	if (current_task != NULL)
 		HAL_FATAL("amd64 initial task created twice on one CPU");
 
 	/* Establishes or waits for the canonical initial FP image. */
@@ -91,7 +100,7 @@ amd64_task_init_cpu(
 	fpregs = task_fpregs(task);
 	hal_memcpy(fpregs, initial_fpregs, sizeof(initial_fpregs));
 	tasklist_add(task);
-	running_task = task;
+	amd64_percpu_current()->running_task = task;
 
 	/* Verifies FP context switching only on the first CPU. */
 	if (run_selftest)
@@ -176,8 +185,8 @@ amd64_task_enter_user_frame(
 	void *frame)
 {
 	/* Publishes the frame only when this CPU has a current task. */
-	if (running_task != NULL)
-		running_task->active_user_frame = frame;
+	if (current_task != NULL)
+		current_task->active_user_frame = frame;
 }
 
 /*
@@ -188,8 +197,8 @@ amd64_task_leave_user_frame(
 	void)
 {
 	/* Clears the frame only when this CPU has a current task. */
-	if (running_task != NULL)
-		running_task->active_user_frame = NULL;
+	if (current_task != NULL)
+		current_task->active_user_frame = NULL;
 }
 
 /*
@@ -208,13 +217,13 @@ hal_task_fork_current(
 	void *child_fpregs;
 
 	/* Requires an active user frame and a user child address space. */
-	if (running_task == NULL ||
+	if (current_task == NULL ||
 	    child_space == HAL_SPACE_SYS ||
-	    running_task->active_user_frame == NULL)
+	    current_task->active_user_frame == NULL)
 		return NULL;
 
 	/* Requires the active frame to return to ring three. */
-	source = running_task->active_user_frame;
+	source = current_task->active_user_frame;
 	if ((source->cs & 3U) != 3U)
 		return NULL;
 
@@ -239,16 +248,16 @@ hal_task_fork_current(
 	*copy = *source;
 	copy->rax = (uint64_t)child_result;
 	child->resume_rsp = (uintptr_t)resume;
-	child->tls = running_task->tls;
+	child->tls = current_task->tls;
 
 	/* Saves the live parent FP image before copying it to the child. */
-	running_fpregs = task_fpregs(running_task);
+	running_fpregs = task_fpregs(current_task);
 	__asm__ volatile("fxsave64 (%0)"
 	    :
 	    : "r"(running_fpregs)
 	    : "memory");
 	child_fpregs = task_fpregs(child);
-	running_fpregs = task_fpregs(running_task);
+	running_fpregs = task_fpregs(current_task);
 	hal_memcpy(child_fpregs, running_fpregs, 512U);
 
 	/* Returns the complete child context. */
@@ -265,7 +274,7 @@ hal_task_exec_validate(
 	uintptr_t user_stack_pointer)
 {
 	/* Requires a current task. */
-	if (running_task == NULL)
+	if (current_task == NULL)
 		return -1;
 
 	/* Requires a non-system destination address space. */
@@ -273,7 +282,7 @@ hal_task_exec_validate(
 		return -1;
 
 	/* Requires an active user-return frame. */
-	if (running_task->active_user_frame == NULL)
+	if (current_task->active_user_frame == NULL)
 		return -1;
 
 	/* Requires nonzero user entry and stack addresses. */
@@ -306,7 +315,7 @@ hal_task_exec_current(
 		return -1;
 
 	/* Rebuilds the active frame for a clean ring-three entry. */
-	frame = running_task->active_user_frame;
+	frame = current_task->active_user_frame;
 	code_segment = SEG_USER_CODE | 3U;
 	stack_segment = SEG_USER_DATA | 3U;
 	flags = 0x202U;
@@ -318,15 +327,15 @@ hal_task_exec_current(
 	frame->ss = stack_segment;
 
 	/* Resets task metadata and the architectural TLS base. */
-	running_task->space = new_space;
-	running_task->tls = 0;
+	current_task->space = new_space;
+	current_task->tls = 0;
 	asm_write_msr(AMD64_MSR_FS_BASE, 0);
-	running_task->signal_depth = 0;
+	current_task->signal_depth = 0;
 
 	/* Restores the canonical initial floating-point state. */
-	fpregs = task_fpregs(running_task);
+	fpregs = task_fpregs(current_task);
 	hal_memcpy(fpregs, initial_fpregs, sizeof(initial_fpregs));
-	fpregs = task_fpregs(running_task);
+	fpregs = task_fpregs(current_task);
 	__asm__ volatile("fxrstor64 (%0)"
 	    :
 	    : "r"(fpregs)
@@ -349,8 +358,8 @@ hal_task_get_user_stack(
 	struct amd64_interrupt_frame *frame;
 
 	/* Resolves the active frame when a current task exists. */
-	if (running_task != NULL)
-		frame = running_task->active_user_frame;
+	if (current_task != NULL)
+		frame = current_task->active_user_frame;
 	else
 		frame = NULL;
 
@@ -374,8 +383,8 @@ hal_task_get_user_context(
 	struct amd64_interrupt_frame *frame;
 
 	/* Resolves the active frame when a current task exists. */
-	if (running_task != NULL)
-		frame = running_task->active_user_frame;
+	if (current_task != NULL)
+		frame = current_task->active_user_frame;
 	else
 		frame = NULL;
 
@@ -415,29 +424,29 @@ hal_task_signal_enter(
 	UNUSED_PARAMETER(restorer);
 
 	/* Resolves the active frame when a current task exists. */
-	if (running_task != NULL)
-		frame = running_task->active_user_frame;
+	if (current_task != NULL)
+		frame = current_task->active_user_frame;
 	else
 		frame = NULL;
 
 	/* Validates the frame, nesting capacity, and signal entry data. */
 	if (frame == NULL ||
-	    running_task->signal_depth >= HAL_SIGNAL_NEST_MAX ||
+	    current_task->signal_depth >= HAL_SIGNAL_NEST_MAX ||
 	    handler == 0 ||
 	    stack_pointer == 0 ||
 	    token == 0)
 		return -1;
 
 	/* Saves the interrupted integer and floating-point contexts. */
-	depth = running_task->signal_depth;
-	running_task->signal_frame[depth] = *frame;
-	fpregs = task_signal_fpregs(running_task, depth);
+	depth = current_task->signal_depth;
+	current_task->signal_frame[depth] = *frame;
+	fpregs = task_signal_fpregs(current_task, depth);
 	__asm__ volatile("fxsave64 (%0)"
 	    :
 	    : "r"(fpregs)
 	    : "memory");
-	running_task->signal_token[depth] = token;
-	running_task->signal_depth = depth + 1U;
+	current_task->signal_token[depth] = token;
+	current_task->signal_depth = depth + 1U;
 
 	/* Rewrites the live frame for the signal-handler ABI. */
 	frame->rip = handler;
@@ -463,33 +472,33 @@ hal_task_signal_return(
 	unsigned depth;
 
 	/* Resolves the active frame when a current task exists. */
-	if (running_task != NULL)
-		frame = running_task->active_user_frame;
+	if (current_task != NULL)
+		frame = current_task->active_user_frame;
 	else
 		frame = NULL;
 
 	/* Requires a live signal frame, result destination, and token. */
 	if (frame == NULL ||
 	    value == NULL ||
-	    running_task->signal_depth == 0 ||
+	    current_task->signal_depth == 0 ||
 	    token == 0)
 		return -1;
 
 	/* Requires the token for the innermost saved signal context. */
-	depth = running_task->signal_depth - 1U;
-	if (token != running_task->signal_token[depth])
+	depth = current_task->signal_depth - 1U;
+	if (token != current_task->signal_token[depth])
 		return -1;
 
 	/* Restores the integer result and floating-point context. */
-	*frame = running_task->signal_frame[depth];
+	*frame = current_task->signal_frame[depth];
 	*value = (intptr_t)frame->rax;
-	fpregs = task_signal_fpregs(running_task, depth);
+	fpregs = task_signal_fpregs(current_task, depth);
 	__asm__ volatile("fxrstor64 (%0)"
 	    :
 	    : "r"(fpregs)
 	    : "memory");
-	running_task->signal_token[depth] = 0;
-	running_task->signal_depth = depth;
+	current_task->signal_token[depth] = 0;
+	current_task->signal_depth = depth;
 
 	/* Reports a completed signal return. */
 	return 0;
@@ -540,7 +549,7 @@ hal_task_context_switch(
 
 	/* Resolves both task contexts before validating the transition. */
 	to = handle;
-	from = running_task;
+	from = current_task;
 	if (to == NULL || from == NULL)
 		HAL_FATAL("invalid amd64 task switch");
 
@@ -572,7 +581,7 @@ hal_task_context_switch(
 
 	/* Switches task identity, address space, and architectural TLS. */
 	from->tls = (uintptr_t)asm_read_msr(AMD64_MSR_FS_BASE);
-	running_task = to;
+	amd64_percpu_current()->running_task = to;
 	hal_space_switch(to->space);
 	asm_write_msr(AMD64_MSR_FS_BASE, (uint64_t)to->tls);
 
@@ -697,7 +706,7 @@ hal_task_set_tls(
 		((struct amd64_task *)handle)->tls = value;
 
 		/* Updates hardware immediately for the running task. */
-		if (handle == running_task)
+		if (handle == current_task)
 			asm_write_msr(AMD64_MSR_FS_BASE, (uint64_t)value);
 	}
 }
@@ -712,7 +721,7 @@ hal_task_get_tls(
 	uintptr_t value;
 
 	/* Reads hardware for the currently running task. */
-	if (handle == running_task) {
+	if (handle == current_task) {
 		value = (uintptr_t)asm_read_msr(AMD64_MSR_FS_BASE);
 
 		/* Returns the live architectural TLS base. */
@@ -898,7 +907,7 @@ xmm_context_selftest(
 	int equal;
 
 	/* Creates the paired self-test task. */
-	xmm_selftest_main = running_task;
+	xmm_selftest_main = current_task;
 	xmm_selftest_task = hal_task_create(
 		HAL_SPACE_SYS,
 		xmm_selftest_entry,
@@ -1177,7 +1186,7 @@ hal_task_get_user_gpregs(
 	 * The thread pointer lives in the register while its task runs, and
 	 * is written back to the task when the task leaves the processor.
 	 */
-	if (task == running_task)
+	if (task == current_task)
 		registers->fs_base = (uint64_t)asm_read_msr(AMD64_MSR_FS_BASE);
 	else
 		registers->fs_base = (uint64_t)task->tls;
@@ -1246,7 +1255,7 @@ hal_task_set_user_gpregs(
 	    AMD64_USER_RFLAGS_FIXED;
 
 	/* The thread pointer follows the running task into the register. */
-	if (task == running_task)
+	if (task == current_task)
 		asm_write_msr(AMD64_MSR_FS_BASE, registers->fs_base);
 	task->tls = (uintptr_t)registers->fs_base;
 
@@ -1269,7 +1278,7 @@ task_current_fpregs(
 	area = task_fpregs(task);
 
 	/* Brings the live registers into the saved area. */
-	if (task == running_task)
+	if (task == current_task)
 		__asm__ volatile("fxsave64 (%0)" : : "r"(area) : "memory");
 
 	/* Returns the saved area. */
@@ -1282,7 +1291,7 @@ task_reload_fpregs(
 	void *area)
 {
 	/* Returns the saved area to the live registers. */
-	if (task == running_task)
+	if (task == current_task)
 		__asm__ volatile("fxrstor64 (%0)" : : "r"(area) : "memory");
 }
 
@@ -1551,20 +1560,20 @@ amd64_debug_hit(
 	write_debug_status(status & ~AMD64_DR6_WRITABLE);
 
 	/* Requires a running task to attribute the stop to. */
-	if (running_task == NULL)
+	if (current_task == NULL)
 		return 0;
 
 	/* Process each element required by the operation. */
-	for (index = 0; index < running_task->debug_point_count; index++) {
+	for (index = 0; index < current_task->debug_point_count; index++) {
 		/* Handles the status condition. */
 		if ((status & AMD64_DR6_POINT(index)) == 0ULL)
 			continue;
 		if (address != NULL)
-			*address = running_task->debug_points[index].address;
+			*address = current_task->debug_points[index].address;
 
 		/* Reports the kind the point was watching for. */
 		if (mode != NULL) {
-			switch (running_task->debug_points[index].kind) {
+			switch (current_task->debug_points[index].kind) {
 			case HAL_DEBUG_KIND_EXECUTE:
 				*mode = HAL_TRAP_MODE_EXEC;
 				break;
@@ -1680,7 +1689,7 @@ hal_task_set_debug_points(
 	task->debug_control = control;
 
 	/* A running task takes them immediately. */
-	if (task == running_task)
+	if (task == current_task)
 		amd64_debug_load(task);
 
 	/* Succeeded. */
