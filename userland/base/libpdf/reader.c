@@ -8,12 +8,14 @@
 /*
  * The PDF reader of libpdf.
  *
- * This first reader reads the documents libpdf's writer produces
- * (plan/ws079/design-pdf.md sections 1 to 3): a classic cross-reference
- * table, possibly followed by older ones through /Prev, indirect objects
- * found through it, the page tree, the attached edit data and the page
- * content streams, uncompressed.  A cross-reference stream, a compressed
- * stream and encryption are reported as ENOTSUP.
+ * It reads the documents libpdf's writer produces (plan/ws079/design-pdf.md
+ * sections 1 to 3) and, from stage 2, those of other programs: classic
+ * cross-reference tables and cross-reference streams (with hybrid files'
+ * /XRefStm), older sections through /Prev, indirect objects found through
+ * them, directly or inside object streams, the page tree, the attached
+ * edit data and the page content streams.  A file whose cross-references
+ * cannot be read is repaired by finding its objects in its bytes.
+ * Encryption is reported as ENOTSUP.
  *
  * The file is not trusted.  The whole file is held in memory, every offset
  * and length read from it is checked against its size, objects are loaded
@@ -54,6 +56,12 @@
 /* The bytes of the first element of the trailer's file identifier. */
 #define PDF_READER_ID_SIZE 16
 
+/* The widest field of a cross-reference stream's entries, in bytes. */
+#define PDF_READER_FIELD_MAX 8
+
+/* The most objects one object stream may hold. */
+#define PDF_READER_STREAM_OBJECTS_MAX ((size_t)1048576)
+
 /*
  * The load state of an indirect object.
  *
@@ -75,7 +83,9 @@ enum pdf_entry_state {
  * the newest, so for one object number the lowest sequence wins.  mark is
  * the number of the last tree walk that reached the object, which keeps a
  * walk from visiting a node twice.  object is the loaded object while state
- * is LOADED, and error the reason while it is FAILED.
+ * is LOADED, and error the reason while it is FAILED.  A compressed entry's
+ * object is the index-th of the object stream numbered stream (its offset
+ * is not used).
  */
 struct pdf_xref_entry {
 	unsigned long number;
@@ -83,6 +93,9 @@ struct pdf_xref_entry {
 	size_t offset;
 	size_t sequence;
 	int in_use;
+	int compressed;
+	unsigned long stream;
+	unsigned long index;
 	enum pdf_entry_state state;
 	unsigned long mark;
 	struct pdf_object *object;
@@ -114,12 +127,32 @@ struct pdf_page_inheritance {
 };
 
 /*
+ * An object stream, decoded once and kept while the document is open.
+ *
+ * bytes is its decoded data (owned is what to free), first the offset of
+ * its first object in it, and numbers and offsets the object numbers and
+ * the offsets (from first) its header lists, count of each.
+ */
+struct pdf_object_stream {
+	struct pdf_object_stream *next;
+	unsigned long number;
+	const unsigned char *bytes;
+	unsigned char *owned;
+	size_t size;
+	size_t first;
+	size_t count;
+	unsigned long *numbers;
+	size_t *offsets;
+};
+
+/*
  * A document being read.
  *
  * data holds the whole file, which the document owns.  The entries are
  * sorted by object number once they are all read, with one entry per
  * number.  null_object stands for every missing object.  mark numbers the
- * current tree walk and only grows.
+ * current tree walk and only grows.  fonts holds the fonts the pages'
+ * text has used (font.c), NULL until the first.
  */
 struct pdf_document {
 	unsigned char *data;
@@ -139,6 +172,9 @@ struct pdf_document {
 	int has_id;
 	time_t creation_time;
 	time_t modification_time;
+	struct pdf_font_cache *fonts;
+	struct pdf_object_stream *object_streams;
+	size_t object_streams_size;
 };
 
 static int open_owned(unsigned char *data, size_t size, struct pdf_document **document);
@@ -149,8 +185,23 @@ static int read_cross_references(struct pdf_document *document, size_t offset);
 static int read_section(struct pdf_document *document, size_t offset, struct pdf_object **trailer);
 static int read_subsection(struct pdf_document *document, struct pdf_lexer *lexer, long start, long count);
 static int add_entry(struct pdf_document *document, unsigned long number, unsigned long generation, size_t offset, int in_use);
+static int add_compressed_entry(struct pdf_document *document, unsigned long number, unsigned long stream, unsigned long index);
+static int read_stream_section(struct pdf_document *document, size_t offset, struct pdf_object **trailer);
+static int read_stream_entries(struct pdf_document *document, struct pdf_object *stream, const unsigned char *data, size_t size);
+static unsigned long read_field(const unsigned char *bytes, long width, unsigned long fallback);
+static int read_hybrid(struct pdf_document *document, struct pdf_object *trailer, size_t section_start);
+static int repair(struct pdf_document *document);
+static void scan_objects(struct pdf_document *document);
+static int find_repaired_trailer(struct pdf_document *document);
+static int add_stream_members(struct pdf_document *document);
+static int make_trailer(struct pdf_document *document, unsigned long catalog, unsigned long generation);
+static int parse_compressed(struct pdf_document *document, const struct pdf_xref_entry *entry, int depth, struct pdf_object **object);
+static int open_object_stream(struct pdf_document *document, unsigned long number, int depth, struct pdf_object_stream **found);
+static int read_object_stream_header(struct pdf_document *document, struct pdf_object_stream *stream, struct pdf_object *dictionary);
+static void free_object_streams(struct pdf_document *document);
 static void sort_entries(struct pdf_document *document);
-static int compare_entries(const void *left, const void *right);
+static int merge_entries(struct pdf_xref_entry *entries, size_t count);
+static int compare_entries(const struct pdf_xref_entry *first, const struct pdf_xref_entry *second);
 static struct pdf_xref_entry *find_entry(struct pdf_document *document, unsigned long number);
 static int load_object(struct pdf_document *document, unsigned long number, unsigned long generation, int depth, struct pdf_object **object);
 static int parse_indirect(struct pdf_document *document, const struct pdf_xref_entry *entry, int depth, struct pdf_object **object);
@@ -260,7 +311,9 @@ pdf_document_close(
 	if (document == NULL)
 		return;
 
-	/* Frees the objects, the tables, the bytes and the document. */
+	/* Frees the fonts, the object streams, the objects, the tables, the bytes and the document. */
+	pdf_font_cache_free(document->fonts);
+	free_object_streams(document);
 	pdf_arena_free(&document->arena);
 	free(document->entries);
 	free(document->pages);
@@ -618,6 +671,18 @@ pdf_reader_bytes(
 }
 
 /*
+ * Reports where a document keeps its fonts, for the font reader (NULL
+ * until the first font is read).
+ */
+struct pdf_font_cache **
+pdf_reader_font_cache(
+	struct pdf_document *document)
+{
+	/* The document's own slot. */
+	return &document->fonts;
+}
+
+/*
  * Reads a document from bytes the document takes over.
  *
  * On failure the bytes are freed.
@@ -649,22 +714,21 @@ open_owned(
 		return error;
 	}
 
-	/* Finds the newest cross-reference section. */
+	/* Finds the newest cross-reference section, and reads it and the older ones it links. */
 	error = find_startxref(created, &offset);
-	if (error != 0) {
-		pdf_document_close(created);
-		return error;
-	}
-
-	/* Reads it and the older ones it links. */
-	error = read_cross_references(created, offset);
-	if (error != 0) {
-		pdf_document_close(created);
-		return error;
-	}
+	if (error == 0)
+		error = read_cross_references(created, offset);
 
 	/* Reads the catalog and lists the pages. */
-	error = read_catalog(created);
+	if (error == 0)
+		error = read_catalog(created);
+
+	/* A document whose cross-references or catalog cannot be read is repaired from its bytes. */
+	if (error != 0 && error != ENOMEM && error != ENOTSUP) {
+		error = repair(created);
+		if (error == 0)
+			error = read_catalog(created);
+	}
 	if (error != 0) {
 		pdf_document_close(created);
 		return error;
@@ -903,6 +967,7 @@ read_section(
 	struct pdf_token token;
 	struct pdf_token count;
 	struct pdf_object *dictionary;
+	size_t section_start;
 	int is_keyword;
 	int error;
 
@@ -916,13 +981,17 @@ read_section(
 	if (error != 0)
 		return error;
 
-	/* Refuses a cross-reference stream, which a reader of stage 2 reads, and anything else. */
+	/* An object's number starts a cross-reference stream; anything but xref is not a section. */
 	is_keyword = pdf_token_is_keyword(&token, "xref");
 	if (!is_keyword) {
-		if (token.type == PDF_TOKEN_INTEGER)
-			return ENOTSUP;
-		return PDF_EFORMAT;
+		if (token.type != PDF_TOKEN_INTEGER)
+			return PDF_EFORMAT;
+		error = read_stream_section(document, offset, trailer);
+		if (error != 0)
+			return error;
+		return 0;
 	}
+	section_start = document->entries_count;
 
 	/* Reads the subsections until the trailer. */
 	for (;;) {
@@ -956,6 +1025,11 @@ read_section(
 		return error;
 	if (dictionary->type != PDF_OBJECT_DICTIONARY)
 		return PDF_EFORMAT;
+
+	/* A hybrid file's cross-reference stream completes the table. */
+	error = read_hybrid(document, dictionary, section_start);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: trailer is the section's trailer. */
 	*trailer = dictionary;
@@ -1077,6 +1151,826 @@ add_entry(
 	return 0;
 }
 
+/* Appends one entry of an object kept in an object stream, in the order it was read. */
+static int
+add_compressed_entry(
+	struct pdf_document *document,
+	unsigned long number,
+	unsigned long stream,
+	unsigned long index)
+{
+	struct pdf_xref_entry *entry;
+	int error;
+
+	/* Adds the entry as one in use at no offset; a compressed object's generation is 0. */
+	error = add_entry(document, number, 0, 0, 1);
+	if (error != 0)
+		return error;
+
+	/* Points it into the object stream. */
+	entry = &document->entries[document->entries_count - 1];
+	entry->compressed = 1;
+	entry->stream = stream;
+	entry->index = index;
+
+	/* Succeeded: the entry is the table's last. */
+	return 0;
+}
+
+/*
+ * Reads a cross-reference stream at an offset: its entries, and its
+ * dictionary, which is the section's trailer.
+ *
+ * The stream's length must be direct, since no object can be loaded while
+ * the cross-references are read; an indirect one is found from the
+ * endstream keyword.
+ */
+static int
+read_stream_section(
+	struct pdf_document *document,
+	size_t offset,
+	struct pdf_object **trailer)
+{
+	struct pdf_lexer lexer;
+	struct pdf_token token;
+	struct pdf_object *dictionary;
+	struct pdf_object *length;
+	struct pdf_object *type;
+	const unsigned char *data;
+	unsigned char *owned;
+	size_t start;
+	size_t end;
+	size_t size;
+	int is_keyword;
+	int is_xref;
+	int dct;
+	int error;
+
+	/* Reads the object's number, generation and obj keyword. */
+	memset(&lexer, 0, sizeof(lexer));
+	lexer.data = document->data;
+	lexer.size = document->size;
+	lexer.position = offset;
+	lexer.arena = &document->arena;
+	error = pdf_lexer_next(&lexer, &token);
+	if (error != 0)
+		return error;
+	if (token.type != PDF_TOKEN_INTEGER)
+		return PDF_EFORMAT;
+	error = pdf_lexer_next(&lexer, &token);
+	if (error != 0)
+		return error;
+	if (token.type != PDF_TOKEN_INTEGER)
+		return PDF_EFORMAT;
+	error = pdf_lexer_next(&lexer, &token);
+	if (error != 0)
+		return error;
+	is_keyword = pdf_token_is_keyword(&token, "obj");
+	if (!is_keyword)
+		return PDF_EFORMAT;
+
+	/* Reads the dictionary and the stream keyword. */
+	error = pdf_parse_object(&lexer, 0, &dictionary);
+	if (error != 0)
+		return error;
+	if (dictionary->type != PDF_OBJECT_DICTIONARY)
+		return PDF_EFORMAT;
+	error = pdf_lexer_next(&lexer, &token);
+	if (error != 0)
+		return error;
+	is_keyword = pdf_token_is_keyword(&token, "stream");
+	if (!is_keyword)
+		return PDF_EFORMAT;
+
+	/* The data starts after the keyword's line end. */
+	start = lexer.position;
+	if (start < document->size && document->data[start] == '\r')
+		start++;
+	if (start < document->size && document->data[start] == '\n')
+		start++;
+
+	/* A direct length, or the distance to the endstream keyword. */
+	length = pdf_object_get(dictionary, "Length");
+	if (length != NULL && length->type == PDF_OBJECT_INTEGER) {
+		if (length->integer < 0 || (unsigned long)length->integer > document->size - start)
+			return PDF_EFORMAT;
+		end = start + (size_t)length->integer;
+	} else {
+		/* Looks for endstream after the data. */
+		for (end = start; end + 9 <= document->size; end++) {
+			if (memcmp(document->data + end, "endstream", 9) == 0)
+				break;
+		}
+		if (end + 9 > document->size)
+			return PDF_EFORMAT;
+	}
+
+	/* The dictionary becomes the stream, which must be a cross-reference stream. */
+	dictionary->type = PDF_OBJECT_STREAM;
+	dictionary->data_offset = start;
+	dictionary->data_length = end - start;
+	type = pdf_object_get(dictionary, "Type");
+	is_xref = pdf_object_is_name(type, "XRef");
+	if (!is_xref)
+		return PDF_EFORMAT;
+
+	/* Decodes the entries. */
+	error = pdf_filter_decode(document, dictionary, 0, &data, &size, &owned, &dct);
+	if (error == ENOMEM)
+		return ENOMEM;
+	if (error != 0)
+		return PDF_EFORMAT;
+
+	/* Reads them. */
+	error = read_stream_entries(document, dictionary, data, size);
+	free(owned);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the stream's dictionary is the section's trailer. */
+	*trailer = dictionary;
+	return 0;
+}
+
+/*
+ * Reads a cross-reference stream's decoded entries: /W gives the widths of
+ * the three fields, /Index the subsections ([0 Size] by default).  A field
+ * of width 0 takes its default: type 1, the others 0.  A stream shorter
+ * than its subsections ends where its data does.
+ */
+static int
+read_stream_entries(
+	struct pdf_document *document,
+	struct pdf_object *stream,
+	const unsigned char *data,
+	size_t size)
+{
+	struct pdf_object *widths;
+	struct pdf_object *count_object;
+	struct pdf_object *index_object;
+	long width[3];
+	long first;
+	long count;
+	long entry;
+	size_t row;
+	size_t position;
+	size_t pair;
+	size_t pairs;
+	unsigned long type;
+	unsigned long second;
+	unsigned long third;
+	unsigned long number;
+	int field;
+	int error;
+
+	/* Reads the three widths. */
+	widths = pdf_object_get(stream, "W");
+	if (widths == NULL || widths->type != PDF_OBJECT_ARRAY || widths->count != 3)
+		return PDF_EFORMAT;
+	row = 0;
+	for (field = 0; field < 3; field++) {
+		if (widths->values[field]->type != PDF_OBJECT_INTEGER)
+			return PDF_EFORMAT;
+		width[field] = widths->values[field]->integer;
+		if (width[field] < 0 || width[field] > PDF_READER_FIELD_MAX)
+			return PDF_EFORMAT;
+		row += (size_t)width[field];
+	}
+	if (row == 0)
+		return PDF_EFORMAT;
+
+	/* Reads the size, which the default subsection covers. */
+	count_object = pdf_object_get(stream, "Size");
+	if (count_object == NULL || count_object->type != PDF_OBJECT_INTEGER)
+		return PDF_EFORMAT;
+	if (count_object->integer < 0 || (unsigned long)count_object->integer > PDF_READER_OBJECT_MAX + 1)
+		return PDF_EFORMAT;
+
+	/* The subsections: /Index's pairs, or the whole size. */
+	index_object = pdf_object_get(stream, "Index");
+	pairs = 1;
+	if (index_object != NULL) {
+		if (index_object->type != PDF_OBJECT_ARRAY || index_object->count % 2 != 0)
+			return PDF_EFORMAT;
+		pairs = index_object->count / 2;
+	}
+
+	/* Reads each subsection's entries. */
+	position = 0;
+	for (pair = 0; pair < pairs; pair++) {
+		/* The subsection's first object number and its count. */
+		first = 0;
+		count = count_object->integer;
+		if (index_object != NULL) {
+			if (index_object->values[pair * 2]->type != PDF_OBJECT_INTEGER)
+				return PDF_EFORMAT;
+			if (index_object->values[pair * 2 + 1]->type != PDF_OBJECT_INTEGER)
+				return PDF_EFORMAT;
+			first = index_object->values[pair * 2]->integer;
+			count = index_object->values[pair * 2 + 1]->integer;
+		}
+		if (first < 0 || count < 0)
+			return PDF_EFORMAT;
+		if ((unsigned long)first > PDF_READER_OBJECT_MAX)
+			return PDF_EFORMAT;
+		if ((unsigned long)count > PDF_READER_OBJECT_MAX + 1 - (unsigned long)first)
+			return PDF_EFORMAT;
+
+		/* Each entry of the subsection that the data holds. */
+		for (entry = 0; entry < count; entry++) {
+			if (row > size - position || position > size)
+				return 0;
+			type = read_field(data + position, width[0], 1);
+			second = read_field(data + position + width[0], width[1], 0);
+			third = read_field(data + position + width[0] + width[1], width[2], 0);
+			position += row;
+			number = (unsigned long)first + (unsigned long)entry;
+
+			/* A free entry, one in the file, one in an object stream; another type is null. */
+			error = 0;
+			if (type == 0) {
+				error = add_entry(document, number, third, 0, 0);
+			} else if (type == 1 && second < document->size) {
+				error = add_entry(document, number, third, (size_t)second, 1);
+			} else if (type == 1) {
+				error = add_entry(document, number, third, 0, 0);
+			} else if (type == 2 && second <= PDF_READER_OBJECT_MAX) {
+				error = add_compressed_entry(document, number, second, third);
+			}
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* Succeeded: every entry the stream holds is added. */
+	return 0;
+}
+
+/* Reads one big-endian field of a cross-reference stream's entry (fallback for width 0). */
+static unsigned long
+read_field(
+	const unsigned char *bytes,
+	long width,
+	unsigned long fallback)
+{
+	unsigned long value;
+	long index;
+
+	/* A field of no width takes its default. */
+	if (width == 0)
+		return fallback;
+
+	/* The bytes, the high one first. */
+	value = 0;
+	for (index = 0; index < width; index++)
+		value = (value << 8) | bytes[index];
+
+	/* The field's value. */
+	return value;
+}
+
+/*
+ * Reads a hybrid file's cross-reference stream (/XRefStm of a classic
+ * trailer).  Its entries name the objects in object streams, which the
+ * table lists as free for older readers; so the table's free entries give
+ * way to them, while the table's objects in use keep their place.
+ */
+static int
+read_hybrid(
+	struct pdf_document *document,
+	struct pdf_object *trailer,
+	size_t section_start)
+{
+	struct pdf_object *offset;
+	struct pdf_object *stream_trailer;
+	size_t stream_start;
+	size_t index;
+	int error;
+
+	/* Only a trailer with a valid offset has a stream. */
+	offset = pdf_object_get(trailer, "XRefStm");
+	if (offset == NULL || offset->type != PDF_OBJECT_INTEGER)
+		return 0;
+	if (offset->integer < 0 || (unsigned long)offset->integer >= document->size)
+		return 0;
+
+	/* Reads the stream's entries; a stream that cannot be read leaves the table as it is. */
+	stream_start = document->entries_count;
+	error = read_stream_section(document, (size_t)offset->integer, &stream_trailer);
+	if (error == ENOMEM)
+		return ENOMEM;
+	if (error != 0)
+		return 0;
+
+	/* The table's free entries come after the stream's. */
+	for (index = section_start; index < stream_start; index++) {
+		if (!document->entries[index].in_use)
+			document->entries[index].sequence = document->entries_count + (index - section_start);
+	}
+
+	/* Succeeded: the stream's entries complete the table. */
+	return 0;
+}
+
+/*
+ * Repairs a document whose cross-references or catalog cannot be read:
+ * every object is found by its "n g obj" header in the bytes (the last
+ * one of a number wins), the members of the object streams among them are
+ * added after the objects found directly, and the trailer is the last one
+ * with a catalog, or one made for the catalog object.
+ */
+static int
+repair(
+	struct pdf_document *document)
+{
+	int error;
+
+	/* Forgets what the failed reading found. */
+	document->entries_count = 0;
+	document->trailer = NULL;
+	document->catalog = NULL;
+	document->pages_count = 0;
+
+	/* Finds the objects in the bytes and orders them. */
+	scan_objects(document);
+	sort_entries(document);
+	if (document->entries_count == 0)
+		return PDF_EFORMAT;
+
+	/* Adds the objects kept in object streams. */
+	error = add_stream_members(document);
+	if (error != 0)
+		return error;
+
+	/* Finds or makes the trailer. */
+	error = find_repaired_trailer(document);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the document can be read from the repaired table. */
+	return 0;
+}
+
+/*
+ * Finds each "n g obj" header in the bytes, from the end, so that a later
+ * definition of a number is read first and wins.
+ */
+static void
+scan_objects(
+	struct pdf_document *document)
+{
+	const unsigned char *data;
+	size_t position;
+	size_t cursor;
+	size_t digits;
+	unsigned long number;
+	unsigned long generation;
+	unsigned long scale;
+	int error;
+
+	/* Looks at each place obj could start, from the end. */
+	data = document->data;
+	for (position = document->size; position >= 3 + 4; position--) {
+		/* The keyword, standing alone after white space. */
+		if (memcmp(data + position - 3, "obj", 3) != 0)
+			continue;
+		if (position < document->size && data[position] >= 'a' && data[position] <= 'z')
+			continue;
+		cursor = position - 3;
+		if (data[cursor - 1] != ' ' && data[cursor - 1] != '\n' && data[cursor - 1] != '\r' && data[cursor - 1] != '\t')
+			continue;
+
+		/* The generation's digits before the white space. */
+		while (cursor > 0 && (data[cursor - 1] == ' ' || data[cursor - 1] == '\r' || data[cursor - 1] == '\n' || data[cursor - 1] == '\t'))
+			cursor--;
+		generation = 0;
+		scale = 1;
+		for (digits = 0; cursor > 0 && data[cursor - 1] >= '0' && data[cursor - 1] <= '9' && digits < 6; digits++) {
+			generation += (unsigned long)(data[cursor - 1] - '0') * scale;
+			scale *= 10;
+			cursor--;
+		}
+		if (digits == 0 || cursor == 0)
+			continue;
+
+		/* The number's digits before more white space. */
+		if (data[cursor - 1] != ' ' && data[cursor - 1] != '\n' && data[cursor - 1] != '\r' && data[cursor - 1] != '\t')
+			continue;
+		while (cursor > 0 && (data[cursor - 1] == ' ' || data[cursor - 1] == '\r' || data[cursor - 1] == '\n' || data[cursor - 1] == '\t'))
+			cursor--;
+		number = 0;
+		scale = 1;
+		for (digits = 0; cursor > 0 && data[cursor - 1] >= '0' && data[cursor - 1] <= '9' && digits < 8; digits++) {
+			number += (unsigned long)(data[cursor - 1] - '0') * scale;
+			scale *= 10;
+			cursor--;
+		}
+		if (digits == 0 || number > PDF_READER_OBJECT_MAX)
+			continue;
+
+		/* The number must start a token. */
+		if (cursor > 0 && data[cursor - 1] >= '0' && data[cursor - 1] <= '9')
+			continue;
+
+		/* Adds the object; running out of memory ends the scan with what it found. */
+		error = add_entry(document, number, generation, cursor, 1);
+		if (error != 0)
+			return;
+	}
+}
+
+/*
+ * Finds a repaired document's trailer: the last trailer dictionary with a
+ * /Root, else the last cross-reference stream's dictionary with one, else
+ * a trailer made for the object whose /Type is /Catalog.
+ */
+static int
+find_repaired_trailer(
+	struct pdf_document *document)
+{
+	struct pdf_lexer lexer;
+	struct pdf_object *dictionary;
+	struct pdf_object *object;
+	struct pdf_object *type;
+	size_t position;
+	size_t index;
+	size_t best_offset;
+	unsigned long catalog;
+	unsigned long catalog_generation;
+	int found_catalog;
+	int is_name;
+	int error;
+
+	/* The last trailer keyword whose dictionary has a /Root. */
+	for (position = document->size; position >= 7; position--) {
+		if (memcmp(document->data + position - 7, "trailer", 7) != 0)
+			continue;
+		memset(&lexer, 0, sizeof(lexer));
+		lexer.data = document->data;
+		lexer.size = document->size;
+		lexer.position = position;
+		lexer.arena = &document->arena;
+		error = pdf_parse_object(&lexer, 0, &dictionary);
+		if (error == ENOMEM)
+			return ENOMEM;
+		if (error != 0 || dictionary->type != PDF_OBJECT_DICTIONARY)
+			continue;
+		if (pdf_object_get(dictionary, "Root") == NULL)
+			continue;
+		document->trailer = dictionary;
+		return 0;
+	}
+
+	/* Else the latest cross-reference stream with a /Root, or the catalog. */
+	found_catalog = 0;
+	catalog = 0;
+	catalog_generation = 0;
+	best_offset = 0;
+	for (index = 0; index < document->entries_count; index++) {
+		error = load_object(document, document->entries[index].number, document->entries[index].generation, 0, &object);
+		if (error == ENOMEM)
+			return ENOMEM;
+		if (error != 0)
+			continue;
+		if (object->type != PDF_OBJECT_DICTIONARY && object->type != PDF_OBJECT_STREAM)
+			continue;
+		type = pdf_object_get(object, "Type");
+
+		/* A cross-reference stream with a /Root, the one furthest in the file. */
+		is_name = pdf_object_is_name(type, "XRef");
+		if (is_name && pdf_object_get(object, "Root") != NULL && document->entries[index].offset >= best_offset) {
+			document->trailer = object;
+			best_offset = document->entries[index].offset;
+			continue;
+		}
+
+		/* The catalog. */
+		is_name = pdf_object_is_name(type, "Catalog");
+		if (is_name) {
+			found_catalog = 1;
+			catalog = document->entries[index].number;
+			catalog_generation = document->entries[index].generation;
+		}
+	}
+	if (document->trailer != NULL)
+		return 0;
+
+	/* Refuses a document without any catalog. */
+	if (!found_catalog)
+		return PDF_EFORMAT;
+
+	/* Makes a trailer that names the catalog. */
+	error = make_trailer(document, catalog, catalog_generation);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the trailer names the catalog. */
+	return 0;
+}
+
+/*
+ * Adds the members of every object stream the repaired table finds, after
+ * the objects found directly, which therefore win.
+ */
+static int
+add_stream_members(
+	struct pdf_document *document)
+{
+	struct pdf_object_stream *stream;
+	struct pdf_object *object;
+	struct pdf_object *type;
+	size_t index;
+	size_t member;
+	int is_stream;
+	int error;
+
+	/* Opens each object that is an object stream. */
+	for (index = 0; index < document->entries_count; index++) {
+		error = load_object(document, document->entries[index].number, document->entries[index].generation, 0, &object);
+		if (error == ENOMEM)
+			return ENOMEM;
+		if (error != 0 || object->type != PDF_OBJECT_STREAM)
+			continue;
+		type = pdf_object_get(object, "Type");
+		is_stream = pdf_object_is_name(type, "ObjStm");
+		if (!is_stream)
+			continue;
+		error = open_object_stream(document, document->entries[index].number, 0, &stream);
+		if (error == ENOMEM)
+			return ENOMEM;
+	}
+
+	/* Adds each member of each opened stream. */
+	for (stream = document->object_streams; stream != NULL; stream = stream->next) {
+		for (member = 0; member < stream->count; member++) {
+			error = add_compressed_entry(document, stream->numbers[member], stream->number, member);
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* Orders the table again, the direct objects before the members. */
+	sort_entries(document);
+
+	/* Succeeded: the members can be loaded. */
+	return 0;
+}
+
+/* Makes a trailer dictionary whose /Root names an object. */
+static int
+make_trailer(
+	struct pdf_document *document,
+	unsigned long catalog,
+	unsigned long generation)
+{
+	struct pdf_object *dictionary;
+	struct pdf_object *key;
+	struct pdf_object *value;
+	unsigned char *name;
+
+	/* The dictionary, its key and its value, and the arrays of one each. */
+	dictionary = pdf_arena_allocate(&document->arena, sizeof(*dictionary));
+	key = pdf_arena_allocate(&document->arena, sizeof(*key));
+	value = pdf_arena_allocate(&document->arena, sizeof(*value));
+	name = pdf_arena_allocate(&document->arena, 5);
+	if (dictionary == NULL || key == NULL || value == NULL || name == NULL)
+		return ENOMEM;
+	memset(dictionary, 0, sizeof(*dictionary));
+	memset(key, 0, sizeof(*key));
+	memset(value, 0, sizeof(*value));
+	dictionary->keys = pdf_arena_allocate(&document->arena, sizeof(*dictionary->keys));
+	dictionary->values = pdf_arena_allocate(&document->arena, sizeof(*dictionary->values));
+	if (dictionary->keys == NULL || dictionary->values == NULL)
+		return ENOMEM;
+
+	/* /Root n g R. */
+	memcpy(name, "Root", 5);
+	key->type = PDF_OBJECT_NAME;
+	key->bytes = name;
+	key->length = 4;
+	value->type = PDF_OBJECT_REFERENCE;
+	value->number = catalog;
+	value->generation = generation;
+	dictionary->type = PDF_OBJECT_DICTIONARY;
+	dictionary->keys[0] = key;
+	dictionary->values[0] = value;
+	dictionary->count = 1;
+
+	/* Succeeded: the made trailer is the document's. */
+	document->trailer = dictionary;
+	return 0;
+}
+
+/*
+ * Parses an object kept in an object stream: the index-th of the stream's
+ * header, or the one of the entry's number when the index does not match.
+ */
+static int
+parse_compressed(
+	struct pdf_document *document,
+	const struct pdf_xref_entry *entry,
+	int depth,
+	struct pdf_object **object)
+{
+	struct pdf_object_stream *stream;
+	struct pdf_lexer lexer;
+	struct pdf_object *parsed;
+	size_t member;
+	size_t position;
+	int error;
+
+	/* Opens the stream, once per document. */
+	error = open_object_stream(document, entry->stream, depth + 1, &stream);
+	if (error != 0)
+		return error;
+
+	/* Finds the member: at its index, or by its number. */
+	member = entry->index;
+	if (member >= stream->count || stream->numbers[member] != entry->number) {
+		for (member = 0; member < stream->count; member++) {
+			if (stream->numbers[member] == entry->number)
+				break;
+		}
+		if (member == stream->count)
+			return PDF_EFORMAT;
+	}
+
+	/* Refuses an offset past the stream's data. */
+	position = stream->first + stream->offsets[member];
+	if (position < stream->first || position >= stream->size)
+		return PDF_EFORMAT;
+
+	/* Parses the object from the decoded bytes; its names and strings are copied into the arena. */
+	memset(&lexer, 0, sizeof(lexer));
+	lexer.data = stream->bytes;
+	lexer.size = stream->size;
+	lexer.position = position;
+	lexer.arena = &document->arena;
+	error = pdf_parse_object(&lexer, 0, &parsed);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: object is the member. */
+	*object = parsed;
+	return 0;
+}
+
+/*
+ * Finds an object stream, decoding it and reading its header the first
+ * time.  The decoded streams together are bounded like the arena.
+ */
+static int
+open_object_stream(
+	struct pdf_document *document,
+	unsigned long number,
+	int depth,
+	struct pdf_object_stream **found)
+{
+	struct pdf_object_stream *stream;
+	struct pdf_object *object;
+	const unsigned char *data;
+	unsigned char *owned;
+	size_t size;
+	int dct;
+	int error;
+
+	/* Answers from a stream already opened. */
+	for (stream = document->object_streams; stream != NULL; stream = stream->next) {
+		if (stream->number == number) {
+			*found = stream;
+			return 0;
+		}
+	}
+
+	/* Loads the stream object, whose generation is 0. */
+	error = load_object(document, number, 0, depth, &object);
+	if (error != 0)
+		return error;
+	if (object->type != PDF_OBJECT_STREAM)
+		return PDF_EFORMAT;
+
+	/* Decodes it, within the bound. */
+	error = pdf_filter_decode(document, object, 0, &data, &size, &owned, &dct);
+	if (error != 0)
+		return error;
+	if (size > PDF_READER_ARENA_MAX - document->object_streams_size) {
+		free(owned);
+		return ENOMEM;
+	}
+
+	/* Keeps it. */
+	stream = calloc(1, sizeof(*stream));
+	if (stream == NULL) {
+		free(owned);
+		return ENOMEM;
+	}
+	stream->number = number;
+	stream->bytes = data;
+	stream->owned = owned;
+	stream->size = size;
+
+	/* Reads its header of numbers and offsets. */
+	error = read_object_stream_header(document, stream, object);
+	if (error != 0) {
+		free(stream->numbers);
+		free(stream->offsets);
+		free(owned);
+		free(stream);
+		return error;
+	}
+	stream->next = document->object_streams;
+	document->object_streams = stream;
+	document->object_streams_size += size;
+
+	/* Succeeded: the stream is open. */
+	*found = stream;
+	return 0;
+}
+
+/* Reads an object stream's /N, /First and header pairs. */
+static int
+read_object_stream_header(
+	struct pdf_document *document,
+	struct pdf_object_stream *stream,
+	struct pdf_object *dictionary)
+{
+	struct pdf_lexer lexer;
+	struct pdf_token number;
+	struct pdf_token offset;
+	struct pdf_object *count;
+	struct pdf_object *first;
+	size_t member;
+	int error;
+
+	/* The count and the offset of the first object. */
+	error = resolve_key(document, dictionary, "N", 0, &count);
+	if (error != 0)
+		return error;
+	error = resolve_key(document, dictionary, "First", 0, &first);
+	if (error != 0)
+		return error;
+	if (count->type != PDF_OBJECT_INTEGER || first->type != PDF_OBJECT_INTEGER)
+		return PDF_EFORMAT;
+	if (count->integer < 0 || (size_t)count->integer > PDF_READER_STREAM_OBJECTS_MAX)
+		return PDF_EFORMAT;
+	if (first->integer < 0 || (unsigned long)first->integer > stream->size)
+		return PDF_EFORMAT;
+	if ((size_t)count->integer > stream->size / 2)
+		return PDF_EFORMAT;
+	stream->first = (size_t)first->integer;
+
+	/* The arrays of numbers and offsets. */
+	stream->numbers = malloc(((size_t)count->integer + 1) * sizeof(*stream->numbers));
+	if (stream->numbers == NULL)
+		return ENOMEM;
+	stream->offsets = malloc(((size_t)count->integer + 1) * sizeof(*stream->offsets));
+	if (stream->offsets == NULL)
+		return ENOMEM;
+
+	/* Reads each pair before the first object; a short header ends the members there. */
+	memset(&lexer, 0, sizeof(lexer));
+	lexer.data = stream->bytes;
+	lexer.size = stream->first;
+	lexer.arena = &document->arena;
+	for (member = 0; member < (size_t)count->integer; member++) {
+		error = pdf_lexer_next(&lexer, &number);
+		if (error != 0)
+			break;
+		error = pdf_lexer_next(&lexer, &offset);
+		if (error != 0)
+			break;
+		if (number.type != PDF_TOKEN_INTEGER || offset.type != PDF_TOKEN_INTEGER)
+			break;
+		if (number.integer < 0 || offset.integer < 0)
+			break;
+		stream->numbers[member] = (unsigned long)number.integer;
+		stream->offsets[member] = (size_t)offset.integer;
+	}
+	stream->count = member;
+
+	/* Succeeded: the members are listed. */
+	return 0;
+}
+
+/* Frees a document's decoded object streams. */
+static void
+free_object_streams(
+	struct pdf_document *document)
+{
+	struct pdf_object_stream *stream;
+	struct pdf_object_stream *next;
+
+	/* Frees each stream's arrays, data and itself. */
+	for (stream = document->object_streams; stream != NULL; stream = next) {
+		next = stream->next;
+		free(stream->numbers);
+		free(stream->offsets);
+		free(stream->owned);
+		free(stream);
+	}
+	document->object_streams = NULL;
+}
+
 /*
  * Sorts the entries by object number and keeps only the newest entry of
  * each number, the one read first.
@@ -1087,13 +1981,18 @@ sort_entries(
 {
 	size_t index;
 	size_t kept;
+	int error;
 
 	/* Nothing to sort. */
 	if (document->entries_count == 0)
 		return;
 
-	/* Orders the entries by number, and by reading order within a number. */
-	qsort(document->entries, document->entries_count, sizeof(*document->entries), compare_entries);
+	/* Orders the entries by number, and by reading order within a number; without memory for the sort, none is kept. */
+	error = merge_entries(document->entries, document->entries_count);
+	if (error != 0) {
+		document->entries_count = 0;
+		return;
+	}
 
 	/* Keeps the first entry of each number. */
 	kept = 1;
@@ -1106,19 +2005,95 @@ sort_entries(
 	document->entries_count = kept;
 }
 
+/*
+ * Sorts entries stably by compare_entries, merging runs bottom up (the C
+ * library's qsort is quadratic, and a document may have a million
+ * objects).
+ */
+static int
+merge_entries(
+	struct pdf_xref_entry *entries,
+	size_t count)
+{
+	struct pdf_xref_entry *buffer;
+	struct pdf_xref_entry *source;
+	struct pdf_xref_entry *target;
+	struct pdf_xref_entry *swap;
+	size_t width;
+	size_t start;
+	size_t middle;
+	size_t end;
+	size_t left;
+	size_t right;
+	size_t out;
+	int take_left;
+	int order;
+
+	/* A table of one entry is sorted. */
+	if (count < 2)
+		return 0;
+
+	/* The second array the runs are merged into. */
+	buffer = malloc(count * sizeof(*buffer));
+	if (buffer == NULL)
+		return ENOMEM;
+
+	/* Merges runs of width, doubling it, between the two arrays. */
+	source = entries;
+	target = buffer;
+	for (width = 1; width < count; width *= 2) {
+		for (start = 0; start < count; start += 2 * width) {
+			/* The two runs [start, middle) and [middle, end). */
+			middle = start + width;
+			if (middle > count)
+				middle = count;
+			end = start + 2 * width;
+			if (end > count)
+				end = count;
+
+			/* Takes the lower head each time, the left one on a tie. */
+			left = start;
+			right = middle;
+			for (out = start; out < end; out++) {
+				take_left = 0;
+				if (right >= end) {
+					/* The right run is used up. */
+					take_left = 1;
+				} else if (left < middle) {
+					/* Both runs have a head; the right one goes first only when lower. */
+					order = compare_entries(&source[left], &source[right]);
+					if (order <= 0)
+						take_left = 1;
+				}
+				if (take_left) {
+					target[out] = source[left];
+					left++;
+				} else {
+					target[out] = source[right];
+					right++;
+				}
+			}
+		}
+		swap = source;
+		source = target;
+		target = swap;
+	}
+
+	/* The sorted entries end where the last pass wrote them. */
+	if (source != entries)
+		memcpy(entries, source, count * sizeof(*entries));
+	free(buffer);
+
+	/* Succeeded: the entries are in order. */
+	return 0;
+}
+
 /* Orders two entries by object number, then by the order they were read. */
 static int
 compare_entries(
-	const void *left,
-	const void *right)
+	const struct pdf_xref_entry *first,
+	const struct pdf_xref_entry *second)
 {
-	const struct pdf_xref_entry *first;
-	const struct pdf_xref_entry *second;
-
-	/* Names the two entries. */
-	first = left;
-	second = right;
-
 	/* A lower object number comes first. */
 	if (first->number < second->number)
 		return -1;
@@ -1209,9 +2184,14 @@ load_object(
 		break;
 	}
 
-	/* Parses the object while marking it as under way. */
+	/* Parses the object, from the file or from its object stream, while marking it as under way. */
 	entry->state = PDF_ENTRY_LOADING;
-	error = parse_indirect(document, entry, depth, &loaded);
+	loaded = NULL;
+	if (entry->compressed) {
+		error = parse_compressed(document, entry, depth, &loaded);
+	} else {
+		error = parse_indirect(document, entry, depth, &loaded);
+	}
 	if (error != 0) {
 		entry->state = PDF_ENTRY_FAILED;
 		entry->error = error;
