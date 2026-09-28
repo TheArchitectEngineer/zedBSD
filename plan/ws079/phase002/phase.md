@@ -55,6 +55,9 @@ HAL の API には触れない。
 
 1. §2.4 の `/dev/input/inject`（`CONFIG_INPUT_TEST_INJECT|bool|Test input injector|amd64|n|`、`include/uapi/input-inject.h`、
    `src/drivers/generic/input-inject.c`）と guest の道具 `peninject`（`plan/ws079/tests/peninject/`）。未着手。
+   調べて分かったこと: devfs の `/dev/input` は event の device（`eventN` の名前、`src/kern/devfs.c` の `event_name` と
+   「/dev/input holds only the event devices」の判定）しか置かないので、`/dev/input/inject` には devfs の名前の規則の変更が要る
+   （設計の §2.4 に書かれていない依存）。devfs を変えるか、node を `/dev/input-inject` のように root に置くかを先に決める。
 2. QEMU の `usb-wacom-tablet` を付けて起動し、列挙と解析が壊れないこと（既存の keyboard・`usb-tablet` が動く）を確かめる。
 3. INPUT_PROP を evdev へ出すか（input の層の変更）を決める。
 4. arm64・pcat の build の確認。
