@@ -116,6 +116,22 @@ def home_script() -> str:
 	return "\n".join(lines) + "\n"
 
 
+def corner_script() -> str:
+	"""A pen swipe from the top-right corner down and left (the p010 gesture, reached as the pointer)."""
+	lines = header()
+	lines.append("tool pen")
+	lines.append(line("hover", 1270, 10))
+	lines.append("wait 300")
+	lines.append(line("down", 1270, 10, 2000))
+	for step in range(1, 21):
+		lines.append(line("move", 1270 - 160 * step / 20, 10 + 160 * step / 20, 2000))
+		lines.append("wait 15")
+	lines.append("lift")
+	lines.append("up")
+	lines.append("hold 1500")
+	return "\n".join(lines) + "\n"
+
+
 def select_script(x0: float, x1: float, y: float) -> str:
 	"""A drag with the tip from x0 to x1 on row y, then the second barrel button (BTN_MIDDLE: paste)."""
 	lines = header()
@@ -141,6 +157,7 @@ def main() -> int:
 	(out / "tablet.pen").write_text(tablet_script())
 	(out / "pointer.pen").write_text(pointer_script())
 	(out / "home.pen").write_text(home_script())
+	(out / "corner.pen").write_text(corner_script())
 	x0 = float(sys.argv[2]) if len(sys.argv) > 4 else 300.0
 	x1 = float(sys.argv[3]) if len(sys.argv) > 4 else 500.0
 	y = float(sys.argv[4]) if len(sys.argv) > 4 else 200.0

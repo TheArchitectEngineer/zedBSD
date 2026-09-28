@@ -762,7 +762,7 @@ touch_press(
 	int taken;
 
 	/* zdesktop's grabs, screens and title bars see the press first. */
-	taken = zwl_seat_button_shell(server, ZWL_BUTTON_LEFT, 1U);
+	taken = zwl_seat_button_shell(server, time, ZWL_BUTTON_LEFT, 1U);
 	if (taken) {
 		focus_set(server, device, NULL);
 		device->route = ROUTE_POINTER;

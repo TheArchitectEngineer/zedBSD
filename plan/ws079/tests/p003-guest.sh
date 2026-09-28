@@ -8,7 +8,8 @@
 # Steps (default all but select): tablet (tablet-probe binds zwp_tablet_manager_v2; the
 # pressure ramp, tilt, a barrel button, the eraser, the implicit grab, proximity), pointer
 # (tablet-probe --pointer: the pen as BTN_LEFT, BTN_RIGHT, BTN_MIDDLE), home (a tap on
-# the launcher opens App Home), terminal (starts /bin/terminal and photographs it),
+# the launcher opens App Home), terminal (starts /bin/terminal and photographs it), corner
+# (a pen swipe from the top-right corner reaches the ws079-p010 recogniser),
 # select X0 X1 Y (a pen drag over the terminal's row, then the second barrel button).
 # The pictures go to build/ws035-shots/ws079-p003-20260928-*.png, the logs to OUTDIR.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -38,7 +39,7 @@ expect_log() {
 
 # Puts the pen scripts on the guest.
 python3 plan/ws079/tests/p003-scripts.py "$out/pen" ${SELECT_ARGS:-} >/dev/null
-for name in tablet pointer home select; do
+for name in tablet pointer home select corner; do
 	timeout 60 python3 plan/tools/guest/guest.py put "$out/pen/$name.pen" "/tmp/$name.pen" >/dev/null 2>&1
 done
 
@@ -103,6 +104,13 @@ export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/kei
 		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" e c h o '<spc>' k e i '<spc>' p e n '<ret>' >/dev/null 2>&1
 		sleep 1
 		shot terminal
+		;;
+	corner)
+		# The top-right swipe (ws079-p010) with the pen: it reaches the recogniser as the pointer.
+		guest 'grep -a -c "CORNER commit" /tmp/zdesktop.log' | tail -1 > "$out/corner-before.txt"
+		guest 'peninject /tmp/corner.pen; echo replay=$?' | tail -1
+		shot corner
+		expect_log /tmp/zdesktop.log 'CORNER commit via=' $(( $(cat "$out/corner-before.txt" 2>/dev/null || echo 0) + 1 ))
 		;;
 	select)
 		# A drag with the pen tip over a row, then the second barrel button pastes it (BTN_MIDDLE).

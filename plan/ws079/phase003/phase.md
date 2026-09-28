@@ -83,6 +83,16 @@ tablet を bind しない client への pointer の fallback、compositor の自
 - pad、`hardware_serial`（MSC_SERIAL は p002 で未実装）、distance、cursor-shape の `get_tablet_tool_v2` は範囲外のまま（cursor.c は tablet tool を受けない）。
 - 端の gesture との関係（design-input-notes の追記、main の決まり）: pen の touch は先に shell に通るので、Wiseview の下端 20 px・desktop の左右の端から始めた touch は今の pointer と同じく gesture になり、紙の中から始めた線は client のもの。右上の gesture（p010）は同じ `zwl_seat_button_shell` の鎖に入れれば pen にも効く。
 
+### main の merge（p010 の右上のスワイプ）との統合
+
+main を merge すると `seat.c` が衝突した（p010 は `zwl_seat_motion`・`zwl_seat_button` に全画面の窓の上の端の gesture（`zwl_glass_edge_motion`・
+`zwl_glass_edge_button`）と `server->input_time` を足していた）。端の gesture の block は `zwl_seat_motion_shell`・`zwl_seat_button_shell` の末尾に
+「取った」（1 を返す）として入れ、`zwl_seat_button_shell` は event の時刻を引数に取るようにした（`input_time` のため。tablet.c の呼び出しも直した）。
+merge 後の tree で image を作り直し、同じ試験を全部やり直した: `p003-guest.sh`（28 件 ok、status=0）、`select`、`peninject -c`/`-d` は merge 前の最終の run で、
+`zdesktop-p076.sh` PASS（52 件）。加えて `p003-guest.sh build/ws079-p003 corner`: pen で右上（1270,10）から左下へ 160 px 動かすと
+`ZWL CORNER press source=pointer`・`armed`・`commit via=distance progress=159`（試験の image に `/bin/notes` が無いので `notes missing`）。pen は shell の
+経路を通るので p010 の認識器に pointer として届く。source を pen として渡す（`ZWL_CONTACT_PEN`）のは p010 の resume の項目のまま（この phase では gesture に触れない）。
+
 ### 未実施・制限
 
 - 実機（10 インチの LCD と AES の pen、未着）: 未実施。INPUT_PROP_DIRECT/POINTER（p002 の残り 3）の扱いも未決定（今は全 tablet を出力の全面に写す、D2 の既定）。

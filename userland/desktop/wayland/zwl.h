@@ -949,7 +949,7 @@ void zwl_seat_motion(struct zwl_server *server, uint32_t time);
 int zwl_seat_motion_shell(struct zwl_server *server, uint32_t time);
 void zwl_seat_motion_deliver(struct zwl_server *server, uint32_t time);
 void zwl_seat_button(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
-int zwl_seat_button_shell(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_seat_button_shell(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
 void zwl_seat_button_deliver(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
 void zwl_seat_axis(struct zwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal);
 void zwl_seat_frame(struct zwl_server *server);
