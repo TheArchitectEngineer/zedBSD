@@ -15,6 +15,7 @@
  */
 
 #include <errno.h>
+#include <sha2.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -818,6 +819,41 @@ pdf_writer_set_dates(
 	writer->modification_time = modification;
 
 	/* Succeeded: the saves carry these dates. */
+	return 0;
+}
+
+/*
+ * Computes the SHA-256 of a page's content stream.
+ *
+ * index counts the pages from 0.  The hash is the one the reader's
+ * pdf_document_page_content_hash() gives for the same page of the saved
+ * file, so Notes can record it in its edit data before saving.  A page
+ * whose content failed to be recorded reports that failure.
+ */
+int
+pdf_writer_get_page_content_hash(
+	const struct pdf_writer *writer,
+	size_t index,
+	unsigned char digest[32])
+{
+	const struct pdf_writer_page *page;
+	SHA2_CTX context;
+
+	/* Refuses a page the document does not have. */
+	if (index >= writer->pages_count)
+		return EINVAL;
+	page = writer->pages[index];
+
+	/* Refuses a page whose content is incomplete. */
+	if (page->content.error != 0)
+		return page->content.error;
+
+	/* Hashes the content stream as it will be saved. */
+	SHA256Init(&context);
+	SHA256Update(&context, page->content.data, page->content.length);
+	SHA256Final(digest, &context);
+
+	/* Succeeded: digest is the page's content hash. */
 	return 0;
 }
 

@@ -70,7 +70,7 @@ struct wltest_renderer {
 };
 
 /* Window lifetime encloses all renderer use of the borrowed native surface. */
-int wltest_window_open(struct wltest_window *window, const char *display, uint32_t width, uint32_t height, int fullscreen);
+int wltest_window_open(struct wltest_window *window, const char *display, uint32_t width, uint32_t height, int fullscreen, const char *app_id);
 int wltest_window_dispatch(struct wltest_window *window);
 void wltest_window_close(struct wltest_window *window);
 
