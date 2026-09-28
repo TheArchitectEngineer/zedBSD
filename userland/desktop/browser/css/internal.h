@@ -152,9 +152,49 @@ struct css_selector {
 	uint32_t specificity;
 };
 
+/* The most arguments a min(), max() or clamp() keeps. */
+#define CSS_CALC_ARGUMENTS	3
+
+/*
+ * A sum of lengths of the kinds calc() mixes, each the number of its unit:
+ * pixels (the absolute units converted), percentages, font-relative and
+ * viewport-relative lengths.  The cascade turns it into pixels and a
+ * percentage the layout resolves.
+ */
+struct css_calc_sum {
+	float px;
+	float percent;
+	float em;
+	float ex;
+	float rem;
+	float vw;
+	float vh;
+	float vmin;
+	float vmax;
+};
+
+/* What a calculation does with its sums. */
+enum css_calc_operation {
+	CSS_CALC_SUM,
+	CSS_CALC_MIN,
+	CSS_CALC_MAX,
+	CSS_CALC_CLAMP
+};
+
+/*
+ * A calc(), min(), max() or clamp() length (ws074-p061): one sum, or the
+ * least or greatest of several, or the middle one of three.
+ */
+struct css_calc {
+	int operation;
+	size_t count;
+	struct css_calc_sum sums[CSS_CALC_ARGUMENTS];
+};
+
 /*
  * A declared value, as parsed: a keyword, a length, a number, a color or
- * font families.
+ * font families.  A length whose unit is CSS_DUNIT_CALC is the
+ * calculation calc points at (in the arena the value was parsed into).
  */
 struct css_value {
 	int kind;
@@ -165,6 +205,7 @@ struct css_value {
 	struct vm_string *families[CSS_DECLARED_FAMILIES];
 	int family_count;
 	struct vm_string *url;
+	const struct css_calc *calc;
 };
 
 /* The kinds of declared value. */
@@ -194,7 +235,10 @@ enum css_declared_unit {
 	CSS_DUNIT_MM,
 	CSS_DUNIT_VW,
 	CSS_DUNIT_VH,
-	CSS_DUNIT_FONT_KEYWORD
+	CSS_DUNIT_FONT_KEYWORD,
+	CSS_DUNIT_VMIN,
+	CSS_DUNIT_VMAX,
+	CSS_DUNIT_CALC
 };
 
 /*
@@ -269,6 +313,76 @@ struct css_declaration {
 	int property;
 	int important;
 	struct css_value value;
+	struct vm_string *custom_name;
+	const struct css_token *raw;
+	size_t raw_count;
+	int pending_property;
+};
+
+/*
+ * The property of a custom property's declaration (--name: tokens): its
+ * name is custom_name and its value the tokens raw (ws074-p061).
+ */
+#define CSS_PROP_CUSTOM		(-1)
+
+/*
+ * The property of a declaration whose value uses var(): its tokens raw
+ * are parsed as pending_property (a longhand or a shorthand) once the
+ * element's custom properties are known.
+ */
+#define CSS_PROP_PENDING	(-2)
+
+/*
+ * One custom property an element has (ws074-p061): its name, its value's
+ * tokens with every var() replaced (none: the property is invalid), and
+ * the next one of the element's list, which ends in its parent's list.
+ */
+struct css_custom {
+	struct vm_string *name;
+	const struct css_token *tokens;
+	size_t count;
+	const struct css_custom *next;
+	int invalid;
+};
+
+/*
+ * One test of a media query: the feature it measures (media.c), how it
+ * compares, and the value (pixels, a ratio, dppx, or 0 or 1).
+ */
+struct css_media_test {
+	int feature;
+	int comparison;
+	float value;
+};
+
+/*
+ * One media query: whether its media type is this browser's, its tests,
+ * and whether not turns the answer round.
+ */
+struct css_media_query {
+	int negate;
+	int type_matches;
+	struct css_media_test *tests;
+	size_t test_count;
+};
+
+/*
+ * A media query list: one of its queries must hold, and so must the list
+ * it is nested in (parent, NULL at the top).
+ */
+struct css_media {
+	struct css_media_query *queries;
+	size_t query_count;
+	const struct css_media *parent;
+};
+
+/*
+ * What parsing a value needs: the heap the names are atoms of, and the
+ * arena a calculation is kept in.
+ */
+struct css_parse {
+	struct vm_heap *heap;
+	struct wb_arena *arena;
 };
 
 /*
@@ -279,6 +393,7 @@ struct css_rule {
 	size_t selector_count;
 	struct css_declaration *declarations;
 	size_t declaration_count;
+	const struct css_media *media;
 };
 
 /*
@@ -324,14 +439,16 @@ struct css_rule_index {
 };
 
 /*
- * A parsed style sheet: its rules, the URLs its @import rules name (atoms,
- * in order), its rule index and the arena all of them live in.
+ * A parsed style sheet: its rules (each with the @media lists it is
+ * nested in), the URLs its @import rules name (atoms, in order) and their
+ * media lists, its rule index and the arena all of them live in.
  */
 struct css_sheet {
 	struct wb_arena arena;
 	struct css_rule *rules;
 	size_t rule_count;
 	struct vm_string **imports;
+	struct css_media **import_media;
 	size_t import_count;
 	struct css_rule_index index;
 	int origin;
@@ -355,12 +472,17 @@ int css_units_equal_ascii(const uint16_t *units, size_t length, const char *asci
 int css_index_build(struct css_sheet *sheet);
 const struct css_index_bucket *css_index_find(const struct css_index_table *table, const struct vm_string *key);
 
+/* Media queries (media.c). */
+int css_media_parse(struct wb_arena *arena, const struct css_token *tokens, size_t count, const struct css_media *parent, struct css_media **media);
+int css_media_matches(const struct css_media *media, float width, float height);
+
 /* Values (values.c). */
 int css_property_lookup(const struct css_token *name);
-int css_parse_value(struct vm_heap *heap, const struct css_token *tokens, size_t count, const struct css_token *name, struct css_declaration *out, size_t *out_count, size_t out_capacity);
+int css_parse_value(struct css_parse *parse, const struct css_token *tokens, size_t count, const struct css_token *name, struct css_declaration *out, size_t *out_count, size_t out_capacity);
+int css_parse_property(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *out_count);
 int css_parse_color(const struct css_token *tokens, size_t count, uint32_t *color);
-int css_parse_value_as(struct vm_heap *heap, int property, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *out_count);
-int css_parse_font(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *out_count);
+int css_parse_value_as(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *out_count);
+int css_parse_font(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *out_count);
 
 /* The user agent's style sheet (ua.c). */
 extern const char css_user_agent_sheet[];

@@ -31,6 +31,12 @@
 #define CASCADE_DEFAULT_VIEWPORT_WIDTH	1024.0f
 #define CASCADE_DEFAULT_VIEWPORT_HEIGHT	768.0f
 
+/* How deep var() references are followed before a cycle is assumed. */
+#define CASCADE_VAR_DEPTH	16
+
+/* The most declarations one pending declaration expands into (a shorthand's longhands). */
+#define CASCADE_EXPANSION_MAX	16U
+
 /* The precedence of a declaration by its origin and importance (higher wins). */
 #define RANK_USER_AGENT		0
 #define RANK_AUTHOR		1
@@ -42,17 +48,23 @@
  * again in owned when the engine parsed it itself (the user agent's, and
  * text added with css_engine_add_sheet) and frees it; a sheet lent by the
  * page (css_engine_add_parsed) has owned NULL and outlives the engine.
+ * media are the lists the sheet applies under (its <link>'s and its
+ * @import rules'), all of which must hold.
  */
 struct cascade_sheet {
 	const struct css_sheet *sheet;
 	struct css_sheet *owned;
+	const struct css_media *media[CSS_MEDIA_CHAIN_MAX];
+	size_t media_count;
 };
 
 /*
  * The style sheets of a document, the atoms the matching looks up, and
  * the buffers the matching of one element reuses: the atoms of its
  * classes, the index entries that may match it, and a class name's
- * characters on their way to an atom.
+ * characters on their way to an atom.  The arena holds what lives as long
+ * as the engine: the media lists of <link> elements and the elements'
+ * custom properties, which the computed styles point at.
  */
 struct css_engine {
 	struct vm_heap *heap;
@@ -67,6 +79,7 @@ struct css_engine {
 	struct wb_vector class_keys;
 	struct wb_vector candidates;
 	struct wb_units word;
+	struct wb_arena arena;
 };
 
 /*
@@ -88,6 +101,12 @@ static int cascade_collect_sheet(struct css_engine *engine, struct dom_element *
 static int cascade_entry_compare(const void *left, const void *right);
 static int cascade_add_declarations(struct wb_vector *matches, const struct css_declaration *declarations, size_t count, int origin, uint32_t specificity, uint64_t order);
 static int cascade_compare(const void *left, const void *right);
+static int cascade_customs(struct css_engine *engine, struct css_style *style, const struct cascade_match *matches, size_t count);
+static int cascade_substitute(const struct css_custom *list, const struct css_token *tokens, size_t count, int depth, struct wb_vector *out);
+static const struct css_custom *cascade_custom_find(const struct css_custom *list, const struct css_token *name);
+static int cascade_keep_tokens(struct css_engine *engine, const struct css_token *tokens, size_t count, const struct css_token **kept);
+static int cascade_resolve_pending(struct css_engine *engine, const struct css_style *style, struct wb_vector *list, struct wb_arena *scratch);
+static struct css_length cascade_calc(struct css_engine *engine, const struct css_calc *calc, float font_size);
 static int cascade_selector_matches(struct css_engine *engine, struct dom_element *element, const struct css_selector *selector, size_t index);
 static int cascade_compound_matches(struct css_engine *engine, struct dom_element *element, const struct css_compound *compound);
 static int cascade_simple_matches(struct css_engine *engine, struct dom_element *element, const struct css_simple *simple);
@@ -129,6 +148,7 @@ css_engine_create(
 	wb_vector_init(&created->class_keys, sizeof(struct vm_string *));
 	wb_vector_init(&created->candidates, sizeof(struct css_index_entry));
 	wb_units_init(&created->word);
+	wb_arena_init(&created->arena, 0);
 	created->atom_id = vm_atom_from_ascii(heap, "id");
 	created->atom_class = vm_atom_from_ascii(heap, "class");
 	created->atom_style = vm_atom_from_ascii(heap, "style");
@@ -178,6 +198,7 @@ css_engine_destroy(
 	wb_vector_release(&engine->class_keys);
 	wb_vector_release(&engine->candidates);
 	wb_units_release(&engine->word);
+	wb_arena_release(&engine->arena);
 	free(engine);
 }
 
@@ -226,7 +247,8 @@ css_engine_add_sheet_origin(
 		return error;
 	}
 
-	/* Appends it, owned by the engine. */
+	/* Appends it, owned by the engine, under no media list. */
+	memset(&entry, 0, sizeof(entry));
 	entry.sheet = sheet;
 	entry.owned = sheet;
 	error = wb_vector_push(&engine->sheets, &entry);
@@ -241,24 +263,70 @@ css_engine_add_sheet_origin(
 
 /*
  * Adds an author sheet the caller parsed (and keeps) after the ones added
- * before it; the engine only borrows it.
+ * before it, applying under every one of media_count media lists (NULL
+ * ones hold); the engine only borrows the sheet and the lists.
  */
 int
 css_engine_add_parsed(
 	struct css_engine *engine,
-	const struct css_sheet *sheet)
+	const struct css_sheet *sheet,
+	const struct css_media *const *media,
+	size_t media_count)
 {
 	struct cascade_sheet entry;
+	size_t index;
 	int error;
 
-	/* Appends the lent sheet. */
+	/* The lent sheet and its lists (the deepest ones beyond the room are left out). */
+	memset(&entry, 0, sizeof(entry));
 	entry.sheet = sheet;
 	entry.owned = NULL;
+	for (index = 0; index < media_count && entry.media_count < CSS_MEDIA_CHAIN_MAX; index++) {
+		if (media[index] == NULL)
+			continue;
+		entry.media[entry.media_count] = media[index];
+		entry.media_count++;
+	}
+
+	/* Appends it. */
 	error = wb_vector_push(&engine->sheets, &entry);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the sheet takes part in the cascade. */
+	return 0;
+}
+
+/*
+ * Reads a media query list (a <link>'s media attribute) into the engine's
+ * arena, for css_engine_add_parsed.
+ */
+int
+css_engine_parse_media(
+	struct css_engine *engine,
+	const uint16_t *units,
+	size_t length,
+	const struct css_media **media)
+{
+	struct css_token *tokens;
+	struct css_media *parsed;
+	size_t count;
+	int error;
+
+	/* The attribute's tokens (without the end-of-file token). */
+	error = css_tokenize(&engine->arena, units, length, &tokens, &count);
+	if (error != 0)
+		return error;
+	if (count > 0)
+		count--;
+
+	/* The list. */
+	error = css_media_parse(&engine->arena, tokens, count, NULL, &parsed);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the list lives as long as the engine. */
+	*media = parsed;
 	return 0;
 }
 
@@ -314,6 +382,7 @@ css_engine_compute(
 		style->visibility = parent->visibility;
 		style->list_style = parent->list_style;
 		style->underline = parent->underline;
+		style->custom = parent->custom;
 	}
 
 	/* Gathers the declarations that apply, in cascade order. */
@@ -330,6 +399,19 @@ css_engine_compute(
 	matches = list.items;
 	if (list.count > 1)
 		qsort(matches, list.count, sizeof(*matches), cascade_compare);
+
+	/* The element's custom properties, then the declarations that wait for them. */
+	error = cascade_customs(engine, style, matches, list.count);
+	if (error == 0)
+		error = cascade_resolve_pending(engine, style, &list, &scratch);
+	if (error != 0) {
+		wb_vector_release(&list);
+		wb_arena_release(&scratch);
+		return error;
+	}
+
+	/* The list may have been rebuilt. */
+	matches = list.items;
 
 	/*
 	 * The font size and family come first: the other lengths in em depend on
@@ -457,6 +539,7 @@ cascade_collect(
 	size_t declaration_count;
 	size_t sheet;
 	size_t index;
+	int holds;
 	int error;
 
 	/* The keys the rule indexes are searched by: the element's id, classes and type. */
@@ -464,9 +547,16 @@ cascade_collect(
 	if (error != 0)
 		return error;
 
-	/* The rules of every sheet whose selectors match, in the order of the sheets. */
+	/* The rules of every sheet whose media hold and whose selectors match, in the order of the sheets. */
 	sheets = engine->sheets.items;
 	for (sheet = 0; sheet < engine->sheets.count; sheet++) {
+		holds = 1;
+		for (index = 0; index < sheets[sheet].media_count && holds; index++)
+			holds = css_media_matches(sheets[sheet].media[index], engine->viewport_width, engine->viewport_height);
+		if (!holds)
+			continue;
+
+		/* The sheet's matching rules. */
 		error = cascade_collect_sheet(engine, element, sheets[sheet].sheet, (uint64_t)sheet, id, matches);
 		if (error != 0)
 			return error;
@@ -701,6 +791,10 @@ cascade_collect_sheet(
 			group++;
 		}
 
+		/* A rule inside @media applies only while its lists hold. */
+		if (matched && rule->media != NULL)
+			matched = css_media_matches(rule->media, engine->viewport_width, engine->viewport_height);
+
 		/* A rule whose selectors all failed does not apply. */
 		if (matched) {
 			order = (sheet_number << 44) | ((uint64_t)candidates[position].rule << 16);
@@ -779,6 +873,446 @@ cascade_add_declarations(
 
 	/* Succeeded: the declarations are gathered. */
 	return 0;
+}
+
+/*
+ * Gives the element its custom properties: its parent's list, with the
+ * ones it declares in front (the last declaration of a name found first),
+ * each with its var() references replaced; a property whose references
+ * cannot be replaced is invalid.  The list lives in the engine's arena.
+ */
+static int
+cascade_customs(
+	struct css_engine *engine,
+	struct css_style *style,
+	const struct cascade_match *matches,
+	size_t count)
+{
+	struct css_custom *node;
+	struct css_custom **own;
+	struct wb_vector owned;
+	struct wb_vector tokens;
+	size_t index;
+	int error;
+
+	/* The element's own properties go in front of the inherited list, in cascade order. */
+	wb_vector_init(&owned, sizeof(struct css_custom *));
+	for (index = 0; index < count; index++) {
+		if (matches[index].declaration->property != CSS_PROP_CUSTOM)
+			continue;
+
+		/* A node for the declaration, its tokens as written for now. */
+		node = wb_arena_zalloc(&engine->arena, sizeof(*node));
+		if (node == NULL) {
+			wb_vector_release(&owned);
+			return ENOMEM;
+		}
+
+		/* The node is the list's first now. */
+		node->name = matches[index].declaration->custom_name;
+		node->tokens = matches[index].declaration->raw;
+		node->count = matches[index].declaration->raw_count;
+		node->next = style->custom;
+		style->custom = node;
+		error = wb_vector_push(&owned, &node);
+		if (error != 0) {
+			wb_vector_release(&owned);
+			return ENOMEM;
+		}
+	}
+
+	/* An element that declares none shares its parent's list. */
+	if (owned.count == 0) {
+		wb_vector_release(&owned);
+		return 0;
+	}
+
+	/* Each own property's tokens, with their references replaced, copied into the engine's arena. */
+	own = owned.items;
+	wb_vector_init(&tokens, sizeof(struct css_token));
+	for (index = 0; index < owned.count; index++) {
+		node = own[index];
+		wb_vector_clear(&tokens);
+		error = cascade_substitute(style->custom, node->tokens, node->count, 0, &tokens);
+		if (error == ENOMEM) {
+			wb_vector_release(&tokens);
+			wb_vector_release(&owned);
+			return error;
+		}
+
+		/* A reference that cannot be replaced makes the property invalid. */
+		if (error != 0) {
+			node->invalid = 1;
+			node->tokens = NULL;
+			node->count = 0;
+			continue;
+		}
+
+		/* The replaced tokens, kept as long as the engine. */
+		error = cascade_keep_tokens(engine, tokens.items, tokens.count, &node->tokens);
+		if (error != 0) {
+			wb_vector_release(&tokens);
+			wb_vector_release(&owned);
+			return error;
+		}
+
+		/* The node holds the replaced tokens. */
+		node->count = tokens.count;
+	}
+
+	/* The buffers are no longer needed. */
+	wb_vector_release(&tokens);
+	wb_vector_release(&owned);
+
+	/* Succeeded: the element has its custom properties. */
+	return 0;
+}
+
+/*
+ * Appends tokens to a buffer with every var(--name[, fallback]) replaced
+ * by the named property's tokens from a custom property list (its own
+ * references replaced in turn, up to a depth that stops a cycle), or by
+ * the fallback.  Returns EINVAL when a reference has neither.
+ */
+static int
+cascade_substitute(
+	const struct css_custom *list,
+	const struct css_token *tokens,
+	size_t count,
+	int depth,
+	struct wb_vector *out)
+{
+	const struct css_custom *node;
+	size_t index;
+	size_t end;
+	size_t name_index;
+	size_t fallback;
+	int nesting;
+	int is_var;
+	int error;
+
+	/* A reference too deep is a cycle. */
+	if (depth > CASCADE_VAR_DEPTH)
+		return EINVAL;
+
+	/* Copies token by token, replacing each var(). */
+	index = 0;
+	while (index < count) {
+		is_var = 0;
+		if (tokens[index].type == CSS_TOKEN_FUNCTION)
+			is_var = css_ident_equal(&tokens[index], "var");
+		if (!is_var) {
+			error = wb_vector_push(out, &tokens[index]);
+			if (error != 0)
+				return ENOMEM;
+			index++;
+			continue;
+		}
+
+		/* The reference's closing parenthesis. */
+		end = index + 1U;
+		nesting = 1;
+		while (end < count) {
+			if (tokens[end].type == CSS_TOKEN_FUNCTION || tokens[end].type == CSS_TOKEN_OPEN_PAREN)
+				nesting++;
+			if (tokens[end].type == CSS_TOKEN_CLOSE_PAREN)
+				nesting--;
+			if (nesting == 0)
+				break;
+			end++;
+		}
+
+		/* The name, and the fallback after a comma. */
+		name_index = index + 1U;
+		while (name_index < end && tokens[name_index].type == CSS_TOKEN_WHITESPACE)
+			name_index++;
+		if (name_index >= end || tokens[name_index].type != CSS_TOKEN_IDENT)
+			return EINVAL;
+		fallback = name_index + 1U;
+		while (fallback < end && tokens[fallback].type == CSS_TOKEN_WHITESPACE)
+			fallback++;
+		if (fallback < end && tokens[fallback].type != CSS_TOKEN_COMMA)
+			return EINVAL;
+
+		/* The named property, when the list has a valid one. */
+		node = cascade_custom_find(list, &tokens[name_index]);
+		if (node != NULL) {
+			error = cascade_substitute(list, node->tokens, node->count, depth + 1, out);
+		} else if (fallback < end) {
+			error = cascade_substitute(list, tokens + fallback + 1U, end - fallback - 1U, depth + 1, out);
+		} else {
+			error = EINVAL;
+		}
+
+		/* A reference that could not be replaced spoils the value. */
+		if (error != 0)
+			return error;
+
+		/* Past the reference. */
+		index = end + 1U;
+	}
+
+	/* Succeeded: the tokens are appended. */
+	return 0;
+}
+
+/* Finds the valid custom property a name token names in a list (NULL when it has none). */
+static const struct css_custom *
+cascade_custom_find(
+	const struct css_custom *list,
+	const struct css_token *name)
+{
+	const struct css_custom *node;
+	int same;
+
+	/* The first node of the name is the one that wins. */
+	for (node = list; node != NULL; node = node->next) {
+		same = vm_string_equal_units(node->name, name->text, name->length);
+		if (!same)
+			continue;
+
+		/* An invalid property is as good as none. */
+		if (node->invalid)
+			return NULL;
+		return node;
+	}
+
+	/* No property of the name. */
+	return NULL;
+}
+
+/* Copies tokens and their text into the engine's arena. */
+static int
+cascade_keep_tokens(
+	struct css_engine *engine,
+	const struct css_token *tokens,
+	size_t count,
+	const struct css_token **kept)
+{
+	struct css_token *copy;
+	uint16_t *text;
+	size_t index;
+
+	/* An empty value keeps no tokens. */
+	*kept = NULL;
+	if (count == 0)
+		return 0;
+
+	/* The tokens. */
+	copy = wb_arena_alloc(&engine->arena, count * sizeof(*copy));
+	if (copy == NULL)
+		return ENOMEM;
+	memcpy(copy, tokens, count * sizeof(*copy));
+
+	/* Each token's text, which may live in an arena that ends sooner. */
+	for (index = 0; index < count; index++) {
+		if (copy[index].text == NULL || copy[index].length == 0)
+			continue;
+		text = wb_arena_alloc(&engine->arena, copy[index].length * sizeof(uint16_t));
+		if (text == NULL)
+			return ENOMEM;
+		memcpy(text, copy[index].text, copy[index].length * sizeof(uint16_t));
+		copy[index].text = text;
+	}
+
+	/* Succeeded: the tokens live as long as the engine. */
+	*kept = copy;
+	return 0;
+}
+
+/*
+ * Replaces each declaration that waits for var() in a sorted list of
+ * matches by the declarations its value makes once the element's custom
+ * properties are substituted (in the scratch arena), in the same place of
+ * the cascade; a value that cannot be substituted or parsed makes the
+ * property unset.
+ */
+static int
+cascade_resolve_pending(
+	struct css_engine *engine,
+	const struct css_style *style,
+	struct wb_vector *list,
+	struct wb_arena *scratch)
+{
+	struct css_declaration expanded[CASCADE_EXPANSION_MAX];
+	struct css_declaration *kept;
+	struct cascade_match *matches;
+	struct cascade_match match;
+	struct css_parse parse;
+	struct css_token unset;
+	struct wb_vector tokens;
+	struct wb_vector resolved;
+	static const uint16_t unset_text[] = { 'u', 'n', 's', 'e', 't' };
+	size_t index;
+	size_t item;
+	size_t made;
+	int pending;
+	int error;
+
+	/* Nothing to do without a pending declaration. */
+	matches = list->items;
+	pending = 0;
+	for (index = 0; index < list->count && !pending; index++) {
+		if (matches[index].declaration->property == CSS_PROP_PENDING)
+			pending = 1;
+	}
+
+	/* A list without one stays as it is. */
+	if (!pending)
+		return 0;
+
+	/* The value parser's context: the heap's names, calculations in the scratch arena. */
+	parse.heap = engine->heap;
+	parse.arena = scratch;
+	memset(&unset, 0, sizeof(unset));
+	unset.type = CSS_TOKEN_IDENT;
+	unset.text = unset_text;
+	unset.length = 5;
+
+	/* Rebuilds the list with each pending declaration expanded in its place. */
+	wb_vector_init(&tokens, sizeof(struct css_token));
+	wb_vector_init(&resolved, sizeof(struct cascade_match));
+	error = 0;
+	for (index = 0; index < list->count && error == 0; index++) {
+		if (matches[index].declaration->property != CSS_PROP_PENDING) {
+			error = wb_vector_push(&resolved, &matches[index]);
+			continue;
+		}
+
+		/* The value with the element's custom properties, parsed as its property. */
+		wb_vector_clear(&tokens);
+		made = 0;
+		error = cascade_substitute(style->custom, matches[index].declaration->raw, matches[index].declaration->raw_count, 0, &tokens);
+		if (error == 0)
+			error = css_parse_property(&parse, matches[index].declaration->pending_property, tokens.items, tokens.count, expanded, &made);
+		if (error == ENOMEM)
+			break;
+
+		/* A value invalid at computed-value time is unset. */
+		if (error != 0 || made == 0) {
+			made = 0;
+			error = css_parse_property(&parse, matches[index].declaration->pending_property, &unset, 1, expanded, &made);
+			if (error != 0)
+				break;
+		}
+
+		/* The declarations made, kept in the scratch arena, in the pending one's place. */
+		kept = wb_arena_alloc(scratch, made * sizeof(*kept) + 1U);
+		if (kept == NULL) {
+			error = ENOMEM;
+			break;
+		}
+
+		/* Each one takes the pending declaration's rank and order. */
+		memcpy(kept, expanded, made * sizeof(*kept));
+		for (item = 0; item < made && error == 0; item++) {
+			match = matches[index];
+			match.declaration = &kept[item];
+			error = wb_vector_push(&resolved, &match);
+		}
+	}
+
+	/* The substituted tokens are no longer needed. */
+	wb_vector_release(&tokens);
+	if (error != 0) {
+		wb_vector_release(&resolved);
+		return error;
+	}
+
+	/* The resolved list replaces the old one. */
+	wb_vector_release(list);
+	*list = resolved;
+
+	/* Succeeded: no declaration waits any more. */
+	return 0;
+}
+
+/*
+ * Computes a calculated length: pixels, or a percentage with pixels added
+ * (min(), max() and clamp() over percentages measure them against the
+ * viewport's width, as the layout's containing block is not known here).
+ */
+static struct css_length
+cascade_calc(
+	struct css_engine *engine,
+	const struct css_calc *calc,
+	float font_size)
+{
+	struct css_length length;
+	float values[CSS_CALC_ARGUMENTS];
+	float percents[CSS_CALC_ARGUMENTS];
+	float least;
+	float vmin;
+	float vmax;
+	size_t index;
+	int any_percent;
+
+	/* Each argument's pixels and percentage (a calculation has one argument at least). */
+	memset(values, 0, sizeof(values));
+	memset(percents, 0, sizeof(percents));
+	vmin = engine->viewport_width;
+	if (engine->viewport_height < vmin)
+		vmin = engine->viewport_height;
+	vmax = engine->viewport_width;
+	if (engine->viewport_height > vmax)
+		vmax = engine->viewport_height;
+	any_percent = 0;
+	for (index = 0; index < calc->count; index++) {
+		values[index] = calc->sums[index].px +
+		    calc->sums[index].em * font_size +
+		    calc->sums[index].ex * font_size * 0.5f +
+		    calc->sums[index].rem * engine->root_font_size +
+		    calc->sums[index].vw * engine->viewport_width / 100.0f +
+		    calc->sums[index].vh * engine->viewport_height / 100.0f +
+		    calc->sums[index].vmin * vmin / 100.0f +
+		    calc->sums[index].vmax * vmax / 100.0f;
+		percents[index] = calc->sums[index].percent;
+		if (percents[index] != 0)
+			any_percent = 1;
+	}
+
+	/* A sum keeps its percentage for the layout. */
+	length.value = values[0];
+	length.unit = CSS_UNIT_PX;
+	length.offset = 0;
+	if (calc->operation == CSS_CALC_SUM) {
+		if (percents[0] != 0) {
+			length.unit = CSS_UNIT_PERCENT;
+			length.value = percents[0];
+			length.offset = values[0];
+		}
+
+		/* The sum's length. */
+		return length;
+	}
+
+	/* The others compare pixels: a percentage is measured against the viewport's width. */
+	if (any_percent) {
+		for (index = 0; index < calc->count; index++)
+			values[index] += percents[index] * engine->viewport_width / 100.0f;
+	}
+
+	/* min() takes the least, max() the greatest. */
+	least = values[0];
+	for (index = 1; index < calc->count; index++) {
+		if (calc->operation == CSS_CALC_MIN && values[index] < least)
+			least = values[index];
+		if (calc->operation != CSS_CALC_MIN && values[index] > least)
+			least = values[index];
+	}
+
+	/* clamp(low, preferred, high) is the preferred one held between the two. */
+	if (calc->operation == CSS_CALC_CLAMP) {
+		least = values[1];
+		if (least > values[2])
+			least = values[2];
+		if (least < values[0])
+			least = values[0];
+	}
+
+	/* Reports the length in pixels. */
+	length.value = least;
+	return length;
 }
 
 /* Orders two applying declarations: rank, then specificity, then order. */
@@ -1308,7 +1842,8 @@ cascade_apply(
 			style->line_height = cascade_length(engine, value, style->font_size);
 			if (style->line_height.unit == CSS_UNIT_PERCENT) {
 				style->line_height.unit = CSS_UNIT_PX;
-				style->line_height.value = style->font_size * style->line_height.value / 100.0f;
+				style->line_height.value = style->font_size * style->line_height.value / 100.0f + style->line_height.offset;
+				style->line_height.offset = 0;
 			}
 		}
 
@@ -1498,8 +2033,15 @@ cascade_length(
 	/* Keywords keep their unit. */
 	length.value = 0;
 	length.unit = CSS_UNIT_PX;
+	length.offset = 0;
 	if (value->kind == CSS_VALUE_KEYWORD) {
 		length.unit = value->keyword;
+		return length;
+	}
+
+	/* A calculation. */
+	if (value->unit == CSS_DUNIT_CALC && value->calc != NULL) {
+		length = cascade_calc(engine, value->calc, font_size);
 		return length;
 	}
 
@@ -1542,6 +2084,16 @@ cascade_length(
 	case CSS_DUNIT_VH:
 		length.value = value->number * engine->viewport_height / 100.0f;
 		break;
+	case CSS_DUNIT_VMIN:
+		length.value = value->number * engine->viewport_width / 100.0f;
+		if (engine->viewport_height < engine->viewport_width)
+			length.value = value->number * engine->viewport_height / 100.0f;
+		break;
+	case CSS_DUNIT_VMAX:
+		length.value = value->number * engine->viewport_width / 100.0f;
+		if (engine->viewport_height > engine->viewport_width)
+			length.value = value->number * engine->viewport_height / 100.0f;
+		break;
 	default:
 		break;
 	}
@@ -1562,6 +2114,14 @@ cascade_font_size(
 	/* em and percentages measure the parent's size. */
 	if (value->kind == CSS_VALUE_LENGTH && value->unit == CSS_DUNIT_PERCENT)
 		return parent_size * value->number / 100.0f;
+
+	/* So do a calculation's. */
+	if (value->kind == CSS_VALUE_LENGTH && value->unit == CSS_DUNIT_CALC && value->calc != NULL) {
+		length = cascade_calc(engine, value->calc, parent_size);
+		if (length.unit == CSS_UNIT_PERCENT)
+			return parent_size * length.value / 100.0f + length.offset;
+		return length.value;
+	}
 
 	/* A keyword is its size at the default size. */
 	if (value->kind == CSS_VALUE_LENGTH && value->unit == CSS_DUNIT_FONT_KEYWORD)

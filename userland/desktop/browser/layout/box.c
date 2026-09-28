@@ -773,11 +773,11 @@ box_relative_offset(
 	if (offset[CSS_LEFT].unit == CSS_UNIT_PX) {
 		*dx = layout_from_px(offset[CSS_LEFT].value);
 	} else if (offset[CSS_LEFT].unit == CSS_UNIT_PERCENT) {
-		*dx = (layout_unit)((float)width * offset[CSS_LEFT].value / 100.0f);
+		*dx = (layout_unit)((float)width * offset[CSS_LEFT].value / 100.0f) + layout_from_px(offset[CSS_LEFT].offset);
 	} else if (offset[CSS_RIGHT].unit == CSS_UNIT_PX) {
 		*dx = -layout_from_px(offset[CSS_RIGHT].value);
 	} else if (offset[CSS_RIGHT].unit == CSS_UNIT_PERCENT) {
-		*dx = -(layout_unit)((float)width * offset[CSS_RIGHT].value / 100.0f);
+		*dx = -((layout_unit)((float)width * offset[CSS_RIGHT].value / 100.0f) + layout_from_px(offset[CSS_RIGHT].offset));
 	}
 
 	/* Vertically: top wins over bottom. */

@@ -252,7 +252,7 @@ block_resolve(
 	if (length->unit == CSS_UNIT_PX)
 		value = layout_from_px(length->value);
 	if (length->unit == CSS_UNIT_PERCENT)
-		value = (layout_unit)((float)containing_width * length->value / 100.0f);
+		value = (layout_unit)((float)containing_width * length->value / 100.0f) + layout_from_px(length->offset);
 
 	/* Reports the length. */
 	return value;

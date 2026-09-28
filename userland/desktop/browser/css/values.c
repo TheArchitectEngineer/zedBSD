@@ -32,7 +32,14 @@ enum values_shorthand {
 	SHORT_BACKGROUND_SIZE,
 	SHORT_FONT,
 	SHORT_TEXT_DECORATION,
-	SHORT_LIST_STYLE
+	SHORT_LIST_STYLE,
+	SHORT_MARGIN_INLINE,
+	SHORT_MARGIN_BLOCK,
+	SHORT_PADDING_INLINE,
+	SHORT_PADDING_BLOCK,
+	SHORT_INSET,
+	SHORT_INSET_INLINE,
+	SHORT_INSET_BLOCK
 };
 
 /*
@@ -52,6 +59,16 @@ struct values_keyword {
 };
 
 /*
+ * One operand of a calculation while it is read: a plain number, or a sum
+ * of lengths.
+ */
+struct values_term {
+	int is_number;
+	float number;
+	struct css_calc_sum sum;
+};
+
+/*
  * A named color and its RGB value.
  */
 struct values_color {
@@ -62,18 +79,18 @@ struct values_color {
 static int values_keyword(const struct values_keyword *table, const struct css_token *token, int *value);
 static int values_unit(const struct css_token *token, int *unit);
 static int values_length(const struct css_token *token, int allow_keywords, struct css_value *value);
-static int values_single(struct vm_heap *heap, int property, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_families(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_single(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_families(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static size_t values_components(const struct css_token *tokens, size_t count, size_t *starts, size_t *lengths, size_t max);
-static int values_four(struct vm_heap *heap, int first, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_border(struct vm_heap *heap, int side, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_four(struct css_parse *parse, int first, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_border(struct css_parse *parse, int side, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static void values_add(struct css_declaration *out, size_t *made, int property, const struct css_value *value);
 static int values_hex_digit(uint16_t unit);
 static int values_rgb_function(const struct css_token *tokens, size_t count, uint32_t *color);
 static void values_wide_keyword(int property, const struct css_value *value, struct css_declaration *out, size_t *made);
-static int values_background(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_background(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static size_t values_function_length(const struct css_token *tokens, size_t count);
-static int values_url(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_url(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_repeat_parts(const struct css_token *const *parts, size_t count, struct css_value *value);
 static int values_position_parts(const struct css_token *const *parts, size_t count, struct css_value *x, struct css_value *y);
 static int values_position_part(const struct css_token *token, struct css_value *value);
@@ -81,6 +98,17 @@ static int values_position_axis(const struct css_token *token);
 static int values_size_parts(const struct css_token *const *parts, size_t count, struct css_value *width, struct css_value *height);
 static int values_background_position(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_background_size(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_takes_length(int property);
+static int values_pair(struct css_parse *parse, int first, int second, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_calc(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_calc_arguments(const struct css_token *tokens, size_t count, int operation, struct css_calc *calc);
+static int values_calc_sum(const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
+static int values_calc_product(const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
+static int values_calc_value(const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
+static int values_calc_unit(const struct css_token *token, struct css_calc_sum *sum);
+static void values_calc_scale(struct css_calc_sum *sum, float factor);
+static void values_calc_add(struct css_calc_sum *sum, const struct css_calc_sum *other, float sign);
+static size_t values_skip_space(const struct css_token *tokens, size_t count, size_t index);
 
 /* The property names this pass knows. */
 static const struct values_name values_names[] = {
@@ -156,6 +184,49 @@ static const struct values_name values_names[] = {
 	{ "font", SHORT_FONT },
 	{ "text-decoration", SHORT_TEXT_DECORATION },
 	{ "list-style", SHORT_LIST_STYLE },
+
+	/* The logical properties, in a horizontal left-to-right writing mode (ws074-p061). */
+	{ "margin-inline-start", CSS_PROP_MARGIN_LEFT },
+	{ "margin-inline-end", CSS_PROP_MARGIN_RIGHT },
+	{ "margin-block-start", CSS_PROP_MARGIN_TOP },
+	{ "margin-block-end", CSS_PROP_MARGIN_BOTTOM },
+	{ "padding-inline-start", CSS_PROP_PADDING_LEFT },
+	{ "padding-inline-end", CSS_PROP_PADDING_RIGHT },
+	{ "padding-block-start", CSS_PROP_PADDING_TOP },
+	{ "padding-block-end", CSS_PROP_PADDING_BOTTOM },
+	{ "inset-inline-start", CSS_PROP_LEFT },
+	{ "inset-inline-end", CSS_PROP_RIGHT },
+	{ "inset-block-start", CSS_PROP_TOP },
+	{ "inset-block-end", CSS_PROP_BOTTOM },
+	{ "inline-size", CSS_PROP_WIDTH },
+	{ "block-size", CSS_PROP_HEIGHT },
+	{ "min-inline-size", CSS_PROP_MIN_WIDTH },
+	{ "max-inline-size", CSS_PROP_MAX_WIDTH },
+	{ "min-block-size", CSS_PROP_MIN_HEIGHT },
+	{ "max-block-size", CSS_PROP_MAX_HEIGHT },
+	{ "border-inline-start-width", CSS_PROP_BORDER_LEFT_WIDTH },
+	{ "border-inline-end-width", CSS_PROP_BORDER_RIGHT_WIDTH },
+	{ "border-block-start-width", CSS_PROP_BORDER_TOP_WIDTH },
+	{ "border-block-end-width", CSS_PROP_BORDER_BOTTOM_WIDTH },
+	{ "border-inline-start-style", CSS_PROP_BORDER_LEFT_STYLE },
+	{ "border-inline-end-style", CSS_PROP_BORDER_RIGHT_STYLE },
+	{ "border-block-start-style", CSS_PROP_BORDER_TOP_STYLE },
+	{ "border-block-end-style", CSS_PROP_BORDER_BOTTOM_STYLE },
+	{ "border-inline-start-color", CSS_PROP_BORDER_LEFT_COLOR },
+	{ "border-inline-end-color", CSS_PROP_BORDER_RIGHT_COLOR },
+	{ "border-block-start-color", CSS_PROP_BORDER_TOP_COLOR },
+	{ "border-block-end-color", CSS_PROP_BORDER_BOTTOM_COLOR },
+	{ "border-inline-start", SHORT_BORDER_LEFT },
+	{ "border-inline-end", SHORT_BORDER_RIGHT },
+	{ "border-block-start", SHORT_BORDER_TOP },
+	{ "border-block-end", SHORT_BORDER_BOTTOM },
+	{ "margin-inline", SHORT_MARGIN_INLINE },
+	{ "margin-block", SHORT_MARGIN_BLOCK },
+	{ "padding-inline", SHORT_PADDING_INLINE },
+	{ "padding-block", SHORT_PADDING_BLOCK },
+	{ "inset", SHORT_INSET },
+	{ "inset-inline", SHORT_INSET_INLINE },
+	{ "inset-block", SHORT_INSET_BLOCK },
 	{ NULL, 0 }
 };
 
@@ -387,6 +458,18 @@ static const struct values_keyword values_units[] = {
 	{ "mm", CSS_DUNIT_MM },
 	{ "vw", CSS_DUNIT_VW },
 	{ "vh", CSS_DUNIT_VH },
+	{ "vmin", CSS_DUNIT_VMIN },
+	{ "vmax", CSS_DUNIT_VMAX },
+	{ "svw", CSS_DUNIT_VW },
+	{ "lvw", CSS_DUNIT_VW },
+	{ "dvw", CSS_DUNIT_VW },
+	{ "svh", CSS_DUNIT_VH },
+	{ "lvh", CSS_DUNIT_VH },
+	{ "dvh", CSS_DUNIT_VH },
+	{ "cqw", CSS_DUNIT_VW },
+	{ "cqi", CSS_DUNIT_VW },
+	{ "cqh", CSS_DUNIT_VH },
+	{ "cqb", CSS_DUNIT_VH },
 	{ NULL, 0 }
 };
 
@@ -593,7 +676,7 @@ css_property_lookup(
  */
 int
 css_parse_value(
-	struct vm_heap *heap,
+	struct css_parse *parse,
 	const struct css_token *tokens,
 	size_t count,
 	const struct css_token *name,
@@ -601,18 +684,53 @@ css_parse_value(
 	size_t *out_count,
 	size_t out_capacity)
 {
-	struct css_value value;
 	int property;
 	int error;
-	int first;
-	int wide;
 
 	UNUSED_PARAMETER(out_capacity);
 
 	/* Finds the property. */
 	*out_count = 0;
 	property = css_property_lookup(name);
-	if (property < 0 || count == 0)
+	if (property < 0)
+		return EINVAL;
+
+	/* Parses the value as that property. */
+	error = css_parse_property(parse, property, tokens, count, out, out_count);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the longhands are declared. */
+	return 0;
+}
+
+/*
+ * Parses a value as a property found before (a longhand or a shorthand)
+ * into longhand declarations; the same errors as css_parse_value.
+ */
+int
+css_parse_property(
+	struct css_parse *parse,
+	int property,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *out_count)
+{
+	struct css_value value;
+	int error;
+	int first;
+	int wide;
+
+	/* Nothing is no value. */
+	*out_count = 0;
+	while (count > 0 && tokens[0].type == CSS_TOKEN_WHITESPACE) {
+		tokens++;
+		count--;
+	}
+	while (count > 0 && tokens[count - 1U].type == CSS_TOKEN_WHITESPACE)
+		count--;
+	if (count == 0)
 		return EINVAL;
 
 	/* The CSS-wide keywords apply to every longhand a shorthand stands for. */
@@ -626,36 +744,36 @@ css_parse_value(
 	/* The shorthands. */
 	switch (property) {
 	case SHORT_MARGIN:
-		return values_four(heap, CSS_PROP_MARGIN_TOP, tokens, count, out, out_count);
+		return values_four(parse, CSS_PROP_MARGIN_TOP, tokens, count, out, out_count);
 	case SHORT_PADDING:
-		return values_four(heap, CSS_PROP_PADDING_TOP, tokens, count, out, out_count);
+		return values_four(parse, CSS_PROP_PADDING_TOP, tokens, count, out, out_count);
 	case SHORT_BORDER_WIDTH:
-		return values_four(heap, CSS_PROP_BORDER_TOP_WIDTH, tokens, count, out, out_count);
+		return values_four(parse, CSS_PROP_BORDER_TOP_WIDTH, tokens, count, out, out_count);
 	case SHORT_BORDER_STYLE:
-		return values_four(heap, CSS_PROP_BORDER_TOP_STYLE, tokens, count, out, out_count);
+		return values_four(parse, CSS_PROP_BORDER_TOP_STYLE, tokens, count, out, out_count);
 	case SHORT_BORDER_COLOR:
-		return values_four(heap, CSS_PROP_BORDER_TOP_COLOR, tokens, count, out, out_count);
+		return values_four(parse, CSS_PROP_BORDER_TOP_COLOR, tokens, count, out, out_count);
 	case SHORT_BORDER:
-		return values_border(heap, -1, tokens, count, out, out_count);
+		return values_border(parse, -1, tokens, count, out, out_count);
 	case SHORT_BORDER_TOP:
-		return values_border(heap, CSS_TOP, tokens, count, out, out_count);
+		return values_border(parse, CSS_TOP, tokens, count, out, out_count);
 	case SHORT_BORDER_RIGHT:
-		return values_border(heap, CSS_RIGHT, tokens, count, out, out_count);
+		return values_border(parse, CSS_RIGHT, tokens, count, out, out_count);
 	case SHORT_BORDER_BOTTOM:
-		return values_border(heap, CSS_BOTTOM, tokens, count, out, out_count);
+		return values_border(parse, CSS_BOTTOM, tokens, count, out, out_count);
 	case SHORT_BORDER_LEFT:
-		return values_border(heap, CSS_LEFT, tokens, count, out, out_count);
+		return values_border(parse, CSS_LEFT, tokens, count, out, out_count);
 	case SHORT_BACKGROUND:
-		return values_background(heap, tokens, count, out, out_count);
+		return values_background(parse, tokens, count, out, out_count);
 	case SHORT_BACKGROUND_POSITION:
 		return values_background_position(tokens, count, out, out_count);
 	case SHORT_BACKGROUND_SIZE:
 		return values_background_size(tokens, count, out, out_count);
 	case SHORT_TEXT_DECORATION:
-		return css_parse_value_as(heap, CSS_PROP_TEXT_DECORATION_LINE, tokens, 1, out, out_count);
+		return css_parse_value_as(parse, CSS_PROP_TEXT_DECORATION_LINE, tokens, 1, out, out_count);
 	case SHORT_LIST_STYLE:
 		for (first = 0; first < (int)count; first++) {
-			error = values_single(heap, CSS_PROP_LIST_STYLE_TYPE, &tokens[first], 1, &value);
+			error = values_single(parse, CSS_PROP_LIST_STYLE_TYPE, &tokens[first], 1, &value);
 			if (error == 0) {
 				values_add(out, out_count, CSS_PROP_LIST_STYLE_TYPE, &value);
 				return 0;
@@ -665,13 +783,27 @@ css_parse_value(
 		/* A list style without a type is not used in this pass. */
 		return EINVAL;
 	case SHORT_FONT:
-		return css_parse_font(heap, tokens, count, out, out_count);
+		return css_parse_font(parse, tokens, count, out, out_count);
+	case SHORT_MARGIN_INLINE:
+		return values_pair(parse, CSS_PROP_MARGIN_LEFT, CSS_PROP_MARGIN_RIGHT, tokens, count, out, out_count);
+	case SHORT_MARGIN_BLOCK:
+		return values_pair(parse, CSS_PROP_MARGIN_TOP, CSS_PROP_MARGIN_BOTTOM, tokens, count, out, out_count);
+	case SHORT_PADDING_INLINE:
+		return values_pair(parse, CSS_PROP_PADDING_LEFT, CSS_PROP_PADDING_RIGHT, tokens, count, out, out_count);
+	case SHORT_PADDING_BLOCK:
+		return values_pair(parse, CSS_PROP_PADDING_TOP, CSS_PROP_PADDING_BOTTOM, tokens, count, out, out_count);
+	case SHORT_INSET:
+		return values_four(parse, CSS_PROP_TOP, tokens, count, out, out_count);
+	case SHORT_INSET_INLINE:
+		return values_pair(parse, CSS_PROP_LEFT, CSS_PROP_RIGHT, tokens, count, out, out_count);
+	case SHORT_INSET_BLOCK:
+		return values_pair(parse, CSS_PROP_TOP, CSS_PROP_BOTTOM, tokens, count, out, out_count);
 	default:
 		break;
 	}
 
 	/* A longhand. */
-	error = values_single(heap, property, tokens, count, &value);
+	error = values_single(parse, property, tokens, count, &value);
 	if (error != 0)
 		return error;
 	values_add(out, out_count, property, &value);
@@ -686,7 +818,7 @@ css_parse_value(
  */
 int
 css_parse_value_as(
-	struct vm_heap *heap,
+	struct css_parse *parse,
 	int property,
 	const struct css_token *tokens,
 	size_t count,
@@ -698,7 +830,7 @@ css_parse_value_as(
 
 	/* Parses the value and adds the declaration. */
 	memset(&value, 0, sizeof(value));
-	error = values_single(heap, property, tokens, count, &value);
+	error = values_single(parse, property, tokens, count, &value);
 	if (error != 0)
 		return error;
 	values_add(out, out_count, property, &value);
@@ -712,7 +844,7 @@ css_parse_value_as(
  */
 int
 css_parse_font(
-	struct vm_heap *heap,
+	struct css_parse *parse,
 	const struct css_token *tokens,
 	size_t count,
 	struct css_declaration *out,
@@ -769,7 +901,7 @@ css_parse_font(
 	}
 
 	/* The size, and an optional line height after a slash. */
-	error = css_parse_value_as(heap, CSS_PROP_FONT_SIZE, &tokens[index], 1, out, out_count);
+	error = css_parse_value_as(parse, CSS_PROP_FONT_SIZE, &tokens[index], 1, out, out_count);
 	if (error != 0)
 		return error;
 	index++;
@@ -779,7 +911,7 @@ css_parse_font(
 			index++;
 		if (index >= count)
 			return EINVAL;
-		error = css_parse_value_as(heap, CSS_PROP_LINE_HEIGHT, &tokens[index], 1, out, out_count);
+		error = css_parse_value_as(parse, CSS_PROP_LINE_HEIGHT, &tokens[index], 1, out, out_count);
 		if (error != 0)
 			return error;
 		index++;
@@ -790,7 +922,7 @@ css_parse_font(
 		index++;
 	if (index >= count)
 		return EINVAL;
-	error = css_parse_value_as(heap, CSS_PROP_FONT_FAMILY, &tokens[index], count - index, out, out_count);
+	error = css_parse_value_as(parse, CSS_PROP_FONT_FAMILY, &tokens[index], count - index, out, out_count);
 	if (error != 0)
 		return error;
 
@@ -1000,7 +1132,7 @@ values_length(
 /* Parses a longhand's value. */
 static int
 values_single(
-	struct vm_heap *heap,
+	struct css_parse *parse,
 	int property,
 	const struct css_token *tokens,
 	size_t count,
@@ -1012,6 +1144,7 @@ values_single(
 	int keyword;
 	int is_auto;
 	int found;
+	int takes_length;
 	int error;
 
 	/* Skips surrounding whitespace. */
@@ -1027,7 +1160,7 @@ values_single(
 
 	/* Families take a list; colors may be a function of several tokens. */
 	if (property == CSS_PROP_FONT_FAMILY)
-		return values_families(heap, tokens, count, value);
+		return values_families(parse, tokens, count, value);
 	if (property == CSS_PROP_COLOR || property == CSS_PROP_BACKGROUND_COLOR ||
 	    (property >= CSS_PROP_BORDER_TOP_COLOR && property <= CSS_PROP_BORDER_LEFT_COLOR)) {
 		error = css_parse_color(tokens, count, &value->color);
@@ -1039,7 +1172,7 @@ values_single(
 
 	/* An image: url(...) or none. */
 	if (property == CSS_PROP_BACKGROUND_IMAGE)
-		return values_url(heap, tokens, count, value);
+		return values_url(parse, tokens, count, value);
 
 	/* background-repeat takes one keyword or one for each axis. */
 	if (property == CSS_PROP_BACKGROUND_REPEAT) {
@@ -1050,6 +1183,16 @@ values_single(
 			used = 1;
 		error = values_repeat_parts(parts, used, value);
 		return error;
+	}
+
+	/* A length may be a calculation, which is a function of several tokens. */
+	takes_length = values_takes_length(property);
+	if (takes_length && tokens[0].type == CSS_TOKEN_FUNCTION) {
+		used = values_function_length(tokens, count);
+		if (used == count) {
+			error = values_calc(parse, property, tokens, count, value);
+			return error;
+		}
 	}
 
 	/* The other properties take one token. */
@@ -1211,7 +1354,7 @@ values_single(
 /* Parses font-family: names (identifiers joined by spaces, or strings) separated by commas. */
 static int
 values_families(
-	struct vm_heap *heap,
+	struct css_parse *parse,
 	const struct css_token *tokens,
 	size_t count,
 	struct css_value *value)
@@ -1231,7 +1374,7 @@ values_families(
 			while (name.length > 0 && name.data[name.length - 1U] == ' ')
 				name.length--;
 			if (name.length != 0 && value->family_count < CSS_DECLARED_FAMILIES) {
-				value->families[value->family_count] = vm_atom_from_units(heap, name.data, name.length);
+				value->families[value->family_count] = vm_atom_from_units(parse->heap, name.data, name.length);
 				if (value->families[value->family_count] == NULL) {
 					wb_units_release(&name);
 					return ENOMEM;
@@ -1325,7 +1468,7 @@ values_components(
 /* Parses a four-sided shorthand (margin, padding, border-width/style/color). */
 static int
 values_four(
-	struct vm_heap *heap,
+	struct css_parse *parse,
 	int first,
 	const struct css_token *tokens,
 	size_t count,
@@ -1344,7 +1487,7 @@ values_four(
 	if (components == 0 || components > 4)
 		return EINVAL;
 	for (index = 0; index < components; index++) {
-		error = values_single(heap, first, tokens + starts[index], lengths[index], &values[index]);
+		error = values_single(parse, first, tokens + starts[index], lengths[index], &values[index]);
 		if (error != 0)
 			return error;
 	}
@@ -1366,7 +1509,7 @@ values_four(
 /* Parses a border shorthand for one side, or all four when side is -1. */
 static int
 values_border(
-	struct vm_heap *heap,
+	struct css_parse *parse,
 	int side,
 	const struct css_token *tokens,
 	size_t count,
@@ -1402,21 +1545,21 @@ values_border(
 	if (components == 0 || components > 3)
 		return EINVAL;
 	for (index = 0; index < components; index++) {
-		error = values_single(heap, CSS_PROP_BORDER_TOP_STYLE, tokens + starts[index], lengths[index], &candidate);
+		error = values_single(parse, CSS_PROP_BORDER_TOP_STYLE, tokens + starts[index], lengths[index], &candidate);
 		if (error == 0) {
 			style = candidate;
 			continue;
 		}
 
 		/* Or a width. */
-		error = values_single(heap, CSS_PROP_BORDER_TOP_WIDTH, tokens + starts[index], lengths[index], &candidate);
+		error = values_single(parse, CSS_PROP_BORDER_TOP_WIDTH, tokens + starts[index], lengths[index], &candidate);
 		if (error == 0) {
 			width = candidate;
 			continue;
 		}
 
 		/* Or a color. */
-		error = values_single(heap, CSS_PROP_BORDER_TOP_COLOR, tokens + starts[index], lengths[index], &candidate);
+		error = values_single(parse, CSS_PROP_BORDER_TOP_COLOR, tokens + starts[index], lengths[index], &candidate);
 		if (error == 0) {
 			color = candidate;
 			continue;
@@ -1453,7 +1596,8 @@ values_add(
 	int property,
 	const struct css_value *value)
 {
-	/* Fills the next place. */
+	/* Fills the next place: an ordinary declaration, neither custom nor pending. */
+	memset(&out[*made], 0, sizeof(out[*made]));
 	out[*made].property = property;
 	out[*made].important = 0;
 	out[*made].value = *value;
@@ -1618,7 +1762,7 @@ values_wide_keyword(
  */
 static int
 values_background(
-	struct vm_heap *heap,
+	struct css_parse *parse,
 	const struct css_token *tokens,
 	size_t count,
 	struct css_declaration *out,
@@ -1683,7 +1827,7 @@ values_background(
 		if (tokens[index].type == CSS_TOKEN_FUNCTION && named)
 			is_url = 1;
 		if (is_url) {
-			error = values_url(heap, tokens + index, rest, &image);
+			error = values_url(parse, tokens + index, rest, &image);
 			if (error != 0)
 				return error;
 			index += rest;
@@ -1792,7 +1936,7 @@ values_function_length(
  */
 static int
 values_url(
-	struct vm_heap *heap,
+	struct css_parse *parse,
 	const struct css_token *tokens,
 	size_t count,
 	struct css_value *value)
@@ -1810,7 +1954,7 @@ values_url(
 
 	/* A URL token carries its text. */
 	if (count == 1 && tokens[0].type == CSS_TOKEN_URL) {
-		value->url = vm_atom_from_units(heap, tokens[0].text, tokens[0].length);
+		value->url = vm_atom_from_units(parse->heap, tokens[0].text, tokens[0].length);
 		if (value->url == NULL)
 			return ENOMEM;
 		value->kind = CSS_VALUE_URL;
@@ -1828,7 +1972,7 @@ values_url(
 		return EINVAL;
 
 	/* The string's text. */
-	value->url = vm_atom_from_units(heap, tokens[index].text, tokens[index].length);
+	value->url = vm_atom_from_units(parse->heap, tokens[index].text, tokens[index].length);
 	if (value->url == NULL)
 		return ENOMEM;
 
@@ -2149,5 +2293,556 @@ values_background_size(
 	values_add(out, made, CSS_PROP_BACKGROUND_SIZE_HEIGHT, &height);
 
 	/* Succeeded: both declared. */
+	return 0;
+}
+
+/* Tells whether a longhand takes a length, and so may take a calculation. */
+static int
+values_takes_length(
+	int property)
+{
+	/* The sizes, the four-sided lengths, the offsets and the font's lengths. */
+	switch (property) {
+	case CSS_PROP_WIDTH:
+	case CSS_PROP_HEIGHT:
+	case CSS_PROP_MIN_WIDTH:
+	case CSS_PROP_MAX_WIDTH:
+	case CSS_PROP_MIN_HEIGHT:
+	case CSS_PROP_MAX_HEIGHT:
+	case CSS_PROP_MARGIN_TOP:
+	case CSS_PROP_MARGIN_RIGHT:
+	case CSS_PROP_MARGIN_BOTTOM:
+	case CSS_PROP_MARGIN_LEFT:
+	case CSS_PROP_PADDING_TOP:
+	case CSS_PROP_PADDING_RIGHT:
+	case CSS_PROP_PADDING_BOTTOM:
+	case CSS_PROP_PADDING_LEFT:
+	case CSS_PROP_BORDER_TOP_WIDTH:
+	case CSS_PROP_BORDER_RIGHT_WIDTH:
+	case CSS_PROP_BORDER_BOTTOM_WIDTH:
+	case CSS_PROP_BORDER_LEFT_WIDTH:
+	case CSS_PROP_TOP:
+	case CSS_PROP_RIGHT:
+	case CSS_PROP_BOTTOM:
+	case CSS_PROP_LEFT:
+	case CSS_PROP_FONT_SIZE:
+	case CSS_PROP_LINE_HEIGHT:
+	case CSS_PROP_BACKGROUND_SIZE_WIDTH:
+	case CSS_PROP_BACKGROUND_SIZE_HEIGHT:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Parses calc(), min(), max() or clamp() (the whole value) into a
+ * calculation in the parse's arena: a length whose unit is
+ * CSS_DUNIT_CALC, or for line-height a plain number.
+ */
+static int
+values_calc(
+	struct css_parse *parse,
+	int property,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	struct css_calc calc;
+	struct css_calc *kept;
+	size_t inner;
+	size_t used;
+	size_t after;
+	int operation;
+	int same;
+	int error;
+
+	/* The function's name picks what it does. */
+	operation = -1;
+	same = css_ident_equal(&tokens[0], "calc");
+	if (!same)
+		same = css_ident_equal(&tokens[0], "-webkit-calc");
+	if (same)
+		operation = CSS_CALC_SUM;
+	same = css_ident_equal(&tokens[0], "min");
+	if (same)
+		operation = CSS_CALC_MIN;
+	same = css_ident_equal(&tokens[0], "max");
+	if (same)
+		operation = CSS_CALC_MAX;
+	same = css_ident_equal(&tokens[0], "clamp");
+	if (same)
+		operation = CSS_CALC_CLAMP;
+	if (operation < 0 || count < 2 || tokens[count - 1U].type != CSS_TOKEN_CLOSE_PAREN)
+		return EINVAL;
+
+	/* calc() around one min(), max() or clamp() is that function. */
+	inner = values_skip_space(tokens, count - 1U, 1);
+	if (operation == CSS_CALC_SUM && inner < count - 1U && tokens[inner].type == CSS_TOKEN_FUNCTION) {
+		used = values_function_length(tokens + inner, count - 1U - inner);
+		after = values_skip_space(tokens, count - 1U, inner + used);
+		if (after == count - 1U) {
+			error = values_calc(parse, property, tokens + inner, used, value);
+			if (error == 0)
+				return 0;
+		}
+	}
+
+	/* The arguments, as sums. */
+	memset(&calc, 0, sizeof(calc));
+	error = values_calc_arguments(tokens + 1, count - 2U, operation, &calc);
+	if (error != 0)
+		return error;
+
+	/* A calculation of plain numbers is a number: line-height's, or zero for a length. */
+	if (calc.count == 0) {
+		if (property == CSS_PROP_LINE_HEIGHT) {
+			value->kind = CSS_VALUE_NUMBER;
+			value->number = calc.sums[0].px;
+			return 0;
+		}
+
+		/* Only zero is a length without a unit. */
+		if (calc.sums[0].px != 0)
+			return EINVAL;
+		value->kind = CSS_VALUE_LENGTH;
+		value->number = 0;
+		value->unit = CSS_DUNIT_PX;
+		return 0;
+	}
+
+	/* The calculation is kept in the arena. */
+	kept = wb_arena_alloc(parse->arena, sizeof(*kept));
+	if (kept == NULL)
+		return ENOMEM;
+	*kept = calc;
+
+	/* Succeeded: a calculated length. */
+	value->kind = CSS_VALUE_LENGTH;
+	value->unit = CSS_DUNIT_CALC;
+	value->number = 0;
+	value->calc = kept;
+	return 0;
+}
+
+/*
+ * Reads a calculation's arguments (the tokens inside its parentheses):
+ * one sum for calc(), one to three separated by commas for min() and
+ * max(), three for clamp().  A calculation of plain numbers leaves count
+ * zero with the number in the first sum's px.
+ */
+static int
+values_calc_arguments(
+	const struct css_token *tokens,
+	size_t count,
+	int operation,
+	struct css_calc *calc)
+{
+	struct values_term term;
+	size_t index;
+	size_t made;
+	int numbers;
+	int error;
+
+	/* Each argument in turn. */
+	calc->operation = operation;
+	index = 0;
+	made = 0;
+	numbers = 0;
+	for (;;) {
+		/* Too many arguments spoil the calculation. */
+		if (made >= CSS_CALC_ARGUMENTS)
+			return EINVAL;
+
+		/* The argument's sum. */
+		error = values_calc_sum(tokens, count, &index, &term);
+		if (error != 0)
+			return error;
+
+		/* A plain number, or a sum of lengths. */
+		if (term.is_number) {
+			numbers++;
+			memset(&calc->sums[made], 0, sizeof(calc->sums[made]));
+			calc->sums[made].px = term.number;
+		} else {
+			calc->sums[made] = term.sum;
+		}
+
+		/* One more argument. */
+		made++;
+
+		/* A comma before the next argument, or the end. */
+		index = values_skip_space(tokens, count, index);
+		if (index >= count)
+			break;
+		if (tokens[index].type != CSS_TOKEN_COMMA || operation == CSS_CALC_SUM)
+			return EINVAL;
+		index++;
+	}
+
+	/* clamp() takes three; numbers and lengths are not mixed. */
+	if (operation == CSS_CALC_CLAMP && made != 3)
+		return EINVAL;
+	if (numbers != 0 && numbers != (int)made)
+		return EINVAL;
+
+	/* A calculation of numbers alone is reported as its number. */
+	calc->count = made;
+	if (numbers != 0) {
+		if (made != 1)
+			return EINVAL;
+		calc->count = 0;
+	}
+
+	/* Succeeded: the arguments are read. */
+	return 0;
+}
+
+/* Reads a sum: products joined by + and -. */
+static int
+values_calc_sum(
+	const struct css_token *tokens,
+	size_t count,
+	size_t *index,
+	struct values_term *term)
+{
+	struct values_term right;
+	float sign;
+	int error;
+
+	/* The first product. */
+	error = values_calc_product(tokens, count, index, term);
+	if (error != 0)
+		return error;
+
+	/* Then + or - and another product, while they follow. */
+	for (;;) {
+		*index = values_skip_space(tokens, count, *index);
+		if (*index >= count || tokens[*index].type != CSS_TOKEN_DELIM)
+			break;
+		if (tokens[*index].delim != '+' && tokens[*index].delim != '-')
+			break;
+
+		/* The operator's sign, then the product after it. */
+		sign = 1.0f;
+		if (tokens[*index].delim == '-')
+			sign = -1.0f;
+		(*index)++;
+		error = values_calc_product(tokens, count, index, &right);
+		if (error != 0)
+			return error;
+
+		/* Numbers add to numbers. */
+		if (term->is_number && right.is_number) {
+			term->number += sign * right.number;
+			continue;
+		}
+
+		/* A zero number counts as a length; any other number with a length spoils the sum. */
+		if (term->is_number) {
+			if (term->number != 0)
+				return EINVAL;
+			memset(&term->sum, 0, sizeof(term->sum));
+			term->is_number = 0;
+		}
+
+		/* The same for the right side. */
+		if (right.is_number) {
+			if (right.number != 0)
+				return EINVAL;
+			continue;
+		}
+
+		/* Two lengths. */
+		values_calc_add(&term->sum, &right.sum, sign);
+	}
+
+	/* Succeeded: the sum is read. */
+	return 0;
+}
+
+/* Reads a product: values joined by * and /, one side of each a number. */
+static int
+values_calc_product(
+	const struct css_token *tokens,
+	size_t count,
+	size_t *index,
+	struct values_term *term)
+{
+	struct values_term right;
+	int divide;
+	int error;
+
+	/* The first value. */
+	error = values_calc_value(tokens, count, index, term);
+	if (error != 0)
+		return error;
+
+	/* Then * or / and another value, while they follow. */
+	for (;;) {
+		*index = values_skip_space(tokens, count, *index);
+		if (*index >= count || tokens[*index].type != CSS_TOKEN_DELIM)
+			break;
+		if (tokens[*index].delim != '*' && tokens[*index].delim != '/')
+			break;
+
+		/* The operator, then the value after it. */
+		divide = 0;
+		if (tokens[*index].delim == '/')
+			divide = 1;
+		(*index)++;
+		error = values_calc_value(tokens, count, index, &right);
+		if (error != 0)
+			return error;
+
+		/* Division is by a number that is not zero. */
+		if (divide) {
+			if (!right.is_number || right.number == 0)
+				return EINVAL;
+			if (term->is_number) {
+				term->number /= right.number;
+			} else {
+				values_calc_scale(&term->sum, 1.0f / right.number);
+			}
+
+			/* The quotient is the term now. */
+			continue;
+		}
+
+		/* Multiplication has a number on one side at least. */
+		if (term->is_number && right.is_number) {
+			term->number *= right.number;
+		} else if (term->is_number) {
+			values_calc_scale(&right.sum, term->number);
+			*term = right;
+		} else if (right.is_number) {
+			values_calc_scale(&term->sum, right.number);
+		} else {
+			return EINVAL;
+		}
+	}
+
+	/* Succeeded: the product is read. */
+	return 0;
+}
+
+/* Reads one value: a number, a percentage, a length, or a sum in parentheses or calc(). */
+static int
+values_calc_value(
+	const struct css_token *tokens,
+	size_t count,
+	size_t *index,
+	struct values_term *term)
+{
+	const struct css_token *token;
+	int is_calc;
+	int error;
+
+	/* The token past whitespace. */
+	memset(term, 0, sizeof(*term));
+	*index = values_skip_space(tokens, count, *index);
+	if (*index >= count)
+		return EINVAL;
+	token = &tokens[*index];
+
+	/* A plain number. */
+	if (token->type == CSS_TOKEN_NUMBER) {
+		term->is_number = 1;
+		term->number = (float)token->number;
+		(*index)++;
+		return 0;
+	}
+
+	/* A percentage. */
+	if (token->type == CSS_TOKEN_PERCENTAGE) {
+		term->sum.percent = (float)token->number;
+		(*index)++;
+		return 0;
+	}
+
+	/* A length. */
+	if (token->type == CSS_TOKEN_DIMENSION) {
+		error = values_calc_unit(token, &term->sum);
+		if (error != 0)
+			return error;
+		(*index)++;
+		return 0;
+	}
+
+	/* A sum in parentheses, or in a nested calc(). */
+	if (token->type == CSS_TOKEN_FUNCTION) {
+		is_calc = css_ident_equal(token, "calc");
+		if (!is_calc)
+			return EINVAL;
+	} else if (token->type != CSS_TOKEN_OPEN_PAREN) {
+		return EINVAL;
+	}
+
+	/* The sum inside, then the closing parenthesis. */
+	(*index)++;
+	error = values_calc_sum(tokens, count, index, term);
+	if (error != 0)
+		return error;
+	*index = values_skip_space(tokens, count, *index);
+	if (*index >= count || tokens[*index].type != CSS_TOKEN_CLOSE_PAREN)
+		return EINVAL;
+	(*index)++;
+
+	/* Succeeded: the value is read. */
+	return 0;
+}
+
+/* Adds a dimension to a sum in the field of its unit (the absolute units as pixels). */
+static int
+values_calc_unit(
+	const struct css_token *token,
+	struct css_calc_sum *sum)
+{
+	float number;
+	int unit;
+	int found;
+
+	/* The unit must be a length unit. */
+	found = values_unit(token, &unit);
+	if (!found)
+		return EINVAL;
+	number = (float)token->number;
+
+	/* Its field. */
+	switch (unit) {
+	case CSS_DUNIT_PX:
+		sum->px += number;
+		break;
+	case CSS_DUNIT_PT:
+		sum->px += number * 96.0f / 72.0f;
+		break;
+	case CSS_DUNIT_PC:
+		sum->px += number * 16.0f;
+		break;
+	case CSS_DUNIT_IN:
+		sum->px += number * 96.0f;
+		break;
+	case CSS_DUNIT_CM:
+		sum->px += number * 96.0f / 2.54f;
+		break;
+	case CSS_DUNIT_MM:
+		sum->px += number * 96.0f / 25.4f;
+		break;
+	case CSS_DUNIT_EM:
+		sum->em += number;
+		break;
+	case CSS_DUNIT_EX:
+		sum->ex += number;
+		break;
+	case CSS_DUNIT_REM:
+		sum->rem += number;
+		break;
+	case CSS_DUNIT_VW:
+		sum->vw += number;
+		break;
+	case CSS_DUNIT_VH:
+		sum->vh += number;
+		break;
+	case CSS_DUNIT_VMIN:
+		sum->vmin += number;
+		break;
+	case CSS_DUNIT_VMAX:
+		sum->vmax += number;
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* Succeeded: the length is in the sum. */
+	return 0;
+}
+
+/* Multiplies every field of a sum by a factor. */
+static void
+values_calc_scale(
+	struct css_calc_sum *sum,
+	float factor)
+{
+	/* Each kind of length. */
+	sum->px *= factor;
+	sum->percent *= factor;
+	sum->em *= factor;
+	sum->ex *= factor;
+	sum->rem *= factor;
+	sum->vw *= factor;
+	sum->vh *= factor;
+	sum->vmin *= factor;
+	sum->vmax *= factor;
+}
+
+/* Adds (sign 1) or subtracts (sign -1) one sum to or from another. */
+static void
+values_calc_add(
+	struct css_calc_sum *sum,
+	const struct css_calc_sum *other,
+	float sign)
+{
+	/* Each kind of length. */
+	sum->px += sign * other->px;
+	sum->percent += sign * other->percent;
+	sum->em += sign * other->em;
+	sum->ex += sign * other->ex;
+	sum->rem += sign * other->rem;
+	sum->vw += sign * other->vw;
+	sum->vh += sign * other->vh;
+	sum->vmin += sign * other->vmin;
+	sum->vmax += sign * other->vmax;
+}
+
+/* Skips whitespace tokens from index; returns the first other index (or count). */
+static size_t
+values_skip_space(
+	const struct css_token *tokens,
+	size_t count,
+	size_t index)
+{
+	/* Moves past the whitespace. */
+	while (index < count && tokens[index].type == CSS_TOKEN_WHITESPACE)
+		index++;
+
+	/* Reports where the rest starts. */
+	return index;
+}
+
+/* Parses a two-sided logical shorthand (margin-inline and the like): one value for both sides, or one each. */
+static int
+values_pair(
+	struct css_parse *parse,
+	int first,
+	int second,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value values[2];
+	size_t starts[3];
+	size_t lengths[3];
+	size_t components;
+	size_t index;
+	int error;
+
+	/* One or two components. */
+	components = values_components(tokens, count, starts, lengths, 3);
+	if (components == 0 || components > 2)
+		return EINVAL;
+	for (index = 0; index < components; index++) {
+		error = values_single(parse, first, tokens + starts[index], lengths[index], &values[index]);
+		if (error != 0)
+			return error;
+	}
+
+	/* The second side copies the first when it is missing. */
+	if (components < 2)
+		values[1] = values[0];
+	values_add(out, made, first, &values[0]);
+	values_add(out, made, second, &values[1]);
+
+	/* Succeeded: two longhands. */
 	return 0;
 }

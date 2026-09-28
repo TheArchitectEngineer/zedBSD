@@ -45,12 +45,24 @@ enum css_unit {
 };
 
 /*
- * A computed length: a value and its unit.
+ * A computed length: a value and its unit.  A percentage may carry pixels
+ * added to it (offset, from a calc() that mixes the two, ws074-p061);
+ * the layout resolves the percentage and adds them.
  */
 struct css_length {
 	float value;
 	int unit;
+	float offset;
 };
+
+/* An element's custom properties (css/internal.h). */
+struct css_custom;
+
+/* A media query list (css/internal.h). */
+struct css_media;
+
+/* The most media lists a sheet of the cascade is under (a <link>'s and its imports'). */
+#define CSS_MEDIA_CHAIN_MAX	10
 
 /* The values of display. */
 enum css_display {
@@ -232,6 +244,13 @@ struct css_style {
 	int white_space;
 	int underline;
 	int list_style;
+
+	/*
+	 * The element's custom properties (inherited; its own first, then its
+	 * parent's), in the style engine's arena: good while the engine that
+	 * computed the style lives.
+	 */
+	const struct css_custom *custom;
 };
 
 /*
@@ -261,6 +280,7 @@ void css_sheet_destroy(struct css_sheet *sheet);
 size_t css_sheet_import_count(const struct css_sheet *sheet);
 struct vm_string *css_sheet_import(const struct css_sheet *sheet, size_t index);
 size_t css_sheet_rule_count(const struct css_sheet *sheet);
+const struct css_media *css_sheet_import_media(const struct css_sheet *sheet, size_t index);
 int css_sheet_resolve_urls(struct css_sheet *sheet, css_url_resolver resolve, void *context);
 
 /* The engine (cascade.c). */
@@ -268,7 +288,8 @@ int css_engine_create(struct css_engine **engine, struct vm_heap *heap);
 void css_engine_destroy(struct css_engine *engine);
 int css_engine_add_sheet(struct css_engine *engine, const uint16_t *units, size_t length);
 int css_engine_add_sheet_origin(struct css_engine *engine, const uint16_t *units, size_t length, int origin);
-int css_engine_add_parsed(struct css_engine *engine, const struct css_sheet *sheet);
+int css_engine_add_parsed(struct css_engine *engine, const struct css_sheet *sheet, const struct css_media *const *media, size_t media_count);
+int css_engine_parse_media(struct css_engine *engine, const uint16_t *units, size_t length, const struct css_media **media);
 void css_engine_set_viewport(struct css_engine *engine, float width, float height);
 int css_engine_compute(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style);
 void css_initial_style(struct css_style *style);

@@ -447,7 +447,7 @@ position_offset(
 
 	/* A percentage of the containing block. */
 	if (length->unit == CSS_UNIT_PERCENT) {
-		*value = (layout_unit)((float)size * length->value / 100.0f);
+		*value = (layout_unit)((float)size * length->value / 100.0f) + layout_from_px(length->offset);
 		return 1;
 	}
 

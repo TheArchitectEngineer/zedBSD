@@ -827,6 +827,8 @@ page_append_length(
 		break;
 	case CSS_UNIT_PERCENT:
 		wb_buffer_printf(out, "%.2f%%", (double)length->value);
+		if (length->offset != 0)
+			wb_buffer_printf(out, "%+.2f", (double)length->offset);
 		break;
 	case CSS_UNIT_AUTO:
 		wb_buffer_append_string(out, "auto");

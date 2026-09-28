@@ -33,8 +33,8 @@
 /* The deepest element nesting the walk descends (the parser caps nesting too). */
 #define SHEETS_DEPTH		512
 
-/* How deep @import rules are followed (a sheet importing itself stops here). */
-#define SHEETS_IMPORT_DEPTH	8
+/* How deep @import rules are followed (a sheet importing itself stops here); less than CSS_MEDIA_CHAIN_MAX. */
+#define SHEETS_IMPORT_DEPTH	8U
 
 /*
  * One sheet of the page: an external one's location (NULL for a <style>
@@ -69,7 +69,8 @@ static int sheets_add_style(struct page *page, struct dom_element *element);
 static int sheets_add_link(struct page *page, struct dom_element *element);
 static int sheets_is_stylesheet_link(const struct dom_element *element);
 static int sheets_word_in(const struct vm_string *list, const char *word);
-static int sheets_add_loaded(struct page *page, struct page_sheet *entry, int depth);
+static int sheets_add_loaded(struct page *page, struct page_sheet *entry, const struct css_media **chain, size_t depth);
+static int sheets_element_media(struct page *page, const struct dom_element *element, const struct css_media **chain);
 static int sheets_external(struct page *page, const char *location, struct page_sheet **found);
 static struct page_sheet *sheets_find_location(const struct page *page, const char *location);
 static int sheets_parse(struct page *page, struct page_sheet *entry, const unsigned char *bytes, size_t length);
@@ -200,6 +201,7 @@ sheets_add_style(
 	struct dom_node *child;
 	const struct dom_character_data *text;
 	struct wb_units units;
+	const struct css_media *chain[CSS_MEDIA_CHAIN_MAX];
 	uint32_t hash;
 	size_t index;
 	int differs;
@@ -276,8 +278,11 @@ sheets_add_style(
 	/* The text, when a known entry matched it, is no longer needed. */
 	wb_units_release(&units);
 
-	/* The sheet, after its imports. */
-	error = sheets_add_loaded(page, entry, 0);
+	/* The element's media list, then the sheet after its imports. */
+	error = sheets_element_media(page, element, chain);
+	if (error != 0)
+		return error;
+	error = sheets_add_loaded(page, entry, chain, 1);
 	if (error != 0)
 		return error;
 
@@ -296,6 +301,7 @@ sheets_add_link(
 	struct vm_string *href_name;
 	struct wb_buffer href;
 	struct wb_buffer location;
+	const struct css_media *chain[CSS_MEDIA_CHAIN_MAX];
 	int is_sheet;
 	int error;
 
@@ -331,8 +337,11 @@ sheets_add_link(
 	if (error != 0)
 		return error;
 
-	/* The sheet, after its imports, once it is there. */
-	error = sheets_add_loaded(page, entry, 0);
+	/* The link's media list, then the sheet after its imports, once it is there. */
+	error = sheets_element_media(page, element, chain);
+	if (error != 0)
+		return error;
+	error = sheets_add_loaded(page, entry, chain, 1);
 	if (error != 0)
 		return error;
 
@@ -434,14 +443,58 @@ sheets_word_in(
 }
 
 /*
+ * Reads the media attribute of a <style> or <link> into chain[0] (NULL
+ * without one: the sheet applies to every medium).
+ */
+static int
+sheets_element_media(
+	struct page *page,
+	const struct dom_element *element,
+	const struct css_media **chain)
+{
+	struct vm_string *media;
+	struct wb_units units;
+	size_t index;
+	int error;
+
+	/* No attribute is no list. */
+	chain[0] = NULL;
+	media = dom_attribute_ascii(element, "media");
+	if (media == NULL)
+		return 0;
+
+	/* The attribute's characters. */
+	wb_units_init(&units);
+	error = 0;
+	for (index = 0; index < media->length && error == 0; index++)
+		error = wb_units_append_code_point(&units, vm_string_at(media, index));
+	if (error != 0) {
+		wb_units_release(&units);
+		return error;
+	}
+
+	/* The list, kept by the engine. */
+	error = css_engine_parse_media(page->css, units.data, units.length, &chain[0]);
+	wb_units_release(&units);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the element's list is read. */
+	return 0;
+}
+
+/*
  * Lends a loaded sheet to the engine after the sheets its @import rules
- * name (a sheet still fetched, or one that failed, adds nothing).
+ * name (a sheet still fetched, or one that failed, adds nothing); it
+ * applies under the depth media lists of chain (its element's and those
+ * of the imports that led to it).
  */
 static int
 sheets_add_loaded(
 	struct page *page,
 	struct page_sheet *entry,
-	int depth)
+	const struct css_media **chain,
+	size_t depth)
 {
 	struct page_sheet *imported;
 	struct wb_buffer text;
@@ -479,14 +532,15 @@ sheets_add_loaded(
 		if (error != 0)
 			return error;
 
-		/* Its own imports and rules. */
-		error = sheets_add_loaded(page, imported, depth + 1);
+		/* Its own imports and rules, under the import's media list too. */
+		chain[depth] = css_sheet_import_media(entry->sheet, index);
+		error = sheets_add_loaded(page, imported, chain, depth + 1U);
 		if (error != 0)
 			return error;
 	}
 
 	/* Then the sheet's own rules. */
-	error = css_engine_add_parsed(page->css, entry->sheet);
+	error = css_engine_add_parsed(page->css, entry->sheet, chain, depth);
 	if (error != 0)
 		return error;
 

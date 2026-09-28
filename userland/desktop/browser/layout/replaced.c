@@ -199,7 +199,7 @@ replaced_length(
 
 	/* A percentage of a known containing width. */
 	if (length->unit == CSS_UNIT_PERCENT && containing > 0) {
-		*value = (layout_unit)((float)containing * length->value / 100.0f);
+		*value = (layout_unit)((float)containing * length->value / 100.0f) + layout_from_px(length->offset);
 		return 1;
 	}
 

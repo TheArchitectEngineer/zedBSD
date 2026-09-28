@@ -34,6 +34,18 @@ struct token_range {
 };
 
 /*
+ * What reading a sheet's rules gathers: the sheet (its arena), its style
+ * rules, and the URLs and media lists of its @import rules.
+ */
+struct parser_state {
+	struct vm_heap *heap;
+	struct css_sheet *sheet;
+	struct wb_vector rules;
+	struct wb_vector imports;
+	struct wb_vector import_media;
+};
+
+/*
  * A pseudo-class name and what it is.
  */
 struct parser_pseudo_name {
@@ -55,14 +67,20 @@ static const struct parser_pseudo_name parser_pseudo_names[] = {
 
 static size_t parser_skip_block(const struct css_token *tokens, size_t count, size_t index);
 static size_t parser_skip_at_rule(const struct css_token *tokens, size_t count, size_t index);
-static int parser_import(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct wb_vector *imports);
-static int parser_add_rule(struct vm_heap *heap, struct css_sheet *sheet, struct wb_vector *rules, struct token_range prelude, struct token_range block);
+static int parser_rules(struct parser_state *state, const struct css_token *tokens, size_t count, const struct css_media *media);
+static int parser_at_rule(struct parser_state *state, const struct css_token *tokens, size_t count, const struct css_media *media);
+static int parser_keep_imports(struct parser_state *state);
+static int parser_supports(struct parser_state *state, const struct css_token *tokens, size_t count);
+static int parser_supports_group(struct parser_state *state, const struct css_token *tokens, size_t count);
+static int parser_import(struct parser_state *state, const struct css_token *tokens, size_t count);
+static int parser_add_rule(struct parser_state *state, struct token_range prelude, struct token_range block, const struct css_media *media);
 static int parser_selectors(struct vm_heap *heap, struct wb_arena *arena, struct token_range prelude, struct css_selector **selectors, size_t *count);
 static int parser_selector(struct vm_heap *heap, struct wb_arena *arena, struct token_range tokens, struct css_selector *selector);
 static int parser_compound(struct vm_heap *heap, struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct css_compound *compound, uint32_t *specificity);
 static int parser_attribute(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct css_simple *simple);
 static int parser_pseudo(const struct css_token *token, struct css_simple *simple);
 static int parser_declarations(struct vm_heap *heap, struct wb_arena *arena, struct token_range block, struct css_declaration **declarations, size_t *count);
+static int parser_special(struct vm_heap *heap, const struct css_token *name, struct token_range value, struct css_declaration *out, size_t *made);
 static struct vm_string *parser_atom(struct vm_heap *heap, const struct css_token *token, int lower);
 static struct token_range parser_trim(struct token_range range);
 
@@ -78,15 +96,8 @@ css_parse_sheet(
 	struct css_sheet *sheet)
 {
 	struct css_token *tokens;
-	struct token_range prelude;
-	struct token_range block;
-	struct wb_vector rules;
-	struct wb_vector imports;
+	struct parser_state state;
 	size_t count;
-	size_t index;
-	size_t start;
-	size_t end;
-	int is_import;
 	int error;
 
 	/* Tokenizes the text into the sheet's arena. */
@@ -97,103 +108,37 @@ css_parse_sheet(
 	if (error != 0)
 		return error;
 
-	/* Reads the top-level rules. */
-	wb_vector_init(&rules, sizeof(struct css_rule));
-	wb_vector_init(&imports, sizeof(struct vm_string *));
-	index = 0;
-	while (index < count && tokens[index].type != CSS_TOKEN_EOF) {
-		/* Whitespace and the HTML comment markers between rules are skipped. */
-		if (tokens[index].type == CSS_TOKEN_WHITESPACE ||
-		    tokens[index].type == CSS_TOKEN_CDO ||
-		    tokens[index].type == CSS_TOKEN_CDC) {
-			index++;
-			continue;
-		}
-
-		/* An @import before the style rules names a sheet that comes before this one's rules. */
-		if (tokens[index].type == CSS_TOKEN_AT_KEYWORD) {
-			is_import = css_ident_equal(&tokens[index], "import");
-			end = parser_skip_at_rule(tokens, count, index);
-			if (is_import && rules.count == 0) {
-				error = parser_import(heap, tokens + index + 1U, end - index - 1U, &imports);
-				if (error == ENOMEM) {
-					wb_vector_release(&rules);
-					wb_vector_release(&imports);
-					return error;
-				}
-			}
-
-			/* Every other at-rule is skipped whole in this pass. */
-			index = end;
-			continue;
-		}
-
-		/* A qualified rule: the prelude up to the block, then the block. */
-		start = index;
-		while (index < count && tokens[index].type != CSS_TOKEN_OPEN_CURLY && tokens[index].type != CSS_TOKEN_EOF) {
-			if (tokens[index].type == CSS_TOKEN_OPEN_PAREN || tokens[index].type == CSS_TOKEN_OPEN_SQUARE ||
-			    tokens[index].type == CSS_TOKEN_FUNCTION) {
-				index = parser_skip_block(tokens, count, index);
-				continue;
-			}
-
-			/* Anything else is part of the prelude. */
-			index++;
-		}
-
-		/* A prelude without a block ends the sheet. */
-		if (index >= count || tokens[index].type == CSS_TOKEN_EOF)
-			break;
-		prelude.tokens = tokens + start;
-		prelude.count = index - start;
-		end = parser_skip_block(tokens, count, index);
-		block.tokens = tokens + index + 1U;
-		block.count = end - index - 1U;
-		if (end > index + 1U && tokens[end - 1U].type == CSS_TOKEN_CLOSE_CURLY)
-			block.count--;
-		index = end;
-
-		/* Adds the rule (a rule that does not parse is dropped). */
-		error = parser_add_rule(heap, sheet, &rules, prelude, block);
-		if (error == ENOMEM) {
-			wb_vector_release(&rules);
-			wb_vector_release(&imports);
-			return error;
-		}
+	/* Reads the rules, the ones in @media and @supports blocks too. */
+	state.heap = heap;
+	state.sheet = sheet;
+	wb_vector_init(&state.rules, sizeof(struct css_rule));
+	wb_vector_init(&state.imports, sizeof(struct vm_string *));
+	wb_vector_init(&state.import_media, sizeof(struct css_media *));
+	error = parser_rules(&state, tokens, count, NULL);
+	if (error == 0)
+		error = parser_keep_imports(&state);
+	wb_vector_release(&state.imports);
+	wb_vector_release(&state.import_media);
+	if (error != 0) {
+		wb_vector_release(&state.rules);
+		return error;
 	}
-
-	/* Moves the imported URLs into the arena. */
-	if (imports.count != 0) {
-		sheet->imports = wb_arena_alloc(&sheet->arena, imports.count * sizeof(struct vm_string *));
-		if (sheet->imports == NULL) {
-			wb_vector_release(&rules);
-			wb_vector_release(&imports);
-			return ENOMEM;
-		}
-
-		/* Copies them. */
-		memcpy(sheet->imports, imports.items, imports.count * sizeof(struct vm_string *));
-		sheet->import_count = imports.count;
-	}
-
-	/* The list of imports is no longer needed. */
-	wb_vector_release(&imports);
 
 	/* Moves the rules into the arena. */
-	if (rules.count != 0) {
-		sheet->rules = wb_arena_alloc(&sheet->arena, rules.count * sizeof(struct css_rule));
+	if (state.rules.count != 0) {
+		sheet->rules = wb_arena_alloc(&sheet->arena, state.rules.count * sizeof(struct css_rule));
 		if (sheet->rules == NULL) {
-			wb_vector_release(&rules);
+			wb_vector_release(&state.rules);
 			return ENOMEM;
 		}
 
 		/* Copies them. */
-		memcpy(sheet->rules, rules.items, rules.count * sizeof(struct css_rule));
-		sheet->rule_count = rules.count;
+		memcpy(sheet->rules, state.rules.items, state.rules.count * sizeof(struct css_rule));
+		sheet->rule_count = state.rules.count;
 	}
 
 	/* The list is no longer needed. */
-	wb_vector_release(&rules);
+	wb_vector_release(&state.rules);
 
 	/* Files the selectors in the rule index. */
 	error = css_index_build(sheet);
@@ -320,6 +265,19 @@ css_sheet_import(
 {
 	/* The import's URL. */
 	return sheet->imports[index];
+}
+
+/*
+ * Gives the media list of one of a sheet's @import rules (NULL: none, the
+ * sheet applies to every medium).
+ */
+const struct css_media *
+css_sheet_import_media(
+	const struct css_sheet *sheet,
+	size_t index)
+{
+	/* The import's list. */
+	return sheet->import_media[index];
 }
 
 /*
@@ -488,21 +446,358 @@ parser_skip_at_rule(
 }
 
 /*
- * Reads the URL of an @import rule (the tokens after its at-keyword): a
- * string or url() first; the media list after it comes with the media
- * queries.  An @import without a URL is ignored.
+ * Reads a list of rules (a whole sheet, or the block of an @media or
+ * @supports rule) into the state; media is the list the rules are nested
+ * in (NULL at the top).  A rule that does not parse is dropped.
+ */
+static int
+parser_rules(
+	struct parser_state *state,
+	const struct css_token *tokens,
+	size_t count,
+	const struct css_media *media)
+{
+	struct token_range prelude;
+	struct token_range block;
+	size_t index;
+	size_t start;
+	size_t end;
+	int error;
+
+	/* Reads rule after rule. */
+	index = 0;
+	while (index < count && tokens[index].type != CSS_TOKEN_EOF) {
+		/* Whitespace and the HTML comment markers between rules are skipped. */
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE ||
+		    tokens[index].type == CSS_TOKEN_CDO ||
+		    tokens[index].type == CSS_TOKEN_CDC) {
+			index++;
+			continue;
+		}
+
+		/* An at-rule runs to its semicolon or past its block. */
+		if (tokens[index].type == CSS_TOKEN_AT_KEYWORD) {
+			end = parser_skip_at_rule(tokens, count, index);
+			error = parser_at_rule(state, tokens + index, end - index, media);
+			if (error == ENOMEM)
+				return error;
+			index = end;
+			continue;
+		}
+
+		/* A qualified rule: the prelude up to the block, then the block. */
+		start = index;
+		while (index < count && tokens[index].type != CSS_TOKEN_OPEN_CURLY && tokens[index].type != CSS_TOKEN_EOF) {
+			if (tokens[index].type == CSS_TOKEN_OPEN_PAREN || tokens[index].type == CSS_TOKEN_OPEN_SQUARE ||
+			    tokens[index].type == CSS_TOKEN_FUNCTION) {
+				index = parser_skip_block(tokens, count, index);
+				continue;
+			}
+
+			/* Anything else is part of the prelude. */
+			index++;
+		}
+
+		/* A prelude without a block ends the list. */
+		if (index >= count || tokens[index].type == CSS_TOKEN_EOF)
+			break;
+		prelude.tokens = tokens + start;
+		prelude.count = index - start;
+		end = parser_skip_block(tokens, count, index);
+		block.tokens = tokens + index + 1U;
+		block.count = end - index - 1U;
+		if (end > index + 1U && tokens[end - 1U].type == CSS_TOKEN_CLOSE_CURLY)
+			block.count--;
+		index = end;
+
+		/* Adds the rule (a rule that does not parse is dropped). */
+		error = parser_add_rule(state, prelude, block, media);
+		if (error == ENOMEM)
+			return error;
+	}
+
+	/* Succeeded: the list's rules are read. */
+	return 0;
+}
+
+/*
+ * Reads one at-rule (its tokens from the at-keyword to its semicolon or
+ * the end of its block): @import before the style rules, the rules of an
+ * @media block under its media list, of an @supports block whose
+ * condition holds, and of an @layer block; any other at-rule is skipped.
+ */
+static int
+parser_at_rule(
+	struct parser_state *state,
+	const struct css_token *tokens,
+	size_t count,
+	const struct css_media *media)
+{
+	struct css_media *nested;
+	size_t open;
+	size_t body_count;
+	int is_media;
+	int is_supports;
+	int is_layer;
+	int is_import;
+	int holds;
+	int error;
+
+	/* An @import counts only before the style rules and at the top. */
+	is_import = css_ident_equal(&tokens[0], "import");
+	if (is_import) {
+		if (state->rules.count != 0 || media != NULL)
+			return 0;
+		error = parser_import(state, tokens + 1, count - 1U);
+		if (error == ENOMEM)
+			return error;
+		return 0;
+	}
+
+	/* The rest that matter have a block: its opening brace. */
+	is_media = css_ident_equal(&tokens[0], "media");
+	is_supports = css_ident_equal(&tokens[0], "supports");
+	is_layer = css_ident_equal(&tokens[0], "layer");
+	if (!is_media && !is_supports && !is_layer)
+		return 0;
+	open = 1;
+	while (open < count && tokens[open].type != CSS_TOKEN_OPEN_CURLY)
+		open++;
+	if (open >= count)
+		return 0;
+
+	/* The block's rules, without its closing brace. */
+	body_count = count - open - 1U;
+	if (body_count > 0 && tokens[count - 1U].type == CSS_TOKEN_CLOSE_CURLY)
+		body_count--;
+
+	/* An @media block's rules hold under its list and the ones it is nested in. */
+	if (is_media) {
+		error = css_media_parse(&state->sheet->arena, tokens + 1, open - 1U, media, &nested);
+		if (error != 0)
+			return error;
+		error = parser_rules(state, tokens + open + 1U, body_count, nested);
+		return error;
+	}
+
+	/* An @supports block counts when its condition holds (decided now: it does not depend on the page). */
+	if (is_supports) {
+		holds = parser_supports(state, tokens + 1, open - 1U);
+		if (!holds)
+			return 0;
+		error = parser_rules(state, tokens + open + 1U, body_count, media);
+		return error;
+	}
+
+	/* An @layer block's rules count in the order they come (the layers' own order is not kept). */
+	error = parser_rules(state, tokens + open + 1U, body_count, media);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the at-rule is read. */
+	return 0;
+}
+
+/* Moves the imports' URLs and media lists into the sheet's arena. */
+static int
+parser_keep_imports(
+	struct parser_state *state)
+{
+	struct css_sheet *sheet;
+	size_t count;
+
+	/* A sheet without imports keeps nothing. */
+	sheet = state->sheet;
+	count = state->imports.count;
+	if (count == 0)
+		return 0;
+
+	/* The URLs. */
+	sheet->imports = wb_arena_alloc(&sheet->arena, count * sizeof(struct vm_string *));
+	if (sheet->imports == NULL)
+		return ENOMEM;
+	memcpy(sheet->imports, state->imports.items, count * sizeof(struct vm_string *));
+
+	/* Their media lists. */
+	sheet->import_media = wb_arena_alloc(&sheet->arena, count * sizeof(struct css_media *));
+	if (sheet->import_media == NULL)
+		return ENOMEM;
+	memcpy(sheet->import_media, state->import_media.items, count * sizeof(struct css_media *));
+
+	/* Succeeded: the sheet has its imports. */
+	sheet->import_count = count;
+	return 0;
+}
+
+/*
+ * Tells whether an @supports condition holds: not, and and or over
+ * groups in parentheses, each a declaration this pass reads, a nested
+ * condition, or selector() (which holds).
+ */
+static int
+parser_supports(
+	struct parser_state *state,
+	const struct css_token *tokens,
+	size_t count)
+{
+	size_t index;
+	size_t end;
+	int holds;
+	int group;
+	int is_not;
+	int is_and;
+	int is_or;
+	int joined_by_or;
+
+	/* not in front turns the rest round. */
+	index = 0;
+	while (index < count && tokens[index].type == CSS_TOKEN_WHITESPACE)
+		index++;
+	if (index >= count)
+		return 0;
+	if (tokens[index].type == CSS_TOKEN_IDENT) {
+		is_not = css_ident_equal(&tokens[index], "not");
+		if (!is_not)
+			return 0;
+		holds = parser_supports(state, tokens + index + 1U, count - index - 1U);
+		return !holds;
+	}
+
+	/* Groups joined by and or by or. */
+	holds = 1;
+	joined_by_or = 0;
+	for (;;) {
+		/* One group: a parenthesis or a function to its end. */
+		if (index >= count)
+			return 0;
+		if (tokens[index].type != CSS_TOKEN_OPEN_PAREN && tokens[index].type != CSS_TOKEN_FUNCTION)
+			return 0;
+		end = parser_skip_block(tokens, count, index);
+		group = parser_supports_group(state, tokens + index, end - index);
+		if (joined_by_or) {
+			if (group)
+				holds = 1;
+		} else if (!group) {
+			holds = 0;
+		}
+
+		/* The word before the next group, or the end. */
+		index = end;
+		while (index < count && tokens[index].type == CSS_TOKEN_WHITESPACE)
+			index++;
+		if (index >= count)
+			break;
+		if (tokens[index].type != CSS_TOKEN_IDENT)
+			return 0;
+		is_and = css_ident_equal(&tokens[index], "and");
+		is_or = css_ident_equal(&tokens[index], "or");
+		if (!is_and && !is_or)
+			return 0;
+
+		/* An or after the first group makes the answer the first that holds. */
+		if (is_or)
+			joined_by_or = 1;
+
+		/* Past the word to the next group. */
+		index++;
+		while (index < count && tokens[index].type == CSS_TOKEN_WHITESPACE)
+			index++;
+	}
+
+	/* Reports the answer. */
+	return holds;
+}
+
+/*
+ * Tells whether one group of an @supports condition holds: its tokens
+ * from the opening parenthesis (or function) to the closing one.
+ */
+static int
+parser_supports_group(
+	struct parser_state *state,
+	const struct css_token *tokens,
+	size_t count)
+{
+	struct css_declaration expanded[PARSER_EXPANSION_MAX];
+	struct css_parse parse;
+	struct token_range value;
+	const struct css_token *inner;
+	size_t inner_count;
+	size_t index;
+	size_t made;
+	int is_selector;
+	int property;
+	int holds;
+	int error;
+
+	/* selector() holds: the selectors this pass reads are the ones it cannot fail on. */
+	if (tokens[0].type == CSS_TOKEN_FUNCTION) {
+		is_selector = css_ident_equal(&tokens[0], "selector");
+		return is_selector;
+	}
+
+	/* The tokens inside the parentheses. */
+	inner = tokens + 1;
+	inner_count = count - 1U;
+	if (inner_count > 0 && tokens[count - 1U].type == CSS_TOKEN_CLOSE_PAREN)
+		inner_count--;
+	index = 0;
+	while (index < inner_count && inner[index].type == CSS_TOKEN_WHITESPACE)
+		index++;
+	if (index >= inner_count)
+		return 0;
+
+	/* A nested condition. */
+	if (inner[index].type != CSS_TOKEN_IDENT) {
+		holds = parser_supports(state, inner, inner_count);
+		return holds;
+	}
+
+	/* A declaration: a property this pass knows and a value it reads. */
+	property = css_property_lookup(&inner[index]);
+	if (property < 0)
+		return 0;
+	index++;
+	while (index < inner_count && inner[index].type == CSS_TOKEN_WHITESPACE)
+		index++;
+	if (index >= inner_count || inner[index].type != CSS_TOKEN_COLON)
+		return 0;
+	value.tokens = inner + index + 1U;
+	value.count = inner_count - index - 1U;
+	value = parser_trim(value);
+
+	/* Parses the value; a calculation it makes stays in the sheet's arena. */
+	parse.heap = state->heap;
+	parse.arena = &state->sheet->arena;
+	made = 0;
+	error = css_parse_property(&parse, property, value.tokens, value.count, expanded, &made);
+	if (error != 0 || made == 0)
+		return 0;
+
+	/* The declaration is supported. */
+	return 1;
+}
+
+/*
+ * Reads an @import rule (the tokens after its at-keyword): a string or
+ * url() first, then an optional media query list.  An @import without a
+ * URL is ignored.
  */
 static int
 parser_import(
-	struct vm_heap *heap,
+	struct parser_state *state,
 	const struct css_token *tokens,
-	size_t count,
-	struct wb_vector *imports)
+	size_t count)
 {
+	struct vm_heap *heap;
 	struct vm_string *url;
+	struct css_media *media;
 	size_t index;
 	int is_url;
 	int error;
+
+	/* The atoms are the sheet's heap's. */
+	heap = state->heap;
 
 	/* Skips the whitespace before the URL. */
 	index = 0;
@@ -527,14 +822,32 @@ parser_import(
 			if (url == NULL)
 				return ENOMEM;
 		}
+
+		/* Past the function's closing parenthesis. */
+		while (index < count && tokens[index].type != CSS_TOKEN_CLOSE_PAREN)
+			index++;
 	}
 
 	/* Anything else names no sheet. */
 	if (url == NULL)
 		return EINVAL;
 
-	/* Keeps the URL. */
-	error = wb_vector_push(imports, &url);
+	/* The media list after the URL (up to the semicolon), when there is one. */
+	index++;
+	while (count > index && (tokens[count - 1U].type == CSS_TOKEN_SEMICOLON || tokens[count - 1U].type == CSS_TOKEN_WHITESPACE))
+		count--;
+	media = NULL;
+	if (index < count) {
+		error = css_media_parse(&state->sheet->arena, tokens + index, count - index, NULL, &media);
+		if (error != 0)
+			return error;
+	}
+
+	/* Keeps the URL and its media. */
+	error = wb_vector_push(&state->imports, &url);
+	if (error != 0)
+		return ENOMEM;
+	error = wb_vector_push(&state->import_media, &media);
 	if (error != 0)
 		return ENOMEM;
 
@@ -545,28 +858,28 @@ parser_import(
 /* Parses one qualified rule and appends it to the list; returns EINVAL for a rule that is dropped. */
 static int
 parser_add_rule(
-	struct vm_heap *heap,
-	struct css_sheet *sheet,
-	struct wb_vector *rules,
+	struct parser_state *state,
 	struct token_range prelude,
-	struct token_range block)
+	struct token_range block,
+	const struct css_media *media)
 {
 	struct css_rule rule;
 	int error;
 
 	/* Reads the selectors; a selector list that does not parse drops the rule. */
 	memset(&rule, 0, sizeof(rule));
-	error = parser_selectors(heap, &sheet->arena, prelude, &rule.selectors, &rule.selector_count);
+	rule.media = media;
+	error = parser_selectors(state->heap, &state->sheet->arena, prelude, &rule.selectors, &rule.selector_count);
 	if (error != 0)
 		return error;
 
 	/* Reads the declarations. */
-	error = parser_declarations(heap, &sheet->arena, block, &rule.declarations, &rule.declaration_count);
+	error = parser_declarations(state->heap, &state->sheet->arena, block, &rule.declarations, &rule.declaration_count);
 	if (error != 0)
 		return error;
 
 	/* Appends the rule. */
-	error = wb_vector_push(rules, &rule);
+	error = wb_vector_push(&state->rules, &rule);
 	if (error != 0)
 		return ENOMEM;
 
@@ -937,6 +1250,7 @@ parser_declarations(
 	size_t *count)
 {
 	struct css_declaration expanded[PARSER_EXPANSION_MAX];
+	struct css_parse parse;
 	struct wb_vector list;
 	struct token_range value;
 	const struct css_token *name;
@@ -948,6 +1262,10 @@ parser_declarations(
 	int important;
 	int last_important;
 	int error;
+
+	/* Values are parsed with the heap's names and a calculation kept in the arena. */
+	parse.heap = heap;
+	parse.arena = arena;
 
 	/* Reads each declaration up to its semicolon. */
 	wb_vector_init(&list, sizeof(struct css_declaration));
@@ -1004,9 +1322,17 @@ parser_declarations(
 			}
 		}
 
-		/* Parses the value into one or more declarations (an invalid one is dropped). */
+		/* A custom property keeps its tokens; a value with var() waits for the element's custom properties. */
 		made = 0;
-		error = css_parse_value(heap, value.tokens, value.count, name, expanded, &made, PARSER_EXPANSION_MAX);
+		error = parser_special(heap, name, value, &expanded[0], &made);
+		if (error == ENOMEM) {
+			wb_vector_release(&list);
+			return error;
+		}
+
+		/* Otherwise parses the value into one or more declarations (an invalid one is dropped). */
+		if (made == 0 && error == 0)
+			error = css_parse_value(&parse, value.tokens, value.count, name, expanded, &made, PARSER_EXPANSION_MAX);
 		if (error == ENOMEM) {
 			wb_vector_release(&list);
 			return error;
@@ -1041,6 +1367,65 @@ parser_declarations(
 	wb_vector_release(&list);
 
 	/* Succeeded: the declarations are in the arena. */
+	return 0;
+}
+
+/*
+ * Makes the declarations the value parser does not: a custom property
+ * (--name: tokens, kept as they are) and a declaration whose value uses
+ * var() (kept as tokens for the property it names).  *made is 0 for an
+ * ordinary declaration; EINVAL drops a var() value of an unknown property.
+ */
+static int
+parser_special(
+	struct vm_heap *heap,
+	const struct css_token *name,
+	struct token_range value,
+	struct css_declaration *out,
+	size_t *made)
+{
+	size_t index;
+	int is_var;
+	int property;
+
+	/* A name that starts with two dashes is a custom property's. */
+	*made = 0;
+	memset(out, 0, sizeof(*out));
+	if (name->length > 2U && name->text[0] == '-' && name->text[1] == '-') {
+		out->property = CSS_PROP_CUSTOM;
+		out->custom_name = vm_atom_from_units(heap, name->text, name->length);
+		if (out->custom_name == NULL)
+			return ENOMEM;
+		out->raw = value.tokens;
+		out->raw_count = value.count;
+		*made = 1;
+		return 0;
+	}
+
+	/* Looks for var() anywhere in the value. */
+	is_var = 0;
+	for (index = 0; index < value.count && !is_var; index++) {
+		if (value.tokens[index].type == CSS_TOKEN_FUNCTION)
+			is_var = css_ident_equal(&value.tokens[index], "var");
+	}
+
+	/* An ordinary value. */
+	if (!is_var)
+		return 0;
+
+	/* The property must be one this pass knows. */
+	property = css_property_lookup(name);
+	if (property < 0)
+		return EINVAL;
+
+	/* The tokens wait for the element's custom properties. */
+	out->property = CSS_PROP_PENDING;
+	out->pending_property = property;
+	out->raw = value.tokens;
+	out->raw_count = value.count;
+	*made = 1;
+
+	/* Succeeded: the declaration is kept as tokens. */
 	return 0;
 }
 
