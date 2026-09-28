@@ -460,6 +460,9 @@ zwl_seat_motion_shell(
 {
 	int taken;
 
+	/* The event's time, for whatever measures the pointer's speed (corner.c). */
+	server->input_time = time;
+
 	/* The lock screen has the pointer: only its buttons light up (ws035-p102). */
 	server->lock_input_ms = zwl_milliseconds();
 	if (server->locked) {
@@ -481,6 +484,13 @@ zwl_seat_motion_shell(
 	/* In the glass look a window being moved takes the motion (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
 		taken = zwl_glass_motion(server);
+		if (taken)
+			return 1;
+	}
+
+	/* Over a fullscreen window only the edges' gestures are zdesktop's (shell.c). */
+	if (server->glass && !server->windowed && server->popup_grab == NULL) {
+		taken = zwl_glass_edge_motion(server);
 		if (taken)
 			return 1;
 	}
@@ -537,7 +547,7 @@ zwl_seat_button(
 	int taken;
 
 	/* zdesktop's own grabs, screens and title bars take the button first. */
-	taken = zwl_seat_button_shell(server, button, state);
+	taken = zwl_seat_button_shell(server, time, button, state);
 	if (taken)
 		return;
 
@@ -553,11 +563,15 @@ zwl_seat_button(
 int
 zwl_seat_button_shell(
 	struct zwl_server *server,
+	uint32_t time,
 	uint32_t button,
 	uint32_t state)
 {
 	uint32_t bit;
 	int taken;
+
+	/* The event's time, for whatever measures the pointer's speed (corner.c). */
+	server->input_time = time;
 
 	/* The buttons held now, which a move or a resize a client asks for needs (toplevel.c). */
 	bit = 0;
@@ -596,6 +610,13 @@ zwl_seat_button_shell(
 	/* In the glass look the title bars and the desktop take their buttons (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
 		taken = zwl_glass_button(server, button, state);
+		if (taken)
+			return 1;
+	}
+
+	/* Over a fullscreen window only the edges' gestures take their buttons (shell.c). */
+	if (server->glass && !server->windowed && server->popup_grab == NULL) {
+		taken = zwl_glass_edge_button(server, button, state);
 		if (taken)
 			return 1;
 	}
