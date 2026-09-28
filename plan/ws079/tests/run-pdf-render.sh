@@ -15,11 +15,13 @@ mkdir -p "$out/include"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
 convert -size 64x48 gradient:red-yellow -quality 90 "$out/test.jpg"
 libpdf="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
 	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/image.c
 	userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/stroke.c
-	userland/base/libpdf/raster.c"
+	userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/encoding.c
+	userland/base/libpdf/shading.c"
 status=0
 for variant in plain asan ubsan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
@@ -37,6 +39,12 @@ for variant in plain asan ubsan; do
 	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $loose -w -I"$(dirname "$file")" -c "$file" -o "$object"
+		objects="$objects $object"
+	done
+	# libtruetype (ws079-p007: libpdf draws text with it) is C11 with float; compiled on its own.
+	for file in userland/desktop/libtruetype/*.c; do
+		object="$out/truetype-$(basename "$file" .c)-$variant.o"
+		"$cc" $loose -Werror -c "$file" -o "$object"
 		objects="$objects $object"
 	done
 	"$cc" $flags -Wno-overlength-strings $libpdf plan/ws079/tests/host-pdf-render.c $objects -lm -o "$out/host-pdf-render-$variant"

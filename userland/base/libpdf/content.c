@@ -14,8 +14,15 @@
  * built on them, the ExtGState's alphas and the Normal and Multiply blend
  * modes), builds paths (m l c v y h re), fills them by either rule, strokes
  * them through the stroker (stroke.c) into fills, clips (W W* n), and draws
- * image XObjects and runs form XObjects (Do).  Text, shadings and inline
- * images are left out and the list says so (PDF_DISPLAY_SKIPPED).
+ * image XObjects and runs form XObjects (Do).  From stage 2 it shows text:
+ * the text state (Tc Tw Tz TL Tf Tr Ts, kept by q and Q), the text and line
+ * matrices of a text object (BT ET Td TD Tm T*), and the strings (Tj TJ '
+ * "), whose glyph outlines (font.c) are filled, stroked, or added to a clip
+ * that ET applies, by the rendering mode.  It paints the axial and radial
+ * shadings (shading.c), by sh and as the colour of a shading pattern (cs
+ * /Pattern and scn), as images clipped to what they fill.  Tiling
+ * patterns, the other shadings and inline images are left out and the
+ * list says so (PDF_DISPLAY_SKIPPED).
  *
  * The content is not trusted.  Operators, operands, the q nesting, the
  * clips, the forms' nesting and the list's size are bounded; a malformed
@@ -45,6 +52,9 @@
 /* The most entries of a dash pattern, and how deep clips may nest. */
 #define PDF_CONTENT_DASH_MAX 16
 #define PDF_CONTENT_CLIPS_MAX 64
+
+/* The most characters one shown string draws. */
+#define PDF_CONTENT_STRING_MAX ((size_t)1048576)
 
 /* How far a flattened curve may stray from the true one, and the width of a zero-width line, in page points. */
 #define PDF_CONTENT_TOLERANCE 0.05
@@ -95,7 +105,23 @@ enum content_operator {
 	OP_XOBJECT,
 	OP_INLINE_IMAGE,
 	OP_SHADING,
+	OP_TEXT_BEGIN,
+	OP_TEXT_END,
+	OP_TEXT_FONT,
+	OP_TEXT_CHARACTER_SPACING,
+	OP_TEXT_WORD_SPACING,
+	OP_TEXT_SCALE,
+	OP_TEXT_LEADING,
+	OP_TEXT_RISE,
+	OP_TEXT_RENDER,
+	OP_TEXT_MOVE,
+	OP_TEXT_MOVE_LEADING,
+	OP_TEXT_MATRIX,
+	OP_TEXT_NEXT_LINE,
 	OP_TEXT_SHOW,
+	OP_TEXT_SHOW_ARRAY,
+	OP_TEXT_NEXT_SHOW,
+	OP_TEXT_SPACED_SHOW,
 	OP_IGNORED
 };
 
@@ -134,6 +160,14 @@ struct content_operand {
  * read leaves its colour unusable (fill_usable, stroke_usable), and what
  * would be painted with it is left out.  clips counts the clips pushed on
  * the list at this level, which its Q pops.
+ *
+ * A colour may instead be a shading pattern (fill_pattern, stroke_pattern,
+ * once scn names one in the Pattern space the *_pattern_space flags mark).
+ *
+ * The text state is part of the level: the font (NULL until Tf names one
+ * the reader can use) and its size, the character and word spacing, the
+ * horizontal scale (1 is 100%), the leading, the rise, and the rendering
+ * mode (0 to 7).
  */
 struct content_state {
 	double ctm[6];
@@ -145,6 +179,10 @@ struct content_state {
 	int stroke_usable;
 	double fill_alpha;
 	double stroke_alpha;
+	int fill_pattern_space;
+	int stroke_pattern_space;
+	struct pdf_object *fill_pattern;
+	struct pdf_object *stroke_pattern;
 	enum pdf_blend_mode blend;
 	double line_width;
 	int line_cap;
@@ -154,6 +192,14 @@ struct content_state {
 	size_t dash_count;
 	double dash_phase;
 	size_t clips;
+	struct pdf_font *font;
+	double font_size;
+	double character_spacing;
+	double word_spacing;
+	double horizontal_scale;
+	double leading;
+	double rise;
+	int render_mode;
 };
 
 /*
@@ -181,6 +227,13 @@ struct content_path {
  * base_depth is the level a running form started at, below which its Q
  * does not go; ignored_saves counts q past the stack's limit, which the
  * matching Q only uncount.  scratch holds the transformed copy of a path.
+ *
+ * pattern_base is the matrix of the content stream being run (the page's,
+ * or a form's), which a pattern's own matrix is relative to.
+ *
+ * A text object has its text matrix and line matrix; the glyphs of its
+ * strings shown in a clipping mode gather in text_clip (in the page's
+ * shown space) until ET makes them the clip.
  */
 struct content_run {
 	struct pdf_document *document;
@@ -202,6 +255,16 @@ struct content_run {
 	unsigned flags;
 	struct pdf_point *scratch;
 	size_t scratch_capacity;
+	double pattern_base[6];
+	double text_matrix[6];
+	double line_matrix[6];
+	int text_clipping;
+	unsigned char *text_clip_verbs;
+	size_t text_clip_verb_count;
+	size_t text_clip_verb_capacity;
+	struct pdf_point *text_clip_points;
+	size_t text_clip_point_count;
+	size_t text_clip_point_capacity;
 };
 
 /*
@@ -252,24 +315,24 @@ static const struct content_name content_names[] = {
 	{ "BI", OP_INLINE_IMAGE },
 	{ "sh", OP_SHADING },
 	{ "Tj", OP_TEXT_SHOW },
-	{ "TJ", OP_TEXT_SHOW },
-	{ "'", OP_TEXT_SHOW },
-	{ "\"", OP_TEXT_SHOW },
+	{ "TJ", OP_TEXT_SHOW_ARRAY },
+	{ "'", OP_TEXT_NEXT_SHOW },
+	{ "\"", OP_TEXT_SPACED_SHOW },
+	{ "BT", OP_TEXT_BEGIN },
+	{ "ET", OP_TEXT_END },
+	{ "Tf", OP_TEXT_FONT },
+	{ "Td", OP_TEXT_MOVE },
+	{ "Tm", OP_TEXT_MATRIX },
+	{ "TD", OP_TEXT_MOVE_LEADING },
+	{ "T*", OP_TEXT_NEXT_LINE },
+	{ "Tc", OP_TEXT_CHARACTER_SPACING },
+	{ "Tw", OP_TEXT_WORD_SPACING },
+	{ "Tz", OP_TEXT_SCALE },
+	{ "TL", OP_TEXT_LEADING },
+	{ "Tr", OP_TEXT_RENDER },
+	{ "Ts", OP_TEXT_RISE },
 	{ "ri", OP_IGNORED },
 	{ "i", OP_IGNORED },
-	{ "BT", OP_IGNORED },
-	{ "ET", OP_IGNORED },
-	{ "Tc", OP_IGNORED },
-	{ "Tw", OP_IGNORED },
-	{ "Tz", OP_IGNORED },
-	{ "TL", OP_IGNORED },
-	{ "Tf", OP_IGNORED },
-	{ "Tr", OP_IGNORED },
-	{ "Ts", OP_IGNORED },
-	{ "Td", OP_IGNORED },
-	{ "TD", OP_IGNORED },
-	{ "Tm", OP_IGNORED },
-	{ "T*", OP_IGNORED },
 	{ "d0", OP_IGNORED },
 	{ "d1", OP_IGNORED },
 	{ "BMC", OP_IGNORED },
@@ -307,6 +370,25 @@ static void state_blend(struct content_run *run, struct pdf_object *dictionary);
 static void apply_blend(struct content_run *run, struct pdf_object *mode);
 static int blend_known(struct pdf_object *mode);
 static int find_resource(struct content_run *run, struct pdf_object *resources, const char *category, struct pdf_object **found);
+static int find_named_resource(struct content_run *run, struct pdf_object *resources, const char *category, const struct content_operand *operand, struct pdf_object **found);
+static void execute_text(struct content_run *run, enum content_operator code, struct pdf_object *resources);
+static void set_font(struct content_run *run, struct pdf_object *resources);
+static void move_text_line(struct content_run *run, double x, double y);
+static void begin_text(struct content_run *run);
+static void end_text(struct content_run *run);
+static void show_operand_string(struct content_run *run, size_t index);
+static void show_array(struct content_run *run);
+static void show_string(struct content_run *run, const unsigned char *bytes, size_t length);
+static int add_glyph(struct content_run *run, const struct pdf_glyph *glyph);
+static void advance_text(struct content_run *run, double amount);
+static void paint_text(struct content_run *run, double bold);
+static void embolden_text(struct content_run *run, double width);
+static int add_text_clip(struct content_run *run);
+static int is_pattern_space(struct content_run *run, struct pdf_object *resources);
+static void set_pattern(struct content_run *run, struct pdf_object *resources, int stroke);
+static void paint_shading(struct content_run *run, struct pdf_object *resources);
+static void paint_pattern(struct content_run *run, struct pdf_object *pattern, const unsigned char *verbs, size_t verb_count, const struct pdf_point *points, size_t point_count, enum pdf_fill_rule rule, double alpha);
+static int add_shading_image(struct content_run *run, struct pdf_object *shading, const double matrix[6], const double bounds[4], double alpha);
 static int space_components(struct content_run *run, struct pdf_object *resources, int *components);
 static int device_components(const unsigned char *name, size_t length);
 static void set_color(struct content_run *run, int stroke, int components, const double *values);
@@ -383,6 +465,8 @@ pdf_page_render(
 	run->document = document;
 	run->builder = builder;
 	base_matrix(&box, run->stack[0].ctm);
+	memcpy(run->pattern_base, run->stack[0].ctm, sizeof(run->pattern_base));
+	run->stack[0].horizontal_scale = 1.0;
 	run->stack[0].fill_components = 1;
 	run->stack[0].stroke_components = 1;
 	run->stack[0].fill_usable = 1;
@@ -416,6 +500,8 @@ pdf_page_render(
 	free(run->path.verbs);
 	free(run->path.points);
 	free(run->scratch);
+	free(run->text_clip_verbs);
+	free(run->text_clip_points);
 	free(run);
 
 	/* Succeeded: the list is the page's drawing. */
@@ -784,9 +870,26 @@ execute(
 		skip_inline_image(run, lexer);
 		break;
 	case OP_SHADING:
+		paint_shading(run, resources);
+		break;
+	case OP_TEXT_BEGIN:
+	case OP_TEXT_END:
+	case OP_TEXT_FONT:
+	case OP_TEXT_CHARACTER_SPACING:
+	case OP_TEXT_WORD_SPACING:
+	case OP_TEXT_SCALE:
+	case OP_TEXT_LEADING:
+	case OP_TEXT_RISE:
+	case OP_TEXT_RENDER:
+	case OP_TEXT_MOVE:
+	case OP_TEXT_MOVE_LEADING:
+	case OP_TEXT_MATRIX:
+	case OP_TEXT_NEXT_LINE:
 	case OP_TEXT_SHOW:
-		/* Shadings and text are drawn from stage 2. */
-		run->flags |= PDF_DISPLAY_SKIPPED;
+	case OP_TEXT_SHOW_ARRAY:
+	case OP_TEXT_NEXT_SHOW:
+	case OP_TEXT_SPACED_SHOW:
+		execute_text(run, code, resources);
 		break;
 	case OP_IGNORED:
 	case OP_UNKNOWN:
@@ -884,7 +987,8 @@ execute_path(
 	/* The path being built. */
 	path = &run->path;
 
-	/* Adds to the path by the operator. */
+	/* Adds to the path by the operator; a close takes no coordinates. */
+	memset(numbers, 0, sizeof(numbers));
 	error = 0;
 	switch (code) {
 	case OP_MOVE:
@@ -1019,6 +1123,7 @@ execute_color(
 	double numbers[4];
 	int components;
 	int stroke;
+	int is_pattern;
 	int error;
 
 	/* The level in force, and whether the operator sets the stroke's colour. */
@@ -1053,6 +1158,21 @@ execute_color(
 		break;
 	case OP_SPACE_FILL:
 	case OP_SPACE_STROKE:
+		/* The Pattern space has no colour until scn names a pattern. */
+		is_pattern = is_pattern_space(run, resources);
+		if (is_pattern) {
+			if (stroke) {
+				state->stroke_usable = 0;
+				state->stroke_pattern_space = 1;
+				state->stroke_pattern = NULL;
+			} else {
+				state->fill_usable = 0;
+				state->fill_pattern_space = 1;
+				state->fill_pattern = NULL;
+			}
+			break;
+		}
+
 		/* A new space starts at its initial colour, black. */
 		error = space_components(run, resources, &components);
 		numbers[0] = 0.0;
@@ -1074,7 +1194,13 @@ execute_color(
 		break;
 	case OP_COLOR_FILL:
 	case OP_COLOR_STROKE:
-		/* The values of the space in force; a pattern's name or a wrong count is not read. */
+		/* A pattern's name in the Pattern space. */
+		if ((stroke && state->stroke_pattern_space) || (!stroke && state->fill_pattern_space)) {
+			set_pattern(run, resources, stroke);
+			break;
+		}
+
+		/* The values of the space in force; a wrong count is not read. */
 		components = state->fill_components;
 		if (stroke)
 			components = state->stroke_components;
@@ -1525,16 +1651,36 @@ find_resource(
 	const char *category,
 	struct pdf_object **found)
 {
-	const struct content_operand *operand;
-	struct pdf_object *dictionary;
-	size_t index;
-	int differs;
 	int error;
 
 	/* The name is the last operand. */
 	if (run->operand_count == 0)
 		return PDF_EFORMAT;
-	operand = &run->operands[run->operand_count - 1];
+
+	/* Finds the resource it names. */
+	error = find_named_resource(run, resources, category, &run->operands[run->operand_count - 1], found);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: found is the resource. */
+	return 0;
+}
+
+/* Finds the resource an operand names in a category of the resources. */
+static int
+find_named_resource(
+	struct content_run *run,
+	struct pdf_object *resources,
+	const char *category,
+	const struct content_operand *operand,
+	struct pdf_object **found)
+{
+	struct pdf_object *dictionary;
+	size_t index;
+	int differs;
+	int error;
+
+	/* Only a name names a resource. */
 	if (operand->type != OPERAND_NAME)
 		return PDF_EFORMAT;
 
@@ -1710,16 +1856,20 @@ set_color(
 		rgb[2] = (1.0 - clamp_unit(values[2])) * (1.0 - clamp_unit(values[3]));
 	}
 
-	/* Stores the colour and its space in the level in force. */
+	/* Stores the colour and its space in the level in force, which is no longer a pattern. */
 	state = &run->stack[run->depth];
 	if (stroke) {
 		memcpy(state->stroke, rgb, sizeof(rgb));
 		state->stroke_components = components;
 		state->stroke_usable = 1;
+		state->stroke_pattern_space = 0;
+		state->stroke_pattern = NULL;
 	} else {
 		memcpy(state->fill, rgb, sizeof(rgb));
 		state->fill_components = components;
 		state->fill_usable = 1;
+		state->fill_pattern_space = 0;
+		state->fill_pattern = NULL;
 	}
 }
 
@@ -1920,6 +2070,12 @@ fill_path(
 		return;
 	}
 
+	/* A shading pattern fills the path with its shading. */
+	if (state->fill_pattern != NULL) {
+		paint_pattern(run, state->fill_pattern, run->path.verbs, run->path.verb_count, transformed, run->path.point_count, rule, state->fill_alpha);
+		return;
+	}
+
 	/* Adds the fill. */
 	memset(&style, 0, sizeof(style));
 	style.rule = rule;
@@ -1989,6 +2145,15 @@ stroke_path(
 		free(verbs);
 		free(points);
 		stop_for(run, error);
+		return;
+	}
+
+	/* A shading pattern fills the outline with its shading. */
+	if (state->stroke_pattern != NULL) {
+		if (verb_count > 0)
+			paint_pattern(run, state->stroke_pattern, verbs, verb_count, transformed, point_count, PDF_FILL_NONZERO, state->stroke_alpha);
+		free(verbs);
+		free(points);
 		return;
 	}
 
@@ -2094,6 +2259,918 @@ matrix_scale(
 	return sqrt(determinant);
 }
 
+/* Executes a text operator: the text state, the text object, positioning, and showing. */
+static void
+execute_text(
+	struct content_run *run,
+	enum content_operator code,
+	struct pdf_object *resources)
+{
+	struct content_state *state;
+	double numbers[6];
+	int error;
+
+	/* The level in force, whose text state the operators change. */
+	state = &run->stack[run->depth];
+
+	/* Changes the text state, or positions or shows text, by the operator. */
+	switch (code) {
+	case OP_TEXT_BEGIN:
+		begin_text(run);
+		break;
+	case OP_TEXT_END:
+		end_text(run);
+		break;
+	case OP_TEXT_FONT:
+		set_font(run, resources);
+		break;
+	case OP_TEXT_CHARACTER_SPACING:
+		error = read_numbers(run, 1, numbers);
+		if (error == 0)
+			state->character_spacing = numbers[0];
+		break;
+	case OP_TEXT_WORD_SPACING:
+		error = read_numbers(run, 1, numbers);
+		if (error == 0)
+			state->word_spacing = numbers[0];
+		break;
+	case OP_TEXT_SCALE:
+		/* A percentage. */
+		error = read_numbers(run, 1, numbers);
+		if (error == 0)
+			state->horizontal_scale = numbers[0] / 100.0;
+		break;
+	case OP_TEXT_LEADING:
+		error = read_numbers(run, 1, numbers);
+		if (error == 0)
+			state->leading = numbers[0];
+		break;
+	case OP_TEXT_RISE:
+		error = read_numbers(run, 1, numbers);
+		if (error == 0)
+			state->rise = numbers[0];
+		break;
+	case OP_TEXT_RENDER:
+		/* One of the eight modes. */
+		error = read_numbers(run, 1, numbers);
+		if (error != 0)
+			break;
+		if (numbers[0] >= 0.0 && numbers[0] <= 7.0)
+			state->render_mode = (int)numbers[0];
+		break;
+	case OP_TEXT_MOVE:
+		error = read_numbers(run, 2, numbers);
+		if (error == 0)
+			move_text_line(run, numbers[0], numbers[1]);
+		break;
+	case OP_TEXT_MOVE_LEADING:
+		/* A move that also sets the leading to the move's negated height. */
+		error = read_numbers(run, 2, numbers);
+		if (error != 0)
+			break;
+		state->leading = -numbers[1];
+		move_text_line(run, numbers[0], numbers[1]);
+		break;
+	case OP_TEXT_MATRIX:
+		/* Both matrices become the operands. */
+		error = read_numbers(run, 6, numbers);
+		if (error != 0)
+			break;
+		memcpy(run->text_matrix, numbers, sizeof(run->text_matrix));
+		memcpy(run->line_matrix, numbers, sizeof(run->line_matrix));
+		break;
+	case OP_TEXT_NEXT_LINE:
+		move_text_line(run, 0.0, -state->leading);
+		break;
+	case OP_TEXT_SHOW:
+		show_operand_string(run, run->operand_count - 1);
+		break;
+	case OP_TEXT_SHOW_ARRAY:
+		show_array(run);
+		break;
+	case OP_TEXT_NEXT_SHOW:
+		/* The next line, then the string. */
+		move_text_line(run, 0.0, -state->leading);
+		show_operand_string(run, run->operand_count - 1);
+		break;
+	case OP_TEXT_SPACED_SHOW:
+		/* The word and character spacing, the next line, then the string. */
+		if (run->operand_count < 3)
+			break;
+		if (run->operands[run->operand_count - 3].type != OPERAND_NUMBER)
+			break;
+		if (run->operands[run->operand_count - 2].type != OPERAND_NUMBER)
+			break;
+		state->word_spacing = run->operands[run->operand_count - 3].number;
+		state->character_spacing = run->operands[run->operand_count - 2].number;
+		move_text_line(run, 0.0, -state->leading);
+		show_operand_string(run, run->operand_count - 1);
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+ * Sets the font and its size (Tf).  A font the resources do not have, or
+ * one the reader cannot read, leaves no font: its strings only mark the
+ * list.
+ */
+static void
+set_font(
+	struct content_run *run,
+	struct pdf_object *resources)
+{
+	struct content_state *state;
+	struct pdf_object *dictionary;
+	struct pdf_font *font;
+	double size;
+	int error;
+
+	/* A name and a size. */
+	state = &run->stack[run->depth];
+	if (run->operand_count < 2)
+		return;
+	error = read_numbers(run, 1, &size);
+	if (error != 0)
+		return;
+	state->font_size = size;
+
+	/* Finds the font dictionary the name gives. */
+	state->font = NULL;
+	error = find_named_resource(run, resources, "Font", &run->operands[run->operand_count - 2], &dictionary);
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return;
+	}
+
+	/* Reads the font, once per document. */
+	error = pdf_font_get(run->document, dictionary, &font);
+	if (error == ENOMEM) {
+		stop_for(run, ENOMEM);
+		return;
+	}
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return;
+	}
+
+	/* The font in force. */
+	state->font = font;
+}
+
+/* Starts the next line at an offset from the start of the current one (Td, TD, T*). */
+static void
+move_text_line(
+	struct content_run *run,
+	double x,
+	double y)
+{
+	double move[6];
+
+	/* The line matrix moves by the offset, and the text matrix starts there. */
+	move[0] = 1.0;
+	move[1] = 0.0;
+	move[2] = 0.0;
+	move[3] = 1.0;
+	move[4] = x;
+	move[5] = y;
+	concat_matrix(run->line_matrix, move);
+	memcpy(run->text_matrix, run->line_matrix, sizeof(run->text_matrix));
+}
+
+/* Begins a text object (BT): both matrices are the identity and no glyph clips yet. */
+static void
+begin_text(
+	struct content_run *run)
+{
+	/* The identity. */
+	memset(run->text_matrix, 0, sizeof(run->text_matrix));
+	run->text_matrix[0] = 1.0;
+	run->text_matrix[3] = 1.0;
+	memcpy(run->line_matrix, run->text_matrix, sizeof(run->line_matrix));
+
+	/* A clip left by an object without its ET is dropped. */
+	run->text_clipping = 0;
+	run->text_clip_verb_count = 0;
+	run->text_clip_point_count = 0;
+}
+
+/*
+ * Ends a text object (ET): the glyphs shown in a clipping mode become the
+ * clip of the level in force (an object that clipped with no glyph clips
+ * everything away).
+ */
+static void
+end_text(
+	struct content_run *run)
+{
+	struct pdf_display_item style;
+	int error;
+
+	/* Nothing clips unless a string was shown in a clipping mode. */
+	if (!run->text_clipping)
+		return;
+	run->text_clipping = 0;
+
+	/* Refuses clips nested past the limit. */
+	if (run->clip_depth >= PDF_CONTENT_CLIPS_MAX) {
+		run->flags |= PDF_DISPLAY_LIMITED;
+		return;
+	}
+
+	/* Adds the glyphs as a nonzero clip, counted at the level. */
+	memset(&style, 0, sizeof(style));
+	style.rule = PDF_FILL_NONZERO;
+	error = pdf_display_add_path(run->builder, PDF_ITEM_CLIP_PUSH, run->text_clip_verbs, run->text_clip_verb_count, run->text_clip_points, run->text_clip_point_count, &style);
+	run->text_clip_verb_count = 0;
+	run->text_clip_point_count = 0;
+	if (error != 0) {
+		stop_for(run, error);
+		return;
+	}
+	run->stack[run->depth].clips++;
+	run->clip_depth++;
+}
+
+/* Shows the string operand at an index (Tj, ', "). */
+static void
+show_operand_string(
+	struct content_run *run,
+	size_t index)
+{
+	const struct content_operand *operand;
+
+	/* The operand must be a string. */
+	if (run->operand_count == 0 || index >= run->operand_count)
+		return;
+	operand = &run->operands[index];
+	if (operand->type != OPERAND_OTHER)
+		return;
+	if (operand->object->type != PDF_OBJECT_STRING)
+		return;
+
+	/* Shows its bytes. */
+	show_string(run, operand->object->bytes, operand->object->length);
+}
+
+/*
+ * Shows an array of strings and adjustments (TJ): each number moves the
+ * text position back by thousandths of the font size.
+ */
+static void
+show_array(
+	struct content_run *run)
+{
+	struct content_state *state;
+	struct pdf_object *array;
+	struct pdf_object *element;
+	double number;
+	size_t index;
+	int error;
+
+	/* The operand must be an array. */
+	state = &run->stack[run->depth];
+	if (run->operand_count == 0)
+		return;
+	if (run->operands[run->operand_count - 1].type != OPERAND_OTHER)
+		return;
+	array = run->operands[run->operand_count - 1].object;
+	if (array->type != PDF_OBJECT_ARRAY)
+		return;
+
+	/* Shows each string and applies each adjustment, in order. */
+	for (index = 0; index < array->count && !run->stopped; index++) {
+		element = array->values[index];
+		if (element->type == PDF_OBJECT_STRING) {
+			show_string(run, element->bytes, element->length);
+			continue;
+		}
+		error = pdf_object_number(element, &number);
+		if (error != 0)
+			continue;
+		if (!(number > -1e9 && number < 1e9))
+			continue;
+		advance_text(run, -number / 1000.0 * state->font_size);
+	}
+}
+
+/*
+ * Shows one string: each code's glyph is added to the path in user space
+ * and the text position moves past it; the path is then painted by the
+ * rendering mode.
+ */
+static void
+show_string(
+	struct content_run *run,
+	const unsigned char *bytes,
+	size_t length)
+{
+	struct content_state *state;
+	struct pdf_glyph glyph;
+	unsigned code;
+	size_t position;
+	size_t used;
+	size_t shown;
+	double spacing;
+	double bold;
+	int single_byte;
+	int draws;
+	int error;
+
+	/* A string without a usable font is not drawn and does not move. */
+	state = &run->stack[run->depth];
+	if (state->font == NULL) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return;
+	}
+	run->flags |= pdf_font_status(state->font);
+
+	/* The glyphs are drawn unless the mode is invisible (3) or clipping only (7). */
+	draws = 1;
+	if (state->render_mode == 3 || state->render_mode == 7)
+		draws = 0;
+	if (state->render_mode >= 4)
+		run->text_clipping = 1;
+
+	/* Starts a path of the string's glyphs; a path left unpainted is dropped. */
+	path_clear(run);
+	bold = 0.0;
+
+	/* Walks the codes of the string. */
+	position = 0;
+	for (shown = 0; position < length && shown < PDF_CONTENT_STRING_MAX; shown++) {
+		/* Reads the next code and what it draws. */
+		used = pdf_font_next_code(state->font, bytes + position, length - position, &code, &single_byte);
+		position += used;
+		error = pdf_font_glyph(state->font, code, &glyph);
+		if (error != 0) {
+			stop_for(run, error);
+			break;
+		}
+
+		/* Adds the glyph's outline where the text position is. */
+		if (glyph.drawable && glyph.verb_count > 0 && (draws || state->render_mode >= 4)) {
+			error = add_glyph(run, &glyph);
+			if (error != 0) {
+				stop_for(run, error);
+				break;
+			}
+			bold = glyph.bold;
+		}
+
+		/* Moves past it: its width, the character spacing, and the word spacing after a one-byte space. */
+		spacing = state->character_spacing;
+		if (single_byte && code == 32)
+			spacing += state->word_spacing;
+		if (pdf_font_vertical(state->font)) {
+			advance_text(run, glyph.vertical_advance * state->font_size + spacing);
+		} else {
+			advance_text(run, glyph.width * state->font_size + spacing);
+		}
+	}
+
+	/* Paints and clips with the glyphs. */
+	if (run->path.verb_count > 0 && !run->stopped)
+		paint_text(run, bold);
+	path_clear(run);
+}
+
+/*
+ * Adds a glyph's outline to the path, from ems at the text position into
+ * user space: its own transform, the font size, the horizontal scale, the
+ * rise, and the text matrix.
+ */
+static int
+add_glyph(
+	struct content_run *run,
+	const struct pdf_glyph *glyph)
+{
+	struct content_state *state;
+	const double *text;
+	double coordinates[6];
+	double glyph_x;
+	double glyph_y;
+	double text_x;
+	double text_y;
+	double scale_x;
+	double scale_y;
+	size_t verb;
+	size_t point;
+	size_t count;
+	size_t index;
+	int error;
+
+	/* The scales from ems to text space. */
+	state = &run->stack[run->depth];
+	text = run->text_matrix;
+	scale_x = state->font_size * state->horizontal_scale;
+	scale_y = state->font_size;
+
+	/* Adds each step with its points moved into user space. */
+	point = 0;
+	for (verb = 0; verb < glyph->verb_count; verb++) {
+		/* How many points the step takes. */
+		count = 0;
+		if (glyph->verbs[verb] == PDF_PATH_MOVE || glyph->verbs[verb] == PDF_PATH_LINE)
+			count = 1;
+		if (glyph->verbs[verb] == PDF_PATH_CUBIC)
+			count = 3;
+		if (point + count > glyph->point_count)
+			return PDF_EFORMAT;
+
+		/* Moves each point: glyph transform, vertical origin, scale and rise, text matrix. */
+		for (index = 0; index < count; index++) {
+			glyph_x = glyph->transform[0] * glyph->points[point + index].x + glyph->transform[2] * glyph->points[point + index].y;
+			glyph_y = glyph->transform[1] * glyph->points[point + index].x + glyph->transform[3] * glyph->points[point + index].y;
+			if (pdf_font_vertical(state->font)) {
+				glyph_x -= glyph->origin_x;
+				glyph_y -= glyph->origin_y;
+			}
+			text_x = glyph_x * scale_x;
+			text_y = glyph_y * scale_y + state->rise;
+			coordinates[index * 2] = text[0] * text_x + text[2] * text_y + text[4];
+			coordinates[index * 2 + 1] = text[1] * text_x + text[3] * text_y + text[5];
+		}
+		point += count;
+
+		/* Adds the step. */
+		error = path_add(run, (enum pdf_path_verb)glyph->verbs[verb], coordinates, count);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the glyph is part of the path. */
+	return 0;
+}
+
+/*
+ * Moves the text position along the writing direction by an amount in
+ * text space: horizontally scaled by Tz for horizontal writing,
+ * downward (negative) for vertical writing.
+ */
+static void
+advance_text(
+	struct content_run *run,
+	double amount)
+{
+	struct content_state *state;
+	double move[6];
+
+	/* A translation in text space. */
+	state = &run->stack[run->depth];
+	move[0] = 1.0;
+	move[1] = 0.0;
+	move[2] = 0.0;
+	move[3] = 1.0;
+	move[4] = amount * state->horizontal_scale;
+	move[5] = 0.0;
+	if (state->font != NULL && pdf_font_vertical(state->font)) {
+		move[4] = 0.0;
+		move[5] = amount;
+	}
+
+	/* The text matrix moves; a nonsensical amount leaves it. */
+	if (!(amount > -1e9 && amount < 1e9))
+		return;
+	concat_matrix(run->text_matrix, move);
+}
+
+/*
+ * Paints the string's glyphs by the rendering mode: 0 fills, 1 strokes, 2
+ * does both, 3 does neither, and 4 to 7 do the same and add the glyphs to
+ * the clip ET applies.  bold thickens a substitute's fill.
+ */
+static void
+paint_text(
+	struct content_run *run,
+	double bold)
+{
+	struct content_state *state;
+	int mode;
+	int error;
+
+	/* The mode's painting, without its clipping. */
+	state = &run->stack[run->depth];
+	mode = state->render_mode % 4;
+
+	/* Fills, thickening a substitute that stands in for a bold face. */
+	if (mode == 0 || mode == 2) {
+		fill_path(run, PDF_FILL_NONZERO);
+		if (bold > 0.0 && !run->stopped)
+			embolden_text(run, bold);
+	}
+
+	/* Strokes. */
+	if ((mode == 1 || mode == 2) && !run->stopped)
+		stroke_path(run);
+
+	/* Keeps the glyphs for the clip. */
+	if (state->render_mode >= 4 && !run->stopped) {
+		error = add_text_clip(run);
+		if (error != 0)
+			stop_for(run, error);
+	}
+}
+
+/*
+ * Thickens filled glyphs by stroking them in the fill's colour with a
+ * width of bold ems of the font size.
+ */
+static void
+embolden_text(
+	struct content_run *run,
+	double width)
+{
+	struct content_state *state;
+	struct content_state saved;
+	double scale;
+
+	/* The stroke's width in user space: the ems in text space, through the text matrix. */
+	state = &run->stack[run->depth];
+	scale = matrix_scale(run->text_matrix);
+	if (state->font_size < 0.0) {
+		width *= -state->font_size;
+	} else {
+		width *= state->font_size;
+	}
+
+	/* Strokes with the fill's colour and a round, solid line, then puts the style back. */
+	saved = *state;
+	memcpy(state->stroke, state->fill, sizeof(state->stroke));
+	state->stroke_usable = state->fill_usable;
+	state->stroke_alpha = state->fill_alpha;
+	state->line_width = width * scale;
+	state->line_join = 1;
+	state->line_cap = 1;
+	state->dash_count = 0;
+	stroke_path(run);
+	*state = saved;
+}
+
+/* Adds the path, moved to the page, to the glyphs the text object's ET makes the clip. */
+static int
+add_text_clip(
+	struct content_run *run)
+{
+	struct pdf_point *transformed;
+	unsigned char *verbs;
+	struct pdf_point *points;
+	size_t capacity;
+	int error;
+
+	/* Refuses glyphs past the list's point limit. */
+	if (run->text_clip_point_count + run->path.point_count > PDF_DISPLAY_POINTS_MAX)
+		return ENOMEM;
+
+	/* Moves the path to the page. */
+	error = transform_path(run, run->path.points, run->path.point_count, &transformed);
+	if (error != 0)
+		return error;
+
+	/* Grows the steps to hold the path's. */
+	if (run->text_clip_verb_count + run->path.verb_count > run->text_clip_verb_capacity) {
+		capacity = run->text_clip_verb_capacity * 2 + run->path.verb_count + 64;
+		verbs = realloc(run->text_clip_verbs, capacity);
+		if (verbs == NULL)
+			return ENOMEM;
+		run->text_clip_verbs = verbs;
+		run->text_clip_verb_capacity = capacity;
+	}
+
+	/* Grows the points to hold the path's. */
+	if (run->text_clip_point_count + run->path.point_count > run->text_clip_point_capacity) {
+		capacity = run->text_clip_point_capacity * 2 + run->path.point_count + 64;
+		points = realloc(run->text_clip_points, capacity * sizeof(*points));
+		if (points == NULL)
+			return ENOMEM;
+		run->text_clip_points = points;
+		run->text_clip_point_capacity = capacity;
+	}
+
+	/* Appends the path. */
+	memcpy(run->text_clip_verbs + run->text_clip_verb_count, run->path.verbs, run->path.verb_count);
+	memcpy(run->text_clip_points + run->text_clip_point_count, transformed, run->path.point_count * sizeof(*transformed));
+	run->text_clip_verb_count += run->path.verb_count;
+	run->text_clip_point_count += run->path.point_count;
+
+	/* Succeeded: the glyphs wait for ET. */
+	return 0;
+}
+
+/* Tells whether the colour space the operand names is the Pattern space (by name, or a resource built on it). */
+static int
+is_pattern_space(
+	struct content_run *run,
+	struct pdf_object *resources)
+{
+	const struct content_operand *operand;
+	struct pdf_object *space;
+	struct pdf_object *family;
+	int is_name;
+	int error;
+
+	/* The name is the last operand. */
+	if (run->operand_count == 0)
+		return 0;
+	operand = &run->operands[run->operand_count - 1];
+	if (operand->type != OPERAND_NAME)
+		return 0;
+
+	/* The space's own name. */
+	if (operand->length == 7 && memcmp(operand->bytes, "Pattern", 7) == 0)
+		return 1;
+
+	/* A resource: the name /Pattern, or an array whose family is /Pattern. */
+	error = find_resource(run, resources, "ColorSpace", &space);
+	if (error != 0)
+		return 0;
+	family = space;
+	if (space->type == PDF_OBJECT_ARRAY && space->count > 0) {
+		error = pdf_reader_resolve(run->document, space->values[0], &family);
+		if (error != 0)
+			return 0;
+	}
+	is_name = pdf_object_is_name(family, "Pattern");
+	if (is_name)
+		return 1;
+
+	/* Another space. */
+	return 0;
+}
+
+/*
+ * Sets the fill or stroke colour to the pattern the last operand names: a
+ * shading pattern is drawn; a tiling pattern, and a name the resources do
+ * not have, leave the colour unusable.
+ */
+static void
+set_pattern(
+	struct content_run *run,
+	struct pdf_object *resources,
+	int stroke)
+{
+	struct content_state *state;
+	struct pdf_object *pattern;
+	struct pdf_object *type;
+	struct pdf_object *chosen;
+	int error;
+
+	/* No pattern until one is found. */
+	state = &run->stack[run->depth];
+	chosen = NULL;
+
+	/* Finds the pattern; only a shading pattern (type 2) is drawn yet. */
+	error = find_resource(run, resources, "Pattern", &pattern);
+	if (error == 0 && (pattern->type == PDF_OBJECT_DICTIONARY || pattern->type == PDF_OBJECT_STREAM)) {
+		error = pdf_reader_resolve_key(run->document, pattern, "PatternType", &type);
+		if (error == 0 && type->type == PDF_OBJECT_INTEGER && type->integer == 2)
+			chosen = pattern;
+	}
+
+	/* The colour is the pattern, usable only when it is drawn. */
+	if (stroke) {
+		state->stroke_pattern = chosen;
+		state->stroke_usable = 0;
+		if (chosen != NULL)
+			state->stroke_usable = 1;
+	} else {
+		state->fill_pattern = chosen;
+		state->fill_usable = 0;
+		if (chosen != NULL)
+			state->fill_usable = 1;
+	}
+}
+
+/*
+ * Paints the shading the operand names (sh) over the clip in force: the
+ * whole page, or the shading's /BBox on it.
+ */
+static void
+paint_shading(
+	struct content_run *run,
+	struct pdf_object *resources)
+{
+	struct content_state *state;
+	struct pdf_object *shading;
+	struct pdf_object *box_object;
+	struct pdf_object *number_object;
+	double box[4];
+	double bounds[4];
+	double x;
+	double y;
+	size_t corner;
+	size_t index;
+	int error;
+
+	/* Finds the shading; a missing one is left out. */
+	state = &run->stack[run->depth];
+	error = find_resource(run, resources, "Shading", &shading);
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return;
+	}
+
+	/* The whole page. */
+	bounds[0] = 0.0;
+	bounds[1] = 0.0;
+	bounds[2] = run->builder->list.width;
+	bounds[3] = run->builder->list.height;
+
+	/* Within the shading's box, when it has one: its corners' box on the page. */
+	error = pdf_reader_resolve_key(run->document, shading, "BBox", &box_object);
+	if (error == 0 && box_object->type == PDF_OBJECT_ARRAY && box_object->count == 4) {
+		for (index = 0; index < 4; index++) {
+			error = pdf_reader_resolve(run->document, box_object->values[index], &number_object);
+			if (error == 0)
+				error = pdf_object_number(number_object, &box[index]);
+			if (error != 0)
+				break;
+		}
+		for (corner = 0; corner < 4 && error == 0; corner++) {
+			x = box[(corner & 1) * 2];
+			y = box[1 + (corner >> 1) * 2];
+			if (corner == 0) {
+				bounds[0] = run->builder->list.width;
+				bounds[1] = run->builder->list.height;
+				bounds[2] = 0.0;
+				bounds[3] = 0.0;
+			}
+			if (state->ctm[0] * x + state->ctm[2] * y + state->ctm[4] > bounds[2])
+				bounds[2] = state->ctm[0] * x + state->ctm[2] * y + state->ctm[4];
+			if (state->ctm[0] * x + state->ctm[2] * y + state->ctm[4] < bounds[0])
+				bounds[0] = state->ctm[0] * x + state->ctm[2] * y + state->ctm[4];
+			if (state->ctm[1] * x + state->ctm[3] * y + state->ctm[5] > bounds[3])
+				bounds[3] = state->ctm[1] * x + state->ctm[3] * y + state->ctm[5];
+			if (state->ctm[1] * x + state->ctm[3] * y + state->ctm[5] < bounds[1])
+				bounds[1] = state->ctm[1] * x + state->ctm[3] * y + state->ctm[5];
+		}
+		if (bounds[0] < 0.0)
+			bounds[0] = 0.0;
+		if (bounds[1] < 0.0)
+			bounds[1] = 0.0;
+		if (bounds[2] > run->builder->list.width)
+			bounds[2] = run->builder->list.width;
+		if (bounds[3] > run->builder->list.height)
+			bounds[3] = run->builder->list.height;
+	}
+
+	/* Paints the shading in user space. */
+	error = add_shading_image(run, shading, state->ctm, bounds, state->fill_alpha);
+	if (error != 0)
+		stop_for(run, error);
+}
+
+/*
+ * Fills a path of the page with a shading pattern: the path as a clip,
+ * the pattern's shading over the path's box, and the clip's end.
+ */
+static void
+paint_pattern(
+	struct content_run *run,
+	struct pdf_object *pattern,
+	const unsigned char *verbs,
+	size_t verb_count,
+	const struct pdf_point *points,
+	size_t point_count,
+	enum pdf_fill_rule rule,
+	double alpha)
+{
+	struct pdf_display_item style;
+	struct pdf_object *matrix_object;
+	struct pdf_object *shading;
+	double matrix[6];
+	double combined[6];
+	double bounds[4];
+	size_t index;
+	int error;
+
+	/* Refuses clips nested past the limit. */
+	if (run->clip_depth >= PDF_CONTENT_CLIPS_MAX) {
+		run->flags |= PDF_DISPLAY_LIMITED;
+		return;
+	}
+
+	/* The path's box, within the page. */
+	if (point_count == 0)
+		return;
+	bounds[0] = points[0].x;
+	bounds[1] = points[0].y;
+	bounds[2] = points[0].x;
+	bounds[3] = points[0].y;
+	for (index = 1; index < point_count; index++) {
+		if (points[index].x < bounds[0])
+			bounds[0] = points[index].x;
+		if (points[index].y < bounds[1])
+			bounds[1] = points[index].y;
+		if (points[index].x > bounds[2])
+			bounds[2] = points[index].x;
+		if (points[index].y > bounds[3])
+			bounds[3] = points[index].y;
+	}
+	if (bounds[0] < 0.0)
+		bounds[0] = 0.0;
+	if (bounds[1] < 0.0)
+		bounds[1] = 0.0;
+	if (bounds[2] > run->builder->list.width)
+		bounds[2] = run->builder->list.width;
+	if (bounds[3] > run->builder->list.height)
+		bounds[3] = run->builder->list.height;
+	if (!(bounds[2] > bounds[0] && bounds[3] > bounds[1]))
+		return;
+
+	/* The pattern's matrix, relative to the content stream's own. */
+	matrix[0] = 1.0;
+	matrix[1] = 0.0;
+	matrix[2] = 0.0;
+	matrix[3] = 1.0;
+	matrix[4] = 0.0;
+	matrix[5] = 0.0;
+	error = pdf_reader_resolve_key(run->document, pattern, "Matrix", &matrix_object);
+	if (error == 0 && matrix_object->type == PDF_OBJECT_ARRAY && matrix_object->count == 6) {
+		for (index = 0; index < 6; index++) {
+			error = pdf_object_number(matrix_object->values[index], &matrix[index]);
+			if (error != 0)
+				return;
+		}
+	}
+	memcpy(combined, run->pattern_base, sizeof(combined));
+	concat_matrix(combined, matrix);
+
+	/* The pattern's shading. */
+	error = pdf_reader_resolve_key(run->document, pattern, "Shading", &shading);
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_DAMAGED;
+		return;
+	}
+
+	/* Clips to the path. */
+	memset(&style, 0, sizeof(style));
+	style.rule = rule;
+	error = pdf_display_add_path(run->builder, PDF_ITEM_CLIP_PUSH, verbs, verb_count, points, point_count, &style);
+	if (error != 0) {
+		stop_for(run, error);
+		return;
+	}
+
+	/* Paints the shading, then ends the clip. */
+	error = add_shading_image(run, shading, combined, bounds, alpha);
+	if (error != 0) {
+		stop_for(run, error);
+		return;
+	}
+	error = pdf_display_add_clip_pop(run->builder);
+	if (error != 0)
+		stop_for(run, error);
+}
+
+/*
+ * Adds a shading drawn over a region of the page as an image item; a
+ * shading the reader cannot draw is left out (only running out of memory
+ * is an error).
+ */
+static int
+add_shading_image(
+	struct content_run *run,
+	struct pdf_object *shading,
+	const double matrix[6],
+	const double bounds[4],
+	double alpha)
+{
+	struct pdf_display_item style;
+	unsigned char *pixels;
+	size_t width;
+	size_t height;
+	int error;
+
+	/* Nothing to paint in a region of no size. */
+	if (!(bounds[2] > bounds[0] && bounds[3] > bounds[1]))
+		return 0;
+
+	/* Draws the shading. */
+	memset(&style, 0, sizeof(style));
+	error = pdf_shading_image(run->document, shading, matrix, bounds, &pixels, &width, &height, style.matrix);
+	if (error == ENOMEM)
+		return ENOMEM;
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return 0;
+	}
+
+	/* Adds it as an image, smoothed, in the fill's alpha and blend mode. */
+	style.image_width = width;
+	style.image_height = height;
+	style.alpha = alpha;
+	style.blend = run->stack[run->depth].blend;
+	style.interpolate = 1;
+	error = pdf_display_add_image(run->builder, pixels, &style);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the shading is on the list. */
+	return 0;
+}
+
 /* Draws the XObject the operand names: an image, or a form's content. */
 static void
 draw_xobject(
@@ -2197,6 +3274,7 @@ run_form(
 	double matrix[6];
 	double box[4];
 	size_t data_size;
+	double saved_pattern_base[6];
 	size_t saved_base;
 	size_t saved_ignored;
 	size_t form_depth;
@@ -2277,8 +3355,10 @@ run_form(
 	run->ignored_saves = 0;
 	run->form_depth++;
 
-	/* Applies the form's matrix and clips to its bounding box. */
+	/* Applies the form's matrix, which its patterns are relative to, and clips to its bounding box. */
 	concat_matrix(run->stack[run->depth].ctm, matrix);
+	memcpy(saved_pattern_base, run->pattern_base, sizeof(saved_pattern_base));
+	memcpy(run->pattern_base, run->stack[run->depth].ctm, sizeof(run->pattern_base));
 	path_clear(run);
 	error = add_rectangle(run, box[0], box[1], box[2], box[3]);
 	if (error == 0) {
@@ -2291,6 +3371,7 @@ run_form(
 	run_content(run, data, data_size, form_resources);
 	free(owned);
 	unwind_to(run, form_depth - 1);
+	memcpy(run->pattern_base, saved_pattern_base, sizeof(run->pattern_base));
 	run->base_depth = saved_base;
 	run->ignored_saves = saved_ignored;
 	run->form_depth--;

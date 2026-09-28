@@ -626,7 +626,8 @@ check_hand_made(void)
 	pdf_object(&pdf, 1, "<< /Type /XRef /Size 2 /W [1 2 1] /Length 0 >>\nstream\n\nendstream");
 	sprintf(body, "startxref\n%lu\n%%%%EOF\n", (unsigned long)pdf.offsets[1]);
 	pdf_append(&pdf, body);
-	expect_error(pdf_document_open_memory(pdf.data, pdf.length, &document), ENOTSUP, "a cross-reference stream");
+	/* ws079-p007: the stream is read; with no entries and no catalog even the repair finds nothing. */
+	expect_error(pdf_document_open_memory(pdf.data, pdf.length, &document), PDF_EFORMAT, "a cross-reference stream without a catalog");
 
 	/* A /Prev chain that comes back to itself, and a subsection too large for the file. */
 	pdf_begin(&pdf);
@@ -635,7 +636,13 @@ check_hand_made(void)
 	sprintf(body, "xref\n0 3\n0000000000 65535 f \n%010lu 00000 n \n%010lu 00000 n \ntrailer\n<< /Size 3 /Root 1 0 R /Prev %lu >>\nstartxref\n%lu\n%%%%EOF\n",
 		(unsigned long)pdf.offsets[1], (unsigned long)pdf.offsets[2], (unsigned long)pdf.length, (unsigned long)pdf.length);
 	pdf_append(&pdf, body);
-	expect_error(pdf_document_open_memory(pdf.data, pdf.length, &document), PDF_EFORMAT, "a /Prev loop");
+	/* ws079-p007: the loop is refused, and the repair finds the objects and the catalog: no pages. */
+	error = pdf_document_open_memory(pdf.data, pdf.length, &document);
+	expect_error(error, 0, "a /Prev loop, repaired");
+	if (error == 0) {
+		expect(pdf_document_page_count(document) == 0, "the repaired /Prev loop has no pages");
+		pdf_document_close(document);
+	}
 	pdf_begin(&pdf);
 	sprintf(body, "xref\n0 8000000\n0000000000 65535 f \ntrailer\n<< /Size 3 >>\nstartxref\n9\n%%%%EOF\n");
 	pdf_append(&pdf, body);

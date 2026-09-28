@@ -220,4 +220,66 @@ struct pdf_stroke_style {
 };
 int pdf_stroke_path(const unsigned char *verbs, size_t verb_count, const struct pdf_point *points, size_t point_count, const struct pdf_stroke_style *style, unsigned char **out_verbs, size_t *out_verb_count, struct pdf_point **out_points, size_t *out_point_count);
 
+/*
+ * One glyph name of a /Differences array and the character it stands for
+ * (encoding.c).
+ */
+struct pdf_glyph_name {
+	const char *name;
+	unsigned short unicode;
+};
+
+/* The simple fonts' base encodings and glyph names (encoding.c). */
+extern const unsigned short pdf_encoding_standard[256];
+extern const unsigned short pdf_encoding_win_ansi[256];
+extern const unsigned short pdf_encoding_mac_roman[256];
+extern const struct pdf_glyph_name pdf_glyph_names[];
+extern const size_t pdf_glyph_names_count;
+
+/*
+ * A font of a document, and a document's fonts (font.c).
+ *
+ * The fonts live in the document until it is closed.
+ */
+struct pdf_font;
+struct pdf_font_cache;
+
+/*
+ * What one character code of a shown string draws.
+ *
+ * width is the horizontal displacement in ems of the font size (a vertical
+ * font's glyph moves by vertical_advance instead, from the origin
+ * origin_x, origin_y).  When drawable, the outline (verbs and points) is in
+ * ems with y upward, and transform (a b c d) maps it into text space before
+ * the font size: it narrows or leans a substitute.  bold is the width, in
+ * ems, of the stroke that thickens a substitute standing in for a bold
+ * face.
+ */
+struct pdf_glyph {
+	double width;
+	double vertical_advance;
+	double origin_x;
+	double origin_y;
+	double transform[4];
+	double bold;
+	int drawable;
+	const unsigned char *verbs;
+	size_t verb_count;
+	const struct pdf_point *points;
+	size_t point_count;
+};
+
+int pdf_font_get(struct pdf_document *document, struct pdf_object *dictionary, struct pdf_font **font);
+void pdf_font_cache_free(struct pdf_font_cache *cache);
+unsigned pdf_font_status(const struct pdf_font *font);
+int pdf_font_vertical(const struct pdf_font *font);
+size_t pdf_font_next_code(const struct pdf_font *font, const unsigned char *bytes, size_t length, unsigned *code, int *single_byte);
+int pdf_font_glyph(struct pdf_font *font, unsigned code, struct pdf_glyph *glyph);
+unsigned pdf_glyph_name_unicode(const unsigned char *name, size_t length);
+struct pdf_font_cache *pdf_reader_font_cache(struct pdf_document *document);
+
+/* The smooth shadings (shading.c): a shading drawn into an image over a region of the page. */
+int pdf_shading_image(struct pdf_document *document, struct pdf_object *object, const double matrix[6], const double bounds[4], unsigned char **pixels, size_t *width, size_t *height, double placement[6]);
+void pdf_reader_set_font_cache(struct pdf_document *document, struct pdf_font_cache *cache, void (*release)(struct pdf_font_cache *cache));
+
 #endif /* LIBPDF_INTERNAL_H */
