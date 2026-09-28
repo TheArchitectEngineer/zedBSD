@@ -223,8 +223,15 @@ ZEDBSD_CLANG_LIBS := libLLVM.so.23.1 libclang-cpp.so.23.1 liblldb.so.23.1
 
 # The headers the compiler supplies for itself -- stddef.h, stdarg.h and the
 # rest, which belong to the compiler rather than to the C library.
+#
+# Which headers there are is known only once LLVM has installed them into the
+# stage, so the list is read from the stage when it is used, and the root
+# tree's recipe uses it after the stage is made (BUG-087).  find rather than
+# $(wildcard): make keeps what it has read of a directory, and a directory
+# read while parsing would not show the headers installed later.
 ZEDBSD_CLANG_RESOURCE_DIR := $(ZEDBSD_CLANG_LIBDIR)/clang/23/include
-ZEDBSD_CLANG_RESOURCE_HEADERS = $(wildcard $(ZEDBSD_CLANG_RESOURCE_DIR)/*.h)
+ZEDBSD_CLANG_RESOURCE_HEADERS = $(shell test -d '$(ZEDBSD_CLANG_RESOURCE_DIR)' && \
+	find '$(ZEDBSD_CLANG_RESOURCE_DIR)' -maxdepth 1 -type f -name '*.h' | LC_ALL=C sort)
 
 # What the compiler needs besides itself to turn a source file into a program
 # that runs here: the C library's headers, the start file a link begins with,
