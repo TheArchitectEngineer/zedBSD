@@ -30,7 +30,7 @@ description), wl_data_device_manager/wl_data_source/wl_data_device/wl_data_offer
 v3 (WS035 p079; the requests, events, `since` versions and dnd_action values of
 the same pinned description; their events reach listeners through the generic
 dispatch, and wl_data_device.data_offer creates the server's wl_data_offer).
-This library does not claim a complete Wayland SDK. It does not supply wl_touch,
+This library does not claim a complete Wayland SDK. It does not supply
 wl_shm, EGL, a public server library, or general C callback FFI.
 
 Input interfaces (added for WS031 p013) were checked against the same pinned
@@ -43,8 +43,10 @@ axis_discrete (`ui`), the last four since 5; wl_keyboard request release (0,
 since 3) and events keymap (`uhu`), enter (`uoa`), leave (`uo`), key (`uuuu`),
 modifiers (`uuuuu`) and repeat_info (`ii`, since 4). The described versions stop
 at 5: pointer axis_value120/axis_relative_direction (v8/v9) and keyboard v10 key
-repetition are not described, and wl_touch is not supplied, so get_touch has no
-wrapper. The public names, signatures, listener member order (including the
+repetition are not described. wl_touch v5 (WS079 p013, touch-protocol.c) follows
+the same pinned description: request release (0, since 3) and events down
+(`uuoiff`), up (`uui`), motion (`uiff`), frame and cancel; shape and orientation
+(since 6) are not described, and get_touch has the upstream wrapper `wl_seat_get_touch`. The public names, signatures, listener member order (including the
 never-invoked v8/v9 pointer members) and enum values follow the upstream client
 header; no upstream code or scanner output was copied. The xdg-shell seat
 arguments now use `struct wl_seat *` as upstream declares them. Custom event interfaces use `wl_proxy_add_dispatcher`; selected interface

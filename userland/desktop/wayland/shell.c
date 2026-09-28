@@ -23,8 +23,8 @@
  * places and the title bar's glass fades.
  *
  * A triple click on a floating title bar sends the window to the back and
- * gives the focus to the window now on top (ws079-p013, "go away"; the
- * two-finger flick up on a touch screen is to do the same).  So that a
+ * gives the focus to the window now on top (ws079-p013, "go away"; a quick
+ * two-finger flick up on it on a touch screen does the same, touch.c).  So that a
  * triple click never docks first, a double click docks only when the time
  * a third press has (DOUBLE_CLICK_MS after the second) is over.
  *
@@ -61,6 +61,7 @@
 #include "toplevel.h"
 #include "subsurface.h"
 #include "panels.h"
+#include "touch.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -896,6 +897,91 @@ zwl_glass_body_at(
 }
 
 /*
+ * Finds the window whose floating title bar a press at a point would reach
+ * (touch.c, which holds a finger on a title bar back a moment to see
+ * whether a second one comes); NULL when the press would go anywhere else:
+ * to a screen or a menu over the windows, to an edge's gesture, to the
+ * system bar, to a body, or to the desktop.
+ */
+struct zwl_object *
+zwl_glass_title_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y)
+{
+	struct zwl_object *surface;
+	enum shell_hit hit;
+	float home;
+	int open;
+
+	/* Only the glass look's window mode has floating title bars. */
+	if (!server->glass || !server->windowed)
+		return NULL;
+
+	/* The login and lock screens, a drag and drop and a popup's grab take every press. */
+	if (server->greeter || server->locked || server->dnd_active)
+		return NULL;
+	if (server->popup_grab != NULL)
+		return NULL;
+
+	/* Wiseview, open or being opened, takes every press. */
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving)
+		return NULL;
+
+	/* App Home takes every press while it shows or follows one. */
+	home = zwl_home_progress(server);
+	if (home > 0.0f || server->home_to > 0.0f)
+		return NULL;
+
+	/* An open menu closes on a press anywhere. */
+	open = zwl_network_is_open();
+	if (open)
+		return NULL;
+	open = zwl_menu_is_open();
+	if (open)
+		return NULL;
+
+	/* The system bar, the desktops' swipe at the side edges and Wiseview's bottom edge come before the windows. */
+	if (y < ZWL_GLASS_BAR)
+		return NULL;
+	if (x < DESKTOP_EDGE || x >= (int32_t)server->width - DESKTOP_EDGE)
+		return NULL;
+	if (y >= (int32_t)server->height - WISEVIEW_EDGE)
+		return NULL;
+
+	/* The topmost window at the point, when the point is on its title bar. */
+	surface = window_at(server, x, y, &hit);
+	if (surface == NULL || hit != HIT_TITLE)
+		return NULL;
+
+	/* Succeeded: the window whose title bar it is. */
+	return surface;
+}
+
+/*
+ * Sends a window to the back and gives the focus to the window now on top,
+ * as a triple click on its title bar does (touch.c's two-finger flick up,
+ * "go away").
+ */
+void
+zwl_glass_lower(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	const char *via)
+{
+	/* A run of clicks or a double click's dock waiting on the window is over. */
+	if (server->dock_waiting == surface)
+		server->dock_waiting = NULL;
+	if (server->click_surface == surface) {
+		server->click_surface = NULL;
+		server->click_count = 0;
+	}
+
+	/* Succeeded: the same as the triple click. */
+	window_lower(server, surface, via);
+}
+
+/*
  * Draws zdesktop's badge of a drag and drop without an icon of its own
  * (data.c): a small white page below and right of the pointer, with an
  * outline and two lines of text, so the user sees something being carried.
@@ -1491,6 +1577,9 @@ zwl_glass_tick(
 
 	/* The top-right corner's swipe: its time limit, its hint settling, and Notes being waited for (corner.c). */
 	zwl_corner_tick(server);
+
+	/* A finger on a title bar that has waited long enough for a second one, or two that did not flick in time (touch.c). */
+	zwl_touch_tick(server);
 
 	/* A double click on a title bar docks its window once a third press can no longer come. */
 	dock_when_due(server);

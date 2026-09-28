@@ -9,10 +9,10 @@
 #     its six axes and every event must be exactly p012-two-fingers.expected
 #     (multitouch protocol B, a frame of three fingers split over two reports).
 #  3. The pen still works: peninject -c, and the pen script's 182 events.
-#  4. With the compositor running, the touch screen joins the seat (as an
-#     absolute pointer through ABS_X/ABS_Y: the compositor has no wl_touch yet,
-#     ws079-p013), leaves it when the injector closes, and the compositor
-#     stays up.
+#  4. With the compositor running, the touch screen joins the seat (as a
+#     touch screen since ws079-p013, which gave the compositor wl_touch; it was
+#     an absolute pointer through ABS_X/ABS_Y before), leaves it when the
+#     injector closes, and the compositor stays up.
 #
 #   plan/ws079/tests/pen-guest.sh start build/amd64/hdd-image.img
 #   plan/ws079/tests/p012-guest.sh [OUTDIR]
@@ -69,7 +69,7 @@ for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)" | awk "{print \$1}"); do
 grep -E "ZWL INPUT|ERROR|FAILED" /tmp/zdesktop-p012.log | head -20' > "$out/compositor.txt"
 if grep -q '^replay=0$' "$out/compositor.txt" &&
    grep -q '^1$' "$out/compositor.txt" &&
-   grep -q 'ZWL INPUT device=/dev/input/event[0-9]* kind=pointer abs=1' "$out/compositor.txt" &&
+   grep -q 'ZWL INPUT device=/dev/input/event[0-9]* kind=touch abs=1' "$out/compositor.txt" &&
    grep -q 'ZWL INPUT_CLOSED' "$out/compositor.txt" &&
    ! grep -qE 'ERROR|FAILED' "$out/compositor.txt"; then
 	echo "compositor with the touch screen: ok"

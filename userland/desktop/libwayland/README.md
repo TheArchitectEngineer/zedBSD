@@ -45,9 +45,10 @@ and its payload generation that the surface's next commit waits for.
 [API-PROVENANCE.md](../../../include/libc/wayland/API-PROVENANCE.md) records pinned
 upstream interface facts, hashes, selected scope, limitations and notices.
 Selected core descriptions are wl_display/registry/callback/region/buffer v1,
-wl_compositor/surface/output v4 and wl_seat/pointer/keyboard v5. Selected
+wl_compositor/surface/output v4 and wl_seat/pointer/keyboard/touch v5 (wl_touch
+since WS079 p013). Selected
 xdg-shell descriptions are v1; their seat arguments are typed `struct wl_seat *`
-as upstream declares them. wl_shm, wl_subcompositor, wl_touch, server-created
+as upstream declares them. wl_shm, wl_subcompositor, server-created
 new_id events, a public server library and general typed callback FFI are
 outside this library's current scope.
 

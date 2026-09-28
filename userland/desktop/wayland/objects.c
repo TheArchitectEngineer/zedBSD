@@ -19,6 +19,7 @@
 #include "extras.h"
 #include "panels.h"
 #include "tablet.h"
+#include "touch.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -291,6 +292,7 @@ zwl_object_destroy(
 		zwl_seat_surface_gone(object);
 		zwl_toplevel_surface_gone(object);
 		zwl_tablet_object_gone(object);
+		zwl_touch_object_gone(object);
 	}
 
 	/* The popups stop naming this one: a positioner's rules go, a popup's grab ends, a parent's popups close (popup.c). */

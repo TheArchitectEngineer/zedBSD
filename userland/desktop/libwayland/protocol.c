@@ -365,14 +365,9 @@ static const struct wl_interface *wl_seat_requests_1_types[] = {
 	&wl_keyboard_interface,
 };
 
-/*
- * Identifies object arguments in wl_seat.get_touch for validation.
- *
- * wl_touch is not described by this library, so the entry only keeps the
- * request opcodes in their protocol order; no wrapper sends it.
- */
+/* Identifies object arguments in wl_seat.get_touch for validation (touch-protocol.c, WS079 p013). */
 static const struct wl_interface *wl_seat_requests_2_types[] = {
-	NULL,
+	&wl_touch_interface,
 };
 
 /* Preserves the wire opcode order for wl_seat requests. */
