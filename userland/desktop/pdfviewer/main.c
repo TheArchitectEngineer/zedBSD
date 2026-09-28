@@ -17,6 +17,8 @@
  * (Ctrl+E) starts /bin/notes on the file.  The outcome is one line on
  * standard error: PDFVIEWER DONE with the reason, or PDFVIEWER FAILED
  * naming what failed; PDFVIEWER READY says the first frame is shown.
+ * ws081-p012: the touch screen scrolls with inertia, zooms with two
+ * fingers and swipes pages (touch.c).
  */
 
 #include "window.h"
@@ -84,6 +86,9 @@ static struct pv_menu main_menu;
 
 /* The window's titlebar controls in zdesktop, with the same life as the menus. */
 static struct pv_titlebar main_titlebar;
+
+/* The touch screen's gestures and scroller, made with the viewer (without them fingers do nothing). */
+static struct pv_touch main_touch;
 
 /*
  * The frame being drawn: ordinary memory the size of the swapchain, remade
@@ -158,6 +163,11 @@ main(
 	if (options.file != NULL)
 		(void)pv_app_open(&main_app, options.file);
 
+	/* The touch screen; without memory for it the fingers do nothing. */
+	error = pv_touch_open(&main_touch);
+	if (error != 0)
+		pv_log("TOUCH failed errno=%d", error);
+
 	/* The menus and the titlebar; a window without them goes on with its keys. */
 	main_state(&state);
 	error = pv_menu_open(&main_menu, &main_window, &state);
@@ -179,6 +189,7 @@ main(
 	/* Everything goes, the titlebar, the menus and the viewer before the window they belong to. */
 	pv_titlebar_close(&main_titlebar);
 	pv_menu_close(&main_menu);
+	pv_touch_close(&main_touch);
 	pv_app_release(&main_app);
 	free(main_pixels);
 	pv_present_close(&main_present);
@@ -336,6 +347,7 @@ static int
 main_loop(
 	const struct main_options *options)
 {
+	struct pv_touch_event touch;
 	struct pv_event event;
 	struct pv_state state;
 	uint64_t started;
@@ -373,6 +385,9 @@ main_loop(
 		due = pv_window_repeat(&main_window, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
+		due = pv_touch_tick(&main_touch, &main_app, pv_touch_clock());
+		if (due >= 0 && due < timeout)
+			timeout = due;
 		if (main_app.dirty)
 			timeout = 0;
 
@@ -401,6 +416,14 @@ main_loop(
 			pv_app_event(&main_app, &event);
 		}
 
+		/* Every touch queued. */
+		for (;;) {
+			taken = pv_window_take_touch(&main_window, &touch);
+			if (taken == 0)
+				break;
+			pv_touch_event(&main_touch, &main_app, &touch);
+		}
+
 		/* A document opened: its title and the recent files; an annotation asked for: Notes. */
 		main_opened();
 		if (main_app.want_annotate) {
@@ -408,8 +431,9 @@ main_loop(
 			main_annotate();
 		}
 
-		/* Time passes for the viewer; the menus and the titlebar show its state. */
+		/* Time passes for the viewer and the fingers; the menus and the titlebar show its state. */
 		(void)pv_app_tick(&main_app, now);
+		(void)pv_touch_tick(&main_touch, &main_app, pv_touch_clock());
 		main_state(&state);
 		pv_menu_refresh(&main_menu, &state);
 		pv_titlebar_refresh(&main_titlebar, &state);

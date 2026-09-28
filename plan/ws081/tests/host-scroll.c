@@ -37,9 +37,51 @@ static unsigned checks;
 /* The number of checks that failed. */
 static unsigned failures;
 
+static void check(int passed, const char *format, ...);
+static uint64_t at(double seconds);
+static struct keiland_scroller *page(double start);
+static void fling(struct keiland_scroller *scroller, double t, double vx, double vy);
+static void test_fling(void);
+static void test_diagonal(void);
+static void test_edges(void);
+static void test_catch(void);
+static void test_misc(void);
+static int gestures(struct keiland_gesture *gesture, double t, struct keiland_gesture_event *events, int capacity);
+static void test_taps(void);
+static void test_drag(void);
+
+/*
+ * Runs every test and reports the result.
+ */
+int
+main(void)
+{
+	/* The scroller first, then the gestures. */
+	test_fling();
+	test_diagonal();
+	test_edges();
+	test_catch();
+	test_misc();
+	test_taps();
+	test_drag();
+
+	/* Reports a failure. */
+	if (failures != 0) {
+		printf("host-scroll: FAILED %u of %u checks\n", failures, checks);
+		return 1;
+	}
+
+	/* Every check passed. */
+	printf("host-scroll: ok (%u checks)\n", checks);
+	return 0;
+}
+
 /* Counts one check and prints it when it fails. */
 static void
-check(int passed, const char *format, ...)
+check(
+	int passed,
+	const char *format,
+	...)
 {
 	va_list arguments;
 
@@ -59,14 +101,16 @@ check(int passed, const char *format, ...)
 
 /* Gives the microseconds of a time in seconds after the base. */
 static uint64_t
-at(double seconds)
+at(
+	double seconds)
 {
 	return TIME_BASE + (uint64_t)llround(seconds * 1.0e6);
 }
 
 /* A scroller over a long page: y from 0 to 100000, no x, a viewport of 800. */
 static struct keiland_scroller *
-page(double start)
+page(
+	double start)
 {
 	struct keiland_scroller *scroller;
 
@@ -79,7 +123,11 @@ page(double start)
 
 /* Flings a scroller: a press, no drag, a release with the finger's velocity. */
 static void
-fling(struct keiland_scroller *scroller, double t, double vx, double vy)
+fling(
+	struct keiland_scroller *scroller,
+	double t,
+	double vx,
+	double vy)
 {
 	(void)keiland_scroller_press(scroller, at(t));
 	keiland_scroller_release(scroller, at(t), vx, vy);
@@ -387,7 +435,11 @@ test_misc(void)
 
 /* Collects the gestures waiting at a time into kinds; returns how many. */
 static int
-gestures(struct keiland_gesture *gesture, double t, struct keiland_gesture_event *events, int capacity)
+gestures(
+	struct keiland_gesture *gesture,
+	double t,
+	struct keiland_gesture_event *events,
+	int capacity)
 {
 	int count;
 	int more;
@@ -559,25 +611,4 @@ test_drag(void)
 	      "DRAG_END with the flick's velocity (%.0f, %.0f)", events[0].vx, events[0].vy);
 	check(keiland_gesture_drag_offset(gesture, at(0.6), &dx, &dy) == ENOENT, "no drag after the lift");
 	keiland_gesture_destroy(gesture);
-}
-
-/* Runs every test and reports the result. */
-int
-main(void)
-{
-	test_fling();
-	test_diagonal();
-	test_edges();
-	test_catch();
-	test_misc();
-	test_taps();
-	test_drag();
-	if (failures != 0) {
-		printf("host-scroll: FAILED %u of %u checks\n", failures, checks);
-		return 1;
-	}
-
-	/* Every check passed. */
-	printf("host-scroll: ok (%u checks)\n", checks);
-	return 0;
 }

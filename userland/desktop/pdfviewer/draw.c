@@ -162,6 +162,15 @@ draw_page(
 	pv_canvas_blend(canvas, x - 1, y + 2, width + 2, height + 2, DRAW_SHADOW);
 	pv_canvas_blend(canvas, x - 1, y - 1, width + 2, height + 2, DRAW_EDGE);
 
+	/* While two fingers zoom, a raster at another scale is stretched rather than drawn again (ws081-p012). */
+	page = &app->document.pages[index];
+	if (app->zooming && page->raster != NULL) {
+		if (page->list != NULL)
+			app->shown_flags |= page->list->flags;
+		pv_canvas_stretch(canvas, x, y, width, height, page->raster, page->raster_width, page->raster_height);
+		return;
+	}
+
 	/* The raster at the scale; a page without one is white. */
 	error = pv_document_raster(&app->document, index, scale, &page);
 	if (error == 0 && page->list != NULL)
