@@ -174,6 +174,10 @@ if [ "$KEILAND_RUN" = 1 ]; then
 	for n in run-zdesktop.sh run-wlkill.sh run-mview.sh run-poweroff.sh; do
 		FILES="$FILES --file /etc/keiland/$n=plan/ws031/tests/zdesktop/$n"
 	done
+	# KEILAND_ZDESKTOP_SH (ws075-p012) replaces the compositor's script, e.g. one that takes the display's own size
+	if [ -n "${KEILAND_ZDESKTOP_SH:-}" ]; then
+		FILES="$FILES --file /etc/keiland/run-zdesktop.sh=$KEILAND_ZDESKTOP_SH"
+	fi
 	# KEILAND_APP=terminal runs terminal (WS035 p068) where the model viewer runs, with the same log
 	if [ "${KEILAND_APP:-mview}" = terminal ]; then
 		FILES="$FILES --file /etc/keiland/run-mview.sh=plan/ws031/tests/zdesktop/run-terminal.sh"
