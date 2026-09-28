@@ -3,7 +3,7 @@
 <!-- awesome-plan-current:start -->
 Active Queue: なし（subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
-Next（2026-09-28 の夜の周期の終わりに整理。main d1c3f097 で build と boot test PASS（batch119。batch117 はQEMU、WS081 p002 の UAPI の追加で sysroot を再 build。前の batch116 も PASS。`include/libc/pdf.h` の変更で sysroot と clang・libcxx 等の package が再 build され、warning はすべて外部の package の source。共有の toolchain の tree は lock のまま、llvm-source の manifest 一致））: 実機の USB の demo の image を新しくした（`build/demo-hdmi2/hdd-image.img`、main 2b07ca13 の時点、
+Next（2026-09-29 に整理。main d1c3f097 で build と boot test PASS（batch119、QEMU）。batch116・117 は `include/libc/pdf.h` と UAPI の input の追加で sysroot と clang・libcxx 等の package を再 build し、warning は外部の package の source だけ。共有の toolchain の tree は lock のまま、llvm-source の manifest 一致）: 実機の USB の demo の image を新しくした（`build/demo-hdmi2/hdd-image.img`、main 2b07ca13 の時点、
 root の password は `build/demo-hdmi2/demo-accounts/root-password`、QEMU・実機の起動は未実施）。ユーザーが実機で試す（HDMI の LCD での login・logout の目視、touch の USB）。
 次の周期（demo critical）: WS074 の direction → p072 → p037（[amazon-goal.md](ws074/amazon-goal.md)）、WS079 p009（規約）と CCITTFax・password の入力・thumbnail、
 WS075 p007〜p010 と BUG-058（p017 uncleared）、WS035 の F-048。WS082 は study.md §10 の 11 項目のユーザーの判断待ち。WS080 はデモ critical の後。
