@@ -80,7 +80,7 @@ master.md の決定の行）。この文書は [ws074-p067](phase067/phase.md) �
 | 5 | [ws074-p035](phase035/phase.md)（最小） | flexbox: row・column・wrap、`flex` の shorthand、grow・shrink・basis、`align-items`・`justify-content`・`gap`、`inline-flex`、`-webkit-box` の別名 | **cleared**（2026-09-29。トップ 画素 27.89% → 33.49%、検索 75.16% → 78.51%。2026-09-29 の capture で入れ子の flex の修正の後 トップ 34.45%（ink 23.79%）、検索 77.89%（ink 27.53%）。guest で header の検索の欄から live の検索が通る） |
 | 6 | [ws074-p060](phase060/phase.md) | `inline-block` の atomic な inline、`vertical-align` | **cleared**（2026-09-29。トップ 画素 34.45% → 34.15%、検索 77.89% → 70.48%: 結果が Chromium と同じ 4 列の card になったが、本体の行の `direction: rtl` が無く filter と結果の列が左右逆のため画素の一致は下がった） |
 | 7 | [ws074-p062](phase062/phase.md) | 描画: `border-radius`、`opacity`、`box-shadow`、`outline`、`linear-gradient`、`object-fit` | **cleared**（2026-09-29。角丸・影・opacity・outline と `clip-path: inset()`。トップ 画素 34.16%（ink 23.65% → 24.28%）、検索 68.83%。`linear-gradient`・`object-fit` は残り） |
-| 8 | ws074-p070 | `@font-face`（WOFF、libz-compat）と Amazon Ember | 2 h |
+| 8 | [ws074-p070](phase070/phase.md) | `@font-face`（WOFF、libz-compat）と Amazon Ember | **cleared**（2026-09-29。WOFF・TrueType の web font。日本の Amazon の本文は Arial・Hiragino で Ember を名指す部品が少なく、一致率は不変（トップ 34.16%、検索 68.83%）。WOFF2 は残り） |
 | 9 | ws074-p071 | 大きな page の速さ（1.4 MB の HTML と 2 MB の CSS、guest で操作できる時間まで）、測って直す | 2〜3 h |
 | 10 | ws074-p037（最小） | table の auto layout の最小 | 3 h |
 | 11 | ws074-p072 | grid の最小（`repeat(N,1fr)`、`grid-column`） | 3 h |

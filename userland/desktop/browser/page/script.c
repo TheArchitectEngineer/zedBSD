@@ -266,6 +266,10 @@ page_needs_layout(
 	if (page->styled_sheets != page->sheets_generation)
 		return 1;
 
+	/* Web fonts that arrived since the layout (ws074-p070). */
+	if (page->laid_out_fonts != page->fonts_generation)
+		return 1;
+
 	/* The layout is up to date. */
 	return 0;
 }

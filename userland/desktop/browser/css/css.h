@@ -114,6 +114,35 @@ enum css_vertical_align {
 	CSS_VALIGN_LENGTH
 };
 
+/* The most sources an @font-face rule keeps (ws074-p070; the ones after are dropped). */
+#define CSS_FONT_SOURCES	4
+
+/* The formats an @font-face source declares (format("...")), or unknown when it declares none. */
+enum css_font_format {
+	CSS_FONT_FORMAT_UNKNOWN,
+	CSS_FONT_FORMAT_WOFF,
+	CSS_FONT_FORMAT_WOFF2,
+	CSS_FONT_FORMAT_TRUETYPE,
+	CSS_FONT_FORMAT_OTHER
+};
+
+/*
+ * One @font-face rule (ws074-p070): the family it names (an atom), the
+ * range of weights it covers, whether it is italic (or oblique), and its
+ * sources in order of preference (URLs as atoms, resolved against the
+ * sheet once the page resolves the sheet's URLs, each with its format;
+ * local() sources are not kept).
+ */
+struct css_font_face {
+	struct vm_string *family;
+	int weight_min;
+	int weight_max;
+	int italic;
+	struct vm_string *sources[CSS_FONT_SOURCES];
+	int formats[CSS_FONT_SOURCES];
+	size_t source_count;
+};
+
 /* The most box shadows a style keeps (ws074-p062; the ones after are dropped). */
 #define CSS_SHADOWS	4
 
@@ -434,6 +463,8 @@ typedef int (*css_url_resolver)(void *context, const struct vm_string *url, stru
 int css_sheet_create(struct css_sheet **sheet, struct vm_heap *heap, const uint16_t *units, size_t length);
 void css_sheet_destroy(struct css_sheet *sheet);
 size_t css_sheet_import_count(const struct css_sheet *sheet);
+size_t css_sheet_font_face_count(const struct css_sheet *sheet);
+const struct css_font_face *css_sheet_font_face(const struct css_sheet *sheet, size_t index);
 struct vm_string *css_sheet_import(const struct css_sheet *sheet, size_t index);
 size_t css_sheet_rule_count(const struct css_sheet *sheet);
 const struct css_media *css_sheet_import_media(const struct css_sheet *sheet, size_t index);

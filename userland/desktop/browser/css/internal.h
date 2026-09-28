@@ -533,6 +533,8 @@ struct css_sheet {
 	struct vm_string **imports;
 	struct css_media **import_media;
 	size_t import_count;
+	struct css_font_face *font_faces;
+	size_t font_face_count;
 	struct css_rule_index index;
 	int origin;
 };

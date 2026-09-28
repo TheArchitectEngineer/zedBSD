@@ -6,9 +6,10 @@
  */
 
 /*
- * The fonts of a page: opening them, picking one for a style, and the
- * glyph cache that keeps every glyph's advance and coverage bitmap once it
- * has been measured or drawn.
+ * The fonts of a page: opening them, picking one for a style, the web
+ * fonts the page adds and their families, and the glyph cache that keeps
+ * every glyph's advance and coverage bitmap once it has been measured or
+ * drawn.
  */
 
 #include "text/text.h"
@@ -46,6 +47,7 @@ static int font_measure(struct text_system *system, const struct text_font *font
 static int font_draw(struct text_system *system, const struct text_font *font, struct text_glyph_entry *entry);
 static int font_open_face(struct text_face *face, const char *path);
 static const unsigned char *font_table(const struct wb_buffer *data, const char *tag, size_t length);
+static int font_weight_distance(const struct text_family *family, int weight);
 
 /*
  * Opens the fonts of a text system.  The sans font is required; the
@@ -146,6 +148,153 @@ text_select_font(
 	font->bold = 0;
 	if (weight >= FONT_BOLD_WEIGHT)
 		font->bold = 1;
+}
+
+/*
+ * Adds a web font's face (ws074-p070) under its family, weights and style;
+ * the face takes the font file's bytes from data (which is left empty).
+ * Returns ENOSPC when the system holds as many web faces as it can.
+ */
+int
+text_add_face(
+	struct text_system *system,
+	const void *family,
+	int weight_min,
+	int weight_max,
+	int italic,
+	struct wb_buffer *data)
+{
+	struct text_face *face;
+	struct text_family *entry;
+	int index;
+	int error;
+
+	/* The next web face's place. */
+	if (system->family_count >= TEXT_WEB_FACES)
+		return ENOSPC;
+	index = TEXT_FACE_WEB + system->family_count;
+	face = &system->faces[index];
+
+	/* The face takes the bytes and opens its first face. */
+	face->data = *data;
+	wb_buffer_init(data);
+	error = truetype_open(face->data.data, face->data.length, 0, &face->face);
+	if (error != 0) {
+		wb_buffer_release(&face->data);
+		return error;
+	}
+
+	/* The face is open. */
+	face->open = 1;
+
+	/* Its family entry. */
+	entry = &system->families[system->family_count];
+	entry->family = family;
+	entry->weight_min = weight_min;
+	entry->weight_max = weight_max;
+	entry->italic = italic;
+	entry->face = index;
+	system->family_count++;
+
+	/* Succeeded: the face is the family's. */
+	return 0;
+}
+
+/*
+ * Picks a web font's face for a family, a weight and a style (ws074-p070),
+ * as CSS font matching does in short: the faces of the style asked for (or
+ * of the other style when the family has none), the weight nearest the one
+ * asked for (a face covering it, else a heavier one for bold weights and a
+ * lighter one for the others).  The font's face becomes it, drawn bold when
+ * a bold weight is asked of a face that is not.  Reports whether the family
+ * has a face.
+ */
+int
+text_select_family(
+	const struct text_system *system,
+	const void *family,
+	int weight,
+	int italic,
+	struct text_font *font)
+{
+	const struct text_family *entry;
+	const struct text_family *best;
+	int best_style;
+	int best_distance;
+	int style_matches;
+	int distance;
+	int index;
+
+	/* The family's faces, the best by style, then by weight. */
+	best = NULL;
+	best_style = 0;
+	best_distance = 0;
+	for (index = 0; index < system->family_count; index++) {
+		entry = &system->families[index];
+		if (entry->family != family)
+			continue;
+
+		/* How well the face fits. */
+		style_matches = 0;
+		if (entry->italic == italic)
+			style_matches = 1;
+		distance = font_weight_distance(entry, weight);
+
+		/* A face of the right style wins; among those of the same style, the nearer weight. */
+		if (best == NULL) {
+			best = entry;
+		} else if (style_matches > best_style) {
+			best = entry;
+		} else if (style_matches == best_style && distance < best_distance) {
+			best = entry;
+		}
+
+		/* The best so far. */
+		if (best == entry) {
+			best_style = style_matches;
+			best_distance = distance;
+		}
+	}
+
+	/* A family without faces is not the font. */
+	if (best == NULL)
+		return 0;
+
+	/* The face; bold is drawn only when the face is lighter than the weight asked for. */
+	font->face = best->face;
+	font->bold = 0;
+	if (weight >= FONT_BOLD_WEIGHT && best->weight_max < FONT_BOLD_WEIGHT)
+		font->bold = 1;
+
+	/* The family has the face. */
+	return 1;
+}
+
+/*
+ * Measures how far a face's weights are from a weight asked for, the way
+ * CSS prefers: none inside its range; for a bold weight, heavier faces
+ * before lighter ones; otherwise lighter faces before heavier ones.
+ */
+static int
+font_weight_distance(
+	const struct text_family *family,
+	int weight)
+{
+	/* A face covering the weight fits exactly. */
+	if (weight >= family->weight_min && weight <= family->weight_max)
+		return 0;
+
+	/* A bold weight: heavier faces by how much heavier, then the lighter ones after them all. */
+	if (weight >= FONT_BOLD_WEIGHT) {
+		if (family->weight_min > weight)
+			return family->weight_min - weight;
+		return 1000 + weight - family->weight_max;
+	}
+
+	/* Another weight: lighter faces first, then the heavier ones. */
+	if (family->weight_max < weight)
+		return weight - family->weight_max;
+	return 1000 + family->weight_min - weight;
 }
 
 /*

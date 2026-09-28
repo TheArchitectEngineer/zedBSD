@@ -269,12 +269,23 @@ layout_font_of(
 	struct text_font *font)
 {
 	int monospace;
+	int found;
+	int index;
 
 	/* The monospace family uses the monospace face. */
 	monospace = 0;
 	if (style->generic_family == CSS_FAMILY_MONOSPACE)
 		monospace = 1;
 	text_select_font(tree->text, monospace, style->font_size, style->font_weight, font);
+
+	/* The first family of the list the page's web fonts have (ws074-p070) takes its place. */
+	if (tree->text->family_count == 0)
+		return;
+	for (index = 0; index < style->family_count; index++) {
+		found = text_select_family(tree->text, style->families[index], style->font_weight, style->font_italic, font);
+		if (found)
+			return;
+	}
 }
 
 /* Builds the box of an element (none for display: none) and of its children. */

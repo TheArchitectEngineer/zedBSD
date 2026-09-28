@@ -544,6 +544,11 @@ sheets_add_loaded(
 	if (error != 0)
 		return error;
 
+	/* And its web fonts, loaded when they are new (ws074-p070). */
+	error = page_fonts_add_sheet(page, entry->sheet);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the sheet and its imports are in the engine. */
 	return 0;
 }

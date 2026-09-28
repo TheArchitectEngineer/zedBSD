@@ -12,11 +12,18 @@ palette.png (8-bit palette), anim.gif (two frames, a transparent colour), tile.p
 ws074-p052).  plan/ws074/tests/images/images.html and backgrounds.html are copied beside them, with
 plan/ws074/tests/pages/second.html (a link's target).  build-browser-image.sh puts the
 directory in the guest image at /usr/share/browser-images/.
+
+The web font test (ws074-p070): mono.woff (JetBrains Mono of build/ws035-fonts, which is under the SIL Open Font
+License, wrapped into WOFF 1.0 with its tables deflated), mono-stored.woff (the same with its tables stored as they
+are), mono.ttf (the font as it is) and the license beside them as mono-OFL.txt, for
+plan/ws074/tests/images/fonts.html.
 """
 
 import os
 import shutil
+import struct
 import sys
+import zlib
 
 from PIL import Image, ImageDraw
 
@@ -52,6 +59,48 @@ def logo(size):
     return image
 
 
+def woff(sfnt, compress):
+    """Wraps an sfnt (TrueType) font file into WOFF 1.0, each table deflated when that makes it smaller."""
+    flavor, count = struct.unpack(">IH", sfnt[:6])
+    records = []
+    for index in range(count):
+        tag, checksum, offset, length = struct.unpack(">4sIII", sfnt[12 + index * 16:28 + index * 16])
+        records.append((tag, checksum, sfnt[offset:offset + length]))
+    records.sort()
+    header_size = 44 + 20 * count
+    directory = b""
+    body = b""
+    place = header_size
+    for tag, checksum, data in records:
+        stored = zlib.compress(data, 9) if compress else data
+        if len(stored) >= len(data):
+            stored = data
+        directory += struct.pack(">4sIIII", tag, place, len(stored), len(data), checksum)
+        padded = stored + b"\0" * (-len(stored) % 4)
+        body += padded
+        place += len(padded)
+    total_sfnt = 12 + 16 * count + sum(len(data) + (-len(data) % 4) for _, _, data in records)
+    header = struct.pack(">4sIIHHIHHIIIII", b"wOFF", flavor, header_size + len(body), count, 0, total_sfnt, 1, 0,
+                         0, 0, 0, 0, 0)
+    return header + directory + body
+
+
+def fonts(out):
+    """Writes the web font test's fonts (ws074-p070) beside its page, when build/ws035-fonts has the font."""
+    source = os.path.join(ROOT, "build/ws035-fonts/JetBrainsMono-Regular.ttf")
+    if not os.path.exists(source):
+        return
+    with open(source, "rb") as font:
+        sfnt = font.read()
+    with open(os.path.join(out, "mono.woff"), "wb") as target:
+        target.write(woff(sfnt, True))
+    with open(os.path.join(out, "mono-stored.woff"), "wb") as target:
+        target.write(woff(sfnt, False))
+    shutil.copy(source, os.path.join(out, "mono.ttf"))
+    shutil.copy(os.path.join(ROOT, "build/ws035-fonts/JetBrainsMono-OFL.txt"), os.path.join(out, "mono-OFL.txt"))
+    shutil.copy(os.path.join(ROOT, "plan/ws074/tests/images/fonts.html"), out)
+
+
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build/ws074-images")
     os.makedirs(out, exist_ok=True)
@@ -81,6 +130,7 @@ def main():
     shutil.copy(os.path.join(ROOT, "plan/ws074/tests/images/images.html"), out)
     shutil.copy(os.path.join(ROOT, "plan/ws074/tests/images/backgrounds.html"), out)
     shutil.copy(os.path.join(ROOT, "plan/ws074/tests/pages/second.html"), out)
+    fonts(out)
     print("make-test-images: %s" % out)
 
 
