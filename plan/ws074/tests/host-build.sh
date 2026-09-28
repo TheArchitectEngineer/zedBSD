@@ -3,12 +3,14 @@
 #
 #   sh plan/ws074/tests/host-build.sh [plain|asan]     (default plain)
 #
-# Every engine source listed in userland/desktop/browser/Makefile is built except the
-# shell/ directory (the zdesktop window); plan/ws074/tests/host-shell.c stands in for it.
+# Every engine source listed in userland/desktop/libbrowser/Makefile and main.c from
+# userland/desktop/browser/Makefile are built, not the shell/ directory (the zdesktop window);
+# plan/ws074/tests/host-shell.c stands in for it.
 # The GPU renderer (paint/vulkan.c) links the host's libvulkan (Debian's libvulkan-dev; lavapipe
 # draws when there is no GPU).
 # The outputs, in build/ws074-host/<variant>/:
 #   browser   the program with its headless modes (the same main.c as on zedBSD)
+#   browser-probe      the second program over the engine (userland/base/tests/browser-probe)
 #   host-NAME          each plan/ws074/tests/host-NAME.c unit test, linked with the engine
 # The asan variant adds -fsanitize=address,undefined; the runners use it to find crashes.  Run it with
 # ASAN_OPTIONS=detect_stack_use_after_return=0: the collector scans the real stack, and the sanitizer's
@@ -37,6 +39,8 @@ engine=""
 # are linked into build/ws074-host/include, since the host's C library does not have them).
 mkdir -p build/ws074-host/include
 ln -sf "$(pwd)/include/libc/truetype.h" build/ws074-host/include/truetype.h
+# The engine's own public header (libbrowser, ws074-p057), which the host's C library lacks too.
+ln -sf "$(pwd)/include/libc/browser.h" build/ws074-host/include/browser.h
 for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c userland/desktop/libtruetype/outline.c \
     userland/desktop/libtruetype/render.c userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c; do
 	object=$out/obj/truetype-$(basename "$file" .c).o
@@ -76,6 +80,11 @@ done
 "$cc" $flags -c plan/ws074/tests/host-shell.c -o "$out/obj/host-shell.o"
 "$cc" $flags -o "$out/browser" $objects "$out/obj/host-shell.o" -lvulkan -lm
 echo "built $out/browser"
+
+# The second program over the engine (ws074-p057), built from <browser.h> only (on the host it links the
+# engine's objects rather than libbrowser.so).
+"$cc" $flags -Ibuild/ws074-host/include -o "$out/browser-probe" userland/base/tests/browser-probe/main.c $engine -lvulkan -lm
+echo "built $out/browser-probe"
 
 # The unit tests.
 for test in plan/ws074/tests/host-*.c; do

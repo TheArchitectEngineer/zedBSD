@@ -75,7 +75,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-087](bugs/BUG-087.md) | clang の resource の header の一覧が parse の時（新しい checkout で欠けうる） | unknown / resolved（2026-09-28、main が patch を適用） | ws073-p021 | 修正案 `BUG-087-wip.patch`（rootfs の recipe で一覧を展開）を `tests/bug087.sh` で確かめる |
 | [BUG-088](bugs/BUG-088.md) | amd64 の AMD64_CURRENT_SPACE の 2 回の load（監査） | unreproduced（監査） / resolved（ws073-p023、2026-09-28、不具合なし） | ws073-p020 | 監査の結果: 読み書きする所（boot、`hal_space_switch`、`shootdown`）は全て割り込み禁止の中で CPU を移らない。code の変更なし |
 | [BUG-089](bugs/BUG-089.md) | 新しい worktree の desktop の image の build が host の LLVM を作り直し共有の build/llvm へ install しようとする | reproduced / tracking | ws079 の agent | toolchain の再利用と共有への install の guard |
-| [BUG-090](bugs/BUG-090.md) | libc の qsort が二次の時間 | reproduced / tracking | ws079-p006 | O(n log n) に |
+| [BUG-090](bugs/BUG-090.md) | libc の qsort が二次の時間 | reproduced / resolved（ws073-p026、2026-09-28） | ws079-p006 | 修正済み: `src/libc/sort.c` の introsort（qsort・qsort_r）、heapsort、安定な mergesort。`plan/ws073/tests/qsort-host.sh`（ASan・UBSan）PASS、guest の n=20000 random 1819 ms → 11 ms。実機は未実施 |
 | [BUG-091](bugs/BUG-091.md) | i915 の timer の thread が spin lock を持ったまま CPU を移り spin_unlock で kernel が止まる（Notes の起動の後） | reproduced（実機 1 回） / resolved（ws075-p014: i915 と `kern_usleep_range` の spin lock を irqsave に、実機で起動 48 回 fault 0） | ws075-p013 | — |
 | [BUG-092](bugs/BUG-092.md) | graphical な起動で sessiond が /dev/gpu0 の前に始まり console の login に落ちる | reproduced（実機） / resolved（ws035-p113: `hw.gpu.attaching` の間だけ sessiond が最大 15 秒待つ、実機と GPU 無しの QEMU で確認） | ws075-p013 | — |
 | [BUG-064](bugs/BUG-064.md) | libwayland の client が flush の EPIPE を致命的にし、直前の protocol error を失う | reproduced / resolved | ws070-p005 | 修正済み（EPIPE を無視して残りの event を読む） |

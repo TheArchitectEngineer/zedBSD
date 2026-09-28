@@ -11,12 +11,19 @@
  *
  * main.c hands the window mode here.  The host tests build the engine
  * without this directory and supply their own shell_run that refuses.
+ * The shell and main.c use the engine through <browser.h> only (the
+ * engine is libbrowser.so, ws074-p057).
  */
 
 #ifndef KEILAND_BROWSER_SHELL_H
 #define KEILAND_BROWSER_SHELL_H
 
-#include "text/text.h"
+#include <browser.h>
+
+/* Marks a parameter a function has to take but does not use (the engine's base.h has the same). */
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(name)	((void)(name))
+#endif
 
 /*
  * What the command line asked of the window: the display, the page to
@@ -27,7 +34,7 @@ struct shell_options {
 	const char *start;
 	unsigned width;
 	unsigned height;
-	const struct text_font_paths *fonts;
+	const struct browser_fonts *fonts;
 };
 
 int shell_run(const struct shell_options *options);
