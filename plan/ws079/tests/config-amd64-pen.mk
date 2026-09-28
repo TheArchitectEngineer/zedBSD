@@ -5,4 +5,4 @@
 #   plan/ws079/tests/build-pen-image.sh [BUILD]
 include plan/tools/titlebar/config-amd64-menu.mk
 CONFIG_INPUT_TEST_INJECT := y
-ZEDBSD_USER_PROGRAMS += peninject
+ZEDBSD_USER_PROGRAMS += peninject tablet-probe
