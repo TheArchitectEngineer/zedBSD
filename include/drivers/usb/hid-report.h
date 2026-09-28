@@ -23,6 +23,16 @@
  */
 #define HID_REPORT_TYPE_DIGITIZER 0x8000U
 
+/*
+ * The value type of a finger field of a touch screen (Tip Switch,
+ * Confidence, Contact Identifier, X, Y) and of its Contact Count.  Like a pen
+ * switch it lies outside the evdev event types: its code names the finger and
+ * the item (include/drivers/usb/hid-touch.h), every such field is reported
+ * each time, and only the touch state machine turns the values into
+ * multitouch events.
+ */
+#define HID_REPORT_TYPE_TOUCH 0x8001U
+
 /* The layout has no pen collection. */
 #define HID_REPORT_PEN_NONE 0U
 /* The layout has a pen on a separate tablet (Digitizer collection). */
@@ -63,6 +73,27 @@ struct hid_report_layout_info {
 	size_t absolute_axis_count;
 	int uses_report_ids;
 	unsigned pen;
+	/* The most fingers one report of the touch screen carries (0: none). */
+	size_t touch_contacts;
+};
+
+/*
+ * What a layout says about its touch screen (a Touch Screen application
+ * collection with Finger collections in it).
+ *
+ * The capabilities and axes of the touch screen are not among the layout's
+ * own: the touch state machine declares them from this description, as a
+ * device of its own.  An instance is filled by the caller's request and owns
+ * no storage.
+ */
+struct hid_report_touch_info {
+	/* The most Finger collections one report carries. */
+	size_t contacts;
+	/* Whether the reports carry a Contact Count (and may split one frame). */
+	int count_present;
+	/* The position axes of the first finger (every finger shares them). */
+	struct input_absinfo x;
+	struct input_absinfo y;
 };
 
 struct hid_report_report_info {
@@ -85,6 +116,8 @@ int drv_hid_report_layout_get_capability(const struct hid_report_layout *, size_
 	struct input_capability *);
 int drv_hid_report_layout_get_absolute_axis(const struct hid_report_layout *,
 	size_t, struct input_abs_axis *);
+int drv_hid_report_layout_get_touch(const struct hid_report_layout *,
+	struct hid_report_touch_info *);
 
 int drv_hid_report_decode(const struct hid_report_layout *, const void *, size_t,
 	struct hid_report_input *);

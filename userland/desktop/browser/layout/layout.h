@@ -154,6 +154,17 @@ struct layout_box {
 };
 
 /*
+ * A rectangle of the page in layout units from the document's top left:
+ * the place a node takes (layout_node_bounds).
+ */
+struct layout_rect {
+	layout_unit x;
+	layout_unit y;
+	layout_unit width;
+	layout_unit height;
+};
+
+/*
  * A laid out page: the box tree, the arena the boxes live in and the size
  * the layout was made for.  While a layout runs, floats is the current
  * block formatting context's list of floats (float.c) and origin_x,
@@ -212,6 +223,7 @@ void layout_font_of(struct layout_tree *tree, const struct css_style *style, str
 int layout_dump(const struct layout_tree *tree, struct wb_buffer *out);
 const struct layout_box *layout_hit(const struct layout_tree *tree, layout_unit x, layout_unit y);
 struct dom_node *layout_hit_node(const struct layout_tree *tree, layout_unit x, layout_unit y);
+int layout_node_bounds(const struct layout_tree *tree, const struct dom_node *node, struct layout_rect *rect);
 layout_unit layout_from_px(float px);
 float layout_to_px(layout_unit value);
 

@@ -606,6 +606,15 @@ struct zwl_server {
 	int32_t drag_start_y;
 	struct zwl_object *click_surface;
 	uint64_t click_ms;
+	/*
+	 * The presses of the latest run of quick clicks on click_surface's
+	 * floating title bar (1, 2 or 3), and a window whose double click is
+	 * waiting to dock it: it docks at dock_due_ms unless a third press
+	 * comes first and sends it to the back instead (ws079-p013).
+	 */
+	unsigned click_count;
+	struct zwl_object *dock_waiting;
+	uint64_t dock_due_ms;
 	struct zwl_object *pull;
 	int32_t pull_start_y;
 	int32_t pull_distance;

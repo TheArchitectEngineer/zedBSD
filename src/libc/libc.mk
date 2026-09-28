@@ -23,7 +23,7 @@ ZEDBSD_REGEX_SOURCES := src/libc/regex/regcomp.c src/libc/regex/regexec.c \
 ZEDBSD_LIBC_USER_EXTRA_SOURCES := \
 	userland/base/libc/atomic-runtime.c \
 	src/libc/string-extra.c src/libc/fenv.c src/libc/wide-extra.c src/libc/inttypes.c \
-	src/libc/stdlib-extra.c src/libc/time-extra.c src/libc/stdio-extra.c \
+	src/libc/stdlib-extra.c src/libc/sort.c src/libc/time-extra.c src/libc/stdio-extra.c \
 	src/libc/setjmp.c src/libc/err.c src/libc/libgen.c src/libc/search.c src/libc/iconv.c \
 	src/libc/random48.c src/libc/random.c src/libc/xsi-crypto.c \
 	src/libc/ftw.c src/libc/ndbm.c src/libc/realpath.c src/libc/tempnam.c \
@@ -49,6 +49,7 @@ ZEDBSD_LIBC_SOURCES := \
 	src/libc/inttypes.c \
 	src/libc/strto.c \
 	src/libc/stdlib-extra.c \
+	src/libc/sort.c \
 	src/libc/time-extra.c \
 	src/libc/format.c \
 	src/libc/stdio.c \

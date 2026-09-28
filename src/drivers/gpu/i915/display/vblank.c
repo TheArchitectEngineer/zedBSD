@@ -795,29 +795,31 @@ i915_crtc_scanline_offset(
  * Reads the frame counter a panel run compares against (the frame hook of
  * the run's vblank waits).
  *
- * XXX: the register is looked up by name in the observation table, which
- * the lookup fills for pipe A: this is PIPE_FRMCOUNT_G4X of pipe A for
- * every pipe, as the old backend read it.
+ * The counter is the one of the run's pipe: the pipe its parameters name
+ * (pipe B for the HDMI display), or the panel's pipe A when the run has
+ * none.  Reading pipe A's counter for a run on pipe B (ws075-p013) saw it
+ * stand at 0, so every flip event of the HDMI display timed out and the
+ * resident run failed at its stop.
  */
 static uint32_t
 i915_lcd_kernel_frame(
 	void *ctx)
 {
 	struct i915_lcd_kernel *k;
-	struct i915_display *display;
 	uint32_t reg;
 	uint32_t frame;
+	int pipe;
 
-	/*
-	 * The context is the panel run, which is the display's own (struct
-	 * i915_display.lk): the display and its modeset world, whose
-	 * observation table the lookup fills, are the run's owner.
-	 */
+	/* The context is the panel run. */
 	k = ctx;
-	display = container_of(k, struct i915_display, lk);
 
-	/* Finds the frame counter register and reads it. */
-	reg = drv_i915_lcd_reg_by_name(display->lcd_world, "PIPE_FRMCOUNT_G4X");
+	/* The pipe the run drives: its parameters', or the panel's pipe A. */
+	pipe = 0;
+	if (k->p != NULL)
+		pipe = k->p->pipe;
+
+	/* Reads the pipe's frame counter. */
+	reg = i915_mmio_reg_offset(PIPE_FRMCOUNT_G4X(pipe));
 	frame = drv_i915_read32(k->d->mmio, reg);
 
 	/* Succeeded: reports the frame number. */

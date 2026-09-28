@@ -1,103 +1,85 @@
 <!-- awesome-plan project=zedbsd record=ws073p026 -->
 
-# ws073-p026: 新しい worktree の desktop の image の build が host の LLVM を作り直し、共有の build/llvm へ書きうる（BUG-089）
+# ws073-p026: libc の qsort を O(n log n) の introsort に（BUG-090）
 
 Status: cleared（2026-09-28）
 Disposition: normal
 Parent: [WS073](../ws.md)
-Bug: [BUG-089](../../bugs/BUG-089.md)（main の依頼、2026-09-28）
+Bug: [BUG-090](../../bugs/BUG-090.md)（main の依頼、2026-09-28）
 
 ## 目的と受け入れ
 
-(a) 既存の有効な toolchain（build/llvm・build/llvm-source・build/llvm-build の identity が固定の LLVM の版と patch に一致）を、checkout の mtime では
-作り直さずに使う（mtime でなく内容の hash・identity で判定）。(b) build/llvm が別の checkout を指す link のとき、toolchain の install を明確な
-message で拒む（明示の上書きの変数を除く）。検証: 新しい worktree（build/llvm は scratch の toolchain の複写への link）で desktop の image の
-build が toolchain に触れない。main の build は変わらない（main の tree の make -n に LLVM の作り直しが無い、main では build しない）。
-toolchain が本当に無く build/llvm が link のとき guard が働く。
+`src/libc/stdlib-extra.c` の `qsort`・`qsort_r` は 1 byte ずつ swap する挿入の sort で O(n²)。O(n log n) の sort にし、要素の大きさと
+配列の alignment が許す最も広い word で交換する。C 標準の意味（安定は要らない）を保つ。同じ code を使う `heapsort`・`mergesort` も直す。
+受け入れ: host 試験（host の qsort と同じ key の並び、等しい key の組の集合の一致。random・sorted・reverse・all-equal・organ-pipe・
+重複の多い入力、n = 0〜1e6、要素 1・3・4・8・16・24 byte、ASan・UBSan）、旧実装との時間の比較、amd64 の image の build（warning 0）と
+boot test、安い guest の確認。
 
-## 原因（再現、修正前の tree、`make -n -k`、build/llvm は scratch の複写への link）
+## 変更
 
-新しい worktree で LLVM を作り直す rule は二つ。
+- 新しい `src/libc/sort.c`（coding-style の全文、`style-check.py` 0）: `qsort`・`qsort_r`・`heapsort`・`mergesort`。
+  - `qsort`・`qsort_r`: introsort。pivot は両端と中央の median of three（65 要素以上は 3 つの median of three の median）、Hoare 型の
+    分割（両側の走査が pivot と等しい要素で止まるので all-equal も中央で割れる）、短い側を再帰・長い側を loop（再帰の深さは log n）、
+    深さが 2⌊log2 n⌋ を超えた範囲は heapsort、16 要素以下は挿入。走査は範囲で上限を持つので、順序にならない比較関数でも範囲の外を触らない。
+  - 交換と複写の単位: `(address | size)` が `unsigned long` の倍数なら machine word、4 の倍数なら 32 bit、他は byte（`may_alias` の typedef）。
+  - `heapsort`: 本物の in-place の heapsort（以前は `qsort` を呼ぶだけ）。size 0 は EINVAL。
+  - `mergesort`: 安定な bottom-up の merge sort（8 要素の run を挿入で、配列の写しと交互に merge、既に順の run の組は一括で複写）。
+    以前も挿入の sort で安定だったので安定性は保つ。新たに、写しを確保できないと ENOMEM で -1（BSD と同じ）。size 0 は EINVAL。
+- `src/libc/stdlib-extra.c`: 旧 `swap_bytes`・`insertion_sort`・`insertion_sort_r`・`qsort`・`qsort_r`・`heapsort`・`mergesort` を削除
+  （`bsearch` は残す）。`tests/style-diff.py` の変更行 0。
+- `src/libc/libc.mk`: `ZEDBSD_LIBC_USER_EXTRA_SOURCES` と `ZEDBSD_LIBC_SOURCES` に `src/libc/sort.c`（全 platform と sysroot がこの一覧を使う）。
+- 意味の変化: `qsort` は以前（挿入の sort）は結果として安定だったが、今は等しい要素の順は不定（C 標準どおり）。安定を暗に頼る呼び手が
+  あれば等しい要素の順が変わる（呼び手の全数の監査は未実施）。
 
-1. `toolchain/llvm/llvm.mk` の `$(ZEDBSD_LLVM_SOURCE_STAMP): $(ZEDBSD_LLVM_PATCH) | $(ZEDBSD_LLVM_ARCHIVE_VERIFIED)`。
-   sysroot の builtins（`sysroot.mk` の `| $(ZEDBSD_LLVM_SOURCE_STAMP)`）と libcxx・clang の package（`$(ZEDBSD_EXTERNAL_LLVM_VERIFIED)`）が要る。
-   worktree に build/llvm-source が無い、または main の tree への link でも patch の mtime（checkout の時刻、13:56）が stamp（9/27 09:07）より新しいので
-   rule が走る。order-only の archive の record は `toolchain/llvm/distfiles`（tree の中、worktree には無い）にあるため、まず 180 MB の
-   LLVM の archive を curl で取り、展開する（link のときは展開の手前の「unrecognized source tree」で止まる）。
-2. `$(ZEDBSD_LLVM_NATIVE_STAMP)`（clang の package が `| $(ZEDBSD_LLVM_NATIVE_STAMP)` で要る host の tblgen）→ `$(ZEDBSD_LLVM_CONFIG_STAMP)` →
-   worktree の build/llvm-build で LLVM 全体（clang;lld;lldb）の cmake の configure と 4 つの tblgen の build。configure は
-   `-DCMAKE_INSTALL_PREFIX=<worktree>/build/llvm`（= 共有の toolchain への link）を焼き込む。この経路は install しないが、焼き込んだ build tree から
-   `install-distribution`（tool の repair の rule、または非 accepted の install の rule）が走れば、共有の build/llvm に書く。
+## 試験
 
-加えて見つけたこと:
+- 追加: [tests/qsort-host.sh](../tests/qsort-host.sh)（[qsort-host.c](../tests/qsort-host.c)、[qsort-host-sort.c](../tests/qsort-host-sort.c) が
+  `sort.c` を `zed_*` の名前で host 向けに C89 `-pedantic -Werror` で compile）、[tests/qsort-guest.sh](../tests/qsort-guest.sh)
+  （[qsort-guest.c](../tests/qsort-guest.c) を image の libc.so に link して guest で実行、`OLD_LIBC` で旧 libc.so と比較）。
+- image の build: [tests/build-image-noclang.sh](../tests/build-image-noclang.sh)（[config-amd64-zdesktop-noclang.mk](../tests/config-amd64-zdesktop-noclang.mk)
+  = zdesktop の config から clang と libcxx の package を除く）。worktree の `build/llvm-source` が共有への symlink なので、clang の package は
+  host の LLVM を作り直し（BUG-089）、libcxx の package の `cp -al build/llvm-source` は symlink を写して共有の source を patch しうるため除いた
+  （`make -n` で確認）。libc の変更には要らない。この image には lldb・libc++ が無い。
 
-- `$(ZEDBSD_LLVM_CONFIG_IDENTITY)` は FORCE の target なので、`make -n` は main の tree でも毎回 cmake の configure と tblgen の build を表示していた
-  （実際の build は identity が同じなので何もしない。dry run の偽陽性）。main の tree の `make -n toolchain`（修正前の main の Makefile）で確認。
-- `external.mk` の `ZEDBSD_EXTERNAL_LLVM_COPY` は `cp -al build/llvm-source copy.tmp`。build/llvm-source が link だと `cp -a` は link そのものを
-  複写し、続く `patch -d copy.tmp` が link の先（共有の検証済みの source）に package の patch を当てる。scratch で確認（`cp -al link copy1` は
-  link の hard link になる）。main の build/llvm-source は検証の stamp（9/27 09:08）より新しい file も `.orig`・`.rej` も無い（被害なし）。
-- build/llvm-build の scratch の複写の `CMAKE_INSTALL_PREFIX` は main の `/home/awe/zedBSD-rpi4/build/llvm`（687 の `cmake_install.cmake`）。
-  共有の build tree から install を走らせると、どの worktree からでも main の toolchain に書く。
+## 検証（host と QEMU。実機は未実施）
 
-## 修正（`toolchain/llvm/llvm.mk`、`userland/packages/external.mk`）
+- host 試験 `sh plan/ws073/tests/qsort-host.sh`（出力 `build/ws073-p026/qsort-host/`）: plain・ASan・UBSan（`-fsanitize=undefined,alignment`、
+  recover なし）の 3 つとも `QSORT:PASS`。範囲: 要素 1・3・4・8・16・24 byte × 8 つの pattern（random、sorted、reverse、equal、organ-pipe、
+  duplicates（key 10 種）、sawtooth、nearly-sorted）× n = 0〜16 の全部と 17・31・32・33・63・64・65・100・127・1000・4097・10000・100000・1e6
+  （1e6 は qsort を全 size、qsort_r・heapsort・mergesort は 8・24 byte）× 4 つの sort。host の qsort と位置ごとの key と要素の多重集合が一致、
+  mergesort は等しい key の元の順を保つ。size 0・n 0・比較関数 NULL・mergesort の巨大な n（ENOMEM）、+1・+2・+4 byte ずらした配列（UBSan の
+  alignment が狭い単位への切り替えを確認）、乱数を返す比較関数（要素が失われず範囲の外を触らない、ASan）、McIlroy の adversary
+  （n=1e4: 481851 比較 = 3.71 n log2 n、n=1e5: 6124108 = 3.83 n log2 n。素の quicksort なら二次）。
+- 時間（host、x86_64、`-O2`、比較関数は key の読み出しの呼び出し。ms）:
 
-- 受け入れを内容で判定する（make が読む時に `$(shell)`、sysroot の identity と同じ考え）:
-  - source: `.zedbsd-source-identity` が版・tag・archive の SHA-256・**patch の SHA-256**・patch level に一致し、stamp がある → stamp の rule は
-    前提なし（patch の mtime も archive も見ない）。一致しなければ FORCE で archive から作り直す。
-  - build tree の configuration: identity の文字列（host の compiler を含む、従来と同じ）を読む時に比べ、一致なら FORCE を外す（`make -n` の偽陽性も消える）。
-  - host の tblgen: configuration が一致、`.zedbsd-native-tools` が identity より古くない、4 つの tool が実行可能 → 前提なし（job 数は stamp の
-    名前に入るが生成物を変えないので問わない）。
-  - install: 従来どおり `.zedbsd-install-identity`。
-- 所有の guard: `ZEDBSD_LLVM_OWNED`（`realpath -m` の結果が tree の root の下か）で build/llvm・build/llvm-source・build/llvm-build のそれぞれを
-  判定する。tree の中を指す link（main の `build/llvm -> llvm-zedbsd8`）は所有とみなす。所有でない tree への書き込み（展開、configure、
-  build、tblgen、install、tool の repair、install の record、verify の record、`toolchain-cache`）は、make が読む時に拒否の rule になる
-  （前提なし、FORCE。archive の取得や展開を先に走らせない）。非 accepted の install は build/llvm と build/llvm-build の両方の所有が要る
-  （build tree の install prefix がその tree の build/llvm のため）。message は理由と三つの対処（所有する checkout で build、link を外す、
-  `ZEDBSD_LLVM_ALLOW_FOREIGN=yes`）を出す。`ZEDBSD_LLVM_ALLOW_FOREIGN=yes` で従来の動作。
-- `external.mk`: package の source の複写を `cp -al '<build/llvm-source>/.' copy.tmp` に（link でも中身の hard link の実 directory を作る）。
+  | 入力 | n | size | 旧 | 新 | glibc | 新の比較 / n log2 n |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | random | 30000 | 8 | 1987 | 4.63 | 4.20 | 1.14 |
+  | reverse | 30000 | 8 | 3947 | 5.23 | 1.57 | 1.80 |
+  | organ-pipe | 30000 | 8 | 1974 | 3.55 | 1.61 | 1.18 |
+  | duplicates | 30000 | 8 | 1762 | 2.99 | 3.07 | 0.92 |
+  | sorted | 30000 | 8 | 0.19 | 2.23 | 1.44 | 0.86 |
+  | random | 1e6 | 8 / 24 / 3 | — | 226 / 239 / 112 | 187 / 264 / 145 | 1.13 / 1.12 / 0.96 |
+  | reverse | 1e6 | 8 | — | 199 | 70 | 1.59 |
 
-## 検証（host。QEMU・実機の起動は無し: kernel・userland のコードは不変）
+  全体は `build/ws073-p026/qsort-host/time.txt`。旧は整列済みの入力だけ O(n) で速い（n=30000 で 0.19 ms 対 2.23 ms）。
+- 各 arch の compile: `make -j16 sysroots`（amd64・i386（`-march=i386 -msoft-float`）・arm64 の sysroot の libc.a に `sort.c.o`、`-Wall -Wextra -Werror`）
+  warning 0。i386 の `sort.c.o` に post-i386 の opcode 無し（`libc-opcode-check` と同じ grep）。
+- image: `sh plan/ws073/tests/build-image-noclang.sh build/amd64` 成功（`build/amd64/hdd-image.img`、`check-amd64-native-image: OK`）。
+  zedBSD 自身の source の warning 0。log の warning は外部 package（openssl・openssh の deprecated など）、既存の
+  `userland/base/noct/noct/src/core/interpreter.c:2395` の -Wreturn-type と `Makefile:769`（他の agent の build の log にも同じものがある）だけ。
+- boot test: `OUTPUT=build/ws073-p026/boot-test plan/tools/boot-test.sh build/amd64/hdd-image.img` PASS（`build/ws073-p026/boot-test/login.png`）。
+- guest（QEMU、`tests/g.sh start build/amd64/hdd-image.img`、SSH）: `OLD_LIBC=build/ws073-p026/old-libc.so sh plan/ws073/tests/qsort-guest.sh`
+  `QSORT-GUEST:PASS`。新: 1e6 × 8 byte random 431 ms、sorted 247 ms、reverse 445 ms、250000 × 24 byte（key 1000 種）qsort 29 ms・qsort_r 32 ms・
+  heapsort 71 ms・mergesort 48 ms（安定）。旧 libc.so（main の `build/amd64/dynamic/libc.so`、2026-09-26 の build を `LD_LIBRARY_PATH` で）と
+  n=20000 で比較: random 1819 ms → 11 ms、reverse 3591 ms → 6 ms、5000 × 24 byte の 4 つの sort 115〜128 ms → 0〜1 ms。
+- PDF の host 試験 `sh plan/ws079/tests/run-pdf-render.sh 300`: `run-pdf-render: ok`（ただしこの試験は host の libc の qsort で動くので、
+  今回の変更を通らない。回帰の確認としての意味は薄い）。
+- libc の既存の試験で qsort を扱うもの: `plan/*/tests`・`userland/base/tests` に無し（`plan/ws074/tests/host-tree.c` は browser の host 試験で host の qsort）。
 
-- 回帰の試験 [tests/bug089.sh](../tests/bug089.sh)（scratch の tree に toolchain/llvm だけを複写し、tree の外に accepted・stale・missing の代用の
-  toolchain を作る。LLVM の取得・展開・build は無い）: 修正後 9/9 PASS。修正前の llvm.mk（`git show HEAD:toolchain/llvm/llvm.mk`、
-  `ZEDBSD_LLVM_FETCH=false` で download を止めて）では 8/9 FAIL（archive の取得・`tar -xJf` に進む、拒否の message が無い）。
-- 新しい worktree の desktop の image（この worktree、build/llvm・llvm-source・llvm-build は `/home/awe/scratch-bug089/` の複写への link。
-  llvm と llvm-build は実の複写で install prefix を scratch に書き換え、llvm-source は main の hard link の複写）:
-  - 修正前の `make -n -k`（desktop の config）: LLVM の archive の curl、展開、build/llvm-build の cmake の configure と tblgen の build。
-  - 修正後の `make -n -k`: LLVM の rule は無し（sysroot と package の複写だけ）。
-  - `make -j64 toolchain`（14:09:58、rc 0）と `plan/ws035/tests/build-zdesktop-image.sh build/bug089-img`（14:10〜14:16、rc 0、
-    `hdd-image.img` の検査 OK。clang の package は scratch の `llvm-build/bin/lldb-tblgen` を使い、`build/packages/clang/src` は実 directory）。
-    この build の後に変えたのは拒否の branch（parse 時の拒否、FORCE、message）だけで、accepted の判定は同じ。最終の llvm.mk での再実行
-    （14:54、15:00、rc 0）も LLVM の rule 無し。新しい BUILD（`build/bug089-dry`）の最終の llvm.mk での `make -n -k`（2822 行）にも LLVM の
-    取得・展開・configure・install は 0 行。
-  - scratch と main の LLVM の三つの tree（llvm-zedbsd8、llvm-source 197164 項目、llvm-build 6783 項目）の path・種類・size・mtime・inode の
-    一覧が build の前後で同一（toolchain・source・build tree のどれにも書いていない。hard link の source も in-place の書き込み無し）。
-- main の build が変わらないこと（main の tree では build せず読むだけ）:
-  - 修正後の llvm.mk を `ZEDBSD_REPO_ROOT=/home/awe/zedBSD-rpi4` で読む probe: source・configuration・tblgen・install が全て accepted、
-    三つの tree とも所有（`build/llvm -> llvm-zedbsd8` を含む）。`make -n llvm-toolchain <verified の stamp> <native の stamp>` は
-    clang・ld.lld の版の確認だけ、他は up to date。
-  - worktree の link を main の三つの tree に向けた `make -n toolchain` と desktop の `make -n disk-image`: LLVM の rule 無し（Noct の smoke と
-    版の確認だけ）。比較: 修正前の main の Makefile での main の tree の `make -n toolchain` は cmake の configure と tblgen の build を表示
-    （FORCE の偽陽性）。
-- guard（`/home/awe/scratch-bug089/guardtree`、tree の複写）: build/llvm が tree の外の存在しない directory への link のとき、`make llvm-toolchain`
-  と `make toolchain-cache` は直ちに拒否（distfiles・llvm-source・llvm-build・releases を作らない）。stale（zedbsd7）の外の toolchain、
-  stale の外の source、stale の外の build tree も拒否し、中身は不変。`ZEDBSD_LLVM_ALLOW_FOREIGN=yes` の `make -n` は従来の source build の経路。
-  外の accepted な source と patch の mtime（2020 年、今）: 受け入れは変わらない。patch の内容を変えると受け入れが外れ、拒否される。
-- 未実施: boot test（kernel・userland のコードは不変、image は build の検証として作っただけ）。main の tree での実 build（指示により行わない）。
-  build/llvm-source も build/llvm-build も無い worktree での実 build（展開と tblgen の build は worktree の中で行われ、所有の tree なので許される。
-  `make -n` で確認のみ）。
+## 未実施・残り
 
-## 使い方（agent の worktree）
-
-build/llvm、build/llvm-source、build/llvm-build の三つを main の同名に link すれば、どれも内容で accepted になり、何も作り直さず何も書かない。
-build/llvm だけを link すると、worktree は自分の build/llvm-source（LLVM の archive の取得 180 MB と展開）と build/llvm-build（configure と
-tblgen の build）を作る。install は起きない（build/llvm が accepted）。main の toolchain が古い・欠けているときは拒否の message が出る。
-
-## 残り
-
-- Noct の host の source（`userland/base/noct/Makefile` の `$(NOCT_HOST_SOURCE_STAMP): $(ZEDBSD_NOCT_PATCHES)`）も同じ mtime の問題を持つ。
-  新しい worktree では patch が build/NoctLang の stamp より新しく、`Noct: refusing to replace existing source tree: build/NoctLang` で
-  `make toolchain` が止まる（link でも複写でも。拒否なので共有の tree は書かれない）。この検証では worktree の Noct の patch の mtime を main の
-  値に戻して進めた。Noct の identity には patch の hash が無いので、同じ直し方には identity の形式の移行が要る。別の bug の候補（ID 未割当）。
-- 並列の image の build で `zedbsd-target-toolchain-ready`（sysroot の有無の検査）が sysroot の build と並んで走り、sysroot が無いと
-  「Missing target sysroot」で止まる（最初の実行で観測。`make toolchain` の後は起きない）。既存の順序の仕様（`make toolchain` が先）どおり。
+- 実機、amd64 以外の image の起動（i386・arm64 は sysroot の compile だけ）。PDF Viewer の guest での描画の時間の再測定（GUI の操作が要る）。
+- `userland/base/libpdf/raster.c` の 84 行目の comment（「C library's qsort is an insertion sort」）は古くなった。WS079 の file なので触れていない。
+  raster の自前の merge sort を libc の qsort・mergesort に戻すかは WS079 の判断。
+- qsort の安定を暗に頼る呼び手の監査（上の「意味の変化」）。

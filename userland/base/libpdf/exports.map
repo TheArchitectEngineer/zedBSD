@@ -39,6 +39,9 @@
 		pdf_document_find_attachment_type;
 		pdf_document_get_id;
 		pdf_document_get_dates;
+		pdf_page_render;
+		pdf_display_list_destroy;
+		pdf_display_list_rasterize;
 	local:
 		*;
 };

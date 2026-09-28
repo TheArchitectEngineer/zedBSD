@@ -204,7 +204,7 @@ ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-cdc-ecm.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c src/drivers/usb/hid-digitizer.c
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c src/drivers/usb/hid-digitizer.c src/drivers/usb/hid-touch.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hub.c
@@ -263,6 +263,10 @@ AMD64_KERNEL_SOURCES := \
 	src/drivers/platform/pcat/graphics/vgafont.c src/drivers/platform/pcat/graphics/splash.c src/kern/init.c
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
 AMD64_KERNEL_SOURCES += src/drivers/generic/input-inject.c
+# The injector's touch screen runs the USB touch screen's state machine.
+ifneq ($(CONFIG_DRIVER_USB_HID),y)
+AMD64_KERNEL_SOURCES += src/drivers/usb/hid-touch.c
+endif
 endif
 ifeq ($(CONFIG_DRIVER_GRAPHICS_DEVICE),y)
 AMD64_KERNEL_SOURCES += \
@@ -726,7 +730,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files notes browser xserver egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files notes pdfviewer browser browser-probe xserver egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
@@ -888,18 +892,18 @@ $(DYNAMIC_DIR)/libjpeg-compat.so: $(DYNAMIC_JPEG_COMPAT_OBJS) $(DYNAMIC_DIR)/lib
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libc.so --soname libjpeg-compat.so $@
 
-# libpdf (ws079-p004): the PDF library of the base programs; its writer needs nothing but the C
-# library.
+# libpdf (ws079-p004): the PDF library of the base programs; its reader decodes Flate streams through
+# libz-compat and JPEG images through libjpeg-compat (ws079-p006).
 DYNAMIC_PDF_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libpdf)
 
-$(DYNAMIC_DIR)/libpdf.so: $(DYNAMIC_PDF_OBJS) $(DYNAMIC_DIR)/libc.so \
+$(DYNAMIC_DIR)/libpdf.so: $(DYNAMIC_PDF_OBJS) $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libjpeg-compat.so $(DYNAMIC_DIR)/libc.so \
 	userland/base/libpdf/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libpdf.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/base/libpdf/exports.map \
- $(DYNAMIC_PDF_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+ $(DYNAMIC_PDF_OBJS) -L$(DYNAMIC_DIR) -l:libz-compat.so -l:libjpeg-compat.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
- --needed libc.so --soname libpdf.so $@
+ --needed libz-compat.so --needed libjpeg-compat.so --needed libc.so --soname libpdf.so $@
 
 # libgif-compat (ws074-p051): giflib's decoding interface of the base programs; it needs nothing but the
 # C library.
@@ -1274,17 +1278,57 @@ $(BUILD)/bin/notes: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
  --needed libpdf.so --needed libc.so $@
 
-# The Web browser (WS074) keeps its modules in subdirectories and includes their headers
-# from its own root; it imports standard Wayland and Vulkan for its window and GPU renderer
-# (ws074-p014), zdesktop's titlebar through libkeiland (ws074-p045), libtruetype for its text, and
-# libjpeg-compat, libpng-compat (with libz-compat) and libgif-compat for its images (ws074-p021).
+# PDF Viewer (ws079-p006) imports standard Wayland, Vulkan, TrueType and C library entry points,
+# zdesktop's menus and titlebar through libkeiland, and libpdf (which brings libz-compat and
+# libjpeg-compat).
+DYNAMIC_PDFVIEWER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,pdfviewer)
+
+$(BUILD)/bin/pdfviewer: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_PDFVIEWER_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libpdf.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_PDFVIEWER_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libpdf.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
+ --needed libpdf.so --needed libc.so $@
+
+# The Web browser engine (WS074, libbrowser since ws074-p057) keeps its modules in subdirectories of
+# userland/desktop/browser and includes their headers from that root; it imports standard Vulkan for its
+# GPU renderer (ws074-p014), libtruetype for its text, and libjpeg-compat, libpng-compat (with
+# libz-compat) and libgif-compat for its images (ws074-p021).  Only the calls of <browser.h> leave it.
+DYNAMIC_BROWSER_LIBRARY_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libbrowser)
+$(DYNAMIC_BROWSER_LIBRARY_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/desktop/browser
+
+$(DYNAMIC_DIR)/libbrowser.so: $(DYNAMIC_BROWSER_LIBRARY_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libtruetype.so \
+	$(DYNAMIC_DIR)/libjpeg-compat.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so \
+	$(DYNAMIC_DIR)/libgif-compat.so $(DYNAMIC_DIR)/libc.so \
+	userland/desktop/libbrowser/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libbrowser.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/desktop/libbrowser/exports.map \
+ $(DYNAMIC_BROWSER_LIBRARY_OBJS) -L$(DYNAMIC_DIR) -l:libvulkan.so -l:libtruetype.so \
+ -l:libjpeg-compat.so -l:libpng-compat.so -l:libz-compat.so -l:libgif-compat.so -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
+ --needed libvulkan.so --needed libtruetype.so --needed libjpeg-compat.so --needed libpng-compat.so \
+ --needed libz-compat.so --needed libgif-compat.so --needed libc.so --soname libbrowser.so $@
+
+# /bin/browser is the shell over libbrowser (ws074-p057): its command line and headless modes (main.c)
+# and its window (shell/), which import the engine through <browser.h>, standard Wayland and Vulkan
+# for the window and its swapchain (ws074-p014), and zdesktop's titlebar through libkeiland (ws074-p045).
 DYNAMIC_ZDESKTOP_BROWSER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,browser)
 $(DYNAMIC_ZDESKTOP_BROWSER_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/desktop/browser
 
 $(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
-	$(DYNAMIC_ZDESKTOP_BROWSER_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libjpeg-compat.so $(DYNAMIC_DIR)/libpng-compat.so \
-	$(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libgif-compat.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	$(DYNAMIC_ZDESKTOP_BROWSER_OBJS) $(DYNAMIC_DIR)/libbrowser.so $(DYNAMIC_DIR)/libvulkan.so \
+	$(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so \
+	$(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
@@ -1292,11 +1336,27 @@ $(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_BROWSER_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so \
- -l:libjpeg-compat.so -l:libpng-compat.so -l:libz-compat.so -l:libgif-compat.so -l:libc.so -o $@
+ -l:libbrowser.so -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
- --needed libjpeg-compat.so --needed libpng-compat.so --needed libz-compat.so --needed libgif-compat.so --needed libc.so $@
+ --needed libbrowser.so --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so \
+ --needed libc.so $@
+
+# The second program over libbrowser (ws074-p057): <browser.h> and the C library, no window.
+DYNAMIC_BROWSER_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,browser-probe)
+
+$(BUILD)/bin/browser-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_BROWSER_PROBE_OBJS) $(DYNAMIC_DIR)/libbrowser.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so \
+	$(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_BROWSER_PROBE_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libbrowser.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libbrowser.so --needed libc.so $@
 
 # OpenGL with GLX for Xzed (WS069 p004): libGLESv2's translation with GLX and a private libX11 inside.
 DYNAMIC_GL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgl)

@@ -14,7 +14,10 @@
  * buttons -- and a frame ends each group; at the frame the tool's state is
  * turned into Notes' input events (window.c's queue): a contact starting
  * is NOTES_INPUT_DOWN, a move in contact NOTES_INPUT_MOTION, a lift
- * NOTES_INPUT_UP.  The pressure comes as 0..65535 and is given on as 0..1;
+ * NOTES_INPUT_UP; a move over the window without contact is
+ * NOTES_INPUT_HOVER and leaving the window NOTES_INPUT_LEAVE, which Notes
+ * uses to show where the pen is (the compositor's cursor is hidden while
+ * a tool is over the window).  The pressure comes as 0..65535 and is given on as 0..1;
  * the tilt comes in degrees.  The eraser end is NOTES_SOURCE_ERASER, and
  * so is the pen's tip while its first barrel button is held
  * (design-input-notes.md D5).
@@ -396,12 +399,13 @@ tool_proximity_in(
 	struct notes_tablet_tool *state;
 
 	/* Near the window, not yet touching. */
-	(void)tool;
-	(void)serial;
 	(void)tablet;
 	(void)surface;
 	state = data;
 	state->near = 1;
+
+	/* No cursor over the window: Notes draws where the pen is itself. */
+	zwp_tablet_tool_v2_set_cursor(tool, serial, NULL, 0, 0);
 }
 
 /* The tool left the window: a contact still under way ends. */
@@ -412,10 +416,11 @@ tool_proximity_out(
 {
 	struct notes_tablet_tool *state;
 
-	/* The tool is gone; the frame that follows ends a contact. */
+	/* The tool is gone; the frame that follows ends a contact and says so. */
 	(void)tool;
 	state = data;
 	state->near = 0;
+	state->leaving = 1;
 	if (state->down)
 		state->lifting = 1;
 }
@@ -598,6 +603,9 @@ tool_frame(
 		tool_event(state, NOTES_INPUT_DOWN, time);
 	} else if (state->down && state->moved && !state->lifting) {
 		tool_event(state, NOTES_INPUT_MOTION, time);
+	} else if (!state->down && state->near && state->moved) {
+		/* A move over the window without touching it. */
+		tool_event(state, NOTES_INPUT_HOVER, time);
 	}
 
 	/* A lift, after the last move of the frame. */
@@ -607,6 +615,12 @@ tool_frame(
 		tool_event(state, NOTES_INPUT_UP, time);
 		state->down = 0;
 		state->lifting = 0;
+	}
+
+	/* A tool that left the window is no longer shown. */
+	if (state->leaving) {
+		tool_event(state, NOTES_INPUT_LEAVE, time);
+		state->leaving = 0;
 	}
 
 	/* The frame's changes are taken. */

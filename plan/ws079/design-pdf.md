@@ -25,7 +25,7 @@ ws079-p001 の設計のうち PDF の部分。pen の入力・gesture・Notes �
 - 画像（ws.md p004 の範囲）: JPEG は bytes をそのまま `/DCTDecode` の Image XObject に、それ以外は 8bit RGB（alpha は `/SMask` の 8bit Gray）。
 - stream は初めは無圧縮（libz-compat は inflate だけで deflate が無い）。libz-compat に deflate が入ったら content・編集 data を `/FlateDecode` に
   する。読む側は両方を受ける。
-- `/Info` に `/Producer (zedBSD Notes)`・`/CreationDate`・`/ModDate`。
+- `/Info` に `/Producer (Kei Notes)`・`/CreationDate`・`/ModDate`。
 
 ## 2. 詳細な編集 data の置き場所
 
@@ -37,9 +37,9 @@ ws079-p001 の設計のうち PDF の部分。pen の入力・gesture・Notes �
 | page の `/PieceInfo` | page ごとの私的な dictionary（PDF 1.3〜）で、他の viewer に見えない | 仕様上、`/LastModified` が page の変更より古いと中身は無効とみなされ、編集 tool が捨ててよい。page 間の共通 data（道具の一覧など）の置き場が無い。大きな binary は結局 stream になる |
 | XMP（`/Metadata`） | 文書の metadata の標準 | XML の text で、binary は base64 で 1.33 倍に膨らむ。多くの tool が XMP を書き直す・捨てる。検索・表示用の metadata の意味と合わない |
 
-**採用: 埋め込みの file の stream**。一つの stream（`/Type /EmbeddedFile /Subtype /application#2Fx-zedbsd-notes`）を、file 名
-`zedbsd-notes.bin` の file specification（`/Type /Filespec /F … /UF … /Desc (zedBSD Notes edit data) /AFRelationship /Source /EF << /F n 0 R >>`）
-から指し、catalog の `/Names << /EmbeddedFiles << /Names [(zedbsd-notes.bin) spec] >> >>` と catalog の `/AF [spec]` の両方から引く。
+**採用: 埋め込みの file の stream**。一つの stream（`/Type /EmbeddedFile /Subtype /application#2Fx-kei-notes`）を、file 名
+`kei-notes.bin` の file specification（`/Type /Filespec /F … /UF … /Desc (Kei Notes edit data) /AFRelationship /Source /EF << /F n 0 R >>`）
+から指し、catalog の `/Names << /EmbeddedFiles << /Names [(kei-notes.bin) spec] >> >>` と catalog の `/AF [spec]` の両方から引く。
 `/AF` と `/AFRelationship` は PDF 2.0（PDF/A-3）の key だが、1.7 の reader は知らない key を無視するので害が無く、PDF/A-3 の道を残す。
 Notes は `/AF` → `/EmbeddedFiles` の順に探し、subtype と file 名の両方が合う stream を使う。
 
@@ -69,7 +69,7 @@ chunk:  tag 4 文字 | length u32（本体の byte 数）| 本体
   `/Contents` の順に連結したもの）と比べる。全 page が一致すれば、編集 data から model を作り直して編集を続ける（PDF の path は読まない）。
 - **一致しない page**（他の tool が page を書き換えた）・**編集 data が無い・壊れている・major が新しい**: その page は「元の PDF の page」を背景
   （libpdf の reader の display list）にし、その上に新しい stroke を足す。古い stroke を黙って編集可能にはしない。Notes は利用者にその旨を示す。
-- **他の viewer**: 編集 data を知らなくても、page は普通の塗りの path として正しく表示・印刷される。添付の一覧に `zedbsd-notes.bin` が見える。
+- **他の viewer**: 編集 data を知らなくても、page は普通の塗りの path として正しく表示・印刷される。添付の一覧に `kei-notes.bin` が見える。
 - **保存**: Notes が最初から作った文書は毎回全体を書き直す（小さく、xref が単純）。他の PDF（PDF Viewer の「書き込む」で開いたもの）は
   **増分更新**（元の bytes の後ろに、新しい content stream・`/Contents` を配列にした page・編集 data・新しい xref と `/Prev` を持つ trailer を
   足す）で保存し、元の内容（text・font・署名の前の版）を壊さない。増分更新の writer は p005 以降（p004 の範囲外）。
@@ -185,3 +185,10 @@ p004 の読み込みの決まり（`reader.c`・`object.c`）:
   `pdf_writer_get_page_content_hash()`。
 - 残り: なし（p004 の範囲）。xref stream・object stream・filter は p006・p007。
 - main の決定（2026-09-28）: header は `include/libc/pdf.h` のまま、stream は無圧縮（deflate は Future Work）、段階 ② の glyph は p007 で決める。
+
+## 8. p006 の状態（2026-09-28）
+
+経過と確認は [phase006/phase.md](phase006/phase.md) が正本。§4 の構成のうち `content.c`（`gstate.c` は分けず content.c の中）・`filter.c`（Flate と
+predictor、ASCIIHex）・`display.c`・画像（`image.c`）・stroker（`stroke.c`）を作り、§4.1 の display list を `pdf_page_render()` で返す。§4.1 の
+`pdf_path_flatten()` は作らず、代わりに CPU の rasterizer `pdf_display_list_rasterize()`（`raster.c`）を足した（PDF Viewer v1 と試験が使う。GPU で描く
+program は display list を自分で描く）。libpdf の依存に libz-compat と libjpeg-compat が加わった。
