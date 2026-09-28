@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001〜p005・p012 は cleared（2026-09-29。p012 の boot test は main に依頼、[phase012](phase012/phase.md)）。次は p010・p011・p013 のどれかで、main の指示の後。HID の driver・Wayland の compositor・ブラウザ（と Keiland の app）にまたがる計画はこの WS の 1 か所で行う
+Resume point: p001〜p005・p011・p012・p013 は cleared（2026-09-29）。p010 は main の判断待ち（phase010）。p011 は cleared。HID の driver・Wayland の compositor・ブラウザ（と Keiland の app）にまたがる計画はこの WS の 1 か所で行う
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）
@@ -49,10 +49,10 @@ p005 を scroller・gesture の library と app ごとの適用に分ける、p0
 | [ws081-p003](phase003/phase.md) | 補間・予測の library（host で試験、率・jitter ごとの誤差の測定）→ `userland/desktop/libkeiland/motion.c`（公開は p004） | cleared | p001 |
 | [ws081-p004](phase004/phase.md) | compositor: resampling・予測の適用（window の drag・端のジェスチャー）、wl_touch の時刻（Scan Time の τ）、library の公開（Makefile・exports.map・keiland.h） | cleared | p002、p003 |
 | [ws081-p005](phase005/phase.md) | 慣性の scroll と touch の gesture の共通の library（libkeiland の scroller・gesture、host 試験、`KEILAND_VERSION` 10） | cleared | p004 |
-| ws081-p010 | Files への適用（tap・長押し・scroll と慣性） | planning | p005 |
-| ws081-p011 | Terminal への適用（scroll と慣性、長押しからの選択） | planning | p005 |
+| [ws081-p010](phase010/phase.md) | Files への適用（tap・長押し・scroll と慣性）。**main の判断待ち**: wl_touch の client の指の drag and drop を compositor の `data.c` が受けない（Files の file の移動が後退する） | planned | p005、判断（phase010） |
+| [ws081-p011](phase011/phase.md) | Terminal への適用（scrollback の px 単位の慣性の scroll、tap の click、長押しからの単語の選択） | cleared | p005 |
 | [ws081-p012](phase012/phase.md) | PDF Viewer への適用（scroll と慣性、二本指の拡大、page mode の swipe） | cleared | p005 |
-| ws081-p013 | Notes の指の線（centripetal Catmull-Rom と予測の尾、design §3.8） | planning | p004 |
+| [ws081-p013](phase013/phase.md) | Notes の指の scroll・pinch・double tap・toolbar の tap と掌の判定（ペンは線。design §3.8 の指の線は main の指示で取りやめ、§5.6） | cleared | p005 |
 | ws081-p006 | ブラウザの慣性の scroll と touch の入力（browser の shell） | planning | p005、WS074（`browser.h` の scroll の範囲・overscroll） |
 | ws081-p007 | 実機の 10 インチの touch LCD での調整（報告の率の実測、係数の調整） | planning | p005、p006、touch の USB |
 | ws081-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |

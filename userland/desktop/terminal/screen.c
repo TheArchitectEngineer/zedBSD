@@ -280,6 +280,12 @@ terminal_screen_scroll_view(
 	unsigned old_view;
 	unsigned step;
 
+	/* Whole lines from here: the fingers' offset within a line goes (ws081-p011). */
+	if (screen->view_offset != 0) {
+		screen->view_offset = 0;
+		screen->changed = 1;
+	}
+
 	/*
 	 * Back goes no further than the oldest line kept, forward no further
 	 * than the live screen.
