@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-28 の周期の終わり: p094〜p120 は cleared（login manager・primary selection・表示の引き継ぎ・lock・システムバーの network と session の network group・configure_bounds・名前の衝突の dialog と Trash・Kei の起動画面と spinner（GOP 1920x1080、黒い帯）・greeter・lock・壁紙・files の Kei の見た目・terminal の選択・sessiond の GPU の待ち（BUG-092）・terminal の scrollback と選択の追従・files の folder の merge・デモの通し（Venus 1920x1280）・bar の launcher の印）、p118〜p120（バーの印を濃く・全画面の窓を守る・デモの利用者 kei と BUG-097・098）。source は userland/desktop/（WS078）。次: HDMI の lease の切り替えで画面を点けたまま（WS075 と共同）、F-048、p120 の main への一覧（sh の prompt の「root@」、実機の demo の image の root の保守）。touch・pen・Notes は WS079
+Resume point: 2026-09-28 の周期の終わり: p094〜p120 は cleared（login manager・primary selection・表示の引き継ぎ・lock・システムバーの network と session の network group・configure_bounds・名前の衝突の dialog と Trash・Kei の起動画面と spinner（GOP 1920x1080、黒い帯）・greeter・lock・壁紙・files の Kei の見た目・terminal の選択・sessiond の GPU の待ち（BUG-092）・terminal の scrollback と選択の追従・files の folder の merge・デモの通し（Venus 1920x1280）・bar の launcher の印）、p118〜p120（バーの印を濃く・全画面の窓を守る・デモの利用者 kei と BUG-097・098）。source は userland/desktop/（WS078）。次: HDMI の lease の切り替えで画面を点けたまま（WS075 と共同）、F-048。p120 の main への一覧は main が処理（sh の prompt は利用者名、demo の image の root は password、2026-09-28）。touch・pen・Notes は WS079
 <!-- awesome-plan-current:end -->
 
 ## 単一目標

@@ -3,9 +3,10 @@
 <!-- awesome-plan-current:start -->
 Active Queue: なし（subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
-Next（2026-09-28 の周期の終わりに整理）: ユーザーが実機で USB の demo の image（`build/demo-hdmi/hdd-image.img`、main ca74780e）を試す。
-次の周期: 実機の結果の反映、BUG-085・BUG-094 の再試験（`plan/ws075/tests/bug085-hw.sh`）、HDMI の lease の切り替えの黒、WS079 の p007 の残り・p008、
-touch の LCD の USB が見えたら descriptor の確認、Notes の host 試験の link の修正（p007 で reader が filter を要るようになった）。
+Next（2026-09-28 の夜の周期の終わりに整理）: 実機の USB の demo の image を新しくした（`build/demo-hdmi2/hdd-image.img`、main 2b07ca13 の時点、
+root の password は `build/demo-hdmi2/demo-accounts/root-password`、QEMU・実機の起動は未実施）。ユーザーが実機で試す（HDMI の LCD での login・logout の目視、touch の USB）。
+次の周期（demo critical）: WS074 の amazon.co.jp の列（[amazon-goal.md](ws074/amazon-goal.md)）、WS079 p009（規約）と CCITTFax・password の入力・thumbnail、
+WS075 p007〜p010 と BUG-058（p017 uncleared）、WS035 の F-048。WS082 は study.md §10 の 11 項目のユーザーの判断待ち。WS080 はデモ critical の後。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -172,11 +173,14 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
-| 実機の USB の demo の image の結果（splash の出る画面、eDP、greeter が LCD を満たすか、touch の USB、Notes・PDF Viewer の起動） | デモ | ユーザーが試験中 |
-| WS075: BUG-085・BUG-094 の再試験（gdb 無し、5 回以上）→ lease の切り替えで HDMI を点けたまま → BUG-058（zgears） | i915 の安定 | `bug085-hw.sh` |
-| WS079: p007 の残り（試験の script、ASCII85・LZW・RunLength、inline image、「一部を表示できない」の表示）→ p008（CFF・Type1・暗号化）→ p009（規約） | PDF | p007 の phase.md |
-| WS079: Notes の host 試験の link の修正、touch の LCD の descriptor の確認（USB が見えたら） | Notes・入力 | — |
-| WS074: p031・p032（form の部品）→ システム環境設定・widget で libbrowser | ブラウザ | 部品化は済み |
+| 実機の USB の demo の image（`build/demo-hdmi2`）の結果（HDMI の LCD での login・logout の目視、eDP、touch の USB の descriptor、Notes・PDF Viewer） | デモ | ユーザーが試験 |
+| WS074: amazon.co.jp の列（p068 の続き → p061 → p069 → p035 → …、[amazon-goal.md](ws074/amazon-goal.md)） | ブラウザのデモの目標 | 各 Phase |
+| WS079: p009（規約）、CCITTFax・password の入力・thumbnail | PDF・Notes | p008 cleared |
+| WS075: p007〜p010、BUG-058（p017 は 6 回で再現せず uncleared）、BUG-095 | i915 | 実機の LCD の目視の後 |
+| WS035: F-048、HDMI の LCD での仕上げ | Keiland | — |
+| WS081: p001（touch の慣性・補間の設計） | touch の質 | — |
+| WS080: p001（ld.coff の設計） | デモ critical の後 | spec.md |
+| WS082: p002・p002b（study.md §10 の判断の後） | KVM | ユーザーの判断 |
 | WS073: BUG-093（Noct の patch の mtime）、BUG-051 | 安定性・開発 | 各 ticket |
 | WS078 の残り: 注釈・log の名前 | 改名 | — |
 
