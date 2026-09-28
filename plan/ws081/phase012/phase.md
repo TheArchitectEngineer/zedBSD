@@ -90,3 +90,11 @@ guest の log は worktree の `build/ws081-p012-guest/`（`flick-log.txt`・`pi
 - 止まったまま報告の来ない指（evdev が同じ値を落とす panel）の予測の尾を戻す規則（`now − τ_n` が `2.5 T̂` を越えたら最後の点へ）の要否を p007 の実機で確かめる
   （motion library、p003 の範囲）。
 - main: pen の image の作り直し（noct の build を含む）と `plan/tools/boot-test.sh`。
+
+## main の検証（2026-09-29、merge の後）
+
+main の checkout（4e850cdd）で zdesktop の image と pen の image を作り直した（batch120）。どちらも boot test PASS（`build/main-batch120-boot1/login.png`、
+`build/main-batch120-penboot/login.png`）。pen の構成は pdfviewer を image に入れないので、試験の BUILD に
+`make ZEDBSD_CONFIG=plan/ws079/tests/config-amd64-pen.mk BUILD=build/main-pen build/main-pen/bin/pdfviewer …/libpdf.so …/libkeiland.so …/libz-compat.so …/libjpeg-compat.so`
+で足した（warning 0）。`p012-guest.sh build/main-pen`: 1 回目は段 3 の replay の成否の行が無く FAIL（効果の検査は全部 ok、[BUG-099](../../bugs/BUG-099.md)）、
+再実行で PASS（flick 2942 px/s、1133.8 px で停止、pinch 1.582→3.002、page 2）。WS079 の p012-guest も PASS。QEMU の証拠だけ、実機は未実施。
