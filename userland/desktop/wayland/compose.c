@@ -1517,8 +1517,10 @@ compose_cursor(
 		}
 	}
 
-	/* A hidden cursor is not drawn. */
+	/* A hidden cursor is not drawn, nor one that has not moved since the start (ws035-p116). */
 	if (server->cursor_hidden)
+		return;
+	if (server->pointer_unmoved)
 		return;
 
 	/* The client's surface, when it has an image. */

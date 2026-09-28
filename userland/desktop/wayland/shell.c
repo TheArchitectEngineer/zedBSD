@@ -28,10 +28,11 @@
  * triple click never docks first, a double click docks only when the time
  * a third press has (DOUBLE_CLICK_MS after the second) is over.
  *
- * The system bar has three zones: on the left the launcher, "Kei" and the
- * docked window; towards the right four virtual desktops; at the right edge
- * the network, the battery and the clock.  The network's icon opens its
- * menu (network.c, ws035-p013); the battery is drawn only (a mock-up).
+ * The system bar has three zones: on the left the launcher (the Kei mark,
+ * ws035-p117) and the docked window; towards the right four virtual
+ * desktops; at the right edge the network, the battery and the clock.  The
+ * network's icon opens its menu (network.c, ws035-p013); the battery is
+ * drawn only (a mock-up).
  *
  * Wiseview (p063, plan/ws035/wiseman-design.md) is the overview of the
  * windows: dragging up from the bottom edge opens it, following the pointer
@@ -92,6 +93,15 @@
 
 /* The docked title's buttons in the system bar are further apart. */
 #define BAR_BUTTON_SPACING	46
+
+/*
+ * The launcher at the bar's left end: the Kei mark's square, its place and
+ * its side in pixels (ws035-p117; App Home's press area, home.c, is the
+ * bar's first 40 pixels).
+ */
+#define BAR_LAUNCHER_X		10
+#define BAR_LAUNCHER_Y		4
+#define BAR_LAUNCHER_SIZE	26
 
 /*
  * The dock animation, a double click, and how far a docked title is pulled
@@ -1635,7 +1645,7 @@ zwl_glass_tick(
 /*
  * Lays out the system bar from the right: the clock, the battery, the
  * signal, a line, the desktops, a line, the docked window's buttons; and
- * from the left the launcher, "Kei", a line and the docked title.
+ * from the left the launcher, a line and the docked title.
  */
 static void
 bar_layout(
@@ -1668,8 +1678,8 @@ bar_layout(
 	for (button = 0; button < BUTTON_COUNT; button++)
 		bar->buttons[button] = bar->desktops_line - 30 - button * BAR_BUTTON_SPACING;
 
-	/* On the left, after the launcher and "Kei", a line and the docked title. */
-	bar->menu_line = 44 + glass_text_width(server, SIZE_BAR, "Kei") + 16;
+	/* On the left, after the launcher, a line and the docked title (ws035-p117: no word after the mark). */
+	bar->menu_line = BAR_LAUNCHER_X + BAR_LAUNCHER_SIZE + 12;
 	bar->title_x = bar->menu_line + 17;
 }
 
@@ -2290,7 +2300,7 @@ draw_sign(
 
 /*
  * Draws the system bar: a glass strip along the top (a little whiter while a
- * window is docked), the launcher and "Kei", the docked window's title and
+ * window is docked), the launcher, the docked window's title and
  * buttons, the desktops, and the status at the right.
  */
 static void
@@ -2299,8 +2309,6 @@ draw_system_bar(
 	VkCommandBuffer command,
 	const struct shell_bar *bar)
 {
-	static const float blue[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
-	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float edge[4] = { 1.0f, 1.0f, 1.0f, 0.55f };
 	static const float line[4] = { 0.12f, 0.16f, 0.24f, 0.18f };
@@ -2336,18 +2344,14 @@ draw_system_bar(
 	glass_shape_draw(server, command, &shape);
 	glass_draw_solid(server, command, 0.0f, (float)(ZWL_GLASS_BAR - 1), (float)server->width, 1.0f, 0.0f, edge);
 
-	/* The launcher: a blue rounded square with four small squares. */
-	glass_draw_solid(server, command, 12.0f, 6.0f, 22.0f, 22.0f, 6.0f, blue);
-	glass_draw_solid(server, command, 17.0f, 11.0f, 5.0f, 5.0f, 1.5f, white);
-	glass_draw_solid(server, command, 24.0f, 11.0f, 5.0f, 5.0f, 1.5f, white);
-	glass_draw_solid(server, command, 17.0f, 18.0f, 5.0f, 5.0f, 1.5f, white);
-	glass_draw_solid(server, command, 24.0f, 18.0f, 5.0f, 5.0f, 1.5f, white);
+	/* The launcher: the Kei mark (ws035-p117). */
+	glass_draw_mark(server, command, BAR_LAUNCHER_X, BAR_LAUNCHER_Y, BAR_LAUNCHER_SIZE, 1.0f);
 
-	/* In App Home the launcher is marked by a ring. */
+	/* In App Home the launcher is marked by a ring around the mark. */
 	if (home > 0.0f) {
-		glass_shape_init(&shape, 9.0f, 3.0f, 28.0f, 28.0f);
+		glass_shape_init(&shape, (float)(BAR_LAUNCHER_X - 2), (float)(BAR_LAUNCHER_Y - 2), (float)(BAR_LAUNCHER_SIZE + 4), (float)(BAR_LAUNCHER_SIZE + 4));
 		shape.mode = MODE_RING;
-		shape.radius = 8.0f;
+		shape.radius = 9.0f;
 		shape.soft = 2.0f;
 		shape.color[0] = 0.25f;
 		shape.color[1] = 0.52f;
@@ -2355,9 +2359,6 @@ draw_system_bar(
 		shape.color[3] = home;
 		glass_shape_draw(server, command, &shape);
 	}
-
-	/* The system menu. */
-	glass_draw_text(server, command, SIZE_BAR, 44, 22, "Kei", 200, dark);
 
 	/* The docked window: a line, its mark, title and menu, and its buttons with restore for maximize. */
 	if (docked != NULL) {
@@ -3266,7 +3267,7 @@ bar_press(
 		return 1;
 	}
 
-	/* Its title: between the line after "Kei" and the buttons. */
+	/* Its title: between the line after the launcher and the buttons. */
 	if (server->pointer_x < bar.menu_line || server->pointer_x >= bar.buttons[BUTTON_MINIMIZE] - BUTTON_WIDTH / 2)
 		return 1;
 

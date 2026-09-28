@@ -48,12 +48,15 @@ enum fm_task_kind {
 /*
  * What a copy or a move does with a name its destination already has
  * (ws071 spec §5.3): keep both (the next free name, the default), replace
- * the item there, or skip the source.
+ * the item there, or skip the source.  A folder whose name a folder has
+ * may instead be merged into it (ws035-p115, F-050): its contents go into
+ * that folder, each asked about again when its own name is taken there.
  */
 enum fm_collision {
 	FM_COLLISION_KEEP_BOTH,
 	FM_COLLISION_REPLACE,
-	FM_COLLISION_SKIP
+	FM_COLLISION_SKIP,
+	FM_COLLISION_MERGE
 };
 
 /*
@@ -78,7 +81,8 @@ enum fm_step_kind {
 	FM_STEP_UNLINK,
 	FM_STEP_RMDIR,
 	FM_STEP_TRASHINFO,
-	FM_STEP_UNTRASHINFO
+	FM_STEP_UNTRASHINFO,
+	FM_STEP_RMDIR_EMPTY
 };
 
 /*
@@ -174,6 +178,23 @@ struct fm_task {
 	 */
 	char **replaced;
 
+	/*
+	 * The folder each source goes into when it is not the destination
+	 * (NULL for the destination), in the sources' order: the contents of a
+	 * merged folder go into the folder they merge with, and a redo puts
+	 * each item back where it went (ws035-p115).
+	 */
+	char **folders;
+
+	/*
+	 * The folders a move merged into others (ws035-p115), in the order
+	 * they were merged: once their contents have moved they are removed
+	 * when empty, the deepest first.  Whether that removal is planned.
+	 */
+	char **merged;
+	size_t merged_count;
+	int merged_planned;
+
 	/* The first failure: its errno value and the path it was about. */
 	int error;
 	char error_path[FM_OPS_PATH_MAX];
@@ -240,6 +261,11 @@ void fm_task_cancel(struct fm_task *task);
 void fm_task_free(struct fm_task *task);
 const char *fm_task_verb(unsigned kind);
 int fm_task_collides(const struct fm_task *task, size_t index);
+int fm_task_can_merge(const struct fm_task *task, size_t index);
+int fm_task_merge(struct fm_task *task, size_t index, size_t *added);
+const char *fm_task_folder(const struct fm_task *task, size_t index);
+int fm_task_set_folder(struct fm_task *task, size_t index, const char *folder);
+int fm_ops_mkdir_parents(const char *path);
 int fm_unique_name(const char *folder, const char *name, const char *suffix, char *path, size_t size);
 uint64_t fm_ops_clock(void);
 

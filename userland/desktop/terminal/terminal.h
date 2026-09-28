@@ -41,6 +41,9 @@ struct zwp_primary_selection_offer_v1;
 #define TERMINAL_MAX_COLUMNS	240U
 #define TERMINAL_MAX_ROWS	100U
 
+/* How many lines that scrolled off the top of the screen the terminal keeps to scroll back to (ws035-p114). */
+#define TERMINAL_HISTORY	1000U
+
 /* How many numeric parameters one control sequence keeps. */
 #define TERMINAL_PARAMETERS	16
 
@@ -224,11 +227,29 @@ struct terminal_screen {
 
 	/*
 	 * A range selected with the pointer (ws035-p093): whether there is one,
-	 * and its first and last cells (column, row) in reading order.
+	 * and its first and last cells (column, line) in reading order.  A line
+	 * is numbered from the first the screen ever showed, so the range stays
+	 * on its text while the text scrolls (ws035-p114).
 	 */
 	int range;
-	unsigned range_from[2];
-	unsigned range_to[2];
+	unsigned long range_from[2];
+	unsigned long range_to[2];
+
+	/*
+	 * The scrollback (ws035-p114): the lines that scrolled off the top of
+	 * the whole screen, a ring of TERMINAL_HISTORY lines of
+	 * TERMINAL_MAX_COLUMNS cells each, where the oldest line is in the
+	 * ring and how many are kept.  scrolled counts every line that ever
+	 * scrolled off, so the screen's row r is line scrolled + r and the
+	 * oldest line kept is line scrolled - history_count.  view is how many
+	 * lines back from the live screen the window shows (0: the live
+	 * screen); new output keeps a view that is back on the same text.
+	 */
+	struct terminal_cell history[TERMINAL_HISTORY * TERMINAL_MAX_COLUMNS];
+	unsigned history_first;
+	unsigned history_count;
+	unsigned long scrolled;
+	unsigned view;
 };
 
 /*
@@ -384,6 +405,15 @@ struct terminal_window {
 	unsigned char input[256];
 	size_t input_length;
 
+	/*
+	 * The view's scrolling the main loop has not yet carried out
+	 * (ws035-p114): wheel notches and Shift+Page Up or Down pages, each
+	 * positive going back into the scrollback and negative toward the live
+	 * screen.
+	 */
+	int scroll_notches;
+	int scroll_pages;
+
 	/* The key held for repeating (0 when none) and when it repeats next, in milliseconds. */
 	uint32_t repeat_key;
 	uint64_t repeat_at;
@@ -504,8 +534,11 @@ void terminal_screen_init(struct terminal_screen *screen, unsigned columns, unsi
 void terminal_screen_resize(struct terminal_screen *screen, unsigned columns, unsigned rows);
 void terminal_screen_write(struct terminal_screen *screen, const unsigned char *bytes, size_t length);
 struct terminal_cell *terminal_screen_cell(struct terminal_screen *screen, unsigned column, unsigned row);
+struct terminal_cell *terminal_screen_line_cell(struct terminal_screen *screen, unsigned column, unsigned long line);
+unsigned long terminal_screen_view_line(const struct terminal_screen *screen, unsigned row);
+int terminal_screen_scroll_view(struct terminal_screen *screen, int lines);
 size_t terminal_screen_text(struct terminal_screen *screen, char *text, size_t size);
-int terminal_screen_in_range(const struct terminal_screen *screen, unsigned column, unsigned row);
+int terminal_screen_in_range(const struct terminal_screen *screen, unsigned column, unsigned long line);
 
 /* The key codes (keys.c). */
 size_t terminal_key_bytes(uint32_t key, uint32_t modifiers, unsigned char *bytes, size_t size);
