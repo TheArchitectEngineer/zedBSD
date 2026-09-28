@@ -4,7 +4,7 @@
 
 Phase ID: `ws035-p112`
 Parent: [WS035](../ws.md)
-Status: in-progress（2026-09-28、サブエージェント。コードと host の試験は済み、QEMU の画面と boot test は未実施）
+Status: cleared（2026-09-28、サブエージェント）
 Phase disposition: normal
 Queue: なし（2026-09-28 main の割り当て）
 
@@ -36,13 +36,23 @@ Queue: なし（2026-09-28 main の割り当て）
   1.3 px 以内で一致（全ての mode）。
 - 画面（host）: `build/ws035-shots/p112-20260928-host-uefi-2560x1440.png`・`-host-uefi-1280x1024.png`・`-host-uefi-1920x1080.png`・
   `-host-bios-1024x768.png`。
-- 未実施: QEMU（UEFI の 1920x1080 と別の mode、BIOS）の boot-shots、`plan/tools/boot-test.sh`、実機。image の build
-  （`build/ws035-p112`）は時間切れの時点で走っていた。
+- **graphical の image の cfg**（`platform/amd64/vmunix.mk`）: `zedbsd-native-uefi.cfg` の `video=640x480` が要求を打ち消すので、
+  `ZEDBSD_GRAPHICAL_BOOT=y` の cfg は `video=` の行を落とす（graphical でない image は 640x480 のまま）。
+- **boot test の読み取り**（`plan/tools/boot-test.py`）: 1920x1080 の console は行の余り 8 px を上下に分けて 4 px 下から描くので、
+  その原点も試し、読みの選び方を「未知の cell が最少」から「認識した文字 − 未知の cell が最大」にした（中央の空白の格子が
+  選ばれて何も読めなかった）。
+- style-check: `bootloader/uefi/logo.c`・`bootloader/bios/logo.c`・`splash.c` は 0。`video.c`（`video_mode_matches`、不変）と
+  `bootx64.c`（変更から遠い 1669〜1692 行）の指摘は既存。
+- QEMU（amd64、`build/ws035-p112` の graphical-network の image、GPU 無し、cfg は `logo=logo.ppm kmsg=quiet login=graphical`）:
+  - UEFI（OVMF、`video=` 無し）: GOP が 1920x1080 になり、絵が帯無しで全面、spinner が絵の場所で回る → login。
+  - UEFI `--cfg video=1280x1024`: 上下に 152 px の黒い帯、絵は 1280x720、spinner は絵の場所。
+  - UEFI `video=640x480`（cfg を落とす前の image）: 上下 60 px の帯。
+  - BIOS（SeaBIOS、VBE 1024x768、`bios-hdd-image.img`）: 上下 96 px の帯、spinner は絵の場所。
+  - boot test（`plan/tools/boot-test.sh build/ws035-p112/hdd-image.img`）PASS（1920x1080 の console の `login:`）。
+- 画面: `build/ws035-shots/p112-20260928-uefi-1920x1080-spinner.png`・`-uefi-1280x1024-bars.png`・`-uefi-640x480-bars.png`・
+  `-bios-1024x768-bars.png`・`-boot-test-login.png`。
+- 未実施: 実機。GPU（Venus・i915）の guest で greeter が 1920x1080 の firmware の framebuffer を引き継ぐ場合の画面。
 
-## 残り（再開の手順）
+## 残り
 
-1. `plan/ws035/tests/build-login-image.sh build/ws035-p112 graphical-network`（worktree の build/ に llvm 等の symlink と
-   build/amd64/sysroot の copy が要る）。
-2. `plan/ws035/tests/boot-shots.py <image> build/ws035-shots/p112-uefi-1080`（OVMF の std VGA は 1920x1080 を持つので要求が通る）、
-   別の mode は `--cfg video=2560x1440`（`--extra '-device VGA,vgamem_mb=32'` 等が要る場合あり）か `video=1280x1024`、BIOS は `--bios`。
-3. `plan/tools/boot-test.sh` で login prompt。
+- 無し（実機の確認は WS035 の実機の Phase で）。

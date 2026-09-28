@@ -348,6 +348,8 @@ logo_pixel_byte(
 			logo->background = 0U;
 			logo->fill_now = 1;
 		}
+
+		/* Then its pixel. */
 		logo_contain_writes(logo, pixel);
 	} else if (logo->x == 0U && logo->y == 0U) {
 		/* The first pixel's colour is the background, filled before any write. */

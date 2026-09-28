@@ -201,7 +201,9 @@ logo_draw_contain(
 				pixels[(uint64_t)y * framebuffer->stride + x] = 0U;
 				continue;
 			}
-			fx = (((uint64_t)(x - origin_x) * 2U + 1U) * width << 16) / (scaled_width * 2U);
+
+			/* A pixel of the picture, sampled where its centre falls. */
+			fx =(((uint64_t)(x - origin_x) * 2U + 1U) * width << 16) / (scaled_width * 2U);
 			pixels[(uint64_t)y * framebuffer->stride + x] = logo_sample(image, width, height, fx, fy, framebuffer);
 		}
 	}
