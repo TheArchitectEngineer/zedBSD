@@ -104,6 +104,18 @@ struct x11_wayland_window {
 	int origin_x;
 	int origin_y;
 
+	/*
+	 * The largest size the desktop lets the window choose (xdg-shell 4;
+	 * zero: not known), and the size the window is to take within them,
+	 * which the next dispatch hands to the server (zero: none waiting).
+	 * It waits for the dispatch because the configure that asks for it
+	 * may come while the window is being opened, before the server holds it.
+	 */
+	unsigned bounds_width;
+	unsigned bounds_height;
+	unsigned pending_width;
+	unsigned pending_height;
+
 	/* The next window of the connection. */
 	struct x11_wayland_window *next;
 };
@@ -193,6 +205,9 @@ static void wayland_ping(void *data, struct xdg_wm_base *shell, uint32_t serial)
 static void wayland_configure(void *data, struct xdg_surface *surface, uint32_t serial);
 static void wayland_toplevel_configure(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height, struct wl_array *states);
 static void wayland_toplevel_close(void *data, struct xdg_toplevel *toplevel);
+static void wayland_toplevel_bounds(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height);
+static void wayland_pending_sizes(struct x11_wayland *wayland);
+static void wayland_bounded_size(struct x11_wayland_window *window);
 static void wayland_buffer_release(void *data, struct wl_buffer *buffer);
 static void wayland_seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities);
 static void wayland_seat_name(void *data, struct wl_seat *seat, const char *name);
@@ -239,9 +254,9 @@ static const struct xdg_surface_listener wayland_surface_listener = {
 	wayland_configure
 };
 
-/* A toplevel's size and close request. */
+/* A toplevel's size, close request and bounds. */
 static const struct xdg_toplevel_listener wayland_toplevel_listener = {
-	wayland_toplevel_configure, wayland_toplevel_close, NULL
+	wayland_toplevel_configure, wayland_toplevel_close, wayland_toplevel_bounds
 };
 
 /* A buffer given back by the desktop. */
@@ -422,6 +437,9 @@ x11_wayland_dispatch(
 	status = wl_display_dispatch_pending(wayland->display);
 	if (status < 0)
 		return -1;
+
+	/* The sizes windows are to take within their bounds, handed to the server. */
+	wayland_pending_sizes(wayland);
 	(void)wl_display_flush(wayland->display);
 
 	/* Succeeded: every event so far has run. */
@@ -1167,7 +1185,9 @@ wayland_global(
 	} else if (shm == 0 && wayland->shm == NULL) {
 		wayland->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1U);
 	} else if (shell == 0 && wayland->shell == NULL) {
-		wayland->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, 1U);
+		if (version > 4U)
+			version = 4U;
+		wayland->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, version);
 		if (wayland->shell != NULL)
 			(void)xdg_wm_base_add_listener(wayland->shell, &wayland_shell_listener, wayland);
 	} else if (seat == 0 && wayland->seat == NULL) {
@@ -1228,12 +1248,20 @@ wayland_toplevel_configure(
 {
 	struct x11_wayland_window *window;
 
-	/* A size that is not given, or the window's own, changes nothing. */
+	/* A size left to the window keeps its own, within the desktop's bounds (the next dispatch asks for it). */
 	(void)toplevel;
 	(void)states;
 	window = data;
-	if (width <= 0 || height <= 0)
+	if (width <= 0 || height <= 0) {
+		wayland_bounded_size(window);
 		return;
+	}
+
+	/* A size the desktop gives replaces one waiting within the bounds. */
+	window->pending_width = 0U;
+	window->pending_height = 0U;
+
+	/* The window's own size changes nothing. */
 	if ((unsigned)width == window->width && (unsigned)height == window->height)
 		return;
 
@@ -1253,6 +1281,94 @@ wayland_toplevel_close(
 	(void)toplevel;
 	window = data;
 	window->wayland->callbacks.close(window->wayland->context, window->id);
+}
+
+/*
+ * Keeps the largest size the desktop lets the window choose (xdg-shell
+ * version 4); the configure that follows applies it.  A zero is a size the
+ * desktop does not know.
+ */
+static void
+wayland_toplevel_bounds(
+	void *data,
+	struct xdg_toplevel *toplevel,
+	int32_t width,
+	int32_t height)
+{
+	struct x11_wayland_window *window;
+
+	/* The width, when known. */
+	(void)toplevel;
+	window = data;
+	window->bounds_width = 0U;
+	if (width > 0)
+		window->bounds_width = (unsigned)width;
+
+	/* The height, when known. */
+	window->bounds_height = 0U;
+	if (height > 0)
+		window->bounds_height = (unsigned)height;
+}
+
+/*
+ * Notes the size a window is to take when its own does not fit the
+ * desktop's bounds: its own size, cut to the bounds.  A window that fits
+ * has nothing waiting.
+ */
+static void
+wayland_bounded_size(
+	struct x11_wayland_window *window)
+{
+	unsigned width;
+	unsigned height;
+
+	/* The width, at most the bounds'. */
+	width = window->width;
+	if (window->bounds_width > 0U && width > window->bounds_width)
+		width = window->bounds_width;
+
+	/* The height, at most the bounds'. */
+	height = window->height;
+	if (window->bounds_height > 0U && height > window->bounds_height)
+		height = window->bounds_height;
+
+	/* A window that fits keeps its size. */
+	window->pending_width = 0U;
+	window->pending_height = 0U;
+	if (width == window->width && height == window->height)
+		return;
+
+	/* The size the next dispatch asks the server for. */
+	window->pending_width = width;
+	window->pending_height = height;
+}
+
+/*
+ * Hands the server the sizes windows are to take within their bounds: the
+ * server resizes each X window, and its desktop window follows.
+ */
+static void
+wayland_pending_sizes(
+	struct x11_wayland *wayland)
+{
+	struct x11_wayland_window *window;
+	unsigned width;
+	unsigned height;
+
+	/* Each window with a size waiting. */
+	for (window = wayland->windows; window != NULL; window = window->next) {
+		if (window->pending_width == 0U || window->pending_height == 0U)
+			continue;
+
+		/* Taken once; the server may close windows while it runs, so the walk ends after one. */
+		width = window->pending_width;
+		height = window->pending_height;
+		window->pending_width = 0U;
+		window->pending_height = 0U;
+		fprintf(stderr, "X11SERVER BOUNDS window=0x%x width=%u height=%u was=%ux%u\n", (unsigned)window->id, width, height, window->width, window->height);
+		wayland->callbacks.configure(wayland->context, window->id, (int)width, (int)height);
+		return;
+	}
 }
 
 /* The desktop has given a buffer back: it can take the next frame. */
