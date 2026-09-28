@@ -108,6 +108,45 @@ notes_frame_rect(
 }
 
 /*
+ * Adds a rectangle in pixels whose colour (0xRRGGBBAA) runs from one at its
+ * top to another at its bottom.
+ */
+void
+notes_frame_gradient(
+	struct notes_frame *frame,
+	float x,
+	float y,
+	float width,
+	float height,
+	uint32_t top,
+	uint32_t bottom)
+{
+	float top_colors[4];
+	float bottom_colors[4];
+	float *vertex;
+	size_t first;
+
+	/* Room for two triangles. */
+	first = frame->vertex_count;
+	vertex = frame_reserve(frame, 6U);
+	if (vertex == NULL)
+		return;
+
+	/* The two triangles, the top corners in one colour and the bottom ones in the other. */
+	color_floats(top, top_colors);
+	color_floats(bottom, bottom_colors);
+	vertex = frame_vertex(vertex, x, y, 0.0f, 0.0f, top_colors);
+	vertex = frame_vertex(vertex, x + width, y, 0.0f, 0.0f, top_colors);
+	vertex = frame_vertex(vertex, x, y + height, 0.0f, 0.0f, bottom_colors);
+	vertex = frame_vertex(vertex, x + width, y, 0.0f, 0.0f, top_colors);
+	vertex = frame_vertex(vertex, x + width, y + height, 0.0f, 0.0f, bottom_colors);
+	(void)frame_vertex(vertex, x, y + height, 0.0f, 0.0f, bottom_colors);
+
+	/* One plain draw. */
+	frame_draw(frame, NOTES_PIPE_PLAIN, first);
+}
+
+/*
  * Turns clipping to a rectangle in pixels on or off for the draws that follow.
  */
 void
@@ -262,11 +301,12 @@ notes_frame_polygon(
 }
 
 /*
- * Adds the toolbar's picture over a rectangle in pixels.
+ * Adds a picture (NOTES_TEXTURE_*) over a rectangle in pixels.
  */
 void
 notes_frame_texture(
 	struct notes_frame *frame,
+	unsigned texture,
 	float x,
 	float y,
 	float width,
@@ -294,8 +334,10 @@ notes_frame_texture(
 	vertex = frame_vertex(vertex, x + width, y + height, 1.0f, 1.0f, white);
 	(void)frame_vertex(vertex, x, y + height, 0.0f, 1.0f, white);
 
-	/* One textured draw. */
+	/* One textured draw, which names its picture. */
 	frame_draw(frame, NOTES_PIPE_TEXTURE, first);
+	if (frame->error == 0)
+		frame->draws[frame->draw_count - 1U].texture = texture;
 }
 
 /*
@@ -399,6 +441,7 @@ frame_draw(
 
 	/* Succeeded: the draw is the frame's last. */
 	frame->draws[frame->draw_count].pipe = pipe;
+	frame->draws[frame->draw_count].texture = NOTES_TEXTURE_TOOLBAR;
 	frame->draws[frame->draw_count].first = (uint32_t)first;
 	frame->draws[frame->draw_count].count = (uint32_t)(frame->vertex_count - first);
 	frame->draws[frame->draw_count].clipped = frame->clipped;

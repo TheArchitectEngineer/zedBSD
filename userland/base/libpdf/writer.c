@@ -1516,7 +1516,7 @@ write_information(
 		modification = now;
 
 	/* Writes the producer and the two dates. */
-	buffer_printf(file, "3 0 obj\n<< /Producer (zedBSD Notes) /CreationDate ");
+	buffer_printf(file, "3 0 obj\n<< /Producer (Kei Notes) /CreationDate ");
 	buffer_append_date(file, writer->creation_time);
 	buffer_printf(file, " /ModDate ");
 	buffer_append_date(file, modification);
@@ -1599,7 +1599,7 @@ write_attachment_objects(
 	buffer_printf(file, " /UF ");
 	buffer_append_literal_string(file, writer->attachment.name);
 	buffer_printf(file,
-		      " /Desc (zedBSD Notes edit data) /AFRelationship /Source /EF << /F %lu 0 R >> >>\nendobj\n",
+		      " /Desc (Kei Notes edit data) /AFRelationship /Source /EF << /F %lu 0 R >> >>\nendobj\n",
 		      (unsigned long)file_object);
 }
 
