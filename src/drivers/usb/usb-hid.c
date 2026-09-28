@@ -67,7 +67,6 @@
 /* The application collections of the Digitizer page that hold a pen. */
 #define HID_USAGE_DIGITIZER		0x000d0001U
 #define HID_USAGE_PEN			0x000d0002U
-#define HID_USAGE_STYLUS		0x000d0020U
 
 /* The Digitizer usages that are absolute axes of a pen. */
 #define HID_USAGE_TIP_PRESSURE		0x30U
