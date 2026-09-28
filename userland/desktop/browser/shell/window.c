@@ -7,11 +7,14 @@
 
 /*
  * The Wayland window of browser: an xdg-shell toplevel and the
- * seat's pointer wheel and keyboard, whose input becomes shell_event values
- * in a queue the main loop reads.  The same way as files' window.
+ * seat's pointer and keyboard, whose input becomes shell_event values in a
+ * queue the main loop reads: the pointer's moves (the last of a run of
+ * moves stands for them all), buttons, wheel and leaving, the keys pressed
+ * and let go, and the keyboard's focus coming and going.  The same way as
+ * files' window.
  *
  * zdesktop does not repeat keys, so a key held past the repeat delay is
- * pressed again on each interval.
+ * pressed again on each interval, marked as a repeat.
  */
 
 #include "shell/internal.h"
@@ -36,6 +39,7 @@
 #define WINDOW_WAYLAND_SHIFT	0x01U
 #define WINDOW_WAYLAND_CTRL	0x04U
 #define WINDOW_WAYLAND_ALT	0x08U
+#define WINDOW_WAYLAND_META	0x40U
 
 /* The evdev codes of the modifier keys, which never repeat. */
 #define WINDOW_KEY_LEFTCTRL	29U
@@ -73,6 +77,7 @@ static void window_keyboard_key(void *data, struct wl_keyboard *keyboard, uint32
 static void window_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
 static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
 static struct shell_event *window_push(struct shell_window *window, int type);
+static void window_push_motion(struct shell_window *window);
 static int window_modifier_key(uint32_t key);
 
 /* The registry's callbacks, for as long as the registry lives. */
@@ -334,10 +339,13 @@ shell_window_repeat(
 	if (now < window->repeat_at)
 		return (int)(window->repeat_at - now);
 
-	/* The key once more; a full queue drops it. */
+	/* The key once more, as a repeat; a full queue drops it. */
 	event = window_push(window, SHELL_EVENT_KEY);
-	if (event != NULL)
+	if (event != NULL) {
 		event->key = window->repeat_key;
+		event->pressed = 1;
+		event->repeat = 1;
+	}
 
 	/* The next repeat is one interval later. */
 	window->repeat_at = now + window->repeat_interval;
@@ -619,7 +627,7 @@ window_seat_name(
 	UNUSED_PARAMETER(name);
 }
 
-/* The pointer comes over the window: its place is kept. */
+/* The pointer comes over the window: its place is kept, and queued as a move. */
 static void
 window_pointer_enter(
 	void *data,
@@ -635,13 +643,14 @@ window_pointer_enter(
 	UNUSED_PARAMETER(serial);
 	UNUSED_PARAMETER(surface);
 
-	/* The place the buttons are pressed at. */
+	/* The place the buttons are pressed at, and the move. */
 	window = data;
 	window->pointer_x = wl_fixed_to_int(x);
 	window->pointer_y = wl_fixed_to_int(y);
+	window_push_motion(window);
 }
 
-/* The pointer leaving is not used yet. */
+/* The pointer leaves the window. */
 static void
 window_pointer_leave(
 	void *data,
@@ -649,14 +658,18 @@ window_pointer_leave(
 	uint32_t serial,
 	struct wl_surface *surface)
 {
-	/* Nothing to do. */
-	UNUSED_PARAMETER(data);
+	struct shell_window *window;
+
 	UNUSED_PARAMETER(pointer);
 	UNUSED_PARAMETER(serial);
 	UNUSED_PARAMETER(surface);
+
+	/* The input; a full queue drops it. */
+	window = data;
+	(void)window_push(window, SHELL_EVENT_LEAVE);
 }
 
-/* The pointer moves over the window: its place is kept. */
+/* The pointer moves over the window: its place is kept, and queued as a move. */
 static void
 window_pointer_motion(
 	void *data,
@@ -670,10 +683,11 @@ window_pointer_motion(
 	UNUSED_PARAMETER(pointer);
 	UNUSED_PARAMETER(time);
 
-	/* The place the buttons are pressed at. */
+	/* The place the buttons are pressed at, and the move. */
 	window = data;
 	window->pointer_x = wl_fixed_to_int(x);
 	window->pointer_y = wl_fixed_to_int(y);
+	window_push_motion(window);
 }
 
 /* A pointer button is pressed or let go, at the pointer's place. */
@@ -708,7 +722,7 @@ window_pointer_button(
 	event->y = window->pointer_y;
 }
 
-/* The wheel turns: vertical scrolling in pixels. */
+/* The wheel turns: scrolling in pixels, down or right. */
 static void
 window_pointer_axis(
 	void *data,
@@ -723,16 +737,17 @@ window_pointer_axis(
 	UNUSED_PARAMETER(pointer);
 	UNUSED_PARAMETER(time);
 
-	/* Only the vertical axis scrolls the page. */
+	/* The input; a full queue drops it. */
 	window = data;
-	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
-		return;
-
-	/* The distance, scaled to the window's pixels; a full queue drops it. */
 	event = window_push(window, SHELL_EVENT_SCROLL);
 	if (event == NULL)
 		return;
-	event->scroll = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
+
+	/* The distance on its axis, scaled to the window's pixels. */
+	if (axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL)
+		event->scroll_x = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
+	else
+		event->scroll = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
 }
 
 /* A group of pointer events ends; each was queued as it came. */
@@ -818,6 +833,7 @@ window_keyboard_enter(
 	struct wl_array *keys)
 {
 	struct shell_window *window;
+	struct shell_event *event;
 
 	UNUSED_PARAMETER(keyboard);
 	UNUSED_PARAMETER(serial);
@@ -827,6 +843,11 @@ window_keyboard_enter(
 	/* Nothing repeats yet. */
 	window = data;
 	window->repeat_key = 0U;
+
+	/* The focus gained, as an input; a full queue drops it. */
+	event = window_push(window, SHELL_EVENT_FOCUS);
+	if (event != NULL)
+		event->pressed = 1;
 }
 
 /* Focus leaves: nothing repeats any more and no modifier is held. */
@@ -847,6 +868,9 @@ window_keyboard_leave(
 	window = data;
 	window->repeat_key = 0U;
 	window->modifiers = 0U;
+
+	/* The focus lost, as an input; a full queue drops it. */
+	(void)window_push(window, SHELL_EVENT_FOCUS);
 }
 
 /* A key is pressed (it repeats while held) or let go. */
@@ -867,18 +891,23 @@ window_keyboard_key(
 	UNUSED_PARAMETER(serial);
 	UNUSED_PARAMETER(time);
 
-	/* A release of the repeating key stops it; other releases are not inputs. */
+	/* A release stops the key repeating, and is an input; a full queue drops it. */
 	window = data;
 	if (state != WL_KEYBOARD_KEY_STATE_PRESSED) {
 		if (key == window->repeat_key)
 			window->repeat_key = 0U;
+		event = window_push(window, SHELL_EVENT_KEY);
+		if (event != NULL)
+			event->key = key;
 		return;
 	}
 
 	/* The press as an input; a full queue drops it. */
 	event = window_push(window, SHELL_EVENT_KEY);
-	if (event != NULL)
+	if (event != NULL) {
 		event->key = key;
+		event->pressed = 1;
+	}
 
 	/* A key that is not a modifier repeats while held. */
 	modifier = window_modifier_key(key);
@@ -916,6 +945,8 @@ window_keyboard_modifiers(
 		window->modifiers |= SHELL_MOD_CTRL;
 	if ((depressed & WINDOW_WAYLAND_ALT) != 0U)
 		window->modifiers |= SHELL_MOD_ALT;
+	if ((depressed & WINDOW_WAYLAND_META) != 0U)
+		window->modifiers |= SHELL_MOD_META;
 }
 
 /* Takes the compositor's repeat rate and delay, when it gives a rate. */
@@ -955,14 +986,43 @@ window_push(
 	slot = (window->event_first + window->event_count) % SHELL_WINDOW_EVENTS;
 	window->event_count++;
 
-	/* The input, with what every input carries. */
+	/* The input, with what every input carries: the modifiers and the pointer's place. */
 	event = &window->events[slot];
 	memset(event, 0, sizeof(*event));
 	event->type = type;
 	event->modifiers = window->modifiers;
+	event->x = window->pointer_x;
+	event->y = window->pointer_y;
 
 	/* Reports the queued input for its details. */
 	return event;
+}
+
+/*
+ * Queues a move of the pointer to its place now; a move queued last is
+ * moved instead (only the latest place of a run of moves matters).
+ */
+static void
+window_push_motion(
+	struct shell_window *window)
+{
+	struct shell_event *last;
+	unsigned slot;
+
+	/* The input queued last, when it is a move, takes the new place. */
+	if (window->event_count != 0U) {
+		slot = (window->event_first + window->event_count - 1U) % SHELL_WINDOW_EVENTS;
+		last = &window->events[slot];
+		if (last->type == SHELL_EVENT_MOTION) {
+			last->x = window->pointer_x;
+			last->y = window->pointer_y;
+			last->modifiers = window->modifiers;
+			return;
+		}
+	}
+
+	/* Otherwise a new move; a full queue drops it. */
+	(void)window_push(window, SHELL_EVENT_MOTION);
 }
 
 /* Tells whether a key is a modifier (which does not repeat). */

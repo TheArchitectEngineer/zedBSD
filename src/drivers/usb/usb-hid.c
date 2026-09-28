@@ -12,6 +12,7 @@
  */
 
 #include <drivers/usb/hid-digitizer.h>
+#include <drivers/usb/hid-touch.h>
 #include <drivers/usb/hid-report.h>
 #include <drivers/usb/usb-hid.h>
 #include <drivers/usb/usb.h>
@@ -68,6 +69,18 @@
 #define HID_USAGE_DIGITIZER		0x000d0001U
 #define HID_USAGE_PEN			0x000d0002U
 
+/* The application collection of a touch screen, and the collection of one of its fingers. */
+#define HID_USAGE_TOUCH_SCREEN		0x000d0004U
+#define HID_USAGE_FINGER		0x000d0022U
+
+/* The Digitizer usages of a finger besides Tip Switch, and the report's Contact Count. */
+#define HID_USAGE_CONFIDENCE		0x47U
+#define HID_USAGE_CONTACT_ID		0x51U
+#define HID_USAGE_CONTACT_COUNT		0x54U
+
+/* What touch_item() calls the Contact Count: above every finger item (HID_TOUCH_ITEM_*). */
+#define TOUCH_ITEM_CONTACT_COUNT	0x10U
+
 /* The Digitizer usages that are absolute axes of a pen. */
 #define HID_USAGE_TIP_PRESSURE		0x30U
 #define HID_USAGE_X_TILT		0x3dU
@@ -89,6 +102,7 @@
 #define HID_FIELD_AXIS			2U
 #define HID_FIELD_KEYBOARD_ARRAY	3U
 #define HID_FIELD_DIGITIZER		4U
+#define HID_FIELD_TOUCH			5U
 
 #define HID_LAYOUT_PROFILE_DESCRIPTOR		0U
 #define HID_LAYOUT_PROFILE_BOOT_KEYBOARD	1U
@@ -127,6 +141,8 @@ struct hid_report_description {
 	uint32_t bit_count;
 	size_t field_count;
 	uint8_t id;
+	/* How many Finger collections of a touch screen this report carries. */
+	uint8_t touch_fingers;
 };
 
 struct hid_report_layout {
@@ -144,6 +160,17 @@ struct hid_report_layout {
 	uint8_t profile;
 	/* Which kind of pen collection the descriptor has (HID_REPORT_PEN_*). */
 	uint8_t pen;
+	/*
+	 * The touch screen: the most Finger collections one report carries,
+	 * whether reports carry a Contact Count, and the first finger's X and Y
+	 * (set once each is seen).
+	 */
+	uint8_t touch_count_present;
+	uint8_t touch_x_set;
+	uint8_t touch_y_set;
+	size_t touch_contacts;
+	struct input_absinfo touch_x;
+	struct input_absinfo touch_y;
 };
 
 struct hid_global_state {
@@ -184,6 +211,13 @@ struct hid_parser {
 	size_t collection_depth;
 	/* The usage that opened each collection that is still open. */
 	uint32_t collection_usages[HID_REPORT_COLLECTION_DEPTH_MAX];
+	/*
+	 * The open Finger collection of a touch screen: the collection depth it
+	 * sits at (0 when none is open), and its place among its report's
+	 * fingers (-1 until its first field names the report).
+	 */
+	size_t finger_depth;
+	int finger_contact;
 	int no_id_report_used;
 	int supported_field_seen;
 };
@@ -212,6 +246,17 @@ struct usb_hid {
 	/* What the pen state machine has already told readers (pen devices only). */
 	struct hid_digitizer_state digitizer;
 	unsigned pen;
+	/*
+	 * The touch screen, published as a device of its own beside the rest
+	 * of the interface (touch screens only): its device, what its state
+	 * machine has told readers, and what it declares.
+	 */
+	struct input_device *touch_input;
+	struct hid_touch_state touch;
+	struct hid_touch_description touch_description;
+	unsigned touch_present;
+	char touch_name[USB_HID_TEXT_MAX];
+	char touch_physical_path[USB_HID_TEXT_MAX];
 	size_t capability_count;
 	size_t absolute_axis_count;
 	size_t report_count;
@@ -281,11 +326,17 @@ static int32_t unit_exponent_value(uint32_t raw);
 static int32_t axis_resolution(const struct hid_global_state *global, int32_t logical_minimum, int32_t logical_maximum);
 static void set_axis_resolution(struct hid_report_layout *layout, uint16_t code, int32_t resolution);
 static void usb_hid_publish_pen_report(struct usb_hid *hid, const struct hid_report_input *decoded);
+static void usb_hid_publish_touch_report(struct usb_hid *hid, const struct hid_report_input *decoded);
+static int parser_in_touch(const struct hid_parser *parser);
+static unsigned touch_item(uint32_t usage);
+static int add_touch_field(struct hid_parser *parser, struct hid_report_description *report, uint32_t bit_offset, uint32_t usage, int32_t logical_maximum);
+static void touch_axis(const struct hid_global_state *global, int32_t logical_maximum, struct input_absinfo *info);
 static int logical_maximum(const struct hid_global_state *global, int32_t *result);
 static int logical_range_fits_field(int32_t minimum, int32_t maximum, uint32_t bit_size);
 static int add_field(struct hid_parser *parser, struct hid_report_description *report, uint32_t bit_offset, uint32_t usage_minimum, uint32_t usage_maximum, int32_t logical_minimum, int32_t logical_maximum, uint16_t type, uint16_t code, uint8_t bit_size, uint8_t kind);
 static int add_keyboard_array_capabilities(struct hid_report_layout *layout, uint32_t minimum, uint32_t maximum);
 static int parse_input(struct hid_parser *parser, uint32_t flags);
+static void close_collection(struct hid_parser *parser);
 static int parse_main(struct hid_parser *parser, unsigned tag, const uint8_t *data, size_t size);
 static int parse_global(struct hid_parser *parser, unsigned tag, const uint8_t *data, size_t size);
 static int parse_local(struct hid_parser *parser, unsigned tag, const uint8_t *data, size_t size);
@@ -795,6 +846,7 @@ usb_hid_fetch_layout(
 {
 	struct hid_report_report_info report;
 	struct hid_report_layout_info info;
+	struct hid_report_touch_info touch_info;
 	uint8_t *descriptor;
 	size_t descriptor_length, actual = 0, index, capacity;
 	size_t maximum_report = 0;
@@ -849,6 +901,16 @@ usb_hid_fetch_layout(
 	/* A pen device starts with no tool in range. */
 	hid->pen = info.pen;
 	drv_hid_digitizer_reset(&hid->digitizer);
+
+	/* A touch screen is described for a device of its own, with no finger down. */
+	error = drv_hid_report_layout_get_touch(hid->layout, &touch_info);
+	if (error == 0) {
+		error = drv_hid_touch_describe(&touch_info, &hid->touch_description);
+		if (error == 0) {
+			hid->touch_present = 1U;
+			drv_hid_touch_reset(&hid->touch, hid->touch_description.slots);
+		}
+	}
 
 	/* Process each remaining element. */
 	for (index = 0; index < info.report_count; index++) {
@@ -972,6 +1034,10 @@ usb_hid_identity(
 	(void)kern_snprintf(hid->physical_path, sizeof(hid->physical_path),
 		       "usb%u/port%u/device%u/interface%u", bus, port, address,
 		       interface_number);
+	(void)kern_snprintf(hid->touch_physical_path,
+			    sizeof(hid->touch_physical_path),
+			    "usb%u/port%u/device%u/interface%u/touch", bus, port,
+			    address, interface_number);
 	hid->unique_id[0] = '\0';
 
 	/* Checks the file descriptor. */
@@ -989,8 +1055,16 @@ usb_hid_identity(
 			: drv_usb_device_get_string(
 				  hid->device, descriptor->product_string, 0,
 				  hid->name, sizeof(hid->name));
-	if (error == 0 && hid->name[0] != '\0')
+	if (error == 0 && hid->name[0] != '\0') {
+		/* The touch screen is the product's touch screen. */
+		(void)kern_snprintf(hid->touch_name, sizeof(hid->touch_name),
+				    "%s Touchscreen", hid->name);
 		return;
+	}
+
+	/* A touch screen without a product name. */
+	(void)kern_snprintf(hid->touch_name, sizeof(hid->touch_name),
+			    "USB HID touchscreen");
 
 	/* Names a device with a pen collection after its pen. */
 	if (hid->pen != HID_REPORT_PEN_NONE)
@@ -1132,6 +1206,7 @@ usb_hid_publish_report(
 	size_t index;
 	unsigned code;
 	int is_pen;
+	int is_touch;
 	int error, emitted = 0;
 
 	/* Checks the operation status. */
@@ -1149,6 +1224,13 @@ usb_hid_publish_report(
 		}
 
 		/* Returns the computed result. */
+		return;
+	}
+
+	/* A touch report goes through the touch state machine to the touch screen's device. */
+	is_touch = drv_hid_touch_report_is_touch(&decoded);
+	if (is_touch) {
+		usb_hid_publish_touch_report(hid, &decoded);
 		return;
 	}
 
@@ -1250,12 +1332,15 @@ usb_hid_unpublish(
 	struct usb_hid *hid)
 {
 	struct input_device *input;
+	struct input_device *touch_input;
 	unsigned long irq;
 
 	irq = spin_lock_irqsave(&hid->lock);
 
 	input = hid->input;
+	touch_input = hid->touch_input;
 	hid->input = NULL;
+	hid->touch_input = NULL;
 	hid->active = 0U;
 
 	spin_unlock_irqrestore(&hid->lock, irq);
@@ -1263,6 +1348,10 @@ usb_hid_unpublish(
 	/* Handles the input availability. */
 	if (input != NULL)
 		drv_input_device_unregister(input);
+
+	/* The touch screen's device goes with it. */
+	if (touch_input != NULL)
+		drv_input_device_unregister(touch_input);
 }
 
 /* Stops the transfers and the worker this device runs. */
@@ -1517,9 +1606,32 @@ usb_hid_activate(
 	info.absolute_axes = hid->absolute_axes;
 	info.absolute_axis_count = hid->absolute_axis_count;
 
-	/* Checks the operation status. */
-	error = drv_input_device_register(&info, &hid->input);
+	/*
+	 * The interface's own device, unless the interface is a touch screen
+	 * and nothing else (its own capabilities are then EV_SYN alone).
+	 */
+	error = 0;
+	if (hid->capability_count > 1U)
+		error = drv_input_device_register(&info, &hid->input);
+
+	/* The touch screen's device beside it, under the same identity. */
+	if (error == 0 && hid->touch_present) {
+		info.name = hid->touch_name;
+		info.physical_path = hid->touch_physical_path;
+		info.capabilities = hid->touch_description.capabilities;
+		info.capability_count = hid->touch_description.capability_count;
+		info.absolute_axes = hid->touch_description.axes;
+		info.absolute_axis_count = hid->touch_description.axis_count;
+		error = drv_input_device_register(&info, &hid->touch_input);
+	}
+
+	/* An interface with neither device has nothing to publish. */
+	if (error == 0 && hid->input == NULL && hid->touch_input == NULL)
+		error = ENODEV;
+
+	/* A failed publication takes back what was published and stops the worker. */
 	if (error != 0) {
+		usb_hid_unpublish(hid);
 		irq = spin_lock_irqsave(&hid->lock);
 		hid->stopping = 1U;
 		spin_unlock_irqrestore(&hid->lock, irq);
@@ -2311,6 +2423,7 @@ add_field(
 	/* Checks the operation status. */
 	if (kind != HID_FIELD_KEYBOARD_ARRAY &&
 	    kind != HID_FIELD_DIGITIZER &&
+	    kind != HID_FIELD_TOUCH &&
 	    (error = add_capability(layout, type, code)) != 0) {
 		/* Failed. */
 		return error;
@@ -2400,6 +2513,8 @@ parse_input(
 	int32_t logical_max;
 	int32_t resolution;
 	int in_pen;
+	int in_touch;
+	int found;
 	int error;
 
 	/* Checks the operation status. */
@@ -2407,8 +2522,9 @@ parse_input(
 	if (error != 0)
 		return error;
 
-	/* Asks whether the fields of this item belong to a pen. */
+	/* Asks whether the fields of this item belong to a pen or to a touch screen. */
 	in_pen = parser_in_pen(parser);
+	in_touch = parser_in_touch(parser);
 
 	/* Checks the active flags. */
 	if ((flags & ~HID_INPUT_SUPPORTED_FLAGS) != 0U)
@@ -2563,9 +2679,24 @@ parse_input(
 
 	/* Process each remaining element. */
 	for (index = 0; index < count; index++) {
-		/* Checks the local usage at result. */
-		if (!local_usage_at(&parser->local, index, &usage) ||
-		    !usage_to_event(usage, flags, in_pen, &type, &code, &kind))
+		/* A field without a usage reports nothing. */
+		found = local_usage_at(&parser->local, index, &usage);
+		if (!found)
+			continue;
+
+		/* A touch screen's fields go to the touch state machine only. */
+		if (in_touch) {
+			error = add_touch_field(parser, report,
+				bit_offset + index * parser->global.report_size,
+				usage, logical_max);
+			if (error != 0)
+				return error;
+			continue;
+		}
+
+		/* A usage without an event reports nothing. */
+		found = usage_to_event(usage, flags, in_pen, &type, &code, &kind);
+		if (!found)
 			continue;
 
 		/* Checks the operation status. */
@@ -2598,6 +2729,21 @@ advance:
 	return 0;
 }
 
+/* Closes the innermost open collection, and the finger it held. */
+static void
+close_collection(
+	struct hid_parser *parser)
+{
+	/* The Finger collection that closes ends its finger. */
+	if (parser->finger_depth == parser->collection_depth) {
+		parser->finger_depth = 0;
+		parser->finger_contact = -1;
+	}
+
+	/* One collection fewer is open. */
+	parser->collection_depth--;
+}
+
 /* Takes one main item into the layout. */
 static int
 parse_main(
@@ -2606,6 +2752,7 @@ parse_main(
 	const uint8_t *data,
 	size_t size)
 {
+	int in_touch;
 	int error;
 
 	/* Checks the operation status. */
@@ -2646,6 +2793,15 @@ parse_main(
 				}
 
 				parser->collection_depth++;
+
+				/* A Finger collection of a touch screen opens one finger, not yet placed. */
+				if (parser->collection_usages[parser->collection_depth - 1U] == HID_USAGE_FINGER) {
+					in_touch = parser_in_touch(parser);
+					if (in_touch) {
+						parser->finger_depth = parser->collection_depth;
+						parser->finger_contact = -1;
+					}
+				}
 			}
 		}
 
@@ -2657,7 +2813,7 @@ parse_main(
 		else if (parser->collection_depth == 0U)
 			error = EINVAL;
 		else
-			parser->collection_depth--;
+			close_collection(parser);
 		break;
 	case HID_MAIN_OUTPUT:
 	case HID_MAIN_FEATURE:
@@ -3275,6 +3431,7 @@ drv_hid_report_layout_get_info(
 	result->absolute_axis_count = layout->absolute_axis_count;
 	result->uses_report_ids = layout->uses_report_ids;
 	result->pen = layout->pen;
+	result->touch_contacts = layout->touch_contacts;
 
 	/* Succeeded. */
 	return 0;
@@ -3347,6 +3504,38 @@ drv_hid_report_layout_get_absolute_axis(
 		return ENOENT;
 	*result = layout->absolute_axes[index];
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Reports the touch screen a layout has: how many fingers a report carries,
+ * whether the reports count them, and the fingers' X and Y.  ENOENT when the
+ * layout has no touch screen with a position.
+ */
+int
+drv_hid_report_layout_get_touch(
+	const struct hid_report_layout *layout,
+	struct hid_report_touch_info *result)
+{
+	/* Refuses a missing layout or result. */
+	if (layout == NULL || result == NULL)
+		return EINVAL;
+
+	/* A layout without fingers, or whose fingers have no position, has no touch screen. */
+	if (layout->touch_contacts == 0U)
+		return ENOENT;
+	if (!layout->touch_x_set)
+		return ENOENT;
+	if (!layout->touch_y_set)
+		return ENOENT;
+
+	/* Copies the description of the fingers. */
+	result->contacts = layout->touch_contacts;
+	result->count_present = layout->touch_count_present;
+	result->x = layout->touch_x;
+	result->y = layout->touch_y;
+
+	/* Succeeded: the layout has a touch screen. */
 	return 0;
 }
 
@@ -3918,4 +4107,189 @@ usb_hid_publish_pen_report(
 		drv_input_device_emit(hid->input, event->type, event->code,
 				      event->value);
 	}
+}
+
+/* Publishes one touch report through the touch state machine. */
+static void
+usb_hid_publish_touch_report(
+	struct usb_hid *hid,
+	const struct hid_report_input *decoded)
+{
+	struct hid_touch_output output;
+	const struct hid_touch_event *event;
+	size_t index;
+	int error;
+
+	/* Turns the fingers into protocol B frames. */
+	error = drv_hid_touch_translate(&hid->touch, decoded, &output);
+	if (error != 0) {
+		/* Leaves a marker for the first reports that did not fit. */
+		if (hid->error_markers < USB_HID_ERROR_MARKERS) {
+			hid->error_markers++;
+			kern_logf("usb-hid: touch report dropped error=%d\n", error);
+		}
+
+		/* The report is dropped; the next frame starts again. */
+		return;
+	}
+
+	/* Hands every event of the frames to the touch screen's device in order. */
+	for (index = 0; index < output.event_count; index++) {
+		event = &output.events[index];
+		drv_input_device_emit(hid->touch_input, event->type, event->code,
+				      event->value);
+	}
+}
+
+/* Asks whether a Touch Screen application collection is open. */
+static int
+parser_in_touch(
+	const struct hid_parser *parser)
+{
+	size_t depth;
+
+	/* Looks for the touch screen among the open collections. */
+	for (depth = 0; depth < parser->collection_depth; depth++) {
+		/* A Touch Screen collection holds the fingers. */
+		if (parser->collection_usages[depth] == HID_USAGE_TOUCH_SCREEN)
+			return 1;
+	}
+
+	/* No touch screen is open. */
+	return 0;
+}
+
+/*
+ * Tells which touch item a usage of a touch screen is: HID_TOUCH_ITEM_* for
+ * a finger's field, TOUCH_ITEM_CONTACT_COUNT for the Contact Count, 0 for a
+ * usage the touch screen ignores.
+ */
+static unsigned
+touch_item(
+	uint32_t usage)
+{
+	uint16_t page;
+	uint16_t value;
+
+	/* Splits the usage into its page and its number. */
+	page = (uint16_t)(usage >> 16U);
+	value = (uint16_t)usage;
+
+	/* The finger's X and Y are Generic Desktop usages. */
+	if (page == HID_USAGE_PAGE_GENERIC_DESKTOP) {
+		if (value == HID_USAGE_X)
+			return HID_TOUCH_ITEM_X;
+		if (value == HID_USAGE_Y)
+			return HID_TOUCH_ITEM_Y;
+		return 0;
+	}
+
+	/* Everything else of a touch screen outside the Digitizer page is ignored. */
+	if (page != HID_USAGE_PAGE_DIGITIZER)
+		return 0;
+
+	/* Chooses the Digitizer usages the touch state machine reads. */
+	switch (value) {
+	case HID_DIGITIZER_USAGE_TIP_SWITCH:
+		return HID_TOUCH_ITEM_TIP;
+	case HID_USAGE_CONFIDENCE:
+		return HID_TOUCH_ITEM_CONFIDENCE;
+	case HID_USAGE_CONTACT_ID:
+		return HID_TOUCH_ITEM_CONTACT_ID;
+	case HID_USAGE_CONTACT_COUNT:
+		return TOUCH_ITEM_CONTACT_COUNT;
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Adds one field of a touch screen: a finger's item under the finger's
+ * place in its report, or the report's Contact Count.  A usage the touch
+ * screen does not read, a finger item outside a Finger collection, and a
+ * finger past HID_TOUCH_CONTACTS_MAX add nothing.
+ */
+static int
+add_touch_field(
+	struct hid_parser *parser,
+	struct hid_report_description *report,
+	uint32_t bit_offset,
+	uint32_t usage,
+	int32_t logical_maximum)
+{
+	struct hid_report_layout *layout;
+	unsigned item;
+	uint16_t code;
+	int error;
+
+	/* Only the usages the touch state machine reads become fields. */
+	layout = parser->layout;
+	item = touch_item(usage);
+	if (item == 0U)
+		return 0;
+
+	/* The Contact Count belongs to the report, outside the fingers. */
+	if (item == TOUCH_ITEM_CONTACT_COUNT) {
+		if (parser->finger_depth != 0U)
+			return 0;
+		code = HID_TOUCH_CONTACT_COUNT_CODE;
+		layout->touch_count_present = 1;
+	} else {
+		/* A finger's item outside a Finger collection belongs to no finger. */
+		if (parser->finger_depth == 0U)
+			return 0;
+
+		/* The finger's first field gives it the next place in its report. */
+		if (parser->finger_contact < 0) {
+			if (report->touch_fingers >= HID_TOUCH_CONTACTS_MAX)
+				return 0;
+			parser->finger_contact = (int)report->touch_fingers;
+			report->touch_fingers++;
+			if (report->touch_fingers > layout->touch_contacts)
+				layout->touch_contacts = report->touch_fingers;
+		}
+
+		/* The code names the finger and the item. */
+		code = HID_TOUCH_CODE((unsigned)parser->finger_contact, item);
+
+		/* The first finger's X and Y describe every finger's position. */
+		if (item == HID_TOUCH_ITEM_X && !layout->touch_x_set) {
+			touch_axis(&parser->global, logical_maximum, &layout->touch_x);
+			layout->touch_x_set = 1;
+		}
+
+		/* And the first finger's Y. */
+		if (item == HID_TOUCH_ITEM_Y && !layout->touch_y_set) {
+			touch_axis(&parser->global, logical_maximum, &layout->touch_y);
+			layout->touch_y_set = 1;
+		}
+	}
+
+	/* Adds the field; the touch state machine declares its own events. */
+	error = add_field(parser, report, bit_offset, usage, usage,
+			  parser->global.logical_minimum, logical_maximum,
+			  HID_REPORT_TYPE_TOUCH, code,
+			  (uint8_t)parser->global.report_size, HID_FIELD_TOUCH);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the field is part of the report. */
+	return 0;
+}
+
+/* Describes a finger's position axis from the field's logical range and physical size. */
+static void
+touch_axis(
+	const struct hid_global_state *global,
+	int32_t logical_maximum,
+	struct input_absinfo *info)
+{
+	/* The logical range, at rest at its minimum, with the resolution its size implies. */
+	info->value = global->logical_minimum;
+	info->minimum = global->logical_minimum;
+	info->maximum = logical_maximum;
+	info->fuzz = 0;
+	info->flat = 0;
+	info->resolution = axis_resolution(global, global->logical_minimum,
+					   logical_maximum);
 }

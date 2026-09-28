@@ -1,0 +1,695 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The stream filters of libpdf's reader (stage 1 of design-pdf.md):
+ * FlateDecode through libz-compat with the PNG and TIFF predictors, and
+ * ASCIIHexDecode.  DCTDecode is not decoded here: an image's JPEG bytes are
+ * handed to the image decoder (image.c) as they are.  Any other filter is
+ * reported as ENOTSUP.
+ *
+ * Every output is bounded by PDF_FILTER_OUTPUT_MAX, which stops a small
+ * stream that inflates to gigabytes.  A Flate stream that is cut short or
+ * damaged keeps the bytes decoded before the damage, as other readers do.
+ */
+
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <compat/zlib/zlib.h>
+
+#include <pdf.h>
+
+#include "internal.h"
+
+/* The most filters one stream may chain. */
+#define PDF_FILTER_CHAIN_MAX 8
+
+/* The first size of an inflated buffer, and the size of the input slices given to inflate. */
+#define PDF_FILTER_INITIAL 65536
+#define PDF_FILTER_SLICE ((size_t)1 << 30)
+
+/* The PNG predictor types a row starts with. */
+#define PDF_PNG_NONE 0
+#define PDF_PNG_SUB 1
+#define PDF_PNG_UP 2
+#define PDF_PNG_AVERAGE 3
+#define PDF_PNG_PAETH 4
+
+/*
+ * The kinds of filter the reader knows.
+ */
+enum pdf_filter_kind {
+	PDF_FILTER_UNKNOWN = 0,
+	PDF_FILTER_FLATE,
+	PDF_FILTER_ASCII_HEX,
+	PDF_FILTER_DCT
+};
+
+/*
+ * The parameters of a predictor, from a filter's /DecodeParms.
+ */
+struct pdf_predictor {
+	long predictor;
+	long colors;
+	long bits;
+	long columns;
+};
+
+static int read_chain(struct pdf_document *document, const struct pdf_object *stream, enum pdf_filter_kind *kinds, struct pdf_object **parameters, size_t *count);
+static enum pdf_filter_kind filter_kind(const struct pdf_object *name);
+static int apply_filter(struct pdf_document *document, enum pdf_filter_kind kind, struct pdf_object *parameters, const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
+static int inflate_bytes(const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
+static int decode_hex(const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
+static int read_predictor(struct pdf_document *document, struct pdf_object *parameters, struct pdf_predictor *predictor);
+static int read_parameter(struct pdf_document *document, struct pdf_object *parameters, const char *key, long fallback, long *value);
+static int undo_predictor(const struct pdf_predictor *predictor, unsigned char *data, size_t *size);
+static int undo_png(const struct pdf_predictor *predictor, unsigned char *data, size_t *size);
+static int undo_tiff(const struct pdf_predictor *predictor, unsigned char *data, size_t size);
+static unsigned char paeth(unsigned char left, unsigned char above, unsigned char upper_left);
+
+/*
+ * Decodes a stream's data through its filters.
+ *
+ * *data is the decoded bytes: the document's own bytes when the stream has
+ * no filter, or a buffer the caller frees through *owned (NULL when
+ * nothing is to be freed).  With stop_at_dct, a last DCTDecode filter is
+ * left undone and *dct is set, so that the image decoder reads the JPEG.
+ */
+int
+pdf_filter_decode(
+	struct pdf_document *document,
+	const struct pdf_object *stream,
+	int stop_at_dct,
+	const unsigned char **data,
+	size_t *size,
+	unsigned char **owned,
+	int *dct)
+{
+	enum pdf_filter_kind kinds[PDF_FILTER_CHAIN_MAX];
+	struct pdf_object *parameters[PDF_FILTER_CHAIN_MAX];
+	const unsigned char *current;
+	unsigned char *current_owned;
+	unsigned char *output;
+	size_t current_size;
+	size_t output_size;
+	size_t count;
+	size_t index;
+	int error;
+
+	/* Starts from the stream's raw bytes. */
+	*owned = NULL;
+	*dct = 0;
+	current = pdf_reader_bytes(document) + stream->data_offset;
+	current_size = stream->data_length;
+	current_owned = NULL;
+
+	/* Reads the chain of filters and their parameters. */
+	error = read_chain(document, stream, kinds, parameters, &count);
+	if (error != 0)
+		return error;
+
+	/* Leaves a last DCTDecode for the image decoder, when asked to. */
+	if (stop_at_dct && count > 0 && kinds[count - 1] == PDF_FILTER_DCT) {
+		count--;
+		*dct = 1;
+	}
+
+	/* Applies each filter in order, each one's output the next one's input. */
+	for (index = 0; index < count; index++) {
+		error = apply_filter(document, kinds[index], parameters[index], current, current_size, &output, &output_size);
+		if (error != 0) {
+			free(current_owned);
+			return error;
+		}
+		free(current_owned);
+		current = output;
+		current_size = output_size;
+		current_owned = output;
+	}
+
+	/* Succeeded: the decoded bytes, and what the caller frees. */
+	*data = current;
+	*size = current_size;
+	*owned = current_owned;
+	return 0;
+}
+
+/* Reads a stream's /Filter and /DecodeParms into parallel arrays. */
+static int
+read_chain(
+	struct pdf_document *document,
+	const struct pdf_object *stream,
+	enum pdf_filter_kind *kinds,
+	struct pdf_object **parameters,
+	size_t *count)
+{
+	struct pdf_object *filter;
+	struct pdf_object *decode;
+	struct pdf_object *name;
+	struct pdf_object *parameter;
+	size_t index;
+	int error;
+
+	/* Finds the filter, a name or an array of them, and the parameters that go with it. */
+	*count = 0;
+	error = pdf_reader_resolve_key(document, stream, "Filter", &filter);
+	if (error != 0)
+		return error;
+	error = pdf_reader_resolve_key(document, stream, "DecodeParms", &decode);
+	if (error != 0)
+		return error;
+
+	/* No filter leaves the bytes as they are. */
+	if (filter->type == PDF_OBJECT_NULL)
+		return 0;
+
+	/* One filter by its name, with its parameter dictionary. */
+	if (filter->type == PDF_OBJECT_NAME) {
+		kinds[0] = filter_kind(filter);
+		parameters[0] = decode;
+		*count = 1;
+		return 0;
+	}
+
+	/* Refuses a filter that is neither a name nor an array, or a chain longer than the limit. */
+	if (filter->type != PDF_OBJECT_ARRAY)
+		return PDF_EFORMAT;
+	if (filter->count > PDF_FILTER_CHAIN_MAX)
+		return ENOTSUP;
+
+	/* Each filter of the array, with the parameters at the same place of the parameter array. */
+	for (index = 0; index < filter->count; index++) {
+		/* The filter's name. */
+		error = pdf_reader_resolve(document, filter->values[index], &name);
+		if (error != 0)
+			return error;
+		if (name->type != PDF_OBJECT_NAME)
+			return PDF_EFORMAT;
+		kinds[index] = filter_kind(name);
+
+		/* Its parameters, when the parameters are an array long enough. */
+		parameter = NULL;
+		if (decode->type == PDF_OBJECT_ARRAY && index < decode->count) {
+			error = pdf_reader_resolve(document, decode->values[index], &parameter);
+			if (error != 0)
+				return error;
+		}
+		parameters[index] = parameter;
+	}
+
+	/* Succeeded: the chain is read. */
+	*count = filter->count;
+	return 0;
+}
+
+/* Tells which filter a name names, including the abbreviations of inline images. */
+static enum pdf_filter_kind
+filter_kind(
+	const struct pdf_object *name)
+{
+	int is_flate;
+	int is_hex;
+	int is_dct;
+
+	/* The Flate names. */
+	is_flate = pdf_object_is_name(name, "FlateDecode");
+	if (is_flate)
+		return PDF_FILTER_FLATE;
+	is_flate = pdf_object_is_name(name, "Fl");
+	if (is_flate)
+		return PDF_FILTER_FLATE;
+
+	/* The hexadecimal names. */
+	is_hex = pdf_object_is_name(name, "ASCIIHexDecode");
+	if (is_hex)
+		return PDF_FILTER_ASCII_HEX;
+	is_hex = pdf_object_is_name(name, "AHx");
+	if (is_hex)
+		return PDF_FILTER_ASCII_HEX;
+
+	/* The JPEG names. */
+	is_dct = pdf_object_is_name(name, "DCTDecode");
+	if (is_dct)
+		return PDF_FILTER_DCT;
+	is_dct = pdf_object_is_name(name, "DCT");
+	if (is_dct)
+		return PDF_FILTER_DCT;
+
+	/* Any other filter is not read yet. */
+	return PDF_FILTER_UNKNOWN;
+}
+
+/* Applies one filter to a buffer, making a new one. */
+static int
+apply_filter(
+	struct pdf_document *document,
+	enum pdf_filter_kind kind,
+	struct pdf_object *parameters,
+	const unsigned char *input,
+	size_t input_size,
+	unsigned char **output,
+	size_t *output_size)
+{
+	struct pdf_predictor predictor;
+	int error;
+
+	/* Decodes by the filter's kind. */
+	switch (kind) {
+	case PDF_FILTER_FLATE:
+		/* Reads the predictor before inflating, so that a bad one costs nothing. */
+		error = read_predictor(document, parameters, &predictor);
+		if (error != 0)
+			return error;
+		error = inflate_bytes(input, input_size, output, output_size);
+		if (error != 0)
+			return error;
+
+		/* Undoes the predictor in place. */
+		error = undo_predictor(&predictor, *output, output_size);
+		if (error != 0) {
+			free(*output);
+			return error;
+		}
+		return 0;
+	case PDF_FILTER_ASCII_HEX:
+		error = decode_hex(input, input_size, output, output_size);
+		return error;
+	case PDF_FILTER_DCT:
+	case PDF_FILTER_UNKNOWN:
+		break;
+	}
+
+	/* A JPEG in the middle of a chain, or a filter the reader does not know. */
+	return ENOTSUP;
+}
+
+/*
+ * Inflates zlib-wrapped bytes into a new buffer, bounded by the decode
+ * limit.
+ *
+ * Output decoded before a damaged or cut-short end is kept; a stream that
+ * gives no byte at all is malformed.
+ */
+static int
+inflate_bytes(
+	const unsigned char *input,
+	size_t input_size,
+	unsigned char **output,
+	size_t *output_size)
+{
+	z_stream stream;
+	unsigned char *buffer;
+	unsigned char *grown;
+	size_t capacity;
+	size_t produced;
+	size_t consumed;
+	size_t slice;
+	int status;
+
+	/* Starts the inflater. */
+	memset(&stream, 0, sizeof(stream));
+	status = inflateInit(&stream);
+	if (status != Z_OK)
+		return ENOMEM;
+
+	/* Allocates the first output buffer. */
+	capacity = PDF_FILTER_INITIAL;
+	buffer = malloc(capacity);
+	if (buffer == NULL) {
+		inflateEnd(&stream);
+		return ENOMEM;
+	}
+
+	/* Inflates until the stream ends, the input runs out, or the data is damaged. */
+	produced = 0;
+	consumed = 0;
+	for (;;) {
+		/* Grows the buffer when it is full, up to the decode limit. */
+		if (produced == capacity) {
+			if (capacity >= PDF_FILTER_OUTPUT_MAX) {
+				inflateEnd(&stream);
+				free(buffer);
+				return ENOMEM;
+			}
+			capacity *= 2;
+			if (capacity > PDF_FILTER_OUTPUT_MAX)
+				capacity = PDF_FILTER_OUTPUT_MAX;
+			grown = realloc(buffer, capacity);
+			if (grown == NULL) {
+				inflateEnd(&stream);
+				free(buffer);
+				return ENOMEM;
+			}
+			buffer = grown;
+		}
+
+		/* Gives inflate the next slice of the input and the free room of the output. */
+		slice = input_size - consumed;
+		if (slice > PDF_FILTER_SLICE)
+			slice = PDF_FILTER_SLICE;
+		stream.next_in = (Bytef *)(input + consumed);
+		stream.avail_in = (uInt)slice;
+		stream.next_out = buffer + produced;
+		stream.avail_out = (uInt)(capacity - produced);
+		status = inflate(&stream, Z_NO_FLUSH);
+		consumed += slice - stream.avail_in;
+		produced = capacity - stream.avail_out;
+
+		/* The end of the stream, damaged data, or no progress with the input used up end the inflation. */
+		if (status == Z_STREAM_END)
+			break;
+		if (status != Z_OK && status != Z_BUF_ERROR)
+			break;
+		if (consumed == input_size && produced < capacity)
+			break;
+	}
+	inflateEnd(&stream);
+
+	/* Refuses a stream that gave nothing. */
+	if (produced == 0 && status != Z_STREAM_END) {
+		free(buffer);
+		return PDF_EFORMAT;
+	}
+
+	/* Succeeded: the inflated bytes. */
+	*output = buffer;
+	*output_size = produced;
+	return 0;
+}
+
+/*
+ * Decodes ASCIIHexDecode: pairs of hexadecimal digits up to '>', white
+ * space ignored, an odd last digit followed by 0.
+ */
+static int
+decode_hex(
+	const unsigned char *input,
+	size_t input_size,
+	unsigned char **output,
+	size_t *output_size)
+{
+	unsigned char *buffer;
+	unsigned char character;
+	size_t index;
+	size_t produced;
+	int high;
+	int digit;
+
+	/* Allocates for the most bytes the input can give (at least one, so that malloc(0) is avoided). */
+	buffer = malloc(input_size / 2 + 1);
+	if (buffer == NULL)
+		return ENOMEM;
+
+	/* Reads the digits in pairs. */
+	produced = 0;
+	high = -1;
+	for (index = 0; index < input_size; index++) {
+		/* The end marker ends the data. */
+		character = input[index];
+		if (character == '>')
+			break;
+
+		/* Finds the digit's value; white space and other bytes are skipped. */
+		digit = -1;
+		if (character >= '0' && character <= '9')
+			digit = character - '0';
+		if (character >= 'a' && character <= 'f')
+			digit = character - 'a' + 10;
+		if (character >= 'A' && character <= 'F')
+			digit = character - 'A' + 10;
+		if (digit < 0)
+			continue;
+
+		/* Keeps a first digit, or completes a byte with a second. */
+		if (high < 0) {
+			high = digit;
+		} else {
+			buffer[produced] = (unsigned char)(high * 16 + digit);
+			produced++;
+			high = -1;
+		}
+	}
+
+	/* A last lone digit is followed by 0. */
+	if (high >= 0) {
+		buffer[produced] = (unsigned char)(high * 16);
+		produced++;
+	}
+
+	/* Succeeded: the decoded bytes. */
+	*output = buffer;
+	*output_size = produced;
+	return 0;
+}
+
+/* Reads a Flate filter's predictor parameters, with the defaults of the PDF reference. */
+static int
+read_predictor(
+	struct pdf_document *document,
+	struct pdf_object *parameters,
+	struct pdf_predictor *predictor)
+{
+	int error;
+
+	/* The predictor, 1 (none) by default. */
+	error = read_parameter(document, parameters, "Predictor", 1, &predictor->predictor);
+	if (error != 0)
+		return error;
+
+	/* The colours a sample has, 1 by default. */
+	error = read_parameter(document, parameters, "Colors", 1, &predictor->colors);
+	if (error != 0)
+		return error;
+
+	/* The bits a colour takes, 8 by default. */
+	error = read_parameter(document, parameters, "BitsPerComponent", 8, &predictor->bits);
+	if (error != 0)
+		return error;
+
+	/* The samples in a row, 1 by default. */
+	error = read_parameter(document, parameters, "Columns", 1, &predictor->columns);
+	if (error != 0)
+		return error;
+
+	/* Refuses parameters no row can be made of. */
+	if (predictor->colors < 1 || predictor->colors > 32)
+		return PDF_EFORMAT;
+	if (predictor->bits != 1 &&
+	    predictor->bits != 2 &&
+	    predictor->bits != 4 &&
+	    predictor->bits != 8 &&
+	    predictor->bits != 16)
+		return PDF_EFORMAT;
+	if (predictor->columns < 1 || predictor->columns > 1048576)
+		return PDF_EFORMAT;
+
+	/* Succeeded: the predictor is known. */
+	return 0;
+}
+
+/* Reads one integer of a parameter dictionary, or a default when it is absent. */
+static int
+read_parameter(
+	struct pdf_document *document,
+	struct pdf_object *parameters,
+	const char *key,
+	long fallback,
+	long *value)
+{
+	struct pdf_object *found;
+	int error;
+
+	/* Absent parameters give the default. */
+	*value = fallback;
+	if (parameters == NULL)
+		return 0;
+	if (parameters->type != PDF_OBJECT_DICTIONARY)
+		return 0;
+
+	/* Finds the key's value. */
+	error = pdf_reader_resolve_key(document, parameters, key, &found);
+	if (error != 0)
+		return error;
+
+	/* A missing key gives the default; anything but an integer is malformed. */
+	if (found->type == PDF_OBJECT_NULL)
+		return 0;
+	if (found->type != PDF_OBJECT_INTEGER)
+		return PDF_EFORMAT;
+
+	/* Succeeded: the parameter's value. */
+	*value = found->integer;
+	return 0;
+}
+
+/* Undoes a predictor in place; the PNG ones also drop each row's type byte. */
+static int
+undo_predictor(
+	const struct pdf_predictor *predictor,
+	unsigned char *data,
+	size_t *size)
+{
+	int error;
+
+	/* No predictor leaves the bytes as they are. */
+	if (predictor->predictor == 1)
+		return 0;
+
+	/* The TIFF predictor. */
+	if (predictor->predictor == 2) {
+		error = undo_tiff(predictor, data, *size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* The PNG predictors, whichever one the parameter names (each row names its own). */
+	if (predictor->predictor >= 10 && predictor->predictor <= 15) {
+		error = undo_png(predictor, data, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* Any other predictor is malformed. */
+	return PDF_EFORMAT;
+}
+
+/*
+ * Undoes the PNG predictors row by row, compacting the rows over their
+ * type bytes; an incomplete last row is dropped.
+ */
+static int
+undo_png(
+	const struct pdf_predictor *predictor,
+	unsigned char *data,
+	size_t *size)
+{
+	unsigned char *row;
+	const unsigned char *previous;
+	unsigned char left;
+	unsigned char above;
+	unsigned char upper_left;
+	size_t row_bytes;
+	size_t sample_bytes;
+	size_t rows;
+	size_t index;
+	size_t column;
+	unsigned type;
+
+	/* The bytes of a row without its type byte, and of one whole sample (at least one). */
+	row_bytes = ((size_t)predictor->colors * (size_t)predictor->bits * (size_t)predictor->columns + 7) / 8;
+	sample_bytes = ((size_t)predictor->colors * (size_t)predictor->bits + 7) / 8;
+	rows = *size / (row_bytes + 1);
+
+	/* Decodes each row into its place in the compacted output. */
+	previous = NULL;
+	for (index = 0; index < rows; index++) {
+		/* Moves the row's bytes over the type bytes before it. */
+		type = data[index * (row_bytes + 1)];
+		row = data + index * row_bytes;
+		memmove(row, data + index * (row_bytes + 1) + 1, row_bytes);
+
+		/* Adds back what each byte was predicted from. */
+		for (column = 0; column < row_bytes; column++) {
+			/* The bytes to the left, above and above-left, zero outside the image. */
+			left = 0;
+			if (column >= sample_bytes)
+				left = row[column - sample_bytes];
+			above = 0;
+			if (previous != NULL)
+				above = previous[column];
+			upper_left = 0;
+			if (previous != NULL && column >= sample_bytes)
+				upper_left = previous[column - sample_bytes];
+
+			/* Adds the prediction of the row's type. */
+			switch (type) {
+			case PDF_PNG_NONE:
+				break;
+			case PDF_PNG_SUB:
+				row[column] = (unsigned char)(row[column] + left);
+				break;
+			case PDF_PNG_UP:
+				row[column] = (unsigned char)(row[column] + above);
+				break;
+			case PDF_PNG_AVERAGE:
+				row[column] = (unsigned char)(row[column] + (unsigned char)(((unsigned)left + (unsigned)above) / 2));
+				break;
+			case PDF_PNG_PAETH:
+				row[column] = (unsigned char)(row[column] + paeth(left, above, upper_left));
+				break;
+			default:
+				/* An unknown type is malformed. */
+				return PDF_EFORMAT;
+			}
+		}
+		previous = row;
+	}
+
+	/* Succeeded: the rows without their type bytes. */
+	*size = rows * row_bytes;
+	return 0;
+}
+
+/* Undoes the TIFF predictor, which only 8-bit samples use here. */
+static int
+undo_tiff(
+	const struct pdf_predictor *predictor,
+	unsigned char *data,
+	size_t size)
+{
+	size_t row_bytes;
+	size_t colors;
+	size_t start;
+	size_t index;
+
+	/* Other sample sizes are not read yet. */
+	if (predictor->bits != 8)
+		return ENOTSUP;
+
+	/* Adds each sample to the one of the same colour to its left, row by row. */
+	colors = (size_t)predictor->colors;
+	row_bytes = colors * (size_t)predictor->columns;
+	for (start = 0; start + row_bytes <= size; start += row_bytes) {
+		for (index = colors; index < row_bytes; index++)
+			data[start + index] = (unsigned char)(data[start + index] + data[start + index - colors]);
+	}
+
+	/* Succeeded: the samples are restored. */
+	return 0;
+}
+
+/* Chooses the Paeth predictor of PNG: the neighbour closest to left + above - upper left. */
+static unsigned char
+paeth(
+	unsigned char left,
+	unsigned char above,
+	unsigned char upper_left)
+{
+	int estimate;
+	int to_left;
+	int to_above;
+	int to_upper_left;
+
+	/* The distances of the three neighbours to the estimate. */
+	estimate = (int)left + (int)above - (int)upper_left;
+	to_left = abs(estimate - (int)left);
+	to_above = abs(estimate - (int)above);
+	to_upper_left = abs(estimate - (int)upper_left);
+
+	/* The left one wins ties, then the one above. */
+	if (to_left <= to_above && to_left <= to_upper_left)
+		return left;
+	if (to_above <= to_upper_left)
+		return above;
+
+	/* The upper left one is the closest. */
+	return upper_left;
+}

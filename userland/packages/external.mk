@@ -108,7 +108,9 @@ packages-cross-toolchain: $(ZEDBSD_EXTERNAL_CROSS_STAMP)
 # extracted, so a package never patches it.  Each gets a copy of its own and
 # patches that.  The copy is made of hard links, which costs no space; patch
 # replaces a file it changes rather than writing into it, so the toolchain's
-# names keep the verified contents.
+# names keep the verified contents.  The copy is taken of the tree's contents
+# (`/.`): build/llvm-source may be a link to another checkout's tree, and a
+# copy of the link would let patch write into that tree (BUG-089).
 ZEDBSD_EXTERNAL_LLVM_SOURCE := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/llvm-source)
 ZEDBSD_EXTERNAL_LLVM_VERIFIED = \
 	$(ZEDBSD_EXTERNAL_LLVM_SOURCE)/.zedbsd-source-verified-$(ZEDBSD_LLVM_VERSION)-$(ZEDBSD_LLVM_PATCH_LEVEL)
@@ -120,7 +122,7 @@ define ZEDBSD_EXTERNAL_LLVM_COPY
 	copy='$(1)'; \
 	rm -rf "$$copy" "$$copy.tmp"; \
 	mkdir -p "$${copy%/*}"; \
-	cp -al '$(ZEDBSD_EXTERNAL_LLVM_SOURCE)' "$$copy.tmp"; \
+	cp -al '$(ZEDBSD_EXTERNAL_LLVM_SOURCE)/.' "$$copy.tmp"; \
 	for patch in $(2); do \
 		patch -p1 --batch --forward --fuzz=0 -d "$$copy.tmp" < "$$patch"; \
 	done; \

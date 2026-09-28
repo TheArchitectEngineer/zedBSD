@@ -1,10 +1,11 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし（2026-09-27 から subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
-Current Focused Goal: fg010 — Kei Operating System の Keiland（Wayland）を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる。
-Next（2026-09-28 の 2 回目の周期の終わりに整理）: 次の周期は N≈3〜4 で — WS074（p054 の headless の移行 → p055〜p057 部品化）、
-WS075（p006 は増分 6 まで実機で確認（feedback 0、p005 の 7 場面 0）。p005 の run の `scenes_shown` の失敗は BUG-085 に記録。5330 は電源の入れ直しの後 10.0.30.3（ssh の alias `solaris10-man` は 10.0.30.3 に更新済み））、Keiland（下の Outlook）、WS073（BUG-087 の wip.patch → BUG-051）。
+Active Queue: なし（subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
+Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
+Next（2026-09-28 の周期の終わりに整理）: ユーザーが実機で USB の demo の image（`build/demo-hdmi/hdd-image.img`、main ca74780e）を試す。
+次の周期: 実機の結果の反映、BUG-085・BUG-094 の再試験（`plan/ws075/tests/bug085-hw.sh`）、HDMI の lease の切り替えの黒、WS079 の p007 の残り・p008、
+touch の LCD の USB が見えたら descriptor の確認、Notes の host 試験の link の修正（p007 で reader が filter を要るようになった）。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -97,7 +98,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS032](ws032/ws.md) | MG002 | 外部 package のクロスビルド（clang・OpenSSL・OpenSSH） | completed | — |
 | [WS033](ws033/ws.md) | MG005 | networking サービスと有線インタフェースの管理 | incomplete | 抜き差しの実機確認 |
 | [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | incomplete | package の導入 |
-| [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | incomplete | 2026-09-28: p101〜p111 cleared（引き継ぎ・lock・PRIMARY・network の menu と group・configure_bounds・衝突の dialog と Trash・Kei の起動画面と spinner・greeter と壁紙と files の Kei の見た目・terminal の選択）。次は Outlook の Keiland の行 |
+| [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | incomplete | 2026-09-28: p094〜p113 cleared（login・lock・network・Kei の見た目・GOP の起動画面ほか）。次: HDMI の lease の切り替えの黒（WS075 と）・F-048・F-050 |
 | [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | completed | 2026-09-27 完了（p021 全 platform の回帰と規約、p026〜p029、p027 は案 A: boot の parameter の parser を緩めた）。実機は未実施。toolchain の cache（zedbsd8）は 2026-09-27 に rev-0 へ upload 済み |
 | [WS037](ws037/ws.md) | MG006 | NVIDIA GPU（予約） | planning | 番号のみ |
 | [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | planning | 番号のみ |
@@ -135,13 +136,14 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS070](ws070/ws.md) | MG006 | zdesktop の System Menu: client がメニューの意味を渡し、zdesktop が浮いたタイトルバーとシステムバーに描く（`xdg_toplevel_menu_v1`、libzdesktop で包む）（2026-09-27 ユーザー指示） | completed | completed（2026-09-27）: System Menu と Titlebar（MENU・CONTROLS・TABS）。残りは Future Work（F-042・F-043・F-045）、i915 実機は WS075 |
 | [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | completed | completed（2026-09-27）: zdesktop-files の最初の版（すりガラスの付箋の pane、タブ、titlebar の CONTROLS、context menu、PNG の thumbnail、DnD、configure_bounds）。残りは Future Work（F-032〜F-041・F-044）、i915 実機は WS075、窓の外への DnD は WS035 |
 | [WS072](ws072/ws.md) | MG004 | write cached の UFS の format の lease（BUG-060）と、NVMe の timeout の後の回復で root の mount が ETIMEDOUT になる（BUG-059）（2026-09-27、サブエージェント） | completed | 2026-09-27 完了（p001 BUG-060: write cached の format の lease、p002 BUG-059: NVMe の timeout の後の再発行） |
-| [WS073](ws073/ws.md) | MG002 | Bug Board の bug の解消（2026-09-27 ユーザー「バグリストに載っているものを解決するサブエージェントを1つ追加しましょう。」）。WS072・WS056（BUG-046）・WS001（BUG-050）の担当と性能の bug（BUG-027・033）を除く | incomplete | 2026-09-28: BUG-079・081・082・075・084・086・088 を解決、BUG-080 は main が解決。次: BUG-087（wip.patch）→ BUG-051 |
-| [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | 2026-09-28: p016〜p021・p050〜p053・p058 cleared、p054 は途中（view と shell は済み、headless の mode が残り）。次: p054 → p055〜p057（libbrowser.so） |
-| [WS075](ws075/ws.md) | MG006 | i915 の高度化: 今日のデスクトップ（zdesktop の glass・backdrop のぼかし・タブ）とグラフィックス（GLES 2/3、GL 3.0〜3.2）を Latitude 5330 の i915 のネイティブ実行器で動かす（compiler の inlining・F-022・F-023 の不足、性能と安定）（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」） | incomplete | 2026-09-28: p001〜p005 cleared、p006 は増分 1〜5（MRT・query・SSBO・stencil・multisample）と後退の修正まで実機で確認。23caa415・082c0957 は実機が未実施（5330 が応答なし） |
+| [WS073](ws073/ws.md) | MG002 | Bug Board の bug の解消（2026-09-27 ユーザー「バグリストに載っているものを解決するサブエージェントを1つ追加しましょう。」）。WS072・WS056（BUG-046）・WS001（BUG-050）の担当と性能の bug（BUG-027・033）を除く | incomplete | 2026-09-28: BUG-075・079〜084・086〜090 を解決。次: BUG-093 → BUG-051 |
+| [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | 2026-09-28: p016〜p021・p050〜p058 cleared。ブラウザは部品になった: `libbrowser.so`（`include/libc/browser.h`、36 の API）、`/bin/browser` はその上の shell、2 つ目の使い手 `browser-probe`。次: p031（DOM の focus 等）・p032（form の部品）・p009（外部 stylesheet の URL） |
+| [WS075](ws075/ws.md) | MG006 | i915 の高度化: 今日のデスクトップ（zdesktop の glass・backdrop のぼかし・タブ）とグラフィックス（GLES 2/3、GL 3.0〜3.2）を Latitude 5330 の i915 のネイティブ実行器で動かす（compiler の inlining・F-022・F-023 の不足、性能と安定）（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」） | incomplete | 2026-09-28: p006 は増分 6 まで実機で確認、HDMI の主出力（p011 H1・p012 H2・p013 H4）、BUG-091（p014）、p015（BUG-085 の再試験、途中）。デモの image: `plan/ws075/demo/build-demo-image.sh` |
 | [WS076](ws076/ws.md) | MG002 | libc の libm を自前で正しく書き直す（src/libc、誤差 1 ulp 以内、fmod 等は正確）（2026-09-28 ユーザー「libmは独自に書いてください。libcのツリーに入れてください。」） | completed | 2026-09-28 完了（`src/libc/math/`、群 B は全件で正しく丸め、BUG-078 解決）。F-046・F-047 へ移管 |
 | [WS077](ws077/ws.md) | MG001 | PC-98 の PCI を有効にする（BUG-024、2026-09-28 ユーザー「Bug024は、PCIを有効にします。」） | planning | **優先度を下げた（2026-09-28 ユーザー「Bug024は優先度を下げます。」）**。p001（調査と設計）。HAL の差分は承認が要る。PC-98 の試験が要るので着手の前に確認 |
-| [WS078](ws078/ws.md) | MG006 | Kei Operating System への名前の移行（2026-09-28 ユーザーの決定: OS の名前 Kei、カーネルの内部名 zedbsd、Keiland、`/bin/wayland`・`/bin/xserver`・`/bin/browser`、`KERN_` の接頭辞、ロゴは Kei の 3 文字） | incomplete | 2026-09-28: p002・p003・p006 と BUG-080 は cleared、p004 は起動画面・文字列まで。残り: X11 の retro の program と zedinst の名前（ユーザーの判断待ち）、注釈 |
-| [WS079](ws079/ws.md) | MG006 | 手書きノート（Notes、筆圧 4096 段階の USB のペンタブレット、PDF に保存し編集の metadata を持つ）と PDF Viewer（scroll と page の swipe）、上の右端から左下へのスワイプで Notes を起動・最前面・全画面（2026-09-28 ユーザー） | planning | p001（設計）から |
+| [WS078](ws078/ws.md) | MG006 | Kei Operating System への名前の移行（2026-09-28 ユーザーの決定: OS の名前 Kei、カーネルの内部名 zedbsd、Keiland、`/bin/wayland`・`/bin/xserver`・`/bin/browser`、`KERN_` の接頭辞、ロゴは Kei の 3 文字） | incomplete | 2026-09-28: p002・p003・p006・BUG-080・retro への移動は済み、p004 はほぼ済み。残り: 注釈と log の名前、p005 |
+| [WS079](ws079/ws.md) | MG006 | 手書きノート（Notes、筆圧 4096 段階の USB のペンタブレット、PDF に保存し編集の metadata を持つ）と PDF Viewer（scroll と page の swipe）、上の右端から左下へのスワイプで Notes を起動・最前面・全画面（2026-09-28 ユーザー） | incomplete | 2026-09-28: 設計、p002（pen）・p003（tablet）・p004（libpdf の writer・reader）・p005（Notes v1）・p006（PDF Viewer v1）・p010（右上のスワイプ）・p011（Notes の仕上げ）・p012（multitouch）・p013（touch・三回 click・二本指の flick）・p014（他の PDF への書き込み）は cleared、p007（PDF の文字）は途中。次: p007 の残り → p008 → p009 |
+| [WS080](ws080/ws.md) | MG002 | `ld.coff`: Win64 PE32+ の動的ローダ（PE/COFF の mapping・relocation・DLL・import/export・Microsoft x64 ABI・最小の TEB/PEB・GS base）。NT の loader は再現せず `AddressOfEntryPoint` へ直接。互換の DLL は上に積む（2026-09-28 ユーザーの仕様 [spec.md](ws080/spec.md)） | planning | p001（設計）から。GS base は swapgs（案 A）に決定、差分は p001 で承認を得る。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/`（商標のため Win64 の名前を OS に出さない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/`。橋の DLL は置かず互換の DLL が zedBSD の UAPI を直接呼び Wayland と直接通信。判断待ち: 優先度 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -149,15 +151,15 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 依存による実行順とは別のもの。Queue の権限は変えない。2026-09-28 に整理（それ以前の順は git の履歴にある）。
 
-**運用（ユーザー、2026-09-27〜28）**: 作業用のサブエージェントを N=1〜4（通常は 3〜4）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
+**運用（ユーザー、2026-09-27〜28）**: 作業用のサブエージェントを N=1〜4（通常は 3〜4。2026-09-28 の枠はユーザーの指示で N=5）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
 N=0 になったら実装をまとめて計画（master・ws.md・queue・Future Work・Bug Board）を整理する。試験は amd64 だけ、Phase の終わりに。
 
 1. **Keiland と名前**: WS035（Keiland の compositor・システムバー・login・lock）、WS078（Kei Operating System への改名）、 **WS079**（手書きの Notes・PDF Viewer・スワイプ）も Keiland の優先に入れる。
    WS071（File Manager、完了。続きは WS035 の Phase と Future Work）。
-2. **グラフィック**: WS075（i915 の高度化: p006 の MRT・query・storage buffer の後、stencil・multisample）、
-   WS068（GL 3.2 まで。3.3 以降は保留）。
-3. **ブラウザ**: WS074（HTTP・HTTPS まで。p019 libjpeg-compat、p050 非同期の loader）。
-4. **bug**: WS073（BUG-082 の hang、BUG-080 の Desktop の分類、BUG-039・031・051）。BUG-027・033 は低い優先度（計測して閉じる）。
+2. **デモ critical（2026-09-28 ユーザー）**: WS075（5330 + HDMI の LCD の安定: BUG-085/094・lease の切り替えの黒）、WS079（PDF Viewer・Notes）、
+   WS035（Keiland の仕上げ）、WS074（ブラウザ、**デモの目標を決めて**そこまで）。WS068（GL 3.2 まで。3.3 以降は保留）。
+3. **WS080（ld.coff）**: デモ critical の後に loader（p001〜p008）を早めに仕上げる。互換の DLL（kernel32 以降）は下位のモデルの subagent に継続して実装させる。
+4. **bug**: WS073（BUG-093・BUG-051・BUG-039・BUG-031）。BUG-027・033 は低い優先度（計測して閉じる）。
 5. **ACPI（WS049〜WS052）と Arm64（WS044・WS048・WS036）**: デスクトップが片付くか limit が余るとき。
 6. **WS001** はユーザーが指示したときだけ。WS077（PC-98 の PCI）・WS066（ld.so の最適化）は低い優先度。
 
@@ -167,11 +169,13 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
-| ws075: HDMI を主な出力に（[hdmi-main-output.md](ws075/hdmi-main-output.md) の H1〜H4、ユーザーへの問い 6 つ）→ p007〜 | デモ（10/17）の 10 インチの LCD | 実機（5330、10.0.30.3） |
-| ws074-p054 の残り（headless の mode を view へ）→ p055（描画の先）→ p056（入力）→ p057（libbrowser.so） | ブラウザの部品化（design §19） | resume の手順は phase054 |
-| WS073: BUG-087（`bugs/BUG-087-wip.patch` と bug087.sh）→ BUG-051（sshd-session の SIGSEGV、2 回目の観測あり）→ BUG-085（i915 の compositor の停止） | 安定性 | 各 ticket |
-| Keiland: greeter の印の大きさ（48 px、ユーザーの判断）、terminal の選択の残り（scroll で追う・端の自動 scroll）、F-048（引き継ぎの黒）、F-050 の folder の merge | fg010 の仕上げ | — |
-| WS078 の残り: X11 の retro の program（zterm・zwm・zgears・zshell・Xzed）と installer（zedinst）の名前（ユーザーの判断待ち）、注釈・log の名前 | 改名 | — |
+| 実機の USB の demo の image の結果（splash の出る画面、eDP、greeter が LCD を満たすか、touch の USB、Notes・PDF Viewer の起動） | デモ | ユーザーが試験中 |
+| WS075: BUG-085・BUG-094 の再試験（gdb 無し、5 回以上）→ lease の切り替えで HDMI を点けたまま → BUG-058（zgears） | i915 の安定 | `bug085-hw.sh` |
+| WS079: p007 の残り（試験の script、ASCII85・LZW・RunLength、inline image、「一部を表示できない」の表示）→ p008（CFF・Type1・暗号化）→ p009（規約） | PDF | p007 の phase.md |
+| WS079: Notes の host 試験の link の修正、touch の LCD の descriptor の確認（USB が見えたら） | Notes・入力 | — |
+| WS074: p031・p032（form の部品）→ システム環境設定・widget で libbrowser | ブラウザ | 部品化は済み |
+| WS073: BUG-093（Noct の patch の mtime）、BUG-051 | 安定性・開発 | 各 ticket |
+| WS078 の残り: 注釈・log の名前 | 改名 | — |
 
 ## Tools
 
@@ -195,7 +199,8 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 | rpi4 と amd64 の serial の guest（WS036 から） | `guest/rpi4-serial.sh`（raspi4b の guest に serial で login して command を実行、`APPEND` で /chosen/bootargs）、`guest/amd64-serial.sh`（amd64 の UEFI・NVMe・KVM、image に `CONFIG_PCAT_SERIAL_MIRROR=y`）、`rpi4/bootargs-rpi4.sh`（rpi4 の boot の parameter の試験）、`rpi4/noct-rpi4.sh`（rpi4 の Noct の JIT と API） | 各 script の先頭 |
 | File Manager の試験（[tools/files](tools/files/)、WS071 から移した） | lean な Venus の guest image（`build-files-image.sh`・`config-amd64-files.mk`）と guest（`files-guest.sh`、runtime `build/ws071-run`、`build/ws035-sq-venus` の renderer が要る）。`files-regress.sh [OUTDIR] [PHASE...]`（zdesktop-files の guest 試験 14 本）、`files-p011.sh`（App Home）、`files-p018.sh`（configure_bounds と置き場所）、`files-lag.sh`。host の files-render（`host-build.sh`・`host-run.sh`・`host-p009/p010/p013/p014.sh`）、`host-png.sh`（libz-compat・libpng-compat を Python と比べる）。`make-home.sh`・`qmp-input.py` | 各 script の先頭の使い方 |
 | System Menu と Titlebar の試験（[tools/titlebar](tools/titlebar/)、WS070 から移した） | lean な guest image（`build-menu-image.sh`・`config-amd64-menu.mk`、probe 入り。WS035・WS071・WS074 の image の元）と guest（`menu-guest.sh`、runtime `build/ws070-run`）。`menu-p002.sh`（protocol の error）、`menu-p003.sh`（terminal の menu）、`menu-occlude.sh`、`menu-regress.sh OUTDIR TEST...`（WS035 の zdesktop の試験）、`titlebar-p008/p009/p010/p011/p013.sh`（model、glyph、CONTROLS、TABS、tab の key と wheel）、`icons-host.c`、`style-compare.sh REV FILE...`、`menu-hw.sh`（i915 実機、`flock /tmp/i915-hw.lock` の下で） | 各 script の先頭。files の guest で走らせるときは `GUEST_RUNTIME=build/ws071-run` |
-| i915 の実機の試験の場面（WS075） | `plan/ws075/tests/test-hw.sh`（`flock /tmp/i915-hw.lock` の下で試験の場面（vke1・vke2・vkx・vkc ほか）を走らせ、共有の /tmp から log を写す）、`capture-hw.sh`（ZDESKTOP_APP ごとの build の directory で zdesktop の capture）、`config-test-hw.mk`（zdesktop の実機の config と serial の mirror）、`shader-survey/run.sh`（host で 122 の module を i915 の compiler の不足と照合）、`vk-calls.py`（client の Vulkan の command と実行器の対応）。注意: i915 の試験の build の kernel は 16 MiB の上限（AMD64_KERNEL_MAX_BYTES、.bss を含む）の近く。2026-09-28 に 28 KiB 超えたので vkx の場面の state（約 240 KiB）を heap へ移した | 各 script の先頭 |
+| i915 の実機の試験の場面（WS075） | `plan/ws075/tests/test-hw.sh`（`flock /tmp/i915-hw.lock` の下で試験の場面（vke1・vke2・vkx・vkc ほか）を走らせ、共有の /tmp から log を写す）、`capture-hw.sh`（ZDESKTOP_APP ごとの build の directory で zdesktop の capture）、`config-test-hw.mk`（zdesktop の実機の config と serial の mirror）、`shader-survey/run.sh`（host で 122 の module を i915 の compiler の不足と照合）、`vk-calls.py`（client の Vulkan の command と実行器の対応）、`bug085-hw.sh IMAGE OUTDIR [SCENARIO]`（ws075-p015: vkloop-hw.sh の作った zdesktop の capture の image を gdbstub 付きで 1 回、capture の frame の止まり・fault を印にして QEMU を debugger のために残す。`bug085/`）。注意: i915 の試験の build の kernel は 16 MiB の上限（AMD64_KERNEL_MAX_BYTES、.bss を含む）の近く。2026-09-28 に 28 KiB 超えたので vkx の場面の state（約 240 KiB）を heap へ移した | 各 script の先頭 |
+| HDMI の主出力の試験とデモの image（WS075 p011〜p013） | `plan/ws075/tests/hdmi-h1-hw.sh SCENARIO OUTDIR [FLAGS]`（i915 の試験の場面を lock の下で走らせ、5330 の host の USB を 1 秒ごとに記録、新しい device の HID の report descriptor を取る）、`hdmi-h2-hw.sh OUTDIR "BOOT LINES" [秒...]`（`ZEDBSD_BOOT_EXTRA_LINES` の zdesktop の image を実機で起動し、resident の scanout の buffer を QMP の memsave で PNG に）、`hdmi/host-output-test.sh`（`display=`・`display.mode=` と EDID・CVT・mode の選択の host 試験）、`hdmi-h4-hw.sh`（start・ctl・fetch・stop）（実機を段ごとに: lock、QEMU、std VGA の splash の連写、resident の buffer の画面、QMP の pointer・key・drag の周期負荷、guest の disk の log。`hdmi/h4-*.{sh,py}`）。デモの image: `plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough]`（graphical boot + `display=hdmi` + App Home。i915 の node は sessiond が `hw.gpu.attaching` の間だけ待つ（ws035-p113、`greeter_gpu` の回避は削除）） | 各 script の先頭 |
 | libwayland の host 試験（WS035 p075） | `plan/ws035/tests/p075/run-host.sh`（host の libwayland-server と試験の protocol で、生成された protocol の event と server の作る object、client が壊した server 側の object（zombie）への event と fd、id の再利用（p089）） | host で実行 |
 | xdg-shell の popup と toplevel の試験（WS035 p076） | `plan/ws035/tests/zdesktop-p076.sh`（Venus の guest、`/bin/popup-probe`（`config-amd64-menu.mk`）で menu・submenu・flip・reposition・dismiss、toplevel の move・resize・min/max size、ping の無応答の表示を QMP で操作し画面を撮る） | 先頭の使い方。PNG は `build/ws035-p076/` |
 | sub-surface と seat の試験（WS035 p077・p078） | `plan/ws035/tests/zdesktop-p077.sh`（`/bin/subsurface-probe`: 位置・sync・desync・place_above/below・破棄）、`plan/ws035/tests/zdesktop-p078.sh`（`/bin/seat-probe`: XKB keymap・repeat_info・lock の modifier・wl_output v4）、`plan/ws035/tests/p078/run-host.sh`（host の libxkbcommon で zdesktop の keymap を compile し modifier と keysym を照合） | 先頭の使い方。Venus の guest |
@@ -307,6 +312,8 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | 部品としての browser（2026-09-28） | ユーザー:「…libbrowser.soというファイルに将来的に分割できるようにして、コンポーネントにしましょう。ブラウザの構造体へのポインタをハンドルにして、Vulkanレンダリングターゲットを指定してイベントも送ってやるとと描画してくれて、Wayland依存はない、みたいなのがいいと思います！これはいきなり実現しなくても、徐々にそういう設計に変えていきましょう。」→ [WS074 design §19](ws074/design.md)（engine と shell の分離、不透明な handle、Vulkan の描画の先、将来の libbrowser.so） |
 | 手書きノートと PDF Viewer（2026-09-28） | ユーザーの指示（[WS079](ws079/ws.md) に原文）と回答: ペンは USB のペンタブレット、PDF Viewer は段階を切る（① Notes の PDF → ② 一般の図形・画像・TrueType → ③ CFF・Type1・暗号化）、名前は notes・pdfviewer・libpdf |
 | retro・GOP・Kei の印（2026-09-28） | ユーザー:「Keiマークはちょうどいいです。GOPフレームバッファは1920x1080を要求して上下左右の不足部分を黒い帯にすればいいかなと思います。X11のプログラムはuserland/X11/にあると思いますので、それはuserland/retro/に入れましょう。zedinstはretro/に入れておいて、Waylandであとで作り直しますが、それはOSCでのデモでは必須ではないので、優先度を下げます。」→ `userland/X11` → `userland/retro`、`userland/base/zedinst` → `userland/retro/zedinst`（main が実施、image の build・boot test・menu の試験 PASS）。UEFI の loader は GOP の 1920x1080 を求め、足りない所は黒い帯。Wayland の installer の作り直しは低い優先度 |
+| Win64 PE の ld.coff（2026-09-28） | ユーザーの仕様（[ws080/spec.md](ws080/spec.md) に原文）→ [WS080](ws080/ws.md)。zedBSD を NT 互換の kernel にしない。v0.1 は自作の最小の PE EXE + DLL が動くまで |
+| デモの範囲と ld.coff の進め方（2026-09-28） | ユーザー:「Desktop appsの、PDFビューアとNotesアプリは、demo criticalにします。Keiland polish、Browserもdemo criticalです。ただし、ブラウザはどんなに作業しても100%にならないのはわかりきっていますので、目標を決めたいですね。ld.coffは、それらの実装のあとにローダーだけは早めに完成させてしまって、Win64のDLLは下位のモデルにひたすら実装させたいです。」→ fg010 の demo critical: HDMI・i915 の安定、PDF Viewer・Notes（WS079）、Keiland の仕上げ（WS035）、ブラウザ（WS074、デモの目標を決める）。WS080 はそれらの後に loader（p001〜p008）を早めに仕上げ、互換の DLL（p009 以降）は下位のモデルの subagent に継続して実装させる |
 | HDMI の主出力（2026-09-28） | ユーザーの回答: 蓋は開けたまま（ACPI 未実装で sleep させない）、デモは HDMI + USB（USB-C は時間が余れば）、LCD は 1920x1080 の見込み、HDMI が無ければ内蔵画面で起動、音は出さない（DVI）、H1 の調査で 5330 を占有してよい、ssh の alias を 10.0.30.3 に書き直す（main が実施）→ [hdmi-main-output.md](ws075/hdmi-main-output.md) |
 | System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
 | Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、**hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）の承認待ち**。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）ことの確認も待つ。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |

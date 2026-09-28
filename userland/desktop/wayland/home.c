@@ -27,7 +27,9 @@
  * Without a search the icons are in pages of six columns and four rows
  * (ws035-p071): a sideways drag on Home follows the pointer and snaps to a
  * page, the wheel and PageUp/PageDown turn pages, the dots at the bottom
- * show where one is.  A drag towards the top left closes Home.  A started
+ * show where one is.  A drag towards the top left closes Home, and so does a
+ * swipe up from the bottom edge (which opens Wiseview only on the desktop,
+ * never over Home, ws079-p010).  A started
  * application's icon grows as Home closes, and its first window grows out
  * of the icon's place (shell.c).
  *
@@ -86,6 +88,18 @@
 #define HOME_KEEP		26.0f
 #define HOME_KEEP_NEAR		40.0f
 #define HOME_NEAR		120
+
+/*
+ * The swipe up from the bottom edge that closes Home (the 2026-09-28
+ * decision at the end of plan/ws079/design-input-notes.md): where it starts
+ * (the same strip that opens Wiseview on the desktop, shell.c), how far it
+ * moves before it is one, how far up Home is closed by it, and the part of
+ * that past which letting go closes Home.
+ */
+#define HOME_BOTTOM_EDGE	20
+#define HOME_BOTTOM_START	12
+#define HOME_BOTTOM_DISTANCE	240.0f
+#define HOME_BOTTOM_THRESHOLD	0.35f
 
 /* The grid: columns, a cell's size, the icon's size and corner, the label's baseline under the icon. */
 #define HOME_COLUMNS		6
@@ -175,6 +189,7 @@ static void home_page_turn(struct zwl_server *server, int target, const char *vi
 static void home_page_release(struct zwl_server *server, float progress);
 static void home_draw_dots(struct zwl_server *server, VkCommandBuffer command, float opacity);
 static void home_select(struct zwl_server *server, int selected);
+static void home_bottom_release(struct zwl_server *server);
 
 /*
  * Returns how far Home is open now: 0 closed, 1 open, between while the
@@ -340,6 +355,12 @@ zwl_home_button(
 		return 1;
 	}
 
+	/* The end of a swipe up from the bottom edge: far enough up closes Home, otherwise it opens again. */
+	if (state == 0 && server->home_bottom_press) {
+		home_bottom_release(server);
+		return 1;
+	}
+
 	/* The end of a press on Home: a page drag snaps, a drag to the top left closes, a click on an icon starts it. */
 	if (state == 0 && server->home_page_press) {
 		home_page_release(server, progress);
@@ -373,6 +394,15 @@ zwl_home_button(
 		return 1;
 	}
 
+	/* A press at the bottom edge may be the swipe up that closes Home (on the desktop the same edge opens Wiseview). */
+	if (y >= (int32_t)server->height - HOME_BOTTOM_EDGE) {
+		server->home_bottom_press = 1;
+		server->home_bottom_dragging = 0;
+		server->home_bottom_start_y = y;
+		server->home_bottom_from = progress;
+		return 1;
+	}
+
 	/* Elsewhere on Home a press may be a click on an icon, a page drag, or a drag that closes Home: its release decides. */
 	app = home_icon_at(server, x, y);
 	server->home_page_press = 1;
@@ -393,8 +423,36 @@ zwl_home_motion(
 {
 	int32_t dx;
 	int32_t dy;
+	int32_t up;
 	float moved;
 	float progress;
+
+	/* A swipe up from the bottom edge: past HOME_BOTTOM_START Home follows it, closing. */
+	if (server->home_bottom_press) {
+		up = server->home_bottom_start_y - server->pointer_y;
+		if (!server->home_bottom_dragging) {
+			if (up < HOME_BOTTOM_START)
+				return 1;
+
+			/* Far enough up: the swipe is one, and Home follows it instead of its animation. */
+			server->home_bottom_dragging = 1;
+			server->home_dragging = 1;
+			server->home_moving = 0;
+			printf("ZWL HOME bottom swipe\n");
+		}
+
+		/* Home closes as far as the pointer has come up, from where it was at the press. */
+		moved = server->home_bottom_from * (1.0f - (float)up / HOME_BOTTOM_DISTANCE);
+		if (moved < 0.0f)
+			moved = 0.0f;
+		if (moved > server->home_bottom_from)
+			moved = server->home_bottom_from;
+
+		/* The swipe has the motion. */
+		server->home_drag = moved;
+		server->dirty = 1;
+		return 1;
+	}
 
 	/* A press on Home: past HOME_PAGE_START it is a drag, whose sideways part moves the pages. */
 	if (server->home_page_press) {
@@ -678,6 +736,91 @@ zwl_home_launched(
 	return 1;
 }
 
+/*
+ * Starts a command with /bin/sh -c in a session of its own, without the
+ * compositor's descriptors and with the compositor's socket in its
+ * environment.  Returns the child's process ID, or -1 with errno set.
+ */
+pid_t
+zwl_spawn(
+	struct zwl_server *server,
+	const char *command)
+{
+	char directory[108];
+	const char *name;
+	char *slash;
+	pid_t child;
+	int descriptor;
+
+	/* Forks the process that runs the command. */
+	child = fork();
+	if (child < 0)
+		return -1;
+
+	/* The child: its own session, none of zdesktop's descriptors, the socket's place, and the command. */
+	if (child == 0) {
+		(void)setsid();
+		for (descriptor = 3; descriptor < 1024; descriptor++)
+			(void)close(descriptor);
+		descriptor = open("/dev/null", O_RDONLY);
+		if (descriptor >= 0 && descriptor != 0) {
+			(void)dup2(descriptor, 0);
+			(void)close(descriptor);
+		}
+
+		/* The socket as XDG_RUNTIME_DIR and WAYLAND_DISPLAY, the way clients look for it. */
+		snprintf(directory, sizeof(directory), "%s", server->socket_path);
+		slash = strrchr(directory, '/');
+		name = directory;
+		if (slash != NULL) {
+			*slash = '\0';
+			name = slash + 1;
+			(void)setenv("XDG_RUNTIME_DIR", directory, 1);
+		}
+
+		/* The socket's name within that directory. */
+		(void)setenv("WAYLAND_DISPLAY", name, 1);
+
+		/* Only a failed exec comes back. */
+		(void)execl("/bin/sh", "sh", "-c", command, (char *)NULL);
+		_exit(127);
+	}
+
+	/* Succeeded: the parent has the child's process ID. */
+	return child;
+}
+
+/*
+ * Closes App Home when it shows or is opening, the way its launcher does
+ * (for the top-right corner's swipe, which brings Notes over Home).
+ */
+void
+zwl_home_dismiss(
+	struct zwl_server *server,
+	const char *via)
+{
+	float progress;
+
+	/* Closed, or already closing: nothing to do. */
+	progress = zwl_home_progress(server);
+	if (progress <= 0.0f && server->home_to <= 0.0f)
+		return;
+	if (server->home_moving && server->home_to <= 0.0f)
+		return;
+
+	/* Any press Home was following is over. */
+	server->home_press = 0;
+	server->home_dragging = 0;
+	server->home_page_press = 0;
+	server->home_page_dragging = 0;
+	server->home_page_offset = 0;
+	server->home_bottom_press = 0;
+	server->home_bottom_dragging = 0;
+
+	/* Succeeded: Home closes from where it is. */
+	home_close(server, progress, via);
+}
+
 /* Reads the applications' list once: the file, or the built-in list when there is none; a login session adds Log Out. */
 static void
 home_read_apps(
@@ -723,6 +866,8 @@ home_read_apps(
 		home_add_app("X terminal", "/bin/sh /usr/libexec/keiland-x11 /bin/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U);
 		home_add_app("Gears", "/bin/sh /usr/libexec/keiland-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU);
 		home_add_app("Files", "/bin/files", "files file manager folder finder browse", 0x2f7cf6U);
+		home_add_app("Notes", "/bin/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U);
+		home_add_app("PDF Viewer", "/bin/pdfviewer", "pdf viewer document reader", 0xd9534fU);
 		home_add_app("Browser", "/bin/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U);
 	}
 
@@ -1203,12 +1348,8 @@ home_launch(
 	struct zwl_server *server,
 	unsigned app)
 {
-	char directory[108];
-	const char *name;
-	char *slash;
 	pid_t child;
 	unsigned slot;
-	int descriptor;
 	int logout;
 
 	/*
@@ -1233,40 +1374,11 @@ home_launch(
 		return;
 	}
 
-	/* The child. */
-	child = fork();
+	/* The application, in its own session with the compositor's socket. */
+	child = zwl_spawn(server, home_apps[app].command);
 	if (child < 0) {
 		printf("ZWL HOME launch name=%s error=%d\n", home_apps[app].name, errno);
 		return;
-	}
-
-	/* The child: its own session, none of zdesktop's descriptors, the socket's place, and the command. */
-	if (child == 0) {
-		(void)setsid();
-		for (descriptor = 3; descriptor < 1024; descriptor++)
-			(void)close(descriptor);
-		descriptor = open("/dev/null", O_RDONLY);
-		if (descriptor >= 0 && descriptor != 0) {
-			(void)dup2(descriptor, 0);
-			(void)close(descriptor);
-		}
-
-		/* The socket as XDG_RUNTIME_DIR and WAYLAND_DISPLAY, the way clients look for it. */
-		snprintf(directory, sizeof(directory), "%s", server->socket_path);
-		slash = strrchr(directory, '/');
-		name = directory;
-		if (slash != NULL) {
-			*slash = '\0';
-			name = slash + 1;
-			(void)setenv("XDG_RUNTIME_DIR", directory, 1);
-		}
-
-		/* The socket's name within that directory. */
-		(void)setenv("WAYLAND_DISPLAY", name, 1);
-
-		/* Only a failed exec comes back. */
-		(void)execl("/bin/sh", "sh", "-c", home_apps[app].command, (char *)NULL);
-		_exit(127);
 	}
 
 	/* Its icon grows as Home closes, and its first window will grow out of the icon's place. */
@@ -1431,6 +1543,32 @@ home_page_release(
 		home_launch(server, (unsigned)app);
 		home_close(server, progress, "launch");
 	}
+}
+
+/* Ends a swipe up from the bottom edge: far enough up, Home closes to the desktop; otherwise it opens again. */
+static void
+home_bottom_release(
+	struct zwl_server *server)
+{
+	int32_t up;
+
+	/* The press is over; one that never moved leaves Home as it is. */
+	server->home_bottom_press = 0;
+	if (!server->home_bottom_dragging)
+		return;
+	server->home_bottom_dragging = 0;
+	server->home_dragging = 0;
+
+	/* Far enough up: Home closes from where the swipe left it (Wiseview does not open). */
+	up = server->home_bottom_start_y - server->pointer_y;
+	if ((float)up >= HOME_BOTTOM_DISTANCE * HOME_BOTTOM_THRESHOLD) {
+		home_close(server, server->home_drag, "bottom");
+		return;
+	}
+
+	/* Not far enough: Home opens again, keeping its search. */
+	printf("ZWL HOME bottom back\n");
+	home_settle(server, server->home_drag, 1.0f);
 }
 
 /* Draws the pages' dots at the bottom centre, the page shown in zedBSD's blue. */

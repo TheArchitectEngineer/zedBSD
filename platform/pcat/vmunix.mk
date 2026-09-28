@@ -108,7 +108,7 @@ ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-cdc-ecm.o
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-hid.o $(BUILD)/drivers/usb/hid-digitizer.o
+PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-hid.o $(BUILD)/drivers/usb/hid-digitizer.o $(BUILD)/drivers/usb/hid-touch.o
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-hub.o
@@ -704,18 +704,32 @@ $(DYNAMIC_DIR)/libjpeg-compat.so: $(DYNAMIC_JPEG_COMPAT_OBJS) $(DYNAMIC_DIR)/lib
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine i386 --role shared-library \
  --needed libc.so --soname libjpeg-compat.so $@
 
-# libpdf (ws079-p004): the PDF library of the base programs; its writer needs nothing but the C
-# library.
+# The TrueType reader (ws079-p007: libpdf draws text with it); it needs nothing but the C library.
+DYNAMIC_TRUETYPE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libtruetype)
+
+$(DYNAMIC_DIR)/libtruetype.so: $(DYNAMIC_TRUETYPE_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/desktop/libtruetype/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_i386 -shared -soname libtruetype.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code $(USER_STACK_LDFLAGS) \
+ --version-script=userland/desktop/libtruetype/exports.map \
+ $(DYNAMIC_TRUETYPE_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine i386 --role shared-library \
+ --needed libc.so --soname libtruetype.so $@
+
+# libpdf (ws079-p004): the PDF library of the base programs; its reader decodes Flate streams through
+# libz-compat and JPEG images through libjpeg-compat (ws079-p006), and draws the glyphs of text through
+# libtruetype (ws079-p007).
 DYNAMIC_PDF_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libpdf)
 
-$(DYNAMIC_DIR)/libpdf.so: $(DYNAMIC_PDF_OBJS) $(DYNAMIC_DIR)/libc.so \
+$(DYNAMIC_DIR)/libpdf.so: $(DYNAMIC_PDF_OBJS) $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libjpeg-compat.so \
+	$(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so \
 	userland/base/libpdf/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_i386 -shared -soname libpdf.so --hash-style=both \
  -z defs -z now -z relro -z separate-code $(USER_STACK_LDFLAGS) \
  --version-script=userland/base/libpdf/exports.map \
- $(DYNAMIC_PDF_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+ $(DYNAMIC_PDF_OBJS) -L$(DYNAMIC_DIR) -l:libz-compat.so -l:libjpeg-compat.so -l:libtruetype.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine i386 --role shared-library \
- --needed libc.so --soname libpdf.so $@
+ --needed libz-compat.so --needed libjpeg-compat.so --needed libtruetype.so --needed libc.so --soname libpdf.so $@
 
 # libgif-compat (ws074-p051): giflib's decoding interface of the base programs; it needs nothing but the
 # C library.

@@ -7,8 +7,9 @@
 
 /*
  * The parts of the shell that speak Wayland and Vulkan: the window
- * (window.c) and the presenter that shows the GPU renderer's frames in it
- * (present.c).  The host build leaves the whole directory out.
+ * (window.c), the names of its keys for the view (keys.c) and the
+ * presenter that shows the view's frames in it (present.c).  The host
+ * build leaves the whole directory out.
  */
 
 #ifndef KEILAND_BROWSER_SHELL_INTERNAL_H
@@ -21,7 +22,6 @@
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 
-#include "paint/gpu.h"
 #include "shell/shell.h"
 
 #include <keiland.h>
@@ -36,29 +36,54 @@
 enum shell_event_type {
 	SHELL_EVENT_KEY,
 	SHELL_EVENT_SCROLL,
-	SHELL_EVENT_BUTTON
+	SHELL_EVENT_BUTTON,
+	SHELL_EVENT_MOTION,
+	SHELL_EVENT_LEAVE,
+	SHELL_EVENT_FOCUS
 };
 
 /* The modifier bits of an input. */
 #define SHELL_MOD_SHIFT		0x01U
 #define SHELL_MOD_CTRL		0x02U
 #define SHELL_MOD_ALT		0x04U
+#define SHELL_MOD_META		0x08U
+
+/* The evdev codes of the pointer's buttons the window names. */
+#define SHELL_BUTTON_LEFT	0x110U
+#define SHELL_BUTTON_RIGHT	0x111U
+#define SHELL_BUTTON_MIDDLE	0x112U
+#define SHELL_BUTTON_SIDE	0x113U
+#define SHELL_BUTTON_EXTRA	0x114U
 
 /*
- * One input for the main loop: a key pressed (its evdev code), a scroll of
- * some pixels (positive is down), or a pointer button pressed or let go
- * (its evdev code), with the pointer's place in the window and the
- * modifiers held.
+ * One input for the main loop: a key pressed, repeated or let go (its
+ * evdev code), a scroll of some pixels (scroll down and scroll_x right are
+ * positive), a pointer button pressed or let go (its evdev code), the
+ * pointer moving or leaving, or the keyboard's focus gained or lost
+ * (pressed), with the pointer's place in the window and the modifiers
+ * held.
  */
 struct shell_event {
 	int type;
 	uint32_t key;
+	int repeat;
 	int scroll;
+	int scroll_x;
 	uint32_t button;
 	int pressed;
 	int x;
 	int y;
 	uint32_t modifiers;
+};
+
+/*
+ * A key as the view names it (keys.c): its DOM code and key, and the text
+ * it types ("" when none).  The strings live for the life of the program.
+ */
+struct shell_key_names {
+	const char *code;
+	const char *key;
+	const char *text;
 };
 
 /*
@@ -115,20 +140,23 @@ struct shell_window {
 };
 
 /*
- * One swapchain image the presenter draws into; the image is the
- * swapchain's.
+ * One swapchain image the view draws into: the image (the swapchain's),
+ * the view of it the view's framebuffer is made over, and the semaphore
+ * its present waits for.
  */
 struct shell_target {
 	VkImage image;
 	VkImageView view;
-	VkFramebuffer framebuffer;
 	VkSemaphore rendered;
 };
 
 /*
  * The Vulkan objects that show the page in the window: the instance with
- * the window's surface, the device, the swapchain with a framebuffer for
- * each image, and the GPU renderer that draws into them.
+ * the window's surface, the device (lent to the view, which draws with
+ * it), the swapchain with its images, and the one command buffer each
+ * frame is recorded into with the fence its submission signals.  The
+ * presenter keeps only the swapchain and the synchronization; the drawing
+ * is the view's (browser_view_record).
  */
 struct shell_present {
 	/* The instance, the surface of the window, the device and its queue family. */
@@ -149,9 +177,11 @@ struct shell_present {
 	/* The semaphore the acquire signals. */
 	VkSemaphore acquired;
 
-	/* The GPU renderer on the device, and whether it was opened. */
-	struct paint_gpu gpu;
-	int gpu_open;
+	/* The frame's command buffer and its fence, and whether a submitted frame may still run. */
+	VkCommandPool pool;
+	VkCommandBuffer command;
+	VkFence fence;
+	int in_flight;
 
 	/* The Vulkan call that failed last, for the error line. */
 	const char *operation;
@@ -205,6 +235,11 @@ void shell_window_title(struct shell_window *window, const char *title);
 void shell_window_close(struct shell_window *window);
 uint64_t shell_clock(void);
 
+/* The keys (keys.c). */
+void shell_key_names(uint32_t evdev, uint32_t modifiers, struct shell_key_names *names);
+uint32_t shell_key_modifiers(uint32_t modifiers);
+int shell_key_button(uint32_t button);
+
 /* The titlebar (titlebar.c). */
 int shell_titlebar_open(struct shell_titlebar *titlebar, struct shell_window *window);
 int shell_titlebar_show(struct shell_titlebar *titlebar, int can_back, int can_forward, const char *path);
@@ -213,9 +248,9 @@ int shell_titlebar_take(struct shell_titlebar *titlebar, struct shell_titlebar_e
 void shell_titlebar_close(struct shell_titlebar *titlebar);
 
 /* The presenter (present.c). */
-VkResult shell_present_open(struct shell_present *present, struct shell_window *window);
-VkResult shell_present_resize(struct shell_present *present, uint32_t width, uint32_t height);
-VkResult shell_present_frame(struct shell_present *present, const struct paint_list *list, struct text_system *text, layout_unit scroll_y);
-void shell_present_close(struct shell_present *present);
+VkResult shell_present_open(struct shell_present *present, struct shell_window *window, struct browser_view *view);
+VkResult shell_present_resize(struct shell_present *present, struct browser_view *view, uint32_t width, uint32_t height);
+VkResult shell_present_frame(struct shell_present *present, struct browser_view *view);
+void shell_present_close(struct shell_present *present, struct browser_view *view);
 
 #endif
