@@ -36,10 +36,15 @@
  *   up ID                 finger ID lifts
  *   swipe DX DY STEPS MS [JITTER]
  *                         moves every touching finger by DX, DY in STEPS frames,
- *                         MS between them (a decimal: 11.111 is 90 Hz), each
- *                         interval changed by up to +-JITTER ms (a fixed
- *                         pseudo-random sequence, so a script repeats itself)
+ *                         MS between them (a decimal: 11.111 is 90 Hz); with
+ *                         JITTER each interval is changed by up to +-JITTER ms
+ *                         (a fixed pseudo-random sequence, so a script repeats
+ *                         itself) while the fingers move at a steady speed over
+ *                         STEPS * MS, as a panel that scans unevenly sees them
  *   wait MS / hold MS     sleeps (a decimal)
+ * The script's times are a schedule from the screen's declaration: each
+ * frame is written as soon as its time has come, so late wakes do not add
+ * up and a Scan Time stays with the real clock, as a panel's does.
  * Every finger that touches is in every frame; a finger that lifts is in its
  * last frame with its tip up.  The screen stays declared until the program
  * ends.
@@ -119,9 +124,15 @@ struct touch_screen {
 	int declared;
 	int width;
 	int height;
-	/* The screen has a Scan Time: the script's own clock in microseconds, and the jitter's generator. */
+	/*
+	 * The screen has a Scan Time.  scan_us is the script's time since the
+	 * declaration in microseconds (the Scan Time, and the schedule the
+	 * frames are written on from origin_us, the monotonic clock at the
+	 * declaration); jitter_state is the jitter's generator.
+	 */
 	int scan_time;
 	unsigned long long scan_us;
+	long long origin_us;
 	unsigned long long jitter_state;
 	struct touch_finger fingers[INPUT_INJECT_TOUCH_CONTACTS];
 };
@@ -195,6 +206,9 @@ static int screen_declare(struct touch_screen *screen, int width, int height, in
 static int screen_frame(struct touch_screen *screen);
 static void sleep_ms(long milliseconds);
 static void sleep_us(long long microseconds);
+static void sleep_until_scheduled(const struct touch_screen *screen);
+static long long now_us(void);
+static int rounded(double value);
 static long long jitter_us(struct touch_screen *screen, double jitter_ms);
 static int check_scan(void);
 static int check_capable_msc(int node);
@@ -592,7 +606,9 @@ run_swipe(
 	struct touch_finger *finger;
 	double milliseconds;
 	double jitter;
+	double fraction;
 	long long interval;
+	long long elapsed;
 	unsigned index;
 	int dx;
 	int dy;
@@ -622,13 +638,31 @@ run_swipe(
 	}
 
 	/* Each step is one frame, a part of the way further. */
+	elapsed = 0;
 	for (step = 1; step <= steps; step++) {
+		/*
+		 * The part of the way: the step's share, or, with jitter, the share
+		 * of the steady motion's time that has passed at this frame.
+		 */
+		fraction = (double)step / (double)steps;
+		if (jitter > 0.0) {
+			fraction = ((double)elapsed + milliseconds * 1000.0) / (milliseconds * 1000.0 * (double)steps);
+			if (fraction > 1.0 || step == steps)
+				fraction = 1.0;
+		}
+
+		/* Every touching finger that far along its way. */
 		for (index = 0; index < INPUT_INJECT_TOUCH_CONTACTS; index++) {
 			finger = &screen->fingers[index];
 			if (!finger->used || finger->lifting)
 				continue;
-			finger->x = start_x[index] + dx * step / steps;
-			finger->y = start_y[index] + dy * step / steps;
+			if (jitter > 0.0) {
+				finger->x = start_x[index] + rounded(dx * fraction);
+				finger->y = start_y[index] + rounded(dy * fraction);
+			} else {
+				finger->x = start_x[index] + dx * step / steps;
+				finger->y = start_y[index] + dy * step / steps;
+			}
 		}
 
 		/* Writes the step's frame. */
@@ -641,7 +675,8 @@ run_swipe(
 		if (interval < 0)
 			interval = 0;
 		screen->scan_us += (unsigned long long)interval;
-		sleep_us(interval);
+		elapsed += interval;
+		sleep_until_scheduled(screen);
 	}
 
 	/* Succeeded: every step was written. */
@@ -663,10 +698,16 @@ run_wait(
 	if (count != 1 || milliseconds < 0.0)
 		return -1;
 
-	/* Succeeded: the time has passed. */
+	/* The time passes: on the schedule once the screen is declared. */
 	microseconds = (long long)(milliseconds * 1000.0 + 0.5);
 	screen->scan_us += (unsigned long long)microseconds;
-	sleep_us(microseconds);
+	if (screen->declared) {
+		sleep_until_scheduled(screen);
+	} else {
+		sleep_us(microseconds);
+	}
+
+	/* Succeeded: the time has passed. */
 	return 0;
 }
 
@@ -760,6 +801,7 @@ screen_declare(
 	screen->height = height;
 	screen->scan_time = scan_time;
 	screen->scan_us = 0;
+	screen->origin_us = now_us();
 	screen->jitter_state = 0x9e3779b97f4a7c15ULL;
 	return 0;
 }
@@ -825,6 +867,50 @@ sleep_ms(
 
 	/* Sleeps; an early wake is of no matter to a test script. */
 	(void)nanosleep(&pause, NULL);
+}
+
+/* Sleeps until the script's time on the screen's schedule has come; a late wake is not carried on. */
+static void
+sleep_until_scheduled(
+	const struct touch_screen *screen)
+{
+	long long due;
+	long long now;
+
+	/* The frame is due at the declaration plus the script's time. */
+	due = screen->origin_us + (long long)screen->scan_us;
+	now = now_us();
+	if (due <= now)
+		return;
+
+	/* Succeeded: sleeps the rest. */
+	sleep_us(due - now);
+}
+
+/* Rounds a distance to the nearest whole pixel, halves away from zero. */
+static int
+rounded(
+	double value)
+{
+	/* A negative distance rounds down, a positive one up, at a half. */
+	if (value < 0.0)
+		return (int)(value - 0.5);
+
+	/* Succeeded: the nearest whole number. */
+	return (int)(value + 0.5);
+}
+
+/* Reports the monotonic time in microseconds. */
+static long long
+now_us(void)
+{
+	struct timespec now;
+
+	/* Reads the monotonic clock. */
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	/* Succeeded: the time in microseconds. */
+	return (long long)now.tv_sec * 1000000LL + now.tv_nsec / 1000L;
 }
 
 /* Sleeps for a number of microseconds. */

@@ -9,14 +9,18 @@ set -eu
 
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 out=${1:-$root/build/ws081-p003}
-mkdir -p "$out"
+mkdir -p "$out/include"
+
+# Only <keiland.h> is taken from include/libc: the rest of that directory is
+# zedBSD's C library, which must not stand in for the host's.
+ln -sf "$root/include/libc/keiland.h" "$out/include/keiland.h"
 
 cc=${CC:-clang}
 extra=${EXTRA_CFLAGS:-}
 flags="-std=gnu11 -O2 -g -Wall -Wextra -Werror"
-$cc $flags -Wconversion -Wno-sign-conversion $extra \
+$cc $flags -Wconversion -Wno-sign-conversion $extra -I "$out/include" \
 	-c "$root/userland/desktop/libkeiland/motion.c" -o "$out/motion.o"
-$cc $flags $extra -I "$root/userland/desktop/libkeiland" \
+$cc $flags $extra -I "$out/include" \
 	-c "$root/plan/ws081/tests/host-motion.c" -o "$out/host-motion.o"
 $cc $extra "$out/host-motion.o" "$out/motion.o" -lm -o "$out/host-motion"
 "$out/host-motion"

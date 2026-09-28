@@ -27,7 +27,7 @@
 #include "motion-compare.c"
 #undef main
 
-#include "motion.h"
+#include <keiland.h>
 
 /* A microsecond count the simulated times are offset by, so that none is zero. */
 #define TIME_BASE	1000000U

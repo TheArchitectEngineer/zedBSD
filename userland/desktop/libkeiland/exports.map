@@ -16,6 +16,7 @@
 		keiland_titlebar_*;
 		keiland_glass_*;
 		keiland_network_*;
+		keiland_motion_*;
 	local:
 		*;
 };

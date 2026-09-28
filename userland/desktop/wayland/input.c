@@ -611,6 +611,7 @@ consume_event(
 
 		/* An intact report is applied as one group: a pen tablet's by the tablet (tablet.c), a touch screen's by touch.c. */
 		time = event_time(event);
+		device->frame_time_us = (uint64_t)event->time.tv_sec * 1000000U + (uint64_t)event->time.tv_usec;
 		if (device->tablet) {
 			zwl_tablet_frame(server, device, time);
 		} else if (device->touch) {

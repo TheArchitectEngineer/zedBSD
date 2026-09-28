@@ -21,7 +21,7 @@
  * are in the design and its host comparison, plan/ws081/tests.
  */
 
-#include "motion.h"
+#include <keiland.h>
 
 #include <errno.h>
 #include <math.h>
@@ -280,7 +280,9 @@ keiland_motion_device_time(
 	int restart;
 
 	/* Refuses a missing device or result. */
-	if (device == NULL || stamp_us == NULL)
+	if (device == NULL)
+		return EINVAL;
+	if (stamp_us == NULL)
 		return EINVAL;
 
 	/*
@@ -542,7 +544,11 @@ keiland_motion_point(
 	int measured;
 
 	/* Refuses a missing motion or result. */
-	if (motion == NULL || x == NULL || y == NULL)
+	if (motion == NULL)
+		return EINVAL;
+	if (x == NULL)
+		return EINVAL;
+	if (y == NULL)
 		return EINVAL;
 
 	/* Nothing to draw before the first report. */
@@ -678,7 +684,11 @@ keiland_motion_velocity(
 	int measured;
 
 	/* Refuses a missing motion or result. */
-	if (motion == NULL || vx == NULL || vy == NULL)
+	if (motion == NULL)
+		return EINVAL;
+	if (vx == NULL)
+		return EINVAL;
+	if (vy == NULL)
 		return EINVAL;
 
 	/* A stroke of fewer than two reports did not move. */
