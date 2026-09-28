@@ -102,6 +102,7 @@ static void ui_separator(struct notes_ui *ui, int32_t x);
 static int32_t ui_text_width(struct notes_ui *ui, const char *text);
 static void ui_text(struct notes_ui *ui, int32_t x, int32_t y, const char *text, uint32_t rgb);
 static int32_t ui_label_button(struct notes_ui *ui, int32_t x, const char *label, uint32_t action, uint32_t chosen, int enabled);
+static int32_t ui_eraser_button(struct notes_ui *ui, int32_t x, const struct notes_ui_state *state);
 static void ui_add_button(struct notes_ui *ui, int32_t x, int32_t y, int32_t width, int32_t height, uint32_t action);
 static uint32_t ui_codepoint(char byte);
 
@@ -375,7 +376,7 @@ ui_layout(
 	x = left;
 	x = ui_label_button(ui, x, "Pen", NOTES_ACTION_PEN, state->tool, 1);
 	x = ui_label_button(ui, x, "Marker", NOTES_ACTION_HIGHLIGHTER, state->tool, 1);
-	x = ui_label_button(ui, x, "Eraser", NOTES_ACTION_ERASER, state->tool, 1);
+	x = ui_eraser_button(ui, x, state);
 	ui_separator(ui, x + UI_GAP / 2 - 1);
 	x += UI_GAP;
 
@@ -881,6 +882,49 @@ ui_label_button(
 	/* A pale button does nothing, so it is not added. */
 	if (enabled)
 		ui_add_button(ui, x, UI_BUTTON_TOP, width, UI_BUTTON_HEIGHT, action);
+
+	/* Reports where the next button goes. */
+	return x + width + 2;
+}
+
+/*
+ * Draws the eraser's button: "Eraser" while it removes whole strokes,
+ * "Part Eraser" while it cuts parts.  It is as wide as the longer label
+ * either way, so the buttons after it do not move when the mode changes.
+ */
+static int32_t
+ui_eraser_button(
+	struct notes_ui *ui,
+	int32_t x,
+	const struct notes_ui_state *state)
+{
+	const char *label;
+	int32_t width;
+	int32_t label_width;
+	int32_t widest;
+	uint32_t rgb;
+
+	/* The label of the mode, and the width of the longer one with room on both sides. */
+	label = "Eraser";
+	if (state->erase_parts)
+		label = "Part Eraser";
+	label_width = ui_text_width(ui, label);
+	widest = ui_text_width(ui, "Part Eraser");
+	width = widest + 24;
+	if (ui->face == NULL)
+		width = 44;
+
+	/* The chosen tool's pale blue pill, and the label's colour. */
+	rgb = UI_TEXT;
+	if (state->tool == NOTES_ACTION_ERASER) {
+		ui_rounded(ui, (float)x, (float)UI_BUTTON_TOP, (float)width, (float)UI_BUTTON_HEIGHT,
+			   (float)UI_BUTTON_HEIGHT / 2.0f, UI_ACCENT, UI_ACCENT_TINT_ALPHA);
+		rgb = UI_ACCENT;
+	}
+
+	/* The label, centred in the button. */
+	ui_text(ui, x + (width - label_width) / 2, UI_BUTTON_TOP, label, rgb);
+	ui_add_button(ui, x, UI_BUTTON_TOP, width, UI_BUTTON_HEIGHT, NOTES_ACTION_ERASER);
 
 	/* Reports where the next button goes. */
 	return x + width + 2;

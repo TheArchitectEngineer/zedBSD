@@ -149,11 +149,16 @@ struct notes_app {
 	char path[MAIN_PATH_MAX];
 	const char *name;
 
-	/* The page shown, the tool (its NOTES_ACTION_*), the colour's and the width's index. */
+	/*
+	 * The page shown, the tool (its NOTES_ACTION_*), the colour's and the
+	 * width's index, and whether the eraser (the tool, and a pen's eraser
+	 * end) cuts parts of strokes rather than removing whole ones.
+	 */
 	size_t page;
 	unsigned tool;
 	unsigned color;
 	unsigned width;
+	int erase_parts;
 
 	/* The contact under way, the stroke it draws (off the page until it ends), and when it started. */
 	unsigned contact;
@@ -639,6 +644,7 @@ app_state(
 	state->page = app->page;
 	state->page_count = app->document.page_count;
 	state->dirty = app->document.dirty;
+	state->erase_parts = app->erase_parts;
 
 	/* Undo while a change stands, redo while one was taken back. */
 	if (app->document.undo_done > 0U)
@@ -682,10 +688,16 @@ app_action(
 	switch (action) {
 	case NOTES_ACTION_PEN:
 	case NOTES_ACTION_HIGHLIGHTER:
-	case NOTES_ACTION_ERASER:
 		/* The tool. */
 		app->tool = action;
 		printf("NOTES TOOL %u\n", action);
+		break;
+	case NOTES_ACTION_ERASER:
+		/* The eraser; chosen again, it switches between whole strokes and parts (design-input-notes.md section 5.2). */
+		if (app->tool == NOTES_ACTION_ERASER)
+			app->erase_parts = !app->erase_parts;
+		app->tool = action;
+		printf("NOTES TOOL %u parts=%d\n", action, app->erase_parts);
 		break;
 	case NOTES_ACTION_UNDO:
 		/* The last change is taken back, and its page shown. */
@@ -979,7 +991,21 @@ app_sample(
 	point.x = (input->x - app->view.x) / app->view.scale;
 	point.y = (input->y - app->view.y) / app->view.scale;
 
-	/* An eraser removes the strokes its circle touches. */
+	/* An eraser of parts cuts the ink under its circle out of the strokes. */
+	if (app->contact == MAIN_CONTACT_ERASE && app->erase_parts) {
+		error = notes_document_erase_parts_at(&app->document, app->page, point.x, point.y, MAIN_ERASER_RADIUS, &removed);
+		if (error == 0 && removed != 0U) {
+			printf("NOTES ERASE page=%lu cut=%lu strokes=%lu\n", (unsigned long)app->page, (unsigned long)removed,
+			       (unsigned long)app->document.pages[app->page]->stroke_count);
+			fflush(stdout);
+			app_changed(app);
+		}
+
+		/* An eraser draws no stroke. */
+		return;
+	}
+
+	/* An eraser of strokes removes the strokes its circle touches. */
 	if (app->contact == MAIN_CONTACT_ERASE) {
 		error = notes_document_erase_at(&app->document, app->page, point.x, point.y, MAIN_ERASER_RADIUS, &removed);
 		if (error == 0 && removed != 0U) {

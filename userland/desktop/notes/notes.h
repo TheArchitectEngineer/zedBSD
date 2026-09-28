@@ -147,6 +147,7 @@ struct notes_page {
 #define NOTES_UNDO_ADD_STROKE		1U
 #define NOTES_UNDO_REMOVE_STROKES	2U
 #define NOTES_UNDO_ADD_PAGE		3U
+#define NOTES_UNDO_ERASE_PARTS		4U
 
 /*
  * One change the undo history can take back.
@@ -156,6 +157,13 @@ struct notes_page {
  * they were removed.  owned says whether the entry holds the strokes (or
  * the page) now: the strokes of a removal while it stands, the stroke of an
  * addition or the page of a page's addition while they are taken back.
+ *
+ * An eraser drag that cuts strokes (NOTES_UNDO_ERASE_PARTS) is kept as the
+ * primitive changes it made, in order: each stroke taken off a page and
+ * each piece put in its place, with the place and, in inserted, which of
+ * the two it was.  Taking it back undoes them in the opposite order.  While
+ * it stands (owned) the entry holds the strokes it took off; while it is
+ * taken back it holds the pieces it had put in.
  */
 struct notes_undo {
 	unsigned kind;
@@ -163,6 +171,7 @@ struct notes_undo {
 	size_t place;
 	struct notes_stroke **strokes;
 	size_t *places;
+	unsigned char *inserted;
 	size_t count;
 	size_t capacity;
 	struct notes_page *page_held;
@@ -266,6 +275,7 @@ int notes_document_add_stroke(struct notes_document *document, size_t page, stru
 int notes_document_add_page(struct notes_document *document, size_t index);
 void notes_document_erase_begin(struct notes_document *document);
 int notes_document_erase_at(struct notes_document *document, size_t page, float x, float y, float radius, size_t *removed);
+int notes_document_erase_parts_at(struct notes_document *document, size_t page, float x, float y, float radius, size_t *cut);
 void notes_document_erase_end(struct notes_document *document);
 int notes_document_undo(struct notes_document *document, size_t *page);
 int notes_document_redo(struct notes_document *document, size_t *page);

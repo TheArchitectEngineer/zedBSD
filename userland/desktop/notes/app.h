@@ -214,12 +214,14 @@ struct notes_button {
 
 /*
  * What the toolbar and the menus show of Notes' state: the tool (its
- * NOTES_ACTION_PEN, _HIGHLIGHTER or _ERASER), the colour's and the width's
- * index, the page and the count, whether undo and redo can go, whether
- * there are unsaved changes and fullscreen, and a status line.
+ * NOTES_ACTION_PEN, _HIGHLIGHTER or _ERASER) and whether the eraser cuts
+ * parts, the colour's and the width's index, the page and the count,
+ * whether undo and redo can go, whether there are unsaved changes and
+ * fullscreen, and a status line.
  */
 struct notes_ui_state {
 	unsigned tool;
+	int erase_parts;
 	unsigned color;
 	unsigned width;
 	size_t page;

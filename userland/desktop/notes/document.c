@@ -33,7 +33,15 @@ static int undo_push(struct notes_document *document, unsigned kind, size_t page
 static int undo_hold(struct notes_undo *entry);
 static int undo_revert(struct notes_document *document, struct notes_undo *entry);
 static int undo_apply(struct notes_document *document, struct notes_undo *entry);
+static int undo_hold_more(struct notes_undo *entry, size_t more);
+static int erase_entry(struct notes_document *document, size_t page, struct notes_undo **entry);
 static int stroke_touches(struct notes_stroke *stroke, float x, float y, float radius);
+static int stroke_split(struct notes_document *document, const struct notes_stroke *stroke, float x, float y, float reach, struct notes_stroke ***pieces, size_t *piece_count, int *crossed);
+static int segment_inside(const struct notes_point *a, const struct notes_point *b, float x, float y, float reach, float *enter, float *leave);
+static void point_between(const struct notes_point *a, const struct notes_point *b, float share, struct notes_point *point);
+static int piece_add(struct notes_document *document, const struct notes_stroke *stroke, struct notes_stroke **piece, const struct notes_point *point);
+static int piece_close(struct notes_stroke **piece, struct notes_stroke ***pieces, size_t *piece_count, size_t *piece_capacity);
+static void pieces_free(struct notes_stroke **pieces, size_t first, size_t count);
 static float segment_distance(float px, float py, float ax, float ay, float bx, float by);
 
 /*
@@ -668,6 +676,122 @@ notes_document_erase_at(
 }
 
 /*
+ * Cuts the ink an eraser circle covers out of the strokes of a page (the
+ * partial eraser, design-input-notes.md section 5.1).
+ *
+ * The circle is at (x, y) with a radius, in points.  A stroke it touches
+ * is taken off the page and the pieces of its path outside the circle
+ * (widened by half the stroke's width, so that the circle's edge is where
+ * the ink ends) are put in its place, each a new stroke of the same tool,
+ * colour and width with a new number; where the path crosses the circle
+ * the pieces end at the crossing.  A stroke wholly inside leaves no piece.
+ * *cut tells how many strokes were cut.  The drag's cuts gather into one
+ * change to undo.  Returns 0, EINVAL or ENOMEM (the cuts made so far stay,
+ * and in the history).
+ */
+int
+notes_document_erase_parts_at(
+	struct notes_document *document,
+	size_t page,
+	float x,
+	float y,
+	float radius,
+	size_t *cut)
+{
+	struct notes_page *target;
+	struct notes_undo *entry;
+	struct notes_stroke *stroke;
+	struct notes_stroke **pieces;
+	size_t piece_count;
+	size_t index;
+	size_t place;
+	size_t piece;
+	int touched;
+	int crossed;
+	int error;
+
+	/* Nothing is cut yet. */
+	*cut = 0;
+	if (page >= document->page_count)
+		return EINVAL;
+	target = document->pages[page];
+
+	/* Each stroke from the top down; the pieces go where the stroke was, above the index. */
+	index = target->stroke_count;
+	while (index > 0) {
+		index--;
+
+		/* A stroke the circle does not touch stays. */
+		stroke = target->strokes[index];
+		touched = stroke_touches(stroke, x, y, radius);
+		if (!touched)
+			continue;
+
+		/* The pieces of the path outside the circle; a path the circle does not cross stays. */
+		error = stroke_split(document, stroke, x, y, radius + stroke->width / 2.0f, &pieces, &piece_count, &crossed);
+		if (error != 0)
+			return error;
+		if (!crossed)
+			continue;
+
+		/* The drag's entry. */
+		error = erase_entry(document, page, &entry);
+		if (error != 0) {
+			pieces_free(pieces, 0, piece_count);
+			return error;
+		}
+
+		/* Room in it for the removal and the pieces. */
+		error = undo_hold_more(entry, 1U + piece_count);
+		if (error != 0) {
+			pieces_free(pieces, 0, piece_count);
+			return error;
+		}
+
+		/* Takes the stroke off the page; the entry keeps it and its place. */
+		stroke = notes_document_remove_stroke(document, page, stroke->id, &place);
+		if (stroke == NULL) {
+			pieces_free(pieces, 0, piece_count);
+			return ENOMEM;
+		}
+
+		/* The removal is the entry's next change. */
+		entry->strokes[entry->count] = stroke;
+		entry->places[entry->count] = place;
+		entry->inserted[entry->count] = 0;
+		entry->count++;
+
+		/* Each piece, in the path's order, where the stroke was, with the next number. */
+		for (piece = 0; piece < piece_count; piece++) {
+			pieces[piece]->id = document->next_id;
+			document->next_id++;
+			error = notes_document_insert_stroke(document, page, place + piece, pieces[piece]);
+			if (error != 0)
+				break;
+
+			/* The insertion is the entry's next change. */
+			entry->strokes[entry->count] = pieces[piece];
+			entry->places[entry->count] = place + piece;
+			entry->inserted[entry->count] = 1;
+			entry->count++;
+		}
+
+		/* Pieces that could not be put in are freed; the cut stands as far as it went. */
+		if (error != 0) {
+			pieces_free(pieces, piece, piece_count);
+			return error;
+		}
+
+		/* The stroke is cut. */
+		free(pieces);
+		(*cut)++;
+	}
+
+	/* Succeeded: every stroke the circle crossed is cut. */
+	return 0;
+}
+
+/*
  * Ends an eraser drag; a later removal starts a change of its own.
  */
 void
@@ -801,8 +925,19 @@ undo_release(
 {
 	size_t index;
 
-	/* The strokes or the page the entry holds while they are off the document. */
-	if (entry->owned) {
+	/*
+	 * A cutting eraser's entry holds, while it stands, the strokes it took
+	 * off, and while it is taken back, the pieces it had put in.
+	 */
+	if (entry->kind == NOTES_UNDO_ERASE_PARTS) {
+		for (index = 0; index < entry->count; index++) {
+			if (entry->owned && entry->inserted[index] == 0)
+				notes_stroke_free(entry->strokes[index]);
+			else if (!entry->owned && entry->inserted[index] != 0)
+				notes_stroke_free(entry->strokes[index]);
+		}
+	} else if (entry->owned) {
+		/* The strokes or the page the entry holds while they are off the document. */
 		for (index = 0; entry->strokes != NULL && index < entry->count; index++)
 			notes_stroke_free(entry->strokes[index]);
 		notes_page_free(entry->page_held);
@@ -811,6 +946,7 @@ undo_release(
 	/* The arrays. */
 	free(entry->strokes);
 	free(entry->places);
+	free(entry->inserted);
 	memset(entry, 0, sizeof(*entry));
 }
 
@@ -866,6 +1002,7 @@ undo_hold(
 {
 	struct notes_stroke **strokes;
 	size_t *places;
+	unsigned char *inserted;
 	size_t count;
 
 	/* An entry with room keeps its arrays. */
@@ -889,8 +1026,101 @@ undo_hold(
 		return ENOMEM;
 	entry->places = places;
 
+	/* The array that tells insertions from removals (a cutting eraser's). */
+	inserted = realloc(entry->inserted, count * sizeof(entry->inserted[0]));
+	if (inserted == NULL)
+		return ENOMEM;
+	entry->inserted = inserted;
+
 	/* Succeeded: the entry has room. */
 	entry->capacity = count;
+	return 0;
+}
+
+/* Makes room in an entry for a number of strokes and their places. */
+static int
+undo_hold_more(
+	struct notes_undo *entry,
+	size_t more)
+{
+	struct notes_stroke **strokes;
+	size_t *places;
+	unsigned char *inserted;
+	size_t needed;
+	size_t count;
+
+	/* An entry with room keeps its arrays. */
+	needed = entry->count + more;
+	if (needed <= entry->capacity)
+		return 0;
+
+	/* Doubles the size from a small start until the number fits. */
+	count = entry->capacity * 2U;
+	if (count < DOCUMENT_GROW_MIN)
+		count = DOCUMENT_GROW_MIN;
+	while (count < needed)
+		count *= 2U;
+
+	/* The strokes' array. */
+	strokes = realloc(entry->strokes, count * sizeof(entry->strokes[0]));
+	if (strokes == NULL)
+		return ENOMEM;
+	entry->strokes = strokes;
+
+	/* The places' array. */
+	places = realloc(entry->places, count * sizeof(entry->places[0]));
+	if (places == NULL)
+		return ENOMEM;
+	entry->places = places;
+
+	/* The array that tells insertions from removals. */
+	inserted = realloc(entry->inserted, count * sizeof(entry->inserted[0]));
+	if (inserted == NULL)
+		return ENOMEM;
+	entry->inserted = inserted;
+
+	/* Succeeded: the entry has room for them all. */
+	entry->capacity = count;
+	return 0;
+}
+
+/*
+ * Finds the entry a cutting eraser's drag gathers its changes in: the one
+ * it made already, or a new one.
+ */
+static int
+erase_entry(
+	struct notes_document *document,
+	size_t page,
+	struct notes_undo **entry)
+{
+	struct notes_undo *last;
+	int error;
+
+	/* The drag's own entry, when it made one on this page. */
+	last = NULL;
+	if (document->erasing == 2 && document->undo_done > 0U)
+		last = &document->undo[document->undo_done - 1U];
+	if (last != NULL &&
+	    last->kind == NOTES_UNDO_ERASE_PARTS &&
+	    last->page == page) {
+		*entry = last;
+		return 0;
+	}
+
+	/* Otherwise a new entry, which stands and holds what the drag takes off. */
+	error = undo_push(document, NOTES_UNDO_ERASE_PARTS, page);
+	if (error != 0)
+		return error;
+	last = &document->undo[document->undo_done - 1U];
+	last->owned = 1;
+
+	/* A drag under way gathers its next changes in it. */
+	if (document->erasing != 0)
+		document->erasing = 2;
+
+	/* Succeeded: the new entry. */
+	*entry = last;
 	return 0;
 }
 
@@ -951,6 +1181,25 @@ undo_revert(
 		entry->page_held = page;
 		entry->owned = 1;
 		break;
+	case NOTES_UNDO_ERASE_PARTS:
+		/* The cuts' changes, the last first: each piece comes off, each cut stroke goes back to its place. */
+		index = entry->count;
+		while (index > 0) {
+			index--;
+			if (entry->inserted[index] != 0) {
+				stroke = notes_document_remove_stroke(document, entry->page, entry->strokes[index]->id, &place);
+				if (stroke == NULL)
+					return ENOMEM;
+			} else {
+				error = notes_document_insert_stroke(document, entry->page, entry->places[index], entry->strokes[index]);
+				if (error != 0)
+					return error;
+			}
+		}
+
+		/* The entry holds the pieces until it is redone. */
+		entry->owned = 0;
+		break;
 	default:
 		return EINVAL;
 	}
@@ -999,6 +1248,23 @@ undo_apply(
 			return error;
 		entry->page_held = NULL;
 		entry->owned = 0;
+		break;
+	case NOTES_UNDO_ERASE_PARTS:
+		/* The cuts' changes again, in order: each cut stroke comes off, each piece goes to its place. */
+		for (index = 0; index < entry->count; index++) {
+			if (entry->inserted[index] != 0) {
+				error = notes_document_insert_stroke(document, entry->page, entry->places[index], entry->strokes[index]);
+				if (error != 0)
+					return error;
+			} else {
+				stroke = notes_document_remove_stroke(document, entry->page, entry->strokes[index]->id, &place);
+				if (stroke == NULL)
+					return ENOMEM;
+			}
+		}
+
+		/* The entry holds the cut strokes again. */
+		entry->owned = 1;
 		break;
 	default:
 		return EINVAL;
@@ -1088,4 +1354,310 @@ segment_distance(
 	cx = ax + dx * share - px;
 	cy = ay + dy * share - py;
 	return (float)sqrt((double)(cx * cx + cy * cy));
+}
+
+/*
+ * Cuts a stroke's path by a circle of a reach: makes the pieces of the path
+ * outside it, in the path's order, and tells whether the path crossed it
+ * at all (when it did not, no pieces are made).  The caller owns the
+ * pieces and their array.
+ */
+static int
+stroke_split(
+	struct notes_document *document,
+	const struct notes_stroke *stroke,
+	float x,
+	float y,
+	float reach,
+	struct notes_stroke ***pieces,
+	size_t *piece_count,
+	int *crossed)
+{
+	struct notes_stroke *piece;
+	struct notes_point point;
+	const struct notes_point *a;
+	const struct notes_point *b;
+	size_t piece_capacity;
+	size_t index;
+	float enter;
+	float leave;
+	float dx;
+	float dy;
+	int inside;
+	int error;
+
+	/* No pieces yet, and nothing crossed. */
+	*pieces = NULL;
+	*piece_count = 0;
+	piece_capacity = 0;
+	*crossed = 0;
+	piece = NULL;
+	error = 0;
+
+	/* The first sample starts a piece when it lies outside the circle. */
+	dx = stroke->points[0].x - x;
+	dy = stroke->points[0].y - y;
+	if (dx * dx + dy * dy < reach * reach) {
+		*crossed = 1;
+	} else {
+		error = piece_add(document, stroke, &piece, &stroke->points[0]);
+		if (error != 0)
+			return error;
+	}
+
+	/* Each segment of the path: the part inside the circle is cut out of it. */
+	for (index = 1; index < stroke->point_count; index++) {
+		a = &stroke->points[index - 1U];
+		b = &stroke->points[index];
+		inside = segment_inside(a, b, x, y, reach, &enter, &leave);
+
+		/* A segment outside the circle carries the piece on to its end. */
+		if (!inside) {
+			if (piece == NULL) {
+				error = piece_add(document, stroke, &piece, a);
+				if (error != 0)
+					break;
+			}
+
+			/* The segment's end joins the piece. */
+			error = piece_add(document, stroke, &piece, b);
+			if (error != 0)
+				break;
+			continue;
+		}
+
+		/* The segment enters the circle: the piece ends where it does. */
+		*crossed = 1;
+		if (enter > 0.0f && piece != NULL) {
+			point_between(a, b, enter, &point);
+			error = piece_add(document, stroke, &piece, &point);
+			if (error != 0)
+				break;
+		}
+
+		/* The piece before the circle is finished. */
+		error = piece_close(&piece, pieces, piece_count, &piece_capacity);
+		if (error != 0)
+			break;
+
+		/* A segment that leaves the circle starts a new piece where it does. */
+		if (leave < 1.0f) {
+			point_between(a, b, leave, &point);
+			error = piece_add(document, stroke, &piece, &point);
+			if (error != 0)
+				break;
+
+			/* The segment's end joins it. */
+			error = piece_add(document, stroke, &piece, b);
+			if (error != 0)
+				break;
+		}
+	}
+
+	/* The last piece is finished. */
+	if (error == 0)
+		error = piece_close(&piece, pieces, piece_count, &piece_capacity);
+
+	/* A failure frees every piece made. */
+	if (error != 0) {
+		notes_stroke_free(piece);
+		pieces_free(*pieces, 0, *piece_count);
+		*pieces = NULL;
+		*piece_count = 0;
+		return error;
+	}
+
+	/* A path that was not cut needs none of its pieces. */
+	if (!*crossed) {
+		pieces_free(*pieces, 0, *piece_count);
+		*pieces = NULL;
+		*piece_count = 0;
+	}
+
+	/* Succeeded: the pieces, when the path was cut. */
+	return 0;
+}
+
+/*
+ * Finds the part of a segment inside a circle, as shares of the way from a
+ * to b (enter to leave, within 0 to 1).  Returns 0 when no part of it is.
+ */
+static int
+segment_inside(
+	const struct notes_point *a,
+	const struct notes_point *b,
+	float x,
+	float y,
+	float reach,
+	float *enter,
+	float *leave)
+{
+	double dx;
+	double dy;
+	double fx;
+	double fy;
+	double along;
+	double across;
+	double rest;
+	double discriminant;
+	double root;
+	double first;
+	double second;
+
+	/* The segment's direction, and its start seen from the circle's centre. */
+	dx = (double)b->x - (double)a->x;
+	dy = (double)b->y - (double)a->y;
+	fx = (double)a->x - (double)x;
+	fy = (double)a->y - (double)y;
+
+	/* The quadratic of the shares where the segment's line meets the circle. */
+	along = dx * dx + dy * dy;
+	across = 2.0 * (fx * dx + fy * dy);
+	rest = fx * fx + fy * fy - (double)reach * (double)reach;
+
+	/* A segment of no length is inside when its point is. */
+	if (along <= 0.0) {
+		if (rest >= 0.0)
+			return 0;
+		*enter = 0.0f;
+		*leave = 1.0f;
+		return 1;
+	}
+
+	/* A line that misses the circle, or only touches it, has no part inside. */
+	discriminant = across * across - 4.0 * along * rest;
+	if (discriminant <= 0.0)
+		return 0;
+
+	/* The two meeting shares, kept within the segment. */
+	root = sqrt(discriminant);
+	first = (-across - root) / (2.0 * along);
+	second = (-across + root) / (2.0 * along);
+	if (first < 0.0)
+		first = 0.0;
+	if (second > 1.0)
+		second = 1.0;
+
+	/* A segment that ends before the circle, or starts after it, has no part inside. */
+	if (first >= second)
+		return 0;
+
+	/* Succeeded: the part inside. */
+	*enter = (float)first;
+	*leave = (float)second;
+	return 1;
+}
+
+/* Makes the sample a share of the way from one sample to the next, on the edit data's grid. */
+static void
+point_between(
+	const struct notes_point *a,
+	const struct notes_point *b,
+	float share,
+	struct notes_point *point)
+{
+	/* The place, on the 1/64 point grid. */
+	memset(point, 0, sizeof(*point));
+	point->x = notes_quantize(a->x + (b->x - a->x) * share);
+	point->y = notes_quantize(a->y + (b->y - a->y) * share);
+
+	/* The pressure, the tilt and the time, in between. */
+	point->pressure = (uint16_t)((float)a->pressure + ((float)b->pressure - (float)a->pressure) * share + 0.5f);
+	point->tilt_x = (int16_t)((float)a->tilt_x + ((float)b->tilt_x - (float)a->tilt_x) * share);
+	point->tilt_y = (int16_t)((float)a->tilt_y + ((float)b->tilt_y - (float)a->tilt_y) * share);
+	point->time_ms = a->time_ms + (uint32_t)((float)(b->time_ms - a->time_ms) * share);
+}
+
+/*
+ * Adds a sample to the piece being made of a stroke, making the piece
+ * first (a stroke of the same tool, colour and width) when there is none.
+ */
+static int
+piece_add(
+	struct notes_document *document,
+	const struct notes_stroke *stroke,
+	struct notes_stroke **piece,
+	const struct notes_point *point)
+{
+	int error;
+
+	/* A new piece; it takes its number once it is kept. */
+	(void)document;
+	if (*piece == NULL) {
+		*piece = notes_stroke_create(0U, stroke->tool, stroke->color, stroke->width, stroke->start_ms);
+		if (*piece == NULL)
+			return ENOMEM;
+		(*piece)->has_tilt = stroke->has_tilt;
+	}
+
+	/* The sample joins it. */
+	error = notes_stroke_append(*piece, point);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the piece has the sample. */
+	return 0;
+}
+
+/*
+ * Finishes the piece being made: one of two samples or more joins the
+ * pieces, a shorter one (a crumb at the circle's edge) is dropped.
+ */
+static int
+piece_close(
+	struct notes_stroke **piece,
+	struct notes_stroke ***pieces,
+	size_t *piece_count,
+	size_t *piece_capacity)
+{
+	uint32_t shift;
+	size_t index;
+	int error;
+
+	/* No piece under way. */
+	if (*piece == NULL)
+		return 0;
+
+	/* A crumb is dropped. */
+	if ((*piece)->point_count < 2U) {
+		notes_stroke_free(*piece);
+		*piece = NULL;
+		return 0;
+	}
+
+	/*
+	 * The piece starts when its first sample was drawn, and its samples'
+	 * times count from there, as a stroke's always do (the edit data keeps
+	 * them so).
+	 */
+	shift = (*piece)->points[0].time_ms;
+	(*piece)->start_ms += shift;
+	for (index = 0; index < (*piece)->point_count; index++)
+		(*piece)->points[index].time_ms -= shift;
+
+	/* Room for one more piece. */
+	error = grow((void **)pieces, piece_capacity, *piece_count + 1U, sizeof((*pieces)[0]));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the piece is the last, and none is under way. */
+	(*pieces)[*piece_count] = *piece;
+	(*piece_count)++;
+	*piece = NULL;
+	return 0;
+}
+
+/* Frees pieces from one index to a count, and their array. */
+static void
+pieces_free(
+	struct notes_stroke **pieces,
+	size_t first,
+	size_t count)
+{
+	size_t index;
+
+	/* Each piece, then the array. */
+	for (index = first; index < count; index++)
+		notes_stroke_free(pieces[index]);
+	free(pieces);
 }
