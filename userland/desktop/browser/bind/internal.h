@@ -42,6 +42,9 @@ enum bind_interface_index {
 	BIND_UI_EVENT,
 	BIND_MOUSE_EVENT,
 	BIND_CUSTOM_EVENT,
+	BIND_KEYBOARD_EVENT,
+	BIND_FOCUS_EVENT,
+	BIND_WHEEL_EVENT,
 	BIND_INTERFACES
 };
 
@@ -162,10 +165,12 @@ struct bind_listeners {
 
 /*
  * The state of an event, the cell an Event object wraps: its type, where
- * it is being dispatched, its flags and, for a mouse event, the pointer.
- * target_override is the target the event reports instead of the one it
- * is dispatched at (the document for the window's load), or the empty
- * value.
+ * it is being dispatched, its flags, for a mouse or wheel event the
+ * pointer, and for a key event its key, its code and whether it repeats
+ * (key and code are NULL for other events; the modifiers of a key event
+ * are kept with the pointer's).  target_override is the target the event
+ * reports instead of the one it is dispatched at (the document for the
+ * window's load), or the empty value.
  */
 struct bind_event {
 	struct vm_cell cell;
@@ -184,6 +189,9 @@ struct bind_event {
 	int trusted;
 	double time_stamp;
 	struct bind_mouse mouse;
+	struct vm_string *key;
+	struct vm_string *code;
+	int repeat;
 };
 
 /* The phases of an event (Event.eventPhase). */
@@ -208,6 +216,9 @@ extern const struct bind_interface bind_event_interface;
 extern const struct bind_interface bind_ui_event_interface;
 extern const struct bind_interface bind_mouse_event_interface;
 extern const struct bind_interface bind_custom_event_interface;
+extern const struct bind_interface bind_keyboard_event_interface;
+extern const struct bind_interface bind_focus_event_interface;
+extern const struct bind_interface bind_wheel_event_interface;
 
 /* The window and the shared helpers (window.c). */
 struct bind_window *bind_window_of(struct vm_realm *realm);
@@ -254,6 +265,16 @@ int bind_element_has_class(const struct dom_element *element, const struct vm_st
 struct bind_event *bind_event_of(vm_value value);
 int bind_event_create(struct bind_window *window, int interface, struct vm_string *type, vm_value *value, struct bind_event **event);
 int bind_dispatch(struct bind_window *window, vm_value target, vm_value event_value, int *canceled);
+int bind_event_prepare(struct bind_window *window, struct dom_node *target, int interface, const char *type, unsigned flags, vm_value *event_value, vm_value *target_value, struct bind_event **event);
+int bind_event_construct(struct vm_realm *realm, int interface, const vm_value *args, unsigned count, vm_value *result, struct bind_event **event);
+int bind_event_init_mouse(struct vm_realm *realm, vm_value init, struct bind_event *event);
+
+/* The modifiers' getters of MouseEvent and KeyboardEvent, and the modifiers of an event's init (input.c). */
+int bind_event_shift_key(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_event_ctrl_key(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_event_alt_key(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_event_meta_key(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_event_init_modifiers(struct vm_realm *realm, vm_value init, struct bind_event *event);
 int bind_listeners_of(struct bind_window *window, vm_value target, int create, struct bind_listeners **listeners);
 int bind_listeners_add(struct bind_listeners *listeners, const struct bind_listener *listener, size_t position);
 int bind_listeners_find(const struct bind_listeners *listeners, const struct vm_string *type, vm_value callback, int capture, int handler, size_t *index);

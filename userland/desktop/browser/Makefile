@@ -72,6 +72,7 @@ KEILAND_BROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/main.c \
 	$(KEILAND_BROWSER_DIR)/bind/event.c \
 	$(KEILAND_BROWSER_DIR)/bind/handler.c \
 	$(KEILAND_BROWSER_DIR)/bind/timer.c \
+	$(KEILAND_BROWSER_DIR)/bind/input.c \
 	$(KEILAND_BROWSER_DIR)/net/url.c \
 	$(KEILAND_BROWSER_DIR)/net/host.c \
 	$(KEILAND_BROWSER_DIR)/net/data.c \
@@ -84,6 +85,7 @@ KEILAND_BROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/main.c \
 	$(KEILAND_BROWSER_DIR)/page/script.c \
 	$(KEILAND_BROWSER_DIR)/page/images.c \
 	$(KEILAND_BROWSER_DIR)/page/network.c \
+	$(KEILAND_BROWSER_DIR)/page/input.c \
 	$(KEILAND_BROWSER_DIR)/view/view.c \
 	$(KEILAND_BROWSER_DIR)/image/decode.c \
 	$(KEILAND_BROWSER_DIR)/image/jpeg.c \
@@ -99,13 +101,15 @@ KEILAND_BROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/main.c \
 	$(KEILAND_BROWSER_DIR)/layout/replaced.c \
 	$(KEILAND_BROWSER_DIR)/layout/dump.c \
 	$(KEILAND_BROWSER_DIR)/layout/hit.c \
+	$(KEILAND_BROWSER_DIR)/layout/bounds.c \
 	$(KEILAND_BROWSER_DIR)/paint/list.c \
 	$(KEILAND_BROWSER_DIR)/paint/software.c \
 	$(KEILAND_BROWSER_DIR)/paint/vulkan.c \
 	$(KEILAND_BROWSER_DIR)/shell/shell.c \
 	$(KEILAND_BROWSER_DIR)/shell/window.c \
 	$(KEILAND_BROWSER_DIR)/shell/present.c \
-	$(KEILAND_BROWSER_DIR)/shell/titlebar.c
+	$(KEILAND_BROWSER_DIR)/shell/titlebar.c \
+	$(KEILAND_BROWSER_DIR)/shell/keys.c
 
 # The pages the browser brings: the start page it opens without an argument (App Home starts it with
 # the same page) and the pages it links to; and the notices of the licences of its committed tables.

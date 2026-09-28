@@ -32,8 +32,18 @@
  * keeps a framebuffer for each image view it is given; the caller tells it
  * to forget them (browser_view_release_targets) before it destroys the
  * images.  A caller without a window makes an offscreen image of the
- * engine's (browser_offscreen) and reads the drawing back.  Input in the
- * DOM's key names with the default actions in the engine is ws074-p056.
+ * engine's (browser_offscreen) and reads the drawing back.
+ *
+ * Input (ws074-p056): the caller sends the pointer, the wheel, the keys
+ * and its own focus in the view's pixels and the DOM's names of the keys
+ * (browser_view_pointer_*, _wheel, _key, _focus); it turns its device's
+ * codes into those names and keeps only its own shortcuts.  The page's
+ * scripts get the events first; unless they cancel them, the view does
+ * the default actions: the wheel and the keys scroll (the arrows, Page Up
+ * and Down, Space, Home, End), a click or Enter on a link follows it, Tab
+ * moves the focus with its ring and scrolls it into view, Alt+Left and
+ * Alt+Right (and the back and forward keys and buttons) step through the
+ * history, F5 and Ctrl+R reload, and Escape stops a load.
  *
  * A view is used from the thread that made it.
  */
@@ -91,11 +101,18 @@ enum browser_dump {
 	BROWSER_DUMP_PAINT
 };
 
-/* Where browser_view_scroll_to goes. */
-enum browser_scroll_place {
-	BROWSER_SCROLL_TOP,
-	BROWSER_SCROLL_BOTTOM
-};
+/* The modifier keys an input says were held. */
+#define BROWSER_MOD_SHIFT		0x01U
+#define BROWSER_MOD_CTRL		0x02U
+#define BROWSER_MOD_ALT			0x04U
+#define BROWSER_MOD_META		0x08U
+
+/* The DOM's numbers of the pointer's buttons (the back and forward buttons step through the history). */
+#define BROWSER_BUTTON_PRIMARY		0
+#define BROWSER_BUTTON_MIDDLE		1
+#define BROWSER_BUTTON_SECONDARY	2
+#define BROWSER_BUTTON_BACK		3
+#define BROWSER_BUTTON_FORWARD		4
 
 /*
  * The caller's callbacks (any may be NULL) and the pointer they get back.
@@ -199,14 +216,27 @@ size_t browser_view_poll_fds(const struct browser_view *view, struct pollfd *fds
 int browser_view_timeout(const struct browser_view *view);
 void browser_view_process(struct browser_view *view, const struct pollfd *fds, size_t count);
 
-/* Scrolling: by pixels (positive is down), by pages of the view's height, to the top or the bottom; and where it is. */
-void browser_view_scroll_by(struct browser_view *view, int pixels);
-void browser_view_scroll_pages(struct browser_view *view, int pages);
-void browser_view_scroll_to(struct browser_view *view, enum browser_scroll_place place);
+/* How far the page is scrolled, in pixels. */
 double browser_view_scroll_y(const struct browser_view *view);
 
-/* A click at a place in the view's pixels: the page's scripts get it, then its link is followed unless they cancel it. */
-int browser_view_click(struct browser_view *view, int x, int y);
+/*
+ * Input, in the view's pixels from its top left, with the modifiers held
+ * (BROWSER_MOD_*).  The pointer moves, a button (BROWSER_BUTTON_*) is
+ * pressed or let go (a press and a release at nearly the same place are a
+ * click), the pointer leaves the view, and the wheel turns (distances in
+ * pixels, positive is down and right).  A key is pressed (repeat when it
+ * is held) or let go: key and code as the DOM names them ("a" and "KeyA",
+ * "Enter", "ArrowDown", " " and "Space"), and the UTF-8 text it types
+ * ("" when none).  The caller's program gains or loses the focus.  Each
+ * reports 0, or an errno value when the page's scripts or its layout
+ * failed.
+ */
+int browser_view_pointer_move(struct browser_view *view, float x, float y, uint32_t modifiers);
+int browser_view_pointer_button(struct browser_view *view, float x, float y, int button, int pressed, uint32_t modifiers);
+int browser_view_pointer_leave(struct browser_view *view);
+int browser_view_wheel(struct browser_view *view, float x, float y, float delta_x, float delta_y, uint32_t modifiers);
+int browser_view_key(struct browser_view *view, const char *key, const char *code, const char *text, int pressed, int repeat, uint32_t modifiers);
+int browser_view_focus(struct browser_view *view, int focused);
 
 /*
  * The headless side: the page brought to rest (the page being fetched has
