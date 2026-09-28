@@ -818,6 +818,11 @@ ZEDBSD_ROOTFS_STICKY_DIRECTORIES := tmp shm
 # there is one description of what a root holds instead of two that drift:
 # a symbolic link, a directory mode, or anything a package adds to the tree
 # reaches the image because the image is that tree.
+#
+# The packages' files are expanded when the recipe runs, after the packages
+# have been staged, not when this rule is evaluated: a package whose file list
+# is read from its own stage has an empty list while make parses a fresh
+# build, and the first image would lack those files (BUG-087).
 define ZEDBSD_ROOTFS_TREE_RULE
 $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
 	$(ZEDBSD_PACKAGE_INPUTS) $(ZEDBSD_ROOTFS_DEVELOPMENT_INPUTS)
@@ -832,7 +837,7 @@ $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
 	@printf '%s\n' '$(1)' > $(BUILD)/rootfs/lib/arch.id
 	@printf 'zedBSD ufs root v1\n' > $(BUILD)/rootfs/etc/zedbsd-root
 	@set -e; for pass in file mode; do \
- set -- $(3) $(ZEDBSD_PACKAGE_FILES); while test $$$$# -gt 0; do \
+ set -- $(3) $$(ZEDBSD_PACKAGE_FILES); while test $$$$# -gt 0; do \
  option=$$$$1; specification=$$$$2; shift 2; \
  path=$$$${specification%%=*}; value=$$$${specification#*=}; \
  path=$$$${path#/}; destination=$(BUILD)/rootfs/$$$$path; \
