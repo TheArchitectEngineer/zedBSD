@@ -819,6 +819,7 @@ i915_draw_build_batch(
 	uint32_t height;
 	uint32_t samples;
 	uint32_t sample_mask;
+	uint32_t streamout;
 	int error;
 
 	/* Switches to 3D, programs the state bases and the once-per-context state. */
@@ -894,7 +895,21 @@ i915_draw_build_batch(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_HS, GEN12_3DSTATE_HS_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_TE, GEN12_3DSTATE_TE_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_DS, GEN12_3DSTATE_DS_DWORDS);
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_STREAMOUT, GEN12_3DSTATE_STREAMOUT_DWORDS);
+
+	/*
+	 * No stream output; a discarding pipeline's primitives stop there, so
+	 * its draws run the vertex shader (and its stores) and rasterize nothing.
+	 */
+	streamout = 0U;
+	if (state->pipeline->rasterizer_discard != 0U)
+		streamout = GEN12_STREAMOUT_RENDERING_DISABLE;
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_STREAMOUT, GEN12_3DSTATE_STREAMOUT_DWORDS));
+	drv_i915_batch_emit(batch, streamout);
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, 0U);
+
+	/* No geometry shader and no primitive replication. */
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_GS, GEN12_3DSTATE_GS_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
 

@@ -353,13 +353,18 @@ i915_gfx_decode_pipeline(
 	if (present != 0U)
 		i915_gfx_decode_viewport(session, reader, pipeline, &viewport_given, &scissor_given);
 
-	/* Decodes the rasterization state, which gives the culling. */
+	/* Decodes the rasterization state, which gives the culling and whether anything is rasterized. */
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U) {
 		kern_memset(&raster, 0, sizeof(raster));
 		i915_vkc_dec_VkPipelineRasterizationStateCreateInfo(reader, &session->arena, &raster);
 		pipeline->cull_mode = raster.cullMode;
 		pipeline->front_face = raster.frontFace;
+
+		/* A discarding pipeline's draws only run the vertex shader (its stores, transform feedback). */
+		pipeline->rasterizer_discard = 0U;
+		if (raster.rasterizerDiscardEnable != VK_FALSE)
+			pipeline->rasterizer_discard = 1U;
 	}
 
 	/*
