@@ -6,7 +6,7 @@
  */
 
 /*
- * ws035-p108: renders the four layers of the Kei mark (userland/desktop/artwork/mark.c)
+ * ws035-p108: renders the layers of the Kei mark (userland/desktop/artwork/mark.c)
  * at a size and writes them side by side as a grey PGM, for looking at on the host.
  *
  *   mark-host OUT.pgm PIXELS

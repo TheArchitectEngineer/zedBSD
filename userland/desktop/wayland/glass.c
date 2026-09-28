@@ -23,7 +23,7 @@
  * font (server->fallback_font_path, for Japanese), into a cell of the
  * atlas's cache, the least recently drawn cell making room; text is UTF-8.
  * The titlebar's icons (icons.c) are rendered into the atlas once, at two
- * sizes, and so are the four layers of the Kei mark (artwork/mark.c,
+ * sizes, and so are the seven layers of the Kei mark (artwork/mark.c,
  * ws035-p108), which the login and lock screens draw.
  */
 
@@ -1295,7 +1295,7 @@ glass_draw_icon(
 }
 
 /*
- * Draws the Kei mark in a square of a size in pixels at (x, y): its four
+ * Draws the Kei mark in a square of a size in pixels at (x, y): its seven
  * layers from the atlas, each in its colour, the whole as opaque as asked
  * (0..1).
  */
@@ -1308,12 +1308,20 @@ glass_draw_mark(
 	unsigned pixels,
 	float opacity)
 {
-	/* The bar pale, its shade deeper, the leaf clearer and its shade the deep blue of the splash. */
+	/*
+	 * The bar pale, its shade deeper, the leaf clearer and its shade the
+	 * deep blue of the splash, the overlap deeper still, then the white
+	 * light along the edges and the sheen (ws035-p109).  The panes are
+	 * translucent, so the picture behind shows through as on the splash.
+	 */
 	static const float colours[KEILAND_MARK_LAYERS][4] = {
-		{ 0.67f, 0.77f, 0.97f, 0.80f },
-		{ 0.43f, 0.59f, 0.94f, 0.55f },
-		{ 0.59f, 0.80f, 0.98f, 0.72f },
-		{ 0.16f, 0.43f, 0.94f, 0.85f }
+		{ 0.663f, 0.765f, 0.965f, 0.69f },
+		{ 0.498f, 0.635f, 0.941f, 0.35f },
+		{ 0.639f, 0.847f, 0.980f, 0.67f },
+		{ 0.227f, 0.525f, 0.961f, 0.67f },
+		{ 0.184f, 0.486f, 0.953f, 0.78f },
+		{ 1.0f, 1.0f, 1.0f, 0.67f },
+		{ 1.0f, 1.0f, 1.0f, 0.24f }
 	};
 	struct glass_shape shape;
 	const struct glass_glyph *glyph;

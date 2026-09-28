@@ -34,3 +34,5 @@
   1440x810 の `fit=cover` の PPM を作り、loader が画面を覆って描く。spinner は kernel（`splash.c`）が同じ場所に描いて回す。
 - 段階 2 の desktop（2026-09-28、[ws035-p108](phase108/phase.md)）: 印を `userland/desktop/artwork/mark.c` の 4 層で描き、greeter・lock・
   files の Home と空の画面に置いた。既定の描いた壁紙を同じ調子に。
+- 段階 2 の仕上げ（2026-09-28、[ws035-p109](phase109/phase.md)）: greeter・lock は壁紙を暗くせず淡い空色へ寄せ、文字は slate、時刻の
+  後ろに白い glow。印は 7 層（重なりの濃い青、縁の白い光、sheen）のすりガラス。
