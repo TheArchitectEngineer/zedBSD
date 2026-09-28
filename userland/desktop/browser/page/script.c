@@ -262,6 +262,10 @@ page_needs_layout(
 	if (page->laid_out_images != page->images_generation)
 		return 1;
 
+	/* Style sheets that arrived since the styling. */
+	if (page->styled_sheets != page->sheets_generation)
+		return 1;
+
 	/* The layout is up to date. */
 	return 0;
 }

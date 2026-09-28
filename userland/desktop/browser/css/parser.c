@@ -9,14 +9,17 @@
  * The CSS parser: style sheets into style rules (selectors and
  * declarations), and style attributes into declarations.
  *
- * At-rules are skipped whole in this pass (@media and the rest come with
- * the later CSS phases); a rule whose selector this pass cannot read is
- * dropped, as the standard drops a rule with an invalid selector.
+ * The URLs of the @import rules before the style rules are kept for the
+ * page to fetch (ws074-p068); other at-rules are skipped whole in this
+ * pass.  A rule whose selector this pass cannot read is dropped, as the
+ * standard drops a rule with an invalid selector.  The parsed sheet's
+ * selectors are filed in its rule index (index.c).
  */
 
 #include "css/internal.h"
 
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* The most declarations one declaration may expand into (a shorthand's longhands). */
@@ -52,6 +55,7 @@ static const struct parser_pseudo_name parser_pseudo_names[] = {
 
 static size_t parser_skip_block(const struct css_token *tokens, size_t count, size_t index);
 static size_t parser_skip_at_rule(const struct css_token *tokens, size_t count, size_t index);
+static int parser_import(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct wb_vector *imports);
 static int parser_add_rule(struct vm_heap *heap, struct css_sheet *sheet, struct wb_vector *rules, struct token_range prelude, struct token_range block);
 static int parser_selectors(struct vm_heap *heap, struct wb_arena *arena, struct token_range prelude, struct css_selector **selectors, size_t *count);
 static int parser_selector(struct vm_heap *heap, struct wb_arena *arena, struct token_range tokens, struct css_selector *selector);
@@ -77,10 +81,12 @@ css_parse_sheet(
 	struct token_range prelude;
 	struct token_range block;
 	struct wb_vector rules;
+	struct wb_vector imports;
 	size_t count;
 	size_t index;
 	size_t start;
 	size_t end;
+	int is_import;
 	int error;
 
 	/* Tokenizes the text into the sheet's arena. */
@@ -93,6 +99,7 @@ css_parse_sheet(
 
 	/* Reads the top-level rules. */
 	wb_vector_init(&rules, sizeof(struct css_rule));
+	wb_vector_init(&imports, sizeof(struct vm_string *));
 	index = 0;
 	while (index < count && tokens[index].type != CSS_TOKEN_EOF) {
 		/* Whitespace and the HTML comment markers between rules are skipped. */
@@ -103,9 +110,21 @@ css_parse_sheet(
 			continue;
 		}
 
-		/* At-rules are skipped whole in this pass. */
+		/* An @import before the style rules names a sheet that comes before this one's rules. */
 		if (tokens[index].type == CSS_TOKEN_AT_KEYWORD) {
-			index = parser_skip_at_rule(tokens, count, index);
+			is_import = css_ident_equal(&tokens[index], "import");
+			end = parser_skip_at_rule(tokens, count, index);
+			if (is_import && rules.count == 0) {
+				error = parser_import(heap, tokens + index + 1U, end - index - 1U, &imports);
+				if (error == ENOMEM) {
+					wb_vector_release(&rules);
+					wb_vector_release(&imports);
+					return error;
+				}
+			}
+
+			/* Every other at-rule is skipped whole in this pass. */
+			index = end;
 			continue;
 		}
 
@@ -138,9 +157,27 @@ css_parse_sheet(
 		error = parser_add_rule(heap, sheet, &rules, prelude, block);
 		if (error == ENOMEM) {
 			wb_vector_release(&rules);
+			wb_vector_release(&imports);
 			return error;
 		}
 	}
+
+	/* Moves the imported URLs into the arena. */
+	if (imports.count != 0) {
+		sheet->imports = wb_arena_alloc(&sheet->arena, imports.count * sizeof(struct vm_string *));
+		if (sheet->imports == NULL) {
+			wb_vector_release(&rules);
+			wb_vector_release(&imports);
+			return ENOMEM;
+		}
+
+		/* Copies them. */
+		memcpy(sheet->imports, imports.items, imports.count * sizeof(struct vm_string *));
+		sheet->import_count = imports.count;
+	}
+
+	/* The list of imports is no longer needed. */
+	wb_vector_release(&imports);
 
 	/* Moves the rules into the arena. */
 	if (rules.count != 0) {
@@ -157,6 +194,11 @@ css_parse_sheet(
 
 	/* The list is no longer needed. */
 	wb_vector_release(&rules);
+
+	/* Files the selectors in the rule index. */
+	error = css_index_build(sheet);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the sheet holds its rules. */
 	return 0;
@@ -207,6 +249,136 @@ css_sheet_release(
 	wb_arena_release(&sheet->arena);
 	sheet->rules = NULL;
 	sheet->rule_count = 0;
+}
+
+/*
+ * Parses an author style sheet into a sheet of its own.
+ */
+int
+css_sheet_create(
+	struct css_sheet **sheet,
+	struct vm_heap *heap,
+	const uint16_t *units,
+	size_t length)
+{
+	struct css_sheet *made;
+	int error;
+
+	/* Allocates the sheet. */
+	made = calloc(1, sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+
+	/* Parses the text into it. */
+	error = css_parse_sheet(heap, units, length, CSS_ORIGIN_AUTHOR, made);
+	if (error != 0) {
+		css_sheet_release(made);
+		free(made);
+		return error;
+	}
+
+	/* Succeeded: the caller owns the sheet. */
+	*sheet = made;
+	return 0;
+}
+
+/*
+ * Frees a sheet made by css_sheet_create.
+ */
+void
+css_sheet_destroy(
+	struct css_sheet *sheet)
+{
+	/* A NULL sheet is nothing to free. */
+	if (sheet == NULL)
+		return;
+
+	/* Its arena, then the sheet. */
+	css_sheet_release(sheet);
+	free(sheet);
+}
+
+/*
+ * Tells how many sheets a sheet's @import rules name.
+ */
+size_t
+css_sheet_import_count(
+	const struct css_sheet *sheet)
+{
+	/* The number of imports. */
+	return sheet->import_count;
+}
+
+/*
+ * Gives the URL (an atom, as the sheet wrote it) of one of a sheet's
+ * @import rules.
+ */
+struct vm_string *
+css_sheet_import(
+	const struct css_sheet *sheet,
+	size_t index)
+{
+	/* The import's URL. */
+	return sheet->imports[index];
+}
+
+/*
+ * Tells how many style rules a sheet holds.
+ */
+size_t
+css_sheet_rule_count(
+	const struct css_sheet *sheet)
+{
+	/* The number of rules. */
+	return sheet->rule_count;
+}
+
+/*
+ * Resolves every URL the sheet's declarations name (and its imports)
+ * with the caller's resolver, so that they no longer depend on where the
+ * sheet came from.
+ */
+int
+css_sheet_resolve_urls(
+	struct css_sheet *sheet,
+	css_url_resolver resolve,
+	void *context)
+{
+	struct css_declaration *declaration;
+	struct vm_string *resolved;
+	size_t rule;
+	size_t position;
+	int error;
+
+	/* The declarations of every rule. */
+	for (rule = 0; rule < sheet->rule_count; rule++) {
+		for (position = 0; position < sheet->rules[rule].declaration_count; position++) {
+			declaration = &sheet->rules[rule].declarations[position];
+
+			/* Only a URL value is resolved. */
+			if (declaration->value.kind != CSS_VALUE_URL || declaration->value.url == NULL)
+				continue;
+
+			/* The resolver's URL replaces the written one; one it cannot resolve stays. */
+			error = resolve(context, declaration->value.url, &resolved);
+			if (error == ENOMEM)
+				return error;
+			if (error == 0)
+				declaration->value.url = resolved;
+		}
+	}
+
+	/* The imports. */
+	for (position = 0; position < sheet->import_count; position++) {
+		error = resolve(context, sheet->imports[position], &resolved);
+		if (error == ENOMEM)
+			return error;
+		if (error == 0)
+			sheet->imports[position] = resolved;
+	}
+
+	/* Succeeded: the URLs are resolved. */
+	return 0;
 }
 
 /*
@@ -313,6 +485,61 @@ parser_skip_at_rule(
 
 	/* The rule ran to the end. */
 	return index;
+}
+
+/*
+ * Reads the URL of an @import rule (the tokens after its at-keyword): a
+ * string or url() first; the media list after it comes with the media
+ * queries.  An @import without a URL is ignored.
+ */
+static int
+parser_import(
+	struct vm_heap *heap,
+	const struct css_token *tokens,
+	size_t count,
+	struct wb_vector *imports)
+{
+	struct vm_string *url;
+	size_t index;
+	int is_url;
+	int error;
+
+	/* Skips the whitespace before the URL. */
+	index = 0;
+	while (index < count && tokens[index].type == CSS_TOKEN_WHITESPACE)
+		index++;
+	if (index >= count)
+		return EINVAL;
+
+	/* A string, a url token, or url("...") with a string inside. */
+	url = NULL;
+	if (tokens[index].type == CSS_TOKEN_STRING || tokens[index].type == CSS_TOKEN_URL) {
+		url = vm_atom_from_units(heap, tokens[index].text, tokens[index].length);
+		if (url == NULL)
+			return ENOMEM;
+	} else if (tokens[index].type == CSS_TOKEN_FUNCTION) {
+		is_url = css_ident_equal(&tokens[index], "url");
+		index++;
+		while (index < count && tokens[index].type == CSS_TOKEN_WHITESPACE)
+			index++;
+		if (is_url && index < count && tokens[index].type == CSS_TOKEN_STRING) {
+			url = vm_atom_from_units(heap, tokens[index].text, tokens[index].length);
+			if (url == NULL)
+				return ENOMEM;
+		}
+	}
+
+	/* Anything else names no sheet. */
+	if (url == NULL)
+		return EINVAL;
+
+	/* Keeps the URL. */
+	error = wb_vector_push(imports, &url);
+	if (error != 0)
+		return ENOMEM;
+
+	/* Succeeded: the import is recorded. */
+	return 0;
 }
 
 /* Parses one qualified rule and appends it to the list; returns EINVAL for a rule that is dropped. */

@@ -67,6 +67,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/css/parser.c \
 	$(KEILAND_BROWSER_DIR)/css/values.c \
 	$(KEILAND_BROWSER_DIR)/css/cascade.c \
+	$(KEILAND_BROWSER_DIR)/css/index.c \
 	$(KEILAND_BROWSER_DIR)/css/ua.c \
 	$(KEILAND_BROWSER_DIR)/bind/window.c \
 	$(KEILAND_BROWSER_DIR)/bind/node.c \
@@ -89,6 +90,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/page/link.c \
 	$(KEILAND_BROWSER_DIR)/page/script.c \
 	$(KEILAND_BROWSER_DIR)/page/images.c \
+	$(KEILAND_BROWSER_DIR)/page/sheets.c \
 	$(KEILAND_BROWSER_DIR)/page/network.c \
 	$(KEILAND_BROWSER_DIR)/page/input.c \
 	$(KEILAND_BROWSER_DIR)/page/form.c \

@@ -240,11 +240,35 @@ struct css_style {
  */
 struct css_engine;
 
+/*
+ * One parsed author style sheet (a <style> element's text, or a sheet a
+ * <link> or an @import fetched), with its rule index.  A page keeps the
+ * sheets it parsed and lends them to each engine it makes, so a sheet is
+ * parsed once however often the page is styled again.
+ */
+struct css_sheet;
+
+/*
+ * Resolves a URL a sheet's value names (an atom) against the sheet's own
+ * location, into *resolved (an atom of the same heap); returns 0 or an
+ * errno value (EINVAL leaves the URL as it is).
+ */
+typedef int (*css_url_resolver)(void *context, const struct vm_string *url, struct vm_string **resolved);
+
+/* Sheets (parser.c). */
+int css_sheet_create(struct css_sheet **sheet, struct vm_heap *heap, const uint16_t *units, size_t length);
+void css_sheet_destroy(struct css_sheet *sheet);
+size_t css_sheet_import_count(const struct css_sheet *sheet);
+struct vm_string *css_sheet_import(const struct css_sheet *sheet, size_t index);
+size_t css_sheet_rule_count(const struct css_sheet *sheet);
+int css_sheet_resolve_urls(struct css_sheet *sheet, css_url_resolver resolve, void *context);
+
 /* The engine (cascade.c). */
 int css_engine_create(struct css_engine **engine, struct vm_heap *heap);
 void css_engine_destroy(struct css_engine *engine);
 int css_engine_add_sheet(struct css_engine *engine, const uint16_t *units, size_t length);
 int css_engine_add_sheet_origin(struct css_engine *engine, const uint16_t *units, size_t length, int origin);
+int css_engine_add_parsed(struct css_engine *engine, const struct css_sheet *sheet);
 void css_engine_set_viewport(struct css_engine *engine, float width, float height);
 int css_engine_compute(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style);
 void css_initial_style(struct css_style *style);

@@ -38,7 +38,21 @@
 #define RANK_USER_AGENT_IMPORTANT	3
 
 /*
- * The style sheets of a document and the atoms the matching looks up.
+ * One sheet of an engine, in cascade order: the sheet, and the same sheet
+ * again in owned when the engine parsed it itself (the user agent's, and
+ * text added with css_engine_add_sheet) and frees it; a sheet lent by the
+ * page (css_engine_add_parsed) has owned NULL and outlives the engine.
+ */
+struct cascade_sheet {
+	const struct css_sheet *sheet;
+	struct css_sheet *owned;
+};
+
+/*
+ * The style sheets of a document, the atoms the matching looks up, and
+ * the buffers the matching of one element reuses: the atoms of its
+ * classes, the index entries that may match it, and a class name's
+ * characters on their way to an atom.
  */
 struct css_engine {
 	struct vm_heap *heap;
@@ -50,21 +64,29 @@ struct css_engine {
 	float root_font_size;
 	float viewport_width;
 	float viewport_height;
+	struct wb_vector class_keys;
+	struct wb_vector candidates;
+	struct wb_units word;
 };
 
 /*
  * One declaration that applies to the element being styled, with what
- * orders it among the others.
+ * orders it among the others: its sheet's place in the cascade, its
+ * rule's place in the sheet and its own place in the rule, packed.
  */
 struct cascade_match {
 	const struct css_declaration *declaration;
 	int rank;
 	uint32_t specificity;
-	uint32_t order;
+	uint64_t order;
 };
 
 static int cascade_collect(struct css_engine *engine, struct dom_element *element, struct wb_vector *matches, struct wb_arena *scratch);
-static int cascade_add_declarations(struct wb_vector *matches, const struct css_declaration *declarations, size_t count, int origin, uint32_t specificity, uint32_t order);
+static int cascade_element_keys(struct css_engine *engine, struct dom_element *element, struct vm_string **id);
+static int cascade_add_bucket(struct css_engine *engine, const struct css_rule_index *index, const struct css_index_bucket *bucket);
+static int cascade_collect_sheet(struct css_engine *engine, struct dom_element *element, const struct css_sheet *sheet, uint64_t sheet_number, struct vm_string *id, struct wb_vector *matches);
+static int cascade_entry_compare(const void *left, const void *right);
+static int cascade_add_declarations(struct wb_vector *matches, const struct css_declaration *declarations, size_t count, int origin, uint32_t specificity, uint64_t order);
 static int cascade_compare(const void *left, const void *right);
 static int cascade_selector_matches(struct css_engine *engine, struct dom_element *element, const struct css_selector *selector, size_t index);
 static int cascade_compound_matches(struct css_engine *engine, struct dom_element *element, const struct css_compound *compound);
@@ -103,7 +125,10 @@ css_engine_create(
 	created->root_font_size = CASCADE_DEFAULT_FONT_SIZE;
 	created->viewport_width = CASCADE_DEFAULT_VIEWPORT_WIDTH;
 	created->viewport_height = CASCADE_DEFAULT_VIEWPORT_HEIGHT;
-	wb_vector_init(&created->sheets, sizeof(struct css_sheet *));
+	wb_vector_init(&created->sheets, sizeof(struct cascade_sheet));
+	wb_vector_init(&created->class_keys, sizeof(struct vm_string *));
+	wb_vector_init(&created->candidates, sizeof(struct css_index_entry));
+	wb_units_init(&created->word);
 	created->atom_id = vm_atom_from_ascii(heap, "id");
 	created->atom_class = vm_atom_from_ascii(heap, "class");
 	created->atom_style = vm_atom_from_ascii(heap, "style");
@@ -136,22 +161,23 @@ void
 css_engine_destroy(
 	struct css_engine *engine)
 {
-	struct css_sheet **sheets;
+	struct cascade_sheet *sheets;
 	size_t index;
 
 	/* A NULL engine is nothing to destroy. */
 	if (engine == NULL)
 		return;
 
-	/* Frees every sheet, then the engine. */
+	/* Frees every sheet the engine parsed itself (the lent ones are their lender's). */
 	sheets = engine->sheets.items;
-	for (index = 0; index < engine->sheets.count; index++) {
-		css_sheet_release(sheets[index]);
-		free(sheets[index]);
-	}
+	for (index = 0; index < engine->sheets.count; index++)
+		css_sheet_destroy(sheets[index].owned);
 
-	/* Frees the list and the engine. */
+	/* Frees the lists, the buffers and the engine. */
 	wb_vector_release(&engine->sheets);
+	wb_vector_release(&engine->class_keys);
+	wb_vector_release(&engine->candidates);
+	wb_units_release(&engine->word);
 	free(engine);
 }
 
@@ -186,6 +212,7 @@ css_engine_add_sheet_origin(
 	size_t length,
 	int origin)
 {
+	struct cascade_sheet entry;
 	struct css_sheet *sheet;
 	int error;
 
@@ -195,20 +222,43 @@ css_engine_add_sheet_origin(
 		return ENOMEM;
 	error = css_parse_sheet(engine->heap, units, length, origin, sheet);
 	if (error != 0) {
-		css_sheet_release(sheet);
-		free(sheet);
+		css_sheet_destroy(sheet);
 		return error;
 	}
 
-	/* Appends it. */
-	error = wb_vector_push(&engine->sheets, &sheet);
+	/* Appends it, owned by the engine. */
+	entry.sheet = sheet;
+	entry.owned = sheet;
+	error = wb_vector_push(&engine->sheets, &entry);
 	if (error != 0) {
-		css_sheet_release(sheet);
-		free(sheet);
+		css_sheet_destroy(sheet);
 		return error;
 	}
 
 	/* Succeeded: the sheet is the engine's last. */
+	return 0;
+}
+
+/*
+ * Adds an author sheet the caller parsed (and keeps) after the ones added
+ * before it; the engine only borrows it.
+ */
+int
+css_engine_add_parsed(
+	struct css_engine *engine,
+	const struct css_sheet *sheet)
+{
+	struct cascade_sheet entry;
+	int error;
+
+	/* Appends the lent sheet. */
+	entry.sheet = sheet;
+	entry.owned = NULL;
+	error = wb_vector_push(&engine->sheets, &entry);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the sheet takes part in the cascade. */
 	return 0;
 }
 
@@ -399,48 +449,27 @@ cascade_collect(
 	struct wb_vector *matches,
 	struct wb_arena *scratch)
 {
-	struct css_sheet **sheets;
+	const struct cascade_sheet *sheets;
 	struct css_declaration *declarations;
-	const struct css_rule *rule;
 	struct dom_attribute *attribute;
+	struct vm_string *id;
 	struct wb_units units;
-	uint32_t best;
 	size_t declaration_count;
 	size_t sheet;
 	size_t index;
-	size_t selector;
-	uint32_t order;
-	int matched;
-	int selector_matched;
 	int error;
 
-	/* The rules of every sheet whose selectors match, each once with its most specific selector. */
-	sheets = engine->sheets.items;
-	order = 0;
-	for (sheet = 0; sheet < engine->sheets.count; sheet++) {
-		for (index = 0; index < sheets[sheet]->rule_count; index++) {
-			rule = &sheets[sheet]->rules[index];
-			order++;
-			matched = 0;
-			best = 0;
-			for (selector = 0; selector < rule->selector_count; selector++) {
-				if (rule->selectors[selector].count == 0)
-					continue;
-				selector_matched = cascade_selector_matches(engine, element, &rule->selectors[selector], rule->selectors[selector].count - 1U);
-				if (selector_matched) {
-					if (!matched || rule->selectors[selector].specificity > best)
-						best = rule->selectors[selector].specificity;
-					matched = 1;
-				}
-			}
+	/* The keys the rule indexes are searched by: the element's id, classes and type. */
+	error = cascade_element_keys(engine, element, &id);
+	if (error != 0)
+		return error;
 
-			/* A rule no selector matched does not apply. */
-			if (!matched)
-				continue;
-			error = cascade_add_declarations(matches, rule->declarations, rule->declaration_count, sheets[sheet]->origin, best, order);
-			if (error != 0)
-				return error;
-		}
+	/* The rules of every sheet whose selectors match, in the order of the sheets. */
+	sheets = engine->sheets.items;
+	for (sheet = 0; sheet < engine->sheets.count; sheet++) {
+		error = cascade_collect_sheet(engine, element, sheets[sheet].sheet, (uint64_t)sheet, id, matches);
+		if (error != 0)
+			return error;
 	}
 
 	/* The style attribute, more specific than any selector. */
@@ -464,11 +493,252 @@ cascade_collect(
 		return error;
 	if (error != 0)
 		return 0;
-	error = cascade_add_declarations(matches, declarations, declaration_count, CSS_ORIGIN_AUTHOR, 0xffffffffU, order + 1U);
+
+	/* They come after every sheet's rules. */
+	error = cascade_add_declarations(matches, declarations, declaration_count, CSS_ORIGIN_AUTHOR, 0xffffffffU, (uint64_t)engine->sheets.count << 44);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: every applying declaration is gathered. */
+	return 0;
+}
+
+/*
+ * Finds the atoms an element is looked up by in the rule indexes: its id
+ * (NULL when it has none, or when no sheet names it), and its classes in
+ * the engine's class_keys (the ones no sheet names are left out: no atom
+ * exists for them, so no selector can name them).
+ */
+static int
+cascade_element_keys(
+	struct css_engine *engine,
+	struct dom_element *element,
+	struct vm_string **id)
+{
+	struct dom_attribute *attribute;
+	struct vm_string *classes;
+	struct vm_string *atom;
+	size_t start;
+	size_t end;
+	size_t position;
+	uint16_t unit;
+	int error;
+
+	/* The id's atom, found without making one. */
+	*id = NULL;
+	wb_vector_clear(&engine->class_keys);
+	attribute = dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_id);
+	if (attribute != NULL) {
+		wb_units_clear(&engine->word);
+		for (position = 0; position < attribute->value->length; position++) {
+			unit = vm_string_at(attribute->value, position);
+			error = wb_units_append(&engine->word, &unit, 1);
+			if (error != 0)
+				return ENOMEM;
+		}
+
+		/* The atom, when a sheet made one. */
+		*id = vm_atom_find_units(engine->heap, engine->word.data, engine->word.length);
+	}
+
+	/* An element without classes has no class keys. */
+	attribute = dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_class);
+	if (attribute == NULL)
+		return 0;
+	classes = attribute->value;
+
+	/* Each whitespace-separated word of the class attribute. */
+	start = 0;
+	while (start < classes->length) {
+		/* Skips whitespace before the word. */
+		unit = vm_string_at(classes, start);
+		if (unit == ' ' || unit == '\t' || unit == '\n' || unit == '\f' || unit == '\r') {
+			start++;
+			continue;
+		}
+
+		/* Copies the word's characters up to the next whitespace. */
+		wb_units_clear(&engine->word);
+		end = start;
+		while (end < classes->length) {
+			unit = vm_string_at(classes, end);
+			if (unit == ' ' || unit == '\t' || unit == '\n' || unit == '\f' || unit == '\r')
+				break;
+			error = wb_units_append(&engine->word, &unit, 1);
+			if (error != 0)
+				return ENOMEM;
+			end++;
+		}
+
+		/* The word's atom, when some sheet named it, is a key. */
+		atom = vm_atom_find_units(engine->heap, engine->word.data, engine->word.length);
+		if (atom != NULL) {
+			error = wb_vector_push(&engine->class_keys, &atom);
+			if (error != 0)
+				return ENOMEM;
+		}
+
+		/* On to the next word. */
+		start = end;
+	}
+
+	/* Succeeded: the element's keys are found. */
+	return 0;
+}
+
+/* Appends the index entries of a bucket (NULL: none) to the engine's candidates. */
+static int
+cascade_add_bucket(
+	struct css_engine *engine,
+	const struct css_rule_index *index,
+	const struct css_index_bucket *bucket)
+{
+	uint32_t position;
+	int error;
+
+	/* A key no selector is filed under adds nothing. */
+	if (bucket == NULL)
+		return 0;
+
+	/* Each entry of the run. */
+	for (position = bucket->start; position < bucket->start + bucket->count; position++) {
+		error = wb_vector_push(&engine->candidates, &index->entries[position]);
+		if (error != 0)
+			return ENOMEM;
+	}
+
+	/* Succeeded: the run is among the candidates. */
+	return 0;
+}
+
+/*
+ * Gathers the declarations of one sheet's rules that match an element:
+ * the selectors its index files under the element's id, classes and type
+ * and the universal ones, tried in rule order, each rule once with the
+ * most specific of its selectors that match.
+ */
+static int
+cascade_collect_sheet(
+	struct css_engine *engine,
+	struct dom_element *element,
+	const struct css_sheet *sheet,
+	uint64_t sheet_number,
+	struct vm_string *id,
+	struct wb_vector *matches)
+{
+	const struct css_rule_index *index;
+	const struct css_index_bucket *bucket;
+	const struct css_index_entry *candidates;
+	const struct css_rule *rule;
+	struct css_index_bucket universal;
+	struct vm_string **class_keys;
+	uint32_t best;
+	uint32_t specificity;
+	uint64_t order;
+	size_t position;
+	size_t group;
+	int matched;
+	int selector_matched;
+	int error;
+
+	/* The candidates: the runs of the id, each class, the type, and the universal run. */
+	index = &sheet->index;
+	wb_vector_clear(&engine->candidates);
+	bucket = css_index_find(&index->ids, id);
+	error = cascade_add_bucket(engine, index, bucket);
+	class_keys = engine->class_keys.items;
+	for (position = 0; position < engine->class_keys.count && error == 0; position++) {
+		bucket = css_index_find(&index->classes, class_keys[position]);
+		error = cascade_add_bucket(engine, index, bucket);
+	}
+
+	/* The type's run. */
+	if (error == 0) {
+		bucket = css_index_find(&index->tags, element->local_name);
+		error = cascade_add_bucket(engine, index, bucket);
+	}
+
+	/* The universal run. */
+	if (error == 0) {
+		universal.key = NULL;
+		universal.start = index->universal_start;
+		universal.count = index->universal_count;
+		error = cascade_add_bucket(engine, index, &universal);
+	}
+
+	/* Memory ran out on the way. */
+	if (error != 0)
+		return error;
+
+	/* Several runs are merged into rule order (each run is in rule order already). */
+	candidates = engine->candidates.items;
+	if (engine->candidates.count > 1)
+		qsort(engine->candidates.items, engine->candidates.count, sizeof(struct css_index_entry), cascade_entry_compare);
+
+	/* Tries the candidates rule by rule. */
+	position = 0;
+	while (position < engine->candidates.count) {
+		rule = &sheet->rules[candidates[position].rule];
+		matched = 0;
+		best = 0;
+
+		/* Every candidate selector of the same rule. */
+		group = position;
+		while (group < engine->candidates.count && candidates[group].rule == candidates[position].rule) {
+			selector_matched = cascade_selector_matches(
+				engine,
+				element,
+				&rule->selectors[candidates[group].selector],
+				rule->selectors[candidates[group].selector].count - 1U);
+			specificity = rule->selectors[candidates[group].selector].specificity;
+			if (selector_matched) {
+				if (!matched || specificity > best)
+					best = specificity;
+				matched = 1;
+			}
+
+			/* The next selector. */
+			group++;
+		}
+
+		/* A rule whose selectors all failed does not apply. */
+		if (matched) {
+			order = (sheet_number << 44) | ((uint64_t)candidates[position].rule << 16);
+			error = cascade_add_declarations(matches, rule->declarations, rule->declaration_count, sheet->origin, best, order);
+			if (error != 0)
+				return error;
+		}
+
+		/* On to the next rule. */
+		position = group;
+	}
+
+	/* Succeeded: the sheet's applying declarations are gathered. */
+	return 0;
+}
+
+/* Orders two index entries by rule, then selector. */
+static int
+cascade_entry_compare(
+	const void *left,
+	const void *right)
+{
+	const struct css_index_entry *a;
+	const struct css_index_entry *b;
+
+	/* Compares the rule, then the selector. */
+	a = left;
+	b = right;
+	if (a->rule < b->rule)
+		return -1;
+	if (a->rule > b->rule)
+		return 1;
+	if (a->selector < b->selector)
+		return -1;
+	if (a->selector > b->selector)
+		return 1;
+
+	/* The same entry. */
 	return 0;
 }
 
@@ -480,7 +750,7 @@ cascade_add_declarations(
 	size_t count,
 	int origin,
 	uint32_t specificity,
-	uint32_t order)
+	uint64_t order)
 {
 	struct cascade_match match;
 	size_t index;
@@ -490,7 +760,7 @@ cascade_add_declarations(
 	for (index = 0; index < count; index++) {
 		match.declaration = &declarations[index];
 		match.specificity = specificity;
-		match.order = order * 4096U + (uint32_t)index;
+		match.order = order + (uint64_t)index;
 		if (origin == CSS_ORIGIN_USER_AGENT) {
 			match.rank = RANK_USER_AGENT;
 			if (declarations[index].important)

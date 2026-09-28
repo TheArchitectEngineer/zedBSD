@@ -1,0 +1,9 @@
+/* ws074-p068: the sheet sheets.html links; it imports sheets-import.css. */
+@import "sheets-import.css";
+* { font-family: sans-serif; }
+#a { background: #ccf; }
+.two { background: #ffc; }
+p.three { background: #eee; margin: 10px 20px; }
+section .deep { color: #060; padding-left: 30px; }
+.imp { background: #00f; }
+div.box.one { border-color: #c00; }

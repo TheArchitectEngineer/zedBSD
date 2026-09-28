@@ -55,6 +55,11 @@ typedef void (*page_request_done)(void *context, struct net_request *request);
  * and images_generation counts the images that arrived, which
  * laid_out_images is compared with to lay the page out again.
  *
+ * The style sheets (sheets.c): sheets is the table of the page's parsed
+ * sheets (<style> texts and fetched sheets, by location);
+ * sheets_generation counts the sheets that arrived, styled_sheets is its
+ * value when the page was last styled, and styling numbers the stylings.
+ *
  * The focus (input.c): focused is the element the keys go to (NULL for
  * none: the body gets them), a root of the heap; focus_visible says the
  * keyboard moved it there, so its ring is drawn while window_focused says
@@ -82,6 +87,10 @@ struct page {
 	struct net_loader *loader;
 	uint32_t images_generation;
 	uint32_t laid_out_images;
+	struct wb_vector sheets;
+	uint32_t sheets_generation;
+	uint32_t styled_sheets;
+	uint32_t styling;
 	page_console console;
 	void *console_context;
 	struct dom_element *focused;
@@ -119,6 +128,11 @@ int page_open_fonts(struct page *page, const struct text_font_paths *paths);
 int page_layout(struct page *page, int width, int height);
 int page_paint(struct page *page);
 int page_title(const struct page *page, struct wb_buffer *out);
+
+/* Style sheets (sheets.c). */
+void page_sheets_init(struct page *page);
+int page_sheets_add(struct page *page);
+void page_sheets_release(struct page *page);
 
 /* Scripts, events and time (script.c). */
 int page_start_scripts(struct page *page);

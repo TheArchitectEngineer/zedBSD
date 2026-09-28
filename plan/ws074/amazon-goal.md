@@ -74,7 +74,7 @@ master.md の決定の行）。この文書は [ws074-p067](phase067/phase.md) �
 | 順 | Phase | 内容 | 目安 |
 | --- | --- | --- | --- |
 | 1 | [ws074-p032](phase032/phase.md) | form: `<input>`（text・password・submit・button・reset・hidden・checkbox・radio）・`<textarea>`・`<select>` の最小の描画、focus と caret、入力と編集、Enter と submit の送信（GET、`accept-charset`・document の encoding）、`noscript` を隠す、`box-sizing` | **cleared**（2026-09-28。guest で live の Amazon の検索が通る。検索 2.42% → 39.08%、トップ 11.56% → 9.19%） |
-| 2 | ws074-p068 | 外の stylesheet（`<link rel=stylesheet>` と `@import`、非同期の loader、読み終えてから再計算）、rule の索引（最右の id・class・tag） | 3 h |
+| 2 | [ws074-p068](phase068/phase.md) | 外の stylesheet（`<link rel=stylesheet>` と `@import`、非同期の loader、読み終えてから再計算）、rule の索引（最右の id・class・tag） | **cleared**（2026-09-28。local の capture で検索 画素 61.07% → 75.75%、トップ 17.16% → 14.97%） |
 | 3 | ws074-p061 | CSS の値: `var()` と custom property、`calc()`・`min()`・`max()`・`clamp()`、`@media`（幅・`prefers-*`）、`@supports`、`!important` の確認、論理 property、`-webkit-` の別名 | 3〜4 h |
 | 4 | ws074-p069 | selector と pseudo-element: `:not()`・`:is()`・`:where()`・`:has()`（子孫の最小）、`:root`、`:nth-child`・`:last-child`・`*-of-type`、`:hover`・`:focus`・`:disabled`・`:checked`、`::before`・`::after`（`content` の文字列） | 3 h |
 | 5 | ws074-p035（最小） | flexbox: row・column・wrap、`flex` の shorthand、grow・shrink・basis、`align-items`・`justify-content`・`gap`、`inline-flex`、`-webkit-box` の別名 | 4 h |

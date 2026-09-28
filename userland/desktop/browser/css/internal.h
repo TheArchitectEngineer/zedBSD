@@ -282,12 +282,58 @@ struct css_rule {
 };
 
 /*
- * A parsed style sheet: its rules and the arena all of them live in.
+ * One selector of the rule index: the rule and which of its selectors.
+ */
+struct css_index_entry {
+	uint32_t rule;
+	uint32_t selector;
+};
+
+/*
+ * The run of index entries filed under one key (an atom; NULL marks an
+ * empty slot of the table).
+ */
+struct css_index_bucket {
+	struct vm_string *key;
+	uint32_t start;
+	uint32_t count;
+};
+
+/*
+ * An open-addressed table of buckets by key; capacity is a power of two
+ * (zero for a table with no key).
+ */
+struct css_index_table {
+	struct css_index_bucket *slots;
+	size_t capacity;
+};
+
+/*
+ * The rule index of a sheet (index.c): its selectors grouped by the key
+ * of their rightmost compound, the groups found by id, class or type, and
+ * the run of selectors any element may match.  Each run is in rule order.
+ */
+struct css_rule_index {
+	struct css_index_entry *entries;
+	size_t entry_count;
+	struct css_index_table ids;
+	struct css_index_table classes;
+	struct css_index_table tags;
+	uint32_t universal_start;
+	uint32_t universal_count;
+};
+
+/*
+ * A parsed style sheet: its rules, the URLs its @import rules name (atoms,
+ * in order), its rule index and the arena all of them live in.
  */
 struct css_sheet {
 	struct wb_arena arena;
 	struct css_rule *rules;
 	size_t rule_count;
+	struct vm_string **imports;
+	size_t import_count;
+	struct css_rule_index index;
 	int origin;
 };
 
@@ -304,6 +350,10 @@ int css_parse_declarations(struct vm_heap *heap, struct wb_arena *arena, const u
 void css_sheet_release(struct css_sheet *sheet);
 int css_ident_equal(const struct css_token *token, const char *ascii);
 int css_units_equal_ascii(const uint16_t *units, size_t length, const char *ascii);
+
+/* The rule index (index.c). */
+int css_index_build(struct css_sheet *sheet);
+const struct css_index_bucket *css_index_find(const struct css_index_table *table, const struct vm_string *key);
 
 /* Values (values.c). */
 int css_property_lookup(const struct css_token *name);
