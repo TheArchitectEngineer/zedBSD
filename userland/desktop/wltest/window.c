@@ -51,7 +51,8 @@ wltest_window_open(
 	const char *display,
 	uint32_t width,
 	uint32_t height,
-	int fullscreen)
+	int fullscreen,
+	const char *app_id)
 {
 	int status;
 
@@ -113,7 +114,7 @@ wltest_window_open(
 
 	/* Publish the application identity and the fullscreen preference, unless a window was asked for. */
 	xdg_toplevel_set_title(window->toplevel, "Wayland Vulkan test");
-	xdg_toplevel_set_app_id(window->toplevel, "wltest");
+	xdg_toplevel_set_app_id(window->toplevel, app_id);
 	if (fullscreen)
 		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
 	wl_surface_commit(window->surface);

@@ -436,35 +436,80 @@ zwl_seat_motion(
 	struct zwl_server *server,
 	uint32_t time)
 {
-	struct zwl_object *object;
-	struct zwl_object *target;
-	uint32_t words[3];
 	int taken;
+
+	/* zdesktop's own grabs and screens take the motion first. */
+	taken = zwl_seat_motion_shell(server, time);
+	if (taken)
+		return;
+
+	/* Succeeded: otherwise the surface under the pointer hears it. */
+	zwl_seat_motion_deliver(server, time);
+}
+
+/*
+ * Gives the pointer's motion to zdesktop's own grabs and screens (the lock
+ * screen, a drag and drop, a resize, the glass look's moves and screens);
+ * reports whether one of them took it.  A pen moving as the pointer passes
+ * here first too (tablet.c).
+ */
+int
+zwl_seat_motion_shell(
+	struct zwl_server *server,
+	uint32_t time)
+{
+	int taken;
+
+	/* The event's time, for whatever measures the pointer's speed (corner.c). */
+	server->input_time = time;
 
 	/* The lock screen has the pointer: only its buttons light up (ws035-p102). */
 	server->lock_input_ms = zwl_milliseconds();
 	if (server->locked) {
 		server->dirty = 1;
-		return;
+		return 1;
 	}
 
 	/* A drag and drop has the pointer (data.c). */
 	if (server->dnd_active) {
 		zwl_data_drag_motion(server, time);
-		return;
+		return 1;
 	}
 
 	/* A window being resized follows the pointer (toplevel.c). */
 	taken = zwl_toplevel_motion(server);
 	if (taken)
-		return;
+		return 1;
 
 	/* In the glass look a window being moved takes the motion (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
 		taken = zwl_glass_motion(server);
 		if (taken)
-			return;
+			return 1;
 	}
+
+	/* Over a fullscreen window only the edges' gestures are zdesktop's (shell.c). */
+	if (server->glass && !server->windowed && server->popup_grab == NULL) {
+		taken = zwl_glass_edge_motion(server);
+		if (taken)
+			return 1;
+	}
+
+	/* Succeeded: nothing of zdesktop's took the motion. */
+	return 0;
+}
+
+/*
+ * Tells the surface under the pointer where the pointer is now.
+ */
+void
+zwl_seat_motion_deliver(
+	struct zwl_server *server,
+	uint32_t time)
+{
+	struct zwl_object *object;
+	struct zwl_object *target;
+	uint32_t words[3];
 
 	/* The surface under the pointer hears it (enter and leave as it changes); nobody without one. */
 	zwl_seat_pointer_update(server);
@@ -499,11 +544,34 @@ zwl_seat_button(
 	uint32_t button,
 	uint32_t state)
 {
-	struct zwl_object *object;
-	struct zwl_object *target;
-	uint32_t words[4];
+	int taken;
+
+	/* zdesktop's own grabs, screens and title bars take the button first. */
+	taken = zwl_seat_button_shell(server, time, button, state);
+	if (taken)
+		return;
+
+	/* Succeeded: otherwise the surface under the pointer hears it. */
+	zwl_seat_button_deliver(server, time, button, state);
+}
+
+/*
+ * Records a pointer button and gives it to zdesktop's own grabs, screens
+ * and title bars; reports whether one of them took it.  A pen's touch
+ * passes here first as BTN_LEFT (tablet.c).
+ */
+int
+zwl_seat_button_shell(
+	struct zwl_server *server,
+	uint32_t time,
+	uint32_t button,
+	uint32_t state)
+{
 	uint32_t bit;
 	int taken;
+
+	/* The event's time, for whatever measures the pointer's speed (corner.c). */
+	server->input_time = time;
 
 	/* The buttons held now, which a move or a resize a client asks for needs (toplevel.c). */
 	bit = 0;
@@ -519,32 +587,57 @@ zwl_seat_button(
 	server->lock_input_ms = zwl_milliseconds();
 	if (server->locked) {
 		(void)zwl_greeter_button(server, button, state);
-		return;
+		return 1;
 	}
 
 	/* A drag and drop takes the buttons; the release of the last one ends it (data.c). */
 	if (server->dnd_active) {
 		if (state == 0U && server->buttons_down == 0U)
 			zwl_data_drag_release(server);
-		return;
+		return 1;
 	}
 
 	/* A window being resized takes the buttons until the release ends the resize (toplevel.c). */
 	taken = zwl_toplevel_button(server, state);
 	if (taken)
-		return;
+		return 1;
 
 	/* While a popup holds the grab, a press outside its chain closes the popups (popup.c). */
 	taken = zwl_popup_button(server, button, state);
 	if (taken)
-		return;
+		return 1;
 
 	/* In the glass look the title bars and the desktop take their buttons (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
 		taken = zwl_glass_button(server, button, state);
 		if (taken)
-			return;
+			return 1;
 	}
+
+	/* Over a fullscreen window only the edges' gestures take their buttons (shell.c). */
+	if (server->glass && !server->windowed && server->popup_grab == NULL) {
+		taken = zwl_glass_edge_button(server, button, state);
+		if (taken)
+			return 1;
+	}
+
+	/* Succeeded: nothing of zdesktop's took the button. */
+	return 0;
+}
+
+/*
+ * Tells the surface under the pointer about one button press or release.
+ */
+void
+zwl_seat_button_deliver(
+	struct zwl_server *server,
+	uint32_t time,
+	uint32_t button,
+	uint32_t state)
+{
+	struct zwl_object *object;
+	struct zwl_object *target;
+	uint32_t words[4];
 
 	/* The button goes to the surface under the pointer; without one it reaches nobody. */
 	zwl_seat_pointer_update(server);
