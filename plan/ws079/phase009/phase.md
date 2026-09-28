@@ -126,3 +126,10 @@ main の checkout（d809ea1b、この Phase の 2 回目の区切りを merge �
 | `zdesktop-p013-touch.sh build/main-pen`（compositor の touch） | PASS | `build/main-pen-p013t.log` |
 
 3 本の log に MISSING・FAIL は 0。
+
+## 注記: 共有の scratchpad の事故（2026-09-29 main が WS074 の subagent の報告から記録）
+
+subagent が共有する session の scratchpad の `regress.sh` を WS079 の agent が上書きし、WS074 の agent がそれと知らずに 01:00〜01:22 に
+2 回、WS079 の worktree で走らせた（run-pdf-reader 等、`build/ws079-p015-host/*.log` を書いた）。走ったのは同じ worktree の WS079 の code の
+試験で、code は変えていない。p009 の clearance は、その後の 2 回目の区切りの host 試験と、main が main の checkout で別に流した pen の image の
+guest 試験に基づくので、影響は無いと判断する。以後、subagent は scratchpad の自分専用の subdirectory だけを使う（main の指示）。
