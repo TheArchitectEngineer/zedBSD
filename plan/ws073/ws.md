@@ -57,6 +57,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p020](phase020/phase.md) | BUG-075・BUG-082 | 読んだ後に消した file の storage を unlink で返す。sync と終了の競合（BUG-082）: wip.patch に加え、sync が読みの fill を i_io_lock を持って待つ待ち合いと、amd64 HAL の `running_task` の per-CPU の 2 回の load（fork が他の thread の frame を写す）を修正。bug082.sh 300/300、bug075.sh 14/14 | cleared（2 回目の試行、2026-09-28） |
 | [ws073-p021](phase021/phase.md) | BUG-084 | header の改名の直後の image の build で rootfs が消えた header を複写する（clang の package の header の一覧を sysroot の manifest から） | cleared（2026-09-28） |
 | [ws073-p022](phase022/phase.md) | BUG-086 | block・ignore された同期の fault の signal を既定の動作（終了）に強いる（thread 宛て、Linux と同じ） | cleared（2026-09-28） |
+| [ws073-p023](phase023/phase.md) | BUG-088 | amd64 の `AMD64_CURRENT_SPACE` の 2 回の load の監査: 使う所は全て割り込み禁止の中で preempt されない、修正不要 | cleared（2026-09-28） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 
