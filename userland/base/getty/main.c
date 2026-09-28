@@ -93,7 +93,7 @@ main(
 
 	/* Handles a failed gethostname operation. */
 	if (gethostname(hostname, sizeof(hostname)) != 0)
-		strcpy(hostname, "zedbsd");
+		strcpy(hostname, "kei");
 
 	hostname[sizeof(hostname) - 1] = '\0';
 

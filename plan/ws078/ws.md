@@ -75,3 +75,16 @@ Resume point: 2026-09-28 の周期の終わり: p002・p003・p006 は cleared�
    `userland/desktop/<name>` に置く（`userland/desktop/wayland` 等）。menuconfig の Desktop の分類（BUG-080）はこの階層と揃える。
 4. Keiland の Wayland の protocol と library: 接頭辞は **`keiland_`**（`zed_titlebar_v1` → `keiland_titlebar_v1` 等、`libzdesktop` → `libkeiland`）。
    `zwp_`・`zxdg_` は upstream の名前であり改めない。
+
+## 残り（2026-09-29 main、ws035-p121 の報告から）
+
+ws035-p121 で見える旧名を直した（wl_output の name `DISPLAY-1`・description・make/model `Unknown`、Vulkan の application 名、usage、xkb の節の名前 等）。
+main が getty の hostname の既定を `kei` にした（sh の prompt の既定と揃える）。残りは次のとおりで、どれもデモの画面には出ない:
+
+| 項目 | 扱い（main の判断） |
+| --- | --- |
+| 注釈の `zdesktop`（約 240 箇所） | WS074・WS081 の作業が落ち着いた後、1 つの agent で一斉に置き換える（他の agent と衝突するので今はしない） |
+| 試験の log の印 `ZWL `・`ZTERM `・`ZFILES `・`ZBROWSER `（約 340 行）、試験の `/tmp/zdesktop.log` | 内部の印で見えない。改名するなら全試験を同時に直す別の Phase。当面は変えない |
+| X の core font の名前 `zed-unicode` | retro（zwm・zterm・zshell・Xzed）の内部の名前。変えない |
+| `TERM=zed`（base の sh の既定） | terminfo の名前。変えるなら terminfo の entry と合わせて。低い優先度 |
+| 古い p069 の demo（service `zdesktop`、`/etc/keiland/run-zdesktop.sh`） | 今のデモ（WS075 の graphical login）に置き換わった。廃止を検討（使っている試験の確認の後） |
