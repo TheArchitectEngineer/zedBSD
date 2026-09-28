@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>browser: external style sheets</title>
+<link rel="stylesheet" href="sheets-main.css">
+<link rel="alternate stylesheet" href="sheets-alt.css">
+<link rel="stylesheet" href="sheets-alt.css" disabled>
+<style>
+@import url("sheets-late.css");
+.late { background: #cfc; }
+</style>
+</head>
+<body>
+<div id="a" class="box one">An id and two classes: the id's background, the compound's border color.</div>
+<div class="box two">A class of the linked sheet and one of its import.</div>
+<p class="three">A type and a class, with the import's color.</p>
+<div class="late">A class of the style element, after the linked sheets.</div>
+<div class="imp">The import's !important background wins over the later normal one.</div>
+<section><div class="deep">A descendant selector filed under its class.</div></section>
+<div style="color: rgb(0, 0, 128)" class="box">The style attribute's color.</div>
+<div class="imported-late">A rule of the style element's @import.</div>
+</body>
+</html>

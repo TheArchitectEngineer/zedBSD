@@ -25,7 +25,7 @@
 #define PAGE_DUMP_DEPTH		512
 
 static int page_gather_styles(struct page *page);
-static int page_collect_styles(struct page *page, struct dom_node *node);
+static int page_update_styles(struct page *page);
 static int page_text_of(const struct dom_node *node, struct wb_units *units);
 static const struct dom_node *page_find_title(const struct dom_node *node, int depth);
 static int page_dump_node(const struct dom_node *node, int depth, struct wb_buffer *out);
@@ -59,6 +59,7 @@ page_create(
 	/* Its stack ends where the caller says, and it has no images yet. */
 	vm_heap_set_stack_base(created->heap, stack_base);
 	page_images_init(created);
+	page_sheets_init(created);
 
 	/* Makes the document and keeps it alive as a root. */
 	created->document = dom_document_create(created->heap);
@@ -119,6 +120,7 @@ page_destroy(
 		text_system_close(&page->text);
 	page_images_release(page);
 	css_engine_destroy(page->css);
+	page_sheets_release(page);
 	bind_window_destroy(page->window);
 	vm_realm_destroy(page->realm);
 	vm_heap_destroy(page->heap);
@@ -401,12 +403,10 @@ page_layout(
 		page->laid_out = 0;
 	}
 
-	/* The style sheets again when a script changed the document since they were gathered. */
-	if (page->css == NULL || page->styled_generation != page->document->generation) {
-		error = page_gather_styles(page);
-		if (error != 0)
-			return error;
-	}
+	/* The style sheets again when the document or its sheets changed since they were gathered. */
+	error = page_update_styles(page);
+	if (error != 0)
+		return error;
 
 	/* The window's size for the scripts. */
 	bind_window_set_viewport(page->window, width, height);
@@ -561,6 +561,11 @@ page_dump_style(
 	struct dom_node *node;
 	int error;
 
+	/* The style sheets as the document and its fetched sheets are now. */
+	error = page_update_styles(page);
+	if (error != 0)
+		return error;
+
 	/* Styles from each element child of the document. */
 	for (node = page->document->node.first_child; node != NULL; node = node->next) {
 		if (node->type != DOM_ELEMENT)
@@ -574,7 +579,32 @@ page_dump_style(
 	return 0;
 }
 
-/* Makes the style engine anew with the document's <style> sheets in order. */
+/*
+ * Gathers the style sheets again when a script changed the document, or
+ * a fetched sheet arrived, since they were last gathered.
+ */
+static int
+page_update_styles(
+	struct page *page)
+{
+	int error;
+
+	/* Styles that are up to date stay. */
+	if (page->css != NULL &&
+	    page->styled_generation == page->document->generation &&
+	    page->styled_sheets == page->sheets_generation)
+		return 0;
+
+	/* A new engine with the sheets as they are now. */
+	error = page_gather_styles(page);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the styles match the document. */
+	return 0;
+}
+
+/* Makes the style engine anew with the document's style sheets in order. */
 static int
 page_gather_styles(
 	struct page *page)
@@ -588,48 +618,13 @@ page_gather_styles(
 	if (error != 0)
 		return error;
 
-	/* The document's sheets. */
-	error = page_collect_styles(page, &page->document->node);
+	/* The document's sheets, parsed once and lent to the engine. */
+	error = page_sheets_add(page);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the sheets match the document of this generation. */
 	page->styled_generation = page->document->generation;
-	return 0;
-}
-
-/* Adds the text of every HTML <style> element under a node to the style engine, in document order. */
-static int
-page_collect_styles(
-	struct page *page,
-	struct dom_node *node)
-{
-	struct dom_node *child;
-	struct wb_units text;
-	int is_style;
-	int error;
-
-	/* A <style> element's text is a sheet. */
-	is_style = dom_element_is(node, DOM_NS_HTML, DOM_TAG_STYLE);
-	if (is_style) {
-		wb_units_init(&text);
-		error = page_text_of(node, &text);
-		if (error == 0)
-			error = css_engine_add_sheet(page->css, text.data, text.length);
-		wb_units_release(&text);
-		if (error == ENOMEM)
-			return error;
-		return 0;
-	}
-
-	/* Otherwise its children are searched. */
-	for (child = node->first_child; child != NULL; child = child->next) {
-		error = page_collect_styles(page, child);
-		if (error != 0)
-			return error;
-	}
-
-	/* Succeeded: the node's sheets are added. */
 	return 0;
 }
 
@@ -832,6 +827,8 @@ page_append_length(
 		break;
 	case CSS_UNIT_PERCENT:
 		wb_buffer_printf(out, "%.2f%%", (double)length->value);
+		if (length->offset != 0)
+			wb_buffer_printf(out, "%+.2f", (double)length->offset);
 		break;
 	case CSS_UNIT_AUTO:
 		wb_buffer_append_string(out, "auto");

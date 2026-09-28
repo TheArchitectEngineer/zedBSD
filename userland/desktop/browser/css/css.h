@@ -45,12 +45,24 @@ enum css_unit {
 };
 
 /*
- * A computed length: a value and its unit.
+ * A computed length: a value and its unit.  A percentage may carry pixels
+ * added to it (offset, from a calc() that mixes the two, ws074-p061);
+ * the layout resolves the percentage and adds them.
  */
 struct css_length {
 	float value;
 	int unit;
+	float offset;
 };
+
+/* An element's custom properties (css/internal.h). */
+struct css_custom;
+
+/* A media query list (css/internal.h). */
+struct css_media;
+
+/* The most media lists a sheet of the cascade is under (a <link>'s and its imports'). */
+#define CSS_MEDIA_CHAIN_MAX	10
 
 /* The values of display. */
 enum css_display {
@@ -159,6 +171,70 @@ enum css_background_size {
 	CSS_BACKGROUND_SIZE_COVER = 101
 };
 
+/*
+ * The pseudo-elements that make boxes (ws074-p069), as numbers of the
+ * cascade and as bits of a style's pseudo_elements.
+ */
+#define CSS_PSEUDO_ELEMENT_NONE		0
+#define CSS_PSEUDO_ELEMENT_BEFORE	1
+#define CSS_PSEUDO_ELEMENT_AFTER	2
+#define CSS_PSEUDO_ELEMENT_OTHER	3
+
+/* What a ::before or ::after box holds: nothing, or a list of strings and attributes' values. */
+enum css_content_kind {
+	CSS_CONTENT_NONE,
+	CSS_CONTENT_LIST
+};
+
+/*
+ * One item of generated content: a string, or the name of an attribute
+ * whose value is shown (both atoms).
+ */
+struct css_content_item {
+	int is_attribute;
+	struct vm_string *text;
+};
+
+/*
+ * The generated content of a ::before or ::after: its items in order, in
+ * the arena of the sheet that declared it.
+ */
+struct css_content {
+	const struct css_content_item *items;
+	size_t count;
+};
+
+/* The values of flex-direction (ws074-p035). */
+enum css_flex_direction {
+	CSS_FLEX_ROW,
+	CSS_FLEX_ROW_REVERSE,
+	CSS_FLEX_COLUMN,
+	CSS_FLEX_COLUMN_REVERSE
+};
+
+/* The values of flex-wrap. */
+enum css_flex_wrap {
+	CSS_FLEX_NOWRAP,
+	CSS_FLEX_WRAP,
+	CSS_FLEX_WRAP_REVERSE
+};
+
+/*
+ * The places of justify-content, align-items, align-self and
+ * align-content (auto is align-self's only; normal and stretch are one).
+ */
+enum css_align {
+	CSS_ALIGN_AUTO,
+	CSS_ALIGN_STRETCH,
+	CSS_ALIGN_START,
+	CSS_ALIGN_END,
+	CSS_ALIGN_CENTER,
+	CSS_ALIGN_BASELINE,
+	CSS_ALIGN_SPACE_BETWEEN,
+	CSS_ALIGN_SPACE_AROUND,
+	CSS_ALIGN_SPACE_EVENLY
+};
+
 /* The generic font families. */
 enum css_generic_family {
 	CSS_FAMILY_SERIF,
@@ -232,6 +308,38 @@ struct css_style {
 	int white_space;
 	int underline;
 	int list_style;
+
+	/*
+	 * Generated content (ws074-p069): what content gives a ::before or
+	 * ::after (content_kind, and the list of its items, in the declaring
+	 * sheet's arena), and for an element, which of its pseudo-elements some rule
+	 * matches (1 << CSS_PSEUDO_ELEMENT_*), so the layout asks for their
+	 * styles only then.
+	 */
+	int content_kind;
+	const struct css_content *content;
+	int pseudo_elements;
+
+	/* Flexible boxes (ws074-p035): the container's, then the item's. */
+	int flex_direction;
+	int flex_wrap;
+	int justify_content;
+	int align_items;
+	int align_content;
+	struct css_length row_gap;
+	struct css_length column_gap;
+	float flex_grow;
+	float flex_shrink;
+	struct css_length flex_basis;
+	int align_self;
+	int order;
+
+	/*
+	 * The element's custom properties (inherited; its own first, then its
+	 * parent's), in the style engine's arena: good while the engine that
+	 * computed the style lives.
+	 */
+	const struct css_custom *custom;
 };
 
 /*
@@ -240,13 +348,40 @@ struct css_style {
  */
 struct css_engine;
 
+/*
+ * One parsed author style sheet (a <style> element's text, or a sheet a
+ * <link> or an @import fetched), with its rule index.  A page keeps the
+ * sheets it parsed and lends them to each engine it makes, so a sheet is
+ * parsed once however often the page is styled again.
+ */
+struct css_sheet;
+
+/*
+ * Resolves a URL a sheet's value names (an atom) against the sheet's own
+ * location, into *resolved (an atom of the same heap); returns 0 or an
+ * errno value (EINVAL leaves the URL as it is).
+ */
+typedef int (*css_url_resolver)(void *context, const struct vm_string *url, struct vm_string **resolved);
+
+/* Sheets (parser.c). */
+int css_sheet_create(struct css_sheet **sheet, struct vm_heap *heap, const uint16_t *units, size_t length);
+void css_sheet_destroy(struct css_sheet *sheet);
+size_t css_sheet_import_count(const struct css_sheet *sheet);
+struct vm_string *css_sheet_import(const struct css_sheet *sheet, size_t index);
+size_t css_sheet_rule_count(const struct css_sheet *sheet);
+const struct css_media *css_sheet_import_media(const struct css_sheet *sheet, size_t index);
+int css_sheet_resolve_urls(struct css_sheet *sheet, css_url_resolver resolve, void *context);
+
 /* The engine (cascade.c). */
 int css_engine_create(struct css_engine **engine, struct vm_heap *heap);
 void css_engine_destroy(struct css_engine *engine);
 int css_engine_add_sheet(struct css_engine *engine, const uint16_t *units, size_t length);
 int css_engine_add_sheet_origin(struct css_engine *engine, const uint16_t *units, size_t length, int origin);
+int css_engine_add_parsed(struct css_engine *engine, const struct css_sheet *sheet, const struct css_media *const *media, size_t media_count);
+int css_engine_parse_media(struct css_engine *engine, const uint16_t *units, size_t length, const struct css_media **media);
 void css_engine_set_viewport(struct css_engine *engine, float width, float height);
 int css_engine_compute(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style);
+int css_engine_compute_pseudo(struct css_engine *engine, struct dom_element *element, int pseudo, const struct css_style *element_style, struct css_style *style);
 void css_initial_style(struct css_style *style);
 
 #endif

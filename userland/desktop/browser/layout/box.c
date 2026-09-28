@@ -24,12 +24,14 @@
 #define BOX_BULLET_SQUARE	0x25aaU
 
 static int box_build_element(struct layout_tree *tree, struct css_engine *css, struct dom_element *element, const struct css_style *parent_style, struct layout_box *parent, int depth);
+static int box_build_pseudo(struct layout_tree *tree, struct css_engine *css, struct dom_element *element, struct layout_box *box, int pseudo);
 static int box_build_children(struct layout_tree *tree, struct css_engine *css, struct dom_node *node, const struct css_style *style, struct layout_box *box, int depth);
 static struct layout_box *box_new(struct layout_tree *tree, int kind, struct dom_node *node, const struct css_style *style);
 static void box_append(struct layout_box *parent, struct layout_box *child);
 static int box_is_inline_level(const struct layout_box *box);
 static int box_is_whitespace(const struct layout_box *box);
 static int box_fix_children(struct layout_tree *tree, struct layout_box *box);
+static int box_flex_items(struct layout_tree *tree, struct layout_box *box);
 static void box_anonymous_style(const struct css_style *parent, struct css_style *style);
 static void box_marker(struct layout_box *box, int ordinal);
 static void box_relative_offset(const struct layout_box *box, layout_unit *dx, layout_unit *dy);
@@ -405,8 +407,14 @@ box_build_element(
 	if (replaced)
 		return 0;
 
-	/* The children, then the fix-ups a block needs. */
+	/* The ::before box, the children, the ::after box, then the fix-ups a block needs. */
+	error = box_build_pseudo(tree, css, element, box, CSS_PSEUDO_ELEMENT_BEFORE);
+	if (error != 0)
+		return error;
 	error = box_build_children(tree, css, &element->node, &box->style, box, depth + 1);
+	if (error != 0)
+		return error;
+	error = box_build_pseudo(tree, css, element, box, CSS_PSEUDO_ELEMENT_AFTER);
 	if (error != 0)
 		return error;
 	error = box_fix_children(tree, box);
@@ -414,6 +422,144 @@ box_build_element(
 		return error;
 
 	/* Succeeded: the element's boxes are built. */
+	return 0;
+}
+
+/*
+ * Builds an element's ::before or ::after box (ws074-p069) as the first or
+ * last child of the element's box: a box of its display with its content
+ * as text, when some rule gives it content.  The boxes belong to no node.
+ */
+static int
+box_build_pseudo(
+	struct layout_tree *tree,
+	struct css_engine *css,
+	struct dom_element *element,
+	struct layout_box *box,
+	int pseudo)
+{
+	struct css_style *style;
+	struct layout_box *generated;
+	struct layout_box *text_box;
+	const struct css_content_item *item;
+	const struct vm_string *part;
+	struct dom_attribute *attribute;
+	struct wb_units text;
+	uint16_t *units;
+	uint16_t unit;
+	size_t index;
+	size_t position;
+	int kind;
+	int error;
+
+	/* Only a pseudo-element some rule names is styled. */
+	if ((box->style.pseudo_elements & (1 << pseudo)) == 0)
+		return 0;
+
+	/* Its style, inherited from the element's. */
+	style = malloc(sizeof(*style));
+	if (style == NULL)
+		return ENOMEM;
+	error = css_engine_compute_pseudo(css, element, pseudo, &box->style, style);
+	if (error != 0) {
+		free(style);
+		return error;
+	}
+
+	/* No content, or display: none, makes no box. */
+	if (style->content_kind == CSS_CONTENT_NONE || style->display == CSS_DISPLAY_NONE) {
+		free(style);
+		return 0;
+	}
+
+	/* The text: the items' strings and attributes' values, joined. */
+	wb_units_init(&text);
+	error = 0;
+	for (index = 0; index < style->content->count && error == 0; index++) {
+		item = &style->content->items[index];
+		part = item->text;
+		if (item->is_attribute) {
+			part = NULL;
+			attribute = dom_element_find_attribute(element, DOM_NS_NONE, item->text);
+			if (attribute != NULL)
+				part = attribute->value;
+		}
+
+		/* A missing attribute adds nothing; the rest adds its characters. */
+		if (part == NULL)
+			continue;
+		for (position = 0; position < part->length && error == 0; position++) {
+			unit = vm_string_at(part, position);
+			error = wb_units_append(&text, &unit, 1);
+		}
+	}
+
+	/* Memory ran out on the way. */
+	if (error != 0) {
+		wb_units_release(&text);
+		free(style);
+		return error;
+	}
+
+	/* The box: inline, or a block (out of the flow, or floating, as an element's). */
+	kind = LAYOUT_BLOCK;
+	if (style->display == CSS_DISPLAY_INLINE)
+		kind = LAYOUT_INLINE;
+	generated = box_new(tree, kind, NULL, style);
+	if (generated == NULL) {
+		wb_units_release(&text);
+		free(style);
+		return ENOMEM;
+	}
+
+	/* Out of the flow, or floating, as an element's box would be. */
+	if (style->position == CSS_POSITION_ABSOLUTE || style->position == CSS_POSITION_FIXED) {
+		generated->kind = LAYOUT_BLOCK;
+		generated->out_of_flow = 1;
+	} else if (style->float_side != CSS_FLOAT_NONE) {
+		generated->kind = LAYOUT_BLOCK;
+		generated->floating = style->float_side;
+	}
+
+	/* The box goes into the element's. */
+	box_append(box, generated);
+
+	/* The text as a text box, its characters copied into the tree's arena. */
+	if (text.length != 0) {
+		units = wb_arena_alloc(&tree->arena, text.length * sizeof(uint16_t));
+		if (units == NULL) {
+			wb_units_release(&text);
+			free(style);
+			return ENOMEM;
+		}
+
+		/* The characters. */
+		memcpy(units, text.data, text.length * sizeof(uint16_t));
+
+		/* The text box takes the pseudo-element's style. */
+		text_box = box_new(tree, LAYOUT_TEXT, NULL, style);
+		if (text_box == NULL) {
+			wb_units_release(&text);
+			free(style);
+			return ENOMEM;
+		}
+
+		/* It shows the characters, inside the pseudo-element's box. */
+		text_box->text = units;
+		text_box->text_length = text.length;
+		box_append(generated, text_box);
+	}
+
+	/* The text and the style were copied into the boxes. */
+	wb_units_release(&text);
+	free(style);
+
+	/* A block around text needs the fix-ups of any block. */
+	error = box_fix_children(tree, generated);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the pseudo-element's box is built. */
 	return 0;
 }
 
@@ -515,6 +661,78 @@ box_append(
 	parent->last_child = child;
 }
 
+/*
+ * Makes a flex container's children its items (ws074-p035): each element
+ * child a block-level box (an inline one, or an inline image, becomes a
+ * block; a float stops floating), each run of text an anonymous block,
+ * and whitespace alone dropped.
+ */
+static int
+box_flex_items(
+	struct layout_tree *tree,
+	struct layout_box *box)
+{
+	struct layout_box *child;
+	struct layout_box *next;
+	struct layout_box *anonymous;
+	struct css_style style;
+	int whitespace;
+
+	/* The children are laid out by the flex layout, not in lines. */
+	box->children_inline = 0;
+	box_anonymous_style(&box->style, &style);
+	child = box->first_child;
+	box->first_child = NULL;
+	box->last_child = NULL;
+	anonymous = NULL;
+	while (child != NULL) {
+		next = child->next;
+		child->next = NULL;
+
+		/* A box out of the flow stays as it is, and ends a run of text. */
+		if (child->out_of_flow) {
+			anonymous = NULL;
+			box_append(box, child);
+			child = next;
+			continue;
+		}
+
+		/* An element's box is an item of its own, block-level whatever it was. */
+		if (child->kind != LAYOUT_TEXT) {
+			anonymous = NULL;
+			child->floating = CSS_FLOAT_NONE;
+			if (child->kind == LAYOUT_INLINE || child->kind == LAYOUT_REPLACED || child->kind == LAYOUT_LINE_BREAK)
+				child->kind = LAYOUT_BLOCK;
+			box_append(box, child);
+			child = next;
+			continue;
+		}
+
+		/* Whitespace alone between items is dropped. */
+		whitespace = box_is_whitespace(child);
+		if (anonymous == NULL && whitespace) {
+			child = next;
+			continue;
+		}
+
+		/* Text starts, or goes on in, an anonymous item. */
+		if (anonymous == NULL) {
+			anonymous = box_new(tree, LAYOUT_ANONYMOUS_BLOCK, NULL, &style);
+			if (anonymous == NULL)
+				return ENOMEM;
+			anonymous->children_inline = 1;
+			box_append(box, anonymous);
+		}
+
+		/* The text goes into the anonymous item. */
+		box_append(anonymous, child);
+		child = next;
+	}
+
+	/* Succeeded: the children are all items. */
+	return 0;
+}
+
 /* Tells whether a box takes part in inline formatting. */
 static int
 box_is_inline_level(
@@ -573,6 +791,7 @@ box_fix_children(
 	int has_inline;
 	int inline_level;
 	int whitespace;
+	int error;
 
 	/* Looks at the kinds of children (those out of the flow and floats count as neither). */
 	has_block = 0;
@@ -586,6 +805,12 @@ box_fix_children(
 			has_block = 1;
 		if (inline_level && !whitespace)
 			has_inline = 1;
+	}
+
+	/* A flex container's children are flex items (ws074-p035). */
+	if (box->kind != LAYOUT_INLINE && box->style.display == CSS_DISPLAY_FLEX) {
+		error = box_flex_items(tree, box);
+		return error;
 	}
 
 	/* An inline box holding blocks is laid out as a block in this pass. */
@@ -773,11 +998,11 @@ box_relative_offset(
 	if (offset[CSS_LEFT].unit == CSS_UNIT_PX) {
 		*dx = layout_from_px(offset[CSS_LEFT].value);
 	} else if (offset[CSS_LEFT].unit == CSS_UNIT_PERCENT) {
-		*dx = (layout_unit)((float)width * offset[CSS_LEFT].value / 100.0f);
+		*dx = (layout_unit)((float)width * offset[CSS_LEFT].value / 100.0f) + layout_from_px(offset[CSS_LEFT].offset);
 	} else if (offset[CSS_RIGHT].unit == CSS_UNIT_PX) {
 		*dx = -layout_from_px(offset[CSS_RIGHT].value);
 	} else if (offset[CSS_RIGHT].unit == CSS_UNIT_PERCENT) {
-		*dx = -(layout_unit)((float)width * offset[CSS_RIGHT].value / 100.0f);
+		*dx = -((layout_unit)((float)width * offset[CSS_RIGHT].value / 100.0f) + layout_from_px(offset[CSS_RIGHT].offset));
 	}
 
 	/* Vertically: top wins over bottom. */

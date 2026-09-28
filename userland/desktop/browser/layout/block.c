@@ -192,8 +192,10 @@ block_content(
 	box->collapsed_top = box->margin[CSS_TOP];
 	box->collapsed_bottom = box->margin[CSS_BOTTOM];
 
-	/* The lines, or the children. */
-	if (box->children_inline) {
+	/* The flex items, the lines, or the children. */
+	if (box->style.display == CSS_DISPLAY_FLEX) {
+		error = layout_flex(tree, box);
+	} else if (box->children_inline) {
 		error = layout_inline(tree, box);
 	} else {
 		error = block_children(tree, box);
@@ -235,6 +237,10 @@ block_owns_context(
 	if (box->style.display == CSS_DISPLAY_FLEX)
 		return 1;
 
+	/* A flex item. */
+	if (box->parent->style.display == CSS_DISPLAY_FLEX)
+		return 1;
+
 	/* A block in its parent's context. */
 	return 0;
 }
@@ -252,7 +258,7 @@ block_resolve(
 	if (length->unit == CSS_UNIT_PX)
 		value = layout_from_px(length->value);
 	if (length->unit == CSS_UNIT_PERCENT)
-		value = (layout_unit)((float)containing_width * length->value / 100.0f);
+		value = (layout_unit)((float)containing_width * length->value / 100.0f) + layout_from_px(length->offset);
 
 	/* Reports the length. */
 	return value;
@@ -331,6 +337,7 @@ block_children(
 	int collapse_top;
 	int collapse_bottom;
 	int first;
+	layout_unit collapsed_y;
 	int empty;
 	int error;
 
@@ -413,6 +420,11 @@ block_children(
 		if (child->height == 0 && child->border[CSS_TOP] == 0 && child->border[CSS_BOTTOM] == 0 &&
 		    child->padding[CSS_TOP] == 0 && child->padding[CSS_BOTTOM] == 0)
 			empty = 1;
+
+		/* An empty block that clears floats is pushed below them, and its margins no longer collapse through (a clearfix). */
+		collapsed_y = cursor + block_collapse(pending, child_top);
+		if (empty && collapsed_y < clearance)
+			empty = 0;
 		if (empty) {
 			/*
 			 * Its border edge sits where the margins met so far and its own top

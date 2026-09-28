@@ -79,6 +79,7 @@ enum css_simple_kind {
 	CSS_SIMPLE_CLASS,
 	CSS_SIMPLE_ATTRIBUTE,
 	CSS_SIMPLE_PSEUDO_CLASS,
+	CSS_SIMPLE_PSEUDO_ELEMENT,
 	CSS_SIMPLE_NEVER
 };
 
@@ -105,7 +106,24 @@ enum css_pseudo_class {
 	CSS_PSEUDO_ONLY_CHILD,
 	CSS_PSEUDO_EMPTY,
 	CSS_PSEUDO_LINK,
-	CSS_PSEUDO_NEVER
+	CSS_PSEUDO_NEVER,
+	CSS_PSEUDO_NOT,
+	CSS_PSEUDO_IS,
+	CSS_PSEUDO_HAS,
+	CSS_PSEUDO_NTH_CHILD,
+	CSS_PSEUDO_NTH_LAST_CHILD,
+	CSS_PSEUDO_NTH_OF_TYPE,
+	CSS_PSEUDO_NTH_LAST_OF_TYPE,
+	CSS_PSEUDO_FIRST_OF_TYPE,
+	CSS_PSEUDO_LAST_OF_TYPE,
+	CSS_PSEUDO_ONLY_OF_TYPE,
+	CSS_PSEUDO_DISABLED,
+	CSS_PSEUDO_ENABLED,
+	CSS_PSEUDO_CHECKED,
+	CSS_PSEUDO_PLACEHOLDER_SHOWN,
+	CSS_PSEUDO_REQUIRED,
+	CSS_PSEUDO_OPTIONAL,
+	CSS_PSEUDO_ALWAYS
 };
 
 /*
@@ -121,7 +139,10 @@ enum css_combinator {
 
 /*
  * One simple selector: a name (an atom), and for attributes a value (an
- * atom) and a comparison.
+ * atom) and a comparison.  A pseudo-class is pseudo (CSS_PSEUDO_*); :not,
+ * :is, :where and :has keep their argument selectors (in the sheet's
+ * arena), the :nth-* ones the a and b of an+b.  A pseudo-element is pseudo
+ * (CSS_PSEUDO_ELEMENT_*).
  */
 struct css_simple {
 	int kind;
@@ -130,6 +151,10 @@ struct css_simple {
 	int match;
 	int case_insensitive;
 	int pseudo;
+	const struct css_selector *arguments;
+	size_t argument_count;
+	int nth_a;
+	int nth_b;
 };
 
 /*
@@ -140,6 +165,7 @@ struct css_compound {
 	struct css_simple *simples;
 	size_t count;
 	int combinator;
+	int pseudo_element;
 };
 
 /*
@@ -152,9 +178,49 @@ struct css_selector {
 	uint32_t specificity;
 };
 
+/* The most arguments a min(), max() or clamp() keeps. */
+#define CSS_CALC_ARGUMENTS	3
+
+/*
+ * A sum of lengths of the kinds calc() mixes, each the number of its unit:
+ * pixels (the absolute units converted), percentages, font-relative and
+ * viewport-relative lengths.  The cascade turns it into pixels and a
+ * percentage the layout resolves.
+ */
+struct css_calc_sum {
+	float px;
+	float percent;
+	float em;
+	float ex;
+	float rem;
+	float vw;
+	float vh;
+	float vmin;
+	float vmax;
+};
+
+/* What a calculation does with its sums. */
+enum css_calc_operation {
+	CSS_CALC_SUM,
+	CSS_CALC_MIN,
+	CSS_CALC_MAX,
+	CSS_CALC_CLAMP
+};
+
+/*
+ * A calc(), min(), max() or clamp() length (ws074-p061): one sum, or the
+ * least or greatest of several, or the middle one of three.
+ */
+struct css_calc {
+	int operation;
+	size_t count;
+	struct css_calc_sum sums[CSS_CALC_ARGUMENTS];
+};
+
 /*
  * A declared value, as parsed: a keyword, a length, a number, a color or
- * font families.
+ * font families.  A length whose unit is CSS_DUNIT_CALC is the
+ * calculation calc points at (in the arena the value was parsed into).
  */
 struct css_value {
 	int kind;
@@ -165,6 +231,8 @@ struct css_value {
 	struct vm_string *families[CSS_DECLARED_FAMILIES];
 	int family_count;
 	struct vm_string *url;
+	const struct css_calc *calc;
+	const struct css_content *content;
 };
 
 /* The kinds of declared value. */
@@ -177,7 +245,8 @@ enum css_value_kind {
 	CSS_VALUE_URL,
 	CSS_VALUE_INHERIT,
 	CSS_VALUE_INITIAL,
-	CSS_VALUE_UNSET
+	CSS_VALUE_UNSET,
+	CSS_VALUE_CONTENT
 };
 
 /* The units a declared length can have (converted to pixels by the cascade). */
@@ -194,7 +263,10 @@ enum css_declared_unit {
 	CSS_DUNIT_MM,
 	CSS_DUNIT_VW,
 	CSS_DUNIT_VH,
-	CSS_DUNIT_FONT_KEYWORD
+	CSS_DUNIT_FONT_KEYWORD,
+	CSS_DUNIT_VMIN,
+	CSS_DUNIT_VMAX,
+	CSS_DUNIT_CALC
 };
 
 /*
@@ -259,6 +331,19 @@ enum css_property {
 	CSS_PROP_BACKGROUND_SIZE_WIDTH,
 	CSS_PROP_BACKGROUND_SIZE_HEIGHT,
 	CSS_PROP_BOX_SIZING,
+	CSS_PROP_CONTENT,
+	CSS_PROP_FLEX_DIRECTION,
+	CSS_PROP_FLEX_WRAP,
+	CSS_PROP_JUSTIFY_CONTENT,
+	CSS_PROP_ALIGN_ITEMS,
+	CSS_PROP_ALIGN_CONTENT,
+	CSS_PROP_ROW_GAP,
+	CSS_PROP_COLUMN_GAP,
+	CSS_PROP_FLEX_GROW,
+	CSS_PROP_FLEX_SHRINK,
+	CSS_PROP_FLEX_BASIS,
+	CSS_PROP_ALIGN_SELF,
+	CSS_PROP_ORDER,
 	CSS_PROP_COUNT
 };
 
@@ -269,6 +354,76 @@ struct css_declaration {
 	int property;
 	int important;
 	struct css_value value;
+	struct vm_string *custom_name;
+	const struct css_token *raw;
+	size_t raw_count;
+	int pending_property;
+};
+
+/*
+ * The property of a custom property's declaration (--name: tokens): its
+ * name is custom_name and its value the tokens raw (ws074-p061).
+ */
+#define CSS_PROP_CUSTOM		(-1)
+
+/*
+ * The property of a declaration whose value uses var(): its tokens raw
+ * are parsed as pending_property (a longhand or a shorthand) once the
+ * element's custom properties are known.
+ */
+#define CSS_PROP_PENDING	(-2)
+
+/*
+ * One custom property an element has (ws074-p061): its name, its value's
+ * tokens with every var() replaced (none: the property is invalid), and
+ * the next one of the element's list, which ends in its parent's list.
+ */
+struct css_custom {
+	struct vm_string *name;
+	const struct css_token *tokens;
+	size_t count;
+	const struct css_custom *next;
+	int invalid;
+};
+
+/*
+ * One test of a media query: the feature it measures (media.c), how it
+ * compares, and the value (pixels, a ratio, dppx, or 0 or 1).
+ */
+struct css_media_test {
+	int feature;
+	int comparison;
+	float value;
+};
+
+/*
+ * One media query: whether its media type is this browser's, its tests,
+ * and whether not turns the answer round.
+ */
+struct css_media_query {
+	int negate;
+	int type_matches;
+	struct css_media_test *tests;
+	size_t test_count;
+};
+
+/*
+ * A media query list: one of its queries must hold, and so must the list
+ * it is nested in (parent, NULL at the top).
+ */
+struct css_media {
+	struct css_media_query *queries;
+	size_t query_count;
+	const struct css_media *parent;
+};
+
+/*
+ * What parsing a value needs: the heap the names are atoms of, and the
+ * arena a calculation is kept in.
+ */
+struct css_parse {
+	struct vm_heap *heap;
+	struct wb_arena *arena;
 };
 
 /*
@@ -279,15 +434,64 @@ struct css_rule {
 	size_t selector_count;
 	struct css_declaration *declarations;
 	size_t declaration_count;
+	const struct css_media *media;
 };
 
 /*
- * A parsed style sheet: its rules and the arena all of them live in.
+ * One selector of the rule index: the rule and which of its selectors.
+ */
+struct css_index_entry {
+	uint32_t rule;
+	uint32_t selector;
+};
+
+/*
+ * The run of index entries filed under one key (an atom; NULL marks an
+ * empty slot of the table).
+ */
+struct css_index_bucket {
+	struct vm_string *key;
+	uint32_t start;
+	uint32_t count;
+};
+
+/*
+ * An open-addressed table of buckets by key; capacity is a power of two
+ * (zero for a table with no key).
+ */
+struct css_index_table {
+	struct css_index_bucket *slots;
+	size_t capacity;
+};
+
+/*
+ * The rule index of a sheet (index.c): its selectors grouped by the key
+ * of their rightmost compound, the groups found by id, class or type, and
+ * the run of selectors any element may match.  Each run is in rule order.
+ */
+struct css_rule_index {
+	struct css_index_entry *entries;
+	size_t entry_count;
+	struct css_index_table ids;
+	struct css_index_table classes;
+	struct css_index_table tags;
+	uint32_t universal_start;
+	uint32_t universal_count;
+};
+
+/*
+ * A parsed style sheet: its rules (each with the @media lists it is
+ * nested in), the URLs its @import rules name (atoms, in order) and their
+ * media lists, its rule index and the arena all of them live in.
  */
 struct css_sheet {
 	struct wb_arena arena;
 	struct css_rule *rules;
 	size_t rule_count;
+	struct vm_string **imports;
+	struct css_media **import_media;
+	size_t import_count;
+	struct css_rule_index index;
 	int origin;
 };
 
@@ -305,12 +509,21 @@ void css_sheet_release(struct css_sheet *sheet);
 int css_ident_equal(const struct css_token *token, const char *ascii);
 int css_units_equal_ascii(const uint16_t *units, size_t length, const char *ascii);
 
+/* The rule index (index.c). */
+int css_index_build(struct css_sheet *sheet);
+const struct css_index_bucket *css_index_find(const struct css_index_table *table, const struct vm_string *key);
+
+/* Media queries (media.c). */
+int css_media_parse(struct wb_arena *arena, const struct css_token *tokens, size_t count, const struct css_media *parent, struct css_media **media);
+int css_media_matches(const struct css_media *media, float width, float height);
+
 /* Values (values.c). */
 int css_property_lookup(const struct css_token *name);
-int css_parse_value(struct vm_heap *heap, const struct css_token *tokens, size_t count, const struct css_token *name, struct css_declaration *out, size_t *out_count, size_t out_capacity);
+int css_parse_value(struct css_parse *parse, const struct css_token *tokens, size_t count, const struct css_token *name, struct css_declaration *out, size_t *out_count, size_t out_capacity);
+int css_parse_property(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *out_count);
 int css_parse_color(const struct css_token *tokens, size_t count, uint32_t *color);
-int css_parse_value_as(struct vm_heap *heap, int property, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *out_count);
-int css_parse_font(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *out_count);
+int css_parse_value_as(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *out_count);
+int css_parse_font(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *out_count);
 
 /* The user agent's style sheet (ua.c). */
 extern const char css_user_agent_sheet[];

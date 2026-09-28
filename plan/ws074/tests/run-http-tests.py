@@ -56,10 +56,11 @@ GUEST_CA = "/tmp/ws074-ca.pem"
 ASYNC = False
 
 # (name, path, expected texts, dump), run with --async only: the images of <img> in the layout, the background
-# images in the display list
+# images in the display list, the linked and imported style sheets in the computed style (ws074-p068)
 IMAGE_CASES = [
     ("async-images", "/images/images.html", ["image 320x200", "image 96x96", "image 64x48", "image 80x50"], "layout"),
     ("async-backgrounds", "/images/backgrounds.html", [" 20x20", " 96x96", " 320x200", " 64x48"], "paint"),
+    ("async-sheets", "/pages/sheets.html", ["background=#ffccccff", "background=#ffffddbb", "color=#ff660000"], "style"),
 ]
 
 
