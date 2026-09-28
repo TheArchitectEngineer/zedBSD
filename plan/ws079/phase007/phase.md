@@ -120,7 +120,14 @@ guest（QEMU の Venus、zdesktop --glass 1280x800、代用 font は image の I
 
 ### 破壊の loop の結果
 
-（`build/ws079-p007-host/fuzz.log`。結果は下の「報告の時点」を見る）
+`build/ws079-p007-host/fuzz.sh 300`（ASan+UBSan、`-fno-sanitize-recover=all`）: 4 文書 × 2（qpdf の非圧縮の copy と object stream の copy）× 2（content の
+変異 300、byte の変異 300）で落ちず、sanitizer の報告なし。開けた数: content の変異は全て、byte の変異は 299〜300（非圧縮）、object stream の copy は
+text-simple 299・text-cid 300・shading 299・text-std14 20（小さい file で xref stream と object stream に当たり、修復でも catalog が見つからない）。時間:
+text-simple の object stream の copy が最長 125 s（変異のたびに修復で全 object を読む）。
+
+main の merge（2026-09-28、p014 の update.c と reader.c の追加）: reader.c の衝突 4 か所を両方残して解いた（xref_offset・has_previous と修復、
+font の cache）。merge 後に host の plain で text-simple・text-cid の比較が同じ数値、実文書が開くこと、amd64 の libpdf.so・pdfviewer の build（warning 0）を
+確認。merge 後の ASan・guest・p004/p006 の回帰は再実行していない。
 
 ## 未実施と制限
 
