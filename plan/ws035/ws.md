@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-28 の周期の終わり: login manager（p094〜p099）・primary selection（p100・p103）・表示の引き継ぎ（p101）・lock（p102）・システムバーの network（p013）は cleared。session の user の `network` の group は p104 で済んだ。F-044 は p105、F-041 の衝突の dialog は p106 で済んだ。Kei の見た目の段階 2 は p107（起動画面）・p108（greeter・lock・壁紙・files）で済んだ。source は WS078 で `userland/desktop/` へ移った（zdesktop → wayland 等）。HAL の quiet console の diff は適用済み（kmsg=quiet の確認は未実施）
+Resume point: 2026-09-28 の周期の終わり: login manager（p094〜p099）・primary selection（p100・p103）・表示の引き継ぎ（p101）・lock（p102）・システムバーの network（p013）は cleared。session の user の `network` の group は p104 で済んだ。F-044 は p105、F-041 の衝突の dialog は p106 で済んだ。Kei の見た目の段階 2 は p107（起動画面）・p108（greeter・lock・壁紙・files）・p109（greeter・lock の明るさ、すりガラスの印）で済んだ。source は WS078 で `userland/desktop/` へ移った（zdesktop → wayland 等）。HAL の quiet console の diff は適用済み（kmsg=quiet の確認は未実施）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -300,6 +300,7 @@ p001で確かめる。
 | [ws035-p106](phase106/phase.md) | （2026-09-28 main の割り当て、F-041 の衝突の部分）files の copy・move・drop の名前の衝突で Replace・Skip・Keep Both と Apply to all | cleared（2026-09-28、zdesktop-p106・files-model・files-p004・p010） | ws071 | files |
 | [ws035-p107](phase107/phase.md) | （2026-09-28 main の割り当て、Kei の見た目の段階 2 の 1）全画面の起動画面（kei-boot-splash.png から `fit=cover` の PPM、UEFI は bilinear・BIOS は縮小で画面を覆う）、quiet の起動の青い点の spinner（HAL の cons.c の実装と pcat の text 層、log・時間で回り lease で止まる） | cleared（2026-09-28、boot-shots UEFI・BIOS、host の描き方の試験、boot test） | p096・p097・p099 | tools・bootloader・HAL の実装・kernel・pcat の graphics |
 | [ws035-p108](phase108/phase.md) | （2026-09-28 main の割り当て、Kei の見た目の段階 2 の 2）印（artwork/mark.c、4 層の coverage）を greeter・lock の左下と files の Home の hero・空の画面に、既定の描いた壁紙と files の hero の風景を Kei の調子に | cleared（2026-09-28、zdesktop-p108・p102、host の files-render） | p107 | artwork・wayland・files |
+| [ws035-p109](phase109/phase.md) | （2026-09-28 main の割り当て 1、p108 の残り）greeter・lock を splash の明るさに（淡い空色の wash、slate の文字、時刻の後ろの白い glow、明るいガラスの button）、印をすりガラスに（7 層: 重なり・縁の光・sheen） | cleared（2026-09-28、zdesktop-p109・p102、host の mark-preview） | p108 | artwork・wayland・files |
 | [ws035-p058](phase058/phase.md) | zdesktop（secondary queue で変えた全 source）の規約の全文との照合と回帰（sq001 の締め） | cleared（2026-09-27、style-check 0、zdesktop・menu・titlebar・files の回帰。boot test はユーザーの指示で無し） | sq001 の他の Phase | sq001 で変えた source |
 | [ws035-p038](phase038/phase.md) | SSHハーネス: ゲストへ SSH で入り、コマンド実行・ファイル転送・ゲスト内 lldb・QEMU gdbstub でのデバッグを行う道具を仕上げる（`plan/tools/guest/` は着手済みで未完成） | cleared（q347-i01。networkd が USB の interface を UP にしないため設定されなかった → RAISE を追加） | p037、USB CDC-ECM が上がること（p039） | `plan/tools/guest/` |
 | [ws035-p039](phase039/phase.md) | USB CDC-ECM の実機確認: 実績のないまま入っている ECM driver が QEMU で実際に link し address を得るかを、シリアルコンソールで観察しながら確かめる。**ECM は USB 2.0 の device なので EHCI と xHCI の両方で確かめる**（ws004-p019 の記録との食い違いの照合を含む）。USB storage と同居したときの挙動も切り分ける | cleared（q343-i01。xHCI の IMAN の競合を直した。UHCI は p044、TCP は ws034-p046 へ） | p037 | `src/drivers/usb/usb-cdc-ecm.c`、試験 |

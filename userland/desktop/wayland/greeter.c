@@ -277,23 +277,25 @@ zwl_greeter_draw(
 	struct zwl_server *server,
 	VkCommandBuffer command)
 {
-	static const float tint[4] = { 0.05f, 0.08f, 0.18f, 0.28f };
 	struct greeter_layout layout;
 	struct glass_shape shape;
 
 	/* Where everything goes. */
 	greeter_layout(server, &layout);
 
-	/* The wallpaper, blurred and dimmed a little so the white text reads on it. */
+	/*
+	 * The wallpaper, blurred and washed towards a pale sky so the screen is
+	 * as bright and airy as the boot screen; the words on it are dark slate
+	 * (ws035-p109).
+	 */
 	glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
 	shape.mode = MODE_GLASS;
-	shape.color[0] = 1.0f;
-	shape.color[1] = 1.0f;
+	shape.color[0] = 0.96f;
+	shape.color[1] = 0.98f;
 	shape.color[2] = 1.0f;
-	shape.color[3] = 0.06f;
+	shape.color[3] = 0.30f;
 	shape.opaque = 1.0f;
 	glass_shape_draw(server, command, &shape);
-	glass_draw_solid(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, 0.0f, tint);
 
 	/* The time and the date. */
 	greeter_draw_clock(server, command);
@@ -700,10 +702,10 @@ greeter_draw_card(
 	shape.mode = MODE_SHADOW;
 	shape.radius = GREETER_CARD_RADIUS;
 	shape.soft = 30.0f;
-	shape.color[0] = 0.04f;
-	shape.color[1] = 0.08f;
-	shape.color[2] = 0.20f;
-	shape.color[3] = 0.30f;
+	shape.color[0] = 0.12f;
+	shape.color[1] = 0.20f;
+	shape.color[2] = 0.34f;
+	shape.color[3] = 0.16f;
 	glass_shape_draw(server, command, &shape);
 
 	/* The frosted glass, whiter than the windows' so the dark text reads on it. */
@@ -811,6 +813,7 @@ greeter_draw_button(
 	static const float blue[4] = { 0.20f, 0.44f, 0.86f, 1.0f };
 	static const float blue_lit[4] = { 0.28f, 0.54f, 0.95f, 1.0f };
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	static const float slate[4] = { 0.17f, 0.23f, 0.31f, 1.0f };
 	struct glass_shape shape;
 	int inside;
 
@@ -830,7 +833,7 @@ greeter_draw_button(
 		return;
 	}
 
-	/* The others are frosted, brighter under the pointer. */
+	/* The others are light frosted glass with a slate label, whiter under the pointer. */
 	glass_shape_init(&shape, (float)rect[0], (float)rect[1], (float)rect[2], (float)rect[3]);
 	shape.mode = MODE_GLASS;
 	shape.radius = (float)rect[3] / 2.0f;
@@ -838,12 +841,12 @@ greeter_draw_button(
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
-	shape.color[3] = 0.22f;
+	shape.color[3] = 0.55f;
 	if (inside)
-		shape.color[3] = 0.40f;
-	shape.edge = 0.60f;
+		shape.color[3] = 0.78f;
+	shape.edge = 0.80f;
 	glass_shape_draw(server, command, &shape);
-	greeter_draw_centered(server, command, SIZE_TITLE, rect[0] + rect[2] / 2, rect[1] + rect[3] / 2 + 5, label, rect[2] - 8, white);
+	greeter_draw_centered(server, command, SIZE_TITLE, rect[0] + rect[2] / 2, rect[1] + rect[3] / 2 + 5, label, rect[2] - 8, slate);
 }
 
 /*
@@ -855,7 +858,7 @@ greeter_draw_brand(
 	struct zwl_server *server,
 	VkCommandBuffer command)
 {
-	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.95f };
+	static const float slate[4] = { 0.17f, 0.23f, 0.31f, 0.95f };
 	int32_t x;
 	int32_t y;
 
@@ -864,8 +867,8 @@ greeter_draw_brand(
 	y = (int32_t)server->height - GREETER_MARGIN - GREETER_BRAND_MARK;
 	glass_draw_mark(server, command, x, y, GREETER_BRAND_MARK, 1.0f);
 
-	/* The word beside it, on the mark's lower part. */
-	glass_draw_text(server, command, SIZE_ICON, x + GREETER_BRAND_MARK + 8, y + GREETER_BRAND_MARK - 12, "Kei", 200, white);
+	/* The word beside it, on the mark's lower part, in the boot screen's slate. */
+	glass_draw_text(server, command, SIZE_ICON, x + GREETER_BRAND_MARK + 8, y + GREETER_BRAND_MARK - 12, "Kei", 200, slate);
 }
 
 /* Draws the time, large, and the date under it, at the top of the output. */
@@ -874,8 +877,9 @@ greeter_draw_clock(
 	struct zwl_server *server,
 	VkCommandBuffer command)
 {
-	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	static const float soft[4] = { 1.0f, 1.0f, 1.0f, 0.85f };
+	static const float slate[4] = { 0.15f, 0.21f, 0.29f, 1.0f };
+	static const float soft[4] = { 0.20f, 0.27f, 0.36f, 0.88f };
+	struct glass_shape shape;
 	char text[64];
 	struct tm local;
 	time_t now;
@@ -889,9 +893,28 @@ greeter_draw_clock(
 	middle = (int32_t)server->width / 2;
 	top = (int32_t)server->height / 7;
 
+	/*
+	 * A soft pale glow behind the time and the date: a local scrim that
+	 * keeps the slate words readable on a bright or busy wallpaper without
+	 * darkening the screen (ws035-p109).
+	 */
+	glass_shape_init(&shape, (float)(middle - 190), (float)top - 10.0f, 380.0f, 104.0f);
+	shape.quad[0] -= 70.0f;
+	shape.quad[1] -= 70.0f;
+	shape.quad[2] += 140.0f;
+	shape.quad[3] += 140.0f;
+	shape.mode = MODE_SHADOW;
+	shape.radius = 52.0f;
+	shape.soft = 60.0f;
+	shape.color[0] = 0.97f;
+	shape.color[1] = 0.99f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.42f;
+	glass_shape_draw(server, command, &shape);
+
 	/* The time. */
 	(void)strftime(text, sizeof(text), "%H:%M", &local);
-	greeter_draw_centered(server, command, SIZE_ICON, middle, top + 36, text, (int32_t)server->width, white);
+	greeter_draw_centered(server, command, SIZE_ICON, middle, top + 36, text, (int32_t)server->width, slate);
 
 	/* The date. */
 	(void)strftime(text, sizeof(text), "%A, %B %e", &local);
