@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: 2026-09-28: p059（Google の調査）・p067（amazon.co.jp の調査）・p032（form）・p068（外の stylesheet と rule の索引）・p061（CSS の値）・p069（selector と ::before・::after）cleared。p035（flexbox の最小）・p060（inline-block と vertical-align）・p062（角丸・影・opacity・outline）・p070（@font-face）・p071（大きな page の速さ）・p073（direction の最小）・p072（grid の最小）・p074（intrinsic の幅）・p075（container query の単位）cleared（2026-09-29）。guest の窓の試験は main の sysroot の複写で worktree の image を作って行う（p035 の phase.md）。デモの目標は amazon.co.jp、版と Phase の列は [amazon-goal.md](amazon-goal.md)。guest の窓で live の Amazon のトップから「kei」を検索して結果の page が出る。次（2026-09-29 main の判断で順を変えた: p073 → p072 → p074 → p075 → p037）: p037 → p027・p065 の一部
+Resume point: 2026-09-28: p059（Google の調査）・p067（amazon.co.jp の調査）・p032（form）・p068（外の stylesheet と rule の索引）・p061（CSS の値）・p069（selector と ::before・::after）cleared。p035（flexbox の最小）・p060（inline-block と vertical-align）・p062（角丸・影・opacity・outline）・p070（@font-face）・p071（大きな page の速さ）・p073（direction の最小）・p072（grid の最小）・p074（intrinsic の幅）・p075（container query の単位）・p037（table の最小）cleared（2026-09-29）。guest の窓の試験は main の sysroot の複写で worktree の image を作って行う（p035 の phase.md）。デモの目標は amazon.co.jp、版と Phase の列は [amazon-goal.md](amazon-goal.md)。guest の窓で live の Amazon のトップから「kei」を検索して結果の page が出る。次（2026-09-29 main の判断で順を変えた: p073 → p072 → p074 → p075 → p037）: p027・p065 の一部
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -134,7 +134,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | ws074-p034 | Wasm の MVP の後: bulk memory、reference types、multi-value、sign-ext、非 trap の変換、SIMD。**M2 の計測** | planned | p033、p032 |
 | [ws074-p035](phase035/phase.md) | flexbox（最小） | cleared（2026-09-29。ASan・guest（QEMU、live の Amazon の検索）を通し、入れ子の flex の測定で % の幅が測定の幅になる不具合を直した） | p013 |
 | ws074-p036 | CSS の段階 M3-1: WPT CSS2・flexbox・backgrounds・values・selectors を測り、失敗の多い塊を直す | planned | p034、p035 |
-| ws074-p037 | table の layout（CSS2 の table、border-collapse） | planned | p036 |
+| [ws074-p037](phase037/phase.md) | table の layout（最小。CSS2 の auto layout、border-collapse は近似） | cleared（2026-09-29、amazon-goal の「最小」の範囲。test page 60/73 box、Amazon のトップの footer が Chromium と同じ 4 列。rowspan・fixed・collapse の解決・column の box は残り） | p036（デモの列の判断で先に最小） |
 | ws074-p038 | transform（2D）、transition・animation、gradient、box-shadow、角丸の clip、opacity、`@font-face`（TTF/OTF） | planned | p036 |
 | ws074-p039 | grid | planned | p036 |
 | ws074-p040 | Chrome との比較の拡大（corpus と実在の site の保存、box と画素の指標）、`-webkit-` の表（別名、`-webkit-box`、`-webkit-line-clamp` 等）。**M3 の計測** | planned | p037〜p039 |

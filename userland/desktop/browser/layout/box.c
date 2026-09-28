@@ -32,6 +32,11 @@ static void box_append(struct layout_box *parent, struct layout_box *child);
 static int box_is_inline_level(const struct layout_box *box);
 static int box_is_whitespace(const struct layout_box *box);
 static int box_fix_children(struct layout_tree *tree, struct layout_box *box);
+static int box_table_fix(struct layout_tree *tree, struct layout_box *box);
+static int box_table_children(struct layout_tree *tree, struct layout_box *box);
+static int box_wrap_tables(struct layout_tree *tree, struct layout_box *box);
+static int box_is_table_part(const struct layout_box *box);
+static struct layout_box *box_anonymous_of(struct layout_tree *tree, const struct layout_box *parent, int display);
 static int box_flex_items(struct layout_tree *tree, struct layout_box *box);
 static void box_anonymous_style(const struct css_style *parent, struct css_style *style);
 static void box_marker(struct layout_box *box, int ordinal);
@@ -322,8 +327,8 @@ box_build_element(
 		return error;
 	}
 
-	/* display: none makes no box, for the element or its children. */
-	if (style->display == CSS_DISPLAY_NONE) {
+	/* display: none makes no box, for the element or its children (a table column neither, in this pass). */
+	if (style->display == CSS_DISPLAY_NONE || style->display == CSS_DISPLAY_TABLE_COLUMN) {
 		free(style);
 		return 0;
 	}
@@ -375,6 +380,8 @@ box_build_element(
 	/* An inline block that is not replaced is a block placed as one piece of its line (ws074-p060). */
 	atomic = 0;
 	if (parent != NULL && kind == LAYOUT_BLOCK && !replaced && style->display == CSS_DISPLAY_INLINE_BLOCK)
+		atomic = 1;
+	if (parent != NULL && kind == LAYOUT_BLOCK && !replaced && style->display == CSS_DISPLAY_INLINE_TABLE)
 		atomic = 1;
 
 	/* An absolutely positioned or fixed box is a block out of the flow (the root stays in it). */
@@ -833,6 +840,25 @@ box_fix_children(
 			has_inline = 1;
 	}
 
+	/* The parts of tables, and the anonymous table boxes they need (ws074-p037). */
+	error = box_table_fix(tree, box);
+	if (error != 0)
+		return error;
+
+	/* The kinds of children again, as the table's fix-ups left them. */
+	has_block = 0;
+	has_inline = 0;
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE)
+			continue;
+		inline_level = box_is_inline_level(child);
+		whitespace = box_is_whitespace(child);
+		if (!inline_level)
+			has_block = 1;
+		if (inline_level && !whitespace)
+			has_inline = 1;
+	}
+
 	/* A flex or grid container's children are its items (ws074-p035, ws074-p072). */
 	if (box->kind != LAYOUT_INLINE && (box->style.display == CSS_DISPLAY_FLEX || box->style.display == CSS_DISPLAY_GRID)) {
 		error = box_flex_items(tree, box);
@@ -904,6 +930,272 @@ box_fix_children(
 
 	/* Succeeded: the children are all blocks. */
 	return 0;
+}
+
+/*
+ * Fixes the parts of tables in a box's children (ws074-p037): a table
+ * takes its row groups' rows as its own (the groups themselves are left
+ * out), a table, a row group and a row wrap what is not theirs in
+ * anonymous rows and cells, and another box wraps its runs of rows and
+ * cells in anonymous tables.  A flex or grid container's rows and cells
+ * are its items instead.
+ */
+static int
+box_table_fix(
+	struct layout_tree *tree,
+	struct layout_box *box)
+{
+	int display;
+	int error;
+
+	/* What the box is. */
+	display = box->style.display;
+	if (box->kind == LAYOUT_INLINE)
+		return 0;
+
+	/* A table's, a row group's or a row's children. */
+	if (display == CSS_DISPLAY_TABLE || display == CSS_DISPLAY_INLINE_TABLE || display == CSS_DISPLAY_TABLE_ROW_GROUP ||
+	    display == CSS_DISPLAY_TABLE_ROW) {
+		error = box_table_children(tree, box);
+		return error;
+	}
+
+	/* A flex or grid container's rows and cells are items. */
+	if (display == CSS_DISPLAY_FLEX || display == CSS_DISPLAY_GRID)
+		return 0;
+
+	/* Another box: its runs of table parts in anonymous tables. */
+	error = box_wrap_tables(tree, box);
+	return error;
+}
+
+/*
+ * Sorts the children of a table, a row group or a row: the parts that
+ * belong there stay, cells outside a row go into anonymous rows, and any
+ * other content (whitespace dropped) into anonymous cells, one for each
+ * run.
+ */
+static int
+box_table_children(
+	struct layout_tree *tree,
+	struct layout_box *box)
+{
+	struct layout_box *child;
+	struct layout_box *next;
+	struct layout_box *row;
+	struct layout_box *cell;
+	int display;
+	int is_row;
+	int whitespace;
+	int error;
+
+	/* Takes the children off, and puts each back where it belongs. */
+	is_row = 0;
+	if (box->style.display == CSS_DISPLAY_TABLE_ROW)
+		is_row = 1;
+	child = box->first_child;
+	box->first_child = NULL;
+	box->last_child = NULL;
+	row = NULL;
+	cell = NULL;
+	while (child != NULL) {
+		next = child->next;
+		child->next = NULL;
+		display = child->style.display;
+		if (child->kind != LAYOUT_BLOCK && child->kind != LAYOUT_ANONYMOUS_BLOCK)
+			display = CSS_DISPLAY_INLINE;
+
+		/* A box out of the flow or a float stays as it is. */
+		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE) {
+			box_append(box, child);
+			child = next;
+			continue;
+		}
+
+		/* A row, a row group or a caption stays in a table or a row group; so does a cell in a row. */
+		if (!is_row && (display == CSS_DISPLAY_TABLE_ROW || display == CSS_DISPLAY_TABLE_CAPTION || display == CSS_DISPLAY_TABLE_ROW_GROUP)) {
+			box_append(box, child);
+			row = NULL;
+			cell = NULL;
+			child = next;
+			continue;
+		}
+
+		/* A cell stays in a row. */
+		if (is_row && display == CSS_DISPLAY_TABLE_CELL) {
+			box_append(box, child);
+			cell = NULL;
+			child = next;
+			continue;
+		}
+
+		/* Whitespace between the parts goes. */
+		whitespace = box_is_whitespace(child);
+		if (whitespace && cell == NULL) {
+			child = next;
+			continue;
+		}
+
+		/* Outside a row, the rest goes into an anonymous row. */
+		if (!is_row && row == NULL) {
+			row = box_anonymous_of(tree, box, CSS_DISPLAY_TABLE_ROW);
+			if (row == NULL)
+				return ENOMEM;
+			box_append(box, row);
+			cell = NULL;
+		}
+
+		/* A cell outside a row joins the anonymous row. */
+		if (display == CSS_DISPLAY_TABLE_CELL) {
+			box_append(row, child);
+			cell = NULL;
+			child = next;
+			continue;
+		}
+
+		/* Other content goes into an anonymous cell. */
+		if (cell == NULL) {
+			if (is_row) {
+				cell = box_anonymous_of(tree, box, CSS_DISPLAY_TABLE_CELL);
+				if (cell == NULL)
+					return ENOMEM;
+				box_append(box, cell);
+			} else {
+				cell = box_anonymous_of(tree, row, CSS_DISPLAY_TABLE_CELL);
+				if (cell == NULL)
+					return ENOMEM;
+				box_append(row, cell);
+			}
+		}
+
+		/* The content joins the cell. */
+		box_append(cell, child);
+		child = next;
+	}
+
+	/* The anonymous cells and rows made here need the fix-ups of any box. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->node != NULL)
+			continue;
+		error = box_fix_children(tree, child);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the children are sorted. */
+	return 0;
+}
+
+/* Wraps each run of rows, row groups and cells among a box's children (whitespace between them included) in an anonymous table. */
+static int
+box_wrap_tables(
+	struct layout_tree *tree,
+	struct layout_box *box)
+{
+	struct layout_box *child;
+	struct layout_box *next;
+	struct layout_box *table;
+	int part;
+	int any;
+	int whitespace;
+	int error;
+
+	/* Nothing to do without table parts. */
+	any = 0;
+	for (child = box->first_child; child != NULL; child = child->next) {
+		part = box_is_table_part(child);
+		if (part)
+			any = 1;
+	}
+
+	/* None: the children stay as they are. */
+	if (!any)
+		return 0;
+
+	/* Takes the children off, and puts the runs of parts into tables. */
+	child = box->first_child;
+	box->first_child = NULL;
+	box->last_child = NULL;
+	table = NULL;
+	while (child != NULL) {
+		next = child->next;
+		child->next = NULL;
+		part = box_is_table_part(child);
+		whitespace = box_is_whitespace(child);
+
+		/* A part starts or continues a table; whitespace inside a run stays with it. */
+		if (part || (whitespace && table != NULL)) {
+			if (table == NULL) {
+				table = box_anonymous_of(tree, box, CSS_DISPLAY_TABLE);
+				if (table == NULL)
+					return ENOMEM;
+				box_append(box, table);
+			}
+
+			/* The child joins the table. */
+			box_append(table, child);
+			child = next;
+			continue;
+		}
+
+		/* Anything else ends the run. */
+		table = NULL;
+		box_append(box, child);
+		child = next;
+	}
+
+	/* The anonymous tables need their own fix-ups. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->node != NULL || child->style.display != CSS_DISPLAY_TABLE)
+			continue;
+		error = box_fix_children(tree, child);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the runs are tables. */
+	return 0;
+}
+
+/* Tells whether a box is a row, a row group or a cell in the flow (a part a table must hold). */
+static int
+box_is_table_part(
+	const struct layout_box *box)
+{
+	/* Boxes out of the flow, floats and what is not a block (text carries its parent's style) are not parts. */
+	if (box->out_of_flow || box->floating != CSS_FLOAT_NONE)
+		return 0;
+	if (box->kind != LAYOUT_BLOCK && box->kind != LAYOUT_ANONYMOUS_BLOCK)
+		return 0;
+
+	/* The three displays. */
+	if (box->style.display == CSS_DISPLAY_TABLE_ROW)
+		return 1;
+	if (box->style.display == CSS_DISPLAY_TABLE_ROW_GROUP)
+		return 1;
+	if (box->style.display == CSS_DISPLAY_TABLE_CELL)
+		return 1;
+
+	/* Anything else. */
+	return 0;
+}
+
+/* Makes an anonymous table box of a display, with the inherited properties of the box it goes in. */
+static struct layout_box *
+box_anonymous_of(
+	struct layout_tree *tree,
+	const struct layout_box *parent,
+	int display)
+{
+	struct css_style style;
+
+	/* The anonymous style, of the display. */
+	box_anonymous_style(&parent->style, &style);
+	style.display = display;
+	style.vertical_align = parent->style.vertical_align;
+
+	/* The box. */
+	return box_new(tree, LAYOUT_ANONYMOUS_BLOCK, NULL, &style);
 }
 
 /* Makes the style of an anonymous block: the parent's inherited properties, initial values otherwise. */

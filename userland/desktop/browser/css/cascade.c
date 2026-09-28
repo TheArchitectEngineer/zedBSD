@@ -610,6 +610,9 @@ cascade_compute(
 		style->line_height = parent->line_height;
 		style->text_align = parent->text_align;
 		style->direction = parent->direction;
+		style->border_spacing[0] = parent->border_spacing[0];
+		style->border_spacing[1] = parent->border_spacing[1];
+		style->border_collapse = parent->border_collapse;
 		style->white_space = parent->white_space;
 		style->visibility = parent->visibility;
 		style->list_style = parent->list_style;
@@ -2705,7 +2708,8 @@ cascade_apply(
 		inherited = property == CSS_PROP_COLOR || property == CSS_PROP_FONT_SIZE || property == CSS_PROP_FONT_WEIGHT ||
 		    property == CSS_PROP_FONT_STYLE || property == CSS_PROP_FONT_FAMILY || property == CSS_PROP_LINE_HEIGHT ||
 		    property == CSS_PROP_TEXT_ALIGN || property == CSS_PROP_WHITE_SPACE || property == CSS_PROP_VISIBILITY ||
-		    property == CSS_PROP_DIRECTION ||
+		    property == CSS_PROP_DIRECTION || property == CSS_PROP_BORDER_SPACING_X || property == CSS_PROP_BORDER_SPACING_Y ||
+		    property == CSS_PROP_BORDER_COLLAPSE ||
 		    property == CSS_PROP_LIST_STYLE_TYPE;
 		if (value->kind == CSS_VALUE_INHERIT || inherited) {
 			if (parent != NULL)
@@ -2894,6 +2898,13 @@ cascade_apply(
 		break;
 	case CSS_PROP_CONTAINER_TYPE:
 		style->container_type = value->keyword;
+		break;
+	case CSS_PROP_BORDER_SPACING_X:
+	case CSS_PROP_BORDER_SPACING_Y:
+		style->border_spacing[property - CSS_PROP_BORDER_SPACING_X] = cascade_length(engine, value, style->font_size).value;
+		break;
+	case CSS_PROP_BORDER_COLLAPSE:
+		style->border_collapse = value->keyword;
 		break;
 	case CSS_PROP_GRID_TEMPLATE_COLUMNS:
 		cascade_tracks(engine, style, value, style->columns, &style->column_count);
@@ -3265,6 +3276,13 @@ cascade_inherit(
 		break;
 	case CSS_PROP_CONTAINER_TYPE:
 		style->container_type = parent->container_type;
+		break;
+	case CSS_PROP_BORDER_SPACING_X:
+	case CSS_PROP_BORDER_SPACING_Y:
+		style->border_spacing[property - CSS_PROP_BORDER_SPACING_X] = parent->border_spacing[property - CSS_PROP_BORDER_SPACING_X];
+		break;
+	case CSS_PROP_BORDER_COLLAPSE:
+		style->border_collapse = parent->border_collapse;
 		break;
 	case CSS_PROP_GRID_TEMPLATE_COLUMNS:
 		memcpy(style->columns, parent->columns, sizeof(style->columns));
