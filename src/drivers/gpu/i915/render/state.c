@@ -397,7 +397,8 @@ drv_i915_gfx_write_state(
  * R32_FLOAT surface is written without the unorm path bit, since it carries
  * a depth value's bits rather than a colour.  A depth surface (D32_SFLOAT,
  * D16_UNORM) is the Y-tiled R32_FLOAT or R16_UNORM it is laid out as (see
- * i915_image_surface_write()); every other surface is linear.
+ * i915_image_surface_write()); a colour surface is linear unless it is
+ * a sample of a multisampled image (surface->tiled).
  */
 int
 drv_i915_gfx_surface_write(
@@ -457,6 +458,10 @@ drv_i915_gfx_surface_write(
 		/* The depth-bits view carries no colour, so no unorm path. */
 		if (surface->format == VK_FORMAT_R32_SFLOAT)
 			unorm = 0U;
+
+		/* A sample of a multisampled image is in Y tiles. */
+		if (surface->tiled != 0U)
+			tile = GEN12_TILEMODE_YMAJOR;
 	}
 
 	/* Refuses a pitch too short for a row of texels, and a Y-tiled surface of partial tiles. */
@@ -769,13 +774,15 @@ drv_i915_gfx_emit_context_setup(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_POLY_STIPPLE_OFFSET, GEN12_3DSTATE_POLY_STIPPLE_OFFSET_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_LINE_STIPPLE, GEN12_3DSTATE_LINE_STIPPLE_DWORDS);
 
-	/* Places the single sample at the pixel centre. */
+	/* Places the single sample at the pixel centre, and two and four samples at the standard positions. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SAMPLE_PATTERN, GEN12_3DSTATE_SAMPLE_PATTERN_DWORDS));
 	for (index = 1U; index < GEN12_3DSTATE_SAMPLE_PATTERN_DWORDS; index++) {
-		/* Only dword 8 carries the 1x pattern; every other dword is zero. */
+		/* Dword 7 carries the 4x pattern, dword 8 the 1x and 2x ones; the 8x and 16x dwords are zero. */
 		pattern = 0U;
+		if (index == 7U)
+			pattern = GEN12_SAMPLE_PATTERN_4X;
 		if (index == 8U)
-			pattern = GEN12_SAMPLE_PATTERN_1X_CENTRE;
+			pattern = GEN12_SAMPLE_PATTERN_1X_CENTRE | GEN12_SAMPLE_PATTERN_2X;
 		drv_i915_batch_emit(batch, pattern);
 	}
 
@@ -1188,6 +1195,26 @@ drv_i915_gfx_emit_constants(
 }
 
 /*
+ * Returns the log2 of a sample count, as the multisample fields take it:
+ * 0 for one sample (or none), 1 for two, 2 for four.
+ */
+uint32_t
+drv_i915_gfx_samples_log2(
+	uint32_t samples)
+{
+	/* Four samples. */
+	if (samples >= 4U)
+		return 2U;
+
+	/* Two samples. */
+	if (samples == 2U)
+		return 1U;
+
+	/* Succeeded: one sample. */
+	return 0U;
+}
+
+/*
  * Emits 3DSTATE_CLIP, SF and RASTER of an ordinary Vulkan pipeline, as anv
  * programs them.
  *
@@ -1204,6 +1231,7 @@ drv_i915_gfx_emit_raster(
 	uint32_t counter_clockwise;
 	uint32_t point_width;
 	uint32_t linear;
+	uint32_t multisample;
 	uint32_t index;
 
 	/* The clipper prepares the linear barycentrics when the pixel kernel reads them. */
@@ -1261,7 +1289,12 @@ drv_i915_gfx_emit_raster(
 	if (pipeline->front_face == VK_FRONT_FACE_COUNTER_CLOCKWISE)
 		counter_clockwise = 1U;
 
-	/* Rasterizes with z near and far clip tests, scissor, the cull mode, the winding and the DX10.1+ API mode. */
+	/* A pipeline of several samples rasterizes on the sample pattern (anv's DXMultisampleRasterizationEnable). */
+	multisample = 0U;
+	if (pipeline->samples > 1U)
+		multisample = GEN12_RASTER_DX_MULTISAMPLE_ENABLE;
+
+	/* Rasterizes with z near and far clip tests, scissor, the cull mode, the winding, the DX10.1+ API mode and the samples. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_RASTER, GEN12_3DSTATE_RASTER_DWORDS));
 	drv_i915_batch_emit(batch,
 			    (1U << 0) |
@@ -1269,7 +1302,8 @@ drv_i915_gfx_emit_raster(
 			    (1U << 1) |
 			    (cull << 16) |
 			    (counter_clockwise << 21) |
-			    (2U << 22));
+			    (2U << 22) |
+			    multisample);
 	for (index = 2U; index < GEN12_3DSTATE_RASTER_DWORDS; index++)
 		drv_i915_batch_emit(batch, 0U);
 }
@@ -1879,6 +1913,7 @@ i915_image_surface_write(
 	uint32_t slices;
 	uint32_t lod;
 	uint32_t tile;
+	uint32_t samples;
 	int error;
 
 	/* Refuses an image with no storage. */
@@ -1950,6 +1985,18 @@ i915_image_surface_write(
 		array = GEN12_RSS_SURFACE_ARRAY;
 	}
 
+	/*
+	 * A multisampled image is Y-tiled with its samples as slices, QPitch
+	 * apart (MSFMT_MSS), which the surface reaches as an array (isl sets
+	 * Surface Array for every 2D surface).
+	 */
+	samples = 0U;
+	if (image->samples > 1U) {
+		tile = GEN12_TILEMODE_YMAJOR;
+		array = GEN12_RSS_SURFACE_ARRAY;
+		samples = drv_i915_gfx_samples_log2(image->samples) << GEN12_RSS_MULTISAMPLES_SHIFT;
+	}
+
 	/* A render target writes level MIP Count; a sampled surface reads from Surface Min LOD. */
 	lod = (((range->level_count - 1U) & GEN12_RSS_LOD_MASK) << GEN12_RSS_MIP_COUNT_SHIFT) |
 	    ((range->base_level & GEN12_RSS_LOD_MASK) << GEN12_RSS_SURFACE_MIN_LOD_SHIFT);
@@ -1975,7 +2022,7 @@ i915_image_surface_write(
 	rss[1] = (1U << 31) | (mocs << 24) | ((rows / 4U) & GEN12_RSS_QPITCH_MASK);
 	rss[2] = (image->width - 1U) | ((image->height - 1U) << 16);
 	rss[3] = ((depth & GEN12_RSS_DEPTH_MASK) << GEN12_RSS_DEPTH_SHIFT) | (image->pitch - 1U);
-	rss[4] = (range->base_layer & GEN12_RSS_DEPTH_MASK) << GEN12_RSS_MIN_ARRAY_ELEMENT_SHIFT;
+	rss[4] = ((range->base_layer & GEN12_RSS_DEPTH_MASK) << GEN12_RSS_MIN_ARRAY_ELEMENT_SHIFT) | samples;
 	if (range->render_target != 0) {
 		if (type == GEN12_SURFTYPE_3D)
 			depth = 0U;

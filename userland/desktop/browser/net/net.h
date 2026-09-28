@@ -72,14 +72,38 @@ struct net_data {
 
 /*
  * The response of an HTTP fetch: the final URL (after the redirects), the
- * status, the Content-Type header's value, and the body (decoded from
- * chunks).
+ * status, the Content-Type header's value, the body (decoded from
+ * chunks), and what the response says of caching it: Cache-Control's
+ * max-age in seconds (-1 without one), no-store and no-cache, and its
+ * ETag (empty without one).
  */
 struct net_response {
 	struct wb_buffer url;
 	int status;
 	struct wb_buffer content_type;
 	struct wb_buffer body;
+	long max_age;
+	int no_store;
+	int no_cache;
+	struct wb_buffer etag;
+};
+
+/*
+ * How far the bytes of a response read so far go (net_http_framing_update):
+ * whether the headers are complete and where the body starts, how the body
+ * ends (its length, its chunks, or the end of the connection), how far the
+ * chunks have been walked, whether the connection may carry another request
+ * after it, and whether the response is complete.
+ */
+struct net_http_framing {
+	int headers_done;
+	size_t body_start;
+	int chunked;
+	int until_close;
+	size_t body_end;
+	size_t position;
+	int keep_alive;
+	int done;
 };
 
 /* A request of the asynchronous loader, and the loader. */
@@ -106,7 +130,10 @@ int net_host_parse(const char *input, size_t length, int opaque, struct wb_buffe
 
 /* HTTP (http.c). */
 int net_http_fetch(const char *url, struct net_response *response);
-int net_http_request_text(const struct net_url *url, struct wb_buffer *request);
+int net_http_request_text(const struct net_url *url, struct wb_buffer *request, int keep_alive, const char *extra);
+void net_response_init(struct net_response *response);
+void net_http_framing_init(struct net_http_framing *framing);
+void net_http_framing_update(struct net_http_framing *framing, const unsigned char *raw, size_t length);
 int net_http_parse_response(const struct net_url *url, const struct wb_buffer *raw, struct net_response *response, struct wb_buffer *location);
 int net_http_is_redirect(int status);
 int net_http_is_web(const char *scheme);

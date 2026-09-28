@@ -1089,6 +1089,13 @@ struct fm_app {
 	size_t collision_index;
 	int collision_all;
 
+	/*
+	 * Whether the held task is the paste of a cut: the clipboard is
+	 * emptied only when the task is queued, so that Esc on the question
+	 * keeps the cut items on it (ws035-p110, F-050).
+	 */
+	int collision_cut;
+
 	/* The paths to select once the folder is read again (a finished task's outcome). */
 	char **select_paths;
 	size_t select_count;
