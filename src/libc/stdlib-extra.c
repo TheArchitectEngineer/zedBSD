@@ -180,20 +180,7 @@ int posix_memalign(void **memory, size_t alignment, size_t size)
 	return 0;
 }
 
-static void swap_bytes(unsigned char *a, unsigned char *b, size_t n)
-{ while (n-- != 0) { unsigned char t = *a; *a++ = *b; *b++ = t; } }
-static void insertion_sort(void *base, size_t count, size_t size,
-    int (*compare)(const void *, const void *))
-{
-	unsigned char *bytes = base;
-	for (size_t i = 1; i < count; i++)
-		for (size_t j = i; j && compare(bytes + (j - 1) * size,
-		    bytes + j * size) > 0; j--)
-			swap_bytes(bytes + (j - 1) * size, bytes + j * size, size);
-}
-void qsort(void *base, size_t count, size_t size,
-    int (*compare)(const void *, const void *))
-{ if (size && compare) insertion_sort(base, count, size, compare); }
+/* qsort, qsort_r, heapsort and mergesort are in sort.c. */
 void *bsearch(const void *key, const void *base, size_t count, size_t size,
     int (*compare)(const void *, const void *))
 {
@@ -204,21 +191,6 @@ void *bsearch(const void *key, const void *base, size_t count, size_t size,
 		else count = middle; }
 	return NULL;
 }
-static void insertion_sort_r(void *base, size_t count, size_t size,
-    int (*compare)(const void *, const void *, void *), void *context)
-{
-	unsigned char *bytes = base;
-	for (size_t i = 1; i < count; i++) for (size_t j = i; j &&
-	    compare(bytes + (j - 1) * size, bytes + j * size, context) > 0; j--)
-		swap_bytes(bytes + (j - 1) * size, bytes + j * size, size);
-}
-void qsort_r(void *base, size_t count, size_t size,
-    int (*compare)(const void *, const void *, void *), void *context)
-{ if (size && compare) insertion_sort_r(base, count, size, compare, context); }
-int heapsort(void *b, size_t n, size_t s, int (*c)(const void *, const void *))
-{ if (!s) { errno = EINVAL; return -1; } qsort(b, n, s, c); return 0; }
-int mergesort(void *b, size_t n, size_t s, int (*c)(const void *, const void *))
-{ if (!s) { errno = EINVAL; return -1; } qsort(b, n, s, c); return 0; }
 
 div_t div(int n, int d) { div_t r = { n / d, n % d }; return r; }
 ldiv_t ldiv(long n, long d) { ldiv_t r = { n / d, n % d }; return r; }
