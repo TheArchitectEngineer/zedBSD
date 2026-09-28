@@ -723,6 +723,7 @@ home_read_apps(
 		home_add_app("X terminal", "/bin/sh /usr/libexec/keiland-x11 /bin/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U);
 		home_add_app("Gears", "/bin/sh /usr/libexec/keiland-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU);
 		home_add_app("Files", "/bin/files", "files file manager folder finder browse", 0x2f7cf6U);
+		home_add_app("Notes", "/bin/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U);
 		home_add_app("Browser", "/bin/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U);
 	}
 
