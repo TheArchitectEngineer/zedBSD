@@ -130,6 +130,17 @@ struct notes_app {
 	/* When Notes ends by itself (0: never), and whether it is ending. */
 	uint64_t deadline;
 	int quit;
+
+	/*
+	 * The frames drawn since the last NOTES FRAMES line: how many, and the
+	 * sum and the longest of the time spent building their geometry and
+	 * drawing them (microseconds).  The line goes out when a contact ends,
+	 * so it tells what drawing a stroke costs a frame.
+	 */
+	unsigned long frame_count;
+	uint64_t frame_build_us;
+	uint64_t frame_draw_us;
+	uint64_t frame_longest_us;
 };
 
 static int app_start_document(struct notes_app *app, const char *file);
@@ -146,8 +157,10 @@ static void app_end_contact(struct notes_app *app, const struct notes_input *inp
 static void app_changed(struct notes_app *app);
 static int app_save(struct notes_app *app, const char *reason);
 static void app_draw(struct notes_app *app);
+static void app_frame_report(struct notes_app *app);
 static int app_timeout(const struct notes_app *app, uint64_t now);
 static uint64_t app_unix_ms(void);
+static uint64_t app_microseconds(void);
 
 /*
  * Runs Notes.
@@ -809,6 +822,12 @@ app_input(
 	if (app->contact != MAIN_CONTACT_NONE)
 		app_end_contact(app, NULL);
 
+	/* The frame times count from the contact's start. */
+	app->frame_count = 0;
+	app->frame_build_us = 0;
+	app->frame_draw_us = 0;
+	app->frame_longest_us = 0;
+
 	/* A press on the toolbar is its button's. */
 	if (input->y < (float)NOTES_TOOLBAR_HEIGHT) {
 		app->contact = MAIN_CONTACT_TOOLBAR;
@@ -957,6 +976,9 @@ app_end_contact(
 	if (app->contact == MAIN_CONTACT_ERASE)
 		notes_document_erase_end(&app->document);
 
+	/* The frames the contact took, for the tests' line. */
+	app_frame_report(app);
+
 	/* No contact is under way. */
 	app->contact = MAIN_CONTACT_NONE;
 	app->redraw = 1;
@@ -1027,9 +1049,15 @@ app_draw(
 	struct notes_view view;
 	struct notes_page *page;
 	unsigned char *pixels;
+	uint64_t started;
+	uint64_t built;
+	uint64_t finished;
 	size_t pitch;
 	size_t index;
 	int error;
+
+	/* When the frame starts, for the frame times. */
+	started = app_microseconds();
 
 	/* The page's place; a new place (and the first) is logged for the tests. */
 	page = app->document.pages[app->page];
@@ -1100,7 +1128,8 @@ app_draw(
 		return;
 	}
 
-	/* Draws it. */
+	/* Draws it, after the time the geometry took. */
+	built = app_microseconds();
 	error = (int)notes_renderer_draw(&app->renderer, &app->frame);
 	if (error == (int)VK_ERROR_OUT_OF_DATE_KHR) {
 		app->window.resized = 1;
@@ -1114,6 +1143,14 @@ app_draw(
 		return;
 	}
 
+	/* The frame's times join the ones the next NOTES FRAMES line reports. */
+	finished = app_microseconds();
+	app->frame_count++;
+	app->frame_build_us += built - started;
+	app->frame_draw_us += finished - built;
+	if (finished - started > app->frame_longest_us)
+		app->frame_longest_us = finished - started;
+
 	/* Succeeded: the frame is shown (the first is logged for the tests). */
 	if (!app->drawn) {
 		printf("NOTES FRAME first draws=%lu\n", (unsigned long)app->frame.draw_count);
@@ -1123,6 +1160,39 @@ app_draw(
 	/* Nothing waits to be drawn. */
 	app->drawn = 1;
 	app->redraw = 0;
+}
+
+/*
+ * Logs the frames drawn since the last report -- their count, the average
+ * time their geometry and their drawing took, and the longest frame -- and
+ * starts counting again.
+ */
+static void
+app_frame_report(
+	struct notes_app *app)
+{
+	unsigned long build_average;
+	unsigned long draw_average;
+
+	/* A contact that drew no frame has nothing to report. */
+	if (app->frame_count == 0U)
+		return;
+
+	/* The averages, in microseconds. */
+	build_average = (unsigned long)(app->frame_build_us / app->frame_count);
+	draw_average = (unsigned long)(app->frame_draw_us / app->frame_count);
+
+	/* The tests' line. */
+	printf("NOTES FRAMES count=%lu strokes=%lu build_us=%lu draw_us=%lu frame_us=%lu longest_us=%lu\n", app->frame_count,
+	       (unsigned long)app->document.pages[app->page]->stroke_count, build_average, draw_average,
+	       build_average + draw_average, (unsigned long)app->frame_longest_us);
+	fflush(stdout);
+
+	/* The next report counts from here. */
+	app->frame_count = 0;
+	app->frame_build_us = 0;
+	app->frame_draw_us = 0;
+	app->frame_longest_us = 0;
 }
 
 /* Tells how long the main loop may wait, in milliseconds (-1: until the compositor speaks). */
@@ -1180,4 +1250,20 @@ app_unix_ms(void)
 
 	/* Reports it in milliseconds. */
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
+}
+
+/* Returns the monotonic time in microseconds. */
+static uint64_t
+app_microseconds(void)
+{
+	struct timespec now;
+	int status;
+
+	/* The monotonic clock. */
+	status = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (status != 0)
+		return 0U;
+
+	/* Reports it in microseconds. */
+	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
 }
