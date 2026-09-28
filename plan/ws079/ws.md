@@ -40,6 +40,10 @@ libtruetypeにはアウトラインを返すAPIを追加しましょう。」
 - 注意: 新しい worktree で desktop の image を build すると、guest の config が host の LLVM（lldb 付き）を共有の `build/llvm` へ install しようと
   することがある（p004 の agent が install の前に止めた）。worktree の build/llvm の symlink の扱いを次の周期に確かめる。
 
+2026-09-28 ユーザー:「ウィンドウのフローティングタイトルバーを二本指でタッチする（叩く）と、Zオーダーが後ろに回って奥に行き、次のウィンドウが表示されるようにしたいです。」
+→ p012（kernel の multitouch）と p013（compositor の touch と二本指のタップ）。今の kernel は指の collection を無視し、compositor には wl_touch が無い。
+touch の LCD の USB はまだ見えていない（H1）ので、QEMU の注入の device で先に作る。
+
 ## 完了の条件（案、p001 で確定）
 
 1. 画面の上の右端から左下へのスワイプ（pointer の drag と、ペン・touch があればそれも）で Notes が起動する。起動済みなら最前面に出て全画面になる。
@@ -69,4 +73,6 @@ libtruetypeにはアウトラインを返すAPIを追加しましょう。」
 | ws079-p006 | libpdf の読み込み ① と PDF Viewer v1（scroll と page の swipe、Notes で書き込み） | planning | p004 |
 | ws079-p007 | 段階 ②: 一般の PDF の図形・画像（DCT は libjpeg-compat、Flate は libz-compat）・埋め込みの TrueType（libtruetype） | planning | p006 |
 | ws079-p008 | 段階 ③: CFF・Type1・暗号化など | planning | p007 |
+| ws079-p012 | kernel の multitouch: USB HID の digitizer の指の collection（Contact ID・Tip Switch・X/Y・Contact Count）→ `ABS_MT_SLOT`・`ABS_MT_TRACKING_ID`・`ABS_MT_POSITION_X/Y`・`BTN_TOUCH`、注入の device の touch の種類（試験用） | planning | p002 |
+| ws079-p013 | compositor の touch: client への `wl_touch`、touch の接触を端のジェスチャー（p010 の `zwl_corner_contact_*` と Home・Wiseview）へ、**浮いたタイトルバーの二本指のタップで窓を z-order の後ろへ回し、次の窓を前に**（2026-09-28 ユーザー） | planning | p012、p003 |
 | ws079-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
