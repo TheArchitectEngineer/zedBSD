@@ -73,15 +73,22 @@ forward）、DLL の依存の解決、IAT の書き換え、Microsoft x64 ABI �
      PE の target で build できるか（依存する libc の関数を上の runtime で満たせるか）を調べる。
 5. 優先度: デモ（fg010）の後か、並べるか。
 
-## Phase（案）
+## Phase（2026-09-28 に分けた。上の決定を反映）
 
-| Phase | 目的 | Status | 依存 |
-| --- | --- | --- | --- |
-| ws080-p001 | 設計: 層の分け方（spec §2）、kernel の汎用の機能（PE の exec の検出、GS base、page の保護）、`ld.coff` の module の namespace・探索・import/export・依存の graph・初期化の順、Microsoft x64 ABI の thunk、最小の TEB/PEB の offset、TLS と unwind の拡張の余地、互換の DLL から native を呼ぶ橋、試験の PE の作り方。GS base の HAL の差分を plan に置く | planning | — |
-| ws080-p002 | kernel: PE の exec の検出で `ld.coff` を起こす、GS base（承認の後）、必要なら page の保護の補助 | planning | p001、HAL の承認 |
-| ws080-p003 | `ld.coff` の PE32+ の解析と mapping（section・保護・base relocation `DIR64`、ASLR 前提）、host の試験 | planning | p001 |
-| ws080-p004 | DLL の loader（namespace・探索の順・大文字小文字を区別しない名前・依存の graph・LOADING/LOADED/INITIALIZED）、import（名前・ordinal）、export（名前・ordinal・forward、循環の検出）、IAT | planning | p003 |
-| ws080-p005 | Microsoft x64 ABI の境界の thunk、最小の TEB/PEB（GS:[0x30]・GS:[0x60]、`offsetof` の assert）、`DllMain(DLL_PROCESS_ATTACH)`、EXE の entrypoint への移動と return → process の終了。自作の最小の EXE + DLL が動く | planning | p002、p004 |
-| ws080-p006 | 最初の互換の DLL（`kernel32.dll` の最小: `ExitProcess`・`GetStdHandle`・`WriteFile`・`GetCommandLineA` 等）と native の橋。hello world の EXE | planning | p005 |
-| ws080-p007 | v0.1 以降の拡張の順の計画（static TLS・TLS callback・unwind の登録・ucrtbase） | planning | p006 |
-| ws080-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
+| Phase | 目的 | 完了の条件 | Status | 依存 |
+| --- | --- | --- | --- | --- |
+| ws080-p001 | 設計の文書（`plan/ws080/design.md`）: 3 つの層、kernel の汎用の機能、`ld.coff` の構成、module の namespace・探索・import/export・依存の graph・初期化の順、MS x64 ABI の境界、最小の TEB/PEB の offset、PE の側の runtime、LLP64 の header の生成、syscall の stub の仕様（上の register の規則）、試験の PE の作り方（clang + `lld-link`）、`LoadLibrary`・`GetProcAddress` が実行時に `ld.coff` の loader を使う道（橋の DLL を置かない形で）、Wayland の道。**GS base の HAL の差分を plan に置く** | 設計の文書と HAL の差分の案、design-reviewer の review | planning | — |
+| ws080-p002 | HAL と kernel: `swapgs` の方式、thread ごとの user の GS base の保存・復元、user が GS base を設定・取得する汎用の UAPI、CR4.FSGSBASE の扱い | **HAL の差分の承認の後**。全ての入口（syscall・割り込み・例外・NMI）の試験、既存の回帰（boot test・desktop・i915 の実機）、user の GS base が thread の切り替えで保たれる試験 | planning | p001、HAL の承認 |
+| ws080-p003 | kernel: exec が `MZ`/`PE\0\0` を見て `/usr/libexec/ld.coff` を interpreter として起こす（argv の約束） | PE を exec すると ld.coff が起き、元の path と argv を受け取る試験 | planning | p001 |
+| ws080-p004 | LLP64 の UAPI の header の生成の script と生成物（固定幅の型、LP64 の元との offset・大きさの `_Static_assert`） | 生成物が clang の windows の target で通り、LP64 との照合が全て合う。UAPI の変更を検出する試験 | planning | p001 |
+| ws080-p005 | PE の側の build の基盤: make の規則（clang `--target=x86_64-pc-windows-msvc` + `lld-link`）、PE の側の最小の runtime（静的な library）、syscall の stub、CRT 無しの試験用の EXE・DLL の fixture | stub の register の保存の host の試験、fixture の EXE・DLL ができる | planning | p001、p004 |
+| ws080-p006 | `ld.coff` の核: PE32+ の解析、`SizeOfImage` の確保、section の配置と 0 埋め、base relocation（ABSOLUTE・DIR64、ASLR 前提）、section の保護（恒久の RWX を作らない） | host の試験（fixture と壊れた PE の fuzz） | planning | p005 |
+| ws080-p007 | DLL の loader: module の namespace、探索（実行ファイルの directory → `/usr/lib/coff64/` → `COFF_LIBRARY_PATH`）、大文字小文字を区別しない名前、import（名前・ordinal）、export（名前・ordinal・forward、循環の検出）、依存の graph（LOADING/LOADED/INITIALIZED）、IAT | host の試験（依存の graph・forward・循環・ordinal） | planning | p006 |
+| ws080-p008 | 実行: MS x64 ABI の thunk、最小の TEB/PEB（GS:[0x30]・GS:[0x60]、`offsetof` の assert）、GS base の設定、`DllMain(DLL_PROCESS_ATTACH)`、EXE の `AddressOfEntryPoint` への移動、return → process の終了 | **v0.1 の到達点**: guest で自作の最小の EXE + 自作の DLL が動く | planning | p002、p003、p007 |
+| ws080-p009 | 最初の互換の DLL（`userland/desktop/w64/kernel32`）: `ExitProcess`・`GetStdHandle`・`WriteFile`・`ReadFile`・`CreateFileW`・`CloseHandle`・`GetCommandLineW`・`VirtualAlloc/Free/Protect`・`GetLastError/SetLastError`・`GetModuleHandleW`・`LoadLibraryW`・`GetProcAddress`・`CreateThread`（UAPI と GS base）。UAPI を直接呼ぶ | guest で console の hello world の EXE、file の読み書き、thread の EXE | planning | p008 |
+| ws080-p010 | CRT への道: `ucrtbase.dll` の最小（printf 系・malloc・文字列）か、先に CRT を静的に link した program（MinGW 系）で試すかを決めて最初の段を作る | CRT を使う hello world | planning | p009 |
+| ws080-p011 | v0.1 の後の拡張の計画と最初の一歩: static TLS・TLS callback・`.pdata` の unwind の登録・`DLL_THREAD_ATTACH`、user32 等が Wayland と直接話す道 | 計画の文書と最初の一歩 | planning | p010 |
+| ws080-p012 | 全文規約確認と回帰（必須の最終確認） | 規約と回帰 | planning | 全 Phase |
+
+実行の順（案）: p001 → （承認を待つ間に）p003・p004・p005 → p006 → p007 → p002（承認の後）→ p008 → p009 → p010 → p011 → p012。
+p002 は全ての kernel の入口を変えるので、単独の Phase にして広い回帰（boot test・desktop の Venus・i915 の実機）を行う。
