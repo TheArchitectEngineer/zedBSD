@@ -132,6 +132,45 @@ struct pdf_token {
 	size_t length;
 };
 
+/* The most bytes one stream may decode to, the decode limit of design-pdf.md section 4.3. */
+#define PDF_FILTER_OUTPUT_MAX ((size_t)256 * 1024 * 1024)
+
+/* The longest side of an image, in samples. */
+#define PDF_IMAGE_SIDE_MAX 16384
+
+/* The most items, path points and image pixels one display list may hold. */
+#define PDF_DISPLAY_ITEMS_MAX ((size_t)1048576)
+#define PDF_DISPLAY_POINTS_MAX ((size_t)8388608)
+#define PDF_DISPLAY_PIXELS_MAX ((size_t)64 * 1024 * 1024)
+
+/*
+ * A display list while a page is interpreted into it.
+ *
+ * The public list comes first, so the builder is the list the caller
+ * receives.  Each item's path is kept as offsets into the shared verb and
+ * point arrays while they may still move; pdf_display_finish() turns the
+ * offsets into the items' pointers.  The images' pixels belong to the
+ * builder and are freed with it.
+ */
+struct pdf_display_builder {
+	struct pdf_display_list list;
+	struct pdf_display_item *items;
+	size_t *verb_starts;
+	size_t *point_starts;
+	size_t items_count;
+	size_t items_capacity;
+	unsigned char *verbs;
+	size_t verbs_count;
+	size_t verbs_capacity;
+	struct pdf_point *points;
+	size_t points_count;
+	size_t points_capacity;
+	unsigned char **images;
+	size_t images_count;
+	size_t images_capacity;
+	size_t pixels_count;
+};
+
 void *pdf_arena_allocate(struct pdf_arena *arena, size_t size);
 void pdf_arena_free(struct pdf_arena *arena);
 int pdf_lexer_next(struct pdf_lexer *lexer, struct pdf_token *token);
@@ -141,5 +180,38 @@ int pdf_parse_object(struct pdf_lexer *lexer, int depth, struct pdf_object **obj
 struct pdf_object *pdf_object_get(const struct pdf_object *dictionary, const char *key);
 int pdf_object_is_name(const struct pdf_object *object, const char *name);
 int pdf_object_number(const struct pdf_object *object, double *number);
+
+/* What the content interpreter needs of a document being read (reader.c). */
+int pdf_reader_resolve(struct pdf_document *document, struct pdf_object *object, struct pdf_object **resolved);
+int pdf_reader_resolve_key(struct pdf_document *document, const struct pdf_object *dictionary, const char *key, struct pdf_object **resolved);
+int pdf_reader_page(struct pdf_document *document, size_t index, struct pdf_object **page, struct pdf_object **resources);
+const unsigned char *pdf_reader_bytes(const struct pdf_document *document);
+
+/* The stream filters (filter.c). */
+int pdf_filter_decode(struct pdf_document *document, const struct pdf_object *stream, int stop_at_dct, const unsigned char **data, size_t *size, unsigned char **owned, int *dct);
+
+/* The images (image.c). */
+int pdf_image_decode(struct pdf_document *document, const struct pdf_object *stream, const double fill[3], unsigned char **pixels, size_t *width, size_t *height, int *interpolate, unsigned *flags);
+
+/* The display list being built (display.c). */
+int pdf_display_create(struct pdf_display_builder **builder);
+void pdf_display_free(struct pdf_display_builder *builder);
+int pdf_display_add_path(struct pdf_display_builder *builder, enum pdf_item_type type, const unsigned char *verbs, size_t verb_count, const struct pdf_point *points, size_t point_count, const struct pdf_display_item *style);
+int pdf_display_add_image(struct pdf_display_builder *builder, unsigned char *pixels, const struct pdf_display_item *style);
+int pdf_display_add_clip_pop(struct pdf_display_builder *builder);
+void pdf_display_finish(struct pdf_display_builder *builder);
+
+/* The stroker (stroke.c): the outline a stroked path covers, in the path's own space. */
+struct pdf_stroke_style {
+	double width;
+	int cap;
+	int join;
+	double miter_limit;
+	const double *dash;
+	size_t dash_count;
+	double dash_phase;
+	double tolerance;
+};
+int pdf_stroke_path(const unsigned char *verbs, size_t verb_count, const struct pdf_point *points, size_t point_count, const struct pdf_stroke_style *style, unsigned char **out_verbs, size_t *out_verb_count, struct pdf_point **out_points, size_t *out_point_count);
 
 #endif /* LIBPDF_INTERNAL_H */

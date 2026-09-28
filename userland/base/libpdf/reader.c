@@ -100,6 +100,7 @@ struct pdf_reader_page {
 	struct pdf_object *media_box;
 	struct pdf_object *crop_box;
 	struct pdf_object *rotate;
+	struct pdf_object *resources;
 };
 
 /*
@@ -109,6 +110,7 @@ struct pdf_page_inheritance {
 	struct pdf_object *media_box;
 	struct pdf_object *crop_box;
 	struct pdf_object *rotate;
+	struct pdf_object *resources;
 };
 
 /*
@@ -532,6 +534,87 @@ pdf_document_get_dates(
 
 	/* Succeeded: both dates are given. */
 	return 0;
+}
+
+/*
+ * Resolves an object that may be a reference, for the other parts of the
+ * library.
+ */
+int
+pdf_reader_resolve(
+	struct pdf_document *document,
+	struct pdf_object *object,
+	struct pdf_object **resolved)
+{
+	int error;
+
+	/* Follows the references from the top of the load chain. */
+	error = resolve(document, object, 0, resolved);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: resolved is the direct object. */
+	return 0;
+}
+
+/*
+ * Resolves the value of a key of a dictionary or a stream, for the other
+ * parts of the library; a missing key is null.
+ */
+int
+pdf_reader_resolve_key(
+	struct pdf_document *document,
+	const struct pdf_object *dictionary,
+	const char *key,
+	struct pdf_object **resolved)
+{
+	int error;
+
+	/* Finds and resolves the value from the top of the load chain. */
+	error = resolve_key(document, dictionary, key, 0, resolved);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: resolved is the key's direct value. */
+	return 0;
+}
+
+/*
+ * Finds a page's dictionary and the resources it has or inherits (null
+ * when it has none).
+ */
+int
+pdf_reader_page(
+	struct pdf_document *document,
+	size_t index,
+	struct pdf_object **page,
+	struct pdf_object **resources)
+{
+	int error;
+
+	/* Refuses a page the document does not have. */
+	if (index >= document->pages_count)
+		return EINVAL;
+
+	/* Resolves the resources, which may be a reference. */
+	error = resolve(document, document->pages[index].resources, 0, resources);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page's dictionary, which the walk resolved. */
+	*page = document->pages[index].page;
+	return 0;
+}
+
+/*
+ * Reports the bytes of a document's file, into which streams point.
+ */
+const unsigned char *
+pdf_reader_bytes(
+	const struct pdf_document *document)
+{
+	/* The whole file, held while the document is open. */
+	return document->data;
 }
 
 /*
@@ -1370,8 +1453,8 @@ read_catalog(
 /*
  * Walks one node of the page tree, listing its pages in order.
  *
- * A node passes its MediaBox, CropBox and Rotate down to the nodes and
- * pages under it, which may replace them.  A node reached a second time is
+ * A node passes its MediaBox, CropBox, Rotate and Resources down to the
+ * nodes and pages under it, which may replace them.  A node reached a second time is
  * skipped, so a tree that loops ends.
  */
 static int
@@ -1422,6 +1505,9 @@ walk_page_tree(
 	value = pdf_object_get(resolved, "Rotate");
 	if (value != NULL)
 		inheritance.rotate = value;
+	value = pdf_object_get(resolved, "Resources");
+	if (value != NULL)
+		inheritance.resources = value;
 
 	/* Tells a node of the tree from a page: by its type, or by its kids when it has no type. */
 	error = resolve_key(document, resolved, "Type", 0, &type);
@@ -1522,6 +1608,7 @@ add_page(
 	document->pages[document->pages_count].media_box = inherited->media_box;
 	document->pages[document->pages_count].crop_box = inherited->crop_box;
 	document->pages[document->pages_count].rotate = inherited->rotate;
+	document->pages[document->pages_count].resources = inherited->resources;
 	document->pages_count++;
 
 	/* Succeeded: the page is the document's last. */
