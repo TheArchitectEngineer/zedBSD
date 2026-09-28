@@ -50,10 +50,22 @@ forward）、DLL の依存の解決、IAT の書き換え、Microsoft x64 ABI �
    呼び出しコストも減る。特に kernel32.dll がファイル・VM・thread・process系のUAPIを直接叩くのは自然です。」
    → **橋の DLL は置かない。** `kernel32.dll` 等は zedBSD の UAPI（syscall）を直接呼び、GUI の DLL（user32 等）は Wayland の compositor と直接通信する。
    p001 で設計する点（main の整理）:
-   - **UAPI の header を PE の側で使う**: Windows の ABI は LLP64（`long` が 32 bit）、zedBSD は LP64。UAPI の struct に `long`・`unsigned long` が
-     あると大きさが食い違うので、PE の build で使う UAPI の header を固定幅の型で監査する（`_Static_assert` で大きさを検査）。
-   - **syscall の stub**: zedBSD の syscall の呼び出しの規約（register）を PE の code から使う小さな asm の stub。Microsoft x64 ABI の関数から
-     zedBSD の syscall の register への並べ替えはこの stub の中だけ。
+   - **UAPI の header（2026-09-28 ユーザー）**: 「既存のUAPIのヘッダを直接使わずに、LLP64で使える専用の、整数の幅を指定したuint64_tとか
+     uint32_tとかで表現しているヘッダを、機械的に生成するのがいいと思うなあ。」→ 既存の `include/uapi` を PE の build で直接使わない。
+     LLP64 用の専用の header を**生成の script で機械的に作る**（`long`→`int64_t`/`uint64_t` 等、全ての型を固定幅に、struct の offset と大きさを
+     LP64 の元と照合する `_Static_assert` も生成）。生成物と script は tree に置き、UAPI が変わったら再生成と照合の試験で検出する。
+   - **syscall の stub**: Microsoft x64 ABI の関数から zedBSD の syscall へ移る小さな asm の stub。**stub の仕様に register の規則を明記する**
+     （2026-09-28 ユーザー「syscall は RCX と R11 を破壊するので、Microsoft x64 ABIのvolatile register規則とzedBSD syscall ABIのclobber規則を
+     stub仕様に明記しておく」）。今の zedBSD の amd64 の syscall の ABI（`src/hal/amd64/int.c`・`src/libc/crt/crt0-amd64.S`）:
+     番号は RAX、引数は RBX・R10（`syscall` の時。`int` の時は RCX）・RDX・RSI・RDI・RBP、戻り値は RAX、`syscall` 命令が RCX（戻り先）と R11（RFLAGS）を壊す。
+     Microsoft x64 ABI: 引数は RCX・RDX・R8・R9 と stack（shadow の 32 byte の上、5 番目は [rsp+0x28]）、volatile は RAX・RCX・RDX・R8〜R11・XMM0〜5、
+     **non-volatile は RBX・RBP・RDI・RSI・RSP・R12〜R15・XMM6〜15**。帰結:
+     - RCX・R11 を syscall が壊すのは MS の volatile の範囲なので問題ない。ただし第 1 引数が RCX で来るので、`syscall` の前に RBX 等へ移す。
+     - **zedBSD の引数の register の RBX・RSI・RDI・RBP は MS では non-volatile** なので、stub が push/pop で保存・復元する（事故の本命）。
+     - 5・6 番目の引数は stack から読む。MS ABI には red zone が無いので stub は rsp の下を使わない。
+     - kernel が syscall の間に XMM6〜15 を保つこと（kernel の FPU の扱い）を p001 で確かめて仕様に書く。保たないなら stub が保存する。
+     - 戻り値（負の errno 等）から Win32 の error（`SetLastError`）への変換は stub でなく kernel32 の側で行う。
+     - stub の host の試験: 全ての non-volatile の register に印を置いて syscall を呼び、戻った後に全て保たれていることを検査する。
    - **PE の側の最小の runtime**: libc の無い PE の code 用に、memcpy・文字列・errno 相当等の最小の部品を**静的な library**（DLL ではない）として
      各互換 DLL に link する（実行時の層は増えない）。
    - **thread**: `CreateThread` は zedBSD の thread の UAPI で作り、新しい thread の GS base を TEB に向ける（p002 の GS base の汎用の機能）。
