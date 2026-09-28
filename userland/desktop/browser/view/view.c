@@ -10,12 +10,16 @@
  * being fetched, the scroll, the page's clock and the network, moved out
  * of the window (ws074-p054).  A file or data: page is read at once; an
  * http or https page after the first is fetched without blocking, and the
- * page shown stays until it has arrived.  The page's timers run on the
- * monotonic clock from the time the page was made, and a page its scripts
- * or its arriving images changed is laid out and painted again.
+ * page shown stays until it has arrived (BROWSER_FETCH_DEFAULT; the other
+ * ways of fetching read every page at once, or fetch the first one too).
+ * The page's timers run on the monotonic clock from the time the page was
+ * made, and a page its scripts or its arriving images changed is laid out
+ * and painted again the next time its boxes are needed.  The headless
+ * modes settle the view on a virtual clock instead, and draw or dump it.
  */
 
 #include "view/view.h"
+#include "net/net.h"
 #include "page/page.h"
 
 #include <errno.h>
@@ -34,6 +38,9 @@
 /* The longest a timer is waited for at once, in milliseconds. */
 #define VIEW_WAIT_MAX		60000.0
 
+/* How many of the loader's descriptors a headless settle polls at most. */
+#define VIEW_POLL_MAX		64U
+
 /* How a page is reached: a new step of the history, or a step already in it. */
 enum view_step {
 	VIEW_STEP_NEW,
@@ -43,11 +50,12 @@ enum view_step {
 /*
  * A view: the page shown and its location, the history of locations
  * (index is the one shown), how far the page is scrolled (layout units),
- * the view's size, the fonts, the stack frame the pages' heaps scan up to,
- * the clock's time when the page shown (page_epoch) and the page being
- * made (open_epoch) began, the loader, the page being fetched (its
- * location and how it joins the history; NULL when none), the title shown,
- * and the callbacks.
+ * the view's size and whether the page was laid out at another size
+ * (resized), the fonts, the stack frame the pages' heaps scan up to, the
+ * clock's time when the page shown (page_epoch) and the page being made
+ * (open_epoch) began, how pages are fetched, the loader (NULL when every
+ * page is read at once), the page being fetched (its location and how it
+ * joins the history; NULL when none), the title shown, and the callbacks.
  */
 struct browser_view {
 	struct page *page;
@@ -58,10 +66,12 @@ struct browser_view {
 	layout_unit scroll_y;
 	unsigned width;
 	unsigned height;
+	int resized;
 	const struct text_font_paths *fonts;
 	const void *stack_base;
 	uint64_t page_epoch;
 	uint64_t open_epoch;
+	enum browser_fetch fetch;
 	struct net_loader *loader;
 	struct net_request *pending;
 	char *pending_path;
@@ -78,7 +88,9 @@ static int view_show_page(struct browser_view *view, struct page *page, const ch
 static int view_start_load(struct browser_view *view, const char *path, int step);
 static void view_document_arrived(void *context, struct net_request *request);
 static void view_stop_load(struct browser_view *view, int report);
-static int view_lay_out(struct browser_view *view);
+static int view_update(struct browser_view *view);
+static void view_settle_network(struct browser_view *view);
+static void view_clamp_scroll(struct browser_view *view);
 static void view_update_title(struct browser_view *view);
 static void view_scroll(struct browser_view *view, layout_unit distance);
 static void view_redraw(struct browser_view *view);
@@ -103,9 +115,16 @@ browser_view_create(
 	made->stack_base = options->stack_base;
 	made->width = options->width;
 	made->height = options->height;
+	made->fetch = options->fetch;
 	wb_buffer_init(&made->title);
 	if (options->callbacks != NULL)
 		made->callbacks = *options->callbacks;
+
+	/* A view that reads every page at once needs no loader. */
+	if (made->fetch == BROWSER_FETCH_AT_ONCE) {
+		*view = made;
+		return 0;
+	}
 
 	/* The loader of the http and https pages and images. */
 	error = page_net_create(&made->loader);
@@ -140,7 +159,8 @@ browser_view_destroy(
 		free(view->history[index]);
 
 	/* The loader, once no page uses it, then the view. */
-	page_net_destroy(view->loader);
+	if (view->loader != NULL)
+		page_net_destroy(view->loader);
 	wb_buffer_release(&view->title);
 	free(view);
 }
@@ -276,8 +296,6 @@ browser_view_resize(
 	unsigned width,
 	unsigned height)
 {
-	int error;
-
 	/* The size, and the page's scripts see it. */
 	view->width = width;
 	view->height = height;
@@ -285,13 +303,11 @@ browser_view_resize(
 		return 0;
 	page_set_viewport(view->page, (int)width, (int)height);
 
-	/* The page at the new size. */
-	error = view_lay_out(view);
-	if (error != 0)
-		return error;
+	/* The page is laid out at the new size when it is drawn next. */
+	view->resized = 1;
 	view_redraw(view);
 
-	/* Succeeded: the page fits the new size. */
+	/* Succeeded: the page will fit the new size. */
 	return 0;
 }
 
@@ -317,13 +333,20 @@ browser_view_title(
 	return wb_buffer_string(&view->title);
 }
 
-/* The height of the page shown's document in pixels. */
+/* The height of the page shown's document in pixels (the page is laid out first when it changed). */
 double
 browser_view_document_height(
-	const struct browser_view *view)
+	struct browser_view *view)
 {
+	int error;
+
 	/* No page is no height. */
 	if (view->page == NULL)
+		return 0.0;
+
+	/* A page that cannot be laid out has no height either. */
+	error = view_update(view);
+	if (error != 0)
 		return 0.0;
 
 	/* The layout's. */
@@ -337,6 +360,10 @@ browser_view_poll_fds(
 	struct pollfd *fds,
 	size_t capacity)
 {
+	/* A view without a loader waits on nothing. */
+	if (view->loader == NULL)
+		return 0;
+
 	/* The loader's. */
 	return page_net_poll_fds(view->loader, fds, capacity);
 }
@@ -352,8 +379,10 @@ browser_view_timeout(
 	int timeout;
 	int found;
 
-	/* The network's earliest time out. */
-	timeout = page_net_timeout(view->loader);
+	/* The network's earliest time out (none without a loader). */
+	timeout = -1;
+	if (view->loader != NULL)
+		timeout = page_net_timeout(view->loader);
 	if (view->page == NULL)
 		return timeout;
 
@@ -376,8 +405,8 @@ browser_view_timeout(
 
 /*
  * Does the work due after the caller's poll: the network (pages and
- * images that arrived), the page's timers, and the layout its scripts or
- * its images changed, with the redraw and a new title.
+ * images that arrived), the page's timers, and the redraw and the new
+ * title when its scripts or its images changed it.
  */
 void
 browser_view_process(
@@ -389,7 +418,8 @@ browser_view_process(
 	int error;
 
 	/* The loader's work: requests that moved on, their callbacks. */
-	page_net_process(view->loader, fds, count);
+	if (view->loader != NULL)
+		page_net_process(view->loader, fds, count);
 	if (view->page == NULL)
 		return;
 
@@ -403,10 +433,7 @@ browser_view_process(
 	if (!changed)
 		return;
 
-	/* The layout, the redraw, and the title the scripts may have set. */
-	error = view_lay_out(view);
-	if (error != 0)
-		return;
+	/* The redraw, which lays the page out again, and the title the scripts may have set. */
 	view_redraw(view);
 	view_update_title(view);
 }
@@ -440,8 +467,15 @@ browser_view_scroll_to(
 	struct browser_view *view,
 	enum browser_scroll_place place)
 {
+	int error;
+
 	/* No page, no scroll. */
 	if (view->page == NULL)
+		return;
+
+	/* The document's height is the one laid out now. */
+	error = view_update(view);
+	if (error != 0)
 		return;
 
 	/* The top, or the bottom (the scroll stops at the last view's worth). */
@@ -483,6 +517,11 @@ browser_view_click(
 	if (view->page == NULL)
 		return 0;
 
+	/* The boxes the click lands on are the page's as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
 	/* The page's scripts get the click first; a canceled click opens no link. */
 	page_y = y + (int)(view->scroll_y / LAYOUT_UNIT);
 	error = page_click(view->page, x, page_y, x, y, &canceled);
@@ -494,7 +533,7 @@ browser_view_click(
 	/* A page the listeners changed is laid out again before its link is looked for. */
 	changed = page_needs_layout(view->page);
 	if (changed) {
-		error = view_lay_out(view);
+		error = view_update(view);
 		if (error != 0)
 			return error;
 		view_redraw(view);
@@ -520,18 +559,215 @@ browser_view_click(
 	return 0;
 }
 
-/* Gives what to draw: the page's display list, its text system and the scroll. */
-void
+/*
+ * Brings the page to rest for a headless caller: the page being fetched
+ * arrives, the page's timers run on a virtual clock up to budget
+ * milliseconds, and with BROWSER_SETTLE_LAYOUT the page is laid out, the
+ * images its layout asked for arrive, and it is laid out again with them.
+ * Returns ENOENT when no page is shown (its load failed, which the load
+ * callback heard of), or why the scripts or the layout failed.
+ */
+int
+browser_view_settle(
+	struct browser_view *view,
+	double budget,
+	unsigned flags)
+{
+	int error;
+
+	/* The page being fetched, if any, arrives or fails. */
+	view_settle_network(view);
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The page's timers, on the virtual clock. */
+	error = page_settle(view->page, budget);
+	if (error != 0)
+		return error;
+
+	/* The DOM and the style need no layout. */
+	if ((flags & BROWSER_SETTLE_LAYOUT) == 0U)
+		return 0;
+
+	/* The layout, which asks for the page's images. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The images that arrive, and the layout again with them. */
+	view_settle_network(view);
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page is at rest. */
+	return 0;
+}
+
+/*
+ * Draws the page shown with the CPU renderer into the caller's pixels:
+ * width by height pixels of 0xAARRGGBB, rows stride bytes apart, the page
+ * scrolled as the view is.
+ */
+int
+browser_view_draw_pixels(
+	struct browser_view *view,
+	uint32_t *pixels,
+	unsigned width,
+	unsigned height,
+	size_t stride)
+{
+	struct paint_bitmap bitmap;
+	unsigned char *row_start;
+	unsigned row;
+	int error;
+
+	/* No page has nothing to draw. */
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The page as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* Rows packed one after another are drawn in place. */
+	if (stride == (size_t)width * sizeof(uint32_t)) {
+		bitmap.pixels = pixels;
+		bitmap.width = (int)width;
+		bitmap.height = (int)height;
+		error = paint_software(&view->page->paint, &view->page->text, view->scroll_y, &bitmap);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the pixels hold the page. */
+		return 0;
+	}
+
+	/* Rows further apart are drawn into a packed bitmap first. */
+	error = paint_bitmap_create(&bitmap, (int)width, (int)height);
+	if (error != 0)
+		return error;
+	error = paint_software(&view->page->paint, &view->page->text, view->scroll_y, &bitmap);
+	if (error != 0) {
+		paint_bitmap_release(&bitmap);
+		return error;
+	}
+
+	/* Then copied into the caller's rows. */
+	for (row = 0; row < height; row++) {
+		row_start = (unsigned char *)pixels + (size_t)row * stride;
+		memcpy(row_start, bitmap.pixels + (size_t)row * width, (size_t)width * sizeof(uint32_t));
+	}
+
+	/* The packed bitmap is no longer needed. */
+	paint_bitmap_release(&bitmap);
+
+	/* Succeeded: the pixels hold the page. */
+	return 0;
+}
+
+/*
+ * Writes one of the page shown's text dumps (its DOM, its computed style,
+ * its layout or its display list) into memory the caller frees.
+ */
+int
+browser_view_dump(
+	struct browser_view *view,
+	enum browser_dump kind,
+	char **text,
+	size_t *length)
+{
+	struct wb_buffer out;
+	int error;
+
+	/* No page has nothing to dump. */
+	*text = NULL;
+	*length = 0;
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The layout and the display list are the page's as it is now. */
+	if (kind == BROWSER_DUMP_LAYOUT || kind == BROWSER_DUMP_PAINT) {
+		error = view_update(view);
+		if (error != 0)
+			return error;
+	}
+
+	/* The dump, as the kind asks. */
+	wb_buffer_init(&out);
+	if (kind == BROWSER_DUMP_DOM) {
+		error = page_dump_dom(view->page, &out);
+	} else if (kind == BROWSER_DUMP_STYLE) {
+		error = page_dump_style(view->page, &out);
+	} else if (kind == BROWSER_DUMP_LAYOUT) {
+		error = layout_dump(&view->page->layout, &out);
+	} else {
+		error = paint_dump(&view->page->paint, &out);
+	}
+
+	/* A dump that could not be written. */
+	if (error != 0) {
+		wb_buffer_release(&out);
+		return error;
+	}
+
+	/* An empty dump still gives the caller a string. */
+	if (out.data == NULL) {
+		error = wb_buffer_append_string(&out, "");
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the caller owns the text. */
+	*text = (char *)out.data;
+	*length = out.length;
+	return 0;
+}
+
+/*
+ * Gives what to draw: the page's display list, its text system and the
+ * scroll, the page laid out first when it changed.
+ */
+int
 browser_view_display(
-	const struct browser_view *view,
+	struct browser_view *view,
 	const struct paint_list **list,
 	struct text_system **text,
 	layout_unit *scroll_y)
 {
-	/* The page's. */
+	int error;
+
+	/* No page has nothing to draw. */
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The page as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page's. */
 	*list = &view->page->paint;
 	*text = &view->page->text;
 	*scroll_y = view->scroll_y;
+	return 0;
+}
+
+/* Trusts the CA certificates of a PEM file for https, besides the system's roots, in every view. */
+int
+browser_add_ca_file(
+	const char *path)
+{
+	int error;
+
+	/* The TLS layer's list. */
+	error = net_tls_add_ca_file(path);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the file's authorities are trusted. */
+	return 0;
 }
 
 /* The monotonic clock in milliseconds. */
@@ -552,9 +788,10 @@ view_clock(void)
 
 /*
  * Makes the page of a location the one shown, as a new step of the history
- * or one already in it: the first page and a file or data: page at once,
- * an http or https page after the first without blocking.  Returns 0, or
- * an errno value when the page could not be opened (the page shown stays).
+ * or one already in it: a file or data: page at once, an http or https
+ * page as the view fetches (the first at once, or every one at once, or
+ * every one without blocking).  Returns 0, or an errno value when the page
+ * could not be opened (the page shown stays).
  */
 static int
 view_navigate(
@@ -563,12 +800,20 @@ view_navigate(
 	int step)
 {
 	struct page *page;
+	int background;
 	int remote;
 	int error;
 
-	/* An http or https page after the first is fetched; the page shown stays until it arrives. */
+	/* Whether an http or https page is fetched without blocking: never without a loader, the first one only when asked. */
 	remote = page_net_is_remote(path);
-	if (remote && view->page != NULL) {
+	background = 0;
+	if (remote && view->loader != NULL) {
+		if (view->page != NULL || view->fetch == BROWSER_FETCH_BACKGROUND)
+			background = 1;
+	}
+
+	/* Such a page is fetched; the page shown stays until it arrives. */
+	if (background) {
 		error = view_start_load(view, path, step);
 		return error;
 	}
@@ -610,7 +855,7 @@ view_make_page(
 	page_set_console(made, view_console, view);
 	view->open_epoch = view_clock();
 
-	/* Its http and https images come through the loader. */
+	/* Its http and https images come through the loader (without one, they are read at once). */
 	page_set_loader(made, view->loader);
 
 	/* Succeeded: the page is empty. */
@@ -618,7 +863,7 @@ view_make_page(
 	return 0;
 }
 
-/* Makes a page and reads a location into it with the fonts; a failure goes to the load callback. */
+/* Makes a page and reads a location into it; a failure goes to the load callback. */
 static int
 view_open_page(
 	struct browser_view *view,
@@ -638,8 +883,6 @@ view_open_page(
 
 	/* The location. */
 	error = page_load_location(loaded, path);
-	if (error == 0)
-		error = page_open_fonts(loaded, view->fonts);
 	if (error != 0) {
 		view_failed(view, path, error, page_failure_reason());
 		page_destroy(loaded);
@@ -664,7 +907,6 @@ view_show_page(
 {
 	char *copy;
 	size_t index;
-	int error;
 
 	/* The page's own location (a URL's after its redirects) is kept for the history and for resolving links. */
 	if (page->base != NULL)
@@ -703,10 +945,7 @@ view_show_page(
 		view->history_count++;
 	}
 
-	/* The page at the view's size, and its title. */
-	error = view_lay_out(view);
-	if (error != 0)
-		return error;
+	/* Its title (it is laid out at the view's size when it is drawn). */
 	wb_buffer_clear(&view->title);
 	(void)page_title(view->page, &view->title);
 
@@ -791,8 +1030,6 @@ view_document_arrived(
 	error = view_make_page(view, &page);
 	if (error == 0) {
 		error = page_load_bytes(page, bytes, length, url);
-		if (error == 0)
-			error = page_open_fonts(page, view->fonts);
 		if (error != 0)
 			page_destroy(page);
 	}
@@ -826,12 +1063,31 @@ view_stop_load(
 	view->pending_path = NULL;
 }
 
-/* Lays the page out at the view's size, paints it, and keeps the scroll inside the document. */
+/*
+ * Lays the page out at the view's size and paints it when it changed or
+ * the view was resized since it was last laid out (opening the fonts the
+ * first time), and keeps the scroll inside the new document.
+ */
 static int
-view_lay_out(
+view_update(
 	struct browser_view *view)
 {
+	int changed;
 	int error;
+
+	/* No page has nothing to lay out. */
+	if (view->page == NULL)
+		return 0;
+
+	/* A page laid out at the view's size and unchanged since is ready. */
+	changed = page_needs_layout(view->page);
+	if (!changed && !view->resized)
+		return 0;
+
+	/* The fonts, opened once. */
+	error = page_open_fonts(view->page, view->fonts);
+	if (error != 0)
+		return error;
 
 	/* The layout at the view's size. */
 	error = page_layout(view->page, (int)view->width, (int)view->height);
@@ -843,11 +1099,66 @@ view_lay_out(
 	if (error != 0)
 		return error;
 
-	/* The scroll stays inside the new document. */
-	view_scroll(view, 0);
+	/* The page fits the view now, and the scroll stays inside the new document. */
+	view->resized = 0;
+	view_clamp_scroll(view);
 
 	/* Succeeded: the page is ready to draw. */
 	return 0;
+}
+
+/*
+ * Runs the loader until it has no request left (the headless modes): polls
+ * its descriptors until one is ready or its earliest time out, then lets
+ * it work.
+ */
+static void
+view_settle_network(
+	struct browser_view *view)
+{
+	struct pollfd fds[VIEW_POLL_MAX];
+	size_t count;
+	int timeout;
+	int ready;
+
+	/* A view without a loader read everything at once. */
+	if (view->loader == NULL)
+		return;
+
+	/* Each round, while a request runs (the loader has no time out when it has none). */
+	for (;;) {
+		timeout = page_net_timeout(view->loader);
+		if (timeout < 0)
+			break;
+
+		/* The descriptors, waited for. */
+		count = page_net_poll_fds(view->loader, fds, VIEW_POLL_MAX);
+		ready = poll(fds, (nfds_t)count, timeout);
+		if (ready < 0 && errno != EINTR)
+			break;
+
+		/* The loader's work, and the callbacks of the requests that ended. */
+		page_net_process(view->loader, fds, count);
+	}
+}
+
+/* Keeps the scroll between the top and the last view's worth of the document as it is laid out. */
+static void
+view_clamp_scroll(
+	struct browser_view *view)
+{
+	layout_unit limit;
+
+	/* The furthest the page scrolls: the document's height less the view's. */
+	limit = view->page->layout.document_height - (layout_unit)view->height * LAYOUT_UNIT;
+	if (limit < 0)
+		limit = 0;
+
+	/* The place, within the limits. */
+	if (view->scroll_y > limit)
+		view->scroll_y = limit;
+	if (view->scroll_y < 0)
+		view->scroll_y = 0;
 }
 
 /* Takes the page's title again, and tells the caller when it changed. */
@@ -889,30 +1200,26 @@ view_scroll(
 	struct browser_view *view,
 	layout_unit distance)
 {
-	layout_unit limit;
-	layout_unit scroll_y;
+	layout_unit before;
+	int error;
 
 	/* No page, no scroll. */
 	if (view->page == NULL)
 		return;
 
-	/* The furthest the page scrolls: the document's height less the view's. */
-	limit = view->page->layout.document_height - (layout_unit)view->height * LAYOUT_UNIT;
-	if (limit < 0)
-		limit = 0;
+	/* The document as it is laid out now, which the scroll stays inside. */
+	error = view_update(view);
+	if (error != 0)
+		return;
 
-	/* The new place, within the limits. */
-	scroll_y = view->scroll_y + distance;
-	if (scroll_y > limit)
-		scroll_y = limit;
-	if (scroll_y < 0)
-		scroll_y = 0;
+	/* The new place, within the document. */
+	before = view->scroll_y;
+	view->scroll_y += distance;
+	view_clamp_scroll(view);
 
 	/* A change is drawn again. */
-	if (scroll_y != view->scroll_y) {
-		view->scroll_y = scroll_y;
+	if (view->scroll_y != before)
 		view_redraw(view);
-	}
 }
 
 /* Asks the caller to draw the view again. */

@@ -21,26 +21,28 @@
  * start page the package installs (MAIN_START_PAGE).  The headless
  * modes (added with the engine, one per phase) draw or dump a page, or run
  * a script, without a window; the tests use them on the host and in the
- * guest.  A page's scripts run in every mode that loads a page, and its
- * timers on a virtual clock up to MAIN_SETTLE_BUDGET before the page is
- * shown; --run writes the page's console to standard output (the other
- * modes write it to standard error).  Every mode reports failure with a
- * non-zero exit status and one line on standard error.
+ * guest.  The modes that load a page do it through a view (view/view.h),
+ * as the window does: the page's scripts run, its timers run on a virtual
+ * clock up to MAIN_SETTLE_BUDGET (browser_view_settle), and the page is
+ * drawn with the CPU (browser_view_draw_pixels) or dumped
+ * (browser_view_dump).  --run writes the page's console to standard output
+ * (the other modes write it to standard error).  Every mode reports
+ * failure with a non-zero exit status and one line on standard error.
  *
+ * --async fetches the page and its images without blocking, through the
+ * view's loader, and waits for them; without it they are read at once.
  * --ca-file (in any mode that loads a page) trusts the CA certificates of
  * a PEM file besides the system's roots for https (the tests' own CA).
  */
 
 #include "base/base.h"
 #include "js/js.h"
-#include "net/net.h"
 #include "vm/bytecode.h"
-#include "page/page.h"
 #include "paint/gpu.h"
 #include "shell/shell.h"
+#include "view/view.h"
 
 #include <errno.h>
-#include <poll.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -100,13 +102,14 @@ struct main_options {
 };
 
 /*
- * A document fetched by --async: the page it goes into, and when it has
- * arrived, how its load ended.
+ * The page of a headless mode: the command line, the view that holds the
+ * page, and whether the load failed (the load callback said why).  It
+ * lives in the mode's function for as long as the view.
  */
-struct main_fetch {
-	struct page *page;
-	int done;
-	int error;
+struct main_page {
+	const struct main_options *options;
+	struct browser_view *view;
+	int failed;
 };
 
 /*
@@ -137,21 +140,15 @@ static int main_render(const struct main_options *options);
 static int main_dump_ast(const struct main_options *options);
 static int main_run_js(const struct main_options *options);
 static int main_run_page(const struct main_options *options);
-static void main_console_out(void *context, int level, const char *text, size_t length);
 static int main_read_script(const char *path, struct wb_units *units);
-/*
- * The loader of --async (NULL without it), made by the first page that
- * needs it and kept until the program ends (the pages that use it are
- * destroyed first).
- */
-static struct net_loader *main_loader;
-
 static int main_dump_code(struct vm_realm *realm, const struct wb_units *units, unsigned how, struct js_syntax_error *error);
 static int main_dump_unit(const struct vm_code *code, struct wb_buffer *out);
-static int main_prepare(const struct main_options *options, const void *stack_base, struct page **page, int paint);
-static int main_load_async(struct page *page, const char *location);
-static void main_document_arrived(void *context, struct net_request *request);
-static void main_settle_network(void);
+static int main_open(const struct main_options *options, const void *stack_base, unsigned flags, struct main_page *page);
+static void main_loaded(void *context, struct browser_view *view, enum browser_load_state state, const char *url, int error, const char *reason);
+static void main_console_out(void *context, struct browser_view *view, int level, const char *text, size_t length);
+static void main_console_err(void *context, struct browser_view *view, int level, const char *text, size_t length);
+static int main_draw_gpu(struct browser_view *view, uint32_t *pixels, unsigned width, unsigned height);
+static int main_write_ppm(const char *path, const uint32_t *pixels, unsigned width, unsigned height);
 static int main_parse_size(const char *text, unsigned *size);
 static const char *main_value(const char *argument, const char *name);
 static void main_usage(FILE *stream);
@@ -224,34 +221,39 @@ static int
 main_dump(
 	const struct main_options *options)
 {
-	struct wb_buffer out;
-	struct page *page;
+	struct main_page page;
+	enum browser_dump kind;
+	unsigned flags;
+	size_t length;
+	char *text;
+	int status;
 	int error;
 
-	int status;
+	/* The dump the mode names; the layout and the display list need the page laid out with its images. */
+	flags = BROWSER_SETTLE_LAYOUT;
+	if (options->mode == MAIN_MODE_DUMP_DOM) {
+		kind = BROWSER_DUMP_DOM;
+		flags = 0;
+	} else if (options->mode == MAIN_MODE_DUMP_STYLE) {
+		kind = BROWSER_DUMP_STYLE;
+		flags = 0;
+	} else if (options->mode == MAIN_MODE_DUMP_LAYOUT) {
+		kind = BROWSER_DUMP_LAYOUT;
+	} else {
+		kind = BROWSER_DUMP_PAINT;
+	}
 
-	/* Loads the page, and lays it out and paints it when the dump shows that. */
-	status = main_prepare(options, __builtin_frame_address(0), &page, options->mode == MAIN_MODE_DUMP_PAINT);
+	/* Loads the page and lets it settle. */
+	status = main_open(options, __builtin_frame_address(0), flags, &page);
 	if (status != 0)
 		return status;
 
-	/* Writes the dump. */
-	wb_buffer_init(&out);
-	if (options->mode == MAIN_MODE_DUMP_DOM) {
-		error = page_dump_dom(page, &out);
-	} else if (options->mode == MAIN_MODE_DUMP_STYLE) {
-		error = page_dump_style(page, &out);
-	} else if (options->mode == MAIN_MODE_DUMP_LAYOUT) {
-		error = layout_dump(&page->layout, &out);
-	} else {
-		error = paint_dump(&page->paint, &out);
-	}
-
-	/* Writes the dump out. */
+	/* The dump, written out. */
+	error = browser_view_dump(page.view, kind, &text, &length);
 	if (error == 0)
-		fwrite(wb_buffer_string(&out), 1, out.length, stdout);
-	wb_buffer_release(&out);
-	page_destroy(page);
+		fwrite(text, 1, length, stdout);
+	free(text);
+	browser_view_destroy(page.view);
 	if (error != 0) {
 		fprintf(stderr, "browser: cannot dump %s: %s\n", options->shell.start, strerror(error));
 		return 1;
@@ -266,10 +268,10 @@ static int
 main_render(
 	const struct main_options *options)
 {
-	struct paint_bitmap bitmap;
-	struct page *page;
-	const char *failed;
-	VkResult result;
+	struct main_page page;
+	uint32_t *pixels;
+	unsigned width;
+	unsigned height;
 	int status;
 	int error;
 
@@ -279,45 +281,40 @@ main_render(
 		return 2;
 	}
 
-	/* Loads, lays out and paints the page. */
-	status = main_prepare(options, __builtin_frame_address(0), &page, 1);
+	/* Loads the page and lets it settle, laid out with its images. */
+	status = main_open(options, __builtin_frame_address(0), BROWSER_SETTLE_LAYOUT, &page);
 	if (status != 0)
 		return status;
 
 	/* The picture: the viewport's worth of the page from its top. */
-	error = paint_bitmap_create(&bitmap, (int)options->shell.width, (int)options->shell.height);
-	if (error != 0) {
-		fprintf(stderr, "browser: cannot draw %s: %s\n", options->shell.start, strerror(error));
-		page_destroy(page);
+	width = options->shell.width;
+	height = options->shell.height;
+	pixels = calloc((size_t)width * (size_t)height, sizeof(uint32_t));
+	if (pixels == NULL) {
+		fprintf(stderr, "browser: cannot draw %s: %s\n", options->shell.start, strerror(ENOMEM));
+		browser_view_destroy(page.view);
 		return 1;
 	}
 
-	/* Draws the page with the GPU renderer, read back from an offscreen image. */
+	/* Draws the page with the GPU renderer (which says why it failed), or with the CPU renderer. */
 	if (options->mode == MAIN_MODE_RENDER_GPU) {
-		result = paint_gpu_render(&page->paint, &page->text, 0, &bitmap, &failed);
-		if (result != VK_SUCCESS) {
-			fprintf(stderr, "browser: cannot draw %s on the GPU: %s failed (%d)\n", options->shell.start, failed, (int)result);
-			paint_bitmap_release(&bitmap);
-			page_destroy(page);
-			return 1;
-		}
+		error = main_draw_gpu(page.view, pixels, width, height);
+	} else {
+		error = browser_view_draw_pixels(page.view, pixels, width, height, (size_t)width * sizeof(uint32_t));
+		if (error != 0)
+			fprintf(stderr, "browser: cannot draw %s: %s\n", options->shell.start, strerror(error));
 	}
 
-	/* Or with the CPU renderer. */
-	if (options->mode == MAIN_MODE_RENDER) {
-		error = paint_software(&page->paint, &page->text, 0, &bitmap);
-		if (error != 0) {
-			fprintf(stderr, "browser: cannot draw %s: %s\n", options->shell.start, strerror(error));
-			paint_bitmap_release(&bitmap);
-			page_destroy(page);
-			return 1;
-		}
+	/* The view is no longer needed; a picture that could not be drawn is not written. */
+	browser_view_destroy(page.view);
+	if (error != 0) {
+		free(pixels);
+		return 1;
 	}
 
 	/* Writes the picture. */
-	error = paint_write_ppm(&bitmap, options->output);
-	paint_bitmap_release(&bitmap);
-	page_destroy(page);
+	error = main_write_ppm(options->output, pixels, width, height);
+	free(pixels);
 	if (error != 0) {
 		fprintf(stderr, "browser: cannot write %s: %s\n", options->output, strerror(error));
 		return 1;
@@ -475,36 +472,19 @@ static int
 main_run_page(
 	const struct main_options *options)
 {
-	struct page *page;
+	struct main_page page;
 	int status;
 
 	/* The page, loaded and settled with its console on standard output. */
-	status = main_prepare(options, __builtin_frame_address(0), &page, 0);
+	status = main_open(options, __builtin_frame_address(0), 0, &page);
 	if (status != 0)
 		return status;
 
 	/* The page is no longer needed. */
-	page_destroy(page);
+	browser_view_destroy(page.view);
 
 	/* Succeeded: the page ran. */
 	return 0;
-}
-
-/* Writes a page's console line to standard output (--run). */
-static void
-main_console_out(
-	void *context,
-	int level,
-	const char *text,
-	size_t length)
-{
-	UNUSED_PARAMETER(context);
-	UNUSED_PARAMETER(level);
-
-	/* The line as it is. */
-	fwrite(text, 1, length, stdout);
-	fputc('\n', stdout);
-	fflush(stdout);
 }
 
 /* Compiles a script and writes its code units (the program's, then each function's inside it). */
@@ -608,210 +588,236 @@ main_read_script(
 }
 
 /*
- * Loads the page the command line names and, for every mode past the DOM
- * and style dumps, opens the fonts and lays it out; paints it when asked.
- * Reports the exit status of a failure after saying why, or 0.
+ * Makes the view of a headless mode and loads the page the command line
+ * names into it, then lets it settle: its timers run on the virtual clock
+ * and, with BROWSER_SETTLE_LAYOUT in flags, it is laid out with its images.
+ * Reports the exit status of a failure after saying why, or 0 with the
+ * view in page->view.
  *
- * stack_base is the caller's frame: the page's heap scans the stack up to
- * it, and the caller goes on using the page after this returns.
+ * stack_base is the caller's frame: the pages' heaps scan the stack up to
+ * it, and the caller goes on using the view after this returns.
  */
 static int
-main_prepare(
+main_open(
 	const struct main_options *options,
 	const void *stack_base,
-	struct page **page,
-	int paint)
+	unsigned flags,
+	struct main_page *page)
 {
-	struct page *loaded;
-	int layout;
-	int changed;
-	const char *reason;
+	struct browser_callbacks callbacks;
+	struct browser_view_options view_options;
 	int error;
 
 	/* Every headless mode needs a page. */
-	*page = NULL;
+	memset(page, 0, sizeof(*page));
+	page->options = options;
 	if (options->shell.start == NULL) {
 		fprintf(stderr, "browser: a file to load is needed\n");
 		return 2;
 	}
 
-	/* Makes the page; its heap's stack ends at the caller's frame. */
-	error = page_create(&loaded, stack_base);
-	if (error != 0) {
-		fprintf(stderr, "browser: cannot make a page: %s\n", strerror(error));
-		return 1;
-	}
-
-	/* The scripts see the viewport's size, and --run's console goes to standard output. */
-	page_set_viewport(loaded, (int)options->shell.width, (int)options->shell.height);
+	/* The callbacks: a failed load is said, and the console goes to standard error (--run's to standard output). */
+	memset(&callbacks, 0, sizeof(callbacks));
+	callbacks.load = main_loaded;
+	callbacks.console = main_console_err;
 	if (options->mode == MAIN_MODE_RUN_PAGE)
-		page_set_console(loaded, main_console_out, NULL);
+		callbacks.console = main_console_out;
+	callbacks.context = page;
 
-	/* Loads the file, running its scripts; with --async an http or https page comes through the loader. */
-	if (options->async) {
-		error = main_load_async(loaded, options->shell.start);
-	} else {
-		error = page_load_location(loaded, options->shell.start);
-	}
-
-	/* A page that could not be loaded, and why. */
+	/* The view at the viewport's size, reading at once or, with --async, fetching the page and its images in the background. */
+	memset(&view_options, 0, sizeof(view_options));
+	view_options.fonts = &options->fonts;
+	view_options.callbacks = &callbacks;
+	view_options.stack_base = stack_base;
+	view_options.width = options->shell.width;
+	view_options.height = options->shell.height;
+	view_options.fetch = BROWSER_FETCH_AT_ONCE;
+	if (options->async)
+		view_options.fetch = BROWSER_FETCH_BACKGROUND;
+	error = browser_view_create(&view_options, &page->view);
 	if (error != 0) {
-		reason = page_failure_reason();
-		fprintf(stderr, "browser: cannot load %s: %s", options->shell.start, strerror(error));
-		if (reason[0] != '\0')
-			fprintf(stderr, " (TLS: %s)", reason);
-		fputc('\n', stderr);
-		page_destroy(loaded);
+		fprintf(stderr, "browser: cannot make a view: %s\n", strerror(error));
 		return 1;
 	}
 
-	/* Runs its timers on the virtual clock. */
-	error = page_settle(loaded, MAIN_SETTLE_BUDGET);
+	/* The page, running its scripts (a load that failed was said by the callback). */
+	error = browser_view_load(page->view, options->shell.start);
 	if (error != 0) {
-		fprintf(stderr, "browser: cannot run the scripts of %s: %s\n", options->shell.start, strerror(error));
-		page_destroy(loaded);
+		if (!page->failed)
+			fprintf(stderr, "browser: cannot load %s: %s\n", options->shell.start, strerror(error));
+		browser_view_destroy(page->view);
 		return 1;
 	}
 
-	/* The DOM and style dumps and --run need no layout. */
-	layout = 1;
-	if (options->mode == MAIN_MODE_DUMP_DOM || options->mode == MAIN_MODE_DUMP_STYLE || options->mode == MAIN_MODE_RUN_PAGE)
-		layout = 0;
-
-	/* Lays the page out in the viewport's width. */
-	if (layout) {
-		error = page_open_fonts(loaded, &options->fonts);
-		if (error == 0)
-			error = page_layout(loaded, (int)options->shell.width, (int)options->shell.height);
-
-		/* With --async, the images that layout asked for arrive, and the page is laid out with them. */
-		if (error == 0 && options->async) {
-			main_settle_network();
-			changed = page_needs_layout(loaded);
-			if (changed)
-				error = page_layout(loaded, (int)options->shell.width, (int)options->shell.height);
-		}
-
-		/* A page that could not be laid out. */
-		if (error != 0) {
-			fprintf(stderr, "browser: cannot lay out %s: %s\n", options->shell.start, strerror(error));
-			page_destroy(loaded);
-			return 1;
-		}
-	}
-
-	/* Builds the display list. */
-	if (paint) {
-		error = page_paint(loaded);
-		if (error != 0) {
-			fprintf(stderr, "browser: cannot paint %s: %s\n", options->shell.start, strerror(error));
-			page_destroy(loaded);
-			return 1;
-		}
+	/* The page settled: fetched, its timers run, and laid out with its images when the mode needs that. */
+	error = browser_view_settle(page->view, MAIN_SETTLE_BUDGET, flags);
+	if (error != 0) {
+		if (!page->failed)
+			fprintf(stderr, "browser: cannot run %s: %s\n", options->shell.start, strerror(error));
+		browser_view_destroy(page->view);
+		return 1;
 	}
 
 	/* Succeeded: the page is ready for the mode. */
-	*page = loaded;
 	return 0;
+}
+
+/* The view's load callback: a load that failed, and why (the TLS reason for an https page). */
+static void
+main_loaded(
+	void *context,
+	struct browser_view *view,
+	enum browser_load_state state,
+	const char *url,
+	int error,
+	const char *reason)
+{
+	struct main_page *page;
+
+	UNUSED_PARAMETER(view);
+	UNUSED_PARAMETER(url);
+
+	/* Only a failure is said. */
+	if (state != BROWSER_LOAD_FAILED)
+		return;
+
+	/* The line, by the location the command line gave. */
+	page = context;
+	fprintf(stderr, "browser: cannot load %s: %s", page->options->shell.start, strerror(error));
+	if (reason[0] != '\0')
+		fprintf(stderr, " (TLS: %s)", reason);
+	fputc('\n', stderr);
+
+	/* The mode ends without saying it again. */
+	page->failed = 1;
+}
+
+/* The view's console callback of --run: the line as it is, on standard output. */
+static void
+main_console_out(
+	void *context,
+	struct browser_view *view,
+	int level,
+	const char *text,
+	size_t length)
+{
+	UNUSED_PARAMETER(context);
+	UNUSED_PARAMETER(view);
+	UNUSED_PARAMETER(level);
+
+	/* The line. */
+	fwrite(text, 1, length, stdout);
+	fputc('\n', stdout);
+	fflush(stdout);
+}
+
+/* The view's console callback of the other modes: the line on standard error, marked as the console's. */
+static void
+main_console_err(
+	void *context,
+	struct browser_view *view,
+	int level,
+	const char *text,
+	size_t length)
+{
+	UNUSED_PARAMETER(context);
+	UNUSED_PARAMETER(view);
+	UNUSED_PARAMETER(level);
+
+	/* The line. */
+	fprintf(stderr, "console: %.*s\n", (int)length, text);
 }
 
 /*
- * Loads a page as --async does: the loader made, the page given it for its
- * images, and an http or https document fetched through it (waited for
- * here); any other location is read at once.
+ * Draws the view with the GPU renderer into an offscreen image of its own
+ * device and reads it back into pixels (width by height, packed rows);
+ * says why on standard error when it cannot.
  */
 static int
-main_load_async(
-	struct page *page,
-	const char *location)
+main_draw_gpu(
+	struct browser_view *view,
+	uint32_t *pixels,
+	unsigned width,
+	unsigned height)
 {
-	struct main_fetch fetch;
-	int remote;
+	const struct paint_list *list;
+	struct text_system *text;
+	struct paint_bitmap bitmap;
+	layout_unit scroll_y;
+	const char *failed;
+	VkResult result;
 	int error;
 
-	/* The loader, made once. */
-	if (main_loader == NULL) {
-		error = page_net_create(&main_loader);
-		if (error != 0)
-			return error;
-	}
-
-	/* The page's images come through it. */
-	page_set_loader(page, main_loader);
-
-	/* A location that is not http or https is read at once. */
-	remote = page_net_is_remote(location);
-	if (!remote) {
-		error = page_load_location(page, location);
+	/* What to draw. */
+	error = browser_view_display(view, &list, &text, &scroll_y);
+	if (error != 0) {
+		fprintf(stderr, "browser: cannot draw on the GPU: %s\n", strerror(error));
 		return error;
 	}
 
-	/* The document, fetched and waited for (the callback loads it into the page). */
-	fetch.page = page;
-	fetch.done = 0;
-	fetch.error = 0;
-	error = page_net_fetch(main_loader, location, main_document_arrived, &fetch, NULL);
-	if (error != 0)
-		return error;
-	main_settle_network();
+	/* The picture, drawn from the page's top. */
+	bitmap.pixels = pixels;
+	bitmap.width = (int)width;
+	bitmap.height = (int)height;
+	result = paint_gpu_render(list, text, 0, &bitmap, &failed);
+	if (result != VK_SUCCESS) {
+		fprintf(stderr, "browser: cannot draw on the GPU: %s failed (%d)\n", failed, (int)result);
+		return EIO;
+	}
 
-	/* A load that could not finish. */
-	if (!fetch.done)
-		return ETIMEDOUT;
-	if (fetch.error != 0)
-		return fetch.error;
-
-	/* Succeeded: the page is loaded. */
+	/* Succeeded: the pixels hold the picture. */
 	return 0;
 }
 
-/* The loader's callback for --async's document: its bytes loaded into the page at its final URL. */
-static void
-main_document_arrived(
-	void *context,
-	struct net_request *request)
+/* Writes pixels (0xAARRGGBB, packed rows) as a binary PPM file. */
+static int
+main_write_ppm(
+	const char *path,
+	const uint32_t *pixels,
+	unsigned width,
+	unsigned height)
 {
-	struct main_fetch *fetch;
-	const unsigned char *bytes;
-	const char *url;
-	size_t length;
+	unsigned char sample[3];
+	size_t count;
+	size_t index;
+	size_t written;
+	FILE *file;
+	int failed;
+	int closed;
 	int error;
 
-	/* The response, loaded while it is there. */
-	fetch = context;
-	error = page_net_result(request, &bytes, &length, &url);
-	if (error == 0)
-		error = page_load_bytes(fetch->page, bytes, length, url);
+	/* The file. */
+	file = fopen(path, "wb");
+	if (file == NULL)
+		return errno;
 
-	/* The load is over. */
-	fetch->error = error;
-	fetch->done = 1;
-}
+	/* The header: the magic, the size and the largest sample. */
+	fprintf(file, "P6\n%u %u\n255\n", width, height);
 
-/* Runs the loader until it has no request left: polls its descriptors, then lets it work. */
-static void
-main_settle_network(void)
-{
-	struct pollfd fds[64];
-	size_t count;
-	int timeout;
-	int ready;
-
-	/* Each round, while a request runs. */
-	for (;;) {
-		timeout = page_net_timeout(main_loader);
-		if (timeout < 0)
+	/* Each pixel's red, green and blue, while the writes go through. */
+	count = (size_t)width * (size_t)height;
+	for (index = 0; index < count; index++) {
+		sample[0] = (unsigned char)(pixels[index] >> 16);
+		sample[1] = (unsigned char)(pixels[index] >> 8);
+		sample[2] = (unsigned char)pixels[index];
+		written = fwrite(sample, 1, sizeof(sample), file);
+		if (written != sizeof(sample))
 			break;
-
-		/* The descriptors, waited for until one is ready or the earliest time out. */
-		count = page_net_poll_fds(main_loader, fds, sizeof(fds) / sizeof(fds[0]));
-		ready = poll(fds, (nfds_t)count, timeout);
-		if (ready < 0 && errno != EINTR)
-			break;
-
-		/* The loader's work. */
-		page_net_process(main_loader, fds, count);
 	}
+
+	/* A write that failed, or a close that did. */
+	error = 0;
+	failed = ferror(file);
+	if (failed)
+		error = EIO;
+	closed = fclose(file);
+	if (closed != 0 && error == 0)
+		error = errno;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the file holds the picture. */
+	return 0;
 }
 
 /* Reads the command line into options; returns EINVAL for a word it does not know. */
@@ -953,7 +959,7 @@ main_parse(
 		/* A CA file for https besides the system's roots. */
 		value = main_value(argv[index], "--ca-file=");
 		if (value != NULL) {
-			error = net_tls_add_ca_file(value);
+			error = browser_add_ca_file(value);
 			if (error != 0)
 				return error;
 

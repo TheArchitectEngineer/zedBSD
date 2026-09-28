@@ -17,9 +17,16 @@
  * browser_view_process, and hears of what happened through callbacks.  The
  * view knows nothing of Wayland or of windows.
  *
- * Drawing still reads the view's display list (browser_view_display); the
- * render target of the draft (browser_target) is ws074-p055, and input in
- * the DOM's key names with the default actions in the engine is p056.
+ * The page is laid out when something needs its boxes (a drawing, a dump
+ * of the layout, the scroll, a click), not when it changes, so a view that
+ * is only asked for its DOM never opens its fonts.  The headless modes and
+ * the tests settle a view (browser_view_settle), then draw it with the CPU
+ * (browser_view_draw_pixels) or dump it (browser_view_dump).
+ *
+ * Drawing in a window still reads the view's display list
+ * (browser_view_display); the render target of the draft (browser_target)
+ * is ws074-p055, and input in the DOM's key names with the default actions
+ * in the engine is p056.
  *
  * A view is used from the thread that made it.
  */
@@ -49,6 +56,29 @@ enum browser_load_state {
 enum browser_policy {
 	BROWSER_POLICY_ALLOW,
 	BROWSER_POLICY_DENY
+};
+
+/*
+ * How a view fetches its http and https pages and images: the first page
+ * at once and the rest without blocking (the default, a window's), every
+ * one at once (the caller waits in each load and each layout), or every
+ * one without blocking, the first page too (the caller settles the view).
+ */
+enum browser_fetch {
+	BROWSER_FETCH_DEFAULT,
+	BROWSER_FETCH_AT_ONCE,
+	BROWSER_FETCH_BACKGROUND
+};
+
+/* What browser_view_settle does besides the network and the timers: lay the page out and wait for its images. */
+#define BROWSER_SETTLE_LAYOUT	0x01U
+
+/* The text dumps of the page shown (the golden files of the tests are made of them). */
+enum browser_dump {
+	BROWSER_DUMP_DOM,
+	BROWSER_DUMP_STYLE,
+	BROWSER_DUMP_LAYOUT,
+	BROWSER_DUMP_PAINT
 };
 
 /* Where browser_view_scroll_to goes. */
@@ -87,7 +117,8 @@ struct browser_callbacks {
 /*
  * What a view is made with: the fonts (NULL fields for the defaults), the
  * callbacks, the outermost stack frame of the thread that uses it (the
- * heaps of its pages scan the stack up to it), and its size in pixels.
+ * heaps of its pages scan the stack up to it), its size in pixels, and how
+ * it fetches (zero is BROWSER_FETCH_DEFAULT).
  */
 struct browser_view_options {
 	const struct text_font_paths *fonts;
@@ -95,6 +126,7 @@ struct browser_view_options {
 	const void *stack_base;
 	unsigned width;
 	unsigned height;
+	enum browser_fetch fetch;
 };
 
 /* Making and ending a view. */
@@ -114,7 +146,7 @@ int browser_view_resize(struct browser_view *view, unsigned width, unsigned heig
 /* The page shown: its location, its title (its location when it has none), and its document's height in pixels. */
 const char *browser_view_url(const struct browser_view *view);
 const char *browser_view_title(const struct browser_view *view);
-double browser_view_document_height(const struct browser_view *view);
+double browser_view_document_height(struct browser_view *view);
 
 /* The main loop's side: the descriptors to poll, how long to wait at most (-1: no limit), and the work due. */
 size_t browser_view_poll_fds(const struct browser_view *view, struct pollfd *fds, size_t capacity);
@@ -130,8 +162,23 @@ double browser_view_scroll_y(const struct browser_view *view);
 /* A click at a place in the view's pixels: the page's scripts get it, then its link is followed unless they cancel it. */
 int browser_view_click(struct browser_view *view, int x, int y);
 
+/*
+ * The headless side: the page brought to rest (the page being fetched has
+ * arrived, its timers have run on a virtual clock up to budget
+ * milliseconds, and with BROWSER_SETTLE_LAYOUT it is laid out with the
+ * images its layout asked for), drawn with the CPU into 0xAARRGGBB pixels
+ * whose rows are stride bytes apart, or dumped as text (*text is the
+ * caller's to free).
+ */
+int browser_view_settle(struct browser_view *view, double budget, unsigned flags);
+int browser_view_draw_pixels(struct browser_view *view, uint32_t *pixels, unsigned width, unsigned height, size_t stride);
+int browser_view_dump(struct browser_view *view, enum browser_dump kind, char **text, size_t *length);
+
 /* What to draw: the display list, the text system its glyphs come from, and the scroll (until p055's render target). */
-void browser_view_display(const struct browser_view *view, const struct paint_list **list, struct text_system **text,
+int browser_view_display(struct browser_view *view, const struct paint_list **list, struct text_system **text,
     layout_unit *scroll_y);
+
+/* The process-wide settings of the engine: the certificate authorities trusted besides the system's (https). */
+int browser_add_ca_file(const char *path);
 
 #endif

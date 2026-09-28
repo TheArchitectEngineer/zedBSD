@@ -489,9 +489,17 @@ shell_frame(
 	struct text_system *text;
 	layout_unit scroll_y;
 	VkResult result;
+	int error;
+
+	/* The page as it is now; one that cannot be laid out is reported and not drawn. */
+	error = browser_view_display(state->view, &list, &text, &scroll_y);
+	if (error != 0) {
+		printf("ZBROWSER ERROR layout error=%s\n", strerror(error));
+		fflush(stdout);
+		return 0;
+	}
 
 	/* The frame. */
-	browser_view_display(state->view, &list, &text, &scroll_y);
 	result = shell_present_frame(&state->present, list, text, scroll_y);
 
 	/* A swapchain that no longer fits the window is replaced, and the frame drawn once more. */
