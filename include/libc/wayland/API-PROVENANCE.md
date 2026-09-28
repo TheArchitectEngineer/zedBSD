@@ -12,6 +12,7 @@ against the following pinned primary interface descriptions on 2026-09-13:
 | [Wayland core protocol](https://gitlab.freedesktop.org/wayland/wayland/-/raw/1.23.1/protocol/wayland.xml) | Wayland 1.23.1 | `0c371e9c31f8178008a7ddecf431cbe12ec4b29ef7714803ecd3e20af925e7ed` |
 | [xdg-shell protocol](https://gitlab.freedesktop.org/wayland/wayland-protocols/-/raw/1.36/stable/xdg-shell/xdg-shell.xml) | wayland-protocols 1.36 | `454c96a942bfd7b21acdceb74d189cee85858afb7e7d2274964c94f13616f69f` |
 | primary-selection-unstable-v1.xml (`unstable/primary-selection/`, the Debian package wayland-protocols 1.44-1 on the build host, 2026-09-28) | wayland-protocols 1.44 | `d568482ba84df6e531698b1f531810860995ca24d69495427fe43aee6017f52c` |
+| tablet-unstable-v2.xml (`unstable/tablet/`, the same Debian package, 2026-09-28) | wayland-protocols 1.44 | `db291b574adb2d42d27f3d01a77723bb3350a7a32e6d33de16513521b42294a9` |
 
 The [client ABI](https://gitlab.freedesktop.org/wayland/wayland/-/blob/1.23.1/src/wayland-client-core.h),
 [client API contract](https://wayland.freedesktop.org/docs/html/apb.html), and
@@ -81,6 +82,22 @@ zwp_primary_selection_source_v1 requests offer (`s`), destroy and events send (`
 cancelled.  The header `wayland/primary-selection-unstable-v1-client-protocol.h`
 follows the upstream client header's names; its events reach listeners through the
 generic dispatch.
+
+The tablet protocol (added for WS079 p003) was checked against the pinned
+tablet-unstable-v2 description, version 1: zwp_tablet_manager_v2 requests
+get_tablet_seat (`no`), destroy; zwp_tablet_seat_v2 request destroy and events
+tablet_added (`n`), tool_added (`n`), pad_added (`n`); zwp_tablet_tool_v2 requests
+set_cursor (`u?oii`), destroy and events type (`u`), hardware_serial (`uu`),
+hardware_id_wacom (`uu`), capability (`u`), done, removed, proximity_in (`uoo`),
+proximity_out, down (`u`), up, motion (`ff`), pressure (`u`), distance (`u`), tilt
+(`ff`), rotation (`f`), slider (`i`), wheel (`fi`), button (`uuu`), frame (`u`);
+zwp_tablet_v2 request destroy and events name (`s`), id (`uu`), path (`s`), done,
+removed.  zwp_tablet_pad_v2 is described (requests set_feedback `usu`, destroy;
+events group `n`, path `s`, buttons `u`, done, button `uuu`, enter `uoo`, leave `uo`,
+removed) only so that pad_added names an interface: the pad group, ring and strip
+are not described and the compositor never announces a pad.  The header
+`wayland/tablet-unstable-v2-client-protocol.h` follows the upstream client header's
+names; its events reach listeners through the generic dispatch.
 
 ## Protocol description license notices
 
@@ -168,4 +185,32 @@ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+```
+
+tablet-unstable-v2:
+
+```
+Copyright 2014 © Stephen "Lyude" Chandler Paul
+Copyright 2015-2016 © Red Hat, Inc.
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation files
+(the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software,
+and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT.  IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```

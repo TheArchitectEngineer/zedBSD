@@ -25,9 +25,20 @@
 		pdf_writer_set_document_id;
 		pdf_writer_get_document_id;
 		pdf_writer_set_dates;
+		pdf_writer_get_page_content_hash;
 		pdf_writer_save;
 		pdf_outline_stroke;
 		pdf_outline_free;
+		pdf_document_open;
+		pdf_document_open_memory;
+		pdf_document_close;
+		pdf_document_page_count;
+		pdf_document_page_box;
+		pdf_document_page_content_hash;
+		pdf_document_find_attachment;
+		pdf_document_find_attachment_type;
+		pdf_document_get_id;
+		pdf_document_get_dates;
 	local:
 		*;
 };
