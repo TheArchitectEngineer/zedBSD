@@ -44,6 +44,9 @@
 #include "kern/swap-boot.h"
 #include "kern/swap-control.h"
 #include "kern/swap-source.h"
+#ifdef INPUT_TEST_INJECT
+#include <drivers/generic/input-inject.h>
+#endif
 
 #include <uapi/errno.h>
 #include <uapi/fcntl.h>
@@ -365,6 +368,15 @@ kern_vfs_init(
 	}
 
 	drv_input_core_init();
+
+#ifdef INPUT_TEST_INJECT
+	/* Publishes the test-only pen injector of test builds. */
+	error = drv_input_inject_register();
+	if (error != 0) {
+		error = vfs_fail("register input-inject", error);
+		return error;
+	}
+#endif
 
 	/* Publishes the console after the device subsystems are ready. */
 	error = drv_console_device_register();

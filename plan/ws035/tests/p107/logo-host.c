@@ -8,7 +8,7 @@
 /*
  * ws035-p107: draws a PPM the way the UEFI loader does (bootloader/uefi/logo.c)
  * into a framebuffer of a size in memory and writes the screen as a PPM, so
- * the cover mode (fit=cover) can be seen on the host.
+ * the black bars (fit=contain, ws035-p112) can be seen on the host.
  *
  *   logo-host IN.ppm OUT.ppm WIDTH HEIGHT
  */

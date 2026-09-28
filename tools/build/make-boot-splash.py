@@ -11,11 +11,13 @@ This script turns it into what the UEFI and the BIOS loaders read (logo=):
 - the spinner is taken out of the picture (its place is filled from the
   sky and water around it), because the kernel draws a spinner that moves
   there (src/drivers/platform/pcat/graphics/splash.c);
-- the picture is scaled to WIDTHxHEIGHT (1440x810 by default, 16:9 like the
-  picture) with bilinear sampling;
-- the result is a binary PPM whose header carries the comment "fit=cover":
-  a loader then scales it to cover the whole screen, cutting what does not
-  fit from both sides (the middle stays), instead of centring it.
+- the picture is scaled to WIDTHxHEIGHT (1920x1080 by default, the GOP mode
+  the UEFI loader asks for, 16:9 like the picture) with bilinear sampling;
+- the result is a binary PPM whose header carries the comment "fit=contain"
+  (ws035-p112): a loader then draws it whole in the middle of a black
+  screen, at its own size when the screen holds it, else shrunk with its
+  proportions kept; the sides it does not reach are black bars.  The kernel's
+  splash.c knows the 1920x1080.
 
 The spinner's place is a contract with the kernel's splash.c: in the
 picture's coordinates its centre is at the middle of the width and at
@@ -180,14 +182,14 @@ def scale(width, height, rows, out_width, out_height):
 def main():
 	if len(sys.argv) not in (3, 4):
 		raise SystemExit('usage: make-boot-splash.py INPUT.png OUTPUT.ppm [WIDTHxHEIGHT]')
-	out_width, out_height = 1440, 810
+	out_width, out_height = 1920, 1080
 	if len(sys.argv) == 4:
 		out_width, out_height = (int(value) for value in sys.argv[3].split('x'))
 	width, height, rows = read_png(sys.argv[1])
 	clear_spinner(width, height, rows)
 	out = scale(width, height, rows, out_width, out_height)
 	with open(sys.argv[2], 'wb') as output:
-		output.write(b'P6\n# fit=cover\n%d %d\n255\n' % (out_width, out_height))
+		output.write(b'P6\n# fit=contain\n%d %d\n255\n' % (out_width, out_height))
 		for line in out:
 			output.write(line)
 

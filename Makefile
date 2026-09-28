@@ -212,6 +212,7 @@ CONFIG_DRIVER_USB_HUB ?= y
 CONFIG_DRIVER_USB_RTL8822BU ?= n
 CONFIG_KERNEL_TEST_CHECKPOINTS ?= n
 CONFIG_PCAT_SERIAL_MIRROR ?= n
+CONFIG_INPUT_TEST_INJECT ?= n
 CONFIG_KERNEL_USB_HID_CHECKPOINT ?= n
 CONFIG_BUF_CACHE_KIB ?= 0
 CONFIG_GPU_JOB_RESERVATION_MS ?= 10000
@@ -507,6 +508,9 @@ ZEDBSD_CONFIG_CPPFLAGS += -DKERN_TEST_CHECKPOINTS
 endif
 ifeq ($(CONFIG_PCAT_SERIAL_MIRROR),y)
 ZEDBSD_CONFIG_CPPFLAGS += -DPCAT_SERIAL_MIRROR
+endif
+ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
+ZEDBSD_CONFIG_CPPFLAGS += -DINPUT_TEST_INJECT
 endif
 # Private test builds may add compile-time fault injection without replacing
 # the configured feature macros above. Keep these flags last so a disposable
@@ -818,6 +822,11 @@ ZEDBSD_ROOTFS_STICKY_DIRECTORIES := tmp shm
 # there is one description of what a root holds instead of two that drift:
 # a symbolic link, a directory mode, or anything a package adds to the tree
 # reaches the image because the image is that tree.
+#
+# The packages' files are expanded when the recipe runs, after the packages
+# have been staged, not when this rule is evaluated: a package whose file list
+# is read from its own stage has an empty list while make parses a fresh
+# build, and the first image would lack those files (BUG-087).
 define ZEDBSD_ROOTFS_TREE_RULE
 $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
 	$(ZEDBSD_PACKAGE_INPUTS) $(ZEDBSD_ROOTFS_DEVELOPMENT_INPUTS)
@@ -832,7 +841,7 @@ $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
 	@printf '%s\n' '$(1)' > $(BUILD)/rootfs/lib/arch.id
 	@printf 'zedBSD ufs root v1\n' > $(BUILD)/rootfs/etc/zedbsd-root
 	@set -e; for pass in file mode; do \
- set -- $(3) $(ZEDBSD_PACKAGE_FILES); while test $$$$# -gt 0; do \
+ set -- $(3) $$(ZEDBSD_PACKAGE_FILES); while test $$$$# -gt 0; do \
  option=$$$$1; specification=$$$$2; shift 2; \
  path=$$$${specification%%=*}; value=$$$${specification#*=}; \
  path=$$$${path#/}; destination=$(BUILD)/rootfs/$$$$path; \

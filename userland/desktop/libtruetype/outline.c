@@ -43,8 +43,6 @@
 #define HAVE_XY_SCALE	0x0040U
 #define HAVE_MATRIX	0x0080U
 
-static int glyph_range(const struct truetype_face *face, unsigned glyph,
-		       uint32_t *offset, uint32_t *length);
 static int load_simple(struct truetype_face *face, const uint8_t *glyf,
 		       uint32_t length, struct truetype_outline *outline);
 static int load_composite(struct truetype_face *face, const uint8_t *glyf,
@@ -86,8 +84,8 @@ truetype_scale_down(
  *
  * A zero-length entry is a glyph with no outline, which is what a space is.
  */
-static int
-glyph_range(
+int
+truetype_glyph_range(
 	const struct truetype_face *face,
 	unsigned glyph,
 	uint32_t *offset,
@@ -540,7 +538,7 @@ truetype_outline_load(
 	uint32_t offset, length;
 	int contours, error;
 
-	error = glyph_range(face, glyph, &offset, &length);
+	error = truetype_glyph_range(face, glyph, &offset, &length);
 
 	/* Reports the failure. */
 	if (error != 0)
