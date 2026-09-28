@@ -4,13 +4,15 @@
 # files, the fonts and the wallpaper, which are not in git).
 #
 #   plan/ws035/tests/build-login-image.sh [BUILD] [graphical]     (default build/amd64)
-# With "graphical" the image boots graphically (config-amd64-graphical.mk: logo, kmsg=quiet, login=graphical).
+# With "graphical" the image boots graphically (config-amd64-graphical.mk: logo, kmsg=quiet, login=graphical);
+# "graphical-network" adds the networkd stand-in (config-amd64-graphical-network.mk, ws035-p104).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
 build=${1:-build/amd64}
 config=plan/ws035/tests/config-amd64-login.mk
 [ "${2:-}" = graphical ] && config=plan/ws035/tests/config-amd64-graphical.mk
+[ "${2:-}" = graphical-network ] && config=plan/ws035/tests/config-amd64-graphical-network.mk
 extra=$(python3 plan/tools/guest/guest.py extra-files | sed -n "s/^ZEDBSD_TEST_EXTRA_FILES='\(.*\)'$/\1/p")
 [ -n "$extra" ] || { echo "build-login-image: no guest files (plan/tools/guest/guest.py keys?)"; exit 1; }
 [ -f build/ws035-fonts/Inter.ttf ] && extra="$extra --file /usr/share/fonts/keiland.ttf=build/ws035-fonts/Inter.ttf"

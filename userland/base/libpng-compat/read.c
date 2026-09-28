@@ -16,7 +16,7 @@
  * (not premultiplied), as libpng gives it.
  */
 
-#include <compat/png.h>
+#include <compat/png/png.h>
 #include <compat/zlib.h>
 
 #include <stdio.h>
