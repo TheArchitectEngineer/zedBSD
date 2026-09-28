@@ -156,9 +156,9 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 1. **Keiland と名前**: WS035（Keiland の compositor・システムバー・login・lock）、WS078（Kei Operating System への改名）、 **WS079**（手書きの Notes・PDF Viewer・スワイプ）も Keiland の優先に入れる。
    WS071（File Manager、完了。続きは WS035 の Phase と Future Work）。
-2. **デモの実機（5330 + HDMI の LCD）とグラフィック**: WS075（HDMI の主出力・demo の image・BUG-085/094 の再試験・lease の切り替えの黒）、
-   WS068（GL 3.2 まで。3.3 以降は保留）。
-3. **ブラウザ**: WS074（部品 libbrowser.so まで済み。次は form の部品、システム環境設定での利用）。
+2. **デモ critical（2026-09-28 ユーザー）**: WS075（5330 + HDMI の LCD の安定: BUG-085/094・lease の切り替えの黒）、WS079（PDF Viewer・Notes）、
+   WS035（Keiland の仕上げ）、WS074（ブラウザ、**デモの目標を決めて**そこまで）。WS068（GL 3.2 まで。3.3 以降は保留）。
+3. **WS080（ld.coff）**: デモ critical の後に loader（p001〜p008）を早めに仕上げる。互換の DLL（kernel32 以降）は下位のモデルの subagent に継続して実装させる。
 4. **bug**: WS073（BUG-093・BUG-051・BUG-039・BUG-031）。BUG-027・033 は低い優先度（計測して閉じる）。
 5. **ACPI（WS049〜WS052）と Arm64（WS044・WS048・WS036）**: デスクトップが片付くか limit が余るとき。
 6. **WS001** はユーザーが指示したときだけ。WS077（PC-98 の PCI）・WS066（ld.so の最適化）は低い優先度。
@@ -313,6 +313,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | 手書きノートと PDF Viewer（2026-09-28） | ユーザーの指示（[WS079](ws079/ws.md) に原文）と回答: ペンは USB のペンタブレット、PDF Viewer は段階を切る（① Notes の PDF → ② 一般の図形・画像・TrueType → ③ CFF・Type1・暗号化）、名前は notes・pdfviewer・libpdf |
 | retro・GOP・Kei の印（2026-09-28） | ユーザー:「Keiマークはちょうどいいです。GOPフレームバッファは1920x1080を要求して上下左右の不足部分を黒い帯にすればいいかなと思います。X11のプログラムはuserland/X11/にあると思いますので、それはuserland/retro/に入れましょう。zedinstはretro/に入れておいて、Waylandであとで作り直しますが、それはOSCでのデモでは必須ではないので、優先度を下げます。」→ `userland/X11` → `userland/retro`、`userland/base/zedinst` → `userland/retro/zedinst`（main が実施、image の build・boot test・menu の試験 PASS）。UEFI の loader は GOP の 1920x1080 を求め、足りない所は黒い帯。Wayland の installer の作り直しは低い優先度 |
 | Win64 PE の ld.coff（2026-09-28） | ユーザーの仕様（[ws080/spec.md](ws080/spec.md) に原文）→ [WS080](ws080/ws.md)。zedBSD を NT 互換の kernel にしない。v0.1 は自作の最小の PE EXE + DLL が動くまで |
+| デモの範囲と ld.coff の進め方（2026-09-28） | ユーザー:「Desktop appsの、PDFビューアとNotesアプリは、demo criticalにします。Keiland polish、Browserもdemo criticalです。ただし、ブラウザはどんなに作業しても100%にならないのはわかりきっていますので、目標を決めたいですね。ld.coffは、それらの実装のあとにローダーだけは早めに完成させてしまって、Win64のDLLは下位のモデルにひたすら実装させたいです。」→ fg010 の demo critical: HDMI・i915 の安定、PDF Viewer・Notes（WS079）、Keiland の仕上げ（WS035）、ブラウザ（WS074、デモの目標を決める）。WS080 はそれらの後に loader（p001〜p008）を早めに仕上げ、互換の DLL（p009 以降）は下位のモデルの subagent に継続して実装させる |
 | HDMI の主出力（2026-09-28） | ユーザーの回答: 蓋は開けたまま（ACPI 未実装で sleep させない）、デモは HDMI + USB（USB-C は時間が余れば）、LCD は 1920x1080 の見込み、HDMI が無ければ内蔵画面で起動、音は出さない（DVI）、H1 の調査で 5330 を占有してよい、ssh の alias を 10.0.30.3 に書き直す（main が実施）→ [hdmi-main-output.md](ws075/hdmi-main-output.md) |
 | System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
 | Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、**hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）の承認待ち**。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）ことの確認も待つ。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |

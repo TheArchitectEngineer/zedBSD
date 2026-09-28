@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から。GS base は案 A（swapgs）に決定（差分の承認は p001 の後）。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/` に決定（Win64 の名前は使わない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/` に決定。native の橋は置かない（互換の DLL が UAPI を直接呼ぶ）に決定。残りの判断: 優先度
+Resume point: p001（設計）から。GS base は案 A（swapgs）に決定（差分の承認は p001 の後）。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/` に決定（Win64 の名前は使わない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/` に決定。native の橋は置かない（互換の DLL が UAPI を直接呼ぶ）に決定。優先度: デモ critical の後に loader を先に仕上げ、DLL は下位のモデルで継続（決定）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -71,7 +71,9 @@ forward）、DLL の依存の解決、IAT の書き換え、Microsoft x64 ABI �
    - **thread**: `CreateThread` は zedBSD の thread の UAPI で作り、新しい thread の GS base を TEB に向ける（p002 の GS base の汎用の機能）。
    - **Wayland**: user32 等が PE の code として Wayland の wire protocol を話す。自前の libwayland（`userland/desktop/libwayland`）の source を
      PE の target で build できるか（依存する libc の関数を上の runtime で満たせるか）を調べる。
-5. 優先度: デモ（fg010）の後か、並べるか。
+5. **優先度と進め方**（2026-09-28 ユーザー）: デモ critical（PDF Viewer・Notes・Keiland の仕上げ・ブラウザ）の実装の後に、**loader（p001〜p008）を早めに完成させる**。
+   **互換の DLL（p009 以降の kernel32・ucrtbase・user32 等）は下位のモデルの subagent にひたすら実装させる**（Agent の model を sonnet・haiku 等に）。
+   そのため p001 の設計で、DLL の API ごとの実装の単位・試験の型（host の試験と guest の EXE）・完了の判定を、下位のモデルが迷わず回せる形に決めておく。
 
 ## Phase（2026-09-28 に分けた。上の決定を反映）
 
