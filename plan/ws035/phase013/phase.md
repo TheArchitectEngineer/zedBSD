@@ -57,8 +57,8 @@ networkd、Wi-Fi の一覧と操作は偽の networkd（試験用）で確かめ
 ## 残り（follow-up）
 
 - profile の無い network の join（password の入力の欄と profile の保存）。今は「no saved profile」と言うだけ。
-- session の user は networkd の socket（`network` 群、0660）に入れない。greeter の session の user を `network` 群に入れるか、
-  SHOW・SUBSCRIBE を誰にでも許すかの判断が要る（試験は root の zdesktop）。
+- ~~session の user は networkd の socket（`network` 群、0660）に入れない。~~ → 2026-09-28 ユーザーの決定で session の user を
+  `network` 群に入れた（[p104](../phase104/phase.md)、普通の user で確認）。
 - 失敗の行が長いと切れる（menu の幅 300）。menu の keyboard 操作（矢印・Enter）は無い。
 - watch の fd を zdesktop の poll に入れていない（10 ms の tick で読む）。
 - icon の強さは scan の値（接続中の RSSI を networkd が出していない）。
