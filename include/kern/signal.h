@@ -78,6 +78,19 @@ signal_send_thread_info(
 	const struct signal_info *info);
 
 /*
+ * Sends the signal of a fault the thread took to that thread.
+ *
+ * A blocked or ignored SIGSEGV, SIGBUS, SIGILL or SIGFPE would send the
+ * thread back to the faulting instruction for ever, so such a signal is
+ * unblocked and its disposition reset to the default, which terminates.
+ */
+int
+signal_send_fault_info(
+	struct thread *thread,
+	int signo,
+	const struct signal_info *info);
+
+/*
  * Atomically snapshot and optionally replace one disposition.
  * Installing an ignored disposition also discards every process- and
  * thread-directed instance of that signal before releasing the

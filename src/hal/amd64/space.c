@@ -57,7 +57,6 @@ _Static_assert(AMD64_RAM_LIMIT == AMD64_DIRECT_LIMIT, "RAM window size agreement
 #define AMD64_FRAMEBUFFER_PD_COUNT \
 	(AMD64_ECAM_PD_FIRST - AMD64_FRAMEBUFFER_PD_FIRST)
 
-#define AMD64_CURRENT_SPACE (amd64_percpu_current()->current_space)
 #define AMD64_SHOOTDOWN_REQUESTS (AMD64_SMP_MAX_CPUS * 4U)
 
 /*
@@ -180,6 +179,8 @@ static int device_window_unmap(void *address, size_t size);
 static int device_window_populate(struct amd64_device_mapping *mapping);
 static void device_window_clear(struct amd64_device_mapping *mapping);
 static void device_window_retire(struct amd64_device_mapping *mapping);
+static hal_space_t current_space_load(void);
+static void current_space_store(hal_space_t handle);
 
 /*
  * Converts a direct-map address to its physical address.
@@ -640,10 +641,7 @@ prekern_amd64_space_init(
 	    (unsigned long long)ram_builder.table_pages,
 	    (unsigned long long)ram_builder.large_pages,
 	    (unsigned long long)ram_builder.small_pages);
-	__atomic_store_n(
-	    &AMD64_CURRENT_SPACE,
-	    HAL_SPACE_SYS,
-	    __ATOMIC_RELEASE);
+	current_space_store(HAL_SPACE_SYS);
 }
 
 /*
@@ -969,25 +967,21 @@ hal_space_switch(
 	hal_space_t handle)
 {
 	struct amd64_space *space;
+	hal_space_t current;
 	uintptr_t cr3;
 	bool enabled;
 	int entered;
 
 	/* Keeps the current hardware space when no switch is required. */
-	if (__atomic_load_n(
-	    &AMD64_CURRENT_SPACE,
-	    __ATOMIC_ACQUIRE) == handle) {
+	current = current_space_load();
+	if (current == handle)
 		return;
-	}
 
 	/* Switches directly to the immortal system page tables. */
 	if (handle == HAL_SPACE_SYS) {
 		enabled = hal_irq_disable();
 		asm_load_cr3(system_cr3);
-		__atomic_store_n(
-		    &AMD64_CURRENT_SPACE,
-		    handle,
-		    __ATOMIC_RELEASE);
+		current_space_store(handle);
 
 		/* Restores the caller's interrupt state. */
 		if (enabled)
@@ -1007,7 +1001,7 @@ hal_space_switch(
 	enabled = space_lock_enter(space);
 	cr3 = (uintptr_t)space->pml4_paddr;
 	asm_load_cr3(cr3);
-	__atomic_store_n(&AMD64_CURRENT_SPACE, handle, __ATOMIC_RELEASE);
+	current_space_store(handle);
 	space_lock_leave(space, enabled);
 	space_op_leave(space);
 }
@@ -2322,7 +2316,8 @@ shootdown(
 	}
 
 	/* Invalidates the sender when it currently uses the affected space. */
-	if (handle == HAL_SPACE_SYS || AMD64_CURRENT_SPACE == handle)
+	current_space = current_space_load();
+	if (handle == HAL_SPACE_SYS || current_space == handle)
 		flush_request_range(handle, vaddr, size);
 
 	/*
@@ -3025,4 +3020,54 @@ device_window_unmap(
 
 	/* Succeeded: no CPU can access the device through this released view. */
 	return HAL_OK;
+}
+
+/*
+ * Reads the address space this CPU has loaded, in one GS-relative load.
+ *
+ * Loading the per-CPU pointer and then the field is two loads, and a caller
+ * moved to another CPU between them would read the old CPU's space.  One
+ * load is taken whole on one CPU.  The present callers run with interrupts
+ * disabled (BUG-088); the single load keeps the read right for any caller.
+ * On amd64 an aligned load is an acquire, and the clobber keeps the
+ * compiler from moving memory accesses across it.
+ */
+static hal_space_t
+current_space_load(
+	void)
+{
+	hal_space_t space;
+
+	/* Traps on an absent per-CPU selection. */
+	(void)amd64_percpu_current();
+
+	/* Reads the field through GS. */
+	__asm__ volatile("movq %%gs:%c1, %0"
+			 : "=r"(space)
+			 : "i"(AMD64_PERCPU_CURRENT_SPACE)
+			 : "memory");
+
+	/* Reports the loaded space. */
+	return space;
+}
+
+/*
+ * Records the address space this CPU has loaded, in one GS-relative store.
+ *
+ * Other CPUs read the field to choose shootdown targets; on amd64 an aligned
+ * store is a release, and the clobber keeps earlier accesses before it.
+ */
+static void
+current_space_store(
+	hal_space_t handle)
+{
+	/* Traps on an absent per-CPU selection. */
+	(void)amd64_percpu_current();
+
+	/* Writes the field through GS. */
+	__asm__ volatile("movq %0, %%gs:%c1"
+			 :
+			 : "r"(handle),
+			   "i"(AMD64_PERCPU_CURRENT_SPACE)
+			 : "memory");
 }

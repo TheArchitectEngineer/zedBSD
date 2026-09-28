@@ -1146,6 +1146,108 @@ signal_send_thread_info(
 }
 
 /*
+ * Sends the signal of a fault the thread took to that thread.
+ *
+ * The thread returns to the instruction that faulted, so a fault signal
+ * the thread cannot take now would fault again at once, for ever.  A
+ * blocked or ignored SIGSEGV, SIGBUS, SIGILL or SIGFPE is therefore
+ * unblocked and reset to the default action, as Linux does; a blocked
+ * signal loses its handler too, because a handler that the program kept
+ * blocked is not one it expects to run here.  Other fault signals, such as
+ * SIGTRAP, are sent as they are: the trap returns past the instruction.
+ */
+int
+signal_send_fault_info(
+	struct thread *thread,
+	int signo,
+	const struct signal_info *info)
+{
+	struct signal_action *action;
+	struct process *process;
+	unsigned long irq;
+	sigset_t bit;
+	int valid;
+	int forced;
+	int reset;
+	int error;
+
+	/* Rejects a thread without a process. */
+	if (thread == NULL)
+		return EINVAL;
+	process = thread->proc;
+	if (process == NULL || process == &process0)
+		return EINVAL;
+
+	/* Rejects a bad signal. */
+	valid = signal_valid(signo);
+	if (!valid)
+		return EINVAL;
+
+	/* Only the signals of a fault that retakes its instruction are forced. */
+	forced = 0;
+	if (signo == SIGSEGV)
+		forced = 1;
+	else if (signo == SIGBUS)
+		forced = 1;
+	else if (signo == SIGILL)
+		forced = 1;
+	else if (signo == SIGFPE)
+		forced = 1;
+
+	/* Sends any other fault signal as an ordinary thread signal. */
+	if (!forced) {
+		error = signal_send_thread_info(thread, signo, info);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the signal is pending on the thread. */
+		return 0;
+	}
+
+	/*
+	 * Records the fault on the thread, making sure it is taken.
+	 *
+	 * The disposition, the mask and the pending bit change under one
+	 * hold of the process lock, so another thread cannot ignore or block
+	 * the signal again between the reset and the record.
+	 */
+	bit = SIGNAL_BIT(signo);
+	irq = spin_lock_irqsave(&process->lock);
+
+	/* A signal that is ignored or blocked cannot be taken as it stands. */
+	action = &process->signal_actions[signo];
+	reset = 0;
+	if (action->handler == (uintptr_t)SIG_IGN)
+		reset = 1;
+	else if ((thread->signal_mask & bit) != 0)
+		reset = 1;
+
+	/* Unblocks the signal and restores the default, which terminates. */
+	if (reset) {
+		action->handler = (uintptr_t)SIG_DFL;
+		action->mask = 0;
+		action->flags = 0;
+		action->restorer = 0;
+		thread->signal_mask &= ~bit;
+	}
+
+	/*
+	 * The fault's own information replaces an older record of the same
+	 * signal: what the handler or the exit reports is this fault.
+	 */
+	kern_memset(&thread->signal_info[signo], 0,
+	    sizeof(thread->signal_info[signo]));
+	if (info != NULL)
+		thread->signal_info[signo] = *info;
+	thread->signal_pending |= bit;
+
+	spin_unlock_irqrestore(&process->lock, irq);
+
+	/* Succeeded: the thread takes the fault's signal on its way back. */
+	return 0;
+}
+
+/*
  * Implements sigtimedwait(): takes one signal of a set, waiting for it.
  *
  * The wait ends with EINTR for a termination request or another
