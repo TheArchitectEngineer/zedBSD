@@ -177,7 +177,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 | WS074: direction の最小（rtl の flex row、2026-09-29 main の判断）→ p072（grid）→ p037（table）（[amazon-goal.md](ws074/amazon-goal.md)）。p035・p060・p062・p070・p071 は cleared（2026-09-29） | ブラウザのデモの目標 | subagent 実行中 |
 | WS079: p009（規約）、CCITTFax・password の入力・thumbnail | PDF・Notes | p008 cleared |
 | WS075: p007〜p010、BUG-058（p017 は 6 回で再現せず uncleared）、BUG-095 | i915 | 実機の LCD の目視の後 |
-| WS035: p121〜p123 cleared（2026-09-29: 見える旧名、Notes の toolbar と title の区切り、App Home の線画のアイコン 10 枚）→ p124（title bar の app の印）・p125（試験の道具の前提）。F-048、HDMI の LCD での仕上げ | Keiland | subagent 実行中 |
+| WS035: p121〜p123 cleared（2026-09-29: 見える旧名、Notes の toolbar と title の区切り、App Home の線画のアイコン 10 枚）、p124（title bar・bar・Wiseview の app の印を同じ絵に）・p125（試験が greeter を止める、zdesktop-guest.sh の stop）cleared。残り: 実機（i915 での atlas の新しい行、browser の窓の印）、他の道具（plan/tools/titlebar/・plan/ws079/tests/）の greeter の前提、guest.py の二重起動の検査、F-048 | Keiland | — |
 | WS081: p001（touch の慣性・補間の設計） | touch の質 | — |
 | WS080: p001（ld.coff の設計） | デモ critical の後 | spec.md |
 | WS082: p002・p002b（study.md §10 の判断の後） | KVM | ユーザーの判断 |
