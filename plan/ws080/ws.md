@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から。**判断が要る点**（下）の 1（GS base の HAL の変更）を p001 の前にユーザーへ
+Resume point: p001（設計）から。GS base は案 A（swapgs）に決定（差分の承認は p001 の後）。残りの判断: path・source の置き場・native の橋・優先度
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -34,8 +34,11 @@ forward）、DLL の依存の解決、IAT の書き換え、Microsoft x64 ABI �
 
 ## 判断が要る点（ユーザーへ）
 
-1. **GS base（spec §15）**: HAL を `swapgs` を使う形に変え、user の GS base を thread の文脈に持つ（HAL の責務の変更、承認が要る）。
-   代案: Win64 の thread だけ特別に扱う等は HAL の複雑さが増すので勧めない。p001 で具体的な差分を plan に置いて承認を求める。
+1. **GS base（spec §15）**: 2026-09-28 ユーザー「では推奨案にしましょう。」→ **案 A: `swapgs`**（Linux・FreeBSD と同じ）。kernel の per-CPU の
+   pointer を `KERNEL_GS_BASE` に置き、kernel の入口・出口（syscall・割り込み・例外・NMI）で `swapgs` で入れ替え、user の GS base を thread の文脈に
+   保存・復元する。入口の判断は保存した CS（user か kernel か）で行う。案 B（kernel が GS を使わず per-CPU を kernel stack の上から引く）は採らない。
+   **方式は決定。具体的な差分（hal.h の `gs_base` の扱いを含む）は p001 で plan に置き、差分ごとの承認を得てから適用する**（AGENTS.md の HAL の規則）。
+   p001 で CR4.FSGSBASE の状態（user の `rdgsbase` で kernel の pointer が見えるか）も確かめる。
 2. **path**（spec §4・§9 の例は `/system/libexec/ld.coff`・`/System/Win64/`）: zedBSD の今の配置では `/usr/libexec/ld.coff` と
    `/usr/lib/win64/`（互換の DLL）、`/usr/lib/win64/compat/` が自然。どちらにするか。
 3. **source の置き場**: `userland/base/ld-coff/`（ローダ）と `userland/win64/`（互換の DLL、PE の DLL として build）を案とする。
