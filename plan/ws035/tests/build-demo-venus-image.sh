@@ -2,7 +2,8 @@
 # ws035-p116: builds the Venus guest image for the demonstration's walk-through (config-amd64-demo-venus.mk): the
 # graphical login with Notes, App Home's demonstration list (plan/ws035/demo/apps.conf), the guest harness's files,
 # and the fonts and the wallpaper, which are not in git (build/ws035-fonts/, build/ws035-wallpaper/).
-# root logs in with an empty password.
+# ws035-p120: the demonstration's accounts (plan/ws035/demo/demo-accounts.sh): the person kei ("Kei") logs in
+# without a password, root is locked (the harness reaches root with its SSH key).
 #
 #   plan/ws035/tests/build-demo-venus-image.sh [BUILD]     (default build/amd64)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -23,5 +24,8 @@ for pair in \
 done
 [ -f build/ws035-wallpaper/wallpaper.ppm ] && extra="$extra --file /usr/share/keiland/wallpaper.ppm=build/ws035-wallpaper/wallpaper.ppm"
 extra="$extra --file /usr/share/files-tests/make-home.sh=plan/tools/files/make-home.sh"
+accounts=$build/demo-accounts
+plan/ws035/demo/demo-accounts.sh "$accounts"
+extra="$extra --file /etc/passwd=$accounts/passwd --file /etc/group=$accounts/group --file /etc/shadow=$accounts/shadow"
 exec make -j"$(nproc)" ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-demo-venus.mk BUILD="$build" \
     "ZEDBSD_TEST_EXTRA_FILES=$extra" disk-image

@@ -12,7 +12,8 @@
  * the session script (/etc/keiland/session) with /bin/sh as the user, the
  * way login starts a shell: initgroups, setgid, setuid, HOME, USER,
  * LOGNAME, PATH, SHELL and XDG_RUNTIME_DIR.  The login is recorded in
- * utmpx.
+ * utmpx.  An account whose home directory is not there yet gets it at its
+ * first login (ws035-p120).
  *
  * The session's user is also given the group "network" (2026-09-28 user
  * decision, ws035-p104): networkd's socket admits that group, and the
@@ -80,6 +81,7 @@
 static unsigned session_wrong;
 
 static int session_runtime(struct sessiond_account *account, char *directory, size_t size);
+static void session_home(struct sessiond_account *account);
 static void session_runtime_clean(const char *directory);
 static void session_child(struct sessiond *daemon, struct sessiond_account *account, const char *directory, int control);
 static void session_network_group(void);
@@ -122,6 +124,9 @@ sessiond_session_run(
 		sessiond_greeter_finish(daemon);
 		return error;
 	}
+
+	/* The user's home directory, made on the first login of an account that has none yet. */
+	session_home(account);
 
 	/* The socket the session talks to sessiond on. */
 	error = socketpair(AF_UNIX, SOCK_STREAM, 0, pair);
@@ -439,6 +444,93 @@ session_runtime(
 
 	/* Succeeded: the directory is ready. */
 	return 0;
+}
+
+/*
+ * Makes the home directory of an account that has none yet (ws035-p120):
+ * an image can name a person's account (the demonstration's kei) but
+ * cannot give a directory to its owner, so the first login makes it, 0700
+ * and the user's.  Anything already at the path is left as it is, and a
+ * home outside a root-owned directory that only root may write is not
+ * made.  A failure leaves the session in / (session_child).
+ */
+static void
+session_home(
+	struct sessiond_account *account)
+{
+	struct stat status;
+	char parent[256];
+	char *slash;
+	size_t length;
+	int descriptor;
+	int error;
+
+	/* Only an absolute path below the root, which fits. */
+	if (account->passwd.pw_dir == NULL || account->passwd.pw_dir[0] != '/')
+		return;
+	if (account->passwd.pw_dir[1] == '\0')
+		return;
+	length = strlen(account->passwd.pw_dir);
+	if (length >= sizeof(parent))
+		return;
+
+	/* Something already there is the account's home, or not for sessiond to replace. */
+	error = lstat(account->passwd.pw_dir, &status);
+	if (error == 0)
+		return;
+	if (errno != ENOENT)
+		return;
+
+	/* The directory it goes in: root's, a directory, and writable by root alone (no one can swap the path). */
+	snprintf(parent, sizeof(parent), "%s", account->passwd.pw_dir);
+	slash = strrchr(parent, '/');
+	if (slash == parent) {
+		parent[1] = '\0';
+	} else {
+		*slash = '\0';
+	}
+
+	/* What is there now. */
+	error = lstat(parent, &status);
+	if (error != 0)
+		return;
+
+	/* A link or a file in its place is refused. */
+	if ((status.st_mode & S_IFMT) != S_IFDIR) {
+		sessiond_log("SESSIOND SESSION home=%s parent not a directory", account->passwd.pw_dir);
+		return;
+	}
+
+	/* So is a directory someone else owns or may write. */
+	if (status.st_uid != 0 || (status.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+		sessiond_log("SESSIOND SESSION home=%s parent not root's", account->passwd.pw_dir);
+		return;
+	}
+
+	/* The directory, private to its user. */
+	error = mkdir(account->passwd.pw_dir, 0700);
+	if (error != 0) {
+		sessiond_log("SESSIOND SESSION home=%s errno=%d", account->passwd.pw_dir, errno);
+		return;
+	}
+
+	/* The directory just made, opened (not a path that could be followed elsewhere). */
+	descriptor = open(account->passwd.pw_dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+	if (descriptor < 0) {
+		sessiond_log("SESSIOND SESSION home=%s open errno=%d", account->passwd.pw_dir, errno);
+		return;
+	}
+
+	/* Given to the user. */
+	error = fchown(descriptor, account->passwd.pw_uid, account->passwd.pw_gid);
+	(void)close(descriptor);
+	if (error != 0) {
+		sessiond_log("SESSIOND SESSION home=%s chown errno=%d", account->passwd.pw_dir, errno);
+		return;
+	}
+
+	/* Succeeded: the home is made and the user's. */
+	sessiond_log("SESSIOND SESSION home=%s made uid=%u", account->passwd.pw_dir, (unsigned)account->passwd.pw_uid);
 }
 
 /* Removes the session's Wayland socket from its runtime directory. */

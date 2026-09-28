@@ -865,7 +865,7 @@ greeter_draw_brand(
 	/* The mark's square, level with the power buttons' foot. */
 	x = GREETER_MARGIN;
 	y = (int32_t)server->height - GREETER_MARGIN - GREETER_BRAND_MARK;
-	glass_draw_mark(server, command, x, y, GREETER_BRAND_MARK, 1.0f);
+	glass_draw_mark(server, command, x, y, GREETER_BRAND_MARK, GLASS_MARK_SPLASH, 1.0f);
 
 	/* The word beside it, on the mark's lower part, in the boot screen's slate. */
 	glass_draw_text(server, command, SIZE_ICON, x + GREETER_BRAND_MARK + 8, y + GREETER_BRAND_MARK - 12, "Kei", 200, slate);

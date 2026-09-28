@@ -79,6 +79,7 @@ fm_app_init(
 	struct fm_location location;
 	struct passwd *account;
 	const char *home;
+	char *comma;
 
 	/* The defaults: icons by name, sidebar shown, preview hidden, hidden files hidden. */
 	memset(app, 0, sizeof(*app));
@@ -105,6 +106,23 @@ fm_app_init(
 	account = getpwuid(getuid());
 	if (account != NULL && account->pw_name != NULL)
 		snprintf(app->user, sizeof(app->user), "%s", account->pw_name);
+
+	/*
+	 * The name the Home page greets: a person's display name, the first
+	 * part of the GECOS field, as the login screen shows it (ws035-p120).
+	 * root's GECOS names its role ("System Administrator"), so root keeps
+	 * its account name.
+	 */
+	if (account != NULL &&
+	    account->pw_uid != 0 &&
+	    account->pw_gecos != NULL &&
+	    account->pw_gecos[0] != '\0' &&
+	    account->pw_gecos[0] != ',') {
+		snprintf(app->user, sizeof(app->user), "%s", account->pw_gecos);
+		comma = strchr(app->user, ',');
+		if (comma != NULL)
+			*comma = '\0';
+	}
 
 	/* The home folder: HOME, else the account's, else the root. */
 	home = getenv("HOME");
