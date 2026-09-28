@@ -726,7 +726,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files browser xserver egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files notes browser xserver egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
@@ -1253,6 +1253,26 @@ $(BUILD)/bin/files: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
  --needed libpng-compat.so --needed libz-compat.so --needed libc.so $@
+
+# Notes (ws079-p005) imports standard Wayland, Vulkan, TrueType and C library entry points,
+# zdesktop's System Menu and the recent files through libkeiland, and libpdf for its PDF.
+DYNAMIC_ZDESKTOP_NOTES_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,notes)
+
+$(BUILD)/bin/notes: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_ZDESKTOP_NOTES_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libpdf.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_NOTES_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libpdf.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
+ --needed libpdf.so --needed libc.so $@
 
 # The Web browser (WS074) keeps its modules in subdirectories and includes their headers
 # from its own root; it imports standard Wayland and Vulkan for its window and GPU renderer

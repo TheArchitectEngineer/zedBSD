@@ -1,0 +1,1544 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The drawing of Notes with Vulkan and the Wayland WSI.
+ *
+ * A frame is the list of draws geometry.c builds: plain rectangles (the
+ * desk and the page), strokes filled through the stencil buffer in three
+ * passes (fan, fringe, cover; see geometry.c), and the toolbar's picture.
+ * Five pipelines share one vertex layout and one set of shaders:
+ *
+ *   stencil  counts the winding of the fan into the stencil, no colour;
+ *   fringe   draws where the stencil is zero, alpha falling with distance;
+ *   cover    draws where the stencil is not zero, and sets it back to zero;
+ *   plain    draws without the stencil;
+ *   texture  draws the toolbar's picture without the stencil.
+ *
+ * Each frame's vertices are copied to host-visible memory, drawn, and
+ * waited for before the next frame, so the host may write the vertices and
+ * the toolbar's image between frames without further synchronization.
+ */
+
+#include "app.h"
+#include "shaders.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+/* How long a frame may take on the GPU, in nanoseconds. */
+#define RENDER_TIMEOUT		10000000000ULL
+
+/* The vertex buffer's first size, in vertices. */
+#define RENDER_VERTICES_MIN	65536U
+
+/* The colour of the desk around the page, as floats. */
+#define RENDER_DESK_RED		0.80f
+#define RENDER_DESK_GREEN	0.82f
+#define RENDER_DESK_BLUE	0.85f
+
+static VkResult render_device(struct notes_renderer *renderer);
+static VkResult render_swapchain(struct notes_renderer *renderer, uint32_t width, uint32_t height, VkSwapchainKHR old);
+static VkResult render_stencil_format(struct notes_renderer *renderer);
+static VkResult render_stencil(struct notes_renderer *renderer);
+static void render_stencil_free(struct notes_renderer *renderer);
+static VkResult render_pass(struct notes_renderer *renderer);
+static VkResult render_targets(struct notes_renderer *renderer);
+static void render_targets_free(struct notes_renderer *renderer);
+static VkResult render_commands(struct notes_renderer *renderer);
+static VkResult render_memory(struct notes_renderer *renderer, const VkMemoryRequirements *requirements, VkMemoryPropertyFlags wanted, VkDeviceMemory *memory);
+static VkResult render_descriptors(struct notes_renderer *renderer);
+static VkResult render_toolbar(struct notes_renderer *renderer);
+static void render_toolbar_free(struct notes_renderer *renderer);
+static VkResult render_vertices(struct notes_renderer *renderer, size_t count);
+static void render_vertices_free(struct notes_renderer *renderer);
+static VkResult render_pipelines(struct notes_renderer *renderer);
+static VkResult render_pipeline(struct notes_renderer *renderer, unsigned pipe, VkShaderModule vertex, VkShaderModule fragment);
+static VkResult render_module(struct notes_renderer *renderer, const uint32_t *code, size_t size, VkShaderModule *module);
+static void render_record(struct notes_renderer *renderer, uint32_t image, const struct notes_frame *frame);
+
+/*
+ * Makes the Vulkan objects of the window: the device, the swapchain and
+ * its stencil buffer, the pipelines, the toolbar's image and the vertex
+ * buffer.
+ */
+VkResult
+notes_renderer_open(
+	struct notes_renderer *renderer,
+	struct notes_window *window)
+{
+	VkApplicationInfo application;
+	VkInstanceCreateInfo instance;
+	VkWaylandSurfaceCreateInfoKHR surface;
+	const char *extensions[2];
+	VkResult error;
+
+	/* Nothing is owned yet. */
+	memset(renderer, 0, sizeof(*renderer));
+
+	/* The instance, with the surface extensions a Wayland window needs. */
+	extensions[0] = VK_KHR_SURFACE_EXTENSION_NAME;
+	extensions[1] = VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME;
+	memset(&application, 0, sizeof(application));
+	application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+	application.pApplicationName = "notes";
+	application.apiVersion = VK_API_VERSION_1_0;
+	memset(&instance, 0, sizeof(instance));
+	instance.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	instance.pApplicationInfo = &application;
+	instance.enabledExtensionCount = 2U;
+	instance.ppEnabledExtensionNames = extensions;
+	renderer->operation = "vkCreateInstance";
+	error = vkCreateInstance(&instance, NULL, &renderer->instance);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The window's surface. */
+	memset(&surface, 0, sizeof(surface));
+	surface.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+	surface.display = window->display;
+	surface.surface = window->surface;
+	renderer->operation = "vkCreateWaylandSurfaceKHR";
+	error = vkCreateWaylandSurfaceKHR(renderer->instance, &surface, NULL, &renderer->surface);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* A device with a queue that draws and presents to the surface. */
+	error = render_device(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The swapchain at the window's size. */
+	error = render_swapchain(renderer, window->width, window->height, VK_NULL_HANDLE);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* A stencil format the device can render to. */
+	error = render_stencil_format(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The stencil buffer at the swapchain's size. */
+	error = render_stencil(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The pass that draws into a swapchain image and the stencil buffer. */
+	error = render_pass(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* A framebuffer for each swapchain image. */
+	error = render_targets(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The command buffer and the frame's synchronization. */
+	error = render_commands(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The sampler and the descriptor set of the toolbar's image. */
+	error = render_descriptors(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The toolbar's image at the window's width. */
+	error = render_toolbar(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The vertex buffer, at its first size. */
+	error = render_vertices(renderer, RENDER_VERTICES_MIN);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The pipelines. */
+	error = render_pipelines(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: frames can be drawn. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Replaces the swapchain, the stencil buffer and the toolbar's image with
+ * ones of a new size.
+ */
+VkResult
+notes_renderer_resize(
+	struct notes_renderer *renderer,
+	uint32_t width,
+	uint32_t height)
+{
+	VkSwapchainKHR old;
+	VkResult error;
+
+	/* Nothing may still use the old images. */
+	renderer->operation = "vkDeviceWaitIdle";
+	error = vkDeviceWaitIdle(renderer->device);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The old targets and stencil buffer go, and the new chain replaces the old one. */
+	render_targets_free(renderer);
+	render_stencil_free(renderer);
+	old = renderer->swapchain;
+	renderer->swapchain = VK_NULL_HANDLE;
+	error = render_swapchain(renderer, width, height, old);
+	vkDestroySwapchainKHR(renderer->device, old, NULL);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The stencil buffer at the new size. */
+	error = render_stencil(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Framebuffers for the new images. */
+	error = render_targets(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The toolbar's image at the new width. */
+	render_toolbar_free(renderer);
+	error = render_toolbar(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the next frame is drawn at the new size. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Draws a frame and presents it, and waits for it to finish.
+ *
+ * Returns VK_ERROR_OUT_OF_DATE_KHR when the swapchain no longer matches
+ * the window; the caller resizes and draws again.
+ */
+VkResult
+notes_renderer_draw(
+	struct notes_renderer *renderer,
+	const struct notes_frame *frame)
+{
+	VkSubmitInfo submit;
+	VkPresentInfoKHR present;
+	VkPipelineStageFlags stage;
+	uint32_t image;
+	VkResult error;
+
+	/* A frame larger than the vertex buffer gets a larger buffer. */
+	if (frame->vertex_count > renderer->vertex_capacity) {
+		renderer->operation = "vkDeviceWaitIdle";
+		error = vkDeviceWaitIdle(renderer->device);
+		if (error != VK_SUCCESS)
+			return error;
+		render_vertices_free(renderer);
+		error = render_vertices(renderer, frame->vertex_count);
+		if (error != VK_SUCCESS)
+			return error;
+	}
+
+	/* The frame's vertices. */
+	if (frame->vertex_count != 0U)
+		memcpy(renderer->vertex_map, frame->vertices, frame->vertex_count * NOTES_VERTEX_FLOATS * sizeof(float));
+
+	/* The image to draw into, once the compositor has given one back. */
+	renderer->operation = "vkAcquireNextImageKHR";
+	error = vkAcquireNextImageKHR(renderer->device, renderer->swapchain, RENDER_TIMEOUT, renderer->acquired, VK_NULL_HANDLE, &image);
+	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
+		return error;
+
+	/* The frame's commands. */
+	renderer->operation = "vkResetCommandBuffer";
+	error = vkResetCommandBuffer(renderer->command, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Records the frame and closes the recording. */
+	render_record(renderer, image, frame);
+	renderer->operation = "vkEndCommandBuffer";
+	error = vkEndCommandBuffer(renderer->command);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The frame's fence starts unsignalled. */
+	renderer->operation = "vkResetFences";
+	error = vkResetFences(renderer->device, 1U, &renderer->fence);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Submits the frame after the acquire, signalling the image's present semaphore. */
+	stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.waitSemaphoreCount = 1U;
+	submit.pWaitSemaphores = &renderer->acquired;
+	submit.pWaitDstStageMask = &stage;
+	submit.commandBufferCount = 1U;
+	submit.pCommandBuffers = &renderer->command;
+	submit.signalSemaphoreCount = 1U;
+	submit.pSignalSemaphores = &renderer->targets[image].rendered;
+	renderer->operation = "vkQueueSubmit";
+	error = vkQueueSubmit(renderer->queue, 1U, &submit, renderer->fence);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Presents the image to the window. */
+	memset(&present, 0, sizeof(present));
+	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	present.waitSemaphoreCount = 1U;
+	present.pWaitSemaphores = &renderer->targets[image].rendered;
+	present.swapchainCount = 1U;
+	present.pSwapchains = &renderer->swapchain;
+	present.pImageIndices = &image;
+	renderer->operation = "vkQueuePresentKHR";
+	error = vkQueuePresentKHR(renderer->queue, &present);
+	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
+		return error;
+
+	/* The frame is finished before the host touches the vertices or the toolbar again. */
+	renderer->operation = "vkWaitForFences";
+	error = vkWaitForFences(renderer->device, 1U, &renderer->fence, VK_TRUE, RENDER_TIMEOUT);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the frame is on the window. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Gives the toolbar's pixels (B8G8R8A8, the swapchain's width by
+ * NOTES_TOOLBAR_HEIGHT) and their row pitch, for the toolbar to draw into
+ * between frames.
+ */
+void
+notes_renderer_toolbar(
+	struct notes_renderer *renderer,
+	unsigned char **pixels,
+	size_t *pitch)
+{
+	/* The rows mapped when the image was made (NULL without the image). */
+	*pixels = renderer->toolbar_pixels;
+	*pitch = renderer->toolbar_pitch;
+}
+
+/*
+ * Releases every Vulkan object, children before their parents.
+ */
+void
+notes_renderer_close(
+	struct notes_renderer *renderer)
+{
+	unsigned pipe;
+
+	/* The device's objects, once nothing runs. */
+	if (renderer->device != VK_NULL_HANDLE) {
+		(void)vkDeviceWaitIdle(renderer->device);
+		render_targets_free(renderer);
+		render_stencil_free(renderer);
+		render_toolbar_free(renderer);
+		render_vertices_free(renderer);
+
+		/* The pipelines and what they bind. */
+		for (pipe = 0; pipe < NOTES_PIPES; pipe++) {
+			if (renderer->pipes[pipe] != VK_NULL_HANDLE)
+				vkDestroyPipeline(renderer->device, renderer->pipes[pipe], NULL);
+		}
+
+		/* The layout, the set and its sampler. */
+		if (renderer->layout != VK_NULL_HANDLE)
+			vkDestroyPipelineLayout(renderer->device, renderer->layout, NULL);
+		if (renderer->descriptor_pool != VK_NULL_HANDLE)
+			vkDestroyDescriptorPool(renderer->device, renderer->descriptor_pool, NULL);
+		if (renderer->set_layout != VK_NULL_HANDLE)
+			vkDestroyDescriptorSetLayout(renderer->device, renderer->set_layout, NULL);
+		if (renderer->sampler != VK_NULL_HANDLE)
+			vkDestroySampler(renderer->device, renderer->sampler, NULL);
+
+		/* The commands and the synchronization. */
+		if (renderer->pool != VK_NULL_HANDLE)
+			vkDestroyCommandPool(renderer->device, renderer->pool, NULL);
+		if (renderer->fence != VK_NULL_HANDLE)
+			vkDestroyFence(renderer->device, renderer->fence, NULL);
+		if (renderer->acquired != VK_NULL_HANDLE)
+			vkDestroySemaphore(renderer->device, renderer->acquired, NULL);
+
+		/* The pass, the swapchain and the device itself. */
+		if (renderer->pass != VK_NULL_HANDLE)
+			vkDestroyRenderPass(renderer->device, renderer->pass, NULL);
+		if (renderer->swapchain != VK_NULL_HANDLE)
+			vkDestroySwapchainKHR(renderer->device, renderer->swapchain, NULL);
+		vkDestroyDevice(renderer->device, NULL);
+	}
+
+	/* The surface and the instance. */
+	if (renderer->surface != VK_NULL_HANDLE)
+		vkDestroySurfaceKHR(renderer->instance, renderer->surface, NULL);
+	if (renderer->instance != VK_NULL_HANDLE)
+		vkDestroyInstance(renderer->instance, NULL);
+
+	/* Nothing is owned any more. */
+	memset(renderer, 0, sizeof(*renderer));
+}
+
+/* Chooses a physical device and a queue family that draws and presents to the surface, and makes the device. */
+static VkResult
+render_device(
+	struct notes_renderer *renderer)
+{
+	VkPhysicalDevice devices[8];
+	VkQueueFamilyProperties families[16];
+	VkDeviceQueueCreateInfo queue;
+	VkDeviceCreateInfo create;
+	const char *extension;
+	float priority;
+	uint32_t count;
+	uint32_t family_count;
+	uint32_t index;
+	uint32_t family;
+	VkBool32 supported;
+	VkResult error;
+
+	/* The physical devices (the first eight are enough). */
+	count = 8U;
+	renderer->operation = "vkEnumeratePhysicalDevices";
+	error = vkEnumeratePhysicalDevices(renderer->instance, &count, devices);
+	if (error != VK_SUCCESS && error != VK_INCOMPLETE)
+		return error;
+
+	/* The first family of any device that draws and presents to this surface. */
+	for (index = 0U; index < count && renderer->physical == VK_NULL_HANDLE; index++) {
+		family_count = 16U;
+		vkGetPhysicalDeviceQueueFamilyProperties(devices[index], &family_count, families);
+		for (family = 0U; family < family_count; family++) {
+			/* A family must draw and have a queue. */
+			if ((families[family].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0U || families[family].queueCount == 0U)
+				continue;
+
+			/* And present to this very surface. */
+			supported = VK_FALSE;
+			error = vkGetPhysicalDeviceSurfaceSupportKHR(devices[index], family, renderer->surface, &supported);
+			if (error != VK_SUCCESS || supported == VK_FALSE)
+				continue;
+
+			/* This family of this device draws the window. */
+			renderer->physical = devices[index];
+			renderer->family = family;
+			break;
+		}
+	}
+
+	/* No device can draw this window. */
+	if (renderer->physical == VK_NULL_HANDLE)
+		return VK_ERROR_INITIALIZATION_FAILED;
+	vkGetPhysicalDeviceMemoryProperties(renderer->physical, &renderer->memory);
+
+	/* One queue of that family and the swapchain extension. */
+	priority = 1.0f;
+	memset(&queue, 0, sizeof(queue));
+	queue.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	queue.queueFamilyIndex = renderer->family;
+	queue.queueCount = 1U;
+	queue.pQueuePriorities = &priority;
+	extension = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	create.queueCreateInfoCount = 1U;
+	create.pQueueCreateInfos = &queue;
+	create.enabledExtensionCount = 1U;
+	create.ppEnabledExtensionNames = &extension;
+	renderer->operation = "vkCreateDevice";
+	error = vkCreateDevice(renderer->physical, &create, NULL, &renderer->device);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the device and its queue. */
+	vkGetDeviceQueue(renderer->device, renderer->family, 0U, &renderer->queue);
+	return VK_SUCCESS;
+}
+
+/* Makes the swapchain at a size, in an 8-bit UNORM format, presenting in FIFO order. */
+static VkResult
+render_swapchain(
+	struct notes_renderer *renderer,
+	uint32_t width,
+	uint32_t height,
+	VkSwapchainKHR old)
+{
+	VkSurfaceCapabilitiesKHR capabilities;
+	VkSurfaceFormatKHR formats[16];
+	VkSwapchainCreateInfoKHR create;
+	uint32_t count;
+	uint32_t index;
+	VkResult error;
+
+	/* The formats the surface offers. */
+	count = 16U;
+	renderer->operation = "vkGetPhysicalDeviceSurfaceFormatsKHR";
+	error = vkGetPhysicalDeviceSurfaceFormatsKHR(renderer->physical, renderer->surface, &count, formats);
+	if (error != VK_SUCCESS && error != VK_INCOMPLETE)
+		return error;
+
+	/* The first of those that is 8-bit UNORM. */
+	renderer->format = VK_FORMAT_UNDEFINED;
+	for (index = 0U; index < count; index++) {
+		if (formats[index].format == VK_FORMAT_B8G8R8A8_UNORM || formats[index].format == VK_FORMAT_R8G8B8A8_UNORM) {
+			renderer->format = formats[index].format;
+			break;
+		}
+	}
+
+	/* A surface without one cannot show the colours as they are. */
+	if (renderer->format == VK_FORMAT_UNDEFINED)
+		return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
+	/* The size the surface takes. */
+	renderer->operation = "vkGetPhysicalDeviceSurfaceCapabilitiesKHR";
+	error = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(renderer->physical, renderer->surface, &capabilities);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The window's size, clamped to the surface's range. */
+	if (width < capabilities.minImageExtent.width)
+		width = capabilities.minImageExtent.width;
+	if (height < capabilities.minImageExtent.height)
+		height = capabilities.minImageExtent.height;
+	if (width > capabilities.maxImageExtent.width)
+		width = capabilities.maxImageExtent.width;
+	if (height > capabilities.maxImageExtent.height)
+		height = capabilities.maxImageExtent.height;
+	renderer->extent.width = width;
+	renderer->extent.height = height;
+
+	/* Three images when the surface allows, opaque, replacing the old chain. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	create.surface = renderer->surface;
+	create.minImageCount = 3U;
+	if (create.minImageCount < capabilities.minImageCount)
+		create.minImageCount = capabilities.minImageCount;
+	if (capabilities.maxImageCount != 0U && create.minImageCount > capabilities.maxImageCount)
+		create.minImageCount = capabilities.maxImageCount;
+	create.imageFormat = renderer->format;
+	create.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+	create.imageExtent = renderer->extent;
+	create.imageArrayLayers = 1U;
+	create.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	create.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	create.preTransform = capabilities.currentTransform;
+	create.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	create.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+	create.clipped = VK_TRUE;
+	create.oldSwapchain = old;
+	renderer->operation = "vkCreateSwapchainKHR";
+	error = vkCreateSwapchainKHR(renderer->device, &create, NULL, &renderer->swapchain);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the chain at the window's size. */
+	return VK_SUCCESS;
+}
+
+/* Chooses a format with a stencil the device can render to, preferring the common combined ones. */
+static VkResult
+render_stencil_format(
+	struct notes_renderer *renderer)
+{
+	static const VkFormat candidates[] = {
+		VK_FORMAT_D24_UNORM_S8_UINT,
+		VK_FORMAT_D32_SFLOAT_S8_UINT,
+		VK_FORMAT_S8_UINT,
+		VK_FORMAT_D16_UNORM_S8_UINT
+	};
+	VkFormatProperties properties;
+	unsigned index;
+
+	/* The first candidate usable as an optimally tiled depth-stencil attachment. */
+	for (index = 0; index < sizeof(candidates) / sizeof(candidates[0]); index++) {
+		vkGetPhysicalDeviceFormatProperties(renderer->physical, candidates[index], &properties);
+		if ((properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0U)
+			continue;
+
+		/* A stencil-only format has one aspect, a combined one two. */
+		renderer->stencil_format = candidates[index];
+		renderer->stencil_aspect = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+		if (candidates[index] == VK_FORMAT_S8_UINT)
+			renderer->stencil_aspect = VK_IMAGE_ASPECT_STENCIL_BIT;
+		return VK_SUCCESS;
+	}
+
+	/* No stencil: strokes cannot be filled. */
+	renderer->operation = "stencil format";
+	return VK_ERROR_FORMAT_NOT_SUPPORTED;
+}
+
+/* Makes the stencil buffer at the swapchain's size. */
+static VkResult
+render_stencil(
+	struct notes_renderer *renderer)
+{
+	VkImageCreateInfo image;
+	VkMemoryRequirements requirements;
+	VkImageViewCreateInfo view;
+	VkResult error;
+
+	/* The image, used only as the pass's attachment. */
+	memset(&image, 0, sizeof(image));
+	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image.imageType = VK_IMAGE_TYPE_2D;
+	image.format = renderer->stencil_format;
+	image.extent.width = renderer->extent.width;
+	image.extent.height = renderer->extent.height;
+	image.extent.depth = 1U;
+	image.mipLevels = 1U;
+	image.arrayLayers = 1U;
+	image.samples = VK_SAMPLE_COUNT_1_BIT;
+	image.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	renderer->operation = "vkCreateImage";
+	error = vkCreateImage(renderer->device, &image, NULL, &renderer->stencil);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Its memory, on the device when it can be. */
+	vkGetImageMemoryRequirements(renderer->device, renderer->stencil, &requirements);
+	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &renderer->stencil_memory);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Binds the memory to the image. */
+	renderer->operation = "vkBindImageMemory";
+	error = vkBindImageMemory(renderer->device, renderer->stencil, renderer->stencil_memory, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The view the framebuffers attach. */
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = renderer->stencil;
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = renderer->stencil_format;
+	view.subresourceRange.aspectMask = renderer->stencil_aspect;
+	view.subresourceRange.levelCount = 1U;
+	view.subresourceRange.layerCount = 1U;
+	renderer->operation = "vkCreateImageView";
+	error = vkCreateImageView(renderer->device, &view, NULL, &renderer->stencil_view);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the stencil buffer. */
+	return VK_SUCCESS;
+}
+
+/* Releases the stencil buffer. */
+static void
+render_stencil_free(
+	struct notes_renderer *renderer)
+{
+	/* The view, the image and the memory, where made. */
+	if (renderer->stencil_view != VK_NULL_HANDLE)
+		vkDestroyImageView(renderer->device, renderer->stencil_view, NULL);
+	if (renderer->stencil != VK_NULL_HANDLE)
+		vkDestroyImage(renderer->device, renderer->stencil, NULL);
+	if (renderer->stencil_memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, renderer->stencil_memory, NULL);
+	renderer->stencil_view = VK_NULL_HANDLE;
+	renderer->stencil = VK_NULL_HANDLE;
+	renderer->stencil_memory = VK_NULL_HANDLE;
+}
+
+/* Makes the pass: the colour attachment cleared to the desk, the stencil cleared to zero. */
+static VkResult
+render_pass(
+	struct notes_renderer *renderer)
+{
+	VkAttachmentDescription attachments[2];
+	VkAttachmentReference color;
+	VkAttachmentReference stencil;
+	VkSubpassDescription subpass;
+	VkSubpassDependency dependency;
+	VkRenderPassCreateInfo create;
+	VkResult error;
+
+	/* The swapchain image, cleared and stored for presenting. */
+	memset(attachments, 0, sizeof(attachments));
+	attachments[0].format = renderer->format;
+	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	/* The stencil, cleared every frame and never kept. */
+	attachments[1].format = renderer->stencil_format;
+	attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	/* The single subpass that draws into both. */
+	color.attachment = 0U;
+	color.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	stencil.attachment = 1U;
+	stencil.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	memset(&subpass, 0, sizeof(subpass));
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1U;
+	subpass.pColorAttachments = &color;
+	subpass.pDepthStencilAttachment = &stencil;
+
+	/* The acquired image's transition waits for the acquire, and the stencil is not cleared under the last frame. */
+	memset(&dependency, 0, sizeof(dependency));
+	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependency.dstSubpass = 0U;
+	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dependency.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+	/* The pass. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	create.attachmentCount = 2U;
+	create.pAttachments = attachments;
+	create.subpassCount = 1U;
+	create.pSubpasses = &subpass;
+	create.dependencyCount = 1U;
+	create.pDependencies = &dependency;
+	renderer->operation = "vkCreateRenderPass";
+	error = vkCreateRenderPass(renderer->device, &create, NULL, &renderer->pass);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the pass. */
+	return VK_SUCCESS;
+}
+
+/* Makes a view, a framebuffer and a present semaphore for each swapchain image. */
+static VkResult
+render_targets(
+	struct notes_renderer *renderer)
+{
+	VkImage images[8];
+	VkImageView attachments[2];
+	VkImageViewCreateInfo view;
+	VkFramebufferCreateInfo framebuffer;
+	VkSemaphoreCreateInfo semaphore;
+	uint32_t index;
+	VkResult error;
+
+	/* The swapchain's images (at most eight). */
+	renderer->count = 8U;
+	renderer->operation = "vkGetSwapchainImagesKHR";
+	error = vkGetSwapchainImagesKHR(renderer->device, renderer->swapchain, &renderer->count, images);
+	if (error != VK_SUCCESS && error != VK_INCOMPLETE)
+		return error;
+
+	/* A zeroed table, so that a failure part-way leaves only made objects to release. */
+	renderer->targets = calloc(renderer->count, sizeof(renderer->targets[0]));
+	if (renderer->targets == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Each image's objects. */
+	for (index = 0U; index < renderer->count; index++) {
+		/* The view of the image. */
+		renderer->targets[index].image = images[index];
+		memset(&view, 0, sizeof(view));
+		view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		view.image = images[index];
+		view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		view.format = renderer->format;
+		view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		view.subresourceRange.levelCount = 1U;
+		view.subresourceRange.layerCount = 1U;
+		renderer->operation = "vkCreateImageView";
+		error = vkCreateImageView(renderer->device, &view, NULL, &renderer->targets[index].view);
+		if (error != VK_SUCCESS)
+			return error;
+
+		/* The framebuffer over it and the shared stencil buffer. */
+		attachments[0] = renderer->targets[index].view;
+		attachments[1] = renderer->stencil_view;
+		memset(&framebuffer, 0, sizeof(framebuffer));
+		framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebuffer.renderPass = renderer->pass;
+		framebuffer.attachmentCount = 2U;
+		framebuffer.pAttachments = attachments;
+		framebuffer.width = renderer->extent.width;
+		framebuffer.height = renderer->extent.height;
+		framebuffer.layers = 1U;
+		renderer->operation = "vkCreateFramebuffer";
+		error = vkCreateFramebuffer(renderer->device, &framebuffer, NULL, &renderer->targets[index].framebuffer);
+		if (error != VK_SUCCESS)
+			return error;
+
+		/* The semaphore its present waits for. */
+		memset(&semaphore, 0, sizeof(semaphore));
+		semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		renderer->operation = "vkCreateSemaphore";
+		error = vkCreateSemaphore(renderer->device, &semaphore, NULL, &renderer->targets[index].rendered);
+		if (error != VK_SUCCESS)
+			return error;
+	}
+
+	/* Succeeded: every image can be drawn into. */
+	return VK_SUCCESS;
+}
+
+/* Releases the objects of the swapchain's images (not the images, which are the swapchain's). */
+static void
+render_targets_free(
+	struct notes_renderer *renderer)
+{
+	uint32_t index;
+
+	/* Each image's semaphore, framebuffer and view, where made. */
+	for (index = 0U; renderer->targets != NULL && index < renderer->count; index++) {
+		if (renderer->targets[index].rendered != VK_NULL_HANDLE)
+			vkDestroySemaphore(renderer->device, renderer->targets[index].rendered, NULL);
+		if (renderer->targets[index].framebuffer != VK_NULL_HANDLE)
+			vkDestroyFramebuffer(renderer->device, renderer->targets[index].framebuffer, NULL);
+		if (renderer->targets[index].view != VK_NULL_HANDLE)
+			vkDestroyImageView(renderer->device, renderer->targets[index].view, NULL);
+	}
+
+	/* The table itself. */
+	free(renderer->targets);
+	renderer->targets = NULL;
+	renderer->count = 0U;
+}
+
+/* Makes the command pool and buffer, the frame's fence and the acquire semaphore. */
+static VkResult
+render_commands(
+	struct notes_renderer *renderer)
+{
+	VkCommandPoolCreateInfo pool;
+	VkCommandBufferAllocateInfo command;
+	VkFenceCreateInfo fence;
+	VkSemaphoreCreateInfo semaphore;
+	VkResult error;
+
+	/* A pool whose one buffer is reset every frame. */
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool.queueFamilyIndex = renderer->family;
+	renderer->operation = "vkCreateCommandPool";
+	error = vkCreateCommandPool(renderer->device, &pool, NULL, &renderer->pool);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The buffer. */
+	memset(&command, 0, sizeof(command));
+	command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	command.commandPool = renderer->pool;
+	command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	command.commandBufferCount = 1U;
+	renderer->operation = "vkAllocateCommandBuffers";
+	error = vkAllocateCommandBuffers(renderer->device, &command, &renderer->command);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The fence the frame's end signals. */
+	memset(&fence, 0, sizeof(fence));
+	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	renderer->operation = "vkCreateFence";
+	error = vkCreateFence(renderer->device, &fence, NULL, &renderer->fence);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The semaphore the acquire signals. */
+	memset(&semaphore, 0, sizeof(semaphore));
+	semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	renderer->operation = "vkCreateSemaphore";
+	error = vkCreateSemaphore(renderer->device, &semaphore, NULL, &renderer->acquired);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: one frame at a time can be recorded and waited for. */
+	return VK_SUCCESS;
+}
+
+/* Allocates memory that meets the requirements, with the wanted properties when a type has them. */
+static VkResult
+render_memory(
+	struct notes_renderer *renderer,
+	const VkMemoryRequirements *requirements,
+	VkMemoryPropertyFlags wanted,
+	VkDeviceMemory *memory)
+{
+	VkMemoryAllocateInfo allocate;
+	uint32_t chosen;
+	uint32_t fallback;
+	uint32_t index;
+	VkResult error;
+
+	/* The first allowed type with the properties, and the first allowed type at all. */
+	chosen = UINT32_MAX;
+	fallback = UINT32_MAX;
+	for (index = 0U; index < renderer->memory.memoryTypeCount; index++) {
+		/* A type the resource does not allow is passed. */
+		if ((requirements->memoryTypeBits & (1U << index)) == 0U)
+			continue;
+		if (fallback == UINT32_MAX)
+			fallback = index;
+
+		/* The first with the wanted properties is chosen. */
+		if ((renderer->memory.memoryTypes[index].propertyFlags & wanted) == wanted) {
+			chosen = index;
+			break;
+		}
+	}
+
+	/* Host-visible memory must be host-visible; other wishes fall back to any allowed type. */
+	if (chosen == UINT32_MAX && (wanted & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0U)
+		chosen = fallback;
+	renderer->operation = "memory type";
+	if (chosen == UINT32_MAX)
+		return VK_ERROR_FEATURE_NOT_PRESENT;
+
+	/* The allocation. */
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate.allocationSize = requirements->size;
+	allocate.memoryTypeIndex = chosen;
+	renderer->operation = "vkAllocateMemory";
+	error = vkAllocateMemory(renderer->device, &allocate, NULL, memory);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the memory. */
+	return VK_SUCCESS;
+}
+
+/* Makes the sampler, the descriptor set layout, the pool and the set of the toolbar's image. */
+static VkResult
+render_descriptors(
+	struct notes_renderer *renderer)
+{
+	VkSamplerCreateInfo sampler;
+	VkDescriptorSetLayoutBinding binding;
+	VkDescriptorSetLayoutCreateInfo set_layout;
+	VkDescriptorPoolSize pool_size;
+	VkDescriptorPoolCreateInfo pool;
+	VkDescriptorSetAllocateInfo allocate;
+	VkResult error;
+
+	/* Nearest sampling: the toolbar's pixels land on the window's pixels one to one. */
+	memset(&sampler, 0, sizeof(sampler));
+	sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler.magFilter = VK_FILTER_NEAREST;
+	sampler.minFilter = VK_FILTER_NEAREST;
+	sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	renderer->operation = "vkCreateSampler";
+	error = vkCreateSampler(renderer->device, &sampler, NULL, &renderer->sampler);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* One combined image sampler for the fragment shader. */
+	memset(&binding, 0, sizeof(binding));
+	binding.binding = 0U;
+	binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	binding.descriptorCount = 1U;
+	binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	memset(&set_layout, 0, sizeof(set_layout));
+	set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	set_layout.bindingCount = 1U;
+	set_layout.pBindings = &binding;
+	renderer->operation = "vkCreateDescriptorSetLayout";
+	error = vkCreateDescriptorSetLayout(renderer->device, &set_layout, NULL, &renderer->set_layout);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* A pool for the one set. */
+	memset(&pool_size, 0, sizeof(pool_size));
+	pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	pool_size.descriptorCount = 1U;
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool.maxSets = 1U;
+	pool.poolSizeCount = 1U;
+	pool.pPoolSizes = &pool_size;
+	renderer->operation = "vkCreateDescriptorPool";
+	error = vkCreateDescriptorPool(renderer->device, &pool, NULL, &renderer->descriptor_pool);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The set. */
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocate.descriptorPool = renderer->descriptor_pool;
+	allocate.descriptorSetCount = 1U;
+	allocate.pSetLayouts = &renderer->set_layout;
+	renderer->operation = "vkAllocateDescriptorSets";
+	error = vkAllocateDescriptorSets(renderer->device, &allocate, &renderer->set);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the set is filled when the toolbar's image is made. */
+	return VK_SUCCESS;
+}
+
+/* Makes the toolbar's image (linear, host-written) at the swapchain's width, and names it in the set. */
+static VkResult
+render_toolbar(
+	struct notes_renderer *renderer)
+{
+	VkImageCreateInfo image;
+	VkMemoryRequirements requirements;
+	VkImageSubresource subresource;
+	VkSubresourceLayout row_layout;
+	VkImageViewCreateInfo view;
+	VkDescriptorImageInfo image_info;
+	VkWriteDescriptorSet write;
+	void *map;
+	VkResult error;
+
+	/* The image: linear so that the host writes its rows, sampled by the fragment shader. */
+	memset(&image, 0, sizeof(image));
+	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image.imageType = VK_IMAGE_TYPE_2D;
+	image.format = VK_FORMAT_B8G8R8A8_UNORM;
+	image.extent.width = renderer->extent.width;
+	image.extent.height = NOTES_TOOLBAR_HEIGHT;
+	image.extent.depth = 1U;
+	image.mipLevels = 1U;
+	image.arrayLayers = 1U;
+	image.samples = VK_SAMPLE_COUNT_1_BIT;
+	image.tiling = VK_IMAGE_TILING_LINEAR;
+	image.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+	renderer->operation = "vkCreateImage";
+	error = vkCreateImage(renderer->device, &image, NULL, &renderer->toolbar);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Its memory, which the host sees. */
+	vkGetImageMemoryRequirements(renderer->device, renderer->toolbar, &requirements);
+	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &renderer->toolbar_memory);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Binds the memory to the image. */
+	renderer->operation = "vkBindImageMemory";
+	error = vkBindImageMemory(renderer->device, renderer->toolbar, renderer->toolbar_memory, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Maps it for the host's writes, for as long as the image lives. */
+	renderer->operation = "vkMapMemory";
+	error = vkMapMemory(renderer->device, renderer->toolbar_memory, 0U, VK_WHOLE_SIZE, 0U, &map);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Where its rows start, which the toolbar needs to draw into it. */
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	vkGetImageSubresourceLayout(renderer->device, renderer->toolbar, &subresource, &row_layout);
+	renderer->toolbar_pixels = (unsigned char *)map + row_layout.offset;
+	renderer->toolbar_pitch = (size_t)row_layout.rowPitch;
+
+	/* The view the shader samples. */
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = renderer->toolbar;
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = VK_FORMAT_B8G8R8A8_UNORM;
+	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view.subresourceRange.levelCount = 1U;
+	view.subresourceRange.layerCount = 1U;
+	renderer->operation = "vkCreateImageView";
+	error = vkCreateImageView(renderer->device, &view, NULL, &renderer->toolbar_view);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The set names the image in the general layout it is kept in. */
+	memset(&image_info, 0, sizeof(image_info));
+	image_info.sampler = renderer->sampler;
+	image_info.imageView = renderer->toolbar_view;
+	image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	memset(&write, 0, sizeof(write));
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet = renderer->set;
+	write.dstBinding = 0U;
+	write.descriptorCount = 1U;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write.pImageInfo = &image_info;
+	vkUpdateDescriptorSets(renderer->device, 1U, &write, 0U, NULL);
+
+	/* Succeeded: the first frame moves the image to the general layout. */
+	renderer->toolbar_ready = 0;
+	return VK_SUCCESS;
+}
+
+/* Releases the toolbar's image. */
+static void
+render_toolbar_free(
+	struct notes_renderer *renderer)
+{
+	/* The view, the image and the memory (which unmaps it), where made. */
+	if (renderer->toolbar_view != VK_NULL_HANDLE)
+		vkDestroyImageView(renderer->device, renderer->toolbar_view, NULL);
+	if (renderer->toolbar != VK_NULL_HANDLE)
+		vkDestroyImage(renderer->device, renderer->toolbar, NULL);
+	if (renderer->toolbar_memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, renderer->toolbar_memory, NULL);
+	renderer->toolbar_view = VK_NULL_HANDLE;
+	renderer->toolbar = VK_NULL_HANDLE;
+	renderer->toolbar_memory = VK_NULL_HANDLE;
+	renderer->toolbar_pixels = NULL;
+	renderer->toolbar_pitch = 0;
+}
+
+/* Makes the vertex buffer for at least a number of vertices, mapped for good. */
+static VkResult
+render_vertices(
+	struct notes_renderer *renderer,
+	size_t count)
+{
+	VkBufferCreateInfo buffer;
+	VkMemoryRequirements requirements;
+	size_t capacity;
+	VkResult error;
+
+	/* The capacity: the first size, doubled until the vertices fit. */
+	capacity = RENDER_VERTICES_MIN;
+	while (capacity < count)
+		capacity *= 2U;
+
+	/* The buffer. */
+	memset(&buffer, 0, sizeof(buffer));
+	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer.size = capacity * NOTES_VERTEX_FLOATS * sizeof(float);
+	buffer.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	renderer->operation = "vkCreateBuffer";
+	error = vkCreateBuffer(renderer->device, &buffer, NULL, &renderer->vertices);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Its memory, which the host sees. */
+	vkGetBufferMemoryRequirements(renderer->device, renderer->vertices, &requirements);
+	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &renderer->vertex_memory);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Binds the memory to the buffer. */
+	renderer->operation = "vkBindBufferMemory";
+	error = vkBindBufferMemory(renderer->device, renderer->vertices, renderer->vertex_memory, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Maps it for the host's writes, for good. */
+	renderer->operation = "vkMapMemory";
+	error = vkMapMemory(renderer->device, renderer->vertex_memory, 0U, VK_WHOLE_SIZE, 0U, &renderer->vertex_map);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the host writes each frame's vertices here. */
+	renderer->vertex_capacity = capacity;
+	return VK_SUCCESS;
+}
+
+/* Releases the vertex buffer. */
+static void
+render_vertices_free(
+	struct notes_renderer *renderer)
+{
+	/* The buffer and its memory (which unmaps it), where made. */
+	if (renderer->vertices != VK_NULL_HANDLE)
+		vkDestroyBuffer(renderer->device, renderer->vertices, NULL);
+	if (renderer->vertex_memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, renderer->vertex_memory, NULL);
+	renderer->vertices = VK_NULL_HANDLE;
+	renderer->vertex_memory = VK_NULL_HANDLE;
+	renderer->vertex_map = NULL;
+	renderer->vertex_capacity = 0;
+}
+
+/* Makes the pipeline layout and the five pipelines. */
+static VkResult
+render_pipelines(
+	struct notes_renderer *renderer)
+{
+	VkShaderModule vertex;
+	VkShaderModule fill;
+	VkShaderModule texture;
+	VkPushConstantRange push;
+	VkPipelineLayoutCreateInfo layout;
+	unsigned pipe;
+	VkResult error;
+
+	/* The layout: the toolbar's set and the window's size. */
+	memset(&push, 0, sizeof(push));
+	push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	push.offset = 0U;
+	push.size = 4U * sizeof(float);
+	memset(&layout, 0, sizeof(layout));
+	layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layout.setLayoutCount = 1U;
+	layout.pSetLayouts = &renderer->set_layout;
+	layout.pushConstantRangeCount = 1U;
+	layout.pPushConstantRanges = &push;
+	renderer->operation = "vkCreatePipelineLayout";
+	error = vkCreatePipelineLayout(renderer->device, &layout, NULL, &renderer->layout);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The vertex shader. */
+	error = render_module(renderer, notes_draw_vert, sizeof(notes_draw_vert), &vertex);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The fill shader. */
+	error = render_module(renderer, notes_fill_frag, sizeof(notes_fill_frag), &fill);
+	if (error != VK_SUCCESS) {
+		vkDestroyShaderModule(renderer->device, vertex, NULL);
+		return error;
+	}
+
+	/* The texture shader. */
+	error = render_module(renderer, notes_texture_frag, sizeof(notes_texture_frag), &texture);
+	if (error != VK_SUCCESS) {
+		vkDestroyShaderModule(renderer->device, vertex, NULL);
+		vkDestroyShaderModule(renderer->device, fill, NULL);
+		return error;
+	}
+
+	/* Each pipeline; the texture pipeline samples, the others fill. */
+	for (pipe = 0; pipe < NOTES_PIPES; pipe++) {
+		if (pipe == NOTES_PIPE_TEXTURE)
+			error = render_pipeline(renderer, pipe, vertex, texture);
+		else
+			error = render_pipeline(renderer, pipe, vertex, fill);
+		if (error != VK_SUCCESS)
+			break;
+	}
+
+	/* The modules are not needed once the pipelines are made. */
+	vkDestroyShaderModule(renderer->device, vertex, NULL);
+	vkDestroyShaderModule(renderer->device, fill, NULL);
+	vkDestroyShaderModule(renderer->device, texture, NULL);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: every pipeline. */
+	return VK_SUCCESS;
+}
+
+/* Makes one pipeline: two vec4 attributes, triangles, straight-alpha blending, and its stencil use. */
+static VkResult
+render_pipeline(
+	struct notes_renderer *renderer,
+	unsigned pipe,
+	VkShaderModule vertex,
+	VkShaderModule fragment)
+{
+	static const VkDynamicState dynamic[] = {
+		VK_DYNAMIC_STATE_VIEWPORT,
+		VK_DYNAMIC_STATE_SCISSOR
+	};
+	VkPipelineShaderStageCreateInfo stages[2];
+	VkVertexInputBindingDescription binding;
+	VkVertexInputAttributeDescription attributes[2];
+	VkPipelineVertexInputStateCreateInfo input;
+	VkPipelineInputAssemblyStateCreateInfo assembly;
+	VkPipelineViewportStateCreateInfo viewport;
+	VkPipelineRasterizationStateCreateInfo raster;
+	VkPipelineMultisampleStateCreateInfo multisample;
+	VkPipelineDepthStencilStateCreateInfo stencil;
+	VkPipelineColorBlendAttachmentState blend_attachment;
+	VkPipelineColorBlendStateCreateInfo blend;
+	VkPipelineDynamicStateCreateInfo dynamic_state;
+	VkGraphicsPipelineCreateInfo pipeline;
+	VkResult error;
+
+	/* The two stages. */
+	memset(stages, 0, sizeof(stages));
+	stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+	stages[0].module = vertex;
+	stages[0].pName = "main";
+	stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	stages[1].module = fragment;
+	stages[1].pName = "main";
+
+	/* One vertex buffer of two vec4s a vertex: position and extra, then colour. */
+	memset(&binding, 0, sizeof(binding));
+	binding.binding = 0U;
+	binding.stride = NOTES_VERTEX_FLOATS * sizeof(float);
+	binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+	memset(attributes, 0, sizeof(attributes));
+	attributes[0].location = 0U;
+	attributes[0].binding = 0U;
+	attributes[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	attributes[0].offset = 0U;
+	attributes[1].location = 1U;
+	attributes[1].binding = 0U;
+	attributes[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	attributes[1].offset = 4U * sizeof(float);
+	memset(&input, 0, sizeof(input));
+	input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	input.vertexBindingDescriptionCount = 1U;
+	input.pVertexBindingDescriptions = &binding;
+	input.vertexAttributeDescriptionCount = 2U;
+	input.pVertexAttributeDescriptions = attributes;
+	memset(&assembly, 0, sizeof(assembly));
+	assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+	/* The viewport and scissor are set each frame; both faces are drawn (the fan's winding needs them). */
+	memset(&viewport, 0, sizeof(viewport));
+	viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewport.viewportCount = 1U;
+	viewport.scissorCount = 1U;
+	memset(&raster, 0, sizeof(raster));
+	raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	raster.polygonMode = VK_POLYGON_MODE_FILL;
+	raster.cullMode = VK_CULL_MODE_NONE;
+	raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	raster.lineWidth = 1.0f;
+	memset(&multisample, 0, sizeof(multisample));
+	multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+	/* No depth test; the stencil as the pipeline's role asks. */
+	memset(&stencil, 0, sizeof(stencil));
+	stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	stencil.front.compareMask = 0xffU;
+	stencil.front.writeMask = 0xffU;
+	stencil.front.reference = 0U;
+	stencil.front.failOp = VK_STENCIL_OP_KEEP;
+	stencil.front.depthFailOp = VK_STENCIL_OP_KEEP;
+	stencil.front.passOp = VK_STENCIL_OP_KEEP;
+	stencil.front.compareOp = VK_COMPARE_OP_ALWAYS;
+	stencil.back = stencil.front;
+	if (pipe == NOTES_PIPE_STENCIL) {
+		/* The fan counts front faces up and back faces down: the winding number, modulo 256. */
+		stencil.stencilTestEnable = VK_TRUE;
+		stencil.front.passOp = VK_STENCIL_OP_INCREMENT_AND_WRAP;
+		stencil.back.passOp = VK_STENCIL_OP_DECREMENT_AND_WRAP;
+	} else if (pipe == NOTES_PIPE_FRINGE) {
+		/* The fringe draws only outside the polygon. */
+		stencil.stencilTestEnable = VK_TRUE;
+		stencil.front.compareOp = VK_COMPARE_OP_EQUAL;
+		stencil.front.writeMask = 0U;
+		stencil.back = stencil.front;
+	} else if (pipe == NOTES_PIPE_COVER) {
+		/* The cover draws only inside, and sets the stencil back to zero there. */
+		stencil.stencilTestEnable = VK_TRUE;
+		stencil.front.compareOp = VK_COMPARE_OP_NOT_EQUAL;
+		stencil.front.passOp = VK_STENCIL_OP_ZERO;
+		stencil.back = stencil.front;
+	}
+
+	/* Straight-alpha blending, and no colour at all while counting the winding. */
+	memset(&blend_attachment, 0, sizeof(blend_attachment));
+	blend_attachment.blendEnable = VK_TRUE;
+	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+	blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+	blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+	blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+	    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	if (pipe == NOTES_PIPE_STENCIL)
+		blend_attachment.colorWriteMask = 0U;
+	memset(&blend, 0, sizeof(blend));
+	blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	blend.attachmentCount = 1U;
+	blend.pAttachments = &blend_attachment;
+	memset(&dynamic_state, 0, sizeof(dynamic_state));
+	dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamic_state.dynamicStateCount = 2U;
+	dynamic_state.pDynamicStates = dynamic;
+
+	/* The pipeline. */
+	memset(&pipeline, 0, sizeof(pipeline));
+	pipeline.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipeline.stageCount = 2U;
+	pipeline.pStages = stages;
+	pipeline.pVertexInputState = &input;
+	pipeline.pInputAssemblyState = &assembly;
+	pipeline.pViewportState = &viewport;
+	pipeline.pRasterizationState = &raster;
+	pipeline.pMultisampleState = &multisample;
+	pipeline.pDepthStencilState = &stencil;
+	pipeline.pColorBlendState = &blend;
+	pipeline.pDynamicState = &dynamic_state;
+	pipeline.layout = renderer->layout;
+	pipeline.renderPass = renderer->pass;
+	renderer->operation = "vkCreateGraphicsPipelines";
+	error = vkCreateGraphicsPipelines(renderer->device, VK_NULL_HANDLE, 1U, &pipeline, NULL, &renderer->pipes[pipe]);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the pipeline. */
+	return VK_SUCCESS;
+}
+
+/* Makes a shader module from SPIR-V words. */
+static VkResult
+render_module(
+	struct notes_renderer *renderer,
+	const uint32_t *code,
+	size_t size,
+	VkShaderModule *module)
+{
+	VkShaderModuleCreateInfo create;
+	VkResult error;
+
+	/* The module over the words. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	create.codeSize = size;
+	create.pCode = code;
+	renderer->operation = "vkCreateShaderModule";
+	error = vkCreateShaderModule(renderer->device, &create, NULL, module);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the module. */
+	return VK_SUCCESS;
+}
+
+/* Records the frame: the toolbar's first layout change, the cleared pass and every draw in order. */
+static void
+render_record(
+	struct notes_renderer *renderer,
+	uint32_t image,
+	const struct notes_frame *frame)
+{
+	VkCommandBufferBeginInfo begin;
+	VkImageMemoryBarrier barrier;
+	VkRenderPassBeginInfo pass;
+	VkClearValue clear[2];
+	VkViewport viewport;
+	VkRect2D scissor;
+	VkRect2D whole;
+	VkDeviceSize offset;
+	const struct notes_draw *draw;
+	float size[4];
+	unsigned bound;
+	size_t index;
+
+	/* One submission of this recording. */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	(void)vkBeginCommandBuffer(renderer->command, &begin);
+
+	/* A new toolbar image moves from preinitialized (the host's writes kept) to general. */
+	if (renderer->toolbar_ready == 0) {
+		memset(&barrier, 0, sizeof(barrier));
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = renderer->toolbar;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.levelCount = 1U;
+		barrier.subresourceRange.layerCount = 1U;
+		vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+		renderer->toolbar_ready = 1;
+	}
+
+	/* The pass, the colour cleared to the desk and the stencil to zero. */
+	memset(clear, 0, sizeof(clear));
+	clear[0].color.float32[0] = RENDER_DESK_RED;
+	clear[0].color.float32[1] = RENDER_DESK_GREEN;
+	clear[0].color.float32[2] = RENDER_DESK_BLUE;
+	clear[0].color.float32[3] = 1.0f;
+	clear[1].depthStencil.depth = 1.0f;
+	clear[1].depthStencil.stencil = 0U;
+	memset(&pass, 0, sizeof(pass));
+	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	pass.renderPass = renderer->pass;
+	pass.framebuffer = renderer->targets[image].framebuffer;
+	pass.renderArea.extent = renderer->extent;
+	pass.clearValueCount = 2U;
+	pass.pClearValues = clear;
+	vkCmdBeginRenderPass(renderer->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+
+	/* The whole image is the viewport. */
+	memset(&viewport, 0, sizeof(viewport));
+	viewport.width = (float)renderer->extent.width;
+	viewport.height = (float)renderer->extent.height;
+	viewport.maxDepth = 1.0f;
+	memset(&whole, 0, sizeof(whole));
+	whole.extent = renderer->extent;
+	vkCmdSetViewport(renderer->command, 0U, 1U, &viewport);
+
+	/* The vertices, the toolbar's set and the window's size. */
+	size[0] = (float)renderer->extent.width;
+	size[1] = (float)renderer->extent.height;
+	size[2] = 0.0f;
+	size[3] = 0.0f;
+	offset = 0U;
+	vkCmdBindVertexBuffers(renderer->command, 0U, 1U, &renderer->vertices, &offset);
+	vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U, &renderer->set, 0U, NULL);
+	vkCmdPushConstants(renderer->command, renderer->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(size), size);
+
+	/* Each draw in order, binding its pipeline when it changes and its scissor every time. */
+	bound = NOTES_PIPES;
+	for (index = 0; index < frame->draw_count; index++) {
+		draw = &frame->draws[index];
+		if (draw->count == 0U)
+			continue;
+
+		/* The pipeline. */
+		if (draw->pipe != bound) {
+			vkCmdBindPipeline(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipes[draw->pipe]);
+			bound = draw->pipe;
+		}
+
+		/* The page's rectangle for a clipped draw (kept inside the image), or the whole image. */
+		scissor = whole;
+		if (draw->clipped) {
+			scissor.offset.x = draw->clip[0];
+			scissor.offset.y = draw->clip[1];
+			scissor.extent.width = (uint32_t)draw->clip[2];
+			scissor.extent.height = (uint32_t)draw->clip[3];
+			if (scissor.offset.x < 0) {
+				scissor.extent.width = (uint32_t)((int32_t)scissor.extent.width + scissor.offset.x);
+				scissor.offset.x = 0;
+			}
+
+			/* And above the top. */
+			if (scissor.offset.y < 0) {
+				scissor.extent.height = (uint32_t)((int32_t)scissor.extent.height + scissor.offset.y);
+				scissor.offset.y = 0;
+			}
+		}
+
+		/* The draw inside its scissor. */
+		vkCmdSetScissor(renderer->command, 0U, 1U, &scissor);
+		vkCmdDraw(renderer->command, draw->count, 1U, draw->first, 0U);
+	}
+
+	/* The pass ends with the image ready to present. */
+	vkCmdEndRenderPass(renderer->command);
+}
