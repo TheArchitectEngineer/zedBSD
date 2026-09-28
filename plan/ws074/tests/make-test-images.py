@@ -8,8 +8,9 @@
 
 The images are drawn here from shapes and gradients (nothing third-party, nothing committed): photo.jpg (320x200,
 4:2:0), photo-prog.jpg (progressive), cmyk.jpg (Adobe CMYK), gray.jpg, logo.png (RGBA with a soft alpha edge),
-palette.png (8-bit palette), anim.gif (two frames, a transparent colour).  plan/ws074/tests/images/images.html is
-copied beside them, with plan/ws074/tests/pages/second.html (its link's target).  build-browser-image.sh puts the
+palette.png (8-bit palette), anim.gif (two frames, a transparent colour), tile.png (a 20x20 tile for backgrounds,
+ws074-p052).  plan/ws074/tests/images/images.html and backgrounds.html are copied beside them, with
+plan/ws074/tests/pages/second.html (a link's target).  build-browser-image.sh puts the
 directory in the guest image at /usr/share/browser-images/.
 """
 
@@ -71,7 +72,14 @@ def main():
         frames.append(frame)
     frames[0].save(os.path.join(out, "anim.gif"), save_all=True, append_images=frames[1:], duration=200, loop=0,
                    transparency=0)
+    tile = Image.new("RGBA", (20, 20), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(tile)
+    draw.rectangle((0, 0, 9, 9), fill=(120, 170, 230, 255))
+    draw.rectangle((10, 10, 19, 19), fill=(230, 150, 90, 200))
+    draw.ellipse((12, 2, 17, 7), fill=(40, 120, 60, 255))
+    tile.save(os.path.join(out, "tile.png"))
     shutil.copy(os.path.join(ROOT, "plan/ws074/tests/images/images.html"), out)
+    shutil.copy(os.path.join(ROOT, "plan/ws074/tests/images/backgrounds.html"), out)
     shutil.copy(os.path.join(ROOT, "plan/ws074/tests/pages/second.html"), out)
     print("make-test-images: %s" % out)
 

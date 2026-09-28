@@ -38,6 +38,9 @@
 /* The visibility value that hides a box's own painting. */
 #define LIST_VISIBILITY_HIDDEN	1
 
+/* The most tiles one background image is painted in (a tiny tile over a huge page stops there). */
+#define LIST_TILES_MAX		16384U
+
 /*
  * What a walk of the box tree carries: the list being filled, the text
  * system that measures the glyphs, the box whose background went to the
@@ -50,6 +53,17 @@ struct list_walk {
 	int error;
 };
 
+/*
+ * A rectangle of the page in layout units: a background's positioning
+ * area or its painting area.
+ */
+struct list_area {
+	layout_unit x;
+	layout_unit y;
+	layout_unit width;
+	layout_unit height;
+};
+
 static const struct layout_box *list_canvas(const struct layout_tree *tree, uint32_t *color);
 static void list_box(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_borders(struct list_walk *walk, const struct layout_box *box);
@@ -59,6 +73,14 @@ static void list_fragment(struct list_walk *walk, const struct layout_fragment *
 static void list_rect(struct list_walk *walk, layout_unit x, layout_unit y, layout_unit width, layout_unit height, uint32_t color);
 static void list_replaced(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
 static void list_image(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
+static void list_image_item(struct list_walk *walk, const struct img_bitmap *image, layout_unit x, layout_unit y, layout_unit width, layout_unit height);
+static void list_box_background(struct list_walk *walk, const struct layout_box *box);
+static void list_canvas_background(struct list_walk *walk, const struct layout_tree *tree);
+static void list_background_image(struct list_walk *walk, const struct layout_box *box, const struct list_area *area, const struct list_area *painting);
+static void list_background_size(const struct layout_box *box, const struct img_bitmap *image, const struct list_area *area, layout_unit *width, layout_unit *height);
+static layout_unit list_background_length(const struct css_length *length, layout_unit whole);
+static layout_unit list_background_offset(const struct css_length *position, layout_unit room);
+static void list_clip_rect(struct list_walk *walk, const struct list_area *area);
 static void list_clip(struct list_walk *walk, const struct layout_box *box);
 static void list_unclip(struct list_walk *walk);
 static int list_layer_clips(struct list_walk *walk, const struct layout_box *layer, int push);
@@ -98,6 +120,9 @@ paint_build(
 	/* An empty document paints only the canvas. */
 	if (tree->root == NULL)
 		return 0;
+
+	/* The canvas's background image, under everything. */
+	list_canvas_background(&walk, tree);
 
 	/* The positioned boxes in painting order, and where the normal flow goes among them. */
 	wb_vector_init(&order, sizeof(const struct layout_box *));
@@ -333,9 +358,11 @@ list_canvas(
 	if (tree->root == NULL)
 		return NULL;
 
-	/* The root's own background wins. */
-	if ((tree->root->style.background_color >> 24) != 0) {
+	/* The root's own background (a color or an image) wins. */
+	if ((tree->root->style.background_color >> 24) != 0 || tree->root->background != NULL) {
 		*color = tree->root->style.background_color;
+		if ((*color >> 24) == 0)
+			*color = LIST_CANVAS_DEFAULT;
 		return tree->root;
 	}
 
@@ -353,11 +380,13 @@ list_canvas(
 		return NULL;
 
 	/* A body without a background leaves the canvas white. */
-	if ((body->style.background_color >> 24) == 0)
+	if ((body->style.background_color >> 24) == 0 && body->background == NULL)
 		return NULL;
 
 	/* The body's background is the canvas's. */
 	*color = body->style.background_color;
+	if ((*color >> 24) == 0)
+		*color = LIST_CANVAS_DEFAULT;
 	return body;
 }
 
@@ -399,6 +428,10 @@ list_box(
 	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
 	if (visible && box != walk->canvas_box && (box->style.background_color >> 24) != 0)
 		list_rect(walk, box->x, box->y, width, height, box->style.background_color);
+
+	/* The background image over the color, unless it went to the canvas. */
+	if (visible && box != walk->canvas_box)
+		list_box_background(walk, box);
 
 	/* The borders go over the background. */
 	if (visible)
@@ -686,13 +719,27 @@ list_image(
 	layout_unit x,
 	layout_unit y)
 {
+	/* The image over the content box. */
+	list_image_item(walk, box->image, x, y, box->width, box->height);
+}
+
+/* Adds an image item: an image stretched over a rectangle. */
+static void
+list_image_item(
+	struct list_walk *walk,
+	const struct img_bitmap *image,
+	layout_unit x,
+	layout_unit y,
+	layout_unit width,
+	layout_unit height)
+{
 	struct paint_item item;
 	int error;
 
-	/* Nothing to add after an error, without an image, or for an empty box. */
-	if (walk->error != 0 || box->image == NULL)
+	/* Nothing to add after an error, without an image, or for an empty rectangle. */
+	if (walk->error != 0 || image == NULL)
 		return;
-	if (box->width <= 0 || box->height <= 0)
+	if (width <= 0 || height <= 0)
 		return;
 
 	/* The item. */
@@ -700,9 +747,256 @@ list_image(
 	item.kind = PAINT_IMAGE;
 	item.x = x;
 	item.y = y;
-	item.width = box->width;
-	item.height = box->height;
-	item.image = box->image;
+	item.width = width;
+	item.height = height;
+	item.image = image;
+	error = wb_vector_push(&walk->list->items, &item);
+	if (error != 0)
+		walk->error = error;
+}
+
+/* Paints a box's background image in its padding box, over its border box. */
+static void
+list_box_background(
+	struct list_walk *walk,
+	const struct layout_box *box)
+{
+	struct list_area area;
+	struct list_area painting;
+
+	/* A box without an image paints none. */
+	if (box->background == NULL)
+		return;
+
+	/* The border box paints it; the padding box places it. */
+	painting.x = box->x;
+	painting.y = box->y;
+	painting.width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+	painting.height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+	area.x = box->x + box->border[CSS_LEFT];
+	area.y = box->y + box->border[CSS_TOP];
+	area.width = box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT];
+	area.height = box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM];
+	list_background_image(walk, box, &area, &painting);
+}
+
+/*
+ * Paints the canvas's background image (the root's, or the body's): placed
+ * in the root's padding box and painted over the whole canvas.
+ */
+static void
+list_canvas_background(
+	struct list_walk *walk,
+	const struct layout_tree *tree)
+{
+	const struct layout_box *root;
+	struct list_area area;
+	struct list_area painting;
+
+	/* A canvas without an image paints none. */
+	if (walk->canvas_box == NULL || walk->canvas_box->background == NULL)
+		return;
+
+	/* The whole canvas paints it; the root's padding box places it. */
+	root = tree->root;
+	painting.x = 0;
+	painting.y = 0;
+	painting.width = walk->list->width;
+	painting.height = walk->list->height;
+	area.x = root->x + root->border[CSS_LEFT];
+	area.y = root->y + root->border[CSS_TOP];
+	area.width = root->padding[CSS_LEFT] + root->width + root->padding[CSS_RIGHT];
+	area.height = root->padding[CSS_TOP] + root->height + root->padding[CSS_BOTTOM];
+	list_background_image(walk, walk->canvas_box, &area, &painting);
+}
+
+/*
+ * Paints a box's background image: sized in its positioning area (the
+ * padding box, or the root's for the canvas), placed there by
+ * background-position, and repeated as background-repeat says over the
+ * painting area (the border box, or the canvas), which clips it.
+ */
+static void
+list_background_image(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	const struct list_area *area,
+	const struct list_area *painting)
+{
+	const struct img_bitmap *image;
+	layout_unit tile_width;
+	layout_unit tile_height;
+	layout_unit start_x;
+	layout_unit start_y;
+	layout_unit end_x;
+	layout_unit end_y;
+	layout_unit x;
+	layout_unit y;
+	size_t tiles;
+	int repeat_x;
+	int repeat_y;
+
+	/* Nothing without an image, or in an area without room. */
+	image = box->background;
+	if (walk->error != 0 || image == NULL)
+		return;
+	if (area->width <= 0 || area->height <= 0 || painting->width <= 0 || painting->height <= 0)
+		return;
+
+	/* The size of one tile; an empty one paints nothing. */
+	list_background_size(box, image, area, &tile_width, &tile_height);
+	if (tile_width <= 0 || tile_height <= 0)
+		return;
+
+	/* The first tile's place, from the position in the room the area leaves. */
+	start_x = area->x + list_background_offset(&box->style.background_position[0], area->width - tile_width);
+	start_y = area->y + list_background_offset(&box->style.background_position[1], area->height - tile_height);
+
+	/* A repeating axis starts at the tile before the painting area and ends past it; another has one tile. */
+	repeat_x = box->style.background_repeat == CSS_REPEAT_BOTH || box->style.background_repeat == CSS_REPEAT_X;
+	repeat_y = box->style.background_repeat == CSS_REPEAT_BOTH || box->style.background_repeat == CSS_REPEAT_Y;
+	end_x = start_x + tile_width;
+	end_y = start_y + tile_height;
+	if (repeat_x) {
+		start_x -= ((start_x - painting->x + tile_width - 1) / tile_width) * tile_width;
+		end_x = painting->x + painting->width;
+	}
+
+	/* The vertical axis likewise. */
+	if (repeat_y) {
+		start_y -= ((start_y - painting->y + tile_height - 1) / tile_height) * tile_height;
+		end_y = painting->y + painting->height;
+	}
+
+	/* The tiles, inside the painting area, up to a number no page needs. */
+	list_clip_rect(walk, painting);
+	tiles = 0;
+	for (y = start_y; y < end_y && tiles < LIST_TILES_MAX; y += tile_height) {
+		for (x = start_x; x < end_x && tiles < LIST_TILES_MAX; x += tile_width) {
+			list_image_item(walk, image, x, y, tile_width, tile_height);
+			tiles++;
+		}
+	}
+
+	/* The painting area's clip ends. */
+	list_unclip(walk);
+}
+
+/*
+ * Works out the size of one tile of a background image in its area:
+ * contain and cover scale the image to fit inside or to cover the area,
+ * lengths and percentages size a side, and an auto side follows the other
+ * through the image's ratio (or is the image's own).
+ */
+static void
+list_background_size(
+	const struct layout_box *box,
+	const struct img_bitmap *image,
+	const struct list_area *area,
+	layout_unit *width,
+	layout_unit *height)
+{
+	const struct css_length *sizes;
+	float natural_width;
+	float natural_height;
+	float scale;
+	float scale_height;
+	int width_auto;
+	int height_auto;
+
+	/* The image's own size. */
+	natural_width = (float)image->width * LAYOUT_UNIT;
+	natural_height = (float)image->height * LAYOUT_UNIT;
+
+	/* contain: the largest size that fits; cover: the smallest that covers. */
+	if (box->style.background_size_keyword != CSS_BACKGROUND_SIZE_LENGTHS) {
+		scale = (float)area->width / natural_width;
+		scale_height = (float)area->height / natural_height;
+		if (box->style.background_size_keyword == CSS_BACKGROUND_SIZE_CONTAIN && scale_height < scale)
+			scale = scale_height;
+		if (box->style.background_size_keyword == CSS_BACKGROUND_SIZE_COVER && scale_height > scale)
+			scale = scale_height;
+		*width = (layout_unit)(natural_width * scale + 0.5f);
+		*height = (layout_unit)(natural_height * scale + 0.5f);
+		return;
+	}
+
+	/* Each side given, or auto. */
+	sizes = box->style.background_size;
+	width_auto = sizes[0].unit != CSS_UNIT_PX && sizes[0].unit != CSS_UNIT_PERCENT;
+	height_auto = sizes[1].unit != CSS_UNIT_PX && sizes[1].unit != CSS_UNIT_PERCENT;
+	*width = (layout_unit)natural_width;
+	*height = (layout_unit)natural_height;
+	if (!width_auto)
+		*width = list_background_length(&sizes[0], area->width);
+	if (!height_auto)
+		*height = list_background_length(&sizes[1], area->height);
+
+	/* An auto side follows the other through the ratio. */
+	if (width_auto && !height_auto)
+		*width = (layout_unit)((float)*height * natural_width / natural_height);
+	if (height_auto && !width_auto)
+		*height = (layout_unit)((float)*width * natural_height / natural_width);
+}
+
+/* Resolves a length of the background against a length of its area (a percentage of it, or pixels). */
+static layout_unit
+list_background_length(
+	const struct css_length *length,
+	layout_unit whole)
+{
+	layout_unit value;
+
+	/* A percentage of the whole. */
+	if (length->unit == CSS_UNIT_PERCENT) {
+		value = (layout_unit)((float)whole * length->value / 100.0f);
+		return value;
+	}
+
+	/* Pixels. */
+	value = layout_from_px(length->value);
+	return value;
+}
+
+/* Resolves one axis of background-position: a percentage of the room the tile leaves, or pixels. */
+static layout_unit
+list_background_offset(
+	const struct css_length *position,
+	layout_unit room)
+{
+	layout_unit offset;
+
+	/* A percentage of the room (which is negative for a tile larger than its area). */
+	if (position->unit == CSS_UNIT_PERCENT) {
+		offset = (layout_unit)((float)room * position->value / 100.0f);
+		return offset;
+	}
+
+	/* Pixels from the area's edge. */
+	offset = layout_from_px(position->value);
+	return offset;
+}
+
+/* Starts a clip to a rectangle (the items until its end are drawn inside it). */
+static void
+list_clip_rect(
+	struct list_walk *walk,
+	const struct list_area *area)
+{
+	struct paint_item item;
+	int error;
+
+	/* Nothing to add after an error. */
+	if (walk->error != 0)
+		return;
+
+	/* The rectangle. */
+	memset(&item, 0, sizeof(item));
+	item.kind = PAINT_CLIP;
+	item.x = area->x;
+	item.y = area->y;
+	item.width = area->width;
+	item.height = area->height;
 	error = wb_vector_push(&walk->list->items, &item);
 	if (error != 0)
 		walk->error = error;

@@ -378,7 +378,7 @@ page_layout(
 		return error;
 
 	/* Builds and lays out the box tree, the images found by their elements. */
-	error = layout_build(&page->layout, page->css, &page->text, page->document, page_image_of, page, width, height);
+	error = layout_build(&page->layout, page->css, &page->text, page->document, page_image_of, page_image_by_url, page, width, height);
 	page->laid_out = 1;
 	page->laid_out_generation = page->document->generation;
 	if (error != 0)

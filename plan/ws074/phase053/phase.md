@@ -63,7 +63,7 @@ include しない（`paint/gpu.h` の `vulkan/vulkan.h` だけ。これは部品
   form）は engine が行い、scripts が取り消せる。
 - process 全体の設定（CA の file）は view の外の関数。
 
-## 移し方（提案。Phase の番号は main が決める）
+## 移し方（2026-09-28 main が番号を割り当て: 1 → p054、2 → p055、3 → p056、4 → p050 の一部、5 → p057）
 
 1. view の型を作り、page と今の shell の state のうち engine の持つべきもの（scroll、履歴、timer の epoch、題名の変化の検出）を
    その中へ移す。shell は view の API だけを呼ぶ。main の headless の mode も同じ API に（CPU の描画、dump）。

@@ -38,7 +38,7 @@ static void box_static_inline(struct layout_box *box, layout_unit x, layout_unit
 /*
  * Builds and lays out the box tree of a document for a viewport of width
  * by height pixels; image_lookup (with its context) finds the image of an
- * <img>.
+ * <img>, url_lookup the image a background names.
  */
 int
 layout_build(
@@ -47,6 +47,7 @@ layout_build(
 	struct text_system *text,
 	struct dom_document *document,
 	layout_image_lookup image_lookup,
+	layout_url_lookup url_lookup,
 	void *image_context,
 	int width,
 	int height)
@@ -61,6 +62,7 @@ layout_build(
 	wb_arena_init(&tree->arena, 0);
 	tree->text = text;
 	tree->image_lookup = image_lookup;
+	tree->url_lookup = url_lookup;
 	tree->image_context = image_context;
 	tree->viewport_width = (layout_unit)width * LAYOUT_UNIT;
 	tree->viewport_height = (layout_unit)height * LAYOUT_UNIT;
@@ -459,6 +461,10 @@ box_new(
 	box->kind = kind;
 	box->node = node;
 	box->style = *style;
+
+	/* An element's box finds the background image its style names (text shares its element's style, not its box). */
+	if (kind != LAYOUT_TEXT && style->background_image != NULL && tree->url_lookup != NULL)
+		box->background = tree->url_lookup(tree->image_context, style->background_image);
 
 	/* Succeeded: the box is detached. */
 	return box;
