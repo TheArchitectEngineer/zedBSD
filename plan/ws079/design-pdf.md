@@ -192,3 +192,12 @@ p004 の読み込みの決まり（`reader.c`・`object.c`）:
 predictor、ASCIIHex）・`display.c`・画像（`image.c`）・stroker（`stroke.c`）を作り、§4.1 の display list を `pdf_page_render()` で返す。§4.1 の
 `pdf_path_flatten()` は作らず、代わりに CPU の rasterizer `pdf_display_list_rasterize()`（`raster.c`）を足した（PDF Viewer v1 と試験が使う。GPU で描く
 program は display list を自分で描く）。libpdf の依存に libz-compat と libjpeg-compat が加わった。
+
+## 9. p014 の状態（2026-09-28）
+
+経過と確認は [phase014/phase.md](phase014/phase.md) が正本。§3 の「増分更新」を次の形にした: Notes は他の PDF を **base**（元の bytes）として持ち、
+保存のたびに base の bytes のまま＋1 つの revision（page の上書き・置き換え・追加、編集 data の添付、/Info の日付、/Prev で base の section を
+指す classic xref）を書く。前回の revision は積まずに置き換える（autosave で file が膨らまない）。編集 data は版 1.1（`BASE`: base の長さと
+SHA-256、`SRC `: page の由来と base の page 番号）。開くときは file の先頭が base の hash と合い、最新の revision が base の直後なら stroke を
+編集可能に戻す。他の program が後から revision を足した file は全体が新しい base になる。libpdf の追加の API: `pdf_writer_create_update()`・
+`pdf_writer_keep_page()`・`pdf_writer_begin_page_over()`・`pdf_document_get_revision()`・`pdf_document_signed()`・`pdf_document_encrypted()`（`update.c`）。

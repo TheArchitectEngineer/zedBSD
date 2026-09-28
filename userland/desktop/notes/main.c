@@ -27,8 +27,11 @@
  *
  * Ctrl+N adds a page after the current one (one process is one notebook,
  * so a new page is what "new" makes).  FILE is opened from the edit data
- * its PDF carries (save.c); a PDF Notes cannot edit -- another program's,
- * or one whose pages another program changed -- is left as it is and a
+ * its PDF carries (save.c).  Another program's PDF -- or a notebook whose
+ * pages another program changed -- is written on: its pages are drawn under
+ * the strokes (libpdf draws them into the background picture) and each
+ * save adds the strokes to the file as a new revision, leaving its own
+ * bytes as they were.  An encrypted or signed PDF is left as it is and a
  * new notebook starts.  Ctrl+O has no file chooser to open another file
  * with yet, and says so.
  *
@@ -66,6 +69,9 @@
 
 /* How long a status stays on the toolbar, in milliseconds. */
 #define MAIN_STATUS_MS		4000U
+
+/* How long what Notes found when it opened a PDF (written on, refused) stays, in milliseconds. */
+#define MAIN_NOTICE_MS		10000U
 
 /* The evdev codes of the keys Notes handles itself. */
 #define MAIN_KEY_ESC		1U
@@ -138,6 +144,21 @@ struct notes_app {
 	float picture_scale;
 	size_t picture_strokes;
 
+	/*
+	 * The background of a page of the PDF the notebook writes on: the
+	 * drawing libpdf made of one page of the base (NULL: none yet), which
+	 * page it is, and whether drawing it failed; and the page, the scale and
+	 * the size the renderer's background picture was last drawn for (it is
+	 * drawn again when any of them changes).
+	 */
+	struct pdf_display_list *background_list;
+	size_t background_source;
+	int background_failed;
+	const struct notes_page *background_page;
+	float background_scale;
+	uint32_t background_width;
+	uint32_t background_height;
+
 	/* The pen over the window: whether it is there, its place (surface pixels) and its source (NOTES_SOURCE_*). */
 	int hover;
 	float hover_x;
@@ -195,6 +216,8 @@ struct notes_app {
 };
 
 static int app_start_document(struct notes_app *app, const char *file);
+static const char *app_opened_name(unsigned opened);
+static int app_background(struct notes_app *app, const struct notes_page *page, float scale);
 static int app_new_path(char *path, size_t size);
 static int app_make_folders(const char *path);
 static void app_set_title(struct notes_app *app);
@@ -410,6 +433,7 @@ main(
 	notes_ui_close(&app.ui);
 	notes_frame_free(&app.frame);
 	notes_frame_free(&app.page_frame);
+	pdf_display_list_destroy(app.background_list);
 	notes_renderer_close(&app.renderer);
 	notes_window_close(&app.window);
 	notes_journal_destroy(app.document.journal);
@@ -436,6 +460,8 @@ app_start_document(
 	const char *slash;
 	const char *cwd;
 	size_t records;
+	unsigned opened;
+	const char *kind;
 	int written;
 	int exists;
 	int found;
@@ -474,9 +500,18 @@ app_start_document(
 			found = 1;
 	}
 
-	/* A journal rebuilds the notebook as it was when Notes last ran. */
+	/* A journal rebuilds the notebook as it was when Notes last ran; one written on a PDF gets that PDF back from the file. */
 	if (found) {
 		error = notes_journal_recover(journal_path, &app->document, recovered_path, sizeof(recovered_path), &records);
+		if (error == 0) {
+			error = notes_attach_base(recovered_path, &app->document);
+			if (error != 0) {
+				printf("NOTES RECOVER base error=%d path=%s\n", error, recovered_path);
+				notes_document_free(&app->document);
+			}
+		}
+
+		/* The recovered notebook, or the failure that leaves the file to be opened instead. */
 		if (error == 0) {
 			memcpy(app->path, recovered_path, strlen(recovered_path) + 1U);
 			printf("NOTES RECOVER records=%lu pages=%lu strokes=%lu path=%s\n", (unsigned long)records,
@@ -494,23 +529,34 @@ app_start_document(
 	if (!found && app->path[0] != '\0')
 		exists = stat(app->path, &status);
 
-	/* A file that is there but has no journal is opened from its edit data. */
+	/* A file that is there but has no journal is opened: a notebook from its edit data, another PDF as the background. */
 	if (exists == 0) {
-		error = notes_open_pdf(app->path, &app->document);
+		error = notes_open_pdf(app->path, &app->document, &opened);
 		if (error == 0) {
 			found = 1;
-			printf("NOTES OPEN pages=%lu strokes=%lu path=%s\n", (unsigned long)app->document.page_count,
-			       (unsigned long)notes_document_stroke_total(&app->document), app->path);
+			kind = app_opened_name(opened);
+			printf("NOTES OPEN pages=%lu strokes=%lu kind=%s path=%s\n", (unsigned long)app->document.page_count,
+			       (unsigned long)notes_document_stroke_total(&app->document), kind, app->path);
+
+			/* Writing on another program's PDF is said once. */
+			if (opened == NOTES_OPENED_FOREIGN)
+				(void)snprintf(app->status, sizeof(app->status), "Writing on the PDF; it stays as it was under your ink");
+			else if (opened == NOTES_OPENED_CHANGED)
+				(void)snprintf(app->status, sizeof(app->status), "Pages changed by another program are now background");
+			if (opened == NOTES_OPENED_FOREIGN || opened == NOTES_OPENED_CHANGED)
+				app->status_until = notes_clock() + MAIN_NOTICE_MS;
 		} else {
-			/* A file Notes cannot edit is left as it is, and a new notebook starts. */
+			/* A file Notes cannot write on is left as it is, and a new notebook starts. */
 			printf("NOTES OPEN failed error=%d path=%s\n", error, app->path);
-			if (error == ENOENT)
-				(void)snprintf(app->status, sizeof(app->status), "Not a Notes PDF; started a new note");
-			else if (error == ESTALE)
-				(void)snprintf(app->status, sizeof(app->status), "Changed by another program; started a new note");
+			if (error == EACCES)
+				(void)snprintf(app->status, sizeof(app->status), "The PDF is encrypted; Notes cannot write on it. Started a new note");
+			else if (error == EPERM)
+				(void)snprintf(app->status, sizeof(app->status), "The PDF is signed; Notes does not write on it. Started a new note");
+			else if (error == ENOTSUP)
+				(void)snprintf(app->status, sizeof(app->status), "The PDF uses features Notes cannot read yet. Started a new note");
 			else
 				(void)snprintf(app->status, sizeof(app->status), "Cannot open the PDF; started a new note");
-			app->status_until = notes_clock() + MAIN_STATUS_MS;
+			app->status_until = notes_clock() + MAIN_NOTICE_MS;
 			app->path[0] = '\0';
 		}
 	}
@@ -541,6 +587,144 @@ app_start_document(
 	/* Succeeded: the notebook is ready. */
 	app->changed_at = notes_clock();
 	return 0;
+}
+
+/* Names what notes_open_pdf() found, for the tests' line. */
+static const char *
+app_opened_name(
+	unsigned opened)
+{
+	/* Each kind by its word. */
+	switch (opened) {
+	case NOTES_OPENED_ANNOTATED:
+		return "annotated";
+	case NOTES_OPENED_FOREIGN:
+		return "foreign";
+	case NOTES_OPENED_CHANGED:
+		return "changed";
+	default:
+		break;
+	}
+
+	/* A notebook Notes saved. */
+	return "notes";
+}
+
+/*
+ * Draws the background picture of a page of the PDF the notebook writes on
+ * at a scale, into the renderer's background image at the page picture's
+ * size, and tells whether it is there to show (0 when the page cannot be
+ * drawn).
+ *
+ * libpdf interprets the base's page once into a display list, which is kept
+ * while the page is shown, and rasterizes it on the CPU over white; the
+ * picture is drawn again only for another page, scale or size.
+ */
+static int
+app_background(
+	struct notes_app *app,
+	const struct notes_page *page,
+	float scale)
+{
+	struct pdf_display_list *list;
+	unsigned char *target;
+	uint32_t *pixels;
+	uint64_t started;
+	uint64_t rendered;
+	uint64_t rasterized;
+	uint32_t width;
+	uint32_t height;
+	size_t pitch;
+	size_t count;
+	size_t index;
+	size_t row;
+	int error;
+
+	/* Nothing to draw without the PDF. */
+	if (app->document.base == NULL)
+		return 0;
+
+	/* The picture's size, the page picture's. */
+	width = app->renderer.page_width;
+	height = app->renderer.page_height;
+	if (width == 0U || height == 0U)
+		return 0;
+
+	/* A picture drawn for the page at the scale and the size stands. */
+	if (app->background_page == page &&
+	    app->background_scale == scale &&
+	    app->background_width == width &&
+	    app->background_height == height &&
+	    app->renderer.background_width == width &&
+	    app->renderer.background_height == height)
+		return 1;
+
+	/* The base's page as a display list, made once while the page is shown. */
+	started = app_microseconds();
+	if (app->background_list == NULL || app->background_source != page->source) {
+		pdf_display_list_destroy(app->background_list);
+		app->background_list = NULL;
+		app->background_failed = 0;
+		app->background_source = page->source;
+		error = pdf_page_render(app->document.base, page->source, &list);
+		if (error != 0) {
+			printf("NOTES BACKGROUND failed source=%lu error=%d\n", (unsigned long)page->source, error);
+			fflush(stdout);
+			app->background_failed = 1;
+			return 0;
+		}
+
+		/* The drawing is kept while the page is shown. */
+		app->background_list = list;
+	}
+
+	/* A page that could not be drawn stays white. */
+	if (app->background_failed)
+		return 0;
+	rendered = app_microseconds();
+
+	/* The picture on the CPU: white, then the page over it. */
+	count = (size_t)width * (size_t)height;
+	pixels = malloc(count * sizeof(*pixels));
+	if (pixels == NULL)
+		return 0;
+	for (index = 0; index < count; index++)
+		pixels[index] = 0xffffffffU;
+	error = pdf_display_list_rasterize(app->background_list, pixels, width, width, height, (double)scale, 0.0, 0.0);
+	if (error != 0) {
+		printf("NOTES BACKGROUND raster failed source=%lu error=%d\n", (unsigned long)page->source, error);
+		free(pixels);
+		return 0;
+	}
+
+	/* When the picture was drawn, for the log. */
+	rasterized = app_microseconds();
+
+	/* The renderer's image of the size, which the picture's rows are copied into. */
+	error = (int)notes_renderer_background(&app->renderer, width, height, &target, &pitch);
+	if (error != (int)VK_SUCCESS || target == NULL) {
+		printf("NOTES BACKGROUND image failed error=%d\n", error);
+		free(pixels);
+		return 0;
+	}
+
+	/* Copies each row into the image, whose rows may be longer. */
+	for (row = 0; row < height; row++)
+		memcpy(target + row * pitch, pixels + row * width, (size_t)width * sizeof(*pixels));
+	free(pixels);
+
+	/* The picture stands for the page at the scale (logged for the tests). */
+	app->background_page = page;
+	app->background_scale = scale;
+	app->background_width = width;
+	app->background_height = height;
+	printf("NOTES BACKGROUND source=%lu items=%lu flags=%u size=%ux%u render_us=%lu raster_us=%lu\n", (unsigned long)page->source,
+	       (unsigned long)app->background_list->count, app->background_list->flags, width, height,
+	       (unsigned long)(rendered - started), (unsigned long)(rasterized - rendered));
+	fflush(stdout);
+
+	/* Succeeded: the background is in the image. */
+	return 1;
 }
 
 /* Writes the path of a new notebook: ~/Documents/Notes/note-YYYYMMDD-HHMMSS.pdf. */
@@ -1208,7 +1392,7 @@ app_draw(
 	if (app->toolbar_dirty) {
 		app_state(app, &state);
 		notes_renderer_toolbar(&app->renderer, &pixels, &pitch);
-		notes_ui_draw(&app->ui, pixels, pitch, app->renderer.extent.width, NOTES_TOOLBAR_HEIGHT, &state);
+		notes_ui_draw(&app->ui, pixels, pitch, app->renderer.extent.width, NOTES_TOOLBAR_IMAGE_HEIGHT, &state);
 		notes_menu_refresh(&app->window, &state);
 		app->toolbar_dirty = 0;
 
@@ -1260,7 +1444,7 @@ app_draw(
 
 	/* The toolbar across the top, and the pen's mark over it. */
 	notes_frame_clip(&app->frame, 0, 0.0f, 0.0f, 0.0f, 0.0f);
-	notes_frame_texture(&app->frame, NOTES_TEXTURE_TOOLBAR, 0.0f, 0.0f, (float)app->renderer.extent.width, (float)NOTES_TOOLBAR_HEIGHT);
+	notes_frame_texture(&app->frame, NOTES_TEXTURE_TOOLBAR, 0.0f, 0.0f, (float)app->renderer.extent.width, (float)NOTES_TOOLBAR_IMAGE_HEIGHT);
 	app_mark(app, &view, 1);
 
 	/* A frame that ran out of memory is not drawn. */
@@ -1335,6 +1519,7 @@ app_page_frame(
 	struct notes_view origin;
 	size_t first;
 	size_t index;
+	int drawn;
 	int error;
 
 	/* The picture must be drawn from the start when anything but strokes on top changed. */
@@ -1360,13 +1545,24 @@ app_page_frame(
 	origin.y = 0.0f;
 	origin.scale = scale;
 
-	/* A cleared picture starts with the white page; one added to starts at its first missing stroke. */
+	/*
+	 * A cleared picture starts with the white page, and on a page of the
+	 * PDF the notebook writes on, with that page drawn over it; one added to
+	 * starts at its first missing stroke.
+	 */
 	notes_frame_begin(&app->page_frame);
 	first = app->picture_strokes;
 	if (*clear) {
 		first = 0;
 		app->picture_strokes = 0;
 		notes_frame_rect(&app->page_frame, 0.0f, 0.0f, page->width * scale, page->height * scale, 0xffffffffU);
+		drawn = 0;
+		if (page->origin == NOTES_ORIGIN_OVER)
+			drawn = app_background(app, page, scale);
+		if (drawn) {
+			notes_frame_texture(&app->page_frame, NOTES_TEXTURE_BACKGROUND, 0.0f, 0.0f,
+					    (float)app->renderer.background_width, (float)app->renderer.background_height);
+		}
 	}
 
 	/* The strokes, bottom first, clipped to the page. */

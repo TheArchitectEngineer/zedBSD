@@ -81,7 +81,8 @@ notes_document_init(
 }
 
 /*
- * Frees the pages, their strokes and the undo history.
+ * Frees the pages, their strokes, the undo history and the PDF the
+ * notebook writes on.
  *
  * The journal is not the document's to free.
  */
@@ -100,6 +101,9 @@ notes_document_free(
 	for (index = 0; index < document->page_count; index++)
 		notes_page_free(document->pages[index]);
 	free(document->pages);
+
+	/* The PDF the notebook writes on, if any. */
+	pdf_document_close(document->base);
 
 	/* Nothing is owned any more. */
 	memset(document, 0, sizeof(*document));
