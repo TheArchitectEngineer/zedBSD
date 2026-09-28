@@ -235,6 +235,21 @@ struct css_value {
 	const struct css_content *content;
 	const struct css_shadow_list *shadows;
 	const struct css_declared_inset *inset;
+	const struct css_track_list *tracks;
+};
+
+/* One declared grid track (ws074-p072): its kind, its size (a length, or the fr share) and minmax()'s minimum. */
+struct css_declared_track {
+	int kind;
+	struct css_value size;
+	int minimum_kind;
+	struct css_value minimum;
+};
+
+/* A declared grid template, kept in the parse's arena (none is an empty list). */
+struct css_track_list {
+	struct css_declared_track tracks[CSS_TRACKS];
+	size_t count;
 };
 
 /* A declared clip-path: inset(): its four declared lengths, top, right, bottom, left (ws074-p062). */
@@ -272,7 +287,9 @@ enum css_value_kind {
 	CSS_VALUE_UNSET,
 	CSS_VALUE_CONTENT,
 	CSS_VALUE_SHADOWS,
-	CSS_VALUE_INSET
+	CSS_VALUE_INSET,
+	CSS_VALUE_TRACKS,
+	CSS_VALUE_GRID_LINE
 };
 
 /* The units a declared length can have (converted to pixels by the cascade). */
@@ -387,6 +404,12 @@ enum css_property {
 	CSS_PROP_OUTLINE_OFFSET,
 	CSS_PROP_CLIP_PATH,
 	CSS_PROP_DIRECTION,
+	CSS_PROP_GRID_TEMPLATE_COLUMNS,
+	CSS_PROP_GRID_TEMPLATE_ROWS,
+	CSS_PROP_GRID_COLUMN_START,
+	CSS_PROP_GRID_COLUMN_END,
+	CSS_PROP_GRID_ROW_START,
+	CSS_PROP_GRID_ROW_END,
 	CSS_PROP_COUNT
 };
 

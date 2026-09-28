@@ -184,12 +184,14 @@ layout_auto_margins(
 	/*
 	 * Without an auto margin, a box in a right-to-left containing block
 	 * keeps its right margin and the left one takes the rest (ws074-p073):
-	 * the box stands at the right.  A flex item's margins are its
+	 * the box stands at the right.  A flex or grid item's margins are its
 	 * container's to give.
 	 */
 	rtl = 0;
-	if (box->parent != NULL && box->parent->style.direction == CSS_DIRECTION_RTL && box->parent->style.display != CSS_DISPLAY_FLEX)
+	if (box->parent != NULL && box->parent->style.direction == CSS_DIRECTION_RTL)
 		rtl = 1;
+	if (rtl && (box->parent->style.display == CSS_DISPLAY_FLEX || box->parent->style.display == CSS_DISPLAY_GRID))
+		rtl = 0;
 	if (rtl && !left_auto && !right_auto && box->floating == CSS_FLOAT_NONE && !box->atomic && !box->out_of_flow) {
 		box->margin[CSS_LEFT] = containing_width - box->width - frame - box->margin[CSS_RIGHT];
 		return;
@@ -218,9 +220,11 @@ block_content(
 	box->collapsed_top = box->margin[CSS_TOP];
 	box->collapsed_bottom = box->margin[CSS_BOTTOM];
 
-	/* The flex items, the lines, or the children. */
+	/* The flex items, the grid items, the lines, or the children. */
 	if (box->style.display == CSS_DISPLAY_FLEX) {
 		error = layout_flex(tree, box);
+	} else if (box->style.display == CSS_DISPLAY_GRID) {
+		error = layout_grid(tree, box);
 	} else if (box->children_inline) {
 		error = layout_inline(tree, box);
 	} else {
@@ -264,9 +268,13 @@ block_owns_context(
 		return 1;
 	if (box->style.display == CSS_DISPLAY_FLEX)
 		return 1;
+	if (box->style.display == CSS_DISPLAY_GRID)
+		return 1;
 
-	/* A flex item. */
+	/* A flex or grid item. */
 	if (box->parent->style.display == CSS_DISPLAY_FLEX)
+		return 1;
+	if (box->parent->style.display == CSS_DISPLAY_GRID)
 		return 1;
 
 	/* A block in its parent's context. */

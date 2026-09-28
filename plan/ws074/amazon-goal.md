@@ -84,7 +84,9 @@ master.md の決定の行）。この文書は [ws074-p067](phase067/phase.md) �
 | 9 | [ws074-p071](phase071/phase.md) | 大きな page の速さ（1.4 MB の HTML と 2 MB の CSS、guest で操作できる時間まで）、測って直す | **cleared**（2026-09-29。host の検索の `--render` 1.42 s → 0.86 s、再 layout 0.47 s → 0.035 s。guest の live の検索は Enter から 90 s → 30 s で style が揃う） |
 | 9a | [ws074-p073](phase073/phase.md) | direction の最小（rtl の flex row、`text-align: start`）。2026-09-29 main の判断で追加し、p072・p037 の前に | **cleared**（2026-09-29。検索 画素 68.83% → 77.16%、ink 20.06% → 34.68%。filter と結果の列が Chromium と同じ並び） |
 | 10 | ws074-p037（最小） | table の auto layout の最小（2026-09-29: p072 の後に） | 3 h |
-| 11 | ws074-p072 | grid の最小（`repeat(N,1fr)`、`grid-column`） | 3 h |
+| 11 | [ws074-p072](phase072/phase.md) | grid の最小（`repeat(N,1fr)`、`grid-column`）。2026-09-29 main の判断で p073 の後、p037 の前に | **cleared**（2026-09-29。トップ 画素 34.16% → 34.72%。最初の card の列は grid でなく p074・p075） |
+| 11a | ws074-p074 | block の幅の intrinsic の keyword（`max-content`・`min-content`・`fit-content`）。2026-09-29 main の判断で追加（トップの carousel） | 1 h |
+| 11b | ws074-p075 | container query の単位（cqi・cqw 等、要れば `@container` の最小）。2026-09-29 main の判断で追加（トップの card の高さ） | 2 h |
 | 12 | ws074-p027・p065 の一部 | RegExp、`Date`・Promise 等（Amazon の script の Uncaught を減らし、popover 等を動かす） | 6 h〜 |
 
 順の理由: 1 で検索できる（デモの操作）。2〜5 が見た目の大部分（外の CSS、変数と calc と @media、selector、flex）。6〜11 は細部と速さ。

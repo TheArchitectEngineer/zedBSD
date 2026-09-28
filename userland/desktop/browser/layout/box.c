@@ -833,8 +833,8 @@ box_fix_children(
 			has_inline = 1;
 	}
 
-	/* A flex container's children are flex items (ws074-p035). */
-	if (box->kind != LAYOUT_INLINE && box->style.display == CSS_DISPLAY_FLEX) {
+	/* A flex or grid container's children are its items (ws074-p035, ws074-p072). */
+	if (box->kind != LAYOUT_INLINE && (box->style.display == CSS_DISPLAY_FLEX || box->style.display == CSS_DISPLAY_GRID)) {
 		error = box_flex_items(tree, box);
 		return error;
 	}

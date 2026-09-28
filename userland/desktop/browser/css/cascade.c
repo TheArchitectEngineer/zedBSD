@@ -181,6 +181,7 @@ static void cascade_apply(struct css_engine *engine, struct css_style *style, co
 static void cascade_inherit(struct css_style *style, const struct css_style *parent, int property);
 static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
 static void cascade_shadows(struct css_engine *engine, struct css_style *style, const struct css_value *value);
+static void cascade_tracks(struct css_engine *engine, struct css_style *style, const struct css_value *value, struct css_track *tracks, int *count);
 static float cascade_font_size(struct css_engine *engine, const struct css_value *value, float parent_size);
 static int cascade_font_size_keyword(const struct css_value *value, int parent_keyword);
 static void cascade_families(struct css_style *style, const struct css_value *value);
@@ -2487,9 +2488,12 @@ cascade_apply(
 {
 	const struct css_value *value;
 	struct css_style initial;
+	struct css_grid_place *place;
 	int property;
 	int inherited;
 	int side;
+	int line;
+	int span;
 	int parent_keyword;
 	float parent_size;
 
@@ -2686,6 +2690,38 @@ cascade_apply(
 		break;
 	case CSS_PROP_DIRECTION:
 		style->direction = value->keyword;
+		break;
+	case CSS_PROP_GRID_TEMPLATE_COLUMNS:
+		cascade_tracks(engine, style, value, style->columns, &style->column_count);
+		break;
+	case CSS_PROP_GRID_TEMPLATE_ROWS:
+		cascade_tracks(engine, style, value, style->rows, &style->row_count);
+		break;
+	case CSS_PROP_GRID_COLUMN_START:
+	case CSS_PROP_GRID_COLUMN_END:
+	case CSS_PROP_GRID_ROW_START:
+	case CSS_PROP_GRID_ROW_END:
+		/* A line (0 for auto) or a span, at the start or the end of the column or the row. */
+		place = &style->grid_column;
+		if (property == CSS_PROP_GRID_ROW_START || property == CSS_PROP_GRID_ROW_END)
+			place = &style->grid_row;
+		line = 0;
+		span = 0;
+		if (value->kind == CSS_VALUE_GRID_LINE) {
+			line = (int)value->number;
+			span = value->keyword;
+		}
+
+		/* The start's line and span, or the end's. */
+		if (property == CSS_PROP_GRID_COLUMN_START || property == CSS_PROP_GRID_ROW_START) {
+			place->start = line;
+			place->start_span = span;
+		} else {
+			place->end = line;
+			place->end_span = span;
+		}
+
+		/* The place is set. */
 		break;
 	case CSS_PROP_WHITE_SPACE:
 		style->white_space = value->keyword;
@@ -3023,6 +3059,22 @@ cascade_inherit(
 	case CSS_PROP_DIRECTION:
 		style->direction = parent->direction;
 		break;
+	case CSS_PROP_GRID_TEMPLATE_COLUMNS:
+		memcpy(style->columns, parent->columns, sizeof(style->columns));
+		style->column_count = parent->column_count;
+		break;
+	case CSS_PROP_GRID_TEMPLATE_ROWS:
+		memcpy(style->rows, parent->rows, sizeof(style->rows));
+		style->row_count = parent->row_count;
+		break;
+	case CSS_PROP_GRID_COLUMN_START:
+	case CSS_PROP_GRID_COLUMN_END:
+		style->grid_column = parent->grid_column;
+		break;
+	case CSS_PROP_GRID_ROW_START:
+	case CSS_PROP_GRID_ROW_END:
+		style->grid_row = parent->grid_row;
+		break;
 	case CSS_PROP_WHITE_SPACE:
 		style->white_space = parent->white_space;
 		break;
@@ -3035,6 +3087,48 @@ cascade_inherit(
 	default:
 		break;
 	}
+}
+
+/*
+ * Converts a declared grid template into computed tracks (ws074-p072):
+ * lengths in pixels or percentages, fr shares, auto; none is no tracks.
+ */
+static void
+cascade_tracks(
+	struct css_engine *engine,
+	struct css_style *style,
+	const struct css_value *value,
+	struct css_track *tracks,
+	int *count)
+{
+	const struct css_declared_track *declared;
+	size_t index;
+
+	/* Anything but a list is no template. */
+	*count = 0;
+	if (value->kind != CSS_VALUE_TRACKS || value->tracks == NULL)
+		return;
+
+	/* Each track. */
+	for (index = 0; index < value->tracks->count && index < CSS_TRACKS; index++) {
+		declared = &value->tracks->tracks[index];
+		memset(&tracks[index], 0, sizeof(tracks[index]));
+		tracks[index].kind = declared->kind;
+		tracks[index].minimum.unit = CSS_UNIT_AUTO;
+
+		/* Its size: an fr share, or a length. */
+		if (declared->kind == CSS_TRACK_FR)
+			tracks[index].fr = declared->size.number;
+		if (declared->kind == CSS_TRACK_LENGTH)
+			tracks[index].size = cascade_length(engine, &declared->size, style->font_size);
+
+		/* Its minimum, when minmax() gave a length. */
+		if (declared->minimum_kind == CSS_TRACK_LENGTH)
+			tracks[index].minimum = cascade_length(engine, &declared->minimum, style->font_size);
+	}
+
+	/* The number of tracks. */
+	*count = (int)index;
 }
 
 /*

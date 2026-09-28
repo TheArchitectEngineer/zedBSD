@@ -75,7 +75,8 @@ enum css_display {
 	CSS_DISPLAY_TABLE_ROW,
 	CSS_DISPLAY_TABLE_CELL,
 	CSS_DISPLAY_FLEX,
-	CSS_DISPLAY_CONTENTS
+	CSS_DISPLAY_CONTENTS,
+	CSS_DISPLAY_GRID
 };
 
 /* The values of position. */
@@ -163,6 +164,40 @@ struct css_shadow {
 	float spread;
 	uint32_t color;
 	int inset;
+};
+
+/* The most tracks a grid template keeps (ws074-p072; the ones after are dropped). */
+#define CSS_TRACKS	24
+
+/* The kinds of grid track size: a length (or percentage), a share of the free space, or the content's. */
+enum css_track_kind {
+	CSS_TRACK_LENGTH,
+	CSS_TRACK_FR,
+	CSS_TRACK_AUTO
+};
+
+/*
+ * One track of a grid template (ws074-p072): its kind, its size (a
+ * length or percentage of the grid's content box, or its fr share) and
+ * the smallest it may be (minmax(); a length, or auto for none given).
+ */
+struct css_track {
+	int kind;
+	struct css_length size;
+	float fr;
+	struct css_length minimum;
+};
+
+/*
+ * Where a grid item goes on one axis (ws074-p072): its start and end,
+ * each a line (0 for auto; a negative line counts from the end) or a span
+ * (0 for none).
+ */
+struct css_grid_place {
+	int start;
+	int start_span;
+	int end;
+	int end_span;
 };
 
 /* The values of direction (ws074-p073): the inline base direction. */
@@ -432,6 +467,14 @@ struct css_style {
 	int align_content;
 	struct css_length row_gap;
 	struct css_length column_gap;
+
+	/* Grids (ws074-p072): the container's templates, then the item's places. */
+	struct css_track columns[CSS_TRACKS];
+	int column_count;
+	struct css_track rows[CSS_TRACKS];
+	int row_count;
+	struct css_grid_place grid_column;
+	struct css_grid_place grid_row;
 	float flex_grow;
 	float flex_shrink;
 	struct css_length flex_basis;

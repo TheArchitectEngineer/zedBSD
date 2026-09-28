@@ -51,7 +51,11 @@ enum values_shorthand {
 	SHORT_RADIUS_TOP_RIGHT,
 	SHORT_RADIUS_BOTTOM_RIGHT,
 	SHORT_RADIUS_BOTTOM_LEFT,
-	SHORT_OUTLINE
+	SHORT_OUTLINE,
+	SHORT_GRID_COLUMN,
+	SHORT_GRID_ROW,
+	SHORT_GRID_AREA,
+	SHORT_PLACE_ITEMS
 };
 
 /*
@@ -131,6 +135,14 @@ static int values_box_shadow(struct css_parse *parse, const struct css_token *to
 static int values_one_shadow(const struct css_token *tokens, size_t count, struct css_declared_shadow *shadow);
 static int values_outline(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_clip_path(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_track_list(const struct css_token *tokens, size_t count, struct css_track_list *list, int depth);
+static int values_one_track(const struct css_token *tokens, size_t count, struct css_declared_track *track);
+static int values_track_size(const struct css_token *tokens, size_t count, int *kind, struct css_value *size);
+static size_t values_split_at(const struct css_token *tokens, size_t count, int type, uint32_t delim);
+static int values_grid_line(const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_grid_pair(int start, int end, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_grid_area(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 
 /* The property names this pass knows. */
 static const struct values_name values_names[] = {
@@ -224,6 +236,12 @@ static const struct values_name values_names[] = {
 	{ "outline-offset", CSS_PROP_OUTLINE_OFFSET },
 	{ "clip-path", CSS_PROP_CLIP_PATH },
 	{ "direction", CSS_PROP_DIRECTION },
+	{ "grid-template-columns", CSS_PROP_GRID_TEMPLATE_COLUMNS },
+	{ "grid-template-rows", CSS_PROP_GRID_TEMPLATE_ROWS },
+	{ "grid-column-start", CSS_PROP_GRID_COLUMN_START },
+	{ "grid-column-end", CSS_PROP_GRID_COLUMN_END },
+	{ "grid-row-start", CSS_PROP_GRID_ROW_START },
+	{ "grid-row-end", CSS_PROP_GRID_ROW_END },
 	{ "-webkit-clip-path", CSS_PROP_CLIP_PATH },
 	{ "flex", SHORT_FLEX },
 	{ "-webkit-flex", SHORT_FLEX },
@@ -246,6 +264,10 @@ static const struct values_name values_names[] = {
 	{ "border-end-end-radius", SHORT_RADIUS_BOTTOM_RIGHT },
 	{ "border-end-start-radius", SHORT_RADIUS_BOTTOM_LEFT },
 	{ "outline", SHORT_OUTLINE },
+	{ "grid-column", SHORT_GRID_COLUMN },
+	{ "grid-row", SHORT_GRID_ROW },
+	{ "grid-area", SHORT_GRID_AREA },
+	{ "place-items", SHORT_PLACE_ITEMS },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -329,8 +351,8 @@ static const struct values_keyword values_display[] = {
 	{ "-webkit-inline-flex", CSS_DISPLAY_FLEX },
 	{ "-webkit-box", CSS_DISPLAY_BLOCK },
 	{ "-webkit-inline-box", CSS_DISPLAY_INLINE_BLOCK },
-	{ "grid", CSS_DISPLAY_BLOCK },
-	{ "inline-grid", CSS_DISPLAY_BLOCK },
+	{ "grid", CSS_DISPLAY_GRID },
+	{ "inline-grid", CSS_DISPLAY_GRID },
 	{ "flow-root", CSS_DISPLAY_BLOCK },
 	{ "contents", CSS_DISPLAY_CONTENTS },
 	{ NULL, 0 }
@@ -859,6 +881,9 @@ css_parse_property(
 	size_t *out_count)
 {
 	struct css_value value;
+	size_t starts[3];
+	size_t lengths[3];
+	size_t components;
 	int error;
 	int first;
 	int wide;
@@ -957,6 +982,18 @@ css_parse_property(
 		return values_corner_radius(parse, CSS_BOTTOM_LEFT, tokens, count, out, out_count);
 	case SHORT_OUTLINE:
 		return values_outline(parse, tokens, count, out, out_count);
+	case SHORT_GRID_COLUMN:
+		return values_grid_pair(CSS_PROP_GRID_COLUMN_START, CSS_PROP_GRID_COLUMN_END, tokens, count, out, out_count);
+	case SHORT_GRID_ROW:
+		return values_grid_pair(CSS_PROP_GRID_ROW_START, CSS_PROP_GRID_ROW_END, tokens, count, out, out_count);
+	case SHORT_GRID_AREA:
+		return values_grid_area(tokens, count, out, out_count);
+	case SHORT_PLACE_ITEMS:
+		/* align-items (the justify-items after it is not kept in this pass). */
+		components = values_components(tokens, count, starts, lengths, 3);
+		if (components == 0)
+			return EINVAL;
+		return css_parse_value_as(parse, CSS_PROP_ALIGN_ITEMS, tokens + starts[0], lengths[0], out, out_count);
 	default:
 		break;
 	}
@@ -1355,6 +1392,14 @@ values_single(
 	/* clip-path takes a shape. */
 	if (property == CSS_PROP_CLIP_PATH)
 		return values_clip_path(parse, tokens, count, value);
+
+	/* A grid template takes a list of tracks (ws074-p072). */
+	if (property == CSS_PROP_GRID_TEMPLATE_COLUMNS || property == CSS_PROP_GRID_TEMPLATE_ROWS)
+		return values_tracks(parse, tokens, count, value);
+
+	/* A grid line: auto, a number, or span and a number. */
+	if (property >= CSS_PROP_GRID_COLUMN_START && property <= CSS_PROP_GRID_ROW_END)
+		return values_grid_line(tokens, count, value);
 
 	/* The outline's width is a border's. */
 	if (property == CSS_PROP_OUTLINE_WIDTH)
@@ -2067,6 +2112,21 @@ values_wide_keyword(
 		values_add(out, made, CSS_PROP_OUTLINE_WIDTH, value);
 		values_add(out, made, CSS_PROP_OUTLINE_STYLE, value);
 		values_add(out, made, CSS_PROP_OUTLINE_COLOR, value);
+		return;
+	case SHORT_GRID_COLUMN:
+		/* A grid item's column lines. */
+		values_add(out, made, CSS_PROP_GRID_COLUMN_START, value);
+		values_add(out, made, CSS_PROP_GRID_COLUMN_END, value);
+		return;
+	case SHORT_GRID_ROW:
+		/* Its row lines. */
+		values_add(out, made, CSS_PROP_GRID_ROW_START, value);
+		values_add(out, made, CSS_PROP_GRID_ROW_END, value);
+		return;
+	case SHORT_GRID_AREA:
+		/* All four. */
+		for (first = CSS_PROP_GRID_COLUMN_START; first <= CSS_PROP_GRID_ROW_END; first++)
+			values_add(out, made, first, value);
 		return;
 	default:
 		break;
@@ -3797,5 +3857,400 @@ values_clip_path(
 	/* Succeeded: the inset is parsed. */
 	value->kind = CSS_VALUE_INSET;
 	value->inset = inset;
+	return 0;
+}
+
+/*
+ * Parses a grid template (ws074-p072): none, or a list of track sizes
+ * (lengths, percentages, fr, auto, min-content and max-content as auto,
+ * minmax(), fit-content() as auto, and repeat() with a count), the line
+ * names in brackets passed by; kept in the parse's arena.
+ */
+static int
+values_tracks(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	struct css_track_list *list;
+	int is_none;
+	int error;
+
+	/* The list, kept in the arena. */
+	list = wb_arena_zalloc(parse->arena, sizeof(*list));
+	if (list == NULL)
+		return ENOMEM;
+	value->kind = CSS_VALUE_TRACKS;
+	value->tracks = list;
+
+	/* none is the empty list. */
+	if (count == 1 && tokens[0].type == CSS_TOKEN_IDENT) {
+		is_none = css_ident_equal(&tokens[0], "none");
+		if (is_none)
+			return 0;
+	}
+
+	/* The tracks. */
+	error = values_track_list(tokens, count, list, 0);
+	if (error != 0)
+		return error;
+
+	/* An empty list is not a template. */
+	if (list->count == 0)
+		return EINVAL;
+
+	/* Succeeded: the template is parsed. */
+	return 0;
+}
+
+/* Appends the tracks of a track list (repeat() expanded, one level deep) to a list, up to its room. */
+static int
+values_track_list(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_track_list *list,
+	int depth)
+{
+	struct css_declared_track track;
+	size_t index;
+	size_t end;
+	size_t inner;
+	size_t comma;
+	size_t times;
+	size_t time;
+	size_t first;
+	size_t added;
+	int is_repeat;
+	int error;
+
+	/* Walks the list: whitespace, bracketed names, repeat() and tracks. */
+	index = 0;
+	while (index < count) {
+		/* Whitespace between tracks. */
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE) {
+			index++;
+			continue;
+		}
+
+		/* Line names in brackets are passed by. */
+		if (tokens[index].type == CSS_TOKEN_OPEN_SQUARE) {
+			while (index < count && tokens[index].type != CSS_TOKEN_CLOSE_SQUARE)
+				index++;
+			index++;
+			continue;
+		}
+
+		/* One component: a function with its arguments, or one token. */
+		end = index + 1U;
+		if (tokens[index].type == CSS_TOKEN_FUNCTION)
+			end = index + values_function_length(tokens + index, count - index);
+
+		/* repeat(count, tracks), expanded (auto-fill and auto-fit are not read in this pass). */
+		is_repeat = 0;
+		if (tokens[index].type == CSS_TOKEN_FUNCTION)
+			is_repeat = css_ident_equal(&tokens[index], "repeat");
+		if (is_repeat) {
+			if (depth > 0)
+				return EINVAL;
+			inner = values_skip_space(tokens, end, index + 1U);
+			if (inner >= end || tokens[inner].type != CSS_TOKEN_NUMBER || !tokens[inner].integer || tokens[inner].number < 1)
+				return EINVAL;
+			times = (size_t)tokens[inner].number;
+			comma = inner + 1U + values_split_at(tokens + inner + 1U, end - inner - 1U, CSS_TOKEN_COMMA, 0);
+			if (comma >= end)
+				return EINVAL;
+
+			/* The tracks once, then again until the count (or the room) runs out. */
+			first = list->count;
+			error = values_track_list(tokens + comma + 1U, end - comma - 2U, list, depth + 1);
+			if (error != 0)
+				return error;
+			added = list->count - first;
+			for (time = 1; time < times && added != 0; time++) {
+				for (inner = 0; inner < added && list->count < CSS_TRACKS; inner++) {
+					list->tracks[list->count] = list->tracks[first + inner];
+					list->count++;
+				}
+			}
+
+			/* On past the function. */
+			index = end;
+			continue;
+		}
+
+		/* One track. */
+		error = values_one_track(tokens + index, end - index, &track);
+		if (error != 0)
+			return error;
+		if (list->count < CSS_TRACKS) {
+			list->tracks[list->count] = track;
+			list->count++;
+		}
+
+		/* On past it. */
+		index = end;
+	}
+
+	/* Succeeded: the tracks are appended. */
+	return 0;
+}
+
+/* Parses one track: a size, minmax(minimum, size), or fit-content() (as auto). */
+static int
+values_one_track(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declared_track *track)
+{
+	size_t comma;
+	size_t start;
+	int is_minmax;
+	int is_fit;
+	int error;
+
+	/* No minimum unless minmax() gives one. */
+	memset(track, 0, sizeof(*track));
+	track->minimum_kind = CSS_TRACK_AUTO;
+
+	/* A function: minmax() or fit-content(). */
+	if (tokens[0].type == CSS_TOKEN_FUNCTION) {
+		is_fit = css_ident_equal(&tokens[0], "fit-content");
+		if (is_fit) {
+			track->kind = CSS_TRACK_AUTO;
+			return 0;
+		}
+
+		/* Any other function is not a track size. */
+		is_minmax = css_ident_equal(&tokens[0], "minmax");
+		if (!is_minmax || count < 3U)
+			return EINVAL;
+
+		/* The minimum before the comma, the size after it (without the closing parenthesis). */
+		comma = 1U + values_split_at(tokens + 1, count - 2U, CSS_TOKEN_COMMA, 0);
+		if (comma >= count - 1U)
+			return EINVAL;
+		start = values_skip_space(tokens, comma, 1U);
+		error = values_track_size(tokens + start, comma - start, &track->minimum_kind, &track->minimum);
+		if (error != 0)
+			return error;
+		start = values_skip_space(tokens, count - 1U, comma + 1U);
+		error = values_track_size(tokens + start, count - 1U - start, &track->kind, &track->size);
+		return error;
+	}
+
+	/* A plain size. */
+	error = values_track_size(tokens, count, &track->kind, &track->size);
+	return error;
+}
+
+/* Parses a track size: fr, auto (min-content, max-content), or a length or percentage. */
+static int
+values_track_size(
+	const struct css_token *tokens,
+	size_t count,
+	int *kind,
+	struct css_value *size)
+{
+	int same;
+
+	/* The size is one token, whitespace after it aside. */
+	while (count > 1U && tokens[count - 1U].type == CSS_TOKEN_WHITESPACE)
+		count--;
+	if (count != 1)
+		return EINVAL;
+	memset(size, 0, sizeof(*size));
+
+	/* A share of the free space. */
+	if (tokens[0].type == CSS_TOKEN_DIMENSION) {
+		same = css_ident_equal(&tokens[0], "fr");
+		if (same) {
+			if (tokens[0].number < 0)
+				return EINVAL;
+			*kind = CSS_TRACK_FR;
+			size->kind = CSS_VALUE_NUMBER;
+			size->number = (float)tokens[0].number;
+			return 0;
+		}
+	}
+
+	/* The content's size. */
+	if (tokens[0].type == CSS_TOKEN_IDENT) {
+		same = css_ident_equal(&tokens[0], "auto");
+		if (!same)
+			same = css_ident_equal(&tokens[0], "min-content");
+		if (!same)
+			same = css_ident_equal(&tokens[0], "max-content");
+		if (!same)
+			return EINVAL;
+		*kind = CSS_TRACK_AUTO;
+		return 0;
+	}
+
+	/* A length or a percentage. */
+	*kind = CSS_TRACK_LENGTH;
+	return values_length(&tokens[0], 0, size);
+}
+
+/* Finds the first token of a type (and a delimiter's character) outside functions and brackets; count when none. */
+static size_t
+values_split_at(
+	const struct css_token *tokens,
+	size_t count,
+	int type,
+	uint32_t delim)
+{
+	size_t index;
+	int depth;
+
+	/* Walks the tokens, keeping count of the open functions and parentheses. */
+	depth = 0;
+	for (index = 0; index < count; index++) {
+		if (tokens[index].type == CSS_TOKEN_FUNCTION || tokens[index].type == CSS_TOKEN_OPEN_PAREN) {
+			depth++;
+			continue;
+		}
+
+		/* A closing parenthesis ends one. */
+		if (tokens[index].type == CSS_TOKEN_CLOSE_PAREN) {
+			depth--;
+			continue;
+		}
+
+		/* A token of the type at the top. */
+		if (depth == 0 && tokens[index].type == type && (type != CSS_TOKEN_DELIM || tokens[index].delim == delim))
+			return index;
+	}
+
+	/* None. */
+	return count;
+}
+
+/*
+ * Parses a grid line (ws074-p072): auto, a line number (negative from the
+ * end), or span with a count; a named line is taken as auto.
+ */
+static int
+values_grid_line(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	size_t index;
+	int is_span;
+	int is_auto;
+
+	/* auto, and the forms this pass does not read, are auto. */
+	value->kind = CSS_VALUE_GRID_LINE;
+	value->number = 0;
+	value->keyword = 0;
+	while (count > 0 && tokens[count - 1U].type == CSS_TOKEN_WHITESPACE)
+		count--;
+	if (count == 0)
+		return EINVAL;
+	is_auto = 0;
+	if (tokens[0].type == CSS_TOKEN_IDENT)
+		is_auto = css_ident_equal(&tokens[0], "auto");
+	if (is_auto)
+		return 0;
+
+	/* span and a count (one when it has none). */
+	is_span = 0;
+	if (tokens[0].type == CSS_TOKEN_IDENT)
+		is_span = css_ident_equal(&tokens[0], "span");
+	if (is_span) {
+		value->keyword = 1;
+		index = values_skip_space(tokens, count, 1U);
+		if (index < count && tokens[index].type == CSS_TOKEN_NUMBER && tokens[index].integer && tokens[index].number >= 1)
+			value->keyword = (int)tokens[index].number;
+		return 0;
+	}
+
+	/* A line number other than zero. */
+	if (tokens[0].type == CSS_TOKEN_NUMBER && tokens[0].integer && tokens[0].number != 0) {
+		value->number = (float)tokens[0].number;
+		return 0;
+	}
+
+	/* A named line, taken as auto. */
+	return 0;
+}
+
+/* Parses grid-column or grid-row: a start line, then optionally a slash and an end line (auto when missing). */
+static int
+values_grid_pair(
+	int start,
+	int end,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value first;
+	struct css_value second;
+	size_t slash;
+	size_t index;
+	int error;
+
+	/* The start before the slash. */
+	slash = values_split_at(tokens, count, CSS_TOKEN_DELIM, '/');
+	error = values_grid_line(tokens, slash, &first);
+	if (error != 0)
+		return error;
+
+	/* The end after it, or auto. */
+	memset(&second, 0, sizeof(second));
+	second.kind = CSS_VALUE_GRID_LINE;
+	if (slash < count) {
+		index = values_skip_space(tokens, count, slash + 1U);
+		error = values_grid_line(tokens + index, count - index, &second);
+		if (error != 0)
+			return error;
+	}
+
+	/* The two longhands. */
+	values_add(out, made, start, &first);
+	values_add(out, made, end, &second);
+
+	/* Succeeded: both are declared. */
+	return 0;
+}
+
+/* Parses grid-area in its line form: row start / column start / row end / column end (the missing ones auto). */
+static int
+values_grid_area(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	static const int properties[4] = {
+		CSS_PROP_GRID_ROW_START, CSS_PROP_GRID_COLUMN_START, CSS_PROP_GRID_ROW_END, CSS_PROP_GRID_COLUMN_END
+	};
+	struct css_value line;
+	size_t start;
+	size_t slash;
+	size_t part;
+	int error;
+
+	/* Each part up to its slash. */
+	start = 0;
+	for (part = 0; part < 4U; part++) {
+		memset(&line, 0, sizeof(line));
+		line.kind = CSS_VALUE_GRID_LINE;
+		if (start < count) {
+			start = values_skip_space(tokens, count, start);
+			slash = start + values_split_at(tokens + start, count - start, CSS_TOKEN_DELIM, '/');
+			error = values_grid_line(tokens + start, slash - start, &line);
+			if (error != 0)
+				return error;
+			start = slash + 1U;
+		}
+
+		/* The part's longhand. */
+		values_add(out, made, properties[part], &line);
+	}
+
+	/* Succeeded: the four are declared. */
 	return 0;
 }
