@@ -1,10 +1,11 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし（2026-09-27 から subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
-Current Focused Goal: fg010 — Kei Operating System の Keiland（Wayland）を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる。
-Next（2026-09-28 の 2 回目の周期の終わりに整理）: 次の周期は N≈3〜4 で — WS074（p054 の headless の移行 → p055〜p057 部品化）、
-WS075（p006 は増分 6 まで実機で確認（feedback 0、p005 の 7 場面 0）。p005 の run の `scenes_shown` の失敗は BUG-085 に記録。5330 は電源の入れ直しの後 10.0.30.3（ssh の alias `solaris10-man` は 10.0.30.3 に更新済み））、Keiland（下の Outlook）、WS073（BUG-087 の wip.patch → BUG-051）。
+Active Queue: なし（subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
+Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
+Next（2026-09-28 の周期の終わりに整理）: ユーザーが実機で USB の demo の image（`build/demo-hdmi/hdd-image.img`、main ca74780e）を試す。
+次の周期: 実機の結果の反映、BUG-085・BUG-094 の再試験（`plan/ws075/tests/bug085-hw.sh`）、HDMI の lease の切り替えの黒、WS079 の p007 の残り・p008、
+touch の LCD の USB が見えたら descriptor の確認、Notes の host 試験の link の修正（p007 で reader が filter を要るようになった）。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -167,11 +168,13 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
-| ws075: HDMI を主な出力に（[hdmi-main-output.md](ws075/hdmi-main-output.md) の H1〜H4、ユーザーへの問い 6 つ）→ p007〜 | デモ（10/17）の 10 インチの LCD | 実機（5330、10.0.30.3） |
-| WS074: p031・p032（form の部品と文字の入力）→ システム環境設定の窓・widget で libbrowser を使う（design §19 の目的） | ブラウザ | 部品化は済み |
-| WS073: BUG-087（`bugs/BUG-087-wip.patch` と bug087.sh）→ BUG-051（sshd-session の SIGSEGV、2 回目の観測あり）→ BUG-085（i915 の compositor の停止） | 安定性 | 各 ticket |
-| Keiland: greeter の印の大きさ（48 px、ユーザーの判断）、terminal の選択の残り（scroll で追う・端の自動 scroll）、F-048（引き継ぎの黒）、F-050 の folder の merge | fg010 の仕上げ | — |
-| WS078 の残り: X11 の retro の program（zterm・zwm・zgears・zshell・Xzed）と installer（zedinst）の名前（ユーザーの判断待ち）、注釈・log の名前 | 改名 | — |
+| 実機の USB の demo の image の結果（splash の出る画面、eDP、greeter が LCD を満たすか、touch の USB、Notes・PDF Viewer の起動） | デモ | ユーザーが試験中 |
+| WS075: BUG-085・BUG-094 の再試験（gdb 無し、5 回以上）→ lease の切り替えで HDMI を点けたまま → BUG-058（zgears） | i915 の安定 | `bug085-hw.sh` |
+| WS079: p007 の残り（試験の script、ASCII85・LZW・RunLength、inline image、「一部を表示できない」の表示）→ p008（CFF・Type1・暗号化）→ p009（規約） | PDF | p007 の phase.md |
+| WS079: Notes の host 試験の link の修正、touch の LCD の descriptor の確認（USB が見えたら） | Notes・入力 | — |
+| WS074: p031・p032（form の部品）→ システム環境設定・widget で libbrowser | ブラウザ | 部品化は済み |
+| WS073: BUG-093（Noct の patch の mtime）、BUG-051 | 安定性・開発 | 各 ticket |
+| WS078 の残り: 注釈・log の名前 | 改名 | — |
 
 ## Tools
 
