@@ -243,9 +243,15 @@ ZEDBSD_CLANG_RESOURCE_HEADERS = $(wildcard $(ZEDBSD_CLANG_RESOURCE_DIR)/*.h)
 # megabyte and is not a second library -- the loader answers DT_NEEDED by
 # soname, so a program linked against this copy loads the /lib one it was
 # going to load anyway.
+#
+# The headers are named from the sysroot's manifest (toolchain/llvm/sysroot.mk)
+# rather than found in the sysroot: the sysroot is remade in the same make
+# that copies them when a header is renamed, and a list found in the old one
+# names files the new one no longer has (BUG-084).  Deferred, because that
+# file is read after this one.
 ZEDBSD_CLANG_SYSROOT_INCLUDE := $(ZEDBSD_EXTERNAL_SYSROOT)/usr/include
 ZEDBSD_CLANG_SYSROOT_HEADERS = \
-	$(shell find $(ZEDBSD_CLANG_SYSROOT_INCLUDE) -type f -name '*.h' 2>/dev/null)
+	$(filter %.h,$(ZEDBSD_SYSROOT_INCLUDE_NAMES))
 ZEDBSD_CLANG_LINK_OBJECTS := crt1.o libclang_rt.builtins.a
 #
 # The copy is the C library of this build, the one /lib holds: the external
@@ -265,7 +271,7 @@ ZEDBSD_PACKAGE_FILES += $(if $(filter clang,$(ZEDBSD_USER_PROGRAMS)),\
 	$(foreach header,$(ZEDBSD_CLANG_RESOURCE_HEADERS),\
 	 --file /usr/lib/clang/23/include/$(notdir $(header))=$(header)) \
 	$(foreach header,$(ZEDBSD_CLANG_SYSROOT_HEADERS),\
-	 --file /usr/include/$(patsubst $(ZEDBSD_CLANG_SYSROOT_INCLUDE)/%,%,$(header))=$(header)) \
+	 --file /usr/include/$(header)=$(ZEDBSD_CLANG_SYSROOT_INCLUDE)/$(header)) \
 	$(foreach object,$(ZEDBSD_CLANG_LINK_OBJECTS),\
 	 --file /usr/lib/$(object)=$(ZEDBSD_EXTERNAL_SYSROOT)/usr/lib/$(object)) \
 	--file /usr/lib/libc.so=$(ZEDBSD_CLANG_RUNTIME_LIBC) \
