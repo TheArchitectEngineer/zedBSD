@@ -13,4 +13,4 @@ LIBJPEG_COMPAT_SOURCES := userland/base/libjpeg-compat/error.c \
 	userland/base/libjpeg-compat/decompress.c
 
 LIBJPEG_COMPAT_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libjpeg-compat.so=$(BUILD)/dynamic/libjpeg-compat.so)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libjpeg-compat,JPEG interface for base programs,amd64,y,library,$(LIBJPEG_COMPAT_SOURCES),y,desktop,base/libjpeg-compat,,,shared-library,$(LIBJPEG_COMPAT_IMAGE_DATA),,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libjpeg-compat,JPEG interface for base programs,*,y,library,$(LIBJPEG_COMPAT_SOURCES),y,base,base/libjpeg-compat,,,shared-library,$(LIBJPEG_COMPAT_IMAGE_DATA),,lib))
