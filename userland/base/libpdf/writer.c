@@ -106,6 +106,7 @@ struct pdf_writer {
 };
 
 static int buffer_reserve(struct pdf_buffer *buffer, size_t extra);
+static void buffer_fail(struct pdf_buffer *buffer, int error);
 static void buffer_append(struct pdf_buffer *buffer, const void *data, size_t length);
 static void buffer_printf(struct pdf_buffer *buffer, const char *format, ...) __attribute__((format(printf, 2, 3)));
 static void buffer_append_number(struct pdf_buffer *buffer, double number);
@@ -743,6 +744,20 @@ buffer_reserve(
 	return 0;
 }
 
+/* Records a buffer's failure, keeping the first one when several occur. */
+static void
+buffer_fail(
+	struct pdf_buffer *buffer,
+	int error)
+{
+	/* An earlier failure is the one the paragraph reports. */
+	if (buffer->error != 0)
+		return;
+
+	/* Later appends to the buffer now do nothing. */
+	buffer->error = error;
+}
+
 /* Appends bytes to a buffer, or records why they could not be appended. */
 static void
 buffer_append(
@@ -759,7 +774,7 @@ buffer_append(
 	/* Makes room for the bytes. */
 	error = buffer_reserve(buffer, length);
 	if (error != 0) {
-		buffer->error = error;
+		buffer_fail(buffer, error);
 		return;
 	}
 
@@ -787,7 +802,7 @@ buffer_printf(
 
 	/* Records text that failed or did not fit as a failure; the writer only formats short tokens. */
 	if (length < 0 || (size_t)length >= sizeof(text)) {
-		buffer->error = EINVAL;
+		buffer_fail(buffer, EINVAL);
 		return;
 	}
 
@@ -812,7 +827,7 @@ buffer_append_number(
 	/* Formats the number with a fixed number of decimals. */
 	length = snprintf(text, sizeof(text), "%.4f", number);
 	if (length < 0 || (size_t)length >= sizeof(text)) {
-		buffer->error = EINVAL;
+		buffer_fail(buffer, EINVAL);
 		return;
 	}
 
@@ -896,7 +911,7 @@ buffer_append_date(
 	/* Breaks the time down in universal time. */
 	converted = gmtime_r(&when, &broken_down);
 	if (converted == NULL) {
-		buffer->error = EINVAL;
+		buffer_fail(buffer, EINVAL);
 		return;
 	}
 
@@ -1217,7 +1232,7 @@ write_page_objects(
 
 	/* A page whose content failed to be recorded cannot be saved. */
 	if (page->content.error != 0) {
-		file->error = page->content.error;
+		buffer_fail(file, page->content.error);
 		return;
 	}
 

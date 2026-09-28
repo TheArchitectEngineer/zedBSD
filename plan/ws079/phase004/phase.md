@@ -62,9 +62,13 @@ libpdf の書き出し（page、ベクタの path、画像、編集の metadata�
 | `/ID` | trailer | `/ID [<7A65644253442D703030342D74657374> <5F056D932FFB0A7AA50020F116191AC0>]` |
 | 描画 | `pdftoppm -r 110`（page 1 の上部） | 目視: 波の両端が細く中央が太い、端が丸い、y が下向き（波は page の上）、半透明の波が重なりで二重にならない、丸い点。画像 `build/ws035-shots/ws079-p004-20260928-stroke.png` |
 | amd64 の build | `make -j16 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/ws079-p004-amd64 build/ws079-p004-amd64/dynamic/libpdf.so` | exit 0、warning 0。`libpdf.so` は NEEDED libc.so だけ、`pdf_` の動的 symbol 18 個 |
-| pcat・pc98・rpi4 の link | `config/ci/config-{pcat,pc98,rpi4}.mk` で同じ target、BUILD は `build/ws079-p004-<platform>` | 3 つとも exit 0、warning 0。pcat・pc98 は Intel 80386、rpi4 は AArch64、どれも `pdf_` の動的 symbol 18 個（pc98 は soft-float で libc の `pow`・`acos` に `-z defs` で link できた） |
+| pcat・pc98・rpi4 の link | `config/ci/config-{pcat,pc98,rpi4}.mk` で同じ target、BUILD は `build/ws079-p004-<platform>` | 3 つとも exit 0、warning 0（`buffer_fail()` を足した後にも再 build）。pcat・pc98 は Intel 80386、rpi4 は AArch64、どれも `pdf_` の動的 symbol 18 個（pc98 は soft-float で libc の `pow`・`acos` に `-z defs` で link できた） |
 
-未実施: disk image の全体の build と guest での読み込み（libpdf を使う program がまだ無い）、QEMU・実機の確認（この Phase の範囲に無い）。
+未実施: disk image の全体の build（`plan/ws035/tests/build-zdesktop-image.sh build/ws079-p004-amd64` を始めたが止めた。guest harness の構成が
+lldb 入りの host の LLVM を `build/llvm-build` で configure し、install 先が共有の `build/llvm`（この worktree では main の `build/llvm` への symlink）
+だったため、共有の toolchain を書き換える前に止めた。共有の `build/llvm` の時刻は 2026-09-27 のままで変わっていない。image の build は、main の
+既存の image の dir で `libpdf.so` の差分だけを入れるか、lldb を含む LLVM が既に入った環境で行う）。guest での読み込み（libpdf を使う program が
+まだ無い）、QEMU・実機の確認（この Phase の範囲に無い）。
 最初の並列の build で pcat と pc98 が同じ `build/i386/sysroot` を同時に作って pc98 が失敗した（`stdint.h` が無い）。pcat の後に pc98 を走らせて解消（code の問題ではない）。
 
 ## 残り（p004 を cleared にする前）
