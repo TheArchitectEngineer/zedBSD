@@ -60,6 +60,8 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | ws075-p008 | 性能: 完了待ちを割込みへ（ws031-p044）、非同期の実行器（ws031-p045）、present mode と vsync（ws031-p027） | planning | p002 |
 | ws075-p009 | 安定: BUG-056・BUG-057（実機の zgears の止まり）ほか p002〜p008 で出た bug | planning | p002 |
 | ws075-p010 | 規約の全文との照合、統合回帰（最後） | planning | 全 Phase |
+| [ws075-p011](phase011/phase.md) | HDMI の主出力の実機の事前調査（[hdmi-main-output.md](hdmi-main-output.md) の H1）: EDID、点く mode、DVI、HDMI の前後の USB | cleared（2026-09-28。EDID は読める、native は 1920x1280。pipe B・DVI で 720p・1080p・1920x1280 を出力。touch の USB は 5330 に現れない。絵の目視は未実施） | — |
+| ws075-p012 | HDMI の主出力（H2）: `display=hdmi\|auto`・`display.mode=WxH[@R]`、resident を HDMI（port B・pipe B・DVI）で、無ければ eDP | planning | p011 |
 
 各 Phase の受け入れは、host の survey（`plan/ws075/tests/shader-survey/run.sh`）の該当の不足が 0 になることと、実機の capture
 （egltest・glxtest の場面の capture の scenario は p003 で足す）。
