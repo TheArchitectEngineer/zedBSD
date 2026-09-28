@@ -18,6 +18,7 @@
 #include <vulkan/vulkan.h>
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
+#include <tablet-unstable-v2-client-protocol.h>
 #include <keiland.h>
 
 #include "notes.h"
@@ -32,6 +33,9 @@
 #define NOTES_INPUTS		4096U
 #define NOTES_KEYS		64U
 #define NOTES_ACTIONS		32U
+
+/* The most tablet tools (a pen's tip and eraser end are two) Notes follows. */
+#define NOTES_TABLET_TOOLS	8U
 
 /* The most buttons the toolbar has. */
 #define NOTES_BUTTONS		32U
@@ -89,12 +93,47 @@ struct notes_key {
 	uint32_t modifiers;
 };
 
+struct notes_window;
+
+/*
+ * One tool of a tablet (tablet.c): its kind, what it can report, and the
+ * state its events build up until a frame turns it into input events.
+ *
+ * It lives from the seat's tool_added to the tool's removal or Notes' end.
+ */
+struct notes_tablet_tool {
+	struct notes_window *window;
+	struct zwp_tablet_tool_v2 *tool;
+
+	/* The kind (ZWP_TABLET_TOOL_V2_TYPE_*) and whether it reports pressure and tilt. */
+	uint32_t type;
+	int has_pressure;
+	int has_tilt;
+
+	/* Whether it is over the window, touching, in a contact Notes has started, and lifting in this frame. */
+	int near;
+	int touching;
+	int down;
+	int lifting;
+
+	/* Whether it moved in this frame, and whether its first barrel button is held. */
+	int moved;
+	int stylus;
+
+	/* Its place (surface pixels), pressure (0 to 1) and tilt (degrees). */
+	float x;
+	float y;
+	float pressure;
+	float tilt_x;
+	float tilt_y;
+};
+
 /*
  * The Wayland window, its seat and what arrived for the main loop.
  *
  * The pointer's left button is turned into NOTES_SOURCE_POINTER input
- * events here; a tablet (ws079-p003's zwp_tablet_tool_v2) adds pen and
- * eraser events with their pressure and tilt through notes_window_input().
+ * events (window.c); a tablet's tools add pen and eraser events with their
+ * pressure and tilt through notes_window_input() (tablet.c).
  */
 struct notes_window {
 	/* The connection and the globals bound from it. */
@@ -145,6 +184,12 @@ struct notes_window {
 	struct keiland_menu_service *menu_service;
 	struct keiland_menu *menu;
 	struct keiland_window_menu *window_menu;
+
+	/* The pen (tablet.c): the tablet manager and the seat's tablets (NULL without them), and the tools. */
+	struct zwp_tablet_manager_v2 *tablet_manager;
+	struct zwp_tablet_seat_v2 *tablet_seat;
+	struct notes_tablet_tool *tools[NOTES_TABLET_TOOLS];
+	unsigned tool_count;
 };
 
 /*
@@ -325,6 +370,11 @@ void notes_window_input(struct notes_window *window, const struct notes_input *i
 void notes_window_set_title(struct notes_window *window, const char *title);
 void notes_window_set_fullscreen(struct notes_window *window, int fullscreen);
 uint64_t notes_clock(void);
+
+/* The pen through the tablet protocol (tablet.c). */
+void notes_tablet_bind(struct notes_window *window, struct wl_registry *registry, uint32_t name);
+void notes_tablet_start(struct notes_window *window);
+void notes_tablet_close(struct notes_window *window);
 
 /* The menus (menu.c). */
 int notes_menu_open(struct notes_window *window);

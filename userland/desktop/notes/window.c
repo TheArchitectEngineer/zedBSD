@@ -13,9 +13,9 @@
  * held, and its release become NOTES_INPUT_DOWN, _MOTION and _UP events
  * from NOTES_SOURCE_POINTER with a fixed pressure.  Every motion is kept,
  * not only the last of a frame, because each one is a sample of the stroke.
- * A pen tablet (ws079-p003's zwp_tablet_tool_v2) is to feed the same queue
- * through notes_window_input() with the pen's own pressure and tilt, so
- * nothing past this file needs to change when it arrives.
+ * A pen tablet's tools (tablet.c, the tablet protocol) feed the same queue
+ * through notes_window_input() with the pen's own pressure and tilt; a pen
+ * without the tablet protocol arrives as the pointer.
  */
 
 #include "app.h"
@@ -150,6 +150,9 @@ notes_window_open(
 		return -1;
 	}
 
+	/* The seat's tablets, when the compositor has the tablet protocol. */
+	notes_tablet_start(window);
+
 	/* The surface. */
 	window->surface = wl_compositor_create_surface(window->compositor);
 	if (window->surface == NULL)
@@ -278,8 +281,9 @@ void
 notes_window_close(
 	struct notes_window *window)
 {
-	/* The menus, before the window they are shown on. */
+	/* The menus, before the window they are shown on, and the pen before the seat. */
 	notes_menu_close(window);
+	notes_tablet_close(window);
 
 	/* The keyboard, the pointer and the seat. */
 	if (window->keyboard != NULL)
@@ -419,7 +423,13 @@ window_global(
 		window->seat = wl_registry_bind(registry, name, &wl_seat_interface, version);
 		if (window->seat != NULL)
 			(void)wl_seat_add_listener(window->seat, &seat_listener, window);
+		return;
 	}
+
+	/* The tablet manager gives the pen with its pressure and tilt (tablet.c). */
+	match = strcmp(interface, "zwp_tablet_manager_v2");
+	if (match == 0)
+		notes_tablet_bind(window, registry, name);
 }
 
 /* A global going away does not matter to a window that already bound what it needs. */

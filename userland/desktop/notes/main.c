@@ -914,6 +914,9 @@ app_end_contact(
 	const struct notes_input *input)
 {
 	struct notes_stroke *stroke;
+	unsigned lowest;
+	unsigned highest;
+	size_t index;
 	int error;
 
 	/* The last sample of a stroke or an eraser drag. */
@@ -931,8 +934,20 @@ app_end_contact(
 			notes_stroke_free(stroke);
 			app_status(app, "Could not keep the stroke");
 		} else {
-			printf("NOTES STROKE page=%lu id=%u tool=%u points=%lu strokes=%lu\n", (unsigned long)app->page, stroke->id,
-			       stroke->tool, (unsigned long)stroke->point_count, (unsigned long)app->document.pages[app->page]->stroke_count);
+			/* The range of the stroke's pressure, for the tests' line. */
+			lowest = NOTES_PRESSURE_MAX;
+			highest = 0;
+			for (index = 0; index < stroke->point_count; index++) {
+				if (stroke->points[index].pressure < lowest)
+					lowest = stroke->points[index].pressure;
+				if (stroke->points[index].pressure > highest)
+					highest = stroke->points[index].pressure;
+			}
+
+			/* The tests' line. */
+			printf("NOTES STROKE page=%lu id=%u tool=%u points=%lu strokes=%lu pressure=%u..%u tilt=%d\n", (unsigned long)app->page,
+			       stroke->id, stroke->tool, (unsigned long)stroke->point_count, (unsigned long)app->document.pages[app->page]->stroke_count,
+			       lowest, highest, stroke->has_tilt);
 			fflush(stdout);
 			app_changed(app);
 		}
