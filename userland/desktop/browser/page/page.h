@@ -98,6 +98,7 @@ void page_set_viewport(struct page *page, int width, int height);
 void page_set_console(struct page *page, page_console console, void *context);
 const char *page_failure_reason(void);
 const struct img_bitmap *page_image_of(void *context, const struct dom_element *element);
+const struct img_bitmap *page_image_by_url(void *context, const struct vm_string *url);
 void page_images_release(struct page *page);
 int page_fetch(const char *base, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
 

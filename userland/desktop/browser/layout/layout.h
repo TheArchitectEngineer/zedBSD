@@ -58,6 +58,12 @@ enum layout_box_kind {
 typedef const struct img_bitmap *(*layout_image_lookup)(void *context, const struct dom_element *element);
 
 /*
+ * Finds the decoded image a style's URL names (a background image; NULL
+ * when it cannot be had), for the page to supply likewise.
+ */
+typedef const struct img_bitmap *(*layout_url_lookup)(void *context, const struct vm_string *url);
+
+/*
  * A piece of text on a line: a run of a text box's characters, with its
  * font, position and width.  x is from the line's left, and the baseline
  * is the line's.
@@ -142,6 +148,9 @@ struct layout_box {
 	/* A replaced box (an <img>), and the image it shows (NULL when it has none). */
 	int replaced;
 	const struct img_bitmap *image;
+
+	/* The background image the style names, decoded (NULL when there is none, or it could not be had). */
+	const struct img_bitmap *background;
 };
 
 /*
@@ -150,7 +159,7 @@ struct layout_box {
  * block formatting context's list of floats (float.c) and origin_x,
  * origin_y the content box of the block being laid out in that context's
  * coordinates.  image_lookup and image_context find the image of an
- * <img>.
+ * <img>, url_lookup a background image's.
  */
 struct layout_tree {
 	struct wb_arena arena;
@@ -163,6 +172,7 @@ struct layout_tree {
 	layout_unit origin_x;
 	layout_unit origin_y;
 	layout_image_lookup image_lookup;
+	layout_url_lookup url_lookup;
 	void *image_context;
 };
 
@@ -177,7 +187,7 @@ struct layout_context {
 };
 
 /* The layout (box.c, block.c, inline.c, float.c, position.c, replaced.c, dump.c, hit.c). */
-int layout_build(struct layout_tree *tree, struct css_engine *css, struct text_system *text, struct dom_document *document, layout_image_lookup image_lookup, void *image_context, int width, int height);
+int layout_build(struct layout_tree *tree, struct css_engine *css, struct text_system *text, struct dom_document *document, layout_image_lookup image_lookup, layout_url_lookup url_lookup, void *image_context, int width, int height);
 void layout_box_model(struct layout_box *box, layout_unit containing_width);
 void layout_auto_margins(struct layout_box *box, layout_unit containing_width);
 void layout_replaced_size(struct layout_box *box, layout_unit containing_width);

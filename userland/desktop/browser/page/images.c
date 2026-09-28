@@ -7,9 +7,10 @@
 
 /*
  * A page's images: the <img> elements' sources fetched and decoded before
- * the page is laid out, and kept by their location for the life of the
- * page (a source that could not be fetched or decoded is remembered as
- * failed, and not fetched again).  The fetch is synchronous in this pass;
+ * the page is laid out, and the background images when the layout asks
+ * for them, kept by their location for the life of the page (a source
+ * that could not be fetched or decoded is remembered as failed, and not
+ * fetched again).  The fetch is synchronous in this pass;
  * the asynchronous loader (ws074-p050) will fill the same table.
  */
 
@@ -24,7 +25,9 @@
 
 /*
  * One image of the page: the location its source resolved to (the key),
- * the decoded bitmap, and whether it failed.
+ * the decoded bitmap, and whether it failed.  The table holds pointers to
+ * these, so that a bitmap the layout and the display list point at does
+ * not move when the table grows.
  */
 struct page_image {
 	char *location;
@@ -36,6 +39,7 @@ static int images_walk(struct page *page, const struct dom_node *node, const str
 static int images_source(struct page *page, const struct dom_element *element, const struct vm_string *src, struct wb_buffer *location, int *found);
 static struct page_image *images_find(const struct page *page, const char *location);
 static int images_load(struct page *page, const struct dom_element *element, const struct vm_string *src);
+static int images_fetch(struct page *page, const char *location, struct page_image **loaded);
 
 /*
  * Starts a page's table of images empty.
@@ -45,7 +49,7 @@ page_images_init(
 	struct page *page)
 {
 	/* No image yet. */
-	wb_vector_init(&page->images, sizeof(struct page_image));
+	wb_vector_init(&page->images, sizeof(struct page_image *));
 }
 
 /*
@@ -113,6 +117,51 @@ page_image_of(
 }
 
 /*
+ * Finds the decoded image a style's URL names (resolved against the
+ * page's location), fetching and decoding it the first time, for the
+ * layout (its context is the page); NULL when it cannot be had.
+ */
+const struct img_bitmap *
+page_image_by_url(
+	void *context,
+	const struct vm_string *url)
+{
+	struct page *page;
+	struct page_image *image;
+	struct wb_buffer text;
+	struct wb_buffer location;
+	int error;
+
+	/* A page without a location resolves nothing. */
+	page = context;
+	if (page->base == NULL)
+		return NULL;
+
+	/* The URL's text. */
+	wb_buffer_init(&text);
+	wb_buffer_init(&location);
+	error = vm_string_to_utf8(url, &text);
+
+	/* Its location against the page's. */
+	if (error == 0)
+		error = page_resolve_location(page->base, wb_buffer_string(&text), &location);
+	wb_buffer_release(&text);
+	if (error != 0) {
+		wb_buffer_release(&location);
+		return NULL;
+	}
+
+	/* The image of that location, loaded now when it is new. */
+	error = images_fetch(page, wb_buffer_string(&location), &image);
+	wb_buffer_release(&location);
+	if (error != 0 || image->failed)
+		return NULL;
+
+	/* Succeeded: the image's bitmap. */
+	return &image->bitmap;
+}
+
+/*
  * Frees the page's images.
  */
 void
@@ -124,9 +173,10 @@ page_images_release(
 
 	/* Each image's location and pixels, then the table. */
 	for (index = 0; index < page->images.count; index++) {
-		image = wb_vector_at(&page->images, index);
+		image = *(struct page_image **)wb_vector_at(&page->images, index);
 		free(image->location);
 		img_bitmap_release(&image->bitmap);
+		free(image);
 	}
 
 	/* The table itself. */
@@ -226,7 +276,7 @@ images_find(
 
 	/* Each image of the table. */
 	for (index = 0; index < page->images.count; index++) {
-		image = wb_vector_at(&page->images, index);
+		image = *(struct page_image **)wb_vector_at(&page->images, index);
 		differs = strcmp(image->location, location);
 		if (differs == 0)
 			return image;
@@ -246,9 +296,7 @@ images_load(
 	const struct dom_element *element,
 	const struct vm_string *src)
 {
-	struct page_image image;
 	struct wb_buffer location;
-	struct wb_buffer bytes;
 	struct page_image *known;
 	int found;
 	int error;
@@ -261,37 +309,69 @@ images_load(
 		return error;
 	}
 
+	/* The location's image, fetched when it is new. */
+	error = images_fetch(page, wb_buffer_string(&location), &known);
+	wb_buffer_release(&location);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the image is in the table. */
+	return 0;
+}
+
+/*
+ * Finds a location's image in the table, or fetches and decodes it into
+ * a new entry (a failure to fetch or decode is remembered in the entry).
+ */
+static int
+images_fetch(
+	struct page *page,
+	const char *location,
+	struct page_image **loaded)
+{
+	struct page_image *image;
+	struct page_image *known;
+	struct wb_buffer bytes;
+	int error;
+
 	/* A location loaded before, well or not, is not fetched again. */
-	known = images_find(page, wb_buffer_string(&location));
+	known = images_find(page, location);
 	if (known != NULL) {
-		wb_buffer_release(&location);
+		*loaded = known;
 		return 0;
 	}
 
-	/* The table's entry for the location. */
-	memset(&image, 0, sizeof(image));
-	image.location = strdup(wb_buffer_string(&location));
-	wb_buffer_release(&location);
-	if (image.location == NULL)
+	/* The table's entry for the location, allocated alone so that its bitmap stays where it is while the table grows. */
+	image = calloc(1, sizeof(*image));
+	if (image == NULL)
 		return ENOMEM;
+
+	/* Its location. */
+	image->location = strdup(location);
+	if (image->location == NULL) {
+		free(image);
+		return ENOMEM;
+	}
 
 	/* The bytes, then the decoding; either failing marks the image failed. */
 	wb_buffer_init(&bytes);
-	error = page_fetch(page->base, image.location, &bytes, NULL);
+	error = page_fetch(page->base, image->location, &bytes, NULL);
 	if (error == 0)
-		error = img_decode(bytes.data, bytes.length, &image.bitmap);
+		error = img_decode(bytes.data, bytes.length, &image->bitmap);
 	wb_buffer_release(&bytes);
 	if (error != 0)
-		image.failed = 1;
+		image->failed = 1;
 
 	/* The entry goes into the table. */
 	error = wb_vector_push(&page->images, &image);
 	if (error != 0) {
-		free(image.location);
-		img_bitmap_release(&image.bitmap);
+		free(image->location);
+		img_bitmap_release(&image->bitmap);
+		free(image);
 		return error;
 	}
 
 	/* Succeeded: the image is in the table. */
+	*loaded = image;
 	return 0;
 }
