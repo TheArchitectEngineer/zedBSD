@@ -636,6 +636,7 @@ kern_usleep_range(unsigned min_us, unsigned max_us)
 	uint64_t base = 0, freq = 0, now = 0, nfreq = 0, earliest;
 	struct wait_queue wq;
 	struct spinlock lk;
+	unsigned long enabled;
 
 	(void)max_us;   /* upper bound is advisory; the tick coarsens the wake */
 	if (!kern_rtc_read_counter(&base, &freq) || freq == 0u)
@@ -653,11 +654,17 @@ kern_usleep_range(unsigned min_us, unsigned max_us)
 		if ((int64_t)(now - earliest) >= 0)
 			return;   /* min_us has elapsed */
 
-		/* Not yet elapsed: wait for the next tick via the existing wait queue. */
-		spin_lock(&lk);
+		/*
+		 * Not yet elapsed: wait for the next tick via the existing wait
+		 * queue.  The lock is taken with interrupts disabled, as the
+		 * locked sleep requires: the spinlock does not hold off
+		 * preemption, and a thread preempted between the lock and the
+		 * sleep may resume on another CPU, whose release traps.
+		 */
+		enabled = spin_lock_irqsave(&lk);
 		seq = waitq_sequence(&wq);
 		(void)waitq_sleep(&wq, &lk, seq, sched_ticks() + 1u, 0u);
-		spin_unlock(&lk);
+		spin_unlock_irqrestore(&lk, enabled);
 		/* woken (tick expiry or early): the loop re-checks the SAME earliest. */
 	}
 }

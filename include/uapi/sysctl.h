@@ -40,6 +40,12 @@
 #define HW_NCPU	1
 #define HW_NCPUONLINE	2
 #define HW_MEMORY_STATS	3
+/*
+ * hw.gpu.attaching (uint32_t): how many GPU devices a driver has attached but
+ * not yet published a node (/dev/gpuN) for or given up on.  The graphical
+ * login waits for /dev/gpu0 only while it is nonzero (BUG-092).
+ */
+#define HW_GPU_ATTACHING	4
 
 /* Firmware RAM and actually managed RAM are distinct. */
 #define MEMORY_STATS_VERSION 2U

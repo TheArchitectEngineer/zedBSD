@@ -102,6 +102,11 @@ spin_trylock(
 
 /*
  * Spins until the spinlock is acquired.
+ *
+ * It does not disable interrupts or preemption.  A thread uses it only where
+ * interrupts are already disabled; elsewhere spin_lock_irqsave() is used,
+ * since a holder preempted by the clock tick may resume on another CPU, and
+ * its release there traps.
  */
 void
 spin_lock(

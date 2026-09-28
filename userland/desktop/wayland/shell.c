@@ -22,6 +22,12 @@
  * DOCK_MS: the body's rectangle and the title bar's slide between their
  * places and the title bar's glass fades.
  *
+ * A triple click on a floating title bar sends the window to the back and
+ * gives the focus to the window now on top (ws079-p013, "go away"; the
+ * two-finger flick up on a touch screen is to do the same).  So that a
+ * triple click never docks first, a double click docks only when the time
+ * a third press has (DOUBLE_CLICK_MS after the second) is over.
+ *
  * The system bar has three zones: on the left the launcher, "Kei" and the
  * docked window; towards the right four virtual desktops; at the right edge
  * the network, the battery and the clock.  The network's icon opens its
@@ -37,6 +43,15 @@
  * Wiseview, and a tile's close button closes its window.  Super+Tab opens
  * it from the keyboard (p014): Tab and the arrows move the current tile,
  * Enter chooses it, Esc closes Wiseview.
+ *
+ * The edges' gestures (the 2026-09-28 decision at the end of
+ * plan/ws079/design-input-notes.md): from the top-left corner App Home,
+ * from the top-right corner Notes (corner.c, also over Home), from the
+ * bottom edge Wiseview (over Home the same swipe closes Home instead,
+ * home.c).  Each counts only when it starts in its corner or edge, so a
+ * stroke that starts inside a window never becomes one.  They work over a
+ * fullscreen window too (zwl_glass_edge_button): a gesture that shows
+ * something makes the output composed again while it shows.
  */
 
 #include "extras.h"
@@ -111,6 +126,9 @@
 
 /* The Super (Windows) key's bit, for Super+Tab (Wiseview). */
 #define MODIFIER_SUPER		0x40U
+
+/* App Home's corner, where its gesture starts over a fullscreen window (the same as home.c's). */
+#define HOME_EDGE_CORNER	28
 
 /* How far a Wiseview tile moves before it is dragged. */
 #define TILE_DRAG_START		8
@@ -211,6 +229,9 @@ static void window_dock(struct zwl_server *server, struct zwl_object *surface, i
 static void window_undock(struct zwl_server *server, struct zwl_object *surface, int32_t x, int32_t y, const char *via);
 static void window_configure(struct zwl_object *surface);
 static unsigned double_click(struct zwl_server *server, struct zwl_object *surface);
+static unsigned title_clicks(struct zwl_server *server, struct zwl_object *surface);
+static void dock_when_due(struct zwl_server *server);
+static void window_lower(struct zwl_server *server, struct zwl_object *surface, const char *via);
 static int bar_press(struct zwl_server *server);
 static float wiseview_progress(struct zwl_server *server);
 static void wiseview_settle(struct zwl_server *server, float from, float to);
@@ -224,6 +245,7 @@ static void draw_wiseview(struct zwl_server *server, VkCommandBuffer command, st
 static void draw_tile(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *tile, float progress, unsigned current, unsigned over);
 static int wiseview_button(struct zwl_server *server, uint32_t button, uint32_t state);
 static void wiseview_log(struct zwl_server *server);
+static int wiseview_edge_press(struct zwl_server *server, uint32_t button, uint32_t state);
 
 /* Whether where the desktops' pictures are has been logged (once, for the tests that click them). */
 static unsigned shell_desktops_logged;
@@ -355,6 +377,9 @@ zwl_glass_draw(
 	/* The network's menu, when open (network.c). */
 	zwl_network_draw_menu(server, command);
 
+	/* The top-right corner's hint, while its swipe is followed or settles (corner.c). */
+	zwl_corner_draw(server, command);
+
 	/* A frame of the animation. */
 	if (server->anim != NULL && server->log_frames)
 		printf("ZWL GLASS anim surface=%u docking=%u t=%.2f\n", server->anim->id, server->anim_docking, (double)animation_progress(server));
@@ -362,8 +387,9 @@ zwl_glass_draw(
 
 /*
  * Handles a pointer button in the glass look.  A press raises the window
- * under the pointer; on its title bar it starts a move, presses a button or
- * (twice) docks it; on the system bar it acts on the docked window.  A
+ * under the pointer; on its title bar it starts a move, presses a button,
+ * (twice) docks it or (three times) sends it to the back; on the system bar
+ * it acts on the docked window.  A
  * release ends a move, docking the window when it ends in the system bar.
  * Returns 1 when the button is zdesktop's, 0 when it goes to the client.
  */
@@ -375,7 +401,7 @@ zwl_glass_button(
 {
 	struct zwl_object *surface;
 	enum shell_hit hit;
-	unsigned second;
+	unsigned clicks;
 	int pressed;
 
 	/* The login screen takes every button (greeter.c). */
@@ -389,6 +415,15 @@ zwl_glass_button(
 		pressed = wiseview_button(server, button, state);
 		return pressed;
 	}
+
+	/*
+	 * The top-right corner's swipe to Notes (corner.c) takes a press that
+	 * starts in the corner, and that contact's release; before Home, so
+	 * that it works over Home too (its corner is not Home's).
+	 */
+	pressed = zwl_corner_button(server, button, state);
+	if (pressed)
+		return 1;
 
 	/* App Home takes the launcher, the top-left corner, and every button while it shows. */
 	pressed = zwl_home_button(server, button, state);
@@ -429,13 +464,9 @@ zwl_glass_button(
 	}
 
 	/* A left press at the bottom edge starts opening Wiseview. */
-	if (state != 0 && button == ZWL_BUTTON_LEFT && server->pointer_y >= (int32_t)server->height - WISEVIEW_EDGE) {
-		server->wiseview_gesture = 1;
-		server->wiseview_start_y = server->pointer_y;
-		server->wiseview_current = zwl_top_window(server);
-		server->dirty = 1;
+	pressed = wiseview_edge_press(server, button, state);
+	if (pressed)
 		return 1;
-	}
 
 	/* A release ends a move (docking in the system bar) or a pull. */
 	if (state == 0) {
@@ -503,10 +534,24 @@ zwl_glass_button(
 		return 1;
 	}
 
-	/* A second press on the title bar docks the window. */
-	second = double_click(server, surface);
-	if (second) {
-		window_dock(server, surface, surface->x, surface->y, "double-click");
+	/*
+	 * A second quick press on the title bar is a double click, which docks
+	 * the window once a third press can no longer come (dock_when_due).
+	 */
+	clicks = title_clicks(server, surface);
+	if (clicks == 2U) {
+		server->dock_waiting = surface;
+		server->dock_due_ms = server->click_ms + DOUBLE_CLICK_MS;
+		printf("ZWL GLASS dock waiting surface=%u\n", surface->id);
+		return 1;
+	}
+
+	/* A third quick press sends the window to the back instead. */
+	if (clicks >= 3U) {
+		server->dock_waiting = NULL;
+		server->click_surface = NULL;
+		server->click_count = 0;
+		window_lower(server, surface, "triple-click");
 		return 1;
 	}
 
@@ -562,6 +607,11 @@ zwl_glass_motion(
 		/* The motion is Wiseview's. */
 		return 1;
 	}
+
+	/* The top-right corner's swipe follows the pointer (corner.c). */
+	taken = zwl_corner_motion(server);
+	if (taken)
+		return 1;
 
 	/* App Home follows its gesture, and hears the pointer while it shows. */
 	taken = zwl_home_motion(server);
@@ -647,6 +697,145 @@ zwl_glass_motion(
 
 	/* Succeeded: the motion was zdesktop's. */
 	return 1;
+}
+
+/*
+ * Handles a pointer button over a fullscreen window, which the rest of the
+ * glass look does not see: only the edges' gestures (the top-left corner's
+ * App Home, the top-right corner's Notes, the bottom edge's Wiseview) and
+ * what they opened.  Returns 1 when the button is zdesktop's, 0 when it goes
+ * to the fullscreen window.
+ */
+int
+zwl_glass_edge_button(
+	struct zwl_server *server,
+	uint32_t button,
+	uint32_t state)
+{
+	float home;
+	int corner_press;
+	int pressed;
+
+	/* The login screen is never over a fullscreen window. */
+	if (server->greeter)
+		return 0;
+
+	/* Wiseview, opened from the bottom edge, takes every button. */
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
+		pressed = wiseview_button(server, button, state);
+		return pressed;
+	}
+
+	/* The top-right corner's swipe to Notes (corner.c). */
+	pressed = zwl_corner_button(server, button, state);
+	if (pressed)
+		return 1;
+
+	/* App Home, when it shows or follows a press of its own, has the button as in window mode. */
+	home = zwl_home_progress(server);
+	if (home > 0.0f ||
+	    server->home_to > 0.0f ||
+	    server->home_press ||
+	    server->home_page_press ||
+	    server->home_bottom_press) {
+		pressed = zwl_home_button(server, button, state);
+		return pressed;
+	}
+
+	/* A left press in the top-left corner may open App Home (the launcher is under the window). */
+	corner_press = 0;
+	if (state != 0 &&
+	    button == ZWL_BUTTON_LEFT &&
+	    server->pointer_x < HOME_EDGE_CORNER &&
+	    server->pointer_y < HOME_EDGE_CORNER)
+		corner_press = 1;
+	if (corner_press) {
+		pressed = zwl_home_button(server, button, state);
+		return pressed;
+	}
+
+	/* A left press at the bottom edge starts opening Wiseview. */
+	pressed = wiseview_edge_press(server, button, state);
+	if (pressed)
+		return 1;
+
+	/* Succeeded: anything else is the fullscreen window's. */
+	return 0;
+}
+
+/*
+ * Follows the edges' gestures over a fullscreen window.  Returns 1 when the
+ * motion is zdesktop's, 0 when it goes to the fullscreen window.
+ */
+int
+zwl_glass_edge_motion(
+	struct zwl_server *server)
+{
+	int taken;
+
+	/* The login screen is never over a fullscreen window. */
+	if (server->greeter)
+		return 0;
+
+	/* Wiseview follows its gesture (the output is composed again once it shows). */
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
+		server->dirty = 1;
+		return 1;
+	}
+
+	/* The top-right corner's swipe (corner.c). */
+	taken = zwl_corner_motion(server);
+	if (taken)
+		return 1;
+
+	/* App Home's gesture from the top-left corner (home.c). */
+	taken = zwl_home_motion(server);
+	if (taken)
+		return 1;
+
+	/* Succeeded: the motion is the fullscreen window's. */
+	return 0;
+}
+
+/*
+ * Tells whether an edge's gesture shows something over the windows (the
+ * top-right corner's hint, App Home, Wiseview), so that the output is
+ * composed even while the top window is fullscreen (display.c).
+ */
+int
+zwl_glass_overlay(
+	struct zwl_server *server)
+{
+	float progress;
+	int showing;
+
+	/* Only the glass look has the gestures. */
+	if (!server->glass)
+		return 0;
+
+	/* The top-right corner's hint (corner.c). */
+	showing = zwl_corner_showing();
+	if (showing)
+		return 1;
+
+	/* App Home, opening, open or closing. */
+	progress = zwl_home_progress(server);
+	if (progress > 0.0f || server->home_to > 0.0f)
+		return 1;
+
+	/* Wiseview's gesture once it has moved (a click at the bottom edge shows nothing). */
+	if (server->wiseview_gesture) {
+		progress = wiseview_progress(server);
+		if (progress > 0.0f)
+			return 1;
+	}
+
+	/* Wiseview, open or settling. */
+	if (server->wiseview > 0.0f || server->wiseview_moving)
+		return 1;
+
+	/* Nothing shows. */
+	return 0;
 }
 
 /*
@@ -760,6 +949,11 @@ zwl_glass_still(
 	/* Home, even closing. */
 	home = zwl_home_progress(server);
 	if (home > 0.0f)
+		return 0;
+
+	/* The top-right corner's hint (corner.c). */
+	open = (unsigned)zwl_corner_showing();
+	if (open)
 		return 0;
 
 	/* A see-through body shows what is under it through its glass. */
@@ -1294,6 +1488,12 @@ zwl_glass_tick(
 
 	/* App Home's animation, and the applications it started that have ended. */
 	zwl_home_tick(server);
+
+	/* The top-right corner's swipe: its time limit, its hint settling, and Notes being waited for (corner.c). */
+	zwl_corner_tick(server);
+
+	/* A double click on a title bar docks its window once a third press can no longer come. */
+	dock_when_due(server);
 
 	/* An open menu closes when what it belongs to changed (menu-shell.c). */
 	zwl_menu_tick(server);
@@ -2737,13 +2937,195 @@ double_click(
 	now = zwl_milliseconds();
 	if (server->click_surface == surface && now - server->click_ms < DOUBLE_CLICK_MS) {
 		server->click_surface = NULL;
+		server->click_count = 0;
 		return 1;
 	}
 
 	/* A first press. */
 	server->click_surface = surface;
 	server->click_ms = now;
+	server->click_count = 1;
 	return 0;
+}
+
+/*
+ * Counts this press on a window's floating title bar into the run of quick
+ * presses on it: 1 for a press that starts a run, 2 for the second of a
+ * double click, 3 for the third of a triple click.  A press more than
+ * DOUBLE_CLICK_MS after the one before, or on another window, starts a new
+ * run.
+ */
+static unsigned
+title_clicks(
+	struct zwl_server *server,
+	struct zwl_object *surface)
+{
+	uint64_t now;
+
+	/* A quick press after the one before on the same window goes on the run. */
+	now = zwl_milliseconds();
+	if (server->click_surface == surface && now - server->click_ms < DOUBLE_CLICK_MS) {
+		server->click_count++;
+	} else {
+		server->click_surface = surface;
+		server->click_count = 1;
+	}
+
+	/*
+	 * The time of this press is where the next one is measured from, so
+	 * the third press has DOUBLE_CLICK_MS after the second.
+	 */
+	server->click_ms = now;
+
+	/* Succeeded: how many presses the run has. */
+	return server->click_count;
+}
+
+/*
+ * Docks the window whose double click has waited out the time a third
+ * press had (DOUBLE_CLICK_MS after the second).
+ */
+static void
+dock_when_due(
+	struct zwl_server *server)
+{
+	struct zwl_object *surface;
+	uint64_t now;
+
+	/* Nothing waits to dock. */
+	surface = server->dock_waiting;
+	if (surface == NULL)
+		return;
+
+	/* A third press may still come. */
+	now = zwl_milliseconds();
+	if (now < server->dock_due_ms)
+		return;
+	server->dock_waiting = NULL;
+
+	/* A window that went away, docked, was hidden or left the desktop meanwhile stays as it is. */
+	if (surface->dead ||
+	    !surface->mapped ||
+	    surface->maximized ||
+	    surface->minimized ||
+	    surface->desktop != server->desktop) {
+		printf("ZWL GLASS dock dropped surface=%u\n", surface->id);
+		return;
+	}
+
+	/* The double click docks it; the log says how long after the second press. */
+	printf("ZWL GLASS double-click surface=%u waited_ms=%llu\n", surface->id, (unsigned long long)(now - (server->dock_due_ms - DOUBLE_CLICK_MS)));
+	window_dock(server, surface, surface->x, surface->y, "double-click");
+}
+
+/*
+ * Sends a window to the back of the stacking order and gives the focus to
+ * the window now on top.  Every other window keeps its place relative to
+ * the others.
+ */
+static void
+window_lower(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	const char *via)
+{
+	struct zwl_client *client;
+	struct zwl_object *other;
+	struct zwl_object *top;
+	uint64_t lowest;
+	unsigned found;
+	uint64_t next_client;
+	uint32_t next;
+	uint64_t focus_client;
+	uint32_t focus;
+
+	/* The lowest place any other mapped surface holds. */
+	found = 0;
+	lowest = 0;
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (other = client->objects; other != NULL; other = other->next) {
+			/* Only the other live mapped surfaces. */
+			if (other == surface ||
+			    other->kind != ZWL_SURFACE ||
+			    other->dead ||
+			    !other->mapped)
+				continue;
+
+			/* Below what was found so far. */
+			if (found && other->map_order >= lowest)
+				continue;
+			found = 1;
+			lowest = other->map_order;
+		}
+	}
+
+	/* A window alone stays where it is. */
+	if (!found) {
+		printf("ZWL GLASS lower client=%llu surface=%u via=%s next=none\n", (unsigned long long)surface->client->number, surface->id, via);
+		return;
+	}
+
+	/*
+	 * With no place free under the lowest (map orders start at 1), every
+	 * other mapped surface moves up one place, which keeps their order.
+	 */
+	if (lowest <= 1U) {
+		for (client = server->clients; client != NULL; client = client->next) {
+			for (other = client->objects; other != NULL; other = other->next) {
+				/* Only the other mapped surfaces hold a place. */
+				if (other == surface ||
+				    other->kind != ZWL_SURFACE ||
+				    !other->mapped)
+					continue;
+				other->map_order++;
+			}
+		}
+
+		/* The next window mapped or raised still comes above them all. */
+		server->map_order++;
+		lowest++;
+	}
+
+	/* Under every other window. */
+	surface->map_order = lowest - 1U;
+
+	/* The window now on top takes the focus. */
+	top = zwl_top_window(server);
+	server->front_surface = top;
+	zwl_seat_focus(server);
+	server->dirty = 1;
+
+	/*
+	 * The log names the window that came forward and the surface that has
+	 * the keyboard now, each as client:surface (surface numbers are each
+	 * client's own).
+	 */
+	next_client = 0;
+	next = 0;
+	if (top != NULL) {
+		next_client = top->client->number;
+		next = top->id;
+	}
+
+	/* The keyboard's surface, when there is one. */
+	focus_client = 0;
+	focus = 0;
+	if (server->focus != NULL) {
+		focus_client = server->focus->client->number;
+		focus = server->focus->id;
+	}
+
+	/* Written as one line for the tests. */
+	printf("ZWL GLASS lower client=%llu surface=%u via=%s next=%llu:%u focus=%llu:%u\n",
+	       (unsigned long long)surface->client->number,
+	       surface->id,
+	       via,
+	       (unsigned long long)next_client,
+	       next,
+	       (unsigned long long)focus_client,
+	       focus);
 }
 
 /*
@@ -2846,6 +3228,31 @@ wiseview_progress(
 		t = (float)elapsed / (float)WISEVIEW_MS;
 	t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
 	return server->wiseview_from + (server->wiseview_to - server->wiseview_from) * t;
+}
+
+/* Starts the swipe up from the bottom edge that opens Wiseview, for a left press in that edge.  Returns 1 when it started. */
+static int
+wiseview_edge_press(
+	struct zwl_server *server,
+	uint32_t button,
+	uint32_t state)
+{
+	/* Only a left press. */
+	if (state == 0 || button != ZWL_BUTTON_LEFT)
+		return 0;
+
+	/* Only in the bottom edge: a stroke that starts above it is not the gesture. */
+	if (server->pointer_y < (int32_t)server->height - WISEVIEW_EDGE)
+		return 0;
+
+	/* The gesture starts; the window on top is the current tile. */
+	server->wiseview_gesture = 1;
+	server->wiseview_start_y = server->pointer_y;
+	server->wiseview_current = zwl_top_window(server);
+	server->dirty = 1;
+
+	/* Succeeded: the press is the gesture's. */
+	return 1;
 }
 
 /* Starts Wiseview settling from one value to another (0 closed, 1 open). */

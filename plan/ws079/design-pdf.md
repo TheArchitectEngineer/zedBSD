@@ -13,7 +13,11 @@ ws079-p001 の設計のうち PDF の部分。pen の入力・gesture・Notes �
   model から作る輪郭（各点の法線方向に ±幅/2 を取った左右の辺と、両端の丸い cap、点の間の曲がりは round join 相当）を
   `m`・`l`・`c` と `h` で一つの閉じた path にして `f`（nonzero）で塗る。一つの stroke を一回の fill にするので、自己交差しても半透明が二重にならない。
   輪郭の計算は Notes と libpdf の writer の間で共有する（libpdf に `pdf_outline_stroke()` を置き、Notes の画面の描画も同じ輪郭を使う。
-  画面と PDF で形が変わらない）。
+  画面と PDF で形が変わらない）。main の判断（2026-09-28）により `pdf_outline_stroke()` が stroke の形の唯一の元で、次を行う（p004 で実装）:
+  sample の間を centripetal Catmull-Rom（Bezier の形に直し、Wang の上界で誤差 0.05 pt 以内の区間に切る）で補間して全 sample を通し、
+  筆圧は区間の両端の値の間に抑えた Catmull-Rom で補間する。角の外側の辺は角の点の周りの円弧（丸い join）、内側の辺は角の点を通る。
+  nonzero で塗ると、区間の台形・join の扇形・両端の cap の和そのものになり、角で細くならない。円弧の 1 本の弦で済む緩い曲がりは
+  二等分の法線の 1 点で済ませる。同じ入力には同じ輪郭を返す。design-input-notes.md §5.3 の `stroke-geometry.c` はこの輪郭を使う。
 - **色と透明**: `r g b rg`（DeviceRGB）。不透明でない道具（蛍光ペンなど）は page の `/Resources /ExtGState` に
   `<< /Type /ExtGState /ca a >>`（必要なら `/BM /Multiply`）を置き、`/GSn gs` で選ぶ。同じ (ca, BM) の組は一つの ExtGState を共有する。
   各 stroke は `q … Q` で囲まない（gs と rg を必要なときだけ出し、content を小さくする）。
@@ -21,7 +25,7 @@ ws079-p001 の設計のうち PDF の部分。pen の入力・gesture・Notes �
 - 画像（ws.md p004 の範囲）: JPEG は bytes をそのまま `/DCTDecode` の Image XObject に、それ以外は 8bit RGB（alpha は `/SMask` の 8bit Gray）。
 - stream は初めは無圧縮（libz-compat は inflate だけで deflate が無い）。libz-compat に deflate が入ったら content・編集 data を `/FlateDecode` に
   する。読む側は両方を受ける。
-- `/Info` に `/Producer (zedBSD Notes)`・`/CreationDate`・`/ModDate`。
+- `/Info` に `/Producer (Kei Notes)`・`/CreationDate`・`/ModDate`。
 
 ## 2. 詳細な編集 data の置き場所
 
@@ -33,9 +37,9 @@ ws079-p001 の設計のうち PDF の部分。pen の入力・gesture・Notes �
 | page の `/PieceInfo` | page ごとの私的な dictionary（PDF 1.3〜）で、他の viewer に見えない | 仕様上、`/LastModified` が page の変更より古いと中身は無効とみなされ、編集 tool が捨ててよい。page 間の共通 data（道具の一覧など）の置き場が無い。大きな binary は結局 stream になる |
 | XMP（`/Metadata`） | 文書の metadata の標準 | XML の text で、binary は base64 で 1.33 倍に膨らむ。多くの tool が XMP を書き直す・捨てる。検索・表示用の metadata の意味と合わない |
 
-**採用: 埋め込みの file の stream**。一つの stream（`/Type /EmbeddedFile /Subtype /application#2Fx-zedbsd-notes`）を、file 名
-`zedbsd-notes.bin` の file specification（`/Type /Filespec /F … /UF … /Desc (zedBSD Notes edit data) /AFRelationship /Source /EF << /F n 0 R >>`）
-から指し、catalog の `/Names << /EmbeddedFiles << /Names [(zedbsd-notes.bin) spec] >> >>` と catalog の `/AF [spec]` の両方から引く。
+**採用: 埋め込みの file の stream**。一つの stream（`/Type /EmbeddedFile /Subtype /application#2Fx-kei-notes`）を、file 名
+`kei-notes.bin` の file specification（`/Type /Filespec /F … /UF … /Desc (Kei Notes edit data) /AFRelationship /Source /EF << /F n 0 R >>`）
+から指し、catalog の `/Names << /EmbeddedFiles << /Names [(kei-notes.bin) spec] >> >>` と catalog の `/AF [spec]` の両方から引く。
 `/AF` と `/AFRelationship` は PDF 2.0（PDF/A-3）の key だが、1.7 の reader は知らない key を無視するので害が無く、PDF/A-3 の道を残す。
 Notes は `/AF` → `/EmbeddedFiles` の順に探し、subtype と file 名の両方が合う stream を使う。
 
@@ -65,7 +69,7 @@ chunk:  tag 4 文字 | length u32（本体の byte 数）| 本体
   `/Contents` の順に連結したもの）と比べる。全 page が一致すれば、編集 data から model を作り直して編集を続ける（PDF の path は読まない）。
 - **一致しない page**（他の tool が page を書き換えた）・**編集 data が無い・壊れている・major が新しい**: その page は「元の PDF の page」を背景
   （libpdf の reader の display list）にし、その上に新しい stroke を足す。古い stroke を黙って編集可能にはしない。Notes は利用者にその旨を示す。
-- **他の viewer**: 編集 data を知らなくても、page は普通の塗りの path として正しく表示・印刷される。添付の一覧に `zedbsd-notes.bin` が見える。
+- **他の viewer**: 編集 data を知らなくても、page は普通の塗りの path として正しく表示・印刷される。添付の一覧に `kei-notes.bin` が見える。
 - **保存**: Notes が最初から作った文書は毎回全体を書き直す（小さく、xref が単純）。他の PDF（PDF Viewer の「書き込む」で開いたもの）は
   **増分更新**（元の bytes の後ろに、新しい content stream・`/Contents` を配列にした page・編集 data・新しい xref と `/Prev` を持つ trailer を
   足す）で保存し、元の内容（text・font・署名の前の版）を壊さない。増分更新の writer は p005 以降（p004 の範囲外）。
@@ -118,20 +122,36 @@ int pdf_writer_attach_file(struct pdf_writer *writer, const char *name, const ch
 int pdf_writer_save(struct pdf_writer *writer, const char *path);
 void pdf_writer_destroy(struct pdf_writer *writer);
 
+int pdf_writer_get_page_content_hash(const struct pdf_writer *writer, size_t index, unsigned char digest[32]); /* p004 で追加 */
+
 /* 読み込み（p004 は自分の形式、p006 で段階 ①、p007・p008 で ②・③） */
 int pdf_document_open(const char *path, struct pdf_document **document);
 int pdf_document_open_memory(const void *data, size_t size, struct pdf_document **document);
 size_t pdf_document_page_count(const struct pdf_document *document);
 int pdf_document_page_box(struct pdf_document *document, size_t index, struct pdf_page_box *box);
 int pdf_document_find_attachment(struct pdf_document *document, const char *name, const void **data, size_t *size);
+int pdf_document_find_attachment_type(struct pdf_document *document, const char *name, const char *mime_type, const void **data, size_t *size); /* p004 で追加 */
 int pdf_document_page_content_hash(struct pdf_document *document, size_t index, unsigned char digest[32]);
-int pdf_page_render(struct pdf_document *document, size_t index, struct pdf_display_list **list);
-void pdf_display_list_destroy(struct pdf_display_list *list);
+int pdf_document_get_id(const struct pdf_document *document, unsigned char id[16]);                  /* p004 で追加 */
+int pdf_document_get_dates(const struct pdf_document *document, time_t *creation, time_t *modification); /* p004 で追加 */
+int pdf_page_render(struct pdf_document *document, size_t index, struct pdf_display_list **list);   /* p006 */
+void pdf_display_list_destroy(struct pdf_display_list *list);                                      /* p006 */
 void pdf_document_close(struct pdf_document *document);
 ```
 
-返り値は 0 か errno の値（`ENOMEM`・`EINVAL`・`EIO`、形式の誤りは `EFTYPE` 相当の値を header で定める）。thread の安全: 一つの document を
+返り値は 0 か errno の値（`ENOMEM`・`EINVAL`・`EIO`・`EFBIG`、形式の誤りは `PDF_EFORMAT`（`pdf.h`、C library に `EFTYPE` が無いので `EILSEQ`）、
+読める形式だが未対応の機能（xref stream・filter・暗号化）は `ENOTSUP`）。thread の安全: 一つの document を
 複数の thread で同時に使わない（viewer は page の描画を一つの worker で行う）。
+
+p004 の読み込みの決まり（`reader.c`・`object.c`）:
+- file 全体を memory に持つ（上限 512 MiB、`open_memory` は複写する）。`find_attachment` の bytes は document の中を指し、close まで有効。
+- `pdf_page_box` は MediaBox・CropBox（MediaBox で切る。何も残らなければ MediaBox）・Rotate（90 の倍数でなければ 0）を継承つきで返し、
+  回した後の表示の幅・高さも返す。
+- `page_content_hash` は `/Contents` の stream を順に連結した bytes の SHA-256（libc の `SHA256*`）。filter つきは `ENOTSUP`（p006 で Flate）。
+  Notes は保存の前に `pdf_writer_get_page_content_hash()` で同じ値を得て編集 data に書く。
+- `find_attachment_type` は catalog の `/AF`、次に `/Names /EmbeddedFiles` の name tree を探し、名前（`/UF`・`/F`）と、指定があれば
+  `/Subtype` が合う埋め込み file の stream を返す。`/Params /Size` と長さが違えば `PDF_EFORMAT`。
+- `get_id` は trailer の `/ID` の第 1 要素（16 byte）、`get_dates` は `/Info` の日付（`D:` の形、時差つき。無い・壊れたものは 0）。
 
 ### 4.3 安全
 
@@ -161,5 +181,14 @@ void pdf_document_close(struct pdf_document *document);
 - 済み: `include/libc/pdf.h`、`writer.c`（規約に合わせた。buffer の `error` で段落ごとに一度検査）、`outline.c`（`pdf_outline_stroke()`・
   `pdf_outline_free()`・`pdf_writer_fill_outline()`）、画像の XObject（JPEG の DCTDecode、RGBA の RGB と SMask）、trailer の `/ID`、`/Info` の日付、package の登録と amd64・arm64・pcat・pc98 の
   `libpdf.so` の link（warning 0）、host の試験（plain・ASan・UBSan、qpdf・pdfinfo、描画の目視）。
-- 残り: 自分の形式の読み込み、輪郭の補間と丸い join の置き場所（§1 と design-input-notes.md §5.3 を揃える）。
+- 済み（2026-09-28 の 2 回目の区切り）: 輪郭の Catmull-Rom の平滑化と丸い join（§1）、自分の形式の読み込み（§4.2）、
+  `pdf_writer_get_page_content_hash()`。
+- 残り: なし（p004 の範囲）。xref stream・object stream・filter は p006・p007。
 - main の決定（2026-09-28）: header は `include/libc/pdf.h` のまま、stream は無圧縮（deflate は Future Work）、段階 ② の glyph は p007 で決める。
+
+## 8. p006 の状態（2026-09-28）
+
+経過と確認は [phase006/phase.md](phase006/phase.md) が正本。§4 の構成のうち `content.c`（`gstate.c` は分けず content.c の中）・`filter.c`（Flate と
+predictor、ASCIIHex）・`display.c`・画像（`image.c`）・stroker（`stroke.c`）を作り、§4.1 の display list を `pdf_page_render()` で返す。§4.1 の
+`pdf_path_flatten()` は作らず、代わりに CPU の rasterizer `pdf_display_list_rasterize()`（`raster.c`）を足した（PDF Viewer v1 と試験が使う。GPU で描く
+program は display list を自分で描く）。libpdf の依存に libz-compat と libjpeg-compat が加わった。

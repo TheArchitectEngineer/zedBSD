@@ -493,6 +493,7 @@ i915_wait_reg_slow(
 	uint64_t observed;
 	int error;
 	int slept;
+	unsigned long enabled;
 
 	/*
 	 * Prepares a wait queue nobody wakes: each sleep simply lasts until its
@@ -538,13 +539,17 @@ i915_wait_reg_slow(
 			return EIO;
 		}
 
-		/* Sleeps for the one tick. */
-		spin_lock(&lock);
+		/*
+		 * Sleeps for the one tick.  The lock is taken with interrupts
+		 * disabled, as the locked sleep requires: a preemption between the
+		 * lock and the sleep could move the thread to another CPU.
+		 */
+		enabled = spin_lock_irqsave(&lock);
 
 		observed = waitq_sequence(&queue);
 		slept = waitq_sleep(&queue, &lock, observed, sleep_deadline, 0U);
 
-		spin_unlock(&lock);
+		spin_unlock_irqrestore(&lock, enabled);
 
 		/*
 		 * An elapsed interval (0, ETIMEDOUT) or a spurious wake (EAGAIN)

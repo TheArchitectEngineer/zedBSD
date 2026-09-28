@@ -4,7 +4,7 @@
 
 Phase ID: `ws074-p054`（2026-09-28 main が割り当て、[p053](../phase053/phase.md) の手順 1）
 Parent: [WS074](../ws.md)
-Status: in-progress（2026-09-28、前半の shell まで済み。後半の main の headless の mode が残る）
+Status: cleared（2026-09-28。前半 view と shell、後半 main の headless の mode）
 Phase disposition: normal
 Queue: なし（サブエージェントが worktree の branch で実行）
 依存: ws074-p053、p050（p058 の後）
@@ -37,15 +37,47 @@ GPU の描画の先（`browser_target`）は p055、DOM の key の形の入力�
   別名の証明書の ERROR）status 0。写真 `/home/awe/zedBSD-rpi4/build/ws074-shots/p054-20260928-window-view-titlebar.png`・
   `p054-20260928-window-view-scripts.png`。この時点の boot test PASS（`p054-20260928-boot-login.png`）。実機は未実施。
 
-## 後半（残り）: main の headless の mode
+## 後半（2026-09-28 済み）: main の headless の mode
 
-再開の手順:
+計画した手順（view に headless の API、main をその上に、確認）のとおりに行った。commit `526eeb71`（main の merge は `7f6959d6`）。
 
-1. view に headless 用の API を足す: `browser_view_settle(view, budget)`（`page_settle` と、非同期の画像を待つ `main_settle_network` の
-   中身を view の loader で）、`browser_view_draw_pixels`（`paint/software.c` で CPU の描画）、dump（`browser_view_dump(view, kind, out)`、
-   dom・style・layout・paint）。
-2. `main.c` の `main_prepare`・`main_load_async`・`main_document_arrived`・`main_settle_network`・`main_dump`・`main_render`・
-   `main_run_page` を view の API に置き換え、`main_loader` を無くす。`--async` は view の `_load` の非同期の経路に（最初の page も
-   非同期に読む option が要る）。
-3. 確認: host の build、golden の dump 28/28、`run-http-tests.py`（同期 14/14・`--async` 16/16、ASan も）、`run-loader-tests.py` 11/11、
-   render-compare（Chromium との比較）が下がらない、image の build、guest の窓の試験（上の 5 本）、boot test。
+- view（`view/view.h`・`view.c`）に足したもの:
+  - `browser_view_options.fetch`（`enum browser_fetch`）: `BROWSER_FETCH_DEFAULT`（0、窓: 最初の page はその場で、以後の http・https の
+    page と画像は block せず）、`BROWSER_FETCH_AT_ONCE`（全部その場で、loader を作らない。headless の既定）、`BROWSER_FETCH_BACKGROUND`
+    （最初の page も loader で。`--async`）。
+  - `browser_view_settle(view, budget, flags)`: 取得中の page の到着（loader が空になるまで poll）、`page_settle` の仮想の時計の timer、
+    `BROWSER_SETTLE_LAYOUT` なら layout、画像の到着、画像の後の layout。page が無ければ（読み込みの失敗、load の callback が聞いた）ENOENT。
+  - `browser_view_draw_pixels(view, pixels, width, height, stride)`: CPU の描画（`paint_software`）。行が詰まっていればその場に、
+    そうでなければ詰めた bitmap に描いて行ごとに写す。
+  - `browser_view_dump(view, kind, &text, &length)`: `BROWSER_DUMP_DOM`・`_STYLE`・`_LAYOUT`・`_PAINT`、text は呼ぶ側が free する。
+  - `browser_add_ca_file`（draft の process 全体の設定。main は `net/net.h` を include しなくなった）。
+  - **layout を必要な時に**: view は page が変わった時でなく、box が要る時（描画・layout と paint の dump・scroll・click・文書の高さ）に
+    layout する（`view_update`: `page_needs_layout` か大きさの変更のときだけ、font は最初の layout で開く）。DOM の dump は font を開かず
+    layout もしない（今までの main と同じ。host の font の無い DOM の dump が通る）。`_display` と `_document_height` は const でなくなり、
+    `_display` は int を返す（layout の失敗）。shell は失敗を `ZBROWSER ERROR layout` と書いてその frame を描かない。
+- `main.c`: `main_prepare`・`main_load_async`・`main_document_arrived`・`main_settle_network`・`main_loader`・`struct main_fetch` を消し、
+  `main_open`（view を作り、load、settle）と view の callback（load の失敗を「cannot load … (TLS: …)」で、console を stderr に
+  「console: …」、`--run` は stdout に）に。dump・`--render`（`draw_pixels`、PPM は main が書く）・`--run` は view の API だけ。
+  `--render-gpu` だけ p055 までの橋（`browser_view_display` と `paint_gpu_render`）。main は `page/page.h`・`net/net.h` を include しない。
+- 振る舞い: 読み込みの失敗の文言は今までと同じ（「cannot load URL: …」と TLS の理由）。scripts・layout の失敗は「cannot run …」に
+  まとめた（試験が読むのは「cannot load」だけ）。
+
+確認（host は Debian の cc、guest は QEMU）:
+
+- host の build（-Werror、plain と ASan）warning 0。style-check（`view.c`・`view.h`・`main.c`・`shell.c`）0、`git diff --check` 0。
+- golden の dump 28/28。変更の前後で、試験の page 7 つと画像の page 3 つの `--render`・`--render-gpu`（lavapipe）の PPM、`--run` の出力、
+  4 種の dump と各 stderr の 126 file が byte で同じ（`build/p054/compare.sh`）。ASan でも同じ（GPU の描画は lavapipe の中の leak の
+  報告だけ。`detect_leaks=0` で同じ PPM）。
+- `run-http-tests.py` 同期 14/14、`--async` 16/16、ASan の同期 14/14・`--async` 16/16。`run-loader-tests.py` 11/11。
+- render-compare（Chromium 153）: CPU の描画が変更の前と byte で同じなので一致率も同じ（blocks 81.31%、first 90.98%、floats 73.83%、
+  overflow 90.82%、position 96.55%、script 89.63%、second 95.54%、backgrounds 94.49%、images 87.01%）。
+- amd64 の image の build（`build-browser-image.sh`、browser の warning 0。warning は perl・openssh・openssl の package のもの）。
+  Venus の guest で `browser-p045.sh`・`browser-p014.sh`・`browser-p030.sh`・`browser-p050.sh`（guest の HTTP 16/16 を含む）・
+  `browser-p017.sh` すべて status 0（1 回目で）。写真 `/home/awe/zedBSD-rpi4/build/ws074-shots/p054-20260928-headless-window-link.png`・
+  `p054-20260928-headless-window-http-images.png`・`p054-20260928-headless-window-scripts.png`。
+- main の merge の後の boot test PASS（`/home/awe/zedBSD-rpi4/build/ws074-shots/p054-20260928-boot-login.png`、上書き）。実機は未実施。
+
+## 残り・移管
+
+- `--render-gpu` の `browser_view_display` の橋と shell の `_display` は p055（`browser_target`）で消す。
+- 入力の DOM の key の形と既定の動作は p056。

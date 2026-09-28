@@ -18,6 +18,7 @@
 #include "data.h"
 #include "extras.h"
 #include "panels.h"
+#include "tablet.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -289,6 +290,7 @@ zwl_object_destroy(
 	if (object->kind == ZWL_SURFACE) {
 		zwl_seat_surface_gone(object);
 		zwl_toplevel_surface_gone(object);
+		zwl_tablet_object_gone(object);
 	}
 
 	/* The popups stop naming this one: a positioner's rules go, a popup's grab ends, a parent's popups close (popup.c). */
@@ -382,6 +384,8 @@ zwl_object_destroy(
 			server->pull = NULL;
 		if (server->click_surface == object)
 			server->click_surface = NULL;
+		if (server->dock_waiting == object)
+			server->dock_waiting = NULL;
 		if (server->anim == object)
 			server->anim = NULL;
 		if (server->wiseview_current == object)
