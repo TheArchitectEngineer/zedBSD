@@ -4,7 +4,7 @@
 Active Queue: なし（2026-09-27 から subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
 Current Focused Goal: fg010 — Kei Operating System の Keiland（Wayland）を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる。
 Next（2026-09-28 の 2 回目の周期の終わりに整理）: 次の周期は N≈3〜4 で — WS074（p054 の headless の移行 → p055〜p057 部品化）、
-WS075（p006 の 23caa415・082c0957 を実機で確かめる。5330 は 11:35 から応答なし）、Keiland（下の Outlook）、WS073（BUG-087 の wip.patch → BUG-051）。
+WS075（p006 は増分 6 まで実機で確認（feedback 0、p005 の 7 場面 0）。p005 の run の `scenes_shown` の失敗は BUG-085 に記録。5330 は電源の入れ直しの後 10.0.30.3（ssh の alias `solaris10-man` は古い 10.0.10.25 のまま。`I915_HOST=awe@10.0.30.3` で動く））、Keiland（下の Outlook）、WS073（BUG-087 の wip.patch → BUG-051）。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -167,7 +167,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
-| ws075-p006 の残り: 23caa415（vertex buffer の features、drawn-from-captured）・082c0957（rasterizer discard）の実機の確認 → p007〜 | i915 | 実機（5330）の復旧が要る |
+| ws075: HDMI を主な出力に（[hdmi-main-output.md](ws075/hdmi-main-output.md) の H1〜H4、ユーザーへの問い 6 つ）→ p007〜 | デモ（10/17）の 10 インチの LCD | 実機（5330、10.0.30.3） |
 | ws074-p054 の残り（headless の mode を view へ）→ p055（描画の先）→ p056（入力）→ p057（libbrowser.so） | ブラウザの部品化（design §19） | resume の手順は phase054 |
 | WS073: BUG-087（`bugs/BUG-087-wip.patch` と bug087.sh）→ BUG-051（sshd-session の SIGSEGV、2 回目の観測あり）→ BUG-085（i915 の compositor の停止） | 安定性 | 各 ticket |
 | Keiland: greeter の印の大きさ（48 px、ユーザーの判断）、terminal の選択の残り（scroll で追う・端の自動 scroll）、F-048（引き継ぎの黒）、F-050 の folder の merge | fg010 の仕上げ | — |
