@@ -34,7 +34,7 @@ cmp "$out/notes-plain.pdf.bin" "$out/notes-ubsan.pdf.bin"
 qpdf --check "$out/notes-plain.pdf"
 pdfinfo "$out/notes-plain.pdf"
 qpdf --list-attachments "$out/notes-plain.pdf"
-qpdf --show-attachment=zedbsd-notes.bin "$out/notes-plain.pdf" > "$out/attached.bin"
+qpdf --show-attachment=kei-notes.bin "$out/notes-plain.pdf" > "$out/attached.bin"
 # The attached edit data is the document encoded at the save (with the pages' content hashes): same size, magic ZNOT.
 [ "$(head -c 4 "$out/attached.bin")" = ZNOT ]
 [ "$(wc -c < "$out/attached.bin")" = "$(wc -c < "$out/notes-plain.pdf.bin")" ]
