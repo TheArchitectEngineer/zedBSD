@@ -66,7 +66,7 @@ user_probe_syscall(
  *
  * A page fault that the address space resolves is retried transparently.
  * Every other fault is recorded in the fault probe and delivered to the
- * process as the matching signal.
+ * faulting thread as the matching signal.
  */
 int
 kernel_user_fault_handler(
@@ -82,6 +82,7 @@ kernel_user_fault_handler(
 	uint32_t required;
 	int signo;
 	int page_fault_error;
+	int send_error;
 	int result;
 
 	thread = curthread;
@@ -204,8 +205,14 @@ kernel_user_fault_handler(
 		break;
 	}
 
-	/* Delivers the signal; a delivered signal completes the trap. */
-	if (signal_send_process_info(thread->proc, signo, &info) == 0)
+	/*
+	 * Sends the signal to the faulting thread; a sent signal completes
+	 * the trap.  A blocked or ignored fault signal is forced to its
+	 * default action, since the thread would otherwise retake the same
+	 * fault for ever.
+	 */
+	send_error = signal_send_fault_info(thread, signo, &info);
+	if (send_error == 0)
 		result = HAL_TRAP_RET_SUCCESS;
 
 out:
