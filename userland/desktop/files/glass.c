@@ -9,7 +9,7 @@
  * The window's glass in zdesktop (ws071-p015): the sidebar, the content
  * (with its tabs) and the preview float as cards on zdesktop's frosted glass,
  * and the desktop shows between them.  zdesktop draws the glass, its rim
- * and the cards' shadows (zed_glass_v1 through libkeiland); the frame
+ * and the cards' shadows (keiland_glass_v1 through libkeiland); the frame
  * leaves its ground clear and only tints the cards.
  *
  * The window is glass when its swapchain is see-through and zdesktop has
@@ -46,7 +46,7 @@ fm_glass_open(
 	}
 
 	/* zdesktop's glass for the window's surface. */
-	glass->glass = zdesktop_glass_create(window->display, window->surface);
+	glass->glass = keiland_glass_create(window->display, window->surface);
 	if (glass->glass == NULL) {
 		fm_log("GLASS off reason=compositor errno=%d", errno);
 		return 0;
@@ -66,7 +66,7 @@ fm_glass_refresh(
 	struct fm_glass *glass,
 	struct fm_app *app)
 {
-	struct zdesktop_glass_panel sent[FM_PANELS];
+	struct keiland_glass_panel sent[FM_PANELS];
 	struct fm_panel panels[FM_PANELS];
 	size_t count;
 	size_t index;
@@ -90,11 +90,11 @@ fm_glass_refresh(
 		sent[index].width = panels[index].rect.width;
 		sent[index].height = panels[index].rect.height;
 		sent[index].radius = panels[index].radius;
-		sent[index].kind = ZDESKTOP_GLASS_CARD;
+		sent[index].kind = KEILAND_GLASS_CARD;
 	}
 
 	/* Sent with the frame; a refused list is logged and the old panels stay. */
-	error = zdesktop_glass_set_panels(glass->glass, sent, count);
+	error = keiland_glass_set_panels(glass->glass, sent, count);
 	if (error != 0) {
 		fm_log("GLASS refused errno=%d count=%lu", error, (unsigned long)count);
 		return;
@@ -115,7 +115,7 @@ fm_glass_close(
 	struct fm_glass *glass)
 {
 	/* The glass object, when there is one. */
-	zdesktop_glass_destroy(glass->glass);
+	keiland_glass_destroy(glass->glass);
 	glass->glass = NULL;
 }
 

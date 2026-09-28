@@ -32,7 +32,7 @@ producerのfd close・GPU session close・process終了後もreceiverのaliasで
 
 1. アプリがoptimal imageへ標準Vulkanで描画する。
 2. libvulkanがGPU copyで共有linear imageへ移し、`VK_QUEUE_FAMILY_EXTERNAL`へのreleaseと実GPU fence完了を待つ。
-3. WSIの独自`zed_gpu_buffer_v1` factoryがallocation fdと64-byte descriptorをSCM_RIGHTSで別processの`zwl`へ渡す。
+3. WSIの独自`keiland_gpu_buffer_v1` factoryがallocation fdと64-byte descriptorをSCM_RIGHTSで別processの`zwl`へ渡す。
 4. `zwl`が自分のGPU contextでimportし、`GPU_DISPLAY_PRESENT`の`FIFO | BLOB`でnative表示へ渡す。
 5. Venusが`SET_SCANOUT_BLOB`と`RESOURCE_FLUSH`を発行する。前のbufferを表示から外せた後に`wl_buffer.release`を返し、clientが再利用前にEXTERNALからacquireする。
 

@@ -317,7 +317,7 @@ submit_job(
 	/* Handles a failed fdopen operation. */
 	if (descriptor < 0 || (output = fdopen(descriptor, "w")) == NULL)
 		return 1;
-	fprintf(output, "# zedBSD at job\n");
+	fprintf(output, "# Kei at job\n");
 
 	/* Process input until it is exhausted. */
 	while (fgets(buffer, sizeof(buffer), input) != NULL) {

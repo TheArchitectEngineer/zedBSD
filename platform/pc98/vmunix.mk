@@ -603,6 +603,56 @@ $(DYNAMIC_DIR)/versuse.so: \
  -z now -z relro -z separate-code $< -L$(DYNAMIC_DIR) \
  -l:verstest.so -o $@
 
+# libz-compat (ws071-p010): the zlib interface of the base programs; it needs nothing but the C library.
+DYNAMIC_Z_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libz-compat)
+
+$(DYNAMIC_DIR)/libz-compat.so: $(DYNAMIC_Z_COMPAT_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/base/libz-compat/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_i386 -shared -soname libz-compat.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code $(USER_STACK_LDFLAGS) \
+ --version-script=userland/base/libz-compat/exports.map \
+ $(DYNAMIC_Z_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine i386 --role shared-library \
+ --needed libc.so --soname libz-compat.so $@
+
+# libpng-compat (ws071-p010): libpng's simplified API of the base programs, over libz-compat.
+DYNAMIC_PNG_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libpng-compat)
+
+$(DYNAMIC_DIR)/libpng-compat.so: $(DYNAMIC_PNG_COMPAT_OBJS) $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libc.so \
+	userland/base/libpng-compat/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_i386 -shared -soname libpng-compat.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code $(USER_STACK_LDFLAGS) \
+ --version-script=userland/base/libpng-compat/exports.map \
+ $(DYNAMIC_PNG_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libz-compat.so -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine i386 --role shared-library \
+ --needed libz-compat.so --needed libc.so --soname libpng-compat.so $@
+
+# libjpeg-compat (ws074-p019): the libjpeg decompression interface of the base programs; it needs nothing
+# but the C library.
+DYNAMIC_JPEG_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libjpeg-compat)
+
+$(DYNAMIC_DIR)/libjpeg-compat.so: $(DYNAMIC_JPEG_COMPAT_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/base/libjpeg-compat/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_i386 -shared -soname libjpeg-compat.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code $(USER_STACK_LDFLAGS) \
+ --version-script=userland/base/libjpeg-compat/exports.map \
+ $(DYNAMIC_JPEG_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine i386 --role shared-library \
+ --needed libc.so --soname libjpeg-compat.so $@
+
+# libgif-compat (ws074-p051): giflib's decoding interface of the base programs; it needs nothing but the
+# C library.
+DYNAMIC_GIF_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgif-compat)
+
+$(DYNAMIC_DIR)/libgif-compat.so: $(DYNAMIC_GIF_COMPAT_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/base/libgif-compat/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_i386 -shared -soname libgif-compat.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code $(USER_STACK_LDFLAGS) \
+ --version-script=userland/base/libgif-compat/exports.map \
+ $(DYNAMIC_GIF_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine i386 --role shared-library \
+ --needed libc.so --soname libgif-compat.so $@
+
 $(DYNAMIC_DIR)/dyntest: $(ZEDBSD_SYSROOT_I386)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/obj/userland/base/tests/dyntest.o $(DYNAMIC_DIR)/libc.so \
 	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_DIR)/tlstest.so \

@@ -33,7 +33,7 @@ Queue: q468-i01
 - `screen.c`: zterm の VT100 の解釈を移し、scroll 領域（DECSTBM）、行・文字の挿入と削除、ECH、CHA・VPA・CNL・CPL、
   DECTCEM、256 色と direct color、OSC の読み捨て、G0/G1 の指定の読み捨て、alternate screen（消去だけ）を足した。
 - `keys.c`: zwl は evdev の code を keymap 無しで送るので、US 配列の表（Shift、Ctrl、Alt は ESC 前置）と xterm の sequence。
-- `font.c`: libtruetype で等幅の TTF（既定 `/usr/share/fonts/zdesktop-mono.ttf`、試験では JetBrains Mono、OFL、git 外）を
+- `font.c`: libtruetype で等幅の TTF（既定 `/usr/share/fonts/keiland-mono.ttf`、試験では JetBrains Mono、OFL、git 外）を
   cell の大きさの slot の atlas に初出時に描く（`/dev/graphics` の font は使わない）。
 - `render.c`: Vulkan。各 cell を三角形 2 つ（vertex に位置・atlas の位置・前景と背景の色）、atlas は host が書く linear の画像、
   frame ごとに全 cell の vertex を作って 1 回の draw。cursor は色を入れ替えた block。shader は i915 の native compiler が通る形
@@ -43,7 +43,7 @@ Queue: q468-i01
   configure の大きさで swapchain と grid を作り直し TIOCSWINSZ、shell の終了か窓の close で終わる（`ZTERM DONE reason=`）。
 - package: `userland/desktop/terminal/Makefile`、`platform/amd64/vmunix.mk` の link、zdesktop の 2 つの config に追加。
 - 試験の道具: `plan/ws035/tests/build-zdesktop-image.sh`（Venus の image に git 外の font と壁紙を入れる。以前の build はこれらを
-  入れ忘れていた）、`qmp-keys.py`（QMP で文字を打つ）、`zdesktop-p068.sh`、実機の scenario の `ZDESKTOP_APP=terminal`
+  入れ忘れていた）、`qmp-keys.py`（QMP で文字を打つ）、`zdesktop-p068.sh`、実機の scenario の `KEILAND_APP=terminal`
   （`plan/ws031/tests/zdesktop/run-terminal.sh`、log を 2 秒ごとに sync）。
 
 確認:

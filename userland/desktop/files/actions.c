@@ -35,6 +35,9 @@
 #define ACTIONS_NEW_FOLDER	"untitled folder"
 
 static int actions_start(struct fm_app *app, unsigned kind, char *const *sources, size_t count, const char *destination, int undoing);
+static void actions_queue(struct fm_app *app, struct fm_task *task);
+static size_t actions_collision_next(const struct fm_task *task, size_t from);
+static void actions_collision_ask(struct fm_app *app);
 static void actions_finish(struct fm_app *app, struct fm_task *task);
 static void actions_record(struct fm_app *app, struct fm_task *task);
 static void actions_select_after(struct fm_app *app, char *const *paths, size_t count);
@@ -283,6 +286,15 @@ fm_action_confirm(
 	int trash_error;
 	int error;
 	int match;
+
+	/* A question about a taken name: Enter keeps both, Esc stops the operation. */
+	if (app->dialog == FM_DIALOG_COLLISION) {
+		if (confirmed != 0)
+			fm_action_collision(app, FM_COLLISION_KEEP_BOTH);
+		else
+			fm_action_collision_cancel(app);
+		return;
+	}
 
 	/* The question is over. */
 	dialog = app->dialog;
@@ -611,10 +623,12 @@ fm_actions_release(
 {
 	int index;
 
-	/* The tasks. */
+	/* The tasks, and the one held for a question. */
 	for (index = 0; index < app->task_count; index++)
 		fm_task_free(app->tasks[index]);
 	app->task_count = 0;
+	fm_task_free(app->collision_task);
+	app->collision_task = NULL;
 
 	/* The histories and the paths kept. */
 	fm_undo_free(&app->undo);
@@ -695,6 +709,7 @@ actions_start(
 	int undoing)
 {
 	struct fm_task *task;
+	size_t first;
 
 	/* The queue has room for a few tasks. */
 	if (app->task_count == FM_TASKS) {
@@ -702,7 +717,13 @@ actions_start(
 		return EBUSY;
 	}
 
-	/* The task, queued behind the others. */
+	/* One question about taken names at a time. */
+	if (app->collision_task != NULL) {
+		fm_ui_message(app, "Answer the question first");
+		return EBUSY;
+	}
+
+	/* The task. */
 	task = fm_task_new(kind, sources, count, destination);
 	if (task == NULL) {
 		fm_ui_message(app, "Out of memory");
@@ -712,18 +733,89 @@ actions_start(
 	/* How it is recorded when it ends. */
 	task->undoing = undoing;
 
+	/*
+	 * A copy or a move the user asked for, onto names the destination
+	 * already has, waits for the user's answers (an undo or a redo does
+	 * not ask: it keeps both).
+	 */
+	first = count;
+	if (undoing == 0)
+		first = actions_collision_next(task, 0U);
+	if (first < count) {
+		app->collision_task = task;
+		app->collision_index = first;
+		app->collision_all = 0;
+		actions_collision_ask(app);
+		return 0;
+	}
+
 	/* Queued behind the others. */
+	actions_queue(app, task);
+
+	/* Succeeded: the task runs in the main loop. */
+	return 0;
+}
+
+/* Puts a task behind the others, to run in the main loop. */
+static void
+actions_queue(
+	struct fm_app *app,
+	struct fm_task *task)
+{
+	const char *destination;
+
+	/* Behind the others. */
 	app->tasks[app->task_count] = task;
 	app->task_count++;
 	app->dirty = 1;
 
 	/* The log line the tests wait for. */
-	if (destination == NULL)
+	destination = task->destination;
+	if (destination[0] == '\0')
 		destination = "-";
-	fm_log("TASK start id=%u kind=%s items=%lu destination=%s", task->id, fm_task_verb(kind), (unsigned long)count, destination);
+	fm_log("TASK start id=%u kind=%s items=%lu destination=%s", task->id, fm_task_verb(task->kind), (unsigned long)task->source_count, destination);
+}
 
-	/* Succeeded: the task runs in the main loop. */
-	return 0;
+/* Finds the next source, from an index on, whose name the destination has; the source count when none. */
+static size_t
+actions_collision_next(
+	const struct fm_task *task,
+	size_t from)
+{
+	size_t index;
+	int collides;
+
+	/* Each source from there on. */
+	for (index = from; index < task->source_count; index++) {
+		collides = fm_task_collides(task, index);
+		if (collides != 0)
+			return index;
+	}
+
+	/* None is left. */
+	return task->source_count;
+}
+
+/* Asks about the held task's source at collision_index. */
+static void
+actions_collision_ask(
+	struct fm_app *app)
+{
+	const char *name;
+	size_t left;
+
+	/* The question, over the window. */
+	app->dialog = FM_DIALOG_COLLISION;
+	app->dirty = 1;
+
+	/* The log line the tests wait for: which name, and how many conflicts are left with it. */
+	name = strrchr(app->collision_task->sources[app->collision_index], '/');
+	if (name == NULL)
+		name = app->collision_task->sources[app->collision_index];
+	else
+		name++;
+	left = fm_action_collision_left(app);
+	fm_log("DIALOG collision index=%lu name=%s left=%lu", (unsigned long)app->collision_index, name, (unsigned long)left);
 }
 
 /* Finishes a task: its outcome recorded for undo, said when it failed, and the folder read again with what it made selected. */
@@ -1042,6 +1134,130 @@ fm_action_transfer(
 
 	/* Succeeded: the task runs in the main loop. */
 	return 0;
+}
+
+/*
+ * Answers the question about a taken name (FM_COLLISION_*): for the source
+ * asked about, or with "apply to all" for it and every later source whose
+ * name is taken.  The next such source is asked about; when none is left
+ * the operation starts.
+ */
+void
+fm_action_collision(
+	struct fm_app *app,
+	unsigned answer)
+{
+	struct fm_task *task;
+	const char *word;
+	size_t index;
+	size_t next;
+	int collides;
+
+	/* No question about names. */
+	task = app->collision_task;
+	if (task == NULL || app->dialog != FM_DIALOG_COLLISION)
+		return;
+
+	/* The words of the answer for the log. */
+	word = "keep";
+	if (answer == FM_COLLISION_REPLACE)
+		word = "replace";
+	else if (answer == FM_COLLISION_SKIP)
+		word = "skip";
+	fm_log("COLLISION answer=%s index=%lu all=%d", word, (unsigned long)app->collision_index, app->collision_all);
+
+	/* The source asked about, and with "apply to all" every later one whose name is taken. */
+	task->collisions[app->collision_index] = (unsigned char)answer;
+	next = actions_collision_next(task, app->collision_index + 1U);
+	if (app->collision_all != 0) {
+		for (index = next; index < task->source_count; index++) {
+			collides = fm_task_collides(task, index);
+			if (collides != 0)
+				task->collisions[index] = (unsigned char)answer;
+		}
+
+		/* Nothing is left to ask. */
+		next = task->source_count;
+	}
+
+	/* Another source to ask about. */
+	if (next < task->source_count) {
+		app->collision_index = next;
+		app->collision_all = 0;
+		actions_collision_ask(app);
+		return;
+	}
+
+	/* Every answer is in: the question is over and the operation starts. */
+	app->dialog = FM_DIALOG_NONE;
+	app->collision_task = NULL;
+	app->dirty = 1;
+	actions_queue(app, task);
+}
+
+/*
+ * Stops the operation held for the question about a taken name: nothing
+ * is copied or moved.
+ */
+void
+fm_action_collision_cancel(
+	struct fm_app *app)
+{
+	/* No question about names. */
+	if (app->collision_task == NULL)
+		return;
+
+	/* The task goes, never started. */
+	fm_log("COLLISION cancel index=%lu", (unsigned long)app->collision_index);
+	fm_task_free(app->collision_task);
+	app->collision_task = NULL;
+	app->dialog = FM_DIALOG_NONE;
+	app->dirty = 1;
+}
+
+/*
+ * Turns "apply to all" on or off for the question about a taken name.
+ */
+void
+fm_action_collision_all(
+	struct fm_app *app)
+{
+	/* No question about names. */
+	if (app->collision_task == NULL)
+		return;
+
+	/* The other way round. */
+	app->collision_all = !app->collision_all;
+	app->dirty = 1;
+	fm_log("COLLISION all=%d", app->collision_all);
+}
+
+/*
+ * Counts the sources of the held operation, from the one asked about on,
+ * whose names the destination has (the one asked about included).
+ */
+size_t
+fm_action_collision_left(
+	const struct fm_app *app)
+{
+	size_t index;
+	size_t count;
+	int collides;
+
+	/* No question about names. */
+	if (app->collision_task == NULL)
+		return 0U;
+
+	/* Each source from the one asked about on. */
+	count = 0U;
+	for (index = app->collision_index; index < app->collision_task->source_count; index++) {
+		collides = fm_task_collides(app->collision_task, index);
+		if (collides != 0)
+			count++;
+	}
+
+	/* Succeeded: how many. */
+	return count;
 }
 
 /*

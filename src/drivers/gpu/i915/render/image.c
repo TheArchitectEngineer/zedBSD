@@ -55,6 +55,7 @@
 #define I915_GFX_IMAGE_LEVEL_ALIGN	4U
 
 static uint32_t i915_gfx_row_pitch(uint32_t width, uint32_t texel_bytes);
+static void i915_gfx_stencil_layout(struct i915_gfx_image *image, uint32_t slices);
 static uint32_t i915_gfx_channel(uint32_t swizzle, uint32_t identity);
 static int i915_gfx_is_depth(uint32_t format);
 static int i915_gfx_image_supported(const VkImageCreateInfo *info);
@@ -452,6 +453,15 @@ drv_i915_gfx_image_layout(
 		return EINVAL;
 	depth = i915_gfx_is_depth(image->format);
 	image->slice_rows = 0U;
+	image->stencil = 0U;
+
+	/* A format with stencil: its planes (the depth's, then the stencil's). */
+	if (image->format == VK_FORMAT_D32_SFLOAT_S8_UINT || image->format == VK_FORMAT_S8_UINT) {
+		if (image->levels != 1U)
+			return EINVAL;
+		i915_gfx_stencil_layout(image, slices);
+		return 0;
+	}
 
 	/*
 	 * Several layers of a depth image: each a whole number of Y tiles
@@ -651,6 +661,42 @@ i915_gfx_channel(
 	}
 }
 
+/*
+ * Lays out an image with stencil, one level: for D32_SFLOAT_S8_UINT the
+ * depth plane as a D32 image's (Y tiles), then on the next page the
+ * stencil plane of bytes in Y tiles, each slice a whole number of tile
+ * rows (isl on Gen12: stencil is Y-tiled); for S8_UINT the stencil plane
+ * alone.
+ */
+static void
+i915_gfx_stencil_layout(
+	struct i915_gfx_image *image,
+	uint32_t slices)
+{
+	uint64_t depth_bytes;
+
+	/* The depth plane, as a D32 image lays it out. */
+	depth_bytes = 0U;
+	image->pitch = (image->width + 127U) & ~127U;
+	if (image->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
+		image->pitch = (image->width * 4U + 127U) & ~127U;
+		depth_bytes = (uint64_t)image->pitch * ((image->height + 31U) & ~31U) * slices;
+		if (slices > 1U)
+			image->slice_rows = (image->height + 31U) & ~31U;
+	}
+
+	/* The stencil plane, page aligned after it. */
+	image->stencil = 1U;
+	image->stencil_offset = (depth_bytes + 4095U) & ~(uint64_t)4095U;
+	image->stencil_pitch = (image->width + 127U) & ~127U;
+	image->stencil_slice_rows = (image->height + 31U) & ~31U;
+	image->bytes = image->stencil_offset + (uint64_t)image->stencil_pitch * image->stencil_slice_rows * slices;
+
+	/* A stencil-only image's slices are the stencil plane's. */
+	if (image->format == VK_FORMAT_S8_UINT && slices > 1U)
+		image->slice_rows = image->stencil_slice_rows;
+}
+
 /* Reports the bytes to a row of `width` texels, rounded up to whole 32-bit words. */
 static uint32_t
 i915_gfx_row_pitch(
@@ -696,6 +742,12 @@ drv_i915_gfx_format_bytes(
 	case VK_FORMAT_D16_UNORM:
 		/* A two-byte depth texel. */
 		return 2U;
+	case VK_FORMAT_D32_SFLOAT_S8_UINT:
+		/* The depth plane's four-byte texel (the stencil plane has its own bytes). */
+		return 4U;
+	case VK_FORMAT_S8_UINT:
+		/* A stencil byte. */
+		return 1U;
 	default:
 		/* Not a format the executor lays out. */
 		return 0U;
@@ -794,8 +846,9 @@ static int
 i915_gfx_is_depth(
 	uint32_t format)
 {
-	/* D32_SFLOAT and D16_UNORM. */
-	if (format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D16_UNORM)
+	/* D32_SFLOAT and D16_UNORM, and the stencil formats D32_SFLOAT_S8_UINT and S8_UINT. */
+	if (format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D16_UNORM ||
+	    format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_S8_UINT)
 		return 1;
 
 	/* Succeeded: any other format is a colour one. */

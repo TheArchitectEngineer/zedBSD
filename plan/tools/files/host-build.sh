@@ -15,7 +15,7 @@ out=build/ws071-host
 src=userland/desktop/files
 mkdir -p "$out/include" "$out/obj"
 ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
-ln -sf "$(pwd)/include/libc/zdesktop.h" "$out/include/zdesktop.h"
+ln -sf "$(pwd)/include/libc/keiland.h" "$out/include/keiland.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
@@ -47,12 +47,16 @@ fi
 # files without the window, the presenter, the menus, the titlebar and the glass.
 for file in $src/*.c; do
 	case $(basename "$file") in
-	main.c|window.c|present.c|menu.c|titlebar.c|glass.c) continue ;;
+	main.c|window.c|present.c|menu.c|titlebar.c|glass.c|dnd.c) continue ;;
 	esac
 	object="$out/obj/files-$(basename "$file" .c).o"
 	"$cc" $flags -c "$file" -o "$object"
 	objects="$objects $object"
 done
+
+# The Kei mark (ws035-p108), shared with the compositor.
+"$cc" $flags -c userland/desktop/artwork/mark.c -o "$out/obj/artwork-mark.o"
+objects="$objects $out/obj/artwork-mark.o"
 
 # The test programs.
 for test in render model; do

@@ -27,7 +27,7 @@ Gears、Browser、組み込みの一覧では試験の client の Vulkan test・
    （`ZWL HOME skip name=... missing=...`）。redirect などの shell の演算子より後の語は見ない（出力先の file は要らない）。
    これで demo の image に無い app（browser の無い image の Browser 等）が出ない。
 4. **demo の Home に試験の client**: 組み込みの一覧は試験用の Vulkan test・Shared memory を含む。demo の image には
-   `plan/ws035/demo/apps.conf`（Files、Terminal、Browser、Model viewer、Gears、X terminal）を `/etc/zdesktop/apps.conf` として入れる
+   `plan/ws035/demo/apps.conf`（Files、Terminal、Browser、Model viewer、Gears、X terminal）を `/etc/keiland/apps.conf` として入れる
    （`build-demo-image.sh`）。組み込みの一覧は試験のために変えない。
 5. **Files の Home が空で、sidebar の usual folder が薄い**: demo の zdesktop は service として HOME 無しで始まり、/root には
    Desktop 等が無い（`before-files.png`）。demo の `run-zdesktop.sh` が HOME（無ければ /root）を決め、Desktop・Documents・

@@ -24,7 +24,7 @@
 #define CLOSE_RACE_ITERATIONS 32U
 
 struct child_report {
-	struct zedbsd_peercred listener;
+	struct kern_peercred listener;
 	int error;
 };
 
@@ -46,7 +46,7 @@ failure(const char *stage)
 }
 
 static int
-peer_equal(const struct zedbsd_peercred *peer, pid_t pid, uid_t euid,
+peer_equal(const struct kern_peercred *peer, pid_t pid, uid_t euid,
 	   gid_t egid)
 {
 	return peer->pid == (int32_t)pid && peer->euid == (uint32_t)euid &&
@@ -86,7 +86,7 @@ write_exact(int descriptor, const void *buffer, size_t length)
 }
 
 static int
-get_peer(int descriptor, struct zedbsd_peercred *peer)
+get_peer(int descriptor, struct kern_peercred *peer)
 {
 	socklen_t length = sizeof(*peer);
 
@@ -196,7 +196,7 @@ test_networkd_admission(void)
 static int
 expect_option_error(int descriptor, int expected)
 {
-	struct zedbsd_peercred peer;
+	struct kern_peercred peer;
 	socklen_t length = sizeof(peer);
 
 	errno = 0;
@@ -244,14 +244,14 @@ test_listener_close_race(void)
 {
 	struct system_resource_info before, after;
 	struct close_race_context context;
-	struct zedbsd_peercred peer;
+	struct kern_peercred peer;
 	pthread_t connector_thread, close_thread;
 	unsigned iteration;
 	int system_descriptor;
 
 	system_descriptor = open("/dev/system", O_RDONLY | O_CLOEXEC);
 	if (system_descriptor < 0 ||
-	    ioctl(system_descriptor, ZEDBSD_SYSTEM_GET_RESOURCES, &before) != 0)
+	    ioctl(system_descriptor, KERN_SYSTEM_GET_RESOURCES, &before) != 0)
 		return failure("close-race-resource-before");
 	for (iteration = 0; iteration < CLOSE_RACE_ITERATIONS; iteration++) {
 		const char start[2] = { 'c', 'l' };
@@ -307,7 +307,7 @@ test_listener_close_race(void)
 		(void)close(context.connector);
 		(void)unlink(CLOSE_RACE_PATH);
 	}
-	if (ioctl(system_descriptor, ZEDBSD_SYSTEM_GET_RESOURCES, &after) != 0 ||
+	if (ioctl(system_descriptor, KERN_SYSTEM_GET_RESOURCES, &after) != 0 ||
 	    close(system_descriptor) != 0)
 		return failure("close-race-resource-after");
 	if (before.socket != after.socket)
@@ -378,7 +378,7 @@ receive_fd(int descriptor)
 static int
 test_socketpair_and_lengths(void)
 {
-	struct zedbsd_peercred peer;
+	struct kern_peercred peer;
 	unsigned char short_buffer[sizeof(peer)];
 	unsigned char large_buffer[sizeof(peer) + 8U];
 	socklen_t length;
@@ -535,7 +535,7 @@ test_path_accept_and_rights(void)
 {
 	struct sockaddr_un address;
 	struct child_report report;
-	struct zedbsd_peercred peer;
+	struct kern_peercred peer;
 	pid_t listener_pid = getpid();
 	pid_t child;
 	int report_pipe[2] = { -1, -1 };
@@ -617,13 +617,13 @@ test_path_accept_and_rights(void)
 int
 main(void)
 {
-	_Static_assert(sizeof(struct zedbsd_peercred) == 12U,
+	_Static_assert(sizeof(struct kern_peercred) == 12U,
 	    "peer credential ABI size");
-	_Static_assert(offsetof(struct zedbsd_peercred, pid) == 0U,
+	_Static_assert(offsetof(struct kern_peercred, pid) == 0U,
 	    "peer credential pid offset");
-	_Static_assert(offsetof(struct zedbsd_peercred, euid) == 4U,
+	_Static_assert(offsetof(struct kern_peercred, euid) == 4U,
 	    "peer credential euid offset");
-	_Static_assert(offsetof(struct zedbsd_peercred, egid) == 8U,
+	_Static_assert(offsetof(struct kern_peercred, egid) == 8U,
 	    "peer credential egid offset");
 
 	if (geteuid() != 0 || getegid() != 0)

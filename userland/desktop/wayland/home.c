@@ -31,7 +31,7 @@
  * application's icon grows as Home closes, and its first window grows out
  * of the icon's place (shell.c).
  *
- * The applications come from /etc/zdesktop/apps.conf, one a line:
+ * The applications come from /etc/keiland/apps.conf, one a line:
  * name|command|keywords|RRGGBB; without the file, a built-in list.  An
  * application whose command names an absolute path that is not there is
  * not shown.  An application is started with /bin/sh -c and the
@@ -64,7 +64,7 @@
 #define HOME_KEY_PAGE_DOWN	109U
 
 /* The applications' list, and how many it may hold. */
-#define HOME_APPS_PATH		"/etc/zdesktop/apps.conf"
+#define HOME_APPS_PATH		"/etc/keiland/apps.conf"
 
 /* The command of a login session's Log Out, which zdesktop carries out itself. */
 #define HOME_LOGOUT		"@logout"
@@ -720,8 +720,8 @@ home_read_apps(
 		home_add_app("Model viewer", "/bin/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU);
 		home_add_app("Vulkan test", "/bin/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30", "wltest gpu test", 0x5a8de0U);
 		home_add_app("Shared memory", "/bin/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU);
-		home_add_app("X terminal", "/bin/sh /usr/libexec/zdesktop-x11 /bin/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U);
-		home_add_app("Gears", "/bin/sh /usr/libexec/zdesktop-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU);
+		home_add_app("X terminal", "/bin/sh /usr/libexec/keiland-x11 /bin/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U);
+		home_add_app("Gears", "/bin/sh /usr/libexec/keiland-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU);
 		home_add_app("Files", "/bin/files", "files file manager folder finder browse", 0x2f7cf6U);
 		home_add_app("Browser", "/bin/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U);
 	}

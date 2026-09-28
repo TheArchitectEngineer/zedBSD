@@ -2,7 +2,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
 # The file manager of the desktop: a Wayland window drawn on the CPU and shown with Vulkan; text from libtruetype.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
-ZDESKTOP_FILES_SOURCES := userland/desktop/files/main.c \
+KEILAND_FILES_SOURCES := userland/desktop/files/main.c \
 	userland/desktop/files/window.c userland/desktop/files/dnd.c userland/desktop/files/present.c \
 	userland/desktop/files/canvas.c userland/desktop/files/text.c \
 	userland/desktop/files/icons.c userland/desktop/files/ui.c \
@@ -22,5 +22,6 @@ ZDESKTOP_FILES_SOURCES := userland/desktop/files/main.c \
 	userland/desktop/files/ui-menu.c userland/desktop/files/ui-help.c \
 	userland/desktop/files/menu.c userland/desktop/files/titlebar.c \
 	userland/desktop/files/ui-titlebar.c userland/desktop/files/glass.c \
-	userland/desktop/files/ui-context.c userland/desktop/files/ui-drag.c
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,files,File manager,amd64,y,basic,$(ZDESKTOP_FILES_SOURCES),y,base,desktop/files,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libtruetype base/libz-compat base/libpng-compat,0755,program,,,bin))
+	userland/desktop/files/ui-context.c userland/desktop/files/ui-drag.c \
+	userland/desktop/artwork/mark.c
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,files,File manager,amd64,y,basic,$(KEILAND_FILES_SOURCES),y,desktop,desktop/files,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libtruetype base/libz-compat base/libpng-compat,0755,program,,,bin))

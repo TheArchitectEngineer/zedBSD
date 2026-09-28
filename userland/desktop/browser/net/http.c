@@ -40,7 +40,7 @@
 #define NET_HTTP_MAX_RESPONSE	((size_t)256U * 1024U * 1024U)
 
 /* The User-Agent the browser sends. */
-#define NET_HTTP_AGENT		"browser/0.1 (zedBSD)"
+#define NET_HTTP_AGENT		"browser/0.1 (Kei)"
 
 /*
  * The other headers of every request: any type (the star, the slash and the star

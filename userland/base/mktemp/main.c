@@ -187,7 +187,7 @@ read_options(
 			options->suffix = scan.value;
 			break;
 		case OPTION_VERSION:
-			printf("mktemp (zedBSD) 1.0\n");
+			printf("mktemp (Kei) 1.0\n");
 			exit(0);
 			break;
 		default:

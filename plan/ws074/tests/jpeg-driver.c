@@ -6,10 +6,10 @@
  */
 
 /*
- * The libjpeg-compat test driver (ws074-p019), built for the host with
- * the library's sources and for zedBSD against libjpeg-compat.so:
+ * The libjpeg-compat test driver (ws074-p019, p020), built for the host
+ * with the library's sources and for zedBSD against libjpeg-compat.so:
  *
- *   host-jpeg [--space=NAME] [--stdio] [--no-fancy] IN.jpg OUT
+ *   host-jpeg [--space=NAME] [--stdio] [--no-fancy] [--markers] IN.jpg OUT
  *
  * decodes IN.jpg as a program does (jpeg_std_error with its own
  * error_exit, jpeg_create_decompress, a memory or stdio source,
@@ -17,9 +17,11 @@
  * jpeg_finish_decompress) and writes OUT: a PGM for gray, a PPM for RGB,
  * or for the other orders a "RAW WIDTH HEIGHT COMPONENTS" line and the
  * bytes.  NAME is gray, rgb, bgr, rgbx, bgrx, xbgr, xrgb, rgba, bgra,
- * abgr or argb (default: the library's default).  It prints the header's
- * facts and the warnings on standard output; an error prints "error:
- * MESSAGE" and exits with 2.
+ * abgr, argb or cmyk (default: the library's default).  It prints the
+ * header's facts and the warnings on standard output; an error prints
+ * "error: MESSAGE" and exits with 2.  --markers keeps every APPn and COM
+ * marker (jpeg_save_markers) and prints each: "marker: CODE LENGTH KEPT
+ * HEX" with the hexadecimal of its kept bytes.
  */
 
 #include <compat/jpeglib.h>
@@ -58,12 +60,14 @@ static const struct test_space test_spaces[] = {
 	{ "bgra", JCS_EXT_BGRA },
 	{ "abgr", JCS_EXT_ABGR },
 	{ "argb", JCS_EXT_ARGB },
+	{ "cmyk", JCS_CMYK },
 	{ NULL, JCS_UNKNOWN }
 };
 
 static void test_error_exit(j_common_ptr cinfo);
 static int test_read_file(const char *path, unsigned char **bytes, size_t *size);
-static int test_decode(const char *in, const char *out, J_COLOR_SPACE space, int stdio, int fancy);
+static int test_decode(const char *in, const char *out, J_COLOR_SPACE space, int stdio, int fancy, int markers);
+static void test_print_markers(struct jpeg_decompress_struct *cinfo);
 static int test_write(const char *path, struct jpeg_decompress_struct *cinfo, const unsigned char *pixels);
 
 /* Reads the command line and decodes the file. */
@@ -79,6 +83,7 @@ main(
 	int entry;
 	int stdio;
 	int fancy;
+	int markers;
 	int differs;
 	int status;
 
@@ -86,6 +91,7 @@ main(
 	space = JCS_UNKNOWN;
 	stdio = 0;
 	fancy = 1;
+	markers = 0;
 	in = NULL;
 	out = NULL;
 	for (index = 1; index < argc; index++) {
@@ -115,6 +121,13 @@ main(
 			continue;
 		}
 
+		/* The APPn and COM markers kept and printed. */
+		differs = strcmp(argv[index], "--markers");
+		if (differs == 0) {
+			markers = 1;
+			continue;
+		}
+
 		/* The files. */
 		if (in == NULL) {
 			in = argv[index];
@@ -125,12 +138,12 @@ main(
 
 	/* Both files are needed. */
 	if (in == NULL || out == NULL) {
-		fprintf(stderr, "usage: host-jpeg [--space=NAME] [--stdio] [--no-fancy] IN.jpg OUT\n");
+		fprintf(stderr, "usage: host-jpeg [--space=NAME] [--stdio] [--no-fancy] [--markers] IN.jpg OUT\n");
 		return 2;
 	}
 
 	/* The decoding. */
-	status = test_decode(in, out, space, stdio, fancy);
+	status = test_decode(in, out, space, stdio, fancy, markers);
 	return status;
 }
 
@@ -193,7 +206,8 @@ test_decode(
 	const char *out,
 	J_COLOR_SPACE space,
 	int stdio,
-	int fancy)
+	int fancy,
+	int markers)
 {
 	struct jpeg_decompress_struct cinfo;
 	struct test_error error;
@@ -206,6 +220,7 @@ test_decode(
 	size_t stride;
 	int jumped;
 	int status;
+	int index;
 
 	/* The error manager, whose exit comes back here. */
 	bytes = NULL;
@@ -248,9 +263,18 @@ test_decode(
 		jpeg_mem_src(&cinfo, bytes, (unsigned long)size);
 	}
 
+	/* Every APPn and COM marker kept, when asked. */
+	if (markers) {
+		for (index = 0; index < 16; index++)
+			jpeg_save_markers(&cinfo, JPEG_APP0 + index, 0xFFFF);
+		jpeg_save_markers(&cinfo, JPEG_COM, 0xFFFF);
+	}
+
 	/* The header, and the output asked for. */
 	jpeg_read_header(&cinfo, TRUE);
 	printf("header: %ux%u components=%d space=%d jfif=%d adobe=%d transform=%d restart=%u\n", cinfo.image_width, cinfo.image_height, cinfo.num_components, (int)cinfo.jpeg_color_space, cinfo.saw_JFIF_marker, cinfo.saw_Adobe_marker, cinfo.Adobe_transform, cinfo.restart_interval);
+	if (markers)
+		test_print_markers(&cinfo);
 	if (space != JCS_UNKNOWN)
 		cinfo.out_color_space = space;
 	cinfo.do_fancy_upsampling = (boolean)fancy;
@@ -286,6 +310,23 @@ test_decode(
 
 	/* Succeeded: the picture is written. */
 	return 0;
+}
+
+/* Prints the kept markers: code, whole length, bytes kept, and the kept bytes in hexadecimal. */
+static void
+test_print_markers(
+	struct jpeg_decompress_struct *cinfo)
+{
+	jpeg_saved_marker_ptr marker;
+	unsigned int index;
+
+	/* Each marker of the list, in the file's order. */
+	for (marker = cinfo->marker_list; marker != NULL; marker = marker->next) {
+		printf("marker: 0x%02x %u %u ", marker->marker, marker->original_length, marker->data_length);
+		for (index = 0; index < marker->data_length; index++)
+			printf("%02x", marker->data[index]);
+		printf("\n");
+	}
 }
 
 /* Writes the pixels: PGM, PPM, or the RAW form for four components. */

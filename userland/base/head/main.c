@@ -203,7 +203,7 @@ read_options(
 			options->delimiter = '\0';
 			break;
 		case OPTION_VERSION:
-			printf("head (zedBSD) 1.0\n");
+			printf("head (Kei) 1.0\n");
 			exit(0);
 		default:
 			usage();

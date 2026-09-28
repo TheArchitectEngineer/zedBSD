@@ -9,8 +9,8 @@
  * The inside of the heap, shared by the files of vm/ and by nobody else.
  */
 
-#ifndef ZDESKTOP_BROWSER_VM_INTERNAL_H
-#define ZDESKTOP_BROWSER_VM_INTERNAL_H
+#ifndef KEILAND_BROWSER_VM_INTERNAL_H
+#define KEILAND_BROWSER_VM_INTERNAL_H
 
 #include "vm/vm.h"
 

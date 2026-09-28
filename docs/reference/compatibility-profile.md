@@ -18,7 +18,7 @@ Its current declarations include:
 | `_POSIX_VERSION` | `202405L` |
 | `_POSIX2_VERSION` | `200809L` |
 | `_XOPEN_VERSION` | `700` |
-| `__ZEDBSD_POSIX_2024_VISIBLE` | 1 when `_POSIX_C_SOURCE >= 202405L` or `_XOPEN_SOURCE >= 800`; otherwise 0 |
+| `__KERN_POSIX_2024_VISIBLE` | 1 when `_POSIX_C_SOURCE >= 202405L` or `_XOPEN_SOURCE >= 800`; otherwise 0 |
 | `_POSIX_THREADS`, `_POSIX_TIMERS`, `_POSIX_MONOTONIC_CLOCK` | `200809L` |
 | `_POSIX_DEVICE_CONTROL` | `202405L` |
 | `_POSIX_THREAD_SAFE_FUNCTIONS`, priority inheritance/protection, asynchronous/prioritized I/O, typed memory objects | `-1` |
@@ -27,7 +27,7 @@ These are literal implementation declarations, not an independent certification
 of the corresponding standards. In particular, the selector threshold 800
 and reported X/Open version 700 must not be collapsed into a claim of full
 SUS Issue 8 support. Legacy declarations are visible by default and under the
-older selectors as specified by `__ZEDBSD_LEGACY_VISIBLE`. Inspect the header
+older selectors as specified by `__KERN_LEGACY_VISIBLE`. Inspect the header
 for the exact combined-selector expression before relying on mixed selectors.
 
 Use a consistent selector before including any public header. Header visibility,

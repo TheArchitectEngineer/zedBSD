@@ -7,8 +7,8 @@
 
 /* Provides the standard include spelling for the Wayland public header. */
 
-#ifndef ZEDBSD_ENTRY_XDG_SHELL_CLIENT_PROTOCOL_H
-#define ZEDBSD_ENTRY_XDG_SHELL_CLIENT_PROTOCOL_H
+#ifndef KERN_ENTRY_XDG_SHELL_CLIENT_PROTOCOL_H
+#define KERN_ENTRY_XDG_SHELL_CLIENT_PROTOCOL_H
 
 #include <wayland/xdg-shell-client-protocol.h>
 

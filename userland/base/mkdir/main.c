@@ -155,7 +155,7 @@ read_options(
 			mode_text = scan.value;
 			break;
 		case OPTION_VERSION:
-			printf("mkdir (zedBSD) 1.0\n");
+			printf("mkdir (Kei) 1.0\n");
 			exit(0);
 			break;
 		default:

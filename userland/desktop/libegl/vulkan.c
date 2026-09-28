@@ -82,7 +82,7 @@ zegl_vulkan_open(
 	extensions[2] = VK_KHR_DISPLAY_EXTENSION_NAME;
 	memset(&application, 0, sizeof(application));
 	application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	application.pApplicationName = "zedBSD EGL";
+	application.pApplicationName = "Kei EGL";
 	application.apiVersion = VK_API_VERSION_1_0;
 	memset(&instance, 0, sizeof(instance));
 	instance.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;

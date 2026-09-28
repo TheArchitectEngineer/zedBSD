@@ -105,6 +105,14 @@ struct kern_text_ops {
 	 * boot, ws035-p097): the screen is cleared and the retained text drawn.
 	 */
 	void (*reveal)(void);
+
+	/*
+	 * Optionally shows that a quiet boot goes on: a record went to the log
+	 * only (end 0: the Kei splash's spinner turns, ws035-p107), or the
+	 * boot's screen is over (end 1: a display was taken for graphics, and
+	 * the splash stops for good).
+	 */
+	void (*progress)(int end);
 };
 
 /*
@@ -139,6 +147,8 @@ void kern_text_resume(void);
  */
 void kern_text_reveal(void);
 void kern_text_kernel_putc(int character);
+void kern_text_progress(void);
+void kern_text_progress_end(void);
 
 /* Renders or queries an optional retained-cell snapshot, without reading display memory. */
 int kern_text_snapshot(struct kern_text_snapshot *snapshot);

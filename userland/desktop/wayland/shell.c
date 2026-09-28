@@ -22,7 +22,7 @@
  * DOCK_MS: the body's rectangle and the title bar's slide between their
  * places and the title bar's glass fades.
  *
- * The system bar has three zones: on the left the launcher, "zedBSD" and the
+ * The system bar has three zones: on the left the launcher, "Kei" and the
  * docked window; towards the right four virtual desktops; at the right edge
  * the network, the battery and the clock.  The network's icon opens its
  * menu (network.c, ws035-p013); the battery is drawn only (a mock-up).
@@ -1346,7 +1346,7 @@ zwl_glass_tick(
 /*
  * Lays out the system bar from the right: the clock, the battery, the
  * signal, a line, the desktops, a line, the docked window's buttons; and
- * from the left the launcher, "zedBSD", a line and the docked title.
+ * from the left the launcher, "Kei", a line and the docked title.
  */
 static void
 bar_layout(
@@ -1379,8 +1379,8 @@ bar_layout(
 	for (button = 0; button < BUTTON_COUNT; button++)
 		bar->buttons[button] = bar->desktops_line - 30 - button * BAR_BUTTON_SPACING;
 
-	/* On the left, after the launcher and "zedBSD", a line and the docked title. */
-	bar->menu_line = 44 + glass_text_width(server, SIZE_BAR, "zedBSD") + 16;
+	/* On the left, after the launcher and "Kei", a line and the docked title. */
+	bar->menu_line = 44 + glass_text_width(server, SIZE_BAR, "Kei") + 16;
 	bar->title_x = bar->menu_line + 17;
 }
 
@@ -2001,7 +2001,7 @@ draw_sign(
 
 /*
  * Draws the system bar: a glass strip along the top (a little whiter while a
- * window is docked), the launcher and "zedBSD", the docked window's title and
+ * window is docked), the launcher and "Kei", the docked window's title and
  * buttons, the desktops, and the status at the right.
  */
 static void
@@ -2068,7 +2068,7 @@ draw_system_bar(
 	}
 
 	/* The system menu. */
-	glass_draw_text(server, command, SIZE_BAR, 44, 22, "zedBSD", 200, dark);
+	glass_draw_text(server, command, SIZE_BAR, 44, 22, "Kei", 200, dark);
 
 	/* The docked window: a line, its mark, title and menu, and its buttons with restore for maximize. */
 	if (docked != NULL) {
@@ -2795,7 +2795,7 @@ bar_press(
 		return 1;
 	}
 
-	/* Its title: between the line after "zedBSD" and the buttons. */
+	/* Its title: between the line after "Kei" and the buttons. */
 	if (server->pointer_x < bar.menu_line || server->pointer_x >= bar.buttons[BUTTON_MINIMIZE] - BUTTON_WIDTH / 2)
 		return 1;
 

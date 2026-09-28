@@ -61,9 +61,9 @@ case "$EXTRA" in wayland*)
 	WAYLAND_RUN=1
 	EXTRA="${EXTRA#wayland}" ;;
 esac
-ZDESKTOP_RUN=0
+KEILAND_RUN=0
 case "$EXTRA" in zdesktop*)
-	ZDESKTOP_RUN=1
+	KEILAND_RUN=1
 	EXTRA="${EXTRA#zdesktop}"
 	export ZEDBSD_CONFIG=${ZEDBSD_CONFIG:-plan/ws031/tests/config-zdesktop-hw.mk}
 	BUILD=${BUILD:-build/resident-zdesktop} ;;
@@ -163,7 +163,7 @@ if [ "$MVIEW_RUN" = 1 ]; then
 	done
 	RC_CONF=plan/ws031/tests/mview/rc.conf
 fi
-if [ "$ZDESKTOP_RUN" = 1 ]; then
+if [ "$KEILAND_RUN" = 1 ]; then
 	# the compositor in Wiseman Mode and three clients; the font and the wallpaper are not in git
 	FILES="--file /etc/service.d/vkwait1=$WAIT1"
 	for n in zdesktop wlwait wlshm1 mwait wlshm2 mwait2 wlkill mview1 vkwait2 poweroff; do
@@ -172,29 +172,29 @@ if [ "$ZDESKTOP_RUN" = 1 ]; then
 	# the compositor's and the viewer's output and the kernel's messages go to /var/log, read afterwards
 	# from the disk image with plan/ws031/tests/ufs-cat.py (not from the serial log)
 	for n in run-zdesktop.sh run-wlkill.sh run-mview.sh run-poweroff.sh; do
-		FILES="$FILES --file /etc/zdesktop/$n=plan/ws031/tests/zdesktop/$n"
+		FILES="$FILES --file /etc/keiland/$n=plan/ws031/tests/zdesktop/$n"
 	done
-	# ZDESKTOP_APP=terminal runs terminal (WS035 p068) where the model viewer runs, with the same log
-	if [ "${ZDESKTOP_APP:-mview}" = terminal ]; then
-		FILES="$FILES --file /etc/zdesktop/run-mview.sh=plan/ws031/tests/zdesktop/run-terminal.sh"
-		FILES="$FILES --file /usr/share/fonts/zdesktop-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"
+	# KEILAND_APP=terminal runs terminal (WS035 p068) where the model viewer runs, with the same log
+	if [ "${KEILAND_APP:-mview}" = terminal ]; then
+		FILES="$FILES --file /etc/keiland/run-mview.sh=plan/ws031/tests/zdesktop/run-terminal.sh"
+		FILES="$FILES --file /usr/share/fonts/keiland-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"
 	fi
-	# ZDESKTOP_APP=home (WS035 p069): nothing is started in the viewer's place; App Home starts the
+	# KEILAND_APP=home (WS035 p069): nothing is started in the viewer's place; App Home starts the
 	# applications (CAPTURE=zdesktop-home clicks them), and the logs are written out every two seconds
-	if [ "${ZDESKTOP_APP:-mview}" = home ]; then
-		FILES="$FILES --file /etc/zdesktop/run-mview.sh=plan/ws031/tests/zdesktop/run-home.sh"
-		FILES="$FILES --file /usr/share/fonts/zdesktop-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"
+	if [ "${KEILAND_APP:-mview}" = home ]; then
+		FILES="$FILES --file /etc/keiland/run-mview.sh=plan/ws031/tests/zdesktop/run-home.sh"
+		FILES="$FILES --file /usr/share/fonts/keiland-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"
 	fi
-	# ZDESKTOP_APP=egltest (ws075-p005): egltest's scenes one after another in the viewer's place, their lines in its log
-	if [ "${ZDESKTOP_APP:-mview}" = egltest ]; then
-		FILES="$FILES --file /etc/zdesktop/run-mview.sh=plan/ws031/tests/zdesktop/run-egltest.sh"
+	# KEILAND_APP=egltest (ws075-p005): egltest's scenes one after another in the viewer's place, their lines in its log
+	if [ "${KEILAND_APP:-mview}" = egltest ]; then
+		FILES="$FILES --file /etc/keiland/run-mview.sh=plan/ws031/tests/zdesktop/run-egltest.sh"
 	fi
-	# ZDESKTOP_APP=egltest6 (ws075-p006): the MRT, blit, query and transform feedback scenes the same way
-	if [ "${ZDESKTOP_APP:-mview}" = egltest6 ]; then
-		FILES="$FILES --file /etc/zdesktop/run-mview.sh=plan/ws031/tests/zdesktop/run-egltest6.sh"
+	# KEILAND_APP=egltest6 (ws075-p006): the MRT, blit, query and transform feedback scenes the same way
+	if [ "${KEILAND_APP:-mview}" = egltest6 ]; then
+		FILES="$FILES --file /etc/keiland/run-mview.sh=plan/ws031/tests/zdesktop/run-egltest6.sh"
 	fi
-	FILES="$FILES --file /usr/share/fonts/zdesktop.ttf=build/ws035-fonts/Inter.ttf"
-	FILES="$FILES --file /usr/share/zdesktop/wallpaper.ppm=build/ws035-wallpaper/wallpaper-1080.ppm"
+	FILES="$FILES --file /usr/share/fonts/keiland.ttf=build/ws035-fonts/Inter.ttf"
+	FILES="$FILES --file /usr/share/keiland/wallpaper.ppm=build/ws035-wallpaper/wallpaper-1080.ppm"
 	RC_CONF=plan/ws031/tests/zdesktop/rc.conf
 fi
 # the image is rebuilt only when an input is newer than it: switching to an older rc.conf does not
@@ -208,12 +208,17 @@ make -j"$(nproc)" BUILD=$BUILD "I915_TESTS=${I915_TESTS:-n}" "I915_TEST_ORACLE=$
 	"I915_TEST_VBT=$I915_TEST_VBT" "I915_TEST_CAPTURE=$I915_TEST_CAPTURE" \
 	"ZEDBSD_TEST_CPPFLAGS=-DGPU_IOCTL_TRACE=1 $EXTRA" \
 	ZEDBSD_TEST_RC_CONF=$RC_CONF "ZEDBSD_TEST_EXTRA_FILES=$FILES" \
-	ZEDBSD_TEST_IMAGE_TAG=vkprobe disk-image > /tmp/resident-build.log 2>&1 || {
+	ZEDBSD_TEST_IMAGE_TAG=vkprobe disk-image > $BUILD/resident-build.log 2>&1 || {
 	echo "BUILD FAILED (the image on the 5330 is NOT this tree):"
-	grep -E ' error: |Error [0-9]' /tmp/resident-build.log | head
+	grep -E ' error: |Error [0-9]' $BUILD/resident-build.log | head
 	exit 1
 }
 printf '%s' "$FLAGS" > $BUILD/.vkloop-flags
+# VKLOOP_BUILD_ONLY=1: the image only (built outside the machine's lock, so the locked run finds it up to date)
+if [ "${VKLOOP_BUILD_ONLY:-0}" = 1 ]; then
+	echo "vkloop-hw: built $BUILD/hdd-image.img"
+	exit 0
+fi
 # the iGPU goes back to vfio-pci if a Venus run left it on the host i915 driver (bigbang/igpu-mode.sh)
 ssh $I915_HOST bigbang/igpu-mode.sh vfio >/dev/null || { echo "iGPU is not on vfio-pci"; exit 1; }
 scp -q $BUILD/hdd-image.img $I915_HOST:bigbang/guest-parity.img || exit 1
@@ -243,7 +248,7 @@ else
 	ssh $I915_HOST 'cd ~/bigbang && rm -f run-parity-serial.log && ./run-parity-vk.sh >/dev/null 2>&1; cp run-parity-serial.log vkloop-last.log'
 fi
 scp -q $I915_HOST:bigbang/vkloop-last.log /tmp/vkloop-last.log
-if [ "$ZDESKTOP_RUN" = 1 ]; then
+if [ "$KEILAND_RUN" = 1 ]; then
 	# the guest's own logs, from its disk
 	scp -q plan/ws031/tests/ufs-cat.py tools/build/check-ufs-image.py $I915_HOST:bigbang/ || exit 1
 	ssh $I915_HOST 'python3 bigbang/ufs-cat.py bigbang/guest-parity.img /var/log/zdesktop.log /var/log/wlkill.log /var/log/mview.log /var/log/dmesg.log /var/log/x11server.log /var/log/vk.log' > /tmp/zdesktop-guest-logs.txt 2>&1

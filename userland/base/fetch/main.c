@@ -225,12 +225,12 @@ fetch_once(
 	status = url.port == 80
 		     ? snprintf(request, sizeof(request),
 				"GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: "
-				"zedBSD-fetch/0.1\r\n"
+				"Kei-fetch/0.1\r\n"
 				"Accept: */*\r\nConnection: close\r\n\r\n",
 				url.path, url.host)
 		     : snprintf(request, sizeof(request),
 				"GET %s HTTP/1.1\r\nHost: %s:%u\r\nUser-Agent: "
-				"zedBSD-fetch/0.1\r\n"
+				"Kei-fetch/0.1\r\n"
 				"Accept: */*\r\nConnection: close\r\n\r\n",
 				url.path, url.host, url.port);
 

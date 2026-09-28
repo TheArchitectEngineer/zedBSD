@@ -10,7 +10,7 @@
  * and CRC-32 (PNG's chunks, gzip), computed a byte and a bit at a time.
  */
 
-#include <compat/zlib.h>
+#include <compat/zlib/zlib.h>
 
 /* Adler-32's modulus, the largest prime below 65536. */
 #define ADLER_BASE		65521U

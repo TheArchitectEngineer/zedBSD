@@ -17,8 +17,8 @@
  * kerning or shaping yet.
  */
 
-#ifndef ZDESKTOP_BROWSER_TEXT_H
-#define ZDESKTOP_BROWSER_TEXT_H
+#ifndef KEILAND_BROWSER_TEXT_H
+#define KEILAND_BROWSER_TEXT_H
 
 #include "base/base.h"
 
@@ -29,9 +29,9 @@
 #define TEXT_FACES		3
 
 /* The fonts the zdesktop image installs. */
-#define TEXT_DEFAULT_SANS	"/usr/share/fonts/zdesktop.ttf"
-#define TEXT_DEFAULT_MONO	"/usr/share/fonts/zdesktop-mono.ttf"
-#define TEXT_DEFAULT_FALLBACK	"/usr/share/fonts/zdesktop-fallback.ttf"
+#define TEXT_DEFAULT_SANS	"/usr/share/fonts/keiland.ttf"
+#define TEXT_DEFAULT_MONO	"/usr/share/fonts/keiland-mono.ttf"
+#define TEXT_DEFAULT_FALLBACK	"/usr/share/fonts/keiland-fallback.ttf"
 
 struct truetype_face;
 struct text_glyph_entry;

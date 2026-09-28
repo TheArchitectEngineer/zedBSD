@@ -12,8 +12,8 @@
  * (foreign content).
  */
 
-#ifndef ZDESKTOP_BROWSER_HTML_PARSER_H
-#define ZDESKTOP_BROWSER_HTML_PARSER_H
+#ifndef KEILAND_BROWSER_HTML_PARSER_H
+#define KEILAND_BROWSER_HTML_PARSER_H
 
 #include "html/html.h"
 #include "dom/dom.h"

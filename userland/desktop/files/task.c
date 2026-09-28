@@ -18,8 +18,11 @@
  * the source, which is skipped for any source whose copy failed, so a
  * failure never loses the only copy.
  *
- * Names that are taken are never overwritten: the copy gets the next free
- * name ("Report 2.pdf", or "Report copy.pdf" for a duplicate).
+ * Names that are taken are not overwritten unless the user chose to: by
+ * default the copy gets the next free name ("Report 2.pdf", or "Report
+ * copy.pdf" for a duplicate).  A copy or a move may instead replace the
+ * item there (it is removed first, by steps planned before the source's) or
+ * skip the source, as its collisions table says (ws035-p106, F-041).
  */
 
 #include "ops.h"
@@ -34,6 +37,16 @@
 #include <sys/xattr.h>
 #include <time.h>
 #include <unistd.h>
+
+/*
+ * What task_resolve found for a source: its target is ready, it is
+ * skipped, or the item it replaces is being removed first.
+ */
+enum task_target {
+	TASK_TARGET_READY,
+	TASK_TARGET_SKIP,
+	TASK_TARGET_REMOVING
+};
 
 /* How many steps a task's table grows by, and how many walks. */
 #define TASK_GROWTH		256U
@@ -53,6 +66,7 @@ static unsigned task_next_id = 1U;
 
 static int task_plan(struct fm_task *task, uint64_t deadline);
 static int task_plan_source(struct fm_task *task);
+static int task_resolve(struct fm_task *task, size_t owner, const char *source, const char *suffix, char *target, size_t size, unsigned *outcome);
 static int task_plan_walk(struct fm_task *task);
 static int task_plan_copy(struct fm_task *task, const char *source, const char *target, const struct stat *status);
 static int task_plan_transfer(struct fm_task *task, const char *source, const char *target, const struct stat *status);
@@ -104,7 +118,8 @@ fm_task_new(
 	task->sources = calloc(count + 1U, sizeof(task->sources[0]));
 	task->results = calloc(count + 1U, sizeof(task->results[0]));
 	task->failed = calloc(count + 1U, 1U);
-	if (task->sources == NULL || task->results == NULL || task->failed == NULL) {
+	task->collisions = calloc(count + 1U, 1U);
+	if (task->sources == NULL || task->results == NULL || task->failed == NULL || task->collisions == NULL) {
 		fm_task_free(task);
 		return NULL;
 	}
@@ -228,6 +243,7 @@ fm_task_free(
 	free(task->sources);
 	free(task->results);
 	free(task->failed);
+	free(task->collisions);
 	free(task);
 }
 
@@ -260,6 +276,47 @@ fm_task_verb(
 
 	/* A kind this program does not know. */
 	return "task";
+}
+
+/*
+ * Tells whether a source of a copy or a move would land on a name its
+ * destination already has (another item than the source itself): 1 when
+ * it would, 0 otherwise.
+ */
+int
+fm_task_collides(
+	const struct fm_task *task,
+	size_t index)
+{
+	struct stat status;
+	char path[2 * FM_OPS_PATH_MAX + 32];
+	int written;
+	int taken;
+	int same;
+
+	/* Only a copy and a move can meet a taken name. */
+	if (task->kind != FM_TASK_COPY && task->kind != FM_TASK_MOVE)
+		return 0;
+	if (index >= task->source_count)
+		return 0;
+
+	/* The path the source would take under its own name. */
+	written = snprintf(path, sizeof(path), "%s/%s", task->destination, task_base(task->sources[index]));
+	if (written < 0 || (size_t)written >= sizeof(path))
+		return 0;
+
+	/* The source itself (a copy or a move into its own folder) is not in the way. */
+	same = strcmp(path, task->sources[index]);
+	if (same == 0)
+		return 0;
+
+	/* Nothing there: the name is free. */
+	taken = lstat(path, &status);
+	if (taken != 0)
+		return 0;
+
+	/* Succeeded: another item has the name. */
+	return 1;
 }
 
 /*
@@ -361,7 +418,10 @@ task_plan(
 			(void)task_plan_walk(task);
 		} else if (task->source_index < task->source_count) {
 			(void)task_plan_source(task);
-			task->source_index++;
+
+			/* A source whose replaced item is being removed is planned again once that is planned. */
+			if (task->replacing == 0)
+				task->source_index++;
 		} else {
 			return 0;
 		}
@@ -389,6 +449,7 @@ task_plan_source(
 	const char *suffix;
 	size_t owner;
 	time_t deleted;
+	unsigned outcome;
 	int same_device;
 	int same_folder;
 	int error;
@@ -414,15 +475,19 @@ task_plan_source(
 			return -1;
 		}
 
-		/* A free name in the destination, then the copy of the tree. */
+		/* The target in the destination, as the name's collision says, then the copy of the tree. */
 		suffix = NULL;
 		if (task->kind == FM_TASK_DUPLICATE)
 			suffix = " copy";
-		error = fm_unique_name(task->destination, task_base(source), suffix, target, sizeof(target));
+		error = task_resolve(task, owner, source, suffix, target, sizeof(target), &outcome);
 		if (error != 0) {
 			task_fail(task, owner, error, source);
 			return -1;
 		}
+
+		/* A skipped source, or one whose replaced item is removed first, plans nothing of its own now. */
+		if (outcome != TASK_TARGET_READY)
+			return 0;
 
 		/* The copy goes there; the tree is planned. */
 		task->results[owner] = strdup(target);
@@ -444,12 +509,16 @@ task_plan_source(
 			return -1;
 		}
 
-		/* A free name in the destination. */
-		error = fm_unique_name(task->destination, task_base(source), NULL, target, sizeof(target));
+		/* The target in the destination, as the name's collision says. */
+		error = task_resolve(task, owner, source, NULL, target, sizeof(target), &outcome);
 		if (error != 0) {
 			task_fail(task, owner, error, source);
 			return -1;
 		}
+
+		/* A skipped source, or one whose replaced item is removed first, plans nothing of its own now. */
+		if (outcome != TASK_TARGET_READY)
+			return 0;
 
 		/* The item goes there. */
 		task->results[owner] = strdup(target);
@@ -575,6 +644,86 @@ task_plan_source(
 	}
 
 	/* Succeeded: the source's first steps are planned. */
+	return 0;
+}
+
+/*
+ * Finds where a source of a task goes in its destination, as the source's
+ * collision choice says: the next free name (keep both, or a name nobody
+ * has), nowhere (skip), or the taken name itself once the item there is
+ * removed (replace): its removal is planned now, and the source is planned
+ * again next with outcome ready.  Returns 0 with the outcome, or an errno
+ * value.
+ */
+static int
+task_resolve(
+	struct fm_task *task,
+	size_t owner,
+	const char *source,
+	const char *suffix,
+	char *target,
+	size_t size,
+	unsigned *outcome)
+{
+	struct stat status;
+	unsigned collision;
+	int collides;
+	int written;
+	int inside;
+	int error;
+
+	/* Ready unless said otherwise. */
+	*outcome = TASK_TARGET_READY;
+
+	/* The replaced item's removal is planned: the source takes its name. */
+	if (task->replacing != 0) {
+		task->replacing = 0;
+		written = snprintf(target, size, "%s/%s", task->destination, task_base(source));
+		if (written < 0 || (size_t)written >= size)
+			return ENAMETOOLONG;
+		return 0;
+	}
+
+	/* What the user chose for this source's name, and whether it is taken. */
+	collision = task->collisions[owner];
+	collides = fm_task_collides(task, owner);
+
+	/* A free name, or a choice to keep both, takes the next free name. */
+	if (collides == 0 || collision == FM_COLLISION_KEEP_BOTH) {
+		error = fm_unique_name(task->destination, task_base(source), suffix, target, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* A skipped source goes nowhere; it is not a failure. */
+	if (collision == FM_COLLISION_SKIP) {
+		*outcome = TASK_TARGET_SKIP;
+		task->skip_count++;
+		return 0;
+	}
+
+	/* The item that has the name, which the source replaces. */
+	written = snprintf(target, size, "%s/%s", task->destination, task_base(source));
+	if (written < 0 || (size_t)written >= size)
+		return ENAMETOOLONG;
+	error = lstat(target, &status);
+	if (error != 0)
+		return errno;
+
+	/* An item that holds the source cannot be replaced by it (the source would go with it). */
+	inside = task_inside(source, target);
+	if (inside != 0)
+		return EINVAL;
+
+	/* Its removal comes first; the source is planned again after it. */
+	error = task_plan_delete(task, target, &status);
+	if (error != 0)
+		return error;
+	task->replacing = 1;
+	*outcome = TASK_TARGET_REMOVING;
+
+	/* Succeeded: the replaced item's removal is planned. */
 	return 0;
 }
 

@@ -20,8 +20,8 @@
  * One heap serves one tab; nothing is shared between heaps.
  */
 
-#ifndef ZDESKTOP_BROWSER_VM_H
-#define ZDESKTOP_BROWSER_VM_H
+#ifndef KEILAND_BROWSER_VM_H
+#define KEILAND_BROWSER_VM_H
 
 #include "base/base.h"
 

@@ -80,7 +80,7 @@ static const struct help_line help_shortcuts[] = {
 
 /* About. */
 static const struct help_line help_about[] = {
-	{ NULL, "The file manager of the zedBSD desktop." },
+	{ NULL, "The file manager of Kei." },
 	{ NULL, "" },
 	{ NULL, "Copyright (C) 2026 Awe Morris" },
 	{ NULL, "Zlib license" }

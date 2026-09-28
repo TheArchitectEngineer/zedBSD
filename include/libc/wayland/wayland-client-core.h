@@ -9,8 +9,8 @@
  * Declares the independent minimal Wayland client connection and proxy ABI.
  */
 
-#ifndef ZEDBSD_WAYLAND_CLIENT_CORE_H
-#define ZEDBSD_WAYLAND_CLIENT_CORE_H
+#ifndef KERN_WAYLAND_CLIENT_CORE_H
+#define KERN_WAYLAND_CLIENT_CORE_H
 
 #include <wayland/wayland-util.h>
 

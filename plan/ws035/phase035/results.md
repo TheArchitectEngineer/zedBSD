@@ -297,7 +297,7 @@ baseline は `1625884c` の `git archive`、対象は p034 と同じ 46 本（�
    （値は不変）。userland の build は通ったが、外部 package で同名を自前定義するものがあれば衝突しうる。
    uapi の ioctl ヘッダが `ioctl()` の宣言を連れてこなくなったため、同じ依存を持つ外部コードがあれば `<sys/ioctl.h>` が要る。
 6. **壊れている fixture**: `directory-fsync-host-test.mk`（`io-stats.c` の削除と多重定義。p035 以前から）。代表を探す途中で試した
-   `credential-vfs-overlay-fault-host-test.mk` は古い名前 `ZEDBSD_PATH_MAX` で失敗（p035 以前の改名が原因）、
+   `credential-vfs-overlay-fault-host-test.mk` は古い名前 `KERN_PATH_MAX` で失敗（p035 以前の改名が原因）、
    `credential-vfs-ufs-socket-fault-host-test.mk` と ws011 `overlay-publication-host-test.mk` も失敗したが原因は調べておらず、
    HEAD での結果も取っていない。WS026 の範囲と思われるが未確認。
 7. **共有 `build/`**: 回帰の fixture は既定パスで `build/` 以下に書くものがある（p034 と同じ）。開始時の `ls build/` は

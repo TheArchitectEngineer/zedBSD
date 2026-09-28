@@ -20,7 +20,7 @@
 
 #include "files.h"
 
-#include <compat/png.h>
+#include <compat/png/png.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>

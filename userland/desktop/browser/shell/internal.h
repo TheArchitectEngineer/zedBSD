@@ -11,8 +11,8 @@
  * (present.c).  The host build leaves the whole directory out.
  */
 
-#ifndef ZDESKTOP_BROWSER_SHELL_INTERNAL_H
-#define ZDESKTOP_BROWSER_SHELL_INTERNAL_H
+#ifndef KEILAND_BROWSER_SHELL_INTERNAL_H
+#define KEILAND_BROWSER_SHELL_INTERNAL_H
 
 /* The Wayland platform's parts of Vulkan, declared before anything includes vulkan.h. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
@@ -23,7 +23,7 @@
 #include "paint/gpu.h"
 #include "shell/shell.h"
 
-#include <zdesktop.h>
+#include <keiland.h>
 
 /* How many inputs wait for the main loop at most. */
 #define SHELL_WINDOW_EVENTS	256U
@@ -172,7 +172,7 @@ enum shell_titlebar_kind {
 /*
  * One thing done with the titlebar: a control chosen (detail is a
  * breadcrumb's part), or a text control's editing ended (detail is how,
- * ZDESKTOP_TEXT_*, and text is its text).
+ * KEILAND_TEXT_*, and text is its text).
  */
 struct shell_titlebar_event {
 	int kind;
@@ -187,7 +187,7 @@ struct shell_titlebar_event {
  * with it and the main loop has not yet carried out, oldest first.
  */
 struct shell_titlebar {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 	struct shell_titlebar_event events[SHELL_TITLEBAR_EVENTS];
 	unsigned event_count;
 };

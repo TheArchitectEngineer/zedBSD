@@ -41,28 +41,28 @@ struct titlebar_control {
 
 /* The controls always there, in their order (the progress is added while operations run). */
 static const struct titlebar_control titlebar_controls[] = {
-	{ FM_CONTROL_BACK, ZDESKTOP_CONTROL_BACK, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Back" },
-	{ FM_CONTROL_FORWARD, ZDESKTOP_CONTROL_FORWARD, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Forward" },
-	{ FM_CONTROL_HOME, ZDESKTOP_CONTROL_HOME, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Home" },
-	{ FM_CONTROL_PATH, ZDESKTOP_CONTROL_BREADCRUMB, ZDESKTOP_PRIORITY_NORMAL, 0U, "Location" },
-	{ FM_CONTROL_SEARCH, ZDESKTOP_CONTROL_SEARCH, ZDESKTOP_PRIORITY_NORMAL, 0U, "Search" },
-	{ FM_CONTROL_ICONS, ZDESKTOP_CONTROL_VIEW_GRID, ZDESKTOP_PRIORITY_SECONDARY, 1U, "Icons" },
-	{ FM_CONTROL_LIST, ZDESKTOP_CONTROL_VIEW_LIST, ZDESKTOP_PRIORITY_SECONDARY, 1U, "List" },
-	{ FM_CONTROL_PREVIEW, ZDESKTOP_CONTROL_PREVIEW, ZDESKTOP_PRIORITY_SECONDARY, 0U, "Preview" }
+	{ FM_CONTROL_BACK, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Back" },
+	{ FM_CONTROL_FORWARD, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Forward" },
+	{ FM_CONTROL_HOME, KEILAND_CONTROL_HOME, KEILAND_PRIORITY_PRIMARY, 0U, "Home" },
+	{ FM_CONTROL_PATH, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, 0U, "Location" },
+	{ FM_CONTROL_SEARCH, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, 0U, "Search" },
+	{ FM_CONTROL_ICONS, KEILAND_CONTROL_VIEW_GRID, KEILAND_PRIORITY_SECONDARY, 1U, "Icons" },
+	{ FM_CONTROL_LIST, KEILAND_CONTROL_VIEW_LIST, KEILAND_PRIORITY_SECONDARY, 1U, "List" },
+	{ FM_CONTROL_PREVIEW, KEILAND_CONTROL_PREVIEW, KEILAND_PRIORITY_SECONDARY, 0U, "Preview" }
 };
 
-static void titlebar_activated(void *data, struct zdesktop_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-static void titlebar_changed(void *data, struct zdesktop_titlebar *object, uint32_t id, const char *text);
-static void titlebar_done(void *data, struct zdesktop_titlebar *object, uint32_t id, const char *text, unsigned how);
-static void titlebar_drop_target(void *data, struct zdesktop_titlebar *object, uint32_t id, uint32_t detail);
+static void titlebar_activated(void *data, struct keiland_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void titlebar_changed(void *data, struct keiland_titlebar *object, uint32_t id, const char *text);
+static void titlebar_done(void *data, struct keiland_titlebar *object, uint32_t id, const char *text, unsigned how);
+static void titlebar_drop_target(void *data, struct keiland_titlebar *object, uint32_t id, uint32_t detail);
 static void titlebar_queue(struct fm_titlebar *titlebar, unsigned kind, uint32_t id, uint32_t detail, const char *text);
 static int titlebar_build(struct fm_titlebar *titlebar);
 static int titlebar_state(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
-static int titlebar_state_controls(struct zdesktop_titlebar *object, const struct fm_titlebar_state *state);
+static int titlebar_state_controls(struct keiland_titlebar *object, const struct fm_titlebar_state *state);
 static int titlebar_state_progress(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
 
 /* What the titlebar tells the window: the controls chosen, the text fields' typing, and the part of the path a drag is over. */
-static const struct zdesktop_titlebar_listener titlebar_listener = {
+static const struct keiland_titlebar_listener titlebar_listener = {
 	titlebar_activated, titlebar_changed, titlebar_done, NULL, NULL, NULL, NULL, titlebar_drop_target
 };
 
@@ -85,7 +85,7 @@ fm_titlebar_open(
 	titlebar->window = window;
 
 	/* The window's titlebar object. */
-	titlebar->titlebar = zdesktop_titlebar_create(window->display, window->toplevel, &titlebar_listener, titlebar);
+	titlebar->titlebar = keiland_titlebar_create(window->display, window->toplevel, &titlebar_listener, titlebar);
 	if (titlebar->titlebar == NULL)
 		return errno;
 
@@ -163,7 +163,7 @@ fm_titlebar_close(
 {
 	/* The titlebar object. */
 	if (titlebar->titlebar != NULL)
-		zdesktop_titlebar_destroy(titlebar->titlebar);
+		keiland_titlebar_destroy(titlebar->titlebar);
 
 	/* Nothing is left. */
 	memset(titlebar, 0, sizeof(*titlebar));
@@ -173,7 +173,7 @@ fm_titlebar_close(
 static void
 titlebar_activated(
 	void *data,
-	struct zdesktop_titlebar *object,
+	struct keiland_titlebar *object,
 	uint32_t id,
 	uint32_t detail,
 	struct wl_seat *seat,
@@ -194,7 +194,7 @@ titlebar_activated(
 static void
 titlebar_drop_target(
 	void *data,
-	struct zdesktop_titlebar *object,
+	struct keiland_titlebar *object,
 	uint32_t id,
 	uint32_t detail)
 {
@@ -215,7 +215,7 @@ titlebar_drop_target(
 static void
 titlebar_changed(
 	void *data,
-	struct zdesktop_titlebar *object,
+	struct keiland_titlebar *object,
 	uint32_t id,
 	const char *text)
 {
@@ -228,7 +228,7 @@ titlebar_changed(
 static void
 titlebar_done(
 	void *data,
-	struct zdesktop_titlebar *object,
+	struct keiland_titlebar *object,
 	uint32_t id,
 	const char *text,
 	unsigned how)
@@ -281,27 +281,27 @@ titlebar_build(
 	int error;
 
 	/* The transaction. */
-	error = zdesktop_titlebar_begin(titlebar->titlebar);
+	error = keiland_titlebar_begin(titlebar->titlebar);
 	if (error != 0)
 		return error;
 
 	/* The controls' presentation. */
-	error = zdesktop_titlebar_set_mode(titlebar->titlebar, ZDESKTOP_TITLEBAR_CONTROLS);
+	error = keiland_titlebar_set_mode(titlebar->titlebar, KEILAND_TITLEBAR_CONTROLS);
 
 	/* Each control in its order. */
 	for (index = 0; error == 0 && index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
 		control = &titlebar_controls[index];
-		error = zdesktop_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, control->group, control->label);
+		error = keiland_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, control->group, control->label);
 	}
 
 	/* A refused change still ends the transaction, which is reported. */
 	if (error != 0) {
-		(void)zdesktop_titlebar_commit(titlebar->titlebar);
+		(void)keiland_titlebar_commit(titlebar->titlebar);
 		return error;
 	}
 
 	/* The controls are shown together. */
-	error = zdesktop_titlebar_commit(titlebar->titlebar);
+	error = keiland_titlebar_commit(titlebar->titlebar);
 	if (error != 0)
 		return error;
 
@@ -322,7 +322,7 @@ titlebar_state(
 	int error;
 
 	/* The transaction. */
-	error = zdesktop_titlebar_begin(titlebar->titlebar);
+	error = keiland_titlebar_begin(titlebar->titlebar);
 	if (error != 0)
 		return error;
 
@@ -333,12 +333,12 @@ titlebar_state(
 
 	/* A refused change still ends the transaction, which is reported. */
 	if (error != 0) {
-		(void)zdesktop_titlebar_commit(titlebar->titlebar);
+		(void)keiland_titlebar_commit(titlebar->titlebar);
 		return error;
 	}
 
 	/* The state is shown together. */
-	error = zdesktop_titlebar_commit(titlebar->titlebar);
+	error = keiland_titlebar_commit(titlebar->titlebar);
 	if (error != 0)
 		return error;
 
@@ -347,10 +347,10 @@ titlebar_state(
 	if (state->focus != FM_CONTROL_NONE && state->focus_serial != titlebar->shown.focus_serial)
 		asked = 1;
 	if (asked != 0) {
-		mode = ZDESKTOP_FOCUS_FIELD;
+		mode = KEILAND_FOCUS_FIELD;
 		if (state->focus == FM_CONTROL_PATH)
-			mode = ZDESKTOP_FOCUS_EDIT;
-		error = zdesktop_titlebar_focus_control(titlebar->titlebar, state->focus, mode);
+			mode = KEILAND_FOCUS_EDIT;
+		error = keiland_titlebar_focus_control(titlebar->titlebar, state->focus, mode);
 		if (error != 0)
 			fm_log("TITLEBAR focus-failed id=%u errno=%d", state->focus, error);
 	}
@@ -374,7 +374,7 @@ titlebar_state(
 /* Sets the controls that are always there; returns 0 or the first refusal. */
 static int
 titlebar_state_controls(
-	struct zdesktop_titlebar *object,
+	struct keiland_titlebar *object,
 	const struct fm_titlebar_state *state)
 {
 	const char *parts[FM_CRUMBS];
@@ -382,29 +382,29 @@ titlebar_state_controls(
 	int error;
 
 	/* The history's steps; Home always works. */
-	error = zdesktop_titlebar_set_control_state(object, FM_CONTROL_BACK, state->can_back, 0);
+	error = keiland_titlebar_set_control_state(object, FM_CONTROL_BACK, state->can_back, 0);
 	if (error == 0)
-		error = zdesktop_titlebar_set_control_state(object, FM_CONTROL_FORWARD, state->can_forward, 0);
+		error = keiland_titlebar_set_control_state(object, FM_CONTROL_FORWARD, state->can_forward, 0);
 
 	/* The path's parts, and the folder its field starts from. */
 	for (index = 0; index < state->part_count; index++)
 		parts[index] = state->parts[index];
 	if (error == 0)
-		error = zdesktop_titlebar_set_breadcrumb(object, FM_CONTROL_PATH, parts, (size_t)state->part_count);
+		error = keiland_titlebar_set_breadcrumb(object, FM_CONTROL_PATH, parts, (size_t)state->part_count);
 	if (error == 0)
-		error = zdesktop_titlebar_set_control_text(object, FM_CONTROL_PATH, state->path, "Go to folder");
+		error = keiland_titlebar_set_control_text(object, FM_CONTROL_PATH, state->path, "Go to folder");
 
 	/* The search's query. */
 	if (error == 0)
-		error = zdesktop_titlebar_set_control_text(object, FM_CONTROL_SEARCH, state->query, "Search");
+		error = keiland_titlebar_set_control_text(object, FM_CONTROL_SEARCH, state->query, "Search");
 
 	/* The view shown and the preview, checked. */
 	if (error == 0)
-		error = zdesktop_titlebar_set_control_state(object, FM_CONTROL_ICONS, 1, state->view == FM_VIEW_ICONS);
+		error = keiland_titlebar_set_control_state(object, FM_CONTROL_ICONS, 1, state->view == FM_VIEW_ICONS);
 	if (error == 0)
-		error = zdesktop_titlebar_set_control_state(object, FM_CONTROL_LIST, 1, state->view == FM_VIEW_LIST);
+		error = keiland_titlebar_set_control_state(object, FM_CONTROL_LIST, 1, state->view == FM_VIEW_LIST);
 	if (error == 0)
-		error = zdesktop_titlebar_set_control_state(object, FM_CONTROL_PREVIEW, 1, state->preview);
+		error = keiland_titlebar_set_control_state(object, FM_CONTROL_PREVIEW, 1, state->preview);
 
 	/* Reports the first refusal, or none. */
 	if (error != 0)
@@ -432,19 +432,19 @@ titlebar_state_progress(
 	if (state->progress == FM_TITLEBAR_NO_PROGRESS) {
 		if (shown == 0)
 			return 0;
-		error = zdesktop_titlebar_remove_control(titlebar->titlebar, FM_CONTROL_PROGRESS);
+		error = keiland_titlebar_remove_control(titlebar->titlebar, FM_CONTROL_PROGRESS);
 		return error;
 	}
 
 	/* Operations run: it comes, when it was not there. */
 	if (shown == 0) {
-		error = zdesktop_titlebar_add_control(titlebar->titlebar, FM_CONTROL_PROGRESS, ZDESKTOP_CONTROL_PROGRESS, ZDESKTOP_PRIORITY_NORMAL, 0U, "Operations");
+		error = keiland_titlebar_add_control(titlebar->titlebar, FM_CONTROL_PROGRESS, KEILAND_CONTROL_PROGRESS, KEILAND_PRIORITY_NORMAL, 0U, "Operations");
 		if (error != 0)
 			return error;
 	}
 
 	/* Their share done. */
-	error = zdesktop_titlebar_set_control_value(titlebar->titlebar, FM_CONTROL_PROGRESS, (unsigned)state->progress);
+	error = keiland_titlebar_set_control_value(titlebar->titlebar, FM_CONTROL_PROGRESS, (unsigned)state->progress);
 	if (error != 0)
 		return error;
 

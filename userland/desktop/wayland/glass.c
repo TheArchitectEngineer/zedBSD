@@ -23,10 +23,12 @@
  * font (server->fallback_font_path, for Japanese), into a cell of the
  * atlas's cache, the least recently drawn cell making room; text is UTF-8.
  * The titlebar's icons (icons.c) are rendered into the atlas once, at two
- * sizes.
+ * sizes, and so are the four layers of the Kei mark (artwork/mark.c,
+ * ws035-p108), which the login and lock screens draw.
  */
 
 #include "glass.h"
+#include "../artwork/mark.h"
 
 #include <truetype.h>
 
@@ -59,6 +61,9 @@
 /* A cached glyph's cell in the atlas, in pixels a side, and the most cells there are. */
 #define GLASS_CELL		48U
 #define GLASS_CELLS		512U
+
+/* The Kei mark's layers in the atlas, in pixels a side. */
+#define GLASS_MARK_PIXELS	128U
 
 /* The largest glyph rendered, in pixels a side. */
 #define GLASS_BITMAP		64U
@@ -105,6 +110,7 @@ struct zwl_glass {
 	struct zwl_import atlas;
 	struct glass_glyph glyphs[GLASS_SIZES][GLASS_GLYPHS];
 	struct glass_glyph icons[GLASS_ICON_SIZES][GLASS_ICON_COUNT];
+	struct glass_glyph mark[KEILAND_MARK_LAYERS];
 	unsigned text;
 	struct truetype_face *faces[GLASS_FACES];
 	void *font_data[GLASS_FACES];
@@ -131,6 +137,7 @@ static uint32_t pack_pixel(const float *rgb);
 static int atlas_create(struct zwl_server *server, struct zwl_glass *glass);
 static int atlas_fill(struct zwl_glass *glass, struct truetype_face *face);
 static int atlas_icons(struct zwl_glass *glass, uint32_t *pen_y);
+static int atlas_mark(struct zwl_glass *glass, uint32_t *pen_y);
 static void atlas_put(struct zwl_glass *glass, const uint8_t *bitmap, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 static int glass_open_face(struct zwl_glass *glass, const char *path);
 static const struct glass_glyph *glass_glyph_of(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
@@ -256,9 +263,12 @@ wallpaper_create(
 }
 
 /*
- * Colors one pixel of the landscape: a sky that pales towards the horizon
- * with a soft sun, three ranges of misty mountains, and a still lake that
- * reflects them.
+ * Colors one pixel of the landscape in the Kei look (ws035-p108,
+ * plan/ws035/kei-identity-design.md): a bright sky that pales towards the
+ * horizon with a soft sun, three ranges of misty hills (pale blue far away,
+ * young green near), a still lake that reflects them, soft green leaves at
+ * the top left and along the foot with a few blurred white flowers, and the
+ * whole a little whitened, as if seen through haze.
  */
 static void
 wallpaper_pixel(
@@ -270,11 +280,21 @@ wallpaper_pixel(
 {
 	static const float ranges[3][5] = {
 		/* base, amplitude, phase, and the color's green and blue (red is below). */
-		{ 0.50f, 0.10f, 0.3f, 0.82f, 0.94f },
-		{ 0.58f, 0.09f, 2.1f, 0.74f, 0.90f },
-		{ 0.66f, 0.07f, 4.7f, 0.64f, 0.85f }
+		{ 0.40f, 0.08f, 0.3f, 0.86f, 0.95f },
+		{ 0.47f, 0.06f, 2.1f, 0.81f, 0.86f },
+		{ 0.54f, 0.04f, 4.7f, 0.80f, 0.68f }
 	};
-	static const float reds[3] = { 0.74f, 0.62f, 0.50f };
+	static const float reds[3] = { 0.78f, 0.68f, 0.64f };
+
+	/* The blurred white flowers along the foot: where (fractions of the output) and how large. */
+	static const float flowers[6][3] = {
+		{ 0.06f, 0.92f, 0.030f },
+		{ 0.15f, 0.97f, 0.025f },
+		{ 0.24f, 0.90f, 0.020f },
+		{ 0.33f, 0.98f, 0.022f },
+		{ 0.80f, 0.95f, 0.024f },
+		{ 0.93f, 0.90f, 0.028f }
+	};
 	float u;
 	float v;
 	float mirror;
@@ -282,23 +302,27 @@ wallpaper_pixel(
 	float mist;
 	float sun;
 	float lake;
+	float leaves;
+	float bloom;
+	float dx;
+	float dy;
 	unsigned index;
 
 	/* The place, as fractions of the output. */
 	u = (float)x / (float)width;
 	v = (float)y / (float)height;
-	lake = 0.80f;
+	lake = 0.62f;
 
 	/* Under the lake's edge the landscape is seen in the water. */
 	mirror = v;
 	if (v > lake)
 		mirror = 2.0f * lake - v;
 
-	/* The sky: pale blue above, nearly white at the horizon, a glow to the upper right. */
-	rgb[0] = 0.78f + 0.18f * mirror;
-	rgb[1] = 0.86f + 0.11f * mirror;
-	rgb[2] = 0.97f + 0.02f * mirror;
-	sun = expf(-((u - 0.78f) * (u - 0.78f) * 18.0f + (mirror - 0.18f) * (mirror - 0.18f) * 30.0f));
+	/* The sky: light blue above, nearly white at the horizon, a glow to the upper right. */
+	rgb[0] = 0.76f + 0.22f * mirror;
+	rgb[1] = 0.87f + 0.11f * mirror;
+	rgb[2] = 0.98f + 0.01f * mirror;
+	sun = expf(-((u - 0.78f) * (u - 0.78f) * 18.0f + (mirror - 0.16f) * (mirror - 0.16f) * 30.0f));
 	rgb[0] += 0.12f * sun;
 	rgb[1] += 0.09f * sun;
 	rgb[2] += 0.03f * sun;
@@ -308,22 +332,55 @@ wallpaper_pixel(
 		top = ridge(u, ranges[index][0], ranges[index][1], ranges[index][2]);
 		if (mirror < top)
 			continue;
-		mist = (mirror - top) / 0.18f;
+		mist = (mirror - top) / 0.14f;
 		if (mist > 1.0f)
 			mist = 1.0f;
-		rgb[0] = reds[index] + (0.92f - reds[index]) * mist * 0.55f;
-		rgb[1] = ranges[index][3] + (0.95f - ranges[index][3]) * mist * 0.55f;
+		rgb[0] = reds[index] + (0.93f - reds[index]) * mist * 0.55f;
+		rgb[1] = ranges[index][3] + (0.96f - ranges[index][3]) * mist * 0.55f;
 		rgb[2] = ranges[index][4] + (0.99f - ranges[index][4]) * mist * 0.55f;
 	}
 
-	/* The water is darker and bluer than what it reflects, deeper towards the bottom. */
+	/* The water is a little bluer than what it reflects, deeper towards the bottom. */
 	if (v > lake) {
-		rgb[0] = rgb[0] * 0.88f - (v - lake) * 0.35f;
-		rgb[1] = rgb[1] * 0.92f - (v - lake) * 0.25f;
-		rgb[2] = rgb[2] * 0.98f - (v - lake) * 0.08f;
-		rgb[0] += 0.006f * sinf((float)y * 0.9f + u * 3.0f);
-		rgb[1] += 0.006f * sinf((float)y * 0.9f + u * 3.0f);
+		rgb[0] = rgb[0] * 0.94f - (v - lake) * 0.10f;
+		rgb[1] = rgb[1] * 0.97f - (v - lake) * 0.04f;
+		rgb[2] = rgb[2] * 1.00f - (v - lake) * 0.02f;
+		rgb[0] += 0.004f * sinf((float)y * 0.9f + u * 3.0f);
+		rgb[1] += 0.004f * sinf((float)y * 0.9f + u * 3.0f);
 	}
+
+	/* Leaves: out of focus at the top left, and a meadow rising at both lower corners. */
+	dx = u - 0.02f;
+	dy = v - 0.04f;
+	leaves = 0.75f * expf(-(dx * dx * 14.0f + dy * dy * 22.0f));
+	top = 0.84f - 0.10f * (2.0f * fabsf(u - 0.5f));
+	if (v > top) {
+		mist = (v - top) / 0.16f;
+		if (mist > 1.0f)
+			mist = 1.0f;
+		leaves += 0.85f * mist;
+	}
+
+	/* The leaves' colour over the scene, as much as they cover. */
+	if (leaves > 1.0f)
+		leaves = 1.0f;
+	rgb[0] += (0.66f - rgb[0]) * leaves;
+	rgb[1] += (0.82f - rgb[1]) * leaves;
+	rgb[2] += (0.58f - rgb[2]) * leaves;
+
+	/* The white flowers, blurred, among the leaves along the foot. */
+	for (index = 0; index < 6U; index++) {
+		dx = (u - flowers[index][0]) * (float)width / (float)height;
+		dy = v - flowers[index][1];
+		bloom = 0.85f * expf(-(dx * dx + dy * dy) / (flowers[index][2] * flowers[index][2]));
+		rgb[0] += (0.98f - rgb[0]) * bloom;
+		rgb[1] += (0.99f - rgb[1]) * bloom;
+		rgb[2] += (0.97f - rgb[2]) * bloom;
+	}
+
+	/* The haze over everything: a fifth of the way to white. */
+	for (index = 0; index < 3U; index++)
+		rgb[index] += (1.0f - rgb[index]) * 0.20f;
 
 	/* Each channel within 0..1. */
 	for (index = 0; index < 3U; index++) {
@@ -637,6 +694,11 @@ atlas_fill(
 	/* The icons in the rows after the glyphs. */
 	pen_y += line + 1U;
 	error = atlas_icons(glass, &pen_y);
+	if (error != 0)
+		return error;
+
+	/* The Kei mark's layers in the row after them. */
+	error = atlas_mark(glass, &pen_y);
 	if (error != 0)
 		return error;
 
@@ -1232,6 +1294,53 @@ glass_draw_icon(
 	glass_shape_draw(server, command, &shape);
 }
 
+/*
+ * Draws the Kei mark in a square of a size in pixels at (x, y): its four
+ * layers from the atlas, each in its colour, the whole as opaque as asked
+ * (0..1).
+ */
+void
+glass_draw_mark(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	int32_t x,
+	int32_t y,
+	unsigned pixels,
+	float opacity)
+{
+	/* The bar pale, its shade deeper, the leaf clearer and its shade the deep blue of the splash. */
+	static const float colours[KEILAND_MARK_LAYERS][4] = {
+		{ 0.67f, 0.77f, 0.97f, 0.80f },
+		{ 0.43f, 0.59f, 0.94f, 0.55f },
+		{ 0.59f, 0.80f, 0.98f, 0.72f },
+		{ 0.16f, 0.43f, 0.94f, 0.85f }
+	};
+	struct glass_shape shape;
+	const struct glass_glyph *glyph;
+	struct zwl_glass *glass;
+	unsigned layer;
+
+	/* Nothing without the atlas. */
+	glass = server->compose->glass;
+	if (!glass->text)
+		return;
+
+	/* Each layer's cell of the atlas over the square, in order. */
+	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
+		glyph = &glass->mark[layer];
+		glass_shape_init(&shape, (float)x, (float)y, (float)pixels, (float)pixels);
+		shape.mode = MODE_TEXT;
+		shape.uv[0] = (float)glyph->x / (float)GLASS_ATLAS_WIDTH;
+		shape.uv[1] = (float)glyph->y / (float)GLASS_ATLAS_HEIGHT;
+		shape.uv[2] = (float)(glyph->x + glyph->width) / (float)GLASS_ATLAS_WIDTH;
+		shape.uv[3] = (float)(glyph->y + glyph->height) / (float)GLASS_ATLAS_HEIGHT;
+		memcpy(shape.color, colours[layer], sizeof(shape.color));
+		shape.color[3] *= opacity;
+		shape.set = glass->atlas.set;
+		glass_shape_draw(server, command, &shape);
+	}
+}
+
 /* The descriptor set of the wallpaper, for pictures of it (the desktops). */
 VkDescriptorSet
 glass_wallpaper_set(
@@ -1297,6 +1406,49 @@ atlas_icons(
 	*pen_y += tallest + 1U;
 
 	/* Succeeded: the icons are in the atlas. */
+	return 0;
+}
+
+/*
+ * Renders the Kei mark's layers into the atlas side by side from a row on,
+ * and moves the row past them; returns 0, or ENOSPC when the atlas is full.
+ */
+static int
+atlas_mark(
+	struct zwl_glass *glass,
+	uint32_t *pen_y)
+{
+	static uint8_t bitmap[GLASS_MARK_PIXELS * GLASS_MARK_PIXELS];
+	struct glass_glyph *glyph;
+	unsigned layer;
+	uint32_t pen_x;
+
+	/* The atlas must hold the row. */
+	if (*pen_y + GLASS_MARK_PIXELS > GLASS_ATLAS_HEIGHT)
+		return ENOSPC;
+
+	/* Each layer's coverage, into the atlas, and its place. */
+	pen_x = 0;
+	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
+		keiland_mark_raster(layer, GLASS_MARK_PIXELS, bitmap, GLASS_MARK_PIXELS);
+		atlas_put(glass, bitmap, pen_x, *pen_y, GLASS_MARK_PIXELS, GLASS_MARK_PIXELS);
+		glyph = &glass->mark[layer];
+		glyph->x = pen_x;
+		glyph->y = *pen_y;
+		glyph->width = GLASS_MARK_PIXELS;
+		glyph->height = GLASS_MARK_PIXELS;
+		glyph->left = 0;
+		glyph->top = 0;
+		glyph->advance = (int32_t)GLASS_MARK_PIXELS;
+
+		/* The pen moves past it. */
+		pen_x += GLASS_MARK_PIXELS + 1U;
+	}
+
+	/* The row after the mark. */
+	*pen_y += GLASS_MARK_PIXELS + 1U;
+
+	/* Succeeded: the mark is in the atlas. */
 	return 0;
 }
 

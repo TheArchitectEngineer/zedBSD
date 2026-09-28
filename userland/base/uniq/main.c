@@ -224,7 +224,7 @@ read_options(
 			options->limited = 1;
 			break;
 		case OPTION_VERSION:
-			printf("uniq (zedBSD) 1.0\n");
+			printf("uniq (Kei) 1.0\n");
 			exit(0);
 		default:
 			usage();

@@ -19,6 +19,7 @@
 #include <kern/cdev.h>
 #include <kern/cred.h>
 #include <kern/tty.h>
+#include <kern/text-display.h>
 #include <kern/file.h>
 #include <kern/filedesc.h>
 #include <kern/fd-object.h>
@@ -3130,6 +3131,9 @@ gpu_display_ioctl(
 		/* The display is this open's: the keyboard is not the text console's while it is. */
 		session->display_claims++;
 		tty_console_input_hold();
+
+		/* The boot's splash under it stops for good (ws035-p107). */
+		kern_text_progress_end();
 
 		/* Succeeded: this exact open now owns the returned native lease. */
 		return 0;

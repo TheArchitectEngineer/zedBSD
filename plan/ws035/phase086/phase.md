@@ -20,7 +20,7 @@ Queue: なし（2026-09-27 main の割り当て「terminal tabs through the titl
 - **zdesktop のタブの key から Ctrl+W と Ctrl+T を外した**（ws070-p013 で入れたもの）: terminal の shell が Ctrl+W（単語の削除）と
   Ctrl+T を使うため。タブを閉じる・作る key は application の menu の shortcut で持つ（files は File > New Tab Ctrl+T・
   Close Tab Ctrl+W、terminal は Ctrl+Shift+T・Ctrl+Shift+W）。Ctrl+Tab・Ctrl+Shift+Tab・Ctrl+PageUp/Down は zdesktop のまま。
-  `zdesktop.h` の説明と `titlebar-p013.sh` を合わせた。
+  `keiland.h` の説明と `titlebar-p013.sh` を合わせた。
 - タブの題名は「Shell N」（OSC の題名は使わない）。背景のタブの shell も毎回読む（pty が詰まらない）。
 
 ## 実装（2026-09-27）
@@ -32,7 +32,7 @@ Queue: なし（2026-09-27 main の割り当て「terminal tabs through the titl
   （`ZTERM TAB new/active/closed`、`ZTERM TABS count= active= mode=`）。
 - `window.c`: `terminal_window_dispatch` が複数の fd を poll、xdg_wm_base を min(広告, 4) で bind、`configure_bounds`。
 - `menu.c`: Shell > New Tab（Ctrl+Shift+T）、Close Tab（Ctrl+Shift+W）。menu の項目は 28 → 30（`menu-p003.sh` を合わせた）。
-- zdesktop `titlebar-shell.c`、`include/libc/zdesktop.h`: 上の key の判断。
+- zdesktop `titlebar-shell.c`、`include/libc/keiland.h`: 上の key の判断。
 
 ## 検証（amd64、Venus の guest、2026-09-27）
 

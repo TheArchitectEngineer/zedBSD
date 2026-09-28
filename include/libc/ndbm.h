@@ -15,7 +15,7 @@ extern "C" {
 #include <sys/types.h>
 
 typedef struct { char *dptr; int dsize; } datum;
-typedef struct __zedbsd_dbm DBM;
+typedef struct __kern_dbm DBM;
 
 #define DBM_INSERT 0
 #define DBM_REPLACE 1

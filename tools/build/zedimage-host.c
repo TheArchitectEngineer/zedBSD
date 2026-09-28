@@ -316,7 +316,7 @@ static void fragment_fat32_root_file(const char *image,uint64_t offset,const cha
 static void pc98_chs(uint8_t out[4],uint32_t lba,uint32_t heads){uint32_t cyl=lba/(heads*17),rem=lba%(heads*17),head=rem/17,sec=rem%17;if(cyl>65535)fail("PC-98 CHS overflow");out[0]=sec;out[1]=head;p16(out+2,cyl);}
 static void gpt_entry(uint8_t *e,const uint8_t type[16],const uint8_t unique[16],uint64_t first,uint64_t last,const char *name){memcpy(e,type,16);memcpy(e+16,unique,16);p64(e+32,first);p64(e+40,last);for(size_t i=0;name[i]&&i<36;i++)p16(e+56+2*i,(uint8_t)name[i]);}
 static void gpt_header(uint8_t h[512],uint64_t cur,uint64_t backup,uint64_t entries,uint64_t first,uint64_t last,const uint8_t diskid[16],uint32_t ecrc){memset(h,0,512);memcpy(h,"EFI PART",8);p32(h+8,0x10000);p32(h+12,92);p64(h+24,cur);p64(h+32,backup);p64(h+40,first);p64(h+48,last);memcpy(h+56,diskid,16);p64(h+72,entries);p32(h+80,128);p32(h+84,128);p32(h+88,ecrc);p32(h+16,crc32_more(0,h,92));}
-struct diskopt {const char *machine,*stage1,*stage2,*pbr,*bootzbsd,*kernel,*bootx64,*zedbsd_config,*logo,*arch,*data,*swap,*ufs_root,*output,*layout;int gpt,force,fragment_kernel,size_mib,fat_mib;};
+struct diskopt {const char *machine,*stage1,*stage2,*pbr,*bootzbsd,*kernel,*bootx64,*kern_config,*logo,*arch,*data,*swap,*ufs_root,*output,*layout;int gpt,force,fragment_kernel,size_mib,fat_mib;};
 static void disk_create_variant(struct diskopt *o);
 static uint64_t parse_size_bytes(const char *text);
 static uint64_t native_copy_sparse(FILE *image, uint64_t offset, const char *path);
@@ -339,7 +339,7 @@ static void disk_create(struct diskopt *o){
     if(!strcmp(o->machine,"pc98")){uint32_t heads=o->size_mib<=20?4:8;uint8_t pe[64]={0};pe[0]=0xa1;pe[1]=0x91;pc98_chs(pe+4,start,heads);pc98_chs(pe+8,start,heads);pc98_chs(pe+12,(root_blocks?root_start:sectors)-1,heads);memset(pe+16,' ',16);memcpy(pe+16,"BOOT",4);if(root_blocks){pe[32]=0x21;pe[33]=0x01;pc98_chs(pe+36,root_start,heads);pc98_chs(pe+40,root_start,heads);pc98_chs(pe+44,root_start+root_blocks-1,heads);memset(pe+48,' ',16);memcpy(pe+48,"ROOT",4);}seek_write(f,512,pe,root_blocks?64:32);}seek_write(f,stage_lba*512,s2,s2n);if(root_blocks)seek_write(f,root_start*512,ufs,ufsn);
     if(o->gpt){static const uint8_t esp[16]={0x28,0x73,0x2a,0xc1,0x1f,0xf8,0xd2,0x11,0xba,0x4b,0x00,0xa0,0xc9,0x3e,0xc9,0x3b};static const uint8_t basic[16]={0xa2,0xa0,0xd0,0xeb,0xe5,0xb9,0x33,0x44,0x87,0xc0,0x68,0xb6,0xb7,0x26,0x99,0xc7};static const uint8_t bios[16]={0x48,0x61,0x68,0x21,0x49,0x64,0x6f,0x6e,0x74,0x4e,0x65,0x65,0x64,0x45,0x46,0x49};uint8_t*entries=calloc(1,128*128),h[512],disk_guid[16],partition_guids[3][16];if(!entries)die("calloc GPT entries");random_guid(disk_guid);for(size_t i=0;i<3;i++){do random_guid(partition_guids[i]);while(!memcmp(partition_guids[i],disk_guid,16)||guid_matches_any(partition_guids[i],partition_guids[0],i));}gpt_entry(entries,esp,partition_guids[0],esp_start,esp_start+esp_blocks-1,"zedBSD EFI System");gpt_entry(entries+128,basic,partition_guids[1],start,start+blocks-1,"zedBSD Payload");gpt_entry(entries+256,bios,partition_guids[2],34,esp_start-1,"zedBSD BIOS loader");uint32_t ec=crc32_more(0,entries,128*128);gpt_header(h,1,sectors-1,2,34,sectors-34,disk_guid,ec);seek_write(f,512,h,512);seek_write(f,1024,entries,128*128);seek_write(f,(sectors-33)*512,entries,128*128);gpt_header(h,sectors-1,1,sectors-33,34,sectors-34,disk_guid,ec);seek_write(f,(sectors-1)*512,h,512);free(entries);}if(fclose(f))die("close disk image before formatting");
     char cmd[16384];uint32_t boot_serial=random_serial(),esp_serial=random_serial();if(esp_serial==boot_serial)esp_serial^=0x80000000U;if(!esp_serial)esp_serial=1;if(o->gpt)shell_format_pcat(tmp,esp_offset,esp_start,esp_blocks,1,"ESP",esp_serial);if(!strcmp(o->machine,"pc98")){uint32_t heads=o->size_mib<=20?4:8,logical=blocks/2,cluster=1;while(logical/cluster>=65525)cluster*=2;snprintf(cmd,sizeof(cmd),"mformat -i '%s'@@%llu -S 3 -N 0x%08x -R 4 -c %u -h %u -s 17 -H 2048 -T %llu -v BOOT ::",tmp,(unsigned long long)offset,boot_serial,cluster,heads,(unsigned long long)logical);if(system(cmd))fail("mformat failed");}else shell_format_pcat(tmp,offset,start,blocks,o->gpt,"BOOT",boot_serial);
-    f=fopen(tmp,"rb+");if(!f)die(tmp);uint8_t bpb[2048];if(fseeko(f,(off_t)offset,SEEK_SET)||fread(bpb,1,2048,f)!=2048)die("read BPB");int fat32=bpb[22]==0&&bpb[23]==0;memcpy(pbr+3,bpb+3,(fat32?0x5a:0x3e)-3);if(fat32){uint16_t reserved=(uint16_t)bpb[14]|(uint16_t)bpb[15]<<8;uint16_t backup=(uint16_t)bpb[50]|(uint16_t)bpb[51]<<8;if(!backup||backup>=reserved)fail("invalid FAT32 backup boot sector");seek_write(f,offset,pbr,512);seek_write(f,offset+(uint64_t)backup*512,pbr,512);seek_write(f,offset+1024,pbr+512,1536);}else seek_write(f,offset,pbr,2048);if(fclose(f))die("close installed partition PBR");shell_copy(tmp,offset,o->bootzbsd,"/BOOTZBSD.EXE");shell_copy(tmp,offset,o->kernel,o->gpt?"/vmunix":"/VMUNIX");if(o->zedbsd_config)shell_copy(tmp,offset,o->zedbsd_config,!strcmp(o->machine,"pc98")?"/BOOTZBSD.CFG":o->gpt?"/zedbsd.cfg":"/ZEDBSD.CFG");if(o->logo)shell_copy(tmp,offset,o->logo,o->gpt?"/logo.ppm":"/LOGO.PPM");if(o->gpt){if(!o->bootx64)fail("GPT image requires BOOTX64.EFI");shell_mkdir(tmp,esp_offset,"/EFI");shell_mkdir(tmp,esp_offset,"/EFI/BOOT");shell_copy(tmp,esp_offset,o->bootx64,"/EFI/BOOT/BOOTX64.EFI");}if(o->arch)shell_copy(tmp,offset,o->arch,o->gpt?"/rootfs.img":"/ROOTFS.IMG");if(o->data)shell_copy(tmp,offset,o->data,o->gpt?"/data.img":"/DATA.IMG");if(o->swap)shell_copy(tmp,offset,o->swap,o->gpt?"/swapfile":"/SWAPFILE");if(o->fragment_kernel){if(!fat32)fail("kernel fragmentation requires FAT32");fragment_fat32_root_file(tmp,offset,"VMUNIX     ");}if(rename(tmp,o->output))die("publish disk image");free(s1);free(s2);free(pbr);free(kernel);free(ufs);
+    f=fopen(tmp,"rb+");if(!f)die(tmp);uint8_t bpb[2048];if(fseeko(f,(off_t)offset,SEEK_SET)||fread(bpb,1,2048,f)!=2048)die("read BPB");int fat32=bpb[22]==0&&bpb[23]==0;memcpy(pbr+3,bpb+3,(fat32?0x5a:0x3e)-3);if(fat32){uint16_t reserved=(uint16_t)bpb[14]|(uint16_t)bpb[15]<<8;uint16_t backup=(uint16_t)bpb[50]|(uint16_t)bpb[51]<<8;if(!backup||backup>=reserved)fail("invalid FAT32 backup boot sector");seek_write(f,offset,pbr,512);seek_write(f,offset+(uint64_t)backup*512,pbr,512);seek_write(f,offset+1024,pbr+512,1536);}else seek_write(f,offset,pbr,2048);if(fclose(f))die("close installed partition PBR");shell_copy(tmp,offset,o->bootzbsd,"/BOOTZBSD.EXE");shell_copy(tmp,offset,o->kernel,o->gpt?"/vmunix":"/VMUNIX");if(o->kern_config)shell_copy(tmp,offset,o->kern_config,!strcmp(o->machine,"pc98")?"/BOOTZBSD.CFG":o->gpt?"/zedbsd.cfg":"/ZEDBSD.CFG");if(o->logo)shell_copy(tmp,offset,o->logo,o->gpt?"/logo.ppm":"/LOGO.PPM");if(o->gpt){if(!o->bootx64)fail("GPT image requires BOOTX64.EFI");shell_mkdir(tmp,esp_offset,"/EFI");shell_mkdir(tmp,esp_offset,"/EFI/BOOT");shell_copy(tmp,esp_offset,o->bootx64,"/EFI/BOOT/BOOTX64.EFI");}if(o->arch)shell_copy(tmp,offset,o->arch,o->gpt?"/rootfs.img":"/ROOTFS.IMG");if(o->data)shell_copy(tmp,offset,o->data,o->gpt?"/data.img":"/DATA.IMG");if(o->swap)shell_copy(tmp,offset,o->swap,o->gpt?"/swapfile":"/SWAPFILE");if(o->fragment_kernel){if(!fat32)fail("kernel fragmentation requires FAT32");fragment_fat32_root_file(tmp,offset,"VMUNIX     ");}if(rename(tmp,o->output))die("publish disk image");free(s1);free(s2);free(pbr);free(kernel);free(ufs);
 }
 
 static uint64_t parse_u64(const char *text,const char *what){
@@ -366,7 +366,7 @@ static void disk_create_uefi(struct diskopt *o){
     uint32_t entry_crc,boot_serial,esp_serial;
 
     if(!o->machine||strcmp(o->machine,"pcat")||!o->kernel||!o->bootx64||
-        !o->zedbsd_config||!o->arch||!o->data||!o->swap||!o->output)
+        !o->kern_config||!o->arch||!o->data||!o->swap||!o->output)
         fail("incomplete UEFI-only disk arguments");
     if(o->gpt||o->ufs_root||o->fragment_kernel)fail("UEFI-only disk received an incompatible legacy option");
     if(o->fat_mib<=0)fail("invalid payload FAT size");
@@ -409,7 +409,7 @@ static void disk_create_uefi(struct diskopt *o){
     shell_mkdir(temporary,esp_start*512U,"/EFI");shell_mkdir(temporary,esp_start*512U,"/EFI/BOOT");
     shell_copy(temporary,esp_start*512U,o->bootx64,"/EFI/BOOT/BOOTX64.EFI");
     shell_copy(temporary,payload_start*512U,o->kernel,"/vmunix");
-    if(o->zedbsd_config)shell_copy(temporary,payload_start*512U,o->zedbsd_config,"/zedbsd.cfg");
+    if(o->kern_config)shell_copy(temporary,payload_start*512U,o->kern_config,"/zedbsd.cfg");
     if(o->arch)shell_copy(temporary,payload_start*512U,o->arch,"/rootfs.img");
     if(o->data)shell_copy(temporary,payload_start*512U,o->data,"/data.img");
     if(o->swap)shell_copy(temporary,payload_start*512U,o->swap,"/swapfile");
@@ -585,7 +585,7 @@ disk_create_native(
 	/* Rejects a request that lacks an input the ESP needs. */
 	if (o->kernel == NULL ||
 	    o->bootx64 == NULL ||
-	    o->zedbsd_config == NULL)
+	    o->kern_config == NULL)
 		fail("native disk layout requires the kernel, BOOTX64.EFI and zedbsd.cfg");
 
 	/* Rejects a request that lacks a partition's input or the output. */
@@ -721,7 +721,7 @@ disk_create_native(
 	shell_mkdir(temporary, esp_start * 512U, "/EFI/BOOT");
 	shell_copy(temporary, esp_start * 512U, o->bootx64, "/EFI/BOOT/BOOTX64.EFI");
 	shell_copy(temporary, esp_start * 512U, o->kernel, "/vmunix");
-	shell_copy(temporary, esp_start * 512U, o->zedbsd_config, "/zedbsd.cfg");
+	shell_copy(temporary, esp_start * 512U, o->kern_config, "/zedbsd.cfg");
 
 	/* The boot logo zedbsd.cfg may name (logo=logo.ppm, ws035-p096). */
 	if (o->logo != NULL)
@@ -814,7 +814,7 @@ static void disk_create_variant(struct diskopt *o){
     if(!strcmp(layout,"uefi")){disk_create_uefi(o);return;}
     if(strcmp(layout,"hybrid")&&strcmp(layout,"bios"))fail("unsupported disk layout");
     if(!o->stage1||!o->stage2||!o->pbr||!o->bootzbsd||!o->kernel||
-        !o->zedbsd_config||!o->arch||!o->data||!o->swap||!o->output)
+        !o->kern_config||!o->arch||!o->data||!o->swap||!o->output)
         fail("incomplete selected disk layout arguments");
     if(!strcmp(layout,"hybrid")&&!o->bootx64)
         fail("Hybrid disk layout requires BOOTX64.EFI");
@@ -823,7 +823,7 @@ static void disk_create_variant(struct diskopt *o){
         fail("invalid Stage 1 layout metadata or Stage 2 LBA");
     o->layout=NULL;o->gpt=!strcmp(layout,"hybrid");disk_create(o);o->layout=layout;
 }
-static void parse_disk(int argc,char **argv){struct diskopt o={.size_mib=129,.fat_mib=128};for(int i=2;i<argc;i++){char*a=argv[i];if(!strcmp(a,"--gpt"))o.gpt=1;else if(!strcmp(a,"--force"))o.force=1;else if(!strcmp(a,"--fragment-kernel"))o.fragment_kernel=1;else if(!strcmp(a,"--machine")&&++i<argc)o.machine=argv[i];else if(!strcmp(a,"--stage1")&&++i<argc)o.stage1=argv[i];else if(!strcmp(a,"--stage2")&&++i<argc)o.stage2=argv[i];else if(!strcmp(a,"--partition-pbr")&&++i<argc)o.pbr=argv[i];else if(!strcmp(a,"--bootzbsd")&&++i<argc)o.bootzbsd=argv[i];else if(!strcmp(a,"--kernel")&&++i<argc)o.kernel=argv[i];else if(!strcmp(a,"--bootx64")&&++i<argc)o.bootx64=argv[i];else if(!strcmp(a,"--zedbsd-config")&&++i<argc)o.zedbsd_config=argv[i];else if(!strcmp(a,"--logo")&&++i<argc)o.logo=argv[i];else if(!strcmp(a,"--arch-image")&&++i<argc)o.arch=argv[i];else if(!strcmp(a,"--data-image")&&++i<argc)o.data=argv[i];else if(!strcmp(a,"--swapfile")&&++i<argc)o.swap=argv[i];else if(!strcmp(a,"--ufs-root")&&++i<argc)o.ufs_root=argv[i];else if(!strcmp(a,"--layout")&&++i<argc)o.layout=argv[i];else if(!strcmp(a,"--size-mib")&&++i<argc)o.size_mib=parse_positive_int(argv[i],"invalid disk size");else if(!strcmp(a,"--fat-size-mib")&&++i<argc)o.fat_mib=parse_positive_int(argv[i],"invalid FAT size");else if((!strcmp(a,"--checker")||!strcmp(a,"--arch-profile")||!strcmp(a,"--arch-format"))&&++i<argc){}else if(a[0]!='-')o.output=a;else fail("unsupported disk argument");}if(o.layout&&o.size_mib==129&&o.fat_mib==128){o.size_mib=177;o.fat_mib=176;}disk_create(&o);}
+static void parse_disk(int argc,char **argv){struct diskopt o={.size_mib=129,.fat_mib=128};for(int i=2;i<argc;i++){char*a=argv[i];if(!strcmp(a,"--gpt"))o.gpt=1;else if(!strcmp(a,"--force"))o.force=1;else if(!strcmp(a,"--fragment-kernel"))o.fragment_kernel=1;else if(!strcmp(a,"--machine")&&++i<argc)o.machine=argv[i];else if(!strcmp(a,"--stage1")&&++i<argc)o.stage1=argv[i];else if(!strcmp(a,"--stage2")&&++i<argc)o.stage2=argv[i];else if(!strcmp(a,"--partition-pbr")&&++i<argc)o.pbr=argv[i];else if(!strcmp(a,"--bootzbsd")&&++i<argc)o.bootzbsd=argv[i];else if(!strcmp(a,"--kernel")&&++i<argc)o.kernel=argv[i];else if(!strcmp(a,"--bootx64")&&++i<argc)o.bootx64=argv[i];else if(!strcmp(a,"--zedbsd-config")&&++i<argc)o.kern_config=argv[i];else if(!strcmp(a,"--logo")&&++i<argc)o.logo=argv[i];else if(!strcmp(a,"--arch-image")&&++i<argc)o.arch=argv[i];else if(!strcmp(a,"--data-image")&&++i<argc)o.data=argv[i];else if(!strcmp(a,"--swapfile")&&++i<argc)o.swap=argv[i];else if(!strcmp(a,"--ufs-root")&&++i<argc)o.ufs_root=argv[i];else if(!strcmp(a,"--layout")&&++i<argc)o.layout=argv[i];else if(!strcmp(a,"--size-mib")&&++i<argc)o.size_mib=parse_positive_int(argv[i],"invalid disk size");else if(!strcmp(a,"--fat-size-mib")&&++i<argc)o.fat_mib=parse_positive_int(argv[i],"invalid FAT size");else if((!strcmp(a,"--checker")||!strcmp(a,"--arch-profile")||!strcmp(a,"--arch-format"))&&++i<argc){}else if(a[0]!='-')o.output=a;else fail("unsupported disk argument");}if(o.layout&&o.size_mib==129&&o.fat_mib==128){o.size_mib=177;o.fat_mib=176;}disk_create(&o);}
 /*
  * Runs `zedimage-host ufs SIZE ROOT OUTPUT [OPTION...]`: builds one UFS
  * image of ROOT's tree.

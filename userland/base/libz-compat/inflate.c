@@ -18,7 +18,7 @@
  * each call until it is whole, which only costs time.
  */
 
-#include <compat/zlib.h>
+#include <compat/zlib/zlib.h>
 
 #include <stdint.h>
 #include <stdlib.h>

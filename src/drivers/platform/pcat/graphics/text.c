@@ -22,16 +22,24 @@
 #include <kern/klog.h>
 #include <kern/lock.h>
 #include <kern/pmem.h>
+#include <kern/clock.h>
+#include <kern/sched.h>
+#include <kern/thread.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "backend.h"
 #include "font.h"
+#include "splash.h"
 #include "text.h"
 #include "../serial-mirror.h"
 
 #define TEXT_GLYPH_WIDTH	8U
 #define TEXT_GLYPH_HEIGHT	16U
+
+/* How often the splash's spinner turns by itself, and for how long at most (milliseconds, ws035-p107). */
+#define TEXT_SPLASH_TICK_MS	125U
+#define TEXT_SPLASH_TICKS_MAX	960U
 
 /* Bounds the static cell array; 1920x1080 needs 240x67. */
 #define TEXT_MAX_COLUMNS	240U
@@ -86,6 +94,13 @@ static volatile uint16_t *text_vram;
 static int text_hidden;
 static unsigned text_framebuffer_height;
 
+/*
+ * Whether the splash's spinner has ended for good (a display was taken
+ * for graphics, ws035-p107): it is not drawn again, by a log record or by
+ * its ticker.  Protected by text_lock.
+ */
+static int text_splash_ended;
+
 /* The standard VGA palette the attribute byte indexes. */
 static const uint32_t text_palette[16] = {
 	0x000000U, 0x0000aaU, 0x00aa00U, 0x00aaaaU,
@@ -101,6 +116,8 @@ static void scroll_locked(void);
 static void putc_locked(int character);
 static int vga_text_attach_locked(void);
 static void vga_cursor_locked(void);
+static void text_splash_ticker(void *argument);
+static void text_splash_ticker_start(void);
 
 /*
  * Renders retained text cells into an independent RAM image without reading display memory.
@@ -385,6 +402,10 @@ putc_locked(
 	if (!text_ready)
 		return;
 
+	/* A line nobody sees on a quiet boot turns the splash's spinner (ws035-p107). */
+	if (text_hidden && character == '\n')
+		drv_pcat_splash_step();
+
 	/*
 	 * A control character moves the cursor without redrawing its cell,
 	 * so the inverted cursor image is erased here first.
@@ -441,7 +462,8 @@ static const struct kern_text_ops pcat_text_ops = {
 	.suspend = drv_pcat_text_suspend,
 	.resume = drv_pcat_text_resume,
 	.snapshot = drv_pcat_text_snapshot,
-	.reveal = drv_pcat_text_reveal
+	.reveal = drv_pcat_text_reveal,
+	.progress = drv_pcat_text_progress
 };
 
 /*
@@ -502,14 +524,24 @@ drv_pcat_text_init(
 	text_cursor_visible = 1;
 	text_ready = 1;
 
-	/* A quiet boot leaves the screen (the boot logo) as it is; otherwise the empty grid is drawn. */
+	/*
+	 * A quiet boot leaves the screen (the boot logo) as it is, and the
+	 * splash's spinner is drawn through this layer's mapping from now on;
+	 * otherwise the empty grid is drawn.
+	 */
 	text_hidden = kern_log_quiet();
+	if (text_hidden && text_surface == TEXT_SURFACE_FRAMEBUFFER)
+		drv_pcat_splash_retarget(text_pixels);
 	redraw_locked();
 	vga_cursor_locked();
 	spin_unlock_irqrestore(&text_lock, irq);
 
 	/* Publishes this board's character output to the kernel. */
 	kern_text_register(&pcat_text_ops);
+
+	/* On a quiet boot the splash's spinner also turns by itself, so a long wait does not look stopped. */
+	if (text_hidden)
+		text_splash_ticker_start();
 }
 
 /*
@@ -808,6 +840,37 @@ drv_pcat_text_resume(
 }
 
 /*
+ * Turns the splash's spinner while the console is kept off the screen: a
+ * log record went nowhere else (ws035-p107); or stops it for good, a
+ * display having been taken for graphics.
+ */
+void
+drv_pcat_text_progress(
+	int end)
+{
+	unsigned long irq;
+
+	/* Serializes the spinner with the other console writers. */
+	irq = spin_lock_irqsave(&text_lock);
+
+	/* The end: nothing more is drawn over what was the splash. */
+	if (end) {
+		text_splash_ended = 1;
+		drv_pcat_splash_stop();
+	}
+
+	/* The next frame, only over the splash (a console that is shown has none). */
+	if (text_hidden && !text_splash_ended)
+		drv_pcat_splash_step();
+
+	/* Lets the other console writers draw again. */
+	spin_unlock_irqrestore(&text_lock, irq);
+
+	/* Succeeded: the spinner shows the step. */
+	return;
+}
+
+/*
  * Shows a quiet console: the screen is cleared (the boot logo goes) and the
  * retained cells and the cursor are drawn.
  */
@@ -827,6 +890,9 @@ drv_pcat_text_reveal(
 	if (text_hidden) {
 		text_hidden = 0;
 
+		/* The splash goes with the clear, and its spinner stops. */
+		drv_pcat_splash_stop();
+
 		/* The whole framebuffer black, then the text, while the surface is drawn to. */
 		if (text_ready && text_surface == TEXT_SURFACE_FRAMEBUFFER && text_pixels != NULL) {
 			pixels = text_pixels;
@@ -843,4 +909,58 @@ drv_pcat_text_reveal(
 
 	/* Lets the other console writers draw again. */
 	spin_unlock_irqrestore(&text_lock, irq);
+}
+
+/* Starts the thread that turns the splash's spinner by itself; without it the spinner turns with the log only. */
+static void
+text_splash_ticker_start(
+	void)
+{
+	struct thread *thread;
+	int error;
+
+	/* The thread, at the default priority. */
+	error = kthread_create(text_splash_ticker, NULL, SCHED_PRIORITY_DEFAULT, &thread);
+	if (error != 0)
+		return;
+
+	/* Lets it run. */
+	thread_start(thread);
+}
+
+/*
+ * Turns the splash's spinner every TEXT_SPLASH_TICK_MS while the console is
+ * kept off the screen, until it is shown, a display is taken for graphics,
+ * or TEXT_SPLASH_TICKS_MAX turns have passed (two minutes).
+ */
+static void
+text_splash_ticker(
+	void *argument)
+{
+	unsigned long irq;
+	unsigned turns;
+	int going;
+
+	/* Each turn after a short sleep. */
+	(void)argument;
+	for (turns = 0; turns < TEXT_SPLASH_TICKS_MAX; turns++) {
+		sched_sleep(sched_ticks() + kern_ms_to_ticks(TEXT_SPLASH_TICK_MS));
+
+		/* Serializes the spinner with the other console writers. */
+		irq = spin_lock_irqsave(&text_lock);
+
+		/* A spinner still over the splash turns. */
+		going = 0;
+		if (text_hidden && !text_splash_ended) {
+			going = 1;
+			drv_pcat_splash_step();
+		}
+
+		/* Lets the other console writers draw again. */
+		spin_unlock_irqrestore(&text_lock, irq);
+
+		/* The splash is gone: the thread ends. */
+		if (!going)
+			return;
+	}
 }

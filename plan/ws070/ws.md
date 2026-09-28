@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws070 -->
 
-# WS070: zdesktop の System Menu と Titlebar Presentation（`xdg_toplevel_menu_v1`・`zed_titlebar_v1`、libkeiland で包む）
+# WS070: zdesktop の System Menu と Titlebar Presentation（`xdg_toplevel_menu_v1`・`keiland_titlebar_v1`、libkeiland で包む）
 
 <!-- awesome-plan-current:start -->
 Status: completed
@@ -35,11 +35,11 @@ Wayland のクライアントがメニューの意味（階層・ラベル・状
 | 1. terminal のメニューが浮いたタイトルバーと docked のシステムバーに出て、pointer・keyboard（F10）・shortcut で action が動く | Venus（p003・p004、menu-p003）と i915 実機（p005、capture の zdesktop-menu 11/11。WS075-p002 でも 11/11） |
 | 2. 動的な更新（enabled・checked）が commit の単位で反映、focus の窓のメニューがシステムバーに | Venus（p003・p004） |
 | 3. protocol の誤りは design §2.2 の error、libkeiland は送らずに errno | menu-probe（menu-p002）、titlebar-probe（titlebar-p008） |
-| 4. 規約の全文との照合 | p005（WS071 と共有しない file）、p006・p012・p013（共有する file、`menu-shell.c` の段落の comment、`libkeiland/menu.c`・`menu-protocol.c`・`zdesktop.h` の手の照合） |
+| 4. 規約の全文との照合 | p005（WS071 と共有しない file）、p006・p012・p013（共有する file、`menu-shell.c` の段落の comment、`libkeiland/menu.c`・`menu-protocol.c`・`keiland.h` の手の照合） |
 | Titlebar: CONTROLS | 配置と縮退（パンくずの前の段、検索が button に、priority の順に「…」へ）、button・segment・検索とパンくずの欄（zdesktop が持つ text field）・輪、docked の Application Zone、dock の animation の補間（p010）。最初の使い手 files の toolbar を移した（WS071-p014・p017） |
 | Titlebar: TABS | strip、active・attention・×・＋、縮退（窓の題名が先に譲る → tab が縮む（題名は中央で切る）→ 矢印で scroll と wheel、「…」に隠れた tab）、mode の atomic な切替（p011）、白い bar でも見える地、Ctrl+Tab・Ctrl+Shift+Tab・Ctrl+PageUp/Down・Ctrl+W・Ctrl+T（p013） |
 | Titlebar: glyph | glass の UTF-8 と動的 glyph cache（fallback font、日本語の題名と label）、role の icon（p009） |
-| context menu | protocol version 2 の `get_context_menu`・`xdg_context_menu_v1`、libkeiland の `zdesktop_menu_popup`（WS071-p009 で実装） |
+| context menu | protocol version 2 の `get_context_menu`・`xdg_context_menu_v1`、libkeiland の `keiland_menu_popup`（WS071-p009 で実装） |
 
 Titlebar の部分は Venus だけ。boot test は System Menu の p002〜p005 で PASS、titlebar の Phase では 2026-09-27 のユーザーの指示で行っていない。
 
@@ -53,7 +53,7 @@ Titlebar の部分は Venus だけ。boot test は System Menu の p002〜p005 �
 | ws070-p004 | libkeiland の API と terminal のメニュー | cleared |
 | ws070-p005 | i915 実機、規約の照合（WS071 と共有しない file）、回帰。libwayland の flush の EPIPE の不具合を直した | cleared |
 | ws070-p007 | Titlebar Presentation の設計 | cleared |
-| ws070-p008 | titlebar の protocol と model、libkeiland の `zdesktop_titlebar_*`、titlebar-probe | cleared |
+| ws070-p008 | titlebar の protocol と model、libkeiland の `keiland_titlebar_*`、titlebar-probe | cleared |
 | ws070-p009 | glass の UTF-8 と動的 glyph cache、role の icon | cleared |
 | ws070-p010 | CONTROLS の presentation | cleared |
 | ws070-p011 | TABS の presentation | cleared |
