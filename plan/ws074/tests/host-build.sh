@@ -47,6 +47,19 @@ for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cma
 	objects="$objects $object"
 done
 
+# The image libraries (ws074-p021): libjpeg-compat, libpng-compat with libz-compat, libgif-compat.
+ln -sfn "$(pwd)/include/libc/compat" build/ws074-host/include/compat
+for file in userland/base/libjpeg-compat/*.c userland/base/libpng-compat/*.c userland/base/libz-compat/*.c \
+    userland/base/libgif-compat/*.c; do
+	library=$(basename "$(dirname "$file")")
+	object=$out/obj/$library-$(basename "$file" .c).o
+	if [ ! -f "$object" ] || [ "$file" -nt "$object" ]; then
+		"$cc" $flags -Wno-error -I"$(dirname "$file")" -c "$file" -o "$object"
+	fi
+	engine="$engine $object"
+	objects="$objects $object"
+done
+
 for file in $sources; do
 	object=$out/obj/$(printf '%s' "${file#$src/}" | tr '/' '_' | sed 's/\.c$/.o/')
 	if [ ! -f "$object" ] || [ "$file" -nt "$object" ] || [ -n "$(find "$src" -name '*.h' -newer "$object" | head -1)" ]; then

@@ -37,7 +37,8 @@ static void box_static_inline(struct layout_box *box, layout_unit x, layout_unit
 
 /*
  * Builds and lays out the box tree of a document for a viewport of width
- * by height pixels.
+ * by height pixels; image_lookup (with its context) finds the image of an
+ * <img>, url_lookup the image a background names.
  */
 int
 layout_build(
@@ -45,6 +46,9 @@ layout_build(
 	struct css_engine *css,
 	struct text_system *text,
 	struct dom_document *document,
+	layout_image_lookup image_lookup,
+	layout_url_lookup url_lookup,
+	void *image_context,
 	int width,
 	int height)
 {
@@ -57,6 +61,9 @@ layout_build(
 	memset(tree, 0, sizeof(*tree));
 	wb_arena_init(&tree->arena, 0);
 	tree->text = text;
+	tree->image_lookup = image_lookup;
+	tree->url_lookup = url_lookup;
+	tree->image_context = image_context;
 	tree->viewport_width = (layout_unit)width * LAYOUT_UNIT;
 	tree->viewport_height = (layout_unit)height * LAYOUT_UNIT;
 	css_engine_set_viewport(css, (float)width, (float)height);
@@ -281,6 +288,7 @@ box_build_element(
 	struct layout_box *box;
 	int out_of_flow;
 	int floating;
+	int replaced;
 	int kind;
 	int error;
 
@@ -317,6 +325,16 @@ box_build_element(
 		kind = LAYOUT_INLINE;
 	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_BR)
 		kind = LAYOUT_LINE_BREAK;
+
+	/* An <img> is a replaced box: an atomic piece of its line when it is inline. */
+	replaced = 0;
+	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG) {
+		replaced = 1;
+		if (kind == LAYOUT_INLINE)
+			kind = LAYOUT_REPLACED;
+	}
+
+	/* The root is a block. */
 	if (parent == NULL)
 		kind = LAYOUT_BLOCK;
 
@@ -341,11 +359,24 @@ box_build_element(
 		return ENOMEM;
 	box->out_of_flow = out_of_flow;
 	box->floating = floating;
+
+	/* A replaced box shows its element's image, and has no children. */
+	if (replaced) {
+		box->replaced = 1;
+		if (tree->image_lookup != NULL)
+			box->image = tree->image_lookup(tree->image_context, element);
+	}
+
+	/* The box goes under its parent, or is the root. */
 	if (parent == NULL) {
 		tree->root = box;
 	} else {
 		box_append(parent, box);
 	}
+
+	/* A replaced box's content is its image. */
+	if (replaced)
+		return 0;
 
 	/* The children, then the fix-ups a block needs. */
 	error = box_build_children(tree, css, &element->node, &box->style, box, depth + 1);
@@ -431,6 +462,10 @@ box_new(
 	box->node = node;
 	box->style = *style;
 
+	/* An element's box finds the background image its style names (text shares its element's style, not its box). */
+	if (kind != LAYOUT_TEXT && style->background_image != NULL && tree->url_lookup != NULL)
+		box->background = tree->url_lookup(tree->image_context, style->background_image);
+
 	/* Succeeded: the box is detached. */
 	return box;
 }
@@ -458,8 +493,10 @@ static int
 box_is_inline_level(
 	const struct layout_box *box)
 {
-	/* Inline boxes, text and line breaks. */
+	/* Inline boxes, text, line breaks and inline replaced boxes. */
 	if (box->kind == LAYOUT_INLINE || box->kind == LAYOUT_TEXT || box->kind == LAYOUT_LINE_BREAK)
+		return 1;
+	if (box->kind == LAYOUT_REPLACED)
 		return 1;
 
 	/* Blocks are block-level. */

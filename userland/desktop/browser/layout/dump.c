@@ -25,7 +25,8 @@ static const char *const dump_kinds[] = {
 	"anonymous",
 	"inline",
 	"text",
-	"br"
+	"br",
+	"replaced"
 };
 
 /*
@@ -81,8 +82,13 @@ dump_box(
 	/* The border box's position and size in pixels. */
 	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
 	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
-	wb_buffer_printf(out, " %.2f %.2f %.2f %.2f\n", (double)layout_to_px(box->x), (double)layout_to_px(box->y),
+	wb_buffer_printf(out, " %.2f %.2f %.2f %.2f", (double)layout_to_px(box->x), (double)layout_to_px(box->y),
 	    (double)layout_to_px(width), (double)layout_to_px(height));
+
+	/* A replaced box's image, then the end of the line. */
+	if (box->replaced && box->image != NULL)
+		wb_buffer_printf(out, " image %dx%d", box->image->width, box->image->height);
+	wb_buffer_append_string(out, "\n");
 
 	/* Its lines, and the boxes out of the flow among its inline content; or its children. */
 	if (box->children_inline) {
@@ -143,6 +149,18 @@ dump_lines(
 		for (item = 0; item < line->fragment_count; item++) {
 			fragment = &line->fragments[item];
 			dump_indent(out, depth + 1);
+
+			/* An inline replaced box: its margin box's place and size. */
+			if (fragment->box->kind == LAYOUT_REPLACED) {
+				wb_buffer_printf(out, "replaced %.2f w %.2f h %.2f", (double)layout_to_px(left + line->left + fragment->x),
+				    (double)layout_to_px(fragment->width), (double)layout_to_px(fragment->ascent));
+				if (fragment->box->image != NULL)
+					wb_buffer_printf(out, " image %dx%d", fragment->box->image->width, fragment->box->image->height);
+				wb_buffer_append_string(out, "\n");
+				continue;
+			}
+
+			/* A text fragment. */
 			wb_buffer_printf(out, "text %.2f w %.2f %upx \"", (double)layout_to_px(left + line->left + fragment->x),
 			    (double)layout_to_px(fragment->width), fragment->font.pixels);
 			wb_units_to_utf8(fragment->text, fragment->length, out);

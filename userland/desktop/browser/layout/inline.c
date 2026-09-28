@@ -11,6 +11,9 @@
  * whitespace collapsed as white-space asks, and packed greedily into line
  * boxes that are aligned and stacked.
  *
+ * An inline replaced box (an <img>) is a piece of its own, as wide as its
+ * margin box, standing on the baseline.
+ *
  * The first pass sets every piece on the baseline; inline boxes contribute
  * their style (through the text they hold) but no borders or padding yet.
  * The floats among the content are placed first, at the content's top
@@ -28,8 +31,8 @@
 
 /*
  * One piece of inline content: a word (or a run that cannot break), a
- * collapsed space, or a forced line break.  A collapsed space is drawn as
- * one space however much whitespace it stands for.
+ * collapsed space, a forced line break, or a replaced box.  A collapsed
+ * space is drawn as one space however much whitespace it stands for.
  */
 struct inline_piece {
 	struct layout_box *box;
@@ -38,17 +41,19 @@ struct inline_piece {
 	layout_unit width;
 	int space;
 	int forced_break;
+	int replaced;
 	int uses_fallback;
 	struct text_font font;
 };
 
 /*
- * The state of cutting a block's content into pieces: the pieces so far,
- * the word being gathered and whether the last character was collapsed
- * whitespace.
+ * The state of cutting a block's content into pieces: the block's width
+ * (which replaced boxes are sized in), the pieces so far, the word being
+ * gathered and whether the last character was collapsed whitespace.
  */
 struct inline_cutter {
 	struct layout_tree *tree;
+	layout_unit width;
 	struct wb_vector pieces;
 	struct layout_box *box;
 	const uint16_t *word;
@@ -66,6 +71,8 @@ static const uint16_t inline_space[1] = { 0x20U };
 
 static void inline_collect(struct inline_cutter *cutter, struct layout_box *box);
 static void inline_cut_text(struct inline_cutter *cutter, struct layout_box *box);
+static void inline_add_replaced(struct inline_cutter *cutter, struct layout_box *box);
+static layout_unit inline_margin_height(const struct layout_box *box);
 static void inline_flush_word(struct inline_cutter *cutter);
 static void inline_add_piece(struct inline_cutter *cutter, const uint16_t *text, size_t length, layout_unit width, int space, int forced_break);
 static layout_unit inline_advance(struct inline_cutter *cutter, uint32_t code_point);
@@ -98,6 +105,7 @@ layout_inline(
 	/* Cuts the content into pieces. */
 	memset(&cutter, 0, sizeof(cutter));
 	cutter.tree = tree;
+	cutter.width = box->width;
 	cutter.after_space = 1;
 	wb_vector_init(&cutter.pieces, sizeof(struct inline_piece));
 	for (child = box->first_child; child != NULL; child = child->next)
@@ -133,6 +141,12 @@ inline_collect(
 	/* Text is cut into words and spaces. */
 	if (box->kind == LAYOUT_TEXT) {
 		inline_cut_text(cutter, box);
+		return;
+	}
+
+	/* A replaced box is a piece of its own. */
+	if (box->kind == LAYOUT_REPLACED) {
+		inline_add_replaced(cutter, box);
 		return;
 	}
 
@@ -248,6 +262,52 @@ inline_cut_text(
 		cutter->previous = code_point;
 		offset += used;
 	}
+}
+
+/*
+ * Sizes an inline replaced box in the block's width and adds it as a
+ * piece as wide as its margin box; the lines may break before and after
+ * it.
+ */
+static void
+inline_add_replaced(
+	struct inline_cutter *cutter,
+	struct layout_box *box)
+{
+	struct inline_piece *piece;
+	layout_unit width;
+
+	/* Its margins, borders, paddings and size. */
+	layout_box_model(box, cutter->width);
+	layout_replaced_size(box, cutter->width);
+	width = box->margin[CSS_LEFT] + box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width +
+	    box->padding[CSS_RIGHT] + box->border[CSS_RIGHT] + box->margin[CSS_RIGHT];
+
+	/* The word before it ends, and the box is a piece of its own. */
+	inline_flush_word(cutter);
+	cutter->box = box;
+	inline_add_piece(cutter, NULL, 0, width, 0, 0);
+	if (cutter->error != 0)
+		return;
+	piece = wb_vector_at(&cutter->pieces, cutter->pieces.count - 1U);
+	piece->replaced = 1;
+
+	/* What follows is not after a space, and starts a new word. */
+	cutter->after_space = 0;
+	cutter->previous = 0;
+}
+
+/* Measures a box's margin box height. */
+static layout_unit
+inline_margin_height(
+	const struct layout_box *box)
+{
+	layout_unit height;
+
+	/* The margins, borders and paddings above and below the content. */
+	height = box->margin[CSS_TOP] + box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height +
+	    box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM] + box->margin[CSS_BOTTOM];
+	return height;
 }
 
 /* Ends the word being gathered and adds it as a piece. */
@@ -515,6 +575,16 @@ inline_finish_line(
 		fragment->underline = pieces[index].box->style.underline;
 		fragment->x = x;
 		fragment->width = pieces[index].width;
+
+		/* A replaced box stands on the baseline: all of its margin box is above it. */
+		if (pieces[index].replaced) {
+			fragment->ascent = inline_margin_height(pieces[index].box);
+			fragment->descent = 0;
+			if (fragment->ascent > above)
+				above = fragment->ascent;
+			x += pieces[index].width;
+			continue;
+		}
 
 		/* The font's ascent and descent, which the painting places the glyphs by. */
 		error = text_font_metrics(tree->text, &pieces[index].font, &metrics);
