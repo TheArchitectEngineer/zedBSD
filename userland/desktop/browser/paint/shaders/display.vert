@@ -12,15 +12,21 @@ layout(push_constant) uniform Frame {
 layout(location = 0) in vec4 corner;
 
 // The item, one per instance: its exact rectangle in pixels (left, top,
-// right, bottom), its straight color, and the atlas place of a glyph (u, v in
-// texels) with its kind (z: 0 a rectangle, 1 a glyph).
+// right, bottom), its straight color, the atlas place of a glyph or an image
+// (u, v in texels) with its kind (z: 0 a rectangle, 1 a glyph, 2 an image),
+// and for an image where it starts (x, y, the unclipped rectangle's top left)
+// with its texels to a pixel (z, w), and its size in texels (x, y).
 layout(location = 1) in vec4 rect;
 layout(location = 2) in vec4 color;
 layout(location = 3) in vec4 atlas;
+layout(location = 4) in vec4 source;
+layout(location = 5) in vec4 texels;
 
 layout(location = 0) flat out vec4 item_rect;
 layout(location = 1) flat out vec4 item_color;
 layout(location = 2) flat out vec4 item_atlas;
+layout(location = 3) flat out vec4 item_source;
+layout(location = 4) flat out vec4 item_texels;
 
 void main()
 {
@@ -34,4 +40,6 @@ void main()
 	item_rect = rect;
 	item_color = color;
 	item_atlas = atlas;
+	item_source = source;
+	item_texels = texels;
 }

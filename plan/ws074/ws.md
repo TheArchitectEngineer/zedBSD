@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010〜p017・p019・p020・p022〜p026・p030・p045・p046・p048・p049・p051 cleared。p019・p020・p051 cleared（2026-09-28）。次は p021 → p050。p017 で BUG-083（rtld の dlopen が /usr/lib を探さない）を直した。p016 を 2026-09-28 に同期の HTTP（p016）と非同期の loader（p050）に分けた。p013 を 2026-09-28 に p013（position）・p048（float）・p049（overflow と clip）に分けた。p030 の依存は p014・p046 に縮めた（理由は p030 の phase.md、WPT の runner は p047 へ）
+Resume point: p001〜p005・p007・p010〜p017・p019〜p021・p022〜p026・p030・p045・p046・p048・p049・p051 cleared。p019・p020・p051・p021 cleared（2026-09-28）。次は p053（部品の設計）→ p052（背景画像）→ p050。p017 で BUG-083（rtld の dlopen が /usr/lib を探さない）を直した。p016 を 2026-09-28 に同期の HTTP（p016）と非同期の loader（p050）に分けた。p013 を 2026-09-28 に p013（position）・p048（float）・p049（overflow と clip）に分けた。p030 の依存は p014・p046 に縮めた（理由は p030 の phase.md、WPT の runner は p047 へ）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -68,7 +68,7 @@ p001 で分け直した（2026-09-27。p002〜p013 の案は実行前の案だ�
 着手の時に大きすぎれば分ける。
 
 **実行の順**（2026-09-27 ユーザー「正常系でワンパス通すのを優先する」、design.md §18）: p005 → p007 → p010 → p011 → p012 → p014（窓に
-実際の page）→ p045（URL の欄と link）→ p022 → p023 → p024 → p025 → p026 → p046 → p030（JS の接続）→ p013 → p048 → p049 → p015 → p016 → p017 → p019 → p020 → p051 → p021 → p050 → p006 → p008 →
+実際の page）→ p045（URL の欄と link）→ p022 → p023 → p024 → p025 → p026 → p046 → p030（JS の接続）→ p013 → p048 → p049 → p015 → p016 → p017 → p019 → p020 → p051 → p021 → p053 → p052 → p050 → p006 → p008 →
 p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 → p034 → p035 以降。各 Phase は最小の範囲で通し、残りは phase.md の「後回し」へ。
 
 | Phase | 内容 | Status | 依存 |
@@ -96,7 +96,9 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p019](phase019/phase.md) | `libjpeg-compat` 1: baseline（huffman、任意の subsampling、restart、grayscale・YCbCr）、library の登録、host の試験（Pillow と比較）。2026-09-28 に base の group・全 platform、libpng-compat の header を `compat/png/` へ | cleared | p002 |
 | [ws074-p020](phase020/phase.md) | `libjpeg-compat` 2: progressive、CMYK/YCCK、`jpeg_save_markers`（EXIF の向き）（`JCS_EXT_BGRA` は p019 で済み） | cleared | p019 |
 | [ws074-p051](phase051/phase.md) | `libgif-compat`（2026-09-28 ユーザー、D5 の変更）: `userland/base/libgif-compat`、`include/libc/compat/gif_lib.h`（giflib 5.2 の decode の部分集合）、全 platform | cleared | p002 |
-| ws074-p021 | browser の画像: `<img>`、CSS の背景画像、JPEG・PNG（libpng-compat）・GIF（libgif-compat）、画像の cache、固有の大きさ | planned | p016、p020、p051、ws071-p010 |
+| [ws074-p021](phase021/phase.md) | browser の画像: `<img>`（replaced box）、JPEG・PNG・GIF（base の compat の library）、画像の表、CPU と GPU の描画（2026-09-28 に CSS の背景画像を p052 へ分けた） | cleared | p016、p020、p051、ws071-p010 |
+| ws074-p052 | CSS の背景画像（p021 から分けた）: `background-image: url()`、repeat、position、size | planned | p021 |
+| ws074-p053 | 部品としての browser の設計（design.md §19）: engine と shell・Wayland の依存の棚卸し、C API（create・destroy・load・resize・呼ぶ側の VkImage への描画・入力の event・callback）の header の案を plan/ws074/ に。.so の分割はまだしない | planned | p021 |
 | [ws074-p022](phase022/phase.md) | VM の核 2: 値（NaN-boxing）、object と shape、配列の elements、関数、realm の骨組み | cleared | p003 |
 | [ws074-p023](phase023/phase.md) | 共通の bytecode と interpreter、呼び出し規約、例外の unwind、native 関数（手で組んだ JS 型と Wasm 型の命令の試験） | cleared | p022 |
 | [ws074-p024](phase024/phase.md) | JS の lexer と parser（ES2024 の構文 → AST）、test262 の構文の試験（parse だけ。46876/47792） | cleared | p023 |

@@ -16,13 +16,16 @@
  * relatively positioned boxes are shifted, and absolutely positioned and
  * fixed boxes, taken out of the flow, are placed in their containing
  * blocks (position.c).  Floats, tables, flex and grid come later; until
- * then their boxes are laid out as blocks.
+ * then their boxes are laid out as blocks.  An <img> is a replaced box
+ * (replaced.c): inline, an atomic piece of its line; otherwise a block
+ * without content; either sized by its image and its width and height.
  */
 
 #ifndef KEILAND_BROWSER_LAYOUT_H
 #define KEILAND_BROWSER_LAYOUT_H
 
 #include "css/css.h"
+#include "image/image.h"
 #include "text/text.h"
 
 /* How many layout units make a pixel. */
@@ -44,8 +47,15 @@ enum layout_box_kind {
 	LAYOUT_ANONYMOUS_BLOCK,
 	LAYOUT_INLINE,
 	LAYOUT_TEXT,
-	LAYOUT_LINE_BREAK
+	LAYOUT_LINE_BREAK,
+	LAYOUT_REPLACED
 };
+
+/*
+ * Finds the decoded image an element shows (NULL when it has none); the
+ * page supplies it, so that the layout needs no knowledge of loading.
+ */
+typedef const struct img_bitmap *(*layout_image_lookup)(void *context, const struct dom_element *element);
 
 /*
  * A piece of text on a line: a run of a text box's characters, with its
@@ -128,6 +138,10 @@ struct layout_box {
 	/* The list marker of a list item ("•" or "1."), empty when none. */
 	uint16_t marker[8];
 	size_t marker_length;
+
+	/* A replaced box (an <img>), and the image it shows (NULL when it has none). */
+	int replaced;
+	const struct img_bitmap *image;
 };
 
 /*
@@ -135,7 +149,8 @@ struct layout_box {
  * the layout was made for.  While a layout runs, floats is the current
  * block formatting context's list of floats (float.c) and origin_x,
  * origin_y the content box of the block being laid out in that context's
- * coordinates.
+ * coordinates.  image_lookup and image_context find the image of an
+ * <img>.
  */
 struct layout_tree {
 	struct wb_arena arena;
@@ -147,6 +162,8 @@ struct layout_tree {
 	struct wb_vector *floats;
 	layout_unit origin_x;
 	layout_unit origin_y;
+	layout_image_lookup image_lookup;
+	void *image_context;
 };
 
 /*
@@ -159,8 +176,11 @@ struct layout_context {
 	layout_unit origin_y;
 };
 
-/* The layout (box.c, block.c, inline.c, float.c, position.c, dump.c, hit.c). */
-int layout_build(struct layout_tree *tree, struct css_engine *css, struct text_system *text, struct dom_document *document, int width, int height);
+/* The layout (box.c, block.c, inline.c, float.c, position.c, replaced.c, dump.c, hit.c). */
+int layout_build(struct layout_tree *tree, struct css_engine *css, struct text_system *text, struct dom_document *document, layout_image_lookup image_lookup, void *image_context, int width, int height);
+void layout_box_model(struct layout_box *box, layout_unit containing_width);
+void layout_auto_margins(struct layout_box *box, layout_unit containing_width);
+void layout_replaced_size(struct layout_box *box, layout_unit containing_width);
 void layout_absolute(struct layout_box *box, layout_unit x, layout_unit y);
 int layout_is_positioned(const struct layout_box *box);
 int layout_clips(const struct layout_box *box);
