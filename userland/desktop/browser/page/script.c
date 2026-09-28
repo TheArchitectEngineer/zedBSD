@@ -9,8 +9,8 @@
  * A page's scripts and its event loop: the realm and window a page runs
  * its scripts in, the script elements run as the parser reaches them (an
  * inline script's text, or a src file next to the page), the load events,
- * the timers driven by the page's clock, and a click turned into a DOM
- * event.
+ * and the timers driven by the page's clock (the user's input becomes DOM
+ * events in input.c).
  *
  * The first pass runs classic scripts only, from the page's own files and
  * data: URLs (http arrives with the network, modules later), and runs them
@@ -35,7 +35,6 @@ static int script_type_runs(const struct dom_element *script);
 static int script_attribute(struct page *page, const struct dom_element *element, const char *name, struct dom_attribute **attribute);
 static int script_run_file(struct page *page, const struct vm_string *src);
 static int script_ascii_equal_folded(const struct vm_string *string, const char *ascii);
-static struct dom_node *script_element_at(struct page *page, int x, int y);
 
 /*
  * The MIME types of a classic script's type attribute, in lower case (the
@@ -245,44 +244,6 @@ page_settle(
 }
 
 /*
- * Fires a click of the main button at a point of the page (x and y in the
- * document, client_x and client_y in the viewport); *canceled says whether
- * a listener canceled the click's default action.
- */
-int
-page_click(
-	struct page *page,
-	int x,
-	int y,
-	int client_x,
-	int client_y,
-	int *canceled)
-{
-	struct bind_mouse mouse;
-	struct dom_node *target;
-	int error;
-
-	/* The element under the point, or the document's root element. */
-	*canceled = 0;
-	target = script_element_at(page, x, y);
-	if (target == NULL)
-		return 0;
-
-	/* The click, with the pointer's place. */
-	memset(&mouse, 0, sizeof(mouse));
-	mouse.client_x = (double)client_x;
-	mouse.client_y = (double)client_y;
-	mouse.page_x = (double)x;
-	mouse.page_y = (double)y;
-	error = bind_fire_mouse_event(page->window, target, "click", &mouse, canceled);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the click is dispatched. */
-	return 0;
-}
-
-/*
  * Tells whether the document changed since the page was laid out.
  */
 int
@@ -480,34 +441,4 @@ script_ascii_equal_folded(
 
 	/* The same text. */
 	return 1;
-}
-
-/* Finds the element under a point of the document, or the root element when no box is there. */
-static struct dom_node *
-script_element_at(
-	struct page *page,
-	int x,
-	int y)
-{
-	struct dom_node *node;
-
-	/* The deepest box under the point, which may be text. */
-	node = NULL;
-	if (page->laid_out)
-		node = layout_hit_node(&page->layout, (layout_unit)x * LAYOUT_UNIT, (layout_unit)y * LAYOUT_UNIT);
-
-	/* Text's element is its parent. */
-	while (node != NULL && node->type != DOM_ELEMENT)
-		node = node->parent;
-
-	/* Nothing under the point is the root element. */
-	if (node == NULL) {
-		for (node = page->document->node.first_child; node != NULL; node = node->next) {
-			if (node->type == DOM_ELEMENT)
-				break;
-		}
-	}
-
-	/* The element. */
-	return node;
 }

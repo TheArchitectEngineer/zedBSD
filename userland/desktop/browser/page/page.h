@@ -54,6 +54,13 @@ typedef void (*page_request_done)(void *context, struct net_request *request);
  * embedder's, or NULL) fetches http and https images without blocking,
  * and images_generation counts the images that arrived, which
  * laid_out_images is compared with to lay the page out again.
+ *
+ * The focus (input.c): focused is the element the keys go to (NULL for
+ * none: the body gets them), a root of the heap; focus_visible says the
+ * keyboard moved it there, so its ring is drawn while window_focused says
+ * the view has the focus of its program.  focus_generation counts the
+ * changes of the three, and painted_focus is its value when the display
+ * list was made, so a change paints the page again without a new layout.
  */
 struct page {
 	struct vm_heap *heap;
@@ -77,6 +84,27 @@ struct page {
 	uint32_t laid_out_images;
 	page_console console;
 	void *console_context;
+	struct dom_element *focused;
+	int focus_visible;
+	int window_focused;
+	uint32_t focus_generation;
+	uint32_t painted_focus;
+};
+
+/*
+ * One input of the pointer for the page: its place in the document and in
+ * the viewport (pixels), the DOM's button number, the modifiers held
+ * (BIND_MOD_*), and a wheel's distances in pixels.
+ */
+struct page_pointer {
+	int x;
+	int y;
+	int client_x;
+	int client_y;
+	int button;
+	unsigned modifiers;
+	double delta_x;
+	double delta_y;
 };
 
 /* Pages (page.c). */
@@ -99,8 +127,19 @@ int page_fire_load(struct page *page);
 int page_set_time(struct page *page, double now);
 int page_next_timer(const struct page *page, double *due);
 int page_settle(struct page *page, double budget);
-int page_click(struct page *page, int x, int y, int client_x, int client_y, int *canceled);
 int page_needs_layout(const struct page *page);
+
+/* The user's input and the focus (input.c). */
+int page_mouse_event(struct page *page, const char *type, const struct page_pointer *pointer, int *canceled);
+int page_wheel_event(struct page *page, const struct page_pointer *pointer, int *canceled);
+int page_key_event(struct page *page, const char *type, const struct bind_key *key, int *canceled);
+int page_focus_at(struct page *page, int x, int y);
+int page_focus_move(struct page *page, int backward);
+int page_window_focus(struct page *page, int focused);
+int page_activate_focused(struct page *page, struct wb_buffer *href, int *found);
+int page_focus_rect(struct page *page, struct layout_rect *rect);
+int page_needs_paint(const struct page *page);
+int page_paint_focus(struct page *page);
 
 /* Links (link.c). */
 int page_link_at(struct page *page, int x, int y, struct wb_buffer *href, int *found);

@@ -1,0 +1,187 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The rectangle a node takes on the laid out page (ws074-p056): the union
+ * of the border boxes of the blocks it makes and of the pieces of lines
+ * its text and inline replaced boxes make.  The focus ring is drawn
+ * around it, and a focused element is scrolled into view by it.
+ *
+ * An inline element makes no box of its own with a place (its text's
+ * fragments have the places), so the lines of every block are searched for
+ * the fragments of the node's descendants.
+ */
+
+#include "layout/layout.h"
+
+static void bounds_walk(const struct layout_box *box, const struct dom_node *node, struct layout_rect *rect, int *found, int depth);
+static void bounds_lines(const struct layout_box *box, const struct dom_node *node, struct layout_rect *rect, int *found);
+static void bounds_add(struct layout_rect *rect, int *found, layout_unit x, layout_unit y, layout_unit width, layout_unit height);
+
+/*
+ * Finds the rectangle a node takes on the page, in layout units from the
+ * document's top left.  Returns whether the node has any box (a node that
+ * is not rendered, or whose boxes are all empty, has none).
+ */
+int
+layout_node_bounds(
+	const struct layout_tree *tree,
+	const struct dom_node *node,
+	struct layout_rect *rect)
+{
+	int found;
+
+	/* Nothing is found until a box is. */
+	found = 0;
+	rect->x = 0;
+	rect->y = 0;
+	rect->width = 0;
+	rect->height = 0;
+
+	/* The whole box tree. */
+	if (tree->root != NULL)
+		bounds_walk(tree->root, node, rect, &found, 0);
+
+	/* Reports whether the node has a box. */
+	return found;
+}
+
+/* Adds a box's part of a node's rectangle (its border box, or its lines' fragments), and its children's. */
+static void
+bounds_walk(
+	const struct layout_box *box,
+	const struct dom_node *node,
+	struct layout_rect *rect,
+	int *found,
+	int depth)
+{
+	const struct layout_box *child;
+	layout_unit width;
+	layout_unit height;
+	int inside;
+	int in_line;
+
+	/* Stops at the depth the layout stops at. */
+	if (depth > LAYOUT_DEPTH_MAX)
+		return;
+
+	/* A block of the node or of its descendants adds its border box. */
+	inside = 0;
+	if (box->node != NULL)
+		inside = dom_is_inclusive_ancestor(node, box->node);
+
+	/* A replaced box among inline content is a piece of its line, which the lines add. */
+	in_line = 0;
+	if (box->kind == LAYOUT_REPLACED &&
+	    box->parent != NULL &&
+	    box->parent->children_inline)
+		in_line = 1;
+
+	/* The blocks and the replaced boxes that stand as blocks have places of their own. */
+	if (inside &&
+	    !in_line &&
+	    (box->kind == LAYOUT_BLOCK || box->kind == LAYOUT_REPLACED)) {
+		width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+		height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+		bounds_add(rect, found, box->x, box->y, width, height);
+	}
+
+	/* A block of lines adds the fragments of the node's text. */
+	if (box->children_inline)
+		bounds_lines(box, node, rect, found);
+
+	/* The children, which may hold more of the node (floats and positioned boxes among inline content too). */
+	for (child = box->first_child; child != NULL; child = child->next)
+		bounds_walk(child, node, rect, found, depth + 1);
+}
+
+/* Adds the fragments of a block's lines that belong to a node or its descendants. */
+static void
+bounds_lines(
+	const struct layout_box *box,
+	const struct dom_node *node,
+	struct layout_rect *rect,
+	int *found)
+{
+	const struct layout_line *line;
+	const struct layout_fragment *fragment;
+	layout_unit left;
+	layout_unit top;
+	layout_unit x;
+	layout_unit y;
+	size_t index;
+	size_t item;
+	int inside;
+
+	/* The content box's origin, which the lines are placed from. */
+	left = box->x + box->border[CSS_LEFT] + box->padding[CSS_LEFT];
+	top = box->y + box->border[CSS_TOP] + box->padding[CSS_TOP];
+
+	/* Each fragment of each line whose box is the node's. */
+	for (index = 0; index < box->line_count; index++) {
+		line = &box->lines[index];
+		for (item = 0; item < line->fragment_count; item++) {
+			fragment = &line->fragments[item];
+
+			/* A fragment of another node's text is passed by. */
+			inside = 0;
+			if (fragment->box != NULL && fragment->box->node != NULL)
+				inside = dom_is_inclusive_ancestor(node, fragment->box->node);
+			if (!inside)
+				continue;
+
+			/* The fragment's run, from its ascent above the baseline to its descent below. */
+			x = left + line->left + fragment->x;
+			y = top + line->y + line->baseline - fragment->ascent;
+			bounds_add(rect, found, x, y, fragment->width, fragment->ascent + fragment->descent);
+		}
+	}
+}
+
+/* Grows a rectangle to take in another (the first one found is taken as it is); an empty one adds nothing. */
+static void
+bounds_add(
+	struct layout_rect *rect,
+	int *found,
+	layout_unit x,
+	layout_unit y,
+	layout_unit width,
+	layout_unit height)
+{
+	layout_unit right;
+	layout_unit bottom;
+
+	/* An empty box has no place to add. */
+	if (width <= 0 || height <= 0)
+		return;
+
+	/* The first box is the rectangle. */
+	if (!*found) {
+		rect->x = x;
+		rect->y = y;
+		rect->width = width;
+		rect->height = height;
+		*found = 1;
+		return;
+	}
+
+	/* The union's far edges. */
+	right = rect->x + rect->width;
+	bottom = rect->y + rect->height;
+	if (x + width > right)
+		right = x + width;
+	if (y + height > bottom)
+		bottom = y + height;
+
+	/* Its near edges, and the size between them. */
+	if (x < rect->x)
+		rect->x = x;
+	if (y < rect->y)
+		rect->y = y;
+	rect->width = right - rect->x;
+	rect->height = bottom - rect->y;
+}

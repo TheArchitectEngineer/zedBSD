@@ -76,6 +76,17 @@ page_create(
 		return error;
 	}
 
+	/* Keeps the focused element alive as a root (none yet). */
+	error = vm_heap_add_root(created->heap, (struct vm_cell **)&created->focused);
+	if (error != 0) {
+		vm_heap_destroy(created->heap);
+		free(created);
+		return error;
+	}
+
+	/* A page starts in a view that has its program's focus (the view says otherwise). */
+	created->window_focused = 1;
+
 	/* The realm whose global object is the document's window. */
 	error = page_start_scripts(created);
 	if (error != 0) {
@@ -440,9 +451,14 @@ page_paint(
 	error = paint_build(&page->paint, &page->layout);
 	if (error != 0)
 		return error;
+	page->painted = 1;
+
+	/* The focus ring over it, when the keyboard put the focus somewhere. */
+	error = page_paint_focus(page);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the page has its display list. */
-	page->painted = 1;
 	return 0;
 }
 

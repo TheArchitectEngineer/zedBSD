@@ -173,6 +173,67 @@ paint_release(
 }
 
 /*
+ * Adds a ring around a rectangle on top of everything painted so far: four
+ * filled rectangles of a thickness just outside it (the focus ring of the
+ * focused element, ws074-p056).
+ */
+int
+paint_add_ring(
+	struct paint_list *list,
+	layout_unit x,
+	layout_unit y,
+	layout_unit width,
+	layout_unit height,
+	layout_unit thickness,
+	uint32_t color)
+{
+	struct paint_item edges[4];
+	size_t index;
+	int error;
+
+	/* The four edges, all of one color. */
+	memset(edges, 0, sizeof(edges));
+	for (index = 0; index < 4U; index++) {
+		edges[index].kind = PAINT_RECT;
+		edges[index].color = color;
+	}
+
+	/* The top edge, across the corners. */
+	edges[0].x = x - thickness;
+	edges[0].y = y - thickness;
+	edges[0].width = width + 2 * thickness;
+	edges[0].height = thickness;
+
+	/* The bottom edge, across the corners. */
+	edges[1].x = x - thickness;
+	edges[1].y = y + height;
+	edges[1].width = width + 2 * thickness;
+	edges[1].height = thickness;
+
+	/* The left edge, between the top and the bottom. */
+	edges[2].x = x - thickness;
+	edges[2].y = y;
+	edges[2].width = thickness;
+	edges[2].height = height;
+
+	/* The right edge, between the top and the bottom. */
+	edges[3].x = x + width;
+	edges[3].y = y;
+	edges[3].width = thickness;
+	edges[3].height = height;
+
+	/* The items, last in the list so they are drawn over the page. */
+	for (index = 0; index < 4U; index++) {
+		error = wb_vector_push(&list->items, &edges[index]);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the ring is in the list. */
+	return 0;
+}
+
+/*
  * Writes a display list as text, one item a line, in pixels.
  */
 int
