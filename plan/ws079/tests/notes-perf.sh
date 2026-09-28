@@ -44,7 +44,7 @@ done
 cc -std=c99 -pedantic -O1 -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I"$out/include" -Iuserland/desktop/notes \
     userland/desktop/notes/document.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c \
     userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c \
-    userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/crypt.c plan/ws079/tests/notes-many.c \
+    userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c plan/ws079/tests/notes-many.c \
     "$out/sha2.o" "$out/digest.o" $zlib -lm \
     -o "$out/notes-many" || exit 1
 "$out/notes-many" "$out/many.pdf" "$count" || exit 1

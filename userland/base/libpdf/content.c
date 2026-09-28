@@ -599,6 +599,8 @@ read_contents(
 			*flags |= PDF_DISPLAY_DAMAGED;
 			return 0;
 		}
+
+		/* An entry that is not a stream ends the content too. */
 		if (stream->type != PDF_OBJECT_STREAM) {
 			*flags |= PDF_DISPLAY_DAMAGED;
 			return 0;
@@ -638,6 +640,8 @@ append_stream(
 		*flags |= PDF_DISPLAY_SKIPPED;
 		return 0;
 	}
+
+	/* Any other failure is damage. */
 	if (error != 0) {
 		*flags |= PDF_DISPLAY_DAMAGED;
 		return 0;
@@ -656,6 +660,8 @@ append_stream(
 		free(owned);
 		return ENOMEM;
 	}
+
+	/* Appends the stream's bytes and a line end, so that its last token does not run into the next stream's first. */
 	*content = grown;
 	memcpy(*content + *size, data, data_size);
 	(*content)[*size + data_size] = '\n';
@@ -746,6 +752,8 @@ run_content(
 			stop_for(run, error);
 			break;
 		}
+
+		/* The end of the content ends the run. */
 		if (token.type == PDF_TOKEN_END)
 			break;
 
@@ -756,6 +764,8 @@ run_content(
 				stop_for(run, error);
 				break;
 			}
+
+			/* The operand waits for its operator. */
 			continue;
 		}
 
@@ -799,6 +809,8 @@ read_operand(
 		run->operand_count++;
 		return 0;
 	}
+
+	/* A real number, kept as it is. */
 	if (token->type == PDF_TOKEN_REAL) {
 		operand->type = OPERAND_NUMBER;
 		operand->number = token->real;
@@ -1214,6 +1226,8 @@ execute_color(
 				state->fill_pattern_space = 1;
 				state->fill_pattern = NULL;
 			}
+
+			/* The colour waits for scn to name a pattern. */
 			break;
 		}
 
@@ -1328,6 +1342,8 @@ end_clips(
 			run->flags |= PDF_DISPLAY_LIMITED;
 		run->clip_depth--;
 	}
+
+	/* The level holds no clip any more. */
 	run->stack[run->depth].clips = 0;
 }
 
@@ -1436,6 +1452,8 @@ set_dash(
 		state->dash_phase = fmod(phase, total * 2.0);
 		return;
 	}
+
+	/* An odd count too long to repeat leaves the line solid. */
 	if (array->count % 2 == 1)
 		return;
 
@@ -1654,7 +1672,7 @@ apply_blend(
 	int is_multiply;
 	int known;
 
-	/* Multiply multiplies. */
+	/* Multiply darkens by multiplying the colours. */
 	is_multiply = pdf_object_is_name(mode, "Multiply");
 	if (is_multiply) {
 		run->stack[run->depth].blend = PDF_BLEND_MULTIPLY;
@@ -1801,6 +1819,8 @@ space_components(
 			return ENOTSUP;
 		return 0;
 	}
+
+	/* Any other space is an array whose first element names its family. */
 	if (space->type != PDF_OBJECT_ARRAY)
 		return PDF_EFORMAT;
 	if (space->count == 0)
@@ -1815,6 +1835,8 @@ space_components(
 		*components = 1;
 		return 0;
 	}
+
+	/* The calibrated RGB space. */
 	is_name = pdf_object_is_name(family, "CalRGB");
 	if (is_name) {
 		*components = 3;
@@ -2006,6 +2028,8 @@ path_add(
 	} else {
 		path->current = path->points[path->point_count - 1];
 	}
+
+	/* A move starts a new subpath there. */
 	if (verb == PDF_PATH_MOVE)
 		path->start = path->current;
 	path->has_current = 1;
@@ -2254,6 +2278,8 @@ push_clip(
 		stop_for(run, error);
 		return;
 	}
+
+	/* The level counts the clip, which the level's Q pops. */
 	run->stack[run->depth].clips++;
 	run->clip_depth++;
 }
@@ -2299,14 +2325,18 @@ matrix_scale(
 	const double matrix[6])
 {
 	double determinant;
+	double scale;
 
 	/* The area scale of the linear part. */
 	determinant = matrix[0] * matrix[3] - matrix[1] * matrix[2];
 	if (determinant < 0.0)
 		determinant = -determinant;
 
-	/* Reports its square root. */
-	return sqrt(determinant);
+	/* Its square root is the length scale. */
+	scale = sqrt(determinant);
+
+	/* Reports the length scale. */
+	return scale;
 }
 
 /* Executes a text operator: the text state, the text object, positioning, and showing. */
@@ -2461,6 +2491,8 @@ set_font(
 		stop_for(run, ENOMEM);
 		return;
 	}
+
+	/* A font that cannot be read leaves its text out. */
 	if (error != 0) {
 		run->flags |= PDF_DISPLAY_SKIPPED;
 		return;
@@ -2680,7 +2712,7 @@ show_string(
 				adds = 1;
 		}
 
-		/* Adds it. */
+		/* Adds the glyph to the list when it is drawn or clips. */
 		if (adds) {
 			error = add_glyph(run, &glyph);
 			if (error != 0) {
@@ -3327,6 +3359,8 @@ draw_xobject(
 		run->flags |= PDF_DISPLAY_SKIPPED;
 		return;
 	}
+
+	/* An XObject that is not a stream is left out too. */
 	if (xobject->type != PDF_OBJECT_STREAM) {
 		run->flags |= PDF_DISPLAY_SKIPPED;
 		return;
@@ -3338,6 +3372,8 @@ draw_xobject(
 		run->flags |= PDF_DISPLAY_DAMAGED;
 		return;
 	}
+
+	/* The two kinds the reader draws. */
 	is_image = pdf_object_is_name(subtype, "Image");
 	is_form = pdf_object_is_name(subtype, "Form");
 	if (is_image)
@@ -3367,6 +3403,8 @@ draw_image(
 		stop_for(run, ENOMEM);
 		return;
 	}
+
+	/* An image the reader cannot decode is left out. */
 	if (error != 0) {
 		run->flags |= PDF_DISPLAY_SKIPPED;
 		return;
@@ -3425,6 +3463,8 @@ run_form(
 		run->flags |= PDF_DISPLAY_LIMITED;
 		return;
 	}
+
+	/* A form needs a level of the state stack of its own. */
 	if (run->depth + 1 >= PDF_CONTENT_STACK_MAX) {
 		run->flags |= PDF_DISPLAY_LIMITED;
 		return;
@@ -3454,10 +3494,14 @@ run_form(
 		run->flags |= PDF_DISPLAY_DAMAGED;
 		return;
 	}
+
+	/* | box_object->count != 4) {|The box is an array of four numbers. */
 	if (box_object->type != PDF_OBJECT_ARRAY || box_object->count != 4) {
 		run->flags |= PDF_DISPLAY_DAMAGED;
 		return;
 	}
+
+	/* Reads the four numbers; any other entry is damage. */
 	for (index = 0; index < 4; index++) {
 		error = pdf_object_number(box_object->values[index], &box[index]);
 		if (error != 0) {

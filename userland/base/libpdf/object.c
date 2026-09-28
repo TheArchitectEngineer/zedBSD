@@ -217,6 +217,8 @@ pdf_lexer_next(
 			lexer->position += 2;
 			return 0;
 		}
+
+		/* A single one opens a hexadecimal string. */
 		error = lex_hex_string(lexer, token);
 		return error;
 	case '>':
@@ -703,6 +705,8 @@ lex_literal_string(
 			index++;
 			continue;
 		}
+
+		/* Parentheses nest; the one that brings the depth to zero closes the string. */
 		if (lexer->data[index] == '(')
 			depth++;
 		if (lexer->data[index] == ')') {
@@ -817,11 +821,15 @@ decode_literal_string(
 					value = value * 8 + (unsigned int)(raw[index] - '0');
 					index++;
 				}
+
+				/* The loop stopped past the last digit, and the outer loop steps over it. */
 				index--;
 				decoded[length] = (unsigned char)(value & 0xff);
 			} else {
 				decoded[length] = character;
 			}
+
+			/* One byte more is decoded. */
 			length++;
 			break;
 		}
@@ -885,8 +893,12 @@ lex_hex_string(
 		} else {
 			decoded[digits / 2] |= (unsigned char)value;
 		}
+
+		/* One digit more is read. */
 		digits++;
 	}
+
+	/* An odd last digit counts as a byte whose low digit is zero. */
 	length = (digits + 1) / 2;
 
 	/* Succeeded: the token is the decoded string. */
@@ -960,6 +972,8 @@ parse_token(
 		} else {
 			return PDF_EFORMAT;
 		}
+
+		/* The keyword's object, when it could be made. */
 		if (created == NULL)
 			return ENOMEM;
 		created->boolean = is_true;
@@ -1120,6 +1134,8 @@ parse_dictionary(
 			error = PDF_EFORMAT;
 			break;
 		}
+
+		/* The key, a name. */
 		error = parse_token(lexer, &token, depth + 1, &key);
 		if (error != 0)
 			break;

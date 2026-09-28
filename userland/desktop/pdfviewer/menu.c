@@ -7,8 +7,8 @@
 
 /*
  * The menus of PDF Viewer in zdesktop's System Menu: File (Open, Annotate
- * in Notes, Close, Quit), View (the two modes, the two fits, the zoom) and
- * Go (the pages).  zdesktop draws them and chooses an item for its
+ * in Notes, Close, Quit), View (the sidebar of page thumbnails, the two
+ * modes, the two fits, the zoom) and Go (the pages).  zdesktop draws them and chooses an item for its
  * shortcut; the choice comes back as an action queued among the window's
  * inputs.  A compositor without the System Menu leaves the viewer without
  * menus, and the keys work as they do with them.
@@ -33,6 +33,8 @@
 #define MENU_QUIT		14U
 
 /* The items of View. */
+#define MENU_THUMBNAILS		19U
+#define MENU_THUMBNAILS_LINE	29U
 #define MENU_SCROLL		20U
 #define MENU_PAGES		21U
 #define MENU_VIEW_LINE		22U
@@ -79,6 +81,8 @@ static const struct menu_item menu_items[] = {
 	{ MENU_CLOSE, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Close", PV_ACTION_CLOSE, KEILAND_MENU_ROLE_CLOSE, KEILAND_MENU_CTRL, 'w' },
 	{ MENU_QUIT, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Quit PDF Viewer", PV_ACTION_QUIT, KEILAND_MENU_ROLE_QUIT, KEILAND_MENU_CTRL, 'q' },
 	{ MENU_VIEW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "View", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_THUMBNAILS, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Page Thumbnails", PV_ACTION_THUMBNAILS, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_THUMBNAILS_LINE, MENU_VIEW, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_SCROLL, MENU_VIEW, KEILAND_MENU_ITEM_RADIO, "Continuous Scroll", PV_ACTION_MODE_SCROLL, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_PAGES, MENU_VIEW, KEILAND_MENU_ITEM_RADIO, "Single Page", PV_ACTION_MODE_PAGE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_VIEW_LINE, MENU_VIEW, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
@@ -272,7 +276,8 @@ menu_build(
 
 /*
  * Shows a state in the menus in one transaction: the document's items
- * enabled while one is open, the mode's and the fit's radio items checked.
+ * enabled while one is open, the mode's and the fit's radio items and the
+ * thumbnails' check box checked.
  */
 static int
 menu_state(
@@ -328,6 +333,8 @@ menu_state(
 		error = keiland_menu_set_enabled(model, MENU_ZOOM_IN, state->has_document);
 	if (error == 0)
 		error = keiland_menu_set_enabled(model, MENU_ZOOM_OUT, state->has_document);
+	if (error == 0)
+		error = keiland_menu_set_enabled(model, MENU_THUMBNAILS, state->has_document);
 
 	/* The mode and the fit in force. */
 	if (error == 0)
@@ -338,6 +345,8 @@ menu_state(
 		error = keiland_menu_set_checked(model, MENU_FIT_WIDTH, fitting_width);
 	if (error == 0)
 		error = keiland_menu_set_checked(model, MENU_FIT_PAGE, fitting_page);
+	if (error == 0)
+		error = keiland_menu_set_checked(model, MENU_THUMBNAILS, state->thumbnails);
 
 	/* A refused change still ends the transaction, and is reported. */
 	if (error != 0) {

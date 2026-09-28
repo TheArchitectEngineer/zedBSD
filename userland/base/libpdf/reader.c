@@ -165,7 +165,10 @@ struct pdf_object_stream {
  * trailer links by /Prev starts (has_previous: there is one).  fonts
  * holds the fonts the pages' text has used, NULL until the first; the
  * font reader (font.c) leaves release_fonts to free them, so that the
- * reader does not depend on it.
+ * reader does not depend on it.  password is the caller's password while
+ * the document is being opened (NULL and 0 for none, the empty one), and
+ * NULL once it is open: the security handler keeps the key, not the
+ * password.
  */
 struct pdf_document {
 	unsigned char *data;
@@ -194,9 +197,11 @@ struct pdf_document {
 	size_t object_streams_size;
 	struct pdf_crypt *crypt;
 	unsigned long encrypt_number;
+	const unsigned char *password;
+	size_t password_length;
 };
 
-static int open_owned(unsigned char *data, size_t size, struct pdf_document **document);
+static int open_owned(unsigned char *data, size_t size, const char *password, struct pdf_document **document);
 static int read_file(const char *path, unsigned char **data, size_t *size);
 static int check_header(const struct pdf_document *document);
 static int find_startxref(struct pdf_document *document, size_t *offset);
@@ -252,11 +257,37 @@ static int string_equals(const struct pdf_object *string, const char *text);
  * Opens a PDF file for reading.
  *
  * The whole file is read into memory, so the file may change or go away
- * while the document is open.
+ * while the document is open.  An encrypted document is opened with the
+ * empty user password (PDF_EPASSWORD when it has another one).
  */
 int
 pdf_document_open(
 	const char *path,
+	struct pdf_document **document)
+{
+	int error;
+
+	/* Opens it with no password. */
+	error = pdf_document_open_password(path, NULL, document);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the open document. */
+	return 0;
+}
+
+/*
+ * Opens a PDF file for reading with a password.
+ *
+ * An encrypted document takes its user password or its owner password
+ * (NULL or "" is the empty one); another password is PDF_EPASSWORD.  The
+ * password is used while the document opens and is not kept.  A document
+ * that is not encrypted ignores it.
+ */
+int
+pdf_document_open_password(
+	const char *path,
+	const char *password,
 	struct pdf_document **document)
 {
 	unsigned char *data;
@@ -277,7 +308,7 @@ pdf_document_open(
 		return error;
 
 	/* Reads the document from the bytes, which it now owns. */
-	error = open_owned(data, size, document);
+	error = open_owned(data, size, password, document);
 	if (error != 0)
 		return error;
 
@@ -289,12 +320,34 @@ pdf_document_open(
  * Opens a PDF held in memory for reading.
  *
  * The document keeps its own copy of the bytes, so the caller's buffer may
- * go away.
+ * go away.  An encrypted document is opened with the empty user password.
  */
 int
 pdf_document_open_memory(
 	const void *data,
 	size_t size,
+	struct pdf_document **document)
+{
+	int error;
+
+	/* Opens it with no password. */
+	error = pdf_document_open_memory_password(data, size, NULL, document);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the open document. */
+	return 0;
+}
+
+/*
+ * Opens a PDF held in memory for reading with a password (see
+ * pdf_document_open_password()).
+ */
+int
+pdf_document_open_memory_password(
+	const void *data,
+	size_t size,
+	const char *password,
 	struct pdf_document **document)
 {
 	unsigned char *copy;
@@ -316,7 +369,7 @@ pdf_document_open_memory(
 		memcpy(copy, data, size);
 
 	/* Reads the document from the copy, which it now owns. */
-	error = open_owned(copy, size, document);
+	error = open_owned(copy, size, password, document);
 	if (error != 0)
 		return error;
 
@@ -981,6 +1034,7 @@ static int
 open_owned(
 	unsigned char *data,
 	size_t size,
+	const char *password,
 	struct pdf_document **document)
 {
 	struct pdf_document *created;
@@ -994,9 +1048,19 @@ open_owned(
 		free(data);
 		return ENOMEM;
 	}
+
+	/* The document takes the bytes; a missing object is null. */
 	created->data = data;
 	created->size = size;
 	created->null_object.type = PDF_OBJECT_NULL;
+
+	/* The password, for the security handler while the document opens (none is the empty one). */
+	created->password = NULL;
+	created->password_length = 0;
+	if (password != NULL) {
+		created->password = (const unsigned char *)password;
+		created->password_length = strlen(password);
+	}
 
 	/* Checks that the bytes start as a PDF. */
 	error = check_header(created);
@@ -1039,6 +1103,10 @@ open_owned(
 		if (error == 0)
 			error = read_catalog(created);
 	}
+
+	/* The password is the caller's, and is not kept past the opening. */
+	created->password = NULL;
+	created->password_length = 0;
 
 	/* Refuses a document that cannot be read even so. */
 	if (error != 0) {
@@ -1098,6 +1166,8 @@ read_file(
 				fclose(stream);
 				return ENOMEM;
 			}
+
+			/* The grown buffer is the file's. */
 			buffer = grown;
 		}
 
@@ -1181,6 +1251,8 @@ find_startxref(
 			break;
 		}
 	}
+
+	/* A file without it is not a PDF. */
 	if (!found)
 		return PDF_EFORMAT;
 
@@ -1230,6 +1302,8 @@ read_cross_references(
 			if (visited[index] == offset)
 				return PDF_EFORMAT;
 		}
+
+		/* The section is visited. */
 		visited[sections] = offset;
 
 		/* Reads the section and its trailer; the first trailer is the document's. */
@@ -1661,7 +1735,7 @@ read_stream_section(
 	if (error != 0)
 		return PDF_EFORMAT;
 
-	/* Reads them. */
+	/* Reads the entries from the decoded stream. */
 	error = read_stream_entries(document, dictionary, data, size);
 	free(owned);
 	if (error != 0)
@@ -2350,7 +2424,7 @@ open_object_stream(
 		return ENOMEM;
 	}
 
-	/* Keeps it. */
+	/* Keeps the decoded object stream on the document. */
 	stream = calloc(1, sizeof(*stream));
 	if (stream == NULL) {
 		free(owned);
@@ -2502,6 +2576,8 @@ sort_entries(
 		document->entries[kept] = document->entries[index];
 		kept++;
 	}
+
+	/* The table holds one entry a number. */
 	document->entries_count = kept;
 }
 
@@ -2808,9 +2884,9 @@ parse_indirect(
 
 /*
  * Opens an encrypted document's security handler: the /Encrypt dictionary
- * with the first /ID string, the empty user password.  The objects loaded
- * before it (by a repair's scan) are loaded again, decrypted, and so are
- * the object streams.
+ * with the first /ID string and the password the document is opened with.
+ * The objects loaded before it (by a repair's scan) are loaded again,
+ * decrypted, and so are the object streams.
  */
 static int
 open_crypt(
@@ -2850,8 +2926,8 @@ open_crypt(
 		}
 	}
 
-	/* Opens the handler; a password other than the empty one is EACCES. */
-	error = pdf_crypt_open(document, encrypt, id, id_length, &document->crypt);
+	/* Opens the handler; a password that is neither the user's nor the owner's is EACCES. */
+	error = pdf_crypt_open(document, encrypt, id, id_length, document->password, document->password_length, &document->crypt);
 	if (error != 0)
 		return error;
 
@@ -3452,6 +3528,8 @@ parse_date(
 	} else {
 		day_of_year = (153 * (month + 9) + 2) / 5 + day - 1;
 	}
+
+	/* The days since 1970. */
 	day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
 	days = era * 146097 + day_of_era - 719468;
 
@@ -3773,6 +3851,8 @@ match_file_specification(
 			return error;
 		equal = string_equals(file_name, name);
 	}
+
+	/* Another file's specification. */
 	if (!equal)
 		return ENOENT;
 

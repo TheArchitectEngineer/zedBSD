@@ -235,6 +235,8 @@ pdf_outline_stroke(
 	} else {
 		build_outline(&path, &polygon);
 	}
+
+	/* The centerline is not needed any more; a failed outline frees its corners. */
 	free(path.vertices);
 	if (polygon.error != 0) {
 		free(polygon.corners);
@@ -496,13 +498,19 @@ knot_distance(
 {
 	double step_x;
 	double step_y;
+	double length;
+	double root;
 
 	/* Measures the step between the points. */
 	step_x = to_x - from_x;
 	step_y = to_y - from_y;
 
-	/* Reports the square root of its length. */
-	return sqrt(sqrt(step_x * step_x + step_y * step_y));
+	/* The square root of its length (the centripetal parameterization's knot distance). */
+	length = sqrt(step_x * step_x + step_y * step_y);
+	root = sqrt(length);
+
+	/* Reports the knot distance. */
+	return root;
 }
 
 /*
@@ -582,6 +590,8 @@ interpolate_pressure(
 		lowest = piece->pressure_end;
 		highest = piece->pressure_start;
 	}
+
+	/* The pressure within them. */
 	if (pressure < lowest)
 		pressure = lowest;
 	if (pressure > highest)
@@ -642,6 +652,8 @@ path_append(
 			path->error = ENOMEM;
 			return;
 		}
+
+		/* The grown array is the path's. */
 		path->vertices = grown;
 		path->capacity = capacity;
 	}
@@ -813,6 +825,7 @@ turn_angle(
 	double out_y;
 	double cross;
 	double dot;
+	double angle;
 
 	/* Takes the segments that arrive at and leave the point. */
 	in_x = corner->x - before->x;
@@ -824,8 +837,11 @@ turn_angle(
 	cross = in_x * out_y - in_y * out_x;
 	dot = in_x * out_x + in_y * out_y;
 
-	/* Reports the angle from the arriving direction to the leaving one. */
-	return atan2(cross, dot);
+	/* The angle from the arriving direction to the leaving one. */
+	angle = atan2(cross, dot);
+
+	/* Reports the turn, in radians. */
+	return angle;
 }
 
 /* Finds the unit left normal of a segment, its direction turned a quarter toward positive angles. */
@@ -968,6 +984,8 @@ polygon_append(
 			polygon->error = ENOMEM;
 			return;
 		}
+
+		/* The grown array is the polygon's. */
 		polygon->corners = grown;
 		polygon->capacity = capacity;
 	}

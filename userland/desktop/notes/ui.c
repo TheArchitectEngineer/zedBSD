@@ -119,8 +119,10 @@ static const uint32_t ui_marker_colors[NOTES_COLORS] = {
 	0xfacc1566U, 0x60a5fa66U, 0xf472b666U, 0x4ade8066U, 0xfb923c66U
 };
 
-/* The pen's and the highlighter's widths in points: fine, medium, bold. */
+/* The pen's widths in points: fine, medium, bold. */
 static const float ui_pen_widths[NOTES_WIDTHS] = { 1.5f, 3.0f, 6.0f };
+
+/* The highlighter's widths in points: fine, medium, bold. */
 static const float ui_marker_widths[NOTES_WIDTHS] = { 10.0f, 16.0f, 24.0f };
 
 /*

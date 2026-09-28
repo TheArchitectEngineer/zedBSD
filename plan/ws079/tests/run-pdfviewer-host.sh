@@ -2,7 +2,8 @@
 # ws079-p006: builds PDF Viewer's core (view, frame, document cache, chooser, canvas, text) with libpdf and
 # libtruetype for the host (plain and ASan), and runs host-pdfviewer on the Notes-like document of
 # run-pdf-render.sh: the scroll mode, the page mode's swipe and keys, the zoom, the chooser.  The frames are
-# written to build/ws079-p006-host/viewer-*/ as PPM and converted to PNG.
+# written to build/ws079-p006-host/viewer-*/ as PPM and converted to PNG.  ws079-p015: the sidebar of thumbnails and the
+# password card (notes.pdf encrypted by qpdf with the user password "secret" and the owner password "owner").
 #   sh plan/ws079/tests/run-pdfviewer-host.sh
 # Needs: build/ws035-fonts/Inter.ttf, and build/ws079-p006-host/notes.pdf (run-pdf-render.sh makes it).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -21,7 +22,7 @@ ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
 libpdf="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
-	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/crypt.c userland/base/libpdf/image.c
+	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c userland/base/libpdf/image.c
 	userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/stroke.c
 	userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/encoding.c
 	userland/base/libpdf/shading.c
@@ -46,6 +47,8 @@ out += b'xref\\n0 6\\n0000000000 65535 f \\n' + b''.join(b'%010d 00000 n \\n' % 
 out += b'trailer\\n<< /Size 6 /Root 1 0 R >>\\nstartxref\\n%d\\n%%%%EOF\\n' % xref
 open(sys.argv[1], 'wb').write(out)
 " "$out/skipped.pdf"
+# ws079-p015: the document encrypted with a user and an owner password, for the password card.
+qpdf --encrypt --user-password=secret --owner-password=owner --bits=256 -- "$out/notes.pdf" "$out/password.pdf"
 status=0
 for variant in plain asan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
@@ -64,7 +67,8 @@ for variant in plain asan; do
 	done
 	"$cc" $flags $libpdf $viewer plan/ws079/tests/host-pdfviewer.c $objects -lm -o "$out/host-pdfviewer-$variant"
 	mkdir -p "$out/viewer-$variant"
-	"$out/host-pdfviewer-$variant" "$font" "$out/notes.pdf" "$out/viewer-$variant" "$out/skipped.pdf" > "$out/viewer-$variant.log" 2>&1 || status=1
+	"$out/host-pdfviewer-$variant" "$font" "$out/notes.pdf" "$out/viewer-$variant" "$out/skipped.pdf" "$out/password.pdf" \
+	    > "$out/viewer-$variant.log" 2>&1 || status=1
 	grep -E "^(ok|FAILED|host-pdfviewer)" "$out/viewer-$variant.log"
 done
 for picture in "$out"/viewer-plain/*.ppm; do

@@ -59,18 +59,24 @@ pv_text_open(
 		fclose(file);
 		return EINVAL;
 	}
+
+	/* Reads the bytes from the start. */
 	rewind(file);
 	text->data = malloc((size_t)size);
 	if (text->data == NULL) {
 		fclose(file);
 		return ENOMEM;
 	}
+
+	/* A file cut short is refused. */
 	got = fread(text->data, 1, (size_t)size, file);
 	fclose(file);
 	if (got != (size_t)size) {
 		pv_text_close(text);
 		return EIO;
 	}
+
+	/* The face reads these bytes. */
 	text->size = (size_t)size;
 
 	/* Opens the face over the bytes. */
@@ -187,6 +193,8 @@ pv_text_draw(
 			if (error == 0)
 				pv_canvas_mask(canvas, x + metrics.left, baseline - metrics.top, text->scratch, (int)metrics.width, (int)metrics.height, color);
 		}
+
+		/* The pen moves by the glyph's advance. */
 		x += metrics.advance;
 	}
 }
@@ -208,6 +216,8 @@ next_codepoint(
 		*index += 1;
 		return bytes[0];
 	}
+
+	/* Two, three or four bytes; anything else is one byte of U+FFFD. */
 	if ((bytes[0] & 0xe0U) == 0xc0U) {
 		codepoint = bytes[0] & 0x1fU;
 		length = 2;
@@ -228,6 +238,8 @@ next_codepoint(
 			*index += part;
 			return 0xfffdU;
 		}
+
+		/*  (bytes[part] & 0x3fU);|Its six bits. */
 		codepoint = (codepoint << 6) | (bytes[part] & 0x3fU);
 	}
 
@@ -244,7 +256,7 @@ set_size(
 {
 	int error;
 
-	/* No font. */
+	/* Without a font there are no words to measure. */
 	if (text->face == NULL)
 		return ENOENT;
 

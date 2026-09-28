@@ -17,6 +17,13 @@
  * or fast enough, turns to the next or the previous page, which slides in
  * (a swipe); the keys and the wheel turn pages too.
  *
+ * ws079-p015: the sidebar of page thumbnails takes the left of the window
+ * while it is shown; a click on a thumbnail shows its page, the wheel and a
+ * drag scroll the column, and the column follows the page in view.  An
+ * encrypted document the empty password does not open shows the password
+ * card, which takes every key and click until the document opens or the
+ * card is cancelled.
+ *
  * Nothing here draws or speaks Wayland; draw.c draws what this lays out,
  * and main.c feeds it the window's input.
  */
@@ -56,6 +63,31 @@
 /* The longest a message stays by default, in milliseconds. */
 #define VIEW_MESSAGE_MS		6000U
 
+/* How many codes the key tables cover (up to the space bar). */
+#define VIEW_KEY_TABLE_SIZE	58U
+
+/* How many thumbnails past the sidebar's view are drawn ahead. */
+#define VIEW_THUMBNAIL_AHEAD	2U
+
+/*
+ * The character each key types without shift, by evdev code; 0 for a key
+ * that types none.  The US layout, as zdesktop sends no keymap.
+ */
+static const char view_plain_keys[VIEW_KEY_TABLE_SIZE] = {
+	0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0, 0,
+	'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', 0, 0,
+	'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0, '\\',
+	'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' '
+};
+
+/* The character each key types with shift, by evdev code. */
+static const char view_shifted_keys[VIEW_KEY_TABLE_SIZE] = {
+	0, 0, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', 0, 0,
+	'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', 0, 0,
+	'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', 0, '|',
+	'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0, '*', 0, ' '
+};
+
 static size_t current_page(const struct pv_app *app);
 static void clamp_view(struct pv_app *app);
 static void show_page(struct pv_app *app, size_t index);
@@ -72,6 +104,20 @@ static void chooser_choose(struct pv_app *app);
 static void open_chooser(struct pv_app *app);
 static const char *reason_of(int error);
 static double page_mode_top(const struct pv_app *app);
+static int open_document(struct pv_app *app, const char *path, const char *password);
+static void relayout(struct pv_app *app);
+static int sidebar_takes(const struct pv_app *app, const struct pv_event *event, int sidebar);
+static void sidebar_event(struct pv_app *app, const struct pv_event *event);
+static int thumbnail_at(const struct pv_app *app, int y, size_t *index);
+static void clamp_sidebar(struct pv_app *app);
+static void reveal_thumbnail(struct pv_app *app, size_t index);
+static void ask_password(struct pv_app *app, const char *path, int wrong);
+static void password_event(struct pv_app *app, const struct pv_event *event);
+static void password_key(struct pv_app *app, const struct pv_event *event);
+static void submit_password(struct pv_app *app);
+static void cancel_password(struct pv_app *app);
+static void forget_password(struct pv_app *app);
+static char key_character(uint32_t key, uint32_t modifiers);
 
 /*
  * Starts the viewer with no document, at a window size.
@@ -89,6 +135,7 @@ pv_app_init(
 	app->mode = PV_MODE_SCROLL;
 	app->fit = PV_FIT_WIDTH;
 	app->zoom = 1.0;
+	app->window_width = width;
 	app->width = width;
 	app->height = height;
 	app->now = pv_clock();
@@ -102,76 +149,32 @@ void
 pv_app_release(
 	struct pv_app *app)
 {
-	/* Closes what is open. */
+	/* Closes what is open, and forgets a password being typed. */
 	pv_app_close_document(app);
 	pv_chooser_close(&app->chooser);
+	forget_password(app);
 }
 
 /*
  * Opens a PDF file in place of the one shown; a file that cannot be opened
- * leaves a message and no document.
+ * leaves a message and no document, and an encrypted one the empty
+ * password does not open shows the password card.
  *
- * Returns 0, or an errno value.
+ * Returns 0, or an errno value (PDF_EPASSWORD while the card asks).
  */
 int
 pv_app_open(
 	struct pv_app *app,
 	const char *path)
 {
-	char message[sizeof(app->message)];
-	const char *name;
-	const char *reason;
-	int encrypted;
-	int checked;
 	int error;
 
-	/* Closes the document shown. */
-	pv_app_close_document(app);
-
-	/* Opens the new one. */
-	error = pv_document_open(&app->document, path);
-	if (error != 0) {
-		name = strrchr(path, '/');
-		if (name == NULL) {
-			name = path;
-		} else {
-			name++;
-		}
-
-		/* Why, in words; an encrypted document refused with EACCES needs a password. */
-		reason = reason_of(error);
-		if (error == PDF_EPASSWORD) {
-			encrypted = 0;
-			checked = pdf_document_encrypted(path, &encrypted);
-			if (checked == 0 && encrypted)
-				reason = "it is protected by a password";
-		}
-
-		/* Tells it, and logs it for the tests. */
-		snprintf(message, sizeof(message), "Cannot open %s: %s.", name, reason);
-		pv_app_message(app, message, VIEW_MESSAGE_MS * 2U);
-		pv_log("OPEN failed path=%s error=%d", path, error);
+	/* Opens it without a password. */
+	error = open_document(app, path, NULL);
+	if (error != 0)
 		return error;
-	}
-
-	/* Starts at its first page, fitting the mode. */
-	app->has_document = 1;
-	app->opened = 1;
-	app->page = 0;
-	app->scroll_x = 0.0;
-	app->scroll_y = 0.0;
-	app->swipe = 0.0;
-	app->turning = 0;
-	app->fit = PV_FIT_WIDTH;
-	if (app->mode == PV_MODE_PAGE)
-		app->fit = PV_FIT_PAGE;
-	app->message[0] = '\0';
-	app->indicator_until = app->now + VIEW_INDICATOR_MS;
-	clamp_view(app);
-	app->dirty = 1;
 
 	/* Succeeded: the document is shown. */
-	pv_log("OPEN path=%s pages=%lu", path, (unsigned long)app->document.count);
 	return 0;
 }
 
@@ -196,7 +199,13 @@ pv_app_close_document(
 	app->turning = 0;
 	app->pressed = 0;
 	app->dragging = 0;
+	app->thumbnail_pressed = 0;
+	app->thumbnail_dragging = 0;
+	app->thumbnail_scroll = 0.0;
 	app->dirty = 1;
+
+	/* The pages take the whole window again: the sidebar needs a document. */
+	app->width = app->window_width;
 }
 
 /*
@@ -213,42 +222,68 @@ pv_app_resize(
 	/* Remembers the page before the layout changes. */
 	page = current_page(app);
 
-	/* The new size, and the same page at its top. */
-	app->width = width;
+	/* The new size, the pages beside the sidebar when it is shown, and the same page at its top. */
+	app->window_width = width;
 	app->height = height;
+	app->width = width - pv_app_sidebar_width(app);
 	if (app->mode == PV_MODE_SCROLL && app->has_document)
 		app->scroll_y = pv_app_page_top(app, page) - PV_MARGIN;
 	clamp_view(app);
+	clamp_sidebar(app);
 	app->dirty = 1;
 }
 
 /*
- * Handles one input from the window.
+ * Handles one input from the window: the password card takes every one
+ * while it is shown, the sidebar the pointer's in it, and the pages the
+ * rest in their own coordinates (right of the sidebar).
  */
 void
 pv_app_event(
 	struct pv_app *app,
 	const struct pv_event *event)
 {
+	struct pv_event local;
+	int sidebar;
+	int taken;
+
+	/* The password card is in front of everything. */
+	if (app->asking_password) {
+		password_event(app, event);
+		return;
+	}
+
+	/* The sidebar's pointer inputs. */
+	sidebar = pv_app_sidebar_width(app);
+	taken = sidebar_takes(app, event, sidebar);
+	if (taken) {
+		sidebar_event(app, event);
+		return;
+	}
+
+	/* The pages' inputs, with the pointer where it is over them. */
+	local = *event;
+	local.x -= sidebar;
+
 	/* Handles it by its kind. */
-	switch (event->type) {
+	switch (local.type) {
 	case PV_EVENT_KEY:
-		if (event->pressed)
-			handle_key(app, event);
+		if (local.pressed)
+			handle_key(app, &local);
 		break;
 	case PV_EVENT_BUTTON:
-		handle_button(app, event);
+		handle_button(app, &local);
 		break;
 	case PV_EVENT_MOTION:
-		handle_motion(app, event);
+		handle_motion(app, &local);
 		break;
 	case PV_EVENT_AXIS:
-		handle_axis(app, event);
+		handle_axis(app, &local);
 		break;
 	case PV_EVENT_LEAVE:
 		break;
 	case PV_EVENT_ACTION:
-		pv_app_action(app, (enum pv_action)event->action);
+		pv_app_action(app, (enum pv_action)local.action);
 		break;
 	}
 }
@@ -274,11 +309,10 @@ pv_app_action(
 		break;
 	case PV_ACTION_CLOSE:
 		/* Closes the document, or the window when none is open. */
-		if (app->has_document) {
+		if (app->has_document)
 			pv_app_close_document(app);
-		} else {
+		else
 			app->want_close = 1;
-		}
 		break;
 	case PV_ACTION_QUIT:
 		app->want_close = 1;
@@ -323,18 +357,18 @@ pv_app_action(
 		show_page(app, page);
 		break;
 	case PV_ACTION_PREVIOUS:
-		if (app->mode == PV_MODE_PAGE) {
+		/* The page mode turns; the scroll mode scrolls to the page before. */
+		if (app->mode == PV_MODE_PAGE)
 			start_turn(app, -1);
-		} else if (page > 0) {
+		else if (page > 0)
 			show_page(app, page - 1);
-		}
 		break;
 	case PV_ACTION_NEXT:
-		if (app->mode == PV_MODE_PAGE) {
+		/* The page mode turns; the scroll mode scrolls to the page after. */
+		if (app->mode == PV_MODE_PAGE)
 			start_turn(app, 1);
-		} else {
+		else
 			show_page(app, page + 1);
-		}
 		break;
 	case PV_ACTION_FIRST:
 		show_page(app, 0);
@@ -343,9 +377,18 @@ pv_app_action(
 		if (app->has_document)
 			show_page(app, app->document.count - 1);
 		break;
+	case PV_ACTION_THUMBNAILS:
+		/* The sidebar comes or goes; the pages are laid out again around the same page, which it then shows. */
+		app->thumbnails = !app->thumbnails;
+		app->thumbnail_followed = (size_t)-1;
+		relayout(app);
+		pv_log("THUMBNAILS shown=%d sidebar=%d", app->thumbnails, pv_app_sidebar_width(app));
+		break;
 	case PV_ACTION_NONE:
 		break;
 	}
+
+	/* After any action the page indicator shows, and the frame is drawn again. */
 	app->indicator_until = app->now + VIEW_INDICATOR_MS;
 	app->dirty = 1;
 }
@@ -363,6 +406,8 @@ pv_app_tick(
 {
 	double progress;
 	double eased;
+	size_t page;
+	int sidebar;
 	int due;
 
 	/* The time of the frame. */
@@ -388,6 +433,8 @@ pv_app_tick(
 			app->swipe = app->turn_from + (app->turn_to - app->turn_from) * eased;
 			due = 16;
 		}
+
+		/* The frame moves with the turn. */
 		app->dirty = 1;
 	}
 
@@ -396,9 +443,21 @@ pv_app_tick(
 		app->indicator_until = 0;
 		app->dirty = 1;
 	}
+
+	/* Until then, the indicator's end is due. */
 	if (app->indicator_until != 0) {
 		if (due < 0 || (int)(app->indicator_until - now) < due)
 			due = (int)(app->indicator_until - now);
+	}
+
+	/* The sidebar follows the page in view, once each time the page changes. */
+	sidebar = pv_app_sidebar_width(app);
+	if (app->has_document && sidebar > 0) {
+		page = current_page(app);
+		if (page != app->thumbnail_followed) {
+			app->thumbnail_followed = page;
+			reveal_thumbnail(app, page);
+		}
 	}
 
 	/* So does the message. */
@@ -406,6 +465,8 @@ pv_app_tick(
 		app->message[0] = '\0';
 		app->dirty = 1;
 	}
+
+	/* Until then, the message's end is due. */
 	if (app->message[0] != '\0' && app->message_until != 0) {
 		if (due < 0 || (int)(app->message_until - now) < due)
 			due = (int)(app->message_until - now);
@@ -417,8 +478,9 @@ pv_app_tick(
 
 /*
  * Rasterizes one page the view will likely show next, while nothing else
- * is to be done: the pages after and before the page in view (and the
- * second after in the scroll mode).
+ * is to be done: first a thumbnail of the sidebar's view (or just past it)
+ * that is not drawn yet, then the pages after and before the page in view
+ * (and the second after in the scroll mode).
  *
  * Returns 1 when a page was drawn (more may follow), 0 when all are ready.
  */
@@ -432,13 +494,34 @@ pv_app_prefetch(
 	size_t count;
 	size_t index;
 	size_t page;
+	size_t first;
+	size_t last;
 	double scale;
 	double difference;
+	int sidebar;
 	int error;
 
 	/* Nothing while there is no document, or while the view moves. */
 	if (!app->has_document || app->turning || app->pressed)
 		return 0;
+
+	/* The sidebar's thumbnails in view and just past it, one at a time. */
+	sidebar = pv_app_sidebar_width(app);
+	if (sidebar > 0 && !app->thumbnail_pressed) {
+		pv_thumbnail_range(app, &first, &last);
+		last += VIEW_THUMBNAIL_AHEAD;
+		if (last >= app->document.count)
+			last = app->document.count - 1;
+		for (index = first; index <= last; index++) {
+			if (app->document.pages[index].thumbnail != NULL)
+				continue;
+			error = pv_document_thumbnail(&app->document, index, &shown);
+			if (error != 0)
+				return 0;
+			app->dirty = 1;
+			return 1;
+		}
+	}
 
 	/* The pages to have ready: after, then before, the page in view. */
 	page = current_page(app);
@@ -447,10 +530,14 @@ pv_app_prefetch(
 		candidates[count] = page + 1;
 		count++;
 	}
+
+	/* The page before. */
 	if (page > 0) {
 		candidates[count] = page - 1;
 		count++;
 	}
+
+	/* In the scroll mode, the second after. */
 	if (app->mode == PV_MODE_SCROLL && page + 2 < app->document.count) {
 		candidates[count] = page + 2;
 		count++;
@@ -465,6 +552,8 @@ pv_app_prefetch(
 			if (difference < 1e-6 && difference > -1e-6)
 				continue;
 		}
+
+		/* Draws it; one that cannot be drawn ends the prefetch. */
 		error = pv_document_raster(&app->document, candidates[index], scale, &shown);
 		if (error != 0)
 			return 0;
@@ -486,6 +575,8 @@ pv_app_current_page(
 
 	/* The page mode's page, or the scroll mode's across the middle. */
 	page = current_page(app);
+
+	/* Reports the page. */
 	return page;
 }
 
@@ -516,6 +607,8 @@ pv_app_scale(
 		width = page->width;
 		height = page->height;
 	}
+
+	/* The room inside the margins, at least 16 pixels each way. */
 	room_width = (double)app->width - 2.0 * PV_MARGIN;
 	room_height = (double)app->height - 2.0 * PV_MARGIN;
 	if (room_width < 16.0)
@@ -572,8 +665,10 @@ pv_app_page_top(
 	size_t page;
 
 	/* The page mode's one page. */
-	if (app->mode == PV_MODE_PAGE)
-		return page_mode_top(app);
+	if (app->mode == PV_MODE_PAGE) {
+		top = page_mode_top(app);
+		return top;
+	}
 
 	/* The pages above it, a gap apart, under the margin. */
 	scale = pv_app_scale(app, 0);
@@ -681,6 +776,116 @@ pv_chooser_layout(
 
 	/* The rows under the header. */
 	*rows = (size_t)((*height - PV_CHOOSER_HEADER - 12) / PV_CHOOSER_ROW);
+}
+
+/*
+ * Reports the width of the sidebar of thumbnails: 0 unless it is asked
+ * for, a document is open and the window leaves room for the pages.
+ */
+int
+pv_app_sidebar_width(
+	const struct pv_app *app)
+{
+	/* Not asked for, or nothing to show. */
+	if (!app->thumbnails)
+		return 0;
+	if (!app->has_document)
+		return 0;
+
+	/* A window too narrow keeps its width for the pages. */
+	if (app->window_width < PV_SIDEBAR_WIDTH + PV_SIDEBAR_ROOM)
+		return 0;
+
+	/* Reports the sidebar's width. */
+	return PV_SIDEBAR_WIDTH;
+}
+
+/*
+ * Reports the pages whose slots meet the sidebar's view, the first and the
+ * last (last < first for a document without pages).
+ */
+void
+pv_thumbnail_range(
+	const struct pv_app *app,
+	size_t *first,
+	size_t *last)
+{
+	double top;
+	double bottom;
+
+	/* Nothing without pages. */
+	*first = 1;
+	*last = 0;
+	if (!app->has_document || app->document.count == 0)
+		return;
+
+	/* The slots across the view's top and its bottom, within the document. */
+	top = app->thumbnail_scroll - PV_THUMBNAIL_TOP;
+	bottom = top + (double)app->height;
+	if (top < 0.0)
+		top = 0.0;
+	*first = (size_t)(top / PV_THUMBNAIL_SLOT);
+	*last = (size_t)(bottom / PV_THUMBNAIL_SLOT);
+	if (*last >= app->document.count)
+		*last = app->document.count - 1;
+	if (*first > *last)
+		*first = *last;
+}
+
+/*
+ * Places a page's thumbnail in the window: the page's shape fitted in the
+ * sidebar's box, centred across and standing on the box's bottom, the
+ * box in the page's slot.
+ */
+void
+pv_thumbnail_place(
+	const struct pv_app *app,
+	size_t index,
+	int *x,
+	int *y,
+	int *width,
+	int *height)
+{
+	const struct pv_page *page;
+	double scale;
+	double tall_scale;
+	double slot_top;
+
+	/* The page fitted in the box, as document.c draws its thumbnail. */
+	page = &app->document.pages[index];
+	scale = (double)PV_THUMBNAIL_WIDTH / page->width;
+	tall_scale = (double)PV_THUMBNAIL_HEIGHT / page->height;
+	if (tall_scale < scale)
+		scale = tall_scale;
+	*width = (int)ceil(page->width * scale - 1e-6);
+	*height = (int)ceil(page->height * scale - 1e-6);
+
+	/* The box in the slot, under the slot's top space; the thumbnail centred across it, on its bottom. */
+	slot_top = PV_THUMBNAIL_TOP + (double)index * PV_THUMBNAIL_SLOT - app->thumbnail_scroll;
+	*x = (PV_SIDEBAR_WIDTH - *width) / 2;
+	*y = (int)floor(slot_top) + 8 + (PV_THUMBNAIL_HEIGHT - *height);
+}
+
+/*
+ * Places the password card in the middle of the window.
+ */
+void
+pv_password_layout(
+	const struct pv_app *app,
+	int *x,
+	int *y,
+	int *width,
+	int *height)
+{
+	/* The card's size, within the window less a margin. */
+	*width = PV_PASSWORD_WIDTH;
+	if (*width > app->window_width - 24)
+		*width = app->window_width - 24;
+	*height = PV_PASSWORD_HEIGHT;
+
+	/* In the middle. */
+	*x = (app->window_width - *width) / 2;
+	*y = (app->height - *height) / 2;
 }
 
 /*
@@ -804,6 +1009,8 @@ show_page(
 		app->swipe = 0.0;
 		app->turning = 0;
 	}
+
+	/* The view stays within the document, and the indicator shows. */
 	clamp_view(app);
 	app->indicator_until = app->now + VIEW_INDICATOR_MS;
 	app->dirty = 1;
@@ -915,6 +1122,10 @@ handle_key(
 	const struct pv_event *event)
 {
 	double page_height;
+	double content_width;
+	double content_height;
+	int fits_across;
+	int fits_down;
 
 	/* The chooser takes the keys while it is open. */
 	if (app->choosing) {
@@ -951,62 +1162,80 @@ handle_key(
 		default:
 			break;
 		}
+
+		/* Control with any other key does nothing more. */
 		return;
 	}
+
+	/*
+	 * Whether the pages fit across and down: the arrows turn pages where
+	 * there is nothing to scroll.
+	 */
+	fits_across = 0;
+	content_width = pv_app_content_width(app);
+	if (content_width <= (double)app->width)
+		fits_across = 1;
+	fits_down = 0;
+	content_height = pv_app_content_height(app);
+	if (content_height <= (double)app->height)
+		fits_down = 1;
 
 	/* The movement keys, by the mode. */
 	page_height = (double)app->height - VIEW_KEY_STEP;
 	switch (event->key) {
 	case PV_KEY_PAGE_UP:
-		if (app->mode == PV_MODE_PAGE) {
+		/* The page mode turns back; the scroll mode scrolls up a screen. */
+		if (app->mode == PV_MODE_PAGE)
 			pv_app_action(app, PV_ACTION_PREVIOUS);
-		} else {
+		else
 			app->scroll_y -= page_height;
-		}
 		break;
 	case PV_KEY_PAGE_DOWN:
 	case PV_KEY_SPACE:
-		if (app->mode == PV_MODE_PAGE) {
+		/* The page mode turns on; the scroll mode scrolls a screen, up with Shift. */
+		if (app->mode == PV_MODE_PAGE)
 			pv_app_action(app, PV_ACTION_NEXT);
-		} else if ((event->modifiers & PV_MOD_SHIFT) != 0) {
+		else if ((event->modifiers & PV_MOD_SHIFT) != 0)
 			app->scroll_y -= page_height;
-		} else {
+		else
 			app->scroll_y += page_height;
-		}
 		break;
 	case PV_KEY_LEFT:
-		if (app->mode == PV_MODE_PAGE || pv_app_content_width(app) <= (double)app->width) {
+		/* Turns back, or scrolls left over pages wider than the window. */
+		if (app->mode == PV_MODE_PAGE || fits_across)
 			pv_app_action(app, PV_ACTION_PREVIOUS);
-		} else {
+		else
 			app->scroll_x -= VIEW_KEY_STEP;
-		}
 		break;
 	case PV_KEY_RIGHT:
-		if (app->mode == PV_MODE_PAGE || pv_app_content_width(app) <= (double)app->width) {
+		/* Turns on, or scrolls right over pages wider than the window. */
+		if (app->mode == PV_MODE_PAGE || fits_across)
 			pv_app_action(app, PV_ACTION_NEXT);
-		} else {
+		else
 			app->scroll_x += VIEW_KEY_STEP;
-		}
 		break;
 	case PV_KEY_UP:
-		if (app->mode == PV_MODE_PAGE && pv_app_content_height(app) <= (double)app->height) {
+		/* The page mode's page that fits turns back; anything else scrolls up. */
+		if (app->mode == PV_MODE_PAGE && fits_down)
 			pv_app_action(app, PV_ACTION_PREVIOUS);
-		} else {
+		else
 			app->scroll_y -= VIEW_KEY_STEP;
-		}
 		break;
 	case PV_KEY_DOWN:
-		if (app->mode == PV_MODE_PAGE && pv_app_content_height(app) <= (double)app->height) {
+		/* The page mode's page that fits turns on; anything else scrolls down. */
+		if (app->mode == PV_MODE_PAGE && fits_down)
 			pv_app_action(app, PV_ACTION_NEXT);
-		} else {
+		else
 			app->scroll_y += VIEW_KEY_STEP;
-		}
 		break;
 	case PV_KEY_HOME:
 		pv_app_action(app, PV_ACTION_FIRST);
 		break;
 	case PV_KEY_END:
 		pv_app_action(app, PV_ACTION_LAST);
+		break;
+	case PV_KEY_F9:
+		pv_app_action(app, PV_ACTION_THUMBNAILS);
 		break;
 	default:
 		return;
@@ -1037,6 +1266,8 @@ handle_button(
 			chooser_click(app, event->x, event->y);
 			return;
 		}
+
+		/* A press elsewhere starts a drag from where the view is. */
 		app->pressed = 1;
 		app->dragging = 0;
 		app->press_x = event->x;
@@ -1064,6 +1295,8 @@ handle_button(
 		pv_log("SWIPE offset=%.0f velocity=%.2f direction=%d", app->swipe, app->velocity_x, direction);
 		start_turn(app, direction);
 	}
+
+	/* No drag goes on after a release. */
 	app->dragging = 0;
 }
 
@@ -1109,6 +1342,8 @@ handle_motion(
 	if (elapsed > 0) {
 		app->velocity_x = app->velocity_x * 0.4 + 0.6 * (double)(event->x - app->last_x) / (double)elapsed;
 	}
+
+	/* The pointer's last place and time. */
 	app->last_x = event->x;
 	app->last_y = event->y;
 	app->last_time = event->time;
@@ -1172,6 +1407,8 @@ handle_axis(
 				app->wheel = 0.0;
 				pv_app_action(app, PV_ACTION_PREVIOUS);
 			}
+
+			/* The wheel turned the page, or gathered toward a turn, and scrolls nothing. */
 			return;
 		}
 	}
@@ -1327,6 +1564,8 @@ open_chooser(
 		if (slash == NULL)
 			snprintf(folder, sizeof(folder), ".");
 	}
+
+	/* Without a document, the home folder, or the root. */
 	if (folder[0] == '\0') {
 		home = getenv("HOME");
 		if (home == NULL || home[0] == '\0')
@@ -1342,6 +1581,8 @@ open_chooser(
 		pv_app_message(app, "Cannot list any folder.", VIEW_MESSAGE_MS);
 		return;
 	}
+
+	/* The chooser is shown. */
 	app->choosing = 1;
 	app->dirty = 1;
 	pv_log("CHOOSER open folder=%s entries=%lu", app->chooser.folder, (unsigned long)app->chooser.count);
@@ -1352,6 +1593,8 @@ static const char *
 reason_of(
 	int error)
 {
+	const char *words;
+
 	/* The reasons libpdf and the system give. */
 	if (error == ENOTSUP)
 		return "it uses PDF features this version does not read yet";
@@ -1369,7 +1612,472 @@ reason_of(
 		return "the document has no pages";
 
 	/* Anything else, by the system's words. */
-	return strerror(error);
+	words = strerror(error);
+	return words;
+}
+
+/*
+ * Opens a document with a password (NULL: none) in place of the one shown.
+ * A file that cannot be opened leaves a message and no document; an
+ * encrypted one the password does not open shows the password card, saying
+ * so when a password was tried.
+ *
+ * Returns 0, or an errno value.
+ */
+static int
+open_document(
+	struct pv_app *app,
+	const char *path,
+	const char *password)
+{
+	char message[sizeof(app->message)];
+	const char *name;
+	const char *reason;
+	int encrypted;
+	int checked;
+	int error;
+
+	/* Closes the document shown. */
+	pv_app_close_document(app);
+
+	/* Opens the new one. */
+	error = pv_document_open(&app->document, path, password);
+	if (error != 0) {
+		name = strrchr(path, '/');
+		if (name == NULL) {
+			name = path;
+		} else {
+			name++;
+		}
+
+		/* An encrypted document refused with EACCES needs a (another) password: the card asks for it. */
+		encrypted = 0;
+		if (error == PDF_EPASSWORD) {
+			checked = pdf_document_encrypted(path, &encrypted);
+			if (checked != 0)
+				encrypted = 0;
+		}
+
+		/* The card asks for it. */
+		if (encrypted) {
+			pv_log("OPEN failed path=%s error=%d", path, error);
+			ask_password(app, path, password != NULL);
+			return error;
+		}
+
+		/* Anything else is told in words, and logged for the tests. */
+		reason = reason_of(error);
+		snprintf(message, sizeof(message), "Cannot open %s: %s.", name, reason);
+		pv_app_message(app, message, VIEW_MESSAGE_MS * 2U);
+		pv_log("OPEN failed path=%s error=%d", path, error);
+		return error;
+	}
+
+	/* Starts at its first page, fitting the mode, the sidebar at its top. */
+	app->has_document = 1;
+	app->opened = 1;
+	app->page = 0;
+	app->scroll_x = 0.0;
+	app->scroll_y = 0.0;
+	app->swipe = 0.0;
+	app->turning = 0;
+	app->fit = PV_FIT_WIDTH;
+	if (app->mode == PV_MODE_PAGE)
+		app->fit = PV_FIT_PAGE;
+	app->message[0] = '\0';
+	app->indicator_until = app->now + VIEW_INDICATOR_MS;
+	app->thumbnail_scroll = 0.0;
+	app->thumbnail_followed = 0;
+	app->width = app->window_width - pv_app_sidebar_width(app);
+	clamp_view(app);
+	app->dirty = 1;
+
+	/* Succeeded: the document is shown. */
+	pv_log("OPEN path=%s pages=%lu", path, (unsigned long)app->document.count);
+	return 0;
+}
+
+/* Lays the pages out again beside the sidebar (or without it), keeping the page in view. */
+static void
+relayout(
+	struct pv_app *app)
+{
+	size_t page;
+
+	/* The page in view before the width changes. */
+	page = current_page(app);
+
+	/* The pages' width, and the same page at the top of the scroll mode's view. */
+	app->width = app->window_width - pv_app_sidebar_width(app);
+	if (app->mode == PV_MODE_SCROLL && app->has_document)
+		app->scroll_y = pv_app_page_top(app, page) - PV_MARGIN;
+	clamp_view(app);
+	clamp_sidebar(app);
+	app->dirty = 1;
+}
+
+/*
+ * Tells whether a pointer input is the sidebar's: a press on it (not while
+ * the chooser is open or the pages are dragged), the moves and the release
+ * of that press, and the wheel over it.
+ */
+static int
+sidebar_takes(
+	const struct pv_app *app,
+	const struct pv_event *event,
+	int sidebar)
+{
+	/* No sidebar, or the chooser in front, takes nothing. */
+	if (sidebar == 0)
+		return 0;
+	if (app->choosing)
+		return 0;
+
+	/* A press the sidebar took keeps its moves and its release. */
+	if (app->thumbnail_pressed) {
+		if (event->type == PV_EVENT_BUTTON)
+			return 1;
+		if (event->type == PV_EVENT_MOTION)
+			return 1;
+	}
+
+	/* A drag of the pages keeps the pointer even over the sidebar. */
+	if (app->pressed)
+		return 0;
+
+	/* A press or the wheel over the sidebar. */
+	if (event->x >= sidebar)
+		return 0;
+	if (event->type == PV_EVENT_BUTTON && event->pressed)
+		return 1;
+	if (event->type == PV_EVENT_AXIS)
+		return 1;
+
+	/* Anything else goes to the pages. */
+	return 0;
+}
+
+/*
+ * Handles the sidebar's pointer input: a press and a release in place
+ * shows the page of the thumbnail under it, a press moved along drags the
+ * column, and the wheel scrolls it.
+ */
+static void
+sidebar_event(
+	struct pv_app *app,
+	const struct pv_event *event)
+{
+	size_t index;
+	int moved;
+	int found;
+
+	/* Handles it by its kind. */
+	switch (event->type) {
+	case PV_EVENT_BUTTON:
+		/* Only the left button. */
+		if (event->button != PV_BUTTON_LEFT)
+			return;
+
+		/* A press starts in place. */
+		if (event->pressed) {
+			app->thumbnail_pressed = 1;
+			app->thumbnail_dragging = 0;
+			app->thumbnail_press_y = event->y;
+			app->thumbnail_press_scroll = app->thumbnail_scroll;
+			return;
+		}
+
+		/* A release ends the press; one that did not drag chooses the thumbnail under it. */
+		app->thumbnail_pressed = 0;
+		if (app->thumbnail_dragging) {
+			app->thumbnail_dragging = 0;
+			return;
+		}
+
+		/* The thumbnail under the release, when there is one, shows its page. */
+		found = thumbnail_at(app, event->y, &index);
+		if (!found)
+			return;
+		pv_log("THUMBNAIL chose page=%lu", (unsigned long)index);
+		show_page(app, index);
+		break;
+	case PV_EVENT_MOTION:
+		/* The column moves with the pointer once it has moved far enough. */
+		moved = event->y - app->thumbnail_press_y;
+		if (!app->thumbnail_dragging) {
+			if (moved < VIEW_DRAG_START && moved > -VIEW_DRAG_START)
+				return;
+			app->thumbnail_dragging = 1;
+		}
+
+		/* The column follows the pointer. */
+		app->thumbnail_scroll = app->thumbnail_press_scroll - (double)moved;
+		clamp_sidebar(app);
+		app->dirty = 1;
+		break;
+	case PV_EVENT_AXIS:
+		/* The wheel scrolls the column. */
+		app->thumbnail_scroll += (double)event->scroll;
+		clamp_sidebar(app);
+		app->dirty = 1;
+		break;
+	case PV_EVENT_KEY:
+	case PV_EVENT_LEAVE:
+	case PV_EVENT_ACTION:
+		break;
+	}
+}
+
+/* Finds the page whose slot is at a height of the sidebar; 0 when none is. */
+static int
+thumbnail_at(
+	const struct pv_app *app,
+	int y,
+	size_t *index)
+{
+	double place;
+
+	/* The place in the column, under the space above the first slot. */
+	place = (double)y + app->thumbnail_scroll - PV_THUMBNAIL_TOP;
+	if (place < 0.0)
+		return 0;
+
+	/* The slot there, when the document has that page. */
+	*index = (size_t)(place / PV_THUMBNAIL_SLOT);
+	if (*index >= app->document.count)
+		return 0;
+
+	/* Found: the page of the slot. */
+	return 1;
+}
+
+/* Keeps the sidebar's view within its column of thumbnails. */
+static void
+clamp_sidebar(
+	struct pv_app *app)
+{
+	double largest;
+
+	/* The column's height, with the space above and below, less the view's. */
+	largest = 2.0 * PV_THUMBNAIL_TOP + (double)app->document.count * PV_THUMBNAIL_SLOT - (double)app->height;
+	if (!app->has_document)
+		largest = 0.0;
+	if (largest < 0.0)
+		largest = 0.0;
+
+	/* The view's top within it. */
+	if (app->thumbnail_scroll > largest)
+		app->thumbnail_scroll = largest;
+	if (app->thumbnail_scroll < 0.0)
+		app->thumbnail_scroll = 0.0;
+}
+
+/* Scrolls the sidebar the least that shows a page's whole slot. */
+static void
+reveal_thumbnail(
+	struct pv_app *app,
+	size_t index)
+{
+	double top;
+	double bottom;
+
+	/* The slot's top and bottom in the column, with the space around it. */
+	top = (double)index * PV_THUMBNAIL_SLOT;
+	bottom = top + PV_THUMBNAIL_SLOT + 2.0 * PV_THUMBNAIL_TOP;
+
+	/* Up to its top, or down to its bottom. */
+	if (top < app->thumbnail_scroll)
+		app->thumbnail_scroll = top;
+	if (bottom > app->thumbnail_scroll + (double)app->height)
+		app->thumbnail_scroll = bottom - (double)app->height;
+	clamp_sidebar(app);
+	app->dirty = 1;
+}
+
+/* Shows the password card for a document, empty, saying whether a password was just refused. */
+static void
+ask_password(
+	struct pv_app *app,
+	const char *path,
+	int wrong)
+{
+	/* The document it is for, nothing typed. */
+	snprintf(app->password_path, sizeof(app->password_path), "%s", path);
+	forget_password(app);
+	app->asking_password = 1;
+	app->password_wrong = wrong;
+	app->choosing = 0;
+	app->dirty = 1;
+
+	/* The log the tests read; never the password. */
+	pv_log("PASSWORD asked path=%s wrong=%d", path, wrong);
+}
+
+/*
+ * Handles an input while the password card is shown: the keys type, a
+ * click on Open tries the password and one on Cancel closes the card.
+ */
+static void
+password_event(
+	struct pv_app *app,
+	const struct pv_event *event)
+{
+	int x;
+	int y;
+	int width;
+	int height;
+	int open_x;
+	int cancel_x;
+	int buttons_y;
+
+	/* A key pressed. */
+	if (event->type == PV_EVENT_KEY) {
+		if (event->pressed)
+			password_key(app, event);
+		return;
+	}
+
+	/* Only a press of the left button is a click. */
+	if (event->type != PV_EVENT_BUTTON)
+		return;
+	if (event->button != PV_BUTTON_LEFT || !event->pressed)
+		return;
+
+	/* Where the buttons are: Open in the card's bottom right corner, Cancel before it. */
+	pv_password_layout(app, &x, &y, &width, &height);
+	open_x = x + width - PV_PASSWORD_BUTTON_INSET - PV_PASSWORD_BUTTON_WIDTH;
+	cancel_x = open_x - 12 - PV_PASSWORD_BUTTON_WIDTH;
+	buttons_y = y + height - PV_PASSWORD_BUTTON_INSET - PV_PASSWORD_BUTTON_HEIGHT;
+
+	/* A click outside the buttons' row does nothing. */
+	if (event->y < buttons_y || event->y >= buttons_y + PV_PASSWORD_BUTTON_HEIGHT)
+		return;
+
+	/* Open tries the password. */
+	if (event->x >= open_x && event->x < open_x + PV_PASSWORD_BUTTON_WIDTH) {
+		submit_password(app);
+		return;
+	}
+
+	/* Cancel closes the card. */
+	if (event->x >= cancel_x && event->x < cancel_x + PV_PASSWORD_BUTTON_WIDTH)
+		cancel_password(app);
+}
+
+/* Handles a key on the password card: Enter tries, Escape cancels, Backspace erases, and the rest type. */
+static void
+password_key(
+	struct pv_app *app,
+	const struct pv_event *event)
+{
+	char character;
+
+	/* Handles the keys that are commands. */
+	switch (event->key) {
+	case PV_KEY_ENTER:
+	case PV_KEY_KP_ENTER:
+		submit_password(app);
+		return;
+	case PV_KEY_ESCAPE:
+		cancel_password(app);
+		return;
+	case PV_KEY_BACKSPACE:
+		/* The last character goes, when there is one. */
+		if (app->password_length == 0)
+			return;
+		app->password_length--;
+		app->password[app->password_length] = '\0';
+		app->dirty = 1;
+		return;
+	default:
+		break;
+	}
+
+	/* A key that types a character adds it, within the longest password. */
+	character = key_character(event->key, event->modifiers);
+	if (character == 0)
+		return;
+	if (app->password_length >= PV_PASSWORD_MAX)
+		return;
+	app->password[app->password_length] = character;
+	app->password_length++;
+	app->password[app->password_length] = '\0';
+	app->password_wrong = 0;
+	app->dirty = 1;
+}
+
+/* Tries to open the card's document with the password typed; a refused one asks again. */
+static void
+submit_password(
+	struct pv_app *app)
+{
+	char path[PV_PATH_MAX];
+	char password[PV_PASSWORD_MAX + 1];
+	int error;
+
+	/* The document and the password, taken from the card, which the try may show again. */
+	snprintf(path, sizeof(path), "%s", app->password_path);
+	memcpy(password, app->password, sizeof(password));
+	forget_password(app);
+	app->asking_password = 0;
+	pv_log("PASSWORD try path=%s", path);
+
+	/* Opens it with the password; a refusal shows the card again, saying so. */
+	error = open_document(app, path, password);
+	memset(password, 0, sizeof(password));
+	if (error != 0)
+		return;
+
+	/* Succeeded: the document is shown and the card is gone. */
+	pv_log("PASSWORD accepted path=%s", path);
+}
+
+/* Closes the password card without opening its document. */
+static void
+cancel_password(
+	struct pv_app *app)
+{
+	/* Nothing typed is kept. */
+	forget_password(app);
+	app->asking_password = 0;
+	app->password_wrong = 0;
+	app->dirty = 1;
+	pv_log("PASSWORD cancelled path=%s", app->password_path);
+}
+
+/* Clears the password typed so far from memory. */
+static void
+forget_password(
+	struct pv_app *app)
+{
+	/* Every byte of the buffer, not only the typed ones. */
+	memset(app->password, 0, sizeof(app->password));
+	app->password_length = 0;
+}
+
+/*
+ * Reports the ASCII character a key types with the modifiers held (the US
+ * layout), or 0 for a key that types none or a command key.
+ */
+static char
+key_character(
+	uint32_t key,
+	uint32_t modifiers)
+{
+	/* A command key types nothing. */
+	if ((modifiers & (PV_MOD_CTRL | PV_MOD_ALT | PV_MOD_SUPER)) != 0U)
+		return 0;
+
+	/* Keys past the tables type nothing. */
+	if (key >= VIEW_KEY_TABLE_SIZE)
+		return 0;
+
+	/* The shifted character. */
+	if ((modifiers & PV_MOD_SHIFT) != 0U)
+		return view_shifted_keys[key];
+
+	/* The plain character. */
+	return view_plain_keys[key];
 }
 
 /* Reports the page mode's page top: centred when it is shorter than the window. */

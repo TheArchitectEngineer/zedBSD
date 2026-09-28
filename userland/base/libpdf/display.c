@@ -183,6 +183,8 @@ pdf_display_add_image(
 		free(pixels);
 		return error;
 	}
+
+	/* The list owns the pixels from here on. */
 	builder->images[builder->images_count] = pixels;
 	builder->images_count++;
 

@@ -18,6 +18,9 @@
  *                                            the given tolerance of the blurred pictures (ws079-p007)
  *   host-pdf-render fuzzdoc IN.pdf ITERATIONS any document: bytes mutated inside its unfiltered streams
  *                                            (the xref stays valid) and anywhere in the file (ws079-p007)
+ *   host-pdf-render renderpassword IN.pdf PASSWORD PREFIX DPI
+ *                                            render with a password (ws079-p015): the file and the memory
+ *                                            forms of the password open must agree
  *
  * run-pdf-render.sh drives it against pdftoppm.  The hand-built document
  * writes its own xref, a Flate content stream and a Flate image with the
@@ -58,6 +61,7 @@ static int draw_writing(struct pdf_writer *writer, double top, double seed, doub
 static int make_ops(const char *path);
 static int build_ops(const char *const contents[3], struct buffer *pdf);
 static int render(const char *path, const char *prefix, double dpi);
+static int render_password(const char *path, const char *password, const char *prefix, double dpi);
 static int render_document(struct pdf_document *document, const char *prefix, double dpi, int quiet);
 static int compare(const char *first, const char *second);
 static int read_ppm(const char *path, unsigned char **pixels, int *width, int *height);
@@ -133,8 +137,10 @@ main(
 		error = blur_compare(argv[2], argv[3], atof(argv[4]), atof(argv[5]));
 	else if (argc == 4 && strcmp(argv[1], "fuzzdoc") == 0)
 		error = fuzz_document(argv[2], atol(argv[3]));
+	else if (argc == 6 && strcmp(argv[1], "renderpassword") == 0)
+		error = render_password(argv[2], argv[3], argv[4], atof(argv[5]));
 	else
-		fprintf(stderr, "usage: host-pdf-render notes|ops|render|compare|fuzz|blurcompare|fuzzdoc ...\n");
+		fprintf(stderr, "usage: host-pdf-render notes|ops|render|compare|fuzz|blurcompare|fuzzdoc|renderpassword ...\n");
 
 	/* Reports the outcome. */
 	if (error != 0)
@@ -490,6 +496,51 @@ render(
 
 	/* Opens the document. */
 	error = pdf_document_open(path, &document);
+	if (error != 0) {
+		fprintf(stderr, "host-pdf-render: %s: open error %d\n", path, error);
+		return error;
+	}
+
+	/* Renders its pages. */
+	error = render_document(document, prefix, dpi, 0);
+	pdf_document_close(document);
+	return error;
+}
+
+/*
+ * Renders each page of a file opened with a password; the memory form of
+ * the open must give the same answer as the file form.
+ */
+static int
+render_password(
+	const char *path,
+	const char *password,
+	const char *prefix,
+	double dpi)
+{
+	struct pdf_document *document;
+	unsigned char *data;
+	size_t size;
+	int memory_error;
+	int error;
+
+	/* Opens the bytes from memory with the password. */
+	error = read_file(path, &data, &size);
+	if (error != 0)
+		return error;
+	memory_error = pdf_document_open_memory_password(data, size, password, &document);
+	if (memory_error == 0)
+		pdf_document_close(document);
+	free(data);
+
+	/* Opens the file with the password: the same answer. */
+	error = pdf_document_open_password(path, password, &document);
+	if (error != memory_error) {
+		fprintf(stderr, "host-pdf-render: %s: file open %d, memory open %d\n", path, error, memory_error);
+		if (error == 0)
+			pdf_document_close(document);
+		return EINVAL;
+	}
 	if (error != 0) {
 		fprintf(stderr, "host-pdf-render: %s: open error %d\n", path, error);
 		return error;

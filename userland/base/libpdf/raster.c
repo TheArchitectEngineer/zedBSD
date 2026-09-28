@@ -209,6 +209,8 @@ pdf_display_list_rasterize(
 			pop_clip(&raster);
 			break;
 		}
+
+		/* A failure ends the drawing. */
 		if (error != 0)
 			break;
 	}
@@ -349,6 +351,8 @@ add_edge(
 		edge->x = x1;
 		edge->direction = -1;
 	}
+
+	/* Its slope, and one edge more. */
 	edge->slope = (x1 - x0) / (y1 - y0);
 	raster->edge_count++;
 
@@ -482,6 +486,8 @@ sort_edges(
 				}
 			}
 		}
+
+		/* The merged runs are the next pass's source. */
 		swap = source;
 		source = target;
 		target = swap;
@@ -693,6 +699,8 @@ scan_path(
 		if (raster->edges[index].bottom > lowest)
 			lowest = raster->edges[index].bottom;
 	}
+
+	/* Within the target. */
 	if (highest < 0.0)
 		highest = 0.0;
 	if (lowest > (double)raster->height)
@@ -760,6 +768,8 @@ row_coverage(
 			raster->steps[x] = 0.0f;
 		}
 	}
+
+	/* No coverage yet in this row. */
 	raster->row_left = raster->width;
 	raster->row_right = -1;
 	weight = 1.0f / (float)PDF_RASTER_SUBSAMPLES;
@@ -790,6 +800,8 @@ row_coverage(
 			raster->crossings[crossing_count].direction = edge->direction;
 			crossing_count++;
 		}
+
+		/* The edges still active. */
 		*active_count = kept;
 
 		/* Orders the crossings from the left. */
@@ -922,9 +934,13 @@ blend_pixel(
 			    (backdrop[channel] * keep + 127U) / 255U +
 			    (source[channel] * backdrop[channel] + 127U) / 255U;
 		}
+
+		/* A colour stays within a byte. */
 		if (result[channel] > 255U)
 			result[channel] = 255U;
 	}
+
+	/* So does the alpha. */
 	if (result[0] > 255U)
 		result[0] = 255U;
 
@@ -977,8 +993,12 @@ sort_crossings(
 				crossings[place] = crossings[place - 1];
 				place--;
 			}
+
+			/* The crossing in its place. */
 			crossings[place] = moving;
 		}
+
+		/* A short list is in order. */
 		return;
 	}
 
@@ -1005,6 +1025,8 @@ sort_crossings(
 				}
 			}
 		}
+
+		/* The merged runs are the next pass's source. */
 		swap = source;
 		source = target;
 		target = swap;
@@ -1074,6 +1096,8 @@ draw_image(
 		corners[index].x = page_x * raster->scale + raster->offset_x;
 		corners[index].y = page_y * raster->scale + raster->offset_y;
 	}
+
+	/* The corners' bounds. */
 	left = corners[0].x;
 	right = corners[0].x;
 	top = corners[0].y;
@@ -1088,6 +1112,8 @@ draw_image(
 		if (corners[index].y > bottom)
 			bottom = corners[index].y;
 	}
+
+	/* Within the target. */
 	if (left < 0.0)
 		left = 0.0;
 	if (top < 0.0)
@@ -1151,6 +1177,8 @@ draw_image(
 						sum[channel] += sample[channel];
 				}
 			}
+
+			/* A pixel no sample covered stays as it is. */
 			if (sum[0] <= 0.0)
 				continue;
 

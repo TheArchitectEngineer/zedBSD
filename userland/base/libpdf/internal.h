@@ -199,6 +199,25 @@ int pdf_reader_page_reference(struct pdf_document *document, size_t index, struc
 /* The stream filters (filter.c). */
 int pdf_filter_decode(struct pdf_document *document, const struct pdf_object *stream, int stop_at_dct, const unsigned char **data, size_t *size, unsigned char **owned, int *dct);
 
+/*
+ * The parameters of one CCITTFaxDecode filter: its /DecodeParms with the
+ * defaults of the PDF reference filled in.  rows 0 means as many rows as
+ * the data holds.  The filter (filter.c) fills one for each decode.
+ */
+struct pdf_ccitt_parameters {
+	long k;
+	long columns;
+	long rows;
+	long damaged_rows;
+	int end_of_line;
+	int byte_align;
+	int end_of_block;
+	int black_is_1;
+};
+
+/* The CCITT fax decoder of Group 3 and Group 4 (ccitt.c, stage 3). */
+int pdf_ccitt_decode(const struct pdf_ccitt_parameters *parameters, const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
+
 /* The images (image.c). */
 int pdf_image_decode(struct pdf_document *document, const struct pdf_object *stream, const double fill[3], unsigned char **pixels, size_t *width, size_t *height, int *interpolate, unsigned *flags);
 
@@ -307,12 +326,12 @@ int pdf_charstrings_outline(struct pdf_charstrings *font, unsigned glyph, pdf_ch
 
 /*
  * The standard security handler of an encrypted document (crypt.c,
- * stage 3): the file key of the empty user password and the ciphers of
+ * stage 3): the file key of the user or the owner password and the ciphers of
  * strings and streams.
  */
 struct pdf_crypt;
 
-int pdf_crypt_open(struct pdf_document *document, struct pdf_object *encrypt, const unsigned char *id, size_t id_length, struct pdf_crypt **crypt);
+int pdf_crypt_open(struct pdf_document *document, struct pdf_object *encrypt, const unsigned char *id, size_t id_length, const unsigned char *password, size_t password_length, struct pdf_crypt **crypt);
 void pdf_crypt_close(struct pdf_crypt *crypt);
 int pdf_crypt_metadata(const struct pdf_crypt *crypt);
 int pdf_crypt_decrypt(const struct pdf_crypt *crypt, int stream, unsigned long number, unsigned long generation, const unsigned char *input, size_t size, unsigned char *output, size_t *output_size);

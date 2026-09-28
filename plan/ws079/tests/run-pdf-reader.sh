@@ -19,7 +19,7 @@ ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 # ws079-p007: the reader decodes cross-reference and object streams through filter.c and libz-compat.
 sources="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c userland/base/libpdf/reader.c
-	userland/base/libpdf/filter.c userland/base/libpdf/crypt.c"
+	userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c"
 for variant in plain asan ubsan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
 	if [ "$variant" = asan ]; then
