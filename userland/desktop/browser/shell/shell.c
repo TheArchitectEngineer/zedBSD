@@ -6,16 +6,19 @@
  */
 
 /*
- * The window mode of browser: a view (view/view.h) shown in a zdesktop
+ * The window mode of browser: a view (<browser.h>) shown in a zdesktop
  * window, recording its drawing into the frames of the window's swapchain
  * on the shell's Vulkan device.  The view holds the page, its history, its
  * scroll, its timers, the network and the renderer; the shell holds the
  * window, zdesktop's titlebar (back, forward, reload and the location,
  * whose URL can be edited) and the presenter (the swapchain), and
- * turns the window's input into the view's calls: the wheel and the keys
- * scroll, a click goes to the view (the page's scripts, then the link under
- * it), Alt+Left and Alt+Right and the titlebar step through the history,
- * F5 reloads, Esc stops a load, and Ctrl+Q or Ctrl+W close the window.
+ * turns the window's input into the view's input (ws074-p056): the
+ * pointer's moves, buttons, wheel and leaving, the keys with the DOM's
+ * names (keys.c), and the keyboard's focus.  The view does what the input
+ * means for the page (scrolling, links, the focus, the history's keys).
+ * The shell keeps its own shortcuts, which the page never sees: Ctrl+Q and
+ * Ctrl+W close the window, and Ctrl+L edits the location; the titlebar's
+ * controls step through the history and reload.
  *
  * The program writes lines to standard output that the guest tests read
  * (ZBROWSER READY, FRAME, LINK, NAVIGATE, TITLEBAR, CONSOLE, LOADING,
@@ -23,41 +26,21 @@
  */
 
 #include "shell/internal.h"
-#include "view/view.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* How far a press of an arrow key scrolls, in pixels. */
-#define SHELL_LINE_SCROLL	40
-
-/* How far the pointer may move between a press and its release for a click, in pixels. */
-#define SHELL_CLICK_SLOP	4
-
-/* The evdev codes of the keys and the button the shell reads. */
-#define SHELL_KEY_ESC		1U
+/* The evdev codes of the keys of the shell's own shortcuts. */
 #define SHELL_KEY_Q		16U
 #define SHELL_KEY_W		17U
 #define SHELL_KEY_L		38U
-#define SHELL_KEY_SPACE		57U
-#define SHELL_KEY_F5		63U
-#define SHELL_KEY_HOME		102U
-#define SHELL_KEY_UP		103U
-#define SHELL_KEY_PAGEUP	104U
-#define SHELL_KEY_LEFT		105U
-#define SHELL_KEY_RIGHT		106U
-#define SHELL_KEY_END		107U
-#define SHELL_KEY_DOWN		108U
-#define SHELL_KEY_PAGEDOWN	109U
-#define SHELL_BUTTON_LEFT	0x110U
 
 /*
  * What the window mode holds while it runs: the view, the window with its
- * titlebar and presenter, whether the view must be drawn again, where the
- * left button went down, and whether the window is up (the view's first
- * page is loaded before it).
+ * titlebar and presenter, whether the view must be drawn again, and
+ * whether the window is up (the view's first page is loaded before it).
  */
 struct shell_state {
 	struct browser_view *view;
@@ -65,15 +48,14 @@ struct shell_state {
 	struct shell_titlebar titlebar;
 	struct shell_present present;
 	int dirty;
-	int press_x;
-	int press_y;
-	int pressed;
 	int ready;
 };
 
 static void shell_show_state(struct shell_state *state);
 static void shell_input(struct shell_state *state, const struct shell_event *event);
-static void shell_click(struct shell_state *state, const struct shell_event *event);
+static void shell_button(struct shell_state *state, const struct shell_event *event);
+static void shell_key(struct shell_state *state, const struct shell_event *event);
+static int shell_shortcut(struct shell_state *state, const struct shell_event *event);
 static void shell_titlebar_input(struct shell_state *state, const struct shell_titlebar_event *event);
 static void shell_go(struct shell_state *state, int steps);
 static void shell_follow(struct shell_state *state, const char *target);
@@ -130,6 +112,7 @@ shell_run(
 	callbacks.script_error = shell_script_error;
 	callbacks.context = &state;
 	memset(&view_options, 0, sizeof(view_options));
+	view_options.version = BROWSER_API_VERSION;
 	view_options.fonts = options->fonts;
 	view_options.callbacks = &callbacks;
 	view_options.stack_base = __builtin_frame_address(0);
@@ -301,118 +284,143 @@ shell_show_state(
 	}
 }
 
-/* Carries out one input: a click, a scroll, a key that scrolls, or a key of the history, the location or the window. */
+/* Gives one input of the window to the view: the pointer, the wheel, a key, or the keyboard's focus. */
 static void
 shell_input(
 	struct shell_state *state,
 	const struct shell_event *event)
 {
+	uint32_t modifiers;
 	int error;
 
-	/* A button: a click on a link opens it. */
-	if (event->type == SHELL_EVENT_BUTTON) {
-		shell_click(state, event);
-		return;
+	/* The modifiers held, as the view names them. */
+	modifiers = shell_key_modifiers(event->modifiers);
+
+	/* Each kind of input to its call. */
+	error = 0;
+	switch (event->type) {
+	case SHELL_EVENT_BUTTON:
+		shell_button(state, event);
+		break;
+	case SHELL_EVENT_MOTION:
+		error = browser_view_pointer_move(state->view, (float)event->x, (float)event->y, modifiers);
+		break;
+	case SHELL_EVENT_LEAVE:
+		error = browser_view_pointer_leave(state->view);
+		break;
+	case SHELL_EVENT_SCROLL:
+		error = browser_view_wheel(
+			state->view,
+			(float)event->x,
+			(float)event->y,
+			(float)event->scroll_x,
+			(float)event->scroll,
+			modifiers);
+		break;
+	case SHELL_EVENT_KEY:
+		shell_key(state, event);
+		break;
+	case SHELL_EVENT_FOCUS:
+		error = browser_view_focus(state->view, event->pressed);
+		break;
+	default:
+		break;
 	}
 
-	/* The wheel scrolls by its distance. */
-	if (event->type == SHELL_EVENT_SCROLL) {
-		browser_view_scroll_by(state->view, event->scroll);
-		return;
+	/* A failure of the page's scripts or its layout is reported and the window goes on. */
+	if (error != 0) {
+		printf("ZBROWSER ERROR input error=%s\n", strerror(error));
+		fflush(stdout);
 	}
+}
 
-	/* Ctrl+Q and Ctrl+W close the window; Ctrl+L edits the location. */
-	if ((event->modifiers & SHELL_MOD_CTRL) != 0U) {
-		if (event->key == SHELL_KEY_Q || event->key == SHELL_KEY_W)
+/* Gives the view a pointer button pressed or let go (the view makes the click of a press and a release). */
+static void
+shell_button(
+	struct shell_state *state,
+	const struct shell_event *event)
+{
+	uint32_t modifiers;
+	int button;
+	int error;
+
+	/* The DOM's number of the button; a button it does not number is not given. */
+	button = shell_key_button(event->button);
+	if (button < 0)
+		return;
+
+	/* The button, at the pointer's place. */
+	modifiers = shell_key_modifiers(event->modifiers);
+	error = browser_view_pointer_button(state->view, (float)event->x, (float)event->y, button, event->pressed, modifiers);
+	if (error != 0) {
+		printf("ZBROWSER ERROR click error=%s\n", strerror(error));
+		fflush(stdout);
+	}
+}
+
+/* Gives the view a key pressed, repeated or let go, unless it is one of the shell's own shortcuts. */
+static void
+shell_key(
+	struct shell_state *state,
+	const struct shell_event *event)
+{
+	struct shell_key_names names;
+	uint32_t modifiers;
+	int taken;
+	int error;
+
+	/* The shell's own shortcuts never reach the page. */
+	taken = shell_shortcut(state, event);
+	if (taken)
+		return;
+
+	/* The key with the DOM's names. */
+	shell_key_names(event->key, event->modifiers, &names);
+	modifiers = shell_key_modifiers(event->modifiers);
+	error = browser_view_key(state->view, names.key, names.code, names.text, event->pressed, event->repeat, modifiers);
+	if (error != 0) {
+		printf("ZBROWSER ERROR key error=%s\n", strerror(error));
+		fflush(stdout);
+	}
+}
+
+/*
+ * Carries out the shell's own shortcuts: Ctrl+Q and Ctrl+W close the
+ * window, and Ctrl+L edits the location.  Returns whether the key was one
+ * (its press and its release are both the shell's).
+ */
+static int
+shell_shortcut(
+	struct shell_state *state,
+	const struct shell_event *event)
+{
+	int error;
+
+	/* Only keys with Control are shortcuts. */
+	if ((event->modifiers & SHELL_MOD_CTRL) == 0U)
+		return 0;
+
+	/* The keys that close the window, when pressed. */
+	if (event->key == SHELL_KEY_Q || event->key == SHELL_KEY_W) {
+		if (event->pressed)
 			state->window.closed = 1;
-		if (event->key == SHELL_KEY_L) {
+		return 1;
+	}
+
+	/* The key that edits the location, when pressed. */
+	if (event->key == SHELL_KEY_L) {
+		if (event->pressed) {
 			error = shell_titlebar_edit_location(&state->titlebar);
 			if (error != 0)
 				printf("ZBROWSER ERROR location-edit error=%d\n", error);
 		}
 
-		/* Other keys with Ctrl do nothing yet. */
-		return;
+		/* Its release is the shell's too. */
+		return 1;
 	}
 
-	/* Alt+Left and Alt+Right step through the history. */
-	if ((event->modifiers & SHELL_MOD_ALT) != 0U) {
-		if (event->key == SHELL_KEY_LEFT)
-			shell_go(state, -1);
-		if (event->key == SHELL_KEY_RIGHT)
-			shell_go(state, 1);
-		return;
-	}
-
-	/* The keys that scroll, F5 that reloads and Esc that stops a load. */
-	switch (event->key) {
-	case SHELL_KEY_DOWN:
-		browser_view_scroll_by(state->view, SHELL_LINE_SCROLL);
-		break;
-	case SHELL_KEY_UP:
-		browser_view_scroll_by(state->view, -SHELL_LINE_SCROLL);
-		break;
-	case SHELL_KEY_PAGEDOWN:
-	case SHELL_KEY_SPACE:
-		browser_view_scroll_pages(state->view, 1);
-		break;
-	case SHELL_KEY_PAGEUP:
-		browser_view_scroll_pages(state->view, -1);
-		break;
-	case SHELL_KEY_HOME:
-		browser_view_scroll_to(state->view, BROWSER_SCROLL_TOP);
-		break;
-	case SHELL_KEY_END:
-		browser_view_scroll_to(state->view, BROWSER_SCROLL_BOTTOM);
-		break;
-	case SHELL_KEY_F5:
-		shell_go(state, 0);
-		break;
-	case SHELL_KEY_ESC:
-		browser_view_stop(state->view);
-		break;
-	default:
-		break;
-	}
-}
-
-/* Gives the view a left click: a press and a release at nearly the same place. */
-static void
-shell_click(
-	struct shell_state *state,
-	const struct shell_event *event)
-{
-	int distance_x;
-	int distance_y;
-	int error;
-
-	/* Only the left button clicks. */
-	if (event->button != SHELL_BUTTON_LEFT)
-		return;
-
-	/* A press remembers its place. */
-	if (event->pressed) {
-		state->press_x = event->x;
-		state->press_y = event->y;
-		state->pressed = 1;
-		return;
-	}
-
-	/* A release without its press, or far from it, is not a click. */
-	if (!state->pressed)
-		return;
-	state->pressed = 0;
-	distance_x = abs(event->x - state->press_x);
-	distance_y = abs(event->y - state->press_y);
-	if (distance_x > SHELL_CLICK_SLOP || distance_y > SHELL_CLICK_SLOP)
-		return;
-
-	/* The view's click: the page's scripts, then the link under it. */
-	error = browser_view_click(state->view, event->x, event->y);
-	if (error != 0) {
-		printf("ZBROWSER ERROR click error=%s\n", strerror(error));
-		fflush(stdout);
-	}
+	/* Any other key with Control is the page's. */
+	return 0;
 }
 
 /* Carries out what was done with the titlebar: back, forward, reload, or the location clicked or edited. */

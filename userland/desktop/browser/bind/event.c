@@ -7,7 +7,8 @@
 
 /*
  * Events: EventTarget with its listeners, the Event interfaces (Event,
- * UIEvent, MouseEvent, CustomEvent), and dispatch along the tree.
+ * UIEvent, MouseEvent, CustomEvent; the keyboard's, the wheel's and the
+ * focus's are in input.c), and dispatch along the tree.
  *
  * Dispatch follows the DOM standard's shape: the path from the target up
  * to the document and the window (not the window for a load event), the
@@ -45,7 +46,6 @@ static void event_forget_listener(struct bind_listeners *listeners, size_t index
 static int event_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_mouse(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_custom(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int event_construct_as(struct vm_realm *realm, int interface, const vm_value *args, unsigned count, vm_value *result, struct bind_event **event);
 static int event_type(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_target(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_current_target(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -161,6 +161,10 @@ static const struct bind_attribute mouse_event_attributes[] = {
 	{ "pageX", event_page_x, NULL },
 	{ "pageY", event_page_y, NULL },
 	{ "button", event_button, NULL },
+	{ "shiftKey", bind_event_shift_key, NULL },
+	{ "ctrlKey", bind_event_ctrl_key, NULL },
+	{ "altKey", bind_event_alt_key, NULL },
+	{ "metaKey", bind_event_meta_key, NULL },
 	{ NULL, NULL, NULL }
 };
 
@@ -526,6 +530,174 @@ bind_fire_mouse_event(
 	return 0;
 }
 
+/*
+ * Makes an event of an interface from a constructor's type and init
+ * (bubbles, cancelable), for the constructors of the Event interfaces.
+ */
+int
+bind_event_construct(
+	struct vm_realm *realm,
+	int interface,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result,
+	struct bind_event **event)
+{
+	struct bind_window *window;
+	struct vm_string *type;
+	vm_value value;
+	int present;
+	int status;
+
+	/* The type is required. */
+	window = bind_window_of(realm);
+	if (count < 1U) {
+		status = vm_throw_type_error(realm, "Failed to construct the event: 1 argument required, but only 0 present.");
+		return status;
+	}
+
+	/* The type's atom. */
+	status = bind_to_atom(realm, args[0], 0, &type);
+	if (status != 0)
+		return status;
+
+	/* The event. */
+	status = bind_event_create(window, interface, type, result, event);
+	if (status != 0)
+		return status;
+
+	/* The init's flags. */
+	status = bind_get_option(realm, js_argument(args, count, 1), "bubbles", &present, &value);
+	if (status != 0)
+		return status;
+	(*event)->bubbles = vm_to_boolean(value);
+	status = bind_get_option(realm, js_argument(args, count, 1), "cancelable", &present, &value);
+	if (status != 0)
+		return status;
+	(*event)->cancelable = vm_to_boolean(value);
+
+	/* Succeeded: the event is made. */
+	return 0;
+}
+
+/*
+ * Takes a MouseEvent's init (clientX, clientY, button and the modifiers)
+ * into an event made by a constructor; the page coordinates copy the
+ * client ones, as there is no scroll to add.
+ */
+int
+bind_event_init_mouse(
+	struct vm_realm *realm,
+	vm_value init,
+	struct bind_event *event)
+{
+	vm_value value;
+	double number;
+	int present;
+	int status;
+
+	/* The horizontal place. */
+	status = bind_get_option(realm, init, "clientX", &present, &value);
+	if (status != 0)
+		return status;
+	if (present) {
+		status = vm_to_number(realm, value, &number);
+		if (status != 0)
+			return status;
+		event->mouse.client_x = number;
+		event->mouse.page_x = number;
+	}
+
+	/* The vertical place. */
+	status = bind_get_option(realm, init, "clientY", &present, &value);
+	if (status != 0)
+		return status;
+	if (present) {
+		status = vm_to_number(realm, value, &number);
+		if (status != 0)
+			return status;
+		event->mouse.client_y = number;
+		event->mouse.page_y = number;
+	}
+
+	/* The button. */
+	status = bind_get_option(realm, init, "button", &present, &value);
+	if (status != 0)
+		return status;
+	if (present) {
+		status = vm_to_number(realm, value, &number);
+		if (status != 0)
+			return status;
+		event->mouse.button = (int)number;
+	}
+
+	/* The modifiers. */
+	status = bind_event_init_modifiers(realm, init, event);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the init is taken. */
+	return 0;
+}
+
+/*
+ * Makes a trusted event of an interface for the browser to fire at a
+ * node, or at the window for NULL, with the flags asked for (bubbles,
+ * cancelable, the document as the load's target): the event's object and
+ * state, and the target's object, for the caller to fill in and pass to
+ * bind_dispatch.
+ */
+int
+bind_event_prepare(
+	struct bind_window *window,
+	struct dom_node *target,
+	int interface,
+	const char *type,
+	unsigned flags,
+	vm_value *event_value,
+	vm_value *target_value,
+	struct bind_event **event)
+{
+	struct vm_string *name;
+	int status;
+
+	/* The type's atom and the event. */
+	name = vm_atom_from_ascii(window->realm->heap, type);
+	if (name == NULL)
+		return ENOMEM;
+	status = bind_event_create(window, interface, name, event_value, event);
+	if (status != 0)
+		return status;
+
+	/*
+	 * The browser fires it: trusted, with the flags asked for.  bubbles and
+	 * cancelable are what listeners see and what preventDefault honors.
+	 */
+	(*event)->trusted = 1;
+	if ((flags & BIND_EVENT_BUBBLES) != 0)
+		(*event)->bubbles = 1;
+	if ((flags & BIND_EVENT_CANCELABLE) != 0)
+		(*event)->cancelable = 1;
+
+	/* The target: the node's object, or the window. */
+	*target_value = vm_value_cell(window->realm->global);
+	if (target != NULL) {
+		status = bind_wrap(window, target, target_value);
+		if (status != 0)
+			return status;
+	}
+
+	/* The window's load reports the document as its target. */
+	if ((flags & BIND_EVENT_DOCUMENT) != 0) {
+		status = bind_wrap(window, &window->document->node, &(*event)->target_override);
+		if (status != 0)
+			return status;
+	}
+
+	/* Succeeded: the event is ready to dispatch. */
+	return 0;
+}
+
 /* Marks what an event's state refers to. */
 static void
 event_trace(
@@ -542,6 +714,12 @@ event_trace(
 	vm_heap_mark_value(heap, event->current_target);
 	vm_heap_mark_value(heap, event->detail);
 	vm_heap_mark_value(heap, event->target_override);
+
+	/* A key event's key and code. */
+	if (event->key != NULL)
+		vm_heap_mark(heap, &event->key->cell);
+	if (event->code != NULL)
+		vm_heap_mark(heap, &event->code->cell);
 }
 
 /* Marks the types and callbacks of a target's listeners. */
@@ -874,7 +1052,7 @@ event_construct(
 	UNUSED_PARAMETER(this_value);
 
 	/* The event with its type and init. */
-	status = event_construct_as(realm, BIND_EVENT, args, count, result, &event);
+	status = bind_event_construct(realm, BIND_EVENT, args, count, result, &event);
 	if (status != 0)
 		return status;
 
@@ -882,7 +1060,7 @@ event_construct(
 	return 0;
 }
 
-/* Makes a MouseEvent (new MouseEvent(type, init)) with the init's place and button. */
+/* Makes a MouseEvent (new MouseEvent(type, init)) with the init's place, button and modifiers. */
 static int
 event_construct_mouse(
 	struct vm_realm *realm,
@@ -892,46 +1070,17 @@ event_construct_mouse(
 	vm_value *result)
 {
 	struct bind_event *event;
-	vm_value init;
-	vm_value value;
-	double number;
-	int present;
 	int status;
 
 	UNUSED_PARAMETER(this_value);
 
 	/* The event with its type and init. */
-	status = event_construct_as(realm, BIND_MOUSE_EVENT, args, count, result, &event);
+	status = bind_event_construct(realm, BIND_MOUSE_EVENT, args, count, result, &event);
 	if (status != 0)
 		return status;
 
-	/* The place: clientX and clientY, which the page coordinates copy without a scroll. */
-	init = js_argument(args, count, 1);
-	status = bind_get_option(realm, init, "clientX", &present, &value);
-	if (status == 0 && present)
-		status = vm_to_number(realm, value, &number);
-	if (status == 0 && present) {
-		event->mouse.client_x = number;
-		event->mouse.page_x = number;
-	}
-
-	/* The same for the vertical place. */
-	if (status == 0)
-		status = bind_get_option(realm, init, "clientY", &present, &value);
-	if (status == 0 && present)
-		status = vm_to_number(realm, value, &number);
-	if (status == 0 && present) {
-		event->mouse.client_y = number;
-		event->mouse.page_y = number;
-	}
-
-	/* The button. */
-	if (status == 0)
-		status = bind_get_option(realm, init, "button", &present, &value);
-	if (status == 0 && present)
-		status = vm_to_number(realm, value, &number);
-	if (status == 0 && present)
-		event->mouse.button = (int)number;
+	/* The pointer's part of the init. */
+	status = bind_event_init_mouse(realm, js_argument(args, count, 1), event);
 	if (status != 0)
 		return status;
 
@@ -956,7 +1105,7 @@ event_construct_custom(
 	UNUSED_PARAMETER(this_value);
 
 	/* The event with its type and init. */
-	status = event_construct_as(realm, BIND_CUSTOM_EVENT, args, count, result, &event);
+	status = bind_event_construct(realm, BIND_CUSTOM_EVENT, args, count, result, &event);
 	if (status != 0)
 		return status;
 
@@ -966,53 +1115,6 @@ event_construct_custom(
 		return status;
 	if (present)
 		event->detail = value;
-
-	/* Succeeded: the event is made. */
-	return 0;
-}
-
-/* Makes an event of an interface from a constructor's type and init (bubbles, cancelable). */
-static int
-event_construct_as(
-	struct vm_realm *realm,
-	int interface,
-	const vm_value *args,
-	unsigned count,
-	vm_value *result,
-	struct bind_event **event)
-{
-	struct bind_window *window;
-	struct vm_string *type;
-	vm_value value;
-	int present;
-	int status;
-
-	/* The type is required. */
-	window = bind_window_of(realm);
-	if (count < 1U) {
-		status = vm_throw_type_error(realm, "Failed to construct the event: 1 argument required, but only 0 present.");
-		return status;
-	}
-
-	/* The type's atom. */
-	status = bind_to_atom(realm, args[0], 0, &type);
-	if (status != 0)
-		return status;
-
-	/* The event. */
-	status = bind_event_create(window, interface, type, result, event);
-	if (status != 0)
-		return status;
-
-	/* The init's flags. */
-	status = bind_get_option(realm, js_argument(args, count, 1), "bubbles", &present, &value);
-	if (status != 0)
-		return status;
-	(*event)->bubbles = vm_to_boolean(value);
-	status = bind_get_option(realm, js_argument(args, count, 1), "cancelable", &present, &value);
-	if (status != 0)
-		return status;
-	(*event)->cancelable = vm_to_boolean(value);
 
 	/* Succeeded: the event is made. */
 	return 0;
@@ -1694,43 +1796,19 @@ event_fire(
 	int *canceled)
 {
 	struct bind_event *event;
-	struct vm_string *name;
 	vm_value event_value;
 	vm_value target_value;
 	int status;
 
-	/* The type's atom and the event. */
+	/* The event and its target. */
 	*canceled = 0;
-	name = vm_atom_from_ascii(window->realm->heap, type);
-	if (name == NULL)
-		return ENOMEM;
-	status = bind_event_create(window, interface, name, &event_value, &event);
+	status = bind_event_prepare(window, target, interface, type, flags, &event_value, &target_value, &event);
 	if (status != 0)
 		return status;
 
-	/* The browser fires it, with the flags and the pointer asked for. */
-	event->trusted = 1;
-	if ((flags & BIND_EVENT_BUBBLES) != 0)
-		event->bubbles = 1;
-	if ((flags & BIND_EVENT_CANCELABLE) != 0)
-		event->cancelable = 1;
+	/* The pointer, for a mouse event. */
 	if (mouse != NULL)
 		event->mouse = *mouse;
-
-	/* The target: the node's object, or the window. */
-	target_value = vm_value_cell(window->realm->global);
-	if (target != NULL) {
-		status = bind_wrap(window, target, &target_value);
-		if (status != 0)
-			return status;
-	}
-
-	/* The window's load reports the document as its target. */
-	if ((flags & BIND_EVENT_DOCUMENT) != 0) {
-		status = bind_wrap(window, &window->document->node, &event->target_override);
-		if (status != 0)
-			return status;
-	}
 
 	/* The dispatch. */
 	status = bind_dispatch(window, target_value, event_value, canceled);

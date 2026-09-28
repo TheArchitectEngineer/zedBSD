@@ -36,6 +36,9 @@
 /* The connector status of a connected sink (enum connector_status). */
 #define I915_OUTPUT_CONNECTED		1
 
+/* The connector status of a sink that is not there (enum connector_status). */
+#define I915_OUTPUT_DISCONNECTED	2
+
 /* The reference clock the WRPLL is computed from when the CDCLK state has none (kHz, non-SSC). */
 #define I915_OUTPUT_REF_KHZ		38400
 
@@ -570,6 +573,14 @@ i915_output_hdmi(
 
 	/* Detects the sink once, the way the connector's first probe does; it reads the EDID too. */
 	status = drv_i915_hpd_probe_connector(display, (unsigned)summary.hdmi_connector);
+#ifdef I915_TEST_HDMI_ABSENT
+	/*
+	 * The panel fallback test (ws075-p013): the probe ran, but its answer is
+	 * taken as a disconnected sink, the state an unplugged cable leaves.
+	 */
+	kern_logf("i915: display output: I915_TEST_HDMI_ABSENT takes the HDMI sink as absent (probe said %d)\n", status);
+	status = I915_OUTPUT_DISCONNECTED;
+#endif
 	if (status != I915_OUTPUT_CONNECTED) {
 		*reason = "no HDMI sink is connected at boot";
 		return ENODEV;

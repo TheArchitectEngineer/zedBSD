@@ -21,7 +21,7 @@
  * start page the package installs (MAIN_START_PAGE).  The headless
  * modes (added with the engine, one per phase) draw or dump a page, or run
  * a script, without a window; the tests use them on the host and in the
- * guest.  The modes that load a page do it through a view (view/view.h),
+ * guest.  The modes that load a page do it through a view (<browser.h>),
  * as the window does: the page's scripts run, its timers run on a virtual
  * clock up to MAIN_SETTLE_BUDGET (browser_view_settle), and the page is
  * drawn with the CPU (browser_view_draw_pixels), with the GPU into an
@@ -32,15 +32,18 @@
  *
  * --async fetches the page and its images without blocking, through the
  * view's loader, and waits for them; without it they are read at once.
+ *
+ * Since ws074-p057 the engine is libbrowser.so and the program uses it
+ * through <browser.h> only: the headless modes through a view, the
+ * script modes (--js, --dump=ast, --dump=code) through the library's
+ * script tools, and the window through shell/.
  * --ca-file (in any mode that loads a page) trusts the CA certificates of
  * a PEM file besides the system's roots for https (the tests' own CA).
  */
 
-#include "base/base.h"
-#include "js/js.h"
-#include "vm/bytecode.h"
 #include "shell/shell.h"
-#include "view/view.h"
+
+#include <browser.h>
 
 #include <errno.h>
 #include <limits.h>
@@ -67,9 +70,6 @@
  */
 #define MAIN_SETTLE_BUDGET	5000.0
 
-/* The most live bytes a script run by --js may keep in its heap. */
-#define MAIN_SCRIPT_HEAP_LIMIT	((size_t)1024U * 1024U * 1024U)
-
 /*
  * What the program was asked to do.
  */
@@ -95,7 +95,7 @@ enum main_mode {
 struct main_options {
 	enum main_mode mode;
 	struct shell_options shell;
-	struct text_font_paths fonts;
+	struct browser_fonts fonts;
 	const char *output;
 	unsigned parse;
 	int async;
@@ -137,12 +137,7 @@ static const struct main_dump_name main_dumps[] = {
 static int main_parse(int argc, char **argv, struct main_options *options);
 static int main_dump(const struct main_options *options);
 static int main_render(const struct main_options *options);
-static int main_dump_ast(const struct main_options *options);
-static int main_run_js(const struct main_options *options);
 static int main_run_page(const struct main_options *options);
-static int main_read_script(const char *path, struct wb_units *units);
-static int main_dump_code(struct vm_realm *realm, const struct wb_units *units, unsigned how, struct js_syntax_error *error);
-static int main_dump_unit(const struct vm_code *code, struct wb_buffer *out);
 static int main_open(const struct main_options *options, const void *stack_base, unsigned flags, struct main_page *page);
 static void main_loaded(void *context, struct browser_view *view, enum browser_load_state state, const char *url, int error, const char *reason);
 static void main_console_out(void *context, struct browser_view *view, int level, const char *text, size_t length);
@@ -191,11 +186,13 @@ main(
 		status = main_render(&options);
 		return status;
 	case MAIN_MODE_DUMP_AST:
-		status = main_dump_ast(&options);
+		status = browser_script_tool(BROWSER_SCRIPT_DUMP_AST, options.shell.start, options.parse, __builtin_frame_address(0));
 		return status;
 	case MAIN_MODE_RUN_JS:
+		status = browser_script_tool(BROWSER_SCRIPT_RUN, options.shell.start, options.parse, __builtin_frame_address(0));
+		return status;
 	case MAIN_MODE_DUMP_CODE:
-		status = main_run_js(&options);
+		status = browser_script_tool(BROWSER_SCRIPT_DUMP_CODE, options.shell.start, options.parse, __builtin_frame_address(0));
 		return status;
 	case MAIN_MODE_RUN_PAGE:
 		status = main_run_page(&options);
@@ -324,149 +321,6 @@ main_render(
 	return 0;
 }
 
-/* Parses the script the command line names and writes its syntax tree, or its syntax error (exit status 1). */
-static int
-main_dump_ast(
-	const struct main_options *options)
-{
-	struct wb_buffer out;
-	struct wb_units units;
-	struct js_program program;
-	struct js_syntax_error error;
-	int status;
-
-	/* A dump needs a file. */
-	if (options->shell.start == NULL) {
-		fprintf(stderr, "browser: a file to parse is needed\n");
-		return 2;
-	}
-
-	/* The file, as UTF-16. */
-	status = main_read_script(options->shell.start, &units);
-	if (status != 0)
-		return 1;
-
-	/* The parse. */
-	status = js_parse(units.data, units.length, options->parse, &program, &error);
-	if (status == EINVAL) {
-		printf("SyntaxError: %s:%u:%u: %s\n", options->shell.start, error.line, error.column, error.message);
-		wb_units_release(&units);
-		return 1;
-	}
-
-	/* Any other failure of the parse. */
-	if (status != 0) {
-		fprintf(stderr, "browser: cannot parse %s: %s\n", options->shell.start, strerror(status));
-		wb_units_release(&units);
-		return 1;
-	}
-
-	/* The tree. */
-	wb_buffer_init(&out);
-	status = js_dump(program.root, &out);
-	if (status == 0)
-		fwrite(wb_buffer_string(&out), 1, out.length, stdout);
-	wb_buffer_release(&out);
-	js_program_release(&program);
-	wb_units_release(&units);
-	if (status != 0)
-		return 1;
-
-	/* Succeeded: the tree is written. */
-	return 0;
-}
-
-/*
- * Runs the script the command line names in a realm of its own with
- * print; reports a syntax error, what is not supported, or an uncaught
- * exception on standard error with exit status 1.
- */
-static int
-main_run_js(
-	const struct main_options *options)
-{
-	struct wb_units units;
-	struct wb_buffer text;
-	struct js_syntax_error error;
-	struct vm_heap *heap;
-	struct vm_realm *realm;
-	vm_value completion;
-	int status;
-	int exit_status;
-
-	/* A run needs a file. */
-	if (options->shell.start == NULL) {
-		fprintf(stderr, "browser: a script to run is needed\n");
-		return 2;
-	}
-
-	/* The file, as UTF-16. */
-	status = main_read_script(options->shell.start, &units);
-	if (status != 0)
-		return 1;
-
-	/* The heap (its stack ends at this frame) and the realm with print. */
-	status = vm_heap_create(&heap, MAIN_SCRIPT_HEAP_LIMIT);
-	if (status != 0) {
-		fprintf(stderr, "browser: cannot make a heap: %s\n", strerror(status));
-		wb_units_release(&units);
-		return 1;
-	}
-
-	/* The stack the collector scans ends at this frame. */
-	vm_heap_set_stack_base(heap, __builtin_frame_address(0));
-	status = vm_realm_create(heap, &realm);
-	if (status == 0)
-		status = js_install_builtins(realm);
-	if (status == 0)
-		status = js_define_print(realm);
-	if (status != 0) {
-		fprintf(stderr, "browser: cannot make a realm: %s\n", strerror(status));
-		vm_heap_destroy(heap);
-		wb_units_release(&units);
-		return 1;
-	}
-
-	/* The run, or the dump of the code. */
-	if (options->mode == MAIN_MODE_DUMP_CODE) {
-		status = main_dump_code(realm, &units, options->parse, &error);
-	} else {
-		status = js_run_script(realm, units.data, units.length, options->parse, &completion, &error);
-	}
-
-	/* The source is no longer needed. */
-	wb_units_release(&units);
-
-	/* Why it did not run to its end. */
-	exit_status = 0;
-	if (status == EINVAL && error.unsupported) {
-		fprintf(stderr, "browser: %s:%u:%u: %s\n", options->shell.start, error.line, error.column, error.message);
-		exit_status = 1;
-	} else if (status == EINVAL) {
-		fprintf(stderr, "SyntaxError: %s:%u:%u: %s\n", options->shell.start, error.line, error.column, error.message);
-		exit_status = 1;
-	} else if (status == VM_THROWN) {
-		wb_buffer_init(&text);
-		status = js_exception_text(realm, realm->exception, &text);
-		if (status == 0)
-			fprintf(stderr, "Uncaught %s\n", wb_buffer_string(&text));
-		wb_buffer_release(&text);
-		exit_status = 1;
-	} else if (status != 0) {
-		fprintf(stderr, "browser: cannot run %s: %s\n", options->shell.start, strerror(status));
-		exit_status = 1;
-	}
-
-	/* The realm and its heap are no longer needed. */
-	vm_realm_destroy(realm);
-	vm_heap_destroy(heap);
-	if (exit_status != 0)
-		return exit_status;
-
-	/* Succeeded: the script ran to its end. */
-	return 0;
-}
-
 /* Loads a page, runs its scripts and timers, and writes its console to standard output. */
 static int
 main_run_page(
@@ -484,106 +338,6 @@ main_run_page(
 	browser_view_destroy(page.view);
 
 	/* Succeeded: the page ran. */
-	return 0;
-}
-
-/* Compiles a script and writes its code units (the program's, then each function's inside it). */
-static int
-main_dump_code(
-	struct vm_realm *realm,
-	const struct wb_units *units,
-	unsigned how,
-	struct js_syntax_error *error)
-{
-	struct js_program program;
-	struct vm_function *function;
-	struct wb_buffer out;
-	int status;
-
-	/* The tree, then the code. */
-	status = js_parse(units->data, units->length, how, &program, error);
-	if (status != 0)
-		return status;
-	status = js_compile(realm, &program, &function, error);
-	js_program_release(&program);
-	if (status != 0)
-		return status;
-
-	/* The units as text. */
-	wb_buffer_init(&out);
-	status = main_dump_unit(function->code, &out);
-	if (status == 0)
-		fwrite(wb_buffer_string(&out), 1, out.length, stdout);
-	wb_buffer_release(&out);
-	if (status != 0)
-		return status;
-
-	/* Succeeded: the code is written. */
-	return 0;
-}
-
-/* Writes a code unit, then the code units among its constants. */
-static int
-main_dump_unit(
-	const struct vm_code *code,
-	struct wb_buffer *out)
-{
-	struct vm_cell *cell;
-	uint32_t index;
-	int is_cell;
-	int status;
-
-	/* The unit's name and instructions. */
-	status = wb_buffer_append_string(out, "\n== ");
-	if (status == 0)
-		status = vm_string_to_utf8(code->name, out);
-	if (status == 0)
-		status = wb_buffer_append_string(out, "\n");
-	if (status == 0)
-		status = vm_code_dump(code, out);
-	if (status != 0)
-		return status;
-
-	/* The functions made inside it. */
-	for (index = 0; index < code->constant_count; index++) {
-		is_cell = vm_value_is_cell(code->constants[index]);
-		if (!is_cell)
-			continue;
-		cell = vm_value_as_cell(code->constants[index]);
-		if (cell->type != &vm_code_type)
-			continue;
-		status = main_dump_unit((const struct vm_code *)cell, out);
-		if (status != 0)
-			return status;
-	}
-
-	/* Succeeded: the units are written. */
-	return 0;
-}
-
-/* Reads a script file as UTF-16; says why on standard error when it cannot. */
-static int
-main_read_script(
-	const char *path,
-	struct wb_units *units)
-{
-	struct wb_buffer bytes;
-	int status;
-
-	/* The bytes, then their UTF-16. */
-	wb_buffer_init(&bytes);
-	wb_units_init(units);
-	status = wb_file_read(path, &bytes);
-	if (status == 0)
-		status = wb_utf8_to_units((const unsigned char *)bytes.data, bytes.length, units);
-	wb_buffer_release(&bytes);
-	if (status != 0) {
-		fprintf(stderr, "browser: cannot read %s: %s\n", path, strerror(status));
-		wb_units_release(units);
-		return status;
-	}
-
-	/* Succeeded: the script's characters. */
 	return 0;
 }
 
@@ -626,6 +380,7 @@ main_open(
 
 	/* The view at the viewport's size, reading at once or, with --async, fetching the page and its images in the background. */
 	memset(&view_options, 0, sizeof(view_options));
+	view_options.version = BROWSER_API_VERSION;
 	view_options.fonts = &options->fonts;
 	view_options.callbacks = &callbacks;
 	view_options.stack_base = stack_base;
@@ -848,14 +603,11 @@ main_parse(
 	int dump;
 	int error;
 
-	/* Starts from the window mode with the default size. */
+	/* Starts from the window mode with the default size, and the system's fonts. */
 	memset(options, 0, sizeof(*options));
 	options->mode = MAIN_MODE_WINDOW;
 	options->shell.width = MAIN_DEFAULT_WIDTH;
 	options->shell.height = MAIN_DEFAULT_HEIGHT;
-	options->fonts.sans = TEXT_DEFAULT_SANS;
-	options->fonts.mono = TEXT_DEFAULT_MONO;
-	options->fonts.fallback = TEXT_DEFAULT_FALLBACK;
 
 	/* Takes each word in turn. */
 	for (index = 1; index < argc; index++) {
@@ -925,14 +677,14 @@ main_parse(
 		/* How a script is parsed: as a module, or as strict code. */
 		differs = strcmp(argv[index], "--module");
 		if (differs == 0) {
-			options->parse |= JS_PARSE_MODULE;
+			options->parse |= BROWSER_SCRIPT_MODULE;
 			continue;
 		}
 
 		/* As strict code. */
 		differs = strcmp(argv[index], "--strict");
 		if (differs == 0) {
-			options->parse |= JS_PARSE_STRICT;
+			options->parse |= BROWSER_SCRIPT_STRICT;
 			continue;
 		}
 
