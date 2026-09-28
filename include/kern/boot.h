@@ -124,6 +124,8 @@ enum kern_boot_parameter_key {
 	KERN_BOOT_PARAMETER_INIT,
 	KERN_BOOT_PARAMETER_KMSG,
 	KERN_BOOT_PARAMETER_LOGIN,
+	KERN_BOOT_PARAMETER_DISPLAY,
+	KERN_BOOT_PARAMETER_DISPLAY_MODE,
 	KERN_BOOT_PARAMETER_COUNT
 };
 
@@ -368,6 +370,19 @@ int
 kern_boot_parameters_token_present(
 	const char *text,
 	const char *token);
+
+/*
+ * Reads a display mode written WxH or WxH@R (the display.mode= boot
+ * parameter, ws075-p012): 0 with the width and height in pixels and the
+ * refresh rate in hertz (0 when the text names none), or EINVAL.
+ */
+int
+kern_boot_display_mode_parse(
+	const char *text,
+	size_t length,
+	uint32_t *width,
+	uint32_t *height,
+	uint32_t *refresh_hz);
 
 /* Kernel-global parse-once instance consumed by init and later VFS phases. */
 int

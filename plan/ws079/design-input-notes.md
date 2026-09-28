@@ -308,3 +308,7 @@ ws.md の案を保ち、p003 を 2 つに分けることを提案する（gestur
 - main の判断（2026-09-28、p010 の報告）: 全画面の窓の上でも端のジェスチャー（左上 28×28・右上 28×28・下端 20 px）を compositor が取る
   （ユーザーの表の「全画面の Notes の上で Home・Wiseview」に合わせる。D3 を右上から 3 つの端に広げた）。Home の上で Notes が既に最前面・全画面なら、
   右上のスワイプは Home を閉じるだけ。ジェスチャーの表示の間は全画面の直接の scanout を離れて合成する（Venus で 400〜1100 ms の切り替え、i915 は未計測）。
+
+- main の判断（2026-09-28、p005 の報告）: D6 はユーザーの回答どおり「保存 button + 5 秒の無操作の後の自動保存 + journal からの復元」（p005 で実装）。
+  Ctrl+N は新しい page（1 つの process は 1 つの notebook）。PDF の中に見える名前は Kei に改める: `/Producer (Kei Notes)`、添付は
+  `kei-notes.bin`・`application/x-kei-notes`（まだ外に出た file は無いので互換は要らない）。
