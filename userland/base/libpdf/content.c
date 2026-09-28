@@ -300,10 +300,18 @@ static void concat_matrix(double ctm[6], const double matrix[6]);
 static int read_numbers(const struct content_run *run, size_t count, double *numbers);
 static void set_dash(struct content_state *state, const struct pdf_object *array, double phase);
 static void apply_extgstate(struct content_run *run, struct pdf_object *resources);
+static int state_number(struct content_run *run, struct pdf_object *dictionary, const char *key, double *number);
+static int state_integer(struct content_run *run, struct pdf_object *dictionary, const char *key, long *integer);
+static void state_dash(struct content_run *run, struct pdf_object *dictionary);
+static void state_blend(struct content_run *run, struct pdf_object *dictionary);
+static void apply_blend(struct content_run *run, struct pdf_object *mode);
+static int blend_known(struct pdf_object *mode);
 static int find_resource(struct content_run *run, struct pdf_object *resources, const char *category, struct pdf_object **found);
 static int space_components(struct content_run *run, struct pdf_object *resources, int *components);
+static int device_components(const unsigned char *name, size_t length);
 static void set_color(struct content_run *run, int stroke, int components, const double *values);
 static int path_add(struct content_run *run, enum pdf_path_verb verb, const double *coordinates, size_t count);
+static int add_rectangle(struct content_run *run, double left, double bottom, double right, double top);
 static void path_clear(struct content_run *run);
 static void paint_path(struct content_run *run, int fill, enum pdf_fill_rule rule, int stroke);
 static void fill_path(struct content_run *run, enum pdf_fill_rule rule);
@@ -458,7 +466,11 @@ read_contents(
 	for (item = 0; item < contents->count; item++) {
 		/* Finds the stream; a missing or malformed one ends the content. */
 		error = pdf_reader_resolve(document, contents->values[item], &stream);
-		if (error != 0 || stream->type != PDF_OBJECT_STREAM) {
+		if (error != 0) {
+			*flags |= PDF_DISPLAY_DAMAGED;
+			return 0;
+		}
+		if (stream->type != PDF_OBJECT_STREAM) {
 			*flags |= PDF_DISPLAY_DAMAGED;
 			return 0;
 		}
@@ -810,31 +822,46 @@ execute_state(
 			concat_matrix(state->ctm, numbers);
 		break;
 	case OP_LINE_WIDTH:
+		/* A width that is not negative. */
 		error = read_numbers(run, 1, numbers);
-		if (error == 0 && numbers[0] >= 0.0)
+		if (error != 0)
+			break;
+		if (numbers[0] >= 0.0)
 			state->line_width = numbers[0];
 		break;
 	case OP_LINE_CAP:
+		/* One of the three caps. */
 		error = read_numbers(run, 1, numbers);
-		if (error == 0 && numbers[0] >= 0.0 && numbers[0] <= 2.0)
+		if (error != 0)
+			break;
+		if (numbers[0] >= 0.0 && numbers[0] <= 2.0)
 			state->line_cap = (int)numbers[0];
 		break;
 	case OP_LINE_JOIN:
+		/* One of the three joins. */
 		error = read_numbers(run, 1, numbers);
-		if (error == 0 && numbers[0] >= 0.0 && numbers[0] <= 2.0)
+		if (error != 0)
+			break;
+		if (numbers[0] >= 0.0 && numbers[0] <= 2.0)
 			state->line_join = (int)numbers[0];
 		break;
 	case OP_MITER_LIMIT:
+		/* A limit of at least 1. */
 		error = read_numbers(run, 1, numbers);
-		if (error == 0 && numbers[0] >= 1.0)
+		if (error != 0)
+			break;
+		if (numbers[0] >= 1.0)
 			state->miter_limit = numbers[0];
 		break;
 	case OP_DASH:
 		/* An array and a phase. */
-		if (run->operand_count == 2 &&
-		    run->operands[0].type == OPERAND_OTHER &&
-		    run->operands[1].type == OPERAND_NUMBER)
-			set_dash(state, run->operands[0].object, run->operands[1].number);
+		if (run->operand_count != 2)
+			break;
+		if (run->operands[0].type != OPERAND_OTHER)
+			break;
+		if (run->operands[1].type != OPERAND_NUMBER)
+			break;
+		set_dash(state, run->operands[0].object, run->operands[1].number);
 		break;
 	case OP_EXTGSTATE:
 		apply_extgstate(run, resources);
@@ -852,7 +879,6 @@ execute_path(
 {
 	struct content_path *path;
 	double numbers[6];
-	double corners[8];
 	int error;
 
 	/* The path being built. */
@@ -867,32 +893,42 @@ execute_path(
 			error = path_add(run, PDF_PATH_MOVE, numbers, 1);
 		break;
 	case OP_LINE:
+		/* A line from the current point, which it needs. */
 		error = read_numbers(run, 2, numbers);
-		if (error == 0 && path->has_current)
+		if (error != 0)
+			break;
+		if (path->has_current)
 			error = path_add(run, PDF_PATH_LINE, numbers, 1);
 		break;
 	case OP_CURVE:
+		/* A curve from the current point, which it needs. */
 		error = read_numbers(run, 6, numbers);
-		if (error == 0 && path->has_current)
+		if (error != 0)
+			break;
+		if (path->has_current)
 			error = path_add(run, PDF_PATH_CUBIC, numbers, 3);
 		break;
 	case OP_CURVE_V:
 		/* The first control point is the current point. */
 		error = read_numbers(run, 4, numbers + 2);
-		if (error == 0 && path->has_current) {
-			numbers[0] = path->current.x;
-			numbers[1] = path->current.y;
-			error = path_add(run, PDF_PATH_CUBIC, numbers, 3);
-		}
+		if (error != 0)
+			break;
+		if (!path->has_current)
+			break;
+		numbers[0] = path->current.x;
+		numbers[1] = path->current.y;
+		error = path_add(run, PDF_PATH_CUBIC, numbers, 3);
 		break;
 	case OP_CURVE_Y:
 		/* The second control point is the end point. */
 		error = read_numbers(run, 4, numbers);
-		if (error == 0 && path->has_current) {
-			numbers[4] = numbers[2];
-			numbers[5] = numbers[3];
-			error = path_add(run, PDF_PATH_CUBIC, numbers, 3);
-		}
+		if (error != 0)
+			break;
+		if (!path->has_current)
+			break;
+		numbers[4] = numbers[2];
+		numbers[5] = numbers[3];
+		error = path_add(run, PDF_PATH_CUBIC, numbers, 3);
 		break;
 	case OP_CLOSE:
 		if (path->has_current)
@@ -903,23 +939,7 @@ execute_path(
 		error = read_numbers(run, 4, numbers);
 		if (error != 0)
 			break;
-		corners[0] = numbers[0];
-		corners[1] = numbers[1];
-		corners[2] = numbers[0] + numbers[2];
-		corners[3] = numbers[1];
-		corners[4] = numbers[0] + numbers[2];
-		corners[5] = numbers[1] + numbers[3];
-		corners[6] = numbers[0];
-		corners[7] = numbers[1] + numbers[3];
-		error = path_add(run, PDF_PATH_MOVE, corners, 1);
-		if (error == 0)
-			error = path_add(run, PDF_PATH_LINE, corners + 2, 1);
-		if (error == 0)
-			error = path_add(run, PDF_PATH_LINE, corners + 4, 1);
-		if (error == 0)
-			error = path_add(run, PDF_PATH_LINE, corners + 6, 1);
-		if (error == 0)
-			error = path_add(run, PDF_PATH_CLOSE, corners, 0);
+		error = add_rectangle(run, numbers[0], numbers[1], numbers[0] + numbers[2], numbers[1] + numbers[3]);
 		break;
 	default:
 		break;
@@ -1257,79 +1277,241 @@ apply_extgstate(
 	struct content_state *state;
 	struct pdf_object *dictionary;
 	struct pdf_object *value;
-	struct pdf_object *mode;
-	struct pdf_object *phase;
 	double number;
-	size_t index;
-	int is_name;
+	long integer;
+	int found;
 	int error;
 
 	/* Finds the named ExtGState; a missing one does nothing. */
 	state = &run->stack[run->depth];
 	error = find_resource(run, resources, "ExtGState", &dictionary);
-	if (error != 0 || dictionary->type != PDF_OBJECT_DICTIONARY)
+	if (error != 0)
+		return;
+	if (dictionary->type != PDF_OBJECT_DICTIONARY)
 		return;
 
-	/* The fill and stroke alphas. */
-	error = pdf_reader_resolve_key(run->document, dictionary, "ca", &value);
-	if (error == 0 && pdf_object_number(value, &number) == 0)
+	/* The fill alpha. */
+	found = state_number(run, dictionary, "ca", &number);
+	if (found)
 		state->fill_alpha = clamp_unit(number);
-	error = pdf_reader_resolve_key(run->document, dictionary, "CA", &value);
-	if (error == 0 && pdf_object_number(value, &number) == 0)
+
+	/* The stroke alpha. */
+	found = state_number(run, dictionary, "CA", &number);
+	if (found)
 		state->stroke_alpha = clamp_unit(number);
 
-	/* The line style. */
-	error = pdf_reader_resolve_key(run->document, dictionary, "LW", &value);
-	if (error == 0 && pdf_object_number(value, &number) == 0 && number >= 0.0)
+	/* The line width, which cannot be negative. */
+	found = state_number(run, dictionary, "LW", &number);
+	if (found && number >= 0.0)
 		state->line_width = number;
-	error = pdf_reader_resolve_key(run->document, dictionary, "LC", &value);
-	if (error == 0 && value->type == PDF_OBJECT_INTEGER && value->integer >= 0 && value->integer <= 2)
-		state->line_cap = (int)value->integer;
-	error = pdf_reader_resolve_key(run->document, dictionary, "LJ", &value);
-	if (error == 0 && value->type == PDF_OBJECT_INTEGER && value->integer >= 0 && value->integer <= 2)
-		state->line_join = (int)value->integer;
-	error = pdf_reader_resolve_key(run->document, dictionary, "ML", &value);
-	if (error == 0 && pdf_object_number(value, &number) == 0 && number >= 1.0)
-		state->miter_limit = number;
-	error = pdf_reader_resolve_key(run->document, dictionary, "D", &value);
-	if (error == 0 && value->type == PDF_OBJECT_ARRAY && value->count == 2) {
-		error = pdf_reader_resolve(run->document, value->values[1], &phase);
-		if (error == 0 && pdf_object_number(phase, &number) == 0) {
-			error = pdf_reader_resolve(run->document, value->values[0], &mode);
-			if (error == 0)
-				set_dash(state, mode, number);
-		}
-	}
 
-	/* The blend mode: a name, or an array whose first known name wins. */
-	error = pdf_reader_resolve_key(run->document, dictionary, "BM", &value);
-	if (error == 0 && value->type != PDF_OBJECT_NULL) {
-		mode = value;
-		if (value->type == PDF_OBJECT_ARRAY && value->count > 0)
-			(void)pdf_reader_resolve(run->document, value->values[0], &mode);
-		for (index = 0; value->type == PDF_OBJECT_ARRAY && index < value->count; index++) {
-			error = pdf_reader_resolve(run->document, value->values[index], &mode);
-			if (error != 0)
-				break;
-			is_name = pdf_object_is_name(mode, "Multiply");
-			if (is_name)
-				break;
-			is_name = pdf_object_is_name(mode, "Normal");
-			if (is_name)
-				break;
-		}
-		state->blend = PDF_BLEND_NORMAL;
-		is_name = pdf_object_is_name(mode, "Multiply");
-		if (is_name)
-			state->blend = PDF_BLEND_MULTIPLY;
-		if (!is_name && !pdf_object_is_name(mode, "Normal") && !pdf_object_is_name(mode, "Compatible"))
-			run->flags |= PDF_DISPLAY_SKIPPED;
-	}
+	/* The line cap, one of the three. */
+	found = state_integer(run, dictionary, "LC", &integer);
+	if (found && integer >= 0 && integer <= 2)
+		state->line_cap = (int)integer;
+
+	/* The line join, one of the three. */
+	found = state_integer(run, dictionary, "LJ", &integer);
+	if (found && integer >= 0 && integer <= 2)
+		state->line_join = (int)integer;
+
+	/* The miter limit, at least 1. */
+	found = state_number(run, dictionary, "ML", &number);
+	if (found && number >= 1.0)
+		state->miter_limit = number;
+
+	/* The dash pattern: an array and a phase. */
+	state_dash(run, dictionary);
+
+	/* The blend mode. */
+	state_blend(run, dictionary);
 
 	/* A soft mask is drawn from stage 3. */
 	error = pdf_reader_resolve_key(run->document, dictionary, "SMask", &value);
-	if (error == 0 && value->type != PDF_OBJECT_NULL && !pdf_object_is_name(value, "None"))
+	if (error != 0)
+		return;
+	if (value->type == PDF_OBJECT_NULL)
+		return;
+	found = pdf_object_is_name(value, "None");
+	if (!found)
 		run->flags |= PDF_DISPLAY_SKIPPED;
+}
+
+/* Reads a number of an ExtGState; reports whether it has one. */
+static int
+state_number(
+	struct content_run *run,
+	struct pdf_object *dictionary,
+	const char *key,
+	double *number)
+{
+	struct pdf_object *value;
+	int error;
+
+	/* Finds the key's value. */
+	error = pdf_reader_resolve_key(run->document, dictionary, key, &value);
+	if (error != 0)
+		return 0;
+
+	/* Only a number counts. */
+	error = pdf_object_number(value, number);
+	if (error != 0)
+		return 0;
+
+	/* The ExtGState has the number. */
+	return 1;
+}
+
+/* Reads an integer of an ExtGState; reports whether it has one. */
+static int
+state_integer(
+	struct content_run *run,
+	struct pdf_object *dictionary,
+	const char *key,
+	long *integer)
+{
+	struct pdf_object *value;
+	int error;
+
+	/* Finds the key's value. */
+	error = pdf_reader_resolve_key(run->document, dictionary, key, &value);
+	if (error != 0)
+		return 0;
+
+	/* Only an integer counts. */
+	if (value->type != PDF_OBJECT_INTEGER)
+		return 0;
+
+	/* The ExtGState has the integer. */
+	*integer = value->integer;
+	return 1;
+}
+
+/* Applies an ExtGState's dash pattern (D: an array and a phase), when it has a usable one. */
+static void
+state_dash(
+	struct content_run *run,
+	struct pdf_object *dictionary)
+{
+	struct pdf_object *value;
+	struct pdf_object *pattern;
+	struct pdf_object *phase;
+	double number;
+	int error;
+
+	/* The value must be a pair. */
+	error = pdf_reader_resolve_key(run->document, dictionary, "D", &value);
+	if (error != 0)
+		return;
+	if (value->type != PDF_OBJECT_ARRAY)
+		return;
+	if (value->count != 2)
+		return;
+
+	/* Its phase, a number. */
+	error = pdf_reader_resolve(run->document, value->values[1], &phase);
+	if (error != 0)
+		return;
+	error = pdf_object_number(phase, &number);
+	if (error != 0)
+		return;
+
+	/* Its pattern, which set_dash checks. */
+	error = pdf_reader_resolve(run->document, value->values[0], &pattern);
+	if (error != 0)
+		return;
+	set_dash(&run->stack[run->depth], pattern, number);
+}
+
+/*
+ * Applies an ExtGState's blend mode (BM): a name, or an array whose first
+ * mode the interpreter draws wins.  Normal and Compatible draw normally,
+ * Multiply multiplies; any other mode draws normally and the list says so.
+ */
+static void
+state_blend(
+	struct content_run *run,
+	struct pdf_object *dictionary)
+{
+	struct pdf_object *value;
+	struct pdf_object *mode;
+	size_t index;
+	int known;
+	int error;
+
+	/* No mode leaves the blend mode as it is. */
+	error = pdf_reader_resolve_key(run->document, dictionary, "BM", &value);
+	if (error != 0)
+		return;
+	if (value->type == PDF_OBJECT_NULL)
+		return;
+
+	/* A name is the mode itself. */
+	if (value->type != PDF_OBJECT_ARRAY) {
+		apply_blend(run, value);
+		return;
+	}
+
+	/* An array's first mode the interpreter knows. */
+	for (index = 0; index < value->count; index++) {
+		error = pdf_reader_resolve(run->document, value->values[index], &mode);
+		if (error != 0)
+			return;
+		known = blend_known(mode);
+		if (known) {
+			apply_blend(run, mode);
+			return;
+		}
+	}
+
+	/* An array of unknown modes draws normally. */
+	run->stack[run->depth].blend = PDF_BLEND_NORMAL;
+	run->flags |= PDF_DISPLAY_SKIPPED;
+}
+
+/* Sets the blend mode a name gives; an unknown one draws normally and marks the list. */
+static void
+apply_blend(
+	struct content_run *run,
+	struct pdf_object *mode)
+{
+	int is_multiply;
+	int known;
+
+	/* Multiply multiplies. */
+	is_multiply = pdf_object_is_name(mode, "Multiply");
+	if (is_multiply) {
+		run->stack[run->depth].blend = PDF_BLEND_MULTIPLY;
+		return;
+	}
+
+	/* Everything else draws normally; a mode other than Normal is left out. */
+	run->stack[run->depth].blend = PDF_BLEND_NORMAL;
+	known = blend_known(mode);
+	if (!known)
+		run->flags |= PDF_DISPLAY_SKIPPED;
+}
+
+/* Tells whether a blend mode is one the interpreter draws (Normal, Compatible, Multiply). */
+static int
+blend_known(
+	struct pdf_object *mode)
+{
+	int is_name;
+
+	/* The three names. */
+	is_name = pdf_object_is_name(mode, "Normal");
+	if (is_name)
+		return 1;
+	is_name = pdf_object_is_name(mode, "Compatible");
+	if (is_name)
+		return 1;
+	is_name = pdf_object_is_name(mode, "Multiply");
+	if (is_name)
+		return 1;
+
+	/* Any other mode. */
+	return 0;
 }
 
 /*
@@ -1346,6 +1528,7 @@ find_resource(
 	const struct content_operand *operand;
 	struct pdf_object *dictionary;
 	size_t index;
+	int differs;
 	int error;
 
 	/* The name is the last operand. */
@@ -1356,7 +1539,9 @@ find_resource(
 		return PDF_EFORMAT;
 
 	/* Finds the category's dictionary. */
-	if (resources == NULL || resources->type != PDF_OBJECT_DICTIONARY)
+	if (resources == NULL)
+		return ENOENT;
+	if (resources->type != PDF_OBJECT_DICTIONARY)
 		return ENOENT;
 	error = pdf_reader_resolve_key(run->document, resources, category, &dictionary);
 	if (error != 0)
@@ -1368,7 +1553,8 @@ find_resource(
 	for (index = 0; index < dictionary->count; index++) {
 		if (dictionary->keys[index]->length != operand->length)
 			continue;
-		if (memcmp(dictionary->keys[index]->bytes, operand->bytes, operand->length) != 0)
+		differs = memcmp(dictionary->keys[index]->bytes, operand->bytes, operand->length);
+		if (differs != 0)
 			continue;
 		error = pdf_reader_resolve(run->document, dictionary->values[index], found);
 		if (error != 0)
@@ -1405,42 +1591,23 @@ space_components(
 		return PDF_EFORMAT;
 
 	/* The device spaces by name. */
-	if (operand->length == 10 && memcmp(operand->bytes, "DeviceGray", 10) == 0) {
-		*components = 1;
+	*components = device_components(operand->bytes, operand->length);
+	if (*components != 0)
 		return 0;
-	}
-	if (operand->length == 9 && memcmp(operand->bytes, "DeviceRGB", 9) == 0) {
-		*components = 3;
-		return 0;
-	}
-	if (operand->length == 10 && memcmp(operand->bytes, "DeviceCMYK", 10) == 0) {
-		*components = 4;
-		return 0;
-	}
 
-	/* Any other name is a resource: an array whose family decides. */
+	/* Any other name is a resource: a device space's name, or an array whose family decides. */
 	error = find_resource(run, resources, "ColorSpace", &space);
 	if (error != 0)
 		return error;
 	if (space->type == PDF_OBJECT_NAME) {
-		is_name = pdf_object_is_name(space, "DeviceGray");
-		if (is_name) {
-			*components = 1;
-			return 0;
-		}
-		is_name = pdf_object_is_name(space, "DeviceRGB");
-		if (is_name) {
-			*components = 3;
-			return 0;
-		}
-		is_name = pdf_object_is_name(space, "DeviceCMYK");
-		if (is_name) {
-			*components = 4;
-			return 0;
-		}
-		return ENOTSUP;
+		*components = device_components(space->bytes, space->length);
+		if (*components == 0)
+			return ENOTSUP;
+		return 0;
 	}
-	if (space->type != PDF_OBJECT_ARRAY || space->count == 0)
+	if (space->type != PDF_OBJECT_ARRAY)
+		return PDF_EFORMAT;
+	if (space->count == 0)
 		return PDF_EFORMAT;
 	error = pdf_reader_resolve(run->document, space->values[0], &family);
 	if (error != 0)
@@ -1460,7 +1627,9 @@ space_components(
 
 	/* An ICC-based space by its profile's component count; anything else is from later stages. */
 	is_name = pdf_object_is_name(family, "ICCBased");
-	if (!is_name || space->count < 2)
+	if (!is_name)
+		return ENOTSUP;
+	if (space->count < 2)
 		return ENOTSUP;
 	error = pdf_reader_resolve(run->document, space->values[1], &family);
 	if (error != 0)
@@ -1472,11 +1641,46 @@ space_components(
 		return error;
 	if (count->type != PDF_OBJECT_INTEGER)
 		return PDF_EFORMAT;
-	if (count->integer != 1 && count->integer != 3 && count->integer != 4)
+	if (count->integer != 1 &&
+	    count->integer != 3 &&
+	    count->integer != 4)
 		return ENOTSUP;
 
 	/* Succeeded: the space's component count. */
 	*components = (int)count->integer;
+	return 0;
+}
+
+/* Tells how many components a device colour space's name has (0 for another name). */
+static int
+device_components(
+	const unsigned char *name,
+	size_t length)
+{
+	int differs;
+
+	/* DeviceGray. */
+	if (length == 10) {
+		differs = memcmp(name, "DeviceGray", 10);
+		if (differs == 0)
+			return 1;
+	}
+
+	/* DeviceRGB. */
+	if (length == 9) {
+		differs = memcmp(name, "DeviceRGB", 9);
+		if (differs == 0)
+			return 3;
+	}
+
+	/* DeviceCMYK. */
+	if (length == 10) {
+		differs = memcmp(name, "DeviceCMYK", 10);
+		if (differs == 0)
+			return 4;
+	}
+
+	/* Another name. */
 	return 0;
 }
 
@@ -1533,15 +1737,21 @@ path_add(
 	double start[2];
 	size_t capacity;
 	size_t index;
+	int after_close;
 	int error;
 
-	/* A close right after a close adds nothing. */
+	/* Whether the path's last segment closed its subpath. */
 	path = &run->path;
-	if (verb == PDF_PATH_CLOSE && path->verb_count > 0 && path->verbs[path->verb_count - 1] == PDF_PATH_CLOSE)
+	after_close = 0;
+	if (path->verb_count > 0 && path->verbs[path->verb_count - 1] == PDF_PATH_CLOSE)
+		after_close = 1;
+
+	/* A close right after a close adds nothing. */
+	if (verb == PDF_PATH_CLOSE && after_close)
 		return 0;
 
-	/* A segment after a close starts a new subpath at the closed subpath's start, as PDF defines. */
-	if (verb != PDF_PATH_MOVE && verb != PDF_PATH_CLOSE && path->verb_count > 0 && path->verbs[path->verb_count - 1] == PDF_PATH_CLOSE) {
+	/* A line or a curve after a close starts a new subpath at the closed subpath's start, as PDF defines. */
+	if (after_close && (verb == PDF_PATH_LINE || verb == PDF_PATH_CUBIC)) {
 		start[0] = path->start.x;
 		start[1] = path->start.y;
 		error = path_add(run, PDF_PATH_MOVE, start, 1);
@@ -1601,6 +1811,53 @@ path_add(
 	path->has_current = 1;
 
 	/* Succeeded: the segment is part of the path. */
+	return 0;
+}
+
+/* Adds a closed rectangle subpath from one corner to the opposite one. */
+static int
+add_rectangle(
+	struct content_run *run,
+	double left,
+	double bottom,
+	double right,
+	double top)
+{
+	double corners[8];
+	int error;
+
+	/* The corners from the first, around. */
+	corners[0] = left;
+	corners[1] = bottom;
+	corners[2] = right;
+	corners[3] = bottom;
+	corners[4] = right;
+	corners[5] = top;
+	corners[6] = left;
+	corners[7] = top;
+
+	/* The move to the first corner. */
+	error = path_add(run, PDF_PATH_MOVE, corners, 1);
+	if (error != 0)
+		return error;
+
+	/* The three sides to the other corners. */
+	error = path_add(run, PDF_PATH_LINE, corners + 2, 1);
+	if (error != 0)
+		return error;
+	error = path_add(run, PDF_PATH_LINE, corners + 4, 1);
+	if (error != 0)
+		return error;
+	error = path_add(run, PDF_PATH_LINE, corners + 6, 1);
+	if (error != 0)
+		return error;
+
+	/* The close back to the first corner. */
+	error = path_add(run, PDF_PATH_CLOSE, corners, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the rectangle is a subpath. */
 	return 0;
 }
 
@@ -1851,7 +2108,11 @@ draw_xobject(
 
 	/* Finds the XObject; a missing one is left out. */
 	error = find_resource(run, resources, "XObject", &xobject);
-	if (error != 0 || xobject->type != PDF_OBJECT_STREAM) {
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return;
+	}
+	if (xobject->type != PDF_OBJECT_STREAM) {
 		run->flags |= PDF_DISPLAY_SKIPPED;
 		return;
 	}
@@ -1935,7 +2196,6 @@ run_form(
 	unsigned char *owned;
 	double matrix[6];
 	double box[4];
-	double corners[8];
 	size_t data_size;
 	size_t saved_base;
 	size_t saved_ignored;
@@ -1962,7 +2222,9 @@ run_form(
 	matrix[4] = 0.0;
 	matrix[5] = 0.0;
 	error = pdf_reader_resolve_key(run->document, form, "Matrix", &matrix_object);
-	if (error == 0 && matrix_object->type == PDF_OBJECT_ARRAY && matrix_object->count == 6) {
+	if (error != 0)
+		return;
+	if (matrix_object->type == PDF_OBJECT_ARRAY && matrix_object->count == 6) {
 		for (index = 0; index < 6; index++) {
 			error = pdf_object_number(matrix_object->values[index], &matrix[index]);
 			if (error != 0)
@@ -1972,7 +2234,11 @@ run_form(
 
 	/* Reads its bounding box, which it needs. */
 	error = pdf_reader_resolve_key(run->document, form, "BBox", &box_object);
-	if (error != 0 || box_object->type != PDF_OBJECT_ARRAY || box_object->count != 4) {
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_DAMAGED;
+		return;
+	}
+	if (box_object->type != PDF_OBJECT_ARRAY || box_object->count != 4) {
 		run->flags |= PDF_DISPLAY_DAMAGED;
 		return;
 	}
@@ -1986,7 +2252,9 @@ run_form(
 
 	/* Its resources, or the caller's. */
 	error = pdf_reader_resolve_key(run->document, form, "Resources", &form_resources);
-	if (error != 0 || form_resources->type != PDF_OBJECT_DICTIONARY)
+	if (error != 0)
+		form_resources = resources;
+	else if (form_resources->type != PDF_OBJECT_DICTIONARY)
 		form_resources = resources;
 
 	/* Decodes its content; one that cannot be decoded is left out. */
@@ -2011,24 +2279,8 @@ run_form(
 
 	/* Applies the form's matrix and clips to its bounding box. */
 	concat_matrix(run->stack[run->depth].ctm, matrix);
-	corners[0] = box[0];
-	corners[1] = box[1];
-	corners[2] = box[2];
-	corners[3] = box[1];
-	corners[4] = box[2];
-	corners[5] = box[3];
-	corners[6] = box[0];
-	corners[7] = box[3];
 	path_clear(run);
-	error = path_add(run, PDF_PATH_MOVE, corners, 1);
-	if (error == 0)
-		error = path_add(run, PDF_PATH_LINE, corners + 2, 1);
-	if (error == 0)
-		error = path_add(run, PDF_PATH_LINE, corners + 4, 1);
-	if (error == 0)
-		error = path_add(run, PDF_PATH_LINE, corners + 6, 1);
-	if (error == 0)
-		error = path_add(run, PDF_PATH_CLOSE, corners, 0);
+	error = add_rectangle(run, box[0], box[1], box[2], box[3]);
 	if (error == 0) {
 		run->clip_pending = 1;
 		run->clip_rule = PDF_FILL_NONZERO;

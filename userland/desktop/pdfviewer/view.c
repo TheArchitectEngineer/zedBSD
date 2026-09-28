@@ -419,6 +419,7 @@ pv_app_prefetch(
 	size_t index;
 	size_t page;
 	double scale;
+	double difference;
 	int error;
 
 	/* Nothing while there is no document, or while the view moves. */
@@ -445,8 +446,11 @@ pv_app_prefetch(
 	for (index = 0; index < count; index++) {
 		scale = pv_app_scale(app, candidates[index]);
 		candidate = &app->document.pages[candidates[index]];
-		if (candidate->raster != NULL && fabs(candidate->raster_scale - scale) < 1e-6)
-			continue;
+		if (candidate->raster != NULL) {
+			difference = candidate->raster_scale - scale;
+			if (difference < 1e-6 && difference > -1e-6)
+				continue;
+		}
 		error = pv_document_raster(&app->document, candidates[index], scale, &shown);
 		if (error != 0)
 			return 0;
@@ -1061,6 +1065,8 @@ handle_motion(
 {
 	int moved_x;
 	int moved_y;
+	int distance_x;
+	int distance_y;
 	uint64_t elapsed;
 
 	/* Only a press drags. */
@@ -1070,11 +1076,17 @@ handle_motion(
 	moved_y = event->y - app->press_y;
 
 	/* The drag starts once the pointer has moved far enough; the page mode chooses sideways or along. */
+	distance_x = moved_x;
+	if (distance_x < 0)
+		distance_x = -distance_x;
+	distance_y = moved_y;
+	if (distance_y < 0)
+		distance_y = -distance_y;
 	if (app->dragging == 0) {
-		if (abs(moved_x) < VIEW_DRAG_START && abs(moved_y) < VIEW_DRAG_START)
+		if (distance_x < VIEW_DRAG_START && distance_y < VIEW_DRAG_START)
 			return;
 		app->dragging = 2;
-		if (app->mode == PV_MODE_PAGE && abs(moved_x) >= abs(moved_y))
+		if (app->mode == PV_MODE_PAGE && distance_x >= distance_y)
 			app->dragging = 1;
 	}
 
@@ -1169,6 +1181,7 @@ chooser_key(
 	int y;
 	int width;
 	int height;
+	int differs;
 	size_t rows;
 
 	/* Moves the selection, keeping it in view. */
@@ -1187,10 +1200,14 @@ chooser_key(
 		chooser_choose(app);
 		return;
 	case PV_KEY_BACKSPACE:
-		/* The parent folder is the first entry. */
+		/* The parent folder is the first entry (the root has none). */
+		if (chooser->count == 0)
+			return;
+		differs = strcmp(chooser->entries[0].name, "..");
+		if (differs != 0)
+			return;
 		chooser->selected = 0;
-		if (chooser->count > 0 && strcmp(chooser->entries[0].name, "..") == 0)
-			chooser_choose(app);
+		chooser_choose(app);
 		return;
 	case PV_KEY_ESCAPE:
 		app->choosing = 0;

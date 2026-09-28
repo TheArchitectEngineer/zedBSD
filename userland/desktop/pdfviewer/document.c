@@ -31,6 +31,7 @@
 /* The white of a page. */
 #define DOCUMENT_PAGE_WHITE	0xffffffffU
 
+static int usable_size(double width, double height);
 static void drop_raster(struct pv_document *document, struct pv_page *page);
 static void evict(struct pv_document *document, size_t needed, size_t keep);
 
@@ -48,6 +49,7 @@ pv_document_open(
 {
 	struct pdf_page_box box;
 	size_t index;
+	int usable;
 	int error;
 
 	/* Starts with nothing open. */
@@ -80,9 +82,12 @@ pv_document_open(
 		document->pages[index].width = 595.276;
 		document->pages[index].height = 841.89;
 		error = pdf_document_page_box(document->document, index, &box);
-		if (error == 0 && box.width >= 1.0 && box.height >= 1.0 && box.width < 20000.0 && box.height < 20000.0) {
-			document->pages[index].width = box.width;
-			document->pages[index].height = box.height;
+		if (error == 0) {
+			usable = usable_size(box.width, box.height);
+			if (usable) {
+				document->pages[index].width = box.width;
+				document->pages[index].height = box.height;
+			}
 		}
 		if (document->pages[index].width > document->widest)
 			document->widest = document->pages[index].width;
@@ -137,6 +142,7 @@ pv_document_raster(
 	struct pv_page *page;
 	uint32_t *pixels;
 	uint64_t started;
+	double difference;
 	size_t count;
 	size_t cell;
 	int width;
@@ -167,8 +173,11 @@ pv_document_raster(
 	}
 
 	/* A raster at the scale is kept. */
-	if (page->raster != NULL && fabs(page->raster_scale - scale) < 1e-6)
-		return 0;
+	if (page->raster != NULL) {
+		difference = page->raster_scale - scale;
+		if (difference < 1e-6 && difference > -1e-6)
+			return 0;
+	}
 
 	/* Keeps the raster within the largest side. */
 	if (page->width * scale > (double)DOCUMENT_RASTER_SIDE)
@@ -234,6 +243,24 @@ pv_document_trim(
 			continue;
 		drop_raster(document, &document->pages[index]);
 	}
+}
+
+/* Tells whether a page's shown size is one the viewer can lay out (1 to 20,000 points a side). */
+static int
+usable_size(
+	double width,
+	double height)
+{
+	/* Too small, or not a number. */
+	if (!(width >= 1.0 && height >= 1.0))
+		return 0;
+
+	/* Too large. */
+	if (width >= 20000.0 || height >= 20000.0)
+		return 0;
+
+	/* A size to lay out. */
+	return 1;
 }
 
 /* Frees a page's raster and uncounts its bytes. */

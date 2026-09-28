@@ -46,6 +46,9 @@
 /* The most corners one piece of the outline has: a half circle's chords, the centre and the ends. */
 #define PDF_STROKE_PIECE_MAX (2 * PDF_STROKE_ARC_CHORDS + 8)
 
+/* The most dash pattern entries one stroke walks through (a pattern of tiny entries on a long line stops there). */
+#define PDF_STROKE_DASHES_MAX ((size_t)1 << 20)
+
 /* The first capacity of the growing point arrays. */
 #define PDF_STROKE_INITIAL 256
 
@@ -77,7 +80,8 @@ struct stroke_output {
 
 /*
  * A dash pattern while a polyline is walked: the pattern, the entry in
- * force, how much of it is left, and whether it is a dash (on) or a gap.
+ * force, how much of it is left, whether it is a dash (on) or a gap, and
+ * how many entries the stroke has walked through (bounded).
  */
 struct stroke_dash {
 	const double *pattern;
@@ -85,6 +89,7 @@ struct stroke_dash {
 	size_t index;
 	double left;
 	int on;
+	size_t entries;
 };
 
 static int flatten_subpath(const unsigned char *verbs, size_t verb_count, const struct pdf_point *points, size_t point_count, size_t *verb_index, size_t *point_index, double tolerance, struct stroke_line *line);
@@ -92,6 +97,9 @@ static int line_append(struct stroke_line *line, double x, double y);
 static int flatten_cubic(struct stroke_line *line, const struct pdf_point *start, const struct pdf_point *control, double tolerance);
 static int stroke_line(const struct stroke_line *line, const struct pdf_stroke_style *style, struct stroke_output *output);
 static int stroke_dashed(const struct stroke_line *line, const struct pdf_stroke_style *style, struct stroke_output *output);
+static int dash_segment(const struct pdf_point *from, const struct pdf_point *to, const struct pdf_stroke_style *style, struct stroke_dash *dash, struct stroke_line *dash_line, struct stroke_output *output);
+static int end_dash(struct stroke_line *dash_line, const struct pdf_stroke_style *style, struct stroke_output *output);
+static int same_point(const struct pdf_point *point, double x, double y);
 static int stroke_open(const struct pdf_point *points, size_t count, int closed, const struct pdf_stroke_style *style, struct stroke_output *output);
 static int stroke_dot(const struct pdf_point *point, const struct pdf_stroke_style *style, struct stroke_output *output);
 static int emit_segment(const struct pdf_point *from, const struct pdf_point *to, double half, struct stroke_output *output);
@@ -252,10 +260,12 @@ line_append(
 {
 	struct pdf_point *grown;
 	size_t capacity;
+	int repeated;
 
 	/* Skips a point on top of the last one. */
 	if (line->count > 0) {
-		if (fabs(line->points[line->count - 1].x - x) < 1e-9 && fabs(line->points[line->count - 1].y - y) < 1e-9)
+		repeated = same_point(&line->points[line->count - 1], x, y);
+		if (repeated)
 			return 0;
 	}
 
@@ -297,6 +307,7 @@ flatten_cubic(
 	double first_y;
 	double second_x;
 	double second_y;
+	double second;
 	double largest;
 	double t;
 	double u;
@@ -312,8 +323,9 @@ flatten_cubic(
 	second_x = control[0].x - 2.0 * control[1].x + control[2].x;
 	second_y = control[0].y - 2.0 * control[1].y + control[2].y;
 	largest = sqrt(first_x * first_x + first_y * first_y);
-	if (sqrt(second_x * second_x + second_y * second_y) > largest)
-		largest = sqrt(second_x * second_x + second_y * second_y);
+	second = sqrt(second_x * second_x + second_y * second_y);
+	if (second > largest)
+		largest = second;
 
 	/* The pieces that keep the chords within the tolerance, between one and the limit. */
 	pieces = 1;
@@ -348,6 +360,7 @@ stroke_line(
 	struct stroke_output *output)
 {
 	size_t count;
+	int repeated;
 	int error;
 
 	/* A subpath without a segment draws nothing. */
@@ -372,11 +385,11 @@ stroke_line(
 
 	/* A closed subpath's last point may repeat its first, which the join then covers. */
 	count = line->count;
-	if (line->closed &&
-	    count > 2 &&
-	    fabs(line->points[count - 1].x - line->points[0].x) < 1e-9 &&
-	    fabs(line->points[count - 1].y - line->points[0].y) < 1e-9)
-		count--;
+	if (line->closed && count > 2) {
+		repeated = same_point(&line->points[0], line->points[count - 1].x, line->points[count - 1].y);
+		if (repeated)
+			count--;
+	}
 
 	/* Strokes the whole polyline. */
 	error = stroke_open(line->points, count, line->closed, style, output);
@@ -399,15 +412,8 @@ stroke_dashed(
 {
 	struct stroke_line dash_line;
 	struct stroke_dash dash;
-	struct pdf_point from;
-	struct pdf_point to;
 	size_t segments;
 	size_t segment;
-	double length;
-	double done;
-	double step;
-	double x;
-	double y;
 	int error;
 
 	/* Starts the pattern at the phase, with an empty dash. */
@@ -419,62 +425,151 @@ stroke_dashed(
 
 	/* Walks each segment, the closing one of a closed subpath too. */
 	error = 0;
-	for (segment = 0; segment < segments && error == 0; segment++) {
-		from = line->points[segment];
-		to = line->points[(segment + 1) % line->count];
-		length = sqrt((to.x - from.x) * (to.x - from.x) + (to.y - from.y) * (to.y - from.y));
-		done = 0.0;
-
-		/* Starts a dash that is on at the segment's start. */
-		if (dash.on && dash_line.count == 0)
-			error = line_append(&dash_line, from.x, from.y);
-
-		/* Walks the segment through the pattern's entries. */
-		while (error == 0 && done < length) {
-			/* Moves to the end of the entry or of the segment, whichever is first. */
-			step = length - done;
-			if (dash.left < step)
-				step = dash.left;
-			done += step;
-			dash.left -= step;
-			x = from.x + (to.x - from.x) * done / length;
-			y = from.y + (to.y - from.y) * done / length;
-
-			/* Extends a dash that is on. */
-			if (dash.on)
-				error = line_append(&dash_line, x, y);
-			if (error != 0)
-				break;
-
-			/* An entry used up turns the dash on or off. */
-			if (dash.left <= 1e-12) {
-				if (dash.on) {
-					/* A dash ends: its outline is added and a gap starts. */
-					dash_line.painted = 1;
-					error = stroke_open(dash_line.points, dash_line.count, 0, style, output);
-					if (error == 0 && dash_line.count < 2)
-						error = stroke_dot(&dash_line.points[0], style, output);
-					dash_line.count = 0;
-				} else {
-					/* A gap ends: a dash starts here. */
-					error = line_append(&dash_line, x, y);
-				}
-				dash.index = (dash.index + 1) % dash.count;
-				dash.left = dash.pattern[dash.index];
-				dash.on = !dash.on;
-			}
-		}
+	for (segment = 0; segment < segments; segment++) {
+		error = dash_segment(&line->points[segment], &line->points[(segment + 1) % line->count], style, &dash, &dash_line, output);
+		if (error != 0)
+			break;
 	}
 
 	/* The dash still on at the end is stroked too. */
-	if (error == 0 && dash.on && dash_line.count >= 2)
-		error = stroke_open(dash_line.points, dash_line.count, 0, style, output);
+	if (error == 0) {
+		if (dash.on && dash_line.count >= 2)
+			error = stroke_open(dash_line.points, dash_line.count, 0, style, output);
+	}
 	free(dash_line.points);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: every dash is added. */
 	return 0;
+}
+
+/*
+ * Walks one segment through the dash pattern: the parts under dashes join
+ * the dash being gathered, and each dash that ends is stroked.
+ */
+static int
+dash_segment(
+	const struct pdf_point *from,
+	const struct pdf_point *to,
+	const struct pdf_stroke_style *style,
+	struct stroke_dash *dash,
+	struct stroke_line *dash_line,
+	struct stroke_output *output)
+{
+	double length;
+	double done;
+	double step;
+	double x;
+	double y;
+	int error;
+
+	/* The segment's length. */
+	length = sqrt((to->x - from->x) * (to->x - from->x) + (to->y - from->y) * (to->y - from->y));
+
+	/* A dash that is on at the segment's start starts there. */
+	if (dash->on && dash_line->count == 0) {
+		error = line_append(dash_line, from->x, from->y);
+		if (error != 0)
+			return error;
+	}
+
+	/* Walks the segment through the pattern's entries. */
+	done = 0.0;
+	while (done < length) {
+		/* Moves to the end of the entry or of the segment, whichever is first. */
+		step = length - done;
+		if (dash->left < step)
+			step = dash->left;
+		done += step;
+		dash->left -= step;
+		x = from->x + (to->x - from->x) * done / length;
+		y = from->y + (to->y - from->y) * done / length;
+
+		/* Extends a dash that is on. */
+		if (dash->on) {
+			error = line_append(dash_line, x, y);
+			if (error != 0)
+				return error;
+		}
+
+		/* An entry not used up goes on into the next segment. */
+		if (dash->left > 1e-12)
+			continue;
+
+		/* An entry used up: a dash ends and is stroked, or a gap ends and a dash starts here. */
+		if (dash->on) {
+			error = end_dash(dash_line, style, output);
+		} else {
+			error = line_append(dash_line, x, y);
+		}
+		if (error != 0)
+			return error;
+
+		/* The next entry, which turns the dash on or off; too many entries stop the stroke. */
+		dash->entries++;
+		if (dash->entries > PDF_STROKE_DASHES_MAX)
+			return ENOMEM;
+		dash->index = (dash->index + 1) % dash->count;
+		dash->left = dash->pattern[dash->index];
+		dash->on = !dash->on;
+	}
+
+	/* Succeeded: the segment is walked. */
+	return 0;
+}
+
+/* Strokes a dash that ended (a dot when it has no length) and empties it. */
+static int
+end_dash(
+	struct stroke_line *dash_line,
+	const struct pdf_stroke_style *style,
+	struct stroke_output *output)
+{
+	int error;
+
+	/* A dash with a length is an open polyline with its caps. */
+	dash_line->painted = 1;
+	if (dash_line->count >= 2) {
+		error = stroke_open(dash_line->points, dash_line->count, 0, style, output);
+		if (error != 0)
+			return error;
+	}
+
+	/* A dash of no length is a dot, drawn by round and square caps. */
+	if (dash_line->count == 1) {
+		error = stroke_dot(&dash_line->points[0], style, output);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the next dash starts empty. */
+	dash_line->count = 0;
+	return 0;
+}
+
+/* Tells whether a point is at a place, within a rounding error. */
+static int
+same_point(
+	const struct pdf_point *point,
+	double x,
+	double y)
+{
+	double distance_x;
+	double distance_y;
+
+	/* Apart across. */
+	distance_x = fabs(point->x - x);
+	if (distance_x >= 1e-9)
+		return 0;
+
+	/* Apart along. */
+	distance_y = fabs(point->y - y);
+	if (distance_y >= 1e-9)
+		return 0;
+
+	/* The same place. */
+	return 1;
 }
 
 /*
@@ -670,7 +765,7 @@ emit_join(
 	/* A straight corner needs no join. */
 	cross = in_x * out_y - in_y * out_x;
 	dot = in_x * out_x + in_y * out_y;
-	if (fabs(cross) < 1e-12 && dot > 0.0)
+	if (cross < 1e-12 && cross > -1e-12 && dot > 0.0)
 		return 0;
 
 	/* The outer side: the normals' side opposite the turn. */
@@ -708,7 +803,9 @@ emit_join(
 	ratio = 0.0;
 	if (bisector > 1e-12)
 		ratio = 2.0 / bisector;
-	if (style->join == PDF_JOIN_MITER && bisector > 1e-12 && ratio <= style->miter_limit) {
+	if (style->join == PDF_JOIN_MITER &&
+	    bisector > 1e-12 &&
+	    ratio <= style->miter_limit) {
 		corners[2].x = at->x + bisector_x / bisector * half * ratio;
 		corners[2].y = at->y + bisector_y / bisector * half * ratio;
 		error = emit_polygon(corners, 4, output);
@@ -803,7 +900,7 @@ emit_arc(
 	/* A disc has no centre corner; a wedge starts at the centre. */
 	count = 0;
 	whole = 0;
-	if (fabs(sweep) >= 2.0 * PDF_STROKE_PI - 1e-9)
+	if (sweep >= 2.0 * PDF_STROKE_PI - 1e-9 || sweep <= -2.0 * PDF_STROKE_PI + 1e-9)
 		whole = 1;
 	if (!whole) {
 		corners[count] = *centre;
@@ -958,6 +1055,7 @@ dash_start(
 	dash->index = 0;
 	dash->left = dash->pattern[0];
 	dash->on = 1;
+	dash->entries = 0;
 
 	/* Walks the phase through the pattern (the caller made the pattern's total positive and the phase within it). */
 	phase = style->dash_phase;

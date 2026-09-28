@@ -76,7 +76,7 @@ cp /tmp/pdfviewer /bin/pdfviewer && cp /tmp/libpdf.so /lib/libpdf.so && cp /tmp/
 chmod 0755 /bin/pdfviewer /bin/files /bin/wayland && chmod 0644 /lib/libpdf.so && mkdir -p /etc/keiland /tmp/pvdir && cp /tmp/apps.conf /etc/keiland/apps.conf &&
 cp /tmp/notes.pdf /tmp/pvdir/notes.pdf && { [ ! -f /tmp/notes-program ] || { cp /tmp/notes-program /bin/notes && chmod 0755 /bin/notes; }; } && echo installed'
 		guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
-/bin/wayland --timeout=1800 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started'
+/bin/wayland --timeout=1800 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 7; echo started'
 		;;
 	home)
 		pointer move 23 17 sleep 300 down sleep 60 up sleep 1500 move 700 780 sleep 300

@@ -201,7 +201,9 @@ titlebar_build(
 	error = keiland_titlebar_set_mode(titlebar->titlebar, KEILAND_TITLEBAR_CONTROLS);
 
 	/* Each control. */
-	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]) && error == 0; index++) {
+	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
+		if (error != 0)
+			break;
 		control = &titlebar_controls[index];
 		error = keiland_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, control->group, control->label);
 	}
@@ -233,7 +235,34 @@ titlebar_state(
 {
 	struct keiland_titlebar *object;
 	char label[64];
+	int can_previous;
+	int can_next;
+	int scrolling;
+	int paging;
+	int fitting_width;
+	int fitting_page;
 	int error;
+
+	/* What the state allows and what it has chosen, as the controls show them. */
+	can_previous = 0;
+	if (state->has_document && state->page > 0)
+		can_previous = 1;
+	can_next = 0;
+	if (state->has_document && state->page + 1 < state->count)
+		can_next = 1;
+	scrolling = 0;
+	if (state->mode == PV_MODE_SCROLL)
+		scrolling = 1;
+	paging = 0;
+	if (state->mode == PV_MODE_PAGE)
+		paging = 1;
+	fitting_width = 0;
+	if (state->fit == PV_FIT_WIDTH)
+		fitting_width = 1;
+	fitting_page = 0;
+	if (state->fit == PV_FIT_PAGE)
+		fitting_page = 1;
+
 
 	/* Where the view is. */
 	snprintf(label, sizeof(label), "No document");
@@ -249,23 +278,23 @@ titlebar_state(
 	/* The page's text and the controls' states. */
 	error = keiland_titlebar_set_control_label(object, CONTROL_PAGE, label);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_PREVIOUS, state->has_document && state->page > 0, 0);
+		error = keiland_titlebar_set_control_state(object, CONTROL_PREVIOUS, can_previous, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_NEXT, state->has_document && state->page + 1 < state->count, 0);
+		error = keiland_titlebar_set_control_state(object, CONTROL_NEXT, can_next, 0);
 	if (error == 0)
 		error = keiland_titlebar_set_control_state(object, CONTROL_PAGE, state->has_document, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_SCROLL, 1, state->mode == PV_MODE_SCROLL);
+		error = keiland_titlebar_set_control_state(object, CONTROL_SCROLL, 1, scrolling);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_PAGES, 1, state->mode == PV_MODE_PAGE);
+		error = keiland_titlebar_set_control_state(object, CONTROL_PAGES, 1, paging);
 	if (error == 0)
 		error = keiland_titlebar_set_control_state(object, CONTROL_ZOOM_OUT, state->has_document, 0);
 	if (error == 0)
 		error = keiland_titlebar_set_control_state(object, CONTROL_ZOOM_IN, state->has_document, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_FIT_WIDTH, state->has_document, state->fit == PV_FIT_WIDTH);
+		error = keiland_titlebar_set_control_state(object, CONTROL_FIT_WIDTH, state->has_document, fitting_width);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_FIT_PAGE, state->has_document, state->fit == PV_FIT_PAGE);
+		error = keiland_titlebar_set_control_state(object, CONTROL_FIT_PAGE, state->has_document, fitting_page);
 	if (error == 0)
 		error = keiland_titlebar_set_control_state(object, CONTROL_ANNOTATE, state->has_document, 0);
 

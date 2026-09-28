@@ -185,9 +185,9 @@ pdf_display_list_rasterize(
 		return ENOMEM;
 	}
 
-	/* Draws each item in order. */
+	/* Draws each item in order, until one fails. */
 	error = 0;
-	for (index = 0; index < list->count && error == 0; index++) {
+	for (index = 0; index < list->count; index++) {
 		item = &list->items[index];
 		switch (item->type) {
 		case PDF_ITEM_FILL:
@@ -203,6 +203,8 @@ pdf_display_list_rasterize(
 			pop_clip(&raster);
 			break;
 		}
+		if (error != 0)
+			break;
 	}
 
 	/* Frees the masks and the scratch arrays. */
@@ -363,6 +365,7 @@ flatten_curve(
 	double bend_x;
 	double bend_y;
 	double bend;
+	double other_bend;
 	double pieces;
 	double t;
 	double u;
@@ -381,8 +384,9 @@ flatten_curve(
 	bend = sqrt(bend_x * bend_x + bend_y * bend_y);
 	bend_x = fabs(first.x - 2.0 * second.x + end->x);
 	bend_y = fabs(first.y - 2.0 * second.y + end->y);
-	if (sqrt(bend_x * bend_x + bend_y * bend_y) > bend)
-		bend = sqrt(bend_x * bend_x + bend_y * bend_y);
+	other_bend = sqrt(bend_x * bend_x + bend_y * bend_y);
+	if (other_bend > bend)
+		bend = other_bend;
 	pieces = ceil(sqrt(0.75 * bend / PDF_RASTER_TOLERANCE));
 	count = 1;
 	if (pieces > 1.0)
@@ -791,10 +795,13 @@ row_coverage(
 		was_inside = 0;
 		left = 0.0;
 		for (index = 0; index < crossing_count; index++) {
+			/* Inside by the rule: any winding for nonzero, an odd one for even-odd. */
 			winding += raster->crossings[index].direction;
-			inside = (winding != 0);
-			if (rule == PDF_FILL_EVEN_ODD)
-				inside = (winding & 1) != 0;
+			inside = 0;
+			if (rule == PDF_FILL_NONZERO && winding != 0)
+				inside = 1;
+			if (rule == PDF_FILL_EVEN_ODD && (winding & 1) != 0)
+				inside = 1;
 			if (inside && !was_inside)
 				left = raster->crossings[index].x;
 			if (!inside && was_inside)
@@ -1048,7 +1055,7 @@ draw_image(
 	if (!(item->alpha > 0.0))
 		return 0;
 	determinant = item->matrix[0] * item->matrix[3] - item->matrix[1] * item->matrix[2];
-	if (!(fabs(determinant) > 1e-12))
+	if (!(determinant > 1e-12 || determinant < -1e-12))
 		return 0;
 
 	/* The image's corners in pixels, and the rows and columns they span within the target. */

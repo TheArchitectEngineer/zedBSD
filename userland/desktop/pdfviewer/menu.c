@@ -280,7 +280,33 @@ menu_state(
 	const struct pv_state *state)
 {
 	struct keiland_menu *model;
+	int can_previous;
+	int can_next;
+	int scrolling;
+	int paging;
+	int fitting_width;
+	int fitting_page;
 	int error;
+
+	/* What the state allows and what it has chosen, as the menus show them. */
+	can_previous = 0;
+	if (state->has_document && state->page > 0)
+		can_previous = 1;
+	can_next = 0;
+	if (state->has_document && state->page + 1 < state->count)
+		can_next = 1;
+	scrolling = 0;
+	if (state->mode == PV_MODE_SCROLL)
+		scrolling = 1;
+	paging = 0;
+	if (state->mode == PV_MODE_PAGE)
+		paging = 1;
+	fitting_width = 0;
+	if (state->fit == PV_FIT_WIDTH)
+		fitting_width = 1;
+	fitting_page = 0;
+	if (state->fit == PV_FIT_PAGE)
+		fitting_page = 1;
 
 	/* The transaction. */
 	model = menu->menu;
@@ -291,9 +317,9 @@ menu_state(
 	/* The items that need a document. */
 	error = keiland_menu_set_enabled(model, MENU_ANNOTATE, state->has_document);
 	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_PREVIOUS, state->has_document && state->page > 0);
+		error = keiland_menu_set_enabled(model, MENU_PREVIOUS, can_previous);
 	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_NEXT, state->has_document && state->page + 1 < state->count);
+		error = keiland_menu_set_enabled(model, MENU_NEXT, can_next);
 	if (error == 0)
 		error = keiland_menu_set_enabled(model, MENU_FIRST, state->has_document);
 	if (error == 0)
@@ -305,13 +331,13 @@ menu_state(
 
 	/* The mode and the fit in force. */
 	if (error == 0)
-		error = keiland_menu_set_checked(model, MENU_SCROLL, state->mode == PV_MODE_SCROLL);
+		error = keiland_menu_set_checked(model, MENU_SCROLL, scrolling);
 	if (error == 0)
-		error = keiland_menu_set_checked(model, MENU_PAGES, state->mode == PV_MODE_PAGE);
+		error = keiland_menu_set_checked(model, MENU_PAGES, paging);
 	if (error == 0)
-		error = keiland_menu_set_checked(model, MENU_FIT_WIDTH, state->fit == PV_FIT_WIDTH);
+		error = keiland_menu_set_checked(model, MENU_FIT_WIDTH, fitting_width);
 	if (error == 0)
-		error = keiland_menu_set_checked(model, MENU_FIT_PAGE, state->fit == PV_FIT_PAGE);
+		error = keiland_menu_set_checked(model, MENU_FIT_PAGE, fitting_page);
 
 	/* A refused change still ends the transaction, and is reported. */
 	if (error != 0) {

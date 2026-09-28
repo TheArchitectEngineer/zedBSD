@@ -323,6 +323,7 @@ main_loop(
 	struct pv_state state;
 	uint64_t started;
 	uint64_t now;
+	pid_t ended;
 	int prefetched;
 	int taken;
 	int status;
@@ -393,8 +394,11 @@ main_loop(
 		pv_titlebar_refresh(&main_titlebar, &state);
 
 		/* Started programs that ended are reaped. */
-		while (waitpid(-1, NULL, WNOHANG) > 0)
-			continue;
+		for (;;) {
+			ended = waitpid(-1, NULL, WNOHANG);
+			if (ended <= 0)
+				break;
+		}
 
 		/* The close button, Quit, or Close on an empty window end the run. */
 		if (main_window.closed != 0 || main_app.want_close != 0) {
@@ -517,6 +521,7 @@ main_opened(void)
 	char resolved[PATH_MAX];
 	char title[PV_PATH_MAX + 32];
 	const char *name;
+	char *absolute;
 	int error;
 
 	/* Only once for each document opened. */
@@ -535,7 +540,8 @@ main_opened(void)
 	pv_window_title(&main_window, title);
 
 	/* The recent files, by the absolute path. */
-	if (realpath(main_app.document.path, resolved) == NULL)
+	absolute = realpath(main_app.document.path, resolved);
+	if (absolute == NULL)
 		return;
 	error = keiland_recent_add(resolved, MAIN_APPLICATION);
 	if (error != 0)
@@ -548,6 +554,7 @@ main_annotate(void)
 {
 	char resolved[PATH_MAX];
 	char *arguments[3];
+	char *absolute;
 	pid_t child;
 	int usable;
 	int error;
@@ -561,7 +568,8 @@ main_annotate(void)
 	}
 
 	/* The document's absolute path, so that Notes finds it wherever it starts. */
-	if (realpath(main_app.document.path, resolved) == NULL)
+	absolute = realpath(main_app.document.path, resolved);
+	if (absolute == NULL)
 		snprintf(resolved, sizeof(resolved), "%s", main_app.document.path);
 
 	/* Starts Notes with the path. */

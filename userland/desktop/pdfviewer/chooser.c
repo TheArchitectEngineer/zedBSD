@@ -40,13 +40,17 @@ pv_chooser_open(
 	struct dirent *entry;
 	struct stat status;
 	DIR *directory;
+	char *absolute;
 	size_t count;
+	int has_parent;
 	int is_folder;
+	int is_pdf;
+	int differs;
 	int result;
 
 	/* The folder's absolute name, when the system can say. */
-	snprintf(resolved, sizeof(resolved), "%s", folder);
-	if (realpath(folder, resolved) == NULL)
+	absolute = realpath(folder, resolved);
+	if (absolute == NULL)
 		snprintf(resolved, sizeof(resolved), "%s", folder);
 
 	/* Opens the folder. */
@@ -63,7 +67,8 @@ pv_chooser_open(
 
 	/* The parent first, except at the root. */
 	count = 0;
-	if (strcmp(resolved, "/") != 0) {
+	differs = strcmp(resolved, "/");
+	if (differs != 0) {
 		snprintf(entries[0].name, sizeof(entries[0].name), "..");
 		entries[0].folder = 1;
 		count = 1;
@@ -83,8 +88,11 @@ pv_chooser_open(
 		if (result != 0)
 			continue;
 		is_folder = S_ISDIR(status.st_mode);
-		if (!is_folder && !is_pdf_name(entry->d_name))
-			continue;
+		if (!is_folder) {
+			is_pdf = is_pdf_name(entry->d_name);
+			if (!is_pdf)
+				continue;
+		}
 		snprintf(entries[count].name, sizeof(entries[count].name), "%s", entry->d_name);
 		entries[count].folder = is_folder;
 		count++;
@@ -92,11 +100,14 @@ pv_chooser_open(
 	closedir(directory);
 
 	/* Folders first, by name (the parent stays first). */
-	if (count > 1 && strcmp(entries[0].name, "..") == 0) {
-		qsort(entries + 1, count - 1, sizeof(entries[0]), compare_entries);
-	} else if (count > 1) {
-		qsort(entries, count, sizeof(entries[0]), compare_entries);
+	has_parent = 0;
+	if (count > 0) {
+		differs = strcmp(entries[0].name, "..");
+		if (differs == 0)
+			has_parent = 1;
 	}
+	if (count > 1)
+		qsort(entries + has_parent, count - (size_t)has_parent, sizeof(entries[0]), compare_entries);
 
 	/* Replaces the old list. */
 	free(chooser->entries);
@@ -107,7 +118,7 @@ pv_chooser_open(
 	snprintf(chooser->folder, sizeof(chooser->folder), "%s", resolved);
 
 	/* Starts on the first entry after the parent. */
-	if (count > 1 && strcmp(entries[0].name, "..") == 0)
+	if (count > 1 && has_parent)
 		chooser->selected = 1;
 
 	/* Succeeded: the folder is listed. */
@@ -139,6 +150,7 @@ pv_chooser_path(
 	size_t size)
 {
 	char *slash;
+	int differs;
 	int written;
 
 	/* Refuses an entry the list does not have. */
@@ -146,7 +158,8 @@ pv_chooser_path(
 		return EINVAL;
 
 	/* The parent: the folder without its last part. */
-	if (strcmp(chooser->entries[index].name, "..") == 0) {
+	differs = strcmp(chooser->entries[index].name, "..");
+	if (differs == 0) {
 		snprintf(path, size, "%s", chooser->folder);
 		slash = strrchr(path, '/');
 		if (slash == path)
@@ -157,7 +170,8 @@ pv_chooser_path(
 	}
 
 	/* Any other entry under the folder. */
-	if (strcmp(chooser->folder, "/") == 0) {
+	differs = strcmp(chooser->folder, "/");
+	if (differs == 0) {
 		written = snprintf(path, size, "/%s", chooser->entries[index].name);
 	} else {
 		written = snprintf(path, size, "%s/%s", chooser->folder, chooser->entries[index].name);

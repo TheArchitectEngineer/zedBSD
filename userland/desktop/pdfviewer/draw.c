@@ -323,6 +323,8 @@ draw_chooser(
 	int width;
 	int height;
 	int row_y;
+	int folder_width;
+	int differs;
 
 	/* The frame dimmed, and the card. */
 	pv_canvas_blend(canvas, 0, 0, canvas->width, canvas->height, DRAW_DIM);
@@ -332,8 +334,12 @@ draw_chooser(
 	/* The header: what the card is for, and the folder (its end, when too long). */
 	pv_text_draw(app->text, canvas, x + 18, y + 24, "Open a PDF", DRAW_TEXT, DRAW_TITLE);
 	folder = app->chooser.folder;
-	while (folder[0] != '\0' && pv_text_width(app->text, folder, 13U) > width - 36)
+	while (folder[0] != '\0') {
+		folder_width = pv_text_width(app->text, folder, 13U);
+		if (folder_width <= width - 36)
+			break;
 		folder++;
+	}
 	pv_text_draw(app->text, canvas, x + 18, y + 44, folder, 13U, DRAW_HINT);
 	pv_canvas_fill(canvas, x + 12, y + PV_CHOOSER_HEADER - 1, width - 24, 1, 0xffd4d7dcU);
 
@@ -353,7 +359,8 @@ draw_chooser(
 		if (entry->folder) {
 			pv_canvas_round(canvas, x + 20, row_y + 11, 18, 13, 3, DRAW_FOLDER);
 			snprintf(line, sizeof(line), "%s/", entry->name);
-			if (strcmp(entry->name, "..") == 0)
+			differs = strcmp(entry->name, "..");
+			if (differs == 0)
 				snprintf(line, sizeof(line), "Parent folder");
 		} else {
 			pv_canvas_round(canvas, x + 22, row_y + 8, 14, 18, 2, DRAW_FILE);
