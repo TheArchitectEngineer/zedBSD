@@ -789,7 +789,7 @@ app_make_folders(
 	return 0;
 }
 
-/* Sets the window's title: "Notes", a dash and the file's name. */
+/* Sets the window's title: the file's name, a dash and "Notes", as PDF Viewer names its window (ws035-p122). */
 static void
 app_set_title(
 	struct notes_app *app)
@@ -797,7 +797,7 @@ app_set_title(
 	char title[MAIN_PATH_MAX];
 
 	/* The title with the file's name. */
-	(void)snprintf(title, sizeof(title), "Notes \xe2\x80\x94 %s", app->name);
+	(void)snprintf(title, sizeof(title), "%s \xe2\x80\x94 Notes", app->name);
 	notes_window_set_title(&app->window, title);
 }
 

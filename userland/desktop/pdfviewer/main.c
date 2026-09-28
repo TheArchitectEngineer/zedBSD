@@ -77,12 +77,12 @@ static struct pv_app main_app;
 static struct pv_text main_text;
 
 /*
- * The window's menus in zdesktop, opened with the window and closed
+ * The window's menus in the compositor, opened with the window and closed
  * before it; absent with a compositor without them.
  */
 static struct pv_menu main_menu;
 
-/* The window's titlebar controls in zdesktop, with the same life as the menus. */
+/* The window's titlebar controls in the compositor, with the same life as the menus. */
 static struct pv_titlebar main_titlebar;
 
 /*
@@ -564,7 +564,7 @@ main_opened(void)
 	}
 
 	/* The window's title. */
-	snprintf(title, sizeof(title), "%s - PDF Viewer", name);
+	snprintf(title, sizeof(title), "%s \xe2\x80\x94 PDF Viewer", name);
 	pv_window_title(&main_window, title);
 
 	/* The recent files, by the absolute path. */

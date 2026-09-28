@@ -34,10 +34,12 @@
  * of the icon's place (shell.c).
  *
  * The applications come from /etc/keiland/apps.conf, one a line:
- * name|command|keywords|RRGGBB; without the file, a built-in list.  An
- * application whose command names an absolute path that is not there is
- * not shown.  An application is started with /bin/sh -c and the
- * compositor's socket in its environment.
+ * name|command|keywords|RRGGBB|picture; without the file, a built-in list.
+ * The picture is one of the names icons.c draws a picture for ("files",
+ * "notes", "terminal", ...; ws035-p123); an application without one shows
+ * its name's first letter on its tile.  An application whose command names
+ * an absolute path that is not there is not shown.  An application is
+ * started with /bin/sh -c and the compositor's socket in its environment.
  */
 
 #include "glass.h"
@@ -68,7 +70,7 @@
 /* The applications' list, and how many it may hold. */
 #define HOME_APPS_PATH		"/etc/keiland/apps.conf"
 
-/* The command of a login session's Log Out, which zdesktop carries out itself. */
+/* The command of a login session's Log Out, which the compositor carries out itself. */
 #define HOME_LOGOUT		"@logout"
 #define HOME_LOCK		"@lock"
 
@@ -109,6 +111,20 @@
 #define HOME_ICON_RADIUS	18.0f
 #define HOME_LABEL		26
 
+/* The picture on a tile, in pixels a side (glass.c renders App Home's pictures at this size). */
+#define HOME_PICTURE		40
+
+/*
+ * The tile's shading (ws035-p123): the tile is drawn in this many bands,
+ * whitened towards its top by up to HOME_SHADE_LIGHT and darkened towards
+ * its bottom by up to HOME_SHADE_DARK, so its colour runs smoothly as on
+ * lit glass; its rim is white at HOME_RIM_ALPHA.
+ */
+#define HOME_SHADE_BANDS	24
+#define HOME_SHADE_LIGHT	0.22f
+#define HOME_SHADE_DARK		0.10f
+#define HOME_RIM_ALPHA		0.22f
+
 /* The evdev codes of the keys Home takes. */
 #define HOME_KEY_ESC		1U
 #define HOME_KEY_BACKSPACE	14U
@@ -131,13 +147,14 @@ struct home_app {
 	char command[160];
 	char keywords[80];
 
-	/* The icon's colour. */
+	/* The icon's colour, and its picture (GLASS_ICON_APP_*, or -1 for the name's first letter). */
 	float color[4];
+	int picture;
 };
 
 /*
  * The applications, read once when Home first opens.  home_app_count is 0
- * until then; the list is not read again while zdesktop runs.
+ * until then; the list is not read again while the compositor runs.
  */
 static struct home_app home_apps[HOME_APPS_MAX];
 static unsigned home_app_count;
@@ -168,7 +185,8 @@ static const char home_characters[HOME_KEYS] = {
 
 static void home_read_apps(struct zwl_server *server);
 static int home_present(const char *name, const char *command);
-static void home_add_app(const char *name, const char *command, const char *keywords, uint32_t rgb);
+static void home_add_app(const char *name, const char *command, const char *keywords, uint32_t rgb, const char *picture);
+static void home_draw_tile(struct zwl_server *server, VkCommandBuffer command, float left, float top, float size, const float *color);
 static void home_parse_line(char *line);
 static uint32_t home_hex(const char *text);
 static void home_layout(struct zwl_server *server);
@@ -757,7 +775,7 @@ zwl_spawn(
 	if (child < 0)
 		return -1;
 
-	/* The child: its own session, none of zdesktop's descriptors, the socket's place, and the command. */
+	/* The child: its own session, none of the compositor's descriptors, the socket's place, and the command. */
 	if (child == 0) {
 		(void)setsid();
 		for (descriptor = 3; descriptor < 1024; descriptor++)
@@ -857,34 +875,35 @@ home_read_apps(
 		fclose(file);
 	}
 
-	/* Without a usable file, the applications zdesktop has. */
+	/* Without a usable file, the applications the compositor has. */
 	if (home_app_count == 0U) {
-		home_add_app("Terminal", "/bin/terminal", "term shell console sh", 0x323a4eU);
-		home_add_app("Model viewer", "/bin/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU);
-		home_add_app("Vulkan test", "/bin/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30", "wltest gpu test", 0x5a8de0U);
-		home_add_app("Shared memory", "/bin/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU);
-		home_add_app("X terminal", "/bin/sh /usr/libexec/keiland-x11 /bin/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U);
-		home_add_app("Gears", "/bin/sh /usr/libexec/keiland-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU);
-		home_add_app("Files", "/bin/files", "files file manager folder finder browse", 0x2f7cf6U);
-		home_add_app("Notes", "/bin/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U);
-		home_add_app("PDF Viewer", "/bin/pdfviewer", "pdf viewer document reader", 0xd9534fU);
-		home_add_app("Browser", "/bin/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U);
+		home_add_app("Terminal", "/bin/terminal", "term shell console sh", 0x323a4eU, "terminal");
+		home_add_app("Model viewer", "/bin/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU, "model");
+		home_add_app("Vulkan test", "/bin/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30", "wltest gpu test", 0x5a8de0U, "");
+		home_add_app("Shared memory", "/bin/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU, "");
+		home_add_app("X terminal", "/bin/sh /usr/libexec/keiland-x11 /bin/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U, "xterm");
+		home_add_app("Gears", "/bin/sh /usr/libexec/keiland-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU, "gears");
+		home_add_app("Files", "/bin/files", "files file manager folder finder browse", 0x2f7cf6U, "files");
+		home_add_app("Notes", "/bin/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U, "notes");
+		home_add_app("PDF Viewer", "/bin/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
+		home_add_app("Browser", "/bin/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U, "browser");
 	}
 
 	/* A login's session locks (ws035-p102) and ends with Log Out (ws035-p095), the last icons. */
 	if (server->session && server->control_fd >= 0)
-		home_add_app("Lock Screen", HOME_LOCK, "lock screen away", 0x5a6aa0U);
+		home_add_app("Lock Screen", HOME_LOCK, "lock screen away", 0x5a6aa0U, "lock");
 	if (server->session)
-		home_add_app("Log Out", HOME_LOGOUT, "logout log out sign out exit session end", 0x6a7488U);
+		home_add_app("Log Out", HOME_LOGOUT, "logout log out sign out exit session end", 0x6a7488U, "logout");
 }
 
-/* Adds an application to the list, when there is room. */
+/* Adds an application to the list, when there is room; its picture is named as icons.c names it ("" for none). */
 static void
 home_add_app(
 	const char *name,
 	const char *command,
 	const char *keywords,
-	uint32_t rgb)
+	uint32_t rgb,
+	const char *picture)
 {
 	struct home_app *app;
 	int present;
@@ -907,6 +926,9 @@ home_add_app(
 	app->color[1] = (float)((rgb >> 8) & 0xffU) / 255.0f;
 	app->color[2] = (float)(rgb & 0xffU) / 255.0f;
 	app->color[3] = 1.0f;
+
+	/* The picture on its tile; a name icons.c does not know leaves the first letter. */
+	app->picture = zwl_icon_named(picture);
 	home_app_count++;
 }
 
@@ -953,13 +975,13 @@ home_present(
 	return 1;
 }
 
-/* Reads one line of the list: name|command|keywords|RRGGBB (the last two may be left out). */
+/* Reads one line of the list: name|command|keywords|RRGGBB|picture (the last three may be left out). */
 static void
 home_parse_line(
 	char *line)
 {
 	static char empty[1];
-	char *fields[4];
+	char *fields[5];
 	char *bar;
 	unsigned count;
 
@@ -968,8 +990,9 @@ home_parse_line(
 	fields[1] = empty;
 	fields[2] = empty;
 	fields[3] = empty;
+	fields[4] = empty;
 	count = 1U;
-	while (count < 4U) {
+	while (count < 5U) {
 		bar = strchr(fields[count - 1U], '|');
 		if (bar == NULL)
 			break;
@@ -982,8 +1005,8 @@ home_parse_line(
 	if (count < 2U || fields[0][0] == '\0' || fields[1][0] == '\0')
 		return;
 
-	/* Succeeded: the application joins the list (grey without a colour). */
-	home_add_app(fields[0], fields[1], fields[2], home_hex(fields[3]));
+	/* Succeeded: the application joins the list (grey without a colour, its first letter without a picture). */
+	home_add_app(fields[0], fields[1], fields[2], home_hex(fields[3]), fields[4]);
 }
 
 /* Reads an RRGGBB colour; a malformed one is a mid grey. */
@@ -1165,7 +1188,7 @@ home_icon_at(
 	return -1;
 }
 
-/* Draws one icon: its rounded square with the name's first letter, the selection's ring, and the name under it. */
+/* Draws one icon: its rounded square with its picture (or the name's first letter), the selection's ring, and the name under it. */
 static void
 home_draw_icon(
 	struct zwl_server *server,
@@ -1182,6 +1205,7 @@ home_draw_icon(
 	float size;
 	float left;
 	float top;
+	float picture_size;
 	int32_t x;
 	int32_t y;
 	int32_t width;
@@ -1226,24 +1250,24 @@ home_draw_icon(
 		color[2] = color[2] + (1.0f - color[2]) * 0.15f;
 	}
 
-	/* The square, faded in with Home. */
+	/* The square, shaded like lit glass and faded in with Home. */
 	color[3] = opacity;
-	glass_draw_solid(server, command, left, top, size, size, HOME_ICON_RADIUS, color);
+	home_draw_tile(server, command, left, top, size, color);
 
-	/* A light sheen on its upper half. */
-	color[0] = 1.0f;
-	color[1] = 1.0f;
-	color[2] = 1.0f;
-	color[3] = 0.12f * opacity;
-	glass_draw_solid(server, command, left, top, size, size / 2.0f, HOME_ICON_RADIUS, color);
-
-	/* The name's first letter, large and white, in the middle. */
-	letter[0] = app->name[0];
-	letter[1] = '\0';
+	/* Its picture, white, in the middle, growing with the square (ws035-p123). */
 	memcpy(color, white, sizeof(color));
 	color[3] = opacity;
-	width = glass_text_width(server, SIZE_ICON, letter);
-	glass_draw_text(server, command, SIZE_ICON, x + (HOME_ICON - width) / 2, y + HOME_ICON / 2 + 13, letter, HOME_ICON, color);
+	if (app->picture >= 0) {
+		picture_size = (float)HOME_PICTURE * size / (float)HOME_ICON;
+		glass_draw_icon(server, command, (unsigned)app->picture, (int32_t)(left + (size - picture_size) * 0.5f),
+				(int32_t)(top + (size - picture_size) * 0.5f), (unsigned)picture_size, color);
+	} else {
+		/* Without a picture, the name's first letter, large. */
+		letter[0] = app->name[0];
+		letter[1] = '\0';
+		width = glass_text_width(server, SIZE_ICON, letter);
+		glass_draw_text(server, command, SIZE_ICON, x + (HOME_ICON - width) / 2, y + HOME_ICON / 2 + 13, letter, HOME_ICON, color);
+	}
 
 	/* The selection (with the keyboard, or the first search result) has a blue ring. */
 	if ((int)slot == server->home_selected && (server->home_query_length != 0U || server->home_selected > 0)) {
@@ -1265,6 +1289,71 @@ home_draw_icon(
 	if (width > HOME_CELL_WIDTH - 8)
 		width = HOME_CELL_WIDTH - 8;
 	glass_draw_text(server, command, SIZE_TITLE, x + (HOME_ICON - width) / 2, y + HOME_ICON + HOME_LABEL, app->name, HOME_CELL_WIDTH - 8, color);
+}
+
+/*
+ * Draws an application's tile: its rounded square in its colour, in bands
+ * whitened towards the top and darkened towards the bottom, and a faint
+ * white rim.  Every band is cut by the whole square's rounded corners, so
+ * the bands meet without seams.  color's alpha fades the whole tile.
+ */
+static void
+home_draw_tile(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	float left,
+	float top,
+	float size,
+	const float *color)
+{
+	struct glass_shape shape;
+	float band_top;
+	float band_bottom;
+	float middle;
+	float shade;
+	int band;
+
+	/* Each band, from the top. */
+	for (band = 0; band < HOME_SHADE_BANDS; band++) {
+		band_top = top + size * (float)band / (float)HOME_SHADE_BANDS;
+		band_bottom = top + size * (float)(band + 1) / (float)HOME_SHADE_BANDS;
+		middle = ((float)band + 0.5f) / (float)HOME_SHADE_BANDS;
+
+		/* The rounded square as the shape, only this band of it drawn. */
+		glass_shape_init(&shape, left, top, size, size);
+		shape.quad[1] = band_top;
+		shape.quad[3] = band_bottom - band_top;
+		shape.mode = MODE_SOLID;
+		shape.radius = HOME_ICON_RADIUS * size / (float)HOME_ICON;
+		memcpy(shape.color, color, sizeof(shape.color));
+
+		/* The upper half whitened, most at the top; the lower half darkened, most at the bottom. */
+		if (middle < 0.5f) {
+			shade = HOME_SHADE_LIGHT * (1.0f - middle / 0.5f);
+			shape.color[0] = color[0] + (1.0f - color[0]) * shade;
+			shape.color[1] = color[1] + (1.0f - color[1]) * shade;
+			shape.color[2] = color[2] + (1.0f - color[2]) * shade;
+		} else {
+			shade = HOME_SHADE_DARK * ((middle - 0.5f) / 0.5f);
+			shape.color[0] = color[0] * (1.0f - shade);
+			shape.color[1] = color[1] * (1.0f - shade);
+			shape.color[2] = color[2] * (1.0f - shade);
+		}
+
+		/* The band, over the shadow. */
+		glass_shape_draw(server, command, &shape);
+	}
+
+	/* The faint white rim of lit glass. */
+	glass_shape_init(&shape, left, top, size, size);
+	shape.mode = MODE_RING;
+	shape.radius = HOME_ICON_RADIUS * size / (float)HOME_ICON;
+	shape.soft = 1.0f;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = HOME_RIM_ALPHA * color[3];
+	glass_shape_draw(server, command, &shape);
 }
 
 /* Draws the search text at the top, on a faint pill (no search box). */
@@ -1353,8 +1442,8 @@ home_launch(
 	int logout;
 
 	/*
-	 * Log Out ends the session: zdesktop ends, and sessiond shows the
-	 * login screen again (started first, when sessiond started zdesktop,
+	 * Log Out ends the session: the compositor ends, and sessiond shows the
+	 * login screen again (started first, when sessiond started the compositor,
 	 * so the display goes straight to it: handoff.c).
 	 */
 	/* Lock Screen locks the session (App Home closes behind it). */
