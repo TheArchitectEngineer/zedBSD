@@ -24,6 +24,10 @@
  * card, which takes every key and click until the document opens or the
  * card is cancelled.
  *
+ * ws081-p012: the touch screen's gestures (touch.c) use the places below
+ * (pv_app_place_at, pv_app_show_place) to keep the point under two fingers
+ * while they zoom, and end a swipe as the pointer's release does.
+ *
  * Nothing here draws or speaks Wayland; draw.c draws what this lays out,
  * and main.c feeds it the window's input.
  */
@@ -503,10 +507,12 @@ pv_app_prefetch(
 	int sidebar;
 	int error;
 
-	/* Nothing while there is no document, or while the view moves. */
+	/* Nothing while there is no document, or while the view moves (by the pointer or by touch). */
 	if (!app->has_document ||
 	    app->turning ||
-	    app->pressed)
+	    app->pressed ||
+	    app->touching ||
+	    app->zooming)
 		return 0;
 
 	/* The sidebar's thumbnails in view and just past it, one at a time. */
@@ -893,6 +899,201 @@ pv_password_layout(
 }
 
 /*
+ * Keeps the view within the laid-out document after it was moved from
+ * outside (touch.c), and draws the frame again.
+ */
+void
+pv_app_clamp(
+	struct pv_app *app)
+{
+	/* Within the document, drawn again. */
+	clamp_view(app);
+	app->dirty = 1;
+}
+
+/*
+ * Sets the user's zoom (within its bounds), without moving the view; the
+ * caller places the view afterwards.
+ */
+void
+pv_app_zoom_to(
+	struct pv_app *app,
+	double scale)
+{
+	/* Within the zoom's bounds. */
+	if (scale < VIEW_ZOOM_MIN)
+		scale = VIEW_ZOOM_MIN;
+	if (scale > VIEW_ZOOM_MAX)
+		scale = VIEW_ZOOM_MAX;
+
+	/* The user's zoom from now on. */
+	app->zoom = scale;
+	app->fit = PV_FIT_CUSTOM;
+	app->dirty = 1;
+}
+
+/*
+ * Reports where a page's left edge is in the view, in pixels (the frame
+ * draws it there, give or take the rounding to whole pixels): centred
+ * when the pages fit across, otherwise moved by scroll_x.
+ */
+double
+pv_app_page_left(
+	const struct pv_app *app,
+	size_t index)
+{
+	double width;
+	double content_width;
+	double left;
+
+	/* The page's width, and the laid-out document's. */
+	width = app->document.pages[index].width * pv_app_scale(app, index);
+	content_width = pv_app_content_width(app);
+
+	/* Centred across, or from the left of the view when the pages are wider. */
+	left = ((double)app->width - width) / 2.0;
+	if (app->mode == PV_MODE_SCROLL &&
+	    content_width > (double)app->width)
+		left = PV_MARGIN + (content_width - 2.0 * PV_MARGIN - width) / 2.0 - app->scroll_x;
+	if (app->mode == PV_MODE_PAGE &&
+	    width + 2.0 * PV_MARGIN > (double)app->width)
+		left = PV_MARGIN - app->scroll_x;
+
+	/* Reports the edge. */
+	return left;
+}
+
+/*
+ * Finds the place in the document under a point of the view (pixels from
+ * the view's top left): the page whose slot holds it (the page mode's
+ * page), and the point on that page in points.  Without a document the
+ * place is page 0 at 0, 0.
+ */
+void
+pv_app_place_at(
+	const struct pv_app *app,
+	double x,
+	double y,
+	struct pv_place *place)
+{
+	double down;
+	double bottom;
+	double scale;
+	double top;
+	double left;
+	size_t page;
+
+	/* Nothing to find without a document. */
+	place->page = 0;
+	place->x = 0.0;
+	place->y = 0.0;
+	if (!app->has_document)
+		return;
+
+	/* The page mode's page, or the scroll mode's page whose bottom (with its gap) is below the point. */
+	page = app->page;
+	if (app->mode == PV_MODE_SCROLL) {
+		down = app->scroll_y + y;
+		scale = pv_app_scale(app, 0);
+		bottom = PV_MARGIN;
+		for (page = 0; page + 1 < app->document.count; page++) {
+			bottom += app->document.pages[page].height * scale + PV_GAP;
+			if (bottom > down)
+				break;
+		}
+	}
+
+	/* The point on that page, in points. */
+	scale = pv_app_scale(app, page);
+	top = pv_app_page_top(app, page);
+	left = pv_app_page_left(app, page);
+	place->page = page;
+	place->x = (x - left) / scale;
+	place->y = (app->scroll_y + y - top) / scale;
+}
+
+/*
+ * Moves the view so that a place in the document is under a point of the
+ * view (as far as the document's ends allow; across, only when the pages
+ * are wider than the view).
+ */
+void
+pv_app_show_place(
+	struct pv_app *app,
+	const struct pv_place *place,
+	double x,
+	double y)
+{
+	double scale;
+	double top;
+	double left;
+	double width;
+	double content_width;
+
+	/* Only a page the document has. */
+	if (!app->has_document ||
+	    place->page >= app->document.count)
+		return;
+
+	/* The page's scale, top and width in the layout now. */
+	scale = pv_app_scale(app, place->page);
+	top = pv_app_page_top(app, place->page);
+	width = app->document.pages[place->page].width * scale;
+	content_width = pv_app_content_width(app);
+
+	/* Down: the place's height on the page under the point. */
+	app->scroll_y = top + place->y * scale - y;
+
+	/* Across: the page's left edge where the place lands under the point, when the pages scroll across. */
+	left = x - place->x * scale;
+	app->scroll_x = 0.0;
+	if (app->mode == PV_MODE_SCROLL &&
+	    content_width > (double)app->width)
+		app->scroll_x = PV_MARGIN + (content_width - 2.0 * PV_MARGIN - width) / 2.0 - left;
+	if (app->mode == PV_MODE_PAGE &&
+	    width + 2.0 * PV_MARGIN > (double)app->width)
+		app->scroll_x = PV_MARGIN - left;
+
+	/* Within the document, drawn again. */
+	clamp_view(app);
+	app->dirty = 1;
+}
+
+/*
+ * Ends a sideways drag of the page mode's page: let go far enough (a share
+ * of the width) or fast enough (velocity, pixels a millisecond, as the
+ * page moved), it turns to the neighbour it moved toward; otherwise, or
+ * when it may not turn (the touch was cancelled), it slides back.
+ */
+void
+pv_app_swipe_end(
+	struct pv_app *app,
+	double velocity,
+	int may_turn)
+{
+	double share;
+	int direction;
+
+	/* How far the page moved, as a share of the width. */
+	share = app->swipe / (double)app->width;
+
+	/* The direction it turns, if any. */
+	direction = 0;
+	if (may_turn) {
+		if (share < -VIEW_SWIPE_SHARE ||
+		    velocity < -VIEW_SWIPE_SPEED)
+			direction = 1;
+		if (share > VIEW_SWIPE_SHARE ||
+		    velocity > VIEW_SWIPE_SPEED)
+			direction = -1;
+	}
+
+	/* Turns, or slides back. */
+	pv_log("SWIPE offset=%.0f velocity=%.2f direction=%d", app->swipe, velocity, direction);
+	start_turn(app, direction);
+}
+
+/*
  * Writes a log line on standard error: PDFVIEWER and the message.  The
  * tests wait for these lines.
  */
@@ -1257,9 +1458,6 @@ handle_button(
 	struct pv_app *app,
 	const struct pv_event *event)
 {
-	double share;
-	int direction;
-
 	/* Only the left button. */
 	if (event->button != PV_BUTTON_LEFT)
 		return;
@@ -1289,16 +1487,8 @@ handle_button(
 	if (!app->pressed)
 		return;
 	app->pressed = 0;
-	if (app->mode == PV_MODE_PAGE && app->dragging == 1) {
-		share = app->swipe / (double)app->width;
-		direction = 0;
-		if (share < -VIEW_SWIPE_SHARE || app->velocity_x < -VIEW_SWIPE_SPEED)
-			direction = 1;
-		if (share > VIEW_SWIPE_SHARE || app->velocity_x > VIEW_SWIPE_SPEED)
-			direction = -1;
-		pv_log("SWIPE offset=%.0f velocity=%.2f direction=%d", app->swipe, app->velocity_x, direction);
-		start_turn(app, direction);
-	}
+	if (app->mode == PV_MODE_PAGE && app->dragging == 1)
+		pv_app_swipe_end(app, app->velocity_x, 1);
 
 	/* No drag goes on after a release. */
 	app->dragging = 0;

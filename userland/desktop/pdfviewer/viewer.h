@@ -16,7 +16,8 @@
  * in one of two modes: a vertical continuous scroll, or one page at a time
  * turned by a sideways drag (a swipe) or the keys.  ws079-p015: a sidebar
  * of page thumbnails on the left, and a card that asks for the password
- * of an encrypted document.
+ * of an encrypted document.  ws081-p012: the touch screen (touch.c) scrolls
+ * with inertia, zooms with two fingers and swipes pages.
  */
 
 #ifndef PDFVIEWER_VIEWER_H
@@ -260,6 +261,11 @@ struct pv_chooser {
  * encrypted document the empty password did not open; password holds what
  * has been typed (never logged, cleared after each try), and
  * password_wrong says the last try was refused.
+ *
+ * ws081-p012: touching says fingers are on the pages or the content glides
+ * after them (touch.c), and zooming that two fingers are changing the zoom:
+ * while zooming, the frame shows the pages' rasters stretched to the new
+ * scale instead of drawing them again, until the fingers stop.
  */
 struct pv_app {
 	struct pv_document document;
@@ -315,6 +321,18 @@ struct pv_app {
 	size_t password_length;
 	int password_wrong;
 	struct pv_text *text;
+	int touching;
+	int zooming;
+};
+
+/*
+ * A place in the document: a page, and a point on it in points from its
+ * top left corner.  Two fingers keep one under them while they zoom.
+ */
+struct pv_place {
+	size_t page;
+	double x;
+	double y;
 };
 
 /* The document and its page cache (document.c). */
@@ -344,6 +362,12 @@ double pv_app_content_width(const struct pv_app *app);
 void pv_app_message(struct pv_app *app, const char *message, uint64_t duration);
 void pv_chooser_layout(const struct pv_app *app, int *x, int *y, int *width, int *height, size_t *rows);
 int pv_app_sidebar_width(const struct pv_app *app);
+void pv_app_clamp(struct pv_app *app);
+void pv_app_zoom_to(struct pv_app *app, double scale);
+double pv_app_page_left(const struct pv_app *app, size_t index);
+void pv_app_place_at(const struct pv_app *app, double x, double y, struct pv_place *place);
+void pv_app_show_place(struct pv_app *app, const struct pv_place *place, double x, double y);
+void pv_app_swipe_end(struct pv_app *app, double velocity, int may_turn);
 void pv_thumbnail_range(const struct pv_app *app, size_t *first, size_t *last);
 void pv_thumbnail_place(const struct pv_app *app, size_t index, int *x, int *y, int *width, int *height);
 void pv_password_layout(const struct pv_app *app, int *x, int *y, int *width, int *height);
@@ -387,6 +411,7 @@ void pv_canvas_fill(struct pv_canvas *canvas, int x, int y, int width, int heigh
 void pv_canvas_blend(struct pv_canvas *canvas, int x, int y, int width, int height, uint32_t color);
 void pv_canvas_round(struct pv_canvas *canvas, int x, int y, int width, int height, int radius, uint32_t color);
 void pv_canvas_copy(struct pv_canvas *canvas, int x, int y, const uint32_t *pixels, int width, int height);
+void pv_canvas_stretch(struct pv_canvas *canvas, int x, int y, int width, int height, const uint32_t *pixels, int source_width, int source_height);
 void pv_canvas_mask(struct pv_canvas *canvas, int x, int y, const unsigned char *mask, int width, int height, uint32_t color);
 
 /* The text (text.c). */
