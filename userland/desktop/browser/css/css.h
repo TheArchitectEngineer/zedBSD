@@ -41,7 +41,10 @@ enum css_unit {
 	CSS_UNIT_AUTO,
 	CSS_UNIT_NONE,
 	CSS_UNIT_NORMAL,
-	CSS_UNIT_NUMBER
+	CSS_UNIT_NUMBER,
+	CSS_UNIT_MAX_CONTENT,
+	CSS_UNIT_MIN_CONTENT,
+	CSS_UNIT_FIT_CONTENT
 };
 
 /*
@@ -75,7 +78,8 @@ enum css_display {
 	CSS_DISPLAY_TABLE_ROW,
 	CSS_DISPLAY_TABLE_CELL,
 	CSS_DISPLAY_FLEX,
-	CSS_DISPLAY_CONTENTS
+	CSS_DISPLAY_CONTENTS,
+	CSS_DISPLAY_GRID
 };
 
 /* The values of position. */
@@ -165,6 +169,53 @@ struct css_shadow {
 	int inset;
 };
 
+/* The most tracks a grid template keeps (ws074-p072; the ones after are dropped). */
+#define CSS_TRACKS	24
+
+/* The kinds of grid track size: a length (or percentage), a share of the free space, or the content's. */
+enum css_track_kind {
+	CSS_TRACK_LENGTH,
+	CSS_TRACK_FR,
+	CSS_TRACK_AUTO
+};
+
+/*
+ * One track of a grid template (ws074-p072): its kind, its size (a
+ * length or percentage of the grid's content box, or its fr share) and
+ * the smallest it may be (minmax(); a length, or auto for none given).
+ */
+struct css_track {
+	int kind;
+	struct css_length size;
+	float fr;
+	struct css_length minimum;
+};
+
+/*
+ * Where a grid item goes on one axis (ws074-p072): its start and end,
+ * each a line (0 for auto; a negative line counts from the end) or a span
+ * (0 for none).
+ */
+struct css_grid_place {
+	int start;
+	int start_span;
+	int end;
+	int end_span;
+};
+
+/* The values of container-type (ws074-p075): not a container, a container of its width, or of both sizes. */
+enum css_container_type {
+	CSS_CONTAINER_NORMAL,
+	CSS_CONTAINER_INLINE_SIZE,
+	CSS_CONTAINER_SIZE
+};
+
+/* The values of direction (ws074-p073): the inline base direction. */
+enum css_direction {
+	CSS_DIRECTION_LTR,
+	CSS_DIRECTION_RTL
+};
+
 /* The values of overflow-x and overflow-y. */
 enum css_overflow {
 	CSS_OVERFLOW_VISIBLE,
@@ -180,7 +231,8 @@ enum css_text_align {
 	CSS_TEXT_ALIGN_LEFT,
 	CSS_TEXT_ALIGN_RIGHT,
 	CSS_TEXT_ALIGN_CENTER,
-	CSS_TEXT_ALIGN_JUSTIFY
+	CSS_TEXT_ALIGN_JUSTIFY,
+	CSS_TEXT_ALIGN_END
 };
 
 /* The values of white-space. */
@@ -401,6 +453,8 @@ struct css_style {
 	/* The text. */
 	struct css_length line_height;
 	int text_align;
+	int direction;
+	int container_type;
 	int white_space;
 	int underline;
 	int list_style;
@@ -424,6 +478,14 @@ struct css_style {
 	int align_content;
 	struct css_length row_gap;
 	struct css_length column_gap;
+
+	/* Grids (ws074-p072): the container's templates, then the item's places. */
+	struct css_track columns[CSS_TRACKS];
+	int column_count;
+	struct css_track rows[CSS_TRACKS];
+	int row_count;
+	struct css_grid_place grid_column;
+	struct css_grid_place grid_row;
 	float flex_grow;
 	float flex_shrink;
 	struct css_length flex_basis;
@@ -459,6 +521,13 @@ struct css_sheet;
  */
 typedef int (*css_url_resolver)(void *context, const struct vm_string *url, struct vm_string **resolved);
 
+/*
+ * Finds a query container's content box size in pixels (ws074-p075): the
+ * page answers from its last layout; 0 when the container was not laid
+ * out there, which the engine counts (css_engine_container_missed).
+ */
+typedef int (*css_container_lookup)(void *context, const struct dom_element *container, float *width, float *height);
+
 /* Sheets (parser.c). */
 int css_sheet_create(struct css_sheet **sheet, struct vm_heap *heap, const uint16_t *units, size_t length);
 void css_sheet_destroy(struct css_sheet *sheet);
@@ -478,6 +547,11 @@ int css_engine_add_sheet_origin(struct css_engine *engine, const uint16_t *units
 int css_engine_add_parsed(struct css_engine *engine, const struct css_sheet *sheet, const struct css_media *const *media, size_t media_count);
 int css_engine_parse_media(struct css_engine *engine, const uint16_t *units, size_t length, const struct css_media **media);
 void css_engine_set_viewport(struct css_engine *engine, float width, float height);
+void css_engine_set_container_lookup(struct css_engine *engine, css_container_lookup lookup, void *context);
+int css_engine_container_missed(const struct css_engine *engine);
+size_t css_engine_container_uses(const struct css_engine *engine);
+void css_engine_container_use(const struct css_engine *engine, size_t index, const struct dom_element **container, float *width, float *height);
+void css_engine_forget_styles(struct css_engine *engine);
 int css_engine_compute(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style);
 int css_engine_compute_pseudo(struct css_engine *engine, struct dom_element *element, int pseudo, const struct css_style *element_style, struct css_style *style);
 void css_initial_style(struct css_style *style);

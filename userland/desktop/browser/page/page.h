@@ -77,6 +77,8 @@ struct page {
 	int text_open;
 	struct layout_tree layout;
 	int laid_out;
+	struct layout_tree previous_layout;
+	int previous_laid_out;
 	struct paint_list paint;
 	int painted;
 	char *base;

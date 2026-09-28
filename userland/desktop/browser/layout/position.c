@@ -219,6 +219,8 @@ layout_max_content(
 	struct layout_box *box,
 	layout_unit *width)
 {
+	struct layout_context context;
+	struct wb_vector floats;
 	int error;
 
 	/* A box measured before has its width already. */
@@ -227,9 +229,16 @@ layout_max_content(
 		return 0;
 	}
 
-	/* The content, laid out very wide. */
+	/*
+	 * The content, laid out very wide in a formatting context of its own, so
+	 * that the floats of the measurement do not stay in the context the box
+	 * is in (ws074-p074: a box that starts no context of its own is measured
+	 * too, for an intrinsic width).
+	 */
 	tree->measuring++;
+	layout_context_begin(tree, &context, &floats);
 	error = layout_block(tree, box, POSITION_MEASURE_WIDTH);
+	layout_context_end(tree, &context);
 	if (error != 0) {
 		tree->measuring--;
 		return error;
@@ -260,6 +269,9 @@ layout_content_width(
 	const struct layout_box *child;
 	layout_unit widest;
 	layout_unit width;
+	layout_unit floats_left;
+	layout_unit floats_right;
+	layout_unit edge;
 	size_t index;
 
 	/* Stops at the depth the layout stops at. */
@@ -267,9 +279,24 @@ layout_content_width(
 	if (depth > LAYOUT_DEPTH_MAX)
 		return 0;
 
-	/* A replaced box's content is as wide as it was sized. */
+	/*
+	 * A replaced box's content is as wide as it was sized; one sized by a
+	 * percentage of the width being measured is as wide as its image (a
+	 * control as its natural width), since that width is indefinite.
+	 */
+	if (box->replaced && box->style.width.unit == CSS_UNIT_PERCENT) {
+		if (box->image != NULL)
+			return (layout_unit)box->image->width * LAYOUT_UNIT;
+		return box->natural_width;
+	}
+
+	/* Any other replaced box. */
 	if (box->replaced)
 		return box->width;
+
+	/* A grid is as wide as its columns at their content's sizes (ws074-p072). */
+	if (box->style.display == CSS_DISPLAY_GRID)
+		return box->grid_content;
 
 	/* A row of flex items is as wide as the items were before they flexed. */
 	if (box->style.display == CSS_DISPLAY_FLEX &&
@@ -304,6 +331,8 @@ layout_content_width(
 	 * is auto or a percentage (a percentage of the width being measured is
 	 * indefinite, so it contributes its content, as in Chromium).
 	 */
+	floats_left = 0;
+	floats_right = 0;
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->out_of_flow)
 			continue;
@@ -316,11 +345,33 @@ layout_content_width(
 
 		/* The child's margins, borders and paddings go around it. */
 		width += child->margin[CSS_LEFT] + position_frame(child) + child->margin[CSS_RIGHT];
+
+		/*
+		 * Floats stand side by side (ws074-p074): a right one adds its margin
+		 * box, a left one reaches its right margin edge (placed relative to
+		 * the content box).
+		 */
+		if (child->floating == CSS_FLOAT_RIGHT) {
+			floats_right += width;
+			continue;
+		}
+
+		/* A left float. */
+		if (child->floating != CSS_FLOAT_NONE) {
+			edge = child->x + position_frame(child) + child->width + child->margin[CSS_RIGHT];
+			if (edge > floats_left)
+				floats_left = edge;
+			continue;
+		}
+
+		/* A block in the flow. */
 		if (width > widest)
 			widest = width;
 	}
 
-	/* The widest one. */
+	/* The widest block, or the floats side by side. */
+	if (floats_left + floats_right > widest)
+		widest = floats_left + floats_right;
 	return widest;
 }
 
@@ -577,36 +628,55 @@ position_collect(
 	return 0;
 }
 
-/* Reports the widest margin box of the floats among a block's inline content. */
+/*
+ * Reports the width the floats among a block's inline content take side by
+ * side: the right margin edge of the furthest left float (they were placed
+ * relative to the content box), and the margin boxes of the right floats
+ * added to it.
+ */
 static layout_unit
 position_inline_floats(
 	const struct layout_box *box,
 	int depth)
 {
 	const struct layout_box *child;
-	layout_unit widest;
+	layout_unit left;
+	layout_unit right;
 	layout_unit width;
+	layout_unit edge;
 
 	/* Stops at the depth the layout stops at. */
-	widest = 0;
 	if (depth > LAYOUT_DEPTH_MAX)
 		return 0;
 
 	/* A float is measured; an inline box is searched; a box out of the flow or an inline block (its line holds it) is not. */
+	left = 0;
+	right = 0;
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->out_of_flow || child->atomic)
 			continue;
-		if (child->floating) {
-			width = child->margin[CSS_LEFT] + position_frame(child) + child->width + child->margin[CSS_RIGHT];
-		} else {
+		if (child->floating == CSS_FLOAT_NONE) {
 			width = position_inline_floats(child, depth + 1);
+			if (width > left)
+				left = width;
+			continue;
 		}
 
-		/* The widest so far. */
-		if (width > widest)
-			widest = width;
+		/* A right float adds its margin box; a left one reaches its right margin edge. */
+		width = child->margin[CSS_LEFT] + position_frame(child) + child->width + child->margin[CSS_RIGHT];
+		if (child->floating == CSS_FLOAT_RIGHT) {
+			right += width;
+			continue;
+		}
+
+		/* A left float, at least as wide as its margin box. */
+		edge = child->x + position_frame(child) + child->width + child->margin[CSS_RIGHT];
+		if (edge < width)
+			edge = width;
+		if (edge > left)
+			left = edge;
 	}
 
-	/* Reports it. */
-	return widest;
+	/* Reports the two sides together. */
+	return left + right;
 }

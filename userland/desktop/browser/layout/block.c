@@ -22,6 +22,8 @@ static layout_unit block_collapse(layout_unit first, layout_unit second);
 static layout_unit block_outer_height(const struct layout_box *box);
 static int block_owns_context(const struct layout_box *box);
 static int block_content(struct layout_tree *tree, struct layout_box *box);
+static int block_intrinsic(struct layout_tree *tree, struct layout_box *box, layout_unit containing_width);
+static int block_is_intrinsic(const struct css_length *length);
 
 /*
  * Lays out a block box in a containing block of a width: its box model,
@@ -42,7 +44,15 @@ layout_block(
 	layout_unit height;
 	layout_unit sizing;
 	int own_context;
+	int intrinsic;
 	int error;
+
+	/* A width of max-content, min-content or fit-content is measured first (ws074-p074). */
+	intrinsic = block_is_intrinsic(&box->style.width);
+	if (intrinsic && !box->replaced) {
+		error = block_intrinsic(tree, box, containing_width);
+		return error;
+	}
 
 	/* The margins, borders and paddings. */
 	layout_box_model(box, containing_width);
@@ -122,6 +132,105 @@ layout_block(
 }
 
 /*
+ * Lays out a box whose width is an intrinsic size (ws074-p074): its
+ * content's width without a limit (max-content), with a line at every
+ * opportunity (min-content), or the room between them the containing
+ * block leaves (fit-content), then the box at that width as if it had
+ * been given in pixels (its style keeps the keyword).
+ */
+static int
+block_intrinsic(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	layout_unit containing_width)
+{
+	struct layout_context context;
+	struct wb_vector floats;
+	struct css_length width;
+	layout_unit most;
+	layout_unit least;
+	layout_unit room;
+	layout_unit used;
+	int error;
+
+	/* The content measured with an auto width. */
+	width = box->style.width;
+	box->style.width.unit = CSS_UNIT_AUTO;
+	error = layout_max_content(tree, box, &most);
+	if (error != 0) {
+		box->style.width = width;
+		return error;
+	}
+
+	/* The widest word, for min-content and fit-content: the content laid out as narrow as it goes. */
+	least = most;
+	if (width.unit != CSS_UNIT_MAX_CONTENT) {
+		tree->measuring++;
+		layout_context_begin(tree, &context, &floats);
+		error = layout_block(tree, box, 0);
+		layout_context_end(tree, &context);
+		if (error == 0)
+			least = layout_content_width(box, 0);
+		tree->measuring--;
+		if (error != 0) {
+			box->style.width = width;
+			return error;
+		}
+	}
+
+	/* The width: max-content, min-content, or the room clamped between them. */
+	used = most;
+	if (width.unit == CSS_UNIT_MIN_CONTENT)
+		used = least;
+	if (width.unit == CSS_UNIT_FIT_CONTENT) {
+		layout_box_model(box, containing_width);
+		room = containing_width - box->margin[CSS_LEFT] - box->margin[CSS_RIGHT] - box->border[CSS_LEFT] - box->padding[CSS_LEFT] -
+		    box->padding[CSS_RIGHT] - box->border[CSS_RIGHT];
+		used = room;
+		if (used > most)
+			used = most;
+		if (used < least)
+			used = least;
+	}
+
+	/* The box at that content width (its borders and paddings outside it). */
+	box->style.width.unit = CSS_UNIT_PX;
+	box->style.width.value = layout_to_px(used);
+	box->style.width.offset = 0;
+	if (box->style.box_sizing == CSS_BOX_SIZING_BORDER) {
+		layout_box_model(box, containing_width);
+		box->style.width.value = layout_to_px(used + box->border[CSS_LEFT] + box->padding[CSS_LEFT] +
+		    box->padding[CSS_RIGHT] + box->border[CSS_RIGHT]);
+	}
+
+	/* The layout at that width, the style's keyword put back after it. */
+	error = layout_block(tree, box, containing_width);
+	box->style.width = width;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the box has its intrinsic width. */
+	return 0;
+}
+
+/* Tells whether a width is one of the intrinsic keywords. */
+static int
+block_is_intrinsic(
+	const struct css_length *length)
+{
+	/* max-content, min-content and fit-content. */
+	if (length->unit == CSS_UNIT_MAX_CONTENT)
+		return 1;
+	if (length->unit == CSS_UNIT_MIN_CONTENT)
+		return 1;
+	if (length->unit == CSS_UNIT_FIT_CONTENT)
+		return 1;
+
+	/* Any other width. */
+	return 0;
+}
+
+/*
  * Resolves a box's margins, borders and paddings against its containing
  * block's width.
  */
@@ -156,6 +265,7 @@ layout_auto_margins(
 	layout_unit room;
 	int left_auto;
 	int right_auto;
+	int rtl;
 
 	/* The borders and paddings around the content. */
 	frame = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
@@ -179,6 +289,24 @@ layout_auto_margins(
 	room = containing_width - box->width - frame;
 	if (room < 0)
 		room = 0;
+
+	/*
+	 * Without an auto margin, a box in a right-to-left containing block
+	 * keeps its right margin and the left one takes the rest (ws074-p073):
+	 * the box stands at the right.  A flex or grid item's margins are its
+	 * container's to give.
+	 */
+	rtl = 0;
+	if (box->parent != NULL && box->parent->style.direction == CSS_DIRECTION_RTL)
+		rtl = 1;
+	if (rtl && (box->parent->style.display == CSS_DISPLAY_FLEX || box->parent->style.display == CSS_DISPLAY_GRID))
+		rtl = 0;
+	if (rtl && !left_auto && !right_auto && box->floating == CSS_FLOAT_NONE && !box->atomic && !box->out_of_flow) {
+		box->margin[CSS_LEFT] = containing_width - box->width - frame - box->margin[CSS_RIGHT];
+		return;
+	}
+
+	/* The auto margins take the room. */
 	if (left_auto && right_auto) {
 		box->margin[CSS_LEFT] = room / 2;
 		box->margin[CSS_RIGHT] = room - room / 2;
@@ -201,9 +329,11 @@ block_content(
 	box->collapsed_top = box->margin[CSS_TOP];
 	box->collapsed_bottom = box->margin[CSS_BOTTOM];
 
-	/* The flex items, the lines, or the children. */
+	/* The flex items, the grid items, the lines, or the children. */
 	if (box->style.display == CSS_DISPLAY_FLEX) {
 		error = layout_flex(tree, box);
+	} else if (box->style.display == CSS_DISPLAY_GRID) {
+		error = layout_grid(tree, box);
 	} else if (box->children_inline) {
 		error = layout_inline(tree, box);
 	} else {
@@ -247,9 +377,13 @@ block_owns_context(
 		return 1;
 	if (box->style.display == CSS_DISPLAY_FLEX)
 		return 1;
+	if (box->style.display == CSS_DISPLAY_GRID)
+		return 1;
 
-	/* A flex item. */
+	/* A flex or grid item. */
 	if (box->parent->style.display == CSS_DISPLAY_FLEX)
+		return 1;
+	if (box->parent->style.display == CSS_DISPLAY_GRID)
 		return 1;
 
 	/* A block in its parent's context. */

@@ -702,6 +702,7 @@ inline_finish_line(
 	size_t count;
 	size_t piece_count;
 	size_t index;
+	int align;
 	int error;
 
 	/* Trailing spaces hang past the line and are dropped. */
@@ -839,12 +840,24 @@ inline_finish_line(
 	inline_align(tree, box, &line, reach, piece_count, &above, &below);
 	free(reach);
 
-	/* Aligns the line in the room the floats leave it. */
+	/* Aligns the line in the room the floats leave it: start and end are the right and the left in a right-to-left block. */
 	room = line_width - x;
 	line.left = line_left;
-	if (room > 0 && box->style.text_align == CSS_TEXT_ALIGN_CENTER)
+	align = box->style.text_align;
+	if (align == CSS_TEXT_ALIGN_START || align == CSS_TEXT_ALIGN_JUSTIFY) {
+		align = CSS_TEXT_ALIGN_LEFT;
+		if (box->style.direction == CSS_DIRECTION_RTL)
+			align = CSS_TEXT_ALIGN_RIGHT;
+	} else if (align == CSS_TEXT_ALIGN_END) {
+		align = CSS_TEXT_ALIGN_RIGHT;
+		if (box->style.direction == CSS_DIRECTION_RTL)
+			align = CSS_TEXT_ALIGN_LEFT;
+	}
+
+	/* The room goes half to each side, or all to the left. */
+	if (room > 0 && align == CSS_TEXT_ALIGN_CENTER)
 		line.left = line_left + room / 2;
-	if (room > 0 && box->style.text_align == CSS_TEXT_ALIGN_RIGHT)
+	if (room > 0 && align == CSS_TEXT_ALIGN_RIGHT)
 		line.left = line_left + room;
 
 	/* Stacks the line under the ones before. */

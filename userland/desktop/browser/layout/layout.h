@@ -178,6 +178,9 @@ struct layout_box {
 	/* A flex item's margin box along its container's main axis before it flexed (flex.c). */
 	layout_unit flex_hypothetical;
 
+	/* A grid container's columns and gaps at their content's sizes, which its content is as wide as (grid.c). */
+	layout_unit grid_content;
+
 	/*
 	 * The width the box's content takes laid out without a limit (its
 	 * max-content width), once it has been measured for shrinking to fit;
@@ -260,6 +263,7 @@ void layout_release(struct layout_tree *tree);
 int layout_block(struct layout_tree *tree, struct layout_box *box, layout_unit containing_width);
 int layout_inline(struct layout_tree *tree, struct layout_box *box);
 int layout_flex(struct layout_tree *tree, struct layout_box *box);
+int layout_grid(struct layout_tree *tree, struct layout_box *box);
 layout_unit layout_flex_content_width(const struct layout_box *box);
 void layout_font_of(struct layout_tree *tree, const struct css_style *style, struct text_font *font);
 int layout_dump(const struct layout_tree *tree, struct wb_buffer *out);

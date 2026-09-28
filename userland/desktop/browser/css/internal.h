@@ -184,8 +184,9 @@ struct css_selector {
 /*
  * A sum of lengths of the kinds calc() mixes, each the number of its unit:
  * pixels (the absolute units converted), percentages, font-relative and
- * viewport-relative lengths.  The cascade turns it into pixels and a
- * percentage the layout resolves.
+ * viewport-relative lengths, and at most one min(), max() or clamp()
+ * inside it times a factor (nested, in the parse's arena; ws074-p074).
+ * The cascade turns it into pixels and a percentage the layout resolves.
  */
 struct css_calc_sum {
 	float px;
@@ -197,6 +198,10 @@ struct css_calc_sum {
 	float vh;
 	float vmin;
 	float vmax;
+	float cqw;
+	float cqh;
+	const struct css_calc *nested;
+	float nested_factor;
 };
 
 /* What a calculation does with its sums. */
@@ -235,6 +240,21 @@ struct css_value {
 	const struct css_content *content;
 	const struct css_shadow_list *shadows;
 	const struct css_declared_inset *inset;
+	const struct css_track_list *tracks;
+};
+
+/* One declared grid track (ws074-p072): its kind, its size (a length, or the fr share) and minmax()'s minimum. */
+struct css_declared_track {
+	int kind;
+	struct css_value size;
+	int minimum_kind;
+	struct css_value minimum;
+};
+
+/* A declared grid template, kept in the parse's arena (none is an empty list). */
+struct css_track_list {
+	struct css_declared_track tracks[CSS_TRACKS];
+	size_t count;
 };
 
 /* A declared clip-path: inset(): its four declared lengths, top, right, bottom, left (ws074-p062). */
@@ -272,7 +292,9 @@ enum css_value_kind {
 	CSS_VALUE_UNSET,
 	CSS_VALUE_CONTENT,
 	CSS_VALUE_SHADOWS,
-	CSS_VALUE_INSET
+	CSS_VALUE_INSET,
+	CSS_VALUE_TRACKS,
+	CSS_VALUE_GRID_LINE
 };
 
 /* The units a declared length can have (converted to pixels by the cascade). */
@@ -292,7 +314,9 @@ enum css_declared_unit {
 	CSS_DUNIT_FONT_KEYWORD,
 	CSS_DUNIT_VMIN,
 	CSS_DUNIT_VMAX,
-	CSS_DUNIT_CALC
+	CSS_DUNIT_CALC,
+	CSS_DUNIT_CQW,
+	CSS_DUNIT_CQH
 };
 
 /*
@@ -386,6 +410,14 @@ enum css_property {
 	CSS_PROP_OUTLINE_COLOR,
 	CSS_PROP_OUTLINE_OFFSET,
 	CSS_PROP_CLIP_PATH,
+	CSS_PROP_DIRECTION,
+	CSS_PROP_GRID_TEMPLATE_COLUMNS,
+	CSS_PROP_GRID_TEMPLATE_ROWS,
+	CSS_PROP_GRID_COLUMN_START,
+	CSS_PROP_GRID_COLUMN_END,
+	CSS_PROP_GRID_ROW_START,
+	CSS_PROP_GRID_ROW_END,
+	CSS_PROP_CONTAINER_TYPE,
 	CSS_PROP_COUNT
 };
 

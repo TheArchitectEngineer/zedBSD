@@ -701,10 +701,12 @@ flex_place_line(
 		break;
 	}
 
-	/* A reverse direction runs from the far end. */
+	/* A reverse direction runs from the far end; so does a row of a right-to-left container (ws074-p073), the other way. */
 	reverse = 0;
 	if (box->style.flex_direction == CSS_FLEX_ROW_REVERSE || box->style.flex_direction == CSS_FLEX_COLUMN_REVERSE)
 		reverse = 1;
+	if (row && box->style.direction == CSS_DIRECTION_RTL)
+		reverse = !reverse;
 
 	/* Each item along the main axis, then across the line. */
 	for (index = 0; index < count; index++) {
