@@ -88,6 +88,43 @@ struct css_engine {
 	struct wb_arena arena;
 	int pseudo_wanted;
 	int pseudo_seen;
+	struct cascade_classes *class_table;
+	size_t class_capacity;
+	size_t class_count;
+	struct wb_vector class_atoms;
+	struct cascade_cached *style_table;
+	size_t style_capacity;
+	size_t style_count;
+};
+
+/*
+ * One element's computed style, kept by the engine (ws074-p071) so that a
+ * layout again (an image or a font arrived) does not run the cascade for
+ * every element again.  The engine is made anew when the document or its
+ * sheets change, and forgets the styles when the viewport changes; an
+ * element's parent style is the same whenever the engine computes it (the
+ * layout and the style dump walk the tree alike).
+ */
+struct cascade_cached {
+	struct dom_element *element;
+	struct css_style *style;
+};
+
+/*
+ * One class attribute's words as atoms (ws074-p071), which the engine
+ * keeps for as long as it lives so that a class selector compares
+ * pointers instead of characters: the attribute's string (with its length
+ * and hash, so that a string freed and another made at its address is
+ * not mistaken for it), and the run of class_atoms that holds the words
+ * some sheet names (a word no sheet names has no atom, and no selector
+ * can name it).
+ */
+struct cascade_classes {
+	struct vm_string *classes;
+	uint32_t length;
+	uint32_t hash;
+	uint32_t start;
+	uint32_t count;
 };
 
 /*
@@ -130,6 +167,13 @@ static int cascade_compound_matches(struct css_engine *engine, struct dom_elemen
 static int cascade_simple_matches(struct css_engine *engine, struct dom_element *element, const struct css_simple *simple);
 static int cascade_attribute_matches(const struct vm_string *value, const struct css_simple *simple);
 static int cascade_has_class(const struct vm_string *classes, const struct vm_string *name);
+static int cascade_class_atoms(struct css_engine *engine, struct vm_string *classes, struct vm_string *const **atoms, size_t *count);
+static int cascade_class_grow(struct css_engine *engine);
+static struct cascade_classes *cascade_class_slot(struct css_engine *engine, struct vm_string *classes);
+static struct cascade_cached *cascade_style_slot(struct css_engine *engine, const struct dom_element *element);
+static void cascade_style_keep(struct css_engine *engine, struct dom_element *element, const struct css_style *style);
+static int cascade_style_grow(struct css_engine *engine);
+static void cascade_style_forget(struct css_engine *engine);
 static struct dom_element *cascade_parent_element(struct dom_element *element);
 static struct dom_element *cascade_previous_element(struct dom_element *element);
 static struct dom_element *cascade_next_element(struct dom_element *element);
@@ -167,6 +211,7 @@ css_engine_create(
 	wb_vector_init(&created->class_keys, sizeof(struct vm_string *));
 	wb_vector_init(&created->candidates, sizeof(struct css_index_entry));
 	wb_units_init(&created->word);
+	wb_vector_init(&created->class_atoms, sizeof(struct vm_string *));
 	wb_arena_init(&created->arena, 0);
 	created->atom_id = vm_atom_from_ascii(heap, "id");
 	created->atom_class = vm_atom_from_ascii(heap, "class");
@@ -217,6 +262,10 @@ css_engine_destroy(
 	wb_vector_release(&engine->class_keys);
 	wb_vector_release(&engine->candidates);
 	wb_units_release(&engine->word);
+	wb_vector_release(&engine->class_atoms);
+	free(engine->class_table);
+	cascade_style_forget(engine);
+	free(engine->style_table);
 	wb_arena_release(&engine->arena);
 	free(engine);
 }
@@ -358,6 +407,10 @@ css_engine_set_viewport(
 	float width,
 	float height)
 {
+	/* The styles computed at another size may differ (vw, vh and the media queries). */
+	if (engine->viewport_width != width || engine->viewport_height != height)
+		cascade_style_forget(engine);
+
 	/* Remembers the size. */
 	engine->viewport_width = width;
 	engine->viewport_height = height;
@@ -374,12 +427,25 @@ css_engine_compute(
 	const struct css_style *parent,
 	struct css_style *style)
 {
+	struct cascade_cached *cached;
 	int error;
+
+	/* A style the engine computed before for the element. */
+	if (engine->style_capacity != 0) {
+		cached = cascade_style_slot(engine, element);
+		if (cached->element != NULL) {
+			*style = *cached->style;
+			return 0;
+		}
+	}
 
 	/* The element itself. */
 	error = cascade_compute(engine, element, parent, style, CSS_PSEUDO_ELEMENT_NONE);
 	if (error != 0)
 		return error;
+
+	/* The engine keeps it (a copy it cannot keep is only computed again). */
+	cascade_style_keep(engine, element, style);
 
 	/* Succeeded: the style is computed. */
 	return 0;
@@ -701,10 +767,8 @@ cascade_element_keys(
 	struct vm_string **id)
 {
 	struct dom_attribute *attribute;
-	struct vm_string *classes;
-	struct vm_string *atom;
-	size_t start;
-	size_t end;
+	struct vm_string *const *atoms;
+	size_t count;
 	size_t position;
 	uint16_t unit;
 	int error;
@@ -730,41 +794,17 @@ cascade_element_keys(
 	attribute = dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_class);
 	if (attribute == NULL)
 		return 0;
-	classes = attribute->value;
 
-	/* Each whitespace-separated word of the class attribute. */
-	start = 0;
-	while (start < classes->length) {
-		/* Skips whitespace before the word. */
-		unit = vm_string_at(classes, start);
-		if (unit == ' ' || unit == '\t' || unit == '\n' || unit == '\f' || unit == '\r') {
-			start++;
-			continue;
-		}
+	/* The class attribute's words that some sheet named (their atoms, kept by the engine). */
+	error = cascade_class_atoms(engine, attribute->value, &atoms, &count);
+	if (error != 0)
+		return error;
 
-		/* Copies the word's characters up to the next whitespace. */
-		wb_units_clear(&engine->word);
-		end = start;
-		while (end < classes->length) {
-			unit = vm_string_at(classes, end);
-			if (unit == ' ' || unit == '\t' || unit == '\n' || unit == '\f' || unit == '\r')
-				break;
-			error = wb_units_append(&engine->word, &unit, 1);
-			if (error != 0)
-				return ENOMEM;
-			end++;
-		}
-
-		/* The word's atom, when some sheet named it, is a key. */
-		atom = vm_atom_find_units(engine->heap, engine->word.data, engine->word.length);
-		if (atom != NULL) {
-			error = wb_vector_push(&engine->class_keys, &atom);
-			if (error != 0)
-				return ENOMEM;
-		}
-
-		/* On to the next word. */
-		start = end;
+	/* Each is a key. */
+	for (position = 0; position < count; position++) {
+		error = wb_vector_push(&engine->class_keys, &atoms[position]);
+		if (error != 0)
+			return ENOMEM;
 	}
 
 	/* Succeeded: the element's keys are found. */
@@ -1607,7 +1647,11 @@ cascade_simple_matches(
 	const struct css_simple *simple)
 {
 	struct dom_attribute *attribute;
+	struct vm_string *const *atoms;
+	size_t count;
+	size_t position;
 	int matches;
+	int error;
 
 	/* The kind of selector. */
 	switch (simple->kind) {
@@ -1625,7 +1669,20 @@ cascade_simple_matches(
 		attribute = dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_class);
 		if (attribute == NULL)
 			return 0;
-		return cascade_has_class(attribute->value, simple->name);
+
+		/* The attribute's words as atoms (a failure to keep them falls back to comparing characters). */
+		error = cascade_class_atoms(engine, attribute->value, &atoms, &count);
+		if (error != 0)
+			return cascade_has_class(attribute->value, simple->name);
+
+		/* The selector's name is an atom: one of the words' atoms is it, or none is. */
+		for (position = 0; position < count; position++) {
+			if (atoms[position] == simple->name)
+				return 1;
+		}
+
+		/* The element does not have the class. */
+		return 0;
 	case CSS_SIMPLE_ATTRIBUTE:
 		attribute = dom_element_find_attribute(element, DOM_NS_NONE, simple->name);
 		if (attribute == NULL)
@@ -2042,6 +2099,281 @@ cascade_attribute_matches(
 
 	/* No place matched. */
 	return 0;
+}
+
+/*
+ * Finds a class attribute's words as the atoms some sheet made for them
+ * (in the attribute's order; words no sheet names are left out), splitting
+ * the attribute the first time the engine meets its string and keeping
+ * the atoms for as long as the engine lives.
+ */
+static int
+cascade_class_atoms(
+	struct css_engine *engine,
+	struct vm_string *classes,
+	struct vm_string *const **atoms,
+	size_t *count)
+{
+	struct cascade_classes *slot;
+	struct vm_string *atom;
+	size_t start;
+	size_t end;
+	uint16_t unit;
+	uint32_t first;
+	int error;
+
+	/* Grows the table when adding would fill more than half of it. */
+	if ((engine->class_count + 1U) * 2U > engine->class_capacity) {
+		error = cascade_class_grow(engine);
+		if (error != 0)
+			return error;
+	}
+
+	/* A string met before has its atoms. */
+	slot = cascade_class_slot(engine, classes);
+	if (slot->classes != NULL) {
+		*atoms = (struct vm_string *const *)engine->class_atoms.items + slot->start;
+		*count = slot->count;
+		return 0;
+	}
+
+	/* Otherwise each whitespace-separated word's atom, when a sheet made one, joins the run. */
+	first = (uint32_t)engine->class_atoms.count;
+	start = 0;
+	while (start < classes->length) {
+		/* Skips whitespace before the word. */
+		unit = vm_string_at(classes, start);
+		if (unit == ' ' || unit == '\t' || unit == '\n' || unit == '\f' || unit == '\r') {
+			start++;
+			continue;
+		}
+
+		/* Copies the word's characters up to the next whitespace. */
+		wb_units_clear(&engine->word);
+		end = start;
+		while (end < classes->length) {
+			unit = vm_string_at(classes, end);
+			if (unit == ' ' || unit == '\t' || unit == '\n' || unit == '\f' || unit == '\r')
+				break;
+			error = wb_units_append(&engine->word, &unit, 1);
+			if (error != 0)
+				return ENOMEM;
+			end++;
+		}
+
+		/* The word's atom, when some sheet named it. */
+		atom = vm_atom_find_units(engine->heap, engine->word.data, engine->word.length);
+		if (atom != NULL) {
+			error = wb_vector_push(&engine->class_atoms, &atom);
+			if (error != 0)
+				return ENOMEM;
+		}
+
+		/* On to the next word. */
+		start = end;
+	}
+
+	/* The string's entry: where its run is. */
+	slot->classes = classes;
+	slot->length = classes->length;
+	slot->hash = vm_string_hash(classes);
+	slot->start = first;
+	slot->count = (uint32_t)engine->class_atoms.count - first;
+	engine->class_count++;
+
+	/* Succeeded: reports the run. */
+	*atoms = (struct vm_string *const *)engine->class_atoms.items + first;
+	*count = slot->count;
+	return 0;
+}
+
+/* Finds the table slot of a class attribute's string: the one holding it, or the empty one where it goes. */
+static struct cascade_classes *
+cascade_class_slot(
+	struct css_engine *engine,
+	struct vm_string *classes)
+{
+	struct cascade_classes *slot;
+	uintptr_t key;
+	uint32_t hash;
+	size_t index;
+
+	/* Probes linearly from the string's address. */
+	key = (uintptr_t)classes;
+	index = (size_t)((key >> 4) * 0x9e3779b97f4a7c15ULL >> 20) & (engine->class_capacity - 1U);
+	for (;;) {
+		slot = &engine->class_table[index];
+		if (slot->classes == NULL)
+			return slot;
+
+		/* The same string, unchanged since it was split (its hash tells a new string at the same address). */
+		if (slot->classes == classes && slot->length == classes->length) {
+			hash = vm_string_hash(classes);
+			if (slot->hash == hash)
+				return slot;
+		}
+
+		/* The next slot of the probe. */
+		index = (index + 1U) & (engine->class_capacity - 1U);
+	}
+}
+
+/*
+ * Doubles the class table and moves every entry (an entry whose string was
+ * replaced at the same address is dropped with the others' moves, since it
+ * is found again only by an equal string).
+ */
+static int
+cascade_class_grow(
+	struct css_engine *engine)
+{
+	struct cascade_classes *old;
+	struct cascade_classes *slot;
+	size_t old_capacity;
+	size_t index;
+
+	/* Takes the larger, empty table. */
+	old = engine->class_table;
+	old_capacity = engine->class_capacity;
+	engine->class_capacity = old_capacity * 2U;
+	if (engine->class_capacity < 256U)
+		engine->class_capacity = 256U;
+	engine->class_table = calloc(engine->class_capacity, sizeof(*engine->class_table));
+	if (engine->class_table == NULL) {
+		engine->class_table = old;
+		engine->class_capacity = old_capacity;
+		return ENOMEM;
+	}
+
+	/* Moves the entries into the slots their strings probe to. */
+	for (index = 0; index < old_capacity; index++) {
+		if (old[index].classes == NULL)
+			continue;
+		slot = cascade_class_slot(engine, old[index].classes);
+		*slot = old[index];
+	}
+
+	/* The old table is no longer needed. */
+	free(old);
+
+	/* Succeeded: the table has room. */
+	return 0;
+}
+
+/* Finds the style table's slot of an element: the one holding it, or the empty one where it goes. */
+static struct cascade_cached *
+cascade_style_slot(
+	struct css_engine *engine,
+	const struct dom_element *element)
+{
+	struct cascade_cached *slot;
+	uintptr_t key;
+	size_t index;
+
+	/* Probes linearly from the element's address. */
+	key = (uintptr_t)element;
+	index = (size_t)((key >> 4) * 0x9e3779b97f4a7c15ULL >> 20) & (engine->style_capacity - 1U);
+	for (;;) {
+		slot = &engine->style_table[index];
+		if (slot->element == NULL || slot->element == element)
+			return slot;
+
+		/* The next slot of the probe. */
+		index = (index + 1U) & (engine->style_capacity - 1U);
+	}
+}
+
+/* Keeps a copy of an element's computed style in the engine; running out of memory only leaves it out. */
+static void
+cascade_style_keep(
+	struct css_engine *engine,
+	struct dom_element *element,
+	const struct css_style *style)
+{
+	struct cascade_cached *slot;
+	struct css_style *copy;
+	int error;
+
+	/* Grows the table when adding would fill more than half of it. */
+	if ((engine->style_count + 1U) * 2U > engine->style_capacity) {
+		error = cascade_style_grow(engine);
+		if (error != 0)
+			return;
+	}
+
+	/* The copy. */
+	copy = malloc(sizeof(*copy));
+	if (copy == NULL)
+		return;
+	*copy = *style;
+
+	/* Its slot (an element kept already keeps its first copy). */
+	slot = cascade_style_slot(engine, element);
+	if (slot->element != NULL) {
+		free(copy);
+		return;
+	}
+
+	/* The element's entry. */
+	slot->element = element;
+	slot->style = copy;
+	engine->style_count++;
+}
+
+/* Doubles the style table and moves every entry. */
+static int
+cascade_style_grow(
+	struct css_engine *engine)
+{
+	struct cascade_cached *old;
+	struct cascade_cached *slot;
+	size_t old_capacity;
+	size_t index;
+
+	/* Takes the larger, empty table. */
+	old = engine->style_table;
+	old_capacity = engine->style_capacity;
+	engine->style_capacity = old_capacity * 2U;
+	if (engine->style_capacity < 256U)
+		engine->style_capacity = 256U;
+	engine->style_table = calloc(engine->style_capacity, sizeof(*engine->style_table));
+	if (engine->style_table == NULL) {
+		engine->style_table = old;
+		engine->style_capacity = old_capacity;
+		return ENOMEM;
+	}
+
+	/* Moves the entries into the slots their elements probe to. */
+	for (index = 0; index < old_capacity; index++) {
+		if (old[index].element == NULL)
+			continue;
+		slot = cascade_style_slot(engine, old[index].element);
+		*slot = old[index];
+	}
+
+	/* The old table is no longer needed. */
+	free(old);
+
+	/* Succeeded: the table has room. */
+	return 0;
+}
+
+/* Forgets every style the engine kept (the table stays, empty). */
+static void
+cascade_style_forget(
+	struct css_engine *engine)
+{
+	size_t index;
+
+	/* Frees each copy and empties its slot. */
+	for (index = 0; index < engine->style_capacity; index++) {
+		free(engine->style_table[index].style);
+		engine->style_table[index].element = NULL;
+		engine->style_table[index].style = NULL;
+	}
+
+	/* No style is kept. */
+	engine->style_count = 0;
 }
 
 /* Tells whether a whitespace-separated list holds a word. */

@@ -250,6 +250,8 @@ int
 page_needs_layout(
 	const struct page *page)
 {
+	int pending;
+
 	/* A page never laid out needs it. */
 	if (!page->laid_out)
 		return 1;
@@ -262,9 +264,12 @@ page_needs_layout(
 	if (page->laid_out_images != page->images_generation)
 		return 1;
 
-	/* Style sheets that arrived since the styling. */
-	if (page->styled_sheets != page->sheets_generation)
-		return 1;
+	/* Style sheets that arrived since the styling, once no other is on its way (the page is styled again once for them all). */
+	if (page->styled_sheets != page->sheets_generation) {
+		pending = page_sheets_pending(page);
+		if (!pending)
+			return 1;
+	}
 
 	/* Web fonts that arrived since the layout (ws074-p070). */
 	if (page->laid_out_fonts != page->fonts_generation)

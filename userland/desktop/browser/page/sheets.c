@@ -123,6 +123,28 @@ page_sheets_add(
 }
 
 /*
+ * Tells whether a sheet of the page is still on its way (ws074-p071): the
+ * page, once styled, waits for the lot before it is styled again.
+ */
+int
+page_sheets_pending(
+	const struct page *page)
+{
+	const struct page_sheet *entry;
+	size_t index;
+
+	/* Any entry with a request under way. */
+	for (index = 0; index < page->sheets.count; index++) {
+		entry = *(struct page_sheet *const *)wb_vector_at(&page->sheets, index);
+		if (entry->request != NULL)
+			return 1;
+	}
+
+	/* Every sheet is here, or failed. */
+	return 0;
+}
+
+/*
  * Frees the page's sheets, cancelling the fetches under way.
  */
 void

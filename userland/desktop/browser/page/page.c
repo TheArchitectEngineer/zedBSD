@@ -592,12 +592,21 @@ static int
 page_update_styles(
 	struct page *page)
 {
+	int pending;
 	int error;
 
 	/* Styles that are up to date stay. */
 	if (page->css != NULL &&
 	    page->styled_generation == page->document->generation &&
 	    page->styled_sheets == page->sheets_generation)
+		return 0;
+
+	/*
+	 * So do styles of the same document while more sheets are on their way:
+	 * the page is styled again once they are all here (ws074-p071).
+	 */
+	pending = page_sheets_pending(page);
+	if (page->css != NULL && page->styled_generation == page->document->generation && pending)
 		return 0;
 
 	/* A new engine with the sheets as they are now. */
