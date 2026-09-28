@@ -29,6 +29,12 @@
 /* The most distinct fill alphas one document may use, each an ExtGState object. */
 #define PDF_WRITER_ALPHA_MAX 64
 
+/* The most images one document may hold, each an Image XObject. */
+#define PDF_WRITER_IMAGE_MAX 4096
+
+/* The largest side of an image in pixels, which keeps width x height x 4 far from overflowing. */
+#define PDF_WRITER_IMAGE_SIDE_MAX 16384
+
 /* The objects the writer places before the pages: the catalog, the page tree and the information dictionary. */
 #define PDF_WRITER_OBJECT_CATALOG 1
 #define PDF_WRITER_OBJECT_PAGES 2
@@ -82,6 +88,25 @@ struct pdf_writer_attachment {
 };
 
 /*
+ * One image the document draws.
+ *
+ * The writer owns the bytes: JPEG data kept as it came (DCTDecode), or 8-bit
+ * RGB samples with an 8-bit alpha mask when some pixel is not opaque.
+ * object is the image's object number, assigned when the document is laid
+ * out; the mask, if any, is the next object.
+ */
+struct pdf_writer_image {
+	unsigned char *data;
+	size_t size;
+	unsigned char *alpha;
+	size_t width;
+	size_t height;
+	int is_jpeg;
+	int components;
+	size_t object;
+};
+
+/*
  * A document being written.
  *
  * The page array only grows, and the last page is the open one while
@@ -97,6 +122,9 @@ struct pdf_writer {
 	double current_alpha;
 	double alphas[PDF_WRITER_ALPHA_MAX];
 	size_t alphas_count;
+	struct pdf_writer_image *images;
+	size_t images_count;
+	size_t images_capacity;
 	struct pdf_writer_attachment attachment;
 	int has_attachment;
 	unsigned char document_id[PDF_WRITER_ID_SIZE];
@@ -118,6 +146,8 @@ static struct pdf_buffer *open_content(struct pdf_writer *writer);
 static int append_point(struct pdf_writer *writer, double x, double y, const char *operator_name);
 static int find_or_add_alpha(struct pdf_writer *writer, double alpha, size_t *index);
 static int copy_string(const char *source, char **copy);
+static int add_image(struct pdf_writer *writer, struct pdf_writer_image *image, double x, double y, double draw_width, double draw_height);
+static void write_image_objects(struct pdf_writer_image *image, struct pdf_buffer *file, size_t *offsets);
 static int mime_type_is_valid(const char *mime_type);
 static int write_document(struct pdf_writer *writer, struct pdf_buffer *file, time_t now);
 static void write_catalog(struct pdf_writer *writer, struct pdf_buffer *file, size_t spec_object);
@@ -170,7 +200,14 @@ pdf_writer_destroy(
 		free(writer->pages[index]);
 	}
 
-	/* Frees the page array, the attachment and the document. */
+	/* Frees each image's samples and mask. */
+	for (index = 0; index < writer->images_count; index++) {
+		free(writer->images[index].data);
+		free(writer->images[index].alpha);
+	}
+
+	/* Frees the page and image arrays, the attachment and the document. */
+	free(writer->images);
 	free(writer->pages);
 	free(writer->attachment.name);
 	free(writer->attachment.mime_type);
@@ -503,6 +540,147 @@ pdf_writer_fill_outline(
 		return error;
 
 	/* Succeeded: the outline is painted. */
+	return 0;
+}
+
+/*
+ * Draws an RGBA image into a rectangle of the open page.
+ *
+ * The pixels are 8-bit red, green, blue and alpha, row by row from the top.
+ * The rectangle's top-left corner is (x, y) in the page's y-down space.  An
+ * image with a pixel that is not opaque carries an alpha mask.  Like every
+ * image, it is painted with the opacity pdf_writer_set_fill_color() selected
+ * last.
+ */
+int
+pdf_writer_draw_rgba_image(
+	struct pdf_writer *writer,
+	const unsigned char *pixels,
+	size_t width,
+	size_t height,
+	double x,
+	double y,
+	double draw_width,
+	double draw_height)
+{
+	struct pdf_writer_image image;
+	size_t pixel_count;
+	size_t index;
+	int translucent;
+	int error;
+
+	/* Refuses missing pixels and an image without area or past the side limit. */
+	if (pixels == NULL)
+		return EINVAL;
+	if (width == 0 || height == 0)
+		return EINVAL;
+	if (width > PDF_WRITER_IMAGE_SIDE_MAX || height > PDF_WRITER_IMAGE_SIDE_MAX)
+		return EINVAL;
+
+	/* Allocates the RGB samples. */
+	memset(&image, 0, sizeof(image));
+	pixel_count = width * height;
+	image.data = malloc(pixel_count * 3);
+	if (image.data == NULL)
+		return ENOMEM;
+
+	/* Allocates the alpha mask. */
+	image.alpha = malloc(pixel_count);
+	if (image.alpha == NULL) {
+		free(image.data);
+		return ENOMEM;
+	}
+
+	/* Splits each pixel into its color and its alpha, noting whether any is not opaque. */
+	translucent = 0;
+	for (index = 0; index < pixel_count; index++) {
+		image.data[index * 3 + 0] = pixels[index * 4 + 0];
+		image.data[index * 3 + 1] = pixels[index * 4 + 1];
+		image.data[index * 3 + 2] = pixels[index * 4 + 2];
+		image.alpha[index] = pixels[index * 4 + 3];
+		if (pixels[index * 4 + 3] != 255)
+			translucent = 1;
+	}
+
+	/* An opaque image needs no mask. */
+	if (!translucent) {
+		free(image.alpha);
+		image.alpha = NULL;
+	}
+
+	/* Describes the samples. */
+	image.size = pixel_count * 3;
+	image.width = width;
+	image.height = height;
+	image.components = 3;
+
+	/* Adds the image to the document and draws it; a refusal frees the samples. */
+	error = add_image(writer, &image, x, y, draw_width, draw_height);
+	if (error != 0) {
+		free(image.data);
+		free(image.alpha);
+		return error;
+	}
+
+	/* Succeeded: the image is drawn. */
+	return 0;
+}
+
+/*
+ * Draws a JPEG image into a rectangle of the open page.
+ *
+ * The JPEG bytes are stored unchanged and decoded by the reader
+ * (DCTDecode).  The caller gives the image's size and its number of color
+ * components, 1 (gray) or 3 (RGB), from the JPEG's frame header.
+ */
+int
+pdf_writer_draw_jpeg_image(
+	struct pdf_writer *writer,
+	const void *data,
+	size_t size,
+	size_t width,
+	size_t height,
+	int components,
+	double x,
+	double y,
+	double draw_width,
+	double draw_height)
+{
+	struct pdf_writer_image image;
+	int error;
+
+	/* Refuses missing data, an image without area or past the side limit, and other color spaces. */
+	if (data == NULL || size == 0)
+		return EINVAL;
+	if (width == 0 || height == 0)
+		return EINVAL;
+	if (width > PDF_WRITER_IMAGE_SIDE_MAX || height > PDF_WRITER_IMAGE_SIDE_MAX)
+		return EINVAL;
+	if (components != 1 && components != 3)
+		return EINVAL;
+
+	/* Copies the JPEG bytes. */
+	memset(&image, 0, sizeof(image));
+	image.data = malloc(size);
+	if (image.data == NULL)
+		return ENOMEM;
+	memcpy(image.data, data, size);
+
+	/* Describes the image. */
+	image.size = size;
+	image.width = width;
+	image.height = height;
+	image.is_jpeg = 1;
+	image.components = components;
+
+	/* Adds the image to the document and draws it; a refusal frees the bytes. */
+	error = add_image(writer, &image, x, y, draw_width, draw_height);
+	if (error != 0) {
+		free(image.data);
+		return error;
+	}
+
+	/* Succeeded: the image is drawn. */
 	return 0;
 }
 
@@ -1044,6 +1222,88 @@ copy_string(
 }
 
 /*
+ * Adds an image to the document and draws it on the open page.
+ *
+ * On success the document owns the image's bytes; on a refusal the caller
+ * still does.
+ */
+static int
+add_image(
+	struct pdf_writer *writer,
+	struct pdf_writer_image *image,
+	double x,
+	double y,
+	double draw_width,
+	double draw_height)
+{
+	struct pdf_writer_image *grown;
+	struct pdf_buffer *content;
+	size_t capacity;
+	int error;
+
+	/* Refuses drawing outside a page. */
+	content = open_content(writer);
+	if (content == NULL)
+		return EINVAL;
+
+	/* Refuses an x that cannot be written. */
+	error = check_coordinate(x);
+	if (error != 0)
+		return error;
+
+	/* Refuses a y that cannot be written. */
+	error = check_coordinate(y);
+	if (error != 0)
+		return error;
+
+	/* Refuses a rectangle without area or past the limit; the negations also refuse a NaN. */
+	if (!(draw_width > 0.0 && draw_width <= PDF_WRITER_COORDINATE_LIMIT))
+		return EINVAL;
+	if (!(draw_height > 0.0 && draw_height <= PDF_WRITER_COORDINATE_LIMIT))
+		return EINVAL;
+
+	/* Refuses an image past the document's limit. */
+	if (writer->images_count == PDF_WRITER_IMAGE_MAX)
+		return ENOSPC;
+
+	/* Grows the image array when it is full. */
+	if (writer->images_count == writer->images_capacity) {
+		capacity = writer->images_capacity * 2;
+		if (capacity == 0)
+			capacity = 8;
+		grown = realloc(writer->images, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		writer->images = grown;
+		writer->images_capacity = capacity;
+	}
+
+	/*
+	 * Maps the image's unit square onto the rectangle.  The page's y axis
+	 * points down and an image's first row is at the top of its square, so
+	 * the square's y is flipped again: its top edge (y = 1) lands on y.
+	 */
+	buffer_printf(content, "q ");
+	buffer_append_number(content, draw_width);
+	buffer_printf(content, " 0 0 ");
+	buffer_append_number(content, -draw_height);
+	buffer_append(content, " ", 1);
+	buffer_append_number(content, x);
+	buffer_append(content, " ", 1);
+	buffer_append_number(content, y + draw_height);
+	buffer_printf(content, " cm /Im%lu Do Q\n", (unsigned long)writer->images_count);
+	if (content->error != 0)
+		return content->error;
+
+	/* Publishes the image under the name the content just used. */
+	writer->images[writer->images_count] = *image;
+	writer->images_count++;
+
+	/* Succeeded: the document owns the image. */
+	return 0;
+}
+
+/*
  * Reports whether a media type can be written as a PDF name.
  *
  * Only the characters of ordinary media types are accepted; the slash is
@@ -1096,12 +1356,20 @@ write_document(
 	size_t *offsets;
 	size_t object_count;
 	size_t first_alpha_object;
+	size_t next_object;
 	size_t file_object;
 	size_t index;
 
-	/* Numbers the objects after the pages. */
+	/* Numbers the objects after the pages: the opacities, then each image and its mask, then the attachment. */
 	first_alpha_object = PDF_WRITER_OBJECT_FIRST_PAGE + writer->pages_count * 2;
-	file_object = first_alpha_object + writer->alphas_count;
+	next_object = first_alpha_object + writer->alphas_count;
+	for (index = 0; index < writer->images_count; index++) {
+		writer->images[index].object = next_object;
+		next_object++;
+		if (writer->images[index].alpha != NULL)
+			next_object++;
+	}
+	file_object = next_object;
 	object_count = file_object;
 	if (writer->has_attachment)
 		object_count += 2;
@@ -1133,6 +1401,10 @@ write_document(
 		buffer_append_number(file, writer->alphas[index]);
 		buffer_printf(file, " >>\nendobj\n");
 	}
+
+	/* Writes each image and its mask. */
+	for (index = 0; index < writer->images_count; index++)
+		write_image_objects(&writer->images[index], file, offsets);
 
 	/* Writes the attachment. */
 	if (writer->has_attachment)
@@ -1295,7 +1567,57 @@ write_attachment_objects(
 		      (unsigned long)file_object);
 }
 
-/* Writes the resource dictionary every page shares, which lists the opacities. */
+/* Writes one Image XObject and, when it has one, its alpha mask. */
+static void
+write_image_objects(
+	struct pdf_writer_image *image,
+	struct pdf_buffer *file,
+	size_t *offsets)
+{
+	const char *color_space;
+
+	/* Names the color space of the samples. */
+	color_space = "/DeviceRGB";
+	if (image->components == 1)
+		color_space = "/DeviceGray";
+
+	/* Opens the image's dictionary with its size and color space. */
+	offsets[image->object] = file->length;
+	buffer_printf(file,
+		      "%lu 0 obj\n<< /Type /XObject /Subtype /Image /Width %lu /Height %lu /ColorSpace %s /BitsPerComponent 8",
+		      (unsigned long)image->object,
+		      (unsigned long)image->width,
+		      (unsigned long)image->height,
+		      color_space);
+
+	/* Names the JPEG filter, or the mask that follows the image. */
+	if (image->is_jpeg)
+		buffer_printf(file, " /Filter /DCTDecode");
+	if (image->alpha != NULL)
+		buffer_printf(file, " /SMask %lu 0 R", (unsigned long)(image->object + 1));
+
+	/* Writes the samples. */
+	buffer_printf(file, " /Length %lu >>\nstream\n", (unsigned long)image->size);
+	buffer_append(file, image->data, image->size);
+	buffer_printf(file, "\nendstream\nendobj\n");
+
+	/* An opaque image has no mask. */
+	if (image->alpha == NULL)
+		return;
+
+	/* Writes the mask as an 8-bit gray image of the alpha values. */
+	offsets[image->object + 1] = file->length;
+	buffer_printf(file,
+		      "%lu 0 obj\n<< /Type /XObject /Subtype /Image /Width %lu /Height %lu /ColorSpace /DeviceGray /BitsPerComponent 8 /Length %lu >>\nstream\n",
+		      (unsigned long)(image->object + 1),
+		      (unsigned long)image->width,
+		      (unsigned long)image->height,
+		      (unsigned long)(image->width * image->height));
+	buffer_append(file, image->alpha, image->width * image->height);
+	buffer_printf(file, "\nendstream\nendobj\n");
+}
+
+/* Writes the resource dictionary every page shares, which lists the opacities and the images. */
 static void
 write_resources(
 	struct pdf_writer *writer,
@@ -1304,18 +1626,28 @@ write_resources(
 	size_t first_alpha_object;
 	size_t index;
 
-	/* A document without translucent fills needs no resources. */
-	if (writer->alphas_count == 0) {
-		buffer_printf(file, "<< >>");
-		return;
-	}
+	/* Opens the dictionary; a document without translucent fills or images leaves it empty. */
+	buffer_printf(file, "<<");
 
 	/* Lists each ExtGState under the name the content streams use. */
-	first_alpha_object = PDF_WRITER_OBJECT_FIRST_PAGE + writer->pages_count * 2;
-	buffer_printf(file, "<< /ExtGState <<");
-	for (index = 0; index < writer->alphas_count; index++)
-		buffer_printf(file, " /GS%lu %lu 0 R", (unsigned long)index, (unsigned long)(first_alpha_object + index));
-	buffer_printf(file, " >> >>");
+	if (writer->alphas_count != 0) {
+		first_alpha_object = PDF_WRITER_OBJECT_FIRST_PAGE + writer->pages_count * 2;
+		buffer_printf(file, " /ExtGState <<");
+		for (index = 0; index < writer->alphas_count; index++)
+			buffer_printf(file, " /GS%lu %lu 0 R", (unsigned long)index, (unsigned long)(first_alpha_object + index));
+		buffer_printf(file, " >>");
+	}
+
+	/* Lists each image under the name the content streams use. */
+	if (writer->images_count != 0) {
+		buffer_printf(file, " /XObject <<");
+		for (index = 0; index < writer->images_count; index++)
+			buffer_printf(file, " /Im%lu %lu 0 R", (unsigned long)index, (unsigned long)writer->images[index].object);
+		buffer_printf(file, " >>");
+	}
+
+	/* Closes the dictionary. */
+	buffer_printf(file, " >>");
 }
 
 /*

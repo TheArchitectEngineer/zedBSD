@@ -11,7 +11,7 @@
  * It writes a two-page document: page 1 holds pressure strokes that
  * pdf_outline_stroke() outlines (an opaque wave whose pressure rises and
  * falls, a translucent one crossing it, and a dot), page 2 a hand-built
- * outline, and the document carries an attached edit-data file, a fixed
+ * outline, a JPEG and a translucent RGBA image, and the document carries an attached edit-data file, a fixed
  * identifier and fixed dates, so two runs write the same bytes.  It then
  * checks the refusals.  run-pdf-writer.sh validates the file with qpdf and
  * pdfinfo.
@@ -20,14 +20,23 @@
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <pdf.h>
 
+/* The size of the test JPEG, which run-pdf-writer.sh makes with ImageMagick. */
+#define TEST_JPEG_WIDTH 64
+#define TEST_JPEG_HEIGHT 48
+
+/* The size of the RGBA test image. */
+#define TEST_RGBA_SIDE 32
+
 /* The number of samples of each test wave. */
 #define TEST_WAVE_POINTS 80
 
-static int write_document(const char *path);
+static int write_document(const char *path, const char *jpeg_path);
+static int draw_images(struct pdf_writer *writer, const char *jpeg_path);
 static int draw_pressure_wave(struct pdf_writer *writer, double top, double alpha, double phase);
 static int draw_dot(struct pdf_writer *writer);
 static int draw_wedge(struct pdf_writer *writer, double x, double y, double alpha);
@@ -44,13 +53,13 @@ main(
 	int error;
 
 	/* Needs the output path. */
-	if (argc != 2) {
-		fprintf(stderr, "usage: host-pdf-writer out.pdf\n");
+	if (argc != 3) {
+		fprintf(stderr, "usage: host-pdf-writer out.pdf test.jpg\n");
 		return 2;
 	}
 
 	/* Writes the document. */
-	error = write_document(argv[1]);
+	error = write_document(argv[1], argv[2]);
 	if (error != 0) {
 		fprintf(stderr, "host-pdf-writer: writing failed: %s\n", strerror(error));
 		return 1;
@@ -71,7 +80,8 @@ main(
 /* Writes the test document to a path. */
 static int
 write_document(
-	const char *path)
+	const char *path,
+	const char *jpeg_path)
 {
 	static const unsigned char edit_data[] = { 'Z', 'N', 'O', 'T', 1, 0, 0, 0, 0, 0, 0, 0, '(', ')', '\\', 0xff };
 	static const unsigned char document_id[16] = {
@@ -112,6 +122,8 @@ write_document(
 		error = pdf_writer_begin_page(writer, 595.276, 841.89);
 	if (error == 0)
 		error = draw_wedge(writer, 300.0, 400.0, 0.4);
+	if (error == 0)
+		error = draw_images(writer, jpeg_path);
 	if (error == 0)
 		error = pdf_writer_end_page(writer);
 
@@ -207,6 +219,58 @@ draw_dot(
 	return 0;
 }
 
+/* Draws the test JPEG and a translucent RGBA gradient over part of it on page 2. */
+static int
+draw_images(
+	struct pdf_writer *writer,
+	const char *jpeg_path)
+{
+	static unsigned char jpeg[65536];
+	static unsigned char pixels[TEST_RGBA_SIDE * TEST_RGBA_SIDE * 4];
+	FILE *stream;
+	size_t jpeg_size;
+	int row;
+	int column;
+	int error;
+
+	/* Reads the JPEG. */
+	stream = fopen(jpeg_path, "rb");
+	if (stream == NULL)
+		return errno;
+	jpeg_size = fread(jpeg, 1, sizeof(jpeg), stream);
+	fclose(stream);
+	if (jpeg_size == 0 || jpeg_size == sizeof(jpeg))
+		return EINVAL;
+
+	/* Paints the images opaque; the wedge left the page translucent, which images obey too. */
+	error = pdf_writer_set_fill_color(writer, 0.0, 0.0, 0.0, 1.0);
+	if (error != 0)
+		return error;
+
+	/* Draws it 256 x 192 points below the wedge. */
+	error = pdf_writer_draw_jpeg_image(writer, jpeg, jpeg_size, TEST_JPEG_WIDTH, TEST_JPEG_HEIGHT, 3, 100.0, 500.0, 256.0, 192.0);
+	if (error != 0)
+		return error;
+
+	/* Makes a green square whose alpha falls from opaque at the top to clear at the bottom. */
+	for (row = 0; row < TEST_RGBA_SIDE; row++) {
+		for (column = 0; column < TEST_RGBA_SIDE; column++) {
+			pixels[(row * TEST_RGBA_SIDE + column) * 4 + 0] = 0;
+			pixels[(row * TEST_RGBA_SIDE + column) * 4 + 1] = 160;
+			pixels[(row * TEST_RGBA_SIDE + column) * 4 + 2] = 60;
+			pixels[(row * TEST_RGBA_SIDE + column) * 4 + 3] = (unsigned char)(255 - row * 255 / (TEST_RGBA_SIDE - 1));
+		}
+	}
+
+	/* Draws it over the JPEG's right half. */
+	error = pdf_writer_draw_rgba_image(writer, pixels, TEST_RGBA_SIDE, TEST_RGBA_SIDE, 250.0, 520.0, 150.0, 150.0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: both images are drawn. */
+	return 0;
+}
+
 /* Draws a hand-built wedge closed by a round cap, with the path calls one by one. */
 static int
 draw_wedge(
@@ -273,6 +337,10 @@ check_refusals(void)
 	if (pdf_writer_line_to(writer, 1e9, 0.0) != EINVAL)
 		error = EPROTO;
 	if (pdf_writer_fill_outline(writer, NULL, 2) != EINVAL)
+		error = EPROTO;
+	if (pdf_writer_draw_jpeg_image(writer, "x", 1, 1, 1, 4, 0.0, 0.0, 1.0, 1.0) != EINVAL)
+		error = EPROTO;
+	if (pdf_writer_draw_rgba_image(writer, id, 1, 1, 0.0, 0.0, 0.0, 1.0) != EINVAL)
 		error = EPROTO;
 	if (pdf_writer_set_dates(writer, -1, 0) != EINVAL)
 		error = EPROTO;

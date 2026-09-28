@@ -44,12 +44,20 @@ libpdf の書き出し（page、ベクタの path、画像、編集の metadata�
      （開始値を変えた 4 本。暗号用ではなく版の区別だけ）。
    - `/Info << /Producer (zedBSD Notes) /CreationDate (D:YYYYMMDDHHmmSSZ) /ModDate (…) >>`（UTC、`gmtime_r`）。`pdf_writer_set_dates()` で
      与えるか、0 なら作成日は初回の保存の時刻（以後保つ）、更新日は各保存の時刻。負の時刻は `EINVAL`。
-5. 公開の API の追加（`include/libc/pdf.h`・`exports.map`）: `struct pdf_stroke_point`・`struct pdf_point`、`pdf_writer_fill_outline`、
-   `pdf_writer_set_document_id`・`pdf_writer_get_document_id`・`pdf_writer_set_dates`、`pdf_outline_stroke`・`pdf_outline_free`。
-   pdf.h は `<time.h>` を読む。
-6. host の試験 `plan/ws079/tests/host-pdf-writer.c`・`run-pdf-writer.sh` を更新: page 1 に筆圧が 0→1→0 の sine の波（不透明）、
+5. 画像の Image XObject（design-pdf.md §1）:
+   - `pdf_writer_draw_jpeg_image()`: JPEG の bytes をそのまま `/Filter /DCTDecode`（成分 1 は DeviceGray、3 は DeviceRGB。CMYK は `EINVAL`）。
+     幅・高さ・成分は呼び手が JPEG の frame header から渡す（libpdf は JPEG を読まない）。
+   - `pdf_writer_draw_rgba_image()`: RGBA8（上の行から）を 8bit RGB の samples と、不透明でない画素があるときだけ 8bit Gray の `/SMask` に分ける。
+   - 置き方: page の y 下向きの空間の矩形 (x, y, w, h) に `q w 0 0 -h x y+h cm /ImN Do Q`（画像の 1 行目が上）。画像は各 page の共有の
+     `/Resources /XObject` に並ぶ。1 辺 16384 画素・文書あたり 4096 枚まで。画像も最後の `pdf_writer_set_fill_color()` の不透明度（`ca`）で塗られる
+     （PDF の規則。試験で半透明の wedge の後の画像が薄くなったので、API の注記と試験の不透明への戻しを足した）。
+6. 公開の API の追加（`include/libc/pdf.h`・`exports.map`）: `struct pdf_stroke_point`・`struct pdf_point`、`pdf_writer_fill_outline`、
+   `pdf_writer_draw_rgba_image`・`pdf_writer_draw_jpeg_image`、`pdf_writer_set_document_id`・`pdf_writer_get_document_id`・
+   `pdf_writer_set_dates`、`pdf_outline_stroke`・`pdf_outline_free`（動的 symbol は計 20）。pdf.h は `<time.h>` を読む。
+7. host の試験 `plan/ws079/tests/host-pdf-writer.c`・`run-pdf-writer.sh` を更新: page 1 に筆圧が 0→1→0 の sine の波（不透明）、
    位相をずらした半透明の波、動かない 3 点の丸い点、page 2 に手で組んだ外形。ID と日付を固定して、plain・ASan・UBSan の出力が byte で一致。
-   拒否の試験に ID の未定（`ENOENT`）、2 点の外形、負の日付、外形の空・幅 0・筆圧 NaN を足した。`goto` を無くした。
+   page 2 に ImageMagick で作る 64x48 の JPEG（`convert -size 64x48 gradient:red-yellow`）と、上が不透明で下が透明の 32x32 の緑の RGBA を重ねた。
+   試験の program は第 2 引数に JPEG の path を取る。拒否の試験に ID の未定（`ENOENT`）、2 点の外形、負の日付、外形の空・幅 0・筆圧 NaN を足した。`goto` を無くした。
 
 ## 確認（2026-09-28、この worktree）
 
@@ -61,8 +69,9 @@ libpdf の書き出し（page、ベクタの path、画像、編集の metadata�
 | 埋め込み file | `qpdf --list-attachments`・`--show-attachment` | `zedbsd-notes.bin -> 10,0`、16 byte が一致 |
 | `/ID` | trailer | `/ID [<7A65644253442D703030342D74657374> <5F056D932FFB0A7AA50020F116191AC0>]` |
 | 描画 | `pdftoppm -r 110`（page 1 の上部） | 目視: 波の両端が細く中央が太い、端が丸い、y が下向き（波は page の上）、半透明の波が重なりで二重にならない、丸い点。画像 `build/ws035-shots/ws079-p004-20260928-stroke.png` |
-| amd64 の build | `make -j16 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/ws079-p004-amd64 build/ws079-p004-amd64/dynamic/libpdf.so` | exit 0、warning 0。`libpdf.so` は NEEDED libc.so だけ、`pdf_` の動的 symbol 18 個 |
-| pcat・pc98・rpi4 の link | `config/ci/config-{pcat,pc98,rpi4}.mk` で同じ target、BUILD は `build/ws079-p004-<platform>` | 3 つとも exit 0、warning 0（`buffer_fail()` を足した後にも再 build）。pcat・pc98 は Intel 80386、rpi4 は AArch64、どれも `pdf_` の動的 symbol 18 個（pc98 は soft-float で libc の `pow`・`acos` に `-z defs` で link できた） |
+| 画像 | `pdfimages -list`、`pdftoppm -r 72`（page 2 の一部） | JPEG は `jpeg` 64x48 rgb、RGBA は `image` 32x32 rgb と `smask` 32x32 gray。目視: JPEG は赤が上・黄が下（上下が正しい）、緑の正方形は上が不透明で下へ透明。画像 `build/ws035-shots/ws079-p004-20260928-images.png` |
+| amd64 の build | `make -j16 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/ws079-p004-amd64 build/ws079-p004-amd64/dynamic/libpdf.so` | exit 0、warning 0。`libpdf.so` は NEEDED libc.so だけ |
+| pcat・pc98・rpi4 の link | `config/ci/config-{pcat,pc98,rpi4}.mk` で同じ target、BUILD は `build/ws079-p004-<platform>` | 3 つとも exit 0、warning 0（画像を足した後に 4 platform とも再 build）。pcat・pc98 は Intel 80386、rpi4 は AArch64、4 つとも `pdf_` の動的 symbol 20 個（pc98 は soft-float で libc の `pow`・`acos` に `-z defs` で link できた） |
 
 未実施: disk image の全体の build（`plan/ws035/tests/build-zdesktop-image.sh build/ws079-p004-amd64` を始めたが止めた。guest harness の構成が
 lldb 入りの host の LLVM を `build/llvm-build` で configure し、install 先が共有の `build/llvm`（この worktree では main の `build/llvm` への symlink）
@@ -73,7 +82,6 @@ lldb 入りの host の LLVM を `build/llvm-build` で configure し、install 
 
 ## 残り（p004 を cleared にする前）
 
-- 画像の XObject（JPEG の `/DCTDecode`、8bit RGB と `/SMask`）。
 - 自分の形式の読み込み（design-pdf.md §4.2 の reader の p004 の分: `pdf_document_open*`・`page_count`・`page_box`・`find_attachment`・`page_content_hash`）。
 - 輪郭の形の差: design-input-notes.md §5.3 は Notes の `stroke-geometry.c` が centripetal Catmull-Rom で補間し継ぎ目も丸（三角の扇）にすると書き、
   design-pdf.md §1 は輪郭の計算を libpdf の `pdf_outline_stroke()` で共有すると書く。今の `pdf_outline_stroke()` は補間をせず、鋭い角は二等分の法線で

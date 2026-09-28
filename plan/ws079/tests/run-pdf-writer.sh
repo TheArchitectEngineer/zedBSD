@@ -10,6 +10,7 @@ cd "$(dirname -- "$0")/../../.."
 out=build/ws079-host
 cc=${CC:-cc}
 mkdir -p "$out/include"
+convert -size 64x48 gradient:red-yellow -quality 90 "$out/test.jpg"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 for variant in plain asan ubsan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
@@ -21,7 +22,7 @@ for variant in plain asan ubsan; do
 	fi
 	"$cc" $flags userland/base/libpdf/writer.c userland/base/libpdf/outline.c plan/ws079/tests/host-pdf-writer.c -lm \
 	    -o "$out/host-pdf-writer-$variant"
-	"$out/host-pdf-writer-$variant" "$out/writer-$variant.pdf"
+	"$out/host-pdf-writer-$variant" "$out/writer-$variant.pdf" "$out/test.jpg"
 done
 cmp "$out/writer-plain.pdf" "$out/writer-asan.pdf"
 cmp "$out/writer-plain.pdf" "$out/writer-ubsan.pdf"
