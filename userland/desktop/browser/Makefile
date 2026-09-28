@@ -84,6 +84,7 @@ KEILAND_BROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/main.c \
 	$(KEILAND_BROWSER_DIR)/page/script.c \
 	$(KEILAND_BROWSER_DIR)/page/images.c \
 	$(KEILAND_BROWSER_DIR)/page/network.c \
+	$(KEILAND_BROWSER_DIR)/view/view.c \
 	$(KEILAND_BROWSER_DIR)/image/decode.c \
 	$(KEILAND_BROWSER_DIR)/image/jpeg.c \
 	$(KEILAND_BROWSER_DIR)/image/png.c \
