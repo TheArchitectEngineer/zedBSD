@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から。GS base は案 A（swapgs）に決定（差分の承認は p001 の後）。残りの判断: path・source の置き場・native の橋・優先度
+Resume point: p001（設計）から。GS base は案 A（swapgs）に決定（差分の承認は p001 の後）。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/` に決定（Win64 の名前は使わない）。残りの判断: source の置き場（案 userland/base/ld-coff・userland/coff64）・native の橋・優先度
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -39,9 +39,12 @@ forward）、DLL の依存の解決、IAT の書き換え、Microsoft x64 ABI �
    保存・復元する。入口の判断は保存した CS（user か kernel か）で行う。案 B（kernel が GS を使わず per-CPU を kernel stack の上から引く）は採らない。
    **方式は決定。具体的な差分（hal.h の `gs_base` の扱いを含む）は p001 で plan に置き、差分ごとの承認を得てから適用する**（AGENTS.md の HAL の規則）。
    p001 で CR4.FSGSBASE の状態（user の `rdgsbase` で kernel の pointer が見えるか）も確かめる。
-2. **path**（spec §4・§9 の例は `/system/libexec/ld.coff`・`/System/Win64/`）: zedBSD の今の配置では `/usr/libexec/ld.coff` と
-   `/usr/lib/win64/`（互換の DLL）、`/usr/lib/win64/compat/` が自然。どちらにするか。
-3. **source の置き場**: `userland/base/ld-coff/`（ローダ）と `userland/win64/`（互換の DLL、PE の DLL として build）を案とする。
+2. **path**: 2026-09-28 ユーザー「zedBSDの既存レイアウトに合わせて、`/usr/libexec/ld.coff`、`/usr/lib/coff64/` を採用したいです。
+   win64は商標の関係で使えないですね。」→ loader は `/usr/libexec/ld.coff`、互換の DLL は `/usr/lib/coff64/`。
+   探索の順（spec §9 の読み替え）: 1. 実行ファイルと同じ directory → 2. `/usr/lib/coff64/` → 3. `COFF_LIBRARY_PATH`。
+   **名前の規則**: 商標のため、OS に見える名前（path・program・package・menu・UI）に「Win64」「Windows」を使わない（`coff64` 等にする）。
+   設計の文書で ABI を説明する技術の用語としての言及は可（main の解釈）。
+3. **source の置き場**（案、path の決定に合わせて改めた）: `userland/base/ld-coff/`（ローダ）と `userland/coff64/`（互換の DLL、PE の DLL として build）。
 4. **互換の DLL から zedBSD の機能を呼ぶ道**（spec §22）: 互換の DLL は PE の世界の code なので、zedBSD の syscall・libc を呼ぶ橋が要る
    （例: `ld.coff` が native の関数の表を PE の export として見せる内部の DLL、名前は案で `kei.dll`）。p001 で設計する。
 5. 優先度: デモ（fg010）の後か、並べるか。
