@@ -3,9 +3,9 @@
 <!-- awesome-plan-current:start -->
 Active Queue: なし（subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
-Next（2026-09-28 の夜の周期の終わりに整理。main 1f5a3aa2 で build と boot test PASS（batch116、QEMU。`include/libc/pdf.h` の変更で sysroot と clang・libcxx 等の package が再 build され、warning はすべて外部の package の source。共有の toolchain の tree は lock のまま、llvm-source の manifest 一致））: 実機の USB の demo の image を新しくした（`build/demo-hdmi2/hdd-image.img`、main 2b07ca13 の時点、
+Next（2026-09-28 の夜の周期の終わりに整理。main c7c06bf4 で build と boot test PASS（batch117、QEMU、WS081 p002 の UAPI の追加で sysroot を再 build。前の batch116 も PASS。`include/libc/pdf.h` の変更で sysroot と clang・libcxx 等の package が再 build され、warning はすべて外部の package の source。共有の toolchain の tree は lock のまま、llvm-source の manifest 一致））: 実機の USB の demo の image を新しくした（`build/demo-hdmi2/hdd-image.img`、main 2b07ca13 の時点、
 root の password は `build/demo-hdmi2/demo-accounts/root-password`、QEMU・実機の起動は未実施）。ユーザーが実機で試す（HDMI の LCD での login・logout の目視、touch の USB）。
-次の周期（demo critical）: WS074 p035 の検証 → p060（[amazon-goal.md](ws074/amazon-goal.md)、subagent に target sysroot を渡す）、WS079 p009（規約）と CCITTFax・password の入力・thumbnail、
+次の周期（demo critical）: WS074 の direction → p072 → p037（[amazon-goal.md](ws074/amazon-goal.md)）、WS079 p009（規約）と CCITTFax・password の入力・thumbnail、
 WS075 p007〜p010 と BUG-058（p017 uncleared）、WS035 の F-048。WS082 は study.md §10 の 11 項目のユーザーの判断待ち。WS080 はデモ critical の後。
 <!-- awesome-plan-current:end -->
 
@@ -174,7 +174,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
 | 実機の USB の demo の image（`build/demo-hdmi2`）の結果（HDMI の LCD での login・logout の目視、eDP、touch の USB の descriptor、Notes・PDF Viewer） | デモ | ユーザーが試験 |
-| WS074: p035（flexbox、実装済み・uncleared: ASan の回帰と guest の窓の試験）→ p060（inline-block）→ p062 → p070（[amazon-goal.md](ws074/amazon-goal.md)）。p068・p061・p069 は cleared（host の証拠だけ、guest は未実施） | ブラウザのデモの目標 | worktree の guest の image には target sysroot が要る: 次の枠で main の `build/` の sysroot を読み取り専用の symlink か複写で渡す（AGENTS.md の範囲。`make toolchain` は走らせない） |
+| WS074: direction の最小（rtl の flex row、2026-09-29 main の判断）→ p072（grid）→ p037（table）（[amazon-goal.md](ws074/amazon-goal.md)）。p035・p060・p062・p070・p071 は cleared（2026-09-29） | ブラウザのデモの目標 | subagent 実行中 |
 | WS079: p009（規約）、CCITTFax・password の入力・thumbnail | PDF・Notes | p008 cleared |
 | WS075: p007〜p010、BUG-058（p017 は 6 回で再現せず uncleared）、BUG-095 | i915 | 実機の LCD の目視の後 |
 | WS035: F-048、HDMI の LCD での仕上げ | Keiland | — |
