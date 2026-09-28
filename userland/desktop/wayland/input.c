@@ -706,6 +706,19 @@ apply_frame(
 		}
 	}
 
+	/*
+	 * The device placed or moved the pointer, even onto the place it
+	 * already had: its arrow is shown from now on, drawn where it is
+	 * (ws035-p116).
+	 */
+	if (server->pointer_unmoved &&
+	    (absolute_seen ||
+	     delta_x != 0 ||
+	     delta_y != 0)) {
+		server->pointer_unmoved = 0U;
+		zwl_damage_pointer(server, server->pointer_x, server->pointer_y);
+	}
+
 	/* An absolute report places the pointer; relative movement is added and clamped. */
 	x = server->pointer_x;
 	y = server->pointer_y;

@@ -65,6 +65,15 @@
 /* The Kei mark's layers in the atlas, in pixels a side. */
 #define GLASS_MARK_PIXELS	128U
 
+/*
+ * The Kei mark's layers again at the system bar's launcher size, in pixels a
+ * side (ws035-p117): drawn one to one, they stay crisp where the large ones
+ * would be shrunk five times.  They sit in the free column right of the
+ * large ones, GLASS_MARK_SMALL_ACROSS a row.
+ */
+#define GLASS_MARK_SMALL_PIXELS	26U
+#define GLASS_MARK_SMALL_ACROSS	4U
+
 /* The largest glyph rendered, in pixels a side. */
 #define GLASS_BITMAP		64U
 
@@ -98,7 +107,8 @@ struct glass_cached {
 
 /*
  * The look's images and glyphs: the wallpaper and its blur, the atlas with
- * the ASCII glyphs at each size, the icons at their sizes, and the cache of
+ * the ASCII glyphs at each size, the icons at their sizes, the Kei mark's
+ * layers large and at the launcher's size (ws035-p117), and the cache of
  * other characters; the fonts stay open (with their files' bytes) to
  * render the cache's glyphs.  cache_top is the atlas row the cache starts
  * at, cache_count the cells that fit under it, clock the count of cached
@@ -111,6 +121,7 @@ struct zwl_glass {
 	struct glass_glyph glyphs[GLASS_SIZES][GLASS_GLYPHS];
 	struct glass_glyph icons[GLASS_ICON_SIZES][GLASS_ICON_COUNT];
 	struct glass_glyph mark[KEILAND_MARK_LAYERS];
+	struct glass_glyph mark_small[KEILAND_MARK_LAYERS];
 	unsigned text;
 	struct truetype_face *faces[GLASS_FACES];
 	void *font_data[GLASS_FACES];
@@ -1297,7 +1308,8 @@ glass_draw_icon(
 /*
  * Draws the Kei mark in a square of a size in pixels at (x, y): its seven
  * layers from the atlas, each in its colour, the whole as opaque as asked
- * (0..1).
+ * (0..1).  A mark about the launcher's size uses the layers rendered at
+ * that size (ws035-p117).
  */
 void
 glass_draw_mark(
@@ -1324,6 +1336,7 @@ glass_draw_mark(
 		{ 1.0f, 1.0f, 1.0f, 0.24f }
 	};
 	struct glass_shape shape;
+	const struct glass_glyph *layers;
 	const struct glass_glyph *glyph;
 	struct zwl_glass *glass;
 	unsigned layer;
@@ -1333,9 +1346,14 @@ glass_draw_mark(
 	if (!glass->text)
 		return;
 
+	/* The layers rendered nearest the size: the small ones up to half again their size. */
+	layers = glass->mark;
+	if (pixels <= GLASS_MARK_SMALL_PIXELS * 3U / 2U)
+		layers = glass->mark_small;
+
 	/* Each layer's cell of the atlas over the square, in order. */
 	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
-		glyph = &glass->mark[layer];
+		glyph = &layers[layer];
 		glass_shape_init(&shape, (float)x, (float)y, (float)pixels, (float)pixels);
 		shape.mode = MODE_TEXT;
 		shape.uv[0] = (float)glyph->x / (float)GLASS_ATLAS_WIDTH;
@@ -1419,7 +1437,9 @@ atlas_icons(
 
 /*
  * Renders the Kei mark's layers into the atlas side by side from a row on,
- * and moves the row past them; returns 0, or ENOSPC when the atlas is full.
+ * the small ones at the launcher's size in the column right of them
+ * (ws035-p117), and moves the row past them; returns 0, or ENOSPC when the
+ * atlas is full.
  */
 static int
 atlas_mark(
@@ -1430,6 +1450,7 @@ atlas_mark(
 	struct glass_glyph *glyph;
 	unsigned layer;
 	uint32_t pen_x;
+	uint32_t column_x;
 
 	/* The atlas must hold the row. */
 	if (*pen_y + GLASS_MARK_PIXELS > GLASS_ATLAS_HEIGHT)
@@ -1451,6 +1472,25 @@ atlas_mark(
 
 		/* The pen moves past it. */
 		pen_x += GLASS_MARK_PIXELS + 1U;
+	}
+
+	/* The small layers must fit the column left of the row's end. */
+	column_x = pen_x;
+	if (column_x + GLASS_MARK_SMALL_ACROSS * (GLASS_MARK_SMALL_PIXELS + 1U) > GLASS_ATLAS_WIDTH)
+		return ENOSPC;
+
+	/* Each small layer's coverage, into its cell of the column, and its place. */
+	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
+		keiland_mark_raster(layer, GLASS_MARK_SMALL_PIXELS, bitmap, GLASS_MARK_SMALL_PIXELS);
+		glyph = &glass->mark_small[layer];
+		glyph->x = column_x + (layer % GLASS_MARK_SMALL_ACROSS) * (GLASS_MARK_SMALL_PIXELS + 1U);
+		glyph->y = *pen_y + (layer / GLASS_MARK_SMALL_ACROSS) * (GLASS_MARK_SMALL_PIXELS + 1U);
+		glyph->width = GLASS_MARK_SMALL_PIXELS;
+		glyph->height = GLASS_MARK_SMALL_PIXELS;
+		glyph->left = 0;
+		glyph->top = 0;
+		glyph->advance = (int32_t)GLASS_MARK_SMALL_PIXELS;
+		atlas_put(glass, bitmap, glyph->x, glyph->y, GLASS_MARK_SMALL_PIXELS, GLASS_MARK_SMALL_PIXELS);
 	}
 
 	/* The row after the mark. */
