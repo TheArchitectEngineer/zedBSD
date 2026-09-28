@@ -71,7 +71,8 @@ static void i915_gfx_float_bits(uint32_t *destination, const float *source);
  *
  * A linear 1D, 2D or 3D image of one sample, with any number of mip levels
  * down to one texel and any number of array layers (a 2D one may be cube
- * compatible), laid out by drv_i915_gfx_image_layout().  Anything else is
+ * compatible), or a 2D image of two or four samples, one level and one
+ * layer, laid out by drv_i915_gfx_image_layout().  Anything else is
  * refused here, by name, rather than laid out wrongly.  A depth image is
  * 2D with one level and one layer, laid out in whole Y tiles.
  */
@@ -127,6 +128,7 @@ drv_i915_gfx_create_image(
 		image->type = info.imageType;
 		image->depth = info.extent.depth;
 		image->layers = info.arrayLayers;
+		image->samples = (uint32_t)info.samples;
 		image->cube = 0U;
 		if ((info.flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) != 0U)
 			image->cube = 1U;
@@ -410,8 +412,13 @@ drv_i915_gfx_subresource_layout(
  * other, slice_rows apart: the layout's height rounded up to the vertical
  * alignment, which the surface state names as its QPitch (isl.c,
  * isl_calc_array_pitch_el_rows_gfx4_2d(), the pitch a Gen9+ surface state
- * programs).  A single slice has slice_rows 0.  Returns EINVAL for an image
- * the executor does not lay out.
+ * programs).  A single slice has slice_rows 0.
+ *
+ * A multisampled colour image is Y-tiled, each sample a slice of whole tile
+ * rows (MSFMT_MSS, isl_gfx8_choose_msaa_layout() for a render target); a
+ * multisampled depth or stencil image interleaves each pixel's samples in
+ * planes of sample_width by sample_height (ISL_MSAA_LAYOUT_INTERLEAVED).
+ * Returns EINVAL for an image the executor does not lay out.
  */
 int
 drv_i915_gfx_image_layout(
@@ -455,6 +462,29 @@ drv_i915_gfx_image_layout(
 	image->slice_rows = 0U;
 	image->stencil = 0U;
 
+	/* The extent of the planes in samples: an image of one sample, or a multisampled colour one, is its own extent. */
+	image->sample_width = image->width;
+	image->sample_height = image->height;
+	if (image->samples > 1U && depth != 0) {
+		/*
+		 * A multisampled depth or stencil image interleaves each pixel's
+		 * samples: two side by side, four in a square of two by two, the
+		 * extent first rounded up to whole pixel pairs
+		 * (isl_msaa_interleaved_scale_px_to_sa()).
+		 */
+		image->sample_width = ((image->width + 1U) & ~1U) * 2U;
+		if (image->samples == 4U)
+			image->sample_height = ((image->height + 1U) & ~1U) * 2U;
+	}
+
+	/* A multisampled colour image: Y tiles, each sample a slice of whole tile rows (MSFMT_MSS). */
+	if (image->samples > 1U && depth == 0) {
+		image->pitch = (image->width * texel_bytes + 127U) & ~127U;
+		image->slice_rows = (image->height + 31U) & ~31U;
+		image->bytes = (uint64_t)image->pitch * image->slice_rows * image->samples;
+		return 0;
+	}
+
 	/* A format with stencil: its planes (the depth's, then the stencil's). */
 	if (image->format == VK_FORMAT_D32_SFLOAT_S8_UINT || image->format == VK_FORMAT_S8_UINT) {
 		if (image->levels != 1U)
@@ -480,10 +510,10 @@ drv_i915_gfx_image_layout(
 		image->pitch = i915_gfx_row_pitch(image->width, texel_bytes);
 		image->bytes = (uint64_t)image->pitch * image->height;
 
-		/* A depth image is rounded up to whole Y tiles. */
+		/* A depth image is whole Y tiles of its samples. */
 		if (depth != 0) {
-			image->pitch = (image->pitch + 127U) & ~127U;
-			image->bytes = (uint64_t)image->pitch * ((image->height + 31U) & ~31U);
+			image->pitch = (i915_gfx_row_pitch(image->sample_width, texel_bytes) + 127U) & ~127U;
+			image->bytes = (uint64_t)image->pitch * ((image->sample_height + 31U) & ~31U);
 		}
 
 		/* Succeeded: one level needs no mip layout. */
@@ -622,6 +652,17 @@ drv_i915_gfx_image_slice(
 	surface->height = i915_gfx_minify(image->height, level);
 	surface->pitch = image->pitch;
 	surface->format = image->format;
+	surface->tiled = 0U;
+
+	/*
+	 * A multisampled image is Y-tiled: a colour one is described by its
+	 * sample 0, a depth one by its plane of interleaved samples.
+	 */
+	if (image->samples > 1U) {
+		surface->width = image->sample_width;
+		surface->height = image->sample_height;
+		surface->tiled = 1U;
+	}
 
 	/* Refuses an image that is not bound to storage. */
 	if (surface->va == 0U)
@@ -666,7 +707,7 @@ i915_gfx_channel(
  * depth plane as a D32 image's (Y tiles), then on the next page the
  * stencil plane of bytes in Y tiles, each slice a whole number of tile
  * rows (isl on Gen12: stencil is Y-tiled); for S8_UINT the stencil plane
- * alone.
+ * alone.  Both planes are as large as the image's extent in samples.
  */
 static void
 i915_gfx_stencil_layout(
@@ -677,19 +718,19 @@ i915_gfx_stencil_layout(
 
 	/* The depth plane, as a D32 image lays it out. */
 	depth_bytes = 0U;
-	image->pitch = (image->width + 127U) & ~127U;
+	image->pitch = (image->sample_width + 127U) & ~127U;
 	if (image->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
-		image->pitch = (image->width * 4U + 127U) & ~127U;
-		depth_bytes = (uint64_t)image->pitch * ((image->height + 31U) & ~31U) * slices;
+		image->pitch = (image->sample_width * 4U + 127U) & ~127U;
+		depth_bytes = (uint64_t)image->pitch * ((image->sample_height + 31U) & ~31U) * slices;
 		if (slices > 1U)
-			image->slice_rows = (image->height + 31U) & ~31U;
+			image->slice_rows = (image->sample_height + 31U) & ~31U;
 	}
 
 	/* The stencil plane, page aligned after it. */
 	image->stencil = 1U;
 	image->stencil_offset = (depth_bytes + 4095U) & ~(uint64_t)4095U;
-	image->stencil_pitch = (image->width + 127U) & ~127U;
-	image->stencil_slice_rows = (image->height + 31U) & ~31U;
+	image->stencil_pitch = (image->sample_width + 127U) & ~127U;
+	image->stencil_slice_rows = (image->sample_height + 31U) & ~31U;
 	image->bytes = image->stencil_offset + (uint64_t)image->stencil_pitch * image->stencil_slice_rows * slices;
 
 	/* A stencil-only image's slices are the stencil plane's. */
@@ -767,9 +808,15 @@ i915_gfx_image_supported(
 	if (info->imageType != VK_IMAGE_TYPE_1D && info->imageType != VK_IMAGE_TYPE_2D && info->imageType != VK_IMAGE_TYPE_3D)
 		return 0;
 
-	/* Only one sample. */
-	if (info->samples != VK_SAMPLE_COUNT_1_BIT)
-		return 0;
+	/* One sample; or two or four of a 2D image of one level and one layer, not cube compatible. */
+	if (info->samples != VK_SAMPLE_COUNT_1_BIT) {
+		if (info->samples != VK_SAMPLE_COUNT_2_BIT && info->samples != VK_SAMPLE_COUNT_4_BIT)
+			return 0;
+		if (info->imageType != VK_IMAGE_TYPE_2D || info->mipLevels != 1U || info->arrayLayers != 1U)
+			return 0;
+		if ((info->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) != 0U)
+			return 0;
+	}
 
 	/* Refuses an empty image. */
 	if (info->extent.width == 0U || info->extent.height == 0U || info->extent.depth == 0U || info->arrayLayers == 0U)

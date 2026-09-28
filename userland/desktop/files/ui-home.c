@@ -468,7 +468,7 @@ home_hero_brand(
 
 /*
  * Draws the Kei mark in a square of a size in pixels at (x, y), as opaque as
- * asked (0..1): its four layers (userland/desktop/artwork/mark.c), each in
+ * asked (0..1): its seven layers (userland/desktop/artwork/mark.c), each in
  * its colour.  The layers are rendered once for a size and kept.
  */
 void
@@ -479,12 +479,20 @@ fm_mark_draw(
 	unsigned pixels,
 	float opacity)
 {
-	/* The bar pale, its shade deeper, the leaf clearer and its shade the deep blue of the splash (colour, alpha). */
+	/*
+	 * The bar pale, its shade deeper, the leaf clearer and its shade the
+	 * deep blue of the splash, the overlap deeper still, then the white
+	 * light along the edges and the sheen (colour, alpha; ws035-p109).  The
+	 * panes are translucent, so what is behind shows through.
+	 */
 	static const uint32_t colours[KEILAND_MARK_LAYERS][2] = {
-		{ 0xabc4f7U, 204U },
-		{ 0x6e96f0U, 140U },
-		{ 0x96ccfaU, 184U },
-		{ 0x296ef0U, 217U }
+		{ 0xa9c3f6U, 175U },
+		{ 0x7fa2f0U, 90U },
+		{ 0xa3d8faU, 170U },
+		{ 0x3a86f5U, 170U },
+		{ 0x2f7cf3U, 200U },
+		{ 0xffffffU, 170U },
+		{ 0xffffffU, 60U }
 	};
 
 	/*
