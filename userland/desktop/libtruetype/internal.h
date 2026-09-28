@@ -108,6 +108,9 @@ uint32_t truetype_u32(const uint8_t *bytes);
 
 int truetype_cmap_select(struct truetype_face *face);
 
+int truetype_glyph_range(const struct truetype_face *face, unsigned glyph,
+			uint32_t *offset, uint32_t *length);
+
 int truetype_outline_load(struct truetype_face *face, unsigned glyph,
 			  struct truetype_outline *outline, unsigned depth);
 int truetype_advance(const struct truetype_face *face, unsigned glyph,
