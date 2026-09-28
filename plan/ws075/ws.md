@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: p001〜p005 cleared（2026-09-28。p005: texture の種類・depth の copy・形式、実機の egltest の 7 場面が全て failures 0）。BUG-077・BUG-056 は GPU core の close の修正で resolved（2026-09-28）。p006 in-progress: 増分 1〜5（MRT・occlusion query・VS の storage buffer・stencil・multisample）済み、実機 egltest6 で targets 0・blits 0・queries 0・feedback 1。p005 の egltest の fbo・es3 の後退は op の list の再確保の後の書き込みと分かり直した（実機 7 場面 0）。増分 6（drawn-from-captured の原因の bufferFeatures、dynamic の storage buffer、rasterizerDiscardEnable）は実機で確認（2026-09-28、5330 は 10.0.30.3）: egltest6 は targets・blits・queries・feedback 全て 0、p005 の 7 場面も全て 0。ただし p005 の run の capture は scenes_shown が false（画面が一つの場面の絵のまま、compositor は動いている、BUG-085 に記録、未調査）、egltest6 の 1 回目は i915 の start が time_base_anomaly で止まった（再試行で動いた）。残りは texel buffer・sampler2DMS と scenes_shown の調査。HDMI の主出力: p011（H1）・p012（H2）cleared（2026-09-28、`display=hdmi`。LCD の目視と H4 は残り）
+Resume point: p001〜p005 cleared（2026-09-28。p005: texture の種類・depth の copy・形式、実機の egltest の 7 場面が全て failures 0）。BUG-077・BUG-056 は GPU core の close の修正で resolved（2026-09-28）。p006 in-progress: 増分 1〜5（MRT・occlusion query・VS の storage buffer・stencil・multisample）済み、実機 egltest6 で targets 0・blits 0・queries 0・feedback 1。p005 の egltest の fbo・es3 の後退は op の list の再確保の後の書き込みと分かり直した（実機 7 場面 0）。増分 6（drawn-from-captured の原因の bufferFeatures、dynamic の storage buffer、rasterizerDiscardEnable）は実機で確認（2026-09-28、5330 は 10.0.30.3）: egltest6 は targets・blits・queries・feedback 全て 0、p005 の 7 場面も全て 0。ただし p005 の run の capture は scenes_shown が false（画面が一つの場面の絵のまま、compositor は動いている、BUG-085 に記録、未調査）、egltest6 の 1 回目は i915 の start が time_base_anomaly で止まった（再試行で動いた）。残りは texel buffer・sampler2DMS と scenes_shown の調査。HDMI の主出力: p011（H1）・p012（H2）・p013（H4）cleared（2026-09-28、`display=hdmi`、デモの image `plan/ws075/demo/`。実機の passthrough で splash → greeter → session（HDMI 1920x1280）→ 30 分 → Shut Down。LCD・eDP の目視と bare metal の起動はユーザー待ち）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -62,6 +62,7 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | ws075-p010 | 規約の全文との照合、統合回帰（最後） | planning | 全 Phase |
 | [ws075-p011](phase011/phase.md) | HDMI の主出力の実機の事前調査（[hdmi-main-output.md](hdmi-main-output.md) の H1）: EDID、点く mode、DVI、HDMI の前後の USB | cleared（2026-09-28。EDID は読める、native は 1920x1280。pipe B・DVI で 720p・1080p・1920x1280 を出力。touch の USB は 5330 に現れない。絵の目視は未実施） | — |
 | [ws075-p012](phase012/phase.md) | HDMI の主出力（H2）: `display=hdmi\|auto`・`display.mode=WxH[@R]`、resident を HDMI（port B・pipe B・DVI）で、無ければ eDP | cleared（2026-09-28。実機で `display=hdmi` は HDMI 1920x1280（EDID）の Keiland 全画面、`display.mode=1920x1080@60` も、`display=auto` は eDP。画面は scanout の buffer から。host 80 checks・boot test PASS。LCD の目視と HDMI の無い boot は未実施） | p011 |
+| [ws075-p013](phase013/phase.md) | デモの形での確認（H4）: デモの image（`plan/ws075/demo/`、graphical boot + `display=hdmi`）、splash・greeter・login・session の全体、30 分の連続表示、Shut Down、eDP への fallback | cleared（2026-09-28。実機の passthrough で全体を通した。H2 の pipe B の frame counter の不具合を修正、i915 の node の前に sessiond が諦める件は image で回避。LCD・eDP の目視と bare metal の起動は未実施） | p012 |
 
 各 Phase の受け入れは、host の survey（`plan/ws075/tests/shader-survey/run.sh`）の該当の不足が 0 になることと、実機の capture
 （egltest・glxtest の場面の capture の scenario は p003 で足す）。
