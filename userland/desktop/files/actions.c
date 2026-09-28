@@ -43,6 +43,7 @@ static void actions_record(struct fm_app *app, struct fm_task *task);
 static void actions_select_after(struct fm_app *app, char *const *paths, size_t count);
 static void actions_ask(struct fm_app *app, unsigned dialog, char **paths, size_t count);
 static void actions_undo_item(struct fm_app *app, struct fm_undo_item *item, int redo);
+static void actions_undo_replaced(struct fm_app *app, const struct fm_undo_item *item, int redo, const char *trash);
 static int actions_undo_possible(const struct fm_undo_item *item, int redo);
 static void actions_parent(const char *path, char *parent, size_t size);
 static void actions_error(struct fm_app *app, const char *what, int error, const char *path);
@@ -125,11 +126,18 @@ fm_action_paste(
 		return;
 	}
 
-	/* A cut moves (once), a copy copies. */
+	/*
+	 * A cut moves (once): the clipboard is emptied when the move is
+	 * queued, which waits for the answers when names are taken (Esc on
+	 * that question keeps the clipboard).  A copy copies.
+	 */
 	if (mode == FM_CLIP_CUT) {
 		error = actions_start(app, FM_TASK_MOVE, paths, count, folder, 0);
-		if (error == 0)
+		if (error == 0 && app->collision_task != NULL) {
+			app->collision_cut = 1;
+		} else if (error == 0) {
 			fm_clip_clear();
+		}
 	} else {
 		error = actions_start(app, FM_TASK_COPY, paths, count, folder, 0);
 	}
@@ -856,9 +864,11 @@ actions_record(
 {
 	char **from;
 	char **to;
+	char **replaced;
 	size_t count;
 	size_t index;
 	unsigned kind;
+	int replacing;
 
 	/* An undo is not recorded again, nor a delete (it cannot be undone). */
 	if (task->undoing == 1 || task->kind == FM_TASK_DELETE)
@@ -873,23 +883,34 @@ actions_record(
 	else if (task->kind == FM_TASK_RESTORE)
 		kind = FM_UNDO_RESTORE;
 
-	/* The pairs of the sources that succeeded. */
+	/* The pairs of the sources that succeeded, with where the items they replaced went. */
 	from = calloc(task->source_count + 1U, sizeof(char *));
 	to = calloc(task->source_count + 1U, sizeof(char *));
+	replaced = calloc(task->source_count + 1U, sizeof(char *));
 	count = 0;
-	for (index = 0; from != NULL && to != NULL && index < task->source_count; index++) {
+	replacing = 0;
+	for (index = 0; from != NULL && to != NULL && replaced != NULL && index < task->source_count; index++) {
 		if (task->failed[index] != 0 || task->results[index] == NULL)
 			continue;
 		from[count] = task->sources[index];
 		to[count] = task->results[index];
+		replaced[count] = task->replaced[index];
+		if (replaced[count] != NULL)
+			replacing = 1;
 		count++;
 	}
 
-	/* A change with something in it is recorded. */
-	if (count != 0)
+	/* A change with something in it is recorded, with the replaced items when there are any. */
+	if (count != 0) {
 		fm_undo_push(&app->undo, kind, count, from, to, NULL, NULL);
+		if (replacing != 0)
+			fm_undo_set_replaced(&app->undo, replaced, count);
+	}
+
+	/* The tables; the paths in them are the task's. */
 	free(from);
 	free(to);
+	free(replaced);
 }
 
 /* Keeps paths to select once the folder is read again (NULL entries are left out). */
@@ -965,6 +986,18 @@ actions_undo_item(
 	switch (item->kind) {
 	case FM_UNDO_MOVE:
 	case FM_UNDO_RENAME:
+		/*
+		 * A move that replaced items is redone as a task, after the
+		 * items it replaced (put back by the undo) go to the trash again.
+		 */
+		if (redo != 0 && item->replaced != NULL) {
+			actions_undo_replaced(app, item, redo, trash);
+			actions_parent(item->to[0], parent, sizeof(parent));
+			(void)actions_start(app, FM_TASK_MOVE, item->from, item->count, parent, 1);
+			break;
+		}
+
+		/* Each item back (or forward) by a rename. */
 		for (index = 0; index < item->count; index++) {
 			if (redo != 0)
 				status = rename(item->from[index], item->to[index]);
@@ -986,14 +1019,24 @@ actions_undo_item(
 			(void)actions_start(app, FM_TASK_MOVE, one, 1, parent, 1);
 		}
 
+		/* The items the move replaced come back from the trash to their names. */
+		if (redo == 0 && item->replaced != NULL)
+			actions_undo_replaced(app, item, redo, trash);
+
 		/* Every item was moved back (or forward). */
 		break;
 	case FM_UNDO_COPY:
 		if (redo != 0) {
+			/* The items the copy replaced go to the trash again first. */
+			if (item->replaced != NULL)
+				actions_undo_replaced(app, item, redo, trash);
 			actions_parent(item->to[0], parent, sizeof(parent));
 			(void)actions_start(app, FM_TASK_COPY, item->from, item->count, parent, 1);
 		} else {
+			/* The copies go to the trash, then the items they replaced come back (tasks run in order). */
 			(void)actions_start(app, FM_TASK_TRASH, item->to, item->count, trash, 1);
+			if (item->replaced != NULL)
+				actions_undo_replaced(app, item, redo, trash);
 		}
 
 		/* The copies are made again, or go to the trash. */
@@ -1034,6 +1077,48 @@ actions_undo_item(
 	default:
 		break;
 	}
+}
+
+/*
+ * Puts back from the trash the items a copy or a move replaced (undo), or
+ * sends them to the trash again from their names (redo), as one task that
+ * runs after those already queued.
+ */
+static void
+actions_undo_replaced(
+	struct fm_app *app,
+	const struct fm_undo_item *item,
+	int redo,
+	const char *trash)
+{
+	char **paths;
+	size_t count;
+	size_t index;
+
+	/* A table of the replaced items' paths. */
+	paths = calloc(item->count + 1U, sizeof(char *));
+	if (paths == NULL)
+		return;
+
+	/* The replaced items: their places in the trash to put back, or their names to trash again. */
+	count = 0;
+	for (index = 0; index < item->count; index++) {
+		if (item->replaced[index] == NULL)
+			continue;
+		if (redo != 0)
+			paths[count] = item->to[index];
+		else
+			paths[count] = item->replaced[index];
+		count++;
+	}
+
+	/* The task, not recorded again. */
+	fm_log("UNDO replaced redo=%d items=%lu", redo, (unsigned long)count);
+	if (count != 0 && redo != 0)
+		(void)actions_start(app, FM_TASK_TRASH, paths, count, trash, 1);
+	else if (count != 0)
+		(void)actions_start(app, FM_TASK_RESTORE, paths, count, trash, 1);
+	free(paths);
 }
 
 /* Tells whether the files are still where a change left them (or, to redo, where the undo left them). */
@@ -1193,6 +1278,12 @@ fm_action_collision(
 	app->collision_task = NULL;
 	app->dirty = 1;
 	actions_queue(app, task);
+
+	/* A cut's paste is under way now, so the clipboard is emptied. */
+	if (app->collision_cut != 0) {
+		fm_clip_clear();
+		app->collision_cut = 0;
+	}
 }
 
 /*
@@ -1203,14 +1294,20 @@ void
 fm_action_collision_cancel(
 	struct fm_app *app)
 {
+	const char *clipboard;
+
 	/* No question about names. */
 	if (app->collision_task == NULL)
 		return;
 
-	/* The task goes, never started. */
-	fm_log("COLLISION cancel index=%lu", (unsigned long)app->collision_index);
+	/* The task goes, never started; a cut stays on the clipboard to be pasted again. */
+	clipboard = "-";
+	if (app->collision_cut != 0)
+		clipboard = "kept";
+	fm_log("COLLISION cancel index=%lu clipboard=%s", (unsigned long)app->collision_index, clipboard);
 	fm_task_free(app->collision_task);
 	app->collision_task = NULL;
+	app->collision_cut = 0;
 	app->dialog = FM_DIALOG_NONE;
 	app->dirty = 1;
 }

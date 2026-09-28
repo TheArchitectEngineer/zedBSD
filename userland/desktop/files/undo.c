@@ -21,6 +21,7 @@
 #include <string.h>
 
 static int undo_copy_paths(char ***copy, char *const *paths, size_t count);
+static void undo_free_paths(char ***paths, size_t count);
 static void undo_drop_oldest(struct fm_undo_item *stack, int *count);
 
 /*
@@ -75,6 +76,34 @@ fm_undo_push(
 		undo_drop_oldest(history->undo, &history->undo_count);
 	history->undo[history->undo_count] = item;
 	history->undo_count++;
+}
+
+/*
+ * Attaches to the newest change the places in the trash of the items its
+ * pairs replaced (a table as long as its pairs, NULL where nothing was
+ * replaced; copied).  Nothing is attached when memory runs out: undo then
+ * leaves the replaced items in the trash.
+ */
+void
+fm_undo_set_replaced(
+	struct fm_undo *history,
+	char *const *replaced,
+	size_t count)
+{
+	struct fm_undo_item *item;
+	int error;
+
+	/* Only the newest change, and only when its pairs match. */
+	if (history->undo_count == 0)
+		return;
+	item = &history->undo[history->undo_count - 1];
+	if (item->count != count || item->replaced != NULL)
+		return;
+
+	/* The places, copied. */
+	error = undo_copy_paths(&item->replaced, replaced, count);
+	if (error != 0)
+		undo_free_paths(&item->replaced, count);
 }
 
 /*
@@ -166,6 +195,7 @@ fm_undo_item_free(
 	free(item->to);
 	free(item->before);
 	free(item->after);
+	undo_free_paths(&item->replaced, item->count);
 	memset(item, 0, sizeof(*item));
 }
 
@@ -211,6 +241,25 @@ undo_copy_paths(
 
 	/* Succeeded: the copy is complete. */
 	return 0;
+}
+
+/* Frees a table of paths (NULL entries are skipped) and leaves it NULL. */
+static void
+undo_free_paths(
+	char ***paths,
+	size_t count)
+{
+	size_t index;
+
+	/* No table. */
+	if (*paths == NULL)
+		return;
+
+	/* Each path, then the table. */
+	for (index = 0; index < count; index++)
+		free((*paths)[index]);
+	free(*paths);
+	*paths = NULL;
 }
 
 /* Drops the oldest change of a full stack. */

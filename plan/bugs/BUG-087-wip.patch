@@ -1,0 +1,46 @@
+diff --git a/Makefile b/Makefile
+index 13f5466d..0403420d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -818,6 +818,11 @@ ZEDBSD_ROOTFS_STICKY_DIRECTORIES := tmp shm
+ # there is one description of what a root holds instead of two that drift:
+ # a symbolic link, a directory mode, or anything a package adds to the tree
+ # reaches the image because the image is that tree.
++#
++# The packages' files are expanded when the recipe runs, after the packages
++# have been staged, not when this rule is evaluated: a package whose file list
++# is read from its own stage has an empty list while make parses a fresh
++# build, and the first image would lack those files (BUG-087).
+ define ZEDBSD_ROOTFS_TREE_RULE
+ $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
+ 	$(ZEDBSD_PACKAGE_INPUTS) $(ZEDBSD_ROOTFS_DEVELOPMENT_INPUTS)
+@@ -832,7 +837,7 @@ $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
+ 	@printf '%s\n' '$(1)' > $(BUILD)/rootfs/lib/arch.id
+ 	@printf 'zedBSD ufs root v1\n' > $(BUILD)/rootfs/etc/zedbsd-root
+ 	@set -e; for pass in file mode; do \
+- set -- $(3) $(ZEDBSD_PACKAGE_FILES); while test $$$$# -gt 0; do \
++ set -- $(3) $$(ZEDBSD_PACKAGE_FILES); while test $$$$# -gt 0; do \
+  option=$$$$1; specification=$$$$2; shift 2; \
+  path=$$$${specification%%=*}; value=$$$${specification#*=}; \
+  path=$$$${path#/}; destination=$(BUILD)/rootfs/$$$$path; \
+diff --git a/userland/packages/lang/clang/Makefile b/userland/packages/lang/clang/Makefile
+index ef77eaa2..4d258b3a 100644
+--- a/userland/packages/lang/clang/Makefile
++++ b/userland/packages/lang/clang/Makefile
+@@ -223,8 +223,15 @@ ZEDBSD_CLANG_LIBS := libLLVM.so.23.1 libclang-cpp.so.23.1 liblldb.so.23.1
+ 
+ # The headers the compiler supplies for itself -- stddef.h, stdarg.h and the
+ # rest, which belong to the compiler rather than to the C library.
++#
++# Which headers there are is known only once LLVM has installed them into the
++# stage, so the list is read from the stage when it is used, and the root
++# tree's recipe uses it after the stage is made (BUG-087).  find rather than
++# $(wildcard): make keeps what it has read of a directory, and a directory
++# read while parsing would not show the headers installed later.
+ ZEDBSD_CLANG_RESOURCE_DIR := $(ZEDBSD_CLANG_LIBDIR)/clang/23/include
+-ZEDBSD_CLANG_RESOURCE_HEADERS = $(wildcard $(ZEDBSD_CLANG_RESOURCE_DIR)/*.h)
++ZEDBSD_CLANG_RESOURCE_HEADERS = $(shell test -d '$(ZEDBSD_CLANG_RESOURCE_DIR)' && \
++	find '$(ZEDBSD_CLANG_RESOURCE_DIR)' -maxdepth 1 -type f -name '*.h' | LC_ALL=C sort)
+ 
+ # What the compiler needs besides itself to turn a source file into a program
+ # that runs here: the C library's headers, the start file a link begins with,

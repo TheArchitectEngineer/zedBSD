@@ -79,12 +79,15 @@ _Static_assert(__builtin_offsetof(struct amd64_percpu, self) == 0,
 	       "amd64 per-CPU self pointer must be the first field");
 
 /*
- * hal_task_get_current() reads running_task through GS in one load.  An
- * enumerator, fixed here, because task.c defines running_task as a macro.
+ * hal_task_get_current() reads running_task, and space.c reads and writes
+ * current_space, through GS in one access each.  Enumerators, fixed here,
+ * because task.c defines running_task as a macro.
  */
 enum {
 	AMD64_PERCPU_RUNNING_TASK =
-	    __builtin_offsetof(struct amd64_percpu, running_task)
+	    __builtin_offsetof(struct amd64_percpu, running_task),
+	AMD64_PERCPU_CURRENT_SPACE =
+	    __builtin_offsetof(struct amd64_percpu, current_space)
 };
 
 void prekern_amd64_percpu_bootstrap(void);

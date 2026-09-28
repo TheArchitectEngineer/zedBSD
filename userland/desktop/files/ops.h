@@ -167,6 +167,13 @@ struct fm_task {
 	int replacing;
 	unsigned skip_count;
 
+	/*
+	 * Where the item each source replaced went in the trash (NULL when it
+	 * replaced nothing, or there was no trash and it was removed), in the
+	 * sources' order; undo puts these back (ws035-p110).
+	 */
+	char **replaced;
+
 	/* The first failure: its errno value and the path it was about. */
 	int error;
 	char error_path[FM_OPS_PATH_MAX];
@@ -192,7 +199,10 @@ enum fm_undo_kind {
 /*
  * One change of the history: what it was and the paths it concerned, as
  * pairs (where from, where to).  For a rename, the old and the new path;
- * for tags, the path and the tags before and after in extra.
+ * for tags, the path and the tags before and after in extra.  A copy or a
+ * move that replaced items keeps, per pair, where the replaced item went
+ * in the trash (NULL for none; the table is NULL when nothing was
+ * replaced), so that undo puts it back (ws035-p110).
  */
 struct fm_undo_item {
 	unsigned kind;
@@ -201,6 +211,7 @@ struct fm_undo_item {
 	char **to;
 	unsigned *before;
 	unsigned *after;
+	char **replaced;
 };
 
 /*
@@ -240,6 +251,7 @@ int fm_trash_name(const char *trash, const char *base, char *name, size_t size);
 
 /* The undo history (undo.c). */
 void fm_undo_push(struct fm_undo *history, unsigned kind, size_t count, char *const *from, char *const *to, const unsigned *before, const unsigned *after);
+void fm_undo_set_replaced(struct fm_undo *history, char *const *replaced, size_t count);
 void fm_undo_push_item(struct fm_undo *history, struct fm_undo_item *item);
 void fm_undo_push_redo(struct fm_undo *history, struct fm_undo_item *item);
 int fm_undo_take(struct fm_undo *history, int redo, struct fm_undo_item *item);

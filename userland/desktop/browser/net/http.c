@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -46,10 +47,9 @@
 
 /*
  * The other headers of every request: any type (the star, the slash and the star
- * written apart so that they do not read as a comment), no compression, and a
- * new connection each time.
+ * written apart so that they do not read as a comment) and no compression.
  */
-#define NET_HTTP_HEADERS	"Accept: *" "/" "*\r\nAccept-Encoding: identity\r\nConnection: close\r\n"
+#define NET_HTTP_HEADERS	"Accept: *" "/" "*\r\nAccept-Encoding: identity\r\n"
 
 /*
  * What the headers of a response say that the fetch uses (besides the
@@ -79,6 +79,9 @@ static int http_is_web(const char *scheme);
 static int http_header(const struct net_url *url, const char *line, size_t length, struct net_response *response, struct wb_buffer *location, struct http_headers *headers);
 static int http_header_value(const char *line, size_t length, const char *name, const char **value, size_t *value_length);
 static int http_dechunk(const unsigned char *body, size_t length, struct wb_buffer *out);
+static void http_cache_control(const char *value, size_t length, struct net_response *response);
+static int http_find_header(const unsigned char *raw, size_t end, const char *name, const char **value, size_t *value_length);
+static const void *http_memmem(const void *haystack, size_t length, const void *needle, size_t needle_length);
 
 /*
  * Fetches a URL with GET, following redirects: fills the response (its
@@ -103,10 +106,7 @@ net_http_fetch(
 
 	/* The URL (and no TLS failure yet). */
 	net_tls_clear_error();
-	memset(response, 0, sizeof(*response));
-	wb_buffer_init(&response->url);
-	wb_buffer_init(&response->content_type);
-	wb_buffer_init(&response->body);
+	net_response_init(response);
 	error = net_url_parse(url_text, strlen(url_text), NULL, &url);
 	if (error != 0)
 		return error;
@@ -165,20 +165,42 @@ void
 net_response_release(
 	struct net_response *response)
 {
-	/* The three buffers. */
+	/* The four buffers. */
 	wb_buffer_release(&response->url);
 	wb_buffer_release(&response->content_type);
 	wb_buffer_release(&response->body);
+	wb_buffer_release(&response->etag);
+}
+
+/*
+ * Starts a response empty: no status, no headers, no body, and nothing
+ * said of caching (max_age -1).
+ */
+void
+net_response_init(
+	struct net_response *response)
+{
+	/* Everything cleared, with the buffers empty. */
+	memset(response, 0, sizeof(*response));
+	wb_buffer_init(&response->url);
+	wb_buffer_init(&response->content_type);
+	wb_buffer_init(&response->body);
+	wb_buffer_init(&response->etag);
+	response->max_age = -1;
 }
 
 /*
  * Writes the text of a GET request for a URL: the request line, Host,
- * User-Agent, the fixed headers and the URL's cookies.
+ * User-Agent, the fixed headers, Connection: close unless the connection
+ * is to be kept, the extra header lines (NULL for none; each ends in CR LF)
+ * and the URL's cookies.
  */
 int
 net_http_request_text(
 	const struct net_url *url,
-	struct wb_buffer *request)
+	struct wb_buffer *request,
+	int keep_alive,
+	const char *extra)
 {
 	const char *target;
 	int error;
@@ -196,6 +218,10 @@ net_http_request_text(
 		error = wb_buffer_printf(request, ":%d", url->port);
 	if (error == 0)
 		error = wb_buffer_printf(request, "\r\nUser-Agent: %s\r\n%s", NET_HTTP_AGENT, NET_HTTP_HEADERS);
+	if (error == 0 && !keep_alive)
+		error = wb_buffer_append_string(request, "Connection: close\r\n");
+	if (error == 0 && extra != NULL)
+		error = wb_buffer_append_string(request, extra);
 
 	/* The cookies for the URL, and the end of the headers. */
 	if (error == 0)
@@ -221,6 +247,147 @@ net_http_is_web(
 	return web;
 }
 
+/*
+ * Starts the framing of a response with nothing read.
+ */
+void
+net_http_framing_init(
+	struct net_http_framing *framing)
+{
+	/* No headers, no body, not done. */
+	memset(framing, 0, sizeof(*framing));
+}
+
+/*
+ * Walks the bytes of a response read so far (raw, from its first byte) as
+ * far as they go: the headers once they are complete (the status, the
+ * length or the chunks, Connection), then the body, and sets done when the
+ * response is complete.  A response whose body ends with the connection
+ * is never done here (the end of the connection completes it), and its
+ * connection is not kept.
+ */
+void
+net_http_framing_update(
+	struct net_http_framing *framing,
+	const unsigned char *raw,
+	size_t length)
+{
+	const unsigned char *end;
+	const char *value;
+	size_t value_length;
+	size_t header_end;
+	size_t line_end;
+	size_t size;
+	int status;
+	int found;
+	int differs;
+	int digit;
+	int c;
+
+	/* The headers, once the empty line after them has come. */
+	if (!framing->headers_done) {
+		end = NULL;
+		if (length >= 4U)
+			end = (const unsigned char *)http_memmem(raw, length, "\r\n\r\n", 4U);
+		if (end == NULL)
+			return;
+		header_end = (size_t)(end - raw);
+		framing->headers_done = 1;
+		framing->body_start = header_end + 4U;
+
+		/* HTTP/1.1 keeps the connection unless it says close; 1.0 does not keep it. */
+		status = 0;
+		if (length >= 12U)
+			status = (raw[9] - '0') * 100 + (raw[10] - '0') * 10 + (raw[11] - '0');
+		framing->keep_alive = 0;
+		if (length >= 8U && raw[7] == '1')
+			framing->keep_alive = 1;
+		found = http_find_header(raw, header_end, "connection", &value, &value_length);
+		differs = 1;
+		if (found && value_length == 5U)
+			differs = strncasecmp(value, "close", 5U);
+		if (differs == 0)
+			framing->keep_alive = 0;
+
+		/* A status without a body. */
+		if (status == 204 || status == 304 || (status >= 100 && status < 200)) {
+			framing->body_end = framing->body_start;
+			framing->done = 1;
+			return;
+		}
+
+		/* Chunks, a length, or the end of the connection. */
+		found = http_find_header(raw, header_end, "transfer-encoding", &value, &value_length);
+		differs = 1;
+		if (found && value_length >= 7U)
+			differs = strncasecmp(value + value_length - 7U, "chunked", 7U);
+		if (differs == 0) {
+			framing->chunked = 1;
+			framing->position = framing->body_start;
+		} else {
+			found = http_find_header(raw, header_end, "content-length", &value, &value_length);
+			if (found) {
+				framing->body_end = framing->body_start + (size_t)strtoul(value, NULL, 10);
+			} else {
+				/* The end of the connection ends the body, and the connection with it. */
+				framing->until_close = 1;
+				framing->keep_alive = 0;
+			}
+		}
+	}
+
+	/* A body cut by its length is complete when all of it has come. */
+	if (!framing->chunked) {
+		if (!framing->until_close && length >= framing->body_end)
+			framing->done = 1;
+		return;
+	}
+
+	/* Chunks: each size line, its bytes and CR LF, from where the walk stopped. */
+	while (!framing->done) {
+		/* The size line, when all of it has come. */
+		line_end = framing->position;
+		while (line_end < length && raw[line_end] != '\n')
+			line_end++;
+		if (line_end >= length)
+			return;
+		size = 0;
+		for (value_length = framing->position; value_length < line_end; value_length++) {
+			c = raw[value_length];
+			digit = -1;
+			if (c >= '0' && c <= '9')
+				digit = c - '0';
+			if ((c | 0x20) >= 'a' && (c | 0x20) <= 'f')
+				digit = (c | 0x20) - 'a' + 10;
+			if (digit < 0)
+				break;
+			size = size * 16U + (size_t)digit;
+		}
+
+		/* The last chunk without trailers: the CR LF right after its line ends the response. */
+		if (size == 0 && line_end + 3U <= length && raw[line_end + 1U] == '\r' && raw[line_end + 2U] == '\n') {
+			framing->body_end = line_end + 3U;
+			framing->done = 1;
+			return;
+		}
+
+		/* The last chunk with trailers: their empty line ends it. */
+		if (size == 0) {
+			end = (const unsigned char *)http_memmem(raw + line_end + 1U, length - line_end - 1U, "\r\n\r\n", 4U);
+			if (end == NULL)
+				return;
+			framing->body_end = (size_t)(end - raw) + 4U;
+			framing->done = 1;
+			return;
+		}
+
+		/* The chunk's bytes and its CR LF, when they have all come. */
+		if (line_end + 1U + size + 2U > length)
+			return;
+		framing->position = line_end + 1U + size + 2U;
+	}
+}
+
 /* Sends one GET and reads its response; a redirect's Location goes to location. */
 static int
 http_request(
@@ -237,7 +404,7 @@ http_request(
 	/* The request's text. */
 	wb_buffer_init(&request);
 	wb_buffer_init(&raw);
-	error = net_http_request_text(url, &request);
+	error = net_http_request_text(url, &request, 0, NULL);
 	if (error != 0) {
 		wb_buffer_release(&request);
 		return error;
@@ -618,6 +785,20 @@ http_header(
 	found = http_header_value(line, length, "set-cookie", &value, &value_length);
 	if (found && error == 0)
 		error = net_cookie_store(url, value, value_length);
+
+	/* What caching the response may do. */
+	found = http_header_value(line, length, "cache-control", &value, &value_length);
+	if (found)
+		http_cache_control(value, value_length, response);
+
+	/* The version the response is, for revalidating it. */
+	found = http_header_value(line, length, "etag", &value, &value_length);
+	if (found && error == 0) {
+		wb_buffer_clear(&response->etag);
+		error = wb_buffer_append(&response->etag, value, value_length);
+	}
+
+	/* A header that could not be kept fails. */
 	if (error != 0)
 		return error;
 
@@ -733,4 +914,122 @@ net_http_is_redirect(
 	if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308)
 		return 1;
 	return 0;
+}
+
+/*
+ * Reads a Cache-Control header's directives: max-age (seconds), no-store
+ * and no-cache (the others are left).
+ */
+static void
+http_cache_control(
+	const char *value,
+	size_t length,
+	struct net_response *response)
+{
+	size_t start;
+	size_t end;
+	size_t word;
+	int differs;
+
+	/* Each directive between commas. */
+	start = 0;
+	while (start < length) {
+		while (start < length && (value[start] == ' ' || value[start] == '\t' || value[start] == ','))
+			start++;
+		end = start;
+		while (end < length && value[end] != ',')
+			end++;
+		word = end - start;
+
+		/* max-age=N. */
+		differs = 1;
+		if (word > 8U)
+			differs = strncasecmp(value + start, "max-age=", 8U);
+		if (differs == 0)
+			response->max_age = strtol(value + start + 8U, NULL, 10);
+
+		/* no-store. */
+		differs = 1;
+		if (word >= 8U)
+			differs = strncasecmp(value + start, "no-store", 8U);
+		if (differs == 0)
+			response->no_store = 1;
+
+		/* no-cache. */
+		differs = 1;
+		if (word >= 8U)
+			differs = strncasecmp(value + start, "no-cache", 8U);
+		if (differs == 0)
+			response->no_cache = 1;
+
+		/* The next directive. */
+		start = end;
+	}
+}
+
+/*
+ * Finds a header's value among the header lines of a response's first
+ * end bytes (after its status line); nonzero when found.
+ */
+static int
+http_find_header(
+	const unsigned char *raw,
+	size_t end,
+	const char *name,
+	const char **value,
+	size_t *value_length)
+{
+	const char *line;
+	const char *limit;
+	const char *newline;
+	size_t line_length;
+	int found;
+
+	/* Each line after the status line. */
+	limit = (const char *)raw + end;
+	newline = memchr(raw, '\n', end);
+	if (newline == NULL)
+		return 0;
+	for (line = newline + 1; line < limit; line = newline + 1) {
+		newline = memchr(line, '\n', (size_t)(limit - line));
+		if (newline == NULL)
+			newline = limit;
+		line_length = (size_t)(newline - line);
+		if (line_length > 0 && line[line_length - 1U] == '\r')
+			line_length--;
+
+		/* The header, when this line is it. */
+		found = http_header_value(line, line_length, name, value, value_length);
+		if (found)
+			return 1;
+	}
+
+	/* The header is not there. */
+	return 0;
+}
+
+/* Finds the first place a run of bytes appears in others (NULL when it does not). */
+static const void *
+http_memmem(
+	const void *haystack,
+	size_t length,
+	const void *needle,
+	size_t needle_length)
+{
+	const unsigned char *bytes;
+	size_t index;
+	int differs;
+
+	/* Each place the run could start. */
+	bytes = haystack;
+	if (needle_length == 0 || length < needle_length)
+		return NULL;
+	for (index = 0; index + needle_length <= length; index++) {
+		differs = memcmp(bytes + index, needle, needle_length);
+		if (differs == 0)
+			return bytes + index;
+	}
+
+	/* Not there. */
+	return NULL;
 }

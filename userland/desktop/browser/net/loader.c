@@ -16,11 +16,26 @@
  * thread (getaddrinfo blocks, so it is the only work done off the main
  * thread; the result comes back through a pipe), a non-blocking connect
  * to each address in turn, the TLS handshake for https, the request sent,
- * and the response read to the end of the connection (Connection: close;
- * persistent connections come with ws074-p058).  The response is parsed
+ * and the response read until its framing (its length, its last chunk, or
+ * the end of the connection) says it is complete.  The response is parsed
  * as the synchronous fetch parses it (http.c); a redirect starts the
  * request again at its Location.  A request that makes no progress for
  * LOADER_TIMEOUT fails with ETIMEDOUT.
+ *
+ * Connections are kept (ws074-p058): a response that leaves its
+ * connection open puts it in the loader's pool of idle connections, by
+ * scheme, host and port, and the next request to the same place takes it
+ * instead of connecting again (a kept connection the server has closed
+ * meanwhile is replaced once by a new one).  At most LOADER_PER_HOST
+ * connections to one place are open at a time; the requests past that wait
+ * for one to end.  An idle connection is closed after LOADER_IDLE.
+ *
+ * The memory cache keeps the 200 responses that say they may be kept
+ * (Cache-Control max-age, or an ETag to revalidate them; not no-store), by
+ * URL, up to LOADER_CACHE_MAX bytes of bodies (the least recently used go
+ * first).  A fresh entry answers a request without the network; a stale
+ * one with an ETag is revalidated with If-None-Match, and a 304 answers
+ * with the kept body.
  *
  * Everything but the resolver's lookups runs on the caller's thread.  A
  * callback may start other requests and cancel any request, itself
@@ -54,8 +69,25 @@
 /* The bytes read from a connection at a time. */
 #define LOADER_CHUNK		16384U
 
+/* The most connections open to one scheme, host and port at a time. */
+#define LOADER_PER_HOST		6
+
+/* How long an idle connection is kept, in milliseconds. */
+#define LOADER_IDLE		30000U
+
+/* The most bytes of bodies the memory cache keeps. */
+#define LOADER_CACHE_MAX	((size_t)64U * 1024U * 1024U)
+
+/* The longest place (scheme://host:port) a connection is kept for. */
+#define LOADER_KEY_MAX		320U
+
+/* The deadline of a request that waits for a connection (it does not time out while it waits). */
+#define LOADER_NEVER		((uint64_t)-1)
+
 /* A request's states. */
 enum loader_state {
+	LOADER_READY,
+	LOADER_WAITING,
 	LOADER_RESOLVING,
 	LOADER_CONNECTING,
 	LOADER_HANDSHAKE,
@@ -80,12 +112,44 @@ struct loader_job {
 };
 
 /*
+ * An idle connection of the pool: the place it goes to (its key), its
+ * socket and TLS, and since when it has been idle.
+ */
+struct loader_connection {
+	struct loader_connection *next;
+	char key[LOADER_KEY_MAX];
+	int descriptor;
+	struct net_tls *tls;
+	uint64_t idle_since;
+};
+
+/*
+ * A response of the memory cache: its URL (the key), what it gives back
+ * (the Content-Type and the body), its ETag, when it was stored or last
+ * revalidated, and how long it stays fresh (max-age in seconds, -1 for
+ * none; no_cache revalidates it every time).
+ */
+struct loader_entry {
+	struct loader_entry *next;
+	char *url;
+	struct wb_buffer content_type;
+	struct wb_buffer body;
+	struct wb_buffer etag;
+	uint64_t stored_at;
+	long max_age;
+	int no_cache;
+};
+
+/*
  * One request: its number, the URL it asks for now (after the redirects so
  * far), its state and connection (the addresses left to try, the socket,
- * TLS, and what the socket must become ready for), the request's text and
- * how much of it went, the response's bytes so far, when it times out (on
- * the loader's monotonic clock, in milliseconds), and its callback.  error and response are the outcome the callback
- * reads.
+ * TLS, and what the socket must become ready for; the place it goes to,
+ * whether the connection came from the pool and whether a kept connection
+ * was replaced already), the request's text and how much of it went, the
+ * response's bytes so far and how far they frame it, the cache entry it
+ * revalidates (or NULL), when it times out (on the loader's monotonic
+ * clock, in milliseconds), and its callback.  error and response are the
+ * outcome the callback reads.
  */
 struct net_request {
 	struct net_loader *loader;
@@ -100,9 +164,14 @@ struct net_request {
 	int descriptor;
 	struct net_tls *tls;
 	short wants;
+	char key[LOADER_KEY_MAX];
+	int reused;
+	int retried;
 	struct wb_buffer request;
 	size_t sent;
 	struct wb_buffer raw;
+	struct net_http_framing framing;
+	struct loader_entry *validating;
 	uint64_t deadline;
 	net_request_done done;
 	void *context;
@@ -113,11 +182,16 @@ struct net_request {
 /*
  * The loader: its requests, the resolver's thread with its queue of jobs
  * and list of answers (under lock; wake tells the thread a job is there),
- * the pipe the thread writes a byte to for each answer, and whether the
- * list is being walked (so that requests are freed only after the walk).
+ * the pipe the thread writes a byte to for each answer, whether the list
+ * is being walked (so that requests are freed only after the walk), the
+ * pool of idle connections, and the memory cache (most recently used
+ * first) with the bytes of its bodies.
  */
 struct net_loader {
 	struct net_request *requests;
+	struct loader_connection *idle;
+	struct loader_entry *cache;
+	size_t cache_bytes;
 	uint64_t next_number;
 	int walking;
 	pthread_t thread;
@@ -146,6 +220,17 @@ static void loader_close(struct net_request *request);
 static void loader_end(struct net_request *request, int error);
 static void loader_reap(struct net_loader *loader);
 static void loader_free(struct net_request *request);
+static int loader_prepare(struct net_request *request);
+static int loader_retry(struct net_request *request);
+static int loader_active(const struct net_loader *loader, const char *key);
+static void loader_wake(struct net_loader *loader, const char *key);
+static void loader_keep(struct net_request *request);
+static void loader_expire_idle(struct net_loader *loader, uint64_t now);
+static struct loader_entry *loader_cache_find(struct net_loader *loader, const char *url);
+static int loader_cache_fresh(const struct loader_entry *entry, uint64_t now);
+static int loader_cache_answer(struct net_request *request, const struct loader_entry *entry);
+static void loader_cache_store(struct net_request *request);
+static void loader_cache_free(struct net_loader *loader, struct loader_entry *entry);
 
 /*
  * Makes a loader and starts its resolver's thread.
@@ -245,6 +330,13 @@ net_loader_destroy(
 		free(job);
 	}
 
+	/* The idle connections. */
+	loader_expire_idle(loader, LOADER_NEVER);
+
+	/* The cache. */
+	while (loader->cache != NULL)
+		loader_cache_free(loader, loader->cache);
+
 	/* The pipe, then the loader. */
 	close(loader->pipe_read);
 	close(loader->pipe_write);
@@ -284,9 +376,7 @@ net_loader_fetch(
 	made->context = context;
 	wb_buffer_init(&made->request);
 	wb_buffer_init(&made->raw);
-	wb_buffer_init(&made->response.url);
-	wb_buffer_init(&made->response.content_type);
-	wb_buffer_init(&made->response.body);
+	net_response_init(&made->response);
 
 	/* Its URL, which must be http or https. */
 	error = net_url_parse(url, strlen(url), NULL, &made->url);
@@ -331,9 +421,10 @@ net_request_cancel(
 	if (request == NULL)
 		return;
 
-	/* Marked, and freed when nothing walks the list. */
+	/* Marked, and freed when nothing walks the list; a request waiting for its place may go. */
 	request->cancelled = 1;
 	loader_close(request);
+	loader_wake(request->loader, request->key);
 	loader_reap(request->loader);
 }
 
@@ -410,8 +501,10 @@ net_loader_timeout(
 	found = 0;
 	earliest = 0;
 	for (request = loader->requests; request != NULL; request = request->next) {
-		if (request->cancelled || request->state == LOADER_ENDED)
+		if (request->cancelled || request->state == LOADER_ENDED || request->state == LOADER_WAITING)
 			continue;
+		if (request->state == LOADER_READY)
+			return 0;
 		if (!found || request->deadline < earliest)
 			earliest = request->deadline;
 		found = 1;
@@ -452,6 +545,15 @@ net_loader_process(
 	/* The resolver's answers. */
 	loader_answers(loader);
 
+	/* The requests the cache answered. */
+	for (request = loader->requests; request != NULL; request = request->next) {
+		if (!request->cancelled && request->state == LOADER_READY)
+			loader_end(request, 0);
+	}
+
+	/* The idle connections kept too long. */
+	loader_expire_idle(loader, now);
+
 	/* Each ready connection takes its next steps. */
 	for (index = 0; index < count; index++) {
 		if (fds[index].revents == 0 || fds[index].fd == loader->pipe_read)
@@ -466,7 +568,7 @@ net_loader_process(
 
 	/* The requests that made no progress in time. */
 	for (request = loader->requests; request != NULL; request = request->next) {
-		if (request->cancelled || request->state == LOADER_ENDED)
+		if (request->cancelled || request->state == LOADER_ENDED || request->state == LOADER_WAITING)
 			continue;
 		if (now >= request->deadline)
 			loader_end(request, ETIMEDOUT);
@@ -564,18 +666,100 @@ loader_resolver(
 	return NULL;
 }
 
-/* Starts a request at its URL: the host's lookup is given to the resolver's thread. */
+/*
+ * Starts a request at its URL: answered by the cache when it holds the URL
+ * fresh; else over a kept connection to the place, or, when fewer than
+ * LOADER_PER_HOST are open there, over a new one (the host's lookup given
+ * to the resolver's thread); else it waits for one to end.
+ */
 static int
 loader_begin(
 	struct net_request *request)
 {
 	struct net_loader *loader;
+	struct loader_connection **link;
+	struct loader_connection *kept;
+	struct loader_entry *entry;
 	struct loader_job *job;
+	struct wb_buffer url;
 	size_t length;
+	uint64_t now;
+	int fresh;
+	int active;
+	int error;
 	int port;
 
-	/* The job: the host without an IPv6 address's brackets, and the port or the scheme's. */
+	/* The place the request goes to. */
 	loader = request->loader;
+	now = loader_clock();
+	port = net_url_default_port(request->url.scheme);
+	if (request->url.port >= 0)
+		port = request->url.port;
+	snprintf(request->key, sizeof(request->key), "%s://%s:%d", request->url.scheme, request->url.host, port);
+
+	/* A fresh answer of the cache ends the request at the next run of the loader. */
+	wb_buffer_init(&url);
+	error = net_url_serialize(&request->url, 1, &url);
+	if (error != 0) {
+		wb_buffer_release(&url);
+		return error;
+	}
+
+	/* The URL's entry, answering when it is fresh. */
+	entry = loader_cache_find(loader, wb_buffer_string(&url));
+	wb_buffer_release(&url);
+	fresh = loader_cache_fresh(entry, now);
+	if (fresh) {
+		error = loader_cache_answer(request, entry);
+		if (error != 0)
+			return error;
+		request->state = LOADER_READY;
+		request->wants = 0;
+		return 0;
+	}
+
+	/* A stale entry with an ETag is revalidated. */
+	request->validating = NULL;
+	if (entry != NULL && entry->etag.length != 0)
+		request->validating = entry;
+
+	/* A kept connection to the place, when there is one (not after a kept one failed). */
+	for (link = &loader->idle; *link != NULL && !request->retried; link = &(*link)->next) {
+		error = strcmp((*link)->key, request->key);
+		if (error == 0)
+			break;
+	}
+
+	/* One is there: the request takes it. */
+	if (!request->retried && *link != NULL) {
+		/* Taken out of the pool. */
+		kept = *link;
+		*link = kept->next;
+		request->descriptor = kept->descriptor;
+		request->tls = kept->tls;
+		request->reused = 1;
+		free(kept);
+
+		/* The request goes out over it. */
+		error = loader_prepare(request);
+		if (error != 0)
+			return error;
+		request->state = LOADER_SENDING;
+		request->wants = POLLOUT;
+		return 0;
+	}
+
+	/* A place with all its connections open: the request waits for one to end. */
+	request->reused = 0;
+	active = loader_active(loader, request->key);
+	if (active >= LOADER_PER_HOST) {
+		request->state = LOADER_WAITING;
+		request->wants = 0;
+		request->deadline = LOADER_NEVER;
+		return 0;
+	}
+
+	/* The job: the host without an IPv6 address's brackets, and the port or the scheme's. */
 	job = calloc(1, sizeof(*job));
 	if (job == NULL)
 		return ENOMEM;
@@ -594,9 +778,6 @@ loader_begin(
 	}
 
 	/* The port, or the scheme's. */
-	port = net_url_default_port(request->url.scheme);
-	if (request->url.port >= 0)
-		port = request->url.port;
 	snprintf(job->port, sizeof(job->port), "%d", port);
 
 	/* The request waits for the answer, for as long as a request may be silent. */
@@ -808,12 +989,9 @@ loader_connected(
 	request->address = NULL;
 
 	/* The request's text. */
-	wb_buffer_clear(&request->request);
-	error = net_http_request_text(&request->url, &request->request);
+	error = loader_prepare(request);
 	if (error != 0)
 		return error;
-	request->sent = 0;
-	request->deadline = loader_clock() + LOADER_TIMEOUT;
 
 	/* https starts TLS over the connection; http sends at once. */
 	is_https = !strcmp(request->url.scheme, "https");
@@ -877,6 +1055,12 @@ loader_send(
 			return EAGAIN;
 		}
 
+		/* A kept connection the server closed is replaced once. */
+		if (count < 0 && request->reused) {
+			error = loader_retry(request);
+			return error;
+		}
+
 		/* Any other failure ends the request. */
 		if (count < 0)
 			return errno;
@@ -924,6 +1108,12 @@ loader_receive(
 		received = (size_t)count;
 	}
 
+	/* A kept connection closed before anything of the response came is replaced once. */
+	if (received == 0 && request->reused && request->raw.length == 0) {
+		error = loader_retry(request);
+		return error;
+	}
+
 	/* The end of the connection is the end of the response. */
 	if (received == 0) {
 		error = loader_finish(request);
@@ -937,8 +1127,15 @@ loader_receive(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: more may come. */
+	/* A response its framing says is complete ends here, its connection kept when it may be. */
 	request->deadline = loader_clock() + LOADER_TIMEOUT;
+	net_http_framing_update(&request->framing, request->raw.data, request->raw.length);
+	if (request->framing.done) {
+		error = loader_finish(request);
+		return error;
+	}
+
+	/* Succeeded: more may come. */
 	return 0;
 }
 
@@ -956,18 +1153,36 @@ loader_finish(
 	int is_web;
 	int error;
 
-	/* The connection is done with. */
+	/* The connection goes back to the pool when the response left it open, else it is closed. */
+	if (request->framing.done && request->framing.keep_alive)
+		loader_keep(request);
 	loader_close(request);
 
-	/* The response. */
+	/* The response, with nothing of the last one's caching left. */
 	wb_buffer_clear(&request->response.content_type);
 	wb_buffer_clear(&request->response.body);
+	wb_buffer_clear(&request->response.etag);
+	request->response.max_age = -1;
+	request->response.no_store = 0;
+	request->response.no_cache = 0;
 	wb_buffer_init(&location);
 	error = net_http_parse_response(&request->url, &request->raw, &request->response, &location);
 	wb_buffer_clear(&request->raw);
 	if (error != 0) {
 		wb_buffer_release(&location);
 		return error;
+	}
+
+	/* A 304 to a revalidation is the kept body, fresh again. */
+	if (request->response.status == 304 && request->validating != NULL) {
+		request->validating->stored_at = loader_clock();
+		if (request->response.max_age >= 0)
+			request->validating->max_age = request->response.max_age;
+		error = loader_cache_answer(request, request->validating);
+		if (error != 0) {
+			wb_buffer_release(&location);
+			return error;
+		}
 	}
 
 	/* A response that is not a redirect with a place to go ends the request at this URL. */
@@ -978,6 +1193,7 @@ loader_finish(
 		error = net_url_serialize(&request->url, 0, &request->response.url);
 		if (error != 0)
 			return error;
+		loader_cache_store(request);
 		loader_end(request, 0);
 		return 0;
 	}
@@ -1048,6 +1264,9 @@ loader_end(
 	request->state = LOADER_ENDED;
 	request->error = error;
 
+	/* A request waiting for its place may go. */
+	loader_wake(request->loader, request->key);
+
 	/* The callback, while nothing is freed. */
 	request->loader->walking++;
 	if (request->done != NULL)
@@ -1094,4 +1313,367 @@ loader_free(
 	wb_buffer_release(&request->raw);
 	net_response_release(&request->response);
 	free(request);
+}
+
+/*
+ * Prepares a request to go out over its connection: its text (keeping the
+ * connection, and If-None-Match for a revalidation), nothing sent or read
+ * yet, and a new time out.
+ */
+static int
+loader_prepare(
+	struct net_request *request)
+{
+	struct wb_buffer extra;
+	const char *lines;
+	int error;
+
+	/* If-None-Match with the kept response's ETag, for a revalidation. */
+	wb_buffer_init(&extra);
+	lines = NULL;
+	if (request->validating != NULL) {
+		error = wb_buffer_printf(&extra, "If-None-Match: %s\r\n", wb_buffer_string(&request->validating->etag));
+		if (error != 0) {
+			wb_buffer_release(&extra);
+			return error;
+		}
+
+		/* The line goes after the fixed headers. */
+		lines = wb_buffer_string(&extra);
+	}
+
+	/* The text, keeping the connection. */
+	wb_buffer_clear(&request->request);
+	error = net_http_request_text(&request->url, &request->request, 1, lines);
+	wb_buffer_release(&extra);
+	if (error != 0)
+		return error;
+
+	/* Nothing sent or read, and a new time out. */
+	request->sent = 0;
+	wb_buffer_clear(&request->raw);
+	net_http_framing_init(&request->framing);
+	request->deadline = loader_clock() + LOADER_TIMEOUT;
+
+	/* Succeeded: the request can go out. */
+	return 0;
+}
+
+/*
+ * Replaces a kept connection that turned out closed by a new connection
+ * (once): the request starts again from its lookup.
+ */
+static int
+loader_retry(
+	struct net_request *request)
+{
+	int error;
+
+	/* A request whose kept connection failed twice fails. */
+	if (request->retried)
+		return ECONNRESET;
+
+	/* The old connection goes, and the request starts again without the pool. */
+	loader_close(request);
+	request->retried = 1;
+	request->reused = 0;
+	error = loader_begin(request);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the request waits for its new connection. */
+	return EAGAIN;
+}
+
+/* Counts the requests that hold or are opening a connection to a place. */
+static int
+loader_active(
+	const struct net_loader *loader,
+	const char *key)
+{
+	const struct net_request *request;
+	int count;
+	int differs;
+
+	/* Each request that is past waiting and not over. */
+	count = 0;
+	for (request = loader->requests; request != NULL; request = request->next) {
+		if (request->cancelled || request->state == LOADER_ENDED)
+			continue;
+		if (request->state == LOADER_READY || request->state == LOADER_WAITING)
+			continue;
+		differs = strcmp(request->key, key);
+		if (differs == 0)
+			count++;
+	}
+
+	/* The count. */
+	return count;
+}
+
+/* Starts the first request that waits for a place, when the place has room again. */
+static void
+loader_wake(
+	struct net_loader *loader,
+	const char *key)
+{
+	struct net_request *request;
+	int differs;
+	int error;
+
+	/* A place without a key (a request that never started) frees nothing. */
+	if (key[0] == '\0')
+		return;
+
+	/* The first request waiting for the place starts; one that cannot fails. */
+	for (request = loader->requests; request != NULL; request = request->next) {
+		if (request->cancelled || request->state != LOADER_WAITING)
+			continue;
+		differs = strcmp(request->key, key);
+		if (differs != 0)
+			continue;
+		error = loader_begin(request);
+		if (error != 0)
+			loader_end(request, error);
+		break;
+	}
+}
+
+/* Puts a request's connection in the pool of idle connections (the request no longer holds it). */
+static void
+loader_keep(
+	struct net_request *request)
+{
+	struct net_loader *loader;
+	struct loader_connection *kept;
+
+	/* The pool's entry; without memory the connection is simply closed. */
+	loader = request->loader;
+	kept = calloc(1, sizeof(*kept));
+	if (kept == NULL)
+		return;
+	memcpy(kept->key, request->key, sizeof(kept->key));
+	kept->descriptor = request->descriptor;
+	kept->tls = request->tls;
+	kept->idle_since = loader_clock();
+
+	/* The connection is the pool's now. */
+	request->descriptor = -1;
+	request->tls = NULL;
+	request->wants = 0;
+	kept->next = loader->idle;
+	loader->idle = kept;
+}
+
+/* Closes the idle connections that have been idle since before a time (LOADER_NEVER: all of them). */
+static void
+loader_expire_idle(
+	struct net_loader *loader,
+	uint64_t now)
+{
+	struct loader_connection **link;
+	struct loader_connection *kept;
+
+	/* Each idle connection. */
+	link = &loader->idle;
+	while (*link != NULL) {
+		kept = *link;
+		if (now != LOADER_NEVER && kept->idle_since + LOADER_IDLE > now) {
+			link = &kept->next;
+			continue;
+		}
+
+		/* Unlinked and closed. */
+		*link = kept->next;
+		if (kept->tls != NULL)
+			net_tls_close(kept->tls);
+		close(kept->descriptor);
+		free(kept);
+	}
+}
+
+/* Finds a URL's entry in the cache, and makes it the most recently used. */
+static struct loader_entry *
+loader_cache_find(
+	struct net_loader *loader,
+	const char *url)
+{
+	struct loader_entry **link;
+	struct loader_entry *entry;
+	int differs;
+
+	/* Each entry. */
+	for (link = &loader->cache; *link != NULL; link = &(*link)->next) {
+		differs = strcmp((*link)->url, url);
+		if (differs != 0)
+			continue;
+
+		/* Moved to the front. */
+		entry = *link;
+		*link = entry->next;
+		entry->next = loader->cache;
+		loader->cache = entry;
+		return entry;
+	}
+
+	/* The URL is not kept. */
+	return NULL;
+}
+
+/* Tells whether an entry answers without the network: kept for less than its max-age, and not no-cache. */
+static int
+loader_cache_fresh(
+	const struct loader_entry *entry,
+	uint64_t now)
+{
+	/* No entry, no max-age, or no-cache. */
+	if (entry == NULL || entry->max_age <= 0 || entry->no_cache)
+		return 0;
+
+	/* Younger than its max-age. */
+	if (now < entry->stored_at + (uint64_t)entry->max_age * 1000U)
+		return 1;
+
+	/* Stale. */
+	return 0;
+}
+
+/* Answers a request from a cache entry: a 200 with its Content-Type and body. */
+static int
+loader_cache_answer(
+	struct net_request *request,
+	const struct loader_entry *entry)
+{
+	int error;
+
+	/* The response the entry keeps, at the request's URL. */
+	request->response.status = 200;
+	wb_buffer_clear(&request->response.content_type);
+	wb_buffer_clear(&request->response.body);
+	wb_buffer_clear(&request->response.url);
+	error = wb_buffer_append(&request->response.content_type, entry->content_type.data, entry->content_type.length);
+	if (error == 0)
+		error = wb_buffer_append(&request->response.body, entry->body.data, entry->body.length);
+	if (error == 0)
+		error = net_url_serialize(&request->url, 0, &request->response.url);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the request has its response. */
+	return 0;
+}
+
+/*
+ * Keeps a request's final 200 response in the cache when it may be kept
+ * (a max-age or an ETag, and not no-store), in place of an older one of
+ * the same URL; the least recently used go when the bodies are too many.
+ */
+static void
+loader_cache_store(
+	struct net_request *request)
+{
+	struct net_loader *loader;
+	struct loader_entry *entry;
+	struct wb_buffer url;
+	int error;
+
+	/* Only a 200 that says it may be kept, and not larger than the cache. */
+	loader = request->loader;
+	if (request->response.status != 200 || request->response.no_store)
+		return;
+	if (request->response.max_age <= 0 && request->response.etag.length == 0)
+		return;
+	if (request->response.body.length > LOADER_CACHE_MAX)
+		return;
+
+	/* The URL, the key; an older response of it goes. */
+	wb_buffer_init(&url);
+	error = net_url_serialize(&request->url, 1, &url);
+	if (error != 0) {
+		wb_buffer_release(&url);
+		return;
+	}
+
+	/* An older entry of the URL is replaced (a revalidated one stays). */
+	entry = loader_cache_find(loader, wb_buffer_string(&url));
+	if (entry != NULL && entry != request->validating)
+		loader_cache_free(loader, entry);
+	if (entry != NULL && entry == request->validating) {
+		/* A revalidated entry was refreshed already. */
+		wb_buffer_release(&url);
+		return;
+	}
+
+	/* The entry. */
+	entry = calloc(1, sizeof(*entry));
+	if (entry == NULL) {
+		wb_buffer_release(&url);
+		return;
+	}
+
+	/* Its URL, type, body, ETag, time and freshness. */
+	entry->url = strdup(wb_buffer_string(&url));
+	wb_buffer_release(&url);
+	wb_buffer_init(&entry->content_type);
+	wb_buffer_init(&entry->body);
+	wb_buffer_init(&entry->etag);
+	error = ENOMEM;
+	if (entry->url != NULL)
+		error = wb_buffer_append(&entry->content_type, request->response.content_type.data, request->response.content_type.length);
+	if (error == 0)
+		error = wb_buffer_append(&entry->body, request->response.body.data, request->response.body.length);
+	if (error == 0)
+		error = wb_buffer_append(&entry->etag, request->response.etag.data, request->response.etag.length);
+	entry->stored_at = loader_clock();
+	entry->max_age = request->response.max_age;
+	entry->no_cache = request->response.no_cache;
+
+	/* At the front; an entry that could not be made is dropped. */
+	entry->next = loader->cache;
+	loader->cache = entry;
+	loader->cache_bytes += entry->body.length;
+	if (error != 0) {
+		loader_cache_free(loader, entry);
+		return;
+	}
+
+	/* The least recently used go until the bodies fit. */
+	while (loader->cache_bytes > LOADER_CACHE_MAX) {
+		entry = loader->cache;
+		while (entry->next != NULL)
+			entry = entry->next;
+		loader_cache_free(loader, entry);
+	}
+}
+
+/* Takes an entry out of the cache and frees it (no request revalidates it any more). */
+static void
+loader_cache_free(
+	struct net_loader *loader,
+	struct loader_entry *entry)
+{
+	struct loader_entry **link;
+	struct net_request *request;
+
+	/* Unlinked. */
+	for (link = &loader->cache; *link != NULL; link = &(*link)->next) {
+		if (*link == entry) {
+			*link = entry->next;
+			break;
+		}
+	}
+
+	/* The requests that revalidate it no longer do. */
+	for (request = loader->requests; request != NULL; request = request->next) {
+		if (request->validating == entry)
+			request->validating = NULL;
+	}
+
+	/* Its bytes, then it. */
+	loader->cache_bytes -= entry->body.length;
+	free(entry->url);
+	wb_buffer_release(&entry->content_type);
+	wb_buffer_release(&entry->body);
+	wb_buffer_release(&entry->etag);
+	free(entry);
 }

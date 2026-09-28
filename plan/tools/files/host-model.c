@@ -156,7 +156,26 @@ main(
 	check(file_is(path, "leaf"), "collision: replace copies the folder in its place");
 	snprintf(path, sizeof(path), "%s/dst/Report 3.pdf", root);
 	check(!exists(path), "collision: replace makes no new name");
+
+	/* 2c. The replaced items went to the trash (ws035-p110, F-050), and the undo's two tasks put the file back. */
+	check(task->replaced[0] != NULL && file_is(task->replaced[0], "older"), "replace: the replaced file is in the trash");
+	snprintf(path, sizeof(path), "%s/extra.txt", task->replaced[1] != NULL ? task->replaced[1] : "-");
+	check(task->replaced[1] != NULL && file_is(path, "extra"), "replace: the replaced folder is in the trash with its contents");
+	targets[0] = strdup(task->results[0]);
+	targets[1] = strdup(task->replaced[0]);
 	fm_task_free(task);
+	fm_trash_path(trash, sizeof(trash));
+	task = fm_task_new(FM_TASK_TRASH, targets, 1, trash);
+	run(task);
+	fm_task_free(task);
+	task = fm_task_new(FM_TASK_RESTORE, targets + 1, 1, trash);
+	run(task);
+	check(file_is(targets[0], "older") && !exists(targets[1]) && task->error_count == 0, "replace: undo puts the replaced file back under its name");
+	fm_task_free(task);
+	free(targets[0]);
+	free(targets[1]);
+	snprintf(path, sizeof(path), "%s/dst/Report.pdf", root);
+	make_file(path, "report");
 	snprintf(path, sizeof(path), "%s/src/Moved.txt", root);
 	make_file(path, "moved");
 	targets[0] = strdup(path);
