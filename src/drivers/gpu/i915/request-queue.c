@@ -201,6 +201,7 @@ drv_i915_request_complete_list(
 	struct drv_gpu_completion *completion;
 	int error;
 	unsigned freed;
+	unsigned long enabled;
 
 	device = engine->device;
 	freed = 0U;
@@ -216,8 +217,13 @@ drv_i915_request_complete_list(
 		if (completion != NULL)
 			drv_gpu_complete(completion, error);
 
-		/* Returns the slot so a concurrent allocation sees it consistently. */
-		spin_lock(&device->irq_lock);
+		/*
+		 * Returns the slot so a concurrent allocation sees it consistently.
+		 * The IRQ lock is taken with interrupts disabled here as everywhere:
+		 * this runs in a thread, which the clock tick could otherwise preempt
+		 * and move to another CPU while it holds the lock.
+		 */
+		enabled = spin_lock_irqsave(&device->irq_lock);
 
 		/* The session's pending count drops only after its callback has run. */
 		if (request->session != NULL && request->session->pending_requests != 0U)
@@ -231,7 +237,7 @@ drv_i915_request_complete_list(
 		request->completion = NULL;
 		request->state = I915_REQUEST_FREE;
 
-		spin_unlock(&device->irq_lock);
+		spin_unlock_irqrestore(&device->irq_lock, enabled);
 
 		freed++;
 		request = next;

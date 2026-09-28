@@ -18,6 +18,8 @@
 		truetype_design_metrics;
 		truetype_glyph_design_advance;
 		truetype_glyph_outline;
+		truetype_open_embedded;
+		truetype_cmap_lookup;
 	local:
 		*;
 };

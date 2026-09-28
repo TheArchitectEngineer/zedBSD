@@ -53,7 +53,10 @@ static void screen_mode(struct terminal_screen *screen, int set);
 static int screen_parameter(const struct terminal_screen *screen, int index, int fallback);
 static void screen_line_feed(struct terminal_screen *screen);
 static void screen_reverse_index(struct terminal_screen *screen);
-static void screen_scroll_up(struct terminal_screen *screen, unsigned top, unsigned bottom, unsigned count);
+static void screen_scroll_up(struct terminal_screen *screen, unsigned top, unsigned bottom, unsigned count, int keep);
+static void screen_keep_line(struct terminal_screen *screen, unsigned row);
+static void screen_range_moved(struct terminal_screen *screen, unsigned top, unsigned bottom);
+static void screen_clear_grid(struct terminal_screen *screen);
 static void screen_scroll_down(struct terminal_screen *screen, unsigned top, unsigned bottom, unsigned count);
 static void screen_utf8(struct terminal_screen *screen, unsigned char byte);
 static void screen_put(struct terminal_screen *screen, uint32_t codepoint);
@@ -161,6 +164,13 @@ terminal_screen_resize(
 	screen->scroll_top = 0U;
 	screen->scroll_bottom = rows - 1U;
 
+	/*
+	 * The rows were laid out again, so a range on them no longer names the
+	 * same text, and the view returns to the live screen (ws035-p114).
+	 */
+	screen->range = 0;
+	screen->view = 0U;
+
 	/* The resized grid is drawn anew. */
 	screen->changed = 1;
 }
@@ -199,27 +209,125 @@ terminal_screen_cell(
 }
 
 /*
- * Tells whether a cell is in the range selected with the pointer
- * (ws035-p093).
+ * Returns the cell at a column of a line (ws035-p114): a line of the
+ * scrollback or of the screen, numbered from the first line the screen
+ * ever showed.  Returns NULL for a line the terminal no longer keeps or
+ * does not show yet, and for a column past the grid.
+ */
+struct terminal_cell *
+terminal_screen_line_cell(
+	struct terminal_screen *screen,
+	unsigned column,
+	unsigned long line)
+{
+	struct terminal_cell *cell;
+	unsigned long oldest;
+	unsigned long index;
+	unsigned slot;
+
+	/* A column past the grid has no cell. */
+	if (column >= screen->columns)
+		return NULL;
+
+	/* A line below the screen's last row is not shown yet. */
+	if (line >= screen->scrolled + screen->rows)
+		return NULL;
+
+	/* A line of the screen is the cell of its row. */
+	if (line >= screen->scrolled) {
+		cell = terminal_screen_cell(screen, column, (unsigned)(line - screen->scrolled));
+		return cell;
+	}
+
+	/* A line older than the oldest kept has gone. */
+	oldest = screen->scrolled - screen->history_count;
+	if (line < oldest)
+		return NULL;
+
+	/* A line of the scrollback is in its slot of the ring, counted from the oldest. */
+	index = line - oldest;
+	slot = (unsigned)((screen->history_first + index) % TERMINAL_HISTORY);
+	cell = &screen->history[(size_t)slot * TERMINAL_MAX_COLUMNS + column];
+
+	/* Succeeded: the scrollback's cell. */
+	return cell;
+}
+
+/*
+ * Gives the line a row of the window shows (ws035-p114): the screen's row
+ * when the view is on the live screen, a line of the scrollback when it is
+ * back.
+ */
+unsigned long
+terminal_screen_view_line(
+	const struct terminal_screen *screen,
+	unsigned row)
+{
+	/* Reports the line: the view's first line, then one per row. */
+	return screen->scrolled - screen->view + row;
+}
+
+/*
+ * Moves the view back into the scrollback (positive lines) or toward the
+ * live screen (negative), within what is kept.  Returns nonzero when the
+ * view moved.
+ */
+int
+terminal_screen_scroll_view(
+	struct terminal_screen *screen,
+	int lines)
+{
+	unsigned old_view;
+	unsigned step;
+
+	/*
+	 * Back goes no further than the oldest line kept, forward no further
+	 * than the live screen.
+	 */
+	old_view = screen->view;
+	if (lines > 0) {
+		step = (unsigned)lines;
+		if (step > screen->history_count - screen->view)
+			step = screen->history_count - screen->view;
+		screen->view += step;
+	} else if (lines < 0) {
+		step = 0U - (unsigned)lines;
+		if (step > screen->view)
+			step = screen->view;
+		screen->view -= step;
+	}
+
+	/* A view that did not move changes nothing. */
+	if (screen->view == old_view)
+		return 0;
+
+	/* Succeeded: the window shows other lines. */
+	screen->changed = 1;
+	return 1;
+}
+
+/*
+ * Tells whether a cell of a line is in the range selected with the pointer
+ * (ws035-p093; lines since ws035-p114).
  */
 int
 terminal_screen_in_range(
 	const struct terminal_screen *screen,
 	unsigned column,
-	unsigned row)
+	unsigned long line)
 {
 	/* Without a range, none is. */
 	if (!screen->range)
 		return 0;
 
-	/* Rows before the first or after the last are not. */
-	if (row < screen->range_from[1] || row > screen->range_to[1])
+	/* Lines before the first or after the last are not. */
+	if (line < screen->range_from[1] || line > screen->range_to[1])
 		return 0;
 
-	/* On the first row, from its first cell; on the last, up to its last. */
-	if (row == screen->range_from[1] && column < screen->range_from[0])
+	/* On the first line, from its first cell; on the last, up to its last. */
+	if (line == screen->range_from[1] && column < screen->range_from[0])
 		return 0;
-	if (row == screen->range_to[1] && column > screen->range_to[0])
+	if (line == screen->range_to[1] && column > screen->range_to[0])
 		return 0;
 
 	/* Succeeded: in it. */
@@ -230,8 +338,9 @@ terminal_screen_in_range(
  * Writes the grid's text as UTF-8, a line per row without its trailing
  * spaces and without the empty rows at the bottom, into a buffer (cut at
  * its size): the range selected with the pointer when there is one and
- * the whole screen is not selected, else the whole grid.  Returns the
- * number of bytes written, without a terminator.
+ * the whole screen is not selected (its lines may be in the scrollback,
+ * ws035-p114), else the whole grid.  Returns the number of bytes written,
+ * without a terminator.
  */
 size_t
 terminal_screen_text(
@@ -247,26 +356,43 @@ terminal_screen_text(
 	size_t start;
 	size_t count;
 	unsigned column;
-	unsigned row;
+	unsigned long line;
+	unsigned long first;
+	unsigned long last;
+	int only_range;
 	int inside;
 
-	/* Each row, then a line break; kept is the length up to the end of the last row with text. */
+	/* The range's lines when it is the range that is copied, else the screen's. */
+	only_range = 0;
+	if (screen->range && !screen->selected)
+		only_range = 1;
+	if (only_range) {
+		first = screen->range_from[1];
+		last = screen->range_to[1];
+	} else {
+		first = screen->scrolled;
+		last = screen->scrolled + screen->rows - 1U;
+	}
+
+	/* Each line, then a line break; kept is the length up to the end of the last line with text. */
 	length = 0;
 	kept = 0;
 	start = 0;
-	for (row = 0U; row < screen->rows; row++) {
-		/* Only the range's rows, when it is the range that is copied. */
-		if (screen->range && !screen->selected && (row < screen->range_from[1] || row > screen->range_to[1]))
-			continue;
-
-		/* Each cell of the row, as the character it shows. */
+	for (line = first; line <= last; line++) {
+		/* Each cell of the line, as the character it shows. */
 		for (column = 0U; column < screen->columns; column++) {
-			/* A continuation is the right half of a wide character written already; a cell out of the range is left out. */
-			cell = terminal_screen_cell(screen, column, row);
+			/*
+			 * A line no longer kept has no cells, a continuation is the
+			 * right half of a wide character written already, and a cell
+			 * out of the range is left out.
+			 */
+			cell = terminal_screen_line_cell(screen, column, line);
+			if (cell == NULL)
+				break;
 			if (cell->continuation)
 				continue;
-			inside = terminal_screen_in_range(screen, column, row);
-			if (screen->range && !screen->selected && !inside)
+			inside = terminal_screen_in_range(screen, column, line);
+			if (only_range && !inside)
 				continue;
 
 			/* A cell never written shows a space. */
@@ -660,11 +786,11 @@ screen_csi(
 	case 'M':
 		/* Deletes lines at the cursor's row, inside the scrolling region. */
 		if (screen->cursor_row >= screen->scroll_top && screen->cursor_row <= screen->scroll_bottom)
-			screen_scroll_up(screen, screen->cursor_row, screen->scroll_bottom, count);
+			screen_scroll_up(screen, screen->cursor_row, screen->scroll_bottom, count, 0);
 		break;
 	case 'S':
 		/* Scrolls the region up. */
-		screen_scroll_up(screen, screen->scroll_top, screen->scroll_bottom, count);
+		screen_scroll_up(screen, screen->scroll_top, screen->scroll_bottom, count, 1);
 		break;
 	case 'T':
 		/* Scrolls the region down. */
@@ -837,11 +963,11 @@ screen_mode(
 	for (index = 0; index < screen->parameter_count; index++) {
 		value = screen->parameters[index];
 
-		/* DECTCEM (? 25) shows or hides the cursor; the alternate screen (? 1049, ? 47) clears the grid. */
+		/* DECTCEM (? 25) shows or hides the cursor; the alternate screen (? 1049, ? 47) clears the grid, keeping the scrollback. */
 		if (screen->private_mode == '?' && value == 25) {
 			screen->cursor_visible = set;
 		} else if (screen->private_mode == '?' && (value == 1049 || value == 47 || value == 1047)) {
-			terminal_screen_init(screen, screen->columns, screen->rows);
+			screen_clear_grid(screen);
 		}
 	}
 }
@@ -868,7 +994,7 @@ screen_line_feed(
 {
 	/* At the region's bottom the region scrolls; elsewhere the cursor moves down. */
 	if (screen->cursor_row == screen->scroll_bottom) {
-		screen_scroll_up(screen, screen->scroll_top, screen->scroll_bottom, 1U);
+		screen_scroll_up(screen, screen->scroll_top, screen->scroll_bottom, 1U, 1);
 	} else if (screen->cursor_row + 1U < screen->rows) {
 		screen->cursor_row++;
 	}
@@ -887,15 +1013,21 @@ screen_reverse_index(
 	}
 }
 
-/* Moves the rows from top to bottom up by count, blanking the rows that open at the bottom. */
+/*
+ * Moves the rows from top to bottom up by count, blanking the rows that
+ * open at the bottom.  With keep, the whole screen scrolling up keeps the
+ * rows that leave its top in the scrollback (ws035-p114).
+ */
 static void
 screen_scroll_up(
 	struct terminal_screen *screen,
 	unsigned top,
 	unsigned bottom,
-	unsigned count)
+	unsigned count,
+	int keep)
 {
 	unsigned row;
+	int whole;
 
 	/* A region outside the grid does not scroll. */
 	if (bottom >= screen->rows || top > bottom)
@@ -904,6 +1036,21 @@ screen_scroll_up(
 	/* More than the region scrolls the whole region away. */
 	if (count > bottom - top + 1U)
 		count = bottom - top + 1U;
+
+	/*
+	 * The whole screen's lines keep their numbers as they go into the
+	 * scrollback, so a range on them follows its text; a region's scroll
+	 * moves text under a range, which is dropped.
+	 */
+	whole = 0;
+	if (keep && top == 0U && bottom + 1U == screen->rows)
+		whole = 1;
+	if (whole) {
+		for (row = 0U; row < count; row++)
+			screen_keep_line(screen, row);
+	} else {
+		screen_range_moved(screen, top, bottom);
+	}
 
 	/* The rows that stay move up. */
 	for (row = top; row + count <= bottom; row++)
@@ -932,6 +1079,9 @@ screen_scroll_down(
 	if (count > bottom - top + 1U)
 		count = bottom - top + 1U;
 
+	/* The text moves under a range on the region, which is dropped (ws035-p114). */
+	screen_range_moved(screen, top, bottom);
+
 	/* The rows that stay move down, starting from the bottom. */
 	for (row = bottom; row >= top + count; row--)
 		memcpy(terminal_screen_cell(screen, 0U, row), terminal_screen_cell(screen, 0U, row - count), (size_t)screen->columns * sizeof(struct terminal_cell));
@@ -939,6 +1089,114 @@ screen_scroll_down(
 	/* The rows that opened are blank. */
 	for (row = top; row < top + count; row++)
 		screen_erase(screen, row, 0U, screen->columns - 1U);
+}
+
+/*
+ * Keeps a row that is leaving the top of the screen as the newest line of
+ * the scrollback (ws035-p114); a full scrollback drops its oldest line.
+ */
+static void
+screen_keep_line(
+	struct terminal_screen *screen,
+	unsigned row)
+{
+	struct terminal_cell *kept;
+	unsigned long oldest;
+	unsigned slot;
+	unsigned column;
+
+	/* The slot after the newest while the ring has room, else the oldest's, whose line is dropped. */
+	if (screen->history_count < TERMINAL_HISTORY) {
+		slot = (screen->history_first + screen->history_count) % TERMINAL_HISTORY;
+		screen->history_count++;
+	} else {
+		slot = screen->history_first;
+		screen->history_first = (screen->history_first + 1U) % TERMINAL_HISTORY;
+	}
+
+	/* The row's cells, and blanks past the grid's width for a wider grid later. */
+	kept = &screen->history[(size_t)slot * TERMINAL_MAX_COLUMNS];
+	memcpy(kept, terminal_screen_cell(screen, 0U, row), (size_t)screen->columns * sizeof(struct terminal_cell));
+	for (column = screen->columns; column < TERMINAL_MAX_COLUMNS; column++) {
+		kept[column].codepoint = ' ';
+		kept[column].foreground = TERMINAL_FOREGROUND;
+		kept[column].background = TERMINAL_BACKGROUND;
+		kept[column].continuation = 0;
+	}
+
+	/*
+	 * One more line has scrolled off: the screen's rows are numbered one
+	 * further on.  A view back in the scrollback goes one line further back
+	 * so that it stays on the same text, unless it is at the oldest line.
+	 */
+	screen->scrolled++;
+	if (screen->view != 0U && screen->view < screen->history_count)
+		screen->view++;
+
+	/* A range that started on the line just dropped has lost its text. */
+	oldest = screen->scrolled - screen->history_count;
+	if (screen->range && screen->range_from[1] < oldest)
+		screen->range = 0;
+}
+
+/*
+ * Drops the range selected with the pointer when it has a line in a part of
+ * the screen whose text moves without its line numbers (a region scrolled,
+ * lines inserted or deleted; ws035-p114).
+ */
+static void
+screen_range_moved(
+	struct terminal_screen *screen,
+	unsigned top,
+	unsigned bottom)
+{
+	/* No range, nothing to drop. */
+	if (!screen->range)
+		return;
+
+	/* A range wholly above or wholly below the rows keeps its text. */
+	if (screen->range_to[1] < screen->scrolled + top)
+		return;
+	if (screen->range_from[1] > screen->scrolled + bottom)
+		return;
+
+	/* Succeeded: the range's text moved, so the range goes. */
+	screen->range = 0;
+}
+
+/*
+ * Empties the grid for the alternate screen (? 1049, ? 47, ? 1047): the
+ * default colours, the cursor home and the whole grid scrolling, with the
+ * scrollback kept and the view on the live screen (ws035-p114).
+ */
+static void
+screen_clear_grid(
+	struct terminal_screen *screen)
+{
+	unsigned row;
+
+	/* The state a new grid has. */
+	screen->foreground = TERMINAL_FOREGROUND;
+	screen->background = TERMINAL_BACKGROUND;
+	screen->inverse = 0;
+	screen->bold = 0;
+	screen->cursor_column = 0U;
+	screen->cursor_row = 0U;
+	screen->saved_column = 0U;
+	screen->saved_row = 0U;
+	screen->cursor_visible = 1;
+	screen->scroll_top = 0U;
+	screen->scroll_bottom = screen->rows - 1U;
+
+	/* Every cell blank. */
+	for (row = 0U; row < screen->rows; row++)
+		screen_erase(screen, row, 0U, screen->columns - 1U);
+
+	/* Nothing selected, the live screen shown and drawn anew. */
+	screen->selected = 0;
+	screen->range = 0;
+	screen->view = 0U;
+	screen->changed = 1;
 }
 
 /* Collects one byte of UTF-8 text, placing each complete character. */

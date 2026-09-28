@@ -71,10 +71,12 @@ struct apps_builtin {
 };
 
 /*
- * The built-in ways, after the lists of the user and the system.  Anything
- * the others do not fit is shown by less in a terminal.
+ * The built-in ways, after the lists of the user and the system.  A PDF opens
+ * in PDF Viewer (ws079-p006) when it is installed.  Anything the others do
+ * not fit is shown by less in a terminal.
  */
 static const struct apps_builtin apps_builtins[] = {
+	{ "application/pdf", "PDF Viewer", "/bin/pdfviewer %f", "pdfviewer" },
 	{ "image/" "*", "Quick Look", "@quicklook", NULL },
 	{ APPS_TEXT_TYPES, "Terminal (less)", "@terminal less %f", NULL },
 	{ APPS_TEXT_TYPES, "Remacs", "@terminal remacs %f", "remacs" },

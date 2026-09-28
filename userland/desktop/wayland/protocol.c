@@ -18,6 +18,7 @@
 #include "data.h"
 #include "extras.h"
 #include "panels.h"
+#include "tablet.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -53,6 +54,7 @@ static const struct zwl_global globals[] = {
 	{ 16, "keiland_titlebar_manager_v1", 2, ZWL_TITLEBAR_MANAGER },
 	{ 17, "keiland_glass_manager_v1", 1, ZWL_GLASS_MANAGER },
 	{ 18, "zwp_primary_selection_device_manager_v1", 1, ZWL_PRIMARY_MANAGER },
+	{ 19, "zwp_tablet_manager_v2", 1, ZWL_TABLET_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -184,6 +186,7 @@ zwl_dispatch(
 	case ZWL_SEAT:
 	case ZWL_POINTER:
 	case ZWL_KEYBOARD:
+	case ZWL_TOUCH:
 		error = zwl_seat_request(object, opcode, bytes, size);
 		break;
 	case ZWL_MENU_MANAGER:
@@ -253,6 +256,13 @@ zwl_dispatch(
 	case ZWL_SUBSURFACE:
 		/* wl_subsurface (subsurface.c). */
 		error = zwl_subsurface_request(object, opcode, bytes, size);
+		break;
+	case ZWL_TABLET_MANAGER:
+	case ZWL_TABLET_SEAT:
+	case ZWL_TABLET:
+	case ZWL_TABLET_TOOL:
+		/* The pen tablets (tablet.c). */
+		error = zwl_tablet_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
@@ -1047,27 +1057,9 @@ shell_request(
 		}
 
 		/* The window becomes fullscreen: at the origin, the output's size (design D0, D6). */
-		if (!surface->fullscreen) {
-			surface->fullscreen = 1;
-			surface->window_x = surface->x;
-			surface->window_y = surface->y;
-			surface->window_width = 0;
-			surface->window_height = 0;
-			if (surface->current != NULL)
-				zwl_surface_size(surface, &surface->window_width, &surface->window_height);
-
-			/* It covers the output from the origin. */
-			surface->x = 0;
-			surface->y = 0;
-			object->client->server->dirty = 1;
-
-			/* A window already configured is told now; otherwise the first configure says it. */
-			if (surface->configured) {
-				error = zwl_window_send_configure(surface);
-				if (error != 0)
-					return error;
-			}
-		}
+		error = zwl_window_enter_fullscreen(surface);
+		if (error != 0)
+			return error;
 
 		break;
 	case 12:
@@ -1226,6 +1218,50 @@ zwl_window_bounds_refresh(
 				printf("ZWL BOUNDS configure errno=%d\n", error);
 		}
 	}
+}
+
+/*
+ * Makes a window fullscreen, when the client asks or the compositor decides
+ * (the top-right corner's swipe, corner.c): it covers the output from the
+ * origin, keeping its place and size to come back to, and a window already
+ * configured is told now.  A fullscreen window is left as it is.  Returns 0,
+ * or the error of sending the configure.
+ */
+int
+zwl_window_enter_fullscreen(
+	struct zwl_object *surface)
+{
+	int error;
+
+	/* Already fullscreen: nothing changes. */
+	if (surface->fullscreen)
+		return 0;
+
+	/* Its place and size before fullscreen, to come back to. */
+	surface->fullscreen = 1;
+	surface->window_x = surface->x;
+	surface->window_y = surface->y;
+	surface->window_width = 0;
+	surface->window_height = 0;
+	if (surface->current != NULL)
+		zwl_surface_size(surface, &surface->window_width, &surface->window_height);
+
+	/* It covers the output from the origin. */
+	surface->x = 0;
+	surface->y = 0;
+	surface->client->server->dirty = 1;
+
+	/* A window not configured yet learns it from its first configure. */
+	if (!surface->configured)
+		return 0;
+
+	/* A window already configured is told now. */
+	error = zwl_window_send_configure(surface);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the window is fullscreen and knows it. */
+	return 0;
 }
 
 /*

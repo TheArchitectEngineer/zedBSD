@@ -1,13 +1,26 @@
 <!-- awesome-plan project=zedbsd record=past-log -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし
-Last finished Queue: q495（ws068-p024 cleared。GLES 3.0 の API（1））
+Active Queue: なし（2026-09-27 から subagent の運用）
+Last finished Queue: q495（ws068-p024 cleared。GLES 3.0 の API（1））。その後の作業は下の 2026-09-28 の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: q443〜q495（2026-09-26〜27）
+## 最新: 2026-09-28 の 3 つの 5 時間の周期（subagent の運用、Queue の外）
+
+- **Kei Operating System への改名**（WS078）: `userland/desktop/`（`/bin/wayland`・`/bin/terminal`・`/bin/files`・`/bin/browser`・`/bin/xserver`・`/sbin/sessiond`・`libkeiland`）、
+  `keiland_*` の protocol、`KERN_` の識別子、画面の Kei、Desktop の menu の分類（BUG-080）、X11 と zedinst を `userland/retro/` へ。
+- **Keiland**（WS035 p101〜p113）: 表示の引き継ぎ・lock・PRIMARY・network の menu と group・configure_bounds・衝突の dialog と Trash・Kei の起動画面（GOP 1920x1080）と spinner・greeter/lock/壁紙/files の Kei の見た目・terminal の選択・sessiond の GPU の待ち。
+- **手書きの Notes と PDF Viewer**（WS079）: USB の pen（筆圧 4096・傾き・消しゴム）と multitouch の kernel、注入の device、`zwp_tablet_manager_v2`・`wl_touch`、
+  右上のスワイプ・三回 click・二本指の flick、libpdf（writer・reader・描画・増分の更新・文字と shading の途中）、Notes（保存・自動保存・journal・他の PDF への書き込み）、PDF Viewer。
+- **ブラウザ**（WS074 p016〜p058）: HTTP・HTTPS・画像・背景画像・非同期の読み込み・keep-alive・cache・DOM の入力・部品 `libbrowser.so`。
+- **i915 と HDMI**（WS075）: stencil・multisample・後退の修正、`display=hdmi`（10 インチの LCD 1920x1280）、demo の image、BUG-091（spin lock）・BUG-092 の修正。
+- **bug**（WS073 ほか）: BUG-075・079〜084・086〜092 を解決、BUG-093・094 を起票。
+- 実機の USB の demo の image: `build/demo-hdmi/hdd-image.img`（main ca74780e、QEMU の boot test PASS、実機はユーザーが試験）。
+- 最後の検証: main 909fb907 の desktop の image の build と boot test PASS（batch111）。
+
+## q443〜q495（2026-09-26〜27）
 
 サブエージェントの運用の再開（2026-09-27 11:52、rate limit の解除の後）: 作業用 N=3（WS071・WS073・WS035）と今回限りの salvage の片付け（WS001・WS056・WS049・WS048・WS068）。[q495](queue-q495.md): ws068-p024 cleared（VAO・buffer の map と copy・instancing・uniform buffer ほか、Venus で egl-p024 PASS）。
 

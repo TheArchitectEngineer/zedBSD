@@ -80,7 +80,7 @@ struct paint_gpu_slot {
 	uint32_t y;
 };
 
-static VkResult gpu_memory(struct paint_gpu *gpu, const VkMemoryRequirements *requirements, VkMemoryPropertyFlags wanted, VkDeviceMemory *memory);
+static VkResult gpu_memory(VkPhysicalDevice physical, VkDevice device, const VkMemoryRequirements *requirements, VkMemoryPropertyFlags wanted, VkDeviceMemory *memory, const char **operation);
 static VkResult gpu_pass(struct paint_gpu *gpu, VkImageLayout final_layout);
 static VkResult gpu_descriptors(struct paint_gpu *gpu);
 static VkResult gpu_atlas(struct paint_gpu *gpu);
@@ -101,10 +101,11 @@ static struct paint_gpu_slot *gpu_slot(struct paint_gpu *gpu, const uint8_t *bit
 static int gpu_slots_grow(struct paint_gpu *gpu);
 static void gpu_atlas_reset(struct paint_gpu *gpu);
 static void gpu_color(uint32_t color, float *out);
-static void gpu_record(struct paint_gpu *gpu, VkFramebuffer framebuffer, VkExtent2D extent, uint32_t canvas);
-static VkResult gpu_submit(struct paint_gpu *gpu, VkSemaphore wait, VkSemaphore signal);
-static VkResult gpu_headless_device(struct paint_gpu *gpu);
-static VkResult gpu_readback(struct paint_gpu *gpu, VkImage image, VkExtent2D extent, struct paint_bitmap *bitmap);
+static void gpu_record(struct paint_gpu *gpu, VkCommandBuffer commands, VkFramebuffer framebuffer, VkExtent2D extent, uint32_t canvas);
+static VkResult gpu_submit_commands(VkDevice device, VkQueue queue, VkCommandBuffer command, VkFence fence, VkSemaphore wait, VkSemaphore signal, const char **operation);
+static VkResult offscreen_device(struct paint_offscreen *offscreen);
+static VkResult offscreen_image(struct paint_offscreen *offscreen);
+static VkResult offscreen_commands(struct paint_offscreen *offscreen);
 
 /*
  * Makes the renderer's objects on a device: the pass for a color format
@@ -173,29 +174,23 @@ paint_gpu_open(
 }
 
 /*
- * Draws a display list, scrolled up by scroll_y, into a framebuffer of an
- * extent made for the renderer's pass, and waits for it to finish.
- *
- * wait (or VK_NULL_HANDLE) is waited for before drawing and signal (or
- * VK_NULL_HANDLE) is signalled after, as a swapchain's acquire and present
- * need.
+ * Makes a frame ready to record: a display list, scrolled up by scroll_y,
+ * turned into the instances of a target of an extent, with any new glyph
+ * or image copied into the atlas.  The last frame that used the atlas and
+ * the instances must have finished on the GPU.
  */
 VkResult
-paint_gpu_draw(
+paint_gpu_prepare(
 	struct paint_gpu *gpu,
 	const struct paint_list *list,
 	struct text_system *text,
 	layout_unit scroll_y,
-	VkFramebuffer framebuffer,
-	VkExtent2D extent,
-	VkSemaphore wait,
-	VkSemaphore signal)
+	VkExtent2D extent)
 {
-	uint32_t canvas;
 	int status;
 	VkResult error;
 
-	/* An atlas that filled up in the last frame starts over. */
+	/* An atlas that filled up in the last frame, or whose glyphs were forgotten, starts over. */
 	if (gpu->full)
 		gpu_atlas_reset(gpu);
 
@@ -217,20 +212,79 @@ paint_gpu_draw(
 	if (gpu->staged.count != 0)
 		memcpy(gpu->instance_map, gpu->staged.items, gpu->staged.count * sizeof(struct gpu_instance));
 
-	/* Records the frame over the canvas color. */
+	/* Succeeded: the frame can be recorded. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Records the frame paint_gpu_prepare made ready into a command buffer
+ * the caller began, drawing into a framebuffer of the renderer's pass over
+ * the list's canvas color; the caller submits it.
+ */
+void
+paint_gpu_record(
+	struct paint_gpu *gpu,
+	VkCommandBuffer commands,
+	const struct paint_list *list,
+	VkFramebuffer framebuffer,
+	VkExtent2D extent)
+{
+	uint32_t canvas;
+
+	/* The pass over the canvas color, with the frame's instances. */
 	canvas = paint_canvas_pixel(list->canvas_color);
+	gpu_record(gpu, commands, framebuffer, extent, canvas);
+}
+
+/*
+ * Draws a display list, scrolled up by scroll_y, into a framebuffer of an
+ * extent made for the renderer's pass, and waits for it to finish.
+ *
+ * wait (or VK_NULL_HANDLE) is waited for before drawing and signal (or
+ * VK_NULL_HANDLE) is signalled after, as a swapchain's acquire and present
+ * need.
+ */
+VkResult
+paint_gpu_draw(
+	struct paint_gpu *gpu,
+	const struct paint_list *list,
+	struct text_system *text,
+	layout_unit scroll_y,
+	VkFramebuffer framebuffer,
+	VkExtent2D extent,
+	VkSemaphore wait,
+	VkSemaphore signal)
+{
+	VkCommandBufferBeginInfo begin;
+	VkResult error;
+
+	/* The frame's instances and atlas. */
+	error = paint_gpu_prepare(gpu, list, text, scroll_y, extent);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The renderer's own command buffer, started over for one submission. */
 	gpu->operation = "vkResetCommandBuffer";
 	error = vkResetCommandBuffer(gpu->command, 0U);
 	if (error != VK_SUCCESS)
 		return error;
-	gpu_record(gpu, framebuffer, extent, canvas);
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	gpu->operation = "vkBeginCommandBuffer";
+	error = vkBeginCommandBuffer(gpu->command, &begin);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Records the frame into it. */
+	paint_gpu_record(gpu, gpu->command, list, framebuffer, extent);
 	gpu->operation = "vkEndCommandBuffer";
 	error = vkEndCommandBuffer(gpu->command);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Submits it and waits for it. */
-	error = gpu_submit(gpu, wait, signal);
+	error = gpu_submit_commands(gpu->device, gpu->queue, gpu->command, gpu->fence, wait, signal, &gpu->operation);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -239,8 +293,20 @@ paint_gpu_draw(
 }
 
 /*
- * Releases the renderer's objects, and the device and instance when it
- * made them.
+ * Forgets the glyphs placed in the atlas (the text system they came from
+ * was closed, and its bitmaps' memory may be used again): the atlas starts
+ * over at the next frame.
+ */
+void
+paint_gpu_forget_glyphs(
+	struct paint_gpu *gpu)
+{
+	/* The next frame resets the atlas before it stages anything. */
+	gpu->full = 1;
+}
+
+/*
+ * Releases the renderer's objects (not the device, which is the caller's).
  */
 void
 paint_gpu_close(
@@ -284,15 +350,7 @@ paint_gpu_close(
 			vkDestroyCommandPool(gpu->device, gpu->pool, NULL);
 		if (gpu->fence != VK_NULL_HANDLE)
 			vkDestroyFence(gpu->device, gpu->fence, NULL);
-
-		/* The device, when the renderer made it. */
-		if (gpu->owns_device)
-			vkDestroyDevice(gpu->device, NULL);
 	}
-
-	/* The instance, when the renderer made it. */
-	if (gpu->owns_device && gpu->instance != VK_NULL_HANDLE)
-		vkDestroyInstance(gpu->instance, NULL);
 
 	/* The host's tables. */
 	wb_vector_release(&gpu->staged);
@@ -302,140 +360,228 @@ paint_gpu_close(
 }
 
 /*
- * Draws a display list on a GPU of its own into an offscreen image of the
- * bitmap's size and reads the picture back into the bitmap.
+ * Makes a device and an image of the renderer's own, width by height, for
+ * drawing without a window: the caller draws into the image (in the
+ * transfer source layout when it is done) and reads it back.
  *
- * On failure *failed names the Vulkan call that failed.
+ * On failure offscreen->operation names the Vulkan call that failed, and
+ * paint_offscreen_close releases what was made.
  */
 VkResult
-paint_gpu_render(
-	const struct paint_list *list,
-	struct text_system *text,
-	layout_unit scroll_y,
-	struct paint_bitmap *bitmap,
-	const char **failed)
+paint_offscreen_open(
+	struct paint_offscreen *offscreen,
+	uint32_t width,
+	uint32_t height)
 {
-	struct paint_gpu gpu;
-	VkImageCreateInfo image_info;
-	VkImageViewCreateInfo view_info;
-	VkFramebufferCreateInfo framebuffer_info;
-	VkMemoryRequirements requirements;
-	VkImage image;
-	VkDeviceMemory memory;
-	VkImageView view;
-	VkFramebuffer framebuffer;
-	VkExtent2D extent;
 	VkResult error;
 
-	/* The device, the renderer's objects on it, and the image drawn into. */
-	memset(&gpu, 0, sizeof(gpu));
-	image = VK_NULL_HANDLE;
-	memory = VK_NULL_HANDLE;
-	view = VK_NULL_HANDLE;
-	framebuffer = VK_NULL_HANDLE;
-	extent.width = (uint32_t)bitmap->width;
-	extent.height = (uint32_t)bitmap->height;
-	error = gpu_headless_device(&gpu);
+	/* Nothing is owned yet. */
+	memset(offscreen, 0, sizeof(*offscreen));
+	offscreen->format = VK_FORMAT_B8G8R8A8_UNORM;
+	offscreen->extent.width = width;
+	offscreen->extent.height = height;
 
-	/* The image: drawn into, then copied out. */
-	if (error == VK_SUCCESS) {
-		memset(&image_info, 0, sizeof(image_info));
-		image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		image_info.imageType = VK_IMAGE_TYPE_2D;
-		image_info.format = gpu.format;
-		image_info.extent.width = extent.width;
-		image_info.extent.height = extent.height;
-		image_info.extent.depth = 1U;
-		image_info.mipLevels = 1U;
-		image_info.arrayLayers = 1U;
-		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-		image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-		image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		gpu.operation = "vkCreateImage";
-		error = vkCreateImage(gpu.device, &image_info, NULL, &image);
-	}
-
-	/* Its memory, of any type the image takes. */
-	if (error == VK_SUCCESS) {
-		vkGetImageMemoryRequirements(gpu.device, image, &requirements);
-		error = gpu_memory(&gpu, &requirements, 0U, &memory);
-	}
-
-	/* Binds the memory to the image. */
-	if (error == VK_SUCCESS) {
-		gpu.operation = "vkBindImageMemory";
-		error = vkBindImageMemory(gpu.device, image, memory, 0U);
-	}
-
-	/* The view the framebuffer draws through. */
-	if (error == VK_SUCCESS) {
-		memset(&view_info, 0, sizeof(view_info));
-		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		view_info.image = image;
-		view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		view_info.format = gpu.format;
-		view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		view_info.subresourceRange.levelCount = 1U;
-		view_info.subresourceRange.layerCount = 1U;
-		gpu.operation = "vkCreateImageView";
-		error = vkCreateImageView(gpu.device, &view_info, NULL, &view);
-	}
-
-	/* The framebuffer over it. */
-	if (error == VK_SUCCESS) {
-		memset(&framebuffer_info, 0, sizeof(framebuffer_info));
-		framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebuffer_info.renderPass = gpu.pass;
-		framebuffer_info.attachmentCount = 1U;
-		framebuffer_info.pAttachments = &view;
-		framebuffer_info.width = extent.width;
-		framebuffer_info.height = extent.height;
-		framebuffer_info.layers = 1U;
-		gpu.operation = "vkCreateFramebuffer";
-		error = vkCreateFramebuffer(gpu.device, &framebuffer_info, NULL, &framebuffer);
-	}
-
-	/* Draws the page. */
-	if (error == VK_SUCCESS)
-		error = paint_gpu_draw(&gpu, list, text, scroll_y, framebuffer, extent, VK_NULL_HANDLE, VK_NULL_HANDLE);
-
-	/* Reads the picture back. */
-	if (error == VK_SUCCESS)
-		error = gpu_readback(&gpu, image, extent, bitmap);
-
-	/* Releases the image's objects, then the renderer and its device. */
-	*failed = gpu.operation;
-	if (gpu.device != VK_NULL_HANDLE) {
-		(void)vkDeviceWaitIdle(gpu.device);
-		if (framebuffer != VK_NULL_HANDLE)
-			vkDestroyFramebuffer(gpu.device, framebuffer, NULL);
-		if (view != VK_NULL_HANDLE)
-			vkDestroyImageView(gpu.device, view, NULL);
-		if (image != VK_NULL_HANDLE)
-			vkDestroyImage(gpu.device, image, NULL);
-		if (memory != VK_NULL_HANDLE)
-			vkFreeMemory(gpu.device, memory, NULL);
-	}
-
-	/* The renderer and the device it made. */
-	paint_gpu_close(&gpu);
+	/* The instance, the device and its queue. */
+	error = offscreen_device(offscreen);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: the bitmap holds the GPU's picture. */
-	*failed = NULL;
+	/* The image with its memory and its view. */
+	error = offscreen_image(offscreen);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The command buffer and the fence of the read back. */
+	error = offscreen_commands(offscreen);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the image can be drawn into. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Copies the offscreen image (drawn, in the transfer source layout) into
+ * 0xAARRGGBB pixels whose rows are stride bytes apart, through a
+ * host-visible buffer.
+ */
+VkResult
+paint_offscreen_read(
+	struct paint_offscreen *offscreen,
+	uint32_t *pixels,
+	size_t stride)
+{
+	VkBufferCreateInfo buffer_info;
+	VkMemoryRequirements requirements;
+	VkCommandBufferBeginInfo begin;
+	VkBufferImageCopy region;
+	VkBufferMemoryBarrier barrier;
+	VkBuffer buffer;
+	VkDeviceMemory memory;
+	const unsigned char *texel;
+	uint32_t *row_start;
+	uint32_t row;
+	uint32_t column;
+	void *map;
+	VkResult error;
+
+	/* The buffer the image is copied into: four bytes a pixel, rows packed. */
+	buffer = VK_NULL_HANDLE;
+	memory = VK_NULL_HANDLE;
+	memset(&buffer_info, 0, sizeof(buffer_info));
+	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer_info.size = (VkDeviceSize)offscreen->extent.width * (VkDeviceSize)offscreen->extent.height * 4U;
+	buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	offscreen->operation = "vkCreateBuffer";
+	error = vkCreateBuffer(offscreen->device, &buffer_info, NULL, &buffer);
+
+	/* Its memory, which the host reads. */
+	if (error == VK_SUCCESS) {
+		vkGetBufferMemoryRequirements(offscreen->device, buffer, &requirements);
+		error = gpu_memory(
+			offscreen->physical,
+			offscreen->device,
+			&requirements,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			&memory,
+			&offscreen->operation);
+	}
+
+	/* Binds the memory to the buffer. */
+	if (error == VK_SUCCESS) {
+		offscreen->operation = "vkBindBufferMemory";
+		error = vkBindBufferMemory(offscreen->device, buffer, memory, 0U);
+	}
+
+	/* Starts the command buffer over. */
+	if (error == VK_SUCCESS) {
+		offscreen->operation = "vkResetCommandBuffer";
+		error = vkResetCommandBuffer(offscreen->command, 0U);
+	}
+
+	/* Records the copy and the host's read after it. */
+	if (error == VK_SUCCESS) {
+		memset(&begin, 0, sizeof(begin));
+		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		(void)vkBeginCommandBuffer(offscreen->command, &begin);
+		memset(&region, 0, sizeof(region));
+		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		region.imageSubresource.layerCount = 1U;
+		region.imageExtent.width = offscreen->extent.width;
+		region.imageExtent.height = offscreen->extent.height;
+		region.imageExtent.depth = 1U;
+		vkCmdCopyImageToBuffer(offscreen->command, offscreen->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1U, &region);
+		memset(&barrier, 0, sizeof(barrier));
+		barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.buffer = buffer;
+		barrier.size = VK_WHOLE_SIZE;
+		vkCmdPipelineBarrier(offscreen->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 0U, NULL, 1U, &barrier, 0U, NULL);
+		offscreen->operation = "vkEndCommandBuffer";
+		error = vkEndCommandBuffer(offscreen->command);
+	}
+
+	/* Runs the copy and waits for it. */
+	if (error == VK_SUCCESS) {
+		error = gpu_submit_commands(
+			offscreen->device,
+			offscreen->queue,
+			offscreen->command,
+			offscreen->fence,
+			VK_NULL_HANDLE,
+			VK_NULL_HANDLE,
+			&offscreen->operation);
+	}
+
+	/* Maps the copy. */
+	map = NULL;
+	if (error == VK_SUCCESS) {
+		offscreen->operation = "vkMapMemory";
+		error = vkMapMemory(offscreen->device, memory, 0U, VK_WHOLE_SIZE, 0U, &map);
+	}
+
+	/* Each pixel's blue, green, red and alpha bytes become one 0xAARRGGBB word in the caller's row. */
+	if (error == VK_SUCCESS) {
+		texel = map;
+		for (row = 0U; row < offscreen->extent.height; row++) {
+			row_start = (uint32_t *)(void *)((unsigned char *)pixels + (size_t)row * stride);
+			for (column = 0U; column < offscreen->extent.width; column++) {
+				row_start[column] = (uint32_t)texel[3] << 24;
+				row_start[column] |= (uint32_t)texel[2] << 16;
+				row_start[column] |= (uint32_t)texel[1] << 8;
+				row_start[column] |= (uint32_t)texel[0];
+				texel += 4;
+			}
+		}
+
+		/* The host is done reading. */
+		vkUnmapMemory(offscreen->device, memory);
+	}
+
+	/* The buffer and its memory go. */
+	if (buffer != VK_NULL_HANDLE)
+		vkDestroyBuffer(offscreen->device, buffer, NULL);
+	if (memory != VK_NULL_HANDLE)
+		vkFreeMemory(offscreen->device, memory, NULL);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the pixels hold the picture. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Releases the offscreen image, its device and its instance, children
+ * before their parents.
+ */
+void
+paint_offscreen_close(
+	struct paint_offscreen *offscreen)
+{
+	/* The device's objects, once nothing runs. */
+	if (offscreen->device != VK_NULL_HANDLE) {
+		(void)vkDeviceWaitIdle(offscreen->device);
+
+		/* The read back's commands and fence. */
+		if (offscreen->pool != VK_NULL_HANDLE)
+			vkDestroyCommandPool(offscreen->device, offscreen->pool, NULL);
+		if (offscreen->fence != VK_NULL_HANDLE)
+			vkDestroyFence(offscreen->device, offscreen->fence, NULL);
+
+		/* The image, its view and its memory. */
+		if (offscreen->view != VK_NULL_HANDLE)
+			vkDestroyImageView(offscreen->device, offscreen->view, NULL);
+		if (offscreen->image != VK_NULL_HANDLE)
+			vkDestroyImage(offscreen->device, offscreen->image, NULL);
+		if (offscreen->memory != VK_NULL_HANDLE)
+			vkFreeMemory(offscreen->device, offscreen->memory, NULL);
+
+		/* The device. */
+		vkDestroyDevice(offscreen->device, NULL);
+	}
+
+	/* The instance. */
+	if (offscreen->instance != VK_NULL_HANDLE)
+		vkDestroyInstance(offscreen->instance, NULL);
+
+	/* Nothing is owned any more. */
+	memset(offscreen, 0, sizeof(*offscreen));
 }
 
 /* Allocates memory of the first allowed type that has the wanted properties. */
 static VkResult
 gpu_memory(
-	struct paint_gpu *gpu,
+	VkPhysicalDevice physical,
+	VkDevice device,
 	const VkMemoryRequirements *requirements,
 	VkMemoryPropertyFlags wanted,
-	VkDeviceMemory *memory)
+	VkDeviceMemory *memory,
+	const char **operation)
 {
 	VkPhysicalDeviceMemoryProperties properties;
 	VkMemoryAllocateInfo allocate;
@@ -443,7 +589,7 @@ gpu_memory(
 	VkResult error;
 
 	/* The first allowed type with every wanted property. */
-	vkGetPhysicalDeviceMemoryProperties(gpu->physical, &properties);
+	vkGetPhysicalDeviceMemoryProperties(physical, &properties);
 	for (index = 0U; index < properties.memoryTypeCount; index++) {
 		/* A type the resource cannot live in. */
 		if ((requirements->memoryTypeBits & (1U << index)) == 0U)
@@ -456,7 +602,7 @@ gpu_memory(
 
 	/* No type fits. */
 	if (index == properties.memoryTypeCount) {
-		gpu->operation = "choosing a memory type";
+		*operation = "choosing a memory type";
 		return VK_ERROR_FEATURE_NOT_PRESENT;
 	}
 
@@ -465,8 +611,8 @@ gpu_memory(
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocate.allocationSize = requirements->size;
 	allocate.memoryTypeIndex = index;
-	gpu->operation = "vkAllocateMemory";
-	error = vkAllocateMemory(gpu->device, &allocate, NULL, memory);
+	*operation = "vkAllocateMemory";
+	error = vkAllocateMemory(device, &allocate, NULL, memory);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -642,7 +788,7 @@ gpu_atlas(
 
 	/* Its memory, which the host sees and keeps coherent. */
 	vkGetImageMemoryRequirements(gpu->device, gpu->atlas, &requirements);
-	error = gpu_memory(gpu, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &gpu->atlas_memory);
+	error = gpu_memory(gpu->physical, gpu->device, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &gpu->atlas_memory, &gpu->operation);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -733,7 +879,7 @@ gpu_corners(
 
 	/* Its memory. */
 	vkGetBufferMemoryRequirements(gpu->device, gpu->corners, &requirements);
-	error = gpu_memory(gpu, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &gpu->corner_memory);
+	error = gpu_memory(gpu->physical, gpu->device, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &gpu->corner_memory, &gpu->operation);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -787,7 +933,7 @@ gpu_instances(
 
 	/* Its memory. */
 	vkGetBufferMemoryRequirements(gpu->device, gpu->instances, &requirements);
-	error = gpu_memory(gpu, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &gpu->instance_memory);
+	error = gpu_memory(gpu->physical, gpu->device, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &gpu->instance_memory, &gpu->operation);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -1579,15 +1725,15 @@ gpu_color(
 	out[3] = (float)(color >> 24) / 255.0f;
 }
 
-/* Records a frame: the atlas made visible to the shader, then the pass with every instance. */
+/* Records a frame into a command buffer the caller began: the atlas made visible to the shader, then the pass with every instance. */
 static void
 gpu_record(
 	struct paint_gpu *gpu,
+	VkCommandBuffer commands,
 	VkFramebuffer framebuffer,
 	VkExtent2D extent,
 	uint32_t canvas)
 {
-	VkCommandBufferBeginInfo begin;
 	VkImageMemoryBarrier barrier;
 	VkRenderPassBeginInfo pass;
 	VkClearValue clear;
@@ -1596,12 +1742,6 @@ gpu_record(
 	VkBuffer buffers[2];
 	VkDeviceSize offsets[2];
 	float size[4];
-
-	/* One submission of this recording. */
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	(void)vkBeginCommandBuffer(gpu->command, &begin);
 
 	/* The host's writes to the atlas before the shader reads it (the first frame also leaves the preinitialized layout). */
 	memset(&barrier, 0, sizeof(barrier));
@@ -1618,7 +1758,7 @@ gpu_record(
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.levelCount = 1U;
 	barrier.subresourceRange.layerCount = 1U;
-	vkCmdPipelineBarrier(gpu->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+	vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 	gpu->atlas_ready = 1;
 
 	/* The pass, cleared to the canvas pixel (exact in an 8-bit target). */
@@ -1634,7 +1774,7 @@ gpu_record(
 	pass.renderArea.extent = extent;
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
-	vkCmdBeginRenderPass(gpu->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBeginRenderPass(commands, &pass, VK_SUBPASS_CONTENTS_INLINE);
 
 	/* The whole target is the viewport. */
 	memset(&viewport, 0, sizeof(viewport));
@@ -1643,8 +1783,8 @@ gpu_record(
 	viewport.maxDepth = 1.0f;
 	memset(&scissor, 0, sizeof(scissor));
 	scissor.extent = extent;
-	vkCmdSetViewport(gpu->command, 0U, 1U, &viewport);
-	vkCmdSetScissor(gpu->command, 0U, 1U, &scissor);
+	vkCmdSetViewport(commands, 0U, 1U, &viewport);
+	vkCmdSetScissor(commands, 0U, 1U, &scissor);
 
 	/* Every instance of the square, in the list's order. */
 	if (gpu->staged.count != 0) {
@@ -1656,31 +1796,35 @@ gpu_record(
 		buffers[1] = gpu->instances;
 		offsets[0] = 0U;
 		offsets[1] = 0U;
-		vkCmdBindPipeline(gpu->command, VK_PIPELINE_BIND_POINT_GRAPHICS, gpu->pipeline);
-		vkCmdBindDescriptorSets(gpu->command, VK_PIPELINE_BIND_POINT_GRAPHICS, gpu->layout, 0U, 1U, &gpu->set, 0U, NULL);
-		vkCmdBindVertexBuffers(gpu->command, 0U, 2U, buffers, offsets);
-		vkCmdPushConstants(gpu->command, gpu->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(size), size);
-		vkCmdDraw(gpu->command, GPU_CORNERS, (uint32_t)gpu->staged.count, 0U, 0U);
+		vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, gpu->pipeline);
+		vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, gpu->layout, 0U, 1U, &gpu->set, 0U, NULL);
+		vkCmdBindVertexBuffers(commands, 0U, 2U, buffers, offsets);
+		vkCmdPushConstants(commands, gpu->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(size), size);
+		vkCmdDraw(commands, GPU_CORNERS, (uint32_t)gpu->staged.count, 0U, 0U);
 	}
 
 	/* The pass ends with the image in the final layout. */
-	vkCmdEndRenderPass(gpu->command);
+	vkCmdEndRenderPass(commands);
 }
 
-/* Submits the recorded commands after wait, signalling signal, and waits for them. */
+/* Submits a command buffer after wait, signalling signal, and waits for its fence. */
 static VkResult
-gpu_submit(
-	struct paint_gpu *gpu,
+gpu_submit_commands(
+	VkDevice device,
+	VkQueue queue,
+	VkCommandBuffer command,
+	VkFence fence,
 	VkSemaphore wait,
-	VkSemaphore signal)
+	VkSemaphore signal,
+	const char **operation)
 {
 	VkSubmitInfo submit;
 	VkPipelineStageFlags stage;
 	VkResult error;
 
 	/* The fence starts unsignalled. */
-	gpu->operation = "vkResetFences";
-	error = vkResetFences(gpu->device, 1U, &gpu->fence);
+	*operation = "vkResetFences";
+	error = vkResetFences(device, 1U, &fence);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -1696,7 +1840,7 @@ gpu_submit(
 
 	/* The one command buffer. */
 	submit.commandBufferCount = 1U;
-	submit.pCommandBuffers = &gpu->command;
+	submit.pCommandBuffers = &command;
 
 	/* The semaphore the end signals, when one was given. */
 	if (signal != VK_NULL_HANDLE) {
@@ -1705,14 +1849,14 @@ gpu_submit(
 	}
 
 	/* Submits it. */
-	gpu->operation = "vkQueueSubmit";
-	error = vkQueueSubmit(gpu->queue, 1U, &submit, gpu->fence);
+	*operation = "vkQueueSubmit";
+	error = vkQueueSubmit(queue, 1U, &submit, fence);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Waits for it, so the host may write again. */
-	gpu->operation = "vkWaitForFences";
-	error = vkWaitForFences(gpu->device, 1U, &gpu->fence, VK_TRUE, GPU_TIMEOUT);
+	*operation = "vkWaitForFences";
+	error = vkWaitForFences(device, 1U, &fence, VK_TRUE, GPU_TIMEOUT);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -1720,10 +1864,10 @@ gpu_submit(
 	return VK_SUCCESS;
 }
 
-/* Makes an instance and a device of its own for the headless renderer, and the renderer's objects on it. */
+/* Makes an instance without surfaces, and a device with one queue of the first family of any device that draws. */
 static VkResult
-gpu_headless_device(
-	struct paint_gpu *gpu)
+offscreen_device(
+	struct paint_offscreen *offscreen)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance_info;
@@ -1731,14 +1875,10 @@ gpu_headless_device(
 	VkQueueFamilyProperties families[16];
 	VkDeviceQueueCreateInfo queue;
 	VkDeviceCreateInfo create;
-	VkPhysicalDevice physical;
-	VkInstance instance;
-	VkDevice device;
 	uint32_t count;
 	uint32_t family_count;
 	uint32_t index;
 	uint32_t family;
-	uint32_t chosen;
 	float priority;
 	VkResult error;
 
@@ -1750,24 +1890,20 @@ gpu_headless_device(
 	memset(&instance_info, 0, sizeof(instance_info));
 	instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	instance_info.pApplicationInfo = &application;
-	gpu->operation = "vkCreateInstance";
-	error = vkCreateInstance(&instance_info, NULL, &instance);
+	offscreen->operation = "vkCreateInstance";
+	error = vkCreateInstance(&instance_info, NULL, &offscreen->instance);
 	if (error != VK_SUCCESS)
 		return error;
-	gpu->instance = instance;
-	gpu->owns_device = 1;
 
 	/* The physical devices (the first eight are enough). */
 	count = 8U;
-	gpu->operation = "vkEnumeratePhysicalDevices";
-	error = vkEnumeratePhysicalDevices(instance, &count, devices);
+	offscreen->operation = "vkEnumeratePhysicalDevices";
+	error = vkEnumeratePhysicalDevices(offscreen->instance, &count, devices);
 	if (error != VK_SUCCESS && error != VK_INCOMPLETE)
 		return error;
 
 	/* The first family of any device that draws. */
-	physical = VK_NULL_HANDLE;
-	chosen = 0U;
-	for (index = 0U; index < count && physical == VK_NULL_HANDLE; index++) {
+	for (index = 0U; index < count && offscreen->physical == VK_NULL_HANDLE; index++) {
 		family_count = 16U;
 		vkGetPhysicalDeviceQueueFamilyProperties(devices[index], &family_count, families);
 		for (family = 0U; family < family_count; family++) {
@@ -1778,15 +1914,15 @@ gpu_headless_device(
 				continue;
 
 			/* This family of this device draws the page. */
-			physical = devices[index];
-			chosen = family;
+			offscreen->physical = devices[index];
+			offscreen->family = family;
 			break;
 		}
 	}
 
 	/* No device can draw. */
-	if (physical == VK_NULL_HANDLE) {
-		gpu->operation = "finding a device that draws";
+	if (offscreen->physical == VK_NULL_HANDLE) {
+		offscreen->operation = "finding a device that draws";
 		return VK_ERROR_INITIALIZATION_FAILED;
 	}
 
@@ -1794,139 +1930,122 @@ gpu_headless_device(
 	priority = 1.0f;
 	memset(&queue, 0, sizeof(queue));
 	queue.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	queue.queueFamilyIndex = chosen;
+	queue.queueFamilyIndex = offscreen->family;
 	queue.queueCount = 1U;
 	queue.pQueuePriorities = &priority;
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	create.queueCreateInfoCount = 1U;
 	create.pQueueCreateInfos = &queue;
-	gpu->operation = "vkCreateDevice";
-	error = vkCreateDevice(physical, &create, NULL, &device);
+	offscreen->operation = "vkCreateDevice";
+	error = vkCreateDevice(offscreen->physical, &create, NULL, &offscreen->device);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The renderer's objects on the new device, drawing images that are then copied out. */
-	error = paint_gpu_open(gpu, instance, physical, chosen, device, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-	gpu->instance = instance;
-	gpu->owns_device = 1;
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* Succeeded: the renderer has a device of its own. */
+	/* Succeeded: the device and its queue. */
+	vkGetDeviceQueue(offscreen->device, offscreen->family, 0U, &offscreen->queue);
 	return VK_SUCCESS;
 }
 
-/* Copies a drawn image (in the transfer source layout) into a bitmap through a host-visible buffer. */
+/* Makes the image drawn into and copied out of, its memory and the view a framebuffer draws through. */
 static VkResult
-gpu_readback(
-	struct paint_gpu *gpu,
-	VkImage image,
-	VkExtent2D extent,
-	struct paint_bitmap *bitmap)
+offscreen_image(
+	struct paint_offscreen *offscreen)
 {
-	VkBufferCreateInfo buffer_info;
+	VkImageCreateInfo image_info;
+	VkImageViewCreateInfo view_info;
 	VkMemoryRequirements requirements;
-	VkCommandBufferBeginInfo begin;
-	VkBufferImageCopy region;
-	VkBufferMemoryBarrier barrier;
-	VkBuffer buffer;
-	VkDeviceMemory memory;
-	const unsigned char *pixels;
-	size_t count;
-	size_t index;
-	void *map;
 	VkResult error;
 
-	/* The buffer the image is copied into: four bytes a pixel, rows packed. */
-	buffer = VK_NULL_HANDLE;
-	memory = VK_NULL_HANDLE;
-	count = (size_t)extent.width * (size_t)extent.height;
-	memset(&buffer_info, 0, sizeof(buffer_info));
-	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer_info.size = (VkDeviceSize)(count * 4U);
-	buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	gpu->operation = "vkCreateBuffer";
-	error = vkCreateBuffer(gpu->device, &buffer_info, NULL, &buffer);
-
-	/* Its memory, which the host reads. */
-	if (error == VK_SUCCESS) {
-		vkGetBufferMemoryRequirements(gpu->device, buffer, &requirements);
-		error = gpu_memory(gpu, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &memory);
-	}
-
-	/* Binds the memory to the buffer. */
-	if (error == VK_SUCCESS) {
-		gpu->operation = "vkBindBufferMemory";
-		error = vkBindBufferMemory(gpu->device, buffer, memory, 0U);
-	}
-
-	/* Starts the command buffer over. */
-	if (error == VK_SUCCESS) {
-		gpu->operation = "vkResetCommandBuffer";
-		error = vkResetCommandBuffer(gpu->command, 0U);
-	}
-
-	/* Records the copy and the host's read after it. */
-	if (error == VK_SUCCESS) {
-		memset(&begin, 0, sizeof(begin));
-		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-		(void)vkBeginCommandBuffer(gpu->command, &begin);
-		memset(&region, 0, sizeof(region));
-		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		region.imageSubresource.layerCount = 1U;
-		region.imageExtent.width = extent.width;
-		region.imageExtent.height = extent.height;
-		region.imageExtent.depth = 1U;
-		vkCmdCopyImageToBuffer(gpu->command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1U, &region);
-		memset(&barrier, 0, sizeof(barrier));
-		barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.buffer = buffer;
-		barrier.size = VK_WHOLE_SIZE;
-		vkCmdPipelineBarrier(gpu->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 0U, NULL, 1U, &barrier, 0U, NULL);
-		gpu->operation = "vkEndCommandBuffer";
-		error = vkEndCommandBuffer(gpu->command);
-	}
-
-	/* Runs the copy and waits for it. */
-	if (error == VK_SUCCESS)
-		error = gpu_submit(gpu, VK_NULL_HANDLE, VK_NULL_HANDLE);
-
-	/* Maps the copy. */
-	map = NULL;
-	if (error == VK_SUCCESS) {
-		gpu->operation = "vkMapMemory";
-		error = vkMapMemory(gpu->device, memory, 0U, VK_WHOLE_SIZE, 0U, &map);
-	}
-
-	/* Each pixel's blue, green, red and alpha bytes become one 0xAARRGGBB word. */
-	if (error == VK_SUCCESS) {
-		pixels = map;
-		for (index = 0; index < count; index++) {
-			bitmap->pixels[index] = (uint32_t)pixels[index * 4U + 3U] << 24;
-			bitmap->pixels[index] |= (uint32_t)pixels[index * 4U + 2U] << 16;
-			bitmap->pixels[index] |= (uint32_t)pixels[index * 4U + 1U] << 8;
-			bitmap->pixels[index] |= (uint32_t)pixels[index * 4U];
-		}
-
-		/* The host is done reading. */
-		vkUnmapMemory(gpu->device, memory);
-	}
-
-	/* The buffer and its memory go. */
-	if (buffer != VK_NULL_HANDLE)
-		vkDestroyBuffer(gpu->device, buffer, NULL);
-	if (memory != VK_NULL_HANDLE)
-		vkFreeMemory(gpu->device, memory, NULL);
+	/* The image: drawn into, then copied out. */
+	memset(&image_info, 0, sizeof(image_info));
+	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.format = offscreen->format;
+	image_info.extent.width = offscreen->extent.width;
+	image_info.extent.height = offscreen->extent.height;
+	image_info.extent.depth = 1U;
+	image_info.mipLevels = 1U;
+	image_info.arrayLayers = 1U;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	offscreen->operation = "vkCreateImage";
+	error = vkCreateImage(offscreen->device, &image_info, NULL, &offscreen->image);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: the bitmap holds the picture. */
+	/* Its memory, of any type the image takes. */
+	vkGetImageMemoryRequirements(offscreen->device, offscreen->image, &requirements);
+	error = gpu_memory(offscreen->physical, offscreen->device, &requirements, 0U, &offscreen->memory, &offscreen->operation);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Binds the memory to the image. */
+	offscreen->operation = "vkBindImageMemory";
+	error = vkBindImageMemory(offscreen->device, offscreen->image, offscreen->memory, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The view a framebuffer draws through. */
+	memset(&view_info, 0, sizeof(view_info));
+	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view_info.image = offscreen->image;
+	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view_info.format = offscreen->format;
+	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view_info.subresourceRange.levelCount = 1U;
+	view_info.subresourceRange.layerCount = 1U;
+	offscreen->operation = "vkCreateImageView";
+	error = vkCreateImageView(offscreen->device, &view_info, NULL, &offscreen->view);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the image can be drawn into and read back. */
+	return VK_SUCCESS;
+}
+
+/* Makes the command pool and buffer and the fence the read back uses. */
+static VkResult
+offscreen_commands(
+	struct paint_offscreen *offscreen)
+{
+	VkCommandPoolCreateInfo pool;
+	VkCommandBufferAllocateInfo command;
+	VkFenceCreateInfo fence;
+	VkResult error;
+
+	/* A pool whose one buffer is reset for each read. */
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool.queueFamilyIndex = offscreen->family;
+	offscreen->operation = "vkCreateCommandPool";
+	error = vkCreateCommandPool(offscreen->device, &pool, NULL, &offscreen->pool);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The buffer. */
+	memset(&command, 0, sizeof(command));
+	command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	command.commandPool = offscreen->pool;
+	command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	command.commandBufferCount = 1U;
+	offscreen->operation = "vkAllocateCommandBuffers";
+	error = vkAllocateCommandBuffers(offscreen->device, &command, &offscreen->command);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The fence the copy's end signals. */
+	memset(&fence, 0, sizeof(fence));
+	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	offscreen->operation = "vkCreateFence";
+	error = vkCreateFence(offscreen->device, &fence, NULL, &offscreen->fence);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the image can be read back. */
 	return VK_SUCCESS;
 }

@@ -38,6 +38,10 @@ static int actions_start(struct fm_app *app, unsigned kind, char *const *sources
 static void actions_queue(struct fm_app *app, struct fm_task *task);
 static size_t actions_collision_next(const struct fm_task *task, size_t from);
 static void actions_collision_ask(struct fm_app *app);
+static void actions_collision_merge(struct fm_app *app, struct fm_task *task);
+static unsigned actions_collision_default(const struct fm_app *app);
+static void actions_collision_go_on(struct fm_app *app, struct fm_task *task, size_t next);
+static void actions_redo_pairs(struct fm_app *app, unsigned kind, char *const *from, char *const *to, size_t count);
 static void actions_finish(struct fm_app *app, struct fm_task *task);
 static void actions_record(struct fm_app *app, struct fm_task *task);
 static void actions_select_after(struct fm_app *app, char *const *paths, size_t count);
@@ -295,10 +299,10 @@ fm_action_confirm(
 	int error;
 	int match;
 
-	/* A question about a taken name: Enter keeps both, Esc stops the operation. */
+	/* A question about a taken name: Enter merges two folders or keeps both (ws035-p115), Esc stops the operation. */
 	if (app->dialog == FM_DIALOG_COLLISION) {
 		if (confirmed != 0)
-			fm_action_collision(app, FM_COLLISION_KEEP_BOTH);
+			fm_action_collision(app, actions_collision_default(app));
 		else
 			fm_action_collision_cancel(app);
 		return;
@@ -811,6 +815,7 @@ actions_collision_ask(
 {
 	const char *name;
 	size_t left;
+	int merge;
 
 	/* The question, over the window. */
 	app->dialog = FM_DIALOG_COLLISION;
@@ -823,7 +828,8 @@ actions_collision_ask(
 	else
 		name++;
 	left = fm_action_collision_left(app);
-	fm_log("DIALOG collision index=%lu name=%s left=%lu", (unsigned long)app->collision_index, name, (unsigned long)left);
+	merge = fm_task_can_merge(app->collision_task, app->collision_index);
+	fm_log("DIALOG collision index=%lu name=%s left=%lu merge=%d", (unsigned long)app->collision_index, name, (unsigned long)left, merge);
 }
 
 /* Finishes a task: its outcome recorded for undo, said when it failed, and the folder read again with what it made selected. */
@@ -992,13 +998,19 @@ actions_undo_item(
 		 */
 		if (redo != 0 && item->replaced != NULL) {
 			actions_undo_replaced(app, item, redo, trash);
-			actions_parent(item->to[0], parent, sizeof(parent));
-			(void)actions_start(app, FM_TASK_MOVE, item->from, item->count, parent, 1);
+			actions_redo_pairs(app, FM_TASK_MOVE, item->from, item->to, item->count);
 			break;
 		}
 
 		/* Each item back (or forward) by a rename. */
 		for (index = 0; index < item->count; index++) {
+			/* An item goes back into its folder, made again when a merge removed it (ws035-p115). */
+			if (redo == 0) {
+				actions_parent(item->from[index], parent, sizeof(parent));
+				(void)fm_ops_mkdir_parents(parent);
+			}
+
+			/* The rename. */
 			if (redo != 0)
 				status = rename(item->from[index], item->to[index]);
 			else
@@ -1030,8 +1042,7 @@ actions_undo_item(
 			/* The items the copy replaced go to the trash again first. */
 			if (item->replaced != NULL)
 				actions_undo_replaced(app, item, redo, trash);
-			actions_parent(item->to[0], parent, sizeof(parent));
-			(void)actions_start(app, FM_TASK_COPY, item->from, item->count, parent, 1);
+			actions_redo_pairs(app, FM_TASK_COPY, item->from, item->to, item->count);
 		} else {
 			/* The copies go to the trash, then the items they replaced come back (tasks run in order). */
 			(void)actions_start(app, FM_TASK_TRASH, item->to, item->count, trash, 1);
@@ -1224,8 +1235,9 @@ fm_action_transfer(
 /*
  * Answers the question about a taken name (FM_COLLISION_*): for the source
  * asked about, or with "apply to all" for it and every later source whose
- * name is taken.  The next such source is asked about; when none is left
- * the operation starts.
+ * name is taken.  A merge puts the folder's contents in its place, asked
+ * about in turn (ws035-p115).  The next such source is asked about; when
+ * none is left the operation starts.
  */
 void
 fm_action_collision(
@@ -1237,11 +1249,19 @@ fm_action_collision(
 	size_t index;
 	size_t next;
 	int collides;
+	int can_merge;
 
 	/* No question about names. */
 	task = app->collision_task;
 	if (task == NULL || app->dialog != FM_DIALOG_COLLISION)
 		return;
+
+	/* A merge of what is not two folders keeps both instead (only a folder's question offers it). */
+	if (answer == FM_COLLISION_MERGE) {
+		can_merge = fm_task_can_merge(task, app->collision_index);
+		if (can_merge == 0)
+			answer = FM_COLLISION_KEEP_BOTH;
+	}
 
 	/* The words of the answer for the log. */
 	word = "keep";
@@ -1249,7 +1269,15 @@ fm_action_collision(
 		word = "replace";
 	else if (answer == FM_COLLISION_SKIP)
 		word = "skip";
+	else if (answer == FM_COLLISION_MERGE)
+		word = "merge";
 	fm_log("COLLISION answer=%s index=%lu all=%d", word, (unsigned long)app->collision_index, app->collision_all);
+
+	/* A merge has its own course: the folder's contents are asked about next. */
+	if (answer == FM_COLLISION_MERGE) {
+		actions_collision_merge(app, task);
+		return;
+	}
 
 	/* The source asked about, and with "apply to all" every later one whose name is taken. */
 	task->collisions[app->collision_index] = (unsigned char)answer;
@@ -1265,25 +1293,8 @@ fm_action_collision(
 		next = task->source_count;
 	}
 
-	/* Another source to ask about. */
-	if (next < task->source_count) {
-		app->collision_index = next;
-		app->collision_all = 0;
-		actions_collision_ask(app);
-		return;
-	}
-
-	/* Every answer is in: the question is over and the operation starts. */
-	app->dialog = FM_DIALOG_NONE;
-	app->collision_task = NULL;
-	app->dirty = 1;
-	actions_queue(app, task);
-
-	/* A cut's paste is under way now, so the clipboard is emptied. */
-	if (app->collision_cut != 0) {
-		fm_clip_clear();
-		app->collision_cut = 0;
-	}
+	/* The next question, or the operation. */
+	actions_collision_go_on(app, task, next);
 }
 
 /*
@@ -1483,4 +1494,163 @@ fm_action_remove_favorite(
 	fm_log("FAVORITE remove path=%s", app->places.items[place].location.path);
 	fm_places_init(&app->places, app->home, &app->tags);
 	app->dirty = 1;
+}
+
+/*
+ * Merges the folder asked about into the folder with its name
+ * (ws035-p115): its contents take its place in the operation and are asked
+ * about from there on.  With "apply to all", every later folder whose name
+ * a folder has merges too, and then the first name that is not two
+ * folders' is asked about.  A folder that cannot be merged is skipped, and
+ * the user told.
+ */
+static void
+actions_collision_merge(
+	struct fm_app *app,
+	struct fm_task *task)
+{
+	size_t index;
+	size_t added;
+	size_t next;
+	size_t first_other;
+	int other;
+	int can_merge;
+	int error;
+
+	/* The folder asked about. */
+	index = app->collision_index;
+	error = fm_task_merge(task, index, &added);
+	fm_log("COLLISION merge index=%lu items=%lu error=%d", (unsigned long)index, (unsigned long)added, error);
+	if (error != 0) {
+		actions_error(app, "Couldn't merge", error, task->sources[index]);
+		task->collisions[index] = FM_COLLISION_SKIP;
+		index++;
+	}
+
+	/* The next taken name, among the folder's contents first. */
+	next = actions_collision_next(task, index);
+
+	/*
+	 * With "apply to all", the later folders merge too, each a question
+	 * fewer; the first other taken name is kept to ask about afterwards
+	 * (a merge further on moves only the sources after it).
+	 */
+	other = 0;
+	first_other = task->source_count;
+	while (app->collision_all != 0 && next < task->source_count) {
+		/* A name that is not two folders' waits for its question. */
+		can_merge = fm_task_can_merge(task, next);
+		if (can_merge == 0) {
+			if (other == 0) {
+				other = 1;
+				first_other = next;
+			}
+
+			/* The scan goes on past it. */
+			next = actions_collision_next(task, next + 1U);
+			continue;
+		}
+
+		/* The folder merges; one that cannot is skipped. */
+		error = fm_task_merge(task, next, &added);
+		fm_log("COLLISION merge index=%lu items=%lu error=%d all=1", (unsigned long)next, (unsigned long)added, error);
+		if (error != 0) {
+			actions_error(app, "Couldn't merge", error, task->sources[next]);
+			task->collisions[next] = FM_COLLISION_SKIP;
+			next++;
+		}
+
+		/* The next taken name from there. */
+		next = actions_collision_next(task, next);
+	}
+
+	/* The first name left that is not two folders' is asked about next. */
+	if (other != 0)
+		next = first_other;
+
+	/* The next question, or the operation. */
+	actions_collision_go_on(app, task, next);
+}
+
+/*
+ * Asks about the next taken name of the held operation, or, when none is
+ * left, ends the question and starts the operation.
+ */
+static void
+actions_collision_go_on(
+	struct fm_app *app,
+	struct fm_task *task,
+	size_t next)
+{
+	/* Another source to ask about. */
+	if (next < task->source_count) {
+		app->collision_index = next;
+		app->collision_all = 0;
+		actions_collision_ask(app);
+		return;
+	}
+
+	/* Every answer is in: the question is over and the operation starts. */
+	app->dialog = FM_DIALOG_NONE;
+	app->collision_task = NULL;
+	app->dirty = 1;
+	actions_queue(app, task);
+
+	/* A cut's paste is under way now, so the clipboard is emptied. */
+	if (app->collision_cut != 0) {
+		fm_clip_clear();
+		app->collision_cut = 0;
+	}
+}
+
+/* Gives the answer Enter chooses for the name asked about: merge for two folders (ws035-p115), else keep both. */
+static unsigned
+actions_collision_default(
+	const struct fm_app *app)
+{
+	int can_merge;
+
+	/* Two folders merge. */
+	can_merge = fm_task_can_merge(app->collision_task, app->collision_index);
+	if (can_merge != 0)
+		return FM_COLLISION_MERGE;
+
+	/* Anything else keeps both. */
+	return FM_COLLISION_KEEP_BOTH;
+}
+
+/*
+ * Redoes a copy or a move as one task that puts each item where it went
+ * the first time: the items of a merge went into several folders
+ * (ws035-p115).  The task is not recorded again.
+ */
+static void
+actions_redo_pairs(
+	struct fm_app *app,
+	unsigned kind,
+	char *const *from,
+	char *const *to,
+	size_t count)
+{
+	char destination[FM_PATH_MAX];
+	char parent[FM_PATH_MAX];
+	struct fm_task *task;
+	size_t index;
+	int error;
+	int same;
+
+	/* The task, into the first item's folder. */
+	actions_parent(to[0], destination, sizeof(destination));
+	error = actions_start(app, kind, from, count, destination, 1);
+	if (error != 0)
+		return;
+
+	/* The task just queued (an undo or a redo never asks first); each other item into its own folder. */
+	task = app->tasks[app->task_count - 1U];
+	for (index = 1U; index < count; index++) {
+		actions_parent(to[index], parent, sizeof(parent));
+		same = strcmp(parent, destination);
+		if (same != 0)
+			(void)fm_task_set_folder(task, index, parent);
+	}
 }

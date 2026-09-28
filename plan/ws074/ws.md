@@ -9,8 +9,17 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010〜p017・p019〜p021・p022〜p026・p050・p052・p053・p058・p030・p045・p046・p048・p049・p051 cleared。p019・p020・p051・p021・p053・p052・p050・p058 cleared（2026-09-28）。p054 は in-progress（view と shell は済み、main の headless の mode が残る。再開の手順は p054 の phase.md）。その後 p055 → p056 → p057（部品化、2026-09-28 main が番号を割り当て）。p017 で BUG-083（rtld の dlopen が /usr/lib を探さない）を直した。p016 を 2026-09-28 に同期の HTTP（p016）と非同期の loader（p050）に分けた。p013 を 2026-09-28 に p013（position）・p048（float）・p049（overflow と clip）に分けた。p030 の依存は p014・p046 に縮めた（理由は p030 の phase.md、WPT の runner は p047 へ）
+Resume point: 2026-09-28 の周期の終わり: p016〜p021・p050〜p058 は cleared。ブラウザは部品 `libbrowser.so`（`include/libc/browser.h`、36 の API、`browser-probe` が 2 つ目の使い手）、HTTP・HTTPS・非同期の読み込み・keep-alive・cache・画像・背景画像・DOM の入力。次: p031（focus 等の DOM）→ p032（form の部品と文字の入力）→ システム環境設定・widget で libbrowser を使う
 <!-- awesome-plan-current:end -->
+
+## デモの目標（2026-09-28 ユーザー）
+
+「Googleの検索トップページと検索が、レイアウトを崩さずに表示できたら、ゴールにしましょう！限定的なCSSと、基本的なJS、WebGLなし、ビデオなしです。」
+- 完了の目安: Google の検索のトップの page と検索の結果の page が、レイアウトを崩さずに表示される。検索の box に文字を入れて検索でき、結果の link を開ける。
+- 範囲: 限定的な CSS、基本的な JS。WebGL・動画は無し。インタラクション: link・戻る/進む・scroll・検索の box と form への入力・JS を動かす button。
+- touch の慣性の scroll 等は [WS081](../ws081/ws.md)。
+- 注意（main）: Google は User-Agent・cookie（同意の画面）・JS の有無で返す HTML を変える。p031・p032 の前に、今の browser が受け取る
+  HTML と足りない機能（form・CSS・JS の API）を調べる Phase を置く。
 
 ## 目標
 
@@ -126,10 +135,10 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p045](phase045/phase.md) | 窓 2（p014 から分けた）: CONTROLS の titlebar の URL の欄、link の click（`file:`）、戻る・進む・再読み込み | cleared | p014 |
 | [ws074-p050](phase050/phase.md) | 非同期の loader の核（p016 から分けた）: non-blocking な socket と TLS、resolver の thread、redirect、page の画像と shell の navigation の非同期化、Esc の中止。部品化の手順 4（`page_net_*`、p053）。2026-09-28 に持続接続と cache を p058 へ分けた | cleared | p016、p017、p053 |
 | [ws074-p058](phase058/phase.md) | 持続接続と memory の cache（p050 から分けた）: host ごとの接続の pool（6 本まで）、長さ・chunked での応答の終わり、Cache-Control（max-age・no-store）、ETag と If-None-Match の再検証、304 | cleared | p050 |
-| [ws074-p054](phase054/phase.md) | 部品化 1（p053 の手順 1）: view の型。scroll・履歴・timer・題名の変化を shell から engine の view へ、shell と main の headless の mode は view の API だけを呼ぶ。2026-09-28 前半（view と shell）済み、後半（main）が残る | in-progress | p053、p050 |
-| ws074-p055 | 部品化 2（p053 の手順 2）: GPU の描画を `browser_target` と `_record`・`_draw` の形に（view 内の image view ごとの framebuffer）、present.c は swapchain と同期だけ | planned | p054 |
-| ws074-p056 | 部品化 3（p053 の手順 3）: 入力を DOM の key・code・text の形に（evdev の変換は shell）、scroll・link・focus の既定の動作を engine へ | planned | p055 |
-| ws074-p057 | 部品化 4（p053 の手順 5）: `libbrowser.so` への分割、公開の header、2 つ目の使い手の試作 | planned | p056 |
+| [ws074-p054](phase054/phase.md) | 部品化 1（p053 の手順 1）: view の型。scroll・履歴・timer・題名の変化を shell から engine の view へ、shell と main の headless の mode は view の API だけを呼ぶ。headless の settle・CPU の描画・dump も view に（2026-09-28） | cleared | p053、p050 |
+| [ws074-p055](phase055/phase.md) | 部品化 2（p053 の手順 2）: GPU の描画を `browser_target` と `_record`・`_draw` の形に（view 内の image view ごとの framebuffer）、present.c は swapchain と同期だけ。`--render-gpu` は engine の offscreen に `_draw` | cleared | p054 |
+| [ws074-p056](phase056/phase.md) | 部品化 3（p053 の手順 3）: 入力を DOM の key・code・text の形に（evdev の変換は shell）、scroll・link・focus の既定の動作を engine へ。KeyboardEvent・WheelEvent・FocusEvent、Tab の focus と ring。form の欄は無い（p032） | cleared | p055 |
+| [ws074-p057](phase057/phase.md) | 部品化 4（p053 の手順 5）: `libbrowser.so` への分割、公開の header `include/libc/browser.h`、2 つ目の使い手 `browser-probe`（Wayland なしで PPM に描く） | cleared | p056 |
 | ws074-p047 | WPT の testharness の runner（p030 から分けた: testharness.js は arrow・let・const・class と Promise を使う）、WPT dom/nodes の計測（M2 の目標 ≥ 40%） | planned | p028、p029、p030 |
 
 ## 後の WS・Future Work の候補

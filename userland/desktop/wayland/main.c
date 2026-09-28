@@ -112,9 +112,10 @@ main(
 	/* Open an independent GPU context before publishing a usable Wayland endpoint (it may take the display's size). */
 	error = zwl_gpu_open(&server);
 
-	/* The pointer starts in the middle of the output. */
+	/* The pointer starts in the middle of the output, its arrow not shown until it moves. */
 	server.pointer_x = (int32_t)(server.width / 2U);
 	server.pointer_y = (int32_t)(server.height / 2U);
+	server.pointer_unmoved = 1U;
 
 	/* Window mode's Vulkan device; without one (or with --direct) one surface is shown directly. */
 	if (error == 0 && !server.direct) {

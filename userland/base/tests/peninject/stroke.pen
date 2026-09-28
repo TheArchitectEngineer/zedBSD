@@ -1,7 +1,9 @@
-# A pressure ramp, a tilted stroke, a barrel button and the eraser.
+# A pressure ramp, a tilted stroke, a barrel button and the eraser (WS079 p002).
+# The pause after size lets a reader (peninject -d) open the new node first.
 size 21600 13500
+wait 1500
 tool pen
-move 1000 1000 0 0 0
+hover 1000 1000 0 0
 down 1000 1000 0 10 -10
 ramp 0 4095 64 5
 move 2000 1500 4095 20 -20
