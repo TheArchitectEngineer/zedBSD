@@ -388,14 +388,18 @@ output_events(
 	uint32_t word;
 	int error;
 
-	/* Geometry includes unknown physical dimensions and fixed make/model strings. */
+	/*
+	 * Geometry includes unknown physical dimensions, and the make and the
+	 * model say that the display is not known (ws035-p121): the compositor
+	 * draws to the GPU's scanout and never learns the monitor's EDID.
+	 */
 	memset(geometry, 0, sizeof(geometry));
-	word = 4;
+	word = 8;
 	memcpy(geometry + 20, &word, 4);
-	memcpy(geometry + 24, "zed", 4);
-	word = 11;
-	memcpy(geometry + 28, &word, 4);
-	memcpy(geometry + 32, "fullscreen", 11);
+	memcpy(geometry + 24, "Unknown", 8);
+	word = 8;
+	memcpy(geometry + 32, &word, 4);
+	memcpy(geometry + 36, "Unknown", 8);
 	error = zwl_emit(output->client, output->id, 0, geometry, 48);
 	if (error != 0)
 		return error;
@@ -437,6 +441,8 @@ output_events(
 /*
  * Sends a version 4 output its name and description: the name stays the
  * same for the whole run (one output), the description gives its size.
+ * Both name the display, not the system (ws035-p121): the compositor does
+ * not know the connector, so the name is a neutral DISPLAY-1.
  */
 static int
 output_names(
@@ -449,15 +455,15 @@ output_names(
 
 	/* The name, a string in the wire's padded form. */
 	memset(payload, 0, sizeof(payload));
-	length = (uint32_t)sizeof("ZDESKTOP-1");
+	length = (uint32_t)sizeof("DISPLAY-1");
 	memcpy(payload, &length, sizeof(length));
-	memcpy(payload + 4, "ZDESKTOP-1", length);
+	memcpy(payload + 4, "DISPLAY-1", length);
 	error = zwl_emit(output->client, output->id, OUTPUT_NAME, payload, 4U + ((length + 3U) & ~3U));
 	if (error != 0)
 		return error;
 
 	/* The description. */
-	(void)snprintf(text, sizeof(text), "zdesktop output %ux%u", output->client->server->width, output->client->server->height);
+	(void)snprintf(text, sizeof(text), "Display %ux%u", output->client->server->width, output->client->server->height);
 	memset(payload, 0, sizeof(payload));
 	length = (uint32_t)strlen(text) + 1U;
 	memcpy(payload, &length, sizeof(length));
