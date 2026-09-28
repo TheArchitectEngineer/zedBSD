@@ -17,6 +17,7 @@
 /* The Wayland platform's parts of Vulkan, declared before anything includes vulkan.h. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
+#include <poll.h>
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 
@@ -24,6 +25,9 @@
 #include "shell/shell.h"
 
 #include <keiland.h>
+
+/* How many descriptors of the network the main loop polls at most besides the compositor's. */
+#define SHELL_NET_FDS		64U
 
 /* How many inputs wait for the main loop at most. */
 #define SHELL_WINDOW_EVENTS	256U
@@ -194,7 +198,7 @@ struct shell_titlebar {
 
 /* The window (window.c). */
 int shell_window_open(struct shell_window *window, const char *display, uint32_t width, uint32_t height, const char *title);
-int shell_window_dispatch(struct shell_window *window, int timeout);
+int shell_window_dispatch(struct shell_window *window, int timeout, struct pollfd *extra, size_t extra_count);
 int shell_window_take(struct shell_window *window, struct shell_event *event);
 int shell_window_repeat(struct shell_window *window, uint64_t now);
 void shell_window_title(struct shell_window *window, const char *title);

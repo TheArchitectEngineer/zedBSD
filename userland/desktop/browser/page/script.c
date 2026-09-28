@@ -297,6 +297,10 @@ page_needs_layout(
 	if (page->laid_out_generation != page->document->generation)
 		return 1;
 
+	/* Images that arrived since the layout. */
+	if (page->laid_out_images != page->images_generation)
+		return 1;
+
 	/* The layout is up to date. */
 	return 0;
 }

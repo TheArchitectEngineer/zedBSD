@@ -10,11 +10,16 @@
  * the page is laid out, and the background images when the layout asks
  * for them, kept by their location for the life of the page (a source
  * that could not be fetched or decoded is remembered as failed, and not
- * fetched again).  The fetch is synchronous in this pass;
- * the asynchronous loader (ws074-p050) will fill the same table.
+ * fetched again).  With the embedder's loader, an http or https image is
+ * fetched without blocking: its entry waits (no image yet) until the
+ * loader's callback decodes it and counts it in the page's
+ * images_generation, which lays the page out again.  Other locations (a
+ * file, a data: URL), and every location without a loader, are read at
+ * once.
  */
 
 #include "page/page.h"
+#include "net/net.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -25,14 +30,17 @@
 
 /*
  * One image of the page: the location its source resolved to (the key),
- * the decoded bitmap, and whether it failed.  The table holds pointers to
- * these, so that a bitmap the layout and the display list point at does
- * not move when the table grows.
+ * the decoded bitmap, whether it failed, and while it is being fetched its
+ * request and the page it is for.  The table holds pointers to these, so
+ * that a bitmap the layout and the display list point at does not move
+ * when the table grows.
  */
 struct page_image {
 	char *location;
 	struct img_bitmap bitmap;
 	int failed;
+	struct page *page;
+	struct net_request *request;
 };
 
 static int images_walk(struct page *page, const struct dom_node *node, const struct vm_string *src, int depth);
@@ -40,6 +48,7 @@ static int images_source(struct page *page, const struct dom_element *element, c
 static struct page_image *images_find(const struct page *page, const char *location);
 static int images_load(struct page *page, const struct dom_element *element, const struct vm_string *src);
 static int images_fetch(struct page *page, const char *location, struct page_image **loaded);
+static void images_arrived(void *context, struct net_request *request);
 
 /*
  * Starts a page's table of images empty.
@@ -106,10 +115,10 @@ page_image_of(
 		return NULL;
 	}
 
-	/* The image of that location, when it was decoded. */
+	/* The image of that location, when it was decoded (not while it is fetched). */
 	image = images_find(page, wb_buffer_string(&location));
 	wb_buffer_release(&location);
-	if (image == NULL || image->failed)
+	if (image == NULL || image->failed || image->request != NULL)
 		return NULL;
 
 	/* Succeeded: the image's bitmap. */
@@ -154,7 +163,7 @@ page_image_by_url(
 	/* The image of that location, loaded now when it is new. */
 	error = images_fetch(page, wb_buffer_string(&location), &image);
 	wb_buffer_release(&location);
-	if (error != 0 || image->failed)
+	if (error != 0 || image->failed || image->request != NULL)
 		return NULL;
 
 	/* Succeeded: the image's bitmap. */
@@ -174,6 +183,7 @@ page_images_release(
 	/* Each image's location and pixels, then the table. */
 	for (index = 0; index < page->images.count; index++) {
 		image = *(struct page_image **)wb_vector_at(&page->images, index);
+		net_request_cancel(image->request);
 		free(image->location);
 		img_bitmap_release(&image->bitmap);
 		free(image);
@@ -332,6 +342,7 @@ images_fetch(
 	struct page_image *image;
 	struct page_image *known;
 	struct wb_buffer bytes;
+	int remote;
 	int error;
 
 	/* A location loaded before, well or not, is not fetched again. */
@@ -353,18 +364,28 @@ images_fetch(
 		return ENOMEM;
 	}
 
-	/* The bytes, then the decoding; either failing marks the image failed. */
-	wb_buffer_init(&bytes);
-	error = page_fetch(page->base, image->location, &bytes, NULL);
-	if (error == 0)
-		error = img_decode(bytes.data, bytes.length, &image->bitmap);
-	wb_buffer_release(&bytes);
-	if (error != 0)
-		image->failed = 1;
+	/* An http or https image with a loader is fetched without blocking; it waits in the table meanwhile. */
+	image->page = page;
+	remote = net_loader_takes(image->location);
+	if (page->loader != NULL && remote) {
+		error = net_loader_fetch(page->loader, image->location, images_arrived, image, &image->request);
+		if (error != 0)
+			image->failed = 1;
+	} else {
+		/* The bytes, then the decoding; either failing marks the image failed. */
+		wb_buffer_init(&bytes);
+		error = page_fetch(page->base, image->location, &bytes, NULL);
+		if (error == 0)
+			error = img_decode(bytes.data, bytes.length, &image->bitmap);
+		wb_buffer_release(&bytes);
+		if (error != 0)
+			image->failed = 1;
+	}
 
 	/* The entry goes into the table. */
 	error = wb_vector_push(&page->images, &image);
 	if (error != 0) {
+		net_request_cancel(image->request);
 		free(image->location);
 		img_bitmap_release(&image->bitmap);
 		free(image);
@@ -374,4 +395,36 @@ images_fetch(
 	/* Succeeded: the image is in the table. */
 	*loaded = image;
 	return 0;
+}
+
+/*
+ * The loader's callback for an image: its body decoded when it came (a
+ * failure, or a status other than 2xx, marks the image failed), and the
+ * page told to lay itself out again.
+ */
+static void
+images_arrived(
+	void *context,
+	struct net_request *request)
+{
+	const struct net_response *response;
+	struct page_image *image;
+	int error;
+
+	/* The image, which waits no longer. */
+	image = context;
+	image->request = NULL;
+
+	/* A response with the image's bytes, decoded. */
+	error = net_request_error(request);
+	response = net_request_response(request);
+	if (error == 0 && (response->status < 200 || response->status > 299))
+		error = EINVAL;
+	if (error == 0)
+		error = img_decode(response->body.data, response->body.length, &image->bitmap);
+	if (error != 0)
+		image->failed = 1;
+
+	/* The page is laid out again with it. */
+	image->page->images_generation++;
 }

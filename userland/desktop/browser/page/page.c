@@ -177,6 +177,34 @@ page_load_html(
 }
 
 /*
+ * Loads an HTML document from its bytes, as fetched from a location (the
+ * page's location for its links, scripts and images).
+ */
+int
+page_load_bytes(
+	struct page *page,
+	const unsigned char *bytes,
+	size_t length,
+	const char *location)
+{
+	int error;
+
+	/* The location. */
+	free(page->base);
+	page->base = strdup(location);
+	if (page->base == NULL)
+		return ENOMEM;
+
+	/* The document. */
+	error = page_load_html(page, bytes, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page is loaded. */
+	return 0;
+}
+
+/*
  * Loads an HTML document from a file.
  */
 int
@@ -377,7 +405,8 @@ page_layout(
 	if (error != 0)
 		return error;
 
-	/* Builds and lays out the box tree, the images found by their elements. */
+	/* Builds and lays out the box tree, the images found by their elements (the ones there are now). */
+	page->laid_out_images = page->images_generation;
 	error = layout_build(&page->layout, page->css, &page->text, page->document, page_image_of, page_image_by_url, page, width, height);
 	page->laid_out = 1;
 	page->laid_out_generation = page->document->generation;
