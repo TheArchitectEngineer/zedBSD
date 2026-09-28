@@ -15,10 +15,11 @@
  * with a plain background reads as one picture on any screen size.  The
  * kernel does not know logo=; it ignores it as an unknown name.
  *
- * A picture whose header has the comment "fit=cover" (the Kei boot splash,
- * tools/build/make-boot-splash.py, ws035-p107) is instead scaled to cover
- * the whole screen, bilinearly, keeping its proportions: what does not fit
- * is cut from both sides and the middle stays.
+ * A picture whose header has the comment "fit=contain" (the Kei boot
+ * splash, 1920x1080, tools/build/make-boot-splash.py, ws035-p112) is drawn
+ * whole in the middle of a black screen: at its own size when the screen
+ * holds it, else shrunk bilinearly, its proportions kept, to the largest
+ * size the screen holds.  The sides it does not reach stay black bars.
  */
 
 #include "logo.h"
@@ -26,13 +27,13 @@
 /* The largest logo side the loader draws. */
 #define LOGO_SIDE_MAX	4096U
 
-/* The header comment that asks for a picture covering the screen. */
-#define LOGO_COVER_WORD	"fit=cover"
+/* The header comment that asks for a whole picture over black bars. */
+#define LOGO_CONTAIN_WORD	"fit=contain"
 
-static int logo_header_number(const uint8_t *data, size_t size, size_t *at, uint32_t *number, int *cover);
-static void logo_skip_space(const uint8_t *data, size_t size, size_t *at, int *cover);
-static int logo_comment_cover(const uint8_t *data, size_t size, size_t at);
-static void logo_draw_cover(const uint8_t *image, uint32_t width, uint32_t height, const struct zbl6_framebuffer *framebuffer, volatile uint32_t *pixels);
+static int logo_header_number(const uint8_t *data, size_t size, size_t *at, uint32_t *number, int *contain);
+static void logo_skip_space(const uint8_t *data, size_t size, size_t *at, int *contain);
+static int logo_comment_contain(const uint8_t *data, size_t size, size_t at);
+static void logo_draw_contain(const uint8_t *image, uint32_t width, uint32_t height, const struct zbl6_framebuffer *framebuffer, volatile uint32_t *pixels);
 static uint32_t logo_sample(const uint8_t *image, uint32_t width, uint32_t height, uint64_t fx, uint64_t fy, const struct zbl6_framebuffer *framebuffer);
 static uint32_t logo_pixel(const struct zbl6_framebuffer *framebuffer, const uint8_t *rgb);
 
@@ -64,23 +65,23 @@ zbl_uefi_logo_draw(
 	uint32_t x;
 	uint32_t y;
 	size_t at;
-	int cover;
+	int contain;
 	int error;
 
 	/* The magic: P6. */
 	if (data == NULL || framebuffer == NULL || size < 2U || data[0] != 'P' || data[1] != '6')
 		return 0;
 
-	/* The width, the height and the maximum value, which must be 255 (a comment may ask for a cover). */
+	/* The width, the height and the maximum value, which must be 255 (a comment may ask for bars). */
 	at = 2U;
-	cover = 0;
-	error = logo_header_number(data, size, &at, &width, &cover);
+	contain = 0;
+	error = logo_header_number(data, size, &at, &width, &contain);
 	if (error != 0)
 		return 0;
-	error = logo_header_number(data, size, &at, &height, &cover);
+	error = logo_header_number(data, size, &at, &height, &contain);
 	if (error != 0)
 		return 0;
-	error = logo_header_number(data, size, &at, &maximum, &cover);
+	error = logo_header_number(data, size, &at, &maximum, &contain);
 	if (error != 0 || maximum != 255U)
 		return 0;
 	if (width == 0U || height == 0U || width > LOGO_SIDE_MAX || height > LOGO_SIDE_MAX)
@@ -97,9 +98,9 @@ zbl_uefi_logo_draw(
 		return 0;
 	pixels = (volatile uint32_t *)(uintptr_t)framebuffer->physical_base;
 
-	/* A picture that covers the screen is scaled over all of it. */
-	if (cover) {
-		logo_draw_cover(image, width, height, framebuffer, pixels);
+	/* A picture over black bars is drawn whole. */
+	if (contain) {
+		logo_draw_contain(image, width, height, framebuffer, pixels);
 		__asm__ volatile("sfence" : : : "memory");
 		return 1;
 	}
@@ -143,11 +144,12 @@ zbl_uefi_logo_draw(
 }
 
 /*
- * Draws a picture scaled to cover the whole framebuffer, its proportions
- * kept and its middle on the middle of the screen.
+ * Draws a whole picture in the middle of a black framebuffer, at its own
+ * size when the screen holds it, else shrunk to the largest size the
+ * screen holds with its proportions kept.
  */
 static void
-logo_draw_cover(
+logo_draw_contain(
 	const uint8_t *image,
 	uint32_t width,
 	uint32_t height,
@@ -156,34 +158,50 @@ logo_draw_cover(
 {
 	uint64_t scaled_width;
 	uint64_t scaled_height;
-	uint64_t offset_x;
-	uint64_t offset_y;
+	uint64_t origin_x;
+	uint64_t origin_y;
 	uint64_t fx;
 	uint64_t fy;
 	uint32_t x;
 	uint32_t y;
 
 	/*
-	 * The picture's size on the screen: as wide as the screen when the
-	 * screen is the wider of the two in proportion, else as tall.
+	 * The picture's size on the screen: its own when it fits, else as
+	 * tall as the screen when the screen is the wider of the two in
+	 * proportion, else as wide.
 	 */
-	if ((uint64_t)framebuffer->width * height >= (uint64_t)framebuffer->height * width) {
-		scaled_width = framebuffer->width;
-		scaled_height = (uint64_t)height * framebuffer->width / width;
-	} else {
-		scaled_height = framebuffer->height;
-		scaled_width = (uint64_t)width * framebuffer->height / height;
+	scaled_width = width;
+	scaled_height = height;
+	if (width > framebuffer->width || height > framebuffer->height) {
+		if ((uint64_t)framebuffer->width * height >= (uint64_t)framebuffer->height * width) {
+			scaled_height = framebuffer->height;
+			scaled_width = (uint64_t)width * framebuffer->height / height;
+		} else {
+			scaled_width = framebuffer->width;
+			scaled_height = (uint64_t)height * framebuffer->width / width;
+		}
 	}
 
-	/* How much of it is cut on the left and at the top (its middle stays). */
-	offset_x = (scaled_width - framebuffer->width) / 2U;
-	offset_y = (scaled_height - framebuffer->height) / 2U;
+	/* Where its top-left corner is: the bars on each side are as wide as each other. */
+	origin_x = (framebuffer->width - scaled_width) / 2U;
+	origin_y = (framebuffer->height - scaled_height) / 2U;
 
-	/* Each screen pixel samples the picture where its centre falls, in 16.16 fixed point. */
+	/* Each screen pixel is black outside the picture, else samples it where its centre falls (16.16). */
 	for (y = 0; y < framebuffer->height; y++) {
-		fy = (((uint64_t)(y + offset_y) * 2U + 1U) * height << 16) / (scaled_height * 2U);
+		if (y < origin_y || y - origin_y >= scaled_height) {
+			for (x = 0; x < framebuffer->width; x++)
+				pixels[(uint64_t)y * framebuffer->stride + x] = 0U;
+			continue;
+		}
+
+		/* A row of the picture between the bars on the left and right. */
+		fy = (((uint64_t)(y - origin_y) * 2U + 1U) * height << 16) / (scaled_height * 2U);
 		for (x = 0; x < framebuffer->width; x++) {
-			fx = (((uint64_t)(x + offset_x) * 2U + 1U) * width << 16) / (scaled_width * 2U);
+			if (x < origin_x || x - origin_x >= scaled_width) {
+				pixels[(uint64_t)y * framebuffer->stride + x] = 0U;
+				continue;
+			}
+			fx = (((uint64_t)(x - origin_x) * 2U + 1U) * width << 16) / (scaled_width * 2U);
 			pixels[(uint64_t)y * framebuffer->stride + x] = logo_sample(image, width, height, fx, fy, framebuffer);
 		}
 	}
@@ -267,13 +285,13 @@ logo_header_number(
 	size_t size,
 	size_t *at,
 	uint32_t *number,
-	int *cover)
+	int *contain)
 {
 	uint32_t value;
 	unsigned digits;
 
 	/* The whitespace and comments before it. */
-	logo_skip_space(data, size, at, cover);
+	logo_skip_space(data, size, at, contain);
 
 	/* Its digits, bounded. */
 	value = 0U;
@@ -295,22 +313,22 @@ logo_header_number(
 	return 0;
 }
 
-/* Steps over whitespace and # comments in a PPM header, noting a "fit=cover" comment. */
+/* Steps over whitespace and # comments in a PPM header, noting a "fit=contain" comment. */
 static void
 logo_skip_space(
 	const uint8_t *data,
 	size_t size,
 	size_t *at,
-	int *cover)
+	int *contain)
 {
 	int asked;
 
 	/* Blanks, and comments to their line's end. */
 	while (*at < size) {
 		if (data[*at] == '#') {
-			asked = logo_comment_cover(data, size, *at + 1U);
+			asked = logo_comment_contain(data, size, *at + 1U);
 			if (asked)
-				*cover = 1;
+				*contain = 1;
 			while (*at < size && data[*at] != '\n')
 				(*at)++;
 			continue;
@@ -323,14 +341,14 @@ logo_skip_space(
 	}
 }
 
-/* Reports whether a comment's text (from after its #) is "fit=cover", blanks around it allowed. */
+/* Reports whether a comment's text (from after its #) is "fit=contain", blanks around it allowed. */
 static int
-logo_comment_cover(
+logo_comment_contain(
 	const uint8_t *data,
 	size_t size,
 	size_t at)
 {
-	static const char word[] = LOGO_COVER_WORD;
+	static const char word[] = LOGO_CONTAIN_WORD;
 	size_t index;
 
 	/* Blanks before the word. */
@@ -350,7 +368,7 @@ logo_comment_cover(
 	if (at < size && data[at] != '\n')
 		return 0;
 
-	/* Succeeded: the picture asks to cover the screen. */
+	/* Succeeded: the picture asks for black bars. */
 	return 1;
 }
 
