@@ -56,18 +56,24 @@
 #define NOTES_AUTOSAVE_IDLE_MS	5000U
 
 /* The name and media type of the edit data attached to the PDF (design-pdf.md section 2). */
-#define NOTES_ATTACHMENT_NAME	"zedbsd-notes.bin"
-#define NOTES_ATTACHMENT_TYPE	"application/x-zedbsd-notes"
+#define NOTES_ATTACHMENT_NAME	"kei-notes.bin"
+#define NOTES_ATTACHMENT_TYPE	"application/x-kei-notes"
 
 /* The sources of an input event: a mouse (or a pen without the tablet protocol), a pen's tip, its eraser end. */
 #define NOTES_SOURCE_POINTER	0U
 #define NOTES_SOURCE_PEN	1U
 #define NOTES_SOURCE_ERASER	2U
 
-/* The kinds of input event: contact starts, the point moves in contact, contact ends. */
+/*
+ * The kinds of input event: contact starts, the point moves in contact,
+ * contact ends; a pen moves over the window without touching it, a pen
+ * leaves the window.
+ */
 #define NOTES_INPUT_DOWN	1U
 #define NOTES_INPUT_MOTION	2U
 #define NOTES_INPUT_UP		3U
+#define NOTES_INPUT_HOVER	4U
+#define NOTES_INPUT_LEAVE	5U
 
 /*
  * One sample of a stroke, in page coordinates.
@@ -141,6 +147,7 @@ struct notes_page {
 #define NOTES_UNDO_ADD_STROKE		1U
 #define NOTES_UNDO_REMOVE_STROKES	2U
 #define NOTES_UNDO_ADD_PAGE		3U
+#define NOTES_UNDO_ERASE_PARTS		4U
 
 /*
  * One change the undo history can take back.
@@ -150,6 +157,13 @@ struct notes_page {
  * they were removed.  owned says whether the entry holds the strokes (or
  * the page) now: the strokes of a removal while it stands, the stroke of an
  * addition or the page of a page's addition while they are taken back.
+ *
+ * An eraser drag that cuts strokes (NOTES_UNDO_ERASE_PARTS) is kept as the
+ * primitive changes it made, in order: each stroke taken off a page and
+ * each piece put in its place, with the place and, in inserted, which of
+ * the two it was.  Taking it back undoes them in the opposite order.  While
+ * it stands (owned) the entry holds the strokes it took off; while it is
+ * taken back it holds the pieces it had put in.
  */
 struct notes_undo {
 	unsigned kind;
@@ -157,6 +171,7 @@ struct notes_undo {
 	size_t place;
 	struct notes_stroke **strokes;
 	size_t *places;
+	unsigned char *inserted;
 	size_t count;
 	size_t capacity;
 	struct notes_page *page_held;
@@ -203,6 +218,15 @@ struct notes_document {
 
 	/* A change since the last save; cleared by a save. */
 	int dirty;
+
+	/*
+	 * Counts the changes other than a stroke put on top of a page: a
+	 * stroke inserted below others or removed, a page inserted or removed.
+	 * It only ever grows.  The screen keeps the finished strokes of a page
+	 * in a picture and adds the strokes put on top to it; a new count tells
+	 * it that the picture must be drawn again from the start.
+	 */
+	uint64_t reshaped;
 
 	/* The journal every change is logged to (NULL: none). */
 	struct notes_journal *journal;
@@ -251,6 +275,7 @@ int notes_document_add_stroke(struct notes_document *document, size_t page, stru
 int notes_document_add_page(struct notes_document *document, size_t index);
 void notes_document_erase_begin(struct notes_document *document);
 int notes_document_erase_at(struct notes_document *document, size_t page, float x, float y, float radius, size_t *removed);
+int notes_document_erase_parts_at(struct notes_document *document, size_t page, float x, float y, float radius, size_t *cut);
 void notes_document_erase_end(struct notes_document *document);
 int notes_document_undo(struct notes_document *document, size_t *page);
 int notes_document_redo(struct notes_document *document, size_t *page);
