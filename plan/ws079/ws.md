@@ -81,5 +81,5 @@ mouse の部分は touch を待たずに先に入れてよい。
 | ws079-p008 | 段階 ③: CFF・Type1・暗号化など | planning | p007 |
 | ws079-p012 | kernel の multitouch: USB HID の digitizer の指の collection（Contact ID・Tip Switch・X/Y・Contact Count）→ `ABS_MT_SLOT`・`ABS_MT_TRACKING_ID`・`ABS_MT_POSITION_X/Y`・`BTN_TOUCH`、注入の device の touch の種類（試験用） | planning | p002 |
 | ws079-p013 | compositor の touch: client への `wl_touch`、touch の接触を端のジェスチャー（p010 の `zwl_corner_contact_*` と Home・Wiseview）へ、**浮いたタイトルバーの上で二本指を軽く短く上へこする（「あっちにいけ」）と窓を z-order の後ろへ回し、次の窓を前に**（2026-09-28 ユーザー。タップから訂正） | planning | p012、p003 |
-| ws079-p014 | Notes で他の PDF に書き込む: 自前の編集の data の無い PDF・他で変わった page を背景（`pdf_page_render`・`pdf_display_list_rasterize`）にして上に線を足し、保存は増分の更新（PDF Viewer の Annotate in Notes の本来の動き） | planning | p005、p006 |
+| [ws079-p014](phase014/phase.md) | Notes で他の PDF に書き込む: 自前の編集の data の無い PDF・他で変わった page を背景（`pdf_page_render`・`pdf_display_list_rasterize`）にして上に線を足し、保存は増分の更新（PDF Viewer の Annotate in Notes の本来の動き） | cleared（2026-09-28 subagent、QEMU の Venus と host。libpdf に update（追加の API 6 つ）、Notes は他の PDF を base に持ち保存ごとに base＋1 revision（積まずに置き換え）、ZNOT 1.1 の BASE・SRC、背景は CPU の raster を texture に、暗号化・署名は notice で拒否。qpdf・pdftoppm・ASan・UBSan。実機は未実施） | p005、p006 |
 | ws079-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |

@@ -176,7 +176,7 @@ guest 'ls /root/.local/share/keiland/notes/ 2>/dev/null | wc -l' | tail -1 | sed
 
 # 8. The saved PDF opens again from its edit data (no journal is left), and editing goes on.
 guest "$start_notes" >/dev/null
-expect_log /tmp/notes.log 'NOTES OPEN pages=2 strokes=6 path=/tmp/notes-test/test.pdf'
+expect_log /tmp/notes.log 'NOTES OPEN pages=2 strokes=6 kind=notes path=/tmp/notes-test/test.pdf'
 pointer move 1270 790 sleep 300
 shot reopened.png
 drag 120,400 250,380 380,420 480,380

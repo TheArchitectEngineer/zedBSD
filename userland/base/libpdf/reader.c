@@ -13,7 +13,10 @@
  * table, possibly followed by older ones through /Prev, indirect objects
  * found through it, the page tree, the attached edit data and the page
  * content streams, uncompressed.  A cross-reference stream, a compressed
- * stream and encryption are reported as ENOTSUP.
+ * stream and encryption are reported as ENOTSUP; pdf_document_encrypted()
+ * tells encryption apart.  It also gives an update (update.c) the parts of
+ * the document a new revision refers to: the trailer, the catalog, the
+ * pages' references and the revisions' sections.
  *
  * The file is not trusted.  The whole file is held in memory, every offset
  * and length read from it is checked against its size, objects are loaded
@@ -93,10 +96,13 @@ struct pdf_xref_entry {
  * One page of a document and the attributes it inherits.
  *
  * The values are as the page tree holds them, possibly references; they
- * are resolved when the page is asked about.
+ * are resolved when the page is asked about.  reference is the reference
+ * the page tree names the page by (NULL for a page written into its
+ * parent's kids directly), which an update uses to replace the page.
  */
 struct pdf_reader_page {
 	struct pdf_object *page;
+	struct pdf_object *reference;
 	struct pdf_object *media_box;
 	struct pdf_object *crop_box;
 	struct pdf_object *rotate;
@@ -119,11 +125,16 @@ struct pdf_page_inheritance {
  * data holds the whole file, which the document owns.  The entries are
  * sorted by object number once they are all read, with one entry per
  * number.  null_object stands for every missing object.  mark numbers the
- * current tree walk and only grows.
+ * current tree walk and only grows.  xref_offset is where the newest
+ * cross-reference section starts, and previous_offset where the one its
+ * trailer links by /Prev starts (has_previous: there is one).
  */
 struct pdf_document {
 	unsigned char *data;
 	size_t size;
+	size_t xref_offset;
+	size_t previous_offset;
+	int has_previous;
 	struct pdf_arena arena;
 	struct pdf_xref_entry *entries;
 	size_t entries_count;
@@ -147,6 +158,7 @@ static int check_header(const struct pdf_document *document);
 static int find_startxref(struct pdf_document *document, size_t *offset);
 static int read_cross_references(struct pdf_document *document, size_t offset);
 static int read_section(struct pdf_document *document, size_t offset, struct pdf_object **trailer);
+static int read_object_dictionary(struct pdf_document *document, size_t offset, struct pdf_object **dictionary);
 static int read_subsection(struct pdf_document *document, struct pdf_lexer *lexer, long start, long count);
 static int add_entry(struct pdf_document *document, unsigned long number, unsigned long generation, size_t offset, int in_use);
 static void sort_entries(struct pdf_document *document);
@@ -160,7 +172,7 @@ static int resolve_key(struct pdf_document *document, const struct pdf_object *d
 static int read_catalog(struct pdf_document *document);
 static int walk_page_tree(struct pdf_document *document, struct pdf_object *node, const struct pdf_page_inheritance *inherited, int depth);
 static int visit_reference(struct pdf_document *document, const struct pdf_object *node);
-static int add_page(struct pdf_document *document, struct pdf_object *page, const struct pdf_page_inheritance *inherited);
+static int add_page(struct pdf_document *document, struct pdf_object *page, struct pdf_object *node, const struct pdf_page_inheritance *inherited);
 static void read_information(struct pdf_document *document);
 static int read_identifier(struct pdf_document *document, struct pdf_object **first);
 static time_t parse_date(const struct pdf_object *date);
@@ -537,6 +549,161 @@ pdf_document_get_dates(
 }
 
 /*
+ * Reports where the newest revision's cross-reference section starts, and
+ * where the one before it starts.
+ *
+ * A file that has been updated incrementally holds its revisions one after
+ * the other, each ending with its own section, and the newest section
+ * links the one before.  previous_offset is (size_t)-1 when the file has
+ * one revision.  Notes compares them to learn whether the newest revision
+ * is the only one added to a file it knows.
+ */
+int
+pdf_document_get_revision(
+	const struct pdf_document *document,
+	size_t *xref_offset,
+	size_t *previous_offset)
+{
+	/* The newest section, which the last startxref names. */
+	*xref_offset = document->xref_offset;
+
+	/* The section it links, if any. */
+	*previous_offset = (size_t)-1;
+	if (document->has_previous)
+		*previous_offset = document->previous_offset;
+
+	/* Succeeded: both offsets are given. */
+	return 0;
+}
+
+/*
+ * Reports whether a document is signed: whether its interactive form says
+ * that it holds signatures (/SigFlags bit 1), or its catalog carries
+ * permissions a signature grants (/Perms).
+ *
+ * Adding a revision to a signed document can invalidate its signatures, so
+ * an update refuses one.
+ */
+int
+pdf_document_signed(
+	struct pdf_document *document,
+	int *is_signed)
+{
+	struct pdf_object *permissions;
+	struct pdf_object *form;
+	struct pdf_object *flags;
+	int error;
+
+	/* Nothing is known to be signed yet. */
+	*is_signed = 0;
+
+	/* Permissions that a signature grants mark the document as signed. */
+	error = resolve_key(document, document->catalog, "Perms", 0, &permissions);
+	if (error != 0)
+		return error;
+	if (permissions->type != PDF_OBJECT_NULL) {
+		*is_signed = 1;
+		return 0;
+	}
+
+	/* The interactive form's flags. */
+	error = resolve_key(document, document->catalog, "AcroForm", 0, &form);
+	if (error != 0)
+		return error;
+	error = resolve_key(document, form, "SigFlags", 0, &flags);
+	if (error != 0)
+		return error;
+
+	/* The first flag says that the form holds at least one signature. */
+	if (flags->type == PDF_OBJECT_INTEGER) {
+		if ((flags->integer & 1) != 0)
+			*is_signed = 1;
+	}
+
+	/* Succeeded: is_signed tells. */
+	return 0;
+}
+
+/*
+ * Reports whether a PDF file is encrypted, which the reader refuses to open
+ * (ENOTSUP) along with other features it does not read yet.
+ *
+ * Only the newest trailer is read: a classic one, or the dictionary of a
+ * cross-reference stream, which holds the trailer's keys.
+ */
+int
+pdf_document_encrypted(
+	const char *path,
+	int *encrypted)
+{
+	struct pdf_document *created;
+	struct pdf_object *trailer;
+	struct pdf_object *encryption;
+	unsigned char *data;
+	size_t offset;
+	size_t size;
+	int error;
+
+	/* Refuses a missing path or answer. */
+	if (path == NULL)
+		return EINVAL;
+	if (encrypted == NULL)
+		return EINVAL;
+
+	/* Reads the whole file. */
+	data = NULL;
+	size = 0;
+	error = read_file(path, &data, &size);
+	if (error != 0)
+		return error;
+
+	/* A document that owns the bytes, to read its newest trailer with. */
+	created = calloc(1, sizeof(*created));
+	if (created == NULL) {
+		free(data);
+		return ENOMEM;
+	}
+
+	/* The document takes the bytes; a missing object is null. */
+	created->data = data;
+	created->size = size;
+	created->null_object.type = PDF_OBJECT_NULL;
+
+	/* Checks that the bytes start as a PDF. */
+	error = check_header(created);
+	if (error != 0) {
+		pdf_document_close(created);
+		return error;
+	}
+
+	/* Finds the newest cross-reference section. */
+	error = find_startxref(created, &offset);
+	if (error != 0) {
+		pdf_document_close(created);
+		return error;
+	}
+
+	/* Reads its trailer: a classic one, or else a cross-reference stream's dictionary. */
+	error = read_section(created, offset, &trailer);
+	if (error == ENOTSUP)
+		error = read_object_dictionary(created, offset, &trailer);
+	if (error != 0) {
+		pdf_document_close(created);
+		return error;
+	}
+
+	/* An /Encrypt key is what encrypts a document. */
+	encryption = pdf_object_get(trailer, "Encrypt");
+	*encrypted = 0;
+	if (encryption != NULL)
+		*encrypted = 1;
+	pdf_document_close(created);
+
+	/* Succeeded: encrypted tells. */
+	return 0;
+}
+
+/*
  * Resolves an object that may be a reference, for the other parts of the
  * library.
  */
@@ -618,6 +785,87 @@ pdf_reader_bytes(
 }
 
 /*
+ * Reports the size of a document's file in bytes.
+ */
+size_t
+pdf_reader_size(
+	const struct pdf_document *document)
+{
+	/* The file's length, which every offset in it is below. */
+	return document->size;
+}
+
+/*
+ * Finds the newest trailer and the catalog it names, for an update.
+ */
+void
+pdf_reader_roots(
+	struct pdf_document *document,
+	struct pdf_object **trailer,
+	struct pdf_object **catalog)
+{
+	/* Both were read when the document was opened. */
+	*trailer = document->trailer;
+	*catalog = document->catalog;
+}
+
+/*
+ * Reports the lowest object number no object of the document uses, which
+ * the first object an update adds takes.
+ *
+ * It is past every number the cross-reference sections list and at least
+ * the newest trailer's /Size.
+ */
+unsigned long
+pdf_reader_next_number(
+	const struct pdf_document *document)
+{
+	const struct pdf_object *size;
+	unsigned long next;
+
+	/* One past the highest number listed; the entries are sorted by number. */
+	next = 1;
+	if (document->entries_count != 0)
+		next = document->entries[document->entries_count - 1].number + 1;
+
+	/* The trailer's /Size, when it is larger. */
+	size = pdf_object_get(document->trailer, "Size");
+	if (size != NULL && size->type == PDF_OBJECT_INTEGER) {
+		if (size->integer > 0 && (unsigned long)size->integer > next)
+			next = (unsigned long)size->integer;
+	}
+
+	/* Reports the first free number. */
+	return next;
+}
+
+/*
+ * Reports the reference the page tree names a page by, which an update
+ * gives the page's new version.
+ *
+ * A page written out in its parent's kids has no reference of its own and
+ * reports ENOTSUP.
+ */
+int
+pdf_reader_page_reference(
+	struct pdf_document *document,
+	size_t index,
+	struct pdf_object **reference)
+{
+	/* Refuses a page the document does not have. */
+	if (index >= document->pages_count)
+		return EINVAL;
+
+	/* Refuses a page that is not an object of its own. */
+	if (document->pages[index].reference == NULL)
+		return ENOTSUP;
+
+	/* Succeeded: the page's reference. */
+	*reference = document->pages[index].reference;
+	return 0;
+}
+
+/*
  * Reads a document from bytes the document takes over.
  *
  * On failure the bytes are freed.
@@ -655,6 +903,9 @@ open_owned(
 		pdf_document_close(created);
 		return error;
 	}
+
+	/* The newest section is the newest revision's, which an update links. */
+	created->xref_offset = offset;
 
 	/* Reads it and the older ones it links. */
 	error = read_cross_references(created, offset);
@@ -874,6 +1125,12 @@ read_cross_references(
 		if (previous->integer < 0 || (unsigned long)previous->integer >= document->size)
 			return PDF_EFORMAT;
 		offset = (size_t)previous->integer;
+
+		/* The newest section's link names the revision before the newest. */
+		if (sections == 0) {
+			document->previous_offset = offset;
+			document->has_previous = 1;
+		}
 	}
 
 	/* Refuses a chain longer than the limit. */
@@ -959,6 +1216,62 @@ read_section(
 
 	/* Succeeded: trailer is the section's trailer. */
 	*trailer = dictionary;
+	return 0;
+}
+
+/*
+ * Reads the dictionary of the object that starts at an offset, "n g obj"
+ * followed by a dictionary: a cross-reference stream's, whose keys are the
+ * trailer's.
+ */
+static int
+read_object_dictionary(
+	struct pdf_document *document,
+	size_t offset,
+	struct pdf_object **dictionary)
+{
+	struct pdf_lexer lexer;
+	struct pdf_token token;
+	struct pdf_object *parsed;
+	int is_keyword;
+	int error;
+
+	/* Reads the object number. */
+	memset(&lexer, 0, sizeof(lexer));
+	lexer.data = document->data;
+	lexer.size = document->size;
+	lexer.position = offset;
+	lexer.arena = &document->arena;
+	error = pdf_lexer_next(&lexer, &token);
+	if (error != 0)
+		return error;
+	if (token.type != PDF_TOKEN_INTEGER)
+		return PDF_EFORMAT;
+
+	/* Reads the generation. */
+	error = pdf_lexer_next(&lexer, &token);
+	if (error != 0)
+		return error;
+	if (token.type != PDF_TOKEN_INTEGER)
+		return PDF_EFORMAT;
+
+	/* Reads the obj keyword. */
+	error = pdf_lexer_next(&lexer, &token);
+	if (error != 0)
+		return error;
+	is_keyword = pdf_token_is_keyword(&token, "obj");
+	if (!is_keyword)
+		return PDF_EFORMAT;
+
+	/* Parses the object, which must be a dictionary. */
+	error = pdf_parse_object(&lexer, 0, &parsed);
+	if (error != 0)
+		return error;
+	if (parsed->type != PDF_OBJECT_DICTIONARY)
+		return PDF_EFORMAT;
+
+	/* Succeeded: dictionary is the object's. */
+	*dictionary = parsed;
 	return 0;
 }
 
@@ -1520,7 +1833,7 @@ walk_page_tree(
 
 	/* Lists a page. */
 	if (!is_pages) {
-		error = add_page(document, resolved, &inheritance);
+		error = add_page(document, resolved, node, &inheritance);
 		if (error != 0)
 			return error;
 		return 0;
@@ -1577,11 +1890,12 @@ visit_reference(
 	return 0;
 }
 
-/* Appends a page with the attributes it inherits. */
+/* Appends a page, named by the node its parent lists, with the attributes it inherits. */
 static int
 add_page(
 	struct pdf_document *document,
 	struct pdf_object *page,
+	struct pdf_object *node,
 	const struct pdf_page_inheritance *inherited)
 {
 	struct pdf_reader_page *grown;
@@ -1603,8 +1917,11 @@ add_page(
 		document->pages_capacity = capacity;
 	}
 
-	/* Fills in the page. */
+	/* Fills in the page; a page its parent writes out in place has no reference. */
 	document->pages[document->pages_count].page = page;
+	document->pages[document->pages_count].reference = NULL;
+	if (node->type == PDF_OBJECT_REFERENCE)
+		document->pages[document->pages_count].reference = node;
 	document->pages[document->pages_count].media_box = inherited->media_box;
 	document->pages[document->pages_count].crop_box = inherited->crop_box;
 	document->pages[document->pages_count].rotate = inherited->rotate;
