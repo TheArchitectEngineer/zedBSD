@@ -43,6 +43,7 @@ static const struct sysctl_leaf leaves[] = {
 	{{ CTL_HW, HW_NCPU, 0 }, 2, "hw.ncpu"},
 	{{ CTL_HW, HW_NCPUONLINE, 0 }, 2, "hw.ncpuonline"},
 	{{ CTL_HW, HW_MEMORY_STATS, 0 }, 2, "hw.memory.stats"},
+	{{ CTL_HW, HW_GPU_ATTACHING, 0 }, 2, "hw.gpu.attaching"},
 	{{ CTL_KERN, KERN_MSGBUF, 0 }, 2, "kern.msgbuf"},
 	{{ CTL_KERN, KERN_MSGBUF_SIZE, 0 }, 2, "kern.msgbuf_size"},
 	{{ CTL_KERN, KERN_MSGBUF_DROPPED, 0 }, 2, "kern.msgbuf_dropped"},
@@ -69,6 +70,19 @@ static const struct sysctl_leaf leaves[] = {
 };
 
 static struct spinlock hostname_lock;
+
+/*
+ * How many GPU devices a driver has attached but not yet published a node
+ * for or given up on (hw.gpu.attaching).
+ *
+ * A driver that finishes its bring-up after the attach (the i915 starts its
+ * device on a worker) counts the device from the attach, which comes before
+ * init, until its node is published or its start has failed.  The graphical
+ * login waits for /dev/gpu0 only while this is nonzero, so a machine without
+ * such a device falls back to the console at once.  It is changed only by
+ * atomic operations and never goes below zero.
+ */
+static atomic_uint_t gpu_attaching;
 static char hostname[KERN_HOST_NAME_MAX + 1U] = "zedbsd";
 
 static int sysctl_writeback(const int *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
@@ -85,6 +99,40 @@ sysctl_init(
 	void)
 {
 	spin_init(&hostname_lock, LOCK_RANK_DEVICE, "hostname");
+}
+
+/*
+ * Counts a GPU device whose driver has attached it and will publish its node
+ * later.
+ */
+void
+kern_gpu_attach_begin(
+	void)
+{
+	/* One more device is on its way to a published node. */
+	(void)atomic_fetch_add_relaxed(&gpu_attaching, 1U);
+}
+
+/*
+ * Uncounts a GPU device whose node is now published or never will be.
+ *
+ * Each call matches one kern_gpu_attach_begin(); an unmatched call leaves
+ * the count at zero.
+ */
+void
+kern_gpu_attach_end(
+	void)
+{
+	unsigned expected;
+	int exchanged;
+
+	/* Takes one device off the count, unless the count is already zero. */
+	expected = atomic_load_acquire(&gpu_attaching);
+	while (expected != 0U) {
+		exchanged = atomic_compare_exchange(&gpu_attaching, &expected, expected - 1U);
+		if (exchanged)
+			break;
+	}
 }
 
 /*
@@ -115,6 +163,7 @@ kern_sysctl(
 	const char *login;
 	uint64_t value;
 	uint32_t cpus;
+	uint32_t attaching;
 	unsigned long irq;
 	size_t length;
 	size_t i;
@@ -140,6 +189,15 @@ kern_sysctl(
 		if (newp != NULL || newlen != 0)
 			return EPERM;
 		error = sysctl_output(oldp, oldlenp, &cpus, sizeof(cpus));
+		return error;
+	}
+
+	/* Reports the GPU devices whose node the graphical login may still wait for. */
+	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_GPU_ATTACHING) {
+		if (newp != NULL || newlen != 0)
+			return EPERM;
+		attaching = atomic_load_acquire(&gpu_attaching);
+		error = sysctl_output(oldp, oldlenp, &attaching, sizeof(attaching));
 		return error;
 	}
 

@@ -88,7 +88,10 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_event_interface,
 	&bind_ui_event_interface,
 	&bind_mouse_event_interface,
-	&bind_custom_event_interface
+	&bind_custom_event_interface,
+	&bind_keyboard_event_interface,
+	&bind_focus_event_interface,
+	&bind_wheel_event_interface
 };
 
 /*

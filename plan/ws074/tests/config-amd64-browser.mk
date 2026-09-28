@@ -10,3 +10,5 @@ ZEDBSD_USER_PROGRAMS += ca-certificates
 ZEDBSD_USER_PROGRAMS += libjpeg-compat
 # GIF (ws074-p051): libgif-compat, before the browser uses it (p021).
 ZEDBSD_USER_PROGRAMS += libgif-compat
+# The engine as libbrowser.so (ws074-p057; browser pulls it in) and its second program.
+ZEDBSD_USER_PROGRAMS += libbrowser browser-probe

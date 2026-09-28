@@ -26,6 +26,7 @@
 #include "worker.h"
 #include "display/display.h"
 #include <kern/kcrt.h>
+#include <kern/sysctl.h>
 
 #include <drivers/generic/dma.h>
 #include <drivers/pci/pci-i915.h>
@@ -72,7 +73,11 @@
  * leaves the list, so each device is started exactly once.
  */
 struct i915_start_registry {
-	/* Protects every other field; initialized on first use. */
+	/*
+	 * Protects every other field; initialized on first use.  It is taken
+	 * with interrupts disabled so that its holder cannot be preempted and
+	 * resume on another CPU while it holds it.
+	 */
 	struct spinlock lock;
 
 	/* Nonzero once the lock has been initialized. */
@@ -140,6 +145,7 @@ static const struct i915_irq_display_ops i915_interim_display_irq_ops = {
 static void i915_start_registry_init(void);
 static void i915_start_launch(void);
 static void i915_start_worker(void *argument);
+static void i915_attach_settled_locked(struct i915_device *device);
 static int i915_start_prepare(struct i915_device *device);
 static int i915_start_display_noirq(struct i915_device *device);
 static int i915_start_display_nogem(struct i915_device *device);
@@ -174,15 +180,17 @@ static unsigned i915_cpu_physical_bits(void);
 void
 drv_i915_runtime_ready(void)
 {
+	unsigned long enabled;
+
 	/* Makes sure the registry lock exists before it is taken. */
 	i915_start_registry_init();
 
 	/* Marks the kernel ready for every current and later device. */
-	spin_lock(&i915_start_registry.lock);
+	enabled = spin_lock_irqsave(&i915_start_registry.lock);
 
 	i915_start_registry.ready = 1U;
 
-	spin_unlock(&i915_start_registry.lock);
+	spin_unlock_irqrestore(&i915_start_registry.lock, enabled);
 
 	/* Starts the devices that attached before readiness. */
 	i915_start_launch();
@@ -198,16 +206,26 @@ void
 drv_i915_device_schedule_start(
 	struct i915_device *device)
 {
+	unsigned long enabled;
+
 	/* Makes sure the registry lock exists before it is taken. */
 	i915_start_registry_init();
 
 	/* Queues the device for its start worker. */
-	spin_lock(&i915_start_registry.lock);
+	enabled = spin_lock_irqsave(&i915_start_registry.lock);
 
 	device->start_next = i915_start_registry.pending;
 	i915_start_registry.pending = device;
 
-	spin_unlock(&i915_start_registry.lock);
+	/*
+	 * The device counts as a GPU node on its way until the node is
+	 * published or the start has failed, so the graphical login waits for
+	 * it rather than falling back to the console.
+	 */
+	device->attach_counted = 1U;
+	kern_gpu_attach_begin();
+
+	spin_unlock_irqrestore(&i915_start_registry.lock, enabled);
 
 	kern_logf("i915: device 8086:%04x registered; the start waits for kernel readiness\n",
 	    (unsigned)device->product);
@@ -305,6 +323,7 @@ drv_i915_device_stop(
 	struct i915_device **link;
 	struct i915_gt *gt;
 	unsigned launched;
+	unsigned long enabled;
 
 	gt = &device->gt;
 
@@ -312,7 +331,7 @@ drv_i915_device_stop(
 	i915_start_registry_init();
 
 	/* Withdraws the device from the start list unless its worker was launched. */
-	spin_lock(&i915_start_registry.lock);
+	enabled = spin_lock_irqsave(&i915_start_registry.lock);
 
 	launched = device->start_launched;
 
@@ -321,13 +340,14 @@ drv_i915_device_stop(
 	while (*link != NULL && *link != device)
 		link = &(*link)->start_next;
 
-	/* Unlinks a device that is still pending. */
+	/* Unlinks a device that is still pending; its node will never be published. */
 	if (*link == device) {
 		*link = device->start_next;
 		device->start_next = NULL;
+		i915_attach_settled_locked(device);
 	}
 
-	spin_unlock(&i915_start_registry.lock);
+	spin_unlock_irqrestore(&i915_start_registry.lock, enabled);
 
 	/*
 	 * XXX: a launched start may still be running; nothing tells the stop
@@ -360,6 +380,29 @@ drv_i915_device_stop(
 	return 0;
 }
 
+/*
+ * Tells the kernel that the device's GPU node is published or will never be.
+ *
+ * The graphical login stops waiting for the node once no device counts as
+ * attaching.  Only the first call for a device has an effect.
+ */
+void
+drv_i915_device_attach_settled(
+	struct i915_device *device)
+{
+	unsigned long enabled;
+
+	/* Makes sure the registry lock exists before it is taken. */
+	i915_start_registry_init();
+
+	/* Takes the device off the kernel's count of GPU nodes on their way. */
+	enabled = spin_lock_irqsave(&i915_start_registry.lock);
+
+	i915_attach_settled_locked(device);
+
+	spin_unlock_irqrestore(&i915_start_registry.lock, enabled);
+}
+
 /* Initializes the registry lock the first time the registry is used. */
 static void
 i915_start_registry_init(void)
@@ -382,11 +425,12 @@ i915_start_launch(void)
 	struct i915_device *device;
 	struct thread *thread;
 	int error;
+	unsigned long enabled;
 
 	/* Hands the pending devices to workers one at a time. */
 	for (;;) {
 		/* Takes the next device off the list, only once the kernel is ready. */
-		spin_lock(&i915_start_registry.lock);
+		enabled = spin_lock_irqsave(&i915_start_registry.lock);
 
 		device = NULL;
 		if (i915_start_registry.ready != 0U && i915_start_registry.pending != NULL) {
@@ -396,7 +440,7 @@ i915_start_launch(void)
 			device->start_launched = 1U;
 		}
 
-		spin_unlock(&i915_start_registry.lock);
+		spin_unlock_irqrestore(&i915_start_registry.lock, enabled);
 
 		/* Nothing is left to launch, or the kernel is not ready yet. */
 		if (device == NULL)
@@ -408,6 +452,7 @@ i915_start_launch(void)
 			kern_logf("i915: device 8086:%04x: the start worker could not be created: %d\n",
 			    (unsigned)device->product,
 			    error);
+			drv_i915_device_attach_settled(device);
 			continue;
 		}
 
@@ -424,6 +469,7 @@ i915_start_worker(
 {
 	struct i915_device *device;
 	int error;
+	unsigned long enabled;
 
 	/* The worker was created for exactly this device. */
 	device = argument;
@@ -432,11 +478,14 @@ i915_start_worker(
 	error = drv_i915_device_start(device);
 
 	/* Tells the device stop that the start no longer runs. */
-	spin_lock(&i915_start_registry.lock);
+	enabled = spin_lock_irqsave(&i915_start_registry.lock);
 
 	device->start_returned = 1U;
 
-	spin_unlock(&i915_start_registry.lock);
+	/* A start that returned has either published and withdrawn its node or failed. */
+	i915_attach_settled_locked(device);
+
+	spin_unlock_irqrestore(&i915_start_registry.lock, enabled);
 
 	/* Reports where a failed start stopped. */
 	if (error != 0) {
@@ -448,6 +497,20 @@ i915_start_worker(
 	}
 
 	kern_logf("i915: device 8086:%04x started\n", (unsigned)device->product);
+}
+
+/* Takes a counted device off hw.gpu.attaching; the caller holds the start registry lock. */
+static void
+i915_attach_settled_locked(
+	struct i915_device *device)
+{
+	/* A device that no longer counts has nothing to take off. */
+	if (device->attach_counted == 0U)
+		return;
+
+	/* The node is published or will never be; the login stops waiting for it. */
+	device->attach_counted = 0U;
+	kern_gpu_attach_end();
 }
 
 /* Prepares the trace, the locks and PCI access, and resumes the device to D0. */
