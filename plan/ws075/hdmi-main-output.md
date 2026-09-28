@@ -89,6 +89,8 @@ H1 は H2 と独立に先に走らせ、結果で H3 の要否（EDID が読め�
   出なかった（`vblank.c` を修正）、(2) i915 の `/dev/gpu0` より先に sessiond が起動して console に戻る（デモの image の `greeter_gpu` で
   回避、sessiond の修正は WS035 へ提案）。eDP への fallback は試験の switch（`-DI915_TEST_HDMI_ABSENT=1`）で確認。
   **amd64 の Shut Down は halt であり電源は切れない**（ACPI の S5 は未実装）。session には Shut Down が無い（Log Out → greeter）。
+  最終の image（main の merge の後、Notes・PDF Viewer を加えた）では **Notes の起動の約 2 秒後に kernel が止まった**（`i915_timer_thread` →
+  `waitq_sleep` → `spin_unlock` の持ち主の違いの trap、gdbstub で解析、未修正。p013 の不具合 3、要 Bug ticket）。
 - 未実施（ユーザー）: LCD と eDP の目視、bare metal での起動（firmware の splash の出し先、takeover の時の eDP）、実物の cable を抜いた
   boot。splash を HDMI に出す案（kernel の spinner を i915 の pipe B で続ける、loader が外の monitor の GOP を選ぶ、BIOS の設定）と、
   lease の替わり目で pipe を止めない案は [p013](phase013/phase.md) の「提案」。画面は worktree の `build/ws075-shots/hdmi-h4-*.png`。

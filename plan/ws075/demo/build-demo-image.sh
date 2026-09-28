@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws075-p013 (H4): builds the demonstration image (plan/ws075/demo/config-demo-hdmi.mk): the graphical boot to the
 # greeter and the session on the HDMI display (display=hdmi), App Home with the demonstration's applications
-# (plan/ws035/demo/apps.conf: Files, Terminal, Browser, Model viewer, Gears, X terminal), and the fonts and the
+# (plan/ws035/demo/apps.conf: Files, Notes, Terminal, PDF Viewer, Browser, Model viewer, Gears, X terminal), and the fonts and the
 # wallpaper, which are not in git (build/ws035-fonts/, build/ws035-wallpaper/).  root logs in
 # with an empty password.  The graphical login waits for the i915's GPU node first (greeter-gpu.sh).
 #

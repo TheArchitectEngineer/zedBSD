@@ -6,5 +6,8 @@
 # display=hdmi makes the HDMI sink the only output when it is connected at boot (the eDP panel stays dark), and the
 # panel otherwise.  Build: plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough]
 include plan/ws031/tests/config-zdesktop-hw.mk
+# The handwriting demonstration (WS079): Notes and PDF Viewer (with libpdf and libjpeg-compat); App Home lists them
+# (plan/ws035/demo/apps.conf) only when they are in the image.
+ZEDBSD_USER_PROGRAMS += libjpeg-compat libpdf notes pdfviewer
 ZEDBSD_GRAPHICAL_BOOT := y
 ZEDBSD_BOOT_EXTRA_LINES ?= display=hdmi

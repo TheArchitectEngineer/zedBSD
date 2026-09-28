@@ -6,7 +6,8 @@ Phase ID: `ws075-p013`
 Parent: [WS075](../ws.md)
 Status: cleared（2026-09-28。デモの image で splash → greeter（HDMI 1920x1280）→ login → session（HDMI）→ 30 分の連続表示 → Log Out →
 greeter の Shut Down を実機の passthrough で通した。途中で見つけた 2 つの不具合（H2 の pipe B の frame counter、i915 の GPU node の前に
-sessiond が諦める）は直すか回避した。eDP への fallback は試験の switch で確認。LCD の目視・bare metal の起動は未実施）
+sessiond が諦める）は直すか回避した。eDP への fallback は試験の switch で確認。最終の image（Notes・PDF Viewer 入り）で Notes の起動が
+kernel の fatal を起こした（不具合 3、未修正、要 Bug ticket）。LCD の目視・bare metal の起動は未実施）
 Phase disposition: normal
 承認: 2026-09-28 main の依頼（[hdmi-main-output.md](../hdmi-main-output.md) の H4、ユーザーの回答 1〜5、デモは 2026-10-17）。
 
@@ -24,8 +25,8 @@ Phase disposition: normal
 
 | 所 | 内容 |
 | --- | --- |
-| `plan/ws075/demo/config-demo-hdmi.mk` | `plan/ws031/tests/config-zdesktop-hw.mk`（i915、Vulkan・EGL/GLES・Wayland、compositor、X server、App Home の application）+ `ZEDBSD_GRAPHICAL_BOOT := y`（logo・`kmsg=quiet`・`login=graphical`）+ `ZEDBSD_BOOT_EXTRA_LINES ?= display=hdmi` |
-| `plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough] [make の引数...]` | 上の config で `disk-image`。App Home は `plan/ws035/demo/apps.conf`（Files・Terminal・Browser・Model viewer・Gears・X terminal）、font と壁紙（git の外、`build/ws035-fonts/`・`build/ws035-wallpaper/wallpaper-1080.ppm`）。`passthrough` は 5330 の QEMU passthrough 用（guest に OpRegion が無いので `I915_TEST_VBT=y`）。bare metal では付けない。zedbsd.cfg: `logo=logo.ppm kmsg=quiet login=graphical display=hdmi` |
+| `plan/ws075/demo/config-demo-hdmi.mk` | `plan/ws031/tests/config-zdesktop-hw.mk`（i915、Vulkan・EGL/GLES・Wayland、compositor、X server、App Home の application）+ Notes・PDF Viewer（`libjpeg-compat libpdf notes pdfviewer`、main の merge の後に追加）+ `ZEDBSD_GRAPHICAL_BOOT := y`（logo・`kmsg=quiet`・`login=graphical`）+ `ZEDBSD_BOOT_EXTRA_LINES ?= display=hdmi` |
+| `plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough] [make の引数...]` | 上の config で `disk-image`。App Home は `plan/ws035/demo/apps.conf`（Files・Notes・Terminal・PDF Viewer・Browser・Model viewer・Gears・X terminal）、font と壁紙（git の外、`build/ws035-fonts/`・`build/ws035-wallpaper/wallpaper-1080.ppm`）。`passthrough` は 5330 の QEMU passthrough 用（guest に OpRegion が無いので `I915_TEST_VBT=y`）。bare metal では付けない。zedbsd.cfg: `logo=logo.ppm kmsg=quiet login=graphical display=hdmi` |
 | `plan/ws075/demo/rc.conf`・`greeter_gpu`・`greeter-gpu.sh` | 下の不具合 2 の回避: service `greeter` の代わりに `greeter_gpu`（`/dev/gpu0` を最大 120 秒待ってから `exec /sbin/sessiond`、待った秒数は `/var/log/greeter-gpu.log`）。rc.conf は base の rc.conf に greeter を無効、greeter_gpu を有効にしたもの |
 | `src/drivers/gpu/i915/display/vblank.c` | 不具合 1 の修正（下） |
 | `src/drivers/gpu/i915/display/output.c` | 試験の switch `-DI915_TEST_HDMI_ABSENT=1`: HDMI の probe の答えを disconnected とみなす（抜いた cable と同じ分岐）。既定の build には入らない |
@@ -49,6 +50,16 @@ Phase disposition: normal
    after 1 s`）。デモの image は `greeter_gpu`（上）で回避した。提案: sessiond の `main_ready()` が、GPU の driver が attach 中の間は
    `/dev/gpu0` を上限付きで待つ（例: PCI に display class の device がある間だけ待つ）か、init に device の準備の依存を持たせる。
    GPU の無い機械で console の login を遅らせない形が要る（ENOENT は GPU の無い機械でも同じ）。
+3. **Notes の起動で kernel が止まる**（未修正、Bug ticket が要る。H4 の範囲外の kernel・i915 の不具合）。run5-apps
+   （`build/ws075-h4/run5-apps/`、最終の image）: App Home の Notes を押した約 2 秒後、Notes の最初の draw（`vk: first draw ... target
+   1024x768 ... depth yes`）の直後に `amd64 fault v=6 rip=FFFFFFFF:8031201D` → `fatal: src/hal/amd64/int.c:395: unhandled amd64 fault`
+   （`hdmi-h4-notes-launch-kernel-fault.png` は止まった画面）。gdbstub（QMP の `gdbserver`、5330 の gdb と stripped でない vmunix）で
+   解析: CPU1 の trap frame は `spin_unlock+0x35`（`ud2` = 持ち主の違う lock の解放の trap）、呼び出しは `sched_sleep_locked+0x103` ←
+   `waitq_sleep+0x18e` ← `i915_timer_thread+0x83`（`src/drivers/gpu/i915/workqueue.c`）。解放しようとした lock（rdi = 0xffff800100470688、
+   `timers->lock`）は `held=1 owner_cpu=0 owner_valid=1` で、解放したのは CPU1。仮説（未確認）: timer thread は `timers->lock` を
+   割込み許可のまま持って loop を回る（`spin_lock` は preemption を止めない）ので、lock を持ったまま preempt されて別の CPU へ移り、
+   次の `waitq_sleep` の解放が持ち主の検査に掛かった。Notes は timer の仕事を増やしたきっかけと見られる（run3 の 30 分では出ていない）。
+   BUG-085（i915 の compositor の停止）と同じ系統かは未確認。1 回の観察（再現の率は未測定）。デモの Notes に直接効くので優先が高い。
 
 ## 実機の結果（5330、VFIO passthrough の QEMU の guest。2026-09-28。QEMU の emulation の証拠ではない）
 
@@ -61,6 +72,7 @@ Phase disposition: normal
 | run2 | greeter_gpu の回避あり | greeter は HDMI に出た。login で不具合 1 |
 | run3 | 両方の修正 | **PASS**（下の全て） |
 | run4-absent | run3 + `-DI915_TEST_HDMI_ABSENT=1` | **PASS**: eDP への fallback |
+| run5-apps | 最終の image（main の merge の後、Notes・PDF Viewer を加えた） | greeter・login・App Home（Notes・PDF Viewer が出る）は PASS。**Notes の起動の約 2 秒後に kernel の fatal**（下の不具合 3） |
 
 ### run3: boot から shutdown まで
 
@@ -138,5 +150,7 @@ HDMI sink is connected at boot: rc=13)`。greeter と session が eDP の 1920x1
 
 ## 残り
 
+- 不具合 3（Notes の起動で kernel の fatal）の Bug ticket と修正（i915 の timer thread の lock、または kernel の spinlock と preemption の
+  規則）。デモの前に要る。root が ticket を作り担当を決める。
 - 上の目視（ユーザー）と、その結果による提案 1 の選択。
 - 提案 2〜5 は root が計画に入れるか判断する。
