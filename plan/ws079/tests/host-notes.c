@@ -15,6 +15,7 @@
  * the PDF the run script checks with qpdf and pdftoppm, opens it again
  * (the same document), and refuses a copy whose page was changed and a PDF
  * without the edit data.  The edit data is also written to OUTPUT.pdf.bin.
+ * ws079-p011 adds the eraser of parts (check_erase_parts).
  *
  *   host-notes OUTPUT.pdf SCRATCH.pdf
  */
@@ -32,6 +33,7 @@
 static int failures;
 
 static void check(int condition, const char *what);
+static void check_erase_parts(void);
 static struct notes_stroke *make_stroke(struct notes_document *document, unsigned tool, uint32_t color, float width, float x0, float y0, float x1, float y1, int wave);
 static int same_document(const struct notes_document *a, const struct notes_document *b);
 static int tamper(const char *from, const char *to);
@@ -189,12 +191,96 @@ main(
 	notes_journal_destroy(document.journal);
 	document.journal = NULL;
 	notes_document_free(&document);
+
+	/* ws079-p011: the eraser of parts. */
+	check_erase_parts();
+
 	if (failures != 0) {
 		printf("host-notes: %d FAILED\n", failures);
 		return 1;
 	}
 	printf("host-notes: ok\n");
 	return 0;
+}
+
+/*
+ * ws079-p011: the eraser of parts cuts a straight stroke where its circle
+ * (widened by half the stroke's width) crosses it, twice in one drag; the
+ * other stroke stays; undo puts the stroke back whole at its place, redo
+ * cuts it again; the journal and the edit data give the same document; a
+ * change after an undo drops the undone cuts (their pieces are freed, which
+ * the ASan run checks).
+ */
+static void
+check_erase_parts(void)
+{
+	struct notes_document parts;
+	struct notes_document copy;
+	struct notes_buffer edit;
+	struct notes_stroke *stroke;
+	char journal_path[4096];
+	char document_path[4096];
+	size_t records;
+	size_t cut;
+	size_t page;
+	uint64_t reshaped;
+
+	check(notes_document_init(&parts, 1790000000000ULL) == 0, "parts init");
+	parts.journal = notes_journal_create("/home/test/Documents/Notes/parts.pdf");
+	check(parts.journal != NULL, "parts journal");
+	stroke = make_stroke(&parts, NOTES_TOOL_PEN, 0x1a1a1aff, 3.0f, 60.0f, 300.0f, 520.0f, 300.0f, 0);
+	check(notes_document_add_stroke(&parts, 0U, stroke) == 0, "parts stroke 1");
+	stroke = make_stroke(&parts, NOTES_TOOL_PEN, 0x1d4ed8ff, 3.0f, 60.0f, 500.0f, 520.0f, 500.0f, 0);
+	check(notes_document_add_stroke(&parts, 0U, stroke) == 0, "parts stroke 2");
+	reshaped = parts.reshaped;
+
+	/* One drag: a cut at x 290 makes two pieces below the blue stroke, a cut at 400 splits the second. */
+	notes_document_erase_begin(&parts);
+	check(notes_document_erase_parts_at(&parts, 0U, 290.0f, 300.0f, 10.0f, &cut) == 0 && cut == 1U, "cut once");
+	check(parts.pages[0]->stroke_count == 3U, "two pieces and the other stroke");
+	check(parts.pages[0]->strokes[2]->id == 2U, "the other stroke stays on top");
+	check(fabs(parts.pages[0]->strokes[0]->points[parts.pages[0]->strokes[0]->point_count - 1U].x - 278.5f) < 0.05, "first piece ends at the circle");
+	check(fabs(parts.pages[0]->strokes[1]->points[0].x - 301.5f) < 0.05, "second piece starts at the circle");
+	check(parts.pages[0]->strokes[0]->id > 2U && parts.pages[0]->strokes[1]->id > parts.pages[0]->strokes[0]->id, "pieces have new numbers");
+	check(notes_document_erase_parts_at(&parts, 0U, 400.0f, 300.0f, 10.0f, &cut) == 0 && cut == 1U, "cut twice");
+	check(notes_document_erase_parts_at(&parts, 0U, 400.0f, 100.0f, 10.0f, &cut) == 0 && cut == 0U, "nothing to cut");
+	notes_document_erase_end(&parts);
+	check(parts.pages[0]->stroke_count == 4U, "three pieces and the other stroke");
+	check(parts.reshaped != reshaped, "the cut reshaped the page");
+
+	/* Undo puts the stroke back whole; redo cuts it again. */
+	check(notes_document_undo(&parts, &page) == 0 && page == 0U, "undo the cuts");
+	check(parts.pages[0]->stroke_count == 2U && parts.pages[0]->strokes[0]->id == 1U, "stroke back whole");
+	check(parts.pages[0]->strokes[0]->point_count == 61U, "all its samples");
+	check(notes_document_redo(&parts, &page) == 0 && parts.pages[0]->stroke_count == 4U, "redo the cuts");
+
+	/* The journal and the edit data give the same document. */
+	check(notes_journal_path("/home/test/Documents/Notes/parts.pdf", journal_path, sizeof(journal_path)) == 0, "parts journal path");
+	check(notes_journal_recover(journal_path, &copy, document_path, sizeof(document_path), &records) == 0, "parts recover");
+	check(same_document(&parts, &copy), "parts recovered the same");
+	notes_document_free(&copy);
+	notes_buffer_init(&edit);
+	check(notes_encode_document(&parts, &edit) == 0, "parts encode");
+	check(notes_decode_document(edit.data, edit.length, &copy) == 0, "parts decode");
+	check(same_document(&parts, &copy), "parts decoded the same");
+	notes_document_free(&copy);
+	notes_buffer_free(&edit);
+
+	/* An undo, then a new stroke: the undone cuts are dropped with their pieces. */
+	check(notes_document_undo(&parts, &page) == 0, "undo before a new stroke");
+	stroke = make_stroke(&parts, NOTES_TOOL_PEN, 0x1a1a1aff, 3.0f, 60.0f, 700.0f, 520.0f, 700.0f, 0);
+	check(notes_document_add_stroke(&parts, 0U, stroke) == 0, "new stroke drops the redo");
+	check(parts.pages[0]->stroke_count == 3U, "whole stroke, the other and the new one");
+
+	/* A cut that stands when the document goes: its entry frees the cut stroke. */
+	notes_document_erase_begin(&parts);
+	check(notes_document_erase_parts_at(&parts, 0U, 100.0f, 700.0f, 10.0f, &cut) == 0 && cut == 1U, "cut the new stroke");
+	notes_document_erase_end(&parts);
+	check(notes_journal_discard(parts.journal) == 0, "parts discard");
+	notes_journal_destroy(parts.journal);
+	parts.journal = NULL;
+	notes_document_free(&parts);
+	printf("host-notes: erase parts checked\n");
 }
 
 /* Counts and reports a failed check. */
