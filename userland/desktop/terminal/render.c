@@ -1091,14 +1091,18 @@ render_build(
 	struct terminal_screen *screen,
 	struct terminal_font *font)
 {
-	struct terminal_cell *cell;
+	static const struct terminal_cell empty = { ' ', TERMINAL_FOREGROUND, TERMINAL_BACKGROUND, 0 };
+	const struct terminal_cell *cell;
 	float *vertex;
 	float *start;
 	uint32_t foreground;
 	uint32_t background;
+	unsigned long line;
+	unsigned long cursor_line;
 	unsigned column;
 	unsigned row;
 	int inside;
+	int selected;
 	unsigned slot;
 	unsigned blank;
 	float x;
@@ -1107,27 +1111,40 @@ render_build(
 	/* The blank glyph (a space), which empty cells and the right halves of wide characters use. */
 	blank = terminal_font_slot(font, ' ');
 
-	/* Each cell, row after row, from the padded top left. */
+	/* The cursor's line, which the window shows only when the view reaches it (ws035-p114). */
+	cursor_line = screen->scrolled + screen->cursor_row;
+
+	/* Each cell of the lines the view shows, row after row, from the padded top left. */
 	start = renderer->vertex_map;
 	vertex = start;
 	for (row = 0U; row < screen->rows; row++) {
+		line = terminal_screen_view_line(screen, row);
 		for (column = 0U; column < screen->columns; column++) {
-			cell = terminal_screen_cell(screen, column, row);
+			/* The line's cell; a line the terminal no longer keeps shows blanks. */
+			cell = terminal_screen_line_cell(screen, column, line);
+			if (cell == NULL)
+				cell = &empty;
 
 			/* The glyph's slot: the blank for spaces and continuations. */
 			slot = blank;
 			if (cell->continuation == 0 && cell->codepoint != ' ' && cell->codepoint != 0U)
 				slot = terminal_font_slot(font, cell->codepoint);
 
-			/* A selected screen (Edit > Select All) or cell (the pointer's range) has the selection's background. */
+			/*
+			 * A selected screen (Edit > Select All, the live screen's lines)
+			 * or cell (the pointer's range) has the selection's background.
+			 */
 			foreground = cell->foreground;
 			background = cell->background;
-			inside = terminal_screen_in_range(screen, column, row);
-			if (screen->selected || inside)
+			inside = terminal_screen_in_range(screen, column, line);
+			selected = 0;
+			if (screen->selected && line >= screen->scrolled)
+				selected = 1;
+			if (selected || inside)
 				background = TERMINAL_SELECTION;
 
 			/* The cursor's cell is drawn with its colours swapped: a block cursor. */
-			if (screen->cursor_visible && column == screen->cursor_column && row == screen->cursor_row) {
+			if (screen->cursor_visible && column == screen->cursor_column && line == cursor_line) {
 				foreground = cell->background;
 				background = cell->foreground;
 			}
