@@ -20,13 +20,17 @@ mkdir -p "$out/include" "$out/refusals"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+# ws079-p008: the security handler (crypt.c) uses the C library's MD5, which openbsd-digest.c has with SHA-1.
+ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
+ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
 # ws079-p007: the page interpreter draws text (font.c, encoding.c, libtruetype) and shadings (shading.c).
 libpdf="userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c
-	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c
+	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/crypt.c
 	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c
 	userland/base/libpdf/stroke.c userland/base/libpdf/raster.c userland/base/libpdf/font.c
-	userland/base/libpdf/encoding.c userland/base/libpdf/shading.c"
+	userland/base/libpdf/encoding.c userland/base/libpdf/shading.c
+	userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c"
 status=0
 for variant in plain asan ubsan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
@@ -40,6 +44,8 @@ for variant in plain asan ubsan; do
 	# The C library's SHA-256 and the compat libraries are not C89; they are compiled as they are for the host.
 	objects=
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
+	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
+	objects="$objects $out/digest-$variant.o"
 	objects="$objects $out/sha2-$variant.o"
 	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
@@ -104,7 +110,13 @@ for variant in plain asan ubsan; do
 	"$out/host-pdf-update-$variant" refusals "$out/refusals/$variant" > "$out/refusals-$variant.log" ||
 	    { cat "$out/refusals-$variant.log"; echo "refusals $variant FAILED"; status=1; }
 done
-cat "$out/keep-plain.log" "$out/refusals-plain.log"
+# ws079-p008: a document encrypted with an empty user password opens, and the update refuses it.
+qpdf --encrypt --user-password= --owner-password=owner --bits=128 --use-aes=y -- "$out/base.pdf" "$out/base-encrypted.pdf"
+for variant in plain asan ubsan; do
+	"$out/host-pdf-update-$variant" encrypted "$out/base-encrypted.pdf" > "$out/encrypted-$variant.log" ||
+	    { cat "$out/encrypted-$variant.log"; echo "encrypted $variant FAILED"; status=1; }
+done
+cat "$out/keep-plain.log" "$out/refusals-plain.log" "$out/encrypted-plain.log"
 qpdf --check "$out/kept-plain.pdf" > "$out/qpdf-kept.txt" 2>&1 || { cat "$out/qpdf-kept.txt"; echo "qpdf: kept"; status=1; }
 qpdf --list-attachments "$out/kept-plain.pdf" > "$out/attachments-kept.txt"
 [ "$(grep -c 'kei-notes.bin' "$out/attachments-kept.txt")" = 1 ] || { echo "kept: not one kei-notes.bin"; status=1; }

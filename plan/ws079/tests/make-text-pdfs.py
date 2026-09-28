@@ -552,7 +552,133 @@ def make_filters(path):
     finish(doc, parent, [page1, page2], path)
 
 
+URW_TYPE1 = '/usr/share/fonts/type1/urw-base35/'
+URW_OPENTYPE = '/usr/share/fonts/opentype/urw-base35/'
+NOTO_CJK = '/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc'
+
+
+def type1_lengths(program):
+    """The clear text's, the encrypted part's and the trailer's lengths of a Type 1 font file."""
+    eexec = program.index(b'eexec') + 5
+    while program[eexec:eexec + 1] in (b'\r', b'\n', b' ', b'\t'):
+        eexec += 1
+    trailer = program.rindex(b'cleartomark')
+    zeros = trailer
+    while zeros > eexec and program[zeros - 1:zeros] in (b'0', b'\r', b'\n'):
+        zeros -= 1
+    return eexec, zeros - eexec, len(program) - zeros
+
+
+def cff_table(path, number=None):
+    font = TTFont(path) if number is None else TTFont(path, fontNumber=number)
+    return font.reader['CFF '], font
+
+
+def program_font(doc, name, subtype, key, program, extra, widths_font, encoding, glyphs, flags=32):
+    fd = descriptor(doc, widths_font, name, flags)
+    stream = doc.stream(program, extra)
+    doc.objects[fd - 1] = doc.objects[fd - 1][:-3] + b' /' + key + b' %d 0 R >>' % stream
+    widths = widths_for(widths_font, glyphs[32:256])
+    body = (b'<< /Type /Font /Subtype /' + subtype + b' /BaseFont /' + name + b' /FirstChar 32 /LastChar 255 /Widths [' +
+            b' '.join(b'%d' % w for w in widths) + b'] /FontDescriptor %d 0 R' % fd)
+    if encoding is not None:
+        body += b' /Encoding ' + encoding
+    return doc.add(body + b' >>')
+
+
+def make_programs(path):
+    """ws079-p008: the embedded font programs other than TrueType: Type 1 (/FontFile) with WinAnsiEncoding and
+    /Differences, a symbolic Type 1 on its own encoding (no /Encoding), CFF (/FontFile3 Type1C), an OpenType
+    /FontFile3 with CFF outlines, and a CID-keyed CFF (CIDFontType0C, a subset of Noto Serif CJK) under Type0
+    Identity-H and Identity-V."""
+    from fontTools import subset
+    doc = Document()
+    parent = doc.reserve()
+    win = lambda b: b.decode('cp1252')
+
+    # Type 1: Nimbus Sans, WinAnsi with /Differences (the widths from the OpenType copy of the same design).
+    sans_otf = TTFont(URW_OPENTYPE + 'NimbusSans-Regular.otf')
+    program = open(URW_TYPE1 + 'NimbusSans-Regular.t1', 'rb').read()
+    l1, l2, l3 = type1_lengths(program)
+    glyphs = encoding_glyphs(sans_otf, win)
+    differences = {128: 'fi', 129: 'fl', 130: 'germandbls', 131: 'Euro', 132: 'Aring', 133: 'ccedilla'}
+    cmap = sans_otf.getBestCmap()
+    for code, glyph in differences.items():
+        glyphs[code] = glyph if glyph in sans_otf.getGlyphOrder() else None
+    diff = b'<< /Type /Encoding /BaseEncoding /WinAnsiEncoding /Differences [128 ' + b' '.join(b'/' + n.encode() for n in differences.values()) + b'] >>'
+    f1 = program_font(doc, b'NimbusSans-Regular', b'Type1', b'FontFile', program, b' /Length1 %d /Length2 %d /Length3 %d' % (l1, l2, l3),
+                      sans_otf, diff, glyphs)
+
+    # A symbolic Type 1 on its own encoding: Standard Symbols (Greek, arrows, operators).
+    symbol_otf = TTFont(URW_OPENTYPE + 'StandardSymbolsPS.otf')
+    program = open(URW_TYPE1 + 'StandardSymbolsPS.t1', 'rb').read()
+    l1, l2, l3 = type1_lengths(program)
+    fd = descriptor(doc, symbol_otf, b'StandardSymbolsPS', 4)
+    stream = doc.stream(program, b' /Length1 %d /Length2 %d /Length3 %d' % (l1, l2, l3))
+    doc.objects[fd - 1] = doc.objects[fd - 1][:-3] + b' /FontFile %d 0 R >>' % stream
+    from fontTools.t1Lib import T1Font
+    symbol_t1 = T1Font(URW_TYPE1 + 'StandardSymbolsPS.t1')
+    symbol_t1.parse()
+    builtin = symbol_t1.font['Encoding']
+    order = set(symbol_otf.getGlyphOrder())
+    symbol_widths = widths_for(symbol_otf, [name if name in order and name != '.notdef' else None for name in builtin[32:256]])
+    f2 = doc.add(b'<< /Type /Font /Subtype /Type1 /BaseFont /StandardSymbolsPS /FirstChar 32 /LastChar 255 /Widths [' +
+                 b' '.join(b'%d' % w for w in symbol_widths) + b'] /FontDescriptor %d 0 R >>' % fd)
+
+    # CFF: Nimbus Roman's CFF table as Type1C.
+    roman_cff, roman = cff_table(URW_OPENTYPE + 'NimbusRoman-Regular.otf')
+    f3 = program_font(doc, b'NimbusRoman-Regular', b'Type1', b'FontFile3', roman_cff, b' /Subtype /Type1C', roman,
+                      b'/WinAnsiEncoding', encoding_glyphs(roman, win), 34)
+
+    # OpenType with CFF outlines: Nimbus Mono PS whole.
+    mono = TTFont(URW_OPENTYPE + 'NimbusMonoPS-Bold.otf')
+    f4 = program_font(doc, b'NimbusMonoPS-Bold', b'Type1', b'FontFile3', open(URW_OPENTYPE + 'NimbusMonoPS-Bold.otf', 'rb').read(),
+                      b' /Subtype /OpenType', mono, b'/WinAnsiEncoding', encoding_glyphs(mono, win), 33)
+
+    # CID-keyed CFF: a subset of Noto Serif CJK JP that keeps its CIDs.
+    text = '縦書きと横書きの日本語。漢字かな交じり文'
+    full = TTFont(NOTO_CJK, fontNumber=0)
+    full_cmap = full.getBestCmap()
+    cids = {ch: int(full_cmap[ord(ch)][3:]) for ch in text}
+    options = subset.Options()
+    options.notdef_outline = True
+    options.name_IDs = ['*']
+    subsetter = subset.Subsetter(options)
+    subsetter.populate(unicodes=[ord(ch) for ch in text])
+    subsetter.subset(full)
+    buffer = io.BytesIO()
+    full.save(buffer)
+    small = TTFont(io.BytesIO(buffer.getvalue()))
+    cid_cff = small.reader['CFF ']
+    assert hasattr(small['CFF '].cff.topDictIndex[0], 'ROS')
+    fd = doc.add(b'<< /Type /FontDescriptor /FontName /NotoSerifCJKjp-Regular /Flags 4 /FontBBox [-1000 -300 3000 1000] /ItalicAngle 0'
+                 b' /Ascent 880 /Descent -120 /CapHeight 700 /StemV 80 /FontFile3 %d 0 R >>' % doc.stream(cid_cff, b' /Subtype /CIDFontType0C'))
+    cid_font = doc.add(b'<< /Type /Font /Subtype /CIDFontType0 /BaseFont /NotoSerifCJKjp-Regular /CIDSystemInfo << /Registry (Adobe)'
+                       b' /Ordering (Identity) /Supplement 0 >> /FontDescriptor %d 0 R /DW 1000 >>' % fd)
+    f5 = doc.add(b'<< /Type /Font /Subtype /Type0 /BaseFont /NotoSerifCJKjp-Regular /Encoding /Identity-H /DescendantFonts [%d 0 R] >>' % cid_font)
+    f6 = doc.add(b'<< /Type /Font /Subtype /Type0 /BaseFont /NotoSerifCJKjp-Regular /Encoding /Identity-V /DescendantFonts [%d 0 R] >>' % cid_font)
+    horizontal = b''.join(b'%04x' % cids[ch] for ch in text)
+    vertical = b''.join(b'%04x' % cids[ch] for ch in text[:10])
+
+    content = b''.join([
+        b'1 g 0 0 420 595 re f 0 g\n',
+        b'BT /F1 16 Tf 20 560 Td (Type 1: Nimbus Sans, WinAnsi) Tj 0 -20 Td (\\200\\201 \\202 \\203 \\204\\205 \\337\\344\\351 \\223quoted\\224) Tj ET\n',
+        b'BT /F2 16 Tf 20 510 Td (abgdpqWSy\\256\\336\\245) Tj ET\n',
+        b'BT /F3 18 Tf 20 470 Td (CFF Type1C: Nimbus Roman, \\"fi\\" & 123) Tj ET\n',
+        b'BT /F3 11 Tf 20 452 Td [(Kerning ) -200 (by TJ, ) 100 (and Tz ) ] TJ 80 Tz (condensed) Tj 100 Tz ET\n',
+        b'BT /F4 16 Tf 20 420 Td (OpenType CFF: Mono Bold 0Oo) Tj ET\n',
+        b'BT /F5 20 Tf 20 370 Td <' + horizontal + b'> Tj ET\n',
+        b'BT /F6 20 Tf 380 330 Td <' + vertical + b'> Tj ET\n',
+        b'BT /F1 30 Tf 2 Tr 1 0 0 RG 0.8 g 20 120 Td (Outline & fill) Tj ET\n',
+        b'BT /F3 40 Tf 0.3 0 0 rg 1 0 0.3 1 20 60 Tm (Slanted) Tj ET\n',
+    ])
+    fonts = [(b'F1', f1), (b'F2', f2), (b'F3', f3), (b'F4', f4), (b'F5', f5), (b'F6', f6)]
+    page1 = page(doc, parent, content, fonts)
+    finish(doc, parent, [page1], path)
+
+
 outdir = sys.argv[1]
+make_programs(outdir + '/programs.pdf')
 make_filters(outdir + '/filters.pdf')
 make_shading(outdir + '/shading.pdf')
 make_simple(outdir + '/text-simple.pdf')

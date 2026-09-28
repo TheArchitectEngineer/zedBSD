@@ -15,13 +15,17 @@ mkdir -p "$out/include"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+# ws079-p008: the security handler (crypt.c) uses the C library's MD5, which openbsd-digest.c has with SHA-1.
+ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
+ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
 convert -size 64x48 gradient:red-yellow -quality 90 "$out/test.jpg"
 libpdf="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
-	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/image.c
+	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/crypt.c userland/base/libpdf/image.c
 	userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/stroke.c
 	userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/encoding.c
-	userland/base/libpdf/shading.c"
+	userland/base/libpdf/shading.c
+	userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c"
 status=0
 for variant in plain asan ubsan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
@@ -35,6 +39,8 @@ for variant in plain asan ubsan; do
 	# The C library's SHA-256 and the compat libraries are not C89; they are compiled as they are for the host.
 	objects=
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
+	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
+	objects="$objects $out/digest-$variant.o"
 	objects="$objects $out/sha2-$variant.o"
 	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"

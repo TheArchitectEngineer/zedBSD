@@ -103,6 +103,7 @@ struct pdf_predictor {
 };
 
 static int read_chain(struct pdf_document *document, const struct pdf_object *stream, enum pdf_filter_kind *kinds, struct pdf_object **parameters, size_t *count);
+static int decrypt_stream(struct pdf_document *document, const struct pdf_object *stream, const unsigned char *data, size_t size, unsigned char **plain, size_t *plain_size);
 static enum pdf_filter_kind filter_kind(const struct pdf_object *name);
 static int apply_filter(struct pdf_document *document, enum pdf_filter_kind kind, struct pdf_object *parameters, const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
 static int inflate_bytes(const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
@@ -164,10 +165,19 @@ pdf_filter_decode(
 	current_size = stream->data_length;
 	current_owned = NULL;
 
-	/* Reads the chain of filters and their parameters. */
-	error = read_chain(document, stream, kinds, parameters, &count);
+	/* An encrypted document's stream is decrypted first. */
+	error = decrypt_stream(document, stream, current, current_size, &current_owned, &current_size);
 	if (error != 0)
 		return error;
+	if (current_owned != NULL)
+		current = current_owned;
+
+	/* Reads the chain of filters and their parameters. */
+	error = read_chain(document, stream, kinds, parameters, &count);
+	if (error != 0) {
+		free(current_owned);
+		return error;
+	}
 
 	/* Leaves a last DCTDecode for the image decoder, when asked to. */
 	if (stop_at_dct && count > 0 && kinds[count - 1] == PDF_FILTER_DCT) {
@@ -192,6 +202,61 @@ pdf_filter_decode(
 	*data = current;
 	*size = current_size;
 	*owned = current_owned;
+	return 0;
+}
+
+/*
+ * Decrypts the data of an encrypted document's stream into a new buffer
+ * (*plain stays NULL when the stream is not encrypted: an inline image, a
+ * cross-reference stream, or a metadata stream the document leaves
+ * plain).
+ */
+static int
+decrypt_stream(
+	struct pdf_document *document,
+	const struct pdf_object *stream,
+	const unsigned char *data,
+	size_t size,
+	unsigned char **plain,
+	size_t *plain_size)
+{
+	struct pdf_crypt *crypt;
+	struct pdf_object *type;
+	unsigned char *buffer;
+	int is_name;
+	int encrypted_metadata;
+	int error;
+
+	/* Only a stream of the file, of an encrypted document, is encrypted. */
+	*plain = NULL;
+	crypt = pdf_reader_crypt(document);
+	if (crypt == NULL)
+		return 0;
+	if (stream->bytes != NULL || stream->number == 0)
+		return 0;
+
+	/* A cross-reference stream never is, and a metadata stream only when the document says so. */
+	type = pdf_object_get(stream, "Type");
+	is_name = pdf_object_is_name(type, "XRef");
+	if (is_name)
+		return 0;
+	is_name = pdf_object_is_name(type, "Metadata");
+	encrypted_metadata = pdf_crypt_metadata(crypt);
+	if (is_name && !encrypted_metadata)
+		return 0;
+
+	/* Decrypts into a buffer as long as the data (the plain bytes are never longer). */
+	buffer = malloc(size + 1);
+	if (buffer == NULL)
+		return ENOMEM;
+	error = pdf_crypt_decrypt(crypt, 1, stream->number, stream->generation, data, size, buffer, plain_size);
+	if (error != 0) {
+		free(buffer);
+		return error;
+	}
+
+	/* Succeeded: the caller owns the plain bytes. */
+	*plain = buffer;
 	return 0;
 }
 

@@ -10,20 +10,27 @@
  * character code of a shown string draws, how far it moves the text
  * position, and the glyph's outline.
  *
- * An embedded TrueType program (/FontFile2) is read through libtruetype:
- * a simple font's codes reach its glyphs through the font's encoding
- * (StandardEncoding, WinAnsiEncoding or MacRomanEncoding and /Differences)
- * and its character maps, a composite font's (Type0 with a CIDFontType2 and
- * the Identity-H or Identity-V encoding) through /CIDToGIDMap.  A font
- * without an embedded program, the standard 14 among them, is drawn with a
- * system font of the same kind (sans, serif or monospace, bold and italic
- * by its name and flags) reached through the encoding's Unicode values,
- * while the positions still come from the font's /Widths, so that the
- * layout stays the document's.  An embedded program of another kind (Type
- * 1, CFF) is substituted the same way until stage 3 reads it; a Type 3
- * font and a composite font the reader cannot map only move the text
- * position.  A font drawn other than as the document means marks the
- * display list PDF_DISPLAY_SKIPPED.
+ * An embedded TrueType program (/FontFile2, or an OpenType /FontFile3
+ * with TrueType outlines) is read through libtruetype: a simple font's
+ * codes reach its glyphs through the font's encoding (StandardEncoding,
+ * WinAnsiEncoding or MacRomanEncoding and /Differences) and its character
+ * maps, a composite font's (Type0 with a CIDFontType2 and the Identity-H
+ * or Identity-V encoding) through /CIDToGIDMap.  From stage 3 an embedded
+ * Type 1 program (/FontFile, type1.c) or CFF program (/FontFile3 of
+ * subtype Type1C, CIDFontType0C or OpenType, cff.c) is read too: a simple
+ * font's codes reach its glyphs by the names /Differences gives, the
+ * base encoding's characters matched to the glyphs' names, or the
+ * program's own encoding; a CIDFontType0's CIDs through the program's
+ * charset.  A font without an embedded program, the standard 14 among
+ * them, is drawn with a system font of the same kind (sans, serif or
+ * monospace, bold and italic by its name and flags) reached through the
+ * encoding's Unicode values, while the positions still come from the
+ * font's /Widths, so that the layout stays the document's; so is a
+ * program the reader cannot read.  A Type 3 font's glyphs are content streams
+ * (/CharProcs, by the names its /Differences gives) that the content
+ * interpreter runs through pdf_font_type3_glyph(); a composite font the
+ * reader cannot map only moves the text position.  A font drawn other than
+ * as the document means marks the display list PDF_DISPLAY_SKIPPED.
  *
  * Each document keeps its fonts, the substitute font files it read, and
  * per font the outlines of the glyphs drawn so far, until it is closed.
@@ -121,6 +128,7 @@ struct font_file {
 struct glyph_slot {
 	unsigned glyph;
 	int used;
+	double advance;
 	size_t verb_start;
 	size_t verb_count;
 	size_t point_start;
@@ -130,8 +138,9 @@ struct glyph_slot {
 /*
  * One font of a document, as the text operators use it.
  *
- * face draws the glyphs (the embedded program or a substitute; NULL when
- * the font's glyphs cannot be drawn).  A simple font maps each byte code to
+ * face draws the glyphs of a TrueType program or a substitute, charstrings
+ * those of a Type 1 or CFF program (both NULL when the font's glyphs cannot
+ * be drawn); program holds the decoded bytes either reads.  A simple font maps each byte code to
  * a glyph and a width; a composite font maps each two-byte CID through its
  * CID-to-glyph map and its widths.  Widths are in text space (thousandths
  * of the /Widths turned into ems); a negative width means the font gave
@@ -147,6 +156,7 @@ struct pdf_font {
 	int vertical;
 	struct truetype_face *face;
 	struct truetype_face *owned_face;
+	struct pdf_charstrings *charstrings;
 	unsigned char *program;
 	double units_per_em;
 	double shear;
@@ -155,6 +165,11 @@ struct pdf_font {
 	unsigned code_glyphs[256];
 	double code_widths[256];
 	double type3_scale;
+	double type3_matrix[6];
+	struct pdf_object *type3_procedures;
+	struct pdf_object *type3_resources;
+	const unsigned char *type3_names[256];
+	size_t type3_lengths[256];
 	float *cid_widths;
 	size_t cid_widths_count;
 	double default_width;
@@ -192,6 +207,11 @@ static int load_simple(struct pdf_document *document, struct pdf_font_cache *cac
 static int load_composite(struct pdf_document *document, struct pdf_object *dictionary, struct pdf_font *font);
 static void load_type3(struct pdf_document *document, struct pdf_object *dictionary, struct pdf_font *font);
 static int load_program(struct pdf_document *document, struct pdf_object *descriptor, struct pdf_font *font, int *foreign);
+static int load_truetype(struct pdf_document *document, struct pdf_object *stream, struct pdf_font *font);
+static int load_font_file3(struct pdf_document *document, struct pdf_object *stream, struct pdf_font *font);
+static int load_type1(struct pdf_document *document, struct pdf_object *stream, struct pdf_font *font);
+static int open_truetype(const unsigned char *data, size_t size, struct pdf_font *font);
+static int decode_program(struct pdf_document *document, struct pdf_object *stream, struct pdf_font *font, const unsigned char **data, size_t *size);
 static int load_substitute(struct pdf_document *document, struct pdf_font_cache *cache, struct pdf_object *dictionary, struct pdf_object *descriptor, struct pdf_font *font);
 static int open_substitute(struct pdf_font_cache *cache, const char *name, struct truetype_face **face);
 static int read_font_file(const char *path, unsigned char **data, size_t *size);
@@ -199,6 +219,9 @@ static void read_encoding(struct pdf_document *document, struct pdf_object *dict
 static int read_builtin_encoding(struct pdf_document *document, struct pdf_object *descriptor, unsigned short builtin[256]);
 static int tex_family(const struct pdf_object *name, enum font_family *family, int *bold, int *italic);
 static void apply_differences(struct pdf_document *document, struct pdf_object *differences, unsigned short unicode[256]);
+static int read_difference_names(struct pdf_document *document, struct pdf_object *dictionary, const unsigned char *names[256], size_t lengths[256]);
+static void map_program_codes(struct pdf_font *font, const unsigned short unicode[256], const unsigned char *const names[256], const size_t lengths[256], int has_base);
+static int emit_program_step(void *context, enum pdf_path_verb verb, const double *coordinates, size_t count);
 static const unsigned short *base_encoding(const struct pdf_object *name);
 static void map_embedded_codes(struct pdf_font *font, const unsigned short unicode[256], int symbolic, int has_encoding);
 static void map_substitute_codes(struct pdf_font *font, const unsigned short unicode[256]);
@@ -212,11 +235,11 @@ static int read_number(struct pdf_document *document, struct pdf_object *object,
 static int name_contains(const struct pdf_object *name, const char *part);
 static void choose_family(struct pdf_document *document, struct pdf_object *dictionary, struct pdf_object *descriptor, enum font_family *family, int *bold, int *italic);
 static unsigned composite_glyph(const struct pdf_font *font, unsigned cid);
-static double face_advance(const struct pdf_font *font, unsigned glyph);
+static double face_advance(struct pdf_font *font, unsigned glyph);
 static int find_outline(struct pdf_font *font, unsigned glyph, struct glyph_slot **slot);
 static int read_outline(struct pdf_font *font, unsigned glyph, struct glyph_slot *slot);
 static int convert_contours(struct pdf_font *font, const struct truetype_glyph_outline *outline, double offset);
-static int append_glyph(struct pdf_font *font, unsigned glyph, double offset);
+static int append_glyph(struct pdf_font *font, unsigned glyph, double offset, double *advance);
 static const char *ligature_letters(unsigned glyph);
 static int emit(struct pdf_font *font, enum pdf_path_verb verb, const double *coordinates, size_t count);
 static int grow_slots(struct pdf_font *font);
@@ -433,8 +456,8 @@ pdf_font_glyph(
 		width = face_advance(font, glyph_index);
 	glyph->width = width;
 
-	/* A font without a face draws nothing. */
-	if (font->face == NULL)
+	/* A font without a face or a program draws nothing. */
+	if (font->face == NULL && font->charstrings == NULL)
 		return 0;
 
 	/* A substitute does not draw its missing-glyph box for a character it lacks. */
@@ -476,6 +499,65 @@ pdf_font_glyph(
 	glyph->points = font->points + slot->point_start;
 	glyph->point_count = slot->point_count;
 	return 0;
+}
+
+/*
+ * Finds the glyph procedure of a Type 3 font's code: its content stream,
+ * the matrix from its glyph space to text space before the font size (the
+ * font matrix), and the resources it runs with (NULL for the page's).
+ * ENOENT means the font is not a Type 3 font or has no procedure for the
+ * code.
+ */
+int
+pdf_font_type3_glyph(
+	struct pdf_document *document,
+	struct pdf_font *font,
+	unsigned code,
+	struct pdf_object **procedure,
+	double matrix[6],
+	struct pdf_object **resources)
+{
+	struct pdf_object *procedures;
+	struct pdf_object *found;
+	size_t index;
+	size_t length;
+	int differs;
+	int error;
+
+	/* Only a Type 3 font with procedures has them, by the code's name. */
+	if (font->kind != FONT_KIND_TYPE3)
+		return ENOENT;
+	procedures = font->type3_procedures;
+	if (procedures == NULL)
+		return ENOENT;
+	if (code > 255)
+		return ENOENT;
+	if (font->type3_names[code] == NULL)
+		return ENOENT;
+
+	/* The procedure of that name, which must be a stream. */
+	length = font->type3_lengths[code];
+	for (index = 0; index < procedures->count; index++) {
+		if (procedures->keys[index]->length != length)
+			continue;
+		differs = memcmp(procedures->keys[index]->bytes, font->type3_names[code], length);
+		if (differs != 0)
+			continue;
+		error = pdf_reader_resolve(document, procedures->values[index], &found);
+		if (error != 0)
+			return error;
+		if (found->type != PDF_OBJECT_STREAM)
+			return ENOENT;
+
+		/* Succeeded: the procedure, the matrix and the resources. */
+		*procedure = found;
+		memcpy(matrix, font->type3_matrix, 6 * sizeof(matrix[0]));
+		*resources = font->type3_resources;
+		return 0;
+	}
+
+	/* The font has no procedure of the name. */
+	return ENOENT;
 }
 
 /*
@@ -640,12 +722,15 @@ load_simple(
 {
 	unsigned short unicode[256];
 	unsigned short builtin[256];
+	const unsigned char *names[256];
+	size_t lengths[256];
 	struct pdf_object *descriptor;
 	struct pdf_object *encoding;
 	long flags;
 	int symbolic;
 	int has_encoding;
 	int has_builtin;
+	int has_base;
 	int foreign;
 	int error;
 
@@ -677,8 +762,12 @@ load_simple(
 	error = load_program(document, descriptor, font, &foreign);
 	if (error == ENOMEM)
 		return ENOMEM;
-	if (error == 0) {
-		/* The program's own glyphs, through its character maps. */
+	if (error == 0 && font->charstrings != NULL) {
+		/* A Type 1 or CFF program's glyphs, by name, character or its own encoding. */
+		has_base = read_difference_names(document, dictionary, names, lengths);
+		map_program_codes(font, unicode, names, lengths, has_base);
+	} else if (error == 0) {
+		/* A TrueType program's glyphs, through its character maps. */
 		map_embedded_codes(font, unicode, symbolic, has_encoding);
 	} else {
 		/* A substitute, through the Unicode values; another embedded program is marked as substituted. */
@@ -750,7 +839,7 @@ load_composite(
 	if (!is_horizontal && !is_vertical)
 		return 0;
 
-	/* Reads the embedded TrueType program; another kind, or none, is not drawn yet. */
+	/* Reads the embedded program (TrueType, or CFF for a CIDFontType0); none is not drawn. */
 	error = pdf_reader_resolve_key(document, cid_font, "FontDescriptor", &descriptor);
 	if (error != 0)
 		return error;
@@ -761,10 +850,12 @@ load_composite(
 	if (error != 0)
 		return 0;
 
-	/* Reads the CID-to-glyph map. */
-	error = read_cid_map(document, cid_font, font);
-	if (error != 0)
-		return error;
+	/* A TrueType program's CIDs reach its glyphs through the CID-to-glyph map; a CFF program's through its charset. */
+	if (font->face != NULL) {
+		error = read_cid_map(document, cid_font, font);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the font draws its own glyphs. */
 	font->status = 0;
@@ -772,8 +863,9 @@ load_composite(
 }
 
 /*
- * Reads a Type 3 font's widths, in its glyph space scaled by its font
- * matrix, so that its text still moves the text position.
+ * Reads a Type 3 font: its glyph procedures and the names its encoding
+ * gives the codes, its font matrix and resources, and its widths in its
+ * glyph space scaled by the matrix.
  */
 static void
 load_type3(
@@ -782,11 +874,59 @@ load_type3(
 	struct pdf_font *font)
 {
 	struct pdf_object *matrix;
+	struct pdf_object *procedures;
+	struct pdf_object *resources;
 	double scale;
+	size_t index;
+	int has_matrix;
 	int error;
 
-	/* The glyphs are content streams, which stage 3 runs. */
+	/* The glyph procedures; a font without them only moves the text position. */
 	font->status = PDF_DISPLAY_SKIPPED;
+	error = pdf_reader_resolve_key(document, dictionary, "CharProcs", &procedures);
+	if (error == 0 && procedures->type == PDF_OBJECT_DICTIONARY) {
+		font->type3_procedures = procedures;
+		font->status = 0;
+	}
+
+	/* The names of the codes, from /Differences. */
+	(void)read_difference_names(document, dictionary, font->type3_names, font->type3_lengths);
+
+	/* The resources the procedures use (else the page's). */
+	error = pdf_reader_resolve_key(document, dictionary, "Resources", &resources);
+	if (error == 0 && resources->type == PDF_OBJECT_DICTIONARY)
+		font->type3_resources = resources;
+
+	/* The whole font matrix, a thousandth by default. */
+	memset(font->type3_matrix, 0, sizeof(font->type3_matrix));
+	font->type3_matrix[0] = 0.001;
+	font->type3_matrix[3] = 0.001;
+	error = pdf_reader_resolve_key(document, dictionary, "FontMatrix", &matrix);
+	has_matrix = 0;
+	if (error == 0 && matrix->type == PDF_OBJECT_ARRAY) {
+		if (matrix->count == 6)
+			has_matrix = 1;
+	}
+
+	/* Reads its six numbers; any that is not a number leaves the default. */
+	if (has_matrix) {
+		for (index = 0; index < 6; index++) {
+			error = read_number(document, matrix->values[index], &font->type3_matrix[index]);
+			if (error != 0)
+				break;
+			if (!(font->type3_matrix[index] > -1e6 && font->type3_matrix[index] < 1e6))
+				error = PDF_EFORMAT;
+			if (error != 0)
+				break;
+		}
+
+		/* A matrix that cannot be read is the default. */
+		if (error != 0) {
+			memset(font->type3_matrix, 0, sizeof(font->type3_matrix));
+			font->type3_matrix[0] = 0.001;
+			font->type3_matrix[3] = 0.001;
+		}
+	}
 
 	/* The horizontal scale of the font matrix, 0.001 by default. */
 	scale = 0.001;
@@ -811,10 +951,11 @@ load_type3(
 }
 
 /*
- * Reads a font's embedded TrueType program (/FontFile2) into a face.
+ * Reads a font's embedded program: TrueType (/FontFile2), Type 1
+ * (/FontFile), or CFF or OpenType (/FontFile3).
  *
- * ENOENT means the descriptor has no TrueType program; *foreign says it
- * has one of another kind (Type 1 or CFF), which stage 3 reads.
+ * ENOENT means the descriptor has no program; *foreign says it has one
+ * the reader could not read, which is substituted and marked.
  */
 static int
 load_program(
@@ -823,13 +964,7 @@ load_program(
 	struct pdf_font *font,
 	int *foreign)
 {
-	struct truetype_design_metrics metrics;
 	struct pdf_object *program;
-	struct pdf_object *other;
-	const unsigned char *data;
-	unsigned char *owned;
-	size_t size;
-	int dct;
 	int error;
 
 	/* A font without a descriptor has no program. */
@@ -837,48 +972,216 @@ load_program(
 	if (descriptor->type != PDF_OBJECT_DICTIONARY)
 		return ENOENT;
 
-	/* Notes a program of another kind. */
-	error = pdf_reader_resolve_key(document, descriptor, "FontFile", &other);
-	if (error == 0 && other->type == PDF_OBJECT_STREAM)
-		*foreign = 1;
-	error = pdf_reader_resolve_key(document, descriptor, "FontFile3", &other);
-	if (error == 0 && other->type == PDF_OBJECT_STREAM)
-		*foreign = 1;
-
-	/* Finds the TrueType program. */
+	/* The TrueType program. */
 	error = pdf_reader_resolve_key(document, descriptor, "FontFile2", &program);
 	if (error != 0)
 		return error;
-	if (program->type != PDF_OBJECT_STREAM)
-		return ENOENT;
-	*foreign = 0;
-
-	/* Decodes it; the face reads the bytes in place, so they live with the font. */
-	error = pdf_filter_decode(document, program, 0, &data, &size, &owned, &dct);
-	if (error != 0) {
-		*foreign = 1;
+	if (program->type == PDF_OBJECT_STREAM) {
+		error = load_truetype(document, program, font);
+		if (error != 0)
+			*foreign = 1;
 		return error;
 	}
-	font->program = owned;
+
+	/* The CFF or OpenType program. */
+	error = pdf_reader_resolve_key(document, descriptor, "FontFile3", &program);
+	if (error != 0)
+		return error;
+	if (program->type == PDF_OBJECT_STREAM) {
+		error = load_font_file3(document, program, font);
+		if (error != 0)
+			*foreign = 1;
+		return error;
+	}
+
+	/* The Type 1 program. */
+	error = pdf_reader_resolve_key(document, descriptor, "FontFile", &program);
+	if (error != 0)
+		return error;
+	if (program->type == PDF_OBJECT_STREAM) {
+		error = load_type1(document, program, font);
+		if (error != 0)
+			*foreign = 1;
+		return error;
+	}
+
+	/* The font has no embedded program. */
+	return ENOENT;
+}
+
+/* Reads a TrueType program into a face. */
+static int
+load_truetype(
+	struct pdf_document *document,
+	struct pdf_object *stream,
+	struct pdf_font *font)
+{
+	const unsigned char *data;
+	size_t size;
+	int error;
+
+	/* Decodes it; the face reads the bytes in place, so they live with the font. */
+	error = decode_program(document, stream, font, &data, &size);
+	if (error != 0)
+		return error;
+
+	/* Opens the face. */
+	error = open_truetype(data, size, font);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the font draws with its own program. */
+	return 0;
+}
+
+/*
+ * Reads a /FontFile3: CFF (subtype Type1C or CIDFontType0C), or OpenType,
+ * whose outlines are CFF or TrueType.
+ */
+static int
+load_font_file3(
+	struct pdf_document *document,
+	struct pdf_object *stream,
+	struct pdf_font *font)
+{
+	struct pdf_object *subtype;
+	const unsigned char *data;
+	const unsigned char *cff;
+	size_t size;
+	size_t cff_size;
+	int is_opentype;
+	int error;
+
+	/* Decodes it; the program reads the bytes in place, so they live with the font. */
+	error = decode_program(document, stream, font, &data, &size);
+	if (error != 0)
+		return error;
+
+	/* An OpenType font's CFF table, or its TrueType outlines. */
+	error = pdf_reader_resolve_key(document, stream, "Subtype", &subtype);
+	if (error != 0)
+		return error;
+	is_opentype = pdf_object_is_name(subtype, "OpenType");
+	cff = data;
+	cff_size = size;
+	if (is_opentype) {
+		error = pdf_opentype_cff(data, size, &cff, &cff_size);
+		if (error == ENOENT) {
+			error = open_truetype(data, size, font);
+			if (error != 0)
+				return error;
+			return 0;
+		}
+
+		/* A damaged table directory is not read. */
+		if (error != 0)
+			return error;
+	}
+
+	/* Reads the CFF program. */
+	error = pdf_cff_open(cff, cff_size, &font->charstrings);
+	if (error == ENOMEM)
+		return ENOMEM;
+	if (error != 0)
+		return ENOTSUP;
+
+	/* Succeeded: the program's outlines are in ems. */
+	font->units_per_em = 1.0;
+	return 0;
+}
+
+/* Reads a Type 1 program: its clear text is /Length1 bytes long. */
+static int
+load_type1(
+	struct pdf_document *document,
+	struct pdf_object *stream,
+	struct pdf_font *font)
+{
+	struct pdf_object *clear_length;
+	const unsigned char *data;
+	size_t size;
+	size_t clear;
+	int error;
+
+	/* Decodes it (the program keeps its own decrypted copy). */
+	error = decode_program(document, stream, font, &data, &size);
+	if (error != 0)
+		return error;
+
+	/* The clear text's length, when the stream gives a usable one. */
+	clear = 0;
+	error = pdf_reader_resolve_key(document, stream, "Length1", &clear_length);
+	if (error == 0 && clear_length->type == PDF_OBJECT_INTEGER) {
+		if (clear_length->integer > 0 && (unsigned long)clear_length->integer < size)
+			clear = (size_t)clear_length->integer;
+	}
+
+	/* Reads the program. */
+	error = pdf_type1_open(data, size, clear, &font->charstrings);
+	if (error == ENOMEM)
+		return ENOMEM;
+	if (error != 0)
+		return ENOTSUP;
+
+	/* Succeeded: the program's outlines are in ems. */
+	font->units_per_em = 1.0;
+	return 0;
+}
+
+/* Opens a TrueType face over a program's bytes and reads its em. */
+static int
+open_truetype(
+	const unsigned char *data,
+	size_t size,
+	struct pdf_font *font)
+{
+	struct truetype_design_metrics metrics;
+	int error;
 
 	/* Opens the face, which may lack a character map. */
 	error = truetype_open_embedded(data, size, &font->owned_face);
-	if (error != 0) {
-		*foreign = 1;
+	if (error != 0)
 		return ENOTSUP;
-	}
 	font->face = font->owned_face;
 
 	/* Reads the em, which every outline and advance is divided by. */
 	error = truetype_design_metrics(font->face, &metrics);
-	if (error != 0 || metrics.units_per_em == 0) {
+	if (error != 0) {
 		font->face = NULL;
-		*foreign = 1;
 		return ENOTSUP;
 	}
-	font->units_per_em = (double)metrics.units_per_em;
+
+	/* An em of no units cannot scale anything. */
+	if (metrics.units_per_em == 0) {
+		font->face = NULL;
+		return ENOTSUP;
+	}
 
 	/* Succeeded: the font draws with its own program. */
+	font->units_per_em = (double)metrics.units_per_em;
+	return 0;
+}
+
+/* Decodes a program's stream; the decoded bytes (if copied) live with the font. */
+static int
+decode_program(
+	struct pdf_document *document,
+	struct pdf_object *stream,
+	struct pdf_font *font,
+	const unsigned char **data,
+	size_t *size)
+{
+	unsigned char *owned;
+	int dct;
+	int error;
+
+	/* Decodes the filters. */
+	error = pdf_filter_decode(document, stream, 0, data, size, &owned, &dct);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the font keeps the decoded copy. */
+	font->program = owned;
 	return 0;
 }
 
@@ -1171,8 +1474,8 @@ read_encoding(
 
 /*
  * Reads the encoding a Type 1 program (/FontFile) defines in its clear
- * text: StandardEncoding, or its "dup code /name put" entries.  Reports
- * whether the program has one.
+ * text, as the Unicode value of each code: StandardEncoding, or its
+ * "dup code /name put" entries.  Reports whether the program has one.
  */
 static int
 read_builtin_encoding(
@@ -1180,93 +1483,52 @@ read_builtin_encoding(
 	struct pdf_object *descriptor,
 	unsigned short builtin[256])
 {
+	const unsigned char *names[256];
+	size_t lengths[256];
 	struct pdf_object *program;
-	struct pdf_object *clear_length;
 	const unsigned char *data;
 	unsigned char *owned;
 	size_t size;
-	size_t position;
-	size_t name_start;
-	size_t name_end;
-	long code;
-	int found;
+	size_t code;
+	int standard;
 	int dct;
 	int error;
 
-	/* Finds the Type 1 program. */
+	/* Finds and decodes the Type 1 program. */
 	if (descriptor->type != PDF_OBJECT_DICTIONARY)
 		return 0;
 	error = pdf_reader_resolve_key(document, descriptor, "FontFile", &program);
-	if (error != 0 || program->type != PDF_OBJECT_STREAM)
+	if (error != 0)
+		return 0;
+	if (program->type != PDF_OBJECT_STREAM)
 		return 0;
 	error = pdf_filter_decode(document, program, 0, &data, &size, &owned, &dct);
 	if (error != 0)
 		return 0;
 
-	/* Only the clear text, before eexec, holds the encoding. */
-	error = pdf_reader_resolve_key(document, program, "Length1", &clear_length);
-	if (error == 0 && clear_length->type == PDF_OBJECT_INTEGER && clear_length->integer > 0 && (size_t)clear_length->integer < size)
-		size = (size_t)clear_length->integer;
-
-	/* Finds /Encoding. */
-	for (position = 0; position + 9 <= size; position++) {
-		if (memcmp(data + position, "/Encoding", 9) == 0)
-			break;
-	}
-	if (position + 9 > size) {
+	/* Reads its clear text's encoding. */
+	error = pdf_type1_encoding(data, size, names, lengths, &standard);
+	if (error != 0) {
 		free(owned);
 		return 0;
 	}
-	position += 9;
 
-	/* StandardEncoding is named. */
-	while (position < size && (data[position] == ' ' || data[position] == '\r' || data[position] == '\n' || data[position] == '\t'))
-		position++;
-	if (position + 16 <= size && memcmp(data + position, "StandardEncoding", 16) == 0) {
+	/* StandardEncoding, or each entry's character by its name. */
+	if (standard) {
 		memcpy(builtin, pdf_encoding_standard, 256 * sizeof(builtin[0]));
-		free(owned);
-		return 1;
-	}
-
-	/* Otherwise each "dup code /name put" up to the def. */
-	memset(builtin, 0, 256 * sizeof(builtin[0]));
-	found = 0;
-	for (; position + 3 <= size; position++) {
-		/* The def that ends the array, a word of its own (not the end of /.notdef). */
-		if (memcmp(data + position, "def", 3) == 0 && position > 0 && (data[position - 1] == ' ' || data[position - 1] == '\n' || data[position - 1] == '\r'))
-			break;
-		if (memcmp(data + position, "dup", 3) != 0)
-			continue;
-
-		/* The code. */
-		position += 3;
-		while (position < size && data[position] == ' ')
-			position++;
-		code = 0;
-		while (position < size && data[position] >= '0' && data[position] <= '9' && code < 1000) {
-			code = code * 10 + (data[position] - '0');
-			position++;
+	} else {
+		memset(builtin, 0, 256 * sizeof(builtin[0]));
+		for (code = 0; code < 256; code++) {
+			if (names[code] != NULL)
+				builtin[code] = (unsigned short)pdf_glyph_name_unicode(names[code], lengths[code]);
 		}
-		while (position < size && data[position] == ' ')
-			position++;
-
-		/* The name after its slash. */
-		if (position >= size || data[position] != '/')
-			continue;
-		name_start = position + 1;
-		name_end = name_start;
-		while (name_end < size && data[name_end] > ' ' && data[name_end] != '/' && data[name_end] != '[' && data[name_end] != '(')
-			name_end++;
-		if (code > 255)
-			continue;
-		builtin[code] = (unsigned short)pdf_glyph_name_unicode(data + name_start, name_end - name_start);
-		found = 1;
-		position = name_end;
 	}
+
+	/* The decoded program goes; the characters are kept. */
 	free(owned);
 
-	/* Reports whether any entry was read. */
-	return found;
+	/* The program has its own encoding. */
+	return 1;
 }
 
 /*
@@ -1339,6 +1601,158 @@ base_encoding(
 
 	/* Another name leaves the encoding as it is. */
 	return NULL;
+}
+
+/*
+ * Reads the glyph names a simple font's /Differences gives its codes
+ * (NULL for a code it does not name).  Reports whether the font's
+ * encoding names a base encoding (a name, or /BaseEncoding), which then
+ * comes before the program's own encoding.
+ */
+static int
+read_difference_names(
+	struct pdf_document *document,
+	struct pdf_object *dictionary,
+	const unsigned char *names[256],
+	size_t lengths[256])
+{
+	struct pdf_object *encoding;
+	struct pdf_object *base;
+	struct pdf_object *differences;
+	struct pdf_object *entry;
+	double number;
+	long code;
+	size_t index;
+	int has_base;
+	int error;
+
+	/* No names yet. */
+	memset(names, 0, 256 * sizeof(names[0]));
+	memset(lengths, 0, 256 * sizeof(lengths[0]));
+
+	/* The encoding: a base encoding's name, or a dictionary. */
+	error = pdf_reader_resolve_key(document, dictionary, "Encoding", &encoding);
+	if (error != 0)
+		return 0;
+	if (encoding->type == PDF_OBJECT_NAME)
+		return 1;
+	if (encoding->type != PDF_OBJECT_DICTIONARY)
+		return 0;
+
+	/* A dictionary's base encoding. */
+	has_base = 0;
+	error = pdf_reader_resolve_key(document, encoding, "BaseEncoding", &base);
+	if (error == 0 && base->type == PDF_OBJECT_NAME)
+		has_base = 1;
+
+	/* Its differences: a number starts a run of codes, each name the next code's. */
+	error = pdf_reader_resolve_key(document, encoding, "Differences", &differences);
+	if (error != 0)
+		return has_base;
+	if (differences->type != PDF_OBJECT_ARRAY)
+		return has_base;
+	code = -1;
+	for (index = 0; index < differences->count && index < FONT_ARRAY_MAX; index++) {
+		error = pdf_reader_resolve(document, differences->values[index], &entry);
+		if (error != 0)
+			break;
+
+		/* A number starts a run. */
+		if (entry->type == PDF_OBJECT_INTEGER || entry->type == PDF_OBJECT_REAL) {
+			error = pdf_object_number(entry, &number);
+			code = -1;
+			if (error != 0)
+				continue;
+			if (number >= 0.0 && number < 256.0)
+				code = (long)number;
+			continue;
+		}
+
+		/* A name names the next code of the run. */
+		if (entry->type != PDF_OBJECT_NAME)
+			continue;
+		if (code < 0 || code > 255)
+			continue;
+		names[code] = entry->bytes;
+		lengths[code] = entry->length;
+		code++;
+	}
+
+	/* Reports whether a base encoding was named. */
+	return has_base;
+}
+
+/*
+ * Maps each code of a simple font with a Type 1 or CFF program to a
+ * glyph: by the name /Differences gives it, then by the program's own
+ * encoding when the font names no base encoding, then by the character
+ * the encoding gives it matched to the glyphs' names, then by the
+ * program's own encoding.
+ */
+static void
+map_program_codes(
+	struct pdf_font *font,
+	const unsigned short unicode[256],
+	const unsigned char *const names[256],
+	const size_t lengths[256],
+	int has_base)
+{
+	const unsigned char *name;
+	unsigned *by_character;
+	unsigned character;
+	unsigned glyph;
+	size_t count;
+	size_t length;
+	size_t index;
+	unsigned code;
+	int error;
+
+	/* The glyph of each character the glyphs' names stand for, the first glyph of a character winning. */
+	by_character = calloc(65536, sizeof(*by_character));
+	count = pdf_charstrings_count(font->charstrings);
+	if (by_character != NULL) {
+		for (index = count; index > 0; index--) {
+			error = pdf_charstrings_name(font->charstrings, (unsigned)(index - 1), &name, &length);
+			if (error != 0)
+				continue;
+			character = pdf_glyph_name_unicode(name, length);
+			if (character != 0 && character < 65536)
+				by_character[character] = (unsigned)(index - 1);
+		}
+	}
+
+	/* Maps each code, trying the ways in turn. */
+	for (code = 0; code < 256; code++) {
+		glyph = 0;
+		error = ENOENT;
+
+		/* The name /Differences gives. */
+		if (names[code] != NULL)
+			error = pdf_charstrings_find(font->charstrings, names[code], lengths[code], &glyph);
+
+		/* The program's own encoding, which is the base when the font names none. */
+		if (error != 0 && !has_base)
+			error = pdf_charstrings_builtin(font->charstrings, code, &glyph);
+
+		/* The encoding's character, by the glyphs' names. */
+		if (error != 0 && by_character != NULL) {
+			glyph = by_character[unicode[code]];
+			if (unicode[code] != 0 && glyph != 0)
+				error = 0;
+		}
+
+		/* The program's own encoding as the last resort. */
+		if (error != 0)
+			error = pdf_charstrings_builtin(font->charstrings, code, &glyph);
+
+		/* The code draws the glyph found (0, the missing glyph, when none was). */
+		if (error != 0)
+			glyph = 0;
+		font->code_glyphs[code] = glyph;
+	}
+
+	/* The characters' table goes. */
+	free(by_character);
 }
 
 /*
@@ -2063,6 +2477,20 @@ composite_glyph(
 	unsigned cid)
 {
 	size_t position;
+	unsigned glyph;
+	int cid_keyed;
+	int error;
+
+	/* A CID-keyed CFF program's charset gives each CID its glyph; another CFF program's glyphs are the CIDs. */
+	if (font->charstrings != NULL) {
+		cid_keyed = pdf_charstrings_cid_keyed(font->charstrings);
+		if (!cid_keyed)
+			return cid;
+		error = pdf_charstrings_cid(font->charstrings, cid, &glyph);
+		if (error != 0)
+			return 0;
+		return glyph;
+	}
 
 	/* The identity when the font has no map. */
 	if (font->cid_map == NULL)
@@ -2080,14 +2508,23 @@ composite_glyph(
 /* Reports a glyph's advance in the face, in ems (0 when unknown). */
 static double
 face_advance(
-	const struct pdf_font *font,
+	struct pdf_font *font,
 	unsigned glyph)
 {
+	struct glyph_slot *slot;
 	const char *letters;
 	unsigned letter;
 	double total;
 	int advance;
 	int error;
+
+	/* A Type 1 or CFF program's advance comes with the glyph's outline. */
+	if (font->charstrings != NULL) {
+		error = find_outline(font, glyph, &slot);
+		if (error != 0)
+			return 0.0;
+		return slot->advance;
+	}
 
 	/* A font without a face has no advances. */
 	if (font->face == NULL)
@@ -2190,6 +2627,7 @@ read_outline(
 	const char *letters;
 	unsigned letter;
 	double offset;
+	double advance;
 	int error;
 
 	/* The outline starts where the arrays end. */
@@ -2197,17 +2635,18 @@ read_outline(
 	slot->point_start = font->points_count;
 	slot->verb_count = 0;
 	slot->point_count = 0;
+	slot->advance = 0.0;
 
-	/* Appends the glyph, or each letter of a ligature. */
+	/* Appends the glyph, or each letter of a ligature (only a substitute has them). */
 	letters = ligature_letters(glyph);
 	if (letters == NULL) {
-		error = append_glyph(font, glyph, 0.0);
+		error = append_glyph(font, glyph, 0.0, &slot->advance);
 	} else {
 		error = 0;
 		offset = 0.0;
 		for (; *letters != '\0' && error == 0; letters++) {
 			letter = truetype_glyph_index(font->face, (unsigned char)*letters);
-			error = append_glyph(font, letter, offset);
+			error = append_glyph(font, letter, offset, &advance);
 			offset += face_advance(font, letter);
 		}
 	}
@@ -2241,19 +2680,31 @@ ligature_letters(
 }
 
 /*
- * Appends one glyph's outline from the face, moved right by offset ems.
- * A glyph the face cannot give adds nothing.
+ * Appends one glyph's outline from the face or the program, moved right
+ * by offset ems (a program's glyphs are never moved: only a substitute
+ * draws ligatures as letters).  *advance is a program glyph's advance in
+ * ems.  A glyph the face cannot give adds nothing.
  */
 static int
 append_glyph(
 	struct pdf_font *font,
 	unsigned glyph,
-	double offset)
+	double offset,
+	double *advance)
 {
 	struct truetype_glyph_outline outline;
 	struct truetype_outline_point *points;
 	unsigned *ends;
 	int error;
+
+	/* A Type 1 or CFF program runs the glyph's charstring into the arrays. */
+	*advance = 0.0;
+	if (font->charstrings != NULL) {
+		error = pdf_charstrings_outline(font->charstrings, glyph, emit_program_step, font, advance);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Reads the contours into the font's scratch arrays, growing them once when they are short. */
 	memset(&outline, 0, sizeof(outline));
@@ -2446,6 +2897,25 @@ convert_contours(
 	return 0;
 }
 
+/* Appends one step of a charstring's outline to the font's arrays (the sink the charstring fonts draw into). */
+static int
+emit_program_step(
+	void *context,
+	enum pdf_path_verb verb,
+	const double *coordinates,
+	size_t count)
+{
+	int error;
+
+	/* The font is the context. */
+	error = emit((struct pdf_font *)context, verb, coordinates, count);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the step is appended. */
+	return 0;
+}
+
 /* Appends one path step to the font's arrays. */
 static int
 emit(
@@ -2547,8 +3017,9 @@ static void
 free_font(
 	struct pdf_font *font)
 {
-	/* The face over the program, then the program's bytes, then the tables. */
+	/* The face or charstrings over the program, then the program's bytes, then the tables. */
 	truetype_close(font->owned_face);
+	pdf_charstrings_close(font->charstrings);
 	free(font->program);
 	free(font->cid_widths);
 	free(font->cid_map_owned);

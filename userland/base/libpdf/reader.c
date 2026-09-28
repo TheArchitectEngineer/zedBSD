@@ -15,7 +15,10 @@
  * them, directly or inside object streams, the page tree, the attached
  * edit data and the page content streams.  A file whose cross-references
  * cannot be read is repaired by finding its objects in its bytes.
- * Encryption is reported as ENOTSUP; pdf_document_encrypted() tells
+ * An encrypted document (stage 3) is read through the standard security
+ * handler with the empty user password (crypt.c): the strings of each
+ * object loaded from the file and the data of each stream are decrypted;
+ * one that needs a password is EACCES, and pdf_document_encrypted() tells
  * encryption apart.  It also gives an update (update.c) the parts of the
  * document a new revision refers to: the trailer, the catalog, the pages'
  * references and the revisions' sections.
@@ -189,6 +192,8 @@ struct pdf_document {
 	void (*release_fonts)(struct pdf_font_cache *cache);
 	struct pdf_object_stream *object_streams;
 	size_t object_streams_size;
+	struct pdf_crypt *crypt;
+	unsigned long encrypt_number;
 };
 
 static int open_owned(unsigned char *data, size_t size, struct pdf_document **document);
@@ -222,6 +227,8 @@ static int compare_entries(const struct pdf_xref_entry *first, const struct pdf_
 static struct pdf_xref_entry *find_entry(struct pdf_document *document, unsigned long number);
 static int load_object(struct pdf_document *document, unsigned long number, unsigned long generation, int depth, struct pdf_object **object);
 static int parse_indirect(struct pdf_document *document, const struct pdf_xref_entry *entry, int depth, struct pdf_object **object);
+static int open_crypt(struct pdf_document *document);
+static int decrypt_strings(struct pdf_document *document, struct pdf_object *object, unsigned long number, unsigned long generation, int depth);
 static int read_stream_data(struct pdf_document *document, struct pdf_lexer *lexer, struct pdf_object *stream, int depth);
 static int resolve(struct pdf_document *document, struct pdf_object *object, int depth, struct pdf_object **resolved);
 static int resolve_key(struct pdf_document *document, const struct pdf_object *dictionary, const char *key, int depth, struct pdf_object **resolved);
@@ -332,6 +339,7 @@ pdf_document_close(
 	if (document->release_fonts != NULL)
 		document->release_fonts(document->fonts);
 	free_object_streams(document);
+	pdf_crypt_close(document->crypt);
 	pdf_arena_free(&document->arena);
 	free(document->entries);
 	free(document->pages);
@@ -684,8 +692,9 @@ pdf_document_signed(
 }
 
 /*
- * Reports whether a PDF file is encrypted, which the reader refuses to open
- * (ENOTSUP) along with other features it does not read yet.
+ * Reports whether a PDF file is encrypted: the reader opens it when the
+ * user password is empty (EACCES otherwise), and a program that writes
+ * (Notes) refuses it.
  *
  * Only the newest trailer is read: a classic one, or the dictionary of a
  * cross-reference stream, which holds the trailer's keys.
@@ -830,6 +839,18 @@ pdf_reader_page(
 	/* Succeeded: the page's dictionary, which the walk resolved. */
 	*page = document->pages[index].page;
 	return 0;
+}
+
+/*
+ * Reports an encrypted document's security handler (NULL for a document
+ * that is not encrypted).
+ */
+struct pdf_crypt *
+pdf_reader_crypt(
+	const struct pdf_document *document)
+{
+	/* The handler read_catalog() opened. */
+	return document->crypt;
 }
 
 /*
@@ -1007,6 +1028,8 @@ open_owned(
 		if (error == ENOMEM)
 			repairable = 0;
 		if (error == ENOTSUP)
+			repairable = 0;
+		if (error == PDF_EPASSWORD)
 			repairable = 0;
 	}
 
@@ -2701,8 +2724,10 @@ parse_indirect(
 	struct pdf_lexer lexer;
 	struct pdf_token token;
 	struct pdf_object *parsed;
+	struct pdf_object *type;
 	size_t after_object;
 	int is_keyword;
+	int is_xref;
 	int error;
 
 	/* Reads the object number at the entry's offset, which must be the entry's. */
@@ -2755,8 +2780,159 @@ parse_indirect(
 		}
 	}
 
+	/* The object keeps its number and generation, which an encrypted document's keys use. */
+	if (parsed->type == PDF_OBJECT_DICTIONARY || parsed->type == PDF_OBJECT_STREAM) {
+		parsed->number = entry->number;
+		parsed->generation = entry->generation;
+	}
+
+	/*
+	 * An encrypted document's strings are decrypted, except the
+	 * encryption dictionary's and a cross-reference stream's, which are
+	 * never encrypted.
+	 */
+	if (document->crypt != NULL && entry->number != document->encrypt_number) {
+		type = pdf_object_get(parsed, "Type");
+		is_xref = pdf_object_is_name(type, "XRef");
+		if (!is_xref) {
+			error = decrypt_strings(document, parsed, entry->number, entry->generation, 0);
+			if (error != 0)
+				return error;
+		}
+	}
+
 	/* Succeeded: object is the parsed object; its endobj is not needed. */
 	*object = parsed;
+	return 0;
+}
+
+/*
+ * Opens an encrypted document's security handler: the /Encrypt dictionary
+ * with the first /ID string, the empty user password.  The objects loaded
+ * before it (by a repair's scan) are loaded again, decrypted, and so are
+ * the object streams.
+ */
+static int
+open_crypt(
+	struct pdf_document *document)
+{
+	struct pdf_object *reference;
+	struct pdf_object *encrypt;
+	struct pdf_object *ids;
+	struct pdf_object *first;
+	const unsigned char *id;
+	size_t id_length;
+	size_t index;
+	int error;
+
+	/* The encryption dictionary, whose own strings are never encrypted. */
+	reference = pdf_object_get(document->trailer, "Encrypt");
+	document->encrypt_number = 0;
+	if (reference->type == PDF_OBJECT_REFERENCE)
+		document->encrypt_number = reference->number;
+	error = resolve(document, reference, 0, &encrypt);
+	if (error != 0)
+		return error;
+
+	/* The first /ID string, which the older revisions' keys mix in. */
+	id = NULL;
+	id_length = 0;
+	error = resolve_key(document, document->trailer, "ID", 0, &ids);
+	if (error != 0)
+		return error;
+	if (ids->type == PDF_OBJECT_ARRAY && ids->count > 0) {
+		error = resolve(document, ids->values[0], 0, &first);
+		if (error != 0)
+			return error;
+		if (first->type == PDF_OBJECT_STRING) {
+			id = first->bytes;
+			id_length = first->length;
+		}
+	}
+
+	/* Opens the handler; a password other than the empty one is EACCES. */
+	error = pdf_crypt_open(document, encrypt, id, id_length, &document->crypt);
+	if (error != 0)
+		return error;
+
+	/* Every object loaded so far but the encryption dictionary is loaded again, decrypted. */
+	for (index = 0; index < document->entries_count; index++) {
+		if (document->entries[index].number == document->encrypt_number)
+			continue;
+		if (document->entries[index].state == PDF_ENTRY_LOADING)
+			continue;
+		document->entries[index].state = PDF_ENTRY_UNLOADED;
+		document->entries[index].object = NULL;
+	}
+
+	/* And the object streams decoded so far. */
+	free_object_streams(document);
+	document->object_streams_size = 0;
+
+	/* Succeeded: the document is read through its handler. */
+	return 0;
+}
+
+/*
+ * Decrypts every string an object holds, in its arrays and dictionaries,
+ * with the key of the object's number and generation.
+ */
+static int
+decrypt_strings(
+	struct pdf_document *document,
+	struct pdf_object *object,
+	unsigned long number,
+	unsigned long generation,
+	int depth)
+{
+	unsigned char *plain;
+	size_t length;
+	size_t index;
+	int error;
+
+	/* Refuses nesting past the limit. */
+	if (depth > PDF_READER_DEPTH_MAX)
+		return PDF_EFORMAT;
+
+	/* A string is decrypted into the arena, with the NUL a string keeps after it. */
+	if (object->type == PDF_OBJECT_STRING) {
+		plain = pdf_arena_allocate(&document->arena, object->length + 1);
+		if (plain == NULL)
+			return ENOMEM;
+		error = pdf_crypt_decrypt(document->crypt, 0, number, generation, object->bytes, object->length, plain, &length);
+		if (error != 0)
+			return error;
+		plain[length] = '\0';
+		object->bytes = plain;
+		object->length = length;
+		return 0;
+	}
+
+	/* An array's elements. */
+	if (object->type == PDF_OBJECT_ARRAY) {
+		for (index = 0; index < object->count; index++) {
+			error = decrypt_strings(document, object->values[index], number, generation, depth + 1);
+			if (error != 0)
+				return error;
+		}
+
+		/* Every element is decrypted. */
+		return 0;
+	}
+
+	/* A dictionary's or a stream's values. */
+	if (object->type == PDF_OBJECT_DICTIONARY || object->type == PDF_OBJECT_STREAM) {
+		for (index = 0; index < object->count; index++) {
+			error = decrypt_strings(document, object->values[index], number, generation, depth + 1);
+			if (error != 0)
+				return error;
+		}
+
+		/* Every value is decrypted. */
+		return 0;
+	}
+
+	/* Anything else holds no string. */
 	return 0;
 }
 
@@ -2890,10 +3066,13 @@ read_catalog(
 	struct pdf_object *encrypt;
 	int error;
 
-	/* Refuses an encrypted document, which a reader of stage 3 reads. */
+	/* An encrypted document is read through its security handler, opened once. */
 	encrypt = pdf_object_get(document->trailer, "Encrypt");
-	if (encrypt != NULL)
-		return ENOTSUP;
+	if (encrypt != NULL && document->crypt == NULL) {
+		error = open_crypt(document);
+		if (error != 0)
+			return error;
+	}
 
 	/* Finds the catalog, which must be a dictionary. */
 	error = resolve_key(document, document->trailer, "Root", 0, &document->catalog);

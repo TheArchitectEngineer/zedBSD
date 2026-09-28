@@ -237,7 +237,9 @@ struct content_path {
  *
  * A text object has its text matrix and line matrix; the glyphs of its
  * strings shown in a clipping mode gather in text_clip (in the page's
- * shown space) until ET makes them the clip.
+ * shown space) until ET makes them the clip.  text_resources are the
+ * resources of the text operator being run, which a Type 3 glyph without
+ * its own runs with.
  */
 struct content_run {
 	struct pdf_document *document;
@@ -263,6 +265,7 @@ struct content_run {
 	double text_matrix[6];
 	double line_matrix[6];
 	int text_clipping;
+	struct pdf_object *text_resources;
 	unsigned char *text_clip_verbs;
 	size_t text_clip_verb_count;
 	size_t text_clip_verb_capacity;
@@ -436,6 +439,7 @@ static double matrix_scale(const double matrix[6]);
 static void draw_xobject(struct content_run *run, struct pdf_object *resources);
 static void draw_image(struct content_run *run, struct pdf_object *image);
 static void run_form(struct content_run *run, struct pdf_object *form, struct pdf_object *resources);
+static void draw_type3_glyph(struct content_run *run, unsigned code);
 static void draw_inline_image(struct content_run *run, struct pdf_lexer *lexer, struct pdf_object *resources);
 static int read_inline_dictionary(struct content_run *run, struct pdf_lexer *lexer, struct pdf_object *resources, struct pdf_object **image);
 static int add_inline_entry(struct content_run *run, struct pdf_object *resources, struct pdf_object *image, const struct pdf_token *key, struct pdf_object *value);
@@ -2316,8 +2320,9 @@ execute_text(
 	double numbers[6];
 	int error;
 
-	/* The level in force, whose text state the operators change. */
+	/* The level in force, whose text state the operators change, and the resources a Type 3 glyph may need. */
 	state = &run->stack[run->depth];
+	run->text_resources = resources;
 
 	/* Changes the text state, or positions or shows text, by the operator. */
 	switch (code) {
@@ -2663,6 +2668,10 @@ show_string(
 			stop_for(run, error);
 			break;
 		}
+
+		/* A Type 3 glyph is its procedure, run where the text position is (it is not added to a clip). */
+		if (draws)
+			draw_type3_glyph(run, code);
 
 		/* Adds the glyph's outline where the text position is, when it is painted or clips. */
 		adds = 0;
@@ -3506,6 +3515,110 @@ run_form(
 
 	/* The caller's operands were the form's name; the form's own are gone with its content. */
 	run->operand_count = 0;
+}
+
+/*
+ * Draws a Type 3 font's glyph: its procedure runs in a level of its own
+ * with the glyph space (the font matrix, the font size and horizontal
+ * scale and rise, the text matrix) before the CTM, and the fill colour in
+ * force.  The text object's matrices and the operands are kept across it.
+ */
+static void
+draw_type3_glyph(
+	struct content_run *run,
+	unsigned code)
+{
+	struct content_state *state;
+	struct pdf_object *procedure;
+	struct pdf_object *resources;
+	const unsigned char *data;
+	unsigned char *owned;
+	double font_matrix[6];
+	double size_matrix[6];
+	double saved_text[6];
+	double saved_line[6];
+	double saved_pattern_base[6];
+	size_t data_size;
+	size_t saved_base;
+	size_t saved_ignored;
+	size_t saved_operands;
+	size_t glyph_depth;
+	int saved_clipping;
+	int dct;
+	int error;
+
+	/* Only a Type 3 font's code with a procedure has one. */
+	state = &run->stack[run->depth];
+	error = pdf_font_type3_glyph(run->document, state->font, code, &procedure, font_matrix, &resources);
+	if (error != 0)
+		return;
+	if (resources == NULL)
+		resources = run->text_resources;
+
+	/* Refuses glyphs nested past the forms' limit (a glyph that shows itself ends here). */
+	if (run->form_depth >= PDF_CONTENT_FORMS_MAX) {
+		run->flags |= PDF_DISPLAY_LIMITED;
+		return;
+	}
+
+	/* And a glyph without a level of the stack left for it. */
+	if (run->depth + 1 >= PDF_CONTENT_STACK_MAX) {
+		run->flags |= PDF_DISPLAY_LIMITED;
+		return;
+	}
+
+	/* Decodes the procedure; one that cannot be decoded is left out. */
+	error = pdf_filter_decode(run->document, procedure, 0, &data, &data_size, &owned, &dct);
+	if (error == ENOMEM) {
+		stop_for(run, ENOMEM);
+		return;
+	} else if (error != 0) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return;
+	}
+
+	/* Keeps what the glyph's content may change of the string being shown. */
+	memcpy(saved_text, run->text_matrix, sizeof(saved_text));
+	memcpy(saved_line, run->line_matrix, sizeof(saved_line));
+	memcpy(saved_pattern_base, run->pattern_base, sizeof(saved_pattern_base));
+	saved_operands = run->operand_count;
+	saved_clipping = run->text_clipping;
+
+	/* Opens the glyph's level, from the state in force. */
+	save_state(run);
+	glyph_depth = run->depth;
+	saved_base = run->base_depth;
+	saved_ignored = run->ignored_saves;
+	run->base_depth = glyph_depth;
+	run->ignored_saves = 0;
+	run->form_depth++;
+
+	/* The glyph space: the font matrix, then the size, horizontal scale and rise, then the text matrix. */
+	size_matrix[0] = state->font_size * state->horizontal_scale;
+	size_matrix[1] = 0.0;
+	size_matrix[2] = 0.0;
+	size_matrix[3] = state->font_size;
+	size_matrix[4] = 0.0;
+	size_matrix[5] = state->rise;
+	concat_matrix(run->stack[run->depth].ctm, run->text_matrix);
+	concat_matrix(run->stack[run->depth].ctm, size_matrix);
+	concat_matrix(run->stack[run->depth].ctm, font_matrix);
+	memcpy(run->pattern_base, run->stack[run->depth].ctm, sizeof(run->pattern_base));
+
+	/* Runs the procedure, then closes every level it opened and its own. */
+	run_content(run, data, data_size, resources);
+	free(owned);
+	unwind_to(run, glyph_depth - 1);
+	run->base_depth = saved_base;
+	run->ignored_saves = saved_ignored;
+	run->form_depth--;
+
+	/* The string goes on as it was. */
+	memcpy(run->text_matrix, saved_text, sizeof(saved_text));
+	memcpy(run->line_matrix, saved_line, sizeof(saved_line));
+	memcpy(run->pattern_base, saved_pattern_base, sizeof(saved_pattern_base));
+	run->operand_count = saved_operands;
+	run->text_clipping = saved_clipping;
 }
 
 /*

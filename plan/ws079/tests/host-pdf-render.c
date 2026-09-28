@@ -993,6 +993,7 @@ fuzz_document(
 	size_t *ends;
 	size_t size;
 	size_t streams;
+	size_t chosen;
 	size_t position;
 	size_t start;
 	size_t end;
@@ -1049,10 +1050,9 @@ fuzz_document(
 		memcpy(mutated, original, size);
 		changes = 1 + (int)(next_random(&random) % 8);
 		for (change = 0; change < changes; change++) {
-			start = starts[next_random(&random) % streams];
-			end = ends[next_random(&random) % streams];
-			if (end <= start)
-				continue;
+			chosen = next_random(&random) % streams;
+			start = starts[chosen];
+			end = ends[chosen];
 			position = start + next_random(&random) % (end - start);
 			if (next_random(&random) % 2 == 0) {
 				mutated[position] = (unsigned char)alphabet[next_random(&random) % (sizeof(alphabet) - 1)];

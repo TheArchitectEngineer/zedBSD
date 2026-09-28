@@ -67,8 +67,10 @@ enum pdf_token_type {
  * are decoded and followed by a NUL that is not counted.  A dictionary and a
  * stream keep their keys (names) and values side by side; a stream's data
  * is a range of the document's bytes, or of bytes when they are set (an
- * inline image, whose data is in a content stream).  Every object lives in
- * the document's arena (or a page run's) and is freed with it.
+ * inline image, whose data is in a content stream).  An object loaded from
+ * the file keeps its number and generation (an encrypted document's key
+ * for it); a reference keeps the ones it names.  Every object lives in the
+ * document's arena (or a page run's) and is freed with it.
  */
 struct pdf_object {
 	enum pdf_object_type type;
@@ -276,6 +278,7 @@ unsigned pdf_font_status(const struct pdf_font *font);
 int pdf_font_vertical(const struct pdf_font *font);
 size_t pdf_font_next_code(const struct pdf_font *font, const unsigned char *bytes, size_t length, unsigned *code, int *single_byte);
 int pdf_font_glyph(struct pdf_font *font, unsigned code, struct pdf_glyph *glyph);
+int pdf_font_type3_glyph(struct pdf_document *document, struct pdf_font *font, unsigned code, struct pdf_object **procedure, double matrix[6], struct pdf_object **resources);
 unsigned pdf_glyph_name_unicode(const unsigned char *name, size_t length);
 struct pdf_font_cache *pdf_reader_font_cache(struct pdf_document *document);
 
@@ -301,6 +304,19 @@ int pdf_charstrings_builtin(const struct pdf_charstrings *font, unsigned code, u
 int pdf_charstrings_cid_keyed(const struct pdf_charstrings *font);
 int pdf_charstrings_cid(const struct pdf_charstrings *font, unsigned cid, unsigned *glyph);
 int pdf_charstrings_outline(struct pdf_charstrings *font, unsigned glyph, pdf_charstrings_emit emit, void *context, double *advance);
+
+/*
+ * The standard security handler of an encrypted document (crypt.c,
+ * stage 3): the file key of the empty user password and the ciphers of
+ * strings and streams.
+ */
+struct pdf_crypt;
+
+int pdf_crypt_open(struct pdf_document *document, struct pdf_object *encrypt, const unsigned char *id, size_t id_length, struct pdf_crypt **crypt);
+void pdf_crypt_close(struct pdf_crypt *crypt);
+int pdf_crypt_metadata(const struct pdf_crypt *crypt);
+int pdf_crypt_decrypt(const struct pdf_crypt *crypt, int stream, unsigned long number, unsigned long generation, const unsigned char *input, size_t size, unsigned char *output, size_t *output_size);
+struct pdf_crypt *pdf_reader_crypt(const struct pdf_document *document);
 
 /* The smooth shadings (shading.c): a shading drawn into an image over a region of the page. */
 int pdf_shading_image(struct pdf_document *document, struct pdf_object *object, const double matrix[6], const double bounds[4], unsigned char **pixels, size_t *width, size_t *height, double placement[6]);
