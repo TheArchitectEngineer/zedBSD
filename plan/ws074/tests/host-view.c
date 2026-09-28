@@ -6,7 +6,7 @@
  */
 
 /*
- * ws074-p056: the host test of the view's input (view/view.h): the keys
+ * ws074-p056: the host test of the view's input (<browser.h>): the keys
  * with the DOM's names and their default actions (scrolling, Tab and the
  * focus ring, Enter on a link, the history's keys, reloading), the wheel,
  * the pointer's buttons and clicks, and the program's focus, on
@@ -20,12 +20,14 @@
  * per failed check and a summary; -v prints the console too.
  */
 
-#include "base/base.h"
-#include "view/view.h"
+#include <browser.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The public header has no helper for unused parameters. */
+#define UNUSED_PARAMETER(name)	((void)(name))
 
 /* The most console text kept since the last mark, in bytes. */
 #define TEST_CONSOLE_MAX	65536U
@@ -67,7 +69,7 @@ main(
 	int argc,
 	char **argv)
 {
-	struct text_font_paths paths;
+	struct browser_fonts paths;
 	struct browser_callbacks callbacks;
 	struct browser_view_options options;
 	struct browser_view *view;
@@ -95,6 +97,7 @@ main(
 	callbacks.load = on_load;
 	callbacks.context = &state;
 	memset(&options, 0, sizeof(options));
+	options.version = BROWSER_API_VERSION;
 	options.fonts = &paths;
 	options.callbacks = &callbacks;
 	options.stack_base = __builtin_frame_address(0);

@@ -6,7 +6,8 @@
  */
 
 /*
- * The view (view.h): the page shown and its session history, the page
+ * The view (the component's interface, <browser.h>): the page shown and
+ * its session history, the page
  * being fetched, the scroll, the page's clock and the network, moved out
  * of the window (ws074-p054).  A file or data: page is read at once; an
  * http or https page after the first is fetched without blocking, and the
@@ -26,10 +27,11 @@
  * stopping's keys and buttons.
  */
 
-#include "view/view.h"
 #include "net/net.h"
 #include "page/page.h"
 #include "paint/gpu.h"
+
+#include <browser.h>
 
 #include <errno.h>
 #include <math.h>
@@ -151,7 +153,7 @@ struct browser_view {
 	unsigned width;
 	unsigned height;
 	int resized;
-	const struct text_font_paths *fonts;
+	struct text_font_paths fonts;
 	const void *stack_base;
 	uint64_t page_epoch;
 	uint64_t open_epoch;
@@ -249,12 +251,30 @@ browser_view_create(
 	struct browser_view *made;
 	int error;
 
-	/* The view, empty. */
+	/* A program built for another version of the interface lays its options out otherwise. */
 	*view = NULL;
+	if (options->version != BROWSER_API_VERSION)
+		return ENOTSUP;
+
+	/* The view, empty. */
 	made = calloc(1, sizeof(*made));
 	if (made == NULL)
 		return ENOMEM;
-	made->fonts = options->fonts;
+
+	/* The fonts the program names, and the system's for the ones it leaves out. */
+	made->fonts.sans = TEXT_DEFAULT_SANS;
+	made->fonts.mono = TEXT_DEFAULT_MONO;
+	made->fonts.fallback = TEXT_DEFAULT_FALLBACK;
+	if (options->fonts != NULL) {
+		if (options->fonts->sans != NULL)
+			made->fonts.sans = options->fonts->sans;
+		if (options->fonts->mono != NULL)
+			made->fonts.mono = options->fonts->mono;
+		if (options->fonts->fallback != NULL)
+			made->fonts.fallback = options->fonts->fallback;
+	}
+
+	/* The rest of the options. */
 	made->stack_base = options->stack_base;
 	made->width = options->width;
 	made->height = options->height;
@@ -1656,7 +1676,7 @@ view_update(
 	}
 
 	/* The fonts, opened once. */
-	error = page_open_fonts(view->page, view->fonts);
+	error = page_open_fonts(view->page, &view->fonts);
 	if (error != 0)
 		return error;
 

@@ -23,7 +23,6 @@
 #include <xdg-shell-client-protocol.h>
 
 #include "shell/shell.h"
-#include "view/view.h"
 
 #include <keiland.h>
 

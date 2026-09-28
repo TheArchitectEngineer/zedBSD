@@ -6,7 +6,7 @@
  */
 
 /*
- * The window mode of browser: a view (view/view.h) shown in a zdesktop
+ * The window mode of browser: a view (<browser.h>) shown in a zdesktop
  * window, recording its drawing into the frames of the window's swapchain
  * on the shell's Vulkan device.  The view holds the page, its history, its
  * scroll, its timers, the network and the renderer; the shell holds the
@@ -26,7 +26,6 @@
  */
 
 #include "shell/internal.h"
-#include "view/view.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -113,6 +112,7 @@ shell_run(
 	callbacks.script_error = shell_script_error;
 	callbacks.context = &state;
 	memset(&view_options, 0, sizeof(view_options));
+	view_options.version = BROWSER_API_VERSION;
 	view_options.fonts = options->fonts;
 	view_options.callbacks = &callbacks;
 	view_options.stack_base = __builtin_frame_address(0);

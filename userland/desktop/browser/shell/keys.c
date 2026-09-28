@@ -8,7 +8,7 @@
 /*
  * The keys of the window (ws074-p056): evdev key codes to the names the
  * DOM gives a key (its code, its key with and without Shift) and the text
- * it types, which the view takes (view/view.h, browser_view_key).
+ * it types, which the view takes (<browser.h>, browser_view_key).
  *
  * zedDesktop sends evdev codes (userland/desktop/wayland/seat.c) and the
  * browser, like the terminal, carries the US layout itself.  A key missing
