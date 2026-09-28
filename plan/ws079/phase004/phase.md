@@ -73,6 +73,8 @@ libpdf の書き出し（page、ベクタの path、画像、編集の metadata�
 | amd64 の build | `make -j16 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/ws079-p004-amd64 build/ws079-p004-amd64/dynamic/libpdf.so` | exit 0、warning 0。`libpdf.so` は NEEDED libc.so だけ |
 | pcat・pc98・rpi4 の link | `config/ci/config-{pcat,pc98,rpi4}.mk` で同じ target、BUILD は `build/ws079-p004-<platform>` | 3 つとも exit 0、warning 0（画像を足した後に 4 platform とも再 build）。pcat・pc98 は Intel 80386、rpi4 は AArch64、4 つとも `pdf_` の動的 symbol 20 個（pc98 は soft-float で libc の `pow`・`acos` に `-z defs` で link できた） |
 
+main（27d25cb9）を merge した後にも host の試験（3 変種・qpdf）と amd64 の `libpdf.so`（exit 0、warning 0）を確かめた（ws.md の表の衝突は main の行に p004 の状態を入れて解消）。
+
 未実施: disk image の全体の build（`plan/ws035/tests/build-zdesktop-image.sh build/ws079-p004-amd64` を始めたが止めた。guest harness の構成が
 lldb 入りの host の LLVM を `build/llvm-build` で configure し、install 先が共有の `build/llvm`（この worktree では main の `build/llvm` への symlink）
 だったため、共有の toolchain を書き換える前に止めた。共有の `build/llvm` の時刻は 2026-09-27 のままで変わっていない。image の build は、main の
