@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Only the calls <compat/zlib.h> declares leave the library. */
+/* Only the calls <compat/zlib/zlib.h> declares leave the library. */
 {
 	global:
 		zlibVersion;

@@ -11,7 +11,9 @@
  * output rows.  Each output row takes each component's row upsampled to
  * the image's width (libjpeg's triangle filter, "fancy upsampling", for
  * the 2:1 ratios by default) and converts its colour with libjpeg's
- * fixed-point tables, so that the samples match libjpeg's.
+ * fixed-point tables, so that the samples match libjpeg's.  A CMYK image
+ * is given as it is, and a YCCK one is made CMYK as libjpeg makes it
+ * (neither becomes RGB: libjpeg does not convert them either).
  */
 
 #include "internal.h"
@@ -38,7 +40,8 @@ enum color_conversion {
 	COLOR_GRAY_RGB,
 	COLOR_RGB_RGB,
 	COLOR_YCC_GRAY,
-	COLOR_RGB_GRAY
+	COLOR_RGB_GRAY,
+	COLOR_YCCK_CMYK
 };
 
 /*
@@ -143,9 +146,11 @@ jpeg_read_header(
 	if (cinfo->src == NULL)
 		jpeg_compat_fail((j_common_ptr)cinfo, JERR_NO_SOURCE);
 
-	/* A clean image: no frame, no marker pending, no JFIF or Adobe facts (the tables stay, as in libjpeg). */
+	/* A clean image: no frame, no marker pending or kept, no JFIF or Adobe facts (the tables stay, as in libjpeg). */
 	master = cinfo->master;
 	master->frame_seen = 0;
+	master->last_saved = NULL;
+	cinfo->marker_list = NULL;
 	master->marker = 0;
 	master->eof_warned = 0;
 	cinfo->input_scan_number = 0;
@@ -222,6 +227,10 @@ jpeg_start_decompress(
 			break;
 	}
 
+	/* A progressive image's coefficients are complete only now. */
+	if (cinfo->progressive_mode)
+		jpeg_compat_finish_progressive(cinfo);
+
 	/* Succeeded: the rows can be read. */
 	cinfo->output_scanline = 0;
 	decompress_state(cinfo, JPEG_STATE_SCANNING);
@@ -281,12 +290,18 @@ static void
 decompress_defaults(
 	j_decompress_ptr cinfo)
 {
-	/* The colour space of the file, and the output's: gray for gray, else RGB. */
+	/* The colour space of the file, and the output's: gray for gray, CMYK for four components, else RGB. */
 	cinfo->jpeg_color_space = JCS_YCbCr;
 	cinfo->out_color_space = JCS_RGB;
 	if (cinfo->num_components == 1) {
 		cinfo->jpeg_color_space = JCS_GRAYSCALE;
 		cinfo->out_color_space = JCS_GRAYSCALE;
+	} else if (cinfo->num_components == 4) {
+		/* Adobe's transform 2 is YCCK; anything else is CMYK. */
+		cinfo->jpeg_color_space = JCS_CMYK;
+		cinfo->out_color_space = JCS_CMYK;
+		if (cinfo->saw_Adobe_marker && cinfo->Adobe_transform == 2)
+			cinfo->jpeg_color_space = JCS_YCCK;
 	} else if (cinfo->saw_JFIF_marker) {
 		/* JFIF is YCbCr. */
 		cinfo->jpeg_color_space = JCS_YCbCr;
@@ -430,12 +445,16 @@ decompress_start_image(
 			v = 1;
 		}
 
-		/* Its size, and a start without a prediction or samples. */
+		/* Its size, and a start without a prediction, samples, coefficients or table. */
 		plane->stride = (size_t)master->mcus_across * (size_t)h * DCTSIZE;
 		plane->rows = (size_t)master->mcus_down * (size_t)v * DCTSIZE;
 		plane->prediction = 0;
 		plane->decoded = 0;
+		plane->coefficients = NULL;
+		plane->quant_latched = 0;
 		size = (uint64_t)plane->stride * plane->rows;
+		if (cinfo->progressive_mode)
+			size *= 1U + sizeof(JCOEF);
 		total += size;
 		if (total > JPEG_SAMPLES_MAX)
 			jpeg_compat_fail_number((j_common_ptr)cinfo, JERR_IMAGE_TOO_BIG, (int)cinfo->image_width, (int)cinfo->image_height);
@@ -447,6 +466,12 @@ decompress_start_image(
 		plane->samples = jpeg_compat_alloc(cinfo, JPOOL_IMAGE, plane->stride * plane->rows);
 		memset(plane->samples, CENTERJSAMPLE, plane->stride * plane->rows);
 		master->upsampled[index] = jpeg_compat_alloc(cinfo, JPOOL_IMAGE, (size_t)cinfo->output_width + 2U * DCTSIZE * 4U);
+
+		/* A progressive image keeps every coefficient of the plane's blocks, starting at zero. */
+		if (cinfo->progressive_mode) {
+			plane->coefficients = jpeg_compat_alloc(cinfo, JPOOL_IMAGE, plane->stride * plane->rows * sizeof(JCOEF));
+			memset(plane->coefficients, 0, plane->stride * plane->rows * sizeof(JCOEF));
+		}
 	}
 
 	/* The colour tables. */
@@ -485,6 +510,15 @@ decompress_conversion(
 			return COLOR_GRAY_RGB;
 		if (in == JCS_RGB)
 			return COLOR_RGB_RGB;
+		jpeg_compat_fail((j_common_ptr)cinfo, JERR_CONVERSION);
+	}
+
+	/* CMYK: from CMYK as it is, or from YCCK. */
+	if (out == JCS_CMYK) {
+		if (in == JCS_CMYK)
+			return COLOR_COPY;
+		if (in == JCS_YCCK)
+			return COLOR_YCCK_CMYK;
 		jpeg_compat_fail((j_common_ptr)cinfo, JERR_CONVERSION);
 	}
 
@@ -766,6 +800,23 @@ decompress_convert(
 		}
 
 		/* Succeeded: the row is gray. */
+		return;
+	}
+
+	/* YCCK to CMYK (libjpeg's ycck_cmyk_convert): the YCbCr part made RGB and inverted, K as it is. */
+	if (conversion == COLOR_YCCK_CMYK) {
+		for (x = 0; x < cinfo->output_width; x++) {
+			luma = master->upsampled[0][x];
+			cb = master->upsampled[1][x];
+			cr = master->upsampled[2][x];
+			pixel = out + (size_t)x * 4U;
+			pixel[0] = decompress_clamp(MAXJSAMPLE - (luma + master->cr_r[cr]));
+			pixel[1] = decompress_clamp(MAXJSAMPLE - (luma + (int)((master->cb_g[cb] + master->cr_g[cr]) >> COLOR_SCALEBITS)));
+			pixel[2] = decompress_clamp(MAXJSAMPLE - (luma + master->cb_b[cb]));
+			pixel[3] = master->upsampled[3][x];
+		}
+
+		/* Succeeded: the row is CMYK. */
 		return;
 	}
 
