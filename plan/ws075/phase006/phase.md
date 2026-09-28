@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p006`
 Parent: [WS075](../ws.md)
-Status: in-progress（2026-09-28〜。増分 1〜3 済み（MRT・occlusion query・VS の storage buffer）、増分 4（stencil）は中断して wip.patch）
+Status: in-progress（2026-09-28〜。増分 1〜4 済み（MRT・occlusion query・VS の storage buffer・stencil）、次は増分 5（multisample と resolve））
 Phase disposition: normal
 承認: 2026-09-27 ユーザー「…i915の高度化に進んでください。」、WS075 の計画（main の登録）。p005 の後（依存 p005 cleared）。
 
@@ -67,6 +67,24 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
   invalidate に VF cache を足した（shader や copy の書いた vertex buffer）。`vertexPipelineStoresAndAtomics` を報告（libGLESv2 は
   これで GL_VERSION を 3.0 にする。atomic は未実装）。
 
+### 増分 4: stencil（2026-09-28、62a10ad0 を再適用して直した）
+
+- 62a10ad0（D32_SFLOAT_S8_UINT・S8_UINT、Y tile の separate stencil plane、3DSTATE_STENCIL_BUFFER、3DSTATE_WM_DEPTH_STENCIL の
+  stencil、vkCmdSetStencil*、pass の stencilLoadOp と ClearAttachments の aspect、stencil の clear は Y tile の R8_UNORM に value/255）
+  を cherry-pick した。
+- st2 の GL_OUT_OF_MEMORY の元: libGLESv2 が DEPTH24_STENCIL8（D32S8 に落ちる）の texture を作るときの vkCmdCopyBufferToImage
+  （depth aspect）で、実行器が buffer 側を D32S8 の形式（Y tile の R32_FLOAT、pitch 16）と記述し、`drv_i915_gfx_surface_write()` が
+  pitch の 128 byte の境界で EINVAL（vk.log の `GPU copy 4x4 -> 4x4 ...: 3`、`command buffer stopped ... error 3`）。submit が EIO に
+  なって libvulkan が device lost（-4）、以後の pipeline の作成と eglSwapBuffers が失敗し、描画が全て黒だった。
+- 修正（`command.c`）: image の plane を aspect で選ぶ `i915_image_planes()`・`i915_image_plane_surface()`（depth・colour の main plane、
+  stencil plane は Y tile の S8 = R8_UNORM）。buffer と image の copy は depth aspect の D32S8 を R32_SFLOAT、stencil aspect を R8_UNORM の
+  linear の buffer として stencil plane と copy する。vkCmdCopyImage・vkCmdBlitImage は両側の aspect が名指す plane ごとに（
+  `i915_image_copy_plane()`・`i915_image_blit_plane()`）。stencil の clear も plane の記述を使う。
+- `i915_image_surface_write()`（`state.c`）: 単一 slice の QPitch を、stencil を持つ形式では depth plane の行（stencil_offset / pitch）
+  に（以前は stencil plane を含む bytes / pitch。QPitch は mask されるので実害は無かったが、意味を正した）。
+- st1 の compositor の停止（wlkill の直後）は st3 で再現しない（1 回、compositor は最後まで commit を続けた）。stencil と無関係に
+  見えるが、1 回の観察なので未確定。
+
 ## 検証
 
 | 確認 | 結果 |
@@ -74,9 +92,12 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
 | host の vk の fixture spirv・lower・resdispatch・eu・compile・pipe | PASS（res・sync・cmdbuf は p005 から既存の失敗） |
 | gentool（Mesa brw_disasm、`BRW_TOOLS=/home/awe/p014-c/mesa/build-asm/src/intel/compiler`） | PASS。MRT の fragment shader（location 0・1・3、discard あり）と storage buffer の vertex shader（load・store・predicate）も受ける（scratch で確認） |
 | 実機 capture egltest6（`build/ws075-p006/`） | mrt1（MRT）: targets 16 → 7。q1（query）: queries 18 → **0**、targets 6。ssbo1: feedback 8 → 2。ssbo2（VF の invalidate と feature）: feedback **1**、targets 6、blits 10、queries 0。画面 `build/ws031-shots/ws075-p006-20260928-{q1,ssbo2}-sheet.png`。hang・fault なし |
+| 実機 capture egltest6 st3（増分 4、`build/ws075-p006/st3`、この worktree の build） | targets 6 → **0**（stencil-complete・depth-stencil-texture-complete・draw-buffer-other も ok、stencil-inside/outside・depth-stencil-test の画素 ok）、blits 10（変化なし、multisample）、queries 0、feedback 1。capture の検査 pass（desktop_drawn・scenes_shown）。hang・fault・device lost なし。画面 `build/ws031-shots/ws075-p006-20260928-st3-sheet.png` |
 | QEMU | 未実施（i915 の実機の変更） |
 
-## 中断（2026-09-28、main の wrap up）: 増分 4 の stencil
+## 中断（2026-09-28、main の wrap up）: 増分 4 の stencil（解決済み、上の増分 4）
+
+（2026-09-28 追記: 増分 4 の commit で `wip.patch` は不要になり削除した。内容は git の履歴の 62a10ad0 と同じ。）
 
 - stencil の実装（D32_SFLOAT_S8_UINT・S8_UINT、Y tile の separate stencil plane、3DSTATE_STENCIL_BUFFER、3DSTATE_WM_DEPTH_STENCIL の
   stencil、vkCmdSetStencil*、pass の stencilLoadOp と ClearAttachments の aspect、stencil の clear は Y tile の R8_UNORM に value/255）は
@@ -88,14 +109,13 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
   単一 slice の QPitch が bytes/pitch）、`image_supported()` の D32S8）→ st1 の compositor の停止が再現するか（stencil の変更と
   無関係の可能性: wlkill の直後、BUG-077 の系統）→ 実機の egltest6。
 
-## 残り（2026-09-28 の時点）
+## 残り（2026-09-28 の時点、増分 4 の後）
 
-- stencil: D24S8・D32S8 の形式、separate stencil buffer、3DSTATE_WM_DEPTH_STENCIL の stencil、動的な stencil の state（targets の
-  stencil-complete・stencil-inside/outside・depth-stencil-test）。
+- stencil: 増分 4 で済み（st3）。D24_UNORM_S8_UINT は無く、libGLESv2 は D32S8 に落ちる。stencil の sampling（usampler の stencil
+  texturing）と D32S8 の format feature の TRANSFER は未（copy の経路は増分 4 で通したので feature を足すのは multisample の増分で）。
 - multisample の image と resolve（blits の 10 件）、sampler2DMS の texelFetch（survey）。
 - texel buffer（samplerBuffer、survey）。
 - feedback の drawn-from-captured: capture した buffer を vertex array にした四角が見えない（原因は未調査）。
-- targets の draw-buffer-other: glDrawBuffers の後の glGetError が GL_INVALID_ENUM（期待は GL_INVALID_OPERATION）。libGLESv2 の
-  glDrawBuffers 自体は INVALID_OPERATION を出すので、その前の呼び出しの残りの error と見られる（WS068 の領域、未調査）。
+- targets の draw-buffer-other: st3 で ok（1282）。以前の INVALID_ENUM は stencil の対応の無い状態の残りの error だったと見られる。
 - `egltest6` の guest の log: `ufs-cat.py` が zdesktop.log を sparse として読めない run がある（ssbo1）。そのときは mview.log を
   別に読む（`ufs-cat.py ... /var/log/mview.log`）。
