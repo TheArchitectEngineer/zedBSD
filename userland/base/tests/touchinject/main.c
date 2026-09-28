@@ -16,22 +16,30 @@
  *
  *   touchinject [SCRIPT]   replays a touch script (standard input without SCRIPT)
  *   touchinject -c         checks the injector's refusals of touch setups and frames
+ *   touchinject -s         checks the Scan Time of a touch screen that has one
+ *                          (ws081-p002): its refusals, and MSC_TIMESTAMP read back
  *   touchinject -d MS      waits for the test touch screen's evdev node and prints
  *                          its name, its axes and every event for MS milliseconds
+ *   touchinject -t MS      the same, each event with its evdev time (seconds.micro)
  *
  * A script has one line per frame; '#' starts a comment.  A line holds one
  * command, or finger commands separated by ';', which make one frame
  * together:
- *   size W H [N]          declares the screen with fingers in 0..W and 0..H and
+ *   size W H [N] [scan]   declares the screen with fingers in 0..W and 0..H and
  *                         N fingers per report (the first command; default
  *                         32767 32767 2: three or more fingers make the split
- *                         reports of a "hybrid" USB touch screen)
+ *                         reports of a "hybrid" USB touch screen); "scan" gives
+ *                         the screen a Scan Time, which runs with the script's
+ *                         own times (swipe and wait), not with the sleeps
  *   down ID X Y           finger ID touches at X, Y
  *   move ID X Y           finger ID moves to X, Y
  *   up ID                 finger ID lifts
- *   swipe DX DY STEPS MS  moves every touching finger by DX, DY in STEPS frames,
- *                         MS between them
- *   wait MS / hold MS     sleeps
+ *   swipe DX DY STEPS MS [JITTER]
+ *                         moves every touching finger by DX, DY in STEPS frames,
+ *                         MS between them (a decimal: 11.111 is 90 Hz), each
+ *                         interval changed by up to +-JITTER ms (a fixed
+ *                         pseudo-random sequence, so a script repeats itself)
+ *   wait MS / hold MS     sleeps (a decimal)
  * Every finger that touches is in every frame; a finger that lifts is in its
  * last frame with its tip up.  The screen stays declared until the program
  * ends.
@@ -111,6 +119,10 @@ struct touch_screen {
 	int declared;
 	int width;
 	int height;
+	/* The screen has a Scan Time: the script's own clock in microseconds, and the jitter's generator. */
+	int scan_time;
+	unsigned long long scan_us;
+	unsigned long long jitter_state;
 	struct touch_finger fingers[INPUT_INJECT_TOUCH_CONTACTS];
 };
 
@@ -163,6 +175,7 @@ static const struct code_name code_names[] = {
 	{ EV_ABS, ABS_MT_POSITION_X, "ABS_MT_POSITION_X" },
 	{ EV_ABS, ABS_MT_POSITION_Y, "ABS_MT_POSITION_Y" },
 	{ EV_KEY, BTN_TOUCH, "BTN_TOUCH" },
+	{ EV_MSC, MSC_TIMESTAMP, "MSC_TIMESTAMP" },
 	{ EV_SYN, SYN_REPORT, "SYN_REPORT" },
 };
 
@@ -176,16 +189,25 @@ static enum touch_command command_of(const char *word);
 static int run_size(struct touch_screen *screen, const char *part);
 static int run_finger(struct touch_screen *screen, enum touch_command command, const char *part);
 static int run_swipe(struct touch_screen *screen, const char *part);
-static int run_wait(const char *part);
+static int run_wait(struct touch_screen *screen, const char *part);
 static struct touch_finger * finger_of(struct touch_screen *screen, int contact_id);
-static int screen_declare(struct touch_screen *screen, int width, int height, int per_report);
+static int screen_declare(struct touch_screen *screen, int width, int height, int per_report, int scan_time);
 static int screen_frame(struct touch_screen *screen);
 static void sleep_ms(long milliseconds);
+static void sleep_us(long long microseconds);
+static long long jitter_us(struct touch_screen *screen, double jitter_ms);
+static int check_scan(void);
+static int check_capable_msc(int node);
+static size_t check_read_events(int node, struct input_event *events, size_t capacity);
+static void check_scan_frames(struct check_result *result, const struct input_event *events, size_t count);
+static int frame_timestamp(const struct input_event *events, size_t start, size_t end);
+static int frame_same_time(const struct input_event *events, size_t start, size_t end);
+static void check_report(const char *name, const struct check_result *result);
 static int check(void);
 static void check_expect(struct check_result *result, const char *name, ssize_t written, int error, int expected);
 static ssize_t check_setup(int fd, unsigned kind, unsigned per_report, unsigned reserved);
 static ssize_t check_frame(int fd, unsigned count, int contact_id, int tip, int x, unsigned reserved);
-static int dump(long milliseconds);
+static int dump(long milliseconds, int with_time);
 static int dump_find(char *path, size_t size);
 static void dump_axes(int fd);
 static const char *code_name_of(int type, int code);
@@ -212,19 +234,38 @@ main(
 		return status;
 	}
 
+	/* -s checks the Scan Time. */
+	same = 1;
+	if (argc == 2)
+		same = strcmp(argv[1], "-s");
+	if (same == 0) {
+		status = check_scan();
+		return status;
+	}
+
 	/* -d MS dumps the touch screen's node. */
 	same = 1;
 	if (argc == 3)
 		same = strcmp(argv[1], "-d");
 	if (same == 0) {
 		milliseconds = strtol(argv[2], NULL, 10);
-		status = dump(milliseconds);
+		status = dump(milliseconds, 0);
+		return status;
+	}
+
+	/* -t MS dumps it with each event's time. */
+	same = 1;
+	if (argc == 3)
+		same = strcmp(argv[1], "-t");
+	if (same == 0) {
+		milliseconds = strtol(argv[2], NULL, 10);
+		status = dump(milliseconds, 1);
 		return status;
 	}
 
 	/* More than one argument is not a replay. */
 	if (argc > 2) {
-		fprintf(stderr, "usage: touchinject [SCRIPT] | -c | -d MS\n");
+		fprintf(stderr, "usage: touchinject [SCRIPT] | -c | -s | -d MS | -t MS\n");
 		return 2;
 	}
 
@@ -235,8 +276,12 @@ main(
 		status = replay(NULL);
 	}
 
-	/* Succeeded or failed as the replay did. */
-	return status;
+	/* Reports a replay that stopped. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the whole script was replayed. */
+	return 0;
 }
 
 /* Replays one script through the injector. */
@@ -286,7 +331,7 @@ replay(
 
 	/* Declares a default screen for a script without commands. */
 	if (!screen.declared) {
-		error = screen_declare(&screen, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_PER_REPORT);
+		error = screen_declare(&screen, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_PER_REPORT, 0);
 		if (error != 0)
 			return 1;
 	}
@@ -377,7 +422,7 @@ run_part(
 	/* Any first command but size declares the default screen. */
 	command = command_of(word);
 	if (!screen->declared && command != COMMAND_SIZE) {
-		error = screen_declare(screen, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_PER_REPORT);
+		error = screen_declare(screen, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_PER_REPORT, 0);
 		if (error != 0)
 			return 1;
 	}
@@ -398,7 +443,7 @@ run_part(
 		error = run_swipe(screen, part);
 		break;
 	case COMMAND_WAIT:
-		error = run_wait(part);
+		error = run_wait(screen, part);
 		break;
 	default:
 		error = -1;
@@ -439,24 +484,37 @@ run_size(
 	struct touch_screen *screen,
 	const char *part)
 {
+	char scan[TOUCHINJECT_WORD_MAX];
 	int width;
 	int height;
 	int per_report;
+	int scan_time;
 	int count;
+	int same;
 	int error;
 
 	/* A screen that is declared already cannot change. */
 	if (screen->declared)
 		return -1;
 
-	/* The size, and the fingers per report when given. */
+	/* The size, the fingers per report and "scan" when given. */
 	per_report = TOUCHINJECT_DEFAULT_PER_REPORT;
-	count = sscanf(part, "%*s %d %d %d", &width, &height, &per_report);
+	scan[0] = '\0';
+	count = sscanf(part, "%*s %d %d %d %15s", &width, &height, &per_report, scan);
 	if (count < 2)
 		return -1;
 
+	/* Only the word scan may follow the fingers per report. */
+	scan_time = 0;
+	if (count == 4) {
+		same = strcmp(scan, "scan");
+		if (same != 0)
+			return -1;
+		scan_time = 1;
+	}
+
 	/* Declares the screen. */
-	error = screen_declare(screen, width, height, per_report);
+	error = screen_declare(screen, width, height, per_report, scan_time);
 	if (error != 0)
 		return 1;
 
@@ -519,7 +577,11 @@ run_finger(
 	return 0;
 }
 
-/* Moves every touching finger by DX, DY in STEPS frames, MS between them. */
+/*
+ * Moves every touching finger by DX, DY in STEPS frames, MS between them,
+ * each interval changed by up to +-JITTER ms.  The screen's Scan Time runs
+ * on by each interval; the sleep may be coarser (the kernel's tick).
+ */
 static int
 run_swipe(
 	struct touch_screen *screen,
@@ -528,7 +590,9 @@ run_swipe(
 	int start_x[INPUT_INJECT_TOUCH_CONTACTS];
 	int start_y[INPUT_INJECT_TOUCH_CONTACTS];
 	struct touch_finger *finger;
-	long milliseconds;
+	double milliseconds;
+	double jitter;
+	long long interval;
 	unsigned index;
 	int dx;
 	int dy;
@@ -537,9 +601,18 @@ run_swipe(
 	int count;
 	int error;
 
-	/* The way, the frames and the time between them. */
-	count = sscanf(part, "%*s %d %d %d %ld", &dx, &dy, &steps, &milliseconds);
-	if (count != 4 || steps < 1 || milliseconds < 0)
+	/* The way, the frames, the time between them and its jitter. */
+	jitter = 0.0;
+	count = sscanf(part, "%*s %d %d %d %lf %lf", &dx, &dy, &steps, &milliseconds, &jitter);
+	if (count < 4)
+		return -1;
+
+	/* At least one frame, no negative time, and no jitter larger than the interval. */
+	if (steps < 1)
+		return -1;
+	if (milliseconds < 0.0)
+		return -1;
+	if (jitter < 0.0 || jitter > milliseconds)
 		return -1;
 
 	/* Where each finger starts. */
@@ -562,29 +635,65 @@ run_swipe(
 		error = screen_frame(screen);
 		if (error != 0)
 			return 1;
-		sleep_ms(milliseconds);
+
+		/* The interval to the next frame, on the Scan Time and in the sleep. */
+		interval = (long long)(milliseconds * 1000.0 + 0.5) + jitter_us(screen, jitter);
+		if (interval < 0)
+			interval = 0;
+		screen->scan_us += (unsigned long long)interval;
+		sleep_us(interval);
 	}
 
 	/* Succeeded: every step was written. */
 	return 0;
 }
 
-/* Sleeps for the time a wait or hold command gives. */
+/* Sleeps for the time a wait or hold command gives; the Scan Time runs on by it. */
 static int
 run_wait(
+	struct touch_screen *screen,
 	const char *part)
 {
-	long milliseconds;
+	double milliseconds;
+	long long microseconds;
 	int count;
 
 	/* A negative or missing time is refused. */
-	count = sscanf(part, "%*s %ld", &milliseconds);
-	if (count != 1 || milliseconds < 0)
+	count = sscanf(part, "%*s %lf", &milliseconds);
+	if (count != 1 || milliseconds < 0.0)
 		return -1;
 
 	/* Succeeded: the time has passed. */
-	sleep_ms(milliseconds);
+	microseconds = (long long)(milliseconds * 1000.0 + 0.5);
+	screen->scan_us += (unsigned long long)microseconds;
+	sleep_us(microseconds);
 	return 0;
+}
+
+/*
+ * Draws the next change of an interval: uniform in +-jitter_ms, from a
+ * fixed sequence (xorshift), so that a script gives the same intervals on
+ * every run.
+ */
+static long long
+jitter_us(
+	struct touch_screen *screen,
+	double jitter_ms)
+{
+	double fraction;
+
+	/* No jitter asked. */
+	if (jitter_ms <= 0.0)
+		return 0;
+
+	/* Advances the generator. */
+	screen->jitter_state ^= screen->jitter_state << 13;
+	screen->jitter_state ^= screen->jitter_state >> 7;
+	screen->jitter_state ^= screen->jitter_state << 17;
+	fraction = (double)(screen->jitter_state >> 11) / 9007199254740992.0;
+
+	/* Succeeded: the change in microseconds. */
+	return (long long)((2.0 * fraction - 1.0) * jitter_ms * 1000.0);
 }
 
 /* Finds the used finger with a contact identifier, or a free place for -1; NULL for none. */
@@ -622,7 +731,8 @@ screen_declare(
 	struct touch_screen *screen,
 	int width,
 	int height,
-	int per_report)
+	int per_report,
+	int scan_time)
 {
 	struct input_inject_setup setup;
 	ssize_t written;
@@ -634,6 +744,8 @@ screen_declare(
 	setup.x_max = width;
 	setup.y_max = height;
 	setup.report_contacts = (uint32_t)per_report;
+	if (scan_time)
+		setup.reserved = INPUT_INJECT_TOUCH_SCAN_TIME;
 
 	/* Writes the setup record, which registers the screen. */
 	written = write(screen->fd, &setup, sizeof(setup));
@@ -646,6 +758,9 @@ screen_declare(
 	screen->declared = 1;
 	screen->width = width;
 	screen->height = height;
+	screen->scan_time = scan_time;
+	screen->scan_us = 0;
+	screen->jitter_state = 0x9e3779b97f4a7c15ULL;
 	return 0;
 }
 
@@ -663,8 +778,10 @@ screen_frame(
 	ssize_t written;
 	unsigned index;
 
-	/* Collects the used fingers in their places' order. */
+	/* Collects the used fingers in their places' order, and the Scan Time (100 us units) on a screen with one. */
 	memset(&frame, 0, sizeof(frame));
+	if (screen->scan_time)
+		frame.reserved = (uint32_t)((screen->scan_us / 100ULL) % (INPUT_INJECT_SCAN_TIME_MAX + 1ULL));
 	for (index = 0; index < INPUT_INJECT_TOUCH_CONTACTS; index++) {
 		finger = &screen->fingers[index];
 		if (!finger->used)
@@ -710,6 +827,21 @@ sleep_ms(
 	(void)nanosleep(&pause, NULL);
 }
 
+/* Sleeps for a number of microseconds. */
+static void
+sleep_us(
+	long long microseconds)
+{
+	struct timespec pause;
+
+	/* Splits the time into seconds and nanoseconds. */
+	pause.tv_sec = (time_t)(microseconds / 1000000LL);
+	pause.tv_nsec = (long)(microseconds % 1000000LL) * 1000L;
+
+	/* Sleeps; an early wake is of no matter to a test script. */
+	(void)nanosleep(&pause, NULL);
+}
+
 /*
  * Checks that the injector refuses bad touch setups and bad frames, and
  * takes good ones.
@@ -738,8 +870,8 @@ check(void)
 	written = check_setup(fd, INPUT_INJECT_KIND_TOUCH, INPUT_INJECT_TOUCH_CONTACTS + 1U, 0);
 	check_expect(&result, "setup-eleven-fingers", written, errno, EINVAL);
 
-	/* The reserved word, a pen with fingers and an unknown kind are refused. */
-	written = check_setup(fd, INPUT_INJECT_KIND_TOUCH, 2, 1);
+	/* An unknown bit of the reserved word, a pen with fingers and an unknown kind are refused. */
+	written = check_setup(fd, INPUT_INJECT_KIND_TOUCH, 2, 2);
 	check_expect(&result, "setup-reserved", written, errno, EINVAL);
 	written = check_setup(fd, INPUT_INJECT_KIND_PEN, 2, 0);
 	check_expect(&result, "setup-pen-with-fingers", written, errno, EINVAL);
@@ -780,12 +912,294 @@ check(void)
 	close(fd);
 
 	/* Reports the totals. */
-	printf("TOUCHCHECK result=%s passed=%u failed=%u\n", result.failed == 0 ? "ok" : "FAIL", result.passed, result.failed);
+	check_report("TOUCHCHECK", &result);
 	if (result.failed != 0)
 		return 1;
 
 	/* Succeeded: every refusal was as expected. */
 	return 0;
+}
+
+/*
+ * Checks a touch screen with a Scan Time (ws081-p002): the setups it
+ * refuses (a pen with a Scan Time, an unknown bit), a frame's Scan Time past
+ * 65535, and a finger's four frames read back: down, a move 8.3 ms later,
+ * the same place 8.3 ms later again, and the lift.  Each frame must end with
+ * MSC_TIMESTAMP (0, 8300, 16600, 24900 us) right before SYN_REPORT, the
+ * unchanged frame must be those two events alone, and every event of a
+ * frame must carry the same time.
+ */
+static int
+check_scan(void)
+{
+	struct check_result result;
+	struct input_event events[64];
+	char path[64];
+	ssize_t written;
+	size_t count;
+	int capable;
+	int found;
+	int fd;
+	int node;
+
+	/* Nothing has been checked yet. */
+	memset(&result, 0, sizeof(result));
+
+	/* Opens the injector as root. */
+	fd = open(TOUCHINJECT_NODE, O_WRONLY);
+	if (fd < 0) {
+		perror(TOUCHINJECT_NODE);
+		return 1;
+	}
+
+	/* A pen with a Scan Time, and an unknown bit beside it, are refused. */
+	written = check_setup(fd, INPUT_INJECT_KIND_PEN, 0, INPUT_INJECT_TOUCH_SCAN_TIME);
+	check_expect(&result, "scan-pen", written, errno, EINVAL);
+	written = check_setup(fd, INPUT_INJECT_KIND_TOUCH, 2, INPUT_INJECT_TOUCH_SCAN_TIME | 2U);
+	check_expect(&result, "scan-unknown-bit", written, errno, EINVAL);
+
+	/* A touch screen with a Scan Time is declared. */
+	written = check_setup(fd, INPUT_INJECT_KIND_TOUCH, 2, INPUT_INJECT_TOUCH_SCAN_TIME);
+	check_expect(&result, "scan-setup", written, errno, 0);
+
+	/* A Scan Time past 65535 is refused. */
+	written = check_frame(fd, 1, 1, 1, 10, INPUT_INJECT_SCAN_TIME_MAX + 1U);
+	check_expect(&result, "scan-past-max", written, errno, EINVAL);
+
+	/* Opens the screen's node before its frames. */
+	node = -1;
+	found = dump_find(path, sizeof(path));
+	if (found)
+		node = open(path, O_RDONLY | O_NONBLOCK);
+	check_expect(&result, "scan-node", node, errno, 0);
+	if (node < 0) {
+		close(fd);
+		check_report("SCANCHECK", &result);
+		return 1;
+	}
+
+	/* The node declares MSC_TIMESTAMP. */
+	capable = check_capable_msc(node);
+	written = 0;
+	if (!capable)
+		written = -1;
+	check_expect(&result, "scan-capability", written, EINVAL, 0);
+
+	/* Down, a move, the same place, the lift: 83 units (8.3 ms) apart. */
+	written = check_frame(fd, 1, 1, 1, 10, 1000);
+	check_expect(&result, "scan-down", written, errno, 0);
+	written = check_frame(fd, 1, 1, 1, 11, 1083);
+	check_expect(&result, "scan-move", written, errno, 0);
+	written = check_frame(fd, 1, 1, 1, 11, 1166);
+	check_expect(&result, "scan-still", written, errno, 0);
+	written = check_frame(fd, 1, 1, 0, 11, 1249);
+	check_expect(&result, "scan-lift", written, errno, 0);
+
+	/* Reads the frames back and judges them. */
+	count = check_read_events(node, events, sizeof(events) / sizeof(events[0]));
+	check_scan_frames(&result, events, count);
+
+	/* Closing removes the screen. */
+	close(node);
+	close(fd);
+
+	/* Reports the totals. */
+	check_report("SCANCHECK", &result);
+	if (result.failed != 0)
+		return 1;
+
+	/* Succeeded: the Scan Time reads back as it was written. */
+	return 0;
+}
+
+/* Tells whether an evdev node declares EV_MSC's MSC_TIMESTAMP. */
+static int
+check_capable_msc(
+	int node)
+{
+	unsigned char bits[8];
+	int length;
+
+	/* Asks the node for its EV_MSC bits (the kernel answers 0, or -1 for a kind it has none of). */
+	memset(bits, 0, sizeof(bits));
+	length = ioctl(node, EVIOCGBIT(EV_MSC, sizeof(bits)), bits);
+	if (length < 0)
+		return 0;
+
+	/* The bit of MSC_TIMESTAMP. */
+	if ((bits[MSC_TIMESTAMP / 8] & (1U << (MSC_TIMESTAMP % 8))) == 0)
+		return 0;
+
+	/* Succeeded: the node declares it. */
+	return 1;
+}
+
+/* Reads a node's events for up to a second, or until the buffer is full; returns how many. */
+static size_t
+check_read_events(
+	int node,
+	struct input_event *events,
+	size_t capacity)
+{
+	struct pollfd poller;
+	long long deadline;
+	long long now;
+	ssize_t bytes;
+	size_t count;
+	int ready;
+
+	/* Takes whatever arrives until the second is over or the buffer is full. */
+	count = 0;
+	deadline = now_ms() + 1000;
+	while (count < capacity) {
+		/* The second is over. */
+		now = now_ms();
+		if (now >= deadline)
+			break;
+
+		/* Waits for events for the rest of the second. */
+		poller.fd = node;
+		poller.events = POLLIN;
+		poller.revents = 0;
+		ready = poll(&poller, 1, (int)(deadline - now));
+		if (ready <= 0)
+			continue;
+
+		/* Reads the events that are ready. */
+		bytes = read(node, events + count, (capacity - count) * sizeof(events[0]));
+		if (bytes <= 0)
+			continue;
+		count += (size_t)bytes / sizeof(events[0]);
+	}
+
+	/* Succeeded: the events read. */
+	return count;
+}
+
+/*
+ * Judges the four frames of the Scan Time check: each ends with the
+ * expected MSC_TIMESTAMP right before SYN_REPORT and has one time for all
+ * its events, the third (the finger did not move) is those two events
+ * alone, and there are exactly four.
+ */
+static void
+check_scan_frames(
+	struct check_result *result,
+	const struct input_event *events,
+	size_t count)
+{
+	static const int expected[] = { 0, 8300, 16600, 24900 };
+	size_t start;
+	size_t index;
+	int timestamp;
+	int same_time;
+	int frames;
+
+	/* Each SYN_REPORT ends a frame that started after the last one. */
+	frames = 0;
+	start = 0;
+	for (index = 0; index < count; index++) {
+		/* Only the end of a frame is judged. */
+		if (events[index].type != EV_SYN)
+			continue;
+		if (events[index].code != SYN_REPORT)
+			continue;
+
+		/* The frame's time stamp and whether its events share one time. */
+		timestamp = frame_timestamp(events, start, index);
+		same_time = frame_same_time(events, start, index);
+		printf("SCANCHECK frame=%d timestamp=%d same-time=%d\n", frames, timestamp, same_time);
+
+		/* The frame is right when its stamp is the expected one and its time is one. */
+		if (frames < 4 &&
+		    timestamp == expected[frames] &&
+		    same_time) {
+			result->passed++;
+		} else {
+			result->failed++;
+		}
+
+		/* The frame of a finger that did not move is MSC_TIMESTAMP and SYN_REPORT alone. */
+		if (frames == 2 && index - start + 1 != 2) {
+			result->failed++;
+			printf("SCANCHECK case=scan-still-alone events=%zu FAIL\n", index - start + 1);
+		}
+
+		/* The next frame starts after this one. */
+		start = index + 1;
+		frames++;
+	}
+
+	/* Exactly the four frames. */
+	if (frames == 4) {
+		result->passed++;
+		printf("SCANCHECK case=scan-frames ok\n");
+	} else {
+		result->failed++;
+		printf("SCANCHECK case=scan-frames frames=%d FAIL\n", frames);
+	}
+}
+
+/* Gives the MSC_TIMESTAMP right before a frame's SYN_REPORT at end, or -1 when there is none. */
+static int
+frame_timestamp(
+	const struct input_event *events,
+	size_t start,
+	size_t end)
+{
+	const struct input_event *before;
+
+	/* A frame of the SYN_REPORT alone has none. */
+	if (end <= start)
+		return -1;
+
+	/* The event right before the SYN_REPORT. */
+	before = &events[end - 1];
+	if (before->type != EV_MSC)
+		return -1;
+	if (before->code != MSC_TIMESTAMP)
+		return -1;
+
+	/* Succeeded: its value. */
+	return before->value;
+}
+
+/* Tells whether every event of the frame from start to its SYN_REPORT at end has the SYN_REPORT's time. */
+static int
+frame_same_time(
+	const struct input_event *events,
+	size_t start,
+	size_t end)
+{
+	size_t index;
+
+	/* Compares each event's time with the SYN_REPORT's. */
+	for (index = start; index < end; index++) {
+		if (events[index].time.tv_sec != events[end].time.tv_sec)
+			return 0;
+		if (events[index].time.tv_usec != events[end].time.tv_usec)
+			return 0;
+	}
+
+	/* Succeeded: one time for the whole frame. */
+	return 1;
+}
+
+/* Prints a check's totals under its name. */
+static void
+check_report(
+	const char *name,
+	const struct check_result *result)
+{
+	const char *verdict;
+
+	/* The check passed when nothing failed. */
+	verdict = "FAIL";
+	if (result->failed == 0)
+		verdict = "ok";
+
+	/* One line of totals. */
+	printf("%s result=%s passed=%u failed=%u\n", name, verdict, result->passed, result->failed);
 }
 
 /*
@@ -885,7 +1299,8 @@ check_frame(
  */
 static int
 dump(
-	long milliseconds)
+	long milliseconds,
+	int with_time)
 {
 	struct input_event events[32];
 	struct pollfd poller;
@@ -896,8 +1311,10 @@ dump(
 	size_t count;
 	size_t index;
 	unsigned long total;
+	const char *name;
 	int found;
 	int ready;
+	int error;
 	int fd;
 
 	/* Waits for the node, which appears when the screen is declared. */
@@ -957,14 +1374,25 @@ dump(
 		if (bytes < 0 && errno == EAGAIN)
 			continue;
 		if (bytes <= 0) {
-			printf("TOUCHDUMP end events=%lu reason=gone errno=%d\n", total, bytes < 0 ? errno : 0);
+			error = 0;
+			if (bytes < 0)
+				error = errno;
+			printf("TOUCHDUMP end events=%lu reason=gone errno=%d\n", total, error);
 			break;
 		}
 
 		/* Prints each event by its name and value. */
 		count = (size_t)bytes / sizeof(events[0]);
 		for (index = 0; index < count; index++) {
-			printf("TOUCHDUMP event %s %d\n", code_name_of(events[index].type, events[index].code), events[index].value);
+			name = code_name_of(events[index].type, events[index].code);
+			if (with_time) {
+				printf("TOUCHDUMP event %s %d time=%lld.%06lld\n", name, events[index].value,
+				       (long long)events[index].time.tv_sec, (long long)events[index].time.tv_usec);
+			} else {
+				printf("TOUCHDUMP event %s %d\n", name, events[index].value);
+			}
+
+			/* One more event printed. */
 			total++;
 		}
 

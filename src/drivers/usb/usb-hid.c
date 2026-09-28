@@ -16,6 +16,7 @@
 #include <drivers/usb/hid-report.h>
 #include <drivers/usb/usb-hid.h>
 #include <drivers/usb/usb.h>
+#include <kern/clock.h>
 #include <kern/input-device.h>
 #include <kern/lock.h>
 #include <kern/sched.h>
@@ -77,9 +78,11 @@
 #define HID_USAGE_CONFIDENCE		0x47U
 #define HID_USAGE_CONTACT_ID		0x51U
 #define HID_USAGE_CONTACT_COUNT		0x54U
+#define HID_USAGE_SCAN_TIME		0x56U
 
-/* What touch_item() calls the Contact Count: above every finger item (HID_TOUCH_ITEM_*). */
+/* What touch_item() calls the Contact Count and the Scan Time: above every finger item (HID_TOUCH_ITEM_*). */
 #define TOUCH_ITEM_CONTACT_COUNT	0x10U
+#define TOUCH_ITEM_SCAN_TIME		0x11U
 
 /* The Digitizer usages that are absolute axes of a pen. */
 #define HID_USAGE_TIP_PRESSURE		0x30U
@@ -171,6 +174,10 @@ struct hid_report_layout {
 	size_t touch_contacts;
 	struct input_absinfo touch_x;
 	struct input_absinfo touch_y;
+	/* The touch screen's Scan Time, when a report carries one: its logical maximum and its unit. */
+	uint8_t touch_scan_present;
+	int32_t touch_scan_maximum;
+	uint32_t touch_scan_unit_ns;
 };
 
 struct hid_global_state {
@@ -261,6 +268,15 @@ struct usb_hid {
 	size_t absolute_axis_count;
 	size_t report_count;
 	unsigned work_pending;
+	/*
+	 * When the last transfer finished (CLOCK_MONOTONIC milliseconds): the
+	 * completion sets it under the lock, and the worker takes it into
+	 * report_milliseconds, the time of every event of the report it
+	 * publishes.  The one URB is not submitted again before the worker has
+	 * published its report, so the time always belongs to the buffer.
+	 */
+	uint64_t completed_milliseconds;
+	uint64_t report_milliseconds;
 	unsigned stopping;
 	unsigned submit_active;
 	unsigned activating;
@@ -331,6 +347,7 @@ static int parser_in_touch(const struct hid_parser *parser);
 static unsigned touch_item(uint32_t usage);
 static int add_touch_field(struct hid_parser *parser, struct hid_report_description *report, uint32_t bit_offset, uint32_t usage, int32_t logical_maximum);
 static void touch_axis(const struct hid_global_state *global, int32_t logical_maximum, struct input_absinfo *info);
+static uint32_t scan_time_unit(const struct hid_global_state *global);
 static int logical_maximum(const struct hid_global_state *global, int32_t *result);
 static int logical_range_fits_field(int32_t minimum, int32_t maximum, uint32_t bit_size);
 static int add_field(struct hid_parser *parser, struct hid_report_description *report, uint32_t bit_offset, uint32_t usage_minimum, uint32_t usage_maximum, int32_t logical_minimum, int32_t logical_maximum, uint16_t type, uint16_t code, uint8_t bit_size, uint8_t kind);
@@ -909,6 +926,7 @@ usb_hid_fetch_layout(
 		if (error == 0) {
 			hid->touch_present = 1U;
 			drv_hid_touch_reset(&hid->touch, hid->touch_description.slots);
+			drv_hid_touch_set_scan_time(&hid->touch, &touch_info);
 		}
 	}
 
@@ -1087,13 +1105,20 @@ usb_hid_completion(
 	struct usb_hid *hid = argument;
 	struct thread *worker;
 	unsigned long irq;
+	uint64_t milliseconds;
 
 	/* Handles the hid availability. */
 	if (hid == NULL || urb != hid->urb)
 		return;
+
+	/* The report's time is when the transfer finished, not when the worker runs. */
+	milliseconds = clock_milliseconds(NULL);
+
+	/* Hands the finished transfer and its time to the worker. */
 	irq = spin_lock_irqsave(&hid->lock);
 
 	hid->work_pending |= USB_HID_WORK_COMPLETE;
+	hid->completed_milliseconds = milliseconds;
 	worker = hid->worker;
 
 	spin_unlock_irqrestore(&hid->lock, irq);
@@ -1208,6 +1233,14 @@ usb_hid_publish_report(
 	int is_pen;
 	int is_touch;
 	int error, emitted = 0;
+	unsigned long irq;
+
+	/* Every event of the report is stamped with the time its transfer finished. */
+	irq = spin_lock_irqsave(&hid->lock);
+
+	hid->report_milliseconds = hid->completed_milliseconds;
+
+	spin_unlock_irqrestore(&hid->lock, irq);
 
 	/* Checks the operation status. */
 	error = drv_hid_report_decode(hid->layout, buffer, length, &decoded);
@@ -1283,8 +1316,9 @@ usb_hid_publish_report(
 				     bit) != 0;
 			if (old_value == new_value)
 				continue;
-			drv_input_device_emit(hid->input, EV_KEY,
-					      (uint16_t)code, new_value);
+			drv_input_device_emit_at(hid->input, EV_KEY,
+						 (uint16_t)code, new_value,
+						 hid->report_milliseconds);
 			emitted = 1;
 		}
 
@@ -1298,14 +1332,15 @@ usb_hid_publish_report(
 		if (value_local1->type == EV_KEY ||
 		    (value_local1->type == EV_REL && value_local1->value == 0))
 			continue;
-		drv_input_device_emit(hid->input, value_local1->type,
-				      value_local1->code, value_local1->value);
+		drv_input_device_emit_at(hid->input, value_local1->type,
+					 value_local1->code, value_local1->value,
+					 hid->report_milliseconds);
 		emitted = 1;
 	}
 
 	/* Handles the emitted condition. */
 	if (emitted)
-		drv_input_device_emit(hid->input, EV_SYN, SYN_REPORT, 0);
+		drv_input_device_emit_at(hid->input, EV_SYN, SYN_REPORT, 0, hid->report_milliseconds);
 }
 
 /* Takes whatever the worker thread has to do next. */
@@ -3535,6 +3570,11 @@ drv_hid_report_layout_get_touch(
 	result->x = layout->touch_x;
 	result->y = layout->touch_y;
 
+	/* And its Scan Time, when the reports carry one. */
+	result->scan_time_present = layout->touch_scan_present;
+	result->scan_time_maximum = layout->touch_scan_maximum;
+	result->scan_time_unit_ns = layout->touch_scan_unit_ns;
+
 	/* Succeeded: the layout has a touch screen. */
 	return 0;
 }
@@ -4104,8 +4144,8 @@ usb_hid_publish_pen_report(
 	/* Hands every event of the frames to the input layer in order. */
 	for (index = 0; index < output.event_count; index++) {
 		event = &output.events[index];
-		drv_input_device_emit(hid->input, event->type, event->code,
-				      event->value);
+		drv_input_device_emit_at(hid->input, event->type, event->code,
+					 event->value, hid->report_milliseconds);
 	}
 }
 
@@ -4120,8 +4160,8 @@ usb_hid_publish_touch_report(
 	size_t index;
 	int error;
 
-	/* Turns the fingers into protocol B frames. */
-	error = drv_hid_touch_translate(&hid->touch, decoded, &output);
+	/* Turns the fingers into protocol B frames, at the time the report arrived. */
+	error = drv_hid_touch_translate_at(&hid->touch, decoded, hid->report_milliseconds, &output);
 	if (error != 0) {
 		/* Leaves a marker for the first reports that did not fit. */
 		if (hid->error_markers < USB_HID_ERROR_MARKERS) {
@@ -4136,8 +4176,8 @@ usb_hid_publish_touch_report(
 	/* Hands every event of the frames to the touch screen's device in order. */
 	for (index = 0; index < output.event_count; index++) {
 		event = &output.events[index];
-		drv_input_device_emit(hid->touch_input, event->type, event->code,
-				      event->value);
+		drv_input_device_emit_at(hid->touch_input, event->type, event->code,
+					 event->value, hid->report_milliseconds);
 	}
 }
 
@@ -4161,8 +4201,9 @@ parser_in_touch(
 
 /*
  * Tells which touch item a usage of a touch screen is: HID_TOUCH_ITEM_* for
- * a finger's field, TOUCH_ITEM_CONTACT_COUNT for the Contact Count, 0 for a
- * usage the touch screen ignores.
+ * a finger's field, TOUCH_ITEM_CONTACT_COUNT for the Contact Count,
+ * TOUCH_ITEM_SCAN_TIME for the Scan Time, 0 for a usage the touch screen
+ * ignores.
  */
 static unsigned
 touch_item(
@@ -4198,6 +4239,8 @@ touch_item(
 		return HID_TOUCH_ITEM_CONTACT_ID;
 	case HID_USAGE_CONTACT_COUNT:
 		return TOUCH_ITEM_CONTACT_COUNT;
+	case HID_USAGE_SCAN_TIME:
+		return TOUCH_ITEM_SCAN_TIME;
 	default:
 		return 0;
 	}
@@ -4234,6 +4277,14 @@ add_touch_field(
 			return 0;
 		code = HID_TOUCH_CONTACT_COUNT_CODE;
 		layout->touch_count_present = 1;
+	} else if (item == TOUCH_ITEM_SCAN_TIME) {
+		/* So does the Scan Time, with its range and its unit. */
+		if (parser->finger_depth != 0U)
+			return 0;
+		code = HID_TOUCH_SCAN_TIME_CODE;
+		layout->touch_scan_present = 1;
+		layout->touch_scan_maximum = logical_maximum;
+		layout->touch_scan_unit_ns = scan_time_unit(&parser->global);
 	} else {
 		/* A finger's item outside a Finger collection belongs to no finger. */
 		if (parser->finger_depth == 0U)
@@ -4275,6 +4326,41 @@ add_touch_field(
 
 	/* Succeeded: the field is part of the report. */
 	return 0;
+}
+
+/*
+ * Gives the unit of a Scan Time in nanoseconds: the field's Unit when it is
+ * a time (seconds, to the power one, in any system) with a Unit Exponent
+ * from -9 to 0, and otherwise 100 us, the unit Windows requires.  Unit and
+ * Unit Exponent are global items, so a Scan Time declared after the
+ * fingers' X and Y may still carry their length unit; that is not a time.
+ */
+static uint32_t
+scan_time_unit(
+	const struct hid_global_state *global)
+{
+	uint32_t unit_ns;
+	int32_t exponent;
+	int32_t power;
+
+	/* A unit that is not a time, or no unit, gives the default. */
+	if ((global->unit & 0x0fU) == 0U)
+		return HID_TOUCH_SCAN_TIME_UNIT_NS;
+	if ((global->unit & ~0x0fU) != 0x1000U)
+		return HID_TOUCH_SCAN_TIME_UNIT_NS;
+
+	/* So does an exponent the nanoseconds cannot express. */
+	exponent = unit_exponent_value(global->unit_exponent);
+	if (exponent < -9 || exponent > 0)
+		return HID_TOUCH_SCAN_TIME_UNIT_NS;
+
+	/* Ten to the power 9 + exponent nanoseconds. */
+	unit_ns = 1U;
+	for (power = 0; power < 9 + exponent; power++)
+		unit_ns *= 10U;
+
+	/* Succeeded: the Scan Time's unit. */
+	return unit_ns;
 }
 
 /* Describes a finger's position axis from the field's logical range and physical size. */

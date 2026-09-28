@@ -94,6 +94,14 @@ struct hid_report_touch_info {
 	/* The position axes of the first finger (every finger shares them). */
 	struct input_absinfo x;
 	struct input_absinfo y;
+	/*
+	 * Whether the reports carry a Scan Time (the screen's own clock), its
+	 * logical maximum (it wraps after it) and its unit in nanoseconds
+	 * (100000 when the descriptor gives no unit of time).
+	 */
+	int scan_time_present;
+	int32_t scan_time_maximum;
+	uint32_t scan_time_unit_ns;
 };
 
 struct hid_report_report_info {
