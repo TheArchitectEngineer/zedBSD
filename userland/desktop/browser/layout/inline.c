@@ -72,6 +72,7 @@ static const uint16_t inline_space[1] = { 0x20U };
 static void inline_collect(struct inline_cutter *cutter, struct layout_box *box);
 static void inline_cut_text(struct inline_cutter *cutter, struct layout_box *box);
 static void inline_add_replaced(struct inline_cutter *cutter, struct layout_box *box);
+static void inline_replaced_extent(const struct layout_box *box, layout_unit *above, layout_unit *below);
 static layout_unit inline_margin_height(const struct layout_box *box);
 static void inline_flush_word(struct inline_cutter *cutter);
 static void inline_add_piece(struct inline_cutter *cutter, const uint16_t *text, size_t length, layout_unit width, int space, int forced_break);
@@ -295,6 +296,36 @@ inline_add_replaced(
 	/* What follows is not after a space, and starts a new word. */
 	cutter->after_space = 0;
 	cutter->previous = 0;
+}
+
+/*
+ * Measures how far an inline replaced box reaches above and below the
+ * baseline: an image's whole margin box stands on it; a form control's
+ * text's baseline is on it, the rest of its margin box below.
+ */
+static void
+inline_replaced_extent(
+	const struct layout_box *box,
+	layout_unit *above,
+	layout_unit *below)
+{
+	layout_unit height;
+
+	/* The margin box. */
+	height = inline_margin_height(box);
+
+	/* An image, or a control without text, is all above the baseline. */
+	if (!box->has_baseline) {
+		*above = height;
+		*below = 0;
+		return;
+	}
+
+	/* A control's text baseline is its margin, border and padding above its content, and its text's baseline in it. */
+	*above = box->margin[CSS_TOP] + box->border[CSS_TOP] + box->padding[CSS_TOP] + box->control_baseline;
+	*below = height - *above;
+	if (*below < 0)
+		*below = 0;
 }
 
 /* Measures a box's margin box height. */
@@ -576,12 +607,17 @@ inline_finish_line(
 		fragment->x = x;
 		fragment->width = pieces[index].width;
 
-		/* A replaced box stands on the baseline: all of its margin box is above it. */
+		/*
+		 * A replaced box stands on the baseline: all of its margin box is above
+		 * it, unless it is a control with text, whose text's baseline is the
+		 * line's.
+		 */
 		if (pieces[index].replaced) {
-			fragment->ascent = inline_margin_height(pieces[index].box);
-			fragment->descent = 0;
+			inline_replaced_extent(pieces[index].box, &fragment->ascent, &fragment->descent);
 			if (fragment->ascent > above)
 				above = fragment->ascent;
+			if (fragment->descent > below)
+				below = fragment->descent;
 			x += pieces[index].width;
 			continue;
 		}

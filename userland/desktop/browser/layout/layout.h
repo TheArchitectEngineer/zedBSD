@@ -19,6 +19,9 @@
  * then their boxes are laid out as blocks.  An <img> is a replaced box
  * (replaced.c): inline, an atomic piece of its line; otherwise a block
  * without content; either sized by its image and its width and height.
+ * A form control (<input>, <textarea>, <select>) is a replaced box too,
+ * sized by its text and attributes and standing on its text's baseline
+ * (control.c).
  */
 
 #ifndef KEILAND_BROWSER_LAYOUT_H
@@ -149,6 +152,17 @@ struct layout_box {
 	int replaced;
 	const struct img_bitmap *image;
 
+	/*
+	 * A form control's box (control.c): its kind (DOM_CONTROL_*, NONE for
+	 * other boxes), its natural size, and whether its text has a baseline
+	 * and how far below its content box's top that is.
+	 */
+	int control;
+	layout_unit natural_width;
+	layout_unit natural_height;
+	int has_baseline;
+	layout_unit control_baseline;
+
 	/* The background image the style names, decoded (NULL when there is none, or it could not be had). */
 	const struct img_bitmap *background;
 };
@@ -224,7 +238,13 @@ int layout_dump(const struct layout_tree *tree, struct wb_buffer *out);
 const struct layout_box *layout_hit(const struct layout_tree *tree, layout_unit x, layout_unit y);
 struct dom_node *layout_hit_node(const struct layout_tree *tree, layout_unit x, layout_unit y);
 int layout_node_bounds(const struct layout_tree *tree, const struct dom_node *node, struct layout_rect *rect);
+const struct layout_box *layout_box_of(const struct layout_tree *tree, const struct dom_node *node);
 layout_unit layout_from_px(float px);
 float layout_to_px(layout_unit value);
+
+/* Form controls (control.c). */
+int layout_control_measure(struct layout_tree *tree, struct layout_box *box);
+int layout_control_line(struct text_system *text, const struct css_style *style, layout_unit *line, layout_unit *ascent);
+int layout_units_width(struct text_system *text, const struct text_font *font, const uint16_t *units, size_t length, layout_unit *width);
 
 #endif

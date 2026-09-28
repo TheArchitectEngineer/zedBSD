@@ -255,11 +255,68 @@ struct dom_attribute {
 };
 
 /*
+ * The kinds of form control (dom_control_kind): what the element draws and
+ * how it takes the user's input.
+ */
+enum dom_control_kind {
+	DOM_CONTROL_NONE,
+	DOM_CONTROL_TEXT,
+	DOM_CONTROL_PASSWORD,
+	DOM_CONTROL_BUTTON,
+	DOM_CONTROL_SUBMIT,
+	DOM_CONTROL_RESET,
+	DOM_CONTROL_CHECKBOX,
+	DOM_CONTROL_RADIO,
+	DOM_CONTROL_HIDDEN,
+	DOM_CONTROL_TEXTAREA,
+	DOM_CONTROL_SELECT
+};
+
+/*
+ * The state of a form control the user can change, kept beside its
+ * element (control.c).
+ *
+ * One is made the first time the user or the page changes the control,
+ * and lives as long as its element (the element's finalizer frees it).
+ * value is the control's value once dirty says it no longer follows the
+ * element's value attribute (or a textarea's text); caret is an offset
+ * into the value in UTF-16 units.  checked is a checkbox's or radio
+ * button's checkedness once checked_dirty says it no longer follows the
+ * checked attribute.
+ *
+ * The rest is what the display list last drew (drawn says it did), in
+ * layout units in the document's coordinates: the content box the text was
+ * drawn in, how far the text was scrolled to the left to keep the caret in
+ * view, where the caret goes (its left, its top and its height) and its
+ * color (0xAARRGGBB).  The page draws the caret and turns a click into an
+ * offset with them.
+ */
+struct dom_control {
+	struct wb_units value;
+	int dirty;
+	size_t caret;
+	int checked;
+	int checked_dirty;
+	int drawn;
+	int32_t scroll_x;
+	int32_t content_x;
+	int32_t content_y;
+	int32_t content_width;
+	int32_t content_height;
+	int32_t caret_x;
+	int32_t caret_top;
+	int32_t caret_height;
+	uint32_t caret_color;
+};
+
+/*
  * An element: its name, namespace and tag number, and its attributes (a
  * malloc'd array the element owns; the strings are traced through it).
  * content is a template's contents, a document fragment.  created is the
  * document's generation when the element was made, which orders its
  * content attributes' event handlers among the listeners scripts added.
+ * control is a form control's state once it has one (control.c; NULL
+ * otherwise), which the element owns.
  */
 struct dom_element {
 	struct dom_node node;
@@ -272,6 +329,7 @@ struct dom_element {
 	size_t attribute_count;
 	size_t attribute_capacity;
 	struct dom_node *content;
+	struct dom_control *control;
 };
 
 /*
@@ -326,6 +384,18 @@ int dom_element_set_attribute(struct dom_element *element, struct vm_string *nam
 int dom_element_remove_attribute(struct dom_element *element, struct vm_string *name);
 int dom_text_set(struct dom_node *node, const uint16_t *units, size_t length);
 int dom_is_inclusive_ancestor(const struct dom_node *ancestor, const struct dom_node *node);
+
+/* Form controls (control.c). */
+int dom_control_kind(const struct dom_element *element);
+struct dom_control *dom_control_of(struct dom_element *element);
+int dom_control_value(struct dom_element *element, struct wb_units *out);
+int dom_control_set_value(struct dom_element *element, const uint16_t *units, size_t length);
+int dom_control_label(const struct dom_element *element, struct wb_units *out);
+int dom_option_text(const struct dom_element *option, struct wb_units *out);
+struct dom_element *dom_select_chosen(struct dom_element *select);
+int dom_control_checked(const struct dom_element *element);
+void dom_control_free(struct dom_element *element);
+struct vm_string *dom_attribute_ascii(const struct dom_element *element, const char *name);
 
 /* Names (names.c). */
 int dom_tag_lookup(const uint16_t *units, size_t length);

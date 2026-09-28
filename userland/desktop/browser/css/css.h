@@ -110,13 +110,26 @@ enum css_white_space {
 	CSS_WHITE_SPACE_PRE_LINE
 };
 
-/* The values of border-style this pass draws (the rest parse as solid). */
+/*
+ * The values of border-style this pass tells apart (groove and ridge parse
+ * as solid; every style is drawn solid, but a form control whose borders
+ * are all inset or outset, as the user agent's sheet gives it, is drawn
+ * the way the platform draws such a control).
+ */
 enum css_border_style {
 	CSS_BORDER_NONE,
 	CSS_BORDER_SOLID,
 	CSS_BORDER_DASHED,
 	CSS_BORDER_DOTTED,
-	CSS_BORDER_DOUBLE
+	CSS_BORDER_DOUBLE,
+	CSS_BORDER_INSET,
+	CSS_BORDER_OUTSET
+};
+
+/* The values of box-sizing: what width and height size. */
+enum css_box_sizing {
+	CSS_BOX_SIZING_CONTENT,
+	CSS_BOX_SIZING_BORDER
 };
 
 /* The values of list-style-type. */
@@ -176,6 +189,7 @@ struct css_style {
 	struct css_length margin[4];
 	struct css_length padding[4];
 	struct css_length offset[4];
+	int box_sizing;
 	int z_index;
 	int z_index_auto;
 	float border_width[4];
