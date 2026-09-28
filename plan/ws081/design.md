@@ -440,6 +440,18 @@ tap（slop の内で離す）、double tap（前の tap から 300 ms・16 px �
 二本指（§5.4）、cancel。app ごとの割り当て（Files: tap で選ぶ・開く、長押しで menu、drag で scroll。Terminal: drag で scroll、長押しから選択。PDF Viewer: drag で
 scroll、二本指で拡大。Notes: 指で線）は app ごとの Phase で決める（§8）。
 
+**Notes の割り当ての改め（2026-09-29、main の指示「ペンは線、指は scroll・pinch」、ws081-p013）**
+- Notes の指は線を描かない。担当は次のとおり。
+  - 拡大した頁の scroll（慣性・rubber band）
+  - 二本指の拡大
+  - double tap（2 倍と頁全体の切り替え）
+  - toolbar の tap
+- 線はペン（と pointer）だけが描く。§3.8 の「指の線」（Catmull-Rom と予測の尾）は実施しない。ペンの線への適用は、今までどおり範囲外（§12）。
+- 掌の扱い
+  - touch screen が信頼しない接触（HID の Confidence 0）は kernel が離す（WS079 p012）。
+  - Notes は、ペンが窓の近くにある間と離れて 500 ms の間は、新しい指を掌として無視する。
+  - ペンが来た時に頁の上にある指は cancel し、離れるまで無視する。glide している頁はその場で止める。
+
 ## 6. library の置き場所と API（p003・p005）
 
 - **置き場所**: `userland/desktop/libkeiland/motion.c`（resampling・速度・率・空き・雑音・device の時刻、p003）と `scroll.c`（fling・端・scroller・gesture、p005）。

@@ -48,6 +48,10 @@
  * Every finger that touches is in every frame; a finger that lifts is in its
  * last frame with its tip up.  The screen stays declared until the program
  * ends.
+ *
+ * Every way out says why on standard error (BUG-099): a replay ends with
+ * "touchinject: done lines=N" or with the line and the reason it stopped,
+ * and -c, -s, -d and -t that fail say which.
  */
 
 #include <dirent.h>
@@ -245,7 +249,14 @@ main(
 		same = strcmp(argv[1], "-c");
 	if (same == 0) {
 		status = check();
-		return status;
+		if (status != 0) {
+			/* Reports which run failed. */
+			fprintf(stderr, "touchinject: -c failed (status %d)\n", status);
+			return status;
+		}
+
+		/* Succeeded: every refusal was as expected. */
+		return 0;
 	}
 
 	/* -s checks the Scan Time. */
@@ -254,7 +265,14 @@ main(
 		same = strcmp(argv[1], "-s");
 	if (same == 0) {
 		status = check_scan();
-		return status;
+		if (status != 0) {
+			/* Reports which run failed. */
+			fprintf(stderr, "touchinject: -s failed (status %d)\n", status);
+			return status;
+		}
+
+		/* Succeeded: the Scan Time read back as expected. */
+		return 0;
 	}
 
 	/* -d MS dumps the touch screen's node. */
@@ -264,7 +282,14 @@ main(
 	if (same == 0) {
 		milliseconds = strtol(argv[2], NULL, 10);
 		status = dump(milliseconds, 0);
-		return status;
+		if (status != 0) {
+			/* Reports which run failed. */
+			fprintf(stderr, "touchinject: -d failed (status %d)\n", status);
+			return status;
+		}
+
+		/* Succeeded: the node was dumped. */
+		return 0;
 	}
 
 	/* -t MS dumps it with each event's time. */
@@ -274,7 +299,14 @@ main(
 	if (same == 0) {
 		milliseconds = strtol(argv[2], NULL, 10);
 		status = dump(milliseconds, 1);
-		return status;
+		if (status != 0) {
+			/* Reports which run failed. */
+			fprintf(stderr, "touchinject: -t failed (status %d)\n", status);
+			return status;
+		}
+
+		/* Succeeded: the node was dumped with the times. */
+		return 0;
 	}
 
 	/* More than one argument is not a replay. */
@@ -336,24 +368,40 @@ replay(
 		if (read_line == NULL)
 			break;
 
-		/* A bad line stops the replay. */
+		/* A bad line stops the replay, saying where. */
 		number++;
 		error = run_line(&screen, line, number);
-		if (error != 0)
+		if (error != 0) {
+			fprintf(stderr, "touchinject: stopped at line %u\n", number);
 			return 1;
+		}
+	}
+
+	/* A script that could not be read to its end is a failure. */
+	error = ferror(script);
+	if (error != 0) {
+		fprintf(stderr, "touchinject: reading the script failed after line %u\n", number);
+		return 1;
 	}
 
 	/* Declares a default screen for a script without commands. */
 	if (!screen.declared) {
 		error = screen_declare(&screen, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_PER_REPORT, 0);
-		if (error != 0)
+		if (error != 0) {
+			fprintf(stderr, "touchinject: declaring the default screen failed\n");
 			return 1;
+		}
 	}
 
 	/* Closing the injector removes the screen. */
-	close(screen.fd);
+	error = close(screen.fd);
+	if (error != 0) {
+		perror("touchinject: close");
+		return 1;
+	}
 
-	/* Succeeded: every line was written. */
+	/* Succeeded: every line was written (said, so that a lost output can be told from a failure). */
+	fprintf(stderr, "touchinject: done lines=%u\n", number);
 	return 0;
 }
 
@@ -393,20 +441,24 @@ run_line(
 		/* A bad command stops the replay. */
 		error = run_part(screen, part, &frame);
 		if (error < 0) {
-			fprintf(stderr, "touchinject: line %u: bad command\n", number);
+			fprintf(stderr, "touchinject: line %u: bad command: %s\n", number, part);
 			return -1;
 		}
 
 		/* A write the kernel refused stops the replay. */
-		if (error > 0)
+		if (error > 0) {
+			fprintf(stderr, "touchinject: line %u: the injector refused a write\n", number);
 			return -1;
+		}
 	}
 
 	/* The finger commands of the line make one frame. */
 	if (frame) {
 		error = screen_frame(screen);
-		if (error != 0)
+		if (error != 0) {
+			fprintf(stderr, "touchinject: line %u: the injector refused the frame\n", number);
 			return -1;
+		}
 	}
 
 	/* Succeeded: the line was run. */

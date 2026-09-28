@@ -35,6 +35,11 @@
  * new notebook starts.  Ctrl+O has no file chooser to open another file
  * with yet, and says so.
  *
+ * ws081-p013: the fingers never write.  One finger scrolls a page zoomed
+ * past the window (with inertia), two fingers zoom, a double tap zooms in
+ * or back to the whole page, and a tap on the toolbar presses its button;
+ * a palm near the pen is left alone (touch.c).
+ *
  * --timeout-s ends Notes after that many seconds as if it were closed (the
  * tests use it to bound a run).  The lines starting with "NOTES" on the
  * standard output are what the tests read.
@@ -129,6 +134,19 @@ struct notes_app {
 	struct notes_frame frame;
 	struct notes_frame page_frame;
 	struct notes_view view;
+
+	/*
+	 * The fingers (touch.c): the gestures, the zoom and the scroll; when the
+	 * page's place is due again (milliseconds, -1: not), the page it was
+	 * last placed for (another page starts at its top), the place last
+	 * logged for the tests, and whether the last frame was drawn while two
+	 * fingers zoomed.
+	 */
+	struct notes_touch touch;
+	int touch_due;
+	const struct notes_page *touch_page;
+	struct notes_view logged_view;
+	int drawn_zooming;
 
 	/*
 	 * The page's picture (render.c) as the last frame left it: the page it
@@ -226,6 +244,7 @@ static void app_state(const struct notes_app *app, struct notes_ui_state *state)
 static void app_action(struct notes_app *app, uint32_t action);
 static void app_key(struct notes_app *app, const struct notes_key *key);
 static void app_input(struct notes_app *app, const struct notes_input *input);
+static void app_touch(struct notes_app *app);
 static void app_hover(struct notes_app *app, const struct notes_input *input);
 static void app_sample(struct notes_app *app, const struct notes_input *input);
 static void app_end_contact(struct notes_app *app, const struct notes_input *input);
@@ -340,9 +359,17 @@ main(
 	if (error != 0)
 		printf("NOTES FONT none error=%d\n", error);
 
+	/* The fingers; without memory for them they do nothing. */
+	app.touch_due = -1;
+	error = notes_touch_open(&app.touch);
+	if (error != 0)
+		printf("NOTES TOUCH none error=%d\n", error);
+
 	/* The page's first place, before any input needs it. */
 	notes_view_layout(&app.view, app.renderer.extent.width, app.renderer.extent.height,
 			  app.document.pages[0]->width, app.document.pages[0]->height);
+	notes_touch_layout(&app.touch, app.renderer.extent.width, app.renderer.extent.height, (float)NOTES_TOOLBAR_HEIGHT, NOTES_PAGE_MARGIN,
+			   app.document.pages[0]->width, app.document.pages[0]->height, app.view.scale);
 
 	/* The tests' first line. */
 	printf("NOTES START width=%u height=%u fullscreen=%d pages=%lu strokes=%lu path=%s\n",
@@ -392,6 +419,12 @@ main(
 			app_input(&app, &app.window.inputs[index]);
 		app.window.input_count = 0;
 
+		/* The fingers' events, and where they put the page. */
+		for (index = 0; index < app.window.touch_count; index++)
+			notes_touch_event(&app.touch, &app.window.touches[index]);
+		app.window.touch_count = 0;
+		app_touch(&app);
+
 		/* The autosave, once the notebook has been still long enough and nothing is being drawn. */
 		now = notes_clock();
 		if (app.document.dirty &&
@@ -430,6 +463,7 @@ main(
 	fflush(stdout);
 
 	/* Everything goes; the journal stays only when the last save failed. */
+	notes_touch_close(&app.touch);
 	notes_ui_close(&app.ui);
 	notes_frame_free(&app.frame);
 	notes_frame_free(&app.page_frame);
@@ -1053,6 +1087,15 @@ app_input(
 	uint32_t id;
 	uint32_t color;
 	float width;
+	int near;
+
+	/* The pen near the window or gone tells a palm from a finger (ws081-p013). */
+	if (input->source != NOTES_SOURCE_POINTER) {
+		near = 1;
+		if (input->kind == NOTES_INPUT_LEAVE)
+			near = 0;
+		notes_touch_pen(&app->touch, near, notes_touch_clock());
+	}
 
 	/* The pen's mark follows the pen, over the window or in contact. */
 	app_hover(app, input);
@@ -1153,6 +1196,46 @@ app_hover(
 	app->hover_y = input->y;
 	app->hover_source = input->source;
 	app->redraw = 1;
+}
+
+/*
+ * Moves time on for the fingers: the toolbar's taps press its buttons, and
+ * a page the fingers moved (or that glides, or is zoomed) is drawn again.
+ */
+static void
+app_touch(
+	struct notes_app *app)
+{
+	uint32_t action;
+	float x;
+	float y;
+	float scale;
+	int taken;
+
+	/* Each tap on the toolbar presses the button under it. */
+	for (;;) {
+		taken = notes_touch_take_tap(&app->touch, &x, &y);
+		if (!taken)
+			break;
+		action = notes_ui_hit(&app->ui, x, y);
+		if (action != NOTES_ACTION_NONE)
+			app_action(app, action);
+	}
+
+	/* The fingers' time moves on. */
+	app->touch_due = notes_touch_tick(&app->touch, notes_touch_clock());
+
+	/*
+	 * A place other than the one last drawn (by the tick, or by a gesture of
+	 * the events before it, such as a double tap), or the start or end of a
+	 * zoom (the page is drawn at its new scale), is drawn.
+	 */
+	notes_touch_view(&app->touch, &x, &y, &scale);
+	if (x != app->view.x ||
+	    y != app->view.y ||
+	    scale != app->view.scale ||
+	    app->touch.zooming != app->drawn_zooming)
+		app->redraw = 1;
 }
 
 /* Adds a sample to the stroke being drawn, or erases at it. */
@@ -1367,26 +1450,43 @@ app_draw(
 	uint32_t picture_height;
 	size_t pitch;
 	size_t index;
+	float stretch;
+	int stretched;
 	int page_clear;
 	int error;
 
 	/* When the frame starts, for the frame times. */
 	started = app_microseconds();
 
-	/* The page's place; a new place (and the first) is logged for the tests. */
+	/* The whole page's place, and the place the fingers' zoom and scroll give it (another page starts at its top). */
 	page = app->document.pages[app->page];
 	notes_view_layout(&view, app->renderer.extent.width, app->renderer.extent.height, page->width, page->height);
-	if (!app->drawn ||
-	    view.x != app->view.x ||
-	    view.y != app->view.y ||
-	    view.scale != app->view.scale) {
+	notes_touch_layout(&app->touch, app->renderer.extent.width, app->renderer.extent.height, (float)NOTES_TOOLBAR_HEIGHT, NOTES_PAGE_MARGIN,
+			   page->width, page->height, view.scale);
+	if (page != app->touch_page) {
+		app->touch_page = page;
+		notes_touch_top(&app->touch);
+	}
+
+	/* The place the frame is drawn at. */
+	notes_touch_view(&app->touch, &view.x, &view.y, &view.scale);
+
+	/* A new place (and the first) is logged for the tests, once the fingers let the page rest. */
+	if (!app->touch.moving &&
+	    !app->touch.pinching &&
+	    (!app->drawn ||
+	     view.x != app->logged_view.x ||
+	     view.y != app->logged_view.y ||
+	     view.scale != app->logged_view.scale)) {
 		printf("NOTES LAYOUT window=%ux%u page=%d,%d,%d,%d scale=%.4f\n", app->renderer.extent.width, app->renderer.extent.height,
 		       (int)view.x, (int)view.y, (int)(page->width * view.scale), (int)(page->height * view.scale), (double)view.scale);
 		fflush(stdout);
+		app->logged_view = view;
 	}
 
-	/* The place the input is measured against. */
+	/* The place the input is measured against, and whether it is drawn while zooming. */
 	app->view = view;
+	app->drawn_zooming = app->touch.zooming;
 
 	/* The toolbar, drawn again when its state changed; the menus show the same state. */
 	if (app->toolbar_dirty) {
@@ -1411,25 +1511,45 @@ app_draw(
 		}
 	}
 
-	/* The page's picture, at the page's size in whole pixels. */
-	picture_width = (uint32_t)ceil((double)(page->width * view.scale));
-	picture_height = (uint32_t)ceil((double)(page->height * view.scale));
-	error = (int)notes_renderer_page(&app->renderer, picture_width, picture_height);
-	if (error != (int)VK_SUCCESS) {
-		fprintf(stderr, "notes: %s failed (%d)\n", app->renderer.operation, error);
-		app->quit = 1;
-		return;
+	/*
+	 * While two fingers zoom, a picture of the page as it stands (at another
+	 * scale) is stretched to the new one rather than drawn again every frame
+	 * (ws081-p013); the page is drawn at its scale when they stop.
+	 */
+	stretch = 1.0f;
+	stretched = 0;
+	if (app->touch.zooming &&
+	    app->picture_page == page &&
+	    app->picture_serial == app->renderer.page_serial &&
+	    app->picture_reshaped == app->document.reshaped &&
+	    app->picture_strokes == page->stroke_count &&
+	    app->picture_scale > 0.0f) {
+		stretched = 1;
+		stretch = view.scale / app->picture_scale;
 	}
 
-	/* What the picture lacks, when anything: the whole page, or the strokes put on top since. */
+	/* The page's picture, at the page's size in whole pixels. */
 	page_clear = 0;
-	page_frame = app_page_frame(app, page, view.scale, &page_clear);
+	page_frame = NULL;
+	if (!stretched) {
+		picture_width = (uint32_t)ceil((double)(page->width * view.scale));
+		picture_height = (uint32_t)ceil((double)(page->height * view.scale));
+		error = (int)notes_renderer_page(&app->renderer, picture_width, picture_height);
+		if (error != (int)VK_SUCCESS) {
+			fprintf(stderr, "notes: %s failed (%d)\n", app->renderer.operation, error);
+			app->quit = 1;
+			return;
+		}
+
+		/* What the picture lacks, when anything: the whole page, or the strokes put on top since. */
+		page_frame = app_page_frame(app, page, view.scale, &page_clear);
+	}
 
 	/* The desk and the page's picture on it. */
 	notes_frame_begin(&app->frame);
 	app_desk(app, &view, page->width * view.scale, page->height * view.scale);
 	notes_frame_texture(&app->frame, NOTES_TEXTURE_PAGE, view.x, view.y,
-			    (float)app->renderer.page_width, (float)app->renderer.page_height);
+			    (float)app->renderer.page_width * stretch, (float)app->renderer.page_height * stretch);
 
 	/* The stroke being drawn, on top, clipped to the page. */
 	notes_frame_clip(&app->frame, 1, view.x, view.y, page->width * view.scale, page->height * view.scale);
@@ -1814,6 +1934,12 @@ app_timeout(
 	/* A frame waiting to be drawn is due now. */
 	if (app->redraw)
 		return 0;
+
+	/* The fingers' next tick, when it comes before anything else. */
+	if (app->touch_due >= 0 &&
+	    (due == 0U ||
+	     now + (uint64_t)app->touch_due < due))
+		return app->touch_due;
 
 	/* Nothing is due: wait for the compositor. */
 	if (due == 0U)

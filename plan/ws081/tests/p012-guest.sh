@@ -44,12 +44,13 @@ python3 plan/ws081/tests/make-touch-pdf.py "$out/touch.pdf"
 guest "$stop_all" >/dev/null
 put "$build/bin/wayland" /bin/wayland
 put "$build/bin/pdfviewer" /bin/pdfviewer
+put "$build/bin/touchinject" /bin/touchinject
 put "$build/dynamic/libkeiland.so" /lib/libkeiland.so
 put "$build/dynamic/libpdf.so" /lib/libpdf.so
 put "$build/dynamic/libz-compat.so" /lib/libz-compat.so
 put "$build/dynamic/libjpeg-compat.so" /lib/libjpeg-compat.so
 put "$out/touch.pdf" /tmp/touch.pdf
-guest 'chmod 755 /bin/wayland /bin/pdfviewer' >/dev/null
+guest 'chmod 755 /bin/wayland /bin/pdfviewer /bin/touchinject' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
 /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
@@ -63,10 +64,24 @@ viewer() {
 	echo "window at $wx,$wy"
 }
 
+# Runs an injector (touchinject or peninject) on a script in the guest.  Without a replay=0 line the step fails, and the
+# SSH command's status and whole output are kept in OUTDIR/SCRIPT.failed.log (BUG-099: tell a failed replay from
+# a lost output; the injector says on standard error how it ended).
+inject() {
+	put "$out/$2" "/tmp/$2"
+	result=$(guest "/bin/$1 /tmp/$2 2>&1; echo replay=\$?")
+	rc=$?
+	if ! printf '%s\n' "$result" | grep -q '^replay=0$'; then
+		{ echo "ssh status: $rc"; printf '%s\n' "$result"; } > "$out/$2.failed.log"
+		echo "$1 $2: FAILED (ssh status $rc, output in $out/$2.failed.log)"
+		printf '%s\n' "$result" | tail -5 | sed 's/^/  | /'
+		status=1
+	fi
+}
+
 # Replays a touch script (a file in OUTDIR) in the guest.
 replay() {
-	put "$out/$1" "/tmp/$1"
-	guest "/bin/touchinject /tmp/$1; echo replay=\$?" | grep -q '^replay=0$' || { echo "touchinject $1: FAILED"; status=1; }
+	inject touchinject "$1"
 }
 
 # 1. A flick in the scroll mode.
