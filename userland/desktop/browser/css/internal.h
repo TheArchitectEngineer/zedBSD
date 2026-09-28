@@ -184,8 +184,9 @@ struct css_selector {
 /*
  * A sum of lengths of the kinds calc() mixes, each the number of its unit:
  * pixels (the absolute units converted), percentages, font-relative and
- * viewport-relative lengths.  The cascade turns it into pixels and a
- * percentage the layout resolves.
+ * viewport-relative lengths, and at most one min(), max() or clamp()
+ * inside it times a factor (nested, in the parse's arena; ws074-p074).
+ * The cascade turns it into pixels and a percentage the layout resolves.
  */
 struct css_calc_sum {
 	float px;
@@ -197,6 +198,8 @@ struct css_calc_sum {
 	float vh;
 	float vmin;
 	float vmax;
+	const struct css_calc *nested;
+	float nested_factor;
 };
 
 /* What a calculation does with its sums. */

@@ -152,6 +152,7 @@ static const struct css_custom *cascade_custom_find(const struct css_custom *lis
 static int cascade_keep_tokens(struct css_engine *engine, const struct css_token *tokens, size_t count, const struct css_token **kept);
 static int cascade_resolve_pending(struct css_engine *engine, const struct css_style *style, struct wb_vector *list, struct wb_arena *scratch);
 static struct css_length cascade_calc(struct css_engine *engine, const struct css_calc *calc, float font_size);
+static float cascade_calc_pixels(struct css_engine *engine, const struct css_calc *calc, float font_size);
 static int cascade_candidate_matches(struct css_engine *engine, struct dom_element *element, const struct css_selector *selector);
 static int cascade_selector_matches(struct css_engine *engine, struct dom_element *element, const struct css_selector *selector, size_t index, struct dom_element *anchor);
 static int cascade_anchored(struct dom_element *element, int combinator, struct dom_element *anchor);
@@ -1403,6 +1404,8 @@ cascade_calc(
 		    calc->sums[index].vh * engine->viewport_height / 100.0f +
 		    calc->sums[index].vmin * vmin / 100.0f +
 		    calc->sums[index].vmax * vmax / 100.0f;
+		if (calc->sums[index].nested != NULL)
+			values[index] += calc->sums[index].nested_factor * cascade_calc_pixels(engine, calc->sums[index].nested, font_size);
 		percents[index] = calc->sums[index].percent;
 		if (percents[index] != 0)
 			any_percent = 1;
@@ -1450,6 +1453,28 @@ cascade_calc(
 	/* Reports the length in pixels. */
 	length.value = least;
 	return length;
+}
+
+/*
+ * Computes a min(), max() or clamp() inside a sum in pixels (ws074-p074):
+ * a percentage it leaves is measured against the viewport's width, as the
+ * comparisons of cascade_calc are.
+ */
+static float
+cascade_calc_pixels(
+	struct css_engine *engine,
+	const struct css_calc *calc,
+	float font_size)
+{
+	struct css_length length;
+
+	/* The calculation, then its percentage in pixels. */
+	length = cascade_calc(engine, calc, font_size);
+	if (length.unit == CSS_UNIT_PERCENT)
+		return length.value * engine->viewport_width / 100.0f + length.offset;
+
+	/* The pixels. */
+	return length.value;
 }
 
 /* Orders two applying declarations: rank, then specificity, then order. */

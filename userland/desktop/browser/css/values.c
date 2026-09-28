@@ -120,13 +120,13 @@ static int values_flex_flow(struct css_parse *parse, const struct css_token *tok
 static int values_content(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_pair(struct css_parse *parse, int first, int second, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_calc(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_calc_arguments(const struct css_token *tokens, size_t count, int operation, struct css_calc *calc);
-static int values_calc_sum(const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
-static int values_calc_product(const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
-static int values_calc_value(const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
+static int values_calc_arguments(struct wb_arena *arena, const struct css_token *tokens, size_t count, int operation, struct css_calc *calc);
+static int values_calc_sum(struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
+static int values_calc_product(struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
+static int values_calc_value(struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
 static int values_calc_unit(const struct css_token *token, struct css_calc_sum *sum);
 static void values_calc_scale(struct css_calc_sum *sum, float factor);
-static void values_calc_add(struct css_calc_sum *sum, const struct css_calc_sum *other, float sign);
+static int values_calc_add(struct css_calc_sum *sum, const struct css_calc_sum *other, float sign);
 static size_t values_skip_space(const struct css_token *tokens, size_t count, size_t index);
 static int values_border_radius(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_corner_radius(struct css_parse *parse, int corner, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
@@ -604,6 +604,15 @@ static const struct values_keyword values_length_keywords[] = {
 	{ "auto", CSS_UNIT_AUTO },
 	{ "none", CSS_UNIT_NONE },
 	{ "normal", CSS_UNIT_NORMAL },
+	{ "max-content", CSS_UNIT_MAX_CONTENT },
+	{ "-webkit-max-content", CSS_UNIT_MAX_CONTENT },
+	{ "-moz-max-content", CSS_UNIT_MAX_CONTENT },
+	{ "min-content", CSS_UNIT_MIN_CONTENT },
+	{ "-webkit-min-content", CSS_UNIT_MIN_CONTENT },
+	{ "-moz-min-content", CSS_UNIT_MIN_CONTENT },
+	{ "fit-content", CSS_UNIT_FIT_CONTENT },
+	{ "-webkit-fit-content", CSS_UNIT_FIT_CONTENT },
+	{ "-moz-fit-content", CSS_UNIT_FIT_CONTENT },
 	{ NULL, 0 }
 };
 
@@ -2789,7 +2798,7 @@ values_calc(
 
 	/* The arguments, as sums. */
 	memset(&calc, 0, sizeof(calc));
-	error = values_calc_arguments(tokens + 1, count - 2U, operation, &calc);
+	error = values_calc_arguments(parse->arena, tokens + 1, count - 2U, operation, &calc);
 	if (error != 0)
 		return error;
 
@@ -2832,6 +2841,7 @@ values_calc(
  */
 static int
 values_calc_arguments(
+	struct wb_arena *arena,
 	const struct css_token *tokens,
 	size_t count,
 	int operation,
@@ -2854,7 +2864,7 @@ values_calc_arguments(
 			return EINVAL;
 
 		/* The argument's sum. */
-		error = values_calc_sum(tokens, count, &index, &term);
+		error = values_calc_sum(arena, tokens, count, &index, &term);
 		if (error != 0)
 			return error;
 
@@ -2900,6 +2910,7 @@ values_calc_arguments(
 /* Reads a sum: products joined by + and -. */
 static int
 values_calc_sum(
+	struct wb_arena *arena,
 	const struct css_token *tokens,
 	size_t count,
 	size_t *index,
@@ -2910,7 +2921,7 @@ values_calc_sum(
 	int error;
 
 	/* The first product. */
-	error = values_calc_product(tokens, count, index, term);
+	error = values_calc_product(arena, tokens, count, index, term);
 	if (error != 0)
 		return error;
 
@@ -2927,7 +2938,7 @@ values_calc_sum(
 		if (tokens[*index].delim == '-')
 			sign = -1.0f;
 		(*index)++;
-		error = values_calc_product(tokens, count, index, &right);
+		error = values_calc_product(arena, tokens, count, index, &right);
 		if (error != 0)
 			return error;
 
@@ -2952,8 +2963,10 @@ values_calc_sum(
 			continue;
 		}
 
-		/* Two lengths. */
-		values_calc_add(&term->sum, &right.sum, sign);
+		/* Two lengths (with one min(), max() or clamp() between them at most). */
+		error = values_calc_add(&term->sum, &right.sum, sign);
+		if (error != 0)
+			return error;
 	}
 
 	/* Succeeded: the sum is read. */
@@ -2963,6 +2976,7 @@ values_calc_sum(
 /* Reads a product: values joined by * and /, one side of each a number. */
 static int
 values_calc_product(
+	struct wb_arena *arena,
 	const struct css_token *tokens,
 	size_t count,
 	size_t *index,
@@ -2973,7 +2987,7 @@ values_calc_product(
 	int error;
 
 	/* The first value. */
-	error = values_calc_value(tokens, count, index, term);
+	error = values_calc_value(arena, tokens, count, index, term);
 	if (error != 0)
 		return error;
 
@@ -2990,7 +3004,7 @@ values_calc_product(
 		if (tokens[*index].delim == '/')
 			divide = 1;
 		(*index)++;
-		error = values_calc_value(tokens, count, index, &right);
+		error = values_calc_value(arena, tokens, count, index, &right);
 		if (error != 0)
 			return error;
 
@@ -3028,12 +3042,16 @@ values_calc_product(
 /* Reads one value: a number, a percentage, a length, or a sum in parentheses or calc(). */
 static int
 values_calc_value(
+	struct wb_arena *arena,
 	const struct css_token *tokens,
 	size_t count,
 	size_t *index,
 	struct values_term *term)
 {
 	const struct css_token *token;
+	struct css_calc *nested;
+	size_t used;
+	int operation;
 	int is_calc;
 	int error;
 
@@ -3068,6 +3086,39 @@ values_calc_value(
 		return 0;
 	}
 
+	/* A min(), max() or clamp() inside the sum (ws074-p074): its arguments, kept in the arena, times one. */
+	operation = -1;
+	if (token->type == CSS_TOKEN_FUNCTION) {
+		is_calc = css_ident_equal(token, "min");
+		if (is_calc)
+			operation = CSS_CALC_MIN;
+		is_calc = css_ident_equal(token, "max");
+		if (is_calc)
+			operation = CSS_CALC_MAX;
+		is_calc = css_ident_equal(token, "clamp");
+		if (is_calc)
+			operation = CSS_CALC_CLAMP;
+	}
+
+	/* The function's arguments, as a calculation of its own. */
+	if (operation >= 0) {
+		used = values_function_length(tokens + *index, count - *index);
+		if (used < 2U || tokens[*index + used - 1U].type != CSS_TOKEN_CLOSE_PAREN)
+			return EINVAL;
+		nested = wb_arena_zalloc(arena, sizeof(*nested));
+		if (nested == NULL)
+			return ENOMEM;
+		error = values_calc_arguments(arena, tokens + *index + 1U, used - 2U, operation, nested);
+		if (error != 0)
+			return error;
+		if (nested->count == 0)
+			return EINVAL;
+		term->sum.nested = nested;
+		term->sum.nested_factor = 1.0f;
+		*index += used;
+		return 0;
+	}
+
 	/* A sum in parentheses, or in a nested calc(). */
 	if (token->type == CSS_TOKEN_FUNCTION) {
 		is_calc = css_ident_equal(token, "calc");
@@ -3079,7 +3130,7 @@ values_calc_value(
 
 	/* The sum inside, then the closing parenthesis. */
 	(*index)++;
-	error = values_calc_sum(tokens, count, index, term);
+	error = values_calc_sum(arena, tokens, count, index, term);
 	if (error != 0)
 		return error;
 	*index = values_skip_space(tokens, count, *index);
@@ -3172,15 +3223,30 @@ values_calc_scale(
 	sum->vh *= factor;
 	sum->vmin *= factor;
 	sum->vmax *= factor;
+
+	/* And the function's factor. */
+	sum->nested_factor *= factor;
 }
 
-/* Adds (sign 1) or subtracts (sign -1) one sum to or from another. */
-static void
+/*
+ * Adds (sign 1) or subtracts (sign -1) one sum to or from another; two
+ * sums that each hold a min(), max() or clamp() are not added in this
+ * pass (EINVAL).
+ */
+static int
 values_calc_add(
 	struct css_calc_sum *sum,
 	const struct css_calc_sum *other,
 	float sign)
 {
+	/* The other's function, when it has one, becomes the sum's. */
+	if (other->nested != NULL) {
+		if (sum->nested != NULL)
+			return EINVAL;
+		sum->nested = other->nested;
+		sum->nested_factor = sign * other->nested_factor;
+	}
+
 	/* Each kind of length. */
 	sum->px += sign * other->px;
 	sum->percent += sign * other->percent;
@@ -3191,6 +3257,9 @@ values_calc_add(
 	sum->vh += sign * other->vh;
 	sum->vmin += sign * other->vmin;
 	sum->vmax += sign * other->vmax;
+
+	/* Succeeded: the sums are added. */
+	return 0;
 }
 
 /* Skips whitespace tokens from index; returns the first other index (or count). */
