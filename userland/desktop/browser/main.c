@@ -40,6 +40,7 @@
 #include "shell/shell.h"
 
 #include <errno.h>
+#include <poll.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -95,6 +96,17 @@ struct main_options {
 	struct text_font_paths fonts;
 	const char *output;
 	unsigned parse;
+	int async;
+};
+
+/*
+ * A document fetched by --async: the page it goes into, and when it has
+ * arrived, how its load ended.
+ */
+struct main_fetch {
+	struct page *page;
+	int done;
+	int error;
 };
 
 /*
@@ -127,9 +139,19 @@ static int main_run_js(const struct main_options *options);
 static int main_run_page(const struct main_options *options);
 static void main_console_out(void *context, int level, const char *text, size_t length);
 static int main_read_script(const char *path, struct wb_units *units);
+/*
+ * The loader of --async (NULL without it), made by the first page that
+ * needs it and kept until the program ends (the pages that use it are
+ * destroyed first).
+ */
+static struct net_loader *main_loader;
+
 static int main_dump_code(struct vm_realm *realm, const struct wb_units *units, unsigned how, struct js_syntax_error *error);
 static int main_dump_unit(const struct vm_code *code, struct wb_buffer *out);
 static int main_prepare(const struct main_options *options, const void *stack_base, struct page **page, int paint);
+static int main_load_async(struct page *page, const char *location);
+static void main_document_arrived(void *context, struct net_request *request);
+static void main_settle_network(void);
 static int main_parse_size(const char *text, unsigned *size);
 static const char *main_value(const char *argument, const char *name);
 static void main_usage(FILE *stream);
@@ -602,6 +624,7 @@ main_prepare(
 {
 	struct page *loaded;
 	int layout;
+	int changed;
 	const char *reason;
 	int error;
 
@@ -624,8 +647,14 @@ main_prepare(
 	if (options->mode == MAIN_MODE_RUN_PAGE)
 		page_set_console(loaded, main_console_out, NULL);
 
-	/* Loads the file, running its scripts. */
-	error = page_load_location(loaded, options->shell.start);
+	/* Loads the file, running its scripts; with --async an http or https page comes through the loader. */
+	if (options->async) {
+		error = main_load_async(loaded, options->shell.start);
+	} else {
+		error = page_load_location(loaded, options->shell.start);
+	}
+
+	/* A page that could not be loaded, and why. */
 	if (error != 0) {
 		reason = page_failure_reason();
 		fprintf(stderr, "browser: cannot load %s: %s", options->shell.start, strerror(error));
@@ -654,6 +683,16 @@ main_prepare(
 		error = page_open_fonts(loaded, &options->fonts);
 		if (error == 0)
 			error = page_layout(loaded, (int)options->shell.width, (int)options->shell.height);
+
+		/* With --async, the images that layout asked for arrive, and the page is laid out with them. */
+		if (error == 0 && options->async) {
+			main_settle_network();
+			changed = page_needs_layout(loaded);
+			if (changed)
+				error = page_layout(loaded, (int)options->shell.width, (int)options->shell.height);
+		}
+
+		/* A page that could not be laid out. */
 		if (error != 0) {
 			fprintf(stderr, "browser: cannot lay out %s: %s\n", options->shell.start, strerror(error));
 			page_destroy(loaded);
@@ -674,6 +713,105 @@ main_prepare(
 	/* Succeeded: the page is ready for the mode. */
 	*page = loaded;
 	return 0;
+}
+
+/*
+ * Loads a page as --async does: the loader made, the page given it for its
+ * images, and an http or https document fetched through it (waited for
+ * here); any other location is read at once.
+ */
+static int
+main_load_async(
+	struct page *page,
+	const char *location)
+{
+	struct main_fetch fetch;
+	int remote;
+	int error;
+
+	/* The loader, made once. */
+	if (main_loader == NULL) {
+		error = page_net_create(&main_loader);
+		if (error != 0)
+			return error;
+	}
+
+	/* The page's images come through it. */
+	page_set_loader(page, main_loader);
+
+	/* A location that is not http or https is read at once. */
+	remote = page_net_is_remote(location);
+	if (!remote) {
+		error = page_load_location(page, location);
+		return error;
+	}
+
+	/* The document, fetched and waited for (the callback loads it into the page). */
+	fetch.page = page;
+	fetch.done = 0;
+	fetch.error = 0;
+	error = page_net_fetch(main_loader, location, main_document_arrived, &fetch, NULL);
+	if (error != 0)
+		return error;
+	main_settle_network();
+
+	/* A load that could not finish. */
+	if (!fetch.done)
+		return ETIMEDOUT;
+	if (fetch.error != 0)
+		return fetch.error;
+
+	/* Succeeded: the page is loaded. */
+	return 0;
+}
+
+/* The loader's callback for --async's document: its bytes loaded into the page at its final URL. */
+static void
+main_document_arrived(
+	void *context,
+	struct net_request *request)
+{
+	struct main_fetch *fetch;
+	const unsigned char *bytes;
+	const char *url;
+	size_t length;
+	int error;
+
+	/* The response, loaded while it is there. */
+	fetch = context;
+	error = page_net_result(request, &bytes, &length, &url);
+	if (error == 0)
+		error = page_load_bytes(fetch->page, bytes, length, url);
+
+	/* The load is over. */
+	fetch->error = error;
+	fetch->done = 1;
+}
+
+/* Runs the loader until it has no request left: polls its descriptors, then lets it work. */
+static void
+main_settle_network(void)
+{
+	struct pollfd fds[64];
+	size_t count;
+	int timeout;
+	int ready;
+
+	/* Each round, while a request runs. */
+	for (;;) {
+		timeout = page_net_timeout(main_loader);
+		if (timeout < 0)
+			break;
+
+		/* The descriptors, waited for until one is ready or the earliest time out. */
+		count = page_net_poll_fds(main_loader, fds, sizeof(fds) / sizeof(fds[0]));
+		ready = poll(fds, (nfds_t)count, timeout);
+		if (ready < 0 && errno != EINTR)
+			break;
+
+		/* The loader's work. */
+		page_net_process(main_loader, fds, count);
+	}
 }
 
 /* Reads the command line into options; returns EINVAL for a word it does not know. */
@@ -774,6 +912,13 @@ main_parse(
 		differs = strcmp(argv[index], "--strict");
 		if (differs == 0) {
 			options->parse |= JS_PARSE_STRICT;
+			continue;
+		}
+
+		/* The headless modes fetch the page and its images with the asynchronous loader. */
+		differs = strcmp(argv[index], "--async");
+		if (differs == 0) {
+			options->async = 1;
 			continue;
 		}
 
@@ -922,7 +1067,7 @@ main_usage(
 		"       browser --dump=dom|style|layout|paint [--width=N] [--height=N] [--font=PATH]\n"
 		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
 		"       browser --run [--width=N] [--height=N] FILE\n"
-		"       browser --render|--render-gpu --output=OUT.ppm [--width=N] [--height=N] [--font=PATH]\n"
+		"       browser --render|--render-gpu --output=OUT.ppm [--width=N] [--height=N] [--font=PATH] [--async]\n"
 		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
 		"       browser --dump=ast [--module] [--strict] FILE.js\n"
 		"       browser --js [--strict] FILE.js\n"

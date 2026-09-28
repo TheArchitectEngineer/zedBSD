@@ -27,6 +27,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <limits.h>
+#include <poll.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -322,6 +323,193 @@ net_tls_write(
 
 	/* Succeeded: the request is sent. */
 	return 0;
+}
+
+/*
+ * Starts TLS over a connected socket without waiting (the asynchronous
+ * loader's way): the connection's state with its names set; the handshake
+ * is then driven by net_tls_handshake as the socket becomes ready.
+ */
+int
+net_tls_start(
+	int descriptor,
+	const char *host,
+	struct net_tls **tls)
+{
+	struct net_tls *made;
+	int result;
+	int error;
+
+	/* The library and the shared context. */
+	*tls = NULL;
+	tls_reason[0] = '\0';
+	error = tls_load();
+	if (error != 0)
+		return error;
+
+	/* The connection's state. */
+	made = calloc(1, sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+	tls_library.err_clear_error();
+	made->ssl = tls_library.ssl_new(tls_context);
+	if (made->ssl == NULL) {
+		free(made);
+		return ENOMEM;
+	}
+
+	/* The socket, the name sent (SNI) and the name checked. */
+	result = tls_library.set_fd(made->ssl, descriptor);
+	error = 0;
+	if (result != 1)
+		error = EPROTO;
+	if (error == 0)
+		error = tls_set_host(made->ssl, host);
+	if (error != 0) {
+		tls_fail("setup", made->ssl, 0);
+		net_tls_close(made);
+		return error;
+	}
+
+	/* Succeeded: the handshake can start. */
+	*tls = made;
+	return 0;
+}
+
+/*
+ * Takes the handshake as far as the socket allows: 0 when it is done,
+ * EAGAIN when it waits for the socket (*wants says for reading, POLLIN, or
+ * writing, POLLOUT), EPROTO when it failed (net_tls_error says why).
+ */
+int
+net_tls_handshake(
+	struct net_tls *tls,
+	short *wants)
+{
+	int result;
+	int reason;
+
+	/* One step of the handshake. */
+	*wants = 0;
+	result = tls_library.connect(tls->ssl);
+	if (result == 1)
+		return 0;
+
+	/* A handshake that waits for the socket. */
+	reason = tls_library.get_error(tls->ssl, result);
+	if (reason == TLS_ERROR_WANT_READ) {
+		*wants = POLLIN;
+		return EAGAIN;
+	}
+
+	/* Or for the socket to take more. */
+	if (reason == TLS_ERROR_WANT_WRITE) {
+		*wants = POLLOUT;
+		return EAGAIN;
+	}
+
+	/* Anything else failed (the chain or the name did not verify). */
+	tls_fail("handshake", tls->ssl, result);
+	return EPROTO;
+}
+
+/*
+ * Reads what TLS can give without waiting: *received bytes (0 at the end
+ * of the connection), EAGAIN when it must wait for the socket (*wants
+ * says for what), or an error.
+ */
+int
+net_tls_read_some(
+	struct net_tls *tls,
+	unsigned char *bytes,
+	size_t length,
+	size_t *received,
+	short *wants)
+{
+	int count;
+	int result;
+	int reason;
+
+	/* One read (OpenSSL takes an int). */
+	*received = 0;
+	*wants = 0;
+	count = (int)length;
+	if (length > INT_MAX)
+		count = INT_MAX;
+	result = tls_library.read(tls->ssl, bytes, count);
+	if (result > 0) {
+		*received = (size_t)result;
+		return 0;
+	}
+
+	/* A record that is not complete yet waits for the socket. */
+	reason = tls_library.get_error(tls->ssl, result);
+	if (reason == TLS_ERROR_WANT_READ) {
+		*wants = POLLIN;
+		return EAGAIN;
+	}
+
+	/* Or for the socket to take more. */
+	if (reason == TLS_ERROR_WANT_WRITE) {
+		*wants = POLLOUT;
+		return EAGAIN;
+	}
+
+	/* The server's close (or a close without close_notify, which the context allows). */
+	if (reason == TLS_ERROR_ZERO_RETURN)
+		return 0;
+	if (reason == TLS_ERROR_SYSCALL && errno != 0)
+		return errno;
+
+	/* Anything else is a broken connection. */
+	tls_fail("read", tls->ssl, result);
+	return EPROTO;
+}
+
+/*
+ * Writes what TLS can take without waiting: *sent bytes, EAGAIN when it
+ * must wait for the socket (*wants says for what), or an error.
+ */
+int
+net_tls_write_some(
+	struct net_tls *tls,
+	const unsigned char *bytes,
+	size_t length,
+	size_t *sent,
+	short *wants)
+{
+	int count;
+	int result;
+	int reason;
+
+	/* One write. */
+	*sent = 0;
+	*wants = 0;
+	count = (int)length;
+	if (length > INT_MAX)
+		count = INT_MAX;
+	result = tls_library.write(tls->ssl, bytes, count);
+	if (result > 0) {
+		*sent = (size_t)result;
+		return 0;
+	}
+
+	/* A write that waits for the socket. */
+	reason = tls_library.get_error(tls->ssl, result);
+	if (reason == TLS_ERROR_WANT_READ) {
+		*wants = POLLIN;
+		return EAGAIN;
+	}
+
+	/* Or for the socket to take more. */
+	if (reason == TLS_ERROR_WANT_WRITE) {
+		*wants = POLLOUT;
+		return EAGAIN;
+	}
+
+	/* Anything else ends the request. */
+	tls_fail("write", tls->ssl, result);
+	return EPROTO;
 }
 
 /*

@@ -10,7 +10,7 @@
  * URL (the WHATWG URL Standard's parser and serializer, url.c), its hosts
  * (host.c: domains, IPv4 and IPv6 addresses, the punycode of
  * internationalized domains), data: URLs (data.c), HTTP/1.1 (http.c), TLS
- * (tls.c) and cookies (cookie.c).
+ * (tls.c), cookies (cookie.c) and the asynchronous loader (loader.c).
  *
  * A URL's parts are kept as they are serialized: ASCII strings, already
  * percent-encoded, which the caller owns through the URL and frees with
@@ -82,6 +82,14 @@ struct net_response {
 	struct wb_buffer body;
 };
 
+/* A request of the asynchronous loader, and the loader. */
+struct net_loader;
+struct net_request;
+struct pollfd;
+
+/* A request's callback: called once when it ends (net_request_error tells how). */
+typedef void (*net_request_done)(void *context, struct net_request *request);
+
 /* URLs (url.c). */
 int net_url_parse(const char *input, size_t length, const struct net_url *base, struct net_url *url);
 void net_url_release(struct net_url *url);
@@ -98,18 +106,38 @@ int net_host_parse(const char *input, size_t length, int opaque, struct wb_buffe
 
 /* HTTP (http.c). */
 int net_http_fetch(const char *url, struct net_response *response);
+int net_http_request_text(const struct net_url *url, struct wb_buffer *request);
+int net_http_parse_response(const struct net_url *url, const struct wb_buffer *raw, struct net_response *response, struct wb_buffer *location);
+int net_http_is_redirect(int status);
+int net_http_is_web(const char *scheme);
 void net_response_release(struct net_response *response);
 
 /* TLS for https (tls.c): the OpenSSL package's library, loaded when first needed. */
 struct net_tls;
 int net_tls_add_ca_file(const char *path);
 int net_tls_open(int descriptor, const char *host, struct net_tls **tls);
+int net_tls_start(int descriptor, const char *host, struct net_tls **tls);
+int net_tls_handshake(struct net_tls *tls, short *wants);
+int net_tls_read_some(struct net_tls *tls, unsigned char *bytes, size_t length, size_t *received, short *wants);
+int net_tls_write_some(struct net_tls *tls, const unsigned char *bytes, size_t length, size_t *sent, short *wants);
 int net_tls_read(struct net_tls *tls, unsigned char *bytes, size_t length, size_t *received);
 int net_tls_write(struct net_tls *tls, const unsigned char *bytes, size_t length);
 int net_tls_pending(const struct net_tls *tls);
 void net_tls_close(struct net_tls *tls);
 void net_tls_clear_error(void);
 const char *net_tls_error(void);
+
+/* The asynchronous loader (loader.c). */
+int net_loader_create(struct net_loader **loader);
+void net_loader_destroy(struct net_loader *loader);
+int net_loader_fetch(struct net_loader *loader, const char *url, net_request_done done, void *context, struct net_request **request);
+void net_request_cancel(struct net_request *request);
+int net_request_error(const struct net_request *request);
+const struct net_response *net_request_response(const struct net_request *request);
+size_t net_loader_poll_fds(const struct net_loader *loader, struct pollfd *fds, size_t capacity);
+int net_loader_timeout(const struct net_loader *loader);
+void net_loader_process(struct net_loader *loader, const struct pollfd *fds, size_t count);
+int net_loader_takes(const char *location);
 
 /* Cookies (cookie.c). */
 int net_cookie_store(const struct net_url *url, const char *header, size_t length);

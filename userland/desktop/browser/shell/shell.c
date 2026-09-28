@@ -13,10 +13,14 @@
  * under it, and zdesktop's titlebar holds back, forward, reload and the
  * location, whose URL can be edited.  The page's timers run on the real
  * clock between the compositor's events, and a page its scripts changed
- * is laid out and drawn again.
+ * is laid out and drawn again.  An http or https page (a link, the
+ * location, the history) is fetched without blocking: the page shown stays
+ * until the new one has arrived, and Esc stops the load; the pages' images
+ * come the same way and are laid out as they arrive.
  *
  * The program writes lines to standard output that the guest tests read
- * (ZBROWSER READY, FRAME, LINK, NAVIGATE, TITLEBAR, CONSOLE, ERROR); they
+ * (ZBROWSER READY, FRAME, LINK, NAVIGATE, TITLEBAR, CONSOLE, LOADING,
+ * STOPPED, ERROR); they
  * are its diagnostic interface.
  */
 
@@ -42,6 +46,7 @@
 #define SHELL_CLICK_SLOP	4
 
 /* The evdev codes of the keys and the button the shell reads. */
+#define SHELL_KEY_ESC		1U
 #define SHELL_KEY_Q		16U
 #define SHELL_KEY_W		17U
 #define SHELL_KEY_L		38U
@@ -70,7 +75,9 @@ enum shell_step {
  * layout units), where the left button went down, the frame of the run
  * whose stack the pages' heaps scan, the size a page is loaded at, and the
  * clock's time when the page shown (page_epoch) and the page being opened
- * (open_epoch) began, which their timers count from.
+ * (open_epoch) began, which their timers count from.  loader fetches the
+ * http and https pages and images; pending is the page being fetched (its
+ * location and how it joins the history), NULL when none is.
  */
 struct shell_state {
 	struct page *page;
@@ -92,11 +99,21 @@ struct shell_state {
 	unsigned height;
 	uint64_t page_epoch;
 	uint64_t open_epoch;
+	struct net_loader *loader;
+	struct net_request *pending;
+	char *pending_path;
+	int pending_step;
 };
 
 static int shell_absolute(const char *start, struct wb_buffer *path);
 static int shell_open_page(struct shell_state *state, const char *path, struct page **page);
 static int shell_navigate(struct shell_state *state, const char *path, int step);
+static int shell_make_page(struct shell_state *state, const char *path, struct page **page);
+static int shell_show_page(struct shell_state *state, struct page *page, const char *path, int step);
+static int shell_start_load(struct shell_state *state, const char *path, int step);
+static void shell_document_arrived(void *context, struct net_request *request);
+static void shell_stop_load(struct shell_state *state, int report);
+static void shell_run_network(struct shell_state *state, struct pollfd *fds, size_t count);
 static int shell_lay_out(struct shell_state *state);
 static void shell_show_state(struct shell_state *state);
 static void shell_input(struct shell_state *state, const struct shell_event *event);
@@ -121,12 +138,14 @@ shell_run(
 	const struct shell_options *options)
 {
 	struct shell_state state;
+	struct pollfd net_fds[SHELL_NET_FDS];
 	struct shell_event event;
 	struct shell_titlebar_event titlebar_event;
 	struct wb_buffer path;
 	struct wb_buffer title;
 	const char *shown;
 	uint64_t now;
+	size_t net_count;
 	int timeout;
 	int status;
 	int taken;
@@ -142,6 +161,13 @@ shell_run(
 	if (options->start == NULL) {
 		fprintf(stderr, "browser: a page to open is needed (a file or a file: URL)\n");
 		return 2;
+	}
+
+	/* The loader of the http and https pages and images. */
+	error = page_net_create(&state.loader);
+	if (error != 0) {
+		fprintf(stderr, "browser: cannot start the network: %s\n", strerror(error));
+		return 1;
 	}
 
 	/* The start page's absolute path. */
@@ -234,14 +260,18 @@ shell_run(
 			state.dirty = 0;
 		}
 
-		/* Waits for the compositor, a held key's next repeat, or the page's next timer. */
+		/* Waits for the compositor, the network, a held key's next repeat, or the page's next timer. */
 		now = shell_clock();
 		timeout = shell_wait(&state, now);
-		status = shell_window_dispatch(&state.window, timeout);
+		net_count = page_net_poll_fds(state.loader, net_fds, SHELL_NET_FDS);
+		status = shell_window_dispatch(&state.window, timeout, net_fds, net_count);
 		if (status != 0) {
 			fprintf(stderr, "browser: the connection to the compositor was lost\n");
 			break;
 		}
+
+		/* The network's work: requests that moved on, pages and images that arrived. */
+		shell_run_network(&state, net_fds, net_count);
 
 		/* Carries out the inputs that arrived. */
 		for (;;) {
@@ -268,6 +298,172 @@ shell_run(
 
 	/* Succeeded: the window was closed. */
 	return 0;
+}
+
+/*
+ * Makes an empty page for a location: its heap scanning the stack up to
+ * the run's frame, the window's size for its scripts, its console as
+ * CONSOLE lines, its clock starting now, and the loader for its images.
+ */
+static int
+shell_make_page(
+	struct shell_state *state,
+	const char *path,
+	struct page **page)
+{
+	struct page *made;
+	int error;
+
+	/* The page. */
+	*page = NULL;
+	error = page_create(&made, state->stack_base);
+	if (error != 0) {
+		printf("ZBROWSER ERROR load path=%s error=%s\n", path, strerror(error));
+		fflush(stdout);
+		return error;
+	}
+
+	/* Its scripts see the window's size, write their console as CONSOLE lines, and count time from now. */
+	page_set_viewport(made, (int)state->width, (int)state->height);
+	if (state->present.extent.width != 0U)
+		page_set_viewport(made, (int)state->present.extent.width, (int)state->present.extent.height);
+	page_set_console(made, shell_console, NULL);
+	state->open_epoch = shell_clock();
+
+	/* Its http and https images come through the loader. */
+	page_set_loader(made, state->loader);
+
+	/* Succeeded: the page is empty. */
+	*page = made;
+	return 0;
+}
+
+/*
+ * Starts fetching an http or https page (any load under way is stopped);
+ * the page shown stays until it arrives (shell_document_arrived).
+ */
+static int
+shell_start_load(
+	struct shell_state *state,
+	const char *path,
+	int step)
+{
+	char *copy;
+	int error;
+
+	/* One load at a time. */
+	shell_stop_load(state, 0);
+
+	/* The location, kept for the arrival. */
+	copy = strdup(path);
+	if (copy == NULL)
+		return ENOMEM;
+
+	/* The request. */
+	error = page_net_fetch(state->loader, path, shell_document_arrived, state, &state->pending);
+	if (error != 0) {
+		printf("ZBROWSER ERROR load path=%s error=%s\n", path, strerror(error));
+		fflush(stdout);
+		free(copy);
+		return error;
+	}
+
+	/* Succeeded: the page is loading. */
+	state->pending_path = copy;
+	state->pending_step = step;
+	printf("ZBROWSER LOADING url=%s\n", path);
+	fflush(stdout);
+	return 0;
+}
+
+/*
+ * The loader's callback for the page being fetched: a response becomes the
+ * page shown (at its final URL, after redirects); a failure is reported and
+ * the page shown stays.
+ */
+static void
+shell_document_arrived(
+	void *context,
+	struct net_request *request)
+{
+	struct shell_state *state;
+	const unsigned char *bytes;
+	const char *url;
+	const char *reason;
+	struct page *page;
+	char *path;
+	size_t length;
+	int step;
+	int error;
+
+	/* The load is over. */
+	state = context;
+	path = state->pending_path;
+	step = state->pending_step;
+	state->pending = NULL;
+	state->pending_path = NULL;
+
+	/* A request that failed leaves the page shown. */
+	error = page_net_result(request, &bytes, &length, &url);
+	if (error != 0) {
+		reason = page_failure_reason();
+		printf("ZBROWSER ERROR load path=%s error=%s tls=%s\n", path, strerror(error), reason);
+		fflush(stdout);
+		free(path);
+		return;
+	}
+
+	/* The document, in a new page at its final URL. */
+	error = shell_make_page(state, url, &page);
+	if (error == 0) {
+		error = page_load_bytes(page, bytes, length, url);
+		if (error == 0)
+			error = page_open_fonts(page, state->fonts);
+		if (error != 0) {
+			printf("ZBROWSER ERROR load path=%s error=%s\n", url, strerror(error));
+			fflush(stdout);
+			page_destroy(page);
+		}
+	}
+
+	/* The new page is shown. */
+	if (error == 0)
+		(void)shell_show_page(state, page, url, step);
+	free(path);
+}
+
+/* Stops the page being fetched, if any; report writes the STOPPED line. */
+static void
+shell_stop_load(
+	struct shell_state *state,
+	int report)
+{
+	/* Nothing loads. */
+	if (state->pending == NULL)
+		return;
+
+	/* The request, and the location kept for it. */
+	page_net_cancel(state->pending);
+	state->pending = NULL;
+	if (report) {
+		printf("ZBROWSER STOPPED url=%s\n", state->pending_path);
+		fflush(stdout);
+	}
+
+	/* The location kept for it goes too. */
+	free(state->pending_path);
+	state->pending_path = NULL;
+}
+
+/* Runs the network after the main loop's poll: the requests move on, and their callbacks run. */
+static void
+shell_run_network(
+	struct shell_state *state,
+	struct pollfd *fds,
+	size_t count)
+{
+	/* The loader's work. */
+	page_net_process(state->loader, fds, count);
 }
 
 /* Writes the absolute path of the page the command line names (a path, relative or not, or a file: URL). */
@@ -306,21 +502,11 @@ shell_open_page(
 	const char *reason;
 	int error;
 
-	/* The page, whose heap scans the stack up to the run's frame. */
+	/* The page. */
 	*page = NULL;
-	error = page_create(&loaded, state->stack_base);
-	if (error != 0) {
-		printf("ZBROWSER ERROR load path=%s error=%s\n", path, strerror(error));
-		fflush(stdout);
+	error = shell_make_page(state, path, &loaded);
+	if (error != 0)
 		return error;
-	}
-
-	/* Its scripts see the window's size, write their console as CONSOLE lines, and count time from now. */
-	page_set_viewport(loaded, (int)state->width, (int)state->height);
-	if (state->present.extent.width != 0U)
-		page_set_viewport(loaded, (int)state->present.extent.width, (int)state->present.extent.height);
-	page_set_console(loaded, shell_console, NULL);
-	state->open_epoch = shell_clock();
 
 	/* The file. */
 	error = page_load_location(loaded, path);
@@ -352,17 +538,50 @@ shell_navigate(
 	int step)
 {
 	struct page *page;
+	int remote;
+	int error;
+
+	/* The first page is loaded before the window. */
+	if (state->path == NULL) {
+		error = shell_show_page(state, state->page, path, step);
+		return error;
+	}
+
+	/* An http or https page is fetched without blocking; the page shown stays until it arrives. */
+	remote = page_net_is_remote(path);
+	if (remote) {
+		error = shell_start_load(state, path, step);
+		return error;
+	}
+
+	/* Any other page is read at once, and shown. */
+	shell_stop_load(state, 0);
+	error = shell_open_page(state, path, &page);
+	if (error != 0)
+		return error;
+	error = shell_show_page(state, page, path, step);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page is the one shown. */
+	return 0;
+}
+
+/*
+ * Makes a loaded page the one shown (the first page is already the state's
+ * page), as a new step of the history or one already in it.  Returns 0, or
+ * an errno value.
+ */
+static int
+shell_show_page(
+	struct shell_state *state,
+	struct page *page,
+	const char *path,
+	int step)
+{
 	char *copy;
 	size_t index;
 	int error;
-
-	/* The first page is loaded before the window; later ones are loaded here. */
-	page = state->page;
-	if (state->path != NULL) {
-		error = shell_open_page(state, path, &page);
-		if (error != 0)
-			return error;
-	}
 
 	/* The page's own location (a URL's after its redirects) is kept for the history and for resolving links. */
 	if (page->base != NULL)
@@ -556,6 +775,9 @@ shell_input(
 		break;
 	case SHELL_KEY_F5:
 		shell_history_go(state, 0);
+		break;
+	case SHELL_KEY_ESC:
+		shell_stop_load(state, 1);
 		break;
 	default:
 		break;
@@ -797,7 +1019,8 @@ shell_release(
 	if (state->window.display != NULL)
 		shell_window_close(&state->window);
 
-	/* The page and its path. */
+	/* A load under way, then the page and its path (its image requests go with it). */
+	shell_stop_load(state, 0);
 	page_destroy(state->page);
 	state->page = NULL;
 	free(state->path);
@@ -807,6 +1030,10 @@ shell_release(
 	for (index = 0; index < state->history_count; index++)
 		free(state->history[index]);
 	state->history_count = 0;
+
+	/* The loader, once no page uses it. */
+	page_net_destroy(state->loader);
+	state->loader = NULL;
 }
 
 /* Reports how long to wait for the compositor: until a held key repeats or the page's next timer is due (-1: no limit). */
@@ -818,11 +1045,17 @@ shell_wait(
 	double due;
 	double page_now;
 	double wait;
+	int network;
 	int timeout;
 	int found;
 
 	/* A held key's repeat. */
 	timeout = shell_window_repeat(&state->window, now);
+
+	/* The network's earliest time out. */
+	network = page_net_timeout(state->loader);
+	if (network >= 0 && (timeout < 0 || network < timeout))
+		timeout = network;
 
 	/* The page's next timer, in the page's own time. */
 	found = page_next_timer(state->page, &due);

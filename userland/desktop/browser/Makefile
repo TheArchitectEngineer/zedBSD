@@ -78,10 +78,12 @@ KEILAND_BROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/main.c \
 	$(KEILAND_BROWSER_DIR)/net/http.c \
 	$(KEILAND_BROWSER_DIR)/net/tls.c \
 	$(KEILAND_BROWSER_DIR)/net/cookie.c \
+	$(KEILAND_BROWSER_DIR)/net/loader.c \
 	$(KEILAND_BROWSER_DIR)/page/page.c \
 	$(KEILAND_BROWSER_DIR)/page/link.c \
 	$(KEILAND_BROWSER_DIR)/page/script.c \
 	$(KEILAND_BROWSER_DIR)/page/images.c \
+	$(KEILAND_BROWSER_DIR)/page/network.c \
 	$(KEILAND_BROWSER_DIR)/image/decode.c \
 	$(KEILAND_BROWSER_DIR)/image/jpeg.c \
 	$(KEILAND_BROWSER_DIR)/image/png.c \

@@ -219,9 +219,13 @@ shell_window_open(
 int
 shell_window_dispatch(
 	struct shell_window *window,
-	int timeout)
+	int timeout,
+	struct pollfd *extra,
+	size_t extra_count)
 {
-	struct pollfd descriptor;
+	struct pollfd descriptors[1U + SHELL_NET_FDS];
+	struct pollfd *descriptor;
+	size_t index;
 	int status;
 
 	/* Runs what is queued until a read of new events can be reserved. */
@@ -251,14 +255,23 @@ shell_window_dispatch(
 	if (window->event_count != 0U)
 		timeout = 0;
 
-	/* Waits for the compositor. */
-	descriptor.fd = wl_display_get_fd(window->display);
-	descriptor.events = POLLIN;
-	descriptor.revents = 0;
-	status = poll(&descriptor, 1, timeout);
+	/* Waits for the compositor, and for the other descriptors the caller gives (the network's). */
+	if (extra_count > SHELL_NET_FDS)
+		extra_count = SHELL_NET_FDS;
+	descriptor = &descriptors[0];
+	descriptor->fd = wl_display_get_fd(window->display);
+	descriptor->events = POLLIN;
+	descriptor->revents = 0;
+	for (index = 0; index < extra_count; index++)
+		descriptors[1U + index] = extra[index];
+	status = poll(descriptors, (nfds_t)(1U + extra_count), timeout);
+
+	/* The others' readiness goes back to the caller. */
+	for (index = 0; index < extra_count; index++)
+		extra[index].revents = descriptors[1U + index].revents;
 
 	/* Reads the compositor's events, or gives the reservation back. */
-	if (status > 0 && (descriptor.revents & POLLIN) != 0) {
+	if (status > 0 && (descriptor->revents & POLLIN) != 0) {
 		status = wl_display_read_events(window->display);
 		if (status < 0)
 			return -1;
@@ -268,7 +281,7 @@ shell_window_dispatch(
 			return -1;
 
 		/* A hung-up connection has no more events. */
-		if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+		if ((descriptor->revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
 			return -1;
 	}
 
