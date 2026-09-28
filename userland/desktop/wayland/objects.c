@@ -384,6 +384,8 @@ zwl_object_destroy(
 			server->pull = NULL;
 		if (server->click_surface == object)
 			server->click_surface = NULL;
+		if (server->dock_waiting == object)
+			server->dock_waiting = NULL;
 		if (server->anim == object)
 			server->anim = NULL;
 		if (server->wiseview_current == object)
