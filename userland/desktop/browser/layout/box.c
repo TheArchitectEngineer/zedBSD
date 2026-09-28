@@ -31,6 +31,7 @@ static void box_append(struct layout_box *parent, struct layout_box *child);
 static int box_is_inline_level(const struct layout_box *box);
 static int box_is_whitespace(const struct layout_box *box);
 static int box_fix_children(struct layout_tree *tree, struct layout_box *box);
+static int box_flex_items(struct layout_tree *tree, struct layout_box *box);
 static void box_anonymous_style(const struct css_style *parent, struct css_style *style);
 static void box_marker(struct layout_box *box, int ordinal);
 static void box_relative_offset(const struct layout_box *box, layout_unit *dx, layout_unit *dy);
@@ -660,6 +661,78 @@ box_append(
 	parent->last_child = child;
 }
 
+/*
+ * Makes a flex container's children its items (ws074-p035): each element
+ * child a block-level box (an inline one, or an inline image, becomes a
+ * block; a float stops floating), each run of text an anonymous block,
+ * and whitespace alone dropped.
+ */
+static int
+box_flex_items(
+	struct layout_tree *tree,
+	struct layout_box *box)
+{
+	struct layout_box *child;
+	struct layout_box *next;
+	struct layout_box *anonymous;
+	struct css_style style;
+	int whitespace;
+
+	/* The children are laid out by the flex layout, not in lines. */
+	box->children_inline = 0;
+	box_anonymous_style(&box->style, &style);
+	child = box->first_child;
+	box->first_child = NULL;
+	box->last_child = NULL;
+	anonymous = NULL;
+	while (child != NULL) {
+		next = child->next;
+		child->next = NULL;
+
+		/* A box out of the flow stays as it is, and ends a run of text. */
+		if (child->out_of_flow) {
+			anonymous = NULL;
+			box_append(box, child);
+			child = next;
+			continue;
+		}
+
+		/* An element's box is an item of its own, block-level whatever it was. */
+		if (child->kind != LAYOUT_TEXT) {
+			anonymous = NULL;
+			child->floating = CSS_FLOAT_NONE;
+			if (child->kind == LAYOUT_INLINE || child->kind == LAYOUT_REPLACED || child->kind == LAYOUT_LINE_BREAK)
+				child->kind = LAYOUT_BLOCK;
+			box_append(box, child);
+			child = next;
+			continue;
+		}
+
+		/* Whitespace alone between items is dropped. */
+		whitespace = box_is_whitespace(child);
+		if (anonymous == NULL && whitespace) {
+			child = next;
+			continue;
+		}
+
+		/* Text starts, or goes on in, an anonymous item. */
+		if (anonymous == NULL) {
+			anonymous = box_new(tree, LAYOUT_ANONYMOUS_BLOCK, NULL, &style);
+			if (anonymous == NULL)
+				return ENOMEM;
+			anonymous->children_inline = 1;
+			box_append(box, anonymous);
+		}
+
+		/* The text goes into the anonymous item. */
+		box_append(anonymous, child);
+		child = next;
+	}
+
+	/* Succeeded: the children are all items. */
+	return 0;
+}
+
 /* Tells whether a box takes part in inline formatting. */
 static int
 box_is_inline_level(
@@ -718,6 +791,7 @@ box_fix_children(
 	int has_inline;
 	int inline_level;
 	int whitespace;
+	int error;
 
 	/* Looks at the kinds of children (those out of the flow and floats count as neither). */
 	has_block = 0;
@@ -731,6 +805,12 @@ box_fix_children(
 			has_block = 1;
 		if (inline_level && !whitespace)
 			has_inline = 1;
+	}
+
+	/* A flex container's children are flex items (ws074-p035). */
+	if (box->kind != LAYOUT_INLINE && box->style.display == CSS_DISPLAY_FLEX) {
+		error = box_flex_items(tree, box);
+		return error;
 	}
 
 	/* An inline box holding blocks is laid out as a block in this pass. */

@@ -104,6 +104,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/text/linebreak.c \
 	$(KEILAND_BROWSER_DIR)/layout/box.c \
 	$(KEILAND_BROWSER_DIR)/layout/block.c \
+	$(KEILAND_BROWSER_DIR)/layout/flex.c \
 	$(KEILAND_BROWSER_DIR)/layout/inline.c \
 	$(KEILAND_BROWSER_DIR)/layout/float.c \
 	$(KEILAND_BROWSER_DIR)/layout/position.c \

@@ -204,6 +204,37 @@ struct css_content {
 	size_t count;
 };
 
+/* The values of flex-direction (ws074-p035). */
+enum css_flex_direction {
+	CSS_FLEX_ROW,
+	CSS_FLEX_ROW_REVERSE,
+	CSS_FLEX_COLUMN,
+	CSS_FLEX_COLUMN_REVERSE
+};
+
+/* The values of flex-wrap. */
+enum css_flex_wrap {
+	CSS_FLEX_NOWRAP,
+	CSS_FLEX_WRAP,
+	CSS_FLEX_WRAP_REVERSE
+};
+
+/*
+ * The places of justify-content, align-items, align-self and
+ * align-content (auto is align-self's only; normal and stretch are one).
+ */
+enum css_align {
+	CSS_ALIGN_AUTO,
+	CSS_ALIGN_STRETCH,
+	CSS_ALIGN_START,
+	CSS_ALIGN_END,
+	CSS_ALIGN_CENTER,
+	CSS_ALIGN_BASELINE,
+	CSS_ALIGN_SPACE_BETWEEN,
+	CSS_ALIGN_SPACE_AROUND,
+	CSS_ALIGN_SPACE_EVENLY
+};
+
 /* The generic font families. */
 enum css_generic_family {
 	CSS_FAMILY_SERIF,
@@ -288,6 +319,20 @@ struct css_style {
 	int content_kind;
 	const struct css_content *content;
 	int pseudo_elements;
+
+	/* Flexible boxes (ws074-p035): the container's, then the item's. */
+	int flex_direction;
+	int flex_wrap;
+	int justify_content;
+	int align_items;
+	int align_content;
+	struct css_length row_gap;
+	struct css_length column_gap;
+	float flex_grow;
+	float flex_shrink;
+	struct css_length flex_basis;
+	int align_self;
+	int order;
 
 	/*
 	 * The element's custom properties (inherited; its own first, then its

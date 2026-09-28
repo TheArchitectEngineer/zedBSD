@@ -42,7 +42,10 @@ enum values_shorthand {
 	SHORT_PADDING_BLOCK,
 	SHORT_INSET,
 	SHORT_INSET_INLINE,
-	SHORT_INSET_BLOCK
+	SHORT_INSET_BLOCK,
+	SHORT_FLEX,
+	SHORT_FLEX_FLOW,
+	SHORT_GAP
 };
 
 /*
@@ -102,6 +105,8 @@ static int values_size_parts(const struct css_token *const *parts, size_t count,
 static int values_background_position(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_background_size(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_takes_length(int property);
+static int values_flex(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_flex_flow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_content(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_pair(struct css_parse *parse, int first, int second, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_calc(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
@@ -173,6 +178,33 @@ static const struct values_name values_names[] = {
 	{ "box-sizing", CSS_PROP_BOX_SIZING },
 	{ "-webkit-box-sizing", CSS_PROP_BOX_SIZING },
 	{ "content", CSS_PROP_CONTENT },
+	{ "flex-direction", CSS_PROP_FLEX_DIRECTION },
+	{ "-webkit-flex-direction", CSS_PROP_FLEX_DIRECTION },
+	{ "flex-wrap", CSS_PROP_FLEX_WRAP },
+	{ "-webkit-flex-wrap", CSS_PROP_FLEX_WRAP },
+	{ "justify-content", CSS_PROP_JUSTIFY_CONTENT },
+	{ "-webkit-justify-content", CSS_PROP_JUSTIFY_CONTENT },
+	{ "align-items", CSS_PROP_ALIGN_ITEMS },
+	{ "-webkit-align-items", CSS_PROP_ALIGN_ITEMS },
+	{ "align-content", CSS_PROP_ALIGN_CONTENT },
+	{ "align-self", CSS_PROP_ALIGN_SELF },
+	{ "-webkit-align-self", CSS_PROP_ALIGN_SELF },
+	{ "row-gap", CSS_PROP_ROW_GAP },
+	{ "grid-row-gap", CSS_PROP_ROW_GAP },
+	{ "column-gap", CSS_PROP_COLUMN_GAP },
+	{ "grid-column-gap", CSS_PROP_COLUMN_GAP },
+	{ "flex-grow", CSS_PROP_FLEX_GROW },
+	{ "-webkit-flex-grow", CSS_PROP_FLEX_GROW },
+	{ "flex-shrink", CSS_PROP_FLEX_SHRINK },
+	{ "-webkit-flex-shrink", CSS_PROP_FLEX_SHRINK },
+	{ "flex-basis", CSS_PROP_FLEX_BASIS },
+	{ "-webkit-flex-basis", CSS_PROP_FLEX_BASIS },
+	{ "order", CSS_PROP_ORDER },
+	{ "flex", SHORT_FLEX },
+	{ "-webkit-flex", SHORT_FLEX },
+	{ "flex-flow", SHORT_FLEX_FLOW },
+	{ "gap", SHORT_GAP },
+	{ "grid-gap", SHORT_GAP },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -252,10 +284,53 @@ static const struct values_keyword values_display[] = {
 	{ "table-caption", CSS_DISPLAY_BLOCK },
 	{ "flex", CSS_DISPLAY_FLEX },
 	{ "inline-flex", CSS_DISPLAY_FLEX },
+	{ "-webkit-flex", CSS_DISPLAY_FLEX },
+	{ "-webkit-inline-flex", CSS_DISPLAY_FLEX },
+	{ "-webkit-box", CSS_DISPLAY_BLOCK },
+	{ "-webkit-inline-box", CSS_DISPLAY_INLINE_BLOCK },
 	{ "grid", CSS_DISPLAY_BLOCK },
 	{ "inline-grid", CSS_DISPLAY_BLOCK },
 	{ "flow-root", CSS_DISPLAY_BLOCK },
 	{ "contents", CSS_DISPLAY_CONTENTS },
+	{ NULL, 0 }
+};
+
+/* The keywords of flex-direction. */
+static const struct values_keyword values_flex_direction[] = {
+	{ "row", CSS_FLEX_ROW },
+	{ "row-reverse", CSS_FLEX_ROW_REVERSE },
+	{ "column", CSS_FLEX_COLUMN },
+	{ "column-reverse", CSS_FLEX_COLUMN_REVERSE },
+	{ NULL, 0 }
+};
+
+/* The keywords of flex-wrap. */
+static const struct values_keyword values_flex_wrap[] = {
+	{ "nowrap", CSS_FLEX_NOWRAP },
+	{ "wrap", CSS_FLEX_WRAP },
+	{ "wrap-reverse", CSS_FLEX_WRAP_REVERSE },
+	{ NULL, 0 }
+};
+
+/* The keywords of the alignment properties (the left and right of justify-content are its start and end here). */
+static const struct values_keyword values_align[] = {
+	{ "auto", CSS_ALIGN_AUTO },
+	{ "normal", CSS_ALIGN_STRETCH },
+	{ "stretch", CSS_ALIGN_STRETCH },
+	{ "flex-start", CSS_ALIGN_START },
+	{ "start", CSS_ALIGN_START },
+	{ "self-start", CSS_ALIGN_START },
+	{ "left", CSS_ALIGN_START },
+	{ "flex-end", CSS_ALIGN_END },
+	{ "end", CSS_ALIGN_END },
+	{ "self-end", CSS_ALIGN_END },
+	{ "right", CSS_ALIGN_END },
+	{ "center", CSS_ALIGN_CENTER },
+	{ "baseline", CSS_ALIGN_BASELINE },
+	{ "first", CSS_ALIGN_BASELINE },
+	{ "space-between", CSS_ALIGN_SPACE_BETWEEN },
+	{ "space-around", CSS_ALIGN_SPACE_AROUND },
+	{ "space-evenly", CSS_ALIGN_SPACE_EVENLY },
 	{ NULL, 0 }
 };
 
@@ -803,6 +878,12 @@ css_parse_property(
 		return values_pair(parse, CSS_PROP_LEFT, CSS_PROP_RIGHT, tokens, count, out, out_count);
 	case SHORT_INSET_BLOCK:
 		return values_pair(parse, CSS_PROP_TOP, CSS_PROP_BOTTOM, tokens, count, out, out_count);
+	case SHORT_FLEX:
+		return values_flex(parse, tokens, count, out, out_count);
+	case SHORT_FLEX_FLOW:
+		return values_flex_flow(parse, tokens, count, out, out_count);
+	case SHORT_GAP:
+		return values_pair(parse, CSS_PROP_ROW_GAP, CSS_PROP_COLUMN_GAP, tokens, count, out, out_count);
 	default:
 		break;
 	}
@@ -1259,6 +1340,18 @@ values_single(
 	case CSS_PROP_BOX_SIZING:
 		table = values_box_sizing;
 		break;
+	case CSS_PROP_FLEX_DIRECTION:
+		table = values_flex_direction;
+		break;
+	case CSS_PROP_FLEX_WRAP:
+		table = values_flex_wrap;
+		break;
+	case CSS_PROP_JUSTIFY_CONTENT:
+	case CSS_PROP_ALIGN_ITEMS:
+	case CSS_PROP_ALIGN_CONTENT:
+	case CSS_PROP_ALIGN_SELF:
+		table = values_align;
+		break;
 	default:
 		break;
 	}
@@ -1271,6 +1364,51 @@ values_single(
 		value->kind = CSS_VALUE_KEYWORD;
 		value->keyword = keyword;
 		return 0;
+	}
+
+	/* flex-grow and flex-shrink: a number that is not negative. */
+	if (property == CSS_PROP_FLEX_GROW || property == CSS_PROP_FLEX_SHRINK) {
+		if (tokens[0].type != CSS_TOKEN_NUMBER || tokens[0].number < 0)
+			return EINVAL;
+		value->kind = CSS_VALUE_NUMBER;
+		value->number = (float)tokens[0].number;
+		return 0;
+	}
+
+	/* order: an integer. */
+	if (property == CSS_PROP_ORDER) {
+		if (tokens[0].type != CSS_TOKEN_NUMBER || !tokens[0].integer)
+			return EINVAL;
+		value->kind = CSS_VALUE_NUMBER;
+		value->number = (float)tokens[0].number;
+		return 0;
+	}
+
+	/* The gaps: normal (none) or a length. */
+	if (property == CSS_PROP_ROW_GAP || property == CSS_PROP_COLUMN_GAP) {
+		is_auto = css_ident_equal(&tokens[0], "normal");
+		if (is_auto) {
+			value->kind = CSS_VALUE_LENGTH;
+			value->number = 0;
+			value->unit = CSS_DUNIT_PX;
+			return 0;
+		}
+
+		/* A length. */
+		return values_length(&tokens[0], 0, value);
+	}
+
+	/* flex-basis: auto, content (as auto) or a length. */
+	if (property == CSS_PROP_FLEX_BASIS) {
+		is_auto = css_ident_equal(&tokens[0], "content");
+		if (is_auto) {
+			value->kind = CSS_VALUE_KEYWORD;
+			value->keyword = CSS_UNIT_AUTO;
+			return 0;
+		}
+
+		/* auto or a length. */
+		return values_length(&tokens[0], 1, value);
 	}
 
 	/* z-index: auto or an integer. */
@@ -2336,6 +2474,9 @@ values_takes_length(
 	case CSS_PROP_LEFT:
 	case CSS_PROP_FONT_SIZE:
 	case CSS_PROP_LINE_HEIGHT:
+	case CSS_PROP_ROW_GAP:
+	case CSS_PROP_COLUMN_GAP:
+	case CSS_PROP_FLEX_BASIS:
 	case CSS_PROP_BACKGROUND_SIZE_WIDTH:
 	case CSS_PROP_BACKGROUND_SIZE_HEIGHT:
 		return 1;
@@ -2941,5 +3082,155 @@ values_content(
 	/* Succeeded: the content is a list. */
 	value->kind = CSS_VALUE_CONTENT;
 	value->content = kept;
+	return 0;
+}
+
+/*
+ * Parses the flex shorthand: none (0 0 auto), auto (1 1 auto), or a grow
+ * factor, an optional shrink factor and an optional basis in any order
+ * the grammar allows (a number alone makes the basis 0%).
+ */
+static int
+values_flex(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value grow;
+	struct css_value shrink;
+	struct css_value basis;
+	struct css_value candidate;
+	size_t starts[4];
+	size_t lengths[4];
+	size_t components;
+	size_t index;
+	int numbers;
+	int is_word;
+	int error;
+
+	/* The defaults of a flex value that names some parts: 1 1 0%. */
+	memset(&grow, 0, sizeof(grow));
+	grow.kind = CSS_VALUE_NUMBER;
+	grow.number = 1;
+	shrink = grow;
+	memset(&basis, 0, sizeof(basis));
+	basis.kind = CSS_VALUE_LENGTH;
+	basis.number = 0;
+	basis.unit = CSS_DUNIT_PERCENT;
+
+	/* none and auto. */
+	components = values_components(tokens, count, starts, lengths, 4);
+	if (components == 1 && tokens[starts[0]].type == CSS_TOKEN_IDENT) {
+		is_word = css_ident_equal(&tokens[starts[0]], "none");
+		if (is_word) {
+			grow.number = 0;
+			shrink.number = 0;
+		} else {
+			is_word = css_ident_equal(&tokens[starts[0]], "auto");
+			if (!is_word)
+				return EINVAL;
+		}
+
+		/* Both keep an auto basis. */
+		basis.kind = CSS_VALUE_KEYWORD;
+		basis.keyword = CSS_UNIT_AUTO;
+		values_add(out, made, CSS_PROP_FLEX_GROW, &grow);
+		values_add(out, made, CSS_PROP_FLEX_SHRINK, &shrink);
+		values_add(out, made, CSS_PROP_FLEX_BASIS, &basis);
+		return 0;
+	}
+
+	/* One to three parts: numbers are the factors in order, anything else the basis. */
+	if (components == 0 || components > 3)
+		return EINVAL;
+	numbers = 0;
+	for (index = 0; index < components; index++) {
+		if (lengths[index] == 1 && tokens[starts[index]].type == CSS_TOKEN_NUMBER && tokens[starts[index]].number != 0) {
+			if (numbers == 0)
+				grow.number = (float)tokens[starts[index]].number;
+			else if (numbers == 1)
+				shrink.number = (float)tokens[starts[index]].number;
+			else
+				return EINVAL;
+			numbers++;
+			continue;
+		}
+
+		/* A zero is a factor where one is expected, else a basis. */
+		if (lengths[index] == 1 && tokens[starts[index]].type == CSS_TOKEN_NUMBER && numbers < 2 && (numbers == 0 || index == 1)) {
+			if (numbers == 0)
+				grow.number = 0;
+			else
+				shrink.number = 0;
+			numbers++;
+			continue;
+		}
+
+		/* The basis. */
+		error = values_single(parse, CSS_PROP_FLEX_BASIS, tokens + starts[index], lengths[index], &candidate);
+		if (error != 0)
+			return error;
+		basis = candidate;
+	}
+
+	/* The three longhands. */
+	values_add(out, made, CSS_PROP_FLEX_GROW, &grow);
+	values_add(out, made, CSS_PROP_FLEX_SHRINK, &shrink);
+	values_add(out, made, CSS_PROP_FLEX_BASIS, &basis);
+
+	/* Succeeded: the flex longhands are declared. */
+	return 0;
+}
+
+/* Parses flex-flow: a direction and a wrap, in either order, each optional. */
+static int
+values_flex_flow(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value direction;
+	struct css_value wrap;
+	struct css_value candidate;
+	size_t starts[3];
+	size_t lengths[3];
+	size_t components;
+	size_t index;
+	int error;
+
+	/* The defaults: row, nowrap. */
+	memset(&direction, 0, sizeof(direction));
+	direction.kind = CSS_VALUE_KEYWORD;
+	direction.keyword = CSS_FLEX_ROW;
+	wrap = direction;
+	wrap.keyword = CSS_FLEX_NOWRAP;
+
+	/* Each part is one or the other. */
+	components = values_components(tokens, count, starts, lengths, 3);
+	if (components == 0 || components > 2)
+		return EINVAL;
+	for (index = 0; index < components; index++) {
+		error = values_single(parse, CSS_PROP_FLEX_DIRECTION, tokens + starts[index], lengths[index], &candidate);
+		if (error == 0) {
+			direction = candidate;
+			continue;
+		}
+
+		/* Or a wrap. */
+		error = values_single(parse, CSS_PROP_FLEX_WRAP, tokens + starts[index], lengths[index], &candidate);
+		if (error != 0)
+			return error;
+		wrap = candidate;
+	}
+
+	/* The two longhands. */
+	values_add(out, made, CSS_PROP_FLEX_DIRECTION, &direction);
+	values_add(out, made, CSS_PROP_FLEX_WRAP, &wrap);
+
+	/* Succeeded: both declared. */
 	return 0;
 }

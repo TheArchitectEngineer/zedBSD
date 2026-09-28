@@ -587,6 +587,14 @@ css_initial_style(
 	style->white_space = CSS_WHITE_SPACE_NORMAL;
 	style->list_style = CSS_LIST_DISC;
 	style->z_index_auto = 1;
+
+	/* The flexible box's initial values that are not zero. */
+	style->justify_content = CSS_ALIGN_START;
+	style->align_items = CSS_ALIGN_STRETCH;
+	style->align_content = CSS_ALIGN_STRETCH;
+	style->align_self = CSS_ALIGN_AUTO;
+	style->flex_shrink = 1;
+	style->flex_basis.unit = CSS_UNIT_AUTO;
 }
 
 /* Gathers every declaration that applies to an element: the matching rules' and the style attribute's. */
@@ -2334,6 +2342,42 @@ cascade_apply(
 	case CSS_PROP_BOX_SIZING:
 		style->box_sizing = value->keyword;
 		break;
+	case CSS_PROP_FLEX_DIRECTION:
+		style->flex_direction = value->keyword;
+		break;
+	case CSS_PROP_FLEX_WRAP:
+		style->flex_wrap = value->keyword;
+		break;
+	case CSS_PROP_JUSTIFY_CONTENT:
+		style->justify_content = value->keyword;
+		break;
+	case CSS_PROP_ALIGN_ITEMS:
+		style->align_items = value->keyword;
+		break;
+	case CSS_PROP_ALIGN_CONTENT:
+		style->align_content = value->keyword;
+		break;
+	case CSS_PROP_ALIGN_SELF:
+		style->align_self = value->keyword;
+		break;
+	case CSS_PROP_ROW_GAP:
+		style->row_gap = cascade_length(engine, value, style->font_size);
+		break;
+	case CSS_PROP_COLUMN_GAP:
+		style->column_gap = cascade_length(engine, value, style->font_size);
+		break;
+	case CSS_PROP_FLEX_GROW:
+		style->flex_grow = value->number;
+		break;
+	case CSS_PROP_FLEX_SHRINK:
+		style->flex_shrink = value->number;
+		break;
+	case CSS_PROP_FLEX_BASIS:
+		style->flex_basis = cascade_length(engine, value, style->font_size);
+		break;
+	case CSS_PROP_ORDER:
+		style->order = (int)value->number;
+		break;
 	case CSS_PROP_CONTENT:
 		/* A list of items, or none (normal and none). */
 		style->content_kind = CSS_CONTENT_NONE;
@@ -2390,6 +2434,42 @@ cascade_inherit(
 	case CSS_PROP_CONTENT:
 		style->content_kind = parent->content_kind;
 		style->content = parent->content;
+		break;
+	case CSS_PROP_FLEX_DIRECTION:
+		style->flex_direction = parent->flex_direction;
+		break;
+	case CSS_PROP_FLEX_WRAP:
+		style->flex_wrap = parent->flex_wrap;
+		break;
+	case CSS_PROP_JUSTIFY_CONTENT:
+		style->justify_content = parent->justify_content;
+		break;
+	case CSS_PROP_ALIGN_ITEMS:
+		style->align_items = parent->align_items;
+		break;
+	case CSS_PROP_ALIGN_CONTENT:
+		style->align_content = parent->align_content;
+		break;
+	case CSS_PROP_ALIGN_SELF:
+		style->align_self = parent->align_self;
+		break;
+	case CSS_PROP_ROW_GAP:
+		style->row_gap = parent->row_gap;
+		break;
+	case CSS_PROP_COLUMN_GAP:
+		style->column_gap = parent->column_gap;
+		break;
+	case CSS_PROP_FLEX_GROW:
+		style->flex_grow = parent->flex_grow;
+		break;
+	case CSS_PROP_FLEX_SHRINK:
+		style->flex_shrink = parent->flex_shrink;
+		break;
+	case CSS_PROP_FLEX_BASIS:
+		style->flex_basis = parent->flex_basis;
+		break;
+	case CSS_PROP_ORDER:
+		style->order = parent->order;
 		break;
 	case CSS_PROP_WIDTH:
 		style->width = parent->width;

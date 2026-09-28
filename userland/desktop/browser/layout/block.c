@@ -192,8 +192,10 @@ block_content(
 	box->collapsed_top = box->margin[CSS_TOP];
 	box->collapsed_bottom = box->margin[CSS_BOTTOM];
 
-	/* The lines, or the children. */
-	if (box->children_inline) {
+	/* The flex items, the lines, or the children. */
+	if (box->style.display == CSS_DISPLAY_FLEX) {
+		error = layout_flex(tree, box);
+	} else if (box->children_inline) {
 		error = layout_inline(tree, box);
 	} else {
 		error = block_children(tree, box);
@@ -233,6 +235,10 @@ block_owns_context(
 	if (box->style.display == CSS_DISPLAY_TABLE_CELL)
 		return 1;
 	if (box->style.display == CSS_DISPLAY_FLEX)
+		return 1;
+
+	/* A flex item. */
+	if (box->parent->style.display == CSS_DISPLAY_FLEX)
 		return 1;
 
 	/* A block in its parent's context. */

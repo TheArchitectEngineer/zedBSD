@@ -165,6 +165,9 @@ struct layout_box {
 
 	/* The background image the style names, decoded (NULL when there is none, or it could not be had). */
 	const struct img_bitmap *background;
+
+	/* A flex item's margin box along its container's main axis before it flexed (flex.c). */
+	layout_unit flex_hypothetical;
 };
 
 /*
@@ -233,6 +236,8 @@ int layout_stacking_order(const struct layout_tree *tree, struct wb_vector *boxe
 void layout_release(struct layout_tree *tree);
 int layout_block(struct layout_tree *tree, struct layout_box *box, layout_unit containing_width);
 int layout_inline(struct layout_tree *tree, struct layout_box *box);
+int layout_flex(struct layout_tree *tree, struct layout_box *box);
+layout_unit layout_flex_content_width(const struct layout_box *box);
 void layout_font_of(struct layout_tree *tree, const struct css_style *style, struct text_font *font);
 int layout_dump(const struct layout_tree *tree, struct wb_buffer *out);
 const struct layout_box *layout_hit(const struct layout_tree *tree, layout_unit x, layout_unit y);

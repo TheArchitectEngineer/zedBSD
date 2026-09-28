@@ -223,6 +223,13 @@ layout_content_width(
 	if (box->replaced)
 		return box->width;
 
+	/* A row of flex items is as wide as the items were before they flexed. */
+	if (box->style.display == CSS_DISPLAY_FLEX &&
+	    (box->style.flex_direction == CSS_FLEX_ROW || box->style.flex_direction == CSS_FLEX_ROW_REVERSE)) {
+		width = layout_flex_content_width(box);
+		return width;
+	}
+
 	/* Lines: the end of each line's last piece. */
 	if (box->children_inline) {
 		for (index = 0; index < box->line_count; index++) {
