@@ -150,7 +150,7 @@ shot saved.png
 timeout 60 python3 plan/tools/guest/guest.py get /tmp/notes-test/test.pdf "$out/test.pdf" >/dev/null 2>&1 </dev/null
 if qpdf --check "$out/test.pdf" > "$out/qpdf.txt" 2>&1; then echo "qpdf: ok"; else echo "qpdf: FAIL"; status=1; fi
 qpdf --list-attachments "$out/test.pdf"
-qpdf --show-attachment=zedbsd-notes.bin "$out/test.pdf" > "$out/edit.bin" && od -An -c -N 12 "$out/edit.bin" | head -1
+qpdf --show-attachment=kei-notes.bin "$out/test.pdf" > "$out/edit.bin" && od -An -c -N 12 "$out/edit.bin" | head -1
 pdfinfo "$out/test.pdf" | grep -E "Pages|Page size|Producer"
 pdftoppm -r 60 -png "$out/test.pdf" "$out/test"
 [ -n "$prefix" ] && cp "$out/test-1.png" "${prefix}pdf-page1.png" && cp "$out/test-2.png" "${prefix}pdf-page2.png"

@@ -11,9 +11,13 @@
 #  4. eraser.png: the pen's eraser end (tool rubber) dragged across the first stroke removes it
 #     (NOTES ERASE removed=1); Ctrl+Z brings it back.
 #  5. Ctrl+S saves; pen.pdf is copied out, checked with qpdf and drawn with pdftoppm (OUTDIR/pen-1.png).
+#  6. (ws079-p011) hover-pen.png: the pen held over the page without touching shows its mark, a dot of the pen's
+#     colour and width (NOTES HOVER source=1); hover-eraser.png: the eraser end held over it shows the eraser's
+#     ring (NOTES HOVER source=2); the pen taken away removes the mark (NOTES HOVER gone).
 #
 #   GUEST_RUNTIME=build/ws079-p005-run plan/ws035/tests/zdesktop-guest.sh start build/amd64/hdd-image.img
 #   plan/ws079/tests/notes-pen.sh [OUTDIR] [SHOTS PREFIX]
+# NOTES_BINARY=build/amd64/bin/notes copies a newer build into the running guest first.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -93,7 +97,26 @@ lines += ["up", "wait 800"]
 open(sys.argv[1], "w").write("\n".join(lines) + "\n")
 EOF
 
+python3 - "$out/hover.pen" <<'EOF'
+import sys
+def raw(x, y):
+    return round(x * 21600 / 1279), round(y * 13500 / 799)
+lines = ["size 21600 13500", "wait 3000", "tool pen"]
+# 6. The pen over (700, 560) without touching, held; then the eraser end over (560, 620), held.
+for step in range(6):
+    x, y = raw(660 + 8 * step, 540 + 4 * step)
+    lines += ["hover %d %d" % (x, y), "wait 30"]
+lines += ["hold 8000", "up", "wait 500", "tool rubber"]
+for step in range(6):
+    x, y = raw(520 + 8 * step, 600 + 4 * step)
+    lines += ["hover %d %d" % (x, y), "wait 30"]
+lines += ["hold 8000", "up", "wait 500"]
+open(sys.argv[1], "w").write("\n".join(lines) + "\n")
+EOF
+
 guest "$stop_all" >/dev/null
+[ -n "${NOTES_BINARY:-}" ] && timeout 60 python3 plan/tools/guest/guest.py put "$NOTES_BINARY" /bin/notes >/dev/null 2>&1 </dev/null
+timeout 60 python3 plan/tools/guest/guest.py put "$out/hover.pen" /tmp/hover.pen >/dev/null 2>&1 </dev/null
 timeout 60 python3 plan/tools/guest/guest.py put "$out/pen.pen" /tmp/pen.pen >/dev/null 2>&1 </dev/null
 timeout 60 python3 plan/tools/guest/guest.py put "$out/rubber.pen" /tmp/rubber.pen >/dev/null 2>&1 </dev/null
 guest 'rm -rf /tmp/notes-pen /tmp/notes-pen.log /root/.local/share/keiland/notes; mkdir -p /tmp/notes-pen' >/dev/null
@@ -121,6 +144,17 @@ expect_log /tmp/notes-pen.log 'NOTES ERASE page=0 removed=1 strokes=1'
 shot eraser.png
 keys '<ctrl-z>'
 expect_log /tmp/notes-pen.log 'NOTES UNDO page=0 strokes=2'
+
+# 6. The pen's mark while it hovers: the pen's dot, then the eraser's ring, then none.
+guest 'timeout 60 /bin/peninject /tmp/hover.pen > /tmp/hover.out 2>&1 </dev/null & echo started' >/dev/null
+sleep 5
+expect_log /tmp/notes-pen.log 'NOTES HOVER source=1'
+shot hover-pen.png
+sleep 6
+expect_log /tmp/notes-pen.log 'NOTES HOVER source=2'
+shot hover-eraser.png
+sleep 5
+expect_log /tmp/notes-pen.log 'NOTES HOVER gone'
 
 # 5. Save, and the PDF on the host.
 keys '<ctrl-s>'
