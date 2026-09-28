@@ -115,6 +115,7 @@ enum vm_opcode {
 	VM_OP_FOR_IN_START,	/* R dst, R object: an iterator over its enumerable keys */
 	VM_OP_FOR_IN_NEXT,	/* R dst, R iterator, J target when there is no next key */
 	VM_OP_TO_PROPERTY_KEY,	/* R dst, R value: a computed key, converted where it is written */
+	VM_OP_NEW_REGEXP,	/* R dst, C pattern, C flags: a regular expression literal's new object (ws074-p027) */
 
 	/* Wasm (raw values). */
 	VM_OP_I32_CONST,	/* R dst, I value */

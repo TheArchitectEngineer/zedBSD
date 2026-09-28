@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: 2026-09-28: p059（Google の調査）・p067（amazon.co.jp の調査）・p032（form）・p068（外の stylesheet と rule の索引）・p061（CSS の値）・p069（selector と ::before・::after）cleared。p035（flexbox の最小）・p060（inline-block と vertical-align）・p062（角丸・影・opacity・outline）・p070（@font-face）・p071（大きな page の速さ）・p073（direction の最小）・p072（grid の最小）・p074（intrinsic の幅）・p075（container query の単位）・p037（table の最小）cleared（2026-09-29）。guest の窓の試験は main の sysroot の複写で worktree の image を作って行う（p035 の phase.md）。デモの目標は amazon.co.jp、版と Phase の列は [amazon-goal.md](amazon-goal.md)。guest の窓で live の Amazon のトップから「kei」を検索して結果の page が出る。次（2026-09-29 main の判断で順を変えた: p073 → p072 → p074 → p075 → p037）: p027・p065 の一部
+Resume point: 2026-09-28: p059（Google の調査）・p067（amazon.co.jp の調査）・p032（form）・p068（外の stylesheet と rule の索引）・p061（CSS の値）・p069（selector と ::before・::after）cleared。p035（flexbox の最小）・p060（inline-block と vertical-align）・p062（角丸・影・opacity・outline）・p070（@font-face）・p071（大きな page の速さ）・p073（direction の最小）・p072（grid の最小）・p074（intrinsic の幅）・p075（container query の単位）・p037（table の最小）・p027（RegExp）cleared（2026-09-29）。guest の窓の試験は main の sysroot の複写で worktree の image を作って行う（p035 の phase.md）。デモの目標は amazon.co.jp、版と Phase の列は [amazon-goal.md](amazon-goal.md)。guest の窓で live の Amazon のトップから「kei」を検索して結果の page が出る。次（2026-09-29 main の判断で順を変えた: p073 → p072 → p074 → p075 → p037）: amazon-goal.md の 12 の残り（Date・Promise 等、p065 の一部。Amazon の script の最初の blocker は `Date`）
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -124,7 +124,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p024](phase024/phase.md) | JS の lexer と parser（ES2024 の構文 → AST）、test262 の構文の試験（parse だけ。46876/47792） | cleared | p023 |
 | [ws074-p025](phase025/phase.md) | JS の compiler（ES5 の核）、`--js` の shell、test262 の runner。最初の数（4992/47792、ES5 1457/8087） | cleared | p024 |
 | [ws074-p026](phase026/phase.md) | 組み込み 1a: Object・Function（bind・Function の構築子）・Error の類（engine の誤りも object に）・Boolean・Number（自前の最短の十進表記と十進の読み取り、toFixed 等）・Math・global の関数、native の構築子（2026-09-28 に Array・String・JSON を p046 へ分けた。9327/47792、ES5 4822/8087） | cleared | p025 |
-| ws074-p027 | RegExp の engine と String の regex の method | planned | p026 |
+| [ws074-p027](phase027/phase.md) | RegExp の engine と String の regex の method | cleared（2026-09-29。自前の backtracking の engine、RegExp と String の match・replace・replaceAll・search・split。test262 14255 → 15762、ES5 6786 → 7592。v flag・`\p`・modifier・matchAll・Symbol の差し替えは残り） | p026 |
 | ws074-p028 | ES2015 の意味 1: let・const・TDZ、arrow、class、destructuring、spread、template、Symbol、iterator、for-of、Map・Set・Weak* | planned | p026 |
 | ws074-p029 | ES2015 の意味 2: generator、Promise と microtask、async・await、Proxy・Reflect、TypedArray・ArrayBuffer・DataView、Date、BigInt | planned | p028 |
 | [ws074-p030](phase030/phase.md) | DOM の binding（interface の表、生成器は後回し）、window・document・Node・Element・Event の基本、console、`<script>` の実行、timer、event loop と microtask の queue（2026-09-28 に WPT の testharness の runner を p047 へ分けた） | cleared | p014、p046（p029 から縮めた: microtask の queue はこの Phase で作った） |

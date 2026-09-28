@@ -502,6 +502,7 @@ interpreter_step_js(
 	case VM_OP_ARRAY_HOLE:
 	case VM_OP_FOR_IN_START:
 	case VM_OP_TO_PROPERTY_KEY:
+	case VM_OP_NEW_REGEXP:
 		status = interpreter_property(run, words, registers);
 		return status;
 	default:
@@ -684,6 +685,7 @@ interpreter_property(
 {
 	struct vm_realm *realm;
 	struct vm_object *object;
+	vm_value literal[2];
 	vm_value value;
 	vm_value key;
 	int strict;
@@ -797,6 +799,19 @@ interpreter_property(
 		break;
 	case VM_OP_TO_PROPERTY_KEY:
 		status = vm_to_key(realm, registers[words[2]], &value);
+		break;
+	case VM_OP_NEW_REGEXP:
+		/* A new object of the realm's RegExp from the literal's pattern and flags (the built-ins install it). */
+		if (realm->intrinsics[VM_INTRINSIC_REGEXP] == NULL) {
+			status = vm_throw_type_error(realm, "regular expressions are not available");
+			return status;
+		}
+
+		/* RegExp(pattern, flags) with itself as new.target. */
+		value = vm_value_cell(realm->intrinsics[VM_INTRINSIC_REGEXP]);
+		literal[0] = run->code->constants[words[2]];
+		literal[1] = run->code->constants[words[3]];
+		status = vm_construct(realm, value, literal, 2, value, &value);
 		break;
 	default:
 		return EINVAL;

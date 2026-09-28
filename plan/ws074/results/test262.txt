@@ -1,3 +1,4 @@
 2026-09-28 test262 4992/47792 (10.4%) es5 1457/8087 (18.0%) excluded 957 suite=test262-7ab7fafa
 2026-09-28 test262 9327/47792 (19.5%) es5 4822/8087 (59.6%) excluded 957 suite=test262-7ab7fafa
 2026-09-28 test262 14255/47792 (29.8%) es5 6786/8087 (83.9%) excluded 957 suite=test262-7ab7fafa
+2026-09-29 test262 15762/47792 (33.0%) es5 7592/8087 (93.9%) excluded 957 suite=test262-7ab7fafa
