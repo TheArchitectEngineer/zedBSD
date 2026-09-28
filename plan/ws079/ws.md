@@ -46,7 +46,7 @@ Resume point: p001 の設計（[design-input-notes.md](design-input-notes.md)・
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws079-p001 | 設計: pen の入力（USB HID digitizer → kernel の input の event、QEMU の合成の入力）、`zwp_tablet_v2`、スワイプの gesture、Notes の文書 model、PDF の書き方と metadata、libpdf の構成（parser・content stream・描画の list）、PDF Viewer | planning | — |
-| ws079-p002 | kernel: USB HID の digitizer（筆圧・傾き・消しゴム・button・in-range）と、試験用の合成の入力 | planning | p001 |
+| [ws079-p002](phase002/phase.md) | kernel: USB HID の digitizer（筆圧・傾き・消しゴム・button・in-range）と、試験用の合成の入力 | in-progress（2026-09-28: pen の読み取りと host 試験・amd64 の build・boot test まで。注入の device は未着手。main の判断: devfs の /dev/input は event の node だけなので、注入は `/dev/input-inject`（devfs の root、試験専用、CONFIG_INPUT_TEST_INJECT）に置く） | p001 |
 | ws079-p003 | compositor: `zwp_tablet_manager_v2`（pad なし）と tablet を bind しない client への pointer の fallback | planning | p001、p002 |
 | ws079-p010 | compositor: 上の右端からのスワイプ（design-input-notes §4）で Notes を起動・最前面・全画面 | planning | p003 |
 | ws079-p004 | libpdf: 書き出し（page、ベクタの path、画像、編集の metadata）と自分の形式の読み込み | planning | p001 |
