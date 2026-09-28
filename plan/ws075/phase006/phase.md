@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p006`
 Parent: [WS075](../ws.md)
-Status: in-progress（2026-09-28〜。増分 1〜5 済み（MRT・occlusion query・VS の storage buffer・stencil・multisample と resolve）。p005 の egltest の fbo・es3 の後退は command.c の op の list の再確保の後の書き込みと分かり直した。残りは texel buffer・sampler2DMS・feedback の drawn-from-captured）
+Status: in-progress（2026-09-28〜。増分 1〜5 済み（MRT・occlusion query・VS の storage buffer・stencil・multisample と resolve）。p005 の egltest の fbo・es3 の後退は command.c の op の list の再確保の後の書き込みと分かり直した。増分 6（feedback の drawn-from-captured の原因の bufferFeatures、dynamic の storage buffer、rasterizerDiscardEnable）は build と host の fixture まで、実機は未実施（5330 に届かない）。残りは texel buffer・sampler2DMS と増分 6 の実機）
 Phase disposition: normal
 承認: 2026-09-27 ユーザー「…i915の高度化に進んでください。」、WS075 の計画（main の登録）。p005 の後（依存 p005 cleared）。
 
@@ -133,6 +133,23 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
   止まった（hang の報告なし、capture の frame と log が同時に終わる）。同じ image の再試行は最後まで動いた。BUG-085 に関係の可能性の
   ある観察として記録した。
 
+### 増分 6: feedback の drawn-from-captured、dynamic の storage buffer、rasterizerDiscardEnable（2026-09-28）
+
+- drawn-from-captured の原因: GPU の copy や cache ではなかった。実行器の vkGetPhysicalDeviceFormatProperties が全ての形式で
+  `bufferFeatures` を 0 と答えていた（`i915_instance_format_features()`）。libGLESv2 の `draw_vertices()` は VERTEX_BUFFER の
+  feature の無い形式の buffer object を device の buffer として bind せず、CPU 側の bytes（`attrib->buffer->data`）を stream へ
+  写して描く。transform feedback の buffer は device の copy だけが新しい（`gpu_written`、map されるまで CPU の bytes は古い）ので、
+  capture した位置の代わりに 0 の頂点を描き、四角が出なかった。map の検査（gles_buffer_fetch で device の copy を読む）は通る。
+  i915 では libGLESv2 の全ての頂点が stream の copy を通っていた（Venus は feature を答えるので直接）。
+- 修正（`instance.c`・`state.c`）: 頂点の fetcher の表（`i915_gfx_vertex_formats[]`）にある形式に `VERTEX_BUFFER_BIT` を答える
+  （`drv_i915_gfx_vertex_format_supported()`）。以後 libGLESv2 は buffer object を直接 bind する（VF の invalidate と RT の flush は
+  draw ごとに既にある）。host の fixture resdispatch の format の検査を合わせた。
+- dynamic の storage buffer（`command.c`）: `i915_record_dynamic_offsets()` が `STORAGE_BUFFER_DYNAMIC` の binding にも offset を
+  番号順に配る（Vulkan の順: set の順、binding 番号の順、uniform と storage を区別しない）。descriptor の slot の `dynamic` と
+  push data の address への加算（`state.c`）は既に storage も扱っていた。
+- rasterizerDiscardEnable（`pipeline.c`・`draw.c`・`genxml.h`）: pipeline の `rasterizer_discard`、draw の 3DSTATE_STREAMOUT の
+  dword 1 bit 30（API Rendering Disable、anv の so.RenderingDisable）。stream output は無効のまま、vertex shader（と store）は走る。
+
 ## 検証
 
 | 確認 | 結果 |
@@ -145,6 +162,8 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
 | host の vk の fixture（増分 5） | spirv・lower・resdispatch・eu・compile・pipe PASS。res・sync・cmdbuf は既存の assertion で失敗（res: `opcode 78 routed to the res module`、sync: `unimplemented opcode 39`、cmdbuf: `test_blend_state` の push）。増分 5 の前の同じ fixture との比較は未実施 |
 | 実機 capture egltest（p005 の 7 場面、回帰） | ms1-p005scenes（増分 5 あり）・st3-p005scenes（なし）・bisect1b（23622062 を外す）: glsl・glsl3・cube・formats・volumes 0、fbo 12、es3 4（上の後退） |
 | 実機 capture（後退の修正、`build/ws075-p006/fix1b-p005scenes`・`fix1-egltest6`） | p005 の 7 場面 glsl・glsl3・fbo・cube・es3・formats・volumes 全て **0**。egltest6: targets 0・blits 0・queries 0・feedback 1。画面 `build/ws031-shots/ws075-p006-20260928-{fix1b-p005scenes,fix1-egltest6}-sheet.png`。fix1-p005scenes は frame 614 で停止（上） |
+| 増分 6 の build と host の fixture（23caa415・082c0957） | image（`build/ws075-p006/img`＝egltest6、`img5`＝p005 の 7 場面、この worktree）の build は warning 0（log の 2 件は userland の noct の既存の warning）。host の fixture resdispatch・eu・compile・pipe PASS（resdispatch の format の検査を VERTEX_BUFFER の答えに合わせた）。cmd は増分 2 からの既存の link の失敗（fence.c の query が要る symbol）で、この増分と無関係 |
+| 実機 capture（増分 6） | **未実施**: 2026-09-28 11:35 頃から 5330（10.0.10.25）に届かない（ping は Destination Host Unreachable、ssh は No route to host）。main にも届かず、ユーザーに確認を依頼した。rasterizerDiscardEnable を直接見る検査は egltest に無い（capture の描画は毎 frame の clear で消える）ので、実機でも回帰（hang・fault の無いこと、feedback の検査）だけを見る |
 | QEMU | 未実施（i915 の実機の変更） |
 
 ## 中断（2026-09-28、main の wrap up）: 増分 4 の stencil（解決済み、上の増分 4）
@@ -167,7 +186,8 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
   texturing）と D32S8 の format feature の TRANSFER は未（copy の経路は増分 4 で通したので feature を足すのは multisample の増分で）。
 - multisample の image と resolve: 増分 5 で済み（ms1、blits 0）。sampler2DMS の texelFetch（sampled の multisample、survey・glxtest の gl32）は未。
 - texel buffer（samplerBuffer、survey）。
-- feedback の drawn-from-captured: capture した buffer を vertex array にした四角が見えない（原因は未調査）。
+- feedback の drawn-from-captured: 原因（bufferFeatures が 0）を増分 6 で直した。実機での確認は未実施（5330 に届かない）。再開: `CAPTURE=zdesktop-egltest KEILAND_APP=egltest6 BUILD=build/ws075-p006/img flock /tmp/i915-hw.lock plan/ws031/tests/vkloop-hw.sh zdesktop`（期待: targets 0・blits 0・queries 0・feedback 0）と、同じく `KEILAND_APP=egltest BUILD=build/ws075-p006/img5` で p005 の 7 場面が 0 のまま（libGLESv2 の全ての頂点が stream の copy から buffer の直接の bind に変わるので要る）。
+- libGLESv2 の潜在の誤り（WS068 の側、未修正）: VERTEX_BUFFER の feature の無い形式の buffer object を CPU の bytes から stream に写す経路が、`gpu_written` の buffer を `gles_buffer_fetch()` せずに読む。i915 は増分 6 で feature を答えるので通らなくなったが、表に無い形式（例: fixed point の変換）では残る。
 - targets の draw-buffer-other: st3 で ok（1282）。以前の INVALID_ENUM は stencil の対応の無い状態の残りの error だったと見られる。
 - `egltest6` の guest の log: `ufs-cat.py` が zdesktop.log を sparse として読めない run がある（ssbo1）。そのときは mview.log を
   別に読む（`ufs-cat.py ... /var/log/mview.log`）。
