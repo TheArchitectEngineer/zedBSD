@@ -8,7 +8,9 @@
 /*
  * The user agent's style sheet: the default look of HTML elements, written
  * for browser after the rendering section of the HTML Standard
- * (the first pass: display, margins, fonts, lists and links).
+ * (the first pass: display, margins, fonts, lists and links; and the form
+ * controls' look, after Chromium's sheet, ws074-p032).  Scripts always run
+ * in this browser, so noscript is never rendered.
  */
 
 #include "css/internal.h"
@@ -61,4 +63,21 @@ const char css_user_agent_sheet[] =
 	"th { text-align: center; }\n"
 	"mark { background-color: yellow; color: black; }\n"
 	"fieldset { margin-left: 2px; margin-right: 2px; border: 2px groove gray;"
-	" padding: 0.35em 0.75em 0.625em; }\n";
+	" padding: 0.35em 0.75em 0.625em; }\n"
+	"noscript { display: none; }\n"
+	"input, textarea, select, button { margin: 0; font-size: 13.333333px; font-family: sans-serif;"
+	" font-weight: normal; font-style: normal; color: black; line-height: normal; text-align: start;"
+	" display: inline-block; white-space: normal; }\n"
+	"input { padding: 1px 2px; border: 2px inset #767676; background-color: white; }\n"
+	"input[type=hidden] { display: none; }\n"
+	"input[type=search] { box-sizing: border-box; }\n"
+	"input[type=submit], input[type=button], input[type=reset], input[type=image], button {"
+	" padding: 1px 6px; border: 2px outset #767676; background-color: #efefef; box-sizing: border-box;"
+	" text-align: center; white-space: pre; }\n"
+	"input[type=checkbox] { margin: 3px 3px 3px 4px; padding: 0; border: none; background-color: transparent;"
+	" box-sizing: border-box; }\n"
+	"input[type=radio] { margin: 3px 3px 0 5px; padding: 0; border: none; background-color: transparent;"
+	" box-sizing: border-box; }\n"
+	"select { padding: 0 0 0 3px; border: 1px outset #767676; background-color: white; }\n"
+	"textarea { font-family: monospace; padding: 2px; border: 1px solid #767676; background-color: white;"
+	" white-space: pre-wrap; }\n";

@@ -45,6 +45,7 @@ static int font_grow(struct text_system *system);
 static int font_measure(struct text_system *system, const struct text_font *font, uint32_t code_point, struct text_glyph_entry *entry);
 static int font_draw(struct text_system *system, const struct text_font *font, struct text_glyph_entry *entry);
 static int font_open_face(struct text_face *face, const char *path);
+static const unsigned char *font_table(const struct wb_buffer *data, const char *tag, size_t length);
 
 /*
  * Opens the fonts of a text system.  The sans font is required; the
@@ -179,6 +180,53 @@ text_font_metrics(
 	metrics->line_height = metrics->ascent + metrics->descent + (int)((float)design.line_gap * scale + 0.5f);
 
 	/* Succeeded: the measures are filled. */
+	return 0;
+}
+
+/*
+ * Reports a font's average and largest character widths in whole pixels,
+ * as Chromium's font code takes them: the OS/2 table's xAvgCharWidth and
+ * the width of the head table's bounding box, scaled to the font's size
+ * and rounded.  A form control's natural width is measured with them.
+ * Returns ENOENT when the face lacks either table.
+ */
+int
+text_font_char_widths(
+	struct text_system *system,
+	const struct text_font *font,
+	int *average,
+	int *maximum)
+{
+	const unsigned char *head;
+	const unsigned char *os2;
+	struct text_face *face;
+	unsigned units_per_em;
+	float scale;
+	int average_units;
+	int x_min;
+	int x_max;
+
+	/* The two tables of the face's file. */
+	face = &system->faces[font->face];
+	head = font_table(&face->data, "head", 44U);
+	os2 = font_table(&face->data, "OS/2", 4U);
+	if (head == NULL || os2 == NULL)
+		return ENOENT;
+
+	/* unitsPerEm and the bounding box's left and right from head, xAvgCharWidth from OS/2 (big-endian). */
+	units_per_em = ((unsigned)head[18] << 8) | (unsigned)head[19];
+	x_min = (int)(int16_t)(((unsigned)head[36] << 8) | (unsigned)head[37]);
+	x_max = (int)(int16_t)(((unsigned)head[40] << 8) | (unsigned)head[41]);
+	average_units = (int)(int16_t)(((unsigned)os2[2] << 8) | (unsigned)os2[3]);
+	if (units_per_em == 0 || average_units <= 0)
+		return ENOENT;
+
+	/* Scaled to the size and rounded to whole pixels. */
+	scale = font->size / (float)units_per_em;
+	*average = (int)((float)average_units * scale + 0.5f);
+	*maximum = (int)((float)(x_max - x_min) * scale + 0.5f);
+
+	/* Succeeded: the widths are reported. */
 	return 0;
 }
 
@@ -456,6 +504,57 @@ font_draw(
 
 	/* Succeeded: the glyph has its bitmap. */
 	return 0;
+}
+
+/*
+ * Finds a table of a font file by its tag in the table directory, when it
+ * lies inside the file with at least length bytes; NULL otherwise.
+ */
+static const unsigned char *
+font_table(
+	const struct wb_buffer *data,
+	const char *tag,
+	size_t length)
+{
+	const unsigned char *bytes;
+	const unsigned char *record;
+	size_t count;
+	size_t index;
+	size_t offset;
+	size_t size;
+	int differs;
+
+	/* The directory's count of tables, after the four byte version. */
+	bytes = data->data;
+	if (data->length < 12U)
+		return NULL;
+	count = ((size_t)bytes[4] << 8) | (size_t)bytes[5];
+
+	/* Each record: the tag, a checksum, the offset and the length. */
+	for (index = 0; index < count; index++) {
+		record = bytes + 12U + index * 16U;
+		if (12U + (index + 1U) * 16U > data->length)
+			return NULL;
+		differs = memcmp(record, tag, 4U);
+		if (differs != 0)
+			continue;
+
+		/* The table, when it is inside the file and long enough. */
+		offset = ((size_t)record[8] << 24) | ((size_t)record[9] << 16) | ((size_t)record[10] << 8) | (size_t)record[11];
+		size = ((size_t)record[12] << 24) | ((size_t)record[13] << 16) | ((size_t)record[14] << 8) | (size_t)record[15];
+		if (size < length)
+			return NULL;
+		if (offset > data->length)
+			return NULL;
+		if (data->length - offset < length)
+			return NULL;
+
+		/* The table's first byte. */
+		return bytes + offset;
+	}
+
+	/* The file has no such table. */
+	return NULL;
 }
 
 /* Reads a font file and opens its first face. */

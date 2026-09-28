@@ -1,7 +1,7 @@
-viewport 1024.00 x 768.00, document height 1927.00
-block <html> 0.00 0.00 1024.00 1927.00
-  block <body> 0.00 24.00 1024.00 1879.00
-    block <div> 32.00 24.00 960.00 1879.00
+viewport 1024.00 x 768.00, document height 1949.00
+block <html> 0.00 0.00 1024.00 1949.00
+  block <body> 0.00 24.00 1024.00 1901.00
+    block <div> 32.00 24.00 960.00 1901.00
       block <h1> 32.00 24.00 960.00 31.00
         line 32.00 24.00 height 31.00 baseline 49.00
           text 32.00 w 73.44 26px "Keys,"
@@ -15,7 +15,7 @@ block <html> 0.00 0.00 1024.00 1927.00
           text 303.77 w 42.03 26px "the"
           text 345.80 w 8.31 26px " "
           text 354.11 w 78.27 26px "wheel"
-      block <div> 32.00 67.00 960.00 146.00
+      block <div> 32.00 67.00 960.00 168.00
         block <p> 49.00 96.00 926.00 20.00
           line 49.00 96.00 height 20.00 baseline 112.00
             text 49.00 w 29.12 16px "The"
@@ -47,28 +47,28 @@ block <html> 0.00 0.00 1024.00 1927.00
             text 555.45 w 4.50 16px " "
             text 559.95 w 6.52 16px "1"
             text 566.47 w 4.61 16px "."
-        block <p> 49.00 132.00 926.00 20.00
-          line 49.00 132.00 height 20.00 baseline 148.00
-            text 49.00 w 11.05 16px "A"
-            text 60.05 w 4.50 16px " "
-            text 64.55 w 48.78 16px "button"
-            text 113.33 w 4.50 16px " "
-            text 117.83 w 35.98 16px "plain"
-            text 153.81 w 4.50 16px " "
-            text 158.31 w 33.14 16px "text,"
-            text 191.45 w 4.50 16px " "
-            text 195.95 w 24.28 16px "not"
-            text 220.23 w 4.50 16px " "
-            text 224.73 w 74.56 16px "focusable"
-        block <p> 49.00 168.00 926.00 18.00
-          line 49.00 168.00 height 18.00 baseline 182.00
+        block <p> 49.00 132.00 926.00 42.00
+          block <button> 49.00 132.00 926.00 22.00
+            line 485.19 135.00 height 16.00 baseline 148.00
+              text 485.19 w 53.61 13px "A button"
+          anonymous 49.00 154.00 926.00 20.00
+            line 49.00 154.00 height 20.00 baseline 170.00
+              text 49.00 w 35.98 16px "plain"
+              text 84.98 w 4.50 16px " "
+              text 89.48 w 33.14 16px "text,"
+              text 122.62 w 4.50 16px " "
+              text 127.12 w 24.28 16px "not"
+              text 151.41 w 4.50 16px " "
+              text 155.91 w 74.56 16px "focusable"
+        block <p> 49.00 190.00 926.00 18.00
+          line 49.00 190.00 height 18.00 baseline 204.00
             text 49.00 w 16.81 14px "No"
             text 65.81 w 8.41 14px " "
             text 74.22 w 25.22 14px "key"
             text 99.44 w 8.41 14px " "
             text 107.84 w 33.62 14px "yet."
-      block <div> 32.00 225.00 960.00 1600.00
-        line 32.00 225.00 height 20.00 baseline 241.00
+      block <div> 32.00 247.00 960.00 1600.00
+        line 32.00 247.00 height 20.00 baseline 263.00
           text 32.00 w 11.05 16px "A"
           text 43.05 w 4.50 16px " "
           text 47.55 w 21.97 16px "tall"
@@ -80,9 +80,9 @@ block <html> 0.00 0.00 1024.00 1927.00
           text 139.03 w 40.97 16px "scroll"
           text 180.00 w 4.50 16px " "
           text 184.50 w 63.69 16px "through."
-      block <div> 32.00 1825.00 960.00 78.00
-        block <p> 49.00 1854.00 926.00 20.00
-          line 49.00 1854.00 height 20.00 baseline 1870.00
+      block <div> 32.00 1847.00 960.00 78.00
+        block <p> 49.00 1876.00 926.00 20.00
+          line 49.00 1876.00 height 20.00 baseline 1892.00
             text 49.00 w 29.12 16px "The"
             text 78.12 w 4.50 16px " "
             text 82.62 w 26.55 16px "last"

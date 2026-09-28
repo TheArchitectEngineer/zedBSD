@@ -458,6 +458,11 @@ page_paint(
 	if (error != 0)
 		return error;
 
+	/* The caret of a focused text control. */
+	error = page_paint_caret(page);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the page has its display list. */
 	return 0;
 }

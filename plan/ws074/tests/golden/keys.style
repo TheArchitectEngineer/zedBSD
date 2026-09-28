@@ -12,7 +12,7 @@
 |           a display=inline font-size=16.00 weight=400 italic=0 color=#ff0000ee background=#00000000 margin=0.00,0.00,0.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
 |           span display=inline font-size=16.00 weight=400 italic=0 color=#ff1d2433 background=#00000000 margin=0.00,0.00,0.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
 |         p display=block font-size=16.00 weight=400 italic=0 color=#ff1d2433 background=#00000000 margin=16.00,0.00,16.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
-|           button display=inline font-size=16.00 weight=400 italic=0 color=#ff1d2433 background=#00000000 margin=0.00,0.00,0.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
+|           button display=inline-block font-size=13.33 weight=400 italic=0 color=#ff000000 background=#ffefefef margin=0.00,0.00,0.00,0.00 padding=1.00,6.00,1.00,6.00 border=2.0,2.0,2.0,2.0 width=auto
 |           span display=inline font-size=16.00 weight=400 italic=0 color=#ff1d2433 background=#00000000 margin=0.00,0.00,0.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
 |         p display=block font-size=14.00 weight=400 italic=0 color=#ff1d2433 background=#00000000 margin=14.00,0.00,14.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
 |       div display=block font-size=16.00 weight=400 italic=0 color=#ff1d2433 background=#ffe3e9f2 margin=0.00,0.00,0.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto

@@ -62,6 +62,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/html/foreign.c \
 	$(KEILAND_BROWSER_DIR)/dom/node.c \
 	$(KEILAND_BROWSER_DIR)/dom/names.c \
+	$(KEILAND_BROWSER_DIR)/dom/control.c \
 	$(KEILAND_BROWSER_DIR)/css/tokenizer.c \
 	$(KEILAND_BROWSER_DIR)/css/parser.c \
 	$(KEILAND_BROWSER_DIR)/css/values.c \
@@ -90,6 +91,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/page/images.c \
 	$(KEILAND_BROWSER_DIR)/page/network.c \
 	$(KEILAND_BROWSER_DIR)/page/input.c \
+	$(KEILAND_BROWSER_DIR)/page/form.c \
 	$(KEILAND_BROWSER_DIR)/view/view.c \
 	$(KEILAND_BROWSER_DIR)/image/decode.c \
 	$(KEILAND_BROWSER_DIR)/image/jpeg.c \
@@ -103,6 +105,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/layout/float.c \
 	$(KEILAND_BROWSER_DIR)/layout/position.c \
 	$(KEILAND_BROWSER_DIR)/layout/replaced.c \
+	$(KEILAND_BROWSER_DIR)/layout/control.c \
 	$(KEILAND_BROWSER_DIR)/layout/dump.c \
 	$(KEILAND_BROWSER_DIR)/layout/hit.c \
 	$(KEILAND_BROWSER_DIR)/layout/bounds.c \

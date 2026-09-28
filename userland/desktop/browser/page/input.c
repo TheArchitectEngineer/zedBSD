@@ -67,6 +67,7 @@ static struct dom_node *input_next(const struct dom_node *node, const struct dom
 static int input_link_of(struct page *page, const struct dom_node *node, struct wb_buffer *href, int *found);
 static int input_is_button(const struct dom_node *node);
 static int input_compare_stops(const struct input_stop *left, const struct input_stop *right);
+static int input_activate_control(struct page *page, struct dom_element *element, struct wb_buffer *href, int *found);
 
 /*
  * Fires a mouse event of a type (mousedown, mouseup, click) at the element
@@ -188,6 +189,7 @@ page_focus_at(
 	long order;
 	int depth;
 	int focusable;
+	int editing;
 	int error;
 
 	/* The element under the point, then its ancestors. */
@@ -210,6 +212,20 @@ page_focus_at(
 	error = input_set_focus(page, (struct dom_element *)node, 0);
 	if (error != 0)
 		return error;
+
+	/*
+	 * A text control shows its ring whichever way it got the focus (as
+	 * :focus-visible matches it in Chromium), and its caret goes where the
+	 * press was.
+	 */
+	editing = page_is_editing(page);
+	if (editing) {
+		page->focus_visible = 1;
+		page->focus_generation++;
+		error = page_place_caret(page, x);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the focus is where the press landed. */
 	return 0;
@@ -316,6 +332,11 @@ page_focus_move(
 	if (error != 0)
 		return error;
 
+	/* A text control reached with Tab takes typing after its text. */
+	error = page_caret_to_end(page);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the focus moved. */
 	return 0;
 }
@@ -382,6 +403,7 @@ page_activate_focused(
 	struct bind_mouse mouse;
 	int is_button;
 	int canceled;
+	int kind;
 	int error;
 
 	/* Nothing focused activates nothing. */
@@ -389,6 +411,13 @@ page_activate_focused(
 	element = input_focused(page);
 	if (element == NULL)
 		return 0;
+
+	/* A form control is activated as a control (a field submits its form, a button is clicked). */
+	kind = dom_control_kind(element);
+	if (kind != DOM_CONTROL_NONE) {
+		error = input_activate_control(page, element, href, found);
+		return error;
+	}
 
 	/* The link it is in, if any. */
 	error = input_link_of(page, &element->node, href, found);
@@ -411,6 +440,72 @@ page_activate_focused(
 		*found = 0;
 
 	/* Succeeded: the element is activated. */
+	return 0;
+}
+
+/*
+ * Carries out the activation of the form control a click landed on at a
+ * point of the page (the click itself was fired and not canceled): a
+ * checkbox or radio button changes, a submit button submits its form, with
+ * the location to go to in href and *found set.
+ */
+int
+page_click_control(
+	struct page *page,
+	int x,
+	int y,
+	struct wb_buffer *href,
+	int *found)
+{
+	struct dom_node *node;
+	int handled;
+	int error;
+
+	/* The element under the point. */
+	*found = 0;
+	node = input_element_at(page, x, y);
+	if (node == NULL || node->type != DOM_ELEMENT)
+		return 0;
+
+	/* Its activation as a control (nothing for another element). */
+	error = page_activate_control(page, (struct dom_element *)node, 0, href, found, &handled);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the control is activated. */
+	return 0;
+}
+
+/*
+ * Tells whether the focused element is pressed by Space: a button, a
+ * checkbox or a radio button (Space scrolls the page otherwise).
+ */
+int
+page_focus_pressable(
+	struct page *page)
+{
+	struct dom_element *element;
+	int kind;
+
+	/* Nothing focused presses nothing. */
+	element = input_focused(page);
+	if (element == NULL)
+		return 0;
+
+	/* The kinds Space presses. */
+	kind = dom_control_kind(element);
+	switch (kind) {
+	case DOM_CONTROL_SUBMIT:
+	case DOM_CONTROL_BUTTON:
+	case DOM_CONTROL_RESET:
+	case DOM_CONTROL_CHECKBOX:
+	case DOM_CONTROL_RADIO:
+		return 1;
+	default:
+		break;
+	}
+
+	/* Anything else is not pressed. */
 	return 0;
 }
 
@@ -502,6 +597,55 @@ page_paint_focus(
 		return error;
 
 	/* Succeeded: the ring is drawn over the page. */
+	return 0;
+}
+
+/*
+ * Activates a focused form control from the keyboard: a text field submits
+ * its form (implicit submission); a button, a checkbox or a radio button
+ * gets a click and, unless it is canceled, does what it does.
+ */
+static int
+input_activate_control(
+	struct page *page,
+	struct dom_element *element,
+	struct wb_buffer *href,
+	int *found)
+{
+	struct bind_mouse mouse;
+	int handled;
+	int canceled;
+	int pressable;
+	int kind;
+	int error;
+
+	/* A field submits its form as Enter in it does. */
+	*found = 0;
+	kind = dom_control_kind(element);
+	if (kind == DOM_CONTROL_TEXT || kind == DOM_CONTROL_PASSWORD) {
+		error = page_activate_control(page, element, 1, href, found, &handled);
+		return error;
+	}
+
+	/* Only the pressable controls are activated by the keyboard; a textarea or a select is not. */
+	pressable = page_focus_pressable(page);
+	if (!pressable)
+		return 0;
+
+	/* The click, from the keyboard: no place and the main button. */
+	memset(&mouse, 0, sizeof(mouse));
+	error = bind_fire_mouse_event(page->window, &element->node, "click", &mouse, &canceled);
+	if (error != 0)
+		return error;
+	if (canceled)
+		return 0;
+
+	/* What the control does. */
+	error = page_activate_control(page, element, 0, href, found, &handled);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the control is activated. */
 	return 0;
 }
 
@@ -962,7 +1106,7 @@ input_is_button(
 	if (is_button)
 		return 1;
 
-	/* Nothing else is activated as a button in this pass (the form controls come later). */
+	/* The form controls are activated as controls (page_activate_control) before this is asked. */
 	return 0;
 }
 

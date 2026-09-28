@@ -18,6 +18,7 @@
 
 static int replaced_attribute(const struct layout_box *box, const char *name, layout_unit *value);
 static int replaced_length(const struct css_length *length, layout_unit containing, layout_unit *value);
+static layout_unit replaced_content_size(const struct layout_box *box, layout_unit size, int first, int second);
 
 /*
  * Sets a replaced box's content width and height for a containing block
@@ -48,10 +49,18 @@ layout_replaced_size(
 		has_ratio = 1;
 	}
 
-	/* The width: the style's, or the attribute's. */
+	/* A form control's natural size is its text's, and has no ratio. */
+	if (box->control != DOM_CONTROL_NONE) {
+		natural_width = box->natural_width;
+		natural_height = box->natural_height;
+	}
+
+	/* The width: the style's (less the frame when it sizes the border box), or the attribute's. */
 	width = 0;
 	width_given = replaced_length(&box->style.width, containing_width, &width);
-	if (!width_given)
+	if (width_given)
+		width = replaced_content_size(box, width, CSS_LEFT, CSS_RIGHT);
+	if (!width_given && box->control == DOM_CONTROL_NONE)
 		width_given = replaced_attribute(box, "width", &width);
 
 	/* The height: the style's (a percentage needs a known height, which is not there), or the attribute's. */
@@ -59,7 +68,9 @@ layout_replaced_size(
 	height_given = 0;
 	if (box->style.height.unit == CSS_UNIT_PX)
 		height_given = replaced_length(&box->style.height, 0, &height);
-	if (!height_given)
+	if (height_given)
+		height = replaced_content_size(box, height, CSS_TOP, CSS_BOTTOM);
+	if (!height_given && box->control == DOM_CONTROL_NONE)
 		height_given = replaced_attribute(box, "height", &height);
 
 	/* What is not given comes from the other side through the ratio, or from the image. */
@@ -194,4 +205,32 @@ replaced_length(
 
 	/* Not a size. */
 	return 0;
+}
+
+/*
+ * Turns a size the style gave into the content box's: under box-sizing:
+ * border-box it sized the border box, so the borders and paddings of the
+ * two sides (first and second) come off it, down to nothing.
+ */
+static layout_unit
+replaced_content_size(
+	const struct layout_box *box,
+	layout_unit size,
+	int first,
+	int second)
+{
+	layout_unit frame;
+
+	/* A content-box size is the content's already. */
+	if (box->style.box_sizing != CSS_BOX_SIZING_BORDER)
+		return size;
+
+	/* The frame of the two sides comes off. */
+	frame = box->border[first] + box->padding[first] + box->padding[second] + box->border[second];
+	size -= frame;
+	if (size < 0)
+		size = 0;
+
+	/* The content's size. */
+	return size;
 }

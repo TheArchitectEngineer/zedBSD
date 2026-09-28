@@ -21,6 +21,7 @@
 static void bounds_walk(const struct layout_box *box, const struct dom_node *node, struct layout_rect *rect, int *found, int depth);
 static void bounds_lines(const struct layout_box *box, const struct dom_node *node, struct layout_rect *rect, int *found);
 static void bounds_add(struct layout_rect *rect, int *found, layout_unit x, layout_unit y, layout_unit width, layout_unit height);
+static const struct layout_box *bounds_find(const struct layout_box *box, const struct dom_node *node, int depth);
 
 /*
  * Finds the rectangle a node takes on the page, in layout units from the
@@ -48,6 +49,55 @@ layout_node_bounds(
 
 	/* Reports whether the node has a box. */
 	return found;
+}
+
+/*
+ * Finds the first box a node made (in tree order), or NULL when it has
+ * none: a form control's box, whose style the caret's placing measures by.
+ */
+const struct layout_box *
+layout_box_of(
+	const struct layout_tree *tree,
+	const struct dom_node *node)
+{
+	const struct layout_box *found;
+
+	/* The whole box tree. */
+	found = NULL;
+	if (tree->root != NULL)
+		found = bounds_find(tree->root, node, 0);
+
+	/* The box, or NULL. */
+	return found;
+}
+
+/* Searches a box and its descendants for the first box of a node. */
+static const struct layout_box *
+bounds_find(
+	const struct layout_box *box,
+	const struct dom_node *node,
+	int depth)
+{
+	const struct layout_box *child;
+	const struct layout_box *found;
+
+	/* Stops at the depth the layout stops at. */
+	if (depth > LAYOUT_DEPTH_MAX)
+		return NULL;
+
+	/* The box itself. */
+	if (box->node == node)
+		return box;
+
+	/* Its children in order. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		found = bounds_find(child, node, depth + 1);
+		if (found != NULL)
+			return found;
+	}
+
+	/* Not under this box. */
+	return NULL;
 }
 
 /* Adds a box's part of a node's rectangle (its border box, or its lines' fragments), and its children's. */

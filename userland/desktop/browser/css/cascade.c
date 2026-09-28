@@ -1055,6 +1055,9 @@ cascade_apply(
 	case CSS_PROP_LIST_STYLE_TYPE:
 		style->list_style = value->keyword;
 		break;
+	case CSS_PROP_BOX_SIZING:
+		style->box_sizing = value->keyword;
+		break;
 	default:
 		break;
 	}
@@ -1093,6 +1096,9 @@ cascade_inherit(
 		break;
 	case CSS_PROP_VISIBILITY:
 		style->visibility = parent->visibility;
+		break;
+	case CSS_PROP_BOX_SIZING:
+		style->box_sizing = parent->box_sizing;
 		break;
 	case CSS_PROP_WIDTH:
 		style->width = parent->width;
