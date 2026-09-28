@@ -24,9 +24,10 @@
  * guest.  The modes that load a page do it through a view (view/view.h),
  * as the window does: the page's scripts run, its timers run on a virtual
  * clock up to MAIN_SETTLE_BUDGET (browser_view_settle), and the page is
- * drawn with the CPU (browser_view_draw_pixels) or dumped
- * (browser_view_dump).  --run writes the page's console to standard output
- * (the other modes write it to standard error).  Every mode reports
+ * drawn with the CPU (browser_view_draw_pixels), with the GPU into an
+ * offscreen image read back (browser_offscreen, --render-gpu), or dumped
+ * (browser_view_dump).  --run writes the page's console to standard
+ * output (the other modes write it to standard error).  Every mode reports
  * failure with a non-zero exit status and one line on standard error.
  *
  * --async fetches the page and its images without blocking, through the
@@ -38,7 +39,6 @@
 #include "base/base.h"
 #include "js/js.h"
 #include "vm/bytecode.h"
-#include "paint/gpu.h"
 #include "shell/shell.h"
 #include "view/view.h"
 
@@ -729,9 +729,9 @@ main_console_err(
 }
 
 /*
- * Draws the view with the GPU renderer into an offscreen image of its own
- * device and reads it back into pixels (width by height, packed rows);
- * says why on standard error when it cannot.
+ * Draws the view with the GPU renderer into an offscreen image (a device
+ * of the engine's own) and reads it back into pixels (width by height,
+ * packed rows); says why on standard error when it cannot.
  */
 static int
 main_draw_gpu(
@@ -740,30 +740,45 @@ main_draw_gpu(
 	unsigned width,
 	unsigned height)
 {
-	const struct paint_list *list;
-	struct text_system *text;
-	struct paint_bitmap bitmap;
-	layout_unit scroll_y;
-	const char *failed;
-	VkResult result;
+	struct browser_offscreen *offscreen;
+	struct browser_gpu_failure failure;
+	struct browser_target target;
+	struct browser_gpu gpu;
 	int error;
 
-	/* What to draw. */
-	error = browser_view_display(view, &list, &text, &scroll_y);
-	if (error != 0) {
+	/* The offscreen image and its device; a Vulkan call that failed is named. */
+	error = browser_offscreen_create(width, height, &offscreen, &failure);
+	if (error == EIO) {
+		fprintf(stderr, "browser: cannot draw on the GPU: %s failed (%d)\n", failure.operation, (int)failure.result);
+		return error;
+	} else if (error != 0) {
 		fprintf(stderr, "browser: cannot draw on the GPU: %s\n", strerror(error));
 		return error;
 	}
 
-	/* The picture, drawn from the page's top. */
-	bitmap.pixels = pixels;
-	bitmap.width = (int)width;
-	bitmap.height = (int)height;
-	result = paint_gpu_render(list, text, 0, &bitmap, &failed);
-	if (result != VK_SUCCESS) {
-		fprintf(stderr, "browser: cannot draw on the GPU: %s failed (%d)\n", failed, (int)result);
-		return EIO;
+	/* The view draws into it with its device, and waits for the drawing. */
+	browser_offscreen_target(offscreen, &gpu, &target);
+	browser_view_set_gpu(view, &gpu);
+	error = browser_view_draw(view, &target, VK_NULL_HANDLE, VK_NULL_HANDLE);
+	if (error == EIO) {
+		browser_view_gpu_failure(view, &failure);
+		fprintf(stderr, "browser: cannot draw on the GPU: %s failed (%d)\n", failure.operation, (int)failure.result);
+	} else if (error != 0) {
+		fprintf(stderr, "browser: cannot draw on the GPU: %s\n", strerror(error));
 	}
+
+	/* The picture read back. */
+	if (error == 0) {
+		error = browser_offscreen_read(offscreen, pixels, (size_t)width * sizeof(uint32_t), &failure);
+		if (error != 0)
+			fprintf(stderr, "browser: cannot read the GPU's picture: %s failed (%d)\n", failure.operation, (int)failure.result);
+	}
+
+	/* The view lets the device go before the offscreen image and its device end. */
+	browser_view_set_gpu(view, NULL);
+	browser_offscreen_destroy(offscreen);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the pixels hold the picture. */
 	return 0;

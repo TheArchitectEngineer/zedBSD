@@ -16,11 +16,14 @@
  * made, and a page its scripts or its arriving images changed is laid out
  * and painted again the next time its boxes are needed.  The headless
  * modes settle the view on a virtual clock instead, and draw or dump it.
+ * On the caller's GPU the view keeps the renderer (paint/gpu.h) and a
+ * framebuffer for each of the caller's image views it drew into.
  */
 
 #include "view/view.h"
 #include "net/net.h"
 #include "page/page.h"
+#include "paint/gpu.h"
 
 #include <errno.h>
 #include <poll.h>
@@ -41,10 +44,33 @@
 /* How many of the loader's descriptors a headless settle polls at most. */
 #define VIEW_POLL_MAX		64U
 
+/* How many of the caller's image views the view keeps a framebuffer for (a swapchain's images, and a few more). */
+#define VIEW_FRAMEBUFFERS_MAX	8U
+
 /* How a page is reached: a new step of the history, or a step already in it. */
 enum view_step {
 	VIEW_STEP_NEW,
 	VIEW_STEP_KEEP
+};
+
+/*
+ * A framebuffer the view made over one of the caller's image views, at the
+ * size it was made for, in the renderer's pass.  It lives until the caller
+ * has the view forget its targets, or the renderer is made again.
+ */
+struct view_framebuffer {
+	VkImageView image_view;
+	uint32_t width;
+	uint32_t height;
+	VkFramebuffer framebuffer;
+};
+
+/*
+ * An offscreen image of the engine's own: the renderer's device and image,
+ * made by browser_offscreen_create and ended by browser_offscreen_destroy.
+ */
+struct browser_offscreen {
+	struct paint_offscreen offscreen;
 };
 
 /*
@@ -56,6 +82,12 @@ enum view_step {
  * (open_epoch) began, how pages are fetched, the loader (NULL when every
  * page is read at once), the page being fetched (its location and how it
  * joins the history; NULL when none), the title shown, and the callbacks.
+ *
+ * On the GPU: the caller's device (has_device says the caller lent one),
+ * the renderer on it (opened at the first drawing, for the target's format
+ * and final layout; gpu_open says it is), the framebuffers made for the
+ * caller's image views (oldest first), and the Vulkan call that failed
+ * last.
  */
 struct browser_view {
 	struct page *page;
@@ -78,6 +110,15 @@ struct browser_view {
 	int pending_step;
 	struct wb_buffer title;
 	struct browser_callbacks callbacks;
+	struct browser_gpu device;
+	int has_device;
+	struct paint_gpu gpu;
+	int gpu_open;
+	VkFormat gpu_format;
+	VkImageLayout gpu_layout;
+	struct view_framebuffer framebuffers[VIEW_FRAMEBUFFERS_MAX];
+	size_t framebuffer_count;
+	struct browser_gpu_failure failure;
 };
 
 static uint64_t view_clock(void);
@@ -96,6 +137,10 @@ static void view_scroll(struct browser_view *view, layout_unit distance);
 static void view_redraw(struct browser_view *view);
 static void view_failed(struct browser_view *view, const char *url, int error, const char *reason);
 static void view_console(void *context, int level, const char *text, size_t length);
+static int view_gpu_ready(struct browser_view *view, const struct browser_target *target);
+static void view_gpu_close(struct browser_view *view);
+static int view_framebuffer(struct browser_view *view, const struct browser_target *target, VkFramebuffer *framebuffer);
+static int view_gpu_failed(struct browser_view *view, const char *operation, VkResult result);
 
 /* Makes a view with its loader and no page. */
 int
@@ -120,6 +165,12 @@ browser_view_create(
 	if (options->callbacks != NULL)
 		made->callbacks = *options->callbacks;
 
+	/* The caller's GPU, when it lends one now. */
+	if (options->gpu != NULL) {
+		made->device = *options->gpu;
+		made->has_device = 1;
+	}
+
 	/* A view that reads every page at once needs no loader. */
 	if (made->fetch == BROWSER_FETCH_AT_ONCE) {
 		*view = made;
@@ -138,7 +189,7 @@ browser_view_create(
 	return 0;
 }
 
-/* Ends a view: a load under way, the page, the history and the loader, in that order. */
+/* Ends a view: its objects on the caller's GPU, a load under way, the page, the history and the loader, in that order. */
 void
 browser_view_destroy(
 	struct browser_view *view)
@@ -148,6 +199,9 @@ browser_view_destroy(
 	/* No view. */
 	if (view == NULL)
 		return;
+
+	/* The renderer and the framebuffers on the caller's device. */
+	view_gpu_close(view);
 
 	/* A load under way, then the page and its path (its image requests go with it). */
 	view_stop_load(view, 0);
@@ -726,16 +780,81 @@ browser_view_dump(
 }
 
 /*
- * Gives what to draw: the page's display list, its text system and the
- * scroll, the page laid out first when it changed.
+ * Gives the view the caller's GPU to draw with from now on, or none (NULL):
+ * what the view made on the old device is released first, so the caller
+ * may destroy that device afterwards.
+ */
+void
+browser_view_set_gpu(
+	struct browser_view *view,
+	const struct browser_gpu *gpu)
+{
+	/* The renderer and the framebuffers on the old device. */
+	view_gpu_close(view);
+
+	/* No GPU from now on. */
+	if (gpu == NULL) {
+		view->has_device = 0;
+		return;
+	}
+
+	/* The new one; the renderer is made on it at the next drawing. */
+	view->device = *gpu;
+	view->has_device = 1;
+}
+
+/*
+ * Forgets the framebuffers the view made for the caller's image views; the
+ * caller calls it before it destroys those views, once the drawing into
+ * them has finished.
+ */
+void
+browser_view_release_targets(
+	struct browser_view *view)
+{
+	size_t index;
+
+	/* Each framebuffer, oldest first. */
+	for (index = 0; index < view->framebuffer_count; index++)
+		vkDestroyFramebuffer(view->device.device, view->framebuffers[index].framebuffer, NULL);
+	view->framebuffer_count = 0;
+}
+
+/* Lays the page out now when it changed, so that a frame the caller begins next cannot fail on the layout. */
+int
+browser_view_prepare(
+	struct browser_view *view)
+{
+	int error;
+
+	/* No page has nothing to lay out. */
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The page as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page can be drawn. */
+	return 0;
+}
+
+/*
+ * Draws the page shown into the caller's image on the caller's GPU and
+ * waits for it: submitted after wait and signalling signal
+ * (VK_NULL_HANDLE for none).
  */
 int
-browser_view_display(
+browser_view_draw(
 	struct browser_view *view,
-	const struct paint_list **list,
-	struct text_system **text,
-	layout_unit *scroll_y)
+	const struct browser_target *target,
+	VkSemaphore wait,
+	VkSemaphore signal)
 {
+	VkFramebuffer framebuffer;
+	VkExtent2D extent;
+	VkResult result;
 	int error;
 
 	/* No page has nothing to draw. */
@@ -747,11 +866,181 @@ browser_view_display(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the page's. */
-	*list = &view->page->paint;
-	*text = &view->page->text;
-	*scroll_y = view->scroll_y;
+	/* The renderer for the target's format and layout, and the framebuffer over the target. */
+	error = view_gpu_ready(view, target);
+	if (error != 0)
+		return error;
+	error = view_framebuffer(view, target, &framebuffer);
+	if (error != 0)
+		return error;
+
+	/* The drawing, submitted and waited for. */
+	extent.width = target->width;
+	extent.height = target->height;
+	result = paint_gpu_draw(&view->gpu, &view->page->paint, &view->page->text, view->scroll_y, framebuffer, extent, wait, signal);
+	if (result != VK_SUCCESS) {
+		error = view_gpu_failed(view, view->gpu.operation, result);
+		return error;
+	}
+
+	/* Succeeded: the image holds the page. */
 	return 0;
+}
+
+/*
+ * Records the drawing of the page shown into the caller's image, render
+ * pass and all, into a command buffer the caller began and submits.  The
+ * drawing recorded before must have finished.
+ */
+int
+browser_view_record(
+	struct browser_view *view,
+	const struct browser_target *target,
+	VkCommandBuffer commands)
+{
+	VkFramebuffer framebuffer;
+	VkExtent2D extent;
+	VkResult result;
+	int error;
+
+	/* No page has nothing to draw. */
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The page as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The renderer for the target's format and layout, and the framebuffer over the target. */
+	error = view_gpu_ready(view, target);
+	if (error != 0)
+		return error;
+	error = view_framebuffer(view, target, &framebuffer);
+	if (error != 0)
+		return error;
+
+	/* The frame's instances and atlas, written by the host now. */
+	extent.width = target->width;
+	extent.height = target->height;
+	result = paint_gpu_prepare(&view->gpu, &view->page->paint, &view->page->text, view->scroll_y, extent);
+	if (result != VK_SUCCESS) {
+		error = view_gpu_failed(view, view->gpu.operation, result);
+		return error;
+	}
+
+	/* The pass, into the caller's command buffer. */
+	paint_gpu_record(&view->gpu, commands, &view->page->paint, framebuffer, extent);
+
+	/* Succeeded: the caller's commands draw the page. */
+	return 0;
+}
+
+/* Tells which Vulkan call (or step) failed last in a drawing, and what it returned. */
+void
+browser_view_gpu_failure(
+	const struct browser_view *view,
+	struct browser_gpu_failure *failure)
+{
+	/* The one kept. */
+	*failure = view->failure;
+}
+
+/*
+ * Makes an offscreen image of the engine's own, width by height, on a
+ * device of its own; a failure is EIO with the Vulkan call in *failure.
+ */
+int
+browser_offscreen_create(
+	unsigned width,
+	unsigned height,
+	struct browser_offscreen **offscreen,
+	struct browser_gpu_failure *failure)
+{
+	struct browser_offscreen *made;
+	VkResult result;
+
+	/* The holder. */
+	*offscreen = NULL;
+	failure->operation = NULL;
+	failure->result = VK_SUCCESS;
+	made = calloc(1, sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+
+	/* The device and the image. */
+	result = paint_offscreen_open(&made->offscreen, (uint32_t)width, (uint32_t)height);
+	if (result != VK_SUCCESS) {
+		failure->operation = made->offscreen.operation;
+		failure->result = result;
+		paint_offscreen_close(&made->offscreen);
+		free(made);
+		return EIO;
+	}
+
+	/* Succeeded: a view can draw into it. */
+	*offscreen = made;
+	return 0;
+}
+
+/* Gives the GPU and the target a view draws into the offscreen image with (left ready to be read back). */
+void
+browser_offscreen_target(
+	const struct browser_offscreen *offscreen,
+	struct browser_gpu *gpu,
+	struct browser_target *target)
+{
+	/* The device. */
+	gpu->instance = offscreen->offscreen.instance;
+	gpu->physical = offscreen->offscreen.physical;
+	gpu->device = offscreen->offscreen.device;
+	gpu->queue_family = offscreen->offscreen.family;
+
+	/* The image, left as the copy that reads it back needs. */
+	target->image = offscreen->offscreen.image;
+	target->view = offscreen->offscreen.view;
+	target->format = offscreen->offscreen.format;
+	target->new_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	target->width = offscreen->offscreen.extent.width;
+	target->height = offscreen->offscreen.extent.height;
+}
+
+/* Reads the offscreen image, drawn by a view, into 0xAARRGGBB pixels whose rows are stride bytes apart. */
+int
+browser_offscreen_read(
+	struct browser_offscreen *offscreen,
+	uint32_t *pixels,
+	size_t stride,
+	struct browser_gpu_failure *failure)
+{
+	VkResult result;
+
+	/* The copy out of the image. */
+	failure->operation = NULL;
+	failure->result = VK_SUCCESS;
+	result = paint_offscreen_read(&offscreen->offscreen, pixels, stride);
+	if (result != VK_SUCCESS) {
+		failure->operation = offscreen->offscreen.operation;
+		failure->result = result;
+		return EIO;
+	}
+
+	/* Succeeded: the pixels hold the picture. */
+	return 0;
+}
+
+/* Ends an offscreen image and its device (no view may draw with it any more). */
+void
+browser_offscreen_destroy(
+	struct browser_offscreen *offscreen)
+{
+	/* No offscreen image. */
+	if (offscreen == NULL)
+		return;
+
+	/* The image, the device, the instance, then the holder. */
+	paint_offscreen_close(&offscreen->offscreen);
+	free(offscreen);
 }
 
 /* Trusts the CA certificates of a PEM file for https, besides the system's roots, in every view. */
@@ -916,6 +1205,13 @@ view_show_page(
 		page_destroy(page);
 		return ENOMEM;
 	}
+
+	/*
+	 * The atlas's glyphs are the old page's (its text system goes with it,
+	 * and the memory of their bitmaps may be used again by the new one's).
+	 */
+	if (view->gpu_open)
+		paint_gpu_forget_glyphs(&view->gpu);
 
 	/* The new page replaces the old one, from its top, with its own clock. */
 	page_destroy(view->page);
@@ -1259,4 +1555,148 @@ view_console(
 	view = context;
 	if (view->callbacks.console != NULL)
 		view->callbacks.console(view->callbacks.context, view, level, text, length);
+}
+
+/*
+ * Makes the renderer ready for a target on the caller's device: made at
+ * the first drawing, and made again when the target's format or final
+ * layout differs from the one its pass was made for.
+ */
+static int
+view_gpu_ready(
+	struct browser_view *view,
+	const struct browser_target *target)
+{
+	VkResult result;
+	int error;
+
+	/* Without the caller's GPU there is nothing to draw with. */
+	if (!view->has_device)
+		return ENODEV;
+
+	/* A renderer made for another kind of target goes. */
+	if (view->gpu_open) {
+		if (view->gpu_format != target->format || view->gpu_layout != target->new_layout)
+			view_gpu_close(view);
+	}
+
+	/* A renderer for this kind of target is there. */
+	if (view->gpu_open)
+		return 0;
+
+	/* The renderer on the caller's device, its pass for the target's format and final layout. */
+	result = paint_gpu_open(
+		&view->gpu,
+		view->device.instance,
+		view->device.physical,
+		view->device.queue_family,
+		view->device.device,
+		target->format,
+		target->new_layout);
+	if (result != VK_SUCCESS) {
+		error = view_gpu_failed(view, view->gpu.operation, result);
+		paint_gpu_close(&view->gpu);
+		return error;
+	}
+
+	/* Succeeded: the renderer draws this kind of target. */
+	view->gpu_open = 1;
+	view->gpu_format = target->format;
+	view->gpu_layout = target->new_layout;
+	return 0;
+}
+
+/* Releases the renderer and the framebuffers on the caller's device, once the device has finished with them. */
+static void
+view_gpu_close(
+	struct browser_view *view)
+{
+	/* Nothing was made. */
+	if (!view->gpu_open)
+		return;
+
+	/* The device's work that may still use them. */
+	(void)vkDeviceWaitIdle(view->device.device);
+
+	/* The framebuffers (made in the renderer's pass), then the renderer. */
+	browser_view_release_targets(view);
+	paint_gpu_close(&view->gpu);
+	view->gpu_open = 0;
+}
+
+/*
+ * Finds the framebuffer over a target's image view at its size, or makes
+ * one in the renderer's pass (the oldest goes when the view keeps as many
+ * as it can; the drawing into it has finished, as the caller promises).
+ */
+static int
+view_framebuffer(
+	struct browser_view *view,
+	const struct browser_target *target,
+	VkFramebuffer *framebuffer)
+{
+	struct view_framebuffer *kept;
+	VkFramebufferCreateInfo create;
+	VkResult result;
+	size_t index;
+	int error;
+
+	/* One made for this image view at this size. */
+	for (index = 0; index < view->framebuffer_count; index++) {
+		kept = &view->framebuffers[index];
+		if (kept->image_view != target->view)
+			continue;
+		if (kept->width != target->width || kept->height != target->height)
+			continue;
+
+		/* Found: the one to draw through. */
+		*framebuffer = kept->framebuffer;
+		return 0;
+	}
+
+	/* A full table lets its oldest go. */
+	if (view->framebuffer_count == VIEW_FRAMEBUFFERS_MAX) {
+		vkDestroyFramebuffer(view->device.device, view->framebuffers[0].framebuffer, NULL);
+		memmove(view->framebuffers, view->framebuffers + 1, (VIEW_FRAMEBUFFERS_MAX - 1U) * sizeof(view->framebuffers[0]));
+		view->framebuffer_count--;
+	}
+
+	/* The framebuffer over the image view, in the renderer's pass. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	create.renderPass = view->gpu.pass;
+	create.attachmentCount = 1U;
+	create.pAttachments = &target->view;
+	create.width = target->width;
+	create.height = target->height;
+	create.layers = 1U;
+	kept = &view->framebuffers[view->framebuffer_count];
+	result = vkCreateFramebuffer(view->device.device, &create, NULL, &kept->framebuffer);
+	if (result != VK_SUCCESS) {
+		error = view_gpu_failed(view, "vkCreateFramebuffer", result);
+		return error;
+	}
+
+	/* Succeeded: kept for the next frames into the same image. */
+	kept->image_view = target->view;
+	kept->width = target->width;
+	kept->height = target->height;
+	view->framebuffer_count++;
+	*framebuffer = kept->framebuffer;
+	return 0;
+}
+
+/* Keeps which Vulkan call failed and what it returned, for browser_view_gpu_failure; reports EIO. */
+static int
+view_gpu_failed(
+	struct browser_view *view,
+	const char *operation,
+	VkResult result)
+{
+	/* The failure, for the caller's message. */
+	view->failure.operation = operation;
+	view->failure.result = result;
+
+	/* The error the drawing reports. */
+	return EIO;
 }

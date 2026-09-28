@@ -23,10 +23,17 @@
  * the tests settle a view (browser_view_settle), then draw it with the CPU
  * (browser_view_draw_pixels) or dump it (browser_view_dump).
  *
- * Drawing in a window still reads the view's display list
- * (browser_view_display); the render target of the draft (browser_target)
- * is ws074-p055, and input in the DOM's key names with the default actions
- * in the engine is p056.
+ * With the GPU (ws074-p055), the caller lends the view its Vulkan device
+ * (browser_view_set_gpu) and names an image of its own to draw into (a
+ * browser_target: a swapchain image of a window, an offscreen image).  The
+ * view either submits the drawing itself and waits for it
+ * (browser_view_draw), or records it into the caller's command buffer
+ * (browser_view_record), which the caller submits.  The view makes and
+ * keeps a framebuffer for each image view it is given; the caller tells it
+ * to forget them (browser_view_release_targets) before it destroys the
+ * images.  A caller without a window makes an offscreen image of the
+ * engine's (browser_offscreen) and reads the drawing back.  Input in the
+ * DOM's key names with the default actions in the engine is ws074-p056.
  *
  * A view is used from the thread that made it.
  */
@@ -34,16 +41,19 @@
 #ifndef KEILAND_BROWSER_VIEW_H
 #define KEILAND_BROWSER_VIEW_H
 
-#include "layout/layout.h"
-#include "paint/paint.h"
 #include "text/text.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include <vulkan/vulkan.h>
+
 /* A view, opaque to the caller. */
 struct browser_view;
 struct pollfd;
+
+/* An offscreen image of the engine's own, opaque to the caller. */
+struct browser_offscreen;
 
 /* How a load went, for the load callback. */
 enum browser_load_state {
@@ -115,10 +125,45 @@ struct browser_callbacks {
 };
 
 /*
+ * The caller's GPU a view draws with: its instance, its device and a queue
+ * family of the device that draws (the view submits on queue 0 of it when
+ * it draws by itself).
+ */
+struct browser_gpu {
+	VkInstance instance;
+	VkPhysicalDevice physical;
+	VkDevice device;
+	uint32_t queue_family;
+};
+
+/*
+ * An image of the caller's the view draws into: the image, a 2D view of
+ * it as a color attachment, its format (8-bit UNORM; the renderer blends
+ * the stored values), the layout the drawing leaves it in, and its size in
+ * pixels.  The view clears the whole image first, so whatever layout it
+ * was in will do.
+ */
+struct browser_target {
+	VkImage image;
+	VkImageView view;
+	VkFormat format;
+	VkImageLayout new_layout;
+	uint32_t width;
+	uint32_t height;
+};
+
+/* Why a Vulkan call of the engine failed: the call (or the step) and what it returned. */
+struct browser_gpu_failure {
+	const char *operation;
+	VkResult result;
+};
+
+/*
  * What a view is made with: the fonts (NULL fields for the defaults), the
  * callbacks, the outermost stack frame of the thread that uses it (the
- * heaps of its pages scan the stack up to it), its size in pixels, and how
- * it fetches (zero is BROWSER_FETCH_DEFAULT).
+ * heaps of its pages scan the stack up to it), its size in pixels, how it
+ * fetches (zero is BROWSER_FETCH_DEFAULT), and the GPU it draws with (NULL
+ * for none yet; browser_view_set_gpu gives it one later).
  */
 struct browser_view_options {
 	const struct text_font_paths *fonts;
@@ -127,6 +172,7 @@ struct browser_view_options {
 	unsigned width;
 	unsigned height;
 	enum browser_fetch fetch;
+	const struct browser_gpu *gpu;
 };
 
 /* Making and ending a view. */
@@ -174,9 +220,43 @@ int browser_view_settle(struct browser_view *view, double budget, unsigned flags
 int browser_view_draw_pixels(struct browser_view *view, uint32_t *pixels, unsigned width, unsigned height, size_t stride);
 int browser_view_dump(struct browser_view *view, enum browser_dump kind, char **text, size_t *length);
 
-/* What to draw: the display list, the text system its glyphs come from, and the scroll (until p055's render target). */
-int browser_view_display(struct browser_view *view, const struct paint_list **list, struct text_system **text,
-    layout_unit *scroll_y);
+/*
+ * The GPU side: the device the view draws with from now on (NULL to let
+ * the old one go: the view releases what it made on it, and the caller
+ * may then destroy it), the framebuffers the view keeps for the caller's
+ * images forgotten (before the caller destroys those images, once the
+ * drawing into them has finished), and the page laid out now (so that a
+ * frame begun cannot fail on the layout).
+ *
+ * Drawing into a target, the view scrolled as it is: submitted by the view
+ * after wait and signalling signal (VK_NULL_HANDLE for none), waited for;
+ * or recorded, render pass and all, into a command buffer the caller
+ * began, which the caller submits.  Before the view draws or records
+ * again, the work it recorded must have finished (the caller waits for its
+ * fence).  Both report 0, ENOENT when no page is shown, ENODEV without a
+ * GPU, a layout's error, or EIO when a Vulkan call failed
+ * (browser_view_gpu_failure says which).
+ */
+void browser_view_set_gpu(struct browser_view *view, const struct browser_gpu *gpu);
+void browser_view_release_targets(struct browser_view *view);
+int browser_view_prepare(struct browser_view *view);
+int browser_view_draw(struct browser_view *view, const struct browser_target *target, VkSemaphore wait, VkSemaphore signal);
+int browser_view_record(struct browser_view *view, const struct browser_target *target, VkCommandBuffer commands);
+void browser_view_gpu_failure(const struct browser_view *view, struct browser_gpu_failure *failure);
+
+/*
+ * An offscreen image of the engine's own, for a caller without a window
+ * (the headless --render-gpu, the tests): a device of its own with one
+ * image of a size, the GPU and the target to give a view, and the image
+ * read back into 0xAARRGGBB pixels (rows stride bytes apart) once a view
+ * has drawn into it.  The view lets the offscreen's GPU go before the
+ * offscreen is destroyed.  A failure is EIO with the Vulkan call in
+ * *failure.
+ */
+int browser_offscreen_create(unsigned width, unsigned height, struct browser_offscreen **offscreen, struct browser_gpu_failure *failure);
+void browser_offscreen_target(const struct browser_offscreen *offscreen, struct browser_gpu *gpu, struct browser_target *target);
+int browser_offscreen_read(struct browser_offscreen *offscreen, uint32_t *pixels, size_t stride, struct browser_gpu_failure *failure);
+void browser_offscreen_destroy(struct browser_offscreen *offscreen);
 
 /* The process-wide settings of the engine: the certificate authorities trusted besides the system's (https). */
 int browser_add_ca_file(const char *path);
