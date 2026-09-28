@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から。GS base は案 A（swapgs）に決定（差分の承認は p001 の後）。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/` に決定（Win64 の名前は使わない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/` に決定。残りの判断: native の橋・優先度
+Resume point: p001（設計）から。GS base は案 A（swapgs）に決定（差分の承認は p001 の後）。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/` に決定（Win64 の名前は使わない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/` に決定。native の橋は置かない（互換の DLL が UAPI を直接呼ぶ）に決定。残りの判断: 優先度
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -45,8 +45,20 @@ forward）、DLL の依存の解決、IAT の書き換え、Microsoft x64 ABI �
    **名前の規則**: 商標のため、OS に見える名前（path・program・package・menu・UI）に「Win64」「Windows」を使わない（`coff64` 等にする）。
    設計の文書で ABI を説明する技術の用語としての言及は可（main の解釈）。
 3. **source の置き場**: 2026-09-28 ユーザー → `userland/base/ld-coff/`（ローダ）と `userland/desktop/w64/`（互換の DLL、PE の DLL として build、`/usr/lib/coff64/` に install）。
-4. **互換の DLL から zedBSD の機能を呼ぶ道**（spec §22）: 互換の DLL は PE の世界の code なので、zedBSD の syscall・libc を呼ぶ橋が要る
-   （例: `ld.coff` が native の関数の表を PE の export として見せる内部の DLL、名前は案で `kei.dll`）。p001 で設計する。
+4. **互換の DLL から zedBSD の機能を呼ぶ道**: 2026-09-28 ユーザー「kei.dllみたいなブリッジはなしで、kernel32.dllとかが直接にzedBSD UAPIを呼び、
+   Waylandコンポジタと通信するのがいいと思います。ブリッジdll を挟まない利点は明確で、ブリッジ層が1枚減る、bootstrapが簡単、デバッグしやすい、
+   呼び出しコストも減る。特に kernel32.dll がファイル・VM・thread・process系のUAPIを直接叩くのは自然です。」
+   → **橋の DLL は置かない。** `kernel32.dll` 等は zedBSD の UAPI（syscall）を直接呼び、GUI の DLL（user32 等）は Wayland の compositor と直接通信する。
+   p001 で設計する点（main の整理）:
+   - **UAPI の header を PE の側で使う**: Windows の ABI は LLP64（`long` が 32 bit）、zedBSD は LP64。UAPI の struct に `long`・`unsigned long` が
+     あると大きさが食い違うので、PE の build で使う UAPI の header を固定幅の型で監査する（`_Static_assert` で大きさを検査）。
+   - **syscall の stub**: zedBSD の syscall の呼び出しの規約（register）を PE の code から使う小さな asm の stub。Microsoft x64 ABI の関数から
+     zedBSD の syscall の register への並べ替えはこの stub の中だけ。
+   - **PE の側の最小の runtime**: libc の無い PE の code 用に、memcpy・文字列・errno 相当等の最小の部品を**静的な library**（DLL ではない）として
+     各互換 DLL に link する（実行時の層は増えない）。
+   - **thread**: `CreateThread` は zedBSD の thread の UAPI で作り、新しい thread の GS base を TEB に向ける（p002 の GS base の汎用の機能）。
+   - **Wayland**: user32 等が PE の code として Wayland の wire protocol を話す。自前の libwayland（`userland/desktop/libwayland`）の source を
+     PE の target で build できるか（依存する libc の関数を上の runtime で満たせるか）を調べる。
 5. 優先度: デモ（fg010）の後か、並べるか。
 
 ## Phase（案）
