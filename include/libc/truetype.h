@@ -140,6 +140,62 @@ int truetype_design_metrics(const struct truetype_face *face,
 int truetype_glyph_design_advance(const struct truetype_face *face,
 				  unsigned glyph, int *advance);
 
+/*
+ * One point of a glyph's outline, in design units with y growing upward.
+ *
+ * on_curve is 1 for a point the outline passes through and 0 for the
+ * control point of a quadratic curve.  Two control points in a row imply an
+ * on-curve point halfway between them, exactly as the glyf table stores it.
+ * The coordinates are whole numbers for a simple glyph; a scaled or rotated
+ * component of a composite glyph can make them fractional.
+ */
+struct truetype_outline_point {
+	float x;
+	float y;
+	unsigned on_curve;
+};
+
+/*
+ * One glyph's outline, as TrueType quadratic contours in design units.
+ *
+ * The caller supplies the two arrays and their capacities.  contour_ends[i]
+ * is the index of the last point of contour i, so contour i runs from the
+ * point after contour_ends[i - 1] (or point 0) to contour_ends[i] and closes
+ * back to its first point.
+ *
+ * advance and left_side_bearing come from hmtx; x_min to y_max are the box
+ * the glyf entry records.  A glyph with no outline, such as a space, reports
+ * no contours and a zero box.
+ */
+struct truetype_glyph_outline {
+	struct truetype_outline_point *points;
+	unsigned point_capacity;
+	unsigned point_count;
+	unsigned *contour_ends;
+	unsigned contour_capacity;
+	unsigned contour_count;
+	int advance;
+	int left_side_bearing;
+	int x_min;
+	int y_min;
+	int x_max;
+	int y_max;
+};
+
+/*
+ * Reads one glyph's contours out of glyf, in design units.
+ *
+ * A composite glyph is flattened: each component's contours are appended
+ * with the component's offset and scale or matrix applied.  Hinting
+ * instructions are ignored.
+ *
+ * When the arrays are too small, ENOSPC is returned and point_count and
+ * contour_count still say how many the glyph needs, so that a caller can
+ * allocate and ask again.  Returns zero, or an errno value.
+ */
+int truetype_glyph_outline(const struct truetype_face *face, unsigned glyph,
+			   struct truetype_glyph_outline *outline);
+
 #ifdef __cplusplus
 }
 #endif

@@ -20,6 +20,9 @@
 #define BOOT_SECTOR_BUFFER 4096U
 #define CONFIG_READ_BUFFER (ZBL_KERN_CONFIG_FILE_MAX + 1U)
 #define FILE_INFO_BUFFER 1024U
+/* The GOP mode a boot with a logo asks for: the Kei splash's size (ws035-p112). */
+#define SPLASH_MODE_WIDTH 1920U
+#define SPLASH_MODE_HEIGHT 1080U
 #define KERNEL_PATH_CHAR16_STORAGE \
 	(ZBL_KERN_CONFIG_KERNEL_PATH_STORAGE_SIZE + 1U)
 
@@ -1404,6 +1407,8 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	int low_pages_allocated = 0;
 	int map_allocated = 0;
 	int quiet_boot = 0;
+	char logo_path[ZBL_LOGO_PATH_MAX + 1U];
+	int logo_named;
 	int logo_shown;
 	unsigned index, attempt;
 
@@ -1438,10 +1443,18 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	if (EFI_ERROR(status))
 		fail_discovered(&context, &discovered, "Load zedbsd.cfg", status);
 
-	/* Applies the optional display request before retaining framebuffer addresses. */
+	/*
+	 * Applies the optional display request before retaining framebuffer
+	 * addresses.  A boot with a logo (logo=) asks for the GOP's 1920x1080,
+	 * the Kei splash's size, when there is no video= (ws035-p112).
+	 */
+	logo_named = zbl_logo_path(configuration.parameter_record.text,
+	    configuration.parameter_record.length, logo_path, sizeof(logo_path));
 	status = zbl_uefi_video_select(boot, gop,
 	    configuration.parameter_record.text,
-	    configuration.parameter_record.length);
+	    configuration.parameter_record.length,
+	    logo_named > 0 ? SPLASH_MODE_WIDTH : 0U,
+	    logo_named > 0 ? SPLASH_MODE_HEIGHT : 0U);
 	if (EFI_ERROR(status))
 		fail_discovered(&context, &discovered, "Select configured video mode", status);
 
