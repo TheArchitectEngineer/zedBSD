@@ -64,7 +64,8 @@ clang-format は host に無く未実施。
 
 ### 残り（resume の条件）
 
-1. touch（p012 の後）: `wl_touch`、touch の接触を `zwl_corner_contact_*` と Home・Wiseview の端へ、浮いたタイトルバーの上の二本指の短い上へのこすりを
+1. touch（p012 の後。p012 は 2026-09-28 に kernel の protocol B と注入の `touchinject` まで入った: guest で `touchinject` の台本が
+   touch screen の evdev（`ABS_MT_*`・`BTN_TOUCH`・`ABS_X/Y`）を出し、compositor は今それを絶対 pointer として開く）: `wl_touch`、touch の接触を `zwl_corner_contact_*` と Home・Wiseview の端へ、浮いたタイトルバーの上の二本指の短い上へのこすりを
    `window_lower()`（同じ関数、via を変える）へ。
 2. 実機（mouse の triple click を含む）は未実施。
 3. docked の窓の bar の題の triple click は範囲外（浮いたタイトルバーだけ）。
