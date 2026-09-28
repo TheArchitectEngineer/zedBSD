@@ -160,6 +160,10 @@ main(
 	if (status != 0)
 		goto cleanup;
 
+	/* The size the window was configured to, which the compositor's bounds may have cut (for the harness). */
+	printf("MVIEW WINDOW run=%s width=%u height=%u bounds=%ux%u\n", options.token, window.width, window.height, window.bounds_width, window.bounds_height);
+	fflush(stdout);
+
 	/* Creates renderer ownership only after the native surface is configured. */
 	result = mview_renderer_open(&renderer, &window, options.pixel_shading);
 	operation = renderer.operation;

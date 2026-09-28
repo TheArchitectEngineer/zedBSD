@@ -126,6 +126,51 @@ main(
 	check(exists(path), "copy again: Folder.v1 2");
 	fm_task_free(task);
 
+	/* 2b. Names taken (ws035-p106, F-041): skip leaves the item there, replace puts the source in its place. */
+	snprintf(path, sizeof(path), "%s/dst/Report.pdf", root);
+	make_file(path, "older");
+	snprintf(path, sizeof(path), "%s/dst/Folder.v1/extra.txt", root);
+	make_file(path, "extra");
+	snprintf(path, sizeof(path), "%s/dst", root);
+	task = fm_task_new(FM_TASK_COPY, sources, 2, path);
+	check(fm_task_collides(task, 0) == 1 && fm_task_collides(task, 1) == 1, "collision: both names are taken");
+	task->collisions[0] = FM_COLLISION_SKIP;
+	task->collisions[1] = FM_COLLISION_SKIP;
+	run(task);
+	snprintf(path, sizeof(path), "%s/dst/Report.pdf", root);
+	check(file_is(path, "older") && task->skip_count == 2 && task->error_count == 0, "collision: skip leaves the items there");
+	check(task->results[0] == NULL && task->failed[0] == 0, "collision: a skipped source has no result and did not fail");
+	snprintf(path, sizeof(path), "%s/dst/Report 3.pdf", root);
+	check(!exists(path), "collision: skip makes no new name");
+	fm_task_free(task);
+	snprintf(path, sizeof(path), "%s/dst", root);
+	task = fm_task_new(FM_TASK_COPY, sources, 2, path);
+	task->collisions[0] = FM_COLLISION_REPLACE;
+	task->collisions[1] = FM_COLLISION_REPLACE;
+	check(run(task) == 0 && task->error_count == 0, "collision: replace, no error");
+	snprintf(path, sizeof(path), "%s/dst/Report.pdf", root);
+	check(file_is(path, "report") && task->results[0] != NULL && strcmp(task->results[0], path) == 0, "collision: replace puts the file in the item's place");
+	snprintf(path, sizeof(path), "%s/dst/Folder.v1/extra.txt", root);
+	check(!exists(path), "collision: replace removes the folder that was there (its extra file too)");
+	snprintf(path, sizeof(path), "%s/dst/Folder.v1/deep/leaf.txt", root);
+	check(file_is(path, "leaf"), "collision: replace copies the folder in its place");
+	snprintf(path, sizeof(path), "%s/dst/Report 3.pdf", root);
+	check(!exists(path), "collision: replace makes no new name");
+	fm_task_free(task);
+	snprintf(path, sizeof(path), "%s/src/Moved.txt", root);
+	make_file(path, "moved");
+	targets[0] = strdup(path);
+	snprintf(path, sizeof(path), "%s/dst/Moved.txt", root);
+	make_file(path, "there");
+	snprintf(path, sizeof(path), "%s/dst", root);
+	task = fm_task_new(FM_TASK_MOVE, targets, 1, path);
+	task->collisions[0] = FM_COLLISION_REPLACE;
+	run(task);
+	snprintf(path, sizeof(path), "%s/dst/Moved.txt", root);
+	check(file_is(path, "moved") && !exists(targets[0]) && task->error_count == 0, "collision: a move replaces the item there");
+	fm_task_free(task);
+	free(targets[0]);
+
 	/* 3. Duplicate beside itself. */
 	snprintf(path, sizeof(path), "%s/src", root);
 	task = fm_task_new(FM_TASK_DUPLICATE, sources, 1, path);

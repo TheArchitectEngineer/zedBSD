@@ -47,7 +47,7 @@ fi
 # files without the window, the presenter, the menus, the titlebar and the glass.
 for file in $src/*.c; do
 	case $(basename "$file") in
-	main.c|window.c|present.c|menu.c|titlebar.c|glass.c) continue ;;
+	main.c|window.c|present.c|menu.c|titlebar.c|glass.c|dnd.c) continue ;;
 	esac
 	object="$out/obj/files-$(basename "$file" .c).o"
 	"$cc" $flags -c "$file" -o "$object"

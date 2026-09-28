@@ -37,6 +37,15 @@ struct mview_window {
 	int32_t discrete;
 	uint32_t width;
 	uint32_t height;
+
+	/* The size the viewer asked for, which a configure without a size keeps within the bounds. */
+	uint32_t preferred_width;
+	uint32_t preferred_height;
+
+	/* The largest size the compositor lets the window choose (xdg-shell 4; zero: not known). */
+	uint32_t bounds_width;
+	uint32_t bounds_height;
+
 	int configured;
 	int resized;
 	int closed;
