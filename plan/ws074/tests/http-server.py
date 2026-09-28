@@ -11,6 +11,8 @@ With --tls-dir (made by make-test-ca.sh) the same paths are also served over HTT
 (localhost, 127.0.0.1, 10.0.2.2) and on --tls-wrong-port with DIR/wrong.pem (a name that matches nothing).
 
   /pages/NAME            a page of plan/ws074/tests/pages, with Content-Length
+  /images/NAME           a file of build/ws074-images (make-test-images.py: the image test pages and their pictures,
+                         ws074-p050), with Content-Length and its type; ?delay=MS waits that long first
   /redirect/N            N redirects (302, 301, 307 in turn) and then /pages/first.html
   /chunked               an HTML page sent in chunks of a few bytes (Transfer-Encoding: chunked)
   /close                 an HTML page without a length, ended by closing the connection
@@ -25,12 +27,15 @@ With --tls-dir (made by make-test-ca.sh) the same paths are also served over HTT
 import argparse
 import http.server
 import os
+import time
 import socketserver
 import ssl
 import sys
 import threading
 
 PAGES = os.path.join(os.path.abspath(os.path.dirname(__file__)), "pages")
+IMAGES = os.path.join(os.path.abspath(os.path.dirname(__file__)), "../../../build/ws074-images")
+TYPES = {".html": "text/html; charset=utf-8", ".jpg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -74,6 +79,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.send_page("<!DOCTYPE html><title>not found</title><p>no such page", 404)
             with open(full, "rb") as stream:
                 return self.send_page(stream.read())
+        if path.startswith("/images/"):
+            name = os.path.basename(path)
+            full = os.path.join(IMAGES, name)
+            if not os.path.isfile(full):
+                return self.send_page("<!DOCTYPE html><title>not found</title><p>no such page", 404)
+            query = self.path.split("?")[1] if "?" in self.path else ""
+            if query.startswith("delay="):
+                time.sleep(int(query[6:]) / 1000.0)
+            with open(full, "rb") as stream:
+                data = stream.read()
+            self.send_response(200)
+            self.send_header("Content-Type", TYPES.get(os.path.splitext(name)[1], "application/octet-stream"))
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if path.startswith("/redirect/"):
             count = int(path.split("/")[2])
             if count <= 0:
