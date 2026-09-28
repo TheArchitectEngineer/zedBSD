@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から
+Resume point: p001 の設計（[design-input-notes.md](design-input-notes.md)・[design-pdf.md](design-pdf.md)）は書けた（2026-09-28）。p002（kernel の pen）・p004（libpdf の writer）が進行中。main の判断: header は `include/libc/pdf.h`（libpdf は独自の API）、保存は非圧縮（deflate は後）、p003 を分けて gesture は p010。ユーザーの判断待ち: design-input-notes §8 の D1〜D8（既定あり）、design-pdf §6 の glyph の outline（p007 の前）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）
@@ -24,6 +24,17 @@ Resume point: p001（設計）から
 - PDF Viewer は **段階を切る**: ① Notes が書く PDF（ベクタの線・画像）→ ② 一般の PDF の図形・画像・埋め込みの TrueType → ③ CFF・Type1・暗号化など。各段の後に評価する。
 - 名前: `userland/desktop/notes`（`/bin/notes`、画面の名前「Notes」）、`userland/desktop/pdfviewer`（`/bin/pdfviewer`、「PDF Viewer」）、
   共有の PDF の library は `userland/base/libpdf`。
+
+同日のユーザーの回答（design-input-notes §8）:「pen tablet はノーブランドのUSB-C or HDMI+USBの10インチタッチLCD＋AES Penを買いました。
+HDMIをメイン出力にする方法を確立して、全画面1スクリーンのみでデモに使いたいです。ペンのボタンはまだ届いてないのでわかりませんが、AES/WGPなので2つくらいあるかも。
+ノートの保存は保存ボタンだけでなく、一定時間操作がないときに自動保存、ジャーナリング的に復元できるのがいいと思います。
+キーボードショートカットは標準的なものにしたほうがわかりやすいと思います。マニアックな使いこなしよりも標準を目指しましょう。
+libtruetypeにはアウトラインを返すAPIを追加しましょう。」
+- D1: 10 インチの touch LCD（USB-C、または HDMI + USB）と AES の pen。pen・touch は USB HID の digitizer として来る見込み（届いたら descriptor を確かめる）。
+- 出力: i915 の実機で **HDMI を主な出力**にし、全画面の 1 画面だけでデモする方法を確立する（新しい Phase、WS075 の display と Keiland）。
+- D5: pen の button は 2 つ程度（届いてから割り当て）。D6: 保存 button に加えて、操作の無い時間の後の自動保存と、journal からの復元。
+- D8: keyboard の shortcut は標準的なもの（Ctrl+S・Ctrl+Z・Ctrl+Shift+Z/Ctrl+Y・Ctrl+N・Ctrl+O 等）。
+- stage ② の glyph: libtruetype に outline を返す API を足す。
 
 ## 完了の条件（案、p001 で確定）
 
@@ -46,8 +57,9 @@ Resume point: p001（設計）から
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws079-p001 | 設計: pen の入力（USB HID digitizer → kernel の input の event、QEMU の合成の入力）、`zwp_tablet_v2`、スワイプの gesture、Notes の文書 model、PDF の書き方と metadata、libpdf の構成（parser・content stream・描画の list）、PDF Viewer | planning | — |
-| ws079-p002 | kernel: USB HID の digitizer（筆圧・傾き・消しゴム・button・in-range）と、試験用の合成の入力 | planning | p001 |
-| ws079-p003 | compositor: `zwp_tablet_manager_v2`、上の右端からのスワイプで Notes を起動・最前面・全画面 | planning | p001、p002 |
+| [ws079-p002](phase002/phase.md) | kernel: USB HID の digitizer（筆圧・傾き・消しゴム・button・in-range）と、試験用の合成の入力 | in-progress（2026-09-28: pen の読み取りと host 試験・amd64 の build・boot test まで。注入の device は未着手。main の判断: devfs の /dev/input は event の node だけなので、注入は `/dev/input-inject`（devfs の root、試験専用、CONFIG_INPUT_TEST_INJECT）に置く） | p001 |
+| ws079-p003 | compositor: `zwp_tablet_manager_v2`（pad なし）と tablet を bind しない client への pointer の fallback | planning | p001、p002 |
+| ws079-p010 | compositor: 上の右端からのスワイプ（design-input-notes §4）で Notes を起動・最前面・全画面 | planning | p003 |
 | [ws079-p004](phase004/phase.md) | libpdf: 書き出し（page、ベクタの path、画像、編集の metadata）と自分の形式の読み込み | in-progress（writer・外形・画像・/ID・日付・4 platform の link 済み。自分の形式の読み込みが残り） | p001 |
 | ws079-p005 | Notes v1: 筆圧の線・消しゴム・page・undo・PDF の保存と再編集 | planning | p003、p004 |
 | ws079-p006 | libpdf の読み込み ① と PDF Viewer v1（scroll と page の swipe、Notes で書き込み） | planning | p004 |
