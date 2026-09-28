@@ -23,7 +23,9 @@
  * previous and next page buttons, a new page, and Save.  The card is laid
  * out once to measure it and drawn centred; its width does not depend on
  * the status, so the buttons stay in place.  A status shows in a small
- * pill of its own beside the card when there is room.  The labels are
+ * pill of its own beside the card when there is room, or else as a notice
+ * centred under the card, in the rows of the picture below the toolbar's
+ * band (NOTES_TOOLBAR_IMAGE_HEIGHT).  The labels are
  * drawn with libtruetype from the desktop's font; without the font the
  * buttons are drawn without them and still work.  Only ASCII is drawn (the
  * labels are ASCII; other characters of a status show as '?').
@@ -66,9 +68,10 @@
 #define UI_BUTTON_TOP		(UI_CARD_TOP + (UI_CARD_HEIGHT - UI_BUTTON_HEIGHT) / 2)
 #define UI_GAP			14
 
-/* The status pill's height and the room around it, in pixels. */
+/* The status pill's height, the room around its text, and the gap above it when it shows under the card, in pixels. */
 #define UI_STATUS_HEIGHT	32
 #define UI_STATUS_PADDING	14
+#define UI_NOTICE_GAP		6
 
 /*
  * Kei's colours, as 0xRRGGBB, with the alphas they are laid on with:
@@ -274,14 +277,22 @@ notes_ui_draw(
 	if (status_x + status_width + 8 > (int32_t)width)
 		status_x = card_x - UI_GAP - status_width;
 
-	/* A status that fits on neither side is not shown. */
+	/* A status that fits on neither side shows as a notice, centred under the card, when the picture reaches there. */
+	if (status_x < 8) {
+		status_x = ((int32_t)width - status_width) / 2;
+		status_y = UI_CARD_TOP + UI_CARD_HEIGHT + UI_NOTICE_GAP;
+	}
+
+	/* A notice wider than the window, or below the picture, is not shown. */
 	if (status_x < 8)
+		return;
+	if (status_y + UI_STATUS_HEIGHT > (int32_t)height)
 		return;
 
 	/* The pill and its text. */
 	ui_shadow(ui, (float)status_x, (float)status_y, (float)status_width, (float)UI_STATUS_HEIGHT, (float)UI_STATUS_HEIGHT / 2.0f);
 	ui_glass(ui, (float)status_x, (float)status_y, (float)status_width, (float)UI_STATUS_HEIGHT, (float)UI_STATUS_HEIGHT / 2.0f);
-	ui_text(ui, status_x + UI_STATUS_PADDING, UI_BUTTON_TOP, state->status, UI_TEXT_SECONDARY);
+	ui_text(ui, status_x + UI_STATUS_PADDING, status_y - (UI_BUTTON_HEIGHT - UI_STATUS_HEIGHT) / 2, state->status, UI_TEXT_SECONDARY);
 }
 
 /*

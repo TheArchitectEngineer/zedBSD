@@ -12,10 +12,14 @@
  * undo and redo of strokes, eraser drags and pages, checks that the edit
  * data decodes to the same document, that a journal left behind by a
  * "crash" (and one whose last record was cut short) rebuilds it, and saves
- * the PDF the run script checks with qpdf and pdftoppm, opens it again
- * (the same document), and refuses a copy whose page was changed and a PDF
- * without the edit data.  The edit data is also written to OUTPUT.pdf.bin.
- * ws079-p011 adds the eraser of parts (check_erase_parts).
+ * the PDF the run script checks with qpdf and pdftoppm, and opens it again
+ * (the same document).  The edit data is also written to OUTPUT.pdf.bin.
+ * ws079-p011 adds the eraser of parts (check_erase_parts).  ws079-p014
+ * writes on other programs' PDFs: a copy whose page was changed
+ * (check_changed), a PDF without the edit data, saved as revisions of it,
+ * journaled, opened again, saved again at the same size, with a revision
+ * of another program after Notes' (check_foreign), and the refusal of a
+ * signed and an encrypted PDF (check_refusals).
  *
  *   host-notes OUTPUT.pdf SCRATCH.pdf
  */
@@ -38,6 +42,14 @@ static struct notes_stroke *make_stroke(struct notes_document *document, unsigne
 static int same_document(const struct notes_document *a, const struct notes_document *b);
 static int tamper(const char *from, const char *to);
 static int foreign(const char *path);
+static void check_changed(const char *path, const struct notes_document *original);
+static void check_foreign(const char *path);
+static void check_refusals(const char *path);
+static int starts_with(const char *path, const char *prefix_path, size_t *size);
+static int write_minimal(const char *path, const char *catalog_extra, const char *trailer_extra);
+static int add_third_party_revision(const char *path);
+static int copy_file(const char *from, const char *to);
+static unsigned char *read_all(const char *path, size_t *size);
 
 int
 main(
@@ -58,6 +70,7 @@ main(
 	size_t bytes;
 	FILE *file;
 	int descriptor;
+	unsigned opened;
 	int error;
 
 	if (argc != 3) {
@@ -174,19 +187,22 @@ main(
 	check(notes_journal_discard(document.journal) == 0, "discard at the end");
 
 	/* The saved PDF opens to the same document, with its identifier. */
-	check(notes_open_pdf(argv[1], &copy) == 0, "open");
+	check(notes_open_pdf(argv[1], &copy, &opened) == 0 && opened == NOTES_OPENED_NOTES, "open");
 	check(same_document(&document, &copy), "opened document is the same");
 	check(copy.has_pdf_id && memcmp(copy.pdf_id, document.pdf_id, 16U) == 0, "opened identifier");
 	check(copy.dirty == 0, "opened clean");
 	notes_document_free(&copy);
 
-	/* A page another program changed is refused: one number of page 1's content stream is altered. */
+	/*
+	 * ws079-p014: a page another program changed becomes background, the
+	 * other page keeps its strokes (one number of page 1's content stream
+	 * is altered), and a PDF without the edit data is another program's.
+	 */
 	check(tamper(argv[1], argv[2]) == 0, "tamper");
-	check(notes_open_pdf(argv[2], &copy) == ESTALE, "changed page refused");
-
-	/* A PDF without the edit data is not a Notes PDF. */
+	check_changed(argv[2], &document);
 	check(foreign(argv[2]) == 0, "foreign");
-	check(notes_open_pdf(argv[2], &copy) == ENOENT, "foreign PDF refused");
+	check_foreign(argv[2]);
+	check_refusals(argv[2]);
 
 	notes_journal_destroy(document.journal);
 	document.journal = NULL;
@@ -424,4 +440,346 @@ foreign(
 	error = pdf_writer_save(writer, path);
 	pdf_writer_destroy(writer);
 	return error;
+}
+
+/*
+ * ws079-p014: a notebook of which another program changed page 1 (path):
+ * page 1 becomes the background (drawn over, its strokes baked into it),
+ * page 2 keeps its strokes (to be written anew in place).  A stroke drawn
+ * on page 1 and a save add a revision to the changed file, which the file
+ * then starts with; opening it again gives the strokes back editable.
+ */
+static void
+check_changed(
+	const char *path,
+	const struct notes_document *original)
+{
+	struct notes_document changed;
+	struct notes_document again;
+	struct notes_stroke *stroke;
+	char work[4096];
+	size_t bytes;
+	size_t size;
+	unsigned opened;
+	int error;
+
+	/* A working copy of the changed file. */
+	snprintf(work, sizeof(work), "%s-changed.pdf", path);
+	check(copy_file(path, work) == 0, "changed copy");
+
+	/* Page 1 is background now, page 2 is the notebook's. */
+	error = notes_open_pdf(work, &changed, &opened);
+	check(error == 0 && opened == NOTES_OPENED_CHANGED, "changed notebook opens as changed");
+	if (error != 0)
+		return;
+	check(changed.page_count == 2U && changed.base != NULL, "changed: two pages and a base");
+	check(changed.pages[0]->origin == NOTES_ORIGIN_OVER && changed.pages[0]->stroke_count == 0U, "changed: page 1 background");
+	check(changed.pages[0]->background == NOTES_BACKGROUND_PDF, "changed: page 1 drawn under");
+	check(changed.pages[1]->origin == NOTES_ORIGIN_REPLACE && changed.pages[1]->source == 1U, "changed: page 2 replaced in place");
+	check(changed.pages[1]->stroke_count == original->pages[1]->stroke_count, "changed: page 2 keeps its strokes");
+
+	/* A stroke on the changed page, saved as a revision of the changed file. */
+	stroke = make_stroke(&changed, NOTES_TOOL_PEN, 0x16a34aff, 4.0f, 100.0f, 400.0f, 450.0f, 420.0f, 1);
+	check(notes_document_add_stroke(&changed, 0U, stroke) == 0, "changed: stroke on page 1");
+	check(notes_save_pdf(&changed, work, &bytes) == 0, "changed: saved");
+	check(starts_with(work, path, &size) == 0, "changed: the changed file untouched at the start");
+
+	/* Opened again: the strokes are editable, page 2 is still the notebook's. */
+	error = notes_open_pdf(work, &again, &opened);
+	check(error == 0 && opened == NOTES_OPENED_ANNOTATED, "changed: opens as annotated");
+	if (error == 0) {
+		check(same_document(&changed, &again), "changed: same notebook");
+		check(again.pages[0]->origin == NOTES_ORIGIN_OVER && again.pages[1]->origin == NOTES_ORIGIN_REPLACE, "changed: origins kept");
+		check(again.base_size == (uint64_t)size, "changed: base is the changed file");
+		notes_document_free(&again);
+	}
+	notes_document_free(&changed);
+}
+
+/*
+ * ws079-p014: another program's PDF (path, one page 200x200 without edit
+ * data).  It opens with its page as the background; a stroke on it and a
+ * page added with a stroke are journaled (the journal recovers the same
+ * notebook and gets its base back), saved as a revision of the PDF,
+ * opened again editable, and saved again at the same size -- the revision
+ * is replaced, not piled up.  A revision another program adds after Notes'
+ * bakes the page's strokes into the background; the added page keeps its
+ * strokes.  Erasing every stroke of the page keeps the page as it was.
+ */
+static void
+check_foreign(
+	const char *path)
+{
+	struct notes_document document;
+	struct notes_document again;
+	struct notes_document recovered;
+	struct notes_document third;
+	struct notes_stroke *stroke;
+	struct notes_stroke *removed;
+	char work[4096];
+	char other[4096];
+	char journal_path[4096];
+	char document_path[4096];
+	size_t first_size;
+	size_t second_size;
+	size_t base_size;
+	size_t records;
+	size_t place;
+	size_t bytes;
+	unsigned opened;
+	int error;
+
+	/* A working copy of the PDF. */
+	snprintf(work, sizeof(work), "%s-foreign.pdf", path);
+	check(copy_file(path, work) == 0, "foreign copy");
+
+	/* The page is the background. */
+	error = notes_open_pdf(work, &document, &opened);
+	check(error == 0 && opened == NOTES_OPENED_FOREIGN, "foreign PDF opens");
+	if (error != 0)
+		return;
+	check(document.page_count == 1U && document.base != NULL, "foreign: one page and a base");
+	check(document.pages[0]->origin == NOTES_ORIGIN_OVER && document.pages[0]->source == 0U, "foreign: the page is the base's");
+	check(document.pages[0]->width == 200.0f && document.pages[0]->height == 200.0f, "foreign: the page's size");
+	check(document.pages[0]->background == NOTES_BACKGROUND_PDF, "foreign: drawn under");
+
+	/* A stroke on the page, and a page added with a stroke, journaled. */
+	document.journal = notes_journal_create(work);
+	check(document.journal != NULL, "foreign: journal");
+	stroke = make_stroke(&document, NOTES_TOOL_PEN, 0xdc2626ff, 3.0f, 20.0f, 100.0f, 180.0f, 110.0f, 1);
+	check(notes_document_add_stroke(&document, 0U, stroke) == 0, "foreign: stroke on the page");
+	check(notes_document_add_page(&document, 1U) == 0, "foreign: page added");
+	stroke = make_stroke(&document, NOTES_TOOL_HIGHLIGHTER, 0xfacc1559, 12.0f, 20.0f, 60.0f, 180.0f, 60.0f, 0);
+	check(notes_document_add_stroke(&document, 1U, stroke) == 0, "foreign: stroke on the added page");
+	check(document.pages[1]->origin == NOTES_ORIGIN_NEW, "foreign: the added page is Notes' own");
+
+	/* The journal recovers the same notebook, which gets its base back from the file. */
+	check(notes_journal_path(work, journal_path, sizeof(journal_path)) == 0, "foreign: journal path");
+	error = notes_journal_recover(journal_path, &recovered, document_path, sizeof(document_path), &records);
+	check(error == 0, "foreign: journal recovers");
+	if (error == 0) {
+		check(same_document(&document, &recovered), "foreign: recovered the same");
+		check(recovered.base_size == document.base_size && recovered.base == NULL, "foreign: recovered base size");
+		check(recovered.pages[0]->origin == NOTES_ORIGIN_OVER, "foreign: recovered origin");
+		check(notes_attach_base(work, &recovered) == 0 && recovered.base != NULL, "foreign: recovered base attached");
+		notes_document_free(&recovered);
+	}
+
+	/* Saved: the PDF's bytes, then the revision. */
+	check(notes_save_pdf(&document, work, &bytes) == 0, "foreign: saved");
+	check(notes_journal_discard(document.journal) == 0, "foreign: journal discarded");
+	notes_journal_destroy(document.journal);
+	document.journal = NULL;
+	check(starts_with(work, path, &base_size) == 0, "foreign: the PDF untouched at the start");
+	first_size = bytes;
+	printf("host-notes: foreign %lu bytes, saved %lu bytes\n", (unsigned long)base_size, (unsigned long)first_size);
+
+	/* Opened again: the strokes are editable. */
+	error = notes_open_pdf(work, &again, &opened);
+	check(error == 0 && opened == NOTES_OPENED_ANNOTATED, "foreign: opens as annotated");
+	if (error != 0) {
+		notes_document_free(&document);
+		return;
+	}
+	check(same_document(&document, &again), "foreign: same notebook");
+	check(again.pages[0]->origin == NOTES_ORIGIN_OVER && again.pages[1]->origin == NOTES_ORIGIN_NEW, "foreign: origins kept");
+	check(again.base_size == (uint64_t)base_size, "foreign: the base is the PDF");
+
+	/* Saved again: the revision replaces the last one. */
+	check(notes_save_pdf(&again, work, &bytes) == 0, "foreign: saved again");
+	second_size = bytes;
+	check(second_size == first_size, "foreign: the revision is replaced, not piled up");
+	check(starts_with(work, path, &base_size) == 0, "foreign: the PDF still untouched");
+
+	/* Another program adds a revision: the page's strokes are baked in, the added page keeps its own. */
+	snprintf(other, sizeof(other), "%s-third.pdf", path);
+	check(copy_file(work, other) == 0, "third-party copy");
+	check(add_third_party_revision(other) == 0, "third-party revision");
+	error = notes_open_pdf(other, &third, &opened);
+	check(error == 0 && opened == NOTES_OPENED_CHANGED, "third party: opens as changed");
+	if (error == 0) {
+		check(third.page_count == 2U, "third party: two pages");
+		check(third.pages[0]->origin == NOTES_ORIGIN_OVER && third.pages[0]->stroke_count == 0U, "third party: page strokes baked in");
+		check(third.pages[1]->origin == NOTES_ORIGIN_REPLACE && third.pages[1]->stroke_count == 1U, "third party: added page keeps its stroke");
+		notes_document_free(&third);
+	}
+
+	/* Every stroke of the page erased: the page is kept as the PDF has it. */
+	removed = notes_document_remove_stroke(&again, 0U, again.pages[0]->strokes[0]->id, &place);
+	check(removed != NULL, "foreign: stroke removed");
+	notes_stroke_free(removed);
+	check(notes_save_pdf(&again, work, &bytes) == 0 && bytes < second_size, "foreign: saved without the page's strokes");
+	notes_document_free(&again);
+	error = notes_open_pdf(work, &again, &opened);
+	check(error == 0 && opened == NOTES_OPENED_ANNOTATED, "foreign: opens again");
+	if (error == 0) {
+		check(again.pages[0]->stroke_count == 0U && again.pages[1]->stroke_count == 1U, "foreign: the page has no strokes");
+		notes_document_free(&again);
+	}
+	notes_document_free(&document);
+}
+
+/* ws079-p014: a signed PDF and an encrypted one are refused; a plain one opens. */
+static void
+check_refusals(
+	const char *path)
+{
+	struct notes_document document;
+	char work[4096];
+	unsigned opened;
+	int error;
+
+	/* A signed PDF. */
+	snprintf(work, sizeof(work), "%s-signed.pdf", path);
+	check(write_minimal(work, " /AcroForm << /Fields [] /SigFlags 3 >>", "") == 0, "signed written");
+	check(notes_open_pdf(work, &document, &opened) == EPERM, "signed PDF refused");
+
+	/* An encrypted PDF. */
+	snprintf(work, sizeof(work), "%s-encrypted.pdf", path);
+	check(write_minimal(work, "", " /Encrypt << /Filter /Standard /V 1 /R 2 /O <00> /U <00> /P -4 >>") == 0, "encrypted written");
+	check(notes_open_pdf(work, &document, &opened) == EACCES, "encrypted PDF refused");
+
+	/* The same PDF without either opens. */
+	snprintf(work, sizeof(work), "%s-minimal.pdf", path);
+	check(write_minimal(work, "", "") == 0, "minimal written");
+	error = notes_open_pdf(work, &document, &opened);
+	check(error == 0 && opened == NOTES_OPENED_FOREIGN && document.page_count == 1U, "minimal PDF opens");
+	if (error == 0)
+		notes_document_free(&document);
+}
+
+/* Tells whether a file starts with the bytes of another (0 when it does), and the other's size. */
+static int
+starts_with(
+	const char *path,
+	const char *prefix_path,
+	size_t *size)
+{
+	unsigned char *whole;
+	unsigned char *prefix;
+	size_t whole_size;
+	size_t prefix_size;
+	int result;
+
+	whole = read_all(path, &whole_size);
+	prefix = read_all(prefix_path, &prefix_size);
+	result = -1;
+	if (whole != NULL && prefix != NULL && whole_size > prefix_size && memcmp(whole, prefix, prefix_size) == 0)
+		result = 0;
+	*size = prefix_size;
+	free(whole);
+	free(prefix);
+	return result;
+}
+
+/* Writes a one-page PDF by hand with extra catalog and trailer entries. */
+static int
+write_minimal(
+	const char *path,
+	const char *catalog_extra,
+	const char *trailer_extra)
+{
+	static const char content[] = "0.2 0.5 0.9 rg 20 20 160 160 re f\n";
+	char text[8192];
+	size_t offsets[5];
+	size_t length;
+	size_t xref;
+	FILE *file;
+
+	length = 0;
+	length += (size_t)sprintf(text + length, "%%PDF-1.7\n");
+	offsets[1] = length;
+	length += (size_t)sprintf(text + length, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R%s >>\nendobj\n", catalog_extra);
+	offsets[2] = length;
+	length += (size_t)sprintf(text + length, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+	offsets[3] = length;
+	length += (size_t)sprintf(text + length, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>\nendobj\n");
+	offsets[4] = length;
+	length += (size_t)sprintf(text + length, "4 0 obj\n<< /Length %lu >>\nstream\n%s\nendstream\nendobj\n", (unsigned long)strlen(content), content);
+	xref = length;
+	length += (size_t)sprintf(text + length, "xref\n0 5\n0000000000 65535 f \n%010lu 00000 n \n%010lu 00000 n \n%010lu 00000 n \n%010lu 00000 n \n",
+	    (unsigned long)offsets[1], (unsigned long)offsets[2], (unsigned long)offsets[3], (unsigned long)offsets[4]);
+	length += (size_t)sprintf(text + length, "trailer\n<< /Size 5 /Root 1 0 R%s >>\nstartxref\n%lu\n%%%%EOF\n", trailer_extra, (unsigned long)xref);
+	file = fopen(path, "wb");
+	if (file == NULL)
+		return -1;
+	fwrite(text, 1U, length, file);
+	fclose(file);
+	return 0;
+}
+
+/* Adds a revision of "another program" to a PDF: every page kept, the information dictionary dated again. */
+static int
+add_third_party_revision(
+	const char *path)
+{
+	struct pdf_document *document;
+	struct pdf_writer *writer;
+	size_t pages;
+	size_t page;
+	int error;
+
+	error = pdf_document_open(path, &document);
+	if (error != 0)
+		return error;
+	error = pdf_writer_create_update(document, &writer);
+	if (error != 0) {
+		pdf_document_close(document);
+		return error;
+	}
+	pages = pdf_document_page_count(document);
+	for (page = 0; page < pages && error == 0; page++)
+		error = pdf_writer_keep_page(writer, page);
+	if (error == 0)
+		error = pdf_writer_save(writer, path);
+	pdf_writer_destroy(writer);
+	pdf_document_close(document);
+	return error;
+}
+
+/* Copies a file. */
+static int
+copy_file(
+	const char *from,
+	const char *to)
+{
+	unsigned char *data;
+	size_t size;
+	FILE *file;
+
+	data = read_all(from, &size);
+	if (data == NULL)
+		return -1;
+	file = fopen(to, "wb");
+	if (file == NULL) {
+		free(data);
+		return -1;
+	}
+	fwrite(data, 1U, size, file);
+	fclose(file);
+	free(data);
+	return 0;
+}
+
+/* Reads a whole file (NULL when it cannot). */
+static unsigned char *
+read_all(
+	const char *path,
+	size_t *size)
+{
+	unsigned char *data;
+	FILE *file;
+	long length;
+
+	file = fopen(path, "rb");
+	if (file == NULL)
+		return NULL;
+	fseek(file, 0, SEEK_END);
+	length = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	data = malloc((size_t)length + 1U);
+	if (data != NULL)
+		*size = fread(data, 1U, (size_t)length, file);
+	fclose(file);
+	return data;
 }

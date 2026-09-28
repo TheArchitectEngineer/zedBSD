@@ -9,10 +9,14 @@
  * The edit data of Notes (plan/ws079/design-pdf.md section 2.1).
  *
  * A saved PDF carries the whole document as an attached file: the magic
- * "ZNOT", the version 1.0, then chunks (a four-letter tag, a 32-bit length,
+ * "ZNOT", the version 1.1, then chunks (a four-letter tag, a 32-bit length,
  * the body).  DOC gives the page count, the pressure's range, the time base
  * and the next stroke number; TOOL lists the tools (kind, colour, width);
- * each PAGE gives a page's size, its background and its strokes.  A stroke's
+ * each PAGE gives a page's size, its background and its strokes.  Version
+ * 1.1 adds, for a notebook written on another program's PDF, BASE (the
+ * length and the SHA-256 of that PDF's bytes, which the file starts with)
+ * and SRC after each page of that PDF (which page it is, and whether the
+ * strokes are drawn over it or replace its content).  A stroke's
  * samples are stored as differences from the sample before, as LEB128
  * numbers (zigzag for signed ones): positions in 1/64 point, the pressure,
  * the tilt in 1/100 degree when the stroke has it, and the time in
@@ -32,7 +36,7 @@
 
 /* The version of the edit data this file writes and reads. */
 #define ENCODE_MAJOR		1U
-#define ENCODE_MINOR		0U
+#define ENCODE_MINOR		1U
 
 /* The stroke flags: the samples carry the tilt, and their times. */
 #define ENCODE_STROKE_TILT	0x01U
@@ -88,6 +92,8 @@ static int decode_samples(struct encode_reader *reader, struct notes_stroke *str
 static int decode_doc(struct encode_reader *reader, struct notes_document *document, size_t *pages);
 static int decode_tools(struct encode_reader *reader, struct encode_tools *tools);
 static int decode_page(struct encode_reader *reader, struct notes_document *document, const struct encode_tools *tools, size_t index);
+static int decode_base(struct encode_reader *reader, struct notes_document *document);
+static int decode_source(struct encode_reader *reader, struct notes_document *document);
 static unsigned read_u8(struct encode_reader *reader);
 static unsigned read_u16(struct encode_reader *reader);
 static uint32_t read_u32(struct encode_reader *reader);
@@ -287,6 +293,16 @@ notes_encode_document(
 	notes_buffer_bytes(buffer, chunk.data, chunk.length);
 	chunk.length = 0;
 
+	/* BASE (version 1.1): the PDF the notebook writes on, by the length and the SHA-256 of its bytes. */
+	if (document->base_size != 0U) {
+		notes_buffer_u64(&chunk, document->base_size);
+		notes_buffer_bytes(&chunk, document->base_hash, sizeof(document->base_hash));
+		notes_buffer_bytes(buffer, "BASE", 4U);
+		notes_buffer_u32(buffer, (uint32_t)chunk.length);
+		notes_buffer_bytes(buffer, chunk.data, chunk.length);
+		chunk.length = 0;
+	}
+
 	/* Gathers the tools every stroke uses, so that TOOL comes before the pages. */
 	for (page_index = 0; page_index < document->page_count; page_index++) {
 		page = document->pages[page_index];
@@ -354,6 +370,17 @@ notes_encode_document(
 		notes_buffer_u32(buffer, (uint32_t)chunk.length);
 		notes_buffer_bytes(buffer, chunk.data, chunk.length);
 		chunk.length = 0;
+
+		/* SRC (version 1.1), after a page of the PDF the notebook writes on: the page's number, origin and source. */
+		if (page->origin != NOTES_ORIGIN_NEW) {
+			notes_buffer_varint(&chunk, page_index);
+			notes_buffer_u8(&chunk, page->origin);
+			notes_buffer_varint(&chunk, page->source);
+			notes_buffer_bytes(buffer, "SRC ", 4U);
+			notes_buffer_u32(buffer, (uint32_t)chunk.length);
+			notes_buffer_bytes(buffer, chunk.data, chunk.length);
+			chunk.length = 0;
+		}
 	}
 
 	/* The scratch buffers go; a failure of either is the encoding's. */
@@ -395,6 +422,8 @@ notes_decode_document(
 	int is_doc;
 	int is_tool;
 	int is_page;
+	int is_base;
+	int is_source;
 	int error;
 
 	/* An empty document to fill, and a reader at the start. */
@@ -443,10 +472,15 @@ notes_decode_document(
 		/* Where the next chunk starts. */
 		end = reader.offset + length;
 
-		/* The chunks this version knows (DOC once, TOOL once, PAGE after DOC); any other is skipped. */
+		/*
+		 * The chunks this version knows (DOC once, TOOL once, PAGE after
+		 * DOC, BASE after DOC, SRC after its page); any other is skipped.
+		 */
 		is_doc = memcmp(tag, "DOC ", 4U);
 		is_tool = memcmp(tag, "TOOL", 4U);
 		is_page = memcmp(tag, "PAGE", 4U);
+		is_base = memcmp(tag, "BASE", 4U);
+		is_source = memcmp(tag, "SRC ", 4U);
 		if (is_doc == 0 && !seen_doc) {
 			error = decode_doc(&reader, document, &declared);
 			seen_doc = 1;
@@ -455,6 +489,10 @@ notes_decode_document(
 		} else if (is_page == 0 && seen_doc) {
 			error = decode_page(&reader, document, &tools, pages);
 			pages++;
+		} else if (is_base == 0 && seen_doc) {
+			error = decode_base(&reader, document);
+		} else if (is_source == 0 && seen_doc) {
+			error = decode_source(&reader, document);
 		}
 
 		/* A body read past its end is damaged; the next chunk starts after it. */
@@ -1005,6 +1043,61 @@ decode_page(
 	}
 
 	/* Succeeded: the page is the document's last. */
+	return 0;
+}
+
+/* Reads the BASE chunk: the length and the SHA-256 of the PDF the notebook writes on. */
+static int
+decode_base(
+	struct encode_reader *reader,
+	struct notes_document *document)
+{
+	uint64_t size;
+
+	/* The length, which must not be zero, and the digest. */
+	size = read_u64(reader);
+	if (reader->error != 0 || size == 0U)
+		return EINVAL;
+	if (reader->length - reader->offset < sizeof(document->base_hash))
+		return EINVAL;
+	memcpy(document->base_hash, reader->data + reader->offset, sizeof(document->base_hash));
+	reader->offset += sizeof(document->base_hash);
+
+	/* Succeeded: the document knows its base; the file gives the base itself. */
+	document->base_size = size;
+	return 0;
+}
+
+/* Reads one SRC chunk: which page of the base a page is, and how it is written back. */
+static int
+decode_source(
+	struct encode_reader *reader,
+	struct notes_document *document)
+{
+	struct notes_page *page;
+	uint64_t number;
+	uint64_t source;
+	unsigned origin;
+
+	/* The page's number, its origin and its source. */
+	number = read_varint(reader);
+	origin = read_u8(reader);
+	source = read_varint(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* The page must have been read, the origin must be a base page's, and the source a page number. */
+	if (number >= document->page_count)
+		return EINVAL;
+	if (origin != NOTES_ORIGIN_OVER && origin != NOTES_ORIGIN_REPLACE)
+		return EINVAL;
+	if (source > ENCODE_PAGES_MAX)
+		return EINVAL;
+
+	/* Succeeded: the page stands for the base's page. */
+	page = document->pages[number];
+	page->origin = origin;
+	page->source = (size_t)source;
 	return 0;
 }
 

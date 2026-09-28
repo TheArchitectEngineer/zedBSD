@@ -187,6 +187,12 @@ int pdf_reader_resolve_key(struct pdf_document *document, const struct pdf_objec
 int pdf_reader_page(struct pdf_document *document, size_t index, struct pdf_object **page, struct pdf_object **resources);
 const unsigned char *pdf_reader_bytes(const struct pdf_document *document);
 
+/* What an update needs of the document it adds to (reader.c). */
+size_t pdf_reader_size(const struct pdf_document *document);
+void pdf_reader_roots(struct pdf_document *document, struct pdf_object **trailer, struct pdf_object **catalog);
+unsigned long pdf_reader_next_number(const struct pdf_document *document);
+int pdf_reader_page_reference(struct pdf_document *document, size_t index, struct pdf_object **reference);
+
 /* The stream filters (filter.c). */
 int pdf_filter_decode(struct pdf_document *document, const struct pdf_object *stream, int stop_at_dct, const unsigned char **data, size_t *size, unsigned char **owned, int *dct);
 
