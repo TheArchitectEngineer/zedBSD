@@ -59,6 +59,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p022](phase022/phase.md) | BUG-086 | block・ignore された同期の fault の signal を既定の動作（終了）に強いる（thread 宛て、Linux と同じ） | cleared（2026-09-28） |
 | [ws073-p023](phase023/phase.md) | BUG-088 | amd64 の `AMD64_CURRENT_SPACE` の 2 回の load の監査: 使う所は全て割り込み禁止の中で preempt されない、修正不要 | cleared（2026-09-28） |
 | [ws073-p024](phase024/phase.md) | BUG-088 | 予防（main の決定）: `current_space` を 1 回の `%gs` 相対の load・store に（HAL の実装、hal.h 不変） | cleared（2026-09-28） |
+| [ws073-p025](phase025/phase.md) | BUG-087 | 新しい build の最初の image に clang の resource の header が入らない: 原因を確認、修正は `plan/bugs/BUG-087-wip.patch`（未検証） | uncleared（2026-09-28） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 
