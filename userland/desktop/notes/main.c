@@ -1448,7 +1448,9 @@ app_draw(
 	app_mark(app, &view, 1);
 
 	/* A frame that ran out of memory is not drawn. */
-	if (app->frame.error != 0 || (page_frame != NULL && page_frame->error != 0)) {
+	if (app->frame.error != 0 ||
+	    (page_frame != NULL &&
+	     page_frame->error != 0)) {
 		printf("NOTES DRAW out of memory\n");
 		return;
 	}

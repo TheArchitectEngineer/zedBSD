@@ -184,7 +184,9 @@ pdf_filter_decode(
 	}
 
 	/* Leaves a last DCTDecode for the image decoder, when asked to. */
-	if (stop_at_dct && count > 0 && kinds[count - 1] == PDF_FILTER_DCT) {
+	if (stop_at_dct &&
+	    count > 0 &&
+	    kinds[count - 1] == PDF_FILTER_DCT) {
 		count--;
 		*dct = 1;
 	}

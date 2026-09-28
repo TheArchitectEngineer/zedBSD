@@ -152,7 +152,10 @@ draw_page(
 	height = (int)ceil(app->document.pages[index].height * scale - 1e-6);
 
 	/* Nothing to draw for a page outside the frame. */
-	if (x >= canvas->width || y >= canvas->height || x + width <= 0 || y + height <= 0)
+	if (x >= canvas->width ||
+	    y >= canvas->height ||
+	    x + width <= 0 ||
+	    y + height <= 0)
 		return;
 
 	/* A soft shadow and a thin edge around it. */

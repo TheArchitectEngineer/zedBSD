@@ -486,8 +486,13 @@ tool_slot(
 	const struct tablet_device *device,
 	int tool)
 {
-	/* Succeeded: two tools per tablet, the pen first. */
-	return device_slot(device) * TABLET_TOOLS + (unsigned)tool;
+	unsigned slot;
+
+	/* Two tools per tablet, the pen first. */
+	slot = device_slot(device) * TABLET_TOOLS + (unsigned)tool;
+
+	/* Reports the tool's number. */
+	return slot;
 }
 
 /* Reads a tablet's axes, name and USB identity from its node. */
@@ -723,7 +728,9 @@ apply_report(
 		/* Otherwise the pen hovers: the surface under it hears it, then its buttons and a new touch. */
 		if (change->moved || entering) {
 			hover(server, device, time, &sent, &pointer_activity);
-		} else if (device->focus != NULL && (change->pressure || change->tilt)) {
+		} else if (device->focus != NULL &&
+		           (change->pressure ||
+		            change->tilt)) {
 			send_axes(device, 0, change->pressure, change->tilt);
 			sent = 1;
 		}
@@ -735,7 +742,9 @@ apply_report(
 	}
 
 	/* A touch that ended may leave the pen over another surface. */
-	if (device->route == ROUTE_NONE && change->touch && !device->touch)
+	if (device->route == ROUTE_NONE &&
+	    change->touch &&
+	    !device->touch)
 		hover(server, device, time, &sent, &pointer_activity);
 
 	/* The tool's events of this report end with a frame; the pointer's with its own. */
@@ -980,7 +989,9 @@ client_has_tool(
 	/* Looks for the tool among the client's objects. */
 	for (object = client->objects; object != NULL; object = object->next) {
 		/* A live object of the tool. */
-		if (object->kind == ZWL_TABLET_TOOL && !object->dead && object->tool_slot == slot)
+		if (object->kind == ZWL_TABLET_TOOL &&
+		    !object->dead &&
+		    object->tool_slot == slot)
 			return 1;
 	}
 
@@ -1082,7 +1093,9 @@ focus_set(
 	device_number = device_slot(device);
 	for (object = surface->client->objects; object != NULL; object = object->next) {
 		/* Only live objects of this tool. */
-		if (object->kind != ZWL_TABLET_TOOL || object->dead || object->tool_slot != slot)
+		if (object->kind != ZWL_TABLET_TOOL ||
+		    object->dead ||
+		    object->tool_slot != slot)
 			continue;
 
 		/* The zwp_tablet_v2 announced on the same seat. */
@@ -1142,10 +1155,14 @@ send_axes(
 	}
 
 	/* The tilt in degrees as wl_fixed, when it differs from what was sent. */
-	if ((tilt || fresh) && device->has_tilt) {
+	if ((tilt ||
+	     fresh) &&
+	    device->has_tilt) {
 		words[0] = tilt_fixed(&device->axis_tilt_x, device->raw_tilt_x);
 		words[1] = tilt_fixed(&device->axis_tilt_y, device->raw_tilt_y);
-		if (fresh || words[0] != device->sent_tilt_x || words[1] != device->sent_tilt_y) {
+		if (fresh ||
+		    words[0] != device->sent_tilt_x ||
+		    words[1] != device->sent_tilt_y) {
 			send_tool(device, TOOL_TILT, words, sizeof(words));
 			device->sent_tilt_x = words[0];
 			device->sent_tilt_y = words[1];
@@ -1172,7 +1189,9 @@ send_tool(
 	slot = tool_slot(device, device->tool);
 	for (object = device->focus->client->objects; object != NULL; object = object->next) {
 		/* Only live objects of this tool. */
-		if (object->kind != ZWL_TABLET_TOOL || object->dead || object->tool_slot != slot)
+		if (object->kind != ZWL_TABLET_TOOL ||
+		    object->dead ||
+		    object->tool_slot != slot)
 			continue;
 
 		/* Queues the event. */
@@ -1457,7 +1476,9 @@ tool_set_cursor(
 	}
 
 	/* Another client's surface, or none, keeps its cursor. */
-	if (device == NULL || device->focus == NULL || device->focus->client != tool->client)
+	if (device == NULL ||
+	    device->focus == NULL ||
+	    device->focus->client != tool->client)
 		return 0;
 
 	/* The previous cursor surface is an ordinary surface again. */

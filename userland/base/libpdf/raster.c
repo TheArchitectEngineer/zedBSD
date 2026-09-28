@@ -477,7 +477,9 @@ sort_edges(
 			left = start;
 			right = middle;
 			for (place = start; place < end; place++) {
-				if (left < middle && (right >= end || source[left].top <= source[right].top)) {
+				if (left < middle &&
+				    (right >= end ||
+				     source[left].top <= source[right].top)) {
 					target[place] = source[left];
 					left++;
 				} else {
@@ -1016,7 +1018,9 @@ sort_crossings(
 			left = start;
 			right = middle;
 			for (place = start; place < end; place++) {
-				if (left < middle && (right >= end || source[left].x <= source[right].x)) {
+				if (left < middle &&
+				    (right >= end ||
+				     source[left].x <= source[right].x)) {
 					target[place] = source[left];
 					left++;
 				} else {
@@ -1164,7 +1168,10 @@ draw_image(
 					page_y = (pixel.y - raster->offset_y) / raster->scale - item->matrix[5];
 					u = (item->matrix[3] * page_x - item->matrix[2] * page_y) / determinant;
 					v = (-item->matrix[1] * page_x + item->matrix[0] * page_y) / determinant;
-					if (!(u >= 0.0 && u < 1.0 && v >= 0.0 && v < 1.0))
+					if (!(u >= 0.0 &&
+					      u < 1.0 &&
+					      v >= 0.0 &&
+					      v < 1.0))
 						continue;
 					if (nearest) {
 						sample_nearest(item, u, v, sample);

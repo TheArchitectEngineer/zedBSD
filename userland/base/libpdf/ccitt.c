@@ -1087,7 +1087,9 @@ between_rows(
 	}
 
 	/* Byte-aligned rows without end-of-line codes end their block with two of them. */
-	if (parameters->end_of_block && !decoder->end_of_line && parameters->byte_align) {
+	if (parameters->end_of_block &&
+	    !decoder->end_of_line &&
+	    parameters->byte_align) {
 		code = peek_bits(decoder, CCITT_EOL_TWICE_BITS);
 		if (code == CCITT_EOL_TWICE) {
 			eat_bits(decoder, CCITT_EOL_BITS);
