@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-28 の周期の終わり: login manager（p094〜p099）・primary selection（p100・p103）・表示の引き継ぎ（p101）・lock（p102）・システムバーの network（p013）は cleared。session の user の `network` の group は p104 で済んだ。F-044 は p105 で済んだ。次: F-041 の名前の衝突の dialog → Kei の見た目の段階 2。source は WS078 で `userland/desktop/` へ移った（zdesktop → wayland 等）。HAL の quiet console の diff は適用済み（kmsg=quiet の確認は未実施）
+Resume point: 2026-09-28 の周期の終わり: login manager（p094〜p099）・primary selection（p100・p103）・表示の引き継ぎ（p101）・lock（p102）・システムバーの network（p013）は cleared。session の user の `network` の group は p104 で済んだ。F-044 は p105、F-041 の衝突の dialog は p106 で済んだ。次: Kei の見た目の段階 2。source は WS078 で `userland/desktop/` へ移った（zdesktop → wayland 等）。HAL の quiet console の diff は適用済み（kmsg=quiet の確認は未実施）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -297,6 +297,7 @@ p001で確かめる。
 | [ws035-p103](phase103/phase.md) | （2026-09-28 main の割り当て、p100 の残り）X11 の PRIMARY と desktop の primary selection の橋（xserver）、zterm の double click の語が PRIMARY・中 button で paste | cleared（2026-09-28、zdesktop-p103・p087） | p100・p087 | xserver・zterm |
 | [ws035-p104](phase104/phase.md) | （2026-09-28 ユーザー「セッションユーザはnetworkグループに追加してOKです。」、p013 の残り）sessiond が session の user を `network` の group に（initgroups の後に setgroups）。root でない user でシステムバーの network の menu が動く | cleared（2026-09-28、zdesktop-p104（uid 1000 の kei で有線と偽の Wi-Fi）・p102） | p013・p094 | sessiond |
 | [ws035-p105](phase105/phase.md) | （2026-09-28 main の割り当て、F-044）mview と xserver の窓が xdg-shell 4 の `configure_bounds` を守る（terminal は p086 で済み） | cleared（2026-09-28、zdesktop-p105・x11-p003・p062） | p085 | mview・xserver |
+| [ws035-p106](phase106/phase.md) | （2026-09-28 main の割り当て、F-041 の衝突の部分）files の copy・move・drop の名前の衝突で Replace・Skip・Keep Both と Apply to all | cleared（2026-09-28、zdesktop-p106・files-model・files-p004・p010） | ws071 | files |
 | [ws035-p058](phase058/phase.md) | zdesktop（secondary queue で変えた全 source）の規約の全文との照合と回帰（sq001 の締め） | cleared（2026-09-27、style-check 0、zdesktop・menu・titlebar・files の回帰。boot test はユーザーの指示で無し） | sq001 の他の Phase | sq001 で変えた source |
 | [ws035-p038](phase038/phase.md) | SSHハーネス: ゲストへ SSH で入り、コマンド実行・ファイル転送・ゲスト内 lldb・QEMU gdbstub でのデバッグを行う道具を仕上げる（`plan/tools/guest/` は着手済みで未完成） | cleared（q347-i01。networkd が USB の interface を UP にしないため設定されなかった → RAISE を追加） | p037、USB CDC-ECM が上がること（p039） | `plan/tools/guest/` |
 | [ws035-p039](phase039/phase.md) | USB CDC-ECM の実機確認: 実績のないまま入っている ECM driver が QEMU で実際に link し address を得るかを、シリアルコンソールで観察しながら確かめる。**ECM は USB 2.0 の device なので EHCI と xHCI の両方で確かめる**（ws004-p019 の記録との食い違いの照合を含む）。USB storage と同居したときの挙動も切り分ける | cleared（q343-i01。xHCI の IMAN の競合を直した。UHCI は p044、TCP は ws034-p046 へ） | p037 | `src/drivers/usb/usb-cdc-ecm.c`、試験 |
