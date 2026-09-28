@@ -404,6 +404,8 @@ devfs_cdev_inode(
 	/* Input event nodes are group-readable only. */
 	if (event_name(device->name))
 		mode = 0640U;
+	else if (kern_strcmp(device->name, "input-inject") == 0)
+		mode = 0600U;
 	else
 		mode = 0666U;
 

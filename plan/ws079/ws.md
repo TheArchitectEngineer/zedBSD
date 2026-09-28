@@ -35,6 +35,10 @@ libtruetypeにはアウトラインを返すAPIを追加しましょう。」
 - D5: pen の button は 2 つ程度（届いてから割り当て）。D6: 保存 button に加えて、操作の無い時間の後の自動保存と、journal からの復元。
 - D8: keyboard の shortcut は標準的なもの（Ctrl+S・Ctrl+Z・Ctrl+Shift+Z/Ctrl+Y・Ctrl+N・Ctrl+O 等）。
 - stage ② の glyph: libtruetype に outline を返す API を足す。
+- main の判断（2026-09-28、p004 の報告の設計の食い違い）: stroke の形は `pdf_outline_stroke()` を唯一の元にする。Catmull-Rom の平滑化と丸い join は
+  この関数に入れ（p005 の前）、Notes は画面と PDF の両方にこの輪郭を使う（design-input-notes §5.3 の `stroke-geometry.c` はこれを呼ぶ）。
+- 注意: 新しい worktree で desktop の image を build すると、guest の config が host の LLVM（lldb 付き）を共有の `build/llvm` へ install しようと
+  することがある（p004 の agent が install の前に止めた）。worktree の build/llvm の symlink の扱いを次の周期に確かめる。
 
 ## 完了の条件（案、p001 で確定）
 
@@ -60,7 +64,7 @@ libtruetypeにはアウトラインを返すAPIを追加しましょう。」
 | [ws079-p002](phase002/phase.md) | kernel: USB HID の digitizer（筆圧・傾き・消しゴム・button・in-range）と、試験用の合成の入力 | in-progress（2026-09-28: pen の読み取りと host 試験・amd64 の build・boot test まで。注入の device は未着手。main の判断: devfs の /dev/input は event の node だけなので、注入は `/dev/input-inject`（devfs の root、試験専用、CONFIG_INPUT_TEST_INJECT）に置く） | p001 |
 | ws079-p003 | compositor: `zwp_tablet_manager_v2`（pad なし）と tablet を bind しない client への pointer の fallback | planning | p001、p002 |
 | ws079-p010 | compositor: 上の右端からのスワイプ（design-input-notes §4）で Notes を起動・最前面・全画面 | planning | p003 |
-| ws079-p004 | libpdf: 書き出し（page、ベクタの path、画像、編集の metadata）と自分の形式の読み込み | planning | p001 |
+| [ws079-p004](phase004/phase.md) | libpdf: 書き出し（page、ベクタの path、画像、編集の metadata）と自分の形式の読み込み | in-progress（writer・外形・画像・/ID・日付・4 platform の link 済み。自分の形式の読み込みが残り） | p001 |
 | ws079-p005 | Notes v1: 筆圧の線・消しゴム・page・undo・PDF の保存と再編集 | planning | p003、p004 |
 | ws079-p006 | libpdf の読み込み ① と PDF Viewer v1（scroll と page の swipe、Notes で書き込み） | planning | p004 |
 | ws079-p007 | 段階 ②: 一般の PDF の図形・画像（DCT は libjpeg-compat、Flate は libz-compat）・埋め込みの TrueType（libtruetype） | planning | p006 |

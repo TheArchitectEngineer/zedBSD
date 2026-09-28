@@ -154,13 +154,12 @@ void pdf_document_close(struct pdf_document *document);
 2. 段階 ② の glyph: libtruetype に輪郭の API を足すか（別の WS/Phase か p007 の範囲）、libpdf が bitmap の item を持つか。
 3. deflate: 保存の圧縮に libz-compat の deflate が要る。無圧縮のまま進め、deflate は Future Work に置くか。
 
-## 7. p004 の着手の状態（2026-09-28、未完）
+## 7. p004 の状態（2026-09-28）
 
-- 済み（host で確認）: `include/libc/pdf.h`、`userland/base/libpdf/writer.c`（文書・page・fill の path・色・`ca` の ExtGState・埋め込み file・
-  classic xref）、`exports.map`、試験 `plan/ws079/tests/run-pdf-writer.sh`（host の cc で `-std=c89 -pedantic -Werror`、plain と ASan/UBSan、
-  `qpdf --check` で誤り無し、`pdfinfo` で 2 page・A4、`qpdf --show-attachment` で埋め込みの bytes が一致、`pdftoppm` で y 下向きと半透明の重なりを目視）。
-- 未 build: package の登録（`userland/base/libpdf/Makefile`、platform `*`）と 4 platform（amd64・arm64・pcat・pc98）の `libpdf.so` の link の規則は
-  `plan/ws079/wip.patch` に置いた。再開: `git apply plan/ws079/wip.patch` → 各 platform の `make -j16`（warning 0）で `build/<platform>/dynamic/libpdf.so`
-  ができることを確かめる。sparcv9・x68k は libjpeg-compat と同じく規則を持たない（platform `*` がそこで問題にならないかも確かめる）。
-- 残り（p004）: trailer の `/ID`、`/Info` の日付、画像の XObject、`pdf_outline_stroke()`、自分の形式の読み込み、`coding-style.md` の全文の見直し
-  （`writer.c` は `error == 0 &&` の連鎖と `goto out` を使っている）。
+経過と確認は [phase004/phase.md](phase004/phase.md) が正本。要約:
+
+- 済み: `include/libc/pdf.h`、`writer.c`（規約に合わせた。buffer の `error` で段落ごとに一度検査）、`outline.c`（`pdf_outline_stroke()`・
+  `pdf_outline_free()`・`pdf_writer_fill_outline()`）、画像の XObject（JPEG の DCTDecode、RGBA の RGB と SMask）、trailer の `/ID`、`/Info` の日付、package の登録と amd64・arm64・pcat・pc98 の
+  `libpdf.so` の link（warning 0）、host の試験（plain・ASan・UBSan、qpdf・pdfinfo、描画の目視）。
+- 残り: 自分の形式の読み込み、輪郭の補間と丸い join の置き場所（§1 と design-input-notes.md §5.3 を揃える）。
+- main の決定（2026-09-28）: header は `include/libc/pdf.h` のまま、stream は無圧縮（deflate は Future Work）、段階 ② の glyph は p007 で決める。

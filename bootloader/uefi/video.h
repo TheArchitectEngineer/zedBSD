@@ -6,8 +6,13 @@
 #include "include/uefi.h"
 #include <stddef.h>
 
-/* Absence preserves the current mode; malformed or unavailable requests fail. */
+/*
+ * Absence of video= sets the preferred mode when the firmware has it (0 by 0
+ * for none) and otherwise preserves the current mode; malformed or
+ * unavailable video= requests fail.
+ */
 EFI_STATUS zbl_uefi_video_select(EFI_BOOT_SERVICES *boot,
-	EFI_GRAPHICS_OUTPUT_PROTOCOL *gop, const char *text, size_t length);
+	EFI_GRAPHICS_OUTPUT_PROTOCOL *gop, const char *text, size_t length,
+	UINT32 preferred_width, UINT32 preferred_height);
 
 #endif

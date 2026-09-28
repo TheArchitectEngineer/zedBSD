@@ -179,15 +179,26 @@ def read_text(path: Path, font: dict[bytes, str]) -> list[str]:
                max(0, (height - 25 * GLYPH_HEIGHT) // 2))
     if centred != (0, 0):
         origins.append(centred)
+
+    # The pcat console centres the part of a row or column of cells that does
+    # not fit (1080 = 67 * 16 + 8 starts the rows 4 pixels down).
+    margins = ((width % GLYPH_WIDTH) // 2, (height % GLYPH_HEIGHT) // 2)
+    if margins not in origins:
+        origins.append(margins)
+    # Keeps the reading with the most recognised glyphs over unrecognised
+    # cells: a blank part of a large screen (the centred grid on a 1920x1080
+    # console that writes from the corner, ws035-p112) recognises nothing.
     best: list[str] = []
-    best_unknown = -1
+    best_score = None
     for left, top in origins:
         for pitch in (GLYPH_WIDTH, GLYPH_WIDTH + 1):
             rows = read_cells(width, height, pixels, pitch, font, left, top)
             unknown = sum(line.count("�") for line in rows)
-            if best_unknown < 0 or unknown < best_unknown:
+            known = sum(len(line.replace(" ", "")) for line in rows) - unknown
+            score = known - unknown
+            if best_score is None or score > best_score:
                 best = rows
-                best_unknown = unknown
+                best_score = score
     return best
 
 
