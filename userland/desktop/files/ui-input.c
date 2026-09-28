@@ -1337,6 +1337,8 @@ input_button(
 		fm_action_collision(app, FM_COLLISION_SKIP);
 	} else if (index == FM_BUTTON_KEEP_BOTH) {
 		fm_action_collision(app, FM_COLLISION_KEEP_BOTH);
+	} else if (index == FM_BUTTON_MERGE) {
+		fm_action_collision(app, FM_COLLISION_MERGE);
 	} else if (index == FM_BUTTON_APPLY_ALL) {
 		fm_action_collision_all(app);
 	} else if (index == FM_BUTTON_CONFIRM) {

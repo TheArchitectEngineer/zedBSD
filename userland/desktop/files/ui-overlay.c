@@ -23,8 +23,9 @@
 #define OVERLAY_BUTTON_WIDTH	104
 #define OVERLAY_BUTTON_HEIGHT	32
 
-/* The question about a taken name's card and the "apply to all" box. */
+/* The question about a taken name's card, wider for a folder's four answers (ws035-p115), and the "apply to all" box. */
 #define OVERLAY_COLLISION_WIDTH		460
+#define OVERLAY_MERGE_WIDTH		520
 #define OVERLAY_COLLISION_HEIGHT	200
 #define OVERLAY_CHECK_SIZE		16
 
@@ -226,7 +227,9 @@ overlay_button(
 /*
  * Draws the question about a taken name (F-041): which name, where, and
  * the answers Skip, Keep Both (the default, Enter) and Replace (red), with
- * "apply to all" when more names of the operation are taken.
+ * "apply to all" when more names of the operation are taken.  When a
+ * folder meets a folder, Merge is offered too and is the default
+ * (ws035-p115, F-050).
  */
 static void
 overlay_collision(
@@ -242,9 +245,12 @@ overlay_collision(
 	char question[128];
 	char all[64];
 	size_t left;
+	int merge;
+	int width;
 	int x;
 	int y;
 	int buttons_y;
+	int right;
 
 	/* The name asked about. */
 	task = app->collision_task;
@@ -256,31 +262,41 @@ overlay_collision(
 	else
 		name++;
 
-	/* The folder it goes into, by its own name. */
-	folder = strrchr(task->destination, '/');
+	/* The folder it goes into (a merged folder's, for its contents), by its own name. */
+	folder = strrchr(fm_task_folder(task, app->collision_index), '/');
 	if (folder == NULL || folder[1] == '\0')
-		folder = task->destination;
+		folder = fm_task_folder(task, app->collision_index);
 	else
 		folder++;
 
-	/* The words: the name, the folder, and what the operation does. */
+	/* The words: the name, the folder, and what the operation does; two folders can be merged. */
 	verb = "copying";
 	if (task->kind == FM_TASK_MOVE)
 		verb = "moving";
-	snprintf(title, sizeof(title), "\"%s\" already exists", name);
-	snprintf(where, sizeof(where), "An item with this name is already in \"%s\".", folder);
-	snprintf(question, sizeof(question), "Replace it with the one you're %s, or keep both?", verb);
+	merge = fm_task_can_merge(task, app->collision_index);
+	if (merge != 0) {
+		snprintf(title, sizeof(title), "A folder named \"%s\" already exists", name);
+		snprintf(where, sizeof(where), "There is already a folder with this name in \"%s\".", folder);
+		snprintf(question, sizeof(question), "Merge the folders, or replace it with the one you're %s?", verb);
+	} else {
+		snprintf(title, sizeof(title), "\"%s\" already exists", name);
+		snprintf(where, sizeof(where), "An item with this name is already in \"%s\".", folder);
+		snprintf(question, sizeof(question), "Replace it with the one you're %s, or keep both?", verb);
+	}
 
-	/* The card in the middle of the window. */
-	x = (app->width - OVERLAY_COLLISION_WIDTH) / 2;
+	/* The card in the middle of the window, wider when there are four answers. */
+	width = OVERLAY_COLLISION_WIDTH;
+	if (merge != 0)
+		width = OVERLAY_MERGE_WIDTH;
+	x = (app->width - width) / 2;
 	y = (app->height - OVERLAY_COLLISION_HEIGHT) / 2;
-	fm_canvas_shadow(canvas, (float)x, (float)y + 8.0f, OVERLAY_COLLISION_WIDTH, OVERLAY_COLLISION_HEIGHT, 18.0f, 24.0f, FM_RGBA(0x1f3a66, 70));
-	fm_canvas_round(canvas, (float)x, (float)y, OVERLAY_COLLISION_WIDTH, OVERLAY_COLLISION_HEIGHT, 18.0f, FM_COLOR_PANEL);
+	fm_canvas_shadow(canvas, (float)x, (float)y + 8.0f, (float)width, OVERLAY_COLLISION_HEIGHT, 18.0f, 24.0f, FM_RGBA(0x1f3a66, 70));
+	fm_canvas_round(canvas, (float)x, (float)y, (float)width, OVERLAY_COLLISION_HEIGHT, 18.0f, FM_COLOR_PANEL);
 
 	/* The title and the two lines under it. */
-	(void)fm_text_draw_fit(app->text, canvas, x + 24, y + 40, title, 16U, 1, OVERLAY_COLLISION_WIDTH - 48, FM_COLOR_TEXT);
-	(void)fm_text_draw_fit(app->text, canvas, x + 24, y + 68, where, 13U, 0, OVERLAY_COLLISION_WIDTH - 48, FM_COLOR_TEXT_SECONDARY);
-	(void)fm_text_draw_fit(app->text, canvas, x + 24, y + 88, question, 13U, 0, OVERLAY_COLLISION_WIDTH - 48, FM_COLOR_TEXT_SECONDARY);
+	(void)fm_text_draw_fit(app->text, canvas, x + 24, y + 40, title, 16U, 1, width - 48, FM_COLOR_TEXT);
+	(void)fm_text_draw_fit(app->text, canvas, x + 24, y + 68, where, 13U, 0, width - 48, FM_COLOR_TEXT_SECONDARY);
+	(void)fm_text_draw_fit(app->text, canvas, x + 24, y + 88, question, 13U, 0, width - 48, FM_COLOR_TEXT_SECONDARY);
 
 	/* "Apply to all" when more names than this one are taken. */
 	left = fm_action_collision_left(app);
@@ -289,11 +305,28 @@ overlay_collision(
 		overlay_check(app, canvas, x + 24, y + 110, all, app->collision_all);
 	}
 
-	/* Skip, Keep Both (the default) and Replace, from the left. */
+	/*
+	 * From the right: for two folders Merge (the default), Replace (red),
+	 * Keep Both and Skip; otherwise Replace, Keep Both (the default) and
+	 * Skip.
+	 */
 	buttons_y = y + OVERLAY_COLLISION_HEIGHT - 24 - OVERLAY_BUTTON_HEIGHT;
-	overlay_button(app, canvas, x + OVERLAY_COLLISION_WIDTH - 24 - 3 * OVERLAY_BUTTON_WIDTH - 20, buttons_y, "Skip", FM_BUTTON_SKIP, 0);
-	overlay_button(app, canvas, x + OVERLAY_COLLISION_WIDTH - 24 - 2 * OVERLAY_BUTTON_WIDTH - 10, buttons_y, "Keep Both", FM_BUTTON_KEEP_BOTH, 2);
-	overlay_button(app, canvas, x + OVERLAY_COLLISION_WIDTH - 24 - OVERLAY_BUTTON_WIDTH, buttons_y, "Replace", FM_BUTTON_REPLACE, 1);
+	right = x + width - 24;
+	if (merge != 0) {
+		overlay_button(app, canvas, right - OVERLAY_BUTTON_WIDTH, buttons_y, "Merge", FM_BUTTON_MERGE, 2);
+		right -= OVERLAY_BUTTON_WIDTH + 10;
+		overlay_button(app, canvas, right - OVERLAY_BUTTON_WIDTH, buttons_y, "Replace", FM_BUTTON_REPLACE, 1);
+		right -= OVERLAY_BUTTON_WIDTH + 10;
+		overlay_button(app, canvas, right - OVERLAY_BUTTON_WIDTH, buttons_y, "Keep Both", FM_BUTTON_KEEP_BOTH, 0);
+	} else {
+		overlay_button(app, canvas, right - OVERLAY_BUTTON_WIDTH, buttons_y, "Replace", FM_BUTTON_REPLACE, 1);
+		right -= OVERLAY_BUTTON_WIDTH + 10;
+		overlay_button(app, canvas, right - OVERLAY_BUTTON_WIDTH, buttons_y, "Keep Both", FM_BUTTON_KEEP_BOTH, 2);
+	}
+
+	/* Skip, leftmost of the answers. */
+	right -= OVERLAY_BUTTON_WIDTH + 10;
+	overlay_button(app, canvas, right - OVERLAY_BUTTON_WIDTH, buttons_y, "Skip", FM_BUTTON_SKIP, 0);
 }
 
 /* Draws a check box with its label at (x, y), clickable as FM_BUTTON_APPLY_ALL. */
