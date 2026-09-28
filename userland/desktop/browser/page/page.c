@@ -854,7 +854,8 @@ page_dump_style_node(
 	struct wb_buffer *out)
 {
 	static const char *const displays[] = {
-		"inline", "block", "inline-block", "list-item", "none", "table", "table-row", "table-cell", "flex", "contents", "grid"
+		"inline", "block", "inline-block", "list-item", "none", "table", "table-row", "table-cell", "flex", "contents", "grid",
+		"table-row-group", "table-caption", "inline-table", "table-column"
 	};
 	struct css_style *style;
 	struct dom_node *child;

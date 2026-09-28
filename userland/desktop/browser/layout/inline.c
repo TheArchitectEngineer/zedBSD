@@ -103,6 +103,7 @@ static int inline_build_lines(struct layout_tree *tree, struct layout_box *box, 
 static int inline_finish_line(struct layout_tree *tree, struct layout_box *box, const struct inline_piece *pieces, size_t start, size_t end, layout_unit *cursor, struct wb_vector *lines, int first_line, layout_unit line_left, layout_unit line_width);
 static int inline_place_floats(struct layout_tree *tree, struct layout_box *content, struct layout_box *box, int depth);
 static void inline_room(struct layout_tree *tree, struct layout_box *box, layout_unit cursor, layout_unit *left, layout_unit *width);
+static int inline_wraps(const struct layout_box *box);
 static void inline_line_height(struct layout_tree *tree, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_font_extent(struct layout_tree *tree, const struct text_font *font, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_piece_extent(struct layout_tree *tree, const struct inline_piece *piece, layout_unit *above, layout_unit *below);
@@ -553,6 +554,19 @@ inline_advance(
 	return (layout_unit)glyph.advance_units;
 }
 
+/* Tells whether a box's white-space lets lines wrap. */
+static int
+inline_wraps(
+	const struct layout_box *box)
+{
+	/* pre and nowrap keep a line whole. */
+	if (box->style.white_space == CSS_WHITE_SPACE_PRE || box->style.white_space == CSS_WHITE_SPACE_NOWRAP)
+		return 0;
+
+	/* The others wrap. */
+	return 1;
+}
+
 /* Packs pieces into lines greedily and stores the lines in the block. */
 static int
 inline_build_lines(
@@ -570,12 +584,11 @@ inline_build_lines(
 	size_t start;
 	size_t index;
 	int wrap_lines;
+	int wraps;
 	int error;
 
-	/* Lines wrap unless white-space forbids it. */
-	wrap_lines = 1;
-	if (box->style.white_space == CSS_WHITE_SPACE_PRE || box->style.white_space == CSS_WHITE_SPACE_NOWRAP)
-		wrap_lines = 0;
+	/* Lines wrap unless the block's white-space forbids it. */
+	wrap_lines = inline_wraps(box);
 
 	/* Walks the pieces, ending a line at a forced break or when the next word does not fit. */
 	wb_vector_init(&lines, sizeof(struct layout_line));
@@ -618,8 +631,16 @@ inline_build_lines(
 			continue;
 		}
 
-		/* A word that overflows a line that has something ends the line before it. */
-		if (wrap_lines && !pieces[index].space && x + pieces[index].width > line_width && index > start) {
+		/*
+		 * A word that overflows a line that has something ends the line
+		 * before it, where the white-space of the piece before (the space
+		 * or the text the break follows) lets lines wrap (ws074-p037: a
+		 * link with white-space: normal in a nowrap item wraps).
+		 */
+		wraps = 0;
+		if (index > start)
+			wraps = inline_wraps(pieces[index - 1U].box);
+		if (wraps && !pieces[index].space && x + pieces[index].width > line_width) {
 			error = inline_finish_line(tree, box, pieces, start, index, &cursor, &lines, lines.count == 0, line_left, line_width);
 			if (error != 0) {
 				wb_vector_release(&lines);

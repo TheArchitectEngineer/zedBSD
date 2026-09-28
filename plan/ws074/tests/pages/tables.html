@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>tables</title>
+<!-- ws074-p037: the least of tables: automatic column widths, colspan, border-spacing, captions, row groups, vertical-align in cells, anonymous boxes. -->
+<style>
+body { font-family: sans-serif; font-size: 14px; margin: 8px; }
+table { margin-bottom: 10px; }
+td, th { border: 1px solid #579; padding: 3px; }
+th { background: #cde; }
+.full { width: 100%; background: #eee; }
+.fixed { width: 400px; border: 2px solid #333; }
+.spacing { border-spacing: 8px 4px; background: #efe; }
+.nospace { border-collapse: collapse; }
+.w80 { width: 80px; }
+.tall { height: 60px; }
+.mid { vertical-align: middle; }
+.top { vertical-align: top; }
+.bottom { vertical-align: bottom; }
+.center { margin-left: auto; margin-right: auto; }
+.css { display: table; background: #fed; }
+.css > .row { display: table-row; }
+.css > .row > span { display: table-cell; border: 1px solid #a73; padding: 2px 6px; }
+.inline { display: inline-table; background: #def; }
+.pct { margin-bottom: 10px; }
+.css > .row > .spacer { width: 10%; padding: 0 15px; border: none; }
+.quarter { width: 25%; }
+.inline > .c { display: table-cell; padding: 1px 4px; border: 1px solid #579; }
+</style>
+</head>
+<body>
+<table>
+<caption>A caption</caption>
+<thead><tr><th>Name</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>alpha</td><td>1</td></tr>
+<tr><td>a longer name here</td><td>22</td></tr>
+</tbody>
+</table>
+
+<table class="full">
+<tr><td>short</td><td>a much longer piece of text that wants a wider column than the others do</td><td>mid</td></tr>
+<tr><td colspan="2">spans two columns</td><td>x</td></tr>
+</table>
+
+<table class="fixed spacing">
+<tr><td class="w80">eighty</td><td>rest</td></tr>
+<tr><td class="tall top">top</td><td class="mid">middle</td></tr>
+<tr><td class="tall bottom">bottom</td><td>baseline</td></tr>
+</table>
+
+<table class="nospace">
+<tr><td>no</td><td>spacing</td><td>here</td></tr>
+</table>
+
+<table class="center">
+<tr><td>centered table</td></tr>
+</table>
+
+<div class="css">
+<div class="row"><span>css</span><span>table</span></div>
+<div class="row"><span>made of</span><span>divs</span></div>
+</div>
+
+<p>Text with an <span class="inline"><span class="c">inline</span><span class="c">table</span></span> inside it.</p>
+
+<div class="css center pct">
+<div class="row"><span>first column</span><span class="spacer"></span><span>second, longer column</span><span class="spacer"></span><span>third</span></div>
+</div>
+
+<table class="full">
+<tr><td class="quarter">a quarter</td><td>the rest</td></tr>
+</table>
+
+<table>
+<tr><td>narrow cells: Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua</td><td>Ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure</td></tr>
+</table>
+</body>
+</html>

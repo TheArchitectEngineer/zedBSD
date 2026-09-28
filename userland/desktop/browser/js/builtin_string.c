@@ -7,8 +7,9 @@
 
 /*
  * String: the constructor, String.fromCharCode, fromCodePoint and raw, and
- * String.prototype's methods that need no regular expression (match,
- * replace, search and split arrive with RegExp, ws074-p027).  Strings are
+ * String.prototype's methods; match, replace, replaceAll, search and split
+ * hand a regular expression to RegExp's algorithms (builtin_regexp.c,
+ * ws074-p027; matchAll waits for the iterators).  Strings are
  * worked on as UTF-16 code units; the case mappings come from the
  * generated Unicode tables (base/unicode.c), with the final sigma rule.
  * normalize returns the string unchanged for now (the normalization tables
@@ -87,6 +88,14 @@ static uint32_t string_code_point(const struct vm_string *string, uint32_t index
 static uint32_t string_code_point_before(const struct vm_string *string, uint32_t index, uint32_t *size);
 static int string_pad(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, int at_start, vm_value *result);
 static int string_trim_with(struct vm_realm *realm, vm_value this_value, int ends, vm_value *result);
+static int string_match(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int string_replace(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int string_replace_all(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int string_search(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int string_split(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int string_replace_text(struct vm_realm *realm, struct vm_string *string, vm_value search_value, vm_value replace_value, int all, vm_value *result);
+static int string_append_range(struct wb_units *units, const struct vm_string *string, uint32_t start, uint32_t end);
+static int string_push(struct vm_realm *realm, vm_value array, vm_value value);
 static int string_is_regexp(vm_value value);
 static int string_position(struct vm_realm *realm, vm_value value, uint32_t length, uint32_t fallback, uint32_t *position);
 
@@ -105,11 +114,16 @@ static const struct string_entry string_methods[] = {
 	{ "isWellFormed", 0, string_is_well_formed },
 	{ "lastIndexOf", 1, string_last_index_of },
 	{ "localeCompare", 1, string_locale_compare },
+	{ "match", 1, string_match },
 	{ "normalize", 0, string_normalize },
 	{ "padEnd", 1, string_pad_end },
 	{ "padStart", 1, string_pad_start },
 	{ "repeat", 1, string_repeat },
+	{ "replace", 2, string_replace },
+	{ "replaceAll", 2, string_replace_all },
+	{ "search", 1, string_search },
 	{ "slice", 2, string_slice },
+	{ "split", 2, string_split },
 	{ "startsWith", 1, string_starts_with },
 	{ "substr", 2, string_substr },
 	{ "substring", 2, string_substring },
@@ -1649,6 +1663,442 @@ string_trim_with(
 	/* The part. */
 	status = string_substring_value(realm, string, start, end, result);
 	return status;
+}
+
+/* String.prototype.match(regexp): a regular expression's (or one made from the argument's) matches. */
+static int
+string_match(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *string;
+	vm_value regexp;
+	int is_regexp;
+	int status;
+
+	/* The string, and the regular expression (one made from anything else). */
+	status = string_this(realm, this_value, "match", &string);
+	if (status != 0)
+		return status;
+	regexp = js_argument(args, count, 0);
+	is_regexp = js_regexp_is(regexp);
+	if (!is_regexp) {
+		status = js_regexp_create(realm, regexp, VM_VALUE_UNDEFINED, &regexp);
+		if (status != 0)
+			return status;
+	}
+
+	/* The matches. */
+	status = js_regexp_symbol_match(realm, regexp, string, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the result. */
+	return 0;
+}
+
+/* String.prototype.replace(search, replacement): the first match (of a string, or a regular expression's) replaced. */
+static int
+string_replace(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *string;
+	int is_regexp;
+	int status;
+
+	/* A regular expression replaces by its own algorithm. */
+	status = string_this(realm, this_value, "replace", &string);
+	if (status != 0)
+		return status;
+	is_regexp = js_regexp_is(js_argument(args, count, 0));
+	if (is_regexp) {
+		status = js_regexp_symbol_replace(realm, js_argument(args, count, 0), string, js_argument(args, count, 1), result);
+		return status;
+	}
+
+	/* A string's first occurrence. */
+	status = string_replace_text(realm, string, js_argument(args, count, 0), js_argument(args, count, 1), 0, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the replaced string. */
+	return 0;
+}
+
+/* String.prototype.replaceAll(search, replacement): every match replaced (a regular expression must be global). */
+static int
+string_replace_all(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *string;
+	struct vm_string *flags_text;
+	vm_value search;
+	vm_value flags;
+	vm_value key;
+	uint32_t index;
+	uint16_t letter;
+	int global;
+	int is_regexp;
+	int status;
+
+	/* A regular expression must have g, then replaces by its own algorithm. */
+	status = string_this(realm, this_value, "replaceAll", &string);
+	if (status != 0)
+		return status;
+	search = js_argument(args, count, 0);
+	is_regexp = js_regexp_is(search);
+	if (is_regexp) {
+		key = vm_key_from_ascii(realm->heap, "flags");
+		if (key == VM_VALUE_EMPTY)
+			return ENOMEM;
+		status = vm_get(realm, search, key, &flags);
+		if (status != 0)
+			return status;
+		if (flags == VM_VALUE_UNDEFINED || flags == VM_VALUE_NULL) {
+			status = vm_throw_type_error(realm, "String.prototype.replaceAll called with a RegExp without flags");
+			return status;
+		}
+
+		/* The flags must have g. */
+		status = vm_to_string(realm, flags, &flags_text);
+		if (status != 0)
+			return status;
+		global = 0;
+		for (index = 0; index < flags_text->length; index++) {
+			letter = vm_string_at(flags_text, index);
+			if (letter == 'g')
+				global = 1;
+		}
+
+		/* Without g replaceAll is refused. */
+		if (!global) {
+			status = vm_throw_type_error(realm, "replaceAll must be called with a global RegExp");
+			return status;
+		}
+
+		/* The regular expression's algorithm. */
+		status = js_regexp_symbol_replace(realm, search, string, js_argument(args, count, 1), result);
+		return status;
+	}
+
+	/* Every occurrence of a string. */
+	status = string_replace_text(realm, string, search, js_argument(args, count, 1), 1, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the replaced string. */
+	return 0;
+}
+
+/* String.prototype.search(regexp): where a regular expression (or one made from the argument) first matches, or -1. */
+static int
+string_search(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *string;
+	vm_value regexp;
+	int is_regexp;
+	int status;
+
+	/* The string, and the regular expression (one made from anything else). */
+	status = string_this(realm, this_value, "search", &string);
+	if (status != 0)
+		return status;
+	regexp = js_argument(args, count, 0);
+	is_regexp = js_regexp_is(regexp);
+	if (!is_regexp) {
+		status = js_regexp_create(realm, regexp, VM_VALUE_UNDEFINED, &regexp);
+		if (status != 0)
+			return status;
+	}
+
+	/* The search. */
+	status = js_regexp_symbol_search(realm, regexp, string, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the index. */
+	return 0;
+}
+
+/*
+ * String.prototype.split(separator, limit): the parts between the
+ * separator's matches (a regular expression's, or a string's; each unit
+ * for the empty string), at most limit of them.
+ */
+static int
+string_split(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *string;
+	struct vm_string *separator;
+	vm_value separator_value;
+	vm_value limit_value;
+	vm_value list;
+	vm_value part;
+	uint32_t limit;
+	uint32_t parts;
+	uint32_t start;
+	uint32_t found;
+	int is_regexp;
+	int present;
+	int status;
+
+	/* A regular expression splits by its own algorithm. */
+	separator_value = js_argument(args, count, 0);
+	limit_value = js_argument(args, count, 1);
+	status = string_this(realm, this_value, "split", &string);
+	if (status != 0)
+		return status;
+	is_regexp = js_regexp_is(separator_value);
+	if (is_regexp) {
+		status = js_regexp_symbol_split(realm, separator_value, string, limit_value, result);
+		return status;
+	}
+
+	/* The limit (2^32 - 1 without one) and the separator as a string. */
+	limit = UINT32_MAX;
+	if (limit_value != VM_VALUE_UNDEFINED) {
+		status = vm_to_uint32(realm, limit_value, &limit);
+		if (status != 0)
+			return status;
+	}
+
+	/* The separator as a string, and the list of parts. */
+	status = vm_to_string(realm, separator_value, &separator);
+	if (status == 0)
+		status = js_builtin_array(realm, NULL, 0, &list);
+	if (status != 0)
+		return status;
+
+	/* No parts for a limit of 0; the whole string without a separator. */
+	*result = list;
+	if (limit == 0)
+		return 0;
+	if (separator_value == VM_VALUE_UNDEFINED) {
+		status = string_push(realm, list, vm_value_cell(string));
+		return status;
+	}
+
+	/* The empty separator splits between the units. */
+	if (separator->length == 0) {
+		for (start = 0; start < string->length && start < limit; start++) {
+			status = string_substring_value(realm, string, start, start + 1U, &part);
+			if (status == 0)
+				status = string_push(realm, list, part);
+			if (status != 0)
+				return status;
+		}
+
+		/* Succeeded: the units. */
+		return 0;
+	}
+
+	/* An empty string is one part. */
+	if (string->length == 0) {
+		status = string_push(realm, list, vm_value_cell(string));
+		return status;
+	}
+
+	/* The parts before each occurrence, then the rest. */
+	parts = 0;
+	start = 0;
+	for (;;) {
+		present = string_find(string, separator, start, 0, &found);
+		if (!present)
+			break;
+		status = string_substring_value(realm, string, start, found, &part);
+		if (status == 0)
+			status = string_push(realm, list, part);
+		if (status != 0)
+			return status;
+		parts++;
+		if (parts == limit)
+			return 0;
+		start = found + separator->length;
+	}
+
+	/* The rest is the last part. */
+	status = string_substring_value(realm, string, start, string->length, &part);
+	if (status == 0)
+		status = string_push(realm, list, part);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the parts. */
+	return 0;
+}
+
+/*
+ * Replaces a string's first (or every) occurrence of a search string by a
+ * function's result or a replacement string's substitution.
+ */
+static int
+string_replace_text(
+	struct vm_realm *realm,
+	struct vm_string *string,
+	vm_value search_value,
+	vm_value replace_value,
+	int all,
+	vm_value *result)
+{
+	struct wb_vector positions;
+	struct wb_units out;
+	struct vm_string *search;
+	struct vm_string *replacement;
+	struct vm_string *text;
+	vm_value arguments[3];
+	vm_value replaced;
+	uint32_t *position;
+	uint32_t from;
+	uint32_t found;
+	uint32_t advance;
+	uint32_t end;
+	size_t index;
+	int functional;
+	int present;
+	int status;
+
+	/* The search string, and the replacement: a function or a string. */
+	status = vm_to_string(realm, search_value, &search);
+	if (status != 0)
+		return status;
+	functional = vm_value_is_callable(replace_value);
+	replacement = NULL;
+	if (!functional) {
+		status = vm_to_string(realm, replace_value, &replacement);
+		if (status != 0)
+			return status;
+	}
+
+	/* Where the search occurs: the first time, or every time (an empty search at each unit and the end). */
+	wb_vector_init(&positions, sizeof(uint32_t));
+	advance = search->length;
+	if (advance == 0)
+		advance = 1;
+	from = 0;
+	status = 0;
+	for (;;) {
+		present = string_find(string, search, from, 0, &found);
+		if (!present)
+			break;
+		status = wb_vector_push(&positions, &found);
+		if (status != 0 || !all)
+			break;
+		from = found + advance;
+		if (from > string->length)
+			break;
+	}
+
+	/* The text between the occurrences and each one's replacement. */
+	wb_units_init(&out);
+	end = 0;
+	for (index = 0; status == 0 && index < positions.count; index++) {
+		position = wb_vector_at(&positions, index);
+		if (functional) {
+			arguments[0] = vm_value_cell(search);
+			arguments[1] = vm_value_number((double)*position);
+			arguments[2] = vm_value_cell(string);
+			status = vm_call(realm, replace_value, VM_VALUE_UNDEFINED, arguments, 3, &replaced);
+			if (status == 0)
+				status = vm_to_string(realm, replaced, &text);
+		} else {
+			status = js_regexp_substitution(realm, search, string, *position, NULL, 0, VM_VALUE_UNDEFINED, replacement, &replaced);
+			if (status == 0)
+				text = (struct vm_string *)vm_value_as_cell(replaced);
+		}
+
+		/* The text before the occurrence, then its replacement. */
+		if (status == 0)
+			status = string_append_range(&out, string, end, *position);
+		if (status == 0)
+			status = vm_string_append_units(text, &out);
+		end = *position + search->length;
+	}
+
+	/* The rest, then the string (the original itself when nothing occurred). */
+	if (status == 0 && positions.count == 0) {
+		*result = vm_value_cell(string);
+	} else if (status == 0) {
+		status = string_append_range(&out, string, end, string->length);
+		if (status == 0)
+			status = string_units_value(realm, &out, result);
+	}
+
+	/* The lists go. */
+	wb_units_release(&out);
+	wb_vector_release(&positions);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the replaced string. */
+	return 0;
+}
+
+/* Appends a range of a string's units. */
+static int
+string_append_range(
+	struct wb_units *units,
+	const struct vm_string *string,
+	uint32_t start,
+	uint32_t end)
+{
+	uint32_t index;
+	uint16_t unit;
+	int status;
+
+	/* Each unit of the range. */
+	status = 0;
+	for (index = start; status == 0 && index < end && index < string->length; index++) {
+		unit = vm_string_at(string, index);
+		status = wb_units_append(units, &unit, 1);
+	}
+
+	/* A failure to append. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the range is appended. */
+	return 0;
+}
+
+/* Appends a value to an array at its end. */
+static int
+string_push(
+	struct vm_realm *realm,
+	vm_value array,
+	vm_value value)
+{
+	struct vm_object *object;
+	int status;
+
+	/* The next index. */
+	object = (struct vm_object *)vm_value_as_cell(array);
+	status = vm_object_define(realm->heap, object, vm_value_int32((int32_t)object->length), value, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the value is at the end. */
+	return 0;
 }
 
 /* Tells whether a value is a regular expression (only RegExp objects for now; Symbol.match comes later). */
