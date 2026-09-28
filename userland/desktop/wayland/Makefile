@@ -4,7 +4,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire.c \
 	userland/desktop/wayland/objects.c userland/desktop/wayland/protocol.c userland/desktop/wayland/display.c \
-	userland/desktop/wayland/seat.c userland/desktop/wayland/input.c \
+	userland/desktop/wayland/seat.c userland/desktop/wayland/input.c userland/desktop/wayland/tablet.c \
 	userland/desktop/wayland/compose.c userland/desktop/wayland/import.c userland/desktop/wayland/shm.c \
 	userland/desktop/wayland/glass.c userland/desktop/wayland/shell.c userland/desktop/wayland/home.c \
 	userland/desktop/wayland/menu.c userland/desktop/wayland/menu-shell.c userland/desktop/wayland/titlebar.c \

@@ -18,6 +18,7 @@
 #include "data.h"
 #include "extras.h"
 #include "panels.h"
+#include "tablet.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -53,6 +54,7 @@ static const struct zwl_global globals[] = {
 	{ 16, "keiland_titlebar_manager_v1", 2, ZWL_TITLEBAR_MANAGER },
 	{ 17, "keiland_glass_manager_v1", 1, ZWL_GLASS_MANAGER },
 	{ 18, "zwp_primary_selection_device_manager_v1", 1, ZWL_PRIMARY_MANAGER },
+	{ 19, "zwp_tablet_manager_v2", 1, ZWL_TABLET_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -253,6 +255,13 @@ zwl_dispatch(
 	case ZWL_SUBSURFACE:
 		/* wl_subsurface (subsurface.c). */
 		error = zwl_subsurface_request(object, opcode, bytes, size);
+		break;
+	case ZWL_TABLET_MANAGER:
+	case ZWL_TABLET_SEAT:
+	case ZWL_TABLET:
+	case ZWL_TABLET_TOOL:
+		/* The pen tablets (tablet.c). */
+		error = zwl_tablet_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
