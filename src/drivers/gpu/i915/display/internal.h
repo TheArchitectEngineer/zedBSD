@@ -3264,6 +3264,24 @@ struct i915_lcd_kernel {
  * only, which run on the start worker one at a time; after the start the
  * resident serving thread is the only other writer.
  */
+/*
+ * The output the resident node drives (output.c, ws075-p012).
+ *
+ * Chosen once, when the node's panel dependencies are filled at the device
+ * start, from the display= boot parameter and the HDMI sink connected then;
+ * it does not change while the device runs.  Zero is the eDP panel.
+ */
+struct i915_display_output {
+	/* Nonzero: the HDMI display of DDI B on pipe B, in DVI mode, in place of the panel. */
+	int hdmi;
+
+	/* The HDMI mode (its physical size included, 0 when unknown), link and WRPLL. */
+	struct i915_lcd_state state;
+
+	/* Where the mode came from, for the log: "EDID", "display.mode", "CEA 4". */
+	const char *mode_source;
+};
+
 struct i915_lcd_world;
 struct i915_wm_world;
 struct i915_takeover_world;
@@ -3354,6 +3372,9 @@ struct i915_display {
 	/* The resident run: what the serving thread needs, and the panel dependencies it uses. */
 	struct i915_resident_ctx rctx;
 	struct i915_lcd_kernel_deps rlcd;
+
+	/* The output the resident run lights: the panel, or the HDMI display (ws075-p012). */
+	struct i915_display_output output;
 
 	/*
 	 * The resident present path.
