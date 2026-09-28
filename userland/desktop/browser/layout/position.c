@@ -173,11 +173,20 @@ layout_shrink_to_fit(
 		return error;
 	}
 
-	/* The content, measured very wide. */
+	/*
+	 * The content, measured very wide.  The count of measurements in
+	 * progress makes the percentages inside indefinite while it lasts.
+	 */
+	tree->measuring++;
 	error = layout_block(tree, box, POSITION_MEASURE_WIDTH);
-	if (error != 0)
+	if (error != 0) {
+		tree->measuring--;
 		return error;
+	}
+
+	/* The content's own width, with the measurement over. */
 	content = layout_content_width(box, 0);
+	tree->measuring--;
 
 	/* No wider than the room leaves, and not negative. */
 	outside = position_frame(box) + box->margin[CSS_LEFT] + box->margin[CSS_RIGHT];
@@ -251,13 +260,22 @@ layout_content_width(
 		return widest;
 	}
 
-	/* Blocks: each child's margin box, its content measured when its width is auto. */
+	/*
+	 * Blocks: each child's margin box, its content measured when its width
+	 * is auto or a percentage (a percentage of the width being measured is
+	 * indefinite, so it contributes its content, as in Chromium).
+	 */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->out_of_flow)
 			continue;
 		width = child->width;
-		if (child->style.width.unit == CSS_UNIT_AUTO)
+		if (child->style.width.unit == CSS_UNIT_AUTO) {
 			width = layout_content_width(child, depth + 1);
+		} else if (child->style.width.unit == CSS_UNIT_PERCENT) {
+			width = layout_content_width(child, depth + 1);
+		}
+
+		/* The child's margins, borders and paddings go around it. */
 		width += child->margin[CSS_LEFT] + position_frame(child) + child->margin[CSS_RIGHT];
 		if (width > widest)
 			widest = width;

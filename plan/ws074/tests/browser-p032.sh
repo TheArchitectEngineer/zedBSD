@@ -5,7 +5,9 @@
 #     submits through the default button: the view follows results.html?name=kei&... (LINK and NAVIGATE lines).
 #  2. With --amazon: https://www.amazon.co.jp/ at 1200x690 (a live request, then the search): PageDown, a click on
 #     the search field (its place from the host build's --dump=layout of a saved capture, build/ws074-amazon/
-#     top-noscript.html, which must exist), type "kei" (amazon-typed.png), Enter: the view goes to /s/ref=nb_sb_noss
+#     top-local-noscript.html from amazon-capture.py, which must exist: an inline replaced box on a line, or since the header's flexbox
+#     (ws074-p035) a flex item "block <input> X Y W H control text", aimed 20 px below its top), type "kei"
+#     (amazon-typed.png), Enter: the view goes to /s/ref=nb_sb_noss
 #     with field-keywords=kei and the results page is shown (amazon-results.png).
 # Neither log may have an ERROR line.
 #
@@ -92,20 +94,25 @@ finish form.log
 if [ $amazon = 1 ]; then
 	f=build/ws035-fonts
 	field=$(build/ws074-host/plain/browser --dump=layout --width=1200 --height=690 --font=$f/Inter.ttf \
-	    --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf build/ws074-amazon/top-noscript.html 2>/dev/null |
-	    awk '$1 == "line" { y = $3; h = $5 } $1 == "replaced" && $NF == "text" { printf "%d %d\n", $2 + $4 / 2, y + h / 2; exit }')
+	    --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf build/ws074-amazon/top-local-noscript.html 2>/dev/null |
+	    awk '$1 == "line" { y = $3; h = $5 } $1 == "replaced" && $NF == "text" { printf "%d %d\n", $2 + $4 / 2, y + h / 2; exit }
+	        $1 == "block" && $2 == "<input>" && $NF == "text" { printf "%d %d\n", $3 + $5 / 2, $4 + 20; exit }')
 	echo "amazon: the search field at $field in the page"
 	start https://www.amazon.co.jp/ 1200 690 40
 	expect_log /tmp/b.log 'ZBROWSER READY width=1200'
 	pointer move $((wx + 1180)) $((wy + 670)) sleep 400
 	keys '<pgdn>'
+	echo "amazon: scrolled down to $(last_scroll)"
+	# The field is in the header now (ws074-p035), so the page goes back up before the click.
+	keys '<pgup>'
 	scroll=$(last_scroll)
 	set -- $field
 	pointer move $((wx + $1)) $((wy + $2 - ${scroll:-0})) sleep 300 down sleep 60 up sleep 800
 	keys kei
 	shot amazon-typed.png
 	keys '<ret>'
-	sleep 40
+	# The results page draws its 2 MB of stylesheets as they arrive; on the guest it is styled after 30 to 90 s (p035).
+	sleep 90
 	expect_log /tmp/b.log 'ZBROWSER NAVIGATE path=https://www.amazon.co.jp/s/ref=nb_sb_noss\?.*field-keywords=kei'
 	shot amazon-results.png
 	finish amazon.log

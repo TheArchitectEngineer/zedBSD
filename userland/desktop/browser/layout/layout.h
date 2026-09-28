@@ -187,7 +187,11 @@ struct layout_rect {
  * block formatting context's list of floats (float.c) and origin_x,
  * origin_y the content box of the block being laid out in that context's
  * coordinates.  image_lookup and image_context find the image of an
- * <img>, url_lookup a background image's.
+ * <img>, url_lookup a background image's.  measuring counts the
+ * measurements of content laid out at a very wide width that are in
+ * progress (shrink-to-fit, a flex item's content size); while one is, a
+ * percentage of the containing width is indefinite, and a flex basis given
+ * in percent is the content's size instead.
  */
 struct layout_tree {
 	struct wb_arena arena;
@@ -202,6 +206,7 @@ struct layout_tree {
 	layout_image_lookup image_lookup;
 	layout_url_lookup url_lookup;
 	void *image_context;
+	int measuring;
 };
 
 /*

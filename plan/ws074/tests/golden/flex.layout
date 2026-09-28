@@ -1,6 +1,6 @@
-viewport 1024.00 x 768.00, document height 787.00
-block <html> 0.00 0.00 1024.00 787.00
-  block <body> 8.00 8.00 1008.00 771.00
+viewport 1024.00 x 768.00, document height 810.00
+block <html> 0.00 0.00 1024.00 810.00
+  block <body> 8.00 8.00 1008.00 794.00
     block <div> 8.00 8.00 1008.00 27.00
       block <div> 8.00 8.00 319.25 27.00
         line 13.00 13.00 height 17.00 baseline 27.00
@@ -194,3 +194,31 @@ block <html> 0.00 0.00 1024.00 787.00
         block <div> 978.06 750.50 27.94 17.00
           line 978.06 750.50 height 17.00 baseline 764.50
             text 978.06 w 27.94 14px "Cart"
+    block <div> 8.00 785.00 1008.00 17.00
+      block <div> 8.00 785.00 149.16 17.00
+        block <div> 8.00 785.00 113.17 17.00
+          block <div> 8.00 785.00 113.17 17.00
+            block <div> 8.00 785.00 84.41 17.00
+              line 8.00 785.00 height 17.00 baseline 799.00
+                text 8.00 w 7.86 14px "a"
+                text 15.86 w 3.94 14px " "
+                text 19.80 w 37.09 14px "100%"
+                text 56.89 w 3.94 14px " "
+                text 60.83 w 31.58 14px "wide"
+            block <div> 92.41 785.00 28.77 17.00
+              line 92.41 785.00 height 17.00 baseline 799.00
+                text 92.41 w 28.77 14px "logo"
+        block <div> 121.17 785.00 35.98 17.00
+          line 121.17 785.00 height 17.00 baseline 799.00
+            text 121.17 w 35.98 14px "place"
+      block <div> 157.16 785.00 833.84 17.00
+        block <div> 157.16 785.00 833.84 17.00
+          line 157.16 785.00 height 17.00 baseline 799.00
+            text 157.16 w 21.02 14px "the"
+            text 178.17 w 3.94 14px " "
+            text 182.11 w 29.42 14px "rest,"
+            text 211.53 w 3.94 14px " "
+            text 215.47 w 41.97 14px "grown"
+      block <div> 991.00 785.00 25.00 17.00
+        line 991.00 785.00 height 17.00 baseline 799.00
+          text 991.00 w 25.00 14px "end"
