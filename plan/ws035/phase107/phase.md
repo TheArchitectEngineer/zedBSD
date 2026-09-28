@@ -30,6 +30,12 @@ UEFI・BIOS の loader に全画面の描き方を足す。kernel の quiet cons
   下の絵を保存して 8 つの点（先頭が濃い青、後ろほど淡い）を 16 標本の anti-alias で描く。`step` で 1 つ回る。
 - **HAL**（`src/hal/amd64/bsp-pcat/cons.c`、実装だけ、hal.h は不変）: `kmsg=quiet` のとき右上の進捗の枠を、左隣の 1 色ではなく
   各列の真下の色で塗る（写真の空でも継ぎ目が見えない）。spinner を始め、早期 console が出さない行ごとに 1 つ回す。
+  承認済みの差分（Guardrail の表の 2026-09-28 の行、`plan/ws035/proposed/hal-quiet-console.diff`）を越えて `cons.c` がする
+  ことは次の 3 つだけ: (1) `quiet_panel_locked` の塗りを「左隣の 1 色」から「各列の真下（40 行目）の色」に変えた、
+  (2) `prekern_pcat_cons_init` の quiet の分岐で `drv_pcat_splash_start()` を呼んで spinner を始める（framebuffer の早期の
+  mapping・大きさ・stride・RGBX かどうかを渡す）、(3) `putc_locked` で console が止まっている（`console_suspended`）間の改行ごとに
+  `drv_pcat_splash_step()` を呼んで spinner を 1 つ回す。どれも `kmsg=quiet` の時だけで、hal.h・HAL の他の責務は変えない
+  （main の確認、2026-09-28: 承認済みの quiet console の責務の範囲）。
 - **kernel**: text-display の ops に任意の `progress(int end)`、`kern_text_progress()`・`kern_text_progress_end()`
   （`include/kern/text-display.h`・`src/kern/text-display.c`）。`klog.c` は quiet のとき record ごとに `kern_text_progress()`。
   `gpu.c` は表示の lease を取ったときに `kern_text_progress_end()`（GPU の画面の下の firmware の framebuffer に描き続けない）。
