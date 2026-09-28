@@ -704,6 +704,19 @@ $(DYNAMIC_DIR)/libjpeg-compat.so: $(DYNAMIC_JPEG_COMPAT_OBJS) $(DYNAMIC_DIR)/lib
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine i386 --role shared-library \
  --needed libc.so --soname libjpeg-compat.so $@
 
+# libpdf (ws079-p004): the PDF library of the base programs; its writer needs nothing but the C
+# library.
+DYNAMIC_PDF_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libpdf)
+
+$(DYNAMIC_DIR)/libpdf.so: $(DYNAMIC_PDF_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/base/libpdf/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_i386 -shared -soname libpdf.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code $(USER_STACK_LDFLAGS) \
+ --version-script=userland/base/libpdf/exports.map \
+ $(DYNAMIC_PDF_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine i386 --role shared-library \
+ --needed libc.so --soname libpdf.so $@
+
 # libgif-compat (ws074-p051): giflib's decoding interface of the base programs; it needs nothing but the
 # C library.
 DYNAMIC_GIF_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgif-compat)
