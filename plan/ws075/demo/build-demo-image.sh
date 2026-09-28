@@ -2,8 +2,9 @@
 # ws075-p013 (H4): builds the demonstration image (plan/ws075/demo/config-demo-hdmi.mk): the graphical boot to the
 # greeter and the session on the HDMI display (display=hdmi), App Home with the demonstration's applications
 # (plan/ws035/demo/apps.conf: Files, Notes, Terminal, PDF Viewer, Browser, Model viewer, Gears, X terminal), and the fonts and the
-# wallpaper, which are not in git (build/ws035-fonts/, build/ws035-wallpaper/).  root logs in
-# with an empty password.  sessiond waits for the i915's GPU node while the kernel reports the device still attaching
+# wallpaper, which are not in git (build/ws035-fonts/, build/ws035-wallpaper/).  The demonstration's accounts
+# (ws035-p120, plan/ws035/demo/demo-accounts.sh): the person kei, shown as "Kei", logs in without a password (Enter
+# at the greeter and at the lock screen); root is locked.  sessiond waits for the i915's GPU node while the kernel reports the device still attaching
 # (hw.gpu.attaching, BUG-092).
 #
 #   plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough] [MAKE ARGUMENTS...]     (default build/demo-hdmi)
@@ -37,6 +38,9 @@ for pair in \
 done
 [ -f build/ws035-wallpaper/wallpaper-1080.ppm ] && extra="$extra --file /usr/share/keiland/wallpaper.ppm=build/ws035-wallpaper/wallpaper-1080.ppm"
 mkdir -p "$build"
+accounts=$build/demo-accounts
+plan/ws035/demo/demo-accounts.sh "$accounts"
+extra="$extra --file /etc/passwd=$accounts/passwd --file /etc/group=$accounts/group --file /etc/shadow=$accounts/shadow"
 make -j"$(nproc)" ZEDBSD_CONFIG=plan/ws075/demo/config-demo-hdmi.mk BUILD="$build" I915_TEST_VBT=$vbt \
 	"ZEDBSD_TEST_EXTRA_FILES=$extra" ZEDBSD_TEST_IMAGE_TAG=demo-hdmi "$@" disk-image
 echo "demo image: $build/hdd-image.img"

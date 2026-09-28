@@ -1307,9 +1307,9 @@ glass_draw_icon(
 
 /*
  * Draws the Kei mark in a square of a size in pixels at (x, y): its seven
- * layers from the atlas, each in its colour, the whole as opaque as asked
- * (0..1).  A mark about the launcher's size uses the layers rendered at
- * that size (ws035-p117).
+ * layers from the atlas, each in the colour of the look asked for, the
+ * whole as opaque as asked (0..1).  A mark about the launcher's size uses
+ * the layers rendered at that size (ws035-p117).
  */
 void
 glass_draw_mark(
@@ -1318,6 +1318,7 @@ glass_draw_mark(
 	int32_t x,
 	int32_t y,
 	unsigned pixels,
+	enum glass_mark_look look,
 	float opacity)
 {
 	/*
@@ -1326,7 +1327,7 @@ glass_draw_mark(
 	 * light along the edges and the sheen (ws035-p109).  The panes are
 	 * translucent, so the picture behind shows through as on the splash.
 	 */
-	static const float colours[KEILAND_MARK_LAYERS][4] = {
+	static const float splash_colours[KEILAND_MARK_LAYERS][4] = {
 		{ 0.663f, 0.765f, 0.965f, 0.69f },
 		{ 0.498f, 0.635f, 0.941f, 0.35f },
 		{ 0.639f, 0.847f, 0.980f, 0.67f },
@@ -1335,6 +1336,23 @@ glass_draw_mark(
 		{ 1.0f, 1.0f, 1.0f, 0.67f },
 		{ 1.0f, 1.0f, 1.0f, 0.24f }
 	};
+
+	/*
+	 * The same layers for the system bar (ws035-p118, the 2026-09-28 user
+	 * decision): every pane a slightly deeper blue and nearly opaque, and
+	 * the white light and sheen fainter, so that the mark stands out on
+	 * the bar's light glass instead of fading into it.
+	 */
+	static const float bar_colours[KEILAND_MARK_LAYERS][4] = {
+		{ 0.455f, 0.600f, 0.925f, 0.92f },
+		{ 0.290f, 0.451f, 0.878f, 0.55f },
+		{ 0.400f, 0.690f, 0.945f, 0.90f },
+		{ 0.145f, 0.408f, 0.890f, 0.90f },
+		{ 0.106f, 0.349f, 0.839f, 0.96f },
+		{ 1.0f, 1.0f, 1.0f, 0.50f },
+		{ 1.0f, 1.0f, 1.0f, 0.18f }
+	};
+	const float (*colours)[4];
 	struct glass_shape shape;
 	const struct glass_glyph *layers;
 	const struct glass_glyph *glyph;
@@ -1345,6 +1363,11 @@ glass_draw_mark(
 	glass = server->compose->glass;
 	if (!glass->text)
 		return;
+
+	/* The colours of the look asked for. */
+	colours = splash_colours;
+	if (look == GLASS_MARK_BAR)
+		colours = bar_colours;
 
 	/* The layers rendered nearest the size: the small ones up to half again their size. */
 	layers = glass->mark;

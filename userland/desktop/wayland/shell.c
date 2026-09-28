@@ -34,6 +34,13 @@
  * network's icon opens its menu (network.c, ws035-p013); the battery is
  * drawn only (a mock-up).
  *
+ * A fullscreen window is kept whole (ws035-p119, the 2026-09-28 user
+ * decision): while it is the highest of the windows that cover the top of
+ * the output (fullscreen or docked), a window opened or raised over it
+ * floats above it and the system bar stays away; the bar's place is the
+ * fullscreen window's, and the bar is reached from the edges' gestures,
+ * with App Home and Wiseview, which show it.
+ *
  * Wiseview (p063, plan/ws035/wiseman-design.md) is the overview of the
  * windows: dragging up from the bottom edge opens it, following the pointer
  * (how far it is open is the distance moved over WISEVIEW_DISTANCE); let go
@@ -244,6 +251,9 @@ static unsigned title_clicks(struct zwl_server *server, struct zwl_object *surfa
 static void dock_when_due(struct zwl_server *server);
 static void window_lower(struct zwl_server *server, struct zwl_object *surface, const char *via);
 static int bar_press(struct zwl_server *server);
+static struct zwl_object *bar_cover(struct zwl_server *server);
+static void bar_cover_log(struct zwl_server *server, const struct zwl_object *cover);
+static int home_without_bar(struct zwl_server *server, uint32_t button, uint32_t state);
 static float wiseview_progress(struct zwl_server *server);
 static void wiseview_settle(struct zwl_server *server, float from, float to);
 static int wiseview_showing(struct zwl_server *server);
@@ -278,6 +288,7 @@ zwl_glass_draw(
 {
 	struct glass_shape shape;
 	struct zwl_object *top;
+	struct zwl_object *cover;
 	struct shell_bar bar;
 	unsigned index;
 	unsigned focused;
@@ -292,6 +303,10 @@ zwl_glass_draw(
 		zwl_greeter_draw(server, command);
 		return;
 	}
+
+	/* The fullscreen window that keeps the system bar away this frame, if any (ws035-p119). */
+	cover = bar_cover(server);
+	bar_cover_log(server, cover);
 
 	/* The menus' and the controls' places are those this frame draws them at (menu-shell.c, titlebar-shell.c). */
 	zwl_menu_frame(server);
@@ -378,9 +393,13 @@ zwl_glass_draw(
 	zwl_backdrop_reset(server);
 	zwl_popup_draw(server, command);
 
-	/* The system bar over everything but the cursor, where it always is. */
+	/*
+	 * The system bar over everything but the cursor, where it always is,
+	 * unless a fullscreen window is to be kept whole (ws035-p119).
+	 */
 	server->layer_on = 0;
-	draw_system_bar(server, command, &bar);
+	if (cover == NULL)
+		draw_system_bar(server, command, &bar);
 
 	/* An open menu's popups over the system bar (menu-shell.c). */
 	zwl_menu_draw_popups(server, command);
@@ -411,9 +430,11 @@ zwl_glass_button(
 	uint32_t state)
 {
 	struct zwl_object *surface;
+	struct zwl_object *cover;
 	enum shell_hit hit;
 	unsigned clicks;
 	int pressed;
+	int open;
 
 	/* The login screen takes every button (greeter.c). */
 	if (server->greeter) {
@@ -436,15 +457,35 @@ zwl_glass_button(
 	if (pressed)
 		return 1;
 
-	/* App Home takes the launcher, the top-left corner, and every button while it shows. */
-	pressed = zwl_home_button(server, button, state);
+	/*
+	 * While a fullscreen window keeps the system bar away (ws035-p119),
+	 * the bar's place is that window's: there is no launcher and no
+	 * network icon to press, and App Home is reached from the top-left
+	 * corner as over a fullscreen window.
+	 */
+	cover = bar_cover(server);
+	pressed = 0;
+	if (cover == NULL) {
+		/* App Home takes the launcher, the top-left corner, and every button while it shows. */
+		pressed = zwl_home_button(server, button, state);
+	} else {
+		/* Only the corner's press, and the rest of one of Home's own presses. */
+		open = home_without_bar(server, button, state);
+		if (open)
+			pressed = zwl_home_button(server, button, state);
+	}
+
+	/* A button Home took goes no further. */
 	if (pressed)
 		return 1;
 
 	/* The network takes a press on its icon, and every button while its menu is open (network.c). */
-	pressed = zwl_network_button(server, button, state);
-	if (pressed)
-		return 1;
+	open = zwl_network_is_open();
+	if (cover == NULL || open) {
+		pressed = zwl_network_button(server, button, state);
+		if (pressed)
+			return 1;
+	}
 
 	/* The menus take a press on a window's menu, and every button while one is open (menu-shell.c). */
 	pressed = zwl_menu_button(server, button, state);
@@ -503,8 +544,8 @@ zwl_glass_button(
 		return 1;
 	}
 
-	/* The system bar is zdesktop's. */
-	if (server->pointer_y < ZWL_GLASS_BAR) {
+	/* The system bar is zdesktop's, where it is drawn. */
+	if (server->pointer_y < ZWL_GLASS_BAR && cover == NULL) {
 		pressed = bar_press(server);
 		return pressed;
 	}
@@ -2344,8 +2385,8 @@ draw_system_bar(
 	glass_shape_draw(server, command, &shape);
 	glass_draw_solid(server, command, 0.0f, (float)(ZWL_GLASS_BAR - 1), (float)server->width, 1.0f, 0.0f, edge);
 
-	/* The launcher: the Kei mark (ws035-p117). */
-	glass_draw_mark(server, command, BAR_LAUNCHER_X, BAR_LAUNCHER_Y, BAR_LAUNCHER_SIZE, 1.0f);
+	/* The launcher: the Kei mark (ws035-p117) in the bar's deeper colours (ws035-p118). */
+	glass_draw_mark(server, command, BAR_LAUNCHER_X, BAR_LAUNCHER_Y, BAR_LAUNCHER_SIZE, GLASS_MARK_BAR, 1.0f);
 
 	/* In App Home the launcher is marked by a ring around the mark. */
 	if (home > 0.0f) {
@@ -3283,6 +3324,117 @@ bar_press(
 	server->pull_start_y = server->pointer_y;
 	server->pull_distance = 0;
 	return 1;
+}
+
+/*
+ * Finds the fullscreen window that keeps the system bar away (ws035-p119,
+ * the 2026-09-28 user decision): of the windows on the desktop shown that
+ * cover the output's top, fullscreen or docked, the highest, when it is
+ * fullscreen.  A window opened or raised over it floats above it and the
+ * bar stays away, so that the fullscreen window (Notes) is kept whole; the
+ * bar is reached through App Home and Wiseview, which show it.  A docked
+ * window above it has the bar, which holds its title.  Returns NULL when
+ * the bar is drawn.
+ */
+static struct zwl_object *
+bar_cover(
+	struct zwl_server *server)
+{
+	struct zwl_client *client;
+	struct zwl_object *surface;
+	struct zwl_object *cover;
+	float progress;
+
+	/* App Home shows the bar, opening, open or closing. */
+	progress = zwl_home_progress(server);
+	if (progress > 0.0f || server->home_to > 0.0f)
+		return NULL;
+
+	/* So does Wiseview. */
+	progress = wiseview_progress(server);
+	if (progress > 0.0f || server->wiseview_moving)
+		return NULL;
+
+	/* The highest fullscreen or docked window of the desktop shown. */
+	cover = NULL;
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only mapped windows of the desktop shown. */
+			if (surface->kind != ZWL_SURFACE ||
+			    surface->dead ||
+			    !surface->mapped ||
+			    surface->role == NULL ||
+			    surface->cursor_role ||
+			    surface->desktop != server->desktop ||
+			    surface->minimized)
+				continue;
+
+			/* A floating window leaves the top of the output to what is under it. */
+			if (!surface->fullscreen && !surface->maximized)
+				continue;
+
+			/* Above what was found so far. */
+			if (cover != NULL && surface->map_order < cover->map_order)
+				continue;
+			cover = surface;
+		}
+	}
+
+	/* No such window, or a docked one on top: the bar is drawn. */
+	if (cover == NULL || !cover->fullscreen)
+		return NULL;
+
+	/* Succeeded: the fullscreen window the bar keeps away from. */
+	return cover;
+}
+
+/* Logs the system bar leaving or coming back for a fullscreen window, once per change (for the tests). */
+static void
+bar_cover_log(
+	struct zwl_server *server,
+	const struct zwl_object *cover)
+{
+	/* The bar went away. */
+	if (cover != NULL && !server->bar_hidden) {
+		server->bar_hidden = 1U;
+		printf("ZWL GLASS bar hidden fullscreen=%u\n", cover->id);
+		return;
+	}
+
+	/* The bar came back. */
+	if (cover == NULL && server->bar_hidden) {
+		server->bar_hidden = 0U;
+		printf("ZWL GLASS bar shown\n");
+	}
+}
+
+/*
+ * Tells whether a button is App Home's while the system bar is kept away
+ * (ws035-p119): the rest of a press Home started, or a left press in the
+ * top-left corner, as over a fullscreen window.
+ */
+static int
+home_without_bar(
+	struct zwl_server *server,
+	uint32_t button,
+	uint32_t state)
+{
+	/* A press Home follows goes on being Home's. */
+	if (server->home_press || server->home_page_press || server->home_bottom_press)
+		return 1;
+
+	/* Only a left press starts one. */
+	if (state == 0 || button != ZWL_BUTTON_LEFT)
+		return 0;
+
+	/* In the corner, where Home's gesture starts. */
+	if (server->pointer_x < HOME_EDGE_CORNER && server->pointer_y < HOME_EDGE_CORNER)
+		return 1;
+
+	/* Anything else is the windows'. */
+	return 0;
 }
 
 /*
