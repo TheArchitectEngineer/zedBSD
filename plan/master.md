@@ -85,7 +85,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 | ws035: session の user を `network` の group に（p013 の残り）→ F-044 → F-041 の名前の衝突の dialog | fg010 | ユーザーの決定あり |
 | ws075-p006: stencil（`phase006/wip.patch`）→ multisample・resolve | i915 のグラフィック | 実機の VFIO |
 | ws074-p019: guest の比較と boot test → p020 以降 | ブラウザ | resume の手順は phase.md |
-| WS073: BUG-082（`bugs/BUG-082-wip.patch`、sync と cat の hang）→ BUG-080（Desktop の分類） | kernel の panic と menu | 再現の script がある |
+| WS073: BUG-086（block された fault の signal の spin）→ BUG-087・BUG-088（監査） | BUG-082・075・084 は 2026-09-28 に resolved | 各 ticket に次の手 |
 | WS078: p006（data の path・API・`keiland_` の protocol）、p002（kernel・UAPI・libc・bootloader の識別子）、p004（見える文字列と Kei の logo） | 改名 | 対応表は ws.md |
 
 ## Tools

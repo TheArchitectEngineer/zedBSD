@@ -299,6 +299,19 @@ vm_object_page_pin_write(
 	const void *buffer,
 	size_t length);
 
+/* As vm_object_page_pin_read(), but EBUSY instead of waiting out a write-back. */
+int
+vm_object_page_pin_read_nowait(
+	struct vm_object_page *page,
+	size_t offset,
+	void *buffer,
+	size_t length);
+
+/* Waits, holding a pin, until a write-back no longer owns the page. */
+int
+vm_object_page_pin_wait(
+	struct vm_object_page *page);
+
 int
 vm_object_fault_resident(
 	struct vm_object *object,
