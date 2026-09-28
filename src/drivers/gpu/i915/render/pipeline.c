@@ -362,11 +362,22 @@ i915_gfx_decode_pipeline(
 		pipeline->front_face = raster.frontFace;
 	}
 
-	/* Decodes the multisample state; nothing of it is used. */
+	/*
+	 * Decodes the multisample state, which gives the samples rasterized and
+	 * the ones written; without it the pipeline rasterizes one sample and
+	 * writes it.  XXX: sample shading, alpha to coverage and alpha to one
+	 * are not implemented.
+	 */
+	pipeline->samples = 1U;
+	pipeline->sample_mask = 0xffffffffU;
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U) {
 		kern_memset(&multisample, 0, sizeof(multisample));
 		i915_vkc_dec_VkPipelineMultisampleStateCreateInfo(reader, &session->arena, &multisample);
+		if (multisample.rasterizationSamples == VK_SAMPLE_COUNT_2_BIT || multisample.rasterizationSamples == VK_SAMPLE_COUNT_4_BIT)
+			pipeline->samples = (uint32_t)multisample.rasterizationSamples;
+		if (multisample.pSampleMask != NULL)
+			pipeline->sample_mask = multisample.pSampleMask[0];
 	}
 
 	/* Decodes the depth and stencil state, which gives the depth test. */

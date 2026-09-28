@@ -93,6 +93,10 @@ struct i915_gfx_session {
 	uint32_t copy_window;
 	uint32_t copy_generation;
 
+	/* The window of the multisample resolve kernel, and its generation. */
+	uint32_t resolve_window;
+	uint32_t resolve_generation;
+
 	/*
 	 * The scratch buffer, made on the first draw whose kernel spills: the
 	 * per-thread space each stage's part has room for and where the part

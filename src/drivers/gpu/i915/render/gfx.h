@@ -104,7 +104,8 @@ enum i915_gfx_op_kind {
 	I915_GFX_OP_QUERY_BEGIN,
 	I915_GFX_OP_QUERY_END,
 	I915_GFX_OP_QUERY_RESET,
-	I915_GFX_OP_SET_STENCIL
+	I915_GFX_OP_SET_STENCIL,
+	I915_GFX_OP_RESOLVE_IMAGE
 };
 
 /* An occlusion query pool (fence.c). */
@@ -186,6 +187,18 @@ struct i915_gfx_image {
 
 	/* The rows from one slice to the next (the QPitch). */
 	uint32_t slice_rows;
+
+	/*
+	 * The samples per pixel (1, 2 or 4).  A multisampled colour image is
+	 * Y-tiled and keeps each sample as a slice of its own, slice_rows
+	 * apart (MSFMT_MSS); a multisampled depth or stencil image interleaves
+	 * the samples of a pixel in its planes (MSFMT_DEPTH_STENCIL), whose
+	 * extent in samples is sample_width by sample_height.  An image of one
+	 * sample has its own extent there.
+	 */
+	uint32_t samples;
+	uint32_t sample_width;
+	uint32_t sample_height;
 
 	/*
 	 * A format with stencil (D32_SFLOAT_S8_UINT, S8_UINT): nonzero, and the
@@ -428,6 +441,10 @@ struct i915_gfx_pipeline {
 	uint32_t cull_mode;
 	uint32_t front_face;
 
+	/* The samples the pipeline rasterizes (1, 2 or 4), and which of them it writes. */
+	uint32_t samples;
+	uint32_t sample_mask;
+
 	/* The depth test state. */
 	uint32_t depth_test;
 	uint32_t depth_write;
@@ -495,6 +512,13 @@ struct i915_gfx_surface {
 
 	/* The VkFormat: R8G8B8A8 or B8G8R8A8 UNORM, or R32_SFLOAT. */
 	uint32_t format;
+
+	/*
+	 * Nonzero for a colour surface laid out in Y tiles (one sample of a
+	 * multisampled image); zero for a linear one.  A depth or stencil
+	 * format is Y-tiled whatever this says.
+	 */
+	uint32_t tiled;
 };
 
 /*
@@ -821,5 +845,6 @@ int drv_i915_gfx_submit_end(struct i915_render_session *session);
 int drv_i915_gfx_rect_prepare(struct i915_render_session *session);
 int drv_i915_gfx_rect(struct i915_render_session *session, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear);
 int drv_i915_gfx_rect_build(struct i915_render_session *session, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear, uint64_t *batch_va);
+int drv_i915_gfx_resolve(struct i915_render_session *session, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *samples, const struct i915_gfx_rect *src_rect);
 
 #endif
