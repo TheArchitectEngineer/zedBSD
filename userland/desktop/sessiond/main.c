@@ -20,7 +20,10 @@
  * It keeps to the console when the boot parameters do not ask for the
  * graphical login (login=graphical), when there is no greeter or no display,
  * and after the greeter has failed three times in a row: it exits 0, and
- * init starts the console's getty that the greeter service replaces.
+ * init starts the console's getty that the greeter service replaces.  A GPU
+ * driver may publish the display (/dev/gpu0) a moment after init has started
+ * the services; while the kernel reports a GPU device still attaching
+ * (hw.gpu.attaching), sessiond waits for the display for a bounded time.
  */
 
 #include "sessiond.h"
@@ -29,6 +32,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,12 +51,26 @@
 /* The boot parameter that chooses the graphical login, as the kernel reports it. */
 #define MAIN_LOGIN_SYSCTL	"kern.boot.login"
 
+/* The display device the greeter draws on. */
+#define MAIN_DISPLAY_PATH	"/dev/gpu0"
+
+/* The kernel's count of GPU devices whose node is still on its way. */
+#define MAIN_GPU_ATTACHING_SYSCTL	"hw.gpu.attaching"
+
+/* How long, in milliseconds, sessiond waits for a display that a GPU driver is still attaching. */
+#define MAIN_DISPLAY_WAIT_MS	15000LL
+
+/* How long, in nanoseconds, sessiond pauses before it looks for the display again. */
+#define MAIN_DISPLAY_POLL_NS	100000000L
+
 /* Set by SIGTERM and SIGINT: sessiond ends its greeter or session and stops. */
 volatile sig_atomic_t sessiond_stopping;
 
 static int main_options(struct sessiond *daemon, int count, char **arguments, int *graphical, int *console);
 static int main_boot_graphical(void);
 static int main_ready(struct sessiond *daemon);
+static int main_wait_display(void);
+static unsigned main_gpu_attaching(void);
 static void main_stop(int signal_number);
 static void main_open_log(void);
 
@@ -349,7 +367,6 @@ static int
 main_ready(
 	struct sessiond *daemon)
 {
-	struct stat status;
 	int error;
 
 	/* The greeter program. */
@@ -359,15 +376,105 @@ main_ready(
 		return 0;
 	}
 
-	/* The display. */
-	error = stat("/dev/gpu0", &status);
+	/* The display, which a GPU driver still attaching its device publishes shortly. */
+	error = main_wait_display();
 	if (error != 0) {
-		sessiond_log("SESSIOND CONSOLE reason=no-display errno=%d", errno);
+		sessiond_log("SESSIOND CONSOLE reason=no-display errno=%d", error);
 		return 0;
 	}
 
 	/* Succeeded: the greeter can start. */
 	return 1;
+}
+
+/*
+ * Waits for the display while a GPU driver is still attaching a device.
+ *
+ * A machine where no GPU device is attaching gets its answer at once, so
+ * its console login is not delayed.  Returns 0 when the display is there,
+ * or the errno of the last look for it.
+ */
+static int
+main_wait_display(
+	void)
+{
+	struct stat status;
+	struct timespec pause;
+	long long start;
+	long long waited;
+	unsigned attaching;
+	unsigned looks;
+	int error;
+
+	/* Looks for the display until it is there, no device is attaching, or the time is up. */
+	start = sessiond_milliseconds();
+	looks = 0U;
+	for (;;) {
+		/* The display is there. */
+		error = stat(MAIN_DISPLAY_PATH, &status);
+		if (error == 0)
+			break;
+		error = errno;
+		looks++;
+
+		/*
+		 * No GPU device is on its way, so the display will not come.  A
+		 * node published between the look and the count is taken by a
+		 * last look.
+		 */
+		attaching = main_gpu_attaching();
+		if (attaching == 0U) {
+			error = stat(MAIN_DISPLAY_PATH, &status);
+			if (error == 0)
+				break;
+			return errno;
+		}
+
+		/* The wait is bounded: a driver that never publishes gives the console back. */
+		waited = sessiond_milliseconds() - start;
+		if (waited >= MAIN_DISPLAY_WAIT_MS) {
+			sessiond_log("SESSIOND DISPLAY timeout waited_ms=%lld attaching=%u", waited, attaching);
+			return error;
+		}
+
+		/* Looks again after a moment. */
+		pause.tv_sec = 0;
+		pause.tv_nsec = MAIN_DISPLAY_POLL_NS;
+		(void)nanosleep(&pause, NULL);
+	}
+
+	/* Notes a wait in the log, so the time the GPU took can be read afterwards. */
+	if (looks != 0U) {
+		waited = sessiond_milliseconds() - start;
+		sessiond_log("SESSIOND DISPLAY waited_ms=%lld", waited);
+	}
+
+	/* Succeeded: the display is there. */
+	return 0;
+}
+
+/* Reports how many GPU devices the kernel still has on their way to a node (0 when it cannot tell). */
+static unsigned
+main_gpu_attaching(
+	void)
+{
+	uint32_t attaching;
+	size_t size;
+	int error;
+
+	/* Asks the kernel; a kernel without the count never makes sessiond wait. */
+	attaching = 0U;
+	size = sizeof(attaching);
+	error = sysctlbyname(MAIN_GPU_ATTACHING_SYSCTL, &attaching, &size, NULL, 0);
+	if (error != 0)
+		return 0U;
+
+	/* An answer of another size is not the count. */
+	if (size != sizeof(attaching))
+		return 0U;
+
+	/* Succeeded: the number of devices still attaching. */
+	return (unsigned)attaching;
 }
 
 /* Asks the main loop to end the greeter or the session and stop. */

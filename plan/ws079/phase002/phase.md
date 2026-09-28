@@ -79,6 +79,12 @@ main の判断に従い、node は devfs の root の `/dev/input-inject`（devf
 未実施: guest での実行（試験の image の作成、peninject の rootfs への組み込み、`/dev/input/eventN` の読み取り）、kernel の
 注入の経路の host 試験、QEMU の起動（この kernel で boot test も未実施）、arm64・pcat（option は amd64 だけ）。QEMU・実機の証拠はどちらも無い。
 
+## 2026-09-28 追記（ws079-p003 の subagent）
+
+下の残り 1 は ws079-p003 の作業で guest（QEMU、Venus）で確かめた: peninject は `userland/base/tests/peninject/` に移して通常の規則で link し、
+試験の image（`plan/ws079/tests/config-amd64-pen.mk`）で node 名・absinfo・ramp・RUBBER・拒否（非 root は mode で EACCES、mode を開けると driver が EPERM、
+EBUSY、EINVAL 12 件）を確認した。詳細は [p003](../phase003/phase.md)。残り 2〜4 は未実施のまま。
+
 ## 残り（resume の条件）
 
 1. 注入の device の guest での確認: `CONFIG_INPUT_TEST_INJECT=y` の image を作り、peninject を userland の通常の規則で build して

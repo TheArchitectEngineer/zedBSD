@@ -90,5 +90,6 @@ void zwl_network_draw_menu(struct zwl_server *server, VkCommandBuffer command);
 
 /* App Home under the desktop layer (home.c). */
 void zwl_home_draw(struct zwl_server *server, VkCommandBuffer command, float progress);
+void zwl_corner_draw(struct zwl_server *server, VkCommandBuffer command);
 
 #endif
