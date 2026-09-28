@@ -18,8 +18,11 @@
  * the text state (Tc Tw Tz TL Tf Tr Ts, kept by q and Q), the text and line
  * matrices of a text object (BT ET Td TD Tm T*), and the strings (Tj TJ '
  * "), whose glyph outlines (font.c) are filled, stroked, or added to a clip
- * that ET applies, by the rendering mode.  Shadings and inline images are
- * left out and the list says so (PDF_DISPLAY_SKIPPED).
+ * that ET applies, by the rendering mode.  It paints the axial and radial
+ * shadings (shading.c), by sh and as the colour of a shading pattern (cs
+ * /Pattern and scn), as images clipped to what they fill.  Tiling
+ * patterns, the other shadings and inline images are left out and the
+ * list says so (PDF_DISPLAY_SKIPPED).
  *
  * The content is not trusted.  Operators, operands, the q nesting, the
  * clips, the forms' nesting and the list's size are bounded; a malformed
@@ -158,6 +161,9 @@ struct content_operand {
  * would be painted with it is left out.  clips counts the clips pushed on
  * the list at this level, which its Q pops.
  *
+ * A colour may instead be a shading pattern (fill_pattern, stroke_pattern,
+ * once scn names one in the Pattern space the *_pattern_space flags mark).
+ *
  * The text state is part of the level: the font (NULL until Tf names one
  * the reader can use) and its size, the character and word spacing, the
  * horizontal scale (1 is 100%), the leading, the rise, and the rendering
@@ -173,6 +179,10 @@ struct content_state {
 	int stroke_usable;
 	double fill_alpha;
 	double stroke_alpha;
+	int fill_pattern_space;
+	int stroke_pattern_space;
+	struct pdf_object *fill_pattern;
+	struct pdf_object *stroke_pattern;
 	enum pdf_blend_mode blend;
 	double line_width;
 	int line_cap;
@@ -218,6 +228,9 @@ struct content_path {
  * does not go; ignored_saves counts q past the stack's limit, which the
  * matching Q only uncount.  scratch holds the transformed copy of a path.
  *
+ * pattern_base is the matrix of the content stream being run (the page's,
+ * or a form's), which a pattern's own matrix is relative to.
+ *
  * A text object has its text matrix and line matrix; the glyphs of its
  * strings shown in a clipping mode gather in text_clip (in the page's
  * shown space) until ET makes them the clip.
@@ -242,6 +255,7 @@ struct content_run {
 	unsigned flags;
 	struct pdf_point *scratch;
 	size_t scratch_capacity;
+	double pattern_base[6];
 	double text_matrix[6];
 	double line_matrix[6];
 	int text_clipping;
@@ -370,6 +384,11 @@ static void advance_text(struct content_run *run, double amount);
 static void paint_text(struct content_run *run, double bold);
 static void embolden_text(struct content_run *run, double width);
 static int add_text_clip(struct content_run *run);
+static int is_pattern_space(struct content_run *run, struct pdf_object *resources);
+static void set_pattern(struct content_run *run, struct pdf_object *resources, int stroke);
+static void paint_shading(struct content_run *run, struct pdf_object *resources);
+static void paint_pattern(struct content_run *run, struct pdf_object *pattern, const unsigned char *verbs, size_t verb_count, const struct pdf_point *points, size_t point_count, enum pdf_fill_rule rule, double alpha);
+static int add_shading_image(struct content_run *run, struct pdf_object *shading, const double matrix[6], const double bounds[4], double alpha);
 static int space_components(struct content_run *run, struct pdf_object *resources, int *components);
 static int device_components(const unsigned char *name, size_t length);
 static void set_color(struct content_run *run, int stroke, int components, const double *values);
@@ -446,6 +465,7 @@ pdf_page_render(
 	run->document = document;
 	run->builder = builder;
 	base_matrix(&box, run->stack[0].ctm);
+	memcpy(run->pattern_base, run->stack[0].ctm, sizeof(run->pattern_base));
 	run->stack[0].horizontal_scale = 1.0;
 	run->stack[0].fill_components = 1;
 	run->stack[0].stroke_components = 1;
@@ -850,8 +870,7 @@ execute(
 		skip_inline_image(run, lexer);
 		break;
 	case OP_SHADING:
-		/* Shadings are drawn from a later stage. */
-		run->flags |= PDF_DISPLAY_SKIPPED;
+		paint_shading(run, resources);
 		break;
 	case OP_TEXT_BEGIN:
 	case OP_TEXT_END:
@@ -968,7 +987,8 @@ execute_path(
 	/* The path being built. */
 	path = &run->path;
 
-	/* Adds to the path by the operator. */
+	/* Adds to the path by the operator; a close takes no coordinates. */
+	memset(numbers, 0, sizeof(numbers));
 	error = 0;
 	switch (code) {
 	case OP_MOVE:
@@ -1103,6 +1123,7 @@ execute_color(
 	double numbers[4];
 	int components;
 	int stroke;
+	int is_pattern;
 	int error;
 
 	/* The level in force, and whether the operator sets the stroke's colour. */
@@ -1137,6 +1158,21 @@ execute_color(
 		break;
 	case OP_SPACE_FILL:
 	case OP_SPACE_STROKE:
+		/* The Pattern space has no colour until scn names a pattern. */
+		is_pattern = is_pattern_space(run, resources);
+		if (is_pattern) {
+			if (stroke) {
+				state->stroke_usable = 0;
+				state->stroke_pattern_space = 1;
+				state->stroke_pattern = NULL;
+			} else {
+				state->fill_usable = 0;
+				state->fill_pattern_space = 1;
+				state->fill_pattern = NULL;
+			}
+			break;
+		}
+
 		/* A new space starts at its initial colour, black. */
 		error = space_components(run, resources, &components);
 		numbers[0] = 0.0;
@@ -1158,7 +1194,13 @@ execute_color(
 		break;
 	case OP_COLOR_FILL:
 	case OP_COLOR_STROKE:
-		/* The values of the space in force; a pattern's name or a wrong count is not read. */
+		/* A pattern's name in the Pattern space. */
+		if ((stroke && state->stroke_pattern_space) || (!stroke && state->fill_pattern_space)) {
+			set_pattern(run, resources, stroke);
+			break;
+		}
+
+		/* The values of the space in force; a wrong count is not read. */
 		components = state->fill_components;
 		if (stroke)
 			components = state->stroke_components;
@@ -1814,16 +1856,20 @@ set_color(
 		rgb[2] = (1.0 - clamp_unit(values[2])) * (1.0 - clamp_unit(values[3]));
 	}
 
-	/* Stores the colour and its space in the level in force. */
+	/* Stores the colour and its space in the level in force, which is no longer a pattern. */
 	state = &run->stack[run->depth];
 	if (stroke) {
 		memcpy(state->stroke, rgb, sizeof(rgb));
 		state->stroke_components = components;
 		state->stroke_usable = 1;
+		state->stroke_pattern_space = 0;
+		state->stroke_pattern = NULL;
 	} else {
 		memcpy(state->fill, rgb, sizeof(rgb));
 		state->fill_components = components;
 		state->fill_usable = 1;
+		state->fill_pattern_space = 0;
+		state->fill_pattern = NULL;
 	}
 }
 
@@ -2024,6 +2070,12 @@ fill_path(
 		return;
 	}
 
+	/* A shading pattern fills the path with its shading. */
+	if (state->fill_pattern != NULL) {
+		paint_pattern(run, state->fill_pattern, run->path.verbs, run->path.verb_count, transformed, run->path.point_count, rule, state->fill_alpha);
+		return;
+	}
+
 	/* Adds the fill. */
 	memset(&style, 0, sizeof(style));
 	style.rule = rule;
@@ -2093,6 +2145,15 @@ stroke_path(
 		free(verbs);
 		free(points);
 		stop_for(run, error);
+		return;
+	}
+
+	/* A shading pattern fills the outline with its shading. */
+	if (state->stroke_pattern != NULL) {
+		if (verb_count > 0)
+			paint_pattern(run, state->stroke_pattern, verbs, verb_count, transformed, point_count, PDF_FILL_NONZERO, state->stroke_alpha);
+		free(verbs);
+		free(points);
 		return;
 	}
 
@@ -2797,6 +2858,319 @@ add_text_clip(
 	return 0;
 }
 
+/* Tells whether the colour space the operand names is the Pattern space (by name, or a resource built on it). */
+static int
+is_pattern_space(
+	struct content_run *run,
+	struct pdf_object *resources)
+{
+	const struct content_operand *operand;
+	struct pdf_object *space;
+	struct pdf_object *family;
+	int is_name;
+	int error;
+
+	/* The name is the last operand. */
+	if (run->operand_count == 0)
+		return 0;
+	operand = &run->operands[run->operand_count - 1];
+	if (operand->type != OPERAND_NAME)
+		return 0;
+
+	/* The space's own name. */
+	if (operand->length == 7 && memcmp(operand->bytes, "Pattern", 7) == 0)
+		return 1;
+
+	/* A resource: the name /Pattern, or an array whose family is /Pattern. */
+	error = find_resource(run, resources, "ColorSpace", &space);
+	if (error != 0)
+		return 0;
+	family = space;
+	if (space->type == PDF_OBJECT_ARRAY && space->count > 0) {
+		error = pdf_reader_resolve(run->document, space->values[0], &family);
+		if (error != 0)
+			return 0;
+	}
+	is_name = pdf_object_is_name(family, "Pattern");
+	if (is_name)
+		return 1;
+
+	/* Another space. */
+	return 0;
+}
+
+/*
+ * Sets the fill or stroke colour to the pattern the last operand names: a
+ * shading pattern is drawn; a tiling pattern, and a name the resources do
+ * not have, leave the colour unusable.
+ */
+static void
+set_pattern(
+	struct content_run *run,
+	struct pdf_object *resources,
+	int stroke)
+{
+	struct content_state *state;
+	struct pdf_object *pattern;
+	struct pdf_object *type;
+	struct pdf_object *chosen;
+	int error;
+
+	/* No pattern until one is found. */
+	state = &run->stack[run->depth];
+	chosen = NULL;
+
+	/* Finds the pattern; only a shading pattern (type 2) is drawn yet. */
+	error = find_resource(run, resources, "Pattern", &pattern);
+	if (error == 0 && (pattern->type == PDF_OBJECT_DICTIONARY || pattern->type == PDF_OBJECT_STREAM)) {
+		error = pdf_reader_resolve_key(run->document, pattern, "PatternType", &type);
+		if (error == 0 && type->type == PDF_OBJECT_INTEGER && type->integer == 2)
+			chosen = pattern;
+	}
+
+	/* The colour is the pattern, usable only when it is drawn. */
+	if (stroke) {
+		state->stroke_pattern = chosen;
+		state->stroke_usable = 0;
+		if (chosen != NULL)
+			state->stroke_usable = 1;
+	} else {
+		state->fill_pattern = chosen;
+		state->fill_usable = 0;
+		if (chosen != NULL)
+			state->fill_usable = 1;
+	}
+}
+
+/*
+ * Paints the shading the operand names (sh) over the clip in force: the
+ * whole page, or the shading's /BBox on it.
+ */
+static void
+paint_shading(
+	struct content_run *run,
+	struct pdf_object *resources)
+{
+	struct content_state *state;
+	struct pdf_object *shading;
+	struct pdf_object *box_object;
+	struct pdf_object *number_object;
+	double box[4];
+	double bounds[4];
+	double x;
+	double y;
+	size_t corner;
+	size_t index;
+	int error;
+
+	/* Finds the shading; a missing one is left out. */
+	state = &run->stack[run->depth];
+	error = find_resource(run, resources, "Shading", &shading);
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return;
+	}
+
+	/* The whole page. */
+	bounds[0] = 0.0;
+	bounds[1] = 0.0;
+	bounds[2] = run->builder->list.width;
+	bounds[3] = run->builder->list.height;
+
+	/* Within the shading's box, when it has one: its corners' box on the page. */
+	error = pdf_reader_resolve_key(run->document, shading, "BBox", &box_object);
+	if (error == 0 && box_object->type == PDF_OBJECT_ARRAY && box_object->count == 4) {
+		for (index = 0; index < 4; index++) {
+			error = pdf_reader_resolve(run->document, box_object->values[index], &number_object);
+			if (error == 0)
+				error = pdf_object_number(number_object, &box[index]);
+			if (error != 0)
+				break;
+		}
+		for (corner = 0; corner < 4 && error == 0; corner++) {
+			x = box[(corner & 1) * 2];
+			y = box[1 + (corner >> 1) * 2];
+			if (corner == 0) {
+				bounds[0] = run->builder->list.width;
+				bounds[1] = run->builder->list.height;
+				bounds[2] = 0.0;
+				bounds[3] = 0.0;
+			}
+			if (state->ctm[0] * x + state->ctm[2] * y + state->ctm[4] > bounds[2])
+				bounds[2] = state->ctm[0] * x + state->ctm[2] * y + state->ctm[4];
+			if (state->ctm[0] * x + state->ctm[2] * y + state->ctm[4] < bounds[0])
+				bounds[0] = state->ctm[0] * x + state->ctm[2] * y + state->ctm[4];
+			if (state->ctm[1] * x + state->ctm[3] * y + state->ctm[5] > bounds[3])
+				bounds[3] = state->ctm[1] * x + state->ctm[3] * y + state->ctm[5];
+			if (state->ctm[1] * x + state->ctm[3] * y + state->ctm[5] < bounds[1])
+				bounds[1] = state->ctm[1] * x + state->ctm[3] * y + state->ctm[5];
+		}
+		if (bounds[0] < 0.0)
+			bounds[0] = 0.0;
+		if (bounds[1] < 0.0)
+			bounds[1] = 0.0;
+		if (bounds[2] > run->builder->list.width)
+			bounds[2] = run->builder->list.width;
+		if (bounds[3] > run->builder->list.height)
+			bounds[3] = run->builder->list.height;
+	}
+
+	/* Paints the shading in user space. */
+	error = add_shading_image(run, shading, state->ctm, bounds, state->fill_alpha);
+	if (error != 0)
+		stop_for(run, error);
+}
+
+/*
+ * Fills a path of the page with a shading pattern: the path as a clip,
+ * the pattern's shading over the path's box, and the clip's end.
+ */
+static void
+paint_pattern(
+	struct content_run *run,
+	struct pdf_object *pattern,
+	const unsigned char *verbs,
+	size_t verb_count,
+	const struct pdf_point *points,
+	size_t point_count,
+	enum pdf_fill_rule rule,
+	double alpha)
+{
+	struct pdf_display_item style;
+	struct pdf_object *matrix_object;
+	struct pdf_object *shading;
+	double matrix[6];
+	double combined[6];
+	double bounds[4];
+	size_t index;
+	int error;
+
+	/* Refuses clips nested past the limit. */
+	if (run->clip_depth >= PDF_CONTENT_CLIPS_MAX) {
+		run->flags |= PDF_DISPLAY_LIMITED;
+		return;
+	}
+
+	/* The path's box, within the page. */
+	if (point_count == 0)
+		return;
+	bounds[0] = points[0].x;
+	bounds[1] = points[0].y;
+	bounds[2] = points[0].x;
+	bounds[3] = points[0].y;
+	for (index = 1; index < point_count; index++) {
+		if (points[index].x < bounds[0])
+			bounds[0] = points[index].x;
+		if (points[index].y < bounds[1])
+			bounds[1] = points[index].y;
+		if (points[index].x > bounds[2])
+			bounds[2] = points[index].x;
+		if (points[index].y > bounds[3])
+			bounds[3] = points[index].y;
+	}
+	if (bounds[0] < 0.0)
+		bounds[0] = 0.0;
+	if (bounds[1] < 0.0)
+		bounds[1] = 0.0;
+	if (bounds[2] > run->builder->list.width)
+		bounds[2] = run->builder->list.width;
+	if (bounds[3] > run->builder->list.height)
+		bounds[3] = run->builder->list.height;
+	if (!(bounds[2] > bounds[0] && bounds[3] > bounds[1]))
+		return;
+
+	/* The pattern's matrix, relative to the content stream's own. */
+	matrix[0] = 1.0;
+	matrix[1] = 0.0;
+	matrix[2] = 0.0;
+	matrix[3] = 1.0;
+	matrix[4] = 0.0;
+	matrix[5] = 0.0;
+	error = pdf_reader_resolve_key(run->document, pattern, "Matrix", &matrix_object);
+	if (error == 0 && matrix_object->type == PDF_OBJECT_ARRAY && matrix_object->count == 6) {
+		for (index = 0; index < 6; index++) {
+			error = pdf_object_number(matrix_object->values[index], &matrix[index]);
+			if (error != 0)
+				return;
+		}
+	}
+	memcpy(combined, run->pattern_base, sizeof(combined));
+	concat_matrix(combined, matrix);
+
+	/* The pattern's shading. */
+	error = pdf_reader_resolve_key(run->document, pattern, "Shading", &shading);
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_DAMAGED;
+		return;
+	}
+
+	/* Clips to the path. */
+	memset(&style, 0, sizeof(style));
+	style.rule = rule;
+	error = pdf_display_add_path(run->builder, PDF_ITEM_CLIP_PUSH, verbs, verb_count, points, point_count, &style);
+	if (error != 0) {
+		stop_for(run, error);
+		return;
+	}
+
+	/* Paints the shading, then ends the clip. */
+	error = add_shading_image(run, shading, combined, bounds, alpha);
+	if (error != 0) {
+		stop_for(run, error);
+		return;
+	}
+	error = pdf_display_add_clip_pop(run->builder);
+	if (error != 0)
+		stop_for(run, error);
+}
+
+/*
+ * Adds a shading drawn over a region of the page as an image item; a
+ * shading the reader cannot draw is left out (only running out of memory
+ * is an error).
+ */
+static int
+add_shading_image(
+	struct content_run *run,
+	struct pdf_object *shading,
+	const double matrix[6],
+	const double bounds[4],
+	double alpha)
+{
+	struct pdf_display_item style;
+	unsigned char *pixels;
+	size_t width;
+	size_t height;
+	int error;
+
+	/* Nothing to paint in a region of no size. */
+	if (!(bounds[2] > bounds[0] && bounds[3] > bounds[1]))
+		return 0;
+
+	/* Draws the shading. */
+	memset(&style, 0, sizeof(style));
+	error = pdf_shading_image(run->document, shading, matrix, bounds, &pixels, &width, &height, style.matrix);
+	if (error == ENOMEM)
+		return ENOMEM;
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return 0;
+	}
+
+	/* Adds it as an image, smoothed, in the fill's alpha and blend mode. */
+	style.image_width = width;
+	style.image_height = height;
+	style.alpha = alpha;
+	style.blend = run->stack[run->depth].blend;
+	style.interpolate = 1;
+	error = pdf_display_add_image(run->builder, pixels, &style);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the shading is on the list. */
+	return 0;
+}
+
 /* Draws the XObject the operand names: an image, or a form's content. */
 static void
 draw_xobject(
@@ -2900,6 +3274,7 @@ run_form(
 	double matrix[6];
 	double box[4];
 	size_t data_size;
+	double saved_pattern_base[6];
 	size_t saved_base;
 	size_t saved_ignored;
 	size_t form_depth;
@@ -2980,8 +3355,10 @@ run_form(
 	run->ignored_saves = 0;
 	run->form_depth++;
 
-	/* Applies the form's matrix and clips to its bounding box. */
+	/* Applies the form's matrix, which its patterns are relative to, and clips to its bounding box. */
 	concat_matrix(run->stack[run->depth].ctm, matrix);
+	memcpy(saved_pattern_base, run->pattern_base, sizeof(saved_pattern_base));
+	memcpy(run->pattern_base, run->stack[run->depth].ctm, sizeof(run->pattern_base));
 	path_clear(run);
 	error = add_rectangle(run, box[0], box[1], box[2], box[3]);
 	if (error == 0) {
@@ -2994,6 +3371,7 @@ run_form(
 	run_content(run, data, data_size, form_resources);
 	free(owned);
 	unwind_to(run, form_depth - 1);
+	memcpy(run->pattern_base, saved_pattern_base, sizeof(run->pattern_base));
 	run->base_depth = saved_base;
 	run->ignored_saves = saved_ignored;
 	run->form_depth--;

@@ -348,7 +348,47 @@ def make_std14(path):
     finish(doc, parent, [page1], path)
 
 
+def make_shading(path):
+    doc = Document()
+    parent = doc.reserve()
+    sans = TTFont(LIBERATION + 'LiberationSans-Bold.ttf')
+    f1 = simple_font(doc, sans, b'LiberationSans-Bold', 32, b'/WinAnsiEncoding', encoding_glyphs(sans, lambda b: b.decode('cp1252')))
+    exp_rgb = doc.add(b'<< /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >>')
+    exp_rgb2 = doc.add(b'<< /FunctionType 2 /Domain [0 1] /C0 [0 0 1] /C1 [1 1 0] /N 2 >>')
+    stitch = doc.add(b'<< /FunctionType 3 /Domain [0 1] /Functions [%d 0 R %d 0 R] /Bounds [0.4] /Encode [0 1 0 1] >>' % (exp_rgb, exp_rgb2))
+    sampled = doc.stream(bytes([255, 255, 255, 0, 160, 80, 200, 0, 120, 20, 20, 60]),
+                         b' /FunctionType 0 /Domain [0 1] /Range [0 1 0 1 0 1] /Size [4] /BitsPerSample 8')
+    gray = doc.add(b'<< /FunctionType 2 /Domain [0 1] /C0 [0.95] /C1 [0.2] /N 1 >>')
+    cmyk = doc.add(b'<< /FunctionType 2 /Domain [0 1] /C0 [0 0.8 0.8 0] /C1 [0.9 0 0.2 0.1] /N 1 >>')
+    per_component = [doc.add(b'<< /FunctionType 2 /Domain [0 1] /C0 [%s] /C1 [%s] /N 1 >>' % (a, b)) for a, b in ((b'0', b'1'), (b'0.8', b'0.2'), (b'0.2', b'0.2'))]
+    s_axial = doc.add(b'<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [20 480 200 560] /Function %d 0 R /Extend [true true] >>' % exp_rgb)
+    s_radial = doc.add(b'<< /ShadingType 3 /ColorSpace /DeviceRGB /Coords [300 520 5 310 510 70] /Function %d 0 R /Extend [false true] >>' % stitch)
+    s_sampled = doc.add(b'<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [20 0 400 0] /Function %d 0 R >>' % sampled)
+    s_cmyk = doc.add(b'<< /ShadingType 2 /ColorSpace /DeviceCMYK /Coords [0 0 0 120] /Function %d 0 R /Extend [true true] >>' % cmyk)
+    s_gray = doc.add(b'<< /ShadingType 3 /ColorSpace /DeviceGray /Coords [0 0 0 0 0 1] /Function %d 0 R /Extend [true true] >>' % gray)
+    s_array = doc.add(b'<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 380 0] /Function [%d 0 R %d 0 R %d 0 R] >>' % tuple(per_component))
+    p_star = doc.add(b'<< /Type /Pattern /PatternType 2 /Shading %d 0 R /Matrix [1 0 0 1 40 300] >>' % s_cmyk)
+    p_ring = doc.add(b'<< /Type /Pattern /PatternType 2 /Shading %d 0 R /Matrix [80 0 0 80 300 350] >>' % s_gray)
+    p_text = doc.add(b'<< /Type /Pattern /PatternType 2 /Shading %d 0 R /Matrix [1 0 0 1 20 150] >>' % s_array)
+    content = b''.join([
+        b'1 g 0 0 420 595 re f\n',
+        b'q 20 470 180 100 re W n /Sh1 sh Q\n',
+        b'q 220 440 180 150 re W n /Sh2 sh Q\n',
+        b'q 20 400 380 40 re W n 0 -10 m /Sh3 sh Q\n',
+        b'/Pattern cs /P1 scn 100 390 m 124 318 l 200 318 l 138 274 l 162 202 l 100 246 l 38 202 l 62 274 l 0 318 l 76 318 l h f\n',
+        b'/Pattern CS /P2 SCN 18 w 300 350 m 300 394 264 430 220 430 c S\n',
+        b'q 0 0 0 rg 280 250 120 60 re f /GS1 gs /Pattern cs /P2 scn 290 260 100 40 re f Q\n',
+        b'BT /F1 44 Tf /Pattern cs /P3 scn 20 150 Td (Shaded text) Tj ET\n',
+        b'BT /F1 44 Tf /Pattern CS /P1 SCN 2 w 1 Tr 20 80 Td (Outline) Tj ET\n',
+    ])
+    resources = (b' /Shading << /Sh1 %d 0 R /Sh2 %d 0 R /Sh3 %d 0 R >> /Pattern << /P1 %d 0 R /P2 %d 0 R /P3 %d 0 R >>'
+                 b' /ExtGState << /GS1 << /ca 0.6 >> >>' % (s_axial, s_radial, s_sampled, p_star, p_ring, p_text))
+    page1 = page(doc, parent, content, [(b'F1', f1)], resources)
+    finish(doc, parent, [page1], path)
+
+
 outdir = sys.argv[1]
+make_shading(outdir + '/shading.pdf')
 make_simple(outdir + '/text-simple.pdf')
 make_cid(outdir + '/text-cid.pdf')
 make_std14(outdir + '/text-std14.pdf')

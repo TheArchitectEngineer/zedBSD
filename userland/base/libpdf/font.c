@@ -237,7 +237,6 @@ pdf_font_get(
 	struct pdf_object *dictionary,
 	struct pdf_font **font)
 {
-	struct pdf_font_cache **cache_slot;
 	struct pdf_font_cache *cache;
 	struct pdf_font *found;
 	struct pdf_font *created;
@@ -249,14 +248,14 @@ pdf_font_get(
 	if (dictionary->type != PDF_OBJECT_DICTIONARY)
 		return PDF_EFORMAT;
 
-	/* Finds the document's font cache, making it the first time. */
-	cache_slot = pdf_reader_font_cache(document);
-	if (*cache_slot == NULL) {
-		*cache_slot = calloc(1, sizeof(**cache_slot));
-		if (*cache_slot == NULL)
+	/* Finds the document's font cache, making it the first time; the document frees it. */
+	cache = pdf_reader_font_cache(document);
+	if (cache == NULL) {
+		cache = calloc(1, sizeof(*cache));
+		if (cache == NULL)
 			return ENOMEM;
+		pdf_reader_set_font_cache(document, cache, pdf_font_cache_free);
 	}
-	cache = *cache_slot;
 
 	/* Answers from a font the document already read. */
 	for (found = cache->fonts; found != NULL; found = found->next) {

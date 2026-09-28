@@ -13,7 +13,10 @@ cc=${CC:-cc}
 mkdir -p "$out/include"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
-sources="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c userland/base/libpdf/reader.c"
+ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
+# ws079-p007: the reader decodes cross-reference and object streams through filter.c and libz-compat.
+sources="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c userland/base/libpdf/reader.c
+	userland/base/libpdf/filter.c"
 for variant in plain asan ubsan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
 	if [ "$variant" = asan ]; then
@@ -24,7 +27,12 @@ for variant in plain asan ubsan; do
 	fi
 	# The C library's SHA-256 uses long long constants, which C89 does not have.
 	"$cc" $(echo "$flags" | sed 's/-std=c89 -pedantic/-std=gnu99/') -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
-	"$cc" $flags $sources plan/ws079/tests/host-pdf-reader.c "$out/sha2-$variant.o" -lm -o "$out/host-pdf-reader-$variant"
+	zlib=
+	for file in userland/base/libz-compat/*.c; do
+		"$cc" $(echo "$flags" | sed 's/-std=c89 -pedantic/-std=gnu99/; s/-Werror//') -w -I"$(dirname "$file")" -c "$file" -o "$out/z-$(basename "$file" .c)-$variant.o"
+		zlib="$zlib $out/z-$(basename "$file" .c)-$variant.o"
+	done
+	"$cc" $flags $sources plan/ws079/tests/host-pdf-reader.c "$out/sha2-$variant.o" $zlib -lm -o "$out/host-pdf-reader-$variant"
 	/usr/bin/time -f "$variant: %e s, %M KiB" "$out/host-pdf-reader-$variant" "$out/reader-$variant.pdf" \
 	    > "$out/reader-$variant.log"
 	cat "$out/reader-$variant.log"

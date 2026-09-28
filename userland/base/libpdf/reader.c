@@ -152,7 +152,8 @@ struct pdf_object_stream {
  * sorted by object number once they are all read, with one entry per
  * number.  null_object stands for every missing object.  mark numbers the
  * current tree walk and only grows.  fonts holds the fonts the pages'
- * text has used (font.c), NULL until the first.
+ * text has used, NULL until the first; the font reader (font.c) leaves
+ * release to free them, so that the reader does not depend on it.
  */
 struct pdf_document {
 	unsigned char *data;
@@ -173,6 +174,7 @@ struct pdf_document {
 	time_t creation_time;
 	time_t modification_time;
 	struct pdf_font_cache *fonts;
+	void (*release_fonts)(struct pdf_font_cache *cache);
 	struct pdf_object_stream *object_streams;
 	size_t object_streams_size;
 };
@@ -312,7 +314,8 @@ pdf_document_close(
 		return;
 
 	/* Frees the fonts, the object streams, the objects, the tables, the bytes and the document. */
-	pdf_font_cache_free(document->fonts);
+	if (document->release_fonts != NULL)
+		document->release_fonts(document->fonts);
 	free_object_streams(document);
 	pdf_arena_free(&document->arena);
 	free(document->entries);
@@ -671,15 +674,30 @@ pdf_reader_bytes(
 }
 
 /*
- * Reports where a document keeps its fonts, for the font reader (NULL
- * until the first font is read).
+ * Reports the fonts a document keeps, for the font reader (NULL until the
+ * first font is read).
  */
-struct pdf_font_cache **
+struct pdf_font_cache *
 pdf_reader_font_cache(
 	struct pdf_document *document)
 {
-	/* The document's own slot. */
-	return &document->fonts;
+	/* The document's fonts. */
+	return document->fonts;
+}
+
+/*
+ * Gives a document the fonts it keeps until it is closed, and the call
+ * that frees them then.
+ */
+void
+pdf_reader_set_font_cache(
+	struct pdf_document *document,
+	struct pdf_font_cache *cache,
+	void (*release)(struct pdf_font_cache *cache))
+{
+	/* The document owns the fonts from here on. */
+	document->fonts = cache;
+	document->release_fonts = release;
 }
 
 /*

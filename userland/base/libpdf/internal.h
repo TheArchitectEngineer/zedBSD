@@ -270,6 +270,10 @@ int pdf_font_vertical(const struct pdf_font *font);
 size_t pdf_font_next_code(const struct pdf_font *font, const unsigned char *bytes, size_t length, unsigned *code, int *single_byte);
 int pdf_font_glyph(struct pdf_font *font, unsigned code, struct pdf_glyph *glyph);
 unsigned pdf_glyph_name_unicode(const unsigned char *name, size_t length);
-struct pdf_font_cache **pdf_reader_font_cache(struct pdf_document *document);
+struct pdf_font_cache *pdf_reader_font_cache(struct pdf_document *document);
+
+/* The smooth shadings (shading.c): a shading drawn into an image over a region of the page. */
+int pdf_shading_image(struct pdf_document *document, struct pdf_object *object, const double matrix[6], const double bounds[4], unsigned char **pixels, size_t *width, size_t *height, double placement[6]);
+void pdf_reader_set_font_cache(struct pdf_document *document, struct pdf_font_cache *cache, void (*release)(struct pdf_font_cache *cache));
 
 #endif /* LIBPDF_INTERNAL_H */
