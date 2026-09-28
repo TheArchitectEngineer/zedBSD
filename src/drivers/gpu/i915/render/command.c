@@ -1474,13 +1474,15 @@ i915_record_bind_descriptor_sets(
 }
 
 /*
- * Gives each dynamic uniform buffer of the bound sets its dynamic offset.
+ * Gives each dynamic uniform or storage buffer of the bound sets its dynamic
+ * offset.
  *
  * Vulkan takes the offsets in the order of the sets, and within a set in the
- * order of the binding numbers.  The sets' operations are the set_count
- * ones from place first_op of the command buffer's list.  Returns EINVAL
- * when the offsets and the dynamic uniform buffers do not pair up.  XXX: a binding holds one
- * descriptor, so an array of dynamic buffers takes one offset.
+ * order of the binding numbers, uniform and storage buffers alike.  The sets'
+ * operations are the set_count ones from place first_op of the command
+ * buffer's list.  Returns EINVAL when the offsets and the dynamic buffers do
+ * not pair up.  XXX: a binding holds one descriptor, so an array of dynamic
+ * buffers takes one offset.
  */
 static int
 i915_record_dynamic_offsets(
@@ -1497,6 +1499,7 @@ i915_record_dynamic_offsets(
 	uint32_t entry;
 	uint32_t next;
 	uint32_t count;
+	uint32_t type;
 
 	/* Walks the sets in order and each set's bindings by number. */
 	next = 0U;
@@ -1509,25 +1512,27 @@ i915_record_dynamic_offsets(
 		if (layout == NULL)
 			continue;
 
-		/* Gives each dynamic uniform buffer, lowest binding number first, the next offset. */
+		/* Gives each dynamic buffer, lowest binding number first, the next offset. */
 		for (binding = 0U; binding < I915_GFX_MAX_BINDINGS; binding++) {
 			for (entry = 0U; entry < layout->count; entry++) {
-				/* Only the layout's dynamic uniform buffer of this number takes an offset. */
+				/* Only the layout's dynamic uniform or storage buffer of this number takes an offset. */
 				if (layout->bindings[entry].binding != binding)
 					continue;
-				if (layout->bindings[entry].type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+				type = layout->bindings[entry].type;
+				if (type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC &&
+				    type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
 					continue;
 
 				/* Refuses a bind with fewer offsets than dynamic buffers. */
 				if (next >= offset_count) {
-					kern_logf("i915: vk: vkCmdBindDescriptorSets: %u dynamic offsets for more dynamic uniform buffers\n", offset_count);
+					kern_logf("i915: vk: vkCmdBindDescriptorSets: %u dynamic offsets for more dynamic buffers\n", offset_count);
 					return EINVAL;
 				}
 
 				/* Refuses more dynamic buffers in one set than a bind keeps. */
 				count = op->u.descriptor.dynamic_count;
 				if (count >= I915_GFX_MAX_DYNAMIC_BUFFERS) {
-					kern_logf("i915: vk: XXX vkCmdBindDescriptorSets: more than %u dynamic uniform buffers in one set\n",
+					kern_logf("i915: vk: XXX vkCmdBindDescriptorSets: more than %u dynamic buffers in one set\n",
 						  I915_GFX_MAX_DYNAMIC_BUFFERS);
 					return ENOTSUP;
 				}
@@ -1543,11 +1548,11 @@ i915_record_dynamic_offsets(
 
 	/* Refuses a bind with more offsets than dynamic buffers. */
 	if (next != offset_count) {
-		kern_logf("i915: vk: vkCmdBindDescriptorSets: %u dynamic offsets for %u dynamic uniform buffers\n", offset_count, next);
+		kern_logf("i915: vk: vkCmdBindDescriptorSets: %u dynamic offsets for %u dynamic buffers\n", offset_count, next);
 		return EINVAL;
 	}
 
-	/* Succeeded: every dynamic uniform buffer has its offset. */
+	/* Succeeded: every dynamic buffer has its offset. */
 	return 0;
 }
 

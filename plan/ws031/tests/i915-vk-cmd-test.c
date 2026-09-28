@@ -87,6 +87,15 @@ kern_pmem_to_kernel(hal_physaddr_t address)
 	return (void *)(uintptr_t)address;
 }
 
+/* The vertex fetcher's format table stand-in (state.c is not in this fixture): 32-bit floats only. */
+int
+drv_i915_gfx_vertex_format_supported(uint32_t format)
+{
+	if (format == VK_FORMAT_R32_SFLOAT || format == VK_FORMAT_R32G32B32A32_SFLOAT)
+		return 1;
+	return 0;
+}
+
 /* The graphics path stand-ins: each claims one opcode and records that it did. */
 static uint32_t gfx_obj_opcode = UINT32_MAX;
 static uint32_t gfx_rec_opcode = UINT32_MAX;

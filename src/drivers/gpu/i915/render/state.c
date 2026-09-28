@@ -330,6 +330,30 @@ static uint64_t i915_state_scratch(uint32_t per_thread_bytes, uint64_t offset);
 static uint32_t i915_state_binding_instanced(const struct i915_gfx_pipeline *pipeline, uint32_t binding);
 
 /*
+ * Reports whether the vertex fetcher reads a format.
+ *
+ * The device's format properties claim the vertex buffer feature for these
+ * formats, so a client binds its buffer objects as they are instead of
+ * copying the vertices out of its own bytes first.  Returns 1 for a format
+ * in the fetcher's table and 0 for any other.
+ */
+int
+drv_i915_gfx_vertex_format_supported(
+	uint32_t format)
+{
+	const struct i915_gfx_vertex_format *entry;
+	int error;
+
+	/* Looks the format up in the fetcher's table. */
+	error = i915_vertex_format(format, &entry);
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: the fetcher reads the format. */
+	return 1;
+}
+
+/*
  * Writes everything a draw's batch points at into its slot of the state
  * object.
  *
@@ -2133,7 +2157,7 @@ i915_state_write_surfaces(
 	return 0;
 }
 
-/* Finds the dynamic offset the bind of a set gave the dynamic uniform buffer at a binding; 0 for none. */
+/* Finds the dynamic offset the bind of a set gave the dynamic uniform or storage buffer at a binding; 0 for none. */
 static uint32_t
 i915_state_dynamic_offset(
 	const struct i915_gfx_draw_state *state,
@@ -2334,7 +2358,7 @@ i915_state_write_push(
 			return EINVAL;
 		}
 
-		/* The descriptor's offset, moved by the bind's dynamic offset for a dynamic uniform buffer. */
+		/* The descriptor's offset, moved by the bind's dynamic offset for a dynamic uniform or storage buffer. */
 		descriptor_offset = set->slots[block->binding].offset;
 		if (set->slots[block->binding].dynamic != 0)
 			descriptor_offset += i915_state_dynamic_offset(state, block->set, block->binding);
