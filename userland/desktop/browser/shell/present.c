@@ -6,8 +6,12 @@
  */
 
 /*
- * The presenter: the page drawn by the GPU renderer straight into the
- * window's swapchain images, with standard Vulkan and Wayland WSI.
+ * The presenter: the window's swapchain and the synchronization of its
+ * frames, with standard Vulkan and Wayland WSI.  The view draws the page:
+ * the presenter lends it the device, and each frame it acquires an image,
+ * has the view record the drawing into the frame's command buffer
+ * (browser_view_record), submits it and presents the image
+ * (ws074-p055, the render target of plan/ws074/design.md §19).
  *
  * The same way of opening the device and the swapchain as files'
  * presenter, but where the file manager copies a CPU canvas onto the image,
@@ -16,6 +20,7 @@
 
 #include "shell/internal.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -29,20 +34,25 @@ static VkResult present_device(struct shell_present *present);
 static VkResult present_swapchain(struct shell_present *present, uint32_t width, uint32_t height, VkSwapchainKHR old);
 static VkResult present_targets(struct shell_present *present);
 static void present_targets_free(struct shell_present *present);
+static VkResult present_commands(struct shell_present *present);
+static VkResult present_wait(struct shell_present *present);
 
 /*
  * Makes the Vulkan objects of the window: the instance and surface, the
- * device, the swapchain and the GPU renderer that draws into it.
+ * device (lent to the view, which draws with it), the swapchain, and the
+ * frame's command buffer.
  */
 VkResult
 shell_present_open(
 	struct shell_present *present,
-	struct shell_window *window)
+	struct shell_window *window,
+	struct browser_view *view)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
 	VkWaylandSurfaceCreateInfoKHR surface;
 	VkSemaphoreCreateInfo semaphore;
+	struct browser_gpu gpu;
 	const char *extensions[2];
 	VkResult error;
 
@@ -86,23 +96,13 @@ shell_present_open(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The GPU renderer, drawing images that are then presented. */
-	error = paint_gpu_open(
-		&present->gpu,
-		present->instance,
-		present->physical,
-		present->family,
-		present->device,
-		present->format,
-		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-	present->gpu_open = 1;
-	if (error != VK_SUCCESS) {
-		present->operation = present->gpu.operation;
-		return error;
-	}
-
-	/* A framebuffer for each swapchain image, in the renderer's pass. */
+	/* A view and a present semaphore for each swapchain image. */
 	error = present_targets(present);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The command buffer each frame is recorded into, and its fence. */
+	error = present_commands(present);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -114,16 +114,25 @@ shell_present_open(
 	if (error != VK_SUCCESS)
 		return error;
 
+	/* The view draws with the device from now on. */
+	gpu.instance = present->instance;
+	gpu.physical = present->physical;
+	gpu.device = present->device;
+	gpu.queue_family = present->family;
+	browser_view_set_gpu(view, &gpu);
+
 	/* Succeeded: pages can be shown. */
 	return VK_SUCCESS;
 }
 
 /*
- * Replaces the swapchain with one of a new size.
+ * Replaces the swapchain with one of a new size (the view forgets the
+ * framebuffers it made over the old images).
  */
 VkResult
 shell_present_resize(
 	struct shell_present *present,
+	struct browser_view *view,
 	uint32_t width,
 	uint32_t height)
 {
@@ -135,8 +144,10 @@ shell_present_resize(
 	error = vkDeviceWaitIdle(present->device);
 	if (error != VK_SUCCESS)
 		return error;
+	present->in_flight = 0;
 
-	/* The old targets go, and the new chain replaces the old one. */
+	/* The view's framebuffers over the old images go, then the images' views, and the new chain replaces the old one. */
+	browser_view_release_targets(view);
 	present_targets_free(present);
 	old = present->swapchain;
 	present->swapchain = VK_NULL_HANDLE;
@@ -145,7 +156,7 @@ shell_present_resize(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Framebuffers for the new images. */
+	/* Views and semaphores for the new images. */
 	error = present_targets(present);
 	if (error != VK_SUCCESS)
 		return error;
@@ -155,8 +166,10 @@ shell_present_resize(
 }
 
 /*
- * Draws a display list, scrolled up by scroll_y, into the next swapchain
- * image and presents it.
+ * Shows the view in the next swapchain image: once the last frame has
+ * finished, the image is acquired, the view records its drawing into the
+ * frame's command buffer, and the buffer is submitted and the image
+ * presented.
  *
  * Returns VK_ERROR_OUT_OF_DATE_KHR when the swapchain no longer matches
  * the window; the caller resizes and draws again.
@@ -164,13 +177,22 @@ shell_present_resize(
 VkResult
 shell_present_frame(
 	struct shell_present *present,
-	const struct paint_list *list,
-	struct text_system *text,
-	layout_unit scroll_y)
+	struct browser_view *view)
 {
+	VkCommandBufferBeginInfo begin;
+	struct browser_target target;
+	struct browser_gpu_failure failure;
+	VkPipelineStageFlags stage;
 	VkPresentInfoKHR info;
+	VkSubmitInfo submit;
 	uint32_t image;
 	VkResult error;
+	int status;
+
+	/* The last frame's work, which used the view's instances and atlas and this command buffer, has finished. */
+	error = present_wait(present);
+	if (error != VK_SUCCESS)
+		return error;
 
 	/* The image to draw into, once the compositor has given one back. */
 	present->operation = "vkAcquireNextImageKHR";
@@ -178,20 +200,65 @@ shell_present_frame(
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 
-	/* Draws the page into it after the acquire, signalling the image's present semaphore. */
-	error = paint_gpu_draw(
-		&present->gpu,
-		list,
-		text,
-		scroll_y,
-		present->targets[image].framebuffer,
-		present->extent,
-		present->acquired,
-		present->targets[image].rendered);
-	if (error != VK_SUCCESS) {
-		present->operation = present->gpu.operation;
+	/* The frame's command buffer, started over. */
+	present->operation = "vkResetCommandBuffer";
+	error = vkResetCommandBuffer(present->command, 0U);
+	if (error != VK_SUCCESS)
 		return error;
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	present->operation = "vkBeginCommandBuffer";
+	error = vkBeginCommandBuffer(present->command, &begin);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The view's drawing of the page into the image, left ready to present. */
+	target.image = present->targets[image].image;
+	target.view = present->targets[image].view;
+	target.format = present->format;
+	target.new_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	target.width = present->extent.width;
+	target.height = present->extent.height;
+	status = browser_view_record(view, &target, present->command);
+	if (status != 0) {
+		browser_view_gpu_failure(view, &failure);
+		present->operation = "browser_view_record";
+		if (failure.operation != NULL)
+			present->operation = failure.operation;
+		if (status == EIO)
+			return failure.result;
+		return VK_ERROR_INITIALIZATION_FAILED;
 	}
+
+	/* The recording ends. */
+	present->operation = "vkEndCommandBuffer";
+	error = vkEndCommandBuffer(present->command);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Submitted after the acquire, signalling the image's present semaphore and the frame's fence. */
+	present->operation = "vkResetFences";
+	error = vkResetFences(present->device, 1U, &present->fence);
+	if (error != VK_SUCCESS)
+		return error;
+	stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.waitSemaphoreCount = 1U;
+	submit.pWaitSemaphores = &present->acquired;
+	submit.pWaitDstStageMask = &stage;
+	submit.commandBufferCount = 1U;
+	submit.pCommandBuffers = &present->command;
+	submit.signalSemaphoreCount = 1U;
+	submit.pSignalSemaphores = &present->targets[image].rendered;
+	present->operation = "vkQueueSubmit";
+	error = vkQueueSubmit(present->queue, 1U, &submit, present->fence);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The frame runs; the next one waits for its fence first. */
+	present->in_flight = 1;
 
 	/* Presents the image to the window. */
 	memset(&info, 0, sizeof(info));
@@ -211,20 +278,27 @@ shell_present_frame(
 }
 
 /*
- * Releases every Vulkan object, children before their parents.
+ * Releases every Vulkan object, children before their parents: the view
+ * lets the device go first.
  */
 void
 shell_present_close(
-	struct shell_present *present)
+	struct shell_present *present,
+	struct browser_view *view)
 {
 	/* The device's objects, once nothing runs. */
 	if (present->device != VK_NULL_HANDLE) {
 		(void)vkDeviceWaitIdle(present->device);
+
+		/* The view's renderer and framebuffers on the device, then the images' views. */
+		browser_view_set_gpu(view, NULL);
 		present_targets_free(present);
 
-		/* The renderer's objects (it does not own the device). */
-		if (present->gpu_open)
-			paint_gpu_close(&present->gpu);
+		/* The frame's commands and fence. */
+		if (present->pool != VK_NULL_HANDLE)
+			vkDestroyCommandPool(present->device, present->pool, NULL);
+		if (present->fence != VK_NULL_HANDLE)
+			vkDestroyFence(present->device, present->fence, NULL);
 
 		/* The acquire semaphore, the swapchain and the device itself. */
 		if (present->acquired != VK_NULL_HANDLE)
@@ -432,14 +506,13 @@ present_swapchain(
 	return VK_SUCCESS;
 }
 
-/* Makes a view, a framebuffer and a present semaphore for each swapchain image. */
+/* Makes a view and a present semaphore for each swapchain image (the view makes its framebuffers over them). */
 static VkResult
 present_targets(
 	struct shell_present *present)
 {
 	VkImage images[PRESENT_IMAGES_MAX];
 	VkImageViewCreateInfo view;
-	VkFramebufferCreateInfo framebuffer;
 	VkSemaphoreCreateInfo semaphore;
 	uint32_t index;
 	VkResult error;
@@ -475,20 +548,6 @@ present_targets(
 		if (error != VK_SUCCESS)
 			return error;
 
-		/* The framebuffer over it, in the renderer's pass. */
-		memset(&framebuffer, 0, sizeof(framebuffer));
-		framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebuffer.renderPass = present->gpu.pass;
-		framebuffer.attachmentCount = 1U;
-		framebuffer.pAttachments = &present->targets[index].view;
-		framebuffer.width = present->extent.width;
-		framebuffer.height = present->extent.height;
-		framebuffer.layers = 1U;
-		present->operation = "vkCreateFramebuffer";
-		error = vkCreateFramebuffer(present->device, &framebuffer, NULL, &present->targets[index].framebuffer);
-		if (error != VK_SUCCESS)
-			return error;
-
 		/* The semaphore its present waits for. */
 		memset(&semaphore, 0, sizeof(semaphore));
 		semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -509,12 +568,10 @@ present_targets_free(
 {
 	uint32_t index;
 
-	/* Each image's semaphore, framebuffer and view, where made. */
+	/* Each image's semaphore and view, where made. */
 	for (index = 0U; present->targets != NULL && index < present->count; index++) {
 		if (present->targets[index].rendered != VK_NULL_HANDLE)
 			vkDestroySemaphore(present->device, present->targets[index].rendered, NULL);
-		if (present->targets[index].framebuffer != VK_NULL_HANDLE)
-			vkDestroyFramebuffer(present->device, present->targets[index].framebuffer, NULL);
 		if (present->targets[index].view != VK_NULL_HANDLE)
 			vkDestroyImageView(present->device, present->targets[index].view, NULL);
 	}
@@ -523,4 +580,69 @@ present_targets_free(
 	free(present->targets);
 	present->targets = NULL;
 	present->count = 0U;
+}
+
+/* Makes the command pool and the one buffer each frame is recorded into, and the fence its submission signals. */
+static VkResult
+present_commands(
+	struct shell_present *present)
+{
+	VkCommandPoolCreateInfo pool;
+	VkCommandBufferAllocateInfo command;
+	VkFenceCreateInfo fence;
+	VkResult error;
+
+	/* A pool whose one buffer is reset every frame. */
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool.queueFamilyIndex = present->family;
+	present->operation = "vkCreateCommandPool";
+	error = vkCreateCommandPool(present->device, &pool, NULL, &present->pool);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The buffer. */
+	memset(&command, 0, sizeof(command));
+	command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	command.commandPool = present->pool;
+	command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	command.commandBufferCount = 1U;
+	present->operation = "vkAllocateCommandBuffers";
+	error = vkAllocateCommandBuffers(present->device, &command, &present->command);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The fence the frame's submission signals. */
+	memset(&fence, 0, sizeof(fence));
+	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	present->operation = "vkCreateFence";
+	error = vkCreateFence(present->device, &fence, NULL, &present->fence);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: frames can be recorded. */
+	return VK_SUCCESS;
+}
+
+/* Waits for the frame submitted last, if one may still run. */
+static VkResult
+present_wait(
+	struct shell_present *present)
+{
+	VkResult error;
+
+	/* No frame runs. */
+	if (!present->in_flight)
+		return VK_SUCCESS;
+
+	/* Its fence. */
+	present->operation = "vkWaitForFences";
+	error = vkWaitForFences(present->device, 1U, &present->fence, VK_TRUE, PRESENT_TIMEOUT);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the frame has finished. */
+	present->in_flight = 0;
+	return VK_SUCCESS;
 }

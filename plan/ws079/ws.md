@@ -40,6 +40,15 @@ libtruetypeにはアウトラインを返すAPIを追加しましょう。」
 - 注意: 新しい worktree で desktop の image を build すると、guest の config が host の LLVM（lldb 付き）を共有の `build/llvm` へ install しようと
   することがある（p004 の agent が install の前に止めた）。worktree の build/llvm の symlink の扱いを次の周期に確かめる。
 
+2026-09-28 ユーザー:「ウィンドウのフローティングタイトルバーを二本指でタッチする（叩く）と、Zオーダーが後ろに回って奥に行き、次のウィンドウが表示されるようにしたいです。」
+→ p012（kernel の multitouch）と p013（compositor の touch と二本指のタップ）。今の kernel は指の collection を無視し、compositor には wl_touch が無い。
+touch の LCD の USB はまだ見えていない（H1）ので、QEMU の注入の device で先に作る。
+同日のユーザー:「2本指でタッチというより、2本指で軽く短く上方向こすって、「あっちにいけ」というジェスチャー、というのがいいですね。とりあえず3回クリックで実装しつつ、マルチタッチが実現したら実装しましょう。」
+同日のユーザー:「では、マウスで3回クリックすると同じ動作にしましょう。」→ 浮いたタイトルバーの mouse の triple click でも同じ（窓を後ろへ）。
+main の注意: タイトルバーの double click は今ドッキング（ws035-p062）なので、triple click を見分けるために double click の動作を
+click の間隔の上限（今の double click の 400 ms）まで待たせる（ドッキングがその分遅れる）。triple click は p013 で compositor と一緒に作るが、
+mouse の部分は touch を待たずに先に入れてよい。
+
 ## 完了の条件（案、p001 で確定）
 
 1. 画面の上の右端から左下へのスワイプ（pointer の drag と、ペン・touch があればそれも）で Notes が起動する。起動済みなら最前面に出て全画面になる。
@@ -65,8 +74,11 @@ libtruetypeにはアウトラインを返すAPIを追加しましょう。」
 | [ws079-p003](phase003/phase.md) | compositor: `zwp_tablet_manager_v2`（pad なし）と tablet を bind しない client への pointer の fallback | in-progress（2026-09-28 subagent: p002 の注入の device を guest で確認（peninject を userland/base/tests へ、15 件の拒否の確認）。compositor の `tablet.c`・seat.c の shell/配送の分割・libwayland の `tablet-protocol.c`・`tablet-probe` を実装し、QEMU の Venus で tablet・fallback・App Home・terminal の選択と貼り付け・p076 の回帰まで PASS。実機は未実施。clearance は main の判断） | p001、p002 |
 | [ws079-p010](phase010/phase.md) | compositor: 上の右端からのスワイプ（design-input-notes §4）で Notes を起動・最前面・全画面、端のジェスチャーの整理（同文書の追記） | cleared（pointer の範囲、2026-09-28、QEMU。pen の接続は p003 の後、本物の Notes は p005 の後） | p003（pen の部分だけ） |
 | [ws079-p004](phase004/phase.md) | libpdf: 書き出し（page、ベクタの path、画像、編集の metadata）と自分の形式の読み込み | cleared（2026-09-28: writer・画像・/ID・日付、`pdf_outline_stroke()` の Catmull-Rom の平滑化と丸い join、自分の形式の読み込み（page・箱・content の SHA-256・添付・ID・日付）、host 試験（ASan/UBSan・破壊 60,000 回・qpdf）、amd64・pcat・rpi4 の `libpdf.so` warning 0。disk image の全体の build は未実施） | p001 |
-| ws079-p005 | Notes v1: 筆圧の線・消しゴム・page・undo・PDF の保存と再編集 | planning | p003、p004 |
-| ws079-p006 | libpdf の読み込み ① と PDF Viewer v1（scroll と page の swipe、Notes で書き込み） | planning | p004 |
+| [ws079-p005](phase005/phase.md) | Notes v1: 筆圧の線・消しゴム・page・undo・PDF の保存と再編集 | cleared（v1 の一通り、2026-09-28、QEMU と host。pen は p003 の tablet で。自動保存 5 秒・journal・Ctrl+N は新しい page。残り: Ctrl+O の選択、他の PDF の背景、部分の消しゴム、描画の cache、PDF の中の名前） | p003、p004 |
+| [ws079-p006](phase006/phase.md) | libpdf の読み込み ① と PDF Viewer v1（scroll と page の swipe、Notes で書き込み） | cleared（2026-09-28、QEMU（Venus）と host。libpdf の display list・stroker・CPU rasterizer（pdftoppm と比較）、PDF Viewer v1（CPU の raster を Vulkan で表示）、App Home・Files の Open With。libc の qsort が O(n²) の発見。実機・image の build は未実施） | p004 |
 | ws079-p007 | 段階 ②: 一般の PDF の図形・画像（DCT は libjpeg-compat、Flate は libz-compat）・埋め込みの TrueType（libtruetype） | planning | p006 |
 | ws079-p008 | 段階 ③: CFF・Type1・暗号化など | planning | p007 |
+| ws079-p012 | kernel の multitouch: USB HID の digitizer の指の collection（Contact ID・Tip Switch・X/Y・Contact Count）→ `ABS_MT_SLOT`・`ABS_MT_TRACKING_ID`・`ABS_MT_POSITION_X/Y`・`BTN_TOUCH`、注入の device の touch の種類（試験用） | planning | p002 |
+| ws079-p013 | compositor の touch: client への `wl_touch`、touch の接触を端のジェスチャー（p010 の `zwl_corner_contact_*` と Home・Wiseview）へ、**浮いたタイトルバーの上で二本指を軽く短く上へこする（「あっちにいけ」）と窓を z-order の後ろへ回し、次の窓を前に**（2026-09-28 ユーザー。タップから訂正） | planning | p012、p003 |
+| ws079-p014 | Notes で他の PDF に書き込む: 自前の編集の data の無い PDF・他で変わった page を背景（`pdf_page_render`・`pdf_display_list_rasterize`）にして上に線を足し、保存は増分の更新（PDF Viewer の Annotate in Notes の本来の動き） | planning | p005、p006 |
 | ws079-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |

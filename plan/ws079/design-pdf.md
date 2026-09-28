@@ -185,3 +185,10 @@ p004 の読み込みの決まり（`reader.c`・`object.c`）:
   `pdf_writer_get_page_content_hash()`。
 - 残り: なし（p004 の範囲）。xref stream・object stream・filter は p006・p007。
 - main の決定（2026-09-28）: header は `include/libc/pdf.h` のまま、stream は無圧縮（deflate は Future Work）、段階 ② の glyph は p007 で決める。
+
+## 8. p006 の状態（2026-09-28）
+
+経過と確認は [phase006/phase.md](phase006/phase.md) が正本。§4 の構成のうち `content.c`（`gstate.c` は分けず content.c の中）・`filter.c`（Flate と
+predictor、ASCIIHex）・`display.c`・画像（`image.c`）・stroker（`stroke.c`）を作り、§4.1 の display list を `pdf_page_render()` で返す。§4.1 の
+`pdf_path_flatten()` は作らず、代わりに CPU の rasterizer `pdf_display_list_rasterize()`（`raster.c`）を足した（PDF Viewer v1 と試験が使う。GPU で描く
+program は display list を自分で描く）。libpdf の依存に libz-compat と libjpeg-compat が加わった。
