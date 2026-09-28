@@ -153,3 +153,14 @@ void pdf_document_close(struct pdf_document *document);
 1. header の置き場所を `include/libc/pdf.h`（truetype.h・keiland.h と同じ直下）にした。main の例の `include/libc/pdf/pdf.h` にする理由があれば変える。
 2. 段階 ② の glyph: libtruetype に輪郭の API を足すか（別の WS/Phase か p007 の範囲）、libpdf が bitmap の item を持つか。
 3. deflate: 保存の圧縮に libz-compat の deflate が要る。無圧縮のまま進め、deflate は Future Work に置くか。
+
+## 7. p004 の着手の状態（2026-09-28、未完）
+
+- 済み（host で確認）: `include/libc/pdf.h`、`userland/base/libpdf/writer.c`（文書・page・fill の path・色・`ca` の ExtGState・埋め込み file・
+  classic xref）、`exports.map`、試験 `plan/ws079/tests/run-pdf-writer.sh`（host の cc で `-std=c89 -pedantic -Werror`、plain と ASan/UBSan、
+  `qpdf --check` で誤り無し、`pdfinfo` で 2 page・A4、`qpdf --show-attachment` で埋め込みの bytes が一致、`pdftoppm` で y 下向きと半透明の重なりを目視）。
+- 未 build: package の登録（`userland/base/libpdf/Makefile`、platform `*`）と 4 platform（amd64・arm64・pcat・pc98）の `libpdf.so` の link の規則は
+  `plan/ws079/wip.patch` に置いた。再開: `git apply plan/ws079/wip.patch` → 各 platform の `make -j16`（warning 0）で `build/<platform>/dynamic/libpdf.so`
+  ができることを確かめる。sparcv9・x68k は libjpeg-compat と同じく規則を持たない（platform `*` がそこで問題にならないかも確かめる）。
+- 残り（p004）: trailer の `/ID`、`/Info` の日付、画像の XObject、`pdf_outline_stroke()`、自分の形式の読み込み、`coding-style.md` の全文の見直し
+  （`writer.c` は `error == 0 &&` の連鎖と `goto out` を使っている）。
