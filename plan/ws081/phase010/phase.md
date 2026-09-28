@@ -3,11 +3,11 @@
 # ws081-p010: Files への適用（tap・長押し・scroll と慣性）
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-09-29、実装に入る前に計画に無い依存を見つけたので止めた。main の判断待ち）
+Status: planned（2026-09-29、実装に入る前に計画に無い依存を見つけたので止めた。main の判断は (1)、依存は [p014](../phase014/phase.md) で入れた）
 Disposition: normal
 Parent: [WS081](../ws.md)
 Queue: main の指示（2026-09-29「p010（Files）→ p011（Terminal）の慣性の scroll」）。Awesome Plan の Queue の item ではない
-Resume point: 下の「要る判断」の答えの後
+Resume point: p014 の後に実装する
 <!-- awesome-plan-current:end -->
 
 ## 見つけた依存（実装の前）

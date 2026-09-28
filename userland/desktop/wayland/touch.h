@@ -20,5 +20,6 @@ void zwl_touch_remove(struct zwl_server *server, struct zwl_input_device *device
 void zwl_touch_frame(struct zwl_server *server, struct zwl_input_device *device, uint32_t time);
 void zwl_touch_tick(struct zwl_server *server);
 void zwl_touch_object_gone(struct zwl_object *object);
+int zwl_touch_drag_start(struct zwl_server *server, struct zwl_client *client, uint32_t serial);
 
 #endif

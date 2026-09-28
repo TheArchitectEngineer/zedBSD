@@ -11,9 +11,11 @@
  * at a time, and a flick glides on (libkeiland's scroller; past the live
  * screen or the oldest line kept it stretches and springs back); a touch
  * catches it.  A tap is a click of the left button, a double tap selects a
- * word, and a long press selects the word under the finger and a drag
- * after it grows the selection by words (the pointer's selection, fed with
- * the presses and motions made here).
+ * word, and a long press holds the button there (TERMINAL_TOUCH_HOLD: the
+ * main loop selects the word under the finger, or, on the selection, holds
+ * a press that drags the selected text out, ws081-p014); the finger's drag
+ * after it moves the pointer (the pointer's selection, fed with the presses
+ * and motions made here).
  *
  * Nothing here speaks Wayland or Vulkan: the window queues the wl_touch
  * events, the main loop hands them here with the screen's state each
@@ -33,10 +35,15 @@
 #define TERMINAL_TOUCH_UP	2U
 #define TERMINAL_TOUCH_CANCEL	3U
 
-/* The kinds of pointer event the fingers make (the values of TERMINAL_POINTER_*). */
+/*
+ * The kinds of pointer event the fingers make: the values of
+ * TERMINAL_POINTER_*, and a long press's hold, which the main loop turns
+ * into presses.
+ */
 #define TERMINAL_TOUCH_PRESS		1U
 #define TERMINAL_TOUCH_RELEASE		2U
 #define TERMINAL_TOUCH_POINTER_MOTION	3U
+#define TERMINAL_TOUCH_HOLD		5U
 
 /* How many pointer events the fingers make before the main loop takes them, at most. */
 #define TERMINAL_TOUCH_POINTERS	16U
@@ -60,7 +67,7 @@ struct terminal_touch_event {
 
 /*
  * One pointer event the fingers make: its kind (TERMINAL_TOUCH_PRESS,
- * _RELEASE or _POINTER_MOTION), where (surface pixels), its time
+ * _RELEASE, _POINTER_MOTION or _HOLD), where (surface pixels), its time
  * (milliseconds) and the serial of the touch that made it.
  */
 struct terminal_touch_pointer {

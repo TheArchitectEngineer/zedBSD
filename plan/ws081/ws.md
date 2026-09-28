@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001〜p005・p011・p012・p013 は cleared（2026-09-29）。p010 は main の判断待ち（phase010）。p011 は cleared。HID の driver・Wayland の compositor・ブラウザ（と Keiland の app）にまたがる計画はこの WS の 1 か所で行う
+Resume point: p001〜p005・p011〜p014 は cleared（2026-09-29）。次は p010（Files、p014 の指の drag and drop の後）。HID の driver・Wayland の compositor・ブラウザ（と Keiland の app）にまたがる計画はこの WS の 1 か所で行う
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）
@@ -49,7 +49,8 @@ p005 を scroller・gesture の library と app ごとの適用に分ける、p0
 | [ws081-p003](phase003/phase.md) | 補間・予測の library（host で試験、率・jitter ごとの誤差の測定）→ `userland/desktop/libkeiland/motion.c`（公開は p004） | cleared | p001 |
 | [ws081-p004](phase004/phase.md) | compositor: resampling・予測の適用（window の drag・端のジェスチャー）、wl_touch の時刻（Scan Time の τ）、library の公開（Makefile・exports.map・keiland.h） | cleared | p002、p003 |
 | [ws081-p005](phase005/phase.md) | 慣性の scroll と touch の gesture の共通の library（libkeiland の scroller・gesture、host 試験、`KEILAND_VERSION` 10） | cleared | p004 |
-| [ws081-p010](phase010/phase.md) | Files への適用（tap・長押し・scroll と慣性）。**main の判断待ち**: wl_touch の client の指の drag and drop を compositor の `data.c` が受けない（Files の file の移動が後退する） | planned | p005、判断（phase010） |
+| [ws081-p014](phase014/phase.md) | 指の drag and drop（compositor の `data.c`・`touch.c`: wl_touch の down の serial で start_drag を受け、drag を指に付ける）と Terminal の選択の文字の指の drag（main の判断 (1)、2026-09-29） | cleared | p011 |
+| [ws081-p010](phase010/phase.md) | Files への適用（tap・長押し・scroll と慣性、指の drag and drop） | planned | p005、p014 |
 | [ws081-p011](phase011/phase.md) | Terminal への適用（scrollback の px 単位の慣性の scroll、tap の click、長押しからの単語の選択） | cleared | p005 |
 | [ws081-p012](phase012/phase.md) | PDF Viewer への適用（scroll と慣性、二本指の拡大、page mode の swipe） | cleared | p005 |
 | [ws081-p013](phase013/phase.md) | Notes の指の scroll・pinch・double tap・toolbar の tap と掌の判定（ペンは線。design §3.8 の指の線は main の指示で取りやめ、§5.6） | cleared | p005 |
