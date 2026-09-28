@@ -13,9 +13,11 @@ rm -rf "$out"
 mkdir -p "$out/include"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
+# ws079-p007: the reader decodes cross-reference and object streams through filter.c and libz-compat.
 sources="userland/desktop/notes/document.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c
 	userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c
-	userland/base/libpdf/object.c userland/base/libpdf/reader.c plan/ws079/tests/host-notes.c"
+	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c plan/ws079/tests/host-notes.c"
 for variant in plain asan ubsan; do
 	flags="-std=c99 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include -Iuserland/desktop/notes"
 	if [ "$variant" = asan ]; then
@@ -26,7 +28,12 @@ for variant in plain asan ubsan; do
 	fi
 	# The C library's SHA-256 (the writer's and the reader's content hashes), compiled for the host.
 	"$cc" $(echo "$flags" | sed 's/-std=c99 -pedantic/-std=gnu99/') -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
-	"$cc" $flags $sources "$out/sha2-$variant.o" -lm -o "$out/host-notes-$variant"
+	zlib=
+	for file in userland/base/libz-compat/*.c; do
+		"$cc" $(echo "$flags" | sed 's/-std=c99 -pedantic/-std=gnu99/; s/-Werror//') -w -I"$(dirname "$file")" -c "$file" -o "$out/z-$(basename "$file" .c)-$variant.o"
+		zlib="$zlib $out/z-$(basename "$file" .c)-$variant.o"
+	done
+	"$cc" $flags $sources "$out/sha2-$variant.o" $zlib -lm -o "$out/host-notes-$variant"
 	timeout 60 "$out/host-notes-$variant" "$out/notes-$variant.pdf" "$out/scratch-$variant.pdf"
 done
 cmp "$out/notes-plain.pdf.bin" "$out/notes-asan.pdf.bin"

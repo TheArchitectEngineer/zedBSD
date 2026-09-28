@@ -387,7 +387,173 @@ def make_shading(path):
     finish(doc, parent, [page1], path)
 
 
+def lzw_encode(data, early=1):
+    """LZWDecode's codes for data: 9 to 12 bits, a clear code first and before the table fills, the end code last."""
+    bits = []
+    width = 9
+
+    def put(code):
+        for shift in range(width - 1, -1, -1):
+            bits.append((code >> shift) & 1)
+
+    table = {bytes([value]): value for value in range(256)}
+    next_code = 258
+    put(256)
+    current = b''
+    for value in data:
+        extended = current + bytes([value])
+        if extended in table:
+            current = extended
+            continue
+        put(table[current])
+        table[extended] = next_code
+        next_code += 1
+        if next_code + early - 1 >= (1 << width) and width < 12:
+            width += 1
+        if next_code >= 4094:
+            put(256)
+            table = {bytes([v]): v for v in range(256)}
+            next_code = 258
+            width = 9
+        current = bytes([value])
+    if current:
+        put(table[current])
+        next_code += 1
+        if next_code + early - 1 >= (1 << width) and width < 12:
+            width += 1
+    put(257)
+    while len(bits) % 8:
+        bits.append(0)
+    return bytes(int(''.join(str(b) for b in bits[i:i + 8]), 2) for i in range(0, len(bits), 8))
+
+
+def run_length_encode(data):
+    """RunLengthDecode's runs: repeats of 3 or more bytes, literal runs of up to 128 otherwise, 128 at the end."""
+    out = bytearray()
+    index = 0
+    while index < len(data):
+        run = 1
+        while index + run < len(data) and run < 128 and data[index + run] == data[index]:
+            run += 1
+        if run >= 3:
+            out += bytes([257 - run, data[index]])
+            index += run
+            continue
+        start = index
+        while index < len(data) and index - start < 128:
+            if index + 2 < len(data) and data[index] == data[index + 1] == data[index + 2]:
+                break
+            index += 1
+        out += bytes([index - start - 1]) + data[start:index]
+    return bytes(out) + b'\x80'
+
+
+def png_up_rows(data, row_bytes):
+    """The PNG Up predictor over rows, each row led by its type byte (2)."""
+    out = bytearray()
+    previous = bytes(row_bytes)
+    for start in range(0, len(data), row_bytes):
+        row = data[start:start + row_bytes]
+        out += b'\x02' + bytes((row[i] - previous[i]) & 0xff for i in range(row_bytes))
+        previous = row
+    return bytes(out)
+
+
+def gradient_rgb(width, height):
+    return bytes(value for y in range(height) for x in range(width)
+                 for value in (x * 255 // max(1, width - 1), y * 255 // max(1, height - 1), 128 + (x ^ y) % 128))
+
+
+def make_filters(path):
+    """ws079-p007: content streams through ASCII85, LZW (both EarlyChange values), RunLength and ASCIIHex, image
+    XObjects through LZW with the PNG predictor, RunLength and ASCII85 over DCT, and inline images (unfiltered RGB
+    with " EI " inside the samples, 1-bit gray with /D, a stencil mask, an indexed space by abbreviation and by a
+    named resource, AHx over Fl, A85, RL, DCT)."""
+    import base64
+    from PIL import Image
+    doc = Document()
+    parent = doc.reserve()
+    sans = TTFont(LIBERATION + 'LiberationSans-Regular.ttf')
+    f1 = simple_font(doc, sans, b'LiberationSans', 32, b'/WinAnsiEncoding', encoding_glyphs(sans, lambda b: b.decode('cp1252')))
+
+    # Content streams, one per filter, drawn one after another on page 1.
+    parts = [
+        b'0.95 g 0 0 420 595 re f\n',
+        b'0.8 0.1 0.1 rg 20 500 120 70 re f BT /F1 14 Tf 0 g 150 530 Td (ASCII85 over Flate) Tj ET\n',
+        b'0.1 0.6 0.2 rg 20 420 120 70 re f BT /F1 14 Tf 0 g 150 450 Td (LZW, early change 1) Tj ET\n' + b'% padding\n' * 400,
+        b'0.1 0.2 0.8 rg 20 340 120 70 re f BT /F1 14 Tf 0 g 150 370 Td (LZW, early change 0) Tj ET\n' + b'% more padding\n' * 400,
+        b'0.7 0.5 0.1 rg 20 260 120 70 re f BT /F1 14 Tf 0 g 150 290 Td (RunLength) Tj ET\n' + b' ' * 300 + b'\n',
+        b'0.5 0.1 0.6 rg 20 180 120 70 re f BT /F1 14 Tf 0 g 150 210 Td (ASCIIHex) Tj ET\n',
+    ]
+    streams = [
+        doc.add(b'<< /Length %d >>\nstream\n' % len(parts[0]) + parts[0] + b'\nendstream'),
+    ]
+    encoded = base64.a85encode(zlib.compress(parts[1]), wrapcol=72) + b'~>'
+    streams.append(doc.add(b'<< /Length %d /Filter [/ASCII85Decode /FlateDecode] >>\nstream\n' % len(encoded) + encoded + b'\nendstream'))
+    encoded = lzw_encode(parts[2], 1)
+    streams.append(doc.add(b'<< /Length %d /Filter /LZWDecode >>\nstream\n' % len(encoded) + encoded + b'\nendstream'))
+    encoded = lzw_encode(parts[3], 0)
+    streams.append(doc.add(b'<< /Length %d /Filter /LZWDecode /DecodeParms << /EarlyChange 0 >> >>\nstream\n' % len(encoded) + encoded + b'\nendstream'))
+    encoded = run_length_encode(parts[4])
+    streams.append(doc.add(b'<< /Length %d /Filter /RunLengthDecode >>\nstream\n' % len(encoded) + encoded + b'\nendstream'))
+    encoded = parts[5].hex().encode() + b'>'
+    streams.append(doc.add(b'<< /Length %d /Filter /ASCIIHexDecode >>\nstream\n' % len(encoded) + encoded + b'\nendstream'))
+
+    # Image XObjects: LZW with the PNG Up predictor, RunLength, ASCII85 over DCT.
+    samples = gradient_rgb(40, 30)
+    encoded = lzw_encode(png_up_rows(samples, 40 * 3), 1)
+    im1 = doc.add(b'<< /Type /XObject /Subtype /Image /Width 40 /Height 30 /ColorSpace /DeviceRGB /BitsPerComponent 8'
+                  b' /Length %d /Filter /LZWDecode /DecodeParms << /Predictor 12 /Colors 3 /Columns 40 >> >>\nstream\n' % len(encoded) +
+                  encoded + b'\nendstream')
+    stripes = bytes(255 if (x // 4) % 2 else 40 for y in range(30) for x in range(40))
+    encoded = run_length_encode(stripes)
+    im2 = doc.add(b'<< /Type /XObject /Subtype /Image /Width 40 /Height 30 /ColorSpace /DeviceGray /BitsPerComponent 8'
+                  b' /Length %d /Filter /RunLengthDecode >>\nstream\n' % len(encoded) + encoded + b'\nendstream')
+    jpeg = io.BytesIO()
+    Image.frombytes('RGB', (40, 30), samples).save(jpeg, 'JPEG', quality=95)
+    encoded = base64.a85encode(jpeg.getvalue(), wrapcol=72) + b'~>'
+    im3 = doc.add(b'<< /Type /XObject /Subtype /Image /Width 40 /Height 30 /ColorSpace /DeviceRGB /BitsPerComponent 8'
+                  b' /Length %d /Filter [/A85 /DCTDecode] >>\nstream\n' % len(encoded) + encoded + b'\nendstream')
+    content = (b'q 120 0 0 90 20 60 cm /Im1 Do Q q 120 0 0 90 150 60 cm /Im2 Do Q q 120 0 0 90 280 60 cm /Im3 Do Q\n'
+               b'BT /F1 10 Tf 0 g 20 45 Td (LZW + PNG Up) Tj 130 0 Td (RunLength) Tj 130 0 Td (A85 + DCT) Tj ET\n')
+    streams.append(doc.stream(content))
+    resources = b'<< /Font << /F1 %d 0 R >> /XObject << /Im1 %d 0 R /Im2 %d 0 R /Im3 %d 0 R >> >>' % (f1, im1, im2, im3)
+    page1 = doc.add(b'<< /Type /Page /Parent %d 0 R /MediaBox [0 0 420 595] /Resources ' % parent + resources +
+                    b' /Contents [' + b' '.join(b'%d 0 R' % n for n in streams) + b'] >>')
+
+    # Inline images on page 2.
+    rgb = bytearray(gradient_rgb(16, 12))
+    rgb[30:34] = b' EI '
+    rgb[100:104] = b'\nEI\n'
+    gray1 = bytes((0xAA if (row // 2) % 2 else 0x55) for row in range(24) for _ in range(3))
+    stencil = bytes(((0xFF << (8 - (row % 8))) & 0xFF) for row in range(24) for _ in range(3))
+    indexed = bytes(((x // 2 + y) % 4) << 6 | ((x // 2 + y + 1) % 4) << 4 | ((x // 2 + y + 2) % 4) << 2 | ((x // 2 + y + 3) % 4)
+                    for y in range(16) for x in range(4))
+    small = gradient_rgb(10, 8)
+    jpeg = io.BytesIO()
+    Image.frombytes('RGB', (10, 8), small).save(jpeg, 'JPEG', quality=95)
+    inline = [
+        b'q 110 0 0 80 20 480 cm BI /W 16 /H 12 /CS /RGB /BPC 8 ID\n' + bytes(rgb) + b'\nEI Q\n',
+        b'q 110 0 0 80 150 480 cm BI /W 24 /H 24 /CS /G /BPC 1 /D [1 0] ID ' + gray1 + b' EI Q\n',
+        b'q 0.1 0.5 0.9 rg 110 0 0 80 280 480 cm BI /W 24 /H 24 /IM true ID ' + stencil + b'\nEI Q\n',
+        b'q 110 0 0 80 20 360 cm BI /W 16 /H 16 /CS [/I /RGB 3 <ff0000 00ff00 0000ff ffff00>] /BPC 2 ID ' + indexed + b'\nEI Q\n',
+        b'q 110 0 0 80 150 360 cm BI /W 16 /H 16 /ColorSpace /CS0 /BitsPerComponent 2 ID ' + indexed + b'\nEI Q\n',
+        b'q 110 0 0 80 280 360 cm BI /W 10 /H 8 /CS /RGB /BPC 8 /F [/AHx /Fl] ID ' + zlib.compress(small).hex().encode() + b'> EI Q\n',
+        b'q 110 0 0 80 20 240 cm BI /W 10 /H 8 /CS /RGB /BPC 8 /F /A85 ID ' + base64.a85encode(small) + b'~> EI Q\n',
+        b'q 110 0 0 80 150 240 cm BI /W 10 /H 8 /CS /RGB /BPC 8 /F /RL ID ' + run_length_encode(small) + b' EI Q\n',
+        b'q 110 0 0 80 280 240 cm BI /W 10 /H 8 /CS /RGB /BPC 8 /F /DCT ID ' + jpeg.getvalue() + b'\nEI Q\n',
+        b'BT /F1 12 Tf 0 g 20 200 Td (Inline images: RGB, gray, stencil, indexed, named, AHx+Fl, A85, RL, DCT) Tj ET\n',
+    ]
+    content2 = b'0.9 g 0 0 420 595 re f\n' + b''.join(inline)
+    palette = doc.add(b'[/Indexed /DeviceRGB 3 <102030 f0a000 20c0c0 ffffff>]')
+    resources2 = b'<< /Font << /F1 %d 0 R >> /ColorSpace << /CS0 %d 0 R >> >>' % (f1, palette)
+    page2 = doc.add(b'<< /Type /Page /Parent %d 0 R /MediaBox [0 0 420 595] /Resources ' % parent + resources2 +
+                    b' /Contents %d 0 R >>' % doc.stream(content2, compress=False))
+    finish(doc, parent, [page1, page2], path)
+
+
 outdir = sys.argv[1]
+make_filters(outdir + '/filters.pdf')
 make_shading(outdir + '/shading.pdf')
 make_simple(outdir + '/text-simple.pdf')
 make_cid(outdir + '/text-cid.pdf')

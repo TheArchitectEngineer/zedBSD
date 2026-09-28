@@ -29,11 +29,19 @@ stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|/bin/[n]otes" |
 # The PDF with COUNT strokes, made on the host with Notes' own model and libpdf.
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc -std=gnu99 -O1 -D_DEFAULT_SOURCE -I"$out/include" -c src/libc/openbsd-sha2.c -o "$out/sha2.o" || exit 1
+# ws079-p007: the reader needs filter.c and libz-compat (cross-reference and object streams); p014: save.c needs update.c.
+zlib=
+for file in userland/base/libz-compat/*.c; do
+	cc -std=gnu99 -O1 -w -D_DEFAULT_SOURCE -I"$out/include" -I"$(dirname "$file")" -c "$file" -o "$out/z-$(basename "$file" .c).o" || exit 1
+	zlib="$zlib $out/z-$(basename "$file" .c).o"
+done
 cc -std=c99 -pedantic -O1 -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I"$out/include" -Iuserland/desktop/notes \
     userland/desktop/notes/document.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c \
-    userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/outline.c \
-    userland/base/libpdf/object.c userland/base/libpdf/reader.c plan/ws079/tests/notes-many.c "$out/sha2.o" -lm \
+    userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c \
+    userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c plan/ws079/tests/notes-many.c \
+    "$out/sha2.o" $zlib -lm \
     -o "$out/notes-many" || exit 1
 "$out/notes-many" "$out/many.pdf" "$count" || exit 1
 

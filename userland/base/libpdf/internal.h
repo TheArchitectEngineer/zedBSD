@@ -66,8 +66,9 @@ enum pdf_token_type {
  * Only the fields of its type are meaningful.  A name's or a string's bytes
  * are decoded and followed by a NUL that is not counted.  A dictionary and a
  * stream keep their keys (names) and values side by side; a stream's data
- * is a range of the document's bytes.  Every object lives in the document's
- * arena and is freed with it.
+ * is a range of the document's bytes, or of bytes when they are set (an
+ * inline image, whose data is in a content stream).  Every object lives in
+ * the document's arena (or a page run's) and is freed with it.
  */
 struct pdf_object {
 	enum pdf_object_type type;
@@ -277,6 +278,29 @@ size_t pdf_font_next_code(const struct pdf_font *font, const unsigned char *byte
 int pdf_font_glyph(struct pdf_font *font, unsigned code, struct pdf_glyph *glyph);
 unsigned pdf_glyph_name_unicode(const unsigned char *name, size_t length);
 struct pdf_font_cache *pdf_reader_font_cache(struct pdf_document *document);
+
+/*
+ * A font program whose glyphs are charstrings: Type 1 (/FontFile) or the
+ * Compact Font Format (/FontFile3), read by charstrings.c, type1.c and
+ * cff.c (stage 3).
+ */
+struct pdf_charstrings;
+
+/* Where a charstring's outline goes: one path step in ems with y upward, 0 or an errno value. */
+typedef int (*pdf_charstrings_emit)(void *context, enum pdf_path_verb verb, const double *coordinates, size_t count);
+
+int pdf_type1_open(const unsigned char *data, size_t size, size_t clear_length, struct pdf_charstrings **font);
+int pdf_type1_encoding(const unsigned char *data, size_t size, const unsigned char *names[256], size_t lengths[256], int *standard);
+int pdf_cff_open(const unsigned char *data, size_t size, struct pdf_charstrings **font);
+int pdf_opentype_cff(const unsigned char *data, size_t size, const unsigned char **cff, size_t *cff_size);
+void pdf_charstrings_close(struct pdf_charstrings *font);
+size_t pdf_charstrings_count(const struct pdf_charstrings *font);
+int pdf_charstrings_find(const struct pdf_charstrings *font, const unsigned char *name, size_t length, unsigned *glyph);
+int pdf_charstrings_name(const struct pdf_charstrings *font, unsigned glyph, const unsigned char **name, size_t *length);
+int pdf_charstrings_builtin(const struct pdf_charstrings *font, unsigned code, unsigned *glyph);
+int pdf_charstrings_cid_keyed(const struct pdf_charstrings *font);
+int pdf_charstrings_cid(const struct pdf_charstrings *font, unsigned cid, unsigned *glyph);
+int pdf_charstrings_outline(struct pdf_charstrings *font, unsigned glyph, pdf_charstrings_emit emit, void *context, double *advance);
 
 /* The smooth shadings (shading.c): a shading drawn into an image over a region of the page. */
 int pdf_shading_image(struct pdf_document *document, struct pdf_object *object, const double matrix[6], const double bounds[4], unsigned char **pixels, size_t *width, size_t *height, double placement[6]);

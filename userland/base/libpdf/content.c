@@ -14,15 +14,16 @@
  * built on them, the ExtGState's alphas and the Normal and Multiply blend
  * modes), builds paths (m l c v y h re), fills them by either rule, strokes
  * them through the stroker (stroke.c) into fills, clips (W W* n), and draws
- * image XObjects and runs form XObjects (Do).  From stage 2 it shows text:
+ * image XObjects and runs form XObjects (Do), and draws inline images (BI
+ * ID EI) the same way.  From stage 2 it shows text:
  * the text state (Tc Tw Tz TL Tf Tr Ts, kept by q and Q), the text and line
  * matrices of a text object (BT ET Td TD Tm T*), and the strings (Tj TJ '
  * "), whose glyph outlines (font.c) are filled, stroked, or added to a clip
  * that ET applies, by the rendering mode.  It paints the axial and radial
  * shadings (shading.c), by sh and as the colour of a shading pattern (cs
  * /Pattern and scn), as images clipped to what they fill.  Tiling
- * patterns, the other shadings and inline images are left out and the
- * list says so (PDF_DISPLAY_SKIPPED).
+ * patterns and the other shadings are left out and the list says so
+ * (PDF_DISPLAY_SKIPPED).
  *
  * The content is not trusted.  Operators, operands, the q nesting, the
  * clips, the forms' nesting and the list's size are bounded; a malformed
@@ -41,6 +42,9 @@
 
 /* The most operands one operator may be given. */
 #define PDF_CONTENT_OPERANDS_MAX 64
+
+/* The most entries an inline image's dictionary may have (it has ten keys; the rest is room for unknown ones). */
+#define PDF_CONTENT_INLINE_KEYS_MAX 16
 
 /* How deep q may nest, and how deep form XObjects may. */
 #define PDF_CONTENT_STACK_MAX 64
@@ -268,6 +272,34 @@ struct content_run {
 };
 
 /*
+ * One key of an inline image's dictionary: its abbreviation and the full
+ * name an image XObject has for it.
+ */
+struct content_inline_key {
+	const char *abbreviation;
+	const char *name;
+};
+
+/*
+ * The abbreviated keys of an inline image (PDF 1.7 table 93).
+ *
+ * The full names are accepted as they are; the image decoder reads only
+ * the full names.
+ */
+static const struct content_inline_key content_inline_keys[] = {
+	{ "BPC", "BitsPerComponent" },
+	{ "CS", "ColorSpace" },
+	{ "D", "Decode" },
+	{ "DP", "DecodeParms" },
+	{ "F", "Filter" },
+	{ "H", "Height" },
+	{ "IM", "ImageMask" },
+	{ "I", "Interpolate" },
+	{ "W", "Width" },
+	{ "L", "Length" }
+};
+
+/*
  * The operators by name, the ones a page uses most first.
  */
 static const struct content_name content_names[] = {
@@ -404,7 +436,14 @@ static double matrix_scale(const double matrix[6]);
 static void draw_xobject(struct content_run *run, struct pdf_object *resources);
 static void draw_image(struct content_run *run, struct pdf_object *image);
 static void run_form(struct content_run *run, struct pdf_object *form, struct pdf_object *resources);
-static void skip_inline_image(struct content_run *run, struct pdf_lexer *lexer);
+static void draw_inline_image(struct content_run *run, struct pdf_lexer *lexer, struct pdf_object *resources);
+static int read_inline_dictionary(struct content_run *run, struct pdf_lexer *lexer, struct pdf_object *resources, struct pdf_object **image);
+static int add_inline_entry(struct content_run *run, struct pdf_object *resources, struct pdf_object *image, const struct pdf_token *key, struct pdf_object *value);
+static const char *inline_key_name(const struct pdf_token *key);
+static size_t inline_sample_bytes(const struct pdf_object *image);
+static int find_inline_end(const struct pdf_lexer *lexer, size_t start, size_t *end);
+static int inline_device_space(const struct pdf_object *name);
+static int inline_device_components(const struct pdf_object *name);
 static int is_white(unsigned char character);
 static void stop_for(struct content_run *run, int error);
 static double clamp_unit(double value);
@@ -867,7 +906,7 @@ execute(
 		draw_xobject(run, resources);
 		break;
 	case OP_INLINE_IMAGE:
-		skip_inline_image(run, lexer);
+		draw_inline_image(run, lexer, resources);
 		break;
 	case OP_SHADING:
 		paint_shading(run, resources);
@@ -1124,6 +1163,7 @@ execute_color(
 	int components;
 	int stroke;
 	int is_pattern;
+	int in_pattern;
 	int error;
 
 	/* The level in force, and whether the operator sets the stroke's colour. */
@@ -1186,8 +1226,11 @@ execute_color(
 			} else {
 				state->fill_usable = 0;
 			}
+
 			break;
 		}
+
+		/* The space's initial colour. */
 		if (components == 1)
 			numbers[0] = 0.0;
 		set_color(run, stroke, components, numbers);
@@ -1195,7 +1238,10 @@ execute_color(
 	case OP_COLOR_FILL:
 	case OP_COLOR_STROKE:
 		/* A pattern's name in the Pattern space. */
-		if ((stroke && state->stroke_pattern_space) || (!stroke && state->fill_pattern_space)) {
+		in_pattern = state->fill_pattern_space;
+		if (stroke)
+			in_pattern = state->stroke_pattern_space;
+		if (in_pattern) {
 			set_pattern(run, resources, stroke);
 			break;
 		}
@@ -2489,6 +2535,8 @@ end_text(
 		stop_for(run, error);
 		return;
 	}
+
+	/* The level's Q, and the page's end, pop the clip. */
 	run->stack[run->depth].clips++;
 	run->clip_depth++;
 }
@@ -2546,6 +2594,8 @@ show_array(
 			show_string(run, element->bytes, element->length);
 			continue;
 		}
+
+		/* A number moves the position back by thousandths of the size; anything else is ignored. */
 		error = pdf_object_number(element, &number);
 		if (error != 0)
 			continue;
@@ -2576,6 +2626,8 @@ show_string(
 	double bold;
 	int single_byte;
 	int draws;
+	int adds;
+	int vertical;
 	int error;
 
 	/* A string without a usable font is not drawn and does not move. */
@@ -2584,7 +2636,10 @@ show_string(
 		run->flags |= PDF_DISPLAY_SKIPPED;
 		return;
 	}
+
+	/* A substituted or unreadable font marks the list; a vertical one moves down. */
 	run->flags |= pdf_font_status(state->font);
+	vertical = pdf_font_vertical(state->font);
 
 	/* The glyphs are drawn unless the mode is invisible (3) or clipping only (7). */
 	draws = 1;
@@ -2609,13 +2664,22 @@ show_string(
 			break;
 		}
 
-		/* Adds the glyph's outline where the text position is. */
-		if (glyph.drawable && glyph.verb_count > 0 && (draws || state->render_mode >= 4)) {
+		/* Adds the glyph's outline where the text position is, when it is painted or clips. */
+		adds = 0;
+		if (glyph.drawable && glyph.verb_count > 0) {
+			if (draws || state->render_mode >= 4)
+				adds = 1;
+		}
+
+		/* Adds it. */
+		if (adds) {
 			error = add_glyph(run, &glyph);
 			if (error != 0) {
 				stop_for(run, error);
 				break;
 			}
+
+			/* A substitute for a bold face is thickened when the string is painted. */
 			bold = glyph.bold;
 		}
 
@@ -2623,7 +2687,7 @@ show_string(
 		spacing = state->character_spacing;
 		if (single_byte && code == 32)
 			spacing += state->word_spacing;
-		if (pdf_font_vertical(state->font)) {
+		if (vertical) {
 			advance_text(run, glyph.vertical_advance * state->font_size + spacing);
 		} else {
 			advance_text(run, glyph.width * state->font_size + spacing);
@@ -2659,13 +2723,15 @@ add_glyph(
 	size_t point;
 	size_t count;
 	size_t index;
+	int vertical;
 	int error;
 
-	/* The scales from ems to text space. */
+	/* The scales from ems to text space, and whether the glyph hangs from its vertical origin. */
 	state = &run->stack[run->depth];
 	text = run->text_matrix;
 	scale_x = state->font_size * state->horizontal_scale;
 	scale_y = state->font_size;
+	vertical = pdf_font_vertical(state->font);
 
 	/* Adds each step with its points moved into user space. */
 	point = 0;
@@ -2683,15 +2749,19 @@ add_glyph(
 		for (index = 0; index < count; index++) {
 			glyph_x = glyph->transform[0] * glyph->points[point + index].x + glyph->transform[2] * glyph->points[point + index].y;
 			glyph_y = glyph->transform[1] * glyph->points[point + index].x + glyph->transform[3] * glyph->points[point + index].y;
-			if (pdf_font_vertical(state->font)) {
+			if (vertical) {
 				glyph_x -= glyph->origin_x;
 				glyph_y -= glyph->origin_y;
 			}
+
+			/* Scaled and risen into text space, then into user space. */
 			text_x = glyph_x * scale_x;
 			text_y = glyph_y * scale_y + state->rise;
 			coordinates[index * 2] = text[0] * text_x + text[2] * text_y + text[4];
 			coordinates[index * 2 + 1] = text[1] * text_x + text[3] * text_y + text[5];
 		}
+
+		/* The next step's points follow. */
 		point += count;
 
 		/* Adds the step. */
@@ -2716,6 +2786,7 @@ advance_text(
 {
 	struct content_state *state;
 	double move[6];
+	int vertical;
 
 	/* A translation in text space. */
 	state = &run->stack[run->depth];
@@ -2725,7 +2796,12 @@ advance_text(
 	move[3] = 1.0;
 	move[4] = amount * state->horizontal_scale;
 	move[5] = 0.0;
-	if (state->font != NULL && pdf_font_vertical(state->font)) {
+
+	/* Vertical writing moves down instead, without the horizontal scale. */
+	vertical = 0;
+	if (state->font != NULL)
+		vertical = pdf_font_vertical(state->font);
+	if (vertical) {
 		move[4] = 0.0;
 		move[5] = amount;
 	}
@@ -2762,8 +2838,10 @@ paint_text(
 	}
 
 	/* Strokes. */
-	if ((mode == 1 || mode == 2) && !run->stopped)
-		stroke_path(run);
+	if (mode == 1 || mode == 2) {
+		if (!run->stopped)
+			stroke_path(run);
+	}
 
 	/* Keeps the glyphs for the clip. */
 	if (state->render_mode >= 4 && !run->stopped) {
@@ -2868,6 +2946,7 @@ is_pattern_space(
 	struct pdf_object *space;
 	struct pdf_object *family;
 	int is_name;
+	int differs;
 	int error;
 
 	/* The name is the last operand. */
@@ -2878,8 +2957,11 @@ is_pattern_space(
 		return 0;
 
 	/* The space's own name. */
-	if (operand->length == 7 && memcmp(operand->bytes, "Pattern", 7) == 0)
-		return 1;
+	if (operand->length == 7) {
+		differs = memcmp(operand->bytes, "Pattern", 7);
+		if (differs == 0)
+			return 1;
+	}
 
 	/* A resource: the name /Pattern, or an array whose family is /Pattern. */
 	error = find_resource(run, resources, "ColorSpace", &space);
@@ -2891,6 +2973,8 @@ is_pattern_space(
 		if (error != 0)
 			return 0;
 	}
+
+	/* The family is the Pattern space's. */
 	is_name = pdf_object_is_name(family, "Pattern");
 	if (is_name)
 		return 1;
@@ -2922,10 +3006,20 @@ set_pattern(
 
 	/* Finds the pattern; only a shading pattern (type 2) is drawn yet. */
 	error = find_resource(run, resources, "Pattern", &pattern);
-	if (error == 0 && (pattern->type == PDF_OBJECT_DICTIONARY || pattern->type == PDF_OBJECT_STREAM)) {
+	if (error != 0)
+		pattern = NULL;
+	if (pattern != NULL) {
+		if (pattern->type != PDF_OBJECT_DICTIONARY && pattern->type != PDF_OBJECT_STREAM)
+			pattern = NULL;
+	}
+
+	/* Its type decides whether it is drawn. */
+	if (pattern != NULL) {
 		error = pdf_reader_resolve_key(run->document, pattern, "PatternType", &type);
-		if (error == 0 && type->type == PDF_OBJECT_INTEGER && type->integer == 2)
-			chosen = pattern;
+		if (error == 0 && type->type == PDF_OBJECT_INTEGER) {
+			if (type->integer == 2)
+				chosen = pattern;
+		}
 	}
 
 	/* The colour is the pattern, usable only when it is drawn. */
@@ -2959,8 +3053,11 @@ paint_shading(
 	double bounds[4];
 	double x;
 	double y;
+	double page_x;
+	double page_y;
 	size_t corner;
 	size_t index;
+	int has_box;
 	int error;
 
 	/* Finds the shading; a missing one is left out. */
@@ -2979,7 +3076,15 @@ paint_shading(
 
 	/* Within the shading's box, when it has one: its corners' box on the page. */
 	error = pdf_reader_resolve_key(run->document, shading, "BBox", &box_object);
-	if (error == 0 && box_object->type == PDF_OBJECT_ARRAY && box_object->count == 4) {
+	has_box = 0;
+	if (error == 0 && box_object->type == PDF_OBJECT_ARRAY) {
+		if (box_object->count == 4)
+			has_box = 1;
+	}
+
+	/* Reads the box. */
+	if (has_box) {
+		/* The box's four numbers; a box that is not numbers leaves the whole page. */
 		for (index = 0; index < 4; index++) {
 			error = pdf_reader_resolve(run->document, box_object->values[index], &number_object);
 			if (error == 0)
@@ -2987,6 +3092,8 @@ paint_shading(
 			if (error != 0)
 				break;
 		}
+
+		/* The box of its four corners on the page. */
 		for (corner = 0; corner < 4 && error == 0; corner++) {
 			x = box[(corner & 1) * 2];
 			y = box[1 + (corner >> 1) * 2];
@@ -2996,15 +3103,21 @@ paint_shading(
 				bounds[2] = 0.0;
 				bounds[3] = 0.0;
 			}
-			if (state->ctm[0] * x + state->ctm[2] * y + state->ctm[4] > bounds[2])
-				bounds[2] = state->ctm[0] * x + state->ctm[2] * y + state->ctm[4];
-			if (state->ctm[0] * x + state->ctm[2] * y + state->ctm[4] < bounds[0])
-				bounds[0] = state->ctm[0] * x + state->ctm[2] * y + state->ctm[4];
-			if (state->ctm[1] * x + state->ctm[3] * y + state->ctm[5] > bounds[3])
-				bounds[3] = state->ctm[1] * x + state->ctm[3] * y + state->ctm[5];
-			if (state->ctm[1] * x + state->ctm[3] * y + state->ctm[5] < bounds[1])
-				bounds[1] = state->ctm[1] * x + state->ctm[3] * y + state->ctm[5];
+
+			/* The corner on the page widens the box. */
+			page_x = state->ctm[0] * x + state->ctm[2] * y + state->ctm[4];
+			page_y = state->ctm[1] * x + state->ctm[3] * y + state->ctm[5];
+			if (page_x > bounds[2])
+				bounds[2] = page_x;
+			if (page_x < bounds[0])
+				bounds[0] = page_x;
+			if (page_y > bounds[3])
+				bounds[3] = page_y;
+			if (page_y < bounds[1])
+				bounds[1] = page_y;
 		}
+
+		/* Within the page. */
 		if (bounds[0] < 0.0)
 			bounds[0] = 0.0;
 		if (bounds[1] < 0.0)
@@ -3043,6 +3156,7 @@ paint_pattern(
 	double combined[6];
 	double bounds[4];
 	size_t index;
+	int has_matrix;
 	int error;
 
 	/* Refuses clips nested past the limit. */
@@ -3068,6 +3182,8 @@ paint_pattern(
 		if (points[index].y > bounds[3])
 			bounds[3] = points[index].y;
 	}
+
+	/* Within the page; a path off the page paints nothing. */
 	if (bounds[0] < 0.0)
 		bounds[0] = 0.0;
 	if (bounds[1] < 0.0)
@@ -3076,7 +3192,9 @@ paint_pattern(
 		bounds[2] = run->builder->list.width;
 	if (bounds[3] > run->builder->list.height)
 		bounds[3] = run->builder->list.height;
-	if (!(bounds[2] > bounds[0] && bounds[3] > bounds[1]))
+	if (!(bounds[2] > bounds[0]))
+		return;
+	if (!(bounds[3] > bounds[1]))
 		return;
 
 	/* The pattern's matrix, relative to the content stream's own. */
@@ -3087,13 +3205,22 @@ paint_pattern(
 	matrix[4] = 0.0;
 	matrix[5] = 0.0;
 	error = pdf_reader_resolve_key(run->document, pattern, "Matrix", &matrix_object);
-	if (error == 0 && matrix_object->type == PDF_OBJECT_ARRAY && matrix_object->count == 6) {
+	has_matrix = 0;
+	if (error == 0 && matrix_object->type == PDF_OBJECT_ARRAY) {
+		if (matrix_object->count == 6)
+			has_matrix = 1;
+	}
+
+	/* Reads the matrix; one that is not numbers leaves the pattern out. */
+	if (has_matrix) {
 		for (index = 0; index < 6; index++) {
 			error = pdf_object_number(matrix_object->values[index], &matrix[index]);
 			if (error != 0)
 				return;
 		}
 	}
+
+	/* The pattern space: the pattern's matrix after the one in force where the content began. */
 	memcpy(combined, run->pattern_base, sizeof(combined));
 	concat_matrix(combined, matrix);
 
@@ -3119,6 +3246,8 @@ paint_pattern(
 		stop_for(run, error);
 		return;
 	}
+
+	/* The clip ends with the shading. */
 	error = pdf_display_add_clip_pop(run->builder);
 	if (error != 0)
 		stop_for(run, error);
@@ -3340,8 +3469,7 @@ run_form(
 	if (error == ENOMEM) {
 		stop_for(run, ENOMEM);
 		return;
-	}
-	if (error != 0) {
+	} else if (error != 0) {
 		run->flags |= PDF_DISPLAY_SKIPPED;
 		return;
 	}
@@ -3381,56 +3509,367 @@ run_form(
 }
 
 /*
- * Skips an inline image (BI, its dictionary, ID, its data, EI), which is
- * drawn from stage 2.
+ * Draws an inline image (BI, its dictionary, ID, its data, EI) as an image
+ * XObject with the same dictionary would be drawn.
  *
- * The data ends at an EI that stands alone between white space (or the
- * content's end); the dictionary's keys and values are read as tokens up
- * to ID.
+ * The dictionary is read into a stream object of the page's arena whose
+ * data is the bytes between ID and EI in the content itself (the object's
+ * bytes point there).  An image the decoder cannot read is left out and
+ * marks the list SKIPPED; the content goes on after the EI either way.
  */
 static void
-skip_inline_image(
+draw_inline_image(
 	struct content_run *run,
-	struct pdf_lexer *lexer)
+	struct pdf_lexer *lexer,
+	struct pdf_object *resources)
 {
-	struct pdf_token token;
-	const unsigned char *data;
-	size_t position;
-	int is_id;
-	int before_space;
-	int after_space;
+	struct pdf_object *image;
+	size_t start;
+	size_t known;
+	size_t end;
 	int error;
 
-	/* The image is left out. */
-	run->flags |= PDF_DISPLAY_SKIPPED;
-
-	/* Reads the dictionary's tokens up to ID. */
-	for (;;) {
-		error = pdf_lexer_next(lexer, &token);
-		if (error != 0) {
-			stop_for(run, PDF_EFORMAT);
-			return;
-		}
-		if (token.type == PDF_TOKEN_END) {
-			stop_for(run, PDF_EFORMAT);
-			return;
-		}
-		is_id = pdf_token_is_keyword(&token, "ID");
-		if (is_id)
-			break;
+	/* Reads the dictionary up to ID; a damaged dictionary still leaves image NULL and the lexer at ID. */
+	error = read_inline_dictionary(run, lexer, resources, &image);
+	if (error != 0) {
+		stop_for(run, error);
+		return;
 	}
 
-	/* Finds the EI that ends the data, after the one white-space byte that follows ID. */
+	/* The data starts after the one white-space byte that follows ID. */
+	start = lexer->position + 1;
+	if (start > lexer->size)
+		start = lexer->size;
+
+	/*
+	 * Unfiltered samples have a size the dictionary tells, and the search
+	 * for EI starts after them, since binary samples may hold " EI ".
+	 */
+	known = 0;
+	if (image != NULL)
+		known = inline_sample_bytes(image);
+	if (known > lexer->size - start)
+		known = 0;
+
+	/* Finds the EI that ends the data; an image without it damages the rest of the content. */
+	error = find_inline_end(lexer, start + known, &end);
+	if (error != 0) {
+		lexer->position = lexer->size;
+		run->flags |= PDF_DISPLAY_DAMAGED;
+		return;
+	}
+
+	/* The content goes on after the EI. */
+	lexer->position = end + 2;
+
+	/* An image whose dictionary could not be read is left out. */
+	if (image == NULL) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return;
+	}
+
+	/* The white space before EI is not data; the known size, when there is one, is exact. */
+	if (known != 0) {
+		end = start + known;
+	} else if (end > start) {
+		end--;
+	}
+
+	/* Draws the samples between. */
+	image->bytes = lexer->data + start;
+	image->data_offset = 0;
+	image->data_length = end - start;
+	draw_image(run, image);
+}
+
+/*
+ * Reads an inline image's dictionary, from BI's operands up to the ID
+ * keyword, into a new stream object with the full key names.
+ *
+ * Only a failure of the lexer (the content ends before ID) or of the arena
+ * is an error; a key or value that cannot be read makes *image NULL, and
+ * the reading goes on to ID so that the data can be skipped.
+ */
+static int
+read_inline_dictionary(
+	struct content_run *run,
+	struct pdf_lexer *lexer,
+	struct pdf_object *resources,
+	struct pdf_object **image)
+{
+	struct pdf_token key;
+	struct pdf_object *value;
+	struct pdf_object *created;
+	size_t saved;
+	int is_id;
+	int error;
+
+	/* Allocates the stream object and room for its entries. */
+	*image = NULL;
+	created = pdf_arena_allocate(&run->arena, sizeof(*created));
+	if (created == NULL)
+		return ENOMEM;
+	created->type = PDF_OBJECT_STREAM;
+	created->keys = pdf_arena_allocate(&run->arena, sizeof(*created->keys) * PDF_CONTENT_INLINE_KEYS_MAX);
+	if (created->keys == NULL)
+		return ENOMEM;
+	created->values = pdf_arena_allocate(&run->arena, sizeof(*created->values) * PDF_CONTENT_INLINE_KEYS_MAX);
+	if (created->values == NULL)
+		return ENOMEM;
+
+	/* Reads key and value pairs until ID. */
+	*image = created;
+	for (;;) {
+		/* The next key, or ID. */
+		error = pdf_lexer_next(lexer, &key);
+		if (error == ENOMEM)
+			return ENOMEM;
+		if (error != 0)
+			return PDF_EFORMAT;
+		if (key.type == PDF_TOKEN_END)
+			return PDF_EFORMAT;
+		is_id = pdf_token_is_keyword(&key, "ID");
+		if (is_id)
+			break;
+
+		/* Anything but a name where a key belongs leaves the image out. */
+		if (key.type != PDF_TOKEN_NAME) {
+			*image = NULL;
+			continue;
+		}
+
+		/* The value, which must not be a keyword (a missing value before ID leaves the image out). */
+		saved = lexer->position;
+		error = pdf_parse_object(lexer, 1, &value);
+		if (error == ENOMEM)
+			return ENOMEM;
+		if (error != 0) {
+			lexer->position = saved;
+			*image = NULL;
+			continue;
+		}
+
+		/* Keeps the entry under its full name. */
+		if (*image == NULL)
+			continue;
+		error = add_inline_entry(run, resources, created, &key, value);
+		if (error == ENOMEM)
+			return ENOMEM;
+		if (error != 0)
+			*image = NULL;
+	}
+
+	/* Succeeded: *image is the dictionary, or NULL when it could not be read. */
+	return 0;
+}
+
+/*
+ * Adds one entry to an inline image's dictionary: the key under its full
+ * name, and a colour space named in the resources replaced by the space
+ * itself.
+ */
+static int
+add_inline_entry(
+	struct content_run *run,
+	struct pdf_object *resources,
+	struct pdf_object *image,
+	const struct pdf_token *key,
+	struct pdf_object *value)
+{
+	struct content_operand operand;
+	struct pdf_object *name;
+	struct pdf_object *space;
+	unsigned char *copy;
+	const char *full;
+	int is_colorspace;
+	int is_device;
+	int error;
+
+	/* Refuses more entries than an inline image has keys. */
+	if (image->count >= PDF_CONTENT_INLINE_KEYS_MAX)
+		return PDF_EFORMAT;
+
+	/* Allocates the key's name object. */
+	name = pdf_arena_allocate(&run->arena, sizeof(*name));
+	if (name == NULL)
+		return ENOMEM;
+	name->type = PDF_OBJECT_NAME;
+
+	/* The key under its full name, or a copy of its own bytes when it is not an abbreviation. */
+	full = inline_key_name(key);
+	if (full != NULL) {
+		name->bytes = (const unsigned char *)full;
+		name->length = strlen(full);
+	} else {
+		copy = pdf_arena_allocate(&run->arena, key->length + 1);
+		if (copy == NULL)
+			return ENOMEM;
+		memcpy(copy, key->bytes, key->length);
+		name->bytes = copy;
+		name->length = key->length;
+	}
+
+	/*
+	 * A colour space given by a name that is not a device space (nor its
+	 * abbreviation, which the image decoder reads) is a resource of the
+	 * page.
+	 */
+	is_colorspace = pdf_object_is_name(name, "ColorSpace");
+	if (is_colorspace && value->type == PDF_OBJECT_NAME) {
+		is_device = inline_device_space(value);
+		if (!is_device) {
+			memset(&operand, 0, sizeof(operand));
+			operand.type = OPERAND_NAME;
+			operand.bytes = value->bytes;
+			operand.length = value->length;
+			error = find_named_resource(run, resources, "ColorSpace", &operand, &space);
+			if (error != 0)
+				return error;
+			value = space;
+		}
+	}
+
+	/* Succeeded: the entry is the dictionary's. */
+	image->keys[image->count] = name;
+	image->values[image->count] = value;
+	image->count++;
+	return 0;
+}
+
+/* Tells the full name of an inline image's abbreviated key, or NULL for any other key. */
+static const char *
+inline_key_name(
+	const struct pdf_token *key)
+{
+	size_t index;
+	size_t length;
+	int differs;
+
+	/* Looks the key up among the abbreviations. */
+	for (index = 0; index < sizeof(content_inline_keys) / sizeof(content_inline_keys[0]); index++) {
+		length = strlen(content_inline_keys[index].abbreviation);
+		if (key->length != length)
+			continue;
+		differs = memcmp(key->bytes, content_inline_keys[index].abbreviation, length);
+		if (differs == 0)
+			return content_inline_keys[index].name;
+	}
+
+	/* Any other key is not an abbreviation. */
+	return NULL;
+}
+
+/*
+ * Tells how many bytes an unfiltered inline image's samples take, or 0
+ * when that is not known (a filter, a colour space whose components are
+ * not known here, or values out of range).
+ */
+static size_t
+inline_sample_bytes(
+	const struct pdf_object *image)
+{
+	const struct pdf_object *filter;
+	const struct pdf_object *space;
+	const struct pdf_object *family;
+	const struct pdf_object *value;
+	long width;
+	long height;
+	long bits;
+	long components;
+	int is_name;
+	int stencil;
+	size_t row;
+
+	/* A filtered image's size is known only after decoding. */
+	filter = pdf_object_get(image, "Filter");
+	if (filter != NULL)
+		return 0;
+
+	/* The width and the height. */
+	value = pdf_object_get(image, "Width");
+	if (value == NULL || value->type != PDF_OBJECT_INTEGER)
+		return 0;
+	width = value->integer;
+	value = pdf_object_get(image, "Height");
+	if (value == NULL || value->type != PDF_OBJECT_INTEGER)
+		return 0;
+	height = value->integer;
+	if (width <= 0 || width > PDF_IMAGE_SIDE_MAX)
+		return 0;
+	if (height <= 0 || height > PDF_IMAGE_SIDE_MAX)
+		return 0;
+
+	/* A stencil mask has one bit per sample. */
+	value = pdf_object_get(image, "ImageMask");
+	stencil = 0;
+	if (value != NULL && value->type == PDF_OBJECT_BOOLEAN)
+		stencil = value->boolean;
+	if (stencil) {
+		row = ((size_t)width + 7) / 8;
+		return row * (size_t)height;
+	}
+
+	/* The bits per component. */
+	value = pdf_object_get(image, "BitsPerComponent");
+	if (value == NULL || value->type != PDF_OBJECT_INTEGER)
+		return 0;
+	bits = value->integer;
+	if (bits < 1 || bits > 16)
+		return 0;
+
+	/* The components of the device spaces, and of an indexed one (a direct array). */
+	space = pdf_object_get(image, "ColorSpace");
+	if (space == NULL)
+		return 0;
+	family = space;
+	if (space->type == PDF_OBJECT_ARRAY) {
+		if (space->count == 0)
+			return 0;
+		family = space->values[0];
+	}
+
+	/* The components, when the family says them. */
+	components = 0;
+	is_name = inline_device_space(family);
+	if (is_name)
+		components = inline_device_components(family);
+	if (components == 0)
+		return 0;
+
+	/* Each row starts on a byte. */
+	row = ((size_t)width * (size_t)components * (size_t)bits + 7) / 8;
+	return row * (size_t)height;
+}
+
+/*
+ * Finds the EI that ends an inline image's data, from a position: an E
+ * and an I with white space before them and white space or the content's
+ * end after them.
+ */
+static int
+find_inline_end(
+	const struct pdf_lexer *lexer,
+	size_t start,
+	size_t *end)
+{
+	const unsigned char *data;
+	size_t position;
+	int before_space;
+	int after_space;
+
+	/* Looks at every E from the start. */
 	data = lexer->data;
-	for (position = lexer->position + 1; position + 1 < lexer->size; position++) {
+	for (position = start; position + 1 < lexer->size; position++) {
 		/* Only an E followed by an I can end the data. */
 		if (data[position] != 'E')
 			continue;
 		if (data[position + 1] != 'I')
 			continue;
 
-		/* The EI must follow white space. */
-		before_space = is_white(data[position - 1]);
+		/* The EI must follow white space (or stand where the data starts, for empty data). */
+		before_space = 1;
+		if (position > 0)
+			before_space = is_white(data[position - 1]);
 		if (!before_space)
 			continue;
 
@@ -3441,14 +3880,70 @@ skip_inline_image(
 		if (!after_space)
 			continue;
 
-		/* The content goes on after the EI. */
-		lexer->position = position + 2;
-		return;
+		/* Succeeded: the position of the E. */
+		*end = position;
+		return 0;
 	}
 
-	/* An image without its end damages the rest of the content. */
-	lexer->position = lexer->size;
-	run->flags |= PDF_DISPLAY_DAMAGED;
+	/* The content ends without an EI. */
+	return PDF_EFORMAT;
+}
+
+/*
+ * Tells whether a name is a device colour space, or a family the image
+ * decoder reads by name: DeviceGray, DeviceRGB, DeviceCMYK, Indexed and
+ * their inline-image abbreviations, CalGray and CalRGB.
+ */
+static int
+inline_device_space(
+	const struct pdf_object *name)
+{
+	int components;
+
+	/* The spaces whose components are known by name. */
+	components = inline_device_components(name);
+	if (components != 0)
+		return 1;
+
+	/* Not a space known by name. */
+	return 0;
+}
+
+/*
+ * Tells the components of a colour space known by name (an indexed space's
+ * samples have one), or 0 for any other.
+ */
+static int
+inline_device_components(
+	const struct pdf_object *name)
+{
+	static const struct {
+		const char *name;
+		int components;
+	} spaces[] = {
+		{ "DeviceGray", 1 },
+		{ "G", 1 },
+		{ "CalGray", 1 },
+		{ "Indexed", 1 },
+		{ "I", 1 },
+		{ "DeviceRGB", 3 },
+		{ "RGB", 3 },
+		{ "CalRGB", 3 },
+		{ "DeviceCMYK", 4 },
+		{ "CMYK", 4 }
+	};
+	size_t index;
+	int is_name;
+
+	/* Looks the name up. */
+	for (index = 0; index < sizeof(spaces) / sizeof(spaces[0]); index++) {
+		is_name = pdf_object_is_name(name, spaces[index].name);
+		if (is_name)
+			return spaces[index].components;
+	}
+
+	/* Any other space. */
+	return 0;
 }
 
 /* Tells whether a byte is white space around an inline image's EI. */

@@ -207,6 +207,8 @@ static unsigned long read_field(const unsigned char *bytes, long width, unsigned
 static int read_hybrid(struct pdf_document *document, struct pdf_object *trailer, size_t section_start);
 static int repair(struct pdf_document *document);
 static void scan_objects(struct pdf_document *document);
+static int is_space_byte(unsigned char byte);
+static int is_digit_byte(unsigned char byte);
 static int find_repaired_trailer(struct pdf_document *document);
 static int add_stream_members(struct pdf_document *document);
 static int make_trailer(struct pdf_document *document, unsigned long catalog, unsigned long generation);
@@ -962,6 +964,7 @@ open_owned(
 {
 	struct pdf_document *created;
 	size_t offset;
+	int repairable;
 	int error;
 
 	/* Allocates the document, which owns the bytes from here on. */
@@ -993,12 +996,28 @@ open_owned(
 	if (error == 0)
 		error = read_catalog(created);
 
-	/* A document whose cross-references or catalog cannot be read is repaired from its bytes. */
-	if (error != 0 && error != ENOMEM && error != ENOTSUP) {
+	/*
+	 * A document whose cross-references or catalog cannot be read is
+	 * repaired from its bytes; running out of memory and a feature the
+	 * reader does not have are not damage.
+	 */
+	repairable = 0;
+	if (error != 0) {
+		repairable = 1;
+		if (error == ENOMEM)
+			repairable = 0;
+		if (error == ENOTSUP)
+			repairable = 0;
+	}
+
+	/* Repairs it and reads the catalog again. */
+	if (repairable) {
 		error = repair(created);
 		if (error == 0)
 			error = read_catalog(created);
 	}
+
+	/* Refuses a document that cannot be read even so. */
 	if (error != 0) {
 		pdf_document_close(created);
 		return error;
@@ -1267,6 +1286,8 @@ read_section(
 			return error;
 		return 0;
 	}
+
+	/* The classic section's entries start after those read so far. */
 	section_start = document->entries_count;
 
 	/* Reads the subsections until the trailer. */
@@ -1536,6 +1557,7 @@ read_stream_section(
 	int is_keyword;
 	int is_xref;
 	int dct;
+	int differs;
 	int error;
 
 	/* Reads the object's number, generation and obj keyword. */
@@ -1590,9 +1612,12 @@ read_stream_section(
 	} else {
 		/* Looks for endstream after the data. */
 		for (end = start; end + 9 <= document->size; end++) {
-			if (memcmp(document->data + end, "endstream", 9) == 0)
+			differs = memcmp(document->data + end, "endstream", 9);
+			if (differs == 0)
 				break;
 		}
+
+		/* A stream without its end is not one. */
 		if (end + 9 > document->size)
 			return PDF_EFORMAT;
 	}
@@ -1657,7 +1682,9 @@ read_stream_entries(
 
 	/* Reads the three widths. */
 	widths = pdf_object_get(stream, "W");
-	if (widths == NULL || widths->type != PDF_OBJECT_ARRAY || widths->count != 3)
+	if (widths == NULL)
+		return PDF_EFORMAT;
+	if (widths->type != PDF_OBJECT_ARRAY || widths->count != 3)
 		return PDF_EFORMAT;
 	row = 0;
 	for (field = 0; field < 3; field++) {
@@ -1668,6 +1695,8 @@ read_stream_entries(
 			return PDF_EFORMAT;
 		row += (size_t)width[field];
 	}
+
+	/* A row of no bytes holds no entry. */
 	if (row == 0)
 		return PDF_EFORMAT;
 
@@ -1701,6 +1730,8 @@ read_stream_entries(
 			first = index_object->values[pair * 2]->integer;
 			count = index_object->values[pair * 2 + 1]->integer;
 		}
+
+		/* Refuses a subsection past the object numbers the reader keeps. */
 		if (first < 0 || count < 0)
 			return PDF_EFORMAT;
 		if ((unsigned long)first > PDF_READER_OBJECT_MAX)
@@ -1729,6 +1760,8 @@ read_stream_entries(
 			} else if (type == 2 && second <= PDF_READER_OBJECT_MAX) {
 				error = add_compressed_entry(document, number, second, third);
 			}
+
+			/* Only running out of memory stops the section. */
 			if (error != 0)
 				return error;
 		}
@@ -1859,57 +1892,125 @@ scan_objects(
 	unsigned long number;
 	unsigned long generation;
 	unsigned long scale;
+	int differs;
+	int space;
+	int digit;
 	int error;
 
 	/* Looks at each place obj could start, from the end. */
 	data = document->data;
 	for (position = document->size; position >= 3 + 4; position--) {
-		/* The keyword, standing alone after white space. */
-		if (memcmp(data + position - 3, "obj", 3) != 0)
+		/* The keyword obj, not followed by a letter (not objstm or the like). */
+		differs = memcmp(data + position - 3, "obj", 3);
+		if (differs != 0)
 			continue;
-		if (position < document->size && data[position] >= 'a' && data[position] <= 'z')
-			continue;
+		if (position < document->size) {
+			if (data[position] >= 'a' && data[position] <= 'z')
+				continue;
+		}
+
+		/* It stands after white space. */
 		cursor = position - 3;
-		if (data[cursor - 1] != ' ' && data[cursor - 1] != '\n' && data[cursor - 1] != '\r' && data[cursor - 1] != '\t')
+		space = is_space_byte(data[cursor - 1]);
+		if (!space)
 			continue;
 
-		/* The generation's digits before the white space. */
-		while (cursor > 0 && (data[cursor - 1] == ' ' || data[cursor - 1] == '\r' || data[cursor - 1] == '\n' || data[cursor - 1] == '\t'))
+		/* Skips the white space before it. */
+		while (cursor > 0) {
+			space = is_space_byte(data[cursor - 1]);
+			if (!space)
+				break;
 			cursor--;
+		}
+
+		/* The generation's digits, read backwards. */
 		generation = 0;
 		scale = 1;
-		for (digits = 0; cursor > 0 && data[cursor - 1] >= '0' && data[cursor - 1] <= '9' && digits < 6; digits++) {
+		for (digits = 0; cursor > 0 && digits < 6; digits++) {
+			digit = is_digit_byte(data[cursor - 1]);
+			if (!digit)
+				break;
 			generation += (unsigned long)(data[cursor - 1] - '0') * scale;
 			scale *= 10;
 			cursor--;
 		}
+
+		/* The generation must have digits and something before them. */
 		if (digits == 0 || cursor == 0)
 			continue;
 
 		/* The number's digits before more white space. */
-		if (data[cursor - 1] != ' ' && data[cursor - 1] != '\n' && data[cursor - 1] != '\r' && data[cursor - 1] != '\t')
+		space = is_space_byte(data[cursor - 1]);
+		if (!space)
 			continue;
-		while (cursor > 0 && (data[cursor - 1] == ' ' || data[cursor - 1] == '\r' || data[cursor - 1] == '\n' || data[cursor - 1] == '\t'))
+		while (cursor > 0) {
+			space = is_space_byte(data[cursor - 1]);
+			if (!space)
+				break;
 			cursor--;
+		}
+
+		/* The number's digits, read backwards. */
 		number = 0;
 		scale = 1;
-		for (digits = 0; cursor > 0 && data[cursor - 1] >= '0' && data[cursor - 1] <= '9' && digits < 8; digits++) {
+		for (digits = 0; cursor > 0 && digits < 8; digits++) {
+			digit = is_digit_byte(data[cursor - 1]);
+			if (!digit)
+				break;
 			number += (unsigned long)(data[cursor - 1] - '0') * scale;
 			scale *= 10;
 			cursor--;
 		}
+
+		/* The number must have digits the reader keeps. */
 		if (digits == 0 || number > PDF_READER_OBJECT_MAX)
 			continue;
 
 		/* The number must start a token. */
-		if (cursor > 0 && data[cursor - 1] >= '0' && data[cursor - 1] <= '9')
-			continue;
+		if (cursor > 0) {
+			digit = is_digit_byte(data[cursor - 1]);
+			if (digit)
+				continue;
+		}
 
 		/* Adds the object; running out of memory ends the scan with what it found. */
 		error = add_entry(document, number, generation, cursor, 1);
 		if (error != 0)
 			return;
 	}
+}
+
+/* Tells whether a byte is white space where the repair scan looks for "n g obj". */
+static int
+is_space_byte(
+	unsigned char byte)
+{
+	/* The white space an object's header has between its words. */
+	switch (byte) {
+	case ' ':
+	case '\n':
+	case '\r':
+	case '\t':
+		return 1;
+	default:
+		break;
+	}
+
+	/* Anything else. */
+	return 0;
+}
+
+/* Tells whether a byte is a decimal digit. */
+static int
+is_digit_byte(
+	unsigned char byte)
+{
+	/* The digits 0 to 9. */
+	if (byte >= '0' && byte <= '9')
+		return 1;
+
+	/* Anything else. */
+	return 0;
 }
 
 /*
@@ -1925,6 +2026,7 @@ find_repaired_trailer(
 	struct pdf_object *dictionary;
 	struct pdf_object *object;
 	struct pdf_object *type;
+	struct pdf_object *root;
 	size_t position;
 	size_t index;
 	size_t best_offset;
@@ -1932,12 +2034,18 @@ find_repaired_trailer(
 	unsigned long catalog_generation;
 	int found_catalog;
 	int is_name;
+	int differs;
+	int later;
 	int error;
 
 	/* The last trailer keyword whose dictionary has a /Root. */
 	for (position = document->size; position >= 7; position--) {
-		if (memcmp(document->data + position - 7, "trailer", 7) != 0)
+		/* The keyword. */
+		differs = memcmp(document->data + position - 7, "trailer", 7);
+		if (differs != 0)
 			continue;
+
+		/* The dictionary after it, which must name the catalog. */
 		memset(&lexer, 0, sizeof(lexer));
 		lexer.data = document->data;
 		lexer.size = document->size;
@@ -1948,7 +2056,8 @@ find_repaired_trailer(
 			return ENOMEM;
 		if (error != 0 || dictionary->type != PDF_OBJECT_DICTIONARY)
 			continue;
-		if (pdf_object_get(dictionary, "Root") == NULL)
+		root = pdf_object_get(dictionary, "Root");
+		if (root == NULL)
 			continue;
 		document->trailer = dictionary;
 		return 0;
@@ -1971,7 +2080,15 @@ find_repaired_trailer(
 
 		/* A cross-reference stream with a /Root, the one furthest in the file. */
 		is_name = pdf_object_is_name(type, "XRef");
-		if (is_name && pdf_object_get(object, "Root") != NULL && document->entries[index].offset >= best_offset) {
+		root = pdf_object_get(object, "Root");
+		later = 0;
+		if (is_name && root != NULL) {
+			if (document->entries[index].offset >= best_offset)
+				later = 1;
+		}
+
+		/* Keeps it as the trailer so far. */
+		if (later) {
 			document->trailer = object;
 			best_offset = document->entries[index].offset;
 			continue;
@@ -1985,6 +2102,8 @@ find_repaired_trailer(
 			catalog_generation = document->entries[index].generation;
 		}
 	}
+
+	/* A cross-reference stream's dictionary serves as the trailer. */
 	if (document->trailer != NULL)
 		return 0;
 
@@ -2061,19 +2180,34 @@ make_trailer(
 	struct pdf_object *value;
 	unsigned char *name;
 
-	/* The dictionary, its key and its value, and the arrays of one each. */
+	/* The dictionary (the arena's memory is zeroed). */
 	dictionary = pdf_arena_allocate(&document->arena, sizeof(*dictionary));
-	key = pdf_arena_allocate(&document->arena, sizeof(*key));
-	value = pdf_arena_allocate(&document->arena, sizeof(*value));
-	name = pdf_arena_allocate(&document->arena, 5);
-	if (dictionary == NULL || key == NULL || value == NULL || name == NULL)
+	if (dictionary == NULL)
 		return ENOMEM;
-	memset(dictionary, 0, sizeof(*dictionary));
-	memset(key, 0, sizeof(*key));
-	memset(value, 0, sizeof(*value));
+
+	/* Its key. */
+	key = pdf_arena_allocate(&document->arena, sizeof(*key));
+	if (key == NULL)
+		return ENOMEM;
+
+	/* Its value. */
+	value = pdf_arena_allocate(&document->arena, sizeof(*value));
+	if (value == NULL)
+		return ENOMEM;
+
+	/* The key's name, with its NUL. */
+	name = pdf_arena_allocate(&document->arena, 5);
+	if (name == NULL)
+		return ENOMEM;
+
+	/* The array of its one key. */
 	dictionary->keys = pdf_arena_allocate(&document->arena, sizeof(*dictionary->keys));
+	if (dictionary->keys == NULL)
+		return ENOMEM;
+
+	/* The array of its one value. */
 	dictionary->values = pdf_arena_allocate(&document->arena, sizeof(*dictionary->values));
-	if (dictionary->keys == NULL || dictionary->values == NULL)
+	if (dictionary->values == NULL)
 		return ENOMEM;
 
 	/* /Root n g R. */
@@ -2124,6 +2258,8 @@ parse_compressed(
 			if (stream->numbers[member] == entry->number)
 				break;
 		}
+
+		/* The stream does not hold the object. */
 		if (member == stream->count)
 			return PDF_EFORMAT;
 	}
@@ -2197,6 +2333,8 @@ open_object_stream(
 		free(owned);
 		return ENOMEM;
 	}
+
+	/* The stream's decoded bytes, which it owns. */
 	stream->number = number;
 	stream->bytes = data;
 	stream->owned = owned;
@@ -2211,6 +2349,8 @@ open_object_stream(
 		free(stream);
 		return error;
 	}
+
+	/* The document keeps it, counted against the decode bound. */
 	stream->next = document->object_streams;
 	document->object_streams = stream;
 	document->object_streams_size += size;
@@ -2279,6 +2419,8 @@ read_object_stream_header(
 		stream->numbers[member] = (unsigned long)number.integer;
 		stream->offsets[member] = (size_t)offset.integer;
 	}
+
+	/* The members read before any damage. */
 	stream->count = member;
 
 	/* Succeeded: the members are listed. */
@@ -2301,6 +2443,8 @@ free_object_streams(
 		free(stream->owned);
 		free(stream);
 	}
+
+	/* The document has none left. */
 	document->object_streams = NULL;
 }
 
@@ -2398,6 +2542,8 @@ merge_entries(
 					if (order <= 0)
 						take_left = 1;
 				}
+
+				/* Moves the chosen head. */
 				if (take_left) {
 					target[out] = source[left];
 					left++;
@@ -2407,6 +2553,8 @@ merge_entries(
 				}
 			}
 		}
+
+		/* The merged runs are the next pass's source. */
 		swap = source;
 		source = target;
 		target = swap;
@@ -2525,6 +2673,8 @@ load_object(
 	} else {
 		error = parse_indirect(document, entry, depth, &loaded);
 	}
+
+	/* A failed entry is not parsed again. */
 	if (error != 0) {
 		entry->state = PDF_ENTRY_FAILED;
 		entry->error = error;

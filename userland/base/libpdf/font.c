@@ -324,6 +324,8 @@ pdf_font_cache_free(
 		free(file->data);
 		free(file);
 	}
+
+	/* The cache itself. */
 	free(cache);
 }
 
@@ -396,6 +398,7 @@ pdf_font_glyph(
 	unsigned glyph_index;
 	double advance;
 	double width;
+	int narrower;
 	int error;
 
 	/* Nothing is drawn until the outline is found. */
@@ -444,12 +447,21 @@ pdf_font_glyph(
 	 */
 	if (font->substituted) {
 		advance = face_advance(font, glyph_index);
-		if (advance > width * 1.05 && width > 0.0) {
+		narrower = 0;
+		if (width > 0.0) {
+			if (advance > width * 1.05)
+				narrower = 1;
+		}
+
+		/* Narrows it, but not below six tenths. */
+		if (narrower) {
 			glyph->transform[0] = width / advance;
 			if (glyph->transform[0] < 0.6)
 				glyph->transform[0] = 0.6;
 		}
 	}
+
+	/* A substitute standing in for an italic face leans. */
 	glyph->transform[2] = font->shear;
 
 	/* Finds or reads the glyph's outline. */
@@ -494,14 +506,19 @@ pdf_glyph_name_unicode(
 	}
 
 	/* uniXXXX names a character by its four hexadecimal digits. */
-	if (length >= 7 && memcmp(name, "uni", 3) == 0) {
-		value = hex_number(name + 3, 4);
-		if (value != 0)
-			return value;
+	if (length >= 7) {
+		difference = memcmp(name, "uni", 3);
+		if (difference == 0) {
+			value = hex_number(name + 3, 4);
+			if (value != 0)
+				return value;
+		}
 	}
 
 	/* uXXXX to uXXXXXX names one by four to six digits, of which the table keeps the first plane. */
-	if (length >= 5 && length <= 7 && name[0] == 'u') {
+	if (length >= 5 &&
+	    length <= 7 &&
+	    name[0] == 'u') {
 		value = hex_number(name + 1, length - 1);
 		if (value != 0 && value <= 0xFFFF)
 			return value;
@@ -556,6 +573,8 @@ hex_number(
 		} else {
 			return 0;
 		}
+
+		/* The digit is the next four bits. */
 		value = value * 16 + digit;
 	}
 
@@ -772,11 +791,17 @@ load_type3(
 	/* The horizontal scale of the font matrix, 0.001 by default. */
 	scale = 0.001;
 	error = pdf_reader_resolve_key(document, dictionary, "FontMatrix", &matrix);
-	if (error == 0 && matrix->type == PDF_OBJECT_ARRAY && matrix->count == 6) {
-		error = read_number(document, matrix->values[0], &scale);
-		if (error != 0)
-			scale = 0.001;
+	if (error != 0)
+		matrix = NULL;
+	if (matrix != NULL && matrix->type == PDF_OBJECT_ARRAY) {
+		if (matrix->count == 6) {
+			error = read_number(document, matrix->values[0], &scale);
+			if (error != 0)
+				scale = 0.001;
+		}
 	}
+
+	/* A scale of a whole em or more (or not a number) is not a font matrix's. */
 	if (!(scale > -1.0 && scale < 1.0))
 		scale = 0.001;
 	font->type3_scale = scale;
@@ -923,12 +948,16 @@ load_substitute(
 			font->shear = FONT_ITALIC_SHEAR;
 	}
 
-	/* The sans in the style, then the plain sans, drawn in the style. */
+	/* The sans in the style. */
 	if (error == ENOENT && family != FONT_FAMILY_SANS) {
 		snprintf(name, sizeof(name), "%s%s.ttf", families[0], styles[style]);
 		error = open_substitute(cache, name, &face);
 	}
-	if (error == ENOENT && family != FONT_FAMILY_SANS && style != 0) {
+
+	/* The plain sans, drawn in the style. */
+	if (error == ENOENT &&
+	    family != FONT_FAMILY_SANS &&
+	    style != 0) {
 		snprintf(name, sizeof(name), "%s.ttf", families[0]);
 		error = open_substitute(cache, name, &face);
 		if (error == 0 && bold)
@@ -942,6 +971,8 @@ load_substitute(
 		font->status |= PDF_DISPLAY_SKIPPED;
 		return 0;
 	}
+
+	/* Reports a failure other than a missing file. */
 	if (error != 0)
 		return error;
 
@@ -1054,6 +1085,8 @@ read_font_file(
 				fclose(stream);
 				return ENOMEM;
 			}
+
+			/* The grown buffer holds what was read. */
 			buffer = grown;
 		}
 
@@ -1116,6 +1149,8 @@ read_encoding(
 			memcpy(unicode, base, 256 * sizeof(unicode[0]));
 		return;
 	}
+
+	/* Anything but a name or a dictionary leaves the default. */
 	if (encoding->type != PDF_OBJECT_DICTIONARY)
 		return;
 
@@ -1328,6 +1363,7 @@ map_embedded_codes(
 	int has_unicode;
 	int has_symbol;
 	int has_mac;
+	int by_character;
 	int error;
 
 	/* Finds which maps the program has. */
@@ -1348,12 +1384,22 @@ map_embedded_codes(
 	for (code = 0; code < 256; code++) {
 		glyph = 0;
 
-		/* The Unicode map, by the character the encoding names. */
-		if (has_unicode && unicode[code] != 0 && (!symbolic || has_encoding))
+		/* The Unicode map, by the character the encoding names (a symbolic font's only when it has an encoding). */
+		by_character = 0;
+		if (has_unicode && unicode[code] != 0) {
+			by_character = 1;
+			if (symbolic && !has_encoding)
+				by_character = 0;
+		}
+
+		/* Looks the character up. */
+		if (by_character)
 			(void)truetype_cmap_lookup(font->face, 3, 1, unicode[code], &glyph);
 
 		/* The symbol map, by the code in each of the ranges symbol fonts use. */
-		for (shift = 0; glyph == 0 && has_symbol && shift < 4; shift++) {
+		for (shift = 0; has_symbol && shift < 4; shift++) {
+			if (glyph != 0)
+				break;
 			if (shift == 0) {
 				(void)truetype_cmap_lookup(font->face, 3, 0, code, &glyph);
 			} else {
@@ -1374,9 +1420,13 @@ map_embedded_codes(
 			(void)truetype_cmap_lookup(font->face, 3, 1, code, &glyph);
 
 		/* A program with no map at all is addressed by glyph number. */
-		if (glyph == 0 && !has_unicode && !has_symbol && !has_mac)
+		if (glyph == 0 &&
+		    !has_unicode &&
+		    !has_symbol &&
+		    !has_mac)
 			glyph = code;
 
+		/* The code draws the glyph found (0, the missing glyph, when none was). */
 		font->code_glyphs[code] = glyph;
 	}
 }
@@ -1404,7 +1454,9 @@ map_substitute_codes(
 		if (character == 0)
 			character = code;
 		font->code_glyphs[code] = truetype_glyph_index(font->face, character);
-		if (font->code_glyphs[code] == 0 && character >= 0xFB00 && character <= 0xFB04)
+		if (font->code_glyphs[code] != 0)
+			continue;
+		if (character >= 0xFB00 && character <= 0xFB04)
 			font->code_glyphs[code] = FONT_LIGATURE_GLYPH + character;
 	}
 }
@@ -1479,7 +1531,9 @@ read_simple_widths(
 	if (error != 0)
 		return;
 	error = pdf_object_number(first_object, &first);
-	if (error != 0 || !(first >= 0.0 && first < 256.0))
+	if (error != 0)
+		first = 0.0;
+	if (!(first >= 0.0 && first < 256.0))
 		first = 0.0;
 
 	/* The missing width covers the codes the widths do not. */
@@ -1489,6 +1543,8 @@ read_simple_widths(
 		if (error == 0)
 			(void)pdf_object_number(missing_object, &missing);
 	}
+
+	/* Every code starts at the missing width. */
 	for (code = 0; code < 256; code++)
 		font->code_widths[code] = missing * scale;
 
@@ -1538,7 +1594,9 @@ read_cid_widths(
 	error = pdf_reader_resolve_key(document, cid_font, "DW", &default_object);
 	if (error == 0) {
 		error = pdf_object_number(default_object, &number);
-		if (error == 0 && number > -1e6 && number < 1e6)
+		if (error != 0)
+			number = 1000.0;
+		if (number > -1e6 && number < 1e6)
 			font->default_width = number * 0.001;
 	}
 
@@ -1554,6 +1612,8 @@ read_cid_widths(
 	font->cid_widths = malloc(font->cid_widths_count * sizeof(*font->cid_widths));
 	if (font->cid_widths == NULL)
 		return ENOMEM;
+
+	/* Every CID starts at the default. */
 	for (cid = 0; cid < font->cid_widths_count; cid++)
 		font->cid_widths[cid] = (float)font->default_width;
 
@@ -1563,7 +1623,9 @@ read_cid_widths(
 	while (index + 1 < widths->count && index < FONT_ARRAY_MAX) {
 		/* The run's first CID. */
 		error = read_number(document, widths->values[index], &number);
-		if (error != 0 || !(number >= 0.0 && number <= (double)FONT_CID_MAX))
+		if (error != 0)
+			break;
+		if (!(number >= 0.0 && number <= (double)FONT_CID_MAX))
 			break;
 		cid = (unsigned long)number;
 		error = pdf_reader_resolve(document, widths->values[index + 1], &next);
@@ -1575,12 +1637,16 @@ read_cid_widths(
 			list = next;
 			for (item = 0; item < list->count && cid + item <= FONT_CID_MAX; item++) {
 				error = read_number(document, list->values[item], &width);
-				if (error != 0 || !(width > -1e6 && width < 1e6))
+				if (error != 0)
+					continue;
+				if (!(width > -1e6 && width < 1e6))
 					continue;
 				font->cid_widths[cid + item] = (float)(width * 0.001);
 				if (cid + item > highest)
 					highest = cid + item;
 			}
+
+			/* The run is read; the next starts after its array. */
 			index += 2;
 			continue;
 		}
@@ -1589,16 +1655,24 @@ read_cid_widths(
 		if (index + 2 >= widths->count)
 			break;
 		error = pdf_object_number(next, &last);
-		if (error != 0 || !(last >= 0.0))
+		if (error != 0)
+			break;
+		if (!(last >= 0.0))
 			break;
 		error = pdf_reader_resolve(document, widths->values[index + 2], &entry);
 		if (error != 0)
 			break;
+
+		/* A width that is not a number skips the range. */
 		error = pdf_object_number(entry, &width);
-		if (error != 0 || !(width > -1e6 && width < 1e6)) {
+		if (error != 0)
+			width = 1e9;
+		if (!(width > -1e6 && width < 1e6)) {
 			index += 3;
 			continue;
 		}
+
+		/* Each CID of the range, up to the last one kept. */
 		end = FONT_CID_MAX;
 		if (last < (double)FONT_CID_MAX)
 			end = (unsigned long)last;
@@ -1647,8 +1721,12 @@ read_vertical_metrics(
 	error = read_number(document, metrics->values[1], &advance);
 	if (error != 0)
 		return;
-	if (!(origin > -1e6 && origin < 1e6 && advance > -1e6 && advance < 1e6))
+	if (!(origin > -1e6 && origin < 1e6))
 		return;
+	if (!(advance > -1e6 && advance < 1e6))
+		return;
+
+	/* The pair, in text space. */
 	font->vertical_origin = origin * 0.001;
 	font->vertical_advance = advance * 0.001;
 }
@@ -1770,6 +1848,8 @@ name_contains(
 			if (left != right)
 				break;
 		}
+
+		/* Every byte matched at this position. */
 		if (index == length)
 			return 1;
 	}
@@ -1855,7 +1935,9 @@ choose_family(
 		error = pdf_reader_resolve_key(document, descriptor, "FontWeight", &weight);
 		if (error == 0) {
 			error = pdf_object_number(weight, &weight_value);
-			if (error == 0 && weight_value >= 600.0)
+			if (error != 0)
+				weight_value = 400.0;
+			if (weight_value >= 600.0)
 				*bold = 1;
 		}
 	}
@@ -1887,6 +1969,7 @@ tex_family(
 	const unsigned char *bytes;
 	size_t length;
 	size_t index;
+	int differs;
 	int found;
 
 	/* Leaves out a subset's prefix: six capitals and a plus sign. */
@@ -1900,7 +1983,10 @@ tex_family(
 	}
 
 	/* Latin Modern names its family and style in words. */
-	if (length > 2 && memcmp(bytes, "LM", 2) == 0) {
+	differs = 1;
+	if (length > 2)
+		differs = memcmp(bytes, "LM", 2);
+	if (differs == 0) {
 		*family = FONT_FAMILY_SERIF;
 		*bold = 0;
 		*italic = 0;
@@ -1925,13 +2011,22 @@ tex_family(
 	/* Computer Modern and cm-super: CM or SF, then two or three letters of family and style, then the size. */
 	if (length < 4)
 		return 0;
-	if (memcmp(bytes, "CM", 2) != 0 && memcmp(bytes, "SF", 2) != 0)
+	differs = memcmp(bytes, "CM", 2);
+	if (differs != 0)
+		differs = memcmp(bytes, "SF", 2);
+	if (differs != 0)
 		return 0;
+
+	/* The capitals end at the size's first digit. */
 	for (index = 2; index < length; index++) {
 		if (bytes[index] < 'A' || bytes[index] > 'Z')
 			break;
 	}
-	if (index == length || bytes[index] < '0' || bytes[index] > '9')
+
+	/* A name of capitals only, or without the size, is not TeX's. */
+	if (index == length)
+		return 0;
+	if (bytes[index] < '0' || bytes[index] > '9')
 		return 0;
 
 	/* The letters: SS sans, TT and VTT monospace, BX and B bold, TI, SL, MI and IT italic. */
@@ -1989,6 +2084,7 @@ face_advance(
 	unsigned glyph)
 {
 	const char *letters;
+	unsigned letter;
 	double total;
 	int advance;
 	int error;
@@ -2001,8 +2097,12 @@ face_advance(
 	letters = ligature_letters(glyph);
 	if (letters != NULL) {
 		total = 0.0;
-		for (; *letters != '\0'; letters++)
-			total += face_advance(font, truetype_glyph_index(font->face, (unsigned char)*letters));
+		for (; *letters != '\0'; letters++) {
+			letter = truetype_glyph_index(font->face, (unsigned char)*letters);
+			total += face_advance(font, letter);
+		}
+
+		/* The letters' advances together. */
 		return total;
 	}
 
@@ -2048,6 +2148,8 @@ find_outline(
 			*slot = found;
 			return 0;
 		}
+
+		/* A collision: the next slot. */
 		index = (index + 1) & mask;
 	}
 
@@ -2109,6 +2211,8 @@ read_outline(
 			offset += face_advance(font, letter);
 		}
 	}
+
+	/* A failure leaves the arrays as they were. */
 	if (error != 0) {
 		font->verbs_count = slot->verb_start;
 		font->points_count = slot->point_start;
@@ -2259,6 +2363,8 @@ convert_contours(
 			start[0] = (points[first].x + points[last].x) / 2.0;
 			start[1] = (points[first].y + points[last].y) / 2.0;
 		}
+
+		/* Moves to the start, in ems. */
 		start[0] = start[0] * scale + offset;
 		start[1] *= scale;
 		error = emit(font, PDF_PATH_MOVE, start, 1);
@@ -2300,6 +2406,8 @@ convert_contours(
 					current[0] = point[0];
 					current[1] = point[1];
 				}
+
+				/* The point is the control point of the next curve. */
 				control[0] = target[0];
 				control[1] = target[1];
 				pending = 1;
@@ -2319,6 +2427,8 @@ convert_contours(
 			} else if (step != count) {
 				error = emit(font, PDF_PATH_LINE, target, 1);
 			}
+
+			/* The point is where the next step starts. */
 			if (error != 0)
 				return error;
 			current[0] = target[0];
@@ -2405,6 +2515,8 @@ grow_slots(
 		font->slots = old;
 		return ENOMEM;
 	}
+
+	/* The new table is the font's. */
 	font->slots_capacity = capacity;
 
 	/* Moves each kept glyph to its place in the new table. */
@@ -2418,8 +2530,12 @@ grow_slots(
 				break;
 			position = (position + 1) & (capacity - 1);
 		}
+
+		/* The glyph's slot in the new table. */
 		*slot = old[index];
 	}
+
+	/* The old table goes. */
 	free(old);
 
 	/* Succeeded: the table has room. */

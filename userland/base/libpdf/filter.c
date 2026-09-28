@@ -6,11 +6,12 @@
  */
 
 /*
- * The stream filters of libpdf's reader (stage 1 of design-pdf.md):
- * FlateDecode through libz-compat with the PNG and TIFF predictors, and
- * ASCIIHexDecode.  DCTDecode is not decoded here: an image's JPEG bytes are
- * handed to the image decoder (image.c) as they are.  Any other filter is
- * reported as ENOTSUP.
+ * The stream filters of libpdf's reader (stages 1 and 2 of design-pdf.md):
+ * FlateDecode through libz-compat and LZWDecode, both with the PNG and TIFF
+ * predictors, ASCIIHexDecode, ASCII85Decode and RunLengthDecode.  DCTDecode
+ * is not decoded here: an image's JPEG bytes are handed to the image
+ * decoder (image.c) as they are.  Any other filter (CCITTFax, JBIG2, JPX)
+ * is reported as ENOTSUP.
  *
  * Every output is bounded by PDF_FILTER_OUTPUT_MAX, which stops a small
  * stream that inflates to gigabytes.  A Flate stream that is cut short or
@@ -48,7 +49,47 @@ enum pdf_filter_kind {
 	PDF_FILTER_UNKNOWN = 0,
 	PDF_FILTER_FLATE,
 	PDF_FILTER_ASCII_HEX,
+	PDF_FILTER_ASCII_85,
+	PDF_FILTER_LZW,
+	PDF_FILTER_RUN_LENGTH,
 	PDF_FILTER_DCT
+};
+
+/* The LZW codes that clear the table and end the data, the first code of the table, and its size. */
+#define PDF_LZW_CLEAR 256
+#define PDF_LZW_END 257
+#define PDF_LZW_FIRST 258
+#define PDF_LZW_TABLE 4096
+
+/* The widest LZW code, in bits. */
+#define PDF_LZW_WIDTH_MAX 12
+
+/*
+ * One entry of the LZW string table.
+ *
+ * A string is its prefix's string followed by one byte, so an entry keeps
+ * the code of the prefix, the last byte, the first byte (the byte the next
+ * entry may append) and the length.  The table lives on the heap for one
+ * decode.
+ */
+struct pdf_lzw_entry {
+	unsigned short prefix;
+	unsigned char last;
+	unsigned char first;
+	unsigned long length;
+};
+
+/*
+ * The output of a decoder that does not know its size in advance.
+ *
+ * It grows by doubling up to the decode limit; error keeps the first
+ * failure, so that a decoder checks it once per step.
+ */
+struct pdf_filter_output {
+	unsigned char *data;
+	size_t size;
+	size_t capacity;
+	int error;
 };
 
 /*
@@ -66,6 +107,14 @@ static enum pdf_filter_kind filter_kind(const struct pdf_object *name);
 static int apply_filter(struct pdf_document *document, enum pdf_filter_kind kind, struct pdf_object *parameters, const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
 static int inflate_bytes(const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
 static int decode_hex(const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
+static int decode_ascii85(const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
+static void put_ascii85_group(unsigned long group, int bytes, unsigned char *buffer, size_t *produced);
+static int decode_lzw(struct pdf_document *document, struct pdf_object *parameters, const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
+static int read_lzw(const unsigned char *input, size_t input_size, long early_change, struct pdf_filter_output *output);
+static void add_lzw_entry(struct pdf_lzw_entry *table, unsigned int *next_code, unsigned int previous, unsigned int code);
+static void put_lzw_string(const struct pdf_lzw_entry *table, unsigned int code, struct pdf_filter_output *output);
+static int decode_run_length(const unsigned char *input, size_t input_size, unsigned char **output, size_t *output_size);
+static void output_reserve(struct pdf_filter_output *output, size_t more);
 static int read_predictor(struct pdf_document *document, struct pdf_object *parameters, struct pdf_predictor *predictor);
 static int read_parameter(struct pdf_document *document, struct pdf_object *parameters, const char *key, long fallback, long *value);
 static int undo_predictor(const struct pdf_predictor *predictor, unsigned char *data, size_t *size);
@@ -102,10 +151,16 @@ pdf_filter_decode(
 	size_t index;
 	int error;
 
-	/* Starts from the stream's raw bytes. */
+	/* Starts from the stream's raw bytes: the document's, or an inline image's in its content. */
 	*owned = NULL;
 	*dct = 0;
-	current = pdf_reader_bytes(document) + stream->data_offset;
+	if (stream->bytes != NULL) {
+		current = stream->bytes + stream->data_offset;
+	} else {
+		current = pdf_reader_bytes(document) + stream->data_offset;
+	}
+
+	/* Nothing decoded is owned yet. */
 	current_size = stream->data_length;
 	current_owned = NULL;
 
@@ -215,6 +270,7 @@ filter_kind(
 {
 	int is_flate;
 	int is_hex;
+	int is_known;
 	int is_dct;
 
 	/* The Flate names. */
@@ -232,6 +288,30 @@ filter_kind(
 	is_hex = pdf_object_is_name(name, "AHx");
 	if (is_hex)
 		return PDF_FILTER_ASCII_HEX;
+
+	/* The base-85 names. */
+	is_known = pdf_object_is_name(name, "ASCII85Decode");
+	if (is_known)
+		return PDF_FILTER_ASCII_85;
+	is_known = pdf_object_is_name(name, "A85");
+	if (is_known)
+		return PDF_FILTER_ASCII_85;
+
+	/* The LZW names. */
+	is_known = pdf_object_is_name(name, "LZWDecode");
+	if (is_known)
+		return PDF_FILTER_LZW;
+	is_known = pdf_object_is_name(name, "LZW");
+	if (is_known)
+		return PDF_FILTER_LZW;
+
+	/* The run-length names. */
+	is_known = pdf_object_is_name(name, "RunLengthDecode");
+	if (is_known)
+		return PDF_FILTER_RUN_LENGTH;
+	is_known = pdf_object_is_name(name, "RL");
+	if (is_known)
+		return PDF_FILTER_RUN_LENGTH;
 
 	/* The JPEG names. */
 	is_dct = pdf_object_is_name(name, "DCTDecode");
@@ -259,6 +339,10 @@ apply_filter(
 	struct pdf_predictor predictor;
 	int error;
 
+	/* Nothing is decoded yet. */
+	*output = NULL;
+	*output_size = 0;
+
 	/* Decodes by the filter's kind. */
 	switch (kind) {
 	case PDF_FILTER_FLATE:
@@ -279,6 +363,15 @@ apply_filter(
 		return 0;
 	case PDF_FILTER_ASCII_HEX:
 		error = decode_hex(input, input_size, output, output_size);
+		return error;
+	case PDF_FILTER_ASCII_85:
+		error = decode_ascii85(input, input_size, output, output_size);
+		return error;
+	case PDF_FILTER_LZW:
+		error = decode_lzw(document, parameters, input, input_size, output, output_size);
+		return error;
+	case PDF_FILTER_RUN_LENGTH:
+		error = decode_run_length(input, input_size, output, output_size);
 		return error;
 	case PDF_FILTER_DCT:
 	case PDF_FILTER_UNKNOWN:
@@ -446,6 +539,458 @@ decode_hex(
 	*output = buffer;
 	*output_size = produced;
 	return 0;
+}
+
+/*
+ * Decodes ASCII85Decode: groups of five characters '!'..'u' make four
+ * bytes, 'z' makes four zero bytes, white space is ignored and "~>" ends
+ * the data; a last partial group of n characters makes n - 1 bytes.
+ *
+ * A character outside the alphabet ends the data where it stands, keeping
+ * what was decoded before it, as other readers do.
+ */
+static int
+decode_ascii85(
+	const unsigned char *input,
+	size_t input_size,
+	unsigned char **output,
+	size_t *output_size)
+{
+	unsigned char *buffer;
+	unsigned char character;
+	unsigned long group;
+	size_t index;
+	size_t produced;
+	int digits;
+
+	/*
+	 * Allocates for the most bytes the input can give: four per 'z',
+	 * which is more than the four per five digits.
+	 */
+	if (input_size > PDF_FILTER_OUTPUT_MAX / 4)
+		return ENOMEM;
+	buffer = malloc(input_size * 4 + 4);
+	if (buffer == NULL)
+		return ENOMEM;
+
+	/* Reads the characters, a group of five at a time. */
+	produced = 0;
+	group = 0;
+	digits = 0;
+	for (index = 0; index < input_size; index++) {
+		character = input[index];
+
+		/* The end marker ends the data. */
+		if (character == '~')
+			break;
+
+		/* White space is skipped. */
+		if (character <= ' ')
+			continue;
+
+		/* 'z' stands for four zero bytes, and only between groups. */
+		if (character == 'z') {
+			if (digits != 0)
+				break;
+			memset(buffer + produced, 0, 4);
+			produced += 4;
+			continue;
+		}
+
+		/* Anything else outside the alphabet ends the data. */
+		if (character > 'u')
+			break;
+
+		/* Adds the digit; the fifth completes a group of four bytes. */
+		group = group * 85 + (unsigned long)(character - '!');
+		digits++;
+		if (digits == 5) {
+			put_ascii85_group(group, 4, buffer, &produced);
+			group = 0;
+			digits = 0;
+		}
+	}
+
+	/* A last partial group is padded with the highest digit and gives one byte fewer than its digits. */
+	if (digits > 1) {
+		index = (size_t)digits;
+		while (index < 5) {
+			group = group * 85 + 84;
+			index++;
+		}
+
+		/* Stores the bytes the digits given make. */
+		put_ascii85_group(group, digits - 1, buffer, &produced);
+	}
+
+	/* Succeeded: the decoded bytes. */
+	*output = buffer;
+	*output_size = produced;
+	return 0;
+}
+
+/*
+ * Stores the first bytes of a base-85 group, most significant first.
+ *
+ * A group above 2^32 - 1 (possible only in damaged data) keeps its low 32
+ * bits.
+ */
+static void
+put_ascii85_group(
+	unsigned long group,
+	int bytes,
+	unsigned char *buffer,
+	size_t *produced)
+{
+	int index;
+
+	/* Stores the bytes from the most significant. */
+	group &= 0xffffffffUL;
+	for (index = 0; index < bytes; index++) {
+		buffer[*produced] = (unsigned char)((group >> (24 - 8 * index)) & 0xff);
+		(*produced)++;
+	}
+}
+
+/* Decodes LZWDecode with its /EarlyChange and predictor parameters. */
+static int
+decode_lzw(
+	struct pdf_document *document,
+	struct pdf_object *parameters,
+	const unsigned char *input,
+	size_t input_size,
+	unsigned char **output,
+	size_t *output_size)
+{
+	struct pdf_filter_output decoded;
+	struct pdf_predictor predictor;
+	long early_change;
+	int error;
+
+	/* Reads the predictor before decoding, so that a bad one costs nothing. */
+	error = read_predictor(document, parameters, &predictor);
+	if (error != 0)
+		return error;
+
+	/* Reads when the code width grows: one code early (1, the default) or exactly at the table's size (0). */
+	error = read_parameter(document, parameters, "EarlyChange", 1, &early_change);
+	if (error != 0)
+		return error;
+	if (early_change != 0)
+		early_change = 1;
+
+	/* Decodes the codes. */
+	memset(&decoded, 0, sizeof(decoded));
+	error = read_lzw(input, input_size, early_change, &decoded);
+	if (error != 0) {
+		free(decoded.data);
+		return error;
+	}
+
+	/* Undoes the predictor in place. */
+	error = undo_predictor(&predictor, decoded.data, &decoded.size);
+	if (error != 0) {
+		free(decoded.data);
+		return error;
+	}
+
+	/* Succeeded: the decoded bytes. */
+	*output = decoded.data;
+	*output_size = decoded.size;
+	return 0;
+}
+
+/*
+ * Reads LZW codes of 9 to 12 bits, most significant bit first, into an
+ * output.
+ *
+ * A code the table cannot have yet, or the input running out, ends the
+ * data and keeps what was decoded before it.
+ */
+static int
+read_lzw(
+	const unsigned char *input,
+	size_t input_size,
+	long early_change,
+	struct pdf_filter_output *output)
+{
+	struct pdf_lzw_entry *table;
+	unsigned long bit_buffer;
+	unsigned long mask;
+	unsigned int code;
+	unsigned int previous;
+	unsigned int next_code;
+	unsigned int width;
+	size_t index;
+	int bits;
+	int have_previous;
+
+	/* Allocates the table. */
+	table = malloc(sizeof(*table) * PDF_LZW_TABLE);
+	if (table == NULL)
+		return ENOMEM;
+
+	/* The first 256 entries are the single bytes. */
+	for (code = 0; code < 256; code++) {
+		table[code].prefix = 0;
+		table[code].last = (unsigned char)code;
+		table[code].first = (unsigned char)code;
+		table[code].length = 1;
+	}
+
+	/* Reads the codes until the end code, the end of the input, or damage. */
+	next_code = PDF_LZW_FIRST;
+	width = 9;
+	previous = 0;
+	have_previous = 0;
+	bit_buffer = 0;
+	bits = 0;
+	index = 0;
+	for (;;) {
+		/* Gathers enough bits for one code; a code cut short by the end of the input ends the data. */
+		while (bits < (int)width && index < input_size) {
+			bit_buffer = ((bit_buffer << 8) | input[index]) & 0xffffffUL;
+			bits += 8;
+			index++;
+		}
+
+		/* Takes the code from the top of the gathered bits. */
+		if (bits < (int)width)
+			break;
+		mask = (1UL << width) - 1;
+		code = (unsigned int)((bit_buffer >> (bits - (int)width)) & mask);
+		bits -= (int)width;
+
+		/* The clear code empties the table and returns to 9-bit codes. */
+		if (code == PDF_LZW_CLEAR) {
+			next_code = PDF_LZW_FIRST;
+			width = 9;
+			have_previous = 0;
+			continue;
+		}
+
+		/* The end code ends the data. */
+		if (code == PDF_LZW_END)
+			break;
+
+		/* A code beyond the entry being defined is damage. */
+		if (code > next_code)
+			break;
+
+		/* Defines the next entry from the previous string; a first code after a clear must be a single byte. */
+		if (have_previous) {
+			add_lzw_entry(table, &next_code, previous, code);
+		} else if (code >= 256) {
+			break;
+		}
+
+		/* Writes this code's string. */
+		put_lzw_string(table, code, output);
+		if (output->error != 0)
+			break;
+		previous = code;
+		have_previous = 1;
+
+		/* Widens the codes when the table reaches the next power of two (one code early by default). */
+		if (width < PDF_LZW_WIDTH_MAX) {
+			if (next_code + (unsigned int)early_change >= (1U << width))
+				width++;
+		}
+	}
+
+	/* The table goes; the output keeps the bytes. */
+	free(table);
+
+	/* An empty result still gets a buffer, so that the caller has one to free. */
+	output_reserve(output, 1);
+
+	/* Refuses output past the decode limit. */
+	if (output->error != 0)
+		return output->error;
+
+	/* Succeeded: the decoded bytes are in the output. */
+	return 0;
+}
+
+/*
+ * Defines the next LZW entry: the previous code's string followed by the
+ * first byte of the current code's string.
+ *
+ * When the current code is the entry being defined, its first byte is the
+ * previous string's first byte.  A full table defines nothing more.
+ */
+static void
+add_lzw_entry(
+	struct pdf_lzw_entry *table,
+	unsigned int *next_code,
+	unsigned int previous,
+	unsigned int code)
+{
+	struct pdf_lzw_entry *entry;
+
+	/* A full table keeps its entries until the next clear code. */
+	if (*next_code >= PDF_LZW_TABLE)
+		return;
+
+	/* The new string: the previous one and one byte more. */
+	entry = &table[*next_code];
+	entry->prefix = (unsigned short)previous;
+	entry->first = table[previous].first;
+	entry->length = table[previous].length + 1;
+
+	/* The appended byte is the first of the current string, which for the entry itself is the previous string's first. */
+	if (code == *next_code) {
+		entry->last = table[previous].first;
+	} else {
+		entry->last = table[code].first;
+	}
+
+	/* The entry is defined; the next code is the one after it. */
+	(*next_code)++;
+}
+
+/* Appends one LZW table entry's string to an output, walking its prefixes from the last byte. */
+static void
+put_lzw_string(
+	const struct pdf_lzw_entry *table,
+	unsigned int code,
+	struct pdf_filter_output *output)
+{
+	unsigned long length;
+	unsigned long position;
+
+	/* Makes room for the whole string. */
+	length = table[code].length;
+	output_reserve(output, length);
+	if (output->error != 0)
+		return;
+
+	/* Writes the bytes backwards from the last one. */
+	position = length;
+	while (position > 0) {
+		position--;
+		output->data[output->size + position] = table[code].last;
+		code = table[code].prefix;
+	}
+
+	/* The string is the output's newest part. */
+	output->size += length;
+}
+
+/*
+ * Decodes RunLengthDecode: a length byte n below 128 copies the next
+ * n + 1 bytes, above 128 repeats the next byte 257 - n times, and 128 ends
+ * the data.
+ */
+static int
+decode_run_length(
+	const unsigned char *input,
+	size_t input_size,
+	unsigned char **output,
+	size_t *output_size)
+{
+	struct pdf_filter_output decoded;
+	size_t index;
+	size_t count;
+	unsigned char length;
+
+	/* Reads the runs until the end marker, the end of the input, or the decode limit. */
+	memset(&decoded, 0, sizeof(decoded));
+	index = 0;
+	while (index < input_size) {
+		length = input[index];
+		index++;
+
+		/* 128 ends the data. */
+		if (length == 128)
+			break;
+
+		/* A literal run copies what the input still has of it. */
+		if (length < 128) {
+			count = (size_t)length + 1;
+			if (count > input_size - index)
+				count = input_size - index;
+			output_reserve(&decoded, count);
+			if (decoded.error != 0)
+				break;
+			memcpy(decoded.data + decoded.size, input + index, count);
+			decoded.size += count;
+			index += count;
+			continue;
+		}
+
+		/* A repeated run needs its byte. */
+		if (index >= input_size)
+			break;
+		count = 257 - (size_t)length;
+		output_reserve(&decoded, count);
+		if (decoded.error != 0)
+			break;
+		memset(decoded.data + decoded.size, input[index], count);
+		decoded.size += count;
+		index++;
+	}
+
+	/* An empty result still gets a buffer, so that the caller has one to free. */
+	output_reserve(&decoded, 1);
+
+	/* Refuses output past the decode limit. */
+	if (decoded.error != 0) {
+		free(decoded.data);
+		return decoded.error;
+	}
+
+	/* Succeeded: the decoded bytes. */
+	*output = decoded.data;
+	*output_size = decoded.size;
+	return 0;
+}
+
+/*
+ * Makes room for more bytes in a growing output, up to the decode limit;
+ * a failure is kept in output->error.
+ */
+static void
+output_reserve(
+	struct pdf_filter_output *output,
+	size_t more)
+{
+	unsigned char *grown;
+	size_t capacity;
+
+	/* A failed output stays failed. */
+	if (output->error != 0)
+		return;
+
+	/* Refuses to pass the decode limit. */
+	if (more > PDF_FILTER_OUTPUT_MAX - output->size) {
+		output->error = ENOMEM;
+		return;
+	}
+
+	/* The room is already there. */
+	if (output->size + more <= output->capacity)
+		return;
+
+	/* Doubles the capacity until it holds the bytes, bounded by the limit. */
+	capacity = output->capacity;
+	if (capacity < PDF_FILTER_INITIAL)
+		capacity = PDF_FILTER_INITIAL;
+	while (capacity < output->size + more)
+		capacity *= 2;
+	if (capacity > PDF_FILTER_OUTPUT_MAX)
+		capacity = PDF_FILTER_OUTPUT_MAX;
+
+	/* Grows the buffer. */
+	grown = realloc(output->data, capacity);
+	if (grown == NULL) {
+		output->error = ENOMEM;
+		return;
+	}
+
+	/* The grown buffer is the output's. */
+	output->data = grown;
+	output->capacity = capacity;
 }
 
 /* Reads a Flate filter's predictor parameters, with the defaults of the PDF reference. */
