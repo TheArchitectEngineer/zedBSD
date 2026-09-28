@@ -63,8 +63,11 @@ menu の group に登録し、`/bin/browser` はそれを link する。Wayland 
   待ちの揺れと同じ形。library の読み込みの遅れでないことは guest で `time /bin/browser --version` が 0.00 s であることで確かめた。
   変更なしの再実行: p014 は 2 回目で status 0。p050 は 2 回目に guest の SSH の接続が切れて NAVIGATE の読み取りだけ失敗
   （「Connection to 127.0.0.1 closed by remote host」、guest の HTTP 16/16）、3 回目で status 0（guest の HTTP 16/16）。
+- main の merge（`e1d2b06e`、`platform/amd64/vmunix.mk` の PDF Viewer の規則と衝突、両方を残して解決）の後: image の build（browser・
+  libbrowser・browser-probe の warning 0）、Venus の guest で `browser-p057.sh`・`browser-p056.sh` status 0、boot test PASS
+  （`/home/awe/zedBSD-rpi4/build/ws074-shots/p057-20260928-boot-login.png`）。
 - 写真: `/home/awe/zedBSD-rpi4/build/ws074-shots/p057-20260928-probe-gpu-first.png`（guest の probe の GPU の描画）・
-  `p057-20260928-probe-tab-ring.png`（probe の Tab の ring）。boot test は下。実機は未実施。
+  `p057-20260928-probe-tab-ring.png`（probe の Tab の ring）。実機は未実施。
 
 ## 残り・移管
 
