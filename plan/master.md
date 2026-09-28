@@ -4,7 +4,7 @@
 Active Queue: なし（2026-09-27 から subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
 Current Focused Goal: fg010 — Kei Operating System の Keiland（Wayland）を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる。
 Next（2026-09-28 の 2 回目の周期の終わりに整理）: 次の周期は N≈3〜4 で — WS074（p054 の headless の移行 → p055〜p057 部品化）、
-WS075（p006 は増分 6 まで実機で確認（feedback 0、p005 の 7 場面 0）。p005 の run の `scenes_shown` の失敗は BUG-085 に記録。5330 は電源の入れ直しの後 10.0.30.3（ssh の alias `solaris10-man` は古い 10.0.10.25 のまま。`I915_HOST=awe@10.0.30.3` で動く））、Keiland（下の Outlook）、WS073（BUG-087 の wip.patch → BUG-051）。
+WS075（p006 は増分 6 まで実機で確認（feedback 0、p005 の 7 場面 0）。p005 の run の `scenes_shown` の失敗は BUG-085 に記録。5330 は電源の入れ直しの後 10.0.30.3（ssh の alias `solaris10-man` は 10.0.30.3 に更新済み））、Keiland（下の Outlook）、WS073（BUG-087 の wip.patch → BUG-051）。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -307,6 +307,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | 部品としての browser（2026-09-28） | ユーザー:「…libbrowser.soというファイルに将来的に分割できるようにして、コンポーネントにしましょう。ブラウザの構造体へのポインタをハンドルにして、Vulkanレンダリングターゲットを指定してイベントも送ってやるとと描画してくれて、Wayland依存はない、みたいなのがいいと思います！これはいきなり実現しなくても、徐々にそういう設計に変えていきましょう。」→ [WS074 design §19](ws074/design.md)（engine と shell の分離、不透明な handle、Vulkan の描画の先、将来の libbrowser.so） |
 | 手書きノートと PDF Viewer（2026-09-28） | ユーザーの指示（[WS079](ws079/ws.md) に原文）と回答: ペンは USB のペンタブレット、PDF Viewer は段階を切る（① Notes の PDF → ② 一般の図形・画像・TrueType → ③ CFF・Type1・暗号化）、名前は notes・pdfviewer・libpdf |
 | retro・GOP・Kei の印（2026-09-28） | ユーザー:「Keiマークはちょうどいいです。GOPフレームバッファは1920x1080を要求して上下左右の不足部分を黒い帯にすればいいかなと思います。X11のプログラムはuserland/X11/にあると思いますので、それはuserland/retro/に入れましょう。zedinstはretro/に入れておいて、Waylandであとで作り直しますが、それはOSCでのデモでは必須ではないので、優先度を下げます。」→ `userland/X11` → `userland/retro`、`userland/base/zedinst` → `userland/retro/zedinst`（main が実施、image の build・boot test・menu の試験 PASS）。UEFI の loader は GOP の 1920x1080 を求め、足りない所は黒い帯。Wayland の installer の作り直しは低い優先度 |
+| HDMI の主出力（2026-09-28） | ユーザーの回答: 蓋は開けたまま（ACPI 未実装で sleep させない）、デモは HDMI + USB（USB-C は時間が余れば）、LCD は 1920x1080 の見込み、HDMI が無ければ内蔵画面で起動、音は出さない（DVI）、H1 の調査で 5330 を占有してよい、ssh の alias を 10.0.30.3 に書き直す（main が実施）→ [hdmi-main-output.md](ws075/hdmi-main-output.md) |
 | System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
 | Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、**hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）の承認待ち**。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）ことの確認も待つ。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |
 | ACPI の統合 | WS049 の p001〜p005・p010〜p015（サブエージェント）を 2026-09-27 に main へ merge（driver は未 link）。**判断待ち**: (1) HAL の差分 `hal_get_arch_handoff("acpi.rsdp")`（ws049/proposed/hal-acpi-rsdp.diff、hal.h は変えないが HAL の責務の追加）の承認、(2) 対象機を Dell Latitude 5330 とし Linux の `sudo acpidump -b` の table を得る、(3) `_OSI` は既定で Windows 2000〜2022 を名乗る（ACPICA と同じ）でよいか、(4) `/dev/acpi` は text の読み書き（UAPI を足さない、device 番号 0x000B0000）か ioctl か `/dev/system` への統合か | WS049、Guardrail |
