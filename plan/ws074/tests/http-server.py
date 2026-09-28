@@ -22,10 +22,18 @@ With --tls-dir (made by make-test-ca.sh) the same paths are also served over HTT
   /status/N              a page with status N
   /to-https              a redirect to the same host's https port, /pages/first.html
   /cookie/secure-set     sets s=1 (Secure) and p=2, then redirects to the http port's /cookie/echo
+  /cached/NAME           a page kept by the client's cache (ws074-p058): ?max-age=N gives Cache-Control: max-age=N,
+                         &etag=1 an ETag (If-None-Match with it is answered 304), ?no-store Cache-Control: no-store
+  /stats                 {"connections": N, "requests": {path: N}, "not_modified": N} since the last /stats/reset:
+                         the connections (counted at their first request, not for /stats) and the requests per path
+  /stats/reset           starts the counts again
+
+A kept connection that stays idle for --idle seconds (default 1) is closed by the server.
 """
 
 import argparse
 import http.server
+import json
 import os
 import time
 import socketserver
@@ -42,6 +50,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     http_port = 0
     tls_port = 0
+    timeout = 1
+    counts_lock = threading.Lock()
+    counts = {"connections": 0, "requests": {}, "not_modified": 0}
+
+    def setup(self):
+        super().setup()
+        self.first_request = True
+
+    def count(self, path):
+        with Handler.counts_lock:
+            if self.first_request and not path.startswith("/stats"):
+                Handler.counts["connections"] += 1
+            if not path.startswith("/stats"):
+                Handler.counts["requests"][path] = Handler.counts["requests"].get(path, 0) + 1
+        self.first_request = False
 
     def host_name(self):
         host = self.headers.get("Host", "127.0.0.1")
@@ -72,6 +95,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        self.count(path)
+        if path == "/stats":
+            with Handler.counts_lock:
+                body = json.dumps(Handler.counts)
+            return self.send_page(body)
+        if path == "/stats/reset":
+            with Handler.counts_lock:
+                Handler.counts = {"connections": 0, "requests": {}, "not_modified": 0}
+            return self.send_page("reset")
+        if path.startswith("/cached/"):
+            name = os.path.basename(path)
+            query = self.path.split("?")[1] if "?" in self.path else ""
+            options = dict(part.split("=", 1) if "=" in part else (part, "") for part in query.split("&") if part)
+            headers = []
+            if "max-age" in options:
+                headers.append(("Cache-Control", "max-age=%s" % options["max-age"]))
+            if "no-store" in options:
+                headers.append(("Cache-Control", "no-store"))
+            tag = '"v-%s"' % name
+            if options.get("etag") == "1":
+                headers.append(("ETag", tag))
+                if self.headers.get("If-None-Match") == tag:
+                    with Handler.counts_lock:
+                        Handler.counts["not_modified"] += 1
+                    self.send_response(304)
+                    for header, value in headers:
+                        self.send_header(header, value)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+            return self.send_page("<!DOCTYPE html><title>cached</title><p id=c>cached %s</p>" % name, 200, headers)
         if path.startswith("/pages/"):
             name = os.path.basename(path)
             full = os.path.join(PAGES, name)
@@ -161,7 +215,9 @@ def main():
     parser.add_argument("--tls-dir")
     parser.add_argument("--tls-port", type=int, default=8443)
     parser.add_argument("--tls-wrong-port", type=int, default=8444)
+    parser.add_argument("--idle", type=float, default=1.0)
     args = parser.parse_args()
+    Handler.timeout = args.idle
     server = Server((args.bind, args.port), Handler)
     Handler.http_port = server.server_address[1]
     Handler.tls_port = args.tls_port
