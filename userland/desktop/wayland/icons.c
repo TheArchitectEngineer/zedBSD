@@ -32,6 +32,9 @@
 #define ICON_GRID		24.0f
 #define ICON_STROKE		1.8f
 
+/* The narrowest line of an application's picture, in pixels. */
+#define ICON_APP_MIN_STROKE	1.6f
+
 /* The most parts one icon has. */
 #define ICON_PARTS		12
 
@@ -72,6 +75,17 @@ struct icon_part {
 	float c;
 	float d;
 	float e;
+};
+
+/*
+ * The application IDs of the windows whose mark is a picture (ws035-p124):
+ * the ID each program gives its windows (an X11 window's is its class),
+ * the picture, and the colour of its square, the same as App Home's.
+ */
+struct icon_app_id {
+	const char *app_id;
+	unsigned icon;
+	uint32_t rgb;
 };
 
 /* The parts of each icon, in the order of enum glass_icon, each list ended by ICON_END. */
@@ -310,6 +324,18 @@ static const char *const icon_app_names[GLASS_ICON_APPS] = {
 	"logout"
 };
 
+/* The known programs' windows, found by their exact application ID. */
+static const struct icon_app_id icon_app_ids[] = {
+	{ "files", GLASS_ICON_APP_FILES, 0x2f7cf6U },
+	{ "notes", GLASS_ICON_APP_NOTES, 0xe0a526U },
+	{ "terminal", GLASS_ICON_APP_TERMINAL, 0x323a4eU },
+	{ "pdfviewer", GLASS_ICON_APP_PDF, 0xd9534fU },
+	{ "browser", GLASS_ICON_APP_BROWSER, 0x3a8fd8U },
+	{ "mview", GLASS_ICON_APP_MODEL, 0xe07a5aU },
+	{ "Gears", GLASS_ICON_APP_GEARS, 0xd05a3aU },
+	{ "XTerminal", GLASS_ICON_APP_XTERM, 0x4a4a78U }
+};
+
 static float icon_distance(const struct icon_part *part, float x, float y);
 static float icon_segment_distance(float x, float y, float x0, float y0, float x1, float y1);
 static float icon_arc_distance(const struct icon_part *part, float x, float y);
@@ -350,6 +376,14 @@ zwl_icon_raster(
 	/* Pixels a unit, and half a stroke's width in pixels. */
 	scale = (float)pixels / ICON_GRID;
 	half = ICON_STROKE * scale * 0.5f;
+
+	/*
+	 * An application's picture drawn small (a window's mark, ws035-p124)
+	 * keeps its lines at least ICON_APP_MIN_STROKE pixels wide, so they
+	 * stay white on the coloured square instead of fading to grey.
+	 */
+	if (icon >= GLASS_ICON_FIRST_APP && half < ICON_APP_MIN_STROKE * 0.5f)
+		half = ICON_APP_MIN_STROKE * 0.5f;
 
 	/* Each pixel: how much of it the nearest part covers. */
 	for (row = 0; row < pixels; row++) {
@@ -422,6 +456,36 @@ zwl_icon_named(
 	}
 
 	/* No picture has that name. */
+	return -1;
+}
+
+/*
+ * Finds the picture of a window's mark from its application ID, and the
+ * colour (0xRRGGBB) of the square it is drawn on.
+ *
+ * Returns the icon (GLASS_ICON_APP_*), or -1 (and leaves rgb alone) for
+ * an ID no picture belongs to.
+ */
+int
+zwl_icon_for_app_id(
+	const char *app_id,
+	uint32_t *rgb)
+{
+	unsigned index;
+	int differs;
+
+	/* Each known ID, until one is the window's. */
+	for (index = 0; index < sizeof(icon_app_ids) / sizeof(icon_app_ids[0]); index++) {
+		differs = strcmp(app_id, icon_app_ids[index].app_id);
+		if (differs != 0)
+			continue;
+
+		/* Succeeded: the picture, and its square's colour. */
+		*rgb = icon_app_ids[index].rgb;
+		return (int)icon_app_ids[index].icon;
+	}
+
+	/* No picture belongs to that ID. */
 	return -1;
 }
 
