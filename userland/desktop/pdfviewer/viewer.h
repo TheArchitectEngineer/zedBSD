@@ -230,6 +230,9 @@ struct pv_chooser {
  * swipe is how far the page of the page mode is dragged sideways, and a
  * turn moves it from turn_from to turn_to between turn_start and
  * turn_start + PV_TURN_MS.  dirty says the frame must be drawn again.
+ * shown_flags gathers the display-list flags (PDF_DISPLAY_*) of the pages
+ * the last frame drew, which decide whether the frame says that some
+ * content could not be shown; notice_shown is whether it last said so.
  */
 struct pv_app {
 	struct pv_document document;
@@ -269,6 +272,8 @@ struct pv_app {
 	int opened;
 	uint64_t now;
 	int dirty;
+	unsigned shown_flags;
+	int notice_shown;
 	struct pv_text *text;
 };
 

@@ -24,7 +24,10 @@
  * item there or skip the source, as its collisions table says (ws035-p106,
  * F-041).  A replaced item goes to the trash first, by steps planned before
  * the source's, so that undo can put it back (ws035-p110, F-050); only
- * when there is no trash is it removed.
+ * when there is no trash is it removed.  A folder whose name a folder has
+ * may be merged into it (ws035-p115, F-050): the source is replaced in the
+ * task by its contents, each going into that folder and asked about again
+ * when its own name is taken; a move removes the emptied folder at the end.
  */
 
 #include "ops.h"
@@ -88,6 +91,12 @@ static const char *task_base(const char *path);
 static void task_parent(const char *path, char *parent, size_t size);
 static int task_inside(const char *path, const char *folder);
 static int task_mkdir_parents(const char *path);
+static int task_grow(struct fm_task *task, size_t count);
+static int task_read_names(const char *folder, char ***names, size_t *count);
+static void task_free_names(char **names, size_t count);
+static int task_compare_names(const void *left, const void *right);
+static int task_plan_merged(struct fm_task *task);
+static int task_merge_tables(const char *source, const char *target, char *const *names, size_t count, char ***items, char ***folders);
 
 /*
  * Makes a task of a kind over sources (absolute paths, copied) into a
@@ -123,7 +132,13 @@ fm_task_new(
 	task->failed = calloc(count + 1U, 1U);
 	task->collisions = calloc(count + 1U, 1U);
 	task->replaced = calloc(count + 1U, sizeof(task->replaced[0]));
-	if (task->sources == NULL || task->results == NULL || task->failed == NULL || task->collisions == NULL || task->replaced == NULL) {
+	task->folders = calloc(count + 1U, sizeof(task->folders[0]));
+	if (task->sources == NULL ||
+	    task->results == NULL ||
+	    task->failed == NULL ||
+	    task->collisions == NULL ||
+	    task->replaced == NULL ||
+	    task->folders == NULL) {
 		fm_task_free(task);
 		return NULL;
 	}
@@ -236,14 +251,20 @@ fm_task_free(
 	/* The table of steps. */
 	free(task->steps);
 
-	/* The sources, the results and the replaced items' places in the trash. */
+	/* The sources, the results, the replaced items' places in the trash and the sources' own folders. */
 	for (index = 0; index < task->source_count; index++) {
 		free(task->sources[index]);
 		if (task->results != NULL)
 			free(task->results[index]);
 		if (task->replaced != NULL)
 			free(task->replaced[index]);
+		if (task->folders != NULL)
+			free(task->folders[index]);
 	}
+
+	/* The folders a move merged. */
+	for (index = 0; index < task->merged_count; index++)
+		free(task->merged[index]);
 
 	/* The tables themselves. */
 	free(task->sources);
@@ -251,6 +272,8 @@ fm_task_free(
 	free(task->failed);
 	free(task->collisions);
 	free(task->replaced);
+	free(task->folders);
+	free(task->merged);
 	free(task);
 }
 
@@ -308,7 +331,7 @@ fm_task_collides(
 		return 0;
 
 	/* The path the source would take under its own name. */
-	written = snprintf(path, sizeof(path), "%s/%s", task->destination, task_base(task->sources[index]));
+	written = snprintf(path, sizeof(path), "%s/%s", fm_task_folder(task, index), task_base(task->sources[index]));
 	if (written < 0 || (size_t)written >= sizeof(path))
 		return 0;
 
@@ -324,6 +347,261 @@ fm_task_collides(
 
 	/* Succeeded: another item has the name. */
 	return 1;
+}
+
+/*
+ * Tells whether a source of a copy or a move can be merged into what has
+ * its name in the destination (ws035-p115): both are folders (not links to
+ * folders), and neither holds the other.  1 when it can, 0 otherwise.
+ */
+int
+fm_task_can_merge(
+	const struct fm_task *task,
+	size_t index)
+{
+	struct stat status;
+	char target[2 * FM_OPS_PATH_MAX + 32];
+	int collides;
+	int written;
+	int error;
+	int folder;
+	int inside;
+
+	/* Only a source whose name is taken by another item. */
+	collides = fm_task_collides(task, index);
+	if (collides == 0)
+		return 0;
+
+	/* The source is a folder. */
+	error = lstat(task->sources[index], &status);
+	if (error != 0)
+		return 0;
+	folder = S_ISDIR(status.st_mode);
+	if (folder == 0)
+		return 0;
+
+	/* The item with its name is a folder too. */
+	written = snprintf(target, sizeof(target), "%s/%s", fm_task_folder(task, index), task_base(task->sources[index]));
+	if (written < 0 || (size_t)written >= sizeof(target))
+		return 0;
+	error = lstat(target, &status);
+	if (error != 0)
+		return 0;
+	folder = S_ISDIR(status.st_mode);
+	if (folder == 0)
+		return 0;
+
+	/* A folder that holds the other, either way round, would be merged into itself. */
+	inside = task_inside(target, task->sources[index]);
+	if (inside != 0)
+		return 0;
+	inside = task_inside(task->sources[index], target);
+	if (inside != 0)
+		return 0;
+
+	/* Succeeded: the two folders can be merged. */
+	return 1;
+}
+
+/*
+ * Merges a source folder into the folder with its name in the source's
+ * destination (ws035-p115): at its place in the task the source is
+ * replaced by the items it holds, sorted by name, each going into that
+ * folder and keeping both until an answer says otherwise.  A move also
+ * keeps the source folder to remove once it is empty.
+ *
+ * Returns 0 with how many items took the source's place, or an errno
+ * value with the task unchanged.
+ */
+int
+fm_task_merge(
+	struct fm_task *task,
+	size_t index,
+	size_t *added)
+{
+	char target[2 * FM_OPS_PATH_MAX + 32];
+	char **names;
+	char **items;
+	char **item_folders;
+	char **merged;
+	char *merged_source;
+	size_t name_count;
+	size_t name_index;
+	size_t count;
+	size_t tail;
+	int can_merge;
+	int written;
+	int error;
+
+	/* Nothing is added until the merge is whole. */
+	*added = 0U;
+
+	/* Only two folders merge. */
+	can_merge = fm_task_can_merge(task, index);
+	if (can_merge == 0)
+		return EINVAL;
+
+	/* The folder the source merges into. */
+	written = snprintf(target, sizeof(target), "%s/%s", fm_task_folder(task, index), task_base(task->sources[index]));
+	if (written < 0 || (size_t)written >= sizeof(target))
+		return ENAMETOOLONG;
+
+	/* The names of the items the source holds, sorted. */
+	error = task_read_names(task->sources[index], &names, &name_count);
+	if (error != 0)
+		return error;
+
+	/* Each item's path in the source, and the merged folder it goes into; the names are not needed after. */
+	error = task_merge_tables(task->sources[index], target, names, name_count, &items, &item_folders);
+	task_free_names(names, name_count);
+	if (error != 0)
+		return error;
+
+	/* A move keeps the source folder, removed once its contents have moved. */
+	merged_source = NULL;
+	if (task->kind == FM_TASK_MOVE) {
+		merged_source = strdup(task->sources[index]);
+		if (merged_source == NULL) {
+			task_free_names(items, name_count);
+			task_free_names(item_folders, name_count);
+			return ENOMEM;
+		}
+
+		/* Room for it among the merged folders. */
+		merged = realloc(task->merged, (task->merged_count + 1U) * sizeof(task->merged[0]));
+		if (merged == NULL) {
+			free(merged_source);
+			task_free_names(items, name_count);
+			task_free_names(item_folders, name_count);
+			return ENOMEM;
+		}
+
+		/* The grown table of merged folders. */
+		task->merged = merged;
+	}
+
+	/* Room in the task's tables for the items in place of the source. */
+	count = task->source_count - 1U + name_count;
+	error = task_grow(task, count);
+	if (error != 0) {
+		free(merged_source);
+		task_free_names(items, name_count);
+		task_free_names(item_folders, name_count);
+		return error;
+	}
+
+	/* The source and its own folder go; it has no result and replaced nothing yet. */
+	free(task->sources[index]);
+	free(task->folders[index]);
+	free(task->results[index]);
+	free(task->replaced[index]);
+
+	/* The sources after it move along to make room for the items. */
+	tail = task->source_count - index - 1U;
+	memmove(&task->sources[index + name_count], &task->sources[index + 1U], tail * sizeof(task->sources[0]));
+	memmove(&task->folders[index + name_count], &task->folders[index + 1U], tail * sizeof(task->folders[0]));
+	memmove(&task->results[index + name_count], &task->results[index + 1U], tail * sizeof(task->results[0]));
+	memmove(&task->replaced[index + name_count], &task->replaced[index + 1U], tail * sizeof(task->replaced[0]));
+	memmove(&task->failed[index + name_count], &task->failed[index + 1U], tail * sizeof(task->failed[0]));
+	memmove(&task->collisions[index + name_count], &task->collisions[index + 1U], tail * sizeof(task->collisions[0]));
+
+	/* The items in the source's place, each into the merged folder, keeping both until answered. */
+	for (name_index = 0; name_index < name_count; name_index++) {
+		task->sources[index + name_index] = items[name_index];
+		task->folders[index + name_index] = item_folders[name_index];
+		task->results[index + name_index] = NULL;
+		task->replaced[index + name_index] = NULL;
+		task->failed[index + name_index] = 0;
+		task->collisions[index + name_index] = FM_COLLISION_KEEP_BOTH;
+	}
+
+	/* The entries past the new end are empty, as the tables' terminators. */
+	task->sources[count] = NULL;
+	task->folders[count] = NULL;
+	task->results[count] = NULL;
+	task->replaced[count] = NULL;
+	task->source_count = count;
+
+	/* The moved folder to remove at the end. */
+	if (merged_source != NULL) {
+		task->merged[task->merged_count] = merged_source;
+		task->merged_count++;
+	}
+
+	/* The tables go; the paths in them now belong to the task. */
+	free(items);
+	free(item_folders);
+
+	/* Succeeded: the items stand where the source stood. */
+	*added = name_count;
+	return 0;
+}
+
+/*
+ * Returns the folder a source of a task goes into: its own when it has one
+ * (a merged folder's items, a redo's pairs; ws035-p115), else the task's
+ * destination.
+ */
+const char *
+fm_task_folder(
+	const struct fm_task *task,
+	size_t index)
+{
+	/* A source past the table, or without a folder of its own, goes to the destination. */
+	if (task->folders == NULL || index >= task->source_count)
+		return task->destination;
+	if (task->folders[index] == NULL)
+		return task->destination;
+
+	/* Reports the source's own folder. */
+	return task->folders[index];
+}
+
+/*
+ * Gives a source of a task a folder of its own to go into, in place of the
+ * destination (ws035-p115: a redo puts each item where it first went).
+ * Returns 0, or an errno value.
+ */
+int
+fm_task_set_folder(
+	struct fm_task *task,
+	size_t index,
+	const char *folder)
+{
+	char *copy;
+
+	/* Only a source of the task. */
+	if (index >= task->source_count)
+		return EINVAL;
+
+	/* The folder, copied. */
+	copy = strdup(folder);
+	if (copy == NULL)
+		return ENOMEM;
+
+	/* Succeeded: it replaces the one the source had. */
+	free(task->folders[index]);
+	task->folders[index] = copy;
+	return 0;
+}
+
+/*
+ * Makes a folder and the folders above it that are missing (mkdir -p).
+ * Returns 0 once the folder is there, or an errno value.
+ */
+int
+fm_ops_mkdir_parents(
+	const char *path)
+{
+	int error;
+
+	/* The folders, one level at a time. */
+	error = task_mkdir_parents(path);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the folder is there. */
+	return 0;
 }
 
 /*
@@ -429,6 +707,9 @@ task_plan(
 			/* A source whose replaced item is being removed is planned again once that is planned. */
 			if (task->replacing == 0)
 				task->source_index++;
+		} else if (task->merged_count != 0U && task->merged_planned == 0) {
+			/* Last, the folders a move merged are removed once empty (ws035-p115). */
+			(void)task_plan_merged(task);
 		} else {
 			return 0;
 		}
@@ -453,6 +734,7 @@ task_plan_source(
 	char original[FM_OPS_PATH_MAX];
 	const char *source;
 	const char *suffix;
+	const char *folder;
 	size_t owner;
 	time_t deleted;
 	unsigned outcome;
@@ -460,10 +742,11 @@ task_plan_source(
 	int same_folder;
 	int error;
 
-	/* The source and what it is; its steps are its own. */
+	/* The source, the folder it goes into (a copy's or a move's), and what it is; its steps are its own. */
 	owner = task->source_index;
 	task->owner = owner;
 	source = task->sources[owner];
+	folder = fm_task_folder(task, owner);
 	error = lstat(source, &status);
 	if (error != 0) {
 		task_fail(task, owner, errno, source);
@@ -475,7 +758,7 @@ task_plan_source(
 	case FM_TASK_COPY:
 	case FM_TASK_DUPLICATE:
 		/* A folder cannot be copied into itself. */
-		error = task_inside(task->destination, source);
+		error = task_inside(folder, source);
 		if (error != 0) {
 			task_fail(task, owner, EINVAL, source);
 			return -1;
@@ -502,14 +785,14 @@ task_plan_source(
 	case FM_TASK_MOVE:
 		/* An item already in the destination stays where it is. */
 		task_parent(source, parent, sizeof(parent));
-		same_folder = strcmp(parent, task->destination);
+		same_folder = strcmp(parent, folder);
 		if (same_folder == 0) {
 			task->results[owner] = strdup(source);
 			return 0;
 		}
 
 		/* A folder cannot be moved into itself. */
-		error = task_inside(task->destination, source);
+		error = task_inside(folder, source);
 		if (error != 0) {
 			task_fail(task, owner, EINVAL, source);
 			return -1;
@@ -531,7 +814,7 @@ task_plan_source(
 
 		/* Within one file system a rename; across, a copy and the source's removal. */
 		same_device = 0;
-		error = stat(task->destination, &target_status);
+		error = stat(folder, &target_status);
 		if (error == 0 && target_status.st_dev == status.st_dev)
 			same_device = 1;
 		if (same_device != 0) {
@@ -649,19 +932,21 @@ task_resolve(
 	struct stat status;
 	char trash[FM_OPS_PATH_MAX];
 	char trashed[2 * FM_OPS_PATH_MAX + 32];
+	const char *folder;
 	unsigned collision;
 	int collides;
 	int written;
 	int inside;
 	int error;
 
-	/* Ready unless said otherwise. */
+	/* Ready unless said otherwise; the source goes into its own folder (a merged one's, ws035-p115) or the destination. */
 	*outcome = TASK_TARGET_READY;
+	folder = fm_task_folder(task, owner);
 
 	/* The replaced item's removal is planned: the source takes its name. */
 	if (task->replacing != 0) {
 		task->replacing = 0;
-		written = snprintf(target, size, "%s/%s", task->destination, task_base(source));
+		written = snprintf(target, size, "%s/%s", folder, task_base(source));
 		if (written < 0 || (size_t)written >= size)
 			return ENAMETOOLONG;
 		return 0;
@@ -673,7 +958,7 @@ task_resolve(
 
 	/* A free name, or a choice to keep both, takes the next free name. */
 	if (collides == 0 || collision == FM_COLLISION_KEEP_BOTH) {
-		error = fm_unique_name(task->destination, task_base(source), suffix, target, size);
+		error = fm_unique_name(folder, task_base(source), suffix, target, size);
 		if (error != 0)
 			return error;
 		return 0;
@@ -687,7 +972,7 @@ task_resolve(
 	}
 
 	/* The item that has the name, which the source replaces. */
-	written = snprintf(target, size, "%s/%s", task->destination, task_base(source));
+	written = snprintf(target, size, "%s/%s", folder, task_base(source));
 	if (written < 0 || (size_t)written >= size)
 		return ENAMETOOLONG;
 	error = lstat(target, &status);
@@ -1104,6 +1389,7 @@ task_add(
 	/* Every step but the making and removing of folders and records counts as one item. */
 	if (kind != FM_STEP_MKDIR &&
 	    kind != FM_STEP_RMDIR &&
+	    kind != FM_STEP_RMDIR_EMPTY &&
 	    kind != FM_STEP_TRASHINFO &&
 	    kind != FM_STEP_UNTRASHINFO)
 		task->files_total++;
@@ -1191,6 +1477,10 @@ task_run_step(
 	case FM_STEP_UNTRASHINFO:
 		status = unlink(step->source);
 		break;
+	case FM_STEP_RMDIR_EMPTY:
+		/* A merged folder something stayed in (skipped, or failed to move) stays too; that is no failure. */
+		(void)rmdir(step->source);
+		return 0;
 	default:
 		break;
 	}
@@ -1527,5 +1817,277 @@ task_mkdir_parents(
 		return errno;
 
 	/* Succeeded: the folder is there. */
+	return 0;
+}
+
+/*
+ * Grows the task's tables of sources (and their results, failures,
+ * answers, replaced items and folders) to hold count sources and a
+ * terminator; the entries already there stay.  Returns 0, or ENOMEM with
+ * the tables as large as they could be made and their contents unchanged.
+ */
+static int
+task_grow(
+	struct fm_task *task,
+	size_t count)
+{
+	char **paths;
+	unsigned char *flags;
+	size_t size;
+
+	/* One entry more than the sources, for the terminator. */
+	size = count + 1U;
+
+	/* The sources. */
+	paths = realloc(task->sources, size * sizeof(task->sources[0]));
+	if (paths == NULL)
+		return ENOMEM;
+	task->sources = paths;
+
+	/* Where each went. */
+	paths = realloc(task->results, size * sizeof(task->results[0]));
+	if (paths == NULL)
+		return ENOMEM;
+	task->results = paths;
+
+	/* What each replaced. */
+	paths = realloc(task->replaced, size * sizeof(task->replaced[0]));
+	if (paths == NULL)
+		return ENOMEM;
+	task->replaced = paths;
+
+	/* The folder each goes into. */
+	paths = realloc(task->folders, size * sizeof(task->folders[0]));
+	if (paths == NULL)
+		return ENOMEM;
+	task->folders = paths;
+
+	/* Which failed. */
+	flags = realloc(task->failed, size);
+	if (flags == NULL)
+		return ENOMEM;
+	task->failed = flags;
+
+	/* What each does with a taken name. */
+	flags = realloc(task->collisions, size);
+	if (flags == NULL)
+		return ENOMEM;
+	task->collisions = flags;
+
+	/* Succeeded: every table holds count sources. */
+	return 0;
+}
+
+/*
+ * Reads the names of the items a folder holds (not . and ..), sorted, into
+ * an allocated table.  Returns 0 with the table and its length, or an
+ * errno value with nothing allocated.
+ */
+static int
+task_read_names(
+	const char *folder,
+	char ***names,
+	size_t *count)
+{
+	DIR *directory;
+	struct dirent *entry;
+	char **table;
+	char **grown;
+	size_t capacity;
+	size_t length;
+	int dot;
+	int error;
+
+	/* Nothing read yet. */
+	*names = NULL;
+	*count = 0U;
+
+	/* The folder. */
+	directory = opendir(folder);
+	if (directory == NULL)
+		return errno;
+
+	/* Each entry but the folder itself and its parent, the table grown as it fills. */
+	table = NULL;
+	capacity = 0U;
+	length = 0U;
+	error = 0;
+	for (;;) {
+		entry = readdir(directory);
+		if (entry == NULL)
+			break;
+
+		/* The folder itself and its parent are not items. */
+		dot = 0;
+		if (entry->d_name[0] == '.' && entry->d_name[1] == '\0')
+			dot = 1;
+		if (entry->d_name[0] == '.' && entry->d_name[1] == '.' && entry->d_name[2] == '\0')
+			dot = 1;
+		if (dot != 0)
+			continue;
+
+		/* Room for one more name and the terminator. */
+		if (length + 1U >= capacity) {
+			capacity += TASK_WALK_GROWTH;
+			grown = realloc(table, capacity * sizeof(table[0]));
+			if (grown == NULL) {
+				error = ENOMEM;
+				break;
+			}
+
+			/* The grown table. */
+			table = grown;
+		}
+
+		/* The name, copied; one more is kept. */
+		table[length] = strdup(entry->d_name);
+		if (table[length] == NULL) {
+			error = ENOMEM;
+			break;
+		}
+
+		/* The table holds one more name. */
+		length++;
+	}
+
+	/* The folder is closed however the reading ended. */
+	closedir(directory);
+
+	/* A failure leaves nothing behind. */
+	if (error != 0) {
+		task_free_names(table, length);
+		return error;
+	}
+
+	/* The names in order, so that the items are asked about as the folder lists them. */
+	if (length > 1U)
+		qsort(table, length, sizeof(table[0]), task_compare_names);
+
+	/* Succeeded: the table and its length. */
+	*names = table;
+	*count = length;
+	return 0;
+}
+
+/* Frees a table of names and the names in it. */
+static void
+task_free_names(
+	char **names,
+	size_t count)
+{
+	size_t index;
+
+	/* No table, nothing to free. */
+	if (names == NULL)
+		return;
+
+	/* Each name, then the table. */
+	for (index = 0; index < count; index++)
+		free(names[index]);
+	free(names);
+}
+
+/* Orders two names of a table (for qsort) by their bytes. */
+static int
+task_compare_names(
+	const void *left,
+	const void *right)
+{
+	const char *const *left_name;
+	const char *const *right_name;
+	int order;
+
+	/* The table's entries are pointers to the names. */
+	left_name = left;
+	right_name = right;
+	order = strcmp(*left_name, *right_name);
+
+	/* Reports the order. */
+	return order;
+}
+
+/*
+ * Plans the removal of the folders a move merged into others, once their
+ * contents have moved (ws035-p115): the deepest first, and each only when
+ * it is empty then (an item left behind keeps its folder).
+ */
+static int
+task_plan_merged(
+	struct fm_task *task)
+{
+	struct fm_step *step;
+	size_t index;
+
+	/* The steps belong to no source. */
+	task->owner = task->source_count;
+
+	/* The latest merged first: a folder merged inside another was merged after it. */
+	for (index = task->merged_count; index > 0U; index--) {
+		step = task_add(task, FM_STEP_RMDIR_EMPTY, task->merged[index - 1U], NULL);
+		if (step == NULL)
+			return ENOMEM;
+	}
+
+	/* Succeeded: the removals are planned. */
+	task->merged_planned = 1;
+	return 0;
+}
+
+/*
+ * Builds the tables of a merged folder's items (ws035-p115): each item's
+ * path in the source folder, and a copy of the folder it merges into for
+ * each.  Returns 0 with both tables, or ENOMEM with neither.
+ */
+static int
+task_merge_tables(
+	const char *source,
+	const char *target,
+	char *const *names,
+	size_t count,
+	char ***items,
+	char ***folders)
+{
+	char **paths;
+	char **copies;
+	size_t index;
+
+	/* Nothing is given back until both are whole. */
+	*items = NULL;
+	*folders = NULL;
+
+	/* The table of paths. */
+	paths = calloc(count + 1U, sizeof(paths[0]));
+	if (paths == NULL)
+		return ENOMEM;
+
+	/* The table of folders. */
+	copies = calloc(count + 1U, sizeof(copies[0]));
+	if (copies == NULL) {
+		free(paths);
+		return ENOMEM;
+	}
+
+	/* Each item's path and folder; a failure frees what was made. */
+	for (index = 0; index < count; index++) {
+		/* The item's path in the source. */
+		paths[index] = task_join(source, names[index]);
+		if (paths[index] == NULL) {
+			task_free_names(paths, count);
+			task_free_names(copies, count);
+			return ENOMEM;
+		}
+
+		/* The folder it goes into. */
+		copies[index] = strdup(target);
+		if (copies[index] == NULL) {
+			task_free_names(paths, count);
+			task_free_names(copies, count);
+			return ENOMEM;
+		}
+	}
+
+	/* Succeeded: both tables. */
+	*items = paths;
+	*folders = copies;
 	return 0;
 }

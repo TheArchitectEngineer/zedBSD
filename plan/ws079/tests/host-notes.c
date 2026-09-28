@@ -73,8 +73,16 @@ main(
 	unsigned opened;
 	int error;
 
+	/* ws079-p008: an encrypted PDF the reader opens is still refused. */
+	if (argc == 3 && strcmp(argv[1], "encrypted") == 0) {
+		check(notes_open_pdf(argv[2], &copy, &opened) == EACCES, "encrypted PDF that opens refused");
+		if (failures != 0)
+			return 1;
+		printf("host-notes encrypted: ok\n");
+		return 0;
+	}
 	if (argc != 3) {
-		fprintf(stderr, "usage: host-notes OUTPUT.pdf SCRATCH.pdf\n");
+		fprintf(stderr, "usage: host-notes OUTPUT.pdf SCRATCH.pdf | encrypted IN.pdf\n");
 		return 2;
 	}
 

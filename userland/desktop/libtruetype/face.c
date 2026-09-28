@@ -364,6 +364,8 @@ read_map(
 		face->cmap_size = 0;
 		return 0;
 	}
+
+	/* Reports any other failure. */
 	if (error != 0)
 		return error;
 
@@ -374,6 +376,8 @@ read_map(
 		face->cmap_subtable = NULL;
 		return 0;
 	}
+
+	/* A face that must map characters and cannot is refused. */
 	if (error != 0)
 		return error;
 

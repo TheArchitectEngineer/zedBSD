@@ -19,7 +19,9 @@
  * with their exact horizontal extent, so edges are smoothed in both
  * directions.  Clips are coverage masks of the whole target, intersected
  * as they nest.  Images are sampled bilinearly, or averaged over the
- * pixel when they are shrunk.  Colours are blended in premultiplied form
+ * pixel when they are shrunk; an image enlarged four times or more without
+ * /Interpolate keeps its pixels square (the nearest one), as poppler and
+ * pdf.js draw it.  Colours are blended in premultiplied form
  * by the Normal or Multiply blend mode.
  */
 
@@ -46,6 +48,9 @@
 
 /* The most samples across one pixel when an image is shrunk. */
 #define PDF_RASTER_IMAGE_SAMPLES 4
+
+/* The enlargement from which an image without /Interpolate is sampled at the nearest pixel. */
+#define PDF_RASTER_IMAGE_BLOCKY 4.0
 
 /* The largest target the rasterizer draws into, in pixels a side. */
 #define PDF_RASTER_SIDE_MAX 32768
@@ -127,6 +132,7 @@ static unsigned to_level(double value);
 static void sort_crossings(struct raster *raster, size_t count);
 static int draw_image(struct raster *raster, const struct pdf_display_item *item);
 static void sample_image(const struct pdf_display_item *item, double u, double v, double sample[4]);
+static void sample_nearest(const struct pdf_display_item *item, double u, double v, double sample[4]);
 static void texel(const struct pdf_display_item *item, long x, long y, double sample[4]);
 
 /*
@@ -1040,6 +1046,7 @@ draw_image(
 	double top;
 	double bottom;
 	int samples;
+	int nearest;
 	int sub_x;
 	int sub_y;
 	int channel;
@@ -1105,6 +1112,13 @@ draw_image(
 	if (samples > PDF_RASTER_IMAGE_SAMPLES)
 		samples = PDF_RASTER_IMAGE_SAMPLES;
 
+	/* A large enlargement keeps the image's pixels square unless the image asks to be smoothed. */
+	nearest = 0;
+	if (!item->interpolate) {
+		if (shrink * PDF_RASTER_IMAGE_BLOCKY <= 1.0)
+			nearest = 1;
+	}
+
 	/* Draws each pixel of the span whose samples fall on the image. */
 	mask = NULL;
 	if (raster->mask_depth > 0)
@@ -1126,7 +1140,13 @@ draw_image(
 					v = (-item->matrix[1] * page_x + item->matrix[0] * page_y) / determinant;
 					if (!(u >= 0.0 && u < 1.0 && v >= 0.0 && v < 1.0))
 						continue;
-					sample_image(item, u, v, sample);
+					if (nearest) {
+						sample_nearest(item, u, v, sample);
+					} else {
+						sample_image(item, u, v, sample);
+					}
+
+					/* Adds the sample to the pixel's sums. */
 					for (channel = 0; channel < 4; channel++)
 						sum[channel] += sample[channel];
 				}
@@ -1198,6 +1218,23 @@ sample_image(
 		    corner[2][channel] * (1.0 - fraction_x) * fraction_y +
 		    corner[3][channel] * fraction_x * fraction_y;
 	}
+}
+
+/* Samples an image at (u, v) of its unit square at the pixel it falls in. */
+static void
+sample_nearest(
+	const struct pdf_display_item *item,
+	double u,
+	double v,
+	double sample[4])
+{
+	long x;
+	long y;
+
+	/* The pixel under the position (clamped at the image's edges by texel). */
+	x = (long)floor(u * (double)item->image_width);
+	y = (long)floor(v * (double)item->image_height);
+	texel(item, x, y, sample);
 }
 
 /* Reads one image pixel, clamped to the image, as premultiplied alpha, red, green, blue from 0 to 1. */

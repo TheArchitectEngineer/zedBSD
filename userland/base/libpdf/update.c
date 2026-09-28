@@ -184,7 +184,9 @@ static void free_layout(struct update_layout *layout);
  * pdf_writer_keep_page() or pdf_writer_begin_page_over(); pages begun with
  * pdf_writer_begin_page() between them are added to the document there.
  * The document must stay open until the writer is destroyed.  A signed
- * document is refused with PDF_ESIGNED.
+ * document is refused with PDF_ESIGNED, an encrypted one (which the reader
+ * opens with its empty user password) with EACCES: the revision would have
+ * to be encrypted too.
  */
 int
 pdf_writer_create_update(
@@ -192,6 +194,7 @@ pdf_writer_create_update(
 	struct pdf_writer **writer)
 {
 	struct pdf_writer *created;
+	struct pdf_crypt *crypt;
 	int is_signed;
 	int error;
 
@@ -207,6 +210,11 @@ pdf_writer_create_update(
 		return error;
 	if (is_signed)
 		return PDF_ESIGNED;
+
+	/* Refuses an encrypted document. */
+	crypt = pdf_reader_crypt(base);
+	if (crypt != NULL)
+		return EACCES;
 
 	/* An ordinary writer. */
 	error = pdf_writer_create(&created);

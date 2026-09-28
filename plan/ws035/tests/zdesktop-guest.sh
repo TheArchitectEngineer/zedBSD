@@ -30,12 +30,18 @@ VENUS_RENDERER=${VENUS_RENDERER:-$PWD/build/ws035-sq-venus/install}
 export RENDER_SERVER_EXEC_PATH="${RENDER_SERVER_EXEC_PATH:-$VENUS_RENDERER/libexec/virgl_render_server}"
 export LD_LIBRARY_PATH="$VENUS_RENDERER/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 command=${1:-start}
+# ws035-p116: VENUS_SIZE=WIDTHxHEIGHT gives the Venus output another preferred mode (the demo LCD's 1920x1280);
+# the default is QEMU's 1280x800.
+size=
+if [ -n "${VENUS_SIZE:-}" ]; then
+	size=",xres=${VENUS_SIZE%x*},yres=${VENUS_SIZE#*x}"
+fi
 case "$command" in
 start)
 	image=${2:-build/ws035-sq/hdd-image.img}
 	exec python3 plan/tools/guest/guest.py start "$image" \
 	    --symbols build/ws035-sq/vmunix \
-	    --qemu-extra "-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem -device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem=256M,max_outputs=1 -display egl-headless,rendernode=/dev/dri/renderD128 -vnc unix:$GUEST_RUNTIME/vnc.sock,display=venus -device usb-tablet,bus=xhci.0,port=4"
+	    --qemu-extra "-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem -device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem=256M,max_outputs=1$size -display egl-headless,rendernode=/dev/dri/renderD128 -vnc unix:$GUEST_RUNTIME/vnc.sock,display=venus -device usb-tablet,bus=xhci.0,port=4"
 	;;
 *)
 	exec python3 plan/tools/guest/guest.py "$@"

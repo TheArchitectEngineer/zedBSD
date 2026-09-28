@@ -70,6 +70,7 @@ static int make_base(const char *path, enum variant variant);
 static int update(const char *in, const char *out);
 static int keep(const char *in, const char *out);
 static int refusals(const char *folder);
+static int refuse_encrypted(const char *path);
 static int draw_pen(struct pdf_writer *writer, double x, double y, double red, double green, double blue, double alpha);
 static int read_file(const char *path, unsigned char **data, size_t *size);
 static void check(int condition, const char *what);
@@ -94,8 +95,10 @@ main(
 		error = keep(argv[2], argv[3]);
 	else if (argc == 3 && strcmp(argv[1], "refusals") == 0)
 		error = refusals(argv[2]);
+	else if (argc == 3 && strcmp(argv[1], "encrypted") == 0)
+		error = refuse_encrypted(argv[2]);
 	else
-		fprintf(stderr, "usage: host-pdf-update base OUT | update IN OUT | keep IN OUT | refusals DIR\n");
+		fprintf(stderr, "usage: host-pdf-update base OUT | update IN OUT | keep IN OUT | refusals DIR | encrypted IN\n");
 	if (error != 0) {
 		fprintf(stderr, "host-pdf-update %s: error %d\n", argc > 1 ? argv[1] : "", error);
 		return 1;
@@ -462,6 +465,37 @@ keep(
 	error = pdf_document_find_attachment(result, "readme.txt", &data, &size);
 	check(error == 0 || error == ENOTSUP, "the document's own attachment kept");
 	pdf_document_close(result);
+	return 0;
+}
+
+/*
+ * ws079-p008: an encrypted document the reader opens (its user password is
+ * empty) is refused by the update, which would have to encrypt its revision.
+ */
+static int
+refuse_encrypted(
+	const char *path)
+{
+	struct pdf_document *document;
+	struct pdf_writer *writer;
+	int encrypted;
+	int error;
+
+	/* The reader opens it and tells it is encrypted. */
+	error = pdf_document_open(path, &document);
+	check(error == 0, "encrypted document with an empty password opens");
+	if (error != 0)
+		return 0;
+	encrypted = 0;
+	error = pdf_document_encrypted(path, &encrypted);
+	check(error == 0 && encrypted == 1, "encrypted document told");
+
+	/* The update refuses it. */
+	error = pdf_writer_create_update(document, &writer);
+	check(error == EACCES, "encrypted document refused by the update");
+	if (error == 0)
+		pdf_writer_destroy(writer);
+	pdf_document_close(document);
 	return 0;
 }
 

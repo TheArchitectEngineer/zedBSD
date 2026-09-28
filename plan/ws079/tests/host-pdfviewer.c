@@ -9,14 +9,16 @@
  * The host test of PDF Viewer's core (ws079-p006): the view, the frame,
  * the document cache and the chooser, without Wayland and Vulkan.
  *
- *   host-pdfviewer FONT DOCUMENT.pdf OUTDIR
+ *   host-pdfviewer FONT DOCUMENT.pdf OUTDIR [SKIPPED.pdf]
  *
  * It opens a three-page document in a 1000x760 window and checks, writing
  * a frame of each step to a PPM in OUTDIR: the scroll mode (fit width, a
  * wheel scroll, a drag), the page mode (a sideways drag that turns to the
  * next page, one that springs back, the keys), the zoom (Ctrl+plus, minus
  * and 0), Home and End, the file chooser, a document that cannot be
- * opened, and the Annotate action.
+ * opened, and the Annotate action.  With SKIPPED.pdf (a page with content
+ * libpdf leaves out), the notice that some content could not be shown
+ * (ws079-p007).
  */
 
 #include "../../../userland/desktop/pdfviewer/viewer.h"
@@ -51,8 +53,8 @@ main(
 	double before;
 	int error;
 
-	if (argc != 4) {
-		fprintf(stderr, "usage: host-pdfviewer FONT DOCUMENT.pdf OUTDIR\n");
+	if (argc != 4 && argc != 5) {
+		fprintf(stderr, "usage: host-pdfviewer FONT DOCUMENT.pdf OUTDIR [SKIPPED.pdf]\n");
 		return 2;
 	}
 	out_dir = argv[3];
@@ -160,6 +162,15 @@ main(
 	frame("12-chooser");
 	key(PV_KEY_ESCAPE, 0);
 	check(app.choosing == 0, "Escape closes the chooser");
+
+	/* ws079-p007: a document drawn whole has no notice; one with content left out has it. */
+	check(!app.notice_shown, "a document drawn whole has no notice");
+	if (argc == 5) {
+		error = pv_app_open(&app, argv[4]);
+		check(error == 0, "the document with content left out opens");
+		frame("13-notice");
+		check(app.notice_shown, "content left out shows the notice");
+	}
 
 	/* Ctrl+W closes the document, and again the window. */
 	key(PV_KEY_W, PV_MOD_CTRL);
