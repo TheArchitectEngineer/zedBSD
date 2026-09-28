@@ -73,7 +73,7 @@ main の判断に従い、node は devfs の root の `/dev/input-inject`（devf
 | 確認 | 結果 |
 | --- | --- |
 | `make -j16 vmunix CONFIG_INPUT_TEST_INJECT=y`（amd64、worktree の `build/amd64`、main の config.mk の写し、`-Werror`） | exit 0、warning 0。`build/amd64/kern64/src/drivers/generic/input-inject.o` が link された |
-| `make -j16 vmunix`（既定 n） | 下の追記を参照 |
+| `make -j16 vmunix`（既定 n、同じ build dir で y の後に） | exit 0、warning 0。`input-inject.c` は compile されず、`build/amd64/vmunix.map` に `drv_input_inject_register` が無い（既定の kernel に入らない） |
 | peninject の cross compile（`build/llvm/bin/clang --target=x86_64-unknown-zedbsd --sysroot=<共有の build/amd64/sysroot> -Wall -Wextra -Werror -idirafter include`） | compile は warning 0 で通る。link は libc の未定義（`strtod`・`__syscall6`・`__signal_restorer` など、userland の通常の link の仕方をしていないため）で失敗。rootfs の build への組み込みは未実施 |
 
 未実施: guest での実行（試験の image の作成、peninject の rootfs への組み込み、`/dev/input/eventN` の読み取り）、kernel の
