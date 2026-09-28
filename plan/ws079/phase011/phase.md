@@ -109,7 +109,11 @@ guest で `cksum /bin/notes` を確かめてから計測した。
 | `plan/ws079/tests/host-notes.c` | 部分の消しゴムの host 試験（`check_erase_parts`） |
 | `plan/ws079/tests/notes-pen.sh` | 6. pen の印（hover の pen と消しゴムの端）の段、`NOTES_BINARY` |
 
-## 試験（2026-09-28、この worktree、最終の image `build/amd64/hdd-image.img`（main を merge した後に build））
+## 試験（2026-09-28、この worktree、最終の image `build/amd64/hdd-image.img`）
+
+下の QEMU の 4 つの試験は、main の p006（libpdf の display list・PDF Viewer）を merge した後に image を build し直して（`build/p011-image-merged.log`、
+Notes・libpdf の warning 0）、もう一度すべて PASS した。libpdf の host 試験（`run-pdf-writer.sh`・`run-pdf-reader.sh`・`run-pdf-render.sh`）も
+merge の後に ok（writer の出力の `/Info` は `<< /Producer (Kei Notes) ... >>`）。
 
 | 確認 | 命令 | 結果 |
 | --- | --- | --- |
