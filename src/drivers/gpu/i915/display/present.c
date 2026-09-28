@@ -743,6 +743,7 @@ i915_present_blit_build(
 	dst.height = height;
 	dst.pitch = pitch;
 	dst.format = VK_FORMAT_B8G8R8A8_UNORM;
+	dst.tiled = 0U;
 
 	/* The largest whole factor that fits both directions. */
 	scale = width / blit->src.width;

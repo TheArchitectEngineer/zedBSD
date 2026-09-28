@@ -416,6 +416,17 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_SAMPLE_PATTERN_1X_CENTRE		((8U << 20) | (8U << 16))
 
 /*
+ * 3DSTATE_SAMPLE_PATTERN dword 8 bits 15:0 and dword 7: the standard two
+ * and four sample positions (Mesa intel_sample_positions.h,
+ * INTEL_SAMPLE_POS_2X and _4X), each sample a byte of X (bits 7:4) and Y
+ * (bits 3:0) in sixteenths, sample 0 in the lowest byte: 2x (0.75, 0.75)
+ * and (0.25, 0.25); 4x (0.375, 0.125), (0.875, 0.375), (0.125, 0.625) and
+ * (0.625, 0.875).
+ */
+#define GEN12_SAMPLE_PATTERN_2X			((0x44U << 8) | 0xccU)
+#define GEN12_SAMPLE_PATTERN_4X			((0xaeU << 24) | (0x2aU << 16) | (0xe6U << 8) | 0x62U)
+
+/*
  * Instruction fetches fill the per-subslice instruction cache through the L3,
  * so the instruction base needs a write-back entry; Mesa's isl names index 2
  * ("internal") for it on Tiger Lake and never an uncached one.
@@ -547,6 +558,18 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_RSS_DEPTH_MASK			0x7ffU
 #define GEN12_RSS_MIN_ARRAY_ELEMENT_SHIFT	18U
 #define GEN12_RSS_VIEW_EXTENT_SHIFT		7U
+
+/*
+ * The multisample fields (gen120.xml): RENDER_SURFACE_STATE dword 4 Number
+ * of Multisamples in bits 5:3 (the samples' log2) with Multisampled Surface
+ * Storage Format bit 6 left MSFMT_MSS (every sample a slice, QPitch apart);
+ * 3DSTATE_MULTISAMPLE dword 1 Number of Multisamples in bits 3:1;
+ * 3DSTATE_RASTER dword 1 DX Multisample Rasterization Enable bit 12, which
+ * with the DX10.1 API mode rasterizes on the sample pattern.
+ */
+#define GEN12_RSS_MULTISAMPLES_SHIFT		3U
+#define GEN12_MULTISAMPLE_COUNT_SHIFT		1U
+#define GEN12_RASTER_DX_MULTISAMPLE_ENABLE	(1U << 12)
 
 /*
  * SAMPLER_STATE fields (gen120.xml), in dword and bit:

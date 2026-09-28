@@ -17,6 +17,10 @@
  *          value at every vertex
  *   copy   colour = texture(source, attribute); the attribute is the
  *          normalized source coordinate, sampled nearest or linear
+ *   resolve colour = the mean of texture(sample n, attribute) over the four
+ *          samples of a multisampled image, each sample a surface of its
+ *          own, sampled nearest (a two-sample image names each sample
+ *          twice)
  */
 
 #include "blit.h"
@@ -47,6 +51,9 @@
 /* How many rectangles are logged even when they succeed. */
 #define I915_BLIT_LOGGED_RECTANGLES	4U
 
+/* The float bits of 0.25, the weight of each of the resolve kernel's four samples. */
+#define I915_BLIT_FLOAT_QUARTER		0x3e800000U
+
 /*
  * The fill and copy kernels.
  *
@@ -58,6 +65,7 @@
  */
 static struct i915_shader_binary *i915_blit_fill_kernel;
 static struct i915_shader_binary *i915_blit_copy_kernel;
+static struct i915_shader_binary *i915_blit_resolve_kernel;
 
 /*
  * How many rectangles have been logged.
@@ -69,6 +77,8 @@ static struct i915_shader_binary *i915_blit_copy_kernel;
 static unsigned i915_blit_logged;
 
 static int i915_blit_compile(int copy, struct i915_shader_binary **result);
+static int i915_blit_compile_resolve(struct i915_shader_binary **result);
+static int i915_blit_record_resolve(const struct i915_gfx_op_space *space, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *samples, const struct i915_gfx_rect *src_rect);
 static int i915_blit_check_rect(const struct i915_gfx_surface *surface, const struct i915_gfx_rect *rect);
 static int i915_blit_window(struct i915_render_session *session, struct i915_gfx_session *work, int copy, struct i915_gfx_op_space *space);
 static int i915_blit_record(const struct i915_gfx_op_space *space, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear);
@@ -111,6 +121,15 @@ drv_i915_gfx_rect_prepare(
 		kern_logf("i915: vk: transfer kernels compiled by the executor: fill %u bytes, copy %u bytes\n",
 			  i915_blit_fill_kernel->code_bytes,
 			  i915_blit_copy_kernel->code_bytes);
+	}
+
+	/* Compiles the resolve kernel the first time. */
+	if (i915_blit_resolve_kernel == NULL) {
+		error = i915_blit_compile_resolve(&i915_blit_resolve_kernel);
+		if (error != 0) {
+			kern_logf("i915: vk: the resolve kernel does not compile: %d\n", error);
+			return error;
+		}
 	}
 
 	/* Makes the session's state and batch objects. */
@@ -291,6 +310,75 @@ drv_i915_gfx_rect(
 	return 0;
 }
 
+
+/*
+ * Records the resolve of a multisampled colour rectangle into the
+ * submission's batch, or runs it outside a submission: each pixel of
+ * dst_rect of `dst` is the mean of the four `samples` surfaces at the
+ * matching pixel of src_rect (the samples of a two-sample image are each
+ * named twice).  The rectangles have the same size.  Every resolve that
+ * fails is logged.
+ */
+int
+drv_i915_gfx_resolve(
+	struct i915_render_session *session,
+	const struct i915_gfx_surface *dst,
+	const struct i915_gfx_rect *dst_rect,
+	const struct i915_gfx_surface *samples,
+	const struct i915_gfx_rect *src_rect)
+{
+	struct i915_gfx_session *work;
+	struct i915_gfx_op_space space;
+	int error;
+
+	/* Makes sure the kernels and the session's objects exist. */
+	error = drv_i915_gfx_rect_prepare(session);
+	if (error != 0)
+		return error;
+
+	/* Finds the resolve kernel's instruction window. */
+	work = session->gfx;
+	error = drv_i915_gfx_window(session,
+				    work,
+				    NULL,
+				    &work->resolve_window,
+				    &work->resolve_generation,
+				    NULL,
+				    0U,
+				    i915_blit_resolve_kernel->code,
+				    i915_blit_resolve_kernel->code_bytes,
+				    &space);
+	if (error != 0)
+		return error;
+
+	/* Takes the rectangle's slot and its room in the batch. */
+	error = drv_i915_gfx_op_begin(session, work, &space);
+	if (error != 0)
+		return error;
+
+	/* Writes the rectangle's state and commands; a later draw may read what it writes on the CPU. */
+	error = i915_blit_record_resolve(&space, dst, dst_rect, samples, src_rect);
+	if (error == 0)
+		work->transfer_pending = 1;
+
+	/* Keeps the rectangle in the batch, or takes it back; outside a submission it runs now. */
+	error = drv_i915_gfx_op_end(session, work, error);
+
+	/* Says why a resolve failed. */
+	if (error != 0) {
+		kern_logf("i915: vk: GPU resolve %ux%u of a %ux%u surface: %d\n",
+			  dst_rect->w,
+			  dst_rect->h,
+			  dst->width,
+			  dst->height,
+			  error);
+		return error;
+	}
+
+	/* Succeeded: the resolve is recorded, or has run outside a submission. */
+	return 0;
+}
+
 /*
  * Compiles the fill kernel (copy zero) or the copy kernel from IR.
  *
@@ -365,6 +453,107 @@ i915_blit_compile(
 	ir.instructions = instructions;
 	ir.instruction_count = count;
 	ir.value_count = first + 4U;
+
+	/* Compiles it. */
+	error = drv_i915_shader_compile(&ir, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the kernel is compiled. */
+	return 0;
+}
+
+/*
+ * Compiles the resolve kernel: the fragment shader that samples the four
+ * sampled images of set 0, bindings 0 to 3, at the coordinate in its two
+ * inputs and stores a quarter of their sum, component by component.
+ */
+static int
+i915_blit_compile_resolve(
+	struct i915_shader_binary **result)
+{
+	struct i915_shader_ir_inst instructions[48];
+	struct i915_shader_ir_uniform uniforms[4];
+	struct i915_shader_ir ir;
+	uint32_t count;
+	uint32_t index;
+	uint32_t sample;
+	uint32_t component;
+	uint32_t sum;
+	uint32_t quarter;
+	uint32_t next;
+	int error;
+
+	/* Starts from an empty shader. */
+	kern_memset(instructions, 0, sizeof(instructions));
+	kern_memset(uniforms, 0, sizeof(uniforms));
+	kern_memset(&ir, 0, sizeof(ir));
+	count = 0U;
+
+	/* Loads the coordinate into values 0 and 1. */
+	for (index = 0U; index < 2U; index++) {
+		instructions[count].op = I915_IR_LOAD_INPUT;
+		instructions[count].dst = index;
+		instructions[count].component = index;
+		count++;
+	}
+
+	/* Samples binding n into values 2 + 4n to 5 + 4n, each binding a sampled image of set 0. */
+	for (sample = 0U; sample < 4U; sample++) {
+		instructions[count].op = I915_IR_SAMPLE;
+		instructions[count].dst = 2U + 4U * sample;
+		instructions[count].src[0] = 0U;
+		instructions[count].src[1] = 1U;
+		instructions[count].immediate = sample;
+		count++;
+		uniforms[sample].binding = sample;
+		uniforms[sample].kind = I915_IR_UNIFORM_SAMPLED_IMAGE;
+	}
+
+	/* The weight of each sample, in value 18. */
+	quarter = 18U;
+	instructions[count].op = I915_IR_CONST;
+	instructions[count].dst = quarter;
+	instructions[count].immediate = I915_BLIT_FLOAT_QUARTER;
+	count++;
+
+	/* Sums each component over the four samples, weighs the sum and stores it. */
+	next = 19U;
+	for (component = 0U; component < 4U; component++) {
+		/* Adds the samples' component one after another. */
+		sum = 2U + component;
+		for (sample = 1U; sample < 4U; sample++) {
+			instructions[count].op = I915_IR_FADD;
+			instructions[count].dst = next;
+			instructions[count].src[0] = sum;
+			instructions[count].src[1] = 2U + 4U * sample + component;
+			count++;
+			sum = next;
+			next++;
+		}
+
+		/* Takes a quarter of the sum. */
+		instructions[count].op = I915_IR_FMUL;
+		instructions[count].dst = next;
+		instructions[count].src[0] = sum;
+		instructions[count].src[1] = quarter;
+		count++;
+
+		/* Stores it as the output's component. */
+		instructions[count].op = I915_IR_STORE_OUTPUT;
+		instructions[count].src[0] = next;
+		instructions[count].component = component;
+		count++;
+		next++;
+	}
+
+	/* Completes the fragment shader. */
+	ir.stage = I915_STAGE_FRAGMENT;
+	ir.instructions = instructions;
+	ir.instruction_count = count;
+	ir.value_count = next;
+	ir.uniforms = uniforms;
+	ir.uniform_count = 4U;
 
 	/* Compiles it. */
 	error = drv_i915_shader_compile(&ir, result);
@@ -477,6 +666,69 @@ i915_blit_record(
 	i915_blit_build_batch(space->batch, space, dst, &kernels, mocs);
 
 	/* Succeeded: the rectangle is written. */
+	return 0;
+}
+
+/*
+ * Writes one resolve rectangle into its slot and appends its commands to
+ * the batch: the copy's state with sample 0 as texture 0, then samples 1
+ * to 3 as textures 1 to 3 with the same nearest sampler.  Returns EINVAL
+ * for a rectangle or a surface that cannot be drawn.
+ */
+static int
+i915_blit_record_resolve(
+	const struct i915_gfx_op_space *space,
+	const struct i915_gfx_surface *dst,
+	const struct i915_gfx_rect *dst_rect,
+	const struct i915_gfx_surface *samples,
+	const struct i915_gfx_rect *src_rect)
+{
+	struct i915_gfx_kernels kernels;
+	uint32_t *surface;
+	uint8_t *dynamic;
+	uint32_t texture;
+	uint32_t mocs;
+	int error;
+
+	/* Refuses a destination rectangle outside its surface. */
+	mocs = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
+	error = i915_blit_check_rect(dst, dst_rect);
+	if (error != 0)
+		return error;
+
+	/* Refuses a source rectangle outside the samples. */
+	error = i915_blit_check_rect(&samples[0], src_rect);
+	if (error != 0)
+		return error;
+
+	/* Writes the target, sample 0 with its nearest sampler and the vertices, as a copy does. */
+	error = i915_blit_write_state(space->slot, dst, dst_rect, &samples[0], src_rect, NULL, 0, mocs);
+	if (error != 0)
+		return error;
+
+	/* Adds samples 1 to 3 as textures 1 to 3, each with a copy of sampler 0. */
+	surface = (uint32_t *)(void *)(space->slot + I915_GFX_SURFACE_HEAP);
+	dynamic = space->slot + I915_GFX_DYNAMIC_HEAP;
+	for (texture = 1U; texture < 4U; texture++) {
+		surface[I915_GFX_BINDING_TABLE / 4U + 1U + texture] = I915_GFX_RSS_TEXTURE + texture * I915_GFX_RSS_BYTES;
+		error = drv_i915_gfx_surface_write(&surface[(I915_GFX_RSS_TEXTURE + texture * I915_GFX_RSS_BYTES) / 4U], &samples[texture], mocs);
+		if (error != 0)
+			return error;
+		kern_memcpy(dynamic + I915_GFX_DYN_SAMPLER + texture * I915_GFX_SAMPLER_BYTES,
+			    dynamic + I915_GFX_DYN_SAMPLER,
+			    I915_GFX_SAMPLER_BYTES);
+	}
+
+	/* Describes the resolve kernel for its packets: one attribute, its payload start and its four sampled images. */
+	kern_memset(&kernels, 0, sizeof(kernels));
+	kernels.varyings = 1U;
+	kernels.ps_grf_start = i915_blit_resolve_kernel->dispatch_grf_start;
+	kernels.ps_samplers = i915_blit_resolve_kernel->sampler_count;
+
+	/* Appends the rectangle's commands. */
+	i915_blit_build_batch(space->batch, space, dst, &kernels, mocs);
+
+	/* Succeeded: the resolve rectangle is written. */
 	return 0;
 }
 

@@ -168,6 +168,7 @@ int drv_i915_gfx_emit_vertex_input(struct i915_gfx_batch *batch, const struct i9
 int drv_i915_gfx_emit_index_buffer(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, uint32_t mocs);
 void drv_i915_gfx_emit_urb(struct i915_gfx_batch *batch, uint32_t entry_size);
 void drv_i915_gfx_emit_constants(struct i915_gfx_batch *batch, uint64_t vs_push_va, uint32_t vs_push_regs, uint64_t ps_push_va, uint32_t ps_push_regs, uint32_t mocs);
+uint32_t drv_i915_gfx_samples_log2(uint32_t samples);
 void drv_i915_gfx_emit_raster(struct i915_gfx_batch *batch, const struct i915_gfx_pipeline *pipeline, const struct i915_gfx_kernels *kernels);
 int drv_i915_gfx_emit_depth(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *depth, uint64_t scratch_va, uint32_t mocs);
 void drv_i915_gfx_emit_vertex_shader(struct i915_gfx_batch *batch, const struct i915_gfx_kernels *kernels);

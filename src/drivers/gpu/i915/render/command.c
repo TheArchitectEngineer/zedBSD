@@ -153,7 +153,7 @@ static int i915_command_buffer_begin(struct i915_render_session *session, struct
 static int i915_command_buffer_end(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static struct i915_gfx_op *i915_command_op(struct i915_gfx_cmdbuf *cmdbuf, enum i915_gfx_op_kind kind);
 static int i915_command_grow(struct i915_gfx_cmdbuf *cmdbuf);
-static int i915_record_image_copy(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader, int blit);
+static int i915_record_image_copy(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader, enum i915_gfx_op_kind kind);
 static int i915_record_clear_image(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_barrier(struct i915_render_session *session, struct i915_wire_reader *reader);
 static int i915_record_buffer_image_copy(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader, int to_image);
@@ -189,6 +189,9 @@ static int i915_execute_clear_image(struct i915_render_session *session, const s
 static int i915_execute_clear_attachment(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static int i915_execute_image_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_image_blit(struct i915_render_session *session, const struct i915_gfx_op *op);
+static int i915_execute_image_resolve(struct i915_render_session *session, const struct i915_gfx_op *op);
+static int i915_fill_samples(struct i915_render_session *session, const struct i915_gfx_image *image, const struct i915_gfx_surface *surface, const struct i915_gfx_rect *rect, const uint32_t words[4]);
+static void i915_sample_rect(const struct i915_gfx_image *image, struct i915_gfx_rect *rect);
 static int i915_execute_buffer_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_draw(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static int i915_command_buffer_execute(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf);
@@ -799,7 +802,10 @@ i915_command_grow(
 
 /*
  * vkCmdCopyImage: [src][layout][dst][layout][present][count]{VkImageCopy};
- * vkCmdBlitImage: the same with VkImageBlit, followed by [filter].
+ * vkCmdBlitImage: the same with VkImageBlit, followed by [filter];
+ * vkCmdResolveImage: the same with VkImageResolve, whose record is
+ * VkImageCopy's field for field and is kept as one.  `kind` is the
+ * operation (I915_GFX_OP_COPY_IMAGE, _BLIT_IMAGE or _RESOLVE_IMAGE).
  *
  * Every region is one operation.
  */
@@ -808,7 +814,7 @@ i915_record_image_copy(
 	struct i915_render_session *session,
 	struct i915_gfx_cmdbuf *cmdbuf,
 	struct i915_wire_reader *reader,
-	int blit)
+	enum i915_gfx_op_kind kind)
 {
 	struct i915_gfx_image *src;
 	struct i915_gfx_image *dst;
@@ -818,7 +824,7 @@ i915_record_image_copy(
 	uint64_t count;
 	uint64_t index;
 	uint32_t filter;
-	enum i915_gfx_op_kind kind;
+	int blit;
 
 	/* Decodes the two images and the number of regions, at most sixteen. */
 	identity = drv_i915_wire_read_u64(reader);
@@ -832,10 +838,10 @@ i915_record_image_copy(
 	if (reader->error != 0 || count > I915_GFX_MAX_REGIONS)
 		return EINVAL;
 
-	/* A blit and a copy record different operations. */
-	kind = I915_GFX_OP_COPY_IMAGE;
-	if (blit)
-		kind = I915_GFX_OP_BLIT_IMAGE;
+	/* A blit has its own region record and a filter; a copy and a resolve share theirs. */
+	blit = 0;
+	if (kind == I915_GFX_OP_BLIT_IMAGE)
+		blit = 1;
 
 	/* Records one operation for each region. */
 	for (index = 0U; index < count; index++) {
@@ -1857,11 +1863,15 @@ i915_record_command(
 		return error;
 	case 113U:
 		/* vkCmdCopyImage */
-		error = i915_record_image_copy(session, cmdbuf, reader, 0);
+		error = i915_record_image_copy(session, cmdbuf, reader, I915_GFX_OP_COPY_IMAGE);
 		return error;
 	case 114U:
 		/* vkCmdBlitImage */
-		error = i915_record_image_copy(session, cmdbuf, reader, 1);
+		error = i915_record_image_copy(session, cmdbuf, reader, I915_GFX_OP_BLIT_IMAGE);
+		return error;
+	case 122U:
+		/* vkCmdResolveImage */
+		error = i915_record_image_copy(session, cmdbuf, reader, I915_GFX_OP_RESOLVE_IMAGE);
 		return error;
 	case 119U:
 		/* vkCmdClearColorImage */
@@ -2029,6 +2039,13 @@ i915_image_plane_surface(
 	surface->height = image->height;
 	surface->pitch = image->stencil_pitch;
 	surface->format = VK_FORMAT_S8_UINT;
+	surface->tiled = 1U;
+
+	/* A multisampled plane interleaves each pixel's samples. */
+	if (image->samples > 1U) {
+		surface->width = image->sample_width;
+		surface->height = image->sample_height;
+	}
 
 	/* Refuses an image that is not bound to storage. */
 	if (surface->va == 0U)
@@ -2207,6 +2224,7 @@ i915_execute_clear(
 			rect.y = 0;
 			rect.w = image->width;
 			rect.h = image->height;
+			i915_sample_rect(image, &rect);
 			error = i915_clear_stencil(session, framebuffer->views[index], &rect, op->u.begin.clear_words[index][1]);
 			if (error != 0)
 				return error;
@@ -2233,12 +2251,12 @@ i915_execute_clear(
 			kern_memcpy(words, op->u.begin.clear_words[index], sizeof(words));
 		}
 
-		/* Fills the whole surface. */
+		/* Fills the whole surface, on every sample. */
 		rect.x = 0;
 		rect.y = 0;
 		rect.w = surface.width;
 		rect.h = surface.height;
-		error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, words, 0);
+		error = i915_fill_samples(session, image, &surface, &rect, words);
 		if (error != 0)
 			return error;
 	}
@@ -2285,9 +2303,11 @@ i915_execute_clear_attachment(
 	if (attachment >= framebuffer->view_count || framebuffer->views[attachment] == NULL)
 		return 0;
 
-	/* A stencil clear fills the rectangle of the stencil plane. */
+	/* A stencil clear fills the rectangle of the stencil plane; a depth or stencil rectangle is one of samples. */
 	image = framebuffer->views[attachment]->image;
 	rect = op->u.clear_attachment.rect;
+	if (op->u.clear_attachment.is_depth != 0U)
+		i915_sample_rect(image, &rect);
 	if (op->u.clear_attachment.is_depth != 0U &&
 	    (op->u.clear_attachment.aspects & VK_IMAGE_ASPECT_STENCIL_BIT) != 0U &&
 	    image->stencil != 0U) {
@@ -2344,8 +2364,8 @@ i915_execute_clear_attachment(
 	rect.w = (uint32_t)(right - rect.x);
 	rect.h = (uint32_t)(bottom - rect.y);
 
-	/* Fills the rectangle. */
-	error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, words, 0);
+	/* Fills the rectangle, on every sample. */
+	error = i915_fill_samples(session, image, &surface, &rect, words);
 	return error;
 }
 
@@ -2463,6 +2483,7 @@ i915_execute_buffer_image_copy(
 	buffer_surface.height = region->imageExtent.height;
 	buffer_surface.pitch = (uint32_t)(row_pixels * texel_bytes);
 	buffer_surface.format = buffer_format;
+	buffer_surface.tiled = 0U;
 	if (buffer_surface.va == 0U)
 		return EINVAL;
 
@@ -2569,7 +2590,7 @@ i915_execute_clear_image(
 			rect.y = 0;
 			rect.w = surface.width;
 			rect.h = surface.height;
-			error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, op->u.clear_image.words, 0);
+			error = i915_fill_samples(session, image, &surface, &rect, op->u.clear_image.words);
 			if (error != 0)
 				return error;
 		}
@@ -2839,6 +2860,145 @@ i915_image_blit_plane(
 }
 
 /*
+ * Runs a vkCmdResolveImage region: each pixel of the destination level's
+ * rectangle becomes the mean of the source's samples at the matching pixel
+ * (a colour image's samples are slices of their own, slice_rows apart).
+ * Returns EINVAL for a source of one sample, a destination of several, or
+ * a region the images do not have.
+ */
+static int
+i915_execute_image_resolve(
+	struct i915_render_session *session,
+	const struct i915_gfx_op *op)
+{
+	const VkImageCopy *region;
+	const struct i915_gfx_image *src;
+	struct i915_gfx_surface samples[4];
+	struct i915_gfx_surface dst_surface;
+	struct i915_gfx_rect src_rect;
+	struct i915_gfx_rect dst_rect;
+	uint32_t sample;
+	int error;
+
+	/* Refuses a resolve whose images do not exist. */
+	region = &op->u.image_copy.region;
+	src = op->u.image_copy.src;
+	if (src == NULL || op->u.image_copy.dst == NULL)
+		return EINVAL;
+
+	/* Refuses a source of one sample, and a destination of several. */
+	if (src->samples <= 1U || op->u.image_copy.dst->samples > 1U)
+		return EINVAL;
+
+	/* Describes the source's sample 0 and the destination's level and layer. */
+	error = i915_image_surface(src, 0U, 0U, &samples[0]);
+	if (error != 0)
+		return EINVAL;
+	error = i915_image_surface(op->u.image_copy.dst, region->dstSubresource.mipLevel, region->dstSubresource.baseArrayLayer, &dst_surface);
+	if (error != 0)
+		return EINVAL;
+
+	/* Every further sample is the slice below the one before; a two-sample image names each twice. */
+	for (sample = 1U; sample < 4U; sample++) {
+		samples[sample] = samples[0];
+		samples[sample].va += (uint64_t)(sample % src->samples) * src->slice_rows * src->pitch;
+	}
+
+	/* The two rectangles are the extent at each side's offset. */
+	src_rect.x = region->srcOffset.x;
+	src_rect.y = region->srcOffset.y;
+	src_rect.w = region->extent.width;
+	src_rect.h = region->extent.height;
+	dst_rect.x = region->dstOffset.x;
+	dst_rect.y = region->dstOffset.y;
+	dst_rect.w = region->extent.width;
+	dst_rect.h = region->extent.height;
+
+	/* An empty region resolves nothing. */
+	if (region->extent.width == 0U || region->extent.height == 0U)
+		return 0;
+
+	/* Resolves the rectangle. */
+	error = drv_i915_gfx_resolve(session, &dst_surface, &dst_rect, samples, &src_rect);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the region is resolved. */
+	return 0;
+}
+
+/*
+ * Fills a rectangle of an image's surface with four words, and in a
+ * multisampled colour image the same rectangle of every further sample,
+ * each a slice of its own slice_rows below the one before.
+ */
+static int
+i915_fill_samples(
+	struct i915_render_session *session,
+	const struct i915_gfx_image *image,
+	const struct i915_gfx_surface *surface,
+	const struct i915_gfx_rect *rect,
+	const uint32_t words[4])
+{
+	struct i915_gfx_surface sample_surface;
+	uint32_t sample;
+	int error;
+
+	/* Fills the surface itself: sample 0, or the one sample. */
+	error = drv_i915_gfx_rect(session, surface, rect, NULL, NULL, words, 0);
+	if (error != 0)
+		return error;
+
+	/* An image of one sample has no other. */
+	if (image->samples <= 1U)
+		return 0;
+
+	/* A depth or stencil plane interleaves its samples: the surface already holds them all. */
+	if (image->stencil != 0U || image->format == VK_FORMAT_D32_SFLOAT || image->format == VK_FORMAT_D16_UNORM)
+		return 0;
+
+	/* Fills the other samples of the multisampled colour image. */
+	if (surface->tiled != 0U) {
+		for (sample = 1U; sample < image->samples; sample++) {
+			sample_surface = *surface;
+			sample_surface.va += (uint64_t)sample * image->slice_rows * image->pitch;
+			error = drv_i915_gfx_rect(session, &sample_surface, rect, NULL, NULL, words, 0);
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* Succeeded: every sample of the rectangle is filled. */
+	return 0;
+}
+
+/*
+ * Turns a rectangle of pixels into the rectangle of samples that holds
+ * them in a multisampled depth or stencil plane: two samples side by side
+ * double its width, four in a square double both sides.  A rectangle of
+ * any other image is left as it is.
+ */
+static void
+i915_sample_rect(
+	const struct i915_gfx_image *image,
+	struct i915_gfx_rect *rect)
+{
+	/* One sample to a pixel: the pixels are the samples. */
+	if (image->samples <= 1U)
+		return;
+
+	/* Two or four samples: two side by side. */
+	rect->x *= 2;
+	rect->w *= 2U;
+
+	/* Four samples: two rows of two. */
+	if (image->samples == 4U) {
+		rect->y *= 2;
+		rect->h *= 2U;
+	}
+}
+
+/*
  * Runs one vkCmdCopyBuffer region as GPU copies.
  *
  * The bytes are copied as four-byte texels between two linear surfaces over
@@ -2915,6 +3075,7 @@ i915_execute_buffer_copy(
 		src_surface.height = (uint32_t)rows;
 		src_surface.pitch = width * 4U;
 		src_surface.format = VK_FORMAT_R8G8B8A8_UNORM;
+		src_surface.tiled = 0U;
 		if (src_surface.va == 0U)
 			return EINVAL;
 
@@ -3024,6 +3185,9 @@ i915_command_buffer_execute(
 			break;
 		case I915_GFX_OP_BLIT_IMAGE:
 			error = i915_execute_image_blit(session, op);
+			break;
+		case I915_GFX_OP_RESOLVE_IMAGE:
+			error = i915_execute_image_resolve(session, op);
 			break;
 		case I915_GFX_OP_CLEAR_IMAGE:
 			error = i915_execute_clear_image(session, op);

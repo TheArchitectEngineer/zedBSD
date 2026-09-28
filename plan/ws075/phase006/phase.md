@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p006`
 Parent: [WS075](../ws.md)
-Status: in-progress（2026-09-28〜。増分 1〜4 済み（MRT・occlusion query・VS の storage buffer・stencil）、次は増分 5（multisample と resolve））
+Status: in-progress（2026-09-28〜。増分 1〜5 済み（MRT・occlusion query・VS の storage buffer・stencil・multisample と resolve）。p005 の egltest の fbo・es3 の後退を bisect 中）
 Phase disposition: normal
 承認: 2026-09-27 ユーザー「…i915の高度化に進んでください。」、WS075 の計画（main の登録）。p005 の後（依存 p005 cleared）。
 
@@ -85,6 +85,37 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
 - st1 の compositor の停止（wlkill の直後）は st3 で再現しない（1 回、compositor は最後まで commit を続けた）。stencil と無関係に
   見えるが、1 回の観察なので未確定。
 
+### 増分 5: multisample と resolve（2026-09-28）
+
+- image（`image.c`）: 2x・4x の 2D・1 level・1 layer の image。colour は Y tile で sample ごとに tile 行の揃った slice（MSFMT_MSS、
+  slice_rows 離れ）、depth・stencil は pixel の sample を平面に interleave（2x は横 2、4x は 2x2、`sample_width`・`sample_height`、
+  isl の ISL_MSAA_LAYOUT_INTERLEAVED）。`drv_i915_gfx_image_slice()` は multisample の image を Y tile（`i915_gfx_surface.tiled`）で記述する。
+- 描画（`state.c`・`draw.c`・`pipeline.c`）: pipeline の rasterizationSamples と pSampleMask、3DSTATE_MULTISAMPLE の sample 数、
+  3DSTATE_SAMPLE_MASK、3DSTATE_RASTER の DX multisample rasterization、3DSTATE_SAMPLE_PATTERN に 2x・4x の標準の位置
+  （Mesa intel_sample_positions.h）、render target の RENDER_SURFACE_STATE の Number of Multisamples・Y tile・Surface Array。
+  executor の試験が手で作る pipeline（samples 0）は 1 sample を書く。
+- resolve（`command.c`・`blit.c`）: vkCmdResolveImage（opcode 122、VkImageResolve は VkImageCopy と同じ wire）。新しい resolve kernel
+  （IR から、4 つの sampled image を nearest で sample して平均、2x は各 sample を 2 回名指す）で sample の slice を平均する。
+- clear: colour の clear（pass の begin・ClearAttachments・ClearColorImage）は全 sample の slice を埋める（`i915_fill_samples()`）。
+  depth・stencil の矩形は sample の矩形へ（`i915_sample_rect()`）。
+- device（`instance.c`）: framebuffer の sample 数 1・2・4、render target に使う（sampled・storage でない）optimal の 2D image の
+  sampleCounts 1・2・4。D32S8・S8 に TRANSFER_SRC・DST の format feature。sampler2DMS（sampled の multisample）は未。
+- host の fixture の stub に `drv_i915_gfx_resolve()` を足した（`plan/ws031/tests/i915-vk-render-stubs.inc`）。
+
+### 後退（2026-09-28 に見つけた、増分 5 より前から）: p005 の egltest の fbo・es3
+
+- p005 の 7 場面（`KEILAND_APP=egltest`）を増分 5 の後に走らせると fbo 12・es3 4（p005 の fix-egltest3 は全て 0）。fbo は FBO の
+  中で blend の四角だけが描かれず（fbo-fbo の blend が背景の 0000ff）、窓へ FBO の texture を貼る fan が黒。es3 は D0〜D3（instanced、
+  divisor）が背景のまま。glsl・glsl3・cube・formats・volumes は 0。executor の拒否・error は log に無い。
+- 増分 5 を外した HEAD（8f36900f と main の merge）でも同じ数（`build/ws075-p006/st3-p005scenes`）: 増分 5 と無関係。
+- libGLESv2・libEGL・libvulkan は p005 の後 rename だけ（rename を追った差分で 61 行の文字列）。GL_VERSION は p005 の 2.0 から 3.0 に
+  （23622062 の vertexPipelineStoresAndAtomics）だが egltest は version で分岐しない。
+- bisect: 23622062（VF の invalidate と feature）を外した run（`bisect1b`）でも fbo 12・es3 4 → 23622062 ではない。残りの候補は
+  9c921466（MRT）・adf87fef（query）・a614b54e（SSBO）・62a10ad0（stencil）・main の kernel の変更（BUG-075 の inode/cache の discard、
+  HAL の quiet console）。
+- `bisect1`（同じ image の 1 回目）は wlkill の直後（ZWL frame 163、client の CLEANUP の後）で compositor が止まり egltest が走らな
+  かった: [BUG-085](../../bugs/BUG-085.md)（st1 と同じ症状、間欠）。
+
 ## 検証
 
 | 確認 | 結果 |
@@ -93,6 +124,9 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
 | gentool（Mesa brw_disasm、`BRW_TOOLS=/home/awe/p014-c/mesa/build-asm/src/intel/compiler`） | PASS。MRT の fragment shader（location 0・1・3、discard あり）と storage buffer の vertex shader（load・store・predicate）も受ける（scratch で確認） |
 | 実機 capture egltest6（`build/ws075-p006/`） | mrt1（MRT）: targets 16 → 7。q1（query）: queries 18 → **0**、targets 6。ssbo1: feedback 8 → 2。ssbo2（VF の invalidate と feature）: feedback **1**、targets 6、blits 10、queries 0。画面 `build/ws031-shots/ws075-p006-20260928-{q1,ssbo2}-sheet.png`。hang・fault なし |
 | 実機 capture egltest6 st3（増分 4、`build/ws075-p006/st3`、この worktree の build） | targets 6 → **0**（stencil-complete・depth-stencil-texture-complete・draw-buffer-other も ok、stencil-inside/outside・depth-stencil-test の画素 ok）、blits 10（変化なし、multisample）、queries 0、feedback 1。capture の検査 pass（desktop_drawn・scenes_shown）。hang・fault・device lost なし。画面 `build/ws031-shots/ws075-p006-20260928-st3-sheet.png` |
+| 実機 capture egltest6 ms1（増分 5、`build/ws075-p006/ms1`） | blits 10 → **0**（resolve-inside/outside・resolve-edge-mixed・depth-blit ok）、targets 0、queries 0、feedback 1（drawn-from-captured）。capture の検査 pass。hang・fault なし。画面 `build/ws031-shots/ws075-p006-20260928-ms1-sheet.png` |
+| host の vk の fixture（増分 5） | spirv・lower・resdispatch・eu・compile・pipe PASS。res・sync・cmdbuf は既存の assertion で失敗（res: `opcode 78 routed to the res module`、sync: `unimplemented opcode 39`、cmdbuf: `test_blend_state` の push）。増分 5 の前の同じ fixture との比較は未実施 |
+| 実機 capture egltest（p005 の 7 場面、回帰） | ms1-p005scenes（増分 5 あり）・st3-p005scenes（なし）・bisect1b（23622062 を外す）: glsl・glsl3・cube・formats・volumes 0、fbo 12、es3 4（上の後退） |
 | QEMU | 未実施（i915 の実機の変更） |
 
 ## 中断（2026-09-28、main の wrap up）: 増分 4 の stencil（解決済み、上の増分 4）

@@ -817,6 +817,8 @@ i915_draw_build_batch(
 	uint32_t level;
 	uint32_t width;
 	uint32_t height;
+	uint32_t samples;
+	uint32_t sample_mask;
 	int error;
 
 	/* Switches to 3D, programs the state bases and the once-per-context state. */
@@ -869,10 +871,23 @@ i915_draw_build_batch(
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, 0U);
 
-	/* Renders one sample per pixel. */
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_MULTISAMPLE, GEN12_3DSTATE_MULTISAMPLE_DWORDS);
+	/*
+	 * Takes the pipeline's samples per pixel and the ones it writes; a
+	 * pipeline no create decoded (the executor's own tests build theirs)
+	 * has no samples recorded and writes its one sample.
+	 */
+	samples = state->pipeline->samples;
+	sample_mask = state->pipeline->sample_mask;
+	if (samples == 0U) {
+		samples = 1U;
+		sample_mask = 1U;
+	}
+
+	/* Renders the samples at the pixel centre, writing the ones the mask names. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_MULTISAMPLE, GEN12_3DSTATE_MULTISAMPLE_DWORDS));
+	drv_i915_batch_emit(batch, drv_i915_gfx_samples_log2(samples) << GEN12_MULTISAMPLE_COUNT_SHIFT);
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SAMPLE_MASK, GEN12_3DSTATE_SAMPLE_MASK_DWORDS));
-	drv_i915_batch_emit(batch, 1U);
+	drv_i915_batch_emit(batch, sample_mask & ((1U << samples) - 1U));
 
 	/* Enables the vertex shader and no other geometry stage. */
 	drv_i915_gfx_emit_vertex_shader(batch, kernels);

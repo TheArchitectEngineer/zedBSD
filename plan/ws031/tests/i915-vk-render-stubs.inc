@@ -390,6 +390,29 @@ drv_i915_gfx_rect(
 }
 
 /*
+ * Stands in for resolving a multisampled rectangle on the GPU: records it
+ * as a copy from sample 0 and reports stub_rect_result.
+ */
+int
+drv_i915_gfx_resolve(
+	struct i915_render_session *session,
+	const struct i915_gfx_surface *dst,
+	const struct i915_gfx_rect *dst_rect,
+	const struct i915_gfx_surface *samples,
+	const struct i915_gfx_rect *src_rect)
+{
+	int error;
+
+	/* Records it as the rectangle stand-in records a copy. */
+	error = drv_i915_gfx_rect(session, dst, dst_rect, &samples[0], src_rect, NULL, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the resolve counts as run. */
+	return 0;
+}
+
+/*
  * Stands in for opening a submission's batch: the stand-in draw and
  * rectangle count as run when they are called, so there is no batch.
  */
