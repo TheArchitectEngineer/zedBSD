@@ -21,8 +21,10 @@
  * Names that are taken are not overwritten unless the user chose to: by
  * default the copy gets the next free name ("Report 2.pdf", or "Report
  * copy.pdf" for a duplicate).  A copy or a move may instead replace the
- * item there (it is removed first, by steps planned before the source's) or
- * skip the source, as its collisions table says (ws035-p106, F-041).
+ * item there or skip the source, as its collisions table says (ws035-p106,
+ * F-041).  A replaced item goes to the trash first, by steps planned before
+ * the source's, so that undo can put it back (ws035-p110, F-050); only
+ * when there is no trash is it removed.
  */
 
 #include "ops.h"
@@ -72,6 +74,7 @@ static int task_plan_copy(struct fm_task *task, const char *source, const char *
 static int task_plan_transfer(struct fm_task *task, const char *source, const char *target, const struct stat *status);
 static int task_walk_finish(struct fm_task *task, int error);
 static int task_plan_delete(struct fm_task *task, const char *source, const struct stat *status);
+static int task_plan_trash(struct fm_task *task, const char *trash, const char *source, const struct stat *status, char *trashed, size_t size);
 static int task_push_walk(struct fm_task *task, const char *source, const char *target, int post_order);
 static struct fm_step *task_add(struct fm_task *task, unsigned kind, const char *source, const char *target);
 static int task_run(struct fm_task *task, uint64_t deadline);
@@ -119,7 +122,8 @@ fm_task_new(
 	task->results = calloc(count + 1U, sizeof(task->results[0]));
 	task->failed = calloc(count + 1U, 1U);
 	task->collisions = calloc(count + 1U, 1U);
-	if (task->sources == NULL || task->results == NULL || task->failed == NULL || task->collisions == NULL) {
+	task->replaced = calloc(count + 1U, sizeof(task->replaced[0]));
+	if (task->sources == NULL || task->results == NULL || task->failed == NULL || task->collisions == NULL || task->replaced == NULL) {
 		fm_task_free(task);
 		return NULL;
 	}
@@ -232,11 +236,13 @@ fm_task_free(
 	/* The table of steps. */
 	free(task->steps);
 
-	/* The sources and the results. */
+	/* The sources, the results and the replaced items' places in the trash. */
 	for (index = 0; index < task->source_count; index++) {
 		free(task->sources[index]);
 		if (task->results != NULL)
 			free(task->results[index]);
+		if (task->replaced != NULL)
+			free(task->replaced[index]);
 	}
 
 	/* The tables themselves. */
@@ -244,6 +250,7 @@ fm_task_free(
 	free(task->results);
 	free(task->failed);
 	free(task->collisions);
+	free(task->replaced);
 	free(task);
 }
 
@@ -444,7 +451,6 @@ task_plan_source(
 	char target[2 * FM_OPS_PATH_MAX + 32];
 	char parent[FM_OPS_PATH_MAX];
 	char original[FM_OPS_PATH_MAX];
-	char name[FM_OPS_PATH_MAX];
 	const char *source;
 	const char *suffix;
 	size_t owner;
@@ -540,35 +546,10 @@ task_plan_source(
 		/* The move is planned. */
 		break;
 	case FM_TASK_TRASH:
-		/* A name in the trash and the record of where the item was. */
-		error = fm_trash_name(task->destination, task_base(source), name, sizeof(name));
-		if (error != 0) {
-			task_fail(task, owner, error, source);
-			return -1;
-		}
-
-		/* The record of where the item was. */
-		snprintf(target, sizeof(target), "%s/info/%s.trashinfo", task->destination, name);
-		step = task_add(task, FM_STEP_TRASHINFO, source, target);
-		if (step == NULL)
-			return ENOMEM;
-
-		/* The item into the trash's files: a rename, or a copy and a removal across file systems. */
-		snprintf(target, sizeof(target), "%s/files/%s", task->destination, name);
-		task->results[owner] = strdup(target);
-		same_device = 0;
-		task_parent(target, parent, sizeof(parent));
-		error = stat(parent, &target_status);
-		if (error == 0 && target_status.st_dev == status.st_dev)
-			same_device = 1;
-		if (same_device != 0) {
-			step = task_add(task, FM_STEP_RENAME, source, target);
-			error = 0;
-			if (step == NULL)
-				error = ENOMEM;
-		} else {
-			error = task_plan_transfer(task, source, target, &status);
-		}
+		/* The item into the trash (the destination), with the record of where it was. */
+		error = task_plan_trash(task, task->destination, source, &status, target, sizeof(target));
+		if (error == 0)
+			task->results[owner] = strdup(target);
 
 		/* The move into the trash is planned. */
 		break;
@@ -666,6 +647,8 @@ task_resolve(
 	unsigned *outcome)
 {
 	struct stat status;
+	char trash[FM_OPS_PATH_MAX];
+	char trashed[2 * FM_OPS_PATH_MAX + 32];
 	unsigned collision;
 	int collides;
 	int written;
@@ -716,10 +699,28 @@ task_resolve(
 	if (inside != 0)
 		return EINVAL;
 
-	/* Its removal comes first; the source is planned again after it. */
-	error = task_plan_delete(task, target, &status);
-	if (error != 0)
-		return error;
+	/*
+	 * It goes to the trash first, where undo finds it again; without a
+	 * trash it is removed.  The source is planned again after it.
+	 */
+	error = fm_trash_path(trash, sizeof(trash));
+	if (error == 0) {
+		error = task_plan_trash(task, trash, target, &status, trashed, sizeof(trashed));
+		if (error != 0)
+			return error;
+
+		/* Where the replaced item waits, for undo. */
+		task->replaced[owner] = strdup(trashed);
+	} else {
+		error = task_plan_delete(task, target, &status);
+		if (error != 0)
+			return error;
+	}
+
+	/*
+	 * The next planning of this source is its own: replacing tells
+	 * task_resolve to give it the name just freed.
+	 */
 	task->replacing = 1;
 	*outcome = TASK_TARGET_REMOVING;
 
@@ -959,6 +960,63 @@ task_plan_delete(
 		return ENOMEM;
 
 	/* Succeeded: the removal is planned. */
+	return 0;
+}
+
+/*
+ * Plans the move of one item into a trash: the record of where it was,
+ * then the item into the trash's files under a free name (a rename, or a
+ * copy and a removal across file systems).  The item's path in the trash
+ * is written to trashed; nonzero on failure.
+ */
+static int
+task_plan_trash(
+	struct fm_task *task,
+	const char *trash,
+	const char *source,
+	const struct stat *status,
+	char *trashed,
+	size_t size)
+{
+	struct stat trash_status;
+	struct fm_step *step;
+	char name[FM_OPS_PATH_MAX];
+	char record[2 * FM_OPS_PATH_MAX + 32];
+	char files[FM_OPS_PATH_MAX + 8];
+	int same_device;
+	int error;
+
+	/* A name in the trash nothing has. */
+	error = fm_trash_name(trash, task_base(source), name, sizeof(name));
+	if (error != 0)
+		return error;
+
+	/* The record of where the item was. */
+	snprintf(record, sizeof(record), "%s/info/%s.trashinfo", trash, name);
+	step = task_add(task, FM_STEP_TRASHINFO, source, record);
+	if (step == NULL)
+		return ENOMEM;
+
+	/* The item's place among the trash's files. */
+	snprintf(trashed, size, "%s/files/%s", trash, name);
+	snprintf(files, sizeof(files), "%s/files", trash);
+
+	/* Within one file system a rename, across a copy and a removal. */
+	same_device = 0;
+	error = stat(files, &trash_status);
+	if (error == 0 && trash_status.st_dev == status->st_dev)
+		same_device = 1;
+	if (same_device != 0) {
+		step = task_add(task, FM_STEP_RENAME, source, trashed);
+		if (step == NULL)
+			return ENOMEM;
+	} else {
+		error = task_plan_transfer(task, source, trashed, status);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the move into the trash is planned. */
 	return 0;
 }
 
