@@ -3,11 +3,11 @@
 # ws079-p009: 全文規約確認と回帰（必須の最終確認）
 
 <!-- awesome-plan-current:start -->
-Status: uncleared（2026-09-29、PDF/Notes subagent の 2 回目の区切り。規約の是正は全て済んだ: 範囲の中と main の許した範囲の外の file は `style-check.py` の違反 0。回帰も host 8 本・truetype の描画の比較・4 platform の build・QEMU の zdesktop（corner・mouse の三回 click）と PDF の demo の全段・boot test まで ok。残るのは pen と touch の guest 試験（p003・p012・p013-touch）だけで、その試験の image（`build-pen-image.sh`）の build が Noct の取得と build を要し、subagent の toolchain の規則で止めた。main の判断で覆してよい）
+Status: cleared（2026-09-29 main: 残りの pen と touch の guest 試験を main が pen の image で流し、3 本とも PASS。規約の是正と他の回帰は 2 回目の区切りで済んでいた。`input-inject.c`・`input-inject.h`・touchinject の規約は WS081 p002 へ移管）
 Disposition: normal
 Parent: [WS079](../ws.md)
 Queue: main の指示（PDF/Notes subagent、2026-09-28）。Awesome Plan の Queue の item ではない
-Resume point: main が pen の試験の image を作る（`sh plan/ws079/tests/build-pen-image.sh BUILD`、Noct の build を含む）か、subagent に Noct の使用を許したら、`pen-guest.sh start IMAGE` の guest で `p003-guest.sh`・`p012-guest.sh`・`zdesktop-p013-touch.sh BUILD`（BUILD はこの区切りの compositor・libwayland・tablet-probe・peninject を持つ build）を流し、PASS なら cleared にする。`input-inject.c`・`input-inject.h`・touchinject の規約は WS081 p002 で是正（main の割り当て）
+Resume point: なし（cleared）。移管: `input-inject.c`・`input-inject.h`・touchinject の規約の是正は WS081 p002、その確認は WS081 の最終確認の Phase
 <!-- awesome-plan-current:end -->
 
 ## 範囲（main の指示、2026-09-28）
@@ -113,3 +113,16 @@ main の判断（2026-09-29）: p015・p009 の commit は main に merge（3843
 - 規約の目視は道具の拾う規則と、短い注釈・vague な注釈の拾い直し、notes/save.c などの一部の読み直しまで。57 file・約 5 万行の全行の目視はしていない。
 - 1 回目の区切りの範囲の外の file は、2 回目の区切りで main の許した 5 つを直した。`input-inject.c`・`input-inject.h`・touchinject は WS081 p002（main の割り当て）。
 - 実機: 未実施。
+
+## main の最後の確認（2026-09-29）
+
+main の checkout（d809ea1b、この Phase の 2 回目の区切りを merge 済み）で pen の試験の image を作り、guest の試験を流した。QEMU の証拠だけ。実機は未実施。
+
+| 試験 | 結果 | log |
+| --- | --- | --- |
+| `plan/ws079/tests/build-pen-image.sh build/main-pen`（Noct の build を含む。共有の toolchain の tree は lock のまま） | ok | `build/main-pen-image.log` |
+| `p003-guest.sh build/main-pen-p003`（pen: tablet・pointer・home・terminal・corner） | status=0 | `build/main-pen-p003.log` |
+| `p012-guest.sh build/main-pen-p012`（multitouch） | PASS | `build/main-pen-p012.log` |
+| `zdesktop-p013-touch.sh build/main-pen`（compositor の touch） | PASS | `build/main-pen-p013t.log` |
+
+3 本の log に MISSING・FAIL は 0。
