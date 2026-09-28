@@ -22,7 +22,6 @@
 
 #include "shell/internal.h"
 #include "page/page.h"
-#include "net/net.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -317,10 +316,10 @@ shell_open_page(
 	}
 
 	/* Its scripts see the window's size, write their console as CONSOLE lines, and count time from now. */
-	bind_window_set_viewport(loaded->window, (int)state->width, (int)state->height);
+	page_set_viewport(loaded, (int)state->width, (int)state->height);
 	if (state->present.extent.width != 0U)
-		bind_window_set_viewport(loaded->window, (int)state->present.extent.width, (int)state->present.extent.height);
-	loaded->console = shell_console;
+		page_set_viewport(loaded, (int)state->present.extent.width, (int)state->present.extent.height);
+	page_set_console(loaded, shell_console, NULL);
 	state->open_epoch = shell_clock();
 
 	/* The file. */
@@ -328,7 +327,7 @@ shell_open_page(
 	if (error == 0)
 		error = page_open_fonts(loaded, state->fonts);
 	if (error != 0) {
-		reason = net_tls_error();
+		reason = page_failure_reason();
 		printf("ZBROWSER ERROR load path=%s error=%s tls=%s\n", path, strerror(error), reason);
 		fflush(stdout);
 		page_destroy(loaded);
