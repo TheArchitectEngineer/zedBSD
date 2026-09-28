@@ -441,6 +441,9 @@ zwl_seat_motion(
 	uint32_t words[3];
 	int taken;
 
+	/* The event's time, for whatever measures the pointer's speed (corner.c). */
+	server->input_time = time;
+
 	/* The lock screen has the pointer: only its buttons light up (ws035-p102). */
 	server->lock_input_ms = zwl_milliseconds();
 	if (server->locked) {
@@ -462,6 +465,13 @@ zwl_seat_motion(
 	/* In the glass look a window being moved takes the motion (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
 		taken = zwl_glass_motion(server);
+		if (taken)
+			return;
+	}
+
+	/* Over a fullscreen window only the edges' gestures are zdesktop's (shell.c). */
+	if (server->glass && !server->windowed && server->popup_grab == NULL) {
+		taken = zwl_glass_edge_motion(server);
 		if (taken)
 			return;
 	}
@@ -505,6 +515,9 @@ zwl_seat_button(
 	uint32_t bit;
 	int taken;
 
+	/* The event's time, for whatever measures the pointer's speed (corner.c). */
+	server->input_time = time;
+
 	/* The buttons held now, which a move or a resize a client asks for needs (toplevel.c). */
 	bit = 0;
 	if (button >= ZWL_BUTTON_LEFT && button - ZWL_BUTTON_LEFT < 32U)
@@ -542,6 +555,13 @@ zwl_seat_button(
 	/* In the glass look the title bars and the desktop take their buttons (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
 		taken = zwl_glass_button(server, button, state);
+		if (taken)
+			return;
+	}
+
+	/* Over a fullscreen window only the edges' gestures take their buttons (shell.c). */
+	if (server->glass && !server->windowed && server->popup_grab == NULL) {
+		taken = zwl_glass_edge_button(server, button, state);
 		if (taken)
 			return;
 	}

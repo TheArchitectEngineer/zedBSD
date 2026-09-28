@@ -37,6 +37,15 @@
  * Wiseview, and a tile's close button closes its window.  Super+Tab opens
  * it from the keyboard (p014): Tab and the arrows move the current tile,
  * Enter chooses it, Esc closes Wiseview.
+ *
+ * The edges' gestures (the 2026-09-28 decision at the end of
+ * plan/ws079/design-input-notes.md): from the top-left corner App Home,
+ * from the top-right corner Notes (corner.c, also over Home), from the
+ * bottom edge Wiseview (over Home the same swipe closes Home instead,
+ * home.c).  Each counts only when it starts in its corner or edge, so a
+ * stroke that starts inside a window never becomes one.  They work over a
+ * fullscreen window too (zwl_glass_edge_button): a gesture that shows
+ * something makes the output composed again while it shows.
  */
 
 #include "extras.h"
@@ -111,6 +120,9 @@
 
 /* The Super (Windows) key's bit, for Super+Tab (Wiseview). */
 #define MODIFIER_SUPER		0x40U
+
+/* App Home's corner, where its gesture starts over a fullscreen window (the same as home.c's). */
+#define HOME_EDGE_CORNER	28
 
 /* How far a Wiseview tile moves before it is dragged. */
 #define TILE_DRAG_START		8
@@ -224,6 +236,7 @@ static void draw_wiseview(struct zwl_server *server, VkCommandBuffer command, st
 static void draw_tile(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *tile, float progress, unsigned current, unsigned over);
 static int wiseview_button(struct zwl_server *server, uint32_t button, uint32_t state);
 static void wiseview_log(struct zwl_server *server);
+static int wiseview_edge_press(struct zwl_server *server, uint32_t button, uint32_t state);
 
 /* Whether where the desktops' pictures are has been logged (once, for the tests that click them). */
 static unsigned shell_desktops_logged;
@@ -355,6 +368,9 @@ zwl_glass_draw(
 	/* The network's menu, when open (network.c). */
 	zwl_network_draw_menu(server, command);
 
+	/* The top-right corner's hint, while its swipe is followed or settles (corner.c). */
+	zwl_corner_draw(server, command);
+
 	/* A frame of the animation. */
 	if (server->anim != NULL && server->log_frames)
 		printf("ZWL GLASS anim surface=%u docking=%u t=%.2f\n", server->anim->id, server->anim_docking, (double)animation_progress(server));
@@ -389,6 +405,15 @@ zwl_glass_button(
 		pressed = wiseview_button(server, button, state);
 		return pressed;
 	}
+
+	/*
+	 * The top-right corner's swipe to Notes (corner.c) takes a press that
+	 * starts in the corner, and that contact's release; before Home, so
+	 * that it works over Home too (its corner is not Home's).
+	 */
+	pressed = zwl_corner_button(server, button, state);
+	if (pressed)
+		return 1;
 
 	/* App Home takes the launcher, the top-left corner, and every button while it shows. */
 	pressed = zwl_home_button(server, button, state);
@@ -429,13 +454,9 @@ zwl_glass_button(
 	}
 
 	/* A left press at the bottom edge starts opening Wiseview. */
-	if (state != 0 && button == ZWL_BUTTON_LEFT && server->pointer_y >= (int32_t)server->height - WISEVIEW_EDGE) {
-		server->wiseview_gesture = 1;
-		server->wiseview_start_y = server->pointer_y;
-		server->wiseview_current = zwl_top_window(server);
-		server->dirty = 1;
+	pressed = wiseview_edge_press(server, button, state);
+	if (pressed)
 		return 1;
-	}
 
 	/* A release ends a move (docking in the system bar) or a pull. */
 	if (state == 0) {
@@ -563,6 +584,11 @@ zwl_glass_motion(
 		return 1;
 	}
 
+	/* The top-right corner's swipe follows the pointer (corner.c). */
+	taken = zwl_corner_motion(server);
+	if (taken)
+		return 1;
+
 	/* App Home follows its gesture, and hears the pointer while it shows. */
 	taken = zwl_home_motion(server);
 	if (taken)
@@ -647,6 +673,145 @@ zwl_glass_motion(
 
 	/* Succeeded: the motion was zdesktop's. */
 	return 1;
+}
+
+/*
+ * Handles a pointer button over a fullscreen window, which the rest of the
+ * glass look does not see: only the edges' gestures (the top-left corner's
+ * App Home, the top-right corner's Notes, the bottom edge's Wiseview) and
+ * what they opened.  Returns 1 when the button is zdesktop's, 0 when it goes
+ * to the fullscreen window.
+ */
+int
+zwl_glass_edge_button(
+	struct zwl_server *server,
+	uint32_t button,
+	uint32_t state)
+{
+	float home;
+	int corner_press;
+	int pressed;
+
+	/* The login screen is never over a fullscreen window. */
+	if (server->greeter)
+		return 0;
+
+	/* Wiseview, opened from the bottom edge, takes every button. */
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
+		pressed = wiseview_button(server, button, state);
+		return pressed;
+	}
+
+	/* The top-right corner's swipe to Notes (corner.c). */
+	pressed = zwl_corner_button(server, button, state);
+	if (pressed)
+		return 1;
+
+	/* App Home, when it shows or follows a press of its own, has the button as in window mode. */
+	home = zwl_home_progress(server);
+	if (home > 0.0f ||
+	    server->home_to > 0.0f ||
+	    server->home_press ||
+	    server->home_page_press ||
+	    server->home_bottom_press) {
+		pressed = zwl_home_button(server, button, state);
+		return pressed;
+	}
+
+	/* A left press in the top-left corner may open App Home (the launcher is under the window). */
+	corner_press = 0;
+	if (state != 0 &&
+	    button == ZWL_BUTTON_LEFT &&
+	    server->pointer_x < HOME_EDGE_CORNER &&
+	    server->pointer_y < HOME_EDGE_CORNER)
+		corner_press = 1;
+	if (corner_press) {
+		pressed = zwl_home_button(server, button, state);
+		return pressed;
+	}
+
+	/* A left press at the bottom edge starts opening Wiseview. */
+	pressed = wiseview_edge_press(server, button, state);
+	if (pressed)
+		return 1;
+
+	/* Succeeded: anything else is the fullscreen window's. */
+	return 0;
+}
+
+/*
+ * Follows the edges' gestures over a fullscreen window.  Returns 1 when the
+ * motion is zdesktop's, 0 when it goes to the fullscreen window.
+ */
+int
+zwl_glass_edge_motion(
+	struct zwl_server *server)
+{
+	int taken;
+
+	/* The login screen is never over a fullscreen window. */
+	if (server->greeter)
+		return 0;
+
+	/* Wiseview follows its gesture (the output is composed again once it shows). */
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
+		server->dirty = 1;
+		return 1;
+	}
+
+	/* The top-right corner's swipe (corner.c). */
+	taken = zwl_corner_motion(server);
+	if (taken)
+		return 1;
+
+	/* App Home's gesture from the top-left corner (home.c). */
+	taken = zwl_home_motion(server);
+	if (taken)
+		return 1;
+
+	/* Succeeded: the motion is the fullscreen window's. */
+	return 0;
+}
+
+/*
+ * Tells whether an edge's gesture shows something over the windows (the
+ * top-right corner's hint, App Home, Wiseview), so that the output is
+ * composed even while the top window is fullscreen (display.c).
+ */
+int
+zwl_glass_overlay(
+	struct zwl_server *server)
+{
+	float progress;
+	int showing;
+
+	/* Only the glass look has the gestures. */
+	if (!server->glass)
+		return 0;
+
+	/* The top-right corner's hint (corner.c). */
+	showing = zwl_corner_showing();
+	if (showing)
+		return 1;
+
+	/* App Home, opening, open or closing. */
+	progress = zwl_home_progress(server);
+	if (progress > 0.0f || server->home_to > 0.0f)
+		return 1;
+
+	/* Wiseview's gesture once it has moved (a click at the bottom edge shows nothing). */
+	if (server->wiseview_gesture) {
+		progress = wiseview_progress(server);
+		if (progress > 0.0f)
+			return 1;
+	}
+
+	/* Wiseview, open or settling. */
+	if (server->wiseview > 0.0f || server->wiseview_moving)
+		return 1;
+
+	/* Nothing shows. */
+	return 0;
 }
 
 /*
@@ -760,6 +925,11 @@ zwl_glass_still(
 	/* Home, even closing. */
 	home = zwl_home_progress(server);
 	if (home > 0.0f)
+		return 0;
+
+	/* The top-right corner's hint (corner.c). */
+	open = (unsigned)zwl_corner_showing();
+	if (open)
 		return 0;
 
 	/* A see-through body shows what is under it through its glass. */
@@ -1294,6 +1464,9 @@ zwl_glass_tick(
 
 	/* App Home's animation, and the applications it started that have ended. */
 	zwl_home_tick(server);
+
+	/* The top-right corner's swipe: its time limit, its hint settling, and Notes being waited for (corner.c). */
+	zwl_corner_tick(server);
 
 	/* An open menu closes when what it belongs to changed (menu-shell.c). */
 	zwl_menu_tick(server);
@@ -2846,6 +3019,31 @@ wiseview_progress(
 		t = (float)elapsed / (float)WISEVIEW_MS;
 	t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
 	return server->wiseview_from + (server->wiseview_to - server->wiseview_from) * t;
+}
+
+/* Starts the swipe up from the bottom edge that opens Wiseview, for a left press in that edge.  Returns 1 when it started. */
+static int
+wiseview_edge_press(
+	struct zwl_server *server,
+	uint32_t button,
+	uint32_t state)
+{
+	/* Only a left press. */
+	if (state == 0 || button != ZWL_BUTTON_LEFT)
+		return 0;
+
+	/* Only in the bottom edge: a stroke that starts above it is not the gesture. */
+	if (server->pointer_y < (int32_t)server->height - WISEVIEW_EDGE)
+		return 0;
+
+	/* The gesture starts; the window on top is the current tile. */
+	server->wiseview_gesture = 1;
+	server->wiseview_start_y = server->pointer_y;
+	server->wiseview_current = zwl_top_window(server);
+	server->dirty = 1;
+
+	/* Succeeded: the press is the gesture's. */
+	return 1;
 }
 
 /* Starts Wiseview settling from one value to another (0 closed, 1 open). */
