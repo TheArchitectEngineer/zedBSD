@@ -620,14 +620,14 @@ main_prepare(
 	}
 
 	/* The scripts see the viewport's size, and --run's console goes to standard output. */
-	bind_window_set_viewport(loaded->window, (int)options->shell.width, (int)options->shell.height);
+	page_set_viewport(loaded, (int)options->shell.width, (int)options->shell.height);
 	if (options->mode == MAIN_MODE_RUN_PAGE)
-		loaded->console = main_console_out;
+		page_set_console(loaded, main_console_out, NULL);
 
 	/* Loads the file, running its scripts. */
 	error = page_load_location(loaded, options->shell.start);
 	if (error != 0) {
-		reason = net_tls_error();
+		reason = page_failure_reason();
 		fprintf(stderr, "browser: cannot load %s: %s", options->shell.start, strerror(error));
 		if (reason[0] != '\0')
 			fprintf(stderr, " (TLS: %s)", reason);

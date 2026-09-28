@@ -273,6 +273,50 @@ page_load_location(
 }
 
 /*
+ * Tells the page's scripts the size of the viewport the page is shown in
+ * (before the page is laid out at it).
+ */
+void
+page_set_viewport(
+	struct page *page,
+	int width,
+	int height)
+{
+	/* The window object's size. */
+	bind_window_set_viewport(page->window, width, height);
+}
+
+/*
+ * Sends the page's console (its scripts' console.log and the like) to a
+ * function of the caller's.
+ */
+void
+page_set_console(
+	struct page *page,
+	page_console console,
+	void *context)
+{
+	/* The function and what it gets back. */
+	page->console = console;
+	page->console_context = context;
+}
+
+/*
+ * Describes why the last load failed beyond its error number (the TLS
+ * verification's reason, for an https page); empty when there is nothing
+ * more to say.
+ */
+const char *
+page_failure_reason(void)
+{
+	const char *reason;
+
+	/* The network's reason. */
+	reason = net_tls_error();
+	return reason;
+}
+
+/*
  * Opens the fonts the page's text is drawn with.
  */
 int

@@ -94,6 +94,9 @@ int page_resolve_file(const char *base, const char *href, struct wb_buffer *out)
 int page_resolve_location(const char *base, const char *href, struct wb_buffer *out);
 void page_images_init(struct page *page);
 int page_load_images(struct page *page);
+void page_set_viewport(struct page *page, int width, int height);
+void page_set_console(struct page *page, page_console console, void *context);
+const char *page_failure_reason(void);
 const struct img_bitmap *page_image_of(void *context, const struct dom_element *element);
 void page_images_release(struct page *page);
 int page_fetch(const char *base, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
