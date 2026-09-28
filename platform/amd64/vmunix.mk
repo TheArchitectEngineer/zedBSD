@@ -142,7 +142,7 @@ AMD64_VENUS_SOURCES += src/drivers/gpu/venus/transport.c \
 endif
 AMD64_I915_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_I915),y)
-AMD64_I915_SOURCES += src/drivers/gpu/i915/command.c src/drivers/gpu/i915/compiler/compile.c src/drivers/gpu/i915/compiler/eu.c src/drivers/gpu/i915/compiler/spirv.c src/drivers/gpu/i915/context.c src/drivers/gpu/i915/defaults.c src/drivers/gpu/i915/device.c src/drivers/gpu/i915/device-info.c src/drivers/gpu/i915/display/aux.c src/drivers/gpu/i915/display/clock.c src/drivers/gpu/i915/display/color.c src/drivers/gpu/i915/display/ddi.c src/drivers/gpu/i915/display/diagnostics.c src/drivers/gpu/i915/display/display.c src/drivers/gpu/i915/display/dmc.c src/drivers/gpu/i915/display/dp.c src/drivers/gpu/i915/display/dp-sink.c src/drivers/gpu/i915/display/edid.c src/drivers/gpu/i915/display/edid-read.c src/drivers/gpu/i915/display/gmbus.c src/drivers/gpu/i915/display/hdmi.c src/drivers/gpu/i915/display/hdmi-mode.c src/drivers/gpu/i915/display/hotplug.c src/drivers/gpu/i915/display/interrupts.c src/drivers/gpu/i915/display/modeset.c src/drivers/gpu/i915/display/opregion.c src/drivers/gpu/i915/display/panel-backlight.c src/drivers/gpu/i915/display/panel.c src/drivers/gpu/i915/display/phy.c src/drivers/gpu/i915/display/pipe.c src/drivers/gpu/i915/display/plane.c src/drivers/gpu/i915/display/power.c src/drivers/gpu/i915/display/present.c src/drivers/gpu/i915/display/scanout.c src/drivers/gpu/i915/display/state.c src/drivers/gpu/i915/display/takeover.c src/drivers/gpu/i915/display/vblank.c src/drivers/gpu/i915/display/vbt.c src/drivers/gpu/i915/display/watermark.c src/drivers/gpu/i915/dma.c src/drivers/gpu/i915/engine.c src/drivers/gpu/i915/firmware.c src/drivers/gpu/i915/ggtt.c src/drivers/gpu/i915/gt-power.c src/drivers/gpu/i915/i915.c src/drivers/gpu/i915/irq.c src/drivers/gpu/i915/job.c src/drivers/gpu/i915/memory.c src/drivers/gpu/i915/migrate.c src/drivers/gpu/i915/mmio.c src/drivers/gpu/i915/pci.c src/drivers/gpu/i915/perf.c src/drivers/gpu/i915/power.c src/drivers/gpu/i915/ppgtt.c src/drivers/gpu/i915/pxp.c src/drivers/gpu/i915/render/batch.c src/drivers/gpu/i915/render/blit.c src/drivers/gpu/i915/render/codec.c src/drivers/gpu/i915/render/command.c src/drivers/gpu/i915/render/descriptor.c src/drivers/gpu/i915/render/dispatch.c src/drivers/gpu/i915/render/draw.c src/drivers/gpu/i915/render/fence.c src/drivers/gpu/i915/render/image.c src/drivers/gpu/i915/render/instance.c src/drivers/gpu/i915/render/math.c src/drivers/gpu/i915/render/memory.c src/drivers/gpu/i915/render/object.c src/drivers/gpu/i915/render/objects.c src/drivers/gpu/i915/render/pipeline.c src/drivers/gpu/i915/render/pipeline-prepare.c src/drivers/gpu/i915/render/render-pass.c src/drivers/gpu/i915/render/reply.c src/drivers/gpu/i915/render/state.c src/drivers/gpu/i915/render/sync.c src/drivers/gpu/i915/render/transport.c src/drivers/gpu/i915/render/vulkan.c src/drivers/gpu/i915/request.c src/drivers/gpu/i915/request-queue.c src/drivers/gpu/i915/reset.c src/drivers/gpu/i915/resource.c src/drivers/gpu/i915/runtime-pm.c src/drivers/gpu/i915/session.c src/drivers/gpu/i915/submit.c src/drivers/gpu/i915/sync.c src/drivers/gpu/i915/tlb.c src/drivers/gpu/i915/trace.c src/drivers/gpu/i915/verify-workarounds.c src/drivers/gpu/i915/workarounds.c src/drivers/gpu/i915/worker.c src/drivers/gpu/i915/workqueue.c
+AMD64_I915_SOURCES += src/drivers/gpu/i915/command.c src/drivers/gpu/i915/compiler/compile.c src/drivers/gpu/i915/compiler/eu.c src/drivers/gpu/i915/compiler/spirv.c src/drivers/gpu/i915/context.c src/drivers/gpu/i915/defaults.c src/drivers/gpu/i915/device.c src/drivers/gpu/i915/device-info.c src/drivers/gpu/i915/display/aux.c src/drivers/gpu/i915/display/clock.c src/drivers/gpu/i915/display/color.c src/drivers/gpu/i915/display/ddi.c src/drivers/gpu/i915/display/diagnostics.c src/drivers/gpu/i915/display/display.c src/drivers/gpu/i915/display/dmc.c src/drivers/gpu/i915/display/dp.c src/drivers/gpu/i915/display/dp-sink.c src/drivers/gpu/i915/display/edid.c src/drivers/gpu/i915/display/edid-read.c src/drivers/gpu/i915/display/gmbus.c src/drivers/gpu/i915/display/hdmi.c src/drivers/gpu/i915/display/hdmi-mode.c src/drivers/gpu/i915/display/hotplug.c src/drivers/gpu/i915/display/interrupts.c src/drivers/gpu/i915/display/modeset.c src/drivers/gpu/i915/display/opregion.c src/drivers/gpu/i915/display/output.c src/drivers/gpu/i915/display/panel-backlight.c src/drivers/gpu/i915/display/panel.c src/drivers/gpu/i915/display/phy.c src/drivers/gpu/i915/display/pipe.c src/drivers/gpu/i915/display/plane.c src/drivers/gpu/i915/display/power.c src/drivers/gpu/i915/display/present.c src/drivers/gpu/i915/display/scanout.c src/drivers/gpu/i915/display/state.c src/drivers/gpu/i915/display/takeover.c src/drivers/gpu/i915/display/vblank.c src/drivers/gpu/i915/display/vbt.c src/drivers/gpu/i915/display/watermark.c src/drivers/gpu/i915/dma.c src/drivers/gpu/i915/engine.c src/drivers/gpu/i915/firmware.c src/drivers/gpu/i915/ggtt.c src/drivers/gpu/i915/gt-power.c src/drivers/gpu/i915/i915.c src/drivers/gpu/i915/irq.c src/drivers/gpu/i915/job.c src/drivers/gpu/i915/memory.c src/drivers/gpu/i915/migrate.c src/drivers/gpu/i915/mmio.c src/drivers/gpu/i915/pci.c src/drivers/gpu/i915/perf.c src/drivers/gpu/i915/power.c src/drivers/gpu/i915/ppgtt.c src/drivers/gpu/i915/pxp.c src/drivers/gpu/i915/render/batch.c src/drivers/gpu/i915/render/blit.c src/drivers/gpu/i915/render/codec.c src/drivers/gpu/i915/render/command.c src/drivers/gpu/i915/render/descriptor.c src/drivers/gpu/i915/render/dispatch.c src/drivers/gpu/i915/render/draw.c src/drivers/gpu/i915/render/fence.c src/drivers/gpu/i915/render/image.c src/drivers/gpu/i915/render/instance.c src/drivers/gpu/i915/render/math.c src/drivers/gpu/i915/render/memory.c src/drivers/gpu/i915/render/object.c src/drivers/gpu/i915/render/objects.c src/drivers/gpu/i915/render/pipeline.c src/drivers/gpu/i915/render/pipeline-prepare.c src/drivers/gpu/i915/render/render-pass.c src/drivers/gpu/i915/render/reply.c src/drivers/gpu/i915/render/state.c src/drivers/gpu/i915/render/sync.c src/drivers/gpu/i915/render/transport.c src/drivers/gpu/i915/render/vulkan.c src/drivers/gpu/i915/request.c src/drivers/gpu/i915/request-queue.c src/drivers/gpu/i915/reset.c src/drivers/gpu/i915/resource.c src/drivers/gpu/i915/runtime-pm.c src/drivers/gpu/i915/session.c src/drivers/gpu/i915/submit.c src/drivers/gpu/i915/sync.c src/drivers/gpu/i915/tlb.c src/drivers/gpu/i915/trace.c src/drivers/gpu/i915/verify-workarounds.c src/drivers/gpu/i915/workarounds.c src/drivers/gpu/i915/worker.c src/drivers/gpu/i915/workqueue.c
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;
@@ -204,7 +204,7 @@ ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-cdc-ecm.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c src/drivers/usb/hid-digitizer.c
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c src/drivers/usb/hid-digitizer.c src/drivers/usb/hid-touch.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hub.c
@@ -263,6 +263,10 @@ AMD64_KERNEL_SOURCES := \
 	src/drivers/platform/pcat/graphics/vgafont.c src/drivers/platform/pcat/graphics/splash.c src/kern/init.c
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
 AMD64_KERNEL_SOURCES += src/drivers/generic/input-inject.c
+# The injector's touch screen runs the USB touch screen's state machine.
+ifneq ($(CONFIG_DRIVER_USB_HID),y)
+AMD64_KERNEL_SOURCES += src/drivers/usb/hid-touch.c
+endif
 endif
 ifeq ($(CONFIG_DRIVER_GRAPHICS_DEVICE),y)
 AMD64_KERNEL_SOURCES += \
@@ -726,7 +730,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files browser xserver egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files notes pdfviewer browser browser-probe xserver egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
@@ -888,18 +892,20 @@ $(DYNAMIC_DIR)/libjpeg-compat.so: $(DYNAMIC_JPEG_COMPAT_OBJS) $(DYNAMIC_DIR)/lib
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libc.so --soname libjpeg-compat.so $@
 
-# libpdf (ws079-p004): the PDF library of the base programs; its writer needs nothing but the C
-# library.
+# libpdf (ws079-p004): the PDF library of the base programs; its reader decodes Flate streams through
+# libz-compat and JPEG images through libjpeg-compat (ws079-p006), and draws the glyphs of text through
+# libtruetype (ws079-p007).
 DYNAMIC_PDF_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libpdf)
 
-$(DYNAMIC_DIR)/libpdf.so: $(DYNAMIC_PDF_OBJS) $(DYNAMIC_DIR)/libc.so \
+$(DYNAMIC_DIR)/libpdf.so: $(DYNAMIC_PDF_OBJS) $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libjpeg-compat.so \
+	$(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so \
 	userland/base/libpdf/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libpdf.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/base/libpdf/exports.map \
- $(DYNAMIC_PDF_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+ $(DYNAMIC_PDF_OBJS) -L$(DYNAMIC_DIR) -l:libz-compat.so -l:libjpeg-compat.so -l:libtruetype.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
- --needed libc.so --soname libpdf.so $@
+ --needed libz-compat.so --needed libjpeg-compat.so --needed libtruetype.so --needed libc.so --soname libpdf.so $@
 
 # libgif-compat (ws074-p051): giflib's decoding interface of the base programs; it needs nothing but the
 # C library.
@@ -1131,6 +1137,23 @@ $(BUILD)/bin/seat-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libwayland-client.so --needed libc.so $@
 
+# The pen probe (WS079 p003): standard Wayland (the tablet protocol) and the C library.
+DYNAMIC_TABLET_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,tablet-probe)
+
+$(BUILD)/bin/tablet-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_TABLET_PROBE_OBJS) $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_TABLET_PROBE_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libwayland-client.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libwayland-client.so --needed libc.so $@
+
 # The clipboard probe (WS035 p079): standard Wayland and the C library.
 DYNAMIC_DATA_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,data-probe)
 
@@ -1237,17 +1260,77 @@ $(BUILD)/bin/files: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
  --needed libpng-compat.so --needed libz-compat.so --needed libc.so $@
 
-# The Web browser (WS074) keeps its modules in subdirectories and includes their headers
-# from its own root; it imports standard Wayland and Vulkan for its window and GPU renderer
-# (ws074-p014), zdesktop's titlebar through libkeiland (ws074-p045), libtruetype for its text, and
-# libjpeg-compat, libpng-compat (with libz-compat) and libgif-compat for its images (ws074-p021).
+# Notes (ws079-p005) imports standard Wayland, Vulkan, TrueType and C library entry points,
+# zdesktop's System Menu and the recent files through libkeiland, and libpdf for its PDF.
+DYNAMIC_ZDESKTOP_NOTES_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,notes)
+
+$(BUILD)/bin/notes: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_ZDESKTOP_NOTES_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libpdf.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_NOTES_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libpdf.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
+ --needed libpdf.so --needed libc.so $@
+
+# PDF Viewer (ws079-p006) imports standard Wayland, Vulkan, TrueType and C library entry points,
+# zdesktop's menus and titlebar through libkeiland, and libpdf (which brings libz-compat and
+# libjpeg-compat).
+DYNAMIC_PDFVIEWER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,pdfviewer)
+
+$(BUILD)/bin/pdfviewer: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_PDFVIEWER_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libpdf.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_PDFVIEWER_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libpdf.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
+ --needed libpdf.so --needed libc.so $@
+
+# The Web browser engine (WS074, libbrowser since ws074-p057) keeps its modules in subdirectories of
+# userland/desktop/browser and includes their headers from that root; it imports standard Vulkan for its
+# GPU renderer (ws074-p014), libtruetype for its text, and libjpeg-compat, libpng-compat (with
+# libz-compat) and libgif-compat for its images (ws074-p021).  Only the calls of <browser.h> leave it.
+DYNAMIC_BROWSER_LIBRARY_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libbrowser)
+$(DYNAMIC_BROWSER_LIBRARY_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/desktop/browser
+
+$(DYNAMIC_DIR)/libbrowser.so: $(DYNAMIC_BROWSER_LIBRARY_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libtruetype.so \
+	$(DYNAMIC_DIR)/libjpeg-compat.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so \
+	$(DYNAMIC_DIR)/libgif-compat.so $(DYNAMIC_DIR)/libc.so \
+	userland/desktop/libbrowser/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libbrowser.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/desktop/libbrowser/exports.map \
+ $(DYNAMIC_BROWSER_LIBRARY_OBJS) -L$(DYNAMIC_DIR) -l:libvulkan.so -l:libtruetype.so \
+ -l:libjpeg-compat.so -l:libpng-compat.so -l:libz-compat.so -l:libgif-compat.so -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
+ --needed libvulkan.so --needed libtruetype.so --needed libjpeg-compat.so --needed libpng-compat.so \
+ --needed libz-compat.so --needed libgif-compat.so --needed libc.so --soname libbrowser.so $@
+
+# /bin/browser is the shell over libbrowser (ws074-p057): its command line and headless modes (main.c)
+# and its window (shell/), which import the engine through <browser.h>, standard Wayland and Vulkan
+# for the window and its swapchain (ws074-p014), and zdesktop's titlebar through libkeiland (ws074-p045).
 DYNAMIC_ZDESKTOP_BROWSER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,browser)
 $(DYNAMIC_ZDESKTOP_BROWSER_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/desktop/browser
 
 $(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
-	$(DYNAMIC_ZDESKTOP_BROWSER_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libjpeg-compat.so $(DYNAMIC_DIR)/libpng-compat.so \
-	$(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libgif-compat.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	$(DYNAMIC_ZDESKTOP_BROWSER_OBJS) $(DYNAMIC_DIR)/libbrowser.so $(DYNAMIC_DIR)/libvulkan.so \
+	$(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so \
+	$(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
@@ -1255,11 +1338,27 @@ $(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_BROWSER_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so \
- -l:libjpeg-compat.so -l:libpng-compat.so -l:libz-compat.so -l:libgif-compat.so -l:libc.so -o $@
+ -l:libbrowser.so -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
- --needed libjpeg-compat.so --needed libpng-compat.so --needed libz-compat.so --needed libgif-compat.so --needed libc.so $@
+ --needed libbrowser.so --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so \
+ --needed libc.so $@
+
+# The second program over libbrowser (ws074-p057): <browser.h> and the C library, no window.
+DYNAMIC_BROWSER_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,browser-probe)
+
+$(BUILD)/bin/browser-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_BROWSER_PROBE_OBJS) $(DYNAMIC_DIR)/libbrowser.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so \
+	$(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_BROWSER_PROBE_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libbrowser.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libbrowser.so --needed libc.so $@
 
 # OpenGL with GLX for Xzed (WS069 p004): libGLESv2's translation with GLX and a private libX11 inside.
 DYNAMIC_GL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgl)
@@ -1580,7 +1679,12 @@ ifeq ($(ZEDBSD_VARIANT),native)
 # ws035-p098: the lines of the graphical boot are added when ZEDBSD_GRAPHICAL_BOOT is y (the value is in
 # the name, so switching it makes the image again).  ws035-p112: the graphical boot drops video= (640x480), so the UEFI
 # loader asks GOP for 1920x1080, the splash's size, and draws black bars where the mode is another.
-AMD64_NATIVE_UEFI_ZEDBSD_CONFIG := $(BUILD)/zedbsd-native-uefi-graphical-$(ZEDBSD_GRAPHICAL_BOOT).cfg
+# ws075-p012: ZEDBSD_BOOT_EXTRA_LINES adds boot parameters of its own, one per word (for example
+# display=hdmi display.mode=1920x1080@60); the words are in the name too, so changing them makes the image again.
+AMD64_BOOT_EXTRA_EMPTY :=
+AMD64_BOOT_EXTRA_SPACE := $(AMD64_BOOT_EXTRA_EMPTY) $(AMD64_BOOT_EXTRA_EMPTY)
+AMD64_BOOT_EXTRA_TAG := $(if $(strip $(ZEDBSD_BOOT_EXTRA_LINES)),-$(subst $(AMD64_BOOT_EXTRA_SPACE),+,$(strip $(ZEDBSD_BOOT_EXTRA_LINES))))
+AMD64_NATIVE_UEFI_ZEDBSD_CONFIG := $(BUILD)/zedbsd-native-uefi-graphical-$(ZEDBSD_GRAPHICAL_BOOT)$(AMD64_BOOT_EXTRA_TAG).cfg
 AMD64_GRAPHICAL_BOOT_LINES := logo=logo.ppm kmsg=quiet login=graphical
 AMD64_NATIVE_ROOT_MIB ?= 1024
 AMD64_NATIVE_ROOT_INODES ?= 65536
@@ -1605,6 +1709,7 @@ $(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG): $(AMD64_PLATFORM)/zedbsd-native-uefi.cfg
 	cp $< $@.tmp
 	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),grep -v '^video=' $< > $@.tmp)
 	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),printf '%s\n' $(AMD64_GRAPHICAL_BOOT_LINES) >> $@.tmp)
+	$(if $(strip $(ZEDBSD_BOOT_EXTRA_LINES)),printf '%s\n' $(ZEDBSD_BOOT_EXTRA_LINES) >> $@.tmp)
 	mv -f $@.tmp $@
 
 $(AMD64_NATIVE_SWAP_IMAGE): $(BUILD_TOOLS_DIR)/make-swapfile.noct

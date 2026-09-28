@@ -27,6 +27,7 @@ struct wl_output;
 struct wl_seat;
 struct wl_pointer;
 struct wl_keyboard;
+struct wl_touch;
 struct xdg_wm_base;
 struct xdg_positioner;
 struct xdg_surface;
@@ -351,6 +352,7 @@ int wl_seat_add_listener(struct wl_seat *wl_seat, const struct wl_seat_listener 
 #define WL_SEAT_RELEASE_SINCE_VERSION 5
 struct wl_pointer *wl_seat_get_pointer(struct wl_seat *wl_seat);
 struct wl_keyboard *wl_seat_get_keyboard(struct wl_seat *wl_seat);
+struct wl_touch *wl_seat_get_touch(struct wl_seat *wl_seat);
 void wl_seat_release(struct wl_seat *wl_seat);
 void wl_seat_destroy(struct wl_seat *wl_seat);
 void wl_seat_set_user_data(struct wl_seat *wl_seat, void *data);
@@ -466,6 +468,39 @@ void wl_keyboard_destroy(struct wl_keyboard *wl_keyboard);
 void wl_keyboard_set_user_data(struct wl_keyboard *wl_keyboard, void *data);
 void *wl_keyboard_get_user_data(struct wl_keyboard *wl_keyboard);
 uint32_t wl_keyboard_get_version(struct wl_keyboard *wl_keyboard);
+
+struct wl_touch;
+extern const struct wl_interface wl_touch_interface;
+
+/*
+ * Receives events for one wl_touch object; retained by its proxy.  shape and
+ * orientation are version 6 events, never sent to a version 5 wl_touch.
+ */
+struct wl_touch_listener {
+	void (*down)(void *data, struct wl_touch *wl_touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
+	void (*up)(void *data, struct wl_touch *wl_touch, uint32_t serial, uint32_t time, int32_t id);
+	void (*motion)(void *data, struct wl_touch *wl_touch, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
+	void (*frame)(void *data, struct wl_touch *wl_touch);
+	void (*cancel)(void *data, struct wl_touch *wl_touch);
+	void (*shape)(void *data, struct wl_touch *wl_touch, int32_t id, wl_fixed_t major, wl_fixed_t minor);
+	void (*orientation)(void *data, struct wl_touch *wl_touch, int32_t id, wl_fixed_t orientation);
+};
+
+int wl_touch_add_listener(struct wl_touch *wl_touch, const struct wl_touch_listener *listener, void *data);
+#define WL_TOUCH_RELEASE 0U
+#define WL_TOUCH_DOWN_SINCE_VERSION 1
+#define WL_TOUCH_UP_SINCE_VERSION 1
+#define WL_TOUCH_MOTION_SINCE_VERSION 1
+#define WL_TOUCH_FRAME_SINCE_VERSION 1
+#define WL_TOUCH_CANCEL_SINCE_VERSION 1
+#define WL_TOUCH_SHAPE_SINCE_VERSION 6
+#define WL_TOUCH_ORIENTATION_SINCE_VERSION 6
+#define WL_TOUCH_RELEASE_SINCE_VERSION 3
+void wl_touch_release(struct wl_touch *wl_touch);
+void wl_touch_destroy(struct wl_touch *wl_touch);
+void wl_touch_set_user_data(struct wl_touch *wl_touch, void *data);
+void *wl_touch_get_user_data(struct wl_touch *wl_touch);
+uint32_t wl_touch_get_version(struct wl_touch *wl_touch);
 
 #define WL_REGISTRY_BIND 0U
 void *wl_registry_bind(struct wl_registry *registry, uint32_t name, const struct wl_interface *interface, uint32_t version);

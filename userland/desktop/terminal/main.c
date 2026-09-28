@@ -149,7 +149,9 @@ static char main_paste[MAIN_CLIPBOARD_MAX];
  * for a selection, or was pressed inside the range (a move then drags the
  * text out), where and with which serial, the press before (for double and
  * triple clicks: its time, its cell and how many clicks it made), and the
- * cell a drag of the range started at.
+ * cell a drag of the range started at.  A cell is a column and a line
+ * (screen.c numbers lines so they follow the text into the scrollback,
+ * ws035-p114).
  */
 static int main_selecting;
 static int main_drag_armed;
@@ -158,10 +160,10 @@ static int32_t main_press_y;
 static uint32_t main_press_serial;
 static uint32_t main_click_time;
 static unsigned main_click_column;
-static unsigned main_click_row;
+static unsigned long main_click_line;
 static unsigned main_clicks;
 static unsigned main_anchor_column;
-static unsigned main_anchor_row;
+static unsigned long main_anchor_line;
 
 /*
  * The unit a held selection grows by (ws035-p111): 1 a cell (a click), 2 a
@@ -171,13 +173,32 @@ static unsigned main_anchor_row;
  * changed the range since the press.
  */
 static unsigned main_unit;
-static unsigned main_unit_from[2];
-static unsigned main_unit_to[2];
+static unsigned long main_unit_from[2];
+static unsigned long main_unit_to[2];
 static int main_unit_moved;
+
+/*
+ * The edge scrolling of a held selection (ws035-p114): where the pointer
+ * last was while the button selects, which way the view scrolls because
+ * the pointer is past the grid's top (1, back into the scrollback) or
+ * bottom (-1, toward the live screen) or 0 while it is on the grid, and
+ * when the next step is due, in milliseconds.
+ */
+static int32_t main_pointer_x;
+static int32_t main_pointer_y;
+static int main_edge;
+static uint64_t main_edge_at;
 
 /* How close in time a click makes a double or triple click, and how far a press moves before it drags, in milliseconds and pixels. */
 #define MAIN_CLICK_MS		400U
 #define MAIN_DRAG_DISTANCE	6
+
+/* How often a selection held past the grid's edge scrolls, in milliseconds, and the most lines one step scrolls (ws035-p114). */
+#define MAIN_EDGE_MS		60U
+#define MAIN_EDGE_LINES		8U
+
+/* How many lines one notch of the wheel scrolls the view (ws035-p114). */
+#define MAIN_WHEEL_LINES	3
 
 /* The window's title as last set: the active tab's (OSC 0 or 2), or "Terminal" (ws035-p091). */
 static char main_window_title[TERMINAL_TITLE];
@@ -217,12 +238,16 @@ static void main_pointer_press(const struct terminal_pointer_event *event);
 static void main_primary_paste(void);
 static void main_pointer_motion(const struct terminal_pointer_event *event);
 static void main_pointer_release(void);
-static void main_cell(int32_t x, int32_t y, unsigned *column, unsigned *row);
-static void main_range(unsigned from_column, unsigned from_row, unsigned to_column, unsigned to_row);
-static int main_word_character(unsigned column, unsigned row);
-static void main_unit_bounds(unsigned unit, unsigned column, unsigned row, unsigned *from, unsigned *to);
-static void main_unit_extend(unsigned column, unsigned row);
+static void main_cell(int32_t x, int32_t y, unsigned *column, unsigned long *line);
+static void main_range(unsigned from_column, unsigned long from_line, unsigned to_column, unsigned long to_line);
+static int main_word_character(unsigned column, unsigned long line);
+static void main_unit_bounds(unsigned unit, unsigned column, unsigned long line, unsigned *from, unsigned *to);
+static void main_unit_extend(unsigned column, unsigned long line);
 static void main_selected_log(const char *how);
+static void main_select_to_pointer(void);
+static void main_edge_scroll(uint64_t now);
+static void main_scroll(void);
+static void main_view_log(const char *how);
 
 /*
  * Runs the terminal.
@@ -502,6 +527,14 @@ main_loop(
 				timeout = (int)(main_window.repeat_at - now);
 		}
 
+		/* A selection held past the grid's edge scrolls on its own time, even while the pointer rests (ws035-p114). */
+		if (main_selecting && main_edge != 0) {
+			if (main_edge_at <= now)
+				timeout = 0;
+			else if ((uint64_t)timeout > main_edge_at - now)
+				timeout = (int)(main_edge_at - now);
+		}
+
 		/* Runs the compositor's events and learns which shells wrote. */
 		for (index = 0; index < main_tab_count; index++)
 			masters[index] = main_tabs[index].master;
@@ -558,6 +591,10 @@ main_loop(
 		/* The pointer selects, or drags the selected text out (ws035-p093). */
 		main_pointer();
 
+		/* The wheel and Shift+Page Up or Down scroll the view, and a selection past the edge scrolls it (ws035-p114). */
+		main_scroll();
+		main_edge_scroll(terminal_clock());
+
 		/* The held key repeats. */
 		terminal_window_repeat(&main_window, terminal_clock());
 
@@ -566,6 +603,13 @@ main_loop(
 			main_screen->selected = 0;
 			main_screen->range = 0;
 			main_screen->changed = 1;
+		}
+
+		/* A key typed shows the live screen again, where the shell answers it (ws035-p114). */
+		if (main_window.input_length != 0U && main_screen->view != 0U) {
+			main_screen->view = 0U;
+			main_screen->changed = 1;
+			main_view_log("key");
 		}
 
 		/* The keys typed and the text pasted go to the shell. */
@@ -1459,7 +1503,7 @@ main_pointer_press(
 	const struct terminal_pointer_event *event)
 {
 	unsigned column;
-	unsigned row;
+	unsigned long line;
 	unsigned from;
 	unsigned to;
 	int again;
@@ -1467,11 +1511,21 @@ main_pointer_press(
 	int extend;
 
 	/* The cell, and whether the press repeats the last click there. */
-	main_cell(event->x, event->y, &column, &row);
-	again = main_clicks > 0U && event->time - main_click_time <= MAIN_CLICK_MS && column == main_click_column && row == main_click_row;
+	main_cell(event->x, event->y, &column, &line);
+	again = 0;
+	if (main_clicks > 0U &&
+	    event->time - main_click_time <= MAIN_CLICK_MS &&
+	    column == main_click_column &&
+	    line == main_click_line)
+		again = 1;
 	main_click_time = event->time;
 	main_click_column = column;
-	main_click_row = row;
+	main_click_line = line;
+
+	/* The pointer is on the grid where it pressed: no edge scrolls yet (ws035-p114). */
+	main_pointer_x = event->x;
+	main_pointer_y = event->y;
+	main_edge = 0;
 
 	/*
 	 * Shift and a click extend the selection there from where the last
@@ -1485,12 +1539,12 @@ main_pointer_press(
 		main_unit = 1U;
 		main_unit_moved = 1;
 		main_selecting = 1;
-		main_range(main_anchor_column, main_anchor_row, column, row);
+		main_range(main_anchor_column, main_anchor_line, column, line);
 		return;
 	}
 
 	/* A press inside the range, not a repeated click, may drag it out. */
-	inside = terminal_screen_in_range(main_screen, column, row);
+	inside = terminal_screen_in_range(main_screen, column, line);
 	if (inside && !again) {
 		main_drag_armed = 1;
 		main_press_x = event->x;
@@ -1517,19 +1571,19 @@ main_pointer_press(
 	if (main_clicks == 1U) {
 		main_screen->range = 0;
 		main_anchor_column = column;
-		main_anchor_row = row;
+		main_anchor_line = line;
 		return;
 	}
 
 	/* Two or three: the word or the line under the pointer is the range, and a drag grows from it. */
-	main_unit_bounds(main_unit, column, row, &from, &to);
+	main_unit_bounds(main_unit, column, line, &from, &to);
 	main_unit_from[0] = from;
-	main_unit_from[1] = row;
+	main_unit_from[1] = line;
 	main_unit_to[0] = to;
-	main_unit_to[1] = row;
+	main_unit_to[1] = line;
 	main_anchor_column = from;
-	main_anchor_row = row;
-	main_range(from, row, to, row);
+	main_anchor_line = line;
+	main_range(from, line, to, line);
 
 	/* Said, and the primary selection. */
 	if (main_clicks == 2U)
@@ -1547,7 +1601,7 @@ static void
 main_unit_bounds(
 	unsigned unit,
 	unsigned column,
-	unsigned row,
+	unsigned long line,
 	unsigned *from,
 	unsigned *to)
 {
@@ -1567,17 +1621,17 @@ main_unit_bounds(
 	}
 
 	/* A word: its letters to the left. */
-	word = main_word_character(column, row);
+	word = main_word_character(column, line);
 	while (word && *from > 0U) {
-		word = main_word_character(*from - 1U, row);
+		word = main_word_character(*from - 1U, line);
 		if (word)
 			(*from)--;
 	}
 
 	/* And to its right. */
-	word = main_word_character(column, row);
+	word = main_word_character(column, line);
 	while (word && *to + 1U < main_screen->columns) {
-		word = main_word_character(*to + 1U, row);
+		word = main_word_character(*to + 1U, line);
 		if (word)
 			(*to)++;
 	}
@@ -1591,25 +1645,25 @@ main_unit_bounds(
 static void
 main_unit_extend(
 	unsigned column,
-	unsigned row)
+	unsigned long line)
 {
 	unsigned from;
 	unsigned to;
 	int before;
 
 	/* The unit under the pointer. */
-	main_unit_bounds(main_unit, column, row, &from, &to);
+	main_unit_bounds(main_unit, column, line, &from, &to);
 
 	/* The pointer's unit before the first chosen one runs the range backward, otherwise forward. */
 	before = 0;
-	if (row < main_unit_from[1])
+	if (line < main_unit_from[1])
 		before = 1;
-	else if (row == main_unit_from[1] && from < main_unit_from[0])
+	else if (line == main_unit_from[1] && from < main_unit_from[0])
 		before = 1;
 	if (before) {
-		main_range(from, row, main_unit_to[0], main_unit_to[1]);
+		main_range(from, line, main_unit_to[0], main_unit_to[1]);
 	} else {
-		main_range(main_unit_from[0], main_unit_from[1], to, row);
+		main_range(main_unit_from[0], main_unit_from[1], to, line);
 	}
 
 	/* The range changed since the press. */
@@ -1623,10 +1677,11 @@ main_pointer_motion(
 {
 	char text[4096];
 	size_t length;
-	unsigned column;
-	unsigned row;
 	int32_t dx;
 	int32_t dy;
+	int32_t top;
+	int32_t bottom;
+	int edge;
 
 	/* A press inside the range, moved far enough: the range's text is dragged out. */
 	if (main_drag_armed) {
@@ -1643,31 +1698,149 @@ main_pointer_motion(
 	/* A selection follows the pointer from where it started. */
 	if (!main_selecting)
 		return;
-	main_cell(event->x, event->y, &column, &row);
+	main_pointer_x = event->x;
+	main_pointer_y = event->y;
 
-	/* After a double or triple click, by whole words or lines (ws035-p111). */
+	/*
+	 * Past the grid's top the view scrolls back into the scrollback, past
+	 * its bottom toward the live screen: a step at once, then one every
+	 * MAIN_EDGE_MS while the pointer stays there (ws035-p114).
+	 */
+	top = (int32_t)TERMINAL_PADDING;
+	bottom = top + (int32_t)(main_screen->rows * main_font.cell_height);
+	edge = 0;
+	if (event->y < top)
+		edge = 1;
+	else if (event->y >= bottom)
+		edge = -1;
+	if (edge != 0 && edge != main_edge)
+		main_edge_at = terminal_clock();
+	main_edge = edge;
+
+	/* The selection runs to the pointer's cell. */
+	main_select_to_pointer();
+}
+
+/*
+ * Extends the held selection to the cell nearest the pointer's last place:
+ * by words or lines after a double or triple click (ws035-p111), else a
+ * cell at a time.
+ */
+static void
+main_select_to_pointer(void)
+{
+	unsigned column;
+	unsigned long line;
+
+	/* The cell, on the lines the view shows now. */
+	main_cell(main_pointer_x, main_pointer_y, &column, &line);
+
+	/* After a double or triple click, by whole words or lines. */
 	if (main_unit > 1U) {
-		main_unit_extend(column, row);
+		main_unit_extend(column, line);
 		return;
 	}
 
-	/* A cell at a time. */
-	if (column == main_anchor_column && row == main_anchor_row && !main_screen->range)
+	/* A cell at a time; the pressed cell alone selects nothing yet. */
+	if (column == main_anchor_column && line == main_anchor_line && !main_screen->range)
 		return;
-	main_range(main_anchor_column, main_anchor_row, column, row);
+	main_range(main_anchor_column, main_anchor_line, column, line);
+}
+
+/*
+ * Scrolls the view a step while a held selection's pointer is past the
+ * grid's top or bottom, and runs the selection onto the line the edge
+ * then shows (ws035-p114).  The farther past the edge, the more lines a
+ * step scrolls.
+ */
+static void
+main_edge_scroll(
+	uint64_t now)
+{
+	int32_t beyond;
+	unsigned lines;
+	int moved;
+
+	/* Only a held selection with the pointer past an edge, once its step is due. */
+	if (!main_selecting || main_edge == 0)
+		return;
+	if (now < main_edge_at)
+		return;
+
+	/* How far past the edge, in pixels (at least one). */
+	if (main_edge > 0) {
+		beyond = (int32_t)TERMINAL_PADDING - main_pointer_y;
+	} else {
+		beyond = main_pointer_y - (int32_t)TERMINAL_PADDING - (int32_t)(main_screen->rows * main_font.cell_height) + 1;
+	}
+
+	/* A pointer that has just come back counts as one pixel past. */
+	if (beyond < 1)
+		beyond = 1;
+
+	/* A line for each cell's height past the edge, up to a limit. */
+	lines = 1U + (unsigned)(beyond - 1) / main_font.cell_height;
+	if (lines > MAIN_EDGE_LINES)
+		lines = MAIN_EDGE_LINES;
+
+	/* The step, and when the next is due; at the scrollback's end or on the live screen nothing moves. */
+	main_edge_at = now + MAIN_EDGE_MS;
+	moved = terminal_screen_scroll_view(main_screen, main_edge * (int)lines);
+	if (!moved)
+		return;
+
+	/* The selection reaches the line now at the edge. */
+	main_select_to_pointer();
+	main_view_log("edge");
+}
+
+/* Scrolls the view as the wheel's notches and Shift+Page Up or Down asked (ws035-p114). */
+static void
+main_scroll(void)
+{
+	unsigned page;
+	int lines;
+	int moved;
+
+	/* Nothing asked, nothing to scroll. */
+	if (main_window.scroll_notches == 0 && main_window.scroll_pages == 0)
+		return;
+
+	/* A few lines a notch; a page is the grid's rows less one, which stays in sight. */
+	page = main_screen->rows - 1U;
+	if (page == 0U)
+		page = 1U;
+	lines = main_window.scroll_notches * MAIN_WHEEL_LINES + main_window.scroll_pages * (int)page;
+	main_window.scroll_notches = 0;
+	main_window.scroll_pages = 0;
+
+	/* The view moves within the scrollback. */
+	moved = terminal_screen_scroll_view(main_screen, lines);
+	if (!moved)
+		return;
+
+	/* A held selection runs onto the lines now under the pointer. */
+	if (main_selecting)
+		main_select_to_pointer();
+
+	/* Said, for the tests. */
+	main_view_log("scroll");
 }
 
 /* A release: a press inside the range that did not drag clears it (a click); a selection ends. */
 static void
 main_pointer_release(void)
 {
+	/* The edge stops scrolling with the button's release (ws035-p114). */
+	main_edge = 0;
+
 	/* A click inside the range clears it, and a Shift click later extends from there. */
 	if (main_drag_armed) {
 		main_drag_armed = 0;
 		main_screen->range = 0;
 		main_screen->changed = 1;
 		main_anchor_column = main_click_column;
-		main_anchor_row = main_click_row;
+		main_anchor_line = main_click_line;
 		return;
 	}
 
@@ -1695,14 +1868,19 @@ main_pointer_release(void)
 		main_selected_log("drag");
 }
 
-/* Gives the cell under a point of the surface, the nearest one for a point outside the grid. */
+/*
+ * Gives the cell under a point of the surface, the nearest one for a point
+ * outside the grid: its column, and the line the view shows on its row.
+ */
 static void
 main_cell(
 	int32_t x,
 	int32_t y,
 	unsigned *column,
-	unsigned *row)
+	unsigned long *line)
 {
+	unsigned row;
+
 	/* From the grid's padded top left, a cell's size at a time. */
 	x -= (int32_t)TERMINAL_PADDING;
 	y -= (int32_t)TERMINAL_PADDING;
@@ -1711,37 +1889,44 @@ main_cell(
 	if (y < 0)
 		y = 0;
 	*column = (unsigned)x / main_font.cell_width;
-	*row = (unsigned)y / main_font.cell_height;
+	row = (unsigned)y / main_font.cell_height;
 
-	/* Succeeded: inside the grid. */
+	/* The nearest cell inside the grid. */
 	if (*column >= main_screen->columns)
 		*column = main_screen->columns - 1U;
-	if (*row >= main_screen->rows)
-		*row = main_screen->rows - 1U;
+	if (row >= main_screen->rows)
+		row = main_screen->rows - 1U;
+
+	/* Succeeded: the line on that row, in the scrollback when the view is back (ws035-p114). */
+	*line = terminal_screen_view_line(main_screen, row);
 }
 
 /* Selects the cells from one to another, in whichever order they come. */
 static void
 main_range(
 	unsigned from_column,
-	unsigned from_row,
+	unsigned long from_line,
 	unsigned to_column,
-	unsigned to_row)
+	unsigned long to_line)
 {
 	int later;
 
 	/* The first in reading order first. */
-	later = from_row > to_row || (from_row == to_row && from_column > to_column);
+	later = 0;
+	if (from_line > to_line)
+		later = 1;
+	else if (from_line == to_line && from_column > to_column)
+		later = 1;
 	if (later) {
 		main_screen->range_from[0] = to_column;
-		main_screen->range_from[1] = to_row;
+		main_screen->range_from[1] = to_line;
 		main_screen->range_to[0] = from_column;
-		main_screen->range_to[1] = from_row;
+		main_screen->range_to[1] = from_line;
 	} else {
 		main_screen->range_from[0] = from_column;
-		main_screen->range_from[1] = from_row;
+		main_screen->range_from[1] = from_line;
 		main_screen->range_to[0] = to_column;
-		main_screen->range_to[1] = to_row;
+		main_screen->range_to[1] = to_line;
 	}
 
 	/* Succeeded: drawn anew. */
@@ -1753,14 +1938,18 @@ main_range(
 static int
 main_word_character(
 	unsigned column,
-	unsigned row)
+	unsigned long line)
 {
 	const struct terminal_cell *cell;
 	uint32_t codepoint;
 	const char *found;
 
+	/* A line no longer kept has no words (ws035-p114). */
+	cell = terminal_screen_line_cell(main_screen, column, line);
+	if (cell == NULL)
+		return 0;
+
 	/* A blank or a space parts words. */
-	cell = terminal_screen_cell(main_screen, column, row);
 	codepoint = cell->codepoint;
 	if (codepoint == 0U || codepoint == ' ' || codepoint == '\t')
 		return 0;
@@ -1776,18 +1965,32 @@ main_word_character(
 	return 1;
 }
 
-/* Logs what the pointer selected: how, where, and how many bytes of text. */
+/* Logs what the pointer selected: how, where (column, line) and how many bytes of text. */
 static void
 main_selected_log(
 	const char *how)
 {
 	size_t length;
 
-	/* The range's text, whole (as long as the screen holds), into what the primary selection sends. */
+	/* The range's text, whole (as long as the buffer holds), into what the primary selection sends. */
 	length = terminal_screen_text(main_screen, main_primary, sizeof(main_primary));
-	printf("ZTERM SELECT how=%s from=%u,%u to=%u,%u bytes=%lu\n", how, main_screen->range_from[0], main_screen->range_from[1], main_screen->range_to[0], main_screen->range_to[1], (unsigned long)length);
+	printf("ZTERM SELECT how=%s from=%lu,%lu to=%lu,%lu bytes=%lu\n", how, main_screen->range_from[0], main_screen->range_from[1], main_screen->range_to[0], main_screen->range_to[1], (unsigned long)length);
 	fflush(stdout);
 
 	/* The selected text is the primary selection (ws035-p100). */
 	terminal_primary_set(&main_window, main_primary, length, main_window.serial);
+}
+
+/*
+ * Logs where the view is: how it moved, how many lines back from the live
+ * screen it is, how many lines the scrollback keeps and how many have
+ * ever scrolled off (ws035-p114).
+ */
+static void
+main_view_log(
+	const char *how)
+{
+	/* One line, for the tests. */
+	printf("ZTERM VIEW how=%s back=%u history=%u scrolled=%lu\n", how, main_screen->view, main_screen->history_count, main_screen->scrolled);
+	fflush(stdout);
 }

@@ -31,6 +31,8 @@ static int find_table(struct truetype_face *face, uint32_t tag,
 static int read_head(struct truetype_face *face);
 static int read_maxp(struct truetype_face *face);
 static int read_hhea(struct truetype_face *face);
+static int open_face(const void *data, size_t size, unsigned index, int map_required, struct truetype_face **result);
+static int read_map(struct truetype_face *face, int map_required);
 
 /*
  * Reads one big-endian value.  A font is big-endian whatever the machine is.
@@ -185,6 +187,55 @@ truetype_open(
 	unsigned index,
 	struct truetype_face **result)
 {
+	int error;
+
+	/* Opens the face, which must map characters to its glyphs. */
+	error = open_face(data, size, index, 1, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the face. */
+	return 0;
+}
+
+/*
+ * Opens a face embedded in a document, whose character map is optional.
+ *
+ * A font a document carries is often cut down to the glyphs the document
+ * uses and addressed by glyph number, and such a font may have no cmap or
+ * only a map this reader does not choose.  The face opens all the same;
+ * truetype_glyph_index() then finds no glyph and truetype_cmap_lookup()
+ * reads whatever maps there are.
+ */
+int
+truetype_open_embedded(
+	const void *data,
+	size_t size,
+	struct truetype_face **result)
+{
+	int error;
+
+	/* Opens the first face without requiring a character map. */
+	error = open_face(data, size, 0, 0, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the face. */
+	return 0;
+}
+
+/*
+ * Opens one face of a font file; map_required refuses a face without a
+ * Unicode character map this reader uses.
+ */
+static int
+open_face(
+	const void *data,
+	size_t size,
+	unsigned index,
+	int map_required,
+	struct truetype_face **result)
+{
 	struct truetype_face *face;
 	const uint8_t *bytes;
 	uint32_t version, directory, count;
@@ -275,12 +326,7 @@ truetype_open(
 
 	/* Handles the glyf table failure. */
 	if (error == 0)
-		error = find_table(face, TRUETYPE_TAG('c', 'm', 'a', 'p'),
-				   &face->cmap, &face->cmap_size);
-
-	/* Handles the cmap table failure. */
-	if (error == 0)
-		error = truetype_cmap_select(face);
+		error = read_map(face, map_required);
 
 	/* Reports the failure. */
 	if (error != 0) {
@@ -293,6 +339,49 @@ truetype_open(
 
 	/* Succeeded: the face reads every table it needs. */
 	*result = face;
+	return 0;
+}
+
+/*
+ * Finds the character map and chooses its Unicode subtable.
+ *
+ * Without map_required, a face that has no cmap, or none this reader
+ * chooses, is left without a chosen subtable instead of refused.
+ */
+static int
+read_map(
+	struct truetype_face *face,
+	int map_required)
+{
+	int error;
+
+	/* Finds the cmap table. */
+	error = find_table(face, TRUETYPE_TAG('c', 'm', 'a', 'p'),
+			   &face->cmap, &face->cmap_size);
+	if (error == ENOENT && !map_required) {
+		/* An embedded face without a map is addressed by glyph number. */
+		face->cmap = NULL;
+		face->cmap_size = 0;
+		return 0;
+	}
+
+	/* Reports any other failure. */
+	if (error != 0)
+		return error;
+
+	/* Chooses the Unicode subtable. */
+	error = truetype_cmap_select(face);
+	if (error != 0 && !map_required) {
+		/* The other subtables stay readable through truetype_cmap_lookup(). */
+		face->cmap_subtable = NULL;
+		return 0;
+	}
+
+	/* A face that must map characters and cannot is refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the face maps characters to glyphs. */
 	return 0;
 }
 

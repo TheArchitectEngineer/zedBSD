@@ -6,19 +6,35 @@
  */
 
 /*
- * The view (view.h): the page shown and its session history, the page
+ * The view (the component's interface, <browser.h>): the page shown and
+ * its session history, the page
  * being fetched, the scroll, the page's clock and the network, moved out
  * of the window (ws074-p054).  A file or data: page is read at once; an
  * http or https page after the first is fetched without blocking, and the
- * page shown stays until it has arrived.  The page's timers run on the
- * monotonic clock from the time the page was made, and a page its scripts
- * or its arriving images changed is laid out and painted again.
+ * page shown stays until it has arrived (BROWSER_FETCH_DEFAULT; the other
+ * ways of fetching read every page at once, or fetch the first one too).
+ * The page's timers run on the monotonic clock from the time the page was
+ * made, and a page its scripts or its arriving images changed is laid out
+ * and painted again the next time its boxes are needed.  The headless
+ * modes settle the view on a virtual clock instead, and draw or dump it.
+ * On the caller's GPU the view keeps the renderer (paint/gpu.h) and a
+ * framebuffer for each of the caller's image views it drew into.
+ *
+ * The caller's input (ws074-p056) goes to the page as DOM events
+ * (page/input.c); the view does the default actions the page's scripts
+ * leave uncanceled: scrolling, following a link clicked or activated with
+ * Enter, moving the focus with Tab, and the history's, reloading's and
+ * stopping's keys and buttons.
  */
 
-#include "view/view.h"
+#include "net/net.h"
 #include "page/page.h"
+#include "paint/gpu.h"
+
+#include <browser.h>
 
 #include <errno.h>
+#include <math.h>
 #include <poll.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,20 +50,98 @@
 /* The longest a timer is waited for at once, in milliseconds. */
 #define VIEW_WAIT_MAX		60000.0
 
+/* How many of the loader's descriptors a headless settle polls at most. */
+#define VIEW_POLL_MAX		64U
+
+/* How many of the caller's image views the view keeps a framebuffer for (a swapchain's images, and a few more). */
+#define VIEW_FRAMEBUFFERS_MAX	8U
+
+/* How far a press of an arrow key scrolls, in pixels. */
+#define VIEW_LINE_SCROLL	40
+
+/* How far the pointer may move between a press and its release for a click, in pixels. */
+#define VIEW_CLICK_SLOP		4.0f
+
+/* How much room is kept around an element the focus scrolls into view, in pixels. */
+#define VIEW_FOCUS_MARGIN	16
+
+/* Where a scroll to an end of the document goes. */
+#define VIEW_SCROLL_TOP		0
+#define VIEW_SCROLL_BOTTOM	1
+
 /* How a page is reached: a new step of the history, or a step already in it. */
 enum view_step {
 	VIEW_STEP_NEW,
 	VIEW_STEP_KEEP
 };
 
+/* The keys with a default action, by what the action is. */
+enum view_key {
+	VIEW_KEY_OTHER,
+	VIEW_KEY_BACK,
+	VIEW_KEY_FORWARD,
+	VIEW_KEY_REFRESH,
+	VIEW_KEY_STOP,
+	VIEW_KEY_R,
+	VIEW_KEY_TAB,
+	VIEW_KEY_ENTER,
+	VIEW_KEY_LEFT,
+	VIEW_KEY_RIGHT,
+	VIEW_KEY_UP,
+	VIEW_KEY_DOWN,
+	VIEW_KEY_PAGE_UP,
+	VIEW_KEY_PAGE_DOWN,
+	VIEW_KEY_SPACE,
+	VIEW_KEY_HOME,
+	VIEW_KEY_END
+};
+
+/* A DOM key name with a default action, and which action. */
+struct view_key_name {
+	const char *name;
+	int key;
+};
+
+/*
+ * A framebuffer the view made over one of the caller's image views, at the
+ * size it was made for, in the renderer's pass.  It lives until the caller
+ * has the view forget its targets, or the renderer is made again.
+ */
+struct view_framebuffer {
+	VkImageView image_view;
+	uint32_t width;
+	uint32_t height;
+	VkFramebuffer framebuffer;
+};
+
+/*
+ * An offscreen image of the engine's own: the renderer's device and image,
+ * made by browser_offscreen_create and ended by browser_offscreen_destroy.
+ */
+struct browser_offscreen {
+	struct paint_offscreen offscreen;
+};
+
 /*
  * A view: the page shown and its location, the history of locations
  * (index is the one shown), how far the page is scrolled (layout units),
- * the view's size, the fonts, the stack frame the pages' heaps scan up to,
- * the clock's time when the page shown (page_epoch) and the page being
- * made (open_epoch) began, the loader, the page being fetched (its
- * location and how it joins the history; NULL when none), the title shown,
- * and the callbacks.
+ * the view's size and whether the page was laid out at another size
+ * (resized), the fonts, the stack frame the pages' heaps scan up to, the
+ * clock's time when the page shown (page_epoch) and the page being made
+ * (open_epoch) began, how pages are fetched, the loader (NULL when every
+ * page is read at once), the page being fetched (its location and how it
+ * joins the history; NULL when none), the title shown, and the callbacks.
+ *
+ * On the GPU: the caller's device (has_device says the caller lent one),
+ * the renderer on it (opened at the first drawing, for the target's format
+ * and final layout; gpu_open says it is), the framebuffers made for the
+ * caller's image views (oldest first), and the Vulkan call that failed
+ * last.
+ *
+ * The input: where the pointer is (pointer_inside says it is over the
+ * view), the button held down and where (press_button is -1 when none;
+ * its release nearby is a click), and whether the caller's program has the
+ * focus (a new page starts with it).
  */
 struct browser_view {
 	struct page *page;
@@ -58,16 +152,61 @@ struct browser_view {
 	layout_unit scroll_y;
 	unsigned width;
 	unsigned height;
-	const struct text_font_paths *fonts;
+	int resized;
+	struct text_font_paths fonts;
 	const void *stack_base;
 	uint64_t page_epoch;
 	uint64_t open_epoch;
+	enum browser_fetch fetch;
 	struct net_loader *loader;
 	struct net_request *pending;
 	char *pending_path;
 	int pending_step;
 	struct wb_buffer title;
 	struct browser_callbacks callbacks;
+	struct browser_gpu device;
+	int has_device;
+	struct paint_gpu gpu;
+	int gpu_open;
+	VkFormat gpu_format;
+	VkImageLayout gpu_layout;
+	struct view_framebuffer framebuffers[VIEW_FRAMEBUFFERS_MAX];
+	size_t framebuffer_count;
+	struct browser_gpu_failure failure;
+	float pointer_x;
+	float pointer_y;
+	int pointer_inside;
+	int press_button;
+	float press_x;
+	float press_y;
+	int has_focus;
+};
+
+/*
+ * The DOM key names with a default action.  The table is constant for the
+ * life of the program and ends with a NULL name.
+ */
+static const struct view_key_name view_key_names[] = {
+	{ "BrowserBack", VIEW_KEY_BACK },
+	{ "BrowserForward", VIEW_KEY_FORWARD },
+	{ "BrowserRefresh", VIEW_KEY_REFRESH },
+	{ "F5", VIEW_KEY_REFRESH },
+	{ "BrowserStop", VIEW_KEY_STOP },
+	{ "Escape", VIEW_KEY_STOP },
+	{ "r", VIEW_KEY_R },
+	{ "R", VIEW_KEY_R },
+	{ "Tab", VIEW_KEY_TAB },
+	{ "Enter", VIEW_KEY_ENTER },
+	{ "ArrowLeft", VIEW_KEY_LEFT },
+	{ "ArrowRight", VIEW_KEY_RIGHT },
+	{ "ArrowUp", VIEW_KEY_UP },
+	{ "ArrowDown", VIEW_KEY_DOWN },
+	{ "PageUp", VIEW_KEY_PAGE_UP },
+	{ "PageDown", VIEW_KEY_PAGE_DOWN },
+	{ " ", VIEW_KEY_SPACE },
+	{ "Home", VIEW_KEY_HOME },
+	{ "End", VIEW_KEY_END },
+	{ NULL, VIEW_KEY_OTHER }
 };
 
 static uint64_t view_clock(void);
@@ -78,12 +217,30 @@ static int view_show_page(struct browser_view *view, struct page *page, const ch
 static int view_start_load(struct browser_view *view, const char *path, int step);
 static void view_document_arrived(void *context, struct net_request *request);
 static void view_stop_load(struct browser_view *view, int report);
-static int view_lay_out(struct browser_view *view);
+static int view_update(struct browser_view *view);
+static void view_settle_network(struct browser_view *view);
+static void view_clamp_scroll(struct browser_view *view);
 static void view_update_title(struct browser_view *view);
 static void view_scroll(struct browser_view *view, layout_unit distance);
 static void view_redraw(struct browser_view *view);
 static void view_failed(struct browser_view *view, const char *url, int error, const char *reason);
 static void view_console(void *context, int level, const char *text, size_t length);
+static int view_gpu_ready(struct browser_view *view, const struct browser_target *target);
+static void view_gpu_close(struct browser_view *view);
+static int view_framebuffer(struct browser_view *view, const struct browser_target *target, VkFramebuffer *framebuffer);
+static int view_gpu_failed(struct browser_view *view, const char *operation, VkResult result);
+static void view_pointer_at(const struct browser_view *view, float x, float y, int button, uint32_t modifiers, struct page_pointer *pointer);
+static unsigned view_bind_modifiers(uint32_t modifiers);
+static void view_changed(struct browser_view *view);
+static int view_click(struct browser_view *view, float x, float y, uint32_t modifiers);
+static void view_follow_link(struct browser_view *view, const char *href);
+static int view_key_default(struct browser_view *view, const char *key, uint32_t modifiers);
+static int view_key_named(const char *key);
+static int view_move_focus(struct browser_view *view, int backward);
+static int view_activate(struct browser_view *view);
+static int view_scroll_into_view(struct browser_view *view);
+static void view_scroll_pages(struct browser_view *view, int pages);
+static void view_scroll_to(struct browser_view *view, int place);
 
 /* Makes a view with its loader and no page. */
 int
@@ -94,18 +251,51 @@ browser_view_create(
 	struct browser_view *made;
 	int error;
 
-	/* The view, empty. */
+	/* A program built for another version of the interface lays its options out otherwise. */
 	*view = NULL;
+	if (options->version != BROWSER_API_VERSION)
+		return ENOTSUP;
+
+	/* The view, empty. */
 	made = calloc(1, sizeof(*made));
 	if (made == NULL)
 		return ENOMEM;
-	made->fonts = options->fonts;
+
+	/* The fonts the program names, and the system's for the ones it leaves out. */
+	made->fonts.sans = TEXT_DEFAULT_SANS;
+	made->fonts.mono = TEXT_DEFAULT_MONO;
+	made->fonts.fallback = TEXT_DEFAULT_FALLBACK;
+	if (options->fonts != NULL) {
+		if (options->fonts->sans != NULL)
+			made->fonts.sans = options->fonts->sans;
+		if (options->fonts->mono != NULL)
+			made->fonts.mono = options->fonts->mono;
+		if (options->fonts->fallback != NULL)
+			made->fonts.fallback = options->fonts->fallback;
+	}
+
+	/* The rest of the options. */
 	made->stack_base = options->stack_base;
 	made->width = options->width;
 	made->height = options->height;
+	made->fetch = options->fetch;
+	made->press_button = -1;
+	made->has_focus = 1;
 	wb_buffer_init(&made->title);
 	if (options->callbacks != NULL)
 		made->callbacks = *options->callbacks;
+
+	/* The caller's GPU, when it lends one now. */
+	if (options->gpu != NULL) {
+		made->device = *options->gpu;
+		made->has_device = 1;
+	}
+
+	/* A view that reads every page at once needs no loader. */
+	if (made->fetch == BROWSER_FETCH_AT_ONCE) {
+		*view = made;
+		return 0;
+	}
 
 	/* The loader of the http and https pages and images. */
 	error = page_net_create(&made->loader);
@@ -119,7 +309,7 @@ browser_view_create(
 	return 0;
 }
 
-/* Ends a view: a load under way, the page, the history and the loader, in that order. */
+/* Ends a view: its objects on the caller's GPU, a load under way, the page, the history and the loader, in that order. */
 void
 browser_view_destroy(
 	struct browser_view *view)
@@ -129,6 +319,9 @@ browser_view_destroy(
 	/* No view. */
 	if (view == NULL)
 		return;
+
+	/* The renderer and the framebuffers on the caller's device. */
+	view_gpu_close(view);
 
 	/* A load under way, then the page and its path (its image requests go with it). */
 	view_stop_load(view, 0);
@@ -140,7 +333,8 @@ browser_view_destroy(
 		free(view->history[index]);
 
 	/* The loader, once no page uses it, then the view. */
-	page_net_destroy(view->loader);
+	if (view->loader != NULL)
+		page_net_destroy(view->loader);
 	wb_buffer_release(&view->title);
 	free(view);
 }
@@ -276,8 +470,6 @@ browser_view_resize(
 	unsigned width,
 	unsigned height)
 {
-	int error;
-
 	/* The size, and the page's scripts see it. */
 	view->width = width;
 	view->height = height;
@@ -285,13 +477,11 @@ browser_view_resize(
 		return 0;
 	page_set_viewport(view->page, (int)width, (int)height);
 
-	/* The page at the new size. */
-	error = view_lay_out(view);
-	if (error != 0)
-		return error;
+	/* The page is laid out at the new size when it is drawn next. */
+	view->resized = 1;
 	view_redraw(view);
 
-	/* Succeeded: the page fits the new size. */
+	/* Succeeded: the page will fit the new size. */
 	return 0;
 }
 
@@ -317,13 +507,20 @@ browser_view_title(
 	return wb_buffer_string(&view->title);
 }
 
-/* The height of the page shown's document in pixels. */
+/* The height of the page shown's document in pixels (the page is laid out first when it changed). */
 double
 browser_view_document_height(
-	const struct browser_view *view)
+	struct browser_view *view)
 {
+	int error;
+
 	/* No page is no height. */
 	if (view->page == NULL)
+		return 0.0;
+
+	/* A page that cannot be laid out has no height either. */
+	error = view_update(view);
+	if (error != 0)
 		return 0.0;
 
 	/* The layout's. */
@@ -337,6 +534,10 @@ browser_view_poll_fds(
 	struct pollfd *fds,
 	size_t capacity)
 {
+	/* A view without a loader waits on nothing. */
+	if (view->loader == NULL)
+		return 0;
+
 	/* The loader's. */
 	return page_net_poll_fds(view->loader, fds, capacity);
 }
@@ -352,8 +553,10 @@ browser_view_timeout(
 	int timeout;
 	int found;
 
-	/* The network's earliest time out. */
-	timeout = page_net_timeout(view->loader);
+	/* The network's earliest time out (none without a loader). */
+	timeout = -1;
+	if (view->loader != NULL)
+		timeout = page_net_timeout(view->loader);
 	if (view->page == NULL)
 		return timeout;
 
@@ -376,8 +579,8 @@ browser_view_timeout(
 
 /*
  * Does the work due after the caller's poll: the network (pages and
- * images that arrived), the page's timers, and the layout its scripts or
- * its images changed, with the redraw and a new title.
+ * images that arrived), the page's timers, and the redraw and the new
+ * title when its scripts or its images changed it.
  */
 void
 browser_view_process(
@@ -389,7 +592,8 @@ browser_view_process(
 	int error;
 
 	/* The loader's work: requests that moved on, their callbacks. */
-	page_net_process(view->loader, fds, count);
+	if (view->loader != NULL)
+		page_net_process(view->loader, fds, count);
 	if (view->page == NULL)
 		return;
 
@@ -403,52 +607,9 @@ browser_view_process(
 	if (!changed)
 		return;
 
-	/* The layout, the redraw, and the title the scripts may have set. */
-	error = view_lay_out(view);
-	if (error != 0)
-		return;
+	/* The redraw, which lays the page out again, and the title the scripts may have set. */
 	view_redraw(view);
 	view_update_title(view);
-}
-
-/* Scrolls by some pixels (positive is down), within the document. */
-void
-browser_view_scroll_by(
-	struct browser_view *view,
-	int pixels)
-{
-	/* The distance in layout units. */
-	view_scroll(view, (layout_unit)pixels * LAYOUT_UNIT);
-}
-
-/* Scrolls by pages: the view's height less a little kept in view, each. */
-void
-browser_view_scroll_pages(
-	struct browser_view *view,
-	int pages)
-{
-	layout_unit step;
-
-	/* A page's step. */
-	step = ((layout_unit)view->height - VIEW_PAGE_OVERLAP) * LAYOUT_UNIT;
-	view_scroll(view, step * pages);
-}
-
-/* Scrolls to the document's top or bottom. */
-void
-browser_view_scroll_to(
-	struct browser_view *view,
-	enum browser_scroll_place place)
-{
-	/* No page, no scroll. */
-	if (view->page == NULL)
-		return;
-
-	/* The top, or the bottom (the scroll stops at the last view's worth). */
-	if (place == BROWSER_SCROLL_TOP)
-		view_scroll(view, -view->scroll_y);
-	else
-		view_scroll(view, view->page->layout.document_height);
 }
 
 /* How far the page is scrolled, in pixels. */
@@ -460,78 +621,726 @@ browser_view_scroll_y(
 	return (double)layout_to_px(view->scroll_y);
 }
 
-/*
- * A click at a place in the view: the page's scripts get it first; unless
- * they cancel it, the link under it is followed when the link callback
- * allows it.
- */
+/* The pointer moves over the view: its place is kept for the wheel and the buttons. */
 int
-browser_view_click(
+browser_view_pointer_move(
 	struct browser_view *view,
-	int x,
-	int y)
+	float x,
+	float y,
+	uint32_t modifiers)
 {
-	struct wb_buffer href;
-	enum browser_policy policy;
-	int page_y;
-	int canceled;
-	int changed;
-	int found;
-	int error;
+	UNUSED_PARAMETER(modifiers);
 
-	/* No page, nothing to click. */
-	if (view->page == NULL)
-		return 0;
+	/* The place, and the pointer is over the view. */
+	view->pointer_x = x;
+	view->pointer_y = y;
+	view->pointer_inside = 1;
 
-	/* The page's scripts get the click first; a canceled click opens no link. */
-	page_y = y + (int)(view->scroll_y / LAYOUT_UNIT);
-	error = page_click(view->page, x, page_y, x, y, &canceled);
-	if (error != 0)
-		return error;
-	if (canceled)
-		return 0;
-
-	/* A page the listeners changed is laid out again before its link is looked for. */
-	changed = page_needs_layout(view->page);
-	if (changed) {
-		error = view_lay_out(view);
-		if (error != 0)
-			return error;
-		view_redraw(view);
-	}
-
-	/* The link under the click, in the document's coordinates. */
-	wb_buffer_init(&href);
-	error = page_link_at(view->page, x, page_y, &href, &found);
-	if (error != 0 || !found) {
-		wb_buffer_release(&href);
-		return error;
-	}
-
-	/* The caller decides; an allowed link is followed (a load that fails goes to the load callback). */
-	policy = BROWSER_POLICY_ALLOW;
-	if (view->callbacks.link != NULL)
-		policy = view->callbacks.link(view->callbacks.context, view, wb_buffer_string(&href));
-	if (policy == BROWSER_POLICY_ALLOW)
-		(void)browser_view_follow(view, wb_buffer_string(&href));
-	wb_buffer_release(&href);
-
-	/* Succeeded: the click was carried out. */
+	/* Succeeded: the place is kept. */
 	return 0;
 }
 
-/* Gives what to draw: the page's display list, its text system and the scroll. */
-void
-browser_view_display(
-	const struct browser_view *view,
-	const struct paint_list **list,
-	struct text_system **text,
-	layout_unit *scroll_y)
+/*
+ * A pointer button is pressed or let go at a place in the view: the page
+ * gets mousedown or mouseup there.  Unless they are canceled, a press of
+ * the main button moves the focus to what it lands on; a release of the
+ * button pressed near its press is a click (the main button's click
+ * follows the link under it), or a step through the history (the back and
+ * forward buttons).
+ */
+int
+browser_view_pointer_button(
+	struct browser_view *view,
+	float x,
+	float y,
+	int button,
+	int pressed,
+	uint32_t modifiers)
 {
+	struct page_pointer pointer;
+	float distance_x;
+	float distance_y;
+	int clicked;
+	int canceled;
+	int error;
+
+	/* The place, which the pointer is at now. */
+	view->pointer_x = x;
+	view->pointer_y = y;
+	view->pointer_inside = 1;
+
+	/* A release is a click when the same button went down nearly there. */
+	clicked = 0;
+	if (!pressed && view->press_button == button) {
+		distance_x = fabsf(x - view->press_x);
+		distance_y = fabsf(y - view->press_y);
+		if (distance_x <= VIEW_CLICK_SLOP && distance_y <= VIEW_CLICK_SLOP)
+			clicked = 1;
+	}
+
+	/* A press remembers its button and place; any release ends the press. */
+	view->press_button = -1;
+	if (pressed) {
+		view->press_button = button;
+		view->press_x = x;
+		view->press_y = y;
+	}
+
+	/* The page gets mousedown or mouseup (there is nothing to press without a page). */
+	canceled = 0;
+	if (view->page != NULL) {
+		error = view_update(view);
+		if (error != 0)
+			return error;
+		view_pointer_at(view, x, y, button, modifiers, &pointer);
+		if (pressed)
+			error = page_mouse_event(view->page, "mousedown", &pointer, &canceled);
+		else
+			error = page_mouse_event(view->page, "mouseup", &pointer, &canceled);
+		if (error != 0)
+			return error;
+	}
+
+	/* The press of the main button moves the focus, unless mousedown was canceled. */
+	if (pressed &&
+	    !canceled &&
+	    button == BROWSER_BUTTON_PRIMARY &&
+	    view->page != NULL) {
+		error = page_focus_at(view->page, pointer.x, pointer.y);
+		if (error != 0)
+			return error;
+	}
+
+	/* The page as the listeners and the focus left it is drawn again. */
+	view_changed(view);
+
+	/* A release that is not a click, or whose mouseup was canceled, does nothing more. */
+	if (!clicked || canceled)
+		return 0;
+
+	/* The main button's click. */
+	if (button == BROWSER_BUTTON_PRIMARY) {
+		error = view_click(view, x, y, modifiers);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* The back and forward buttons step through the history (a failure goes to the load callback). */
+	if (button == BROWSER_BUTTON_BACK)
+		(void)browser_view_go(view, -1);
+	if (button == BROWSER_BUTTON_FORWARD)
+		(void)browser_view_go(view, 1);
+
+	/* Succeeded: the button is carried out. */
+	return 0;
+}
+
+/* The pointer leaves the view: a press under way is no longer a click. */
+int
+browser_view_pointer_leave(
+	struct browser_view *view)
+{
+	/* Nothing is pressed or pointed at any more. */
+	view->pointer_inside = 0;
+	view->press_button = -1;
+
+	/* Succeeded: the pointer is gone. */
+	return 0;
+}
+
+/*
+ * The wheel turns over a place in the view: the page gets a wheel event
+ * there, and unless it is canceled the page scrolls by the vertical
+ * distance.
+ */
+int
+browser_view_wheel(
+	struct browser_view *view,
+	float x,
+	float y,
+	float delta_x,
+	float delta_y,
+	uint32_t modifiers)
+{
+	struct page_pointer pointer;
+	int canceled;
+	int error;
+
+	/* The place, which the pointer is at now. */
+	view->pointer_x = x;
+	view->pointer_y = y;
+	view->pointer_inside = 1;
+
+	/* No page, nothing to scroll. */
+	if (view->page == NULL)
+		return 0;
+
+	/* The boxes the wheel is over are the page's as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The page's wheel event. */
+	view_pointer_at(view, x, y, BROWSER_BUTTON_PRIMARY, modifiers, &pointer);
+	pointer.button = 0;
+	pointer.delta_x = (double)delta_x;
+	pointer.delta_y = (double)delta_y;
+	error = page_wheel_event(view->page, &pointer, &canceled);
+	if (error != 0)
+		return error;
+	view_changed(view);
+
+	/* A canceled wheel does not scroll. */
+	if (canceled)
+		return 0;
+
+	/* The scroll, by the vertical distance (the page does not scroll sideways yet). */
+	view_scroll(view, layout_from_px(delta_y));
+
+	/* Succeeded: the wheel is carried out. */
+	return 0;
+}
+
+/*
+ * A key is pressed (repeat when held) or let go: the page gets keydown or
+ * keyup at its focused element, and keypress for a key that types text;
+ * unless keydown is canceled, the view does the key's default action.
+ */
+int
+browser_view_key(
+	struct browser_view *view,
+	const char *key,
+	const char *code,
+	const char *text,
+	int pressed,
+	int repeat,
+	uint32_t modifiers)
+{
+	struct bind_key event;
+	struct bind_key typed;
+	int canceled;
+	int error;
+
+	/* The key as the page sees it (a missing name is empty). */
+	memset(&event, 0, sizeof(event));
+	event.key = "";
+	if (key != NULL)
+		event.key = key;
+	event.code = "";
+	if (code != NULL)
+		event.code = code;
+	event.repeat = repeat;
+	event.modifiers = view_bind_modifiers(modifiers);
+
+	/* keydown or keyup, at the focused element (there is no page to tell before the first). */
+	canceled = 0;
+	if (view->page != NULL) {
+		if (pressed)
+			error = page_key_event(view->page, "keydown", &event, &canceled);
+		else
+			error = page_key_event(view->page, "keyup", &event, &canceled);
+		if (error != 0)
+			return error;
+		view_changed(view);
+	}
+
+	/* A release, or a canceled keydown, has no default action. */
+	if (!pressed || canceled)
+		return 0;
+
+	/* A key that types text without Control, Alt or Meta gets keypress too, with the text as its key. */
+	if (view->page != NULL &&
+	    text != NULL &&
+	    text[0] != '\0' &&
+	    (modifiers & (BROWSER_MOD_CTRL | BROWSER_MOD_ALT | BROWSER_MOD_META)) == 0U) {
+		typed = event;
+		typed.key = text;
+		error = page_key_event(view->page, "keypress", &typed, &canceled);
+		if (error != 0)
+			return error;
+		view_changed(view);
+	}
+
+	/* The key's default action (the text itself goes nowhere: there are no form controls yet). */
+	error = view_key_default(view, event.key, modifiers);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the key is carried out. */
+	return 0;
+}
+
+/*
+ * The caller's program gains or loses the focus: the page's focused
+ * element hears of it, and its ring shows only while the view has it.
+ */
+int
+browser_view_focus(
+	struct browser_view *view,
+	int focused)
+{
+	int error;
+
+	/* The view's own record, which a new page starts from. */
+	view->has_focus = focused;
+	if (view->page == NULL)
+		return 0;
+
 	/* The page's. */
-	*list = &view->page->paint;
-	*text = &view->page->text;
-	*scroll_y = view->scroll_y;
+	error = page_window_focus(view->page, focused);
+	if (error != 0)
+		return error;
+	view_changed(view);
+
+	/* Succeeded: the focus is told. */
+	return 0;
+}
+
+/*
+ * Brings the page to rest for a headless caller: the page being fetched
+ * arrives, the page's timers run on a virtual clock up to budget
+ * milliseconds, and with BROWSER_SETTLE_LAYOUT the page is laid out, the
+ * images its layout asked for arrive, and it is laid out again with them.
+ * Returns ENOENT when no page is shown (its load failed, which the load
+ * callback heard of), or why the scripts or the layout failed.
+ */
+int
+browser_view_settle(
+	struct browser_view *view,
+	double budget,
+	unsigned flags)
+{
+	int error;
+
+	/* The page being fetched, if any, arrives or fails. */
+	view_settle_network(view);
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The page's timers, on the virtual clock. */
+	error = page_settle(view->page, budget);
+	if (error != 0)
+		return error;
+
+	/* The DOM and the style need no layout. */
+	if ((flags & BROWSER_SETTLE_LAYOUT) == 0U)
+		return 0;
+
+	/* The layout, which asks for the page's images. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The images that arrive, and the layout again with them. */
+	view_settle_network(view);
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page is at rest. */
+	return 0;
+}
+
+/*
+ * Draws the page shown with the CPU renderer into the caller's pixels:
+ * width by height pixels of 0xAARRGGBB, rows stride bytes apart, the page
+ * scrolled as the view is.
+ */
+int
+browser_view_draw_pixels(
+	struct browser_view *view,
+	uint32_t *pixels,
+	unsigned width,
+	unsigned height,
+	size_t stride)
+{
+	struct paint_bitmap bitmap;
+	unsigned char *row_start;
+	unsigned row;
+	int error;
+
+	/* No page has nothing to draw. */
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The page as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* Rows packed one after another are drawn in place. */
+	if (stride == (size_t)width * sizeof(uint32_t)) {
+		bitmap.pixels = pixels;
+		bitmap.width = (int)width;
+		bitmap.height = (int)height;
+		error = paint_software(&view->page->paint, &view->page->text, view->scroll_y, &bitmap);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the pixels hold the page. */
+		return 0;
+	}
+
+	/* Rows further apart are drawn into a packed bitmap first. */
+	error = paint_bitmap_create(&bitmap, (int)width, (int)height);
+	if (error != 0)
+		return error;
+	error = paint_software(&view->page->paint, &view->page->text, view->scroll_y, &bitmap);
+	if (error != 0) {
+		paint_bitmap_release(&bitmap);
+		return error;
+	}
+
+	/* Then copied into the caller's rows. */
+	for (row = 0; row < height; row++) {
+		row_start = (unsigned char *)pixels + (size_t)row * stride;
+		memcpy(row_start, bitmap.pixels + (size_t)row * width, (size_t)width * sizeof(uint32_t));
+	}
+
+	/* The packed bitmap is no longer needed. */
+	paint_bitmap_release(&bitmap);
+
+	/* Succeeded: the pixels hold the page. */
+	return 0;
+}
+
+/*
+ * Writes one of the page shown's text dumps (its DOM, its computed style,
+ * its layout or its display list) into memory the caller frees.
+ */
+int
+browser_view_dump(
+	struct browser_view *view,
+	enum browser_dump kind,
+	char **text,
+	size_t *length)
+{
+	struct wb_buffer out;
+	int error;
+
+	/* No page has nothing to dump. */
+	*text = NULL;
+	*length = 0;
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The layout and the display list are the page's as it is now. */
+	if (kind == BROWSER_DUMP_LAYOUT || kind == BROWSER_DUMP_PAINT) {
+		error = view_update(view);
+		if (error != 0)
+			return error;
+	}
+
+	/* The dump, as the kind asks. */
+	wb_buffer_init(&out);
+	if (kind == BROWSER_DUMP_DOM) {
+		error = page_dump_dom(view->page, &out);
+	} else if (kind == BROWSER_DUMP_STYLE) {
+		error = page_dump_style(view->page, &out);
+	} else if (kind == BROWSER_DUMP_LAYOUT) {
+		error = layout_dump(&view->page->layout, &out);
+	} else {
+		error = paint_dump(&view->page->paint, &out);
+	}
+
+	/* A dump that could not be written. */
+	if (error != 0) {
+		wb_buffer_release(&out);
+		return error;
+	}
+
+	/* An empty dump still gives the caller a string. */
+	if (out.data == NULL) {
+		error = wb_buffer_append_string(&out, "");
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the caller owns the text. */
+	*text = (char *)out.data;
+	*length = out.length;
+	return 0;
+}
+
+/*
+ * Gives the view the caller's GPU to draw with from now on, or none (NULL):
+ * what the view made on the old device is released first, so the caller
+ * may destroy that device afterwards.
+ */
+void
+browser_view_set_gpu(
+	struct browser_view *view,
+	const struct browser_gpu *gpu)
+{
+	/* The renderer and the framebuffers on the old device. */
+	view_gpu_close(view);
+
+	/* No GPU from now on. */
+	if (gpu == NULL) {
+		view->has_device = 0;
+		return;
+	}
+
+	/* The new one; the renderer is made on it at the next drawing. */
+	view->device = *gpu;
+	view->has_device = 1;
+}
+
+/*
+ * Forgets the framebuffers the view made for the caller's image views; the
+ * caller calls it before it destroys those views, once the drawing into
+ * them has finished.
+ */
+void
+browser_view_release_targets(
+	struct browser_view *view)
+{
+	size_t index;
+
+	/* Each framebuffer, oldest first. */
+	for (index = 0; index < view->framebuffer_count; index++)
+		vkDestroyFramebuffer(view->device.device, view->framebuffers[index].framebuffer, NULL);
+	view->framebuffer_count = 0;
+}
+
+/* Lays the page out now when it changed, so that a frame the caller begins next cannot fail on the layout. */
+int
+browser_view_prepare(
+	struct browser_view *view)
+{
+	int error;
+
+	/* No page has nothing to lay out. */
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The page as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page can be drawn. */
+	return 0;
+}
+
+/*
+ * Draws the page shown into the caller's image on the caller's GPU and
+ * waits for it: submitted after wait and signalling signal
+ * (VK_NULL_HANDLE for none).
+ */
+int
+browser_view_draw(
+	struct browser_view *view,
+	const struct browser_target *target,
+	VkSemaphore wait,
+	VkSemaphore signal)
+{
+	VkFramebuffer framebuffer;
+	VkExtent2D extent;
+	VkResult result;
+	int error;
+
+	/* No page has nothing to draw. */
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The page as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The renderer for the target's format and layout, and the framebuffer over the target. */
+	error = view_gpu_ready(view, target);
+	if (error != 0)
+		return error;
+	error = view_framebuffer(view, target, &framebuffer);
+	if (error != 0)
+		return error;
+
+	/* The drawing, submitted and waited for. */
+	extent.width = target->width;
+	extent.height = target->height;
+	result = paint_gpu_draw(&view->gpu, &view->page->paint, &view->page->text, view->scroll_y, framebuffer, extent, wait, signal);
+	if (result != VK_SUCCESS) {
+		error = view_gpu_failed(view, view->gpu.operation, result);
+		return error;
+	}
+
+	/* Succeeded: the image holds the page. */
+	return 0;
+}
+
+/*
+ * Records the drawing of the page shown into the caller's image, render
+ * pass and all, into a command buffer the caller began and submits.  The
+ * drawing recorded before must have finished.
+ */
+int
+browser_view_record(
+	struct browser_view *view,
+	const struct browser_target *target,
+	VkCommandBuffer commands)
+{
+	VkFramebuffer framebuffer;
+	VkExtent2D extent;
+	VkResult result;
+	int error;
+
+	/* No page has nothing to draw. */
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The page as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The renderer for the target's format and layout, and the framebuffer over the target. */
+	error = view_gpu_ready(view, target);
+	if (error != 0)
+		return error;
+	error = view_framebuffer(view, target, &framebuffer);
+	if (error != 0)
+		return error;
+
+	/* The frame's instances and atlas, written by the host now. */
+	extent.width = target->width;
+	extent.height = target->height;
+	result = paint_gpu_prepare(&view->gpu, &view->page->paint, &view->page->text, view->scroll_y, extent);
+	if (result != VK_SUCCESS) {
+		error = view_gpu_failed(view, view->gpu.operation, result);
+		return error;
+	}
+
+	/* The pass, into the caller's command buffer. */
+	paint_gpu_record(&view->gpu, commands, &view->page->paint, framebuffer, extent);
+
+	/* Succeeded: the caller's commands draw the page. */
+	return 0;
+}
+
+/* Tells which Vulkan call (or step) failed last in a drawing, and what it returned. */
+void
+browser_view_gpu_failure(
+	const struct browser_view *view,
+	struct browser_gpu_failure *failure)
+{
+	/* The one kept. */
+	*failure = view->failure;
+}
+
+/*
+ * Makes an offscreen image of the engine's own, width by height, on a
+ * device of its own; a failure is EIO with the Vulkan call in *failure.
+ */
+int
+browser_offscreen_create(
+	unsigned width,
+	unsigned height,
+	struct browser_offscreen **offscreen,
+	struct browser_gpu_failure *failure)
+{
+	struct browser_offscreen *made;
+	VkResult result;
+
+	/* The holder. */
+	*offscreen = NULL;
+	failure->operation = NULL;
+	failure->result = VK_SUCCESS;
+	made = calloc(1, sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+
+	/* The device and the image. */
+	result = paint_offscreen_open(&made->offscreen, (uint32_t)width, (uint32_t)height);
+	if (result != VK_SUCCESS) {
+		failure->operation = made->offscreen.operation;
+		failure->result = result;
+		paint_offscreen_close(&made->offscreen);
+		free(made);
+		return EIO;
+	}
+
+	/* Succeeded: a view can draw into it. */
+	*offscreen = made;
+	return 0;
+}
+
+/* Gives the GPU and the target a view draws into the offscreen image with (left ready to be read back). */
+void
+browser_offscreen_target(
+	const struct browser_offscreen *offscreen,
+	struct browser_gpu *gpu,
+	struct browser_target *target)
+{
+	/* The device. */
+	gpu->instance = offscreen->offscreen.instance;
+	gpu->physical = offscreen->offscreen.physical;
+	gpu->device = offscreen->offscreen.device;
+	gpu->queue_family = offscreen->offscreen.family;
+
+	/* The image, left as the copy that reads it back needs. */
+	target->image = offscreen->offscreen.image;
+	target->view = offscreen->offscreen.view;
+	target->format = offscreen->offscreen.format;
+	target->new_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	target->width = offscreen->offscreen.extent.width;
+	target->height = offscreen->offscreen.extent.height;
+}
+
+/* Reads the offscreen image, drawn by a view, into 0xAARRGGBB pixels whose rows are stride bytes apart. */
+int
+browser_offscreen_read(
+	struct browser_offscreen *offscreen,
+	uint32_t *pixels,
+	size_t stride,
+	struct browser_gpu_failure *failure)
+{
+	VkResult result;
+
+	/* The copy out of the image. */
+	failure->operation = NULL;
+	failure->result = VK_SUCCESS;
+	result = paint_offscreen_read(&offscreen->offscreen, pixels, stride);
+	if (result != VK_SUCCESS) {
+		failure->operation = offscreen->offscreen.operation;
+		failure->result = result;
+		return EIO;
+	}
+
+	/* Succeeded: the pixels hold the picture. */
+	return 0;
+}
+
+/* Ends an offscreen image and its device (no view may draw with it any more). */
+void
+browser_offscreen_destroy(
+	struct browser_offscreen *offscreen)
+{
+	/* No offscreen image. */
+	if (offscreen == NULL)
+		return;
+
+	/* The image, the device, the instance, then the holder. */
+	paint_offscreen_close(&offscreen->offscreen);
+	free(offscreen);
+}
+
+/* Trusts the CA certificates of a PEM file for https, besides the system's roots, in every view. */
+int
+browser_add_ca_file(
+	const char *path)
+{
+	int error;
+
+	/* The TLS layer's list. */
+	error = net_tls_add_ca_file(path);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the file's authorities are trusted. */
+	return 0;
 }
 
 /* The monotonic clock in milliseconds. */
@@ -552,9 +1361,10 @@ view_clock(void)
 
 /*
  * Makes the page of a location the one shown, as a new step of the history
- * or one already in it: the first page and a file or data: page at once,
- * an http or https page after the first without blocking.  Returns 0, or
- * an errno value when the page could not be opened (the page shown stays).
+ * or one already in it: a file or data: page at once, an http or https
+ * page as the view fetches (the first at once, or every one at once, or
+ * every one without blocking).  Returns 0, or an errno value when the page
+ * could not be opened (the page shown stays).
  */
 static int
 view_navigate(
@@ -563,12 +1373,20 @@ view_navigate(
 	int step)
 {
 	struct page *page;
+	int background;
 	int remote;
 	int error;
 
-	/* An http or https page after the first is fetched; the page shown stays until it arrives. */
+	/* Whether an http or https page is fetched without blocking: never without a loader, the first one only when asked. */
 	remote = page_net_is_remote(path);
-	if (remote && view->page != NULL) {
+	background = 0;
+	if (remote && view->loader != NULL) {
+		if (view->page != NULL || view->fetch == BROWSER_FETCH_BACKGROUND)
+			background = 1;
+	}
+
+	/* Such a page is fetched; the page shown stays until it arrives. */
+	if (background) {
 		error = view_start_load(view, path, step);
 		return error;
 	}
@@ -610,7 +1428,7 @@ view_make_page(
 	page_set_console(made, view_console, view);
 	view->open_epoch = view_clock();
 
-	/* Its http and https images come through the loader. */
+	/* Its http and https images come through the loader (without one, they are read at once). */
 	page_set_loader(made, view->loader);
 
 	/* Succeeded: the page is empty. */
@@ -618,7 +1436,7 @@ view_make_page(
 	return 0;
 }
 
-/* Makes a page and reads a location into it with the fonts; a failure goes to the load callback. */
+/* Makes a page and reads a location into it; a failure goes to the load callback. */
 static int
 view_open_page(
 	struct browser_view *view,
@@ -638,8 +1456,6 @@ view_open_page(
 
 	/* The location. */
 	error = page_load_location(loaded, path);
-	if (error == 0)
-		error = page_open_fonts(loaded, view->fonts);
 	if (error != 0) {
 		view_failed(view, path, error, page_failure_reason());
 		page_destroy(loaded);
@@ -664,7 +1480,6 @@ view_show_page(
 {
 	char *copy;
 	size_t index;
-	int error;
 
 	/* The page's own location (a URL's after its redirects) is kept for the history and for resolving links. */
 	if (page->base != NULL)
@@ -674,6 +1489,16 @@ view_show_page(
 		page_destroy(page);
 		return ENOMEM;
 	}
+
+	/*
+	 * The atlas's glyphs are the old page's (its text system goes with it,
+	 * and the memory of their bitmaps may be used again by the new one's).
+	 */
+	if (view->gpu_open)
+		paint_gpu_forget_glyphs(&view->gpu);
+
+	/* The new page has the focus of the view's program as the view has it (it has no focused element to tell yet). */
+	(void)page_window_focus(page, view->has_focus);
 
 	/* The new page replaces the old one, from its top, with its own clock. */
 	page_destroy(view->page);
@@ -703,10 +1528,7 @@ view_show_page(
 		view->history_count++;
 	}
 
-	/* The page at the view's size, and its title. */
-	error = view_lay_out(view);
-	if (error != 0)
-		return error;
+	/* Its title (it is laid out at the view's size when it is drawn). */
 	wb_buffer_clear(&view->title);
 	(void)page_title(view->page, &view->title);
 
@@ -791,8 +1613,6 @@ view_document_arrived(
 	error = view_make_page(view, &page);
 	if (error == 0) {
 		error = page_load_bytes(page, bytes, length, url);
-		if (error == 0)
-			error = page_open_fonts(page, view->fonts);
 		if (error != 0)
 			page_destroy(page);
 	}
@@ -826,12 +1646,39 @@ view_stop_load(
 	view->pending_path = NULL;
 }
 
-/* Lays the page out at the view's size, paints it, and keeps the scroll inside the document. */
+/*
+ * Lays the page out at the view's size and paints it when it changed or
+ * the view was resized since it was last laid out (opening the fonts the
+ * first time), and keeps the scroll inside the new document.
+ */
 static int
-view_lay_out(
+view_update(
 	struct browser_view *view)
 {
+	int changed;
+	int repaint;
 	int error;
+
+	/* No page has nothing to lay out. */
+	if (view->page == NULL)
+		return 0;
+
+	/* A page laid out at the view's size and unchanged since needs at most its focus painted again. */
+	changed = page_needs_layout(view->page);
+	if (!changed && !view->resized) {
+		repaint = page_needs_paint(view->page);
+		if (!repaint)
+			return 0;
+		error = page_paint(view->page);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* The fonts, opened once. */
+	error = page_open_fonts(view->page, &view->fonts);
+	if (error != 0)
+		return error;
 
 	/* The layout at the view's size. */
 	error = page_layout(view->page, (int)view->width, (int)view->height);
@@ -843,11 +1690,66 @@ view_lay_out(
 	if (error != 0)
 		return error;
 
-	/* The scroll stays inside the new document. */
-	view_scroll(view, 0);
+	/* The page fits the view now, and the scroll stays inside the new document. */
+	view->resized = 0;
+	view_clamp_scroll(view);
 
 	/* Succeeded: the page is ready to draw. */
 	return 0;
+}
+
+/*
+ * Runs the loader until it has no request left (the headless modes): polls
+ * its descriptors until one is ready or its earliest time out, then lets
+ * it work.
+ */
+static void
+view_settle_network(
+	struct browser_view *view)
+{
+	struct pollfd fds[VIEW_POLL_MAX];
+	size_t count;
+	int timeout;
+	int ready;
+
+	/* A view without a loader read everything at once. */
+	if (view->loader == NULL)
+		return;
+
+	/* Each round, while a request runs (the loader has no time out when it has none). */
+	for (;;) {
+		timeout = page_net_timeout(view->loader);
+		if (timeout < 0)
+			break;
+
+		/* The descriptors, waited for. */
+		count = page_net_poll_fds(view->loader, fds, VIEW_POLL_MAX);
+		ready = poll(fds, (nfds_t)count, timeout);
+		if (ready < 0 && errno != EINTR)
+			break;
+
+		/* The loader's work, and the callbacks of the requests that ended. */
+		page_net_process(view->loader, fds, count);
+	}
+}
+
+/* Keeps the scroll between the top and the last view's worth of the document as it is laid out. */
+static void
+view_clamp_scroll(
+	struct browser_view *view)
+{
+	layout_unit limit;
+
+	/* The furthest the page scrolls: the document's height less the view's. */
+	limit = view->page->layout.document_height - (layout_unit)view->height * LAYOUT_UNIT;
+	if (limit < 0)
+		limit = 0;
+
+	/* The place, within the limits. */
+	if (view->scroll_y > limit)
+		view->scroll_y = limit;
+	if (view->scroll_y < 0)
+		view->scroll_y = 0;
 }
 
 /* Takes the page's title again, and tells the caller when it changed. */
@@ -889,30 +1791,26 @@ view_scroll(
 	struct browser_view *view,
 	layout_unit distance)
 {
-	layout_unit limit;
-	layout_unit scroll_y;
+	layout_unit before;
+	int error;
 
 	/* No page, no scroll. */
 	if (view->page == NULL)
 		return;
 
-	/* The furthest the page scrolls: the document's height less the view's. */
-	limit = view->page->layout.document_height - (layout_unit)view->height * LAYOUT_UNIT;
-	if (limit < 0)
-		limit = 0;
+	/* The document as it is laid out now, which the scroll stays inside. */
+	error = view_update(view);
+	if (error != 0)
+		return;
 
-	/* The new place, within the limits. */
-	scroll_y = view->scroll_y + distance;
-	if (scroll_y > limit)
-		scroll_y = limit;
-	if (scroll_y < 0)
-		scroll_y = 0;
+	/* The new place, within the document. */
+	before = view->scroll_y;
+	view->scroll_y += distance;
+	view_clamp_scroll(view);
 
 	/* A change is drawn again. */
-	if (scroll_y != view->scroll_y) {
-		view->scroll_y = scroll_y;
+	if (view->scroll_y != before)
 		view_redraw(view);
-	}
 }
 
 /* Asks the caller to draw the view again. */
@@ -952,4 +1850,571 @@ view_console(
 	view = context;
 	if (view->callbacks.console != NULL)
 		view->callbacks.console(view->callbacks.context, view, level, text, length);
+}
+
+/*
+ * Makes the renderer ready for a target on the caller's device: made at
+ * the first drawing, and made again when the target's format or final
+ * layout differs from the one its pass was made for.
+ */
+static int
+view_gpu_ready(
+	struct browser_view *view,
+	const struct browser_target *target)
+{
+	VkResult result;
+	int error;
+
+	/* Without the caller's GPU there is nothing to draw with. */
+	if (!view->has_device)
+		return ENODEV;
+
+	/* A renderer made for another kind of target goes. */
+	if (view->gpu_open) {
+		if (view->gpu_format != target->format || view->gpu_layout != target->new_layout)
+			view_gpu_close(view);
+	}
+
+	/* A renderer for this kind of target is there. */
+	if (view->gpu_open)
+		return 0;
+
+	/* The renderer on the caller's device, its pass for the target's format and final layout. */
+	result = paint_gpu_open(
+		&view->gpu,
+		view->device.instance,
+		view->device.physical,
+		view->device.queue_family,
+		view->device.device,
+		target->format,
+		target->new_layout);
+	if (result != VK_SUCCESS) {
+		error = view_gpu_failed(view, view->gpu.operation, result);
+		paint_gpu_close(&view->gpu);
+		return error;
+	}
+
+	/* Succeeded: the renderer draws this kind of target. */
+	view->gpu_open = 1;
+	view->gpu_format = target->format;
+	view->gpu_layout = target->new_layout;
+	return 0;
+}
+
+/* Releases the renderer and the framebuffers on the caller's device, once the device has finished with them. */
+static void
+view_gpu_close(
+	struct browser_view *view)
+{
+	/* Nothing was made. */
+	if (!view->gpu_open)
+		return;
+
+	/* The device's work that may still use them. */
+	(void)vkDeviceWaitIdle(view->device.device);
+
+	/* The framebuffers (made in the renderer's pass), then the renderer. */
+	browser_view_release_targets(view);
+	paint_gpu_close(&view->gpu);
+	view->gpu_open = 0;
+}
+
+/*
+ * Finds the framebuffer over a target's image view at its size, or makes
+ * one in the renderer's pass (the oldest goes when the view keeps as many
+ * as it can; the drawing into it has finished, as the caller promises).
+ */
+static int
+view_framebuffer(
+	struct browser_view *view,
+	const struct browser_target *target,
+	VkFramebuffer *framebuffer)
+{
+	struct view_framebuffer *kept;
+	VkFramebufferCreateInfo create;
+	VkResult result;
+	size_t index;
+	int error;
+
+	/* One made for this image view at this size. */
+	for (index = 0; index < view->framebuffer_count; index++) {
+		kept = &view->framebuffers[index];
+		if (kept->image_view != target->view)
+			continue;
+		if (kept->width != target->width || kept->height != target->height)
+			continue;
+
+		/* Found: the one to draw through. */
+		*framebuffer = kept->framebuffer;
+		return 0;
+	}
+
+	/* A full table lets its oldest go. */
+	if (view->framebuffer_count == VIEW_FRAMEBUFFERS_MAX) {
+		vkDestroyFramebuffer(view->device.device, view->framebuffers[0].framebuffer, NULL);
+		memmove(view->framebuffers, view->framebuffers + 1, (VIEW_FRAMEBUFFERS_MAX - 1U) * sizeof(view->framebuffers[0]));
+		view->framebuffer_count--;
+	}
+
+	/* The framebuffer over the image view, in the renderer's pass. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	create.renderPass = view->gpu.pass;
+	create.attachmentCount = 1U;
+	create.pAttachments = &target->view;
+	create.width = target->width;
+	create.height = target->height;
+	create.layers = 1U;
+	kept = &view->framebuffers[view->framebuffer_count];
+	result = vkCreateFramebuffer(view->device.device, &create, NULL, &kept->framebuffer);
+	if (result != VK_SUCCESS) {
+		error = view_gpu_failed(view, "vkCreateFramebuffer", result);
+		return error;
+	}
+
+	/* Succeeded: kept for the next frames into the same image. */
+	kept->image_view = target->view;
+	kept->width = target->width;
+	kept->height = target->height;
+	view->framebuffer_count++;
+	*framebuffer = kept->framebuffer;
+	return 0;
+}
+
+/* Keeps which Vulkan call failed and what it returned, for browser_view_gpu_failure; reports EIO. */
+static int
+view_gpu_failed(
+	struct browser_view *view,
+	const char *operation,
+	VkResult result)
+{
+	/* The failure, for the caller's message. */
+	view->failure.operation = operation;
+	view->failure.result = result;
+
+	/* The error the drawing reports. */
+	return EIO;
+}
+
+/* Describes a place of the view to the page: in the document (scrolled) and in the viewport, whole pixels. */
+static void
+view_pointer_at(
+	const struct browser_view *view,
+	float x,
+	float y,
+	int button,
+	uint32_t modifiers,
+	struct page_pointer *pointer)
+{
+	/* The viewport's place, and the document's below the scroll. */
+	memset(pointer, 0, sizeof(*pointer));
+	pointer->client_x = (int)floorf(x);
+	pointer->client_y = (int)floorf(y);
+	pointer->x = pointer->client_x;
+	pointer->y = pointer->client_y + (int)(view->scroll_y / LAYOUT_UNIT);
+
+	/* The button and the modifiers. */
+	pointer->button = button;
+	pointer->modifiers = view_bind_modifiers(modifiers);
+}
+
+/* Turns the view's modifier bits into the binding's. */
+static unsigned
+view_bind_modifiers(
+	uint32_t modifiers)
+{
+	unsigned bits;
+
+	/* Each modifier held. */
+	bits = 0;
+	if ((modifiers & BROWSER_MOD_SHIFT) != 0U)
+		bits |= BIND_MOD_SHIFT;
+	if ((modifiers & BROWSER_MOD_CTRL) != 0U)
+		bits |= BIND_MOD_CTRL;
+	if ((modifiers & BROWSER_MOD_ALT) != 0U)
+		bits |= BIND_MOD_ALT;
+	if ((modifiers & BROWSER_MOD_META) != 0U)
+		bits |= BIND_MOD_META;
+
+	/* The binding's bits. */
+	return bits;
+}
+
+/*
+ * Asks the caller to draw the view again when the page's scripts changed
+ * its document or its focus, and tells it of a new title.
+ */
+static void
+view_changed(
+	struct browser_view *view)
+{
+	int layout;
+	int paint;
+
+	/* No page, no change. */
+	if (view->page == NULL)
+		return;
+
+	/* A document the scripts changed: drawn again, and its title may be new. */
+	layout = page_needs_layout(view->page);
+	if (layout) {
+		view_redraw(view);
+		view_update_title(view);
+		return;
+	}
+
+	/* A focus that moved: drawn again with its ring. */
+	paint = page_needs_paint(view->page);
+	if (paint)
+		view_redraw(view);
+}
+
+/*
+ * The click of the main button at a place in the view: the page's scripts
+ * get it first; unless they cancel it, the link under it is followed.
+ */
+static int
+view_click(
+	struct browser_view *view,
+	float x,
+	float y,
+	uint32_t modifiers)
+{
+	struct page_pointer pointer;
+	struct wb_buffer href;
+	int canceled;
+	int found;
+	int error;
+
+	/* No page, nothing to click. */
+	if (view->page == NULL)
+		return 0;
+
+	/* The boxes the click lands on are the page's as it is now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The page's scripts get the click first; a canceled click opens no link. */
+	view_pointer_at(view, x, y, BROWSER_BUTTON_PRIMARY, modifiers, &pointer);
+	error = page_mouse_event(view->page, "click", &pointer, &canceled);
+	if (error != 0)
+		return error;
+	view_changed(view);
+	if (canceled)
+		return 0;
+
+	/* A page the listeners changed is laid out again before its link is looked for. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The link under the click, in the document's coordinates. */
+	wb_buffer_init(&href);
+	error = page_link_at(view->page, pointer.x, pointer.y, &href, &found);
+	if (error != 0) {
+		wb_buffer_release(&href);
+		return error;
+	}
+
+	/* The link, when there is one, is followed. */
+	if (found)
+		view_follow_link(view, wb_buffer_string(&href));
+	wb_buffer_release(&href);
+
+	/* Succeeded: the click was carried out. */
+	return 0;
+}
+
+/* Follows a link a click or Enter opened, when the link callback allows it (a load that fails goes to the load callback). */
+static void
+view_follow_link(
+	struct browser_view *view,
+	const char *href)
+{
+	enum browser_policy policy;
+
+	/* The caller decides. */
+	policy = BROWSER_POLICY_ALLOW;
+	if (view->callbacks.link != NULL)
+		policy = view->callbacks.link(view->callbacks.context, view, href);
+
+	/* An allowed link is followed. */
+	if (policy == BROWSER_POLICY_ALLOW)
+		(void)browser_view_follow(view, href);
+}
+
+/*
+ * Does the default action of a key the page's scripts did not cancel:
+ * the history (Alt+Left, Alt+Right, the back and forward keys), reloading
+ * (F5, Ctrl+R) and stopping (Escape), the focus (Tab, Shift+Tab) and a
+ * link's activation (Enter), and scrolling (the arrows, Page Up and Down,
+ * Space, Home, End).
+ */
+static int
+view_key_default(
+	struct browser_view *view,
+	const char *key,
+	uint32_t modifiers)
+{
+	int named;
+	int alt;
+	int ctrl;
+	int meta;
+	int shift;
+	int error;
+
+	/* The key among the ones with an action, and the modifiers held. */
+	named = view_key_named(key);
+	alt = 0;
+	if ((modifiers & BROWSER_MOD_ALT) != 0U)
+		alt = 1;
+	ctrl = 0;
+	if ((modifiers & BROWSER_MOD_CTRL) != 0U)
+		ctrl = 1;
+	meta = 0;
+	if ((modifiers & BROWSER_MOD_META) != 0U)
+		meta = 1;
+	shift = 0;
+	if ((modifiers & BROWSER_MOD_SHIFT) != 0U)
+		shift = 1;
+
+	/* The history, reloading and stopping, with or without a page (a failure goes to the load callback). */
+	switch (named) {
+	case VIEW_KEY_BACK:
+		(void)browser_view_go(view, -1);
+		return 0;
+	case VIEW_KEY_FORWARD:
+		(void)browser_view_go(view, 1);
+		return 0;
+	case VIEW_KEY_LEFT:
+		if (alt)
+			(void)browser_view_go(view, -1);
+		return 0;
+	case VIEW_KEY_RIGHT:
+		if (alt)
+			(void)browser_view_go(view, 1);
+		return 0;
+	case VIEW_KEY_REFRESH:
+		(void)browser_view_go(view, 0);
+		return 0;
+	case VIEW_KEY_R:
+		if (ctrl)
+			(void)browser_view_go(view, 0);
+		return 0;
+	case VIEW_KEY_STOP:
+		view_stop_load(view, 1);
+		return 0;
+	default:
+		break;
+	}
+
+	/* The rest need a page, and neither Alt nor Meta. */
+	if (view->page == NULL)
+		return 0;
+	if (alt || meta)
+		return 0;
+
+	/* The focus, the activation and scrolling. */
+	error = 0;
+	switch (named) {
+	case VIEW_KEY_TAB:
+		/* Ctrl+Tab belongs to the program around the view (its tabs). */
+		if (!ctrl)
+			error = view_move_focus(view, shift);
+		break;
+	case VIEW_KEY_ENTER:
+		error = view_activate(view);
+		break;
+	case VIEW_KEY_DOWN:
+		view_scroll(view, (layout_unit)VIEW_LINE_SCROLL * LAYOUT_UNIT);
+		break;
+	case VIEW_KEY_UP:
+		view_scroll(view, -(layout_unit)VIEW_LINE_SCROLL * LAYOUT_UNIT);
+		break;
+	case VIEW_KEY_PAGE_DOWN:
+		view_scroll_pages(view, 1);
+		break;
+	case VIEW_KEY_PAGE_UP:
+		view_scroll_pages(view, -1);
+		break;
+	case VIEW_KEY_SPACE:
+		/* Space goes down a page, and up with Shift. */
+		if (shift)
+			view_scroll_pages(view, -1);
+		else
+			view_scroll_pages(view, 1);
+		break;
+	case VIEW_KEY_HOME:
+		view_scroll_to(view, VIEW_SCROLL_TOP);
+		break;
+	case VIEW_KEY_END:
+		view_scroll_to(view, VIEW_SCROLL_BOTTOM);
+		break;
+	default:
+		break;
+	}
+
+	/* Reports why the focus or the activation failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the key's default action is done (most keys have none). */
+	return 0;
+}
+
+/* Finds which of the keys with a default action a DOM key name is (VIEW_KEY_OTHER for the rest). */
+static int
+view_key_named(
+	const char *key)
+{
+	size_t index;
+	int differs;
+
+	/* The table's names. */
+	for (index = 0; view_key_names[index].name != NULL; index++) {
+		differs = strcmp(key, view_key_names[index].name);
+		if (differs == 0)
+			return view_key_names[index].key;
+	}
+
+	/* A key without a default action. */
+	return VIEW_KEY_OTHER;
+}
+
+/* Moves the focus forward or backward (Tab), and scrolls the focused element into view. */
+static int
+view_move_focus(
+	struct browser_view *view,
+	int backward)
+{
+	int error;
+
+	/* The order of the elements is the page's as it is laid out now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The move. */
+	error = page_focus_move(view->page, backward);
+	if (error != 0)
+		return error;
+	view_changed(view);
+
+	/* The focused element in view. */
+	error = view_scroll_into_view(view);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the focus moved. */
+	return 0;
+}
+
+/* Activates the focused element (Enter): its click, and the link it is in is followed unless the click was canceled. */
+static int
+view_activate(
+	struct browser_view *view)
+{
+	struct wb_buffer href;
+	int found;
+	int error;
+
+	/* The click at the focused element, and its link. */
+	wb_buffer_init(&href);
+	error = page_activate_focused(view->page, &href, &found);
+	if (error != 0) {
+		wb_buffer_release(&href);
+		return error;
+	}
+
+	/* The page as the click's listeners left it is drawn again. */
+	view_changed(view);
+
+	/* The link, when there is one, is followed. */
+	if (found)
+		view_follow_link(view, wb_buffer_string(&href));
+	wb_buffer_release(&href);
+
+	/* Succeeded: the element is activated. */
+	return 0;
+}
+
+/*
+ * Scrolls the least that brings the focused element into view, with a
+ * little room around it (its top when it is taller than the view).
+ */
+static int
+view_scroll_into_view(
+	struct browser_view *view)
+{
+	struct layout_rect rect;
+	layout_unit margin;
+	layout_unit height;
+	layout_unit target;
+	int found;
+	int error;
+
+	/* The page laid out and painted with the focus as it is. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The focused element's rectangle; nothing focused scrolls nothing. */
+	found = page_focus_rect(view->page, &rect);
+	if (!found)
+		return 0;
+
+	/* The view's height and the room kept around the element. */
+	margin = (layout_unit)VIEW_FOCUS_MARGIN * LAYOUT_UNIT;
+	height = (layout_unit)view->height * LAYOUT_UNIT;
+	target = view->scroll_y;
+
+	/* Below the view: its bottom at the view's bottom; above it (or taller than it): its top at the view's top. */
+	if (rect.y + rect.height + margin > target + height)
+		target = rect.y + rect.height + margin - height;
+	if (rect.y - margin < target)
+		target = rect.y - margin;
+
+	/* The scroll, kept inside the document. */
+	view_scroll(view, target - view->scroll_y);
+
+	/* Succeeded: the element is in view. */
+	return 0;
+}
+
+/* Scrolls by pages: the view's height less a little kept in view, each. */
+static void
+view_scroll_pages(
+	struct browser_view *view,
+	int pages)
+{
+	layout_unit step;
+
+	/* A page's step. */
+	step = ((layout_unit)view->height - VIEW_PAGE_OVERLAP) * LAYOUT_UNIT;
+	view_scroll(view, step * pages);
+}
+
+/* Scrolls to the document's top or bottom. */
+static void
+view_scroll_to(
+	struct browser_view *view,
+	int place)
+{
+	int error;
+
+	/* No page, no scroll. */
+	if (view->page == NULL)
+		return;
+
+	/* The document's height is the one laid out now. */
+	error = view_update(view);
+	if (error != 0)
+		return;
+
+	/* The top, or the bottom (the scroll stops at the last view's worth). */
+	if (place == VIEW_SCROLL_TOP)
+		view_scroll(view, -view->scroll_y);
+	else
+		view_scroll(view, view->page->layout.document_height);
 }

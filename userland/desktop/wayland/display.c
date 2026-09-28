@@ -363,6 +363,7 @@ zwl_schedule(
 	struct zwl_object *top;
 	unsigned fullscreen;
 	uint64_t now;
+	int overlay;
 	int ready;
 	int error;
 
@@ -396,13 +397,16 @@ zwl_schedule(
 
 	/*
 	 * Fullscreen mode when the topmost window is fullscreen with an image
-	 * that can be the output, no sub-surface to draw with it, and no
-	 * viewport that would crop or scale it (viewport.c).
+	 * that can be the output, no sub-surface to draw with it, no viewport
+	 * that would crop or scale it (viewport.c), and no edge gesture showing
+	 * something over it (the corner's hint, App Home, Wiseview: shell.c).
 	 */
 	top = zwl_top_window(server);
+	overlay = zwl_glass_overlay(server);
 	fullscreen = 0;
 	if (top != NULL &&
 	    !server->locked &&
+	    !overlay &&
 	    top->fullscreen &&
 	    top->current != NULL &&
 	    top->current->scanout &&

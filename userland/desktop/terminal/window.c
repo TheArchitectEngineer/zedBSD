@@ -43,6 +43,13 @@
 #define WINDOW_KEY_LEFTMETA	125U
 #define WINDOW_KEY_RIGHTMETA	126U
 
+/* The evdev codes of Page Up and Page Down, which with Shift scroll the view (ws035-p114). */
+#define WINDOW_KEY_PAGEUP	104U
+#define WINDOW_KEY_PAGEDOWN	109U
+
+/* The wl_pointer axis of the vertical wheel. */
+#define WINDOW_AXIS_VERTICAL	0U
+
 static void window_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void window_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void window_ping(void *data, struct xdg_wm_base *shell, uint32_t serial);
@@ -771,6 +778,22 @@ window_press(
 	uint32_t key)
 {
 	size_t length;
+	int shift;
+
+	/* Shift with Page Up scrolls the view a page back instead of typing (ws035-p114). */
+	shift = 0;
+	if ((window->modifiers & TERMINAL_MODIFIER_SHIFT) != 0U)
+		shift = 1;
+	if (shift && key == WINDOW_KEY_PAGEUP) {
+		window->scroll_pages++;
+		return;
+	}
+
+	/* Shift with Page Down scrolls a page toward the live screen. */
+	if (shift && key == WINDOW_KEY_PAGEDOWN) {
+		window->scroll_pages--;
+		return;
+	}
 
 	/* The bytes, if they fit in what is left of the buffer. */
 	length = terminal_key_bytes(key, window->modifiers, window->input + window->input_length, sizeof(window->input) - window->input_length);
@@ -986,7 +1009,11 @@ window_pointer_axis_stop(
 	(void)axis;
 }
 
-/* The wheel is not used. */
+/*
+ * The wheel turns by notches: each notch toward the user (positive) goes
+ * forward toward the live screen, away from the user back into the
+ * scrollback (ws035-p114).
+ */
 static void
 window_pointer_axis_discrete(
 	void *data,
@@ -994,11 +1021,16 @@ window_pointer_axis_discrete(
 	uint32_t axis,
 	int32_t discrete)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct terminal_window *window;
+
+	/* Only the vertical wheel scrolls. */
 	(void)pointer;
-	(void)axis;
-	(void)discrete;
+	window = data;
+	if (axis != WINDOW_AXIS_VERTICAL)
+		return;
+
+	/* Kept for the main loop, back as positive. */
+	window->scroll_notches -= discrete;
 }
 
 /* Adds a pointer event at the pointer's place for the main loop (a full queue drops it). */

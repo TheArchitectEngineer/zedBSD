@@ -35,7 +35,9 @@
  *   alt 0x8, meta 0x40), and repeat_info rate 0 (no client repeat).
  *   Kernel autorepeat events are not forwarded.
  * - wl_pointer.set_cursor is accepted and ignored; nothing draws a cursor and
- *   a cursor surface cannot be committed.  wl_touch is not offered.
+ *   a cursor surface cannot be committed.
+ * - A touch screen (multitouch protocol B) is offered as wl_touch (touch.c,
+ *   WS079 p013); the compositor's own gestures see its fingers first.
  */
 #ifndef ZWL_H
 #define ZWL_H
@@ -136,6 +138,21 @@ enum zwl_kind {
 	ZWL_GLASS_MANAGER,
 	ZWL_GLASS,
 	ZWL_CONTEXT_MENU,
+	ZWL_TABLET_MANAGER,
+	ZWL_TABLET_SEAT,
+	ZWL_TABLET,
+	ZWL_TABLET_TOOL,
+	ZWL_TOUCH,
+};
+
+/*
+ * Where a contact the edge gestures hear comes from (ws079-p010): the
+ * pointer's left button, the tip of a pen, or a finger.
+ */
+enum zwl_contact_source {
+	ZWL_CONTACT_POINTER,
+	ZWL_CONTACT_PEN,
+	ZWL_CONTACT_TOUCH
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -192,6 +209,10 @@ struct zwl_input_device {
 	unsigned pointer;
 	unsigned keyboard;
 	unsigned absolute;
+	/* A pen tablet (tablet.c, WS079 p003): its reports go to the tablet, not to apply_frame. */
+	unsigned tablet;
+	/* A touch screen (touch.c, WS079 p013): its reports go to the touch screen, not to apply_frame. */
+	unsigned touch;
 	unsigned discarding;
 	int32_t abs_x_minimum;
 	int32_t abs_x_maximum;
@@ -421,6 +442,16 @@ struct zwl_object {
 	 */
 	struct zwl_object *glass;
 	struct zwl_panels *panels;
+	/*
+	 * The tablet protocol (tablet.c, WS079 p003): the number of the
+	 * zwp_tablet_seat_v2 a tablet or a tool object was announced on (a
+	 * seat's own number; unique for the compositor's life), and the slot of
+	 * the tablet device and of the tool the object stands for
+	 * (ZWL_TABLET_SLOT_NONE once the device or the tool has gone).
+	 */
+	uint64_t tablet_seat_number;
+	unsigned tablet_slot;
+	unsigned tool_slot;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -590,6 +621,15 @@ struct zwl_server {
 	int32_t drag_start_y;
 	struct zwl_object *click_surface;
 	uint64_t click_ms;
+	/*
+	 * The presses of the latest run of quick clicks on click_surface's
+	 * floating title bar (1, 2 or 3), and a window whose double click is
+	 * waiting to dock it: it docks at dock_due_ms unless a third press
+	 * comes first and sends it to the back instead (ws079-p013).
+	 */
+	unsigned click_count;
+	struct zwl_object *dock_waiting;
+	uint64_t dock_due_ms;
 	struct zwl_object *pull;
 	int32_t pull_start_y;
 	int32_t pull_distance;
@@ -647,6 +687,15 @@ struct zwl_server {
 	unsigned home_query_length;
 	int home_selected;
 	/*
+	 * A press at the bottom edge while Home shows, which may become the
+	 * swipe up that closes Home (ws079-p010): whether it has moved far
+	 * enough to be one, where it started, and how far Home was open then.
+	 */
+	unsigned home_bottom_press;
+	unsigned home_bottom_dragging;
+	int32_t home_bottom_start_y;
+	float home_bottom_from;
+	/*
 	 * The virtual desktops (ws035-p065): the one shown; a press at the
 	 * left or right edge that may become the swipe (where it started,
 	 * whether it has moved enough) and the swipe's offset in pixels; the
@@ -695,6 +744,12 @@ struct zwl_server {
 	unsigned cursor_hidden;
 	struct zwl_import *arrow;
 	/*
+	 * Nonzero from the start until the pointer first moves (input.c): the
+	 * cursor is not drawn before, so a touch screen shows no arrow resting
+	 * in the middle of the greeter or the desktop (ws035-p116).
+	 */
+	unsigned pointer_unmoved;
+	/*
 	 * The surface whose client was told the pointer entered it (seat.c): it
 	 * hears the pointer's events.  It is the focused window, or the
 	 * sub-surface of it under the pointer (ws035-p077); while a popup's grab
@@ -720,6 +775,21 @@ struct zwl_server {
 	 */
 	uint32_t buttons_down;
 	uint32_t press_serial;
+	/*
+	 * The time of the pointer event being handled (evdev's, in the wrapping
+	 * milliseconds Wayland carries), set by zwl_seat_motion and
+	 * zwl_seat_button before anything hears the event; the corner's swipe
+	 * measures its speed with it (corner.c).
+	 */
+	uint32_t input_time;
+	/*
+	 * Where the contact the shell's pointer path carries comes from: the
+	 * pointer, except while touch.c passes a finger through the shell as
+	 * the pointer's left button (it sets ZWL_CONTACT_TOUCH around each call
+	 * and puts ZWL_CONTACT_POINTER back), so the edge gestures know the
+	 * finger's contact from the mouse's (corner.c).
+	 */
+	enum zwl_contact_source shell_source;
 	/*
 	 * The clipboard (data.c): the wl_data_source set as the selection (NULL
 	 * for an empty clipboard), and the number of the client last told it
@@ -848,6 +918,7 @@ void zwl_damage_pointer(struct zwl_server *server, int32_t old_x, int32_t old_y)
 void zwl_damage_commit(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *previous);
 void zwl_window_bounds_refresh(struct zwl_server *server);
 int zwl_window_send_configure(struct zwl_object *surface);
+int zwl_window_enter_fullscreen(struct zwl_object *surface);
 int zwl_fence_ready(struct zwl_server *server, struct zwl_object *surface);
 int zwl_compose_waiting(struct zwl_server *server);
 void zwl_compose_poll(struct zwl_server *server);
@@ -864,6 +935,24 @@ int zwl_home_key(struct zwl_server *server, uint32_t key, uint32_t state);
 void zwl_home_tick(struct zwl_server *server);
 int zwl_home_axis(struct zwl_server *server, int32_t vertical, int32_t horizontal);
 int zwl_home_launched(struct zwl_server *server, int32_t *rect);
+void zwl_home_dismiss(struct zwl_server *server, const char *via);
+pid_t zwl_spawn(struct zwl_server *server, const char *command);
+
+/* The top-right corner's swipe that brings Notes (corner.c; the drawing is in glass.h). */
+int zwl_corner_contact_begin(struct zwl_server *server, enum zwl_contact_source source, int32_t x, int32_t y, uint32_t time);
+int zwl_corner_contact_move(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
+int zwl_corner_contact_end(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
+int zwl_corner_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_corner_motion(struct zwl_server *server);
+void zwl_corner_tick(struct zwl_server *server);
+int zwl_corner_showing(void);
+
+/* The edge gestures over a fullscreen window, and whether one needs the output composed (shell.c). */
+int zwl_glass_edge_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_glass_edge_motion(struct zwl_server *server);
+int zwl_glass_overlay(struct zwl_server *server);
+struct zwl_object *zwl_glass_title_at(struct zwl_server *server, int32_t x, int32_t y);
+void zwl_glass_lower(struct zwl_server *server, struct zwl_object *surface, const char *via);
 void zwl_glass_mapped(struct zwl_server *server, struct zwl_object *surface);
 int zwl_glass_key(struct zwl_server *server, uint32_t key, uint32_t state);
 
@@ -887,7 +976,11 @@ void zwl_seat_focus(struct zwl_server *server);
 void zwl_seat_surface_gone(struct zwl_object *surface);
 void zwl_seat_capabilities(struct zwl_server *server);
 void zwl_seat_motion(struct zwl_server *server, uint32_t time);
+int zwl_seat_motion_shell(struct zwl_server *server, uint32_t time);
+void zwl_seat_motion_deliver(struct zwl_server *server, uint32_t time);
 void zwl_seat_button(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
+int zwl_seat_button_shell(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
+void zwl_seat_button_deliver(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
 void zwl_seat_axis(struct zwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal);
 void zwl_seat_frame(struct zwl_server *server);
 void zwl_seat_key(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);

@@ -196,6 +196,27 @@ struct truetype_glyph_outline {
 int truetype_glyph_outline(const struct truetype_face *face, unsigned glyph,
 			   struct truetype_glyph_outline *outline);
 
+/*
+ * Opens a face embedded in a document.
+ *
+ * It differs from truetype_open() only in that a face without a cmap, or
+ * without a Unicode subtable this reader chooses, still opens: a font a
+ * document carries is often addressed by glyph number.  For such a face
+ * truetype_glyph_index() finds nothing.  Returns zero, or an errno value.
+ */
+int truetype_open_embedded(const void *data, size_t size,
+			   struct truetype_face **face);
+
+/*
+ * Looks a code up in the cmap subtable of one platform and encoding, such
+ * as the Windows symbol map (3, 0) or the Macintosh Roman map (1, 0).
+ * Formats 0, 4, 6 and 12 are read.  Returns ENOENT when the face has no
+ * such subtable; otherwise zero, with *glyph the glyph or 0 for a code the
+ * subtable does not map.
+ */
+int truetype_cmap_lookup(const struct truetype_face *face, unsigned platform,
+			 unsigned encoding, uint32_t code, unsigned *glyph);
+
 #ifdef __cplusplus
 }
 #endif

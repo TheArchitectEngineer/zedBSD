@@ -8,6 +8,7 @@
 		keiland_glass_manager_v1_*;
 		keiland_glass_v1_*;
 		zwp_primary_selection_*;
+		zwp_tablet_*;
 	local:
 		*;
 };
