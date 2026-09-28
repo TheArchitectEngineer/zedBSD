@@ -3,8 +3,8 @@
 <!-- awesome-plan-current:start -->
 Active Queue: なし（2026-09-27 から subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
 Current Focused Goal: fg010 — Kei Operating System の Keiland（Wayland）を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる。
-Next（2026-09-28 の周期の終わりに整理）: リセットの後に N≈3 で再開 — Keiland（F-044 → F-041、network の group）、WS075 i915（p006 の stencil を wip.patch から）、
-WS074 ブラウザ（p019 の guest の確認）、WS073（BUG-082 の hang → BUG-080 の Desktop の分類）。main は WS078 の残り（Venus の確認、p006・p002・p004）。
+Next（2026-09-28 の 2 回目の周期の終わりに整理）: 次の周期は N≈3〜4 で — WS074（p054 の headless の移行 → p055〜p057 部品化）、
+WS075（p006 の 23caa415・082c0957 を実機で確かめる。5330 は 11:35 から応答なし）、Keiland（下の Outlook）、WS073（BUG-087 の wip.patch → BUG-051）。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -81,12 +81,11 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
-| WS078 の Venus の確認（graphical な login、`/bin/wayland`、App Home から terminal・files・browser） | p003 の未実施の確認 | image は build できる |
-| ws035: session の user を `network` の group に（p013 の残り）→ F-044 → F-041 の名前の衝突の dialog | fg010 | ユーザーの決定あり |
-| ws075-p006: stencil（`phase006/wip.patch`）→ multisample・resolve | i915 のグラフィック | 実機の VFIO |
-| ws074-p019: guest の比較と boot test → p020 以降 | ブラウザ | resume の手順は phase.md |
-| WS073: BUG-086（block された fault の signal の spin）→ BUG-087・BUG-088（監査） | BUG-082・075・084 は 2026-09-28 に resolved | 各 ticket に次の手 |
-| WS078: p006（data の path・API・`keiland_` の protocol）、p002（kernel・UAPI・libc・bootloader の識別子）、p004（見える文字列と Kei の logo） | 改名 | 対応表は ws.md |
+| ws075-p006 の残り: 23caa415（vertex buffer の features、drawn-from-captured）・082c0957（rasterizer discard）の実機の確認 → p007〜 | i915 | 実機（5330）の復旧が要る |
+| ws074-p054 の残り（headless の mode を view へ）→ p055（描画の先）→ p056（入力）→ p057（libbrowser.so） | ブラウザの部品化（design §19） | resume の手順は phase054 |
+| WS073: BUG-087（`bugs/BUG-087-wip.patch` と bug087.sh）→ BUG-051（sshd-session の SIGSEGV、2 回目の観測あり）→ BUG-085（i915 の compositor の停止） | 安定性 | 各 ticket |
+| Keiland: greeter の印の大きさ（48 px、ユーザーの判断）、terminal の選択の残り（scroll で追う・端の自動 scroll）、F-048（引き継ぎの黒）、F-050 の folder の merge | fg010 の仕上げ | — |
+| WS078 の残り: X11 の retro の program（zterm・zwm・zgears・zshell・Xzed）と installer（zedinst）の名前（ユーザーの判断待ち）、注釈・log の名前 | 改名 | — |
 
 ## Tools
 
