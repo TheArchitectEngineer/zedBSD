@@ -12,7 +12,10 @@ Queue: なし（2026-09-27 のユーザーの指示でサブエージェント�
 Resume point: 2026-09-28: p059（Google の調査）cleared。デモの目標の版と Phase の列は [google-goal.md](google-goal.md)。次（デモの順）: p032（form に絞った）→ p060 → p037（最小）→ p027 → p065（結果の page の関門）→ p066 → p035 → p061 → p062 → p063 → p031 → p064。結果の page は Google の bot の判定（`/sorry`）が危険で、ユーザーの判断待ち（google-goal.md §3）
 <!-- awesome-plan-current:end -->
 
-## デモの目標（2026-09-28 ユーザー）
+## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
+
+**変更**: ユーザー「…amazon.co.jpに変更しましょう。」→ デモの目標は amazon.co.jp（トップの page と検索、限定的な CSS・基本的な JS、WebGL・動画なし）。以下の Google の記述は経緯として残す。
+
 
 「Googleの検索トップページと検索が、レイアウトを崩さずに表示できたら、ゴールにしましょう！限定的なCSSと、基本的なJS、WebGLなし、ビデオなしです。」
 - 完了の目安: Google の検索のトップの page と検索の結果の page が、レイアウトを崩さずに表示される。検索の box に文字を入れて検索でき、結果の link を開ける。
