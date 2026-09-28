@@ -21,6 +21,7 @@
 #include "css/css.h"
 #include "dom/dom.h"
 #include "html/html.h"
+#include "image/image.h"
 #include "layout/layout.h"
 #include "paint/paint.h"
 #include "text/text.h"
@@ -40,7 +41,8 @@ typedef void (*page_console)(void *context, int level, const char *text, size_t 
  * of its file, or its URL (what relative URLs resolve against); now the
  * page's clock in milliseconds, and the two
  * generations the document's generation when the style sheets were
- * gathered and when the page was last laid out.
+ * gathered and when the page was last laid out.  images is the table of
+ * the page's decoded images (page/images.c), by location.
  */
 struct page {
 	struct vm_heap *heap;
@@ -58,6 +60,7 @@ struct page {
 	double now;
 	uint32_t styled_generation;
 	uint32_t laid_out_generation;
+	struct wb_vector images;
 	page_console console;
 	void *console_context;
 };
@@ -89,6 +92,10 @@ int page_needs_layout(const struct page *page);
 int page_link_at(struct page *page, int x, int y, struct wb_buffer *href, int *found);
 int page_resolve_file(const char *base, const char *href, struct wb_buffer *out);
 int page_resolve_location(const char *base, const char *href, struct wb_buffer *out);
+void page_images_init(struct page *page);
+int page_load_images(struct page *page);
+const struct img_bitmap *page_image_of(void *context, const struct dom_element *element);
+void page_images_release(struct page *page);
 int page_fetch(const char *base, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
 
 #endif

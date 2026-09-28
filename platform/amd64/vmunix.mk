@@ -1223,13 +1223,15 @@ $(BUILD)/bin/files: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 
 # The Web browser (WS074) keeps its modules in subdirectories and includes their headers
 # from its own root; it imports standard Wayland and Vulkan for its window and GPU renderer
-# (ws074-p014), zdesktop's titlebar through libkeiland (ws074-p045), and libtruetype for its text.
+# (ws074-p014), zdesktop's titlebar through libkeiland (ws074-p045), libtruetype for its text, and
+# libjpeg-compat, libpng-compat (with libz-compat) and libgif-compat for its images (ws074-p021).
 DYNAMIC_ZDESKTOP_BROWSER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,browser)
 $(DYNAMIC_ZDESKTOP_BROWSER_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/desktop/browser
 
 $(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZDESKTOP_BROWSER_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libjpeg-compat.so $(DYNAMIC_DIR)/libpng-compat.so \
+	$(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libgif-compat.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
@@ -1237,9 +1239,11 @@ $(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_BROWSER_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so \
+ -l:libjpeg-compat.so -l:libpng-compat.so -l:libz-compat.so -l:libgif-compat.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so --needed libc.so $@
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
+ --needed libjpeg-compat.so --needed libpng-compat.so --needed libz-compat.so --needed libgif-compat.so --needed libc.so $@
 
 # OpenGL with GLX for Xzed (WS069 p004): libGLESv2's translation with GLX and a private libX11 inside.
 DYNAMIC_GL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgl)

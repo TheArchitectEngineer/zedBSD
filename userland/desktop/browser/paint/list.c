@@ -18,7 +18,9 @@
  * that clips its overflow puts its content between a clip to its padding
  * box and the clip's end; a positioned box is clipped by the clipping
  * boxes around it that it does not escape (an absolute box escapes those
- * outside its containing block, a fixed one all of them).
+ * outside its containing block, a fixed one all of them).  A replaced box
+ * paints its background and borders, then its image over its content box:
+ * a block one as a block does, an inline one where its fragment is.
  */
 
 #include "paint/paint.h"
@@ -55,6 +57,8 @@ static void list_inline_floats(struct list_walk *walk, const struct layout_box *
 static void list_lines(struct list_walk *walk, const struct layout_box *box);
 static void list_fragment(struct list_walk *walk, const struct layout_fragment *fragment, layout_unit x, layout_unit baseline);
 static void list_rect(struct list_walk *walk, layout_unit x, layout_unit y, layout_unit width, layout_unit height, uint32_t color);
+static void list_replaced(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
+static void list_image(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
 static void list_clip(struct list_walk *walk, const struct layout_box *box);
 static void list_unclip(struct list_walk *walk);
 static int list_layer_clips(struct list_walk *walk, const struct layout_box *layer, int push);
@@ -184,6 +188,13 @@ paint_dump(
 			    (double)layout_to_px(item->width), (double)layout_to_px(item->height));
 			list_color(out, item->color);
 			wb_buffer_append_string(out, "\n");
+			continue;
+		}
+
+		/* An image: its rectangle and its image's size. */
+		if (item->kind == PAINT_IMAGE) {
+			wb_buffer_printf(out, "image %.2f %.2f %.2f %.2f %dx%d\n", (double)layout_to_px(item->x), (double)layout_to_px(item->y),
+			    (double)layout_to_px(item->width), (double)layout_to_px(item->height), item->image->width, item->image->height);
 			continue;
 		}
 
@@ -393,6 +404,12 @@ list_box(
 	if (visible)
 		list_borders(walk, box);
 
+	/* A replaced block's image fills its content box. */
+	if (visible && box->replaced) {
+		list_image(walk, box, box->x + box->border[CSS_LEFT] + box->padding[CSS_LEFT], box->y + box->border[CSS_TOP] + box->padding[CSS_TOP]);
+		return;
+	}
+
 	/* A box that clips its overflow clips its content to its padding box. */
 	clips = layout_clips(box);
 	if (clips)
@@ -549,6 +566,12 @@ list_fragment(
 	if (fragment->box->style.visibility == LIST_VISIBILITY_HIDDEN)
 		return;
 
+	/* An inline replaced box's margin box stands on the baseline. */
+	if (fragment->box->kind == LAYOUT_REPLACED) {
+		list_replaced(walk, fragment->box, x, baseline - fragment->ascent);
+		return;
+	}
+
 	/* There are at most as many glyphs as UTF-16 units. */
 	glyphs = NULL;
 	if (fragment->length != 0) {
@@ -622,6 +645,67 @@ list_fragment(
 			thickness = LAYOUT_UNIT;
 		list_rect(walk, x, baseline + offset, fragment->width, thickness, fragment->color);
 	}
+}
+
+/*
+ * Paints an inline replaced box whose margin box starts at a point: its
+ * background, its borders and its image.
+ */
+static void
+list_replaced(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	layout_unit x,
+	layout_unit y)
+{
+	struct layout_box placed;
+	layout_unit width;
+	layout_unit height;
+
+	/* The box as if its border box were placed there (the layout places only blocks). */
+	placed = *box;
+	placed.x = x + box->margin[CSS_LEFT];
+	placed.y = y + box->margin[CSS_TOP];
+
+	/* The background under the border box. */
+	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+	if ((box->style.background_color >> 24) != 0)
+		list_rect(walk, placed.x, placed.y, width, height, box->style.background_color);
+
+	/* The borders, then the image in the content box. */
+	list_borders(walk, &placed);
+	list_image(walk, box, placed.x + box->border[CSS_LEFT] + box->padding[CSS_LEFT], placed.y + box->border[CSS_TOP] + box->padding[CSS_TOP]);
+}
+
+/* Adds a replaced box's image over its content box, whose top left is at a point. */
+static void
+list_image(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	layout_unit x,
+	layout_unit y)
+{
+	struct paint_item item;
+	int error;
+
+	/* Nothing to add after an error, without an image, or for an empty box. */
+	if (walk->error != 0 || box->image == NULL)
+		return;
+	if (box->width <= 0 || box->height <= 0)
+		return;
+
+	/* The item. */
+	memset(&item, 0, sizeof(item));
+	item.kind = PAINT_IMAGE;
+	item.x = x;
+	item.y = y;
+	item.width = box->width;
+	item.height = box->height;
+	item.image = box->image;
+	error = wb_vector_push(&walk->list->items, &item);
+	if (error != 0)
+		walk->error = error;
 }
 
 /* Adds a filled rectangle. */

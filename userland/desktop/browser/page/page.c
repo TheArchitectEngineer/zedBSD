@@ -56,8 +56,9 @@ page_create(
 		return error;
 	}
 
-	/* Its stack ends where the caller says. */
+	/* Its stack ends where the caller says, and it has no images yet. */
 	vm_heap_set_stack_base(created->heap, stack_base);
+	page_images_init(created);
 
 	/* Makes the document and keeps it alive as a root. */
 	created->document = dom_document_create(created->heap);
@@ -105,6 +106,7 @@ page_destroy(
 		layout_release(&page->layout);
 	if (page->text_open)
 		text_system_close(&page->text);
+	page_images_release(page);
 	css_engine_destroy(page->css);
 	bind_window_destroy(page->window);
 	vm_realm_destroy(page->realm);
@@ -185,9 +187,11 @@ page_load_file(
 	struct wb_buffer buffer;
 	int error;
 
-	/* The page's scripts find their files from the page's. */
+	/* The page's scripts and images find their files from the page's, by its absolute path. */
 	free(page->base);
-	page->base = strdup(path);
+	page->base = realpath(path, NULL);
+	if (page->base == NULL)
+		page->base = strdup(path);
 	if (page->base == NULL)
 		return ENOMEM;
 
@@ -324,8 +328,13 @@ page_layout(
 	/* The window's size for the scripts. */
 	bind_window_set_viewport(page->window, width, height);
 
-	/* Builds and lays out the box tree. */
-	error = layout_build(&page->layout, page->css, &page->text, page->document, width, height);
+	/* The images the document names, fetched and decoded when they are new. */
+	error = page_load_images(page);
+	if (error != 0)
+		return error;
+
+	/* Builds and lays out the box tree, the images found by their elements. */
+	error = layout_build(&page->layout, page->css, &page->text, page->document, page_image_of, page, width, height);
 	page->laid_out = 1;
 	page->laid_out_generation = page->document->generation;
 	if (error != 0)
