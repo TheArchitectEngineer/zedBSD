@@ -87,7 +87,7 @@ H1 は H2 と独立に先に走らせ、結果で H3 の要否（EDID が読め�
   PASS、3214 flip）→ Log Out → greeter の Shut Down（CPU は全て halt、pipe B は停止）。途中で 2 つの不具合: (1) H2 の resident の vblank の
   待ちが pipe A の frame counter を読み、HDMI では flip の event が全て時間切れ → 最初の lease の終わりで display が FAIL し login の後が
   出なかった（`vblank.c` を修正）、(2) i915 の `/dev/gpu0` より先に sessiond が起動して console に戻る（デモの image の `greeter_gpu` で
-  回避、sessiond の修正は WS035 へ提案）。eDP への fallback は試験の switch（`-DI915_TEST_HDMI_ABSENT=1`）で確認。
+  回避、2026-09-28 に ws035-p113 で sessiond を直し回避を削除、BUG-092）。eDP への fallback は試験の switch（`-DI915_TEST_HDMI_ABSENT=1`）で確認。
   **amd64 の Shut Down は halt であり電源は切れない**（ACPI の S5 は未実装）。session には Shut Down が無い（Log Out → greeter）。
   最終の image（main の merge の後、Notes・PDF Viewer を加えた）では **Notes の起動の約 2 秒後に kernel が止まった**（`i915_timer_thread` →
   `waitq_sleep` → `spin_unlock` の持ち主の違いの trap、gdbstub で解析、未修正。p013 の不具合 3、要 Bug ticket）。

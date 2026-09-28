@@ -9,9 +9,12 @@
  * Deferred work and delayed work (see workqueue.h).
  *
  * The work queue lock is taken with interrupts disabled because an
- * interrupt handler may queue work.  The timer queue lock is an ordinary
- * spinlock: it is only taken from threads, and it is never held while the
- * work queue lock is taken except for the pending check of a queue request.
+ * interrupt handler may queue work.  The timer queue lock is only taken
+ * from threads, but with interrupts disabled as well: the kernel's spinlock
+ * does not hold off preemption, and a holder preempted by the clock tick
+ * may resume on another CPU, whose release traps as a release by a CPU
+ * that does not own the lock.  The timer queue lock is held while the work
+ * queue lock is taken only for the pending check of a queue request.
  */
 
 #include "workqueue.h"
@@ -411,9 +414,10 @@ drv_i915_timer_queue_destroy(
 	struct i915_timer_queue *timers)
 {
 	uint64_t observed;
+	unsigned long enabled;
 
 	/* Asks the timer thread to leave and waits until it has. */
-	spin_lock(&timers->lock);
+	enabled = spin_lock_irqsave(&timers->lock);
 
 	timers->stop = 1;
 	waitq_wake_all(&timers->waitq);
@@ -424,7 +428,7 @@ drv_i915_timer_queue_destroy(
 		(void)waitq_sleep(&timers->waitq, &timers->lock, observed, 0U, 0U);
 	}
 
-	spin_unlock(&timers->lock);
+	spin_unlock_irqrestore(&timers->lock, enabled);
 }
 
 /*
@@ -471,23 +475,24 @@ drv_i915_delayed_queue(
 	unsigned slot;
 	int pending;
 	int error;
+	unsigned long enabled;
 
 	/* Arms the work in a free slot and wakes the timer thread. */
-	spin_lock(&timers->lock);
+	enabled = spin_lock_irqsave(&timers->lock);
 
 	/* Lets a hand-over in progress finish, so the work is either armed or pending. */
 	i915_delayed_wait_not_firing(timers, delayed);
 
 	/* An armed work keeps its earlier deadline. */
 	if (delayed->armed != 0) {
-		spin_unlock(&timers->lock);
+		spin_unlock_irqrestore(&timers->lock, enabled);
 		return 0;
 	}
 
 	/* A work already in the work queue runs once for both requests. */
 	pending = drv_i915_work_pending(timers->workqueue, &delayed->work);
 	if (pending != 0) {
-		spin_unlock(&timers->lock);
+		spin_unlock_irqrestore(&timers->lock, enabled);
 		return 0;
 	}
 
@@ -500,7 +505,7 @@ drv_i915_delayed_queue(
 	deadline = 0U;
 	error = kern_deadline_after(now, ticks, &deadline);
 	if (error != 0) {
-		spin_unlock(&timers->lock);
+		spin_unlock_irqrestore(&timers->lock, enabled);
 		return 0;
 	}
 
@@ -512,7 +517,7 @@ drv_i915_delayed_queue(
 
 	/* Every slot holds an armed work. */
 	if (slot == I915_TIMER_QUEUE_SLOTS) {
-		spin_unlock(&timers->lock);
+		spin_unlock_irqrestore(&timers->lock, enabled);
 		kern_logf("i915: delayed work: no free timer slot (%s)\n", timers->name);
 		return 0;
 	}
@@ -527,7 +532,7 @@ drv_i915_delayed_queue(
 	/* Wakes the timer thread, whose earliest deadline may have moved. */
 	waitq_wake_all(&timers->waitq);
 
-	spin_unlock(&timers->lock);
+	spin_unlock_irqrestore(&timers->lock, enabled);
 
 	/* Succeeded: the work runs once its deadline passes. */
 	return 1;
@@ -546,16 +551,17 @@ drv_i915_delayed_cancel(
 {
 	int disarmed;
 	int removed;
+	unsigned long enabled;
 
 	/* Takes the work off its timer slot. */
-	spin_lock(&timers->lock);
+	enabled = spin_lock_irqsave(&timers->lock);
 
 	i915_delayed_wait_not_firing(timers, delayed);
 	disarmed = i915_delayed_disarm(timers, delayed);
 	if (disarmed != 0)
 		delayed->cancelled_armed++;
 
-	spin_unlock(&timers->lock);
+	spin_unlock_irqrestore(&timers->lock, enabled);
 
 	/* An armed work never reached the work queue. */
 	if (disarmed != 0)
@@ -589,16 +595,17 @@ drv_i915_delayed_cancel_sync(
 {
 	int disarmed;
 	int removed;
+	unsigned long enabled;
 
 	/* Takes the work off its timer slot. */
-	spin_lock(&timers->lock);
+	enabled = spin_lock_irqsave(&timers->lock);
 
 	i915_delayed_wait_not_firing(timers, delayed);
 	disarmed = i915_delayed_disarm(timers, delayed);
 	if (disarmed != 0)
 		delayed->cancelled_armed++;
 
-	spin_unlock(&timers->lock);
+	spin_unlock_irqrestore(&timers->lock, enabled);
 
 	/*
 	 * Takes the work out of the work queue and waits out a running
@@ -630,9 +637,10 @@ drv_i915_delayed_pending(
 {
 	int waiting;
 	int queued;
+	unsigned long enabled;
 
 	/* Samples whether the work waits for its deadline or is being handed over. */
-	spin_lock(&timers->lock);
+	enabled = spin_lock_irqsave(&timers->lock);
 
 	waiting = 0;
 	if (delayed->armed != 0)
@@ -640,7 +648,7 @@ drv_i915_delayed_pending(
 	else if (delayed->firing != 0)
 		waiting = 1;
 
-	spin_unlock(&timers->lock);
+	spin_unlock_irqrestore(&timers->lock, enabled);
 
 	/* A work still waiting for its deadline is pending. */
 	if (waiting != 0)
@@ -777,12 +785,13 @@ i915_timer_thread(
 	uint64_t earliest;
 	uint64_t now;
 	uint64_t observed;
+	unsigned long enabled;
 
 	/* The thread was created for exactly this timer queue. */
 	timers = argument;
 
 	/* Fires due works, dropping the lock around each hand-over. */
-	spin_lock(&timers->lock);
+	enabled = spin_lock_irqsave(&timers->lock);
 
 	for (;;) {
 		/* Leaves at the destroy's request. */
@@ -808,12 +817,12 @@ i915_timer_thread(
 		due->firing = 1;
 		due->fired_count++;
 
-		spin_unlock(&timers->lock);
+		spin_unlock_irqrestore(&timers->lock, enabled);
 
 		/* Hands the due work to the worker. */
 		(void)drv_i915_queue_work(timers->workqueue, &due->work);
 
-		spin_lock(&timers->lock);
+		enabled = spin_lock_irqsave(&timers->lock);
 
 		/* The hand-over is over; wakes a queue or cancel waiting for it. */
 		due->firing = 0;
@@ -824,7 +833,7 @@ i915_timer_thread(
 	timers->alive = 0;
 	waitq_wake_all(&timers->waitq);
 
-	spin_unlock(&timers->lock);
+	spin_unlock_irqrestore(&timers->lock, enabled);
 }
 
 /* Takes the first due work off its slot; the caller holds the timer queue lock. */

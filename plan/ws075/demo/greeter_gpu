@@ -1,7 +1,0 @@
-type=respawn
-command=/bin/sh
-arguments=/etc/keiland/greeter-gpu.sh
-after=syslogd,networking
-replaces=getty_console
-restart=on-failure
-required=NO

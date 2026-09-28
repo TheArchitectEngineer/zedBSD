@@ -40,8 +40,33 @@
 #define NOTES_TOOL_PEN		0U
 #define NOTES_TOOL_HIGHLIGHTER	1U
 
-/* The page backgrounds (the edit data's background kind); v1 draws plain pages. */
+/*
+ * The page backgrounds (the edit data's background kind): plain, and the
+ * page of the PDF Notes writes on, drawn under the strokes.
+ */
 #define NOTES_BACKGROUND_PLAIN	0U
+#define NOTES_BACKGROUND_PDF	3U
+
+/*
+ * Where a page comes from (the edit data's SRC chunk): a page Notes made;
+ * a page of the PDF Notes writes on, drawn under the strokes and saved by
+ * drawing the strokes over it; a page of that PDF whose content is Notes'
+ * own strokes (shown editable), saved by drawing them anew in its place.
+ */
+#define NOTES_ORIGIN_NEW	0U
+#define NOTES_ORIGIN_OVER	1U
+#define NOTES_ORIGIN_REPLACE	2U
+
+/*
+ * What notes_open_pdf() found: a notebook Notes saved; another program's
+ * PDF Notes has written on (its strokes editable again); another program's
+ * PDF (its pages the background); a PDF whose pages another program
+ * changed since Notes saved it (those pages are the background now).
+ */
+#define NOTES_OPENED_NOTES	0U
+#define NOTES_OPENED_ANNOTATED	1U
+#define NOTES_OPENED_FOREIGN	2U
+#define NOTES_OPENED_CHANGED	3U
 
 /* The pressure of one sample runs from 0 to this value. */
 #define NOTES_PRESSURE_MAX	65535U
@@ -132,11 +157,17 @@ struct notes_stroke {
  * last saved or opened it (all zero: not known).  The edit data records
  * it, and opening a PDF compares it with the page in the file to learn
  * whether another program changed the page (design-pdf.md section 3).
+ *
+ * origin (NOTES_ORIGIN_*) says whether the page is one of the PDF Notes
+ * writes on, and source which page of that PDF (the document's base) it
+ * is.  A page Notes made has origin NOTES_ORIGIN_NEW and no source.
  */
 struct notes_page {
 	float width;
 	float height;
 	unsigned background;
+	unsigned origin;
+	size_t source;
 	unsigned char content_hash[32];
 	struct notes_stroke **strokes;
 	size_t stroke_count;
@@ -201,6 +232,21 @@ struct notes_document {
 	/* The PDF's permanent identifier once the document has been saved (design-pdf.md section 1). */
 	unsigned char pdf_id[16];
 	int has_pdf_id;
+
+	/*
+	 * The PDF this notebook writes on, when it is another program's (or a
+	 * notebook another program changed): the document read from the first
+	 * base_size bytes of the file, whose SHA-256 is base_hash.  Each save
+	 * writes those bytes unchanged and adds one revision with the strokes
+	 * (libpdf's update), so the revision of the last save is replaced
+	 * rather than piled up.  base is NULL for a notebook Notes writes
+	 * whole; base_size is 0 then.  A document recovered from its journal
+	 * knows base_size and base_hash but gets base from the file
+	 * (notes_attach_base()).
+	 */
+	struct pdf_document *base;
+	uint64_t base_size;
+	unsigned char base_hash[32];
 
 	/*
 	 * The undo history: the entries in order, how many stand (the rest
@@ -314,6 +360,7 @@ int notes_journal_newest(char *path, size_t size);
 
 /* The PDF (save.c). */
 int notes_save_pdf(struct notes_document *document, const char *path, size_t *bytes);
-int notes_open_pdf(const char *path, struct notes_document *document);
+int notes_open_pdf(const char *path, struct notes_document *document, unsigned *opened);
+int notes_attach_base(const char *path, struct notes_document *document);
 
 #endif
