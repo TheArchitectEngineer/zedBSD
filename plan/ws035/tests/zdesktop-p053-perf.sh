@@ -11,7 +11,7 @@ cd "$(dirname -- "$0")/../../.."
 export GUEST_RUNTIME="${GUEST_RUNTIME:-$PWD/build/ws035-sq-run}"
 runs=${1:-3}
 guest() { timeout 150 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
-stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[w]lshm|[w]ltest" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[w]lshm|[w]ltest" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[w]lshm|[w]ltest" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[w]lshm|[w]ltest" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 for setup in gpu gpu3 shm shmband; do
 	case $setup in
 	gpu) others='' ;;

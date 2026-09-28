@@ -21,7 +21,7 @@ out=${1:-build/ws035-p053}
 mkdir -p "$out"
 guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
-stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[w]lshm|[w]ltest" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[w]lshm|[w]ltest" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[w]lshm|[w]ltest" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[w]lshm|[w]ltest" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 
 # Moves the pointer to an output pixel.  The tablet's range is 0..32767 and
 # zdesktop takes the pixel floor(v * (size - 1) / 32767), so v is rounded up.
