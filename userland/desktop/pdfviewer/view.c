@@ -309,11 +309,10 @@ pv_app_action(
 		break;
 	case PV_ACTION_CLOSE:
 		/* Closes the document, or the window when none is open. */
-		if (app->has_document) {
+		if (app->has_document)
 			pv_app_close_document(app);
-		} else {
+		else
 			app->want_close = 1;
-		}
 		break;
 	case PV_ACTION_QUIT:
 		app->want_close = 1;
@@ -358,18 +357,18 @@ pv_app_action(
 		show_page(app, page);
 		break;
 	case PV_ACTION_PREVIOUS:
-		if (app->mode == PV_MODE_PAGE) {
+		/* The page mode turns; the scroll mode scrolls to the page before. */
+		if (app->mode == PV_MODE_PAGE)
 			start_turn(app, -1);
-		} else if (page > 0) {
+		else if (page > 0)
 			show_page(app, page - 1);
-		}
 		break;
 	case PV_ACTION_NEXT:
-		if (app->mode == PV_MODE_PAGE) {
+		/* The page mode turns; the scroll mode scrolls to the page after. */
+		if (app->mode == PV_MODE_PAGE)
 			start_turn(app, 1);
-		} else {
+		else
 			show_page(app, page + 1);
-		}
 		break;
 	case PV_ACTION_FIRST:
 		show_page(app, 0);
@@ -388,6 +387,8 @@ pv_app_action(
 	case PV_ACTION_NONE:
 		break;
 	}
+
+	/* After any action the page indicator shows, and the frame is drawn again. */
 	app->indicator_until = app->now + VIEW_INDICATOR_MS;
 	app->dirty = 1;
 }
@@ -432,6 +433,8 @@ pv_app_tick(
 			app->swipe = app->turn_from + (app->turn_to - app->turn_from) * eased;
 			due = 16;
 		}
+
+		/* The frame moves with the turn. */
 		app->dirty = 1;
 	}
 
@@ -440,6 +443,8 @@ pv_app_tick(
 		app->indicator_until = 0;
 		app->dirty = 1;
 	}
+
+	/* Until then, the indicator's end is due. */
 	if (app->indicator_until != 0) {
 		if (due < 0 || (int)(app->indicator_until - now) < due)
 			due = (int)(app->indicator_until - now);
@@ -460,6 +465,8 @@ pv_app_tick(
 		app->message[0] = '\0';
 		app->dirty = 1;
 	}
+
+	/* Until then, the message's end is due. */
 	if (app->message[0] != '\0' && app->message_until != 0) {
 		if (due < 0 || (int)(app->message_until - now) < due)
 			due = (int)(app->message_until - now);
@@ -523,10 +530,14 @@ pv_app_prefetch(
 		candidates[count] = page + 1;
 		count++;
 	}
+
+	/* The page before. */
 	if (page > 0) {
 		candidates[count] = page - 1;
 		count++;
 	}
+
+	/* In the scroll mode, the second after. */
 	if (app->mode == PV_MODE_SCROLL && page + 2 < app->document.count) {
 		candidates[count] = page + 2;
 		count++;
@@ -541,6 +552,8 @@ pv_app_prefetch(
 			if (difference < 1e-6 && difference > -1e-6)
 				continue;
 		}
+
+		/* Draws it; one that cannot be drawn ends the prefetch. */
 		error = pv_document_raster(&app->document, candidates[index], scale, &shown);
 		if (error != 0)
 			return 0;
@@ -562,6 +575,8 @@ pv_app_current_page(
 
 	/* The page mode's page, or the scroll mode's across the middle. */
 	page = current_page(app);
+
+	/* Reports the page. */
 	return page;
 }
 
@@ -592,6 +607,8 @@ pv_app_scale(
 		width = page->width;
 		height = page->height;
 	}
+
+	/* The room inside the margins, at least 16 pixels each way. */
 	room_width = (double)app->width - 2.0 * PV_MARGIN;
 	room_height = (double)app->height - 2.0 * PV_MARGIN;
 	if (room_width < 16.0)
@@ -648,8 +665,10 @@ pv_app_page_top(
 	size_t page;
 
 	/* The page mode's one page. */
-	if (app->mode == PV_MODE_PAGE)
-		return page_mode_top(app);
+	if (app->mode == PV_MODE_PAGE) {
+		top = page_mode_top(app);
+		return top;
+	}
 
 	/* The pages above it, a gap apart, under the margin. */
 	scale = pv_app_scale(app, 0);
@@ -990,6 +1009,8 @@ show_page(
 		app->swipe = 0.0;
 		app->turning = 0;
 	}
+
+	/* The view stays within the document, and the indicator shows. */
 	clamp_view(app);
 	app->indicator_until = app->now + VIEW_INDICATOR_MS;
 	app->dirty = 1;
@@ -1101,6 +1122,10 @@ handle_key(
 	const struct pv_event *event)
 {
 	double page_height;
+	double content_width;
+	double content_height;
+	int fits_across;
+	int fits_down;
 
 	/* The chooser takes the keys while it is open. */
 	if (app->choosing) {
@@ -1137,56 +1162,71 @@ handle_key(
 		default:
 			break;
 		}
+
+		/* Control with any other key does nothing more. */
 		return;
 	}
+
+	/*
+	 * Whether the pages fit across and down: the arrows turn pages where
+	 * there is nothing to scroll.
+	 */
+	fits_across = 0;
+	content_width = pv_app_content_width(app);
+	if (content_width <= (double)app->width)
+		fits_across = 1;
+	fits_down = 0;
+	content_height = pv_app_content_height(app);
+	if (content_height <= (double)app->height)
+		fits_down = 1;
 
 	/* The movement keys, by the mode. */
 	page_height = (double)app->height - VIEW_KEY_STEP;
 	switch (event->key) {
 	case PV_KEY_PAGE_UP:
-		if (app->mode == PV_MODE_PAGE) {
+		/* The page mode turns back; the scroll mode scrolls up a screen. */
+		if (app->mode == PV_MODE_PAGE)
 			pv_app_action(app, PV_ACTION_PREVIOUS);
-		} else {
+		else
 			app->scroll_y -= page_height;
-		}
 		break;
 	case PV_KEY_PAGE_DOWN:
 	case PV_KEY_SPACE:
-		if (app->mode == PV_MODE_PAGE) {
+		/* The page mode turns on; the scroll mode scrolls a screen, up with Shift. */
+		if (app->mode == PV_MODE_PAGE)
 			pv_app_action(app, PV_ACTION_NEXT);
-		} else if ((event->modifiers & PV_MOD_SHIFT) != 0) {
+		else if ((event->modifiers & PV_MOD_SHIFT) != 0)
 			app->scroll_y -= page_height;
-		} else {
+		else
 			app->scroll_y += page_height;
-		}
 		break;
 	case PV_KEY_LEFT:
-		if (app->mode == PV_MODE_PAGE || pv_app_content_width(app) <= (double)app->width) {
+		/* Turns back, or scrolls left over pages wider than the window. */
+		if (app->mode == PV_MODE_PAGE || fits_across)
 			pv_app_action(app, PV_ACTION_PREVIOUS);
-		} else {
+		else
 			app->scroll_x -= VIEW_KEY_STEP;
-		}
 		break;
 	case PV_KEY_RIGHT:
-		if (app->mode == PV_MODE_PAGE || pv_app_content_width(app) <= (double)app->width) {
+		/* Turns on, or scrolls right over pages wider than the window. */
+		if (app->mode == PV_MODE_PAGE || fits_across)
 			pv_app_action(app, PV_ACTION_NEXT);
-		} else {
+		else
 			app->scroll_x += VIEW_KEY_STEP;
-		}
 		break;
 	case PV_KEY_UP:
-		if (app->mode == PV_MODE_PAGE && pv_app_content_height(app) <= (double)app->height) {
+		/* The page mode's page that fits turns back; anything else scrolls up. */
+		if (app->mode == PV_MODE_PAGE && fits_down)
 			pv_app_action(app, PV_ACTION_PREVIOUS);
-		} else {
+		else
 			app->scroll_y -= VIEW_KEY_STEP;
-		}
 		break;
 	case PV_KEY_DOWN:
-		if (app->mode == PV_MODE_PAGE && pv_app_content_height(app) <= (double)app->height) {
+		/* The page mode's page that fits turns on; anything else scrolls down. */
+		if (app->mode == PV_MODE_PAGE && fits_down)
 			pv_app_action(app, PV_ACTION_NEXT);
-		} else {
+		else
 			app->scroll_y += VIEW_KEY_STEP;
-		}
 		break;
 	case PV_KEY_HOME:
 		pv_app_action(app, PV_ACTION_FIRST);
@@ -1226,6 +1266,8 @@ handle_button(
 			chooser_click(app, event->x, event->y);
 			return;
 		}
+
+		/* A press elsewhere starts a drag from where the view is. */
 		app->pressed = 1;
 		app->dragging = 0;
 		app->press_x = event->x;
@@ -1253,6 +1295,8 @@ handle_button(
 		pv_log("SWIPE offset=%.0f velocity=%.2f direction=%d", app->swipe, app->velocity_x, direction);
 		start_turn(app, direction);
 	}
+
+	/* No drag goes on after a release. */
 	app->dragging = 0;
 }
 
@@ -1298,6 +1342,8 @@ handle_motion(
 	if (elapsed > 0) {
 		app->velocity_x = app->velocity_x * 0.4 + 0.6 * (double)(event->x - app->last_x) / (double)elapsed;
 	}
+
+	/* The pointer's last place and time. */
 	app->last_x = event->x;
 	app->last_y = event->y;
 	app->last_time = event->time;
@@ -1361,6 +1407,8 @@ handle_axis(
 				app->wheel = 0.0;
 				pv_app_action(app, PV_ACTION_PREVIOUS);
 			}
+
+			/* The wheel turned the page, or gathered toward a turn, and scrolls nothing. */
 			return;
 		}
 	}
@@ -1516,6 +1564,8 @@ open_chooser(
 		if (slash == NULL)
 			snprintf(folder, sizeof(folder), ".");
 	}
+
+	/* Without a document, the home folder, or the root. */
 	if (folder[0] == '\0') {
 		home = getenv("HOME");
 		if (home == NULL || home[0] == '\0')
@@ -1531,6 +1581,8 @@ open_chooser(
 		pv_app_message(app, "Cannot list any folder.", VIEW_MESSAGE_MS);
 		return;
 	}
+
+	/* The chooser is shown. */
 	app->choosing = 1;
 	app->dirty = 1;
 	pv_log("CHOOSER open folder=%s entries=%lu", app->chooser.folder, (unsigned long)app->chooser.count);
@@ -1541,6 +1593,8 @@ static const char *
 reason_of(
 	int error)
 {
+	const char *words;
+
 	/* The reasons libpdf and the system give. */
 	if (error == ENOTSUP)
 		return "it uses PDF features this version does not read yet";
@@ -1558,7 +1612,8 @@ reason_of(
 		return "the document has no pages";
 
 	/* Anything else, by the system's words. */
-	return strerror(error);
+	words = strerror(error);
+	return words;
 }
 
 /*

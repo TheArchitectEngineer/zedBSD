@@ -18,15 +18,18 @@
  * draws itself or has pdf_display_list_rasterize() draw into memory.  An
  * update (pdf_writer_create_update()) adds a revision to a document being
  * read -- pages drawn over, kept or added, an attached file -- and saves it
- * after the document's own bytes, which stay as they were.  The
- * library depends on the C library, libz-compat and libjpeg-compat, and
- * knows neither the window system nor the renderer.
+ * after the document's own bytes, which stay as they were.  The reader
+ * also reads general PDF (stages 2 and 3: text in embedded and substituted
+ * fonts, shadings, cross-reference and object streams, the filters,
+ * encryption with the empty, the user's or the owner's password).  The
+ * library depends on the C library, libz-compat, libjpeg-compat and
+ * libtruetype, and knows neither the window system nor the renderer.
  *
  * Every call that can fail reports 0 or an errno value: EINVAL for a misuse,
  * ENOMEM when memory or a limit of the reader runs out, PDF_EFORMAT for a
- * malformed PDF, and ENOTSUP for a valid PDF that uses a feature the reader
- * does not read yet (a cross-reference stream, a compressed stream,
- * encryption).
+ * malformed PDF, PDF_EPASSWORD for an encrypted one the password does not
+ * open, and ENOTSUP for a valid PDF that uses a feature the reader does not
+ * read (another security handler, a document that cannot be read at all).
  */
 
 #ifndef _PDF_H_
@@ -228,6 +231,7 @@ struct pdf_writer;
  */
 struct pdf_document;
 
+/* The writer: pages of filled paths and images, an attached file, the identifier and the dates. */
 int pdf_writer_create(struct pdf_writer **writer);
 void pdf_writer_destroy(struct pdf_writer *writer);
 int pdf_writer_begin_page(struct pdf_writer *writer, double width, double height);
@@ -253,9 +257,11 @@ int pdf_writer_create_update(struct pdf_document *base, struct pdf_writer **writ
 int pdf_writer_keep_page(struct pdf_writer *writer, size_t index);
 int pdf_writer_begin_page_over(struct pdf_writer *writer, size_t index, enum pdf_page_use use);
 
+/* The outline of a pen stroke, which the writer and a screen fill alike. */
 int pdf_outline_stroke(const struct pdf_stroke_point *points, size_t count, double width, struct pdf_point **outline, size_t *outline_count);
 void pdf_outline_free(struct pdf_point *outline);
 
+/* The reader: a document opened from a file or memory, its pages, its attached file and what its trailer says. */
 int pdf_document_open(const char *path, struct pdf_document **document);
 int pdf_document_open_memory(const void *data, size_t size, struct pdf_document **document);
 int pdf_document_open_password(const char *path, const char *password, struct pdf_document **document);
@@ -272,6 +278,7 @@ int pdf_document_get_revision(const struct pdf_document *document, size_t *xref_
 int pdf_document_signed(struct pdf_document *document, int *is_signed);
 int pdf_document_encrypted(const char *path, int *encrypted);
 
+/* A page interpreted into a display list, and the list drawn into memory. */
 int pdf_page_render(struct pdf_document *document, size_t index, struct pdf_display_list **list);
 void pdf_display_list_destroy(struct pdf_display_list *list);
 int pdf_display_list_rasterize(const struct pdf_display_list *list, uint32_t *pixels, size_t stride, size_t width, size_t height, double scale, double offset_x, double offset_y);

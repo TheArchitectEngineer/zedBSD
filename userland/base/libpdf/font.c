@@ -301,7 +301,7 @@ pdf_font_get(
 	created->default_width = 1.0;
 	created->type3_scale = 0.001;
 
-	/* Reads it. */
+	/* Reads the font from its dictionary. */
 	error = load_font(document, cache, dictionary, created);
 	if (error != 0) {
 		free_font(created);

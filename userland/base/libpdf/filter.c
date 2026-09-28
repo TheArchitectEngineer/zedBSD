@@ -196,6 +196,8 @@ pdf_filter_decode(
 			free(current_owned);
 			return error;
 		}
+
+		/* The filter's output replaces its input, which goes. */
 		free(current_owned);
 		current = output;
 		current_size = output_size;
@@ -324,6 +326,8 @@ read_chain(
 			if (error != 0)
 				return error;
 		}
+
+		/* The filter's parameters, or none. */
 		parameters[index] = parameter;
 	}
 
@@ -443,6 +447,8 @@ apply_filter(
 			free(*output);
 			return error;
 		}
+
+		/* Succeeded: the inflated bytes, the predictor undone. */
 		return 0;
 	case PDF_FILTER_ASCII_HEX:
 		error = decode_hex(input, input_size, output, output_size);
@@ -520,6 +526,8 @@ inflate_bytes(
 				free(buffer);
 				return ENOMEM;
 			}
+
+			/* Doubles the room, bounded by the limit. */
 			capacity *= 2;
 			if (capacity > PDF_FILTER_OUTPUT_MAX)
 				capacity = PDF_FILTER_OUTPUT_MAX;
@@ -529,6 +537,8 @@ inflate_bytes(
 				free(buffer);
 				return ENOMEM;
 			}
+
+			/* The grown buffer is the output's. */
 			buffer = grown;
 		}
 
@@ -552,6 +562,8 @@ inflate_bytes(
 		if (consumed == input_size && produced < capacity)
 			break;
 	}
+
+	/* The inflation's state is not needed any more. */
 	inflateEnd(&stream);
 
 	/* Refuses a stream that gave nothing. */
@@ -1380,6 +1392,8 @@ undo_png(
 				return PDF_EFORMAT;
 			}
 		}
+
+		/* The row is the next row's row above. */
 		previous = row;
 	}
 

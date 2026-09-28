@@ -167,6 +167,8 @@ draw_page(
 		pv_canvas_fill(canvas, x, y, width, height, 0xffffffffU);
 		return;
 	}
+
+	/* The page's raster. */
 	pv_canvas_copy(canvas, x, y, page->raster, page->raster_width, page->raster_height);
 }
 
@@ -444,6 +446,8 @@ draw_chooser(
 			break;
 		folder++;
 	}
+
+	/* The folder, and a line under the header. */
 	pv_text_draw(app->text, canvas, x + 18, y + 44, folder, 13U, DRAW_HINT);
 	pv_canvas_fill(canvas, x + 12, y + PV_CHOOSER_HEADER - 1, width - 24, 1, 0xffd4d7dcU);
 
@@ -470,6 +474,8 @@ draw_chooser(
 			pv_canvas_round(canvas, x + 22, row_y + 8, 14, 18, 2, DRAW_FILE);
 			snprintf(line, sizeof(line), "%s", entry->name);
 		}
+
+		/* The entry's name. */
 		pv_text_draw(app->text, canvas, x + 48, row_y + 22, line, DRAW_TEXT, DRAW_TITLE);
 	}
 

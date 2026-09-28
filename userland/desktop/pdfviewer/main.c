@@ -61,24 +61,37 @@ struct main_options {
 /*
  * The program's parts, for the whole run.  They are file-scope because
  * the window's input queue and the viewer are too large for the stack.
+ *
+ * The window: the Wayland connection and surface, and the input queue,
+ * from the start of the run to its end.
  */
 static struct pv_window main_window;
+
+/* The presenter: Vulkan's swapchain over the window, made after it and closed before it. */
 static struct pv_present main_present;
+
+/* The viewer: the document and the view, made once the swapchain's size is known. */
 static struct pv_app main_app;
+
+/* The font the frame's words are drawn in, open for the whole run (without it the frame has no words). */
 static struct pv_text main_text;
 
 /*
- * The window's menus and titlebar in zdesktop, opened with the window and
- * closed before it; either may be absent (a compositor without them).
+ * The window's menus in zdesktop, opened with the window and closed
+ * before it; absent with a compositor without them.
  */
 static struct pv_menu main_menu;
+
+/* The window's titlebar controls in zdesktop, with the same life as the menus. */
 static struct pv_titlebar main_titlebar;
 
 /*
- * The frame being drawn: ordinary memory the size of the swapchain, and
- * the canvas over it.  They are remade when the window changes size.
+ * The frame being drawn: ordinary memory the size of the swapchain, remade
+ * (and the canvas with it) when the window changes size.
  */
 static uint32_t *main_pixels;
+
+/* The canvas over main_pixels, which the viewer draws each frame into. */
 static struct pv_canvas main_canvas;
 
 /* The environment a started program inherits. */
@@ -152,6 +165,8 @@ main(
 		pv_log("MENU failed errno=%d", error);
 		pv_menu_close(&main_menu);
 	}
+
+	/* The titlebar's controls. */
 	error = pv_titlebar_open(&main_titlebar, &main_window, &state);
 	if (error != 0) {
 		pv_log("TITLEBAR failed errno=%d", error);
@@ -238,6 +253,8 @@ main_parse(
 				options->page_mode = 1;
 				continue;
 			}
+
+			/* The scroll mode is the default; anything else is a usage error. */
 			match = strcmp(value, "scroll");
 			if (match != 0)
 				return -1;
@@ -336,6 +353,8 @@ main_loop(
 		fprintf(stderr, "PDFVIEWER FAILED operation=canvas\n");
 		return -1;
 	}
+
+	/* The document given on the command line, and the first frame. */
 	main_opened();
 	status = main_frame();
 	if (status != 0)
@@ -363,6 +382,8 @@ main_loop(
 			if (prefetched)
 				timeout = 0;
 		}
+
+		/* Waits; a lost connection ends the run. */
 		status = pv_window_dispatch(&main_window, timeout);
 		if (status != 0) {
 			pv_log("DONE reason=disconnected");
@@ -420,6 +441,8 @@ main_loop(
 				fprintf(stderr, "PDFVIEWER FAILED operation=%s result=%d\n", main_present.operation, status);
 				return -1;
 			}
+
+			/* A canvas of the new size. */
 			status = main_canvas_make();
 			if (status != 0)
 				return -1;
@@ -463,6 +486,8 @@ main_frame(void)
 			fprintf(stderr, "PDFVIEWER FAILED operation=%s result=%d\n", main_present.operation, (int)result);
 			return -1;
 		}
+
+		/* A canvas of the swapchain's size. */
 		status = main_canvas_make();
 		if (status != 0)
 			return -1;
@@ -537,6 +562,8 @@ main_opened(void)
 	} else {
 		name++;
 	}
+
+	/* The window's title. */
 	snprintf(title, sizeof(title), "%s - PDF Viewer", name);
 	pv_window_title(&main_window, title);
 

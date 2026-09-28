@@ -237,6 +237,8 @@ clip_span(
 		*width += *x;
 		*x = 0;
 	}
+
+	/* The top edge. */
 	if (*y < 0) {
 		*height += *y;
 		*y = 0;

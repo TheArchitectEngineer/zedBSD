@@ -611,6 +611,8 @@ pdf_writer_attach_file(
 		free(attachment.mime_type);
 		return ENOMEM;
 	}
+
+	/* The bytes and their count. */
 	if (size != 0)
 		memcpy(attachment.data, data, size);
 	attachment.size = size;
@@ -1603,6 +1605,8 @@ write_document(
 		if (writer->images[index].alpha != NULL)
 			next_object++;
 	}
+
+	/* The attached file and its specification come last. */
 	file_object = next_object;
 	object_count = file_object;
 	if (writer->has_attachment)

@@ -103,6 +103,8 @@ pv_document_open(
 				document->pages[index].height = box.height;
 			}
 		}
+
+		/* The widest and the tallest page, which the scroll mode fits. */
 		if (document->pages[index].width > document->widest)
 			document->widest = document->pages[index].width;
 		if (document->pages[index].height > document->tallest)
@@ -128,6 +130,8 @@ pv_document_close(
 		free(document->pages[index].raster);
 		free(document->pages[index].thumbnail);
 	}
+
+	/* The pages themselves. */
 	free(document->pages);
 
 	/* Closes libpdf's document. */

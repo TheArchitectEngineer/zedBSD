@@ -247,7 +247,7 @@ pdf_cff_open(
 		return ENOMEM;
 	}
 
-	/* Reads it. */
+	/* Reads the charset into it. */
 	error = read_charset(created, data, size, top.charset, charset);
 	if (error != 0) {
 		free(charset);
@@ -290,7 +290,7 @@ pdf_cff_open(
 		return ENOMEM;
 	}
 
-	/* Reads it. */
+	/* Reads the one private DICT of a font that is not CID-keyed. */
 	created->privates_count = 1;
 	error = read_private(data, size, &top, created->matrix, &created->privates[0]);
 	if (error != 0) {
@@ -1804,7 +1804,7 @@ call_subr(
 		return;
 	}
 
-	/* Runs it. */
+	/* Runs the subroutine, one level deeper. */
 	run_charstring(run, &subrs[index], depth + 1, seac_depth);
 }
 

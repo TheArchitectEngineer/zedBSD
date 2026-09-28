@@ -1048,6 +1048,8 @@ open_owned(
 		free(data);
 		return ENOMEM;
 	}
+
+	/* The document takes the bytes; a missing object is null. */
 	created->data = data;
 	created->size = size;
 	created->null_object.type = PDF_OBJECT_NULL;
@@ -1164,6 +1166,8 @@ read_file(
 				fclose(stream);
 				return ENOMEM;
 			}
+
+			/* The grown buffer is the file's. */
 			buffer = grown;
 		}
 
@@ -1247,6 +1251,8 @@ find_startxref(
 			break;
 		}
 	}
+
+	/* A file without it is not a PDF. */
 	if (!found)
 		return PDF_EFORMAT;
 
@@ -1296,6 +1302,8 @@ read_cross_references(
 			if (visited[index] == offset)
 				return PDF_EFORMAT;
 		}
+
+		/* The section is visited. */
 		visited[sections] = offset;
 
 		/* Reads the section and its trailer; the first trailer is the document's. */
@@ -1727,7 +1735,7 @@ read_stream_section(
 	if (error != 0)
 		return PDF_EFORMAT;
 
-	/* Reads them. */
+	/* Reads the entries from the decoded stream. */
 	error = read_stream_entries(document, dictionary, data, size);
 	free(owned);
 	if (error != 0)
@@ -2416,7 +2424,7 @@ open_object_stream(
 		return ENOMEM;
 	}
 
-	/* Keeps it. */
+	/* Keeps the decoded object stream on the document. */
 	stream = calloc(1, sizeof(*stream));
 	if (stream == NULL) {
 		free(owned);
@@ -2568,6 +2576,8 @@ sort_entries(
 		document->entries[kept] = document->entries[index];
 		kept++;
 	}
+
+	/* The table holds one entry a number. */
 	document->entries_count = kept;
 }
 
@@ -3518,6 +3528,8 @@ parse_date(
 	} else {
 		day_of_year = (153 * (month + 9) + 2) / 5 + day - 1;
 	}
+
+	/* The days since 1970. */
 	day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
 	days = era * 146097 + day_of_era - 719468;
 
@@ -3839,6 +3851,8 @@ match_file_specification(
 			return error;
 		equal = string_equals(file_name, name);
 	}
+
+	/* Another file's specification. */
 	if (!equal)
 		return ENOENT;
 

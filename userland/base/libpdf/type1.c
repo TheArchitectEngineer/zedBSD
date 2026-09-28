@@ -305,7 +305,7 @@ pdf_type1_run(
 	run.font = font;
 	run.path = path;
 
-	/* Runs it. */
+	/* Runs the glyph's charstring. */
 	run_glyph(&run, glyph, 0);
 
 	/* The width hsbw or sbw set. */

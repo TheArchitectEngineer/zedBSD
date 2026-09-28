@@ -802,7 +802,7 @@ read_file(
 	int descriptor;
 	int error;
 
-	/* Opens it. */
+	/* Opens the journal file. */
 	descriptor = open(path, O_RDONLY);
 	if (descriptor < 0)
 		return errno;
