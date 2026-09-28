@@ -201,7 +201,7 @@ draw_single(
 		scale = pv_app_scale(app, neighbour);
 		width = (int)ceil(app->document.pages[neighbour].width * scale - 1e-6);
 		height = (int)ceil(app->document.pages[neighbour].height * scale - 1e-6);
-		x = (canvas->width - width) / 2 - canvas->width - PV_GAP + (int)floor(offset);
+		x = (canvas->width - width) / 2 - (int)floor(pv_app_neighbour_distance(app, neighbour)) + (int)floor(offset);
 		y = (canvas->height - height) / 2;
 		if (y < PV_MARGIN)
 			y = PV_MARGIN;
@@ -214,7 +214,7 @@ draw_single(
 		scale = pv_app_scale(app, neighbour);
 		width = (int)ceil(app->document.pages[neighbour].width * scale - 1e-6);
 		height = (int)ceil(app->document.pages[neighbour].height * scale - 1e-6);
-		x = (canvas->width - width) / 2 + canvas->width + PV_GAP + (int)floor(offset);
+		x = (canvas->width - width) / 2 + (int)floor(pv_app_neighbour_distance(app, neighbour)) + (int)floor(offset);
 		y = (canvas->height - height) / 2;
 		if (y < PV_MARGIN)
 			y = PV_MARGIN;

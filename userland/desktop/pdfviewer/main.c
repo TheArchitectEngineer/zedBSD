@@ -323,6 +323,7 @@ main_loop(
 	struct pv_state state;
 	uint64_t started;
 	uint64_t now;
+	int prefetched;
 	int taken;
 	int status;
 	int timeout;
@@ -354,6 +355,13 @@ main_loop(
 			timeout = due;
 		if (main_app.dirty)
 			timeout = 0;
+
+		/* With time to spare, the pages next to the view are drawn ahead, one a round. */
+		if (timeout > 0) {
+			prefetched = pv_app_prefetch(&main_app);
+			if (prefetched)
+				timeout = 0;
+		}
 		status = pv_window_dispatch(&main_window, timeout);
 		if (status != 0) {
 			pv_log("DONE reason=disconnected");

@@ -136,6 +136,7 @@ pv_document_raster(
 {
 	struct pv_page *page;
 	uint32_t *pixels;
+	uint64_t started;
 	size_t count;
 	size_t cell;
 	int width;
@@ -152,6 +153,7 @@ pv_document_raster(
 
 	/* Interprets the page once; a page that cannot be interpreted stays blank. */
 	if (page->list == NULL && page->list_error == 0) {
+		started = pv_clock();
 		error = pdf_page_render(document->document, index, &page->list);
 		if (error != 0) {
 			page->list = NULL;
@@ -159,7 +161,8 @@ pv_document_raster(
 			pv_log("PAGE index=%lu render-error=%d", (unsigned long)index, error);
 		} else {
 			document->flags |= page->list->flags;
-			pv_log("PAGE index=%lu items=%lu flags=%u", (unsigned long)index, (unsigned long)page->list->count, page->list->flags);
+			pv_log("PAGE index=%lu items=%lu flags=%u ms=%lu", (unsigned long)index, (unsigned long)page->list->count, page->list->flags,
+			    (unsigned long)(pv_clock() - started));
 		}
 	}
 
@@ -193,9 +196,11 @@ pv_document_raster(
 
 	/* Draws the page's list, when it has one. */
 	if (page->list != NULL) {
+		started = pv_clock();
 		error = pdf_display_list_rasterize(page->list, pixels, (size_t)width, (size_t)width, (size_t)height, scale, 0.0, 0.0);
 		if (error != 0)
 			pv_log("PAGE index=%lu raster-error=%d", (unsigned long)index, error);
+		pv_log("RASTER index=%lu size=%dx%d ms=%lu", (unsigned long)index, width, height, (unsigned long)(pv_clock() - started));
 	}
 
 	/* Keeps the raster. */

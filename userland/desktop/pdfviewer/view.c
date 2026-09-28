@@ -402,6 +402,62 @@ pv_app_tick(
 }
 
 /*
+ * Rasterizes one page the view will likely show next, while nothing else
+ * is to be done: the pages after and before the page in view (and the
+ * second after in the scroll mode).
+ *
+ * Returns 1 when a page was drawn (more may follow), 0 when all are ready.
+ */
+int
+pv_app_prefetch(
+	struct pv_app *app)
+{
+	const struct pv_page *shown;
+	const struct pv_page *candidate;
+	size_t candidates[3];
+	size_t count;
+	size_t index;
+	size_t page;
+	double scale;
+	int error;
+
+	/* Nothing while there is no document, or while the view moves. */
+	if (!app->has_document || app->turning || app->pressed)
+		return 0;
+
+	/* The pages to have ready: after, then before, the page in view. */
+	page = current_page(app);
+	count = 0;
+	if (page + 1 < app->document.count) {
+		candidates[count] = page + 1;
+		count++;
+	}
+	if (page > 0) {
+		candidates[count] = page - 1;
+		count++;
+	}
+	if (app->mode == PV_MODE_SCROLL && page + 2 < app->document.count) {
+		candidates[count] = page + 2;
+		count++;
+	}
+
+	/* Draws the first one without a raster at its scale. */
+	for (index = 0; index < count; index++) {
+		scale = pv_app_scale(app, candidates[index]);
+		candidate = &app->document.pages[candidates[index]];
+		if (candidate->raster != NULL && fabs(candidate->raster_scale - scale) < 1e-6)
+			continue;
+		error = pv_document_raster(&app->document, candidates[index], scale, &shown);
+		if (error != 0)
+			return 0;
+		return 1;
+	}
+
+	/* Every page near the view is ready. */
+	return 0;
+}
+
+/*
  * Reports the page the view is on (0 without a document).
  */
 size_t
@@ -462,6 +518,26 @@ pv_app_scale(
 
 	/* Reports the scale. */
 	return scale;
+}
+
+/*
+ * Reports how far the page mode's neighbour stands from the page shown,
+ * centre to centre, in pixels: half of each page's width and two gaps.
+ */
+double
+pv_app_neighbour_distance(
+	const struct pv_app *app,
+	size_t neighbour)
+{
+	double shown;
+	double other;
+
+	/* The two pages' widths at their scales. */
+	shown = app->document.pages[app->page].width * pv_app_scale(app, app->page);
+	other = app->document.pages[neighbour].width * pv_app_scale(app, neighbour);
+
+	/* Reports the distance between their centres. */
+	return (shown + other) / 2.0 + 2.0 * PV_GAP;
 }
 
 /*
@@ -738,8 +814,12 @@ start_turn(
 	if (direction > 0 && app->page + 1 >= app->document.count)
 		direction = 0;
 
-	/* Slides from where the page is to one window's width (and a gap) aside, or back to rest. */
-	distance = (double)app->width + PV_GAP;
+	/* Slides from where the page is to where its neighbour stands, or back to rest. */
+	distance = 0.0;
+	if (direction > 0)
+		distance = pv_app_neighbour_distance(app, app->page + 1);
+	if (direction < 0)
+		distance = pv_app_neighbour_distance(app, app->page - 1);
 	app->turning = 1;
 	app->turn_from = app->swipe;
 	app->turn_to = -(double)direction * distance;

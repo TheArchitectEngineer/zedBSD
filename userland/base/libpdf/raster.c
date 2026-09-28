@@ -80,7 +80,9 @@ struct raster_crossing {
  * masks[mask_depth - 1] is the clip in force (NULL entries do not exist:
  * mask_depth 0 is no clip); ignored_clips counts clip pushes past the
  * limit, which their pops only uncount.  row_left and row_right bound the
- * coverage of the row last computed.
+ * coverage of the row last computed.  The spare arrays are the merge
+ * sorts' room (the C library's qsort is an insertion sort, too slow for the
+ * thousands of edges of a page's strokes).
  */
 struct raster {
 	uint32_t *pixels;
@@ -96,7 +98,10 @@ struct raster {
 	size_t *active;
 	size_t active_capacity;
 	struct raster_crossing *crossings;
+	struct raster_crossing *crossings_spare;
 	size_t crossing_capacity;
+	struct raster_edge *edges_spare;
+	size_t edges_spare_capacity;
 	float *coverage;
 	float *steps;
 	int row_left;
@@ -110,15 +115,16 @@ static int build_edges(struct raster *raster, const struct pdf_display_item *ite
 static int add_edge(struct raster *raster, double x0, double y0, double x1, double y1);
 static int flatten_curve(struct raster *raster, const struct pdf_point *start, const struct pdf_point *controls, struct pdf_point *end);
 static void to_pixel(const struct raster *raster, const struct pdf_point *point, struct pdf_point *pixel);
-static int compare_edges(const void *left, const void *right);
-static int compare_crossings(const void *left, const void *right);
+static int sort_edges(struct raster *raster);
 static int fill_item(struct raster *raster, const struct pdf_display_item *item);
 static int push_clip(struct raster *raster, const struct pdf_display_item *item);
 static void pop_clip(struct raster *raster);
 static int scan_path(struct raster *raster, enum pdf_fill_rule rule, int *top, int *bottom);
 static int row_coverage(struct raster *raster, enum pdf_fill_rule rule, int row, size_t *next_edge, size_t *active_count);
 static void add_span(struct raster *raster, double left, double right, float weight);
-static void blend_pixel(uint32_t *pixel, double red, double green, double blue, double alpha, enum pdf_blend_mode blend);
+static void blend_pixel(uint32_t *pixel, const unsigned color[3], unsigned alpha, enum pdf_blend_mode blend);
+static unsigned to_level(double value);
+static void sort_crossings(struct raster *raster, size_t count);
 static int draw_image(struct raster *raster, const struct pdf_display_item *item);
 static void sample_image(const struct pdf_display_item *item, double u, double v, double sample[4]);
 static void texel(const struct pdf_display_item *item, long x, long y, double sample[4]);
@@ -203,8 +209,10 @@ pdf_display_list_rasterize(
 	for (level = 0; level < raster.mask_depth; level++)
 		free(raster.masks[level]);
 	free(raster.edges);
+	free(raster.edges_spare);
 	free(raster.active);
 	free(raster.crossings);
+	free(raster.crossings_spare);
 	free(raster.coverage);
 	free(raster.steps);
 	if (error != 0)
@@ -411,45 +419,74 @@ to_pixel(
 	pixel->y = point->y * raster->scale + raster->offset_y;
 }
 
-/* Orders edges by their tops, for qsort. */
+/*
+ * Sorts the edges by their tops with a bottom-up merge sort, stable and
+ * in n log n, through the spare array.
+ */
 static int
-compare_edges(
-	const void *left,
-	const void *right)
+sort_edges(
+	struct raster *raster)
 {
-	const struct raster_edge *first;
-	const struct raster_edge *second;
+	struct raster_edge *source;
+	struct raster_edge *target;
+	struct raster_edge *swap;
+	size_t count;
+	size_t width;
+	size_t start;
+	size_t middle;
+	size_t end;
+	size_t left;
+	size_t right;
+	size_t place;
 
-	/* The higher top first. */
-	first = left;
-	second = right;
-	if (first->top < second->top)
-		return -1;
-	if (first->top > second->top)
-		return 1;
+	/* Makes the spare array as large as the edges. */
+	count = raster->edge_count;
+	if (count > raster->edges_spare_capacity) {
+		swap = realloc(raster->edges_spare, count * sizeof(*swap));
+		if (swap == NULL)
+			return ENOMEM;
+		raster->edges_spare = swap;
+		raster->edges_spare_capacity = count;
+	}
 
-	/* Equal tops are in either order. */
-	return 0;
-}
+	/* Merges runs of doubling width from one array into the other. */
+	source = raster->edges;
+	target = raster->edges_spare;
+	for (width = 1; width < count; width *= 2) {
+		for (start = 0; start < count; start += 2 * width) {
+			middle = start + width;
+			if (middle > count)
+				middle = count;
+			end = start + 2 * width;
+			if (end > count)
+				end = count;
+			left = start;
+			right = middle;
+			for (place = start; place < end; place++) {
+				if (left < middle && (right >= end || source[left].top <= source[right].top)) {
+					target[place] = source[left];
+					left++;
+				} else {
+					target[place] = source[right];
+					right++;
+				}
+			}
+		}
+		swap = source;
+		source = target;
+		target = swap;
+	}
 
-/* Orders crossings by x, for qsort. */
-static int
-compare_crossings(
-	const void *left,
-	const void *right)
-{
-	const struct raster_crossing *first;
-	const struct raster_crossing *second;
+	/* The sorted edges end in the edges' own array. */
+	if (source != raster->edges) {
+		raster->edges_spare = raster->edges;
+		raster->edges = source;
+		width = raster->edge_capacity;
+		raster->edge_capacity = raster->edges_spare_capacity;
+		raster->edges_spare_capacity = width;
+	}
 
-	/* The leftmost first. */
-	first = left;
-	second = right;
-	if (first->x < second->x)
-		return -1;
-	if (first->x > second->x)
-		return 1;
-
-	/* Equal places are in either order. */
+	/* Succeeded: the edges are in order from the top. */
 	return 0;
 }
 
@@ -460,9 +497,12 @@ fill_item(
 	const struct pdf_display_item *item)
 {
 	const unsigned char *mask;
+	unsigned color[3];
+	unsigned level;
 	size_t next_edge;
 	size_t active_count;
-	double alpha;
+	float coverage;
+	float scale;
 	int top;
 	int bottom;
 	int row;
@@ -472,6 +512,14 @@ fill_item(
 	/* Nothing to draw at no alpha. */
 	if (!(item->alpha > 0.0))
 		return 0;
+
+	/* The colour as levels of 0 to 255, and the alpha that scales the coverage to a level. */
+	color[0] = to_level(item->red);
+	color[1] = to_level(item->green);
+	color[2] = to_level(item->blue);
+	scale = (float)(item->alpha * 255.0);
+	if (item->alpha > 1.0)
+		scale = 255.0f;
 
 	/* Flattens the path and finds the rows it touches. */
 	error = build_edges(raster, item);
@@ -492,17 +540,18 @@ fill_item(
 		if (error != 0)
 			return error;
 		for (x = raster->row_left; x <= raster->row_right; x++) {
-			alpha = raster->coverage[x];
-			if (alpha <= 0.0)
+			/* The pixel's coverage, within the clip, as a level of the alpha. */
+			coverage = raster->coverage[x];
+			if (coverage <= 0.0f)
 				continue;
-			if (alpha > 1.0)
-				alpha = 1.0;
+			if (coverage > 1.0f)
+				coverage = 1.0f;
 			if (mask != NULL)
-				alpha *= (double)mask[(size_t)row * (size_t)raster->width + (size_t)x] / 255.0;
-			alpha *= item->alpha;
-			if (alpha <= 0.0)
+				coverage *= (float)mask[(size_t)row * (size_t)raster->width + (size_t)x] / 255.0f;
+			level = (unsigned)(coverage * scale + 0.5f);
+			if (level == 0U)
 				continue;
-			blend_pixel(raster->pixels + (size_t)row * raster->stride + (size_t)x, item->red, item->green, item->blue, alpha, item->blend);
+			blend_pixel(raster->pixels + (size_t)row * raster->stride + (size_t)x, color, level, item->blend);
 		}
 	}
 
@@ -613,6 +662,7 @@ scan_path(
 	size_t index;
 	size_t *active;
 	struct raster_crossing *crossings;
+	int error;
 
 	/* No edges touch no rows. */
 	(void)rule;
@@ -622,7 +672,9 @@ scan_path(
 		return 0;
 
 	/* Sorts the edges from the top. */
-	qsort(raster->edges, raster->edge_count, sizeof(raster->edges[0]), compare_edges);
+	error = sort_edges(raster);
+	if (error != 0)
+		return error;
 
 	/* The rows from the highest top to the lowest bottom, within the target. */
 	highest = raster->edges[0].top;
@@ -650,6 +702,10 @@ scan_path(
 		if (crossings == NULL)
 			return ENOMEM;
 		raster->crossings = crossings;
+		crossings = realloc(raster->crossings_spare, raster->edge_count * sizeof(*crossings));
+		if (crossings == NULL)
+			return ENOMEM;
+		raster->crossings_spare = crossings;
 		raster->active_capacity = raster->edge_count;
 		raster->crossing_capacity = raster->edge_count;
 	}
@@ -728,7 +784,7 @@ row_coverage(
 
 		/* Orders the crossings from the left. */
 		if (crossing_count > 1)
-			qsort(raster->crossings, crossing_count, sizeof(raster->crossings[0]), compare_crossings);
+			sort_crossings(raster, crossing_count);
 
 		/* Adds the spans that are inside by the rule. */
 		winding = 0;
@@ -809,57 +865,143 @@ add_span(
 }
 
 /*
- * Blends a colour (not premultiplied) at an alpha over a premultiplied
- * pixel, by the Normal or Multiply blend mode.
+ * Blends a colour (levels of 0 to 255, not premultiplied) at an alpha level
+ * over a premultiplied pixel, by the Normal or Multiply blend mode.
+ *
+ * Normal is the source over the backdrop.  Multiply adds, where both are,
+ * the product of the two colours: with premultiplied source s and
+ * backdrop d of alphas as and ab, the result is s (1 - ab) + d (1 - as) + s d.
  */
 static void
 blend_pixel(
 	uint32_t *pixel,
-	double red,
-	double green,
-	double blue,
-	double alpha,
+	const unsigned color[3],
+	unsigned alpha,
 	enum pdf_blend_mode blend)
 {
-	double backdrop[4];
-	double source[4];
-	double result[4];
+	unsigned backdrop[4];
+	unsigned source[4];
+	unsigned result[4];
+	unsigned keep;
 	int channel;
 
-	/* The pixel's premultiplied channels (alpha, red, green, blue) from 0 to 1. */
-	backdrop[0] = (double)((*pixel >> 24) & 0xffU) / 255.0;
-	backdrop[1] = (double)((*pixel >> 16) & 0xffU) / 255.0;
-	backdrop[2] = (double)((*pixel >> 8) & 0xffU) / 255.0;
-	backdrop[3] = (double)(*pixel & 0xffU) / 255.0;
+	/* The pixel's premultiplied channels, alpha first. */
+	backdrop[0] = (*pixel >> 24) & 0xffU;
+	backdrop[1] = (*pixel >> 16) & 0xffU;
+	backdrop[2] = (*pixel >> 8) & 0xffU;
+	backdrop[3] = *pixel & 0xffU;
 
-	/* The source, premultiplied. */
+	/* The source premultiplied, and what of the backdrop stays. */
 	source[0] = alpha;
-	source[1] = red * alpha;
-	source[2] = green * alpha;
-	source[3] = blue * alpha;
+	source[1] = (color[0] * alpha + 127U) / 255U;
+	source[2] = (color[1] * alpha + 127U) / 255U;
+	source[3] = (color[2] * alpha + 127U) / 255U;
+	keep = 255U - alpha;
 
-	/* Normal: the source over the backdrop; Multiply adds the product where both are. */
-	result[0] = source[0] + backdrop[0] * (1.0 - source[0]);
+	/* The alpha: the source over the backdrop in either mode. */
+	result[0] = source[0] + (backdrop[0] * keep + 127U) / 255U;
+
+	/* Each colour by the mode. */
 	for (channel = 1; channel < 4; channel++) {
-		result[channel] = source[channel] + backdrop[channel] * (1.0 - source[0]);
+		result[channel] = source[channel] + (backdrop[channel] * keep + 127U) / 255U;
 		if (blend == PDF_BLEND_MULTIPLY) {
-			result[channel] = source[channel] * (1.0 - backdrop[0]) +
-			    backdrop[channel] * (1.0 - source[0]) +
-			    source[channel] * backdrop[channel];
+			result[channel] = (source[channel] * (255U - backdrop[0]) + 127U) / 255U +
+			    (backdrop[channel] * keep + 127U) / 255U +
+			    (source[channel] * backdrop[channel] + 127U) / 255U;
 		}
+		if (result[channel] > 255U)
+			result[channel] = 255U;
+	}
+	if (result[0] > 255U)
+		result[0] = 255U;
+
+	/* Stores the result. */
+	*pixel = (result[0] << 24) | (result[1] << 16) | (result[2] << 8) | result[3];
+}
+
+/* Converts a colour or alpha value from 0..1 to a level of 0 to 255, clamped and rounded. */
+static unsigned
+to_level(
+	double value)
+{
+	/* Below and above the range, NaN below. */
+	if (!(value > 0.0))
+		return 0U;
+	if (value >= 1.0)
+		return 255U;
+
+	/* Rounds to the nearest level. */
+	return (unsigned)(value * 255.0 + 0.5);
+}
+
+/* Orders a sub-scanline's crossings from the left: few by insertion, many by a merge sort through the spare array. */
+static void
+sort_crossings(
+	struct raster *raster,
+	size_t count)
+{
+	struct raster_crossing *crossings;
+	struct raster_crossing *source;
+	struct raster_crossing *target;
+	struct raster_crossing *swap;
+	struct raster_crossing moving;
+	size_t index;
+	size_t place;
+	size_t width;
+	size_t start;
+	size_t middle;
+	size_t end;
+	size_t left;
+	size_t right;
+
+	/* Few crossings: each moves left past the larger ones before it. */
+	crossings = raster->crossings;
+	if (count <= 24) {
+		for (index = 1; index < count; index++) {
+			moving = crossings[index];
+			place = index;
+			while (place > 0 && crossings[place - 1].x > moving.x) {
+				crossings[place] = crossings[place - 1];
+				place--;
+			}
+			crossings[place] = moving;
+		}
+		return;
 	}
 
-	/* Stores the result, clamped and rounded. */
-	for (channel = 0; channel < 4; channel++) {
-		if (result[channel] < 0.0)
-			result[channel] = 0.0;
-		if (result[channel] > 1.0)
-			result[channel] = 1.0;
+	/* Many: runs of doubling width merged from one array into the other. */
+	source = raster->crossings;
+	target = raster->crossings_spare;
+	for (width = 1; width < count; width *= 2) {
+		for (start = 0; start < count; start += 2 * width) {
+			middle = start + width;
+			if (middle > count)
+				middle = count;
+			end = start + 2 * width;
+			if (end > count)
+				end = count;
+			left = start;
+			right = middle;
+			for (place = start; place < end; place++) {
+				if (left < middle && (right >= end || source[left].x <= source[right].x)) {
+					target[place] = source[left];
+					left++;
+				} else {
+					target[place] = source[right];
+					right++;
+				}
+			}
+		}
+		swap = source;
+		source = target;
+		target = swap;
 	}
-	*pixel = ((uint32_t)(result[0] * 255.0 + 0.5) << 24) |
-	    ((uint32_t)(result[1] * 255.0 + 0.5) << 16) |
-	    ((uint32_t)(result[2] * 255.0 + 0.5) << 8) |
-	    (uint32_t)(result[3] * 255.0 + 0.5);
+
+	/* The sorted crossings end in the crossings' own array (the spare has the same size). */
+	if (source != raster->crossings) {
+		raster->crossings_spare = raster->crossings;
+		raster->crossings = source;
+	}
 }
 
 /*
@@ -874,6 +1016,8 @@ draw_image(
 	const unsigned char *mask;
 	struct pdf_point corners[4];
 	struct pdf_point pixel;
+	unsigned color[3];
+	unsigned level;
 	double determinant;
 	double page_x;
 	double page_y;
@@ -992,7 +1136,13 @@ draw_image(
 				continue;
 
 			/* Blends the colour, unpremultiplied from the sums. */
-			blend_pixel(raster->pixels + (size_t)row * raster->stride + (size_t)x, sum[1] / sum[0], sum[2] / sum[0], sum[3] / sum[0], alpha, item->blend);
+			color[0] = to_level(sum[1] / sum[0]);
+			color[1] = to_level(sum[2] / sum[0]);
+			color[2] = to_level(sum[3] / sum[0]);
+			level = to_level(alpha);
+			if (level == 0U)
+				continue;
+			blend_pixel(raster->pixels + (size_t)row * raster->stride + (size_t)x, color, level, item->blend);
 		}
 	}
 
