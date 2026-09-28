@@ -601,9 +601,10 @@ element_finalize(
 
 	UNUSED_PARAMETER(heap);
 
-	/* The strings are cells of their own; only the array is the element's. */
+	/* The strings are cells of their own; only the array and a control's state are the element's. */
 	element = (struct dom_element *)cell;
 	free(element->attributes);
+	dom_control_free(element);
 }
 
 /* Frees the character buffer of a dead text or comment node. */

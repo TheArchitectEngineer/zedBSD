@@ -112,6 +112,7 @@ void text_select_font(const struct text_system *system, int monospace, float siz
 int text_font_metrics(struct text_system *system, const struct text_font *font, struct text_metrics *metrics);
 int text_glyph(struct text_system *system, const struct text_font *font, uint32_t code_point, int with_bitmap, struct text_glyph *glyph);
 int text_glyph_advance(struct text_system *system, const struct text_font *font, uint32_t code_point, int *advance);
+int text_font_char_widths(struct text_system *system, const struct text_font *font, int *average, int *maximum);
 
 /* Line breaking (linebreak.c). */
 int text_is_space(uint32_t code_point);

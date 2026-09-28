@@ -820,6 +820,7 @@ browser_view_key(
 	struct bind_key event;
 	struct bind_key typed;
 	int canceled;
+	int handled;
 	int error;
 
 	/* The key as the page sees it (a missing name is empty). */
@@ -860,9 +861,24 @@ browser_view_key(
 		if (error != 0)
 			return error;
 		view_changed(view);
+
+		/* A canceled keypress types nothing, and has no default action either. */
+		if (canceled)
+			return 0;
 	}
 
-	/* The key's default action (the text itself goes nowhere: there are no form controls yet). */
+	/* A focused text control takes the text and its editing keys. */
+	if (view->page != NULL) {
+		error = page_edit_key(view->page, event.key, text, event.modifiers, &handled);
+		if (error != 0)
+			return error;
+		if (handled) {
+			view_changed(view);
+			return 0;
+		}
+	}
+
+	/* The key's default action. */
 	error = view_key_default(view, event.key, modifiers);
 	if (error != 0)
 		return error;
@@ -2109,9 +2125,22 @@ view_click(
 	if (error != 0)
 		return error;
 
-	/* The link under the click, in the document's coordinates. */
+	/* A form control under the click does what it does (a submit button's form goes where it submits). */
 	wb_buffer_init(&href);
-	error = page_link_at(view->page, pointer.x, pointer.y, &href, &found);
+	error = page_click_control(view->page, pointer.x, pointer.y, &href, &found);
+	if (error == 0 && found) {
+		view_changed(view);
+		view_follow_link(view, wb_buffer_string(&href));
+		wb_buffer_release(&href);
+		return 0;
+	}
+
+	/* A control that changed (a checkbox) is drawn again. */
+	view_changed(view);
+
+	/* The link under the click, in the document's coordinates. */
+	if (error == 0)
+		error = page_link_at(view->page, pointer.x, pointer.y, &href, &found);
 	if (error != 0) {
 		wb_buffer_release(&href);
 		return error;
@@ -2162,6 +2191,7 @@ view_key_default(
 	int ctrl;
 	int meta;
 	int shift;
+	int pressable;
 	int error;
 
 	/* The key among the ones with an action, and the modifiers held. */
@@ -2239,8 +2269,11 @@ view_key_default(
 		view_scroll_pages(view, -1);
 		break;
 	case VIEW_KEY_SPACE:
-		/* Space goes down a page, and up with Shift. */
-		if (shift)
+		/* Space presses a focused button or checkbox; otherwise it goes down a page, and up with Shift. */
+		pressable = page_focus_pressable(view->page);
+		if (pressable)
+			error = view_activate(view);
+		else if (shift)
 			view_scroll_pages(view, -1);
 		else
 			view_scroll_pages(view, 1);

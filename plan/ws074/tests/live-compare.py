@@ -2,15 +2,17 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Draws a live page (the Google demo goal) with browser and with Chromium, and compares them.
+"""Draws a live page (the demo goal: amazon.co.jp, earlier Google) with browser and with Chromium, and compares them.
 
-  google-compare.py [URL] [--width W] [--height H] [--program PATH] [--out DIR] [--shots DIR --tag TAG]
+  live-compare.py URL [--width W] [--height H] [--program PATH] [--out DIR] [--shots DIR --tag TAG]
 
-URL defaults to https://www.google.com/.  browser runs `--render` with the fonts of build/ws035-fonts;
+URL is a live http or https page, or a saved capture under build/ (a file's path), which is how the
+demo's pages are iterated on without asking the site again.  browser runs `--render` with the fonts of
+build/ws035-fonts;
 Chromium (headless, the same fonts through build/ws074-chrome/fonts.conf from chrome-fonts.sh) takes a
 screenshot with browser's own User-Agent, so both get the same variant of the page, and runs the page's
 scripts for five seconds of virtual time.  Both pictures and a side-by-side picture (ours | Chromium |
-differing pixels in red) go to DIR (default build/ws074-google).  A pixel agrees when no channel differs by
+differing pixels in red) go to DIR (default build/ws074-live).  A pixel agrees when no channel differs by
 more than 16; prints the share of all pixels that agree and the share of the pixels that are not white in
 either picture ("ink"), which is the number to watch.  With --shots the side-by-side picture is also copied
 to SHOTS/TAG.png.
@@ -42,7 +44,7 @@ def render_ours(program, url, width, height, out):
     result = subprocess.run(command, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
-        raise SystemExit("google-compare: browser failed")
+        raise SystemExit("live-compare: browser failed")
     Image.open(ppm).save(out)
     os.unlink(ppm)
     return result.stderr
@@ -55,7 +57,9 @@ def render_chromium(url, width, height, out):
         subprocess.run(["sh", os.path.join(ROOT, "plan/ws074/tests/chrome-fonts.sh")], check=True)
     env = dict(os.environ)
     env["FONTCONFIG_FILE"] = fonts
-    profile = os.path.join(ROOT, "build/ws074-google/chrome-profile")
+    if not url.startswith(("http:", "https:", "file:", "data:")):
+        url = "file://" + os.path.abspath(url)
+    profile = os.path.join(ROOT, "build/ws074-live/chrome-profile")
     shutil.rmtree(profile, ignore_errors=True)
     command = ["chromium", "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
                "--force-device-scale-factor=1", "--user-data-dir=" + profile, "--virtual-time-budget=5000",
@@ -63,7 +67,7 @@ def render_chromium(url, width, height, out):
     subprocess.run(command, env=env, capture_output=True, timeout=120)
     shutil.rmtree(profile, ignore_errors=True)
     if not os.path.exists(out):
-        raise SystemExit("google-compare: Chromium made no screenshot")
+        raise SystemExit("live-compare: Chromium made no screenshot")
 
 
 def compare(ours, theirs, side):
@@ -106,13 +110,13 @@ def compare(ours, theirs, side):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("url", nargs="?", default="https://www.google.com/")
+    parser.add_argument("url")
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--program", default=os.path.join(ROOT, "build/ws074-host/plain/browser"))
-    parser.add_argument("--out", default=os.path.join(ROOT, "build/ws074-google"))
+    parser.add_argument("--out", default=os.path.join(ROOT, "build/ws074-live"))
     parser.add_argument("--shots")
-    parser.add_argument("--tag", default="google")
+    parser.add_argument("--tag", default="live")
     args = parser.parse_args()
     os.makedirs(args.out, exist_ok=True)
     ours = os.path.join(args.out, args.tag + "-ours.png")

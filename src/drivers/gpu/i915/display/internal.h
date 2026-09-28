@@ -3185,6 +3185,30 @@ struct i915_present_window {
 	struct i915_ppgtt *map_vm;
 	uint64_t map_va[2];
 	unsigned map_pages[2];
+
+	/*
+	 * The hold between two leases (ws075-p016).  A release does not leave
+	 * the window: the output stays lit with the last picture of the lease
+	 * that ended, so the next lease's first frame is a flip and not a
+	 * modeset.  holding is nonzero from the release until the next lease's
+	 * first frame, or until the window is left because the hold ran out
+	 * (hold_until, in ticks) or the machine shuts down (hold_ended, which
+	 * also refuses every later hold).  hold_since is the tick of the
+	 * release.  The device IRQ lock guards all four: the worker writes
+	 * them and the shutdown reads holding and sets hold_ended.
+	 */
+	int holding;
+	int hold_ended;
+	uint64_t hold_since;
+	uint64_t hold_until;
+
+	/*
+	 * Bit i is set while resident buffer i still holds a picture of a
+	 * lease that ended.  A frame that does not cover the whole buffer
+	 * clears it first, so nothing of the ended lease shows around it.
+	 * Only the worker reads and writes it.
+	 */
+	unsigned stale_buffers;
 };
 
 /*

@@ -138,6 +138,8 @@ static const struct values_name values_names[] = {
 	{ "overflow", CSS_PROP_OVERFLOW },
 	{ "overflow-x", CSS_PROP_OVERFLOW_X },
 	{ "overflow-y", CSS_PROP_OVERFLOW_Y },
+	{ "box-sizing", CSS_PROP_BOX_SIZING },
+	{ "-webkit-box-sizing", CSS_PROP_BOX_SIZING },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -241,8 +243,15 @@ static const struct values_keyword values_border_style[] = {
 	{ "double", CSS_BORDER_DOUBLE },
 	{ "groove", CSS_BORDER_SOLID },
 	{ "ridge", CSS_BORDER_SOLID },
-	{ "inset", CSS_BORDER_SOLID },
-	{ "outset", CSS_BORDER_SOLID },
+	{ "inset", CSS_BORDER_INSET },
+	{ "outset", CSS_BORDER_OUTSET },
+	{ NULL, 0 }
+};
+
+/* The keywords of box-sizing. */
+static const struct values_keyword values_box_sizing[] = {
+	{ "content-box", CSS_BOX_SIZING_CONTENT },
+	{ "border-box", CSS_BOX_SIZING_BORDER },
 	{ NULL, 0 }
 };
 
@@ -1094,6 +1103,9 @@ values_single(
 		break;
 	case CSS_PROP_LIST_STYLE_TYPE:
 		table = values_list_style;
+		break;
+	case CSS_PROP_BOX_SIZING:
+		table = values_box_sizing;
 		break;
 	default:
 		break;

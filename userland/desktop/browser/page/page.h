@@ -137,9 +137,20 @@ int page_focus_at(struct page *page, int x, int y);
 int page_focus_move(struct page *page, int backward);
 int page_window_focus(struct page *page, int focused);
 int page_activate_focused(struct page *page, struct wb_buffer *href, int *found);
+int page_click_control(struct page *page, int x, int y, struct wb_buffer *href, int *found);
+int page_focus_pressable(struct page *page);
 int page_focus_rect(struct page *page, struct layout_rect *rect);
 int page_needs_paint(const struct page *page);
 int page_paint_focus(struct page *page);
+
+/* Forms (form.c). */
+int page_is_editing(struct page *page);
+int page_edit_key(struct page *page, const char *key, const char *text, unsigned modifiers, int *handled);
+int page_activate_control(struct page *page, struct dom_element *element, int implicit, struct wb_buffer *href, int *found, int *handled);
+int page_submit_form(struct page *page, struct dom_element *form, struct dom_element *submitter, struct wb_buffer *href, int *found);
+int page_place_caret(struct page *page, int x);
+int page_caret_to_end(struct page *page);
+int page_paint_caret(struct page *page);
 
 /* Links (link.c). */
 int page_link_at(struct page *page, int x, int y, struct wb_buffer *href, int *found);

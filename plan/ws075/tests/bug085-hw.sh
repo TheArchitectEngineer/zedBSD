@@ -68,7 +68,7 @@ fi
 # What the run left.
 scp -q "$host:$remote/run.log" "$out/kernel.log"
 scp -q "$host:$remote/serial.log" "$out/serial.log"
-for f in qemu.log watch.log harness.out stall fault; do
+for f in qemu.log watch.log harness.out stall fault poweroff; do
 	scp -q "$host:$remote/$f" "$out/$f" 2>/dev/null
 done
 scp -qr "$host:$remote/capture-out" "$out/capture" 2>/dev/null

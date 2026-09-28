@@ -645,6 +645,15 @@ primary docs for operational syntax:
   承認なしで行ってよい（2026-09-25）。承認前の hal.h の差分は plan に置くだけで適用しない。承認済みの差分は [Guardrail](plan/guardrail.md) の表。
 - RTL8822B の `.inc` はライセンスを分けるために独立させており、別の file のまま保つ。
 - 共有の `build/` の成果物を消さない（自分の作業用の directory は消してよい）。
+- **toolchain は main の許可なしに変えない**（2026-09-28 ユーザー、subagent の worktree の build が共有の LLVM の source に package の patch を当てた事故の再発防止）。
+  toolchain とは `toolchain/`（LLVM の patch・`llvm.mk`・`sysroot.mk`）、`userland/base/noct/` の patch と build の規則、`userland/packages/lang/clang`・
+  `userland/packages/devel/libcxx`、共有の `build/llvm`・`build/llvm-source`・`build/llvm-build`・`build/NoctLang` を指す。subagent はこれらを変更・build・
+  install しない。必要なら main に理由を送って許可を得る。共有の toolchain の tree は `plan/tools/toolchain-lock.sh lock` で directory を読み取り専用に
+  してあり、main が許可した変更の間だけ `unlock` し、終わったら `lock` する。
+- **subagent の修正可能範囲**（2026-09-28 ユーザー）: 割り当てられた WS・Phase の source と、その WS の `plan/wsNNN/`（phase.md・ws.md・試験）、
+  指示された bug の ticket と Bug Board の該当の行、自分の worktree の中の `build/`。それ以外（`AGENTS.md`・`plan/master.md`・`plan/queue.md`・
+  `plan/guardrail.md`・`plan/coding-style.md`・`plan/history/`、他の WS の source と plan、HAL の API、toolchain、main の checkout の `build/`）は
+  読むだけにし、変更が要るなら main に依頼する。main の checkout の共有の `build/` からは、読み取り専用の symlink か複写で使う。
 - sudo はパスワード無しで使ってよい（package の導入、host の操作）。
 
 ## 検証

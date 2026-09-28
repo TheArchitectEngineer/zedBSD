@@ -289,6 +289,7 @@ box_build_element(
 	int out_of_flow;
 	int floating;
 	int replaced;
+	int is_control;
 	int kind;
 	int error;
 
@@ -334,6 +335,24 @@ box_build_element(
 			kind = LAYOUT_REPLACED;
 	}
 
+	/*
+	 * An <input> or a <textarea> is a replaced box too, drawn by the
+	 * painting from its state: an atomic piece of its line when it is inline
+	 * or an inline block, as the user agent's sheet makes it.
+	 */
+	is_control = 0;
+	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_INPUT)
+		is_control = 1;
+	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_TEXTAREA)
+		is_control = 1;
+	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_SELECT)
+		is_control = 1;
+	if (is_control) {
+		replaced = 1;
+		if (kind == LAYOUT_INLINE || style->display == CSS_DISPLAY_INLINE_BLOCK)
+			kind = LAYOUT_REPLACED;
+	}
+
 	/* The root is a block. */
 	if (parent == NULL)
 		kind = LAYOUT_BLOCK;
@@ -361,10 +380,18 @@ box_build_element(
 	box->floating = floating;
 
 	/* A replaced box shows its element's image, and has no children. */
-	if (replaced) {
+	if (replaced && !is_control) {
 		box->replaced = 1;
 		if (tree->image_lookup != NULL)
 			box->image = tree->image_lookup(tree->image_context, element);
+	}
+
+	/* A control's box has the natural size of its text and attributes instead. */
+	if (is_control) {
+		box->replaced = 1;
+		error = layout_control_measure(tree, box);
+		if (error != 0)
+			return error;
 	}
 
 	/* The box goes under its parent, or is the root. */

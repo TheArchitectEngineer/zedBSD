@@ -29,6 +29,21 @@ static const char *const dump_kinds[] = {
 	"replaced"
 };
 
+/* The names of the form controls' kinds, in enum dom_control_kind order. */
+static const char *const dump_control_names[] = {
+	"none",
+	"text",
+	"password",
+	"button",
+	"submit",
+	"reset",
+	"checkbox",
+	"radio",
+	"hidden",
+	"textarea",
+	"select"
+};
+
 /*
  * Writes the layout tree as text.
  */
@@ -88,6 +103,8 @@ dump_box(
 	/* A replaced box's image, then the end of the line. */
 	if (box->replaced && box->image != NULL)
 		wb_buffer_printf(out, " image %dx%d", box->image->width, box->image->height);
+	if (box->control != DOM_CONTROL_NONE)
+		wb_buffer_printf(out, " control %s", dump_control_names[box->control]);
 	wb_buffer_append_string(out, "\n");
 
 	/* Its lines, and the boxes out of the flow among its inline content; or its children. */
@@ -156,6 +173,8 @@ dump_lines(
 				    (double)layout_to_px(fragment->width), (double)layout_to_px(fragment->ascent));
 				if (fragment->box->image != NULL)
 					wb_buffer_printf(out, " image %dx%d", fragment->box->image->width, fragment->box->image->height);
+				if (fragment->box->control != DOM_CONTROL_NONE)
+					wb_buffer_printf(out, " control %s", dump_control_names[fragment->box->control]);
 				wb_buffer_append_string(out, "\n");
 				continue;
 			}

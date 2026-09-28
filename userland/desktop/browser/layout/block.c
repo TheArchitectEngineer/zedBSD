@@ -40,6 +40,7 @@ layout_block(
 	layout_unit saved_x;
 	layout_unit saved_y;
 	layout_unit height;
+	layout_unit sizing;
 	int own_context;
 	int error;
 
@@ -87,22 +88,31 @@ layout_block(
 	if (error != 0)
 		return error;
 
+	/* Under box-sizing: border-box the given heights size the border box, so the frame comes off them. */
+	sizing = 0;
+	if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+		sizing = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+
 	/* An explicit height replaces the content's. */
 	if (box->style.height.unit == CSS_UNIT_PX) {
-		height = layout_from_px(box->style.height.value);
+		height = layout_from_px(box->style.height.value) - sizing;
+		if (height < 0)
+			height = 0;
 		box->height = height;
 	}
 
 	/* min-height raises a shorter box. */
 	if (box->style.min_height.unit == CSS_UNIT_PX) {
-		height = layout_from_px(box->style.min_height.value);
+		height = layout_from_px(box->style.min_height.value) - sizing;
 		if (box->height < height)
 			box->height = height;
 	}
 
 	/* max-height lowers a taller box. */
 	if (box->style.max_height.unit == CSS_UNIT_PX) {
-		height = layout_from_px(box->style.max_height.value);
+		height = layout_from_px(box->style.max_height.value) - sizing;
+		if (height < 0)
+			height = 0;
 		if (box->height > height)
 			box->height = height;
 	}
@@ -257,26 +267,35 @@ block_width(
 	layout_unit frame;
 	layout_unit room;
 	layout_unit width;
+	layout_unit sizing;
 
 	/* The borders and paddings around the content. */
 	frame = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+
+	/*
+	 * Under box-sizing: border-box the given widths size the border box, so
+	 * the frame comes off them to give the content's.
+	 */
+	sizing = 0;
+	if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+		sizing = frame;
 
 	/* An auto width fills the containing block. */
 	if (box->style.width.unit == CSS_UNIT_AUTO) {
 		width = containing_width - box->margin[CSS_LEFT] - box->margin[CSS_RIGHT] - frame;
 	} else {
-		width = block_resolve(&box->style.width, containing_width);
+		width = block_resolve(&box->style.width, containing_width) - sizing;
 	}
 
 	/* min-width and max-width. */
 	if (box->style.max_width.unit == CSS_UNIT_PX || box->style.max_width.unit == CSS_UNIT_PERCENT) {
-		room = block_resolve(&box->style.max_width, containing_width);
+		room = block_resolve(&box->style.max_width, containing_width) - sizing;
 		if (width > room)
 			width = room;
 	}
 
 	/* min-width wins over max-width, and no width is negative. */
-	room = block_resolve(&box->style.min_width, containing_width);
+	room = block_resolve(&box->style.min_width, containing_width) - sizing;
 	if (width < room)
 		width = room;
 	if (width < 0)

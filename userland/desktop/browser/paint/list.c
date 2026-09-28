@@ -42,6 +42,24 @@
 #define LIST_TILES_MAX		16384U
 
 /*
+ * The colors of the form controls' own look, as Chromium draws them
+ * (0xAARRGGBB): a checkbox's frame and inside, a checked one's fill, and a
+ * field's placeholder.
+ */
+#define LIST_FRAME_COLOR	0xff767676U
+#define LIST_FIELD_COLOR	0xffffffffU
+#define LIST_CHECKED_COLOR	0xff0075ffU
+#define LIST_PLACEHOLDER_COLOR	0xff757575U
+
+/* The character a password field shows for each of its characters. */
+#define LIST_PASSWORD_BULLET	0x2022U
+
+/* A select's arrow: how far its left is from the content box's right, its rows and its widest row, in pixels. */
+#define LIST_ARROW_RIGHT	14
+#define LIST_ARROW_ROWS		5
+#define LIST_ARROW_WIDTH	9
+
+/*
  * What a walk of the box tree carries: the list being filled, the text
  * system that measures the glyphs, the box whose background went to the
  * canvas (and is not painted again), and the first error.
@@ -73,6 +91,17 @@ static void list_fragment(struct list_walk *walk, const struct layout_fragment *
 static void list_rect(struct list_walk *walk, layout_unit x, layout_unit y, layout_unit width, layout_unit height, uint32_t color);
 static void list_replaced(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
 static void list_image(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
+static void list_control(struct list_walk *walk, const struct layout_box *box);
+static int list_control_native(const struct layout_box *box);
+static void list_check(struct list_walk *walk, const struct layout_box *box, layout_unit width, layout_unit height);
+static void list_control_text(struct list_walk *walk, const struct layout_box *box);
+static int list_control_shown(const struct layout_box *box, struct dom_element *element, const struct dom_control *control, struct wb_units *shown, uint32_t *color);
+static int list_caret_offset(struct list_walk *walk, const struct text_font *font, const struct layout_box *box, struct dom_element *element, struct dom_control *control, layout_unit *offset);
+static void list_textarea(struct list_walk *walk, const struct layout_box *box, struct dom_element *element, const struct list_area *content, const struct text_font *font, layout_unit line, layout_unit ascent);
+static void list_select(struct list_walk *walk, const struct layout_box *box, struct dom_element *element, const struct list_area *content, const struct text_font *font, layout_unit line, layout_unit ascent);
+static void list_control_record(struct list_walk *walk, const struct layout_box *box, struct dom_control *control, const struct list_area *content, const struct text_font *font, layout_unit caret_x, layout_unit line_top, layout_unit ascent);
+static void list_style_font(struct list_walk *walk, const struct css_style *style, struct text_font *font);
+static void list_text_run(struct list_walk *walk, const struct text_font *font, uint32_t color, const uint16_t *units, size_t length, layout_unit x, layout_unit baseline);
 static void list_image_item(struct list_walk *walk, const struct img_bitmap *image, layout_unit x, layout_unit y, layout_unit width, layout_unit height);
 static void list_box_background(struct list_walk *walk, const struct layout_box *box);
 static void list_canvas_background(struct list_walk *walk, const struct layout_tree *tree);
@@ -230,6 +259,40 @@ paint_add_ring(
 	}
 
 	/* Succeeded: the ring is in the list. */
+	return 0;
+}
+
+/*
+ * Adds a filled rectangle on top of everything painted so far (the caret
+ * of a focused text control, ws074-p032).
+ */
+int
+paint_add_rect(
+	struct paint_list *list,
+	layout_unit x,
+	layout_unit y,
+	layout_unit width,
+	layout_unit height,
+	uint32_t color)
+{
+	struct paint_item item;
+	int error;
+
+	/* The rectangle. */
+	memset(&item, 0, sizeof(item));
+	item.kind = PAINT_RECT;
+	item.x = x;
+	item.y = y;
+	item.width = width;
+	item.height = height;
+	item.color = color;
+
+	/* The item, last in the list so it is drawn over the page. */
+	error = wb_vector_push(&list->items, &item);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the rectangle is in the list. */
 	return 0;
 }
 
@@ -483,6 +546,12 @@ list_box(
 	visible = 1;
 	if (box->style.visibility == LIST_VISIBILITY_HIDDEN)
 		visible = 0;
+
+	/* A form control standing as a block draws itself from its state. */
+	if (visible && box->control != DOM_CONTROL_NONE) {
+		list_control(walk, box);
+		return;
+	}
 
 	/* The background fills the border box, unless it went to the canvas. */
 	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
@@ -761,6 +830,12 @@ list_replaced(
 	placed.x = x + box->margin[CSS_LEFT];
 	placed.y = y + box->margin[CSS_TOP];
 
+	/* A form control draws itself from its state. */
+	if (box->control != DOM_CONTROL_NONE) {
+		list_control(walk, &placed);
+		return;
+	}
+
 	/* The background under the border box. */
 	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
 	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
@@ -770,6 +845,636 @@ list_replaced(
 	/* The borders, then the image in the content box. */
 	list_borders(walk, &placed);
 	list_image(walk, box, placed.x + box->border[CSS_LEFT] + box->padding[CSS_LEFT], placed.y + box->border[CSS_TOP] + box->padding[CSS_TOP]);
+}
+
+/*
+ * Paints a form control whose border box is placed (ws074-p032): its
+ * frame, then its text, and it records where it drew its text and where
+ * the caret goes in the control's state for the page.
+ *
+ * A control keeps the look the user agent's sheet gives it -- all four
+ * borders inset or outset -- is drawn the way Chromium's controls look: a
+ * one pixel frame in the border's color around the background.  One the
+ * page styled otherwise is drawn from its style like any box.
+ */
+static void
+list_control(
+	struct list_walk *walk,
+	const struct layout_box *box)
+{
+	struct list_area painting;
+	struct list_area area;
+	layout_unit width;
+	layout_unit height;
+	layout_unit pixel;
+	int native;
+
+	/* The border box. */
+	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+
+	/* A checkbox or a radio button is drawn as the platform draws one. */
+	if (box->control == DOM_CONTROL_CHECKBOX || box->control == DOM_CONTROL_RADIO) {
+		list_check(walk, box, width, height);
+		return;
+	}
+
+	/* The background color under the border box. */
+	if ((box->style.background_color >> 24) != 0)
+		list_rect(walk, box->x, box->y, width, height, box->style.background_color);
+
+	/* The background image, placed in the padding box and painted over the border box. */
+	painting.x = box->x;
+	painting.y = box->y;
+	painting.width = width;
+	painting.height = height;
+	area.x = box->x + box->border[CSS_LEFT];
+	area.y = box->y + box->border[CSS_TOP];
+	area.width = box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT];
+	area.height = box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM];
+	list_background_image(walk, box, &area, &painting);
+
+	/* The platform's one pixel frame, or the style's borders. */
+	native = list_control_native(box);
+	if (native) {
+		pixel = LAYOUT_UNIT;
+		list_rect(walk, box->x, box->y, width, pixel, box->style.border_color[CSS_TOP]);
+		list_rect(walk, box->x, box->y + height - pixel, width, pixel, box->style.border_color[CSS_BOTTOM]);
+		list_rect(walk, box->x, box->y + pixel, pixel, height - 2 * pixel, box->style.border_color[CSS_LEFT]);
+		list_rect(walk, box->x + width - pixel, box->y + pixel, pixel, height - 2 * pixel, box->style.border_color[CSS_RIGHT]);
+	} else {
+		list_borders(walk, box);
+	}
+
+	/* The text in the content box. */
+	list_control_text(walk, box);
+}
+
+/* Tells whether a control keeps the user agent's look: all four borders inset (a field) or outset (a button). */
+static int
+list_control_native(
+	const struct layout_box *box)
+{
+	int side;
+	int style;
+
+	/* Every side must be inset or outset. */
+	for (side = 0; side < 4; side++) {
+		style = box->style.border_style[side];
+		if (style != CSS_BORDER_INSET && style != CSS_BORDER_OUTSET)
+			return 0;
+	}
+
+	/* The user agent's look. */
+	return 1;
+}
+
+/*
+ * Draws a checkbox or a radio button in its border box: a white square
+ * with a gray frame, filled with blue and marked in white when it is
+ * checked, as Chromium's look.
+ */
+static void
+list_check(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	layout_unit width,
+	layout_unit height)
+{
+	const struct dom_element *element;
+	layout_unit pixel;
+	layout_unit mark;
+	int checked;
+
+	/* Whether it is checked. */
+	checked = 0;
+	if (box->node != NULL && box->node->type == DOM_ELEMENT) {
+		element = (const struct dom_element *)box->node;
+		checked = dom_control_checked(element);
+	}
+
+	/* The frame and the inside: gray around white, or blue all over when checked. */
+	pixel = LAYOUT_UNIT;
+	if (checked) {
+		list_rect(walk, box->x, box->y, width, height, LIST_CHECKED_COLOR);
+	} else {
+		list_rect(walk, box->x, box->y, width, height, LIST_FRAME_COLOR);
+		list_rect(walk, box->x + pixel, box->y + pixel, width - 2 * pixel, height - 2 * pixel, LIST_FIELD_COLOR);
+	}
+
+	/* A checked control's white mark in its middle, a third of its size. */
+	if (checked) {
+		mark = width / 3;
+		list_rect(walk, box->x + (width - mark) / 2, box->y + (height - mark) / 2, mark, mark, LIST_FIELD_COLOR);
+	}
+}
+
+/*
+ * Draws a control's text in its content box and records where it went: a
+ * field's value (bullets for a password, the placeholder in gray when it
+ * is empty) scrolled to keep the caret in view and clipped to the content
+ * box, a button's label centered, a textarea's lines from the top.
+ */
+static void
+list_control_text(
+	struct list_walk *walk,
+	const struct layout_box *box)
+{
+	struct dom_element *element;
+	struct dom_control *control;
+	struct list_area content;
+	struct text_font font;
+	struct wb_units shown;
+	layout_unit line;
+	layout_unit ascent;
+	layout_unit width;
+	layout_unit caret;
+	layout_unit left;
+	layout_unit top;
+	uint32_t color;
+	int editable;
+	int error;
+
+	/* Only an element's control has text. */
+	if (walk->error != 0 || box->node == NULL || box->node->type != DOM_ELEMENT)
+		return;
+	element = (struct dom_element *)box->node;
+
+	/* The content box. */
+	content.x = box->x + box->border[CSS_LEFT] + box->padding[CSS_LEFT];
+	content.y = box->y + box->border[CSS_TOP] + box->padding[CSS_TOP];
+	content.width = box->width;
+	content.height = box->height;
+
+	/* The font and the line the text is set in. */
+	list_style_font(walk, &box->style, &font);
+	error = layout_control_line(walk->text, &box->style, &line, &ascent);
+	if (error != 0) {
+		walk->error = error;
+		return;
+	}
+
+	/* A textarea's lines go their own way. */
+	if (box->control == DOM_CONTROL_TEXTAREA) {
+		list_textarea(walk, box, element, &content, &font, line, ascent);
+		return;
+	}
+
+	/* So does a select's chosen option and its arrow. */
+	if (box->control == DOM_CONTROL_SELECT) {
+		list_select(walk, box, element, &content, &font, line, ascent);
+		return;
+	}
+
+	/* A field keeps its state for the caret; a button only shows its label. */
+	editable = 0;
+	if (box->control == DOM_CONTROL_TEXT || box->control == DOM_CONTROL_PASSWORD)
+		editable = 1;
+	control = NULL;
+	if (editable) {
+		control = dom_control_of(element);
+		if (control == NULL) {
+			walk->error = ENOMEM;
+			return;
+		}
+	}
+
+	/* The text shown, and its color. */
+	wb_units_init(&shown);
+	color = box->style.color;
+	error = list_control_shown(box, element, control, &shown, &color);
+	if (error == 0)
+		error = layout_units_width(walk->text, &font, shown.data, shown.length, &width);
+	if (error != 0) {
+		wb_units_release(&shown);
+		walk->error = error;
+		return;
+	}
+
+	/* The line is centered in the content box's height. */
+	top = content.y + (content.height - line) / 2;
+
+	/* A button's label is placed by text-align (centered by the user agent's sheet). */
+	if (!editable) {
+		left = content.x;
+		if (box->style.text_align == CSS_TEXT_ALIGN_CENTER)
+			left = content.x + (content.width - width) / 2;
+		if (box->style.text_align == CSS_TEXT_ALIGN_RIGHT)
+			left = content.x + content.width - width;
+		list_text_run(walk, &font, color, shown.data, shown.length, left, top + ascent);
+		wb_units_release(&shown);
+		return;
+	}
+
+	/* The caret's place in the text (at the start while the placeholder shows). */
+	error = list_caret_offset(walk, &font, box, element, control, &caret);
+	if (error != 0) {
+		wb_units_release(&shown);
+		walk->error = error;
+		return;
+	}
+
+	/* The scroll keeps the caret inside the content box, and no more of the box empty than it must. */
+	if (caret - control->scroll_x > content.width - LAYOUT_UNIT)
+		control->scroll_x = caret - content.width + LAYOUT_UNIT;
+	if (caret < control->scroll_x)
+		control->scroll_x = caret;
+	if (control->scroll_x > 0 && width - control->scroll_x < content.width - LAYOUT_UNIT) {
+		control->scroll_x = width - content.width + LAYOUT_UNIT;
+		if (control->scroll_x < 0)
+			control->scroll_x = 0;
+	}
+
+	/* The text, scrolled and clipped to the content box. */
+	list_clip_rect(walk, &content);
+	list_text_run(walk, &font, color, shown.data, shown.length, content.x - control->scroll_x, top + ascent);
+	list_unclip(walk);
+	wb_units_release(&shown);
+
+	/*
+	 * What the page needs of this drawing: drawn says the rest is current,
+	 * and the caret stands at its offset, as tall as the font's glyphs.
+	 */
+	list_control_record(walk, box, control, &content, &font, content.x + caret - control->scroll_x, top, ascent);
+}
+
+/*
+ * Writes the text a field or a button shows: a button's label, a field's
+ * value (a password's as bullets), or the placeholder in gray when the
+ * field is empty.
+ */
+static int
+list_control_shown(
+	const struct layout_box *box,
+	struct dom_element *element,
+	const struct dom_control *control,
+	struct wb_units *shown,
+	uint32_t *color)
+{
+	struct vm_string *placeholder;
+	struct wb_units value;
+	size_t index;
+	uint16_t unit;
+	int error;
+
+	/* A button shows its label. */
+	if (control == NULL) {
+		error = dom_control_label(element, shown);
+		return error;
+	}
+
+	/* A field's value. */
+	wb_units_init(&value);
+	error = dom_control_value(element, &value);
+	if (error != 0) {
+		wb_units_release(&value);
+		return error;
+	}
+
+	/* An empty field shows its placeholder in gray. */
+	placeholder = dom_attribute_ascii(element, "placeholder");
+	if (value.length == 0 && placeholder != NULL) {
+		wb_units_release(&value);
+		*color = LIST_PLACEHOLDER_COLOR;
+		for (index = 0; index < placeholder->length; index++) {
+			unit = vm_string_at(placeholder, index);
+			error = wb_units_append(shown, &unit, 1);
+			if (error != 0)
+				return error;
+		}
+
+		/* The placeholder is all that shows. */
+		return 0;
+	}
+
+	/* A password shows a bullet for each unit, anything else its value. */
+	if (box->control == DOM_CONTROL_PASSWORD) {
+		unit = LIST_PASSWORD_BULLET;
+		for (index = 0; index < value.length && error == 0; index++)
+			error = wb_units_append(shown, &unit, 1);
+	} else {
+		error = wb_units_append(shown, value.data, value.length);
+	}
+
+	/* The value is no longer needed. */
+	wb_units_release(&value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the text is written. */
+	return 0;
+}
+
+/*
+ * Measures where a field's caret is from its text's start: the width of the
+ * value (or its bullets) before the caret; 0 while the field is empty.
+ */
+static int
+list_caret_offset(
+	struct list_walk *walk,
+	const struct text_font *font,
+	const struct layout_box *box,
+	struct dom_element *element,
+	struct dom_control *control,
+	layout_unit *offset)
+{
+	struct wb_units value;
+	size_t index;
+	uint16_t bullet;
+	layout_unit one;
+	int error;
+
+	/* The value, and a caret that fell past its end moves back to it. */
+	*offset = 0;
+	wb_units_init(&value);
+	error = dom_control_value(element, &value);
+	if (error != 0) {
+		wb_units_release(&value);
+		return error;
+	}
+
+	/* A caret past the value's end comes back to it. */
+	if (control->caret > value.length)
+		control->caret = value.length;
+
+	/* A password's caret is after as many bullets. */
+	if (box->control == DOM_CONTROL_PASSWORD) {
+		bullet = LIST_PASSWORD_BULLET;
+		error = layout_units_width(walk->text, font, &bullet, 1, &one);
+		for (index = 0; index < control->caret && error == 0; index++)
+			*offset += one;
+	} else {
+		error = layout_units_width(walk->text, font, value.data, control->caret, offset);
+	}
+
+	/* The value is no longer needed. */
+	wb_units_release(&value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caret's offset. */
+	return 0;
+}
+
+/*
+ * Draws a textarea's value line by line from its content box's top,
+ * clipped to the content box, and records its caret (lines do not wrap in
+ * this pass).
+ */
+static void
+list_textarea(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	struct dom_element *element,
+	const struct list_area *content,
+	const struct text_font *font,
+	layout_unit line,
+	layout_unit ascent)
+{
+	struct dom_control *control;
+	struct wb_units value;
+	layout_unit caret_x;
+	layout_unit caret_top;
+	layout_unit y;
+	size_t start;
+	size_t index;
+	int error;
+
+	/* The state that the caret is kept in, and the value. */
+	control = dom_control_of(element);
+	if (control == NULL) {
+		walk->error = ENOMEM;
+		return;
+	}
+
+	/* The value. */
+	wb_units_init(&value);
+	error = dom_control_value(element, &value);
+	if (error != 0) {
+		wb_units_release(&value);
+		walk->error = error;
+		return;
+	}
+
+	/* A caret past the value's end comes back to it. */
+	if (control->caret > value.length)
+		control->caret = value.length;
+
+	/* Each line, and the caret on the line it is in. */
+	control->scroll_x = 0;
+	caret_x = content->x;
+	caret_top = content->y;
+	list_clip_rect(walk, content);
+	y = content->y;
+	start = 0;
+	for (index = 0; index <= value.length && walk->error == 0; index++) {
+		/* A line ends at a line feed or at the end of the value. */
+		if (index < value.length && value.data[index] != 0x0aU)
+			continue;
+
+		/* The caret is on this line when it falls within it. */
+		if (control->caret >= start && control->caret <= index) {
+			error = layout_units_width(walk->text, font, value.data + start, control->caret - start, &caret_x);
+			if (error != 0)
+				walk->error = error;
+			caret_x += content->x;
+			caret_top = y;
+		}
+
+		/* The line's text, then the next line below it. */
+		list_text_run(walk, font, box->style.color, value.data + start, index - start, content->x, y + ascent);
+		y += line;
+		start = index + 1U;
+	}
+
+	/* The clip ends with the lines, and the value is no longer needed. */
+	list_unclip(walk);
+	wb_units_release(&value);
+
+	/* What the page needs for the caret. */
+	list_control_record(walk, box, control, content, font, caret_x, caret_top, ascent);
+}
+
+/*
+ * Draws a select: its chosen option's label from the content box's left,
+ * on a line centered in its height, and a small arrow pointing down in the
+ * room kept at its right.
+ */
+static void
+list_select(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	struct dom_element *element,
+	const struct list_area *content,
+	const struct text_font *font,
+	layout_unit line,
+	layout_unit ascent)
+{
+	struct dom_element *option;
+	struct wb_units label;
+	layout_unit top;
+	layout_unit arrow_x;
+	layout_unit arrow_y;
+	layout_unit row;
+	int step;
+	int error;
+
+	/* The chosen option's label, if there is an option. */
+	wb_units_init(&label);
+	option = dom_select_chosen(element);
+	error = 0;
+	if (option != NULL)
+		error = dom_option_text(option, &label);
+	if (error != 0) {
+		wb_units_release(&label);
+		walk->error = error;
+		return;
+	}
+
+	/* The label on the line, clipped to the room left of the arrow. */
+	top = content->y + (content->height - line) / 2;
+	list_clip_rect(walk, content);
+	list_text_run(walk, font, box->style.color, label.data, label.length, content->x, top + ascent);
+	list_unclip(walk);
+	wb_units_release(&label);
+
+	/* The arrow: rows a pixel tall, each two pixels narrower, from a row nine pixels wide. */
+	row = LAYOUT_UNIT;
+	arrow_x = content->x + content->width - LIST_ARROW_RIGHT * LAYOUT_UNIT;
+	arrow_y = content->y + (content->height - LIST_ARROW_ROWS * row) / 2;
+	for (step = 0; step < LIST_ARROW_ROWS; step++) {
+		list_rect(
+			walk,
+			arrow_x + (layout_unit)step * row,
+			arrow_y + (layout_unit)step * row,
+			(layout_unit)(LIST_ARROW_WIDTH - 2 * step) * row,
+			row,
+			box->style.color);
+	}
+}
+
+/*
+ * Records in a control's state where it was drawn and where its caret
+ * goes: the content box, and a caret as tall as the font's glyphs on the
+ * line whose top is given, in the text's color.
+ */
+static void
+list_control_record(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	struct dom_control *control,
+	const struct list_area *content,
+	const struct text_font *font,
+	layout_unit caret_x,
+	layout_unit line_top,
+	layout_unit ascent)
+{
+	struct text_metrics metrics;
+	int error;
+
+	/* The glyphs' extent, which the caret spans. */
+	error = text_font_metrics(walk->text, font, &metrics);
+	if (error != 0) {
+		walk->error = error;
+		return;
+	}
+
+	/*
+	 * drawn tells the page that the geometry below is the display list's;
+	 * it stays set as long as the control keeps a box.
+	 */
+	control->drawn = 1;
+	control->content_x = content->x;
+	control->content_y = content->y;
+	control->content_width = content->width;
+	control->content_height = content->height;
+	control->caret_x = caret_x;
+	control->caret_top = line_top + ascent - (layout_unit)metrics.ascent * LAYOUT_UNIT;
+	control->caret_height = (layout_unit)(metrics.ascent + metrics.descent) * LAYOUT_UNIT;
+	control->caret_color = box->style.color;
+}
+
+/* Picks the font a style draws text with (as the layout picks it). */
+static void
+list_style_font(
+	struct list_walk *walk,
+	const struct css_style *style,
+	struct text_font *font)
+{
+	int monospace;
+
+	/* The monospace family uses the monospace face. */
+	monospace = 0;
+	if (style->generic_family == CSS_FAMILY_MONOSPACE)
+		monospace = 1;
+	text_select_font(walk->text, monospace, style->font_size, style->font_weight, font);
+}
+
+/* Adds a run of UTF-16 text as a text item from a pen position on a baseline. */
+static void
+list_text_run(
+	struct list_walk *walk,
+	const struct text_font *font,
+	uint32_t color,
+	const uint16_t *units,
+	size_t length,
+	layout_unit x,
+	layout_unit baseline)
+{
+	struct paint_item item;
+	struct paint_glyph *glyphs;
+	struct text_glyph glyph;
+	uint32_t code_point;
+	layout_unit pen;
+	size_t count;
+	size_t used;
+	size_t position;
+	int error;
+
+	/* Nothing to add after an error, or for no text. */
+	if (walk->error != 0 || length == 0)
+		return;
+
+	/* There are at most as many glyphs as UTF-16 units. */
+	glyphs = wb_arena_alloc(&walk->list->arena, length * sizeof(struct paint_glyph));
+	if (glyphs == NULL) {
+		walk->error = ENOMEM;
+		return;
+	}
+
+	/* Sets each character's glyph at the pen, which moves by its advance. */
+	count = 0;
+	pen = 0;
+	position = 0;
+	while (position < length) {
+		used = wb_utf16_decode(units + position, length - position, &code_point);
+		position += used;
+		error = text_glyph(walk->text, font, code_point, 0, &glyph);
+		if (error != 0) {
+			walk->error = error;
+			return;
+		}
+
+		/* Places it and moves the pen on. */
+		glyphs[count].code_point = code_point;
+		glyphs[count].x = pen;
+		count++;
+		pen += (layout_unit)glyph.advance_units;
+	}
+
+	/* The text item. */
+	memset(&item, 0, sizeof(item));
+	item.kind = PAINT_TEXT;
+	item.x = x;
+	item.y = baseline;
+	item.width = pen;
+	item.color = color;
+	item.font = *font;
+	item.glyphs = glyphs;
+	item.glyph_count = count;
+	error = wb_vector_push(&walk->list->items, &item);
+	if (error != 0)
+		walk->error = error;
 }
 
 /* Adds a replaced box's image over its content box, whose top left is at a point. */
