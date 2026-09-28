@@ -150,15 +150,15 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 依存による実行順とは別のもの。Queue の権限は変えない。2026-09-28 に整理（それ以前の順は git の履歴にある）。
 
-**運用（ユーザー、2026-09-27〜28）**: 作業用のサブエージェントを N=1〜4（通常は 3〜4）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
+**運用（ユーザー、2026-09-27〜28）**: 作業用のサブエージェントを N=1〜4（通常は 3〜4。2026-09-28 の枠はユーザーの指示で N=5）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
 N=0 になったら実装をまとめて計画（master・ws.md・queue・Future Work・Bug Board）を整理する。試験は amd64 だけ、Phase の終わりに。
 
 1. **Keiland と名前**: WS035（Keiland の compositor・システムバー・login・lock）、WS078（Kei Operating System への改名）、 **WS079**（手書きの Notes・PDF Viewer・スワイプ）も Keiland の優先に入れる。
    WS071（File Manager、完了。続きは WS035 の Phase と Future Work）。
-2. **グラフィック**: WS075（i915 の高度化: p006 の MRT・query・storage buffer の後、stencil・multisample）、
+2. **デモの実機（5330 + HDMI の LCD）とグラフィック**: WS075（HDMI の主出力・demo の image・BUG-085/094 の再試験・lease の切り替えの黒）、
    WS068（GL 3.2 まで。3.3 以降は保留）。
-3. **ブラウザ**: WS074（HTTP・HTTPS まで。p019 libjpeg-compat、p050 非同期の loader）。
-4. **bug**: WS073（BUG-082 の hang、BUG-080 の Desktop の分類、BUG-039・031・051）。BUG-027・033 は低い優先度（計測して閉じる）。
+3. **ブラウザ**: WS074（部品 libbrowser.so まで済み。次は form の部品、システム環境設定での利用）。
+4. **bug**: WS073（BUG-093・BUG-051・BUG-039・BUG-031）。BUG-027・033 は低い優先度（計測して閉じる）。
 5. **ACPI（WS049〜WS052）と Arm64（WS044・WS048・WS036）**: デスクトップが片付くか limit が余るとき。
 6. **WS001** はユーザーが指示したときだけ。WS077（PC-98 の PCI）・WS066（ld.so の最適化）は低い優先度。
 
