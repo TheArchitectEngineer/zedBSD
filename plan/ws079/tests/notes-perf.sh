@@ -39,7 +39,11 @@ cc -std=c99 -pedantic -O1 -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I"$out/includ
 
 # The guest: the PDF, Notes (when another build is given), zdesktop and Notes on the PDF.
 guest "$stop_all" >/dev/null
-[ -n "${NOTES_BINARY:-}" ] && timeout 60 python3 plan/tools/guest/guest.py put "$NOTES_BINARY" /bin/notes >/dev/null 2>&1 </dev/null
+if [ -n "${NOTES_BINARY:-}" ]; then
+	timeout 60 python3 plan/tools/guest/guest.py put "$NOTES_BINARY" /bin/notes >/dev/null 2>&1 </dev/null ||
+	    { echo "notes-perf: cannot copy $NOTES_BINARY into the guest"; exit 1; }
+fi
+guest 'cksum /bin/notes'
 guest 'rm -rf /tmp/notes-perf /tmp/notes-perf.log /root/.local/share/keiland/notes; mkdir -p /tmp/notes-perf' >/dev/null
 timeout 60 python3 plan/tools/guest/guest.py put "$out/many.pdf" /tmp/notes-perf/many.pdf >/dev/null 2>&1 </dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm

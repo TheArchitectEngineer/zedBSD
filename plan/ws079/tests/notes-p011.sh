@@ -60,9 +60,21 @@ button() {
 	    awk '{print int($1 + $3 / 2), int($2 + $4 / 2)}'
 }
 
-# A click on a toolbar button of an action.
+# A click on a toolbar button of an action (its place read again when the guest did not answer).
 press() {
-	set -- $(button "$1")
+	action=$1
+	place=
+	tries=0
+	while [ -z "$place" ] && [ $tries -lt 3 ]; do
+		place=$(button "$action")
+		tries=$((tries + 1))
+	done
+	if [ -z "$place" ]; then
+		echo "button $action: MISSING"
+		status=1
+		return
+	fi
+	set -- $place
 	pointer move "$1" "$2" sleep 100 down sleep 60 up sleep 300
 }
 
@@ -114,7 +126,12 @@ EOF
 guest "$stop_all" >/dev/null
 [ -n "${NOTES_BINARY:-}" ] && timeout 60 python3 plan/tools/guest/guest.py put "$NOTES_BINARY" /bin/notes >/dev/null 2>&1 </dev/null
 for script in kei wave marker note hover; do
-	timeout 60 python3 plan/tools/guest/guest.py put "$out/$script.pen" "/tmp/$script.pen" >/dev/null 2>&1 </dev/null
+	tries=0
+	until timeout 60 python3 plan/tools/guest/guest.py put "$out/$script.pen" "/tmp/$script.pen" >/dev/null 2>&1 </dev/null; do
+		tries=$((tries + 1))
+		[ $tries -ge 3 ] && { echo "put $script.pen: FAILED"; status=1; break; }
+		sleep 2
+	done
 done
 guest 'rm -rf /tmp/notes-p011 /tmp/notes-p011.log /root/.local/share/keiland/notes; mkdir -p /tmp/notes-p011' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
