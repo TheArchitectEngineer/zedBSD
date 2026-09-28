@@ -21,11 +21,16 @@
 /* The most bytes of live cells a page's heap may hold. */
 #define PAGE_HEAP_LIMIT		((size_t)1024U * 1024U * 1024U)
 
+/* How many times more a layout is made at most for the query containers' sizes (ws074-p075). */
+#define PAGE_CONTAINER_PASSES	2
+
 /* The deepest element nesting the style dump descends (the parser caps nesting too). */
 #define PAGE_DUMP_DEPTH		512
 
 static int page_gather_styles(struct page *page);
 static int page_update_styles(struct page *page);
+static int page_container_size(void *context, const struct dom_element *container, float *width, float *height);
+static int page_containers_moved(const struct page *page);
 static int page_text_of(const struct dom_node *node, struct wb_units *units);
 static const struct dom_node *page_find_title(const struct dom_node *node, int depth);
 static int page_dump_node(const struct dom_node *node, int depth, struct wb_buffer *out);
@@ -117,6 +122,8 @@ page_destroy(
 		paint_release(&page->paint);
 	if (page->laid_out)
 		layout_release(&page->layout);
+	if (page->previous_laid_out)
+		layout_release(&page->previous_layout);
 	if (page->text_open)
 		text_system_close(&page->text);
 	page_images_release(page);
@@ -391,6 +398,8 @@ page_layout(
 	int width,
 	int height)
 {
+	int missed;
+	int pass;
 	int error;
 
 	/* Throws the old display list and layout away. */
@@ -399,9 +408,15 @@ page_layout(
 		page->painted = 0;
 	}
 
-	/* The layout. */
+	/*
+	 * The layout: the old one is kept while the new one is made, for the
+	 * sizes of the query containers of the container-relative units
+	 * (ws074-p075).
+	 */
 	if (page->laid_out) {
-		layout_release(&page->layout);
+		page->previous_layout = page->layout;
+		page->previous_laid_out = 1;
+		memset(&page->layout, 0, sizeof(page->layout));
 		page->laid_out = 0;
 	}
 
@@ -423,9 +438,40 @@ page_layout(
 
 	/* Builds and lays out the box tree, the images found by their elements (the ones there are now). */
 	page->laid_out_images = page->images_generation;
+	css_engine_set_container_lookup(page->css, page_container_size, page);
 	error = layout_build(&page->layout, page->css, &page->text, page->document, page_image_of, page_image_by_url, page, width, height);
 	page->laid_out = 1;
 	page->laid_out_generation = page->document->generation;
+
+	/*
+	 * A query container the old layout did not have (the first layout), or
+	 * one this layout gave another size than the styles used: the page is
+	 * laid out again with the sizes it has now (twice more at most).
+	 */
+	for (pass = 0; pass < PAGE_CONTAINER_PASSES && error == 0; pass++) {
+		missed = css_engine_container_missed(page->css);
+		if (!missed)
+			missed = page_containers_moved(page);
+		if (!missed)
+			break;
+
+		/* This layout is the one the sizes come from now. */
+		if (page->previous_laid_out)
+			layout_release(&page->previous_layout);
+		page->previous_layout = page->layout;
+		page->previous_laid_out = 1;
+		memset(&page->layout, 0, sizeof(page->layout));
+		css_engine_forget_styles(page->css);
+		error = layout_build(&page->layout, page->css, &page->text, page->document, page_image_of, page_image_by_url, page, width, height);
+	}
+
+	/* The old layout is no longer needed. */
+	if (page->previous_laid_out) {
+		layout_release(&page->previous_layout);
+		page->previous_laid_out = 0;
+	}
+
+	/* A layout that could not be made. */
 	if (error != 0)
 		return error;
 
@@ -582,6 +628,72 @@ page_dump_style(
 
 	/* Succeeded: the styles are in the buffer. */
 	return 0;
+}
+
+/*
+ * Tells whether a query container the styles used has another size (by
+ * more than half a pixel) in the page's layout, or none (ws074-p075).
+ */
+static int
+page_containers_moved(
+	const struct page *page)
+{
+	const struct dom_element *container;
+	const struct layout_box *box;
+	float width;
+	float height;
+	float difference;
+	size_t count;
+	size_t index;
+
+	/* Each container the engine used. */
+	count = css_engine_container_uses(page->css);
+	for (index = 0; index < count; index++) {
+		css_engine_container_use(page->css, index, &container, &width, &height);
+		box = layout_box_of(&page->layout, &container->node);
+		if (box == NULL)
+			return 1;
+
+		/* Its width or its height moved. */
+		difference = layout_to_px(box->width) - width;
+		if (difference > 0.5f || difference < -0.5f)
+			return 1;
+		difference = layout_to_px(box->height) - height;
+		if (difference > 0.5f || difference < -0.5f)
+			return 1;
+	}
+
+	/* Every container is as the styles used it. */
+	return 0;
+}
+
+/*
+ * Finds a query container's content box size in the page's previous
+ * layout (ws074-p075), for the container-relative units of the style
+ * engine; 0 when that layout did not have the container.
+ */
+static int
+page_container_size(
+	void *context,
+	const struct dom_element *container,
+	float *width,
+	float *height)
+{
+	const struct layout_box *box;
+	struct page *page;
+
+	/* The previous layout's box of the container. */
+	page = context;
+	if (!page->previous_laid_out)
+		return 0;
+	box = layout_box_of(&page->previous_layout, &container->node);
+	if (box == NULL)
+		return 0;
+
+	/* Its content box. */
+	*width = layout_to_px(box->width);
+	*height = layout_to_px(box->height);
+	return 1;
 }
 
 /*

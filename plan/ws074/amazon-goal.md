@@ -86,7 +86,7 @@ master.md の決定の行）。この文書は [ws074-p067](phase067/phase.md) �
 | 10 | ws074-p037（最小） | table の auto layout の最小（2026-09-29: p072 の後に） | 3 h |
 | 11 | [ws074-p072](phase072/phase.md) | grid の最小（`repeat(N,1fr)`、`grid-column`）。2026-09-29 main の判断で p073 の後、p037 の前に | **cleared**（2026-09-29。トップ 画素 34.16% → 34.72%。最初の card の列は grid でなく p074・p075） |
 | 11a | [ws074-p074](phase074/phase.md) | block の幅の intrinsic の keyword（`max-content`・`min-content`・`fit-content`）。2026-09-29 main の判断で追加（トップの carousel） | **cleared**（2026-09-29。トップ 画素 34.72% → 79.12%、ink 24.43% → 75.06%。calc の入れ子の clamp と並ぶ float の max-content も） |
-| 11b | ws074-p075 | container query の単位（cqi・cqw 等、要れば `@container` の最小）。2026-09-29 main の判断で追加（トップの card の高さ） | 2 h |
+| 11b | [ws074-p075](phase075/phase.md) | container query の単位（cqi・cqw 等、要れば `@container` の最小）。2026-09-29 main の判断で追加（トップの card の高さ） | **cleared**（2026-09-29。トップ 画素 79.12% → 80.40%、ink 75.06% → 76.55%。guest の live のトップの card が正しい大きさ） |
 | 12 | ws074-p027・p065 の一部 | RegExp、`Date`・Promise 等（Amazon の script の Uncaught を減らし、popover 等を動かす） | 6 h〜 |
 
 順の理由: 1 で検索できる（デモの操作）。2〜5 が見た目の大部分（外の CSS、変数と calc と @media、selector、flex）。6〜11 は細部と速さ。

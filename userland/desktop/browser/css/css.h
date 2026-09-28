@@ -203,6 +203,13 @@ struct css_grid_place {
 	int end_span;
 };
 
+/* The values of container-type (ws074-p075): not a container, a container of its width, or of both sizes. */
+enum css_container_type {
+	CSS_CONTAINER_NORMAL,
+	CSS_CONTAINER_INLINE_SIZE,
+	CSS_CONTAINER_SIZE
+};
+
 /* The values of direction (ws074-p073): the inline base direction. */
 enum css_direction {
 	CSS_DIRECTION_LTR,
@@ -447,6 +454,7 @@ struct css_style {
 	struct css_length line_height;
 	int text_align;
 	int direction;
+	int container_type;
 	int white_space;
 	int underline;
 	int list_style;
@@ -513,6 +521,13 @@ struct css_sheet;
  */
 typedef int (*css_url_resolver)(void *context, const struct vm_string *url, struct vm_string **resolved);
 
+/*
+ * Finds a query container's content box size in pixels (ws074-p075): the
+ * page answers from its last layout; 0 when the container was not laid
+ * out there, which the engine counts (css_engine_container_missed).
+ */
+typedef int (*css_container_lookup)(void *context, const struct dom_element *container, float *width, float *height);
+
 /* Sheets (parser.c). */
 int css_sheet_create(struct css_sheet **sheet, struct vm_heap *heap, const uint16_t *units, size_t length);
 void css_sheet_destroy(struct css_sheet *sheet);
@@ -532,6 +547,11 @@ int css_engine_add_sheet_origin(struct css_engine *engine, const uint16_t *units
 int css_engine_add_parsed(struct css_engine *engine, const struct css_sheet *sheet, const struct css_media *const *media, size_t media_count);
 int css_engine_parse_media(struct css_engine *engine, const uint16_t *units, size_t length, const struct css_media **media);
 void css_engine_set_viewport(struct css_engine *engine, float width, float height);
+void css_engine_set_container_lookup(struct css_engine *engine, css_container_lookup lookup, void *context);
+int css_engine_container_missed(const struct css_engine *engine);
+size_t css_engine_container_uses(const struct css_engine *engine);
+void css_engine_container_use(const struct css_engine *engine, size_t index, const struct dom_element **container, float *width, float *height);
+void css_engine_forget_styles(struct css_engine *engine);
 int css_engine_compute(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style);
 int css_engine_compute_pseudo(struct css_engine *engine, struct dom_element *element, int pseudo, const struct css_style *element_style, struct css_style *style);
 void css_initial_style(struct css_style *style);

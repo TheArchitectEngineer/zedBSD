@@ -198,6 +198,8 @@ struct css_calc_sum {
 	float vh;
 	float vmin;
 	float vmax;
+	float cqw;
+	float cqh;
 	const struct css_calc *nested;
 	float nested_factor;
 };
@@ -312,7 +314,9 @@ enum css_declared_unit {
 	CSS_DUNIT_FONT_KEYWORD,
 	CSS_DUNIT_VMIN,
 	CSS_DUNIT_VMAX,
-	CSS_DUNIT_CALC
+	CSS_DUNIT_CALC,
+	CSS_DUNIT_CQW,
+	CSS_DUNIT_CQH
 };
 
 /*
@@ -413,6 +417,7 @@ enum css_property {
 	CSS_PROP_GRID_COLUMN_END,
 	CSS_PROP_GRID_ROW_START,
 	CSS_PROP_GRID_ROW_END,
+	CSS_PROP_CONTAINER_TYPE,
 	CSS_PROP_COUNT
 };
 

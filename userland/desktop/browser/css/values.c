@@ -55,7 +55,8 @@ enum values_shorthand {
 	SHORT_GRID_COLUMN,
 	SHORT_GRID_ROW,
 	SHORT_GRID_AREA,
-	SHORT_PLACE_ITEMS
+	SHORT_PLACE_ITEMS,
+	SHORT_CONTAINER
 };
 
 /*
@@ -242,6 +243,7 @@ static const struct values_name values_names[] = {
 	{ "grid-column-end", CSS_PROP_GRID_COLUMN_END },
 	{ "grid-row-start", CSS_PROP_GRID_ROW_START },
 	{ "grid-row-end", CSS_PROP_GRID_ROW_END },
+	{ "container-type", CSS_PROP_CONTAINER_TYPE },
 	{ "-webkit-clip-path", CSS_PROP_CLIP_PATH },
 	{ "flex", SHORT_FLEX },
 	{ "-webkit-flex", SHORT_FLEX },
@@ -268,6 +270,7 @@ static const struct values_name values_names[] = {
 	{ "grid-row", SHORT_GRID_ROW },
 	{ "grid-area", SHORT_GRID_AREA },
 	{ "place-items", SHORT_PLACE_ITEMS },
+	{ "container", SHORT_CONTAINER },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -355,6 +358,14 @@ static const struct values_keyword values_display[] = {
 	{ "inline-grid", CSS_DISPLAY_GRID },
 	{ "flow-root", CSS_DISPLAY_BLOCK },
 	{ "contents", CSS_DISPLAY_CONTENTS },
+	{ NULL, 0 }
+};
+
+/* The keywords of container-type (ws074-p075). */
+static const struct values_keyword values_container_type[] = {
+	{ "normal", CSS_CONTAINER_NORMAL },
+	{ "inline-size", CSS_CONTAINER_INLINE_SIZE },
+	{ "size", CSS_CONTAINER_SIZE },
 	{ NULL, 0 }
 };
 
@@ -638,10 +649,12 @@ static const struct values_keyword values_units[] = {
 	{ "svh", CSS_DUNIT_VH },
 	{ "lvh", CSS_DUNIT_VH },
 	{ "dvh", CSS_DUNIT_VH },
-	{ "cqw", CSS_DUNIT_VW },
-	{ "cqi", CSS_DUNIT_VW },
-	{ "cqh", CSS_DUNIT_VH },
-	{ "cqb", CSS_DUNIT_VH },
+	{ "cqw", CSS_DUNIT_CQW },
+	{ "cqi", CSS_DUNIT_CQW },
+	{ "cqmin", CSS_DUNIT_CQW },
+	{ "cqmax", CSS_DUNIT_CQW },
+	{ "cqh", CSS_DUNIT_CQH },
+	{ "cqb", CSS_DUNIT_CQH },
 	{ NULL, 0 }
 };
 
@@ -997,6 +1010,16 @@ css_parse_property(
 		return values_grid_pair(CSS_PROP_GRID_ROW_START, CSS_PROP_GRID_ROW_END, tokens, count, out, out_count);
 	case SHORT_GRID_AREA:
 		return values_grid_area(tokens, count, out, out_count);
+	case SHORT_CONTAINER:
+		/* container: a name, then a slash and the type (the name is not kept in this pass). */
+		first = (int)values_split_at(tokens, count, CSS_TOKEN_DELIM, '/');
+		if ((size_t)first < count) {
+			first = (int)values_skip_space(tokens, count, (size_t)first + 1U);
+			return css_parse_value_as(parse, CSS_PROP_CONTAINER_TYPE, tokens + first, count - (size_t)first, out, out_count);
+		}
+
+		/* A name alone makes a container of no type. */
+		return 0;
 	case SHORT_PLACE_ITEMS:
 		/* align-items (the justify-items after it is not kept in this pass). */
 		components = values_components(tokens, count, starts, lengths, 3);
@@ -1495,6 +1518,9 @@ values_single(
 		break;
 	case CSS_PROP_DIRECTION:
 		table = values_direction;
+		break;
+	case CSS_PROP_CONTAINER_TYPE:
+		table = values_container_type;
 		break;
 	case CSS_PROP_WHITE_SPACE:
 		table = values_white_space;
@@ -3199,6 +3225,12 @@ values_calc_unit(
 	case CSS_DUNIT_VMAX:
 		sum->vmax += number;
 		break;
+	case CSS_DUNIT_CQW:
+		sum->cqw += number;
+		break;
+	case CSS_DUNIT_CQH:
+		sum->cqh += number;
+		break;
 	default:
 		return EINVAL;
 	}
@@ -3223,6 +3255,8 @@ values_calc_scale(
 	sum->vh *= factor;
 	sum->vmin *= factor;
 	sum->vmax *= factor;
+	sum->cqw *= factor;
+	sum->cqh *= factor;
 
 	/* And the function's factor. */
 	sum->nested_factor *= factor;
@@ -3257,6 +3291,8 @@ values_calc_add(
 	sum->vh += sign * other->vh;
 	sum->vmin += sign * other->vmin;
 	sum->vmax += sign * other->vmax;
+	sum->cqw += sign * other->cqw;
+	sum->cqh += sign * other->cqh;
 
 	/* Succeeded: the sums are added. */
 	return 0;

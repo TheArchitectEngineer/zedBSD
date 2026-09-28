@@ -95,6 +95,21 @@ struct css_engine {
 	struct cascade_cached *style_table;
 	size_t style_capacity;
 	size_t style_count;
+	css_container_lookup container_lookup;
+	void *container_context;
+	struct dom_element *current;
+	int container_missed;
+	struct wb_vector container_uses;
+};
+
+/*
+ * One query container whose size the engine's styles were computed with
+ * (ws074-p075): the page checks it against each new layout.
+ */
+struct cascade_container_use {
+	const struct dom_element *element;
+	float width;
+	float height;
 };
 
 /*
@@ -153,6 +168,7 @@ static int cascade_keep_tokens(struct css_engine *engine, const struct css_token
 static int cascade_resolve_pending(struct css_engine *engine, const struct css_style *style, struct wb_vector *list, struct wb_arena *scratch);
 static struct css_length cascade_calc(struct css_engine *engine, const struct css_calc *calc, float font_size);
 static float cascade_calc_pixels(struct css_engine *engine, const struct css_calc *calc, float font_size);
+static void cascade_container(struct css_engine *engine, float *width, float *height);
 static int cascade_candidate_matches(struct css_engine *engine, struct dom_element *element, const struct css_selector *selector);
 static int cascade_selector_matches(struct css_engine *engine, struct dom_element *element, const struct css_selector *selector, size_t index, struct dom_element *anchor);
 static int cascade_anchored(struct dom_element *element, int combinator, struct dom_element *anchor);
@@ -214,6 +230,7 @@ css_engine_create(
 	wb_vector_init(&created->candidates, sizeof(struct css_index_entry));
 	wb_units_init(&created->word);
 	wb_vector_init(&created->class_atoms, sizeof(struct vm_string *));
+	wb_vector_init(&created->container_uses, sizeof(struct cascade_container_use));
 	wb_arena_init(&created->arena, 0);
 	created->atom_id = vm_atom_from_ascii(heap, "id");
 	created->atom_class = vm_atom_from_ascii(heap, "class");
@@ -268,6 +285,7 @@ css_engine_destroy(
 	free(engine->class_table);
 	cascade_style_forget(engine);
 	free(engine->style_table);
+	wb_vector_release(&engine->container_uses);
 	wb_arena_release(&engine->arena);
 	free(engine);
 }
@@ -419,6 +437,86 @@ css_engine_set_viewport(
 }
 
 /*
+ * Sets how the engine finds a query container's size for the
+ * container-relative units (ws074-p075); without one they are the
+ * viewport's.
+ */
+void
+css_engine_set_container_lookup(
+	struct css_engine *engine,
+	css_container_lookup lookup,
+	void *context)
+{
+	/* The page's lookup. */
+	engine->container_lookup = lookup;
+	engine->container_context = context;
+}
+
+/*
+ * Tells whether a container-relative unit had a query container whose size
+ * the lookup did not know since the styles were last forgotten: the page
+ * lays out again with the sizes it has now.
+ */
+int
+css_engine_container_missed(
+	const struct css_engine *engine)
+{
+	/* The count of misses, as a truth. */
+	if (engine->container_missed != 0)
+		return 1;
+
+	/* Every container was known. */
+	return 0;
+}
+
+/*
+ * Forgets the computed styles the engine kept (ws074-p075: they are
+ * computed again with the query containers' sizes the page knows now).
+ */
+void
+css_engine_forget_styles(
+	struct css_engine *engine)
+{
+	/* The kept styles, the misses and the sizes used. */
+	cascade_style_forget(engine);
+	engine->container_missed = 0;
+	wb_vector_clear(&engine->container_uses);
+}
+
+/*
+ * Tells how many query containers' sizes the engine's styles were
+ * computed with since the styles were last forgotten (ws074-p075).
+ */
+size_t
+css_engine_container_uses(
+	const struct css_engine *engine)
+{
+	/* The number of containers used. */
+	return engine->container_uses.count;
+}
+
+/*
+ * Reports one query container and the size the engine's styles were
+ * computed with.
+ */
+void
+css_engine_container_use(
+	const struct css_engine *engine,
+	size_t index,
+	const struct dom_element **container,
+	float *width,
+	float *height)
+{
+	const struct cascade_container_use *use;
+
+	/* The recorded use. */
+	use = wb_vector_at((struct wb_vector *)&engine->container_uses, index);
+	*container = use->element;
+	*width = use->width;
+	*height = use->height;
+}
+
+/*
  * Computes an element's style from the cascade and its parent's style
  * (NULL for the root).
  */
@@ -494,6 +592,9 @@ cascade_compute(
 	int is_root;
 	int error;
 	int side;
+
+	/* The element whose container-relative units are resolved (ws074-p075). */
+	engine->current = element;
 
 	/* Starts from the initial values, with the inherited ones from the parent. */
 	css_initial_style(style);
@@ -1379,6 +1480,8 @@ cascade_calc(
 	struct css_length length;
 	float values[CSS_CALC_ARGUMENTS];
 	float percents[CSS_CALC_ARGUMENTS];
+	float container_width;
+	float container_height;
 	float least;
 	float vmin;
 	float vmax;
@@ -1404,6 +1507,12 @@ cascade_calc(
 		    calc->sums[index].vh * engine->viewport_height / 100.0f +
 		    calc->sums[index].vmin * vmin / 100.0f +
 		    calc->sums[index].vmax * vmax / 100.0f;
+		if (calc->sums[index].cqw != 0 || calc->sums[index].cqh != 0) {
+			cascade_container(engine, &container_width, &container_height);
+			values[index] += calc->sums[index].cqw * container_width / 100.0f + calc->sums[index].cqh * container_height / 100.0f;
+		}
+
+		/* A min(), max() or clamp() inside the sum. */
 		if (calc->sums[index].nested != NULL)
 			values[index] += calc->sums[index].nested_factor * cascade_calc_pixels(engine, calc->sums[index].nested, font_size);
 		percents[index] = calc->sums[index].percent;
@@ -1453,6 +1562,73 @@ cascade_calc(
 	/* Reports the length in pixels. */
 	length.value = least;
 	return length;
+}
+
+/*
+ * Finds the size the container-relative units of the element being styled
+ * are measured against (ws074-p075): the content box of its nearest
+ * ancestor whose style (kept by the engine) makes it a query container, as
+ * the page's lookup knows it; the height only for a container of both
+ * sizes.  Without a container, or its size, the viewport's (a container
+ * the lookup does not know is counted as missed).
+ */
+static void
+cascade_container(
+	struct css_engine *engine,
+	float *width,
+	float *height)
+{
+	struct cascade_cached *cached;
+	struct cascade_container_use use;
+	struct cascade_container_use *last;
+	struct dom_node *node;
+	float found_width;
+	float found_height;
+	int known;
+	int error;
+
+	/* The viewport's size, unless a container says otherwise. */
+	*width = engine->viewport_width;
+	*height = engine->viewport_height;
+	if (engine->current == NULL || engine->style_capacity == 0)
+		return;
+
+	/* The element's ancestors, nearest first. */
+	for (node = engine->current->node.parent; node != NULL && node->type == DOM_ELEMENT; node = node->parent) {
+		cached = cascade_style_slot(engine, (struct dom_element *)node);
+		if (cached->element == NULL || cached->style->container_type == CSS_CONTAINER_NORMAL)
+			continue;
+
+		/* The container: its size as the page knows it. */
+		known = 0;
+		if (engine->container_lookup != NULL)
+			known = engine->container_lookup(engine->container_context, (struct dom_element *)node, &found_width, &found_height);
+		if (!known) {
+			engine->container_missed++;
+			return;
+		}
+
+		/* Its width, and its height when it contains both. */
+		*width = found_width;
+		if (cached->style->container_type == CSS_CONTAINER_SIZE)
+			*height = found_height;
+
+		/* The size used is remembered (once for a container used again in a row). */
+		use.element = (struct dom_element *)node;
+		use.width = found_width;
+		use.height = found_height;
+		last = NULL;
+		if (engine->container_uses.count != 0)
+			last = wb_vector_at(&engine->container_uses, engine->container_uses.count - 1U);
+		if (last == NULL || last->element != use.element) {
+			error = wb_vector_push(&engine->container_uses, &use);
+			if (error != 0)
+				engine->container_missed++;
+		}
+
+		/* The container is found. */
+		return;
+	}
 }
 
 /*
@@ -2716,6 +2892,9 @@ cascade_apply(
 	case CSS_PROP_DIRECTION:
 		style->direction = value->keyword;
 		break;
+	case CSS_PROP_CONTAINER_TYPE:
+		style->container_type = value->keyword;
+		break;
 	case CSS_PROP_GRID_TEMPLATE_COLUMNS:
 		cascade_tracks(engine, style, value, style->columns, &style->column_count);
 		break;
@@ -3084,6 +3263,9 @@ cascade_inherit(
 	case CSS_PROP_DIRECTION:
 		style->direction = parent->direction;
 		break;
+	case CSS_PROP_CONTAINER_TYPE:
+		style->container_type = parent->container_type;
+		break;
 	case CSS_PROP_GRID_TEMPLATE_COLUMNS:
 		memcpy(style->columns, parent->columns, sizeof(style->columns));
 		style->column_count = parent->column_count;
@@ -3208,6 +3390,8 @@ cascade_length(
 	float font_size)
 {
 	struct css_length length;
+	float container_width;
+	float container_height;
 
 	/* Keywords keep their unit. */
 	length.value = 0;
@@ -3259,6 +3443,14 @@ cascade_length(
 		break;
 	case CSS_DUNIT_VW:
 		length.value = value->number * engine->viewport_width / 100.0f;
+		break;
+	case CSS_DUNIT_CQW:
+		cascade_container(engine, &container_width, &container_height);
+		length.value = value->number * container_width / 100.0f;
+		break;
+	case CSS_DUNIT_CQH:
+		cascade_container(engine, &container_width, &container_height);
+		length.value = value->number * container_height / 100.0f;
 		break;
 	case CSS_DUNIT_VH:
 		length.value = value->number * engine->viewport_height / 100.0f;
