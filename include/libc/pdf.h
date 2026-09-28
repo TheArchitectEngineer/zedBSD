@@ -56,6 +56,14 @@ extern "C" {
 #define PDF_ESIGNED EPERM
 
 /*
+ * The error the reader reports for an encrypted document whose user
+ * password is not empty (ws079-p008: only the empty password is tried).
+ * pdf_document_encrypted() tells it apart from a file the system does not
+ * let the program read.
+ */
+#define PDF_EPASSWORD EACCES
+
+/*
  * How an update draws over a page of the document it adds to.
  *
  * OVERLAY keeps the page's own content and draws the new content over it;

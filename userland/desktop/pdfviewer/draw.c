@@ -7,7 +7,8 @@
 
 /*
  * The frame of PDF Viewer: the pages where the view lays them out, the
- * page indicator, the message, and the file chooser over everything.
+ * page indicator, the notice that a page drawn has content libpdf could
+ * not show, the message, and the file chooser over everything.
  *
  * The pages come from the document's cache of rasters (document.c), made
  * when a page is first drawn at the scale in force.
@@ -34,6 +35,13 @@
 #define DRAW_FILE		0xffd9534fU
 #define DRAW_MESSAGE		0xf0ffffffU
 #define DRAW_MESSAGE_TEXT	0xff8a1f1fU
+#define DRAW_NOTICE		0xf2f7f8faU
+#define DRAW_NOTICE_TEXT	0xff3a4150U
+#define DRAW_NOTICE_MARK	0xffe0a526U
+
+/* What the notice says, and the display-list flags that call for it. */
+#define DRAW_NOTICE_WORDS	"Some content could not be shown"
+#define DRAW_NOTICE_FLAGS	(PDF_DISPLAY_SKIPPED | PDF_DISPLAY_DAMAGED | PDF_DISPLAY_LIMITED)
 
 /* The text sizes, in pixels. */
 #define DRAW_TEXT		15U
@@ -44,6 +52,7 @@ static void draw_scroll(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_single(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_empty(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_indicator(struct pv_app *app, struct pv_canvas *canvas);
+static void draw_notice(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_message(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_chooser(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_centred(struct pv_app *app, struct pv_canvas *canvas, int baseline, const char *text, unsigned pixels, uint32_t color);
@@ -56,8 +65,9 @@ pv_draw(
 	struct pv_app *app,
 	struct pv_canvas *canvas)
 {
-	/* The ground. */
+	/* The ground; the pages drawn gather their flags anew. */
 	pv_canvas_fill(canvas, 0, 0, canvas->width, canvas->height, DRAW_BACKGROUND);
+	app->shown_flags = 0;
 
 	/* The pages, by the mode, or the empty window's hint. */
 	if (!app->has_document) {
@@ -68,9 +78,10 @@ pv_draw(
 		draw_single(app, canvas);
 	}
 
-	/* The page indicator, the message and the chooser over the pages. */
+	/* The page indicator, the notice, the message and the chooser over the pages. */
 	if (app->has_document && app->indicator_until != 0)
 		draw_indicator(app, canvas);
+	draw_notice(app, canvas);
 	if (app->message[0] != '\0')
 		draw_message(app, canvas);
 	if (app->choosing)
@@ -108,6 +119,8 @@ draw_page(
 
 	/* The raster at the scale; a page without one is white. */
 	error = pv_document_raster(&app->document, index, scale, &page);
+	if (error == 0 && page->list != NULL)
+		app->shown_flags |= page->list->flags;
 	if (error != 0 || page->raster == NULL) {
 		pv_canvas_fill(canvas, x, y, width, height, 0xffffffffU);
 		return;
@@ -279,6 +292,55 @@ draw_indicator(
 	y = canvas->height - height - 20;
 	pv_canvas_round(canvas, x, y, width, height, height / 2, DRAW_PILL);
 	pv_text_draw(app->text, canvas, x + 14, y + 20, text, DRAW_TEXT, DRAW_PILL_TEXT);
+}
+
+/*
+ * Draws, in the bottom left corner, a small notice that a page in view has
+ * content libpdf left out (a font, filter or shading it does not read) or
+ * could not finish, and logs when the notice comes and goes.
+ */
+static void
+draw_notice(
+	struct pv_app *app,
+	struct pv_canvas *canvas)
+{
+	int wanted;
+	int width;
+	int height;
+	int x;
+	int y;
+
+	/* Only a document whose pages in view left something out has the notice. */
+	wanted = 0;
+	if (app->has_document) {
+		if ((app->shown_flags & DRAW_NOTICE_FLAGS) != 0)
+			wanted = 1;
+	}
+
+	/* Logs a change, for the tests. */
+	if (wanted != app->notice_shown) {
+		app->notice_shown = wanted;
+		if (wanted) {
+			pv_log("NOTICE shown flags=%u", app->shown_flags);
+		} else {
+			pv_log("NOTICE hidden");
+		}
+	}
+
+	/* Nothing to draw without the notice. */
+	if (!wanted)
+		return;
+
+	/* A light pill with an amber mark and the words, clear of the page indicator in the middle. */
+	width = pv_text_width(app->text, DRAW_NOTICE_WORDS, 13U) + 40;
+	height = 28;
+	x = 16;
+	y = canvas->height - height - 21;
+	pv_canvas_round(canvas, x + 1, y + 2, width, height, height / 2, DRAW_SHADOW);
+	pv_canvas_round(canvas, x - 1, y - 1, width + 2, height + 2, height / 2 + 1, DRAW_EDGE);
+	pv_canvas_round(canvas, x, y, width, height, height / 2, DRAW_NOTICE);
+	pv_canvas_round(canvas, x + 12, y + 10, 8, 8, 4, DRAW_NOTICE_MARK);
+	pv_text_draw(app->text, canvas, x + 28, y + 19, DRAW_NOTICE_WORDS, 13U, DRAW_NOTICE_TEXT);
 }
 
 /* Draws the message in a card at the top (in the middle for an empty window). */

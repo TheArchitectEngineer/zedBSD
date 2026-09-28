@@ -15,7 +15,10 @@
  * them, directly or inside object streams, the page tree, the attached
  * edit data and the page content streams.  A file whose cross-references
  * cannot be read is repaired by finding its objects in its bytes.
- * Encryption is reported as ENOTSUP; pdf_document_encrypted() tells
+ * An encrypted document (stage 3) is read through the standard security
+ * handler with the empty user password (crypt.c): the strings of each
+ * object loaded from the file and the data of each stream are decrypted;
+ * one that needs a password is EACCES, and pdf_document_encrypted() tells
  * encryption apart.  It also gives an update (update.c) the parts of the
  * document a new revision refers to: the trailer, the catalog, the pages'
  * references and the revisions' sections.
@@ -189,6 +192,8 @@ struct pdf_document {
 	void (*release_fonts)(struct pdf_font_cache *cache);
 	struct pdf_object_stream *object_streams;
 	size_t object_streams_size;
+	struct pdf_crypt *crypt;
+	unsigned long encrypt_number;
 };
 
 static int open_owned(unsigned char *data, size_t size, struct pdf_document **document);
@@ -207,6 +212,8 @@ static unsigned long read_field(const unsigned char *bytes, long width, unsigned
 static int read_hybrid(struct pdf_document *document, struct pdf_object *trailer, size_t section_start);
 static int repair(struct pdf_document *document);
 static void scan_objects(struct pdf_document *document);
+static int is_space_byte(unsigned char byte);
+static int is_digit_byte(unsigned char byte);
 static int find_repaired_trailer(struct pdf_document *document);
 static int add_stream_members(struct pdf_document *document);
 static int make_trailer(struct pdf_document *document, unsigned long catalog, unsigned long generation);
@@ -220,6 +227,8 @@ static int compare_entries(const struct pdf_xref_entry *first, const struct pdf_
 static struct pdf_xref_entry *find_entry(struct pdf_document *document, unsigned long number);
 static int load_object(struct pdf_document *document, unsigned long number, unsigned long generation, int depth, struct pdf_object **object);
 static int parse_indirect(struct pdf_document *document, const struct pdf_xref_entry *entry, int depth, struct pdf_object **object);
+static int open_crypt(struct pdf_document *document);
+static int decrypt_strings(struct pdf_document *document, struct pdf_object *object, unsigned long number, unsigned long generation, int depth);
 static int read_stream_data(struct pdf_document *document, struct pdf_lexer *lexer, struct pdf_object *stream, int depth);
 static int resolve(struct pdf_document *document, struct pdf_object *object, int depth, struct pdf_object **resolved);
 static int resolve_key(struct pdf_document *document, const struct pdf_object *dictionary, const char *key, int depth, struct pdf_object **resolved);
@@ -330,6 +339,7 @@ pdf_document_close(
 	if (document->release_fonts != NULL)
 		document->release_fonts(document->fonts);
 	free_object_streams(document);
+	pdf_crypt_close(document->crypt);
 	pdf_arena_free(&document->arena);
 	free(document->entries);
 	free(document->pages);
@@ -682,8 +692,9 @@ pdf_document_signed(
 }
 
 /*
- * Reports whether a PDF file is encrypted, which the reader refuses to open
- * (ENOTSUP) along with other features it does not read yet.
+ * Reports whether a PDF file is encrypted: the reader opens it when the
+ * user password is empty (EACCES otherwise), and a program that writes
+ * (Notes) refuses it.
  *
  * Only the newest trailer is read: a classic one, or the dictionary of a
  * cross-reference stream, which holds the trailer's keys.
@@ -831,6 +842,18 @@ pdf_reader_page(
 }
 
 /*
+ * Reports an encrypted document's security handler (NULL for a document
+ * that is not encrypted).
+ */
+struct pdf_crypt *
+pdf_reader_crypt(
+	const struct pdf_document *document)
+{
+	/* The handler read_catalog() opened. */
+	return document->crypt;
+}
+
+/*
  * Reports the bytes of a document's file, into which streams point.
  */
 const unsigned char *
@@ -962,6 +985,7 @@ open_owned(
 {
 	struct pdf_document *created;
 	size_t offset;
+	int repairable;
 	int error;
 
 	/* Allocates the document, which owns the bytes from here on. */
@@ -993,12 +1017,30 @@ open_owned(
 	if (error == 0)
 		error = read_catalog(created);
 
-	/* A document whose cross-references or catalog cannot be read is repaired from its bytes. */
-	if (error != 0 && error != ENOMEM && error != ENOTSUP) {
+	/*
+	 * A document whose cross-references or catalog cannot be read is
+	 * repaired from its bytes; running out of memory and a feature the
+	 * reader does not have are not damage.
+	 */
+	repairable = 0;
+	if (error != 0) {
+		repairable = 1;
+		if (error == ENOMEM)
+			repairable = 0;
+		if (error == ENOTSUP)
+			repairable = 0;
+		if (error == PDF_EPASSWORD)
+			repairable = 0;
+	}
+
+	/* Repairs it and reads the catalog again. */
+	if (repairable) {
 		error = repair(created);
 		if (error == 0)
 			error = read_catalog(created);
 	}
+
+	/* Refuses a document that cannot be read even so. */
 	if (error != 0) {
 		pdf_document_close(created);
 		return error;
@@ -1267,6 +1309,8 @@ read_section(
 			return error;
 		return 0;
 	}
+
+	/* The classic section's entries start after those read so far. */
 	section_start = document->entries_count;
 
 	/* Reads the subsections until the trailer. */
@@ -1536,6 +1580,7 @@ read_stream_section(
 	int is_keyword;
 	int is_xref;
 	int dct;
+	int differs;
 	int error;
 
 	/* Reads the object's number, generation and obj keyword. */
@@ -1590,9 +1635,12 @@ read_stream_section(
 	} else {
 		/* Looks for endstream after the data. */
 		for (end = start; end + 9 <= document->size; end++) {
-			if (memcmp(document->data + end, "endstream", 9) == 0)
+			differs = memcmp(document->data + end, "endstream", 9);
+			if (differs == 0)
 				break;
 		}
+
+		/* A stream without its end is not one. */
 		if (end + 9 > document->size)
 			return PDF_EFORMAT;
 	}
@@ -1657,7 +1705,9 @@ read_stream_entries(
 
 	/* Reads the three widths. */
 	widths = pdf_object_get(stream, "W");
-	if (widths == NULL || widths->type != PDF_OBJECT_ARRAY || widths->count != 3)
+	if (widths == NULL)
+		return PDF_EFORMAT;
+	if (widths->type != PDF_OBJECT_ARRAY || widths->count != 3)
 		return PDF_EFORMAT;
 	row = 0;
 	for (field = 0; field < 3; field++) {
@@ -1668,6 +1718,8 @@ read_stream_entries(
 			return PDF_EFORMAT;
 		row += (size_t)width[field];
 	}
+
+	/* A row of no bytes holds no entry. */
 	if (row == 0)
 		return PDF_EFORMAT;
 
@@ -1701,6 +1753,8 @@ read_stream_entries(
 			first = index_object->values[pair * 2]->integer;
 			count = index_object->values[pair * 2 + 1]->integer;
 		}
+
+		/* Refuses a subsection past the object numbers the reader keeps. */
 		if (first < 0 || count < 0)
 			return PDF_EFORMAT;
 		if ((unsigned long)first > PDF_READER_OBJECT_MAX)
@@ -1729,6 +1783,8 @@ read_stream_entries(
 			} else if (type == 2 && second <= PDF_READER_OBJECT_MAX) {
 				error = add_compressed_entry(document, number, second, third);
 			}
+
+			/* Only running out of memory stops the section. */
 			if (error != 0)
 				return error;
 		}
@@ -1859,57 +1915,125 @@ scan_objects(
 	unsigned long number;
 	unsigned long generation;
 	unsigned long scale;
+	int differs;
+	int space;
+	int digit;
 	int error;
 
 	/* Looks at each place obj could start, from the end. */
 	data = document->data;
 	for (position = document->size; position >= 3 + 4; position--) {
-		/* The keyword, standing alone after white space. */
-		if (memcmp(data + position - 3, "obj", 3) != 0)
+		/* The keyword obj, not followed by a letter (not objstm or the like). */
+		differs = memcmp(data + position - 3, "obj", 3);
+		if (differs != 0)
 			continue;
-		if (position < document->size && data[position] >= 'a' && data[position] <= 'z')
-			continue;
+		if (position < document->size) {
+			if (data[position] >= 'a' && data[position] <= 'z')
+				continue;
+		}
+
+		/* It stands after white space. */
 		cursor = position - 3;
-		if (data[cursor - 1] != ' ' && data[cursor - 1] != '\n' && data[cursor - 1] != '\r' && data[cursor - 1] != '\t')
+		space = is_space_byte(data[cursor - 1]);
+		if (!space)
 			continue;
 
-		/* The generation's digits before the white space. */
-		while (cursor > 0 && (data[cursor - 1] == ' ' || data[cursor - 1] == '\r' || data[cursor - 1] == '\n' || data[cursor - 1] == '\t'))
+		/* Skips the white space before it. */
+		while (cursor > 0) {
+			space = is_space_byte(data[cursor - 1]);
+			if (!space)
+				break;
 			cursor--;
+		}
+
+		/* The generation's digits, read backwards. */
 		generation = 0;
 		scale = 1;
-		for (digits = 0; cursor > 0 && data[cursor - 1] >= '0' && data[cursor - 1] <= '9' && digits < 6; digits++) {
+		for (digits = 0; cursor > 0 && digits < 6; digits++) {
+			digit = is_digit_byte(data[cursor - 1]);
+			if (!digit)
+				break;
 			generation += (unsigned long)(data[cursor - 1] - '0') * scale;
 			scale *= 10;
 			cursor--;
 		}
+
+		/* The generation must have digits and something before them. */
 		if (digits == 0 || cursor == 0)
 			continue;
 
 		/* The number's digits before more white space. */
-		if (data[cursor - 1] != ' ' && data[cursor - 1] != '\n' && data[cursor - 1] != '\r' && data[cursor - 1] != '\t')
+		space = is_space_byte(data[cursor - 1]);
+		if (!space)
 			continue;
-		while (cursor > 0 && (data[cursor - 1] == ' ' || data[cursor - 1] == '\r' || data[cursor - 1] == '\n' || data[cursor - 1] == '\t'))
+		while (cursor > 0) {
+			space = is_space_byte(data[cursor - 1]);
+			if (!space)
+				break;
 			cursor--;
+		}
+
+		/* The number's digits, read backwards. */
 		number = 0;
 		scale = 1;
-		for (digits = 0; cursor > 0 && data[cursor - 1] >= '0' && data[cursor - 1] <= '9' && digits < 8; digits++) {
+		for (digits = 0; cursor > 0 && digits < 8; digits++) {
+			digit = is_digit_byte(data[cursor - 1]);
+			if (!digit)
+				break;
 			number += (unsigned long)(data[cursor - 1] - '0') * scale;
 			scale *= 10;
 			cursor--;
 		}
+
+		/* The number must have digits the reader keeps. */
 		if (digits == 0 || number > PDF_READER_OBJECT_MAX)
 			continue;
 
 		/* The number must start a token. */
-		if (cursor > 0 && data[cursor - 1] >= '0' && data[cursor - 1] <= '9')
-			continue;
+		if (cursor > 0) {
+			digit = is_digit_byte(data[cursor - 1]);
+			if (digit)
+				continue;
+		}
 
 		/* Adds the object; running out of memory ends the scan with what it found. */
 		error = add_entry(document, number, generation, cursor, 1);
 		if (error != 0)
 			return;
 	}
+}
+
+/* Tells whether a byte is white space where the repair scan looks for "n g obj". */
+static int
+is_space_byte(
+	unsigned char byte)
+{
+	/* The white space an object's header has between its words. */
+	switch (byte) {
+	case ' ':
+	case '\n':
+	case '\r':
+	case '\t':
+		return 1;
+	default:
+		break;
+	}
+
+	/* Anything else. */
+	return 0;
+}
+
+/* Tells whether a byte is a decimal digit. */
+static int
+is_digit_byte(
+	unsigned char byte)
+{
+	/* The digits 0 to 9. */
+	if (byte >= '0' && byte <= '9')
+		return 1;
+
+	/* Anything else. */
+	return 0;
 }
 
 /*
@@ -1925,6 +2049,7 @@ find_repaired_trailer(
 	struct pdf_object *dictionary;
 	struct pdf_object *object;
 	struct pdf_object *type;
+	struct pdf_object *root;
 	size_t position;
 	size_t index;
 	size_t best_offset;
@@ -1932,12 +2057,18 @@ find_repaired_trailer(
 	unsigned long catalog_generation;
 	int found_catalog;
 	int is_name;
+	int differs;
+	int later;
 	int error;
 
 	/* The last trailer keyword whose dictionary has a /Root. */
 	for (position = document->size; position >= 7; position--) {
-		if (memcmp(document->data + position - 7, "trailer", 7) != 0)
+		/* The keyword. */
+		differs = memcmp(document->data + position - 7, "trailer", 7);
+		if (differs != 0)
 			continue;
+
+		/* The dictionary after it, which must name the catalog. */
 		memset(&lexer, 0, sizeof(lexer));
 		lexer.data = document->data;
 		lexer.size = document->size;
@@ -1948,7 +2079,8 @@ find_repaired_trailer(
 			return ENOMEM;
 		if (error != 0 || dictionary->type != PDF_OBJECT_DICTIONARY)
 			continue;
-		if (pdf_object_get(dictionary, "Root") == NULL)
+		root = pdf_object_get(dictionary, "Root");
+		if (root == NULL)
 			continue;
 		document->trailer = dictionary;
 		return 0;
@@ -1971,7 +2103,15 @@ find_repaired_trailer(
 
 		/* A cross-reference stream with a /Root, the one furthest in the file. */
 		is_name = pdf_object_is_name(type, "XRef");
-		if (is_name && pdf_object_get(object, "Root") != NULL && document->entries[index].offset >= best_offset) {
+		root = pdf_object_get(object, "Root");
+		later = 0;
+		if (is_name && root != NULL) {
+			if (document->entries[index].offset >= best_offset)
+				later = 1;
+		}
+
+		/* Keeps it as the trailer so far. */
+		if (later) {
 			document->trailer = object;
 			best_offset = document->entries[index].offset;
 			continue;
@@ -1985,6 +2125,8 @@ find_repaired_trailer(
 			catalog_generation = document->entries[index].generation;
 		}
 	}
+
+	/* A cross-reference stream's dictionary serves as the trailer. */
 	if (document->trailer != NULL)
 		return 0;
 
@@ -2061,19 +2203,34 @@ make_trailer(
 	struct pdf_object *value;
 	unsigned char *name;
 
-	/* The dictionary, its key and its value, and the arrays of one each. */
+	/* The dictionary (the arena's memory is zeroed). */
 	dictionary = pdf_arena_allocate(&document->arena, sizeof(*dictionary));
-	key = pdf_arena_allocate(&document->arena, sizeof(*key));
-	value = pdf_arena_allocate(&document->arena, sizeof(*value));
-	name = pdf_arena_allocate(&document->arena, 5);
-	if (dictionary == NULL || key == NULL || value == NULL || name == NULL)
+	if (dictionary == NULL)
 		return ENOMEM;
-	memset(dictionary, 0, sizeof(*dictionary));
-	memset(key, 0, sizeof(*key));
-	memset(value, 0, sizeof(*value));
+
+	/* Its key. */
+	key = pdf_arena_allocate(&document->arena, sizeof(*key));
+	if (key == NULL)
+		return ENOMEM;
+
+	/* Its value. */
+	value = pdf_arena_allocate(&document->arena, sizeof(*value));
+	if (value == NULL)
+		return ENOMEM;
+
+	/* The key's name, with its NUL. */
+	name = pdf_arena_allocate(&document->arena, 5);
+	if (name == NULL)
+		return ENOMEM;
+
+	/* The array of its one key. */
 	dictionary->keys = pdf_arena_allocate(&document->arena, sizeof(*dictionary->keys));
+	if (dictionary->keys == NULL)
+		return ENOMEM;
+
+	/* The array of its one value. */
 	dictionary->values = pdf_arena_allocate(&document->arena, sizeof(*dictionary->values));
-	if (dictionary->keys == NULL || dictionary->values == NULL)
+	if (dictionary->values == NULL)
 		return ENOMEM;
 
 	/* /Root n g R. */
@@ -2124,6 +2281,8 @@ parse_compressed(
 			if (stream->numbers[member] == entry->number)
 				break;
 		}
+
+		/* The stream does not hold the object. */
 		if (member == stream->count)
 			return PDF_EFORMAT;
 	}
@@ -2197,6 +2356,8 @@ open_object_stream(
 		free(owned);
 		return ENOMEM;
 	}
+
+	/* The stream's decoded bytes, which it owns. */
 	stream->number = number;
 	stream->bytes = data;
 	stream->owned = owned;
@@ -2211,6 +2372,8 @@ open_object_stream(
 		free(stream);
 		return error;
 	}
+
+	/* The document keeps it, counted against the decode bound. */
 	stream->next = document->object_streams;
 	document->object_streams = stream;
 	document->object_streams_size += size;
@@ -2279,6 +2442,8 @@ read_object_stream_header(
 		stream->numbers[member] = (unsigned long)number.integer;
 		stream->offsets[member] = (size_t)offset.integer;
 	}
+
+	/* The members read before any damage. */
 	stream->count = member;
 
 	/* Succeeded: the members are listed. */
@@ -2301,6 +2466,8 @@ free_object_streams(
 		free(stream->owned);
 		free(stream);
 	}
+
+	/* The document has none left. */
 	document->object_streams = NULL;
 }
 
@@ -2398,6 +2565,8 @@ merge_entries(
 					if (order <= 0)
 						take_left = 1;
 				}
+
+				/* Moves the chosen head. */
 				if (take_left) {
 					target[out] = source[left];
 					left++;
@@ -2407,6 +2576,8 @@ merge_entries(
 				}
 			}
 		}
+
+		/* The merged runs are the next pass's source. */
 		swap = source;
 		source = target;
 		target = swap;
@@ -2525,6 +2696,8 @@ load_object(
 	} else {
 		error = parse_indirect(document, entry, depth, &loaded);
 	}
+
+	/* A failed entry is not parsed again. */
 	if (error != 0) {
 		entry->state = PDF_ENTRY_FAILED;
 		entry->error = error;
@@ -2551,8 +2724,10 @@ parse_indirect(
 	struct pdf_lexer lexer;
 	struct pdf_token token;
 	struct pdf_object *parsed;
+	struct pdf_object *type;
 	size_t after_object;
 	int is_keyword;
+	int is_xref;
 	int error;
 
 	/* Reads the object number at the entry's offset, which must be the entry's. */
@@ -2605,8 +2780,159 @@ parse_indirect(
 		}
 	}
 
+	/* The object keeps its number and generation, which an encrypted document's keys use. */
+	if (parsed->type == PDF_OBJECT_DICTIONARY || parsed->type == PDF_OBJECT_STREAM) {
+		parsed->number = entry->number;
+		parsed->generation = entry->generation;
+	}
+
+	/*
+	 * An encrypted document's strings are decrypted, except the
+	 * encryption dictionary's and a cross-reference stream's, which are
+	 * never encrypted.
+	 */
+	if (document->crypt != NULL && entry->number != document->encrypt_number) {
+		type = pdf_object_get(parsed, "Type");
+		is_xref = pdf_object_is_name(type, "XRef");
+		if (!is_xref) {
+			error = decrypt_strings(document, parsed, entry->number, entry->generation, 0);
+			if (error != 0)
+				return error;
+		}
+	}
+
 	/* Succeeded: object is the parsed object; its endobj is not needed. */
 	*object = parsed;
+	return 0;
+}
+
+/*
+ * Opens an encrypted document's security handler: the /Encrypt dictionary
+ * with the first /ID string, the empty user password.  The objects loaded
+ * before it (by a repair's scan) are loaded again, decrypted, and so are
+ * the object streams.
+ */
+static int
+open_crypt(
+	struct pdf_document *document)
+{
+	struct pdf_object *reference;
+	struct pdf_object *encrypt;
+	struct pdf_object *ids;
+	struct pdf_object *first;
+	const unsigned char *id;
+	size_t id_length;
+	size_t index;
+	int error;
+
+	/* The encryption dictionary, whose own strings are never encrypted. */
+	reference = pdf_object_get(document->trailer, "Encrypt");
+	document->encrypt_number = 0;
+	if (reference->type == PDF_OBJECT_REFERENCE)
+		document->encrypt_number = reference->number;
+	error = resolve(document, reference, 0, &encrypt);
+	if (error != 0)
+		return error;
+
+	/* The first /ID string, which the older revisions' keys mix in. */
+	id = NULL;
+	id_length = 0;
+	error = resolve_key(document, document->trailer, "ID", 0, &ids);
+	if (error != 0)
+		return error;
+	if (ids->type == PDF_OBJECT_ARRAY && ids->count > 0) {
+		error = resolve(document, ids->values[0], 0, &first);
+		if (error != 0)
+			return error;
+		if (first->type == PDF_OBJECT_STRING) {
+			id = first->bytes;
+			id_length = first->length;
+		}
+	}
+
+	/* Opens the handler; a password other than the empty one is EACCES. */
+	error = pdf_crypt_open(document, encrypt, id, id_length, &document->crypt);
+	if (error != 0)
+		return error;
+
+	/* Every object loaded so far but the encryption dictionary is loaded again, decrypted. */
+	for (index = 0; index < document->entries_count; index++) {
+		if (document->entries[index].number == document->encrypt_number)
+			continue;
+		if (document->entries[index].state == PDF_ENTRY_LOADING)
+			continue;
+		document->entries[index].state = PDF_ENTRY_UNLOADED;
+		document->entries[index].object = NULL;
+	}
+
+	/* And the object streams decoded so far. */
+	free_object_streams(document);
+	document->object_streams_size = 0;
+
+	/* Succeeded: the document is read through its handler. */
+	return 0;
+}
+
+/*
+ * Decrypts every string an object holds, in its arrays and dictionaries,
+ * with the key of the object's number and generation.
+ */
+static int
+decrypt_strings(
+	struct pdf_document *document,
+	struct pdf_object *object,
+	unsigned long number,
+	unsigned long generation,
+	int depth)
+{
+	unsigned char *plain;
+	size_t length;
+	size_t index;
+	int error;
+
+	/* Refuses nesting past the limit. */
+	if (depth > PDF_READER_DEPTH_MAX)
+		return PDF_EFORMAT;
+
+	/* A string is decrypted into the arena, with the NUL a string keeps after it. */
+	if (object->type == PDF_OBJECT_STRING) {
+		plain = pdf_arena_allocate(&document->arena, object->length + 1);
+		if (plain == NULL)
+			return ENOMEM;
+		error = pdf_crypt_decrypt(document->crypt, 0, number, generation, object->bytes, object->length, plain, &length);
+		if (error != 0)
+			return error;
+		plain[length] = '\0';
+		object->bytes = plain;
+		object->length = length;
+		return 0;
+	}
+
+	/* An array's elements. */
+	if (object->type == PDF_OBJECT_ARRAY) {
+		for (index = 0; index < object->count; index++) {
+			error = decrypt_strings(document, object->values[index], number, generation, depth + 1);
+			if (error != 0)
+				return error;
+		}
+
+		/* Every element is decrypted. */
+		return 0;
+	}
+
+	/* A dictionary's or a stream's values. */
+	if (object->type == PDF_OBJECT_DICTIONARY || object->type == PDF_OBJECT_STREAM) {
+		for (index = 0; index < object->count; index++) {
+			error = decrypt_strings(document, object->values[index], number, generation, depth + 1);
+			if (error != 0)
+				return error;
+		}
+
+		/* Every value is decrypted. */
+		return 0;
+	}
+
+	/* Anything else holds no string. */
 	return 0;
 }
 
@@ -2740,10 +3066,13 @@ read_catalog(
 	struct pdf_object *encrypt;
 	int error;
 
-	/* Refuses an encrypted document, which a reader of stage 3 reads. */
+	/* An encrypted document is read through its security handler, opened once. */
 	encrypt = pdf_object_get(document->trailer, "Encrypt");
-	if (encrypt != NULL)
-		return ENOTSUP;
+	if (encrypt != NULL && document->crypt == NULL) {
+		error = open_crypt(document);
+		if (error != 0)
+			return error;
+	}
 
 	/* Finds the catalog, which must be a dictionary. */
 	error = resolve_key(document, document->trailer, "Root", 0, &document->catalog);

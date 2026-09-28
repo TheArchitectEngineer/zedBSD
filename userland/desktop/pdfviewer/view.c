@@ -120,6 +120,9 @@ pv_app_open(
 {
 	char message[sizeof(app->message)];
 	const char *name;
+	const char *reason;
+	int encrypted;
+	int checked;
 	int error;
 
 	/* Closes the document shown. */
@@ -134,7 +137,18 @@ pv_app_open(
 		} else {
 			name++;
 		}
-		snprintf(message, sizeof(message), "Cannot open %s: %s.", name, reason_of(error));
+
+		/* Why, in words; an encrypted document refused with EACCES needs a password. */
+		reason = reason_of(error);
+		if (error == PDF_EPASSWORD) {
+			encrypted = 0;
+			checked = pdf_document_encrypted(path, &encrypted);
+			if (checked == 0 && encrypted)
+				reason = "it is protected by a password";
+		}
+
+		/* Tells it, and logs it for the tests. */
+		snprintf(message, sizeof(message), "Cannot open %s: %s.", name, reason);
 		pv_app_message(app, message, VIEW_MESSAGE_MS * 2U);
 		pv_log("OPEN failed path=%s error=%d", path, error);
 		return error;
