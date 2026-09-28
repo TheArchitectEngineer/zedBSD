@@ -18,6 +18,7 @@ static int dump_box(const struct layout_box *box, int depth, struct wb_buffer *o
 static void dump_indent(struct wb_buffer *out, int depth);
 static void dump_lines(const struct layout_box *box, int depth, struct wb_buffer *out);
 static int dump_out_of_flow(const struct layout_box *box, int depth, struct wb_buffer *out);
+static void dump_shift(struct wb_buffer *out, const struct layout_fragment *fragment);
 
 /* The names of the box kinds, in enum layout_box_kind order. */
 static const char *const dump_kinds[] = {
@@ -175,6 +176,16 @@ dump_lines(
 					wb_buffer_printf(out, " image %dx%d", fragment->box->image->width, fragment->box->image->height);
 				if (fragment->box->control != DOM_CONTROL_NONE)
 					wb_buffer_printf(out, " control %s", dump_control_names[fragment->box->control]);
+				dump_shift(out, fragment);
+				wb_buffer_append_string(out, "\n");
+				continue;
+			}
+
+			/* An inline block: its margin box's place, and its reach above the baseline (its boxes follow the lines). */
+			if (fragment->box->atomic) {
+				wb_buffer_printf(out, "inline-block %.2f w %.2f h %.2f", (double)layout_to_px(left + line->left + fragment->x),
+				    (double)layout_to_px(fragment->width), (double)layout_to_px(fragment->ascent));
+				dump_shift(out, fragment);
 				wb_buffer_append_string(out, "\n");
 				continue;
 			}
@@ -183,12 +194,28 @@ dump_lines(
 			wb_buffer_printf(out, "text %.2f w %.2f %upx \"", (double)layout_to_px(left + line->left + fragment->x),
 			    (double)layout_to_px(fragment->width), fragment->font.pixels);
 			wb_units_to_utf8(fragment->text, fragment->length, out);
-			wb_buffer_append_string(out, "\"\n");
+			wb_buffer_append_string(out, "\"");
+			dump_shift(out, fragment);
+			wb_buffer_append_string(out, "\n");
 		}
 	}
 }
 
-/* Writes the boxes out of the flow and the floats found among a block's inline content, in tree order. */
+/* Writes a fragment's shift from its line's baseline (vertical-align), when it has one. */
+static void
+dump_shift(
+	struct wb_buffer *out,
+	const struct layout_fragment *fragment)
+{
+	/* A fragment on the baseline writes nothing, so that the dumps of pages without vertical-align stay as they were. */
+	if (fragment->shift == 0)
+		return;
+
+	/* The shift downwards, in pixels. */
+	wb_buffer_printf(out, " shift %.2f", (double)layout_to_px(fragment->shift));
+}
+
+/* Writes the boxes out of the flow, the floats and the inline blocks found among a block's inline content, in tree order. */
 static int
 dump_out_of_flow(
 	const struct layout_box *box,
@@ -198,9 +225,9 @@ dump_out_of_flow(
 	const struct layout_box *child;
 	int error;
 
-	/* Inline boxes are searched through; a box out of the flow or a float is written with its own content. */
+	/* Inline boxes are searched through; a box out of the flow, a float or an inline block is written with its own content. */
 	for (child = box->first_child; child != NULL; child = child->next) {
-		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE) {
+		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE || child->atomic) {
 			error = dump_box(child, depth, out);
 		} else {
 			error = dump_out_of_flow(child, depth, out);

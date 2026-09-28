@@ -160,13 +160,22 @@ layout_auto_margins(
 	/* The borders and paddings around the content. */
 	frame = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
 
-	/* Auto margins share what is left of a sized box: both center it, one takes it all (a float's are zero). */
+	/*
+	 * Auto margins share what is left of a sized box: both center it, one
+	 * takes it all (a float's and an inline block's are zero).
+	 */
 	left_auto = 0;
 	if (box->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO && box->floating == CSS_FLOAT_NONE)
 		left_auto = 1;
 	right_auto = 0;
 	if (box->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO && box->floating == CSS_FLOAT_NONE)
 		right_auto = 1;
+	if (box->atomic) {
+		left_auto = 0;
+		right_auto = 0;
+	}
+
+	/* The room the sized box leaves, which the auto margins share. */
 	room = containing_width - box->width - frame;
 	if (room < 0)
 		room = 0;
@@ -229,7 +238,9 @@ block_owns_context(
 	if (clips)
 		return 1;
 
-	/* The displays that make a formatting context (laid out as blocks in this pass). */
+	/* The displays that make a formatting context (an inline block, and the table cells laid out as blocks in this pass). */
+	if (box->atomic)
+		return 1;
 	if (box->style.display == CSS_DISPLAY_INLINE_BLOCK)
 		return 1;
 	if (box->style.display == CSS_DISPLAY_TABLE_CELL)

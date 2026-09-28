@@ -20,7 +20,8 @@
  * boxes around it that it does not escape (an absolute box escapes those
  * outside its containing block, a fixed one all of them).  A replaced box
  * paints its background and borders, then its image over its content box:
- * a block one as a block does, an inline one where its fragment is.
+ * a block one as a block does, an inline one where its fragment is.  An
+ * inline block is painted as a block in its place among its line's text.
  */
 
 #include "paint/paint.h"
@@ -86,7 +87,7 @@ static const struct layout_box *list_canvas(const struct layout_tree *tree, uint
 static void list_box(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_borders(struct list_walk *walk, const struct layout_box *box);
 static void list_inline_floats(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
-static void list_lines(struct list_walk *walk, const struct layout_box *box);
+static void list_lines(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_fragment(struct list_walk *walk, const struct layout_fragment *fragment, layout_unit x, layout_unit baseline);
 static void list_rect(struct list_walk *walk, layout_unit x, layout_unit y, layout_unit width, layout_unit height, uint32_t color);
 static void list_replaced(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
@@ -578,10 +579,10 @@ list_box(
 	if (clips)
 		list_clip(walk, box);
 
-	/* A block of lines paints the floats among its content, then its text. */
+	/* A block of lines paints the floats among its content, then its text and inline blocks. */
 	if (box->children_inline) {
 		list_inline_floats(walk, box, layer, depth + 1);
-		list_lines(walk, box);
+		list_lines(walk, box, layer, depth + 1);
 	} else {
 		/* A block of blocks paints its children in order, the floats after the others. */
 		for (child = box->first_child; child != NULL; child = child->next) {
@@ -615,9 +616,12 @@ list_inline_floats(
 	if (depth > LAYOUT_DEPTH_MAX)
 		return;
 
-	/* A float paints itself; an inline box is searched; a box out of the flow is painted in its own turn. */
+	/*
+	 * A float paints itself; an inline box is searched; a box out of the
+	 * flow is painted in its own turn, and an inline block with its line.
+	 */
 	for (child = box->first_child; child != NULL; child = child->next) {
-		if (child->out_of_flow)
+		if (child->out_of_flow || child->atomic)
 			continue;
 		if (child->floating != CSS_FLOAT_NONE) {
 			list_box(walk, child, layer, depth + 1);
@@ -678,11 +682,13 @@ list_borders(
 	}
 }
 
-/* Adds the text of a block's lines. */
+/* Adds the text of a block's lines, and the inline blocks on them. */
 static void
 list_lines(
 	struct list_walk *walk,
-	const struct layout_box *box)
+	const struct layout_box *box,
+	const struct layout_box *layer,
+	int depth)
 {
 	const struct layout_line *line;
 	const struct layout_fragment *fragment;
@@ -695,12 +701,20 @@ list_lines(
 	left = box->x + box->border[CSS_LEFT] + box->padding[CSS_LEFT];
 	top = box->y + box->border[CSS_TOP] + box->padding[CSS_TOP];
 
-	/* Each fragment of each line, on the line's baseline. */
+	/* Each fragment of each line, on the line's baseline moved by its vertical alignment. */
 	for (index = 0; index < box->line_count; index++) {
 		line = &box->lines[index];
 		for (item = 0; item < line->fragment_count; item++) {
 			fragment = &line->fragments[item];
-			list_fragment(walk, fragment, left + line->left + fragment->x, top + line->y + line->baseline);
+
+			/* An inline block paints itself where the line put it. */
+			if (fragment->box->atomic) {
+				list_box(walk, fragment->box, layer, depth);
+				continue;
+			}
+
+			/* Text and replaced boxes. */
+			list_fragment(walk, fragment, left + line->left + fragment->x, top + line->y + line->baseline + fragment->shift);
 		}
 	}
 }

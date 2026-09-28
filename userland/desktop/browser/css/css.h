@@ -95,6 +95,25 @@ enum css_float {
 	CSS_CLEAR_BOTH
 };
 
+/*
+ * The values of vertical-align (ws074-p060): the baseline, the line box's
+ * top or bottom, the middle (the parent's baseline plus half its
+ * x-height), the parent's text top or bottom, the parent's subscript or
+ * superscript position, or a length (vertical_offset: pixels or a
+ * percentage of the line height) above the baseline.
+ */
+enum css_vertical_align {
+	CSS_VALIGN_BASELINE,
+	CSS_VALIGN_TOP,
+	CSS_VALIGN_MIDDLE,
+	CSS_VALIGN_BOTTOM,
+	CSS_VALIGN_TEXT_TOP,
+	CSS_VALIGN_TEXT_BOTTOM,
+	CSS_VALIGN_SUB,
+	CSS_VALIGN_SUPER,
+	CSS_VALIGN_LENGTH
+};
+
 /* The values of overflow-x and overflow-y. */
 enum css_overflow {
 	CSS_OVERFLOW_VISIBLE,
@@ -266,6 +285,8 @@ struct css_style {
 	struct css_length padding[4];
 	struct css_length offset[4];
 	int box_sizing;
+	int vertical_align;
+	struct css_length vertical_offset;
 	int z_index;
 	int z_index_auto;
 	float border_width[4];

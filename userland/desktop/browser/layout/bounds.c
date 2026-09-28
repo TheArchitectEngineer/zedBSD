@@ -186,7 +186,7 @@ bounds_lines(
 
 			/* The fragment's run, from its ascent above the baseline to its descent below. */
 			x = left + line->left + fragment->x;
-			y = top + line->y + line->baseline - fragment->ascent;
+			y = top + line->y + line->baseline + fragment->shift - fragment->ascent;
 			bounds_add(rect, found, x, y, fragment->width, fragment->ascent + fragment->descent);
 		}
 	}

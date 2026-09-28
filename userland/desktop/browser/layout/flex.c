@@ -22,9 +22,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The width content is measured at, wide enough never to wrap it. */
-#define FLEX_MEASURE_WIDTH	((layout_unit)1 << 24)
-
 /*
  * One item on its way through the algorithm: its box, the frame (borders
  * and paddings) and margins along the main axis, which of those margins
@@ -386,17 +383,10 @@ flex_base_size(
 				return error;
 			item->base = child->width;
 		} else {
-			/* The content measured very wide, its percentages indefinite meanwhile. */
-			tree->measuring++;
-			error = layout_block(tree, child, FLEX_MEASURE_WIDTH);
-			if (error != 0) {
-				tree->measuring--;
+			/* The content's width without a limit (measured once, its percentages indefinite). */
+			error = layout_max_content(tree, child, &item->base);
+			if (error != 0)
 				return error;
-			}
-
-			/* The content's own width, with the measurement over. */
-			item->base = layout_content_width(child, 0);
-			tree->measuring--;
 		}
 	} else if (item->base < 0) {
 		error = layout_block(tree, child, box->width);

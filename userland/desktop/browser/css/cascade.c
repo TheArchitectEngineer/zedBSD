@@ -2378,6 +2378,17 @@ cascade_apply(
 	case CSS_PROP_ORDER:
 		style->order = (int)value->number;
 		break;
+	case CSS_PROP_VERTICAL_ALIGN:
+		/* A keyword, or a length that raises the box by it. */
+		if (value->kind == CSS_VALUE_KEYWORD) {
+			style->vertical_align = value->keyword;
+		} else {
+			style->vertical_align = CSS_VALIGN_LENGTH;
+			style->vertical_offset = cascade_length(engine, value, style->font_size);
+		}
+
+		/* The alignment is set. */
+		break;
 	case CSS_PROP_CONTENT:
 		/* A list of items, or none (normal and none). */
 		style->content_kind = CSS_CONTENT_NONE;
@@ -2470,6 +2481,10 @@ cascade_inherit(
 		break;
 	case CSS_PROP_ORDER:
 		style->order = parent->order;
+		break;
+	case CSS_PROP_VERTICAL_ALIGN:
+		style->vertical_align = parent->vertical_align;
+		style->vertical_offset = parent->vertical_offset;
 		break;
 	case CSS_PROP_WIDTH:
 		style->width = parent->width;

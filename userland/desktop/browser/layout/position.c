@@ -152,10 +152,11 @@ layout_stacking_order(
 }
 
 /*
- * Lays out a box whose width is auto so it shrinks to its content: laid
- * out very wide to measure the content, then at the narrower of that and
+ * Lays out a box whose width is auto so it shrinks to its content: at the
+ * narrower of its content's width without a limit (layout_max_content) and
  * the room (minus its margins, borders and paddings).  A box with a width
- * is laid out in the room as it is.
+ * is laid out in the room as it is.  The style keeps its auto width, so a
+ * later layout in another room shrinks the box again.
  */
 int
 layout_shrink_to_fit(
@@ -163,6 +164,7 @@ layout_shrink_to_fit(
 	struct layout_box *box,
 	layout_unit room)
 {
+	struct css_length width;
 	layout_unit content;
 	layout_unit outside;
 	int error;
@@ -173,10 +175,59 @@ layout_shrink_to_fit(
 		return error;
 	}
 
-	/*
-	 * The content, measured very wide.  The count of measurements in
-	 * progress makes the percentages inside indefinite while it lasts.
-	 */
+	/* The content's width without a limit. */
+	error = layout_max_content(tree, box, &content);
+	if (error != 0)
+		return error;
+
+	/* No wider than the room leaves, and not negative. */
+	layout_box_model(box, room);
+	outside = position_frame(box) + box->margin[CSS_LEFT] + box->margin[CSS_RIGHT];
+	if (content > room - outside)
+		content = room - outside;
+	if (content < 0)
+		content = 0;
+
+	/* Under box-sizing: border-box the width given is the border box's. */
+	if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+		content += position_frame(box);
+
+	/* The box is laid out at that width, given for this layout only. */
+	width = box->style.width;
+	box->style.width.unit = CSS_UNIT_PX;
+	box->style.width.value = layout_to_px(content);
+	box->style.width.offset = 0;
+	error = layout_block(tree, box, room);
+	box->style.width = width;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the box has shrunk to fit. */
+	return 0;
+}
+
+/*
+ * Measures the width a box's content takes laid out without a limit (its
+ * max-content width): the box laid out very wide, while the count of
+ * measurements in progress makes the percentages inside indefinite.  The
+ * width does not depend on the room the box is later laid out in, so it
+ * is measured once and kept in the box.
+ */
+int
+layout_max_content(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	layout_unit *width)
+{
+	int error;
+
+	/* A box measured before has its width already. */
+	if (box->max_content_known) {
+		*width = box->max_content;
+		return 0;
+	}
+
+	/* The content, laid out very wide. */
 	tree->measuring++;
 	error = layout_block(tree, box, POSITION_MEASURE_WIDTH);
 	if (error != 0) {
@@ -185,24 +236,12 @@ layout_shrink_to_fit(
 	}
 
 	/* The content's own width, with the measurement over. */
-	content = layout_content_width(box, 0);
+	box->max_content = layout_content_width(box, 0);
+	box->max_content_known = 1;
 	tree->measuring--;
 
-	/* No wider than the room leaves, and not negative. */
-	outside = position_frame(box) + box->margin[CSS_LEFT] + box->margin[CSS_RIGHT];
-	if (content > room - outside)
-		content = room - outside;
-	if (content < 0)
-		content = 0;
-
-	/* The width is now set, and the box is laid out at it. */
-	box->style.width.unit = CSS_UNIT_PX;
-	box->style.width.value = layout_to_px(content);
-	error = layout_block(tree, box, room);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the box has shrunk to fit. */
+	/* Succeeded: the width is measured. */
+	*width = box->max_content;
 	return 0;
 }
 
@@ -553,9 +592,9 @@ position_inline_floats(
 	if (depth > LAYOUT_DEPTH_MAX)
 		return 0;
 
-	/* A float is measured; an inline box is searched; a box out of the flow is not. */
+	/* A float is measured; an inline box is searched; a box out of the flow or an inline block (its line holds it) is not. */
 	for (child = box->first_child; child != NULL; child = child->next) {
-		if (child->out_of_flow)
+		if (child->out_of_flow || child->atomic)
 			continue;
 		if (child->floating) {
 			width = child->margin[CSS_LEFT] + position_frame(child) + child->width + child->margin[CSS_RIGHT];

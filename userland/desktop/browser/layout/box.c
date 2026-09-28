@@ -9,7 +9,8 @@
  * The box tree: built from the DOM and the computed styles, with anonymous
  * blocks where a block holds both block and inline children, then laid out
  * from the root and given absolute positions (relatively positioned boxes
- * shifted by their offsets), and its out-of-flow boxes placed.
+ * shifted by their offsets), and its out-of-flow boxes placed.  An inline
+ * block is a block box marked atomic, which counts as inline content.
  */
 
 #include "layout/layout.h"
@@ -292,6 +293,7 @@ box_build_element(
 	int floating;
 	int replaced;
 	int is_control;
+	int atomic;
 	int kind;
 	int error;
 
@@ -329,11 +331,11 @@ box_build_element(
 	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_BR)
 		kind = LAYOUT_LINE_BREAK;
 
-	/* An <img> is a replaced box: an atomic piece of its line when it is inline. */
+	/* An <img> is a replaced box: an atomic piece of its line when it is inline or an inline block. */
 	replaced = 0;
 	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG) {
 		replaced = 1;
-		if (kind == LAYOUT_INLINE)
+		if (kind == LAYOUT_INLINE || style->display == CSS_DISPLAY_INLINE_BLOCK)
 			kind = LAYOUT_REPLACED;
 	}
 
@@ -359,11 +361,17 @@ box_build_element(
 	if (parent == NULL)
 		kind = LAYOUT_BLOCK;
 
+	/* An inline block that is not replaced is a block placed as one piece of its line (ws074-p060). */
+	atomic = 0;
+	if (parent != NULL && kind == LAYOUT_BLOCK && !replaced && style->display == CSS_DISPLAY_INLINE_BLOCK)
+		atomic = 1;
+
 	/* An absolutely positioned or fixed box is a block out of the flow (the root stays in it). */
 	out_of_flow = 0;
 	if (parent != NULL && (style->position == CSS_POSITION_ABSOLUTE || style->position == CSS_POSITION_FIXED)) {
 		kind = LAYOUT_BLOCK;
 		out_of_flow = 1;
+		atomic = 0;
 	}
 
 	/* A float that is not out of the flow is a block beside the flow. */
@@ -371,6 +379,7 @@ box_build_element(
 	if (parent != NULL && !out_of_flow && style->float_side != CSS_FLOAT_NONE) {
 		kind = LAYOUT_BLOCK;
 		floating = style->float_side;
+		atomic = 0;
 	}
 
 	/* Makes the box and places it in the tree. */
@@ -380,6 +389,7 @@ box_build_element(
 		return ENOMEM;
 	box->out_of_flow = out_of_flow;
 	box->floating = floating;
+	box->atomic = atomic;
 
 	/* A replaced box shows its element's image, and has no children. */
 	if (replaced && !is_control) {
@@ -512,13 +522,15 @@ box_build_pseudo(
 		return ENOMEM;
 	}
 
-	/* Out of the flow, or floating, as an element's box would be. */
+	/* Out of the flow, or floating, as an element's box would be; otherwise an inline block is atomic. */
 	if (style->position == CSS_POSITION_ABSOLUTE || style->position == CSS_POSITION_FIXED) {
 		generated->kind = LAYOUT_BLOCK;
 		generated->out_of_flow = 1;
 	} else if (style->float_side != CSS_FLOAT_NONE) {
 		generated->kind = LAYOUT_BLOCK;
 		generated->floating = style->float_side;
+	} else if (style->display == CSS_DISPLAY_INLINE_BLOCK) {
+		generated->atomic = 1;
 	}
 
 	/* The box goes into the element's. */
@@ -701,6 +713,7 @@ box_flex_items(
 		if (child->kind != LAYOUT_TEXT) {
 			anonymous = NULL;
 			child->floating = CSS_FLOAT_NONE;
+			child->atomic = 0;
 			if (child->kind == LAYOUT_INLINE || child->kind == LAYOUT_REPLACED || child->kind == LAYOUT_LINE_BREAK)
 				child->kind = LAYOUT_BLOCK;
 			box_append(box, child);
@@ -738,10 +751,12 @@ static int
 box_is_inline_level(
 	const struct layout_box *box)
 {
-	/* Inline boxes, text, line breaks and inline replaced boxes. */
+	/* Inline boxes, text, line breaks, inline replaced boxes and inline blocks. */
 	if (box->kind == LAYOUT_INLINE || box->kind == LAYOUT_TEXT || box->kind == LAYOUT_LINE_BREAK)
 		return 1;
 	if (box->kind == LAYOUT_REPLACED)
+		return 1;
+	if (box->atomic)
 		return 1;
 
 	/* Blocks are block-level. */
@@ -1015,8 +1030,9 @@ box_relative_offset(
 
 /*
  * Gives the boxes out of the flow inside a block's inline content their
- * static position (the content's top left), and makes the floats there
- * absolute (they were placed relative to the content box).
+ * static position (the content's top left), and makes the floats and the
+ * inline blocks there absolute (they were placed relative to the content
+ * box).
  */
 static void
 box_static_inline(
@@ -1034,8 +1050,8 @@ box_static_inline(
 			continue;
 		}
 
-		/* A float moves with the content box. */
-		if (child->floating != CSS_FLOAT_NONE) {
+		/* A float or an inline block moves with the content box. */
+		if (child->floating != CSS_FLOAT_NONE || child->atomic) {
 			layout_absolute(child, x, y);
 			continue;
 		}

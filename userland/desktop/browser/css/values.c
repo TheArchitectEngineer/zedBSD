@@ -200,6 +200,7 @@ static const struct values_name values_names[] = {
 	{ "flex-basis", CSS_PROP_FLEX_BASIS },
 	{ "-webkit-flex-basis", CSS_PROP_FLEX_BASIS },
 	{ "order", CSS_PROP_ORDER },
+	{ "vertical-align", CSS_PROP_VERTICAL_ALIGN },
 	{ "flex", SHORT_FLEX },
 	{ "-webkit-flex", SHORT_FLEX },
 	{ "flex-flow", SHORT_FLEX_FLOW },
@@ -292,6 +293,19 @@ static const struct values_keyword values_display[] = {
 	{ "inline-grid", CSS_DISPLAY_BLOCK },
 	{ "flow-root", CSS_DISPLAY_BLOCK },
 	{ "contents", CSS_DISPLAY_CONTENTS },
+	{ NULL, 0 }
+};
+
+/* The keywords of vertical-align (a length or percentage is the other form). */
+static const struct values_keyword values_vertical_align[] = {
+	{ "baseline", CSS_VALIGN_BASELINE },
+	{ "top", CSS_VALIGN_TOP },
+	{ "middle", CSS_VALIGN_MIDDLE },
+	{ "bottom", CSS_VALIGN_BOTTOM },
+	{ "text-top", CSS_VALIGN_TEXT_TOP },
+	{ "text-bottom", CSS_VALIGN_TEXT_BOTTOM },
+	{ "sub", CSS_VALIGN_SUB },
+	{ "super", CSS_VALIGN_SUPER },
 	{ NULL, 0 }
 };
 
@@ -1364,6 +1378,20 @@ values_single(
 		value->kind = CSS_VALUE_KEYWORD;
 		value->keyword = keyword;
 		return 0;
+	}
+
+	/* vertical-align: a keyword, or a length or percentage that raises the box. */
+	if (property == CSS_PROP_VERTICAL_ALIGN) {
+		found = values_keyword(values_vertical_align, &tokens[0], &keyword);
+		if (found) {
+			value->kind = CSS_VALUE_KEYWORD;
+			value->keyword = keyword;
+			return 0;
+		}
+
+		/* A length or a percentage. */
+		error = values_length(&tokens[0], 0, value);
+		return error;
 	}
 
 	/* flex-grow and flex-shrink: a number that is not negative. */

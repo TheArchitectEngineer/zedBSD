@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: 2026-09-28: p059（Google の調査）・p067（amazon.co.jp の調査）・p032（form）・p068（外の stylesheet と rule の索引）・p061（CSS の値）・p069（selector と ::before・::after）cleared。p035（flexbox の最小）cleared（2026-09-29）。guest の窓の試験は main の sysroot の複写で worktree の image を作って行う（p035 の phase.md）。デモの目標は amazon.co.jp、版と Phase の列は [amazon-goal.md](amazon-goal.md)。guest の窓で live の Amazon のトップから「kei」を検索して結果の page が出る。次（デモの順）: p060 → p062 → p070 → p071 → p037 → p072 → p027・p065 の一部
+Resume point: 2026-09-28: p059（Google の調査）・p067（amazon.co.jp の調査）・p032（form）・p068（外の stylesheet と rule の索引）・p061（CSS の値）・p069（selector と ::before・::after）cleared。p035（flexbox の最小）・p060（inline-block と vertical-align）cleared（2026-09-29）。検索の本体の行が `direction: rtl` の flex で左右が逆（p060 の phase.md、Phase の追加を main に提案）。guest の窓の試験は main の sysroot の複写で worktree の image を作って行う（p035 の phase.md）。デモの目標は amazon.co.jp、版と Phase の列は [amazon-goal.md](amazon-goal.md)。guest の窓で live の Amazon のトップから「kei」を検索して結果の page が出る。次（デモの順）: p062 → p070 → p071 → p037 → p072 → p027・p065 の一部
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -152,7 +152,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p057](phase057/phase.md) | 部品化 4（p053 の手順 5）: `libbrowser.so` への分割、公開の header `include/libc/browser.h`、2 つ目の使い手 `browser-probe`（Wayland なしで PPM に描く） | cleared | p056 |
 | ws074-p047 | WPT の testharness の runner（p030 から分けた: testharness.js は arrow・let・const・class と Promise を使う）、WPT dom/nodes の計測（M2 の目標 ≥ 40%） | planned | p028、p029、p030 |
 | [ws074-p059](phase059/phase.md) | Google の調査（デモの目標の前提）: 返る HTML の版（UA ごと）、Chromium との比較、足りない機能、目標の版と Phase の列（[google-goal.md](google-goal.md)） | cleared | p057 |
-| ws074-p060 | `inline-block` を atomic な inline に（shrink-to-fit、baseline、`vertical-align` の top・middle・bottom・baseline） | planned | p032 |
+| [ws074-p060](phase060/phase.md) | `inline-block` を atomic な inline に（shrink-to-fit、baseline、`vertical-align` の top・middle・bottom・baseline） | cleared（2026-09-29。検索の結果が 4 列の card に。`direction: rtl` の不足を発見） | p032 |
 | [ws074-p061](phase061/phase.md) | CSS の値と selector（p008・p009 から Google が使う部分）: `@media`、`var()`、`calc()`、`!important`、`:not()`・`:hover`・`:active`・`:focus`・`:visited`、`::before`・`::after`、`box-sizing`、`-webkit-` の別名、`text-overflow`、`letter-spacing`、`text-transform` | cleared（値の部分: var・calc・@media・@supports・論理 property。selector と pseudo-element は p069、`box-sizing` は p032） | p007 |
 | ws074-p062 | 描画（p038 から）: `border-radius`（CPU と GPU）、`opacity`、`box-shadow`、`outline` | planned | p014 |
 | ws074-p063 | （デモの列から外した: Amazon は sprite の PNG）inline の SVG の最小（`svg`・`path`・`circle`・`rect`、`viewBox`、`fill`・`currentColor`） | planned | p012 |

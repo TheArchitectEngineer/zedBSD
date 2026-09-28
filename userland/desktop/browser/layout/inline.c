@@ -12,7 +12,12 @@
  * boxes that are aligned and stacked.
  *
  * An inline replaced box (an <img>) is a piece of its own, as wide as its
- * margin box, standing on the baseline.
+ * margin box, standing on the baseline.  So is an inline block
+ * (ws074-p060): laid out on its own, shrunk to fit, it stands on its last
+ * line's baseline (on its bottom margin edge when it has no line or clips
+ * its overflow).  vertical-align then moves each piece: to the line's top
+ * or bottom, to the middle, the parent's text top or bottom, the sub- or
+ * superscript position, or by a length; the line grows to hold them.
  *
  * The first pass sets every piece on the baseline; inline boxes contribute
  * their style (through the text they hold) but no borders or padding yet.
@@ -24,6 +29,7 @@
 #include "layout/layout.h"
 
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* How many spaces a tab stands for in preserved whitespace. */
@@ -66,12 +72,28 @@ struct inline_cutter {
 	int error;
 };
 
+/*
+ * How far a piece of a line reaches above and below its own baseline: an
+ * atomic piece's margin box, or a text piece's line height.
+ */
+struct inline_reach {
+	layout_unit above;
+	layout_unit below;
+};
+
 /* The one space a collapsed run of whitespace is drawn as. */
 static const uint16_t inline_space[1] = { 0x20U };
 
 static void inline_collect(struct inline_cutter *cutter, struct layout_box *box);
 static void inline_cut_text(struct inline_cutter *cutter, struct layout_box *box);
 static void inline_add_replaced(struct inline_cutter *cutter, struct layout_box *box);
+static void inline_add_atomic(struct inline_cutter *cutter, struct layout_box *box);
+static int inline_last_baseline(const struct layout_box *box, layout_unit *baseline, int depth);
+static void inline_align(struct layout_tree *tree, struct layout_box *box, struct layout_line *line, struct inline_reach *reach, size_t count, layout_unit *above, layout_unit *below);
+static layout_unit inline_shift(struct layout_tree *tree, const struct layout_box *box, const struct css_style *style, const struct inline_reach *reach);
+static layout_unit inline_x_height(struct layout_tree *tree, const struct css_style *style);
+static const struct css_style *inline_align_style(const struct layout_fragment *fragment, const struct layout_box *block);
+static void inline_place_atomics(const struct layout_line *line);
 static void inline_replaced_extent(const struct layout_box *box, layout_unit *above, layout_unit *below);
 static layout_unit inline_margin_height(const struct layout_box *box);
 static void inline_flush_word(struct inline_cutter *cutter);
@@ -148,6 +170,12 @@ inline_collect(
 	/* A replaced box is a piece of its own. */
 	if (box->kind == LAYOUT_REPLACED) {
 		inline_add_replaced(cutter, box);
+		return;
+	}
+
+	/* So is an inline block, laid out on its own first. */
+	if (box->atomic) {
+		inline_add_atomic(cutter, box);
 		return;
 	}
 
@@ -296,6 +324,116 @@ inline_add_replaced(
 	/* What follows is not after a space, and starts a new word. */
 	cutter->after_space = 0;
 	cutter->previous = 0;
+}
+
+/*
+ * Lays an inline block out, shrunk to fit the block's width in a
+ * formatting context of its own, finds its baseline, and adds it as a
+ * piece as wide as its margin box; the lines may break before and after it.
+ */
+static void
+inline_add_atomic(
+	struct inline_cutter *cutter,
+	struct layout_box *box)
+{
+	struct inline_piece *piece;
+	layout_unit origin_x;
+	layout_unit origin_y;
+	layout_unit baseline;
+	layout_unit width;
+	int found;
+	int clips;
+	int error;
+
+	/* The inline block's own layout, which leaves the origin of the block around it as it was. */
+	origin_x = cutter->tree->origin_x;
+	origin_y = cutter->tree->origin_y;
+	error = layout_shrink_to_fit(cutter->tree, box, cutter->width);
+	cutter->tree->origin_x = origin_x;
+	cutter->tree->origin_y = origin_y;
+	if (error != 0) {
+		cutter->error = error;
+		return;
+	}
+
+	/* Its baseline is its last line's, unless it clips its overflow (then its bottom margin edge stands on the line's). */
+	box->has_baseline = 0;
+	box->control_baseline = 0;
+	clips = layout_clips(box);
+	if (!clips) {
+		found = inline_last_baseline(box, &baseline, 0);
+		if (found) {
+			box->has_baseline = 1;
+			box->control_baseline = baseline;
+		}
+	}
+
+	/* Its margin box's width. */
+	width = box->margin[CSS_LEFT] + box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width +
+	    box->padding[CSS_RIGHT] + box->border[CSS_RIGHT] + box->margin[CSS_RIGHT];
+
+	/* The word before it ends, and the box is a piece of its own. */
+	inline_flush_word(cutter);
+	cutter->box = box;
+	inline_add_piece(cutter, NULL, 0, width, 0, 0);
+	if (cutter->error != 0)
+		return;
+	piece = wb_vector_at(&cutter->pieces, cutter->pieces.count - 1U);
+	piece->replaced = 1;
+
+	/* What follows is not after a space, and starts a new word. */
+	cutter->after_space = 0;
+	cutter->previous = 0;
+}
+
+/*
+ * Finds the baseline of a laid out block's last line in the normal flow,
+ * searching its last blocks that have one, as a distance below the top of
+ * its content box.  Reports whether there is one.
+ */
+static int
+inline_last_baseline(
+	const struct layout_box *box,
+	layout_unit *baseline,
+	int depth)
+{
+	const struct layout_box *child;
+	const struct layout_line *line;
+	layout_unit inner;
+	int found;
+	int any;
+
+	/* Stops at the depth the layout stops at. */
+	if (depth > LAYOUT_DEPTH_MAX)
+		return 0;
+
+	/* A block of lines: its last line's baseline. */
+	if (box->children_inline) {
+		if (box->line_count == 0)
+			return 0;
+		line = &box->lines[box->line_count - 1U];
+		*baseline = line->y + line->baseline;
+		return 1;
+	}
+
+	/* A block of blocks: the last child in the flow that has a baseline, below where that child's content starts. */
+	any = 0;
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE)
+			continue;
+		if (child->kind != LAYOUT_BLOCK && child->kind != LAYOUT_ANONYMOUS_BLOCK)
+			continue;
+
+		/* The child's own last baseline, moved into this box's content box. */
+		found = inline_last_baseline(child, &inner, depth + 1);
+		if (found) {
+			*baseline = child->y + child->border[CSS_TOP] + child->padding[CSS_TOP] + inner;
+			any = 1;
+		}
+	}
+
+	/* Reports whether any child had one. */
+	return any;
 }
 
 /*
@@ -533,7 +671,11 @@ inline_build_lines(
 	return 0;
 }
 
-/* Makes one line of pieces [start, end): its fragments, height, baseline and alignment. */
+/*
+ * Makes one line of pieces [start, end): its fragments, their vertical
+ * alignment, the line's height, baseline and horizontal alignment, and
+ * the places of the inline blocks on it.
+ */
 static int
 inline_finish_line(
 	struct layout_tree *tree,
@@ -549,16 +691,16 @@ inline_finish_line(
 {
 	struct layout_line line;
 	struct layout_fragment *fragment;
+	struct inline_reach *reach;
 	struct text_metrics metrics;
 	struct text_font font;
 	struct text_glyph glyph;
 	layout_unit above;
 	layout_unit below;
-	layout_unit piece_above;
-	layout_unit piece_below;
 	layout_unit x;
 	layout_unit room;
 	size_t count;
+	size_t piece_count;
 	size_t index;
 	int error;
 
@@ -582,13 +724,19 @@ inline_finish_line(
 		count++;
 
 	/* Allocates the fragments of a line that has any. */
+	reach = NULL;
 	if (count != 0) {
 		line.fragments = wb_arena_zalloc(&tree->arena, count * sizeof(struct layout_fragment));
 		if (line.fragments == NULL)
 			return ENOMEM;
+
+		/* And how far each reaches, which the alignment reads (the marker reaches nowhere). */
+		reach = calloc(count, sizeof(*reach));
+		if (reach == NULL)
+			return ENOMEM;
 	}
 
-	/* Sets one fragment per piece along the line; each raises the line to fit it. */
+	/* Sets one fragment per piece along the line, and how far it reaches above and below its baseline. */
 	x = 0;
 	for (index = start; index < end; index++) {
 		/* A forced break has no fragment. */
@@ -614,31 +762,32 @@ inline_finish_line(
 		 */
 		if (pieces[index].replaced) {
 			inline_replaced_extent(pieces[index].box, &fragment->ascent, &fragment->descent);
-			if (fragment->ascent > above)
-				above = fragment->ascent;
-			if (fragment->descent > below)
-				below = fragment->descent;
+			reach[line.fragment_count - 1U].above = fragment->ascent;
+			reach[line.fragment_count - 1U].below = fragment->descent;
 			x += pieces[index].width;
 			continue;
 		}
 
 		/* The font's ascent and descent, which the painting places the glyphs by. */
 		error = text_font_metrics(tree->text, &pieces[index].font, &metrics);
-		if (error != 0)
+		if (error != 0) {
+			free(reach);
 			return error;
+		}
+
+		/* In layout units. */
 		fragment->ascent = (layout_unit)metrics.ascent * LAYOUT_UNIT;
 		fragment->descent = (layout_unit)metrics.descent * LAYOUT_UNIT;
 
-		/* The piece's reach above and below the baseline raises the line. */
-		inline_piece_extent(tree, &pieces[index], &piece_above, &piece_below);
-		if (piece_above > above)
-			above = piece_above;
-		if (piece_below > below)
-			below = piece_below;
+		/* The piece's line reaches above and below its baseline. */
+		inline_piece_extent(tree, &pieces[index], &reach[line.fragment_count - 1U].above, &reach[line.fragment_count - 1U].below);
 
 		/* The next piece starts where this one ends. */
 		x += pieces[index].width;
 	}
+
+	/* The pieces' fragments come before the marker's. */
+	piece_count = line.fragment_count;
 
 	/* A list item's marker hangs to the left of its first line. */
 	if (first_line && box->marker_length != 0) {
@@ -655,24 +804,40 @@ inline_finish_line(
 		/* The marker is as wide as its characters. */
 		for (index = 0; index < box->marker_length; index++) {
 			error = text_glyph(tree->text, &font, box->marker[index], 0, &glyph);
-			if (error != 0)
+			if (error != 0) {
+				free(reach);
 				return error;
+			}
+
+			/* The character widens the marker. */
 			fragment->width += glyph.advance_units;
 		}
 
 		/* It ends a space's width before the content's left edge. */
 		error = text_glyph(tree->text, &font, 0x20U, 0, &glyph);
-		if (error != 0)
+		if (error != 0) {
+			free(reach);
 			return error;
+		}
+
+		/* Its right edge is that space before the content. */
 		fragment->x = -(fragment->width + glyph.advance_units);
 
 		/* The font's ascent and descent, which the painting places the glyphs by. */
 		error = text_font_metrics(tree->text, &font, &metrics);
-		if (error != 0)
+		if (error != 0) {
+			free(reach);
 			return error;
+		}
+
+		/* In layout units. */
 		fragment->ascent = (layout_unit)metrics.ascent * LAYOUT_UNIT;
 		fragment->descent = (layout_unit)metrics.descent * LAYOUT_UNIT;
 	}
+
+	/* vertical-align places the pieces, and the line grows to hold them over the strut. */
+	inline_align(tree, box, &line, reach, piece_count, &above, &below);
+	free(reach);
 
 	/* Aligns the line in the room the floats leave it. */
 	room = line_width - x;
@@ -688,6 +853,9 @@ inline_finish_line(
 	line.baseline = above;
 	*cursor += line.height;
 
+	/* The inline blocks on the line now know where they are. */
+	inline_place_atomics(&line);
+
 	/* Adds it. */
 	error = wb_vector_push(lines, &line);
 	if (error != 0)
@@ -695,6 +863,240 @@ inline_finish_line(
 
 	/* Succeeded: the line is made. */
 	return 0;
+}
+
+/*
+ * Aligns the pieces of a line vertically (vertical-align): each piece's
+ * shift from the line's baseline, and how far the line reaches above and
+ * below its baseline (above and below come in as the strut's).  The
+ * pieces aligned with the baseline come first; a piece aligned with the
+ * line's top or bottom then makes the line tall enough for it and is put
+ * at that edge.
+ */
+static void
+inline_align(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	struct layout_line *line,
+	struct inline_reach *reach,
+	size_t count,
+	layout_unit *above,
+	layout_unit *below)
+{
+	struct layout_fragment *fragment;
+	const struct css_style *style;
+	layout_unit top_height;
+	layout_unit bottom_height;
+	layout_unit height;
+	size_t index;
+	int align;
+
+	/* The pieces placed from the baseline raise the line; those at its top or bottom wait. */
+	top_height = 0;
+	bottom_height = 0;
+	for (index = 0; index < count; index++) {
+		fragment = &line->fragments[index];
+		height = reach[index].above + reach[index].below;
+
+		/* The piece's alignment: the baseline, unless a style around it says otherwise. */
+		align = CSS_VALIGN_BASELINE;
+		style = inline_align_style(fragment, box);
+		if (style != NULL)
+			align = style->vertical_align;
+
+		/* A piece at the line's top or bottom needs the line at least as tall as itself. */
+		if (align == CSS_VALIGN_TOP) {
+			if (height > top_height)
+				top_height = height;
+			continue;
+		}
+
+		/* Likewise a piece at its bottom. */
+		if (align == CSS_VALIGN_BOTTOM) {
+			if (height > bottom_height)
+				bottom_height = height;
+			continue;
+		}
+
+		/* The shift from the baseline, and how far the shifted piece reaches. */
+		fragment->shift = 0;
+		if (style != NULL)
+			fragment->shift = inline_shift(tree, box, style, &reach[index]);
+		if (reach[index].above - fragment->shift > *above)
+			*above = reach[index].above - fragment->shift;
+		if (reach[index].below + fragment->shift > *below)
+			*below = reach[index].below + fragment->shift;
+	}
+
+	/* A piece at the top grows the line downwards, one at the bottom upwards. */
+	if (top_height > *above + *below)
+		*below = top_height - *above;
+	if (bottom_height > *above + *below)
+		*above = bottom_height - *below;
+
+	/* The pieces at the top and the bottom go to those edges. */
+	for (index = 0; index < count; index++) {
+		fragment = &line->fragments[index];
+		style = inline_align_style(fragment, box);
+		if (style == NULL)
+			continue;
+
+		/* Its top on the line's top, or its bottom on the line's bottom. */
+		if (style->vertical_align == CSS_VALIGN_TOP)
+			fragment->shift = reach[index].above - *above;
+		if (style->vertical_align == CSS_VALIGN_BOTTOM)
+			fragment->shift = *below - reach[index].below;
+	}
+}
+
+/*
+ * Picks the style whose vertical-align moves a fragment, or NULL for the
+ * baseline: an atomic piece's own; for text, that of the nearest inline
+ * box around it that leaves the baseline (text straight in the block
+ * stays on the baseline, since vertical-align does not apply to blocks).
+ */
+static const struct css_style *
+inline_align_style(
+	const struct layout_fragment *fragment,
+	const struct layout_box *block)
+{
+	const struct layout_box *ancestor;
+
+	/* A replaced box or an inline block is aligned by its own style. */
+	if (fragment->box->kind != LAYOUT_TEXT) {
+		if (fragment->box->style.vertical_align == CSS_VALIGN_BASELINE)
+			return NULL;
+		return &fragment->box->style;
+	}
+
+	/* Text: the inline boxes around it, up to the block. */
+	for (ancestor = fragment->box->parent; ancestor != NULL && ancestor != block; ancestor = ancestor->parent) {
+		if (ancestor->kind != LAYOUT_INLINE)
+			break;
+		if (ancestor->style.vertical_align != CSS_VALIGN_BASELINE)
+			return &ancestor->style;
+	}
+
+	/* No inline box around the text leaves the baseline. */
+	return NULL;
+}
+
+/*
+ * Finds how far a piece's baseline sits below the line's (negative: above)
+ * for vertical-align relative to the parent, which is the block holding
+ * the line in this pass.
+ */
+static layout_unit
+inline_shift(
+	struct layout_tree *tree,
+	const struct layout_box *box,
+	const struct css_style *style,
+	const struct inline_reach *reach)
+{
+	struct text_metrics metrics;
+	struct text_font font;
+	layout_unit x_height;
+	layout_unit line_above;
+	layout_unit line_below;
+	layout_unit shift;
+	int error;
+
+	/* Each keyword moves the piece its own way. */
+	shift = 0;
+	switch (style->vertical_align) {
+	case CSS_VALIGN_MIDDLE:
+		/* The piece's middle goes to half the parent's x-height above the baseline. */
+		x_height = inline_x_height(tree, &box->style);
+		shift = (reach->above - reach->below) / 2 - x_height / 2;
+		break;
+	case CSS_VALIGN_TEXT_TOP:
+	case CSS_VALIGN_TEXT_BOTTOM:
+		/* The parent's font's ascent and descent are its text's top and bottom. */
+		layout_font_of(tree, &box->style, &font);
+		error = text_font_metrics(tree->text, &font, &metrics);
+		if (error != 0)
+			break;
+
+		/* The piece's top goes to the text's top, or its bottom to the text's bottom. */
+		if (style->vertical_align == CSS_VALIGN_TEXT_TOP) {
+			shift = reach->above - (layout_unit)metrics.ascent * LAYOUT_UNIT;
+		} else {
+			shift = (layout_unit)metrics.descent * LAYOUT_UNIT - reach->below;
+		}
+
+		/* The shift is found. */
+		break;
+	case CSS_VALIGN_SUB:
+		/* Lowered by a fifth of the parent's font size, as Chromium does. */
+		shift = layout_from_px(box->style.font_size / 5.0f + 1.0f);
+		break;
+	case CSS_VALIGN_SUPER:
+		/* Raised by a third of the parent's font size, as Chromium does. */
+		shift = -layout_from_px(box->style.font_size / 3.0f + 1.0f);
+		break;
+	case CSS_VALIGN_LENGTH:
+		/* Raised by a length, or by a percentage of the piece's own line height. */
+		if (style->vertical_offset.unit == CSS_UNIT_PX) {
+			shift = -layout_from_px(style->vertical_offset.value);
+		} else if (style->vertical_offset.unit == CSS_UNIT_PERCENT) {
+			inline_line_height(tree, style, &line_above, &line_below);
+			shift = -(layout_unit)((float)(line_above + line_below) * style->vertical_offset.value / 100.0f);
+		}
+
+		/* The shift is found. */
+		break;
+	default:
+		break;
+	}
+
+	/* Reports the shift. */
+	return shift;
+}
+
+/*
+ * Measures a style's font's x-height: how far the top of an "x" is above
+ * the baseline, or half the font size when the glyph cannot be drawn.
+ */
+static layout_unit
+inline_x_height(
+	struct layout_tree *tree,
+	const struct css_style *style)
+{
+	struct text_font font;
+	struct text_glyph glyph;
+	int error;
+
+	/* The drawn "x" of the style's font. */
+	layout_font_of(tree, style, &font);
+	error = text_glyph(tree->text, &font, 'x', 1, &glyph);
+	if (error != 0 || glyph.top <= 0)
+		return layout_from_px(style->font_size / 2.0f);
+
+	/* Its top above the baseline. */
+	return (layout_unit)glyph.top * LAYOUT_UNIT;
+}
+
+/*
+ * Places the inline blocks of a stacked line: each border box relative to
+ * the block's content box, from the line's left and its piece's baseline.
+ */
+static void
+inline_place_atomics(
+	const struct layout_line *line)
+{
+	const struct layout_fragment *fragment;
+	struct layout_box *atomic;
+	size_t index;
+
+	/* Each inline block's margin box starts at its piece, its top its reach above the piece's baseline. */
+	for (index = 0; index < line->fragment_count; index++) {
+		fragment = &line->fragments[index];
+		atomic = fragment->box;
+		if (!atomic->atomic)
+			continue;
+		atomic->x = line->left + fragment->x + atomic->margin[CSS_LEFT];
+		atomic->y = line->y + line->baseline + fragment->shift - fragment->ascent + atomic->margin[CSS_TOP];
+	}
 }
 
 /* Measures how far a style's line reaches above and below the baseline, half-leading included. */
@@ -790,7 +1192,7 @@ inline_font_extent(
 	*below = height - *above;
 }
 
-/* Lays out and places the floats among a block's inline content (not inside boxes out of the flow or other floats). */
+/* Lays out and places the floats among a block's inline content (not inside boxes out of the flow, inline blocks or other floats). */
 static int
 inline_place_floats(
 	struct layout_tree *tree,
@@ -811,7 +1213,7 @@ inline_place_floats(
 	origin_x = tree->origin_x;
 	origin_y = tree->origin_y;
 	for (child = box->first_child; child != NULL; child = child->next) {
-		if (child->out_of_flow)
+		if (child->out_of_flow || child->atomic)
 			continue;
 		if (child->floating == CSS_FLOAT_NONE) {
 			error = inline_place_floats(tree, content, child, depth + 1);
