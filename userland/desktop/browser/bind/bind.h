@@ -55,9 +55,19 @@ struct bind_host {
 };
 
 /*
- * A pointer event's place and button, for bind_fire_mouse_event: the
- * point in the viewport and in the document, in CSS pixels, and the DOM's
- * button number (0 is the main button).
+ * The modifier keys an input event says were held (shiftKey, ctrlKey,
+ * altKey and metaKey of MouseEvent and KeyboardEvent).
+ */
+#define BIND_MOD_SHIFT		0x01U
+#define BIND_MOD_CTRL		0x02U
+#define BIND_MOD_ALT		0x04U
+#define BIND_MOD_META		0x08U
+
+/*
+ * A pointer event's place and button, for bind_fire_mouse_event and
+ * bind_fire_wheel_event: the point in the viewport and in the document,
+ * in CSS pixels, the DOM's button number (0 is the main button), the
+ * modifiers held (BIND_MOD_*), and a wheel event's distances in pixels.
  */
 struct bind_mouse {
 	double client_x;
@@ -65,6 +75,22 @@ struct bind_mouse {
 	double page_x;
 	double page_y;
 	int button;
+	unsigned modifiers;
+	double delta_x;
+	double delta_y;
+};
+
+/*
+ * A key event's key, for bind_fire_key_event: the key's value and its
+ * physical code as the DOM names them (UTF-8, "a" and "KeyA", "Enter"
+ * and "Enter"), whether the key is held and repeating, and the modifiers
+ * held (BIND_MOD_*).
+ */
+struct bind_key {
+	const char *key;
+	const char *code;
+	int repeat;
+	unsigned modifiers;
 };
 
 struct bind_window;
@@ -87,5 +113,10 @@ int bind_run_timers(struct bind_window *window);
 /* Events (event.c). */
 int bind_fire_event(struct bind_window *window, struct dom_node *target, const char *type, unsigned flags, int *canceled);
 int bind_fire_mouse_event(struct bind_window *window, struct dom_node *target, const char *type, const struct bind_mouse *mouse, int *canceled);
+
+/* The events of the keyboard, the wheel and the focus (input.c). */
+int bind_fire_key_event(struct bind_window *window, struct dom_node *target, const char *type, const struct bind_key *key, int *canceled);
+int bind_fire_wheel_event(struct bind_window *window, struct dom_node *target, const struct bind_mouse *mouse, int *canceled);
+int bind_fire_focus_event(struct bind_window *window, struct dom_node *target, const char *type, int bubbles);
 
 #endif

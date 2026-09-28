@@ -35,6 +35,9 @@ static unsigned lookup_format12(const struct truetype_face *face,
 static unsigned lookup(const struct truetype_face *face, const uint8_t *table,
 		       uint32_t table_size, unsigned format,
 		       uint32_t codepoint);
+static int subtable_any(const struct truetype_face *face, uint32_t offset, unsigned *format, uint32_t *length);
+static unsigned lookup_format0(const struct truetype_face *face, const uint8_t *table, uint32_t table_size, uint32_t code);
+static unsigned lookup_format6(const struct truetype_face *face, const uint8_t *table, uint32_t table_size, uint32_t code);
 
 /*
  * Reports whether one subtable is a format this reads and lies inside cmap.
@@ -161,6 +164,10 @@ lookup(
 	/* Handles the selected subtable format. */
 	if (format == 12U)
 		return lookup_format12(face, table, table_size, codepoint);
+	if (format == 0U)
+		return lookup_format0(face, table, table_size, codepoint);
+	if (format == 6U)
+		return lookup_format6(face, table, table_size, codepoint);
 
 	/* Returns the computed result. */
 	return lookup_format4(face, table, table_size, codepoint);
@@ -324,4 +331,180 @@ truetype_glyph_index(
 	/* Returns the computed result. */
 	return lookup(face, face->cmap_subtable, face->cmap_subtable_size,
 		      face->cmap_format, codepoint);
+}
+
+/*
+ * Looks a code up in the subtable of one platform and encoding.
+ *
+ * A document's font is often addressed through a map other than the
+ * Unicode one truetype_glyph_index() reads: the Windows symbol map (3, 0)
+ * or the Macintosh Roman map (1, 0), in the byte formats 0 and 6 as well as
+ * 4 and 12.  ENOENT means the font has no such subtable in a format this
+ * reads; otherwise *glyph is the glyph, 0 when the code is not mapped.
+ */
+int
+truetype_cmap_lookup(
+	const struct truetype_face *face,
+	unsigned platform,
+	unsigned encoding,
+	uint32_t code,
+	unsigned *glyph)
+{
+	const uint8_t *record;
+	uint32_t count;
+	uint32_t offset;
+	uint32_t length;
+	unsigned index;
+	unsigned format;
+	int usable;
+
+	/* Refuses a missing face or answer. */
+	if (face == NULL)
+		return EINVAL;
+	if (glyph == NULL)
+		return EINVAL;
+	*glyph = 0;
+
+	/* A face without a map has no subtable. */
+	if (face->cmap == NULL)
+		return ENOENT;
+	if (face->cmap_size < 4U)
+		return ENOENT;
+	count = truetype_u16(face->cmap + 2);
+
+	/* Refuses a record list the table does not hold. */
+	if (count > (face->cmap_size - 4U) / 8U)
+		return ENOENT;
+
+	/* Finds the first usable subtable of the platform and encoding. */
+	for (index = 0; index < count; index++) {
+		record = face->cmap + 4U + (size_t)index * 8U;
+
+		/* Skips a record of another platform or encoding. */
+		if (truetype_u16(record) != platform)
+			continue;
+		if (truetype_u16(record + 2) != encoding)
+			continue;
+
+		/* Skips a subtable this reader cannot use. */
+		offset = truetype_u32(record + 4);
+		usable = subtable_any(face, offset, &format, &length);
+		if (!usable)
+			continue;
+
+		/* Succeeded: the subtable's answer. */
+		*glyph = lookup(face, face->cmap + offset, length, format, code);
+		return 0;
+	}
+
+	/* The font has no such subtable. */
+	return ENOENT;
+}
+
+/*
+ * Reports whether a subtable is in any format this reads (0, 4, 6, 12) and
+ * lies inside cmap.
+ */
+static int
+subtable_any(
+	const struct truetype_face *face,
+	uint32_t offset,
+	unsigned *format,
+	uint32_t *length)
+{
+	const uint8_t *subtable;
+	int usable;
+
+	/* Formats 4 and 12 are the ones the Unicode choice reads. */
+	usable = subtable_usable(face, offset, format, length);
+	if (usable)
+		return 1;
+
+	/* Refuses a subtable the table does not hold. */
+	if (offset > face->cmap_size || face->cmap_size - offset < 6U)
+		return 0;
+	subtable = face->cmap + offset;
+	*format = truetype_u16(subtable);
+
+	/* Formats 0 and 6 keep a 16-bit length after the format. */
+	if (*format != 0U && *format != 6U)
+		return 0;
+	*length = truetype_u16(subtable + 2);
+
+	/* Refuses a subtable running past the end of the table. */
+	if (*length < 6U || *length > face->cmap_size - offset)
+		return 0;
+
+	/* Succeeded: the subtable can be read. */
+	return 1;
+}
+
+/*
+ * Looks one byte code up in a format 0 subtable: 256 glyph numbers of one
+ * byte each.
+ */
+static unsigned
+lookup_format0(
+	const struct truetype_face *face,
+	const uint8_t *table,
+	uint32_t table_size,
+	uint32_t code)
+{
+	unsigned glyph;
+
+	/* A code past one byte, or past the array, is not mapped. */
+	if (code > 255U)
+		return 0;
+	if (6U + code >= table_size)
+		return 0;
+	glyph = table[6U + code];
+
+	/* A glyph the face does not have is not mapped. */
+	if (glyph >= face->glyph_count)
+		return 0;
+
+	/* Succeeded: the code's glyph. */
+	return glyph;
+}
+
+/*
+ * Looks one code up in a format 6 subtable: a run of 16-bit glyph numbers
+ * for consecutive codes from a first code.
+ */
+static unsigned
+lookup_format6(
+	const struct truetype_face *face,
+	const uint8_t *table,
+	uint32_t table_size,
+	uint32_t code)
+{
+	uint32_t first;
+	uint32_t count;
+	uint32_t position;
+	unsigned glyph;
+
+	/* Refuses a subtable too short for its header. */
+	if (table_size < 10U)
+		return 0;
+	first = truetype_u16(table + 6);
+	count = truetype_u16(table + 8);
+
+	/* A code outside the run is not mapped. */
+	if (code < first)
+		return 0;
+	if (code - first >= count)
+		return 0;
+
+	/* Refuses an entry the subtable does not hold. */
+	position = 10U + (code - first) * 2U;
+	if (position + 2U > table_size)
+		return 0;
+	glyph = truetype_u16(table + position);
+
+	/* A glyph the face does not have is not mapped. */
+	if (glyph >= face->glyph_count)
+		return 0;
+
+	/* Succeeded: the code's glyph. */
+	return glyph;
 }

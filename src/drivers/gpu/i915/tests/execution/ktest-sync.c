@@ -415,18 +415,19 @@ i915_ktest_waitq_deadline(
 	uint64_t end_tick;
 	uint64_t observed;
 	int slept;
+	unsigned long enabled;
 
 	/* Sleeps on a queue nobody wakes, until the deadline 200 ms away. */
 	spin_init(&lock, LOCK_RANK_DEVICE, "ktest-k0");
 	waitq_init(&queue, "ktest-k0");
 	start_tick = sched_ticks();
 	deadline = drv_i915_ktest_deadline_ms(200U);
-	spin_lock(&lock);
+	enabled = spin_lock_irqsave(&lock);
 
 	observed = waitq_sequence(&queue);
 	slept = waitq_sleep(&queue, &lock, observed, deadline, 0U);
 
-	spin_unlock(&lock);
+	spin_unlock_irqrestore(&lock, enabled);
 
 	/* Logs when the sleep ended against its deadline. */
 	end_tick = sched_ticks();

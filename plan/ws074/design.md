@@ -537,3 +537,9 @@ Vulkanレンダリングターゲットを指定してイベントも送って�
   上の shell になる。システム環境設定の窓や widget が同じ library を使う。
 - 移し方: 新しいコードは engine と shell の境界を守って書く。境界を越える既存の依存は、触る Phase で少しずつ直す。
   分割（.so と公開の header、API の文書、2 つ目の使い手の試作）は専用の Phase で行う。
+- 実施（2026-09-28、p054〜p057）: view の型（p054）、呼ぶ側の Vulkan の描画の先（p055）、DOM の形の入力と既定の動作（p056）の後、
+  p057 で engine を `libbrowser.so` に分けた。公開の header は `include/libc/browser.h`（sysroot の `<browser.h>`、API の文書を兼ねる。
+  `BROWSER_API_VERSION` と options の version）。package は `userland/desktop/libbrowser/`（Makefile と exports.map。source は
+  `userland/desktop/browser/` の module の directory に残し、試験の path を変えない）。`/bin/browser` は `main.c` と `shell/` だけで、
+  `<browser.h>` だけを使う（`--js`・`--dump=ast`・`--dump=code` は library の `browser_script_tool`）。2 つ目の使い手は
+  `userland/base/tests/browser-probe`（`<browser.h>` と libc だけ、Wayland なしで page を CPU か engine の offscreen の GPU で PPM に描く）。

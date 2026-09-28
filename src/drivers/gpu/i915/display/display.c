@@ -34,6 +34,7 @@
 #include "interrupts.h"
 #include "modeset.h"
 #include "opregion.h"
+#include "output.h"
 #include "power.h"
 #include "present.h"
 #include "scanout.h"
@@ -692,6 +693,10 @@ drv_i915_display_resident_deps(
 	rctx->gm = &gt->mem;
 	rctx->es = &gt->engines;
 	rctx->lcd = rlcd;
+
+	/* The output the node drives: the panel, or HDMI when display=hdmi finds a sink (ws075-p012). */
+	if (!display->absent)
+		drv_i915_display_output_select(display);
 }
 
 /*
@@ -984,8 +989,9 @@ drv_i915_display_session_close(
 }
 
 /*
- * Reads the panel's mode (the resident eDP's LCD state): 0, or ENXIO when
- * the node has no panel.
+ * Reads the mode of the node's output: the panel's (the resident eDP's
+ * LCD state), or the HDMI mode display=hdmi chose (ws075-p012).  0, or
+ * ENXIO when the node has no output.
  */
 int
 drv_i915_display_panel(
@@ -994,16 +1000,10 @@ drv_i915_display_panel(
 	uint32_t *height,
 	uint32_t *refresh_millihz)
 {
-	const struct i915_lcd_kernel_deps *deps;
 	int error;
 
-	/* The node has a panel only once the resident dependencies exist. */
-	deps = display->rctx.lcd;
-	if (deps == NULL)
-		return ENXIO;
-
-	/* The mode, derived from the panel's own timing. */
-	error = drv_i915_display_panel_mode(deps, width, height, refresh_millihz);
+	/* The mode of the output the node drives. */
+	error = drv_i915_display_output_mode(display, width, height, refresh_millihz);
 	if (error != 0)
 		return ENXIO;
 
@@ -2492,6 +2492,7 @@ i915_display_query(
 	uint32_t refresh;
 	uint32_t width_mm;
 	uint32_t height_mm;
+	const char *name;
 	int error;
 	int size_error;
 
@@ -2535,14 +2536,16 @@ i915_display_query(
 	request->max_height = height;
 	request->refresh_millihz = refresh;
 
-	/* The physical size, when the panel reports one. */
-	size_error = drv_i915_display_panel_size_mm(display->rctx.lcd, &width_mm, &height_mm);
+	/* The physical size, when the output reports one. */
+	size_error = drv_i915_display_output_size_mm(display, &width_mm, &height_mm);
 	if (size_error == 0) {
 		request->physical_width_mm = width_mm;
 		request->physical_height_mm = height_mm;
 	}
 
-	kern_memcpy(request->name, "eDP panel", sizeof("eDP panel"));
+	/* The output's name: the panel, or the HDMI display (ws075-p012). */
+	name = drv_i915_display_output_name(display);
+	kern_memcpy(request->name, name, kern_strlen(name) + 1U);
 
 	/* Succeeded: the display is described. */
 	return 0;
