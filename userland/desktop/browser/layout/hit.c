@@ -12,7 +12,8 @@
  * from, which is what a click on a link needs; a point on no text hits the
  * deepest block around it.  The positioned boxes are searched first, the
  * one painted last first (layout_stacking_order), then the normal flow,
- * then the positioned boxes painted below it.
+ * then the positioned boxes painted below it.  An inline block is searched
+ * like a float among its line's content.
  */
 
 #include "layout/layout.h"
@@ -26,6 +27,7 @@ static const struct layout_box *hit_block(const struct layout_box *box, layout_u
 static const struct layout_box *hit_lines(const struct layout_box *box, layout_unit x, layout_unit y);
 static const struct layout_box *hit_in(const struct layout_box *box, layout_unit x, layout_unit y, int what);
 static const struct layout_box *hit_inline_floats(const struct layout_box *box, layout_unit x, layout_unit y, int depth);
+static const struct layout_box *hit_inline_blocks(const struct layout_box *box, layout_unit x, layout_unit y, int depth);
 static const struct layout_box *hit_ordered(const struct layout_tree *tree, layout_unit x, layout_unit y, int what);
 
 /*
@@ -144,9 +146,11 @@ hit_lines(
 		if (y < top + line->y || y >= top + line->y + line->height)
 			continue;
 
-		/* The fragment of that line whose run holds the point. */
+		/* The fragment of that line whose run holds the point (an inline block's text was searched before). */
 		for (item = 0; item < line->fragment_count; item++) {
 			fragment = &line->fragments[item];
+			if (fragment->box->atomic)
+				continue;
 			start = left + line->left + fragment->x;
 			if (x >= start && x < start + fragment->width)
 				return fragment->box;
@@ -194,8 +198,49 @@ hit_block(
 			return found;
 	}
 
+	/* So is an inline block among its lines' content. */
+	if (box->children_inline) {
+		found = hit_inline_blocks(box, x, y, depth + 1);
+		if (found != NULL)
+			return found;
+	}
+
 	/* The block itself. */
 	return box;
+}
+
+/* Finds the deepest block holding a point inside the inline blocks among a block's inline content. */
+static const struct layout_box *
+hit_inline_blocks(
+	const struct layout_box *box,
+	layout_unit x,
+	layout_unit y,
+	int depth)
+{
+	const struct layout_box *child;
+	const struct layout_box *found;
+
+	/* Stops at the depth the layout stops at. */
+	if (depth > LAYOUT_DEPTH_MAX)
+		return NULL;
+
+	/* An inline block is searched like a block; an inline box is searched through. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE)
+			continue;
+		if (child->atomic) {
+			found = hit_block(child, x, y, depth + 1);
+		} else {
+			found = hit_inline_blocks(child, x, y, depth + 1);
+		}
+
+		/* The first block found. */
+		if (found != NULL)
+			return found;
+	}
+
+	/* No inline block holds the point. */
+	return NULL;
 }
 
 /* Searches one layer (a positioned box, or the root's normal flow) for text, then for a block when asked. */
@@ -265,7 +310,7 @@ hit_ordered(
 }
 
 
-/* Searches the floats among a block's inline content for the text under a point. */
+/* Searches the floats and the inline blocks among a block's inline content for the text under a point. */
 static const struct layout_box *
 hit_inline_floats(
 	const struct layout_box *box,
@@ -280,11 +325,11 @@ hit_inline_floats(
 	if (depth > LAYOUT_DEPTH_MAX)
 		return NULL;
 
-	/* A float is searched like a block; an inline box is searched through. */
+	/* A float or an inline block is searched like a block; an inline box is searched through. */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->out_of_flow)
 			continue;
-		if (child->floating != CSS_FLOAT_NONE) {
+		if (child->floating != CSS_FLOAT_NONE || child->atomic) {
 			found = hit_box(child, x, y, depth + 1);
 		} else {
 			found = hit_inline_floats(child, x, y, depth + 1);

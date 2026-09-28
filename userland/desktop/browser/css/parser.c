@@ -44,6 +44,7 @@ struct parser_state {
 	struct wb_vector rules;
 	struct wb_vector imports;
 	struct wb_vector import_media;
+	struct wb_vector font_faces;
 };
 
 /*
@@ -104,6 +105,13 @@ static int parser_keep_imports(struct parser_state *state);
 static int parser_supports(struct parser_state *state, const struct css_token *tokens, size_t count);
 static int parser_supports_group(struct parser_state *state, const struct css_token *tokens, size_t count);
 static int parser_import(struct parser_state *state, const struct css_token *tokens, size_t count);
+static int parser_font_face(struct parser_state *state, const struct css_token *tokens, size_t count);
+static int parser_font_descriptor(struct parser_state *state, const struct css_token *name, const struct css_token *tokens, size_t count, struct css_font_face *face);
+static int parser_font_family(struct parser_state *state, const struct css_token *tokens, size_t count, struct vm_string **family);
+static int parser_font_sources(struct parser_state *state, const struct css_token *tokens, size_t count, struct css_font_face *face);
+static int parser_font_weight(const struct css_token *token, int *weight);
+static int parser_font_format(const struct css_token *format);
+static int parser_keep_font_faces(struct parser_state *state);
 static int parser_add_rule(struct parser_state *state, struct token_range prelude, struct token_range block, const struct css_media *media);
 static int parser_selectors(struct vm_heap *heap, struct wb_arena *arena, struct token_range prelude, struct css_selector **selectors, size_t *count);
 static int parser_selector(struct vm_heap *heap, struct wb_arena *arena, struct token_range tokens, struct css_selector *selector);
@@ -148,11 +156,15 @@ css_parse_sheet(
 	wb_vector_init(&state.rules, sizeof(struct css_rule));
 	wb_vector_init(&state.imports, sizeof(struct vm_string *));
 	wb_vector_init(&state.import_media, sizeof(struct css_media *));
+	wb_vector_init(&state.font_faces, sizeof(struct css_font_face));
 	error = parser_rules(&state, tokens, count, NULL);
 	if (error == 0)
 		error = parser_keep_imports(&state);
+	if (error == 0)
+		error = parser_keep_font_faces(&state);
 	wb_vector_release(&state.imports);
 	wb_vector_release(&state.import_media);
+	wb_vector_release(&state.font_faces);
 	if (error != 0) {
 		wb_vector_release(&state.rules);
 		return error;
@@ -315,6 +327,29 @@ css_sheet_import_media(
 }
 
 /*
+ * Tells how many @font-face rules a sheet holds (ws074-p070).
+ */
+size_t
+css_sheet_font_face_count(
+	const struct css_sheet *sheet)
+{
+	/* The number of faces. */
+	return sheet->font_face_count;
+}
+
+/*
+ * Gives one of a sheet's @font-face rules.
+ */
+const struct css_font_face *
+css_sheet_font_face(
+	const struct css_sheet *sheet,
+	size_t index)
+{
+	/* The face. */
+	return &sheet->font_faces[index];
+}
+
+/*
  * Tells how many style rules a sheet holds.
  */
 size_t
@@ -367,6 +402,17 @@ css_sheet_resolve_urls(
 			return error;
 		if (error == 0)
 			sheet->imports[position] = resolved;
+	}
+
+	/* The sources of the @font-face rules. */
+	for (rule = 0; rule < sheet->font_face_count; rule++) {
+		for (position = 0; position < sheet->font_faces[rule].source_count; position++) {
+			error = resolve(context, sheet->font_faces[rule].sources[position], &resolved);
+			if (error == ENOMEM)
+				return error;
+			if (error == 0)
+				sheet->font_faces[rule].sources[position] = resolved;
+		}
 	}
 
 	/* Succeeded: the URLs are resolved. */
@@ -558,7 +604,8 @@ parser_rules(
  * Reads one at-rule (its tokens from the at-keyword to its semicolon or
  * the end of its block): @import before the style rules, the rules of an
  * @media block under its media list, of an @supports block whose
- * condition holds, and of an @layer block; any other at-rule is skipped.
+ * condition holds, and of an @layer block, and an @font-face rule's
+ * descriptors; any other at-rule is skipped.
  */
 static int
 parser_at_rule(
@@ -574,6 +621,7 @@ parser_at_rule(
 	int is_supports;
 	int is_layer;
 	int is_import;
+	int is_font_face;
 	int holds;
 	int error;
 
@@ -592,7 +640,8 @@ parser_at_rule(
 	is_media = css_ident_equal(&tokens[0], "media");
 	is_supports = css_ident_equal(&tokens[0], "supports");
 	is_layer = css_ident_equal(&tokens[0], "layer");
-	if (!is_media && !is_supports && !is_layer)
+	is_font_face = css_ident_equal(&tokens[0], "font-face");
+	if (!is_media && !is_supports && !is_layer && !is_font_face)
 		return 0;
 	open = 1;
 	while (open < count && tokens[open].type != CSS_TOKEN_OPEN_CURLY)
@@ -604,6 +653,14 @@ parser_at_rule(
 	body_count = count - open - 1U;
 	if (body_count > 0 && tokens[count - 1U].type == CSS_TOKEN_CLOSE_CURLY)
 		body_count--;
+
+	/* An @font-face block's descriptors (under an @media list too: the face is kept whatever the medium). */
+	if (is_font_face) {
+		error = parser_font_face(state, tokens + open + 1U, body_count);
+		if (error == ENOMEM)
+			return error;
+		return 0;
+	}
 
 	/* An @media block's rules hold under its list and the ones it is nested in. */
 	if (is_media) {
@@ -1916,4 +1973,369 @@ parser_trim(
 
 	/* Reports the trimmed range. */
 	return range;
+}
+
+/*
+ * Reads an @font-face rule's descriptors (ws074-p070): font-family,
+ * font-weight (a weight or a range), font-style and src.  A face without a
+ * family or a source is not kept.
+ */
+static int
+parser_font_face(
+	struct parser_state *state,
+	const struct css_token *tokens,
+	size_t count)
+{
+	struct css_font_face face;
+	size_t start;
+	size_t index;
+	size_t colon;
+	size_t name;
+	int error;
+
+	/* A face covers every weight at normal style until it says otherwise. */
+	memset(&face, 0, sizeof(face));
+	face.weight_min = 400;
+	face.weight_max = 400;
+
+	/* Each descriptor runs to a semicolon. */
+	start = 0;
+	while (start < count) {
+		index = start;
+		while (index < count && tokens[index].type != CSS_TOKEN_SEMICOLON)
+			index++;
+
+		/* Its name, a colon, then its value. */
+		name = start;
+		while (name < index && tokens[name].type == CSS_TOKEN_WHITESPACE)
+			name++;
+		colon = name + 1U;
+		while (colon < index && tokens[colon].type == CSS_TOKEN_WHITESPACE)
+			colon++;
+		if (name < index && tokens[name].type == CSS_TOKEN_IDENT && colon < index && tokens[colon].type == CSS_TOKEN_COLON) {
+			error = parser_font_descriptor(state, &tokens[name], tokens + colon + 1U, index - colon - 1U, &face);
+			if (error == ENOMEM)
+				return error;
+		}
+
+		/* The next descriptor starts after the semicolon. */
+		start = index + 1U;
+	}
+
+	/* A face without a family or a source names nothing to load. */
+	if (face.family == NULL || face.source_count == 0)
+		return 0;
+
+	/* Keeps the face. */
+	error = wb_vector_push(&state->font_faces, &face);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the face is kept. */
+	return 0;
+}
+
+/* Reads one descriptor of an @font-face rule into the face (one it does not know, or cannot read, is passed by). */
+static int
+parser_font_descriptor(
+	struct parser_state *state,
+	const struct css_token *name,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_font_face *face)
+{
+	size_t second;
+	int is_family;
+	int is_weight;
+	int is_style;
+	int is_src;
+	int is_italic;
+	int error;
+
+	/* The value without the whitespace around it. */
+	while (count > 0 && tokens[0].type == CSS_TOKEN_WHITESPACE) {
+		tokens++;
+		count--;
+	}
+	while (count > 0 && tokens[count - 1U].type == CSS_TOKEN_WHITESPACE)
+		count--;
+	if (count == 0)
+		return 0;
+
+	/* font-family: a string, or words. */
+	is_family = css_ident_equal(name, "font-family");
+	if (is_family) {
+		error = parser_font_family(state, tokens, count, &face->family);
+		return error;
+	}
+
+	/* font-weight: a weight, or two for a range. */
+	is_weight = css_ident_equal(name, "font-weight");
+	if (is_weight) {
+		error = parser_font_weight(&tokens[0], &face->weight_min);
+		if (error != 0)
+			return 0;
+		face->weight_max = face->weight_min;
+
+		/* The second weight of a range. */
+		second = 1;
+		while (second < count && tokens[second].type == CSS_TOKEN_WHITESPACE)
+			second++;
+		if (second < count)
+			parser_font_weight(&tokens[second], &face->weight_max);
+		if (face->weight_max < face->weight_min)
+			face->weight_max = face->weight_min;
+		return 0;
+	}
+
+	/* font-style: italic and oblique are italic. */
+	is_style = css_ident_equal(name, "font-style");
+	if (is_style) {
+		face->italic = 0;
+		is_italic = css_ident_equal(&tokens[0], "italic");
+		if (is_italic)
+			face->italic = 1;
+		is_italic = css_ident_equal(&tokens[0], "oblique");
+		if (is_italic)
+			face->italic = 1;
+		return 0;
+	}
+
+	/* src: the sources. */
+	is_src = css_ident_equal(name, "src");
+	if (is_src) {
+		error = parser_font_sources(state, tokens, count, face);
+		return error;
+	}
+
+	/* A descriptor this pass does not use (font-display, unicode-range, ...). */
+	return 0;
+}
+
+/* Reads a family name: a string, or words joined by single spaces, as an atom. */
+static int
+parser_font_family(
+	struct parser_state *state,
+	const struct css_token *tokens,
+	size_t count,
+	struct vm_string **family)
+{
+	struct wb_units units;
+	uint16_t space;
+	size_t index;
+	int error;
+
+	/* A string is the name. */
+	if (tokens[0].type == CSS_TOKEN_STRING) {
+		*family = vm_atom_from_units(state->heap, tokens[0].text, tokens[0].length);
+		if (*family == NULL)
+			return ENOMEM;
+		return 0;
+	}
+
+	/* Otherwise the words, each space between them one space. */
+	wb_units_init(&units);
+	space = ' ';
+	error = 0;
+	for (index = 0; index < count && error == 0; index++) {
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE) {
+			error = wb_units_append(&units, &space, 1);
+			continue;
+		}
+
+		/* Only words make a name. */
+		if (tokens[index].type != CSS_TOKEN_IDENT) {
+			wb_units_release(&units);
+			return 0;
+		}
+
+		/* The word joins the name. */
+		error = wb_units_append(&units, tokens[index].text, tokens[index].length);
+	}
+
+	/* The name as an atom. */
+	if (error == 0) {
+		*family = vm_atom_from_units(state->heap, units.data, units.length);
+		if (*family == NULL)
+			error = ENOMEM;
+	}
+
+	/* The name's characters are the atom's now. */
+	wb_units_release(&units);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the family is named. */
+	return 0;
+}
+
+/*
+ * Reads src: a comma-separated list of url() sources, each optionally
+ * followed by format(); local() sources are passed by.
+ */
+static int
+parser_font_sources(
+	struct parser_state *state,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_font_face *face)
+{
+	struct vm_string *url;
+	const struct css_token *format;
+	size_t index;
+	size_t inner;
+	int is_url;
+	int is_format;
+	int format_kind;
+
+	/* Walks the list, one source up to each comma. */
+	index = 0;
+	url = NULL;
+	format_kind = CSS_FONT_FORMAT_UNKNOWN;
+	while (index <= count) {
+		/* A comma, or the end, ends the source: a URL is kept with its format. */
+		if (index == count || tokens[index].type == CSS_TOKEN_COMMA) {
+			if (url != NULL && face->source_count < CSS_FONT_SOURCES) {
+				face->sources[face->source_count] = url;
+				face->formats[face->source_count] = format_kind;
+				face->source_count++;
+			}
+
+			/* The next source starts empty. */
+			url = NULL;
+			format_kind = CSS_FONT_FORMAT_UNKNOWN;
+			index++;
+			continue;
+		}
+
+		/* An unquoted url(...). */
+		if (tokens[index].type == CSS_TOKEN_URL) {
+			url = vm_atom_from_units(state->heap, tokens[index].text, tokens[index].length);
+			if (url == NULL)
+				return ENOMEM;
+			index++;
+			continue;
+		}
+
+		/* Other things than functions (whitespace) are passed by. */
+		if (tokens[index].type != CSS_TOKEN_FUNCTION) {
+			index++;
+			continue;
+		}
+
+		/* A function: url("...") or format("..."), and its string argument. */
+		is_url = css_ident_equal(&tokens[index], "url");
+		is_format = css_ident_equal(&tokens[index], "format");
+		inner = index + 1U;
+		while (inner < count && tokens[inner].type == CSS_TOKEN_WHITESPACE)
+			inner++;
+		format = NULL;
+		if (inner < count && tokens[inner].type == CSS_TOKEN_STRING)
+			format = &tokens[inner];
+		if (is_url && format != NULL) {
+			url = vm_atom_from_units(state->heap, format->text, format->length);
+			if (url == NULL)
+				return ENOMEM;
+		}
+
+		/* The format's name. */
+		if (is_format && format != NULL)
+			format_kind = parser_font_format(format);
+
+		/* Past the function's closing parenthesis. */
+		while (index < count && tokens[index].type != CSS_TOKEN_CLOSE_PAREN)
+			index++;
+		index++;
+	}
+
+	/* Succeeded: the sources are read. */
+	return 0;
+}
+
+/* Names the format a format() string declares. */
+static int
+parser_font_format(
+	const struct css_token *format)
+{
+	int same;
+
+	/* WOFF. */
+	same = css_units_equal_ascii(format->text, format->length, "woff");
+	if (same)
+		return CSS_FONT_FORMAT_WOFF;
+
+	/* WOFF 2. */
+	same = css_units_equal_ascii(format->text, format->length, "woff2");
+	if (same)
+		return CSS_FONT_FORMAT_WOFF2;
+
+	/* TrueType, and OpenType (which this pass reads when its outlines are TrueType's). */
+	same = css_units_equal_ascii(format->text, format->length, "truetype");
+	if (same)
+		return CSS_FONT_FORMAT_TRUETYPE;
+	same = css_units_equal_ascii(format->text, format->length, "opentype");
+	if (same)
+		return CSS_FONT_FORMAT_TRUETYPE;
+
+	/* Any other format. */
+	return CSS_FONT_FORMAT_OTHER;
+}
+
+/* Reads a weight: a number from 1 to 1000, normal (400) or bold (700). */
+static int
+parser_font_weight(
+	const struct css_token *token,
+	int *weight)
+{
+	int is_word;
+
+	/* A number. */
+	if (token->type == CSS_TOKEN_NUMBER) {
+		if (token->number < 1 || token->number > 1000)
+			return EINVAL;
+		*weight = (int)token->number;
+		return 0;
+	}
+
+	/* normal. */
+	is_word = css_ident_equal(token, "normal");
+	if (is_word) {
+		*weight = 400;
+		return 0;
+	}
+
+	/* bold. */
+	is_word = css_ident_equal(token, "bold");
+	if (is_word) {
+		*weight = 700;
+		return 0;
+	}
+
+	/* Anything else is not a weight. */
+	return EINVAL;
+}
+
+/* Moves the @font-face rules into the sheet's arena. */
+static int
+parser_keep_font_faces(
+	struct parser_state *state)
+{
+	struct css_sheet *sheet;
+	size_t count;
+
+	/* A sheet without faces keeps nothing. */
+	sheet = state->sheet;
+	count = state->font_faces.count;
+	if (count == 0)
+		return 0;
+
+	/* The faces. */
+	sheet->font_faces = wb_arena_alloc(&sheet->arena, count * sizeof(struct css_font_face));
+	if (sheet->font_faces == NULL)
+		return ENOMEM;
+	memcpy(sheet->font_faces, state->font_faces.items, count * sizeof(struct css_font_face));
+
+	/* Succeeded: the sheet has its faces. */
+	sheet->font_face_count = count;
+	return 0;
 }

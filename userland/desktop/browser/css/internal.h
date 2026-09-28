@@ -233,6 +233,30 @@ struct css_value {
 	struct vm_string *url;
 	const struct css_calc *calc;
 	const struct css_content *content;
+	const struct css_shadow_list *shadows;
+	const struct css_declared_inset *inset;
+};
+
+/* A declared clip-path: inset(): its four declared lengths, top, right, bottom, left (ws074-p062). */
+struct css_declared_inset {
+	struct css_value lengths[4];
+};
+
+/*
+ * One declared box shadow (ws074-p062): its offset, blur and spread as
+ * declared lengths (the missing ones zero pixels), its color and whether
+ * it is inset.
+ */
+struct css_declared_shadow {
+	struct css_value lengths[4];
+	uint32_t color;
+	int inset;
+};
+
+/* A declared box-shadow list, kept in the parse's arena (none is an empty list). */
+struct css_shadow_list {
+	struct css_declared_shadow shadows[CSS_SHADOWS];
+	size_t count;
 };
 
 /* The kinds of declared value. */
@@ -246,7 +270,9 @@ enum css_value_kind {
 	CSS_VALUE_INHERIT,
 	CSS_VALUE_INITIAL,
 	CSS_VALUE_UNSET,
-	CSS_VALUE_CONTENT
+	CSS_VALUE_CONTENT,
+	CSS_VALUE_SHADOWS,
+	CSS_VALUE_INSET
 };
 
 /* The units a declared length can have (converted to pixels by the cascade). */
@@ -344,6 +370,22 @@ enum css_property {
 	CSS_PROP_FLEX_BASIS,
 	CSS_PROP_ALIGN_SELF,
 	CSS_PROP_ORDER,
+	CSS_PROP_VERTICAL_ALIGN,
+	CSS_PROP_RADIUS_TOP_LEFT_X,
+	CSS_PROP_RADIUS_TOP_LEFT_Y,
+	CSS_PROP_RADIUS_TOP_RIGHT_X,
+	CSS_PROP_RADIUS_TOP_RIGHT_Y,
+	CSS_PROP_RADIUS_BOTTOM_RIGHT_X,
+	CSS_PROP_RADIUS_BOTTOM_RIGHT_Y,
+	CSS_PROP_RADIUS_BOTTOM_LEFT_X,
+	CSS_PROP_RADIUS_BOTTOM_LEFT_Y,
+	CSS_PROP_OPACITY,
+	CSS_PROP_BOX_SHADOW,
+	CSS_PROP_OUTLINE_WIDTH,
+	CSS_PROP_OUTLINE_STYLE,
+	CSS_PROP_OUTLINE_COLOR,
+	CSS_PROP_OUTLINE_OFFSET,
+	CSS_PROP_CLIP_PATH,
 	CSS_PROP_COUNT
 };
 
@@ -491,6 +533,8 @@ struct css_sheet {
 	struct vm_string **imports;
 	struct css_media **import_media;
 	size_t import_count;
+	struct css_font_face *font_faces;
+	size_t font_face_count;
 	struct css_rule_index index;
 	int origin;
 };

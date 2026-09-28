@@ -95,6 +95,76 @@ enum css_float {
 	CSS_CLEAR_BOTH
 };
 
+/*
+ * The values of vertical-align (ws074-p060): the baseline, the line box's
+ * top or bottom, the middle (the parent's baseline plus half its
+ * x-height), the parent's text top or bottom, the parent's subscript or
+ * superscript position, or a length (vertical_offset: pixels or a
+ * percentage of the line height) above the baseline.
+ */
+enum css_vertical_align {
+	CSS_VALIGN_BASELINE,
+	CSS_VALIGN_TOP,
+	CSS_VALIGN_MIDDLE,
+	CSS_VALIGN_BOTTOM,
+	CSS_VALIGN_TEXT_TOP,
+	CSS_VALIGN_TEXT_BOTTOM,
+	CSS_VALIGN_SUB,
+	CSS_VALIGN_SUPER,
+	CSS_VALIGN_LENGTH
+};
+
+/* The most sources an @font-face rule keeps (ws074-p070; the ones after are dropped). */
+#define CSS_FONT_SOURCES	4
+
+/* The formats an @font-face source declares (format("...")), or unknown when it declares none. */
+enum css_font_format {
+	CSS_FONT_FORMAT_UNKNOWN,
+	CSS_FONT_FORMAT_WOFF,
+	CSS_FONT_FORMAT_WOFF2,
+	CSS_FONT_FORMAT_TRUETYPE,
+	CSS_FONT_FORMAT_OTHER
+};
+
+/*
+ * One @font-face rule (ws074-p070): the family it names (an atom), the
+ * range of weights it covers, whether it is italic (or oblique), and its
+ * sources in order of preference (URLs as atoms, resolved against the
+ * sheet once the page resolves the sheet's URLs, each with its format;
+ * local() sources are not kept).
+ */
+struct css_font_face {
+	struct vm_string *family;
+	int weight_min;
+	int weight_max;
+	int italic;
+	struct vm_string *sources[CSS_FONT_SOURCES];
+	int formats[CSS_FONT_SOURCES];
+	size_t source_count;
+};
+
+/* The most box shadows a style keeps (ws074-p062; the ones after are dropped). */
+#define CSS_SHADOWS	4
+
+/* The corners of border-radius, in the order its shorthand lists them. */
+#define CSS_TOP_LEFT		0
+#define CSS_TOP_RIGHT		1
+#define CSS_BOTTOM_RIGHT	2
+#define CSS_BOTTOM_LEFT		3
+
+/*
+ * One box shadow (ws074-p062): its offset, blur radius and spread in
+ * pixels, its color, and whether it is drawn inside the box.
+ */
+struct css_shadow {
+	float x;
+	float y;
+	float blur;
+	float spread;
+	uint32_t color;
+	int inset;
+};
+
 /* The values of overflow-x and overflow-y. */
 enum css_overflow {
 	CSS_OVERFLOW_VISIBLE,
@@ -266,6 +336,32 @@ struct css_style {
 	struct css_length padding[4];
 	struct css_length offset[4];
 	int box_sizing;
+
+	/*
+	 * The box's decoration (ws074-p062): each corner's radius, horizontal
+	 * then vertical (pixels or a percentage of the border box), the opacity
+	 * of the box and its content (0 to 1), its shadows, and its outline
+	 * (width and offset in pixels, a border style, a color).
+	 */
+	struct css_length radius[4][2];
+	float opacity;
+	struct css_shadow shadows[CSS_SHADOWS];
+	int shadow_count;
+	float outline_width;
+	int outline_style;
+	uint32_t outline_color;
+	float outline_offset;
+
+	/*
+	 * clip-path: inset() (ws074-p062): whether the box's painting is clipped,
+	 * and how far in from each side of its border box (top, right, bottom,
+	 * left; pixels or a percentage of the box's height or width; negative
+	 * reaches outside).  The other shapes are not clipped in this pass.
+	 */
+	int clip_inset;
+	struct css_length clip[4];
+	int vertical_align;
+	struct css_length vertical_offset;
 	int z_index;
 	int z_index_auto;
 	float border_width[4];
@@ -367,6 +463,8 @@ typedef int (*css_url_resolver)(void *context, const struct vm_string *url, stru
 int css_sheet_create(struct css_sheet **sheet, struct vm_heap *heap, const uint16_t *units, size_t length);
 void css_sheet_destroy(struct css_sheet *sheet);
 size_t css_sheet_import_count(const struct css_sheet *sheet);
+size_t css_sheet_font_face_count(const struct css_sheet *sheet);
+const struct css_font_face *css_sheet_font_face(const struct css_sheet *sheet, size_t index);
 struct vm_string *css_sheet_import(const struct css_sheet *sheet, size_t index);
 size_t css_sheet_rule_count(const struct css_sheet *sheet);
 const struct css_media *css_sheet_import_media(const struct css_sheet *sheet, size_t index);

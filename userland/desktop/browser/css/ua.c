@@ -55,6 +55,8 @@ const char css_user_agent_sheet[] =
 	"small { font-size: smaller; }\n"
 	"big { font-size: larger; }\n"
 	"sub, sup { font-size: smaller; }\n"
+	"sub { vertical-align: sub; }\n"
+	"sup { vertical-align: super; }\n"
 	"a:link { color: #0000ee; text-decoration: underline; }\n"
 	"u, ins { text-decoration: underline; }\n"
 	"center { text-align: center; }\n"

@@ -77,11 +77,11 @@ master.md の決定の行）。この文書は [ws074-p067](phase067/phase.md) �
 | 2 | [ws074-p068](phase068/phase.md) | 外の stylesheet（`<link rel=stylesheet>` と `@import`、非同期の loader、読み終えてから再計算）、rule の索引（最右の id・class・tag） | **cleared**（2026-09-28。local の capture で検索 画素 61.07% → 75.75%、トップ 17.16% → 14.97%） |
 | 3 | [ws074-p061](phase061/phase.md) | CSS の値: `var()` と custom property、`calc()`・`min()`・`max()`・`clamp()`、`@media`（幅・`prefers-*`）、`@supports`、`!important` の確認、論理 property、`-webkit-` の別名 | **cleared**（2026-09-28。トップ 画素 14.97% → 23.51%、検索 75.75% → 73.65%） |
 | 4 | [ws074-p069](phase069/phase.md) | selector と pseudo-element: `:not()`・`:is()`・`:where()`・`:has()`（子孫の最小）、`:root`、`:nth-child`・`:last-child`・`*-of-type`、`:hover`・`:focus`・`:disabled`・`:checked`、`::before`・`::after`（`content` の文字列） | **cleared**（2026-09-28。トップ 画素 23.51% → 27.89%、検索 73.65% → 75.16%） |
-| 5 | [ws074-p035](phase035/phase.md)（最小） | flexbox: row・column・wrap、`flex` の shorthand、grow・shrink・basis、`align-items`・`justify-content`・`gap`、`inline-flex`、`-webkit-box` の別名 | 実装済み・uncleared（2026-09-28。トップ 画素 27.89% → 33.49%、検索 75.16% → 78.51%） |
-| 6 | ws074-p060 | `inline-block` の atomic な inline、`vertical-align` | 2 h |
-| 7 | ws074-p062 | 描画: `border-radius`、`opacity`、`box-shadow`、`outline`、`linear-gradient`、`object-fit` | 3 h |
-| 8 | ws074-p070 | `@font-face`（WOFF、libz-compat）と Amazon Ember | 2 h |
-| 9 | ws074-p071 | 大きな page の速さ（1.4 MB の HTML と 2 MB の CSS、guest で操作できる時間まで）、測って直す | 2〜3 h |
+| 5 | [ws074-p035](phase035/phase.md)（最小） | flexbox: row・column・wrap、`flex` の shorthand、grow・shrink・basis、`align-items`・`justify-content`・`gap`、`inline-flex`、`-webkit-box` の別名 | **cleared**（2026-09-29。トップ 画素 27.89% → 33.49%、検索 75.16% → 78.51%。2026-09-29 の capture で入れ子の flex の修正の後 トップ 34.45%（ink 23.79%）、検索 77.89%（ink 27.53%）。guest で header の検索の欄から live の検索が通る） |
+| 6 | [ws074-p060](phase060/phase.md) | `inline-block` の atomic な inline、`vertical-align` | **cleared**（2026-09-29。トップ 画素 34.45% → 34.15%、検索 77.89% → 70.48%: 結果が Chromium と同じ 4 列の card になったが、本体の行の `direction: rtl` が無く filter と結果の列が左右逆のため画素の一致は下がった） |
+| 7 | [ws074-p062](phase062/phase.md) | 描画: `border-radius`、`opacity`、`box-shadow`、`outline`、`linear-gradient`、`object-fit` | **cleared**（2026-09-29。角丸・影・opacity・outline と `clip-path: inset()`。トップ 画素 34.16%（ink 23.65% → 24.28%）、検索 68.83%。`linear-gradient`・`object-fit` は残り） |
+| 8 | [ws074-p070](phase070/phase.md) | `@font-face`（WOFF、libz-compat）と Amazon Ember | **cleared**（2026-09-29。WOFF・TrueType の web font。日本の Amazon の本文は Arial・Hiragino で Ember を名指す部品が少なく、一致率は不変（トップ 34.16%、検索 68.83%）。WOFF2 は残り） |
+| 9 | [ws074-p071](phase071/phase.md) | 大きな page の速さ（1.4 MB の HTML と 2 MB の CSS、guest で操作できる時間まで）、測って直す | **cleared**（2026-09-29。host の検索の `--render` 1.42 s → 0.86 s、再 layout 0.47 s → 0.035 s。guest の live の検索は Enter から 90 s → 30 s で style が揃う） |
 | 10 | ws074-p037（最小） | table の auto layout の最小 | 3 h |
 | 11 | ws074-p072 | grid の最小（`repeat(N,1fr)`、`grid-column`） | 3 h |
 | 12 | ws074-p027・p065 の一部 | RegExp、`Date`・Promise 等（Amazon の script の Uncaught を減らし、popover 等を動かす） | 6 h〜 |

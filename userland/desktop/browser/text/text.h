@@ -15,6 +15,10 @@
  * Fallback, for Japanese).  Serif maps to the sans font until the image has
  * a serif font.  Bold is the regular glyph widened by a pixel; there is no
  * kerning or shaping yet.
+ *
+ * A page adds the faces its @font-face rules load (ws074-p070) after
+ * those: each under its family, weights and style, which a style's
+ * font-family finds before the sans font.
  */
 
 #ifndef KEILAND_BROWSER_TEXT_H
@@ -22,11 +26,13 @@
 
 #include "base/base.h"
 
-/* The faces a text system holds: sans, monospace and the fallback. */
+/* The faces a text system holds: sans, monospace, the fallback, then the page's web fonts. */
 #define TEXT_FACE_SANS		0
 #define TEXT_FACE_MONO		1
 #define TEXT_FACE_FALLBACK	2
-#define TEXT_FACES		3
+#define TEXT_FACE_WEB		3
+#define TEXT_WEB_FACES		24
+#define TEXT_FACES		(TEXT_FACE_WEB + TEXT_WEB_FACES)
 
 /* The fonts the zdesktop image installs. */
 #define TEXT_DEFAULT_SANS	"/usr/share/fonts/keiland.ttf"
@@ -53,6 +59,19 @@ struct text_face {
 	struct wb_buffer data;
 	struct truetype_face *face;
 	int open;
+};
+
+/*
+ * A web font's face in its family (ws074-p070): the family's key (an
+ * opaque pointer the caller matches by identity, the page's atom of the
+ * name), the weights the face covers, whether it is italic, and the face.
+ */
+struct text_family {
+	const void *family;
+	int weight_min;
+	int weight_max;
+	int italic;
+	int face;
 };
 
 /*
@@ -100,6 +119,8 @@ struct text_glyph {
  */
 struct text_system {
 	struct text_face faces[TEXT_FACES];
+	struct text_family families[TEXT_WEB_FACES];
+	int family_count;
 	struct text_glyph_entry **cache;
 	size_t cache_capacity;
 	size_t cache_count;
@@ -109,6 +130,11 @@ struct text_system {
 int text_system_open(struct text_system *system, const struct text_font_paths *paths);
 void text_system_close(struct text_system *system);
 void text_select_font(const struct text_system *system, int monospace, float size, int weight, struct text_font *font);
+int text_add_face(struct text_system *system, const void *family, int weight_min, int weight_max, int italic, struct wb_buffer *data);
+int text_select_family(const struct text_system *system, const void *family, int weight, int italic, struct text_font *font);
+
+/* Web font files (woff.c). */
+int text_font_file(const unsigned char *bytes, size_t length, struct wb_buffer *sfnt);
 int text_font_metrics(struct text_system *system, const struct text_font *font, struct text_metrics *metrics);
 int text_glyph(struct text_system *system, const struct text_font *font, uint32_t code_point, int with_bitmap, struct text_glyph *glyph);
 int text_glyph_advance(struct text_system *system, const struct text_font *font, uint32_t code_point, int *advance);

@@ -20,7 +20,20 @@
  * boxes around it that it does not escape (an absolute box escapes those
  * outside its containing block, a fixed one all of them).  A replaced box
  * paints its background and borders, then its image over its content box:
- * a block one as a block does, an inline one where its fragment is.
+ * a block one as a block does, an inline one where its fragment is.  An
+ * inline block is painted as a block in its place among its line's text.
+ *
+ * The decoration (ws074-p062) is made of the same rectangles, so that both
+ * renderers draw it alike: a box with rounded corners fills and borders
+ * each pixel row of its corners with a rectangle as wide as the curve at
+ * the row's middle (the straight part between them is one rectangle); a
+ * shadow is its box's shape spread and offset, blurred by stacking
+ * translucent copies grown and shrunk by up to its blur radius; an outline
+ * is four rectangles around the border box; and a box's opacity scales the
+ * alpha of the rectangles and text painted for it and its content (an
+ * image inside keeps its own), a box of no opacity painting nothing.  A
+ * clip-path inset() clips the box's painting, its shadows included, to its
+ * border box moved in (or out) by the inset.
  */
 
 #include "paint/paint.h"
@@ -37,6 +50,12 @@
 
 /* The visibility value that hides a box's own painting. */
 #define LIST_VISIBILITY_HIDDEN	1
+
+/* An opacity at or under which a box and its content are not painted at all. */
+#define LIST_OPACITY_NONE	0.002f
+
+/* How many translucent copies a blurred shadow is stacked from. */
+#define LIST_SHADOW_LAYERS	10
 
 /* The most tiles one background image is painted in (a tiny tile over a huge page stops there). */
 #define LIST_TILES_MAX		16384U
@@ -60,6 +79,17 @@
 #define LIST_ARROW_WIDTH	9
 
 /*
+ * How far each copy of a blurred shadow is grown, in standard deviations
+ * of the blur (a blur radius is two of them): the normal distribution's
+ * quantiles at the middles of ten equal shares, so that the share of
+ * copies covering a point at a distance outside the shape is the Gaussian
+ * blur's there.
+ */
+static const float list_shadow_quantiles[LIST_SHADOW_LAYERS] = {
+	1.645f, 1.036f, 0.674f, 0.385f, 0.126f, -0.126f, -0.385f, -0.674f, -1.036f, -1.645f
+};
+
+/*
  * What a walk of the box tree carries: the list being filled, the text
  * system that measures the glyphs, the box whose background went to the
  * canvas (and is not painted again), and the first error.
@@ -69,6 +99,18 @@ struct list_walk {
 	struct text_system *text;
 	const struct layout_box *canvas_box;
 	int error;
+};
+
+/*
+ * A box's rounded shape in layout units: its rectangle and each corner's
+ * radius, horizontal then vertical (CSS_TOP_LEFT and on, clockwise).
+ */
+struct list_shape {
+	layout_unit x;
+	layout_unit y;
+	layout_unit width;
+	layout_unit height;
+	layout_unit radius[4][2];
 };
 
 /*
@@ -84,9 +126,22 @@ struct list_area {
 
 static const struct layout_box *list_canvas(const struct layout_tree *tree, uint32_t *color);
 static void list_box(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
+static void list_box_own(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
+static void list_fade(struct list_walk *walk, size_t first, float opacity);
+static int list_border_shape(const struct layout_box *box, struct list_shape *shape);
+static void list_round_fill(struct list_walk *walk, const struct list_shape *shape, uint32_t color);
+static void list_round_row(struct list_walk *walk, const struct list_shape *shape, layout_unit top, layout_unit bottom, uint32_t color);
+static void list_round_span(const struct list_shape *shape, layout_unit y, layout_unit *left, layout_unit *right);
+static void list_round_borders(struct list_walk *walk, const struct layout_box *box, const struct list_shape *outer);
+static void list_shadows(struct list_walk *walk, const struct layout_box *box);
+static void list_shadow(struct list_walk *walk, const struct list_shape *border, const struct css_shadow *shadow);
+static void list_grow_shape(const struct list_shape *shape, layout_unit amount, struct list_shape *grown);
+static void list_outline(struct list_walk *walk, const struct layout_box *box);
+static float list_inline_opacity(const struct layout_box *box);
+static int list_clip_path(struct list_walk *walk, const struct layout_box *box);
 static void list_borders(struct list_walk *walk, const struct layout_box *box);
 static void list_inline_floats(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
-static void list_lines(struct list_walk *walk, const struct layout_box *box);
+static void list_lines(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_fragment(struct list_walk *walk, const struct layout_fragment *fragment, layout_unit x, layout_unit baseline);
 static void list_rect(struct list_walk *walk, layout_unit x, layout_unit y, layout_unit width, layout_unit height, uint32_t color);
 static void list_replaced(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
@@ -514,7 +569,11 @@ list_canvas(
 	return body;
 }
 
-/* Adds a box's painting and its descendants' to the list; positioned boxes other than the layer being painted wait for their turn. */
+/*
+ * Adds a box's painting and its descendants' to the list, its outline over
+ * them and its opacity applied to them all; positioned boxes other than
+ * the layer being painted wait for their turn.
+ */
 static void
 list_box(
 	struct list_walk *walk,
@@ -522,12 +581,9 @@ list_box(
 	const struct layout_box *layer,
 	int depth)
 {
-	const struct layout_box *child;
-	layout_unit width;
-	layout_unit height;
+	size_t first;
 	int positioned;
-	int visible;
-	int clips;
+	int clipped;
 
 	/* Stops at the depth the layout stops at, or after an error. */
 	if (depth > LAYOUT_DEPTH_MAX || walk->error != 0)
@@ -542,6 +598,88 @@ list_box(
 	if (positioned && box != layer && box->parent != NULL)
 		return;
 
+	/* A box of no opacity paints nothing, nor does its content. */
+	if (box->style.opacity <= LIST_OPACITY_NONE)
+		return;
+
+	/* The box and its content inside its clip-path, then its outline over them. */
+	first = walk->list->items.count;
+	clipped = list_clip_path(walk, box);
+	list_box_own(walk, box, layer, depth);
+	if (box->style.visibility != LIST_VISIBILITY_HIDDEN)
+		list_outline(walk, box);
+	if (clipped)
+		list_unclip(walk);
+
+	/* A translucent box fades what was painted for it. */
+	if (box->style.opacity < 1.0f)
+		list_fade(walk, first, box->style.opacity);
+}
+
+/* Starts the clip of a box's clip-path inset(), and reports whether there is one to end. */
+static int
+list_clip_path(
+	struct list_walk *walk,
+	const struct layout_box *box)
+{
+	struct list_area area;
+	layout_unit inset[4];
+	layout_unit width;
+	layout_unit height;
+	layout_unit whole;
+	int side;
+
+	/* A box without an inset is not clipped. */
+	if (!box->style.clip_inset)
+		return 0;
+
+	/* The border box, which the inset moves in from. */
+	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+
+	/* Each side's inset: pixels, or a percentage of the height (top, bottom) or the width (left, right). */
+	for (side = 0; side < 4; side++) {
+		whole = width;
+		if (side == CSS_TOP || side == CSS_BOTTOM)
+			whole = height;
+		inset[side] = 0;
+		if (box->style.clip[side].unit == CSS_UNIT_PX)
+			inset[side] = layout_from_px(box->style.clip[side].value);
+		if (box->style.clip[side].unit == CSS_UNIT_PERCENT)
+			inset[side] = (layout_unit)((float)whole * box->style.clip[side].value / 100.0f) + layout_from_px(box->style.clip[side].offset);
+	}
+
+	/* The clip's rectangle. */
+	area.x = box->x + inset[CSS_LEFT];
+	area.y = box->y + inset[CSS_TOP];
+	area.width = width - inset[CSS_LEFT] - inset[CSS_RIGHT];
+	area.height = height - inset[CSS_TOP] - inset[CSS_BOTTOM];
+	if (area.width < 0)
+		area.width = 0;
+	if (area.height < 0)
+		area.height = 0;
+	list_clip_rect(walk, &area);
+
+	/* The clip is started. */
+	return 1;
+}
+
+/* Adds a box's own painting (its shadows, background, borders and image or content) to the list. */
+static void
+list_box_own(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	const struct layout_box *layer,
+	int depth)
+{
+	const struct layout_box *child;
+	struct list_shape shape;
+	layout_unit width;
+	layout_unit height;
+	int rounded;
+	int visible;
+	int clips;
+
 	/* A hidden box paints nothing of its own, but its children may be visible. */
 	visible = 1;
 	if (box->style.visibility == LIST_VISIBILITY_HIDDEN)
@@ -553,19 +691,32 @@ list_box(
 		return;
 	}
 
-	/* The background fills the border box, unless it went to the canvas. */
+	/* The shadows go under the box. */
+	if (visible)
+		list_shadows(walk, box);
+
+	/* The background fills the border box, rounded as its corners are, unless it went to the canvas. */
 	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
 	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
-	if (visible && box != walk->canvas_box && (box->style.background_color >> 24) != 0)
-		list_rect(walk, box->x, box->y, width, height, box->style.background_color);
+	rounded = list_border_shape(box, &shape);
+	if (visible && box != walk->canvas_box && (box->style.background_color >> 24) != 0) {
+		if (rounded) {
+			list_round_fill(walk, &shape, box->style.background_color);
+		} else {
+			list_rect(walk, box->x, box->y, width, height, box->style.background_color);
+		}
+	}
 
 	/* The background image over the color, unless it went to the canvas. */
 	if (visible && box != walk->canvas_box)
 		list_box_background(walk, box);
 
 	/* The borders go over the background. */
-	if (visible)
+	if (visible && rounded) {
+		list_round_borders(walk, box, &shape);
+	} else if (visible) {
 		list_borders(walk, box);
+	}
 
 	/* A replaced block's image fills its content box. */
 	if (visible && box->replaced) {
@@ -578,10 +729,10 @@ list_box(
 	if (clips)
 		list_clip(walk, box);
 
-	/* A block of lines paints the floats among its content, then its text. */
+	/* A block of lines paints the floats among its content, then its text and inline blocks. */
 	if (box->children_inline) {
 		list_inline_floats(walk, box, layer, depth + 1);
-		list_lines(walk, box);
+		list_lines(walk, box, layer, depth + 1);
 	} else {
 		/* A block of blocks paints its children in order, the floats after the others. */
 		for (child = box->first_child; child != NULL; child = child->next) {
@@ -615,9 +766,12 @@ list_inline_floats(
 	if (depth > LAYOUT_DEPTH_MAX)
 		return;
 
-	/* A float paints itself; an inline box is searched; a box out of the flow is painted in its own turn. */
+	/*
+	 * A float paints itself; an inline box is searched; a box out of the
+	 * flow is painted in its own turn, and an inline block with its line.
+	 */
 	for (child = box->first_child; child != NULL; child = child->next) {
-		if (child->out_of_flow)
+		if (child->out_of_flow || child->atomic)
 			continue;
 		if (child->floating != CSS_FLOAT_NONE) {
 			list_box(walk, child, layer, depth + 1);
@@ -678,11 +832,13 @@ list_borders(
 	}
 }
 
-/* Adds the text of a block's lines. */
+/* Adds the text of a block's lines, and the inline blocks on them. */
 static void
 list_lines(
 	struct list_walk *walk,
-	const struct layout_box *box)
+	const struct layout_box *box,
+	const struct layout_box *layer,
+	int depth)
 {
 	const struct layout_line *line;
 	const struct layout_fragment *fragment;
@@ -695,12 +851,20 @@ list_lines(
 	left = box->x + box->border[CSS_LEFT] + box->padding[CSS_LEFT];
 	top = box->y + box->border[CSS_TOP] + box->padding[CSS_TOP];
 
-	/* Each fragment of each line, on the line's baseline. */
+	/* Each fragment of each line, on the line's baseline moved by its vertical alignment. */
 	for (index = 0; index < box->line_count; index++) {
 		line = &box->lines[index];
 		for (item = 0; item < line->fragment_count; item++) {
 			fragment = &line->fragments[item];
-			list_fragment(walk, fragment, left + line->left + fragment->x, top + line->y + line->baseline);
+
+			/* An inline block paints itself where the line put it. */
+			if (fragment->box->atomic) {
+				list_box(walk, fragment->box, layer, depth);
+				continue;
+			}
+
+			/* Text and replaced boxes. */
+			list_fragment(walk, fragment, left + line->left + fragment->x, top + line->y + line->baseline + fragment->shift);
 		}
 	}
 }
@@ -723,6 +887,7 @@ list_fragment(
 	size_t count;
 	size_t used;
 	size_t position;
+	float opacity;
 	int error;
 
 	/* A fragment of a hidden box paints nothing. */
@@ -780,13 +945,16 @@ list_fragment(
 		pen += (layout_unit)glyph.advance_units;
 	}
 
-	/* The text item. */
+	/* The text item, faded by the inline boxes around it (the block's own opacity fades it with the block). */
 	memset(&item, 0, sizeof(item));
 	item.kind = PAINT_TEXT;
 	item.x = x;
 	item.y = baseline;
 	item.width = fragment->width;
 	item.color = fragment->color;
+	opacity = list_inline_opacity(fragment->box);
+	if (opacity < 1.0f)
+		item.color = (item.color & 0x00ffffffU) | ((uint32_t)((float)(item.color >> 24) * opacity + 0.5f) << 24);
 	item.font = fragment->font;
 	item.glyphs = glyphs;
 	item.glyph_count = count;
@@ -806,7 +974,7 @@ list_fragment(
 		thickness = (thickness / LAYOUT_UNIT) * LAYOUT_UNIT;
 		if (thickness < LAYOUT_UNIT)
 			thickness = LAYOUT_UNIT;
-		list_rect(walk, x, baseline + offset, fragment->width, thickness, fragment->color);
+		list_rect(walk, x, baseline + offset, fragment->width, thickness, item.color);
 	}
 }
 
@@ -1800,6 +1968,489 @@ list_rect(
 	error = wb_vector_push(&walk->list->items, &item);
 	if (error != 0)
 		walk->error = error;
+}
+
+/* Scales the alpha of the rectangles and text added since an index by an opacity. */
+static void
+list_fade(
+	struct list_walk *walk,
+	size_t first,
+	float opacity)
+{
+	struct paint_item *item;
+	uint32_t alpha;
+	size_t index;
+
+	/* Each rectangle's and text item's alpha (clips and images keep theirs). */
+	for (index = first; index < walk->list->items.count; index++) {
+		item = wb_vector_at(&walk->list->items, index);
+		if (item->kind != PAINT_RECT && item->kind != PAINT_TEXT)
+			continue;
+		alpha = (uint32_t)((float)(item->color >> 24) * opacity + 0.5f);
+		item->color = (item->color & 0x00ffffffU) | (alpha << 24);
+	}
+}
+
+/* Multiplies the opacities of the inline boxes around a text box, up to the block that holds its line. */
+static float
+list_inline_opacity(
+	const struct layout_box *box)
+{
+	const struct layout_box *ancestor;
+	float opacity;
+
+	/* The inline boxes up to the first box that is not one. */
+	opacity = 1.0f;
+	for (ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent) {
+		if (ancestor->kind != LAYOUT_INLINE)
+			break;
+		opacity *= ancestor->style.opacity;
+	}
+
+	/* The product. */
+	return opacity;
+}
+
+/*
+ * Finds a box's border box with its corners' radii in layout units (a
+ * percentage of the border box's width or height), shrunk together when
+ * two radii on a side would overlap.  Reports whether any corner is round.
+ */
+static int
+list_border_shape(
+	const struct layout_box *box,
+	struct list_shape *shape)
+{
+	const struct css_length *length;
+	layout_unit whole;
+	float factor;
+	float room;
+	int corner;
+	int axis;
+	int round;
+
+	/* The border box. */
+	shape->x = box->x;
+	shape->y = box->y;
+	shape->width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+	shape->height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+
+	/* Each radius: pixels, or a percentage of the width (horizontal) or the height (vertical). */
+	round = 0;
+	for (corner = 0; corner < 4; corner++) {
+		for (axis = 0; axis < 2; axis++) {
+			length = &box->style.radius[corner][axis];
+			whole = shape->width;
+			if (axis == 1)
+				whole = shape->height;
+			shape->radius[corner][axis] = 0;
+			if (length->unit == CSS_UNIT_PX)
+				shape->radius[corner][axis] = layout_from_px(length->value);
+			if (length->unit == CSS_UNIT_PERCENT)
+				shape->radius[corner][axis] = (layout_unit)((float)whole * length->value / 100.0f) + layout_from_px(length->offset);
+			if (shape->radius[corner][axis] < 0)
+				shape->radius[corner][axis] = 0;
+		}
+
+		/* A corner is round only when both of its radii are. */
+		if (shape->radius[corner][0] == 0 || shape->radius[corner][1] == 0) {
+			shape->radius[corner][0] = 0;
+			shape->radius[corner][1] = 0;
+		} else {
+			round = 1;
+		}
+	}
+
+	/* A square box needs no shape. */
+	if (!round)
+		return 0;
+
+	/* The radii shrink by the same factor until no two on a side overlap. */
+	factor = 1.0f;
+	room = (float)shape->width / (float)(shape->radius[CSS_TOP_LEFT][0] + shape->radius[CSS_TOP_RIGHT][0] + 1);
+	if (room < factor)
+		factor = room;
+	room = (float)shape->width / (float)(shape->radius[CSS_BOTTOM_LEFT][0] + shape->radius[CSS_BOTTOM_RIGHT][0] + 1);
+	if (room < factor)
+		factor = room;
+	room = (float)shape->height / (float)(shape->radius[CSS_TOP_LEFT][1] + shape->radius[CSS_BOTTOM_LEFT][1] + 1);
+	if (room < factor)
+		factor = room;
+	room = (float)shape->height / (float)(shape->radius[CSS_TOP_RIGHT][1] + shape->radius[CSS_BOTTOM_RIGHT][1] + 1);
+	if (room < factor)
+		factor = room;
+
+	/* Applies the factor to every radius. */
+	if (factor < 1.0f) {
+		for (corner = 0; corner < 4; corner++) {
+			shape->radius[corner][0] = (layout_unit)((float)shape->radius[corner][0] * factor);
+			shape->radius[corner][1] = (layout_unit)((float)shape->radius[corner][1] * factor);
+		}
+	}
+
+	/* The box has round corners. */
+	return 1;
+}
+
+/*
+ * Fills a rounded shape: each pixel row of the corners as a rectangle
+ * between the curves at the row's middle, and the straight part between
+ * the corners as one rectangle.
+ */
+static void
+list_round_fill(
+	struct list_walk *walk,
+	const struct list_shape *shape,
+	uint32_t color)
+{
+	layout_unit top_band;
+	layout_unit bottom_band;
+	layout_unit row;
+	layout_unit next;
+	layout_unit bottom;
+
+	/* An empty shape fills nothing. */
+	if (shape->width <= 0 || shape->height <= 0)
+		return;
+
+	/* The straight part starts at the pixel row under the lower top corner, and ends above the higher bottom corner. */
+	bottom = shape->y + shape->height;
+	top_band = shape->radius[CSS_TOP_LEFT][1];
+	if (shape->radius[CSS_TOP_RIGHT][1] > top_band)
+		top_band = shape->radius[CSS_TOP_RIGHT][1];
+	top_band = (shape->y + top_band + LAYOUT_UNIT - 1) / LAYOUT_UNIT * LAYOUT_UNIT;
+	bottom_band = shape->radius[CSS_BOTTOM_LEFT][1];
+	if (shape->radius[CSS_BOTTOM_RIGHT][1] > bottom_band)
+		bottom_band = shape->radius[CSS_BOTTOM_RIGHT][1];
+	bottom_band = (bottom - bottom_band) / LAYOUT_UNIT * LAYOUT_UNIT;
+	if (top_band > bottom_band) {
+		top_band = bottom;
+		bottom_band = bottom;
+	}
+
+	/* The rows of the top corners, one pixel row at a time. */
+	row = shape->y;
+	while (row < top_band && walk->error == 0) {
+		next = (row / LAYOUT_UNIT + 1) * LAYOUT_UNIT;
+		if (next > top_band)
+			next = top_band;
+		list_round_row(walk, shape, row, next, color);
+		row = next;
+	}
+
+	/* The straight part between the corners. */
+	if (bottom_band > top_band)
+		list_rect(walk, shape->x, top_band, shape->width, bottom_band - top_band, color);
+
+	/* The rows of the bottom corners. */
+	row = bottom_band;
+	if (row < top_band)
+		row = top_band;
+	while (row < bottom && walk->error == 0) {
+		next = (row / LAYOUT_UNIT + 1) * LAYOUT_UNIT;
+		if (next > bottom)
+			next = bottom;
+		list_round_row(walk, shape, row, next, color);
+		row = next;
+	}
+}
+
+/* Fills one row of a rounded shape between its curves at the row's middle. */
+static void
+list_round_row(
+	struct list_walk *walk,
+	const struct list_shape *shape,
+	layout_unit top,
+	layout_unit bottom,
+	uint32_t color)
+{
+	layout_unit left;
+	layout_unit right;
+
+	/* The shape's width at the row's middle. */
+	list_round_span(shape, (top + bottom) / 2, &left, &right);
+
+	/* The row's rectangle. */
+	list_rect(walk, left, top, right - left, bottom - top, color);
+}
+
+/* Finds where a rounded shape starts and ends across at a height (both corners' curves on each side). */
+static void
+list_round_span(
+	const struct list_shape *shape,
+	layout_unit y,
+	layout_unit *left,
+	layout_unit *right)
+{
+	const layout_unit *radius;
+	layout_unit inset;
+	float across;
+	float down;
+
+	/* The rectangle's sides, moved in by the corners the height is beside. */
+	*left = shape->x;
+	*right = shape->x + shape->width;
+
+	/* The top left corner. */
+	radius = shape->radius[CSS_TOP_LEFT];
+	if (radius[1] > 0 && y < shape->y + radius[1]) {
+		down = (float)(shape->y + radius[1] - y) / (float)radius[1];
+		across = 1.0f - sqrtf(1.0f - down * down);
+		inset = (layout_unit)((float)radius[0] * across);
+		if (shape->x + inset > *left)
+			*left = shape->x + inset;
+	}
+
+	/* The bottom left corner. */
+	radius = shape->radius[CSS_BOTTOM_LEFT];
+	if (radius[1] > 0 && y > shape->y + shape->height - radius[1]) {
+		down = (float)(y - (shape->y + shape->height - radius[1])) / (float)radius[1];
+		if (down > 1.0f)
+			down = 1.0f;
+		across = 1.0f - sqrtf(1.0f - down * down);
+		inset = (layout_unit)((float)radius[0] * across);
+		if (shape->x + inset > *left)
+			*left = shape->x + inset;
+	}
+
+	/* The top right corner. */
+	radius = shape->radius[CSS_TOP_RIGHT];
+	if (radius[1] > 0 && y < shape->y + radius[1]) {
+		down = (float)(shape->y + radius[1] - y) / (float)radius[1];
+		across = 1.0f - sqrtf(1.0f - down * down);
+		inset = (layout_unit)((float)radius[0] * across);
+		if (shape->x + shape->width - inset < *right)
+			*right = shape->x + shape->width - inset;
+	}
+
+	/* The bottom right corner. */
+	radius = shape->radius[CSS_BOTTOM_RIGHT];
+	if (radius[1] > 0 && y > shape->y + shape->height - radius[1]) {
+		down = (float)(y - (shape->y + shape->height - radius[1])) / (float)radius[1];
+		if (down > 1.0f)
+			down = 1.0f;
+		across = 1.0f - sqrtf(1.0f - down * down);
+		inset = (layout_unit)((float)radius[0] * across);
+		if (shape->x + shape->width - inset < *right)
+			*right = shape->x + shape->width - inset;
+	}
+}
+
+/*
+ * Paints the borders of a box with rounded corners: each pixel row between
+ * the outer shape and the inner one (the padding box, its radii the outer
+ * ones less the borders), in the color of the side it belongs to (the top
+ * and bottom rows in theirs, the rows beside the padding box in the left
+ * and right colors).
+ */
+static void
+list_round_borders(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	const struct list_shape *outer)
+{
+	struct list_shape inner;
+	layout_unit outer_left;
+	layout_unit outer_right;
+	layout_unit inner_left;
+	layout_unit inner_right;
+	layout_unit row;
+	layout_unit next;
+	layout_unit middle;
+	layout_unit bottom;
+	int corner;
+
+	/* No border draws nothing. */
+	if (box->border[CSS_TOP] == 0 && box->border[CSS_RIGHT] == 0 && box->border[CSS_BOTTOM] == 0 && box->border[CSS_LEFT] == 0)
+		return;
+
+	/* The padding box, its radii the outer ones less the borders beside them. */
+	inner.x = outer->x + box->border[CSS_LEFT];
+	inner.y = outer->y + box->border[CSS_TOP];
+	inner.width = outer->width - box->border[CSS_LEFT] - box->border[CSS_RIGHT];
+	inner.height = outer->height - box->border[CSS_TOP] - box->border[CSS_BOTTOM];
+	for (corner = 0; corner < 4; corner++) {
+		inner.radius[corner][0] = outer->radius[corner][0] - box->border[CSS_LEFT];
+		if (corner == CSS_TOP_RIGHT || corner == CSS_BOTTOM_RIGHT)
+			inner.radius[corner][0] = outer->radius[corner][0] - box->border[CSS_RIGHT];
+		inner.radius[corner][1] = outer->radius[corner][1] - box->border[CSS_TOP];
+		if (corner == CSS_BOTTOM_LEFT || corner == CSS_BOTTOM_RIGHT)
+			inner.radius[corner][1] = outer->radius[corner][1] - box->border[CSS_BOTTOM];
+		if (inner.radius[corner][0] < 0)
+			inner.radius[corner][0] = 0;
+		if (inner.radius[corner][1] < 0)
+			inner.radius[corner][1] = 0;
+	}
+
+	/* Each row of the border box: at pixel rows, and at the padding box's top and bottom. */
+	bottom = outer->y + outer->height;
+	row = outer->y;
+	while (row < bottom && walk->error == 0) {
+		next = (row / LAYOUT_UNIT + 1) * LAYOUT_UNIT;
+		if (row < inner.y && next > inner.y)
+			next = inner.y;
+		if (row < inner.y + inner.height && next > inner.y + inner.height)
+			next = inner.y + inner.height;
+		if (next > bottom)
+			next = bottom;
+		middle = (row + next) / 2;
+		list_round_span(outer, middle, &outer_left, &outer_right);
+
+		/* A row above or below the padding box is the top or bottom border. */
+		if (middle < inner.y || middle >= inner.y + inner.height || inner.width <= 0) {
+			if (middle < inner.y) {
+				list_rect(walk, outer_left, row, outer_right - outer_left, next - row, box->style.border_color[CSS_TOP]);
+			} else {
+				list_rect(walk, outer_left, row, outer_right - outer_left, next - row, box->style.border_color[CSS_BOTTOM]);
+			}
+
+			/* On to the next row. */
+			row = next;
+			continue;
+		}
+
+		/* A row beside the padding box is the left and right borders. */
+		list_round_span(&inner, middle, &inner_left, &inner_right);
+		list_rect(walk, outer_left, row, inner_left - outer_left, next - row, box->style.border_color[CSS_LEFT]);
+		list_rect(walk, inner_right, row, outer_right - inner_right, next - row, box->style.border_color[CSS_RIGHT]);
+		row = next;
+	}
+}
+
+/* Paints a box's outer shadows under it, the last listed lowest (inset shadows are not drawn in this pass). */
+static void
+list_shadows(
+	struct list_walk *walk,
+	const struct layout_box *box)
+{
+	struct list_shape border;
+	int index;
+
+	/* A box without shadows paints none. */
+	if (box->style.shadow_count == 0)
+		return;
+
+	/* The border box's shape, which the shadows follow. */
+	list_border_shape(box, &border);
+
+	/* The shadows from the last to the first. */
+	for (index = box->style.shadow_count - 1; index >= 0; index--) {
+		if (box->style.shadows[index].inset)
+			continue;
+		list_shadow(walk, &border, &box->style.shadows[index]);
+	}
+}
+
+/*
+ * Paints one outer shadow: the border box's shape moved by the offset and
+ * grown by the spread, and when it is blurred, translucent copies grown
+ * and shrunk by the blur's quantiles, which together fade from the full
+ * color inside to nothing outside as a Gaussian blur does, half at the
+ * edge.
+ */
+static void
+list_shadow(
+	struct list_walk *walk,
+	const struct list_shape *border,
+	const struct css_shadow *shadow)
+{
+	struct list_shape moved;
+	struct list_shape layer;
+	layout_unit blur;
+	layout_unit amount;
+	uint32_t color;
+	float alpha;
+	float share;
+	int index;
+
+	/* A transparent shadow paints nothing. */
+	if ((shadow->color >> 24) == 0)
+		return;
+
+	/* The shape moved and spread. */
+	list_grow_shape(border, layout_from_px(shadow->spread), &moved);
+	moved.x += layout_from_px(shadow->x);
+	moved.y += layout_from_px(shadow->y);
+
+	/* A sharp shadow is the shape in the color. */
+	blur = layout_from_px(shadow->blur);
+	if (blur < LAYOUT_UNIT / 2) {
+		list_round_fill(walk, &moved, shadow->color);
+		return;
+	}
+
+	/* Each copy's alpha, so that all of them together make the color's. */
+	alpha = (float)(shadow->color >> 24) / 255.0f;
+	share = 1.0f - powf(1.0f - alpha, 1.0f / (float)LIST_SHADOW_LAYERS);
+	color = (shadow->color & 0x00ffffffU) | ((uint32_t)(share * 255.0f + 0.5f) << 24);
+
+	/* The copies, grown by the quantiles of a deviation of half the blur radius. */
+	for (index = 0; index < LIST_SHADOW_LAYERS && walk->error == 0; index++) {
+		amount = (layout_unit)((float)blur * 0.5f * list_shadow_quantiles[index]);
+		list_grow_shape(&moved, amount, &layer);
+		list_round_fill(walk, &layer, color);
+	}
+}
+
+/* Grows a shape by an amount on every side (shrinks it when the amount is negative), its radii with it. */
+static void
+list_grow_shape(
+	const struct list_shape *shape,
+	layout_unit amount,
+	struct list_shape *grown)
+{
+	int corner;
+	int axis;
+
+	/* The rectangle, and each round corner's radii, by the amount (a square corner stays square). */
+	*grown = *shape;
+	grown->x = shape->x - amount;
+	grown->y = shape->y - amount;
+	grown->width = shape->width + 2 * amount;
+	grown->height = shape->height + 2 * amount;
+	for (corner = 0; corner < 4; corner++) {
+		for (axis = 0; axis < 2; axis++) {
+			if (shape->radius[corner][axis] == 0)
+				continue;
+			grown->radius[corner][axis] = shape->radius[corner][axis] + amount;
+			if (grown->radius[corner][axis] < 0)
+				grown->radius[corner][axis] = 0;
+		}
+	}
+}
+
+/* Paints a box's outline: four rectangles of its width around the border box, moved out by its offset. */
+static void
+list_outline(
+	struct list_walk *walk,
+	const struct layout_box *box)
+{
+	layout_unit width;
+	layout_unit height;
+	layout_unit thickness;
+	layout_unit x;
+	layout_unit y;
+	uint32_t color;
+
+	/* A box without an outline paints none. */
+	thickness = layout_from_px(box->style.outline_width);
+	if (thickness <= 0)
+		return;
+
+	/* The rectangle the outline goes around. */
+	x = box->x - layout_from_px(box->style.outline_offset);
+	y = box->y - layout_from_px(box->style.outline_offset);
+	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT] +
+	    2 * layout_from_px(box->style.outline_offset);
+	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM] +
+	    2 * layout_from_px(box->style.outline_offset);
+	color = box->style.outline_color;
+
+	/* The top and bottom across the corners, the left and right between them. */
+	list_rect(walk, x - thickness, y - thickness, width + 2 * thickness, thickness, color);
+	list_rect(walk, x - thickness, y + height, width + 2 * thickness, thickness, color);
+	list_rect(walk, x - thickness, y, thickness, height, color);
+	list_rect(walk, x + width, y, thickness, height, color);
 }
 
 /* Writes a color as #AARRGGBB. */

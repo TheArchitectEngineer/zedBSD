@@ -31,6 +31,12 @@ body { font-family: sans-serif; margin: 8px; font-size: 14px; }
 .nav .logo { font-weight: bold; margin-right: 20px; }
 .nav .search { flex: 1; background: white; height: 28px; border-radius: 4px; }
 .nav .links { display: flex; gap: 12px; margin-left: 20px; }
+.nested { display: flex; background: #eee; margin-top: 6px; }
+.nested .outer { display: flex; }
+.nested .inner { display: flex; flex-shrink: 0; }
+.nested .full { display: flex; width: 100%; }
+.nested .fill { flex: 1 1 auto; display: flex; }
+.nested .fill div { flex: 1 1 auto; }
 </style>
 </head>
 <body>
@@ -52,5 +58,6 @@ body { font-family: sans-serif; margin: 8px; font-size: 14px; }
 <div class="row stretch"><div>stretched</div><div class="tall">tall</div></div>
 <div class="row inline-items">text <span>an inline item</span> more text</div>
 <div class="nav"><div class="logo">amazon</div><div class="search"></div><div class="links"><div>JP</div><div>Account</div><div>Cart</div></div></div>
+<div class="nested"><div class="outer"><div class="inner"><div class="full"><div>a 100% wide</div><div>logo</div></div></div><div>place</div></div><div class="fill"><div>the rest, grown</div></div><div>end</div></div>
 </body>
 </html>

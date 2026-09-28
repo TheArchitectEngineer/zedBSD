@@ -92,6 +92,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/page/script.c \
 	$(KEILAND_BROWSER_DIR)/page/images.c \
 	$(KEILAND_BROWSER_DIR)/page/sheets.c \
+	$(KEILAND_BROWSER_DIR)/page/fonts.c \
 	$(KEILAND_BROWSER_DIR)/page/network.c \
 	$(KEILAND_BROWSER_DIR)/page/input.c \
 	$(KEILAND_BROWSER_DIR)/page/form.c \
@@ -102,6 +103,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/image/gif.c \
 	$(KEILAND_BROWSER_DIR)/text/font.c \
 	$(KEILAND_BROWSER_DIR)/text/linebreak.c \
+	$(KEILAND_BROWSER_DIR)/text/woff.c \
 	$(KEILAND_BROWSER_DIR)/layout/box.c \
 	$(KEILAND_BROWSER_DIR)/layout/block.c \
 	$(KEILAND_BROWSER_DIR)/layout/flex.c \

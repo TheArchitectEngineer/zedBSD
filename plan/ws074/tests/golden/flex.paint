@@ -1,4 +1,4 @@
-canvas 1024.00 x 787.00 #ffffffff
+canvas 1024.00 x 810.00 #ffffffff
 rect 8.00 8.00 1008.00 27.00 #ffeeeeee
 rect 8.00 8.00 319.25 27.00 #ffccddee
 rect 8.00 8.00 319.25 1.00 #ff557799
@@ -298,7 +298,29 @@ text 164.28 720.00 14px face 0 bold 0 #ff000000 " "
 text 168.22 720.00 14px face 0 bold 0 #ff000000 "text"
 rect 8.00 739.00 1008.00 40.00 #ff232f3e
 text 18.00 764.50 14px face 0 bold 1 #ffffffff "amazon"
-rect 96.38 745.00 765.59 28.00 #ffffffff
+rect 98.44 745.00 761.47 1.00 #ffffffff
+rect 97.25 746.00 763.84 1.00 #ffffffff
+rect 96.66 747.00 765.03 1.00 #ffffffff
+rect 96.41 748.00 765.53 1.00 #ffffffff
+rect 96.38 749.00 765.59 20.00 #ffffffff
+rect 96.41 769.00 765.53 1.00 #ffffffff
+rect 96.66 770.00 765.03 1.00 #ffffffff
+rect 97.25 771.00 763.84 1.00 #ffffffff
+rect 98.44 772.00 761.47 1.00 #ffffffff
 text 881.97 764.50 14px face 0 bold 0 #ffffffff "JP"
 text 910.89 764.50 14px face 0 bold 0 #ffffffff "Account"
 text 978.06 764.50 14px face 0 bold 0 #ffffffff "Cart"
+rect 8.00 785.00 1008.00 17.00 #ffeeeeee
+text 8.00 799.00 14px face 0 bold 0 #ff000000 "a"
+text 15.86 799.00 14px face 0 bold 0 #ff000000 " "
+text 19.80 799.00 14px face 0 bold 0 #ff000000 "100%"
+text 56.89 799.00 14px face 0 bold 0 #ff000000 " "
+text 60.83 799.00 14px face 0 bold 0 #ff000000 "wide"
+text 92.41 799.00 14px face 0 bold 0 #ff000000 "logo"
+text 121.17 799.00 14px face 0 bold 0 #ff000000 "place"
+text 157.16 799.00 14px face 0 bold 0 #ff000000 "the"
+text 178.17 799.00 14px face 0 bold 0 #ff000000 " "
+text 182.11 799.00 14px face 0 bold 0 #ff000000 "rest,"
+text 211.53 799.00 14px face 0 bold 0 #ff000000 " "
+text 215.47 799.00 14px face 0 bold 0 #ff000000 "grown"
+text 991.00 799.00 14px face 0 bold 0 #ff000000 "end"

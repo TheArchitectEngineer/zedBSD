@@ -22,9 +22,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The width content is measured at, wide enough never to wrap it. */
-#define FLEX_MEASURE_WIDTH	((layout_unit)1 << 24)
-
 /*
  * One item on its way through the algorithm: its box, the frame (borders
  * and paddings) and margins along the main axis, which of those margins
@@ -44,10 +41,26 @@ struct flex_item {
 	layout_unit maximum;
 };
 
+/*
+ * The part of an item's style that its layout at the flexed size
+ * overrides, kept to be put back afterwards.
+ */
+struct flex_sizes {
+	int box_sizing;
+	struct css_length width;
+	struct css_length min_width;
+	struct css_length max_width;
+	struct css_length height;
+	struct css_length min_height;
+	struct css_length max_height;
+	struct css_length margin[4];
+};
+
 static int flex_collect(struct layout_box *box, struct flex_item **items, size_t *count);
 static int flex_base_size(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row, layout_unit available);
 static void flex_resolve(struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static int flex_lay_item(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
+static int flex_lay_sized(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
 static void flex_place_line(struct layout_box *box, struct flex_item *items, size_t count, int row, layout_unit available, layout_unit gap, layout_unit cross_start, layout_unit line_cross);
 static layout_unit flex_cross_outer(const struct layout_box *item, int row);
 static int flex_align_of(const struct layout_box *box, const struct layout_box *item);
@@ -307,26 +320,36 @@ flex_base_size(
 	struct layout_box *child;
 	const struct css_length *basis;
 	layout_unit sizing;
+	int start_side;
+	int end_side;
 	int error;
 
 	/* The item's box model against the container's width. */
 	child = item->box;
 	layout_box_model(child, box->width);
 
-	/* Its frame and margins along the main axis (an auto margin counts as none until the free space is shared). */
+	/* The sides the main axis starts and ends at: left and right for a row, top and bottom for a column. */
+	start_side = CSS_TOP;
+	end_side = CSS_BOTTOM;
 	if (row) {
-		item->frame = child->border[CSS_LEFT] + child->padding[CSS_LEFT] + child->padding[CSS_RIGHT] + child->border[CSS_RIGHT];
-		item->margin_start = child->margin[CSS_LEFT];
-		item->margin_end = child->margin[CSS_RIGHT];
-		item->auto_start = child->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO;
-		item->auto_end = child->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO;
-	} else {
-		item->frame = child->border[CSS_TOP] + child->padding[CSS_TOP] + child->padding[CSS_BOTTOM] + child->border[CSS_BOTTOM];
-		item->margin_start = child->margin[CSS_TOP];
-		item->margin_end = child->margin[CSS_BOTTOM];
-		item->auto_start = child->style.margin[CSS_TOP].unit == CSS_UNIT_AUTO;
-		item->auto_end = child->style.margin[CSS_BOTTOM].unit == CSS_UNIT_AUTO;
+		start_side = CSS_LEFT;
+		end_side = CSS_RIGHT;
 	}
+
+	/* Its frame and margins along the main axis (an auto margin counts as none until the free space is shared). */
+	item->frame = child->border[start_side] + child->padding[start_side] + child->padding[end_side] + child->border[end_side];
+	item->margin_start = child->margin[start_side];
+	item->margin_end = child->margin[end_side];
+
+	/* An auto margin at the start takes a share of the free space later. */
+	item->auto_start = 0;
+	if (child->style.margin[start_side].unit == CSS_UNIT_AUTO)
+		item->auto_start = 1;
+
+	/* So does one at the end. */
+	item->auto_end = 0;
+	if (child->style.margin[end_side].unit == CSS_UNIT_AUTO)
+		item->auto_end = 1;
 
 	/* Under border-box sizing the given sizes include the frame. */
 	sizing = 0;
@@ -341,11 +364,15 @@ flex_base_size(
 			basis = &child->style.height;
 	}
 
-	/* A definite basis: pixels, or a percentage of a definite main size. */
+	/*
+	 * A definite basis: pixels, or a percentage of a definite main size (a
+	 * container being measured has none: its width is only the measuring
+	 * width).
+	 */
 	item->base = -1;
 	if (basis->unit == CSS_UNIT_PX)
 		item->base = layout_from_px(basis->value) - sizing;
-	if (basis->unit == CSS_UNIT_PERCENT && available >= 0)
+	if (basis->unit == CSS_UNIT_PERCENT && available >= 0 && tree->measuring == 0)
 		item->base = flex_length(basis, available) - sizing;
 
 	/* Otherwise the content's size: its widest line, or its height at the container's width. */
@@ -356,10 +383,10 @@ flex_base_size(
 				return error;
 			item->base = child->width;
 		} else {
-			error = layout_block(tree, child, FLEX_MEASURE_WIDTH);
+			/* The content's width without a limit (measured once, its percentages indefinite). */
+			error = layout_max_content(tree, child, &item->base);
 			if (error != 0)
 				return error;
-			item->base = layout_content_width(child, 0);
 		}
 	} else if (item->base < 0) {
 		error = layout_block(tree, child, box->width);
@@ -496,12 +523,61 @@ flex_resolve(
 }
 
 /*
+ * Lays an item out as a block at its final main size, with its style's
+ * sizes and margins as they were afterwards: the next layout of the item
+ * (the real one after a measurement, or the next line's) starts from its
+ * own style again, not from the size this one gave it.
+ */
+static int
+flex_lay_item(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	struct flex_item *item,
+	int row)
+{
+	struct flex_sizes saved;
+	struct layout_box *child;
+	int error;
+
+	/* Keeps the style's sizes and margins, which the layout at the flexed size overrides. */
+	child = item->box;
+	saved.box_sizing = child->style.box_sizing;
+	saved.width = child->style.width;
+	saved.min_width = child->style.min_width;
+	saved.max_width = child->style.max_width;
+	saved.height = child->style.height;
+	saved.min_height = child->style.min_height;
+	saved.max_height = child->style.max_height;
+	memcpy(saved.margin, child->style.margin, sizeof(saved.margin));
+
+	/* The layout at the flexed size. */
+	error = flex_lay_sized(tree, box, item, row);
+
+	/* The style is the item's own again, whatever the layout reported. */
+	child->style.box_sizing = saved.box_sizing;
+	child->style.width = saved.width;
+	child->style.min_width = saved.min_width;
+	child->style.max_width = saved.max_width;
+	child->style.height = saved.height;
+	child->style.min_height = saved.min_height;
+	child->style.max_height = saved.max_height;
+	memcpy(child->style.margin, saved.margin, sizeof(saved.margin));
+
+	/* Reports an item that could not be laid out. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the item is laid out at its size. */
+	return 0;
+}
+
+/*
  * Lays an item out as a block at its final main size: its width (a row's
  * item) or height (a column's) set to that size, its main-axis margins to
  * the shared ones; a column's item that does not stretch shrinks to fit.
  */
 static int
-flex_lay_item(
+flex_lay_sized(
 	struct layout_tree *tree,
 	struct layout_box *box,
 	struct flex_item *item,

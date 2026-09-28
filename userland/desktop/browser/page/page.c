@@ -60,6 +60,7 @@ page_create(
 	vm_heap_set_stack_base(created->heap, stack_base);
 	page_images_init(created);
 	page_sheets_init(created);
+	page_fonts_init(created);
 
 	/* Makes the document and keeps it alive as a root. */
 	created->document = dom_document_create(created->heap);
@@ -121,6 +122,7 @@ page_destroy(
 	page_images_release(page);
 	css_engine_destroy(page->css);
 	page_sheets_release(page);
+	page_fonts_release(page);
 	bind_window_destroy(page->window);
 	vm_realm_destroy(page->realm);
 	vm_heap_destroy(page->heap);
@@ -408,6 +410,9 @@ page_layout(
 	if (error != 0)
 		return error;
 
+	/* The web fonts that arrived join the text system. */
+	page_fonts_install(page);
+
 	/* The window's size for the scripts. */
 	bind_window_set_viewport(page->window, width, height);
 
@@ -587,12 +592,21 @@ static int
 page_update_styles(
 	struct page *page)
 {
+	int pending;
 	int error;
 
 	/* Styles that are up to date stay. */
 	if (page->css != NULL &&
 	    page->styled_generation == page->document->generation &&
 	    page->styled_sheets == page->sheets_generation)
+		return 0;
+
+	/*
+	 * So do styles of the same document while more sheets are on their way:
+	 * the page is styled again once they are all here (ws074-p071).
+	 */
+	pending = page_sheets_pending(page);
+	if (page->css != NULL && page->styled_generation == page->document->generation && pending)
 		return 0;
 
 	/* A new engine with the sheets as they are now. */

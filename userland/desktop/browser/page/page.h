@@ -90,6 +90,9 @@ struct page {
 	struct wb_vector sheets;
 	uint32_t sheets_generation;
 	uint32_t styled_sheets;
+	struct wb_vector fonts;
+	uint32_t fonts_generation;
+	uint32_t laid_out_fonts;
 	uint32_t styling;
 	page_console console;
 	void *console_context;
@@ -132,7 +135,14 @@ int page_title(const struct page *page, struct wb_buffer *out);
 /* Style sheets (sheets.c). */
 void page_sheets_init(struct page *page);
 int page_sheets_add(struct page *page);
+int page_sheets_pending(const struct page *page);
 void page_sheets_release(struct page *page);
+
+/* Web fonts (fonts.c, ws074-p070). */
+void page_fonts_init(struct page *page);
+int page_fonts_add_sheet(struct page *page, const struct css_sheet *sheet);
+void page_fonts_install(struct page *page);
+void page_fonts_release(struct page *page);
 
 /* Scripts, events and time (script.c). */
 int page_start_scripts(struct page *page);

@@ -45,7 +45,13 @@ enum values_shorthand {
 	SHORT_INSET_BLOCK,
 	SHORT_FLEX,
 	SHORT_FLEX_FLOW,
-	SHORT_GAP
+	SHORT_GAP,
+	SHORT_BORDER_RADIUS,
+	SHORT_RADIUS_TOP_LEFT,
+	SHORT_RADIUS_TOP_RIGHT,
+	SHORT_RADIUS_BOTTOM_RIGHT,
+	SHORT_RADIUS_BOTTOM_LEFT,
+	SHORT_OUTLINE
 };
 
 /*
@@ -118,6 +124,13 @@ static int values_calc_unit(const struct css_token *token, struct css_calc_sum *
 static void values_calc_scale(struct css_calc_sum *sum, float factor);
 static void values_calc_add(struct css_calc_sum *sum, const struct css_calc_sum *other, float sign);
 static size_t values_skip_space(const struct css_token *tokens, size_t count, size_t index);
+static int values_border_radius(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_corner_radius(struct css_parse *parse, int corner, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_radii(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *radii);
+static int values_box_shadow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_one_shadow(const struct css_token *tokens, size_t count, struct css_declared_shadow *shadow);
+static int values_outline(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_clip_path(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 
 /* The property names this pass knows. */
 static const struct values_name values_names[] = {
@@ -200,11 +213,38 @@ static const struct values_name values_names[] = {
 	{ "flex-basis", CSS_PROP_FLEX_BASIS },
 	{ "-webkit-flex-basis", CSS_PROP_FLEX_BASIS },
 	{ "order", CSS_PROP_ORDER },
+	{ "vertical-align", CSS_PROP_VERTICAL_ALIGN },
+	{ "opacity", CSS_PROP_OPACITY },
+	{ "box-shadow", CSS_PROP_BOX_SHADOW },
+	{ "-webkit-box-shadow", CSS_PROP_BOX_SHADOW },
+	{ "-moz-box-shadow", CSS_PROP_BOX_SHADOW },
+	{ "outline-width", CSS_PROP_OUTLINE_WIDTH },
+	{ "outline-style", CSS_PROP_OUTLINE_STYLE },
+	{ "outline-color", CSS_PROP_OUTLINE_COLOR },
+	{ "outline-offset", CSS_PROP_OUTLINE_OFFSET },
+	{ "clip-path", CSS_PROP_CLIP_PATH },
+	{ "-webkit-clip-path", CSS_PROP_CLIP_PATH },
 	{ "flex", SHORT_FLEX },
 	{ "-webkit-flex", SHORT_FLEX },
 	{ "flex-flow", SHORT_FLEX_FLOW },
 	{ "gap", SHORT_GAP },
 	{ "grid-gap", SHORT_GAP },
+	{ "border-radius", SHORT_BORDER_RADIUS },
+	{ "-webkit-border-radius", SHORT_BORDER_RADIUS },
+	{ "-moz-border-radius", SHORT_BORDER_RADIUS },
+	{ "border-top-left-radius", SHORT_RADIUS_TOP_LEFT },
+	{ "border-top-right-radius", SHORT_RADIUS_TOP_RIGHT },
+	{ "border-bottom-right-radius", SHORT_RADIUS_BOTTOM_RIGHT },
+	{ "border-bottom-left-radius", SHORT_RADIUS_BOTTOM_LEFT },
+	{ "-webkit-border-top-left-radius", SHORT_RADIUS_TOP_LEFT },
+	{ "-webkit-border-top-right-radius", SHORT_RADIUS_TOP_RIGHT },
+	{ "-webkit-border-bottom-right-radius", SHORT_RADIUS_BOTTOM_RIGHT },
+	{ "-webkit-border-bottom-left-radius", SHORT_RADIUS_BOTTOM_LEFT },
+	{ "border-start-start-radius", SHORT_RADIUS_TOP_LEFT },
+	{ "border-start-end-radius", SHORT_RADIUS_TOP_RIGHT },
+	{ "border-end-end-radius", SHORT_RADIUS_BOTTOM_RIGHT },
+	{ "border-end-start-radius", SHORT_RADIUS_BOTTOM_LEFT },
+	{ "outline", SHORT_OUTLINE },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -292,6 +332,19 @@ static const struct values_keyword values_display[] = {
 	{ "inline-grid", CSS_DISPLAY_BLOCK },
 	{ "flow-root", CSS_DISPLAY_BLOCK },
 	{ "contents", CSS_DISPLAY_CONTENTS },
+	{ NULL, 0 }
+};
+
+/* The keywords of vertical-align (a length or percentage is the other form). */
+static const struct values_keyword values_vertical_align[] = {
+	{ "baseline", CSS_VALIGN_BASELINE },
+	{ "top", CSS_VALIGN_TOP },
+	{ "middle", CSS_VALIGN_MIDDLE },
+	{ "bottom", CSS_VALIGN_BOTTOM },
+	{ "text-top", CSS_VALIGN_TEXT_TOP },
+	{ "text-bottom", CSS_VALIGN_TEXT_BOTTOM },
+	{ "sub", CSS_VALIGN_SUB },
+	{ "super", CSS_VALIGN_SUPER },
 	{ NULL, 0 }
 };
 
@@ -884,6 +937,18 @@ css_parse_property(
 		return values_flex_flow(parse, tokens, count, out, out_count);
 	case SHORT_GAP:
 		return values_pair(parse, CSS_PROP_ROW_GAP, CSS_PROP_COLUMN_GAP, tokens, count, out, out_count);
+	case SHORT_BORDER_RADIUS:
+		return values_border_radius(parse, tokens, count, out, out_count);
+	case SHORT_RADIUS_TOP_LEFT:
+		return values_corner_radius(parse, CSS_TOP_LEFT, tokens, count, out, out_count);
+	case SHORT_RADIUS_TOP_RIGHT:
+		return values_corner_radius(parse, CSS_TOP_RIGHT, tokens, count, out, out_count);
+	case SHORT_RADIUS_BOTTOM_RIGHT:
+		return values_corner_radius(parse, CSS_BOTTOM_RIGHT, tokens, count, out, out_count);
+	case SHORT_RADIUS_BOTTOM_LEFT:
+		return values_corner_radius(parse, CSS_BOTTOM_LEFT, tokens, count, out, out_count);
+	case SHORT_OUTLINE:
+		return values_outline(parse, tokens, count, out, out_count);
 	default:
 		break;
 	}
@@ -1275,6 +1340,44 @@ values_single(
 	if (property == CSS_PROP_CONTENT)
 		return values_content(parse, tokens, count, value);
 
+	/* box-shadow takes a list of shadows. */
+	if (property == CSS_PROP_BOX_SHADOW)
+		return values_box_shadow(parse, tokens, count, value);
+
+	/* clip-path takes a shape. */
+	if (property == CSS_PROP_CLIP_PATH)
+		return values_clip_path(parse, tokens, count, value);
+
+	/* The outline's width is a border's. */
+	if (property == CSS_PROP_OUTLINE_WIDTH)
+		return values_single(parse, CSS_PROP_BORDER_TOP_WIDTH, tokens, count, value);
+
+	/* Its style is a border's, and auto a solid one. */
+	if (property == CSS_PROP_OUTLINE_STYLE) {
+		is_auto = css_ident_equal(&tokens[0], "auto");
+		if (count == 1 && is_auto) {
+			value->kind = CSS_VALUE_KEYWORD;
+			value->keyword = CSS_BORDER_SOLID;
+			return 0;
+		}
+
+		/* Any other style. */
+		return values_single(parse, CSS_PROP_BORDER_TOP_STYLE, tokens, count, value);
+	}
+
+	/* Its color is a border's, and invert the current color. */
+	if (property == CSS_PROP_OUTLINE_COLOR) {
+		is_auto = css_ident_equal(&tokens[0], "invert");
+		if (count == 1 && is_auto) {
+			value->kind = CSS_VALUE_COLOR;
+			value->color = CSS_CURRENT_COLOR;
+			return 0;
+		}
+
+		/* Any other color. */
+		return values_single(parse, CSS_PROP_BORDER_TOP_COLOR, tokens, count, value);
+	}
+
 	/* A length may be a calculation, which is a function of several tokens. */
 	takes_length = values_takes_length(property);
 	if (takes_length && tokens[0].type == CSS_TOKEN_FUNCTION) {
@@ -1365,6 +1468,53 @@ values_single(
 		value->keyword = keyword;
 		return 0;
 	}
+
+	/* vertical-align: a keyword, or a length or percentage that raises the box. */
+	if (property == CSS_PROP_VERTICAL_ALIGN) {
+		found = values_keyword(values_vertical_align, &tokens[0], &keyword);
+		if (found) {
+			value->kind = CSS_VALUE_KEYWORD;
+			value->keyword = keyword;
+			return 0;
+		}
+
+		/* A length or a percentage. */
+		error = values_length(&tokens[0], 0, value);
+		return error;
+	}
+
+	/* opacity: a number or a percentage, held between 0 and 1. */
+	if (property == CSS_PROP_OPACITY) {
+		value->kind = CSS_VALUE_NUMBER;
+		if (tokens[0].type == CSS_TOKEN_NUMBER) {
+			value->number = (float)tokens[0].number;
+		} else if (tokens[0].type == CSS_TOKEN_PERCENTAGE) {
+			value->number = (float)tokens[0].number / 100.0f;
+		} else {
+			return EINVAL;
+		}
+
+		/* The number, held in range. */
+		if (value->number < 0)
+			value->number = 0;
+		if (value->number > 1)
+			value->number = 1;
+		return 0;
+	}
+
+	/* A corner's radius on one axis: a length or a percentage that is not negative. */
+	if (property >= CSS_PROP_RADIUS_TOP_LEFT_X && property <= CSS_PROP_RADIUS_BOTTOM_LEFT_Y) {
+		error = values_length(&tokens[0], 0, value);
+		if (error != 0)
+			return error;
+		if (value->number < 0)
+			return EINVAL;
+		return 0;
+	}
+
+	/* outline-offset: a length. */
+	if (property == CSS_PROP_OUTLINE_OFFSET)
+		return values_length(&tokens[0], 0, value);
 
 	/* flex-grow and flex-shrink: a number that is not negative. */
 	if (property == CSS_PROP_FLEX_GROW || property == CSS_PROP_FLEX_SHRINK) {
@@ -1886,6 +2036,26 @@ values_wide_keyword(
 		values_add(out, made, CSS_PROP_BACKGROUND_POSITION_Y, value);
 		values_add(out, made, CSS_PROP_BACKGROUND_SIZE_WIDTH, value);
 		values_add(out, made, CSS_PROP_BACKGROUND_SIZE_HEIGHT, value);
+		return;
+	case SHORT_BORDER_RADIUS:
+		/* The eight radii (ws074-p062). */
+		for (first = CSS_PROP_RADIUS_TOP_LEFT_X; first <= CSS_PROP_RADIUS_BOTTOM_LEFT_Y; first++)
+			values_add(out, made, first, value);
+		return;
+	case SHORT_RADIUS_TOP_LEFT:
+	case SHORT_RADIUS_TOP_RIGHT:
+	case SHORT_RADIUS_BOTTOM_RIGHT:
+	case SHORT_RADIUS_BOTTOM_LEFT:
+		/* A corner's two radii. */
+		first = CSS_PROP_RADIUS_TOP_LEFT_X + 2 * (property - SHORT_RADIUS_TOP_LEFT);
+		values_add(out, made, first, value);
+		values_add(out, made, first + 1, value);
+		return;
+	case SHORT_OUTLINE:
+		/* The outline's width, style and color. */
+		values_add(out, made, CSS_PROP_OUTLINE_WIDTH, value);
+		values_add(out, made, CSS_PROP_OUTLINE_STYLE, value);
+		values_add(out, made, CSS_PROP_OUTLINE_COLOR, value);
 		return;
 	default:
 		break;
@@ -2450,6 +2620,14 @@ values_takes_length(
 {
 	/* The sizes, the four-sided lengths, the offsets and the font's lengths. */
 	switch (property) {
+	case CSS_PROP_RADIUS_TOP_LEFT_X:
+	case CSS_PROP_RADIUS_TOP_LEFT_Y:
+	case CSS_PROP_RADIUS_TOP_RIGHT_X:
+	case CSS_PROP_RADIUS_TOP_RIGHT_Y:
+	case CSS_PROP_RADIUS_BOTTOM_RIGHT_X:
+	case CSS_PROP_RADIUS_BOTTOM_RIGHT_Y:
+	case CSS_PROP_RADIUS_BOTTOM_LEFT_X:
+	case CSS_PROP_RADIUS_BOTTOM_LEFT_Y:
 	case CSS_PROP_WIDTH:
 	case CSS_PROP_HEIGHT:
 	case CSS_PROP_MIN_WIDTH:
@@ -3232,5 +3410,381 @@ values_flex_flow(
 	values_add(out, made, CSS_PROP_FLEX_WRAP, &wrap);
 
 	/* Succeeded: both declared. */
+	return 0;
+}
+
+/*
+ * Parses border-radius (ws074-p062): one to four horizontal radii (top
+ * left, top right, bottom right, bottom left, the missing ones copied as
+ * the four-sided shorthands copy them), then optionally a slash and one to
+ * four vertical radii (otherwise the same as the horizontal ones).
+ */
+static int
+values_border_radius(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value horizontal[4];
+	struct css_value vertical[4];
+	size_t slash;
+	size_t corner;
+	int error;
+
+	/* The slash between the two lists, if there is one. */
+	slash = count;
+	for (corner = 0; corner < count; corner++) {
+		if (tokens[corner].type == CSS_TOKEN_DELIM && tokens[corner].delim == '/') {
+			slash = corner;
+			break;
+		}
+	}
+
+	/* The horizontal radii. */
+	error = values_radii(parse, tokens, slash, horizontal);
+	if (error != 0)
+		return error;
+
+	/* The vertical radii, or the horizontal ones again. */
+	if (slash < count) {
+		error = values_radii(parse, tokens + slash + 1U, count - slash - 1U, vertical);
+		if (error != 0)
+			return error;
+	} else {
+		memcpy(vertical, horizontal, sizeof(vertical));
+	}
+
+	/* Each corner's two longhands. */
+	for (corner = 0; corner < 4U; corner++) {
+		values_add(out, made, CSS_PROP_RADIUS_TOP_LEFT_X + 2 * (int)corner, &horizontal[corner]);
+		values_add(out, made, CSS_PROP_RADIUS_TOP_LEFT_Y + 2 * (int)corner, &vertical[corner]);
+	}
+
+	/* Succeeded: eight longhands. */
+	return 0;
+}
+
+/* Parses one to four radii into the four corners, the missing ones copied from their opposites. */
+static int
+values_radii(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *radii)
+{
+	size_t starts[5];
+	size_t lengths[5];
+	size_t components;
+	size_t index;
+	int error;
+
+	/* One to four components, each a radius. */
+	components = values_components(tokens, count, starts, lengths, 5);
+	if (components == 0 || components > 4)
+		return EINVAL;
+	for (index = 0; index < components; index++) {
+		error = values_single(parse, CSS_PROP_RADIUS_TOP_LEFT_X, tokens + starts[index], lengths[index], &radii[index]);
+		if (error != 0)
+			return error;
+	}
+
+	/* The missing ones, as margin copies its sides. */
+	if (components < 2)
+		radii[1] = radii[0];
+	if (components < 3)
+		radii[2] = radii[0];
+	if (components < 4)
+		radii[3] = radii[1];
+
+	/* Succeeded: four radii. */
+	return 0;
+}
+
+/* Parses one corner's radius: a horizontal radius and optionally a vertical one (otherwise the same). */
+static int
+values_corner_radius(
+	struct css_parse *parse,
+	int corner,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	/* The pair of longhands of the corner. */
+	return values_pair(parse, CSS_PROP_RADIUS_TOP_LEFT_X + 2 * corner, CSS_PROP_RADIUS_TOP_LEFT_Y + 2 * corner, tokens, count, out, made);
+}
+
+/*
+ * Parses box-shadow (ws074-p062): none, or a comma-separated list of
+ * shadows (the first CSS_SHADOWS of them are kept), in the parse's arena.
+ */
+static int
+values_box_shadow(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	struct css_shadow_list *list;
+	size_t start;
+	size_t index;
+	size_t used;
+	int is_none;
+	int error;
+
+	/* The list, kept in the arena. */
+	list = wb_arena_zalloc(parse->arena, sizeof(*list));
+	if (list == NULL)
+		return ENOMEM;
+	value->kind = CSS_VALUE_SHADOWS;
+	value->shadows = list;
+
+	/* none is the empty list. */
+	if (count == 1 && tokens[0].type == CSS_TOKEN_IDENT) {
+		is_none = css_ident_equal(&tokens[0], "none");
+		if (!is_none)
+			return EINVAL;
+		return 0;
+	}
+
+	/* Each shadow runs to a comma outside the functions. */
+	start = 0;
+	index = 0;
+	while (index <= count) {
+		if (index < count && tokens[index].type != CSS_TOKEN_COMMA) {
+			used = 1;
+			if (tokens[index].type == CSS_TOKEN_FUNCTION)
+				used = values_function_length(tokens + index, count - index);
+			index += used;
+			continue;
+		}
+
+		/* One shadow from start to here, kept while there is room. */
+		if (list->count < CSS_SHADOWS) {
+			error = values_one_shadow(tokens + start, index - start, &list->shadows[list->count]);
+			if (error != 0)
+				return error;
+			list->count++;
+		}
+
+		/* The next shadow starts after the comma. */
+		index++;
+		start = index;
+	}
+
+	/* Succeeded: the shadows are parsed. */
+	return 0;
+}
+
+/* Parses one shadow: inset, two to four lengths and a color, the keyword and the color at either end. */
+static int
+values_one_shadow(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declared_shadow *shadow)
+{
+	struct css_value candidate;
+	size_t starts[7];
+	size_t lengths[7];
+	size_t components;
+	size_t index;
+	size_t lengths_seen;
+	int is_inset;
+	int error;
+
+	/* No shadow is the default: black, all lengths zero pixels. */
+	memset(shadow, 0, sizeof(*shadow));
+	shadow->color = CSS_CURRENT_COLOR;
+	for (index = 0; index < 4U; index++) {
+		shadow->lengths[index].kind = CSS_VALUE_LENGTH;
+		shadow->lengths[index].unit = CSS_DUNIT_PX;
+	}
+
+	/* Each component is inset, a length or a color. */
+	components = values_components(tokens, count, starts, lengths, 7);
+	if (components < 2 || components > 6)
+		return EINVAL;
+	lengths_seen = 0;
+	for (index = 0; index < components; index++) {
+		is_inset = 0;
+		if (lengths[index] == 1 && tokens[starts[index]].type == CSS_TOKEN_IDENT)
+			is_inset = css_ident_equal(&tokens[starts[index]], "inset");
+		if (is_inset) {
+			shadow->inset = 1;
+			continue;
+		}
+
+		/* A length (four at most). */
+		memset(&candidate, 0, sizeof(candidate));
+		error = EINVAL;
+		if (lengths[index] == 1 && lengths_seen < 4U)
+			error = values_length(&tokens[starts[index]], 0, &candidate);
+		if (error == 0) {
+			shadow->lengths[lengths_seen] = candidate;
+			lengths_seen++;
+			continue;
+		}
+
+		/* Otherwise a color. */
+		error = css_parse_color(tokens + starts[index], lengths[index], &shadow->color);
+		if (error != 0)
+			return error;
+	}
+
+	/* The two offsets are required. */
+	if (lengths_seen < 2U)
+		return EINVAL;
+
+	/* Succeeded: the shadow is parsed. */
+	return 0;
+}
+
+/* Parses the outline shorthand: a width, a style and a color in any order (medium, none and currentcolor when missing). */
+static int
+values_outline(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value width;
+	struct css_value style;
+	struct css_value color;
+	struct css_value candidate;
+	size_t starts[4];
+	size_t lengths[4];
+	size_t components;
+	size_t index;
+	int error;
+
+	/* The defaults: medium, none, currentcolor. */
+	memset(&width, 0, sizeof(width));
+	width.kind = CSS_VALUE_LENGTH;
+	width.number = 3;
+	width.unit = CSS_DUNIT_PX;
+	memset(&style, 0, sizeof(style));
+	style.kind = CSS_VALUE_KEYWORD;
+	style.keyword = CSS_BORDER_NONE;
+	memset(&color, 0, sizeof(color));
+	color.kind = CSS_VALUE_COLOR;
+	color.color = CSS_CURRENT_COLOR;
+
+	/* Each component is a style, a width or a color. */
+	components = values_components(tokens, count, starts, lengths, 4);
+	if (components == 0 || components > 3)
+		return EINVAL;
+	for (index = 0; index < components; index++) {
+		error = values_single(parse, CSS_PROP_OUTLINE_STYLE, tokens + starts[index], lengths[index], &candidate);
+		if (error == 0) {
+			style = candidate;
+			continue;
+		}
+
+		/* Or a width. */
+		error = values_single(parse, CSS_PROP_OUTLINE_WIDTH, tokens + starts[index], lengths[index], &candidate);
+		if (error == 0) {
+			width = candidate;
+			continue;
+		}
+
+		/* Or a color. */
+		error = values_single(parse, CSS_PROP_OUTLINE_COLOR, tokens + starts[index], lengths[index], &candidate);
+		if (error == 0) {
+			color = candidate;
+			continue;
+		}
+
+		/* Anything else spoils the shorthand. */
+		return EINVAL;
+	}
+
+	/* The three longhands. */
+	values_add(out, made, CSS_PROP_OUTLINE_WIDTH, &width);
+	values_add(out, made, CSS_PROP_OUTLINE_STYLE, &style);
+	values_add(out, made, CSS_PROP_OUTLINE_COLOR, &color);
+
+	/* Succeeded: the longhands are declared. */
+	return 0;
+}
+
+/*
+ * Parses clip-path (ws074-p062): inset() with one to four lengths (the
+ * missing ones copied as margin copies its sides; a "round" and its radii
+ * after them are not kept) as an inset in the parse's arena; none, and the
+ * shapes this pass does not clip by, as the keyword 0.
+ */
+static int
+values_clip_path(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	struct css_declared_inset *inset;
+	size_t starts[5];
+	size_t lengths[5];
+	size_t components;
+	size_t used;
+	size_t index;
+	int is_inset;
+	int is_round;
+	int error;
+
+	/* Anything but inset() clips nothing in this pass. */
+	value->kind = CSS_VALUE_KEYWORD;
+	value->keyword = 0;
+	is_inset = 0;
+	if (tokens[0].type == CSS_TOKEN_FUNCTION)
+		is_inset = css_ident_equal(&tokens[0], "inset");
+	if (!is_inset)
+		return 0;
+
+	/* The arguments, between the function's name and its closing parenthesis. */
+	used = values_function_length(tokens, count);
+	if (used < 2U)
+		return EINVAL;
+	components = values_components(tokens + 1, used - 2U, starts, lengths, 5);
+
+	/* The inset, kept in the arena, zero pixels on every side to start with. */
+	inset = wb_arena_zalloc(parse->arena, sizeof(*inset));
+	if (inset == NULL)
+		return ENOMEM;
+	for (index = 0; index < 4U; index++) {
+		inset->lengths[index].kind = CSS_VALUE_LENGTH;
+		inset->lengths[index].unit = CSS_DUNIT_PX;
+	}
+
+	/* Up to four lengths, until round. */
+	for (index = 0; index < components && index < 4U; index++) {
+		is_round = 0;
+		if (tokens[1U + starts[index]].type == CSS_TOKEN_IDENT)
+			is_round = css_ident_equal(&tokens[1U + starts[index]], "round");
+		if (is_round)
+			break;
+		if (lengths[index] != 1)
+			return EINVAL;
+		error = values_length(&tokens[1U + starts[index]], 0, &inset->lengths[index]);
+		if (error != 0)
+			return error;
+	}
+
+	/* No length at all is no inset. */
+	if (index == 0)
+		return EINVAL;
+
+	/* The missing ones, as margin copies its sides. */
+	if (index < 2U)
+		inset->lengths[1] = inset->lengths[0];
+	if (index < 3U)
+		inset->lengths[2] = inset->lengths[0];
+	if (index < 4U)
+		inset->lengths[3] = inset->lengths[1];
+
+	/* Succeeded: the inset is parsed. */
+	value->kind = CSS_VALUE_INSET;
+	value->inset = inset;
 	return 0;
 }

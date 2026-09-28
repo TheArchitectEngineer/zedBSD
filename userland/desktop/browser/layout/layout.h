@@ -21,7 +21,9 @@
  * without content; either sized by its image and its width and height.
  * A form control (<input>, <textarea>, <select>) is a replaced box too,
  * sized by its text and attributes and standing on its text's baseline
- * (control.c).
+ * (control.c).  An inline block (ws074-p060) is a block laid out on its
+ * own and placed as one atomic piece of its line, standing on its last
+ * line's baseline; vertical-align moves the pieces of a line up and down.
  */
 
 #ifndef KEILAND_BROWSER_LAYOUT_H
@@ -68,8 +70,10 @@ typedef const struct img_bitmap *(*layout_url_lookup)(void *context, const struc
 
 /*
  * A piece of text on a line: a run of a text box's characters, with its
- * font, position and width.  x is from the line's left, and the baseline
- * is the line's.
+ * font, position and width, or an atomic piece (a replaced box or an
+ * inline block).  x is from the line's left; the piece's baseline is the
+ * line's moved down by shift (up when it is negative), as vertical-align
+ * places it.
  */
 struct layout_fragment {
 	struct layout_box *box;
@@ -82,6 +86,7 @@ struct layout_fragment {
 	layout_unit width;
 	layout_unit ascent;
 	layout_unit descent;
+	layout_unit shift;
 };
 
 /*
@@ -107,7 +112,9 @@ struct layout_line {
  * laid out children.  An absolutely positioned or fixed box is out of the
  * flow: its parent's layout passes it by and records its static position
  * (where it would have been, relative to the parent's content box, then
- * absolute), and position.c places it.
+ * absolute), and position.c places it.  An atomic box (an inline block)
+ * is a block among its parent's inline content: the line it is on places
+ * it (x and y relative to that block's content box, like a float).
  */
 struct layout_box {
 	int kind;
@@ -120,6 +127,7 @@ struct layout_box {
 	int children_inline;
 	int out_of_flow;
 	int floating;
+	int atomic;
 	layout_unit static_x;
 	layout_unit static_y;
 
@@ -155,7 +163,8 @@ struct layout_box {
 	/*
 	 * A form control's box (control.c): its kind (DOM_CONTROL_*, NONE for
 	 * other boxes), its natural size, and whether its text has a baseline
-	 * and how far below its content box's top that is.
+	 * and how far below its content box's top that is.  An inline block
+	 * keeps its last line's baseline in the same two fields (inline.c).
 	 */
 	int control;
 	layout_unit natural_width;
@@ -168,6 +177,14 @@ struct layout_box {
 
 	/* A flex item's margin box along its container's main axis before it flexed (flex.c). */
 	layout_unit flex_hypothetical;
+
+	/*
+	 * The width the box's content takes laid out without a limit (its
+	 * max-content width), once it has been measured for shrinking to fit;
+	 * the measurement does not depend on the room, so it is made once.
+	 */
+	layout_unit max_content;
+	int max_content_known;
 };
 
 /*
@@ -187,7 +204,11 @@ struct layout_rect {
  * block formatting context's list of floats (float.c) and origin_x,
  * origin_y the content box of the block being laid out in that context's
  * coordinates.  image_lookup and image_context find the image of an
- * <img>, url_lookup a background image's.
+ * <img>, url_lookup a background image's.  measuring counts the
+ * measurements of content laid out at a very wide width that are in
+ * progress (shrink-to-fit, a flex item's content size); while one is, a
+ * percentage of the containing width is indefinite, and a flex basis given
+ * in percent is the content's size instead.
  */
 struct layout_tree {
 	struct wb_arena arena;
@@ -202,6 +223,7 @@ struct layout_tree {
 	layout_image_lookup image_lookup;
 	layout_url_lookup url_lookup;
 	void *image_context;
+	int measuring;
 };
 
 /*
@@ -232,6 +254,7 @@ layout_unit layout_below_float(const struct layout_tree *tree, layout_unit top);
 layout_unit layout_clearance(const struct layout_tree *tree, int clear);
 layout_unit layout_floats_bottom(const struct layout_tree *tree);
 int layout_shrink_to_fit(struct layout_tree *tree, struct layout_box *box, layout_unit room);
+int layout_max_content(struct layout_tree *tree, struct layout_box *box, layout_unit *width);
 int layout_stacking_order(const struct layout_tree *tree, struct wb_vector *boxes, size_t *flow_index);
 void layout_release(struct layout_tree *tree);
 int layout_block(struct layout_tree *tree, struct layout_box *box, layout_unit containing_width);
