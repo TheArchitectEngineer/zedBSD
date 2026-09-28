@@ -156,6 +156,7 @@ layout_auto_margins(
 	layout_unit room;
 	int left_auto;
 	int right_auto;
+	int rtl;
 
 	/* The borders and paddings around the content. */
 	frame = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
@@ -179,6 +180,22 @@ layout_auto_margins(
 	room = containing_width - box->width - frame;
 	if (room < 0)
 		room = 0;
+
+	/*
+	 * Without an auto margin, a box in a right-to-left containing block
+	 * keeps its right margin and the left one takes the rest (ws074-p073):
+	 * the box stands at the right.  A flex item's margins are its
+	 * container's to give.
+	 */
+	rtl = 0;
+	if (box->parent != NULL && box->parent->style.direction == CSS_DIRECTION_RTL && box->parent->style.display != CSS_DISPLAY_FLEX)
+		rtl = 1;
+	if (rtl && !left_auto && !right_auto && box->floating == CSS_FLOAT_NONE && !box->atomic && !box->out_of_flow) {
+		box->margin[CSS_LEFT] = containing_width - box->width - frame - box->margin[CSS_RIGHT];
+		return;
+	}
+
+	/* The auto margins take the room. */
 	if (left_auto && right_auto) {
 		box->margin[CSS_LEFT] = room / 2;
 		box->margin[CSS_RIGHT] = room - room / 2;

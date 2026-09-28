@@ -223,6 +223,7 @@ static const struct values_name values_names[] = {
 	{ "outline-color", CSS_PROP_OUTLINE_COLOR },
 	{ "outline-offset", CSS_PROP_OUTLINE_OFFSET },
 	{ "clip-path", CSS_PROP_CLIP_PATH },
+	{ "direction", CSS_PROP_DIRECTION },
 	{ "-webkit-clip-path", CSS_PROP_CLIP_PATH },
 	{ "flex", SHORT_FLEX },
 	{ "-webkit-flex", SHORT_FLEX },
@@ -332,6 +333,13 @@ static const struct values_keyword values_display[] = {
 	{ "inline-grid", CSS_DISPLAY_BLOCK },
 	{ "flow-root", CSS_DISPLAY_BLOCK },
 	{ "contents", CSS_DISPLAY_CONTENTS },
+	{ NULL, 0 }
+};
+
+/* The keywords of direction (ws074-p073). */
+static const struct values_keyword values_direction[] = {
+	{ "ltr", CSS_DIRECTION_LTR },
+	{ "rtl", CSS_DIRECTION_RTL },
 	{ NULL, 0 }
 };
 
@@ -504,7 +512,7 @@ static const struct values_keyword values_text_align[] = {
 	{ "right", CSS_TEXT_ALIGN_RIGHT },
 	{ "center", CSS_TEXT_ALIGN_CENTER },
 	{ "justify", CSS_TEXT_ALIGN_JUSTIFY },
-	{ "end", CSS_TEXT_ALIGN_RIGHT },
+	{ "end", CSS_TEXT_ALIGN_END },
 	{ "-webkit-center", CSS_TEXT_ALIGN_CENTER },
 	{ NULL, 0 }
 };
@@ -1430,6 +1438,9 @@ values_single(
 		break;
 	case CSS_PROP_TEXT_ALIGN:
 		table = values_text_align;
+		break;
+	case CSS_PROP_DIRECTION:
+		table = values_direction;
 		break;
 	case CSS_PROP_WHITE_SPACE:
 		table = values_white_space;

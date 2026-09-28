@@ -82,7 +82,8 @@ master.md の決定の行）。この文書は [ws074-p067](phase067/phase.md) �
 | 7 | [ws074-p062](phase062/phase.md) | 描画: `border-radius`、`opacity`、`box-shadow`、`outline`、`linear-gradient`、`object-fit` | **cleared**（2026-09-29。角丸・影・opacity・outline と `clip-path: inset()`。トップ 画素 34.16%（ink 23.65% → 24.28%）、検索 68.83%。`linear-gradient`・`object-fit` は残り） |
 | 8 | [ws074-p070](phase070/phase.md) | `@font-face`（WOFF、libz-compat）と Amazon Ember | **cleared**（2026-09-29。WOFF・TrueType の web font。日本の Amazon の本文は Arial・Hiragino で Ember を名指す部品が少なく、一致率は不変（トップ 34.16%、検索 68.83%）。WOFF2 は残り） |
 | 9 | [ws074-p071](phase071/phase.md) | 大きな page の速さ（1.4 MB の HTML と 2 MB の CSS、guest で操作できる時間まで）、測って直す | **cleared**（2026-09-29。host の検索の `--render` 1.42 s → 0.86 s、再 layout 0.47 s → 0.035 s。guest の live の検索は Enter から 90 s → 30 s で style が揃う） |
-| 10 | ws074-p037（最小） | table の auto layout の最小 | 3 h |
+| 9a | [ws074-p073](phase073/phase.md) | direction の最小（rtl の flex row、`text-align: start`）。2026-09-29 main の判断で追加し、p072・p037 の前に | **cleared**（2026-09-29。検索 画素 68.83% → 77.16%、ink 20.06% → 34.68%。filter と結果の列が Chromium と同じ並び） |
+| 10 | ws074-p037（最小） | table の auto layout の最小（2026-09-29: p072 の後に） | 3 h |
 | 11 | ws074-p072 | grid の最小（`repeat(N,1fr)`、`grid-column`） | 3 h |
 | 12 | ws074-p027・p065 の一部 | RegExp、`Date`・Promise 等（Amazon の script の Uncaught を減らし、popover 等を動かす） | 6 h〜 |
 

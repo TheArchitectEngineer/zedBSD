@@ -165,6 +165,12 @@ struct css_shadow {
 	int inset;
 };
 
+/* The values of direction (ws074-p073): the inline base direction. */
+enum css_direction {
+	CSS_DIRECTION_LTR,
+	CSS_DIRECTION_RTL
+};
+
 /* The values of overflow-x and overflow-y. */
 enum css_overflow {
 	CSS_OVERFLOW_VISIBLE,
@@ -180,7 +186,8 @@ enum css_text_align {
 	CSS_TEXT_ALIGN_LEFT,
 	CSS_TEXT_ALIGN_RIGHT,
 	CSS_TEXT_ALIGN_CENTER,
-	CSS_TEXT_ALIGN_JUSTIFY
+	CSS_TEXT_ALIGN_JUSTIFY,
+	CSS_TEXT_ALIGN_END
 };
 
 /* The values of white-space. */
@@ -401,6 +408,7 @@ struct css_style {
 	/* The text. */
 	struct css_length line_height;
 	int text_align;
+	int direction;
 	int white_space;
 	int underline;
 	int list_style;

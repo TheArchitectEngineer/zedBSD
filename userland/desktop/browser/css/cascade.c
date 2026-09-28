@@ -506,6 +506,7 @@ cascade_compute(
 		style->family_count = parent->family_count;
 		style->line_height = parent->line_height;
 		style->text_align = parent->text_align;
+		style->direction = parent->direction;
 		style->white_space = parent->white_space;
 		style->visibility = parent->visibility;
 		style->list_style = parent->list_style;
@@ -2499,6 +2500,7 @@ cascade_apply(
 		inherited = property == CSS_PROP_COLOR || property == CSS_PROP_FONT_SIZE || property == CSS_PROP_FONT_WEIGHT ||
 		    property == CSS_PROP_FONT_STYLE || property == CSS_PROP_FONT_FAMILY || property == CSS_PROP_LINE_HEIGHT ||
 		    property == CSS_PROP_TEXT_ALIGN || property == CSS_PROP_WHITE_SPACE || property == CSS_PROP_VISIBILITY ||
+		    property == CSS_PROP_DIRECTION ||
 		    property == CSS_PROP_LIST_STYLE_TYPE;
 		if (value->kind == CSS_VALUE_INHERIT || inherited) {
 			if (parent != NULL)
@@ -2681,6 +2683,9 @@ cascade_apply(
 		break;
 	case CSS_PROP_TEXT_ALIGN:
 		style->text_align = value->keyword;
+		break;
+	case CSS_PROP_DIRECTION:
+		style->direction = value->keyword;
 		break;
 	case CSS_PROP_WHITE_SPACE:
 		style->white_space = value->keyword;
@@ -3014,6 +3019,9 @@ cascade_inherit(
 		break;
 	case CSS_PROP_TEXT_ALIGN:
 		style->text_align = parent->text_align;
+		break;
+	case CSS_PROP_DIRECTION:
+		style->direction = parent->direction;
 		break;
 	case CSS_PROP_WHITE_SPACE:
 		style->white_space = parent->white_space;

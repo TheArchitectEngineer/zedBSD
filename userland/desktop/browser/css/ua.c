@@ -60,6 +60,8 @@ const char css_user_agent_sheet[] =
 	"a:link { color: #0000ee; text-decoration: underline; }\n"
 	"u, ins { text-decoration: underline; }\n"
 	"center { text-align: center; }\n"
+	"[dir=rtl i] { direction: rtl; }\n"
+	"[dir=ltr i] { direction: ltr; }\n"
 	"hr { border: 1px inset gray; margin-top: 0.5em; margin-bottom: 0.5em; }\n"
 	"td, th { padding: 1px; }\n"
 	"th { text-align: center; }\n"
