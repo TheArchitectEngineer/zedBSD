@@ -298,7 +298,15 @@ text 164.28 720.00 14px face 0 bold 0 #ff000000 " "
 text 168.22 720.00 14px face 0 bold 0 #ff000000 "text"
 rect 8.00 739.00 1008.00 40.00 #ff232f3e
 text 18.00 764.50 14px face 0 bold 1 #ffffffff "amazon"
-rect 96.38 745.00 765.59 28.00 #ffffffff
+rect 98.44 745.00 761.47 1.00 #ffffffff
+rect 97.25 746.00 763.84 1.00 #ffffffff
+rect 96.66 747.00 765.03 1.00 #ffffffff
+rect 96.41 748.00 765.53 1.00 #ffffffff
+rect 96.38 749.00 765.59 20.00 #ffffffff
+rect 96.41 769.00 765.53 1.00 #ffffffff
+rect 96.66 770.00 765.03 1.00 #ffffffff
+rect 97.25 771.00 763.84 1.00 #ffffffff
+rect 98.44 772.00 761.47 1.00 #ffffffff
 text 881.97 764.50 14px face 0 bold 0 #ffffffff "JP"
 text 910.89 764.50 14px face 0 bold 0 #ffffffff "Account"
 text 978.06 764.50 14px face 0 bold 0 #ffffffff "Cart"

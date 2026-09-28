@@ -136,6 +136,7 @@ static struct dom_element *cascade_next_element(struct dom_element *element);
 static void cascade_apply(struct css_engine *engine, struct css_style *style, const struct css_style *parent, const struct css_declaration *declaration);
 static void cascade_inherit(struct css_style *style, const struct css_style *parent, int property);
 static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
+static void cascade_shadows(struct css_engine *engine, struct css_style *style, const struct css_value *value);
 static float cascade_font_size(struct css_engine *engine, const struct css_value *value, float parent_size);
 static int cascade_font_size_keyword(const struct css_value *value, int parent_keyword);
 static void cascade_families(struct css_style *style, const struct css_value *value);
@@ -528,6 +529,18 @@ cascade_compute(
 	if (style->background_color == CSS_CURRENT_COLOR)
 		style->background_color = style->color;
 
+	/* And in the outline's color; an outline of no style has no width (ws074-p062). */
+	if (style->outline_color == CSS_CURRENT_COLOR)
+		style->outline_color = style->color;
+	if (style->outline_style == CSS_BORDER_NONE)
+		style->outline_width = 0;
+
+	/* And in the shadows' colors. */
+	for (side = 0; side < style->shadow_count; side++) {
+		if (style->shadows[side].color == CSS_CURRENT_COLOR)
+			style->shadows[side].color = style->color;
+	}
+
 	/* The root's font size is what rem measures (its pseudo-elements do not change it). */
 	is_root = 0;
 	if (pseudo == CSS_PSEUDO_ELEMENT_NONE && element->node.parent != NULL && element->node.parent->type == DOM_DOCUMENT)
@@ -595,6 +608,12 @@ css_initial_style(
 	style->align_self = CSS_ALIGN_AUTO;
 	style->flex_shrink = 1;
 	style->flex_basis.unit = CSS_UNIT_AUTO;
+
+	/* The decoration's initial values that are not zero (ws074-p062): opaque, a medium outline of no style in currentcolor. */
+	style->opacity = 1;
+	style->outline_width = 3;
+	style->outline_style = CSS_BORDER_NONE;
+	style->outline_color = CSS_CURRENT_COLOR;
 }
 
 /* Gathers every declaration that applies to an element: the matching rules' and the style attribute's. */
@@ -2137,6 +2156,7 @@ cascade_apply(
 	struct css_style initial;
 	int property;
 	int inherited;
+	int side;
 	int parent_keyword;
 	float parent_size;
 
@@ -2378,6 +2398,47 @@ cascade_apply(
 	case CSS_PROP_ORDER:
 		style->order = (int)value->number;
 		break;
+	case CSS_PROP_RADIUS_TOP_LEFT_X:
+	case CSS_PROP_RADIUS_TOP_LEFT_Y:
+	case CSS_PROP_RADIUS_TOP_RIGHT_X:
+	case CSS_PROP_RADIUS_TOP_RIGHT_Y:
+	case CSS_PROP_RADIUS_BOTTOM_RIGHT_X:
+	case CSS_PROP_RADIUS_BOTTOM_RIGHT_Y:
+	case CSS_PROP_RADIUS_BOTTOM_LEFT_X:
+	case CSS_PROP_RADIUS_BOTTOM_LEFT_Y:
+		/* The corner is every second property, horizontal before vertical. */
+		style->radius[(property - CSS_PROP_RADIUS_TOP_LEFT_X) / 2][(property - CSS_PROP_RADIUS_TOP_LEFT_X) % 2] =
+		    cascade_length(engine, value, style->font_size);
+		break;
+	case CSS_PROP_OPACITY:
+		style->opacity = value->number;
+		break;
+	case CSS_PROP_BOX_SHADOW:
+		cascade_shadows(engine, style, value);
+		break;
+	case CSS_PROP_OUTLINE_WIDTH:
+		style->outline_width = cascade_length(engine, value, style->font_size).value;
+		break;
+	case CSS_PROP_OUTLINE_STYLE:
+		style->outline_style = value->keyword;
+		break;
+	case CSS_PROP_OUTLINE_COLOR:
+		style->outline_color = value->color;
+		break;
+	case CSS_PROP_OUTLINE_OFFSET:
+		style->outline_offset = cascade_length(engine, value, style->font_size).value;
+		break;
+	case CSS_PROP_CLIP_PATH:
+		/* An inset's four lengths, or no clip. */
+		style->clip_inset = 0;
+		if (value->kind == CSS_VALUE_INSET && value->inset != NULL) {
+			style->clip_inset = 1;
+			for (side = 0; side < 4; side++)
+				style->clip[side] = cascade_length(engine, &value->inset->lengths[side], style->font_size);
+		}
+
+		/* The clip is set. */
+		break;
 	case CSS_PROP_VERTICAL_ALIGN:
 		/* A keyword, or a length that raises the box by it. */
 		if (value->kind == CSS_VALUE_KEYWORD) {
@@ -2485,6 +2546,40 @@ cascade_inherit(
 	case CSS_PROP_VERTICAL_ALIGN:
 		style->vertical_align = parent->vertical_align;
 		style->vertical_offset = parent->vertical_offset;
+		break;
+	case CSS_PROP_RADIUS_TOP_LEFT_X:
+	case CSS_PROP_RADIUS_TOP_LEFT_Y:
+	case CSS_PROP_RADIUS_TOP_RIGHT_X:
+	case CSS_PROP_RADIUS_TOP_RIGHT_Y:
+	case CSS_PROP_RADIUS_BOTTOM_RIGHT_X:
+	case CSS_PROP_RADIUS_BOTTOM_RIGHT_Y:
+	case CSS_PROP_RADIUS_BOTTOM_LEFT_X:
+	case CSS_PROP_RADIUS_BOTTOM_LEFT_Y:
+		style->radius[(property - CSS_PROP_RADIUS_TOP_LEFT_X) / 2][(property - CSS_PROP_RADIUS_TOP_LEFT_X) % 2] =
+		    parent->radius[(property - CSS_PROP_RADIUS_TOP_LEFT_X) / 2][(property - CSS_PROP_RADIUS_TOP_LEFT_X) % 2];
+		break;
+	case CSS_PROP_OPACITY:
+		style->opacity = parent->opacity;
+		break;
+	case CSS_PROP_BOX_SHADOW:
+		memcpy(style->shadows, parent->shadows, sizeof(style->shadows));
+		style->shadow_count = parent->shadow_count;
+		break;
+	case CSS_PROP_OUTLINE_WIDTH:
+		style->outline_width = parent->outline_width;
+		break;
+	case CSS_PROP_OUTLINE_STYLE:
+		style->outline_style = parent->outline_style;
+		break;
+	case CSS_PROP_OUTLINE_COLOR:
+		style->outline_color = parent->outline_color;
+		break;
+	case CSS_PROP_OUTLINE_OFFSET:
+		style->outline_offset = parent->outline_offset;
+		break;
+	case CSS_PROP_CLIP_PATH:
+		style->clip_inset = parent->clip_inset;
+		memcpy(style->clip, parent->clip, sizeof(style->clip));
 		break;
 	case CSS_PROP_WIDTH:
 		style->width = parent->width;
@@ -2599,6 +2694,50 @@ cascade_inherit(
 		break;
 	default:
 		break;
+	}
+}
+
+/*
+ * Converts a declared box-shadow list into the style's shadows in pixels
+ * (ws074-p062); a percentage, which a shadow's length cannot be, is zero.
+ */
+static void
+cascade_shadows(
+	struct css_engine *engine,
+	struct css_style *style,
+	const struct css_value *value)
+{
+	const struct css_declared_shadow *declared;
+	struct css_shadow *shadow;
+	struct css_length length;
+	float lengths[4];
+	size_t index;
+	size_t part;
+
+	/* Anything but a list is no shadow. */
+	style->shadow_count = 0;
+	if (value->kind != CSS_VALUE_SHADOWS || value->shadows == NULL)
+		return;
+
+	/* Each shadow's lengths in pixels, its color and whether it is inset. */
+	for (index = 0; index < value->shadows->count && index < CSS_SHADOWS; index++) {
+		declared = &value->shadows->shadows[index];
+		for (part = 0; part < 4U; part++) {
+			length = cascade_length(engine, &declared->lengths[part], style->font_size);
+			lengths[part] = 0;
+			if (length.unit == CSS_UNIT_PX)
+				lengths[part] = length.value;
+		}
+
+		/* The shadow. */
+		shadow = &style->shadows[index];
+		shadow->x = lengths[0];
+		shadow->y = lengths[1];
+		shadow->blur = lengths[2];
+		shadow->spread = lengths[3];
+		shadow->color = declared->color;
+		shadow->inset = declared->inset;
+		style->shadow_count++;
 	}
 }
 
