@@ -647,6 +647,15 @@ struct zwl_server {
 	unsigned home_query_length;
 	int home_selected;
 	/*
+	 * A press at the bottom edge while Home shows, which may become the
+	 * swipe up that closes Home (ws079-p010): whether it has moved far
+	 * enough to be one, where it started, and how far Home was open then.
+	 */
+	unsigned home_bottom_press;
+	unsigned home_bottom_dragging;
+	int32_t home_bottom_start_y;
+	float home_bottom_from;
+	/*
 	 * The virtual desktops (ws035-p065): the one shown; a press at the
 	 * left or right edge that may become the swipe (where it started,
 	 * whether it has moved enough) and the swipe's offset in pixels; the
@@ -720,6 +729,13 @@ struct zwl_server {
 	 */
 	uint32_t buttons_down;
 	uint32_t press_serial;
+	/*
+	 * The time of the pointer event being handled (evdev's, in the wrapping
+	 * milliseconds Wayland carries), set by zwl_seat_motion and
+	 * zwl_seat_button before anything hears the event; the corner's swipe
+	 * measures its speed with it (corner.c).
+	 */
+	uint32_t input_time;
 	/*
 	 * The clipboard (data.c): the wl_data_source set as the selection (NULL
 	 * for an empty clipboard), and the number of the client last told it
@@ -848,6 +864,7 @@ void zwl_damage_pointer(struct zwl_server *server, int32_t old_x, int32_t old_y)
 void zwl_damage_commit(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *previous);
 void zwl_window_bounds_refresh(struct zwl_server *server);
 int zwl_window_send_configure(struct zwl_object *surface);
+int zwl_window_enter_fullscreen(struct zwl_object *surface);
 int zwl_fence_ready(struct zwl_server *server, struct zwl_object *surface);
 int zwl_compose_waiting(struct zwl_server *server);
 void zwl_compose_poll(struct zwl_server *server);
@@ -864,6 +881,32 @@ int zwl_home_key(struct zwl_server *server, uint32_t key, uint32_t state);
 void zwl_home_tick(struct zwl_server *server);
 int zwl_home_axis(struct zwl_server *server, int32_t vertical, int32_t horizontal);
 int zwl_home_launched(struct zwl_server *server, int32_t *rect);
+void zwl_home_dismiss(struct zwl_server *server, const char *via);
+pid_t zwl_spawn(struct zwl_server *server, const char *command);
+
+/*
+ * Where a contact the edge gestures hear comes from (ws079-p010): the
+ * pointer's left button, the tip of a pen, or a finger.
+ */
+enum zwl_contact_source {
+	ZWL_CONTACT_POINTER,
+	ZWL_CONTACT_PEN,
+	ZWL_CONTACT_TOUCH
+};
+
+/* The top-right corner's swipe that brings Notes (corner.c; the drawing is in glass.h). */
+int zwl_corner_contact_begin(struct zwl_server *server, enum zwl_contact_source source, int32_t x, int32_t y, uint32_t time);
+int zwl_corner_contact_move(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
+int zwl_corner_contact_end(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
+int zwl_corner_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_corner_motion(struct zwl_server *server);
+void zwl_corner_tick(struct zwl_server *server);
+int zwl_corner_showing(void);
+
+/* The edge gestures over a fullscreen window, and whether one needs the output composed (shell.c). */
+int zwl_glass_edge_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_glass_edge_motion(struct zwl_server *server);
+int zwl_glass_overlay(struct zwl_server *server);
 void zwl_glass_mapped(struct zwl_server *server, struct zwl_object *surface);
 int zwl_glass_key(struct zwl_server *server, uint32_t key, uint32_t state);
 
