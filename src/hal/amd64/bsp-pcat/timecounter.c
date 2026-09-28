@@ -25,6 +25,17 @@
 #define CPUID_EXTENDED_POWER        0x80000007U
 #define MSR_IA32_TSC_ADJUST         0x03bU
 #define TIMECOUNTER_PROBE_TIMEOUT   10000000U
+
+/*
+ * The least time an AP probe wait lasts once the TSC's rate is known, in
+ * seconds, and how many polls pass between two looks at the TSC.  A poll
+ * count alone is a time only on the machine it was tuned on: a virtual CPU
+ * the host does not run for a while (BUG-094: the 5330's QEMU passthrough,
+ * an AP that published its readiness late) turns it into a false failure,
+ * and the time counter is then refused on every CPU.
+ */
+#define TIMECOUNTER_PROBE_SECONDS   2U
+#define TIMECOUNTER_PROBE_TSC_POLLS 4096U
 #define TIMECOUNTER_RUNTIME_TIMEOUT 10000000U
 #define TIMECOUNTER_RUNTIME_READS   64U
 
@@ -844,9 +855,22 @@ wait_probe_value(
 	const struct amd64_percpu *cpu)
 {
 	unsigned timeout;
+	uint64_t start;
+	uint64_t least_ticks;
+	uint64_t now;
 
-	/* Polls the value and startup error for a bounded interval. */
-	for (timeout = 0U; timeout < TIMECOUNTER_PROBE_TIMEOUT; timeout++) {
+	/* The TSC time the wait lasts at least, when the TSC's rate is known already. */
+	start = amd64_timecounter_sample_serialized();
+	least_ticks = 0U;
+	if (candidate_valid)
+		least_ticks = candidate_frequency_hz * TIMECOUNTER_PROBE_SECONDS;
+
+	/*
+	 * Polls the value and startup error for a bounded interval: at least
+	 * TIMECOUNTER_PROBE_TIMEOUT polls and, with a known TSC rate, at least
+	 * TIMECOUNTER_PROBE_SECONDS.
+	 */
+	for (timeout = 0U;; timeout++) {
 		/* Reports success when the expected probe value is published. */
 		if (__atomic_load_n(value, __ATOMIC_ACQUIRE) == expected)
 			return 1;
@@ -854,6 +878,14 @@ wait_probe_value(
 		/* Stops when the AP publishes a startup error. */
 		if (__atomic_load_n(&cpu->startup_error, __ATOMIC_ACQUIRE) != 0U)
 			return 0;
+
+		/* Past the poll bound, the wait ends once the least time has passed too. */
+		if (timeout >= TIMECOUNTER_PROBE_TIMEOUT &&
+		    timeout % TIMECOUNTER_PROBE_TSC_POLLS == 0U) {
+			now = amd64_timecounter_sample_serialized();
+			if (now - start >= least_ticks)
+				break;
+		}
 
 		/* Backs off before sampling the shared state again. */
 		__asm__ volatile("pause");

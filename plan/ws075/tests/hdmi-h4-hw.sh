@@ -33,7 +33,7 @@ start)
 	setsid nohup plan/ws075/tests/hdmi/h4-lock.sh "$out" < /dev/null > /dev/null 2>&1 &
 	until [ -f "$out/.locked" ]; do sleep 1; done
 	ssh "$host" bigbang/igpu-mode.sh vfio > /dev/null || { echo "iGPU is not on vfio-pci"; rm -f "$out/.running"; exit 1; }
-	ssh "$host" "mkdir -p $remote && sudo -n rm -rf $remote/shots $remote/load.log $remote/splash.log"
+	ssh "$host" "mkdir -p $remote && sudo -n rm -rf $remote/shots $remote/load.log $remote/splash.log $remote/watch.log"
 	scp -q "$image" "$host:$remote/guest.img" || { rm -f "$out/.running"; exit 1; }
 	scp -q plan/ws075/tests/hdmi/h4-qemu.sh plan/ws075/tests/hdmi/h4-ctl.py "$host:$remote/" || { rm -f "$out/.running"; exit 1; }
 	ssh -n -f "$host" "cd $remote && H4_MINUTES=${H4_MINUTES:-60} setsid nohup bash h4-qemu.sh /home/awe/$remote/guest.img < /dev/null > /dev/null 2>&1 &"
@@ -46,12 +46,13 @@ ctl)
 fetch)
 	out=$1
 	mkdir -p "$out/shots"
-	ssh "$host" "sudo -n chown -R awe: $remote/shots $remote/load.log $remote/splash.log 2>/dev/null; true"
+	ssh "$host" "sudo -n chown -R awe: $remote/shots $remote/load.log $remote/splash.log $remote/watch.log 2>/dev/null; true"
 	scp -q "$host:$remote/run.log" "$out/kernel.log"
 	scp -q "$host:$remote/serial.log" "$out/serial.log"
 	scp -q "$host:$remote/qemu.log" "$out/qemu.log"
 	scp -q "$host:$remote/load.log" "$out/load.log" 2>/dev/null
 	scp -q "$host:$remote/splash.log" "$out/splash.log" 2>/dev/null
+	scp -q "$host:$remote/watch.log" "$out/watch.log" 2>/dev/null
 	rsync -a "$host:$remote/shots/" "$out/shots/" 2>/dev/null || scp -qr "$host:$remote/shots/." "$out/shots/"
 	python3 plan/ws075/tests/hdmi/h4-png.py "$out/shots"
 	;;

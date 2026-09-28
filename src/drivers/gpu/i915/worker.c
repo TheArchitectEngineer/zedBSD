@@ -74,7 +74,9 @@
 /*
  * Why a pass of the worker loop returned: a stop was asked for, a
  * presentation waits outside the display window (the caller lights the
- * panel), or a release waits inside it (it is completed after the stop).
+ * panel), or the window is to be left: a release that cannot hold the last
+ * picture waits inside it (it is completed after the stop), or a hold of
+ * the last picture is over.
  */
 #define I915_WORKER_SERVE_STOP		0
 #define I915_WORKER_SERVE_ENTER_DISPLAY	1
@@ -329,6 +331,32 @@ drv_i915_worker_stop(
 	irq = spin_lock_irqsave(&device->irq_lock);
 
 	worker->stop = 1;
+	waitq_wake_all(&worker->work);
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+}
+
+/*
+ * Wakes the worker to look at its queue and the display's hold again.
+ *
+ * The shutdown uses it after it ended a hold of the last picture, so the
+ * worker stops the output without waiting for its next bounded sleep.
+ */
+void
+drv_i915_worker_wake(
+	struct i915_device *device)
+{
+	struct i915_worker *worker;
+	unsigned long irq;
+
+	/* A device without a worker has nobody to wake. */
+	worker = device->worker;
+	if (worker == NULL)
+		return;
+
+	/* Wakes the worker under the lock its sleep is ordered by. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
 	waitq_wake_all(&worker->work);
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
@@ -827,8 +855,10 @@ drv_i915_worker_gt_reset(
  * Runs queued work in arrival order until a stop is asked for and nothing
  * is left to run, or until a display item belongs to the other side of the
  * display window: a presentation outside it (the caller lights the panel)
- * or a release inside it (it is completed after the panel stops).  Returns
- * one of I915_WORKER_SERVE_*.
+ * or a release inside it that cannot hold the last picture (it is
+ * completed after the panel stops).  Inside the window it also returns
+ * when a hold of the last picture is over.  Returns one of
+ * I915_WORKER_SERVE_*.
  */
 static int
 i915_worker_loop(
@@ -841,6 +871,8 @@ i915_worker_loop(
 	uint64_t observed;
 	unsigned long irq;
 	int ready;
+	int holding;
+	int hold_over;
 
 	device = worker->device;
 
@@ -852,6 +884,15 @@ i915_worker_loop(
 		while (worker->run_head == NULL &&
 		    worker->sync_head == NULL &&
 		    worker->stop == 0) {
+			/* A hold of the last picture that ran out, or that the shutdown ended, leaves the window: the output is stopped. */
+			if (in_display) {
+				hold_over = drv_i915_present_hold_over(device);
+				if (hold_over) {
+					spin_unlock_irqrestore(&device->irq_lock, irq);
+					return I915_WORKER_SERVE_LEAVE_DISPLAY;
+				}
+			}
+
 			observed = waitq_sequence(&worker->work);
 			(void)waitq_sleep(&worker->work, &device->irq_lock, observed, sched_ticks() + I915_WORKER_SLEEP_TICKS, 0U);
 		}
@@ -869,10 +910,22 @@ i915_worker_loop(
 				}
 			}
 
-			/* A release inside the window leaves it; it stays at the head. */
+			/*
+			 * A release inside the window holds the last picture for the
+			 * next lease (ws075-p016) and stays in the window.  When a stop
+			 * is asked for or the shutdown refuses the hold, it leaves the
+			 * window instead and stays at the head: it is completed after
+			 * the output is stopped.
+			 */
+			holding = 0;
 			if (item->kind == I915_WORKER_SYNC_RELEASE && in_display) {
-				spin_unlock_irqrestore(&device->irq_lock, irq);
-				return I915_WORKER_SERVE_LEAVE_DISPLAY;
+				if (worker->stop == 0)
+					holding = drv_i915_present_hold_start(device);
+
+				if (!holding) {
+					spin_unlock_irqrestore(&device->irq_lock, irq);
+					return I915_WORKER_SERVE_LEAVE_DISPLAY;
+				}
 			}
 
 			worker->sync_head = item->next;
@@ -880,6 +933,10 @@ i915_worker_loop(
 				worker->sync_tail = NULL;
 
 			spin_unlock_irqrestore(&device->irq_lock, irq);
+
+			/* The ended lease gives up the panel buffers before its release completes. */
+			if (holding)
+				drv_i915_present_hold_prepare(device);
 
 			i915_worker_run_sync_item(worker, item, in_display);
 
@@ -1014,7 +1071,7 @@ i915_worker_run_sync_item(
 			error = drv_i915_present_blob_frame(device, item->present);
 		break;
 	default:
-		/* A release with the panel down: nothing to stop. */
+		/* A release with the panel down (nothing to stop), or held for the next lease. */
 		error = 0;
 		break;
 	}

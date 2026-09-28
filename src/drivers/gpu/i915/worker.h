@@ -81,6 +81,7 @@ struct i915_worker_present {
 int drv_i915_worker_create(struct i915_device *device);
 int drv_i915_worker_serve(struct i915_device *device);
 void drv_i915_worker_stop(struct i915_device *device);
+void drv_i915_worker_wake(struct i915_device *device);
 void drv_i915_worker_destroy(struct i915_device *device);
 
 int drv_i915_worker_context_create(struct i915_device *device, struct i915_engine *engine, struct i915_ppgtt *vm, uint32_t sw_id, struct i915_context *context);

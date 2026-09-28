@@ -22,8 +22,14 @@
  * Every presentation is queued to the request worker and waited for.  The
  * first one makes the worker enter the display window: the panel is lit
  * (the resident run of modeset.c) and the worker keeps serving every
- * request from inside the window; the release makes it leave, and the panel
- * is stopped through the reference's stop path.
+ * request from inside the window.  A release does not make it leave: the
+ * output holds the last picture of the lease that ended, and the next
+ * lease's first frame is drawn into the other buffer and flipped to, so a
+ * login or a logout (the greeter's lease, then the session's, then the
+ * greeter's again) never goes dark (ws075-p016).  A hold that no lease
+ * ends within I915_PRESENT_HOLD_MS, or the shutdown, makes the worker
+ * leave the window, and the panel is stopped through the reference's stop
+ * path.
  *
  * A presentation returns once the flip has completed (FIFO), so a wait
  * never waits.  A kernel built with I915_PRESENT_NO_VSYNC set does not wait
@@ -69,6 +75,17 @@
 #define I915_PRESENT_FNV_BASIS		2166136261U
 #define I915_PRESENT_FNV_PRIME		16777619U
 
+/*
+ * How long the output holds the last picture of an ended lease for the
+ * next one before it is stopped.  It covers the hand-over of a login or a
+ * logout (the greeter or the session exits, the next one starts and
+ * presents), and bounds how long a picture of nobody stays on the screen.
+ */
+#define I915_PRESENT_HOLD_MS		10000U
+
+/* How long the shutdown waits for the worker to stop a held output, in steps of 10 ms. */
+#define I915_PRESENT_SHUTDOWN_STEPS	200U
+
 /* How many of the first GPU-copied frames the check reads back. */
 #define I915_PRESENT_CHECKED_FRAMES	2U
 
@@ -106,6 +123,8 @@ static int i915_present_window_serve(void *ctx);
 static void i915_present_check_frame(struct i915_display *display, const struct i915_worker_present *frame, struct i915_scanout *back, unsigned index);
 static struct i915_scanout *i915_present_target(struct i915_display *display, int *flip);
 static int i915_present_flip(struct i915_display *display, int publish);
+static void i915_present_hold_end(struct i915_display *display);
+static void i915_present_clear_stale(struct i915_display *display, struct i915_scanout *back, uint32_t width, uint32_t height, uint32_t scale);
 
 /*
  * Shows a CPU frame on the panel.
@@ -161,8 +180,76 @@ drv_i915_present_release(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the panel is stopped. */
+	/* Succeeded: the panel is stopped, or holds the last picture for the next lease. */
 	return 0;
+}
+
+/*
+ * Ends a hold of the last picture before the machine goes down.
+ *
+ * Runs from the PCI shutdown.  Every later hold is refused, and a hold in
+ * progress makes the worker leave the window: the output is stopped, as it
+ * was before a hold existed, instead of showing a picture of nobody while
+ * the machine halts.  Waits a bounded time for the stop.  A lease that is
+ * still held keeps its output.
+ */
+void
+drv_i915_present_shutdown(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+	unsigned long irq;
+	unsigned step;
+	int holding;
+
+	display = device->display;
+
+	/* A device without a display holds nothing. */
+	if (display == NULL)
+		return;
+
+	/*
+	 * hold_ended refuses every later hold and ends the current one; the
+	 * worker sees it in its next look at the queue.
+	 */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	display->window.hold_ended = 1;
+	holding = display->window.holding;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Nothing is held: nothing to stop. */
+	if (!holding)
+		return;
+
+	/* Wakes the worker to see the end of the hold. */
+	drv_i915_worker_wake(device);
+
+	/* Waits, in bounded steps, until the worker has stopped the output. */
+	for (step = 0U; step < I915_PRESENT_SHUTDOWN_STEPS; step++) {
+		/* Gives the worker 10 ms to leave the window and stop the output. */
+		kern_usleep_range(10000U, 11000U);
+
+		/* Reads whether it still holds the picture. */
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		holding = display->window.holding;
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+
+		/* The worker has left the window and the output is stopped. */
+		if (!holding)
+			break;
+	}
+
+	/* Says whether the output was stopped before the machine goes down. */
+	if (holding) {
+		kern_logf("i915: resident display: XXX the held picture was not stopped within %u ms of the shutdown\n",
+		    I915_PRESENT_SHUTDOWN_STEPS * 10U);
+	} else {
+		kern_logf("i915: resident display: the held picture was stopped for the shutdown\n");
+	}
 }
 
 /*
@@ -451,8 +538,9 @@ drv_i915_present_window_ready(
 /*
  * Runs the display window on the worker.
  *
- * Lights the panel (the resident run); the window serves every request
- * until a release, and the reference's stop path follows.  XXX: a panel
+ * Lights the panel (the resident run); the window serves every request,
+ * across the holds between leases, until a hold is over or a stop is asked
+ * for, and the reference's stop path follows.  XXX: a panel
  * that did not come up, or did not stop cleanly, is not tried again:
  * presentation fails from here on and the node keeps serving.
  */
@@ -461,18 +549,120 @@ drv_i915_present_window(
 	struct i915_device *device)
 {
 	struct i915_display *display;
+	unsigned long irq;
 	int error;
 
 	display = device->display;
 
-	/* Lights the panel; the window serves until the release. */
+	/* Lights the panel; the window serves until a hold is over or a stop. */
 	error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+
+	/*
+	 * The output is stopped: no picture is held any more (a shutdown waiting
+	 * for the stop sees it here), and the buffers of the next lighting start
+	 * black.
+	 */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	display->window.holding = 0;
+	display->window.stale_buffers = 0U;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
 
 	/* A failed run makes every later presentation fail. */
 	if (error != 0 && !display->window.display_failed) {
 		display->window.display_failed = 1;
 		kern_logf("i915: resident display: the panel did not come up (or did not stop cleanly); presentation fails from now on\n");
 	}
+}
+
+/*
+ * Starts holding the last picture for the next lease, for a release that
+ * reached the worker inside the window.
+ *
+ * The caller holds the device IRQ lock.  Returns 1 when the hold started,
+ * or 0 when the shutdown has ended holding: the worker then leaves the
+ * window and the output is stopped.
+ */
+int
+drv_i915_present_hold_start(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+
+	display = device->display;
+
+	/* The shutdown stops the output instead. */
+	if (display->window.hold_ended)
+		return 0;
+
+	/*
+	 * The hold runs from now until the next lease's first frame, or until
+	 * it runs out and the output is stopped.  Both buffers show the ended
+	 * lease's pictures until a frame covers them.
+	 */
+	display->window.holding = 1;
+	display->window.hold_since = sched_ticks();
+	display->window.hold_until = display->window.hold_since + KERN_MS_TO_TICKS(I915_PRESENT_HOLD_MS);
+	display->window.stale_buffers = 3U;
+
+	/* Succeeded: the output holds the last picture. */
+	return 1;
+}
+
+/*
+ * Reports whether a hold is over: it ran out, or the shutdown ended it.
+ *
+ * The caller holds the device IRQ lock.  Returns 1 when the worker is to
+ * leave the window and stop the output, 0 otherwise (no hold, or a hold
+ * that goes on).
+ */
+int
+drv_i915_present_hold_over(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+	uint64_t now;
+
+	display = device->display;
+
+	/* Nothing is held. */
+	if (!display->window.holding)
+		return 0;
+
+	/* The shutdown ends the hold at once. */
+	if (display->window.hold_ended)
+		return 1;
+
+	/* The hold ran out: no lease came to take the output. */
+	now = sched_ticks();
+	if (now >= display->window.hold_until)
+		return 1;
+
+	/* The hold goes on. */
+	return 0;
+}
+
+/*
+ * Prepares a hold after its start: the ended lease's address space gives
+ * up the panel buffers before its release completes and the address space
+ * may go.  The caller does not hold the device IRQ lock.
+ */
+void
+drv_i915_present_hold_prepare(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+
+	display = device->display;
+
+	/* The next lease maps the buffers into its own address space. */
+	drv_i915_scanout_unmap_panel(display);
+
+	/* Says which buffer the output holds, and for how long at most. */
+	kern_logf("i915: resident display: lease released; holding the last picture (buffer %c) for the next lease for up to %u ms\n",
+	    (char)('A' + display->resident_front),
+	    I915_PRESENT_HOLD_MS);
 }
 
 /*
@@ -521,6 +711,10 @@ drv_i915_present_frame(
 		    back->height);
 		return EINVAL;
 	}
+
+	/* The first frame of a lease after a hold ends the hold; a buffer of the ended lease is cleared if the frame leaves it showing. */
+	i915_present_hold_end(display);
+	i915_present_clear_stale(display, back, frame->width, frame->height, scale);
 
 	/* Centres the scaled frame. */
 	x0 = (back->width - frame->width * scale) / 2U;
@@ -576,6 +770,7 @@ drv_i915_present_blob_frame(
 	struct i915_scanout *first;
 	uint64_t batch_va;
 	uint64_t start;
+	uint32_t scale;
 	unsigned index;
 	int flip;
 	int error;
@@ -588,10 +783,24 @@ drv_i915_present_blob_frame(
 	if (back == NULL)
 		return EIO;
 
+	/* The first frame of a lease after a hold ends the hold. */
+	i915_present_hold_end(display);
+
 	/* Makes both buffers addressable in the session's space. */
 	error = drv_i915_scanout_map_panel(display, frame->vm);
 	if (error != 0)
 		return error;
+
+	/* The largest whole factor that fits both directions, as the copy scales. */
+	scale = 0U;
+	if (frame->width != 0U && frame->height != 0U) {
+		scale = back->width / frame->width;
+		if (back->height / frame->height < scale)
+			scale = back->height / frame->height;
+	}
+
+	/* A buffer of the ended lease is cleared if the frame leaves it showing. */
+	i915_present_clear_stale(display, back, frame->width, frame->height, scale);
 
 	/* Which of the two the back buffer is. */
 	first = drv_i915_lcd_resident_buffer(display, 0U);
@@ -825,6 +1034,8 @@ i915_present_shared(
 	 * for its flip (FIFO) waits here, outside the worker.
 	 */
 	kern_memset(&item, 0, sizeof(item));
+	item.width = request->width;
+	item.height = request->height;
 	item.context = &owner->contexts[I915_ENGINE_RCS0];
 	item.vm = owner->vm;
 	item.build = i915_present_blit_build;
@@ -1053,4 +1264,78 @@ i915_present_flip(
 
 	/* Succeeded: the new buffer is displayed, or armed to be at the next vblank. */
 	return 0;
+}
+
+/* Ends a hold of the last picture at the next lease's first frame, which is a flip and not a modeset. */
+static void
+i915_present_hold_end(
+	struct i915_display *display)
+{
+	struct i915_device *device;
+	unsigned long irq;
+	uint64_t held;
+	int holding;
+
+	device = display->device;
+
+	/* The hold is over from here: a shutdown no longer waits for a stop. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	holding = display->window.holding;
+	held = sched_ticks() - display->window.hold_since;
+	display->window.holding = 0;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Nothing was held: this is not a lease's first frame after a hold. */
+	if (!holding)
+		return;
+
+	/* Says how long the output held the ended lease's picture. */
+	kern_logf("i915: resident display: the next lease's first frame after holding the last picture for %llu ms (no modeset)\n",
+	    (unsigned long long)kern_ticks_to_ms(held));
+}
+
+/*
+ * Clears a resident buffer that still shows an ended lease's picture when
+ * the scaled frame about to be drawn into it does not cover it, so the
+ * border around the frame is black as on a fresh lighting.  A frame that
+ * covers the buffer replaces the picture by itself.
+ */
+static void
+i915_present_clear_stale(
+	struct i915_display *display,
+	struct i915_scanout *back,
+	uint32_t width,
+	uint32_t height,
+	uint32_t scale)
+{
+	unsigned bit;
+	int covered;
+
+	/* Which buffer this is. */
+	bit = 2U;
+	if (back == &display->resident_buf[0])
+		bit = 1U;
+
+	/* A buffer drawn by this lease already needs nothing. */
+	if ((display->window.stale_buffers & bit) == 0U)
+		return;
+
+	/* The buffer is this lease's from here: the frame below replaces or clears the old picture. */
+	display->window.stale_buffers &= ~bit;
+
+	/* A frame that fills the buffer leaves nothing of the old picture. */
+	covered = 0;
+	if (scale != 0U &&
+	    width * scale == back->width &&
+	    height * scale == back->height)
+		covered = 1;
+
+	if (covered)
+		return;
+
+	/* Black under the frame, visible to the display and to the GPU's copy. */
+	kern_memset(back->cpu, 0, back->size);
+	drv_i915_scanout_publish(back);
 }

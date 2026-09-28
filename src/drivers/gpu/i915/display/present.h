@@ -12,8 +12,11 @@
  * first one makes the worker enter the display window: the panel is lit
  * and the worker keeps serving every request from inside the window, so a
  * frame is shown by writing the back buffer (a CPU copy, or a GPU copy of
- * a shared blob) and flipping.  A release makes the worker leave the
- * window, and the panel is stopped through the Linux stop path.
+ * a shared blob) and flipping.  A release does not leave the window at
+ * once: the output holds the last picture for the next lease, whose first
+ * frame is only a flip.  A hold that runs out, or the shutdown, makes the
+ * worker leave the window, and the panel is stopped through the Linux stop
+ * path.
  *
  * The header is neutral: the request worker (../worker.c) includes it
  * without the display's types.
@@ -38,8 +41,11 @@ struct gpu_display_wait;
 /* Shows a CPU frame: queued to the worker and waited for. */
 int drv_i915_present(struct i915_device *device, const void *pixels, uint32_t width, uint32_t height, uint32_t stride, int bgra);
 
-/* Gives the panel back: the worker leaves the display window and the panel is stopped. */
+/* Gives the panel back: the worker holds the last picture for the next lease, or stops the panel. */
 int drv_i915_present_release(struct i915_device *device);
+
+/* Ends a hold of the last picture before the machine goes down: the panel is stopped (the PCI shutdown). */
+void drv_i915_present_shutdown(struct i915_device *device);
 
 /* The present, wait and release operations of the node's display (private data: the device). */
 int drv_i915_present_display_present(void *device, void *session, void *object, struct gpu_display_present *request);
@@ -65,6 +71,17 @@ int drv_i915_present_window_ready(struct i915_device *device);
  * come up, or did not stop cleanly, makes every later presentation fail.
  */
 void drv_i915_present_window(struct i915_device *device);
+
+/*
+ * The hold of the last picture between two leases.  With the device IRQ
+ * lock held: start one for a release inside the window (0 when the
+ * shutdown refuses it), and tell whether it is over (ran out, or ended by
+ * the shutdown).  Without the lock: give up the ended lease's mappings of
+ * the panel buffers before its release completes.
+ */
+int drv_i915_present_hold_start(struct i915_device *device);
+int drv_i915_present_hold_over(struct i915_device *device);
+void drv_i915_present_hold_prepare(struct i915_device *device);
 
 /* Shows one frame from inside the window: a CPU copy, or a GPU copy of a shared blob, then the flip. */
 int drv_i915_present_frame(struct i915_device *device, const struct i915_worker_present *frame);
