@@ -6,41 +6,31 @@
  */
 
 /*
- * The window mode of browser: a page loaded from a file, laid out
- * at the window's width, and drawn by the GPU renderer into the window's
- * swapchain.  The wheel and the keys scroll it, a click goes to the page's
- * scripts as a click event and then, unless they cancel it, opens the link
- * under it, and zdesktop's titlebar holds back, forward, reload and the
- * location, whose URL can be edited.  The page's timers run on the real
- * clock between the compositor's events, and a page its scripts changed
- * is laid out and drawn again.  An http or https page (a link, the
- * location, the history) is fetched without blocking: the page shown stays
- * until the new one has arrived, and Esc stops the load; the pages' images
- * come the same way and are laid out as they arrive.
+ * The window mode of browser: a view (view/view.h) shown in a zdesktop
+ * window and drawn by the GPU renderer into the window's swapchain.  The
+ * view holds the page, its history, its scroll, its timers and the
+ * network; the shell holds the window, zdesktop's titlebar (back, forward,
+ * reload and the location, whose URL can be edited) and the presenter, and
+ * turns the window's input into the view's calls: the wheel and the keys
+ * scroll, a click goes to the view (the page's scripts, then the link under
+ * it), Alt+Left and Alt+Right and the titlebar step through the history,
+ * F5 reloads, Esc stops a load, and Ctrl+Q or Ctrl+W close the window.
  *
  * The program writes lines to standard output that the guest tests read
  * (ZBROWSER READY, FRAME, LINK, NAVIGATE, TITLEBAR, CONSOLE, LOADING,
- * STOPPED, ERROR); they
- * are its diagnostic interface.
+ * STOPPED, ERROR); they are its diagnostic interface.
  */
 
 #include "shell/internal.h"
-#include "page/page.h"
+#include "view/view.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 /* How far a press of an arrow key scrolls, in pixels. */
 #define SHELL_LINE_SCROLL	40
-
-/* How much of the window a page scroll keeps in view, in pixels. */
-#define SHELL_PAGE_OVERLAP	40
-
-/* The most pages the history remembers (the oldest is forgotten first). */
-#define SHELL_HISTORY_MAX	64U
 
 /* How far the pointer may move between a press and its release for a click, in pixels. */
 #define SHELL_CLICK_SLOP	4
@@ -62,71 +52,40 @@
 #define SHELL_KEY_PAGEDOWN	109U
 #define SHELL_BUTTON_LEFT	0x110U
 
-/* How a page is reached: a new step of the history, or a step already in it. */
-enum shell_step {
-	SHELL_STEP_NEW,
-	SHELL_STEP_KEEP
-};
-
 /*
- * What the window mode holds while it runs: the page and its file's
- * absolute path, the history of paths (index is the one shown), the
- * window with its titlebar and presenter, how far the page is scrolled (in
- * layout units), where the left button went down, the frame of the run
- * whose stack the pages' heaps scan, the size a page is loaded at, and the
- * clock's time when the page shown (page_epoch) and the page being opened
- * (open_epoch) began, which their timers count from.  loader fetches the
- * http and https pages and images; pending is the page being fetched (its
- * location and how it joins the history), NULL when none is.
+ * What the window mode holds while it runs: the view, the window with its
+ * titlebar and presenter, whether the view must be drawn again, where the
+ * left button went down, and whether the window is up (the view's first
+ * page is loaded before it).
  */
 struct shell_state {
-	struct page *page;
-	char *path;
-	char *history[SHELL_HISTORY_MAX];
-	size_t history_count;
-	size_t history_index;
+	struct browser_view *view;
 	struct shell_window window;
 	struct shell_titlebar titlebar;
 	struct shell_present present;
-	layout_unit scroll_y;
 	int dirty;
 	int press_x;
 	int press_y;
 	int pressed;
-	const struct text_font_paths *fonts;
-	const void *stack_base;
-	unsigned width;
-	unsigned height;
-	uint64_t page_epoch;
-	uint64_t open_epoch;
-	struct net_loader *loader;
-	struct net_request *pending;
-	char *pending_path;
-	int pending_step;
+	int ready;
 };
 
-static int shell_absolute(const char *start, struct wb_buffer *path);
-static int shell_open_page(struct shell_state *state, const char *path, struct page **page);
-static int shell_navigate(struct shell_state *state, const char *path, int step);
-static int shell_make_page(struct shell_state *state, const char *path, struct page **page);
-static int shell_show_page(struct shell_state *state, struct page *page, const char *path, int step);
-static int shell_start_load(struct shell_state *state, const char *path, int step);
-static void shell_document_arrived(void *context, struct net_request *request);
-static void shell_stop_load(struct shell_state *state, int report);
-static void shell_run_network(struct shell_state *state, struct pollfd *fds, size_t count);
-static int shell_lay_out(struct shell_state *state);
 static void shell_show_state(struct shell_state *state);
 static void shell_input(struct shell_state *state, const struct shell_event *event);
 static void shell_click(struct shell_state *state, const struct shell_event *event);
 static void shell_titlebar_input(struct shell_state *state, const struct shell_titlebar_event *event);
-static void shell_history_go(struct shell_state *state, int direction);
+static void shell_go(struct shell_state *state, int steps);
 static void shell_follow(struct shell_state *state, const char *target);
-static void shell_scroll_by(struct shell_state *state, layout_unit distance);
 static int shell_frame(struct shell_state *state);
 static void shell_release(struct shell_state *state);
-static int shell_wait(struct shell_state *state, uint64_t now);
-static void shell_run_page(struct shell_state *state);
-static void shell_console(void *context, int level, const char *text, size_t length);
+static int shell_resize_view(struct shell_state *state);
+static void shell_redraw(void *context, struct browser_view *view);
+static void shell_title(void *context, struct browser_view *view, const char *title);
+static void shell_committed(void *context, struct browser_view *view);
+static void shell_load(void *context, struct browser_view *view, enum browser_load_state state, const char *url, int error, const char *reason);
+static enum browser_policy shell_link(void *context, struct browser_view *view, const char *href);
+static void shell_console(void *context, struct browser_view *view, int level, const char *text, size_t length);
+static void shell_script_error(void *context, struct browser_view *view, int error);
 
 /*
  * Runs the browser in a zdesktop window until it is closed.
@@ -138,15 +97,15 @@ shell_run(
 	const struct shell_options *options)
 {
 	struct shell_state state;
+	struct browser_callbacks callbacks;
+	struct browser_view_options view_options;
 	struct pollfd net_fds[SHELL_NET_FDS];
 	struct shell_event event;
 	struct shell_titlebar_event titlebar_event;
-	struct wb_buffer path;
-	struct wb_buffer title;
-	const char *shown;
 	uint64_t now;
 	size_t net_count;
 	int timeout;
+	int network;
 	int status;
 	int taken;
 	int error;
@@ -154,51 +113,43 @@ shell_run(
 
 	/* A window needs a page to show. */
 	memset(&state, 0, sizeof(state));
-	state.fonts = options->fonts;
-	state.stack_base = __builtin_frame_address(0);
-	state.width = options->width;
-	state.height = options->height;
 	if (options->start == NULL) {
 		fprintf(stderr, "browser: a page to open is needed (a file or a file: URL)\n");
 		return 2;
 	}
 
-	/* The loader of the http and https pages and images. */
-	error = page_net_create(&state.loader);
+	/* The view, which tells the shell what happens to it. */
+	memset(&callbacks, 0, sizeof(callbacks));
+	callbacks.redraw = shell_redraw;
+	callbacks.title = shell_title;
+	callbacks.committed = shell_committed;
+	callbacks.load = shell_load;
+	callbacks.link = shell_link;
+	callbacks.console = shell_console;
+	callbacks.script_error = shell_script_error;
+	callbacks.context = &state;
+	memset(&view_options, 0, sizeof(view_options));
+	view_options.fonts = options->fonts;
+	view_options.callbacks = &callbacks;
+	view_options.stack_base = __builtin_frame_address(0);
+	view_options.width = options->width;
+	view_options.height = options->height;
+	error = browser_view_create(&view_options, &state.view);
 	if (error != 0) {
 		fprintf(stderr, "browser: cannot start the network: %s\n", strerror(error));
 		return 1;
 	}
 
-	/* The start page's absolute path. */
-	wb_buffer_init(&path);
-	error = shell_absolute(options->start, &path);
+	/* The start page, read before the window opens. */
+	error = browser_view_load(state.view, options->start);
 	if (error != 0) {
-		fprintf(stderr, "browser: cannot open %s: %s\n", options->start, strerror(error));
-		wb_buffer_release(&path);
-		return 1;
-	}
-
-	/* Loads it as the history's first step. */
-	status = shell_open_page(&state, wb_buffer_string(&path), &state.page);
-	if (status == 0)
-		status = shell_navigate(&state, wb_buffer_string(&path), SHELL_STEP_NEW);
-	wb_buffer_release(&path);
-	if (status != 0) {
 		shell_release(&state);
 		return 1;
 	}
 
-	/* The window's first title: the page's, or its file's path. */
-	wb_buffer_init(&title);
-	error = page_title(state.page, &title);
-	shown = wb_buffer_string(&title);
-	if (error != 0 || title.length == 0)
-		shown = state.path;
-
-	/* The window. */
-	status = shell_window_open(&state.window, options->display, options->width, options->height, shown);
-	wb_buffer_release(&title);
+	/* The window, with the page's title. */
+	status = shell_window_open(&state.window, options->display, options->width, options->height,
+	    browser_view_title(state.view));
 	if (status != 0) {
 		fprintf(stderr, "browser: cannot open a window: %s\n", strerror(errno));
 		shell_release(&state);
@@ -221,7 +172,7 @@ shell_run(
 	}
 
 	/* The page at the window's size. */
-	status = shell_lay_out(&state);
+	status = shell_resize_view(&state);
 	if (status != 0) {
 		shell_release(&state);
 		return 1;
@@ -229,14 +180,15 @@ shell_run(
 
 	/* The line the tests wait for, and the titlebar's state. */
 	printf("ZBROWSER READY width=%u height=%u document=%.0f\n", (unsigned)state.present.extent.width,
-	    (unsigned)state.present.extent.height, (double)layout_to_px(state.page->layout.document_height));
+	    (unsigned)state.present.extent.height, browser_view_document_height(state.view));
 	fflush(stdout);
+	state.ready = 1;
 	shell_show_state(&state);
 
 	/* Draws, then waits for the compositor, until the window closes. */
 	state.dirty = 1;
 	while (!state.window.closed) {
-		/* A new size lays the page out again and replaces the swapchain. */
+		/* A new size replaces the swapchain and lays the page out again. */
 		if (state.window.resized) {
 			state.window.resized = 0;
 			result = shell_present_resize(&state.present, state.window.width, state.window.height);
@@ -245,8 +197,8 @@ shell_run(
 				break;
 			}
 
-			/* The page at the new width. */
-			status = shell_lay_out(&state);
+			/* The page at the new size. */
+			status = shell_resize_view(&state);
 			if (status != 0)
 				break;
 			state.dirty = 1;
@@ -260,18 +212,18 @@ shell_run(
 			state.dirty = 0;
 		}
 
-		/* Waits for the compositor, the network, a held key's next repeat, or the page's next timer. */
+		/* Waits for the compositor, the view's descriptors, a held key's next repeat, or the view's next work. */
 		now = shell_clock();
-		timeout = shell_wait(&state, now);
-		net_count = page_net_poll_fds(state.loader, net_fds, SHELL_NET_FDS);
+		timeout = shell_window_repeat(&state.window, now);
+		network = browser_view_timeout(state.view);
+		if (network >= 0 && (timeout < 0 || network < timeout))
+			timeout = network;
+		net_count = browser_view_poll_fds(state.view, net_fds, SHELL_NET_FDS);
 		status = shell_window_dispatch(&state.window, timeout, net_fds, net_count);
 		if (status != 0) {
 			fprintf(stderr, "browser: the connection to the compositor was lost\n");
 			break;
 		}
-
-		/* The network's work: requests that moved on, pages and images that arrived. */
-		shell_run_network(&state, net_fds, net_count);
 
 		/* Carries out the inputs that arrived. */
 		for (;;) {
@@ -289,8 +241,8 @@ shell_run(
 			shell_titlebar_input(&state, &titlebar_event);
 		}
 
-		/* The page's timers, and the layout its scripts changed. */
-		shell_run_page(&state);
+		/* The view's work: the network, the page's timers, and the layout they changed. */
+		browser_view_process(state.view, net_fds, net_count);
 	}
 
 	/* Closes everything. */
@@ -300,368 +252,21 @@ shell_run(
 	return 0;
 }
 
-/*
- * Makes an empty page for a location: its heap scanning the stack up to
- * the run's frame, the window's size for its scripts, its console as
- * CONSOLE lines, its clock starting now, and the loader for its images.
- */
+/* Gives the view the swapchain's size; nonzero on failure. */
 static int
-shell_make_page(
-	struct shell_state *state,
-	const char *path,
-	struct page **page)
-{
-	struct page *made;
-	int error;
-
-	/* The page. */
-	*page = NULL;
-	error = page_create(&made, state->stack_base);
-	if (error != 0) {
-		printf("ZBROWSER ERROR load path=%s error=%s\n", path, strerror(error));
-		fflush(stdout);
-		return error;
-	}
-
-	/* Its scripts see the window's size, write their console as CONSOLE lines, and count time from now. */
-	page_set_viewport(made, (int)state->width, (int)state->height);
-	if (state->present.extent.width != 0U)
-		page_set_viewport(made, (int)state->present.extent.width, (int)state->present.extent.height);
-	page_set_console(made, shell_console, NULL);
-	state->open_epoch = shell_clock();
-
-	/* Its http and https images come through the loader. */
-	page_set_loader(made, state->loader);
-
-	/* Succeeded: the page is empty. */
-	*page = made;
-	return 0;
-}
-
-/*
- * Starts fetching an http or https page (any load under way is stopped);
- * the page shown stays until it arrives (shell_document_arrived).
- */
-static int
-shell_start_load(
-	struct shell_state *state,
-	const char *path,
-	int step)
-{
-	char *copy;
-	int error;
-
-	/* One load at a time. */
-	shell_stop_load(state, 0);
-
-	/* The location, kept for the arrival. */
-	copy = strdup(path);
-	if (copy == NULL)
-		return ENOMEM;
-
-	/* The request. */
-	error = page_net_fetch(state->loader, path, shell_document_arrived, state, &state->pending);
-	if (error != 0) {
-		printf("ZBROWSER ERROR load path=%s error=%s\n", path, strerror(error));
-		fflush(stdout);
-		free(copy);
-		return error;
-	}
-
-	/* Succeeded: the page is loading. */
-	state->pending_path = copy;
-	state->pending_step = step;
-	printf("ZBROWSER LOADING url=%s\n", path);
-	fflush(stdout);
-	return 0;
-}
-
-/*
- * The loader's callback for the page being fetched: a response becomes the
- * page shown (at its final URL, after redirects); a failure is reported and
- * the page shown stays.
- */
-static void
-shell_document_arrived(
-	void *context,
-	struct net_request *request)
-{
-	struct shell_state *state;
-	const unsigned char *bytes;
-	const char *url;
-	const char *reason;
-	struct page *page;
-	char *path;
-	size_t length;
-	int step;
-	int error;
-
-	/* The load is over. */
-	state = context;
-	path = state->pending_path;
-	step = state->pending_step;
-	state->pending = NULL;
-	state->pending_path = NULL;
-
-	/* A request that failed leaves the page shown. */
-	error = page_net_result(request, &bytes, &length, &url);
-	if (error != 0) {
-		reason = page_failure_reason();
-		printf("ZBROWSER ERROR load path=%s error=%s tls=%s\n", path, strerror(error), reason);
-		fflush(stdout);
-		free(path);
-		return;
-	}
-
-	/* The document, in a new page at its final URL. */
-	error = shell_make_page(state, url, &page);
-	if (error == 0) {
-		error = page_load_bytes(page, bytes, length, url);
-		if (error == 0)
-			error = page_open_fonts(page, state->fonts);
-		if (error != 0) {
-			printf("ZBROWSER ERROR load path=%s error=%s\n", url, strerror(error));
-			fflush(stdout);
-			page_destroy(page);
-		}
-	}
-
-	/* The new page is shown. */
-	if (error == 0)
-		(void)shell_show_page(state, page, url, step);
-	free(path);
-}
-
-/* Stops the page being fetched, if any; report writes the STOPPED line. */
-static void
-shell_stop_load(
-	struct shell_state *state,
-	int report)
-{
-	/* Nothing loads. */
-	if (state->pending == NULL)
-		return;
-
-	/* The request, and the location kept for it. */
-	page_net_cancel(state->pending);
-	state->pending = NULL;
-	if (report) {
-		printf("ZBROWSER STOPPED url=%s\n", state->pending_path);
-		fflush(stdout);
-	}
-
-	/* The location kept for it goes too. */
-	free(state->pending_path);
-	state->pending_path = NULL;
-}
-
-/* Runs the network after the main loop's poll: the requests move on, and their callbacks run. */
-static void
-shell_run_network(
-	struct shell_state *state,
-	struct pollfd *fds,
-	size_t count)
-{
-	/* The loader's work. */
-	page_net_process(state->loader, fds, count);
-}
-
-/* Writes the absolute path of the page the command line names (a path, relative or not, or a file: URL). */
-static int
-shell_absolute(
-	const char *start,
-	struct wb_buffer *path)
-{
-	char directory[1024];
-	char *found;
-	int error;
-
-	/* The working directory, which a relative path starts from, with a slash to make it a base. */
-	found = getcwd(directory, sizeof(directory) - 1U);
-	if (found == NULL)
-		return errno;
-	strcat(directory, "/");
-
-	/* The start resolved against it, as a link would be. */
-	error = page_resolve_location(directory, start, path);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the path is absolute. */
-	return 0;
-}
-
-/* Makes a page and loads a file into it with the fonts; reports the error line's cause, or 0. */
-static int
-shell_open_page(
-	struct shell_state *state,
-	const char *path,
-	struct page **page)
-{
-	struct page *loaded;
-	const char *reason;
-	int error;
-
-	/* The page. */
-	*page = NULL;
-	error = shell_make_page(state, path, &loaded);
-	if (error != 0)
-		return error;
-
-	/* The file. */
-	error = page_load_location(loaded, path);
-	if (error == 0)
-		error = page_open_fonts(loaded, state->fonts);
-	if (error != 0) {
-		reason = page_failure_reason();
-		printf("ZBROWSER ERROR load path=%s error=%s tls=%s\n", path, strerror(error), reason);
-		fflush(stdout);
-		page_destroy(loaded);
-		return error;
-	}
-
-	/* Succeeded: the page is loaded. */
-	*page = loaded;
-	return 0;
-}
-
-/*
- * Makes the page of a path the one shown, as a new step of the history or
- * one already in it; the page of the first call is already loaded.
- * Returns 0, or an errno value when the page could not be opened (the page
- * shown stays).
- */
-static int
-shell_navigate(
-	struct shell_state *state,
-	const char *path,
-	int step)
-{
-	struct page *page;
-	int remote;
-	int error;
-
-	/* The first page is loaded before the window. */
-	if (state->path == NULL) {
-		error = shell_show_page(state, state->page, path, step);
-		return error;
-	}
-
-	/* An http or https page is fetched without blocking; the page shown stays until it arrives. */
-	remote = page_net_is_remote(path);
-	if (remote) {
-		error = shell_start_load(state, path, step);
-		return error;
-	}
-
-	/* Any other page is read at once, and shown. */
-	shell_stop_load(state, 0);
-	error = shell_open_page(state, path, &page);
-	if (error != 0)
-		return error;
-	error = shell_show_page(state, page, path, step);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the page is the one shown. */
-	return 0;
-}
-
-/*
- * Makes a loaded page the one shown (the first page is already the state's
- * page), as a new step of the history or one already in it.  Returns 0, or
- * an errno value.
- */
-static int
-shell_show_page(
-	struct shell_state *state,
-	struct page *page,
-	const char *path,
-	int step)
-{
-	char *copy;
-	size_t index;
-	int error;
-
-	/* The page's own location (a URL's after its redirects) is kept for the history and for resolving links. */
-	if (page->base != NULL)
-		path = page->base;
-	copy = strdup(path);
-	if (copy == NULL) {
-		if (page != state->page)
-			page_destroy(page);
-		return ENOMEM;
-	}
-
-	/* The new page replaces the old one, from its top, with its own clock. */
-	if (page != state->page)
-		page_destroy(state->page);
-	state->page = page;
-	state->page_epoch = state->open_epoch;
-	free(state->path);
-	state->path = copy;
-	state->scroll_y = 0;
-
-	/* A new step drops the steps after the one shown, and the oldest when the history is full. */
-	if (step == SHELL_STEP_NEW) {
-		for (index = state->history_index + 1U; index < state->history_count; index++)
-			free(state->history[index]);
-		if (state->history_count != 0)
-			state->history_count = state->history_index + 1U;
-		if (state->history_count == SHELL_HISTORY_MAX) {
-			free(state->history[0]);
-			memmove(state->history, state->history + 1, (SHELL_HISTORY_MAX - 1U) * sizeof(state->history[0]));
-			state->history_count--;
-		}
-	}
-
-	/* Records the new step. */
-	if (step == SHELL_STEP_NEW) {
-		state->history[state->history_count] = strdup(path);
-		if (state->history[state->history_count] == NULL)
-			return ENOMEM;
-		state->history_index = state->history_count;
-		state->history_count++;
-	}
-
-	/* A page shown in the window is laid out at its size and drawn. */
-	if (state->window.display != NULL) {
-		error = shell_lay_out(state);
-		if (error != 0)
-			return EIO;
-		shell_show_state(state);
-		state->dirty = 1;
-	}
-
-	/* Succeeded: the page is the one shown. */
-	return 0;
-}
-
-/* Lays the page out at the swapchain's size, paints it, and keeps the scroll inside the document; nonzero on failure. */
-static int
-shell_lay_out(
+shell_resize_view(
 	struct shell_state *state)
 {
 	int error;
 
-	/* The layout at the window's size. */
-	error = page_layout(state->page, (int)state->present.extent.width, (int)state->present.extent.height);
+	/* The view at the swapchain's extent. */
+	error = browser_view_resize(state->view, state->present.extent.width, state->present.extent.height);
 	if (error != 0) {
 		fprintf(stderr, "browser: cannot lay out the page: %s\n", strerror(error));
 		return 1;
 	}
 
-	/* The display list. */
-	error = page_paint(state->page);
-	if (error != 0) {
-		fprintf(stderr, "browser: cannot paint the page: %s\n", strerror(error));
-		return 1;
-	}
-
-	/* The scroll stays inside the new document. */
-	shell_scroll_by(state, 0);
-
-	/* Succeeded: the page is ready to draw. */
+	/* Succeeded: the page fits the window. */
 	return 0;
 }
 
@@ -670,35 +275,25 @@ static void
 shell_show_state(
 	struct shell_state *state)
 {
-	struct wb_buffer title;
-	const char *shown;
+	const char *title;
+	const char *url;
 	int can_back;
 	int can_forward;
 	int error;
 
-	/* The window's title: the page's, or its file's path. */
-	wb_buffer_init(&title);
-	error = page_title(state->page, &title);
-	shown = wb_buffer_string(&title);
-	if (error != 0 || title.length == 0)
-		shown = state->path;
-	shell_window_title(&state->window, shown);
+	/* The window's title: the page's, or its location. */
+	title = browser_view_title(state->view);
+	url = browser_view_url(state->view);
+	shell_window_title(&state->window, title);
 
 	/* The line the tests read. */
-	printf("ZBROWSER NAVIGATE path=%s title=%s\n", state->path, shown);
+	printf("ZBROWSER NAVIGATE path=%s title=%s\n", url, title);
 	fflush(stdout);
-	wb_buffer_release(&title);
-
-	/* The history's steps from the one shown. */
-	can_back = 0;
-	if (state->history_index > 0)
-		can_back = 1;
-	can_forward = 0;
-	if (state->history_index + 1U < state->history_count)
-		can_forward = 1;
 
 	/* The titlebar; a refusal is reported and the titlebar stays as it was. */
-	error = shell_titlebar_show(&state->titlebar, can_back, can_forward, state->path);
+	can_back = browser_view_can_go(state->view, -1);
+	can_forward = browser_view_can_go(state->view, 1);
+	error = shell_titlebar_show(&state->titlebar, can_back, can_forward, url);
 	if (error != 0) {
 		printf("ZBROWSER ERROR titlebar-state error=%d\n", error);
 		fflush(stdout);
@@ -711,7 +306,6 @@ shell_input(
 	struct shell_state *state,
 	const struct shell_event *event)
 {
-	layout_unit page_step;
 	int error;
 
 	/* A button: a click on a link opens it. */
@@ -722,7 +316,7 @@ shell_input(
 
 	/* The wheel scrolls by its distance. */
 	if (event->type == SHELL_EVENT_SCROLL) {
-		shell_scroll_by(state, (layout_unit)event->scroll * LAYOUT_UNIT);
+		browser_view_scroll_by(state->view, event->scroll);
 		return;
 	}
 
@@ -743,60 +337,52 @@ shell_input(
 	/* Alt+Left and Alt+Right step through the history. */
 	if ((event->modifiers & SHELL_MOD_ALT) != 0U) {
 		if (event->key == SHELL_KEY_LEFT)
-			shell_history_go(state, -1);
+			shell_go(state, -1);
 		if (event->key == SHELL_KEY_RIGHT)
-			shell_history_go(state, 1);
+			shell_go(state, 1);
 		return;
 	}
 
-	/* A page's step: the window's height less the overlap kept in view. */
-	page_step = ((layout_unit)state->present.extent.height - SHELL_PAGE_OVERLAP) * LAYOUT_UNIT;
-
-	/* The keys that scroll, and F5 that reloads. */
+	/* The keys that scroll, F5 that reloads and Esc that stops a load. */
 	switch (event->key) {
 	case SHELL_KEY_DOWN:
-		shell_scroll_by(state, SHELL_LINE_SCROLL * LAYOUT_UNIT);
+		browser_view_scroll_by(state->view, SHELL_LINE_SCROLL);
 		break;
 	case SHELL_KEY_UP:
-		shell_scroll_by(state, -SHELL_LINE_SCROLL * LAYOUT_UNIT);
+		browser_view_scroll_by(state->view, -SHELL_LINE_SCROLL);
 		break;
 	case SHELL_KEY_PAGEDOWN:
 	case SHELL_KEY_SPACE:
-		shell_scroll_by(state, page_step);
+		browser_view_scroll_pages(state->view, 1);
 		break;
 	case SHELL_KEY_PAGEUP:
-		shell_scroll_by(state, -page_step);
+		browser_view_scroll_pages(state->view, -1);
 		break;
 	case SHELL_KEY_HOME:
-		shell_scroll_by(state, -state->scroll_y);
+		browser_view_scroll_to(state->view, BROWSER_SCROLL_TOP);
 		break;
 	case SHELL_KEY_END:
-		shell_scroll_by(state, state->page->layout.document_height);
+		browser_view_scroll_to(state->view, BROWSER_SCROLL_BOTTOM);
 		break;
 	case SHELL_KEY_F5:
-		shell_history_go(state, 0);
+		shell_go(state, 0);
 		break;
 	case SHELL_KEY_ESC:
-		shell_stop_load(state, 1);
+		browser_view_stop(state->view);
 		break;
 	default:
 		break;
 	}
 }
 
-/* Opens the link under a left click: a press and a release at nearly the same place. */
+/* Gives the view a left click: a press and a release at nearly the same place. */
 static void
 shell_click(
 	struct shell_state *state,
 	const struct shell_event *event)
 {
-	struct wb_buffer href;
 	int distance_x;
 	int distance_y;
-	int page_y;
-	int canceled;
-	int changed;
-	int found;
 	int error;
 
 	/* Only the left button clicks. */
@@ -820,34 +406,12 @@ shell_click(
 	if (distance_x > SHELL_CLICK_SLOP || distance_y > SHELL_CLICK_SLOP)
 		return;
 
-	/* The page's scripts get the click first; a canceled click opens no link. */
-	page_y = event->y + (int)(state->scroll_y / LAYOUT_UNIT);
-	error = page_click(state->page, event->x, page_y, event->x, event->y, &canceled);
-	if (error != 0 || canceled)
-		return;
-
-	/* A page the listeners changed is laid out again before its link is looked for. */
-	changed = page_needs_layout(state->page);
-	if (changed) {
-		error = shell_lay_out(state);
-		if (error != 0)
-			return;
-		state->dirty = 1;
+	/* The view's click: the page's scripts, then the link under it. */
+	error = browser_view_click(state->view, event->x, event->y);
+	if (error != 0) {
+		printf("ZBROWSER ERROR click error=%s\n", strerror(error));
+		fflush(stdout);
 	}
-
-	/* The link under the release, in the document's coordinates. */
-	wb_buffer_init(&href);
-	error = page_link_at(state->page, event->x, page_y, &href, &found);
-	if (error != 0 || !found) {
-		wb_buffer_release(&href);
-		return;
-	}
-
-	/* Opens it. */
-	printf("ZBROWSER LINK href=%s\n", wb_buffer_string(&href));
-	fflush(stdout);
-	shell_follow(state, wb_buffer_string(&href));
-	wb_buffer_release(&href);
 }
 
 /* Carries out what was done with the titlebar: back, forward, reload, or the location clicked or edited. */
@@ -871,13 +435,13 @@ shell_titlebar_input(
 	/* A control chosen. */
 	switch (event->id) {
 	case SHELL_CONTROL_BACK:
-		shell_history_go(state, -1);
+		shell_go(state, -1);
 		break;
 	case SHELL_CONTROL_FORWARD:
-		shell_history_go(state, 1);
+		shell_go(state, 1);
 		break;
 	case SHELL_CONTROL_RELOAD:
-		shell_history_go(state, 0);
+		shell_go(state, 0);
 		break;
 	case SHELL_CONTROL_LOCATION:
 		/* A part of the location turns it into the URL's field. */
@@ -890,101 +454,51 @@ shell_titlebar_input(
 	}
 }
 
-/* Shows the page a step back (-1), forward (1), or the same page again (0, a reload). */
+/* Shows the page some steps back or forward, or the same page again (0, a reload). */
 static void
-shell_history_go(
+shell_go(
 	struct shell_state *state,
-	int direction)
+	int steps)
 {
-	size_t index;
-	int error;
-
-	/* No step before the first or after the last. */
-	if (direction < 0 && state->history_index == 0)
-		return;
-	if (direction > 0 && state->history_index + 1U >= state->history_count)
-		return;
-
-	/* The step to show. */
-	index = state->history_index;
-	if (direction < 0)
-		state->history_index--;
-	if (direction > 0)
-		state->history_index++;
-
-	/* Its page, loaded again; a page that does not open leaves the history where it was. */
-	error = shell_navigate(state, state->history[state->history_index], SHELL_STEP_KEEP);
-	if (error != 0)
-		state->history_index = index;
+	/* A failure was reported by the load callback; the history stays where it was. */
+	(void)browser_view_go(state->view, steps);
 }
 
-/* Opens a link's or the location's target, resolved against the page shown, as a new step. */
+/* Opens a typed location, resolved against the page shown, as a new step. */
 static void
 shell_follow(
 	struct shell_state *state,
 	const char *target)
 {
-	struct wb_buffer path;
 	int error;
 
-	/* The target's path. */
-	wb_buffer_init(&path);
-	error = page_resolve_location(state->path, target, &path);
-	if (error != 0) {
+	/* The view's navigation; a location that does not resolve is reported here. */
+	error = browser_view_follow(state->view, target);
+	if (error == EINVAL) {
 		printf("ZBROWSER ERROR follow target=%s error=%s\n", target, strerror(error));
 		fflush(stdout);
-		wb_buffer_release(&path);
-		return;
-	}
-
-	/* Its page, as a new step of the history. */
-	(void)shell_navigate(state, wb_buffer_string(&path), SHELL_STEP_NEW);
-	wb_buffer_release(&path);
-}
-
-/* Moves the scroll by a distance, kept between the top and the last window's worth of the document. */
-static void
-shell_scroll_by(
-	struct shell_state *state,
-	layout_unit distance)
-{
-	layout_unit limit;
-	layout_unit scroll_y;
-
-	/* The furthest the page scrolls: the document's height less the window's. */
-	limit = state->page->layout.document_height - (layout_unit)state->present.extent.height * LAYOUT_UNIT;
-	if (limit < 0)
-		limit = 0;
-
-	/* The new place, within the limits. */
-	scroll_y = state->scroll_y + distance;
-	if (scroll_y > limit)
-		scroll_y = limit;
-	if (scroll_y < 0)
-		scroll_y = 0;
-
-	/* A change is drawn in the next frame. */
-	if (scroll_y != state->scroll_y) {
-		state->scroll_y = scroll_y;
-		state->dirty = 1;
 	}
 }
 
-/* Draws the page into the window; a swapchain out of date is replaced and the frame drawn again. Nonzero on failure. */
+/* Draws the view into the window; a swapchain out of date is replaced and the frame drawn again. Nonzero on failure. */
 static int
 shell_frame(
 	struct shell_state *state)
 {
+	const struct paint_list *list;
+	struct text_system *text;
+	layout_unit scroll_y;
 	VkResult result;
 
 	/* The frame. */
-	result = shell_present_frame(&state->present, &state->page->paint, &state->page->text, state->scroll_y);
+	browser_view_display(state->view, &list, &text, &scroll_y);
+	result = shell_present_frame(&state->present, list, text, scroll_y);
 
 	/* A swapchain that no longer fits the window is replaced, and the frame drawn once more. */
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 		result = shell_present_resize(&state->present, state->window.width, state->window.height);
 		if (result == VK_SUCCESS)
-			result = shell_present_frame(&state->present, &state->page->paint, &state->page->text, state->scroll_y);
+			result = shell_present_frame(&state->present, list, text, scroll_y);
 	}
 
 	/* Says what failed. */
@@ -994,7 +508,7 @@ shell_frame(
 	}
 
 	/* The line the tests read. */
-	printf("ZBROWSER FRAME scroll=%.0f width=%u height=%u\n", (double)layout_to_px(state->scroll_y),
+	printf("ZBROWSER FRAME scroll=%.0f width=%u height=%u\n", browser_view_scroll_y(state->view),
 	    (unsigned)state->present.extent.width, (unsigned)state->present.extent.height);
 	fflush(stdout);
 
@@ -1002,13 +516,11 @@ shell_frame(
 	return 0;
 }
 
-/* Releases the presenter, the titlebar, the window, the page and the history, in that order. */
+/* Releases the presenter, the titlebar, the window and the view, in that order. */
 static void
 shell_release(
 	struct shell_state *state)
 {
-	size_t index;
-
 	/* The presenter before the window whose surface it draws. */
 	shell_present_close(&state->present);
 
@@ -1019,107 +531,121 @@ shell_release(
 	if (state->window.display != NULL)
 		shell_window_close(&state->window);
 
-	/* A load under way, then the page and its path (its image requests go with it). */
-	shell_stop_load(state, 0);
-	page_destroy(state->page);
-	state->page = NULL;
-	free(state->path);
-	state->path = NULL;
-
-	/* The history's paths. */
-	for (index = 0; index < state->history_count; index++)
-		free(state->history[index]);
-	state->history_count = 0;
-
-	/* The loader, once no page uses it. */
-	page_net_destroy(state->loader);
-	state->loader = NULL;
+	/* The view, with its page, its history and its network. */
+	browser_view_destroy(state->view);
+	state->view = NULL;
 }
 
-/* Reports how long to wait for the compositor: until a held key repeats or the page's next timer is due (-1: no limit). */
-static int
-shell_wait(
-	struct shell_state *state,
-	uint64_t now)
-{
-	double due;
-	double page_now;
-	double wait;
-	int network;
-	int timeout;
-	int found;
-
-	/* A held key's repeat. */
-	timeout = shell_window_repeat(&state->window, now);
-
-	/* The network's earliest time out. */
-	network = page_net_timeout(state->loader);
-	if (network >= 0 && (timeout < 0 || network < timeout))
-		timeout = network;
-
-	/* The page's next timer, in the page's own time. */
-	found = page_next_timer(state->page, &due);
-	if (!found)
-		return timeout;
-	page_now = (double)(now - state->page_epoch);
-	wait = due - page_now;
-	if (wait < 0.0)
-		wait = 0.0;
-	if (wait > 60000.0)
-		wait = 60000.0;
-
-	/* The sooner of the two. */
-	if (timeout < 0 || (int)wait < timeout)
-		timeout = (int)wait;
-	return timeout;
-}
-
-/* Runs the page's timers that are due, then lays the page out again and redraws it when its scripts changed it. */
+/* The view's callback: its content changed and is drawn in the next frame. */
 static void
-shell_run_page(
-	struct shell_state *state)
+shell_redraw(
+	void *context,
+	struct browser_view *view)
 {
-	struct wb_buffer title;
-	uint64_t now;
-	int changed;
-	int error;
+	struct shell_state *state;
 
-	/* The timers due by now, in the page's own time. */
-	now = shell_clock();
-	error = page_set_time(state->page, (double)(now - state->page_epoch));
-	if (error != 0) {
-		printf("ZBROWSER ERROR script error=%s\n", strerror(error));
-		fflush(stdout);
-	}
-
-	/* A page the scripts left as it was needs nothing more. */
-	changed = page_needs_layout(state->page);
-	if (!changed)
-		return;
-
-	/* The layout and the frame, and the title the scripts may have set. */
-	error = shell_lay_out(state);
-	if (error != 0)
-		return;
+	/* The next frame. */
+	UNUSED_PARAMETER(view);
+	state = context;
 	state->dirty = 1;
-	wb_buffer_init(&title);
-	error = page_title(state->page, &title);
-	if (error == 0 && title.length != 0)
-		shell_window_title(&state->window, wb_buffer_string(&title));
-	wb_buffer_release(&title);
 }
 
-/* Writes a page's console line as a CONSOLE line of the diagnostic interface. */
+/* The view's callback: a script changed the title, which the window shows. */
+static void
+shell_title(
+	void *context,
+	struct browser_view *view,
+	const char *title)
+{
+	struct shell_state *state;
+
+	/* The window's title, once the window is up. */
+	UNUSED_PARAMETER(view);
+	state = context;
+	if (state->ready)
+		shell_window_title(&state->window, title);
+}
+
+/* The view's callback: a page became the one shown (the first page is shown once the window is up). */
+static void
+shell_committed(
+	void *context,
+	struct browser_view *view)
+{
+	struct shell_state *state;
+
+	/* The title, the NAVIGATE line and the titlebar. */
+	UNUSED_PARAMETER(view);
+	state = context;
+	if (state->ready)
+		shell_show_state(state);
+}
+
+/* The view's callback: a load started (LOADING), was stopped (STOPPED) or failed (ERROR). */
+static void
+shell_load(
+	void *context,
+	struct browser_view *view,
+	enum browser_load_state state,
+	const char *url,
+	int error,
+	const char *reason)
+{
+	/* The line the tests read. */
+	UNUSED_PARAMETER(context);
+	UNUSED_PARAMETER(view);
+	if (state == BROWSER_LOAD_STARTED)
+		printf("ZBROWSER LOADING url=%s\n", url);
+	if (state == BROWSER_LOAD_STOPPED)
+		printf("ZBROWSER STOPPED url=%s\n", url);
+	if (state == BROWSER_LOAD_FAILED)
+		printf("ZBROWSER ERROR load path=%s error=%s tls=%s\n", url, strerror(error), reason);
+	fflush(stdout);
+}
+
+/* The view's callback: a click opens a link, which the shell allows (and writes the LINK line). */
+static enum browser_policy
+shell_link(
+	void *context,
+	struct browser_view *view,
+	const char *href)
+{
+	/* The line the tests read. */
+	UNUSED_PARAMETER(context);
+	UNUSED_PARAMETER(view);
+	printf("ZBROWSER LINK href=%s\n", href);
+	fflush(stdout);
+
+	/* The view follows it. */
+	return BROWSER_POLICY_ALLOW;
+}
+
+/* The view's callback: a page's console line, as a CONSOLE line of the diagnostic interface. */
 static void
 shell_console(
 	void *context,
+	struct browser_view *view,
 	int level,
 	const char *text,
 	size_t length)
 {
-	UNUSED_PARAMETER(context);
-
 	/* The level's number and the text. */
+	UNUSED_PARAMETER(context);
+	UNUSED_PARAMETER(view);
 	printf("ZBROWSER CONSOLE level=%d %.*s\n", level, (int)length, text);
+	fflush(stdout);
+}
+
+/* The view's callback: a timer's script failed. */
+static void
+shell_script_error(
+	void *context,
+	struct browser_view *view,
+	int error)
+{
+	/* The line the tests read. */
+	UNUSED_PARAMETER(context);
+	UNUSED_PARAMETER(view);
+	printf("ZBROWSER ERROR script error=%s\n", strerror(error));
 	fflush(stdout);
 }
