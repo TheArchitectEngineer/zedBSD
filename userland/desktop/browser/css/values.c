@@ -15,6 +15,9 @@
 #include <errno.h>
 #include <string.h>
 
+/* The most items a content value keeps. */
+#define VALUES_CONTENT_ITEMS	8
+
 /* The shorthands this pass expands (numbered after the longhands). */
 enum values_shorthand {
 	SHORT_MARGIN = CSS_PROP_COUNT,
@@ -99,6 +102,7 @@ static int values_size_parts(const struct css_token *const *parts, size_t count,
 static int values_background_position(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_background_size(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_takes_length(int property);
+static int values_content(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_pair(struct css_parse *parse, int first, int second, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_calc(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_calc_arguments(const struct css_token *tokens, size_t count, int operation, struct css_calc *calc);
@@ -168,6 +172,7 @@ static const struct values_name values_names[] = {
 	{ "overflow-y", CSS_PROP_OVERFLOW_Y },
 	{ "box-sizing", CSS_PROP_BOX_SIZING },
 	{ "-webkit-box-sizing", CSS_PROP_BOX_SIZING },
+	{ "content", CSS_PROP_CONTENT },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -1184,6 +1189,10 @@ values_single(
 		error = values_repeat_parts(parts, used, value);
 		return error;
 	}
+
+	/* content takes a list of strings and functions. */
+	if (property == CSS_PROP_CONTENT)
+		return values_content(parse, tokens, count, value);
 
 	/* A length may be a calculation, which is a function of several tokens. */
 	takes_length = values_takes_length(property);
@@ -2844,5 +2853,93 @@ values_pair(
 	values_add(out, made, second, &values[1]);
 
 	/* Succeeded: two longhands. */
+	return 0;
+}
+
+/*
+ * Parses content: none or normal (no box), or a list of strings and
+ * attr(name) items, kept in the parse's arena (counters, quotes and images
+ * add nothing in this pass; the alternative text after a slash is not
+ * drawn).
+ */
+static int
+values_content(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	struct css_content_item items[VALUES_CONTENT_ITEMS];
+	struct css_content_item *kept_items;
+	struct css_content *kept;
+	size_t made;
+	size_t index;
+	size_t name;
+	size_t used;
+	int is_word;
+	int is_attribute;
+
+	/* none and normal. */
+	if (count == 1 && tokens[0].type == CSS_TOKEN_IDENT) {
+		is_word = css_ident_equal(&tokens[0], "none");
+		if (!is_word)
+			is_word = css_ident_equal(&tokens[0], "normal");
+		if (!is_word)
+			return EINVAL;
+		value->kind = CSS_VALUE_KEYWORD;
+		value->keyword = 0;
+		return 0;
+	}
+
+	/* The strings and attr() items in order (up to the room there is). */
+	made = 0;
+	index = 0;
+	while (index < count && made < VALUES_CONTENT_ITEMS) {
+		if (tokens[index].type == CSS_TOKEN_DELIM && tokens[index].delim == '/')
+			break;
+
+		/* A string. */
+		if (tokens[index].type == CSS_TOKEN_STRING) {
+			items[made].is_attribute = 0;
+			items[made].text = vm_atom_from_units(parse->heap, tokens[index].text, tokens[index].length);
+			if (items[made].text == NULL)
+				return ENOMEM;
+			made++;
+		}
+
+		/* attr(name). */
+		is_attribute = 0;
+		if (tokens[index].type == CSS_TOKEN_FUNCTION)
+			is_attribute = css_ident_equal(&tokens[index], "attr");
+		used = values_function_length(tokens + index, count - index);
+		if (is_attribute) {
+			name = values_skip_space(tokens, index + used, index + 1U);
+			if (name < index + used && tokens[name].type == CSS_TOKEN_IDENT) {
+				items[made].is_attribute = 1;
+				items[made].text = vm_atom_from_units(parse->heap, tokens[name].text, tokens[name].length);
+				if (items[made].text == NULL)
+					return ENOMEM;
+				made++;
+			}
+		}
+
+		/* The next item (a function's arguments with it). */
+		index += used;
+	}
+
+	/* The list, kept in the arena. */
+	kept = wb_arena_zalloc(parse->arena, sizeof(*kept));
+	if (kept == NULL)
+		return ENOMEM;
+	kept_items = wb_arena_alloc(parse->arena, made * sizeof(*kept_items) + 1U);
+	if (kept_items == NULL)
+		return ENOMEM;
+	memcpy(kept_items, items, made * sizeof(*kept_items));
+	kept->items = kept_items;
+	kept->count = made;
+
+	/* Succeeded: the content is a list. */
+	value->kind = CSS_VALUE_CONTENT;
+	value->content = kept;
 	return 0;
 }

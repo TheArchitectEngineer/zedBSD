@@ -171,6 +171,39 @@ enum css_background_size {
 	CSS_BACKGROUND_SIZE_COVER = 101
 };
 
+/*
+ * The pseudo-elements that make boxes (ws074-p069), as numbers of the
+ * cascade and as bits of a style's pseudo_elements.
+ */
+#define CSS_PSEUDO_ELEMENT_NONE		0
+#define CSS_PSEUDO_ELEMENT_BEFORE	1
+#define CSS_PSEUDO_ELEMENT_AFTER	2
+#define CSS_PSEUDO_ELEMENT_OTHER	3
+
+/* What a ::before or ::after box holds: nothing, or a list of strings and attributes' values. */
+enum css_content_kind {
+	CSS_CONTENT_NONE,
+	CSS_CONTENT_LIST
+};
+
+/*
+ * One item of generated content: a string, or the name of an attribute
+ * whose value is shown (both atoms).
+ */
+struct css_content_item {
+	int is_attribute;
+	struct vm_string *text;
+};
+
+/*
+ * The generated content of a ::before or ::after: its items in order, in
+ * the arena of the sheet that declared it.
+ */
+struct css_content {
+	const struct css_content_item *items;
+	size_t count;
+};
+
 /* The generic font families. */
 enum css_generic_family {
 	CSS_FAMILY_SERIF,
@@ -246,6 +279,17 @@ struct css_style {
 	int list_style;
 
 	/*
+	 * Generated content (ws074-p069): what content gives a ::before or
+	 * ::after (content_kind, and the list of its items, in the declaring
+	 * sheet's arena), and for an element, which of its pseudo-elements some rule
+	 * matches (1 << CSS_PSEUDO_ELEMENT_*), so the layout asks for their
+	 * styles only then.
+	 */
+	int content_kind;
+	const struct css_content *content;
+	int pseudo_elements;
+
+	/*
 	 * The element's custom properties (inherited; its own first, then its
 	 * parent's), in the style engine's arena: good while the engine that
 	 * computed the style lives.
@@ -292,6 +336,7 @@ int css_engine_add_parsed(struct css_engine *engine, const struct css_sheet *she
 int css_engine_parse_media(struct css_engine *engine, const uint16_t *units, size_t length, const struct css_media **media);
 void css_engine_set_viewport(struct css_engine *engine, float width, float height);
 int css_engine_compute(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style);
+int css_engine_compute_pseudo(struct css_engine *engine, struct dom_element *element, int pseudo, const struct css_style *element_style, struct css_style *style);
 void css_initial_style(struct css_style *style);
 
 #endif

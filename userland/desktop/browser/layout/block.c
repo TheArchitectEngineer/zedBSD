@@ -331,6 +331,7 @@ block_children(
 	int collapse_top;
 	int collapse_bottom;
 	int first;
+	layout_unit collapsed_y;
 	int empty;
 	int error;
 
@@ -413,6 +414,11 @@ block_children(
 		if (child->height == 0 && child->border[CSS_TOP] == 0 && child->border[CSS_BOTTOM] == 0 &&
 		    child->padding[CSS_TOP] == 0 && child->padding[CSS_BOTTOM] == 0)
 			empty = 1;
+
+		/* An empty block that clears floats is pushed below them, and its margins no longer collapse through (a clearfix). */
+		collapsed_y = cursor + block_collapse(pending, child_top);
+		if (empty && collapsed_y < clearance)
+			empty = 0;
 		if (empty) {
 			/*
 			 * Its border edge sits where the margins met so far and its own top

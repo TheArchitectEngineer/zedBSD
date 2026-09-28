@@ -24,6 +24,7 @@
 #define BOX_BULLET_SQUARE	0x25aaU
 
 static int box_build_element(struct layout_tree *tree, struct css_engine *css, struct dom_element *element, const struct css_style *parent_style, struct layout_box *parent, int depth);
+static int box_build_pseudo(struct layout_tree *tree, struct css_engine *css, struct dom_element *element, struct layout_box *box, int pseudo);
 static int box_build_children(struct layout_tree *tree, struct css_engine *css, struct dom_node *node, const struct css_style *style, struct layout_box *box, int depth);
 static struct layout_box *box_new(struct layout_tree *tree, int kind, struct dom_node *node, const struct css_style *style);
 static void box_append(struct layout_box *parent, struct layout_box *child);
@@ -405,8 +406,14 @@ box_build_element(
 	if (replaced)
 		return 0;
 
-	/* The children, then the fix-ups a block needs. */
+	/* The ::before box, the children, the ::after box, then the fix-ups a block needs. */
+	error = box_build_pseudo(tree, css, element, box, CSS_PSEUDO_ELEMENT_BEFORE);
+	if (error != 0)
+		return error;
 	error = box_build_children(tree, css, &element->node, &box->style, box, depth + 1);
+	if (error != 0)
+		return error;
+	error = box_build_pseudo(tree, css, element, box, CSS_PSEUDO_ELEMENT_AFTER);
 	if (error != 0)
 		return error;
 	error = box_fix_children(tree, box);
@@ -414,6 +421,144 @@ box_build_element(
 		return error;
 
 	/* Succeeded: the element's boxes are built. */
+	return 0;
+}
+
+/*
+ * Builds an element's ::before or ::after box (ws074-p069) as the first or
+ * last child of the element's box: a box of its display with its content
+ * as text, when some rule gives it content.  The boxes belong to no node.
+ */
+static int
+box_build_pseudo(
+	struct layout_tree *tree,
+	struct css_engine *css,
+	struct dom_element *element,
+	struct layout_box *box,
+	int pseudo)
+{
+	struct css_style *style;
+	struct layout_box *generated;
+	struct layout_box *text_box;
+	const struct css_content_item *item;
+	const struct vm_string *part;
+	struct dom_attribute *attribute;
+	struct wb_units text;
+	uint16_t *units;
+	uint16_t unit;
+	size_t index;
+	size_t position;
+	int kind;
+	int error;
+
+	/* Only a pseudo-element some rule names is styled. */
+	if ((box->style.pseudo_elements & (1 << pseudo)) == 0)
+		return 0;
+
+	/* Its style, inherited from the element's. */
+	style = malloc(sizeof(*style));
+	if (style == NULL)
+		return ENOMEM;
+	error = css_engine_compute_pseudo(css, element, pseudo, &box->style, style);
+	if (error != 0) {
+		free(style);
+		return error;
+	}
+
+	/* No content, or display: none, makes no box. */
+	if (style->content_kind == CSS_CONTENT_NONE || style->display == CSS_DISPLAY_NONE) {
+		free(style);
+		return 0;
+	}
+
+	/* The text: the items' strings and attributes' values, joined. */
+	wb_units_init(&text);
+	error = 0;
+	for (index = 0; index < style->content->count && error == 0; index++) {
+		item = &style->content->items[index];
+		part = item->text;
+		if (item->is_attribute) {
+			part = NULL;
+			attribute = dom_element_find_attribute(element, DOM_NS_NONE, item->text);
+			if (attribute != NULL)
+				part = attribute->value;
+		}
+
+		/* A missing attribute adds nothing; the rest adds its characters. */
+		if (part == NULL)
+			continue;
+		for (position = 0; position < part->length && error == 0; position++) {
+			unit = vm_string_at(part, position);
+			error = wb_units_append(&text, &unit, 1);
+		}
+	}
+
+	/* Memory ran out on the way. */
+	if (error != 0) {
+		wb_units_release(&text);
+		free(style);
+		return error;
+	}
+
+	/* The box: inline, or a block (out of the flow, or floating, as an element's). */
+	kind = LAYOUT_BLOCK;
+	if (style->display == CSS_DISPLAY_INLINE)
+		kind = LAYOUT_INLINE;
+	generated = box_new(tree, kind, NULL, style);
+	if (generated == NULL) {
+		wb_units_release(&text);
+		free(style);
+		return ENOMEM;
+	}
+
+	/* Out of the flow, or floating, as an element's box would be. */
+	if (style->position == CSS_POSITION_ABSOLUTE || style->position == CSS_POSITION_FIXED) {
+		generated->kind = LAYOUT_BLOCK;
+		generated->out_of_flow = 1;
+	} else if (style->float_side != CSS_FLOAT_NONE) {
+		generated->kind = LAYOUT_BLOCK;
+		generated->floating = style->float_side;
+	}
+
+	/* The box goes into the element's. */
+	box_append(box, generated);
+
+	/* The text as a text box, its characters copied into the tree's arena. */
+	if (text.length != 0) {
+		units = wb_arena_alloc(&tree->arena, text.length * sizeof(uint16_t));
+		if (units == NULL) {
+			wb_units_release(&text);
+			free(style);
+			return ENOMEM;
+		}
+
+		/* The characters. */
+		memcpy(units, text.data, text.length * sizeof(uint16_t));
+
+		/* The text box takes the pseudo-element's style. */
+		text_box = box_new(tree, LAYOUT_TEXT, NULL, style);
+		if (text_box == NULL) {
+			wb_units_release(&text);
+			free(style);
+			return ENOMEM;
+		}
+
+		/* It shows the characters, inside the pseudo-element's box. */
+		text_box->text = units;
+		text_box->text_length = text.length;
+		box_append(generated, text_box);
+	}
+
+	/* The text and the style were copied into the boxes. */
+	wb_units_release(&text);
+	free(style);
+
+	/* A block around text needs the fix-ups of any block. */
+	error = box_fix_children(tree, generated);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the pseudo-element's box is built. */
 	return 0;
 }
 

@@ -34,6 +34,9 @@
 /* How deep var() references are followed before a cycle is assumed. */
 #define CASCADE_VAR_DEPTH	16
 
+/* How deep :has() looks below an element (the parser caps nesting too). */
+#define CASCADE_HAS_DEPTH	512
+
 /* The most declarations one pending declaration expands into (a shorthand's longhands). */
 #define CASCADE_EXPANSION_MAX	16U
 
@@ -64,7 +67,10 @@ struct cascade_sheet {
  * classes, the index entries that may match it, and a class name's
  * characters on their way to an atom.  The arena holds what lives as long
  * as the engine: the media lists of <link> elements and the elements'
- * custom properties, which the computed styles point at.
+ * custom properties, which the computed styles point at.  pseudo_wanted is
+ * the pseudo-element being styled (CSS_PSEUDO_ELEMENT_NONE for the element
+ * itself), and pseudo_seen collects, while an element is styled, the bits
+ * of the pseudo-elements some rule gives it.
  */
 struct css_engine {
 	struct vm_heap *heap;
@@ -80,6 +86,8 @@ struct css_engine {
 	struct wb_vector candidates;
 	struct wb_units word;
 	struct wb_arena arena;
+	int pseudo_wanted;
+	int pseudo_seen;
 };
 
 /*
@@ -107,7 +115,17 @@ static const struct css_custom *cascade_custom_find(const struct css_custom *lis
 static int cascade_keep_tokens(struct css_engine *engine, const struct css_token *tokens, size_t count, const struct css_token **kept);
 static int cascade_resolve_pending(struct css_engine *engine, const struct css_style *style, struct wb_vector *list, struct wb_arena *scratch);
 static struct css_length cascade_calc(struct css_engine *engine, const struct css_calc *calc, float font_size);
-static int cascade_selector_matches(struct css_engine *engine, struct dom_element *element, const struct css_selector *selector, size_t index);
+static int cascade_candidate_matches(struct css_engine *engine, struct dom_element *element, const struct css_selector *selector);
+static int cascade_selector_matches(struct css_engine *engine, struct dom_element *element, const struct css_selector *selector, size_t index, struct dom_element *anchor);
+static int cascade_anchored(struct dom_element *element, int combinator, struct dom_element *anchor);
+static int cascade_pseudo_class(struct css_engine *engine, struct dom_element *element, const struct css_simple *simple);
+static int cascade_any_matches(struct css_engine *engine, struct dom_element *element, const struct css_simple *simple);
+static int cascade_has(struct css_engine *engine, struct dom_element *element, const struct css_simple *simple);
+static int cascade_has_below(struct css_engine *engine, struct dom_node *node, const struct css_simple *simple, struct dom_element *anchor, int depth);
+static int cascade_any_relative(struct css_engine *engine, struct dom_element *element, const struct css_simple *simple, struct dom_element *anchor);
+static int cascade_nth(struct dom_element *element, const struct css_simple *simple);
+static int cascade_is_form_element(const struct dom_element *element);
+static int cascade_compute(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style, int pseudo);
 static int cascade_compound_matches(struct css_engine *engine, struct dom_element *element, const struct css_compound *compound);
 static int cascade_simple_matches(struct css_engine *engine, struct dom_element *element, const struct css_simple *simple);
 static int cascade_attribute_matches(const struct vm_string *value, const struct css_simple *simple);
@@ -355,6 +373,49 @@ css_engine_compute(
 	const struct css_style *parent,
 	struct css_style *style)
 {
+	int error;
+
+	/* The element itself. */
+	error = cascade_compute(engine, element, parent, style, CSS_PSEUDO_ELEMENT_NONE);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the style is computed. */
+	return 0;
+}
+
+/*
+ * Computes the style of an element's ::before or ::after (pseudo) from
+ * the rules for it and the element's own style, which it inherits from.
+ */
+int
+css_engine_compute_pseudo(
+	struct css_engine *engine,
+	struct dom_element *element,
+	int pseudo,
+	const struct css_style *element_style,
+	struct css_style *style)
+{
+	int error;
+
+	/* The pseudo-element's rules. */
+	error = cascade_compute(engine, element, element_style, style, pseudo);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the pseudo-element's style is computed. */
+	return 0;
+}
+
+/* Computes the style of an element, or of one of its pseudo-elements, in the cascade. */
+static int
+cascade_compute(
+	struct css_engine *engine,
+	struct dom_element *element,
+	const struct css_style *parent,
+	struct css_style *style,
+	int pseudo)
+{
 	struct cascade_match *matches;
 	struct wb_vector list;
 	struct wb_arena scratch;
@@ -385,10 +446,15 @@ css_engine_compute(
 		style->custom = parent->custom;
 	}
 
-	/* Gathers the declarations that apply, in cascade order. */
+	/* Gathers the declarations that apply, in cascade order, noting the pseudo-elements some rule gives the element. */
 	wb_vector_init(&list, sizeof(struct cascade_match));
 	wb_arena_init(&scratch, 0);
+	engine->pseudo_wanted = pseudo;
+	engine->pseudo_seen = 0;
 	error = cascade_collect(engine, element, &list, &scratch);
+	engine->pseudo_wanted = CSS_PSEUDO_ELEMENT_NONE;
+	if (pseudo == CSS_PSEUDO_ELEMENT_NONE)
+		style->pseudo_elements = engine->pseudo_seen;
 	if (error != 0) {
 		wb_vector_release(&list);
 		wb_arena_release(&scratch);
@@ -462,9 +528,9 @@ css_engine_compute(
 	if (style->background_color == CSS_CURRENT_COLOR)
 		style->background_color = style->color;
 
-	/* The root's font size is what rem measures. */
+	/* The root's font size is what rem measures (its pseudo-elements do not change it). */
 	is_root = 0;
-	if (element->node.parent != NULL && element->node.parent->type == DOM_DOCUMENT)
+	if (pseudo == CSS_PSEUDO_ELEMENT_NONE && element->node.parent != NULL && element->node.parent->type == DOM_DOCUMENT)
 		is_root = 1;
 	if (is_root)
 		engine->root_font_size = style->font_size;
@@ -562,7 +628,9 @@ cascade_collect(
 			return error;
 	}
 
-	/* The style attribute, more specific than any selector. */
+	/* The style attribute, more specific than any selector (the element's own, not its pseudo-elements'). */
+	if (engine->pseudo_wanted != CSS_PSEUDO_ELEMENT_NONE)
+		return 0;
 	attribute = dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_style);
 	if (attribute == NULL)
 		return 0;
@@ -720,14 +788,16 @@ cascade_collect_sheet(
 	const struct css_index_bucket *bucket;
 	const struct css_index_entry *candidates;
 	const struct css_rule *rule;
+	const struct css_selector *selector;
 	struct css_index_bucket universal;
 	struct vm_string **class_keys;
 	uint32_t best;
-	uint32_t specificity;
 	uint64_t order;
 	size_t position;
 	size_t group;
+	size_t item;
 	int matched;
+	int holds;
 	int selector_matched;
 	int error;
 
@@ -772,28 +842,26 @@ cascade_collect_sheet(
 		matched = 0;
 		best = 0;
 
-		/* Every candidate selector of the same rule. */
+		/* The end of the rule's candidates. */
 		group = position;
-		while (group < engine->candidates.count && candidates[group].rule == candidates[position].rule) {
-			selector_matched = cascade_selector_matches(
-				engine,
-				element,
-				&rule->selectors[candidates[group].selector],
-				rule->selectors[candidates[group].selector].count - 1U);
-			specificity = rule->selectors[candidates[group].selector].specificity;
-			if (selector_matched) {
-				if (!matched || specificity > best)
-					best = specificity;
-				matched = 1;
-			}
-
-			/* The next selector. */
+		while (group < engine->candidates.count && candidates[group].rule == candidates[position].rule)
 			group++;
-		}
 
 		/* A rule inside @media applies only while its lists hold. */
-		if (matched && rule->media != NULL)
-			matched = css_media_matches(rule->media, engine->viewport_width, engine->viewport_height);
+		holds = 1;
+		if (rule->media != NULL)
+			holds = css_media_matches(rule->media, engine->viewport_width, engine->viewport_height);
+
+		/* Every candidate selector of the rule. */
+		for (item = position; item < group && holds; item++) {
+			selector = &rule->selectors[candidates[item].selector];
+			selector_matched = cascade_candidate_matches(engine, element, selector);
+			if (selector_matched) {
+				if (!matched || selector->specificity > best)
+					best = selector->specificity;
+				matched = 1;
+			}
+		}
 
 		/* A rule whose selectors all failed does not apply. */
 		if (matched) {
@@ -1344,13 +1412,55 @@ cascade_compare(
 	return 0;
 }
 
-/* Tells whether an element matches a selector's compounds up to index, right to left. */
+/*
+ * Tells whether a candidate selector of the index applies to what is being
+ * styled: the element itself, or its ::before or ::after.  While the
+ * element itself is styled, a selector of its ::before or ::after that
+ * matches marks the element's pseudo_seen instead.
+ */
+static int
+cascade_candidate_matches(
+	struct css_engine *engine,
+	struct dom_element *element,
+	const struct css_selector *selector)
+{
+	int pseudo;
+	int matches;
+
+	/* A selector for what is being styled is matched as it is. */
+	pseudo = selector->compounds[selector->count - 1U].pseudo_element;
+	if (pseudo == engine->pseudo_wanted) {
+		matches = cascade_selector_matches(engine, element, selector, selector->count - 1U, NULL);
+		return matches;
+	}
+
+	/* Only the element's own styling looks at the others, to see which pseudo-elements it has. */
+	if (engine->pseudo_wanted != CSS_PSEUDO_ELEMENT_NONE || pseudo == CSS_PSEUDO_ELEMENT_OTHER)
+		return 0;
+
+	/* A ::before or ::after selector that would match marks the element. */
+	engine->pseudo_wanted = pseudo;
+	matches = cascade_selector_matches(engine, element, selector, selector->count - 1U, NULL);
+	engine->pseudo_wanted = CSS_PSEUDO_ELEMENT_NONE;
+	if (matches)
+		engine->pseudo_seen |= 1 << pseudo;
+
+	/* Its declarations are not the element's. */
+	return 0;
+}
+
+/*
+ * Tells whether an element matches a selector's compounds up to index,
+ * right to left.  With an anchor (the element a :has() is on), the first
+ * compound must also stand in its combinator's relation to the anchor.
+ */
 static int
 cascade_selector_matches(
 	struct css_engine *engine,
 	struct dom_element *element,
 	const struct css_selector *selector,
-	size_t index)
+	size_t index,
+	struct dom_element *anchor)
 {
 	const struct css_compound *compound;
 	struct dom_element *other;
@@ -1361,19 +1471,25 @@ cascade_selector_matches(
 	matches = cascade_compound_matches(engine, element, compound);
 	if (!matches)
 		return 0;
-	if (index == 0)
-		return 1;
+
+	/* The first compound ends the selector, or relates it to the anchor. */
+	if (index == 0) {
+		if (anchor == NULL)
+			return 1;
+		matches = cascade_anchored(element, compound->combinator, anchor);
+		return matches;
+	}
 
 	/* Then the compound on its left, through the combinator. */
 	switch (compound->combinator) {
 	case CSS_COMBINATOR_CHILD:
 		other = cascade_parent_element(element);
-		if (other == NULL)
+		if (other == NULL || other == anchor)
 			return 0;
-		return cascade_selector_matches(engine, other, selector, index - 1U);
+		return cascade_selector_matches(engine, other, selector, index - 1U, anchor);
 	case CSS_COMBINATOR_DESCENDANT:
-		for (other = cascade_parent_element(element); other != NULL; other = cascade_parent_element(other)) {
-			matches = cascade_selector_matches(engine, other, selector, index - 1U);
+		for (other = cascade_parent_element(element); other != NULL && other != anchor; other = cascade_parent_element(other)) {
+			matches = cascade_selector_matches(engine, other, selector, index - 1U, anchor);
 			if (matches)
 				return 1;
 		}
@@ -1382,12 +1498,12 @@ cascade_selector_matches(
 		return 0;
 	case CSS_COMBINATOR_NEXT:
 		other = cascade_previous_element(element);
-		if (other == NULL)
+		if (other == NULL || other == anchor)
 			return 0;
-		return cascade_selector_matches(engine, other, selector, index - 1U);
+		return cascade_selector_matches(engine, other, selector, index - 1U, anchor);
 	case CSS_COMBINATOR_SUBSEQUENT:
-		for (other = cascade_previous_element(element); other != NULL; other = cascade_previous_element(other)) {
-			matches = cascade_selector_matches(engine, other, selector, index - 1U);
+		for (other = cascade_previous_element(element); other != NULL && other != anchor; other = cascade_previous_element(other)) {
+			matches = cascade_selector_matches(engine, other, selector, index - 1U, anchor);
 			if (matches)
 				return 1;
 		}
@@ -1395,6 +1511,42 @@ cascade_selector_matches(
 		/* Otherwise no earlier sibling matched. */
 		return 0;
 	default:
+		return 0;
+	}
+}
+
+/* Tells whether an element stands in a combinator's relation to an anchor (on the combinator's left). */
+static int
+cascade_anchored(
+	struct dom_element *element,
+	int combinator,
+	struct dom_element *anchor)
+{
+	struct dom_element *other;
+
+	/* The relation. */
+	switch (combinator) {
+	case CSS_COMBINATOR_CHILD:
+		other = cascade_parent_element(element);
+		return other == anchor;
+	case CSS_COMBINATOR_NEXT:
+		other = cascade_previous_element(element);
+		return other == anchor;
+	case CSS_COMBINATOR_SUBSEQUENT:
+		for (other = cascade_previous_element(element); other != NULL; other = cascade_previous_element(other)) {
+			if (other == anchor)
+				return 1;
+		}
+
+		/* The anchor is not an earlier sibling. */
+		return 0;
+	default:
+		for (other = cascade_parent_element(element); other != NULL; other = cascade_parent_element(other)) {
+			if (other == anchor)
+				return 1;
+		}
+
+		/* The anchor is not an ancestor. */
 		return 0;
 	}
 }
@@ -1428,7 +1580,7 @@ cascade_simple_matches(
 	const struct css_simple *simple)
 {
 	struct dom_attribute *attribute;
-	struct dom_node *child;
+	int matches;
 
 	/* The kind of selector. */
 	switch (simple->kind) {
@@ -1453,30 +1605,349 @@ cascade_simple_matches(
 			return 0;
 		return cascade_attribute_matches(attribute->value, simple);
 	case CSS_SIMPLE_PSEUDO_CLASS:
-		switch (simple->pseudo) {
-		case CSS_PSEUDO_ROOT:
-			return element->node.parent != NULL && element->node.parent->type == DOM_DOCUMENT;
-		case CSS_PSEUDO_FIRST_CHILD:
-			return cascade_previous_element(element) == NULL && cascade_parent_element(element) != NULL;
-		case CSS_PSEUDO_LAST_CHILD:
-			return cascade_next_element(element) == NULL && cascade_parent_element(element) != NULL;
-		case CSS_PSEUDO_ONLY_CHILD:
-			return cascade_previous_element(element) == NULL && cascade_next_element(element) == NULL;
-		case CSS_PSEUDO_EMPTY:
-			for (child = element->node.first_child; child != NULL; child = child->next) {
-				if (child->type == DOM_ELEMENT || child->type == DOM_TEXT)
-					return 0;
-			}
+		matches = cascade_pseudo_class(engine, element, simple);
+		return matches;
+	case CSS_SIMPLE_PSEUDO_ELEMENT:
+		/* A pseudo-element matches while its own style is computed. */
+		return simple->pseudo == engine->pseudo_wanted;
+	default:
+		return 0;
+	}
+}
 
-			/* The empty element. */
-			return 1;
-		case CSS_PSEUDO_LINK:
-			if (element->ns != DOM_NS_HTML || (element->tag != DOM_TAG_A && element->tag != DOM_TAG_AREA))
+/* Tells whether an element matches a pseudo-class. */
+static int
+cascade_pseudo_class(
+	struct css_engine *engine,
+	struct dom_element *element,
+	const struct css_simple *simple)
+{
+	struct dom_node *child;
+	struct vm_string *attribute;
+	struct wb_units value;
+	int kind;
+	int matches;
+	int error;
+
+	/* The pseudo-class. */
+	switch (simple->pseudo) {
+	case CSS_PSEUDO_ROOT:
+		return element->node.parent != NULL && element->node.parent->type == DOM_DOCUMENT;
+	case CSS_PSEUDO_FIRST_CHILD:
+		return cascade_previous_element(element) == NULL && cascade_parent_element(element) != NULL;
+	case CSS_PSEUDO_LAST_CHILD:
+		return cascade_next_element(element) == NULL && cascade_parent_element(element) != NULL;
+	case CSS_PSEUDO_ONLY_CHILD:
+		return cascade_previous_element(element) == NULL && cascade_next_element(element) == NULL;
+	case CSS_PSEUDO_EMPTY:
+		for (child = element->node.first_child; child != NULL; child = child->next) {
+			if (child->type == DOM_ELEMENT || child->type == DOM_TEXT)
 				return 0;
-			return dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_href) != NULL;
-		default:
-			return 0;
 		}
+
+		/* The empty element. */
+		return 1;
+	case CSS_PSEUDO_LINK:
+		if (element->ns != DOM_NS_HTML || (element->tag != DOM_TAG_A && element->tag != DOM_TAG_AREA))
+			return 0;
+		return dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_href) != NULL;
+	case CSS_PSEUDO_NOT:
+		matches = cascade_any_matches(engine, element, simple);
+		return !matches;
+	case CSS_PSEUDO_IS:
+		matches = cascade_any_matches(engine, element, simple);
+		return matches;
+	case CSS_PSEUDO_HAS:
+		matches = cascade_has(engine, element, simple);
+		return matches;
+	case CSS_PSEUDO_NTH_CHILD:
+	case CSS_PSEUDO_NTH_LAST_CHILD:
+	case CSS_PSEUDO_NTH_OF_TYPE:
+	case CSS_PSEUDO_NTH_LAST_OF_TYPE:
+	case CSS_PSEUDO_FIRST_OF_TYPE:
+	case CSS_PSEUDO_LAST_OF_TYPE:
+		matches = cascade_nth(element, simple);
+		return matches;
+	case CSS_PSEUDO_ONLY_OF_TYPE:
+		matches = cascade_nth(element, simple);
+		return matches;
+	case CSS_PSEUDO_DISABLED:
+	case CSS_PSEUDO_ENABLED:
+		/* A form element is disabled by its attribute. */
+		matches = cascade_is_form_element(element);
+		if (!matches)
+			return 0;
+		attribute = dom_attribute_ascii(element, "disabled");
+		if (simple->pseudo == CSS_PSEUDO_DISABLED)
+			return attribute != NULL;
+		return attribute == NULL;
+	case CSS_PSEUDO_CHECKED:
+		/* A checked checkbox or radio button, or a selected option. */
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_OPTION) {
+			attribute = dom_attribute_ascii(element, "selected");
+			return attribute != NULL;
+		}
+
+		/* Otherwise only a checkbox or a radio button can be checked. */
+		kind = dom_control_kind(element);
+		if (kind != DOM_CONTROL_CHECKBOX && kind != DOM_CONTROL_RADIO)
+			return 0;
+		matches = dom_control_checked(element);
+		return matches;
+	case CSS_PSEUDO_PLACEHOLDER_SHOWN:
+		/* A field with a placeholder and no value. */
+		attribute = dom_attribute_ascii(element, "placeholder");
+		if (attribute == NULL)
+			return 0;
+		wb_units_init(&value);
+		error = dom_control_value(element, &value);
+		matches = 0;
+		if (error == 0 && value.length == 0)
+			matches = 1;
+		wb_units_release(&value);
+		return matches;
+	case CSS_PSEUDO_REQUIRED:
+	case CSS_PSEUDO_OPTIONAL:
+		/* A form element is required by its attribute. */
+		matches = cascade_is_form_element(element);
+		if (!matches)
+			return 0;
+		attribute = dom_attribute_ascii(element, "required");
+		if (simple->pseudo == CSS_PSEUDO_REQUIRED)
+			return attribute != NULL;
+		return attribute == NULL;
+	case CSS_PSEUDO_ALWAYS:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+/* Tells whether an element matches any selector of an :is() or :not() argument list. */
+static int
+cascade_any_matches(
+	struct css_engine *engine,
+	struct dom_element *element,
+	const struct css_simple *simple)
+{
+	const struct css_selector *selector;
+	size_t index;
+	int matches;
+
+	/* Each selector of the list, as for the element itself. */
+	for (index = 0; index < simple->argument_count; index++) {
+		selector = &simple->arguments[index];
+		if (selector->count == 0)
+			continue;
+		matches = cascade_selector_matches(engine, element, selector, selector->count - 1U, NULL);
+		if (matches)
+			return 1;
+	}
+
+	/* None matched. */
+	return 0;
+}
+
+/*
+ * Tells whether an element has what a :has() argument asks for: an
+ * element among its descendants, or its later siblings and theirs, that a
+ * relative selector matches anchored at the element.
+ */
+static int
+cascade_has(
+	struct css_engine *engine,
+	struct dom_element *element,
+	const struct css_simple *simple)
+{
+	struct dom_node *sibling;
+	size_t index;
+	int siblings;
+	int matches;
+
+	/* The descendants. */
+	matches = cascade_has_below(engine, &element->node, simple, element, 0);
+	if (matches)
+		return 1;
+
+	/* The later siblings and their descendants, when a selector starts with + or ~. */
+	siblings = 0;
+	for (index = 0; index < simple->argument_count; index++) {
+		if (simple->arguments[index].compounds[0].combinator == CSS_COMBINATOR_NEXT)
+			siblings = 1;
+		if (simple->arguments[index].compounds[0].combinator == CSS_COMBINATOR_SUBSEQUENT)
+			siblings = 1;
+	}
+
+	/* Without one, the siblings are not looked at. */
+	if (!siblings)
+		return 0;
+
+	/* Each later sibling, itself and below. */
+	for (sibling = element->node.next; sibling != NULL; sibling = sibling->next) {
+		if (sibling->type != DOM_ELEMENT)
+			continue;
+		matches = cascade_any_relative(engine, (struct dom_element *)sibling, simple, element);
+		if (matches)
+			return 1;
+		matches = cascade_has_below(engine, sibling, simple, element, 0);
+		if (matches)
+			return 1;
+	}
+
+	/* Nothing matched. */
+	return 0;
+}
+
+/* Tells whether an element below a node (at any depth) matches a relative selector of :has() anchored at anchor. */
+static int
+cascade_has_below(
+	struct css_engine *engine,
+	struct dom_node *node,
+	const struct css_simple *simple,
+	struct dom_element *anchor,
+	int depth)
+{
+	struct dom_node *child;
+	int matches;
+
+	/* Stops at the depth the parser stops at. */
+	if (depth > CASCADE_HAS_DEPTH)
+		return 0;
+
+	/* Each element child, itself then its own descendants. */
+	for (child = node->first_child; child != NULL; child = child->next) {
+		if (child->type != DOM_ELEMENT)
+			continue;
+		matches = cascade_any_relative(engine, (struct dom_element *)child, simple, anchor);
+		if (matches)
+			return 1;
+		matches = cascade_has_below(engine, child, simple, anchor, depth + 1);
+		if (matches)
+			return 1;
+	}
+
+	/* Nothing below matched. */
+	return 0;
+}
+
+/* Tells whether an element matches any relative selector of a :has() anchored at anchor. */
+static int
+cascade_any_relative(
+	struct css_engine *engine,
+	struct dom_element *element,
+	const struct css_simple *simple,
+	struct dom_element *anchor)
+{
+	const struct css_selector *selector;
+	size_t index;
+	int matches;
+
+	/* Each relative selector. */
+	for (index = 0; index < simple->argument_count; index++) {
+		selector = &simple->arguments[index];
+		matches = cascade_selector_matches(engine, element, selector, selector->count - 1U, anchor);
+		if (matches)
+			return 1;
+	}
+
+	/* None matched. */
+	return 0;
+}
+
+/*
+ * Tells whether an element's place among its siblings matches an
+ * :nth-*() (an+b, counting from 1, of every element or of its type, from
+ * the start or the end) or a :*-of-type pseudo-class.
+ */
+static int
+cascade_nth(
+	struct dom_element *element,
+	const struct css_simple *simple)
+{
+	struct dom_node *node;
+	struct dom_element *other;
+	int of_type;
+	int from_end;
+	int place;
+	int after;
+	int step;
+
+	/* What is counted, and from which end. */
+	of_type = 0;
+	from_end = 0;
+	if (simple->pseudo == CSS_PSEUDO_NTH_OF_TYPE ||
+	    simple->pseudo == CSS_PSEUDO_NTH_LAST_OF_TYPE ||
+	    simple->pseudo == CSS_PSEUDO_FIRST_OF_TYPE ||
+	    simple->pseudo == CSS_PSEUDO_LAST_OF_TYPE ||
+	    simple->pseudo == CSS_PSEUDO_ONLY_OF_TYPE)
+		of_type = 1;
+	if (simple->pseudo == CSS_PSEUDO_NTH_LAST_CHILD ||
+	    simple->pseudo == CSS_PSEUDO_NTH_LAST_OF_TYPE ||
+	    simple->pseudo == CSS_PSEUDO_LAST_OF_TYPE)
+		from_end = 1;
+
+	/* A root, or an element without an element parent, is not counted among siblings. */
+	other = cascade_parent_element(element);
+	if (other == NULL)
+		return 0;
+
+	/* The places before and after the element (1 for the first). */
+	place = 1;
+	for (node = element->node.previous; node != NULL; node = node->previous) {
+		if (node->type != DOM_ELEMENT)
+			continue;
+		other = (struct dom_element *)node;
+		if (!of_type || other->local_name == element->local_name)
+			place++;
+	}
+
+	/* The places after it, counted the same way. */
+	after = 1;
+	for (node = element->node.next; node != NULL; node = node->next) {
+		if (node->type != DOM_ELEMENT)
+			continue;
+		other = (struct dom_element *)node;
+		if (!of_type || other->local_name == element->local_name)
+			after++;
+	}
+
+	/* The :*-of-type forms. */
+	if (simple->pseudo == CSS_PSEUDO_FIRST_OF_TYPE)
+		return place == 1;
+	if (simple->pseudo == CSS_PSEUDO_LAST_OF_TYPE)
+		return after == 1;
+	if (simple->pseudo == CSS_PSEUDO_ONLY_OF_TYPE)
+		return place == 1 && after == 1;
+
+	/* an+b from the chosen end: some n >= 0 gives the place. */
+	if (from_end)
+		place = after;
+	if (simple->nth_a == 0)
+		return place == simple->nth_b;
+	step = place - simple->nth_b;
+	if (step % simple->nth_a != 0)
+		return 0;
+
+	/* n = step / a must not be negative. */
+	return step / simple->nth_a >= 0;
+}
+
+/* Tells whether an element is an HTML form element that can be disabled or required. */
+static int
+cascade_is_form_element(
+	const struct dom_element *element)
+{
+	/* The HTML form elements. */
+	if (element->ns != DOM_NS_HTML)
+		return 0;
+	switch (element->tag) {
+	case DOM_TAG_INPUT:
+	case DOM_TAG_BUTTON:
+	case DOM_TAG_SELECT:
+	case DOM_TAG_TEXTAREA:
+	case DOM_TAG_OPTION:
+	case DOM_TAG_FIELDSET:
+		return 1;
 	default:
 		return 0;
 	}
@@ -1863,6 +2334,17 @@ cascade_apply(
 	case CSS_PROP_BOX_SIZING:
 		style->box_sizing = value->keyword;
 		break;
+	case CSS_PROP_CONTENT:
+		/* A list of items, or none (normal and none). */
+		style->content_kind = CSS_CONTENT_NONE;
+		style->content = NULL;
+		if (value->kind == CSS_VALUE_CONTENT) {
+			style->content_kind = CSS_CONTENT_LIST;
+			style->content = value->content;
+		}
+
+		/* The content is set. */
+		break;
 	default:
 		break;
 	}
@@ -1904,6 +2386,10 @@ cascade_inherit(
 		break;
 	case CSS_PROP_BOX_SIZING:
 		style->box_sizing = parent->box_sizing;
+		break;
+	case CSS_PROP_CONTENT:
+		style->content_kind = parent->content_kind;
+		style->content = parent->content;
 		break;
 	case CSS_PROP_WIDTH:
 		style->width = parent->width;

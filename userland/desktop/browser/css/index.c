@@ -224,8 +224,12 @@ index_kind_of(
 	if (selector->count == 0)
 		return INDEX_KIND_NONE;
 
-	/* Looks at every simple selector of the rightmost compound. */
+	/* A pseudo-element that makes no box never matches (::before and ::after are filed as their compound says). */
 	compound = &selector->compounds[selector->count - 1U];
+	if (compound->pseudo_element == CSS_PSEUDO_ELEMENT_OTHER)
+		return INDEX_KIND_NONE;
+
+	/* Looks at every simple selector of the rightmost compound. */
 	class_name = NULL;
 	type_name = NULL;
 	for (position = 0; position < compound->count; position++) {

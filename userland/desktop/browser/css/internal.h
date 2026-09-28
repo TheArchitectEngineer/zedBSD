@@ -79,6 +79,7 @@ enum css_simple_kind {
 	CSS_SIMPLE_CLASS,
 	CSS_SIMPLE_ATTRIBUTE,
 	CSS_SIMPLE_PSEUDO_CLASS,
+	CSS_SIMPLE_PSEUDO_ELEMENT,
 	CSS_SIMPLE_NEVER
 };
 
@@ -105,7 +106,24 @@ enum css_pseudo_class {
 	CSS_PSEUDO_ONLY_CHILD,
 	CSS_PSEUDO_EMPTY,
 	CSS_PSEUDO_LINK,
-	CSS_PSEUDO_NEVER
+	CSS_PSEUDO_NEVER,
+	CSS_PSEUDO_NOT,
+	CSS_PSEUDO_IS,
+	CSS_PSEUDO_HAS,
+	CSS_PSEUDO_NTH_CHILD,
+	CSS_PSEUDO_NTH_LAST_CHILD,
+	CSS_PSEUDO_NTH_OF_TYPE,
+	CSS_PSEUDO_NTH_LAST_OF_TYPE,
+	CSS_PSEUDO_FIRST_OF_TYPE,
+	CSS_PSEUDO_LAST_OF_TYPE,
+	CSS_PSEUDO_ONLY_OF_TYPE,
+	CSS_PSEUDO_DISABLED,
+	CSS_PSEUDO_ENABLED,
+	CSS_PSEUDO_CHECKED,
+	CSS_PSEUDO_PLACEHOLDER_SHOWN,
+	CSS_PSEUDO_REQUIRED,
+	CSS_PSEUDO_OPTIONAL,
+	CSS_PSEUDO_ALWAYS
 };
 
 /*
@@ -121,7 +139,10 @@ enum css_combinator {
 
 /*
  * One simple selector: a name (an atom), and for attributes a value (an
- * atom) and a comparison.
+ * atom) and a comparison.  A pseudo-class is pseudo (CSS_PSEUDO_*); :not,
+ * :is, :where and :has keep their argument selectors (in the sheet's
+ * arena), the :nth-* ones the a and b of an+b.  A pseudo-element is pseudo
+ * (CSS_PSEUDO_ELEMENT_*).
  */
 struct css_simple {
 	int kind;
@@ -130,6 +151,10 @@ struct css_simple {
 	int match;
 	int case_insensitive;
 	int pseudo;
+	const struct css_selector *arguments;
+	size_t argument_count;
+	int nth_a;
+	int nth_b;
 };
 
 /*
@@ -140,6 +165,7 @@ struct css_compound {
 	struct css_simple *simples;
 	size_t count;
 	int combinator;
+	int pseudo_element;
 };
 
 /*
@@ -206,6 +232,7 @@ struct css_value {
 	int family_count;
 	struct vm_string *url;
 	const struct css_calc *calc;
+	const struct css_content *content;
 };
 
 /* The kinds of declared value. */
@@ -218,7 +245,8 @@ enum css_value_kind {
 	CSS_VALUE_URL,
 	CSS_VALUE_INHERIT,
 	CSS_VALUE_INITIAL,
-	CSS_VALUE_UNSET
+	CSS_VALUE_UNSET,
+	CSS_VALUE_CONTENT
 };
 
 /* The units a declared length can have (converted to pixels by the cascade). */
@@ -303,6 +331,7 @@ enum css_property {
 	CSS_PROP_BACKGROUND_SIZE_WIDTH,
 	CSS_PROP_BACKGROUND_SIZE_HEIGHT,
 	CSS_PROP_BOX_SIZING,
+	CSS_PROP_CONTENT,
 	CSS_PROP_COUNT
 };
 

@@ -19,6 +19,7 @@
 #include "css/internal.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -62,6 +63,36 @@ static const struct parser_pseudo_name parser_pseudo_names[] = {
 	{ "empty", CSS_PSEUDO_EMPTY },
 	{ "link", CSS_PSEUDO_LINK },
 	{ "any-link", CSS_PSEUDO_LINK },
+	{ "first-of-type", CSS_PSEUDO_FIRST_OF_TYPE },
+	{ "last-of-type", CSS_PSEUDO_LAST_OF_TYPE },
+	{ "only-of-type", CSS_PSEUDO_ONLY_OF_TYPE },
+	{ "disabled", CSS_PSEUDO_DISABLED },
+	{ "enabled", CSS_PSEUDO_ENABLED },
+	{ "checked", CSS_PSEUDO_CHECKED },
+	{ "placeholder-shown", CSS_PSEUDO_PLACEHOLDER_SHOWN },
+	{ "required", CSS_PSEUDO_REQUIRED },
+	{ "optional", CSS_PSEUDO_OPTIONAL },
+	{ "defined", CSS_PSEUDO_ALWAYS },
+	{ "scope", CSS_PSEUDO_ROOT },
+	{ NULL, 0 }
+};
+
+/*
+ * The functional pseudo-classes by their names (the ones not listed never
+ * match); the state pseudo-classes (:hover, :focus and the like) are not
+ * listed either: this pass draws a page at rest.
+ */
+static const struct parser_pseudo_name parser_pseudo_functions[] = {
+	{ "not", CSS_PSEUDO_NOT },
+	{ "is", CSS_PSEUDO_IS },
+	{ "matches", CSS_PSEUDO_IS },
+	{ "-webkit-any", CSS_PSEUDO_IS },
+	{ "where", CSS_PSEUDO_IS },
+	{ "has", CSS_PSEUDO_HAS },
+	{ "nth-child", CSS_PSEUDO_NTH_CHILD },
+	{ "nth-last-child", CSS_PSEUDO_NTH_LAST_CHILD },
+	{ "nth-of-type", CSS_PSEUDO_NTH_OF_TYPE },
+	{ "nth-last-of-type", CSS_PSEUDO_NTH_LAST_OF_TYPE },
 	{ NULL, 0 }
 };
 
@@ -78,7 +109,10 @@ static int parser_selectors(struct vm_heap *heap, struct wb_arena *arena, struct
 static int parser_selector(struct vm_heap *heap, struct wb_arena *arena, struct token_range tokens, struct css_selector *selector);
 static int parser_compound(struct vm_heap *heap, struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct css_compound *compound, uint32_t *specificity);
 static int parser_attribute(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct css_simple *simple);
-static int parser_pseudo(const struct css_token *token, struct css_simple *simple);
+static int parser_pseudo(struct vm_heap *heap, struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct css_simple *simple, uint32_t *specificity);
+static void parser_pseudo_element(const struct css_token *token, struct css_simple *simple);
+static int parser_pseudo_arguments(struct vm_heap *heap, struct wb_arena *arena, struct token_range arguments, int relative, struct css_simple *simple, uint32_t *specificity);
+static int parser_nth(struct token_range arguments, int *a, int *b);
 static int parser_declarations(struct vm_heap *heap, struct wb_arena *arena, struct token_range block, struct css_declaration **declarations, size_t *count);
 static int parser_special(struct vm_heap *heap, const struct css_token *name, struct token_range value, struct css_declaration *out, size_t *made);
 static struct vm_string *parser_atom(struct vm_heap *heap, const struct css_token *token, int lower);
@@ -902,12 +936,18 @@ parser_selectors(
 	size_t index;
 	size_t commas;
 	size_t made;
+	int depth;
 	int error;
 
-	/* Counts the selectors to size the list. */
+	/* Counts the selectors to size the list (commas inside a function's arguments do not part them). */
 	commas = 0;
+	depth = 0;
 	for (index = 0; index < prelude.count; index++) {
-		if (prelude.tokens[index].type == CSS_TOKEN_COMMA)
+		if (prelude.tokens[index].type == CSS_TOKEN_FUNCTION || prelude.tokens[index].type == CSS_TOKEN_OPEN_PAREN)
+			depth++;
+		if (prelude.tokens[index].type == CSS_TOKEN_CLOSE_PAREN)
+			depth--;
+		if (prelude.tokens[index].type == CSS_TOKEN_COMMA && depth == 0)
 			commas++;
 	}
 
@@ -916,12 +956,21 @@ parser_selectors(
 	if (list == NULL)
 		return ENOMEM;
 
-	/* Parses each selector between the commas. */
+	/* Parses each selector between the top-level commas. */
 	made = 0;
 	start = 0;
+	depth = 0;
 	for (index = 0; index <= prelude.count; index++) {
-		if (index < prelude.count && prelude.tokens[index].type != CSS_TOKEN_COMMA)
-			continue;
+		if (index < prelude.count) {
+			if (prelude.tokens[index].type == CSS_TOKEN_FUNCTION || prelude.tokens[index].type == CSS_TOKEN_OPEN_PAREN)
+				depth++;
+			if (prelude.tokens[index].type == CSS_TOKEN_CLOSE_PAREN)
+				depth--;
+			if (prelude.tokens[index].type != CSS_TOKEN_COMMA || depth != 0)
+				continue;
+		}
+
+		/* The selector between the last comma and this one. */
 		one.tokens = prelude.tokens + start;
 		one.count = index - start;
 		one = parser_trim(one);
@@ -1043,6 +1092,7 @@ parser_compound(
 
 	/* Reads simple selectors until whitespace, a combinator or the end. */
 	made = 0;
+	compound->pseudo_element = CSS_PSEUDO_ELEMENT_NONE;
 	while (*index < count && made < 32U) {
 		token = &tokens[*index];
 		simple = &simples[made];
@@ -1082,23 +1132,28 @@ parser_compound(
 			*index = end - 1U;
 			*specificity += 1U << 8;
 		} else if (token->type == CSS_TOKEN_COLON) {
-			/* A pseudo-class (or, with a second colon, a pseudo-element, which never matches an element). */
+			/* A pseudo-class, or with a second colon a pseudo-element. */
 			(*index)++;
-			if (*index < count && tokens[*index].type == CSS_TOKEN_COLON) {
-				simple->kind = CSS_SIMPLE_NEVER;
+			if (*index >= count)
+				return EINVAL;
+			if (tokens[*index].type == CSS_TOKEN_COLON) {
 				(*index)++;
-			} else if (*index < count) {
-				error = parser_pseudo(&tokens[*index], simple);
+				if (*index >= count)
+					return EINVAL;
+				parser_pseudo_element(&tokens[*index], simple);
+				compound->pseudo_element = simple->pseudo;
+				*specificity += 1U;
+
+				/* A functional pseudo-element's arguments are skipped. */
+				if (tokens[*index].type == CSS_TOKEN_FUNCTION)
+					*index = parser_skip_block(tokens, count, *index) - 1U;
+			} else {
+				error = parser_pseudo(heap, arena, tokens, count, index, simple, specificity);
 				if (error != 0)
 					return error;
-				*specificity += 1U << 8;
-			} else {
-				return EINVAL;
+				if (simple->kind == CSS_SIMPLE_PSEUDO_ELEMENT)
+					compound->pseudo_element = simple->pseudo;
 			}
-
-			/* A functional pseudo-class's arguments are skipped. */
-			if (*index < count && tokens[*index].type == CSS_TOKEN_FUNCTION)
-				*index = parser_skip_block(tokens, count, *index) - 1U;
 		} else {
 			break;
 		}
@@ -1208,35 +1263,419 @@ parser_attribute(
 	return 0;
 }
 
-/* Reads a pseudo-class name; one this pass does not know never matches. */
+/*
+ * Reads a pseudo-class at *index (a name, or a function to its closing
+ * parenthesis, where *index is left) into a simple selector and adds its
+ * specificity; one this pass does not know never matches.  The legacy
+ * single-colon :before and :after are pseudo-elements.
+ */
 static int
 parser_pseudo(
-	const struct css_token *token,
-	struct css_simple *simple)
+	struct vm_heap *heap,
+	struct wb_arena *arena,
+	const struct css_token *tokens,
+	size_t count,
+	size_t *index,
+	struct css_simple *simple,
+	uint32_t *specificity)
 {
-	size_t index;
+	const struct css_token *token;
+	struct token_range arguments;
+	size_t end;
+	size_t position;
 	int same;
+	int error;
 
 	/* Only identifiers and functions name pseudo-classes. */
+	token = &tokens[*index];
 	if (token->type != CSS_TOKEN_IDENT && token->type != CSS_TOKEN_FUNCTION)
 		return EINVAL;
-
-	/* The pseudo-classes this pass evaluates; a function never matches yet. */
 	simple->kind = CSS_SIMPLE_PSEUDO_CLASS;
 	simple->pseudo = CSS_PSEUDO_NEVER;
-	if (token->type != CSS_TOKEN_IDENT)
-		return 0;
 
-	/* Looks the name up. */
-	for (index = 0; parser_pseudo_names[index].name != NULL; index++) {
-		same = css_ident_equal(token, parser_pseudo_names[index].name);
+	/* A name: the legacy pseudo-elements, then the pseudo-classes this pass evaluates. */
+	if (token->type == CSS_TOKEN_IDENT) {
+		same = css_ident_equal(token, "before");
+		if (!same)
+			same = css_ident_equal(token, "after");
+		if (!same)
+			same = css_ident_equal(token, "first-line");
+		if (!same)
+			same = css_ident_equal(token, "first-letter");
 		if (same) {
-			simple->pseudo = parser_pseudo_names[index].pseudo;
+			parser_pseudo_element(token, simple);
+			*specificity += 1U;
+			return 0;
+		}
+
+		/* Looks the name up. */
+		for (position = 0; parser_pseudo_names[position].name != NULL; position++) {
+			same = css_ident_equal(token, parser_pseudo_names[position].name);
+			if (same) {
+				simple->pseudo = parser_pseudo_names[position].pseudo;
+				break;
+			}
+		}
+
+		/* A pseudo-class counts as a class. */
+		*specificity += 1U << 8;
+		return 0;
+	}
+
+	/* A function: its arguments run to its closing parenthesis, where the index is left. */
+	end = parser_skip_block(tokens, count, *index);
+	arguments.tokens = tokens + *index + 1U;
+	arguments.count = end - *index - 1U;
+	if (arguments.count > 0 && tokens[end - 1U].type == CSS_TOKEN_CLOSE_PAREN)
+		arguments.count--;
+	arguments = parser_trim(arguments);
+	*index = end - 1U;
+
+	/* Looks the function up. */
+	for (position = 0; parser_pseudo_functions[position].name != NULL; position++) {
+		same = css_ident_equal(token, parser_pseudo_functions[position].name);
+		if (same) {
+			simple->pseudo = parser_pseudo_functions[position].pseudo;
 			break;
 		}
 	}
 
-	/* Succeeded: the pseudo-class is known or never matches. */
+	/* The kind of function picks how its arguments are read. */
+	switch (simple->pseudo) {
+	case CSS_PSEUDO_NOT:
+	case CSS_PSEUDO_IS:
+		/* Selectors; :where() adds nothing to the specificity. */
+		same = css_ident_equal(token, "where");
+		if (same) {
+			error = parser_pseudo_arguments(heap, arena, arguments, 0, simple, NULL);
+		} else {
+			error = parser_pseudo_arguments(heap, arena, arguments, 0, simple, specificity);
+		}
+
+		/* :not() with an argument it cannot read drops the rule; :is() and :where() forgive it. */
+		if (error == ENOMEM)
+			return error;
+		if (error != 0 && simple->pseudo == CSS_PSEUDO_NOT)
+			return error;
+		if (error != 0)
+			simple->pseudo = CSS_PSEUDO_NEVER;
+		return 0;
+	case CSS_PSEUDO_HAS:
+		/* Relative selectors. */
+		error = parser_pseudo_arguments(heap, arena, arguments, 1, simple, specificity);
+		if (error == ENOMEM)
+			return error;
+		if (error != 0)
+			simple->pseudo = CSS_PSEUDO_NEVER;
+		return 0;
+	case CSS_PSEUDO_NTH_CHILD:
+	case CSS_PSEUDO_NTH_LAST_CHILD:
+	case CSS_PSEUDO_NTH_OF_TYPE:
+	case CSS_PSEUDO_NTH_LAST_OF_TYPE:
+		/* an+b, counted as a class. */
+		error = parser_nth(arguments, &simple->nth_a, &simple->nth_b);
+		if (error != 0)
+			return error;
+		*specificity += 1U << 8;
+		return 0;
+	default:
+		/* Any other function never matches, and counts as a class. */
+		*specificity += 1U << 8;
+		return 0;
+	}
+}
+
+/* Reads a pseudo-element's name: ::before and ::after make boxes, any other never matches. */
+static void
+parser_pseudo_element(
+	const struct css_token *token,
+	struct css_simple *simple)
+{
+	int same;
+
+	/* ::before. */
+	simple->kind = CSS_SIMPLE_PSEUDO_ELEMENT;
+	simple->pseudo = CSS_PSEUDO_ELEMENT_BEFORE;
+	same = css_ident_equal(token, "before");
+	if (same)
+		return;
+
+	/* ::after. */
+	simple->pseudo = CSS_PSEUDO_ELEMENT_AFTER;
+	same = css_ident_equal(token, "after");
+	if (same)
+		return;
+
+	/* Any other (::placeholder, ::-webkit-scrollbar, ::first-line ...) is not drawn. */
+	simple->pseudo = CSS_PSEUDO_ELEMENT_OTHER;
+}
+
+/*
+ * Reads the selector list of :not(), :is(), :where() or (relative) :has()
+ * into the simple selector, and adds the most specific one's specificity
+ * (none when specificity is NULL).  A relative selector may start with a
+ * combinator, which relates its first compound to the element the
+ * pseudo-class is on; without one it is the descendant combinator.
+ */
+static int
+parser_pseudo_arguments(
+	struct vm_heap *heap,
+	struct wb_arena *arena,
+	struct token_range arguments,
+	int relative,
+	struct css_simple *simple,
+	uint32_t *specificity)
+{
+	struct css_selector *list;
+	struct token_range one;
+	uint32_t best;
+	size_t made;
+	size_t start;
+	size_t index;
+	int depth;
+	int combinator;
+	int error;
+
+	/* An empty list is not a list. */
+	if (arguments.count == 0)
+		return EINVAL;
+
+	/* The plain selectors of :not(), :is() and :where(). */
+	if (!relative) {
+		error = parser_selectors(heap, arena, arguments, &list, &made);
+		if (error != 0)
+			return error;
+	} else {
+		/* Relative selectors: counted between the top-level commas. */
+		made = 1;
+		depth = 0;
+		for (index = 0; index < arguments.count; index++) {
+			if (arguments.tokens[index].type == CSS_TOKEN_FUNCTION || arguments.tokens[index].type == CSS_TOKEN_OPEN_PAREN)
+				depth++;
+			if (arguments.tokens[index].type == CSS_TOKEN_CLOSE_PAREN)
+				depth--;
+			if (arguments.tokens[index].type == CSS_TOKEN_COMMA && depth == 0)
+				made++;
+		}
+
+		/* Makes room for them. */
+		list = wb_arena_zalloc(arena, made * sizeof(*list));
+		if (list == NULL)
+			return ENOMEM;
+
+		/* Each one: an optional leading combinator, then a selector. */
+		made = 0;
+		start = 0;
+		depth = 0;
+		for (index = 0; index <= arguments.count; index++) {
+			if (index < arguments.count) {
+				if (arguments.tokens[index].type == CSS_TOKEN_FUNCTION || arguments.tokens[index].type == CSS_TOKEN_OPEN_PAREN)
+					depth++;
+				if (arguments.tokens[index].type == CSS_TOKEN_CLOSE_PAREN)
+					depth--;
+				if (arguments.tokens[index].type != CSS_TOKEN_COMMA || depth != 0)
+					continue;
+			}
+
+			/* The selector's tokens, and its leading combinator. */
+			one.tokens = arguments.tokens + start;
+			one.count = index - start;
+			one = parser_trim(one);
+			start = index + 1U;
+			combinator = CSS_COMBINATOR_DESCENDANT;
+			if (one.count > 0 && one.tokens[0].type == CSS_TOKEN_DELIM) {
+				if (one.tokens[0].delim == '>')
+					combinator = CSS_COMBINATOR_CHILD;
+				if (one.tokens[0].delim == '+')
+					combinator = CSS_COMBINATOR_NEXT;
+				if (one.tokens[0].delim == '~')
+					combinator = CSS_COMBINATOR_SUBSEQUENT;
+				if (combinator != CSS_COMBINATOR_DESCENDANT) {
+					one.tokens++;
+					one.count--;
+					one = parser_trim(one);
+				}
+			}
+
+			/* The selector, whose first compound carries the combinator to the anchor. */
+			error = parser_selector(heap, arena, one, &list[made]);
+			if (error != 0)
+				return error;
+			list[made].compounds[0].combinator = combinator;
+			made++;
+		}
+	}
+
+	/* The most specific argument. */
+	best = 0;
+	for (index = 0; index < made; index++) {
+		if (list[index].specificity > best)
+			best = list[index].specificity;
+	}
+
+	/* It counts toward the compound's specificity, unless the caller counts nothing. */
+	if (specificity != NULL)
+		*specificity += best;
+
+	/* Succeeded: the arguments are the simple selector's. */
+	simple->arguments = list;
+	simple->argument_count = made;
+	return 0;
+}
+
+/*
+ * Reads the an+b of an :nth-*() pseudo-class: odd, even, an integer, or
+ * the forms the tokenizer splits in several ways (2n+1, -n+3, n, 2n-1,
+ * 3n + 2).  A trailing "of S" is not read in this pass.
+ */
+static int
+parser_nth(
+	struct token_range arguments,
+	int *a,
+	int *b)
+{
+	const struct css_token *token;
+	char text[64];
+	size_t length;
+	size_t index;
+	size_t part;
+	int written;
+	int sign;
+	int value;
+	int has_digits;
+	int is_word;
+	int differs;
+	int after_sign;
+
+	/* Spells the tokens out as ASCII, up to an "of". */
+	length = 0;
+	for (index = 0; index < arguments.count; index++) {
+		token = &arguments.tokens[index];
+		if (token->type == CSS_TOKEN_WHITESPACE)
+			continue;
+		if (token->type == CSS_TOKEN_IDENT) {
+			is_word = css_ident_equal(token, "of");
+			if (is_word)
+				break;
+		}
+
+		/* A number after an n keeps its sign; after a + or - it is the operand. */
+		after_sign = 0;
+		if (length > 0 && (text[length - 1U] == '+' || text[length - 1U] == '-'))
+			after_sign = 1;
+
+		/* Numbers with their sign, then the text of identifiers and units. */
+		written = 0;
+		if (token->type == CSS_TOKEN_NUMBER || token->type == CSS_TOKEN_DIMENSION) {
+			if (token->type == CSS_TOKEN_NUMBER && length > 0 && !after_sign) {
+				written = snprintf(text + length, sizeof(text) - length, "%+d", (int)token->number);
+			} else {
+				written = snprintf(text + length, sizeof(text) - length, "%d", (int)token->number);
+			}
+
+			/* The number must fit. */
+			if (written < 0 || (size_t)written >= sizeof(text) - length)
+				return EINVAL;
+			length += (size_t)written;
+		}
+
+		/* An operator's character. */
+		if (token->type == CSS_TOKEN_DELIM) {
+			if (length + 1U >= sizeof(text))
+				return EINVAL;
+			text[length] = (char)token->delim;
+			length++;
+		}
+
+		/* An identifier's or a unit's letters, in lower case. */
+		if (token->type == CSS_TOKEN_IDENT || token->type == CSS_TOKEN_DIMENSION) {
+			for (part = 0; part < token->length; part++) {
+				if (length + 1U >= sizeof(text) || token->text[part] > 0x7fU)
+					return EINVAL;
+				text[length] = (char)token->text[part];
+				if (text[length] >= 'A' && text[length] <= 'Z')
+					text[length] = (char)(text[length] + 0x20);
+				length++;
+			}
+		}
+	}
+
+	/* The spelling ends here. */
+	text[length] = '\0';
+
+	/* odd and even. */
+	differs = strcmp(text, "odd");
+	if (differs == 0) {
+		*a = 2;
+		*b = 1;
+		return 0;
+	}
+
+	/* even. */
+	differs = strcmp(text, "even");
+	if (differs == 0) {
+		*a = 2;
+		*b = 0;
+		return 0;
+	}
+
+	/* a: a signed number before n (a bare sign or none is one). */
+	index = 0;
+	sign = 1;
+	*a = 0;
+	*b = 0;
+	if (text[index] == '+' || text[index] == '-') {
+		if (text[index] == '-')
+			sign = -1;
+		index++;
+	}
+
+	/* The digits of a. */
+	value = 0;
+	has_digits = 0;
+	while (text[index] >= '0' && text[index] <= '9') {
+		value = value * 10 + (text[index] - '0');
+		has_digits = 1;
+		index++;
+	}
+
+	/* Without an n the number is b alone. */
+	if (text[index] != 'n') {
+		if (!has_digits || text[index] != '\0')
+			return EINVAL;
+		*b = sign * value;
+		return 0;
+	}
+
+	/* A bare n is 1n. */
+	if (!has_digits)
+		value = 1;
+	*a = sign * value;
+	index++;
+
+	/* b: an optional signed number after the n. */
+	if (text[index] == '\0')
+		return 0;
+	if (text[index] != '+' && text[index] != '-')
+		return EINVAL;
+	sign = 1;
+	if (text[index] == '-')
+		sign = -1;
+	index++;
+	value = 0;
+	has_digits = 0;
+	while (text[index] >= '0' && text[index] <= '9') {
+		value = value * 10 + (text[index] - '0');
+		has_digits = 1;
+		index++;
+	}
+
+	/* b must be digits to the end. */
+	if (!has_digits || text[index] != '\0')
+		return EINVAL;
+	*b = sign * value;
+
+	/* Succeeded: a and b are read. */
 	return 0;
 }
 
