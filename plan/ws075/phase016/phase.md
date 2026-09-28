@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p016`
 Parent: [WS075](../ws.md)
-Status: in-progress
+Status: cleared（2026-09-28。実機の passthrough で login 6 回・logout 5 回とも暗 0・黒 0（前は替わり目ごとに 180〜383 ms の register の上の暗・黒と transcoder の停止）、Shut Down と hold の期限切れで出力は止まる。実物の monitor の目視は未実施）
 Phase disposition: normal
 承認: 2026-09-28 main の依頼（WS075 の i915 の subagent、デモの頑健さ。[F-048](../../future-work.md) のこの構成での目標）。
 
@@ -74,3 +74,23 @@ Shut Down の前の logout の 60）ms。この間、画面は前の lease の�
 - fault・fatal は 0。`XXX` の行は既存の 2 種だけ（capset の vendor flags、Gears の GL の pipeline の dynamic state 2・3）。
 - 画面（scanout の live の buffer）: `build/ws075-shots/ws075-p016-hold-{logout1,logout5}-greeter.png`・`ws075-p016-hold-{login1,login5}-session.png`、
   前: `ws075-p016-before-logout1-greeter.png`・`ws075-p016-before-login1-session.png`、App Home: `ws075-p016-app-home.png`。
+- **hold の期限切れ**（`build/h4-timeout/`、同じ image）: session の Terminal で `kill -STOP 12`（sessiond、`ps -A` で確認）→ Log Out。
+  compositor は sessiond の応答を待たず終わり、`lease released; holding the last picture (buffer A)` の後に次の lease は来ず、
+  `released after 54 flip(s); the reference stop path follows` → `ended PASS (show rc=0; flips 54, stop confirmed, ...)`。その後の register:
+  `TRANSCONF` B = 0、`PLANE_CTL_1_B` = 0（出力は止まった）。hold と停止の間の時間は log に時刻が無く測っていない（10 秒の設定）。
+
+## 確認
+
+- build: `plan/ws075/demo/build-demo-image.sh build/h4-hold passthrough`（hold だけ）・`build/h4-hold2 passthrough`（hold + p015 の HAL）。
+  compiler の warning 0。
+- QEMU の boot test（GPU の無い q35、`build/h4-hold2` の image）: PASS（p015 と同じ run）。
+- 規約: `plan/tools/style-check.py` の指摘は既存の同じ形の行（critical section の lock・unlock の段落、`display = device->display;` の段落）
+  だけ。diff の空白の検査は清浄。
+- host の試験: resident display の worker・present の host 試験は無い（証拠は上の実機の run）。
+- 未実施: 実物の HDMI の monitor・LCD の目視（passthrough では register と scanout の buffer だけ。信号の再検出の時間が消えたかは LCD で
+  確かめる必要がある）。eDP（`display=auto`）での login・logout（同じ経路だが実機では未実施）。bare metal。
+
+## 残り
+
+- F-048 の全体（fd の受け渡しと revoke、Venus の最後の画）は未着手。この Phase は i915 の resident display の範囲で暗転を無くした。
+- 登録していない道具: `h4-cycle.sh`・`h4-blank.py`・`h4-ctl.py watch` は `plan/master.md` の Tools の HDMI の行に足す（main）。
