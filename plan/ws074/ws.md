@@ -12,6 +12,15 @@ Queue: なし（2026-09-27 のユーザーの指示でサブエージェント�
 Resume point: 2026-09-28 の周期の終わり: p016〜p021・p050〜p058 は cleared。ブラウザは部品 `libbrowser.so`（`include/libc/browser.h`、36 の API、`browser-probe` が 2 つ目の使い手）、HTTP・HTTPS・非同期の読み込み・keep-alive・cache・画像・背景画像・DOM の入力。次: p031（focus 等の DOM）→ p032（form の部品と文字の入力）→ システム環境設定・widget で libbrowser を使う
 <!-- awesome-plan-current:end -->
 
+## デモの目標（2026-09-28 ユーザー）
+
+「Googleの検索トップページと検索が、レイアウトを崩さずに表示できたら、ゴールにしましょう！限定的なCSSと、基本的なJS、WebGLなし、ビデオなしです。」
+- 完了の目安: Google の検索のトップの page と検索の結果の page が、レイアウトを崩さずに表示される。検索の box に文字を入れて検索でき、結果の link を開ける。
+- 範囲: 限定的な CSS、基本的な JS。WebGL・動画は無し。インタラクション: link・戻る/進む・scroll・検索の box と form への入力・JS を動かす button。
+- touch の慣性の scroll 等は [WS081](../ws081/ws.md)。
+- 注意（main）: Google は User-Agent・cookie（同意の画面）・JS の有無で返す HTML を変える。p031・p032 の前に、今の browser が受け取る
+  HTML と足りない機能（form・CSS・JS の API）を調べる Phase を置く。
+
 ## 目標
 
 2026-09-27 ユーザー:「新しいWSを作ります。Webブラウザを作成します。userland/desktop/browserです。
