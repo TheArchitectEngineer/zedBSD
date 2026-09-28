@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-28 の周期の終わり: login manager（p094〜p099）・primary selection（p100・p103）・表示の引き継ぎ（p101）・lock（p102）・システムバーの network（p013）は cleared。session の user の `network` の group は p104 で済んだ。F-044 は p105、F-041 の衝突の dialog は p106 で済んだ。Kei の見た目の段階 2 は p107（起動画面）・p108（greeter・lock・壁紙・files）・p109（greeter・lock の明るさ、すりガラスの印）で済んだ。F-050 の Replace の Trash と cut の Esc は p110、terminal の語・行単位の drag と Shift+click は p111 で済んだ。source は WS078 で `userland/desktop/` へ移った（zdesktop → wayland 等）。HAL の quiet console の diff は適用済み（kmsg=quiet の確認は未実施）
+Resume point: 2026-09-28 の周期の終わり: p094〜p113 は cleared（login manager・primary selection・表示の引き継ぎ・lock・システムバーの network と session の network group・configure_bounds・名前の衝突の dialog と Trash・Kei の起動画面と spinner（GOP 1920x1080、黒い帯）・greeter・lock・壁紙・files の Kei の見た目・terminal の選択・sessiond の GPU の待ち（BUG-092））。source は userland/desktop/（WS078）。次: HDMI の lease の切り替えで画面を点けたまま（WS075 と共同）、F-048、F-050 の folder の merge、terminal の選択の残り（scroll で追う・端の自動 scroll）。touch・pen・Notes は WS079
 <!-- awesome-plan-current:end -->
 
 ## 単一目標

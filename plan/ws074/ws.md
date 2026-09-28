@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010〜p017・p019〜p021・p022〜p026・p050・p052・p053・p058・p030・p045・p046・p048・p049・p051 cleared。p019・p020・p051・p021・p053・p052・p050・p058・p054・p055・p056・p057 cleared（2026-09-28。p057 で engine は libbrowser.so、公開の header は include/libc/browser.h）。次は実行の順の p006。p017 で BUG-083（rtld の dlopen が /usr/lib を探さない）を直した。p016 を 2026-09-28 に同期の HTTP（p016）と非同期の loader（p050）に分けた。p013 を 2026-09-28 に p013（position）・p048（float）・p049（overflow と clip）に分けた。p030 の依存は p014・p046 に縮めた（理由は p030 の phase.md、WPT の runner は p047 へ）
+Resume point: 2026-09-28 の周期の終わり: p016〜p021・p050〜p058 は cleared。ブラウザは部品 `libbrowser.so`（`include/libc/browser.h`、36 の API、`browser-probe` が 2 つ目の使い手）、HTTP・HTTPS・非同期の読み込み・keep-alive・cache・画像・背景画像・DOM の入力。次: p031（focus 等の DOM）→ p032（form の部品と文字の入力）→ システム環境設定・widget で libbrowser を使う
 <!-- awesome-plan-current:end -->
 
 ## 目標

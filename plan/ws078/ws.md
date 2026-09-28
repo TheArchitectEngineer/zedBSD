@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p002・p003・p006 は cleared（main）、p004 は logo と一部の文字列まで。次は Venus での graphical な確認（login・`/bin/wayland`・App Home）、BUG-080 の Desktop の分類、p002、p004 の残り
+Resume point: 2026-09-28 の周期の終わり: p002・p003・p006 は cleared、BUG-080 の Desktop の分類、X11 の program と zedinst は `userland/retro/` へ（ユーザー決定）、画面の文字列・Kei の起動画面（p004 の主な部分）も済み。残り: 注釈と log の名前（`zdesktop.log` 等、内部）、`/usr/libexec/keiland-x11` の見直し、p005（規約と回帰）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザーの決定、要旨）

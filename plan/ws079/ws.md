@@ -3,13 +3,13 @@
 # WS079: 手書きノート（Notes）と PDF Viewer、上の右端からのスワイプ
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001 の設計（[design-input-notes.md](design-input-notes.md)・[design-pdf.md](design-pdf.md)）は書けた（2026-09-28）。p002（kernel の pen）が進行中。p004（libpdf の writer・輪郭・自分の形式の読み込み）は cleared（2026-09-28）。main の判断: header は `include/libc/pdf.h`（libpdf は独自の API）、保存は非圧縮（deflate は後）、p003 を分けて gesture は p010。ユーザーの判断待ち: design-input-notes §8 の D1〜D8（既定あり）、design-pdf §6 の glyph の outline（p007 の前）
+Resume point: 2026-09-28 の周期の終わり: 設計、p002（pen）・p003（tablet）・p004（libpdf の writer・reader）・p005（Notes v1）・p006（PDF Viewer v1）・p010（右上のスワイプ）・p011（Notes の仕上げ）・p012（multitouch）・p013（touch・三回 click・二本指の flick）・p014（他の PDF への書き込み）は cleared。p007（PDF の文字・shading・xref stream）は途中（残りは phase007）。次: p007 の残り → Notes の host 試験の link の修正 → p008（CFF・Type1・暗号化）→ p009（規約）。実機: USB の demo の image でユーザーが試験中、touch の LCD の USB の descriptor は未確認
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）

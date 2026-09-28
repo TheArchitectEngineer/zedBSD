@@ -9,7 +9,7 @@ Related Milestones: MG004, MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Executor: WS073 のサブエージェント（branch `worktree-agent-a4f5b29b09938aa63`。p001・p002 は `worktree-agent-aefedcaf4a52a0507`）。main が merge する
-Resume point: p027（BUG-089、toolchain の再利用と guard）と p026（BUG-090、qsort）は cleared（2026-09-28。同種の候補: Noct の host の source の mtime、ID 未割当）。p020（BUG-075・BUG-082）と p021（BUG-084）は cleared（2026-09-28）。次は main の割り当て（別の bug の候補 2 つは ID 待ち: block された SIGSEGV の fault の永久の繰り返し、clang の resource の header の parse 時の一覧）、残りの bug の表
+Resume point: 2026-09-28 の周期の終わり: BUG-075・079〜084・086〜090 を解決（p019〜p027）。次: BUG-093（Noct の patch の mtime）→ BUG-051（sshd-session の SIGSEGV、2 回目の観測あり）→ BUG-039・BUG-031 の確認。BUG-027・033 は低い優先度
 <!-- awesome-plan-current:end -->
 
 ## 目標
