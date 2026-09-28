@@ -1501,12 +1501,16 @@ apply_extgstate(
 
 	/* The line cap, one of the three. */
 	found = state_integer(run, dictionary, "LC", &integer);
-	if (found && integer >= 0 && integer <= 2)
+	if (found &&
+	    integer >= 0 &&
+	    integer <= 2)
 		state->line_cap = (int)integer;
 
 	/* The line join, one of the three. */
 	found = state_integer(run, dictionary, "LJ", &integer);
-	if (found && integer >= 0 && integer <= 2)
+	if (found &&
+	    integer >= 0 &&
+	    integer <= 2)
 		state->line_join = (int)integer;
 
 	/* The miter limit, at least 1. */
@@ -1973,7 +1977,9 @@ path_add(
 		return 0;
 
 	/* A line or a curve after a close starts a new subpath at the closed subpath's start, as PDF defines. */
-	if (after_close && (verb == PDF_PATH_LINE || verb == PDF_PATH_CUBIC)) {
+	if (after_close &&
+	    (verb == PDF_PATH_LINE ||
+	     verb == PDF_PATH_CUBIC)) {
 		start[0] = path->start.x;
 		start[1] = path->start.y;
 		error = path_add(run, PDF_PATH_MOVE, start, 1);

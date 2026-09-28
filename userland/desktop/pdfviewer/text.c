@@ -55,7 +55,9 @@ pv_text_open(
 		return errno;
 	status = fseek(file, 0, SEEK_END);
 	size = ftell(file);
-	if (status != 0 || size <= 0 || (size_t)size > TEXT_FILE_MAX) {
+	if (status != 0 ||
+	    size <= 0 ||
+	    (size_t)size > TEXT_FILE_MAX) {
 		fclose(file);
 		return EINVAL;
 	}

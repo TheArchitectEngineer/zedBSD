@@ -461,7 +461,9 @@ pv_app_tick(
 	}
 
 	/* So does the message. */
-	if (app->message[0] != '\0' && app->message_until != 0 && now >= app->message_until) {
+	if (app->message[0] != '\0' &&
+	    app->message_until != 0 &&
+	    now >= app->message_until) {
 		app->message[0] = '\0';
 		app->dirty = 1;
 	}
@@ -502,7 +504,9 @@ pv_app_prefetch(
 	int error;
 
 	/* Nothing while there is no document, or while the view moves. */
-	if (!app->has_document || app->turning || app->pressed)
+	if (!app->has_document ||
+	    app->turning ||
+	    app->pressed)
 		return 0;
 
 	/* The sidebar's thumbnails in view and just past it, one at a time. */
@@ -1398,7 +1402,10 @@ handle_axis(
 		largest = pv_app_content_height(app) - (double)app->height;
 		if (largest < 0.0)
 			largest = 0.0;
-		if ((event->scroll > 0 && app->scroll_y >= largest) || (event->scroll < 0 && app->scroll_y <= 0.0)) {
+		if ((event->scroll > 0 &&
+		     app->scroll_y >= largest) ||
+		    (event->scroll < 0 &&
+		     app->scroll_y <= 0.0)) {
 			app->wheel += (double)event->scroll;
 			if (app->wheel >= VIEW_WHEEL_TURN) {
 				app->wheel = 0.0;
@@ -1492,7 +1499,10 @@ chooser_click(
 
 	/* A click outside the card closes the chooser. */
 	pv_chooser_layout(app, &x, &y, &width, &height, &rows);
-	if (click_x < x || click_x >= x + width || click_y < y || click_y >= y + height) {
+	if (click_x < x ||
+	    click_x >= x + width ||
+	    click_y < y ||
+	    click_y >= y + height) {
 		app->choosing = 0;
 		app->dirty = 1;
 		pv_log("CHOOSER closed");

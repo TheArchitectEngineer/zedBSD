@@ -771,7 +771,9 @@ emit_join(
 	/* A straight corner needs no join. */
 	cross = in_x * out_y - in_y * out_x;
 	dot = in_x * out_x + in_y * out_y;
-	if (cross < 1e-12 && cross > -1e-12 && dot > 0.0)
+	if (cross < 1e-12 &&
+	    cross > -1e-12 &&
+	    dot > 0.0)
 		return 0;
 
 	/* The outer side: the normals' side opposite the turn. */

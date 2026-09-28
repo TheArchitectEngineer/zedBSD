@@ -402,7 +402,9 @@ lay_out_update(
 	bytes = pdf_reader_bytes(layout.base);
 	size = pdf_reader_size(layout.base);
 	pdf_buffer_append(file, bytes, size);
-	if (size != 0 && bytes[size - 1] != '\n' && bytes[size - 1] != '\r')
+	if (size != 0 &&
+	    bytes[size - 1] != '\n' &&
+	    bytes[size - 1] != '\r')
 		pdf_buffer_append(file, "\n", 1);
 	layout.section = file->length;
 
@@ -2143,7 +2145,9 @@ write_real(
 		length--;
 
 	/* A negative number that rounded to zero is written as zero. */
-	if (length == 2 && text[0] == '-' && text[1] == '0') {
+	if (length == 2 &&
+	    text[0] == '-' &&
+	    text[1] == '0') {
 		text[0] = '0';
 		length = 1;
 	}

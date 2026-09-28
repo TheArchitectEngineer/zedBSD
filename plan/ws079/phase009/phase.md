@@ -3,11 +3,11 @@
 # ws079-p009: 全文規約確認と回帰（必須の最終確認）
 
 <!-- awesome-plan-current:start -->
-Status: uncleared（2026-09-29、PDF/Notes subagent。直してよい範囲（libpdf・pdf.h・pdfviewer・notes・試験の道具）は規約の道具の違反 0 と回帰（host 8 本・4 platform の build・QEMU の Venus の全段）まで済んだ。WS079 の範囲の外の source（kernel の注入の device・compositor の corner.c・libtruetype の outline.c・試験の program）に違反が残り、main の判断が要る）
+Status: uncleared（2026-09-29、PDF/Notes subagent の 2 回目の区切り。規約の是正は全て済んだ: 範囲の中と main の許した範囲の外の file は `style-check.py` の違反 0。回帰も host 8 本・truetype の描画の比較・4 platform の build・QEMU の zdesktop（corner・mouse の三回 click）と PDF の demo の全段・boot test まで ok。残るのは pen と touch の guest 試験（p003・p012・p013-touch）だけで、その試験の image（`build-pen-image.sh`）の build が Noct の取得と build を要し、subagent の toolchain の規則で止めた。main の判断で覆してよい）
 Disposition: normal
 Parent: [WS079](../ws.md)
 Queue: main の指示（PDF/Notes subagent、2026-09-28）。Awesome Plan の Queue の item ではない
-Resume point: main が範囲の外の file（下の表）を直す許可か割り当てをしたら、それを直し、`style-check.py`・`style-extra.py` と該当の回帰（kernel は build と boot test、compositor は zdesktop の試験）を流して cleared にする
+Resume point: main が pen の試験の image を作る（`sh plan/ws079/tests/build-pen-image.sh BUILD`、Noct の build を含む）か、subagent に Noct の使用を許したら、`pen-guest.sh start IMAGE` の guest で `p003-guest.sh`・`p012-guest.sh`・`zdesktop-p013-touch.sh BUILD`（BUILD はこの区切りの compositor・libwayland・tablet-probe・peninject を持つ build）を流し、PASS なら cleared にする。`input-inject.c`・`input-inject.h`・touchinject の規約は WS081 p002 で是正（main の割り当て）
 <!-- awesome-plan-current:end -->
 
 ## 範囲（main の指示、2026-09-28）
@@ -56,23 +56,60 @@ WS079 の試験の道具だけ（main の指示）。WS079 の他の source（ke
 | QEMU の Venus guest（main の image の copy、この worktree の 4 つを SSH で入れ替え）: `pdf-demo-guest.sh … quilt faq refcard programs encrypted notice annotate refuse ccitt password thumbnails` | 全段 ok、zdesktop の ERROR 0。1 回目は `encrypted` と `notice` の期待が p015 の前の振る舞い（password の要る文書の message、gnus-logo の注意）で MISSING になった。p015 の意図した変化なので段を直し（password の card、JBIG2 の `skipped.pdf` の注意）、2 段を流し直して ok。画面: `/home/awe/zedBSD-rpi4/build/ws079-shots/ws079-p009-20260929-*.png`（27 枚） |
 | boot test（`plan/tools/boot-test.sh`） | 未実施（kernel と image は変えていない。guest は main の image の copy で起動した） |
 
-## 範囲の外の WS079 の source（main へ、直していない）
+## 2 回目の区切り（2026-09-29、main の判断の後）
+
+main の判断（2026-09-29）: p015・p009 の commit は main に merge（384361e5）。範囲の外の file のうち WS079 が作った `userland/desktop/wayland/corner.c`・
+`tablet.c`、`userland/desktop/libtruetype/outline.c`、`userland/base/tests/peninject`・`tablet-probe` はこの subagent が直してよい。
+**`src/drivers/generic/input-inject.c`・`include/uapi/input-inject.h`・`userland/base/tests/touchinject` は WS081 の subagent が p002 で変更中（Scan Time の宣言）なので
+触らず、規約の是正は main が WS081 に割り当てる（WS081 p002 で是正、確認は WS081 の最終確認の Phase へ）。** libpdf の公開 API の追加 2 つは承認。
+
+### 行ったこと
+
+- worktree に `git merge main`（fast-forward で main の 1f5a3aa2 へ、384361e5 を含む）。
+- `userland/desktop/libtruetype/outline.c` を規約に合わせて書き直した: 著作権の見出しの前の mode 行を除く、公開の関数を static の前に（`truetype_outline_load()`・
+  `truetype_outline_bounds()` を前へ）、前方宣言を 1 行に、宣言を 1 行 1 つに、公開の関数に動詞の注釈、条件演算子 3 つを if に、C99 の複合 literal 2 つを
+  変数（`control`）に、呼び出しの結果の直接の return を変数に、禁じられた注釈「Returns the computed result.」を除く、`load_simple()` を
+  `read_flags()`・`read_coordinates()`・`trace_contour()` に分けた（x と y の同じ読み方を 1 つの関数に）。到達しない分岐（前の検査で除かれた
+  `last < first` の skip）を除いた。
+- `corner.c`: 閉じ括弧の後の 3 か所に段落の注釈。`tablet.c`: `tool_slot()` の呼び出しの結果の return を変数に。`peninject/main.c`: 裸の `return status;` 2 つを
+  失敗と成功の return に、printf の引数の条件演算子 2 つを変数に。
+- §6 の「3 つ以上の節、または `&&` と `||` の混在の条件は節を行に分ける」を、1 行に書かれた条件 35 か所（libpdf・pdfviewer・notes・tablet.c・corner.c・
+  tablet-probe）で行に分けた（括弧と字下げで構造を示す、評価の順序は不変）。
+- `plan/ws079/tests/truetype-render-dump.c`・`truetype-render-compare.sh`（新）: libtruetype を今の `outline.c` と git の revision の `outline.c` で host に 2 度 build し、
+  font の全 glyph を 5 つの大きさで `truetype_render_glyph()` で描いて（結果・箱・送り・bitmap の hash）比べる。
+
+### 確認（2026-09-29）
+
+| 確認 | 結果 |
+| --- | --- |
+| `style-check.py`（範囲の 57 file と、corner.c・tablet.c・touch.c・libtruetype の outline.c・peninject・tablet-probe） | 違反 0 |
+| `style-extra.py`（同じ） | 7（joined-check。割り当ての検査ではない 2 節の NULL の検査で規約に当たらない） |
+| `truetype-render-compare.sh 1f5a3aa2`（DejaVu Sans・Serif・Sans Mono Bold、Noto Sans Balinese（変換つきの合成）、Liberation Serif、大きさ 9・13・16・24・40） | 5 font の 81,900 の描画が前の `outline.c` と全て同じ（うち 80,300 が描けた glyph）、ASan+UBSan の報告なし |
+| `truetype-outline-test.sh`（p007 の outline の API と fontTools） | 4 font とも 0 differ |
+| host 8 本（`run-pdf-ccitt 100`・`run-pdf-text 20`・`run-pdf-render 100`・`run-pdf-reader`・`run-pdf-writer`・`run-pdf-update`・`run-notes-host`・`run-pdfviewer-host`） | 8 本とも ok（Notes・PDF Viewer の文字の描画を含む） |
+| build | amd64 の wayland・wltest・pdfviewer・notes・libpdf.so・libtruetype.so、pen の config の peninject・tablet-probe、pcat・pc98・rpi4 の libpdf.so: 全て exit 0・warning 0 |
+| QEMU の zdesktop（main の `ws035-sq` の image の copy、この worktree の compositor と wltest を入れる） | `zdesktop-p010.sh`（上の右端のスワイプ、端のジェスチャー）: **p010: PASS**。`zdesktop-p013.sh`（mouse の三回 click、double click の docking）: **p013: PASS**。画面は `/home/awe/zedBSD-rpi4/build/ws079-shots/ws079-p009-20260929-zdesktop-p01{0,3}-*.png` |
+| QEMU の PDF の demo（同じ image、最終の pdfviewer・notes・libpdf.so・libtruetype.so） | `pdf-demo-guest.sh` の全 13 段 ok、MISSING 0、zdesktop の ERROR 0（`ws079-p009b-20260929-*.png`） |
+| boot test（`plan/tools/boot-test.sh build/ws079-p015-run/hdd-image.img`） | PASS（login prompt、`ws079-p009-20260929-boot-login.png`）。ただしこの image は main の image の copy で、この区切りの変更（userland だけ）を含まない |
+| pen と touch の guest 試験（`p003-guest.sh`・`p012-guest.sh`・`zdesktop-p013-touch.sh`） | **未実施**: 注入の device（CONFIG_INPUT_TEST_INJECT）を持つ pen の image が要り、`build-pen-image.sh` が Noct の archive の取得と source の展開・build を要した（`build/NoctLang` を main への読み取りの symlink にしても、disk image の規則が worktree の `userland/base/noct/noct` を作ろうとする）。toolchain の規則で止め、途中で取得された archive（worktree の `userland/base/noct/distfiles/`、git の外）と symlink は消した。tablet.c・tablet-probe・peninject の変更は条件の行の分割・変数への代入・return の分割で、振る舞いは変えていない（build は warning 0） |
+
+## 範囲の外の WS079 の source（1 回目の照合）
 
 `style-check.py`（34）と `style-extra.py`（15）の指摘:
 
 | file | 指摘 |
 | --- | --- |
-| `src/drivers/generic/input-inject.c`（p002） | blank-after-brace 4、call-in-condition 2（`cred_is_superuser(cred_current())`、`inject_event_valid`）、conditional 1、goto 2（`goto fail`、単一の後始末なら規約内）、multi-line-body 1（`return inject_key_valid(...) &&` の Boolean の式）、裸の `return error;` 1、呼び出しの結果の return 2 |
-| `include/uapi/input-inject.h` | paragraph-comment 1 |
+| `src/drivers/generic/input-inject.c`（p002、**WS081 p002 で是正、main の割り当て**） | blank-after-brace 4、call-in-condition 2（`cred_is_superuser(cred_current())`、`inject_event_valid`）、conditional 1、goto 2（`goto fail`、単一の後始末なら規約内）、multi-line-body 1（`return inject_key_valid(...) &&` の Boolean の式）、裸の `return error;` 1、呼び出しの結果の return 2 |
+| `include/uapi/input-inject.h`（**WS081 p002 で是正、main の割り当て**） | paragraph-comment 1 |
 | `userland/desktop/wayland/corner.c`（p010） | blank-after-brace 3 |
 | `userland/desktop/wayland/tablet.c`（p003） | 呼び出しの結果の return 1、joined-check 1（規約に当たらない見込み） |
 | `userland/desktop/libtruetype/outline.c`（p007 の outline の API） | blank-after-brace 9、paragraph-comment 3、forward-declaration 3、conditional 1、著作権の見出しの前の mode 行、公開の関数の注釈 2、禁じられた注釈「Returns the computed result.」、呼び出しの結果の return 2 |
-| `userland/base/tests/peninject/main.c`・`touchinject/main.c`（p002・p012 の試験の program） | conditional 4（printf の引数）、裸の `return status;` 3 |
+| `userland/base/tests/peninject/main.c`（2 回目の区切りで是正）・`touchinject/main.c`（**WS081 p002 で是正、main の割り当て**）（p002・p012 の試験の program） | conditional 4（printf の引数）、裸の `return status;` 3 |
 | `userland/base/tests/tablet-probe/main.c` | joined-check 1 |
 | `src/drivers/usb/hid-digitizer.c`・`hid-touch.c`・`include/drivers/usb/hid-*.h`・`userland/desktop/wayland/touch.c`・`touch.h` | 指摘なし |
 
 ## 未実施と制限
 
 - 規約の目視は道具の拾う規則と、短い注釈・vague な注釈の拾い直し、notes/save.c などの一部の読み直しまで。57 file・約 5 万行の全行の目視はしていない。
-- 範囲の外の上の file は直していない（main の判断待ち）。
+- 1 回目の区切りの範囲の外の file は、2 回目の区切りで main の許した 5 つを直した。`input-inject.c`・`input-inject.h`・touchinject は WS081 p002（main の割り当て）。
 - 実機: 未実施。

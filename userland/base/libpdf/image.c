@@ -324,7 +324,9 @@ read_space(
 			return error;
 		if (count->type != PDF_OBJECT_INTEGER)
 			return PDF_EFORMAT;
-		if (count->integer != 1 && count->integer != 3 && count->integer != 4)
+		if (count->integer != 1 &&
+		    count->integer != 3 &&
+		    count->integer != 4)
 			return ENOTSUP;
 		result->components = (int)count->integer;
 		return 0;
