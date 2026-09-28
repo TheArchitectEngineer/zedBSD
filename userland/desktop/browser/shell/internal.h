@@ -7,7 +7,7 @@
 
 /*
  * The parts of the shell that speak Wayland and Vulkan: the window
- * (window.c) and the presenter that shows the GPU renderer's frames in it
+ * (window.c) and the presenter that shows the view's frames in it
  * (present.c).  The host build leaves the whole directory out.
  */
 
@@ -21,8 +21,8 @@
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 
-#include "paint/gpu.h"
 #include "shell/shell.h"
+#include "view/view.h"
 
 #include <keiland.h>
 
@@ -115,20 +115,23 @@ struct shell_window {
 };
 
 /*
- * One swapchain image the presenter draws into; the image is the
- * swapchain's.
+ * One swapchain image the view draws into: the image (the swapchain's),
+ * the view of it the view's framebuffer is made over, and the semaphore
+ * its present waits for.
  */
 struct shell_target {
 	VkImage image;
 	VkImageView view;
-	VkFramebuffer framebuffer;
 	VkSemaphore rendered;
 };
 
 /*
  * The Vulkan objects that show the page in the window: the instance with
- * the window's surface, the device, the swapchain with a framebuffer for
- * each image, and the GPU renderer that draws into them.
+ * the window's surface, the device (lent to the view, which draws with
+ * it), the swapchain with its images, and the one command buffer each
+ * frame is recorded into with the fence its submission signals.  The
+ * presenter keeps only the swapchain and the synchronization; the drawing
+ * is the view's (browser_view_record).
  */
 struct shell_present {
 	/* The instance, the surface of the window, the device and its queue family. */
@@ -149,9 +152,11 @@ struct shell_present {
 	/* The semaphore the acquire signals. */
 	VkSemaphore acquired;
 
-	/* The GPU renderer on the device, and whether it was opened. */
-	struct paint_gpu gpu;
-	int gpu_open;
+	/* The frame's command buffer and its fence, and whether a submitted frame may still run. */
+	VkCommandPool pool;
+	VkCommandBuffer command;
+	VkFence fence;
+	int in_flight;
 
 	/* The Vulkan call that failed last, for the error line. */
 	const char *operation;
@@ -213,9 +218,9 @@ int shell_titlebar_take(struct shell_titlebar *titlebar, struct shell_titlebar_e
 void shell_titlebar_close(struct shell_titlebar *titlebar);
 
 /* The presenter (present.c). */
-VkResult shell_present_open(struct shell_present *present, struct shell_window *window);
-VkResult shell_present_resize(struct shell_present *present, uint32_t width, uint32_t height);
-VkResult shell_present_frame(struct shell_present *present, const struct paint_list *list, struct text_system *text, layout_unit scroll_y);
-void shell_present_close(struct shell_present *present);
+VkResult shell_present_open(struct shell_present *present, struct shell_window *window, struct browser_view *view);
+VkResult shell_present_resize(struct shell_present *present, struct browser_view *view, uint32_t width, uint32_t height);
+VkResult shell_present_frame(struct shell_present *present, struct browser_view *view);
+void shell_present_close(struct shell_present *present, struct browser_view *view);
 
 #endif
