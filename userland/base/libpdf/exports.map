@@ -1,0 +1,33 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/* Only the calls <pdf.h> declares leave the library. */
+{
+	global:
+		pdf_writer_create;
+		pdf_writer_destroy;
+		pdf_writer_begin_page;
+		pdf_writer_end_page;
+		pdf_writer_set_fill_color;
+		pdf_writer_move_to;
+		pdf_writer_line_to;
+		pdf_writer_curve_to;
+		pdf_writer_close_path;
+		pdf_writer_fill;
+		pdf_writer_fill_outline;
+		pdf_writer_draw_rgba_image;
+		pdf_writer_draw_jpeg_image;
+		pdf_writer_attach_file;
+		pdf_writer_set_document_id;
+		pdf_writer_get_document_id;
+		pdf_writer_set_dates;
+		pdf_writer_save;
+		pdf_outline_stroke;
+		pdf_outline_free;
+	local:
+		*;
+};

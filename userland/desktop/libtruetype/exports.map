@@ -17,6 +17,7 @@
 		truetype_render_glyph;
 		truetype_design_metrics;
 		truetype_glyph_design_advance;
+		truetype_glyph_outline;
 	local:
 		*;
 };

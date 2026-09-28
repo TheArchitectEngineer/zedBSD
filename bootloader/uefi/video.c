@@ -14,37 +14,65 @@
 static int video_dimension(const char *text, size_t end, size_t *position, UINT32 *dimension);
 static int video_parse(const char *text, size_t length, UINT32 *width, UINT32 *height);
 static int video_mode_matches(const EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info, UINTN size, UINT32 width, UINT32 height);
+static EFI_STATUS video_set(EFI_BOOT_SERVICES *boot, EFI_GRAPHICS_OUTPUT_PROTOCOL *gop, UINT32 width, UINT32 height);
 
 /*
  * Selects video=WIDTHxHEIGHT from an already assembled parameter record.
- * QueryMode buffers belong to firmware pool storage and are released before
- * SetMode. The caller must rebuild its framebuffer mapping after success.
+ * Without video=, a preferred mode (preferred_width by preferred_height,
+ * both nonzero; ws035-p112: 1920x1080 for the boot splash) is set when the
+ * firmware has it, and the current mode is kept when it has not or when
+ * setting it fails.  The caller must rebuild its framebuffer mapping after
+ * success.
  */
 EFI_STATUS
 zbl_uefi_video_select(
 	EFI_BOOT_SERVICES *boot,
 	EFI_GRAPHICS_OUTPUT_PROTOCOL *gop,
 	const char *text,
-	size_t length)
+	size_t length,
+	UINT32 preferred_width,
+	UINT32 preferred_height)
+{
+	UINT32 width;
+	UINT32 height;
+	int parsed;
+
+	/* The configuration's request, when there is one, must be met. */
+	parsed = video_parse(text, length, &width, &height);
+	if (parsed < 0)
+		return EFI_INVALID_PARAMETER;
+
+	if (parsed > 0)
+		return video_set(boot, gop, width, height);
+
+	/* Else the preferred mode, which is only a wish: the current mode stays without it. */
+	if (preferred_width != 0U && preferred_height != 0U)
+		(void)video_set(boot, gop, preferred_width, preferred_height);
+
+	/* Succeeded: whatever mode is active now is the caller's to validate. */
+	return EFI_SUCCESS;
+}
+
+/*
+ * Sets the GOP mode of a size with a supported pixel layout, keeping the
+ * current mode when it already is one.  QueryMode buffers belong to
+ * firmware pool storage and are released before SetMode.  Returns
+ * EFI_UNSUPPORTED when the firmware has no such mode.
+ */
+static EFI_STATUS
+video_set(
+	EFI_BOOT_SERVICES *boot,
+	EFI_GRAPHICS_OUTPUT_PROTOCOL *gop,
+	UINT32 width,
+	UINT32 height)
 {
 	EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
 	EFI_STATUS status;
 	EFI_STATUS release_status;
 	UINTN size;
-	UINT32 width;
-	UINT32 height;
 	UINT32 index;
 	UINT32 count;
-	int parsed;
 	int matches;
-
-	/* Leaves the firmware mode alone unless the configuration requests one. */
-	parsed = video_parse(text, length, &width, &height);
-	if (parsed < 0)
-		return EFI_INVALID_PARAMETER;
-
-	if (parsed == 0)
-		return EFI_SUCCESS;
 
 	/* Refuses incomplete protocol tables and an unbounded firmware enumeration. */
 	if (boot == 0 || gop == 0)

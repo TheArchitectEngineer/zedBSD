@@ -204,7 +204,7 @@ ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-cdc-ecm.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c src/drivers/usb/hid-digitizer.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hub.c
@@ -261,6 +261,9 @@ AMD64_KERNEL_SOURCES := \
 	src/kern/tty.c \
 	src/drivers/generic/system-device.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
 	src/drivers/platform/pcat/graphics/vgafont.c src/drivers/platform/pcat/graphics/splash.c src/kern/init.c
+ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
+AMD64_KERNEL_SOURCES += src/drivers/generic/input-inject.c
+endif
 ifeq ($(CONFIG_DRIVER_GRAPHICS_DEVICE),y)
 AMD64_KERNEL_SOURCES += \
 	src/drivers/platform/pcat/graphics/pcat-graphics.c \
@@ -885,6 +888,19 @@ $(DYNAMIC_DIR)/libjpeg-compat.so: $(DYNAMIC_JPEG_COMPAT_OBJS) $(DYNAMIC_DIR)/lib
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libc.so --soname libjpeg-compat.so $@
 
+# libpdf (ws079-p004): the PDF library of the base programs; its writer needs nothing but the C
+# library.
+DYNAMIC_PDF_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libpdf)
+
+$(DYNAMIC_DIR)/libpdf.so: $(DYNAMIC_PDF_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/base/libpdf/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libpdf.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/base/libpdf/exports.map \
+ $(DYNAMIC_PDF_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
+ --needed libc.so --soname libpdf.so $@
+
 # libgif-compat (ws074-p051): giflib's decoding interface of the base programs; it needs nothing but the
 # C library.
 DYNAMIC_GIF_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgif-compat)
@@ -1471,7 +1487,8 @@ rootfs: $(BUILD)/rootfs/.stamp
 
 # ws035-p096: the boot logo on the boot FAT (/logo.ppm: the ESP of the native layout, the payload FAT of the BIOS image), drawn by the
 # UEFI and the BIOS loaders when zedbsd.cfg names it (logo=logo.ppm).  ws035-p107: it is the Kei boot splash
-# (userland/desktop/artwork/kei-boot-splash.png, 1440x810 without its spinner, "fit=cover": the loaders cover the screen with it and the
+# (userland/desktop/artwork/kei-boot-splash.png, 1920x1080 without its spinner, "fit=contain" since ws035-p112: the loaders draw it in the
+# middle over black bars, shrunk only when the screen is smaller, and the
 # kernel's quiet console draws the spinner, src/drivers/platform/pcat/graphics/splash.c).
 AMD64_BOOT_LOGO := $(BUILD)/boot-logo.ppm
 
@@ -1561,7 +1578,8 @@ ifeq ($(ZEDBSD_VARIANT),native)
 # swap are 1 GiB each, a 2 GiB image that CI publishes gzip-compressed
 # (2026-09-26 user direction).
 # ws035-p098: the lines of the graphical boot are added when ZEDBSD_GRAPHICAL_BOOT is y (the value is in
-# the name, so switching it makes the image again).
+# the name, so switching it makes the image again).  ws035-p112: the graphical boot drops video= (640x480), so the UEFI
+# loader asks GOP for 1920x1080, the splash's size, and draws black bars where the mode is another.
 AMD64_NATIVE_UEFI_ZEDBSD_CONFIG := $(BUILD)/zedbsd-native-uefi-graphical-$(ZEDBSD_GRAPHICAL_BOOT).cfg
 AMD64_GRAPHICAL_BOOT_LINES := logo=logo.ppm kmsg=quiet login=graphical
 AMD64_NATIVE_ROOT_MIB ?= 1024
@@ -1585,6 +1603,7 @@ $(AMD64_NATIVE_ROOT_IMAGE): $(BUILD)/rootfs/.stamp $(ARCH_UFS_IMAGE_TOOLS)
 $(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG): $(AMD64_PLATFORM)/zedbsd-native-uefi.cfg
 	@mkdir -p $(dir $@)
 	cp $< $@.tmp
+	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),grep -v '^video=' $< > $@.tmp)
 	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),printf '%s\n' $(AMD64_GRAPHICAL_BOOT_LINES) >> $@.tmp)
 	mv -f $@.tmp $@
 
