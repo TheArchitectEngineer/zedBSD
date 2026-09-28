@@ -348,8 +348,9 @@ notes_document_insert_page(
 	document->pages[index] = page;
 	document->page_count++;
 
-	/* Succeeded: the document changed since its last save. */
+	/* Succeeded: the document changed since its last save, and the pages moved. */
 	document->dirty = 1;
+	document->reshaped++;
 	return 0;
 }
 
@@ -384,8 +385,9 @@ notes_document_remove_page(
 	memmove(&document->pages[index], &document->pages[index + 1U], (document->page_count - index - 1U) * sizeof(document->pages[0]));
 	document->page_count--;
 
-	/* Succeeded: the document changed since its last save. */
+	/* Succeeded: the document changed since its last save, and the pages moved. */
 	document->dirty = 1;
+	document->reshaped++;
 	return page;
 }
 
@@ -423,6 +425,10 @@ notes_document_insert_stroke(
 		if (error != 0)
 			return error;
 	}
+
+	/* A stroke that goes below others changes what the page's picture holds. */
+	if (place != target->stroke_count)
+		document->reshaped++;
 
 	/* Moves the later strokes up and puts the stroke in. */
 	memmove(&target->strokes[place + 1U], &target->strokes[place], (target->stroke_count - place) * sizeof(target->strokes[0]));
@@ -484,8 +490,9 @@ notes_document_remove_stroke(
 	memmove(&target->strokes[index], &target->strokes[index + 1U], (target->stroke_count - index - 1U) * sizeof(target->strokes[0]));
 	target->stroke_count--;
 
-	/* Succeeded: the document changed since its last save. */
+	/* Succeeded: the document changed since its last save, and a stroke left a page's picture. */
 	document->dirty = 1;
+	document->reshaped++;
 	*place = index;
 	return stroke;
 }

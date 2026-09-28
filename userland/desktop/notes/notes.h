@@ -64,10 +64,16 @@
 #define NOTES_SOURCE_PEN	1U
 #define NOTES_SOURCE_ERASER	2U
 
-/* The kinds of input event: contact starts, the point moves in contact, contact ends. */
+/*
+ * The kinds of input event: contact starts, the point moves in contact,
+ * contact ends; a pen moves over the window without touching it, a pen
+ * leaves the window.
+ */
 #define NOTES_INPUT_DOWN	1U
 #define NOTES_INPUT_MOTION	2U
 #define NOTES_INPUT_UP		3U
+#define NOTES_INPUT_HOVER	4U
+#define NOTES_INPUT_LEAVE	5U
 
 /*
  * One sample of a stroke, in page coordinates.
@@ -203,6 +209,15 @@ struct notes_document {
 
 	/* A change since the last save; cleared by a save. */
 	int dirty;
+
+	/*
+	 * Counts the changes other than a stroke put on top of a page: a
+	 * stroke inserted below others or removed, a page inserted or removed.
+	 * It only ever grows.  The screen keeps the finished strokes of a page
+	 * in a picture and adds the strokes put on top to it; a new count tells
+	 * it that the picture must be drawn again from the start.
+	 */
+	uint64_t reshaped;
 
 	/* The journal every change is logged to (NULL: none). */
 	struct notes_journal *journal;

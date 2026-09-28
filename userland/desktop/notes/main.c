@@ -40,6 +40,7 @@
 #include "app.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -81,6 +82,30 @@
 #define MAIN_KEY_PAGE_UP	104U
 #define MAIN_KEY_PAGE_DOWN	109U
 
+/* The points of a circle the pen's mark is drawn with. */
+#define MAIN_CIRCLE_POINTS	40U
+
+/*
+ * The desk around the page: a soft wash like Kei's blurred landscape --
+ * pale sky at the top, a light haze a little below the middle, pale leaf
+ * green at the bottom -- and the page's slate shadow: its
+ * colour, its darkest alpha, how many pixels it fades over and how far it
+ * drops below the page.
+ */
+#define MAIN_DESK_TOP		0xd9e6f5ffU
+#define MAIN_DESK_HAZE		0xeef3f6ffU
+#define MAIN_DESK_BOTTOM	0xdfecd6ffU
+#define MAIN_DESK_HAZE_SHARE	0.58f
+#define MAIN_SHADOW_COLOR	0x1f3a6600U
+#define MAIN_SHADOW_ALPHA	44
+#define MAIN_SHADOW_RINGS	12
+#define MAIN_SHADOW_DROP	3.0f
+
+/* The colours of the pen's mark: its white halo, the slate of the eraser's ring and its fill. */
+#define MAIN_MARK_HALO		0xffffffd8U
+#define MAIN_MARK_RING		0x33415599U
+#define MAIN_MARK_FILL		0x3341551cU
+
 /* What the current contact is doing. */
 #define MAIN_CONTACT_NONE	0U
 #define MAIN_CONTACT_TOOLBAR	1U
@@ -91,12 +116,33 @@
  * Everything Notes holds for the one notebook it shows.
  */
 struct notes_app {
-	/* The window, its drawing, the toolbar and the frame being built. */
+	/* The window, its drawing, the toolbar, the frame being built and the page frame (below). */
 	struct notes_window window;
 	struct notes_renderer renderer;
 	struct notes_ui ui;
 	struct notes_frame frame;
+	struct notes_frame page_frame;
 	struct notes_view view;
+
+	/*
+	 * The page's picture (render.c) as the last frame left it: the page it
+	 * shows, the renderer's serial of the picture, the document's reshaped
+	 * count and the scale when it was drawn, and how many of the page's
+	 * strokes it holds, from the bottom.  A frame adds the strokes put on
+	 * top since, or draws the page again from the start when anything else
+	 * changed.
+	 */
+	const struct notes_page *picture_page;
+	unsigned long picture_serial;
+	uint64_t picture_reshaped;
+	float picture_scale;
+	size_t picture_strokes;
+
+	/* The pen over the window: whether it is there, its place (surface pixels) and its source (NOTES_SOURCE_*). */
+	int hover;
+	float hover_x;
+	float hover_y;
+	unsigned hover_source;
 
 	/* The notebook, its file and the name shown in the title. */
 	struct notes_document document;
@@ -152,11 +198,17 @@ static void app_state(const struct notes_app *app, struct notes_ui_state *state)
 static void app_action(struct notes_app *app, uint32_t action);
 static void app_key(struct notes_app *app, const struct notes_key *key);
 static void app_input(struct notes_app *app, const struct notes_input *input);
+static void app_hover(struct notes_app *app, const struct notes_input *input);
 static void app_sample(struct notes_app *app, const struct notes_input *input);
 static void app_end_contact(struct notes_app *app, const struct notes_input *input);
 static void app_changed(struct notes_app *app);
 static int app_save(struct notes_app *app, const char *reason);
 static void app_draw(struct notes_app *app);
+static struct notes_frame *app_page_frame(struct notes_app *app, const struct notes_page *page, float scale, int *clear);
+static void app_desk(struct notes_app *app, const struct notes_view *view, float width, float height);
+static void app_mark(struct notes_app *app, const struct notes_view *view, int over_toolbar);
+static void app_circle(struct notes_frame *frame, float cx, float cy, float radius, uint32_t color);
+static void app_ring(struct notes_frame *frame, float cx, float cy, float radius, float thickness, uint32_t color);
 static void app_frame_report(struct notes_app *app);
 static int app_timeout(const struct notes_app *app, uint64_t now);
 static uint64_t app_unix_ms(void);
@@ -352,6 +404,7 @@ main(
 	/* Everything goes; the journal stays only when the last save failed. */
 	notes_ui_close(&app.ui);
 	notes_frame_free(&app.frame);
+	notes_frame_free(&app.page_frame);
 	notes_renderer_close(&app.renderer);
 	notes_window_close(&app.window);
 	notes_journal_destroy(app.document.journal);
@@ -805,6 +858,11 @@ app_input(
 	uint32_t color;
 	float width;
 
+	/* The pen's mark follows the pen, over the window or in contact. */
+	app_hover(app, input);
+	if (input->kind == NOTES_INPUT_HOVER || input->kind == NOTES_INPUT_LEAVE)
+		return;
+
 	/* A motion or an end belongs to the contact under way. */
 	if (input->kind == NOTES_INPUT_MOTION) {
 		if (app->contact == MAIN_CONTACT_DRAW || app->contact == MAIN_CONTACT_ERASE)
@@ -862,6 +920,43 @@ app_input(
 	app->live_start = input->time_ms;
 	app->contact = MAIN_CONTACT_DRAW;
 	app_sample(app, input);
+}
+
+/*
+ * Follows the pen for its mark: a pen over the window or in contact is
+ * where its last event was; one that left, and the pointer (which has its
+ * own cursor), have no mark.
+ */
+static void
+app_hover(
+	struct notes_app *app,
+	const struct notes_input *input)
+{
+	/* The pointer and a pen that left show no mark; the frame shows it gone (logged for the tests). */
+	if (input->kind == NOTES_INPUT_LEAVE || input->source == NOTES_SOURCE_POINTER) {
+		if (app->hover) {
+			printf("NOTES HOVER gone\n");
+			fflush(stdout);
+			app->redraw = 1;
+		}
+
+		/* No mark from now on. */
+		app->hover = 0;
+		return;
+	}
+
+	/* A pen that comes over the window is logged for the tests. */
+	if (!app->hover || app->hover_source != input->source) {
+		printf("NOTES HOVER source=%u x=%d y=%d\n", input->source, (int)input->x, (int)input->y);
+		fflush(stdout);
+	}
+
+	/* The pen is here now; the frame shows its mark here. */
+	app->hover = 1;
+	app->hover_x = input->x;
+	app->hover_y = input->y;
+	app->hover_source = input->source;
+	app->redraw = 1;
 }
 
 /* Adds a sample to the stroke being drawn, or erases at it. */
@@ -1040,7 +1135,11 @@ app_save(
 	return 0;
 }
 
-/* Builds and draws a frame: the desk, the page and its strokes, the stroke being drawn, the toolbar. */
+/*
+ * Builds and draws a frame: the desk, the page's picture with the strokes
+ * added since the last frame, the stroke being drawn, the pen's mark and
+ * the toolbar.
+ */
 static void
 app_draw(
 	struct notes_app *app)
@@ -1048,12 +1147,17 @@ app_draw(
 	struct notes_ui_state state;
 	struct notes_view view;
 	struct notes_page *page;
+	struct notes_frame *page_frame;
 	unsigned char *pixels;
+	const char *mode;
 	uint64_t started;
 	uint64_t built;
 	uint64_t finished;
+	uint32_t picture_width;
+	uint32_t picture_height;
 	size_t pitch;
 	size_t index;
+	int page_clear;
 	int error;
 
 	/* When the frame starts, for the frame times. */
@@ -1097,40 +1201,51 @@ app_draw(
 		}
 	}
 
-	/* The page with a soft shadow. */
-	notes_frame_begin(&app->frame);
-	notes_frame_rect(&app->frame, view.x + 2.0f, view.y + 3.0f, page->width * view.scale, page->height * view.scale, 0x0000002eU);
-	notes_frame_rect(&app->frame, view.x, view.y, page->width * view.scale, page->height * view.scale, 0xffffffffU);
-
-	/* The strokes, bottom first, clipped to the page. */
-	notes_frame_clip(&app->frame, 1, view.x, view.y, page->width * view.scale, page->height * view.scale);
-	for (index = 0; index < page->stroke_count; index++) {
-		error = notes_stroke_outline(page->strokes[index]);
-		if (error != 0)
-			continue;
-		notes_frame_polygon(&app->frame, page->strokes[index]->outline, page->strokes[index]->outline_count, &view, page->strokes[index]->color);
+	/* The page's picture, at the page's size in whole pixels. */
+	picture_width = (uint32_t)ceil((double)(page->width * view.scale));
+	picture_height = (uint32_t)ceil((double)(page->height * view.scale));
+	error = (int)notes_renderer_page(&app->renderer, picture_width, picture_height);
+	if (error != (int)VK_SUCCESS) {
+		fprintf(stderr, "notes: %s failed (%d)\n", app->renderer.operation, error);
+		app->quit = 1;
+		return;
 	}
 
-	/* The stroke being drawn, on top. */
+	/* What the picture lacks, when anything: the whole page, or the strokes put on top since. */
+	page_clear = 0;
+	page_frame = app_page_frame(app, page, view.scale, &page_clear);
+
+	/* The desk and the page's picture on it. */
+	notes_frame_begin(&app->frame);
+	app_desk(app, &view, page->width * view.scale, page->height * view.scale);
+	notes_frame_texture(&app->frame, NOTES_TEXTURE_PAGE, view.x, view.y,
+			    (float)app->renderer.page_width, (float)app->renderer.page_height);
+
+	/* The stroke being drawn, on top, clipped to the page. */
+	notes_frame_clip(&app->frame, 1, view.x, view.y, page->width * view.scale, page->height * view.scale);
 	if (app->live != NULL && app->live->point_count != 0U) {
 		error = notes_stroke_outline(app->live);
 		if (error == 0)
 			notes_frame_polygon(&app->frame, app->live->outline, app->live->outline_count, &view, app->live->color);
 	}
 
-	/* The toolbar across the top. */
-	notes_frame_clip(&app->frame, 0, 0.0f, 0.0f, 0.0f, 0.0f);
-	notes_frame_texture(&app->frame, 0.0f, 0.0f, (float)app->renderer.extent.width, (float)NOTES_TOOLBAR_HEIGHT);
+	/* The pen's mark on the page. */
+	app_mark(app, &view, 0);
 
-	/* The frame; a swapchain out of date is remade and drawn next time. */
-	if (app->frame.error != 0) {
+	/* The toolbar across the top, and the pen's mark over it. */
+	notes_frame_clip(&app->frame, 0, 0.0f, 0.0f, 0.0f, 0.0f);
+	notes_frame_texture(&app->frame, NOTES_TEXTURE_TOOLBAR, 0.0f, 0.0f, (float)app->renderer.extent.width, (float)NOTES_TOOLBAR_HEIGHT);
+	app_mark(app, &view, 1);
+
+	/* A frame that ran out of memory is not drawn. */
+	if (app->frame.error != 0 || (page_frame != NULL && page_frame->error != 0)) {
 		printf("NOTES DRAW out of memory\n");
 		return;
 	}
 
-	/* Draws it, after the time the geometry took. */
+	/* Draws it, after the time the geometry took; a swapchain out of date is remade and drawn next time. */
 	built = app_microseconds();
-	error = (int)notes_renderer_draw(&app->renderer, &app->frame);
+	error = (int)notes_renderer_draw(&app->renderer, &app->frame, page_frame, page_clear);
 	if (error == (int)VK_ERROR_OUT_OF_DATE_KHR) {
 		app->window.resized = 1;
 		return;
@@ -1141,6 +1256,20 @@ app_draw(
 		fprintf(stderr, "notes: %s failed (%d)\n", app->renderer.operation, error);
 		app->quit = 1;
 		return;
+	}
+
+	/* The picture holds the page as it stands now: drawn anew, or added to (logged for the tests). */
+	if (page_frame != NULL) {
+		mode = "add";
+		if (page_clear)
+			mode = "full";
+		printf("NOTES PICTURE %s strokes=%lu..%lu\n", mode, (unsigned long)app->picture_strokes, (unsigned long)page->stroke_count);
+		fflush(stdout);
+		app->picture_page = page;
+		app->picture_serial = app->renderer.page_serial;
+		app->picture_reshaped = app->document.reshaped;
+		app->picture_scale = view.scale;
+		app->picture_strokes = page->stroke_count;
 	}
 
 	/* The frame's times join the ones the next NOTES FRAMES line reports. */
@@ -1160,6 +1289,247 @@ app_draw(
 	/* Nothing waits to be drawn. */
 	app->drawn = 1;
 	app->redraw = 0;
+}
+
+/*
+ * Builds the page frame the page's picture lacks, and tells whether it
+ * starts from a cleared picture: the whole page when the picture shows
+ * another page, was made again, is of another scale, or lost strokes;
+ * only the strokes put on top since when that is all that changed.
+ * Returns NULL when the picture shows the page as it stands.
+ */
+static struct notes_frame *
+app_page_frame(
+	struct notes_app *app,
+	const struct notes_page *page,
+	float scale,
+	int *clear)
+{
+	struct notes_stroke *stroke;
+	struct notes_view origin;
+	size_t first;
+	size_t index;
+	int error;
+
+	/* The picture must be drawn from the start when anything but strokes on top changed. */
+	*clear = 0;
+	if (app->picture_page != page) {
+		*clear = 1;
+	} else if (app->picture_serial != app->renderer.page_serial) {
+		*clear = 1;
+	} else if (app->picture_reshaped != app->document.reshaped) {
+		*clear = 1;
+	} else if (app->picture_scale != scale) {
+		*clear = 1;
+	} else if (page->stroke_count < app->picture_strokes) {
+		*clear = 1;
+	}
+
+	/* A picture that has every stroke needs nothing. */
+	if (!*clear && page->stroke_count == app->picture_strokes)
+		return NULL;
+
+	/* The picture's own place: the page at its top left, at the frame's scale. */
+	origin.x = 0.0f;
+	origin.y = 0.0f;
+	origin.scale = scale;
+
+	/* A cleared picture starts with the white page; one added to starts at its first missing stroke. */
+	notes_frame_begin(&app->page_frame);
+	first = app->picture_strokes;
+	if (*clear) {
+		first = 0;
+		app->picture_strokes = 0;
+		notes_frame_rect(&app->page_frame, 0.0f, 0.0f, page->width * scale, page->height * scale, 0xffffffffU);
+	}
+
+	/* The strokes, bottom first, clipped to the page. */
+	notes_frame_clip(&app->page_frame, 1, 0.0f, 0.0f, page->width * scale, page->height * scale);
+	for (index = first; index < page->stroke_count; index++) {
+		stroke = page->strokes[index];
+		error = notes_stroke_outline(stroke);
+		if (error != 0)
+			continue;
+		notes_frame_polygon(&app->page_frame, stroke->outline, stroke->outline_count, &origin, stroke->color);
+	}
+
+	/* Reports the page frame. */
+	return &app->page_frame;
+}
+
+/* Adds the desk: the soft wash over the window, and the page's shadow. */
+static void
+app_desk(
+	struct notes_app *app,
+	const struct notes_view *view,
+	float width,
+	float height)
+{
+	float window_width;
+	float window_height;
+	float haze;
+	float left;
+	float top;
+	float share;
+	uint32_t color;
+	int ring;
+
+	/* The wash: from sky at the top to the haze, and from the haze to leaf green at the bottom. */
+	window_width = (float)app->renderer.extent.width;
+	window_height = (float)app->renderer.extent.height;
+	haze = (float)floor((double)(window_height * MAIN_DESK_HAZE_SHARE));
+	notes_frame_gradient(&app->frame, 0.0f, 0.0f, window_width, haze, MAIN_DESK_TOP, MAIN_DESK_HAZE);
+	notes_frame_gradient(&app->frame, 0.0f, haze, window_width, window_height - haze, MAIN_DESK_HAZE, MAIN_DESK_BOTTOM);
+
+	/*
+	 * The shadow, dropped a little below the page: rings a pixel wide round
+	 * it, fading outwards.  Each ring is four thin strips, so only the
+	 * shadow's own pixels are drawn.
+	 */
+	for (ring = 0; ring < MAIN_SHADOW_RINGS; ring++) {
+		share = 1.0f - (float)ring / (float)MAIN_SHADOW_RINGS;
+		color = MAIN_SHADOW_COLOR | (uint32_t)(share * share * (float)MAIN_SHADOW_ALPHA);
+		left = view->x - (float)ring - 1.0f;
+		top = view->y + MAIN_SHADOW_DROP - (float)ring - 1.0f;
+
+		/* The ring's top and bottom strips, then its sides between them. */
+		notes_frame_rect(&app->frame, left, top, width + 2.0f * (float)ring + 2.0f, 1.0f, color);
+		notes_frame_rect(&app->frame, left, top + height + 2.0f * (float)ring + 1.0f, width + 2.0f * (float)ring + 2.0f, 1.0f, color);
+		notes_frame_rect(&app->frame, left, top + 1.0f, 1.0f, height + 2.0f * (float)ring, color);
+		notes_frame_rect(&app->frame, left + width + 2.0f * (float)ring + 1.0f, top + 1.0f, 1.0f, height + 2.0f * (float)ring, color);
+	}
+}
+
+/*
+ * Adds the pen's mark: where the pen is while it is over the window and
+ * the compositor shows no cursor for it.  On the page it shows the tool --
+ * a dot of the pen's or the highlighter's colour and width, or the eraser's
+ * ring -- and over the toolbar (over_toolbar) a small slate dot.  A pen
+ * drawing a stroke has no mark: the ink shows where it is.
+ */
+static void
+app_mark(
+	struct notes_app *app,
+	const struct notes_view *view,
+	int over_toolbar)
+{
+	unsigned tool;
+	uint32_t color;
+	float radius;
+	int on_toolbar;
+
+	/* No pen over the window, or a pen drawing. */
+	if (!app->hover)
+		return;
+	if (app->contact == MAIN_CONTACT_DRAW)
+		return;
+
+	/* The mark is drawn with the page's part of the frame, or the toolbar's. */
+	on_toolbar = 0;
+	if (app->hover_y < (float)NOTES_TOOLBAR_HEIGHT)
+		on_toolbar = 1;
+	if (on_toolbar != over_toolbar)
+		return;
+
+	/* Over the toolbar, a small dot that points at the buttons. */
+	if (on_toolbar) {
+		app_circle(&app->frame, app->hover_x, app->hover_y, 5.5f, MAIN_MARK_HALO);
+		app_circle(&app->frame, app->hover_x, app->hover_y, 4.0f, MAIN_MARK_RING | 0xffU);
+		return;
+	}
+
+	/* The eraser, or a pen's eraser end: its ring, the size it erases. */
+	if (app->tool == NOTES_ACTION_ERASER || app->hover_source == NOTES_SOURCE_ERASER) {
+		radius = MAIN_ERASER_RADIUS * view->scale;
+		app_circle(&app->frame, app->hover_x, app->hover_y, radius, MAIN_MARK_FILL);
+		app_ring(&app->frame, app->hover_x, app->hover_y, radius, 1.5f, MAIN_MARK_RING);
+		return;
+	}
+
+	/* The pen or the highlighter: a dot of its colour and about its width, on a white halo. */
+	tool = NOTES_TOOL_PEN;
+	if (app->tool == NOTES_ACTION_HIGHLIGHTER)
+		tool = NOTES_TOOL_HIGHLIGHTER;
+	color = notes_ui_color(tool, app->color);
+	radius = notes_ui_width(tool, app->width) * view->scale * 0.5f;
+	if (radius < 2.0f)
+		radius = 2.0f;
+	app_circle(&app->frame, app->hover_x, app->hover_y, radius + 1.5f, MAIN_MARK_HALO);
+	app_circle(&app->frame, app->hover_x, app->hover_y, radius, color);
+}
+
+/* Adds a filled circle in window pixels, in a colour (0xRRGGBBAA). */
+static void
+app_circle(
+	struct notes_frame *frame,
+	float cx,
+	float cy,
+	float radius,
+	uint32_t color)
+{
+	struct pdf_point points[MAIN_CIRCLE_POINTS];
+	struct notes_view pixels;
+	double angle;
+	unsigned index;
+
+	/* The circle's corners, counter-clockwise. */
+	for (index = 0; index < MAIN_CIRCLE_POINTS; index++) {
+		angle = 2.0 * 3.14159265358979 * (double)index / (double)MAIN_CIRCLE_POINTS;
+		points[index].x = (double)cx + (double)radius * cos(angle);
+		points[index].y = (double)cy + (double)radius * sin(angle);
+	}
+
+	/* The polygon, placed in pixels as they are. */
+	pixels.x = 0.0f;
+	pixels.y = 0.0f;
+	pixels.scale = 1.0f;
+	notes_frame_polygon(frame, points, MAIN_CIRCLE_POINTS, &pixels, color);
+}
+
+/*
+ * Adds a ring in window pixels, in a colour (0xRRGGBBAA): one polygon that
+ * goes round the outer circle and back round the inner one, which the
+ * nonzero rule fills between them.
+ */
+static void
+app_ring(
+	struct notes_frame *frame,
+	float cx,
+	float cy,
+	float radius,
+	float thickness,
+	uint32_t color)
+{
+	struct pdf_point points[2U * MAIN_CIRCLE_POINTS + 2U];
+	struct notes_view pixels;
+	double angle;
+	double inner;
+	unsigned index;
+	unsigned count;
+
+	/* The outer circle, closed back to its first corner. */
+	count = 0;
+	for (index = 0; index <= MAIN_CIRCLE_POINTS; index++) {
+		angle = 2.0 * 3.14159265358979 * (double)index / (double)MAIN_CIRCLE_POINTS;
+		points[count].x = (double)cx + (double)radius * cos(angle);
+		points[count].y = (double)cy + (double)radius * sin(angle);
+		count++;
+	}
+
+	/* The inner circle the other way round, back to the start. */
+	inner = (double)radius - (double)thickness;
+	for (index = 0; index <= MAIN_CIRCLE_POINTS; index++) {
+		angle = -2.0 * 3.14159265358979 * (double)index / (double)MAIN_CIRCLE_POINTS;
+		points[count].x = (double)cx + inner * cos(angle);
+		points[count].y = (double)cy + inner * sin(angle);
+		count++;
+	}
+
+	/* The polygon, placed in pixels as they are. */
+	pixels.x = 0.0f;
+	pixels.y = 0.0f;
+	pixels.scale = 1.0f;
+	notes_frame_polygon(frame, points, count, &pixels, color);
 }
 
 /*

@@ -9,15 +9,24 @@
  * The drawing of Notes with Vulkan and the Wayland WSI.
  *
  * A frame is the list of draws geometry.c builds: plain rectangles (the
- * desk and the page), strokes filled through the stencil buffer in three
- * passes (fan, fringe, cover; see geometry.c), and the toolbar's picture.
- * Five pipelines share one vertex layout and one set of shaders:
+ * desk and the page's shadow), strokes filled through the stencil buffer in
+ * three passes (fan, fringe, cover; see geometry.c), and pictures.  Five
+ * pipelines share one vertex layout and one set of shaders:
  *
  *   stencil  counts the winding of the fan into the stencil, no colour;
  *   fringe   draws where the stencil is zero, alpha falling with distance;
  *   cover    draws where the stencil is not zero, and sets it back to zero;
  *   plain    draws without the stencil;
- *   texture  draws the toolbar's picture without the stencil.
+ *   texture  draws a picture without the stencil.
+ *
+ * There are two pictures.  The toolbar's is drawn on the CPU into a linear
+ * image.  The page's holds the page and its finished strokes: a second list
+ * of draws, the page frame, is drawn into it with the same pipelines before
+ * the frame when the page changed -- from a cleared picture after the page
+ * was turned or a stroke was removed, or on top of the last picture when
+ * strokes were only added -- so that a frame draws the page as one picture
+ * and only the stroke being drawn as geometry (design-input-notes.md
+ * section 5.3).
  *
  * Each frame's vertices are copied to host-visible memory, drawn, and
  * waited for before the next frame, so the host may write the vertices and
@@ -36,10 +45,10 @@
 /* The vertex buffer's first size, in vertices. */
 #define RENDER_VERTICES_MIN	65536U
 
-/* The colour of the desk around the page, as floats. */
-#define RENDER_DESK_RED		0.80f
-#define RENDER_DESK_GREEN	0.82f
-#define RENDER_DESK_BLUE	0.85f
+/* The colour the window is cleared to before the desk is drawn over it (its pale sky), as floats. */
+#define RENDER_DESK_RED		0.894f
+#define RENDER_DESK_GREEN	0.929f
+#define RENDER_DESK_BLUE	0.969f
 
 static VkResult render_device(struct notes_renderer *renderer);
 static VkResult render_swapchain(struct notes_renderer *renderer, uint32_t width, uint32_t height, VkSwapchainKHR old);
@@ -47,6 +56,8 @@ static VkResult render_stencil_format(struct notes_renderer *renderer);
 static VkResult render_stencil(struct notes_renderer *renderer);
 static void render_stencil_free(struct notes_renderer *renderer);
 static VkResult render_pass(struct notes_renderer *renderer);
+static VkResult render_page_pass(struct notes_renderer *renderer, int load, VkRenderPass *pass);
+static void render_page_free(struct notes_renderer *renderer);
 static VkResult render_targets(struct notes_renderer *renderer);
 static void render_targets_free(struct notes_renderer *renderer);
 static VkResult render_commands(struct notes_renderer *renderer);
@@ -59,7 +70,8 @@ static void render_vertices_free(struct notes_renderer *renderer);
 static VkResult render_pipelines(struct notes_renderer *renderer);
 static VkResult render_pipeline(struct notes_renderer *renderer, unsigned pipe, VkShaderModule vertex, VkShaderModule fragment);
 static VkResult render_module(struct notes_renderer *renderer, const uint32_t *code, size_t size, VkShaderModule *module);
-static void render_record(struct notes_renderer *renderer, uint32_t image, const struct notes_frame *frame);
+static void render_record(struct notes_renderer *renderer, uint32_t image, const struct notes_frame *frame, const struct notes_frame *page_frame, int page_clear);
+static void render_draws(struct notes_renderer *renderer, const struct notes_frame *frame, uint32_t base, VkExtent2D extent);
 
 /*
  * Makes the Vulkan objects of the window: the device, the swapchain and
@@ -132,6 +144,16 @@ notes_renderer_open(
 	if (error != VK_SUCCESS)
 		return error;
 
+	/* The page's pass that starts from a cleared picture. */
+	error = render_page_pass(renderer, 0, &renderer->page_clear_pass);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* And the one that adds to the picture the last frame left. */
+	error = render_page_pass(renderer, 1, &renderer->page_load_pass);
+	if (error != VK_SUCCESS)
+		return error;
+
 	/* A framebuffer for each swapchain image. */
 	error = render_targets(renderer);
 	if (error != VK_SUCCESS)
@@ -185,8 +207,13 @@ notes_renderer_resize(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The old targets and stencil buffer go, and the new chain replaces the old one. */
+	/*
+	 * The old targets, the page's picture (whose framebuffer holds the
+	 * stencil buffer) and the stencil buffer go, and the new chain replaces
+	 * the old one.  The next frame makes the page's picture again.
+	 */
 	render_targets_free(renderer);
+	render_page_free(renderer);
 	render_stencil_free(renderer);
 	old = renderer->swapchain;
 	renderer->swapchain = VK_NULL_HANDLE;
@@ -216,37 +243,180 @@ notes_renderer_resize(
 }
 
 /*
+ * Makes the page's picture at a size in pixels, unless it has that size
+ * already.
+ *
+ * A picture made again is empty and has a new page_serial: the caller
+ * draws the whole page into it with the next frame.
+ */
+VkResult
+notes_renderer_page(
+	struct notes_renderer *renderer,
+	uint32_t width,
+	uint32_t height)
+{
+	VkImageCreateInfo image;
+	VkMemoryRequirements requirements;
+	VkImageViewCreateInfo view;
+	VkFramebufferCreateInfo framebuffer;
+	VkImageView attachments[2];
+	VkDescriptorImageInfo image_info;
+	VkWriteDescriptorSet write;
+	VkResult error;
+
+	/* The picture is at most the window's size, which the stencil buffer has. */
+	if (width == 0U || width > renderer->extent.width)
+		width = renderer->extent.width;
+	if (height == 0U || height > renderer->extent.height)
+		height = renderer->extent.height;
+
+	/* A picture of the size stands. */
+	if (renderer->page != VK_NULL_HANDLE &&
+	    renderer->page_width == width &&
+	    renderer->page_height == height)
+		return VK_SUCCESS;
+
+	/* The old picture goes once nothing uses it. */
+	renderer->operation = "vkDeviceWaitIdle";
+	error = vkDeviceWaitIdle(renderer->device);
+	if (error != VK_SUCCESS)
+		return error;
+	render_page_free(renderer);
+
+	/* The image: drawn into by the page's passes and sampled by the frame. */
+	memset(&image, 0, sizeof(image));
+	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image.imageType = VK_IMAGE_TYPE_2D;
+	image.format = renderer->format;
+	image.extent.width = width;
+	image.extent.height = height;
+	image.extent.depth = 1U;
+	image.mipLevels = 1U;
+	image.arrayLayers = 1U;
+	image.samples = VK_SAMPLE_COUNT_1_BIT;
+	image.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	renderer->operation = "vkCreateImage";
+	error = vkCreateImage(renderer->device, &image, NULL, &renderer->page);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Its memory, on the device when it can be. */
+	vkGetImageMemoryRequirements(renderer->device, renderer->page, &requirements);
+	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &renderer->page_memory);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Binds the memory to the image. */
+	renderer->operation = "vkBindImageMemory";
+	error = vkBindImageMemory(renderer->device, renderer->page, renderer->page_memory, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The view the framebuffer attaches and the shader samples. */
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = renderer->page;
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = renderer->format;
+	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view.subresourceRange.levelCount = 1U;
+	view.subresourceRange.layerCount = 1U;
+	renderer->operation = "vkCreateImageView";
+	error = vkCreateImageView(renderer->device, &view, NULL, &renderer->page_view);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The framebuffer over the picture and the window's stencil buffer, which is at least as large. */
+	attachments[0] = renderer->page_view;
+	attachments[1] = renderer->stencil_view;
+	memset(&framebuffer, 0, sizeof(framebuffer));
+	framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer.renderPass = renderer->page_clear_pass;
+	framebuffer.attachmentCount = 2U;
+	framebuffer.pAttachments = attachments;
+	framebuffer.width = width;
+	framebuffer.height = height;
+	framebuffer.layers = 1U;
+	renderer->operation = "vkCreateFramebuffer";
+	error = vkCreateFramebuffer(renderer->device, &framebuffer, NULL, &renderer->page_framebuffer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The page's set names the picture in the layout its passes leave it in. */
+	memset(&image_info, 0, sizeof(image_info));
+	image_info.sampler = renderer->sampler;
+	image_info.imageView = renderer->page_view;
+	image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	memset(&write, 0, sizeof(write));
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet = renderer->sets[NOTES_TEXTURE_PAGE];
+	write.dstBinding = 0U;
+	write.descriptorCount = 1U;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write.pImageInfo = &image_info;
+	vkUpdateDescriptorSets(renderer->device, 1U, &write, 0U, NULL);
+
+	/* Succeeded: a new, empty picture, which the serial announces. */
+	renderer->page_width = width;
+	renderer->page_height = height;
+	renderer->page_serial++;
+	return VK_SUCCESS;
+}
+
+/*
  * Draws a frame and presents it, and waits for it to finish.
  *
+ * A page frame, when given, is drawn into the page's picture first: into a
+ * cleared picture when page_clear is set, on top of the last one otherwise.
  * Returns VK_ERROR_OUT_OF_DATE_KHR when the swapchain no longer matches
  * the window; the caller resizes and draws again.
  */
 VkResult
 notes_renderer_draw(
 	struct notes_renderer *renderer,
-	const struct notes_frame *frame)
+	const struct notes_frame *frame,
+	const struct notes_frame *page_frame,
+	int page_clear)
 {
 	VkSubmitInfo submit;
 	VkPresentInfoKHR present;
 	VkPipelineStageFlags stage;
+	size_t page_vertices;
+	size_t vertices;
 	uint32_t image;
 	VkResult error;
 
-	/* A frame larger than the vertex buffer gets a larger buffer. */
-	if (frame->vertex_count > renderer->vertex_capacity) {
+	/* The page frame's vertices go first in the buffer, the frame's after them. */
+	page_vertices = 0;
+	if (page_frame != NULL)
+		page_vertices = page_frame->vertex_count;
+	vertices = page_vertices + frame->vertex_count;
+
+	/* Vertices beyond the buffer's capacity get a larger buffer. */
+	if (vertices > renderer->vertex_capacity) {
 		renderer->operation = "vkDeviceWaitIdle";
 		error = vkDeviceWaitIdle(renderer->device);
 		if (error != VK_SUCCESS)
 			return error;
 		render_vertices_free(renderer);
-		error = render_vertices(renderer, frame->vertex_count);
+		error = render_vertices(renderer, vertices);
 		if (error != VK_SUCCESS)
 			return error;
 	}
 
-	/* The frame's vertices. */
-	if (frame->vertex_count != 0U)
-		memcpy(renderer->vertex_map, frame->vertices, frame->vertex_count * NOTES_VERTEX_FLOATS * sizeof(float));
+	/* The page frame's vertices. */
+	if (page_vertices != 0U)
+		memcpy(renderer->vertex_map, page_frame->vertices, page_vertices * NOTES_VERTEX_FLOATS * sizeof(float));
+
+	/* The frame's vertices, after them. */
+	if (frame->vertex_count != 0U) {
+		memcpy((float *)renderer->vertex_map + page_vertices * NOTES_VERTEX_FLOATS,
+		       frame->vertices,
+		       frame->vertex_count * NOTES_VERTEX_FLOATS * sizeof(float));
+	}
 
 	/* The image to draw into, once the compositor has given one back. */
 	renderer->operation = "vkAcquireNextImageKHR";
@@ -261,7 +431,7 @@ notes_renderer_draw(
 		return error;
 
 	/* Records the frame and closes the recording. */
-	render_record(renderer, image, frame);
+	render_record(renderer, image, frame, page_frame, page_clear);
 	renderer->operation = "vkEndCommandBuffer";
 	error = vkEndCommandBuffer(renderer->command);
 	if (error != VK_SUCCESS)
@@ -341,6 +511,7 @@ notes_renderer_close(
 	if (renderer->device != VK_NULL_HANDLE) {
 		(void)vkDeviceWaitIdle(renderer->device);
 		render_targets_free(renderer);
+		render_page_free(renderer);
 		render_stencil_free(renderer);
 		render_toolbar_free(renderer);
 		render_vertices_free(renderer);
@@ -369,9 +540,13 @@ notes_renderer_close(
 		if (renderer->acquired != VK_NULL_HANDLE)
 			vkDestroySemaphore(renderer->device, renderer->acquired, NULL);
 
-		/* The pass, the swapchain and the device itself. */
+		/* The passes, the swapchain and the device itself. */
 		if (renderer->pass != VK_NULL_HANDLE)
 			vkDestroyRenderPass(renderer->device, renderer->pass, NULL);
+		if (renderer->page_clear_pass != VK_NULL_HANDLE)
+			vkDestroyRenderPass(renderer->device, renderer->page_clear_pass, NULL);
+		if (renderer->page_load_pass != VK_NULL_HANDLE)
+			vkDestroyRenderPass(renderer->device, renderer->page_load_pass, NULL);
 		if (renderer->swapchain != VK_NULL_HANDLE)
 			vkDestroySwapchainKHR(renderer->device, renderer->swapchain, NULL);
 		vkDestroyDevice(renderer->device, NULL);
@@ -727,6 +902,126 @@ render_pass(
 	return VK_SUCCESS;
 }
 
+/*
+ * Makes a pass that draws into the page's picture: from a cleared picture,
+ * or (load) from the picture the last frame left.
+ *
+ * Its attachments have the formats of the window's pass, so the pipelines
+ * made for that pass draw in this one too.  It leaves the picture ready to
+ * be sampled by the frame that follows.
+ */
+static VkResult
+render_page_pass(
+	struct notes_renderer *renderer,
+	int load,
+	VkRenderPass *pass)
+{
+	VkAttachmentDescription attachments[2];
+	VkAttachmentReference color;
+	VkAttachmentReference stencil;
+	VkSubpassDescription subpass;
+	VkSubpassDependency dependencies[2];
+	VkRenderPassCreateInfo create;
+	VkResult error;
+
+	/* The picture, cleared or kept, and left for sampling. */
+	memset(attachments, 0, sizeof(attachments));
+	attachments[0].format = renderer->format;
+	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	/* A picture added to keeps what it holds, in the layout the last pass left it. */
+	if (load) {
+		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		attachments[0].initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	}
+
+	/* The window's stencil buffer, cleared for the pass and not kept. */
+	attachments[1].format = renderer->stencil_format;
+	attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	/* The single subpass that draws into both. */
+	color.attachment = 0U;
+	color.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	stencil.attachment = 1U;
+	stencil.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	memset(&subpass, 0, sizeof(subpass));
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1U;
+	subpass.pColorAttachments = &color;
+	subpass.pDepthStencilAttachment = &stencil;
+
+	/*
+	 * Before the pass: the last frame's sampling of the picture and its use
+	 * of the stencil are done.  After it: the frame samples what it drew.
+	 */
+	memset(dependencies, 0, sizeof(dependencies));
+	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[0].dstSubpass = 0U;
+	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+	    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dependencies[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+	    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependencies[1].srcSubpass = 0U;
+	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+	/* The pass. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	create.attachmentCount = 2U;
+	create.pAttachments = attachments;
+	create.subpassCount = 1U;
+	create.pSubpasses = &subpass;
+	create.dependencyCount = 2U;
+	create.pDependencies = dependencies;
+	renderer->operation = "vkCreateRenderPass";
+	error = vkCreateRenderPass(renderer->device, &create, NULL, pass);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the pass. */
+	return VK_SUCCESS;
+}
+
+/* Releases the page's picture; the next frame makes it again. */
+static void
+render_page_free(
+	struct notes_renderer *renderer)
+{
+	/* The framebuffer, the view, the image and the memory, where made. */
+	if (renderer->page_framebuffer != VK_NULL_HANDLE)
+		vkDestroyFramebuffer(renderer->device, renderer->page_framebuffer, NULL);
+	if (renderer->page_view != VK_NULL_HANDLE)
+		vkDestroyImageView(renderer->device, renderer->page_view, NULL);
+	if (renderer->page != VK_NULL_HANDLE)
+		vkDestroyImage(renderer->device, renderer->page, NULL);
+	if (renderer->page_memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, renderer->page_memory, NULL);
+	renderer->page_framebuffer = VK_NULL_HANDLE;
+	renderer->page_view = VK_NULL_HANDLE;
+	renderer->page = VK_NULL_HANDLE;
+	renderer->page_memory = VK_NULL_HANDLE;
+	renderer->page_width = 0;
+	renderer->page_height = 0;
+}
+
 /* Makes a view, a framebuffer and a present semaphore for each swapchain image. */
 static VkResult
 render_targets(
@@ -925,7 +1220,7 @@ render_memory(
 	return VK_SUCCESS;
 }
 
-/* Makes the sampler, the descriptor set layout, the pool and the set of the toolbar's image. */
+/* Makes the sampler, the descriptor set layout, the pool and the sets of the two pictures. */
 static VkResult
 render_descriptors(
 	struct notes_renderer *renderer)
@@ -936,9 +1231,10 @@ render_descriptors(
 	VkDescriptorPoolSize pool_size;
 	VkDescriptorPoolCreateInfo pool;
 	VkDescriptorSetAllocateInfo allocate;
+	VkDescriptorSetLayout layouts[NOTES_TEXTURES];
 	VkResult error;
 
-	/* Nearest sampling: the toolbar's pixels land on the window's pixels one to one. */
+	/* Nearest sampling: the pictures' pixels land on the window's pixels one to one. */
 	memset(&sampler, 0, sizeof(sampler));
 	sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 	sampler.magFilter = VK_FILTER_NEAREST;
@@ -967,13 +1263,13 @@ render_descriptors(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* A pool for the one set. */
+	/* A pool for a set of each picture. */
 	memset(&pool_size, 0, sizeof(pool_size));
 	pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	pool_size.descriptorCount = 1U;
+	pool_size.descriptorCount = NOTES_TEXTURES;
 	memset(&pool, 0, sizeof(pool));
 	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	pool.maxSets = 1U;
+	pool.maxSets = NOTES_TEXTURES;
 	pool.poolSizeCount = 1U;
 	pool.pPoolSizes = &pool_size;
 	renderer->operation = "vkCreateDescriptorPool";
@@ -981,18 +1277,20 @@ render_descriptors(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The set. */
+	/* The sets, both of the one layout. */
+	layouts[NOTES_TEXTURE_TOOLBAR] = renderer->set_layout;
+	layouts[NOTES_TEXTURE_PAGE] = renderer->set_layout;
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocate.descriptorPool = renderer->descriptor_pool;
-	allocate.descriptorSetCount = 1U;
-	allocate.pSetLayouts = &renderer->set_layout;
+	allocate.descriptorSetCount = NOTES_TEXTURES;
+	allocate.pSetLayouts = layouts;
 	renderer->operation = "vkAllocateDescriptorSets";
-	error = vkAllocateDescriptorSets(renderer->device, &allocate, &renderer->set);
+	error = vkAllocateDescriptorSets(renderer->device, &allocate, renderer->sets);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: the set is filled when the toolbar's image is made. */
+	/* Succeeded: each set is filled when its picture is made. */
 	return VK_SUCCESS;
 }
 
@@ -1077,7 +1375,7 @@ render_toolbar(
 	image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 	memset(&write, 0, sizeof(write));
 	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet = renderer->set;
+	write.dstSet = renderer->sets[NOTES_TEXTURE_TOOLBAR];
 	write.dstBinding = 0U;
 	write.descriptorCount = 1U;
 	write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1422,25 +1720,26 @@ render_module(
 	return VK_SUCCESS;
 }
 
-/* Records the frame: the toolbar's first layout change, the cleared pass and every draw in order. */
+/*
+ * Records the frame: the toolbar's first layout change, the page frame's
+ * pass into the page's picture when there is one, then the window's
+ * cleared pass with every draw in order.
+ */
 static void
 render_record(
 	struct notes_renderer *renderer,
 	uint32_t image,
-	const struct notes_frame *frame)
+	const struct notes_frame *frame,
+	const struct notes_frame *page_frame,
+	int page_clear)
 {
 	VkCommandBufferBeginInfo begin;
 	VkImageMemoryBarrier barrier;
 	VkRenderPassBeginInfo pass;
 	VkClearValue clear[2];
-	VkViewport viewport;
-	VkRect2D scissor;
-	VkRect2D whole;
+	VkExtent2D page_extent;
 	VkDeviceSize offset;
-	const struct notes_draw *draw;
-	float size[4];
-	unsigned bound;
-	size_t index;
+	uint32_t base;
 
 	/* One submission of this recording. */
 	memset(&begin, 0, sizeof(begin));
@@ -1466,7 +1765,39 @@ render_record(
 		renderer->toolbar_ready = 1;
 	}
 
-	/* The pass, the colour cleared to the desk and the stencil to zero. */
+	/* The vertices of both lists, the page frame's first. */
+	offset = 0U;
+	vkCmdBindVertexBuffers(renderer->command, 0U, 1U, &renderer->vertices, &offset);
+
+	/* The page frame, drawn into the page's picture: cleared to nothing, or kept, and the stencil to zero. */
+	base = 0;
+	if (page_frame != NULL && renderer->page != VK_NULL_HANDLE) {
+		memset(clear, 0, sizeof(clear));
+		clear[1].depthStencil.depth = 1.0f;
+		clear[1].depthStencil.stencil = 0U;
+		page_extent.width = renderer->page_width;
+		page_extent.height = renderer->page_height;
+		memset(&pass, 0, sizeof(pass));
+		pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		pass.renderPass = renderer->page_load_pass;
+		if (page_clear)
+			pass.renderPass = renderer->page_clear_pass;
+		pass.framebuffer = renderer->page_framebuffer;
+		pass.renderArea.extent = page_extent;
+		pass.clearValueCount = 2U;
+		pass.pClearValues = clear;
+		vkCmdBeginRenderPass(renderer->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+
+		/* Its draws, with the picture's size. */
+		render_draws(renderer, page_frame, 0U, page_extent);
+		vkCmdEndRenderPass(renderer->command);
+	}
+
+	/* The frame's vertices follow the page frame's. */
+	if (page_frame != NULL)
+		base = (uint32_t)page_frame->vertex_count;
+
+	/* The window's pass, the colour cleared to the desk and the stencil to zero. */
 	memset(clear, 0, sizeof(clear));
 	clear[0].color.float32[0] = RENDER_DESK_RED;
 	clear[0].color.float32[1] = RENDER_DESK_GREEN;
@@ -1483,27 +1814,53 @@ render_record(
 	pass.pClearValues = clear;
 	vkCmdBeginRenderPass(renderer->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 
-	/* The whole image is the viewport. */
+	/* The frame's draws, with the window's size. */
+	render_draws(renderer, frame, base, renderer->extent);
+
+	/* The pass ends with the image ready to present. */
+	vkCmdEndRenderPass(renderer->command);
+}
+
+/*
+ * Records a list of draws into the pass begun: the viewport and the size
+ * the vertex shader maps from, then each draw in order, its vertices
+ * counted from base.
+ */
+static void
+render_draws(
+	struct notes_renderer *renderer,
+	const struct notes_frame *frame,
+	uint32_t base,
+	VkExtent2D extent)
+{
+	VkViewport viewport;
+	VkRect2D scissor;
+	VkRect2D whole;
+	const struct notes_draw *draw;
+	float size[4];
+	unsigned bound;
+	unsigned bound_texture;
+	size_t index;
+
+	/* The whole target is the viewport. */
 	memset(&viewport, 0, sizeof(viewport));
-	viewport.width = (float)renderer->extent.width;
-	viewport.height = (float)renderer->extent.height;
+	viewport.width = (float)extent.width;
+	viewport.height = (float)extent.height;
 	viewport.maxDepth = 1.0f;
 	memset(&whole, 0, sizeof(whole));
-	whole.extent = renderer->extent;
+	whole.extent = extent;
 	vkCmdSetViewport(renderer->command, 0U, 1U, &viewport);
 
-	/* The vertices, the toolbar's set and the window's size. */
-	size[0] = (float)renderer->extent.width;
-	size[1] = (float)renderer->extent.height;
+	/* The target's size, which the vertex shader maps pixels from. */
+	size[0] = (float)extent.width;
+	size[1] = (float)extent.height;
 	size[2] = 0.0f;
 	size[3] = 0.0f;
-	offset = 0U;
-	vkCmdBindVertexBuffers(renderer->command, 0U, 1U, &renderer->vertices, &offset);
-	vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U, &renderer->set, 0U, NULL);
 	vkCmdPushConstants(renderer->command, renderer->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(size), size);
 
-	/* Each draw in order, binding its pipeline when it changes and its scissor every time. */
+	/* Each draw in order, binding its pipeline and its picture when they change and its scissor every time. */
 	bound = NOTES_PIPES;
+	bound_texture = NOTES_TEXTURES;
 	for (index = 0; index < frame->draw_count; index++) {
 		draw = &frame->draws[index];
 		if (draw->count == 0U)
@@ -1515,7 +1872,16 @@ render_record(
 			bound = draw->pipe;
 		}
 
-		/* The page's rectangle for a clipped draw (kept inside the image), or the whole image. */
+		/* A picture's set, for a texture draw (the page's only once it is made). */
+		if (draw->pipe == NOTES_PIPE_TEXTURE && draw->texture != bound_texture) {
+			if (draw->texture == NOTES_TEXTURE_PAGE && renderer->page == VK_NULL_HANDLE)
+				continue;
+			vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U,
+						&renderer->sets[draw->texture], 0U, NULL);
+			bound_texture = draw->texture;
+		}
+
+		/* The clipping rectangle for a clipped draw (kept inside the target), or the whole target. */
 		scissor = whole;
 		if (draw->clipped) {
 			scissor.offset.x = draw->clip[0];
@@ -1536,9 +1902,6 @@ render_record(
 
 		/* The draw inside its scissor. */
 		vkCmdSetScissor(renderer->command, 0U, 1U, &scissor);
-		vkCmdDraw(renderer->command, draw->count, 1U, draw->first, 0U);
+		vkCmdDraw(renderer->command, draw->count, 1U, base + draw->first, 0U);
 	}
-
-	/* The pass ends with the image ready to present. */
-	vkCmdEndRenderPass(renderer->command);
 }

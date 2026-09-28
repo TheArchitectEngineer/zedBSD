@@ -23,8 +23,11 @@
 
 #include "notes.h"
 
-/* The toolbar's height in pixels, above the page area. */
-#define NOTES_TOOLBAR_HEIGHT	52U
+/*
+ * The toolbar's band in pixels, above the page area: the glass card of the
+ * buttons floats in it (ui.c).
+ */
+#define NOTES_TOOLBAR_HEIGHT	68U
 
 /* The room around the page, in pixels. */
 #define NOTES_PAGE_MARGIN	16.0f
@@ -85,6 +88,11 @@
 /* The floats of one vertex: x, y, then u, v (a fringe's distance or a texture place), then red, green, blue, alpha. */
 #define NOTES_VERTEX_FLOATS	8U
 
+/* The pictures a texture draw shows: the toolbar, and the page with its finished strokes. */
+#define NOTES_TEXTURE_TOOLBAR	0U
+#define NOTES_TEXTURE_PAGE	1U
+#define NOTES_TEXTURES		2U
+
 /*
  * One key press for the main loop: the evdev code and the modifiers held.
  */
@@ -116,8 +124,9 @@ struct notes_tablet_tool {
 	int down;
 	int lifting;
 
-	/* Whether it moved in this frame, and whether its first barrel button is held. */
+	/* Whether it moved in this frame, whether it left the window in it, and whether its first barrel button is held. */
 	int moved;
+	int leaving;
 	int stylus;
 
 	/* Its place (surface pixels), pressure (0 to 1) and tilt (degrees). */
@@ -235,11 +244,16 @@ struct notes_ui {
 	unsigned font_pixels;
 	int ascent;
 
-	/* The picture: its size, its pixels (borrowed from the renderer) and their row pitch. */
+	/*
+	 * The picture: its size, its pixels (borrowed from the renderer) and
+	 * their row pitch, and whether the layout draws into it (0 while it only
+	 * measures the card).
+	 */
 	uint32_t width;
 	uint32_t height;
 	unsigned char *pixels;
 	size_t pitch;
+	int drawing;
 
 	/* The buttons, as last laid out. */
 	struct notes_button buttons[NOTES_BUTTONS];
@@ -249,9 +263,11 @@ struct notes_ui {
 /*
  * One draw call of a frame: a pipeline, a run of vertices, and whether it
  * is clipped, with the rectangle it is clipped to (x, y, width, height).
+ * A texture draw also names its picture (NOTES_TEXTURE_*).
  */
 struct notes_draw {
 	unsigned pipe;
+	unsigned texture;
 	uint32_t first;
 	uint32_t count;
 	int clipped;
@@ -325,14 +341,32 @@ struct notes_renderer {
 	VkDeviceMemory stencil_memory;
 	VkImageView stencil_view;
 
-	/* The pass, the pipelines and what they bind. */
+	/* The pass, the pipelines and what they bind: one set for each picture (NOTES_TEXTURE_*). */
 	VkRenderPass pass;
 	VkDescriptorSetLayout set_layout;
 	VkPipelineLayout layout;
 	VkPipeline pipes[NOTES_PIPES];
 	VkDescriptorPool descriptor_pool;
-	VkDescriptorSet set;
+	VkDescriptorSet sets[NOTES_TEXTURES];
 	VkSampler sampler;
+
+	/*
+	 * The page's picture: the page and its finished strokes, drawn by the
+	 * same pipelines through two passes that differ only in what they start
+	 * from -- a cleared picture, or the picture as the last frame left it
+	 * (to add strokes on top) -- and sampled by the frame.  Its size in
+	 * pixels (0: not made), and a serial that grows each time it is made
+	 * again, which tells the caller that its content is gone.
+	 */
+	VkRenderPass page_clear_pass;
+	VkRenderPass page_load_pass;
+	VkImage page;
+	VkDeviceMemory page_memory;
+	VkImageView page_view;
+	VkFramebuffer page_framebuffer;
+	uint32_t page_width;
+	uint32_t page_height;
+	unsigned long page_serial;
 
 	/*
 	 * The toolbar's image: host-written and linear, its rows (mapped for as
@@ -384,7 +418,8 @@ void notes_menu_close(struct notes_window *window);
 /* The drawing (render.c). */
 VkResult notes_renderer_open(struct notes_renderer *renderer, struct notes_window *window);
 VkResult notes_renderer_resize(struct notes_renderer *renderer, uint32_t width, uint32_t height);
-VkResult notes_renderer_draw(struct notes_renderer *renderer, const struct notes_frame *frame);
+VkResult notes_renderer_page(struct notes_renderer *renderer, uint32_t width, uint32_t height);
+VkResult notes_renderer_draw(struct notes_renderer *renderer, const struct notes_frame *frame, const struct notes_frame *page_frame, int page_clear);
 void notes_renderer_toolbar(struct notes_renderer *renderer, unsigned char **pixels, size_t *pitch);
 void notes_renderer_close(struct notes_renderer *renderer);
 
@@ -392,9 +427,10 @@ void notes_renderer_close(struct notes_renderer *renderer);
 void notes_frame_begin(struct notes_frame *frame);
 void notes_frame_free(struct notes_frame *frame);
 void notes_frame_rect(struct notes_frame *frame, float x, float y, float width, float height, uint32_t color);
+void notes_frame_gradient(struct notes_frame *frame, float x, float y, float width, float height, uint32_t top, uint32_t bottom);
 void notes_frame_clip(struct notes_frame *frame, int enabled, float x, float y, float width, float height);
 void notes_frame_polygon(struct notes_frame *frame, const struct pdf_point *points, size_t count, const struct notes_view *view, uint32_t color);
-void notes_frame_texture(struct notes_frame *frame, float x, float y, float width, float height);
+void notes_frame_texture(struct notes_frame *frame, unsigned texture, float x, float y, float width, float height);
 void notes_view_layout(struct notes_view *view, uint32_t width, uint32_t height, float page_width, float page_height);
 
 /* The toolbar (ui.c). */

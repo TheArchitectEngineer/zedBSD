@@ -6,16 +6,27 @@
  */
 
 /*
- * The toolbar of Notes: a band across the top of the window, drawn on the
- * CPU into the picture the renderer shows (design-input-notes.md section
- * 5.2).
+ * The toolbar of Notes: a card of frosted glass floating at the top of the
+ * window, drawn on the CPU into the picture the renderer shows over the
+ * desk (design-input-notes.md section 5.2).
  *
- * From the left: the tools (Pen, Marker, Eraser), five colours, three
- * widths, Undo and Redo, the page's number between the previous and next
- * page buttons, a new page, Save, and a status line at the right.  The
- * labels are drawn with libtruetype from the desktop's font; without the
- * font the buttons are drawn without them and still work.  Only ASCII is
- * drawn (the labels are ASCII; other characters of a status show as '?').
+ * It follows the look of the File Manager and the titlebar (Kei's look,
+ * plan/ws035/kei-identity-design.md): a translucent white card with a light
+ * rim and a soft slate shadow, slate labels, and Kei's blue for what is
+ * chosen -- the tool and the width on a pale blue pill in blue, as the
+ * File Manager marks its chosen place, and the colour with a blue ring.  The picture is B8G8R8A8 with straight
+ * alpha: transparent around the card, so the desk shows there, and
+ * translucent in the card, so the desk's colours show through the glass.
+ *
+ * From the left the card holds the tools (Pen, Marker, Eraser), five
+ * colours, three widths, Undo and Redo, the page's number between the
+ * previous and next page buttons, a new page, and Save.  The card is laid
+ * out once to measure it and drawn centred; its width does not depend on
+ * the status, so the buttons stay in place.  A status shows in a small
+ * pill of its own beside the card when there is room.  The labels are
+ * drawn with libtruetype from the desktop's font; without the font the
+ * buttons are drawn without them and still work.  Only ASCII is drawn (the
+ * labels are ASCII; other characters of a status show as '?').
  */
 
 #include "app.h"
@@ -23,6 +34,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -38,25 +50,55 @@
 /* The largest glyph drawn, in pixels a side. */
 #define UI_GLYPH_MAX		64U
 
-/* The buttons' height, their top, and the gap between groups, in pixels. */
+/* The glass card: its top, height and corner radius, and the room inside its ends, in pixels. */
+#define UI_CARD_TOP		8
+#define UI_CARD_HEIGHT		52
+#define UI_CARD_RADIUS		18.0f
+#define UI_CARD_PADDING		10
+
+/* The card's shadow: how far it spreads, how far it drops, and its darkest alpha. */
+#define UI_SHADOW_SOFT		12.0f
+#define UI_SHADOW_DROP		4.0f
+#define UI_SHADOW_ALPHA		52U
+
+/* The buttons' height and top, and the gap between groups, in pixels. */
 #define UI_BUTTON_HEIGHT	36
-#define UI_BUTTON_TOP		8
+#define UI_BUTTON_TOP		(UI_CARD_TOP + (UI_CARD_HEIGHT - UI_BUTTON_HEIGHT) / 2)
 #define UI_GAP			14
-#define UI_PADDING		12
 
-/* The toolbar's colours, as 0xRRGGBB. */
-#define UI_BACKGROUND		0xf3f4f6U
-#define UI_BORDER		0xd1d5dbU
-#define UI_TEXT			0x1f2937U
-#define UI_TEXT_DISABLED	0x9ca3afU
-#define UI_SELECTED		0xdbeafeU
-#define UI_SELECTED_TEXT	0x1d4ed8U
-#define UI_STATUS_TEXT		0x4b5563U
+/* The status pill's height and the room around it, in pixels. */
+#define UI_STATUS_HEIGHT	32
+#define UI_STATUS_PADDING	14
 
-static void ui_fill(struct notes_ui *ui, int32_t x, int32_t y, int32_t width, int32_t height, uint32_t rgb);
-static void ui_frame(struct notes_ui *ui, int32_t x, int32_t y, int32_t width, int32_t height, uint32_t rgb);
-static void ui_blend(struct notes_ui *ui, int32_t x, int32_t y, uint32_t rgb, unsigned coverage);
-static void ui_dot(struct notes_ui *ui, float cx, float cy, float radius, uint32_t rgb);
+/*
+ * Kei's colours, as 0xRRGGBB, with the alphas they are laid on with:
+ * the glass's white veil, its rim and its slate edge, the slate text in
+ * three strengths, Kei's blue and its pale tint, and the shadow's slate
+ * (the same values as the File Manager's).
+ */
+#define UI_WHITE		0xffffffU
+#define UI_GLASS_ALPHA		210U
+#define UI_RIM_ALPHA		235U
+#define UI_SLATE_EDGE		0x1f3a66U
+#define UI_EDGE_ALPHA		34U
+#define UI_TEXT			0x1e2632U
+#define UI_TEXT_SECONDARY	0x6b7585U
+#define UI_TEXT_DISABLED	0xa3abb8U
+#define UI_ACCENT		0x2f7cf6U
+#define UI_ACCENT_TINT_ALPHA	52U
+#define UI_SEPARATOR_ALPHA	40U
+
+static int32_t ui_layout(struct notes_ui *ui, int32_t x, const struct notes_ui_state *state);
+static void ui_clear(struct notes_ui *ui);
+static void ui_over(struct notes_ui *ui, int32_t x, int32_t y, uint32_t rgb, unsigned alpha);
+static float ui_rounded_distance(float px, float py, float x, float y, float width, float height, float radius);
+static void ui_rounded(struct notes_ui *ui, float x, float y, float width, float height, float radius, uint32_t rgb, unsigned alpha);
+static void ui_rounded_edge(struct notes_ui *ui, float x, float y, float width, float height, float radius, uint32_t rgb, unsigned alpha);
+static void ui_shadow(struct notes_ui *ui, float x, float y, float width, float height, float radius);
+static void ui_glass(struct notes_ui *ui, float x, float y, float width, float height, float radius);
+static void ui_dot(struct notes_ui *ui, float cx, float cy, float radius, uint32_t rgb, unsigned alpha);
+static void ui_ring(struct notes_ui *ui, float cx, float cy, float radius, float thickness, uint32_t rgb);
+static void ui_separator(struct notes_ui *ui, int32_t x);
 static int32_t ui_text_width(struct notes_ui *ui, const char *text);
 static void ui_text(struct notes_ui *ui, int32_t x, int32_t y, const char *text, uint32_t rgb);
 static int32_t ui_label_button(struct notes_ui *ui, int32_t x, const char *label, uint32_t action, uint32_t chosen, int enabled);
@@ -172,7 +214,8 @@ notes_ui_close(
 }
 
 /*
- * Draws the toolbar into a picture (B8G8R8A8 rows) and lays out its buttons.
+ * Draws the toolbar into a picture (B8G8R8A8 rows, straight alpha) and lays
+ * out its buttons.
  */
 void
 notes_ui_draw(
@@ -183,16 +226,12 @@ notes_ui_draw(
 	uint32_t height,
 	const struct notes_ui_state *state)
 {
-	char page_text[48];
-	const uint32_t *colors;
-	const float *widths;
-	int32_t x;
-	int32_t text_width;
-	unsigned index;
-	float radius;
-	int selected;
-	int earlier;
-	int later;
+	int32_t content_width;
+	int32_t card_x;
+	int32_t card_width;
+	int32_t status_width;
+	int32_t status_x;
+	int32_t status_y;
 
 	/* The picture being drawn, and no buttons yet. */
 	ui->pixels = pixels;
@@ -203,91 +242,45 @@ notes_ui_draw(
 	if (pixels == NULL)
 		return;
 
-	/* The band and the line under it. */
-	ui_fill(ui, 0, 0, (int32_t)width, (int32_t)height, UI_BACKGROUND);
-	ui_fill(ui, 0, (int32_t)height - 1, (int32_t)width, 1, UI_BORDER);
+	/* Measures the card's content by laying it out without drawing. */
+	ui->drawing = 0;
+	content_width = ui_layout(ui, 0, state);
 
-	/* The tools, the chosen one marked. */
-	x = UI_PADDING;
-	x = ui_label_button(ui, x, "Pen", NOTES_ACTION_PEN, state->tool, 1);
-	x = ui_label_button(ui, x, "Marker", NOTES_ACTION_HIGHLIGHTER, state->tool, 1);
-	x = ui_label_button(ui, x, "Eraser", NOTES_ACTION_ERASER, state->tool, 1);
-	x += UI_GAP;
+	/* The card, centred, or from the left edge when the window is narrower. */
+	card_width = content_width + 2 * UI_CARD_PADDING;
+	card_x = ((int32_t)width - card_width) / 2;
+	if (card_x < 8)
+		card_x = 8;
 
-	/* The colours of the pen, or of the highlighter while it is chosen. */
-	colors = ui_pen_colors;
-	widths = ui_pen_widths;
-	if (state->tool == NOTES_ACTION_HIGHLIGHTER) {
-		colors = ui_marker_colors;
-		widths = ui_marker_widths;
-	}
+	/* The picture starts transparent: the desk shows around the card. */
+	ui->drawing = 1;
+	ui_clear(ui);
 
-	/* Each colour, a dot. */
-	for (index = 0; index < NOTES_COLORS; index++) {
-		/* The chosen colour has a frame. */
-		selected = 0;
-		if (index == state->color)
-			selected = 1;
-		if (selected)
-			ui_frame(ui, x, UI_BUTTON_TOP, UI_BUTTON_HEIGHT, UI_BUTTON_HEIGHT, UI_SELECTED_TEXT);
-		ui_dot(ui, (float)x + (float)UI_BUTTON_HEIGHT / 2.0f, (float)UI_BUTTON_TOP + (float)UI_BUTTON_HEIGHT / 2.0f, 11.0f, colors[index] >> 8);
-		ui_add_button(ui, x, UI_BUTTON_TOP, UI_BUTTON_HEIGHT, UI_BUTTON_HEIGHT, NOTES_ACTION_COLOR + index);
-		x += UI_BUTTON_HEIGHT + 2;
-	}
+	/* The card's shadow, its glass and its rim. */
+	ui_shadow(ui, (float)card_x, (float)UI_CARD_TOP, (float)card_width, (float)UI_CARD_HEIGHT, UI_CARD_RADIUS);
+	ui_glass(ui, (float)card_x, (float)UI_CARD_TOP, (float)card_width, (float)UI_CARD_HEIGHT, UI_CARD_RADIUS);
 
-	/* A gap before the next group. */
-	x += UI_GAP;
+	/* The buttons on the card, laid out again where they are drawn. */
+	ui->button_count = 0;
+	(void)ui_layout(ui, card_x + UI_CARD_PADDING, state);
 
-	/* The widths, each a dot of its size (the chosen one framed). */
-	for (index = 0; index < NOTES_WIDTHS; index++) {
-		selected = 0;
-		if (index == state->width)
-			selected = 1;
-		if (selected)
-			ui_fill(ui, x, UI_BUTTON_TOP, UI_BUTTON_HEIGHT, UI_BUTTON_HEIGHT, UI_SELECTED);
-		radius = 2.0f + (float)index * 2.5f;
-		if (widths[index] > 8.0f)
-			radius = 3.0f + (float)index * 3.0f;
-		ui_dot(ui, (float)x + (float)UI_BUTTON_HEIGHT / 2.0f, (float)UI_BUTTON_TOP + (float)UI_BUTTON_HEIGHT / 2.0f, radius, UI_TEXT);
-		ui_add_button(ui, x, UI_BUTTON_TOP, UI_BUTTON_HEIGHT, UI_BUTTON_HEIGHT, NOTES_ACTION_WIDTH + index);
-		x += UI_BUTTON_HEIGHT + 2;
-	}
+	/* A status shows in its own pill: right of the card when it fits, or left of it. */
+	if (state->status == NULL || state->status[0] == '\0')
+		return;
+	status_width = ui_text_width(ui, state->status) + 2 * UI_STATUS_PADDING;
+	status_y = UI_CARD_TOP + (UI_CARD_HEIGHT - UI_STATUS_HEIGHT) / 2;
+	status_x = card_x + card_width + UI_GAP;
+	if (status_x + status_width + 8 > (int32_t)width)
+		status_x = card_x - UI_GAP - status_width;
 
-	/* A gap before the next group. */
-	x += UI_GAP;
+	/* A status that fits on neither side is not shown. */
+	if (status_x < 8)
+		return;
 
-	/* Undo and Redo, pale when there is nothing to take back or make again. */
-	x = ui_label_button(ui, x, "Undo", NOTES_ACTION_UNDO, NOTES_ACTION_NONE, state->can_undo);
-	x = ui_label_button(ui, x, "Redo", NOTES_ACTION_REDO, NOTES_ACTION_NONE, state->can_redo);
-	x += UI_GAP;
-
-	/* Whether there is a page before the current one, and one after. */
-	earlier = 0;
-	if (state->page > 0U)
-		earlier = 1;
-	later = 0;
-	if (state->page + 1U < state->page_count)
-		later = 1;
-
-	/* The pages: previous, "3 / 12", next, and a new page. */
-	x = ui_label_button(ui, x, "<", NOTES_ACTION_PREVIOUS_PAGE, NOTES_ACTION_NONE, earlier);
-	(void)snprintf(page_text, sizeof(page_text), "%lu / %lu", (unsigned long)(state->page + 1U), (unsigned long)state->page_count);
-	text_width = ui_text_width(ui, page_text);
-	ui_text(ui, x + 4, UI_BUTTON_TOP, page_text, UI_TEXT);
-	x += text_width + 8;
-	x = ui_label_button(ui, x, ">", NOTES_ACTION_NEXT_PAGE, NOTES_ACTION_NONE, later);
-	x = ui_label_button(ui, x, "+ Page", NOTES_ACTION_NEW_PAGE, NOTES_ACTION_NONE, 1);
-	x += UI_GAP;
-
-	/* Save. */
-	x = ui_label_button(ui, x, "Save", NOTES_ACTION_SAVE, NOTES_ACTION_NONE, 1);
-
-	/* The status at the right, when there is room for it. */
-	if (state->status != NULL && state->status[0] != '\0') {
-		text_width = ui_text_width(ui, state->status);
-		if (x + UI_GAP + text_width + UI_PADDING <= (int32_t)width)
-			ui_text(ui, (int32_t)width - UI_PADDING - text_width, UI_BUTTON_TOP, state->status, UI_STATUS_TEXT);
-	}
+	/* The pill and its text. */
+	ui_shadow(ui, (float)status_x, (float)status_y, (float)status_width, (float)UI_STATUS_HEIGHT, (float)UI_STATUS_HEIGHT / 2.0f);
+	ui_glass(ui, (float)status_x, (float)status_y, (float)status_width, (float)UI_STATUS_HEIGHT, (float)UI_STATUS_HEIGHT / 2.0f);
+	ui_text(ui, status_x + UI_STATUS_PADDING, UI_BUTTON_TOP, state->status, UI_TEXT_SECONDARY);
 }
 
 /*
@@ -356,102 +349,345 @@ notes_ui_width(
 	return ui_pen_widths[index];
 }
 
-/* Fills a rectangle of the picture with an opaque colour, clipped to the picture. */
-static void
-ui_fill(
+/*
+ * Lays out (and, while ui->drawing is set, draws) the card's buttons from a
+ * left edge, adds them, and returns the width they take.
+ */
+static int32_t
+ui_layout(
 	struct notes_ui *ui,
-	int32_t x,
-	int32_t y,
-	int32_t width,
-	int32_t height,
-	uint32_t rgb)
+	int32_t left,
+	const struct notes_ui_state *state)
 {
-	unsigned char *row;
-	int32_t left;
-	int32_t top;
-	int32_t right;
-	int32_t bottom;
-	int32_t column;
+	char page_text[48];
+	const uint32_t *colors;
+	const float *widths;
+	int32_t x;
+	int32_t text_width;
+	unsigned index;
+	float radius;
+	float cx;
+	float cy;
+	int earlier;
+	int later;
 
-	/* The rectangle inside the picture. */
-	left = x;
-	top = y;
-	right = x + width;
-	bottom = y + height;
-	if (left < 0)
-		left = 0;
-	if (top < 0)
-		top = 0;
-	if (right > (int32_t)ui->width)
-		right = (int32_t)ui->width;
-	if (bottom > (int32_t)ui->height)
-		bottom = (int32_t)ui->height;
+	/* The tools, the chosen one in Kei's blue. */
+	x = left;
+	x = ui_label_button(ui, x, "Pen", NOTES_ACTION_PEN, state->tool, 1);
+	x = ui_label_button(ui, x, "Marker", NOTES_ACTION_HIGHLIGHTER, state->tool, 1);
+	x = ui_label_button(ui, x, "Eraser", NOTES_ACTION_ERASER, state->tool, 1);
+	ui_separator(ui, x + UI_GAP / 2 - 1);
+	x += UI_GAP;
 
-	/* Each pixel, blue, green, red, alpha. */
-	for (; top < bottom; top++) {
-		row = ui->pixels + (size_t)top * ui->pitch;
-		for (column = left; column < right; column++) {
-			row[column * 4 + 0] = (unsigned char)(rgb & 0xffU);
-			row[column * 4 + 1] = (unsigned char)((rgb >> 8) & 0xffU);
-			row[column * 4 + 2] = (unsigned char)((rgb >> 16) & 0xffU);
-			row[column * 4 + 3] = 0xffU;
-		}
+	/* The colours of the pen, or of the highlighter while it is chosen. */
+	colors = ui_pen_colors;
+	widths = ui_pen_widths;
+	if (state->tool == NOTES_ACTION_HIGHLIGHTER) {
+		colors = ui_marker_colors;
+		widths = ui_marker_widths;
 	}
+
+	/* Each colour, a dot; the chosen one has a blue ring. */
+	for (index = 0; index < NOTES_COLORS; index++) {
+		cx = (float)x + (float)UI_BUTTON_HEIGHT / 2.0f;
+		cy = (float)UI_BUTTON_TOP + (float)UI_BUTTON_HEIGHT / 2.0f;
+		if (index == state->color)
+			ui_ring(ui, cx, cy, 15.0f, 2.0f, UI_ACCENT);
+		ui_dot(ui, cx, cy, 10.5f, colors[index] >> 8, 255U);
+		ui_add_button(ui, x, UI_BUTTON_TOP, UI_BUTTON_HEIGHT, UI_BUTTON_HEIGHT, NOTES_ACTION_COLOR + index);
+		x += UI_BUTTON_HEIGHT + 2;
+	}
+
+	/* A separator before the next group. */
+	ui_separator(ui, x + UI_GAP / 2 - 1);
+	x += UI_GAP;
+
+	/* The widths, each a dot of its size; the chosen one on a pale blue pill, in blue. */
+	for (index = 0; index < NOTES_WIDTHS; index++) {
+		cx = (float)x + (float)UI_BUTTON_HEIGHT / 2.0f;
+		cy = (float)UI_BUTTON_TOP + (float)UI_BUTTON_HEIGHT / 2.0f;
+		radius = 2.0f + (float)index * 2.5f;
+		if (widths[index] > 8.0f)
+			radius = 3.0f + (float)index * 3.0f;
+
+		/* The chosen width stands out in Kei's blue. */
+		if (index == state->width) {
+			ui_rounded(ui, (float)x, (float)UI_BUTTON_TOP, (float)UI_BUTTON_HEIGHT, (float)UI_BUTTON_HEIGHT,
+				   (float)UI_BUTTON_HEIGHT / 2.0f, UI_ACCENT, UI_ACCENT_TINT_ALPHA);
+			ui_dot(ui, cx, cy, radius, UI_ACCENT, 255U);
+		} else {
+			ui_dot(ui, cx, cy, radius, UI_TEXT, 255U);
+		}
+
+		/* The width's button. */
+		ui_add_button(ui, x, UI_BUTTON_TOP, UI_BUTTON_HEIGHT, UI_BUTTON_HEIGHT, NOTES_ACTION_WIDTH + index);
+		x += UI_BUTTON_HEIGHT + 2;
+	}
+
+	/* A separator before the next group. */
+	ui_separator(ui, x + UI_GAP / 2 - 1);
+	x += UI_GAP;
+
+	/* Undo and Redo, pale when there is nothing to take back or make again. */
+	x = ui_label_button(ui, x, "Undo", NOTES_ACTION_UNDO, NOTES_ACTION_NONE, state->can_undo);
+	x = ui_label_button(ui, x, "Redo", NOTES_ACTION_REDO, NOTES_ACTION_NONE, state->can_redo);
+	ui_separator(ui, x + UI_GAP / 2 - 1);
+	x += UI_GAP;
+
+	/* Whether there is a page before the current one, and one after. */
+	earlier = 0;
+	if (state->page > 0U)
+		earlier = 1;
+	later = 0;
+	if (state->page + 1U < state->page_count)
+		later = 1;
+
+	/* The pages: previous, "3 / 12", next, and a new page. */
+	x = ui_label_button(ui, x, "<", NOTES_ACTION_PREVIOUS_PAGE, NOTES_ACTION_NONE, earlier);
+	(void)snprintf(page_text, sizeof(page_text), "%lu / %lu", (unsigned long)(state->page + 1U), (unsigned long)state->page_count);
+	text_width = ui_text_width(ui, page_text);
+	ui_text(ui, x + 4, UI_BUTTON_TOP, page_text, UI_TEXT_SECONDARY);
+	x += text_width + 8;
+	x = ui_label_button(ui, x, ">", NOTES_ACTION_NEXT_PAGE, NOTES_ACTION_NONE, later);
+	x = ui_label_button(ui, x, "+ Page", NOTES_ACTION_NEW_PAGE, NOTES_ACTION_NONE, 1);
+	ui_separator(ui, x + UI_GAP / 2 - 1);
+	x += UI_GAP;
+
+	/* Save; the last button leaves no gap after it. */
+	x = ui_label_button(ui, x, "Save", NOTES_ACTION_SAVE, NOTES_ACTION_NONE, 1);
+
+	/* Reports the width the buttons took. */
+	return x - 2 - left;
 }
 
-/* Draws a rectangle's outline, two pixels thick. */
+/* Makes the whole picture transparent. */
 static void
-ui_frame(
-	struct notes_ui *ui,
-	int32_t x,
-	int32_t y,
-	int32_t width,
-	int32_t height,
-	uint32_t rgb)
+ui_clear(
+	struct notes_ui *ui)
 {
-	/* The four sides. */
-	ui_fill(ui, x, y, width, 2, rgb);
-	ui_fill(ui, x, y + height - 2, width, 2, rgb);
-	ui_fill(ui, x, y, 2, height, rgb);
-	ui_fill(ui, x + width - 2, y, 2, height, rgb);
+	uint32_t row;
+
+	/* Each row, every byte zero. */
+	for (row = 0; row < ui->height; row++)
+		memset(ui->pixels + (size_t)row * ui->pitch, 0, (size_t)ui->width * 4U);
 }
 
-/* Blends a colour over one pixel by a coverage from 0 to 255. */
+/*
+ * Lays a colour with an alpha (0 to 255) over one pixel, by the "over"
+ * rule on straight alpha: what was there shows through by what the colour
+ * leaves.
+ */
 static void
-ui_blend(
+ui_over(
 	struct notes_ui *ui,
 	int32_t x,
 	int32_t y,
 	uint32_t rgb,
-	unsigned coverage)
+	unsigned alpha)
 {
 	unsigned char *pixel;
 	unsigned channel;
+	unsigned source;
+	unsigned below;
+	unsigned below_alpha;
+	unsigned result_alpha;
 	unsigned value;
 
-	/* A pixel outside the picture is not drawn. */
+	/* Nothing to lay, or a pixel outside the picture. */
+	if (alpha == 0U || !ui->drawing)
+		return;
 	if (x < 0 ||
 	    y < 0 ||
 	    x >= (int32_t)ui->width ||
 	    y >= (int32_t)ui->height)
 		return;
 
-	/* Each of blue, green and red moves toward the colour by the coverage. */
+	/* The alpha of the result: the colour's, plus what the pixel's shows through it. */
 	pixel = ui->pixels + (size_t)y * ui->pitch + (size_t)x * 4U;
+	below_alpha = pixel[3];
+	result_alpha = alpha + (below_alpha * (255U - alpha) + 127U) / 255U;
+	if (result_alpha == 0U)
+		return;
+
+	/* Each of blue, green and red, weighted by the two alphas (the rounding of the alpha may carry it past 255). */
 	for (channel = 0; channel < 3U; channel++) {
-		value = (rgb >> (channel * 8U)) & 0xffU;
-		pixel[channel] = (unsigned char)((value * coverage + pixel[channel] * (255U - coverage) + 127U) / 255U);
+		source = (rgb >> (channel * 8U)) & 0xffU;
+		below = pixel[channel];
+		value = (source * alpha * 255U + below * below_alpha * (255U - alpha) + result_alpha * 127U) / (result_alpha * 255U);
+		if (value > 255U)
+			value = 255U;
+		pixel[channel] = (unsigned char)value;
+	}
+
+	/* The pixel's new alpha. */
+	pixel[3] = (unsigned char)result_alpha;
+}
+
+/* Measures how far a point is outside a rounded rectangle (negative inside), in pixels. */
+static float
+ui_rounded_distance(
+	float px,
+	float py,
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius)
+{
+	float cx;
+	float cy;
+	float dx;
+	float dy;
+	float outside;
+	float inside;
+
+	/* The point relative to the rectangle's centre, folded into one quarter. */
+	cx = x + width / 2.0f;
+	cy = y + height / 2.0f;
+	dx = (float)fabs((double)(px - cx)) - (width / 2.0f - radius);
+	dy = (float)fabs((double)(py - cy)) - (height / 2.0f - radius);
+
+	/* The distance past the corner's circle, or into the straight sides. */
+	outside = 0.0f;
+	if (dx > 0.0f && dy > 0.0f)
+		outside = (float)sqrt((double)(dx * dx + dy * dy));
+	else if (dx > 0.0f)
+		outside = dx;
+	else if (dy > 0.0f)
+		outside = dy;
+	inside = dx;
+	if (dy > inside)
+		inside = dy;
+	if (inside > 0.0f)
+		inside = 0.0f;
+
+	/* Reports the distance from the rounded edge. */
+	return outside + inside - radius;
+}
+
+/* Fills a rounded rectangle with a colour at an alpha, its edge anti-aliased. */
+static void
+ui_rounded(
+	struct notes_ui *ui,
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius,
+	uint32_t rgb,
+	unsigned alpha)
+{
+	int32_t column;
+	int32_t row;
+	float distance;
+	float coverage;
+
+	/* Each pixel of the rectangle, covered by how far inside the edge its centre is. */
+	for (row = (int32_t)y; row <= (int32_t)(y + height); row++) {
+		for (column = (int32_t)x; column <= (int32_t)(x + width); column++) {
+			distance = ui_rounded_distance((float)column + 0.5f, (float)row + 0.5f, x, y, width, height, radius);
+			coverage = 0.5f - distance;
+			if (coverage <= 0.0f)
+				continue;
+			if (coverage > 1.0f)
+				coverage = 1.0f;
+			ui_over(ui, column, row, rgb, (unsigned)(coverage * (float)alpha + 0.5f));
+		}
 	}
 }
 
-/* Draws an anti-aliased disc. */
+/* Draws the one-pixel edge of a rounded rectangle in a colour at an alpha. */
+static void
+ui_rounded_edge(
+	struct notes_ui *ui,
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius,
+	uint32_t rgb,
+	unsigned alpha)
+{
+	int32_t column;
+	int32_t row;
+	float distance;
+	float coverage;
+
+	/* Each pixel near the edge, covered by how close to the edge's middle its centre is. */
+	for (row = (int32_t)y - 1; row <= (int32_t)(y + height) + 1; row++) {
+		for (column = (int32_t)x - 1; column <= (int32_t)(x + width) + 1; column++) {
+			distance = ui_rounded_distance((float)column + 0.5f, (float)row + 0.5f, x, y, width, height, radius);
+			coverage = 1.0f - (float)fabs((double)(distance + 0.5f));
+			if (coverage <= 0.0f)
+				continue;
+			ui_over(ui, column, row, rgb, (unsigned)(coverage * (float)alpha + 0.5f));
+		}
+	}
+}
+
+/* Draws the soft slate shadow a rounded card casts below it, outside the card only. */
+static void
+ui_shadow(
+	struct notes_ui *ui,
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius)
+{
+	int32_t column;
+	int32_t row;
+	float distance;
+	float card;
+	float share;
+
+	/* Each pixel around the dropped card, darker the closer it is. */
+	for (row = (int32_t)(y - UI_SHADOW_SOFT); row <= (int32_t)(y + height + UI_SHADOW_DROP + UI_SHADOW_SOFT); row++) {
+		for (column = (int32_t)(x - UI_SHADOW_SOFT); column <= (int32_t)(x + width + UI_SHADOW_SOFT); column++) {
+			/* The card's own pixels are left to the glass. */
+			card = ui_rounded_distance((float)column + 0.5f, (float)row + 0.5f, x, y, width, height, radius);
+			if (card < 0.5f)
+				continue;
+
+			/* The shadow fades from the dropped card's edge out to its soft reach. */
+			distance = ui_rounded_distance((float)column + 0.5f, (float)row + 0.5f, x, y + UI_SHADOW_DROP, width, height, radius);
+			if (distance < 0.0f)
+				distance = 0.0f;
+			share = 1.0f - distance / UI_SHADOW_SOFT;
+			if (share <= 0.0f)
+				continue;
+			ui_over(ui, column, row, UI_SLATE_EDGE, (unsigned)(share * share * (float)UI_SHADOW_ALPHA));
+		}
+	}
+}
+
+/* Draws a card of frosted glass: the white veil, the bright rim at its top and a faint slate edge. */
+static void
+ui_glass(
+	struct notes_ui *ui,
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius)
+{
+	/* The veil, through which the desk shows. */
+	ui_rounded(ui, x, y, width, height, radius, UI_WHITE, UI_GLASS_ALPHA);
+
+	/* The faint edge all round, and the rim's light along the inside of the top. */
+	ui_rounded_edge(ui, x, y, width, height, radius, UI_SLATE_EDGE, UI_EDGE_ALPHA);
+	ui_rounded_edge(ui, x + 1.0f, y + 1.0f, width - 2.0f, height - 2.0f, radius - 1.0f, UI_WHITE, UI_RIM_ALPHA / 2U);
+}
+
+/* Draws an anti-aliased disc in a colour at an alpha. */
 static void
 ui_dot(
 	struct notes_ui *ui,
 	float cx,
 	float cy,
 	float radius,
-	uint32_t rgb)
+	uint32_t rgb,
+	unsigned alpha)
 {
 	int32_t x;
 	int32_t y;
@@ -471,9 +707,59 @@ ui_dot(
 				continue;
 			if (coverage > 1.0f)
 				coverage = 1.0f;
-			ui_blend(ui, x, y, rgb & 0xffffffU, (unsigned)(coverage * 255.0f));
+			ui_over(ui, x, y, rgb & 0xffffffU, (unsigned)(coverage * (float)alpha + 0.5f));
 		}
 	}
+}
+
+/* Draws an anti-aliased ring of a thickness whose outer edge has a radius. */
+static void
+ui_ring(
+	struct notes_ui *ui,
+	float cx,
+	float cy,
+	float radius,
+	float thickness,
+	uint32_t rgb)
+{
+	int32_t x;
+	int32_t y;
+	float dx;
+	float dy;
+	float distance;
+	float coverage;
+	float inner;
+
+	/* Each pixel of the ring's box, covered by how far inside both edges its centre is. */
+	for (y = (int32_t)(cy - radius - 1.0f); y <= (int32_t)(cy + radius + 1.0f); y++) {
+		for (x = (int32_t)(cx - radius - 1.0f); x <= (int32_t)(cx + radius + 1.0f); x++) {
+			dx = (float)x + 0.5f - cx;
+			dy = (float)y + 0.5f - cy;
+			distance = (float)sqrt((double)(dx * dx + dy * dy));
+			coverage = radius + 0.5f - distance;
+			inner = distance - (radius - thickness) + 0.5f;
+			if (inner < coverage)
+				coverage = inner;
+			if (coverage <= 0.0f)
+				continue;
+			if (coverage > 1.0f)
+				coverage = 1.0f;
+			ui_over(ui, x, y, rgb, (unsigned)(coverage * 255.0f + 0.5f));
+		}
+	}
+}
+
+/* Draws the thin slate line that separates two groups of buttons. */
+static void
+ui_separator(
+	struct notes_ui *ui,
+	int32_t x)
+{
+	int32_t y;
+
+	/* A column of faint pixels, shorter than the buttons. */
+	for (y = UI_BUTTON_TOP + 8; y < UI_BUTTON_TOP + UI_BUTTON_HEIGHT - 8; y++)
+		ui_over(ui, x, y, UI_SLATE_EDGE, UI_SEPARATOR_ALPHA);
 }
 
 /* Measures a text's width in pixels (0 without the font). */
@@ -524,8 +810,8 @@ ui_text(
 	int32_t baseline;
 	int error;
 
-	/* Nothing to draw without the font. */
-	if (ui->face == NULL)
+	/* Nothing to draw without the font, or while only measuring. */
+	if (ui->face == NULL || !ui->drawing)
 		return;
 
 	/* The baseline, centring the text in a button's height. */
@@ -544,11 +830,11 @@ ui_text(
 			continue;
 		}
 
-		/* Its pixels blended over the toolbar. */
+		/* Its pixels laid over the picture by their coverage. */
 		for (row = 0; row < glyph.height; row++) {
 			for (column = 0; column < glyph.width; column++) {
-				if (bitmap[row * UI_GLYPH_MAX + column] != 0U)
-					ui_blend(ui, x + glyph.left + (int32_t)column, baseline - glyph.top + (int32_t)row, rgb, bitmap[row * UI_GLYPH_MAX + column]);
+				ui_over(ui, x + glyph.left + (int32_t)column, baseline - glyph.top + (int32_t)row, rgb,
+					bitmap[row * UI_GLYPH_MAX + column]);
 			}
 		}
 
@@ -558,9 +844,9 @@ ui_text(
 }
 
 /*
- * Draws a button with a label, marked when its action is the chosen one
- * (a tool's) or pale when it cannot be used, adds it, and returns where the
- * next one goes.
+ * Draws a button with a label -- on a pale blue pill with a blue label
+ * when its action is the chosen one (a tool's), with a pale label when it
+ * cannot be used -- adds it, and returns where the next one goes.
  */
 static int32_t
 ui_label_button(
@@ -575,21 +861,22 @@ ui_label_button(
 	uint32_t rgb;
 
 	/* The label's width with room on both sides (a fixed width without the font). */
-	width = ui_text_width(ui, label) + 20;
+	width = ui_text_width(ui, label) + 24;
 	if (ui->face == NULL)
 		width = 44;
 
-	/* The chosen tool's background, and the label's colour. */
+	/* The chosen tool's pale blue pill, and the label's colour. */
 	rgb = UI_TEXT;
 	if (action == chosen) {
-		ui_fill(ui, x, UI_BUTTON_TOP, width, UI_BUTTON_HEIGHT, UI_SELECTED);
-		rgb = UI_SELECTED_TEXT;
+		ui_rounded(ui, (float)x, (float)UI_BUTTON_TOP, (float)width, (float)UI_BUTTON_HEIGHT,
+			   (float)UI_BUTTON_HEIGHT / 2.0f, UI_ACCENT, UI_ACCENT_TINT_ALPHA);
+		rgb = UI_ACCENT;
 	}
 
 	/* A button that cannot be used is pale. */
 	if (!enabled)
 		rgb = UI_TEXT_DISABLED;
-	ui_text(ui, x + 10, UI_BUTTON_TOP, label, rgb);
+	ui_text(ui, x + 12, UI_BUTTON_TOP, label, rgb);
 
 	/* A pale button does nothing, so it is not added. */
 	if (enabled)
