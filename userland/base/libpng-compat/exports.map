@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Only the calls <compat/png.h> declares leave the library. */
+/* Only the calls <compat/png/png.h> declares leave the library. */
 {
 	global:
 		png_image_begin_read_from_file;

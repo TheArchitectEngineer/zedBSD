@@ -418,6 +418,19 @@ $(DYNAMIC_DIR)/versuse.so: \
 	$(ARM64_LD) -shared -soname versuse.so --hash-style=gnu \
  -z now -z relro -z separate-code -z max-page-size=4096 \
  $< -L$(DYNAMIC_DIR) -l:verstest.so -o $@
+
+# libjpeg-compat (ws074-p019): the libjpeg decompression interface of the base programs; it needs nothing
+# but the C library.
+DYNAMIC_JPEG_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libjpeg-compat)
+
+$(DYNAMIC_DIR)/libjpeg-compat.so: $(DYNAMIC_JPEG_COMPAT_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/base/libjpeg-compat/exports.map tools/build/check-dynamic-elf.py
+	$(ARM64_LD) -shared -soname libjpeg-compat.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code -z max-page-size=4096 -z stack-size=0x100000 \
+ --version-script=userland/base/libjpeg-compat/exports.map \
+ $(DYNAMIC_JPEG_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine aarch64 --role shared-library \
+ --needed libc.so --soname libjpeg-compat.so $@
 $(DYNAMIC_DIR)/dyntest: $(ZEDBSD_SYSROOT_ARM64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/obj/userland/base/tests/dyntest.o $(DYNAMIC_DIR)/libc.so \
 	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_DIR)/tlstest.so \

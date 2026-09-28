@@ -4,7 +4,7 @@
 
 Phase ID: `ws074-p019`
 Parent: [WS074](../ws.md)
-Status: in-progress（2026-09-28、main の wrap up で中断。host は済み、guest と boot test が残る）
+Status: cleared（2026-09-28）
 Phase disposition: normal
 Queue: なし（サブエージェントが worktree の branch で実行）
 依存: ws074-p002（cleared）
@@ -36,18 +36,31 @@ Queue: なし（サブエージェントが worktree の branch で実行）
 - amd64 の build: `libjpeg-compat.so` warning 0（`check-dynamic-elf.py` 通過）。style-check: library の全 file・header・
   `jpeg-driver.c` 0。guest の image の build は通った。
 - 同じ commit に p017 の file の §11（返り値の段落）の直し: `net/http.c`・`net/tls.c`（HTTP/HTTPS の host の試験 14/14）。
-- **未実施**: guest での decode の比較（`jpeg-guest.sh`。guest に tar が無いので 1 file ずつ送る形に直した、その実行の途中で
-  wrap up）、boot test。
+- guest（2026-09-28、Kei への改名の後の main を merge、Venus の無い plain の guest）: `jpeg-guest.sh` で 150 file を guest の
+  `libjpeg-compat.so` で decode し、**150/150 が djpeg と byte ごとに一致**（`jpeg-tests: PASS`）。
+- boot test: `boot-check.sh p019` PASS（login prompt）。写真 `/home/awe/zedBSD-rpi4/build/ws074-shots/p019-20260928-boot-login.png`。
 - commit: `0c385f8c`（library・header・試験・image の設定）、この記録の commit。
 
-## 再開の手順
+## 2026-09-28 のユーザーの決定の反映（同じ Phase で）
 
-1. `git merge main`（Kei への名前の変更で `/bin/browser` 等が変わっている場合、試験の script の path を合わせる）。
-2. `sh plan/ws074/tests/build-browser-image.sh`、`sh plan/ws074/tests/browser-guest.sh plain`、`... wait`。
-3. `sh plan/ws074/tests/jpeg-guest.sh`（約 150 file を 1 つずつ送るので数分かかる。background で走らせる）。期待:
-   `jpeg-tests: PASS`（djpeg と一致）。
-4. `sh plan/ws074/tests/boot-check.sh p019`、写真を見る。
-5. この phase.md を cleared にし、ws.md の表と Resume point を直して commit、main へ報告。
+ユーザー:「JPEGライブラリは、userland/base/libjpeg-compatにして、共有にしましょう。GIFもそうするのがいいです。」
+「include/libc/compat/jpeglib.hの方がいいです。訂正します。」「PNGもbase/libpng-compatにして、include/libc/compat/png/に入れましょう。」
+（main 経由）。
+
+- libjpeg-compat: header は `include/libc/compat/jpeglib.h` のまま。menu の group を `desktop` から `base` へ、platform を
+  `amd64` から `*` へ。pcat・pc98・arm64 の `vmunix.mk` に `libjpeg-compat.so` の link の規則（amd64 と同じ形、`-z defs` と
+  `check-dynamic-elf.py`）。`config/ci/config-pcat.mk`・`config-pc98.mk`・`config-rpi4.mk` で `libjpeg-compat.so` が
+  warning 0 で link できた（i386 の soft-float の libc.so、arm64 の libc.so）。sun4u・x68k は base の data を image に入れない
+  （x68k は dynamic の libc が無い）ので、選んでも何も入らない。
+- libpng-compat: header を `include/libc/compat/png.h` から `include/libc/compat/png/png.h` へ移し、使い手（libpng-compat の
+  `read.c`・`exports.map`、files の `thumb.c`、`plan/tools/files/host-png.c`、WS035 の記録）を直した。menu の group を `base` へ。
+  platform は `amd64` のまま（libz-compat が amd64 だけで、libz-compat は触らない指示）で、MAC-T001 の例外の一覧
+  （`plan/tools/menuconfig-target-host-test.py` の `platform_tied`）に理由付きで足した。
+- 確認: `make menuconfig-host-test`（MAC-T001 PASS）、`plan/tools/files/host-png.sh` PASS、browser の image（files を含む）の
+  build、Venus の guest で `files-p010.sh` PASS（PNG の thumbnail、写真
+  `/home/awe/zedBSD-rpi4/build/ws074-shots/p019-20260928-files-png-thumbs.png`）、`browser-page.sh first.html` status 0（写真
+  `p019-20260928-window-first.png`）。
+- GIF は新しい Phase [ws074-p051](../phase051/phase.md)（`userland/base/libgif-compat`、`include/libc/compat/gif_lib.h`）。
 
 ## 後回し（follow-up）
 
