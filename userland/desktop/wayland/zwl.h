@@ -639,6 +639,11 @@ struct zwl_server {
 	int32_t anim_from[4];
 	int32_t anim_to[4];
 	/*
+	 * Whether the last frame left the system bar out to keep a fullscreen
+	 * window whole (ws035-p119, shell.c); only the change is logged.
+	 */
+	unsigned bar_hidden;
+	/*
 	 * Wiseview (shell.c): how far it is open (0 closed, 1 open) when settled,
 	 * a gesture from the bottom edge and where it started, the animation to
 	 * a settled value (from, to, when it started), and the window that was

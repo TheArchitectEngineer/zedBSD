@@ -21,6 +21,7 @@
 #include <kern/kcrt.h>
 
 #include "kern/clock.h"
+#include "kern/cred.h"
 #include "kern/file.h"
 #include "kern/cdev.h"
 #include "kern/kmem.h"
@@ -2907,12 +2908,31 @@ pty_master_open(
 {
 	struct pty_handle *handle;
 	struct pty_pair *pair;
+	struct ucred *credential;
 	pid_t old_session;
 	uint64_t old_association_generation;
+	uid_t owner_uid;
 	unsigned i;
 	unsigned long irq;
 
 	pair = NULL;
+
+	/*
+	 * The slave belongs to the real user of whoever opens the master
+	 * (grantpt, BUG-098, ws035-p120), so that a person's program -- a terminal of the
+	 * desktop -- can open the terminal it asked for.  Its group stays 0:
+	 * with mode 0620 the group may write to the terminal, and the
+	 * caller's own group would let its other members do that (Linux
+	 * devpts uses the group tty, which this system does not have).  A
+	 * login server running as root hands its terminal on with chown as
+	 * before.
+	 */
+	owner_uid = 0;
+	credential = cred_current_ref();
+	if (credential != NULL) {
+		owner_uid = credential->ruid;
+		cred_release(credential);
+	}
 
 	/* Allocates the handle and claims a free pair. */
 	handle = kern_malloc(sizeof(*handle));
@@ -2933,8 +2953,8 @@ pty_master_open(
 			pair->output_used = 0;
 			pair->slave_output_stopped = 0;
 
-			/* A fresh pair belongs to nobody but the superuser. */
-			pair->owner_uid = 0;
+			/* A fresh pair belongs to the user who opened it, in the group 0. */
+			pair->owner_uid = owner_uid;
 			pair->owner_gid = 0;
 			pair->owner_mode = 0620U;
 			pair->generation++;

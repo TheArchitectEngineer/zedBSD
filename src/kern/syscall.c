@@ -5200,10 +5200,28 @@ sys_mutation_common(
 	/* Performs the operation under the mount's namespace transaction. */
 	if (number == KERN_SYS_mkdir) {
 		mount_vfs_transaction_enter(parent.p_mount);
-		error = inode_creation_request_user(parent.p_inode,
+
+		/*
+		 * A name that is there already is EEXIST before the parent's
+		 * write permission is asked, as POSIX systems answer: mkdir -p
+		 * and every "make the folders down to here" loop pass over
+		 * /home as a user who may not write it (BUG-097, ws035-p120).
+		 */
+		error = inode_lookup(parent.p_inode, &name, &victim);
+		if (error == 0) {
+			inode_release(victim);
+			error = EEXIST;
+		} else if (error == ENOENT) {
+			error = 0;
+		}
+
+		/* A name that is not there yet is made, when the caller may write the parent. */
+		if (error == 0) {
+			error = inode_creation_request_user(parent.p_inode,
 			    credential, INODE_DIR,
 			    ((mode_t)option & 07777U) & ~process_umask, 0, NULL,
 			    &creation);
+		}
 		if (error == 0)
 			error = inode_mkdir(parent.p_inode, &name, &creation,
 			    &created);

@@ -3,9 +3,10 @@
 <!-- awesome-plan-current:start -->
 Active Queue: なし（subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
-Next（2026-09-28 の周期の終わりに整理）: ユーザーが実機で USB の demo の image（`build/demo-hdmi/hdd-image.img`、main ca74780e）を試す。
-次の周期: 実機の結果の反映、BUG-085・BUG-094 の再試験（`plan/ws075/tests/bug085-hw.sh`）、HDMI の lease の切り替えの黒、WS079 の p007 の残り・p008、
-touch の LCD の USB が見えたら descriptor の確認、Notes の host 試験の link の修正（p007 で reader が filter を要るようになった）。
+Next（2026-09-28 の夜の周期の終わりに整理）: 実機の USB の demo の image を新しくした（`build/demo-hdmi2/hdd-image.img`、main 2b07ca13 の時点、
+root の password は `build/demo-hdmi2/demo-accounts/root-password`、QEMU・実機の起動は未実施）。ユーザーが実機で試す（HDMI の LCD での login・logout の目視、touch の USB）。
+次の周期（demo critical）: WS074 の amazon.co.jp の列（[amazon-goal.md](ws074/amazon-goal.md)）、WS079 p009（規約）と CCITTFax・password の入力・thumbnail、
+WS075 p007〜p010 と BUG-058（p017 uncleared）、WS035 の F-048。WS082 は study.md §10 の 11 項目のユーザーの判断待ち。WS080 はデモ critical の後。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -145,7 +146,8 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS079](ws079/ws.md) | MG006 | 手書きノート（Notes、筆圧 4096 段階の USB のペンタブレット、PDF に保存し編集の metadata を持つ）と PDF Viewer（scroll と page の swipe）、上の右端から左下へのスワイプで Notes を起動・最前面・全画面（2026-09-28 ユーザー） | incomplete | 2026-09-28: 設計、p002（pen）・p003（tablet）・p004（libpdf の writer・reader）・p005（Notes v1）・p006（PDF Viewer v1）・p010（右上のスワイプ）・p011（Notes の仕上げ）・p012（multitouch）・p013（touch・三回 click・二本指の flick）・p014（他の PDF への書き込み）は cleared、p007（PDF の文字）は途中。次: p007 の残り → p008 → p009 |
 | [WS080](ws080/ws.md) | MG002 | `ld.coff`: Win64 PE32+ の動的ローダ（PE/COFF の mapping・relocation・DLL・import/export・Microsoft x64 ABI・最小の TEB/PEB・GS base）。NT の loader は再現せず `AddressOfEntryPoint` へ直接。互換の DLL は上に積む（2026-09-28 ユーザーの仕様 [spec.md](ws080/spec.md)） | planning | p001（設計）から。GS base は swapgs（案 A）に決定、差分は p001 で承認を得る。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/`（商標のため Win64 の名前を OS に出さない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/`。橋の DLL は置かず互換の DLL が zedBSD の UAPI を直接呼び Wayland と直接通信。判断待ち: 優先度 |
 | [WS081](ws081/ws.md) | MG006 | touch の操作の質: 慣性のある scroll と、低い fps の安い touch panel の数式による補間・予測。HID の driver・compositor・ブラウザ（と Keiland の app）にまたがる計画をこの 1 か所で（2026-09-28 ユーザー） | planning | p001（設計）から。demo critical |
-| [WS082](ws082/ws.md) | MG002 | Linux の `/dev/kvm` の移植の検討（eventfd 等の非 POSIX の fd の代わりに unix socket の message で MMIO・IRQ の通知。ioctl を直接の移植・別の仕組みでの代替・実装不能に分類）（2026-09-28 ユーザー） | planning | p001（検討だけ）から |
+| [WS082](ws082/ws.md) | MG002 | Linux の `/dev/kvm` の移植の検討（eventfd 等の非 POSIX の fd の代わりに unix socket の message で MMIO・IRQ の通知。ioctl を直接の移植・別の仕組みでの代替・実装不能に分類）（2026-09-28 ユーザー） | incomplete | p001 cleared（[study.md](ws082/study.md)）。§10 の 11 項目のユーザーの判断待ち |
+| [WS083](ws083/ws.md) | MG006 | Vulkan Video の拡張（`VK_KHR_video_queue`・`video_decode_queue`・`video_decode_h264`）と i915 の VCS・MFX の対応、最初の目標は H.264 の decode（2026-09-28 ユーザー。OSC のデモには必須ではない） | planning | p001（設計）から。デモの後 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -171,11 +173,14 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
-| 実機の USB の demo の image の結果（splash の出る画面、eDP、greeter が LCD を満たすか、touch の USB、Notes・PDF Viewer の起動） | デモ | ユーザーが試験中 |
-| WS075: BUG-085・BUG-094 の再試験（gdb 無し、5 回以上）→ lease の切り替えで HDMI を点けたまま → BUG-058（zgears） | i915 の安定 | `bug085-hw.sh` |
-| WS079: p007 の残り（試験の script、ASCII85・LZW・RunLength、inline image、「一部を表示できない」の表示）→ p008（CFF・Type1・暗号化）→ p009（規約） | PDF | p007 の phase.md |
-| WS079: Notes の host 試験の link の修正、touch の LCD の descriptor の確認（USB が見えたら） | Notes・入力 | — |
-| WS074: p031・p032（form の部品）→ システム環境設定・widget で libbrowser | ブラウザ | 部品化は済み |
+| 実機の USB の demo の image（`build/demo-hdmi2`）の結果（HDMI の LCD での login・logout の目視、eDP、touch の USB の descriptor、Notes・PDF Viewer） | デモ | ユーザーが試験 |
+| WS074: amazon.co.jp の列（p068 の続き → p061 → p069 → p035 → …、[amazon-goal.md](ws074/amazon-goal.md)） | ブラウザのデモの目標 | 各 Phase |
+| WS079: p009（規約）、CCITTFax・password の入力・thumbnail | PDF・Notes | p008 cleared |
+| WS075: p007〜p010、BUG-058（p017 は 6 回で再現せず uncleared）、BUG-095 | i915 | 実機の LCD の目視の後 |
+| WS035: F-048、HDMI の LCD での仕上げ | Keiland | — |
+| WS081: p001（touch の慣性・補間の設計） | touch の質 | — |
+| WS080: p001（ld.coff の設計） | デモ critical の後 | spec.md |
+| WS082: p002・p002b（study.md §10 の判断の後） | KVM | ユーザーの判断 |
 | WS073: BUG-093（Noct の patch の mtime）、BUG-051 | 安定性・開発 | 各 ticket |
 | WS078 の残り: 注釈・log の名前 | 改名 | — |
 
@@ -323,6 +328,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | デモの利用者・KVM の検討の時期（2026-09-28） | ユーザーの回答: デモは**名前のある利用者**でログインする（指定が無いので利用者名 `kei`、表示名「Kei」。root で空の password のログインはデモの image から外す）。WS082（KVM の検討）は**空いた枠で始める** |
 | toolchain の保護と subagent の範囲（2026-09-28） | ユーザー:「再発防止のため、ツールチェインはメインエージェントの許可がないと変更できないようにしましょう。また、サブエージェントの修正可能範囲を明示しましょう。」→ AGENTS.md の「禁止と承認」に 2 つの規則、`plan/tools/toolchain-lock.sh`（共有の toolchain の tree の directory を読み取り専用に、main だけが一時的に unlock）。経緯: 15:55〜15:57 に古い Makefile の worktree の build が共有の `build/llvm-source` に clang・libcxx の package の patch 5 つ（41 file）を当てた。main が patch -R で戻し、manifest の全 file の SHA-256 と file の一覧の一致を確認（BUG-096） |
 | HDMI の主出力（2026-09-28） | ユーザーの回答: 蓋は開けたまま（ACPI 未実装で sleep させない）、デモは HDMI + USB（USB-C は時間が余れば）、LCD は 1920x1080 の見込み、HDMI が無ければ内蔵画面で起動、音は出さない（DVI）、H1 の調査で 5330 を占有してよい、ssh の alias を 10.0.30.3 に書き直す（main が実施）→ [hdmi-main-output.md](ws075/hdmi-main-output.md) |
+| デモの image の root（2026-09-28） | root を lock し su も無いと実機で管理の作業ができない件でユーザーの回答:「root に password を設定する」→ `plan/ws035/demo/demo-accounts.sh` が root に password を付ける（`DEMO_ROOT_PASSWORD`、無ければ 12 文字の乱数。`BUILD/demo-accounts/root-password`（0600、git に入れない）に書く。image には SHA-512 crypt だけ）。空の password の root は引き続き無し。kei は password 無しのまま |
 | System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
 | Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、**hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）の承認待ち**。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）ことの確認も待つ。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |
 | ACPI の統合 | WS049 の p001〜p005・p010〜p015（サブエージェント）を 2026-09-27 に main へ merge（driver は未 link）。**判断待ち**: (1) HAL の差分 `hal_get_arch_handoff("acpi.rsdp")`（ws049/proposed/hal-acpi-rsdp.diff、hal.h は変えないが HAL の責務の追加）の承認、(2) 対象機を Dell Latitude 5330 とし Linux の `sudo acpidump -b` の table を得る、(3) `_OSI` は既定で Windows 2000〜2022 を名乗る（ACPICA と同じ）でよいか、(4) `/dev/acpi` は text の読み書き（UAPI を足さない、device 番号 0x000B0000）か ioctl か `/dev/system` への統合か | WS049、Guardrail |

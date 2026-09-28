@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（検討）から。**まずは検討だけ**（実装は検討の結果をユーザーが判断してから）
+Resume point: p001 cleared（2026-09-28、[study.md](study.md)）。次は study.md §10 の 11 項目のユーザーの判断。判断の後に p002（HAL の差分の提案）・p002b（ioctl の ABI）を計画する
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）
@@ -41,5 +41,18 @@ Resume point: p001（検討）から。**まずは検討だけ**（実装は検�
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws082-p001 | 検討（上の study.md）。実装はしない | planning | — |
+| ws082-p001 | 検討（上の study.md）。実装はしない | cleared（2026-09-28） | — |
 | 以降 | 検討の結果をユーザーが判断してから計画する | — | p001 |
+
+## p001 の結果（2026-09-28）
+
+[study.md](study.md)（792 行、design-reviewer のレビュー 24 件を反映）。Linux の header の ioctl 150・cap 233 を機械的に突き合わせた。
+
+- ioctl（amd64 に関係 106）: A 82 / B 2（`KVM_IOEVENTFD`・`KVM_IRQFD`）/ C 22。kvm_run の exit 24: A 19 / C 5。cap（amd64 に関係 137）: A 90 / B 5 / C 42。
+  C: guest_memfd・SEV/TDX・nested・Hyper-V/Xen・SMM・vPMU・VFIO の device fd・stats fd・userfaultfd。
+- zedBSD の ioctl の ABI の穴 3 つ（成功で 0 しか返せない、libc の `_IO` が第 3 引数を渡さない、ioctl の SA_RESTART で `KVM_RUN` の EINTR が潰れる）→ p002b。
+- HAL の新責務（VMXON/VMXOFF と CR0.NE、VMCS の host state、entry/exit、vmread/vmwrite、invept/invvpid、MSR）→ p002 で `proposed/hal-virt.diff`（差分ごとの承認）。
+- 最大の実装量と risk は x86 命令の emulator（3〜4k 行、fuzz を受け入れに）。
+- unix socket の通知: `struct kvm_notify`（32 byte）、登録ごとに packet を 1 つ予約して合体。`poll_notify` が全 poller を起こす設計が懸念。
+- 到達点の案: M0 HAL の VMX self test → M1 自作の `kvm-smoke` で real mode の "Hello" → M2 patch した QEMU（userspace irqchip）で Linux の shell → M3 QEMU 既定で ping → M4 firecracker 等の cap の集合。
+- 未実施: build・QEMU・実機（検討だけ）。

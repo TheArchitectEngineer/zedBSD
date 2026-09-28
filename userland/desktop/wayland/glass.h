@@ -49,6 +49,16 @@ enum glass_size {
 };
 
 /*
+ * The Kei mark's colours: the translucent glass of the boot splash (the
+ * greeter and the lock screen), or the deeper and less see-through ones
+ * that read on the light system bar (the launcher, ws035-p118).
+ */
+enum glass_mark_look {
+	GLASS_MARK_SPLASH,
+	GLASS_MARK_BAR
+};
+
+/*
  * One shape for the panel shader, in output pixels: the quad drawn, the
  * rounded box the shader measures from (it may reach past the quad), the
  * part of the image, a color, and how the shape is drawn.  opacity fades the
@@ -78,7 +88,7 @@ void glass_draw_text_middle(struct zwl_server *server, VkCommandBuffer command, 
 void glass_draw_glyph(struct zwl_server *server, VkCommandBuffer command, enum glass_size size, unsigned index, int32_t x, int32_t baseline, const float *color);
 int32_t glass_glyph_advance(struct zwl_server *server, enum glass_size size, unsigned index);
 void glass_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned icon, int32_t x, int32_t y, unsigned pixels, const float *color);
-void glass_draw_mark(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t y, unsigned pixels, float opacity);
+void glass_draw_mark(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t y, unsigned pixels, enum glass_mark_look look, float opacity);
 VkDescriptorSet glass_wallpaper_set(struct zwl_server *server);
 
 /* The login screen in place of the desktop (greeter.c). */
