@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <pwd.h>
 #include <readline/history.h>
 #include <readline/readline.h>
 #include <stdio.h>
@@ -220,6 +221,8 @@ sh_prompt_text(
 	char cwd[PATH_MAX];
 	char host[65];
 	char *named;
+	struct passwd *account;
+	const char *user;
 	int host_error;
 	int expanded_ok;
 
@@ -229,16 +232,23 @@ sh_prompt_text(
 	else
 		prompt = sh_var_get("PS2");
 
-	/* Without PS1, the zedBSD prompt: user, host and directory. */
+	/* Without PS1, the default prompt: user, host and directory. */
 	if (which == 1 && default_prompt && prompt == NULL) {
 		named = getcwd(cwd, sizeof(cwd));
 		if (named == NULL)
 			strcpy(cwd, "/");
 		host_error = gethostname(host, sizeof(host));
 		if (host_error != 0)
-			strcpy(host, "zedbsd");
+			strcpy(host, "kei");
 		host[sizeof(host) - 1] = '\0';
-		snprintf(text, sizeof(text), "root@%s:%s$ ", host, cwd);
+
+		/* The user the shell runs as, by name (the test tools read "$" for every user). */
+		account = getpwuid(geteuid());
+		user = "?";
+		if (account != NULL)
+			user = account->pw_name;
+
+		snprintf(text, sizeof(text), "%s@%s:%s$ ", user, host, cwd);
 		return text;
 	}
 
