@@ -46,6 +46,7 @@
 #include "dp.h"
 #include "dp-sink.h"
 #include "edid.h"
+#include "output.h"
 #include "hdmi-mode.h"
 #include "panel.h"
 #include "pipe.h"
@@ -105,6 +106,9 @@
 #define I915_LCD_DBUF_TGL_BLOCKS	2048U
 #define I915_LCD_DBUF_XELPD_BLOCKS	4096U
 #define I915_LCD_DBUF_XELPD_SLICES	0x0fU
+
+/* DDI_BUF_CTL of port B, whose saved bits an HDMI run on it keeps (intel_ddi_init()). */
+#define I915_LCD_DDI_BUF_CTL_PORT_B	0x64100U
 
 /* The pipe A registers the preflight reads raw on the HDMI arm. */
 #define I915_LCD_TRANSCONF_B		0x71008U
@@ -166,7 +170,9 @@ static void i915_kernel_irq_on(void *ctx);
 static int i915_kernel_preflight_hdmi(struct i915_lcd_kernel *k);
 static int i915_resident_window(void *ctx, struct i915_lcd_observer *o);
 static uint32_t i915_resident_verify(void *ctx, const struct i915_scanout *so);
-static int i915_resident_buffers(struct i915_display *display, const struct i915_lcd_kernel_deps *d);
+static int i915_resident_buffers(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_lcd_state *lcd);
+static void i915_resident_hdmi_params(struct i915_display *display, struct i915_lcd_run_params *params);
+static void i915_resident_hdmi_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, struct i915_lcd_modeset_cfg *cfg);
 static int i915_resident_release(struct i915_display *display, const struct i915_lcd_show_report *rep);
 static int i915_resident_passed(const struct i915_lcd_show_report *rep);
 
@@ -1657,9 +1663,11 @@ drv_i915_lcd_show_discard_model(
  * shown through the show body, and serve runs inside its observation
  * window (after the first frames were seen) until the display is to be
  * given back; the reference's stop path follows and both buffers are
- * released.  Returns 0 when the panel came up and was stopped and released
- * cleanly; EINVAL (a dependency is missing), EBUSY (resources of an earlier
- * run are retained) or EIO otherwise.
+ * released.  When display=hdmi chose the HDMI display (output.c), it is
+ * lit in the panel's place: port B, pipe B, DVI mode, the chosen mode,
+ * and the panel is not touched.  Returns 0 when the output came up and was
+ * stopped and released cleanly; EINVAL (a dependency is missing), EBUSY
+ * (resources of an earlier run are retained) or EIO otherwise.
  */
 int
 drv_i915_lcd_kernel_resident_run(
@@ -1668,6 +1676,8 @@ drv_i915_lcd_kernel_resident_run(
 	int (*serve)(void *ctx),
 	void *ctx)
 {
+	struct i915_lcd_run_params hdmi_params;
+	const struct i915_lcd_state *lcd;
 	struct i915_lcd_kernel *k;
 	struct i915_lcd_show_env *env;
 	struct i915_lcd_show_report *rep;
@@ -1714,6 +1724,20 @@ drv_i915_lcd_kernel_resident_run(
 	k->d = d;
 	drv_i915_lcd_kernel_bind_ops(k);
 
+	/*
+	 * The HDMI display in the panel's place (ws075-p012): the run's
+	 * parameters name port B and pipe B, and, as the only screen, it owns
+	 * the device's PLL pool and DBUF state from their empty start.
+	 */
+	lcd = &d->edp->lcd;
+	if (display->output.hdmi) {
+		i915_resident_hdmi_params(display, &hdmi_params);
+		k->p = &hdmi_params;
+		lcd = &display->output.state;
+		drv_i915_lcd_dplls_reset(display->lcd_world);
+		drv_i915_lcd_dbuf_forget(display->wm_world);
+	}
+
 	/* The hardware must be as the initialisation left it, and the inputs must be complete. */
 	kern_memset(env, 0, sizeof(*env));
 	preflight_error = drv_i915_lcd_kernel_preflight(k);
@@ -1722,13 +1746,20 @@ drv_i915_lcd_kernel_resident_run(
 		fill_error = drv_i915_lcd_kernel_fill_cfg(k, &env->cfg);
 	if (preflight_error != 0 || fill_error != 0) {
 		kern_logf("i915: resident display: not started (preflight: nothing was written)\n");
+		k->p = NULL;
 		return EIO;
 	}
 
-	/* Creates, pins, clears and publishes both buffers. */
-	buffers_error = i915_resident_buffers(display, d);
-	if (buffers_error != 0)
+	/* The HDMI encoder of port B in place of the panel's eDP. */
+	if (display->output.hdmi)
+		i915_resident_hdmi_cfg(display, d, &env->cfg);
+
+	/* Creates, pins, clears and publishes both buffers at the output's size. */
+	buffers_error = i915_resident_buffers(display, d, lcd);
+	if (buffers_error != 0) {
+		k->p = NULL;
 		return EIO;
+	}
 
 	/* Buffer A is shown first; the serve loop runs in the window. */
 	display->resident_front = 0U;
@@ -1740,7 +1771,7 @@ drv_i915_lcd_kernel_resident_run(
 	/* The show environment: the window is the time serve runs. */
 	env->hw = &k->ops;
 	env->gm = d->gm;
-	env->lcd = &d->edp->lcd;
+	env->lcd = lcd;
 	env->pipe = 0;
 	env->first_frames_ms = I915_LCD_FIRST_FRAMES_MS;
 	env->window_ms = 0U;
@@ -1749,6 +1780,10 @@ drv_i915_lcd_kernel_resident_run(
 	env->at_stage = drv_i915_lcd_kernel_at_stage;
 	env->at_stage_ctx = k;
 	k->window_ms = 0U;
+
+	/* The HDMI display runs on its own pipe. */
+	if (display->output.hdmi)
+		env->pipe = I915_OUTPUT_HDMI_PIPE;
 
 	/* Shows buffer A, serves in the window, and stops through the reference's path. */
 	show_result = drv_i915_lcd_show_prepared(display, env, &display->resident_buf[0], i915_resident_verify, NULL, rep);
@@ -1801,8 +1836,9 @@ drv_i915_lcd_kernel_resident_run(
 	    held,
 	    first_anomaly);
 
-	/* The serve loop is no longer called. */
+	/* The serve loop is no longer called, and the run's parameters are gone. */
 	display->resident_serve = NULL;
+	k->p = NULL;
 
 	/* A run that did not pass, did not give everything back or still holds power failed. */
 	if (!passed || !released || held != 0)
@@ -3438,7 +3474,8 @@ i915_resident_verify(
 static int
 i915_resident_buffers(
 	struct i915_display *display,
-	const struct i915_lcd_kernel_deps *d)
+	const struct i915_lcd_kernel_deps *d,
+	const struct i915_lcd_state *lcd)
 {
 	struct i915_scanout *a;
 	struct i915_scanout *b;
@@ -3454,8 +3491,8 @@ i915_resident_buffers(
 	if (window_error != 0 && window_error != EBUSY)
 		return window_error;
 
-	/* Creates and pins A at the panel's size, then B at A's size. */
-	error = drv_i915_scanout_create(d->gm, d->edp->lcd.mode.hdisplay, d->edp->lcd.mode.vdisplay, I915_FOURCC_XRGB8888, I915_MOD_LINEAR, a);
+	/* Creates and pins A at the output's size, then B at A's size. */
+	error = drv_i915_scanout_create(d->gm, lcd->mode.hdisplay, lcd->mode.vdisplay, I915_FOURCC_XRGB8888, I915_MOD_LINEAR, a);
 	if (error == 0)
 		error = drv_i915_scanout_pin(a, "resident A");
 	if (error == 0)
@@ -3479,6 +3516,16 @@ i915_resident_buffers(
 		kern_memset(display->resident_buf[i].cpu, 0, display->resident_buf[i].size);
 		drv_i915_scanout_publish(&display->resident_buf[i]);
 	}
+
+	/* Names both buffers: the kernel addresses let a debugger or the QEMU monitor read the picture. */
+	kern_logf("i915: resident display: buffers %ux%u pitch %u: A surf 0x%08x cpu %p, B surf 0x%08x cpu %p\n",
+	    a->width,
+	    a->height,
+	    a->pitch,
+	    (uint32_t)a->surf,
+	    (void *)a->cpu,
+	    (uint32_t)b->surf,
+	    (void *)b->cpu);
 
 	/* Succeeded: both buffers are pinned and black. */
 	return 0;
@@ -3543,13 +3590,15 @@ i915_resident_passed(
 	if (!rep->display_released)
 		return 0;
 
-	/* The enable, the first frames and the trained link. */
+	/* The enable, the first frames and, on DP, the trained link (HDMI trains none). */
 	if (rep->enable_rc != I915_LCD_MS_OK)
 		return 0;
 	if (rep->steady_rc != 0)
 		return 0;
-	if (!rep->at_enable.cr_ok || !rep->at_enable.eq_ok)
-		return 0;
+	if (!rep->output_hdmi) {
+		if (!rep->at_enable.cr_ok || !rep->at_enable.eq_ok)
+			return 0;
+	}
 
 	/* No underrun, the vblank interrupt never unmasked, and no wrong pixels. */
 	if (rep->obs.seen_steady != 0U)
@@ -3569,4 +3618,71 @@ i915_resident_passed(
 
 	/* Passed. */
 	return 1;
+}
+
+/*
+ * Fills the parameters of a resident run on the HDMI display: port B,
+ * pipe and transcoder B, DPLL 0 from an empty pool, the chosen mode.
+ */
+static void
+i915_resident_hdmi_params(
+	struct i915_display *display,
+	struct i915_lcd_run_params *params)
+{
+	/* The HDMI output of DDI B, alone, with the mode output.c chose. */
+	kern_memset(params, 0, sizeof(*params));
+	params->output_hdmi = 1;
+	params->port = I915_OUTPUT_HDMI_PORT;
+	params->pipe = I915_OUTPUT_HDMI_PIPE;
+	params->cpu_transcoder = I915_OUTPUT_HDMI_PIPE;
+	params->dpll_id = 0;
+	params->reset_dplls = 1;
+	params->state = &display->output.state;
+	params->tag = "resident HDMI";
+}
+
+/*
+ * Turns a filled panel configuration into the HDMI encoder's: what
+ * intel_ddi_init() would have left for port B, no backlight, and the VBT
+ * child's HDMI level shift.
+ */
+static void
+i915_resident_hdmi_cfg(
+	struct i915_display *display,
+	const struct i915_lcd_kernel_deps *d,
+	struct i915_lcd_modeset_cfg *cfg)
+{
+	const struct i915_vbt_encoder *encoder;
+	const struct i915_lcd_mode *mode;
+
+	/* Port B, pipe and transcoder B, DPLL 0, and the port's saved reversal and lane bits. */
+	cfg->output_hdmi = 1;
+	cfg->port = I915_OUTPUT_HDMI_PORT;
+	cfg->pipe = I915_OUTPUT_HDMI_PIPE;
+	cfg->cpu_transcoder = I915_OUTPUT_HDMI_PIPE;
+	cfg->dpll_id = 0;
+	cfg->aux_ch = I915_OUTPUT_HDMI_PORT;
+	cfg->saved_port_bits = drv_i915_read32(d->mmio, I915_LCD_DDI_BUF_CTL_PORT_B) & I915_LCD_SAVED_PORT_BITS;
+
+	/* An external display has no backlight of ours. */
+	cfg->vbt_backlight_present = 0;
+
+	/* The VBT child of the port: its HDMI level shift, or the table's default entry when it names none. */
+	encoder = drv_i915_vbt_encoder_for_port(&d->edp->vbt->parsed, I915_OUTPUT_HDMI_PORT);
+	cfg->vbt_hdmi_level_shift = -1;
+	if (encoder != NULL)
+		cfg->vbt_hdmi_level_shift = encoder->hdmi_level_shift;
+
+	/* Logs what the run drives. */
+	mode = &display->output.state.mode;
+	kern_logf("i915: resident display: HDMI on port %d, pipe %d, DVI mode: %ux%u %d kHz | PLL cfgcr0=0x%08x cfgcr1=0x%08x | VBT level shift %d | saved DDI_BUF_CTL bits 0x%x\n",
+	    cfg->port,
+	    cfg->pipe,
+	    mode->hdisplay,
+	    mode->vdisplay,
+	    mode->clock_khz,
+	    display->output.state.pll.cfgcr0,
+	    display->output.state.pll.cfgcr1,
+	    cfg->vbt_hdmi_level_shift,
+	    cfg->saved_port_bits);
 }

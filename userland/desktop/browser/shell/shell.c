@@ -7,10 +7,11 @@
 
 /*
  * The window mode of browser: a view (view/view.h) shown in a zdesktop
- * window and drawn by the GPU renderer into the window's swapchain.  The
- * view holds the page, its history, its scroll, its timers and the
- * network; the shell holds the window, zdesktop's titlebar (back, forward,
- * reload and the location, whose URL can be edited) and the presenter, and
+ * window, recording its drawing into the frames of the window's swapchain
+ * on the shell's Vulkan device.  The view holds the page, its history, its
+ * scroll, its timers, the network and the renderer; the shell holds the
+ * window, zdesktop's titlebar (back, forward, reload and the location,
+ * whose URL can be edited) and the presenter (the swapchain), and
  * turns the window's input into the view's calls: the wheel and the keys
  * scroll, a click goes to the view (the page's scripts, then the link under
  * it), Alt+Left and Alt+Right and the titlebar step through the history,
@@ -164,7 +165,7 @@ shell_run(
 	}
 
 	/* The Vulkan presenter in the window. */
-	result = shell_present_open(&state.present, &state.window);
+	result = shell_present_open(&state.present, &state.window, state.view);
 	if (result != VK_SUCCESS) {
 		fprintf(stderr, "browser: cannot draw in the window: %s failed (%d)\n", state.present.operation, (int)result);
 		shell_release(&state);
@@ -191,7 +192,7 @@ shell_run(
 		/* A new size replaces the swapchain and lays the page out again. */
 		if (state.window.resized) {
 			state.window.resized = 0;
-			result = shell_present_resize(&state.present, state.window.width, state.window.height);
+			result = shell_present_resize(&state.present, state.view, state.window.width, state.window.height);
 			if (result != VK_SUCCESS) {
 				fprintf(stderr, "browser: cannot resize: %s failed (%d)\n", state.present.operation, (int)result);
 				break;
@@ -485,20 +486,25 @@ static int
 shell_frame(
 	struct shell_state *state)
 {
-	const struct paint_list *list;
-	struct text_system *text;
-	layout_unit scroll_y;
 	VkResult result;
+	int error;
 
-	/* The frame. */
-	browser_view_display(state->view, &list, &text, &scroll_y);
-	result = shell_present_frame(&state->present, list, text, scroll_y);
+	/* The page laid out as it is now, before a frame begins; one that cannot be laid out is reported and not drawn. */
+	error = browser_view_prepare(state->view);
+	if (error != 0) {
+		printf("ZBROWSER ERROR layout error=%s\n", strerror(error));
+		fflush(stdout);
+		return 0;
+	}
+
+	/* The frame, which the view records into the window's image. */
+	result = shell_present_frame(&state->present, state->view);
 
 	/* A swapchain that no longer fits the window is replaced, and the frame drawn once more. */
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		result = shell_present_resize(&state->present, state->window.width, state->window.height);
+		result = shell_present_resize(&state->present, state->view, state->window.width, state->window.height);
 		if (result == VK_SUCCESS)
-			result = shell_present_frame(&state->present, list, text, scroll_y);
+			result = shell_present_frame(&state->present, state->view);
 	}
 
 	/* Says what failed. */
@@ -522,7 +528,7 @@ shell_release(
 	struct shell_state *state)
 {
 	/* The presenter before the window whose surface it draws. */
-	shell_present_close(&state->present);
+	shell_present_close(&state->present, state->view);
 
 	/* The titlebar before the window it belongs to. */
 	shell_titlebar_close(&state->titlebar);

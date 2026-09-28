@@ -139,6 +139,51 @@ static const struct i915_lcd_mode i915_test_hdmi_cea4 = {
 	.edid_bpc = 8,
 };
 
+#ifdef I915_TEST_HDMIB_CEA16
+/*
+ * CEA-861 format 16: 1920x1080 at 60 Hz, 148.5 MHz, positive syncs, 8 bits
+ * per colour.  HDMI-B shows it in place of format 4 when the build defines
+ * I915_TEST_HDMIB_CEA16 (ws075 H1: the CEA mode of the LCD's EDID extension).
+ */
+static const struct i915_lcd_mode i915_test_hdmi_cea16 = {
+	.clock_khz = 148500,
+	.hdisplay = 1920,
+	.hsync_start = 2008,
+	.hsync_end = 2052,
+	.htotal = 2200,
+	.vdisplay = 1080,
+	.vsync_start = 1084,
+	.vsync_end = 1089,
+	.vtotal = 1125,
+	.hsync_positive = 1,
+	.vsync_positive = 1,
+	.edid_bpc = 8,
+};
+#endif
+
+#ifdef I915_TEST_HDMIB_NATIVE
+/*
+ * The first detailed timing of the ws075 H1 LCD's EDID (JTG S123):
+ * 1920x1280 at 60 Hz, 164.36 MHz, positive horizontal and negative
+ * vertical sync.  HDMI-B shows it when the build defines
+ * I915_TEST_HDMIB_NATIVE.
+ */
+static const struct i915_lcd_mode i915_test_hdmi_native = {
+	.clock_khz = 164360,
+	.hdisplay = 1920,
+	.hsync_start = 1968,
+	.hsync_end = 2000,
+	.htotal = 2080,
+	.vdisplay = 1280,
+	.vsync_start = 1283,
+	.vsync_end = 1293,
+	.vtotal = 1317,
+	.hsync_positive = 1,
+	.vsync_positive = 0,
+	.edid_bpc = 8,
+};
+#endif
+
 static int i915_test_hdmib_window(void *ctx, struct i915_lcd_observer *observer);
 static uint32_t i915_test_dual_frame(const struct i915_lcd_kernel_deps *d, int pipe);
 static int i915_test_dual_begin(struct i915_display *display, const char *tag, struct i915_lcd_kernel **k_out);
@@ -159,6 +204,7 @@ drv_i915_test_display_hdmib(
 	struct i915_device *device)
 {
 	struct i915_lcd_run_params params;
+	const struct i915_lcd_mode *mode;
 	struct i915_display *display;
 	int error;
 
@@ -167,8 +213,18 @@ drv_i915_test_display_hdmib(
 	if (display == NULL)
 		return;
 
+	/* The CEA mode the build chose. */
+#if defined(I915_TEST_HDMIB_CEA16)
+	mode = &i915_test_hdmi_cea16;
+#elif defined(I915_TEST_HDMIB_NATIVE)
+	mode = &i915_test_hdmi_native;
+#else
+	mode = &i915_test_hdmi_cea4;
+#endif
+	kern_logf("i915: HDMI-B mode %ux%u %u kHz (DVI)\n", mode->hdisplay, mode->vdisplay, (unsigned)mode->clock_khz);
+
 	/* The HDMI state of the CEA mode, with its WRPLL. */
-	error = drv_i915_lcd_compute_hdmi(&i915_test_hdmi_cea4, I915_TEST_HDMI_REF_KHZ, &i915_test_hdmi_state);
+	error = drv_i915_lcd_compute_hdmi(mode, I915_TEST_HDMI_REF_KHZ, &i915_test_hdmi_state);
 	if (error != 0) {
 		kern_logf("i915: HDMI-B verdict: FAIL (the WRPLL calculation refused the TMDS clock: rc=%d)\n", error);
 		return;

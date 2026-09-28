@@ -1,0 +1,446 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The window-system half of Notes: the Wayland window and its input
+ * (window.c), the Vulkan drawing (render.c), the frame's geometry
+ * (geometry.c), the toolbar (ui.c) and the System Menu (menu.c).
+ */
+
+#ifndef NOTES_APP_H
+#define NOTES_APP_H
+
+#define VK_USE_PLATFORM_WAYLAND_KHR 1
+#include <vulkan/vulkan.h>
+#include <wayland-client.h>
+#include <xdg-shell-client-protocol.h>
+#include <tablet-unstable-v2-client-protocol.h>
+#include <keiland.h>
+
+#include "notes.h"
+
+/*
+ * The toolbar's band in pixels, above the page area: the glass card of the
+ * buttons floats in it (ui.c).
+ */
+#define NOTES_TOOLBAR_HEIGHT	68U
+
+/* The room around the page, in pixels. */
+#define NOTES_PAGE_MARGIN	16.0f
+
+/* How many input events, keys and menu choices wait for the main loop at most. */
+#define NOTES_INPUTS		4096U
+#define NOTES_KEYS		64U
+#define NOTES_ACTIONS		32U
+
+/* The most tablet tools (a pen's tip and eraser end are two) Notes follows. */
+#define NOTES_TABLET_TOOLS	8U
+
+/* The most buttons the toolbar has. */
+#define NOTES_BUTTONS		32U
+
+/* The pen's colours and widths the toolbar offers. */
+#define NOTES_COLORS		5U
+#define NOTES_WIDTHS		3U
+
+/* The pressure a pointer draws with, which has none of its own. */
+#define NOTES_POINTER_PRESSURE	0.5f
+
+/* The modifier bits of wl_keyboard.modifiers, as the compositor reports them. */
+#define NOTES_MODIFIER_SHIFT	0x01U
+#define NOTES_MODIFIER_CONTROL	0x04U
+#define NOTES_MODIFIER_ALT	0x08U
+
+/*
+ * What the toolbar's buttons, the menus and the keys ask for; the main
+ * loop carries each out.  A colour and a width are the base plus their
+ * index.
+ */
+#define NOTES_ACTION_NONE		0U
+#define NOTES_ACTION_PEN		1U
+#define NOTES_ACTION_HIGHLIGHTER	2U
+#define NOTES_ACTION_ERASER		3U
+#define NOTES_ACTION_UNDO		4U
+#define NOTES_ACTION_REDO		5U
+#define NOTES_ACTION_PREVIOUS_PAGE	6U
+#define NOTES_ACTION_NEXT_PAGE		7U
+#define NOTES_ACTION_NEW_PAGE		8U
+#define NOTES_ACTION_SAVE		9U
+#define NOTES_ACTION_OPEN		10U
+#define NOTES_ACTION_CLOSE		11U
+#define NOTES_ACTION_FULLSCREEN	12U
+#define NOTES_ACTION_LEAVE_FULLSCREEN	13U
+#define NOTES_ACTION_COLOR		20U
+#define NOTES_ACTION_WIDTH		30U
+
+/* The pipelines a draw uses (render.c). */
+#define NOTES_PIPE_STENCIL	0U
+#define NOTES_PIPE_FRINGE	1U
+#define NOTES_PIPE_COVER	2U
+#define NOTES_PIPE_PLAIN	3U
+#define NOTES_PIPE_TEXTURE	4U
+#define NOTES_PIPES		5U
+
+/* The floats of one vertex: x, y, then u, v (a fringe's distance or a texture place), then red, green, blue, alpha. */
+#define NOTES_VERTEX_FLOATS	8U
+
+/* The pictures a texture draw shows: the toolbar, and the page with its finished strokes. */
+#define NOTES_TEXTURE_TOOLBAR	0U
+#define NOTES_TEXTURE_PAGE	1U
+#define NOTES_TEXTURES		2U
+
+/*
+ * One key press for the main loop: the evdev code and the modifiers held.
+ */
+struct notes_key {
+	uint32_t key;
+	uint32_t modifiers;
+};
+
+struct notes_window;
+
+/*
+ * One tool of a tablet (tablet.c): its kind, what it can report, and the
+ * state its events build up until a frame turns it into input events.
+ *
+ * It lives from the seat's tool_added to the tool's removal or Notes' end.
+ */
+struct notes_tablet_tool {
+	struct notes_window *window;
+	struct zwp_tablet_tool_v2 *tool;
+
+	/* The kind (ZWP_TABLET_TOOL_V2_TYPE_*) and whether it reports pressure and tilt. */
+	uint32_t type;
+	int has_pressure;
+	int has_tilt;
+
+	/* Whether it is over the window, touching, in a contact Notes has started, and lifting in this frame. */
+	int near;
+	int touching;
+	int down;
+	int lifting;
+
+	/* Whether it moved in this frame, whether it left the window in it, and whether its first barrel button is held. */
+	int moved;
+	int leaving;
+	int stylus;
+
+	/* Its place (surface pixels), pressure (0 to 1) and tilt (degrees). */
+	float x;
+	float y;
+	float pressure;
+	float tilt_x;
+	float tilt_y;
+};
+
+/*
+ * The Wayland window, its seat and what arrived for the main loop.
+ *
+ * The pointer's left button is turned into NOTES_SOURCE_POINTER input
+ * events (window.c); a tablet's tools add pen and eraser events with their
+ * pressure and tilt through notes_window_input() (tablet.c).
+ */
+struct notes_window {
+	/* The connection and the globals bound from it. */
+	struct wl_display *display;
+	struct wl_registry *registry;
+	struct wl_compositor *compositor;
+	struct xdg_wm_base *shell;
+	struct wl_seat *seat;
+	struct wl_keyboard *keyboard;
+	struct wl_pointer *pointer;
+
+	/* The window: its surface and roles. */
+	struct wl_surface *surface;
+	struct xdg_surface *role;
+	struct xdg_toplevel *toplevel;
+
+	/* The size the compositor gave, whether it changed since taken, and whether the window is fullscreen. */
+	uint32_t width;
+	uint32_t height;
+	int resized;
+	int fullscreen;
+
+	/* The largest size the window may choose (xdg-shell's bounds; 0 when not known), and the size it would like. */
+	uint32_t bounds_width;
+	uint32_t bounds_height;
+	uint32_t preferred_width;
+	uint32_t preferred_height;
+
+	/* Whether the first configure arrived, and whether the compositor asked the window to close. */
+	int configured;
+	int closed;
+
+	/* The pointer's place (surface pixels), whether its left button is held down, and the modifiers held. */
+	float pointer_x;
+	float pointer_y;
+	int pointer_down;
+	uint32_t modifiers;
+
+	/* The input events, keys and menu choices not yet taken by the main loop, oldest first. */
+	struct notes_input inputs[NOTES_INPUTS];
+	unsigned input_count;
+	struct notes_key keys[NOTES_KEYS];
+	unsigned key_count;
+	uint32_t actions[NOTES_ACTIONS];
+	unsigned action_count;
+
+	/* The System Menu (menu.c): the service (NULL without one), the menu and its place on the window. */
+	struct keiland_menu_service *menu_service;
+	struct keiland_menu *menu;
+	struct keiland_window_menu *window_menu;
+
+	/* The pen (tablet.c): the tablet manager and the seat's tablets (NULL without them), and the tools. */
+	struct zwp_tablet_manager_v2 *tablet_manager;
+	struct zwp_tablet_seat_v2 *tablet_seat;
+	struct notes_tablet_tool *tools[NOTES_TABLET_TOOLS];
+	unsigned tool_count;
+};
+
+/*
+ * One rectangle of the toolbar that does something when pressed.
+ */
+struct notes_button {
+	int32_t x;
+	int32_t y;
+	int32_t width;
+	int32_t height;
+	uint32_t action;
+};
+
+/*
+ * What the toolbar and the menus show of Notes' state: the tool (its
+ * NOTES_ACTION_PEN, _HIGHLIGHTER or _ERASER) and whether the eraser cuts
+ * parts, the colour's and the width's index, the page and the count,
+ * whether undo and redo can go, whether there are unsaved changes and
+ * fullscreen, and a status line.
+ */
+struct notes_ui_state {
+	unsigned tool;
+	int erase_parts;
+	unsigned color;
+	unsigned width;
+	size_t page;
+	size_t page_count;
+	int can_undo;
+	int can_redo;
+	int dirty;
+	int fullscreen;
+	const char *status;
+};
+
+/*
+ * The toolbar: a picture drawn on the CPU (B8G8R8A8, the window's width by
+ * NOTES_TOOLBAR_HEIGHT) that the renderer shows at the top, the buttons on
+ * it, and the font its labels are drawn with.
+ */
+struct notes_ui {
+	/* The font file and face (NULL without a font: the buttons are drawn without labels). */
+	void *font_data;
+	size_t font_size;
+	struct truetype_face *face;
+	unsigned font_pixels;
+	int ascent;
+
+	/*
+	 * The picture: its size, its pixels (borrowed from the renderer) and
+	 * their row pitch, and whether the layout draws into it (0 while it only
+	 * measures the card).
+	 */
+	uint32_t width;
+	uint32_t height;
+	unsigned char *pixels;
+	size_t pitch;
+	int drawing;
+
+	/* The buttons, as last laid out. */
+	struct notes_button buttons[NOTES_BUTTONS];
+	unsigned button_count;
+};
+
+/*
+ * One draw call of a frame: a pipeline, a run of vertices, and whether it
+ * is clipped, with the rectangle it is clipped to (x, y, width, height).
+ * A texture draw also names its picture (NOTES_TEXTURE_*).
+ */
+struct notes_draw {
+	unsigned pipe;
+	unsigned texture;
+	uint32_t first;
+	uint32_t count;
+	int clipped;
+	int32_t clip[4];
+};
+
+/*
+ * The geometry of one frame, built on the CPU (geometry.c) and handed to
+ * the renderer: the vertices, the draw calls in order, and the clipping
+ * the draws added next take.
+ */
+struct notes_frame {
+	float *vertices;
+	size_t vertex_count;
+	size_t vertex_capacity;
+	struct notes_draw *draws;
+	size_t draw_count;
+	size_t draw_capacity;
+	int clipped;
+	int32_t clip[4];
+	int error;
+};
+
+/*
+ * Where the page is in the window: its top left in pixels, and pixels per point.
+ */
+struct notes_view {
+	float x;
+	float y;
+	float scale;
+};
+
+/*
+ * One swapchain image the renderer draws into; the image is the swapchain's.
+ */
+struct notes_target {
+	VkImage image;
+	VkImageView view;
+	VkFramebuffer framebuffer;
+	VkSemaphore rendered;
+};
+
+/*
+ * The Vulkan objects of the window.
+ *
+ * They are made once the window is configured; the swapchain, the stencil
+ * buffer and the toolbar's image are made again when the window's size
+ * changes.
+ */
+struct notes_renderer {
+	/* The instance, the window's surface, the device and its queue. */
+	VkInstance instance;
+	VkSurfaceKHR surface;
+	VkPhysicalDevice physical;
+	VkDevice device;
+	VkQueue queue;
+	uint32_t family;
+	VkPhysicalDeviceMemoryProperties memory;
+
+	/* The swapchain, its format and extent, and one target per image. */
+	VkSwapchainKHR swapchain;
+	VkFormat format;
+	VkExtent2D extent;
+	struct notes_target *targets;
+	uint32_t count;
+
+	/* The stencil buffer the strokes are filled through, shared by every target. */
+	VkFormat stencil_format;
+	VkImageAspectFlags stencil_aspect;
+	VkImage stencil;
+	VkDeviceMemory stencil_memory;
+	VkImageView stencil_view;
+
+	/* The pass, the pipelines and what they bind: one set for each picture (NOTES_TEXTURE_*). */
+	VkRenderPass pass;
+	VkDescriptorSetLayout set_layout;
+	VkPipelineLayout layout;
+	VkPipeline pipes[NOTES_PIPES];
+	VkDescriptorPool descriptor_pool;
+	VkDescriptorSet sets[NOTES_TEXTURES];
+	VkSampler sampler;
+
+	/*
+	 * The page's picture: the page and its finished strokes, drawn by the
+	 * same pipelines through two passes that differ only in what they start
+	 * from -- a cleared picture, or the picture as the last frame left it
+	 * (to add strokes on top) -- and sampled by the frame.  Its size in
+	 * pixels (0: not made), and a serial that grows each time it is made
+	 * again, which tells the caller that its content is gone.
+	 */
+	VkRenderPass page_clear_pass;
+	VkRenderPass page_load_pass;
+	VkImage page;
+	VkDeviceMemory page_memory;
+	VkImageView page_view;
+	VkFramebuffer page_framebuffer;
+	uint32_t page_width;
+	uint32_t page_height;
+	unsigned long page_serial;
+
+	/*
+	 * The toolbar's image: host-written and linear, its rows (mapped for as
+	 * long as the image lives) and their pitch, and whether it has left its
+	 * first layout.
+	 */
+	VkImage toolbar;
+	VkDeviceMemory toolbar_memory;
+	VkImageView toolbar_view;
+	unsigned char *toolbar_pixels;
+	size_t toolbar_pitch;
+	int toolbar_ready;
+
+	/* The vertices of one frame, in host-visible memory mapped for good. */
+	VkBuffer vertices;
+	VkDeviceMemory vertex_memory;
+	void *vertex_map;
+	size_t vertex_capacity;
+
+	/* One command buffer, the fence that says it finished and the acquire semaphore. */
+	VkCommandPool pool;
+	VkCommandBuffer command;
+	VkFence fence;
+	VkSemaphore acquired;
+
+	/* The Vulkan call that failed last, for the error line. */
+	const char *operation;
+};
+
+/* The window (window.c). */
+int notes_window_open(struct notes_window *window, uint32_t width, uint32_t height, int fullscreen);
+int notes_window_dispatch(struct notes_window *window, int timeout);
+void notes_window_close(struct notes_window *window);
+void notes_window_input(struct notes_window *window, const struct notes_input *input);
+void notes_window_set_title(struct notes_window *window, const char *title);
+void notes_window_set_fullscreen(struct notes_window *window, int fullscreen);
+uint64_t notes_clock(void);
+
+/* The pen through the tablet protocol (tablet.c). */
+void notes_tablet_bind(struct notes_window *window, struct wl_registry *registry, uint32_t name);
+void notes_tablet_start(struct notes_window *window);
+void notes_tablet_close(struct notes_window *window);
+
+/* The menus (menu.c). */
+int notes_menu_open(struct notes_window *window);
+void notes_menu_refresh(struct notes_window *window, const struct notes_ui_state *state);
+void notes_menu_close(struct notes_window *window);
+
+/* The drawing (render.c). */
+VkResult notes_renderer_open(struct notes_renderer *renderer, struct notes_window *window);
+VkResult notes_renderer_resize(struct notes_renderer *renderer, uint32_t width, uint32_t height);
+VkResult notes_renderer_page(struct notes_renderer *renderer, uint32_t width, uint32_t height);
+VkResult notes_renderer_draw(struct notes_renderer *renderer, const struct notes_frame *frame, const struct notes_frame *page_frame, int page_clear);
+void notes_renderer_toolbar(struct notes_renderer *renderer, unsigned char **pixels, size_t *pitch);
+void notes_renderer_close(struct notes_renderer *renderer);
+
+/* The frame's geometry (geometry.c). */
+void notes_frame_begin(struct notes_frame *frame);
+void notes_frame_free(struct notes_frame *frame);
+void notes_frame_rect(struct notes_frame *frame, float x, float y, float width, float height, uint32_t color);
+void notes_frame_gradient(struct notes_frame *frame, float x, float y, float width, float height, uint32_t top, uint32_t bottom);
+void notes_frame_clip(struct notes_frame *frame, int enabled, float x, float y, float width, float height);
+void notes_frame_polygon(struct notes_frame *frame, const struct pdf_point *points, size_t count, const struct notes_view *view, uint32_t color);
+void notes_frame_texture(struct notes_frame *frame, unsigned texture, float x, float y, float width, float height);
+void notes_view_layout(struct notes_view *view, uint32_t width, uint32_t height, float page_width, float page_height);
+
+/* The toolbar (ui.c). */
+int notes_ui_open(struct notes_ui *ui, const char *font_path);
+void notes_ui_close(struct notes_ui *ui);
+void notes_ui_draw(struct notes_ui *ui, unsigned char *pixels, size_t pitch, uint32_t width, uint32_t height, const struct notes_ui_state *state);
+uint32_t notes_ui_hit(const struct notes_ui *ui, float x, float y);
+uint32_t notes_ui_color(unsigned tool, unsigned index);
+float notes_ui_width(unsigned tool, unsigned index);
+
+#endif
