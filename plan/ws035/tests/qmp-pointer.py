@@ -8,6 +8,7 @@ Each step is one word and its numbers, run in order:
     down / up     the left button
     right-down / right-up   the right button
     middle-down / middle-up the middle button (ws035-p100)
+    shift-down / shift-up   the left Shift key held for the steps between (ws035-p111)
     wheel-down / wheel-up   one notch of the wheel
     sleep MS      a pause
 Pixels are output pixels of an output of --width x --height; zdesktop takes the
@@ -72,6 +73,10 @@ def main():
 		elif word in ("middle-down", "middle-up"):
 			send(stream, "input-send-event", {"events": [
 				{"type": "btn", "data": {"down": word == "middle-down", "button": "middle"}}]})
+			index += 1
+		elif word in ("shift-down", "shift-up"):
+			send(stream, "input-send-event", {"events": [
+				{"type": "key", "data": {"down": word == "shift-down", "key": {"type": "qcode", "data": "shift"}}}]})
 			index += 1
 		elif word in ("wheel-down", "wheel-up"):
 			for down in (True, False):

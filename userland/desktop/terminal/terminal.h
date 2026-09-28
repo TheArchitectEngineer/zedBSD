@@ -242,6 +242,7 @@ struct terminal_pointer_event {
 	int32_t y;
 	uint32_t time;
 	uint32_t serial;
+	uint32_t modifiers;
 };
 
 /*
