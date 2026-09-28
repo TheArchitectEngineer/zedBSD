@@ -157,6 +157,15 @@ struct i915_device {
 	 * no start is still using the device.  Protected by the start registry lock.
 	 */
 	unsigned start_returned;
+
+	/*
+	 * Nonzero while the device counts in the kernel's hw.gpu.attaching:
+	 * from the attach until its GPU node is published or its start has
+	 * failed or been withdrawn.  The graphical login waits for /dev/gpu0
+	 * only while a device counts there.  Protected by the start registry
+	 * lock.
+	 */
+	unsigned attach_counted;
 };
 
 void drv_i915_node_init(struct i915_device *device);

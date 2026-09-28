@@ -181,6 +181,9 @@ drv_i915_publish(
 	/* Names the backend without claiming any rendering works. */
 	kern_logf("i915: registered native GPU node (storage, native streams, jobs)\n");
 
+	/* The node is there: the graphical login no longer waits for this device. */
+	drv_i915_device_attach_settled(device);
+
 	/* Succeeded: the GPU node accepts sessions. */
 	return 0;
 }
