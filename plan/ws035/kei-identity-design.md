@@ -30,3 +30,5 @@
   画素の色で画面を塗る）。
 - 段階 2（Keiland の agent）: 全画面の起動画面（`kei-boot-splash.png` を画面の大きさに合わせて PPM にし、loader が全画面に描く。spinner は kernel の進みで動かす）、spinner を kernel の
   進みの枠へ、greeter・lock・壁紙・Welcome に反映。
+- 段階 2 の起動画面（2026-09-28、[ws035-p107](phase107/phase.md)）: `tools/build/make-boot-splash.py` が画像から spinner を消した
+  1440x810 の `fit=cover` の PPM を作り、loader が画面を覆って描く。spinner は kernel（`splash.c`）が同じ場所に描いて回す。

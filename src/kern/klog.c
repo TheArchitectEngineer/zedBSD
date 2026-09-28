@@ -20,6 +20,7 @@
 #include "kern/atomic.h"
 #include "kern/lock.h"
 #include "kern/platform.h"
+#include "kern/text-display.h"
 #include <stdarg.h>
 #include <kern/kcrt.h>
 #include <hal/hal.h>
@@ -115,6 +116,10 @@ kern_log_write(
 		for (at = 0; at < length; at++)
 			console_output((unsigned char)bytes[at]);
 	}
+
+	/* A quiet console shows only that the boot goes on (ws035-p107). */
+	if (quiet)
+		kern_text_progress();
 
 	/* Mirrors the record to the debug console in terminated chunks. */
 	at = 0;

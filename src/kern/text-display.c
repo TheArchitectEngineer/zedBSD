@@ -162,6 +162,38 @@ kern_text_reveal(
 }
 
 /*
+ * Shows that a quiet boot goes on: the log took a record nobody sees
+ * (ws035-p107).  A display without the operation shows nothing.
+ */
+void
+kern_text_progress(
+	void)
+{
+	const struct kern_text_ops *table;
+
+	/* The backend's sign of progress, when it has one. */
+	table = ops();
+	if (table != NULL && table->progress != NULL)
+		table->progress(0);
+}
+
+/*
+ * Ends the quiet boot's sign of progress: a display was taken for graphics
+ * (the greeter or a session), so nothing is drawn under it any more.
+ */
+void
+kern_text_progress_end(
+	void)
+{
+	const struct kern_text_ops *table;
+
+	/* The backend stops showing progress, when it shows any. */
+	table = ops();
+	if (table != NULL && table->progress != NULL)
+		table->progress(1);
+}
+
+/*
  * Writes a terminated string at one cell with one attribute.
  */
 void

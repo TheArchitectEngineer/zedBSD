@@ -46,6 +46,17 @@ enum fm_task_kind {
 };
 
 /*
+ * What a copy or a move does with a name its destination already has
+ * (ws071 spec §5.3): keep both (the next free name, the default), replace
+ * the item there, or skip the source.
+ */
+enum fm_collision {
+	FM_COLLISION_KEEP_BOTH,
+	FM_COLLISION_REPLACE,
+	FM_COLLISION_SKIP
+};
+
+/*
  * Where a task is: planning its steps (walking the folders), carrying
  * them out, or finished (done, or cancelled part way).
  */
@@ -141,9 +152,20 @@ struct fm_task {
 	uint64_t bytes_total;
 	uint64_t bytes_done;
 
-	/* Where each source went (NULL for one that failed), in the sources' order, and which sources failed. */
+	/* Where each source went (NULL for one that failed or was skipped), in the sources' order, and which sources failed. */
 	char **results;
 	unsigned char *failed;
+
+	/*
+	 * What each source does with a name the destination has
+	 * (FM_COLLISION_*; zero, keep both, unless the caller sets it before the
+	 * first step), whether the item a replacing source removes has just been
+	 * planned (the same source is planned again for its own steps), and how
+	 * many sources were skipped.
+	 */
+	unsigned char *collisions;
+	int replacing;
+	unsigned skip_count;
 
 	/* The first failure: its errno value and the path it was about. */
 	int error;
@@ -206,6 +228,7 @@ int fm_task_step(struct fm_task *task, uint64_t budget_ms);
 void fm_task_cancel(struct fm_task *task);
 void fm_task_free(struct fm_task *task);
 const char *fm_task_verb(unsigned kind);
+int fm_task_collides(const struct fm_task *task, size_t index);
 int fm_unique_name(const char *folder, const char *name, const char *suffix, char *path, size_t size);
 uint64_t fm_ops_clock(void);
 

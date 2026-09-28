@@ -260,7 +260,7 @@ AMD64_KERNEL_SOURCES := \
 	$(KERN_AUDIO_SOURCES) \
 	src/kern/tty.c \
 	src/drivers/generic/system-device.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
-	src/drivers/platform/pcat/graphics/vgafont.c src/kern/init.c
+	src/drivers/platform/pcat/graphics/vgafont.c src/drivers/platform/pcat/graphics/splash.c src/kern/init.c
 ifeq ($(CONFIG_DRIVER_GRAPHICS_DEVICE),y)
 AMD64_KERNEL_SOURCES += \
 	src/drivers/platform/pcat/graphics/pcat-graphics.c \
@@ -1466,13 +1466,15 @@ $(eval $(call ZEDBSD_ROOTFS_UFS_IMAGE_RULE,$(AMD64_ARCH_UFS_IMAGE),amd64))
 rootfs: $(BUILD)/rootfs/.stamp
 
 # ws035-p096: the boot logo on the boot FAT (/logo.ppm: the ESP of the native layout, the payload FAT of the BIOS image), drawn by the
-# UEFI and the BIOS loaders when zedbsd.cfg names it
-# (logo=logo.ppm).  It is made from shapes by a script, so no picture from elsewhere is in the tree.
+# UEFI and the BIOS loaders when zedbsd.cfg names it (logo=logo.ppm).  ws035-p107: it is the Kei boot splash
+# (userland/desktop/artwork/kei-boot-splash.png, 1440x810 without its spinner, "fit=cover": the loaders cover the screen with it and the
+# kernel's quiet console draws the spinner, src/drivers/platform/pcat/graphics/splash.c).
 AMD64_BOOT_LOGO := $(BUILD)/boot-logo.ppm
 
-$(AMD64_BOOT_LOGO): tools/build/make-boot-logo.py
+$(AMD64_BOOT_LOGO): tools/build/make-boot-splash.py userland/desktop/artwork/kei-boot-splash.png
 	@mkdir -p $(dir $@)
-	$(PYTHON) tools/build/make-boot-logo.py $@
+	$(PYTHON) tools/build/make-boot-splash.py userland/desktop/artwork/kei-boot-splash.png $@.tmp
+	mv -f $@.tmp $@
 
 # The BIOS image's zedbsd.cfg gets the graphical boot's lines too when ZEDBSD_GRAPHICAL_BOOT is y
 # (ws035-p099; the BIOS loader draws the logo on its VBE framebuffer).
