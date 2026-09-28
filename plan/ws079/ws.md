@@ -66,7 +66,7 @@ libtruetypeにはアウトラインを返すAPIを追加しましょう。」
 | [ws079-p010](phase010/phase.md) | compositor: 上の右端からのスワイプ（design-input-notes §4）で Notes を起動・最前面・全画面、端のジェスチャーの整理（同文書の追記） | cleared（pointer の範囲、2026-09-28、QEMU。pen の接続は p003 の後、本物の Notes は p005 の後） | p003（pen の部分だけ） |
 | [ws079-p004](phase004/phase.md) | libpdf: 書き出し（page、ベクタの path、画像、編集の metadata）と自分の形式の読み込み | cleared（2026-09-28: writer・画像・/ID・日付、`pdf_outline_stroke()` の Catmull-Rom の平滑化と丸い join、自分の形式の読み込み（page・箱・content の SHA-256・添付・ID・日付）、host 試験（ASan/UBSan・破壊 60,000 回・qpdf）、amd64・pcat・rpi4 の `libpdf.so` warning 0。disk image の全体の build は未実施） | p001 |
 | [ws079-p005](phase005/phase.md) | Notes v1: 筆圧の線・消しゴム・page・undo・PDF の保存と再編集 | cleared（v1 の一通り、2026-09-28、QEMU と host。pen は p003 の tablet で。自動保存 5 秒・journal・Ctrl+N は新しい page。残り: Ctrl+O の選択、他の PDF の背景、部分の消しゴム、描画の cache、PDF の中の名前） | p003、p004 |
-| ws079-p006 | libpdf の読み込み ① と PDF Viewer v1（scroll と page の swipe、Notes で書き込み） | planning | p004 |
+| [ws079-p006](phase006/phase.md) | libpdf の読み込み ① と PDF Viewer v1（scroll と page の swipe、Notes で書き込み） | cleared（2026-09-28、QEMU（Venus）と host。libpdf の display list・stroker・CPU rasterizer（pdftoppm と比較）、PDF Viewer v1（CPU の raster を Vulkan で表示）、App Home・Files の Open With。libc の qsort が O(n²) の発見。実機・image の build は未実施） | p004 |
 | ws079-p007 | 段階 ②: 一般の PDF の図形・画像（DCT は libjpeg-compat、Flate は libz-compat）・埋め込みの TrueType（libtruetype） | planning | p006 |
 | ws079-p008 | 段階 ③: CFF・Type1・暗号化など | planning | p007 |
 | ws079-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
