@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: 2026-09-28 の周期の終わり: p001〜p006 は実機で確認（MRT・query・SSBO・stencil・multisample・transform feedback、p005 の 7 場面 0）。HDMI の主出力 p011（H1）・p012（H2 `display=hdmi`）・p013（H4 demo の image `plan/ws075/demo/build-demo-image.sh`）、BUG-091（p014）は cleared。p015（BUG-085 の再試験）は途中（valid な run 0、BUG-094 を起票）。次: `plan/ws075/tests/bug085-hw.sh` で BUG-085・BUG-094 を 5 回以上 → lease の切り替えで HDMI を点けたまま → BUG-058（zgears）→ p007〜p010
+Resume point: 2026-09-28 の夜: p001〜p006 は実機で確認（MRT・query・SSBO・stencil・multisample・transform feedback）。HDMI の主出力 p011〜p013、BUG-091（p014）は cleared。p015（BUG-085 の再試験）は cleared: BUG-094 の原因（HAL の APIC timer の較正と AP の timecounter の probe が vCPU の停止で狂う）を直し、修正の後の 10 回で BUG-085・BUG-094 とも 0。p016（lease の替わり目で HDMI を点けたまま）は cleared: login・logout の 暗転 0（実機の passthrough の register）。p017（BUG-058）は 6 回で再現せず uncleared。BUG-095（capture の image の power-off）を起票。次: 実物の LCD での login・logout の目視（ユーザー）→ p007〜p010
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -64,7 +64,9 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p012](phase012/phase.md) | HDMI の主出力（H2）: `display=hdmi\|auto`・`display.mode=WxH[@R]`、resident を HDMI（port B・pipe B・DVI）で、無ければ eDP | cleared（2026-09-28。実機で `display=hdmi` は HDMI 1920x1280（EDID）の Keiland 全画面、`display.mode=1920x1080@60` も、`display=auto` は eDP。画面は scanout の buffer から。host 80 checks・boot test PASS。LCD の目視と HDMI の無い boot は未実施） | p011 |
 | [ws075-p013](phase013/phase.md) | デモの形での確認（H4）: デモの image（`plan/ws075/demo/`、graphical boot + `display=hdmi`）、splash・greeter・login・session の全体、30 分の連続表示、Shut Down、eDP への fallback | cleared（2026-09-28。実機の passthrough で全体を通した。H2 の pipe B の frame counter の不具合を修正、i915 の node の前に sessiond が諦める件は image で回避。最終の image で Notes の起動が kernel の fatal（i915 の timer thread の spin_unlock の持ち主の違い、未修正、要 Bug ticket）。LCD・eDP の目視と bare metal の起動は未実施） | p012 |
 | [ws075-p014](phase014/phase.md) | [BUG-091](../bugs/BUG-091.md) の修正: i915 が割込み許可のまま spin lock を持つ所（timer queue・start registry・retire の irq_lock・1 tick の sleep）と `kern_usleep_range()` を irqsave に。H4 の greeter の黒い画像の説明 | cleared（2026-09-28。実機の passthrough で Notes・PDF Viewer の起動 48 回 fault 0、host の contract 42 checks、GPU の無い boot test PASS。H4 の greeter の黒は表示していない buffer A を撮ったもの） | p013 |
-| [ws075-p015](phase015/phase.md) | [BUG-085](../bugs/BUG-085.md) の再試験（BUG-091 の修正の後）、`h4-ctl.py shot` の live buffer の選択、（余れば）lease の替わり目で HDMI を点けたまま | uncleared（2026-09-28。main の wrap-up で中断。有効な run 0（e6-1 は compositor の前の service の連鎖で停止、gdb の attach の影響を除けない）。live の選択は書いたが実機で未実行。HDMI の件は未着手） | p014 |
+| [ws075-p015](phase015/phase.md) | [BUG-085](../bugs/BUG-085.md) の再試験（BUG-091 の修正の後）、`h4-ctl.py shot` の live buffer の選択、[BUG-094](../bugs/BUG-094.md) の原因 | cleared（2026-09-28 の再開。BUG-094 = HAL の起動時の時間の測定が vCPU の停止で狂う（`lapic.c` の較正を gate の縁で括り 3 窓の最短、`timecounter.c` の AP の probe を最低 2 秒）。修正の後の egltest6・p005 の各 5 回で BUG-085・BUG-094 とも 0、shot の live は register（PLANE_SURFLIVE）で選べた。GPU の無い boot test PASS） | p014 |
+| [ws075-p016](phase016/phase.md) | lease の替わり目で HDMI を点けたまま（[F-048](../future-work.md) のこの構成の目標）: release で window を出ず最後の絵を次の lease の最初の flip まで保つ（10 秒で期限切れ、PCI shutdown で止める） | cleared（2026-09-28。実機の passthrough で login 6・logout 5 回とも暗 0・黒 0、前は 180〜383 ms と transcoder の停止。Shut Down と期限切れで出力は止まる。実物の LCD の目視は未実施） | p015 |
+| [ws075-p017](phase017/phase.md) | [BUG-058](../bugs/BUG-058.md)（App Home の zgears が最初の frame の前に終わる）の再試験 | uncleared（2026-09-28。6 回の起動で再現せず、原因は未特定） | p016 |
 
 各 Phase の受け入れは、host の survey（`plan/ws075/tests/shader-survey/run.sh`）の該当の不足が 0 になることと、実機の capture
 （egltest・glxtest の場面の capture の scenario は p003 で足す）。
