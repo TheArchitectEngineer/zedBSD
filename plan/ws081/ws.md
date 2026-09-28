@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001 は cleared（2026-09-29、[design.md](design.md)）。次は p003（library、host 試験）。p002 は design §11 の 1・2（範囲の file と注入の拡張）の main の判断の後。HID の driver・Wayland の compositor・ブラウザ（と Keiland の app）にまたがる計画はこの WS の 1 か所で行う
+Resume point: p001・p003 は cleared（2026-09-29、[design.md](design.md)、`userland/desktop/libkeiland/motion.c` と host 試験）。p002 は design §11 の 1・2（範囲の file と注入の拡張）の main の判断の後。p004 以降は main の指示の後。HID の driver・Wayland の compositor・ブラウザ（と Keiland の app）にまたがる計画はこの WS の 1 か所で行う
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）
@@ -43,7 +43,7 @@ Waylandコンポジタ、ブラウザの3つに渡る実装と調整が必要な
 | --- | --- | --- | --- |
 | [ws081-p001](phase001/phase.md) | 設計（上の項目、数式の比較の host の試験を含む）→ [design.md](design.md) | cleared | WS079 p012・p013 |
 | ws081-p002 | kernel: HID の報告の時刻の精度、報告の率の測定と公開（設計で「1 報告 1 時刻と Scan Time の `MSC_TIMESTAMP`」に変える案、率の測定は p003 へ。design §8） | planning | p001、design §11 の 1・2 |
-| ws081-p003 | 補間・予測の library（host で試験、率・jitter ごとの誤差の測定） | planning | p001 |
+| [ws081-p003](phase003/phase.md) | 補間・予測の library（host で試験、率・jitter ごとの誤差の測定）→ `userland/desktop/libkeiland/motion.c`（公開は p004） | cleared | p001 |
 | ws081-p004 | compositor: resampling・予測の適用、scroll の gesture の判定と app への渡し方、window の drag・Notes の線への適用 | planning | p002、p003 |
 | ws081-p005 | 慣性の scroll の共通の実装（libkeiland）と Files・Terminal・PDF Viewer への適用 | planning | p004 |
 | ws081-p006 | ブラウザ（libbrowser）の慣性の scroll と touch の入力 | planning | p004、WS074 |

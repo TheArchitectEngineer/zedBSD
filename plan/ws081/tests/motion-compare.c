@@ -92,7 +92,8 @@ enum method_kind {
 	KIND_KALMAN,
 	KIND_LSQ12,
 	KIND_ALPHA_BETA,
-	KIND_ONE_EURO
+	KIND_ONE_EURO,
+	KIND_EXTERNAL
 };
 
 /*
@@ -223,6 +224,13 @@ static double device_interval;
  * and its measurement noise by it.
  */
 static double device_noise;
+
+/*
+ * The method of kind KIND_EXTERNAL: a test that includes this file (the
+ * library's host test, host-motion.c) sets it to draw with the library.
+ * Unset in this program, which compares only its own methods.
+ */
+static void (*external_point)(const struct report *reports, int count, double now, double *x, double *y);
 
 /* The report rates the tables cover, in hertz. */
 static const double rates[] = {30.0, 45.0, 60.0, 90.0, 120.0};
@@ -1271,6 +1279,11 @@ method_point(
 		t = target - reports[count - 1].stamp;
 		*x += vx * t;
 		*y += vy * t;
+		break;
+	case KIND_EXTERNAL:
+		/* The point the including test's method draws. */
+		if (external_point != NULL)
+			external_point(reports, count, now, x, y);
 		break;
 	case KIND_ONE_EURO:
 		/* The filtered position moved on by the filtered velocity. */
