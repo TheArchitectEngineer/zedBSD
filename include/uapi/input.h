@@ -203,6 +203,12 @@ struct input_absinfo {
 #define BTN_MIDDLE	0x112
 #define BTN_SIDE	0x113
 #define BTN_EXTRA	0x114
+#define BTN_DIGI	0x140
+#define BTN_TOOL_PEN	0x140
+#define BTN_TOOL_RUBBER	0x141
+#define BTN_TOUCH	0x14a
+#define BTN_STYLUS	0x14b
+#define BTN_STYLUS2	0x14c
 
 #define REL_X		0x00
 #define REL_Y		0x01
@@ -212,6 +218,10 @@ struct input_absinfo {
 
 #define ABS_X		0x00
 #define ABS_Y		0x01
+#define ABS_PRESSURE	0x18
+#define ABS_DISTANCE	0x19
+#define ABS_TILT_X	0x1a
+#define ABS_TILT_Y	0x1b
 #define ABS_MT_SLOT		0x2f
 #define ABS_MT_POSITION_X	0x35
 #define ABS_MT_POSITION_Y	0x36
