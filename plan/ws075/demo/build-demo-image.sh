@@ -3,7 +3,8 @@
 # greeter and the session on the HDMI display (display=hdmi), App Home with the demonstration's applications
 # (plan/ws035/demo/apps.conf: Files, Notes, Terminal, PDF Viewer, Browser, Model viewer, Gears, X terminal), and the fonts and the
 # wallpaper, which are not in git (build/ws035-fonts/, build/ws035-wallpaper/).  root logs in
-# with an empty password.  The graphical login waits for the i915's GPU node first (greeter-gpu.sh).
+# with an empty password.  sessiond waits for the i915's GPU node while the kernel reports the device still attaching
+# (hw.gpu.attaching, BUG-092).
 #
 #   plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough] [MAKE ARGUMENTS...]     (default build/demo-hdmi)
 #
@@ -25,8 +26,6 @@ if [ "${1:-}" = passthrough ]; then
 	shift
 fi
 extra="--file /etc/keiland/apps.conf=plan/ws035/demo/apps.conf"
-# The graphical login waits for the i915's GPU node (rc.conf: greeter_gpu in place of greeter).
-extra="$extra --file /etc/service.d/greeter_gpu=plan/ws075/demo/greeter_gpu --file /etc/keiland/greeter-gpu.sh=plan/ws075/demo/greeter-gpu.sh"
 for pair in \
 	keiland.ttf=build/ws035-fonts/Inter.ttf \
 	keiland-OFL.txt=build/ws035-fonts/OFL.txt \
@@ -39,5 +38,5 @@ done
 [ -f build/ws035-wallpaper/wallpaper-1080.ppm ] && extra="$extra --file /usr/share/keiland/wallpaper.ppm=build/ws035-wallpaper/wallpaper-1080.ppm"
 mkdir -p "$build"
 make -j"$(nproc)" ZEDBSD_CONFIG=plan/ws075/demo/config-demo-hdmi.mk BUILD="$build" I915_TEST_VBT=$vbt \
-	ZEDBSD_TEST_RC_CONF=plan/ws075/demo/rc.conf "ZEDBSD_TEST_EXTRA_FILES=$extra" ZEDBSD_TEST_IMAGE_TAG=demo-hdmi "$@" disk-image
+	"ZEDBSD_TEST_EXTRA_FILES=$extra" ZEDBSD_TEST_IMAGE_TAG=demo-hdmi "$@" disk-image
 echo "demo image: $build/hdd-image.img"
