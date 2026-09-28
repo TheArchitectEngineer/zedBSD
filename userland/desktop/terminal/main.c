@@ -163,6 +163,18 @@ static unsigned main_clicks;
 static unsigned main_anchor_column;
 static unsigned main_anchor_row;
 
+/*
+ * The unit a held selection grows by (ws035-p111): 1 a cell (a click), 2 a
+ * word (a double click), 3 a line (a triple click); the word or line the
+ * double or triple click chose, which a drag keeps selected while it adds
+ * whole words or lines on the side the pointer goes; and whether the drag
+ * changed the range since the press.
+ */
+static unsigned main_unit;
+static unsigned main_unit_from[2];
+static unsigned main_unit_to[2];
+static int main_unit_moved;
+
 /* How close in time a click makes a double or triple click, and how far a press moves before it drags, in milliseconds and pixels. */
 #define MAIN_CLICK_MS		400U
 #define MAIN_DRAG_DISTANCE	6
@@ -208,6 +220,8 @@ static void main_pointer_release(void);
 static void main_cell(int32_t x, int32_t y, unsigned *column, unsigned *row);
 static void main_range(unsigned from_column, unsigned from_row, unsigned to_column, unsigned to_row);
 static int main_word_character(unsigned column, unsigned row);
+static void main_unit_bounds(unsigned unit, unsigned column, unsigned row, unsigned *from, unsigned *to);
+static void main_unit_extend(unsigned column, unsigned row);
 static void main_selected_log(const char *how);
 
 /*
@@ -1435,8 +1449,10 @@ main_pointer(void)
 }
 
 /*
- * A press of the left button: inside the range it may start a drag;
- * otherwise one click starts a selection, two select a word, three a line.
+ * A press of the left button: inside the range it may start a drag; with
+ * Shift it extends the selection to the cell; otherwise one click starts a
+ * selection, two select a word, three a line, and a drag after two or
+ * three clicks goes on by whole words or lines.
  */
 static void
 main_pointer_press(
@@ -1448,7 +1464,7 @@ main_pointer_press(
 	unsigned to;
 	int again;
 	int inside;
-	int word;
+	int extend;
 
 	/* The cell, and whether the press repeats the last click there. */
 	main_cell(event->x, event->y, &column, &row);
@@ -1456,6 +1472,22 @@ main_pointer_press(
 	main_click_time = event->time;
 	main_click_column = column;
 	main_click_row = row;
+
+	/*
+	 * Shift and a click extend the selection there from where the last
+	 * one started (any earlier press set that place; ws035-p111).
+	 */
+	extend = 0;
+	if ((event->modifiers & TERMINAL_MODIFIER_SHIFT) != 0U && main_clicks > 0U)
+		extend = 1;
+	if (extend) {
+		main_clicks = 1U;
+		main_unit = 1U;
+		main_unit_moved = 1;
+		main_selecting = 1;
+		main_range(main_anchor_column, main_anchor_row, column, row);
+		return;
+	}
 
 	/* A press inside the range, not a repeated click, may drag it out. */
 	inside = terminal_screen_in_range(main_screen, column, row);
@@ -1476,44 +1508,112 @@ main_pointer_press(
 	main_screen->selected = 0;
 	main_screen->changed = 1;
 
+	/* The held button selects by the clicks' unit until it is released. */
+	main_selecting = 1;
+	main_unit = main_clicks;
+	main_unit_moved = 0;
+
 	/* One: the selection starts here and follows the pointer. */
 	if (main_clicks == 1U) {
 		main_screen->range = 0;
 		main_anchor_column = column;
 		main_anchor_row = row;
-		main_selecting = 1;
 		return;
 	}
 
-	/* Two: the word under the pointer (its letters, or the one character that is not one). */
-	main_selecting = 0;
-	if (main_clicks == 2U) {
-		from = column;
-		to = column;
-		word = main_word_character(column, row);
-		while (word && from > 0U) {
-			word = main_word_character(from - 1U, row);
-			if (word)
-				from--;
-		}
+	/* Two or three: the word or the line under the pointer is the range, and a drag grows from it. */
+	main_unit_bounds(main_unit, column, row, &from, &to);
+	main_unit_from[0] = from;
+	main_unit_from[1] = row;
+	main_unit_to[0] = to;
+	main_unit_to[1] = row;
+	main_anchor_column = from;
+	main_anchor_row = row;
+	main_range(from, row, to, row);
 
-		/* And to its right. */
-		word = main_word_character(column, row);
-		while (word && to + 1U < main_screen->columns) {
-			word = main_word_character(to + 1U, row);
-			if (word)
-				to++;
-		}
-
-		/* The word is the range. */
-		main_range(from, row, to, row);
+	/* Said, and the primary selection. */
+	if (main_clicks == 2U)
 		main_selected_log("word");
+	else
+		main_selected_log("line");
+}
+
+/*
+ * Gives the first and the last column of the unit a cell is in: the cell
+ * itself (1), its word, or the one character that is not a word's (2), or
+ * its whole line (3).
+ */
+static void
+main_unit_bounds(
+	unsigned unit,
+	unsigned column,
+	unsigned row,
+	unsigned *from,
+	unsigned *to)
+{
+	int word;
+
+	/* A cell is its own unit. */
+	*from = column;
+	*to = column;
+	if (unit <= 1U)
+		return;
+
+	/* A line runs across the grid. */
+	if (unit >= 3U) {
+		*from = 0U;
+		*to = main_screen->columns - 1U;
 		return;
 	}
 
-	/* Three: the whole line. */
-	main_range(0U, row, main_screen->columns - 1U, row);
-	main_selected_log("line");
+	/* A word: its letters to the left. */
+	word = main_word_character(column, row);
+	while (word && *from > 0U) {
+		word = main_word_character(*from - 1U, row);
+		if (word)
+			(*from)--;
+	}
+
+	/* And to its right. */
+	word = main_word_character(column, row);
+	while (word && *to + 1U < main_screen->columns) {
+		word = main_word_character(*to + 1U, row);
+		if (word)
+			(*to)++;
+	}
+}
+
+/*
+ * Grows a word or line selection to the unit under the pointer: the range
+ * keeps the word or line first chosen and runs to the far end of the
+ * pointer's unit on whichever side it is.
+ */
+static void
+main_unit_extend(
+	unsigned column,
+	unsigned row)
+{
+	unsigned from;
+	unsigned to;
+	int before;
+
+	/* The unit under the pointer. */
+	main_unit_bounds(main_unit, column, row, &from, &to);
+
+	/* The pointer's unit before the first chosen one runs the range backward, otherwise forward. */
+	before = 0;
+	if (row < main_unit_from[1])
+		before = 1;
+	else if (row == main_unit_from[1] && from < main_unit_from[0])
+		before = 1;
+	if (before) {
+		main_range(from, row, main_unit_to[0], main_unit_to[1]);
+	} else {
+		main_range(main_unit_from[0], main_unit_from[1], to, row);
+	}
+
+	/* The range changed since the press. */
+	main_unit_moved = 1;
 }
 
 /* A motion: it drags the range out once it moves far enough from a press inside it, or extends a selection. */
@@ -1544,6 +1644,14 @@ main_pointer_motion(
 	if (!main_selecting)
 		return;
 	main_cell(event->x, event->y, &column, &row);
+
+	/* After a double or triple click, by whole words or lines (ws035-p111). */
+	if (main_unit > 1U) {
+		main_unit_extend(column, row);
+		return;
+	}
+
+	/* A cell at a time. */
 	if (column == main_anchor_column && row == main_anchor_row && !main_screen->range)
 		return;
 	main_range(main_anchor_column, main_anchor_row, column, row);
@@ -1553,11 +1661,13 @@ main_pointer_motion(
 static void
 main_pointer_release(void)
 {
-	/* A click inside the range. */
+	/* A click inside the range clears it, and a Shift click later extends from there. */
 	if (main_drag_armed) {
 		main_drag_armed = 0;
 		main_screen->range = 0;
 		main_screen->changed = 1;
+		main_anchor_column = main_click_column;
+		main_anchor_row = main_click_row;
 		return;
 	}
 
@@ -1565,6 +1675,22 @@ main_pointer_release(void)
 	if (!main_selecting)
 		return;
 	main_selecting = 0;
+
+	/* A word or line selection says so only when the drag grew it (the press said the first one). */
+	if (main_unit == 2U) {
+		if (main_unit_moved)
+			main_selected_log("words");
+		return;
+	}
+
+	/* The same for lines. */
+	if (main_unit == 3U) {
+		if (main_unit_moved)
+			main_selected_log("lines");
+		return;
+	}
+
+	/* A cell selection, dragged or extended with Shift. */
 	if (main_screen->range)
 		main_selected_log("drag");
 }
@@ -1655,17 +1781,13 @@ static void
 main_selected_log(
 	const char *how)
 {
-	char text[4096];
 	size_t length;
 
-	/* The range's text, for its length. */
-	length = terminal_screen_text(main_screen, text, sizeof(text));
+	/* The range's text, whole (as long as the screen holds), into what the primary selection sends. */
+	length = terminal_screen_text(main_screen, main_primary, sizeof(main_primary));
 	printf("ZTERM SELECT how=%s from=%u,%u to=%u,%u bytes=%lu\n", how, main_screen->range_from[0], main_screen->range_from[1], main_screen->range_to[0], main_screen->range_to[1], (unsigned long)length);
 	fflush(stdout);
 
 	/* The selected text is the primary selection (ws035-p100). */
-	if (length > sizeof(main_primary))
-		length = sizeof(main_primary);
-	memcpy(main_primary, text, length);
 	terminal_primary_set(&main_window, main_primary, length, main_window.serial);
 }
