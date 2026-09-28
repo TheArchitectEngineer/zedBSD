@@ -8,3 +8,5 @@ ZEDBSD_USER_PROGRAMS += browser
 ZEDBSD_USER_PROGRAMS += ca-certificates
 # JPEG (ws074-p019): libjpeg-compat, before the browser uses it (p021).
 ZEDBSD_USER_PROGRAMS += libjpeg-compat
+# GIF (ws074-p051): libgif-compat, before the browser uses it (p021).
+ZEDBSD_USER_PROGRAMS += libgif-compat

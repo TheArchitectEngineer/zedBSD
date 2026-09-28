@@ -54,6 +54,10 @@ for file in $src/*.c; do
 	objects="$objects $object"
 done
 
+# The Kei mark (ws035-p108), shared with the compositor.
+"$cc" $flags -c userland/desktop/artwork/mark.c -o "$out/obj/artwork-mark.o"
+objects="$objects $out/obj/artwork-mark.o"
+
 # The test programs.
 for test in render model; do
 	if [ -f "plan/tools/files/host-$test.c" ]; then

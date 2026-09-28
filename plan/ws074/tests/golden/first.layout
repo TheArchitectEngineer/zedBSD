@@ -7,7 +7,7 @@ block <html> 0.00 0.00 1024.00 385.72
         text 90.12 w 10.00 32px " "
         text 100.12 w 75.11 32px "from"
         text 175.23 w 10.00 32px " "
-        text 185.23 w 294.95 32px "browser"
+        text 185.23 w 131.61 32px "browser"
     block <p> 8.00 87.88 1008.00 21.00
       line 8.00 87.88 height 21.00 baseline 104.88
         text 8.00 w 36.12 18px "This"

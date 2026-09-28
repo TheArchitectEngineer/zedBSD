@@ -1246,6 +1246,7 @@ void fm_search_stop(struct fm_search *search);
 void fm_home_gather(struct fm_app *app);
 void fm_home_folder_opened(const char *folder);
 void fm_home_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
+void fm_mark_draw(struct fm_canvas *canvas, int x, int y, unsigned pixels, float opacity);
 void fm_home_click(struct fm_app *app, unsigned kind, int index, int double_click);
 
 /* The places that are not one folder and the search field (ui-search.c). */

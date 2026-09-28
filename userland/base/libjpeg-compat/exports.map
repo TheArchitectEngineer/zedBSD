@@ -22,6 +22,7 @@
 		jpeg_read_scanlines;
 		jpeg_finish_decompress;
 		jpeg_resync_to_restart;
+		jpeg_save_markers;
 	local:
 		*;
 };

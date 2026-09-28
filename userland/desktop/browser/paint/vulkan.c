@@ -8,8 +8,9 @@
 /*
  * The GPU renderer: a display list drawn with one Vulkan pipeline.
  *
- * Every rectangle and every glyph is one instance of the unit square: its
- * exact rectangle, its color and, for a glyph, its place in the atlas.  The
+ * Every rectangle, glyph and image is one instance of the unit square: its
+ * exact rectangle, its color and, for a glyph or an image, its place in the
+ * atlas (an image also with where it starts and its texels to a pixel).  The
  * vertex shader stretches the square over the pixels the rectangle touches
  * and the fragment shader weighs each pixel by the CPU renderer's coverage
  * rule, so the blend (straight alpha, over the canvas color the pass clears
@@ -41,16 +42,32 @@
 /* The kinds of instance, as the fragment shader reads them. */
 #define GPU_KIND_RECT		0.0f
 #define GPU_KIND_GLYPH		1.0f
+#define GPU_KIND_IMAGE		2.0f
 
 /*
  * One instance: the exact rectangle in pixels (left, top, right, bottom),
- * the straight color (red, green, blue, alpha from 0 to 1) and the atlas
- * place with the kind (u, v in texels, kind, unused).
+ * the straight color (red, green, blue, alpha from 0 to 1), the atlas
+ * place with the kind (u, v in texels, kind, unused), and for an image
+ * the unclipped rectangle's top left with its texels to a pixel (x, y,
+ * scale x, scale y) and its size in texels (width, height, unused,
+ * unused).
  */
 struct gpu_instance {
 	float rect[4];
 	float color[4];
 	float atlas[4];
+	float source[4];
+	float texels[4];
+};
+
+/*
+ * One image placed in the atlas: the bitmap's serial (the key) and where
+ * its pixels went.
+ */
+struct paint_gpu_image {
+	uint64_t serial;
+	uint32_t x;
+	uint32_t y;
 };
 
 /*
@@ -76,7 +93,10 @@ static VkResult gpu_commands(struct paint_gpu *gpu);
 static int gpu_stage(struct paint_gpu *gpu, const struct paint_list *list, struct text_system *text, layout_unit scroll_y, VkExtent2D extent);
 static int gpu_stage_rect(struct paint_gpu *gpu, const struct paint_item *item, layout_unit scroll_y, VkExtent2D extent, const struct paint_clip *clip);
 static int gpu_stage_text(struct paint_gpu *gpu, const struct paint_item *item, struct text_system *text, layout_unit scroll_y, VkExtent2D extent, const struct paint_clip *clip);
+static int gpu_stage_image(struct paint_gpu *gpu, const struct paint_item *item, layout_unit scroll_y, VkExtent2D extent, const struct paint_clip *clip);
 static int gpu_place(struct paint_gpu *gpu, const struct text_glyph *glyph, uint32_t *x, uint32_t *y);
+static int gpu_place_image(struct paint_gpu *gpu, const struct img_bitmap *image, uint32_t *x, uint32_t *y);
+static int gpu_shelf(struct paint_gpu *gpu, uint32_t width, uint32_t height, uint32_t *x, uint32_t *y);
 static struct paint_gpu_slot *gpu_slot(struct paint_gpu *gpu, const uint8_t *bitmap);
 static int gpu_slots_grow(struct paint_gpu *gpu);
 static void gpu_atlas_reset(struct paint_gpu *gpu);
@@ -111,6 +131,7 @@ paint_gpu_open(
 	gpu->format = format;
 	vkGetDeviceQueue(device, family, 0U, &gpu->queue);
 	wb_vector_init(&gpu->staged, sizeof(struct gpu_instance));
+	wb_vector_init(&gpu->images, sizeof(struct paint_gpu_image));
 
 	/* The pass that draws into the caller's images. */
 	error = gpu_pass(gpu, final_layout);
@@ -275,6 +296,7 @@ paint_gpu_close(
 
 	/* The host's tables. */
 	wb_vector_release(&gpu->staged);
+	wb_vector_release(&gpu->images);
 	free(gpu->slots);
 	memset(gpu, 0, sizeof(*gpu));
 }
@@ -819,7 +841,7 @@ gpu_pipeline(
 	VkPipelineLayoutCreateInfo layout;
 	VkPipelineShaderStageCreateInfo stages[2];
 	VkVertexInputBindingDescription bindings[2];
-	VkVertexInputAttributeDescription attributes[4];
+	VkVertexInputAttributeDescription attributes[6];
 	VkPipelineVertexInputStateCreateInfo input;
 	VkPipelineInputAssemblyStateCreateInfo assembly;
 	VkPipelineViewportStateCreateInfo viewport;
@@ -869,7 +891,7 @@ gpu_pipeline(
 	stages[1].module = fragment;
 	stages[1].pName = "main";
 
-	/* The corners, one vec4 a vertex, and the items, three vec4 an instance. */
+	/* The corners, one vec4 a vertex, and the items, five vec4 an instance. */
 	memset(bindings, 0, sizeof(bindings));
 	bindings[0].binding = 0U;
 	bindings[0].stride = GPU_CORNER_FLOATS * sizeof(float);
@@ -878,13 +900,13 @@ gpu_pipeline(
 	bindings[1].stride = sizeof(struct gpu_instance);
 	bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
-	/* The corner at location 0, and the item's rectangle, color and atlas place at 1 to 3. */
+	/* The corner at location 0, and the item's rectangle, color, atlas place, image source and texels at 1 to 5. */
 	memset(attributes, 0, sizeof(attributes));
 	attributes[0].location = 0U;
 	attributes[0].binding = 0U;
 	attributes[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	attributes[0].offset = 0U;
-	for (index = 1U; index < 4U; index++) {
+	for (index = 1U; index < 6U; index++) {
 		attributes[index].location = index;
 		attributes[index].binding = 1U;
 		attributes[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -896,7 +918,7 @@ gpu_pipeline(
 	input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	input.vertexBindingDescriptionCount = 2U;
 	input.pVertexBindingDescriptions = bindings;
-	input.vertexAttributeDescriptionCount = 4U;
+	input.vertexAttributeDescriptionCount = 6U;
 	input.pVertexAttributeDescriptions = attributes;
 	memset(&assembly, 0, sizeof(assembly));
 	assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -1076,6 +1098,14 @@ gpu_stage(
 			continue;
 		}
 
+		/* An image is one instance. */
+		if (item->kind == PAINT_IMAGE) {
+			status = gpu_stage_image(gpu, item, scroll_y, extent, paint_clips_top(&clips));
+			if (status != 0)
+				return status;
+			continue;
+		}
+
 		/* A text run is one instance a glyph. */
 		status = gpu_stage_text(gpu, item, text, scroll_y, extent, paint_clips_top(&clips));
 		if (status != 0)
@@ -1238,8 +1268,11 @@ gpu_place(
 	uint8_t *target;
 	uint32_t width;
 	uint32_t height;
+	uint32_t left;
+	uint32_t top;
 	uint32_t row;
 	uint32_t column;
+	int placed;
 	int error;
 
 	/* Grows the table when adding would fill more than half of it. */
@@ -1257,45 +1290,198 @@ gpu_place(
 		return 1;
 	}
 
-	/* A glyph larger than the atlas never fits. */
+	/* Room on the shelves; a glyph that does not fit waits for the atlas to start over. */
 	width = (uint32_t)glyph->width;
 	height = (uint32_t)glyph->height;
+	placed = gpu_shelf(gpu, width, height, &left, &top);
+	if (!placed)
+		return 0;
+
+	/* Copies the coverage into every channel of the texels. */
+	for (row = 0U; row < height; row++) {
+		source = glyph->bitmap + (size_t)row * width;
+		target = gpu->atlas_map + (size_t)(top + row) * gpu->atlas_pitch + (size_t)left * 4U;
+		for (column = 0U; column < width; column++)
+			memset(target + (size_t)column * 4U, source[column], 4U);
+	}
+
+	/* Records the place. */
+	slot->bitmap = glyph->bitmap;
+	slot->x = left;
+	slot->y = top;
+	gpu->slot_count++;
+
+	/* Succeeded: the glyph is in the atlas. */
+	*x = slot->x;
+	*y = slot->y;
+	return 1;
+}
+
+/*
+ * Stages an image item as one instance: its rectangle cut to the clip,
+ * its place in the atlas, and the unclipped rectangle's top left with the
+ * image's texels to a pixel, from which the shader finds the texel under
+ * each pixel as the CPU renderer does.
+ */
+static int
+gpu_stage_image(
+	struct paint_gpu *gpu,
+	const struct paint_item *item,
+	layout_unit scroll_y,
+	VkExtent2D extent,
+	const struct paint_clip *clip)
+{
+	struct gpu_instance instance;
+	uint32_t atlas_x;
+	uint32_t atlas_y;
+	int placed;
+	int error;
+
+	/* The rectangle in pixels, scrolled, as the CPU renderer measures it. */
+	memset(&instance, 0, sizeof(instance));
+	instance.rect[0] = layout_to_px(item->x);
+	instance.rect[1] = layout_to_px(item->y - scroll_y);
+	instance.rect[2] = layout_to_px(item->x + item->width);
+	instance.rect[3] = layout_to_px(item->y - scroll_y + item->height);
+
+	/* Where the image starts and its texels to a pixel, before the cut. */
+	instance.source[0] = instance.rect[0];
+	instance.source[1] = instance.rect[1];
+	instance.source[2] = (float)item->image->width / layout_to_px(item->width);
+	instance.source[3] = (float)item->image->height / layout_to_px(item->height);
+	instance.texels[0] = (float)item->image->width;
+	instance.texels[1] = (float)item->image->height;
+
+	/* Cut to the clip; an image outside it draws nothing. */
+	if (instance.rect[0] < clip->left)
+		instance.rect[0] = clip->left;
+	if (instance.rect[1] < clip->top)
+		instance.rect[1] = clip->top;
+	if (instance.rect[2] > clip->right)
+		instance.rect[2] = clip->right;
+	if (instance.rect[3] > clip->bottom)
+		instance.rect[3] = clip->bottom;
+	if (instance.rect[2] <= instance.rect[0] || instance.rect[3] <= instance.rect[1])
+		return 0;
+
+	/* An image above or below the target draws nothing. */
+	if (instance.rect[3] <= 0.0f || instance.rect[1] >= (float)extent.height)
+		return 0;
+
+	/* Its pixels in the atlas; an image the atlas cannot take is left out of this frame. */
+	placed = gpu_place_image(gpu, item->image, &atlas_x, &atlas_y);
+	if (!placed)
+		return 0;
+	instance.atlas[0] = (float)atlas_x;
+	instance.atlas[1] = (float)atlas_y;
+	instance.atlas[2] = GPU_KIND_IMAGE;
+	instance.color[3] = 1.0f;
+
+	/* Adds it. */
+	error = wb_vector_push(&gpu->staged, &instance);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the image is staged. */
+	return 0;
+}
+
+/*
+ * Finds an image's place in the atlas, copying its pixels there the first
+ * time; 0 when it does not fit (the atlas then starts over before the next
+ * frame, unless the image is larger than the atlas).
+ */
+static int
+gpu_place_image(
+	struct paint_gpu *gpu,
+	const struct img_bitmap *image,
+	uint32_t *x,
+	uint32_t *y)
+{
+	struct paint_gpu_image *known;
+	struct paint_gpu_image place;
+	uint32_t width;
+	uint32_t height;
+	uint32_t row;
+	size_t index;
+	int placed;
+	int error;
+
+	/* An image placed before is where it was put. */
+	for (index = 0; index < gpu->images.count; index++) {
+		known = wb_vector_at(&gpu->images, index);
+		if (known->serial == image->serial) {
+			*x = known->x;
+			*y = known->y;
+			return 1;
+		}
+	}
+
+	/* An image larger than the atlas never fits (drawing it is left for later). */
+	width = (uint32_t)image->width;
+	height = (uint32_t)image->height;
 	if (width > PAINT_GPU_ATLAS_SIZE || height > PAINT_GPU_ATLAS_SIZE)
 		return 0;
 
-	/* A glyph past the shelf's end starts the next shelf. */
+	/* Room on the shelves. */
+	placed = gpu_shelf(gpu, width, height, &place.x, &place.y);
+	if (!placed)
+		return 0;
+
+	/* Its pixels, 0xAARRGGBB, are the atlas's B8G8R8A8 texels as they lie in a little-endian memory (amd64). */
+	for (row = 0U; row < height; row++)
+		memcpy(gpu->atlas_map + (size_t)(place.y + row) * gpu->atlas_pitch + (size_t)place.x * 4U, image->pixels + (size_t)row * width, (size_t)width * 4U);
+
+	/* Records the place. */
+	place.serial = image->serial;
+	error = wb_vector_push(&gpu->images, &place);
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: the image is in the atlas. */
+	*x = place.x;
+	*y = place.y;
+	return 1;
+}
+
+/*
+ * Takes a rectangle of the atlas on its shelves: left to right on the
+ * current shelf, or on a new shelf below; 0 when the atlas is full (it
+ * starts over before the next frame).
+ */
+static int
+gpu_shelf(
+	struct paint_gpu *gpu,
+	uint32_t width,
+	uint32_t height,
+	uint32_t *x,
+	uint32_t *y)
+{
+	/* Nothing larger than the atlas ever fits. */
+	if (width > PAINT_GPU_ATLAS_SIZE || height > PAINT_GPU_ATLAS_SIZE)
+		return 0;
+
+	/* A rectangle past the shelf's end starts the next shelf. */
 	if (gpu->shelf_x + width > PAINT_GPU_ATLAS_SIZE) {
 		gpu->shelf_y += gpu->shelf_height;
 		gpu->shelf_x = 0U;
 		gpu->shelf_height = 0U;
 	}
 
-	/* A glyph below the last shelf does not fit until the atlas starts over. */
+	/* A rectangle below the last shelf does not fit until the atlas starts over. */
 	if (gpu->shelf_y + height > PAINT_GPU_ATLAS_SIZE) {
 		gpu->full = 1;
 		return 0;
 	}
 
-	/* Copies the coverage into every channel of the texels. */
-	for (row = 0U; row < height; row++) {
-		source = glyph->bitmap + (size_t)row * width;
-		target = gpu->atlas_map + (size_t)(gpu->shelf_y + row) * gpu->atlas_pitch + (size_t)gpu->shelf_x * 4U;
-		for (column = 0U; column < width; column++)
-			memset(target + (size_t)column * 4U, source[column], 4U);
-	}
-
-	/* Records the place and moves along the shelf. */
-	slot->bitmap = glyph->bitmap;
-	slot->x = gpu->shelf_x;
-	slot->y = gpu->shelf_y;
-	gpu->slot_count++;
+	/* The place, and the shelf moves along it. */
+	*x = gpu->shelf_x;
+	*y = gpu->shelf_y;
 	gpu->shelf_x += width;
 	if (height > gpu->shelf_height)
 		gpu->shelf_height = height;
 
-	/* Succeeded: the glyph is in the atlas. */
-	*x = slot->x;
-	*y = slot->y;
+	/* Succeeded: the rectangle is taken. */
 	return 1;
 }
 
@@ -1369,10 +1555,11 @@ static void
 gpu_atlas_reset(
 	struct paint_gpu *gpu)
 {
-	/* Forgets every place (the texels are written again as glyphs come back). */
+	/* Forgets every place (the texels are written again as glyphs and images come back). */
 	if (gpu->slots != NULL)
 		memset(gpu->slots, 0, gpu->slot_capacity * sizeof(*gpu->slots));
 	gpu->slot_count = 0;
+	wb_vector_clear(&gpu->images);
 	gpu->shelf_x = 0U;
 	gpu->shelf_y = 0U;
 	gpu->shelf_height = 0U;

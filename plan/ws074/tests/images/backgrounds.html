@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>browser: backgrounds</title>
+<style>
+body { font-family: sans-serif; color: #222; margin: 16px; background: #eef2f6 url(tile.png); }
+h1 { font-size: 24px; margin: 0 0 8px 0; background-color: rgba(255, 255, 255, 0.8); }
+.box { width: 240px; height: 100px; margin: 8px 12px 8px 0; border: 4px solid #1f4e79; padding: 6px; float: left;
+       background-color: #fff; font-size: 13px; }
+.repeat { background-image: url(tile.png); }
+.repeat-x { background-image: url("tile.png"); background-repeat: repeat-x; background-position: 0 50%; }
+.repeat-y { background: white url(tile.png) repeat-y right top; }
+.none-center { background: white url(logo.png) no-repeat center; }
+.bottom-right { background: white url(logo.png) no-repeat right bottom; }
+.corner { background-image: url(logo.png); background-repeat: no-repeat; background-position: 10px 20px; }
+.contain { background: #333 url(photo.jpg) no-repeat center / contain; color: white; }
+.cover { background: url(photo.jpg) center / cover; color: white; }
+.sized { background: url(photo.jpg) 0 0 / 60px 40px; color: white; }
+.half { background-image: url(photo.jpg); background-size: 50% auto; background-repeat: no-repeat; }
+.gif { background: url(anim.gif) 4px 4px; }
+.missing { background: #fdd url(missing.png); }
+.clear { clear: both; }
+</style>
+</head>
+<body>
+<h1>Backgrounds</h1>
+<div class="box repeat">repeat</div>
+<div class="box repeat-x">repeat-x at 0 50%</div>
+<div class="box repeat-y">repeat-y right top</div>
+<div class="box none-center">no-repeat center</div>
+<div class="box bottom-right">right bottom</div>
+<div class="box corner">10px 20px</div>
+<div class="box contain">contain</div>
+<div class="box cover">cover</div>
+<div class="box sized">60px 40px</div>
+<div class="box half">50% auto</div>
+<div class="box gif">a GIF</div>
+<div class="box missing">a missing image</div>
+<p class="clear">The body's background (a color and a tile) is the canvas's.</p>
+</body>
+</html>

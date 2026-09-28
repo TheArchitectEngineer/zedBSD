@@ -28,6 +28,8 @@ enum values_shorthand {
 	SHORT_BORDER_STYLE,
 	SHORT_BORDER_COLOR,
 	SHORT_BACKGROUND,
+	SHORT_BACKGROUND_POSITION,
+	SHORT_BACKGROUND_SIZE,
 	SHORT_FONT,
 	SHORT_TEXT_DECORATION,
 	SHORT_LIST_STYLE
@@ -69,7 +71,16 @@ static void values_add(struct css_declaration *out, size_t *made, int property, 
 static int values_hex_digit(uint16_t unit);
 static int values_rgb_function(const struct css_token *tokens, size_t count, uint32_t *color);
 static void values_wide_keyword(int property, const struct css_value *value, struct css_declaration *out, size_t *made);
-static void values_background(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_background(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static size_t values_function_length(const struct css_token *tokens, size_t count);
+static int values_url(struct vm_heap *heap, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_repeat_parts(const struct css_token *const *parts, size_t count, struct css_value *value);
+static int values_position_parts(const struct css_token *const *parts, size_t count, struct css_value *x, struct css_value *y);
+static int values_position_part(const struct css_token *token, struct css_value *value);
+static int values_position_axis(const struct css_token *token);
+static int values_size_parts(const struct css_token *const *parts, size_t count, struct css_value *width, struct css_value *height);
+static int values_background_position(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_background_size(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 
 /* The property names this pass knows. */
 static const struct values_name values_names[] = {
@@ -105,6 +116,10 @@ static const struct values_name values_names[] = {
 	{ "border-left-color", CSS_PROP_BORDER_LEFT_COLOR },
 	{ "color", CSS_PROP_COLOR },
 	{ "background-color", CSS_PROP_BACKGROUND_COLOR },
+	{ "background-image", CSS_PROP_BACKGROUND_IMAGE },
+	{ "background-repeat", CSS_PROP_BACKGROUND_REPEAT },
+	{ "background-position-x", CSS_PROP_BACKGROUND_POSITION_X },
+	{ "background-position-y", CSS_PROP_BACKGROUND_POSITION_Y },
 	{ "font-size", CSS_PROP_FONT_SIZE },
 	{ "font-weight", CSS_PROP_FONT_WEIGHT },
 	{ "font-style", CSS_PROP_FONT_STYLE },
@@ -134,6 +149,8 @@ static const struct values_name values_names[] = {
 	{ "border-style", SHORT_BORDER_STYLE },
 	{ "border-color", SHORT_BORDER_COLOR },
 	{ "background", SHORT_BACKGROUND },
+	{ "background-position", SHORT_BACKGROUND_POSITION },
+	{ "background-size", SHORT_BACKGROUND_SIZE },
 	{ "font", SHORT_FONT },
 	{ "text-decoration", SHORT_TEXT_DECORATION },
 	{ "list-style", SHORT_LIST_STYLE },
@@ -315,6 +332,27 @@ static const struct values_keyword values_wide[] = {
 	{ "unset", CSS_VALUE_UNSET },
 	{ "revert", CSS_VALUE_UNSET },
 	{ "revert-layer", CSS_VALUE_UNSET },
+	{ NULL, 0 }
+};
+
+/* The values of background-repeat's keywords (space and round are drawn as repeat). */
+static const struct values_keyword values_repeat[] = {
+	{ "repeat", CSS_REPEAT_BOTH },
+	{ "repeat-x", CSS_REPEAT_X },
+	{ "repeat-y", CSS_REPEAT_Y },
+	{ "no-repeat", CSS_REPEAT_NONE },
+	{ "space", CSS_REPEAT_BOTH },
+	{ "round", CSS_REPEAT_BOTH },
+	{ NULL, 0 }
+};
+
+/* The keywords of background-position, as percentages of the room. */
+static const struct values_keyword values_position_keywords[] = {
+	{ "left", 0 },
+	{ "center", 50 },
+	{ "right", 100 },
+	{ "top", 0 },
+	{ "bottom", 100 },
 	{ NULL, 0 }
 };
 
@@ -599,8 +637,11 @@ css_parse_value(
 	case SHORT_BORDER_LEFT:
 		return values_border(heap, CSS_LEFT, tokens, count, out, out_count);
 	case SHORT_BACKGROUND:
-		values_background(tokens, count, out, out_count);
-		return 0;
+		return values_background(heap, tokens, count, out, out_count);
+	case SHORT_BACKGROUND_POSITION:
+		return values_background_position(tokens, count, out, out_count);
+	case SHORT_BACKGROUND_SIZE:
+		return values_background_size(tokens, count, out, out_count);
 	case SHORT_TEXT_DECORATION:
 		return css_parse_value_as(heap, CSS_PROP_TEXT_DECORATION_LINE, tokens, 1, out, out_count);
 	case SHORT_LIST_STYLE:
@@ -957,6 +998,8 @@ values_single(
 	struct css_value *value)
 {
 	const struct values_keyword *table;
+	const struct css_token *parts[2];
+	size_t used;
 	int keyword;
 	int is_auto;
 	int found;
@@ -985,9 +1028,28 @@ values_single(
 		return 0;
 	}
 
+	/* An image: url(...) or none. */
+	if (property == CSS_PROP_BACKGROUND_IMAGE)
+		return values_url(heap, tokens, count, value);
+
+	/* background-repeat takes one keyword or one for each axis. */
+	if (property == CSS_PROP_BACKGROUND_REPEAT) {
+		parts[0] = &tokens[0];
+		parts[1] = &tokens[count - 1U];
+		used = 2;
+		if (count == 1)
+			used = 1;
+		error = values_repeat_parts(parts, used, value);
+		return error;
+	}
+
 	/* The other properties take one token. */
 	if (count != 1)
 		return EINVAL;
+
+	/* One axis of background-position: a keyword or a length. */
+	if (property == CSS_PROP_BACKGROUND_POSITION_X || property == CSS_PROP_BACKGROUND_POSITION_Y)
+		return values_position_part(&tokens[0], value);
 
 	/* The keyword properties. */
 	table = NULL;
@@ -1505,6 +1567,23 @@ values_wide_keyword(
 	case SHORT_BORDER_COLOR:
 		first = CSS_PROP_BORDER_TOP_COLOR;
 		break;
+	case SHORT_BACKGROUND_POSITION:
+		values_add(out, made, CSS_PROP_BACKGROUND_POSITION_X, value);
+		values_add(out, made, CSS_PROP_BACKGROUND_POSITION_Y, value);
+		return;
+	case SHORT_BACKGROUND_SIZE:
+		values_add(out, made, CSS_PROP_BACKGROUND_SIZE_WIDTH, value);
+		values_add(out, made, CSS_PROP_BACKGROUND_SIZE_HEIGHT, value);
+		return;
+	case SHORT_BACKGROUND:
+		values_add(out, made, CSS_PROP_BACKGROUND_COLOR, value);
+		values_add(out, made, CSS_PROP_BACKGROUND_IMAGE, value);
+		values_add(out, made, CSS_PROP_BACKGROUND_REPEAT, value);
+		values_add(out, made, CSS_PROP_BACKGROUND_POSITION_X, value);
+		values_add(out, made, CSS_PROP_BACKGROUND_POSITION_Y, value);
+		values_add(out, made, CSS_PROP_BACKGROUND_SIZE_WIDTH, value);
+		values_add(out, made, CSS_PROP_BACKGROUND_SIZE_HEIGHT, value);
+		return;
 	default:
 		break;
 	}
@@ -1520,35 +1599,543 @@ values_wide_keyword(
 	values_add(out, made, first + 3, value);
 }
 
-/* Parses the background shorthand for its color (the first component that is one; transparent without one). */
-static void
+/*
+ * Parses the background shorthand: its color, image, repeat, position
+ * and, after a slash, its size, in any order; what it leaves out takes
+ * its initial value (transparent, none, repeat, 0% 0%, auto).
+ */
+static int
 values_background(
+	struct vm_heap *heap,
 	const struct css_token *tokens,
 	size_t count,
 	struct css_declaration *out,
 	size_t *made)
 {
-	struct css_value value;
+	const struct css_token *positions[2];
+	const struct css_token *sizes[2];
+	const struct css_token *repeats[2];
+	struct css_value color;
+	struct css_value image;
+	struct css_value repeat;
+	struct css_value x;
+	struct css_value y;
+	struct css_value width;
+	struct css_value height;
+	size_t position_count;
+	size_t size_count;
+	size_t repeat_count;
 	size_t index;
 	size_t rest;
+	int after_slash;
+	int is_url;
+	int named;
+	int keyword;
+	int found;
 	int error;
 
-	/* Tries each token as the start of a color. */
-	memset(&value, 0, sizeof(value));
-	value.kind = CSS_VALUE_COLOR;
-	for (index = 0; index < count; index++) {
-		/* A function takes its arguments with it. */
-		rest = 1;
-		if (tokens[index].type == CSS_TOKEN_FUNCTION)
-			rest = count - index;
-		error = css_parse_color(&tokens[index], rest, &value.color);
-		if (error == 0) {
-			values_add(out, made, CSS_PROP_BACKGROUND_COLOR, &value);
-			return;
+	/* The initial values. */
+	memset(&color, 0, sizeof(color));
+	color.kind = CSS_VALUE_COLOR;
+	memset(&image, 0, sizeof(image));
+	image.kind = CSS_VALUE_KEYWORD;
+	position_count = 0;
+	size_count = 0;
+	repeat_count = 0;
+	after_slash = 0;
+
+	/* Each component, token by token (a function with its arguments). */
+	index = 0;
+	while (index < count) {
+		/* Whitespace separates components. */
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE) {
+			index++;
+			continue;
 		}
+
+		/* A slash: the size follows. */
+		if (tokens[index].type == CSS_TOKEN_DELIM && tokens[index].delim == '/') {
+			after_slash = 1;
+			index++;
+			continue;
+		}
+
+		/* The tokens of the component: one, or a function to its closing parenthesis. */
+		rest = values_function_length(tokens + index, count - index);
+
+		/* An image: url(...) or none. */
+		is_url = 0;
+		named = css_ident_equal(&tokens[index], "url");
+		if (tokens[index].type == CSS_TOKEN_URL)
+			is_url = 1;
+		if (tokens[index].type == CSS_TOKEN_FUNCTION && named)
+			is_url = 1;
+		if (is_url) {
+			error = values_url(heap, tokens + index, rest, &image);
+			if (error != 0)
+				return error;
+			index += rest;
+			continue;
+		}
+
+		/* none is no image. */
+		named = css_ident_equal(&tokens[index], "none");
+		if (named) {
+			image.kind = CSS_VALUE_KEYWORD;
+			image.keyword = 0;
+			index += rest;
+			continue;
+		}
+
+		/* A repeat keyword. */
+		found = values_keyword(values_repeat, &tokens[index], &keyword);
+		if (found && repeat_count < 2) {
+			repeats[repeat_count] = &tokens[index];
+			repeat_count++;
+			index += rest;
+			continue;
+		}
+
+		/* After the slash, a part of the size. */
+		if (after_slash && size_count < 2) {
+			sizes[size_count] = &tokens[index];
+			size_count++;
+			index += rest;
+			continue;
+		}
+
+		/* A position keyword or a length is a part of the position. */
+		found = values_keyword(values_position_keywords, &tokens[index], &keyword);
+		if (tokens[index].type == CSS_TOKEN_NUMBER || tokens[index].type == CSS_TOKEN_PERCENTAGE || tokens[index].type == CSS_TOKEN_DIMENSION)
+			found = 1;
+		if (found && position_count < 2) {
+			positions[position_count] = &tokens[index];
+			position_count++;
+			index += rest;
+			continue;
+		}
+
+		/* Anything else must be the color. */
+		error = css_parse_color(&tokens[index], rest, &color.color);
+		if (error != 0)
+			return EINVAL;
+		index += rest;
 	}
 
-	/* No color means transparent. */
-	value.color = 0;
-	values_add(out, made, CSS_PROP_BACKGROUND_COLOR, &value);
+	/* The repeat, the position and the size from their parts. */
+	error = values_repeat_parts(repeats, repeat_count, &repeat);
+	if (error != 0)
+		return error;
+	error = values_position_parts(positions, position_count, &x, &y);
+	if (error != 0)
+		return error;
+	error = values_size_parts(sizes, size_count, &width, &height);
+	if (error != 0)
+		return error;
+
+	/* Declares every longhand of the shorthand. */
+	values_add(out, made, CSS_PROP_BACKGROUND_COLOR, &color);
+	values_add(out, made, CSS_PROP_BACKGROUND_IMAGE, &image);
+	values_add(out, made, CSS_PROP_BACKGROUND_REPEAT, &repeat);
+	values_add(out, made, CSS_PROP_BACKGROUND_POSITION_X, &x);
+	values_add(out, made, CSS_PROP_BACKGROUND_POSITION_Y, &y);
+	values_add(out, made, CSS_PROP_BACKGROUND_SIZE_WIDTH, &width);
+	values_add(out, made, CSS_PROP_BACKGROUND_SIZE_HEIGHT, &height);
+
+	/* Succeeded: the longhands are declared. */
+	return 0;
+}
+
+/* Measures a component's tokens: one, or a function or a parenthesis with its arguments. */
+static size_t
+values_function_length(
+	const struct css_token *tokens,
+	size_t count)
+{
+	size_t index;
+	int depth;
+
+	/* A plain token is one. */
+	if (tokens[0].type != CSS_TOKEN_FUNCTION && tokens[0].type != CSS_TOKEN_OPEN_PAREN)
+		return 1;
+
+	/* To the parenthesis that closes it (or the end). */
+	depth = 0;
+	for (index = 0; index < count; index++) {
+		if (tokens[index].type == CSS_TOKEN_FUNCTION || tokens[index].type == CSS_TOKEN_OPEN_PAREN)
+			depth++;
+		if (tokens[index].type == CSS_TOKEN_CLOSE_PAREN)
+			depth--;
+		if (depth == 0)
+			return index + 1U;
+	}
+
+	/* An unclosed function runs to the end. */
+	return count;
+}
+
+/*
+ * Parses an image: url(...) (a URL token, or the url function with a
+ * string) into an atom of its text, or none.
+ */
+static int
+values_url(
+	struct vm_heap *heap,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	size_t index;
+	int named;
+
+	/* none. */
+	memset(value, 0, sizeof(*value));
+	named = css_ident_equal(&tokens[0], "none");
+	if (count == 1 && named) {
+		value->kind = CSS_VALUE_KEYWORD;
+		return 0;
+	}
+
+	/* A URL token carries its text. */
+	if (count == 1 && tokens[0].type == CSS_TOKEN_URL) {
+		value->url = vm_atom_from_units(heap, tokens[0].text, tokens[0].length);
+		if (value->url == NULL)
+			return ENOMEM;
+		value->kind = CSS_VALUE_URL;
+		return 0;
+	}
+
+	/* url( "string" ): the function, whitespace, the string, whitespace, the parenthesis. */
+	named = css_ident_equal(&tokens[0], "url");
+	if (tokens[0].type != CSS_TOKEN_FUNCTION || !named)
+		return EINVAL;
+	index = 1;
+	while (index < count && tokens[index].type == CSS_TOKEN_WHITESPACE)
+		index++;
+	if (index >= count || tokens[index].type != CSS_TOKEN_STRING)
+		return EINVAL;
+
+	/* The string's text. */
+	value->url = vm_atom_from_units(heap, tokens[index].text, tokens[index].length);
+	if (value->url == NULL)
+		return ENOMEM;
+
+	/* Succeeded: the URL. */
+	value->kind = CSS_VALUE_URL;
+	return 0;
+}
+
+/*
+ * Makes background-repeat from its keywords: one (repeat, repeat-x,
+ * repeat-y, no-repeat; space and round repeat), or one for each axis;
+ * none is repeat.
+ */
+static int
+values_repeat_parts(
+	const struct css_token *const *parts,
+	size_t count,
+	struct css_value *value)
+{
+	int second;
+	int across;
+	int down;
+	int found;
+
+	/* The initial value. */
+	memset(value, 0, sizeof(*value));
+	value->kind = CSS_VALUE_KEYWORD;
+	value->keyword = CSS_REPEAT_BOTH;
+	if (count == 0)
+		return 0;
+
+	/* One keyword names both axes. */
+	found = values_keyword(values_repeat, parts[0], &value->keyword);
+	if (!found)
+		return EINVAL;
+	if (count == 1)
+		return 0;
+
+	/* Two keywords: each axis repeats or not (repeat-x and repeat-y name both axes, and cannot be one of two). */
+	found = values_keyword(values_repeat, parts[1], &second);
+	if (!found)
+		return EINVAL;
+	if (value->keyword == CSS_REPEAT_X || value->keyword == CSS_REPEAT_Y)
+		return EINVAL;
+	if (second == CSS_REPEAT_X || second == CSS_REPEAT_Y)
+		return EINVAL;
+
+	/* The axes that do not repeat. */
+	across = 0;
+	if (value->keyword == CSS_REPEAT_NONE)
+		across = 1;
+	down = 0;
+	if (second == CSS_REPEAT_NONE)
+		down = 1;
+
+	/* Decide by the axes that do not repeat. */
+	if (!across && !down) {
+		value->keyword = CSS_REPEAT_BOTH;
+	} else if (!across) {
+		value->keyword = CSS_REPEAT_X;
+	} else if (!down) {
+		value->keyword = CSS_REPEAT_Y;
+	} else {
+		value->keyword = CSS_REPEAT_NONE;
+	}
+
+	/* Succeeded: the repeat. */
+	return 0;
+}
+
+/*
+ * Makes background-position's two axes from one or two parts: keywords
+ * (left, center, right, top, bottom, as percentages) or lengths.  One part
+ * is centred on the other axis; top and bottom name the vertical axis
+ * wherever they are.
+ */
+static int
+values_position_parts(
+	const struct css_token *const *parts,
+	size_t count,
+	struct css_value *x,
+	struct css_value *y)
+{
+	struct css_value first;
+	struct css_value second;
+	int first_vertical;
+	int second_horizontal;
+	int axis;
+	int error;
+
+	/* The initial value, 0% 0%. */
+	memset(x, 0, sizeof(*x));
+	x->kind = CSS_VALUE_LENGTH;
+	x->unit = CSS_DUNIT_PERCENT;
+	*y = *x;
+	if (count == 0)
+		return 0;
+
+	/* The first part. */
+	error = values_position_part(parts[0], &first);
+	if (error != 0)
+		return error;
+	axis = values_position_axis(parts[0]);
+	first_vertical = 0;
+	if (axis == 2)
+		first_vertical = 1;
+
+	/* One part: it and the centre of the other axis. */
+	if (count == 1) {
+		second.kind = CSS_VALUE_LENGTH;
+		second.number = 50.0f;
+		second.unit = CSS_DUNIT_PERCENT;
+		*x = first;
+		*y = second;
+		if (first_vertical) {
+			*x = second;
+			*y = first;
+		}
+
+		/* Succeeded: one axis given, the other centred. */
+		return 0;
+	}
+
+	/* Two parts, horizontal first unless the keywords say otherwise. */
+	error = values_position_part(parts[1], &second);
+	if (error != 0)
+		return error;
+	axis = values_position_axis(parts[1]);
+	second_horizontal = 0;
+	if (axis == 1)
+		second_horizontal = 1;
+	*x = first;
+	*y = second;
+	if (first_vertical || second_horizontal) {
+		*x = second;
+		*y = first;
+	}
+
+	/* Succeeded: both axes. */
+	return 0;
+}
+
+/* Tells which axis a part of a position names: 1 for left and right, 2 for top and bottom, 0 for any other. */
+static int
+values_position_axis(
+	const struct css_token *token)
+{
+	int named;
+
+	/* left and right are horizontal. */
+	named = css_ident_equal(token, "left");
+	if (named)
+		return 1;
+	named = css_ident_equal(token, "right");
+	if (named)
+		return 1;
+
+	/* top and bottom are vertical. */
+	named = css_ident_equal(token, "top");
+	if (named)
+		return 2;
+	named = css_ident_equal(token, "bottom");
+	if (named)
+		return 2;
+
+	/* center and lengths name neither. */
+	return 0;
+}
+
+/* Reads one part of a position: a keyword as a percentage, or a length. */
+static int
+values_position_part(
+	const struct css_token *token,
+	struct css_value *value)
+{
+	int keyword;
+	int found;
+	int error;
+
+	/* A keyword is a percentage of the room. */
+	memset(value, 0, sizeof(*value));
+	found = values_keyword(values_position_keywords, token, &keyword);
+	if (found) {
+		value->kind = CSS_VALUE_LENGTH;
+		value->number = (float)keyword;
+		value->unit = CSS_DUNIT_PERCENT;
+		return 0;
+	}
+
+	/* A length or a percentage. */
+	error = values_length(token, 0, value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the length. */
+	return 0;
+}
+
+/*
+ * Makes background-size's width and height from one or two parts:
+ * contain or cover, or a width (and a height; auto when there is none),
+ * each a length, a percentage or auto.
+ */
+static int
+values_size_parts(
+	const struct css_token *const *parts,
+	size_t count,
+	struct css_value *width,
+	struct css_value *height)
+{
+	int named;
+	int error;
+
+	/* The initial value, auto auto. */
+	memset(width, 0, sizeof(*width));
+	width->kind = CSS_VALUE_KEYWORD;
+	width->keyword = CSS_UNIT_AUTO;
+	*height = *width;
+	if (count == 0)
+		return 0;
+
+	/* contain and cover size both sides. */
+	named = css_ident_equal(parts[0], "contain");
+	if (named)
+		width->keyword = CSS_BACKGROUND_SIZE_CONTAIN;
+	named = css_ident_equal(parts[0], "cover");
+	if (named)
+		width->keyword = CSS_BACKGROUND_SIZE_COVER;
+	if (width->keyword != CSS_UNIT_AUTO && count != 1)
+		return EINVAL;
+	if (width->keyword != CSS_UNIT_AUTO)
+		return 0;
+
+	/* The width: a length, a percentage or auto. */
+	error = values_length(parts[0], 1, width);
+	if (error != 0)
+		return error;
+	if (count == 1)
+		return 0;
+
+	/* The height likewise. */
+	error = values_length(parts[1], 1, height);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: both sides. */
+	return 0;
+}
+
+/* Parses background-position into its two longhands. */
+static int
+values_background_position(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	const struct css_token *parts[2];
+	struct css_value x;
+	struct css_value y;
+	size_t found;
+	size_t index;
+	int error;
+
+	/* Its parts: at most two tokens. */
+	found = 0;
+	for (index = 0; index < count; index++) {
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE)
+			continue;
+		if (found == 2)
+			return EINVAL;
+		parts[found] = &tokens[index];
+		found++;
+	}
+
+	/* The two axes. */
+	error = values_position_parts(parts, found, &x, &y);
+	if (error != 0)
+		return error;
+	values_add(out, made, CSS_PROP_BACKGROUND_POSITION_X, &x);
+	values_add(out, made, CSS_PROP_BACKGROUND_POSITION_Y, &y);
+
+	/* Succeeded: both declared. */
+	return 0;
+}
+
+/* Parses background-size into its two longhands. */
+static int
+values_background_size(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	const struct css_token *parts[2];
+	struct css_value width;
+	struct css_value height;
+	size_t found;
+	size_t index;
+	int error;
+
+	/* Its parts: at most two tokens. */
+	found = 0;
+	for (index = 0; index < count; index++) {
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE)
+			continue;
+		if (found == 2)
+			return EINVAL;
+		parts[found] = &tokens[index];
+		found++;
+	}
+
+	/* The two sides. */
+	error = values_size_parts(parts, found, &width, &height);
+	if (error != 0)
+		return error;
+	values_add(out, made, CSS_PROP_BACKGROUND_SIZE_WIDTH, &width);
+	values_add(out, made, CSS_PROP_BACKGROUND_SIZE_HEIGHT, &height);
+
+	/* Succeeded: both declared. */
+	return 0;
 }

@@ -219,6 +219,10 @@ layout_content_width(
 	if (depth > LAYOUT_DEPTH_MAX)
 		return 0;
 
+	/* A replaced box's content is as wide as it was sized. */
+	if (box->replaced)
+		return box->width;
+
 	/* Lines: the end of each line's last piece. */
 	if (box->children_inline) {
 		for (index = 0; index < box->line_count; index++) {

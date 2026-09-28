@@ -16,7 +16,6 @@
 #include "layout/layout.h"
 
 static layout_unit block_resolve(const struct css_length *length, layout_unit containing_width);
-static void block_box_model(struct layout_box *box, layout_unit containing_width);
 static void block_width(struct layout_box *box, layout_unit containing_width);
 static int block_children(struct layout_tree *tree, struct layout_box *box);
 static layout_unit block_collapse(layout_unit first, layout_unit second);
@@ -44,8 +43,19 @@ layout_block(
 	int own_context;
 	int error;
 
-	/* The margins, borders, paddings and the content width. */
-	block_box_model(box, containing_width);
+	/* The margins, borders and paddings. */
+	layout_box_model(box, containing_width);
+
+	/* A replaced box (an <img> as a block) is sized by its image, and has no content to lay out. */
+	if (box->replaced) {
+		layout_replaced_size(box, containing_width);
+		layout_auto_margins(box, containing_width);
+		box->collapsed_top = box->margin[CSS_TOP];
+		box->collapsed_bottom = box->margin[CSS_BOTTOM];
+		return 0;
+	}
+
+	/* The content width. */
 	block_width(box, containing_width);
 
 	/* A box that starts a formatting context lays its content out in it; another moves the origin to its content box. */
@@ -99,6 +109,65 @@ layout_block(
 
 	/* Succeeded: the box has its size. */
 	return 0;
+}
+
+/*
+ * Resolves a box's margins, borders and paddings against its containing
+ * block's width.
+ */
+void
+layout_box_model(
+	struct layout_box *box,
+	layout_unit containing_width)
+{
+	int side;
+
+	/* Every side: percentages of the containing width, borders only where they are drawn. */
+	for (side = 0; side < 4; side++) {
+		box->margin[side] = block_resolve(&box->style.margin[side], containing_width);
+		box->padding[side] = block_resolve(&box->style.padding[side], containing_width);
+		box->border[side] = 0;
+		if (box->style.border_style[side] != CSS_BORDER_NONE)
+			box->border[side] = layout_from_px(box->style.border_width[side]);
+	}
+}
+
+/*
+ * Shares what a sized box leaves of its containing block's width among
+ * its auto horizontal margins: both center it, one takes it all (a
+ * float's are zero).
+ */
+void
+layout_auto_margins(
+	struct layout_box *box,
+	layout_unit containing_width)
+{
+	layout_unit frame;
+	layout_unit room;
+	int left_auto;
+	int right_auto;
+
+	/* The borders and paddings around the content. */
+	frame = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+
+	/* Auto margins share what is left of a sized box: both center it, one takes it all (a float's are zero). */
+	left_auto = 0;
+	if (box->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO && box->floating == CSS_FLOAT_NONE)
+		left_auto = 1;
+	right_auto = 0;
+	if (box->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO && box->floating == CSS_FLOAT_NONE)
+		right_auto = 1;
+	room = containing_width - box->width - frame;
+	if (room < 0)
+		room = 0;
+	if (left_auto && right_auto) {
+		box->margin[CSS_LEFT] = room / 2;
+		box->margin[CSS_RIGHT] = room - room / 2;
+	} else if (left_auto) {
+		box->margin[CSS_LEFT] = room - box->margin[CSS_RIGHT];
+	} else if (right_auto) {
+		box->margin[CSS_RIGHT] = room - box->margin[CSS_LEFT];
+	}
 }
 
 /* Lays out a block's content: lines of inline content, or the child blocks. */
@@ -179,24 +248,6 @@ block_resolve(
 	return value;
 }
 
-/* Resolves a box's margins, borders and paddings. */
-static void
-block_box_model(
-	struct layout_box *box,
-	layout_unit containing_width)
-{
-	int side;
-
-	/* Every side: percentages of the containing width, borders only where they are drawn. */
-	for (side = 0; side < 4; side++) {
-		box->margin[side] = block_resolve(&box->style.margin[side], containing_width);
-		box->padding[side] = block_resolve(&box->style.padding[side], containing_width);
-		box->border[side] = 0;
-		if (box->style.border_style[side] != CSS_BORDER_NONE)
-			box->border[side] = layout_from_px(box->style.border_width[side]);
-	}
-}
-
 /* Computes a block's content width and its horizontal margins (auto margins center a sized box). */
 static void
 block_width(
@@ -206,8 +257,6 @@ block_width(
 	layout_unit frame;
 	layout_unit room;
 	layout_unit width;
-	int left_auto;
-	int right_auto;
 
 	/* The borders and paddings around the content. */
 	frame = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
@@ -234,24 +283,8 @@ block_width(
 		width = 0;
 	box->width = width;
 
-	/* Auto margins share what is left of a sized box: both center it, one takes it all (a float's are zero). */
-	left_auto = 0;
-	if (box->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO && box->floating == CSS_FLOAT_NONE)
-		left_auto = 1;
-	right_auto = 0;
-	if (box->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO && box->floating == CSS_FLOAT_NONE)
-		right_auto = 1;
-	room = containing_width - width - frame;
-	if (room < 0)
-		room = 0;
-	if (left_auto && right_auto) {
-		box->margin[CSS_LEFT] = room / 2;
-		box->margin[CSS_RIGHT] = room - room / 2;
-	} else if (left_auto) {
-		box->margin[CSS_LEFT] = room - box->margin[CSS_RIGHT];
-	} else if (right_auto) {
-		box->margin[CSS_RIGHT] = room - box->margin[CSS_LEFT];
-	}
+	/* Auto margins share what is left. */
+	layout_auto_margins(box, containing_width);
 }
 
 /*

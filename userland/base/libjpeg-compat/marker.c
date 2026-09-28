@@ -6,11 +6,12 @@
  */
 
 /*
- * The markers of a JPEG file (ITU T.81 B.1): SOI, the frame (SOF0 and
- * SOF1, Huffman with 8-bit samples), the tables (DQT, DHT), the restart
- * interval (DRI), the scan header (SOS), and the APP0 (JFIF) and APP14
- * (Adobe) markers whose facts decide the colour space.  Other APPn and
- * COM segments are skipped; the other frame types are refused.
+ * The markers of a JPEG file (ITU T.81 B.1): SOI, the frame (SOF0, SOF1
+ * and SOF2, Huffman with 8-bit samples), the tables (DQT, DHT), the
+ * restart interval (DRI), the scan header (SOS), and the APP0 (JFIF) and
+ * APP14 (Adobe) markers whose facts decide the colour space.  APPn and
+ * COM segments are kept when the program asked (jpeg_save_markers) and
+ * skipped otherwise; the other frame types are refused.
  */
 
 #include "internal.h"
@@ -31,6 +32,11 @@
 #define JPEG_DNL		0xDC
 #define JPEG_DRI		0xDD
 #define JPEG_APP14		0xEE
+#define JPEG_APP15		0xEF
+
+/* The bytes of an APP0 (JFIF) and an APP14 (Adobe) segment that say what it is. */
+#define JPEG_JFIF_HEAD		14
+#define JPEG_ADOBE_HEAD		12
 #define JPEG_TEM		0x01
 
 /*
@@ -59,8 +65,10 @@ static void jpeg_compat_read_scan(j_decompress_ptr cinfo);
 static void jpeg_compat_read_dqt(j_decompress_ptr cinfo);
 static void jpeg_compat_read_dht(j_decompress_ptr cinfo);
 static void jpeg_compat_read_dri(j_decompress_ptr cinfo);
-static void jpeg_compat_read_app0(j_decompress_ptr cinfo);
-static void jpeg_compat_read_app14(j_decompress_ptr cinfo);
+static void jpeg_compat_read_other(j_decompress_ptr cinfo, int marker);
+static int jpeg_compat_saved_kind(int marker);
+static void jpeg_compat_parse_app0(j_decompress_ptr cinfo, const unsigned char *head);
+static void jpeg_compat_parse_app14(j_decompress_ptr cinfo, const unsigned char *head);
 static void jpeg_compat_refuse_frame(j_decompress_ptr cinfo, int marker);
 
 /*
@@ -100,6 +108,28 @@ jpeg_compat_read_byte(
 }
 
 /*
+ * Asks for the APPn or COM markers of a kind to be kept in marker_list
+ * (up to length_limit bytes of each; 0 keeps none), before
+ * jpeg_read_header.
+ */
+void
+jpeg_save_markers(
+	j_decompress_ptr cinfo,
+	int marker_code,
+	unsigned int length_limit)
+{
+	int kind;
+
+	/* Only APP0 to APP15 and COM can be kept. */
+	kind = jpeg_compat_saved_kind(marker_code);
+	if (kind < 0)
+		jpeg_compat_fail_number((j_common_ptr)cinfo, JERR_UNKNOWN_MARKER, marker_code, 0);
+
+	/* The limit, remembered for the markers read from now on. */
+	cinfo->master->save_limit[kind] = length_limit;
+}
+
+/*
  * Reads markers and their segments up to the next SOS (whose header is
  * read) or EOI.  in_image is 0 for the markers before the first scan
  * (starting with SOI) and 1 between scans (starting with the marker the
@@ -136,6 +166,7 @@ jpeg_compat_read_markers(
 		switch (marker) {
 		case JPEG_SOF0:
 		case JPEG_SOF1:
+		case JPEG_SOF2:
 			jpeg_compat_read_frame(cinfo, marker);
 			break;
 		case JPEG_DHT:
@@ -146,12 +177,6 @@ jpeg_compat_read_markers(
 			break;
 		case JPEG_DRI:
 			jpeg_compat_read_dri(cinfo);
-			break;
-		case JPEG_APP0:
-			jpeg_compat_read_app0(cinfo);
-			break;
-		case JPEG_APP14:
-			jpeg_compat_read_app14(cinfo);
 			break;
 		case JPEG_SOS:
 			if (!master->frame_seen)
@@ -169,6 +194,12 @@ jpeg_compat_read_markers(
 			} else if (marker >= JPEG_RST0 && marker <= JPEG_RST0 + 7) {
 				/* A restart marker outside a scan carries nothing. */
 				continue;
+			} else if (marker >= JPEG_APP0 && marker <= JPEG_APP15) {
+				/* APPn: kept when asked, and JFIF and Adobe read. */
+				jpeg_compat_read_other(cinfo, marker);
+			} else if (marker == JPEG_COM) {
+				/* A comment: kept when asked. */
+				jpeg_compat_read_other(cinfo, marker);
 			} else {
 				/* APPn, COM, DNL and the rest: their segments are skipped. */
 				length = jpeg_compat_segment_length(cinfo);
@@ -263,7 +294,7 @@ jpeg_compat_skip_segment(
 	}
 }
 
-/* Reads SOF0 or SOF1: the precision, the size and each component's sampling and table. */
+/* Reads SOF0, SOF1 or SOF2: the precision, the size and each component's sampling and table. */
 static void
 jpeg_compat_read_frame(
 	j_decompress_ptr cinfo,
@@ -277,19 +308,18 @@ jpeg_compat_read_frame(
 
 	/* The frame's header. */
 	master = cinfo->master;
-	(void)marker;
 	length = jpeg_compat_segment_length(cinfo);
 	cinfo->data_precision = jpeg_compat_read_byte(cinfo);
 	cinfo->image_height = jpeg_compat_read_word(cinfo);
 	cinfo->image_width = jpeg_compat_read_word(cinfo);
 	cinfo->num_components = jpeg_compat_read_byte(cinfo);
 
-	/* 8-bit samples, a size given in the frame, and 1 or 3 components (4 come with CMYK). */
+	/* 8-bit samples, a size given in the frame, and 1, 3 or 4 components. */
 	if (cinfo->data_precision != 8)
 		jpeg_compat_fail_number((j_common_ptr)cinfo, JERR_BAD_PRECISION, cinfo->data_precision, 0);
 	if (cinfo->image_height == 0 || cinfo->image_width == 0)
 		jpeg_compat_fail((j_common_ptr)cinfo, JERR_BAD_SIZE);
-	if (cinfo->num_components != 1 && cinfo->num_components != 3)
+	if (cinfo->num_components != 1 && cinfo->num_components != 3 && cinfo->num_components != 4)
 		jpeg_compat_fail_number((j_common_ptr)cinfo, JERR_BAD_COMPONENTS, cinfo->num_components, 0);
 	if (length != 6U + 3U * (unsigned)cinfo->num_components)
 		jpeg_compat_fail((j_common_ptr)cinfo, JERR_BAD_LENGTH);
@@ -313,9 +343,11 @@ jpeg_compat_read_frame(
 		component->DCT_scaled_size = DCTSIZE;
 	}
 
-	/* Succeeded: the frame is known. */
+	/* Succeeded: the frame is known, progressive for SOF2. */
 	cinfo->comp_info = master->components;
 	cinfo->progressive_mode = FALSE;
+	if (marker == JPEG_SOF2)
+		cinfo->progressive_mode = TRUE;
 	cinfo->arith_code = FALSE;
 	master->frame_seen = 1;
 }
@@ -362,14 +394,30 @@ jpeg_compat_read_scan(
 		master->scan_components[index] = found;
 	}
 
-	/* The spectral selection and approximation: the whole block, once, in a sequential file. */
+	/* The spectral selection and the successive approximation (high bits, low bits). */
 	master->scan_count = count;
 	master->spectral_start = jpeg_compat_read_byte(cinfo);
 	master->spectral_end = jpeg_compat_read_byte(cinfo);
 	approximation = jpeg_compat_read_byte(cinfo);
 	master->approximation = approximation;
-	if (master->spectral_start != 0 || master->spectral_end != DCTSIZE2 - 1 || approximation != 0)
-		jpeg_compat_fail((j_common_ptr)cinfo, JERR_BAD_SCAN);
+
+	/* A sequential scan is the whole block, once. */
+	if (!cinfo->progressive_mode) {
+		if (master->spectral_start != 0 || master->spectral_end != DCTSIZE2 - 1 || approximation != 0)
+			jpeg_compat_fail((j_common_ptr)cinfo, JERR_BAD_SCAN);
+	}
+
+	/* A progressive scan is the DC alone or a band of AC of one component, with at most 13 bits each way (T.81 G.1.1.1). */
+	if (cinfo->progressive_mode) {
+		if (master->spectral_start > master->spectral_end || master->spectral_end > DCTSIZE2 - 1)
+			jpeg_compat_fail((j_common_ptr)cinfo, JERR_BAD_SCAN);
+		if (master->spectral_start == 0 && master->spectral_end != 0)
+			jpeg_compat_fail((j_common_ptr)cinfo, JERR_BAD_SCAN);
+		if (master->spectral_start != 0 && count != 1)
+			jpeg_compat_fail((j_common_ptr)cinfo, JERR_BAD_SCAN);
+		if ((approximation >> 4) > 13 || (approximation & 15) > 13)
+			jpeg_compat_fail((j_common_ptr)cinfo, JERR_BAD_SCAN);
+	}
 
 	/* Succeeded: one more scan. */
 	cinfo->input_scan_number++;
@@ -493,84 +541,136 @@ jpeg_compat_read_dri(
 	cinfo->restart_interval = jpeg_compat_read_word(cinfo);
 }
 
-/* Reads APP0: a JFIF header's version and density (anything else is skipped). */
+/*
+ * Reads an APPn or COM segment: the bytes the program asked to keep go
+ * into a saved marker at the end of marker_list, and the start of an
+ * APP0 or APP14 segment is read for its JFIF or Adobe facts.
+ */
 static void
-jpeg_compat_read_app0(
-	j_decompress_ptr cinfo)
+jpeg_compat_read_other(
+	j_decompress_ptr cinfo,
+	int marker)
 {
-	unsigned char head[14];
+	struct jpeg_decomp_master *master;
+	jpeg_saved_marker_ptr saved;
+	unsigned char head[JPEG_JFIF_HEAD];
 	unsigned length;
+	unsigned keep;
 	unsigned index;
-	int differs;
+	int kind;
+	int byte;
 
-	/* The first 14 bytes, when the segment has them. */
+	/* The segment's length, and how much of it the program keeps. */
+	master = cinfo->master;
 	length = jpeg_compat_segment_length(cinfo);
-	if (length < sizeof(head)) {
-		jpeg_compat_skip_segment(cinfo, length);
-		return;
+	kind = jpeg_compat_saved_kind(marker);
+	keep = master->save_limit[kind];
+	if (keep > length)
+		keep = length;
+
+	/* A kept marker: its record and bytes in the image's pool. */
+	saved = NULL;
+	if (master->save_limit[kind] != 0) {
+		saved = jpeg_compat_alloc(cinfo, JPOOL_IMAGE, sizeof(*saved) + keep);
+		saved->next = NULL;
+		saved->marker = (UINT8)marker;
+		saved->original_length = length;
+		saved->data_length = keep;
+		saved->data = (JOCTET *)(saved + 1);
 	}
 
-	/* The bytes that say what the segment is. */
-	for (index = 0; index < sizeof(head); index++)
-		head[index] = (unsigned char)jpeg_compat_read_byte(cinfo);
+	/* Each byte: into the record while it keeps them, and the first ones for JFIF and Adobe. */
+	memset(head, 0, sizeof(head));
+	for (index = 0; index < length; index++) {
+		byte = jpeg_compat_read_byte(cinfo);
+		if (saved != NULL && index < keep)
+			saved->data[index] = (JOCTET)byte;
+		if (index < sizeof(head))
+			head[index] = (unsigned char)byte;
+	}
 
-	/* "JFIF\0", the version, the unit and the densities. */
+	/* The kept marker goes at the end of the list. */
+	if (saved != NULL) {
+		if (master->last_saved == NULL) {
+			cinfo->marker_list = saved;
+		} else {
+			master->last_saved->next = saved;
+		}
+
+		/* The next kept marker follows this one. */
+		master->last_saved = saved;
+	}
+
+	/* JFIF's and Adobe's facts, when the segment is long enough to hold them. */
+	if (marker == JPEG_APP0 && length >= JPEG_JFIF_HEAD)
+		jpeg_compat_parse_app0(cinfo, head);
+	if (marker == JPEG_APP14 && length >= JPEG_ADOBE_HEAD)
+		jpeg_compat_parse_app14(cinfo, head);
+}
+
+/* Tells which kind of kept marker a code is (APP0 to APP15 are 0 to 15, COM 16), or -1. */
+static int
+jpeg_compat_saved_kind(
+	int marker)
+{
+	/* APPn. */
+	if (marker >= JPEG_APP0 && marker <= JPEG_APP15)
+		return marker - JPEG_APP0;
+
+	/* COM. */
+	if (marker == JPEG_COM)
+		return JPEG_SAVED_KINDS - 1;
+
+	/* Any other marker cannot be kept. */
+	return -1;
+}
+
+/* Reads a JFIF header's version and density from the start of an APP0 segment. */
+static void
+jpeg_compat_parse_app0(
+	j_decompress_ptr cinfo,
+	const unsigned char *head)
+{
+	int differs;
+
+	/* "JFIF\0", the version, the unit and the densities; another APP0 says nothing. */
 	differs = memcmp(head, "JFIF", 5);
-	if (differs == 0) {
-		cinfo->saw_JFIF_marker = TRUE;
-		cinfo->JFIF_major_version = head[5];
-		cinfo->JFIF_minor_version = head[6];
-		cinfo->density_unit = head[7];
-		cinfo->X_density = (UINT16)((head[8] << 8) | head[9]);
-		cinfo->Y_density = (UINT16)((head[10] << 8) | head[11]);
-	}
+	if (differs != 0)
+		return;
 
-	/* The rest (a thumbnail, or another APP0). */
-	jpeg_compat_skip_segment(cinfo, length - (unsigned)sizeof(head));
+	/* The header's facts. */
+	cinfo->saw_JFIF_marker = TRUE;
+	cinfo->JFIF_major_version = head[5];
+	cinfo->JFIF_minor_version = head[6];
+	cinfo->density_unit = head[7];
+	cinfo->X_density = (UINT16)((head[8] << 8) | head[9]);
+	cinfo->Y_density = (UINT16)((head[10] << 8) | head[11]);
 }
 
-/* Reads APP14: Adobe's colour transform (0 for RGB or CMYK, 1 for YCbCr, 2 for YCCK). */
+/* Reads Adobe's colour transform (0 for RGB or CMYK, 1 for YCbCr, 2 for YCCK) from the start of an APP14 segment. */
 static void
-jpeg_compat_read_app14(
-	j_decompress_ptr cinfo)
+jpeg_compat_parse_app14(
+	j_decompress_ptr cinfo,
+	const unsigned char *head)
 {
-	unsigned char head[12];
-	unsigned length;
-	unsigned index;
 	int differs;
 
-	/* The first 12 bytes, when the segment has them. */
-	length = jpeg_compat_segment_length(cinfo);
-	if (length < sizeof(head)) {
-		jpeg_compat_skip_segment(cinfo, length);
-		return;
-	}
-
-	/* The bytes that say what the segment is. */
-	for (index = 0; index < sizeof(head); index++)
-		head[index] = (unsigned char)jpeg_compat_read_byte(cinfo);
-
-	/* "Adobe", the version and flags, then the transform. */
+	/* "Adobe", the version and flags, then the transform; another APP14 says nothing. */
 	differs = memcmp(head, "Adobe", 5);
-	if (differs == 0) {
-		cinfo->saw_Adobe_marker = TRUE;
-		cinfo->Adobe_transform = head[11];
-	}
+	if (differs != 0)
+		return;
 
-	/* The rest. */
-	jpeg_compat_skip_segment(cinfo, length - (unsigned)sizeof(head));
+	/* The marker's transform. */
+	cinfo->saw_Adobe_marker = TRUE;
+	cinfo->Adobe_transform = head[11];
 }
 
-/* Refuses a frame this part does not decode: progressive (p020), arithmetic, lossless and hierarchical. */
+/* Refuses a frame this library does not decode: arithmetic, lossless and hierarchical. */
 static void
 jpeg_compat_refuse_frame(
 	j_decompress_ptr cinfo,
 	int marker)
 {
-	/* Progressive Huffman comes next. */
-	if (marker == JPEG_SOF2)
-		jpeg_compat_fail((j_common_ptr)cinfo, JERR_PROGRESSIVE);
-
 	/* Arithmetic coding (SOF9 and up, and DAC). */
 	if (marker >= 0xC9 || marker == JPEG_DAC)
 		jpeg_compat_fail((j_common_ptr)cinfo, JERR_ARITHMETIC);

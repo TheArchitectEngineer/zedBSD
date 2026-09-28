@@ -516,3 +516,24 @@ libcrypto の互換品（別の WS）、GPU の合成、sync・password の管�
 基盤（p002〜p003）→ HTML（p004〜p006）→ CSS（p007〜p009）→ text・layout・描画・窓（p010〜p014、M1）→ network（p015〜p017）→
 encoding（p018）→ 画像（p019〜p021）→ 共通の engine（p022〜p023）→ JS（p024〜p029）→ binding（p030〜p032）→ Wasm（p033〜p034、M2）→
 CSS の互換（p035〜p039）→ Chrome との比較（p040、M3）→ shell の仕上げ（p041）→ M4（p042〜p043）→ 規約の照合（p044）。
+
+## 19. 部品としての browser（libbrowser.so、2026-09-28 ユーザーの方針）
+
+ユーザー:「ブラウザですが、システム環境設定などのウィンドウとか、ウィジェットとかで、HTML5コンポーネントを使えたらいいなと思っているので、
+libbrowser.soというファイルに将来的に分割できるようにして、コンポーネントにしましょう。ブラウザの構造体へのポインタをハンドルにして、
+Vulkanレンダリングターゲットを指定してイベントも送ってやるとと描画してくれて、Wayland依存はない、みたいなのがいいと思います！
+これはいきなり実現しなくても、徐々にそういう設計に変えていきましょう。」
+
+目標の形（徐々に移す。一度に作り直さない）:
+
+- **engine と shell の分離**: HTML・CSS・layout・JS・DOM・net・image・paint（display list と Vulkan の描画）は engine、
+  窓・Wayland・titlebar・location bar・入力の変換は shell（今の `shell/`・`main.c`）。engine は Wayland の header を include しない。
+- **handle**: engine の実体の構造体へのポインタ（例 `struct browser_view *`、不透明な型）。作成・破棄・読み込み（URL・HTML の文字列）・
+  大きさの変更・描画・入力の event（pointer・key・scroll・focus）・callback（題名・URL・読み込みの状態・再描画の要求・link の navigation の
+  決定）を C の API にする。
+- **描画の先**: 呼び出し側が Vulkan の device・queue と描画の先（VkImage と layout・大きさ、または command buffer）を渡し、engine は
+  そこに描く。CPU の reference の描画（試験用）も同じ API から選べる。
+- **library**: 将来 `libbrowser.so`（`userland/desktop/` の library。header は `include/libc/` の適所）に分け、`/bin/browser` はその
+  上の shell になる。システム環境設定の窓や widget が同じ library を使う。
+- 移し方: 新しいコードは engine と shell の境界を守って書く。境界を越える既存の依存は、触る Phase で少しずつ直す。
+  分割（.so と公開の header、API の文書、2 つ目の使い手の試作）は専用の Phase で行う。

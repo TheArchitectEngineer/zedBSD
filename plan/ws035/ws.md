@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-28 の周期の終わり: login manager（p094〜p099）・primary selection（p100・p103）・表示の引き継ぎ（p101）・lock（p102）・システムバーの network（p013）は cleared。session の user の `network` の group は p104 で済んだ。F-044 は p105、F-041 の衝突の dialog は p106 で済んだ。Kei の見た目の段階 2 は起動画面（p107）まで。次: greeter・lock・壁紙・files（p108）。source は WS078 で `userland/desktop/` へ移った（zdesktop → wayland 等）。HAL の quiet console の diff は適用済み（kmsg=quiet の確認は未実施）
+Resume point: 2026-09-28 の周期の終わり: login manager（p094〜p099）・primary selection（p100・p103）・表示の引き継ぎ（p101）・lock（p102）・システムバーの network（p013）は cleared。session の user の `network` の group は p104 で済んだ。F-044 は p105、F-041 の衝突の dialog は p106 で済んだ。Kei の見た目の段階 2 は p107（起動画面）・p108（greeter・lock・壁紙・files）・p109（greeter・lock の明るさ、すりガラスの印）で済んだ。source は WS078 で `userland/desktop/` へ移った（zdesktop → wayland 等）。HAL の quiet console の diff は適用済み（kmsg=quiet の確認は未実施）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -224,7 +224,7 @@ p001で確かめる。
 | ws035-p026 | zdesktop: タスクバーの音量表示・操作。**音量も libkeiland 経由**（p042） | planning | p013, p019, p042 | zdesktop、libkeiland |
 | ws035-p008 | hdaドライバの実機確認（人間が行う。エージェントは確認用のimageと手順を用意する。HDA は passthrough できないので、ユーザーが後で USB boot のベアメタルで試す。2026-09-24） | planning | p007 | hda |
 | [ws035-p010](phase010/phase.md) | libtruetype（`cmap`・`glyf`・`hmtx`、anti-aliasの描画、`/lib/libtruetype.so`） | cleared（q323-i06） | p004 | libtruetype（新規） |
-| [ws035-p040](phase040/phase.md) | 互換libz（`userland/base/libz-compat`、`/lib/libz-compat.so`）: deflate/inflate を素直に実装する。zlib の全機能は要らない。最適化より読みやすさ。baseのプログラムはこれに依存する | planning | p004。**zdesktop が要るときに入れる** | `userland/base/libz-compat`、`include/libc/compat/zlib.h` |
+| [ws035-p040](phase040/phase.md) | 互換libz（`userland/base/libz-compat`、`/lib/libz-compat.so`）: deflate/inflate を素直に実装する。zlib の全機能は要らない。最適化より読みやすさ。baseのプログラムはこれに依存する | planning | p004。**zdesktop が要るときに入れる** | `userland/base/libz-compat`、`include/libc/compat/zlib/zlib.h` |
 | [ws035-p041](phase041/phase.md) | 互換libpng（`userland/base/libpng-compat`、`/lib/libpng-compat.so`）: decode と encode。encode は filter にこだわらない。decode は試験用のRGBA32 PNGが読める正常系まで | planning | p040。**zdesktop が要るときに入れる** | `userland/base/libpng-compat`、`include/libc/compat/png/png.h` |
 | [ws035-p042](phase042/phase.md) | libkeiland（`userland/desktop/libkeiland`、`/lib/libkeiland.so`）: **Vulkan 以外の OS 依存をここに閉じ込める**。zdesktop は networkd・audiod などと直接話さず、このライブラリを通す。**まずは空の枠だけ** | cleared（q325-i02） | p004 | `userland/desktop/libkeiland`、`include/libc/keiland.h` |
 | ws035-p027 | zdesktop: タイトル等の文字描画をlibtruetypeへ移す | canceled（2026-09-27: p059 で置き換え済み。zdesktop の文字（題名、システムバー、App Home、Wiseview、System Menu）は最初から libtruetype の glyph atlas（`glass.c`）で描く） | p010, p025 | zdesktop |
@@ -299,6 +299,8 @@ p001で確かめる。
 | [ws035-p105](phase105/phase.md) | （2026-09-28 main の割り当て、F-044）mview と xserver の窓が xdg-shell 4 の `configure_bounds` を守る（terminal は p086 で済み） | cleared（2026-09-28、zdesktop-p105・x11-p003・p062） | p085 | mview・xserver |
 | [ws035-p106](phase106/phase.md) | （2026-09-28 main の割り当て、F-041 の衝突の部分）files の copy・move・drop の名前の衝突で Replace・Skip・Keep Both と Apply to all | cleared（2026-09-28、zdesktop-p106・files-model・files-p004・p010） | ws071 | files |
 | [ws035-p107](phase107/phase.md) | （2026-09-28 main の割り当て、Kei の見た目の段階 2 の 1）全画面の起動画面（kei-boot-splash.png から `fit=cover` の PPM、UEFI は bilinear・BIOS は縮小で画面を覆う）、quiet の起動の青い点の spinner（HAL の cons.c の実装と pcat の text 層、log・時間で回り lease で止まる） | cleared（2026-09-28、boot-shots UEFI・BIOS、host の描き方の試験、boot test） | p096・p097・p099 | tools・bootloader・HAL の実装・kernel・pcat の graphics |
+| [ws035-p108](phase108/phase.md) | （2026-09-28 main の割り当て、Kei の見た目の段階 2 の 2）印（artwork/mark.c、4 層の coverage）を greeter・lock の左下と files の Home の hero・空の画面に、既定の描いた壁紙と files の hero の風景を Kei の調子に | cleared（2026-09-28、zdesktop-p108・p102、host の files-render） | p107 | artwork・wayland・files |
+| [ws035-p109](phase109/phase.md) | （2026-09-28 main の割り当て 1、p108 の残り）greeter・lock を splash の明るさに（淡い空色の wash、slate の文字、時刻の後ろの白い glow、明るいガラスの button）、印をすりガラスに（7 層: 重なり・縁の光・sheen） | cleared（2026-09-28、zdesktop-p109・p102、host の mark-preview） | p108 | artwork・wayland・files |
 | [ws035-p058](phase058/phase.md) | zdesktop（secondary queue で変えた全 source）の規約の全文との照合と回帰（sq001 の締め） | cleared（2026-09-27、style-check 0、zdesktop・menu・titlebar・files の回帰。boot test はユーザーの指示で無し） | sq001 の他の Phase | sq001 で変えた source |
 | [ws035-p038](phase038/phase.md) | SSHハーネス: ゲストへ SSH で入り、コマンド実行・ファイル転送・ゲスト内 lldb・QEMU gdbstub でのデバッグを行う道具を仕上げる（`plan/tools/guest/` は着手済みで未完成） | cleared（q347-i01。networkd が USB の interface を UP にしないため設定されなかった → RAISE を追加） | p037、USB CDC-ECM が上がること（p039） | `plan/tools/guest/` |
 | [ws035-p039](phase039/phase.md) | USB CDC-ECM の実機確認: 実績のないまま入っている ECM driver が QEMU で実際に link し address を得るかを、シリアルコンソールで観察しながら確かめる。**ECM は USB 2.0 の device なので EHCI と xHCI の両方で確かめる**（ws004-p019 の記録との食い違いの照合を含む）。USB storage と同居したときの挙動も切り分ける | cleared（q343-i01。xHCI の IMAN の競合を直した。UHCI は p044、TCP は ws034-p046 へ） | p037 | `src/drivers/usb/usb-cdc-ecm.c`、試験 |
@@ -604,9 +606,9 @@ ws034-p021（zlib）・p027（libpng）は**そのまま残す**。置き換え�
   （`libc.so`・`libvulkan.so`・`libwayland-client.so`・`libtruetype.so`）に版付き SONAME は無く、
   それに揃える。版は API が名乗る文字列で表す（D1）。
 - **ヘッダは `include/libc/compat/`**（2026-09-23 ユーザー決定、D4）。
-  `include/libc/compat/zlib.h`・`include/libc/compat/png/png.h` が
-  `/usr/include/compat/zlib.h`・`/usr/include/compat/png/png.h` に入り、
-  base のプログラムは `#include <compat/zlib.h>` と書く。
+  `include/libc/compat/zlib/zlib.h`・`include/libc/compat/png/png.h` が
+  `/usr/include/compat/zlib/zlib.h`・`/usr/include/compat/png/png.h` に入り、
+  base のプログラムは `#include <compat/zlib/zlib.h>` と書く。
   本家は package として `/usr/include/zlib.h`・`/usr/include/png.h` を入れるので、
   **同じ場所に置くと衝突する**。ファイル名は本家と同じままで、置き場だけを分ける。
 - **関数名は本家と同じ**（`deflate`・`inflate`・`png_create_read_struct` …）。

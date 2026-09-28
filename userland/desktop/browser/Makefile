@@ -78,9 +78,16 @@ KEILAND_BROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/main.c \
 	$(KEILAND_BROWSER_DIR)/net/http.c \
 	$(KEILAND_BROWSER_DIR)/net/tls.c \
 	$(KEILAND_BROWSER_DIR)/net/cookie.c \
+	$(KEILAND_BROWSER_DIR)/net/loader.c \
 	$(KEILAND_BROWSER_DIR)/page/page.c \
 	$(KEILAND_BROWSER_DIR)/page/link.c \
 	$(KEILAND_BROWSER_DIR)/page/script.c \
+	$(KEILAND_BROWSER_DIR)/page/images.c \
+	$(KEILAND_BROWSER_DIR)/page/network.c \
+	$(KEILAND_BROWSER_DIR)/image/decode.c \
+	$(KEILAND_BROWSER_DIR)/image/jpeg.c \
+	$(KEILAND_BROWSER_DIR)/image/png.c \
+	$(KEILAND_BROWSER_DIR)/image/gif.c \
 	$(KEILAND_BROWSER_DIR)/text/font.c \
 	$(KEILAND_BROWSER_DIR)/text/linebreak.c \
 	$(KEILAND_BROWSER_DIR)/layout/box.c \
@@ -88,6 +95,7 @@ KEILAND_BROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/main.c \
 	$(KEILAND_BROWSER_DIR)/layout/inline.c \
 	$(KEILAND_BROWSER_DIR)/layout/float.c \
 	$(KEILAND_BROWSER_DIR)/layout/position.c \
+	$(KEILAND_BROWSER_DIR)/layout/replaced.c \
 	$(KEILAND_BROWSER_DIR)/layout/dump.c \
 	$(KEILAND_BROWSER_DIR)/layout/hit.c \
 	$(KEILAND_BROWSER_DIR)/paint/list.c \
@@ -106,4 +114,4 @@ KEILAND_BROWSER_DATA := /usr/share/browser/start.html=$(KEILAND_BROWSER_DIR)/dat
 	/usr/share/licenses/browser/WHATWG-entities=userland/base/licenses/browser/WHATWG-entities \
 	/usr/share/licenses/browser/Unicode-License-V3=userland/base/licenses/browser/Unicode-License-V3
 
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,browser,Web browser,amd64,n,basic,$(KEILAND_BROWSER_SOURCES),y,desktop,desktop/browser,desktop/libtruetype desktop/libvulkan desktop/libwayland desktop/libkeiland,0755,program,$(KEILAND_BROWSER_DATA),,bin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,browser,Web browser,amd64,n,basic,$(KEILAND_BROWSER_SOURCES),y,desktop,desktop/browser,desktop/libtruetype desktop/libvulkan desktop/libwayland desktop/libkeiland base/libjpeg-compat base/libpng-compat base/libz-compat base/libgif-compat,0755,program,$(KEILAND_BROWSER_DATA),,bin))

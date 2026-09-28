@@ -16,6 +16,10 @@
  * (the desktop's recent list, newest first) and the folders opened lately
  * (the file manager's own list).  Everything is gathered when the
  * dashboard is shown; the hero's picture is scaled once for its size.
+ *
+ * The hero card carries the Kei mark and word at its upper right, as the
+ * boot screen does (ws035-p108); fm_mark_draw draws the mark for the empty
+ * folders too.
  */
 
 #include "files.h"
@@ -30,6 +34,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <keiland.h>
+#include "../artwork/mark.h"
 
 
 /* The dashboard's measurements. */
@@ -44,6 +49,12 @@
 
 /* The largest wallpaper read, in bytes. */
 #define HOME_WALLPAPER_MAX	(64U * 1024U * 1024U)
+
+/* The largest Kei mark drawn, in pixels a side (its layers are kept rendered at the last size). */
+#define HOME_MARK_MAX		128U
+
+/* The mark's size on the hero card. */
+#define HOME_HERO_MARK		56
 
 /* How many recent folders the file manager keeps. */
 #define HOME_FOLDERS_KEPT	12
@@ -77,6 +88,7 @@ static int home_ppm_load(const char *path, struct fm_image *image);
 static int home_ppm_number(const unsigned char *data, size_t size, size_t *at);
 static void home_hero(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
 static void home_hero_art(struct fm_image *image);
+static void home_hero_brand(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
 static int home_section(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width, const char *title, int link);
 static int home_cards(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
 static int home_recents(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
@@ -409,7 +421,7 @@ home_hero(
 	if (app->hero.pixels != NULL) {
 		fm_canvas_image(canvas, &app->hero, (float)x, (float)y, (float)width, HOME_HERO_HEIGHT, 18.0f, 1.0f);
 	} else {
-		fm_canvas_round_gradient(canvas, (float)x, (float)y, (float)width, HOME_HERO_HEIGHT, 18.0f, FM_RGB(0x9cc3ec), FM_RGB(0xdce9f7));
+		fm_canvas_round_gradient(canvas, (float)x, (float)y, (float)width, HOME_HERO_HEIGHT, 18.0f, FM_RGB(0xbcd9f4), FM_RGB(0xe8f2f6));
 	}
 
 	/* A veil darkens the lower part, under the words. */
@@ -424,9 +436,95 @@ home_hero(
 	/* The greeting and the line about the files, in white at the lower left. */
 	(void)fm_text_draw_fit(app->text, canvas, x + 28, y + HOME_HERO_HEIGHT - 56, app->dashboard.greeting, 26U, 1, width - 56, FM_RGB(0xffffff));
 	(void)fm_text_draw_fit(app->text, canvas, x + 28, y + HOME_HERO_HEIGHT - 28, app->dashboard.summary, 14U, 0, width - 56, FM_RGBA(0xffffff, 230));
+
+	/* The Kei mark and word at the upper right. */
+	home_hero_brand(app, canvas, x, y, width);
 }
 
-/* Draws a quiet landscape into a picture: a sky, hills and a lake (when there is no wallpaper). */
+/* Draws the Kei mark and the word Kei (three letters, never a lone K) at the hero card's upper right. */
+static void
+home_hero_brand(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	int x,
+	int y,
+	int width)
+{
+	int word;
+	int left;
+
+	/* The word's width, and where the pair starts so that it ends at the card's right margin. */
+	word = fm_text_width(app->text, "Kei", 3U, 30U, 0);
+	left = x + width - 24 - word - 6 - HOME_HERO_MARK;
+
+	/* A card too narrow for the pair keeps only its words. */
+	if (left < x + width / 2)
+		return;
+
+	/* The mark, then the word in slate beside its lower part. */
+	fm_mark_draw(canvas, left, y + 18, (unsigned)HOME_HERO_MARK, 1.0f);
+	(void)fm_text_draw(app->text, canvas, left + HOME_HERO_MARK + 6, y + 18 + HOME_HERO_MARK - 10, "Kei", 3U, 30U, 0, FM_RGB(0x2e3a4c));
+}
+
+/*
+ * Draws the Kei mark in a square of a size in pixels at (x, y), as opaque as
+ * asked (0..1): its seven layers (userland/desktop/artwork/mark.c), each in
+ * its colour.  The layers are rendered once for a size and kept.
+ */
+void
+fm_mark_draw(
+	struct fm_canvas *canvas,
+	int x,
+	int y,
+	unsigned pixels,
+	float opacity)
+{
+	/*
+	 * The bar pale, its shade deeper, the leaf clearer and its shade the
+	 * deep blue of the splash, the overlap deeper still, then the white
+	 * light along the edges and the sheen (colour, alpha; ws035-p109).  The
+	 * panes are translucent, so what is behind shows through.
+	 */
+	static const uint32_t colours[KEILAND_MARK_LAYERS][2] = {
+		{ 0xa9c3f6U, 175U },
+		{ 0x7fa2f0U, 90U },
+		{ 0xa3d8faU, 170U },
+		{ 0x3a86f5U, 170U },
+		{ 0x2f7cf3U, 200U },
+		{ 0xffffffU, 170U },
+		{ 0xffffffU, 60U }
+	};
+
+	/*
+	 * The layers at the size last drawn (zero before the first); a new size
+	 * renders them again.  They live for the program's life.
+	 */
+	static uint8_t layers[KEILAND_MARK_LAYERS][HOME_MARK_MAX * HOME_MARK_MAX];
+	static unsigned layers_pixels;
+	uint32_t alpha;
+	unsigned layer;
+
+	/* A mark larger than the kept layers is drawn at their largest. */
+	if (pixels > HOME_MARK_MAX)
+		pixels = HOME_MARK_MAX;
+	if (pixels == 0U)
+		return;
+
+	/* The layers at this size. */
+	if (layers_pixels != pixels) {
+		for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++)
+			keiland_mark_raster(layer, pixels, layers[layer], pixels);
+		layers_pixels = pixels;
+	}
+
+	/* Each layer in its colour, as opaque as asked. */
+	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
+		alpha = (uint32_t)((float)colours[layer][1] * opacity + 0.5f);
+		fm_canvas_mask(canvas, x, y, layers[layer], (int)pixels, (int)pixels, pixels, FM_RGBA(colours[layer][0], alpha));
+	}
+}
+
+/* Draws a quiet landscape into a picture in the Kei look: a bright sky, hills and a green-edged lake (when there is no wallpaper). */
 static void
 home_hero_art(
 	struct fm_image *image)
@@ -451,10 +549,10 @@ home_hero_art(
 	whole.y = 0;
 	whole.width = image->width;
 	whole.height = image->height * 3 / 5;
-	fm_canvas_gradient(&canvas, &whole, FM_RGB(0x8fb8e6), FM_RGB(0xe6eef8));
+	fm_canvas_gradient(&canvas, &whole, FM_RGB(0xbcd9f4), FM_RGB(0xf1f6fb));
 	whole.y = whole.height;
 	whole.height = image->height - whole.y;
-	fm_canvas_gradient(&canvas, &whole, FM_RGB(0xa9c7e4), FM_RGB(0x6f97c4));
+	fm_canvas_gradient(&canvas, &whole, FM_RGB(0xd3e6f3), FM_RGB(0xb5d3c0));
 
 	/* The far hills, pale blue. */
 	far_hills[0] = 0.0f;
@@ -473,9 +571,9 @@ home_hero_art(
 	far_hills[13] = height * 0.44f;
 	far_hills[14] = width;
 	far_hills[15] = height * 0.60f;
-	fm_canvas_polygon(&canvas, far_hills, 8, FM_RGB(0x9db5d4));
+	fm_canvas_polygon(&canvas, far_hills, 8, FM_RGB(0xc2d6ea));
 
-	/* The near hills, darker. */
+	/* The near hills, young green (the Kei look, ws035-p108). */
 	near_hills[0] = 0.0f;
 	near_hills[1] = height * 0.60f;
 	near_hills[2] = width * 0.20f;
@@ -492,7 +590,7 @@ home_hero_art(
 	near_hills[13] = height * 0.60f;
 	near_hills[14] = 0.0f;
 	near_hills[15] = height * 0.60f;
-	fm_canvas_polygon(&canvas, near_hills, 8, FM_RGB(0x6f8fb4));
+	fm_canvas_polygon(&canvas, near_hills, 8, FM_RGB(0xa7c9a4));
 
 	/* The canvas is let go (the pixels are the picture's). */
 	fm_canvas_release(&canvas);

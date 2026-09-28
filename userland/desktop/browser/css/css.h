@@ -128,6 +128,24 @@ enum css_list_style {
 	CSS_LIST_NONE
 };
 
+/* The values of background-repeat (the two axes together). */
+enum css_background_repeat {
+	CSS_REPEAT_BOTH,
+	CSS_REPEAT_X,
+	CSS_REPEAT_Y,
+	CSS_REPEAT_NONE
+};
+
+/*
+ * The keywords of background-size (a size of lengths is none of them);
+ * numbered past the units, as the declared width's keyword carries them.
+ */
+enum css_background_size {
+	CSS_BACKGROUND_SIZE_LENGTHS = 0,
+	CSS_BACKGROUND_SIZE_CONTAIN = 100,
+	CSS_BACKGROUND_SIZE_COVER = 101
+};
+
 /* The generic font families. */
 enum css_generic_family {
 	CSS_FAMILY_SERIF,
@@ -167,6 +185,19 @@ struct css_style {
 	/* The colors. */
 	uint32_t color;
 	uint32_t background_color;
+
+	/*
+	 * The background image: its URL as the style sheet wrote it (an atom,
+	 * which lives as long as the heap; NULL for none), how it repeats,
+	 * where it sits (x and y: pixels or a percentage of the room left in the
+	 * padding box) and its size (contain, cover, or a width and height, each
+	 * pixels, a percentage of the padding box or auto).
+	 */
+	struct vm_string *background_image;
+	int background_repeat;
+	struct css_length background_position[2];
+	int background_size_keyword;
+	struct css_length background_size[2];
 
 	/*
 	 * The font.  font_size_keyword is 1 while the size still follows the
