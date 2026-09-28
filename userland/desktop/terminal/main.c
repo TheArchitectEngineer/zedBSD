@@ -110,6 +110,15 @@ static struct terminal_window main_window;
 static struct terminal_renderer main_renderer;
 
 /*
+ * The touch screen (touch.c, ws081-p011): the fingers' gestures and
+ * scroller, made with the window (without them fingers do nothing).
+ */
+static struct terminal_touch main_touch;
+
+/* In how many milliseconds the fingers want the next round (-1: none). */
+static int main_touch_due = -1;
+
+/*
  * One tab: its grid (allocated, too large for the stack), its shell's
  * process and pseudo-terminal, its ID in the titlebar and its title.
  */
@@ -248,6 +257,7 @@ static void main_select_to_pointer(void);
 static void main_edge_scroll(uint64_t now);
 static void main_scroll(void);
 static void main_view_log(const char *how);
+static void main_touch_round(void);
 
 /*
  * Runs the terminal.
@@ -302,6 +312,7 @@ main(
 
 	/* The drawing before the window it draws into, then the font. */
 	terminal_renderer_close(&main_renderer);
+	terminal_touch_close(&main_touch);
 	terminal_window_close(&main_window);
 	terminal_font_close(&main_font);
 
@@ -464,6 +475,11 @@ main_start(
 	if (status != 0)
 		return -1;
 
+	/* The fingers; without memory for them they do nothing. */
+	status = terminal_touch_open(&main_touch);
+	if (status != 0)
+		printf("ZTERM TOUCH none error=%d\n", status);
+
 	/* The drawing, at the size the compositor gave. */
 	run->result = terminal_renderer_open(&main_renderer, &main_window, &main_font);
 	run->operation = main_renderer.operation;
@@ -527,6 +543,10 @@ main_loop(
 				timeout = (int)(main_window.repeat_at - now);
 		}
 
+		/* The fingers' next round, when it comes first (ws081-p011). */
+		if (main_touch_due >= 0 && main_touch_due < timeout)
+			timeout = main_touch_due;
+
 		/* A selection held past the grid's edge scrolls on its own time, even while the pointer rests (ws035-p114). */
 		if (main_selecting && main_edge != 0) {
 			if (main_edge_at <= now)
@@ -588,6 +608,9 @@ main_loop(
 		if (main_window.drop_pending)
 			main_drop_paste();
 
+		/* The fingers scroll the view, and their taps and long presses become the pointer's presses (ws081-p011). */
+		main_touch_round();
+
 		/* The pointer selects, or drags the selected text out (ws035-p093). */
 		main_pointer();
 
@@ -605,9 +628,12 @@ main_loop(
 			main_screen->changed = 1;
 		}
 
-		/* A key typed shows the live screen again, where the shell answers it (ws035-p114). */
-		if (main_window.input_length != 0U && main_screen->view != 0U) {
+		/* A key typed shows the live screen again, where the shell answers it (ws035-p114), on whole lines. */
+		if (main_window.input_length != 0U &&
+		    (main_screen->view != 0U ||
+		     main_screen->view_offset != 0)) {
 			main_screen->view = 0U;
+			main_screen->view_offset = 0;
 			main_screen->changed = 1;
 			main_view_log("key");
 		}
@@ -1881,9 +1907,9 @@ main_cell(
 {
 	unsigned row;
 
-	/* From the grid's padded top left, a cell's size at a time. */
+	/* From the grid's padded top left, with the text moved by the view's offset within a line (ws081-p011), a cell's size at a time. */
 	x -= (int32_t)TERMINAL_PADDING;
-	y -= (int32_t)TERMINAL_PADDING;
+	y -= (int32_t)TERMINAL_PADDING + main_screen->view_offset;
 	if (x < 0)
 		x = 0;
 	if (y < 0)
@@ -1993,4 +2019,54 @@ main_view_log(
 	/* One line, for the tests. */
 	printf("ZTERM VIEW how=%s back=%u history=%u scrolled=%lu\n", how, main_screen->view, main_screen->history_count, main_screen->scrolled);
 	fflush(stdout);
+}
+
+/*
+ * Runs the fingers for one round (ws081-p011): gives them the screen's
+ * view, takes their events, sets the view they moved to, and queues the
+ * pointer's presses, releases and motions they made for main_pointer.
+ */
+static void
+main_touch_round(void)
+{
+	struct terminal_touch_pointer made;
+	struct terminal_pointer_event *event;
+	unsigned index;
+	unsigned view;
+	int offset;
+	int moved;
+	int taken;
+
+	/* The screen's view, and the fingers' events. */
+	terminal_touch_layout(&main_touch, main_screen, main_font.cell_height, main_screen->history_count,
+			      main_screen->rows * main_font.cell_height, main_screen->view, main_screen->view_offset);
+	for (index = 0U; index < main_window.touch_count; index++)
+		terminal_touch_event(&main_touch, &main_window.touches[index]);
+	main_window.touch_count = 0U;
+
+	/* Time moves on for them; a new view is shown. */
+	main_touch_due = terminal_touch_tick(&main_touch, terminal_touch_clock());
+	moved = terminal_touch_view(&main_touch, &view, &offset);
+	if (moved) {
+		main_screen->view = view;
+		main_screen->view_offset = offset;
+		main_screen->changed = 1;
+	}
+
+	/* The pointer's events they made, after the pointer's own (a full queue drops them). */
+	for (;;) {
+		taken = terminal_touch_take_pointer(&main_touch, &made);
+		if (!taken)
+			break;
+		if (main_window.pointer_event_count >= TERMINAL_POINTER_EVENTS)
+			continue;
+		event = &main_window.pointer_events[main_window.pointer_event_count];
+		main_window.pointer_event_count++;
+		event->kind = made.kind;
+		event->x = made.x;
+		event->y = made.y;
+		event->time = made.time;
+		event->serial = made.serial;
+		event->modifiers = main_window.modifiers;
+	}
 }

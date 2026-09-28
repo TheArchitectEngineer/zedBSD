@@ -31,6 +31,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "touch.h"
+
 /* The primary selection's objects (primary.c includes their protocol's header). */
 struct zwp_primary_selection_device_manager_v1;
 struct zwp_primary_selection_device_v1;
@@ -79,6 +81,9 @@ struct zwp_primary_selection_offer_v1;
 
 /* How many pointer events wait for the main loop at most (ws035-p093). */
 #define TERMINAL_POINTER_EVENTS	32U
+
+/* How many touch inputs wait for the main loop at most (ws081-p011). */
+#define TERMINAL_TOUCH_EVENTS	256U
 
 /* The kinds of pointer events the main loop takes: the left button pressed or released, a motion. */
 #define TERMINAL_POINTER_PRESS		1U
@@ -244,12 +249,17 @@ struct terminal_screen {
 	 * oldest line kept is line scrolled - history_count.  view is how many
 	 * lines back from the live screen the window shows (0: the live
 	 * screen); new output keeps a view that is back on the same text.
+	 * view_offset (ws081-p011) moves the text down by that many pixels
+	 * within a line while the fingers scroll it smoothly (negative past the
+	 * live screen, a line or more past the oldest line kept); the wheel and
+	 * the keys set it back to 0.
 	 */
 	struct terminal_cell history[TERMINAL_HISTORY * TERMINAL_MAX_COLUMNS];
 	unsigned history_first;
 	unsigned history_count;
 	unsigned long scrolled;
 	unsigned view;
+	int view_offset;
 };
 
 /*
@@ -377,6 +387,11 @@ struct terminal_window {
 	struct wl_seat *seat;
 	struct wl_keyboard *keyboard;
 	struct wl_pointer *pointer;
+	struct wl_touch *touch;
+
+	/* The touch inputs not yet taken by the main loop, oldest first (ws081-p011; a full queue drops the newest). */
+	struct terminal_touch_event touches[TERMINAL_TOUCH_EVENTS];
+	unsigned touch_count;
 
 	/* Where the pointer is over the surface (pixels), and its events not yet taken by the main loop (ws035-p093). */
 	int32_t pointer_x;
