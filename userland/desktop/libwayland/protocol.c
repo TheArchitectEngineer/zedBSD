@@ -853,38 +853,38 @@ const struct wl_interface xdg_popup_interface = {
 	3, xdg_popup_events
 };
 
-/* Identifies object arguments in zed_gpu_buffer_v1.create_buffer for validation. */
-static const struct wl_interface *zed_gpu_buffer_v1_requests_1_types[] = {
+/* Identifies object arguments in keiland_gpu_buffer_v1.create_buffer for validation. */
+static const struct wl_interface *keiland_gpu_buffer_v1_requests_1_types[] = {
 	&wl_buffer_interface,
 	NULL,
 	NULL,
 };
 
-/* Identifies the surface argument of zed_gpu_buffer_v1.set_acquire_fence (version 2). */
-static const struct wl_interface *zed_gpu_buffer_v1_requests_2_types[] = {
+/* Identifies the surface argument of keiland_gpu_buffer_v1.set_acquire_fence (version 2). */
+static const struct wl_interface *keiland_gpu_buffer_v1_requests_2_types[] = {
 	&wl_surface_interface,
 	NULL,
 	NULL,
 	NULL,
 };
 
-/* Identifies the buffer argument of zed_gpu_buffer_v1.set_alpha (version 3). */
-static const struct wl_interface *zed_gpu_buffer_v1_requests_3_types[] = {
+/* Identifies the buffer argument of keiland_gpu_buffer_v1.set_alpha (version 3). */
+static const struct wl_interface *keiland_gpu_buffer_v1_requests_3_types[] = {
 	&wl_buffer_interface,
 	NULL,
 };
 
-/* Preserves the wire opcode order for zed_gpu_buffer_v1 requests. */
-static const struct wl_message zed_gpu_buffer_v1_requests[] = {
+/* Preserves the wire opcode order for keiland_gpu_buffer_v1 requests. */
+static const struct wl_message keiland_gpu_buffer_v1_requests[] = {
 	{ "destroy", "", NULL },
-	{ "create_buffer", "nha", zed_gpu_buffer_v1_requests_1_types },
-	{ "set_acquire_fence", "2ohuu", zed_gpu_buffer_v1_requests_2_types },
-	{ "set_alpha", "3ou", zed_gpu_buffer_v1_requests_3_types },
+	{ "create_buffer", "nha", keiland_gpu_buffer_v1_requests_1_types },
+	{ "set_acquire_fence", "2ohuu", keiland_gpu_buffer_v1_requests_2_types },
+	{ "set_alpha", "3ou", keiland_gpu_buffer_v1_requests_3_types },
 };
 
-/* Exposes the immutable selected zed_gpu_buffer_v1 protocol description. */
-const struct wl_interface zed_gpu_buffer_v1_interface = {
-	"zed_gpu_buffer_v1", 3, 4, zed_gpu_buffer_v1_requests,
+/* Exposes the immutable selected keiland_gpu_buffer_v1 protocol description. */
+const struct wl_interface keiland_gpu_buffer_v1_interface = {
+	"keiland_gpu_buffer_v1", 3, 4, keiland_gpu_buffer_v1_requests,
 	0, NULL
 };
 
@@ -3352,11 +3352,11 @@ xdg_popup_get_version(
 }
 
 /*
- * Sends the zed_gpu_buffer_v1.destroy request.
+ * Sends the keiland_gpu_buffer_v1.destroy request.
  */
 void
-zed_gpu_buffer_v1_destroy(
-	struct zed_gpu_buffer_v1 *object)
+keiland_gpu_buffer_v1_destroy(
+	struct keiland_gpu_buffer_v1 *object)
 {
 
 	/* Queues the wire request atomically with any newly allocated object. */
@@ -3367,11 +3367,11 @@ zed_gpu_buffer_v1_destroy(
 }
 
 /*
- * Sends the zed_gpu_buffer_v1.create_buffer request.
+ * Sends the keiland_gpu_buffer_v1.create_buffer request.
  */
 struct wl_buffer *
-zed_gpu_buffer_v1_create_buffer(
-	struct zed_gpu_buffer_v1 *object,
+keiland_gpu_buffer_v1_create_buffer(
+	struct keiland_gpu_buffer_v1 *object,
 	int fd,
 	struct wl_array *metadata)
 {
@@ -3393,13 +3393,13 @@ zed_gpu_buffer_v1_create_buffer(
 }
 
 /*
- * Sends the zed_gpu_buffer_v1.set_acquire_fence request (version 2): the
+ * Sends the keiland_gpu_buffer_v1.set_acquire_fence request (version 2): the
  * surface's next commit is used once the fence's payload generation is done.
  * The fd stays the caller's.
  */
 void
-zed_gpu_buffer_v1_set_acquire_fence(
-	struct zed_gpu_buffer_v1 *object,
+keiland_gpu_buffer_v1_set_acquire_fence(
+	struct keiland_gpu_buffer_v1 *object,
 	struct wl_surface *surface,
 	int fd,
 	uint64_t generation)
@@ -3415,13 +3415,13 @@ zed_gpu_buffer_v1_set_acquire_fence(
 }
 
 /*
- * Sends the zed_gpu_buffer_v1.set_alpha request (version 3): how the
+ * Sends the keiland_gpu_buffer_v1.set_alpha request (version 3): how the
  * compositor reads the buffer's alpha channel, ignored (opaque, 0) or as
  * premultiplied alpha (1).
  */
 void
-zed_gpu_buffer_v1_set_alpha(
-	struct zed_gpu_buffer_v1 *object,
+keiland_gpu_buffer_v1_set_alpha(
+	struct keiland_gpu_buffer_v1 *object,
 	struct wl_buffer *buffer,
 	uint32_t alpha)
 {
@@ -3434,11 +3434,11 @@ zed_gpu_buffer_v1_set_alpha(
 }
 
 /*
- * Associates client state with the zed_gpu_buffer_v1 proxy.
+ * Associates client state with the keiland_gpu_buffer_v1 proxy.
  */
 void
-zed_gpu_buffer_v1_set_user_data(
-	struct zed_gpu_buffer_v1 *object,
+keiland_gpu_buffer_v1_set_user_data(
+	struct keiland_gpu_buffer_v1 *object,
 	void *data)
 {
 	/* Uses the common proxy ownership and synchronization contract. */
@@ -3449,11 +3449,11 @@ zed_gpu_buffer_v1_set_user_data(
 }
 
 /*
- * Obtains client state from the zed_gpu_buffer_v1 proxy.
+ * Obtains client state from the keiland_gpu_buffer_v1 proxy.
  */
 void *
-zed_gpu_buffer_v1_get_user_data(
-	struct zed_gpu_buffer_v1 *object)
+keiland_gpu_buffer_v1_get_user_data(
+	struct keiland_gpu_buffer_v1 *object)
 {
 	void *answer;
 
@@ -3465,11 +3465,11 @@ zed_gpu_buffer_v1_get_user_data(
 }
 
 /*
- * Obtains the negotiated version of the zed_gpu_buffer_v1 proxy.
+ * Obtains the negotiated version of the keiland_gpu_buffer_v1 proxy.
  */
 uint32_t
-zed_gpu_buffer_v1_get_version(
-	struct zed_gpu_buffer_v1 *object)
+keiland_gpu_buffer_v1_get_version(
+	struct keiland_gpu_buffer_v1 *object)
 {
 	uint32_t answer;
 

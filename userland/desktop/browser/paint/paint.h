@@ -16,13 +16,13 @@
  * of a pixel) in document coordinates; the renderers subtract the scroll.
  *
  * The first pass paints normal flow: the canvas color, each block's
- * background and borders (every style drawn solid), and the text of the
- * lines with its underline.  Rounded corners, images, clipping, opacity,
- * shadows and the stacking order of positioned boxes come later.
+ * background and borders (every style drawn solid), the text of the lines
+ * with its underline, and the images of <img> elements.  Rounded corners,
+ * background images, opacity and shadows come later.
  */
 
-#ifndef ZDESKTOP_BROWSER_PAINT_H
-#define ZDESKTOP_BROWSER_PAINT_H
+#ifndef KEILAND_BROWSER_PAINT_H
+#define KEILAND_BROWSER_PAINT_H
 
 #include "layout/layout.h"
 
@@ -33,7 +33,8 @@ enum paint_kind {
 	PAINT_RECT,
 	PAINT_TEXT,
 	PAINT_CLIP,
-	PAINT_UNCLIP
+	PAINT_UNCLIP,
+	PAINT_IMAGE
 };
 
 /* The deepest nesting of clips the renderers keep (deeper clips are ignored). */
@@ -53,7 +54,11 @@ struct paint_glyph {
  *
  * A rectangle is filled with a color, its edges covering the pixels they
  * cross in proportion.  A text item draws its glyphs from x along the
- * baseline y in its font and color.
+ * baseline y in its font and color.  An image item stretches its image
+ * over its rectangle: each pixel takes the image's pixel under its centre
+ * (no filtering), and its edges cover the pixels they cross in proportion
+ * as a rectangle's do.  The image belongs to the page, which keeps it for
+ * as long as the list lives.
  */
 struct paint_item {
 	int kind;
@@ -65,6 +70,7 @@ struct paint_item {
 	struct text_font font;
 	const struct paint_glyph *glyphs;
 	size_t glyph_count;
+	const struct img_bitmap *image;
 };
 
 /*

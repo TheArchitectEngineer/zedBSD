@@ -19,14 +19,14 @@
  * shell on a pseudo-terminal for each tab and ties them together.
  */
 
-#ifndef ZDESKTOP_TERMINAL_H
-#define ZDESKTOP_TERMINAL_H
+#ifndef KEILAND_TERMINAL_H
+#define KEILAND_TERMINAL_H
 
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
-#include <zdesktop.h>
+#include <keiland.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -406,7 +406,7 @@ struct terminal_window {
 	 * (and whether ever shown), and what the titlebar asked and the main
 	 * loop has not yet carried out, oldest first.
 	 */
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 	struct terminal_tab_view tabs_shown[TERMINAL_TABS];
 	unsigned tabs_shown_count;
 	uint32_t tabs_shown_active;
@@ -420,9 +420,9 @@ struct terminal_window {
 	 * state the menu last showed, and the actions chosen but not yet
 	 * carried out, oldest first.
 	 */
-	struct zdesktop_menu_service *menu_service;
-	struct zdesktop_menu *menu;
-	struct zdesktop_window_menu *window_menu;
+	struct keiland_menu_service *menu_service;
+	struct keiland_menu *menu;
+	struct keiland_window_menu *window_menu;
 	struct terminal_menu_state menu_state;
 	uint32_t actions[TERMINAL_ACTIONS];
 	unsigned action_count;

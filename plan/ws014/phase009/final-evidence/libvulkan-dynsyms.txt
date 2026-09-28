@@ -45,7 +45,7 @@ Symbol table '.dynsym' contains 236 entries:
     41: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_display_get_registry
     42: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_registry_add_listener
     43: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_display_roundtrip_queue
-    44: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND zed_gpu_buffer_v1_destroy
+    44: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND keiland_gpu_buffer_v1_destroy
     45: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_registry_destroy
     46: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_proxy_wrapper_destroy
     47: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_event_queue_destroy
@@ -53,7 +53,7 @@ Symbol table '.dynsym' contains 236 entries:
     49: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_callback_destroy
     50: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_buffer_destroy
     51: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_display_flush
-    52: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND zed_gpu_buffer_v1_create_buffer
+    52: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND keiland_gpu_buffer_v1_create_buffer
     53: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_buffer_add_listener
     54: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_surface_frame
     55: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_callback_add_listener
@@ -65,7 +65,7 @@ Symbol table '.dynsym' contains 236 entries:
     61: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_display_get_fd
     62: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_display_cancel_read
     63: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_display_read_events
-    64: 0000000000000000     0 OBJECT  GLOBAL DEFAULT  UND zed_gpu_buffer_v1_interface
+    64: 0000000000000000     0 OBJECT  GLOBAL DEFAULT  UND keiland_gpu_buffer_v1_interface
     65: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND wl_registry_bind
     66: 0000000000019d4b    66 FUNC    GLOBAL DEFAULT    8 vkUnmapMemory
     67: 0000000000011fb6   449 FUNC    GLOBAL DEFAULT    8 vkGetPhysicalDeviceExternalBufferPropertiesKHR

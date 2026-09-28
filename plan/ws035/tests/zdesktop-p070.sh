@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws035-p070: X11 applications from App Home on the Venus guest (the zdesktop image, built by
 # plan/ws035/tests/build-zdesktop-image.sh, run by plan/ws035/tests/zdesktop-guest.sh start).
-# zdesktop --glass runs alone; App Home's "X terminal" starts zterm through /usr/libexec/zdesktop-x11, which starts
+# zdesktop --glass runs alone; App Home's "X terminal" starts zterm through /usr/libexec/keiland-x11, which starts
 # xserver first; "Gears" then starts zgears on the same server.
 #  1. xterm.png: zterm's window (a Wiseman window) after the click on its icon.
 #  2. gears.png: the gears' window too; one server runs.
@@ -42,7 +42,7 @@ icon() {
 
 # zdesktop alone (no X server yet).
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/x11server.pid; rmdir /tmp/x11server.lock 2>/dev/null; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/x11server.pid; rmdir /tmp/x11server.lock 2>/dev/null; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 /bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 echo "xserver before: $(processes xserver)"
 

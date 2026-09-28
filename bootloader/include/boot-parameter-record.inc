@@ -16,14 +16,14 @@
 	.word KERN_BOOT_PARAMETER_RECORD_VERSION
 	.word KERN_BOOT_PARAMETER_RECORD_SIZE
 	.word KERN_BOOT_PARAMETER_RECORD_FLAG_TEXT
-	.word .Lzedbsd_boot_parameters_end\@ - \
-	      .Lzedbsd_boot_parameters_start\@
+	.word .Lkern_boot_parameters_end\@ - \
+	      .Lkern_boot_parameters_start\@
 	.long 0
-.Lzedbsd_boot_parameters_start\@:
+.Lkern_boot_parameters_start\@:
 	.ascii KERN_IMAGE_BOOT_PARAMETERS_TEXT
-.Lzedbsd_boot_parameters_end\@:
+.Lkern_boot_parameters_end\@:
 	.byte 0
 	.space KERN_BOOT_PARAMETERS_STORAGE_SIZE - \
-	       (.Lzedbsd_boot_parameters_end\@ - \
-	        .Lzedbsd_boot_parameters_start\@) - 1
+	       (.Lkern_boot_parameters_end\@ - \
+	        .Lkern_boot_parameters_start\@) - 1
 .endm

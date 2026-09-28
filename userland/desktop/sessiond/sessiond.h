@@ -19,13 +19,13 @@
 
 /* The greeter program and the session script sessiond starts by default. */
 #define SESSIOND_GREETER	"/bin/wayland"
-#define SESSIOND_SESSION	"/etc/zdesktop/session"
+#define SESSIOND_SESSION	"/etc/keiland/session"
 
 /* The unprivileged account the greeter runs as. */
 #define SESSIOND_GREETER_USER	"_greeter"
 
 /* The wallpaper the greeter shows when the image has one. */
-#define SESSIOND_WALLPAPER	"/usr/share/zdesktop/wallpaper.ppm"
+#define SESSIOND_WALLPAPER	"/usr/share/keiland/wallpaper.ppm"
 
 /* The descriptor the greeter talks to sessiond on, and the one the session does (ws035-p101). */
 #define SESSIOND_AUTH_FD	3

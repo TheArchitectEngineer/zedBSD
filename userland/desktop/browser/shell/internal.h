@@ -11,19 +11,23 @@
  * (present.c).  The host build leaves the whole directory out.
  */
 
-#ifndef ZDESKTOP_BROWSER_SHELL_INTERNAL_H
-#define ZDESKTOP_BROWSER_SHELL_INTERNAL_H
+#ifndef KEILAND_BROWSER_SHELL_INTERNAL_H
+#define KEILAND_BROWSER_SHELL_INTERNAL_H
 
 /* The Wayland platform's parts of Vulkan, declared before anything includes vulkan.h. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
+#include <poll.h>
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 
 #include "paint/gpu.h"
 #include "shell/shell.h"
 
-#include <zdesktop.h>
+#include <keiland.h>
+
+/* How many descriptors of the network the main loop polls at most besides the compositor's. */
+#define SHELL_NET_FDS		64U
 
 /* How many inputs wait for the main loop at most. */
 #define SHELL_WINDOW_EVENTS	256U
@@ -172,7 +176,7 @@ enum shell_titlebar_kind {
 /*
  * One thing done with the titlebar: a control chosen (detail is a
  * breadcrumb's part), or a text control's editing ended (detail is how,
- * ZDESKTOP_TEXT_*, and text is its text).
+ * KEILAND_TEXT_*, and text is its text).
  */
 struct shell_titlebar_event {
 	int kind;
@@ -187,14 +191,14 @@ struct shell_titlebar_event {
  * with it and the main loop has not yet carried out, oldest first.
  */
 struct shell_titlebar {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 	struct shell_titlebar_event events[SHELL_TITLEBAR_EVENTS];
 	unsigned event_count;
 };
 
 /* The window (window.c). */
 int shell_window_open(struct shell_window *window, const char *display, uint32_t width, uint32_t height, const char *title);
-int shell_window_dispatch(struct shell_window *window, int timeout);
+int shell_window_dispatch(struct shell_window *window, int timeout, struct pollfd *extra, size_t extra_count);
 int shell_window_take(struct shell_window *window, struct shell_event *event);
 int shell_window_repeat(struct shell_window *window, uint64_t now);
 void shell_window_title(struct shell_window *window, const char *title);

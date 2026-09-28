@@ -201,7 +201,7 @@ inline の中の text は、white-space の処理 → 改行の機会（UAX #14 
 - **font の一覧**: `/usr/share/fonts/` の TTF を起動のときに走査し、`name`・`OS/2` の表から family・weight・italic を読む。CSS の
   generic family（`serif`・`sans-serif`・`monospace`・`system-ui`・`cursive`・`fantasy`）は設定の file
   （`/etc/browser/fonts.conf`、無ければ組み込みの既定）で具体的な font の file へ対応させる。fallback は文字の cmap で選ぶ
-  （日本語は zdesktop-fallback.ttf）。`@font-face` の font も同じ一覧に入る。
+  （日本語は keiland-fallback.ttf）。`@font-face` の font も同じ一覧に入る。
 - **libtruetype**: 今の API は整数の pixel の大きさと整数の advance だけで、kerning・名前の表・`unitsPerEm` を返さない。browser には
   小数の大きさ（13.333px など）、1/64 px の advance、`kern`・`GPOS` の kerning、名前と `OS/2` の値、design unit の outline が要る。
   **libtruetype に関数を足す**（既存の関数は変えない追加だけ。p010。§17 の D8: main に伝えてから）。
@@ -244,16 +244,16 @@ page の変更 → 次の frame callback（`wl_surface.frame`）で rAF → styl
 ### 8.4 窓（shell）
 
 - **提示は Wayland の上の Vulkan**（libvulkan の Wayland WSI の `VkSurfaceKHR` と swapchain）。files の `window.c`・
-  `present.c` の方式（premultiplied alpha、glass を使うなら zed_glass_v1）に倣うが、canvas を 1 枚貼るのではなく display list を
+  `present.c` の方式（premultiplied alpha、glass を使うなら keiland_glass_v1）に倣うが、canvas を 1 枚貼るのではなく display list を
   §8.2 の GPU の描画で直接 swapchain の image へ描く。
-- **titlebar**: WS070 の titlebar の拡張（libkeiland の `zdesktop_titlebar_*`）。
+- **titlebar**: WS070 の titlebar の拡張（libkeiland の `keiland_titlebar_*`）。
   - ws070-p011（TABS の presentation）の前: **CONTROLS** mode（戻る・進む・再読み込み／中止・URL の text field・menu）。タブは
     無し（1 窓 1 タブ、Ctrl+T は新しい窓）。
   - ws070-p011 の後: **TABS** mode（タブの strip と `+`）と、窓の中の toolbar（戻る・進む・再読み込み・URL の欄）を browser が描く
     （titlebar-spec §4.3 の用途: browser が TABS の最初の本格的な使い手）。CONTROLS と TABS は排他（仕様 §5）なので、URL の欄は
     窓の中へ移る（§17 の D3）。
 - **menu**: System Menu（WS070）で File（New Tab・New Window・Open File…・Close Tab）、Edit（Copy・Paste・Find）、View（Reload・
-  Zoom・View Source）、History（Back・Forward）、Window、Help。link の上の右 click は `zdesktop_menu_popup`。
+  Zoom・View Source）、History（Back・Forward）、Window、Help。link の上の右 click は `keiland_menu_popup`。
 - 入力: pointer（hover・click・wheel・drag の選択）、keyboard（focus の移動、scroll、form の入力）。日本語の IME は zdesktop の
   text-input の対応の後（§16）。
 
@@ -498,7 +498,7 @@ libcrypto の互換品（別の WS）、GPU の合成、sync・password の管�
 | D2 | TLS の繋ぎ方 | OpenSSL の package の `libssl.so` を実行時に `dlopen`（base の build は OpenSSL に依存しない。package が無ければ https は error の page） | build のときに link する（base の build が package の OpenSSL の cross build に依存し、image に package が必須になる） | base と package の境界を保ち、将来の base の互換品へ読む名前を変えるだけで移れる |
 | D3 | titlebar の使い方 | ws070-p011 の前は CONTROLS（URL の欄を titlebar に、1 窓 1 タブ）。後は TABS（タブを titlebar に）+ 窓の中の toolbar | CONTROLS のまま窓の中にタブ | 仕様（titlebar-spec §4.3）が browser を TABS の主な用途としている |
 | D4 | 仕様や Unicode から作る表（文字参照 2231 件は WHATWG の HTML 標準の一覧（CC BY 4.0、source に取り込んだ部分は BSD 3-Clause）、日本語の encoding の表は WHATWG Encoding 標準の index、Unicode の性質は UCD（Unicode License v3）） | **決定（2026-09-28 ユーザー「文字の表は、生成した表をコミットしていいてす。」）**: 生成の script（`tools/`）と生成した `.c` を commit し、出典とライセンスの表示を file の先頭と `userland/base/licenses/browser/` の notice に置く。`tools/regenerate.sh` が固定の SHA-256 で一覧を取得して再生成する | build のたびに取得して生成（base の build が network に依存する） | どれも許容的なライセンスで表示を保てば再配布できる。base の build を offline に保つ |
-| D5 | GIF の decoder の置き場 | browser の中（`image/gif.c`） | `libgif-compat` を base の library に | 今 GIF を要る base の program は browser だけ |
+| D5 | GIF の decoder の置き場 | browser の中（`image/gif.c`） | `libgif-compat` を base の library に | 今 GIF を要る base の program は browser だけ。**2026-09-28 ユーザー決定: `userland/base/libgif-compat`（共有）、libjpeg-compat も base の共有 library。header は `include/libc/compat/`（同日の訂正、GIF も同じ所）** |
 | D6 | 窓の提示と描画 | **決定（2026-09-27 ユーザー「ブラウザはWaylandとVulkanで実装してください。」）**: Wayland の上の Vulkan。display list を GPU で描く。CPU の参照の描画は headless と試験だけ（§8.2） | （既定だった wl_shm は取り消し） | — |
 | D7 | libpng-compat の範囲 | ws071-p010 の simplified API に `png_image_begin_read_from_memory` を含めてもらう（browser は memory から読む） | browser が一時 file に書いて `from_file` | 仕様の simplified API の一部で、実装はほぼ同じ |
 | D8 | libtruetype の拡張 | 既存の関数を変えずに関数を足す（小数の大きさ、1/64 px の advance、kerning、`name`・`OS/2`、`unitsPerEm`）。足す前に main に伝える | browser の中に別の TrueType の読み手を持つ | TrueType の parser を base に 2 つ持たない |
@@ -516,3 +516,24 @@ libcrypto の互換品（別の WS）、GPU の合成、sync・password の管�
 基盤（p002〜p003）→ HTML（p004〜p006）→ CSS（p007〜p009）→ text・layout・描画・窓（p010〜p014、M1）→ network（p015〜p017）→
 encoding（p018）→ 画像（p019〜p021）→ 共通の engine（p022〜p023）→ JS（p024〜p029）→ binding（p030〜p032）→ Wasm（p033〜p034、M2）→
 CSS の互換（p035〜p039）→ Chrome との比較（p040、M3）→ shell の仕上げ（p041）→ M4（p042〜p043）→ 規約の照合（p044）。
+
+## 19. 部品としての browser（libbrowser.so、2026-09-28 ユーザーの方針）
+
+ユーザー:「ブラウザですが、システム環境設定などのウィンドウとか、ウィジェットとかで、HTML5コンポーネントを使えたらいいなと思っているので、
+libbrowser.soというファイルに将来的に分割できるようにして、コンポーネントにしましょう。ブラウザの構造体へのポインタをハンドルにして、
+Vulkanレンダリングターゲットを指定してイベントも送ってやるとと描画してくれて、Wayland依存はない、みたいなのがいいと思います！
+これはいきなり実現しなくても、徐々にそういう設計に変えていきましょう。」
+
+目標の形（徐々に移す。一度に作り直さない）:
+
+- **engine と shell の分離**: HTML・CSS・layout・JS・DOM・net・image・paint（display list と Vulkan の描画）は engine、
+  窓・Wayland・titlebar・location bar・入力の変換は shell（今の `shell/`・`main.c`）。engine は Wayland の header を include しない。
+- **handle**: engine の実体の構造体へのポインタ（例 `struct browser_view *`、不透明な型）。作成・破棄・読み込み（URL・HTML の文字列）・
+  大きさの変更・描画・入力の event（pointer・key・scroll・focus）・callback（題名・URL・読み込みの状態・再描画の要求・link の navigation の
+  決定）を C の API にする。
+- **描画の先**: 呼び出し側が Vulkan の device・queue と描画の先（VkImage と layout・大きさ、または command buffer）を渡し、engine は
+  そこに描く。CPU の reference の描画（試験用）も同じ API から選べる。
+- **library**: 将来 `libbrowser.so`（`userland/desktop/` の library。header は `include/libc/` の適所）に分け、`/bin/browser` はその
+  上の shell になる。システム環境設定の窓や widget が同じ library を使う。
+- 移し方: 新しいコードは engine と shell の境界を守って書く。境界を越える既存の依存は、触る Phase で少しずつ直す。
+  分割（.so と公開の header、API の文書、2 つ目の使い手の試作）は専用の Phase で行う。

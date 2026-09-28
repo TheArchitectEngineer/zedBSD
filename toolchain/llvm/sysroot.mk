@@ -88,6 +88,14 @@ $(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES): | $(ZEDBSD_LLVM_SOURCE_STAMP)
 
 ZEDBSD_SYSROOT_PUBLIC_HEADERS := $(shell \
 	find include/libc include/libc include/uapi -type f ! -name '*~' -print | LC_ALL=C sort)
+# The names the public headers have under a sysroot's usr/include, the same
+# mapping as the header loop of the rule below.  They come from the manifest,
+# not from a sysroot on disk: a list read from the disk while make parses is
+# the old sysroot's, and when a header is renamed or moved the rule below
+# replaces that sysroot later in the same make, so whatever copies the listed
+# files afterwards names a file that is gone (BUG-084).
+ZEDBSD_SYSROOT_INCLUDE_NAMES := $(patsubst include/libc/%,%,\
+	$(patsubst include/uapi/%,uapi/%,$(ZEDBSD_SYSROOT_PUBLIC_HEADERS)))
 ZEDBSD_SYSROOT_LINKER_SCRIPTS := \
 	platform/amd64/user.ld platform/amd64/vmunix.ld \
 	platform/pcat/user.ld platform/pcat/vmunix.ld \

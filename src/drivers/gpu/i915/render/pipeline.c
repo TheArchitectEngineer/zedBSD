@@ -48,6 +48,7 @@ static int i915_gfx_decode_vertex_input(struct i915_render_session *session, str
 static void i915_gfx_decode_viewport(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline, int *viewport_given, int *scissor_given);
 static void i915_gfx_decode_blend(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline);
 static void i915_gfx_decode_dynamic(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline);
+static void i915_gfx_stencil_face(struct i915_gfx_pipeline *pipeline, uint32_t face, const VkStencilOpState *op);
 static void i915_gfx_float_bits(uint32_t *destination, const float *source);
 static void i915_gfx_free_pipelines(struct i915_gfx_pipeline **pipelines, uint64_t count);
 
@@ -376,6 +377,9 @@ i915_gfx_decode_pipeline(
 		pipeline->depth_test = depth.depthTestEnable;
 		pipeline->depth_write = depth.depthWriteEnable;
 		pipeline->depth_compare = depth.depthCompareOp;
+		pipeline->stencil_test = depth.stencilTestEnable;
+		i915_gfx_stencil_face(pipeline, 0U, &depth.front);
+		i915_gfx_stencil_face(pipeline, 1U, &depth.back);
 	}
 
 	/* Decodes the colour blend state when it is present. */
@@ -658,10 +662,33 @@ i915_gfx_decode_dynamic(
 			pipeline->dynamic_scissor = 1;
 		} else if (state == VK_DYNAMIC_STATE_BLEND_CONSTANTS) {
 			pipeline->dynamic_blend_constants = 1;
+		} else if (state == VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK) {
+			pipeline->dynamic_stencil_compare = 1;
+		} else if (state == VK_DYNAMIC_STATE_STENCIL_WRITE_MASK) {
+			pipeline->dynamic_stencil_write = 1;
+		} else if (state == VK_DYNAMIC_STATE_STENCIL_REFERENCE) {
+			pipeline->dynamic_stencil_reference = 1;
 		} else {
 			kern_logf("i915: vk: XXX pipeline declares dynamic state %u; no vkCmdSet* command for it is implemented\n", state);
 		}
 	}
+}
+
+/* Keeps one face's stencil operations, test and values (face 0 front, 1 back). */
+static void
+i915_gfx_stencil_face(
+	struct i915_gfx_pipeline *pipeline,
+	uint32_t face,
+	const VkStencilOpState *op)
+{
+	/* What the test does, and the values it uses when they are not dynamic. */
+	pipeline->stencil_fail[face] = op->failOp;
+	pipeline->stencil_pass[face] = op->passOp;
+	pipeline->stencil_depth_fail[face] = op->depthFailOp;
+	pipeline->stencil_compare[face] = op->compareOp;
+	pipeline->stencil_compare_mask[face] = op->compareMask;
+	pipeline->stencil_write_mask[face] = op->writeMask;
+	pipeline->stencil_reference[face] = op->reference;
 }
 
 /* Copies a float as its 32 bits; no floating-point register is involved. */

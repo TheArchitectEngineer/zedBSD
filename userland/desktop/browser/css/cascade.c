@@ -371,6 +371,15 @@ css_initial_style(
 	/* The initial values that are not zero. */
 	style->color = 0xff000000U;
 	style->background_color = 0;
+	style->background_image = NULL;
+	style->background_repeat = CSS_REPEAT_BOTH;
+	style->background_position[0].unit = CSS_UNIT_PERCENT;
+	style->background_position[0].value = 0;
+	style->background_position[1].unit = CSS_UNIT_PERCENT;
+	style->background_position[1].value = 0;
+	style->background_size_keyword = CSS_BACKGROUND_SIZE_LENGTHS;
+	style->background_size[0].unit = CSS_UNIT_AUTO;
+	style->background_size[1].unit = CSS_UNIT_AUTO;
 	style->font_size = CASCADE_DEFAULT_FONT_SIZE;
 	style->font_size_keyword = 1;
 	style->font_weight = 400;
@@ -972,6 +981,33 @@ cascade_apply(
 	case CSS_PROP_BACKGROUND_COLOR:
 		style->background_color = value->color;
 		break;
+	case CSS_PROP_BACKGROUND_IMAGE:
+		style->background_image = NULL;
+		if (value->kind == CSS_VALUE_URL)
+			style->background_image = value->url;
+		break;
+	case CSS_PROP_BACKGROUND_REPEAT:
+		style->background_repeat = value->keyword;
+		break;
+	case CSS_PROP_BACKGROUND_POSITION_X:
+	case CSS_PROP_BACKGROUND_POSITION_Y:
+		style->background_position[property - CSS_PROP_BACKGROUND_POSITION_X] = cascade_length(engine, value, style->font_size);
+		break;
+	case CSS_PROP_BACKGROUND_SIZE_WIDTH:
+		/* contain and cover size both sides; otherwise the width. */
+		style->background_size_keyword = CSS_BACKGROUND_SIZE_LENGTHS;
+		if (value->kind == CSS_VALUE_KEYWORD && (value->keyword == CSS_BACKGROUND_SIZE_CONTAIN || value->keyword == CSS_BACKGROUND_SIZE_COVER)) {
+			style->background_size_keyword = value->keyword;
+			style->background_size[0].unit = CSS_UNIT_AUTO;
+			break;
+		}
+
+		/* A width of lengths. */
+		style->background_size[0] = cascade_length(engine, value, style->font_size);
+		break;
+	case CSS_PROP_BACKGROUND_SIZE_HEIGHT:
+		style->background_size[1] = cascade_length(engine, value, style->font_size);
+		break;
 	case CSS_PROP_FONT_SIZE:
 		/* The root measures against the default size, on the keyword scale. */
 		parent_size = CASCADE_DEFAULT_FONT_SIZE;
@@ -1121,6 +1157,23 @@ cascade_inherit(
 		break;
 	case CSS_PROP_BACKGROUND_COLOR:
 		style->background_color = parent->background_color;
+		break;
+	case CSS_PROP_BACKGROUND_IMAGE:
+		style->background_image = parent->background_image;
+		break;
+	case CSS_PROP_BACKGROUND_REPEAT:
+		style->background_repeat = parent->background_repeat;
+		break;
+	case CSS_PROP_BACKGROUND_POSITION_X:
+	case CSS_PROP_BACKGROUND_POSITION_Y:
+		style->background_position[property - CSS_PROP_BACKGROUND_POSITION_X] = parent->background_position[property - CSS_PROP_BACKGROUND_POSITION_X];
+		break;
+	case CSS_PROP_BACKGROUND_SIZE_WIDTH:
+		style->background_size_keyword = parent->background_size_keyword;
+		style->background_size[0] = parent->background_size[0];
+		break;
+	case CSS_PROP_BACKGROUND_SIZE_HEIGHT:
+		style->background_size[1] = parent->background_size[1];
 		break;
 	case CSS_PROP_FONT_SIZE:
 		style->font_size = parent->font_size;

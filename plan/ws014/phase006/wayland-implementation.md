@@ -17,7 +17,7 @@
 | K/GPU/Venusと`zwl` | immutable allocation capability、別contextへのimport、native表示と表示中の参照を保持 |
 | `wltest`等のアプリ | 標準Wayland/xdg-shellとVulkan APIを使う。独自factoryやGPU ioctlは呼ばない |
 
-base package名は`libwayland-client`、ソースディレクトリは`desktop/libwayland`、公開SONAME/配置は`/lib/libwayland-client.so`。現在のpackage対象はamd64。ホストDSOでは183個の公開`wl_*`/`xdg_*`/`zed_gpu_buffer_v1_*` symbolを確認し、内部`wlc_*`はexport mapで隠す。libvulkanは実libwayland-client DSOへ依存する。Vulkan公開関数は従来155個にWaylandの2個を加えた157個で、instance extension enablementにより探索を制限する。
+base package名は`libwayland-client`、ソースディレクトリは`desktop/libwayland`、公開SONAME/配置は`/lib/libwayland-client.so`。現在のpackage対象はamd64。ホストDSOでは183個の公開`wl_*`/`xdg_*`/`keiland_gpu_buffer_v1_*` symbolを確認し、内部`wlc_*`はexport mapで隠す。libvulkanは実libwayland-client DSOへ依存する。Vulkan公開関数は従来155個にWaylandの2個を加えた157個で、instance extension enablementにより探索を制限する。
 
 `vulkan.h`は`VK_USE_PLATFORM_WAYLAND_KHR`が定義された場合にWayland型を公開し、`vulkan_wayland.h`の直接includeも可能。WaylandとVulkan Wayland公開型はC/C++、ILP32/LP64で検証した。C++検証で見つかった既存`stddef.h`の`wchar_t`再typedefは、C++では宣言しない最小guardで修正した。targetに不足していた`EPROTO`はlibcへ追加されており、別のerrnoへの読み替えはしていない。
 
@@ -47,7 +47,7 @@ proxyはcaller、wire ID map、wrapper、queued eventが同じ世代を保持す
 
 ## 独自buffer factoryと64byte metadata
 
-独自protocol名は`zed_gpu_buffer_v1`、version 1。opcode 0はdestroy、opcode 1は`create_buffer(new_id wl_buffer, fd, array metadata)`、署名は`nha`。eventはない。WSIとzwlだけがこのfactoryを使い、アプリは通常の`VkSurfaceKHR`/`VkSwapchainKHR`とWayland objectを見る。`linux-dmabuf-v1`は広告しない。
+独自protocol名は`keiland_gpu_buffer_v1`、version 1。opcode 0はdestroy、opcode 1は`create_buffer(new_id wl_buffer, fd, array metadata)`、署名は`nha`。eventはない。WSIとzwlだけがこのfactoryを使い、アプリは通常の`VkSurfaceKHR`/`VkSwapchainKHR`とWayland objectを見る。`linux-dmabuf-v1`は広告しない。
 
 metadataは[include/uapi/gpu.h](../../../include/uapi/gpu.h)の`struct gpu_image_descriptor`、version 1、size 64。Wayland clientはopaqueなwl_arrayとして転送し、内容の信用判断やGPU objectの操作をしない。
 

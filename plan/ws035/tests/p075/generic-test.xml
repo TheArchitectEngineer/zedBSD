@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<protocol name="zed_generic_test_v1">
+<protocol name="keiland_generic_test_v1">
   <copyright>
     Copyright (C) 2026 Awe Morris
     SPDX-License-Identifier: Zlib
@@ -11,7 +11,7 @@
     to a client that has only the code wayland-scanner makes for them.
   </description>
 
-  <interface name="zed_generic_test_v1" version="1">
+  <interface name="keiland_generic_test_v1" version="1">
     <request name="emit">
       <description summary="the server answers with every test event"/>
       <arg name="round" type="uint"/>
@@ -30,12 +30,12 @@
     </event>
 
     <event name="child">
-      <arg name="id" type="new_id" interface="zed_generic_child_v1"/>
+      <arg name="id" type="new_id" interface="keiland_generic_child_v1"/>
       <arg name="tag" type="uint"/>
     </event>
 
     <event name="reference">
-      <arg name="child" type="object" interface="zed_generic_child_v1" allow-null="true"/>
+      <arg name="child" type="object" interface="keiland_generic_child_v1" allow-null="true"/>
     </event>
 
     <event name="many">
@@ -58,7 +58,7 @@
     </event>
   </interface>
 
-  <interface name="zed_generic_child_v1" version="1">
+  <interface name="keiland_generic_child_v1" version="1">
     <request name="destroy" type="destructor"/>
 
     <request name="ping">

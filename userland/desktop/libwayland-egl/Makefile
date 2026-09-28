@@ -5,4 +5,4 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 LIBWAYLAND_EGL_SOURCES := userland/desktop/libwayland-egl/wayland-egl.c
 
 LIBWAYLAND_EGL_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libwayland-egl.so=$(BUILD)/dynamic/libwayland-egl.so)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libwayland-egl,Wayland EGL window,amd64,y,library,$(LIBWAYLAND_EGL_SOURCES),y,base,desktop/libwayland-egl,,,shared-library,$(LIBWAYLAND_EGL_IMAGE_DATA),,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libwayland-egl,Wayland EGL window,amd64,y,library,$(LIBWAYLAND_EGL_SOURCES),y,desktop,desktop/libwayland-egl,,,shared-library,$(LIBWAYLAND_EGL_IMAGE_DATA),,lib))

@@ -7,8 +7,8 @@
 
 /* Provides the standard include spelling for the Wayland public header. */
 
-#ifndef ZEDBSD_ENTRY_WAYLAND_UTIL_H
-#define ZEDBSD_ENTRY_WAYLAND_UTIL_H
+#ifndef KERN_ENTRY_WAYLAND_UTIL_H
+#define KERN_ENTRY_WAYLAND_UTIL_H
 
 #include <wayland/wayland-util.h>
 

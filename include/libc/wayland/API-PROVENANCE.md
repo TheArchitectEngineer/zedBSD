@@ -53,7 +53,7 @@ Server-created new_id event objects are outside these selected interfaces and
 are rejected rather than silently synthesized. The fd count per outgoing
 message is limited by zedBSD's existing SCM_RIGHTS maximum of eight.
 
-The zedBSD-original `zed_gpu_buffer_v1` factory is version 1. Opcode 0 destroys
+The zedBSD-original `keiland_gpu_buffer_v1` factory is version 1. Opcode 0 destroys
 the factory. Opcode 1 has signature `nha`: a new wl_buffer, one SCM_RIGHTS fd,
 and a metadata array. The fd has no in-band placeholder word. Metadata is an
 opaque versioned GPU descriptor verified by the server against the immutable
@@ -62,7 +62,7 @@ The application uses ordinary Wayland and Vulkan interfaces; only the WSI and
 compositor use this factory. No linux-dmabuf-v1 interface is advertised. Its client header is not public: it lives with libwayland
 (`userland/desktop/libwayland/zed-gpu-buffer-v1-client-protocol.h`), and only
 libwayland and libvulkan's WSI include it. Other zdesktop clients that need a
-non-standard zdesktop extension use libkeiland (`<zdesktop.h>`).
+non-standard zdesktop extension use libkeiland (`<keiland.h>`).
 
 xdg-shell version 3 (added for WS035 p076) was checked against the same pinned
 wayland-protocols 1.36 description: xdg_positioner requests set_reactive (7,

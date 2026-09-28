@@ -228,7 +228,7 @@ build_load_options_loader()
 		-fno-asynchronous-unwind-tables -fno-unwind-tables -fno-ident
 		-ffunction-sections -fdata-sections -Os -Wall -Wextra -Werror
 		-I"$repo")
-	"$efi_cc" "${efi_cflags[@]}" -Defi_main=zedbsd_loader_main \
+	"$efi_cc" "${efi_cflags[@]}" -Defi_main=kern_loader_main \
 		-c "$repo/bootloader/uefi/bootx64.c" -o "$loader_dir/bootx64.o"
 	for source_name in elf64 framebuffer memory-map volume-discovery zedbsd-config; do
 		"$efi_cc" "${efi_cflags[@]}" \

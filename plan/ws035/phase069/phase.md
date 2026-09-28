@@ -42,7 +42,7 @@ Queue: q469-i01
   先頭を選択（青い輪）。Enter で起動、矢印で選択、Backspace で消す、Esc で検索を消す。
 - 起動: `fork` と `/bin/sh -c`、子は setsid・zwl の fd を閉じ、`XDG_RUNTIME_DIR` と `WAYLAND_DISPLAY` を socket から。
   終わった子は tick で `waitpid` する。
-- アプリの一覧: `/etc/zdesktop/apps.conf`（`name|command|keywords|RRGGBB`）、無ければ内蔵（Terminal、Model viewer、
+- アプリの一覧: `/etc/keiland/apps.conf`（`name|command|keywords|RRGGBB`）、無ければ内蔵（Terminal、Model viewer、
   Vulkan test、Shared memory）。
 - atlas に 36 px（icon の文字）と 24 px（検索）の大きさを足した（1024x512）。key は `zwl_seat_key` の先で Home が取る。
 - 実機で使う image: `plan/ws035/demo/build-demo-image.sh`（`build/zdesktop-demo/hdd-image.img`、zwl --glass を起動時に、
@@ -53,7 +53,7 @@ Queue: q469-i01
 1. Venus（QEMU）: `plan/ws035/tests/zdesktop-p069.sh` PASS（`build/ws035-p069/run2/`、最終のコードで `venus-p069/`）:
    launcher で Home（`home.png`）、Terminal の icon で terminal の窓、角からの drag の途中（`gesture.png`: 明るい Home が左上から
    現れ desktop が右下へ）、`mod` の検索で Model viewer だけ（`search.png`）、Enter で mview（`mview.png`）、Esc と角で閉じる。
-2. i915 実機（5330、VFIO、capture）: `CAPTURE=zdesktop-home ZDESKTOP_APP=home` で 4 検査 PASS（`build/ws035-p069/hw1/`:
+2. i915 実機（5330、VFIO、capture）: `CAPTURE=zdesktop-home KEILAND_APP=home` で 4 検査 PASS（`build/ws035-p069/hw1/`:
    Home、Terminal の icon で terminal、Model viewer の icon で mview の 3D の窓）。
 3. 回帰（Venus）p068・p052・p059・p062・p063 PASS。build は warning 0。boot test PASS（demo image、`build/ws035-p069-boot/login.png`、
    QEMU は i915 が無いので zwl は起動し直しを繰り返すが login に届く）。

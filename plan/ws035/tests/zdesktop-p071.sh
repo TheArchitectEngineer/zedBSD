@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws035-p071: App Home's pages, launch animation, close drag and keys on the Venus guest (the zdesktop image).
-# /etc/zdesktop/apps.conf gets 30 applications (2 pages of 24); zdesktop --glass runs with a wl_shm window.
+# /etc/keiland/apps.conf gets 30 applications (2 pages of 24); zdesktop --glass runs with a wl_shm window.
 #  1. page1.png: Home opens on page 1 of 2 (the dots at the bottom).
 #  2. drag.png / page2.png: a drag to the left follows the pointer and turns to page 2.
 #  3. The wheel turns back to page 1 and forward to 2; PageUp back to 1; Tab past the last icon of page 1 turns to 2.
@@ -44,7 +44,7 @@ icon() {
 
 # 30 applications: Terminal, 28 fillers, and a real one on page 2.
 guest "$stop_all" >/dev/null
-guest 'mkdir -p /etc/zdesktop; { echo "Terminal|/bin/terminal|term|323a4e"; i=2; while [ $i -le 29 ]; do echo "App $i|/bin/true|filler|$(printf "%02x%02x%02x" $((i*8)) $((200-i*4)) $((80+i*5)))"; i=$((i+1)); done; echo "Second page shm|/bin/wlshm --size=420x280 --color=ff5a8de0 --frames=20000|shm page|5aa87a"; } > /etc/zdesktop/apps.conf; wc -l < /etc/zdesktop/apps.conf'
+guest 'mkdir -p /etc/keiland; { echo "Terminal|/bin/terminal|term|323a4e"; i=2; while [ $i -le 29 ]; do echo "App $i|/bin/true|filler|$(printf "%02x%02x%02x" $((i*8)) $((200-i*4)) $((80+i*5)))"; i=$((i+1)); done; echo "Second page shm|/bin/wlshm --size=420x280 --color=ff5a8de0 --frames=20000|shm page|5aa87a"; } > /etc/keiland/apps.conf; wc -l < /etc/keiland/apps.conf'
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/wlshm --size=520x340 --color=ffe8eef8 --frames=20000 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 
@@ -92,6 +92,6 @@ pointer move 23 17 sleep 300 down sleep 60 up sleep 1200
 pointer move 1000 650 sleep 200 down sleep 100 move 900 560 sleep 80 move 750 430 sleep 80 move 600 300 sleep 200 up sleep 1200
 check "$out/closed.png" >/dev/null
 expect_log 'ZWL HOME close via=drag'
-guest "$stop_all; rm -f /etc/zdesktop/apps.conf" >/dev/null
+guest "$stop_all; rm -f /etc/keiland/apps.conf" >/dev/null
 [ $status -eq 0 ] && echo "zdesktop-p071: PASS (and judge the screens)" || echo "zdesktop-p071: FAIL"
 exit $status

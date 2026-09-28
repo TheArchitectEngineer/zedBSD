@@ -7,8 +7,8 @@
 
 /* Declares the selected core protocol objects and typed requests. */
 
-#ifndef ZEDBSD_WAYLAND_CLIENT_PROTOCOL_H
-#define ZEDBSD_WAYLAND_CLIENT_PROTOCOL_H
+#ifndef KERN_WAYLAND_CLIENT_PROTOCOL_H
+#define KERN_WAYLAND_CLIENT_PROTOCOL_H
 
 #include <wayland/wayland-client-core.h>
 

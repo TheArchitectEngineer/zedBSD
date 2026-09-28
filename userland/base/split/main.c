@@ -249,7 +249,7 @@ read_options(
 			output->verbose = 1;
 			break;
 		case OPTION_VERSION:
-			printf("split (zedBSD) 1.0\n");
+			printf("split (Kei) 1.0\n");
 			exit(0);
 			break;
 		default:

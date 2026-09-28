@@ -19,32 +19,32 @@ extern "C" {
 #endif
 
 /*
- * XXX: Rename these __ZEDBSD_* to __LIBC_*
+ * XXX: Rename these __KERN_* to __LIBC_*
  */
 /* Compiler-specific implementation details for the ISO C atomic facade. */
-#define __ZEDBSD_ATOMIC_BOOL_LOCK_FREE		__GCC_ATOMIC_BOOL_LOCK_FREE
-#define __ZEDBSD_ATOMIC_CHAR_LOCK_FREE		__GCC_ATOMIC_CHAR_LOCK_FREE
-#define __ZEDBSD_ATOMIC_CHAR16_T_LOCK_FREE	__GCC_ATOMIC_CHAR16_T_LOCK_FREE
-#define __ZEDBSD_ATOMIC_CHAR32_T_LOCK_FREE	__GCC_ATOMIC_CHAR32_T_LOCK_FREE
-#define __ZEDBSD_ATOMIC_WCHAR_T_LOCK_FREE	__GCC_ATOMIC_WCHAR_T_LOCK_FREE
-#define __ZEDBSD_ATOMIC_SHORT_LOCK_FREE		__GCC_ATOMIC_SHORT_LOCK_FREE
-#define __ZEDBSD_ATOMIC_INT_LOCK_FREE		__GCC_ATOMIC_INT_LOCK_FREE
-#define __ZEDBSD_ATOMIC_LONG_LOCK_FREE		__GCC_ATOMIC_LONG_LOCK_FREE
-#define __ZEDBSD_ATOMIC_LLONG_LOCK_FREE		__GCC_ATOMIC_LLONG_LOCK_FREE
-#define __ZEDBSD_ATOMIC_POINTER_LOCK_FREE	__GCC_ATOMIC_POINTER_LOCK_FREE
+#define __KERN_ATOMIC_BOOL_LOCK_FREE		__GCC_ATOMIC_BOOL_LOCK_FREE
+#define __KERN_ATOMIC_CHAR_LOCK_FREE		__GCC_ATOMIC_CHAR_LOCK_FREE
+#define __KERN_ATOMIC_CHAR16_T_LOCK_FREE	__GCC_ATOMIC_CHAR16_T_LOCK_FREE
+#define __KERN_ATOMIC_CHAR32_T_LOCK_FREE	__GCC_ATOMIC_CHAR32_T_LOCK_FREE
+#define __KERN_ATOMIC_WCHAR_T_LOCK_FREE	__GCC_ATOMIC_WCHAR_T_LOCK_FREE
+#define __KERN_ATOMIC_SHORT_LOCK_FREE		__GCC_ATOMIC_SHORT_LOCK_FREE
+#define __KERN_ATOMIC_INT_LOCK_FREE		__GCC_ATOMIC_INT_LOCK_FREE
+#define __KERN_ATOMIC_LONG_LOCK_FREE		__GCC_ATOMIC_LONG_LOCK_FREE
+#define __KERN_ATOMIC_LLONG_LOCK_FREE		__GCC_ATOMIC_LLONG_LOCK_FREE
+#define __KERN_ATOMIC_POINTER_LOCK_FREE	__GCC_ATOMIC_POINTER_LOCK_FREE
 
 /*
- * XXX: Rename these __ZEDBSD_* to __LIBC_*
+ * XXX: Rename these __KERN_* to __LIBC_*
  */
-#define __ZEDBSD_MEMORY_ORDER_RELAXED		__ATOMIC_RELAXED
-#define __ZEDBSD_MEMORY_ORDER_CONSUME		__ATOMIC_CONSUME
-#define __ZEDBSD_MEMORY_ORDER_ACQUIRE		__ATOMIC_ACQUIRE
-#define __ZEDBSD_MEMORY_ORDER_RELEASE		__ATOMIC_RELEASE
-#define __ZEDBSD_MEMORY_ORDER_ACQ_REL		__ATOMIC_ACQ_REL
-#define __ZEDBSD_MEMORY_ORDER_SEQ_CST		__ATOMIC_SEQ_CST
+#define __KERN_MEMORY_ORDER_RELAXED		__ATOMIC_RELAXED
+#define __KERN_MEMORY_ORDER_CONSUME		__ATOMIC_CONSUME
+#define __KERN_MEMORY_ORDER_ACQUIRE		__ATOMIC_ACQUIRE
+#define __KERN_MEMORY_ORDER_RELEASE		__ATOMIC_RELEASE
+#define __KERN_MEMORY_ORDER_ACQ_REL		__ATOMIC_ACQ_REL
+#define __KERN_MEMORY_ORDER_SEQ_CST		__ATOMIC_SEQ_CST
 
 /*
- * XXX: Rename these __ZEDBSD_* to __LIBC_*
+ * XXX: Rename these __KERN_* to __LIBC_*
  */
 
 /*
@@ -55,16 +55,16 @@ extern "C" {
  * made every standard use of <stdatomic.h> fail to compile.
  */
 
-#define __zedbsd_atomic_store(object, desired, order) \
+#define __kern_atomic_store(object, desired, order) \
 	__c11_atomic_store((object), (desired), (order))
 
-#define __zedbsd_atomic_load(object, order) \
+#define __kern_atomic_load(object, order) \
 	__c11_atomic_load((object), (order))
 
-#define __zedbsd_atomic_exchange(object, desired, order) \
+#define __kern_atomic_exchange(object, desired, order) \
 	__c11_atomic_exchange((object), (desired), (order))
 
-#define __zedbsd_atomic_compare_exchange(object, expected, desired, weak, \
+#define __kern_atomic_compare_exchange(object, expected, desired, weak, \
 	success, failure) \
 	((weak) \
 	    ? __c11_atomic_compare_exchange_weak((object), (expected), \
@@ -72,17 +72,17 @@ extern "C" {
 	    : __c11_atomic_compare_exchange_strong((object), (expected), \
 		  (desired), (success), (failure)))
 
-#define __zedbsd_atomic_is_lock_free(object) \
+#define __kern_atomic_is_lock_free(object) \
 	__c11_atomic_is_lock_free(sizeof(*(object)))
-#define __zedbsd_atomic_thread_fence(order)			__c11_atomic_thread_fence(order)
-#define __zedbsd_atomic_signal_fence(order)			__c11_atomic_signal_fence(order)
-#define __zedbsd_atomic_fetch_add(object, operand, order)	__c11_atomic_fetch_add((object), (operand), (order))
-#define __zedbsd_atomic_fetch_sub(object, operand, order) 	__c11_atomic_fetch_sub((object), (operand), (order))
-#define __zedbsd_atomic_fetch_or(object, operand, order)	__c11_atomic_fetch_or((object), (operand), (order))
-#define __zedbsd_atomic_fetch_xor(object, operand, order)	__c11_atomic_fetch_xor((object), (operand), (order))
-#define __zedbsd_atomic_fetch_and(object, operand, order) 	__c11_atomic_fetch_and((object), (operand), (order))
-#define __zedbsd_atomic_flag_test_and_set(object, order) 	__c11_atomic_exchange((object), 1, (order))
-#define __zedbsd_atomic_flag_clear(object, order)		__c11_atomic_store((object), 0, (order))
+#define __kern_atomic_thread_fence(order)			__c11_atomic_thread_fence(order)
+#define __kern_atomic_signal_fence(order)			__c11_atomic_signal_fence(order)
+#define __kern_atomic_fetch_add(object, operand, order)	__c11_atomic_fetch_add((object), (operand), (order))
+#define __kern_atomic_fetch_sub(object, operand, order) 	__c11_atomic_fetch_sub((object), (operand), (order))
+#define __kern_atomic_fetch_or(object, operand, order)	__c11_atomic_fetch_or((object), (operand), (order))
+#define __kern_atomic_fetch_xor(object, operand, order)	__c11_atomic_fetch_xor((object), (operand), (order))
+#define __kern_atomic_fetch_and(object, operand, order) 	__c11_atomic_fetch_and((object), (operand), (order))
+#define __kern_atomic_flag_test_and_set(object, order) 	__c11_atomic_exchange((object), 1, (order))
+#define __kern_atomic_flag_clear(object, order)		__c11_atomic_store((object), 0, (order))
 
 #ifdef __cplusplus
 }

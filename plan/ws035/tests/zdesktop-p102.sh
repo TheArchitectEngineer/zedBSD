@@ -43,7 +43,7 @@ expect_log() {
 }
 
 # The session script with --lock-idle=20 for this run.
-guest "cp /etc/zdesktop/session /tmp/session.saved && sed 's/--session /--session --lock-idle=20 /' /tmp/session.saved > /etc/zdesktop/session; grep -c lock-idle=20 /etc/zdesktop/session" | tail -1 | sed 's/^/session script lock-idle lines: /'
+guest "cp /etc/keiland/session /tmp/session.saved && sed 's/--session /--session --lock-idle=20 /' /tmp/session.saved > /etc/keiland/session; grep -c lock-idle=20 /etc/keiland/session" | tail -1 | sed 's/^/session script lock-idle lines: /'
 
 # 1. Login, a terminal, and Super+L.
 expect_log /var/log/greeter.log 'ZWL GREETER open' 60
@@ -93,7 +93,7 @@ unlocks=$(guest "grep -c 'ZWL LOCK unlocked' /run/user/0/session.log" | tail -1)
 [ "${unlocks:-0}" -ge 3 ] && echo "unlocks: $unlocks ok" || { echo "unlocks: $unlocks FAIL"; status=1; }
 
 # The session script as it was.
-guest 'cp /tmp/session.saved /etc/zdesktop/session' >/dev/null
+guest 'cp /tmp/session.saved /etc/keiland/session' >/dev/null
 guest "cat /var/log/sessiond.log" > "$out/sessiond.log"
 guest "cat /run/user/0/session.log" > "$out/session.log"
 echo "zdesktop-p102: status=$status"

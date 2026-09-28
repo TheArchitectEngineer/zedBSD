@@ -17,7 +17,7 @@ mkdir -p "$out"
 guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
-stop_all='for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[z]desktop-x11server|[g]lxtest|[e]gltest|[z]term" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[z]desktop( |$)|[z]desktop-x11server|[g]lxtest|[e]gltest|[z]term" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[x]server|[g]lxtest|[e]gltest|[z]term" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[x]server|[g]lxtest|[e]gltest|[z]term" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
 # Fails the run unless a log has a line matching a pattern.
@@ -58,7 +58,7 @@ pointer move 1250 780 sleep 400
 check "$out/glx.png" $(scene_expect "$wx" "$wy" 640 400) || status=1
 guest 'cat /tmp/glx.log' > "$out/glx.txt"
 grep -vE "PIXEL.*ok$" "$out/glx.txt"
-expect_log /tmp/glx.log 'GLXTEST GLX run=g version=1.4 server_vendor="zedBSD" server_version="1.4"'
+expect_log /tmp/glx.log 'GLXTEST GLX run=g version=1.4 server_vendor="Kei" server_version="1.4"'
 expect_log /tmp/glx.log 'GLXTEST START run=g .* direct=1'
 expect_log /tmp/glx.log 'EGLTEST CHECK run=g failures=0 glerror=0x0'
 
@@ -78,7 +78,7 @@ fi
 close=$(guest "grep 'GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* buttons=\([0-9]*\),.*/\1/p')
 pointer move ${close:-0} 17 sleep 500 down sleep 60 up sleep 3000
 left=$(guest 'ps -A -o args | grep -c "[g]lxtest"' | tail -1)
-servers=$(guest 'ps -A -o args | grep -c "[z]desktop-x11server"' | tail -1)
+servers=$(guest 'ps -A -o args | grep -c "[x]server"' | tail -1)
 echo "after close: glxtest=${left:-?} x11server=${servers:-?}"
 [ "${left:-1}" = 0 ] || status=1
 [ "${servers:-0}" -ge 1 ] 2>/dev/null || status=1

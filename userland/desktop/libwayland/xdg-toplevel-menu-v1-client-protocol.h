@@ -9,13 +9,13 @@
  * Declares zdesktop's System Menu protocol (xdg_toplevel_menu_v1, WS070).
  *
  * The header is private: it is not installed, and applications reach the
- * protocol through libkeiland (<zdesktop.h>) only.  libkeiland and the
+ * protocol through libkeiland (<keiland.h>) only.  libkeiland and the
  * library's own event dispatch include it by its path in the tree.  The
  * protocol is defined in plan/ws070/design.md.
  */
 
-#ifndef ZEDBSD_XDG_TOPLEVEL_MENU_V1_CLIENT_PROTOCOL_H
-#define ZEDBSD_XDG_TOPLEVEL_MENU_V1_CLIENT_PROTOCOL_H
+#ifndef KERN_XDG_TOPLEVEL_MENU_V1_CLIENT_PROTOCOL_H
+#define KERN_XDG_TOPLEVEL_MENU_V1_CLIENT_PROTOCOL_H
 
 #include <wayland/wayland-client-core.h>
 #include <wayland/wayland-client-protocol.h>

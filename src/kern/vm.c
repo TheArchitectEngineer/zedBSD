@@ -364,7 +364,7 @@ static int object_wait_resize(struct vm_object *object);
 static void content_release_pages_locked(struct vm_object *object, uint64_t generation);
 static void vm_object_content_finish(struct vm_object_content *content, const void *buffer, size_t committed, int commit);
 static void vm_object_resize_finish(struct vm_object_resize *resize, off_t logical_size, int commit);
-static int vm_object_page_pin_copy(struct vm_object_page *page, size_t offset, void *buffer, size_t length, int write);
+static int vm_object_page_pin_copy(struct vm_object_page *page, size_t offset, void *buffer, size_t length, int write, int nowait);
 static int range_has_wired_mapping(struct vm_object *object, uint64_t start, uint64_t end);
 static int vm_object_sync_range_internal(struct vm_object *object, off_t offset, size_t size, int flags, int detaching, int resize_owner, off_t resize_target);
 static int vm_object_sync_range_buffer(struct vm_object *object, off_t offset, size_t size, int flags, int detaching, int resize_owner, off_t resize_target, void *scratch, size_t capacity);
@@ -1969,7 +1969,7 @@ vm_object_page_pin_read(
 	int error;
 
 	/* Reports why the copy failed. */
-	error = vm_object_page_pin_copy(page, offset, buffer, length, 0);
+	error = vm_object_page_pin_copy(page, offset, buffer, length, 0, 0);
 	if (error != 0)
 		return error;
 
@@ -1990,7 +1990,49 @@ vm_object_page_pin_write(
 	int error;
 
 	/* Reports why the copy failed. */
-	error = vm_object_page_pin_copy(page, offset, (void *)buffer, length, 1);
+	error = vm_object_page_pin_copy(page, offset, (void *)buffer, length, 1, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Copies out of a pinned page unless a write-back owns it (EBUSY).  A fault
+ * that holds a mapping reserved uses it: a sync that owns the page waits
+ * for that reservation while revoking the page's mappings (BUG-082).
+ */
+int
+vm_object_page_pin_read_nowait(
+	struct vm_object_page *page,
+	size_t offset,
+	void *buffer,
+	size_t length)
+{
+	int error;
+
+	/* Reports why the copy failed. */
+	error = vm_object_page_pin_copy(page, offset, buffer, length, 0, 1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Waits until no write-back owns a pinned page, holding no VM lock.
+ */
+int
+vm_object_page_pin_wait(
+	struct vm_object_page *page)
+{
+	uint8_t nothing;
+	int error;
+
+	/* A zero-length copy waits and moves nothing. */
+	error = vm_object_page_pin_copy(page, 0, &nothing, 0, 0, 0);
 	if (error != 0)
 		return error;
 
@@ -7169,7 +7211,8 @@ vm_object_page_pin_copy(
 	size_t offset,
 	void *buffer,
 	size_t length,
-	int write)
+	int write,
+	int nowait)
 {
 	struct vm_object *object;
 	unsigned long irq;
@@ -7208,6 +7251,12 @@ vm_object_page_pin_copy(
 
 		if ((page->flags & (VM_OBJECT_PAGE_BUSY | VM_OBJECT_PAGE_WRITEBACK)) == 0)
 			break;
+
+		/* A caller that may not wait is told the page is taken. */
+		if (nowait) {
+			spin_unlock_irqrestore(&object->lock, irq);
+			return EBUSY;
+		}
 
 		sequence = waitq_sequence(&object->page_waitq);
 		error = waitq_sleep(&object->page_waitq, &object->lock, sequence, 0, 0);
@@ -7446,6 +7495,19 @@ vm_object_sync_range_buffer(
 
 			/* Skips a page this pass has already taken. */
 			if (page->write_generation == sync_generation)
+				continue;
+
+			/*
+			 * Leaves a page that a read is still filling to that read
+			 * when this pass holds the inode's I/O lock.  A fill is
+			 * BUSY without WRITEBACK, and it takes the same lock to
+			 * read the backend, so waiting for it here would wait
+			 * forever (BUG-082).  Until the fill publishes the page
+			 * it is clean and unmapped: there is nothing in it for
+			 * this pass to revoke or write.
+			 */
+			if (held_inode_io &&
+			    (page->flags & (VM_OBJECT_PAGE_BUSY | VM_OBJECT_PAGE_WRITEBACK)) == VM_OBJECT_PAGE_BUSY)
 				continue;
 
 			/* Waits out a page another transaction owns or is writing. */

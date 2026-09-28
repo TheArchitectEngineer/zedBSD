@@ -10,7 +10,7 @@
  * libkeiland's checks.
  *
  * Each server case opens its own connection, makes a toplevel and its
- * zed_titlebar_v1 through the private protocol header, sends a few
+ * keiland_titlebar_v1 through the private protocol header, sends a few
  * requests, and checks the protocol error zdesktop answers with (its
  * interface and code), or that there is none.  The library case checks
  * that libkeiland refuses the same mistakes itself and sends nothing that
@@ -34,7 +34,7 @@
 
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
-#include <zdesktop.h>
+#include <keiland.h>
 
 #include "userland/desktop/libwayland/zed-titlebar-v1-client-protocol.h"
 
@@ -72,12 +72,12 @@ struct probe_connection {
 	struct wl_registry *registry;
 	struct wl_compositor *compositor;
 	struct xdg_wm_base *shell;
-	struct zed_titlebar_manager_v1 *manager;
+	struct keiland_titlebar_manager_v1 *manager;
 	struct wl_shm *shm;
 	struct wl_surface *surface;
 	struct xdg_surface *role;
 	struct xdg_toplevel *toplevel;
-	struct zed_titlebar_v1 *titlebar;
+	struct keiland_titlebar_v1 *titlebar;
 	int configured;
 	uint32_t configure_serial;
 };
@@ -99,7 +99,7 @@ static int probe_server_case(const struct probe_case *test);
 static int probe_connect(struct probe_connection *connection);
 static void probe_disconnect(struct probe_connection *connection);
 static int probe_library(void);
-static int probe_library_calls(struct zdesktop_titlebar *titlebar);
+static int probe_library_calls(struct keiland_titlebar *titlebar);
 static void send_outside(struct probe_connection *connection);
 static void send_zero_id(struct probe_connection *connection);
 static void send_duplicate(struct probe_connection *connection);
@@ -116,18 +116,18 @@ static void send_good(struct probe_connection *connection);
 static int probe_show(const char *title, unsigned seconds, const char *mode);
 static int probe_show_window(struct probe_connection *connection, const char *title);
 static int probe_show_buffer(struct probe_connection *connection);
-static void probe_show_model(struct zdesktop_titlebar *titlebar, const char *mode);
-static void probe_tabs_start(struct zdesktop_titlebar *titlebar);
+static void probe_show_model(struct keiland_titlebar *titlebar, const char *mode);
+static void probe_tabs_start(struct keiland_titlebar *titlebar);
 static int probe_tab_find(uint32_t id);
-static void probe_tab_activate(struct zdesktop_titlebar *titlebar, int index);
+static void probe_tab_activate(struct keiland_titlebar *titlebar, int index);
 static void probe_configure(void *data, struct xdg_surface *role, uint32_t serial);
-static void probe_activated(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-static void probe_text_changed(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text);
-static void probe_text_done(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
-static void probe_tab_activated(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t serial);
-static void probe_tab_close(void *data, struct zdesktop_titlebar *titlebar, uint32_t id);
-static void probe_new_tab(void *data, struct zdesktop_titlebar *titlebar, uint32_t serial);
-static void probe_overflow(void *data, struct zdesktop_titlebar *titlebar);
+static void probe_activated(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void probe_text_changed(void *data, struct keiland_titlebar *titlebar, uint32_t id, const char *text);
+static void probe_text_done(void *data, struct keiland_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
+static void probe_tab_activated(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t serial);
+static void probe_tab_close(void *data, struct keiland_titlebar *titlebar, uint32_t id);
+static void probe_new_tab(void *data, struct keiland_titlebar *titlebar, uint32_t serial);
+static void probe_overflow(void *data, struct keiland_titlebar *titlebar);
 
 /*
  * The shown window's width, PROBE_WIDTH unless --width gives another; set
@@ -160,7 +160,7 @@ static const struct xdg_surface_listener probe_role_listener = {
 };
 
 /* What zdesktop tells the shown window's titlebar, printed. */
-static const struct zdesktop_titlebar_listener probe_titlebar_listener = {
+static const struct keiland_titlebar_listener probe_titlebar_listener = {
 	probe_activated,
 	probe_text_changed,
 	probe_text_done,
@@ -173,18 +173,18 @@ static const struct zdesktop_titlebar_listener probe_titlebar_listener = {
 
 /* The server cases, each on its own connection. */
 static const struct probe_case probe_cases[] = {
-	{ "outside", send_outside, "zed_titlebar_v1", 2U },
-	{ "zero-id", send_zero_id, "zed_titlebar_v1", 0U },
-	{ "duplicate", send_duplicate, "zed_titlebar_v1", 0U },
-	{ "role", send_role, "zed_titlebar_v1", 1U },
-	{ "mode", send_mode, "zed_titlebar_v1", 1U },
-	{ "serial", send_serial, "zed_titlebar_v1", 4U },
-	{ "nested", send_nested, "zed_titlebar_v1", 3U },
-	{ "breadcrumb-role", send_breadcrumb_role, "zed_titlebar_v1", 1U },
-	{ "value-role", send_value_role, "zed_titlebar_v1", 1U },
-	{ "tab-flags", send_tab_flags, "zed_titlebar_v1", 1U },
-	{ "focus-uncommitted", send_focus_uncommitted, "zed_titlebar_v1", 0U },
-	{ "exists", send_exists, "zed_titlebar_manager_v1", 0U },
+	{ "outside", send_outside, "keiland_titlebar_v1", 2U },
+	{ "zero-id", send_zero_id, "keiland_titlebar_v1", 0U },
+	{ "duplicate", send_duplicate, "keiland_titlebar_v1", 0U },
+	{ "role", send_role, "keiland_titlebar_v1", 1U },
+	{ "mode", send_mode, "keiland_titlebar_v1", 1U },
+	{ "serial", send_serial, "keiland_titlebar_v1", 4U },
+	{ "nested", send_nested, "keiland_titlebar_v1", 3U },
+	{ "breadcrumb-role", send_breadcrumb_role, "keiland_titlebar_v1", 1U },
+	{ "value-role", send_value_role, "keiland_titlebar_v1", 1U },
+	{ "tab-flags", send_tab_flags, "keiland_titlebar_v1", 1U },
+	{ "focus-uncommitted", send_focus_uncommitted, "keiland_titlebar_v1", 0U },
+	{ "exists", send_exists, "keiland_titlebar_manager_v1", 0U },
 	{ "good", send_good, NULL, PROBE_NO_ERROR }
 };
 
@@ -305,9 +305,9 @@ probe_global(
 	}
 
 	/* The Titlebar Presentation. */
-	same = strcmp(interface, "zed_titlebar_manager_v1");
+	same = strcmp(interface, "keiland_titlebar_manager_v1");
 	if (same == 0)
-		connection->manager = wl_registry_bind(registry, name, &zed_titlebar_manager_v1_interface, 1U);
+		connection->manager = wl_registry_bind(registry, name, &keiland_titlebar_manager_v1_interface, 1U);
 }
 
 /* A global going away does not matter to a short case. */
@@ -423,7 +423,7 @@ probe_connect(
 	connection->surface = wl_compositor_create_surface(connection->compositor);
 	connection->role = xdg_wm_base_get_xdg_surface(connection->shell, connection->surface);
 	connection->toplevel = xdg_surface_get_toplevel(connection->role);
-	connection->titlebar = zed_titlebar_manager_v1_get_titlebar(connection->manager, connection->toplevel);
+	connection->titlebar = keiland_titlebar_manager_v1_get_titlebar(connection->manager, connection->toplevel);
 	if (connection->titlebar == NULL)
 		return -1;
 
@@ -448,7 +448,7 @@ send_outside(
 	struct probe_connection *connection)
 {
 	/* No begin_update before it. */
-	zed_titlebar_v1_set_mode(connection->titlebar, ZED_TITLEBAR_V1_MODE_CONTROLS);
+	keiland_titlebar_v1_set_mode(connection->titlebar, KEILAND_TITLEBAR_V1_MODE_CONTROLS);
 }
 
 /* A control ID of zero. */
@@ -457,8 +457,8 @@ send_zero_id(
 	struct probe_connection *connection)
 {
 	/* Zero is not a control's ID. */
-	zed_titlebar_v1_begin_update(connection->titlebar, 1U);
-	zed_titlebar_v1_add_control(connection->titlebar, 0U, ZDESKTOP_CONTROL_BACK, 0U, 0U, "Back");
+	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
+	keiland_titlebar_v1_add_control(connection->titlebar, 0U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
 }
 
 /* The same control ID twice. */
@@ -467,9 +467,9 @@ send_duplicate(
 	struct probe_connection *connection)
 {
 	/* The second add reuses the first's ID. */
-	zed_titlebar_v1_begin_update(connection->titlebar, 1U);
-	zed_titlebar_v1_add_control(connection->titlebar, 5U, ZDESKTOP_CONTROL_BACK, 0U, 0U, "Back");
-	zed_titlebar_v1_add_control(connection->titlebar, 5U, ZDESKTOP_CONTROL_FORWARD, 0U, 0U, "Forward");
+	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
+	keiland_titlebar_v1_add_control(connection->titlebar, 5U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
+	keiland_titlebar_v1_add_control(connection->titlebar, 5U, KEILAND_CONTROL_FORWARD, 0U, 0U, "Forward");
 }
 
 /* A role the protocol does not name. */
@@ -478,8 +478,8 @@ send_role(
 	struct probe_connection *connection)
 {
 	/* Role 99. */
-	zed_titlebar_v1_begin_update(connection->titlebar, 1U);
-	zed_titlebar_v1_add_control(connection->titlebar, 1U, 99U, 0U, 0U, "What");
+	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
+	keiland_titlebar_v1_add_control(connection->titlebar, 1U, 99U, 0U, 0U, "What");
 }
 
 /* A mode the protocol does not name. */
@@ -488,8 +488,8 @@ send_mode(
 	struct probe_connection *connection)
 {
 	/* Mode 5. */
-	zed_titlebar_v1_begin_update(connection->titlebar, 1U);
-	zed_titlebar_v1_set_mode(connection->titlebar, 5U);
+	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
+	keiland_titlebar_v1_set_mode(connection->titlebar, 5U);
 }
 
 /* A commit that names another serial. */
@@ -498,8 +498,8 @@ send_serial(
 	struct probe_connection *connection)
 {
 	/* Begun as 7, committed as 8. */
-	zed_titlebar_v1_begin_update(connection->titlebar, 7U);
-	zed_titlebar_v1_commit(connection->titlebar, 8U);
+	keiland_titlebar_v1_begin_update(connection->titlebar, 7U);
+	keiland_titlebar_v1_commit(connection->titlebar, 8U);
 }
 
 /* A transaction inside a transaction. */
@@ -508,8 +508,8 @@ send_nested(
 	struct probe_connection *connection)
 {
 	/* Two begins. */
-	zed_titlebar_v1_begin_update(connection->titlebar, 1U);
-	zed_titlebar_v1_begin_update(connection->titlebar, 2U);
+	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
+	keiland_titlebar_v1_begin_update(connection->titlebar, 2U);
 }
 
 /* Breadcrumb parts for a search control. */
@@ -527,9 +527,9 @@ send_breadcrumb_role(
 		memcpy(place, "Home", 5U);
 
 	/* The search is not a breadcrumb. */
-	zed_titlebar_v1_begin_update(connection->titlebar, 1U);
-	zed_titlebar_v1_add_control(connection->titlebar, 1U, ZDESKTOP_CONTROL_SEARCH, 0U, 0U, "Search");
-	zed_titlebar_v1_set_breadcrumb(connection->titlebar, 1U, &parts);
+	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
+	keiland_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_SEARCH, 0U, 0U, "Search");
+	keiland_titlebar_v1_set_breadcrumb(connection->titlebar, 1U, &parts);
 	wl_array_release(&parts);
 }
 
@@ -539,9 +539,9 @@ send_value_role(
 	struct probe_connection *connection)
 {
 	/* A back button has no value. */
-	zed_titlebar_v1_begin_update(connection->titlebar, 1U);
-	zed_titlebar_v1_add_control(connection->titlebar, 1U, ZDESKTOP_CONTROL_BACK, 0U, 0U, "Back");
-	zed_titlebar_v1_set_control_value(connection->titlebar, 1U, 500U);
+	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
+	keiland_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
+	keiland_titlebar_v1_set_control_value(connection->titlebar, 1U, 500U);
 }
 
 /* Tab flags the protocol does not name. */
@@ -550,9 +550,9 @@ send_tab_flags(
 	struct probe_connection *connection)
 {
 	/* Flag 8. */
-	zed_titlebar_v1_begin_update(connection->titlebar, 1U);
-	zed_titlebar_v1_add_tab(connection->titlebar, 1U, "One");
-	zed_titlebar_v1_set_tab(connection->titlebar, 1U, "One", 8U);
+	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
+	keiland_titlebar_v1_add_tab(connection->titlebar, 1U, "One");
+	keiland_titlebar_v1_set_tab(connection->titlebar, 1U, "One", 8U);
 }
 
 /* The keyboard asked for a control that is not shown yet. */
@@ -561,9 +561,9 @@ send_focus_uncommitted(
 	struct probe_connection *connection)
 {
 	/* The search is only in the open transaction. */
-	zed_titlebar_v1_begin_update(connection->titlebar, 1U);
-	zed_titlebar_v1_add_control(connection->titlebar, 1U, ZDESKTOP_CONTROL_SEARCH, 0U, 0U, "Search");
-	zed_titlebar_v1_focus_control(connection->titlebar, 1U, 0U);
+	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
+	keiland_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_SEARCH, 0U, 0U, "Search");
+	keiland_titlebar_v1_focus_control(connection->titlebar, 1U, 0U);
 }
 
 /* A second titlebar on one window. */
@@ -572,7 +572,7 @@ send_exists(
 	struct probe_connection *connection)
 {
 	/* The connection's window has one already. */
-	(void)zed_titlebar_manager_v1_get_titlebar(connection->manager, connection->toplevel);
+	(void)keiland_titlebar_manager_v1_get_titlebar(connection->manager, connection->toplevel);
 }
 
 /*
@@ -585,7 +585,7 @@ send_good(
 	struct probe_connection *connection)
 {
 	static const char parts_bytes[] = "Home\0Projects\0zedBSD";
-	struct zed_titlebar_v1 *titlebar;
+	struct keiland_titlebar_v1 *titlebar;
 	struct wl_array parts;
 	char *place;
 
@@ -597,42 +597,42 @@ send_good(
 
 	/* The controls. */
 	titlebar = connection->titlebar;
-	zed_titlebar_v1_begin_update(titlebar, 1U);
-	zed_titlebar_v1_set_mode(titlebar, ZED_TITLEBAR_V1_MODE_CONTROLS);
-	zed_titlebar_v1_add_control(titlebar, 1U, ZDESKTOP_CONTROL_BACK, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Back");
-	zed_titlebar_v1_add_control(titlebar, 2U, ZDESKTOP_CONTROL_FORWARD, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Forward");
-	zed_titlebar_v1_add_control(titlebar, 3U, ZDESKTOP_CONTROL_BREADCRUMB, ZDESKTOP_PRIORITY_NORMAL, 0U, "Location");
-	zed_titlebar_v1_add_control(titlebar, 4U, ZDESKTOP_CONTROL_SEARCH, ZDESKTOP_PRIORITY_NORMAL, 0U, "Search");
-	zed_titlebar_v1_add_control(titlebar, 5U, ZDESKTOP_CONTROL_VIEW_GRID, ZDESKTOP_PRIORITY_SECONDARY, 1U, "Icons");
-	zed_titlebar_v1_add_control(titlebar, 6U, ZDESKTOP_CONTROL_VIEW_LIST, ZDESKTOP_PRIORITY_SECONDARY, 1U, "List");
-	zed_titlebar_v1_add_control(titlebar, 7U, ZDESKTOP_CONTROL_PROGRESS, ZDESKTOP_PRIORITY_NORMAL, 0U, "Copying");
+	keiland_titlebar_v1_begin_update(titlebar, 1U);
+	keiland_titlebar_v1_set_mode(titlebar, KEILAND_TITLEBAR_V1_MODE_CONTROLS);
+	keiland_titlebar_v1_add_control(titlebar, 1U, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Back");
+	keiland_titlebar_v1_add_control(titlebar, 2U, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Forward");
+	keiland_titlebar_v1_add_control(titlebar, 3U, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, 0U, "Location");
+	keiland_titlebar_v1_add_control(titlebar, 4U, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, 0U, "Search");
+	keiland_titlebar_v1_add_control(titlebar, 5U, KEILAND_CONTROL_VIEW_GRID, KEILAND_PRIORITY_SECONDARY, 1U, "Icons");
+	keiland_titlebar_v1_add_control(titlebar, 6U, KEILAND_CONTROL_VIEW_LIST, KEILAND_PRIORITY_SECONDARY, 1U, "List");
+	keiland_titlebar_v1_add_control(titlebar, 7U, KEILAND_CONTROL_PROGRESS, KEILAND_PRIORITY_NORMAL, 0U, "Copying");
 
 	/* Their states, texts, parts and value. */
-	zed_titlebar_v1_set_control_state(titlebar, 2U, 0U, 0U);
-	zed_titlebar_v1_set_control_state(titlebar, 5U, 1U, 1U);
-	zed_titlebar_v1_set_control_text(titlebar, 4U, "", "Search");
-	zed_titlebar_v1_set_breadcrumb(titlebar, 3U, &parts);
-	zed_titlebar_v1_set_control_value(titlebar, 7U, 420U);
-	zed_titlebar_v1_set_control_label(titlebar, 7U, "Copying 3 of 7 items");
-	zed_titlebar_v1_remove_control(titlebar, 7U);
+	keiland_titlebar_v1_set_control_state(titlebar, 2U, 0U, 0U);
+	keiland_titlebar_v1_set_control_state(titlebar, 5U, 1U, 1U);
+	keiland_titlebar_v1_set_control_text(titlebar, 4U, "", "Search");
+	keiland_titlebar_v1_set_breadcrumb(titlebar, 3U, &parts);
+	keiland_titlebar_v1_set_control_value(titlebar, 7U, 420U);
+	keiland_titlebar_v1_set_control_label(titlebar, 7U, "Copying 3 of 7 items");
+	keiland_titlebar_v1_remove_control(titlebar, 7U);
 
 	/* Tabs, kept while the mode is controls. */
-	zed_titlebar_v1_add_tab(titlebar, 1U, "README.md");
-	zed_titlebar_v1_add_tab(titlebar, 2U, "main.c");
-	zed_titlebar_v1_set_tab(titlebar, 2U, "main.c", ZDESKTOP_TAB_ACTIVE | ZDESKTOP_TAB_CLOSABLE);
-	zed_titlebar_v1_set_tabs_options(titlebar, ZDESKTOP_TABS_NEW_BUTTON);
-	zed_titlebar_v1_remove_tab(titlebar, 1U);
-	zed_titlebar_v1_commit(titlebar, 1U);
+	keiland_titlebar_v1_add_tab(titlebar, 1U, "README.md");
+	keiland_titlebar_v1_add_tab(titlebar, 2U, "main.c");
+	keiland_titlebar_v1_set_tab(titlebar, 2U, "main.c", KEILAND_TAB_ACTIVE | KEILAND_TAB_CLOSABLE);
+	keiland_titlebar_v1_set_tabs_options(titlebar, KEILAND_TABS_NEW_BUTTON);
+	keiland_titlebar_v1_remove_tab(titlebar, 1U);
+	keiland_titlebar_v1_commit(titlebar, 1U);
 	wl_array_release(&parts);
 
 	/* The keyboard for the search, then the mode switched to tabs and back in transactions. */
-	zed_titlebar_v1_focus_control(titlebar, 4U, 0U);
-	zed_titlebar_v1_begin_update(titlebar, 2U);
-	zed_titlebar_v1_set_mode(titlebar, ZED_TITLEBAR_V1_MODE_TABS);
-	zed_titlebar_v1_commit(titlebar, 2U);
-	zed_titlebar_v1_begin_update(titlebar, 3U);
-	zed_titlebar_v1_set_mode(titlebar, ZED_TITLEBAR_V1_MODE_CONTROLS);
-	zed_titlebar_v1_commit(titlebar, 3U);
+	keiland_titlebar_v1_focus_control(titlebar, 4U, 0U);
+	keiland_titlebar_v1_begin_update(titlebar, 2U);
+	keiland_titlebar_v1_set_mode(titlebar, KEILAND_TITLEBAR_V1_MODE_TABS);
+	keiland_titlebar_v1_commit(titlebar, 2U);
+	keiland_titlebar_v1_begin_update(titlebar, 3U);
+	keiland_titlebar_v1_set_mode(titlebar, KEILAND_TITLEBAR_V1_MODE_CONTROLS);
+	keiland_titlebar_v1_commit(titlebar, 3U);
 }
 
 /*
@@ -644,7 +644,7 @@ static int
 probe_library(void)
 {
 	struct probe_connection connection;
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 	int status;
 	int failed;
 	int error;
@@ -658,9 +658,9 @@ probe_library(void)
 	}
 
 	/* The window's titlebar through the library (the probe's own is let go first). */
-	zed_titlebar_v1_destroy(connection.titlebar);
+	keiland_titlebar_v1_destroy(connection.titlebar);
 	connection.titlebar = NULL;
-	titlebar = zdesktop_titlebar_create(connection.display, connection.toplevel, NULL, NULL);
+	titlebar = keiland_titlebar_create(connection.display, connection.toplevel, NULL, NULL);
 	if (titlebar == NULL) {
 		printf("TITLEBARPROBE case=library FAIL create errno=%d\n", errno);
 		probe_disconnect(&connection);
@@ -679,7 +679,7 @@ probe_library(void)
 	}
 
 	/* The titlebar and the connection go. */
-	zdesktop_titlebar_destroy(titlebar);
+	keiland_titlebar_destroy(titlebar);
 	probe_disconnect(&connection);
 
 	/* Reports a check that failed. */
@@ -694,7 +694,7 @@ probe_library(void)
 /* Makes the library's calls and compares their answers; returns 1 when one was wrong. */
 static int
 probe_library_calls(
-	struct zdesktop_titlebar *titlebar)
+	struct keiland_titlebar *titlebar)
 {
 	static const char *const parts[] = { "Home", "Projects" };
 	int results[PROBE_CALLS];
@@ -703,45 +703,45 @@ probe_library_calls(
 	int failed;
 
 	/* Each call and what it must answer. */
-	results[0] = zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_CONTROLS);
+	results[0] = keiland_titlebar_set_mode(titlebar, KEILAND_TITLEBAR_CONTROLS);
 	wanted[0] = EINVAL;
-	results[1] = zdesktop_titlebar_begin(titlebar);
+	results[1] = keiland_titlebar_begin(titlebar);
 	wanted[1] = 0;
-	results[2] = zdesktop_titlebar_begin(titlebar);
+	results[2] = keiland_titlebar_begin(titlebar);
 	wanted[2] = EBUSY;
-	results[3] = zdesktop_titlebar_add_control(titlebar, 0U, ZDESKTOP_CONTROL_BACK, 0U, 0U, "Zero");
+	results[3] = keiland_titlebar_add_control(titlebar, 0U, KEILAND_CONTROL_BACK, 0U, 0U, "Zero");
 	wanted[3] = EINVAL;
-	results[4] = zdesktop_titlebar_add_control(titlebar, 1U, ZDESKTOP_CONTROL_SEARCH, 0U, 0U, "Search");
+	results[4] = keiland_titlebar_add_control(titlebar, 1U, KEILAND_CONTROL_SEARCH, 0U, 0U, "Search");
 	wanted[4] = 0;
-	results[5] = zdesktop_titlebar_add_control(titlebar, 1U, ZDESKTOP_CONTROL_BACK, 0U, 0U, "Again");
+	results[5] = keiland_titlebar_add_control(titlebar, 1U, KEILAND_CONTROL_BACK, 0U, 0U, "Again");
 	wanted[5] = EEXIST;
-	results[6] = zdesktop_titlebar_add_control(titlebar, 2U, 99U, 0U, 0U, "Role");
+	results[6] = keiland_titlebar_add_control(titlebar, 2U, 99U, 0U, 0U, "Role");
 	wanted[6] = EINVAL;
-	results[7] = zdesktop_titlebar_set_breadcrumb(titlebar, 1U, parts, 2U);
+	results[7] = keiland_titlebar_set_breadcrumb(titlebar, 1U, parts, 2U);
 	wanted[7] = EINVAL;
-	results[8] = zdesktop_titlebar_set_control_value(titlebar, 1U, 5U);
+	results[8] = keiland_titlebar_set_control_value(titlebar, 1U, 5U);
 	wanted[8] = EINVAL;
-	results[9] = zdesktop_titlebar_set_control_label(titlebar, 9U, "Nothing");
+	results[9] = keiland_titlebar_set_control_label(titlebar, 9U, "Nothing");
 	wanted[9] = ENOENT;
-	results[10] = zdesktop_titlebar_focus_control(titlebar, 1U, ZDESKTOP_FOCUS_FIELD);
+	results[10] = keiland_titlebar_focus_control(titlebar, 1U, KEILAND_FOCUS_FIELD);
 	wanted[10] = EINVAL;
-	results[11] = zdesktop_titlebar_add_tab(titlebar, 1U, "One");
+	results[11] = keiland_titlebar_add_tab(titlebar, 1U, "One");
 	wanted[11] = 0;
-	results[12] = zdesktop_titlebar_set_tab(titlebar, 1U, "One", 8U);
+	results[12] = keiland_titlebar_set_tab(titlebar, 1U, "One", 8U);
 	wanted[12] = EINVAL;
-	results[13] = zdesktop_titlebar_remove_tab(titlebar, 2U);
+	results[13] = keiland_titlebar_remove_tab(titlebar, 2U);
 	wanted[13] = ENOENT;
-	results[14] = zdesktop_titlebar_add_control(titlebar, 3U, ZDESKTOP_CONTROL_BREADCRUMB, 1U, 0U, "Location");
+	results[14] = keiland_titlebar_add_control(titlebar, 3U, KEILAND_CONTROL_BREADCRUMB, 1U, 0U, "Location");
 	wanted[14] = 0;
-	results[15] = zdesktop_titlebar_set_breadcrumb(titlebar, 3U, parts, 2U);
+	results[15] = keiland_titlebar_set_breadcrumb(titlebar, 3U, parts, 2U);
 	wanted[15] = 0;
-	results[16] = zdesktop_titlebar_commit(titlebar);
+	results[16] = keiland_titlebar_commit(titlebar);
 	wanted[16] = 0;
-	results[17] = zdesktop_titlebar_commit(titlebar);
+	results[17] = keiland_titlebar_commit(titlebar);
 	wanted[17] = EINVAL;
-	results[18] = zdesktop_titlebar_focus_control(titlebar, 1U, ZDESKTOP_FOCUS_EDIT);
+	results[18] = keiland_titlebar_focus_control(titlebar, 1U, KEILAND_FOCUS_EDIT);
 	wanted[18] = 0;
-	results[19] = zdesktop_titlebar_focus_control(titlebar, 1U, 7U);
+	results[19] = keiland_titlebar_focus_control(titlebar, 1U, 7U);
 	wanted[19] = EINVAL;
 
 	/* The answers. */
@@ -769,7 +769,7 @@ probe_show(
 	const char *mode)
 {
 	struct probe_connection connection;
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 	struct pollfd poll_entry;
 	unsigned tabs_shown;
 	time_t switched;
@@ -786,7 +786,7 @@ probe_show(
 	}
 
 	/* Its titlebar, through the library, with the model of the mode. */
-	titlebar = zdesktop_titlebar_create(connection.display, connection.toplevel, &probe_titlebar_listener, NULL);
+	titlebar = keiland_titlebar_create(connection.display, connection.toplevel, &probe_titlebar_listener, NULL);
 	if (titlebar == NULL) {
 		printf("TITLEBARPROBE show FAIL titlebar errno=%d\n", errno);
 		probe_disconnect(&connection);
@@ -813,17 +813,17 @@ probe_show(
 		/* The mode switched now and then, in one transaction. */
 		if (probe_switch > 0U && now - switched >= (time_t)probe_switch) {
 			tabs_shown = !tabs_shown;
-			(void)zdesktop_titlebar_begin(titlebar);
+			(void)keiland_titlebar_begin(titlebar);
 			if (tabs_shown != 0U) {
-				(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_TABS);
+				(void)keiland_titlebar_set_mode(titlebar, KEILAND_TITLEBAR_TABS);
 				printf("TITLEBARPROBE switch mode=tabs\n");
 			} else {
-				(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_CONTROLS);
+				(void)keiland_titlebar_set_mode(titlebar, KEILAND_TITLEBAR_CONTROLS);
 				printf("TITLEBARPROBE switch mode=controls\n");
 			}
 
 			/* One commit for the switch. */
-			(void)zdesktop_titlebar_commit(titlebar);
+			(void)keiland_titlebar_commit(titlebar);
 			switched = now;
 			fflush(stdout);
 		}
@@ -862,7 +862,7 @@ probe_show(
 	}
 
 	/* The titlebar and the connection go. */
-	zdesktop_titlebar_destroy(titlebar);
+	keiland_titlebar_destroy(titlebar);
 	probe_disconnect(&connection);
 	printf("TITLEBARPROBE show done\n");
 	return 0;
@@ -973,7 +973,7 @@ probe_show_buffer(
 /* Gives the shown window's titlebar a model: a file manager's controls, three tabs, or the menu mode alone. */
 static void
 probe_show_model(
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	const char *mode)
 {
 	static const char *const parts[] = { "Home", "Projects", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e" };
@@ -985,20 +985,20 @@ probe_show_model(
 	tabs = strcmp(mode, "tabs");
 
 	/* One transaction for the whole model. */
-	(void)zdesktop_titlebar_begin(titlebar);
+	(void)keiland_titlebar_begin(titlebar);
 	if (controls == 0 || probe_switch > 0U) {
-		(void)zdesktop_titlebar_add_control(titlebar, 1U, ZDESKTOP_CONTROL_BACK, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Back");
-		(void)zdesktop_titlebar_add_control(titlebar, 2U, ZDESKTOP_CONTROL_FORWARD, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Forward");
-		(void)zdesktop_titlebar_add_control(titlebar, 3U, ZDESKTOP_CONTROL_HOME, ZDESKTOP_PRIORITY_PRIMARY, 0U, "Home");
-		(void)zdesktop_titlebar_add_control(titlebar, 4U, ZDESKTOP_CONTROL_BREADCRUMB, ZDESKTOP_PRIORITY_NORMAL, 0U, "Location");
-		(void)zdesktop_titlebar_set_breadcrumb(titlebar, 4U, parts, 3U);
-		(void)zdesktop_titlebar_add_control(titlebar, 5U, ZDESKTOP_CONTROL_SEARCH, ZDESKTOP_PRIORITY_NORMAL, 0U, "Search");
-		(void)zdesktop_titlebar_set_control_text(titlebar, 5U, "", "Search");
-		(void)zdesktop_titlebar_add_control(titlebar, 6U, ZDESKTOP_CONTROL_VIEW_GRID, ZDESKTOP_PRIORITY_SECONDARY, 1U, "Icons");
-		(void)zdesktop_titlebar_set_control_state(titlebar, 6U, 1, 1);
-		(void)zdesktop_titlebar_add_control(titlebar, 7U, ZDESKTOP_CONTROL_VIEW_LIST, ZDESKTOP_PRIORITY_SECONDARY, 1U, "List");
-		(void)zdesktop_titlebar_add_control(titlebar, 8U, ZDESKTOP_CONTROL_PREVIEW, ZDESKTOP_PRIORITY_SECONDARY, 0U, "Preview");
-		(void)zdesktop_titlebar_set_control_state(titlebar, 2U, 0, 0);
+		(void)keiland_titlebar_add_control(titlebar, 1U, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Back");
+		(void)keiland_titlebar_add_control(titlebar, 2U, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Forward");
+		(void)keiland_titlebar_add_control(titlebar, 3U, KEILAND_CONTROL_HOME, KEILAND_PRIORITY_PRIMARY, 0U, "Home");
+		(void)keiland_titlebar_add_control(titlebar, 4U, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, 0U, "Location");
+		(void)keiland_titlebar_set_breadcrumb(titlebar, 4U, parts, 3U);
+		(void)keiland_titlebar_add_control(titlebar, 5U, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, 0U, "Search");
+		(void)keiland_titlebar_set_control_text(titlebar, 5U, "", "Search");
+		(void)keiland_titlebar_add_control(titlebar, 6U, KEILAND_CONTROL_VIEW_GRID, KEILAND_PRIORITY_SECONDARY, 1U, "Icons");
+		(void)keiland_titlebar_set_control_state(titlebar, 6U, 1, 1);
+		(void)keiland_titlebar_add_control(titlebar, 7U, KEILAND_CONTROL_VIEW_LIST, KEILAND_PRIORITY_SECONDARY, 1U, "List");
+		(void)keiland_titlebar_add_control(titlebar, 8U, KEILAND_CONTROL_PREVIEW, KEILAND_PRIORITY_SECONDARY, 0U, "Preview");
+		(void)keiland_titlebar_set_control_state(titlebar, 2U, 0, 0);
 	}
 
 	/* The tabs. */
@@ -1007,12 +1007,12 @@ probe_show_model(
 
 	/* The mode. */
 	if (controls == 0)
-		(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_CONTROLS);
+		(void)keiland_titlebar_set_mode(titlebar, KEILAND_TITLEBAR_CONTROLS);
 	if (tabs == 0)
-		(void)zdesktop_titlebar_set_mode(titlebar, ZDESKTOP_TITLEBAR_TABS);
+		(void)keiland_titlebar_set_mode(titlebar, KEILAND_TITLEBAR_TABS);
 
 	/* The model is shown at once. */
-	(void)zdesktop_titlebar_commit(titlebar);
+	(void)keiland_titlebar_commit(titlebar);
 }
 
 /*
@@ -1022,17 +1022,17 @@ probe_show_model(
  */
 static void
 probe_tabs_start(
-	struct zdesktop_titlebar *titlebar)
+	struct keiland_titlebar *titlebar)
 {
 	static const char *const titles[] = { "README.md", "main.c", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e.txt" };
-	static const uint32_t flags[] = { 0U, ZDESKTOP_TAB_ACTIVE | ZDESKTOP_TAB_CLOSABLE, ZDESKTOP_TAB_ATTENTION | ZDESKTOP_TAB_CLOSABLE };
+	static const uint32_t flags[] = { 0U, KEILAND_TAB_ACTIVE | KEILAND_TAB_CLOSABLE, KEILAND_TAB_ATTENTION | KEILAND_TAB_CLOSABLE };
 	unsigned index;
 
 	/* Each tab, the probe's copy first. */
 	for (index = 0; index < probe_tabs_wanted; index++) {
 		probe_tab_ids[index] = probe_tab_next;
 		probe_tab_next++;
-		probe_tab_flags[index] = ZDESKTOP_TAB_CLOSABLE;
+		probe_tab_flags[index] = KEILAND_TAB_CLOSABLE;
 		if (index < 3U) {
 			probe_tab_flags[index] = flags[index];
 			(void)snprintf(probe_tab_titles[index], PROBE_TAB_TITLE, "%s", titles[index]);
@@ -1041,13 +1041,13 @@ probe_tabs_start(
 		}
 
 		/* The titlebar's. */
-		(void)zdesktop_titlebar_add_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index]);
-		(void)zdesktop_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], probe_tab_flags[index]);
+		(void)keiland_titlebar_add_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index]);
+		(void)keiland_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], probe_tab_flags[index]);
 	}
 
 	/* How many, and "+". */
 	probe_tab_count = probe_tabs_wanted;
-	(void)zdesktop_titlebar_set_tabs_options(titlebar, ZDESKTOP_TABS_NEW_BUTTON);
+	(void)keiland_titlebar_set_tabs_options(titlebar, KEILAND_TABS_NEW_BUTTON);
 }
 
 /* Finds a tab's place among the probe's by its ID, or -1. */
@@ -1070,7 +1070,7 @@ probe_tab_find(
 /* Makes a tab the active one (it no longer wants attention), in a titlebar being updated. */
 static void
 probe_tab_activate(
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	int chosen)
 {
 	unsigned index;
@@ -1078,13 +1078,13 @@ probe_tab_activate(
 
 	/* Each tab's flags: only the chosen one active. */
 	for (index = 0; index < probe_tab_count; index++) {
-		flags = probe_tab_flags[index] & ~(uint32_t)ZDESKTOP_TAB_ACTIVE;
+		flags = probe_tab_flags[index] & ~(uint32_t)KEILAND_TAB_ACTIVE;
 		if ((int)index == chosen)
-			flags = (flags | ZDESKTOP_TAB_ACTIVE) & ~(uint32_t)ZDESKTOP_TAB_ATTENTION;
+			flags = (flags | KEILAND_TAB_ACTIVE) & ~(uint32_t)KEILAND_TAB_ATTENTION;
 		if (flags == probe_tab_flags[index])
 			continue;
 		probe_tab_flags[index] = flags;
-		(void)zdesktop_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], flags);
+		(void)keiland_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], flags);
 	}
 }
 
@@ -1108,7 +1108,7 @@ probe_configure(
 static void
 probe_activated(
 	void *data,
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	uint32_t detail,
 	struct wl_seat *seat,
@@ -1126,7 +1126,7 @@ probe_activated(
 static void
 probe_text_changed(
 	void *data,
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	const char *text)
 {
@@ -1141,7 +1141,7 @@ probe_text_changed(
 static void
 probe_text_done(
 	void *data,
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	const char *text,
 	unsigned how)
@@ -1157,7 +1157,7 @@ probe_text_done(
 static void
 probe_tab_activated(
 	void *data,
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	uint32_t serial)
 {
@@ -1172,16 +1172,16 @@ probe_tab_activated(
 	index = probe_tab_find(id);
 	if (index < 0)
 		return;
-	(void)zdesktop_titlebar_begin(titlebar);
+	(void)keiland_titlebar_begin(titlebar);
 	probe_tab_activate(titlebar, index);
-	(void)zdesktop_titlebar_commit(titlebar);
+	(void)keiland_titlebar_commit(titlebar);
 }
 
 /* Prints a tab's close button. */
 static void
 probe_tab_close(
 	void *data,
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	uint32_t id)
 {
 	unsigned active;
@@ -1196,15 +1196,15 @@ probe_tab_close(
 	index = probe_tab_find(id);
 	if (index < 0)
 		return;
-	active = probe_tab_flags[index] & ZDESKTOP_TAB_ACTIVE;
+	active = probe_tab_flags[index] & KEILAND_TAB_ACTIVE;
 	memmove(&probe_tab_ids[index], &probe_tab_ids[index + 1], (probe_tab_count - (unsigned)index - 1U) * sizeof(probe_tab_ids[0]));
 	memmove(&probe_tab_flags[index], &probe_tab_flags[index + 1], (probe_tab_count - (unsigned)index - 1U) * sizeof(probe_tab_flags[0]));
 	memmove(probe_tab_titles[index], probe_tab_titles[index + 1], (probe_tab_count - (unsigned)index - 1U) * sizeof(probe_tab_titles[0]));
 	probe_tab_count--;
 
 	/* And from the titlebar; its neighbour becomes active when it was. */
-	(void)zdesktop_titlebar_begin(titlebar);
-	(void)zdesktop_titlebar_remove_tab(titlebar, id);
+	(void)keiland_titlebar_begin(titlebar);
+	(void)keiland_titlebar_remove_tab(titlebar, id);
 	if (active != 0U && probe_tab_count > 0U) {
 		if ((unsigned)index == probe_tab_count)
 			index--;
@@ -1212,14 +1212,14 @@ probe_tab_close(
 	}
 
 	/* Shown at once. */
-	(void)zdesktop_titlebar_commit(titlebar);
+	(void)keiland_titlebar_commit(titlebar);
 }
 
 /* Prints the new-tab button. */
 static void
 probe_new_tab(
 	void *data,
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	uint32_t serial)
 {
 	unsigned index;
@@ -1235,23 +1235,23 @@ probe_new_tab(
 	index = probe_tab_count;
 	probe_tab_ids[index] = probe_tab_next;
 	probe_tab_next++;
-	probe_tab_flags[index] = ZDESKTOP_TAB_CLOSABLE;
+	probe_tab_flags[index] = KEILAND_TAB_CLOSABLE;
 	(void)snprintf(probe_tab_titles[index], PROBE_TAB_TITLE, "Untitled %u", probe_tab_ids[index]);
 	probe_tab_count++;
 
 	/* The titlebar's. */
-	(void)zdesktop_titlebar_begin(titlebar);
-	(void)zdesktop_titlebar_add_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index]);
-	(void)zdesktop_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], probe_tab_flags[index]);
+	(void)keiland_titlebar_begin(titlebar);
+	(void)keiland_titlebar_add_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index]);
+	(void)keiland_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], probe_tab_flags[index]);
 	probe_tab_activate(titlebar, (int)index);
-	(void)zdesktop_titlebar_commit(titlebar);
+	(void)keiland_titlebar_commit(titlebar);
 }
 
 /* Prints the overflow popup's opening. */
 static void
 probe_overflow(
 	void *data,
-	struct zdesktop_titlebar *titlebar)
+	struct keiland_titlebar *titlebar)
 {
 	/* The event's line. */
 	(void)data;

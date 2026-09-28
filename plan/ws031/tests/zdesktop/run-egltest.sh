@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws075-p005: egltest's scenes in a zdesktop window, one after another, in the viewer's place
-# (ZDESKTOP_APP=egltest): the OpenGL ES 2 and 3 scenes whose textures, framebuffer objects and formats the
+# (KEILAND_APP=egltest): the OpenGL ES 2 and 3 scenes whose textures, framebuffer objects and formats the
 # i915 executor draws natively (not the MRT, multisample, query and transform feedback ones, ws075-p006).  Each
 # scene's lines (EGLTEST CHECK run=<scene> failures=N, EGLTEST DONE or FAILED) go to the viewer's log, which
 # the run collects; the logs and the kernel's messages are written out every two seconds meanwhile, as

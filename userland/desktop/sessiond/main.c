@@ -13,7 +13,7 @@
  * It is small and runs as root: it gives the display and the input devices
  * to the seat's user, starts the greeter (zdesktop --greeter) as the
  * unprivileged _greeter account, checks the passwords the greeter sends it,
- * starts the user's session (/etc/zdesktop/session) as the user, and starts
+ * starts the user's session (/etc/keiland/session) as the user, and starts
  * the greeter again when the session ends.  It draws nothing and reads no
  * image or font.
  *

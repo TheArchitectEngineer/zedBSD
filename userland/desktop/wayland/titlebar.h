@@ -7,7 +7,7 @@
 
 /*
  * The Titlebar Presentation (WS070 p008, plan/ws070/titlebar-design.md):
- * the model a client gives a window's titlebar through zed_titlebar_v1 (its
+ * the model a client gives a window's titlebar through keiland_titlebar_v1 (its
  * mode, its controls and its tabs), kept by titlebar.c, and what the
  * presentation (titlebar-shell.c) reads of it and sends back.
  */
@@ -108,7 +108,7 @@ struct zwl_titlebar_state {
 };
 
 /*
- * A window's titlebar model, owned by its zed_titlebar_v1 object: the state
+ * A window's titlebar model, owned by its keiland_titlebar_v1 object: the state
  * shown, the state being built between begin_update and commit, the
  * transaction's serial, and how many commits there were.  A control the
  * client asked the keyboard for (focus_control) waits in focus_id (0 when

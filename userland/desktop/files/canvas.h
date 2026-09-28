@@ -14,8 +14,8 @@
  * same frames into a canvas of their own and write it out as a picture.
  */
 
-#ifndef ZDESKTOP_FILES_CANVAS_H
-#define ZDESKTOP_FILES_CANVAS_H
+#ifndef KEILAND_FILES_CANVAS_H
+#define KEILAND_FILES_CANVAS_H
 
 #include <stddef.h>
 #include <stdint.h>

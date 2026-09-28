@@ -17,8 +17,8 @@
  * and resumes where it stopped.
  */
 
-#ifndef ZDESKTOP_BROWSER_HTML_H
-#define ZDESKTOP_BROWSER_HTML_H
+#ifndef KEILAND_BROWSER_HTML_H
+#define KEILAND_BROWSER_HTML_H
 
 #include "base/base.h"
 

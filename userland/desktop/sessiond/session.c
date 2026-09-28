@@ -9,10 +9,14 @@
  * The user's session: after a login sessiond gives the seat to the user,
  * makes the user's runtime directory (/run/user/UID, 0700, the user's: the
  * Wayland socket goes there, where no other user can reach it), and runs
- * the session script (/etc/zdesktop/session) with /bin/sh as the user, the
+ * the session script (/etc/keiland/session) with /bin/sh as the user, the
  * way login starts a shell: initgroups, setgid, setuid, HOME, USER,
  * LOGNAME, PATH, SHELL and XDG_RUNTIME_DIR.  The login is recorded in
  * utmpx.
+ *
+ * The session's user is also given the group "network" (2026-09-28 user
+ * decision, ws035-p104): networkd's socket admits that group, and the
+ * system bar's network menu speaks to networkd as the session's user.
  *
  * The session ends when the script ends (zdesktop's Log Out).  Whatever of
  * it is left is ended too: its process group, and every process of the
@@ -59,6 +63,12 @@
 /* The utmpx line of the graphical seat. */
 #define SESSION_LINE		"seat0"
 
+/* The group networkd's socket admits, which every session's user joins. */
+#define SESSION_NETWORK_GROUP	"network"
+
+/* The most groups a session's user is read with. */
+#define SESSION_GROUPS_MAX	64
+
 /* How long the greeter stays on the screen for a session that does not say READY (seconds). */
 #define SESSION_READY_SECONDS	30
 
@@ -72,6 +82,7 @@ static unsigned session_wrong;
 static int session_runtime(struct sessiond_account *account, char *directory, size_t size);
 static void session_runtime_clean(const char *directory);
 static void session_child(struct sessiond *daemon, struct sessiond_account *account, const char *directory, int control);
+static void session_network_group(void);
 static void session_handoff(struct sessiond *daemon, int control);
 static int session_request(struct sessiond *daemon, struct sessiond_account *account, int control);
 static void session_logout(struct sessiond *daemon, int control);
@@ -467,6 +478,11 @@ session_child(
 	error = initgroups(account->passwd.pw_name, account->passwd.pw_gid);
 	if (error != 0)
 		_exit(126);
+
+	/* The system bar reaches networkd through the group its socket admits. */
+	session_network_group();
+
+	/* The user's ids, which leave root behind. */
 	error = setgid(account->passwd.pw_gid);
 	if (error != 0)
 		_exit(126);
@@ -520,6 +536,45 @@ session_child(
 	arguments[3] = NULL;
 	(void)execve("/bin/sh", arguments, environment);
 	_exit(127);
+}
+
+/* Adds the group networkd's socket admits to the groups initgroups gave the session. */
+static void
+session_network_group(
+	void)
+{
+	gid_t groups[SESSION_GROUPS_MAX];
+	struct group *network;
+	int count;
+	int index;
+	int error;
+
+	/* The group, which a system without networkd may not have. */
+	network = getgrnam(SESSION_NETWORK_GROUP);
+	if (network == NULL)
+		return;
+
+	/* The groups the user has now, with room for one more. */
+	count = getgroups(SESSION_GROUPS_MAX - 1, groups);
+	if (count < 0) {
+		syslog(LOG_WARNING, "the session's groups could not be read: %s", strerror(errno));
+		return;
+	}
+
+	/* A user who is a member already keeps the list as it is. */
+	for (index = 0; index < count; index++) {
+		if (groups[index] == network->gr_gid)
+			return;
+	}
+
+	/*
+	 * The group joins the list.  A failure leaves the session without the
+	 * network menu, not without a login.
+	 */
+	groups[count] = network->gr_gid;
+	error = setgroups((size_t)count + 1U, groups);
+	if (error != 0)
+		syslog(LOG_WARNING, "the session could not join the group %s: %s", SESSION_NETWORK_GROUP, strerror(errno));
 }
 
 /* Writes the session's utmpx record: logged in, or ended. */

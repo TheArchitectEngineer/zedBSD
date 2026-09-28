@@ -694,7 +694,7 @@ signal_exec(
 	 * pending signal.
 	 */
 	signal_discard_locked(process,
-	    SIGNAL_BIT(__ZEDBSD_SIGEV_THREAD_SIGNAL), completions,
+	    SIGNAL_BIT(__KERN_SIGEV_THREAD_SIGNAL), completions,
 	    &completion_count);
 
 	/* Caught signals revert to the default action. */

@@ -70,9 +70,14 @@ def check_packages() -> None:
         if row[4] != group:
             fail(f"{name} is filed under {row[4]} rather than {group}")
 
-    # A program is chosen by whoever configures the build, not by the
-    # platform: only the kernel options and the drivers are tied to one.
+    # A base program or a package is chosen by whoever configures the
+    # build, not by the platform: only the kernel options, the drivers, the
+    # desktop and the firmware are tied to one (BUG-080).  noct and zedinst
+    # need the Noct runtime, which some platforms lack.
+    platform_tied = {"noct", "zedinst"}
     for row in rows:
+        if row[0] in platform_tied:
+            continue
         if row[4].startswith("packages/") or row[4] == "base":
             if row[2] != "*":
                 fail(f"{row[0]} is offered only on {row[2]}")

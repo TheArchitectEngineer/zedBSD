@@ -16,17 +16,18 @@
  * into an atlas image the first time they are drawn.
  */
 
-#ifndef ZDESKTOP_BROWSER_PAINT_GPU_H
-#define ZDESKTOP_BROWSER_PAINT_GPU_H
+#ifndef KEILAND_BROWSER_PAINT_GPU_H
+#define KEILAND_BROWSER_PAINT_GPU_H
 
 #include "paint/paint.h"
 
 #include <vulkan/vulkan.h>
 
-/* The glyph atlas's width and height, in texels. */
-#define PAINT_GPU_ATLAS_SIZE	1024U
+/* The atlas's width and height, in texels (glyphs and images share it). */
+#define PAINT_GPU_ATLAS_SIZE	2048U
 
 struct paint_gpu_slot;
+struct paint_gpu_image;
 
 /*
  * The Vulkan objects of the GPU renderer.
@@ -78,7 +79,9 @@ struct paint_gpu {
 	 * The atlas's packing: glyphs go left to right on shelves as tall as
 	 * their tallest glyph.  The table maps a glyph's bitmap (which the text
 	 * system keeps for its life) to its place; full says a glyph did not fit
-	 * and the atlas starts over before the next frame.
+	 * and the atlas starts over before the next frame.  Images go on the same
+	 * shelves; their places are a list by the image's serial (an image's
+	 * pixels may be freed and their memory used again, a serial never).
 	 */
 	uint32_t shelf_x;
 	uint32_t shelf_y;
@@ -86,6 +89,7 @@ struct paint_gpu {
 	struct paint_gpu_slot *slots;
 	size_t slot_capacity;
 	size_t slot_count;
+	struct wb_vector images;
 	int full;
 
 	/* One command buffer and the fence its submission signals. */

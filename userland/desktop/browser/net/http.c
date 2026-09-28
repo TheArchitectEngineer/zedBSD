@@ -13,10 +13,12 @@
  * kept and sent back (cookie.c).  An https URL's connection is TLS
  * (tls.c) under the same requests.
  *
- * The fetch blocks the caller while it runs: the name lookup, the
+ * net_http_fetch blocks the caller while it runs: the name lookup, the
  * connection and each read (a read waits NET_HTTP_TIMEOUT at most).  The
- * asynchronous loader with its resolver thread, persistent connections
- * and the cache come later (plan/ws074/design.md §9).
+ * asynchronous loader (loader.c) makes the same requests and reads the
+ * same responses without blocking, through net_http_request_text and
+ * net_http_parse_response; persistent connections and the cache come
+ * with ws074-p058.
  */
 
 #include "net/net.h"
@@ -40,7 +42,7 @@
 #define NET_HTTP_MAX_RESPONSE	((size_t)256U * 1024U * 1024U)
 
 /* The User-Agent the browser sends. */
-#define NET_HTTP_AGENT		"browser/0.1 (zedBSD)"
+#define NET_HTTP_AGENT		"browser/0.1 (Kei)"
 
 /*
  * The other headers of every request: any type (the star, the slash and the star
@@ -74,11 +76,9 @@ static int http_send_all(const struct http_connection *connection, const unsigne
 static int http_receive_all(const struct http_connection *connection, struct wb_buffer *raw);
 static int http_receive(const struct http_connection *connection, unsigned char *bytes, size_t length, size_t *received);
 static int http_is_web(const char *scheme);
-static int http_parse(const struct net_url *url, const struct wb_buffer *raw, struct net_response *response, struct wb_buffer *location);
 static int http_header(const struct net_url *url, const char *line, size_t length, struct net_response *response, struct wb_buffer *location, struct http_headers *headers);
 static int http_header_value(const char *line, size_t length, const char *name, const char **value, size_t *value_length);
 static int http_dechunk(const unsigned char *body, size_t length, struct wb_buffer *out);
-static int http_is_redirect(int status);
 
 /*
  * Fetches a URL with GET, following redirects: fills the response (its
@@ -115,7 +115,7 @@ net_http_fetch(
 	wb_buffer_init(&location);
 	for (redirects = 0;; redirects++) {
 		/* Only http and https. */
-		is_web = http_is_web(url.scheme);
+		is_web = net_http_is_web(url.scheme);
 		if (!is_web) {
 			error = EPROTONOSUPPORT;
 			break;
@@ -128,7 +128,7 @@ net_http_fetch(
 			break;
 
 		/* A redirect with a place to go is followed; anything else is the response. */
-		redirected = http_is_redirect(response->status);
+		redirected = net_http_is_redirect(response->status);
 		if (!redirected || location.length == 0)
 			break;
 		if (redirects == NET_HTTP_REDIRECTS) {
@@ -171,6 +171,56 @@ net_response_release(
 	wb_buffer_release(&response->body);
 }
 
+/*
+ * Writes the text of a GET request for a URL: the request line, Host,
+ * User-Agent, the fixed headers and the URL's cookies.
+ */
+int
+net_http_request_text(
+	const struct net_url *url,
+	struct wb_buffer *request)
+{
+	const char *target;
+	int error;
+
+	/* The request line: the path (at least "/") and the query. */
+	target = url->path;
+	if (target[0] == '\0')
+		target = "/";
+	error = wb_buffer_printf(request, "GET %s", target);
+	if (error == 0 && url->query != NULL)
+		error = wb_buffer_printf(request, "?%s", url->query);
+	if (error == 0)
+		error = wb_buffer_printf(request, " HTTP/1.1\r\nHost: %s", url->host);
+	if (error == 0 && url->port >= 0)
+		error = wb_buffer_printf(request, ":%d", url->port);
+	if (error == 0)
+		error = wb_buffer_printf(request, "\r\nUser-Agent: %s\r\n%s", NET_HTTP_AGENT, NET_HTTP_HEADERS);
+
+	/* The cookies for the URL, and the end of the headers. */
+	if (error == 0)
+		error = net_cookie_header(url, request);
+	if (error == 0)
+		error = wb_buffer_append_string(request, "\r\n");
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the request is written. */
+	return 0;
+}
+
+/* Tells whether a scheme is one HTTP fetches: http or https. */
+int
+net_http_is_web(
+	const char *scheme)
+{
+	int web;
+
+	/* The two schemes. */
+	web = http_is_web(scheme);
+	return web;
+}
+
 /* Sends one GET and reads its response; a redirect's Location goes to location. */
 static int
 http_request(
@@ -181,31 +231,13 @@ http_request(
 	struct http_connection connection;
 	struct wb_buffer request;
 	struct wb_buffer raw;
-	const char *target;
 	int is_https;
 	int error;
 
-	/* The request line: the path (at least "/") and the query. */
+	/* The request's text. */
 	wb_buffer_init(&request);
 	wb_buffer_init(&raw);
-	target = url->path;
-	if (target[0] == '\0')
-		target = "/";
-	error = wb_buffer_printf(&request, "GET %s", target);
-	if (error == 0 && url->query != NULL)
-		error = wb_buffer_printf(&request, "?%s", url->query);
-	if (error == 0)
-		error = wb_buffer_printf(&request, " HTTP/1.1\r\nHost: %s", url->host);
-	if (error == 0 && url->port >= 0)
-		error = wb_buffer_printf(&request, ":%d", url->port);
-	if (error == 0)
-		error = wb_buffer_printf(&request, "\r\nUser-Agent: %s\r\n%s", NET_HTTP_AGENT, NET_HTTP_HEADERS);
-
-	/* The cookies for the URL, and the end of the headers. */
-	if (error == 0)
-		error = net_cookie_header(url, &request);
-	if (error == 0)
-		error = wb_buffer_append_string(&request, "\r\n");
+	error = net_http_request_text(url, &request);
 	if (error != 0) {
 		wb_buffer_release(&request);
 		return error;
@@ -233,7 +265,7 @@ http_request(
 
 	/* The response. */
 	if (error == 0)
-		error = http_parse(url, &raw, response, location);
+		error = net_http_parse_response(url, &raw, response, location);
 	wb_buffer_release(&raw);
 	if (error != 0)
 		return error;
@@ -453,9 +485,13 @@ http_is_web(
 	return 0;
 }
 
-/* Parses a response: the status line, the headers (cookies kept, a redirect's Location), and the body. */
-static int
-http_parse(
+/*
+ * Parses a whole response: the status line, the headers (cookies kept, a
+ * redirect's Location into location), and the body (cut by its length or
+ * decoded from chunks).
+ */
+int
+net_http_parse_response(
 	const struct net_url *url,
 	const struct wb_buffer *raw,
 	struct net_response *response,
@@ -688,9 +724,9 @@ http_dechunk(
 	return 0;
 }
 
-/* Tells whether a status is a redirect the fetch follows. */
-static int
-http_is_redirect(
+/* Tells whether a status is a redirect a fetch follows. */
+int
+net_http_is_redirect(
 	int status)
 {
 	/* 301, 302, 303, 307 and 308. */

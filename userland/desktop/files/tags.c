@@ -9,15 +9,15 @@
  * The tags of files (spec §20).
  *
  * A file's tags are kept with the file, in its extended attribute
- * user.zdesktop.tags: the tags' names, one a line.  They move and are
+ * user.keiland.tags: the tags' names, one a line.  They move and are
  * renamed with the file, and a copy carries them.  The tags the window
  * knows -- their names and colors, in the sidebar's order -- are
- * $XDG_CONFIG_HOME/zdesktop/tags (NAME<TAB>#RRGGBB a line), or five
+ * $XDG_CONFIG_HOME/keiland/tags (NAME<TAB>#RRGGBB a line), or five
  * defaults.  Names the window does not know are kept in the attribute
  * untouched.
  *
  * So that a tag's place in the sidebar lists its files without walking the
- * disk, the window keeps an index, $XDG_DATA_HOME/zdesktop/tag-index (TAG
+ * disk, the window keeps an index, $XDG_DATA_HOME/keiland/tag-index (TAG
  * <TAB> PATH a line), updated when it tags a file; the listing checks each
  * file's attribute, so a stale line only costs a look.  Files tagged by
  * other programs are found by a search (tag:NAME).
@@ -34,7 +34,7 @@
 #include <sys/xattr.h>
 
 /* The extended attribute that holds a file's tags. */
-#define TAGS_ATTRIBUTE		"user.zdesktop.tags"
+#define TAGS_ATTRIBUTE		"user.keiland.tags"
 
 /* The largest attribute value read or written. */
 #define TAGS_VALUE_MAX		2048
@@ -86,7 +86,7 @@ fm_tags_load(
 	memset(tags, 0, sizeof(*tags));
 
 	/* The user's file, when there is one. */
-	tags_folder("XDG_CONFIG_HOME", ".config", "zdesktop/tags", path, sizeof(path));
+	tags_folder("XDG_CONFIG_HOME", ".config", "keiland/tags", path, sizeof(path));
 	file = fopen(path, "r");
 	if (file != NULL) {
 		for (;;) {
@@ -276,7 +276,7 @@ fm_tags_paths(
 		return EINVAL;
 
 	/* The index. */
-	tags_folder("XDG_DATA_HOME", ".local/share", "zdesktop/tag-index", index_path, sizeof(index_path));
+	tags_folder("XDG_DATA_HOME", ".local/share", "keiland/tag-index", index_path, sizeof(index_path));
 	file = fopen(index_path, "r");
 	if (file == NULL)
 		return 0;
@@ -422,7 +422,7 @@ tags_index_update(
 	int same_path;
 
 	/* The index and a new one beside it (its folder made when missing). */
-	tags_folder("XDG_DATA_HOME", ".local/share", "zdesktop/tag-index", index_path, sizeof(index_path));
+	tags_folder("XDG_DATA_HOME", ".local/share", "keiland/tag-index", index_path, sizeof(index_path));
 	snprintf(folder, sizeof(folder), "%s", index_path);
 	slash = strrchr(folder, '/');
 	if (slash != NULL) {

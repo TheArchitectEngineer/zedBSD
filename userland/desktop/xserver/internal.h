@@ -16,8 +16,8 @@
  * keyboard's table, the core font and the GLX extension.
  */
 
-#ifndef ZDESKTOP_X11SERVER_INTERNAL_H
-#define ZDESKTOP_X11SERVER_INTERNAL_H
+#ifndef KEILAND_X11SERVER_INTERNAL_H
+#define KEILAND_X11SERVER_INTERNAL_H
 
 #include "userland/desktop/xserver/x11server.h"
 

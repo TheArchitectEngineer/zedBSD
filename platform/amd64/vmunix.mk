@@ -260,7 +260,7 @@ AMD64_KERNEL_SOURCES := \
 	$(KERN_AUDIO_SOURCES) \
 	src/kern/tty.c \
 	src/drivers/generic/system-device.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
-	src/drivers/platform/pcat/graphics/vgafont.c src/kern/init.c
+	src/drivers/platform/pcat/graphics/vgafont.c src/drivers/platform/pcat/graphics/splash.c src/kern/init.c
 ifeq ($(CONFIG_DRIVER_GRAPHICS_DEVICE),y)
 AMD64_KERNEL_SOURCES += \
 	src/drivers/platform/pcat/graphics/pcat-graphics.c \
@@ -885,6 +885,19 @@ $(DYNAMIC_DIR)/libjpeg-compat.so: $(DYNAMIC_JPEG_COMPAT_OBJS) $(DYNAMIC_DIR)/lib
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libc.so --soname libjpeg-compat.so $@
 
+# libgif-compat (ws074-p051): giflib's decoding interface of the base programs; it needs nothing but the
+# C library.
+DYNAMIC_GIF_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgif-compat)
+
+$(DYNAMIC_DIR)/libgif-compat.so: $(DYNAMIC_GIF_COMPAT_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/base/libgif-compat/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libgif-compat.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/base/libgif-compat/exports.map \
+ $(DYNAMIC_GIF_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
+ --needed libc.so --soname libgif-compat.so $@
+
 # The Wayland EGL window (WS068 p002); it needs nothing but the C library.
 DYNAMIC_WAYLAND_EGL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libwayland-egl)
 
@@ -1210,13 +1223,15 @@ $(BUILD)/bin/files: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 
 # The Web browser (WS074) keeps its modules in subdirectories and includes their headers
 # from its own root; it imports standard Wayland and Vulkan for its window and GPU renderer
-# (ws074-p014), zdesktop's titlebar through libkeiland (ws074-p045), and libtruetype for its text.
+# (ws074-p014), zdesktop's titlebar through libkeiland (ws074-p045), libtruetype for its text, and
+# libjpeg-compat, libpng-compat (with libz-compat) and libgif-compat for its images (ws074-p021).
 DYNAMIC_ZDESKTOP_BROWSER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,browser)
 $(DYNAMIC_ZDESKTOP_BROWSER_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/desktop/browser
 
 $(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZDESKTOP_BROWSER_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libjpeg-compat.so $(DYNAMIC_DIR)/libpng-compat.so \
+	$(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libgif-compat.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
@@ -1224,9 +1239,11 @@ $(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_BROWSER_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so \
+ -l:libjpeg-compat.so -l:libpng-compat.so -l:libz-compat.so -l:libgif-compat.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so --needed libc.so $@
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
+ --needed libjpeg-compat.so --needed libpng-compat.so --needed libz-compat.so --needed libgif-compat.so --needed libc.so $@
 
 # OpenGL with GLX for Xzed (WS069 p004): libGLESv2's translation with GLX and a private libX11 inside.
 DYNAMIC_GL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgl)
@@ -1453,13 +1470,15 @@ $(eval $(call ZEDBSD_ROOTFS_UFS_IMAGE_RULE,$(AMD64_ARCH_UFS_IMAGE),amd64))
 rootfs: $(BUILD)/rootfs/.stamp
 
 # ws035-p096: the boot logo on the boot FAT (/logo.ppm: the ESP of the native layout, the payload FAT of the BIOS image), drawn by the
-# UEFI and the BIOS loaders when zedbsd.cfg names it
-# (logo=logo.ppm).  It is made from shapes by a script, so no picture from elsewhere is in the tree.
+# UEFI and the BIOS loaders when zedbsd.cfg names it (logo=logo.ppm).  ws035-p107: it is the Kei boot splash
+# (userland/desktop/artwork/kei-boot-splash.png, 1440x810 without its spinner, "fit=cover": the loaders cover the screen with it and the
+# kernel's quiet console draws the spinner, src/drivers/platform/pcat/graphics/splash.c).
 AMD64_BOOT_LOGO := $(BUILD)/boot-logo.ppm
 
-$(AMD64_BOOT_LOGO): tools/build/make-boot-logo.py
+$(AMD64_BOOT_LOGO): tools/build/make-boot-splash.py userland/desktop/artwork/kei-boot-splash.png
 	@mkdir -p $(dir $@)
-	$(PYTHON) tools/build/make-boot-logo.py $@
+	$(PYTHON) tools/build/make-boot-splash.py userland/desktop/artwork/kei-boot-splash.png $@.tmp
+	mv -f $@.tmp $@
 
 # The BIOS image's zedbsd.cfg gets the graphical boot's lines too when ZEDBSD_GRAPHICAL_BOOT is y
 # (ws035-p099; the BIOS loader draws the logo on its VBE framebuffer).

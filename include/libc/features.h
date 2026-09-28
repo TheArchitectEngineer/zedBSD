@@ -13,27 +13,27 @@
 #define LIBC_FEATURES_H
 
 /*
- * XXX: Rename __ZEDBSD_* to __LIBC_*
+ * XXX: Rename __KERN_* to __LIBC_*
  */
 #if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 202405L
-#define __ZEDBSD_POSIX_2024_VISIBLE	1
+#define __KERN_POSIX_2024_VISIBLE	1
 #elif defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 800
-#define __ZEDBSD_POSIX_2024_VISIBLE	1
+#define __KERN_POSIX_2024_VISIBLE	1
 #else
-#define __ZEDBSD_POSIX_2024_VISIBLE	0
+#define __KERN_POSIX_2024_VISIBLE	0
 #endif
 
 /*
- * XXX: Rename __ZEDBSD_* to __LIBC_*
+ * XXX: Rename __KERN_* to __LIBC_*
  */
 #if !defined(_POSIX_C_SOURCE) && !defined(_XOPEN_SOURCE)
-#define __ZEDBSD_LEGACY_VISIBLE	1
+#define __KERN_LEGACY_VISIBLE	1
 #elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE < 202405L
-#define __ZEDBSD_LEGACY_VISIBLE	1
+#define __KERN_LEGACY_VISIBLE	1
 #elif defined(_XOPEN_SOURCE) && _XOPEN_SOURCE < 800
-#define __ZEDBSD_LEGACY_VISIBLE	1
+#define __KERN_LEGACY_VISIBLE	1
 #else
-#define __ZEDBSD_LEGACY_VISIBLE	0
+#define __KERN_LEGACY_VISIBLE	0
 #endif
 
 /*

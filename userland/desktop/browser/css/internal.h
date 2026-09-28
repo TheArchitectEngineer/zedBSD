@@ -11,8 +11,8 @@
  * property table.
  */
 
-#ifndef ZDESKTOP_BROWSER_CSS_INTERNAL_H
-#define ZDESKTOP_BROWSER_CSS_INTERNAL_H
+#ifndef KEILAND_BROWSER_CSS_INTERNAL_H
+#define KEILAND_BROWSER_CSS_INTERNAL_H
 
 #include "css/css.h"
 
@@ -164,6 +164,7 @@ struct css_value {
 	uint32_t color;
 	struct vm_string *families[CSS_DECLARED_FAMILIES];
 	int family_count;
+	struct vm_string *url;
 };
 
 /* The kinds of declared value. */
@@ -173,6 +174,7 @@ enum css_value_kind {
 	CSS_VALUE_NUMBER,
 	CSS_VALUE_COLOR,
 	CSS_VALUE_FAMILIES,
+	CSS_VALUE_URL,
 	CSS_VALUE_INHERIT,
 	CSS_VALUE_INITIAL,
 	CSS_VALUE_UNSET
@@ -250,6 +252,12 @@ enum css_property {
 	CSS_PROP_OVERFLOW,
 	CSS_PROP_OVERFLOW_X,
 	CSS_PROP_OVERFLOW_Y,
+	CSS_PROP_BACKGROUND_IMAGE,
+	CSS_PROP_BACKGROUND_REPEAT,
+	CSS_PROP_BACKGROUND_POSITION_X,
+	CSS_PROP_BACKGROUND_POSITION_Y,
+	CSS_PROP_BACKGROUND_SIZE_WIDTH,
+	CSS_PROP_BACKGROUND_SIZE_HEIGHT,
 	CSS_PROP_COUNT
 };
 

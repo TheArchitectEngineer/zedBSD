@@ -1,6 +1,6 @@
 #!/bin/sh
 # The graphical session sessiond starts after a login, as the user, with HOME, USER, LOGNAME, PATH, SHELL and
-# XDG_RUNTIME_DIR (the user's own directory, /run/user/UID) set.  Installed as /etc/zdesktop/session.  The
+# XDG_RUNTIME_DIR (the user's own directory, /run/user/UID) set.  Installed as /etc/keiland/session.  The
 # session lasts as long as zdesktop does: App Home's Log Out ends it, and sessiond shows the greeter again.
 # sessiond passes --control-fd=3 (its socket; zdesktop says READY on it before it takes the display from the
 # greeter), which goes to zdesktop with the other arguments.
@@ -13,5 +13,5 @@ done
 
 # zdesktop, with the wallpaper when the image has one; its socket in the runtime directory.
 picture=
-[ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
+[ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 exec /bin/wayland --session --glass --socket="$XDG_RUNTIME_DIR/wayland-0" $picture "$@"

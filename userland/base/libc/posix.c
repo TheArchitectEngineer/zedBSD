@@ -8051,7 +8051,7 @@ __libc_init(
 	 * program thread, whose blocking call then returns EINTR.  The bit is
 	 * built directly because the public helpers stop at SIGRTMAX.
 	 */
-	wake_signal = (sigset_t)1ULL << (__ZEDBSD_SIGEV_THREAD_SIGNAL - 1U);
+	wake_signal = (sigset_t)1ULL << (__KERN_SIGEV_THREAD_SIGNAL - 1U);
 	(void)__syscall6(KERN_SYS_sigprocmask, SIG_BLOCK, (uintptr_t)&wake_signal,
 			 0, 0, 0, 0);
 

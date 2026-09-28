@@ -7,7 +7,7 @@
 #
 #   plan/ws075/tests/capture-hw.sh SCENARIO MODE OUTDIR
 #       e.g. plan/ws075/tests/capture-hw.sh zdesktop zdesktop build/ws075-p001/hw-zdesktop
-#   I915_HOST as vkloop-hw.sh (default here awe@10.0.30.3); other variables (ZDESKTOP_APP, MVIEW_ARGS, BUILD) pass through.
+#   I915_HOST as vkloop-hw.sh (default here awe@10.0.30.3); other variables (KEILAND_APP, MVIEW_ARGS, BUILD) pass through.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 [ $# -eq 3 ] || { echo "usage: $0 SCENARIO MODE OUTDIR"; exit 2; }
@@ -20,10 +20,10 @@ mkdir -p "$out"
 I915_HOST=${I915_HOST:-awe@10.0.30.3}
 export I915_HOST
 
-# A zdesktop run builds one image per ZDESKTOP_APP: vkloop-hw.sh rebuilds only when an input file is newer than the
+# A zdesktop run builds one image per KEILAND_APP: vkloop-hw.sh rebuilds only when an input file is newer than the
 # image, so a changed file list (run-home.sh in place of run-mview.sh, the terminal's font) would keep the old image.
 if [ "$mode" = zdesktop ] && [ -z "${BUILD:-}" ]; then
-	BUILD=build/resident-zdesktop-${ZDESKTOP_APP:-mview}
+	BUILD=build/resident-zdesktop-${KEILAND_APP:-mview}
 	export BUILD
 fi
 

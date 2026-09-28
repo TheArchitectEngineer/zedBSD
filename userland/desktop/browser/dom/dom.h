@@ -16,8 +16,8 @@
  * a growable buffer outside the heap, since the parser appends to it.
  */
 
-#ifndef ZDESKTOP_BROWSER_DOM_H
-#define ZDESKTOP_BROWSER_DOM_H
+#ifndef KEILAND_BROWSER_DOM_H
+#define KEILAND_BROWSER_DOM_H
 
 #include "vm/vm.h"
 

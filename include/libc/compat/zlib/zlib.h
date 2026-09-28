@@ -10,7 +10,7 @@
  * interface its base programs use (plan/ws035/ws.md, D1 to D6).  It holds
  * no zlib code; the names and values are zlib's so that a program written
  * for zlib reads the same.  Programs of the packages use the real zlib
- * (/usr/include/zlib.h); base programs include <compat/zlib.h>.
+ * (/usr/include/zlib.h); base programs include <compat/zlib/zlib.h>.
  *
  * This first part decompresses (inflate, uncompress) and checksums
  * (adler32, crc32); compression (deflate) comes with ws035-p040.  inflate
@@ -19,8 +19,8 @@
  * then hands out the output as there is room for it.
  */
 
-#ifndef ZEDBSD_COMPAT_ZLIB_H
-#define ZEDBSD_COMPAT_ZLIB_H
+#ifndef KERN_COMPAT_ZLIB_H
+#define KERN_COMPAT_ZLIB_H
 
 #include <stddef.h>
 

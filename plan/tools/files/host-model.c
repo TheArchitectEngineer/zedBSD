@@ -18,7 +18,7 @@
 
 #include "files.h"
 
-#include <zdesktop.h>
+#include <keiland.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -81,7 +81,7 @@ main(
 	mkdir(path, 0755);
 	snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
 	make_file(path, "report");
-	error = setxattr(path, "user.zdesktop.tags", "Work", 4, 0);
+	error = setxattr(path, "user.keiland.tags", "Work", 4, 0);
 	check(error == 0, "xattr set on the source (the host's file system has user xattrs)");
 	snprintf(path, sizeof(path), "%s/src/Folder.v1", root);
 	mkdir(path, 0755);
@@ -107,7 +107,7 @@ main(
 	check(task->files_done == 4, "copy: four items (the top file, two nested files, a link)");
 	snprintf(path, sizeof(path), "%s/dst/Report.pdf", root);
 	check(file_is(path, "report"), "copy: the file's contents");
-	length = getxattr(path, "user.zdesktop.tags", value, sizeof(value));
+	length = getxattr(path, "user.keiland.tags", value, sizeof(value));
 	check(length == 4 && memcmp(value, "Work", 4) == 0, "copy: the tag (xattr) came along");
 	snprintf(path, sizeof(path), "%s/dst/Folder.v1/deep/leaf.txt", root);
 	check(file_is(path, "leaf"), "copy: a nested file");
@@ -125,6 +125,51 @@ main(
 	snprintf(path, sizeof(path), "%s/dst/Folder.v1 2/inner.txt", root);
 	check(exists(path), "copy again: Folder.v1 2");
 	fm_task_free(task);
+
+	/* 2b. Names taken (ws035-p106, F-041): skip leaves the item there, replace puts the source in its place. */
+	snprintf(path, sizeof(path), "%s/dst/Report.pdf", root);
+	make_file(path, "older");
+	snprintf(path, sizeof(path), "%s/dst/Folder.v1/extra.txt", root);
+	make_file(path, "extra");
+	snprintf(path, sizeof(path), "%s/dst", root);
+	task = fm_task_new(FM_TASK_COPY, sources, 2, path);
+	check(fm_task_collides(task, 0) == 1 && fm_task_collides(task, 1) == 1, "collision: both names are taken");
+	task->collisions[0] = FM_COLLISION_SKIP;
+	task->collisions[1] = FM_COLLISION_SKIP;
+	run(task);
+	snprintf(path, sizeof(path), "%s/dst/Report.pdf", root);
+	check(file_is(path, "older") && task->skip_count == 2 && task->error_count == 0, "collision: skip leaves the items there");
+	check(task->results[0] == NULL && task->failed[0] == 0, "collision: a skipped source has no result and did not fail");
+	snprintf(path, sizeof(path), "%s/dst/Report 3.pdf", root);
+	check(!exists(path), "collision: skip makes no new name");
+	fm_task_free(task);
+	snprintf(path, sizeof(path), "%s/dst", root);
+	task = fm_task_new(FM_TASK_COPY, sources, 2, path);
+	task->collisions[0] = FM_COLLISION_REPLACE;
+	task->collisions[1] = FM_COLLISION_REPLACE;
+	check(run(task) == 0 && task->error_count == 0, "collision: replace, no error");
+	snprintf(path, sizeof(path), "%s/dst/Report.pdf", root);
+	check(file_is(path, "report") && task->results[0] != NULL && strcmp(task->results[0], path) == 0, "collision: replace puts the file in the item's place");
+	snprintf(path, sizeof(path), "%s/dst/Folder.v1/extra.txt", root);
+	check(!exists(path), "collision: replace removes the folder that was there (its extra file too)");
+	snprintf(path, sizeof(path), "%s/dst/Folder.v1/deep/leaf.txt", root);
+	check(file_is(path, "leaf"), "collision: replace copies the folder in its place");
+	snprintf(path, sizeof(path), "%s/dst/Report 3.pdf", root);
+	check(!exists(path), "collision: replace makes no new name");
+	fm_task_free(task);
+	snprintf(path, sizeof(path), "%s/src/Moved.txt", root);
+	make_file(path, "moved");
+	targets[0] = strdup(path);
+	snprintf(path, sizeof(path), "%s/dst/Moved.txt", root);
+	make_file(path, "there");
+	snprintf(path, sizeof(path), "%s/dst", root);
+	task = fm_task_new(FM_TASK_MOVE, targets, 1, path);
+	task->collisions[0] = FM_COLLISION_REPLACE;
+	run(task);
+	snprintf(path, sizeof(path), "%s/dst/Moved.txt", root);
+	check(file_is(path, "moved") && !exists(targets[0]) && task->error_count == 0, "collision: a move replaces the item there");
+	fm_task_free(task);
+	free(targets[0]);
 
 	/* 3. Duplicate beside itself. */
 	snprintf(path, sizeof(path), "%s/src", root);
@@ -241,30 +286,30 @@ main(
 
 	/* 14. The recent list (libkeiland): newest first, a path once, removal. */
 	{
-		static struct zdesktop_recent_item items[8];
+		static struct keiland_recent_item items[8];
 		struct fm_tags tags;
 		char **tagged;
 		size_t tagged_count;
 		unsigned mask;
 
 		snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
-		check(zdesktop_recent_add(path, "test") == 0, "recent: add");
+		check(keiland_recent_add(path, "test") == 0, "recent: add");
 		snprintf(other, sizeof(other), "%s/src/Report copy.pdf", root);
-		check(zdesktop_recent_add(other, "test") == 0, "recent: add another");
-		check(zdesktop_recent_add(path, "test") == 0, "recent: add the first again");
-		check(zdesktop_recent_list(items, 8, &count) == 0 && count == 2 && strcmp(items[0].path, path) == 0 && strcmp(items[1].path, other) == 0, "recent: newest first, once each");
-		check(zdesktop_recent_remove(path) == 0, "recent: remove");
-		check(zdesktop_recent_list(items, 8, &count) == 0 && count == 1 && strcmp(items[0].path, other) == 0, "recent: the other is left");
+		check(keiland_recent_add(other, "test") == 0, "recent: add another");
+		check(keiland_recent_add(path, "test") == 0, "recent: add the first again");
+		check(keiland_recent_list(items, 8, &count) == 0 && count == 2 && strcmp(items[0].path, path) == 0 && strcmp(items[1].path, other) == 0, "recent: newest first, once each");
+		check(keiland_recent_remove(path) == 0, "recent: remove");
+		check(keiland_recent_list(items, 8, &count) == 0 && count == 1 && strcmp(items[0].path, other) == 0, "recent: the other is left");
 
 		/* 15. Tags: the xattr, unknown names kept, and the index. */
 		fm_tags_load(&tags);
 		check(tags.count == 5 && strcmp(tags.items[0].name, "Work") == 0, "tags: the five defaults");
 		snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
-		setxattr(path, "user.zdesktop.tags", "Work\nMine\n", 10, 0);
+		setxattr(path, "user.keiland.tags", "Work\nMine\n", 10, 0);
 		mask = fm_tags_of(&tags, path);
 		check(mask == 1U, "tags: Work read (Mine unknown)");
 		check(fm_tags_write(&tags, path, (1U << 2) | 1U) == 0, "tags: write Work and Ideas");
-		length = getxattr(path, "user.zdesktop.tags", value, sizeof(value));
+		length = getxattr(path, "user.keiland.tags", value, sizeof(value));
 		value[length > 0 ? length : 0] = '\0';
 		check(strstr(value, "Mine") != NULL && strstr(value, "Ideas") != NULL, "tags: the unknown name kept");
 		check(fm_tags_paths(&tags, 2, &tagged, &tagged_count) == 0 && tagged_count == 1 && strcmp(tagged[0], path) == 0, "tags: the index lists the file under Ideas");

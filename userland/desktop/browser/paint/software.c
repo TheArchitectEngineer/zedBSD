@@ -28,6 +28,7 @@
 
 static void software_rect(struct paint_bitmap *bitmap, const struct paint_item *item, layout_unit scroll_y, const struct paint_clip *clip);
 static int software_text(struct paint_bitmap *bitmap, struct text_system *text, const struct paint_item *item, layout_unit scroll_y, const struct paint_clip *clip);
+static void software_image(struct paint_bitmap *bitmap, const struct paint_item *item, layout_unit scroll_y, const struct paint_clip *clip);
 static void software_blend(struct paint_bitmap *bitmap, int x, int y, uint32_t color, float coverage);
 static float software_overlap(float start, float end, int pixel);
 
@@ -111,6 +112,12 @@ paint_software(
 		/* A rectangle. */
 		if (item->kind == PAINT_RECT) {
 			software_rect(bitmap, item, scroll_y, paint_clips_top(&clips));
+			continue;
+		}
+
+		/* An image. */
+		if (item->kind == PAINT_IMAGE) {
+			software_image(bitmap, item, scroll_y, paint_clips_top(&clips));
 			continue;
 		}
 
@@ -251,6 +258,99 @@ software_rect(
 		for (x = first_x; x < last_x; x++) {
 			coverage_x = software_overlap(left, right, x);
 			software_blend(bitmap, x, y, item->color, coverage_x * coverage_y);
+		}
+	}
+}
+
+/*
+ * Draws an image item: each pixel it touches takes the image's pixel under
+ * the pixel's centre, weighed by the share of its square the item's
+ * rectangle (cut to the clip) covers, as a rectangle's pixels are.  The
+ * GPU's fragment shader maps the pixels the same way, in the same
+ * single-precision steps.
+ */
+static void
+software_image(
+	struct paint_bitmap *bitmap,
+	const struct paint_item *item,
+	layout_unit scroll_y,
+	const struct paint_clip *clip)
+{
+	const struct img_bitmap *image;
+	float origin_x;
+	float origin_y;
+	float scale_x;
+	float scale_y;
+	float left;
+	float top;
+	float right;
+	float bottom;
+	float coverage_x;
+	float coverage_y;
+	uint32_t texel;
+	int first_x;
+	int last_x;
+	int first_y;
+	int last_y;
+	int u;
+	int v;
+	int x;
+	int y;
+
+	/* The image's place and its texels to a pixel. */
+	image = item->image;
+	origin_x = layout_to_px(item->x);
+	origin_y = layout_to_px(item->y - scroll_y);
+	scale_x = (float)image->width / layout_to_px(item->width);
+	scale_y = (float)image->height / layout_to_px(item->height);
+
+	/* The rectangle in pixels, scrolled, and cut to the clip. */
+	left = origin_x;
+	top = origin_y;
+	right = layout_to_px(item->x + item->width);
+	bottom = layout_to_px(item->y - scroll_y + item->height);
+	if (left < clip->left)
+		left = clip->left;
+	if (top < clip->top)
+		top = clip->top;
+	if (right > clip->right)
+		right = clip->right;
+	if (bottom > clip->bottom)
+		bottom = clip->bottom;
+	if (right <= left || bottom <= top)
+		return;
+
+	/* The pixels it touches, within the bitmap. */
+	first_x = (int)floorf(left);
+	last_x = (int)ceilf(right);
+	first_y = (int)floorf(top);
+	last_y = (int)ceilf(bottom);
+	if (first_x < 0)
+		first_x = 0;
+	if (first_y < 0)
+		first_y = 0;
+	if (last_x > bitmap->width)
+		last_x = bitmap->width;
+	if (last_y > bitmap->height)
+		last_y = bitmap->height;
+
+	/* Each pixel: the texel under its centre, by the share of its square covered. */
+	for (y = first_y; y < last_y; y++) {
+		coverage_y = software_overlap(top, bottom, y);
+		v = (int)floorf(((float)y + 0.5f - origin_y) * scale_y);
+		if (v < 0)
+			v = 0;
+		if (v > image->height - 1)
+			v = image->height - 1;
+		for (x = first_x; x < last_x; x++) {
+			coverage_x = software_overlap(left, right, x);
+			u = (int)floorf(((float)x + 0.5f - origin_x) * scale_x);
+			if (u < 0)
+				u = 0;
+			if (u > image->width - 1)
+				u = image->width - 1;
+			texel = image->pixels[(size_t)v * (size_t)image->width + (size_t)u];
+			software_blend(bitmap, x, y, texel, coverage_x * coverage_y);
 		}
 	}
 }

@@ -9,7 +9,7 @@ Related Milestones: MG004, MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Executor: WS073 のサブエージェント（branch `worktree-agent-a4f5b29b09938aa63`。p001・p002 は `worktree-agent-aefedcaf4a52a0507`）。main が merge する
-Resume point: ws073-p020 の再開の手順（BUG-082 の wip.patch の hang）、その後 BUG-080 の group の変更（ticket の次の手）、残りの bug の表（2026-09-28）
+Resume point: p020（BUG-075・BUG-082）と p021（BUG-084）は cleared（2026-09-28）。次は main の割り当て（別の bug の候補 2 つは ID 待ち: block された SIGSEGV の fault の永久の繰り返し、clang の resource の header の parse 時の一覧）、残りの bug の表
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -54,13 +54,13 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p017](phase017/phase.md) | BUG-036・BUG-031（030・041） | 起動時の USB の root port の列挙を ETIMEDOUT・EIO で 3 回まで再試行、kernel の console への写しを record 単位で排他、間欠の bug の再現の試み | cleared |
 | [ws073-p016](phase016/phase.md) | BUG-074・BUG-076 | FAT の readdir の位置を record の番号にし走査中の unlink で entry を飛ばさない（`rm -r`）。FAT の inode の pool が満ちたら cache だけの inode を追い出す | cleared |
 | [ws073-p019](phase019/phase.md) | BUG-079 | libc の setenv・putenv が既存の変数の置き換えで後ろの変数を落とす（App Home の app が zdesktop の環境を失う）を修正 | cleared |
-| [ws073-p020](phase020/phase.md) | BUG-075・BUG-082 | 読んだ後に消した file の storage を unlink で返す（commit）。sync と終了の競合（BUG-082）は wip.patch、hang が残る | uncleared |
+| [ws073-p020](phase020/phase.md) | BUG-075・BUG-082 | 読んだ後に消した file の storage を unlink で返す。sync と終了の競合（BUG-082）: wip.patch に加え、sync が読みの fill を i_io_lock を持って待つ待ち合いと、amd64 HAL の `running_task` の per-CPU の 2 回の load（fork が他の thread の frame を写す）を修正。bug082.sh 300/300、bug075.sh 14/14 | cleared（2 回目の試行、2026-09-28） |
+| [ws073-p021](phase021/phase.md) | BUG-084 | header の改名の直後の image の build で rootfs が消えた header を複写する（clang の package の header の一覧を sysroot の manifest から） | cleared（2026-09-28） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 
 | Bug | 状態 | 次の手 |
 | --- | --- | --- |
-| BUG-075 | 原因の見込みあり（read の page cache の object が inode に handle を持ち、unlink の後も orphan の chain が残る） | unlink で DEAD になった inode の cache だけの object を捨てる設計の Phase（VM の object の寿命） |
 | BUG-031 | 修正あり、確認は部分的 | 起動の途中の画面を撮る試験で 20 回 |
 | BUG-036 | 緩和（列挙の再試行） | 時間切れの原因（xHCI の event か QEMU か）、hub の下の port |
 | BUG-030・041・051 | 再現せず | 再現したとき |

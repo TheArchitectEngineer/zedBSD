@@ -16,8 +16,8 @@
  * before anything that could call another function).
  */
 
-#ifndef ZDESKTOP_BROWSER_JS_BUILTIN_H
-#define ZDESKTOP_BROWSER_JS_BUILTIN_H
+#ifndef KEILAND_BROWSER_JS_BUILTIN_H
+#define KEILAND_BROWSER_JS_BUILTIN_H
 
 #include "js/js.h"
 #include "vm/bytecode.h"

@@ -408,7 +408,7 @@ read_options(
 			options->exit_on_overflow = 1;
 			break;
 		case OPTION_VERSION:
-			printf("xargs (zedBSD) 1.0\n");
+			printf("xargs (Kei) 1.0\n");
 			exit(0);
 			break;
 		default:

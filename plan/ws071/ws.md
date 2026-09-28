@@ -38,7 +38,7 @@ action が動き、context menu が system の UI で出る、3. 規約の全文
 | 項目 | 結果 |
 | --- | --- |
 | program | `userland/desktop/files`（`/bin/files`）。標準の Wayland と Vulkan、CPU の canvas（canvas・text・icons）を Vulkan で貼る。zdesktop の拡張は libkeiland だけを使う。App Home の項目 |
-| 画面 | Home の dashboard（hero、folder cards、recent）、sidebar（Favorites・Locations・Tags）、content（icon・list、並べ替え、選択、scroll）、preview の pane。3 つの pane は窓の中に浮いたすりガラスの card（`zed_glass_v1`、窓の地は透明、ws035-p083・p057）で、外側は浮いたタイトルバーの幅に揃う |
+| 画面 | Home の dashboard（hero、folder cards、recent）、sidebar（Favorites・Locations・Tags）、content（icon・list、並べ替え、選択、scroll）、preview の pane。3 つの pane は窓の中に浮いたすりガラスの card（`keiland_glass_v1`、窓の地は透明、ws035-p083・p057）で、外側は浮いたタイトルバーの幅に揃う |
 | titlebar | 戻る・進む・Home・パンくず・検索・表示の切替・preview・進みの輪は WS070 の CONTROLS（浮いたタイトルバー、最大化ではシステムバーの Application Zone）。Ctrl+F・Ctrl+L で titlebar の欄へ。拡張が無ければ起動で失敗 |
 | 操作 | copy・move・delete・duplicate・link の background の task と進み、clipboard、new folder、rename、ゴミ箱（freedesktop.org Trash、Put Back・Empty）、undo・redo、検索（名前・拡張子・kind・tag）、タグ（xattr `user.zdesktop.tags`）、recent（libkeiland の API）、Get Info（owner・権限・checksum・xattr）、開く・別のアプリで開く（関連付け）、Quick Look（窓の中の overlay）、サムネイル（PPM・PGM・PNG: libz-compat の inflate・libpng-compat の decode）、窓の中の DnD（folder・sidebar・tag・Trash・tab、Ctrl で copy・Ctrl+Shift で link） |
 | menu | File・Edit・View・Go・Window・Help（System Menu、状態の反映、CONTROLS の窓では右端の「…」）、shortcut（spec §35）、context menu（WS070 protocol version 2、項目・空き地・Trash・sidebar） |

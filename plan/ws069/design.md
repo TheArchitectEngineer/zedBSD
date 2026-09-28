@@ -22,7 +22,7 @@ zed-gpu-buffer-v1-client-protocol.h もパブリックにしなくていいよ�
   （内蔵そのものは今はしない）。
 - **標準の Wayland と Vulkan**: 窓は xdg-shell、入力は wl_seat。窓の表示は Vulkan（`VK_KHR_wayland_surface` の swapchain、
   top-level ごと）。X の窓の合成は今の CPU の合成から始め、GPU での合成は後の段階。
-- **zdesktop の非標準の拡張は libkeiland 経由**（`zed_gpu_buffer_v1` 等）。GLX の画像を GPU の buffer のまま渡す段階
+- **zdesktop の非標準の拡張は libkeiland 経由**（`keiland_gpu_buffer_v1` 等）。GLX の画像を GPU の buffer のまま渡す段階
   （DRI3/Present に当たる）はこれを使う。libkeiland は OS・daemon への道も兼ねる（2026-09-27 ユーザー決定「両方」）。
 - **非公開の header**: `X11/Xzed.h`（libX11 の Xzed 固有の関数）と `wayland/zed-gpu-buffer-v1-client-protocol.h` は sysroot の
   公開 header から外す。libGL の GLX と xserver の間の private な要求（画像の転送、GLX 拡張）は、それぞれの source の

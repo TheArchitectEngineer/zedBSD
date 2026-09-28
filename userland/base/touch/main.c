@@ -185,7 +185,7 @@ read_options(
 			apply_time_word(scan.value, options);
 			break;
 		case OPTION_VERSION:
-			printf("touch (zedBSD) 1.0\n");
+			printf("touch (Kei) 1.0\n");
 			exit(0);
 		default:
 			usage();

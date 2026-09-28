@@ -215,7 +215,7 @@ read_options(
 			options->output_delimiter = scan.value;
 			break;
 		case OPTION_VERSION:
-			printf("cut (zedBSD) 1.0\n");
+			printf("cut (Kei) 1.0\n");
 			exit(0);
 		default:
 			usage();

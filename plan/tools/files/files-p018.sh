@@ -20,9 +20,9 @@ mkdir -p "$out"
 guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
-stop_all='for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[z]desktop-files" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[z]desktop( |$)|[z]desktop-files" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[f]iles" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[f]iles" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 start='export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
+picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 /bin/wayland --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started'
 status=0
 
@@ -49,7 +49,7 @@ shot() {
 }
 
 # 1. One window at its own size.
-guest "$stop_all; rm -f /etc/zdesktop/apps.conf; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null 2>&1" >/dev/null
+guest "$stop_all; rm -f /etc/keiland/apps.conf; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null 2>&1" >/dev/null
 guest "$start" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=200 > /tmp/f1.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 expect_log /tmp/zdesktop.log 'ZWL BOUNDS client=1 surface=[0-9]+ width=1256 height=690'

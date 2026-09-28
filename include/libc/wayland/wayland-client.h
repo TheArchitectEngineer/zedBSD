@@ -9,8 +9,8 @@
  * Collects the selected standard Wayland client interfaces.
  */
 
-#ifndef ZEDBSD_WAYLAND_CLIENT_H
-#define ZEDBSD_WAYLAND_CLIENT_H
+#ifndef KERN_WAYLAND_CLIENT_H
+#define KERN_WAYLAND_CLIENT_H
 
 #include <wayland/wayland-client-core.h>
 #include <wayland/wayland-client-protocol.h>

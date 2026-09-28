@@ -13,9 +13,9 @@ Queue: なし
 ## 範囲
 
 `userland/base/libpng-compat` に PNG の読み書きの独自実装を置き、`/lib/libpng-compat.so` を作る。
-公開ヘッダは `include/libc/compat/png.h`（`/usr/include/compat/png.h`）。
-使う側は `#include <compat/png.h>` と書く。
-**libpng のコードは使わない**（Zlib ライセンスで独自実装）。圧縮は p040 の `libz-compat` を使う（`#include <compat/zlib.h>`）。
+公開ヘッダは `include/libc/compat/png/png.h`（`/usr/include/compat/png/png.h`）。
+使う側は `#include <compat/png/png.h>` と書く。
+**libpng のコードは使わない**（Zlib ライセンスで独自実装）。圧縮は p040 の `libz-compat` を使う（`#include <compat/zlib/zlib.h>`）。
 
 **使うのは base のプログラムだけ**である。GTK・Qt・freetype は本家 libpng（ws034-p027）を使う
 （2026-09-23 ユーザー決定）。`PNG_LIBPNG_VER_STRING` は本家と同じ値
@@ -77,7 +77,7 @@ p025 のフレーム描画あたり）に着手するときに、p040 と一緒�
 
 ## 2026-09-27: decode は ws071-p010 で
 
-[ws071-p010](../../ws071/ws.md) で読む側を先に作った: `include/libc/compat/png.h`、`userland/base/libpng-compat/read.c`、
+[ws071-p010](../../ws071/ws.md) で読む側を先に作った: `include/libc/compat/png/png.h`、`userland/base/libpng-compat/read.c`、
 `/lib/libpng-compat.so`。libpng 1.6 の simplified API（`png_image_begin_read_from_memory`・`_from_file`・`png_image_finish_read`・
 `png_image_free`）。上の案より広く、全部の色型と bit 深度 1〜16・`tRNS`・filter 5 種・CRC。Adam7 は読まない（失敗）。host の試験
 `plan/tools/files/host-png.sh`（PIL と比べる）。WS074 の browser も使う。**この Phase に残るのは encode**（と p040 の deflate）。
