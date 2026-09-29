@@ -90,7 +90,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | 5 | fg010 の台本（S1〜S14）と WS099 の基準 C1〜C10・WS100 の A1〜A7 の数値 | 案のまま | 随時 | 上の表、各 ws.md |
 | 7 | WS099 の C7: 空の一覧の案内（Files の「Files you open appear here.」、比 1.8〜2.0）を contrast の基準に入れるか。副次の文字の色を `0x6b7585` → `0x56606f` に暗くした（main が許可、Settings と Files、2026-09-30 夜） | 案内は基準の外（使えない項目として WCAG の対象外）。色の変更は戻せる | 随時 | ws099-p005 |
 | 8 | WS100: Settings の Sound の頁で音量を変えられるようにするか（p005、基準 A1〜A7 の外） | 入れない（system bar の音量だけ） | WS100 p004 の後 | [WS100 design](ws100/design.md) |
-| 6 | WS099 の C6（窓 10 個で pointer の移動から表示まで中央値 50 ms 以内）: 新しい物差し（`c6.py`、5 run・200 試料）で実機の passthrough の中央値は 121.5 ms・p90 173 ms（compositor 約 9.5 frame/s）。基準を保つか緩めるか | 基準は保ち、frame の長さの主因（1 frame に約 7 run の直列か、client の待ちか）を次の Phase で分析する | 随時 | ws075-p024 の途中報告 |
+| 6 | WS099 の C6（窓 10 個で pointer の移動から表示まで中央値 50 ms 以内）: 新しい物差し（`c6.py`、5 run・200 試料）で実機の passthrough の中央値は 121.5 ms・p90 173 ms（compositor 約 9.5 frame/s）。基準を保つか緩めるか | **決定（2026-09-30 朝 ユーザー「50 ms を保つ」）**: 基準は保ち、WS075 p026 の分析と直しで近づける。届かなければ 10/10 に見直す | — | ws075-p024 の途中報告 |
 
 ## Workstream registry
 
