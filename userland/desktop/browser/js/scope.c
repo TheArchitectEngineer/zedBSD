@@ -1223,11 +1223,11 @@ scope_visit_class(
 	if (node->first != NULL)
 		scope_visit(compiler, scope, node->first);
 
-	/* A named class expression sees its own name as a const, and the class's code its private names. */
+	/* A named class sees its own name as a const (apart from a declaration's outer let), and the class's code its private names. */
 	inner = scope;
 	node->scope = NULL;
 	named = 0;
-	if (node->kind == JS_NODE_CLASS && node->text != NULL)
+	if (node->text != NULL)
 		named = 1;
 	has_private = 0;
 	for (member = node->second; member != NULL; member = member->next) {

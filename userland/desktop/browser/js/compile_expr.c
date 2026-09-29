@@ -426,8 +426,8 @@ js_compile_class(
 		expr_class_method(fc, member, constructor, prototype);
 	}
 
-	/* A named class expression's own name takes the class. */
-	if (node->kind == JS_NODE_CLASS && node->text != NULL)
+	/* A named class's own inner name takes the class. */
+	if (node->text != NULL)
 		js_init_binding(fc, node->text, node->text_length, constructor);
 
 	/* The static fields and blocks run with the class as this. */
