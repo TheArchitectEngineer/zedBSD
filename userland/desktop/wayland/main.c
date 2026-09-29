@@ -9,6 +9,7 @@
  * A finite, fullscreen Wayland service using independent shared GPU resources.
  */
 
+#include "desktop.h"
 #include "zwl.h"
 #include "toplevel.h"
 #include "keymap.h"
@@ -78,7 +79,7 @@ main(
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: wayland [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: wayland [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
 		return 2;
 	}
 
@@ -291,6 +292,13 @@ parse_options(
 			server->size_given = 1;
 			continue;
 		}
+
+		/* The desktop surface's program and token (desktop.c, ws094-p002). */
+		match = zwl_desktop_option(server, argument);
+		if (match == 1)
+			continue;
+		if (match != 0)
+			return EINVAL;
 
 		/* Service timeout always remains finite, including unattended test invocations. */
 		match = strncmp(argument, "--timeout=", 10);

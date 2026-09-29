@@ -9,6 +9,7 @@
  * Selected core Wayland, xdg-shell and typed GPU-buffer request semantics.
  */
 
+#include "desktop.h"
 #include "zwl.h"
 #include "menu.h"
 #include "titlebar.h"
@@ -58,6 +59,7 @@ static const struct zwl_global globals[] = {
 	{ 17, "keiland_glass_manager_v1", 1, ZWL_GLASS_MANAGER },
 	{ 18, "zwp_primary_selection_device_manager_v1", 1, ZWL_PRIMARY_MANAGER },
 	{ 19, "zwp_tablet_manager_v2", 1, ZWL_TABLET_MANAGER },
+	{ 20, "keiland_desktop_manager_v1", 1, ZWL_DESKTOP_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -266,6 +268,11 @@ zwl_dispatch(
 	case ZWL_TABLET_TOOL:
 		/* The pen tablets (tablet.c). */
 		error = zwl_tablet_request(object, opcode, bytes, size);
+		break;
+	case ZWL_DESKTOP_MANAGER:
+	case ZWL_DESKTOP_SURFACE:
+		/* The desktop surface (desktop.c, ws094-p002). */
+		error = zwl_desktop_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */

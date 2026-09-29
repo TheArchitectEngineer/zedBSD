@@ -17,6 +17,7 @@
  * menu-shell.c.
  */
 
+#include "desktop.h"
 #include "menu.h"
 
 #include <errno.h>
@@ -838,8 +839,9 @@ context_create(
 		return EPROTO;
 	created->shown_menu = menu;
 
-	/* Only a window (a toplevel's surface) shows one. */
-	if (surface->role == NULL || surface->role->top == NULL) {
+	/* Only a window (a toplevel's surface) or the desktop surface (desktop.c) shows one. */
+	if ((surface->role == NULL || surface->role->top == NULL) &&
+	    surface != zwl_desktop_surface(server)) {
 		printf("ZWL MENU context-refused client=%llu context=%u surface=%u reason=window\n", (unsigned long long)manager->client->number, created->id, surface->id);
 		zwl_menu_send_context_done(created);
 		return 0;

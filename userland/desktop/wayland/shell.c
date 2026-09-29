@@ -62,6 +62,7 @@
  * something makes the output composed again while it shows.
  */
 
+#include "desktop.h"
 #include "extras.h"
 #include "menu.h"
 #include "popup.h"
@@ -372,6 +373,9 @@ zwl_glass_draw(
 		return;
 	}
 
+	/* The desktop's icons over the wallpaper, with the layer (desktop.c). */
+	zwl_desktop_draw(server, command);
+
 	/*
 	 * The windows; the top one has the focus; where a dragged one would
 	 * dock shows just under it.  The desktop shown's windows, and while
@@ -569,6 +573,17 @@ zwl_glass_button(
 
 	/* Only the left button acts on windows. */
 	surface = window_at(server, server->pointer_x, server->pointer_y, &hit);
+
+	/* A press where no window is goes to the desktop's icons when there are any (desktop.c); a window's press takes the keyboard back from them. */
+	if (surface == NULL) {
+		open = zwl_desktop_press(server);
+		if (open)
+			return 0;
+	} else {
+		zwl_desktop_unfocus(server);
+	}
+
+	/* Another button is the client's on a body, zdesktop's elsewhere. */
 	if (button != ZWL_BUTTON_LEFT)
 		return hit != HIT_BODY;
 
@@ -1723,6 +1738,9 @@ draw_backdrop(
 	shape.opaque = 1.0f;
 	shape.set = glass_wallpaper_set(server);
 	glass_shape_draw(server, command, &shape);
+
+	/* The desktop's icons on it (desktop.c). */
+	zwl_desktop_draw(server, command);
 
 	/* The windows below, as the blur will show them. */
 	for (index = 0; index < below; index++) {

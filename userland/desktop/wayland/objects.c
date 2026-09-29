@@ -9,6 +9,7 @@
  * Protocol-object ownership and deferred destruction of imported image resources.
  */
 
+#include "desktop.h"
 #include "zwl.h"
 #include "menu.h"
 #include "titlebar.h"
@@ -336,6 +337,10 @@ zwl_object_destroy(
 	    object->kind == ZWL_CONTEXT_MENU ||
 	    object->kind == ZWL_MENU)
 		zwl_menu_object_gone(object);
+
+	/* The desktop surface's role ends with its surface or its object (desktop.c). */
+	if (object->kind == ZWL_SURFACE || object->kind == ZWL_DESKTOP_SURFACE)
+		zwl_desktop_object_gone(object);
 
 	/* The Titlebar Presentation's objects stop naming this one (titlebar.c). */
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_TOPLEVEL || object->kind == ZWL_TITLEBAR)
