@@ -45,10 +45,19 @@ kernel の raw socket の検査（`src/kern/syscall.c` の socket 生成、`cred
   - root の `ping -c 2 127.0.0.1` も 2/2。
 - 未実施: 実機（ユーザーの報告の素の 5330・demo-lcd3）、graphical の session の terminal からの実行、i386・arm64 の image。
 
-## 所見（範囲外、直していない）
+## 所見（範囲外として見つけ、下の追記で修正）
 
 - ping の統計の最小値: RTT が 0 の応答を「未設定」と扱う（`minimum == 0 || rtt < minimum`）ため、root の 2 回の実行で
   `min/avg/max = 1.000/0.500/1.000` と min が avg より大きく出た。QEMU では RTT が 0 ms・1 ms に丸まる（時計の分解能）。見た目だけの不具合。
+
+### 修正の追記（2026-09-29、main の指示「BUG-102 の続きとして直す」）
+
+- `userland/base/ping/main.c`: 最初の応答（`received == 1`）で min を初期化し、以後はより速い応答で下げる。RTT 0 は実測として扱う。
+- `tests/ping-user.sh` に統計の順序の検査（各実行の `min <= avg <= max`）を足した。
+- build（main の 7f2f61a0 に fast-forward した tree、`build/ws073-p029/build3.log`）: `check-amd64-native-image: OK`、ping に warning 0。style-diff findings 0。
+- QEMU: `ping-user.sh` `PING-USER:PASS`。root の 2 回は `0.000/0.500/1.000`（修正前の同じ形の実行は `1.000/0.500/1.000`）、
+  kei の 10.0.2.2 は `0.000/1.000/2.000`、127.0.0.1 は `0.000/0.000/0.000`。boot test PASS（`build/ws073-p029/boot-test2/login.png`）。
+- 未実施: 実機。
 
 ## Resume point
 

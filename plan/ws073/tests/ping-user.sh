@@ -4,7 +4,7 @@
 # As root it gives kei the harness key, then over SSH as kei it checks /bin/ping's mode, pings the guest's own
 # loopback and the emulator's gateway, shows that a copy without the set-user-ID bit is refused (the bit is what
 # grants the socket), and runs tests/setuid-drop.c installed set-user-ID root (the privilege is gone after
-# setuid(getuid()) and cannot come back).  Prints PING-USER:PASS.
+# setuid(getuid()) and cannot come back).  The round-trip statistics must be ordered.  Prints PING-USER:PASS.
 #   sh plan/ws073/tests/ping-user.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -48,5 +48,11 @@ cat "$out/kei-setuid-drop.txt"
 grep -q 'SETUID-DROP:PASS' "$out/kei-setuid-drop.txt" || { echo "PING-USER:FAIL privilege drop"; status=1; }
 g run 'ping -c 2 127.0.0.1' > "$out/root-ping-lo.txt" 2>&1 || { echo "PING-USER:FAIL root loopback"; status=1; }
 cat "$out/root-ping-lo.txt"
+# The statistics are ordered (min <= avg <= max) in every run, also when a round trip rounds to 0 ms.
+for f in "$out/kei-ping-lo.txt" "$out/kei-ping-gw.txt" "$out/root-ping-lo.txt"; do
+	sed -n 's|^round-trip min/avg/max = \([0-9.]*\)/\([0-9.]*\)/\([0-9.]*\) ms$|\1 \2 \3|p' "$f" |
+		awk '{ if (!($1 <= $2 && $2 <= $3)) exit 1 } END { if (NR != 1) exit 1 }' ||
+		{ echo "PING-USER:FAIL statistics out of order in $f"; status=1; }
+done
 [ "$status" = 0 ] && echo "PING-USER:PASS"
 exit "$status"
