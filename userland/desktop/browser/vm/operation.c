@@ -106,6 +106,7 @@ vm_to_primitive(
 	int hint,
 	vm_value *result)
 {
+	struct vm_object *object;
 	const char *first;
 	const char *second;
 	int is_object;
@@ -117,6 +118,11 @@ vm_to_primitive(
 	is_object = vm_value_is_object(value);
 	if (!is_object)
 		return 0;
+
+	/* A Date's default hint is string, as its @@toPrimitive has it (ws074-p076; there are no symbols yet). */
+	object = (struct vm_object *)vm_value_as_cell(value);
+	if (hint == VM_HINT_DEFAULT && object->kind == VM_KIND_DATE)
+		hint = VM_HINT_STRING;
 
 	/* A string hint tries toString first; the others valueOf. */
 	first = "valueOf";
