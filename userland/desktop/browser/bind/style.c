@@ -237,7 +237,15 @@ style_element(
 	struct vm_object *object;
 	struct dom_node *node;
 	int is_object;
+	int computed;
 	int status;
+
+	/* A computed declaration (ws074-p082) reaches here only to be changed, which it cannot be. */
+	computed = bind_computed_element(this_value, element);
+	if (computed) {
+		status = bind_throw_dom(realm, "NoModificationAllowedError", "The computed style cannot be modified.");
+		return status;
+	}
 
 	/* A platform object. */
 	is_object = vm_value_is_object(this_value);
@@ -1046,10 +1054,18 @@ style_css_text_get(
 	struct style_list list;
 	struct vm_string *text;
 	struct wb_units units;
+	int computed;
 	int status;
 
 	UNUSED_PARAMETER(args);
 	UNUSED_PARAMETER(count);
+
+	/* A computed declaration's text is empty, as in other browsers. */
+	computed = bind_computed_element(this_value, &element);
+	if (computed) {
+		status = bind_string(realm, "", result);
+		return status;
+	}
 
 	/* The element's declarations. */
 	status = style_element(realm, this_value, &element);
@@ -1159,10 +1175,18 @@ style_length(
 {
 	struct dom_element *element;
 	struct style_list list;
+	int computed;
 	int status;
 
 	UNUSED_PARAMETER(args);
 	UNUSED_PARAMETER(count);
+
+	/* A computed declaration lists the properties it reports. */
+	computed = bind_computed_element(this_value, &element);
+	if (computed) {
+		*result = vm_value_int32((int32_t)bind_computed_count());
+		return 0;
+	}
 
 	/* The element's declarations. */
 	status = style_element(realm, this_value, &element);
@@ -1188,8 +1212,23 @@ style_item(
 {
 	struct dom_element *element;
 	struct style_list list;
+	const char *name;
 	uint32_t index;
+	int computed;
 	int status;
+
+	/* A computed declaration names its properties in its order. */
+	computed = bind_computed_element(this_value, &element);
+	if (computed) {
+		status = vm_to_uint32(realm, js_argument(args, count, 0), &index);
+		if (status != 0)
+			return status;
+		name = bind_computed_name(index);
+		if (name == NULL)
+			name = "";
+		status = bind_string(realm, name, result);
+		return status;
+	}
 
 	/* The element's declarations and the place. */
 	status = style_element(realm, this_value, &element);
@@ -1227,7 +1266,18 @@ style_get_property_value(
 	struct vm_string *name;
 	uint32_t index;
 	int present;
+	int computed;
 	int status;
+
+	/* A computed declaration's value is the element's resolved one. */
+	computed = bind_computed_element(this_value, &element);
+	if (computed) {
+		status = style_property_name(realm, js_argument(args, count, 0), &name);
+		if (status != 0)
+			return status;
+		status = bind_computed_value(realm, element, name, result);
+		return status;
+	}
 
 	/* The element, the name and the declarations. */
 	status = style_element(realm, this_value, &element);
@@ -1267,7 +1317,15 @@ style_get_property_priority(
 	uint32_t index;
 	int present;
 	int important;
+	int computed;
 	int status;
+
+	/* A computed declaration has no priorities. */
+	computed = bind_computed_element(this_value, &element);
+	if (computed) {
+		status = bind_string(realm, "", result);
+		return status;
+	}
 
 	/* The element, the name and the declarations. */
 	status = style_element(realm, this_value, &element);
@@ -1403,17 +1461,25 @@ style_member_get(
 	struct vm_string *name;
 	uint32_t index;
 	int present;
+	int computed;
 	int status;
 
 	UNUSED_PARAMETER(args);
 	UNUSED_PARAMETER(count);
 
-	/* The element, the property and the declarations. */
+	/* The property; a computed declaration's value is the element's resolved one. */
+	callee = js_builtin_callee(realm);
+	name = (struct vm_string *)vm_value_as_cell(callee->data);
+	computed = bind_computed_element(this_value, &element);
+	if (computed) {
+		status = bind_computed_value(realm, element, name, result);
+		return status;
+	}
+
+	/* The element and the declarations. */
 	status = style_element(realm, this_value, &element);
 	if (status != 0)
 		return status;
-	callee = js_builtin_callee(realm);
-	name = (struct vm_string *)vm_value_as_cell(callee->data);
 	status = style_read(realm, element, &list);
 	if (status != 0)
 		return status;

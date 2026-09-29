@@ -2193,7 +2193,7 @@ view_bind_modifiers(
 
 /*
  * Asks the caller to draw the view again when the page's scripts changed
- * its document or its focus, and tells it of a new title.
+ * its document, its focus or its scroll, and tells it of a new title.
  */
 static void
 view_changed(
@@ -2205,6 +2205,14 @@ view_changed(
 	/* No page, no change. */
 	if (view->page == NULL)
 		return;
+
+	/* A scroll the scripts asked for (ws074-p082) is the view's, drawn again. */
+	if (view->page->scroll_requested) {
+		view->page->scroll_requested = 0;
+		view->scroll_y = layout_from_px((float)view->page->scroll_y);
+		view_clamp_scroll(view);
+		view_redraw(view);
+	}
 
 	/* A document the scripts changed: drawn again, and its title may be new. */
 	layout = page_needs_layout(view->page);

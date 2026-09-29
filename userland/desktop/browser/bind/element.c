@@ -71,7 +71,7 @@ static const struct bind_attribute element_attributes[] = {
 	{ "clientLeft", bind_client_left, NULL },
 	{ "scrollWidth", bind_scroll_width, NULL },
 	{ "scrollHeight", bind_scroll_height, NULL },
-	{ "scrollTop", bind_scroll_top, bind_scroll_position_set },
+	{ "scrollTop", bind_scroll_top, bind_scroll_top_set },
 	{ "scrollLeft", bind_scroll_left, bind_scroll_position_set },
 	{ "innerHTML", bind_inner_html_get, bind_inner_html_set },
 	{ "outerHTML", bind_outer_html_get, bind_outer_html_set },
@@ -102,6 +102,10 @@ static const struct bind_operation element_operations[] = {
 	{ "insertAdjacentHTML", 2, bind_insert_adjacent_html },
 	{ "insertAdjacentElement", 2, bind_insert_adjacent_element },
 	{ "insertAdjacentText", 2, bind_insert_adjacent_text },
+	{ "scrollIntoView", 0, bind_scroll_into_view },
+	{ "scrollTo", 0, bind_element_scroll_to },
+	{ "scroll", 0, bind_element_scroll_to },
+	{ "scrollBy", 0, bind_element_scroll_by },
 	{ NULL, 0, NULL }
 };
 
@@ -123,6 +127,9 @@ static const struct bind_attribute html_element_attributes[] = {
 	{ "style", bind_style, bind_style_set },
 	{ "offsetWidth", bind_offset_width, NULL },
 	{ "offsetHeight", bind_offset_height, NULL },
+	{ "offsetParent", bind_offset_parent, NULL },
+	{ "offsetTop", bind_offset_top, NULL },
+	{ "offsetLeft", bind_offset_left, NULL },
 	{ NULL, NULL, NULL }
 };
 

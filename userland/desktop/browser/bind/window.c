@@ -65,6 +65,10 @@ static const struct bind_operation window_operations[] = {
 	{ "requestAnimationFrame", 1, bind_request_animation_frame },
 	{ "cancelAnimationFrame", 1, bind_clear_timer },
 	{ "queueMicrotask", 1, window_queue_microtask },
+	{ "getComputedStyle", 1, bind_get_computed_style },
+	{ "scrollTo", 0, bind_window_scroll_to },
+	{ "scroll", 0, bind_window_scroll_to },
+	{ "scrollBy", 0, bind_window_scroll_by },
 	{ NULL, 0, NULL }
 };
 

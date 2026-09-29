@@ -28,7 +28,6 @@
 #define PAGE_DUMP_DEPTH		512
 
 static int page_gather_styles(struct page *page);
-static int page_update_styles(struct page *page);
 static int page_container_size(void *context, const struct dom_element *container, float *width, float *height);
 static int page_containers_moved(const struct page *page);
 static int page_text_of(const struct dom_node *node, struct wb_units *units);
@@ -129,6 +128,7 @@ page_destroy(
 	page_images_release(page);
 	css_engine_destroy(page->css);
 	css_engine_destroy(page->query_css);
+	page_box_index_release(page);
 	page_sheets_release(page);
 	page_fonts_release(page);
 	bind_window_destroy(page->window);
@@ -476,6 +476,7 @@ page_layout(
 	error = layout_build(&page->layout, page->css, &page->text, page->document, page_image_of, page_image_by_url, page, width, height);
 	page->laid_out = 1;
 	page->laid_out_generation = page->document->generation;
+	page->layout_serial++;
 
 	/*
 	 * A query container the old layout did not have (the first layout), or
@@ -734,7 +735,7 @@ page_container_size(
  * Gathers the style sheets again when a script changed the document, or
  * a fetched sheet arrived, since they were last gathered.
  */
-static int
+int
 page_update_styles(
 	struct page *page)
 {

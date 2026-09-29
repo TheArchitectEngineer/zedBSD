@@ -19,12 +19,21 @@
  * (the layout does not keep how far a box's content overflows it), and
  * its scroll position is 0 (boxes do not scroll).  A node without a box
  * has an empty rectangle and sizes of 0.
+ *
+ * ws074-p082 adds offsetParent, offsetTop and offsetLeft (CSSOM View: the
+ * nearest positioned ancestor, table cell or table, or the body), and the
+ * scroll a script asks for: window.scrollTo, scroll and scrollBy, an
+ * element's scrollIntoView, and the root element's scrollTo, scroll,
+ * scrollBy and scrollTop, which move the document (the host keeps the
+ * scroll inside it; boxes do not scroll, and the page not sideways).
  */
 
 #include "bind/internal.h"
+#include "css/css.h"
 
 #include <errno.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 /*
@@ -87,6 +96,13 @@ static int geometry_box(struct bind_window *window, struct dom_element *element,
 static int geometry_is_root(const struct bind_window *window, const struct dom_element *element);
 static void geometry_scroll(const struct bind_window *window, double *x, double *y);
 static double geometry_round(double value);
+static int geometry_position(struct bind_window *window, struct dom_element *element, int *position);
+static int geometry_offset_parent(struct bind_window *window, struct dom_element *element, struct dom_element **parent);
+static int geometry_offset(struct vm_realm *realm, vm_value this_value, int top, vm_value *result);
+static int geometry_scroll_arguments(struct vm_realm *realm, const vm_value *args, unsigned count, double *x, double *y, int *given_x, int *given_y);
+static void geometry_scroll_move(struct bind_window *window, double x, double y);
+static double geometry_finite(double value);
+static int geometry_stops_offset(const struct dom_node *node);
 static int geometry_rect_create(struct bind_window *window, double x, double y, double width, double height, vm_value *value);
 static int geometry_rect_of(struct vm_realm *realm, vm_value value, struct geometry_rect **rect);
 static int geometry_rect_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -534,6 +550,390 @@ bind_offset_height(
 		return status;
 
 	/* Succeeded: the height. */
+	return 0;
+}
+
+/*
+ * Takes a new scroll position for the root element (the setter of
+ * scrollTop), which scrolls the document; any other element's is ignored.
+ */
+int
+bind_scroll_top_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct dom_element *element;
+	double position;
+	double scroll_x;
+	double scroll_y;
+	int root;
+	int status;
+
+	/* The element, and the number, whose conversion may throw. */
+	*result = VM_VALUE_UNDEFINED;
+	window = bind_window_of(realm);
+	status = geometry_element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	status = vm_to_number(realm, js_argument(args, count, 0), &position);
+	if (status != 0)
+		return status;
+
+	/* Only the root scrolls, with the document. */
+	root = geometry_is_root(window, element);
+	if (!root)
+		return 0;
+
+	/* Succeeded: the document scrolls down to it. */
+	geometry_scroll(window, &scroll_x, &scroll_y);
+	geometry_scroll_move(window, scroll_x, geometry_finite(position));
+	return 0;
+}
+
+/*
+ * Reports the element an element's offsetTop and offsetLeft are measured
+ * from, or null (offsetParent).
+ */
+int
+bind_offset_parent(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct dom_element *element;
+	struct dom_element *parent;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The element and its offset parent. */
+	window = bind_window_of(realm);
+	status = geometry_element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	status = geometry_offset_parent(window, element, &parent);
+	if (status != 0)
+		return status;
+
+	/* None is null. */
+	if (parent == NULL) {
+		*result = VM_VALUE_NULL;
+		return 0;
+	}
+
+	/* Succeeded: its object. */
+	status = bind_wrap(window, &parent->node, result);
+	if (status != 0)
+		return status;
+	return 0;
+}
+
+/* Reports how far an element's border box is below its offset parent's padding box (offsetTop). */
+int
+bind_offset_top(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The distance down. */
+	status = geometry_offset(realm, this_value, 1, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the distance. */
+	return 0;
+}
+
+/* Reports how far an element's border box is right of its offset parent's padding box (offsetLeft). */
+int
+bind_offset_left(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The distance across. */
+	status = geometry_offset(realm, this_value, 0, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the distance. */
+	return 0;
+}
+
+/*
+ * Scrolls the document to a place: two numbers (across, down) or a
+ * dictionary with left and top (window.scrollTo and window.scroll).
+ */
+int
+bind_window_scroll_to(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	double scroll_x;
+	double scroll_y;
+	double x;
+	double y;
+	int given_x;
+	int given_y;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+
+	/* The place; a coordinate not given stays where it is. */
+	*result = VM_VALUE_UNDEFINED;
+	window = bind_window_of(realm);
+	status = geometry_scroll_arguments(realm, args, count, &x, &y, &given_x, &given_y);
+	if (status != 0)
+		return status;
+	geometry_scroll(window, &scroll_x, &scroll_y);
+	if (!given_x)
+		x = scroll_x;
+	if (!given_y)
+		y = scroll_y;
+
+	/* Succeeded: the document scrolls there. */
+	geometry_scroll_move(window, x, y);
+	return 0;
+}
+
+/*
+ * Scrolls the document by a distance: two numbers (across, down) or a
+ * dictionary with left and top (window.scrollBy).
+ */
+int
+bind_window_scroll_by(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	double scroll_x;
+	double scroll_y;
+	double x;
+	double y;
+	int given_x;
+	int given_y;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+
+	/* The distance; a coordinate not given does not move. */
+	*result = VM_VALUE_UNDEFINED;
+	window = bind_window_of(realm);
+	status = geometry_scroll_arguments(realm, args, count, &x, &y, &given_x, &given_y);
+	if (status != 0)
+		return status;
+	if (!given_x)
+		x = 0.0;
+	if (!given_y)
+		y = 0.0;
+
+	/* Succeeded: the document scrolls by it. */
+	geometry_scroll(window, &scroll_x, &scroll_y);
+	geometry_scroll_move(window, scroll_x + x, scroll_y + y);
+	return 0;
+}
+
+/*
+ * Scrolls an element's content to a place (Element's scrollTo and scroll):
+ * the root element's is the document's; other boxes do not scroll.
+ */
+int
+bind_element_scroll_to(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct dom_element *element;
+	double x;
+	double y;
+	int given_x;
+	int given_y;
+	int root;
+	int status;
+
+	/* The element and the place, whose conversion may throw. */
+	*result = VM_VALUE_UNDEFINED;
+	window = bind_window_of(realm);
+	status = geometry_element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	status = geometry_scroll_arguments(realm, args, count, &x, &y, &given_x, &given_y);
+	if (status != 0)
+		return status;
+
+	/* Only the root scrolls, with the document. */
+	root = geometry_is_root(window, element);
+	if (!root)
+		return 0;
+
+	/* Succeeded: the document scrolls. */
+	status = bind_window_scroll_to(realm, VM_VALUE_UNDEFINED, args, count, result);
+	return status;
+}
+
+/*
+ * Scrolls an element's content by a distance (Element's scrollBy): the
+ * root element's is the document's; other boxes do not scroll.
+ */
+int
+bind_element_scroll_by(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct dom_element *element;
+	double x;
+	double y;
+	int given_x;
+	int given_y;
+	int root;
+	int status;
+
+	/* The element and the distance, whose conversion may throw. */
+	*result = VM_VALUE_UNDEFINED;
+	window = bind_window_of(realm);
+	status = geometry_element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	status = geometry_scroll_arguments(realm, args, count, &x, &y, &given_x, &given_y);
+	if (status != 0)
+		return status;
+
+	/* Only the root scrolls, with the document. */
+	root = geometry_is_root(window, element);
+	if (!root)
+		return 0;
+
+	/* Succeeded: the document scrolls. */
+	status = bind_window_scroll_by(realm, VM_VALUE_UNDEFINED, args, count, result);
+	return status;
+}
+
+/*
+ * Scrolls the document so an element is in view (scrollIntoView): its top
+ * at the view's top (true, or block "start"), its bottom at the view's
+ * bottom (false, or "end"), its middle at the view's ("center"), or the
+ * least move that shows it ("nearest").  An element without a box does
+ * not move the document.
+ */
+int
+bind_scroll_into_view(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct dom_element *element;
+	struct vm_string *block;
+	struct bind_box box;
+	vm_value argument;
+	vm_value value;
+	double scroll_x;
+	double scroll_y;
+	double y;
+	int present;
+	int found;
+	int is_object;
+	int end;
+	int center;
+	int nearest;
+	int status;
+
+	/* The element and where its block edge goes (start unless the argument says). */
+	*result = VM_VALUE_UNDEFINED;
+	window = bind_window_of(realm);
+	status = geometry_element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	argument = js_argument(args, count, 0);
+	block = NULL;
+	is_object = vm_value_is_object(argument);
+	if (is_object) {
+		status = bind_get_option(realm, argument, "block", &present, &value);
+		if (status != 0)
+			return status;
+		if (present) {
+			status = bind_to_string(realm, value, &block);
+			if (status != 0)
+				return status;
+		}
+	} else if (argument == VM_VALUE_FALSE) {
+		block = vm_atom_from_ascii(realm->heap, "end");
+		if (block == NULL)
+			return ENOMEM;
+	}
+
+	/* Nothing moves for an element without a box. */
+	found = geometry_box(window, element, &box);
+	if (!found)
+		return 0;
+
+	/* Which edge the argument names. */
+	end = 0;
+	center = 0;
+	nearest = 0;
+	if (block != NULL) {
+		end = vm_string_equal_ascii(block, "end");
+		center = vm_string_equal_ascii(block, "center");
+		nearest = vm_string_equal_ascii(block, "nearest");
+	}
+
+	/* The place the document scrolls down to, by the block edge. */
+	geometry_scroll(window, &scroll_x, &scroll_y);
+	y = box.y;
+	if (end) {
+		y = box.y + box.height - window->viewport_height;
+	} else if (center) {
+		y = box.y + (box.height - window->viewport_height) / 2.0;
+	} else if (nearest) {
+		/* Already in view stays; otherwise the nearer edge. */
+		y = scroll_y;
+		if (box.y < scroll_y) {
+			y = box.y;
+		} else if (box.y + box.height > scroll_y + window->viewport_height) {
+			y = box.y + box.height - window->viewport_height;
+		}
+	}
+
+	/* Succeeded: the document scrolls there. */
+	geometry_scroll_move(window, scroll_x, y);
 	return 0;
 }
 
@@ -1040,4 +1440,291 @@ geometry_rect_value(
 
 	/* The left edge. */
 	return fmin(rect->x, rect->x + rect->width);
+}
+
+/*
+ * Finds an element's computed position (static when the host cannot say:
+ * an element outside the document).
+ */
+static int
+geometry_position(
+	struct bind_window *window,
+	struct dom_element *element,
+	int *position)
+{
+	struct css_style *style;
+	int error;
+
+	/* Static until the host says. */
+	*position = CSS_POSITION_STATIC;
+	if (window->host.computed_style == NULL)
+		return 0;
+
+	/* The element's style (on the heap: it is large). */
+	style = malloc(sizeof(*style));
+	if (style == NULL)
+		return ENOMEM;
+	error = window->host.computed_style(window->host.context, element, style);
+	if (error == 0)
+		*position = style->position;
+	free(style);
+
+	/* An element outside the document is static. */
+	if (error == ENOENT)
+		return 0;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the position. */
+	return 0;
+}
+
+/*
+ * Finds an element's offset parent (CSSOM View): none for the root, the
+ * body, an element without a box or a fixed one; otherwise its nearest
+ * ancestor that is positioned, the body, or a td, th or table element of
+ * static position.
+ */
+static int
+geometry_offset_parent(
+	struct bind_window *window,
+	struct dom_element *element,
+	struct dom_element **parent)
+{
+	struct dom_element *ancestor;
+	struct dom_node *walk;
+	struct bind_box box;
+	int position;
+	int found;
+	int root;
+	int body;
+	int stops;
+	int error;
+
+	/* The root and the body have none. */
+	*parent = NULL;
+	root = geometry_is_root(window, element);
+	if (root)
+		return 0;
+	body = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_BODY);
+	if (body)
+		return 0;
+
+	/* Nor does an element without a box. */
+	found = geometry_box(window, element, &box);
+	if (!found)
+		return 0;
+
+	/* Nor a fixed one. */
+	error = geometry_position(window, element, &position);
+	if (error != 0)
+		return error;
+	if (position == CSS_POSITION_FIXED)
+		return 0;
+
+	/* The nearest ancestor that is one. */
+	for (walk = element->node.parent; walk != NULL && walk->type == DOM_ELEMENT; walk = walk->parent) {
+		ancestor = (struct dom_element *)walk;
+		error = geometry_position(window, ancestor, &position);
+		if (error != 0)
+			return error;
+
+		/* A positioned one. */
+		if (position != CSS_POSITION_STATIC) {
+			*parent = ancestor;
+			return 0;
+		}
+
+		/* The body, a table cell or a table. */
+		stops = geometry_stops_offset(walk);
+		if (stops) {
+			*parent = ancestor;
+			return 0;
+		}
+	}
+
+	/* None. */
+	return 0;
+}
+
+/*
+ * Reports how far an element's border box is from its offset parent's
+ * padding box (from the document's origin when the parent is none or the
+ * body), down or across, in whole pixels.
+ */
+static int
+geometry_offset(
+	struct vm_realm *realm,
+	vm_value this_value,
+	int top,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct dom_element *element;
+	struct dom_element *parent;
+	struct bind_box parent_box;
+	struct bind_box box;
+	double value;
+	int body;
+	int found;
+	int status;
+
+	/* The element and its box; without one it is 0. */
+	window = bind_window_of(realm);
+	status = geometry_element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	found = geometry_box(window, element, &box);
+	if (!found) {
+		*result = vm_value_int32(0);
+		return 0;
+	}
+
+	/* The offset parent. */
+	status = geometry_offset_parent(window, element, &parent);
+	if (status != 0)
+		return status;
+
+	/* From the document's origin, or from the parent's padding box. */
+	value = box.x;
+	if (top)
+		value = box.y;
+	body = 0;
+	if (parent != NULL)
+		body = dom_element_is(&parent->node, DOM_NS_HTML, DOM_TAG_BODY);
+	if (parent != NULL && !body) {
+		geometry_box(window, parent, &parent_box);
+		if (top) {
+			value -= parent_box.y + parent_box.border_top;
+		} else {
+			value -= parent_box.x + parent_box.border_left;
+		}
+	}
+
+	/* Succeeded: in whole pixels. */
+	*result = vm_value_number(geometry_round(value));
+	return 0;
+}
+
+/*
+ * Reads the arguments of the scroll methods: a dictionary with left and
+ * top, or two numbers (across, down); says which were given.
+ */
+static int
+geometry_scroll_arguments(
+	struct vm_realm *realm,
+	const vm_value *args,
+	unsigned count,
+	double *x,
+	double *y,
+	int *given_x,
+	int *given_y)
+{
+	vm_value first;
+	vm_value value;
+	int is_object;
+	int present;
+	int status;
+
+	/* Nothing given yet. */
+	*x = 0.0;
+	*y = 0.0;
+	*given_x = 0;
+	*given_y = 0;
+	first = js_argument(args, count, 0);
+
+	/* A dictionary's left and top. */
+	is_object = vm_value_is_object(first);
+	if (is_object || count == 0 || first == VM_VALUE_UNDEFINED) {
+		status = bind_get_option(realm, first, "left", &present, &value);
+		if (status != 0)
+			return status;
+		if (present) {
+			status = vm_to_number(realm, value, x);
+			if (status != 0)
+				return status;
+			*given_x = 1;
+		}
+
+		/* Then its top. */
+		status = bind_get_option(realm, first, "top", &present, &value);
+		if (status != 0)
+			return status;
+		if (present) {
+			status = vm_to_number(realm, value, y);
+			if (status != 0)
+				return status;
+			*given_y = 1;
+		}
+
+		/* The coordinates as numbers that are finite. */
+		*x = geometry_finite(*x);
+		*y = geometry_finite(*y);
+		return 0;
+	}
+
+	/* Two numbers. */
+	status = vm_to_number(realm, first, x);
+	if (status != 0)
+		return status;
+	status = vm_to_number(realm, js_argument(args, count, 1), y);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: both, as numbers that are finite. */
+	*x = geometry_finite(*x);
+	*y = geometry_finite(*y);
+	*given_x = 1;
+	*given_y = 1;
+	return 0;
+}
+
+/* Asks the host to scroll the document to a place (it keeps the place inside the document). */
+static void
+geometry_scroll_move(
+	struct bind_window *window,
+	double x,
+	double y)
+{
+	/* Nothing without a host that scrolls. */
+	if (window->host.scroll_to == NULL)
+		return;
+
+	/* The host's scroll. */
+	window->host.scroll_to(window->host.context, x, y);
+}
+
+/* Makes a number that is not finite 0, as the scroll methods take them. */
+static double
+geometry_finite(
+	double value)
+{
+	/* NaN and the infinities are 0. */
+	if (value != value)
+		return 0.0;
+	if (value > 1e300 || value < -1e300)
+		return 0.0;
+
+	/* Succeeded: the number. */
+	return value;
+}
+
+/* Tells whether a static ancestor is an offset parent: the body, a td, a th or a table element. */
+static int
+geometry_stops_offset(
+	const struct dom_node *node)
+{
+	static const int tags[] = { DOM_TAG_BODY, DOM_TAG_TD, DOM_TAG_TH, DOM_TAG_TABLE };
+	size_t index;
+	int is;
+
+	/* Each of the elements. */
+	for (index = 0; index < sizeof(tags) / sizeof(tags[0]); index++) {
+		is = dom_element_is(node, DOM_NS_HTML, tags[index]);
+		if (is)
+			return 1;
+	}
+
+	/* Any other element is not. */
+	return 0;
 }
