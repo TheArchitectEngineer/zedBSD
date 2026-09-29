@@ -7,7 +7,7 @@ Status: in-progress（2026-09-29、サブエージェント、worktree `.claude/
 Disposition: normal
 Parent: [WS075](../ws.md)
 Queue: main の依頼（2026-09-29「F-054 を WS075 の新しい Phase p020 として」）。Queue の ID は main が記録する
-Resume point: 実装中（下の「設計」）
+Resume point: 実装・host 試験・build・QEMU の boot test は済み（下の「経過」）。残り: 実機の passthrough（`build/p020/base.img` と `rps.img`）
 <!-- awesome-plan-current:end -->
 
 ## 背景と目的
@@ -51,3 +51,12 @@ Resume point: 実装中（下の「設計」）
   11 までの割込みの方式を使う（GTPM の割込みの block は Alder Lake-P にもある）。
 - park・unpark（GT の idle で idle の周波数へ）は無い。idle では down の閾値の割込みが倍々で最低まで下げる（forcewake を node の公開の間ずっと持つので、
   GT は RC6 に入らず、RP の評価は続く）。
+
+## 経過（2026-09-29）
+
+- 実装: gt-power.c・gt-power.h・intel/gt-power.h（RPS の register）、irq.c・irq.h（GTPM の分配と `drv_i915_gt_pm_reset_iir`）、device.c（start・stop）、
+  engine.c（enable に clock）、worker.c（同期の batch の boost）、tests/contracts（rps の contract test）、tests/execution/ktest-gt.c（期待値）。
+- 実機用の image: `build/p020/base.img`（ws075-i915 の worktree の p008 の `irq.img` の複写、RP0 固定、kernel は main 4e95147f と同じ i915）と
+  `build/p020/rps.img`（同じ image の ESP の vmunix を、この tree を同じ引数（demo の config、`I915_TEST_VBT=y`、`ZEDBSD_GRAPHICAL_BOOT=n`、
+  `display=edp login=graphical`）で build した `build/p020-pt/vmunix` に替えたもの）。
+- h4-ctl.py に `freq SECONDS MS [move]`（RPNSWREQ と RPSTAT1 の CAGF を xp で読む）。
