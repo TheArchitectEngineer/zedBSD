@@ -38,6 +38,17 @@
 #define JS_COMPLETION_RETURN	2
 #define JS_COMPLETION_JUMPS	3
 
+/*
+ * How js_bind_pattern writes the names of a pattern: as an assignment's
+ * targets, as a var's (or a parameter's or a catch clause's) names, or as
+ * a let's or const's names being declared.
+ */
+enum js_bind_mode {
+	JS_BIND_ASSIGN,
+	JS_BIND_VAR,
+	JS_BIND_INIT
+};
+
 /* The kinds of binding. */
 enum js_binding_kind {
 	JS_BINDING_PARAMETER,
@@ -155,7 +166,9 @@ struct js_function_info {
 	struct js_global_name *global_vars;
 	struct js_global_name *global_vars_last;
 	struct js_global_lexical *global_lexicals;
-	struct js_node *unsupported;
+	struct js_node *rest;
+	int simple_parameters;
+	uint32_t length;
 	int program;
 	int strict;
 	int has_env;
@@ -225,7 +238,9 @@ struct js_patch {
  * (words, constants, handlers, labels), the registers, where names are
  * looked up, and the statements break, continue and return must leave.
  * line and column are the source position of the expression or statement
- * being compiled, which the next instruction is recorded at (positions).
+ * being compiled, which the next instruction is recorded at (positions);
+ * chain_label is where an optional chain being compiled goes when a
+ * value before ?. is undefined or null (JS_LABEL_UNPLACED outside one).
  *
  * It lives in the arena; its vectors are malloc'd and freed when the
  * function is finished, or by js_compile after a failure (the chain of
@@ -243,6 +258,7 @@ struct js_function_compiler {
 	struct wb_vector positions;
 	uint32_t line;
 	uint32_t column;
+	uint32_t chain_label;
 	uint32_t *constant_index;
 	uint32_t constant_capacity;
 	struct js_scope *scope;
@@ -320,6 +336,7 @@ void js_compile_expression_named(struct js_function_compiler *fc, struct js_node
 void js_load_binding(struct js_function_compiler *fc, const uint16_t *name, size_t length, uint32_t target);
 void js_store_binding(struct js_function_compiler *fc, const struct js_node *node, const uint16_t *name, size_t length, uint32_t source);
 void js_init_binding(struct js_function_compiler *fc, const uint16_t *name, size_t length, uint32_t source);
+void js_bind_pattern(struct js_function_compiler *fc, struct js_node *target, uint32_t value, int mode);
 void js_emit_throw_error(struct js_function_compiler *fc, int kind, const char *text);
 void js_store_target(struct js_function_compiler *fc, struct js_node *target, uint32_t source);
 

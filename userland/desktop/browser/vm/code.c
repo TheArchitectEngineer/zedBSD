@@ -114,6 +114,16 @@ const struct vm_opcode_info vm_opcodes[VM_OPCODE_COUNT] = {
 	{ "throw_error", 2, { VM_OPERAND_IMMEDIATE, VM_OPERAND_CONSTANT } },
 	{ "define_global_lexical", 2, { VM_OPERAND_CONSTANT, VM_OPERAND_IMMEDIATE } },
 	{ "init_global_lexical", 2, { VM_OPERAND_CONSTANT, VM_OPERAND_REGISTER } },
+	{ "iter_start", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "iter_next", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "iter_rest", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "array_spread", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "copy_data", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "object_rest", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "call_array", 4, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "construct_array", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "check_coercible", 1, { VM_OPERAND_REGISTER } },
+	{ "args_rest", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_IMMEDIATE } },
 	{ "i32.const", 2, { VM_OPERAND_REGISTER, VM_OPERAND_IMMEDIATE } },
 	{ "i32.add", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
 	{ "i32.sub", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
@@ -163,6 +173,7 @@ vm_code_create(
 	made->handler_count = model->handler_count;
 	made->flags = model->flags;
 	made->arguments_register = model->arguments_register;
+	made->length = model->length;
 	made->name = model->name;
 
 	/* A copy of the words. */

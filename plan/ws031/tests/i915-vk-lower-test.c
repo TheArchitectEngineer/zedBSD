@@ -623,7 +623,8 @@ test_refusals(void)
 
 	/*
 	 * still not lowered: a branch back to a block already lowered that is no loop's header, a return inside a
-	 * loop (the entry block made a loop header whose merge block never comes), OpSwitch
+	 * loop (the entry block made a loop header whose merge block never comes).  OpSwitch is lowered (ws075-p009,
+	 * test_switch)
 	 */
 	begin_module();
 	op(249U, 1U, U(L_ENTRY));
@@ -631,9 +632,6 @@ test_refusals(void)
 	begin_module();
 	op(246U, 3U, U(B), U(B + 1), U(0));
 	assert(end_module(&ir, &diag) == ENOTSUP && diag.opcode == 253U);
-	begin_module();
-	op(251U, 2U, U(C_I0), U(B));
-	assert(end_module(&ir, &diag) == ENOTSUP && diag.opcode == 251U);
 	/* OpKill outside a fragment shader: the entry point's execution model made Vertex */
 	begin_module();
 	mod[5U + 2U + 3U + 1U] = 0U;
@@ -655,7 +653,7 @@ test_refusals(void)
 		mod_n += 7U;
 	}
 	assert(end_module(&ir, &diag) == ENOTSUP && ir == NULL && diag.opcode == 71U);
-	printf("  refusals: unset local, partial local, dynamic index, initializer, size mismatch, input store, back edge, return in a loop, switch, vertex OpKill, Component\n");
+	printf("  refusals: unset local, partial local, dynamic index, initializer, size mismatch, input store, back edge, return in a loop, vertex OpKill, Component\n");
 }
 
 /* RelaxedPrecision (no effect on this lowering) is accepted by name. */
@@ -1739,6 +1737,101 @@ test_remainders(void)
 	printf("  remainders: SRem(-7,3) = -1, SRem(7,-3) = 1, SMod(-7,3) = 2, SMod(7,-3) = -2, FRem(-7.5,2) = -1.5, FMod = 0.5\n");
 }
 
+/* Loads a SPIR-V file of plan/ws075/tests/switch/. */
+static uint32_t *
+load_switch_spv(const char *name, size_t *words)
+{
+	char path[512];
+	FILE *file;
+	long size;
+	uint32_t *code;
+
+	snprintf(path, sizeof(path), "%s/plan/ws075/tests/switch/%s", VK_REPO, name);
+	file = fopen(path, "rb");
+	assert(file != NULL);
+	fseek(file, 0, SEEK_END);
+	size = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	assert(size > 0 && (size % 4) == 0);
+	code = malloc((size_t)size);
+	assert(code != NULL);
+	assert(fread(code, 1, (size_t)size, file) == (size_t)size);
+	fclose(file);
+	*words = (size_t)size / 4U;
+	return code;
+}
+
+/*
+ * OpSwitch (ws075-p009): switch.frag as glslc makes it (one OpSwitch of six literals: two of one target, a
+ * fall-through, a case on the default's target) and with -O (the merge-return pass adds a default-only OpSwitch
+ * around the body for the early return), at every pixel of 64 x 64 against the C formula of the GLSL.
+ */
+static void
+test_switch(void)
+{
+	static const char *const names[2] = { "switch.frag.spv", "switch-O.frag.spv" };
+	struct i915_shader_ir *ir;
+	struct machine m;
+	uint32_t *code;
+	size_t words;
+	unsigned variant, x, y;
+
+	for (variant = 0U; variant < 2U; variant++) {
+		code = load_switch_spv(names[variant], &words);
+		ir = parse_words(names[variant], code, words * 4U, I915_STAGE_FRAGMENT);
+		for (y = 0U; y < 64U; y++) {
+			for (x = 0U; x < 64U; x++) {
+				float place_x = (float)x + 0.5f;
+				float place_y = (float)y + 0.5f;
+				int k = (int)place_x % 7;
+				float r = 0.0f;
+				float want[4];
+				unsigned c;
+
+				/* The GLSL's switch in C. */
+				switch (k) {
+				case 0:
+					r = 0.125f;
+					break;
+				case 1:
+				case 2:
+					r = 0.25f;
+					break;
+				case 3:
+					r = 0.5f;
+					/* falls through */
+				case 4:
+					r = r + 0.0625f;
+					break;
+				default:
+					r = 0.875f;
+					break;
+				}
+				want[0] = r;
+				want[1] = place_y > 32.0f ? 0.5f : 0.25f;
+				want[2] = place_y > 32.0f ? 0.0f : (float)k * 0.125f;
+				want[3] = 1.0f;
+
+				memset(&m, 0, sizeof(m));
+				m.input[0][0] = place_x;
+				m.input[0][1] = place_y;
+				run_ir(ir, &m);
+				for (c = 0U; c < 4U; c++) {
+					assert(m.written[0][c] >= 1U);
+					if (!close_to(m.output[0][c], want[c])) {
+						printf("  %s at (%u, %u) component %u: %g, want %g\n", names[variant], x, y, c,
+							(double)m.output[0][c], (double)want[c]);
+						assert(!"switch.frag differs from its C formula");
+					}
+				}
+			}
+		}
+		drv_i915_shader_ir_free(ir);
+		free(code);
+	}
+	printf("  switch: switch.frag (6 literals, shared target, fall-through, default) and its -O form (merge-return) match at 2 x 4096 pixels\n");
+}
+
 int
 main(void)
 {
@@ -1762,6 +1855,7 @@ main(void)
 	test_p004_fragment_shaders();
 	test_generality_interfaces();
 	test_remainders();
+	test_switch();
 	assert(fixture_live == 0U);
 	printf("i915 vk lower host test PASS\n");
 	return 0;

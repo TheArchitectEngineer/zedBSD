@@ -87,6 +87,8 @@ static int interpreter_for_in_next(struct interpreter *run, const uint32_t *word
 static int interpreter_return(struct interpreter *run, vm_value value);
 static int interpreter_unwind(struct interpreter *run);
 static int interpreter_throw_error(struct vm_realm *realm, uint32_t kind, vm_value message);
+static int interpreter_spread(struct interpreter *run, const uint32_t *words, vm_value *registers);
+static int interpreter_args_rest(struct vm_realm *realm, vm_value arguments, uint32_t first, vm_value *result);
 static struct vm_function *interpreter_function(const struct vm_realm *realm, uint32_t base);
 static int interpreter_is_strict(const struct interpreter *run);
 static double interpreter_f64(vm_value bits);
@@ -507,6 +509,18 @@ interpreter_step_js(
 	case VM_OP_TO_STRING:
 	case VM_OP_LOAD_EMPTY:
 		status = interpreter_property(run, words, registers);
+		return status;
+	case VM_OP_ITER_START:
+	case VM_OP_ITER_NEXT:
+	case VM_OP_ITER_REST:
+	case VM_OP_ARRAY_SPREAD:
+	case VM_OP_COPY_DATA:
+	case VM_OP_OBJECT_REST:
+	case VM_OP_CALL_ARRAY:
+	case VM_OP_CONSTRUCT_ARRAY:
+	case VM_OP_CHECK_COERCIBLE:
+	case VM_OP_ARGS_REST:
+		status = interpreter_spread(run, words, registers);
 		return status;
 	default:
 		break;
@@ -1354,6 +1368,103 @@ interpreter_unwind(
 		function = interpreter_function(realm, run->base);
 		run->code = function->code;
 	}
+}
+
+/* Runs one instruction of spreading and destructuring (ws074-p079). */
+static int
+interpreter_spread(
+	struct interpreter *run,
+	const uint32_t *words,
+	vm_value *registers)
+{
+	struct vm_realm *realm;
+	vm_value value;
+	int done;
+	int status;
+
+	/* Each instruction; one that computes a value writes it only when it succeeds. */
+	realm = run->realm;
+	switch (words[0]) {
+	case VM_OP_ITER_START:
+		status = vm_iter_start(realm, registers[words[2]], &value);
+		break;
+	case VM_OP_ITER_NEXT:
+		status = vm_iter_next(realm, registers[words[2]], &value, &done);
+		break;
+	case VM_OP_ITER_REST:
+		status = vm_iter_rest(realm, registers[words[2]], &value);
+		break;
+	case VM_OP_ARRAY_SPREAD:
+		status = vm_array_spread(realm, registers[words[1]], registers[words[2]]);
+		return status;
+	case VM_OP_COPY_DATA:
+		status = vm_copy_data_properties(realm, registers[words[1]], registers[words[2]]);
+		return status;
+	case VM_OP_OBJECT_REST:
+		status = vm_object_rest(realm, registers[words[2]], registers[words[3]], &value);
+		break;
+	case VM_OP_CALL_ARRAY:
+		status = vm_call_array(realm, registers[words[2]], registers[words[3]], registers[words[4]], 0, &value);
+		break;
+	case VM_OP_CONSTRUCT_ARRAY:
+		status = vm_call_array(realm, registers[words[2]], VM_VALUE_UNDEFINED, registers[words[3]], 1, &value);
+		break;
+	case VM_OP_CHECK_COERCIBLE:
+		/* An object pattern cannot take its properties from undefined or null. */
+		if (registers[words[1]] == VM_VALUE_UNDEFINED || registers[words[1]] == VM_VALUE_NULL) {
+			status = vm_throw_type_error(realm, "Cannot destructure a value that is undefined or null.");
+			return status;
+		}
+
+		/* Any other value can be destructured. */
+		return 0;
+	case VM_OP_ARGS_REST:
+		status = interpreter_args_rest(realm, registers[words[2]], words[3], &value);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* A failed instruction writes nothing. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the value in the first operand's register. */
+	registers[words[1]] = value;
+	return 0;
+}
+
+/* Makes the array of a rest parameter: the arguments object's elements from a first index. */
+static int
+interpreter_args_rest(
+	struct vm_realm *realm,
+	vm_value arguments,
+	uint32_t first,
+	vm_value *result)
+{
+	vm_value iterator;
+	vm_value value;
+	uint32_t index;
+	int done;
+	int status;
+
+	/* The arguments in order, skipping those before the first. */
+	status = vm_iter_start(realm, arguments, &iterator);
+	if (status != 0)
+		return status;
+	for (index = 0; index < first; index++) {
+		status = vm_iter_next(realm, iterator, &value, &done);
+		if (status != 0)
+			return status;
+	}
+
+	/* The rest as an array. */
+	status = vm_iter_rest(realm, iterator, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the array. */
+	return 0;
 }
 
 /* Throws a new error of a kind (enum vm_error_kind) with a message (a string constant). */

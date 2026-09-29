@@ -26,3 +26,10 @@ batch の終わりを待たないと書けない。
 ## 依存
 
 [ws075-p008](../phase008/phase.md)（完了を割込みで知る）。
+
+## 設計に生かす所見（p008・p009）
+
+- p008: desktop だけのとき入力から flip まで約 49 ms・約 20 flip/s。worker の待ち方（busy-wait → 割込み）では変わらない。frame の周期は
+  submit の GPU の往復 2 回と present（copy と flip の待ち）の直列の和と見る（推測）。
+- p009: App Home の 8 app を開き Gears が回ると 3.1 flip/s・中央値 166 ms。全 client の submit と present が 1 つの worker で直列に待つ。
+- 物差し（受け入れ）: `h4-ctl.py rate A 10`・`latency A 10` を (a) desktop だけ、(b) 8 app と Gears、で変更の前後に。

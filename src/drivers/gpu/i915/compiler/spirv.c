@@ -25,7 +25,11 @@
  * is visible outside it except through a store, a phi or a discard, and each
  * of those takes the predicate: a store keeps the old value where the
  * predicate is false (SELECT), a phi selects by the predicates of its edges,
- * a discard discards only where its predicate is true.  OpSwitch is refused.
+ * a discard discards only where its predicate is true.  An OpSwitch with a
+ * 32-bit selector is a set of edges the same way: each case's edge is taken
+ * where the selector equals one of its literals, the default's where it
+ * equals none (the construct spirv-opt's merge-return pass wraps a function
+ * body in is an OpSwitch with the default target alone).
  *
  * A structured loop (OpLoopMerge) keeps the same model inside one pass of
  * its body, and the IR runs the body again (LOOP_BEGIN .. LOOP_END) while
@@ -679,6 +683,9 @@ struct i915_spirv_parser {
 
 	uint32_t body_instructions;
 
+	/* The edges the OpSwitch instructions of the body can add beyond two each, to size the edge list. */
+	uint32_t switch_edges;
+
 	/* A failure latched by an emitter that has no return value to carry it. */
 	int error;
 
@@ -831,6 +838,7 @@ static int i915_spirv_lower_phi(struct i915_spirv_parser *parser, const uint32_t
 static int i915_spirv_lower_header_phi(struct i915_spirv_parser *parser, struct i915_spirv_loop *loop, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_branch(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_branch_conditional(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_switch(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_kill(struct i915_spirv_parser *parser, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_return(struct i915_spirv_parser *parser, uint32_t opcode, uint32_t offset);
 static int i915_spirv_edge_add(struct i915_spirv_parser *parser, uint32_t target, uint32_t predicate, uint32_t opcode, uint32_t offset);
@@ -977,9 +985,12 @@ drv_i915_shader_parse(
 			error = ENOMEM;
 	}
 
-	/* A terminator adds at most two edges, so the edge list has room for two per body instruction. */
+	/*
+	 * A terminator adds at most two edges, so the edge list has room for
+	 * two per body instruction, and for each case of an OpSwitch.
+	 */
 	if (error == 0) {
-		parser.edge_capacity = 2U * parser.body_instructions + 2U;
+		parser.edge_capacity = 2U * parser.body_instructions + parser.switch_edges + 2U;
 		parser.edges = kern_calloc(parser.edge_capacity, sizeof(*parser.edges));
 		if (parser.edges == NULL)
 			error = ENOMEM;
@@ -1076,6 +1087,10 @@ i915_spirv_pass_declarations(
 			in_function = 1;
 		if (in_function != 0) {
 			parser->body_instructions++;
+
+			/* An OpSwitch adds an edge per case and one for the default. */
+			if (opcode == OP_SWITCH && count > 3U)
+				parser->switch_edges += (count - 3U) / 2U;
 			if (opcode == OP_FUNCTION_END)
 				in_function = 0;
 			offset += count;
@@ -2020,7 +2035,7 @@ i915_spirv_lower(
 		return i915_spirv_lower_phi(parser, word, count, opcode, offset);
 
 	case OP_SWITCH:
-		return i915_spirv_refuse(parser, opcode, offset, "OpSwitch is not lowered");
+		return i915_spirv_lower_switch(parser, word, count, opcode, offset);
 
 	case OP_FDIV:
 		return i915_spirv_lower_divide(parser, word, count, opcode, offset);
@@ -7394,6 +7409,148 @@ i915_spirv_lower_branch_conditional(
 	parser->terminated = 1;
 
 	/* Succeeded: both edges are recorded. */
+	return 0;
+}
+
+/*
+ * Lowers OpSwitch: the edge of each case for the block's channels where the
+ * selector equals one of the case's literals, and the default's edge for
+ * the others.  Several literals of one target make one edge, the or of
+ * their conditions, so a phi in the target finds one edge from the block.
+ * After an OpSelectionMerge the block is a header, and its construct opens
+ * here.  Only a 32-bit integer selector is taken, and no target may be the
+ * innermost loop's header.
+ */
+static int
+i915_spirv_lower_switch(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_construct *construct;
+	struct i915_spirv_id *selector_record;
+	uint32_t selector[4];
+	uint32_t selector_count;
+	uint32_t matched;
+	uint32_t equal;
+	uint32_t literal;
+	uint32_t target;
+	uint32_t condition;
+	uint32_t others;
+	uint32_t predicate;
+	uint32_t header;
+	uint32_t index;
+	uint32_t later;
+	int seen;
+	int error;
+
+	/* The instruction names the selector, the default and pairs of a literal and a target. */
+	if (count < 3U || ((count - 3U) % 2U) != 0U)
+		return EINVAL;
+
+	/* The selector is one 32-bit integer, so each literal is one word. */
+	selector_record = i915_spirv_id(parser, word[1]);
+	if (selector_record == NULL)
+		return EINVAL;
+	if (i915_spirv_kind_components(parser, selector_record->type, SCALAR_INT) != 1U)
+		return i915_spirv_refuse(parser, opcode, offset, "OpSwitch selector that is not a 32-bit integer scalar");
+	selector_count = i915_spirv_operand(parser, word[1], selector);
+	if (selector_count != 1U)
+		return i915_spirv_refuse(parser, opcode, offset, "OpSwitch selector that is not a 32-bit integer scalar");
+
+	/* No target may be the innermost loop's header: a back edge from a switch is not lowered. */
+	header = NO_VALUE;
+	if (parser->loop_depth != 0U)
+		header = parser->loops[parser->loop_depth - 1U].header;
+	for (index = 2U; index < count; index += 2U) {
+		if (word[index] == header)
+			return i915_spirv_refuse(parser, opcode, offset, "OpSwitch that branches back to its loop's header");
+	}
+
+	/* A header opens its construct before its edges are recorded. */
+	if (parser->pending_merge != NO_VALUE) {
+		if (parser->depth >= MAX_CONSTRUCT_DEPTH)
+			return i915_spirv_refuse(parser, opcode, offset, "selection constructs nested too deep");
+		construct = &parser->constructs[parser->depth];
+		construct->merge = parser->pending_merge;
+		construct->predicate = parser->predicate;
+		construct->leaky = 0;
+		construct->loop = 0;
+		parser->depth++;
+		parser->pending_merge = NO_VALUE;
+	}
+
+	/* Records the edge of each case target once, for every literal that names it. */
+	matched = NO_VALUE;
+	for (index = 3U; index < count; index += 2U) {
+		target = word[index + 1U];
+
+		/* A target an earlier pair named has its edge already. */
+		seen = 0;
+		for (later = 3U; later < index; later += 2U) {
+			if (word[later + 1U] == target)
+				seen = 1;
+		}
+
+		if (seen)
+			continue;
+
+		/* The channels whose selector is any literal of this target. */
+		condition = NO_VALUE;
+		for (later = index; later < count; later += 2U) {
+			if (word[later + 1U] != target)
+				continue;
+			literal = i915_spirv_integer_constant(parser, word[later]);
+			equal = i915_spirv_emit_value(parser, I915_IR_IEQ, selector[0], literal);
+			if (condition == NO_VALUE) {
+				condition = equal;
+			} else {
+				condition = i915_spirv_emit_value(parser, I915_IR_OR, condition, equal);
+			}
+		}
+
+		/* The target's channels so far, for the default's complement. */
+		if (matched == NO_VALUE) {
+			matched = condition;
+		} else {
+			matched = i915_spirv_emit_value(parser, I915_IR_OR, matched, condition);
+		}
+
+		/* The default taking this target as well adds its channels to the edge below. */
+		if (target == word[2])
+			continue;
+
+		/* Records the case's edge. */
+		predicate = i915_spirv_predicate_and(parser, parser->predicate, condition);
+		error = i915_spirv_edge_add(parser, target, predicate, opcode, offset);
+		if (error != 0)
+			return error;
+	}
+
+	/* The default's channels: those no literal matched, and those of a case that shares its target. */
+	if (matched == NO_VALUE) {
+		predicate = parser->predicate;
+	} else {
+		others = i915_spirv_emit_value(parser, I915_IR_NOT, matched, 0U);
+		for (index = 3U; index < count; index += 2U) {
+			if (word[index + 1U] != word[2])
+				continue;
+			literal = i915_spirv_integer_constant(parser, word[index]);
+			equal = i915_spirv_emit_value(parser, I915_IR_IEQ, selector[0], literal);
+			others = i915_spirv_emit_value(parser, I915_IR_OR, others, equal);
+		}
+		predicate = i915_spirv_predicate_and(parser, parser->predicate, others);
+	}
+
+	/* Records the default's edge and ends the block. */
+	error = i915_spirv_edge_add(parser, word[2], predicate, opcode, offset);
+	if (error != 0)
+		return error;
+	parser->terminated = 1;
+
+	/* Succeeded: every edge of the switch is recorded. */
 	return 0;
 }
 
