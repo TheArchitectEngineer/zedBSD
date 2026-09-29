@@ -32,6 +32,9 @@
 /* How many touch inputs wait for the main loop at most. */
 #define TE_WINDOW_TOUCHES	256U
 
+/* The most fingers followed on the program's other surfaces (the file chooser's). */
+#define TE_WINDOW_FOREIGN_TOUCHES	10U
+
 /* The primary selection's objects (primary.c includes their protocol's header). */
 struct zwp_primary_selection_device_manager_v1;
 struct zwp_primary_selection_device_v1;
@@ -86,6 +89,18 @@ struct te_window {
 	uint32_t modifiers;
 	uint32_t serial;
 	uint32_t press_serial;
+
+	/*
+	 * Whether the pointer and the keyboard are on the window's own surface,
+	 * and the fingers down on other surfaces of the program.  Wayland sends
+	 * every seat object of the program the events of all its surfaces, and
+	 * a file chooser (libkeiland) is a window of the program too; its input
+	 * is not the editor's.
+	 */
+	int pointer_ours;
+	int keyboard_ours;
+	int32_t foreign_touches[TE_WINDOW_FOREIGN_TOUCHES];
+	unsigned foreign_touch_count;
 
 	/* The key held for repeating (0 when none), when it repeats next, and the repeat's delay and interval. */
 	uint32_t repeat_key;

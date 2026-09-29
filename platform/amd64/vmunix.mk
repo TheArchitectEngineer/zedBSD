@@ -957,17 +957,18 @@ $(DYNAMIC_DIR)/libGLESv2.so: $(DYNAMIC_GLESV2_OBJS) $(DYNAMIC_DIR)/libEGL.so $(D
  --needed libEGL.so --needed libvulkan.so --needed libc.so --soname libGLESv2.so $@
 
 # The desktop's way into the system and zdesktop's Wayland extensions (the
-# System Menu, WS070): the C library and the Wayland client.
+# System Menu, WS070): the C library and the Wayland client; the file
+# chooser (ws092-p003) draws its text with libtruetype.
 DYNAMIC_ZDESKTOP_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libkeiland)
 
-$(DYNAMIC_DIR)/libkeiland.so: $(DYNAMIC_ZDESKTOP_OBJS) $(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libc.so \
-	userland/desktop/libkeiland/exports.map tools/build/check-dynamic-elf.py
+$(DYNAMIC_DIR)/libkeiland.so: $(DYNAMIC_ZDESKTOP_OBJS) $(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libtruetype.so \
+	$(DYNAMIC_DIR)/libc.so userland/desktop/libkeiland/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libkeiland.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libkeiland/exports.map \
- $(DYNAMIC_ZDESKTOP_OBJS) -L$(DYNAMIC_DIR) -l:libwayland-client.so -l:libc.so -o $@
+ $(DYNAMIC_ZDESKTOP_OBJS) -L$(DYNAMIC_DIR) -l:libwayland-client.so -l:libtruetype.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
- --needed libwayland-client.so --needed libc.so --soname libkeiland.so $@
+ --needed libwayland-client.so --needed libtruetype.so --needed libc.so --soname libkeiland.so $@
 
 # Vulkan is an ordinary shared dependency of the portable base application.
 DYNAMIC_VULKAN_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libvulkan)
