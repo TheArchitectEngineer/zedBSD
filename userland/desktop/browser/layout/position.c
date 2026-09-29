@@ -167,18 +167,27 @@ layout_shrink_to_fit(
 	struct css_length width;
 	layout_unit content;
 	layout_unit outside;
+	int indefinite_percentage;
 	int error;
 
-	/* A width of its own needs no measuring. */
-	if (box->style.width.unit != CSS_UNIT_AUTO) {
+	/* A percentage is indefinite while an ancestor's intrinsic width is being measured. */
+	width = box->style.width;
+	indefinite_percentage = tree->measuring != 0 && width.unit == CSS_UNIT_PERCENT;
+	if (width.unit != CSS_UNIT_AUTO && !indefinite_percentage) {
 		error = layout_block(tree, box, room);
 		return error;
 	}
 
+	/* An indefinite percentage behaves as auto only for this measurement. */
+	if (indefinite_percentage)
+		box->style.width.unit = CSS_UNIT_AUTO;
+
 	/* The content's width without a limit. */
 	error = layout_max_content(tree, box, &content);
-	if (error != 0)
+	if (error != 0) {
+		box->style.width = width;
 		return error;
+	}
 
 	/* No wider than the room leaves, and not negative. */
 	layout_box_model(box, room);
@@ -193,7 +202,6 @@ layout_shrink_to_fit(
 		content += position_frame(box);
 
 	/* The box is laid out at that width, given for this layout only. */
-	width = box->style.width;
 	box->style.width.unit = CSS_UNIT_PX;
 	box->style.width.value = layout_to_px(content);
 	box->style.width.offset = 0;
