@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし（main が実装、2026-09-29 ユーザーの指示）
-Resume point: 2026-09-29 ユーザー「HDMI はいったんやめて LCD のみ」→ demo の既定を `display=edp`。image `build/demo-lcd1/hdd-image.img`（combo PHY の PLL の readout を含む）。実機の再試験はユーザー待ち
+Resume point: demo-lcd1 は実機でフリーズ（GOP の LCD のまま、network も不通）→ 原因を直した image `build/demo-lcd2/hdd-image.img`（logo と kmsg=quiet を外し、login=graphical は残す）。実機の再試験はユーザー待ち
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -89,3 +89,15 @@ Resume point: 2026-09-29 ユーザー「HDMI はいったんやめて LCD のみ
   preflight を readout の前に 1 回だけ行って takeover の後は preflight 無しで再点灯していたので、止まり切らない pipe が表に出なかったと見る（推測、parity の takeover の後の register の記録は無い）。
 - 検証: image の build（warning 0、`display=edp`）、QEMU の boot test PASS（`build/ws084-boot-test-lcd1/login.png`）。実機: 未実施。
 - 実機の確認点: `takeover: readout` の `DPLL1` と clock が 0 でないこと、`pipe_off wait timed out` が無いこと、preflight が通り `resident display` が frame を出すこと。
+
+### p002 の 4 回目（2026-09-29、demo-lcd1 のフリーズ）
+
+- ユーザー:「フリーズしていて、ネットワークも届きません」「LCDはGOPのまま有効でフリーズしてます。グラフィックブートを無効にするのがいいかもね。」
+- 原因（コードから）: 3 回目で結んだ `i915_icl_ddi_combo_get_config` → `i915_ddi_get_clock` の `icl_set_active_port_dpll` が移植されていない step
+  （`I915_TAKEOVER_ICL_SET_ACTIVE_PORT_DPLL`、名前の記録だけ）で、`crtc_state->shared_dpll` が NULL のまま `drv_i915_dpll_get_freq(i915, NULL, ...)` が
+  NULL を参照して fault。readout の中なので takeover の前、GOP の画面のまま止まる。QEMU は firmware の画面が無く active な encoder が無いのでこの経路を通らない。
+- 修正: `ddi.c` `i915_ddi_get_clock` に参照の `icl_set_active_port_dpll` の 2 行（`shared_dpll`・`dpll_hw_state` の代入）。同じ経路の残り
+  （`drv_i915_disable_shared_dpll` の lock は N1 の emit、combo の PLL の funcs）は確かめた。
+- image: `plan/ws075/demo/build-demo-image.sh build/demo-lcd2 ZEDBSD_GRAPHICAL_BOOT=n "ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"`
+  （logo と kmsg=quiet を外し、kernel の message を GOP の画面に出したまま。graphical boot を丸ごと切ると greeter が lease を取らず takeover が走らないので login=graphical は残す）。
+- 検証: build（warning 0）、QEMU の boot test PASS（`build/ws084-boot-test-lcd2/login.png`）。実機: 未実施。

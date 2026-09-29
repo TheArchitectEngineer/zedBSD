@@ -3952,15 +3952,13 @@ i915_ddi_get_clock(
 	struct intel_shared_dpll *pll)
 {
 	struct drm_i915_private *i915;
-	struct drm_i915_private *cur_i915;
 	enum icl_port_dpll_id port_dpll_id;
 	struct icl_port_dpll *port_dpll;
 	bool pll_active;
 	bool warned;
 
-	/* Finds the devices and the crtc state's default port PLL slot. */
+	/* Finds the device and the crtc state's default port PLL slot. */
 	i915 = i915_lcd_to_i915(encoder->base.dev);
-	cur_i915 = i915_ddi_cur_i915(encoder);
 	port_dpll_id = ICL_PORT_DPLL_DEFAULT;
 	port_dpll = &crtc_state->icl_port_dplls[port_dpll_id];
 
@@ -3974,8 +3972,13 @@ i915_ddi_get_clock(
 	pll_active = drv_i915_dpll_get_hw_state(i915, pll, &port_dpll->hw_state);
 	(void)I915_LCD_DRM_WARN_ON(&i915->drm, !pll_active);
 
-	/* Makes the slot the active one. */
-	I915_TAKEOVER_ICL_SET_ACTIVE_PORT_DPLL(cur_i915, crtc_state, port_dpll_id);
+	/*
+	 * Makes the slot the active one (icl_set_active_port_dpll()).  The
+	 * frequency below reads the PLL it names, so this is not a recorded
+	 * step: a NULL PLL there faulted the bare-metal takeover (ws084).
+	 */
+	crtc_state->shared_dpll = port_dpll->pll;
+	crtc_state->dpll_hw_state = port_dpll->hw_state;
 
 	/* Computes the port clock of the crtc's PLL. */
 	crtc_state->port_clock = drv_i915_dpll_get_freq(i915, crtc_state->shared_dpll,
