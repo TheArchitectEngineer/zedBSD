@@ -1,0 +1,42 @@
+;; ws095 host tests: a small fixed SKK dictionary for the Japanese engine.
+;; Most lines are copied from REmacs's SKK-JISYO.X (revision 1a724393); the
+;; readings わたし and にほん are added the way the supplement will add them,
+;; and the last lines are malformed on purpose (the loader must skip them).
+;; Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+;;
+;; okuri-ari entries.
+よm /読/詠/
+たb /食/
+はなs /話/離/
+かk /書/掛/懸/掻/架/欠/賭/駆/
+みr /見/看/視/観/診/
+いk /行/生/活/
+かw /変/買/交/代/替/換/飼/
+とr /取/執/摂/撮/捕/採/盗/
+たかi /高/
+たかk /高/
+むずかs /難/
+あg /上/挙/揚/
+かんがe /考/
+のr /乗/載/
+;; okuri-nasi entries.
+きょう /今日/教/京/興/凶/供/恭/姜/狂/挟/
+てんき /天気/転記/
+ほん /本/
+べんきょう /勉強/
+にほんご /日本語/
+わたし /私/渡し/渡/
+にほん /日本/
+かいしゃ /会社/
+でんしゃ /電車/
+は /歯/葉/刃/派/
+き /木/気/期/機/黄/帰/記/喜/奇/季/
+い /胃/意/井/伊/藺/医/
+こ /子/個/呼/児/鼓/弧/
+もの /物/者/
+はな /花/鼻/華/
+とうきょう /東京;地名/
+ひづけ /(concat "x")/日付/
+brokenline-without-candidates
+nocandidates /
+missingslash 候補/
