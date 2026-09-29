@@ -418,6 +418,8 @@ char *sh_node_text(struct sh_node *);
 
 /* Functions and command search (command.c). */
 struct sh_function *sh_function_find(const char *);
+const char *sh_function_name(int);
+const char *sh_reserved_word(int);
 int sh_function_unset(const char *);
 void sh_function_define(const char *, struct sh_node *, struct sh_arena *);
 void sh_function_print(const char *);
@@ -534,10 +536,14 @@ void sh_history_add(const char *);
 void sh_history_load(void);
 void sh_history_save(const char *);
 void sh_history_size_changed(const char *);
+
+/* Completion. */
+void sh_complete_init(void);
 int sh_fc_builtin(int, char **);
 
 /* Builtins. */
 const struct sh_builtin *sh_builtin_find(const char *);
+const char *sh_builtin_name(int);
 int sh_builtin_run(const struct sh_builtin *, int, char **);
 extern int sh_builtin_exit_requested;
 

@@ -18,6 +18,9 @@
 /* Returns an alias's text, or NULL. */
 const char *sh_alias_get(const char *);
 
+/* Returns the name of the alias at an index, or NULL past the last. */
+const char *sh_alias_name(int);
+
 /* Defines an alias.  Returns -1 for a name an alias may not have. */
 int sh_alias_set(const char *, const char *);
 
