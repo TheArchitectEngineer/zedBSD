@@ -149,6 +149,7 @@ static int date_to_json(struct vm_realm *realm, vm_value this_value, const vm_va
 static int date_to_locale_string(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int date_to_locale_date_string(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int date_to_locale_time_string(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int date_to_primitive(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int date_this_time(struct vm_realm *realm, vm_value this_value, double *time);
 static int date_store(vm_value this_value, double time, vm_value *result);
 static int date_numbers(struct vm_realm *realm, const vm_value *args, unsigned count, unsigned most, double *numbers);
@@ -328,6 +329,13 @@ js_builtin_install_date(
 	error = js_builtin_value(realm, prototype, "toUTCString", utc_string, JS_BUILTIN_METHOD);
 	if (error == 0)
 		error = js_builtin_value(realm, prototype, "toGMTString", utc_string, JS_BUILTIN_METHOD);
+	if (error != 0)
+		return error;
+
+	/* Date.prototype[Symbol.toPrimitive] (configurable only), whose default hint is string (ws074-p087). */
+	error = js_builtin_function(realm, "[Symbol.toPrimitive]", 1, date_to_primitive, NULL, &function);
+	if (error == 0)
+		error = js_builtin_symbol_value(realm, prototype, VM_SYMBOL_TO_PRIMITIVE, vm_value_cell(function), VM_PROPERTY_CONFIGURABLE);
 	if (error != 0)
 		return error;
 
@@ -1056,6 +1064,71 @@ date_to_locale_time_string(
 		return error;
 
 	/* Succeeded: the text. */
+	return 0;
+}
+
+/*
+ * Date.prototype[Symbol.toPrimitive](hint): this through toString first for
+ * "string" and "default", through valueOf first for "number"; any other
+ * hint is a TypeError.
+ */
+static int
+date_to_primitive(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	const struct vm_string *name;
+	vm_value hint;
+	int is_object;
+	int is_string;
+	int matches;
+	int order;
+	int status;
+
+	/* this must be an object. */
+	*result = VM_VALUE_UNDEFINED;
+	is_object = vm_value_is_object(this_value);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Date.prototype[Symbol.toPrimitive] called on non-object");
+		return status;
+	}
+
+	/* The hint must be one of the three names. */
+	hint = js_argument(args, count, 0);
+	is_string = vm_value_is_string(hint);
+	if (!is_string) {
+		status = vm_throw_type_error(realm, "Invalid hint");
+		return status;
+	}
+
+	/* Which of the names it is: "number" tries valueOf first, "string" and "default" toString. */
+	name = (const struct vm_string *)vm_value_as_cell(hint);
+	order = -1;
+	matches = vm_string_equal_ascii(name, "number");
+	if (matches)
+		order = VM_HINT_NUMBER;
+	matches = vm_string_equal_ascii(name, "string");
+	if (matches)
+		order = VM_HINT_STRING;
+	matches = vm_string_equal_ascii(name, "default");
+	if (matches)
+		order = VM_HINT_STRING;
+
+	/* Anything else is refused. */
+	if (order < 0) {
+		status = vm_throw_type_error(realm, "Invalid hint");
+		return status;
+	}
+
+	/* valueOf and toString in the hint's order. */
+	status = vm_ordinary_to_primitive(realm, this_value, order, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the primitive. */
 	return 0;
 }
 

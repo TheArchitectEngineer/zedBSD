@@ -38,6 +38,8 @@ js_install_builtins(
 	if (error == 0)
 		error = js_builtin_install_function(realm);
 	if (error == 0)
+		error = js_builtin_install_symbol(realm);
+	if (error == 0)
 		error = js_builtin_install_array(realm);
 	if (error == 0)
 		error = js_builtin_install_string(realm);
@@ -56,9 +58,17 @@ js_install_builtins(
 	if (error == 0)
 		error = js_builtin_install_global(realm);
 	if (error == 0)
+		error = js_builtin_install_uri(realm);
+	if (error == 0)
+		error = js_builtin_install_iterator(realm);
+	if (error == 0)
 		error = js_builtin_install_promise(realm);
 	if (error == 0)
 		error = js_builtin_install_generator(realm);
+	if (error == 0)
+		error = js_builtin_install_collection(realm);
+	if (error == 0)
+		error = js_builtin_install_tags(realm);
 	if (error != 0)
 		return error;
 

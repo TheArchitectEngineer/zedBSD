@@ -97,6 +97,7 @@ master.md の決定の行）。この文書は [ws074-p067](phase067/phase.md) �
 | 12g | [ws074-p082](phase082/phase.md) | getComputedStyle、offsetTop・offsetLeft・offsetParent、scrollTo・scrollBy・scroll・scrollIntoView | **cleared**（2026-09-29。DOM の側の Uncaught は無し、Uncaught は top 2・search 7（js の側）のまま。画素は不変: top 64.47%、search 76.04%） |
 | 12h | [ws074-p086](phase086/phase.md) | async function と generator・Promise（p029 から分けた） | **cleared**（2026-09-29。async の SyntaxError top 1・search 4 → 0、連鎖の `(at 1:1)` 2 も 0。Uncaught top 2（`Set` 1・for-of 1）、search 3（for-of 3）。画素は不変） |
 | 12i | [ws074-p083](phase083/phase.md) | DOMException（interface・name・code、DOM の操作の例外） | **cleared**（2026-09-29。Amazon の Uncaught は top 2（Set 1・for-of 1）・search 3（for-of）で js の側だけ。画素は不変: top 64.47%、search 76.04%） |
+| 12j | [ws074-p087](phase087/phase.md) | Symbol・iterator・for-of・Map・Set、URI の関数（p028 から分けた） | **cleared**（2026-09-29。for-of・`Set`・`encodeURIComponent` の誤り 0。`--run` の Uncaught: top 3（`fetch` 2・`IntersectionObserver` 1、DOM の側）、search 0。`--render` の search は `document.elementsFromPoint` 1。画素は不変） |
 
 順の理由: 1 で検索できる（デモの操作）。2〜5 が見た目の大部分（外の CSS、変数と calc と @media、selector、flex）。6〜11 は細部と速さ。
 JS（12）はデモの配置に要らないので最後。Google 用の p063（SVG）・p065（challenge）・p066（Google の結果）はデモの列から外す（planned のまま）。

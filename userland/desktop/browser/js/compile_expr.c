@@ -1215,12 +1215,19 @@ expr_bind_array(
 	uint32_t mark;
 	uint32_t iterator;
 	uint32_t part;
+	uint32_t caught;
+	uint32_t start;
+	uint32_t end;
+	uint32_t after;
+	uint32_t landing;
 
 	/* The iteration of the value. */
 	mark = fc->temp_top;
 	iterator = js_temp(fc);
 	part = js_temp(fc);
+	caught = js_temp(fc);
 	js_emit2(fc, VM_OP_ITER_START, iterator, value);
+	start = js_here(fc);
 
 	/* Each element in order. */
 	for (element = pattern->first; element != NULL; element = element->next) {
@@ -1239,6 +1246,22 @@ expr_bind_array(
 		/* The element's target takes it. */
 		js_bind_pattern(fc, element, part, mode);
 	}
+
+	/* The end of what the targets did. */
+	end = js_here(fc);
+
+	/* An iteration the pattern did not finish is closed (ws074-p087). */
+	js_emit2(fc, VM_OP_ITER_CLOSE, iterator, 0);
+	after = js_label_new(fc);
+	js_emit_jump(fc, VM_OP_JUMP, 0, after);
+
+	/* An exception while the targets took their values closes it too, quietly, and goes on. */
+	landing = js_label_new(fc);
+	js_label_place(fc, landing);
+	js_emit_handler(fc, start, end, landing, caught);
+	js_emit2(fc, VM_OP_ITER_CLOSE, iterator, 1);
+	js_emit1(fc, VM_OP_THROW, caught);
+	js_label_place(fc, after);
 
 	/* The temporaries are free again. */
 	fc->temp_top = mark;
