@@ -3,13 +3,13 @@
 # WS090: widget・control の共有 library（慣性の smooth scroll を含む）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から
+Resume point: p001 cleared（2026-09-29、[design.md](design.md): 新しい `libkeiui`、即時の描画の部品、窓の土台、scroll view、file chooser の移動、J1〜J8 は既定）。次は p002（骨組みと描画の層、Settings の共有を替える。WS089 と時期を合わせる）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -22,11 +22,24 @@ Resume point: p001（設計）から
   部品として出し、既存の app を順に移す。button・toggle・slider・list・sidebar・card・text field 等の範囲と、library の名前・置き場（libkeiland を
   広げるか、新しい library か）・API の形は p001 で決める。新しい app（WS089 Settings、WS091・WS092）はこれを使う。
 
-## Phase（案）
+## Phase
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws090-p001 | 設計 | planning | — |
+| [ws090-p001](phase001/phase.md) | 設計（[design.md](design.md)） | cleared（2026-09-29） | — |
+| ws090-p002 | libkeiui の骨組みと描画の層（canvas・text・icons・theme）、Settings の Files の source の共有を替える | planning | p001、WS089 の合間 |
+| ws090-p003 | scroll view（`kui_scroll`）と入力の層（`kui_ui`） | planning | p002 |
+| ws090-p004 | 窓の土台（`kui_window`、Vulkan・shm・無し）、Text Editor の窓・present・touch・clipboard | planning | p003 |
+| ws090-p005 | 部品（button・switch・slider・field・list・sidebar・card・row・header・dialog・chip・progress）と見本の program | planning | p003 |
+| ws090-p006 | file chooser を libkeiui へ、libkeiland から取り除く（KEILAND_VERSION）、Text Editor の chooser・dialog・chip | planning | p004・p005 |
+| ws090-p007 | Settings を部品と窓の土台へ | planning | p005、WS089 |
+| ws090-p008 | PDF Viewer・Image Viewer を移す | planning | p006 |
+| ws090-p009 | Files（その 1）: 描画の層と scroll | planning | p003 |
+| ws090-p010 | Files（その 2）: 部品と窓 | planning | p009・p005・p004 |
+| ws090-p011 | Terminal・Notes: 窓（見せ方は無し）と scroll の model | planning | p004 |
+| ws090-p012 | 規約の全文との照合と回帰 | planning | 全て |
+
+p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 までに移し終えたものだけ残す（design.md J5）。
 
 ## 2026-09-29 の申し送り（main）
 
