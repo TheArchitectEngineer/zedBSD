@@ -128,6 +128,7 @@ page_destroy(
 	page_images_release(page);
 	css_engine_destroy(page->css);
 	css_engine_destroy(page->query_css);
+	page_box_index_release(page);
 	page_sheets_release(page);
 	page_fonts_release(page);
 	bind_window_destroy(page->window);
@@ -475,6 +476,7 @@ page_layout(
 	error = layout_build(&page->layout, page->css, &page->text, page->document, page_image_of, page_image_by_url, page, width, height);
 	page->laid_out = 1;
 	page->laid_out_generation = page->document->generation;
+	page->layout_serial++;
 
 	/*
 	 * A query container the old layout did not have (the first layout), or

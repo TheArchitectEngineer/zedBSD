@@ -30,10 +30,28 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * One slot of the page's index of boxes: a node and its first box (an
+ * empty slot has no node).
+ */
+struct page_box_slot {
+	const struct dom_node *node;
+	const struct layout_box *box;
+};
+
+/* The fewest slots the index of boxes has. */
+#define GEOMETRY_INDEX_MIN	64U
+
 /* The deepest element whose style is computed without a box. */
 #define GEOMETRY_STYLE_DEPTH	512
 
 static int geometry_layout(struct page *page);
+static const struct layout_box *geometry_first_box(struct page *page, const struct dom_node *node);
+static int geometry_own_place(const struct layout_box *box);
+static int geometry_index(struct page *page);
+static size_t geometry_count_boxes(const struct layout_box *box, int depth);
+static void geometry_index_boxes(struct page *page, const struct layout_box *box, int depth);
+static size_t geometry_slot_of(const struct page *page, const struct dom_node *node);
 static int geometry_cascade(struct page *page, struct dom_element *element, struct css_style *style);
 
 /*
@@ -81,6 +99,7 @@ page_node_box(
 	int laid_out;
 	int found;
 	int block;
+	int own;
 
 	/* A page that cannot be laid out has no boxes. */
 	page = context;
@@ -89,17 +108,27 @@ page_node_box(
 	if (!laid_out)
 		return 0;
 
-	/* The union of the node's boxes. */
-	found = layout_node_bounds(&page->layout, node, &rect);
-	if (!found)
-		return 0;
+	/* A block's (or a replaced box's that stands as one) border box; otherwise the union of the node's boxes. */
+	first = geometry_first_box(page, node);
+	own = geometry_own_place(first);
+	if (own) {
+		rect.x = first->x;
+		rect.y = first->y;
+		rect.width = first->border[CSS_LEFT] + first->padding[CSS_LEFT] + first->width + first->padding[CSS_RIGHT] + first->border[CSS_RIGHT];
+		rect.height = first->border[CSS_TOP] + first->padding[CSS_TOP] + first->height + first->padding[CSS_BOTTOM] + first->border[CSS_BOTTOM];
+	} else {
+		found = layout_node_bounds(&page->layout, node, &rect);
+		if (!found)
+			return 0;
+	}
+
+	/* The rectangle in pixels. */
 	box->x = layout_to_px(rect.x);
 	box->y = layout_to_px(rect.y);
 	box->width = layout_to_px(rect.width);
 	box->height = layout_to_px(rect.height);
 
 	/* The first box: a block (or a replaced or atomic box) has a client area and borders, an inline box not. */
-	first = layout_box_of(&page->layout, node);
 	block = 0;
 	if (first != NULL) {
 		if (first->kind == LAYOUT_BLOCK) {
@@ -209,7 +238,7 @@ page_computed_style(
 	laid_out = geometry_layout(page);
 	box = NULL;
 	if (laid_out)
-		box = layout_box_of(&page->layout, &element->node);
+		box = geometry_first_box(page, &element->node);
 	if (box != NULL) {
 		*style = box->style;
 		return 0;
@@ -297,6 +326,168 @@ geometry_layout(
 
 	/* Succeeded: the page is laid out. */
 	return 1;
+}
+
+/* Frees the page's index of boxes. */
+void
+page_box_index_release(
+	struct page *page)
+{
+	/* The slots. */
+	free(page->box_index);
+	page->box_index = NULL;
+	page->box_index_capacity = 0;
+}
+
+/*
+ * Finds a node's first box (in tree order) in the page's layout through
+ * the index, made again after each layout; NULL when the node has none.
+ * Without memory for the index the layout is searched.
+ */
+static const struct layout_box *
+geometry_first_box(
+	struct page *page,
+	const struct dom_node *node)
+{
+	size_t slot;
+	int error;
+
+	/* The index of this layout. */
+	error = geometry_index(page);
+	if (error != 0)
+		return layout_box_of(&page->layout, node);
+
+	/* Succeeded: the node's slot's box, or none. */
+	slot = geometry_slot_of(page, node);
+	return page->box_index[slot].box;
+}
+
+/*
+ * Tells whether a node's first box has a place of its own that is the
+ * node's rectangle: a block, or a replaced box outside a line.
+ */
+static int
+geometry_own_place(
+	const struct layout_box *box)
+{
+	/* No box. */
+	if (box == NULL)
+		return 0;
+
+	/* A block, atomic or not. */
+	if (box->kind == LAYOUT_BLOCK)
+		return 1;
+
+	/* A replaced box among inline content is a piece of its line. */
+	if (box->kind != LAYOUT_REPLACED)
+		return 0;
+	if (box->parent != NULL && box->parent->children_inline)
+		return 0;
+
+	/* Succeeded: a replaced box that stands as a block. */
+	return 1;
+}
+
+/*
+ * Makes the index of the page's boxes when the layout changed since it
+ * was made: twice as many slots as boxes, a power of two.
+ */
+static int
+geometry_index(
+	struct page *page)
+{
+	size_t count;
+	size_t capacity;
+
+	/* An index of this layout stays. */
+	if (page->box_index != NULL && page->box_index_serial == page->layout_serial)
+		return 0;
+
+	/* The slots for the boxes there are. */
+	count = 0;
+	if (page->layout.root != NULL)
+		count = geometry_count_boxes(page->layout.root, 0);
+	capacity = GEOMETRY_INDEX_MIN;
+	while (capacity < count * 2U)
+		capacity *= 2U;
+
+	/* Empty slots. */
+	page_box_index_release(page);
+	page->box_index = calloc(capacity, sizeof(*page->box_index));
+	if (page->box_index == NULL)
+		return ENOMEM;
+	page->box_index_capacity = capacity;
+
+	/* Succeeded: each node's first box is in its slot. */
+	if (page->layout.root != NULL)
+		geometry_index_boxes(page, page->layout.root, 0);
+	page->box_index_serial = page->layout_serial;
+	return 0;
+}
+
+/* Counts a box and its descendants, down to the depth the layout stops at. */
+static size_t
+geometry_count_boxes(
+	const struct layout_box *box,
+	int depth)
+{
+	const struct layout_box *child;
+	size_t count;
+
+	/* Past the depth there are none. */
+	if (depth > LAYOUT_DEPTH_MAX)
+		return 0;
+
+	/* The box and each child's. */
+	count = 1;
+	for (child = box->first_child; child != NULL; child = child->next)
+		count += geometry_count_boxes(child, depth + 1);
+	return count;
+}
+
+/* Puts a box, then its descendants in tree order, in the index where their nodes have no box yet. */
+static void
+geometry_index_boxes(
+	struct page *page,
+	const struct layout_box *box,
+	int depth)
+{
+	const struct layout_box *child;
+	size_t slot;
+
+	/* Past the depth the layout stops at. */
+	if (depth > LAYOUT_DEPTH_MAX)
+		return;
+
+	/* The node's first box. */
+	if (box->node != NULL) {
+		slot = geometry_slot_of(page, box->node);
+		if (page->box_index[slot].node == NULL) {
+			page->box_index[slot].node = box->node;
+			page->box_index[slot].box = box;
+		}
+	}
+
+	/* Each child. */
+	for (child = box->first_child; child != NULL; child = child->next)
+		geometry_index_boxes(page, child, depth + 1);
+}
+
+/* Finds a node's slot in the index: its own, or the empty one it would take. */
+static size_t
+geometry_slot_of(
+	const struct page *page,
+	const struct dom_node *node)
+{
+	size_t mask;
+	size_t slot;
+
+	/* From the hash of the node's address, on to the next slot while another node has it. */
+	mask = page->box_index_capacity - 1U;
+	slot = (size_t)((((uintptr_t)node >> 4) * 2654435761U) & mask);
+	while (page->box_index[slot].node != NULL && page->box_index[slot].node != node)
+		slot = (slot + 1U) & mask;
+	return slot;
 }
 
 /*

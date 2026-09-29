@@ -75,7 +75,13 @@ typedef void (*page_request_done)(void *context, struct net_request *request);
  * question lays the page out when it changed; scroll_x and scroll_y are
  * how far the view is scrolled, in CSS pixels.  scroll_requested says a
  * script moved them (ws074-p082), which the view takes as its scroll.
+ * layout_serial counts the layouts; box_index (box_index_capacity slots,
+ * open addressing by the node) finds each node's first box of the layout
+ * whose serial box_index_serial is, made when a script first asks after a
+ * layout (geometry.c).
  */
+struct page_box_slot;
+
 struct page {
 	struct vm_heap *heap;
 	struct dom_document *document;
@@ -119,6 +125,10 @@ struct page {
 	double scroll_x;
 	double scroll_y;
 	int scroll_requested;
+	uint32_t layout_serial;
+	struct page_box_slot *box_index;
+	size_t box_index_capacity;
+	uint32_t box_index_serial;
 };
 
 /*
@@ -224,6 +234,7 @@ int page_node_box(void *context, struct dom_node *node, struct bind_box *box);
 void page_document_size(void *context, double *width, double *height);
 void page_scroll(void *context, double *x, double *y);
 int page_computed_style(void *context, struct dom_element *element, struct css_style *style);
+void page_box_index_release(struct page *page);
 void page_scroll_to(void *context, double x, double y);
 
 /* Web Storage (storage.c, ws074-p080). */
