@@ -38,6 +38,7 @@ static int pool_resize(struct zwl_object *pool, const unsigned char *bytes, size
 static int surface_upload(struct zwl_server *server, struct zwl_object *surface);
 static VkResult image_create(struct zwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct zwl_import *import);
 static VkResult image_layout(struct zwl_compose *compose, VkImage image);
+static VkResult image_layout_record(VkCommandBuffer command, VkImage image);
 static void image_release(struct zwl_compose *compose, struct zwl_import *import);
 static uint32_t word(const unsigned char *bytes, size_t offset);
 static uint32_t zwl_row_sum(const unsigned char *row, uint32_t width);
@@ -304,6 +305,60 @@ zwl_host_image_release(
 {
 	/* Whatever part of it was made. */
 	image_release(compose, import);
+}
+
+/*
+ * Starts recording the start's host images' layout moves into one command
+ * buffer (ws035-p131), submitted by zwl_host_image_batch_end.
+ */
+void
+zwl_host_image_batch_begin(
+	struct zwl_compose *compose)
+{
+	/* The next images' moves wait in setup_command. */
+	compose->setup_batching = 1;
+}
+
+/*
+ * Submits the layout moves recorded since zwl_host_image_batch_begin and
+ * waits for them once, before the first frame samples those images.
+ */
+VkResult
+zwl_host_image_batch_end(
+	struct zwl_compose *compose)
+{
+	VkSubmitInfo submit;
+	VkCommandBuffer command;
+	VkResult result;
+
+	/* Later images are moved one by one again. */
+	compose->setup_batching = 0;
+	command = compose->setup_command;
+	compose->setup_command = VK_NULL_HANDLE;
+	if (command == VK_NULL_HANDLE)
+		return VK_SUCCESS;
+
+	/* The recorded moves, submitted together. */
+	result = vkEndCommandBuffer(command);
+	if (result == VK_SUCCESS) {
+		memset(&submit, 0, sizeof(submit));
+		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit.commandBufferCount = 1U;
+		submit.pCommandBuffers = &command;
+		result = vkQueueSubmit(compose->queue, 1U, &submit, VK_NULL_HANDLE);
+	}
+
+	/* One wait for all of them, before the first frame. */
+	if (result == VK_SUCCESS)
+		result = vkQueueWaitIdle(compose->queue);
+
+	/* The command buffer is not kept. */
+	vkFreeCommandBuffers(compose->device, compose->pool, 1U, &command);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: every image of the start is in the general layout. */
+	return VK_SUCCESS;
 }
 
 /* Maps a client's fd as a new pool (wl_shm.create_pool). */
@@ -674,7 +729,11 @@ image_create(
 	return result;
 }
 
-/* Moves a new host-written image to the general layout, keeping what the host wrote. */
+/*
+ * Moves a new host-written image to the general layout, keeping what the
+ * host wrote: recorded into the start's batch while there is one, or
+ * submitted and waited for alone.
+ */
 static VkResult
 image_layout(
 	struct zwl_compose *compose,
@@ -682,12 +741,17 @@ image_layout(
 {
 	VkCommandBufferAllocateInfo allocate;
 	VkCommandBufferBeginInfo begin;
-	VkImageMemoryBarrier barrier;
 	VkSubmitInfo submit;
 	VkCommandBuffer command;
 	VkResult result;
 
-	/* A one-time command buffer. */
+	/* The start's batch: its command buffer made and begun by the first image. */
+	if (compose->setup_batching && compose->setup_command != VK_NULL_HANDLE) {
+		result = image_layout_record(compose->setup_command, image);
+		return result;
+	}
+
+	/* A command buffer, the batch's or a one-time one. */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocate.commandPool = compose->pool;
@@ -701,25 +765,19 @@ image_layout(
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	result = vkBeginCommandBuffer(command, &begin);
 
-	/* From preinitialized (the host's writes kept) to general. */
-	if (result == VK_SUCCESS) {
-		memset(&barrier, 0, sizeof(barrier));
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = image;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.levelCount = 1U;
-		barrier.subresourceRange.layerCount = 1U;
-		vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
-		result = vkEndCommandBuffer(command);
+	/* The move, recorded. */
+	if (result == VK_SUCCESS)
+		result = image_layout_record(command, image);
+
+	/* In the batch, the command buffer waits for the others (zwl_host_image_batch_end). */
+	if (result == VK_SUCCESS && compose->setup_batching) {
+		compose->setup_command = command;
+		return VK_SUCCESS;
 	}
 
-	/* Submitted and finished before the image is first drawn. */
+	/* Alone: submitted and finished before the image is first drawn. */
+	if (result == VK_SUCCESS)
+		result = vkEndCommandBuffer(command);
 	if (result == VK_SUCCESS) {
 		memset(&submit, 0, sizeof(submit));
 		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -734,7 +792,38 @@ image_layout(
 
 	/* The command buffer is not kept. */
 	vkFreeCommandBuffers(compose->device, compose->pool, 1U, &command);
-	return result;
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: the image is in the general layout. */
+	return VK_SUCCESS;
+}
+
+/* Records one image's move from preinitialized (the host's writes kept) to general. */
+static VkResult
+image_layout_record(
+	VkCommandBuffer command,
+	VkImage image)
+{
+	VkImageMemoryBarrier barrier;
+
+	/* The host's writes, before and after this, are seen by the fragment shader. */
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1U;
+	barrier.subresourceRange.layerCount = 1U;
+	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+
+	/* Succeeded: the move is recorded. */
+	return VK_SUCCESS;
 }
 
 /* Destroys what image_create made, whatever part of it was made. */

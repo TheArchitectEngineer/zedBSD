@@ -126,6 +126,16 @@ struct zwl_compose {
 	VkDescriptorPool descriptors;
 	VkCommandPool pool;
 	VkCommandBuffer command;
+	/*
+	 * The start's images (ws035-p131): while setup_batching is set, a new
+	 * host image's move to the general layout is recorded into
+	 * setup_command (made by the first one) instead of being submitted and
+	 * waited for alone; zwl_host_image_batch_end submits them all and waits
+	 * once.  Images made later (clients' wl_shm buffers, cursors) are moved
+	 * one by one as before.
+	 */
+	unsigned setup_batching;
+	VkCommandBuffer setup_command;
 	VkFence fence;
 	VkSemaphore acquired;
 	struct vkdemo_display output;
@@ -176,6 +186,8 @@ struct zwl_compose {
 /* Host-written images (shm.c), sampled with the given sampler. */
 VkResult zwl_host_image_create(struct zwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct zwl_import *import);
 void zwl_host_image_release(struct zwl_compose *compose, struct zwl_import *import);
+void zwl_host_image_batch_begin(struct zwl_compose *compose);
+VkResult zwl_host_image_batch_end(struct zwl_compose *compose);
 
 /* The glass look (glass.c). */
 int zwl_glass_open(struct zwl_server *server);
