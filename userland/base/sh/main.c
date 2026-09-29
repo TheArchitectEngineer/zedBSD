@@ -146,6 +146,7 @@ main(
 		job_control = sh_job_control_active();
 		sh_signals_for_interactive(job_control);
 		using_history();
+		sh_complete_init();
 	}
 
 	/* A login shell reads the profiles; an interactive one reads $ENV. */

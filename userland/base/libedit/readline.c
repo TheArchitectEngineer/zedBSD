@@ -23,8 +23,10 @@
 #include "readline/history.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -36,6 +38,12 @@
 
 /* The largest count a vi command takes; more digits are ignored. */
 #define VI_COUNT_MAX 9999U
+
+/* The width a list of matches is laid out for when the terminal does not say. */
+#define COMPLETION_WIDTH 80U
+
+/* The blanks between two columns of a list of matches. */
+#define COMPLETION_GAP 2U
 
 /*
  * An editing key of emacs mode: an arrow, Home, End or Delete as a
@@ -120,6 +128,36 @@ int rl_end;
 int rl_editing_mode = 1;
 
 /*
+ * The caller's completion function, called for Tab; NULL (the default)
+ * leaves Tab doing nothing.  readline.h describes what it returns.
+ */
+rl_completion_func_t *rl_attempted_completion_function;
+
+/* The characters that end a word going back from the cursor, GNU Readline's default. */
+static char completion_default_breaks[] = " \t\n\"\\'`@$><=;|&{(";
+
+/*
+ * The characters that separate the word to complete from what is before
+ * it.  The caller may point it at its own set.
+ */
+char *rl_completer_word_break_characters = completion_default_breaks;
+
+/*
+ * Tells whether the character at an index of the line is quoted, so that a
+ * break character is part of the word; NULL treats none as quoted.
+ */
+rl_linebuf_func_t *rl_char_is_quoted_p;
+
+/*
+ * What follows a single match; '\0' for nothing.  It is set back to ' '
+ * before each call of the completion function, which may change it.
+ */
+int rl_completion_append_character = ' ';
+
+/* How many matches are listed without asking first. */
+int rl_completion_query_items = 100;
+
+/*
  * The number the oldest history entry has, as GNU Readline counts; it
  * moves up by one each time a full history drops its oldest entry.
  */
@@ -170,6 +208,20 @@ static size_t line_changed_from;
  */
 static struct vi_state vi_state;
 
+/*
+ * The prompt of the line being edited, written again after a list of
+ * matches.  It points at the caller's string for one call of readline().
+ */
+static const char *completion_prompt;
+
+/*
+ * Whether the key before this one was a Tab, and whether this one is.
+ * readline() moves the second to the first before each key; a Tab that
+ * leaves the line as it was lists the matches when the first is set.
+ */
+static int completion_previous_tab;
+static int completion_this_tab;
+
 static void history_drop_oldest(void);
 static int history_grow(void);
 static char *duplicate(const char *text);
@@ -186,6 +238,15 @@ static void line_changed(size_t position);
 static void update_display(const char *line, size_t old_length, size_t old_point, size_t length, size_t point, size_t changed_from);
 static void move_cursor(size_t from, size_t to);
 static void cursor_step(size_t columns, char direction);
+static enum line_result complete_key(const struct edit_line *edit);
+static size_t complete_word_start(const struct edit_line *edit);
+static int complete_replace(const struct edit_line *edit, size_t start, const char *replacement);
+static int complete_append(const struct edit_line *edit, int character);
+static void complete_list(const struct edit_line *edit, char **matches);
+static int complete_ask(size_t count);
+static void complete_columns(char **matches, size_t count);
+static void complete_free(char **matches);
+static void write_bell(void);
 static void vi_begin_line(void);
 static enum line_result vi_key(const struct edit_line *edit, unsigned char byte);
 static unsigned char vi_arrow(unsigned char letter);
@@ -448,7 +509,10 @@ readline(
 			terminal = 0;
 	}
 
-	/* The prompt. */
+	/* The prompt, which a list of matches writes again; no Tab has come yet. */
+	completion_prompt = prompt;
+	completion_previous_tab = 0;
+	completion_this_tab = 0;
 	(void)write_all(prompt, strlen(prompt));
 
 	/* Each key edits the line until one ends it. */
@@ -463,10 +527,12 @@ readline(
 			break;
 		}
 
-		/* The key edits the line in the current mode. */
+		/* The key edits the line in the current mode; a Tab marks itself as one. */
 		old_length = length;
 		old_point = point;
 		line_changed_from = (size_t)-1;
+		completion_previous_tab = completion_this_tab;
+		completion_this_tab = 0;
 		if (rl_editing_mode == 0) {
 			result = vi_key(&edit, byte);
 		} else {
@@ -620,6 +686,7 @@ emacs_key(
 	const struct edit_line *edit,
 	unsigned char byte)
 {
+	enum line_result result;
 	enum edit_key key;
 	char character;
 	int done;
@@ -672,6 +739,12 @@ emacs_key(
 	if (byte == 21) {
 		line_delete(edit, 0, *edit->point);
 		return LINE_CONTINUE;
+	}
+
+	/* Tab completes the word before the cursor. */
+	if (byte == '\t') {
+		result = complete_key(edit);
+		return result;
 	}
 
 	/* Other control characters are not text. */
@@ -1036,6 +1109,351 @@ cursor_step(
 }
 
 /*
+ * Completes the word before the cursor (Tab).
+ *
+ * One match replaces the word and is followed by the append character.
+ * Several put what they have in common in its place; when that leaves the
+ * line as it was and the key before was a Tab too, they are listed.  The
+ * bell rings for no match and for matches not listed.
+ */
+static enum line_result
+complete_key(
+	const struct edit_line *edit)
+{
+	char **matches;
+	char *word;
+	size_t start;
+	size_t length;
+	int changed;
+	int appended;
+	int previous_tab;
+
+	/* This key is a Tab, and whether the one before was is kept for the decision below. */
+	previous_tab = completion_previous_tab;
+	completion_this_tab = 1;
+
+	/* Without a completion function Tab does nothing. */
+	if (rl_attempted_completion_function == NULL)
+		return LINE_CONTINUE;
+
+	/* The word runs back from the cursor to a break character. */
+	start = complete_word_start(edit);
+	length = *edit->point - start;
+	word = malloc(length + 1U);
+	if (word == NULL)
+		return LINE_NOMEM;
+	memcpy(word, *edit->text + start, length);
+	word[length] = '\0';
+
+	/* The function sees the whole line, and the append character starts as a blank. */
+	rl_line_buffer = *edit->text;
+	rl_point = (int)*edit->point;
+	rl_end = (int)*edit->length;
+	rl_completion_append_character = ' ';
+	matches = rl_attempted_completion_function(word, (int)start, (int)*edit->point);
+	free(word);
+
+	/* No match: only the bell. */
+	if (matches == NULL) {
+		write_bell();
+		return LINE_CONTINUE;
+	}
+
+	/* An empty array is no match either. */
+	if (matches[0] == NULL) {
+		complete_free(matches);
+		write_bell();
+		return LINE_CONTINUE;
+	}
+
+	/* The match, or what the matches have in common, takes the word's place. */
+	changed = complete_replace(edit, start, matches[0]);
+	if (changed < 0) {
+		complete_free(matches);
+		return LINE_NOMEM;
+	}
+
+	/* One match is followed by the append character. */
+	if (matches[1] == NULL) {
+		appended = complete_append(edit, rl_completion_append_character);
+		complete_free(matches);
+		if (!appended)
+			return LINE_NOMEM;
+		return LINE_CONTINUE;
+	}
+
+	/* Several matches: a second Tab that changes nothing lists them, otherwise the bell. */
+	if (!changed && previous_tab) {
+		complete_list(edit, matches);
+	} else {
+		write_bell();
+	}
+
+	/* Succeeded: the matches are no longer needed. */
+	complete_free(matches);
+	return LINE_CONTINUE;
+}
+
+/* Returns where the word before the cursor starts: after the last unquoted break character. */
+static size_t
+complete_word_start(
+	const struct edit_line *edit)
+{
+	const char *breaks;
+	const char *found;
+	size_t position;
+	char character;
+	int quoted;
+
+	/* No break characters make the whole line before the cursor the word. */
+	breaks = rl_completer_word_break_characters;
+	if (breaks == NULL)
+		breaks = "";
+
+	/* Back from the cursor until a break character that is not quoted. */
+	position = *edit->point;
+	while (position > 0) {
+		character = (*edit->text)[position - 1U];
+		found = NULL;
+		if (character != '\0')
+			found = strchr(breaks, character);
+
+		/* A break character ends the word unless the caller calls it quoted. */
+		if (found != NULL) {
+			quoted = 0;
+			if (rl_char_is_quoted_p != NULL)
+				quoted = rl_char_is_quoted_p(*edit->text, (int)(position - 1U));
+			if (!quoted)
+				break;
+		}
+
+		/* The character belongs to the word. */
+		position--;
+	}
+
+	/* Succeeded: the start of the word. */
+	return position;
+}
+
+/*
+ * Replaces the text from start to the cursor with a replacement; returns 1
+ * when the line changed, 0 when it already held the replacement, and -1
+ * without memory.
+ */
+static int
+complete_replace(
+	const struct edit_line *edit,
+	size_t start,
+	const char *replacement)
+{
+	size_t length;
+	size_t size;
+	int compare;
+	int inserted;
+
+	/* The same text is no change. */
+	length = *edit->point - start;
+	size = strlen(replacement);
+	if (size == length) {
+		compare = memcmp(*edit->text + start, replacement, size);
+		if (compare == 0)
+			return 0;
+	}
+
+	/* The word goes and the replacement goes in with the cursor after it. */
+	line_delete(edit, start, *edit->point);
+	*edit->point = start;
+	inserted = line_insert(edit, start, replacement, size);
+	if (!inserted)
+		return -1;
+
+	/* Succeeded: the line changed. */
+	return 1;
+}
+
+/*
+ * Puts the append character after a single match, or steps over it when the
+ * line already has it there; returns 0 without memory.
+ */
+static int
+complete_append(
+	const struct edit_line *edit,
+	int character)
+{
+	char text;
+	int inserted;
+
+	/* '\0' appends nothing. */
+	if (character == '\0')
+		return 1;
+
+	/* The same character already under the cursor is stepped over. */
+	text = (char)character;
+	if (*edit->point < *edit->length && (*edit->text)[*edit->point] == text) {
+		(*edit->point)++;
+		return 1;
+	}
+
+	/* The character goes in at the cursor. */
+	inserted = line_insert(edit, *edit->point, &text, 1);
+	if (!inserted)
+		return 0;
+
+	/* Succeeded. */
+	return 1;
+}
+
+/*
+ * Lists the matches under the line, asking first when there are many, then
+ * writes the prompt and the line again with the cursor where it was.
+ */
+static void
+complete_list(
+	const struct edit_line *edit,
+	char **matches)
+{
+	size_t count;
+	int wanted;
+
+	/* The matches to list are those after the replacement. */
+	count = 0;
+	while (matches[count + 1U] != NULL)
+		count++;
+
+	/* The list starts on the line after the one being edited. */
+	move_cursor(*edit->point, *edit->length);
+	(void)write_all("\n", 1);
+
+	/* Many matches are listed only when the answer is yes. */
+	wanted = 1;
+	if (count > (size_t)rl_completion_query_items)
+		wanted = complete_ask(count);
+	if (wanted)
+		complete_columns(matches + 1, count);
+
+	/* The prompt and the line again, with the cursor back at its place. */
+	(void)write_all(completion_prompt, strlen(completion_prompt));
+	(void)write_all(*edit->text, *edit->length);
+	move_cursor(*edit->length, *edit->point);
+}
+
+/* Asks whether to list many matches; returns 1 for y, Y or a blank. */
+static int
+complete_ask(
+	size_t count)
+{
+	char question[64];
+	unsigned char answer;
+	ssize_t received;
+	int length;
+
+	/* The question, as GNU Readline puts it. */
+	length = snprintf(question, sizeof(question), "Display all %lu possibilities? (y or n)", (unsigned long)count);
+	if (length > 0)
+		(void)write_all(question, (size_t)length);
+
+	/* One key answers it; a failed read is a no. */
+	do
+		received = read(STDIN_FILENO, &answer, 1);
+	while (received < 0 && errno == EINTR);
+	(void)write_all("\n", 1);
+	if (received != 1)
+		return 0;
+
+	/* y, Y and a blank are yes. */
+	if (answer == 'y' || answer == 'Y' || answer == ' ')
+		return 1;
+
+	/* Anything else is no. */
+	return 0;
+}
+
+/*
+ * Writes matches in columns as wide as the longest match and a gap, as many
+ * as the terminal's width holds, filled top to bottom and then left to right.
+ */
+static void
+complete_columns(
+	char **matches,
+	size_t count)
+{
+	struct winsize size;
+	size_t width;
+	size_t longest;
+	size_t length;
+	size_t columns;
+	size_t rows;
+	size_t row;
+	size_t column;
+	size_t index;
+	size_t pad;
+	int size_error;
+
+	/* The terminal's width, or the usual 80 columns when it does not say. */
+	width = COMPLETION_WIDTH;
+	size_error = ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
+	if (size_error == 0 && size.ws_col > 0)
+		width = size.ws_col;
+
+	/* The longest match sets the width of a column. */
+	longest = 0;
+	for (index = 0; index < count; index++) {
+		length = strlen(matches[index]);
+		if (length > longest)
+			longest = length;
+	}
+
+	/* As many columns as fit, at least one, and the rows they need. */
+	columns = width / (longest + COMPLETION_GAP);
+	if (columns == 0)
+		columns = 1;
+	rows = (count + columns - 1U) / columns;
+
+	/* Each row takes one match from each column. */
+	for (row = 0; row < rows; row++) {
+		for (column = 0; column < columns; column++) {
+			/* A column past the last match ends the row. */
+			index = column * rows + row;
+			if (index >= count)
+				break;
+			length = strlen(matches[index]);
+			(void)write_all(matches[index], length);
+
+			/* Blanks up to the next column, when there is a match in it. */
+			if (index + rows < count) {
+				for (pad = length; pad < longest + COMPLETION_GAP; pad++)
+					(void)write_all(" ", 1);
+			}
+		}
+
+		/* The row ends. */
+		(void)write_all("\n", 1);
+	}
+}
+
+/* Frees an array of matches the completion function returned, and its strings. */
+static void
+complete_free(
+	char **matches)
+{
+	size_t index;
+
+	/* Each string, then the array. */
+	for (index = 0; matches[index] != NULL; index++)
+		free(matches[index]);
+	free(matches);
+}
+
+/* Rings the terminal's bell. */
+static void
+write_bell(
+	void)
+{
+	/* BEL. */
+	(void)write_all("\a", 1);
+}
+
+/*
  * The vi editing mode (XCU sh, Command Line Editing (vi-mode)).
  *
  * A line starts in insert mode; ESC enters command mode, where keys move
@@ -1148,6 +1566,7 @@ vi_insert_key(
 	const struct edit_line *edit,
 	unsigned char byte)
 {
+	enum line_result result;
 	size_t start;
 	char character;
 	int inserted;
@@ -1179,6 +1598,12 @@ vi_insert_key(
 		start = vi_word_backward(edit, *edit->point, 0);
 		line_delete(edit, start, *edit->point);
 		return LINE_CONTINUE;
+	}
+
+	/* Tab completes the word before the cursor, as in emacs mode. */
+	if (byte == '\t') {
+		result = complete_key(edit);
+		return result;
 	}
 
 	/* Other control characters are not text. */
