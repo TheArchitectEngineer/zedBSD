@@ -2,7 +2,7 @@
 
 # ws092-p003: 共有の file chooser（libkeiland の `keiland_file_chooser_*`）と editor の Open・Save As
 
-Status: in-progress（2026-09-29、subagent の worktree `wt/ws092`）
+Status: cleared（2026-09-29、subagent の worktree `wt/ws092`）
 Disposition: normal
 Parent: [WS092](../ws.md)
 Queue: main の依頼（2026-09-29「ws092-p003（共有の file chooser）: 設計 → 実装 → text editor の `te_host.choose` と `TE_EVENT_CHOSEN` の受け口に結ぶ → host と QEMU の試験」）
@@ -150,6 +150,57 @@ void keiland_file_chooser_destroy(struct keiland_file_chooser *chooser);
 - QEMU（Venus の desktop、main の `build/ws035-sq/hdd-image.img` の複写）: 新しい `libkeiland.so` と `textedit` を置き、Ctrl+O で chooser、
   folder の移動、file を開く、Save As で新しい名前・既にある名前（確認）で保存、SSH で保存した byte を確かめる。画面は `build/ws092-shots/`。
 
-## 結果
+## 結果（2026-09-29）
 
-（実行中）
+### 設計からの違い・分かったこと
+
+- **zdesktop は client に生きている xdg_surface が 1 つでもあると `xdg_wm_base.destroy` を protocol error にする**（`userland/desktop/wayland/protocol.c` の
+  ZWL_WM の opcode 0。protocol の定義では「その binding から作った xdg_surface」だけが対象）。最初の実装は chooser の destroy で自分の xdg_wm_base を
+  destroy し、editor の接続が切れた（QEMU で観測: `ZWL ERROR client=1 object=99 reason=invalid or unsupported request`、editor は `DONE reason=disconnected`）。
+  library は **xdg_wm_base の binding を process に 1 つ持ち続け**、ping に答え続ける形にした（`chooser.c` の `chooser_kept_shell`）。zdesktop の側を
+  binding ごとの判定に直すのは WS035 の範囲なので main に報告する（変えていない）。
+- 窓を閉じた後の答えは `wl_display.sync` の callback から伝える（app が `done` の中で destroy しても、配送中の object を壊さない）。
+- 2 回目の tap は TAP と DOUBLE_TAP の組で届く（`gesture.c`）。組は double tap だけとして扱い、1 回目の tap が別の folder を見せた時は捨てる（`generation`）。
+- Save の窓が狭い時（既定の 760 でも名前の欄が 110 px 未満になる時）は filter の pill を出さない。filter の幅は 136。
+- key の repeat は chooser では無い（押すごとに 1 回）。Files からの drag and drop・複数選択・新しい folder は範囲外（要る app が来たら足す）。
+
+### 変えた file
+
+- 新規（libkeiland）: `chooser.c`（Wayland の窓・seat・shm・frame・glass・答えの配送）、`chooser-model.c`（folder・並べ・filter・sidebar・key・pointer・
+  tap・Save の確かめ）、`chooser-draw.c`（配置と描画、Files の色と大きさ）、`chooser.h`、`paint.c`・`paint-text.c`・`paint.h`（CPU の canvas と文字。
+  textedit の canvas.c・text.c を元に、角丸の縁・線・円・環・縦の階調を足した）。
+- `include/libc/keiland.h`: `KEILAND_VERSION` 11 → **12**（main の最新は 11 を 2026-09-29 の c4268cc0 で確認）、`keiland_file_chooser_*` の API（追加だけ）。
+- `userland/desktop/libkeiland/exports.map`（`keiland_file_chooser_*`）、`Makefile`（source と `desktop/libtruetype` の依存）、
+  `platform/amd64/vmunix.mk`（`libkeiland.so` の link に `libtruetype.so`、NEEDED の確認にも）。
+- text editor: `main.c`（`main_choose`・`main_chosen`、Text Files と All Files の filter、Quit で待たなくなった chooser を閉じる）、
+  `window.c`・`window.h`（自分の surface 以外の pointer・keyboard・touch の event を無視する）。
+
+### 試験
+
+- host（`sh plan/ws092/tests/host-chooser.sh`、Linux の cc で model・draw・paint・recent と libtruetype を build）: **75/75**。
+  並べ（folder が先・大文字小文字を無視）、隠し file と Ctrl+H、filter（pill の click）、sidebar（Recent・Home・Desktop・Documents・Computer、無い Downloads は出ない）、
+  ↓・Enter・Backspace・Alt+↑・↑ の button・文字での選択、click と double click（400 ms を超えた 2 回は開かない）、folder の tap で入る・file の tap と double tap、
+  Esc と Cancel、Recent（filter に合わない file は出ない）、悪い option（EINVAL）、Save（拡張子の前までの選択・上書き・新しい名前・既にある file の確認と
+  Cancel・Esc・Replace・folder の名前で入る・`/` の拒否と message・書けない folder の拒否・空の名前）、Ctrl+L の path（`~/Desktop`、相対の file、Save の path）。
+  絵: `build/ws092-shots/host-chooser-{open,open-glass,save,replace,narrow,path}.png`。host の text editor の試験 `host-core.sh` も 34/34（回帰）。
+- build（amd64、`make -j64 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/amd64 build/amd64/bin/textedit build/amd64/dynamic/libkeiland.so build/amd64/bin/wayland`、`-Werror`）:
+  exit 0、warning 0（main を merge した後も）。
+- 規約: `python3 plan/tools/style-check.py userland/desktop/libkeiland/*.c userland/desktop/textedit/*.c` → **違反 0**（最初の 64 件を直した）。全文との照合は p004。
+- QEMU（Venus の desktop、`build/ws092/zd-start.sh`、main の `build/ws035-sq/hdd-image.img` の複写に新しい `/lib/libkeiland.so`・`/tmp/textedit`・`/tmp/wayland --glass --timeout=3600`。
+  入力は QMP（`plan/ws092/tests/qmp-keys.py`）、画面は VNC（`plan/ws035/tests/zdesktop-shot.py --runtime <絶対 path>`）、結果は editor の log と SSH で読んだ file）:
+  - Ctrl+O で chooser の窓（題「Open」、editor の印、すりガラスの card 2 枚）: `q-open.png`。↓↓ Enter で folder に入る（`q-notes.png`）、Backspace で戻る、
+    hover（`q-hover.png`）、filter の pill で All Files（`picture.png` が出る、`q-filter.png`）、click で選んで Open が有効に（`q-select.png`）、Open の button で
+    README.md を開いた（`q-opened.png`、log `CHOSEN result=0 path=/root/Documents/README.md`・`OPEN`）。↓↓↓ Enter でも開いた。
+  - Save As（Ctrl+Shift+S）: 名前の欄が `README.md` の `README` を選んだ状態、`copy` を打って `copy.md`（`q-saveas-typed.png`）、Enter で保存（SSH で
+    `/root/Documents/copy.md` = `# readme edited`）。既にある file の選択 → Save → 確認の card（`q-replace.png`）→ Enter で置き換え（22 byte）。
+  - Untitled の Ctrl+S → Home の Save As（`q-save-untitled.png`、filter の pill あり）、Tab で list、↓↓ Enter で Documents（`q-save-folder.png`）、Tab で名前、
+    `note` → `note.txt` を保存（SSH で `a new note`）。
+  - Esc と窓の close の button で取り消し（log `CHOSEN result=1 path=`）、その後 editor に keyboard が戻る（`q-cancelled.png`）。同じ process での 2 回目以降の
+    chooser も動く（shell の binding の共有）。zdesktop の log に ERROR なし（修正の後）。
+- 未実施: touch（guest に touch の device が無い。model の tap は host で確かめた。慣性の scroll は実機）、wheel の scroll の目視、Quit の時に開いている chooser を
+  閉じる経路、Ctrl+L の path の欄の guest での操作（host では確かめた）、日本語の名前の guest での表示（host の絵では出る）、実機。
+
+### 残り
+
+- p004: 規約の全文との照合（p002・p003 の全 source）と回帰（boot test）。
+- main への依頼: zdesktop の `xdg_wm_base.destroy` の判定（client 全体ではなく binding ごと）を WS035 で直すか判断。直っても library はそのままで動く。
