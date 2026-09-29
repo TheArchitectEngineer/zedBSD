@@ -689,6 +689,8 @@ expr_bind_default(
 	} else {
 		js_compile_expression(fc, pattern->second, chosen);
 	}
+
+	/* The default was taken, or the value was not undefined. */
 	js_label_place(fc, given);
 
 	/* The target takes the value chosen. */
@@ -729,6 +731,8 @@ expr_bind_object(
 		if (property->kind == JS_NODE_REST)
 			has_rest = 1;
 	}
+
+	/* A rest needs the list of the keys taken. */
 	if (has_rest)
 		js_emit1(fc, VM_OP_NEW_ARRAY, excluded);
 

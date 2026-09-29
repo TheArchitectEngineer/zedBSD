@@ -598,6 +598,8 @@ scope_visit_try(
 			scope_declare_lexical(compiler, clause, node->second, JS_BINDING_CATCH);
 			scope_visit(compiler, clause, node->second);
 		}
+
+		/* The clause's block, in the clause's scope. */
 		scope_visit_list(compiler, clause, node->third);
 	}
 
@@ -758,6 +760,8 @@ scope_global_lexical(
 				scope_global_lexical(compiler, info, element, is_const);
 			}
 		}
+
+		/* Nothing more for a pattern. */
 		return;
 	}
 

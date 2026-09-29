@@ -389,6 +389,8 @@ compile_prepare(
 		if (parameter->kind != JS_NODE_REST)
 			fc->parameter_count++;
 	}
+
+	/* The locals start after the arguments' registers. */
 	fc->local_count = fc->parameter_count;
 
 	/* Every binding of every scope of the function gets its place, and a block with an environment a register to hold it. */
