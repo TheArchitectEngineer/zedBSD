@@ -2,12 +2,12 @@
 
 # ws073-p041: BUG-030（起動時の USB mass storage の CSW の時間切れ）の原因と修正
 
-Status: in-progress（2026-09-30、サブエージェント、worktree `.claude/worktrees/ws073-bugs`、branch `wt/ws073`。原因を特定して修正し、build と短い再現試験と boot test は済み。受け入れの本数の試験は別の担当が行う）
+Status: in-progress（2026-09-30。受け入れの試験は wrap up で途中、下の「受け入れの試験の結果」。元: サブエージェント、worktree `.claude/worktrees/ws073-bugs`、branch `wt/ws073`。原因を特定して修正し、build と短い再現試験と boot test は済み。受け入れの本数の試験は別の担当が行う）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-030](../../bugs/BUG-030.md)
 Queue: main の依頼（2026-09-29「BUG-030 をなるべく短時間で修正」）。Queue の ID は main が記録する
-Resume point: 下の「試験の担当への引き継ぎ」
+Resume point: 2026-09-30 の受け入れの試験（下の「受け入れの試験の結果」）は wrap up で途中。残り: TCG・trace 付き 2 本並列の残り 5 回（35/40 済み）、KVM 2 本並列 × 20（丸読み 1 回を含む、未実施）、回帰の boot test（keyboard）と serial.py の login（未実施）。加えて、受け入れ条件の「`xhci: cancel` 0」は、usb-storage とは別の EP0 の control の時間切れ（修正の前からある、下の結果の 2）で満たせない。受け入れ条件をusb-storage の error に絞るか、EP0 の件を別 bug（BUG-036 の系統）に分けるかは main の判断
 
 ## 範囲
 
@@ -85,6 +85,36 @@ image は `sh plan/ws073/tests/kernel-image.sh build/amd64/vmunix build/<dir>/gu
 4. 受け入れ: 1・2 で error 0、3 が通る。そのうえで BUG-030 を resolved にし、この Phase を cleared にする。
 5. 時間切れが出た場合: `dmesg` の `xhci: cancel ... pending-events=N` と `xhci: cancelled request ... completion=C` を見る。N>0 なら guest の取りこぼし
    （この Phase の結論が覆る）、N=0 かつ C=26 なら controller/QEMU 側で、QEMU の trace で command を特定する。
+
+## 受け入れの試験の結果（2026-09-30、試験の担当、QEMU。wrap up で途中）
+
+image は `build/ws073-p041/guest.img`（中の vmunix は `build/amd64/vmunix` と `cmp` で同一。`make ... vmunix` は no-op、warning 0）。
+runner は `build/ws073-p041-accept/run.sh`（`usb-stress.sh` を 2 本並列、起動ごとに別の `GUEST_RUNTIME`、各回の `dmesg-1.txt`・`qemu.log`・trace を保存）。
+`guest.py` が起動のたびに image を 2.2 GB 複写するので、全ての回が「複写の直後」の条件である。判定は SSH の `dmesg` だけ。
+
+| 組 | kernel | 回数 | SSH | usb-storage の error（BOT/`op=28`） | `xhci: cancel` の起きた回 | keyboard の attach の失敗 | 列挙の再試行 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| TCG、trace なし、2×20（`tcg/`） | 修正後 | 40 | 40/40 | **0** | 7（全て EP0） | 2 | 6（port 7 が 5、port 6 が 1） |
+| TCG、`-trace enable=usb_msd_*`、2 本並列（`tcg-trace/`、途中で停止） | 修正後 | 35 | 35/35 | **0**（trace に `usb_msd_cmd_cancel` 0） | 9（全て EP0） | 6 | 3 |
+| 基準: TCG、trace なし、2×20（`base-p040-tcg/`） | 修正前（`build/ws073-p040/guest.img`、p041 の diff だけが無い） | 40 | 40/40 | **7 回**（`BOT CSW error=42`） | （診断なし） | 6 | 1 |
+| KVM 2×20（丸読み 1 回を含む） | 修正後 | 未実施 | | | | | |
+
+1 回の起動は TCG で 26〜34 秒（SSH の dmesg まで）。
+
+1. **usb-storage（BUG-030 の本体）**: 修正後 75 回で 0（修正前は同じ条件で 40 回中 7 回）。60 秒・30 秒の timeout が足りない回は無かった。
+2. **別の問題: EP0 の control の 1 秒の時間切れ（修正の前からある）**: 修正後の 16 回の `xhci: cancel` は全て `endpoint=1`（EP0）で、slot 3（keyboard）が 15、
+   slot 2（usb-net）が 1。形は毎回 `pending-events=2 first-type=32 iman=3 usbsts=8 polling=0 command-busy=0 irq-busy=0`、cancel 中の completion は
+   **1（Success）residual=0**。つまり transfer event は ring に届き、IMAN.IP・USBSTS.EINT も立っているのに、1 秒（`USB_HID_CONTROL_TIMEOUT_MS`・
+   `USB_CONTROL_TIMEOUT_MS`）の間 guest の割り込みの handler が event を取っていない＝**guest 側の取りこぼし（割り込みが届かないか処理されない）**。
+   列挙の段なら再試行（BUG-036 の緩和）で回復するが、usb-hid の attach の段だと keyboard が無いまま起動する（修正後 75 回で 8 回、修正前 40 回で 6 回）。
+   修正前の kernel でも同じ率で起きており、p041 の修正の退行ではない。BUG-030 の CSW の時間切れ（`pending-events=0`、completion 26）とは形が違う。
+   BUG-036（列挙の時間切れ、原因未解明）と同じ根と見られる（未証明）。
+3. 丸読み（`dd` 2216689664 bytes）: 未実施（KVM の組で行う予定だった）。usb-net: SSH は 115/115 回つながった。keyboard: 上の 2 のとおり 115 回中 14 回
+   attach に失敗（修正前後とも）。boot test の画面と `serial.py` の login は未実施（p041 の修正直後の boot test は `build/ws073-p041/boot-test/login.png` で PASS）。
+
+次の手: (a) EP0 の件を別の bug として扱う（BUG-036 に追記するか新しい ticket、main の判断）。gdbstub で `xhci: cancel` の時点の MSI-X の table・PBA と
+CPU の割り込みの状態を見る（IP=1 なのに handler が走っていない理由）。(b) BUG-030 の受け入れ条件を「usb-storage の error 0」に絞るなら、KVM 2×20 と
+boot test を足せば clear できる見込み。
 
 ## 残課題
 
