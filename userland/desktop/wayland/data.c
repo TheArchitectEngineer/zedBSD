@@ -37,6 +37,7 @@
  * (touch.c).
  */
 
+#include "desktop.h"
 #include "data.h"
 #include "extras.h"
 #include "popup.h"
@@ -1121,8 +1122,13 @@ drag_surface_at(
 	if (found)
 		return surface;
 
-	/* Succeeded: a window's body, or none (shell.c). */
+	/* A window's body (shell.c). */
 	surface = zwl_glass_body_at(server, server->pointer_x, server->pointer_y);
+	if (surface != NULL)
+		return surface;
+
+	/* Succeeded: the desktop's icons where no window is, or none (desktop.c). */
+	surface = zwl_desktop_at(server, server->pointer_x, server->pointer_y);
 	return surface;
 }
 

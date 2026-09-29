@@ -16,6 +16,7 @@
  * callbacks of the surfaces it showed are held until the fence signals.
  */
 
+#include "desktop.h"
 #include "compose.h"
 #include "shaders.h"
 #include "popup.h"
@@ -1547,6 +1548,10 @@ compose_record(
 	if (server->glass) {
 		zwl_glass_draw(server, compose->command, windows, count);
 	} else {
+		/* The desktop's icons under the windows (desktop.c). */
+		zwl_desktop_draw(server, compose->command);
+
+		/* Each window. */
 		for (index = 0; index < count; index++) {
 			/* A window between its sub-surfaces below and above it (subsurface.c). */
 			zwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 0U);
@@ -1739,6 +1744,20 @@ compose_hold(
 	/* A drag's icon surface is held and told too. */
 	surface = server->dnd_icon;
 	if (server->dnd_active && surface != NULL && !surface->dead && surface->current != NULL) {
+		zwl_buffer_get(surface->current);
+		compose->held[compose->held_count++] = surface->current;
+
+		/* Its frame callbacks after the windows'. */
+		tail = &compose->callbacks;
+		while (*tail != NULL)
+			tail = &(*tail)->callback_next;
+		*tail = surface->committed_callbacks;
+		surface->committed_callbacks = NULL;
+	}
+
+	/* The desktop surface is held and told too (desktop.c). */
+	surface = zwl_desktop_surface(server);
+	if (surface != NULL && surface->current != NULL) {
 		zwl_buffer_get(surface->current);
 		compose->held[compose->held_count++] = surface->current;
 

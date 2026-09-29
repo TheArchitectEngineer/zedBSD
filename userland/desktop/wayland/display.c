@@ -10,6 +10,7 @@
  * (WS035 compositing design, D0), and fullscreen mode's direct scanout.
  */
 
+#include "desktop.h"
 #include "zwl.h"
 #include "popup.h"
 #include "toplevel.h"
@@ -377,6 +378,9 @@ zwl_schedule(
 	if (server->glass)
 		zwl_glass_tick(server);
 
+	/* The desktop surface's program and place (desktop.c). */
+	zwl_desktop_tick(server);
+
 	/* Every committed surface takes its new image. */
 	for (client = server->clients; client != NULL; client = client->next) {
 		if (client->fatal)
@@ -447,8 +451,8 @@ zwl_schedule(
 		return;
 	}
 
-	/* Input goes to the topmost window. */
-	server->front_surface = top;
+	/* Input goes to the topmost window, or to the desktop pressed last (desktop.c). */
+	server->front_surface = zwl_desktop_front(server, top);
 	zwl_seat_focus(server);
 
 	/* wl_shm images are copied, and their buffers released, while no frame is in flight. */
@@ -506,6 +510,10 @@ zwl_top_window(
 			if (surface->kind != ZWL_SURFACE || surface->dead || !surface->mapped)
 				continue;
 			if (surface->desktop != server->desktop || surface->minimized)
+				continue;
+
+			/* The desktop's icons are never a window, so a closed last window does not give them the keyboard (desktop.c). */
+			if (zwl_desktop_is(surface))
 				continue;
 			if (top == NULL || surface->map_order > top->map_order)
 				top = surface;

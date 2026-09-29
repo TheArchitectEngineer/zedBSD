@@ -65,6 +65,7 @@
  * finger was last reported.
  */
 
+#include "desktop.h"
 #include "zwl.h"
 #include "touch.h"
 #include "data.h"
@@ -1590,6 +1591,10 @@ surface_at(
 	} else {
 		window = server->focus;
 	}
+
+	/* Where no window is, the desktop's icons (desktop.c). */
+	if (window == NULL)
+		window = zwl_desktop_at(server, x, y);
 
 	/* No window, or one that is going. */
 	if (window == NULL ||

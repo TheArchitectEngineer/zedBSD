@@ -145,7 +145,7 @@ struct zwl_compose {
 	VkImageView views[ZWL_SWAPCHAIN_MAX];
 	VkFramebuffer framebuffers[ZWL_SWAPCHAIN_MAX];
 	VkSemaphore rendered[ZWL_SWAPCHAIN_MAX];
-	struct zwl_object *held[ZWL_FRAME_WINDOWS + 2U];
+	struct zwl_object *held[ZWL_FRAME_WINDOWS + 3U];
 	struct zwl_object *callbacks;
 	unsigned held_count;
 	unsigned in_flight;

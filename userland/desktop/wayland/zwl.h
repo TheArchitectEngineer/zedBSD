@@ -155,6 +155,9 @@ enum zwl_kind {
 	ZWL_VIRTUAL_KEYBOARD,
 	ZWL_IME_STATUS_MANAGER,
 	ZWL_IME_STATUS,
+	/* The desktop surface (desktop.c, ws094-p002). */
+	ZWL_DESKTOP_MANAGER,
+	ZWL_DESKTOP_SURFACE,
 };
 
 /*
