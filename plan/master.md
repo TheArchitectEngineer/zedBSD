@@ -50,7 +50,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | Goal | 当面の成果 | Milestone | 担当 | 出典 |
 | --- | --- | --- | --- | --- |
-| **fg010** | **2026-10-17 の Open Source Conference Tokyo Fall のデモに向けて、Kei Operating System を仕上げる**: Dell Latitude 5330 の実機（内蔵 LCD、USB boot。HDMI の touch LCD は 2026-09-29 に外した）で graphical login から Keiland のデスクトップ、demo critical のアプリ（Image Viewer・Text Editor・Files・Settings・Notes・PDF Viewer・ブラウザ（amazon.co.jp）・terminal）が動く | MG006 | [WS035](ws035/ws.md)（Keiland）、[WS075](ws075/ws.md)（i915）、[WS089](ws089/ws.md)（Settings）、[WS091](ws091/ws.md)・[WS092](ws092/ws.md)・[WS093](ws093/ws.md)（画像・text・Files からの起動）、[WS079](ws079/ws.md)（Notes・PDF Viewer）、[WS074](ws074/ws.md)（ブラウザ）、[WS081](ws081/ws.md)（touch） | 2026-09-24 ユーザー指示、2026-09-29 のデモ critical の追加（画像 viewer と text editor）、2026-09-30 に記述を更新 |
+| **fg010** | **2026-10-17 の Open Source Conference Tokyo Fall のデモに向けて、Kei Operating System を仕上げる**: Dell Latitude 5330 の実機（内蔵 LCD、USB boot。HDMI の touch LCD は 2026-09-29 に外した）で graphical login から Keiland のデスクトップ、demo critical のアプリ（Image Viewer・Text Editor・Files・Settings・Notes・PDF Viewer・ブラウザ（amazon.co.jp）・terminal）が動く | MG006 | [WS099](ws099/ws.md)（Keiland のデモの仕上げ、WS035 の後継）、[WS075](ws075/ws.md)（i915）、[WS089](ws089/ws.md)（Settings）、[WS091](ws091/ws.md)・[WS092](ws092/ws.md)・[WS093](ws093/ws.md)（画像・text・Files からの起動）、[WS079](ws079/ws.md)（Notes・PDF Viewer）、[WS074](ws074/ws.md)（ブラウザ）、[WS081](ws081/ws.md)（touch） | 2026-09-24 ユーザー指示、2026-09-29 のデモ critical の追加（画像 viewer と text editor）、2026-09-30 に記述を更新 |
 
 デモの platform は amd64 の実機（Dell Latitude 5330、HDMI + USB、2026-09-28 ユーザーの回答）。開発の試験は QEMU（amd64）で行い、実機の証拠と分けて書く。以前の focus（fg004 インストーラの実機、
 fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残すが、現在は優先しない。
