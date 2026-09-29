@@ -126,3 +126,15 @@ vblank の配列（停止要因 5〜7）、N0 が active な pipe で止まら�
 - ユーザー:「起動しました！ですが、1fpsくらいしか出ないです。」→ takeover と再点灯は実機で動いた（firmware の画面から LCD の表示へ）。性能は約 1 fps。
 - 原因は未特定。flip の完了の待ちは 100 ms で打ち切る（`I915_LCD_FLIP_EVENT_MS`）ので、毎回 timeout しても約 10 fps のはずで合わない。GPU の実行の時間か present の経路の待ちを疑う。
   main の端末から 10.0.30.3 に届かない（No route to host）ので、dmesg の `perf:` の行をユーザーに依頼した。
+
+### passthrough での入力の遅れの計測（2026-09-29）
+
+ユーザー:「マウスの移動をしても描画が1秒後ですね。…QEMUでパススルーして、マウス移動から描画までの時間を計ったりできますか？」（5330 は Linux、10.0.10.25。
+`~/.ssh/config` の `solaris10-man` を 10.0.10.25 に書き直した）。
+- 道具: `plan/ws075/tests/hdmi/h4-ctl.py latency PIPE COUNT`（足した。tablet を 40 px 動かし、pipe の `PLANE_SURFLIVE` を passthrough の BAR 越しに xp で読んで
+  次の flip までの時間。続けて入力なしの 3 秒の flip の数）。image `plan/ws075/demo/build-demo-image.sh build/demo-lcd-pt passthrough`（display=edp）、
+  `plan/ws075/tests/hdmi-h4-hw.sh start|ctl|stop`、結果 `build/ws084-pt1/`。
+- QEMU（passthrough、firmware の画面なし＝takeover なし）: 10/10 flip、中央値 49.1 ms（40.6〜49.5）、入力なしは 3 秒で 0 flip。
+  perf の行は present 1 回の GPU 約 15 ms、flip 1〜7 ms。
+- 結論: 約 1 秒の遅れは bare metal（takeover の後）だけのもの。GPU の描画や compositor の経路一般の問題ではない。疑い: takeover の後に残る状態
+  （INIT の参照を再点灯の前に返す＝DC state、probe 時の sanitize の差、`kmsg` を画面に出す console）。bare metal の `perf:` の行で確かめる。
