@@ -68,6 +68,8 @@ icmp_socket_create(
 	struct socket **result)
 {
 	struct icmp_endpoint *endpoint;
+	struct icmp_endpoint *other;
+	unsigned registered;
 	unsigned long irq;
 
 	/* Rejects a missing result or another protocol. */
@@ -81,13 +83,30 @@ icmp_socket_create(
 	inet_socket_object_init(&endpoint->inet, SOCK_RAW, IPPROTO_ICMP,
 	    &icmp_ops);
 
-	/* Registers it for delivery. */
+	/*
+	 * Registers it for delivery, unless the delivery snapshot is already
+	 * as large as it can be.
+	 */
 	irq = spin_lock_irqsave(&icmp_registry_lock);
 
-	endpoint->next = icmp_sockets;
-	icmp_sockets = endpoint;
+	/* Counts the sockets already registered. */
+	registered = 0;
+	for (other = icmp_sockets; other != NULL; other = other->next)
+		registered++;
+
+	/* Links the new socket while the snapshot can still hold it. */
+	if (registered < SOCKET_BROADCAST_MAX) {
+		endpoint->next = icmp_sockets;
+		icmp_sockets = endpoint;
+	}
 
 	spin_unlock_irqrestore(&icmp_registry_lock, irq);
+
+	/* Refuses a socket the delivery could not reach. */
+	if (registered >= SOCKET_BROADCAST_MAX) {
+		kern_free(endpoint);
+		return ENFILE;
+	}
 
 	*result = &endpoint->inet.socket;
 
@@ -377,12 +396,13 @@ icmp_deliver(
 	uint32_t destination)
 {
 	struct icmp_endpoint *endpoint;
-	struct icmp_endpoint *snapshot[SOCKET_MAX];
+	struct icmp_endpoint *snapshot[SOCKET_BROADCAST_MAX];
 	struct packet_buf *copy;
 	struct sockaddr_in address;
 	unsigned count;
 	unsigned index;
 	unsigned long irq;
+	int referenced;
 
 	count = 0;
 
@@ -390,8 +410,18 @@ icmp_deliver(
 	irq = spin_lock_irqsave(&icmp_registry_lock);
 
 	for (endpoint = icmp_sockets; endpoint != NULL; endpoint = endpoint->next) {
-		if (count < SOCKET_MAX && socket_tryref(&endpoint->inet.socket))
-			snapshot[count++] = endpoint;
+		/* Stops at a full snapshot, which creation keeps from happening. */
+		if (count >= SOCKET_BROADCAST_MAX)
+			break;
+
+		/* Skips a socket whose closing has begun. */
+		referenced = socket_tryref(&endpoint->inet.socket);
+		if (!referenced)
+			continue;
+
+		/* Keeps the referenced socket in the snapshot. */
+		snapshot[count] = endpoint;
+		count++;
 	}
 
 	spin_unlock_irqrestore(&icmp_registry_lock, irq);

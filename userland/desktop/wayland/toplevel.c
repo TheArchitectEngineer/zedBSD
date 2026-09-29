@@ -50,12 +50,6 @@
 #define TOPLEVEL_ERROR_INVALID_RESIZE_EDGE	0U
 #define TOPLEVEL_ERROR_INVALID_PARENT		1U
 
-/* The edges a resize drags (xdg_toplevel.resize_edge is made of these bits). */
-#define EDGE_TOP		1U
-#define EDGE_BOTTOM		2U
-#define EDGE_LEFT		4U
-#define EDGE_RIGHT		8U
-
 /* xdg_wm_base's ping event. */
 #define WM_BASE_PING		0U
 
@@ -64,6 +58,17 @@
 
 /* The smallest window a resize makes, whatever the client's minimum. */
 #define RESIZE_MINIMUM		64
+
+/*
+ * How long after a resize ends a client's image of another size than the
+ * last one asked for is still taken as drawn before the client read the
+ * last configure (ws035-p128): until then the anchor stays.  Files on Venus
+ * takes about 330 ms a frame and was seen to commit three frames of an
+ * earlier size, over about a second, after acknowledging the last
+ * configure.  Keeping the anchor longer only keeps the dragged window's far
+ * edges in place a little longer.
+ */
+#define RESIZE_STALE_MS		3000U
 
 static int toplevel_set_parent(struct zwl_object *toplevel, const unsigned char *bytes, size_t size);
 static int toplevel_size_hint(struct zwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
@@ -159,6 +164,7 @@ zwl_toplevel_committed(
 	struct zwl_server *server,
 	struct zwl_object *surface)
 {
+	uint64_t now;
 	int32_t geometry_x;
 	int32_t geometry_y;
 	int32_t width;
@@ -181,9 +187,9 @@ zwl_toplevel_committed(
 	window_extent(surface, &geometry_x, &geometry_y, &width, &height);
 
 	/* Dragged from the left, the right edge stays; dragged from the top, the bottom does. */
-	if ((surface->resize_edges & EDGE_LEFT) != 0U)
+	if ((surface->resize_edges & ZWL_EDGE_LEFT) != 0U)
 		surface->x = surface->resize_right - geometry_x - width;
-	if ((surface->resize_edges & EDGE_TOP) != 0U)
+	if ((surface->resize_edges & ZWL_EDGE_TOP) != 0U)
 		surface->y = surface->resize_bottom - geometry_y - height;
 	server->dirty = 1;
 
@@ -193,18 +199,30 @@ zwl_toplevel_committed(
 
 	/*
 	 * After it, the anchor goes with the first image of the last size, or
-	 * the first drawn after the client acknowledged the last configure (a
-	 * client may draw a size of its own, a terminal a whole number of
-	 * cells).
+	 * with an image of a size of the client's own (a terminal draws a whole
+	 * number of cells) once the client has acknowledged the last configure.
 	 */
 	if (width == (int32_t)surface->window_width && height == (int32_t)surface->window_height) {
 		resize_settle(surface, width, height);
 		return;
 	}
 
-	/* Succeeded: the anchor goes once the last configure is drawn. */
-	if (surface->acked_serial == surface->resize_final_serial)
-		resize_settle(surface, width, height);
+	/*
+	 * A client that acknowledged the last configure may still commit an
+	 * image it drew before reading it (Files acknowledges a configure when
+	 * it arrives and draws later), so another size settles the anchor only
+	 * once RESIZE_STALE_MS have passed since the resize ended.
+	 */
+	if (surface->acked_serial != surface->resize_final_serial)
+		return;
+
+	/* An image soon after the end may be one drawn before the last configure was read. */
+	now = zwl_milliseconds();
+	if (now - surface->resize_end_ms < RESIZE_STALE_MS)
+		return;
+
+	/* Succeeded: the client keeps a size of its own; the anchor goes. */
+	resize_settle(surface, width, height);
 }
 
 /*
@@ -257,13 +275,13 @@ zwl_toplevel_motion(
 	/* The size at the start, grown or shrunk by how far each dragged edge has moved. */
 	width = server->resize_width;
 	height = server->resize_height;
-	if ((surface->resize_edges & EDGE_RIGHT) != 0U)
+	if ((surface->resize_edges & ZWL_EDGE_RIGHT) != 0U)
 		width += server->pointer_x - server->resize_pointer_x;
-	if ((surface->resize_edges & EDGE_LEFT) != 0U)
+	if ((surface->resize_edges & ZWL_EDGE_LEFT) != 0U)
 		width -= server->pointer_x - server->resize_pointer_x;
-	if ((surface->resize_edges & EDGE_BOTTOM) != 0U)
+	if ((surface->resize_edges & ZWL_EDGE_BOTTOM) != 0U)
 		height += server->pointer_y - server->resize_pointer_y;
-	if ((surface->resize_edges & EDGE_TOP) != 0U)
+	if ((surface->resize_edges & ZWL_EDGE_TOP) != 0U)
 		height -= server->pointer_y - server->resize_pointer_y;
 
 	/* Within the window's limits and the output. */
@@ -316,6 +334,7 @@ zwl_toplevel_button(
 	if (error != 0)
 		printf("ZWL RESIZE configure errno=%d\n", error);
 	surface->resize_final_serial = surface->configure_serial;
+	surface->resize_end_ms = zwl_milliseconds();
 	printf("ZWL RESIZE end surface=%u width=%u height=%u\n", surface->id, surface->window_width, surface->window_height);
 
 	/* A client that has drawn the last size already needs the anchor no more. */
@@ -325,6 +344,56 @@ zwl_toplevel_button(
 
 	/* Succeeded: the button was the resize's. */
 	return 1;
+}
+
+/*
+ * Starts a resize of a window by the edges given (one side or a corner),
+ * following the pointer until its button is let go.
+ *
+ * A client asks for one with xdg_toplevel.resize from its own press; the
+ * glass look starts one from a press on a window's frame (shell.c).
+ * Returns EBUSY when the window cannot be resized now: not in window mode,
+ * not shown at its own size, or with a move or another resize going on.
+ */
+int
+zwl_toplevel_resize_start(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	uint32_t edges)
+{
+	int32_t geometry_x;
+	int32_t geometry_y;
+	int32_t width;
+	int32_t height;
+
+	/* Only a shown window in window mode, at its own size, with nothing else following the pointer. */
+	if (!server->windowed ||
+	    surface->current == NULL ||
+	    !surface->mapped ||
+	    surface->fullscreen ||
+	    surface->maximized ||
+	    server->resize != NULL ||
+	    server->drag != NULL)
+		return EBUSY;
+
+	/* Where the pointer and the window's size start. */
+	window_extent(surface, &geometry_x, &geometry_y, &width, &height);
+	server->resize = surface;
+	server->resize_pointer_x = server->pointer_x;
+	server->resize_pointer_y = server->pointer_y;
+	server->resize_width = width;
+	server->resize_height = height;
+
+	/* The dragged edges, and the right and bottom edges on the output that stay when the left or top is dragged. */
+	surface->resize_edges = edges;
+	surface->resize_right = surface->x + geometry_x + width;
+	surface->resize_bottom = surface->y + geometry_y + height;
+	surface->window_width = (uint32_t)width;
+	surface->window_height = (uint32_t)height;
+
+	/* Succeeded: the log line the tests read. */
+	printf("ZWL RESIZE start surface=%u edges=%u width=%d height=%d\n", surface->id, edges, width, height);
+	return 0;
 }
 
 /*
@@ -529,11 +598,8 @@ toplevel_resize(
 	uint32_t seat_id;
 	uint32_t serial;
 	uint32_t edges;
-	int32_t geometry_x;
-	int32_t geometry_y;
-	int32_t width;
-	int32_t height;
 	int held;
+	int error;
 
 	/* A seat, the serial of the press, and the edges dragged. */
 	if (size != 12U)
@@ -542,9 +608,9 @@ toplevel_resize(
 	/* The edges must be one side or one corner. */
 	edges = toplevel_word(bytes, 8U);
 	if (edges == 0U ||
-	    edges > (EDGE_BOTTOM | EDGE_RIGHT) ||
-	    (edges & (EDGE_TOP | EDGE_BOTTOM)) == (EDGE_TOP | EDGE_BOTTOM) ||
-	    (edges & (EDGE_LEFT | EDGE_RIGHT)) == (EDGE_LEFT | EDGE_RIGHT)) {
+	    edges > (ZWL_EDGE_BOTTOM | ZWL_EDGE_RIGHT) ||
+	    (edges & (ZWL_EDGE_TOP | ZWL_EDGE_BOTTOM)) == (ZWL_EDGE_TOP | ZWL_EDGE_BOTTOM) ||
+	    (edges & (ZWL_EDGE_LEFT | ZWL_EDGE_RIGHT)) == (ZWL_EDGE_LEFT | ZWL_EDGE_RIGHT)) {
 		(void)zwl_error_code(toplevel->client, toplevel->id, TOPLEVEL_ERROR_INVALID_RESIZE_EDGE, "not a resize edge");
 		return EPROTO;
 	}
@@ -561,35 +627,12 @@ toplevel_resize(
 		return 0;
 	}
 
-	/* Only a shown window in window mode, at its own size, with nothing else following the pointer. */
-	if (!server->windowed ||
-	    surface->current == NULL ||
-	    !surface->mapped ||
-	    surface->fullscreen ||
-	    surface->maximized ||
-	    server->resize != NULL ||
-	    server->drag != NULL) {
+	/* A window that cannot be resized now leaves the request without effect. */
+	error = zwl_toplevel_resize_start(server, surface, edges);
+	if (error != 0)
 		printf("ZWL RESIZE refused surface=%u reason=state\n", surface->id);
-		return 0;
-	}
 
-	/* Where the pointer and the window's size start. */
-	window_extent(surface, &geometry_x, &geometry_y, &width, &height);
-	server->resize = surface;
-	server->resize_pointer_x = server->pointer_x;
-	server->resize_pointer_y = server->pointer_y;
-	server->resize_width = width;
-	server->resize_height = height;
-
-	/* The dragged edges, and the right and bottom edges on the output that stay when the left or top is dragged. */
-	surface->resize_edges = edges;
-	surface->resize_right = surface->x + geometry_x + width;
-	surface->resize_bottom = surface->y + geometry_y + height;
-	surface->window_width = (uint32_t)width;
-	surface->window_height = (uint32_t)height;
-
-	/* Succeeded: the log line the tests read. */
-	printf("ZWL RESIZE start surface=%u edges=%u width=%d height=%d\n", surface->id, edges, width, height);
+	/* Succeeded: the request was taken, whether or not the window could be resized. */
 	return 0;
 }
 
@@ -718,7 +761,7 @@ resize_limit(
 		*height = (int32_t)server->height;
 
 	/* Dragged from the top, the window's top may go no higher than the highest a window may be. */
-	if ((surface->resize_edges & EDGE_TOP) != 0U) {
+	if ((surface->resize_edges & ZWL_EDGE_TOP) != 0U) {
 		window_extent(surface, &geometry_x, &geometry_y, &current_width, &current_height);
 		highest = surface->resize_bottom - geometry_y - window_lowest(server);
 		if (*height > highest)

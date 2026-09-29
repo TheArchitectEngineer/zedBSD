@@ -495,8 +495,21 @@ vm_get_global(
 	int found;
 	int status;
 
-	/* A name the global object does not have. */
+	/* A script's top-level let or const comes first; before its declaration runs it cannot be read (not even by typeof). */
 	*result = VM_VALUE_UNDEFINED;
+	found = vm_object_get_own(realm->lexicals, key, &property);
+	if (found && *property.value == VM_VALUE_EMPTY) {
+		status = vm_throw_uninitialized(realm, key);
+		return status;
+	}
+
+	/* An initialized one is read from the record. */
+	if (found) {
+		*result = *property.value;
+		return 0;
+	}
+
+	/* A name the global object does not have. */
 	found = vm_object_find(realm->global, key, &property);
 	if (!found) {
 		if (for_typeof)
@@ -528,6 +541,25 @@ vm_put_global(
 	struct vm_property property;
 	int found;
 	int status;
+
+	/* A script's top-level let or const: not before its declaration runs, and never a const. */
+	found = vm_object_get_own(realm->lexicals, key, &property);
+	if (found && *property.value == VM_VALUE_EMPTY) {
+		status = vm_throw_uninitialized(realm, key);
+		return status;
+	}
+
+	/* A const keeps its value. */
+	if (found && (property.attributes & VM_PROPERTY_WRITABLE) == 0U) {
+		status = vm_throw_type_error(realm, "Assignment to constant variable.");
+		return status;
+	}
+
+	/* A let takes the new one. */
+	if (found) {
+		*property.value = value;
+		return 0;
+	}
 
 	/* Strict code assigns only a variable that exists. */
 	if (strict) {
@@ -641,7 +673,16 @@ vm_delete_global(
 	vm_value key,
 	vm_value *result)
 {
+	struct vm_property property;
+	int found;
 	int status;
+
+	/* A script's top-level let or const cannot be deleted. */
+	found = vm_object_get_own(realm->lexicals, key, &property);
+	if (found) {
+		*result = VM_VALUE_FALSE;
+		return 0;
+	}
 
 	/* The global object's property (a var of a script is not configurable and stays). */
 	status = vm_delete(realm, vm_value_cell(realm->global), key, 0, result);
@@ -649,6 +690,64 @@ vm_delete_global(
 		return status;
 
 	/* Succeeded: whether it is gone. */
+	return 0;
+}
+
+/*
+ * Declares a script's top-level let or const in the realm's record of
+ * them, holding the empty value until its declaration runs.  A name the
+ * record has already (from this or an earlier script) is a SyntaxError.
+ */
+int
+vm_define_global_lexical(
+	struct vm_realm *realm,
+	vm_value key,
+	int is_const)
+{
+	struct vm_property property;
+	uint32_t attributes;
+	int found;
+	int status;
+
+	/* A name declared already. */
+	found = vm_object_get_own(realm->lexicals, key, &property);
+	if (found) {
+		status = vm_throw_redeclared(realm, key);
+		return status;
+	}
+
+	/* A const is a property that cannot be written; a let one that can. */
+	attributes = VM_PROPERTY_ENUMERABLE;
+	if (!is_const)
+		attributes |= VM_PROPERTY_WRITABLE;
+	status = vm_object_define(realm->heap, realm->lexicals, key, VM_VALUE_EMPTY, attributes);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the name is declared, not yet initialized. */
+	return 0;
+}
+
+/*
+ * Runs the declaration of a script's top-level let or const: the binding
+ * takes its first value (a const too).
+ */
+int
+vm_init_global_lexical(
+	struct vm_realm *realm,
+	vm_value key,
+	vm_value value)
+{
+	struct vm_property property;
+	int found;
+
+	/* The record has the name, which the script's prologue declared. */
+	found = vm_object_get_own(realm->lexicals, key, &property);
+	if (!found)
+		return EINVAL;
+
+	/* Succeeded: the binding has its value. */
+	*property.value = value;
 	return 0;
 }
 

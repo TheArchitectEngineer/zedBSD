@@ -44,7 +44,7 @@ Future Work は実行を許可しない。
 | F-035 | 動画・PDF・JPEG のサムネイル、disk の thumbnail cache | 今は PPM・PGM・PNG（libpng-compat）を memory の cache で。decoder の package の監査が要る | ws071 design §9 | deferred | 画像・文書の多い folder を扱うとき | [WS071](ws071/ws.md) |
 | F-036 | 装置の unmount・eject（spec §25） | Locations の装置を外す。zedBSD の mount の仕組み（removable の通知）次第 | ws071 design §13 | deferred | USB の storage の hotplug が整ったとき | [WS071](ws071/ws.md) |
 | F-037 | files の描き直しを damage の矩形に絞る | 今は CPU の canvas を frame ごとに全部描いて Vulkan で貼る。大きな窓で重いとき | ws071 design §2 | deferred | File Manager の描画が遅いと分かったとき | [WS071](ws071/ws.md) |
-| F-038 | canvas・text・icons を共有の UI library へ | files の CPU の描画部品を 2 つ目の使い手（設定、login manager 等）と共有する | ws071 design §2 | deferred | 2 つ目の CPU 描画の app を作るとき | [WS071](ws071/ws.md) |
+| F-038 | canvas・text・icons を共有の UI library へ | files の CPU の描画部品を 2 つ目の使い手（設定、login manager 等）と共有する | ws071 design §2 | promoted（2026-09-29: 2 つ目の使い手 WS089 Settings ができたので、canvas・text・icons の共有は [WS090](ws090/ws.md) で扱う） | 2 つ目の CPU 描画の app を作るとき | [WS071](ws071/ws.md) |
 | F-039 | DnD の中の自動の scroll と spring-loaded（tab・folder の上で待つと開く） | files の窓の中の DnD（ws071-p010）に足す | ws071-p010 | deferred | DnD の使い勝手を詰めるとき | [WS071](ws071/ws.md) |
 | F-040 | compositor が描く system の Quick Look | 今は files の窓の中の overlay。zdesktop の system UI にすれば他の app も使える | ws071 design §9 | deferred | 2 つ目の app が preview を要るとき | [WS071](ws071/ws.md) |
 | F-041 | File Manager の残りの操作: 名前の衝突の Replace・Skip の dialog、日本語の UI 文言と IME、`$topdir/.Trash-$uid` | 今は衝突で「name 2」を付ける、UI は英語、ゴミ箱は home のだけ | ws071 design §5.3・§5.4・§15 | 衝突の dialog は promoted（2026-09-28 → [ws035-p106](ws035/phase106/phase.md)）。日本語の UI 文言と IME、`$topdir/.Trash-$uid` は deferred | IME ができたとき、または removable の volume を扱うとき | [WS071](ws071/ws.md) |

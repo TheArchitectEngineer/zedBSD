@@ -84,3 +84,9 @@ mouse の部分は touch を待たずに先に入れてよい。
 | [ws079-p014](phase014/phase.md) | Notes で他の PDF に書き込む: 自前の編集の data の無い PDF・他で変わった page を背景（`pdf_page_render`・`pdf_display_list_rasterize`）にして上に線を足し、保存は増分の更新（PDF Viewer の Annotate in Notes の本来の動き） | cleared（2026-09-28 subagent、QEMU の Venus と host。libpdf に update（追加の API 6 つ）、Notes は他の PDF を base に持ち保存ごとに base＋1 revision（積まずに置き換え）、ZNOT 1.1 の BASE・SRC、背景は CPU の raster を texture に、暗号化・署名は notice で拒否。qpdf・pdftoppm・ASan・UBSan。実機は未実施） | p005、p006 |
 | [ws079-p015](phase015/phase.md) | p007・p008 の残り: CCITTFax（Group 3・4）の画像の decode、暗号化の文書の password（libpdf の user・owner password の API と PDF Viewer の card）、PDF Viewer の thumbnail の sidebar | cleared（2026-09-29 subagent、host と QEMU の Venus と 4 platform の build。`ccitt.c`（ghostscript の符号化 80 例と bit 単位で同じ、実文書の SKIPPED 3 → 0）、`pdf_document_open_password()`・`_memory_password()`（R2〜R6 の user と owner、qpdf の copy が平文と同じ画素）、PDF Viewer の password の card と左の thumbnail の sidebar（F9・View・titlebar、待つ間に描く、click で page、一覧が追う）。実機は未実施） | p007、p008 |
 | [ws079-p009](phase009/phase.md) | 全文規約確認と回帰（必須の最終確認） | cleared（2026-09-29: WS079 の source と main の許した範囲の外の file は `style-check.py` の違反 0、host 8 本・描画の比較・4 platform の build・QEMU の PDF の demo と corner・三回 click、main が pen の image で p003・p012・p013-touch の guest 試験 PASS。input-inject・touchinject の規約は WS081 p002 へ移管。実機は未実施） | 全 Phase |
+
+## ユーザーの判断（2026-09-29 に master から移した）
+
+| 項目 | 決定 | 記録先 |
+| --- | --- | --- |
+| 手書きノートと PDF Viewer（2026-09-28） | ユーザーの指示（[WS079](ws079/ws.md) に原文）と回答: ペンは USB のペンタブレット、PDF Viewer は段階を切る（① Notes の PDF → ② 一般の図形・画像・TrueType → ③ CFF・Type1・暗号化）、名前は notes・pdfviewer・libpdf |

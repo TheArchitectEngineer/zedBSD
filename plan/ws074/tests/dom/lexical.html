@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Lexical</title></head>
+<body>
+<script>
+// ws074-p078: a script's top-level let and const are shared with the later scripts, but are not the window's properties.
+let shared = 1;
+const fixed = "k";
+var plain = "v";
+function readLater() { return later; }
+try { readLater(); } catch (e) { console.log(e.name, e.message); }
+let later = "later";
+</script>
+<script>
+console.log(shared, fixed, plain, readLater(), typeof window.shared, "fixed" in window, window.plain);
+shared = 2;
+console.log(shared);
+try { fixed = "x"; } catch (e) { console.log(e.name, e.message); }
+setTimeout(() => console.log("timer", shared, `${fixed}!`), 0);
+</script>
+<script>
+let shared = 3;
+console.log("not reached");
+</script>
+<script>
+console.log("after", shared);
+</script>
+</body>
+</html>

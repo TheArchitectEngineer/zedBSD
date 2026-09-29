@@ -9,7 +9,7 @@ Related Milestones: MG004, MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Executor: WS073 のサブエージェント（2026-09-29 から worktree `.claude/worktrees/ws073-bugs`、branch `wt/ws073`。以前は `worktree-agent-a4f5b29b09938aa63`、p001・p002 は `worktree-agent-aefedcaf4a52a0507`）。main が merge する
-Resume point: 2026-09-29: BUG-102（p029）・BUG-104（p031）を解決。次: ws073-p030（BUG-051）の再開（user の register の割り込み前後の検査の probe、短い session の大量の試行、再現したら gdbstub）→ BUG-039・BUG-031 の確認。BUG-093 は toolchain なので main の許可まで扱わない。BUG-027・033 は低い優先度
+Resume point: 2026-09-29: BUG-102（p029）・BUG-104（p031）・BUG-051（p030）・BUG-107（p034、socket の上限）を解決。次: BUG-039・BUG-031 の確認（p035 から）。BUG-093 は toolchain なので main の許可まで扱わない。BUG-027・033 は低い優先度
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -64,9 +64,11 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p027](phase027/phase.md) | BUG-089 | 新しい worktree の build が host の LLVM を作り直し共有の build/llvm に書きうる: source・configuration・tblgen・install を identity の内容で受け入れ、tree の外の toolchain の tree への書き込みを拒否（`ZEDBSD_LLVM_ALLOW_FOREIGN=yes`）、package の source の複写を link の中身から（libcxx・clang）。bug089.sh 修正前 8/9 FAIL・修正後 PASS | cleared（2026-09-28） |
 | [ws073-p028](phase028/phase.md) | BUG-100 | Remacs 用 host Noct の重複 build と古い `.nb` 出力名による `make` の失敗を修正。canonical host Noct を使い、取得 source の `.nb` の場合だけ patch。toolchain の Noct smoke 依存を外す | cleared（2026-09-29、q498 で通常の `make` を完走） |
 | [ws073-p029](phase029/phase.md) | BUG-102 | ping を setuid root（mode 4755）にし、raw socket を開いた直後に `setuid(getuid())` で権限を落とす（ユーザーの決定、BSD と同じ）。QEMU で kei（uid 1000）から 127.0.0.1・10.0.2.2 へ ping が通る、`PING-USER:PASS` | cleared（2026-09-29） |
-| [ws073-p030](phase030/phase.md) | BUG-051 | sshd-session の子の SIGSEGV: 再現の試み（150 session・bulk 転送で 0）、観測の address を libcrypto の `ChaCha20_ctr32` の `inp` の NULL の読みと特定。原因（呼び出し側か kernel の register・stack の page か）は未確定 | in-progress（2026-09-29、BUG-104 の後に再開） |
+| [ws073-p030](phase030/phase.md) | BUG-051 | sshd などの SIGSEGV の原因は、signal の frame が中断した %rsp の真下（amd64 の red zone）に積まれ、red zone を使う libcrypto の leaf の関数の変数を壊すこと。`src/kern/signal.c` で amd64 は 128 byte 空ける。gdbstub で捕獲、red zone の probe 修正前 FAIL・後 PASS、SSH の負荷 1092 session で落ち 0 | cleared（2026-09-29） |
+| [ws073-p034](phase034/phase.md) | BUG-107 | system 全体の socket の上限 32 を 1024 に。raw ICMP・packet・route は family ごとに 32（作成で ENFILE）、TCP の timer の snapshot は数に合わせて割り当て。Venus の guest で client 44・socket 100、SSH 10 本並列、socketpair 200 ＋ TCP 60 が PASS | cleared（2026-09-29） |
 | [ws073-p031](phase031/phase.md) | BUG-104 | less で Ctrl-F・f（1 画面進む）と Ctrl-B（1 画面戻る）。more は不変。host の pty 試験と guest で `PAGER-KEYS:PASS` | cleared（2026-09-29） |
 | [ws073-p032](phase032/phase.md) | BUG-105 | Logi Bolt の受信機（046d:c548）の HID の descriptor を parse する: 同じ key の複数の field（0x31・0x32 → KEY_BACKSLASH）を許し、keyboard の usage を持たない array を読み飛ばし、AC Pan を REL_HWHEEL に。host 試験 PASS、HID の host 試験 3 本の回帰なし、vmunix warning 0、boot test PASS | in-progress（2026-09-29、実機の確認はユーザー待ち） |
+| [ws073-p033](phase033/phase.md) | BUG-106 | `ssh -tt` の最後の命令の出力の欠け: kernel の pty と OpenSSH の終わりの順を読み（出力を捨てる経路なし）、pen の image で約 500 回（欠け 0。0 byte の 1 回は sshd の listener の SIGSEGV と同時で BUG-051 の種類）。原因未確定、修正なし | uncleared（2026-09-29、WS081 のサブエージェントが main の依頼で実施、60 分で区切った） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 

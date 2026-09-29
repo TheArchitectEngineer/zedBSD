@@ -43,6 +43,9 @@ static void expr_new(struct js_function_compiler *fc, struct js_node *node, uint
 static uint32_t expr_arguments(struct js_function_compiler *fc, struct js_node *list, uint32_t *count);
 static void expr_throw_text(struct js_function_compiler *fc, const char *text);
 static struct js_node *expr_unwrap(struct js_node *node);
+static void expr_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_tagged_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_template_strings(struct js_function_compiler *fc, struct js_node *template, uint32_t target);
 static void expr_unsupported(struct js_function_compiler *fc, struct js_node *node);
 
 /*
@@ -101,6 +104,13 @@ js_compile_expression_named(
 		js_load_value(fc, target, VM_VALUE_NULL);
 		break;
 	case JS_NODE_THIS:
+		/* An arrow function reads the this of the function around it. */
+		if ((fc->info->node->flags & JS_FLAG_ARROW) != 0U && !fc->info->program) {
+			js_load_binding(fc, js_this_name, JS_THIS_NAME_LENGTH, target);
+			break;
+		}
+
+		/* Any other function its own. */
 		js_emit1(fc, VM_OP_LOAD_THIS, target);
 		break;
 	case JS_NODE_IDENTIFIER:
@@ -145,6 +155,12 @@ js_compile_expression_named(
 	case JS_NODE_MEMBER:
 		expr_member(fc, node, target);
 		break;
+	case JS_NODE_TEMPLATE:
+		expr_template(fc, node, target);
+		break;
+	case JS_NODE_TAGGED_TEMPLATE:
+		expr_tagged_template(fc, node, target);
+		break;
 	case JS_NODE_SEQUENCE:
 		/* Each expression in order; the last one's value stays. */
 		for (node = node->first; node != NULL; node = node->next)
@@ -174,7 +190,7 @@ js_load_binding(
 	uint32_t hops;
 	uint32_t key;
 
-	/* A global. */
+	/* A global (or a script's top-level let or const, which the global lookup checks). */
 	binding = js_scope_resolve(fc, name, length, &hops);
 	if (binding == NULL) {
 		key = js_constant_key(fc, name, length);
@@ -182,20 +198,26 @@ js_load_binding(
 		return;
 	}
 
-	/* A captured binding in an environment. */
+	/* A captured binding in an environment, or a binding of this function's frame. */
 	if (binding->in_env) {
 		js_emit4(fc, VM_OP_GET_ENV, target, fc->env_register, hops, binding->location);
-		return;
+	} else {
+		js_emit2(fc, VM_OP_MOV, target, binding->location);
 	}
 
-	/* A binding of this function's frame. */
-	js_emit2(fc, VM_OP_MOV, target, binding->location);
+	/* A let or const cannot be read before its declaration runs. */
+	if (binding->kind == JS_BINDING_LET || binding->kind == JS_BINDING_CONST) {
+		key = js_constant_key(fc, name, length);
+		js_emit2(fc, VM_OP_CHECK_INIT, target, key);
+	}
 }
 
 /*
  * Writes a register's value to a name: its register, its environment's
  * slot, or the global object.  A named function expression's own name
- * cannot be written (silently in sloppy code, a TypeError in strict code).
+ * cannot be written (silently in sloppy code, a TypeError in strict code);
+ * a let or const cannot be written before its declaration runs, and a
+ * const not at all.
  */
 void
 js_store_binding(
@@ -208,10 +230,12 @@ js_store_binding(
 	struct js_binding *binding;
 	uint32_t hops;
 	uint32_t key;
+	uint32_t mark;
+	uint32_t current;
 
 	UNUSED_PARAMETER(node);
 
-	/* A global. */
+	/* A global (or a script's top-level let or const, which the global assignment checks). */
 	binding = js_scope_resolve(fc, name, length, &hops);
 	if (binding == NULL) {
 		key = js_constant_key(fc, name, length);
@@ -226,6 +250,18 @@ js_store_binding(
 		return;
 	}
 
+	/* A let or const: its declaration must have run, and a const is never assigned. */
+	if (binding->kind == JS_BINDING_LET || binding->kind == JS_BINDING_CONST) {
+		mark = fc->temp_top;
+		current = js_temp(fc);
+		js_load_binding(fc, name, length, current);
+		fc->temp_top = mark;
+		if (binding->kind == JS_BINDING_CONST) {
+			js_emit_throw_error(fc, VM_ERROR_TYPE, "Assignment to constant variable.");
+			return;
+		}
+	}
+
 	/* A captured binding in an environment. */
 	if (binding->in_env) {
 		js_emit4(fc, VM_OP_PUT_ENV, fc->env_register, hops, binding->location, source);
@@ -234,6 +270,63 @@ js_store_binding(
 
 	/* A binding of this function's frame. */
 	js_emit2(fc, VM_OP_MOV, binding->location, source);
+}
+
+/*
+ * Runs the declaration of a let or const: the name takes its first value
+ * (a const too), in its register, its environment's slot, or the realm's
+ * record of the scripts' top-level ones.
+ */
+void
+js_init_binding(
+	struct js_function_compiler *fc,
+	const uint16_t *name,
+	size_t length,
+	uint32_t source)
+{
+	struct js_binding *binding;
+	uint32_t hops;
+	uint32_t key;
+
+	/* The program's top level: the realm's record. */
+	binding = js_scope_resolve(fc, name, length, &hops);
+	if (binding == NULL) {
+		key = js_constant_key(fc, name, length);
+		js_emit2(fc, VM_OP_INIT_GLOBAL_LEXICAL, key, source);
+		return;
+	}
+
+	/* A captured binding in an environment. */
+	if (binding->in_env) {
+		js_emit4(fc, VM_OP_PUT_ENV, fc->env_register, hops, binding->location, source);
+		return;
+	}
+
+	/* A binding of this function's frame. */
+	js_emit2(fc, VM_OP_MOV, binding->location, source);
+}
+
+/*
+ * Throws a new error of a kind (enum vm_error_kind) with a message when
+ * the code runs.
+ */
+void
+js_emit_throw_error(
+	struct js_function_compiler *fc,
+	int kind,
+	const char *text)
+{
+	struct vm_string *string;
+	uint32_t constant;
+
+	/* The message as a constant. */
+	string = vm_string_from_utf8(fc->compiler->realm->heap, text, strlen(text));
+	if (string == NULL)
+		js_compile_out_of_memory(fc->compiler);
+	constant = js_constant(fc, vm_value_cell(string));
+
+	/* The throw. */
+	js_emit2(fc, VM_OP_THROW_ERROR, (uint32_t)kind, constant);
 }
 
 /*
@@ -279,6 +372,173 @@ js_store_target(
 	object = js_temp(fc);
 	js_compile_expression(fc, place, object);
 	expr_throw_text(fc, "ReferenceError: Invalid left-hand side in assignment");
+	fc->temp_top = mark;
+}
+
+/*
+ * Compiles a template literal: its strings and its substitutions (each
+ * converted with ToString) joined in order.
+ */
+static void
+expr_template(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	struct js_node *part;
+	uint32_t mark;
+	uint32_t joined;
+	uint32_t piece;
+	uint32_t constant;
+	int first;
+
+	/* The text so far and the next piece, in temporaries of their own. */
+	mark = fc->temp_top;
+	joined = js_temp(fc);
+	piece = js_temp(fc);
+
+	/* Each part in turn: a string as it is, a substitution converted to a string. */
+	first = 1;
+	for (part = node->first; part != NULL; part = part->next) {
+		if (part->kind == JS_NODE_TEMPLATE_STRING) {
+			constant = js_constant_string(fc, part->text, part->text_length);
+			js_emit2(fc, VM_OP_LOAD_CONST, piece, constant);
+		} else {
+			js_compile_expression(fc, part, piece);
+			js_emit2(fc, VM_OP_TO_STRING, piece, piece);
+		}
+
+		/* The first piece starts the text; each later one is joined to it. */
+		if (first) {
+			js_emit2(fc, VM_OP_MOV, joined, piece);
+			first = 0;
+		} else {
+			js_emit3(fc, VM_OP_ADD, joined, joined, piece);
+		}
+	}
+
+	/* A template without parts is the empty string. */
+	if (first) {
+		constant = js_constant_string(fc, node->text, 0);
+		js_emit2(fc, VM_OP_LOAD_CONST, joined, constant);
+	}
+
+	/* The text is the value. */
+	js_emit2(fc, VM_OP_MOV, target, joined);
+	fc->temp_top = mark;
+}
+
+/*
+ * Compiles a tagged template: the tag is called (with a property's object
+ * as this) with the array of the strings, whose raw property is the array
+ * of their raw texts, and then each substitution's value.
+ */
+static void
+expr_tagged_template(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	struct js_node *tag;
+	struct js_node *part;
+	uint32_t mark;
+	uint32_t function;
+	uint32_t this_value;
+	uint32_t key;
+	uint32_t first;
+	uint32_t count;
+
+	/* The function and this: a property's object, or undefined. */
+	mark = fc->temp_top;
+	function = js_temp(fc);
+	this_value = js_temp(fc);
+	tag = expr_unwrap(node->first);
+	if (tag->kind == JS_NODE_MEMBER) {
+		key = js_temp(fc);
+		expr_member_parts(fc, tag, this_value, key);
+		expr_member_get(fc, tag, this_value, key, function);
+	} else {
+		js_compile_expression(fc, node->first, function);
+		js_load_value(fc, this_value, VM_VALUE_UNDEFINED);
+	}
+
+	/* The arguments' registers, which follow each other: the strings, then one per substitution. */
+	first = fc->temp_top;
+	count = 1;
+	js_temp(fc);
+	for (part = node->second->first; part != NULL; part = part->next) {
+		if (part->kind == JS_NODE_TEMPLATE_STRING)
+			continue;
+		js_temp(fc);
+		count++;
+	}
+
+	/* The strings, then each substitution's value. */
+	expr_template_strings(fc, node->second, first);
+	count = 1;
+	for (part = node->second->first; part != NULL; part = part->next) {
+		if (part->kind == JS_NODE_TEMPLATE_STRING)
+			continue;
+		js_compile_expression(fc, part, first + count);
+		count++;
+	}
+
+	/* The call. */
+	js_emit5(fc, VM_OP_CALL, target, function, this_value, first, count);
+	fc->temp_top = mark;
+}
+
+/*
+ * Makes a tagged template's array of strings: the cooked strings
+ * (undefined for one whose escapes are not valid), with the array of the
+ * raw texts as its raw property.  A new array is made at each call (the
+ * standard keeps one per place in the source, frozen).
+ */
+static void
+expr_template_strings(
+	struct js_function_compiler *fc,
+	struct js_node *template,
+	uint32_t target)
+{
+	static const uint16_t raw_name[] = { 'r', 'a', 'w' };
+	struct js_node *part;
+	uint32_t mark;
+	uint32_t raw;
+	uint32_t value;
+	uint32_t constant;
+
+	/* The two arrays. */
+	mark = fc->temp_top;
+	raw = js_temp(fc);
+	value = js_temp(fc);
+	js_emit1(fc, VM_OP_NEW_ARRAY, target);
+	js_emit1(fc, VM_OP_NEW_ARRAY, raw);
+
+	/* Each string's cooked and raw text. */
+	for (part = template->first; part != NULL; part = part->next) {
+		if (part->kind != JS_NODE_TEMPLATE_STRING)
+			continue;
+
+		/* The cooked text, or undefined. */
+		if ((part->flags & JS_FLAG_INVALID_COOKED) != 0U) {
+			js_load_value(fc, value, VM_VALUE_UNDEFINED);
+		} else {
+			constant = js_constant_string(fc, part->text, part->text_length);
+			js_emit2(fc, VM_OP_LOAD_CONST, value, constant);
+		}
+
+		/* At the end of the strings. */
+		js_emit2(fc, VM_OP_ARRAY_PUSH, target, value);
+
+		/* The raw text. */
+		constant = js_constant_string(fc, part->raw, part->raw_length);
+		js_emit2(fc, VM_OP_LOAD_CONST, value, constant);
+		js_emit2(fc, VM_OP_ARRAY_PUSH, raw, value);
+	}
+
+	/* The raw texts on the strings. */
+	constant = js_constant_key(fc, raw_name, 3);
+	js_emit3(fc, VM_OP_DEFINE_PROP, target, constant, raw);
 	fc->temp_top = mark;
 }
 

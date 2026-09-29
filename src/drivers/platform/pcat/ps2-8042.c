@@ -738,16 +738,20 @@ scan_symbol(
 /*
  * Reports every key this controller can publish.
  *
- * The capability set is derived from the scan-code table, so it follows the
- * table instead of being maintained twice.
+ * The capability set is derived from the scan-code tables, plain and
+ * E0-prefixed, so it follows them instead of being maintained twice.  A key
+ * left out of it would be dropped by the input layer, which publishes only
+ * the codes a device declared.
  */
 static void
 keyboard_build_capabilities(
 	void)
 {
+	const char *symbol;
 	unsigned scan;
 	unsigned index;
 	uint16_t code;
+	int extended;
 	int duplicate;
 
 	/* Every input device reports the synchronisation event. */
@@ -756,34 +760,40 @@ keyboard_build_capabilities(
 	keyboard_capabilities[keyboard_capability_count].code = SYN_REPORT;
 	keyboard_capability_count++;
 
-	/* Adds each distinct key the scan table can produce. */
-	for (scan = 0; scan < 128U; scan++) {
-		if (scan_symbols[scan] == NULL)
-			continue;
-		code = drv_input_key_from_symbol(scan_symbols[scan]);
-		if (code == KEY_RESERVED)
-			continue;
+	/* Adds each distinct key the plain and the E0-prefixed positions can produce. */
+	for (extended = 0; extended < 2; extended++) {
+		for (scan = 0; scan < 128U; scan++) {
+			/* A position this build understands, and the code its symbol has. */
+			symbol = scan_symbol((uint8_t)scan, extended);
+			if (symbol == NULL)
+				continue;
+			code = drv_input_key_from_symbol(symbol);
+			if (code == KEY_RESERVED)
+				continue;
 
-		/* Skips a key an earlier position already published. */
-		duplicate = 0;
-		for (index = 0; index < keyboard_capability_count; index++) {
-			if (keyboard_capabilities[index].type == EV_KEY &&
-			    keyboard_capabilities[index].code == code) {
-				duplicate = 1;
-				break;
+			/* Skips a key an earlier position already published. */
+			duplicate = 0;
+			for (index = 0; index < keyboard_capability_count; index++) {
+				if (keyboard_capabilities[index].type == EV_KEY &&
+				    keyboard_capabilities[index].code == code) {
+					duplicate = 1;
+					break;
+				}
 			}
-		}
-		if (duplicate)
-			continue;
 
-		/* Stops at the fixed capability bound. */
-		if (keyboard_capability_count >=
-		    sizeof(keyboard_capabilities) /
-		    sizeof(keyboard_capabilities[0]))
-			break;
-		keyboard_capabilities[keyboard_capability_count].type = EV_KEY;
-		keyboard_capabilities[keyboard_capability_count].code = code;
-		keyboard_capability_count++;
+			/* A key already in the set is not added twice. */
+			if (duplicate)
+				continue;
+
+			/* Stops at the fixed capability bound. */
+			if (keyboard_capability_count >=
+			    sizeof(keyboard_capabilities) /
+			    sizeof(keyboard_capabilities[0]))
+				return;
+			keyboard_capabilities[keyboard_capability_count].type = EV_KEY;
+			keyboard_capabilities[keyboard_capability_count].code = code;
+			keyboard_capability_count++;
+		}
 	}
 }
 

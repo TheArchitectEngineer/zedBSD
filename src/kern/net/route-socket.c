@@ -83,7 +83,7 @@ route_socket_notify(
 	unsigned transition)
 {
 	struct route_endpoint *endpoint;
-	struct route_endpoint *snapshot[SOCKET_MAX];
+	struct route_endpoint *snapshot[SOCKET_BROADCAST_MAX];
 	struct rtm_ifinfo message;
 	unsigned count;
 	unsigned index;
@@ -127,7 +127,7 @@ route_socket_notify(
 	     endpoint != NULL;
 	     endpoint = endpoint->next) {
 		/* Leaves additional listeners untouched after filling the snapshot. */
-		if (count >= SOCKET_MAX)
+		if (count >= SOCKET_BROADCAST_MAX)
 			continue;
 
 		/* Retains this listener or skips it when closing has begun. */
@@ -378,6 +378,8 @@ route_create(
 		.close = route_close,
 	};
 	struct route_endpoint *endpoint;
+	struct route_endpoint *other;
+	unsigned registered;
 	unsigned long irq;
 	int error;
 
@@ -405,13 +407,31 @@ route_create(
 		return ENOMEM;
 	}
 
-	/* Publishes the initialized endpoint to interface notifications. */
+	/*
+	 * Publishes the initialized endpoint to interface notifications,
+	 * unless the notification snapshot is already as large as it can be.
+	 */
 	irq = spin_lock_irqsave(&route_registry_lock);
 
-	endpoint->next = route_sockets;
-	route_sockets = endpoint;
+	/* Counts the listeners already registered. */
+	registered = 0;
+	for (other = route_sockets; other != NULL; other = other->next)
+		registered++;
+
+	/* Links the new listener while the snapshot can still hold it. */
+	if (registered < SOCKET_BROADCAST_MAX) {
+		endpoint->next = route_sockets;
+		route_sockets = endpoint;
+	}
 
 	spin_unlock_irqrestore(&route_registry_lock, irq);
+
+	/* Refuses a listener the notifications could not reach. */
+	if (registered >= SOCKET_BROADCAST_MAX) {
+		route_endpoint_release_free_packets(endpoint);
+		kern_free(endpoint);
+		return ENFILE;
+	}
 
 	/* Returns the initialized socket to its caller. */
 	*result = &endpoint->socket;

@@ -582,6 +582,10 @@ struct vm_function {
  * native function calling a script function does.  host is what the
  * embedder keeps with the realm (the DOM binding's window), and jobs the
  * queue of microtasks (struct vm_job) the next checkpoint runs.
+ * lexicals holds the top-level let and const of every script run in the
+ * realm (the global declarative record, which the scripts share and which
+ * is not the global object): a const is a property that is not writable,
+ * and a declaration that has not run yet holds the empty value.
  * throw_value, throw_line and throw_column are where the exception
  * throw_value was last seen leaving a bytecode frame without a handler
  * (throw_line 0 when that place is not known); the embedder reads them
@@ -594,6 +598,7 @@ struct vm_realm {
 	struct vm_object *function_prototype;
 	struct vm_object *array_prototype;
 	struct vm_object *intrinsics[VM_INTRINSICS];
+	struct vm_object *lexicals;
 	vm_value exception;
 	vm_value throw_value;
 	uint32_t throw_line;
@@ -707,6 +712,8 @@ int vm_throw_type_error(struct vm_realm *realm, const char *message);
 int vm_throw_range_error(struct vm_realm *realm, const char *message);
 int vm_throw_reference_error(struct vm_realm *realm, const char *message);
 int vm_throw_not_defined(struct vm_realm *realm, vm_value key);
+int vm_throw_uninitialized(struct vm_realm *realm, vm_value key);
+int vm_throw_redeclared(struct vm_realm *realm, vm_value key);
 int vm_is_space(uint16_t unit);
 
 /* Properties of any value, globals and enumeration (access.c). */
@@ -723,6 +730,8 @@ int vm_put_global(struct vm_realm *realm, vm_value key, vm_value value, int stri
 int vm_define_global_var(struct vm_realm *realm, vm_value key);
 int vm_define_global_function(struct vm_realm *realm, vm_value key, vm_value function);
 int vm_delete_global(struct vm_realm *realm, vm_value key, vm_value *result);
+int vm_define_global_lexical(struct vm_realm *realm, vm_value key, int is_const);
+int vm_init_global_lexical(struct vm_realm *realm, vm_value key, vm_value value);
 int vm_to_object(struct vm_realm *realm, vm_value value, vm_value *object);
 int vm_get_own_descriptor(struct vm_object *object, vm_value key, struct vm_descriptor *descriptor);
 int vm_define_own_property(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor, int *done);

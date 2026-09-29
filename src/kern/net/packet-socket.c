@@ -90,12 +90,13 @@ packet_socket_deliver(
 	uint8_t packet_type)
 {
 	struct packet_endpoint *endpoint;
-	struct packet_endpoint *snapshot[SOCKET_MAX];
+	struct packet_endpoint *snapshot[SOCKET_BROADCAST_MAX];
 	struct packet_buf *copy;
 	struct sockaddr_l2 address;
 	unsigned count;
 	unsigned index;
 	unsigned long irq;
+	int referenced;
 
 	count = 0;
 
@@ -104,8 +105,18 @@ packet_socket_deliver(
 
 	for (endpoint = packet_sockets; endpoint != NULL;
 	     endpoint = endpoint->next) {
-		if (count < SOCKET_MAX && socket_tryref(&endpoint->socket))
-			snapshot[count++] = endpoint;
+		/* Stops at a full snapshot, which creation keeps from happening. */
+		if (count >= SOCKET_BROADCAST_MAX)
+			break;
+
+		/* Skips a socket whose closing has begun. */
+		referenced = socket_tryref(&endpoint->socket);
+		if (!referenced)
+			continue;
+
+		/* Keeps the referenced socket in the snapshot. */
+		snapshot[count] = endpoint;
+		count++;
 	}
 
 	spin_unlock_irqrestore(&packet_registry_lock, irq);
@@ -366,6 +377,8 @@ packet_create(
 	struct socket **result)
 {
 	struct packet_endpoint *endpoint;
+	struct packet_endpoint *other;
+	unsigned registered;
 	unsigned long irq;
 
 	/* Only raw sockets exist in this family. */
@@ -380,13 +393,30 @@ packet_create(
 			   &packet_ops);
 	endpoint->protocol = net_ntohs((uint16_t)protocol);
 
-	/* Registers it for delivery. */
+	/*
+	 * Registers it for delivery, unless the delivery snapshot is already
+	 * as large as it can be.
+	 */
 	irq = spin_lock_irqsave(&packet_registry_lock);
 
-	endpoint->next = packet_sockets;
-	packet_sockets = endpoint;
+	/* Counts the sockets already registered. */
+	registered = 0;
+	for (other = packet_sockets; other != NULL; other = other->next)
+		registered++;
+
+	/* Links the new socket while the snapshot can still hold it. */
+	if (registered < SOCKET_BROADCAST_MAX) {
+		endpoint->next = packet_sockets;
+		packet_sockets = endpoint;
+	}
 
 	spin_unlock_irqrestore(&packet_registry_lock, irq);
+
+	/* Refuses a socket the delivery could not reach. */
+	if (registered >= SOCKET_BROADCAST_MAX) {
+		kern_free(endpoint);
+		return ENFILE;
+	}
 
 	*result = &endpoint->socket;
 

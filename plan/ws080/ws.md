@@ -3,13 +3,13 @@
 # WS080: `ld.coff` — Win64 PE/COFF の動的ローダ
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG002
 Related Milestones: MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から。GS base は案 A（swapgs）に決定（差分の承認は p001 の後）。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/` に決定（Win64 の名前は使わない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/` に決定。native の橋は置かない（互換の DLL が UAPI を直接呼ぶ）に決定。優先度: デモ critical の後に loader を先に仕上げ、DLL は下位のモデルで継続（決定）
+Resume point: p001 の設計の文書（[design.md](design.md)）と HAL の差分の案（[proposed/hal-gs-base.md](proposed/hal-gs-base.md)、未適用）まで完了（2026-09-29）。design-reviewer の review、design.md §19 の判断 D1〜D17、HAL の承認（A1・A2）を待つ。p003・p004・p005 は承認を待たずに始められる。GS base は案 A（swapgs）に決定（差分の承認は p001 の後）。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/` に決定（Win64 の名前は使わない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/` に決定。native の橋は置かない（互換の DLL が UAPI を直接呼ぶ）に決定。優先度: デモ critical の後に loader を先に仕上げ、DLL は下位のモデルで継続（決定）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -79,7 +79,7 @@ forward）、DLL の依存の解決、IAT の書き換え、Microsoft x64 ABI �
 
 | Phase | 目的 | 完了の条件 | Status | 依存 |
 | --- | --- | --- | --- | --- |
-| ws080-p001 | 設計の文書（`plan/ws080/design.md`）: 3 つの層、kernel の汎用の機能、`ld.coff` の構成、module の namespace・探索・import/export・依存の graph・初期化の順、MS x64 ABI の境界、最小の TEB/PEB の offset、PE の側の runtime、LLP64 の header の生成、syscall の stub の仕様（上の register の規則）、試験の PE の作り方（clang + `lld-link`）、`LoadLibrary`・`GetProcAddress` が実行時に `ld.coff` の loader を使う道（橋の DLL を置かない形で）、Wayland の道。**GS base の HAL の差分を plan に置く** | 設計の文書と HAL の差分の案、design-reviewer の review | planning | — |
+| [ws080-p001](phase001/phase.md) | 設計の文書（`plan/ws080/design.md`）: 3 つの層、kernel の汎用の機能、`ld.coff` の構成、module の namespace・探索・import/export・依存の graph・初期化の順、MS x64 ABI の境界、最小の TEB/PEB の offset、PE の側の runtime、LLP64 の header の生成、syscall の stub の仕様（上の register の規則）、試験の PE の作り方（clang + `lld-link`）、`LoadLibrary`・`GetProcAddress` が実行時に `ld.coff` の loader を使う道（橋の DLL を置かない形で）、Wayland の道。**GS base の HAL の差分を plan に置く** | 設計の文書と HAL の差分の案、design-reviewer の review | uncleared（文書と案は完了。review・判断・承認待ち） | — |
 | ws080-p002 | HAL と kernel: `swapgs` の方式、thread ごとの user の GS base の保存・復元、user が GS base を設定・取得する汎用の UAPI、CR4.FSGSBASE の扱い | **HAL の差分の承認の後**。全ての入口（syscall・割り込み・例外・NMI）の試験、既存の回帰（boot test・desktop・i915 の実機）、user の GS base が thread の切り替えで保たれる試験 | planning | p001、HAL の承認 |
 | ws080-p003 | kernel: exec が `MZ`/`PE\0\0` を見て `/usr/libexec/ld.coff` を interpreter として起こす（argv の約束） | PE を exec すると ld.coff が起き、元の path と argv を受け取る試験 | planning | p001 |
 | ws080-p004 | LLP64 の UAPI の header の生成の script と生成物（固定幅の型、LP64 の元との offset・大きさの `_Static_assert`） | 生成物が clang の windows の target で通り、LP64 との照合が全て合う。UAPI の変更を検出する試験 | planning | p001 |

@@ -97,6 +97,49 @@ static void dot_parameters_replace(int count, char **values, struct sh_parameter
 static void dot_parameters_restore(struct sh_parameters *saved, int generation);
 
 /*
+ * Returns the name of the function at an index of the list, or NULL past
+ * its end, so that completion can offer every function.
+ */
+const char *
+sh_function_name(
+	int index)
+{
+	struct sh_function *function;
+	int at;
+
+	/* Walks the list to the index. */
+	function = functions;
+	for (at = 0; at < index && function != NULL; at++)
+		function = function->next;
+
+	/* Past the end there is no name. */
+	if (function == NULL)
+		return NULL;
+
+	/* Succeeded: the function's name. */
+	return function->name;
+}
+
+/*
+ * Returns the reserved word at an index of the table, or NULL past its end.
+ */
+const char *
+sh_reserved_word(
+	int index)
+{
+	int at;
+
+	/* Walks to the index, stopping at the table's end. */
+	for (at = 0; at < index; at++) {
+		if (reserved_words[at] == NULL)
+			return NULL;
+	}
+
+	/* Succeeded: the word, or NULL at the end. */
+	return reserved_words[index];
+}
+
+/*
  * Finds a defined function.
  */
 struct sh_function *

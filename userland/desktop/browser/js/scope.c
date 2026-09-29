@@ -19,13 +19,19 @@
  * program's vars and function declarations are globals too (properties of
  * the global object), listed for the code pass to declare.
  *
- * Block-level function declarations are hoisted to their function like
- * vars (the ES5 practice); let, const and class, whose block scopes arrive
- * in ws074-p028, are left for the code pass to refuse.
+ * let and const (ws074-p078) are bindings of the scope of the block, the
+ * for statement's head or the switch's cases they are written in, or of
+ * the function's scope at the top level of its body; at the top level of
+ * the program they are listed for the realm's shared record of them.  A
+ * function declaration is hoisted to its function like a var (the ES5
+ * practice); inside a block that has a scope it is made when the block is
+ * entered, so that it sees the block's bindings, and its var then takes
+ * it (Annex B).  class is left for the code pass to refuse.
  */
 
 #include "js/compile.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /* The length of the name arguments. */
@@ -49,6 +55,28 @@ static void scope_visit(struct js_compiler *compiler, struct js_scope *scope, st
 static void scope_visit_try(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
 static void scope_reference(struct js_compiler *compiler, struct js_scope *scope, const uint16_t *name, size_t length);
 static int scope_has_own_arguments(const struct js_function_info *info);
+static void scope_arrow_this(struct js_compiler *compiler, struct js_scope *scope);
+static struct js_scope *scope_lexical_block(struct js_compiler *compiler, struct js_scope *parent, struct js_node *list, int switch_cases);
+static int scope_declare_lexicals(struct js_compiler *compiler, struct js_scope *scope, struct js_node *list);
+static void scope_declare_lexical(struct js_compiler *compiler, struct js_scope *scope, struct js_node *target, int kind);
+static void scope_global_lexical(struct js_compiler *compiler, struct js_function_info *info, struct js_node *target, int is_const);
+static void scope_visit_block(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
+static void scope_visit_for(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
+static void scope_visit_switch(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
+static int scope_is_lexical(const struct js_node *node);
+static void scope_redeclared(struct js_compiler *compiler, const struct js_node *target);
+static void scope_check_vars(struct js_compiler *compiler, const struct js_scope *block, struct js_node *list, int direct);
+static void scope_check_var_target(struct js_compiler *compiler, const struct js_scope *block, struct js_node *target);
+static void scope_block_function(struct js_compiler *compiler, struct js_scope *block, struct js_node *node);
+
+/*
+ * The hidden binding of a function's this that its arrow functions read:
+ * "#this", which no identifier can be.  A constant for the life of the
+ * program.
+ */
+const uint16_t js_this_name[JS_THIS_NAME_LENGTH] = {
+	'#', 't', 'h', 'i', 's'
+};
 static void scope_arguments_var(struct js_function_info *info);
 
 /*
@@ -86,7 +114,7 @@ js_scope_resolve(
 	const struct js_function_info *function;
 	struct js_binding *binding;
 
-	/* Outwards through the scopes, counting the environments of the functions passed. */
+	/* Outwards through the scopes, counting the environments passed. */
 	*hops = 0;
 	function = fc->info;
 	for (scope = fc->scope; scope != NULL; scope = scope->parent) {
@@ -101,6 +129,10 @@ js_scope_resolve(
 		binding = scope_find(scope, name, length);
 		if (binding != NULL)
 			return binding;
+
+		/* Leaving a block with an environment of its own passes that environment. */
+		if (scope->kind == JS_SCOPE_BLOCK && scope->has_env)
+			(*hops)++;
 	}
 
 	/* No scope declares it: a global. */
@@ -149,6 +181,12 @@ scope_function(
 	info->scope = scope_new(compiler, outer, info, JS_SCOPE_FUNCTION);
 	node->scope = info->scope;
 
+	/* A declaration in a block that has a scope is made when the block is entered. */
+	if (node->kind == JS_NODE_FUNCTION_DECLARATION && parent != NULL && parent->kind == JS_SCOPE_BLOCK) {
+		node->flags |= JS_FLAG_BLOCK_FUNCTION;
+		scope_block_function(compiler, parent, node);
+	}
+
 	/* The parameters, in order (a repeated name is the last one's); other forms are left for the code pass to refuse. */
 	index = 0;
 	parameter = NULL;
@@ -170,12 +208,17 @@ scope_function(
 		index++;
 	}
 
-	/* The declarations of the body, then the names it uses. */
+	/* The declarations of the body (the program's let and const are the realm's), then the names it uses. */
 	if (program) {
 		scope_declarations(compiler, info, node->first);
+		scope_declare_lexicals(compiler, info->scope, node->first);
 		scope_visit_list(compiler, info->scope, node->first);
+	} else if ((node->flags & JS_FLAG_EXPRESSION_BODY) != 0U) {
+		scope_arguments_var(info);
+		scope_visit(compiler, info->scope, node->second);
 	} else {
 		scope_declarations(compiler, info, node->second);
+		scope_declare_lexicals(compiler, info->scope, node->second);
 		scope_arguments_var(info);
 		scope_visit_list(compiler, info->scope, node->second);
 	}
@@ -460,6 +503,20 @@ scope_visit(
 	case JS_NODE_TRY:
 		scope_visit_try(compiler, scope, node);
 		return;
+	case JS_NODE_THIS:
+		scope_arrow_this(compiler, scope);
+		return;
+	case JS_NODE_BLOCK:
+		scope_visit_block(compiler, scope, node);
+		return;
+	case JS_NODE_FOR:
+	case JS_NODE_FOR_IN:
+	case JS_NODE_FOR_OF:
+		scope_visit_for(compiler, scope, node);
+		return;
+	case JS_NODE_SWITCH:
+		scope_visit_switch(compiler, scope, node);
+		return;
 	case JS_NODE_MEMBER:
 		/* The object; the property only when computed. */
 		scope_visit(compiler, scope, node->first);
@@ -545,17 +602,472 @@ scope_reference(
 			}
 		}
 
-		/* The scope that declares it; a function's binding used by another is captured. */
+		/* The scope that declares it; a function's binding used by another is captured (in the block's environment for a block's). */
 		if (binding != NULL) {
 			if (search->function != scope->function) {
 				binding->captured = 1;
-				search->function->has_env = 1;
+				if (search->kind == JS_SCOPE_BLOCK) {
+					search->has_env = 1;
+				} else {
+					search->function->has_env = 1;
+				}
 			}
 
 			/* Resolved. */
 			return;
 		}
 	}
+}
+
+/*
+ * Declares the let and const written directly in a list of statements in
+ * a scope: the program's go to the realm's record instead.  Reports
+ * whether there was any.
+ */
+static int
+scope_declare_lexicals(
+	struct js_compiler *compiler,
+	struct js_scope *scope,
+	struct js_node *list)
+{
+	struct js_node *node;
+	struct js_node *declarator;
+	int is_const;
+	int kind;
+	int found;
+	int lexical;
+
+	/* Each statement that is a let or const declaration. */
+	found = 0;
+	for (node = list; node != NULL; node = node->next) {
+		lexical = scope_is_lexical(node);
+		if (!lexical)
+			continue;
+		found = 1;
+
+		/* The kind of its names. */
+		is_const = 0;
+		kind = JS_BINDING_LET;
+		if (node->op == JS_P_CONST) {
+			is_const = 1;
+			kind = JS_BINDING_CONST;
+		}
+
+		/* Each declarator's names: the realm's for the program's top level, the scope's otherwise. */
+		for (declarator = node->first; declarator != NULL; declarator = declarator->next) {
+			if (scope->kind == JS_SCOPE_FUNCTION && scope->function->program) {
+				scope_global_lexical(compiler, scope->function, declarator->first, is_const);
+			} else {
+				scope_declare_lexical(compiler, scope, declarator->first, kind);
+			}
+		}
+	}
+
+	/* Reports whether the list declared any. */
+	return found;
+}
+
+/* Declares the names of a let or const target (a name, or the names inside a pattern) in a scope. */
+static void
+scope_declare_lexical(
+	struct js_compiler *compiler,
+	struct js_scope *scope,
+	struct js_node *target,
+	int kind)
+{
+	struct js_binding *declared;
+	struct js_node *element;
+
+	/* Nothing to declare. */
+	if (target == NULL)
+		return;
+
+	/* A name, which the scope may not declare already (a parameter, a var, a function or another let or const). */
+	if (target->kind == JS_NODE_IDENTIFIER) {
+		declared = scope_find(scope, target->text, target->text_length);
+		if (declared != NULL)
+			scope_redeclared(compiler, target);
+		scope_declare(compiler, scope, target->text, target->text_length, kind);
+		return;
+	}
+
+	/* A pattern's elements (the code pass refuses patterns for now, but their names are still declared). */
+	for (element = target->first; element != NULL; element = element->next) {
+		if (element->kind == JS_NODE_PROPERTY) {
+			scope_declare_lexical(compiler, scope, element->second, kind);
+		} else {
+			scope_declare_lexical(compiler, scope, element, kind);
+		}
+	}
+}
+
+/* Lists a let or const name of the program's top level for the realm's record (a pattern's names are refused by the code pass). */
+static void
+scope_global_lexical(
+	struct js_compiler *compiler,
+	struct js_function_info *info,
+	struct js_node *target,
+	int is_const)
+{
+	struct js_global_lexical *lexical;
+	struct js_global_lexical *listed;
+	struct js_global_name *global;
+	int same;
+
+	/* Only a name is listed. */
+	if (target == NULL || target->kind != JS_NODE_IDENTIFIER)
+		return;
+
+	/* The script may not declare the name twice, nor as a var or a function too. */
+	for (listed = info->global_lexicals; listed != NULL; listed = listed->next) {
+		same = js_text_equal(listed->name, listed->length, target->text, target->text_length);
+		if (same)
+			scope_redeclared(compiler, target);
+	}
+
+	/* The script's vars and functions. */
+	for (global = info->global_vars; global != NULL; global = global->next) {
+		same = js_text_equal(global->name, global->length, target->text, target->text_length);
+		if (same)
+			scope_redeclared(compiler, target);
+	}
+
+	/* The entry, at the front of the list (the order does not matter). */
+	lexical = wb_arena_zalloc(compiler->arena, sizeof(*lexical));
+	if (lexical == NULL)
+		js_compile_out_of_memory(compiler);
+	lexical->name = target->text;
+	lexical->length = target->text_length;
+	lexical->is_const = is_const;
+	lexical->next = info->global_lexicals;
+	info->global_lexicals = lexical;
+}
+
+/*
+ * Makes the scope of a block, a for statement's head or a switch's cases
+ * when it declares a let or const (the parent scope otherwise); for a
+ * switch the list is the cases, whose statements are searched.
+ */
+static struct js_scope *
+scope_lexical_block(
+	struct js_compiler *compiler,
+	struct js_scope *parent,
+	struct js_node *list,
+	int switch_cases)
+{
+	struct js_scope *block;
+	struct js_node *clause;
+	int found;
+	int any;
+
+	/* A block scope, kept only when something is declared in it. */
+	block = scope_new(compiler, parent, parent->function, JS_SCOPE_BLOCK);
+	any = 0;
+	if (switch_cases) {
+		for (clause = list; clause != NULL; clause = clause->next) {
+			found = scope_declare_lexicals(compiler, block, clause->second);
+			if (found)
+				any = 1;
+		}
+	} else {
+		any = scope_declare_lexicals(compiler, block, list);
+	}
+
+	/* A scope that declares nothing is not needed (it stays on the function's list, empty). */
+	if (!any)
+		return parent;
+
+	/* A var inside the block, or a function declared in it, may not have the name of one of its let or const. */
+	if (switch_cases) {
+		for (clause = list; clause != NULL; clause = clause->next)
+			scope_check_vars(compiler, block, clause->second, 1);
+	} else {
+		scope_check_vars(compiler, block, list, 1);
+	}
+
+	/* Succeeded: the block's scope. */
+	return block;
+}
+
+/* Resolves the names of a block, in a scope of its own when it declares a let or const. */
+static void
+scope_visit_block(
+	struct js_compiler *compiler,
+	struct js_scope *scope,
+	struct js_node *node)
+{
+	struct js_scope *block;
+
+	/* The block's scope, noted on the node when it has one. */
+	block = scope_lexical_block(compiler, scope, node->first, 0);
+	node->scope = NULL;
+	if (block != scope)
+		node->scope = block;
+
+	/* The statements in it. */
+	scope_visit_list(compiler, block, node->first);
+}
+
+/*
+ * Resolves the names of a for, for-in or for-of statement: a let or const
+ * in its head has a scope of its own around the head and the body (the
+ * object of for-in and for-of is evaluated outside it).
+ */
+static void
+scope_visit_for(
+	struct js_compiler *compiler,
+	struct js_scope *scope,
+	struct js_node *node)
+{
+	struct js_scope *head;
+	int lexical;
+
+	/* The head's scope, noted on the node when it has one. */
+	node->scope = NULL;
+	head = scope;
+	lexical = 0;
+	if (node->first != NULL)
+		lexical = scope_is_lexical(node->first);
+	if (lexical) {
+		head = scope_lexical_block(compiler, scope, node->first, 0);
+		node->scope = head;
+	}
+
+	/* A plain for statement: every part in the head's scope. */
+	if (node->kind == JS_NODE_FOR) {
+		if (node->first != NULL)
+			scope_visit(compiler, head, node->first);
+		if (node->second != NULL)
+			scope_visit(compiler, head, node->second);
+		if (node->third != NULL)
+			scope_visit(compiler, head, node->third);
+		scope_visit(compiler, head, node->fourth);
+		return;
+	}
+
+	/* for-in and for-of: the object outside, the left side and the body inside. */
+	scope_visit(compiler, scope, node->second);
+	scope_visit(compiler, head, node->first);
+	scope_visit(compiler, head, node->fourth);
+}
+
+/* Resolves the names of a switch statement, whose cases share a scope when they declare a let or const. */
+static void
+scope_visit_switch(
+	struct js_compiler *compiler,
+	struct js_scope *scope,
+	struct js_node *node)
+{
+	struct js_scope *cases;
+	struct js_node *clause;
+
+	/* The discriminant, outside. */
+	scope_visit(compiler, scope, node->first);
+
+	/* The cases' scope, noted on the node when it has one. */
+	cases = scope_lexical_block(compiler, scope, node->second, 1);
+	node->scope = NULL;
+	if (cases != scope)
+		node->scope = cases;
+
+	/* Each case's test and statements. */
+	for (clause = node->second; clause != NULL; clause = clause->next) {
+		if (clause->first != NULL)
+			scope_visit(compiler, cases, clause->first);
+		scope_visit_list(compiler, cases, clause->second);
+	}
+}
+
+/* Tells whether a statement is a let or const declaration. */
+static int
+scope_is_lexical(
+	const struct js_node *node)
+{
+	/* Only a declaration of variables can be. */
+	if (node->kind != JS_NODE_VARIABLES)
+		return 0;
+
+	/* var is not. */
+	if (node->op == JS_P_VAR)
+		return 0;
+
+	/* let or const. */
+	return 1;
+}
+
+/*
+ * Fails the compilation when a var in a list of statements (down through
+ * blocks, not into functions), or a function declared directly in it
+ * (direct), has the name of a let or const of a block scope.
+ */
+static void
+scope_check_vars(
+	struct js_compiler *compiler,
+	const struct js_scope *block,
+	struct js_node *list,
+	int direct)
+{
+	struct js_node *node;
+	struct js_node *declarator;
+	struct js_binding *declared;
+
+	/* Each statement by its kind. */
+	for (node = list; node != NULL; node = node->next) {
+		switch (node->kind) {
+		case JS_NODE_VARIABLES:
+			/* A var's names (a let or const was checked when declared). */
+			if (node->op != JS_P_VAR)
+				break;
+			for (declarator = node->first; declarator != NULL; declarator = declarator->next)
+				scope_check_var_target(compiler, block, declarator->first);
+			break;
+		case JS_NODE_FUNCTION_DECLARATION:
+			/* A function declared in the block itself. */
+			if (!direct)
+				break;
+			declared = scope_find(block, node->text, node->text_length);
+			if (declared != NULL)
+				scope_redeclared(compiler, node);
+			break;
+		case JS_NODE_BLOCK:
+			scope_check_vars(compiler, block, node->first, 0);
+			break;
+		case JS_NODE_IF:
+			scope_check_vars(compiler, block, node->second, 0);
+			scope_check_vars(compiler, block, node->third, 0);
+			break;
+		case JS_NODE_FOR:
+		case JS_NODE_FOR_IN:
+		case JS_NODE_FOR_OF:
+			scope_check_vars(compiler, block, node->first, 0);
+			scope_check_vars(compiler, block, node->fourth, 0);
+			break;
+		case JS_NODE_WHILE:
+		case JS_NODE_DO_WHILE:
+		case JS_NODE_WITH:
+		case JS_NODE_LABELED:
+			scope_check_vars(compiler, block, node->fourth, 0);
+			break;
+		case JS_NODE_TRY:
+			scope_check_vars(compiler, block, node->first, 0);
+			scope_check_vars(compiler, block, node->third, 0);
+			scope_check_vars(compiler, block, node->fourth, 0);
+			break;
+		case JS_NODE_SWITCH:
+			for (declarator = node->second; declarator != NULL; declarator = declarator->next)
+				scope_check_vars(compiler, block, declarator->second, 0);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+/* Fails the compilation when a var's target (a name, or the names of a pattern) names a let or const of a block scope. */
+static void
+scope_check_var_target(
+	struct js_compiler *compiler,
+	const struct js_scope *block,
+	struct js_node *target)
+{
+	struct js_binding *declared;
+	struct js_node *element;
+
+	/* Nothing to check. */
+	if (target == NULL)
+		return;
+
+	/* A name. */
+	if (target->kind == JS_NODE_IDENTIFIER) {
+		declared = scope_find(block, target->text, target->text_length);
+		if (declared != NULL)
+			scope_redeclared(compiler, target);
+		return;
+	}
+
+	/* A pattern's elements. */
+	for (element = target->first; element != NULL; element = element->next) {
+		if (element->kind == JS_NODE_PROPERTY) {
+			scope_check_var_target(compiler, block, element->second);
+		} else {
+			scope_check_var_target(compiler, block, element);
+		}
+	}
+}
+
+/* Fails the compilation with the SyntaxError of a name a scope declares twice. */
+static void
+scope_redeclared(
+	struct js_compiler *compiler,
+	const struct js_node *target)
+{
+	char message[200];
+	char name[128];
+	size_t index;
+
+	/* The name in ASCII (other characters as ?), cut short when long. */
+	for (index = 0; index < target->text_length && index + 1U < sizeof(name); index++) {
+		name[index] = '?';
+		if (target->text[index] < 0x80U)
+			name[index] = (char)target->text[index];
+	}
+
+	/* Ends the copy as a C string. */
+	name[index] = '\0';
+
+	/* The early error, as Chromium words it. */
+	snprintf(message, sizeof(message), "Identifier '%s' has already been declared", name);
+	js_compile_fail(compiler, target, message);
+}
+
+/* Lists a function declaration a block makes when it is entered. */
+static void
+scope_block_function(
+	struct js_compiler *compiler,
+	struct js_scope *block,
+	struct js_node *node)
+{
+	struct js_hoisted *entry;
+
+	/* The entry, at the end of the block's list (source order). */
+	entry = wb_arena_zalloc(compiler->arena, sizeof(*entry));
+	if (entry == NULL)
+		js_compile_out_of_memory(compiler);
+	entry->node = node;
+	if (block->functions_last == NULL) {
+		block->functions = entry;
+	} else {
+		block->functions_last->next = entry;
+	}
+
+	/* The declaration is the last now. */
+	block->functions_last = entry;
+}
+
+/*
+ * Gives an arrow function the this of the function around it: that
+ * function keeps its this in a hidden binding, which the arrow captures
+ * (an ordinary function's own this needs nothing).
+ */
+static void
+scope_arrow_this(
+	struct js_compiler *compiler,
+	struct js_scope *scope)
+{
+	struct js_function_info *owner;
+
+	/* An ordinary function (or the program) reads its own this. */
+	owner = scope->function;
+	if (owner->program || (owner->node->flags & JS_FLAG_ARROW) == 0U)
+		return;
+
+	/* The nearest function around it that is not an arrow function (the program at the latest). */
+	while (!owner->program && (owner->node->flags & JS_FLAG_ARROW) != 0U)
+		owner = owner->parent;
+
+	/* Its hidden binding, which the arrow's use captures. */
+	scope_declare(compiler, owner->scope, js_this_name, JS_THIS_NAME_LENGTH, JS_BINDING_THIS);
+	scope_reference(compiler, scope, js_this_name, JS_THIS_NAME_LENGTH);
 }
 
 /*

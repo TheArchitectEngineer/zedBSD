@@ -98,6 +98,26 @@ static const struct sh_builtin builtins[] = {
 };
 
 /*
+ * Returns the name of the builtin at an index of the table, or NULL past
+ * its end, so that completion can offer every builtin.
+ */
+const char *
+sh_builtin_name(
+	int index)
+{
+	int at;
+
+	/* Walks to the index, stopping at the table's end. */
+	for (at = 0; at < index; at++) {
+		if (builtins[at].name == NULL)
+			return NULL;
+	}
+
+	/* Succeeded: the name, or NULL at the end. */
+	return builtins[index].name;
+}
+
+/*
  * Finds a builtin by name.
  */
 const struct sh_builtin *

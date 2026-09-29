@@ -1,0 +1,7 @@
+ReferenceError Cannot access 'later' before initialization
+1 k v later undefined false v
+2
+TypeError Assignment to constant variable.
+Uncaught SyntaxError: Identifier 'shared' has already been declared
+after 2
+timer 2 k!

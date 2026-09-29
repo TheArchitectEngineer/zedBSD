@@ -45,6 +45,30 @@ static int valid_name(const char *name);
 static int compare_aliases(const void *left, const void *right);
 
 /*
+ * Returns the name of the alias at an index of the list, or NULL past its
+ * end, so that completion can offer every alias.
+ */
+const char *
+sh_alias_name(
+	int index)
+{
+	struct alias *alias;
+	int at;
+
+	/* Walks the list to the index. */
+	alias = aliases;
+	for (at = 0; at < index && alias != NULL; at++)
+		alias = alias->next;
+
+	/* Past the end there is no name. */
+	if (alias == NULL)
+		return NULL;
+
+	/* Succeeded: the alias's name. */
+	return alias->name;
+}
+
+/*
  * Returns an alias's text, or NULL.
  */
 const char *

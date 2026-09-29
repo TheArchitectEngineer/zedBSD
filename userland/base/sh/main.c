@@ -62,6 +62,7 @@ static void run_profile(const char *path);
 static void run_login_profiles(void);
 static void set_default_variables(void);
 static int open_script(const char *path);
+static void prompt_directory(const char *cwd, char *text, size_t size);
 
 /*
  * Runs the sh command.
@@ -145,6 +146,7 @@ main(
 		job_control = sh_job_control_active();
 		sh_signals_for_interactive(job_control);
 		using_history();
+		sh_complete_init();
 	}
 
 	/* A login shell reads the profiles; an interactive one reads $ENV. */
@@ -227,6 +229,7 @@ sh_prompt_text(
 	const char *prompt;
 	char *expanded;
 	char cwd[PATH_MAX];
+	char shown[PATH_MAX + 1];
 	char host[65];
 	char *named;
 	struct passwd *account;
@@ -256,7 +259,9 @@ sh_prompt_text(
 		if (account != NULL)
 			user = account->pw_name;
 
-		snprintf(text, sizeof(text), "%s@%s:%s$ ", user, host, cwd);
+		/* The directory, with the home directory shown as ~ (as bash's \w does). */
+		prompt_directory(cwd, shown, sizeof(shown));
+		snprintf(text, sizeof(text), "%s@%s:%s$ ", user, host, shown);
 		return text;
 	}
 
@@ -531,4 +536,56 @@ open_script(
 	/* Succeeded: the descriptor, moved to 10 or more. */
 	descriptor = sh_descriptor_high(descriptor);
 	return descriptor;
+}
+
+/*
+ * Writes the directory the default prompt shows: the working directory, with
+ * the home directory at its start written as ~.  A HOME that is empty or /
+ * is not replaced, since every directory would then start with it.
+ */
+static void
+prompt_directory(
+	const char *cwd,
+	char *text,
+	size_t size)
+{
+	const char *home;
+	size_t length;
+	int compare;
+
+	/* The home directory, without the slashes a HOME may end in. */
+	home = sh_var_get("HOME");
+	length = 0;
+	if (home != NULL)
+		length = strlen(home);
+	while (length > 1 && home[length - 1] == '/')
+		length--;
+
+	/* An unset or empty HOME leaves the directory as it is. */
+	if (length == 0) {
+		snprintf(text, size, "%s", cwd);
+		return;
+	}
+
+	/* So does HOME=/, which every directory starts with. */
+	if (length == 1 && home[0] == '/') {
+		snprintf(text, size, "%s", cwd);
+		return;
+	}
+
+	/* A directory that does not start with the home directory stays as it is. */
+	compare = strncmp(cwd, home, length);
+	if (compare != 0) {
+		snprintf(text, size, "%s", cwd);
+		return;
+	}
+
+	/* Only the whole name matches: /home/kei2 is not under /home/kei. */
+	if (cwd[length] != '\0' && cwd[length] != '/') {
+		snprintf(text, size, "%s", cwd);
+		return;
+	}
+
+	/* The home directory becomes ~, and what is under it follows. */
+	snprintf(text, size, "~%s", cwd + length);
 }
