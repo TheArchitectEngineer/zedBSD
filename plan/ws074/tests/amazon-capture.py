@@ -115,7 +115,8 @@ def localize_page(text, page_url, files):
                 css = source.read()
             with open(path, "w", encoding="utf-8") as target:
                 target.write(localize_css(css, url, files))
-        return tag.replace(href.group(0), 'href="files/%s"' % name)
+        quote = href.group(1)
+        return tag.replace(href.group(0), "href=" + quote + "files/%s" % name + quote)
 
     def image(match):
         tag = match.group(0)
@@ -126,7 +127,8 @@ def localize_page(text, page_url, files):
         name = mirror(absolute(src.group(2), page_url), files)
         if name is None:
             return tag
-        return tag.replace(src.group(0), ' src="files/%s"' % name)
+        quote = src.group(1)
+        return tag.replace(src.group(0), " src=" + quote + "files/%s" % name + quote)
 
     def style_block(match):
         return match.group(1) + localize_css(match.group(2), page_url, files, "files/") + match.group(3)

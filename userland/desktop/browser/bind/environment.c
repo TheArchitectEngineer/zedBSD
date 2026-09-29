@@ -83,6 +83,7 @@ static int environment_install_screen(struct bind_window *window);
 static int environment_install_performance(struct bind_window *window);
 static int environment_install_location(struct bind_window *window);
 static int environment_install_image(struct bind_window *window);
+static int environment_install_observers(struct bind_window *window);
 static int environment_install_window(struct bind_window *window);
 static int environment_instance(struct bind_window *window, int interface, const char *global, struct vm_object **object);
 static int environment_strings(struct vm_realm *realm, struct vm_object *object, const struct environment_string *table);
@@ -105,6 +106,19 @@ static int environment_location_part(struct vm_realm *realm, vm_value this_value
 static int environment_location_to_string(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_image_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_outer_size(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_atob(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_btoa(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_fetch(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_response_text(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_response_json(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_headers_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_response(struct vm_realm *realm, const struct wb_buffer *bytes, const struct wb_buffer *url, vm_value *result);
+static int environment_settle_promise(struct vm_realm *realm, vm_value value, int reject, vm_value *result);
+static int environment_observer_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_observer_observe(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_observer_nothing(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_observer_records(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_base64_value(uint16_t unit);
 
 /*
  * The screen's sizes (the part is 0 for the width and 1 for the height).
@@ -327,12 +341,45 @@ bind_environment_install(
 	if (error != 0)
 		return error;
 
+	/* The observation APIs used to reveal and resize page components. */
+	error = environment_install_observers(window);
+	if (error != 0)
+		return error;
+
 	/* The window's own plain properties. */
 	error = environment_install_window(window);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the environment is on the global object. */
+	return 0;
+}
+
+/* Makes the three observation constructors used by responsive pages. */
+static int
+environment_install_observers(
+	struct bind_window *window)
+{
+	static const char *const names[] = { "MutationObserver", "IntersectionObserver", "ResizeObserver" };
+	struct vm_realm *realm;
+	struct vm_function *constructor;
+	size_t index;
+	int error;
+
+	/* Each constructor records its observer kind in its native function. */
+	realm = window->realm;
+	for (index = 0; index < sizeof(names) / sizeof(names[0]); index++) {
+		error = js_builtin_function(realm, names[index], 1, bind_illegal_constructor,
+		    environment_observer_construct, &constructor);
+		if (error != 0)
+			return error;
+		constructor->data = vm_value_int32((int32_t)index);
+		error = js_builtin_value(realm, realm->global, names[index], vm_value_cell(constructor), JS_BUILTIN_METHOD);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every observer constructor is global. */
 	return 0;
 }
 
@@ -592,6 +639,15 @@ environment_install_window(
 	realm = window->realm;
 	global = realm->global;
 	error = js_builtin_value(realm, global, "devicePixelRatio", vm_value_int32(1), VM_PROPERTY_DEFAULT);
+	if (error != 0)
+		return error;
+
+	/* Binary string conversion used by resource loaders. */
+	error = js_builtin_method(realm, global, "atob", 1, environment_atob);
+	if (error == 0)
+		error = js_builtin_method(realm, global, "btoa", 1, environment_btoa);
+	if (error == 0)
+		error = js_builtin_method(realm, global, "fetch", 1, environment_fetch);
 	if (error != 0)
 		return error;
 
@@ -1196,6 +1252,553 @@ environment_image_construct(
 
 	/* Succeeded: the image element is made. */
 	return 0;
+}
+
+/* Decodes a Base64 string into a string whose code units are bytes (atob). */
+static int
+environment_atob(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *input;
+	struct vm_string *decoded;
+	struct wb_buffer clean;
+	struct wb_buffer bytes;
+	uint32_t bits;
+	uint16_t unit;
+	size_t index;
+	int value;
+	int held;
+	int space;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+
+	/* Converts the argument and removes the ASCII whitespace Base64 permits. */
+	status = bind_to_string(realm, js_argument(args, count, 0), &input);
+	if (status != 0)
+		return status;
+	wb_buffer_init(&clean);
+	wb_buffer_init(&bytes);
+	for (index = 0; index < input->length && status == 0; index++) {
+		unit = vm_string_at(input, index);
+		space = unit == 0x09U || unit == 0x0aU || unit == 0x0cU || unit == 0x0dU || unit == 0x20U;
+		if (!space && unit <= 0x7fU)
+			status = wb_buffer_append_byte(&clean, (unsigned char)unit);
+		if (!space && unit > 0x7fU)
+			status = EINVAL;
+	}
+
+	/* One or two padding characters at a quartet's end are optional. */
+	if (status == 0 && clean.length % 4U == 0U && clean.length != 0 && clean.data[clean.length - 1U] == '=') {
+		clean.length--;
+		if (clean.length != 0 && clean.data[clean.length - 1U] == '=')
+			clean.length--;
+	}
+
+	/* A lone character after whole groups cannot make a byte. */
+	if (status == 0 && clean.length % 4U == 1U)
+		status = EINVAL;
+
+	/* Six bits per character make each output byte. */
+	bits = 0;
+	held = 0;
+	for (index = 0; index < clean.length && status == 0; index++) {
+		value = environment_base64_value(clean.data[index]);
+		if (value < 0) {
+			status = EINVAL;
+			continue;
+		}
+
+		/* The six bits join those held from the preceding character. */
+		bits = (bits << 6) | (uint32_t)value;
+		held += 6;
+		if (held >= 8) {
+			held -= 8;
+			status = wb_buffer_append_byte(&bytes, (unsigned char)(bits >> held));
+		}
+	}
+
+	/* Invalid input throws the DOM exception browsers use. */
+	if (status == EINVAL) {
+		wb_buffer_release(&clean);
+		wb_buffer_release(&bytes);
+		return bind_throw_dom(realm, "InvalidCharacterError", "The string is not correctly encoded.");
+	}
+
+	/* Other failures are allocation failures. */
+	if (status != 0) {
+		wb_buffer_release(&clean);
+		wb_buffer_release(&bytes);
+		return status;
+	}
+
+	/* A binary string preserves every decoded byte. */
+	decoded = vm_string_from_latin1(realm->heap, bytes.data, bytes.length);
+	wb_buffer_release(&clean);
+	wb_buffer_release(&bytes);
+	if (decoded == NULL)
+		return ENOMEM;
+	*result = vm_value_cell(decoded);
+	return 0;
+}
+
+/* Encodes a binary string as Base64 (btoa). */
+static int
+environment_btoa(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	struct vm_string *input;
+	struct vm_string *encoded;
+	struct wb_buffer text;
+	uint32_t group;
+	uint16_t units[3];
+	uint16_t unit;
+	unsigned char third;
+	unsigned char fourth;
+	size_t index;
+	size_t left;
+	size_t take;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+
+	/* Every input code unit must fit one byte. */
+	status = bind_to_string(realm, js_argument(args, count, 0), &input);
+	if (status != 0)
+		return status;
+	for (index = 0; index < input->length; index++) {
+		unit = vm_string_at(input, index);
+		if (unit > 0xffU)
+			return bind_throw_dom(realm, "InvalidCharacterError", "The string contains a character outside of the Latin1 range.");
+	}
+
+	/* Encodes three bytes into four alphabet characters. */
+	wb_buffer_init(&text);
+	status = 0;
+	for (index = 0; index < input->length && status == 0; index += take) {
+		left = input->length - index;
+		take = 3U;
+		if (left < take)
+			take = left;
+		units[0] = vm_string_at(input, index);
+		units[1] = 0;
+		units[2] = 0;
+		if (take > 1U)
+			units[1] = vm_string_at(input, index + 1U);
+		if (take > 2U)
+			units[2] = vm_string_at(input, index + 2U);
+		group = ((uint32_t)units[0] << 16) | ((uint32_t)units[1] << 8) | units[2];
+		third = '=';
+		fourth = '=';
+		if (take > 1U)
+			third = (unsigned char)alphabet[(group >> 6) & 63U];
+		if (take > 2U)
+			fourth = (unsigned char)alphabet[group & 63U];
+		status = wb_buffer_append_byte(&text, (unsigned char)alphabet[(group >> 18) & 63U]);
+		if (status == 0)
+			status = wb_buffer_append_byte(&text, (unsigned char)alphabet[(group >> 12) & 63U]);
+		if (status == 0)
+			status = wb_buffer_append_byte(&text, third);
+		if (status == 0)
+			status = wb_buffer_append_byte(&text, fourth);
+	}
+
+	/* An allocation failure stops the encoding. */
+	if (status != 0) {
+		wb_buffer_release(&text);
+		return status;
+	}
+
+	/* The encoding is ASCII. */
+	encoded = vm_string_from_latin1(realm->heap, text.data, text.length);
+	wb_buffer_release(&text);
+	if (encoded == NULL)
+		return ENOMEM;
+	*result = vm_value_cell(encoded);
+	return 0;
+}
+
+/* Fetches one GET resource and reports a promise of its Response. */
+static int
+environment_fetch(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct vm_string *input;
+	struct wb_buffer href;
+	struct wb_buffer bytes;
+	struct wb_buffer final_url;
+	vm_value response;
+	vm_value reason;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+
+	/* Converts the request's URL to the host's UTF-8 form. */
+	status = bind_to_string(realm, js_argument(args, count, 0), &input);
+	if (status != 0)
+		return status;
+	wb_buffer_init(&href);
+	wb_buffer_init(&bytes);
+	wb_buffer_init(&final_url);
+	status = vm_string_to_utf8(input, &href);
+
+	/* The page resolves and fetches it. */
+	window = bind_window_of(realm);
+	if (status == 0 && window->host.fetch == NULL)
+		status = ENOSYS;
+	if (status == 0)
+		status = window->host.fetch(window->host.context, wb_buffer_string(&href), &bytes, &final_url);
+
+	/* A response fulfills; a network failure rejects with a TypeError. */
+	if (status == 0) {
+		status = environment_response(realm, &bytes, &final_url, &response);
+		if (status == 0)
+			status = environment_settle_promise(realm, response, 0, result);
+	} else if (status != ENOMEM) {
+		status = vm_error_create(realm, VM_ERROR_TYPE, "Failed to fetch", &reason);
+		if (status == 0)
+			status = environment_settle_promise(realm, reason, 1, result);
+	}
+
+	/* The fetch or response copied the temporary buffers. */
+	wb_buffer_release(&href);
+	wb_buffer_release(&bytes);
+	wb_buffer_release(&final_url);
+	return status;
+}
+
+/* Makes the small Response object used by fetch. */
+static int
+environment_response(
+	struct vm_realm *realm,
+	const struct wb_buffer *bytes,
+	const struct wb_buffer *url,
+	vm_value *result)
+{
+	struct vm_function *method;
+	struct vm_object *headers;
+	struct vm_object *response;
+	struct vm_string *body;
+	struct vm_string *empty;
+	struct vm_string *location;
+	int status;
+
+	/* The body is decoded as UTF-8 for text() and json(). */
+	body = vm_string_from_utf8(realm->heap, (const char *)bytes->data, bytes->length);
+	if (body == NULL)
+		return ENOMEM;
+	location = vm_string_from_utf8(realm->heap, wb_buffer_string(url), url->length);
+	if (location == NULL)
+		return ENOMEM;
+	empty = vm_string_from_latin1(realm->heap, (const unsigned char *)"", 0);
+	if (empty == NULL)
+		return ENOMEM;
+
+	/* Headers is empty in this first pass, with a get() that reports null. */
+	headers = vm_object_create(realm->heap, realm->object_prototype);
+	if (headers == NULL)
+		return ENOMEM;
+	status = js_builtin_method(realm, headers, "get", 1, environment_headers_get);
+	if (status != 0)
+		return status;
+
+	/* The Response's status and URL. */
+	response = vm_object_create(realm->heap, realm->object_prototype);
+	if (response == NULL)
+		return ENOMEM;
+	status = js_builtin_value(realm, response, "ok", VM_VALUE_TRUE, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, response, "status", vm_value_int32(200), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, response, "statusText", vm_value_cell(empty), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, response, "url", vm_value_cell(location), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, response, "redirected", VM_VALUE_FALSE, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, response, "headers", vm_value_cell(headers), VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		return status;
+
+	/* text() and json() retain the body string in their function data. */
+	status = js_builtin_function(realm, "text", 0, environment_response_text, NULL, &method);
+	if (status == 0) {
+		method->data = vm_value_cell(body);
+		status = js_builtin_value(realm, response, "text", vm_value_cell(method), JS_BUILTIN_METHOD);
+	}
+
+	/* json() uses the same retained string. */
+	if (status == 0) {
+		status = js_builtin_function(realm, "json", 0, environment_response_json, NULL, &method);
+		if (status == 0) {
+			method->data = vm_value_cell(body);
+			status = js_builtin_value(realm, response, "json", vm_value_cell(method), JS_BUILTIN_METHOD);
+		}
+	}
+
+	/* A failed method definition stops the response. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the response object owns everything through its properties and methods. */
+	*result = vm_value_cell(response);
+	return 0;
+}
+
+/* Returns a fulfilled promise of a Response's body string. */
+static int
+environment_response_text(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_function *callee;
+
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	callee = js_builtin_callee(realm);
+	return environment_settle_promise(realm, callee->data, 0, result);
+}
+
+/* Parses a Response's body and returns a promise of the JSON value. */
+static int
+environment_response_json(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_function *callee;
+	vm_value json;
+	vm_value key;
+	vm_value parse;
+	vm_value value;
+	int rejects;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Calls the realm's JSON.parse with the retained body. */
+	callee = js_builtin_callee(realm);
+	key = vm_key_from_ascii(realm->heap, "JSON");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_get(realm, vm_value_cell(realm->global), key, &json);
+	if (status == 0) {
+		key = vm_key_from_ascii(realm->heap, "parse");
+		if (key == VM_VALUE_EMPTY)
+			return ENOMEM;
+		status = vm_get(realm, json, key, &parse);
+	}
+
+	/* Parses, turning a thrown SyntaxError into the promise's rejection. */
+	if (status == 0)
+		status = vm_call(realm, parse, json, &callee->data, 1, &value);
+	rejects = 0;
+	if (status == VM_THROWN) {
+		value = realm->exception;
+		realm->exception = VM_VALUE_UNDEFINED;
+		rejects = 1;
+		status = 0;
+	}
+
+	/* Other engine failures stop the call. */
+	if (status != 0)
+		return status;
+
+	/* The promise follows the parse outcome. */
+	return environment_settle_promise(realm, value, rejects, result);
+}
+
+/* An empty Headers object has no value for a name. */
+static int
+environment_headers_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	UNUSED_PARAMETER(realm);
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	*result = VM_VALUE_NULL;
+	return 0;
+}
+
+/* Makes and fulfills or rejects a native Promise. */
+static int
+environment_settle_promise(
+	struct vm_realm *realm,
+	vm_value value,
+	int reject,
+	vm_value *result)
+{
+	vm_value promise;
+	int status;
+
+	/* The promise uses the realm's Promise prototype. */
+	status = vm_promise_create(realm, NULL, &promise);
+	if (status != 0)
+		return status;
+	if (reject) {
+		status = vm_promise_reject(realm, promise, value);
+	} else {
+		status = vm_promise_resolve(realm, promise, value);
+	}
+
+	/* Succeeded: the settled promise is returned. */
+	if (status != 0)
+		return status;
+	*result = promise;
+	return 0;
+}
+
+/* Makes an observer whose callback is kept by its observe method. */
+static int
+environment_observer_construct(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_function *callee;
+	struct vm_function *method;
+	struct vm_object *observer;
+	vm_value data_values[2];
+	vm_value data;
+	vm_value callback;
+	int callable;
+	int type;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+
+	/* The first argument is the callable notified by observe. */
+	callback = js_argument(args, count, 0);
+	callable = vm_value_is_callable(callback);
+	if (!callable)
+		return vm_throw_type_error(realm, "The observer callback is not a function.");
+	callee = js_builtin_callee(realm);
+	type = vm_value_as_int32(callee->data);
+	data_values[0] = callback;
+	data_values[1] = vm_value_int32(type);
+	status = js_builtin_array(realm, data_values, 2, &data);
+	if (status != 0)
+		return status;
+
+	/* The observer's methods; observe keeps the callback and kind in its function data. */
+	observer = vm_object_create(realm->heap, realm->object_prototype);
+	if (observer == NULL)
+		return ENOMEM;
+	status = js_builtin_function(realm, "observe", 1, environment_observer_observe, NULL, &method);
+	if (status == 0) {
+		method->data = data;
+		status = js_builtin_value(realm, observer, "observe", vm_value_cell(method), JS_BUILTIN_METHOD);
+	}
+
+	/* The other methods do not need per-observer state. */
+	if (status == 0)
+		status = js_builtin_method(realm, observer, "unobserve", 1, environment_observer_nothing);
+	if (status == 0)
+		status = js_builtin_method(realm, observer, "disconnect", 0, environment_observer_nothing);
+	if (status == 0)
+		status = js_builtin_method(realm, observer, "takeRecords", 0, environment_observer_records);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: new reports the observer object. */
+	*result = vm_value_cell(observer);
+	return 0;
+}
+
+/* Accepts one observation target; change delivery is not connected yet. */
+static int
+environment_observer_observe(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	UNUSED_PARAMETER(realm);
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	*result = VM_VALUE_UNDEFINED;
+	return 0;
+}
+
+/* Takes disconnect and unobserve without retaining targets in this first pass. */
+static int
+environment_observer_nothing(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	UNUSED_PARAMETER(realm);
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	*result = VM_VALUE_UNDEFINED;
+	return 0;
+}
+
+/* Reports no queued observer records. */
+static int
+environment_observer_records(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	return js_builtin_array(realm, NULL, 0, result);
+}
+
+/* Reports a Base64 alphabet character's six-bit value, or -1. */
+static int
+environment_base64_value(
+	uint16_t unit)
+{
+	if (unit >= 'A' && unit <= 'Z')
+		return unit - 'A';
+	if (unit >= 'a' && unit <= 'z')
+		return unit - 'a' + 26;
+	if (unit >= '0' && unit <= '9')
+		return unit - '0' + 52;
+	if (unit == '+')
+		return 62;
+	if (unit == '/')
+		return 63;
+	return -1;
 }
 
 /* Reports outerWidth or outerHeight (the function's data: 0 for the width, 1 for the height). */

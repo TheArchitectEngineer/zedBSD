@@ -242,6 +242,7 @@ void page_scroll(void *context, double *x, double *y);
 int page_computed_style(void *context, struct dom_element *element, struct css_style *style);
 void page_box_index_release(struct page *page);
 void page_scroll_to(void *context, double x, double y);
+struct dom_node *page_element_at(void *context, double x, double y);
 
 /* Web Storage (storage.c, ws074-p080). */
 const struct bind_storage_calls *page_storage_calls(void);

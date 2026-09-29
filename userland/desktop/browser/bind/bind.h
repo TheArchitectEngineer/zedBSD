@@ -140,6 +140,8 @@ struct bind_host {
 	void (*scroll_to)(void *context, double x, double y);
 	int (*node_inserted)(void *context, struct dom_node *node);
 	int (*checkpoint)(void *context);
+	int (*fetch)(void *context, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
+	struct dom_node *(*element_at)(void *context, double x, double y);
 };
 
 /*

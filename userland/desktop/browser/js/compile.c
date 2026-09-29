@@ -20,10 +20,10 @@
  *
  * The first pass covers the core of ES5: var, functions and closures,
  * arguments, this, the operators, object and array literals with
- * accessors, every ES5 statement but with, and labels.  What later phases
+ * accessors, every ES5 statement, and labels.  What later phases
  * bring (let and const, arrow functions, classes, destructuring, spread,
  * templates, generators, async functions, regular expressions, modules,
- * with, direct eval) is refused with a "not supported yet" error.
+ * direct eval) is refused with a "not supported yet" error.
  */
 
 #include "js/compile.h"
@@ -66,6 +66,7 @@ static void compile_scope_renew(struct js_function_compiler *fc, struct js_scope
 static void compile_block(struct js_function_compiler *fc, struct js_node *node);
 static void compile_parameters(struct js_function_compiler *fc);
 static void compile_class_declaration(struct js_function_compiler *fc, struct js_node *node);
+static void compile_with(struct js_function_compiler *fc, struct js_node *node);
 
 /*
  * Compiles a parsed program into a function of a realm (the program's code
@@ -788,7 +789,8 @@ compile_statement(
 		compile_for_of(fc, node);
 		break;
 	case JS_NODE_WITH:
-		js_compile_unsupported(fc->compiler, node, "with");
+		compile_with(fc, node);
+		break;
 	default:
 		js_compile_unsupported(fc->compiler, node, "modules");
 	}
@@ -796,6 +798,27 @@ compile_statement(
 	/* The enclosing statement's later instructions carry its own position again. */
 	fc->line = saved_line;
 	fc->column = saved_column;
+}
+
+/* Compiles sloppy-mode with: names in the body first search the value's properties. */
+static void
+compile_with(
+	struct js_function_compiler *fc,
+	struct js_node *node)
+{
+	struct js_with active;
+	uint32_t mark;
+
+	/* The object remains in a temporary register for the whole body. */
+	mark = fc->temp_top;
+	active.object = js_temp(fc);
+	js_compile_expression(fc, node->first, active.object);
+	js_emit1(fc, VM_OP_CHECK_COERCIBLE, active.object);
+	active.outer = fc->with;
+	fc->with = &active;
+	compile_statement(fc, node->fourth);
+	fc->with = active.outer;
+	fc->temp_top = mark;
 }
 
 /* Compiles a var statement: each declarator with an initializer assigns it. */

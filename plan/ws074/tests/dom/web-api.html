@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>web api</title>
+<div id="target">target</div>
+<script>
+console.log("base64", atob("SGV sbG8="), btoa("Hello"), btoa(String.fromCharCode(0, 255)));
+try {
+    atob("a");
+} catch (error) {
+    console.log("atob error", error.name);
+}
+try {
+    btoa("\u0100");
+} catch (error) {
+    console.log("btoa error", error.name);
+}
+
+var target = document.getElementById("target");
+var intersected = false;
+var resized = false;
+var mutations = 0;
+var intersection = new IntersectionObserver(function (entries) {
+    intersected = entries.length === 1 && entries[0].target === target && entries[0].isIntersecting;
+});
+var resize = new ResizeObserver(function (entries) {
+    resized = entries.length === 1 && entries[0].target === target && typeof entries[0].contentRect.width === "number";
+});
+var mutation = new MutationObserver(function (entries) { mutations += entries.length; });
+intersection.observe(target);
+resize.observe(target);
+mutation.observe(target, { attributes: true });
+console.log("observers", typeof intersection.disconnect, typeof resize.unobserve, mutation.takeRecords().length);
+var points = document.elementsFromPoint(1, 1);
+console.log("point", typeof document.elementFromPoint, Array.isArray(points), points.length > 0);
+var withObject = { value: 4 };
+var withFallback = 3;
+var withAssigned = 0;
+function readWith(object) { with (object) { return value + withFallback; } }
+with (withObject) { value = 5; withAssigned = 6; }
+console.log("with", readWith(withObject), withObject.value, withAssigned);
+
+var fetchedText = "";
+var fetchedAnswer = 0;
+var fetchFailed = false;
+fetch("data:text/plain,console.log(%22external%22)%3B").then(function (response) {
+    console.log("response", response.ok, response.status, typeof response.headers.get);
+    return response.text();
+}).then(function (text) { fetchedText = text.replace(/\s/g, " ").trim(); });
+fetch("data:application/json,%7B%22answer%22%3A42%7D").then(function (response) { return response.json(); }).then(function (value) {
+    fetchedAnswer = value.answer;
+});
+fetch("web-api-missing.json").catch(function (error) { fetchFailed = error instanceof TypeError; });
+setTimeout(function () { console.log("fetch", fetchedText, fetchedAnswer, fetchFailed); }, 100);
+</script>

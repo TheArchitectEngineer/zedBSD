@@ -229,6 +229,12 @@ struct js_finally {
 	int next_code;
 };
 
+/* One active sloppy-mode with statement and its object register. */
+struct js_with {
+	struct js_with *outer;
+	uint32_t object;
+};
+
 /*
  * A jump or a handler to fix up when the code is finished: the word to
  * write, the instruction it belongs to and the label it goes to.
@@ -278,6 +284,7 @@ struct js_function_compiler {
 	struct js_target *targets;
 	struct js_label_name *pending_labels;
 	struct js_finally *finally;
+	struct js_with *with;
 	uint32_t finally_depth;
 	int released;
 };

@@ -29,7 +29,7 @@
 #define SCRIPT_NAME_MAX		200U
 
 /* The most rounds of timers a settling page runs (a page whose timers never stop is cut short). */
-#define SCRIPT_SETTLE_ROUNDS	100000
+#define SCRIPT_SETTLE_ROUNDS	100
 
 /* The deepest inserted subtree searched for scripts. */
 #define SCRIPT_INSERT_DEPTH	512
@@ -56,6 +56,7 @@ static int script_type_runs(const struct dom_element *script);
 static int script_attribute(struct page *page, const struct dom_element *element, const char *name, struct dom_attribute **attribute);
 static int script_run_file(struct page *page, const struct vm_string *src);
 static int script_ascii_equal_folded(const struct vm_string *string, const char *ascii);
+static int script_fetch(void *context, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
 static int script_node_inserted(void *context, struct dom_node *node);
 static int script_checkpoint(void *context);
 static int script_walk_inserted(struct page *page, struct dom_node *node, int depth);
@@ -206,12 +207,33 @@ page_start_scripts(
 	host.scroll_to = page_scroll_to;
 	host.node_inserted = script_node_inserted;
 	host.checkpoint = script_checkpoint;
+	host.fetch = script_fetch;
+	host.element_at = page_element_at;
 	error = bind_window_create(page->realm, page->document, &host, &page->window);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the page can run scripts. */
 	return 0;
+}
+
+/* Fetches bytes for the binding's fetch API, resolved against this page. */
+static int
+script_fetch(
+	void *context,
+	const char *href,
+	struct wb_buffer *bytes,
+	struct wb_buffer *final_url)
+{
+	struct page *page;
+	int error;
+
+	/* The existing page fetcher handles file, data, HTTP and HTTPS locations. */
+	page = context;
+	if (page->base == NULL)
+		return EINVAL;
+	error = page_fetch(page->base, href, bytes, final_url);
+	return error;
 }
 
 /*
