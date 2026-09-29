@@ -36,5 +36,5 @@ Resume point: p003（辞書の package、100 文の計測 X＋補い 92/100、�
 | ws095-p007 | Text Editor の対応（WS092 の口） | planning | p006、WS092 |
 | ws095-p008 | zdesktop の自前の field（titlebar の検索）と Files の field | planning | p005・p006 |
 | ws095-p009 | Browser の text field | planning | p006 |
-| ws095-p010 | PS/2 の日本語の key の写し（5330 の内蔵 keyboard は PS/2、main の指示で必要。ただし配列は US（D7）で日本語の key が無いので、デモには効かない。順は後ろ） | planning | — |
+| ws095-p010 | PS/2 の日本語の key の写し（条件付き: JIS の PS/2 keyboard の利用者が出た時、F-058 と一緒に。5330 は PS/2 だが US 配列で日本語の key が無い。main 2026-09-29） | planning | JIS の PS/2 の利用者（F-058） |
 | ws095-p011 | 全体の規約の適合、guest の回帰（実機の確認は別に記録） | planning | p002〜p009 |

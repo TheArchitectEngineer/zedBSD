@@ -529,7 +529,7 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
 | ws095-p007 | Text Editor の対応（WS092 の口、preedit の大きさ、cursor の矩形） | textedit | p006、WS092 |
 | ws095-p008 | zdesktop の自前の field（titlebar の検索、§4.4）と Files の field | wayland の titlebar-shell、files | p005・p006 |
 | ws095-p009 | Browser の text field（`form.c`、UTF-16 の caret の変換） | browser | p006 |
-| ws095-p010 | PS/2 の日本語の key の写し（ユーザーの回答 2026-09-29: 5330 の内蔵 keyboard は PS/2。main の指示で必要。ただし D7 で配列は US で、US 配列の PS/2 keyboard には日本語の key が無いので、デモでの効きは無い。順は後ろ。driver の変更で HAL ではない） | `src/drivers/platform/pcat/ps2-8042.c` | — |
+| ws095-p010 | PS/2 の日本語の key の写し（条件付き: JIS の PS/2 keyboard の利用者が出た時、F-058 と一緒に。5330 の内蔵 keyboard は PS/2 だが US 配列（D7）で日本語の key が無い。main 2026-09-29。driver の変更で HAL ではない） | `src/drivers/platform/pcat/ps2-8042.c` | JIS の PS/2 の利用者（F-058） |
 | ws095-p011 | 全体の規約の適合（coding-style の全文）、guest の回帰。実機の確認は人の作業として別に記録 | — | p002〜p009（p010 は行った時だけ） |
 
 ## 14. 人間の判断が要る点（既定を選んで進める）
