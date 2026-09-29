@@ -1,13 +1,17 @@
 <!-- awesome-plan project=zedbsd record=past-log -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: [q502](../queue.md) / ws074-p088（動的に挿入された外部script）
-Last finished Queue: [q501](queue-q501.md)（ws074-p089 cleared。percentage heightとgrid `1fr`）
+Active Queue: [q503](../queue.md) / ws074-p092（Amazonの後続scriptが使うWeb API）
+Last finished Queue: [q502](queue-q502.md)（ws074-p088 cleared。動的な外部script）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q501
+## 最新: 2026-09-30 q502
+
+[q502](queue-q502.md): DOMへ挿入された外部scriptを非同期取得して一度だけ実行し、load/errorを送る。Chromium fixture、DOM 20/20、ASan。dynamic topはAUI後続scriptへ進み、次のWeb API不足をp092へ分けた。GitHubへは未公開。
+
+## 2026-09-30 q501
 
 [q501](queue-q501.md): percentage heightを確定したcontaining blockで解決し、flex/gridへ高さを伝播、gridの`1fr`行を配分。topは84.06%/ink 80.56%、searchは76.32%/ink 34.48%へ改善。GitHubへは未公開。
 

@@ -1,17 +1,17 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# Queue q502: 動的に挿入された外部script
+# Queue q503: Amazonの後続scriptが使うWeb API
 
 <!-- awesome-plan-current:start -->
 Status: active（2026-09-30）
-Active Queue: q502-i01 / [ws074-p088](ws074/phase088/phase.md)
-Last finished Queue: [q501](history/queue-q501.md)（ws074-p089 cleared。percentage heightとgrid `1fr`）
+Active Queue: q503-i01 / [ws074-p092](ws074/phase092/phase.md)
+Last finished Queue: [q502](history/queue-q502.md)（ws074-p088 cleared。動的な外部script）
 Executor: main
 Approval: ユーザー「Amazon.co.jpのトップページがうまくレンダリングできるようになるまで、自走をお願いします。」
 <!-- awesome-plan-current:end -->
 
-## q502-i01
+## q503-i01
 
-DOMへ挿入された外部`script src`を非同期に取得・一度だけ実行し、load/error eventを送る。小さいChromium fixture、host ASan、Amazonの動的比較で確認する。
+AmazonのAUI後続scriptが使う`fetch`、observer、`atob`・`btoa`、`elementsFromPoint`を実装し、dynamic比較を有界な時間で完了させる。
 
-Upcoming Work Outlook: p088の結果から不足するWeb APIを特定し、p092（fetch・IntersectionObserver・elementsFromPoint）またはp064（XHR）を1 PhaseずつQueueへ入れる。
+Upcoming Work Outlook: p092の結果から、XHR（p064）または型付き配列（p093）を1 PhaseずつQueueへ入れる。

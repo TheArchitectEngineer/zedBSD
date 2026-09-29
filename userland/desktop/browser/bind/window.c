@@ -107,6 +107,7 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_performance_interface,
 	&bind_location_interface,
 	&bind_html_image_element_interface,
+	&bind_html_script_element_interface,
 	&bind_dom_token_list_interface,
 	&bind_dom_string_map_interface,
 	&bind_dom_rect_interface,
@@ -299,6 +300,13 @@ bind_checkpoint(
 	status = vm_run_jobs(window->realm, window_report_job, window);
 	if (status != 0)
 		return status;
+
+	/* A page may now run tasks queued by DOM changes, but not from a nested script. */
+	if (window->realm->depth == 0 && window->host.checkpoint != NULL) {
+		status = window->host.checkpoint(window->host.context);
+		if (status != 0)
+			return status;
+	}
 
 	/* Succeeded: the queue is empty. */
 	return 0;

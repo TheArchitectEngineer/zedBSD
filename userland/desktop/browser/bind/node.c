@@ -290,10 +290,14 @@ bind_insert(
 	struct dom_node *node,
 	struct dom_node *reference)
 {
+	struct bind_window *window;
 	struct dom_node *child;
 	struct dom_element *existing;
 	int ancestor;
 	int status;
+
+	/* The window's host observes successful insertions. */
+	window = bind_window_of(realm);
 
 	/* Only a document, a fragment or an element has children. */
 	if (parent->type != DOM_DOCUMENT &&
@@ -337,13 +341,26 @@ bind_insert(
 
 	/* A fragment's children move, in order; the fragment is left empty. */
 	if (node->type == DOM_DOCUMENT_FRAGMENT) {
-		for (child = node->first_child; child != NULL; child = node->first_child)
+		for (child = node->first_child; child != NULL; child = node->first_child) {
 			dom_insert_before(parent, child, reference);
+			if (window->host.node_inserted != NULL) {
+				status = window->host.node_inserted(window->host.context, child);
+				if (status != 0)
+					return status;
+			}
+		}
+
+		/* Succeeded: every child was moved. */
 		return 0;
 	}
 
 	/* Any other node moves from where it was. */
 	dom_insert_before(parent, node, reference);
+	if (window->host.node_inserted != NULL) {
+		status = window->host.node_inserted(window->host.context, node);
+		if (status != 0)
+			return status;
+	}
 
 	/* Succeeded: the node is in the parent. */
 	return 0;
@@ -1387,6 +1404,8 @@ node_prototype_index(
 		element = (const struct dom_element *)node;
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG)
 			return BIND_HTML_IMAGE_ELEMENT;
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_SCRIPT)
+			return BIND_HTML_SCRIPT_ELEMENT;
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_TEMPLATE)
 			return BIND_HTML_TEMPLATE_ELEMENT;
 		if (element->ns == DOM_NS_HTML)

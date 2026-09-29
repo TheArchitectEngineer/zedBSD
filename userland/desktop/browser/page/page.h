@@ -107,6 +107,8 @@ struct page {
 	struct wb_vector sheets;
 	uint32_t sheets_generation;
 	uint32_t styled_sheets;
+	struct wb_vector scripts;
+	int scripts_running;
 	struct wb_vector fonts;
 	uint32_t fonts_generation;
 	uint32_t laid_out_fonts;
@@ -160,6 +162,10 @@ int page_layout(struct page *page, int width, int height);
 int page_update_styles(struct page *page);
 int page_paint(struct page *page);
 int page_title(const struct page *page, struct wb_buffer *out);
+
+/* Dynamic scripts (script.c). */
+void page_scripts_init(struct page *page);
+void page_scripts_release(struct page *page);
 
 /* Style sheets (sheets.c). */
 void page_sheets_init(struct page *page);

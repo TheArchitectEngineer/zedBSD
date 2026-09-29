@@ -121,6 +121,8 @@ struct bind_storage_calls {
  * script asks for (scroll_to, in CSS pixels; the host keeps it inside the
  * document, and scroll reports where it went).  A NULL callback reads as nothing and
  * writes nothing: no engine matches nothing, and no layout has no boxes.
+ * node_inserted is told after a script changes a DOM tree; checkpoint is
+ * called after the outermost script task and its microtasks have finished.
  */
 struct bind_host {
 	void *context;
@@ -136,6 +138,8 @@ struct bind_host {
 	const struct bind_storage_calls *storage;
 	int (*computed_style)(void *context, struct dom_element *element, struct css_style *style);
 	void (*scroll_to)(void *context, double x, double y);
+	int (*node_inserted)(void *context, struct dom_node *node);
+	int (*checkpoint)(void *context);
 };
 
 /*

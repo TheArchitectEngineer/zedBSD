@@ -50,6 +50,7 @@ enum bind_interface_index {
 	BIND_PERFORMANCE,
 	BIND_LOCATION,
 	BIND_HTML_IMAGE_ELEMENT,
+	BIND_HTML_SCRIPT_ELEMENT,
 	BIND_DOM_TOKEN_LIST,
 	BIND_DOM_STRING_MAP,
 	BIND_DOM_RECT,
@@ -247,6 +248,7 @@ extern const struct bind_interface bind_screen_interface;
 extern const struct bind_interface bind_performance_interface;
 extern const struct bind_interface bind_location_interface;
 extern const struct bind_interface bind_html_image_element_interface;
+extern const struct bind_interface bind_html_script_element_interface;
 extern const struct bind_interface bind_dom_token_list_interface;
 extern const struct bind_interface bind_dom_string_map_interface;
 extern const struct bind_interface bind_dom_rect_interface;

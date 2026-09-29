@@ -38,6 +38,7 @@ static int markup_template_content(struct vm_realm *realm, vm_value this_value, 
 static int markup_element_this(struct vm_realm *realm, vm_value this_value, struct dom_element **element);
 static int markup_serialize(struct vm_realm *realm, const struct dom_node *node, int self, vm_value *result);
 static int markup_parse(struct vm_realm *realm, struct dom_element *context, vm_value text, struct dom_node **fragment);
+static void markup_mark_scripts(struct dom_node *node, int depth);
 static int markup_context(struct bind_window *window, struct dom_node *node, struct dom_element **context);
 static int markup_position(struct vm_realm *realm, vm_value value, int *position);
 static int markup_insert(struct vm_realm *realm, struct dom_element *element, int position, struct dom_node *node, int *inserted);
@@ -549,9 +550,41 @@ markup_parse(
 		dom_insert_before(made, root->node.first_child, NULL);
 	html_parser_destroy(parser);
 
+	/* Fragment-created scripts are inert, including after they are moved later. */
+	markup_mark_scripts(made, 0);
+
 	/* Succeeded: the fragment. */
 	*fragment = made;
 	return 0;
+}
+
+/* Marks every script made by the fragment parser as already started. */
+static void
+markup_mark_scripts(
+	struct dom_node *node,
+	int depth)
+{
+	struct dom_element *element;
+	struct dom_node *child;
+	int script;
+
+	/* Stops at the parser's maximum nesting. */
+	if (depth > 512)
+		return;
+
+	/* A script in the fragment is already started and remains inert. */
+	script = dom_element_is(node, DOM_NS_HTML, DOM_TAG_SCRIPT);
+	if (script)
+		node->flags |= DOM_NODE_SCRIPT_STARTED;
+
+	/* Marks ordinary children, and a template's separate contents. */
+	for (child = node->first_child; child != NULL; child = child->next)
+		markup_mark_scripts(child, depth + 1);
+	if (node->type == DOM_ELEMENT) {
+		element = (struct dom_element *)node;
+		if (element->content != NULL)
+			markup_mark_scripts(element->content, depth + 1);
+	}
 }
 
 /*
