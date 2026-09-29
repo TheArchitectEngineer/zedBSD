@@ -4,7 +4,7 @@
 
 Phase ID: `ws074-p084`
 Parent: [WS074](../ws.md)
-Status: in-progress
+Status: uncleared（2026-09-29、main の wrap up で停止。調べと Phase の案は済み、直した layout の確認の一部が残り）
 Phase disposition: normal
 Queue: なし（main の指示でサブエージェントが worktree `wt/ws074-dom` で実行、2026-09-29）
 依存: p031・p080〜p083
@@ -70,13 +70,42 @@ top-local-noscript 79.80%、search-local-noscript 77.16%。worktree の `build/p
 ## この Phase で直したもの
 
 - `css/cascade.c`: `min-width`・`min-height` の初期値を `auto`（`CSS_UNIT_AUTO`、layout では 0 と同じ）にした。
-- `layout/flex.c`: row の item の自動の最小の大きさ（CSS Flexbox 4.5）: `min-width:auto` で内容が scroll しない item は、
-  line が縮む時だけ内容の min-content の幅（`width` が px でより狭ければそれ、`max-width` の内）より狭くならない。
-  column の item は前と同じ（0 まで縮む）。
-- 効果: header の hamburger が Chromium と同じ形（80 px 前後、icon と文字が並ぶ）。画素は top-local 64.47 → 64.29%、search-local
-  76.04 → 75.85%（hamburger が広がり 2 段目の項目が右へずれ、Chromium が隠す最後の項目（「新着商品」）が私たちでは出るため）。
-- 確かめ: golden 76/76（変わらず）。他の回帰は下の「確認」。
+- `layout/flex.c`: row の item の自動の最小の大きさ（CSS Flexbox 4.5）: `min-width:auto` で内容が scroll しない item は、line が
+  縮む時だけ内容の min-content の幅（`width` が px でより狭ければそれ、`max-width` の内）より狭くならない（`flex_auto_minimums`・
+  `flex_min_content`）。縮みは 9.7 のように最小で止まった item を凍らせて残りで分け直す（`flex_shrink`、前は一度だけ縮めて最小で
+  切っていたので合計が溢れた）。column の item は前と同じ（0 まで縮む）。
+- 試験: `plan/ws074/tests/dom/flexmin.html`（5 行、新）と Chromium 153 の expected（内容の幅、`min-width:0`、`overflow:hidden`、
+  px の width、max-width、computed の `auto`）。
+- 効果: header の hamburger（「☰ すべて」）が Chromium と同じ形になった（21.7 px → 70 px 前後、Chromium 80.5 px。差は太字の幅）。
+  画素: top-local 64.47 → 64.49%、search-local 76.04 → 76.02%、top-local-noscript 79.80 → 79.84%、search-local-noscript 77.16 → 77.15%
+  （ほぼ不変: 2 段目の項目が Chromium と同じ位置に並んだが、Chromium が隠す最後の項目「新着商品」が私たちでは出る）。
+
+## 確認（host は Debian の cc と Chromium 153）
+
+- host の build（plain と ASan、-Werror）warning 0。style-check: `layout/flex.c` に指摘 0（`css/cascade.c` の 1 件は前から）。
+- 回帰（plain、最後の変更（凍らせる縮み）の後）: golden 76/76、host-view 59、host-form 28、host-link 22、host-position 19、host-text 20、
+  host-relayout 161、host-base 2038・heap 31・interp 45・number 71・object 98（全て 0 failed）、run-dom-tests **19/19**（flexmin を追加）、
+  run-js-tests 13/13、loader 11/11、http 14/14・`--async` 17/17、font 8/8、html5lib tree 1854/1959・fragment 206/206。
+- ASan の回帰: 自動の最小の大きさを入れた時点（凍らせる縮みの前）で plain と同じ結果。凍らせる縮みの後の ASan は**未実施**。
+- guest（QEMU）の run-dom-tests・boot test: **未実施**（wrap up で停止）。実機: 未実施。
+
+## Phase の案（効果の大きい順、見込み）
+
+| 順 | 案 | 内容 | 効果の見込み | 大きさ |
+| --- | --- | --- | --- | --- |
+| 1 | 動的に挿入された script（bind/・page/・dom/） | script が挿入した `<script src>` を取得して走らせ、`load`・`error` の event を出す（inline の動的な script も spec どおり）。「already started」の flag（parser と innerHTML の断片の script は started）。外の script は task（0 ms の timer）で走らせる | top の約 10〜13 点（AUI の core・jQuery・card・carousel・RHF が初めて走る。RHF の枠（`/hz/rhf` の ajax の失敗で `#rhf-error`）が出れば footer の位置が合う）。ただし AUI の 6 MB の code が初めて走り、新しい Uncaught と未実装の API（XMLHttpRequest（p064）、MutationObserver ほか）が出る見込み | 中（bind の挿入の口と page の取得・実行、試験の頁） |
+| 2 | 百分率の高さ（layout/） | `height`・`min-height`・`max-height` の `%` を、高さの定まった containing block（px、定まった % の連鎖、root は viewport、stretch された flex・grid の item、absolute の containing block）に対して解決。block・float・inline-block・absolute・replaced（max-height）と grid の `1fr` の行の高さ | top の card（`height:100%` の連鎖と 4 つの tile の grid、画像の `height:100%`）と search の結果の画像（`max-height:100%` の縦横比）: 各 2〜6 点の見込み | 中〜大（高さの「定まり」を layout 全体に渡す） |
+| 3 | 太字の文字の幅（text/） | 合成の太字（fake bold）で advance を広げない（Chromium の Skia と同じ）か、太字の face を使う。Latin の太字が約 9% 広い | 見出しの折り返し（top の card の見出し）、header の文字の位置。1 点前後 | 小 |
+| 4 | flex の小さな残り（layout/） | 隠れる overflow の項目（`#nav-xshop` の最後の項目を Chromium は `overflow:hidden` の中で切る）、flex item の display の blockification（computed の値）、column の自動の最小の大きさ | 0.5 点前後 | 小 |
+| 5 | CSSOM の小さな不足（bind/） | `cssFloat`（`float` の accessor）、shorthand の computed の値 | 画素には効かない（script の分岐） | 小 |
+
+- 参考: search は script 付きと script なしの差が小さい（76.04 と 77.16）ので、search の差の大部分は案 2（画像）と文字・filter の
+  列の位置（行の高さは一致、太字の幅と画像の大きさでずれる）。sponsored brand の logo の画像（KIMIE）が出ない件は未調査。
 
 ## Resume point
 
-- 2026-09-29: 原因の特定まで済み、flex の自動の最小の大きさを直した。残り: 回帰（plain・ASan）、Phase の案の表、記録。
+- 2026-09-29（wrap up）: 調べと Phase の案は済み。この Phase を cleared にするには、flex の変更（最後の commit）について ASan の回帰、
+  guest（`build-browser-image.sh`・run-dom-tests `--outputs`）、boot test を流す。案 1〜5 は main が計画する（Phase の番号は main と合わせる）。
+- 調べの道具: 頁の末尾に getComputedStyle・getBoundingClientRect を console に出す probe の script を足し、私たちの `--run` と
+  Chromium の `--dump-dom`（`--hide-scrollbars --window-size=1280,900`）の console を比べる（p082 の getComputedStyle で可能に
+  なった。probe の頁は build/ の下に作り、終わったら消した）。
