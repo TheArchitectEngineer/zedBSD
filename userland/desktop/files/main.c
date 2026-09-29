@@ -239,6 +239,7 @@ main(
 	fm_titlebar_close(&main_titlebar);
 	fm_menu_close(&main_menu);
 	fm_glass_close(&main_glass);
+	fm_desktop_release(&main_app.desk);
 	fm_app_release(&main_app);
 	fm_canvas_release(&main_canvas);
 	free(main_pixels);
@@ -454,7 +455,7 @@ main_loop(
 			return 0;
 		}
 
-		/* The held key's repeat, and every input queued (the menus' choices among them); the desktop takes none yet (ws094-p004). */
+		/* The held key's repeat, and every input queued (the menus' choices among them); the desktop has its own (ui-desktop.c). */
 		now = fm_clock();
 		(void)fm_window_repeat(&main_window, now);
 		inputs = 0;
@@ -462,8 +463,11 @@ main_loop(
 			taken = fm_window_take(&main_window, &event);
 			if (taken == 0)
 				break;
-			if (!main_app.desktop)
+			if (main_app.desktop) {
+				fm_desktop_event(&main_app, &event);
+			} else {
 				fm_ui_event(&main_app, &event);
+			}
 			inputs++;
 		}
 
