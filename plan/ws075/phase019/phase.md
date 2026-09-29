@@ -4,8 +4,8 @@
 
 Phase ID: `ws075-p019`
 Parent: [WS075](../ws.md)
-Status: uncleared（2026-09-29、サブエージェント、worktree `.claude/worktrees/ws075-rps`。FIFO の先行（UAPI なし）は実装し実機で確認。MAILBOX・IMMEDIATE は UAPI の追加が要るので提案 [proposed/p019-present-mode.md](../proposed/p019-present-mode.md) を置いて判断待ち）
-Resume point: 提案の承認の後、MAILBOX（resident の buffer を 3 つ、armed の flip の置き換え）・IMMEDIATE・libvulkan の display WSI の報告を入れる。承認されなければ MAILBOX・IMMEDIATE を範囲の外へ移して cleared にできる
+Status: cleared（2026-09-29、サブエージェント、worktree `.claude/worktrees/ws075-rps`。FIFO の先行（UAPI なし）を実装し実機の passthrough で確認。MAILBOX・IMMEDIATE はユーザーの判断「デモの後に回す」で範囲の外、[F-057](../../future-work.md) へ）
+Resume point: なし（MAILBOX・IMMEDIATE は F-057、提案は [proposed/p019-present-mode.md](../proposed/p019-present-mode.md)）
 Phase disposition: normal
 
 ## 範囲（正本は WS031 の ws.md の p027 の行と [phase018](../../ws031/phase018/phase.md) の 5）
@@ -68,6 +68,11 @@ presentation は flip の latch まで presenting thread（compositor）を待�
   - 承認されたら: resident の buffer を 3 つにして tear の無い MAILBOX（armed の flip の置き換え）、IMMEDIATE、libvulkan の display WSI の報告と flag の写し。
   - 承認されなければ: display の present mode は FIFO だけとし、MAILBOX・IMMEDIATE を範囲の外に移して p019 を cleared にする。
 
+### 判断と結果（2026-09-29）
+
+- ユーザーの判断（main の中継、質問への回答）: 「MAILBOX・IMMEDIATE はデモの後に回す」。範囲から外し、[F-057](../../future-work.md)（main が記録、提案の file を指す）へ。
+- p019 は FIFO の先行で cleared（受け入れの「FIFO（vsync）」「tear なし」「latency・率が p020 より悪くならない」を満たす。MAILBOX・IMMEDIATE の扱いは F-057）。
+
 ### 未実施
 
-- 素の 5330。MAILBOX・IMMEDIATE（UAPI 待ち）。tear の画面での検査。
+- 素の 5330。tear の画面での検査（構成による）。
