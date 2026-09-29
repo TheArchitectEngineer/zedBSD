@@ -75,7 +75,8 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | S11 | 窓の操作 | 10 個ほどの窓で移動・resize・Wiseview・最大化 | WS099、WS075 |
 | S12 | 音量 | system bar の音量の icon で音量を変え、確かめの音が鳴る | WS100 |
 | S13 | GPU の compute | Noct の見本を GPU と CPU で走らせ、時間を比べる | WS101 |
-| S14 | 終わり | Log Out → greeter、Shut Down | WS099 |
+| S14 | スクリーンキーボード | 右下の角の swipe で flick（日本語）、左下の角の swipe で QWERTY と手書きの面、Text Editor に打つ | WS102 |
+| S15 | 終わり | Log Out → greeter、Shut Down | WS099 |
 
 ブラウザ（WS074）と IME（WS095）は人間が作業中。戻ったときに台本に足すかを決める。
 
@@ -197,7 +198,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | 2026-09-30: p001・p003・p004・p005・p007・p008・p009 cleared（QEMU）: 基準の一括の試験、BUG-115（試験の待ち）、C1 の起動と Shut Down の試験、C7 の contrast（ガラスの明るさの下限と副次の文字の色、72/72）、BUG-118（cursor の持ち主）、BUG-119 の切り分け、greeter の「Shutting down…」。残り: C5・C6 の実機（WS075 の物差し、C6 は中央値 121.5 ms で未達）、BUG-119 の kernel の電源断（High の担当待ち） |
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | p001〜p004・p007 cleared 2026-09-30（QEMU）: audiod の確かめの音と software の音量、libkeiland の `keiland_audio_*`（KEILAND_VERSION 15）、system bar の音量の icon・slider・mute・wheel・保存（A1〜A6 PASS）、規約の照合。残り: p006（5330 の実機の音、A7、ユーザー）、p005（Settings の Sound の頁、ユーザー「入れる」）。completed は A7 の扱いが決まってから |
 | [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | p001〜p006 cleared 2026-09-30: **i915 の実機（5330 の passthrough）で Vulkan の compute が動く**（vkcs 15/15: dispatch・ID・push・uniform・SSBO と shared memory の atomic・barrier・fence・reduce・prefix sum・断るべき shader）。実行器の回帰 PASS。試験の build は `I915_TEST_SET` で分けた。p008（GLSL ES 3.10 の compute、host と lavapipe で照合）cleared。p009（libglesv2 の OpenGL ES 3.1 の compute、Venus で PASS。D1 は既定の案で名乗る）cleared。p010（**i915 の実機（passthrough）で GLES 3.1 の compute が動いた**: glescompute の indirect 以外の全 step、egltest の回帰 PASS）cleared。次は p007（indirect）、p011（Noct、D2 の許可待ち）。ユーザーの判断 D1〜D5 は「fg010 に必要な判断」 |
-| [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | planning | p001（設計）。IME（人間が作業中）の file を変えない形を先に |
+| [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | planning | p001（設計）から。デモの台本 S14 に入れる、WS101 の後に始める（2026-09-30 朝 ユーザー）。IME（人間が作業中）の file を変えない形を先に |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
