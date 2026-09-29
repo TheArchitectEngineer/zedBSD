@@ -463,7 +463,7 @@ list-targets:
 # The LLVM source is verified, and the host generators the clang package's
 # cross build runs are built from it, here: with the binary cache nothing else
 # does either before packages start using (and patching) that source tree.
-toolchain: $(NOCT_HOST_BUILD_STAMP) noct-toolchain-smoke llvm-toolchain \
+toolchain: $(NOCT_HOST_BUILD_STAMP) llvm-toolchain \
 	sysroots $(ZEDBSD_LLVM_SOURCE_VERIFIED) $(ZEDBSD_LLVM_NATIVE_STAMP)
 
 .PHONY: download

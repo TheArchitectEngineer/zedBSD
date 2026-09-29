@@ -2,10 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし（2026-09-27 から subagent の運用）
-Last finished Queue: q497（ws073-p028 の再試行 cleared。Remacs の patch の再適用を防ぐ）。それ以前の作業は下の節
+Last finished Queue: q498（ws073-p028 cleared。Noct smoke を外し `make` が完走）。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-09-29 q498
+
+[q498](queue-q498.md): `toolchain` の Noct smoke 依存を削除。`make toolchain-cache` は既存のホスト用 LLVM を受け入れた。ゲスト用 clang のソースビルドを終え、`make -j16` と通常の `make` が image の検査まで PASS。QEMU・実機は未実施。GitHub へは未公開。
 
 ## 最新: 2026-09-29 q497
 
