@@ -35,7 +35,7 @@ Resume point: —（完了の処理: Phase の directory の削除と試験の `
   画面の文字に Keiland・libkeiland を出さない。App Home に「Image Viewer」の tile（緑、額の絵）。
 - 規約: `plan/coding-style.md` の全文と照合した（p003）。`style-check.py` の残りは design の例外の `setjmp` の 1 件。
 
-確認（すべて QEMU、Venus）: host の試験 `plan/ws091/tests/run-host.sh`（PIL と比べた復号・folder・EXIF・view）PASS、build の warning 0、guest の
+確認（すべて QEMU、Venus）: host の試験 `plan/tools/imageview/run-host.sh`（PIL と比べた復号・folder・EXIF・view）PASS、build の warning 0、guest の
 `imageview-guest.sh` の 16 step（App Home・空・fit・次・zoom・wheel・縦・回転・透明・GIF・画素・壊れた画像・swipe・全画面・chooser）ok、
 注入の touch の `touch-guest.sh`（pinch・flick の慣性・double tap・swipe・long press）PASS、boot test PASS。画面は `build/ws091-shots/`（worktree）。
 

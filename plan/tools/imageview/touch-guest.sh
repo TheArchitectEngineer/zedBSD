@@ -15,7 +15,7 @@
 # node now and then).  The steps read the program's own log (/tmp/iv.log) through SSH; nothing reads the console.
 #
 #   GUEST_RUNTIME=$PWD/build/ws091-pen-run plan/ws035/tests/zdesktop-guest.sh start build/ws091-pen-run/base.img
-#   GUEST_RUNTIME=$PWD/build/ws091-pen-run BIN=build/ws091-amd64 plan/ws091/tests/touch-guest.sh OUTDIR
+#   GUEST_RUNTIME=$PWD/build/ws091-pen-run BIN=build/ws091-amd64 plan/tools/imageview/touch-guest.sh OUTDIR
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -71,7 +71,7 @@ viewer() {
 }
 
 # The programs, the libraries and the pictures under test, and the compositor.
-python3 plan/ws091/tests/make-images.py build/ws091-images >/dev/null
+python3 plan/tools/imageview/make-images.py build/ws091-images >/dev/null
 guest "$stop_all" >/dev/null
 put "$bin/bin/wayland" /bin/wayland
 put "$bin/bin/imageview" /bin/imageview

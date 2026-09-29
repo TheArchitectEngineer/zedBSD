@@ -5,7 +5,7 @@
 # (4, UNUSED_PARAMETER), split calls with two arguments on a line (8), and public/static definitions and
 # file-scope declarations without a comment (2, 3).  Heuristic: every hit needs reading (table initializers of
 # several numbers a row are hits too).
-#   python3 plan/ws091/tests/style-extra.py FILE...
+#   python3 plan/tools/imageview/style-extra.py FILE...
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import re
 import sys
