@@ -53,9 +53,11 @@ extern void drv_i915_gfx_draw_checkpoint(const struct i915_gfx_image *target, un
 /* The stages of the scratch buffer's parts, as the index of struct i915_gfx_session's scratch arrays. */
 #define I915_DRAW_SCRATCH_VERTEX	0U
 #define I915_DRAW_SCRATCH_PIXEL		1U
+#define I915_DRAW_SCRATCH_COMPUTE	2U
 
 static int i915_draw_object_create(struct i915_render_session *session, uint64_t bytes, struct i915_gem_object **result);
 static int i915_draw_scratch(struct i915_render_session *session, struct i915_gfx_session *work, struct i915_gfx_kernels *kernels);
+static int i915_draw_writes_storage(const struct i915_gfx_kernels *kernels);
 static int i915_draw_scratch_grow(struct i915_render_session *session, struct i915_gfx_session *work, const struct i915_gfx_kernels *kernels);
 static void i915_draw_object_destroy(struct i915_render_session *session, struct i915_gem_object *object);
 static int i915_draw_build_batch(struct i915_gfx_batch *batch, const struct i915_gfx_op_space *space, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, const struct i915_gfx_image *depth, uint32_t mocs, const struct i915_gfx_draw_args *args);
@@ -456,6 +458,7 @@ drv_i915_gfx_draw(
 	uint64_t target_va;
 	uint32_t mocs;
 	unsigned dwords;
+	int writes;
 	int refused;
 	int error;
 
@@ -564,6 +567,15 @@ drv_i915_gfx_draw(
 		return error;
 	}
 
+	/*
+	 * A draw whose kernels have storage buffers may write them, and a later
+	 * operation that copies uniform data on the CPU must wait for it to run
+	 * (ws101-p004), as after a rectangle.
+	 */
+	writes = i915_draw_writes_storage(&kernels);
+	if (writes != 0)
+		work->transfer_pending = 1;
+
 	/* An indexed draw counts indices, a draw vertices. */
 	counted = "vertices";
 	if (args->indexed != 0)
@@ -598,6 +610,57 @@ drv_i915_gfx_draw(
 	}
 
 	/* Succeeded: the draw is recorded, or has run outside a submission. */
+	return 0;
+}
+
+/*
+ * Gives the kernels of an operation that spill their parts of the session's
+ * scratch buffer, growing it when it has too little room.
+ *
+ * A dispatch takes its compute kernel's part with it (ws101-p004), as a draw
+ * takes its vertex and pixel kernels' parts.  Returns 0 or the error of the
+ * buffer's growth.
+ */
+int
+drv_i915_gfx_scratch(
+	struct i915_render_session *session,
+	struct i915_gfx_session *work,
+	struct i915_gfx_kernels *kernels)
+{
+	int error;
+
+	/* Gives the parts as a draw's kernels get theirs. */
+	error = i915_draw_scratch(session, work, kernels);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: every spilling kernel has its part. */
+	return 0;
+}
+
+/*
+ * Reports whether a draw's kernels name a storage buffer, which they may
+ * write: 1 when either stage's push data carries a storage buffer's address.
+ */
+static int
+i915_draw_writes_storage(
+	const struct i915_gfx_kernels *kernels)
+{
+	uint32_t index;
+
+	/* The vertex stage's blocks. */
+	for (index = 0U; index < kernels->vs_push.block_count; index++) {
+		if (kernels->vs_push.blocks[index].address != 0U)
+			return 1;
+	}
+
+	/* The pixel stage's blocks. */
+	for (index = 0U; index < kernels->ps_push.block_count; index++) {
+		if (kernels->ps_push.blocks[index].address != 0U)
+			return 1;
+	}
+
+	/* Succeeded: no storage buffer. */
 	return 0;
 }
 
@@ -669,14 +732,17 @@ i915_draw_scratch(
 	int roomy;
 
 	/* Kernels that spill nothing need no buffer, and the general state base stays zero. */
-	if (kernels->vs_scratch_bytes == 0U && kernels->ps_scratch_bytes == 0U)
+	if (kernels->vs_scratch_bytes == 0U &&
+	    kernels->ps_scratch_bytes == 0U &&
+	    kernels->cs_scratch_bytes == 0U)
 		return 0;
 
-	/* Notes whether the buffer has room for both kernels' per-thread spaces. */
+	/* Notes whether the buffer has room for every kernel's per-thread space. */
 	roomy = 0;
 	if (work->scratch != NULL &&
 	    kernels->vs_scratch_bytes <= work->scratch_per_thread[I915_DRAW_SCRATCH_VERTEX] &&
-	    kernels->ps_scratch_bytes <= work->scratch_per_thread[I915_DRAW_SCRATCH_PIXEL])
+	    kernels->ps_scratch_bytes <= work->scratch_per_thread[I915_DRAW_SCRATCH_PIXEL] &&
+	    kernels->cs_scratch_bytes <= work->scratch_per_thread[I915_DRAW_SCRATCH_COMPUTE])
 		roomy = 1;
 
 	/* Grows the buffer when it has not. */
@@ -690,6 +756,7 @@ i915_draw_scratch(
 	kernels->scratch_base = work->scratch->va;
 	kernels->vs_scratch_offset = work->scratch_offset[I915_DRAW_SCRATCH_VERTEX];
 	kernels->ps_scratch_offset = work->scratch_offset[I915_DRAW_SCRATCH_PIXEL];
+	kernels->cs_scratch_offset = work->scratch_offset[I915_DRAW_SCRATCH_COMPUTE];
 
 	/* Succeeded: every spilling kernel has its part. */
 	return 0;
@@ -716,10 +783,12 @@ i915_draw_scratch_grow(
 	struct i915_gem_object *object;
 	uint32_t vertex_bytes;
 	uint32_t pixel_bytes;
+	uint32_t compute_bytes;
 	uint32_t slice_mask;
 	uint32_t slices;
 	uint64_t pixel_ids;
 	uint64_t pixel_offset;
+	uint64_t compute_offset;
 	uint64_t bytes;
 	int error;
 
@@ -740,6 +809,9 @@ i915_draw_scratch_grow(
 	pixel_bytes = work->scratch_per_thread[I915_DRAW_SCRATCH_PIXEL];
 	if (kernels->ps_scratch_bytes > pixel_bytes)
 		pixel_bytes = kernels->ps_scratch_bytes;
+	compute_bytes = work->scratch_per_thread[I915_DRAW_SCRATCH_COMPUTE];
+	if (kernels->cs_scratch_bytes > compute_bytes)
+		compute_bytes = kernels->cs_scratch_bytes;
 
 	/* Counts the slices the fuses left: the pixel stage's thread ids grow with them. */
 	device = session->vk->i915;
@@ -752,10 +824,12 @@ i915_draw_scratch_grow(
 		slices = 1U;
 	pixel_ids = (uint64_t)I915_GFX_PS_SCRATCH_IDS_PER_SLICE * slices;
 
-	/* Lays the buffer out: the guard page, the vertex part, the pixel part, each page-aligned. */
+	/* Lays the buffer out: the guard page, the vertex part, the pixel part, the compute part, each page-aligned. */
 	pixel_offset = I915_GFX_SCRATCH_GUARD + (uint64_t)vertex_bytes * I915_GFX_VS_SCRATCH_IDS;
 	pixel_offset = (pixel_offset + I915_GFX_SCRATCH_ALIGN - 1U) & ~(uint64_t)(I915_GFX_SCRATCH_ALIGN - 1U);
-	bytes = pixel_offset + (uint64_t)pixel_bytes * pixel_ids;
+	compute_offset = pixel_offset + (uint64_t)pixel_bytes * pixel_ids;
+	compute_offset = (compute_offset + I915_GFX_SCRATCH_ALIGN - 1U) & ~(uint64_t)(I915_GFX_SCRATCH_ALIGN - 1U);
+	bytes = compute_offset + (uint64_t)compute_bytes * I915_GFX_CS_SCRATCH_IDS;
 
 	/* A buffer beyond the general state's size cannot be addressed. */
 	if (bytes > I915_GFX_GENERAL_STATE_BYTES) {
@@ -776,7 +850,9 @@ i915_draw_scratch_grow(
 	work->scratch_per_thread[I915_DRAW_SCRATCH_PIXEL] = pixel_bytes;
 	work->scratch_offset[I915_DRAW_SCRATCH_VERTEX] = I915_GFX_SCRATCH_GUARD;
 	work->scratch_offset[I915_DRAW_SCRATCH_PIXEL] = pixel_offset;
-	kern_logf("i915: vk: scratch: %llu bytes at 0x%llx: vertex %u bytes a thread for %u ids at +0x%x, pixel %u for %llu ids at +0x%llx\n",
+	work->scratch_per_thread[I915_DRAW_SCRATCH_COMPUTE] = compute_bytes;
+	work->scratch_offset[I915_DRAW_SCRATCH_COMPUTE] = compute_offset;
+	kern_logf("i915: vk: scratch: %llu bytes at 0x%llx: vertex %u bytes a thread for %u ids at +0x%x, pixel %u for %llu ids at +0x%llx, compute %u for %u ids at +0x%llx\n",
 		  (unsigned long long)bytes,
 		  (unsigned long long)object->va,
 		  vertex_bytes,
@@ -784,9 +860,12 @@ i915_draw_scratch_grow(
 		  I915_GFX_SCRATCH_GUARD,
 		  pixel_bytes,
 		  (unsigned long long)pixel_ids,
-		  (unsigned long long)pixel_offset);
+		  (unsigned long long)pixel_offset,
+		  compute_bytes,
+		  I915_GFX_CS_SCRATCH_IDS,
+		  (unsigned long long)compute_offset);
 
-	/* Succeeded: the buffer has room for both kernels. */
+	/* Succeeded: the buffer has room for every kernel. */
 	return 0;
 }
 

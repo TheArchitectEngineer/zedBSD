@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（基準の確定と QEMU の通しの試験）から。基準の案はユーザーの確認待ち
+Resume point: p001 cleared（2026-09-30）: 一括の試験 `plan/ws099/tests/criteria.sh`。FAIL は C5（QEMU）、範囲の不足は C1・C7、C6 は実機。直す Phase の案 p002〜p006 を下の表に。基準の案はユーザーの確認待ち
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -49,4 +49,11 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws099-p001 | 基準の確定（ユーザー）、C1〜C10 を確かめる一括の試験の script（既存の試験をまとめ、足りない C2・C5・C7・C10 を足す）、今の状態での実行と不足の一覧 | planning | — |
+| [ws099-p001](phase001/phase.md) | C1〜C10 を確かめる一括の試験（`plan/ws099/tests/criteria.sh`、新しい C2・C5・C7・C10）、今の状態での実行と不足の一覧、BUG-115 の切り分け | cleared（2026-09-30、QEMU の Venus: C1〜C4・C7〜C10 PASS（C1・C7 は範囲が一部）、C5 FAIL（最初の frame まで 102〜215 ms）、C6 未実施（実機）。BUG-115 は試験の固定の待ち（古い image の起動 6 秒超）） | — |
+| ws099-p002（案） | C5: App Home と Wiseview の開閉の最初の frame を早める（QEMU で要求から最初の frame まで 102〜215 ms、frame の間隔 約 130〜140 ms）。まず実機（WS075）で測り、100 ms を超えるなら、開閉の要求を受けた pass で frame を出す（次の frame の pacing を待たない）など。QEMU の数を基準にするかはユーザーの判断 | planning | p001 |
+| [ws099-p003](phase003/phase.md) | BUG-115: `plan/ws035/tests/` の固定の `sleep N`（42 本・43 箇所）を、compositor の log の `ZWL READY` を待つ形に（試験の側の直し） | cleared（2026-09-30: 古い image で p072 PASS（前は FAIL）、C9 の 9 本 PASS） | p001 |
+| [ws099-p004](phase004/phase.md) | C1 の残り: 起動と Shut Down の替わり目を両方の画面（VGA と Venus）で撮る試験（`c1-watch.py`・`c1-boot-shutdown.sh`）、criteria.sh の C1 に入れ、p126 に `--no-black` | cleared（2026-09-30: 起動・Shut Down とも黒 0・文字 0、Shut Down の後は greeter の絵のまま機械が止まる） | p001 |
+| [ws099-p005](phase005/phase.md) | C7 の残り: client が描くガラスの上の文字の contrast を測る（c7-contrast.sh に Settings と Files）。compositor のガラスに明るさの下限（panel.frag）、Settings・Files・libkeiui の副次の文字の色 `0x6b7585` → `0x56606f`（main の許可） | cleared（2026-09-30: C7 72/72 が 4.5 以上、最小 4.68（前 1.91）） | p001 |
+| [ws099-p007](phase007/phase.md) | BUG-118: client の cursor（隠す・surface・shape）をその client の窓の本体の上だけに、他は矢印（cursor.c・compose.c）。試験 cursor-owner.sh を C9 に | cleared（2026-09-30: 変更前 FAIL・変更後 PASS、C8・C9 PASS） | p001 |
+| [ws099-p008](phase008/phase.md) | BUG-119: Shut Down で電源が切れない。QEMU の monitor で確認（VM running、CPU は全て HLT）、原因（init が poweroff を HALT にし、PC の kernel に ACPI の S5 が無い）と直し方の案（UAPI・system-device・platform・ACPI の driver・init、HAL の API は変えない）、greeter の「Shutting down…」の案 | cleared（2026-09-30、確認と案まで。実装は別に割り当て） | p004 |
+| ws099-p006（案） | C6: 実機（5330）の pointer の遅延の計測（WS075 の measure-apps.sh）。WS075 の p023 と合わせる | planning | p001・WS075 |

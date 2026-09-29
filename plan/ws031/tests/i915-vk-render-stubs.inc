@@ -855,3 +855,34 @@ stub_allocate(
 	/* Succeeded: the caller owns the block behind the header. */
 	return block + 1;
 }
+
+/*
+ * ws101-p004: the dispatch of a compute pipeline (render/compute.c), which
+ * command.c calls, stands in here as the draw does: it records the call and
+ * the groups and reports success.
+ */
+#include "../../../src/drivers/gpu/i915/render/compute.h"
+
+/* How many dispatches ran, and the groups of the last one. */
+static unsigned stub_dispatch_calls;
+static uint32_t stub_last_dispatch[3];
+
+/*
+ * Stands in for recording one dispatch: records it and reports success.
+ */
+int
+drv_i915_gfx_dispatch(
+	struct i915_render_session *session,
+	const struct i915_gfx_draw_state *state,
+	const uint32_t groups[3])
+{
+	UNUSED_PARAMETER(session);
+	UNUSED_PARAMETER(state);
+
+	/* Records the groups of the dispatch. */
+	stub_dispatch_calls++;
+	memcpy(stub_last_dispatch, groups, sizeof(stub_last_dispatch));
+
+	/* Succeeded: the dispatch counts as recorded. */
+	return 0;
+}

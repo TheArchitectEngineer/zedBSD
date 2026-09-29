@@ -140,6 +140,26 @@
 #define I915_GFX_GENERAL_STATE_BYTES		0xfffff000ULL
 
 /*
+ * The thread ids the scratch memory of the compute stage has to cover
+ * (Mesa 25.0.7 intel_device_info.c, init_max_scratch_ids() on Gen12:
+ * 16 * 8 ids a subslice, and 6 subslices for a GT2 whatever the fuses left)
+ * (ws101-p004).
+ */
+#define I915_GFX_CS_SCRATCH_IDS			(16U * 8U * 6U)
+
+/*
+ * Where a dispatch writes in its slot (ws101-p004), as offsets from the
+ * dynamic state base (the slot's dynamic heap): the interface descriptor,
+ * the three group counts gl_NumWorkGroups reads, and the CURBE -- the
+ * cross-thread push data, then each thread's own -- which may take up to
+ * the slot's post-sync scratch (I915_GFX_SCRATCH).
+ */
+#define I915_GFX_DYN_INTERFACE			0x0000U
+#define I915_GFX_DYN_GROUP_COUNTS		0x0040U
+#define I915_GFX_DYN_CURBE			0x1000U
+#define I915_GFX_CURBE_BYTES			(I915_GFX_SCRATCH - I915_GFX_DYNAMIC_HEAP - I915_GFX_DYN_CURBE)
+
+/*
  * The MOCS table entry the render paths use for their surfaces, vertex
  * buffers and state: index 3, uncached (see GEN12_MOCS()).
  */

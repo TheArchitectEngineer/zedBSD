@@ -37,7 +37,7 @@ wait_for() {
 
 # A clean start: no compositor or client left from before.
 guest 'service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[w]ltest" | awk "{print \$1}"); do kill $p; done; sleep 1; rm -f /tmp/wayland-0' >/dev/null
-guest '/bin/wayland --timeout=400 --width=1280 --height=800 --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 3
+guest '/bin/wayland --timeout=400 --width=1280 --height=800 --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 XDG_RUNTIME_DIR=/tmp /bin/wltest --windowed --size=400x300 --color=ff0000 --frames=3000 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 3
 XDG_RUNTIME_DIR=/tmp /bin/wltest --windowed --size=300x200 --color=00ff00 --frames=3000 --fullscreen-at='"$full"' --unfullscreen-at='"$back"' --token=b > /tmp/b.log 2>&1 </dev/null & sleep 1; echo started' >/dev/null
 

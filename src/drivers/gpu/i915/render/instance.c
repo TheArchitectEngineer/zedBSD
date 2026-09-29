@@ -343,9 +343,9 @@ i915_instance_limits(
 
 	/* Compute. */
 	limits->maxComputeSharedMemorySize = 16384U;
-	limits->maxComputeWorkGroupCount[0] = 65535U;
-	limits->maxComputeWorkGroupCount[1] = 65535U;
-	limits->maxComputeWorkGroupCount[2] = 65535U;
+	limits->maxComputeWorkGroupCount[0] = I915_GFX_MAX_GROUP_COUNT;
+	limits->maxComputeWorkGroupCount[1] = I915_GFX_MAX_GROUP_COUNT;
+	limits->maxComputeWorkGroupCount[2] = I915_GFX_MAX_GROUP_COUNT;
 	limits->maxComputeWorkGroupInvocations = 128U;
 	limits->maxComputeWorkGroupSize[0] = 128U;
 	limits->maxComputeWorkGroupSize[1] = 128U;

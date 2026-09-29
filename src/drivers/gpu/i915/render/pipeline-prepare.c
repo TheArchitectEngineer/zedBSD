@@ -6,8 +6,9 @@
  */
 
 /*
- * The kernels of a graphics pipeline: compiling its two stages and handing
- * what the compiler reports to the draw.
+ * The kernels of a pipeline: compiling a graphics pipeline's two stages or
+ * a compute pipeline's one, and handing what the compiler reports to the
+ * draw or the dispatch.
  *
  * The pipeline's SPIR-V goes through the executor's own compiler, and the
  * words of 3DSTATE_VS, PS, PS_EXTRA, WM, SBE and SBE_SWIZ are packed from
@@ -27,6 +28,7 @@
 #include "../i915.h"
 
 #include <kern/klog.h>
+#include <kern/kmem.h>
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -36,6 +38,8 @@ static int i915_pipeline_compile_stage(const struct i915_gfx_shader *shader, enu
 static int i915_pipeline_kernels_fit(const struct i915_gfx_pipeline *pipeline);
 static int i915_pipeline_input_slot(const struct i915_shader_binary *vertex, uint32_t location, uint32_t *slot);
 static const char *i915_pipeline_stage_name(enum i915_shader_stage stage);
+static int i915_pipeline_compute_fits(const struct i915_shader_binary *binary);
+static int i915_pipeline_thread_ids(struct i915_gfx_pipeline *pipeline);
 
 /*
  * Compiles a pipeline's vertex and fragment kernels.
@@ -108,19 +112,94 @@ drv_i915_gfx_pipeline_prepare(
 }
 
 /*
+ * Compiles a compute pipeline's kernel and makes its threads' ID table
+ * (ws101-p003).
+ *
+ * The kernel must fit an instruction window, its push data the room a
+ * dispatch gives it, and its workgroup the threads one group may have.
+ * Returns the parser's or the compiler's error, ENOTSUP for a kernel the
+ * dispatch cannot place, or ENOMEM; the pipeline is then left without a
+ * kernel.
+ */
+int
+drv_i915_gfx_compute_prepare(
+	struct i915_render_session *session,
+	struct i915_gfx_pipeline *pipeline)
+{
+	int fits;
+	int error;
+
+	UNUSED_PARAMETER(session);
+
+	/* Refuses a pipeline without its compute stage. */
+	if (pipeline->compute == NULL)
+		return EINVAL;
+
+	/* Compiles the compute stage. */
+	error = i915_pipeline_compile_stage(pipeline->compute, I915_STAGE_COMPUTE, &pipeline->cs_binary);
+	if (error != 0) {
+		drv_i915_gfx_pipeline_release(pipeline);
+		return error;
+	}
+
+	/* Refuses a kernel the dispatch cannot place. */
+	fits = i915_pipeline_compute_fits(pipeline->cs_binary);
+	if (fits == 0) {
+		kern_logf("i915: vk: XXX unimplemented path: cs %u bytes / %u push registers (%u bytes of push constants) / group %u x %u x %u\n",
+			  pipeline->cs_binary->code_bytes,
+			  pipeline->cs_binary->cross_thread_regs,
+			  pipeline->cs_binary->push_constant_bytes,
+			  pipeline->cs_binary->local_size[0],
+			  pipeline->cs_binary->local_size[1],
+			  pipeline->cs_binary->local_size[2]);
+		drv_i915_gfx_pipeline_release(pipeline);
+		return ENOTSUP;
+	}
+
+	/* Makes the table of the threads' IDs every dispatch delivers. */
+	error = i915_pipeline_thread_ids(pipeline);
+	if (error != 0) {
+		drv_i915_gfx_pipeline_release(pipeline);
+		return error;
+	}
+
+	/* Says what the compiler made of the pipeline. */
+	kern_logf("i915: vk: compute pipeline compiled by the executor: cs %u bytes, group %u x %u x %u in %u threads, %u push registers\n",
+		  pipeline->cs_binary->code_bytes,
+		  pipeline->cs_binary->local_size[0],
+		  pipeline->cs_binary->local_size[1],
+		  pipeline->cs_binary->local_size[2],
+		  pipeline->threads,
+		  pipeline->cs_binary->cross_thread_regs);
+
+	/* Marks the pipeline dispatchable. */
+	pipeline->kernels_ready = 1;
+
+	/* Succeeded: the kernel is compiled and fits the dispatch. */
+	return 0;
+}
+
+/*
  * Releases a pipeline's kernels and marks it not drawable.
  */
 void
 drv_i915_gfx_pipeline_release(
 	struct i915_gfx_pipeline *pipeline)
 {
-	/* Frees both binaries; a stage never compiled has none. */
+	/* Frees every binary and the compute threads' table; a stage never compiled has none. */
 	drv_i915_shader_binary_free(pipeline->vs_binary);
 	drv_i915_shader_binary_free(pipeline->fs_binary);
+	drv_i915_shader_binary_free(pipeline->cs_binary);
+	if (pipeline->thread_ids != NULL)
+		kern_free(pipeline->thread_ids);
 
-	/* Forgets them, so the pipeline cannot be drawn with. */
+	/* Forgets them, so the pipeline cannot be drawn or dispatched with. */
 	pipeline->vs_binary = NULL;
 	pipeline->fs_binary = NULL;
+	pipeline->cs_binary = NULL;
+	pipeline->thread_ids = NULL;
+	pipeline->threads = 0U;
+	pipeline->right_mask = 0U;
 	pipeline->kernels_ready = 0;
 }
 
@@ -249,6 +328,19 @@ i915_pipeline_compile_stage(
 		return error;
 	}
 
+	/*
+	 * Refuses a module whose entry point is of another stage than the one it
+	 * is used for: a compute shader named as a vertex stage, or the reverse,
+	 * would be compiled as what it is and run as what it is not (ws101-p003).
+	 */
+	if (ir->stage != stage) {
+		kern_logf("i915: vk: %s stage given a %s shader\n",
+			  i915_pipeline_stage_name(stage),
+			  i915_pipeline_stage_name(ir->stage));
+		drv_i915_shader_ir_free(ir);
+		return EINVAL;
+	}
+
 	/* Compiles the IR to EU code, and frees the IR either way. */
 	error = drv_i915_shader_compile(ir, result);
 	drv_i915_shader_ir_free(ir);
@@ -366,10 +458,106 @@ static const char *
 i915_pipeline_stage_name(
 	enum i915_shader_stage stage)
 {
-	/* Only the vertex stage is not a fragment stage here. */
+	/* The vertex and the compute stage by name. */
 	if (stage == I915_STAGE_VERTEX)
 		return "vertex";
+	if (stage == I915_STAGE_COMPUTE)
+		return "compute";
 
 	/* Succeeded: every other stage is the fragment stage. */
 	return "fragment";
+}
+
+/*
+ * Reports whether a compute kernel fits the dispatch: the kernel an
+ * instruction window, its push constants what a command buffer carries, its
+ * cross-thread data the push data room of a slot, and its workgroup the
+ * threads one group may have.
+ */
+static int
+i915_pipeline_compute_fits(
+	const struct i915_shader_binary *binary)
+{
+	uint32_t invocations;
+
+	/* The kernel takes a whole instruction window: no vertex and pixel slots in a dispatch. */
+	if (binary->code_bytes > I915_GFX_INSTRUCTION_BYTES)
+		return 0;
+
+	/* The push constants come from the command buffer's block. */
+	if (binary->push_constant_bytes > I915_GFX_PUSH_BYTES)
+		return 0;
+
+	/* The cross-thread data takes no more room than one stage's push data. */
+	if (binary->cross_thread_regs * 32U > I915_GFX_PUSH_DATA_BYTES)
+		return 0;
+
+	/* The compiler refused larger groups; one past the device's limit is inconsistent. */
+	invocations = binary->local_size[0] * binary->local_size[1] * binary->local_size[2];
+	if (invocations == 0U || invocations > I915_SHADER_MAX_GROUP_INVOCATIONS)
+		return 0;
+
+	/* Succeeded: the dispatch can place the kernel. */
+	return 1;
+}
+
+/*
+ * Makes a compute pipeline's table of its threads' IDs: for SIMD8 thread t
+ * of a group, channel c is the group's invocation 8 t + c, whose local ID
+ * along x, y and z and linear index go into the thread's four registers.
+ * A channel past the group's invocations gets zeros; the dispatch does not
+ * run it (the walker's right execution mask).  Returns 0 or ENOMEM.
+ */
+static int
+i915_pipeline_thread_ids(
+	struct i915_gfx_pipeline *pipeline)
+{
+	const struct i915_shader_binary *binary;
+	uint32_t *table;
+	uint32_t invocations;
+	uint32_t threads;
+	uint32_t thread;
+	uint32_t channel;
+	uint32_t linear;
+	uint32_t base;
+	uint32_t size_x;
+	uint32_t size_y;
+	uint32_t remainder;
+
+	/* The group's invocations in SIMD8 threads. */
+	binary = pipeline->cs_binary;
+	size_x = binary->local_size[0];
+	size_y = binary->local_size[1];
+	invocations = size_x * size_y * binary->local_size[2];
+	threads = (invocations + 7U) / 8U;
+
+	/* Allocates the table: four registers of eight dwords to a thread, zeros for the channels that do not run. */
+	table = kern_calloc((size_t)threads * I915_SHADER_PER_THREAD_REGS * 8U, sizeof(uint32_t));
+	if (table == NULL)
+		return ENOMEM;
+
+	/* Fills each running channel's local IDs and linear index. */
+	for (thread = 0U; thread < threads; thread++) {
+		base = thread * I915_SHADER_PER_THREAD_REGS * 8U;
+		for (channel = 0U; channel < 8U; channel++) {
+			linear = thread * 8U + channel;
+			if (linear >= invocations)
+				break;
+			table[base + channel] = linear % size_x;
+			table[base + 8U + channel] = (linear / size_x) % size_y;
+			table[base + 16U + channel] = linear / (size_x * size_y);
+			table[base + 24U + channel] = linear;
+		}
+	}
+
+	/* The last thread runs the channels of the group's remaining invocations, or all eight. */
+	remainder = invocations % 8U;
+	pipeline->right_mask = 0xffU;
+	if (remainder != 0U)
+		pipeline->right_mask = (1U << remainder) - 1U;
+
+	/* Succeeded: the pipeline owns the table. */
+	pipeline->thread_ids = table;
+	pipeline->threads = threads;
+	return 0;
 }

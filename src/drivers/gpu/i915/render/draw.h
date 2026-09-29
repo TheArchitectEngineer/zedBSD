@@ -27,6 +27,7 @@
 #include "gfx.h"
 
 struct i915_gem_object;
+struct i915_gfx_kernels;
 struct i915_render_session;
 
 /*
@@ -104,8 +105,8 @@ struct i915_gfx_session {
 	 * once the recorded operations, which may still point at it, have run.
 	 */
 	struct i915_gem_object *scratch;
-	uint32_t scratch_per_thread[2];
-	uint64_t scratch_offset[2];
+	uint32_t scratch_per_thread[3];
+	uint64_t scratch_offset[3];
 };
 
 /*
@@ -136,6 +137,7 @@ int drv_i915_gfx_window(struct i915_render_session *session, struct i915_gfx_ses
 int drv_i915_gfx_op_begin(struct i915_render_session *session, struct i915_gfx_session *work, struct i915_gfx_op_space *space);
 int drv_i915_gfx_op_end(struct i915_render_session *session, struct i915_gfx_session *work, int error);
 int drv_i915_gfx_flush(struct i915_render_session *session, struct i915_gfx_session *work);
+int drv_i915_gfx_scratch(struct i915_render_session *session, struct i915_gfx_session *work, struct i915_gfx_kernels *kernels);
 struct i915_gem_object;
 int drv_i915_gfx_object_create(struct i915_render_session *session, uint64_t bytes, struct i915_gem_object **result);
 void drv_i915_gfx_object_destroy(struct i915_render_session *session, struct i915_gem_object *object);

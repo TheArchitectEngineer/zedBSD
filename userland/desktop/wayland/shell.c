@@ -1614,7 +1614,7 @@ zwl_glass_tick(
 			if (server->wiseview > 0.0f)
 				wiseview_log(server);
 			else
-				printf("ZWL WISEVIEW closed\n");
+				printf("ZWL WISEVIEW closed at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
 		}
 	}
 
@@ -3706,7 +3706,7 @@ wiseview_open_key(
 	server->wiseview_current = zwl_top_window(server);
 
 	/* Wiseview opens as it does at the end of the gesture. */
-	printf("ZWL WISEVIEW opening key\n");
+	printf("ZWL WISEVIEW opening key at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
 	wiseview_settle(server, 0.0f, 1.0f);
 }
 
@@ -3817,7 +3817,7 @@ wiseview_close_key(
 	server->wiseview_gesture = 0;
 
 	/* Wiseview settles closed. */
-	printf("ZWL WISEVIEW close key\n");
+	printf("ZWL WISEVIEW close key at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
 	wiseview_settle(server, progress, 0.0f);
 }
 
@@ -4332,7 +4332,7 @@ wiseview_log(
 	/* The tiles as they are laid out now. */
 	count = wiseview_windows(server, windows, WISEVIEW_WINDOWS);
 	wiseview_layout(server, windows, count, tiles);
-	printf("ZWL WISEVIEW open windows=%u\n", count);
+	printf("ZWL WISEVIEW open windows=%u at_ms=%llu\n", count, (unsigned long long)zwl_milliseconds());
 	for (index = 0; index < count; index++)
 		printf("ZWL WISEVIEW tile client=%llu surface=%u x=%d y=%d width=%d height=%d\n", (unsigned long long)windows[index]->client->number, windows[index]->id, tiles[index].x, tiles[index].y, tiles[index].width, tiles[index].height);
 }

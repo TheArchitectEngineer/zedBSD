@@ -414,6 +414,31 @@ drv_i915_gfx_write_state(
 }
 
 /*
+ * Fills the push data of one kernel from the bound state: the push
+ * constants, the uniform blocks' ranges and the storage buffers' addresses
+ * (see i915_state_write_push()).
+ *
+ * A dispatch fills its cross-thread data with it (ws101-p004), with the
+ * compute bind point's sets in place of the graphics ones.
+ */
+int
+drv_i915_gfx_write_push(
+	uint8_t *data,
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_push_layout *layout)
+{
+	int error;
+
+	/* Fills the push data as a draw's stage does. */
+	error = i915_state_write_push(data, state, layout);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the push data is in place. */
+	return 0;
+}
+
+/*
  * Writes the RENDER_SURFACE_STATE of a 2D one-level surface.
  *
  * The surface is checked first: a GPU address, an extent of at most 16384
@@ -2326,7 +2351,7 @@ i915_state_write_push(
 	uint64_t va;
 	uint32_t constant_bytes;
 	uint32_t index;
-	uint32_t words[2];
+	uint32_t words[3];
 
 	/* Refuses push data larger than its buffer. */
 	if (layout->regs * 32U > I915_GFX_PUSH_DATA_BYTES)
@@ -2346,6 +2371,10 @@ i915_state_write_push(
 		if (block->push_offset + block->bytes > I915_GFX_PUSH_DATA_BYTES)
 			return EINVAL;
 
+		/* The system storage buffer of a compute kernel (the group counts) is the dispatch's to fill. */
+		if (block->set == I915_IR_SYSTEM_SET)
+			continue;
+
 		/* Finds the buffer bound at the block's set and binding. */
 		set = NULL;
 		if (block->set < I915_GFX_BOUND_SETS && block->binding < I915_GFX_MAX_BINDINGS)
@@ -2363,23 +2392,30 @@ i915_state_write_push(
 		if (set->slots[block->binding].dynamic != 0)
 			descriptor_offset += i915_state_dynamic_offset(state, block->set, block->binding);
 
-		/* A storage buffer is delivered as the GPU address of its range, the low word first. */
-		if (block->address != 0U) {
-			va = drv_i915_gfx_memory_va(buffer->memory, buffer->offset + descriptor_offset);
-			if (va == 0U)
-				return EINVAL;
-			words[0] = (uint32_t)va;
-			words[1] = (uint32_t)(va >> 32);
-			kern_memcpy(data + block->push_offset, words, sizeof(words));
-			continue;
-		}
-
 		/* The descriptor's range: to the buffer's end for VK_WHOLE_SIZE, nothing past it. */
 		range = set->slots[block->binding].range;
 		if (descriptor_offset >= buffer->size) {
 			range = 0U;
 		} else if (range == VK_WHOLE_SIZE || range > buffer->size - descriptor_offset) {
 			range = buffer->size - descriptor_offset;
+		}
+
+		/*
+		 * A storage buffer is delivered as the GPU address of its range, the
+		 * low word first, and the range's bytes after it, which an
+		 * OpArrayLength reads (ws101-p004).
+		 */
+		if (block->address != 0U) {
+			va = drv_i915_gfx_memory_va(buffer->memory, buffer->offset + descriptor_offset);
+			if (va == 0U)
+				return EINVAL;
+			words[0] = (uint32_t)va;
+			words[1] = (uint32_t)(va >> 32);
+			words[2] = (uint32_t)range;
+			if (range > 0xFFFFFFFFULL)
+				words[2] = 0xFFFFFFFFU;
+			kern_memcpy(data + block->push_offset, words, sizeof(words));
+			continue;
 		}
 
 		/* A block read wholly past the range reads zeros only. */

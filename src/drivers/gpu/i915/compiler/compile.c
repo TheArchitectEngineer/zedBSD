@@ -105,6 +105,9 @@
 /* Vertex: the push data starts here. */
 #define COMPILE_PAYLOAD_GRF	2U
 
+/* Compute: the push data starts right after the thread header (compile-compute.inc). */
+#define COMPILE_CS_PUSH_GRF	1U
+
 /* Fragment: the two perspective barycentrics. */
 #define COMPILE_FS_BARY1_GRF	2U
 #define COMPILE_FS_BARY2_GRF	3U
@@ -542,6 +545,13 @@ static void i915_compile_terminate_gathered(struct i915_compile_state *state);
 static void i915_compile_gather(struct i915_compile_state *state, uint32_t first, uint32_t count);
 static void i915_compile_read_into(struct i915_compile_state *state, uint32_t value, uint32_t grf);
 static void i915_compile_describe(const struct i915_compile_state *state, struct i915_shader_binary *binary);
+static void i915_compile_compute_interface(struct i915_compile_state *state);
+static void i915_compile_load_system(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t payload_inputs);
+static void i915_compile_atomic(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t payload_inputs);
+static void i915_compile_storage_size(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t payload_inputs);
+static int i915_compile_storage_block(struct i915_compile_state *state, uint32_t uniform, uint32_t *block);
+static void i915_compile_terminate_compute(struct i915_compile_state *state);
+static void i915_compile_describe_compute(const struct i915_compile_state *state, struct i915_shader_binary *binary);
 
 /*
  * Compiles one shader IR into a Gen12 EU binary.
@@ -889,9 +899,18 @@ i915_compile_operands(
 	case I915_IR_DDY:
 	case I915_IR_DDY_FINE:
 	case I915_IR_UNPACK_HALF:
-	case I915_IR_LOAD_STORAGE:
 	case I915_IR_SKIP_BEGIN:
 		return 1U;
+
+	case I915_IR_LOAD_STORAGE:
+		/* The offset, and the predicate of a predicated load (ws101-p002). */
+		return 1U + inst->component;
+
+	case I915_IR_ATOMIC:
+		/* The offset and the value, the comparator of a compare and exchange, then a predicate (ws101-p002). */
+		if (inst->immediate == I915_IR_ATOMIC_CMPXCHG)
+			return 3U + inst->component;
+		return 2U + inst->component;
 
 	case I915_IR_FADD:
 	case I915_IR_FSUB:
@@ -1686,9 +1705,11 @@ i915_compile_instruction(
 	uint32_t payload_inputs;
 	uint32_t dst;
 
-	/* The inputs follow the fixed payload registers and the push data. */
+	/* The inputs follow the fixed payload registers and the push data; a compute thread's push data starts at r1. */
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		payload_inputs = COMPILE_PAYLOAD_GRF + state->push_regs;
+	} else if (state->ir->stage == I915_STAGE_COMPUTE) {
+		payload_inputs = COMPILE_CS_PUSH_GRF + state->push_regs;
 	} else {
 		payload_inputs = state->fs_setup_grf + state->push_regs;
 	}
@@ -1725,6 +1746,18 @@ i915_compile_instruction(
 	case I915_IR_LOAD_STORAGE:
 	case I915_IR_STORE_STORAGE:
 		i915_compile_storage(state, inst, payload_inputs);
+		break;
+
+	case I915_IR_LOAD_SYSTEM:
+		i915_compile_load_system(state, inst, payload_inputs);
+		break;
+
+	case I915_IR_ATOMIC:
+		i915_compile_atomic(state, inst, payload_inputs);
+		break;
+
+	case I915_IR_STORAGE_SIZE:
+		i915_compile_storage_size(state, inst, payload_inputs);
 		break;
 
 	case I915_IR_STORE_OUTPUT:
@@ -2173,7 +2206,7 @@ i915_compile_storage(
 	high = drv_i915_eu_grf_scalar(push_grf, 4U);
 	high.type = COMPILE_TYPE_UD;
 
-	/* Reads the offset, and for a store the word and its predicate. */
+	/* Reads the offset, for a store the word and its predicate, and a predicated load's predicate. */
 	offset_grf = i915_compile_grf(state, inst->src[0]);
 	data_grf = 0U;
 	predicate_grf = 0U;
@@ -2181,6 +2214,8 @@ i915_compile_storage(
 		data_grf = i915_compile_grf(state, inst->src[1]);
 		if (inst->component != 0U)
 			predicate_grf = i915_compile_grf(state, inst->src[2]);
+	} else if (inst->component != 0U) {
+		predicate_grf = i915_compile_grf(state, inst->src[1]);
 	}
 
 	/* A load's word gets its register. */
@@ -2213,8 +2248,29 @@ i915_compile_storage(
 	interleaved.subnr = 4U;
 	drv_i915_eu_mov(&state->code, interleaved, drv_i915_eu_grf_ud(carry));
 
-	/* A load reads the word into its register. */
-	if (inst->op == I915_IR_LOAD_STORAGE) {
+	/* A predicated load reads where the predicate is not zero; the other channels keep what the register held (ws101-p002). */
+	if (inst->op == I915_IR_LOAD_STORAGE && inst->component != 0U) {
+		null = drv_i915_eu_null();
+		null.type = COMPILE_TYPE_D;
+		drv_i915_eu_cmp(&state->code,
+				I915_EU_COND_NE,
+				I915_EU_FLAG_F0_0,
+				0,
+				null,
+				drv_i915_eu_grf_d(predicate_grf),
+				drv_i915_eu_imm_d(0U));
+		drv_i915_eu_send_masked(&state->code,
+					I915_EU_FLAG_F0_0,
+					drv_i915_eu_grf(dst),
+					drv_i915_eu_grf(payload),
+					drv_i915_eu_null(),
+					COMPILE_SFID_DATA_CACHE_1,
+					COMPILE_DESC_A64_READ,
+					0U,
+					0,
+					0);
+	} else if (inst->op == I915_IR_LOAD_STORAGE) {
+		/* A load reads the word into its register. */
 		drv_i915_eu_send(&state->code,
 				 drv_i915_eu_grf(dst),
 				 drv_i915_eu_grf(payload),
@@ -3601,6 +3657,7 @@ i915_compile_skip_region(
 	uint32_t index;
 	uint32_t value;
 	uint32_t results;
+	uint32_t operands;
 	int known;
 	int clean;
 	int word;
@@ -3651,6 +3708,19 @@ i915_compile_skip_region(
 				return 0;
 		}
 
+		/* So must an atomic, whose predicate is its last source (ws101-p002). */
+		if (inst->op == I915_IR_ATOMIC) {
+			if (inst->component == 0U)
+				return 0;
+			operands = i915_compile_operands(inst);
+			known = i915_compile_bool_table(state, inst->src[operands - 1U], table, 0U);
+			if (!known)
+				return 0;
+			clean = i915_compile_table_within(table, inside);
+			if (!clean)
+				return 0;
+		}
+
 		/* Marks what it makes as garbage on every channel. */
 		results = i915_compile_results(inst);
 		for (value = inst->dst; results != 0U && value < ir->value_count; value++, results--) {
@@ -3677,6 +3747,7 @@ i915_compile_skip_region(
 		if (!clean &&
 		    (inst->op == I915_IR_STORE_OUTPUT ||
 		     inst->op == I915_IR_STORE_STORAGE ||
+		     inst->op == I915_IR_ATOMIC ||
 		     inst->op == I915_IR_KILL ||
 		     inst->op == I915_IR_MOVE ||
 		     inst->op == I915_IR_LOOP_END ||
@@ -4210,9 +4281,15 @@ i915_compile_interface(
 	if (state->ir->stage == I915_STAGE_FRAGMENT)
 		i915_compile_fragment_payload(state);
 
-	/* Finds where the payload ends: four registers to an attribute, two to an interpolated input. */
+	/* A compute thread's payload is its header, its push data and its per-thread IDs. */
+	if (state->ir->stage == I915_STAGE_COMPUTE)
+		i915_compile_compute_interface(state);
+
+	/* Finds where the payload ends: four registers to an attribute, two to an interpolated input, the IDs of a compute thread. */
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		payload_end = COMPILE_PAYLOAD_GRF + state->push_regs + 4U * state->input_count;
+	} else if (state->ir->stage == I915_STAGE_COMPUTE) {
+		payload_end = COMPILE_CS_PUSH_GRF + state->push_regs + I915_SHADER_PER_THREAD_REGS;
 	} else {
 		payload_end = state->fs_setup_grf + state->push_regs + 2U * state->input_count;
 	}
@@ -4367,6 +4444,10 @@ i915_compile_prologue(
 	if (state->header_grf != COMPILE_NO_GRF)
 		i915_compile_scratch_header(state);
 
+	/* A compute shader has no output to fill: it writes memory only. */
+	if (state->ir->stage == I915_STAGE_COMPUTE)
+		return;
+
 	/* A fragment shader's colours start as zeros. */
 	if (state->ir->stage != I915_STAGE_VERTEX) {
 		outputs = i915_compile_fs_outputs(state);
@@ -4413,6 +4494,12 @@ i915_compile_terminate(
 
 	/* Emits into the shader's encoder buffer. */
 	code = &state->code;
+
+	/* A compute thread only retires. */
+	if (state->ir->stage == I915_STAGE_COMPUTE) {
+		i915_compile_terminate_compute(state);
+		return;
+	}
 
 	/* A vertex shader writes its VUE, staged or gathered. */
 	if (state->ir->stage == I915_STAGE_VERTEX && state->late_vue != 0) {
@@ -4729,11 +4816,13 @@ i915_compile_describe(
 	if (state->writes_point_size != 0)
 		binary->writes_point_size = 1U;
 
-	/* A vertex shader passes its varyings on; a fragment shader's varyings are its inputs. */
+	/* A vertex shader passes its varyings on; a fragment shader's varyings are its inputs; a compute shader has a workgroup. */
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		binary->varying_count = state->varying_count;
 		kern_memcpy(binary->varying_locations, state->varyings, sizeof(state->varyings));
 		binary->dispatch_grf_start = COMPILE_PAYLOAD_GRF;
+	} else if (state->ir->stage == I915_STAGE_COMPUTE) {
+		i915_compile_describe_compute(state, binary);
 	} else {
 		binary->varying_count = state->input_count;
 		binary->dispatch_grf_start = state->fs_setup_grf;
@@ -4747,3 +4836,6 @@ i915_compile_describe(
 	if (state->uses_w != 0)
 		binary->uses_source_w = 1U;
 }
+
+/* The compute part of the code generator (ws101-p002). */
+#include "compile-compute.inc"

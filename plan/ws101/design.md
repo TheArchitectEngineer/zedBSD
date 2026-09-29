@@ -118,7 +118,8 @@ r0            header（WorkgroupID: r0.1 x、r0.6 y、r0.7 z。barrier ID: r0.2[
 r1 .. rC      cross-thread の push data（C register）:
                 push constants（push_constant_bytes、register 単位）、
                 uniform block の写しと storage buffer の address（1 buffer 1 register: dword 0〜1 address、dword 2 range）、
-                最後に system の 1 register（dword 0〜1: NumWorkgroups の 3 word の置き場所の 64 bit の address。使うときだけ）
+                gl_NumWorkGroups を読む shader では、set が I915_IR_SYSTEM_SET の「system の storage buffer」の address の register
+                （p002 で確定: 独立の system の register は作らず、storage buffer の 1 つとして block の並びに入る）
 rC+1 .. rC+4  per-thread の push（4 register）: LocalInvocationID.x、.y、.z、LocalInvocationIndex（8 channel の dword）
 rC+5 ..       値（今の約束どおり r16 から、payload が r15 を越えるならその後ろから、r95 まで）
 r127          EOT の message（r0 の写し）
@@ -171,6 +172,23 @@ aop（`BRW_AOP_*`）: AND 1、OR 2、XOR 3、MOV 4、INC 5、DEC 6、ADD 7、SUB
 `sync` の function（Mesa の `brw_eu_defines.h` の `tgl_sync_function`: NOP 0、ALLRD 2、ALLWR 3、BAR 0xe。確認済み）も写す。
 新しい命令はすべて `eu.c` の encoder に足し、encoding の header に Mesa の file と sha256 を出典として足す。scoreboard（SWSB）は既存の
 `scoreboard-check.h` で健全性を確かめる（send の dst を読む前の wait、fence の完了待ち）。
+
+### 1.6a p002 の実装で確定したこと（2026-09-30）
+
+- **NumWorkgroups**: parser は set `I915_IR_SYSTEM_SET`（0xFFFFFFFF）・binding 0 の storage buffer を uniform の並びに足し、3 word を
+  `LOAD_STORAGE`（offset 0・4・8、predicate なし）で読む。binary の `blocks[]` に `set == I915_IR_SYSTEM_SET` の address の block として
+  出るので、実行器（p004）はその block に 3 word の置き場所の address を入れる（direct は slot の中、indirect は indirect buffer + offset）。
+- **`LOAD_STORAGE` の predicate** は src[1]（src[0] が offset で、source の番号が連続するため。STORE は src[2] のまま）。compute の stage だけに
+  付ける（graphics の shader の生成は変えない）。
+- **`ATOMIC`** の応答の有無の flag は IR に持たない。code generator が liveness（dst を読む命令が後にあるか）で決め、応答の bit と rlen を同じ
+  判断から作る。predicate は値の後ろの source（src[2]、CMPXCHG は src[3]）。
+- **`STORAGE_SIZE`**（`OpArrayLength` の range）は storage の address の register の dword 2 を読む。実行器（p004）がそこに range を置く。
+- **WS075 の skip の囲い**（ws075-p023）: `ATOMIC` は `STORE_STORAGE` と同じく「囲いの中では P の下の predicate が要る」「囲いの後で
+  garbage を受けてはならない」の検査に入れた。`BARRIER`（p006）は囲いの中にあれば囲いを断る（飛ぶと GPU が固まる）形で足す。
+- **compute の変更の置き場所**: WS075 と同じ file での衝突を減らすため、`compiler/spirv-compute.inc`・`compiler/compile-compute.inc` に置き、
+  spirv.c・compile.c の末尾から include する（host の試験は .c を include するので、そのまま通る）。
+- **拒否**: Workgroup の変数（p006）、barrier（p006）、image・sampler、spec constant、各軸 128・128・64 と総数 128 を越える workgroup、
+  SubgroupSize などの built-in、順序の semantics を持つ atomic（fence は p006）。
 
 ### 1.7 Gen12 で気をつけること
 
