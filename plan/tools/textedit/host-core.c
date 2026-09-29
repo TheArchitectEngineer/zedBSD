@@ -10,7 +10,7 @@
  * and finding (plan/ws092/design.md section 15), built on Linux with the
  * editor's own sources:
  *
- *   sh plan/ws092/tests/host-core.sh
+ *   sh plan/tools/textedit/host-core.sh
  *
  * Random edits are made both to the gap buffer and to a plain string and
  * compared after each, with the line table checked against the string;
