@@ -41,6 +41,13 @@
 
 #define UNIX_STREAM_CHUNK_SIZE 2048U
 
+/*
+ * The largest listen backlog a unix stream listener keeps: the SOMAXCONN
+ * of the BSDs and Linux, and what libwayland-server asks for.  A desktop
+ * that starts many clients at once fills a smaller one (BUG-108).
+ */
+#define UNIX_LISTEN_BACKLOG_MAX 128
+
 struct unix_pending {
 	struct socket *socket;
 	struct unix_pending *next;
@@ -1036,8 +1043,8 @@ unix_socket_listen(
 	/* Clamps the backlog and records the credential on the first listen. */
 	if (backlog < 1)
 		backlog = 1;
-	if (backlog > 16)
-		backlog = 16;
+	if (backlog > UNIX_LISTEN_BACKLOG_MAX)
+		backlog = UNIX_LISTEN_BACKLOG_MAX;
 	endpoint->backlog = (unsigned)backlog;
 	if (!endpoint->listening) {
 		endpoint->listener_credential = *listener_credential;
@@ -2068,15 +2075,18 @@ unix_connect_resolved(
 	struct unix_connection *connection;
 	struct kern_peercred listener_credential;
 	struct socket *accepted;
+	struct thread *thread;
 	unsigned long irq;
+	uint64_t sequence;
+	int interrupted;
+	int wait_error;
 	int error;
 	struct socket *old;
 
 	client = unix_endpoint(socket);
 	listener = unix_endpoint(listener_socket);
 	accepted = NULL;
-
-	(void)io_flags;
+	thread = thread_current();
 
 	/* Rejects a missing credential. */
 	if (connector_credential == NULL) {
@@ -2122,17 +2132,61 @@ unix_connect_resolved(
 	spin_init(&connection->lock, LOCK_RANK_UNIX_CONNECTION,
 		  "unix connection");
 
-	/* Queues the accepted end at a listener with backlog room. */
+	/*
+	 * Queues the accepted end at a listener with backlog room.  A
+	 * blocking connect to a full backlog waits for an accept to make
+	 * room, as on the BSDs and Linux; a nonblocking one reports EAGAIN.
+	 */
 	error = 0;
 	irq = spin_lock_irqsave(&listener->socket.lock);
 
-	if (!listener->listening) {
-		error = ECONNREFUSED;
-	} else if (!listener->listener_credential_valid) {
-		error = ECONNREFUSED;
-	} else if (listener->pending_count >= listener->backlog) {
-		error = EAGAIN;
-	} else {
+	/* Checks the listener again after every wake-up. */
+	for (;;) {
+		/* A listener that stopped listening refuses the connection. */
+		if (!listener->listening) {
+			error = ECONNREFUSED;
+			break;
+		}
+
+		/* So does one without the credential its peers are given. */
+		if (!listener->listener_credential_valid) {
+			error = ECONNREFUSED;
+			break;
+		}
+
+		/* Room in the backlog lets the connection be queued now. */
+		if (listener->pending_count < listener->backlog)
+			break;
+
+		/* A connect that must not block reports the full backlog. */
+		if ((io_flags & SOCKET_IO_NONBLOCK) != 0 || thread == NULL) {
+			error = EAGAIN;
+			break;
+		}
+
+		/* A signal ends the wait. */
+		interrupted = signal_pending_unblocked(thread);
+		if (interrupted) {
+			error = EINTR;
+			break;
+		}
+
+		/*
+		 * Sleeps on the listener's connect queue, which an accept
+		 * and the listener's close wake; the loop checks again.
+		 */
+		sequence = waitq_sequence(&listener->socket.connect_waitq);
+		wait_error = waitq_sleep(&listener->socket.connect_waitq,
+					 &listener->socket.lock, sequence, 0,
+					 WAITQ_INTERRUPTIBLE);
+		if (wait_error == EINTR) {
+			error = EINTR;
+			break;
+		}
+	}
+
+	/* Publishes the connection on the listener's queue. */
+	if (error == 0) {
 		listener_credential = listener->listener_credential;
 		connection->ends[0] = socket;
 		connection->ends[1] = accepted;
@@ -2262,6 +2316,9 @@ unix_accept(
 		listener->pending_tail = NULL;
 	listener->pending_count--;
 	*result = pending->socket;
+
+	/* Wakes the connects waiting for room in the backlog. */
+	waitq_wake_all(&socket->connect_waitq);
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
@@ -2567,6 +2624,9 @@ unix_endpoint_close(
 	endpoint->pending_count = 0;
 	endpoint->listening = 0;
 	waitq_wake_all(&socket->receive_space_waitq);
+
+	/* Wakes the connects waiting for backlog room, which now fail. */
+	waitq_wake_all(&socket->connect_waitq);
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
