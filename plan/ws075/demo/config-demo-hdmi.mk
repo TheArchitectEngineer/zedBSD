@@ -15,3 +15,7 @@ ZEDBSD_BOOT_EXTRA_LINES ?= display=edp
 # screen and the login cannot be relied on).  The host keys are made at the first start (sshd-start); root takes
 # the password and the guest harness's key (build-demo-image.sh).
 ZEDBSD_USER_PROGRAMS += openssl openssh
+# ws089 (D10, main's permission 2026-09-29): Settings in App Home (plan/ws035/demo/apps.conf), and the sound server
+# its Sound page speaks to (the default rc.conf starts audiod; the kernel here has no HDA driver yet, so audiod finds
+# no device until one is added).
+ZEDBSD_USER_PROGRAMS += settings audiod
