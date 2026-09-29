@@ -196,6 +196,15 @@ void kui_window_redraw(struct kui_window *window);       /* 次の frame で lis
   古さを見る程度の約束（keiland.h の冒頭）では守れない。使い手は in-tree の textedit だけで、同じ Phase・同じ build で移すので許す。
 - Image Viewer・PDF Viewer の app の中の `chooser.c` は、それぞれの app を移す Phase で `kui_file_chooser` に替える。
 - 試験: `plan/tools/keiland/host-chooser.*` は model の試験なので、移した model に合わせて `plan/tools/keiui/` に移す（main の Tools 節も）。
+- p006 で決めたこと: chooser の窓は app の接続の上の `kui_window`（`keiui_window_open_shared`: 自分の queue で global を探し、app の default queue
+  に移す。shm の見せ方。自分の xdg_wm_base を bind して閉じる時に destroy する。BUG-112 の回避の「binding を持ち続ける」は外した）。窓は入力を
+  queue に積んだ後に `wl_display.sync` で chooser を起こす（`keiui_window_set_notify`）。描画は frame callback で間引く。答えは窓を消した後の
+  sync で伝える（今までと同じ）。model（`chooser-model.c`）は選択と scroll を `kui_list`、名前と path を `kui_field` で持ち、view（`chooser-view.c`）
+  が部品の報告と部品の取らなかった key で model を動かす。
+- key の順（p006 で直した）: 部品が要らない key に当たると、その部品はその後の key を取らない。部品の取らなかった一番古い key が app の
+  `KUI_EVENT_KEY` になり、その後の key は次の frame を待つ（「z のあと Enter」が 1 frame に来ても z の選択の後に Enter が開く）。
+- `KUI_HIT_TOUCHED`・`KUI_LIST_TOUCHED`（KUI_VERSION 5）: 指の tap での click（chooser の folder は 1 回の tap で入る）。
+- Text Editor の dialog は `kui_dialog`、message は `kui_chip`（Ln/Col の status の chip は今のまま）。dialog の間は pointer と key を `kui_ui` に渡す。
 
 ## 8. 版（version）
 

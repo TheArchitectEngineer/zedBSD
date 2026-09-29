@@ -39,8 +39,12 @@
 /* How often frames are drawn while the fingers or the view's scroll move, in milliseconds. */
 #define MAIN_FRAME_MS		16
 
-/* The text view's id among the parts the fingers' input records. */
+/* The text view's id among the parts the fingers' input records, and the dialog's (libkeiui's kui_dialog). */
 #define MAIN_TEXT_REGION	1U
+#define MAIN_DIALOG		2U
+
+/* How far above the card's bottom a message's chip stands. */
+#define MAIN_CHIP_BOTTOM	42
 
 /* How many frames in a row may find the swapchain out of date before the program gives up. */
 #define MAIN_STALE_LIMIT	8U
@@ -126,19 +130,23 @@ static uint32_t *main_pixels;
 /* The canvas over main_pixels, which the editor draws each frame into. */
 static struct te_canvas main_canvas;
 
-/* libkeiui's canvas over the same pixels, which the text view's handles are drawn with (made with main_canvas). */
+/* libkeiui's canvas over the same pixels, which the text view's handles, a message's chip and a dialog are drawn with (made with main_canvas). */
 static struct kui_canvas main_handles;
 static int main_handles_made;
+
+/* The interface's font as libkeiui's text, for the chip and the dialog (open when main_widgets_text is 1). */
+static struct kui_text main_widgets;
+static int main_widgets_text;
 
 /* The title the window shows now, to set it again only when it changes. */
 static char main_title[MAIN_TITLE_MAX];
 
 /*
- * The file chooser open for Open or Save As (libkeiland's), or NULL.  It
+ * The file chooser open for Open or Save As (libkeiui's), or NULL.  It
  * is destroyed when it answers, and by the main loop when the editor stops
  * waiting for it (Quit while it is open).
  */
-static struct keiland_file_chooser *main_chooser;
+static struct kui_file_chooser *main_chooser;
 
 /* The interface's font, which the chooser draws its words with too. */
 static const char *main_ui_font;
@@ -147,7 +155,7 @@ static const char *main_ui_font;
  * The filters the chooser offers: the kinds of files that are plain text,
  * and every file.
  */
-static const struct keiland_file_filter main_filters[] = {
+static const struct kui_file_filter main_filters[] = {
 	{ "Text Files", "txt text md markdown rst c h cc cpp hpp py sh mk conf cfg ini json xml html css js log csv tsv yaml yml toml" },
 	{ "All Files", NULL }
 };
@@ -157,6 +165,7 @@ static const char *main_value(const char *argument, const char *name);
 static int main_number(const char *text, unsigned maximum, unsigned *value);
 static int main_loop(const struct main_options *options);
 static int main_frame(void);
+static void main_overlay(uint64_t now_us);
 static int main_canvas_make(void);
 static void main_state(struct te_state *state);
 static void main_title_refresh(void);
@@ -171,8 +180,9 @@ static void main_find_focus(void *data);
 static int main_choose(void *data, int saving, const char *folder, const char *name);
 static void main_window_event(const struct kui_window_event *event);
 static void main_fingers(uint64_t now_us);
+static int main_dialog_event(const struct kui_window_event *event);
 static int main_resize(void);
-static void main_chosen(void *data, struct keiland_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+static void main_chosen(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 
 /*
  * Runs Text Editor.
@@ -202,6 +212,11 @@ main(
 	error = te_text_open(&main_ui, options.ui_font, options.fallback);
 	if (error != 0)
 		te_log("FONT missing path=%s error=%d", options.ui_font, error);
+
+	/* The chip and the dialog draw with it too, as libkeiui's text. */
+	error = kui_text_open(&main_widgets, options.ui_font, options.fallback);
+	if (error == 0)
+		main_widgets_text = 1;
 
 	/* The chooser draws with the interface's font. */
 	main_ui_font = options.ui_font;
@@ -263,7 +278,7 @@ main(
 	status = main_loop(&options);
 
 	/* Everything goes, the chooser, the titlebar, the menus and the editor before the window they belong to. */
-	keiland_file_chooser_destroy(main_chooser);
+	kui_file_chooser_destroy(main_chooser);
 	main_chooser = NULL;
 	te_titlebar_close(&main_titlebar);
 	te_menu_close(&main_menu);
@@ -276,6 +291,8 @@ main(
 	kui_window_close(main_window.kui);
 	te_text_close(&main_ui);
 	te_text_close(&main_body);
+	if (main_widgets_text)
+		kui_text_close(&main_widgets);
 
 	/* Reports how the run ended. */
 	if (status != 0)
@@ -536,7 +553,7 @@ main_loop(
 
 		/* A chooser the editor no longer waits for (Quit came meanwhile) closes. */
 		if (main_chooser != NULL && !main_app.choosing) {
-			keiland_file_chooser_destroy(main_chooser);
+			kui_file_chooser_destroy(main_chooser);
 			main_chooser = NULL;
 		}
 
@@ -608,6 +625,9 @@ main_frame(void)
 		kui_text_touch_draw_handles(&main_app.touch, &main_handles, (double)text.x - main_app.scroll_x, (double)text.y - main_app.scroll_y, kui_theme_default());
 		kui_canvas_clip_pop(&main_handles);
 
+		/* A message's chip and a dialog over it all. */
+		main_overlay(kui_clock_us());
+
 		/* Its glass card, and the frame shown in the window. */
 		te_glass_refresh(&main_glass, &main_app);
 		status = kui_window_present(main_window.kui, main_pixels, (size_t)main_width);
@@ -629,6 +649,61 @@ main_frame(void)
 	/* The swapchain stayed out of date. */
 	fprintf(stderr, "TEXTEDIT FAILED operation=stale-swapchain\n");
 	return -1;
+}
+
+/* Draws a message's chip and the dialog shown (libkeiui's), and carries out the dialog's answer. */
+static void
+main_overlay(
+	uint64_t now_us)
+{
+	struct kui_style style;
+	struct kui_event event;
+	struct kui_rect area;
+	struct te_rect card;
+	const char *const *labels;
+	const char *words;
+	char title[TE_PATH_MAX + 64];
+	int answer;
+	int count;
+	int taken;
+
+	/* Without the interface's text, the words cannot be drawn. */
+	if (!main_widgets_text)
+		return;
+
+	/* The widgets draw over the frame, on the window's card. */
+	style.canvas = &main_handles;
+	style.text = &main_widgets;
+	style.theme = kui_theme_default();
+	style.glass = main_app.glass;
+	te_app_card(&main_app, &card);
+	area.x = card.x;
+	area.y = card.y;
+	area.width = card.width;
+	area.height = card.height;
+
+	/* A message, at the bottom middle of the card. */
+	if (main_app.message[0] != '\0')
+		kui_chip(&style, card.x + card.width / 2, card.y + card.height - MAIN_CHIP_BOTTOM, main_app.message);
+
+	/* The dialog, a frame of the fingers' and the pointer's input of its own. */
+	if (main_app.dialog == TE_DIALOG_NONE || main_input == NULL)
+		return;
+	te_app_dialog_words(&main_app, title, sizeof(title), &words, &labels, &count);
+	kui_ui_begin(main_input, now_us);
+	answer = kui_dialog(main_input, &style, MAIN_DIALOG, &area, title, words, labels, count);
+	main_moving = kui_ui_end(main_input, now_us);
+
+	/* What no part took under a dialog is nothing. */
+	for (;;) {
+		taken = kui_ui_take(main_input, &event);
+		if (taken == 0)
+			break;
+	}
+
+	/* The answer: the dialog closes and its button is carried out (the next frame shows it). */
+	if (answer >= 0)
+		te_app_dialog_choose(&main_app, answer);
 }
 
 /* Remakes the presenter at the window's size, with a canvas to match; nonzero when it cannot. */
@@ -877,22 +952,22 @@ main_choose(
 	const char *folder,
 	const char *name)
 {
-	struct keiland_file_chooser_options options;
-	static const struct keiland_file_chooser_listener listener = {
+	struct kui_file_chooser_options options;
+	static const struct kui_file_chooser_listener listener = {
 		main_chosen
 	};
 	struct te_window *window;
 
 	/* A chooser left open goes first (one at a time). */
 	window = data;
-	keiland_file_chooser_destroy(main_chooser);
+	kui_file_chooser_destroy(main_chooser);
 	main_chooser = NULL;
 
 	/* Open or Save As, at the document's folder, with the text files shown first. */
 	memset(&options, 0, sizeof(options));
-	options.mode = KEILAND_FILE_CHOOSER_OPEN;
+	options.mode = KUI_FILE_CHOOSER_OPEN;
 	if (saving) {
-		options.mode = KEILAND_FILE_CHOOSER_SAVE;
+		options.mode = KUI_FILE_CHOOSER_SAVE;
 		options.name = name;
 	}
 
@@ -905,7 +980,7 @@ main_choose(
 	options.font = main_ui_font;
 
 	/* The chooser's window over the editor's. */
-	main_chooser = keiland_file_chooser_open(kui_window_display(window->kui), kui_window_toplevel(window->kui), &options, &listener, window);
+	main_chooser = kui_file_chooser_open(kui_window_display(window->kui), kui_window_toplevel(window->kui), &options, &listener, window);
 	if (main_chooser == NULL)
 		return errno;
 
@@ -917,7 +992,7 @@ main_choose(
 static void
 main_chosen(
 	void *data,
-	struct keiland_file_chooser *chooser,
+	struct kui_file_chooser *chooser,
 	unsigned result,
 	const char *path,
 	size_t filter)
@@ -929,7 +1004,7 @@ main_chosen(
 	event = te_window_push(data, TE_EVENT_CHOSEN);
 	if (event != NULL) {
 		event->text[0] = '\0';
-		if (result == KEILAND_FILE_CHOOSER_CHOSEN)
+		if (result == KUI_FILE_CHOOSER_CHOSEN)
 			snprintf(event->text, sizeof(event->text), "%s", path);
 	}
 
@@ -937,7 +1012,7 @@ main_chosen(
 	te_log("CHOSEN result=%u path=%s", result, path);
 
 	/* The chooser is spent. */
-	keiland_file_chooser_destroy(chooser);
+	kui_file_chooser_destroy(chooser);
 	if (chooser == main_chooser)
 		main_chooser = NULL;
 }
@@ -952,11 +1027,19 @@ main_window_event(
 	const struct kui_window_event *event)
 {
 	struct te_event *input;
+	int main_dialog_input;
 
 	/* Every input carries the pointer's place and the modifiers (the same bits as the editor's). */
 	main_window.pointer_x = (int)event->x;
 	main_window.pointer_y = (int)event->y;
 	main_window.modifiers = event->modifiers;
+
+	/* A dialog takes the pointer and the keys (libkeiui's). */
+	main_dialog_input = 0;
+	if (main_app.dialog != TE_DIALOG_NONE && main_input != NULL)
+		main_dialog_input = main_dialog_event(event);
+	if (main_dialog_input)
+		return;
 
 	/* What it is. */
 	switch (event->kind) {
@@ -1028,6 +1111,39 @@ main_window_event(
 	}
 }
 
+/* Gives the pointer's and the keys' input to a dialog shown; 1 when it took it. */
+static int
+main_dialog_event(
+	const struct kui_window_event *event)
+{
+	/* What it is. */
+	switch (event->kind) {
+	case KUI_WINDOW_MOTION:
+		(void)kui_ui_pointer_motion(main_input, event->x, event->y);
+		break;
+	case KUI_WINDOW_LEAVE:
+		(void)kui_ui_pointer_leave(main_input);
+		break;
+	case KUI_WINDOW_BUTTON:
+		/* The main button only. */
+		(void)kui_ui_pointer_motion(main_input, event->x, event->y);
+		if (event->code == KUI_BUTTON_LEFT)
+			(void)kui_ui_pointer_button(main_input, event->pressed, event->arrival_us);
+		break;
+	case KUI_WINDOW_KEY:
+		(void)kui_ui_key(main_input, event->code, event->pressed, event->modifiers);
+		break;
+	case KUI_WINDOW_AXIS:
+		break;
+	default:
+		return 0;
+	}
+
+	/* Succeeded: the dialog is drawn again with it. */
+	main_app.dirty = 1;
+	return 1;
+}
+
 /*
  * Moves the fingers' input on to a time: the text view is recorded (unless
  * a dialog or the chooser covers it), the fingers' selection and context
@@ -1049,6 +1165,10 @@ main_fingers(
 		main_moving = te_app_sync_scroll(&main_app, now_us);
 		return;
 	}
+
+	/* A dialog records its own frame of the input (main_overlay). */
+	if (main_app.dialog != TE_DIALOG_NONE)
+		return;
 
 	/* The frame of the fingers' input: the text view, when nothing covers it. */
 	kui_ui_begin(main_input, now_us);

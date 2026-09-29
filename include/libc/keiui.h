@@ -47,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls). */
-#define KUI_VERSION	4U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows). */
+#define KUI_VERSION	5U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -548,6 +548,7 @@ struct kui_ui;
 #define KUI_HIT_CLICKED	4U	/* pressed and released on it since the last frame */
 #define KUI_HIT_DOUBLE		8U	/* the click was the second of a double click or tap */
 #define KUI_HIT_FOCUSED	16U	/* it has the keyboard's focus (a widget that takes the keyboard) */
+#define KUI_HIT_TOUCHED	32U	/* KUI_VERSION 5: the click was a finger's tap */
 
 /* The input no part took. */
 #define KUI_EVENT_PRESS		1U
@@ -757,6 +758,7 @@ struct kui_style {
 /* What a list reports (bits). */
 #define KUI_LIST_SELECTED	1U
 #define KUI_LIST_ACTIVATED	2U
+#define KUI_LIST_TOUCHED	4U	/* KUI_VERSION 5: the row was chosen by a finger's tap */
 
 /* The longest text a field holds, with its NUL. */
 #define KUI_FIELD_MAX		512U
@@ -813,6 +815,100 @@ int kui_header(const struct kui_style *style, int x, int y, int width, const cha
 int kui_dialog(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *area, const char *title, const char *body, const char *const *labels, int count);
 void kui_chip(const struct kui_style *style, int centre_x, int bottom, const char *message);
 void kui_progress(const struct kui_style *style, const struct kui_rect *rect, double fraction, uint64_t now_us);
+
+/*
+ * The file chooser (KUI_VERSION 5; libkeiland's keiland_file_chooser of
+ * KEILAND_VERSION 12, moved here by ws090-p006 and made of the widgets):
+ * the Open and Save As window every application shares.  It shows the
+ * folders and files of a folder, the sidebar's places (Recent, Home and
+ * its usual folders, Computer), the filter chosen, and in Save mode takes
+ * a name and asks before a file is replaced.  The answer comes once,
+ * through the listener, while the application dispatches its default
+ * Wayland queue; the application then destroys the chooser.  The
+ * application keeps running meanwhile, and should take no input of its
+ * own until the answer comes.
+ *
+ * The chooser is a window of its own on the application's connection, with
+ * its own wl_seat objects.  Wayland sends a client's pointer, keyboard and
+ * touch events to all of its objects of a seat, so an application ignores
+ * the enter, key and touch events of surfaces that are not its own (as
+ * kui_window does).
+ */
+struct kui_file_chooser;
+
+/* What the chooser asks for: an existing file to open, or a folder and a name to save as. */
+#define KUI_FILE_CHOOSER_OPEN		0U
+#define KUI_FILE_CHOOSER_SAVE		1U
+
+/* How it ended: a path was chosen, or the user cancelled. */
+#define KUI_FILE_CHOOSER_CHOSEN		0U
+#define KUI_FILE_CHOOSER_CANCELLED	1U
+
+/* The most filters one chooser offers. */
+#define KUI_FILE_CHOOSER_FILTERS_MAX	16U
+
+/*
+ * One filter: the label it is shown by, and the file name extensions it
+ * shows, separated by spaces and without their dots ("txt md c h"),
+ * compared without regard to case.  NULL or empty extensions show every
+ * file.  Folders are always shown.
+ */
+struct kui_file_filter {
+	const char *label;
+	const char *extensions;
+};
+
+/*
+ * What a chooser starts with.  Any pointer may be NULL.
+ *
+ * mode: KUI_FILE_CHOOSER_OPEN or _SAVE.  title: the window's title ("Open"
+ * or "Save As" when NULL).  application: the app_id the window gets, so
+ * that zdesktop shows it as the application's.  folder: where it starts
+ * (the home folder when NULL or not a folder).  name: the name Save starts
+ * with, selected up to its extension.  filters, filter_count and filter:
+ * the filters offered (at most KUI_FILE_CHOOSER_FILTERS_MAX) and the one
+ * chosen first; without filters every file is shown.  font and
+ * fallback_font: the interface's font and the one for characters it lacks
+ * (the system's when NULL).
+ */
+struct kui_file_chooser_options {
+	unsigned mode;
+	const char *title;
+	const char *application;
+	const char *folder;
+	const char *name;
+	const struct kui_file_filter *filters;
+	size_t filter_count;
+	size_t filter;
+	const char *font;
+	const char *fallback_font;
+};
+
+/*
+ * What a chooser tells the application, once and last: how it ended
+ * (KUI_FILE_CHOOSER_*), the absolute path chosen (empty when cancelled),
+ * and the filter chosen last.  In Save mode the user has already agreed to
+ * replace a file that exists.  The chooser's window is closed by then; the
+ * application destroys the chooser, from the callback or later.
+ */
+struct kui_file_chooser_listener {
+	void (*done)(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+};
+
+/*
+ * Opens a file chooser over an application's window (parent may be NULL)
+ * on the application's connection.
+ *
+ * Returns NULL with errno set: EINVAL (an unknown mode, too many filters,
+ * a filter number past them, no listener), ENOTSUP (a compositor without
+ * wl_shm or xdg_wm_base), an errno value of opening the font, ENOMEM.
+ */
+struct kui_file_chooser *kui_file_chooser_open(struct wl_display *display, struct xdg_toplevel *parent, const struct kui_file_chooser_options *options, const struct kui_file_chooser_listener *listener, void *data);
+
+/*
+ * Closes a chooser; one still open closes without telling.
+ */
+void kui_file_chooser_destroy(struct kui_file_chooser *chooser);
 
 #ifdef __cplusplus
 }

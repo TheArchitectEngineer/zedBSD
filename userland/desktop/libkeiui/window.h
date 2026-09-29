@@ -103,8 +103,9 @@ struct keiui_present {
 	unsigned wait_ms;
 };
 
-/* One wl_shm buffer: the pixels mapped, their size, and whether the compositor still reads it. */
+/* One wl_shm buffer: its window, the pixels mapped, their size, and whether the compositor still reads it. */
 struct keiui_shm_buffer {
+	struct kui_window *window;
 	struct wl_buffer *buffer;
 	uint32_t *pixels;
 	size_t size;
@@ -211,7 +212,24 @@ struct kui_window {
 	int primary_pending_text;
 	char *primary_text;
 	size_t primary_length;
+
+	/*
+	 * A window on another's connection (a file chooser's, ws090-p006): the
+	 * connection is the application's and stays open, and the owner hears
+	 * of queued input and of a buffer given back from a wl_display.sync
+	 * after the events that queued it (notify, its data, and the sync
+	 * asked for).
+	 */
+	int shared;
+	void (*notify)(void *data);
+	void *notify_data;
+	struct wl_callback *notify_sync;
 };
+
+/* A window on the application's connection, and its owner's wake-up (window.c). */
+struct kui_window *keiui_window_open_shared(struct wl_display *display, struct xdg_toplevel *parent, const struct kui_window_options *options, uint32_t min_width, uint32_t min_height);
+void keiui_window_set_notify(struct kui_window *window, void (*notify)(void *data), void *data);
+void keiui_window_wake(struct kui_window *window);
 
 /* The window's clock in milliseconds (window.c). */
 uint64_t keiui_clock_ms(void);
