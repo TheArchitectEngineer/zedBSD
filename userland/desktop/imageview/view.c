@@ -163,20 +163,24 @@ iv_app_open(
 		return error;
 	}
 
-	/* A folder shows its first image; a folder without one says so. */
+	/* Whether the path is a folder, which shows its first image. */
 	is_folder = 0;
 	error = stat(path, &status);
 	if (error == 0)
 		is_folder = S_ISDIR(status.st_mode);
+
+	/* A folder without images says so. */
 	if (is_folder && app->folder.count == 0) {
 		iv_app_message(app, "There are no images in that folder.", VIEW_MESSAGE_MS);
 		iv_log("OPEN empty folder=%s", path);
 		return ENOENT;
 	}
 
-	/* The neighbours of whatever was shown go; the image is decoded now. */
+	/* The neighbours of whatever was shown go. */
 	view_free_image(&app->previous);
 	view_free_image(&app->next);
+
+	/* The image is decoded now: a folder's first, or the file (a failure is shown with its reason). */
 	if (is_folder) {
 		image = view_decode(app, app->folder.index);
 	} else {
@@ -191,8 +195,10 @@ iv_app_open(
 		return ENOMEM;
 	}
 
-	/* Succeeded: the image is shown (or why it cannot be). */
+	/* The image replaces whatever was shown. */
 	view_show(app, image, 0);
+
+	/* Succeeded: the image is shown (or why it cannot be). */
 	return 0;
 }
 
@@ -281,7 +287,9 @@ iv_app_fit_scale(
 	double scale;
 
 	/* Without an image to show, the scale does not matter. */
-	if (!app->has_image || app->current == NULL || app->current->width <= 0)
+	if (!app->has_image ||
+	    app->current == NULL ||
+	    app->current->width <= 0)
 		return 1.0;
 
 	/* The turned image's size. */
@@ -459,7 +467,9 @@ iv_app_zoom_at(
 	double from_y;
 
 	/* Nothing to zoom without an image to show. */
-	if (!app->has_image || app->current == NULL || app->current->error != 0)
+	if (!app->has_image ||
+	    app->current == NULL ||
+	    app->current->error != 0)
 		return;
 
 	/* The place under the point, and where the view is now. */
@@ -540,8 +550,11 @@ iv_app_swipe_end(
 		fast = 1;
 
 	/* Which way it went: the swipe's side, or the fling's when it went fast but not far. */
-	if (may_turn && (far || fast)) {
-		if (app->swipe < 0.0 || (!far && velocity < 0.0))
+	if (may_turn &&
+	    (far || fast)) {
+		/* Leftward goes on to the next image, rightward back to the previous one. */
+		if (app->swipe < 0.0 ||
+		    (!far && velocity < 0.0))
 			direction = 1;
 		else
 			direction = -1;
@@ -594,7 +607,10 @@ iv_app_quad(
 	/* Nothing drawn without an image that can be shown. */
 	memset(quad, 0, sizeof(*quad));
 	image = app->current;
-	if (!app->has_image || image == NULL || image->error != 0 || image->level_count == 0)
+	if (!app->has_image ||
+	    image == NULL ||
+	    image->error != 0 ||
+	    image->level_count == 0)
 		return;
 
 	/* The content's rectangle, moved by a swipe. */
@@ -881,22 +897,31 @@ iv_app_action(
 		view_step(app, 1);
 		break;
 	case IV_ACTION_FIRST:
+		/* The first image of the folder, when it has any. */
 		if (app->folder.count != 0)
 			view_go(app, 0);
 		break;
 	case IV_ACTION_LAST:
+		/* The last image of the folder, when it has any. */
 		if (app->folder.count != 0)
 			view_go(app, app->folder.count - 1U);
 		break;
 	case IV_ACTION_PLAY:
 		/* Only an animated image plays and pauses. */
-		if (app->has_image && app->current != NULL && app->current->frame_count > 1U) {
-			app->playing = !app->playing;
-			app->frame_due = app->now + app->current->delays[app->frame];
-			if (app->playing)
-				iv_app_message(app, "Playing", 1200U);
-			else
+		if (app->has_image &&
+		    app->current != NULL &&
+		    app->current->frame_count > 1U) {
+			/* Playing pauses and pausing plays, saying which. */
+			if (app->playing) {
+				app->playing = 0;
 				iv_app_message(app, "Paused", 1200U);
+			} else {
+				app->playing = 1;
+				iv_app_message(app, "Playing", 1200U);
+			}
+
+			/* The frame shown next is due a delay from now. */
+			app->frame_due = app->now + app->current->delays[app->frame];
 		}
 
 		break;
@@ -970,7 +995,10 @@ iv_app_tick(
 
 	/* An animated image's next frame, when it is due. */
 	image = app->current;
-	if (app->has_image && image != NULL && image->frame_count > 1U && app->playing) {
+	if (app->has_image &&
+	    image != NULL &&
+	    image->frame_count > 1U &&
+	    app->playing) {
 		if (now >= app->frame_due) {
 			app->frame = (app->frame + 1U) % image->frame_count;
 			app->frame_serial++;
@@ -1074,7 +1102,9 @@ iv_app_toggle_zoom(
 	double closer;
 
 	/* Nothing to zoom without an image to show. */
-	if (!app->has_image || app->current == NULL || app->current->error != 0)
+	if (!app->has_image ||
+	    app->current == NULL ||
+	    app->current->error != 0)
 		return;
 
 	/* Zoomed: back to the fit. */
@@ -1162,12 +1192,20 @@ view_show(
 		app->frame_due = app->now + image->delays[0];
 	}
 
-	/* The chip says what is shown, and the log. */
+	/* The chip says what is shown. */
 	iv_app_show_chip(app);
 	app->dirty = 1;
 	app->ui_dirty = 1;
-	iv_log("SHOW path=%s index=%lu count=%lu width=%d height=%d frames=%lu error=%d", image->path, (unsigned long)app->folder.index,
-	    (unsigned long)app->folder.count, image->file_width, image->file_height, (unsigned long)image->frame_count, image->error);
+
+	/* Logs the image shown, which the tests wait for. */
+	iv_log("SHOW path=%s index=%lu count=%lu width=%d height=%d frames=%lu error=%d",
+	       image->path,
+	       (unsigned long)app->folder.index,
+	       (unsigned long)app->folder.count,
+	       image->file_width,
+	       image->file_height,
+	       (unsigned long)image->frame_count,
+	       image->error);
 }
 
 /* Shows one image of the folder by its place, using a neighbour already decoded when it is the one. */
@@ -1224,9 +1262,11 @@ view_step(
 	struct iv_app *app,
 	int direction)
 {
-	/* Only with images to go through; the folder may have changed since it was read. */
+	/* Only with images to go through. */
 	if (!app->has_image || app->folder.count == 0)
 		return;
+
+	/* The folder may have changed since it was read. */
 	view_refresh_folder(app);
 
 	/* The ends are not passed. */
@@ -1263,10 +1303,12 @@ view_decode(
 	if (error != 0)
 		return NULL;
 
-	/* The image, decoded (or with the reason it could not be). */
+	/* Room for the image. */
 	image = calloc(1, sizeof(*image));
 	if (image == NULL)
 		return NULL;
+
+	/* The image, decoded (or with the reason it could not be, which it carries). */
 	(void)iv_image_load(image, path, app->max_dimension);
 
 	/* Reports the image. */
@@ -1308,6 +1350,8 @@ view_refresh_folder(
 	error = iv_folder_read(&app->folder, app->current->path);
 	if (error != 0)
 		return;
+
+	/* The neighbours are found again from the new list. */
 	view_free_image(&app->previous);
 	view_free_image(&app->next);
 	iv_log("FOLDER reread count=%lu index=%lu", (unsigned long)app->folder.count, (unsigned long)app->folder.index);
@@ -1345,7 +1389,9 @@ view_turn(
 	int step;
 
 	/* Nothing to turn without an image to show. */
-	if (!app->has_image || app->current == NULL || app->current->error != 0)
+	if (!app->has_image ||
+	    app->current == NULL ||
+	    app->current->error != 0)
 		return;
 
 	/* The place in the middle, before the turn. */
@@ -1355,9 +1401,12 @@ view_turn(
 
 	/* Each quarter turns the place with the image (the turned image's width is the height before). */
 	for (step = 0; step < quarters; step++) {
+		/* The height of the image as it is turned now. */
 		height = (double)app->current->height;
 		if ((app->rotation & 1U) != 0)
 			height = (double)app->current->width;
+
+		/* The place a quarter turn clockwise on. */
 		turned.x = height - place.y;
 		turned.y = place.x;
 		place = turned;
@@ -1461,7 +1510,7 @@ view_min_scale(
 {
 	double fit;
 
-	/* A share of the fit, but no image's pixel smaller than it would be fitted to a tiny window. */
+	/* The fit, which the zoom springs back to when it is let go below it. */
 	fit = iv_app_fit_scale(app);
 
 	/* Reports the share of the fit. */
@@ -1481,6 +1530,8 @@ view_key(
 	/* Only presses (and repeats) do anything; each is logged for the tests. */
 	if (!event->pressed)
 		return;
+
+	/* Logs the key for the tests. */
 	iv_log("KEY key=%u modifiers=%u repeat=%d time=%llu", event->key, event->modifiers, event->repeat, (unsigned long long)event->time);
 
 	/*
@@ -1499,21 +1550,30 @@ view_key(
 		return;
 	}
 
-	/* The modifiers held. */
-	control = (event->modifiers & IV_MOD_CTRL) != 0;
-	shift = (event->modifiers & IV_MOD_SHIFT) != 0;
+	/* Whether Ctrl is held, which the file's keys need. */
+	control = 0;
+	if ((event->modifiers & IV_MOD_CTRL) != 0)
+		control = 1;
+
+	/* Whether Shift is held, which turns the other way. */
+	shift = 0;
+	if ((event->modifiers & IV_MOD_SHIFT) != 0)
+		shift = 1;
 
 	/* Each key. */
 	switch (event->key) {
 	case IV_KEY_O:
+		/* Ctrl+O opens the chooser. */
 		if (control)
 			iv_app_action(app, IV_ACTION_OPEN);
 		break;
 	case IV_KEY_W:
+		/* Ctrl+W closes the image. */
 		if (control)
 			iv_app_action(app, IV_ACTION_CLOSE);
 		break;
 	case IV_KEY_Q:
+		/* Ctrl+Q ends the viewer. */
 		if (control)
 			iv_app_action(app, IV_ACTION_QUIT);
 		break;
@@ -1550,7 +1610,9 @@ view_key(
 		break;
 	case IV_KEY_SPACE:
 		/* Space plays an animated image, and goes on otherwise. */
-		if (app->has_image && app->current != NULL && app->current->frame_count > 1U)
+		if (app->has_image &&
+		    app->current != NULL &&
+		    app->current->frame_count > 1U)
 			iv_app_action(app, IV_ACTION_PLAY);
 		else
 			iv_app_action(app, IV_ACTION_NEXT);
@@ -1690,14 +1752,17 @@ view_button(
 	if (!app->has_image) {
 		iv_app_open_button(app, &x, &y, &width, &height);
 		if (event->pressed &&
-		    event->x >= x && event->x < x + width &&
-		    event->y >= y && event->y < y + height)
+		    event->x >= x &&
+		    event->x < x + width &&
+		    event->y >= y &&
+		    event->y < y + height)
 			iv_app_action(app, IV_ACTION_OPEN);
 		return;
 	}
 
 	/* A press starts following the pointer; a second one soon after in the same place is a double click. */
 	if (event->pressed) {
+		/* How far the press is from the last click; soon after and close by, it is a double click. */
 		distance_x = abs(event->x - app->last_click_x);
 		distance_y = abs(event->y - app->last_click_y);
 		if (event->time - app->last_click <= VIEW_DOUBLE_CLICK_MS &&
@@ -1727,12 +1792,15 @@ view_button(
 		return;
 	}
 
-	/* A release ends the drag; a swipe goes to the next image or slides back. */
+	/* Only a release of a press the viewer followed ends anything. */
 	if (!app->pressed)
 		return;
+
+	/* A release ends the drag; a swipe goes to the next image or slides back. */
 	app->pressed = 0;
 	swiping = view_can_swipe(app);
 	if (app->dragging && swiping) {
+		/* A pointer that stopped before it let go flings nothing. */
 		velocity = app->velocity_x;
 		if (event->time - app->last_time > 100U)
 			velocity = 0.0;
@@ -1757,7 +1825,9 @@ view_motion(
 	int swiping;
 
 	/* The pointer moving over an image shows its chip. */
-	if (app->has_image && !app->pressed && !app->chooser_open)
+	if (app->has_image &&
+	    !app->pressed &&
+	    !app->chooser_open)
 		iv_app_show_chip(app);
 
 	/* Nothing more without a press. */
@@ -1767,8 +1837,12 @@ view_motion(
 	/* A press becomes a drag once the pointer has gone a little way. */
 	moved_x = abs(event->x - app->press_x);
 	moved_y = abs(event->y - app->press_y);
-	if (!app->dragging && moved_x < VIEW_DRAG_SLOP && moved_y < VIEW_DRAG_SLOP)
+	if (!app->dragging &&
+	    moved_x < VIEW_DRAG_SLOP &&
+	    moved_y < VIEW_DRAG_SLOP)
 		return;
+
+	/* The press is a drag from now until the release. */
 	app->dragging = 1;
 
 	/* The drag's velocity across, pixels a millisecond. */
@@ -1784,6 +1858,7 @@ view_motion(
 	dy = (double)(event->y - app->press_y);
 	swiping = view_can_swipe(app);
 	if (swiping) {
+		/* The image follows the pointer, a third as far past either end. */
 		app->swipe = dx;
 		if (app->folder.index == 0 && app->swipe > 0.0)
 			app->swipe /= VIEW_SWIPE_RESIST;
@@ -1812,6 +1887,7 @@ view_axis(
 
 	/* The chooser scrolls its list. */
 	if (app->chooser_open) {
+		/* Down moves the selection down the list, up moves it up. */
 		if (event->scroll > 0)
 			chooser_key(app, IV_KEY_DOWN);
 		else if (event->scroll < 0)
@@ -1819,8 +1895,11 @@ view_axis(
 		return;
 	}
 
-	/* Nothing to zoom without an image to show. */
-	if (!app->has_image || app->current == NULL || app->current->error != 0 || event->scroll == 0)
+	/* Nothing to zoom without an image to show, or without a turn of the wheel. */
+	if (!app->has_image ||
+	    app->current == NULL ||
+	    app->current->error != 0 ||
+	    event->scroll == 0)
 		return;
 
 	/* Down zooms out, up zooms in, a step a notch; at the fit's bottom the zoom stops. */
@@ -1828,6 +1907,7 @@ view_axis(
 	target = app->scale * factor;
 	fit = iv_app_fit_scale(app);
 	if (factor < 1.0 && target < fit) {
+		/* A zoomed image goes back to the fit; a fitted one stays. */
 		if (!app->fit)
 			iv_app_action(app, IV_ACTION_FIT);
 		return;
@@ -1864,15 +1944,19 @@ chooser_key(
 	int differs;
 	size_t rows;
 
-	/* Moves the selection, keeping it in view. */
+	/* The chooser and how many rows its card shows. */
 	chooser = &app->chooser;
 	iv_chooser_layout(app, &x, &y, &width, &height, &rows);
+
+	/* Moves the selection, chooses, goes up a folder or closes. */
 	switch (key) {
 	case IV_KEY_UP:
+		/* Up stops at the first entry. */
 		if (chooser->selected > 0)
 			chooser->selected--;
 		break;
 	case IV_KEY_DOWN:
+		/* Down stops at the last entry. */
 		if (chooser->selected + 1 < chooser->count)
 			chooser->selected++;
 		break;
@@ -1884,9 +1968,13 @@ chooser_key(
 		/* The parent folder is the first entry (the root has none). */
 		if (chooser->count == 0)
 			return;
+
+		/* A first entry other than the parent means there is no folder above. */
 		differs = strcmp(chooser->entries[0].name, "..");
 		if (differs != 0)
 			return;
+
+		/* The parent folder is chosen. */
 		chooser->selected = 0;
 		chooser_choose(app);
 		return;
@@ -1898,11 +1986,13 @@ chooser_key(
 		break;
 	}
 
-	/* The selection stays among the rows shown. */
+	/* The selection stays among the rows shown: the first row follows it up or down. */
 	if (chooser->selected < chooser->first)
 		chooser->first = chooser->selected;
 	if (rows > 0 && chooser->selected >= chooser->first + rows)
 		chooser->first = chooser->selected - rows + 1;
+
+	/* The list is drawn again. */
 	app->dirty = 1;
 	app->ui_dirty = 1;
 }
@@ -1934,12 +2024,16 @@ chooser_click(
 		return;
 	}
 
-	/* A click on a row chooses its entry. */
+	/* A click on the header chooses nothing. */
 	if (click_y < y + IV_CHOOSER_HEADER)
 		return;
+
+	/* The row clicked, which must hold an entry. */
 	row = (size_t)((click_y - y - IV_CHOOSER_HEADER) / IV_CHOOSER_ROW);
 	if (row >= rows || app->chooser.first + row >= app->chooser.count)
 		return;
+
+	/* The row's entry is chosen. */
 	app->chooser.selected = app->chooser.first + row;
 	chooser_choose(app);
 }
@@ -1956,6 +2050,8 @@ chooser_choose(
 	/* Nothing to choose in an empty folder. */
 	if (app->chooser.count == 0)
 		return;
+
+	/* The entry selected. */
 	entry = &app->chooser.entries[app->chooser.selected];
 
 	/* The entry's path. */
@@ -1968,6 +2064,8 @@ chooser_choose(
 		error = iv_chooser_open(&app->chooser, path);
 		if (error != 0)
 			iv_app_message(app, "Cannot read that folder.", VIEW_MESSAGE_MS);
+
+		/* The list is drawn again, whichever folder it shows. */
 		app->dirty = 1;
 		app->ui_dirty = 1;
 		return;
@@ -1994,6 +2092,8 @@ open_chooser(
 	folder[0] = '\0';
 	if (app->has_image && app->folder.directory[0] != '\0')
 		snprintf(folder, sizeof(folder), "%s", app->folder.directory);
+
+	/* Without an image, the home folder, or the root without a home. */
 	if (folder[0] == '\0') {
 		home = getenv("HOME");
 		if (home == NULL || home[0] == '\0')
@@ -2005,6 +2105,8 @@ open_chooser(
 	error = iv_chooser_open(&app->chooser, folder);
 	if (error != 0)
 		error = iv_chooser_open(&app->chooser, "/");
+
+	/* Not even the root could be listed. */
 	if (error != 0) {
 		iv_app_message(app, "Cannot list any folder.", VIEW_MESSAGE_MS);
 		return;

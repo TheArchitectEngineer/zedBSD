@@ -188,6 +188,8 @@ iv_present_resize(
 	old = present->swapchain;
 	present->swapchain = VK_NULL_HANDLE;
 	error = present_swapchain(present, width, height, old);
+
+	/* The old chain goes whether or not the new one was made; a chain that was not made fails the resize. */
 	vkDestroySwapchainKHR(present->device, old, NULL);
 	if (error != VK_SUCCESS)
 		return error;
@@ -236,6 +238,7 @@ iv_present_frame(
 	/* The canvas's rows into its image, when they changed (a new canvas image has none yet). */
 	started = iv_clock();
 	if (canvas_changed || present->canvas_ready == 0) {
+		/* Each row, into the image's row as its pitch places it. */
 		for (row = 0; row < present->extent.height; row++)
 			memcpy(present->canvas_map + (size_t)row * present->canvas_pitch, pixels + (size_t)row * stride, (size_t)present->extent.width * 4U);
 	}
@@ -376,6 +379,79 @@ iv_present_close(
 	memset(present, 0, sizeof(*present));
 }
 
+/*
+ * Makes the textures of an image's levels (an animated image: level 0,
+ * whose frames are written with iv_present_set_frame()), replacing those
+ * of the image before.  serial names the image, so that the same one is
+ * not written again.  A NULL image (or one that cannot be shown) leaves
+ * no texture.
+ */
+VkResult
+iv_present_set_image(
+	struct iv_present *present,
+	const struct iv_image *image,
+	unsigned serial)
+{
+	size_t index;
+	VkResult error;
+
+	/* The same image is already there. */
+	if (present->image_serial == serial && present->level_count != 0U)
+		return VK_SUCCESS;
+
+	/* Nothing may still read the old textures. */
+	present->operation = "vkDeviceWaitIdle";
+	error = vkDeviceWaitIdle(present->device);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The old textures go; the new image is the one the textures are of. */
+	present_levels_free(present);
+	present->image_serial = serial;
+
+	/* Nothing to show. */
+	if (image == NULL ||
+	    image->error != 0 ||
+	    image->level_count == 0U)
+		return VK_SUCCESS;
+
+	/* A texture for each level. */
+	for (index = 0; index < image->level_count; index++) {
+		/* The level's texture; a failure leaves no texture at all. */
+		error = present_level(present, &present->levels[index], &image->levels[index]);
+		if (error != VK_SUCCESS) {
+			present_levels_free(present);
+			return error;
+		}
+
+		/* One more level made. */
+		present->level_count = index + 1U;
+	}
+
+	/* Every level has its texture. */
+	present->has_image = 1;
+
+	/* Succeeded: the image can be drawn. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Writes a frame of an animated image into level 0's texture (the frame
+ * shown last has finished, so the host may write it).
+ */
+void
+iv_present_set_frame(
+	struct iv_present *present,
+	const uint32_t *pixels)
+{
+	/* Only an image with its level 0. */
+	if (!present->has_image || present->level_count == 0U)
+		return;
+
+	/* The frame's rows. */
+	present_level_write(&present->levels[0], pixels);
+}
+
 /* Chooses a physical device and a queue family that draws and presents to the surface, and makes the device. */
 static VkResult
 present_device(
@@ -402,7 +478,10 @@ present_device(
 		return error;
 
 	/* The first family of any device that draws and presents to this surface. */
-	for (index = 0U; index < count && present->physical == VK_NULL_HANDLE; index++) {
+	for (index = 0U;
+	     index < count && present->physical == VK_NULL_HANDLE;
+	     index++) {
+		/* The device's queue families (the first sixteen are enough). */
 		family_count = 16U;
 		vkGetPhysicalDeviceQueueFamilyProperties(devices[index], &family_count, families);
 		for (family = 0U; family < family_count; family++) {
@@ -446,8 +525,10 @@ present_device(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: the device and its queue. */
+	/* The device's one queue. */
 	vkGetDeviceQueue(present->device, present->family, 0U, &present->queue);
+
+	/* Succeeded: the device and its queue. */
 	return VK_SUCCESS;
 }
 
@@ -476,6 +557,7 @@ present_swapchain(
 	/* The first of those formats that is 8-bit UNORM. */
 	present->format = VK_FORMAT_UNDEFINED;
 	for (index = 0U; index < count; index++) {
+		/* Either order of the four 8-bit channels will do. */
 		if (formats[index].format == VK_FORMAT_B8G8R8A8_UNORM || formats[index].format == VK_FORMAT_R8G8B8A8_UNORM) {
 			present->format = formats[index].format;
 			break;
@@ -664,14 +746,22 @@ present_targets_free(
 {
 	uint32_t index;
 
-	/* Each image's semaphore, framebuffer and view, where made. */
-	for (index = 0U; present->targets != NULL && index < present->count; index++) {
-		if (present->targets[index].rendered != VK_NULL_HANDLE)
-			vkDestroySemaphore(present->device, present->targets[index].rendered, NULL);
-		if (present->targets[index].framebuffer != VK_NULL_HANDLE)
-			vkDestroyFramebuffer(present->device, present->targets[index].framebuffer, NULL);
-		if (present->targets[index].view != VK_NULL_HANDLE)
-			vkDestroyImageView(present->device, present->targets[index].view, NULL);
+	/* Without a table there is nothing of the images to release. */
+	if (present->targets != NULL) {
+		/* Each image's semaphore, framebuffer and view, where made. */
+		for (index = 0U; index < present->count; index++) {
+			/* The semaphore its present waited for. */
+			if (present->targets[index].rendered != VK_NULL_HANDLE)
+				vkDestroySemaphore(present->device, present->targets[index].rendered, NULL);
+
+			/* The framebuffer over it. */
+			if (present->targets[index].framebuffer != VK_NULL_HANDLE)
+				vkDestroyFramebuffer(present->device, present->targets[index].framebuffer, NULL);
+
+			/* The view of it. */
+			if (present->targets[index].view != VK_NULL_HANDLE)
+				vkDestroyImageView(present->device, present->targets[index].view, NULL);
+		}
 	}
 
 	/* The table itself. */
@@ -749,6 +839,7 @@ present_memory(
 	vkGetPhysicalDeviceMemoryProperties(present->physical, &properties);
 	wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	for (index = 0U; index < properties.memoryTypeCount; index++) {
+		/* A type the resource allows, with every property wanted. */
 		if ((requirements->memoryTypeBits & (1U << index)) != 0U && (properties.memoryTypes[index].propertyFlags & wanted) == wanted)
 			break;
 	}
@@ -1015,6 +1106,8 @@ present_vertices(
 	error = vkMapMemory(present->device, present->vertex_memory, 0U, VK_WHOLE_SIZE, 0U, &map);
 	if (error != VK_SUCCESS)
 		return error;
+
+	/* The canvas's corners, which never change. */
 	present->vertex_map = map;
 	memcpy(present->vertex_map, quad, sizeof(quad));
 
@@ -1074,6 +1167,11 @@ present_pipeline(
 	layout.pPushConstantRanges = &push;
 	present->operation = "vkCreatePipelineLayout";
 	error = vkCreatePipelineLayout(present->device, &layout, NULL, &present->layout);
+	if (error != VK_SUCCESS) {
+		vkDestroyShaderModule(present->device, vertex, NULL);
+		vkDestroyShaderModule(present->device, fragment, NULL);
+		return error;
+	}
 
 	/* The two stages. */
 	memset(stages, 0, sizeof(stages));
@@ -1143,28 +1241,28 @@ present_pipeline(
 	dynamic_state.dynamicStateCount = 2U;
 	dynamic_state.pDynamicStates = dynamic;
 
-	/* The pipeline, when the layout was made. */
-	if (error == VK_SUCCESS) {
-		memset(&pipeline, 0, sizeof(pipeline));
-		pipeline.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-		pipeline.stageCount = 2U;
-		pipeline.pStages = stages;
-		pipeline.pVertexInputState = &input;
-		pipeline.pInputAssemblyState = &assembly;
-		pipeline.pViewportState = &viewport;
-		pipeline.pRasterizationState = &raster;
-		pipeline.pMultisampleState = &multisample;
-		pipeline.pColorBlendState = &blend;
-		pipeline.pDynamicState = &dynamic_state;
-		pipeline.layout = present->layout;
-		pipeline.renderPass = present->pass;
-		present->operation = "vkCreateGraphicsPipelines";
-		error = vkCreateGraphicsPipelines(present->device, VK_NULL_HANDLE, 1U, &pipeline, NULL, &present->pipeline);
-	}
+	/* The pipeline. */
+	memset(&pipeline, 0, sizeof(pipeline));
+	pipeline.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipeline.stageCount = 2U;
+	pipeline.pStages = stages;
+	pipeline.pVertexInputState = &input;
+	pipeline.pInputAssemblyState = &assembly;
+	pipeline.pViewportState = &viewport;
+	pipeline.pRasterizationState = &raster;
+	pipeline.pMultisampleState = &multisample;
+	pipeline.pColorBlendState = &blend;
+	pipeline.pDynamicState = &dynamic_state;
+	pipeline.layout = present->layout;
+	pipeline.renderPass = present->pass;
+	present->operation = "vkCreateGraphicsPipelines";
+	error = vkCreateGraphicsPipelines(present->device, VK_NULL_HANDLE, 1U, &pipeline, NULL, &present->pipeline);
 
-	/* The modules are not needed once the pipeline is made. */
+	/* The modules are not needed once the pipeline is made (or could not be). */
 	vkDestroyShaderModule(present->device, vertex, NULL);
 	vkDestroyShaderModule(present->device, fragment, NULL);
+
+	/* A pipeline that could not be made fails the presenter. */
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -1249,7 +1347,11 @@ present_record(
 
 	/* And to the level drawn, likewise. */
 	level = NULL;
-	if (quad != NULL && quad->visible && present->has_image && quad->level < present->level_count) {
+	if (quad != NULL &&
+	    quad->visible &&
+	    present->has_image &&
+	    quad->level < present->level_count) {
+		/* The level's barrier is the canvas's for another image; a new level leaves its preinitialized layout. */
 		level = &present->levels[quad->level];
 		barriers[1] = barriers[0];
 		barriers[1].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -1296,6 +1398,7 @@ present_record(
 
 	/* The image's quad, within its clip: window pixels divided by the window's size, the level smooth or to the nearest texel. */
 	if (level != NULL) {
+		/* The clip, kept inside the swapchain image. */
 		clip.offset.x = quad->clip_x;
 		clip.offset.y = quad->clip_y;
 		clip.extent.width = (uint32_t)quad->clip_width;
@@ -1309,9 +1412,13 @@ present_record(
 		if ((uint32_t)clip.offset.y + clip.extent.height > present->extent.height)
 			clip.extent.height = present->extent.height - (uint32_t)clip.offset.y;
 		vkCmdSetScissor(present->command, 0U, 1U, &clip);
+
+		/* The level smooth, or to the nearest texel when much enlarged or when the device cannot filter it. */
 		set = level->smooth_set;
 		if (quad->nearest || !present->smooth)
 			set = level->nearest_set;
+
+		/* The quad in window pixels, divided by the window's size. */
 		size[0] = (float)present->extent.width;
 		size[1] = (float)present->extent.height;
 		size[2] = 0.0f;
@@ -1333,72 +1440,6 @@ present_record(
 
 	/* The pass ends with the image ready to present. */
 	vkCmdEndRenderPass(present->command);
-}
-
-/*
- * Makes the textures of an image's levels (an animated image: level 0,
- * whose frames are written with iv_present_set_frame()), replacing those
- * of the image before.  serial names the image, so that the same one is
- * not written again.  A NULL image (or one that cannot be shown) leaves
- * no texture.
- */
-VkResult
-iv_present_set_image(
-	struct iv_present *present,
-	const struct iv_image *image,
-	unsigned serial)
-{
-	size_t index;
-	VkResult error;
-
-	/* The same image is already there. */
-	if (present->image_serial == serial && present->level_count != 0U)
-		return VK_SUCCESS;
-
-	/* Nothing may still read the old textures. */
-	present->operation = "vkDeviceWaitIdle";
-	error = vkDeviceWaitIdle(present->device);
-	if (error != VK_SUCCESS)
-		return error;
-	present_levels_free(present);
-	present->image_serial = serial;
-
-	/* Nothing to show. */
-	if (image == NULL || image->error != 0 || image->level_count == 0U)
-		return VK_SUCCESS;
-
-	/* A texture for each level. */
-	for (index = 0; index < image->level_count; index++) {
-		error = present_level(present, &present->levels[index], &image->levels[index]);
-		if (error != VK_SUCCESS) {
-			present_levels_free(present);
-			return error;
-		}
-
-		/* One more level made. */
-		present->level_count = index + 1U;
-	}
-
-	/* Succeeded: the image can be drawn. */
-	present->has_image = 1;
-	return VK_SUCCESS;
-}
-
-/*
- * Writes a frame of an animated image into level 0's texture (the frame
- * shown last has finished, so the host may write it).
- */
-void
-iv_present_set_frame(
-	struct iv_present *present,
-	const uint32_t *pixels)
-{
-	/* Only an image with its level 0. */
-	if (!present->has_image || present->level_count == 0U)
-		return;
-
-	/* The frame's rows. */
-	present_level_write(&present->levels[0], pixels);
 }
 
 /*
@@ -1501,6 +1542,8 @@ present_level(
 	error = vkAllocateDescriptorSets(present->device, &allocate, sets);
 	if (error != VK_SUCCESS)
 		return error;
+
+	/* The level keeps both sets. */
 	level->smooth_set = sets[0];
 	level->nearest_set = sets[1];
 
@@ -1570,6 +1613,8 @@ present_levels_free(
 			vkDestroyImage(present->device, level->image, NULL);
 		if (level->memory != VK_NULL_HANDLE)
 			vkFreeMemory(present->device, level->memory, NULL);
+
+		/* Nothing of the level is left. */
 		memset(level, 0, sizeof(*level));
 	}
 
@@ -1599,9 +1644,15 @@ present_limits(
 
 	/* The largest linear, sampled image. */
 	present->max_dimension = 4096;
-	error = vkGetPhysicalDeviceImageFormatProperties(present->physical, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_LINEAR,
-	    VK_IMAGE_USAGE_SAMPLED_BIT, 0U, &limits);
+	error = vkGetPhysicalDeviceImageFormatProperties(present->physical,
+							 VK_FORMAT_B8G8R8A8_UNORM,
+							 VK_IMAGE_TYPE_2D,
+							 VK_IMAGE_TILING_LINEAR,
+							 VK_IMAGE_USAGE_SAMPLED_BIT,
+							 0U,
+							 &limits);
 	if (error == VK_SUCCESS) {
+		/* The shorter of the two sides the device allows. */
 		present->max_dimension = (int)limits.maxExtent.width;
 		if ((int)limits.maxExtent.height < present->max_dimension)
 			present->max_dimension = (int)limits.maxExtent.height;
@@ -1630,11 +1681,14 @@ present_image_vertices(
 	unsigned corner;
 
 	/* Nothing drawn, nothing written. */
-	if (quad == NULL || !quad->visible || present->vertex_map == NULL)
+	if (quad == NULL ||
+	    !quad->visible ||
+	    present->vertex_map == NULL)
 		return;
 
 	/* Each of the six vertices after the canvas's. */
 	for (index = 0; index < PRESENT_VERTICES; index++) {
+		/* The corner the vertex is, and its place in the vertex buffer. */
 		corner = corners[index];
 		vertex = present->vertex_map + (PRESENT_VERTICES + index) * PRESENT_VERTEX_FLOATS;
 		vertex[0] = quad->x[corner];

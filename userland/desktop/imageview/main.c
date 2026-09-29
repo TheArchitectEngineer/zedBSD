@@ -286,9 +286,11 @@ main_parse(
 		if (argv[index][0] == '-')
 			return -1;
 
-		/* The file to open, once. */
+		/* A second file refuses the command line. */
 		if (options->file != NULL)
 			return -1;
+
+		/* The file to open. */
 		options->file = argv[index];
 	}
 
@@ -371,24 +373,35 @@ main_loop(
 	status = main_frame();
 	if (status != 0)
 		return -1;
-	iv_log("READY width=%u height=%u glass=%d images=%lu", main_present.extent.width, main_present.extent.height, main_app.glass,
-	    (unsigned long)main_app.folder.count);
+
+	/* Logs that the first frame is shown, which the tests wait for. */
+	iv_log("READY width=%u height=%u glass=%d images=%lu",
+	       main_present.extent.width,
+	       main_present.extent.height,
+	       main_app.glass,
+	       (unsigned long)main_app.folder.count);
 
 	/* Each round: input, time, and a frame when something changed. */
 	started = iv_clock();
 	for (;;) {
-		/* Waits for the compositor, or until something is due. */
+		/* Waits no longer than the viewer's next animation step, frame or fade. */
 		now = iv_clock();
 		timeout = MAIN_IDLE_MS;
 		due = iv_app_tick(&main_app, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
+
+		/* Nor than the next repeat of a key held. */
 		due = iv_window_repeat_wait(&main_window, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
+
+		/* Nor than the fingers' next step (a fling, a long press). */
 		due = iv_touch_tick(&main_touch, &main_app, iv_touch_clock());
 		if (due >= 0 && due < timeout)
 			timeout = due;
+
+		/* A frame already waiting to be drawn does not wait at all. */
 		if (main_app.dirty)
 			timeout = 0;
 
@@ -406,10 +419,12 @@ main_loop(
 			return 0;
 		}
 
-		/* Every input queued (the menus' and the titlebar's choices among them). */
+		/* A key held repeats once the compositor's input is in, so that its release is seen first. */
 		now = iv_clock();
 		main_app.now = now;
 		(void)iv_window_repeat(&main_window, now);
+
+		/* Every input queued (the menus' and the titlebar's choices among them). */
 		for (;;) {
 			taken = iv_window_take(&main_window, &event);
 			if (taken == 0)
@@ -467,6 +482,8 @@ main_loop(
 			status = main_canvas_make();
 			if (status != 0)
 				return -1;
+
+			/* The viewer lays itself out at the new size. */
 			iv_app_resize(&main_app, (int)main_present.extent.width, (int)main_present.extent.height);
 		}
 
@@ -539,6 +556,8 @@ main_frame(void)
 		status = main_canvas_make();
 		if (status != 0)
 			return -1;
+
+		/* The viewer lays itself out at the swapchain's size. */
 		iv_app_resize(&main_app, (int)main_present.extent.width, (int)main_present.extent.height);
 	}
 
@@ -558,10 +577,12 @@ main_image(void)
 	const struct iv_image *image;
 	VkResult result;
 
-	/* The image's levels, once for each image shown. */
+	/* The image shown, if any. */
 	image = NULL;
 	if (main_app.has_image)
 		image = main_app.current;
+
+	/* The image's levels, once for each image shown. */
 	result = iv_present_set_image(&main_present, image, main_app.image_serial);
 	if (result != VK_SUCCESS) {
 		fprintf(stderr, "IMAGEVIEW FAILED operation=%s result=%d\n", main_present.operation, (int)result);
@@ -569,7 +590,9 @@ main_image(void)
 	}
 
 	/* An animated image's frame, when it moved on. */
-	if (image != NULL && image->frame_count > 1U && main_frame_serial != main_app.frame_serial) {
+	if (image != NULL &&
+	    image->frame_count > 1U &&
+	    main_frame_serial != main_app.frame_serial) {
 		iv_present_set_frame(&main_present, image->frames[main_app.frame]);
 		main_frame_serial = main_app.frame_serial;
 	}
@@ -590,6 +613,8 @@ main_canvas_make(void)
 	pixels = malloc(count * sizeof(pixels[0]));
 	if (pixels == NULL)
 		return -1;
+
+	/* The new memory replaces the old. */
 	free(main_pixels);
 	main_pixels = pixels;
 
@@ -612,16 +637,26 @@ main_state(
 {
 	/* A clean state, so that states compare by their bytes. */
 	memset(state, 0, sizeof(*state));
+
+	/* What the viewer shows, where it is in the folder, and how. */
 	state->has_image = main_app.has_image;
-	if (main_app.has_image && main_app.current != NULL && main_app.current->error == 0)
-		state->can_show = 1;
 	state->index = main_app.folder.index;
 	state->count = main_app.folder.count;
 	state->fit = main_app.fit;
-	if (main_app.has_image && main_app.current != NULL && main_app.current->frame_count > 1U)
-		state->animated = 1;
 	state->playing = main_app.playing;
 	state->fullscreen = main_app.fullscreen;
+
+	/* Only an image that was decoded can be zoomed and turned. */
+	if (main_app.has_image &&
+	    main_app.current != NULL &&
+	    main_app.current->error == 0)
+		state->can_show = 1;
+
+	/* Only an animated image plays. */
+	if (main_app.has_image &&
+	    main_app.current != NULL &&
+	    main_app.current->frame_count > 1U)
+		state->animated = 1;
 }
 
 /* After an image opened: the window's title names it, and it joins the recent files. */
@@ -637,6 +672,8 @@ main_opened(void)
 	/* Only once for each image shown. */
 	if (!main_app.opened)
 		return;
+
+	/* The opening is being answered now. */
 	main_app.opened = 0;
 
 	/* Without an image, the application's name. */
@@ -645,12 +682,14 @@ main_opened(void)
 		return;
 	}
 
-	/* The title: the file's name and the application's. */
+	/* The file's name: the part of the path after its last slash. */
 	name = strrchr(main_app.current->path, '/');
 	if (name == NULL)
 		name = main_app.current->path;
 	else
 		name++;
+
+	/* The title: the file's name and the application's. */
 	snprintf(title, sizeof(title), "%s \xe2\x80\x94 Image Viewer", name);
 	iv_window_title(&main_window, title);
 
@@ -658,6 +697,8 @@ main_opened(void)
 	absolute = realpath(main_app.current->path, resolved);
 	if (absolute == NULL)
 		return;
+
+	/* The image joins the recent files; a failure only goes to the log. */
 	error = keiland_recent_add(resolved, MAIN_APPLICATION);
 	if (error != 0)
 		iv_log("RECENT failed errno=%d", error);
@@ -670,11 +711,19 @@ main_opened(void)
 static void
 main_fullscreen(void)
 {
+	int wanted;
+
 	/* A request: the opposite of how the window is now. */
 	if (main_app.want_fullscreen) {
+		/* The full screen for a window that is not in it, and out of it for one that is. */
+		wanted = 1;
+		if (main_window.fullscreen)
+			wanted = 0;
+
+		/* The request goes to the compositor, which answers with a configure. */
 		main_app.want_fullscreen = 0;
-		iv_window_fullscreen(&main_window, !main_window.fullscreen);
-		iv_log("FULLSCREEN request=%d", !main_window.fullscreen);
+		iv_window_fullscreen(&main_window, wanted);
+		iv_log("FULLSCREEN request=%d", wanted);
 	}
 
 	/* The compositor's answer: the layout (and the glass) follow it. */

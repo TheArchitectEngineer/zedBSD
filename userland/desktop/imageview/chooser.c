@@ -75,19 +75,29 @@ iv_chooser_open(
 
 	/* Each visible folder and image file, while there is room. */
 	for (;;) {
+		/* The next entry of the folder, until there are no more. */
 		entry = readdir(directory);
 		if (entry == NULL)
 			break;
+
+		/* Hidden entries are not listed. */
 		if (entry->d_name[0] == '.')
 			continue;
+
+		/* A full list ends the reading. */
 		if (count == IV_CHOOSER_ENTRIES)
 			break;
+
+		/* What the entry is; one that cannot be looked at is left out. */
 		snprintf(path, sizeof(path), "%s/%s", resolved, entry->d_name);
 		result = stat(path, &status);
 		if (result != 0)
 			continue;
+
+		/* A folder is listed; a file only when it is an image. */
 		is_folder = S_ISDIR(status.st_mode);
 		if (!is_folder) {
+			/* A file of another kind is left out. */
 			is_image = iv_image_is_name(entry->d_name);
 			if (!is_image)
 				continue;
@@ -102,7 +112,7 @@ iv_chooser_open(
 	/* The folder is read. */
 	closedir(directory);
 
-	/* Folders first, by name (the parent stays first). */
+	/* Whether the list starts with the parent, which stays first. */
 	has_parent = 0;
 	if (count > 0) {
 		differs = strcmp(entries[0].name, "..");
@@ -110,7 +120,7 @@ iv_chooser_open(
 			has_parent = 1;
 	}
 
-	/* Sorts the entries after the parent. */
+	/* Folders first, by name, after the parent. */
 	if (count > 1)
 		qsort(entries + has_parent, count - (size_t)has_parent, sizeof(entries[0]), compare_entries);
 
@@ -166,6 +176,8 @@ iv_chooser_path(
 	differs = strcmp(chooser->entries[index].name, "..");
 	if (differs == 0) {
 		snprintf(path, size, "%s", chooser->folder);
+
+		/* The root's slash stays; any other last slash ends the path. */
 		slash = strrchr(path, '/');
 		if (slash == path)
 			slash[1] = '\0';
@@ -182,7 +194,7 @@ iv_chooser_path(
 		written = snprintf(path, size, "%s/%s", chooser->folder, chooser->entries[index].name);
 	}
 
-	/* | (size_t)written >= size)|A path longer than the room is refused. */
+	/* A path longer than the room is refused. */
 	if (written < 0 || (size_t)written >= size)
 		return ENAMETOOLONG;
 
@@ -200,9 +212,11 @@ compare_entries(
 	const struct iv_entry *second;
 	int order;
 
-	/* Folders before files. */
+	/* The two entries of the list. */
 	first = left;
 	second = right;
+
+	/* Folders before files. */
 	if (first->folder != second->folder)
 		return second->folder - first->folder;
 

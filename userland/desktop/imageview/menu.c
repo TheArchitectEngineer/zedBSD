@@ -123,15 +123,19 @@ static void menu_context_activated(void *data, struct keiland_context_menu *cont
 static void menu_context_done(void *data, struct keiland_context_menu *context_menu);
 static int menu_build(struct keiland_menu *model, const struct menu_item *items, size_t count);
 static int menu_state(struct iv_menu *menu, const struct iv_state *state);
+static int menu_state_items(struct keiland_menu *model, const struct iv_state *state);
 
 /* What the window menu tells the viewer: only the choices. */
 static const struct keiland_window_menu_listener menu_listener = {
-	menu_activated, NULL, NULL
+	menu_activated,
+	NULL,
+	NULL
 };
 
 /* What a context menu tells the viewer: the choice, and that it closed. */
 static const struct keiland_context_menu_listener menu_context_listener = {
-	menu_context_activated, menu_context_done
+	menu_context_activated,
+	menu_context_done
 };
 
 /*
@@ -185,16 +189,20 @@ iv_menu_open(
 	if (error != 0)
 		return error;
 
-	/* The context menu's model, built once. */
+	/* The context menu's model. */
 	menu->context = keiland_menu_create(menu->service);
 	if (menu->context == NULL)
 		return errno;
+
+	/* Its items, built once. */
 	error = menu_build(menu->context, context_items, sizeof(context_items) / sizeof(context_items[0]));
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the menus are zdesktop's to show. */
+	/* Logs the menus for the tests. */
 	iv_log("MENU ready items=%u", (unsigned)(sizeof(menu_items) / sizeof(menu_items[0])));
+
+	/* Succeeded: the menus are zdesktop's to show. */
 	return 0;
 }
 
@@ -237,7 +245,9 @@ iv_menu_context(
 	int y)
 {
 	/* Without menus, or without an image, nothing opens. */
-	if (menu->service == NULL || menu->context == NULL || !state->has_image)
+	if (menu->service == NULL ||
+	    menu->context == NULL ||
+	    !state->has_image)
 		return;
 
 	/* A context menu still open is replaced. */
@@ -247,8 +257,15 @@ iv_menu_context(
 	}
 
 	/* zdesktop shows it at the press. */
-	menu->popup = keiland_menu_popup(menu->service, menu->context, menu->window->surface, x, y, menu->window->seat, menu->window->press_serial,
-	    &menu_context_listener, menu);
+	menu->popup = keiland_menu_popup(menu->service,
+					 menu->context,
+					 menu->window->surface,
+					 x,
+					 y,
+					 menu->window->seat,
+					 menu->window->press_serial,
+					 &menu_context_listener,
+					 menu);
 	if (menu->popup == NULL) {
 		iv_log("CONTEXT-MENU none errno=%d", errno);
 		return;
@@ -276,6 +293,8 @@ iv_menu_close(
 		keiland_menu_destroy(menu->menu);
 	if (menu->service != NULL)
 		keiland_menu_service_close(menu->service);
+
+	/* Nothing of the menus is left. */
 	memset(menu, 0, sizeof(*menu));
 }
 
@@ -291,9 +310,10 @@ menu_activated(
 {
 	struct iv_menu *menu;
 
+	UNUSED_PARAMETER(window_menu);
+	UNUSED_PARAMETER(seat);
+
 	/* The menus whose item was chosen. */
-	(void)window_menu;
-	(void)seat;
 	menu = data;
 
 	/* The log line the tests read, and the action. */
@@ -312,8 +332,9 @@ menu_context_activated(
 {
 	struct iv_menu *menu;
 
+	UNUSED_PARAMETER(context_menu);
+
 	/* The menus whose context menu was chosen from. */
-	(void)context_menu;
 	menu = data;
 
 	/* The log line the tests read, and the action. */
@@ -329,8 +350,10 @@ menu_context_done(
 {
 	struct iv_menu *menu;
 
-	/* The one open is the one that closed. */
+	/* The menus the context menu belonged to. */
 	menu = data;
+
+	/* The one open is the one that closed. */
 	if (menu->popup == context_menu) {
 		keiland_context_menu_destroy(menu->popup);
 		menu->popup = NULL;
@@ -358,6 +381,7 @@ menu_build(
 
 	/* Each item in its order under its parent. */
 	for (index = 0; index < count; index++) {
+		/* The item under its parent. */
 		item = &items[index];
 		error = keiland_menu_append(model, item->id, item->parent, item->type, item->label, item->action);
 		if (error != 0)
@@ -398,21 +422,7 @@ menu_state(
 	const struct iv_state *state)
 {
 	struct keiland_menu *model;
-	int can_previous;
-	int can_next;
-	int can_go;
 	int error;
-
-	/* Where the image is in the folder, as the menus show it. */
-	can_previous = 0;
-	if (state->has_image && state->index > 0)
-		can_previous = 1;
-	can_next = 0;
-	if (state->has_image && state->index + 1 < state->count)
-		can_next = 1;
-	can_go = 0;
-	if (state->has_image && state->count > 1)
-		can_go = 1;
 
 	/* The transaction. */
 	model = menu->menu;
@@ -420,40 +430,8 @@ menu_state(
 	if (error != 0)
 		return error;
 
-	/* The items that need an image that can be shown. */
-	error = keiland_menu_set_enabled(model, MENU_FIT, state->can_show);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_ACTUAL, state->can_show);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_ZOOM_IN, state->can_show);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_ZOOM_OUT, state->can_show);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_ROTATE_RIGHT, state->can_show);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_ROTATE_LEFT, state->can_show);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_PLAY, state->animated);
-
-	/* The folder's images. */
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_PREVIOUS, can_previous);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_NEXT, can_next);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_FIRST, can_go);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_LAST, can_go);
-
-	/* The fit, the animation playing and the full screen. */
-	if (error == 0)
-		error = keiland_menu_set_checked(model, MENU_FIT, state->fit);
-	if (error == 0)
-		error = keiland_menu_set_checked(model, MENU_PLAY, state->playing);
-	if (error == 0)
-		error = keiland_menu_set_checked(model, MENU_FULLSCREEN, state->fullscreen);
-
-	/* A refused change still ends the transaction, and is reported. */
+	/* The items' marks; a refused change still ends the transaction, and is reported. */
+	error = menu_state_items(model, state);
 	if (error != 0) {
 		(void)keiland_menu_commit(model);
 		return error;
@@ -464,7 +442,109 @@ menu_state(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the menus show the state. */
+	/* The menus show this state from now on. */
 	menu->shown = *state;
+
+	/* Succeeded: the menus show the state. */
+	return 0;
+}
+
+/* Sets the items' enabled and checked marks for a state inside an open transaction; stops at the first refusal. */
+static int
+menu_state_items(
+	struct keiland_menu *model,
+	const struct iv_state *state)
+{
+	int can_previous;
+	int can_next;
+	int can_go;
+	int error;
+
+	/* There is an image before the one shown. */
+	can_previous = 0;
+	if (state->has_image && state->index > 0)
+		can_previous = 1;
+
+	/* There is an image after it. */
+	can_next = 0;
+	if (state->has_image && state->index + 1 < state->count)
+		can_next = 1;
+
+	/* The folder has other images to go to. */
+	can_go = 0;
+	if (state->has_image && state->count > 1)
+		can_go = 1;
+
+	/* The fit needs an image that can be shown. */
+	error = keiland_menu_set_enabled(model, MENU_FIT, state->can_show);
+	if (error != 0)
+		return error;
+
+	/* So does the actual size. */
+	error = keiland_menu_set_enabled(model, MENU_ACTUAL, state->can_show);
+	if (error != 0)
+		return error;
+
+	/* So does zooming in. */
+	error = keiland_menu_set_enabled(model, MENU_ZOOM_IN, state->can_show);
+	if (error != 0)
+		return error;
+
+	/* So does zooming out. */
+	error = keiland_menu_set_enabled(model, MENU_ZOOM_OUT, state->can_show);
+	if (error != 0)
+		return error;
+
+	/* So does a turn to the right. */
+	error = keiland_menu_set_enabled(model, MENU_ROTATE_RIGHT, state->can_show);
+	if (error != 0)
+		return error;
+
+	/* So does a turn to the left. */
+	error = keiland_menu_set_enabled(model, MENU_ROTATE_LEFT, state->can_show);
+	if (error != 0)
+		return error;
+
+	/* Only an animated image plays. */
+	error = keiland_menu_set_enabled(model, MENU_PLAY, state->animated);
+	if (error != 0)
+		return error;
+
+	/* The previous image, when there is one. */
+	error = keiland_menu_set_enabled(model, MENU_PREVIOUS, can_previous);
+	if (error != 0)
+		return error;
+
+	/* The next image, when there is one. */
+	error = keiland_menu_set_enabled(model, MENU_NEXT, can_next);
+	if (error != 0)
+		return error;
+
+	/* The first image, in a folder of several. */
+	error = keiland_menu_set_enabled(model, MENU_FIRST, can_go);
+	if (error != 0)
+		return error;
+
+	/* The last image, likewise. */
+	error = keiland_menu_set_enabled(model, MENU_LAST, can_go);
+	if (error != 0)
+		return error;
+
+	/* The fit is checked while the image follows the window. */
+	error = keiland_menu_set_checked(model, MENU_FIT, state->fit);
+	if (error != 0)
+		return error;
+
+	/* The animation is checked while it plays. */
+	error = keiland_menu_set_checked(model, MENU_PLAY, state->playing);
+	if (error != 0)
+		return error;
+
+	/* The full screen is checked while the window fills it. */
+	error = keiland_menu_set_checked(model, MENU_FULLSCREEN, state->fullscreen);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: every item shows the state. */
 	return 0;
 }

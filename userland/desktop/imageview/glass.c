@@ -55,8 +55,10 @@ iv_glass_open(
 		return 0;
 	}
 
-	/* Succeeded: the window is glass. */
+	/* Logs the glass for the tests. */
 	iv_log("GLASS on");
+
+	/* Succeeded: the window is glass. */
 	return 1;
 }
 
@@ -108,6 +110,8 @@ iv_glass_close(
 	/* The glass object, when there is one. */
 	if (glass->glass != NULL)
 		keiland_glass_destroy(glass->glass);
+
+	/* The window is not glass any more. */
 	glass->glass = NULL;
 }
 
@@ -121,11 +125,11 @@ glass_panels(
 	size_t count;
 
 	/* A fullscreen window has no glass. */
-	count = 0;
 	if (app->fullscreen)
 		return 0;
 
-	/* The card, inset from the window's edge. */
+	/* The card, inset from the window's edge, when there is room for it in the list. */
+	count = 0;
 	if (count < capacity) {
 		panels[count].x = IV_CARD_INSET;
 		panels[count].y = IV_CARD_INSET;
@@ -133,12 +137,16 @@ glass_panels(
 		panels[count].height = app->window_height - 2 * IV_CARD_INSET;
 		panels[count].radius = IV_CARD_RADIUS;
 		panels[count].kind = KEILAND_GLASS_CARD;
+
+		/* A window too small for a card has none. */
 		if (panels[count].width > 0 && panels[count].height > 0)
 			count++;
 	}
 
 	/* The chip, where the frame drew it. */
-	if (count < capacity && app->chip_width > 0 && app->chip_height > 0) {
+	if (count < capacity &&
+	    app->chip_width > 0 &&
+	    app->chip_height > 0) {
 		panels[count].x = app->chip_x;
 		panels[count].y = app->chip_y;
 		panels[count].width = app->chip_width;
@@ -162,14 +170,17 @@ glass_same(
 	size_t index;
 	int differs;
 
-	/* Nothing sent yet, or another count. */
+	/* Nothing sent yet. */
 	if (glass->sent == 0)
 		return 0;
+
+	/* Another count of panels. */
 	if (glass->count != count)
 		return 0;
 
 	/* Any panel with another place, radius or kind. */
 	for (index = 0; index < count; index++) {
+		/* The panel byte for byte, as it was sent. */
 		differs = memcmp(&panels[index], &glass->panels[index], sizeof(panels[index]));
 		if (differs != 0)
 			return 0;

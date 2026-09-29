@@ -6,8 +6,8 @@
  */
 
 /*
- * The touch screen of PDF Viewer (ws081-p012): what the fingers do to the
- * view, with libkeiland's gestures and scroller (touch.h).
+ * The touch screen of Image Viewer (after PDF Viewer's ws081-p012): what
+ * the fingers do to the view, with libkeiland's gestures and scroller (touch.h).
  *
  * The scroller owns the view from a touch until the content rests: each
  * tick sets scroll_x and scroll_y from it (past an end, as the rubber band
@@ -145,20 +145,25 @@ iv_touch_event(
 		/* The first finger presses the scroller. */
 		if (touch->fingers == 0U)
 			touch_press(touch, app, event->arrival);
+
+		/* The finger joins the gestures, and counts once they took it. */
 		error = keiland_gesture_down(touch->gesture, event->id, time, event->arrival, event->x, event->y);
 		if (error == 0)
 			touch->fingers++;
 		break;
 	case IV_TOUCH_MOTION:
+		/* The finger's new place; the tick places the view from it. */
 		(void)keiland_gesture_motion(touch->gesture, event->id, time, event->arrival, event->x, event->y);
 		break;
 	case IV_TOUCH_UP:
+		/* The finger leaves the gestures, and the count once they let it go. */
 		error = keiland_gesture_up(touch->gesture, event->id, time);
 		if (error == 0 &&
 		    touch->fingers > 0U)
 			touch->fingers--;
 		break;
 	case IV_TOUCH_CANCEL:
+		/* Every finger is gone at once. */
 		keiland_gesture_cancel(touch->gesture);
 		touch->fingers = 0;
 		break;
@@ -346,8 +351,9 @@ touch_for_pointer(
 	const struct iv_app *app,
 	const struct iv_touch_event *event)
 {
+	UNUSED_PARAMETER(event);
+
 	/* The chooser takes every touch, and so does the empty window (its Open button). */
-	(void)event;
 	if (app->chooser_open)
 		return 1;
 	if (!app->has_image)
@@ -400,11 +406,14 @@ touch_pointer(
 		touch->pointer_id = event->id;
 		pointer.type = IV_EVENT_MOTION;
 		iv_app_event(app, &pointer);
+
+		/* The press, where the pointer came. */
 		pointer.type = IV_EVENT_BUTTON;
 		pointer.pressed = 1;
 		iv_app_event(app, &pointer);
 		break;
 	case IV_TOUCH_MOTION:
+		/* The pointer follows the finger. */
 		pointer.type = IV_EVENT_MOTION;
 		iv_app_event(app, &pointer);
 		break;
@@ -614,6 +623,8 @@ touch_cancel(
 	/* The scroller lets go (content past an end springs back). */
 	if (touch->pressed)
 		keiland_scroller_cancel(touch->scroller, now);
+
+	/* No finger drags any more. */
 	touch->pressed = 0;
 	touch->drag = TOUCH_DRAG_NONE;
 	iv_log("TOUCH cancel");
@@ -646,8 +657,10 @@ touch_long_press(
 	struct iv_app *app,
 	const struct keiland_gesture_event *gesture)
 {
-	/* Only over an image, and not after a catch. */
+	/* Logs every long press for the tests. */
 	iv_log("TOUCH long-press x=%.0f y=%.0f", gesture->x, gesture->y);
+
+	/* Only over an image, and not after a catch. */
 	if (!app->has_image ||
 	    touch->caught)
 		return;
@@ -673,6 +686,8 @@ touch_bounds(
 	largest_x = iv_app_content_width(app) - (double)app->area_width;
 	if (largest_x < 0.0)
 		largest_x = 0.0;
+
+	/* And down. */
 	largest_y = iv_app_content_height(app) - (double)app->area_height;
 	if (largest_y < 0.0)
 		largest_y = 0.0;
@@ -681,6 +696,8 @@ touch_bounds(
 	width = (double)app->area_width;
 	if (width < 1.0)
 		width = 1.0;
+
+	/* And its height. */
 	height = (double)app->area_height;
 	if (height < 1.0)
 		height = 1.0;
@@ -725,6 +742,7 @@ touch_pinch(
 	    touch->drag != TOUCH_DRAG_SWIPE)
 		error = keiland_gesture_pinch(touch->gesture, now, &ratio, &x, &y);
 	if (error != 0) {
+		/* A zoom going on ends with the second finger. */
 		if (touch->pinching)
 			touch_pinch_end(touch, app, now);
 		return;
@@ -735,6 +753,8 @@ touch_pinch(
 		change = fabs(ratio - 1.0);
 		if (change < TOUCH_PINCH_START)
 			return;
+
+		/* The zoom starts from the scale and the ratio now, holding the place between the fingers. */
 		touch->pinching = 1;
 		touch->ratio = ratio;
 		touch->scale = app->scale;
@@ -773,6 +793,8 @@ touch_pinch_end(
 	keiland_scroller_set_position(touch->scroller, app->scroll_x, app->scroll_y);
 	touch->written_x = app->scroll_x;
 	touch->written_y = app->scroll_y;
+
+	/* A finger still down presses the scroller again, to drag on from here. */
 	if (touch->pressed &&
 	    touch->fingers > 0U)
 		touch_press(touch, app, now);
@@ -794,8 +816,7 @@ touch_swipe(
 	if (error != 0)
 		return;
 
-	/* The image follows, a third as far past either end. */
-	(void)dy;
+	/* The image follows across (the fingers' movement down is not used), a third as far past either end. */
 	app->swipe = dx;
 	if (app->folder.index == 0 &&
 	    app->swipe > 0.0)

@@ -51,7 +51,7 @@ struct iv_touch_event {
 };
 
 /*
- * The fingers and what they are doing: the gestures of the pages, the
+ * The fingers and what they are doing: the gestures over the image, the
  * scroller that moves the view, and the state between them.
  *
  * pointer says a finger plays the pointer (pointer_id, last at pointer_x,

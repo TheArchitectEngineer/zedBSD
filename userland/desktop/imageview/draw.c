@@ -85,15 +85,19 @@ iv_draw(
 	else if (app->current != NULL && app->current->error != 0)
 		draw_failed(app, canvas);
 
-	/* The chip while it is shown, and the message. */
+	/* The chip while it is shown. */
 	if (app->has_image)
 		draw_chip(app, canvas);
+
+	/* The message, when there is one. */
 	if (app->message[0] != '\0')
 		draw_message(app, canvas);
 
 	/* The chooser over everything. */
 	if (app->chooser_open)
 		draw_chooser(app, canvas);
+
+	/* The canvas matches the viewer until its words or cards change again. */
 	app->ui_dirty = 0;
 }
 
@@ -151,12 +155,14 @@ draw_failed(
 	iv_text_draw(app->text, canvas, x + 60, y + 43, "Can't show this image", DRAW_TEXT_LARGE - 4U, DRAW_TITLE);
 	iv_text_draw(app->text, canvas, x + 60, y + 72, app->current->reason, DRAW_TEXT, DRAW_HINT);
 
-	/* The file's name. */
+	/* The file's name: the part of the path after its last slash. */
 	name = strrchr(app->current->path, '/');
 	if (name == NULL)
 		name = app->current->path;
 	else
 		name++;
+
+	/* The name under the reason. */
 	iv_text_draw(app->text, canvas, x + 60, y + 100, name, DRAW_TEXT_SMALL, DRAW_HINT);
 }
 
@@ -193,8 +199,15 @@ draw_chip(
 	if (app->current->error != 0) {
 		snprintf(line, sizeof(line), "%s  \xc2\xb7  %lu / %lu", name, (unsigned long)app->folder.index + 1UL, (unsigned long)app->folder.count);
 	} else {
-		snprintf(line, sizeof(line), "%s  \xc2\xb7  %lu / %lu  \xc2\xb7  %d \xc3\x97 %d  \xc2\xb7  %d%%", name, (unsigned long)app->folder.index + 1UL,
-		    (unsigned long)app->folder.count, app->current->file_width, app->current->file_height, zoom);
+		snprintf(line,
+			 sizeof(line),
+			 "%s  \xc2\xb7  %lu / %lu  \xc2\xb7  %d \xc3\x97 %d  \xc2\xb7  %d%%",
+			 name,
+			 (unsigned long)app->folder.index + 1UL,
+			 (unsigned long)app->folder.count,
+			 app->current->file_width,
+			 app->current->file_height,
+			 zoom);
 	}
 
 	/* A pill as wide as the line, within the area, at its bottom. */
@@ -213,8 +226,10 @@ draw_chip(
 	}
 
 	/* The pill and its line, fading together. */
-	iv_canvas_round(canvas, x, y, width, DRAW_CHIP_HEIGHT, DRAW_CHIP_HEIGHT / 2, draw_fade(fill, opacity));
-	iv_text_draw(app->text, canvas, x + 18, y + 23, line, DRAW_TEXT_SMALL, draw_fade(ink, opacity));
+	fill = draw_fade(fill, opacity);
+	ink = draw_fade(ink, opacity);
+	iv_canvas_round(canvas, x, y, width, DRAW_CHIP_HEIGHT, DRAW_CHIP_HEIGHT / 2, fill);
+	iv_text_draw(app->text, canvas, x + 18, y + 23, line, DRAW_TEXT_SMALL, ink);
 
 	/* Where it is, for the glass under it. */
 	app->chip_x = x;
@@ -278,6 +293,8 @@ draw_chooser(
 		folder_width = iv_text_width(app->text, folder, DRAW_TEXT_SMALL);
 		if (folder_width <= width - 36)
 			break;
+
+		/* One character less of the folder's start. */
 		folder++;
 	}
 
@@ -287,9 +304,12 @@ draw_chooser(
 
 	/* The rows in view. */
 	for (row = 0; row < rows; row++) {
+		/* The entry of the row; the list may end before the rows do. */
 		index = app->chooser.first + row;
 		if (index >= app->chooser.count)
 			break;
+
+		/* The entry and the row's top. */
 		entry = &app->chooser.entries[index];
 		row_y = y + IV_CHOOSER_HEADER + (int)row * IV_CHOOSER_ROW;
 
@@ -301,6 +321,8 @@ draw_chooser(
 		if (entry->folder) {
 			iv_canvas_round(canvas, x + 20, row_y + 11, 18, 13, 3, DRAW_FOLDER);
 			snprintf(line, sizeof(line), "%s/", entry->name);
+
+			/* The parent folder is named in words. */
 			differs = strcmp(entry->name, "..");
 			if (differs == 0)
 				snprintf(line, sizeof(line), "Parent folder");
@@ -356,13 +378,18 @@ draw_mark(
 	/* A mark larger than the kept layers is drawn at their largest. */
 	if (pixels > DRAW_MARK_MAX)
 		pixels = DRAW_MARK_MAX;
+
+	/* A mark of no size draws nothing. */
 	if (pixels == 0U)
 		return;
 
 	/* The layers at this size. */
 	if (layers_pixels != pixels) {
+		/* Each layer's coverage at the size. */
 		for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++)
 			keiland_mark_raster(layer, pixels, layers[layer], pixels);
+
+		/* The size the layers are now of. */
 		layers_pixels = pixels;
 	}
 
