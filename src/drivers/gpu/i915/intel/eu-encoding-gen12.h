@@ -213,10 +213,16 @@
 #define EU_OP_RNDZ			71U
 #define EU_OP_RNDE			70U
 #define EU_OP_WHILE			39U
+#define EU_OP_IF			34U
+#define EU_OP_ENDIF			37U
 
 /* A branch's jump target: bytes from the branch instruction, in the last word. */
 #define EU_JIP_HI			127
 #define EU_JIP_LO			96
+
+/* A branch's second target (an IF's or an ELSE's UIP): bytes from the branch, in the third word. */
+#define EU_UIP_HI			95
+#define EU_UIP_LO			64
 
 /* Conditional modifiers (BRW_CONDITIONAL_*): what a CMP tests, or which source a SEL keeps. */
 #define EU_COND_Z			1U

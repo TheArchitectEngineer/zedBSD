@@ -21,7 +21,7 @@
  * true of its output: every instruction depends on the one before it.
  *
  *   - an in-order instruction (MOV, ADD, MUL, SEL, CMP, AND, OR, XOR, NOT,
- *     SHL, SHR, ASR, RNDD, RNDZ, RNDE, FRC, WHILE) waits for the previous in-order
+ *     SHL, SHR, ASR, RNDD, RNDZ, RNDE, FRC, WHILE, IF, ENDIF) waits for the previous in-order
  *     instruction (@1); a flag a CMP writes is read only by a later in-order
  *     instruction, so the same wait covers it.  The wait counts back over
  *     the instructions as they ran, so the first instruction of a loop,
@@ -1172,6 +1172,146 @@ drv_i915_eu_while(
 	i915_eu_dst(inst, null);
 	i915_eu_bit(inst, EU_SRC0_IS_IMM_BIT, 1U);
 	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, (uint32_t)jump);
+}
+
+/*
+ * Encodes an IF on `flag`: the channels whose bit of the flag is clear stop
+ * running until the matching ENDIF, and when no channel is left the thread
+ * jumps to the ENDIF.  Returns the IF's position; its targets are written by
+ * drv_i915_eu_patch_if() once the ENDIF is placed.
+ *
+ * The form is Mesa's brw_IF on Gen12: a null signed-integer destination,
+ * SIMD8 under the execution mask, the JIP and the UIP immediate.
+ */
+uint32_t
+drv_i915_eu_if(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_flag flag)
+{
+	struct i915_eu_reg null;
+	uint32_t *inst;
+	uint32_t here;
+
+	/* The IF's position, which the patch names it by. */
+	here = drv_i915_eu_position(buffer);
+
+	/* A flag outside the two flag registers is refused. */
+	if (flag >= I915_EU_FLAG_COUNT) {
+		buffer->error = 1;
+		return here;
+	}
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return here;
+
+	/* Encodes an in-order IF predicated on the flag, with a null destination. */
+	i915_eu_common(buffer, inst, EU_OP_IF, I915_EU_IN_ORDER);
+	i915_eu_flag(inst, flag);
+	i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+	null = drv_i915_eu_null();
+	null.type = EU_TYPE_D;
+	i915_eu_dst(inst, null);
+
+	/* Both targets are immediates, zero until the ENDIF is placed. */
+	i915_eu_bit(inst, EU_SRC0_IS_IMM_BIT, 1U);
+	i915_eu_bit(inst, EU_SRC1_IS_IMM_BIT, 1U);
+
+	/* Succeeded: the IF waits for its targets. */
+	return here;
+}
+
+/*
+ * Encodes the ENDIF of an IF: the channels the IF stopped run again.
+ * Returns its position.  Its JIP -- where the thread goes when no channel is
+ * left after it -- is the next instruction until drv_i915_eu_patch_endif()
+ * points it at the end of an enclosing loop, as Mesa's brw_set_uip_jip()
+ * does.
+ */
+uint32_t
+drv_i915_eu_endif(
+	struct i915_eu_buf *buffer)
+{
+	uint32_t *inst;
+	uint32_t here;
+
+	/* The ENDIF's position, which the patches name it by. */
+	here = drv_i915_eu_position(buffer);
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return here;
+
+	/*
+	 * Encodes an in-order ENDIF whose JIP is the next instruction, in bytes;
+	 * the JIP is a signed-integer immediate source, as brw_ENDIF's src0.
+	 */
+	i915_eu_common(buffer, inst, EU_OP_ENDIF, I915_EU_IN_ORDER);
+	i915_eu_bit(inst, EU_SRC0_IS_IMM_BIT, 1U);
+	i915_eu_set(inst, EU_SRC0_REG_TYPE_HI, EU_SRC0_REG_TYPE_LO, EU_TYPE_D);
+	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, GEN12_EU_DWORDS * 4U);
+
+	/* Succeeded: the ENDIF is placed. */
+	return here;
+}
+
+/*
+ * Points an IF's JIP and UIP at its ENDIF (Mesa's patch_IF_ELSE() without
+ * an ELSE).  Positions outside what the buffer holds poison it.
+ */
+void
+drv_i915_eu_patch_if(
+	struct i915_eu_buf *buffer,
+	uint32_t if_position,
+	uint32_t endif_position)
+{
+	uint32_t *inst;
+	uint32_t jump;
+
+	/* A poisoned buffer encoded neither instruction. */
+	if (buffer->error != 0)
+		return;
+
+	/* The ENDIF comes after its IF, and both are in the buffer. */
+	if (endif_position <= if_position || endif_position >= drv_i915_eu_position(buffer)) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* Both targets are the ENDIF, in bytes from the IF. */
+	inst = buffer->words + (size_t)if_position * GEN12_EU_DWORDS;
+	jump = (endif_position - if_position) * GEN12_EU_DWORDS * 4U;
+	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, jump);
+	i915_eu_set(inst, EU_UIP_HI, EU_UIP_LO, jump);
+}
+
+/*
+ * Points an ENDIF's JIP at `target`, the WHILE of the loop it is inside.
+ * Positions outside what the buffer holds poison it.
+ */
+void
+drv_i915_eu_patch_endif(
+	struct i915_eu_buf *buffer,
+	uint32_t endif_position,
+	uint32_t target)
+{
+	uint32_t *inst;
+
+	/* A poisoned buffer encoded neither instruction. */
+	if (buffer->error != 0)
+		return;
+
+	/* The target comes after the ENDIF, and both are in the buffer. */
+	if (target <= endif_position || target >= drv_i915_eu_position(buffer)) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* The JIP, in bytes from the ENDIF. */
+	inst = buffer->words + (size_t)endif_position * GEN12_EU_DWORDS;
+	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, (target - endif_position) * GEN12_EU_DWORDS * 4U);
 }
 
 /*

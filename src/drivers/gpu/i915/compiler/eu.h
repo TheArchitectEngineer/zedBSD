@@ -188,5 +188,9 @@ void drv_i915_eu_send_all(struct i915_eu_buf *buffer, struct i915_eu_reg dst, st
 void drv_i915_eu_nop(struct i915_eu_buf *buffer);
 uint32_t drv_i915_eu_position(const struct i915_eu_buf *buffer);
 void drv_i915_eu_while(struct i915_eu_buf *buffer, enum i915_eu_flag flag, uint32_t target);
+uint32_t drv_i915_eu_if(struct i915_eu_buf *buffer, enum i915_eu_flag flag);
+uint32_t drv_i915_eu_endif(struct i915_eu_buf *buffer);
+void drv_i915_eu_patch_if(struct i915_eu_buf *buffer, uint32_t if_position, uint32_t endif_position);
+void drv_i915_eu_patch_endif(struct i915_eu_buf *buffer, uint32_t endif_position, uint32_t target);
 
 #endif /* DRIVERS_GPU_I915_COMPILER_EU_H */

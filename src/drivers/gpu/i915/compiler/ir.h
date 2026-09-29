@@ -404,6 +404,17 @@ struct i915_shader_ir_inst {
 	uint32_t immediate;
 	uint32_t location;
 	uint32_t component;
+
+	/*
+	 * A texture instruction (SAMPLE, SAMPLE_BIAS, SAMPLE_LOD, TEXTURE):
+	 * the Boolean of the channels whose result is used, plus one; zero
+	 * when every channel's is.  A channel outside it only ever meets the
+	 * result in a selection that takes something else, so the code
+	 * generator may run the message for the guard's channels alone and
+	 * skip it when no channel is in the guard (ws075-p021).  Other
+	 * instructions leave it zero.
+	 */
+	uint32_t guard;
 };
 
 /*
