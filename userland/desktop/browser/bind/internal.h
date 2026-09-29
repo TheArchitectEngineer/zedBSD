@@ -54,6 +54,9 @@ enum bind_interface_index {
 	BIND_DOM_STRING_MAP,
 	BIND_DOM_RECT,
 	BIND_CSS_STYLE_DECLARATION,
+	BIND_TEXT_ENCODER,
+	BIND_TEXT_DECODER,
+	BIND_STORAGE,
 	BIND_INTERFACES
 };
 
@@ -131,7 +134,9 @@ struct bind_timer {
  * keeps the cells it holds alive.  ready_state is a static string.
  * location is the window's Location object (document.location reports it
  * too), and time_origin the moment the window was made, in milliseconds
- * since 1970 (performance.timeOrigin).
+ * since 1970 (performance.timeOrigin).  local_storage and session_storage
+ * are the window's Storage objects, made when a script first asks for them
+ * (NULL until then; ws074-p080).
  */
 struct bind_window {
 	struct vm_realm *realm;
@@ -149,6 +154,8 @@ struct bind_window {
 	const char *ready_state;
 	struct vm_object *location;
 	double time_origin;
+	struct vm_object *local_storage;
+	struct vm_object *session_storage;
 };
 
 /*
@@ -242,6 +249,13 @@ extern const struct bind_interface bind_dom_token_list_interface;
 extern const struct bind_interface bind_dom_string_map_interface;
 extern const struct bind_interface bind_dom_rect_interface;
 extern const struct bind_interface bind_css_style_declaration_interface;
+extern const struct bind_interface bind_text_encoder_interface;
+extern const struct bind_interface bind_text_decoder_interface;
+extern const struct bind_interface bind_storage_interface;
+
+/* Web Storage (storage.c, ws074-p080). */
+int bind_local_storage(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_session_storage(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
 /* The inline style (style.c, ws074-p031). */
 int bind_style_install(struct bind_window *window);

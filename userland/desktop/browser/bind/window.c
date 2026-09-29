@@ -48,6 +48,8 @@ static const struct bind_attribute window_attributes[] = {
 	{ "scrollY", bind_window_scroll_y, NULL },
 	{ "pageXOffset", bind_window_scroll_x, NULL },
 	{ "pageYOffset", bind_window_scroll_y, NULL },
+	{ "localStorage", bind_local_storage, NULL },
+	{ "sessionStorage", bind_session_storage, NULL },
 	{ NULL, NULL, NULL }
 };
 
@@ -104,7 +106,10 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_dom_token_list_interface,
 	&bind_dom_string_map_interface,
 	&bind_dom_rect_interface,
-	&bind_css_style_declaration_interface
+	&bind_css_style_declaration_interface,
+	&bind_text_encoder_interface,
+	&bind_text_decoder_interface,
+	&bind_storage_interface
 };
 
 /*
@@ -1007,4 +1012,10 @@ window_trace(
 	if (window->listeners != NULL)
 		vm_heap_mark(heap, window->listeners);
 	bind_timers_trace(heap, window);
+
+	/* The storage objects made so far (ws074-p080). */
+	if (window->local_storage != NULL)
+		vm_heap_mark(heap, &window->local_storage->cell);
+	if (window->session_storage != NULL)
+		vm_heap_mark(heap, &window->session_storage->cell);
 }
