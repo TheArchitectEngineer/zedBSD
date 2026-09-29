@@ -9,7 +9,7 @@ Related Milestones: MG004, MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Executor: WS073 のサブエージェント（2026-09-29 から worktree `.claude/worktrees/ws073-bugs`、branch `wt/ws073`。以前は `worktree-agent-a4f5b29b09938aa63`、p001・p002 は `worktree-agent-aefedcaf4a52a0507`）。main が merge する
-Resume point: 2026-09-29: BUG-102（p029）・BUG-104（p031）・BUG-051（p030）・BUG-107（p034）・BUG-108（p035、unix の connect の backlog）を解決。次: BUG-039・BUG-031 の確認（p036 から）。BUG-093 は toolchain なので main の許可まで扱わない。BUG-027・033 は低い優先度
+Resume point: 2026-09-29: BUG-102（p029）・BUG-104（p031）・BUG-051（p030）・BUG-107（p034）・BUG-108（p035）を解決、BUG-031 を resolved・BUG-039 は確認のみ（p036）。次は main の指示を待つ（残り: BUG-036・030・041 の再現、BUG-039 は host 試験の土台の WS、BUG-093 は toolchain、BUG-027・033 は低い優先度）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -67,6 +67,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p030](phase030/phase.md) | BUG-051 | sshd などの SIGSEGV の原因は、signal の frame が中断した %rsp の真下（amd64 の red zone）に積まれ、red zone を使う libcrypto の leaf の関数の変数を壊すこと。`src/kern/signal.c` で amd64 は 128 byte 空ける。gdbstub で捕獲、red zone の probe 修正前 FAIL・後 PASS、SSH の負荷 1092 session で落ち 0 | cleared（2026-09-29） |
 | [ws073-p034](phase034/phase.md) | BUG-107 | system 全体の socket の上限 32 を 1024 に。raw ICMP・packet・route は family ごとに 32（作成で ENFILE）、TCP の timer の snapshot は数に合わせて割り当て。Venus の guest で client 44・socket 100、SSH 10 本並列、socketpair 200 ＋ TCP 60 が PASS | cleared（2026-09-29） |
 | [ws073-p035](phase035/phase.md) | BUG-108 | unix の blocking の connect が backlog の空きを待つ（nonblocking は EAGAIN、close で ECONNREFUSED、signal で EINTR）、backlog の上限 16 → 128。wltest の「EMFILE」は zedBSD の errno 24 = EAGAIN の読み違え。一斉の 44 client が 3 回とも全て描画 | cleared（2026-09-29） |
+| [ws073-p036](phase036/phase.md) | BUG-039・BUG-031 | BUG-039: 状態は 09-27 と同じ（VFS PASS、overlay の link 125 未定義、UFS の断片が作れない）、host 試験の土台の WS へ。BUG-031: 起動の途中の画面を撮る試験（`console-midboot.py`）が修正の無い kernel で 10/10 検出、今の kernel で 21 起動 0 → resolved | cleared（2026-09-29） |
 | [ws073-p031](phase031/phase.md) | BUG-104 | less で Ctrl-F・f（1 画面進む）と Ctrl-B（1 画面戻る）。more は不変。host の pty 試験と guest で `PAGER-KEYS:PASS` | cleared（2026-09-29） |
 | [ws073-p032](phase032/phase.md) | BUG-105 | Logi Bolt の受信機（046d:c548）の HID の descriptor を parse する: 同じ key の複数の field（0x31・0x32 → KEY_BACKSLASH）を許し、keyboard の usage を持たない array を読み飛ばし、AC Pan を REL_HWHEEL に。host 試験 PASS、HID の host 試験 3 本の回帰なし、vmunix warning 0、boot test PASS | in-progress（2026-09-29、実機の確認はユーザー待ち） |
 | [ws073-p033](phase033/phase.md) | BUG-106 | `ssh -tt` の最後の命令の出力の欠け: kernel の pty と OpenSSH の終わりの順を読み（出力を捨てる経路なし）、pen の image で約 500 回（欠け 0。0 byte の 1 回は sshd の listener の SIGSEGV と同時で BUG-051 の種類）。原因未確定、修正なし | uncleared（2026-09-29、WS081 のサブエージェントが main の依頼で実施、60 分で区切った） |
@@ -75,10 +76,10 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 
 | Bug | 状態 | 次の手 |
 | --- | --- | --- |
-| BUG-031 | 修正あり、確認は部分的 | 起動の途中の画面を撮る試験で 20 回 |
+| BUG-031 | resolved（ws073-p036、起動の途中の画面の試験 21 回 0、修正の無い kernel では 10/10 検出） | — |
 | BUG-036 | 緩和（列挙の再試行） | 時間切れの原因（xHCI の event か QEMU か）、hub の下の port |
 | BUG-030・041・051 | 再現せず | 再現したとき |
-| BUG-039 | VFS の fixture だけ修正 | host 試験の土台の WS（overlay・UFS の fixture） |
+| BUG-039 | VFS の fixture だけ修正（2026-09-29 に再確認、変化なし） | host 試験の土台の WS（overlay・UFS の fixture） |
 | BUG-024 | ユーザーの判断待ち（A 説明だけ／B PC-98 の PCI・USB の移植） | 判断の後 |
 | BUG-023・013・025 | PC-98・実機が要る（amd64 だけの方針で未実施） | 試験が許されたとき |
 | BUG-026 の workaround | kernel は修正済み。clang の package の `--mmap-output-file` は main の判断で当面残す | WS032 の受け入れを無しで通したら外す |
