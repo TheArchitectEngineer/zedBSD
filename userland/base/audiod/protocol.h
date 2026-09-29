@@ -48,6 +48,13 @@
 #define AUDIOD_STREAM_DESTROY	8U
 #define AUDIOD_DEVICE_VOLUME	9U
 #define AUDIOD_SUBSCRIBE	10U
+/*
+ * Plays audiod's short feedback sound (about 100 ms) once at the device
+ * volume, as a volume control does when the volume changes (ws100-p002).
+ * The header only; a request while the sound plays starts it again, so
+ * quick changes never overlap.  An audiod without it answers ERROR EINVAL.
+ */
+#define AUDIOD_FEEDBACK		11U
 
 /* Replies and events. */
 #define AUDIOD_WELCOME		64U
