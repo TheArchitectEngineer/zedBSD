@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし（main が実装、2026-09-29 ユーザーの指示）
-Resume point: p002 の 2 回目の修正（combo PHY の PLL の readout、HDMI の live status の log）、image `build/demo-hdmi5/hdd-image.img`。実機の再試験はユーザー待ち
+Resume point: 2026-09-29 ユーザー「HDMI はいったんやめて LCD のみ」→ demo の既定を `display=edp`。image `build/demo-lcd1/hdd-image.img`（combo PHY の PLL の readout を含む）。実機の再試験はユーザー待ち
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -20,8 +20,8 @@ Resume point: p002 の 2 回目の修正（combo PHY の PLL の readout、HDMI 
 この経路を通らなかった。ユーザー:「ではWSを立ち上げて実装してください。display takeoverは以前に実験して動いた実績があり、難しくないと思います。
 メインエージェントで実装してください。」
 
-完了の条件: 素の 5330 を USB の image から UEFI で起動し、firmware の画面を引き継いで greeter（または自動の login の desktop）が内蔵の LCD と
-HDMI の LCD に出る。
+完了の条件: 素の 5330 を USB の image から UEFI で起動し、firmware の画面を引き継いで greeter（または自動の login の desktop）が内蔵の LCD に出る。
+（2026-09-29 ユーザー「HDMIはいったんやめて、LCDのみの構成にします」: HDMI の LCD は WS075 の範囲に戻し、この WS の条件から外した）
 
 ## Phase
 
@@ -78,3 +78,14 @@ HDMI の LCD に出る。
 - HDMI: 6 秒の再試験でも未接続。hotplug の割込みは DDI A だけで DDI B は無い。`hotplug.c` `drv_i915_hpd_probe_connector` が毎回 SDEISR と pin の bit を log に出す
   （live status が立たないのか、EDID が読めないのかを分ける）。
 - 検証: build（warning 0）、QEMU の boot test PASS（`build/ws084-boot-test5/login.png`）。kernel 内の hotplug の試験（`tests/display/hpd-ktest.c` 等）は build の道具が無く未実施。実機: 未実施。
+
+### p002 の 3 回目（2026-09-29、LCD のみ）
+
+- ユーザー:「HDMIはいったんやめて、LCDのみの構成にします。その上で、過去にLCDのtakeoverに成功しているはずです。修正を続けてください。」
+  → `plan/ws075/demo/config-demo-hdmi.mk` の既定を `display=edp`。
+- 2 回目の修正の根拠を参照で確認: Linux の `intel_ddi_init`（履歴 `6d8ca152` の `plan/ws031/linux-parity/linux-reference/i915-src/display/intel_ddi.c` 5030 行）は
+  display 11 以上の combo PHY に `icl_ddi_combo_get_config` を結ぶ。移植の `i915_sanitize_dpll_state`（`clock.c`）は `active_mask` の無い PLL を止め、
+  `active_mask` は readout の `crtc_state->shared_dpll` から決まる。parity の N1（`8022d26f` の `parity_ddi_emit_glue.inc`）も `intel_ddi_get_config` を結んでおり、
+  preflight を readout の前に 1 回だけ行って takeover の後は preflight 無しで再点灯していたので、止まり切らない pipe が表に出なかったと見る（推測、parity の takeover の後の register の記録は無い）。
+- 検証: image の build（warning 0、`display=edp`）、QEMU の boot test PASS（`build/ws084-boot-test-lcd1/login.png`）。実機: 未実施。
+- 実機の確認点: `takeover: readout` の `DPLL1` と clock が 0 でないこと、`pipe_off wait timed out` が無いこと、preflight が通り `resident display` が frame を出すこと。
