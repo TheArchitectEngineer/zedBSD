@@ -68,6 +68,9 @@ main(
 	server.font_path = "/usr/share/fonts/keiland.ttf";
 	server.fallback_font_path = "/usr/share/fonts/keiland-fallback.ttf";
 	server.window_opacity = 1.0f;
+	server.pointer_speed = 100;
+	server.repeat_rate = 25;
+	server.repeat_delay_ms = 400;
 	server.width = 320;
 	server.height = 240;
 	server.timeout_ms = 150000;
@@ -100,6 +103,14 @@ main(
 		/* The glass look draws it. */
 		server.glass = 1;
 	}
+
+	/*
+	 * A desktop that is not the login screen follows the user's
+	 * preferences (ws089-p007), read before the look draws its wallpaper
+	 * so that the picture is read once.
+	 */
+	if (!server.greeter)
+		zwl_preferences_open(&server);
 
 	/* Catch normal termination without performing allocation or I/O inside a signal handler. */
 	previous_handler = signal(SIGINT, stop_service);
@@ -639,6 +650,9 @@ event_loop(
 		/* The windows hear new bounds when the space for bodies changed (the glass look given up, protocol.c). */
 		zwl_window_bounds_refresh(server);
 
+		/* The user's preferences, when they changed, apply now (preferences.c looks once a second). */
+		zwl_preferences_tick(server, now);
+
 		/* Allocate exactly enough poll storage for the presently live client and device set. */
 		count = 1;
 		for (client = server->clients; client != NULL; client = client->next)
@@ -893,6 +907,9 @@ service_cleanup(
 
 	/* No client remains to hear from the seat, so its devices close quietly. */
 	zwl_input_cleanup(server);
+
+	/* The user's preferences are not read any more. */
+	zwl_preferences_close(server);
 
 	/* Closing the independent renderer session completes all remaining native cleanup. */
 	if (server->gpu >= 0) {

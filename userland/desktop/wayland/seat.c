@@ -78,13 +78,6 @@
 /* One wheel notch scrolls this many surface units, as common compositors do. */
 #define WHEEL_STEP			15
 
-/*
- * The key repeat clients do themselves (ws035-p078): 25 keys a second after
- * 400 ms, the repeat terminal uses when it is told none.
- */
-#define REPEAT_RATE			25
-#define REPEAT_DELAY_MS			400
-
 static int create_device(struct zwl_object *seat, enum zwl_kind kind, const unsigned char *bytes, size_t size);
 static void deliver(struct zwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
 static void pointer_enter(struct zwl_object *pointer, struct zwl_object *surface, uint32_t serial);
@@ -961,10 +954,14 @@ create_device(
 		if (error != 0)
 			return error;
 
-		/* Version 4 keyboards are told how to repeat a held key themselves (zdesktop does not). */
+		/*
+		 * Version 4 keyboards are told how to repeat a held key themselves
+		 * (zdesktop does not): 25 keys a second after 400 ms (ws035-p078),
+		 * or the user's preferences (ws089-p007, main.c and preferences.c).
+		 */
 		if (device->version >= KEYBOARD_REPEAT_VERSION) {
-			repeat[0] = REPEAT_RATE;
-			repeat[1] = REPEAT_DELAY_MS;
+			repeat[0] = seat->client->server->repeat_rate;
+			repeat[1] = seat->client->server->repeat_delay_ms;
 			deliver(device->client, device->id, KEYBOARD_REPEAT_INFO, repeat, sizeof(repeat));
 		}
 	}
