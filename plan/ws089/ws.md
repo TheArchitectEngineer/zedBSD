@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: **2026-09-29（2 人目のサブエージェント）**: p001・p002・p003・p008・**p007** は cleared（p007 は Venus の guest で PASS、commit 済み）。p007 で libkeiland の `keiland_preferences_*`（KEILAND_VERSION 13）と zdesktop の反映（壁紙・透明度・pointer・repeat、1 秒ごと）を入れた。次は p004（Appearance・Wallpaper・Display・Storage の頁）→ p005（Mouse・Keyboard、Sound は audiod の有無の表示だけ）、最後に p006。proposed の状態: desktop-preferences は適用済み、audio・system は未適用（許可済み D4）。試験の手順は各 phase.md と `plan/ws089/tests/`（`build-settings-image.sh`・`settings-guest.sh`・`settings-p002.sh`・`settings-p003.sh`・`settings-p007.sh`・`settings-p008.sh`・`host-build.sh`・`host-preferences.sh`）
+Resume point: **2026-09-29（2 人目のサブエージェント）**: p001・p002・p003・p008・p007・**p004** は cleared（p004 は Venus の guest で PASS、commit 済み）。次は p005（Mouse・Keyboard の頁、Sound は audiod の有無の表示だけ、Touchpad は準備中のまま）、最後に p006。proposed の状態: desktop-preferences は適用済み（p007）、audio・system は未適用（許可済み D4）。同梱の壁紙をデモの image に足すのは WS075（main に依頼）。試験の手順は各 phase.md と `plan/ws089/tests/`（`build-settings-image.sh`（先に `make-wallpapers.py`）・`settings-guest.sh`・`settings-p002.sh`・`settings-p003.sh`・`settings-p004.sh`・`settings-p007.sh`・`settings-p008.sh`・`host-build.sh`・`host-preferences.sh`）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -48,7 +48,7 @@ Resume point: **2026-09-29（2 人目のサブエージェント）**: p001・p0
 | [ws089-p008](phase008/phase.md) | 検索（titlebar の欄と結果の頁）と Home の tile の今の状態。App Home の歯車の絵（許可済み D4）も同時に | cleared（2026-09-29、Venus の guest。実機は未実施） | p002 |
 | [ws089-p007](phase007/phase.md) | desktop の設定の仕組み: libkeiland の `keiland_preferences_*`（KEILAND_VERSION 13）と zdesktop の反映（[案](proposed/desktop-preferences.md)、許可済み D4） | cleared（2026-09-29、Venus の guest。実機は未実施） | p001、main の許可 |
 | [ws089-p003](phase003/phase.md) | Network・Wi-Fi・Ethernet の頁（networkd の状態、Wi-Fi の一覧・接続・切断・新しい network の鍵、address・DNS・通信量。[案](proposed/libkeiland-network-link.md)、networkd の protocol は変えない） | cleared（2026-09-29、Venus の guest。実機は未実施） | p002 |
-| ws089-p004 | Appearance・Wallpaper・Display・Storage の頁 | planning | p002, p007 |
+| [ws089-p004](phase004/phase.md) | Appearance・Wallpaper・Display・Storage の頁 | cleared（2026-09-29、Venus の guest。実機は未実施） | p002, p007 |
 | ws089-p005 | Sound・Mouse・Touchpad・Keyboard の頁（音量は [案](proposed/libkeiland-audio.md)） | planning | p002, p007（音量は main の許可） |
 | ws089-p006 | 規約の全文との照合、回帰、デモの通し、App Home の絵とデモの image（[案](proposed/app-home-icon.md)、main の許可） | planning | p003〜p005, p008 |
 
