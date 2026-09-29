@@ -38,6 +38,7 @@ static void parser_set_formatting(struct html_parser *p, size_t index, struct do
 static void parser_insert_formatting(struct html_parser *p, size_t index, struct dom_element *element);
 static struct dom_element *parser_clone_element(struct html_parser *p, const struct dom_element *element);
 static void parser_nomem(struct html_parser *p);
+static int parser_fragment_state(const struct dom_element *context, int scripting);
 
 /*
  * Makes a parser that builds a whole document.
@@ -84,6 +85,86 @@ html_parser_create(
 	/* Succeeded: the parser is ready for input. */
 	*parser = p;
 	return 0;
+}
+
+/*
+ * Makes a parser that builds a fragment in the context of an element (the
+ * HTML Standard's HTML fragment parsing algorithm; ws074-p081): the
+ * tokenizer starts in the state the context's content is read in, the
+ * elements are built in a root html element of the context's document
+ * (not inserted in it; html_parser_fragment_root finds it), the insertion
+ * mode is the one the context element gives, and the form element pointer
+ * is the context's nearest form.  No script runs.
+ */
+int
+html_parser_create_fragment(
+	struct html_parser **parser,
+	struct dom_element *context,
+	int scripting)
+{
+	struct html_parser *p;
+	struct dom_element *root;
+	struct dom_node *walk;
+	int state;
+	int error;
+
+	/* A parser of the context's document. */
+	error = html_parser_create(&p, context->node.document, scripting);
+	if (error != 0)
+		return error;
+	p->context = context;
+
+	/* The tokenizer's state is the one the context's content is read in. */
+	state = parser_fragment_state(context, scripting);
+	html_tokenizer_set_state(&p->tokenizer, state);
+
+	/*
+	 * The tokenizer has seen no start tag: an end tag of the context's name
+	 * in its raw text is text (the html5lib fragment cases, and other
+	 * browsers).
+	 */
+
+	/* The root html element, the only element open. */
+	root = tb_create_element_for_tag(p, DOM_TAG_HTML);
+	if (root == NULL) {
+		html_parser_destroy(p);
+		return ENOMEM;
+	}
+	p->fragment_root = root;
+	tb_push(p, root);
+
+	/* A template context reads in template contents. */
+	if (context->ns == DOM_NS_HTML && context->tag == DOM_TAG_TEMPLATE)
+		tb_push_template_mode(p, TB_IN_TEMPLATE);
+
+	/* The mode the context gives. */
+	tb_reset_insertion_mode(p);
+
+	/* The form element pointer: the context or its nearest ancestor that is a form. */
+	for (walk = &context->node; walk != NULL; walk = walk->parent) {
+		if (walk->type != DOM_ELEMENT)
+			continue;
+		if (dom_element_is(walk, DOM_NS_HTML, DOM_TAG_FORM)) {
+			p->form = (struct dom_element *)walk;
+			break;
+		}
+	}
+
+	/* Succeeded: the parser takes the fragment's text. */
+	*parser = p;
+	return 0;
+}
+
+/*
+ * Finds the root html element a fragment parser built the fragment in
+ * (its children are the fragment), or NULL for a document's parser.
+ */
+struct dom_element *
+html_parser_fragment_root(
+	const struct html_parser *p)
+{
+	/* The root, kept apart from the stack, which a stopped parse empties. */
+	return p->fragment_root;
 }
 
 /*
@@ -575,6 +656,35 @@ tb_template_on_stack(
 	}
 
 	/* No template is open. */
+	return 0;
+}
+
+/*
+ * Tells whether the parser builds template contents, for the form element
+ * pointer: a template is open, or a fragment's context is a template (the
+ * context is not on the stack, but its contents are what is built;
+ * ws074-p081, as the html5lib fragment cases have it).
+ */
+int
+tb_template_contents(
+	const struct html_parser *p)
+{
+	int open;
+	int context_template;
+
+	/* A template on the stack. */
+	open = tb_template_on_stack(p);
+	if (open)
+		return 1;
+
+	/* A fragment built in a template. */
+	if (p->context == NULL)
+		return 0;
+	context_template = dom_element_is(&p->context->node, DOM_NS_HTML, DOM_TAG_TEMPLATE);
+	if (context_template)
+		return 1;
+
+	/* Succeeded: no template contents are built. */
 	return 0;
 }
 
@@ -1762,6 +1872,8 @@ parser_trace(
 		vm_heap_mark(heap, &p->form->node.cell);
 	if (p->context != NULL)
 		vm_heap_mark(heap, &p->context->node.cell);
+	if (p->fragment_root != NULL)
+		vm_heap_mark(heap, &p->fragment_root->node.cell);
 
 	/* Marks the open elements and the formatting elements. */
 	for (index = 0; index < p->open.count; index++)
@@ -2242,4 +2354,46 @@ parser_nomem(
 	/* The run loop reports the failure. */
 	p->failed = 1;
 	p->stopped = 1;
+}
+
+/*
+ * Chooses the tokenizer's state for a fragment's context: RCDATA in title
+ * and textarea, RAWTEXT in style, xmp, iframe, noembed and noframes (and
+ * noscript when scripting), script data in script, PLAINTEXT in plaintext,
+ * and data anywhere else (a context of another namespace too).
+ */
+static int
+parser_fragment_state(
+	const struct dom_element *context,
+	int scripting)
+{
+	/* Only HTML elements change the state. */
+	if (context->ns != DOM_NS_HTML)
+		return HTML_TOKENIZE_DATA;
+
+	/* Chooses by the element. */
+	switch (context->tag) {
+	case DOM_TAG_TITLE:
+	case DOM_TAG_TEXTAREA:
+		return HTML_TOKENIZE_RCDATA;
+	case DOM_TAG_STYLE:
+	case DOM_TAG_XMP:
+	case DOM_TAG_IFRAME:
+	case DOM_TAG_NOEMBED:
+	case DOM_TAG_NOFRAMES:
+		return HTML_TOKENIZE_RAWTEXT;
+	case DOM_TAG_NOSCRIPT:
+		if (scripting)
+			return HTML_TOKENIZE_RAWTEXT;
+		return HTML_TOKENIZE_DATA;
+	case DOM_TAG_SCRIPT:
+		return HTML_TOKENIZE_SCRIPT_DATA;
+	case DOM_TAG_PLAINTEXT:
+		return HTML_TOKENIZE_PLAINTEXT;
+	default:
+		break;
+	}
+
+	/* Any other element. */
+	return HTML_TOKENIZE_DATA;
 }

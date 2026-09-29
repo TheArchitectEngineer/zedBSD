@@ -126,8 +126,9 @@ struct html_parser {
 	struct wb_units table_text;
 	int table_text_other;
 
-	/* The fragment case: the context element (NULL for a whole document). */
+	/* The fragment case: the context element (NULL for a whole document) and the root html element the fragment is built in (ws074-p081). */
 	struct dom_element *context;
+	struct dom_element *fragment_root;
 
 	/* What runs a script element when its end tag is parsed (NULL: nothing runs). */
 	html_script_hook script_hook;
@@ -159,6 +160,7 @@ int tb_current_is(const struct html_parser *p, int tag);
 int tb_in_scope(const struct html_parser *p, int tag, int scope);
 int tb_element_in_scope(const struct html_parser *p, const struct dom_element *target, int scope);
 int tb_template_on_stack(const struct html_parser *p);
+int tb_template_contents(const struct html_parser *p);
 int tb_is_special(const struct dom_element *element);
 void tb_generate_implied_end_tags(struct html_parser *p, int except);
 void tb_generate_all_implied_end_tags(struct html_parser *p);

@@ -175,6 +175,8 @@ const char *html_error_name(int error);
 
 /* The tree builder (parser.c). */
 int html_parser_create(struct html_parser **parser, struct dom_document *document, int scripting);
+int html_parser_create_fragment(struct html_parser **parser, struct dom_element *context, int scripting);
+struct dom_element *html_parser_fragment_root(const struct html_parser *parser);
 void html_parser_set_script_hook(struct html_parser *parser, html_script_hook hook, void *context);
 void html_parser_destroy(struct html_parser *parser);
 int html_parser_feed(struct html_parser *parser, const uint16_t *units, size_t length);

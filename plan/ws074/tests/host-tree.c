@@ -36,6 +36,7 @@ static void print_string(const struct vm_string *string);
 static void string_to_ascii(const struct vm_string *string, char *out, size_t size);
 static int compare_attributes(const void *left, const void *right);
 static int parse_hex(const char *text, struct wb_units *units);
+static struct dom_element *make_context(struct dom_document *document, const char *text);
 
 int
 main(void)
@@ -45,6 +46,9 @@ main(void)
 	struct dom_document *document;
 	struct html_parser *parser;
 	struct wb_units input;
+	struct dom_element *context;
+	char *context_text;
+	char *second;
 	char *tab;
 	int scripting;
 
@@ -60,15 +64,33 @@ main(void)
 		}
 		*tab = '\0';
 		scripting = atoi(line);
+
+		/* ws074-p081: a fragment case has a third field before the input, its context (NS:NAME). */
+		context_text = NULL;
+		second = strchr(tab + 1, '\t');
+		if (second != NULL) {
+			*second = '\0';
+			context_text = tab + 1;
+			tab = second;
+		}
 		wb_units_clear(&input);
 		parse_hex(tab + 1, &input);
 
 		document = dom_document_create(heap);
-		html_parser_create(&parser, document, scripting);
+		if (context_text == NULL) {
+			html_parser_create(&parser, document, scripting);
+		} else {
+			context = make_context(document, context_text);
+			html_parser_create_fragment(&parser, context, scripting);
+		}
 		html_parser_feed(parser, input.data, input.length);
 		html_parser_finish(parser);
+		if (context_text == NULL) {
+			dump(&document->node, 0);
+		} else {
+			dump(&html_parser_fragment_root(parser)->node, 0);
+		}
 		html_parser_destroy(parser);
-		dump(&document->node, 0);
 		printf("#end\n");
 		fflush(stdout);
 		document = NULL;
@@ -243,4 +265,22 @@ string_to_ascii(
 	vm_string_to_utf8(string, &buffer);
 	snprintf(out, size, "%s", wb_buffer_string(&buffer));
 	wb_buffer_release(&buffer);
+}
+
+/* Makes a fragment case's context element from "html:NAME", "svg:NAME" or "math:NAME". */
+static struct dom_element *
+make_context(
+	struct dom_document *document,
+	const char *text)
+{
+	const char *colon;
+	int ns;
+
+	colon = strchr(text, ':');
+	ns = DOM_NS_HTML;
+	if (strncmp(text, "svg:", 4) == 0)
+		ns = DOM_NS_SVG;
+	if (strncmp(text, "math:", 5) == 0)
+		ns = DOM_NS_MATHML;
+	return dom_element_create(document, ns, vm_atom_from_ascii(document->heap, colon + 1), NULL);
 }

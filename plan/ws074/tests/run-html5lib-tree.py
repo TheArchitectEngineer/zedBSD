@@ -60,6 +60,14 @@ def to_hex(text):
     return "".join("%04x" % (data[i] | (data[i + 1] << 8)) for i in range(0, len(data), 2))
 
 
+def case_line(case):
+    if case["fragment"] is None:
+        return "%d\t%s\n" % (case["scripting"], to_hex(case["data"]))
+    words = case["fragment"].split()
+    context = "html:" + words[0] if len(words) == 1 else words[0] + ":" + words[1]
+    return "%d\t%s\t%s\n" % (case["scripting"], context, to_hex(case["data"]))
+
+
 def run_in_guest(root, driver, cases):
     guest = os.path.join(root, "plan/ws074/tests/browser-guest.sh")
     scratch = os.path.join(root, "build/ws074-guest")
@@ -93,9 +101,10 @@ def main():
         if args.file and os.path.basename(path) != args.file:
             continue
         cases.extend(read_cases(path))
-    documents = [case for case in cases if case["fragment"] is None]
-    fragments = len(cases) - len(documents)
-    batch = "".join("%d\t%s\n" % (case["scripting"], to_hex(case["data"])) for case in documents)
+    # ws074-p081: the fragment cases run too, with their context (NS:NAME) as a field before the input.
+    documents = cases
+    fragments = sum(1 for case in cases if case["fragment"] is not None)
+    batch = "".join(case_line(case) for case in documents)
     if args.guest:
         output = run_in_guest(root, args.guest, batch)
     else:
@@ -111,16 +120,20 @@ def main():
         else:
             failures.append((case, got))
     total = len(documents)
-    print("tree construction: %d/%d documents pass (%.1f%%); %d fragment cases not run yet"
-          % (passed, total, 100.0 * passed / max(total, 1), fragments))
+    fragment_passed = sum(1 for number, case in enumerate(documents)
+                          if case["fragment"] is not None and number < len(results)
+                          and results[number].rstrip("\n") == case["expected"])
+    print("tree construction: %d/%d cases pass (%.1f%%); fragments %d/%d"
+          % (passed, total, 100.0 * passed / max(total, 1), fragment_passed, fragments))
     for case, got in failures[: args.show]:
         print("--- %s #%d (scripting %d): %r" % (case["file"], case["index"], case["scripting"], case["data"][:200]))
         print("expected:\n" + case["expected"])
         print("got:\n" + got)
     if args.record:
         with open(args.record, "a", encoding="utf-8") as stream:
-            stream.write("%s tree-construction %d/%d (%.1f%%) fragments-not-run %d suite=wpt-2d66b9b7\n"
-                         % (datetime.date.today().isoformat(), passed, total, 100.0 * passed / max(total, 1), fragments))
+            stream.write("%s tree-construction %d/%d (%.1f%%) fragments %d/%d suite=wpt-2d66b9b7\n"
+                         % (datetime.date.today().isoformat(), passed, total, 100.0 * passed / max(total, 1),
+                            fragment_passed, fragments))
     return 0
 
 
