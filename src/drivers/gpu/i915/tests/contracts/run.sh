@@ -5,7 +5,7 @@
 # ASan/UBSan.  Each test links the production sources it checks with a mock
 # behind their operations table; see README.md.
 #
-# Usage: run.sh [test ...]   (default: mmio dma pci rpm pte sync)
+# Usage: run.sh [test ...]   (default: mmio dma pci rpm pte sync rps)
 set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -15,7 +15,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/i915-contracts.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT HUP INT TERM
 
 compiler=${CC:-cc}
-tests=${*:-"mmio dma pci rpm pte sync"}
+tests=${*:-"mmio dma pci rpm pte sync rps"}
 
 warnings="-std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement"
 ordinary="-O2"
@@ -45,6 +45,8 @@ sources_for() {
 		echo "$here/pte_contract_test.c $driver/ggtt.c $driver/ppgtt.c" ;;
 	sync)
 		echo "$here/sync_contract_test.c $here/host_kernel.c $here/host_thread.c $driver/sync.c $driver/workqueue.c $driver/mmio.c $driver/trace.c" ;;
+	rps)
+		echo "$here/rps_contract_test.c $here/mock_mmio.c $here/host_kernel.c $here/host_thread.c $driver/gt-power.c $driver/workqueue.c $driver/mmio.c $driver/trace.c" ;;
 	*)
 		echo "unknown contract test: $1" >&2
 		return 1 ;;

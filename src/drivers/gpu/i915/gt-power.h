@@ -12,7 +12,14 @@
  * media power gating let the idle units switch off.  RPS picks the GT clock.
  * Both follow the Linux intel_rc6.c and intel_rps.c paths that Alder Lake-P
  * takes with the GuC disabled: the driver writes the thresholds and the
- * enables itself, and requests a fixed frequency.
+ * enables itself.  RPS follows the load (ws075-p020) as Linux does for
+ * graphics version 12: an evaluation every few milliseconds compares the
+ * engines' busy time with the thresholds (Linux's rps_timer; the GT's own
+ * up/down interrupts, which versions 6 to 11 use and which are kept here,
+ * do not fire on Alder Lake-P), a work raises or lowers the requested
+ * frequency, a client waiting on work the GT has not started boosts it,
+ * and an idle GT at the minimum stops the evaluations until the engines
+ * run again.
  *
  * The PCODE mailbox that RPS reads the efficient frequency from belongs to
  * power.c; this file only uses it.
@@ -21,11 +28,38 @@
 #ifndef DRIVERS_GPU_I915_GT_POWER_H
 #define DRIVERS_GPU_I915_GT_POWER_H
 
+#include <kern/lock.h>
 #include <stdint.h>
+
+#include "workqueue.h"
 
 struct i915_mmio;
 struct i915_gt_info;
+struct i915_irq_dev;
 struct mutex;
+
+/*
+ * The power modes the RPS thresholds are set for (Linux's LOW_POWER,
+ * BETWEEN and HIGH_POWER): the higher the frequency, the sooner the GT
+ * counts as busy enough to go up and the later as idle enough to go down.
+ * NONE means no thresholds have been written yet.
+ */
+#define I915_RPS_POWER_NONE		(-1)
+#define I915_RPS_POWER_LOW		0
+#define I915_RPS_POWER_BETWEEN		1
+#define I915_RPS_POWER_HIGH		2
+
+/* The power management interrupt events of RPS (GEN6_PM_RP_*). */
+#define I915_RPS_DOWN_TIMEOUT		(1U << 6)
+#define I915_RPS_UP_THRESHOLD		(1U << 5)
+#define I915_RPS_DOWN_THRESHOLD		(1U << 4)
+#define I915_RPS_UP_EI_EXPIRED		(1U << 2)
+#define I915_RPS_DOWN_EI_EXPIRED	(1U << 1)
+#define I915_RPS_EVENTS			(I915_RPS_UP_EI_EXPIRED | I915_RPS_UP_THRESHOLD | I915_RPS_DOWN_EI_EXPIRED | \
+					 I915_RPS_DOWN_THRESHOLD | I915_RPS_DOWN_TIMEOUT)
+
+/* No frequency has been written yet. */
+#define I915_RPS_FREQ_NONE		0xffffffffU
 
 /*
  * The RC6 state of one GT.
@@ -57,8 +91,11 @@ struct i915_rc6 {
 /*
  * The frequency limits and state of one GT, in 16.67 MHz units.
  *
- * It is built by the GT table construction and changed by the enable step
- * of the GT resume.
+ * It is built by the GT table construction, changed by the enable step of
+ * the GT resume, and driven from the start of the published node to its
+ * stop: the interrupt handler hands the events to the work, which alone
+ * requests frequencies from then on.  lock guards pm_iir, pm_imr, pm_ier and
+ * waiters, and is taken with interrupts disabled.
  */
 struct i915_rps {
 	/* The highest, the sustainable and the lowest frequency the fuses allow. */
@@ -77,13 +114,111 @@ struct i915_rps {
 
 	/* Nonzero when the PCODE reported the efficient frequency. */
 	int pcode_ok;
+
+	/*
+	 * The range the work moves in (Linux's sysfs soft limits, which stay
+	 * the whole range here), the frequency a boost jumps to (RP0), the
+	 * frequency the driver last settled on and the one it last wrote
+	 * (I915_RPS_FREQ_NONE before the first), and the last step the work
+	 * took (its sign says up or down; consecutive steps double).
+	 */
+	uint32_t min_softlimit;
+	uint32_t max_softlimit;
+	uint32_t boost_freq;
+	uint32_t cur_freq;
+	uint32_t last_freq;
+	int last_adj;
+
+	/* The power mode of the thresholds written, and the busy percentages that go up and down. */
+	int power_mode;
+	uint32_t up_threshold;
+	uint32_t down_threshold;
+
+	/* The GT's command streamer clock in Hz, the unit of the evaluation intervals. */
+	uint32_t clock_frequency;
+
+	/* The interrupt events RPS follows (I915_RPS_UP_THRESHOLD and I915_RPS_DOWN_THRESHOLD). */
+	uint32_t pm_events;
+
+	/*
+	 * The started part: the register access and the interrupt device the
+	 * handler is registered with (NULL before the start), the events the
+	 * handler saw that the work has not taken, the PM interrupt mask and
+	 * enable as last written (the low half of GPM_WGBOXPERF's upper half),
+	 * and how many clients wait on work the GT has not started.
+	 */
+	struct i915_mmio *mmio;
+	struct i915_irq_dev *irq;
+	struct spinlock lock;
+	uint32_t pm_iir;
+	uint32_t pm_imr;
+	uint32_t pm_ier;
+	unsigned waiters;
+
+	/* The queue and the work that change the frequency; work_ready says they exist. */
+	struct i915_workqueue workqueue;
+	struct i915_work work;
+	int work_ready;
+
+	/*
+	 * How the load is followed: nonzero for the busy-time evaluation
+	 * (Linux's rps_timer over the engines' busy stats, graphics version
+	 * 12), zero for the GT's up/down interrupts (versions 6 to 11).
+	 */
+	int use_timer;
+
+	/*
+	 * The busy-time evaluation: the engines' busy time of the runs that
+	 * ended, when the runs under way began (busy_runs counts them), the
+	 * busy time and the clock at the last evaluation (nanoseconds), the
+	 * next evaluation's interval (1 ms after a change, doubling to 20 ms),
+	 * whether the evaluations run (zero: parked, the GT idle at the
+	 * minimum) and whether the next one starts the GT from the efficient
+	 * frequency (unpark).  busy_* and ticking are guarded by lock; the
+	 * timer queue fires the evaluations on the work's queue.
+	 */
+	uint64_t busy_total_ns;
+	uint64_t busy_since_ns;
+	unsigned busy_runs;
+	uint64_t busy_seen_ns;
+	uint64_t tick_ns;
+	unsigned interval_ms;
+	int ticking;
+	int unparking;
+	struct i915_timer_queue timers;
+	struct i915_delayed_work tick_work;
+	int timers_ready;
+
+	/* What happened, for the diagnostics: events, boosts, work runs and frequency changes. */
+	volatile unsigned up_events;
+	volatile unsigned down_events;
+	volatile unsigned boosts;
+	volatile unsigned work_runs;
+	volatile unsigned changes;
+	volatile unsigned ticks;
+	volatile unsigned parks;
+	volatile unsigned unparks;
+
+	/* How many frequency changes the log has reported (the first few only). */
+	unsigned logged;
 };
 
 void drv_i915_rc6_init(struct i915_rc6 *rc6, struct i915_mmio *mmio);
 void drv_i915_gen11_rc6_enable(struct i915_rc6 *rc6, struct i915_mmio *mmio, const struct i915_gt_info *gt);
 void drv_i915_rc6_sanitize(struct i915_rc6 *rc6, struct i915_mmio *mmio);
 void drv_i915_rps_init(struct i915_rps *rps, struct mutex *sb_lock, struct i915_mmio *mmio);
-void drv_i915_rps_enable(struct i915_rps *rps, struct i915_mmio *mmio);
+void drv_i915_rps_enable(struct i915_rps *rps, struct i915_mmio *mmio, uint32_t clock_frequency);
 void drv_i915_rps_sanitize(struct i915_rps *rps, struct i915_mmio *mmio);
+int drv_i915_rps_start(struct i915_rps *rps, struct i915_irq_dev *irq, struct i915_mmio *mmio);
+void drv_i915_rps_stop(struct i915_rps *rps);
+void drv_i915_rps_irq(void *context, uint32_t pm_iir);
+void drv_i915_rps_boost_begin(struct i915_rps *rps);
+void drv_i915_rps_boost_end(struct i915_rps *rps);
+void drv_i915_rps_busy_begin(struct i915_rps *rps);
+void drv_i915_rps_busy_end(struct i915_rps *rps);
+uint32_t drv_i915_rps_next_freq(const struct i915_rps *rps, uint32_t pm_iir, int client_boost, int *adj);
+uint32_t drv_i915_rps_pm_mask(const struct i915_rps *rps, uint32_t freq);
+uint32_t drv_i915_rps_limits(const struct i915_rps *rps, uint32_t freq);
+uint32_t drv_i915_rps_pm_interval(uint32_t clock_frequency, uint64_t ns);
 
 #endif
