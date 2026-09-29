@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: 2026-09-29: p008（性能）を 3 つに分け（p008 完了待ちの割込み・p018 非同期の実行器・p019 present mode）、p008 を実施中。その前、2026-09-28 の夜: p001〜p006 は実機で確認（MRT・query・SSBO・stencil・multisample・transform feedback）。HDMI の主出力 p011〜p013、BUG-091（p014）は cleared。p015（BUG-085 の再試験）は cleared: BUG-094 の原因（HAL の APIC timer の較正と AP の timecounter の probe が vCPU の停止で狂う）を直し、修正の後の 10 回で BUG-085・BUG-094 とも 0。p016（lease の替わり目で HDMI を点けたまま）は cleared: login・logout の 暗転 0（実機の passthrough の register）。p017（BUG-058）は 6 回で再現せず uncleared。BUG-095（capture の image の power-off）を起票。次: 実物の LCD での login・logout の目視（ユーザー）→ p007〜p010
+Resume point: 2026-09-29: p008（性能）を 3 つに分け（p008 完了待ちの割込み・p018 非同期の実行器・p019 present mode）、p008 は cleared。次は p009（安定、BUG-056・BUG-057）、その後 p018・p019、F-054（RPS の割込み）。その前、2026-09-28 の夜: p001〜p006 は実機で確認（MRT・query・SSBO・stencil・multisample・transform feedback）。HDMI の主出力 p011〜p013、BUG-091（p014）は cleared。p015（BUG-085 の再試験）は cleared: BUG-094 の原因（HAL の APIC timer の較正と AP の timecounter の probe が vCPU の停止で狂う）を直し、修正の後の 10 回で BUG-085・BUG-094 とも 0。p016（lease の替わり目で HDMI を点けたまま）は cleared: login・logout の 暗転 0（実機の passthrough の register）。p017（BUG-058）は 6 回で再現せず uncleared。BUG-095（capture の image の power-off）を起票。次: 実物の LCD での login・logout の目視（ユーザー）→ p007〜p010
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -57,7 +57,7 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p005](phase005/phase.md) | texture の種類: compiler の texelFetch（OpImage・OpImageFetch）・textureSize、shadow（Dref）、integer sampler、cube・配列・3D の sampler。実行器の cube・配列・3D の image、mip level・layer への描画（ws031-p030）、depth の copy、sampler の compare 等（ws031-p034）、descriptor 配列（ws031-p035） | cleared（2026-09-28。実機 egltest の glsl・glsl3・fbo・cube・es3・formats・volumes が failures 0、vke1 6/6・vke2 17/17・vkx 9/9・vkc 9/9、zdesktop・files PASS） | p004 |
 | [ws075-p006](phase006/phase.md) | 実行器と compiler: MRT（ws031-p031）、occlusion query（sync の module）、texel buffer（buffer view）、storage buffer（transform feedback の VS の store）、stencil、multisample の image と resolve | in-progress（増分 1〜5 済み、後退を修正。増分 6 は実機が未実施） | p005 |
 | ws075-p007 | GL 3.2 の stage: geometry shader（compiler の stage と 3DSTATE_GS）、gl_Layer と layered の描画、PrimitiveId。着手前に分ける | planning | p006 |
-| [ws075-p008](phase008/phase.md) | 性能 1: 完了待ちを割込みへ（ws031-p044）。2026-09-29 に 3 つに分けた（p018・p019） | in-progress | p002 |
+| [ws075-p008](phase008/phase.md) | 性能 1: 完了待ちを割込みへ（ws031-p044）。2026-09-29 に 3 つに分けた（p018・p019） | cleared（2026-09-29。worker は engine の割込みで起きる。実機の passthrough で request の終わりの 149/150 が割込みの直後、latency 49.3 ms・20 flip/s は前と同じ、vkx 9/9） | p002 |
 | ws075-p009 | 安定: BUG-056・BUG-057（実機の zgears の止まり）ほか p002〜p008 で出た bug | planning | p002 |
 | ws075-p010 | 規約の全文との照合、統合回帰（最後） | planning | 全 Phase |
 | [ws075-p011](phase011/phase.md) | HDMI の主出力の実機の事前調査（[hdmi-main-output.md](hdmi-main-output.md) の H1）: EDID、点く mode、DVI、HDMI の前後の USB | cleared（2026-09-28。EDID は読める、native は 1920x1280。pipe B・DVI で 720p・1080p・1920x1280 を出力。touch の USB は 5330 に現れない。絵の目視は未実施） | — |
