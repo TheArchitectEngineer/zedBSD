@@ -363,6 +363,8 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | 文字の符号（2026-09-29） | ユーザー:「我々のOSはutf-8のみをサポートしており、Escapeは不要と思います。LANG=CをUtf-8と解釈するのが乱暴というなら、C.UTF-8を設定するのでもいいです。」→ ls は locale に関わらず名前を UTF-8 として扱い、表示できる UTF-8 の文字を escape しない（escape は制御文字と不正な byte だけ）。幅は UTF-8 の表示幅 | WS086 |
 | sh の上下キー（2026-09-29） | ユーザー:「上下キーは、同じ窓で命令を打った直後に上を押しても、何も出なかった、と思いますが、私の操作ミスかもしれません。」→ WS087 p002（履歴の file）に加え、実機（PS/2 の内蔵キーボード）で上キーの event が届くかを `plan/ws084/tests/evlat.c` で確かめる | WS087、BUG-103 |
 | less のページ送り（2026-09-29） | ユーザー:「lessコマンドで、Ctrl-F, Ctrl-Bでページ送りできるようにしてほしいです。」 | [BUG-104](bugs/BUG-104.md)（WS073） |
+| 替わり目の画の保持（2026-09-29） | ws035-p126 の問い「kernel の message を画面に出す構成でも前の画を保つか」にユーザーが「quiet のときだけ」→ 今の形（kmsg=quiet のときだけ保つ）で確定 | WS035 p126、F-048 |
+| Kei-nightly.zip の base（2026-09-29） | ユーザー:「今の下書きを今すぐ upload」→ draft の base（`kei-nightly-base-winq-a10-1.zip`、SHA-256 81120981…）を rev-0 に upload（main が読み戻しで一致を確認）、`KEI_NIGHTLY_ALLOW_DRAFT ?= 1`。fork の commit が確定したら作り直して差し替える | WS088 |
 
 ### 主な依存関係
 
