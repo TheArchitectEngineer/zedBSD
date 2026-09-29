@@ -26,7 +26,8 @@
 
 /* The kernel services the executor calls, backed by the host. */
 static unsigned fixture_live;
-static char fixture_log[256];
+/* The lines logged since the fixture last emptied it (a refused command logs the refusal after the reason, ws075-p024). */
+static char fixture_log[1024];
 
 void *kern_malloc(size_t size);
 void *kern_calloc(size_t count, size_t size);
@@ -66,9 +67,10 @@ void
 kern_logf(const char *format, ...)
 {
 	va_list arguments;
+	size_t used = strlen(fixture_log);
 
 	va_start(arguments, format);
-	vsnprintf(fixture_log, sizeof(fixture_log), format, arguments);
+	vsnprintf(fixture_log + used, sizeof(fixture_log) - used, format, arguments);
 	va_end(arguments);
 }
 
@@ -79,6 +81,60 @@ kern_logf(const char *format, ...)
 #include "../../../src/drivers/gpu/i915/render/instance.c"
 #include "../../../src/drivers/gpu/i915/render/vulkan.c"
 #include "../../../src/drivers/gpu/i915/render/fence.c"
+#include "../../../src/drivers/gpu/i915/render/batch.c"
+
+/*
+ * The query pools' GPU objects and batch (ws075-p006), as in
+ * i915-vk-render-stubs.inc: the host has no GPU, so creating a pool's
+ * counters fails and a recorded query command cannot take a batch
+ * (ws075-p024).
+ */
+int
+drv_i915_gfx_object_create(struct i915_render_session *session, uint64_t bytes, struct i915_gem_object **result)
+{
+	(void)session;
+	(void)bytes;
+	*result = NULL;
+	return ENOMEM;
+}
+
+void
+drv_i915_gfx_object_destroy(struct i915_render_session *session, struct i915_gem_object *object)
+{
+	(void)session;
+	(void)object;
+}
+
+struct i915_gfx_session *
+drv_i915_gfx_session_get(struct i915_render_session *session)
+{
+	(void)session;
+	return NULL;
+}
+
+int
+drv_i915_gfx_op_begin(struct i915_render_session *session, struct i915_gfx_session *work, struct i915_gfx_op_space *space)
+{
+	(void)session;
+	(void)work;
+	(void)space;
+	return ENOMEM;
+}
+
+int
+drv_i915_gfx_op_end(struct i915_render_session *session, struct i915_gfx_session *work, int error)
+{
+	(void)session;
+	(void)work;
+	return error;
+}
+
+void
+drv_i915_gt_clflush(const volatile void *address, size_t bytes)
+{
+	(void)address;
+	(void)bytes;
+}
 
 /* A session blob's physical address is its host pointer in this fixture. */
 void *
@@ -444,11 +500,12 @@ test_routing(void)
 	put32(&b, 42U); put32(&b, 1U);
 	put32(&b, 137U); put32(&b, 1U); put64(&b, 1U);
 	memset(reply_blob, 0xee, sizeof(reply_blob));
+	fixture_log[0] = '\0';
 	error = run_stream(&b, &reply_bytes, &reply);
 	assert(error == ENOTSUP);
 	assert(reply_bytes == sizeof(reply_blob));
 	assert(reply_blob[4] == 0xeeU);
-	assert(strcmp(fixture_log, "i915: vk: XXX unimplemented opcode 42 (sync)\n") == 0);
+	assert(strstr(fixture_log, "i915: vk: XXX unimplemented opcode 42 (sync)\n") == fixture_log);
 
 	/* An unimplemented builtin is refused the same way. */
 	for (index = 0U; index < 2U; index++) {
@@ -457,11 +514,12 @@ test_routing(void)
 		put32(&b, refused[index]); put32(&b, 1U);
 		put32(&b, 137U); put32(&b, 1U); put64(&b, 1U);
 		memset(reply_blob, 0xee, sizeof(reply_blob));
+		fixture_log[0] = '\0';
 		error = run_stream(&b, &reply_bytes, &reply);
 		assert(error == ENOTSUP);
 		assert(reply_bytes == sizeof(reply_blob));
 		assert(reply_blob[4] == 0xeeU);
-		assert(strcmp(fixture_log, "i915: vk: XXX unimplemented opcode 17 (builtin)\n") == 0 || refused[index] != 17U);
+		assert(strstr(fixture_log, "i915: vk: XXX unimplemented opcode 17 (builtin)\n") == fixture_log || refused[index] != 17U);
 	}
 
 	fixture_close();

@@ -979,7 +979,8 @@ test_recording_limits(void)
 	error = stub_execute(&fixture_wire, &reply_bytes);
 	assert(error == ENOTSUP);
 	assert(reply_bytes == STUB_REPLY_BYTES);
-	assert(strcmp(stub_log, "i915: vk: command refused at opcode 99: error 95\n") == 0);
+	assert(strstr(stub_log, "i915: vk: XXX unimplemented opcode 99 (recording)\n") == stub_log);
+	assert(strstr(stub_log, "i915: vk: command refused at opcode 99: error 95\n") != NULL);
 
 	/* vkDestroyCommandPool frees the buffer still allocated from it. */
 	stub_wire_begin(&fixture_wire);
@@ -1717,7 +1718,9 @@ test_blend_state(void)
 	state.dset[1] = &sets[1];
 	for (index = 0U; index < I915_GFX_PUSH_BYTES; index++)
 		state.push[index] = (uint8_t)index;
-	state.dynamic_offsets[1][4] = 128U;
+	state.dynamic_count[1] = 1U;
+	state.dynamic_bindings[1][0] = 4U;
+	state.dynamic_offsets[1][0] = 128U;
 	state.blend_constants[1] = 0x3f000000U;
 
 	/*
@@ -1890,11 +1893,11 @@ test_blend_state(void)
 	sets[1].slots[3].buffer = NULL;
 	error = drv_i915_gfx_write_state(page, &state, &kernels, &target, 0x6U);
 	assert(error == EINVAL);
-	assert(strstr(stub_log, "set 1 binding 3 has no uniform buffer") != NULL);
+	assert(strstr(stub_log, "set 1 binding 3 has no uniform or storage buffer") != NULL);
 
 	/* A dynamic offset past the range reads zeros. */
 	sets[1].slots[3].buffer = &uniforms;
-	state.dynamic_offsets[1][4] = 1024U;
+	state.dynamic_offsets[1][0] = 1024U;
 	error = drv_i915_gfx_write_state(page, &state, &kernels, &target, 0x6U);
 	assert(error == 0);
 	for (index = 0U; index < 8U; index++)
@@ -2145,12 +2148,14 @@ test_uniform_bindings(void)
 	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
 	assert(stub_get32(stub_reply, 12U) == VK_SUCCESS);
 
-	/* The draw ran with the set as set 1, its dynamic offsets by binding and the blend constants. */
+	/* The draw ran with the set as set 1, its dynamic offsets paired with their bindings in order, and the blend constants. */
 	assert(stub_draw_calls == 1U);
 	assert(stub_last_draw.state.dset[1] == dset);
+	assert(stub_last_draw.state.dynamic_count[1] == 2U);
+	assert(stub_last_draw.state.dynamic_bindings[1][0] == 0U);
 	assert(stub_last_draw.state.dynamic_offsets[1][0] == 64U);
-	assert(stub_last_draw.state.dynamic_offsets[1][3] == 192U);
-	assert(stub_last_draw.state.dynamic_offsets[1][1] == 0U);
+	assert(stub_last_draw.state.dynamic_bindings[1][1] == 3U);
+	assert(stub_last_draw.state.dynamic_offsets[1][1] == 192U);
 	assert(stub_last_draw.state.blend_constants_set != 0);
 	assert(stub_last_draw.state.blend_constants[0] == 0x3e800000U);
 	assert(stub_last_draw.state.blend_constants[3] == 0x3f800000U);
@@ -2161,13 +2166,13 @@ test_uniform_bindings(void)
 	fixture_bind_set(FIXTURE_CB0, 0U, FIXTURE_SET, offsets, 1U);
 	error = stub_execute(&fixture_wire, &reply_bytes);
 	assert(error == EINVAL);
-	assert(strstr(stub_log, "1 dynamic offsets for more dynamic uniform buffers") != NULL);
+	assert(strstr(stub_log, "1 dynamic offsets for more dynamic buffers") != NULL);
 	stub_wire_begin(&fixture_wire);
 	fixture_begin(FIXTURE_CB0);
 	fixture_bind_set(FIXTURE_CB0, 0U, FIXTURE_SET, offsets, 3U);
 	error = stub_execute(&fixture_wire, &reply_bytes);
 	assert(error == EINVAL);
-	assert(strstr(stub_log, "3 dynamic offsets for 2 dynamic uniform buffers") != NULL);
+	assert(strstr(stub_log, "3 dynamic offsets for 2 dynamic buffers") != NULL);
 
 	/*
 	 * Destroys the pool, the resources and the layout, and withdraws the
