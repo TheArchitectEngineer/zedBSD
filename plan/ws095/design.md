@@ -376,12 +376,14 @@ X の前に引く。語の選び方と量はユーザーと相談（ユーザー
   0x7d ¥）の写しが無い。ノート PC の内蔵 keyboard は i8042 経由が多い。デモの機械（5330）の内蔵 keyboard の接続（PS/2 か USB か）と配列は **未確認**。
   PS/2 で JIS なら、写しを足す driver の Phase（ws095-p010、HAL ではない）を 5330 の確認の後に行う（§13）。
 
-### 10.3 JIS の keyboard の 半角/全角
+### 10.3 JIS の keyboard の 半角/全角（WS の外、後の候補）
 
 USB の JIS の keyboard の 半角/全角 は HID の usage 0x35（US の `` ` `` の位置）を送り、kernel では KEY_GRAVE になる。今の zdesktop の keymap は US だけ
-（`keymap.c`）で、配列の選択（US・JIS）が無い。JIS の配列を選べる設定ができるまで、KEY_GRAVE を 半角/全角 と見なすのは US の keyboard の `` ` `` を奪うので
-しない。**JIS の配列の設定**（Settings・keymap・Terminal と Text Editor の `keys.c`）は別の WS にすることを提案する（§14 D7）。それまで JIS の keyboard では
-変換・無変換・カタカナ/ひらがな・Super+Space で切り替える。
+（`keymap.c`）で、配列の選択（US・JIS）が無い。KEY_GRAVE を 半角/全角 と見なすのは US の keyboard の `` ` `` を奪うのでしない。
+
+**決定（ユーザー、2026-09-29、D7）**: デモ機（5330）の keyboard は US 配列なので、JIS の配列の設定（Settings・keymap・Terminal と Text Editor の
+`keys.c`）と 半角/全角 の key は後回しにし、WS095 には入れない。WS の外の後の候補として main に渡す（master の Future Work への登録は main が行う）。
+この WS の切り替えは Super+Space（US の keyboard で押せる）で、変換・無変換・カタカナ/ひらがな・かな・英数 の key は来れば受ける（§10.1）。
 
 ## 11. app の側（text-input-v3 の対応）
 
@@ -447,11 +449,11 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
 | --- | --- | --- | --- |
 | D1 | 辞書をどう image に入れるか・license の表示 | REmacs の commit を固定した tarball から build の時に `SKK-JISYO.X` を取り image に入れる。tree には取り込まない。image に著作権者の許可の文（LICENSE）を置く | (a) 著作権者が REmacs の辞書の header を Kei でも使える license（二重 license 等）に書き換える（header と LICENSE の食い違いが無くなる）／(b) 辞書を tree（`userland/desktop/ime/dict/`）に取り込み header を Kei 用に書き換える |
 | D2 | 変換の操作 | **決定（ユーザー、2026-09-29、main 経由の質問への回答）**: MS-IME の型。ひらがなを打ち、Space で未確定の全体を変換し、文節は自動で分ける。Shift の大文字は一時的な英字。SKK の大文字の起点は使わない（操作の層 `ja-keys.c` は engine の中心から分けてあり、差し替えられる） | SKK の型（大文字で変換の始まり・送りの始まりを示す。REmacs と同じ操作、分割の誤りが減るが一般の利用者には馴染みが薄い） |
-| D3 | 足りない語の補い | この project で書き下ろす補いの辞書 `SKK-JISYO.kei`（代名詞・基本の名詞・挨拶・助数詞・基本の動詞と形容詞、数百〜千語）。p003 で 100 文の計測の後に語の一覧を示して量を決める | REmacs の辞書そのものに足す（ユーザーの repo）／SKK-JISYO.L 等の外部の辞書を任意で入れる（GPL、既定では入れない） |
+| D3 | 足りない語の補い | **決定（ユーザー、2026-09-29）**: この project で書き下ろす補いの辞書 `SKK-JISYO.kei`（代名詞・基本の名詞・挨拶・助数詞・基本の動詞と形容詞、数百〜千語）。p003 で 100 文の計測の後に語の一覧を示して量を決める | REmacs の辞書そのものに足す（ユーザーの repo）／SKK-JISYO.L 等の外部の辞書を任意で入れる（GPL、既定では入れない） |
 | D4 | 単語の登録 | 最初の版では作らない（学習は候補の順だけ） | 変換で見つからない時に登録の小窓（SKK の再帰の登録） |
 | D5 | 直接入力の時も key を IME に通すか | **通さない**（レビューで変更: zdesktop が status で今の言語を知っているので grab を飛ばす。IME のハング・遅延が英字の入力に影響しない） | 通す（input-method-v2 の素直な形。IME が全ての key を見る） |
 | D6 | 言語の切り替えの時の未確定の文字 | 確定する（Windows と同じ） | 破棄する |
-| D7 | JIS の keyboard の配列（半角/全角 が KEY_GRAVE、¥・ろ の key） | WS095 では扱わず、別の WS（keyboard の配列の設定）を提案。それまで 変換・無変換・カタカナ/ひらがな・Super+Space で代える | WS095 で JIS の配列の選択まで作る |
+| D7 | JIS の keyboard の配列（半角/全角 が KEY_GRAVE、¥・ろ の key） | **決定（ユーザー、2026-09-29）**: デモ機（5330）の keyboard は US 配列。JIS の配列と 半角/全角 は後回しで WS095 には入れない（WS の外の後の候補）。切り替えは US の keyboard で押せる Super+Space。変換・無変換・カタカナ/ひらがな が来たら受ける。内蔵の keyboard が PS/2 か USB か（p010 の要否）は実機の image を作る時に main が確かめる | WS095 で JIS の配列の選択まで作る |
 | D8 | IME の program の名前 | `/usr/libexec/keiland-ime`（内部の名前、画面には出さない） | `/bin/ime` など |
 | D9 | 候補の窓の見た目 | wl_shm で Kei の見た目（白の card、角丸、選んだ行を強調、番号 1〜9 で選べる）。glass の効果は付けない | glass（zdesktop の glass の拡張を popup に広げる） |
 | D10 | focus が移る時の未確定の文字（レビューで追加） | zdesktop が旧い field に確定して送る（Windows の IME と同じ。打ちかけを失わない） | 破棄する（text-input-v3 の素直な形） |
