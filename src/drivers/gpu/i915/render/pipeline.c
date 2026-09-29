@@ -6,8 +6,8 @@
  */
 
 /*
- * The executor's pipeline layouts, shader modules and graphics pipelines
- * (see pipeline.h).
+ * The executor's pipeline layouts, shader modules, and graphics and compute
+ * pipelines (see pipeline.h).
  *
  * Every command is decoded exactly as libvulkan encodes it: the records
  * through the generated codec, the framing around them as read from the
@@ -51,6 +51,7 @@ static void i915_gfx_decode_dynamic(struct i915_render_session *session, struct 
 static void i915_gfx_stencil_face(struct i915_gfx_pipeline *pipeline, uint32_t face, const VkStencilOpState *op);
 static void i915_gfx_float_bits(uint32_t *destination, const float *source);
 static void i915_gfx_free_pipelines(struct i915_gfx_pipeline **pipelines, uint64_t count);
+static int i915_gfx_decode_compute(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline);
 
 /*
  * Creates a VkPipelineLayout: vkCreatePipelineLayout, a generic create.
@@ -243,6 +244,134 @@ drv_i915_gfx_create_pipelines(
 	 */
 	if (error != 0)
 		kern_logf("i915: vk: vkCreateGraphicsPipelines failed: %d\n", error);
+
+	/* Writes the result and the count of the create. */
+	result = drv_i915_gfx_result(error);
+	drv_i915_wire_reply_u32(reply, result);
+	drv_i915_wire_reply_u64(reply, count);
+
+	/* Answers each identity, or a null handle for each when the create failed. */
+	for (index = 0U; index < count; index++) {
+		answered = 0U;
+		if (error == 0)
+			answered = identities[index];
+		drv_i915_wire_reply_u64(reply, answered);
+	}
+
+	/* Succeeded: the reply carries the result of the create. */
+	return 0;
+}
+
+/*
+ * Creates compute pipelines: vkCreateComputePipelines (ws101-p003).
+ *
+ * The command is framed as vkCreateGraphicsPipelines is: [device][cache]
+ * [count][count]{create info}[pAllocator][count][identities], and the reply
+ * [result][count][identities].  A record that does not decode fails the
+ * command without a reply body; a pipeline whose kernel cannot be made
+ * fails the create with its result.  Each pipeline's kernel is prepared
+ * before any is published.
+ */
+int
+drv_i915_gfx_create_compute_pipelines(
+	struct i915_render_session *session,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
+{
+	struct i915_gfx_pipeline *pipelines[I915_GFX_MAX_CREATED_PIPELINES];
+	uint64_t identities[I915_GFX_MAX_CREATED_PIPELINES];
+	uint64_t count;
+	uint64_t identity_count;
+	uint64_t index;
+	uint64_t answered;
+	uint64_t published;
+	uint32_t result;
+	int error;
+
+	/* Reads how many pipelines follow, behind the device, the cache and the count's first form. */
+	(void)drv_i915_wire_read_u64(reader);
+	(void)drv_i915_wire_read_u64(reader);
+	(void)drv_i915_wire_read_u32(reader);
+	count = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0)
+		return EINVAL;
+	if (count == 0U || count > I915_GFX_MAX_CREATED_PIPELINES)
+		return EINVAL;
+
+	/* Allocates and decodes each pipeline, up to the first failure. */
+	kern_memset(pipelines, 0, sizeof(pipelines));
+	error = 0;
+	for (index = 0U; index < count; index++) {
+		pipelines[index] = kern_calloc(1U, sizeof(*pipelines[index]));
+		if (pipelines[index] == NULL) {
+			error = ENOMEM;
+			break;
+		}
+
+		/* Each record decodes into an empty arena; one that fails leaves the rest unreadable. */
+		session->arena.used = 0U;
+		error = i915_gfx_decode_compute(session, reader, pipelines[index]);
+		if (error != 0)
+			break;
+	}
+
+	/* A pipeline that could not be decoded fails the whole command. */
+	if (error != 0) {
+		i915_gfx_free_pipelines(pipelines, count);
+		return error;
+	}
+
+	/*
+	 * Reads the identity count behind the allocator.  A count that is not
+	 * one per pipeline fails the reader, so the stream decodes no further.
+	 */
+	(void)drv_i915_wire_read_u64(reader);
+	identity_count = drv_i915_wire_read_u64(reader);
+	if (identity_count != count)
+		reader->error = 1;
+
+	/* Reads the identity libvulkan chose for each pipeline. */
+	for (index = 0U; index < count; index++)
+		identities[index] = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0) {
+		i915_gfx_free_pipelines(pipelines, count);
+		return EINVAL;
+	}
+
+	/* Prepares each pipeline's kernel, up to the first failure. */
+	for (index = 0U; index < count; index++) {
+		error = drv_i915_gfx_compute_prepare(session, pipelines[index]);
+		if (error != 0)
+			break;
+	}
+
+	/* Publishes each pipeline once all of them are prepared, up to the first failure. */
+	published = 0U;
+	if (error == 0) {
+		for (index = 0U; index < count; index++) {
+			error = drv_i915_object_insert(session, I915_VK_OBJ_PIPELINE, identities[index], pipelines[index]);
+			if (error != 0)
+				break;
+			published++;
+		}
+	}
+
+	/*
+	 * A create that failed before anything was published releases and
+	 * frees every pipeline.  XXX: as for graphics pipelines, a failure while
+	 * publishing leaves the pipelines published so far published (happy
+	 * path only).
+	 */
+	if (error != 0) {
+		kern_logf("i915: vk: vkCreateComputePipelines failed: %d\n", error);
+		if (published == 0U) {
+			for (index = 0U; index < count; index++) {
+				if (pipelines[index] != NULL)
+					drv_i915_gfx_pipeline_release(pipelines[index]);
+			}
+			i915_gfx_free_pipelines(pipelines, count);
+		}
+	}
 
 	/* Writes the result and the count of the create. */
 	result = drv_i915_gfx_result(error);
@@ -728,4 +857,52 @@ i915_gfx_free_pipelines(
 	/* Frees every slot; a slot that was never allocated is NULL. */
 	for (index = 0U; index < count; index++)
 		kern_free(pipelines[index]);
+}
+
+/*
+ * Decodes one VkComputePipelineCreateInfo into a compute pipeline: its one
+ * stage, which must be the compute stage.  A stage of another kind, an
+ * unknown module or specialization constants leave the pipeline without a
+ * stage, so its preparation fails the create; the record itself is always
+ * read to its end.
+ */
+static int
+i915_gfx_decode_compute(
+	struct i915_render_session *session,
+	struct i915_wire_reader *reader,
+	struct i915_gfx_pipeline *pipeline)
+{
+	VkComputePipelineCreateInfo info;
+	uint64_t module_id;
+
+	/* Decodes the record as libvulkan encodes it. */
+	kern_memset(&info, 0, sizeof(info));
+	i915_vkc_dec_VkComputePipelineCreateInfo(reader, &session->arena, &info);
+
+	/* A record that did not decode leaves the rest of the stream unreadable. */
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* The pipeline is bound at the compute bind point. */
+	pipeline->bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
+
+	/* Refuses a stage that is not the compute stage. */
+	if (info.stage.stage != VK_SHADER_STAGE_COMPUTE_BIT) {
+		kern_logf("i915: vk: compute pipeline with stage 0x%x\n", (unsigned)info.stage.stage);
+		return 0;
+	}
+
+	/* Refuses specialization constants: the compiler takes none (a module that declares some is refused there too). */
+	if (info.stage.pSpecializationInfo != NULL && info.stage.pSpecializationInfo->mapEntryCount != 0U) {
+		kern_logf("i915: vk: XXX unimplemented path: compute pipeline with %u specialization constants\n",
+			  (unsigned)info.stage.pSpecializationInfo->mapEntryCount);
+		return 0;
+	}
+
+	/* Keeps the module of the stage; an unknown one leaves none. */
+	module_id = (uint64_t)(uintptr_t)info.stage.module;
+	pipeline->compute = drv_i915_object_lookup(session, I915_VK_OBJ_SHADER_MODULE, module_id);
+
+	/* Succeeded: the record is read and the stage kept. */
+	return 0;
 }

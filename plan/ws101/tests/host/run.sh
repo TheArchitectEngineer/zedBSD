@@ -9,6 +9,7 @@
 #    the same bytes.
 # 4. compute-lower.c runs each module's IR on a small interpreter, dispatch by dispatch, and compares the buffers with
 #    what C computes on its own.
+# 5. executor-test.c (ws101-p003) creates compute pipelines and records dispatches through the executor's wire.
 #
 #   plan/ws101/tests/host/run.sh        (BRW_TOOLS: a Mesa 25.0.7 build's src/intel/compiler, default below)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -59,5 +60,22 @@ done
 # The IR computes what C computes.
 "$work/lower" "$work" || status=1
 
-[ $status = 0 ] && echo "ws101-p002 host test PASS"
+# ws101-p003: the executor's compute pipelines and the recording of dispatches, through the wire, on the stand-ins of
+# plan/ws031/tests/i915-vk-render-stubs.inc (the executor's sources as run-vk-host-tests.sh links them, command.c
+# inside the test itself).
+driver=$repo/src/drivers/gpu/i915
+executor=""
+for part in codec object dispatch transport instance vulkan fence objects reply memory image descriptor pipeline \
+    pipeline-prepare render-pass sync state batch math; do
+	executor="$executor $driver/render/$part.c"
+done
+for part in spirv compile eu; do
+	executor="$executor $driver/compiler/$part.c"
+done
+cp "$repo/userland/desktop/vkdemo/shaders/cuboid.vert.spv" "$repo/userland/desktop/vkdemo/shaders/cuboid.frag.spv" "$work/"
+cc -std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_ABI_LP64 -DVK_REPO="\"$repo\"" \
+	-I"$repo/include" -I"$repo" -idirafter "$repo/include/libc" -o "$work/executor" "$here/executor-test.c" $executor -lm || exit 1
+"$work/executor" "$work" || status=1
+
+[ $status = 0 ] && echo "ws101 host test PASS"
 exit $status
