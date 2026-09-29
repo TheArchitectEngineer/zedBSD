@@ -8,7 +8,9 @@
 /*
  * The theme of the library: the Kei look's colours and sizes, the values
  * the file manager's specification set (plan/ws071/spec.md, Files'
- * files.h), so that every widget drawn with it matches Files.
+ * files.h) and Settings' (plan/ws089, settings.h and widgets.c: the cards,
+ * the controls, the switches), so that every widget drawn with it matches
+ * Files and Settings.
  */
 
 #include <keiui.h>
@@ -44,7 +46,18 @@ static const struct kui_theme theme_light = {
 	28,				/* row_height */
 	13U,				/* text_body */
 	12U,				/* text_small */
-	15U				/* text_title */
+	15U,				/* text_title */
+	KUI_RGBA(0xffffff, 150),	/* card */
+	KUI_RGBA(0xffffff, 190),	/* card_edge */
+	KUI_RGBA(0x8a96aa, 60),		/* row_separator */
+	KUI_RGBA(0xffffff, 225),	/* control */
+	KUI_RGBA(0x8a96aa, 70),		/* control_edge */
+	KUI_RGB(0xc9d1dc),		/* track */
+	KUI_RGB(0x2fb45a),		/* good */
+	KUI_RGB(0xe0533d),		/* bad */
+	32,				/* control_height */
+	44,				/* switch_width */
+	24				/* switch_height */
 };
 
 /*

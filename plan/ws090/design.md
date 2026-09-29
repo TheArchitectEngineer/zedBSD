@@ -127,6 +127,18 @@ void kui_window_redraw(struct kui_window *window);       /* 次の frame で lis
 - **IME**（WS095）: field は focus を得たら `kui_window` に text input の enable と cursor の矩形を伝え、commit を挿入、preedit を下線で描く。
   結線は WS095 の libkeiland の helper（ws095-p006）の上に作る（WS095 の p006 が前提。それまでは US の配列の文字だけ）。
 
+### 4.1 p005 で決めたこと（上の抜粋との違い）
+
+- 部品は `struct kui_style`（canvas・text・theme・glass）を受ける（`kui_ui` は入力だけを持ち、描く道具は持たない）。
+- **key の宛先**: key は押された時に focus のあった部品に宛てて frame まで待つ（`struct ui_press` の target）。frame の間に Tab が来ても、Tab の前の
+  key は前の部品、後の key は次の部品が取る（QEMU で「Tab の前の文字が app に落ちる」誤りを見つけて直した）。部品が要らない key と、focus の
+  無い時の key は app の `KUI_EVENT_KEY`。部品は自分の要る key だけを取る（field の Ctrl は A だけ、slider・list は Ctrl・Alt の無い矢印など）。
+- **focus**: 押した部品が keyboard を取らなければ、その下の同じ id の取る部品が取る（list の行 → list 自身。行は Tab の止まり所にならない）。
+  dialog の記録は `KEIUI_MODAL` で、Tab はその後に描いた部品（dialog の button）だけを回る。focus の枠は Tab で動かした時だけ描く。
+- **drag の終わり**: slider のような pointer に従う部品は、放した frame にも held と見る（frame の間の最後の動きと release を失わない）。
+- **hover**: 各 frame の終わりに止まった pointer の下の部品を求め直す（wheel で list が動いた時の光る行）。
+- dialog は `labels[0]` が主（右、Enter）、最後が取り消し（Esc）。button は `(id, index)`、dialog 自身は `(id, 0xffffffff)`。
+
 ## 5. 窓の土台（`kui_window`）
 
 - options: 題、app_id、大きさ（最小を含む）、見せ方（`KUI_PRESENT_VULKAN` 既定、`_SHM`、`_NONE`: app が `kui_window_surface()` に自分で描く）、glass を使うか、親の toplevel（dialog の窓）、
