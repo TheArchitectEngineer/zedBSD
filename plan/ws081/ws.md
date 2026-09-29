@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001〜p005・p010〜p015 は cleared（2026-09-29）。次: p006（ブラウザ）→ p007（実機）→ p009。BUG-099 は診断を入れて tracking
+Resume point: p001〜p005・p010〜p015 は cleared（2026-09-29）。p006（ブラウザ）は uncleared（2026-09-29、WS074 の `browser.h` に scroll の設定・範囲・overscroll の API が無い。phase006 の「要る API」を main が WS074 に依頼）。次: WS074 の API の後に p006 → p007（実機）→ p009。BUG-099 は診断を入れて tracking
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）
@@ -55,7 +55,7 @@ p005 を scroller・gesture の library と app ごとの適用に分ける、p0
 | [ws081-p012](phase012/phase.md) | PDF Viewer への適用（scroll と慣性、二本指の拡大、page mode の swipe） | cleared | p005 |
 | [ws081-p013](phase013/phase.md) | Notes の指の scroll・pinch・double tap・toolbar の tap と掌の判定（ペンは線。design §3.8 の指の線は main の指示で取りやめ、§5.6） | cleared | p005 |
 | [ws081-p015](phase015/phase.md) | Notes の「指で書く」の切り替え（2026-09-29 ユーザーの決定: 既定は今のまま指は scroll・pinch。toolbar に切り替えを足し、入れた間は一本指で線、二本指で scroll・pinch。実機でペンが使えない場合のデモの備え） | cleared | p013 |
-| ws081-p006 | ブラウザの慣性の scroll と touch の入力（browser の shell） | planning | p005、WS074（`browser.h` の scroll の範囲・overscroll） |
+| [ws081-p006](phase006/phase.md) | ブラウザの慣性の scroll と touch の入力（browser の shell） | uncleared | p005、WS074（`browser.h` の scroll の範囲・overscroll） |
 | ws081-p007 | 実機の 10 インチの touch LCD での調整（報告の率の実測、係数の調整） | planning | p005、p006、touch の USB |
 | ws081-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
 
