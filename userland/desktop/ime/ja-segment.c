@@ -16,7 +16,8 @@
  * right, comparing the costs of the ways to reach each place in this
  * order: the fewest kana no dictionary knows and one-kana nouns counted
  * together (い 胃 and き 木 would otherwise swallow kana), then the fewest
- * segments, then the most kana found in a dictionary.
+ * segments, then the most kana read as particles, then the most kana found
+ * in a dictionary.
  */
 
 #include "ja.h"
@@ -44,6 +45,7 @@ struct segment_cost {
 	unsigned int unknown;
 	unsigned int single;
 	unsigned int segments;
+	unsigned int particles;
 	unsigned int dictionary;
 	size_t previous;
 };
@@ -67,14 +69,20 @@ static const struct segment_builtin segment_builtins[] = {
 static bool *segment_particle_table(const struct ja_text *text, size_t start);
 static bool segment_has_noun(const struct ja_lexicon *lexicon, const char *key, size_t length);
 static bool segment_has_verb(const struct ja_lexicon *lexicon, const char *key, size_t length);
+static bool segment_is_adjective(const struct ja_lexicon *lexicon, const char *stem, size_t length, char consonant);
+static uint32_t segment_code_at(const struct ja_text *text, size_t unit);
+static bool segment_is_loanword(const struct ja_text *text, size_t start, size_t end);
 static bool segment_all_kana(const struct ja_text *text, size_t start, size_t end);
 static void segment_item_better(struct segment_item *best, bool *valid, const struct segment_item *item);
 static bool segment_cost_better(const struct segment_cost *left, const struct segment_cost *right);
 static void segment_cores(const struct ja_lexicon *lexicon, const struct ja_text *text, size_t start, struct segment_item *cores, bool *valid);
 static void segment_add_nouns(const struct ja_lexicon *lexicon, const char *key, size_t length, const char *suffix, size_t suffix_length, struct ja_segment *segment);
+static void segment_add_dict_nouns(const struct ja_dict *dict, const char *key, size_t length, const char *suffix, size_t suffix_length, struct ja_segment *segment);
+static void segment_add_dict_verbs(const struct ja_lexicon *lexicon, const struct ja_dict *dict, const struct ja_text *text, size_t start, size_t core_end, size_t end, struct ja_segment *segment);
+static void segment_add_dict_suru(const struct ja_dict *dict, const struct ja_text *text, size_t start, size_t core_end, size_t end, struct ja_segment *segment);
 static void segment_add_entry(const struct ja_dict_entry *entry, const char *suffix, size_t suffix_length, struct ja_segment *segment);
 static void segment_add_joined(struct ja_segment *segment, const char *word, size_t word_length, const char *suffix, size_t suffix_length);
-static void segment_add_core_candidates(const struct ja_lexicon *lexicon, const struct ja_text *text, size_t start, size_t core_end, size_t end, struct ja_segment *segment);
+static void segment_add_tier(const struct ja_lexicon *lexicon, const struct ja_text *text, size_t start, size_t core_end, size_t end, size_t tier, struct ja_segment *segment);
 static void segment_add_katakana(const struct ja_text *text, size_t start, size_t core_end, size_t end, struct ja_segment *segment);
 static void segment_add_full_width(const struct ja_text *text, size_t start, size_t end, struct ja_segment *segment);
 
@@ -175,6 +183,7 @@ ja_segment_split(
 				candidate.unknown += cores[core_end].unknown;
 				candidate.single += cores[core_end].single;
 				candidate.segments++;
+				candidate.particles += (unsigned int)(end - core_end);
 				candidate.dictionary += cores[core_end].dictionary;
 				candidate.previous = position;
 				candidate.reached = true;
@@ -191,7 +200,7 @@ ja_segment_split(
 			if (!particles[position * row + end])
 				continue;
 
-			/* The cost of reaching the end through the particles. */
+			/* The cost of reaching the end through the particles, which count as no word's particles. */
 			candidate = costs[position];
 			candidate.segments++;
 			candidate.previous = position;
@@ -246,8 +255,10 @@ ja_segment_candidates(
 	size_t i;
 	const char *span_bytes;
 	size_t span_length;
+	size_t tier;
 	bool particle;
 	bool all_kana;
+	bool loanword;
 
 	segment->candidate_count = 0;
 	segment->selected = 0;
@@ -264,24 +275,33 @@ ja_segment_candidates(
 			ja_segment_add_candidate(segment, learned->candidates[i], strlen(learned->candidates[i]));
 	}
 
-	/* A segment that is one particle is offered as typed first (the は left after shortening). */
-	particle = ja_is_particle(text, segment->start, segment->end);
+	/* A segment that is one particle of one kana is offered as typed first (the は left after shortening). */
+	particle = false;
+	if (segment->end == segment->start + 1U)
+		particle = ja_is_particle(text, segment->start, segment->end);
 	if (particle)
 		ja_segment_add_candidate(segment, span_bytes, span_length);
 
-	/* The words, longest first, each with the particles after it. */
-	for (core_end = segment->end; core_end > segment->start; core_end--) {
-		memset(ends, 0, sizeof(ends));
-		ja_particle_ends(text, core_end, ends);
-		if (!ends[segment->end])
-			continue;
+	/*
+	 * The words, each with the particles after it, source by source: the
+	 * user's and the engine's own words and 来る, the supplement, the verbs
+	 * written in kana, then the system dictionary; within each, the longest
+	 * word first.
+	 */
+	for (tier = 0; tier < lexicon->dict_count + 2U; tier++) {
+		for (core_end = segment->end; core_end > segment->start; core_end--) {
+			memset(ends, 0, sizeof(ends));
+			ja_particle_ends(text, core_end, ends);
+			if (!ends[segment->end])
+				continue;
 
-		/* Only kana make words. */
-		all_kana = segment_all_kana(text, segment->start, core_end);
-		if (!all_kana)
-			continue;
+			/* Only kana make words. */
+			all_kana = segment_all_kana(text, segment->start, core_end);
+			if (!all_kana)
+				continue;
 
-		segment_add_core_candidates(lexicon, text, segment->start, core_end, segment->end, segment);
+			segment_add_tier(lexicon, text, segment->start, core_end, segment->end, tier, segment);
+		}
 	}
 
 	/* A literal is offered as typed and in full width. */
@@ -290,11 +310,13 @@ ja_segment_candidates(
 		segment_add_full_width(text, segment->start, segment->end, segment);
 	}
 
-	/* The segment in hiragana. */
-	ja_segment_add_candidate(segment, span_bytes, span_length);
+	/* A word that looks taken from another language is offered in katakana before hiragana. */
+	loanword = segment_is_loanword(text, segment->start, segment->end);
+	if (!loanword)
+		ja_segment_add_candidate(segment, span_bytes, span_length);
 
-	/* And in katakana, with the particles left in hiragana. */
-	for (core_end = segment->end; core_end > segment->start; core_end--) {
+	/* The segment in katakana, with the particles left in hiragana: the shortest word first (コーヒーを before コーヒーヲ). */
+	for (core_end = segment->start + 1U; core_end <= segment->end; core_end++) {
 		memset(ends, 0, sizeof(ends));
 		ja_particle_ends(text, core_end, ends);
 		if (!ends[segment->end])
@@ -307,6 +329,9 @@ ja_segment_candidates(
 
 		segment_add_katakana(text, segment->start, core_end, segment->end, segment);
 	}
+
+	/* The segment in hiragana, after the katakana for a loanword. */
+	ja_segment_add_candidate(segment, span_bytes, span_length);
 }
 
 /*
@@ -438,6 +463,107 @@ segment_has_verb(
 }
 
 /*
+ * Tells whether a verb's headword is an adjective's: a pure-い adjective has
+ * an i and a k headword with the same word (高い: たかi /高/ and たかk
+ * /高/), where a verb and a noun that share a stem have different ones
+ * (いk /行/ and いi /言/).
+ */
+static bool
+segment_is_adjective(
+	const struct ja_lexicon *lexicon,
+	const char *stem,
+	size_t length,
+	char consonant)
+{
+	const struct ja_dict_entry *with_i;
+	const struct ja_dict_entry *with_k;
+	const char *word_i;
+	const char *word_k;
+	char key[JA_HEADWORD_MAX * 4U + 2U];
+	size_t length_i;
+	size_t length_k;
+	size_t position;
+	size_t d;
+	bool more;
+	bool same;
+
+	/* Only the i and k headwords can be an adjective's. */
+	if (consonant != 'i' && consonant != 'k')
+		return false;
+
+	/* Looks in each dictionary for both headwords with the same first word. */
+	memcpy(key, stem, length);
+	for (d = 0; d < lexicon->dict_count; d++) {
+		key[length] = 'i';
+		with_i = ja_dict_find(lexicon->dicts[d], key, length + 1U);
+		key[length] = 'k';
+		with_k = ja_dict_find(lexicon->dicts[d], key, length + 1U);
+		if (with_i == NULL || with_k == NULL)
+			continue;
+
+		/* The first word of each. */
+		position = 0;
+		more = ja_dict_next_candidate(with_i, &position, &word_i, &length_i);
+		if (!more)
+			continue;
+
+		position = 0;
+		more = ja_dict_next_candidate(with_k, &position, &word_k, &length_k);
+		if (!more)
+			continue;
+
+		/* The same word under both: an adjective. */
+		same = ja_bytes_equal(word_i, length_i, word_k, length_k);
+		if (same)
+			return true;
+	}
+
+	/* No adjective has this stem. */
+	return false;
+}
+
+/*
+ * Gives the code point of a unit.
+ */
+static uint32_t
+segment_code_at(
+	const struct ja_text *text,
+	size_t unit)
+{
+	uint32_t code;
+
+	/* Decodes the unit's character. */
+	code = 0;
+	(void)ja_utf8_decode(text->bytes + text->offsets[unit], text->offsets[unit + 1U] - text->offsets[unit], &code);
+	return code;
+}
+
+/*
+ * Tells whether a span has a kana that marks a loanword.
+ */
+static bool
+segment_is_loanword(
+	const struct ja_text *text,
+	size_t start,
+	size_t end)
+{
+	uint32_t code;
+	size_t i;
+	bool mark;
+
+	/* Looks at each character. */
+	for (i = start; i < end; i++) {
+		code = segment_code_at(text, i);
+		mark = ja_is_loanword_mark(code);
+		if (mark)
+			return true;
+	}
+
+	/* No mark of a loanword. */
+	return false;
+}
+
+/*
  * Tells whether every unit of a span is a kana.
  */
 static bool
@@ -520,6 +646,17 @@ segment_cost_better(
 		return false;
 	}
 
+	/*
+	 * Then the most kana read as particles: a word boundary before は or
+	 * が is likelier than a verb that swallows it (服は｜高い rather than
+	 * 服｜叩かい).
+	 */
+	if (left->particles != right->particles) {
+		if (left->particles > right->particles)
+			return true;
+		return false;
+	}
+
 	/* Then the most kana found in a dictionary. */
 	if (left->dictionary > right->dictionary)
 		return true;
@@ -549,6 +686,9 @@ segment_cores(
 	size_t end;
 	size_t i;
 	bool found;
+	bool adjective;
+	bool no_word;
+	uint32_t first;
 
 	/* A run of literals is one word of its own. */
 	if (!text->kana[start]) {
@@ -574,10 +714,17 @@ segment_cores(
 		segment_item_better(&cores[end], &valid[end], &item);
 	}
 
-	/* する and 来る in their forms. */
+	/* No word of a dictionary begins with ー, っ, ん or a small kana. */
+	first = segment_code_at(text, start);
+	no_word = ja_starts_no_word(first);
+	if (no_word)
+		return;
+
+	/* する, 来る and the verbs written in kana, in their forms. */
 	memset(ends, 0, sizeof(ends));
 	ja_inflect_suru_ends(text, start, ends);
 	ja_inflect_kuru_ends(text, start, ends);
+	ja_inflect_kana_verb_ends(text, start, ends);
 	for (end = start + 1U; end <= run_end; end++) {
 		if (!ends[end])
 			continue;
@@ -626,8 +773,9 @@ segment_cores(
 				continue;
 
 			/* Every okurigana the headword can take here. */
+			adjective = segment_is_adjective(lexicon, key, key_length, SEGMENT_CONSONANTS[i]);
 			memset(ends, 0, sizeof(ends));
-			ja_inflect_ends(text, start + length, SEGMENT_CONSONANTS[i], ends);
+			ja_inflect_ends(text, start + length, SEGMENT_CONSONANTS[i], adjective, ends);
 			for (end = start + length + 1U; end <= run_end; end++) {
 				if (!ends[end])
 					continue;
@@ -654,7 +802,6 @@ segment_add_nouns(
 	size_t suffix_length,
 	struct ja_segment *segment)
 {
-	const struct ja_dict_entry *entry;
 	const struct ja_user_entry *learned;
 	size_t i;
 	size_t j;
@@ -682,11 +829,29 @@ segment_add_nouns(
 	}
 
 	/* Each dictionary in order. */
-	for (i = 0; i < lexicon->dict_count; i++) {
-		entry = ja_dict_find(lexicon->dicts[i], key, length);
-		if (entry != NULL)
-			segment_add_entry(entry, suffix, suffix_length, segment);
-	}
+	for (i = 0; i < lexicon->dict_count; i++)
+		segment_add_dict_nouns(lexicon->dicts[i], key, length, suffix, suffix_length, segment);
+}
+
+/*
+ * Adds the nouns of a reading from one dictionary, each followed by a
+ * suffix.
+ */
+static void
+segment_add_dict_nouns(
+	const struct ja_dict *dict,
+	const char *key,
+	size_t length,
+	const char *suffix,
+	size_t suffix_length,
+	struct ja_segment *segment)
+{
+	const struct ja_dict_entry *entry;
+
+	/* The headword's words, when the dictionary has it. */
+	entry = ja_dict_find(dict, key, length);
+	if (entry != NULL)
+		segment_add_entry(entry, suffix, suffix_length, segment);
 }
 
 /*
@@ -739,12 +904,105 @@ segment_add_joined(
 }
 
 /*
- * Adds the candidates whose word ends before a place, followed by the rest
- * of the segment (okurigana and particles) as typed.
+ * Adds the candidates of one source whose word ends before a place,
+ * followed by the rest of the segment (okurigana and particles) as typed.
+ *
+ * The sources, in order: 0 is the user's and the engine's own words and
+ * 来る; then each dictionary, with the verbs written in kana (います,
+ * ありません) just before the last one, the system dictionary, so that the
+ * supplement's words come before them and the system dictionary's after.
+ * A dictionary's words are a noun that is the whole word, a verb or an
+ * adjective whose okurigana ends it (the longest stem first), and a noun
+ * with a form of する.
  */
 static void
-segment_add_core_candidates(
+segment_add_tier(
 	const struct ja_lexicon *lexicon,
+	const struct ja_text *text,
+	size_t start,
+	size_t core_end,
+	size_t end,
+	size_t tier,
+	struct ja_segment *segment)
+{
+	struct ja_lexicon learned_only;
+	bool ends[JA_UNITS_MAX + 1U];
+	const char *start_bytes;
+	const char *after_word;
+	const struct ja_dict *dict;
+	size_t word_length;
+	size_t after_length;
+	size_t kana_stem;
+	size_t kana_tier;
+	bool short_enough;
+
+	start_bytes = text->bytes + text->offsets[start];
+	word_length = text->offsets[core_end] - text->offsets[start];
+	after_word = text->bytes + text->offsets[core_end];
+	after_length = text->offsets[end] - text->offsets[core_end];
+
+	/* Only a reading no longer than a headword can be a noun. */
+	short_enough = false;
+	if (core_end - start <= JA_HEADWORD_MAX)
+		short_enough = true;
+
+	/* The user's and the engine's own words, and 来る (来ました rather than 切ました). */
+	if (tier == 0U) {
+		learned_only = *lexicon;
+		learned_only.dict_count = 0;
+		if (short_enough)
+			segment_add_nouns(&learned_only, start_bytes, word_length, after_word, after_length, segment);
+
+		memset(ends, 0, sizeof(ends));
+		ja_inflect_kuru_ends(text, start, ends);
+		if (ends[core_end]) {
+			segment_add_joined(segment, "来", strlen("来"), text->bytes + text->offsets[start + 1U],
+					   text->offsets[end] - text->offsets[start + 1U]);
+		}
+
+		return;
+	}
+
+	/*
+	 * The verbs written in kana come just before the system dictionary (the
+	 * last one), or after the engine's own words when there is none.
+	 */
+	kana_tier = 1;
+	if (lexicon->dict_count > 0U)
+		kana_tier = lexicon->dict_count;
+
+	if (tier == kana_tier) {
+		kana_stem = ja_inflect_kana_verb_stem(text, start, core_end);
+		if (kana_stem != start)
+			(void)ja_segment_add_candidate(segment, start_bytes, text->offsets[end] - text->offsets[start]);
+		return;
+	}
+
+	/* The dictionaries before the last are the sources before the kana verbs; the last one comes after them. */
+	if (tier < kana_tier) {
+		dict = lexicon->dicts[tier - 1U];
+	} else if (tier == kana_tier + 1U && lexicon->dict_count > 0U) {
+		dict = lexicon->dicts[lexicon->dict_count - 1U];
+	} else {
+		return;
+	}
+
+	/* The dictionary's words. */
+	if (short_enough)
+		segment_add_dict_nouns(dict, start_bytes, word_length, after_word, after_length, segment);
+
+	segment_add_dict_verbs(lexicon, dict, text, start, core_end, end, segment);
+	segment_add_dict_suru(dict, text, start, core_end, end, segment);
+}
+
+/*
+ * Adds one dictionary's verbs and adjectives whose okurigana ends a word,
+ * the longest stem first.
+ */
+static void
+segment_add_dict_verbs(
+	const struct ja_lexicon *lexicon,
+	const struct ja_dict *dict,
 	const struct ja_text *text,
 	size_t start,
 	size_t core_end,
@@ -754,51 +1012,53 @@ segment_add_core_candidates(
 	const struct ja_dict_entry *entry;
 	bool ends[JA_UNITS_MAX + 1U];
 	char key[JA_HEADWORD_MAX * 4U + 2U];
-	const char *start_bytes;
+	size_t stem_length;
 	size_t key_length;
-	size_t length;
-	size_t noun_end;
 	size_t i;
-	size_t d;
+	bool adjective;
 
-	start_bytes = text->bytes + text->offsets[start];
-
-	/* A noun that is the whole word. */
-	key_length = text->offsets[core_end] - text->offsets[start];
-
-	/* Only a reading no longer than a headword can be one. */
-	if (core_end - start <= JA_HEADWORD_MAX) {
-		segment_add_nouns(lexicon, start_bytes, key_length, text->bytes + text->offsets[core_end],
-				  text->offsets[end] - text->offsets[core_end], segment);
-	}
-
-	/* A verb or an adjective whose okurigana ends the word, the longest stem first. */
-	for (length = core_end - start - 1U; length >= 1U; length--) {
-		if (length > JA_HEADWORD_MAX)
+	/* Each stem, the longest first, with each letter a headword can end with. */
+	for (stem_length = core_end - start - 1U; stem_length >= 1U; stem_length--) {
+		if (stem_length > JA_HEADWORD_MAX)
 			continue;
 
-		key_length = text->offsets[start + length] - text->offsets[start];
-		memcpy(key, start_bytes, key_length);
+		key_length = text->offsets[start + stem_length] - text->offsets[start];
+		memcpy(key, text->bytes + text->offsets[start], key_length);
 		for (i = 0; SEGMENT_CONSONANTS[i] != '\0'; i++) {
 			key[key_length] = SEGMENT_CONSONANTS[i];
+			entry = ja_dict_find(dict, key, key_length + 1U);
+			if (entry == NULL)
+				continue;
 
 			/* The headword's okurigana must end the word. */
+			adjective = segment_is_adjective(lexicon, key, key_length, SEGMENT_CONSONANTS[i]);
 			memset(ends, 0, sizeof(ends));
-			ja_inflect_ends(text, start + length, SEGMENT_CONSONANTS[i], ends);
+			ja_inflect_ends(text, start + stem_length, SEGMENT_CONSONANTS[i], adjective, ends);
 			if (!ends[core_end])
 				continue;
 
-			for (d = 0; d < lexicon->dict_count; d++) {
-				entry = ja_dict_find(lexicon->dicts[d], key, key_length + 1U);
-				if (entry != NULL) {
-					segment_add_entry(entry, text->bytes + text->offsets[start + length],
-							  text->offsets[end] - text->offsets[start + length], segment);
-				}
-			}
+			segment_add_entry(entry, text->bytes + text->offsets[start + stem_length],
+					  text->offsets[end] - text->offsets[start + stem_length], segment);
 		}
 	}
+}
 
-	/* A noun with a form of する that ends the word. */
+/*
+ * Adds one dictionary's nouns that, with a form of する, make a word.
+ */
+static void
+segment_add_dict_suru(
+	const struct ja_dict *dict,
+	const struct ja_text *text,
+	size_t start,
+	size_t core_end,
+	size_t end,
+	struct ja_segment *segment)
+{
+	bool ends[JA_UNITS_MAX + 1U];
+	size_t noun_end;
+
+	/* Each place the noun can end, with する from there to the end of the word. */
 	for (noun_end = core_end - 1U; noun_end > start; noun_end--) {
 		if (noun_end - start > JA_HEADWORD_MAX)
 			continue;
@@ -808,16 +1068,8 @@ segment_add_core_candidates(
 		if (!ends[core_end])
 			continue;
 
-		segment_add_nouns(lexicon, start_bytes, text->offsets[noun_end] - text->offsets[start],
-				  text->bytes + text->offsets[noun_end], text->offsets[end] - text->offsets[noun_end], segment);
-	}
-
-	/* A form of 来る, written with its kanji. */
-	memset(ends, 0, sizeof(ends));
-	ja_inflect_kuru_ends(text, start, ends);
-	if (ends[core_end]) {
-		segment_add_joined(segment, "来", strlen("来"), text->bytes + text->offsets[start + 1U],
-				   text->offsets[end] - text->offsets[start + 1U]);
+		segment_add_dict_nouns(dict, text->bytes + text->offsets[start], text->offsets[noun_end] - text->offsets[start],
+				       text->bytes + text->offsets[noun_end], text->offsets[end] - text->offsets[noun_end], segment);
 	}
 }
 

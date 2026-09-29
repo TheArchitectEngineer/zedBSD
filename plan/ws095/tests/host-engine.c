@@ -220,7 +220,7 @@ test_dict_reader(void)
 	if (error != 0)
 		return;
 
-	check(dict.entry_count == 31, "dict: 31 headwords (got %zu)", dict.entry_count);
+	check(dict.entry_count == 34, "dict: 34 headwords (got %zu)", dict.entry_count);
 	check(dict.malformed_count == 3, "dict: 3 malformed lines skipped (got %zu)", dict.malformed_count);
 
 	entry = ja_dict_find(&dict, "かk", strlen("かk"));
@@ -338,6 +338,8 @@ test_inflect(void)
 	inflect_case("かんがえます", 3, 'e', 6, 1);
 	inflect_case("とった", 1, 'r', 3, 1);
 	inflect_case("よ", 1, 'm', 1, 0);
+	inflect_case("よまないで", 1, 'm', 5, 1);
+	inflect_case("たべないでください", 1, 'b', 9, 1);
 }
 
 static void
@@ -370,7 +372,7 @@ inflect_case(
 
 	ja_text_build(text, units, count);
 	memset(ends, 0, sizeof(ends));
-	ja_inflect_ends(text, stem_end, consonant, ends);
+	ja_inflect_ends(text, stem_end, consonant, false, ends);
 	check((ends[end] ? 1 : 0) == expected, "inflect %s (stem %zu, %c) %s at %zu", reading, stem_end, consonant,
 	      expected ? "ends" : "does not end", end);
 	free(text);
@@ -411,6 +413,12 @@ test_split(void)
 	split_case(&core, "ものをかった", "物を|変った");
 	split_case(&core, "でんしゃにのって", "電車に|乗って");
 	split_case(&core, "きょうはいいてんきですね", "今日は|いい|天気ですね");
+	split_case(&core, "どこからきましたか", "どこから|来ましたか");
+	split_case(&core, "たかくない", "高くない");
+	split_case(&core, "わたしはいます", "私は|います");
+	split_case(&core, "ほんですね", "本ですね");
+	split_case(&core, "こーひー", "コーヒー");
+	split_case(&core, "こーひーを", "コーヒーを");
 	split_case(&core, "ぱそこんを", "ぱそこんを");
 
 	/* An unknown word is offered in katakana, its particle in hiragana. */

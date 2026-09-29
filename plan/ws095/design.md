@@ -333,7 +333,7 @@ input_method_v2 の request（commit_string・set_preedit_string・delete_surrou
 - IME を通さない field（§4.1）は IME に届かないので学習しない。加えて content hint に `sensitive_data` がある時は、IME は学習しない（二重の守り）。
 - 単語の登録（辞書に無い読みの登録の UI）は最初の版では作らない（§14 D4）。
 
-### 7.5 p002 で X を使って分かったこと（p003 への引き継ぎ）
+### 7.5 p002 で X を使って分かったこと（p003 への引き継ぎ。p003 の結果は §7.7・§9.3）
 
 `plan/ws095/tests/host-engine convert <X> -- <読み>` で REmacs の X（revision `1a72439`）を使って変換した結果（host、2026-09-29）:
 
@@ -355,6 +355,27 @@ p003 の補いの辞書（D3）で、基本の語（私・この・日本・多�
 
 予測変換、かな入力、全角英数の変換の既定、学習の頻度、文節の区切りの学習。
 
+### 7.7 p003 の計測で直した規則（2026-09-29）
+
+100 文の計測（§9.3）で見つけた engine の誤りを直した（`ja-segment.c`・`ja-inflect.c`・`ja-kana.c`、host の試験 150 通過）:
+
+- **形容詞の見出し**: i と k の見出しの最初の候補が同じ語幹（高い: たかi /高/・たかk /高/）は形容詞とし、形容詞の語尾だけを付ける（辛 からk に
+  一段の語尾が付き「どこ｜辛きました」になったため）。語幹が同じ別の語（いk /行/・いi /言/）は形容詞にしない。
+- **語の始まり**: ー・っ・ん・小書きのかな から始まる辞書の語を作らない（未知語は作れる）。
+- **外来語らしい未知語**: ー・ぁぃぅぇぉ を含む文節は カタカナ を ひらがな より先の候補にする。カタカナの候補は語の短い方から（コーヒーを が
+  コーヒーヲ より先）。
+- **かなで書く動詞**: いる・ある・なる・できる を内蔵の語（かなのまま）にした。SKK の `いr` は 居る・要る・入れる を兼ね、います を かな で出す手段が
+  無いため。
+- **候補の出所の順**: 利用者・内蔵の語・来る → 補いの辞書の語（名詞・動詞・名詞＋する） → かなの動詞 → system の辞書の語。各出所の中では語の長い順。
+  （旧い「語の長さが先」の順では、X の長い語（秋葉）が補いの辞書の語＋助詞（秋は）に勝ち、X の古い送り仮名（終った）が補いの辞書（終わった）に勝った。）
+- **分割の費用**: 不明＋1 字の名詞 → 文節の数 → **助詞の字数（多い方）** → 辞書の語の長さ。助詞を比べる段を足した（服は｜高い が 服｜叩かい に
+  負けたため。助詞の段の有無の比較は 86 対 85 で有りを採った）。助詞だけの文節の字数は数えない。
+- **助詞の表**: ても・たら は動詞の て・た の後だけ（語尾の側）に移し、名詞の後の表から外した（夏｜鳩ても の誤り）。copula と の の後にだけ
+  が・から・ので・です 等を付ける（を＋か の誤り）。文末の助詞（ね・よ・か・な・わ・よね・かな・ですか 等）は **入力の末か記号の前だけ**（明日のよ｜訂 の誤り）。
+  のです・のでしょう を足し、んです は外した（花んですか の誤り）。
+- **語尾**: 否定の ないで・ないでください、て形の後の も・は・きます・いく・あります 等を足した。する・来る の 1 字の形は p002 のとおり語にしない。
+- 1 つの助詞だけの文節を ひらがな 先にするのは 1 字の時だけ（くらい が 暗い に勝ったため）。
+
 ## 8. 言語の表示と切り替えの指示（私的な拡張 `keiland_ime_status_v1`）
 
 - IME → zdesktop: `language(id, label)`（今の言語。label は "A"・"あ"）、`languages(list)`（切り替えの順）、`composing(0|1)`（preedit が空でないか。
@@ -371,26 +392,45 @@ p003 の補いの辞書（D3）で、基本の語（私・この・日本・多�
 - 確かめた事実: 今の remacs の package は revision を固定していない（`userland/packages/editors/remacs/Makefile:14-16`: `REMACS_GIT_REF ?= main`、
   `git clone --depth 1 --branch main` を共有の `build/sources/remacs` に）。`userland/download.mk` は lifecycle の定義だけで取得の規則を持たない。
   共有の `build/sources/remacs` は main の HEAD に動くので、それを pin とは言えない。
-- 設計: IME の package は REmacs の **commit を固定した tarball** を自分で取得・検証する（Guardrail の「tarball を取得・検証」に合わせる）:
-  - URL `https://github.com/awemorris/remacs/archive/1a724393053e18c4e1f502ecc5ca8ce07d99287a.tar.gz`
-    （2026-09-29 に取得: 597,025 byte、SHA-256 `419d03a195e18875e4761f4d81992905d4130697b72a5fc87849f0228a2f1507`）。
-  - GitHub の archive の tarball は再生成で hash が変わりうるので、中の `dict/SKK-JISYO.X` の SHA-256
-    `73819384159330a0c822915d0fd211c3e21dea77f2cfd2083273ac1ffd121ab9`（今の共有の `build/sources/remacs` の X と同じ）も確かめる。
-  - 取得の先は `build/distfiles/`（共有、消さない）、展開は `$(BUILD)/packages/desktop/ime/` の中。image の `/usr/share/kei/ime/ja/SKK-JISYO.X` に入れる
-    （`ZEDBSD_USERLAND_PACKAGE` の DATA）。remacs の package とは独立（remacs を選ばない image でも IME は辞書を持つ）。
-- license: 辞書の header は「remacs と同じ license（GPL）」だが、ユーザーが著作権者で Kei の IME に使うことを許可（2026-09-29、ws.md）。
-  既定は image の `/usr/share/kei/ime/ja/LICENSE` に その許可の文（著作権者による Kei での利用の許可）を置く。header と LICENSE の文が食い違って
-  見えるので、別の案として著作権者が REmacs の辞書の header を書き換える（二重 license 等）方が矛盾が無い（§14 D1）。license の監査の道具
-  （`plan/tools/` の audit）での扱いは p003 で main と決める。
+- 設計（p003 で実装、`userland/desktop/ime/dict/Makefile`、package `ime-dict-ja`）: REmacs の **commit を固定した tarball** を取得・検証する
+  （`userland/packages/external.mk` の `ZEDBSD_EXTERNAL_SOURCE`、ca-certificates・expat と同じ規則）:
+  - URL `https://github.com/awemorris/remacs/archive/1a724393053e18c4e1f502ecc5ca8ce07d99287a.tar.gz`、distfile の名 `remacs-1a724393053e.tar.gz`、
+    root `REmacs-1a724393053e18c4e1f502ecc5ca8ce07d99287a`（2026-09-29 に 2 回取得して同じ: 597,025 byte、SHA-256
+    `419d03a195e18875e4761f4d81992905d4130697b72a5fc87849f0228a2f1507`）。
+  - GitHub の archive の tarball は再生成で byte が変わりうるので、展開の後に中の `dict/SKK-JISYO.X` の SHA-256
+    `73819384159330a0c822915d0fd211c3e21dea77f2cfd2083273ac1ffd121ab9` を確かめてから `$(WORKROOT)/ime-dict-ja/SKK-JISYO.X` に写す（合わなければ
+    止まる。p003 で確かめた）。
+  - image の `/usr/share/kei/ime/ja/SKK-JISYO.X` と、補いの辞書 `/usr/share/kei/ime/ja/SKK-JISYO.kei`（`userland/desktop/ime/dict/`）に入れる（mode 0644）。
+    remacs の package とは独立（remacs を選ばない image でも IME は辞書を持つ）。
+  - package の既定は **選ばない**（n）。IME の program（p004）の package が既定で選ばれ、この package を REQUIRE する形にする（program の無い間に
+    全ての image が辞書を取得しないように）。
+- license（**決定、ユーザー、2026-09-29、D1**）: 「私が著作権者なので、zlibライセンスで改めてライセンスします。特別に権利を主張したい気持ちもないので、
+  プロジェクト全体のライセンスファイルの影響下ということで問題ないです。」→ REmacs の辞書（`SKK-JISYO.X`）は著作権者（Awe Morris）により zlib で
+  再 license された扱い。Kei の image では project 全体の license の file の下に置き、辞書用の LICENSE の file は作らない。辞書の header の
+  「remacs と同じ license（GPL）」の記述とこの判断の関係は、package の Makefile の注釈（出典と日付）とこの節に記録した。file は header を含めて
+  公開のまま入れる。
 - 形式はそのまま（SKK、UTF-8）。起動の時に読むので build の変換は要らない。
 
 ### 9.2 足りない分（補いの辞書）
 
 REmacs の辞書は作者の文章の語彙が中心で、日常の基本の語に欠けがある（確かめた例: `わたし` → 私 が無い（`わたし /渡し/渡/` だけ）、
-`にほん` → 日本 が無い（`にほんご` 等の複合語だけ）、`ありがとう`・`いい` が無い、1 文字の名詞 `い`→胃 等が先に出る）。代名詞・基本の名詞・挨拶・
-助数詞・基本の動詞・形容詞の見出しを集めた **補いの辞書** `SKK-JISYO.kei`（数百〜千語、この project で書き下ろす original の work、zlib）を作り、
-X の前に引く。語の選び方と量はユーザーと相談（ユーザーの指示「足りない分は要相談」、§14 D3）。p003 で「日常の文 100 文を変換して、1 回目の候補が
-正しい割合」を計り、欠けの一覧を出して相談する。
+`にほん` → 日本 が無い（`にほんご` 等の複合語だけ）、`ありがとう`・`いい` が無い、1 文字の名詞 `い`→胃 等が先に出る）。**補いの辞書**
+`SKK-JISYO.kei`（この project で書き下ろす original の work、zlib。**決定、ユーザー、2026-09-29、D3**）を X の前に引く。
+
+p003 の結果（2026-09-29、案）: `userland/desktop/ime/dict/SKK-JISYO.kei` に **337 見出し**（okuri-ari 約 110、okuri-nasi 約 225）の案を書いた。
+分類: 代名詞・指示語、疑問の語、挨拶と決まった言い方、時と数（何時・曜日）、家族、基本の名詞、外来語（カタカナ）、かなで書くことの多い語、
+基本の動詞（読む・買う・分かる・終わる 等、同じ読みの X の語より先に出したい語）、基本の形容詞（i と k の見出しの組）。語の一覧と相談の点は
+[phase003/phase.md](phase003/phase.md)。量と語はユーザーの答えで直す。
+
+### 9.3 品質の計測（p003）
+
+- 道具: `plan/ws095/tests/ja-sentences.tsv`（日常の 100 文、読みと期待の表記、この project の書き下ろし）と `plan/ws095/tests/measure.sh`
+  （`host-engine convert` で変換し、第一候補を並べた文全体が期待と一致する数を数える）。
+- 結果（host、2026-09-29、p003 の最後の engine）: **X だけ 37/100、X＋補いの辞書の案 92/100**。p003 の最初（p002 の engine、X だけ）は 31/100。
+- 残る 8 文: 読みだけでは決まらないもの 5（飼って／買って、言って／行って、遅れた／送れた、来るまで／車で、とは＋なす）、SKK の見出しの共有に
+  よるもの 1（`いr` が 入れる・要る・居る を兼ね、入れた が 要れた になる）、分け方 2（終わったらか｜得ります、去年と｜右京へ）。
+- 注意: 補いの辞書の語と engine の規則は、この 100 文を見ながら直した。100 文への過剰な適合を確かめるには、別の文の集合（held-out）での
+  計測が要る（p003 では未実施。後の Phase の候補）。
 
 ## 10. 切り替えの key
 
@@ -398,7 +438,7 @@ X の前に引く。語の選び方と量はユーザーと相談（ユーザー
 
 | key | 動作 | 理由 |
 | --- | --- | --- |
-| **Super+Space** | 次の言語（direct → ja → direct） | macOS の Ctrl+Space、Windows の Win+Space、GNOME の Super+Space と同じ系統。zdesktop・app は Super+Space を使っていない（Super+Tab・Super+L だけ。app の menu の item は Super を持てる（`menu-shell.c:2099-2100`）が、切り替えは menu より前で取るので衝突しない） |
+| **Alt+Space** | 次の言語（direct → ja → direct） | **ユーザーの指示（2026-09-29 夜）**「IMEのON/OFFは、ひとまずAlt+Spaceがいいです。」（D7 の Super+Space を置き換えた）。US の keyboard で押せる |
 | **半角/全角**（JIS の keyboard） | direct ⇄ ja の切り替え | Windows の日本語の既定。ただし USB の JIS の keyboard では KEY_GRAVE で来るので §10.3 |
 | **変換**（Henkan、evdev 92） | direct の時は ja にする。ja の時は IME に渡す（変換中なら次の候補・再変換） | Windows 10 以降の IME の設定「無変換・変換で オフ・オン」。変換中の 変換 は「変換」の意味を保つ（R: D3） |
 | **無変換**（Muhenkan、evdev 94） | direct にする | 同上 |
@@ -407,6 +447,13 @@ X の前に引く。語の選び方と量はユーザーと相談（ユーザー
 
 - 切り替えの key は zdesktop が取る（§4.2 の 1）ので、どの app でも同じに効き、IME が変換中でも効く（切り替えの時は未確定の文字を確定する。§14 D6）。
 - Ctrl+Space は使わない（Emacs の mark、Terminal の NUL と衝突するため）。
+- **Alt+Space の衝突の確認（2026-09-29、source で確かめた）**: Windows では Alt+Space は窓の System Menu の key だが、zdesktop には窓の menu を
+  Alt+Space で開く機能は無い（menu は F10、`menu-shell.c:702-750`。Space を見るのは menu が開いている間の行の選択 `menu-shell.c:1787` と
+  Wiseview の間 `shell.c:3688` だけ）。Files（Alt+←→ だけ、`files/ui-input.c:1008-1010`）・Text Editor（Ctrl・Alt・Super の組み合わせは文字に
+  しない、`textedit/keys.c:53`）・PDF Viewer・Settings・Browser にも Alt+Space の割り当ては無い。app の menu の item の shortcut にも無い。
+  **ぶつかる所は 1 つ**: Terminal は Alt の組み合わせを ESC＋文字（meta）として pty に送る（`terminal/keys.c:160-166`）ので、今は Alt+Space が
+  ESC＋空白（Emacs の M-SPC）として shell に届く。IME を優先する方針（main の指示）で、zdesktop が Alt+Space を先に取り、Terminal には届かなく
+  なる。REmacs は M-SPC を使っていない（`editor/keymap.noct` は C-SPC だけ）。X11 の app（keiland-x11 の下）にも zdesktop が先に取るので届かない。
 
 ### 10.2 key の code
 
@@ -424,7 +471,7 @@ USB の JIS の keyboard の 半角/全角 は HID の usage 0x35（US の `` ` 
 
 **決定（ユーザー、2026-09-29、D7）**: デモ機（5330）の keyboard は US 配列なので、JIS の配列の設定（Settings・keymap・Terminal と Text Editor の
 `keys.c`）と 半角/全角 の key は後回しにし、WS095 には入れない。WS の外の後の候補として main に渡す（master の Future Work への登録は main が行う）。
-この WS の切り替えは Super+Space（US の keyboard で押せる）で、変換・無変換・カタカナ/ひらがな・かな・英数 の key は来れば受ける（§10.1）。
+この WS の切り替えは Alt+Space（ユーザーの指示 2026-09-29 夜。US の keyboard で押せる）で、変換・無変換・カタカナ/ひらがな・かな・英数 の key は来れば受ける（§10.1）。
 
 ## 11. app の側（text-input-v3 の対応）
 
@@ -463,7 +510,7 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
   QMP で key の列を送る（qcode に henkan 等があるかは p004 で確かめる）。確かめる事柄:
   - protocol: done の serial が text input の commit の数と等しい、IME の serial が合わない時も文字が届く、4000 byte と UTF-8 の境界、popup が
     active の間だけ見える。
-  - key の経路: Super+Space の切り替え、変換、確定、Esc、password の field で素通し、直接入力で grab を通らない、press の後に grab が付いて release が
+  - key の経路: Alt+Space の切り替え、変換、確定、Esc、password の field で素通し、直接入力で grab を通らない、press の後に grab が付いて release が
     来る、key を押したまま IME を kill しても client の repeat が止まる、IME を STOP（ハング）させて 500 ms 後に素通しになる、変換中の focus の変化で
     preedit が確定される、変換中の lock で候補が出ない。
   - 候補の窓と indicator は画面を撮って目で確かめる（全画面の窓の上でも出ること）。直接入力の遅延が増えないこと。
@@ -475,27 +522,27 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
 | --- | --- | --- | --- |
 | ws095-p001 | 設計（この文書） | plan だけ | — |
 | ws095-p002 | 日本語の engine（Wayland 無し）: ローマ字・辞書の読み込み・活用の規則・分割・候補・利用者の辞書、試験用の固定の辞書で host の試験 | `userland/desktop/ime/` の engine の file、`plan/ws095/tests/` | p001 |
-| ws095-p003 | 辞書の package（pin した tarball の取得・検証と install、LICENSE）、X での変換の品質の計測と補いの辞書の案（ユーザーと相談） | ime の Makefile、`SKK-JISYO.kei` の案 | p002、§14 D1・D3 |
+| ws095-p003 | 辞書の package（pin した tarball の取得・検証と install）、100 文での品質の計測、補いの辞書の案（ユーザーと相談） | `userland/desktop/ime/dict/`（Makefile・`SKK-JISYO.kei`）、engine の分割の規則、`plan/ws095/tests/`（100 文・measure） | p002、§14 D1・D3 |
 | ws095-p004 | protocol の client の記述（text-input-v3・input-method-v2・virtual-keyboard-v1・status）、zdesktop の仲介（§2.1 の起動と信頼、§4.1・§4.2 の key の経路、§4.5 の watchdog）、IME の program の骨（直接入力の engine）、ime-probe と guest の試験（protocol・key の経路） | libwayland、`wayland/text-input.c`・`input-method.c`・`seat.c`・`protocol.c`・`main.c`・`zwl.h`、ime の Wayland の部分 | p002。zdesktop を変えている WS035 等と merge の順（main） |
 | ws095-p005 | 候補の窓の合成（§4.3、plain・glass の両経路、全画面）、indicator と status（§8）、日本語の engine の結線、lock・Home での deactivate、guest の試験（変換・候補の窓の画面） | `wayland/compose.c`・`glass.c`・`display.c`・`damage.c`・`shell.c`・`network.c`、ime の `popup.c`・`status.c` | p003（image に辞書）・p004 |
 | ws095-p006 | libkeiland の text-input の helper と Terminal の対応（password の検出を含む） | libkeiland、terminal | p004・p005、**Terminal の CJK の fallback の font**（今は無い。WS095 に入れるか別の WS かを main が決める） |
 | ws095-p007 | Text Editor の対応（WS092 の口、preedit の大きさ、cursor の矩形） | textedit | p006、WS092 |
 | ws095-p008 | zdesktop の自前の field（titlebar の検索、§4.4）と Files の field | wayland の titlebar-shell、files | p005・p006 |
 | ws095-p009 | Browser の text field（`form.c`、UTF-16 の caret の変換） | browser | p006 |
-| ws095-p010 | PS/2 の日本語の key の写し（5330 の内蔵 keyboard が PS/2 の JIS と分かった時だけ。driver の変更で HAL ではない） | `src/drivers/platform/pcat/ps2-8042.c` | 5330 の確認（人） |
+| ws095-p010 | PS/2 の日本語の key の写し（ユーザーの回答 2026-09-29: 5330 の内蔵 keyboard は PS/2。main の指示で必要。ただし D7 で配列は US で、US 配列の PS/2 keyboard には日本語の key が無いので、デモでの効きは無い。順は後ろ。driver の変更で HAL ではない） | `src/drivers/platform/pcat/ps2-8042.c` | — |
 | ws095-p011 | 全体の規約の適合（coding-style の全文）、guest の回帰。実機の確認は人の作業として別に記録 | — | p002〜p009（p010 は行った時だけ） |
 
 ## 14. 人間の判断が要る点（既定を選んで進める）
 
 | # | 問い | 既定（この設計が選んだもの） | 別の案 |
 | --- | --- | --- | --- |
-| D1 | 辞書をどう image に入れるか・license の表示 | REmacs の commit を固定した tarball から build の時に `SKK-JISYO.X` を取り image に入れる。tree には取り込まない。image に著作権者の許可の文（LICENSE）を置く | (a) 著作権者が REmacs の辞書の header を Kei でも使える license（二重 license 等）に書き換える（header と LICENSE の食い違いが無くなる）／(b) 辞書を tree（`userland/desktop/ime/dict/`）に取り込み header を Kei 用に書き換える |
+| D1 | 辞書をどう image に入れるか・license の表示 | **決定（ユーザー、2026-09-29）**: 著作権者が REmacs の辞書を zlib で再 license。project 全体の license の file の下に置き、辞書用の LICENSE は作らない。辞書は REmacs の commit を固定した tarball から build の時に取り（tree に取り込まない）、header の GPL の記述との関係は Makefile の注釈と §9.1 に記録（p003） | (a) 著作権者が REmacs の辞書の header を書き換える／(b) 辞書を tree に取り込む |
 | D2 | 変換の操作 | **決定（ユーザー、2026-09-29、main 経由の質問への回答）**: MS-IME の型。ひらがなを打ち、Space で未確定の全体を変換し、文節は自動で分ける。Shift の大文字は一時的な英字。SKK の大文字の起点は使わない（操作の層 `ja-keys.c` は engine の中心から分けてあり、差し替えられる） | SKK の型（大文字で変換の始まり・送りの始まりを示す。REmacs と同じ操作、分割の誤りが減るが一般の利用者には馴染みが薄い） |
 | D3 | 足りない語の補い | **決定（ユーザー、2026-09-29）**: この project で書き下ろす補いの辞書 `SKK-JISYO.kei`（代名詞・基本の名詞・挨拶・助数詞・基本の動詞と形容詞、数百〜千語）。p003 で 100 文の計測の後に語の一覧を示して量を決める | REmacs の辞書そのものに足す（ユーザーの repo）／SKK-JISYO.L 等の外部の辞書を任意で入れる（GPL、既定では入れない） |
 | D4 | 単語の登録 | 最初の版では作らない（学習は候補の順だけ） | 変換で見つからない時に登録の小窓（SKK の再帰の登録） |
 | D5 | 直接入力の時も key を IME に通すか | **通さない**（レビューで変更: zdesktop が status で今の言語を知っているので grab を飛ばす。IME のハング・遅延が英字の入力に影響しない） | 通す（input-method-v2 の素直な形。IME が全ての key を見る） |
 | D6 | 言語の切り替えの時の未確定の文字 | 確定する（Windows と同じ） | 破棄する |
-| D7 | JIS の keyboard の配列（半角/全角 が KEY_GRAVE、¥・ろ の key） | **決定（ユーザー、2026-09-29）**: デモ機（5330）の keyboard は US 配列。JIS の配列と 半角/全角 は後回しで WS095 には入れない（WS の外の後の候補）。切り替えは US の keyboard で押せる Super+Space。変換・無変換・カタカナ/ひらがな が来たら受ける。内蔵の keyboard が PS/2 か USB か（p010 の要否）は実機の image を作る時に main が確かめる | WS095 で JIS の配列の選択まで作る |
+| D7 | JIS の keyboard の配列（半角/全角 が KEY_GRAVE、¥・ろ の key） | **決定（ユーザー、2026-09-29）**: デモ機（5330）の keyboard は US 配列。JIS の配列と 半角/全角 は後回しで WS095 には入れない（WS の外の後の候補）。切り替えは US の keyboard で押せる key（D7 では Super+Space としたが、**ユーザーの指示（2026-09-29 夜）で Alt+Space** に置き換えた、§10.1）。変換・無変換・カタカナ/ひらがな が来たら受ける。内蔵の keyboard が PS/2 か USB か（p010 の要否）は実機の image を作る時に main が確かめる | WS095 で JIS の配列の選択まで作る |
 | D8 | IME の program の名前 | `/usr/libexec/keiland-ime`（内部の名前、画面には出さない） | `/bin/ime` など |
 | D9 | 候補の窓の見た目 | wl_shm で Kei の見た目（白の card、角丸、選んだ行を強調、番号 1〜9 で選べる）。glass の効果は付けない | glass（zdesktop の glass の拡張を popup に広げる） |
 | D10 | focus が移る時の未確定の文字（レビューで追加） | zdesktop が旧い field に確定して送る（Windows の IME と同じ。打ちかけを失わない） | 破棄する（text-input-v3 の素直な形） |

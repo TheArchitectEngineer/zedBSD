@@ -394,6 +394,68 @@ ja_is_hiragana(
 }
 
 /*
+ * Tells whether no word can begin with a kana: the long-vowel mark, the
+ * small kana, っ and ん only follow another kana.
+ */
+bool
+ja_starts_no_word(
+	uint32_t code)
+{
+	/* The kana that only follow another. */
+	switch (code) {
+	case 0x30fcU:
+		/* ー */
+	case 0x3063U:
+		/* っ */
+	case 0x3093U:
+		/* ん */
+	case 0x3041U:
+	case 0x3043U:
+	case 0x3045U:
+	case 0x3047U:
+	case 0x3049U:
+		/* ぁ ぃ ぅ ぇ ぉ */
+	case 0x3083U:
+	case 0x3085U:
+	case 0x3087U:
+	case 0x308eU:
+		/* ゃ ゅ ょ ゎ */
+		return true;
+	default:
+		break;
+	}
+
+	/* Any other kana can begin a word. */
+	return false;
+}
+
+/*
+ * Tells whether a kana marks a word taken from another language: the
+ * long-vowel mark and the small vowels (コーヒー, ファイル), which native
+ * words seldom have.
+ */
+bool
+ja_is_loanword_mark(
+	uint32_t code)
+{
+	/* ー and the small vowels. */
+	switch (code) {
+	case 0x30fcU:
+	case 0x3041U:
+	case 0x3043U:
+	case 0x3045U:
+	case 0x3047U:
+	case 0x3049U:
+		return true;
+	default:
+		break;
+	}
+
+	/* Any other kana. */
+	return false;
+}
+
+/*
  * Gives the katakana of a hiragana; any other code point is given back
  * unchanged.
  */

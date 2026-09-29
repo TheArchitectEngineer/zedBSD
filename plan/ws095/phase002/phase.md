@@ -18,7 +18,7 @@ X の品質は p003 で計る。main の指示（2026-09-29）: D2 が変わっ�
 ## 前提と判断
 
 - ユーザーの判断（2026-09-29、main 経由）: D2 = MS-IME の型（設計の既定どおり）、D3 = 補いの辞書を書き下ろす、D7 = デモ機は US 配列で
-  JIS は後回し・切り替えは Super+Space。design.md の §14・§10.3 を決定に直した。D14 は main が既定（WS095 の中で p006 の前提として足す）に決めた。
+  JIS は後回し・切り替えは Super+Space（後に 2026-09-29 夜のユーザーの指示で Alt+Space に変更、design §10.1）。design.md の §14・§10.3 を決定に直した。D14 は main が既定（WS095 の中で p006 の前提として足す）に決めた。
 - HAL・toolchain は変えていない。共有の `build/` は読むだけ（`build/sources/remacs/dict/SKK-JISYO.X` を試験で読む）。
 
 ## 結果
