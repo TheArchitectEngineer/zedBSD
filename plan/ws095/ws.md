@@ -39,3 +39,15 @@ Resume point: 2026-09-29 ユーザーの指示でブラッシュアップ（p005
 | ws095-p010 | PS/2 の日本語の key の写し（条件付き: JIS の PS/2 keyboard の利用者が出た時、F-058 と一緒に。5330 は PS/2 だが US 配列で日本語の key が無い。main 2026-09-29） | planning | JIS の PS/2 の利用者（F-058） |
 | ws095-p011 | 全体の規約の適合、guest の回帰（実機の確認は別に記録） | planning | p002〜p009・p012 |
 | ws095-p012 | 補いの辞書を千語へ広げ、補いの辞書の候補に活用の種類の注釈（SKK の `;…`）を足して engine が読む。held-out の文 100 以上を書き下ろし、拡張の前後で測る（ユーザーの答え 2026-09-29 夜） | planning | p003・p004 |
+
+## 再開のときに直すこと（2026-09-30 main、ws035-p137 の調べから）
+
+- `plan/ws095/tests/ime-p004.sh`（139 行目付近）の kill は `grep "[i]me-probe"` に当たる全ての ime-probe を閉じ、残すはずの窓も閉じる。
+  BUG-113（閉じた後に focus が戻らない）の観測はこれによる見込み（zdesktop は次の窓へ focus を移している、ws035-p137）。
+  guest の `ps` は引数を出さないので、閉じる process は起動の時の pid（`$!`）で kill する。
+
+## 再開のときに直すこと（2026-09-30 main、ws035-p137 の調べから）
+
+- `plan/ws095/tests/ime-p004.sh`（139 行目付近）の kill は `grep "[i]me-probe"` に当たる全ての ime-probe を閉じ、残すはずの窓も閉じる。
+  BUG-113（閉じた後に focus が戻らない）の観測はこれによる見込み（zdesktop は次の窓へ focus を移している、ws035-p137）。
+  guest の `ps` は引数を出さないので、閉じる process は起動の時の pid（`$!`）で kill する。
