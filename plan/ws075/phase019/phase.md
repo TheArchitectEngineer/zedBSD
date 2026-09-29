@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p019`
 Parent: [WS075](../ws.md)
-Status: planning（2026-09-29、[ws075-p008](../phase008/phase.md) から分けた）
+Status: in-progress（2026-09-29、サブエージェント、worktree `.claude/worktrees/ws075-rps`。FIFO の先行（UAPI なし）を実装、MAILBOX・IMMEDIATE は UAPI の提案 [proposed/p019-present-mode.md](../proposed/p019-present-mode.md)）
 Phase disposition: normal
 
 ## 範囲（正本は WS031 の ws.md の p027 の行と [phase018](../../ws031/phase018/phase.md) の 5）
