@@ -130,3 +130,9 @@ boot test を足せば clear できる見込み。
 - 修正前の証拠: `build/ws073-p041/before-fix/`（`trace*.txt`、各起動の `dmesg-1.txt`・`qemu.log`）。修正後: `build/ws073-p041/trace*`、boot test は
   `build/ws073-p041/boot-test/login.png`。
 - QEMU 10.0 の `hcd-xhci.c`・`dev-storage.c` は突き合わせのために読んだだけで、tree には入れていない。
+
+## main の判断（2026-09-30）
+
+- 受け入れの条件を「usb-storage の error 0」に絞る。`xhci: cancel` の行は EP0 の別の症状で、[BUG-116](../../bugs/BUG-116.md) として起票した。
+- 修正は main にマージした（TCG で修正の前 40 回中 7 回 → 修正の後 75 回で 0）。cleared にする残りは KVM の 2×20（丸読みを含む）と boot test。
+  次の枠で行う。
