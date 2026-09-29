@@ -22,6 +22,7 @@
 		keiland_file_chooser_*;
 		keiland_preferences_*;
 		keiland_desktop_*;
+		keiland_audio_*;
 	local:
 		*;
 };

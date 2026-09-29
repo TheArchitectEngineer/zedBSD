@@ -29,7 +29,7 @@ static const struct kui_theme theme_light = {
 	KUI_RGBA(0xffffff, 60),		/* glass_content */
 	KUI_RGBA(0xffffff, 120),	/* sidebar */
 	KUI_RGB(0x1e2632),		/* text */
-	KUI_RGB(0x6b7585),		/* text_secondary */
+	KUI_RGB(0x56606f),		/* text_secondary */
 	KUI_RGB(0xa3abb8),		/* text_faint */
 	KUI_RGB(0x46526a),		/* icon */
 	KUI_RGB(0x2f7cf6),		/* accent */

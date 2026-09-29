@@ -42,6 +42,7 @@
 #include "glass.h"
 
 #include <errno.h>
+#include <math.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <stdio.h>
@@ -70,6 +71,13 @@
 #define GREETER_BUTTON_WIDTH	112
 #define GREETER_BUTTON_HEIGHT	36
 #define GREETER_MARGIN		24
+
+/* The longest wait for the "Shutting down..." picture before the power request goes (ws099-p009). */
+#define GREETER_POWER_MS	1000U
+
+/* The dots of the power screen's spinner, and the time one turn takes. */
+#define GREETER_SPINNER_DOTS	8U
+#define GREETER_SPINNER_MS	1200U
 
 /* The Kei mark's square at the bottom left, in pixels. */
 #define GREETER_BRAND_MARK	48
@@ -142,6 +150,19 @@ static unsigned greeter_password_length;
 static char greeter_message[64];
 static unsigned greeter_waiting;
 static unsigned greeter_starting;
+
+/*
+ * Shut Down or Restart pressed (ws099-p009): the power request waiting to
+ * go ("poweroff" or "reboot", empty when none), whether it has gone, and the
+ * frame count and time when it was pressed.  The screen says "Shutting
+ * down..." first, and the request goes to sessiond once that picture has
+ * been shown (the frame count has moved on twice, or GREETER_POWER_MS has
+ * passed), so the picture the display keeps at the end is that one.
+ */
+static char greeter_powering[16];
+static unsigned greeter_power_sent;
+static uint64_t greeter_power_frame;
+static uint64_t greeter_power_ms;
 static char greeter_answer[64];
 static size_t greeter_answer_used;
 
@@ -174,6 +195,8 @@ static void greeter_select(struct zwl_server *server, unsigned user);
 static void greeter_type(struct zwl_server *server, uint32_t key);
 static void greeter_submit(struct zwl_server *server);
 static void greeter_power(struct zwl_server *server, const char *what);
+static void greeter_power_send(struct zwl_server *server);
+static void greeter_draw_power(struct zwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
 static void greeter_send(struct zwl_server *server, const char *line);
 static void greeter_answered(struct zwl_server *server, const char *answer);
 static void greeter_erase(void);
@@ -303,6 +326,12 @@ zwl_greeter_draw(
 	/* The Kei mark and word at the bottom left (ws035-p108). */
 	greeter_draw_brand(server, command);
 
+	/* Shutting down or restarting: only that, with a spinner, in the card. */
+	if (greeter_powering[0] != '\0') {
+		greeter_draw_power(server, command, &layout);
+		return;
+	}
+
 	/* The card with the users, the password and Log In. */
 	greeter_draw_card(server, command, &layout);
 
@@ -326,8 +355,8 @@ zwl_greeter_button(
 	enum greeter_hit hit;
 	unsigned user;
 
-	/* Only the left button's press does anything, and nothing once the session is starting. */
-	if (button != GREETER_BUTTON_LEFT || state == 0U || greeter_starting)
+	/* Only the left button's press does anything, and nothing once the session is starting or the machine ending. */
+	if (button != GREETER_BUTTON_LEFT || state == 0U || greeter_starting || greeter_powering[0] != '\0')
 		return 1;
 
 	/* What the press is on. */
@@ -369,8 +398,8 @@ zwl_greeter_key(
 	uint32_t key,
 	uint32_t state)
 {
-	/* Releases do nothing, and nothing does once the session is starting. */
-	if (state == 0U || greeter_starting)
+	/* Releases do nothing, and nothing does once the session is starting or the machine ending. */
+	if (state == 0U || greeter_starting || greeter_powering[0] != '\0')
 		return 1;
 
 	/* Routes the key by its code. */
@@ -434,6 +463,12 @@ zwl_greeter_tick(
 	/* The lock screen's answers come through handoff.c. */
 	if (!server->greeter)
 		return;
+
+	/* Shutting down: the spinner turns, and the request goes once its picture is shown. */
+	if (greeter_powering[0] != '\0') {
+		server->dirty = 1;
+		greeter_power_send(server);
+	}
 
 	/* What sessiond has answered. */
 	count = read(server->auth_fd, greeter_answer + greeter_answer_used, sizeof(greeter_answer) - 1U - greeter_answer_used);
@@ -1026,18 +1061,100 @@ greeter_submit(
 	printf("ZWL GREETER auth user=%s\n", greeter_users[greeter_selected].name);
 }
 
-/* Asks sessiond to end the machine. */
+/*
+ * Starts ending the machine (Shut Down or Restart): the screen says so from
+ * the next frame, and greeter_power_send sends the request once that
+ * picture has been shown.
+ */
 static void
 greeter_power(
 	struct zwl_server *server,
 	const char *what)
 {
+	/* The request to send, and when it was asked for. */
+	(void)snprintf(greeter_powering, sizeof(greeter_powering), "%s", what);
+	greeter_power_sent = 0U;
+	greeter_power_frame = server->frame;
+	greeter_power_ms = zwl_milliseconds();
+	server->dirty = 1;
+	printf("ZWL GREETER powering=%s frame=%llu\n", what, (unsigned long long)server->frame);
+}
+
+/* Sends the power request once the "Shutting down..." picture has been shown (two frames on, or GREETER_POWER_MS). */
+static void
+greeter_power_send(
+	struct zwl_server *server)
+{
 	char line[32];
+	uint64_t elapsed;
+
+	/* Sent already. */
+	if (greeter_power_sent)
+		return;
+
+	/* The picture is shown once two frames have gone since the press, or after the longest wait. */
+	elapsed = zwl_milliseconds() - greeter_power_ms;
+	if (server->frame < greeter_power_frame + 2U && elapsed < GREETER_POWER_MS)
+		return;
 
 	/* The request. */
-	snprintf(line, sizeof(line), "POWER %s\n", what);
+	(void)snprintf(line, sizeof(line), "POWER %s\n", greeter_powering);
 	greeter_send(server, line);
-	printf("ZWL GREETER power=%s\n", what);
+	greeter_power_sent = 1U;
+	printf("ZWL GREETER power=%s frames=%llu ms=%llu\n", greeter_powering, (unsigned long long)(server->frame - greeter_power_frame), (unsigned long long)elapsed);
+}
+
+/* Draws the card of a machine that is ending: "Shutting down..." or "Restarting...", and a turning ring of dots. */
+static void
+greeter_draw_power(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	const struct greeter_layout *layout)
+{
+	static const float ink[4] = { 0.10f, 0.14f, 0.22f, 1.0f };
+	struct glass_shape shape;
+	const char *words;
+	float dot[4];
+	float angle;
+	float phase;
+	float cx;
+	float cy;
+	int32_t middle;
+	unsigned index;
+	int reboot;
+
+	/* The card's frosted glass, as the login card's. */
+	glass_shape_init(&shape, (float)layout->card[0], (float)layout->card[1], (float)layout->card[2], (float)layout->card[3]);
+	shape.mode = MODE_GLASS;
+	shape.radius = GREETER_CARD_RADIUS;
+	shape.soft = 1.0f;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.62f;
+	shape.edge = 0.70f;
+	glass_shape_draw(server, command, &shape);
+
+	/* The words, in the card's upper half. */
+	words = "Shutting down...";
+	reboot = strcmp(greeter_powering, "reboot");
+	if (reboot == 0)
+		words = "Restarting...";
+	middle = layout->card[0] + layout->card[2] / 2;
+	greeter_draw_centered(server, command, SIZE_SEARCH, middle, layout->card[1] + layout->card[3] * 2 / 5, words, GREETER_CARD_WIDTH - 32, ink);
+
+	/* The spinner under them: dots on a ring, the brightest turning with the time. */
+	cx = (float)middle;
+	cy = (float)(layout->card[1] + layout->card[3] * 2 / 3);
+	phase = (float)(zwl_milliseconds() % GREETER_SPINNER_MS) / (float)GREETER_SPINNER_MS;
+	for (index = 0U; index < GREETER_SPINNER_DOTS; index++) {
+		angle = 6.2831853f * (float)index / (float)GREETER_SPINNER_DOTS;
+		dot[0] = 0.26f;
+		dot[1] = 0.48f;
+		dot[2] = 0.86f;
+		dot[3] = 0.25f + 0.75f * fmodf(1.0f + (float)index / (float)GREETER_SPINNER_DOTS - phase, 1.0f);
+		glass_draw_solid(server, command, cx + 22.0f * sinf(angle) - 5.0f, cy - 22.0f * cosf(angle) - 5.0f, 10.0f, 10.0f, 5.0f, dot);
+	}
 }
 
 /* Writes one request line to sessiond. */

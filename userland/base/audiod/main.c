@@ -425,6 +425,17 @@ handle_message(
 		broadcast_volume();
 		break;
 
+	case AUDIOD_FEEDBACK:
+		/* The short feedback sound, from its start (ws100-p002); the header only. */
+		if (length != sizeof(request.header)) {
+			error = EINVAL;
+			break;
+		}
+
+		/* Played by the mix from the next period. */
+		audiod_device_feedback(&audiod_device);
+		break;
+
 	case AUDIOD_SUBSCRIBE:
 		/* A new subscriber is told the volume as it stands. */
 		client->subscribed = request.subscribe.mask;

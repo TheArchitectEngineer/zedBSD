@@ -46,7 +46,7 @@ extern "C" {
 #endif
 
 /* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser; 13: the desktop's preferences; 14: the desktop surface). */
-#define KEILAND_VERSION	14U
+#define KEILAND_VERSION	15U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1253,6 +1253,73 @@ void keiland_desktop_ack(struct keiland_desktop *desktop, uint32_t serial);
  * Gives the desktop's role up.
  */
 void keiland_desktop_destroy(struct keiland_desktop *desktop);
+
+/*
+ * The sound output's volume (ws100-p003, KEILAND_VERSION 15): the device
+ * volume audiod applies to everything it plays, 0 to 100 per channel, and
+ * whether it is muted, for the system bar and Settings.  Nothing here
+ * waits: keiland_audio_update reads what audiod has sent, a set or the
+ * feedback sound is sent at once.  An audiod that is not running is not a
+ * failure; the updates connect again, at most once a second.
+ */
+struct keiland_audio;
+
+/* What audiod last reported. */
+struct keiland_audio_state {
+	unsigned reachable;	/* 0 while audiod cannot be reached */
+	unsigned device;	/* 0 when audiod has no sound device */
+	unsigned rate;		/* the device's rate, 0 unknown */
+	unsigned channels;
+	unsigned left;		/* 0..100 */
+	unsigned right;		/* 0..100 */
+	unsigned muted;		/* 0 or 1 */
+};
+
+/* What keiland_audio_update found changed. */
+#define KEILAND_AUDIO_CHANGED_REACHABLE	1U	/* audiod came or went */
+#define KEILAND_AUDIO_CHANGED_VOLUME	2U	/* the volume or mute changed */
+
+/*
+ * Starts following audiod's volume (HELLO, then SUBSCRIBE).  Returns NULL
+ * only without memory.
+ */
+struct keiland_audio *keiland_audio_open(void);
+
+/*
+ * Stops following audiod.
+ */
+void keiland_audio_close(struct keiland_audio *audio);
+
+/*
+ * The descriptor to poll for audiod's messages, or -1 while not connected.
+ */
+int keiland_audio_fd(const struct keiland_audio *audio);
+
+/*
+ * Reads what audiod has sent without waiting, and connects again when the
+ * connection went (at most once a second).  *changed has the
+ * KEILAND_AUDIO_CHANGED_* bits of what changed.  Returns 0, or EINVAL.
+ */
+int keiland_audio_update(struct keiland_audio *audio, unsigned *changed);
+
+/*
+ * Copies what audiod last reported.
+ */
+void keiland_audio_get_state(const struct keiland_audio *audio, struct keiland_audio_state *state);
+
+/*
+ * Asks audiod for a volume (0..100 each) and mute.  The new volume comes
+ * back through keiland_audio_update.  Returns 0, ENOTCONN (not connected),
+ * EINVAL (out of range) or the error of sending.
+ */
+int keiland_audio_set_volume(struct keiland_audio *audio, unsigned left, unsigned right, unsigned muted);
+
+/*
+ * Asks audiod to play its short feedback sound at the device volume (an
+ * audiod without it stays silent).  Returns 0, ENOTCONN, or the error of
+ * sending.
+ */
+int keiland_audio_feedback(struct keiland_audio *audio);
 
 #ifdef __cplusplus
 }

@@ -1586,6 +1586,7 @@ compose_cursor(
 	struct zwl_import alpha;
 	int32_t hotspot_x;
 	int32_t hotspot_y;
+	int shown;
 
 	/* A drag and drop's icon under the cursor (its surface's corner at the pointer), or the compositor's badge in the glass look (data.c). */
 	if (server->dnd_active) {
@@ -1602,10 +1603,29 @@ compose_cursor(
 		}
 	}
 
-	/* A hidden cursor is not drawn, nor one that has not moved since the start (ws035-p116). */
-	if (server->cursor_hidden)
-		return;
+	/* A cursor that has not moved since the start is not drawn (ws035-p116). */
 	if (server->pointer_unmoved)
+		return;
+
+	/* A client's cursor only over its own window (BUG-118): elsewhere the frame's arrow or zdesktop's. */
+	shown = zwl_cursor_client_shown(server);
+	if (!shown) {
+		if (server->frame_edges != 0U) {
+			image = zwl_cursor_image(server, &hotspot_x, &hotspot_y);
+			if (image != NULL) {
+				compose_quad(server, command, image, server->pointer_x - hotspot_x, server->pointer_y - hotspot_y);
+				return;
+			}
+		}
+
+		/* The arrow, its tip at the pointer. */
+		if (server->arrow != NULL)
+			compose_quad(server, command, server->arrow, server->pointer_x, server->pointer_y);
+		return;
+	}
+
+	/* A hidden cursor is not drawn. */
+	if (server->cursor_hidden)
 		return;
 
 	/* A window frame's resize arrow, over the client's own cursor (shell.c, cursor.c). */

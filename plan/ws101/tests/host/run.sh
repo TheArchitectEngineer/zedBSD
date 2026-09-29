@@ -1,7 +1,8 @@
 #!/bin/sh
 # ws101-p002: the i915 compiler's compute shaders on the host.
 #
-# 1. Compiles the GLSL of shaders/ with glslc (Vulkan 1.0 SPIR-V).
+# 1. Compiles the GLSL of shaders/ with glslc (Vulkan 1.0 SPIR-V), and the shared-memory and barrier shaders of the vkcs
+#    scenario and its refusals (src/drivers/gpu/i915/tests/render/compute-shaders/, ws101-p006).
 # 2. compute-dump.c parses and compiles each module as a compute shader: the scoreboard must be sound, every
 #    atomic's reply bit must agree with its reply length, the kernel must end at the thread spawner; the modules of
 #    shaders/refuse/ must be refused.
@@ -39,6 +40,16 @@ for source in "$here"/shaders/*.comp "$here"/shaders/refuse/*.comp; do
 	glslc --target-env=vulkan1.0 -fshader-stage=compute -o "$work/${relative%.comp}.spv" "$source" || {
 		echo "$relative: FAIL glslc"; status=1; }
 done
+vkcs=$repo/src/drivers/gpu/i915/tests/render/compute-shaders
+for name in shared reduce scan oddbar atomsh; do
+	glslc --target-env=vulkan1.0 -fshader-stage=compute -o "$work/$name.spv" "$vkcs/$name.comp" || {
+		echo "$name: FAIL glslc"; status=1; }
+done
+for source in "$vkcs"/refuse/*.comp; do
+	name=$(basename "$source" .comp)
+	glslc --target-env=vulkan1.0 -fshader-stage=compute -o "$work/refuse/vkcs-$name.spv" "$source" || {
+		echo "vkcs refuse/$name: FAIL glslc"; status=1; }
+done
 
 # Every module compiles, and its kernel passes Mesa's disassembler and assembler.
 for spv in "$work"/*.spv; do
@@ -59,7 +70,8 @@ done
 
 # The modules that must be refused are.
 for spv in "$work"/refuse/*.spv; do
-	"$work/dump" -refuse "$spv" | sed "s|^.*/refuse/|refuse/|" || status=1
+	"$work/dump" -refuse "$spv" > "$work/refuse.out" 2>&1 || status=1
+	sed "s|^.*/refuse/|refuse/|" "$work/refuse.out"
 done
 
 # The IR computes what C computes.
@@ -87,7 +99,7 @@ cc -std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_AB
 	-I"$repo/include" -I"$repo" -idirafter "$repo/include/libc" -o "$work/batch" "$here/compute-batch-test.c" \
 	$executor "$driver/render/command.c" -lm || exit 1
 "$work/batch" "$work" "$work/dispatch" || status=1
-for name in add ids; do
+for name in add ids reduce; do
 	python3 "$here/genxml-check.py" "$genxml" "$work/dispatch-$name" || status=1
 done
 

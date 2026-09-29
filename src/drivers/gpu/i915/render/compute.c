@@ -63,6 +63,10 @@
 /* The bytes of the three group counts. */
 #define I915_COMPUTE_GROUP_COUNT_BYTES		12U
 
+/* Shared local memory: the smallest a group takes (1 KiB, the encoding 1) and the largest (16 KiB, 5). */
+#define I915_COMPUTE_SLM_MIN_BYTES		1024U
+#define I915_COMPUTE_SLM_MAX_SIZE		5U
+
 /* Scratch space: the smallest per-thread space and the largest encoding (1 KiB << 11 = 2 MiB). */
 #define I915_COMPUTE_SCRATCH_MIN_BYTES		1024U
 #define I915_COMPUTE_SCRATCH_MAX_SPACE		11U
@@ -71,6 +75,7 @@ static int i915_compute_reads_uniforms(const struct i915_shader_binary *binary);
 static int i915_compute_names_storage(const struct i915_shader_binary *binary);
 static uint32_t i915_compute_dss_count(const struct i915_render_session *session);
 static uint64_t i915_compute_scratch(uint32_t per_thread_bytes, uint64_t offset);
+static uint32_t i915_compute_slm_size(uint32_t bytes);
 
 /*
  * Records one dispatch of the bound compute pipeline over groups[0] by
@@ -227,13 +232,15 @@ drv_i915_gfx_dispatch_write(
 	/*
 	 * The interface descriptor: the kernel at the start of its window, no
 	 * mid-thread preemption (anv), the per-thread registers, the threads of
-	 * a group and the cross-thread registers.  XXX: shared local memory and
-	 * the barrier are ws101-p006.
+	 * a group with their shared local memory and barrier (ws101-p006), and
+	 * the cross-thread registers.
 	 */
 	descriptor = (uint32_t *)(void *)(dynamic + I915_GFX_DYN_INTERFACE);
 	descriptor[2] = GEN12_IDD_PREEMPTION_DISABLE;
 	descriptor[5] = I915_SHADER_PER_THREAD_REGS << GEN12_IDD_PER_THREAD_LENGTH_SHIFT;
-	descriptor[6] = pipeline->threads;
+	descriptor[6] = pipeline->threads | (i915_compute_slm_size(binary->shared_bytes) << GEN12_IDD_SLM_SIZE_SHIFT);
+	if (binary->uses_barrier != 0U)
+		descriptor[6] |= GEN12_IDD_BARRIER_ENABLE;
 	descriptor[7] = binary->cross_thread_regs;
 
 	/* The group counts gl_NumWorkGroups reads. */
@@ -472,4 +479,36 @@ i915_compute_scratch(
 
 	/* Succeeded: the pointer's bits 47:10 and the space in bits 3:0. */
 	return (offset & ~(uint64_t)(I915_COMPUTE_SCRATCH_MIN_BYTES - 1U)) | (uint64_t)space;
+}
+
+/*
+ * Encodes the Shared Local Memory Size of the interface descriptor
+ * (ws101-p006): 0 for none, else n with 1 KiB << (n - 1) the group's bytes
+ * rounded up to a power of two of at least 1 KiB (Mesa 25.0.7
+ * src/intel/common/intel_compute_slm.c, sha256
+ * 2c5ccd8fdef7e070fd8c14ffa7fa172e29d77c65bee81e3ca3fa2e1a4dfc5ebc,
+ * intel_compute_slm_calculate_size() and intel_compute_slm_encode_size() on
+ * Gen9 to Gen12.0).  The parser refuses more than 16 KiB.
+ */
+static uint32_t
+i915_compute_slm_size(
+	uint32_t bytes)
+{
+	uint32_t size;
+	uint32_t encoded;
+
+	/* A kernel without shared memory takes none. */
+	if (bytes == 0U)
+		return 0U;
+
+	/* Finds the smallest power of two from 1 KiB that holds the bytes. */
+	size = I915_COMPUTE_SLM_MIN_BYTES;
+	encoded = 1U;
+	while (size < bytes && encoded < I915_COMPUTE_SLM_MAX_SIZE) {
+		size *= 2U;
+		encoded++;
+	}
+
+	/* Succeeded: the encoding. */
+	return encoded;
 }

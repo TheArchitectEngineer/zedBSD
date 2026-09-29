@@ -146,8 +146,12 @@ static unsigned long stub_next_serial = 1UL;
 /* How many blocks are live now. */
 static unsigned stub_live;
 
-/* The last line production code logged, and how many it logged in all. */
-static char stub_log[512];
+/*
+ * The lines production code logged since the current stream began (a
+ * refused command logs the refusal after its reason, ws075-p024), and how
+ * many it logged in all.
+ */
+static char stub_log[4096];
 static unsigned stub_log_lines;
 
 /* How many draws and rectangles were asked for, and the most recent of each. */
@@ -289,11 +293,21 @@ kern_logf(
 	...)
 {
 	va_list arguments;
+	char line[512];
+	size_t used;
+	size_t length;
 
-	/* Formats the line over the previous one. */
+	/* Formats the line. */
 	va_start(arguments, format);
-	vsnprintf(stub_log, sizeof(stub_log), format, arguments);
+	vsnprintf(line, sizeof(line), format, arguments);
 	va_end(arguments);
+
+	/* Appends it; one that does not fit starts the text again. */
+	used = strlen(stub_log);
+	length = strlen(line);
+	if (used + length >= sizeof(stub_log))
+		used = 0U;
+	memcpy(stub_log + used, line, length + 1U);
 
 	/* Counts the line. */
 	stub_log_lines++;
@@ -766,6 +780,9 @@ stub_execute(
 	size_t capacity;
 	void *region;
 	int error;
+
+	/* The log holds this stream's lines. */
+	stub_log[0] = '\0';
 
 	/* Resolves the reply region the stream's selector names. */
 	region = drv_i915_render_transport_reply(&stub_gpu, wire->bytes, (uint32_t)wire->size, &capacity);

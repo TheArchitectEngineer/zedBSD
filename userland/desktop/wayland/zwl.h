@@ -810,6 +810,15 @@ struct zwl_server {
 	int32_t home_launch_rect[4];
 	/* The cursor: a client's surface, zdesktop's arrow when there is none, or hidden. */
 	struct zwl_object *cursor_surface;
+	/*
+	 * The client whose request (a cursor surface, none to hide it, or a
+	 * shape) the cursor state is; NULL for zdesktop's own.  Its state is
+	 * shown only while the pointer is over that client's window (BUG-118);
+	 * cleared when the state goes back to the arrow or the client goes.
+	 */
+	struct zwl_client *cursor_client;
+	/* What the log last said about showing that client's cursor (0 none said, 1 not shown, 2 shown), for the tests. */
+	unsigned cursor_client_logged;
 	int32_t cursor_hotspot_x;
 	int32_t cursor_hotspot_y;
 	unsigned cursor_hidden;
@@ -993,6 +1002,7 @@ void zwl_pool_put(struct zwl_pool *pool);
 int zwl_shm_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 int zwl_shm_bind(struct zwl_object *shm);
 void zwl_cursor_default(struct zwl_server *server);
+int zwl_cursor_client_shown(struct zwl_server *server);
 int zwl_arrow_create(struct zwl_server *server);
 void zwl_arrow_destroy(struct zwl_server *server);
 struct zwl_object *zwl_top_window(struct zwl_server *server);
@@ -1055,6 +1065,13 @@ int zwl_network_button(struct zwl_server *server, uint32_t button, uint32_t stat
 int zwl_network_key(struct zwl_server *server, uint32_t key, uint32_t state);
 int zwl_network_motion(struct zwl_server *server);
 int zwl_network_is_open(void);
+void zwl_volume_tick(struct zwl_server *server);
+void zwl_volume_preferences(struct zwl_server *server);
+int zwl_volume_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_volume_key(struct zwl_server *server, uint32_t key, uint32_t state);
+int zwl_volume_motion(struct zwl_server *server);
+int zwl_volume_axis(struct zwl_server *server, int32_t vertical, int32_t horizontal);
+int zwl_volume_is_open(void);
 
 /* What a toplevel asks the glass look's shell to do (xdg_toplevel requests, ws035-p076). */
 #define ZWL_TOPLEVEL_MOVE		1
