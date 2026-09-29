@@ -2,14 +2,32 @@
 
 # WS035: デスクトップ環境とアプリケーションの導入
 
+## 終了（2026-09-30）
+
+ユーザー:「WS035は、あまりゴールが明確でないのに延々と作業している気がします。」→ main の提案「閉じて、デモの台本をゴールにした新しい WS へ移す」を
+ユーザーが選んだ（2026-09-30）。下の「単一目標」（2026-09-23: アプリの導入、音声、Chromium、X11 の client）は、その後の目標（Keiland の
+デスクトップとデモの仕上げ）に合わなくなっていた。
+
+- **結果**（p001〜p138、QEMU の Venus と一部は実機の 5330 の passthrough）: Wayland の compositor（zdesktop、2 つのモード、glass、App Home、
+  Wiseview、system bar、窓の管理と装飾、touch・pen）、sessiond・greeter・lock・login、Files・Terminal・Notes 等の Keiland の app、
+  audiod、libz・libpng の互換、X server（Xwayland 相当）、起動の短縮（p129〜p133）、BUG-112・BUG-114、Terminal の本体の角（p136）。
+- **やらなかったこと**: Chromium の移植（WS074 の自前のブラウザに置き換わった）、音量の UI。
+- **移管**:
+  - デモまでの仕上げ → [WS099](../ws099/ws.md)（p135 の暗い壁紙の上の文字、[BUG-115](../bugs/BUG-115.md) を含む）。
+  - ぼかしの pass の短縮（約 80 ms、CPU）→ Future Work F-060。
+  - 既存の Future Work（F-048 ほか）と Bug Board の行はそのまま。
+- **完了の処理の残り**: `plan/ws035/tests/` は他の WS の試験（114 file）が参照する共有の道具なので、今は消さずに残す。
+  `plan/tools/zdesktop/` への移動と参照の書き換え、phase の directory の削除は、後の整理で main が行う。
+- 表の p040・p041（planning）は古い行で、libz-compat・libpng-compat は別の Phase で入っている。
+
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-09-30 ユーザーの判断で閉じた。後継は [WS099](../ws099/ws.md)）
 Primary Milestone: MG006
 Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-28 の周期の終わり: p094〜p120 は cleared（login manager・primary selection・表示の引き継ぎ・lock・システムバーの network と session の network group・configure_bounds・名前の衝突の dialog と Trash・Kei の起動画面と spinner（GOP 1920x1080、黒い帯）・greeter・lock・壁紙・files の Kei の見た目・terminal の選択・sessiond の GPU の待ち（BUG-092）・terminal の scrollback と選択の追従・files の folder の merge・デモの通し（Venus 1920x1280）・bar の launcher の印）、p118〜p120（バーの印を濃く・全画面の窓を守る・デモの利用者 kei と BUG-097・098）。source は userland/desktop/（WS078）。次: HDMI の lease の切り替えで画面を点けたまま（WS075 と共同）、F-048。p120 の main への一覧は main が処理（sh の prompt は利用者名、demo の image の root は password、2026-09-28）。touch・pen・Notes は WS079。2026-09-29 の demo critical: p121（見える旧名、WS078 の残り）・p122（Notes の toolbar の間隔と title の区切り）・p123（App Home の絵の icon）・p124（窓の印を絵に）・p125（試験の道具の前提）は cleared（QEMU の Venus、実機は未実施）。p126（F-048 の代案: Venus の driver が最後の画を保ち、login・Log Out の黒 1.4〜1.7 秒を 0 に）は cleared（QEMU の Venus）。F-048 の本案（fd の受け渡しと revoke）と loud の console での保ちは残り（loud では保たないことを 2026-09-29 ユーザーが決定）。p127（zdesktop-p101.sh を kei の image に）・p128（窓の四隅と辺の resize、ユーザーの要望）は cleared（QEMU の Venus）。p129（compositor の起動: Kei の印の平方根、compose 約 1.2 秒短縮）は cleared（QEMU の Venus）。残り（libvulkan の WSI の件として後で）: login・Log Out の替わり目の保った画（約 1.3 秒）の主は GO の後の `output-swapchain` 434 ms（libvulkan の `vkdemo_display_create_swapchain`: display の claim と blob の image の確保、p129 の `ZWL STARTUP`）。BUG-109 は ws073-p037 で解決（2026-09-29）。p130（surface と pipelines を READY の前に）・p131（起動の画像の layout の移行を 1 回の submit と wait に、compose 約 270 ms 短縮）は cleared。Venus の同期の遅さと swapchain の作成は F-056。p132（BUG-112 の修正、binding ごとの判定と defunct_surfaces の code）は cleared（QEMU の Venus）。p133（壁紙の読みと拡縮、先読みの thread と行ごとの経路、wallpaper の段 約 115 ms 短縮）は cleared。p134（Terminal の窓の角を丸めない、ユーザーの指示）・p136（その直し: 本体だけ直角、title bar は丸いまま）は cleared。p137（BUG-113、focus）は cleared（修正なし、試験の側の原因）。p138（BUG-114、全画面を解いた窓の位置）は cleared。次の割り当ては無し（2026-09-30 wrap up）。p135（暗い壁紙の上のすりガラスの contrast）は保留（すりガラスをやめるかをユーザーが WS075 の計測で決める）。その後の候補: wallpaper の ppm の読みと拡縮（約 170 ms）
+Queue: なし
+Resume point: 閉じた。デモまでの Keiland の作業は WS099（デモの台本をゴールにした仕上げ）。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
