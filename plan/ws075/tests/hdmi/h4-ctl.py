@@ -35,7 +35,8 @@ kernel's log (run.log, the debugcon: every record, also on a quiet boot).
                                   rows just below the destination are read from the buffer on the screen, and after each
                                   change of PLANE_SURFLIVE the same pixels of the new buffer: the first flip that shows
                                   them changed (the composited cursor) ends the trial (3 s at most).  X, Y must be a
-                                  static part of the screen (no animation there).  One line per trial in c6.log; on the
+                                  static part of the wallpaper (no window, no animation): the pointer clicks there
+                                  first, which shows the arrow again if a client (an X client) had hidden it.  One line per trial in c6.log; on the
                                   output the samples and their median, 90th percentile and flips that did not show it
     h4-ctl.py rate PIPE SECONDS [X Y]  (ws075-p008; X Y: where the pointer moves, default the centre) the flips per second of PIPE while the pointer keeps moving: the tablet
                                   moves back and forth by 40 pixels every 8 ms for SECONDS, and PLANE_SURFLIVE is read
@@ -433,6 +434,14 @@ def c6(f, pipe, count, cx, cy):
     other = 0
     with open(os.path.join(DIR, 'c6.log'), 'a') as log:
         log.write(f'# c6 {time.strftime("%H:%M:%S")} pipe {pipe} at {cx} {cy} {width}x{height}\n')
+        # A click on the wallpaper where the trials start: a client that hid the cursor (an X client) keeps it hidden
+        # until the focus moves (zdesktop's seat.c), and the first trial must go somewhere else than the pointer is.
+        tablet(f, cx - 40, cy, width, height)
+        time.sleep(0.2)
+        button(f, True)
+        time.sleep(0.08)
+        button(f, False)
+        time.sleep(1.0)
         for trial in range(count):
             x = cx + (40 if trial % 2 == 0 else -40)
             time.sleep(random.uniform(0.3, 0.8))

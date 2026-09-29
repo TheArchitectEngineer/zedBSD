@@ -26,8 +26,8 @@ ctl() { timeout 120 plan/ws075/tests/hdmi-h4-hw.sh ctl "$@"; }
 	plan/ws075/tests/hdmi/apps8.sh 8000
 	ctl rate A 10 | tail -1
 	ctl latency A 10 | tail -2
-	# ws075-p024: WS099's C6, the pointer's move to the flip that shows it, over the static middle of the screen
-	timeout 300 plan/ws075/tests/hdmi-h4-hw.sh ctl c6 A "${C6_TRIALS:-40}" 960 540 | tail -2
+	# ws075-p024: WS099's C6, the pointer's move to the flip that shows it, over the wallpaper above the windows
+	timeout 300 plan/ws075/tests/hdmi-h4-hw.sh ctl c6 A "${C6_TRIALS:-40}" 960 100 | tail -2
 	echo "== engine"
 	RATE_XY="1700 1000" plan/ws075/tests/hdmi/engine-gdb.sh "$vmunix" 10
 	ctl shot end1 | tail -1
