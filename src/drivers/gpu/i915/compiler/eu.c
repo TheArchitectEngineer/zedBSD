@@ -1175,6 +1175,56 @@ drv_i915_eu_while(
 }
 
 /*
+ * Moves a flag subregister's sixteen channel bits, zero-extended, into the
+ * dword at byte `subnr` of general register `nr`: one channel, outside the
+ * mask.  The counterpart of drv_i915_eu_flag_load().
+ */
+void
+drv_i915_eu_flag_store(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_flag flag,
+	uint32_t nr,
+	uint32_t subnr)
+{
+	struct i915_eu_reg dst;
+	struct i915_eu_reg src;
+	uint32_t *inst;
+
+	/* A flag outside the two flag registers is refused. */
+	if (flag >= I915_EU_FLAG_COUNT) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* The dword of the general register, written for the one channel. */
+	dst = drv_i915_eu_grf_scalar(nr, subnr);
+	dst.type = EU_TYPE_UD;
+	dst.hstride = EU_HSTRIDE_1;
+
+	/* The flag register and the byte of its subregister, as a 16-bit scalar source. */
+	kern_memset(&src, 0, sizeof(src));
+	src.file = EU_FILE_ARF;
+	src.nr = EU_ARF_FLAG + (uint32_t)flag / 2U;
+	src.subnr = ((uint32_t)flag % 2U) * 2U;
+	src.type = EU_TYPE_UW;
+	src.vstride = EU_VSTRIDE_0;
+	src.width = EU_WIDTH_1;
+	src.hstride = EU_HSTRIDE_0;
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes an in-order move, then narrows it to one channel outside the mask. */
+	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
+	i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
+	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
+	i915_eu_dst(inst, dst);
+	i915_eu_src0(inst, src);
+}
+
+/*
  * Encodes an IF on `flag`: the channels whose bit of the flag is clear stop
  * running until the matching ENDIF, and when no channel is left the thread
  * jumps to the ENDIF.  Returns the IF's position; its targets are written by

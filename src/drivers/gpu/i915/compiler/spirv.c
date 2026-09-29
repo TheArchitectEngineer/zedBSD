@@ -703,6 +703,14 @@ struct i915_spirv_parser {
 	/* Nonzero while the block is the merge block of a loop, where no phi is lowered. */
 	int loop_merge_block;
 
+	/*
+	 * The block now lowered is a skippable region (ws075-p023): a SKIP_BEGIN
+	 * on its predicate was emitted at its label and its SKIP_END comes before
+	 * its terminator; `skip_first_value` is the first value made inside it.
+	 */
+	int skip_open;
+	uint32_t skip_first_value;
+
 	/* The merge block an OpSelectionMerge named for the terminator after it, or NO_VALUE. */
 	uint32_t pending_merge;
 
@@ -850,6 +858,8 @@ static uint32_t i915_spirv_float_constant(struct i915_spirv_parser *parser, uint
 static uint32_t i915_spirv_integer_constant(struct i915_spirv_parser *parser, uint32_t bits);
 static uint32_t i915_spirv_select_value(struct i915_spirv_parser *parser, uint32_t condition, uint32_t taken, uint32_t other);
 static void i915_spirv_guard(struct i915_spirv_parser *parser, struct i915_shader_ir_inst *inst);
+static void i915_spirv_skip_open(struct i915_spirv_parser *parser);
+static void i915_spirv_skip_close(struct i915_spirv_parser *parser);
 static uint32_t i915_spirv_move_value(struct i915_spirv_parser *parser, uint32_t destination, uint32_t source);
 static int i915_spirv_refuse(struct i915_spirv_parser *parser, uint32_t opcode, uint32_t word_offset, const char *reason);
 static struct i915_spirv_id *i915_spirv_id(struct i915_spirv_parser *parser, uint32_t id);
@@ -1995,6 +2005,17 @@ i915_spirv_lower(
 	/* Every other instruction belongs to an open block, before its terminator. */
 	if (parser->block == 0U || parser->terminated != 0)
 		return EINVAL;
+
+	/* A skippable region ends before the block's merge declaration or terminator, which lower edges and loop moves. */
+	if (opcode == OP_SELECTION_MERGE ||
+	    opcode == OP_LOOP_MERGE ||
+	    opcode == OP_BRANCH ||
+	    opcode == OP_BRANCH_CONDITIONAL ||
+	    opcode == OP_SWITCH ||
+	    opcode == OP_RETURN ||
+	    opcode == OP_KILL ||
+	    opcode == OP_UNREACHABLE)
+		i915_spirv_skip_close(parser);
 
 	/* A loop's body starts at the first instruction of its header that is not a phi. */
 	if (parser->loop_depth != 0U && opcode != OP_PHI) {
@@ -6714,6 +6735,10 @@ i915_spirv_lower_label(
 	parser->pending_merge = NO_VALUE;
 	parser->loop_merge_block = loop_merge;
 
+	/* A block not every channel runs is a skippable region, unless it heads a loop (its loop begins inside it). */
+	if (predicate != PREDICATE_ALWAYS && header == 0)
+		i915_spirv_skip_open(parser);
+
 	/* Succeeded: the block is open. */
 	return 0;
 }
@@ -7791,6 +7816,65 @@ i915_spirv_guard(
 
 	/* The block's predicate, plus one (zero means no guard). */
 	inst->guard = parser->predicate + 1U;
+}
+
+/*
+ * Opens a skippable region at the start of a block: a SKIP_BEGIN on the
+ * block's predicate.  Whether the region is really skipped is decided by the
+ * code generator, which checks what leaves it (i915_compile_skips()).
+ */
+static void
+i915_spirv_skip_open(
+	struct i915_spirv_parser *parser)
+{
+	/* The region starts with the next value. */
+	parser->skip_first_value = parser->ir->value_count;
+	parser->skip_open = 1;
+
+	/* Marks its start with the block's predicate. */
+	(void)i915_spirv_emit(parser, I915_IR_SKIP_BEGIN, 0U, parser->predicate, 0U);
+}
+
+/*
+ * Closes the open skippable region, if any, with a SKIP_END.  A constant
+ * first materialized inside it is materialized again when read after it, as
+ * after a loop: when the region is skipped its value is never made.
+ */
+static void
+i915_spirv_skip_close(
+	struct i915_spirv_parser *parser)
+{
+	struct i915_spirv_id *record;
+	uint32_t first;
+	uint32_t end;
+	uint32_t id;
+
+	/* No region is open. */
+	if (!parser->skip_open)
+		return;
+
+	/* Marks its end. */
+	(void)i915_spirv_emit(parser, I915_IR_SKIP_END, 0U, 0U, 0U);
+	parser->skip_open = 0;
+
+	/* A constant first used in the region is used again as a fresh constant. */
+	first = parser->skip_first_value;
+	end = parser->ir->value_count;
+	for (id = 0U; id < parser->bound; id++) {
+		record = &parser->ids[id];
+		if (record->kind != ID_CONSTANT || record->count == 0U)
+			continue;
+		if (record->comp[0] >= first && record->comp[0] < end)
+			record->count = 0U;
+	}
+
+	/* So is a constant the lowering introduced in it. */
+	if (parser->zero_value != NO_VALUE && parser->zero_value >= first && parser->zero_value < end)
+		parser->zero_value = NO_VALUE;
+	if (parser->one_value != NO_VALUE && parser->one_value >= first && parser->one_value < end)
+		parser->one_value = NO_VALUE;
+	if (parser->true_value != NO_VALUE && parser->true_value >= first && parser->true_value < end)
+		parser->true_value = NO_VALUE;
 }
 
 /* Emits a float constant of the given bits and returns its value. */

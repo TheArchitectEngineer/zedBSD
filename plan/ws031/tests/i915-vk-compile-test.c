@@ -397,6 +397,9 @@ static unsigned eu_model_scratch_partial;       /* block writes that ran on some
 /* how many kernels had their scoreboard checked (ws075-p022) */
 static unsigned eu_model_scoreboard_checks;
 
+/* how many IFs the model ran, and how many it jumped over with no channel left (ws075-p023) */
+static unsigned eu_model_ifs, eu_model_ifs_jumped;
+
 struct eu_model {
 	uint32_t grf[128][8];
 	uint16_t flag[4];
@@ -680,6 +683,7 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 	unsigned count = binary->code_bytes / 16U, index, channel;
 	unsigned active = m->dispatched;
 	unsigned loop_at[32], parked[32], loops = 0U, passes = 0U;
+	unsigned if_mask[32], ifs = 0U;         /* the active channels at each open IF (ws075-p023) */
 
 	/* every kernel the model runs has its scoreboard checked first (ws075-p022) */
 	{
@@ -716,6 +720,44 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 			assert(predicate == EU_PREDICATE_NORMAL);
 			if (opcode != EU_OP_SEL)
 				enabled &= m->flag[flag];
+		}
+
+		/* IF: the channels whose flag bit is set run the body; none left jumps to the ENDIF (its JIP, in bytes) */
+		if (opcode == EU_OP_IF) {
+			int32_t jump = (int32_t)inst[3];
+
+			assert(predicate == EU_PREDICATE_NORMAL && jump > 0 && (jump % 16) == 0);
+			assert(inst[2] == inst[3]);             /* no ELSE: the UIP is the JIP */
+			assert(ifs < 32U);
+			if_mask[ifs++] = active;
+			active = enabled;
+			eu_model_ifs++;
+			if (active == 0U) {
+				eu_model_ifs_jumped++;
+				index = (unsigned)((int32_t)index + jump / 16) - 1U;   /* lands on the ENDIF */
+			}
+			continue;
+		}
+
+		/* ENDIF: back to the channels active at its IF */
+		if (opcode == EU_OP_ENDIF) {
+			assert(ifs != 0U);
+			active = if_mask[--ifs];
+			continue;
+		}
+
+
+		/* the flag's channel bits into a general register's dword (the any-channel IF, ws075-p023) */
+		if (opcode == EU_OP_MOV && exec == EU_EXEC_SIZE_1 && dst_file == 1U &&
+		    inst_bit(inst, EU_SRC0_REG_FILE_BIT) == 0U && inst_bit(inst, EU_SRC0_IS_IMM_BIT) == 0U) {
+			unsigned src_nr = inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO);
+			unsigned src_sub = inst_field(inst, EU_SRC0_SUBREG_HI, EU_SRC0_SUBREG_LO);
+			unsigned subnr = inst_field(inst, EU_DST_SUBREG_HI, EU_DST_SUBREG_LO);
+
+			assert(src_nr == EU_ARF_FLAG || src_nr == EU_ARF_FLAG + 1U);
+			assert(dst_type == EU_TYPE_UD && (subnr % 4U) == 0U);
+			m->grf[dst][subnr / 4U] = m->flag[(src_nr - EU_ARF_FLAG) * 2U + src_sub / 2U];
+			continue;
 		}
 
 		if (opcode == EU_OP_WHILE) {
@@ -2074,6 +2116,7 @@ main(void)
 	test_eu_generality_interfaces();
 	assert(fixture_live == 0U);
 	printf("  scoreboard: %u kernels checked (ws075-p022)\n", eu_model_scoreboard_checks);
+	printf("  skippable regions and guards (ws075-p023): %u IFs run, %u jumped over\n", eu_model_ifs, eu_model_ifs_jumped);
 	printf("i915 vk compile host test PASS\n");
 	return 0;
 }

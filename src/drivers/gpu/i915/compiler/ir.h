@@ -353,6 +353,19 @@ enum i915_shader_ir_op {
 	 */
 	I915_IR_STORE_STORAGE,
 
+	/*
+	 * The start of a skippable block (ws075-p023): the instructions up to
+	 * the matching SKIP_END are the body of one block whose predicate is the
+	 * Boolean src[0]; a thread none of whose channels is in it may jump over
+	 * them.  The parser checks that nothing made between the two is seen
+	 * afterwards except through a selection or an AND by that predicate, and
+	 * turns a pair it cannot prove so into NOPs.
+	 */
+	I915_IR_SKIP_BEGIN,
+
+	/* The end of a skippable block. */
+	I915_IR_SKIP_END,
+
 	I915_IR_OP_COUNT
 };
 

@@ -46,6 +46,8 @@ kern_free(void *pointer)
 }
 
 #include "../../../src/drivers/gpu/i915/compiler/spirv.c"
+#include "../../../src/drivers/gpu/i915/compiler/eu.c"
+#include "../../../src/drivers/gpu/i915/compiler/compile.c"
 #include "../../../src/drivers/gpu/i915/tests/fixtures/generality-shaders-gen.inc"
 
 /* ------------------------------------------------------------------ the IR interpreter */
@@ -111,8 +113,15 @@ boolean(int truth)
  * ones or zero.  Values are kept as bits: a float, an integer, or a Boolean.  A loop runs its body again while
  * LOOP_END's Boolean is true (one invocation: one channel).
  */
+/*
+ * ws075-p023: runs the IR with the skippable regions the code generator proves safe (i915_compile_skips()) really
+ * skipped where their predicate is false for the one channel, every value such a skipped region would have made
+ * set to `poison` -- `skipping` 0 runs every region.
+ */
+static unsigned skip_regions_run, skip_regions_skipped;
+
 static void
-run_ir(const struct i915_shader_ir *ir, struct machine *m)
+run_ir_mode(const struct i915_shader_ir *ir, struct machine *m, const uint32_t *skip_ok, int skipping, uint32_t poison)
 {
 	uint32_t *value = calloc(ir->value_count + 4U, sizeof(*value));
 	uint32_t *def_at = calloc(ir->value_count + 4U, sizeof(*def_at));
@@ -129,6 +138,40 @@ run_ir(const struct i915_shader_ir *ir, struct machine *m)
 		unsigned sources = 0U, results = 1U, slot;
 		uint32_t a, b, c;
 		float fa, fb, rgba[4];
+
+		/* a skippable region the code generator skips, entered with the predicate false: jumped over, its values poisoned */
+		if (inst->op == I915_IR_SKIP_BEGIN) {
+			assert(inst->src[0] < ir->value_count && defined[inst->src[0]] != 0U);
+			if (skipping && skip_ok[index] != 0U && value[inst->src[0]] == 0U) {
+				unsigned end = index + 1U;
+
+				/* every value made up to the region's end is poison */
+				while (ir->instructions[end].op != I915_IR_SKIP_END) {
+					unsigned made = i915_compile_results(&ir->instructions[end]);
+
+					/* its results */
+					for (k = 0U; k < made; k++) {
+						value[ir->instructions[end].dst + k] = poison;
+						if (defined[ir->instructions[end].dst + k] == 0U)
+							def_at[ir->instructions[end].dst + k] = end;
+						defined[ir->instructions[end].dst + k] = 1U;
+					}
+
+					/* the next instruction of the region */
+					end++;
+				}
+
+				/* resumes at the SKIP_END */
+				skip_regions_skipped++;
+				index = end;
+			}
+
+			continue;
+		}
+
+		/* a region's end does nothing */
+		if (inst->op == I915_IR_SKIP_END)
+			continue;
 
 		switch (inst->op) {
 		case I915_IR_STORE_OUTPUT: sources = 1U; results = 0U; break;
@@ -326,6 +369,57 @@ run_ir(const struct i915_shader_ir *ir, struct machine *m)
 	free(value);
 	free(def_at);
 	free(defined);
+}
+
+/*
+ * Runs the IR as the tests always did, then -- when the code generator skips some of its regions -- again with
+ * them skipped, the skipped values poisoned with all-zero and with all-one bits: the outputs, the writes and the
+ * discard must be the same bit for bit (ws075-p023).
+ */
+static void
+run_ir(const struct i915_shader_ir *ir, struct machine *m)
+{
+	struct i915_compile_state state;
+	struct machine again;
+	uint32_t *maps;
+	unsigned index, skipped = 0U, pass;
+	int same;
+
+	/* the plain run: every block runs under its predicate */
+	run_ir_mode(ir, m, NULL, 0, 0U);
+
+	/* the code generator's proof of which regions are skipped */
+	memset(&state, 0, sizeof(state));
+	state.ir = ir;
+	maps = calloc(2U * ir->value_count + ir->instruction_count + 4U, sizeof(*maps));
+	assert(maps != NULL);
+	state.skip_taint = maps;
+	state.skip_def = maps + ir->value_count;
+	state.skip_ok = maps + 2U * ir->value_count;
+	i915_compile_skips(&state);
+	for (index = 0U; index < ir->instruction_count; index++)
+		skipped += state.skip_ok[index] != 0U;
+	skip_regions_run += skipped;
+	if (skipped != 0U) {
+		for (pass = 0U; pass < 2U; pass++) {
+			/* poison 0, then all ones */
+			again = *m;
+			if (pass == 0U)
+				run_ir_mode(ir, &again, state.skip_ok, 1, 0U);
+			else
+				run_ir_mode(ir, &again, state.skip_ok, 1, 0xFFFFFFFFU);
+			same = memcmp(again.output, m->output, sizeof(m->output)) == 0;
+			same &= memcmp(again.written, m->written, sizeof(m->written)) == 0;
+			same &= again.killed == m->killed;
+			if (!same) {
+				printf("  a skipped region changed the result (poison %u)\n", pass);
+				assert(!"a region the code generator skips is seen");
+			}
+		}
+	}
+
+	/* the proof's tables */
+	free(maps);
 }
 
 /* ------------------------------------------------------------------ a tiny SPIR-V assembler */
@@ -1857,6 +1951,8 @@ main(void)
 	test_remainders();
 	test_switch();
 	assert(fixture_live == 0U);
+	printf("  skippable regions (ws075-p023): %u proven across the runs, %u skipped in the poisoned runs, results unchanged\n",
+		skip_regions_run, skip_regions_skipped);
 	printf("i915 vk lower host test PASS\n");
 	return 0;
 }
