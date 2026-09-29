@@ -346,3 +346,13 @@ VLCの署名は鍵が得られず未検証（公開SHA-256とは一致）。
 ## 現状
 
 計画を作っただけで、Queue・実装・試験はまだ無い。GitHub Issueも未作成である。
+
+## ユーザーの判断（2026-09-29 に master から移した）
+
+| 項目 | 決定 | 記録先 |
+| --- | --- | --- |
+| autotools の package | package ごとに patch する | WS034 |
+| epoll・timerfd・signalfd | POSIX の範囲で Wayland を作れるか調べる | ws034-p050 |
+| git の package | `NO_RUST=1` でよい | ws034-p009 |
+| `FD_SETSIZE` | 1024 | ws034-p048 |
+| 動かない試験 | 書き直さず削除する | ws034-p049 |

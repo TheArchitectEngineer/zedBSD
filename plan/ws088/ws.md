@@ -47,3 +47,9 @@ ZIPで配布しようと思います。Kei-nightly.zipは、clangのキャッシ
 | [ws088-p003](phase003/phase.md) | `make kei-nightly-zip`（取得・検証・展開・image の追加・zip）と host での確認（zip の中身、Linux の QEMU で展開した image の起動） | in-progress（準備まで。draft の base で試験 PASS。実 URL は p002 の後） | p002、WS085 の取り込み |
 | ws088-p004 | CI への組み込み（build の job と nightly の Release の files）。push はユーザー。案: [ci-kei-nightly.diff](ci-kei-nightly.diff) | planning | p003 |
 | ws088-p005 | 確認: CI の nightly の zip を Windows で起動（ユーザー）と Linux の Venus（QEMU）での起動 | planning | p004 |
+
+## ユーザーの判断（2026-09-29 に master から移した）
+
+| 項目 | 決定 | 記録先 |
+| --- | --- | --- |
+| Kei-nightly.zip の base（2026-09-29） | ユーザー:「今の下書きを今すぐ upload」→ draft の base（`kei-nightly-base-winq-a10-1.zip`、SHA-256 81120981…）を rev-0 に upload（main が読み戻しで一致を確認）、`KEI_NIGHTLY_ALLOW_DRAFT ?= 1`。fork の commit が確定したら作り直して差し替える | WS088 |

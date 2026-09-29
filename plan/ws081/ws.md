@@ -60,3 +60,9 @@ p005 を scroller・gesture の library と app ごとの適用に分ける、p0
 | ws081-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
 
 touchpad の二本指の scroll（目標 1）の Phase は、design §10 の 4 のユーザーの判断の後に置く。
+
+## ユーザーの判断（2026-09-29 に master から移した）
+
+| 項目 | 決定 | 記録先 |
+| --- | --- | --- |
+| Notes の指（2026-09-29） | 実機の AES ペンがまだ認識されていない件で、Notes の指の扱いをユーザーに確認:「切り替えを付ける」→ 既定は指で scroll・pinch（掌の誤りの線を防ぐ）、toolbar の切り替えで一本指で線を引ける（その間は二本指で scroll・pinch）。ws081-p015 |

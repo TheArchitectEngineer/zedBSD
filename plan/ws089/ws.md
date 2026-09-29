@@ -45,3 +45,10 @@ Resume point: p002（骨格と About）から。p001 は cleared（[design.md](d
 | ws089-p004 | Appearance・Wallpaper・Display・Storage の頁 | planning | p002, p007 |
 | ws089-p005 | Sound・Mouse・Touchpad・Keyboard の頁（音量は [案](proposed/libkeiland-audio.md)） | planning | p002, p007（音量は main の許可） |
 | ws089-p006 | 規約の全文との照合、回帰、デモの通し、App Home の絵とデモの image（[案](proposed/app-home-icon.md)、main の許可） | planning | p003〜p005, p008 |
+
+## ユーザーの判断（2026-09-29 に master から移した）
+
+| 項目 | 決定 | 記録先 |
+| --- | --- | --- |
+| 設定のアプリ（2026-09-29） | ユーザー:「これもOSCデモで使う優先事項にしたいですが、設定画面のアプリを作ってほしいです。添付がイメージです。あくまでもイメージなので、この通りでなくていいです。左側に項目のペイン、右側に設定項目。フローティングでセパレート。」 | [WS089](ws089/ws.md) |
+| 設定のアプリの範囲（2026-09-29 夜） | ws089-p001 の問い（Display の拡大は表示だけ・accent の色は出さない・Touchpad は準備中）にユーザー:「設定項目は、ネットワークを中心にしてください。ディスプレイはまだスタブでいいです。」→ Network（Wi-Fi・Ethernet・状態・新しい Wi-Fi への鍵の入力を含む）を中心に作り込む。Display はスタブ、accent と Touchpad は出さない（準備中） | WS089 |
