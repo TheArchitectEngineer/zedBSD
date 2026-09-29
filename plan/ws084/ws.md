@@ -101,3 +101,22 @@ Resume point: demo-lcd1 は実機でフリーズ（GOP の LCD のまま、netwo
 - image: `plan/ws075/demo/build-demo-image.sh build/demo-lcd2 ZEDBSD_GRAPHICAL_BOOT=n "ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"`
   （logo と kmsg=quiet を外し、kernel の message を GOP の画面に出したまま。graphical boot を丸ごと切ると greeter が lease を取らず takeover が走らないので login=graphical は残す）。
 - 検証: build（warning 0）、QEMU の boot test PASS（`build/ws084-boot-test-lcd2/login.png`）。実機: 未実施。
+
+### parity の N1 との照合（2026-09-29、ユーザーの依頼「過去に動作したN1と、現在のコードを、レビューで解離がないか確認」）
+
+比べたもの: parity の tree（`8022d26f`: `parity/lcd/parity_modeset_setup_glue.inc`・`parity_lcd_kernel.c` の `parity_lcd_kernel_n1_run`・
+`display_nogem.c`・`driver_probe.c`・`probe.c` の `PARITY_N1_TEST` の分岐）と、今の `takeover.c`・`modeset.c`・`display.c`・`ddi.c`。
+
+一致: registry と device の組み立て（`i915_n1_build_device`）、readout・takeover・release の glue、encoder の readout の hook、atomic state の crtc、
+vblank の配列（停止要因 5〜7）、N0 が active な pipe で止まらないこと、P7 の initial_commit で止まらないこと（停止要因 3）。
+
+乖離:
+1. **takeover の後の preflight**: parity は preflight を readout の前に 1 回（RUNNING を正常とする）行い、takeover の後は preflight 無しで自前の modeset で再点灯。
+   今は takeover の後に preflight を行い、`TRANSCONF` の state の bit が残ると拒む（実機の 1・2 回目の失敗の直接の理由）。
+2. **probe 時の sanitize**: parity は firmware の画面があるとき、encoder の PLL の対応付け（DDI の clock の gate）・crtc・DPLL・未使用の well の 4 つを全て外した。
+   今は p002 で well だけを外した。
+3. **INIT の参照の返却**: parity は N1 の run（再点灯と保持を含む）が終わってから返した。今は takeover の直後、再点灯の前に返す
+   （実機の 2 回目: `wells_on 8 -> 3`、`power well DC_off state mismatch`）。今の takeover は lease の時で DMC の読み込みの後なので、DC state の影響も受け得る。
+4. **readout の PLL**: parity も `intel_ddi_get_config` を結び、`icl_set_active_port_dpll` は空の step（`n1_compat.h`）で、readout は PLL を持たなかった。
+   今は p002 で Linux どおり PLL を読む（parity より参照に近いが、実機で未確認の経路。demo-lcd1 のフリーズはこの経路の空の step）。
+5. 再点灯の中身: parity は firmware の framebuffer を import して readout の pipe に点けた。今は resident の run（自前の buffer、pipe A）。readout の pipe は 0 で同じ。
