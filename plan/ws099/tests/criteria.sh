@@ -65,7 +65,16 @@ run() {
 : > "$results"
 for criterion in $criteria; do
 	case $criterion in
-	C1) run C1 p126 1280x800 sh plan/ws035/tests/zdesktop-p126.sh "$out/c1" "$C1_CYCLES" ;;
+	C1)
+		# Login and Log Out (black pictures fail the run), then the boot and Shut Down (ws099-p004; starts its own guest).
+		run C1 p126 1280x800 sh plan/ws035/tests/zdesktop-p126.sh "$out/c1" "$C1_CYCLES" --no-black
+		began=$(date +%s)
+		sh plan/ws099/tests/c1-boot-shutdown.sh "$image" "$out/c1-boot" > "$out/c1-boot-shutdown.log" 2>&1
+		code=$?
+		verdict=FAIL
+		[ $code -eq 0 ] && verdict=PASS
+		echo "C1 c1-boot-shutdown $verdict seconds=$(($(date +%s) - began)) $(grep -E 'RESULT' "$out/c1-boot-shutdown.log" | tail -1)" | tee -a "$results"
+		;;
 	C2) run C2 c2-geometry 1920x1280 sh plan/ws099/tests/c2-geometry.sh "$out/c2" ;;
 	C3) run C3 p138 1280x800 sh plan/ws035/tests/zdesktop-p138.sh "$out/c3" ;;
 	C4) run C4 p137 1280x800 sh plan/ws035/tests/zdesktop-p137.sh "$out/c4" ;;

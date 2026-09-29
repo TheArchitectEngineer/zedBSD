@@ -128,6 +128,10 @@ struct i915_gfx_kernels {
 	uint64_t scratch_base;
 	uint64_t vs_scratch_offset;
 	uint64_t ps_scratch_offset;
+
+	/* A compute kernel's scratch space and where its part starts (ws101-p004); zero for a draw. */
+	uint32_t cs_scratch_bytes;
+	uint64_t cs_scratch_offset;
 };
 
 /*
@@ -159,6 +163,7 @@ int drv_i915_gfx_vertex_format_supported(uint32_t format);
 void drv_i915_gfx_pipeline_kernels(const struct i915_gfx_pipeline *pipeline, struct i915_gfx_kernels *kernels);
 
 int drv_i915_gfx_write_state(uint8_t *page, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs);
+int drv_i915_gfx_write_push(uint8_t *data, const struct i915_gfx_draw_state *state, const struct i915_gfx_push_layout *layout);
 int drv_i915_gfx_surface_write(uint32_t *rss, const struct i915_gfx_surface *surface, uint32_t mocs);
 void drv_i915_gfx_sampler_write(uint32_t *state, const struct i915_gfx_sampler *sampler);
 void drv_i915_gfx_sampler_border_write(uint32_t *state, uint32_t *border, uint32_t offset, const struct i915_gfx_sampler *sampler);

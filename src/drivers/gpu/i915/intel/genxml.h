@@ -719,4 +719,81 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_BLENDFUNCTION_MIN			3U
 #define GEN12_BLENDFUNCTION_MAX			4U
 
+/*
+ * The GPGPU pipeline's commands and the interface descriptor (ws101-p004),
+ * from Mesa 25.0.7 (MIT; Debian source package 25.0.7-2+deb13u1; values are
+ * Intel PRM hardware facts).  gen120.xml imports them from:
+ *   src/intel/genxml/gen110.xml (MEDIA_VFE_STATE, MEDIA_STATE_FLUSH)
+ *     6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d
+ *   src/intel/genxml/gen80.xml (GPGPU_WALKER)
+ *     2962677cf69dc947345fd88bd7010427900160eb7a7b076463e6e8d28772439d
+ *   src/intel/genxml/gen60.xml (MEDIA_CURBE_LOAD, MEDIA_INTERFACE_DESCRIPTOR_LOAD)
+ *     30fac841448b4239bbaedf92a77424ec054629d28f266c7190b3f592f4b9185c
+ *   src/intel/genxml/gen120.xml (INTERFACE_DESCRIPTOR_DATA)
+ *     e2452c7dd2d19f9c506f487ce98e938984b6bdf8a3ea2504c64afdd4facd542e
+ * The values programmed follow anv (src/intel/vulkan/genX_pipeline.c
+ *     9bf244df1284531767529980909176d09b72db037b6fdaa7f5874d997ebf7545,
+ * genX_cmd_compute.c
+ *     c0455a006e15a2b719c2545f818e3084a13fb5a959c86d213b2386d976311349)
+ * and the compute test that ran on the Latitude 5330 (tests/execution/eu-test.c).
+ */
+
+/* PIPELINE_SELECT's value for the GPGPU pipeline. */
+#define GEN12_PIPELINE_SELECT_GPGPU		2U
+
+/* The headers of the media commands, their DWord Length already in (a fixed length each). */
+#define GEN12_MEDIA_VFE_STATE_HEADER		0x70000007U
+#define GEN12_MEDIA_CURBE_LOAD_HEADER		0x70010002U
+#define GEN12_MEDIA_INTERFACE_DESCRIPTOR_LOAD_HEADER	0x70020002U
+#define GEN12_MEDIA_STATE_FLUSH_HEADER		0x70040000U
+#define GEN12_GPGPU_WALKER_HEADER		0x7105000dU
+
+/* Packet lengths. */
+#define GEN12_MEDIA_VFE_STATE_DWORDS		9U
+#define GEN12_MEDIA_CURBE_LOAD_DWORDS		4U
+#define GEN12_MEDIA_INTERFACE_DESCRIPTOR_LOAD_DWORDS	4U
+#define GEN12_MEDIA_STATE_FLUSH_DWORDS		2U
+#define GEN12_GPGPU_WALKER_DWORDS		15U
+#define GEN12_INTERFACE_DESCRIPTOR_DWORDS	8U
+
+/*
+ * MEDIA_VFE_STATE: dword 1 the Per Thread Scratch Space (bits 3:0) and the
+ * Scratch Space Base Pointer's bits 31:10, dword 2 its bits 47:32; dword 3
+ * the Maximum Number of Threads (31:16) and the Number of URB Entries
+ * (15:8); dword 5 the URB Entry Allocation Size (31:16) and the CURBE
+ * Allocation Size (15:0, in registers).
+ */
+#define GEN12_VFE_MAX_THREADS_SHIFT		16U
+#define GEN12_VFE_URB_ENTRIES_SHIFT		8U
+#define GEN12_VFE_URB_ALLOCATION_SHIFT		16U
+
+/* The URB entries and their size anv and the compute test program (they carry no push data on Gen12). */
+#define GEN12_VFE_URB_ENTRIES			2U
+#define GEN12_VFE_URB_ALLOCATION		2U
+
+/* The threads one dual-subslice runs, the VFE's Maximum Number of Threads being that times the dual-subslices, less one. */
+#define GEN12_VFE_THREADS_PER_DSS		112U
+
+/*
+ * INTERFACE_DESCRIPTOR_DATA: dword 2 bit 20 Thread Preemption Disable;
+ * dword 5 the Constant URB Entry Read Length (31:16, the per-thread
+ * registers); dword 6 the Number of Threads in GPGPU Thread Group (9:0),
+ * the Shared Local Memory Size (20:16) and Barrier Enable (21); dword 7 the
+ * Cross-Thread Constant Data Read Length (7:0, registers).
+ */
+#define GEN12_IDD_PREEMPTION_DISABLE		(1U << 20)
+#define GEN12_IDD_PER_THREAD_LENGTH_SHIFT	16U
+#define GEN12_IDD_SLM_SIZE_SHIFT		16U
+#define GEN12_IDD_BARRIER_ENABLE		(1U << 21)
+
+/*
+ * GPGPU_WALKER: dword 0 bit 10 Indirect Parameter Enable; dword 4 the SIMD
+ * Size (31:30, 0 for SIMD8) and the Thread Width Counter Maximum (5:0);
+ * dwords 7, 10 and 12 the group counts along x, y and z; dwords 13 and 14
+ * the right and the bottom execution masks.
+ */
+#define GEN12_WALKER_INDIRECT			(1U << 10)
+#define GEN12_WALKER_SIMD8			0U
+#define GEN12_WALKER_SIMD_SHIFT			30U
+
 #endif /* DRIVERS_GPU_I915_INTEL_GENXML_H */

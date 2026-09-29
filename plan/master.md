@@ -88,6 +88,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | 3 | WS101 D3: G3 の見本の大きさ N = 4,000,000 と、CPU との倍率の目標 3 倍以上（伸ばせれば 10 倍） | 案のまま | ws101-p011 | 同 |
 | 4 | WS101 D5: デモの見本は整数だけでよいか（float を GPU に出すには Noct の意味を変える patch が要る） | 整数だけ | ws101-p011 | 同 |
 | 5 | fg010 の台本（S1〜S14）と WS099 の基準 C1〜C10・WS100 の A1〜A7 の数値 | 案のまま | 随時 | 上の表、各 ws.md |
+| 6 | WS099 の C6（窓 10 個で pointer の移動から表示まで中央値 50 ms 以内）: 新しい物差し（cursor が行き先に出る flip まで）で実機の passthrough の中央値は約 121〜131 ms・p90 約 180〜240 ms（compositor 約 9.5 frame/s）。基準を保つか緩めるか | 基準は保ち、frame の長さの主因（1 frame に約 7 run の直列か、client の待ちか）を次の Phase で分析する | 随時 | ws075-p024 の途中報告 |
 
 ## Workstream registry
 
@@ -193,7 +194,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
 | [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | p001 cleared 2026-09-30: 基準の一括の試験 `plan/ws099/tests/criteria.sh`、QEMU で PASS 8（C1・C7 は範囲の一部）、C5 は QEMU の frame の間隔で 102〜215 ms（基準は実機）、C6 は実機で未実施。次: p003（BUG-115 の試験の待ち）→ p004（C1 の起動と Shut Down）→ p005（C7 の client のガラス）→ p002・p006（C5・C6 の実機の計測） |
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | planning | p001（設計。5330 の HDA 8086:51c8 の実機の出音が前提の危険） |
-| [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | p001（設計、p002〜p013）・p002（compiler の核: GLCompute・built-in の ID・SSBO の A64 の atomic、host で Mesa と byte 一致）cleared 2026-09-30。次は p003（実行器の object）。ユーザーの判断 D1〜D5 は master の「fg010 に必要な判断」 |
+| [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | p001〜p004 cleared 2026-09-30（設計、compiler の核、実行器の object、dispatch の batch。host と Mesa の genxml で照合、GPU での実行は p005）。draw の側の変更（storage の draw の flush と range）は build だけの確認で、p005 の回帰で見る。ユーザーの判断 D1〜D5 は master の「fg010 に必要な判断」 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -268,7 +269,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・Future Work・
 | 共有の file chooser の試験（[tools/keiland](tools/keiland/)、WS092 から移した） | `host-chooser.sh`: libkeiland の `keiland_file_chooser_*` の model と描画の host 試験（75 件）、絵は `build/keiland-shots/` | `sh plan/tools/keiland/host-chooser.sh` |
 | Text Editor の試験（[tools/textedit](tools/textedit/)、WS092 から移した） | `host-core.sh`: 文書・undo・file・表示の行・検索・編集の host 試験（34 件）。`qmp-keys.py`: QMP で文字列・key の組・pointer を guest に送る（US の配列） | `sh plan/tools/textedit/host-core.sh` |
 | i915 の実機の計測（WS075） | `plan/ws075/tests/hdmi/measure-apps.sh`（lock の下で 1 回の計測の run）、`engine-gdb.sh`（session ごとの engine の時間を gdb で読む）、`h4-ctl.py`（latency・rate・freq）。compiler の guard の host 試験 `plan/ws075/tests/guard/run.sh`（Mesa の brw_asm・brw_disasm と byte で比べる） | 各 script の先頭の使い方 |
-| GPU の compute の compiler の host 試験（WS101） | `plan/ws101/tests/host/run.sh`: compute の module の compile、scoreboard、descriptor の応答の bit、EOT、Mesa 25.0.7 の brw_disasm・brw_asm との byte の照合、拒否すべき shader、IR の interpreter での結果の照合（add・ids・atomic・length・dynamic・noct） | `sh plan/ws101/tests/host/run.sh` |
+| GPU の compute の compiler の host 試験（WS101） | `plan/ws101/tests/host/run.sh`: compute の module の compile、scoreboard、descriptor の応答の bit、EOT、Mesa 25.0.7 の brw_disasm・brw_asm との byte の照合、拒否すべき shader、IR の interpreter での結果の照合（add・ids・atomic・length・dynamic・noct）、実行器の compute の object の試験（executor-test）、p004 の dispatch の batch の試験と genxml の照合（Mesa の genxml を使う。既定は `/home/awe/p014-c/mesa/src/intel/genxml`） | `sh plan/ws101/tests/host/run.sh` |
 | compositor のデモの基準の試験（WS099） | `plan/ws099/tests/criteria.sh`: 基準 C1〜C10 を QEMU の Venus で一括して確かめる（閾値は先頭の変数）。基準の image は `build-criteria-image.sh`・`config-amd64-criteria.mk` | `sh plan/ws099/tests/criteria.sh` |
 | libwayland の host 試験（WS035 p075） | `plan/ws035/tests/p075/run-host.sh`（host の libwayland-server と試験の protocol で、生成された protocol の event と server の作る object、client が壊した server 側の object（zombie）への event と fd、id の再利用（p089）） | host で実行 |
 | xdg-shell の popup と toplevel の試験（WS035 p076） | `plan/ws035/tests/zdesktop-p076.sh`（Venus の guest、`/bin/popup-probe`（`config-amd64-menu.mk`）で menu・submenu・flip・reposition・dismiss、toplevel の move・resize・min/max size、ping の無応答の表示を QMP で操作し画面を撮る） | 先頭の使い方。PNG は `build/ws035-p076/` |

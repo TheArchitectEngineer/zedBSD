@@ -122,3 +122,27 @@ drv_i915_batch_pipe_control(
 	for (index = 2U; index < I915_PIPE_CONTROL_DWORDS; index++)
 		drv_i915_batch_emit(batch, 0U);
 }
+
+/*
+ * Appends a PIPE_CONTROL with the given flags, the HDC pipeline flush in the
+ * header dword, and no post-sync write (ws101-p004).
+ *
+ * A compute dispatch ends with it before the pipeline goes back to 3D: the
+ * data port's writes are flushed without a render target flush, which the
+ * GPGPU pipeline does not take (anv, flush_pipeline_select()).
+ */
+void
+drv_i915_batch_pipe_control_hdc(
+	struct i915_gfx_batch *batch,
+	uint32_t flags)
+{
+	unsigned index;
+
+	/* Writes the header with the HDC pipeline flush, and the flags. */
+	drv_i915_batch_emit(batch, GFX_OP_PIPE_CONTROL(6) | PIPE_CONTROL0_HDC_PIPELINE_FLUSH);
+	drv_i915_batch_emit(batch, flags);
+
+	/* Zeroes the address and the immediate data: nothing is written after the sync. */
+	for (index = 2U; index < I915_PIPE_CONTROL_DWORDS; index++)
+		drv_i915_batch_emit(batch, 0U);
+}
