@@ -630,6 +630,8 @@ drv_i915_rps_next_freq(
 		} else if ((long)rps->cur_freq > lowest) {
 			freq = lowest;
 		}
+
+		/* A jump, not a step. */
 		step = 0;
 	} else if ((pm_iir & I915_RPS_DOWN_THRESHOLD) != 0U) {
 		/* Idle: down by one, or by twice the last step when the last went down too. */
@@ -843,6 +845,8 @@ i915_rps_set_thresholds(
 		} else if (freq >= rps->rp0_freq && freq > rps->cur_freq) {
 			new_power = I915_RPS_POWER_HIGH;
 		}
+
+		/* Nothing else. */
 		break;
 	case I915_RPS_POWER_HIGH:
 		/* Down below the middle of RP1 and RP0. */

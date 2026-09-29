@@ -6,7 +6,7 @@ and checks the contract the source promises (return conventions, ownership,
 ordering), not the hardware.
 
 ```
-src/drivers/gpu/i915/tests/contracts/run.sh          # all: mmio dma pci rpm pte sync
+src/drivers/gpu/i915/tests/contracts/run.sh          # all: mmio dma pci rpm pte sync rps
 src/drivers/gpu/i915/tests/contracts/run.sh mmio pte # a subset
 ```
 
@@ -37,6 +37,7 @@ variant held.
 | `rpm` | `runtime-pm.c`, `pci.c`, `trace.c` |
 | `pte` | `ggtt.c`, `ppgtt.c` (encoders only) |
 | `sync` | `sync.c` (completion only), `workqueue.c`, `mmio.c`, `trace.c` |
+| `rps` | `gt-power.c` (RPS: enable, start, interrupt, work, boost, stop; ws075-p020), `workqueue.c`, `mmio.c`, `trace.c` |
 
 ## Host build notes
 
