@@ -84,6 +84,9 @@ zwl_compose_open(
 		return EIO;
 	}
 
+	/* The start's images (the arrow, the wallpaper, the glyphs) are moved to their layout together (ws035-p131). */
+	zwl_host_image_batch_begin(compose);
+
 	/* the compositor's arrow cursor. */
 	error = zwl_arrow_create(server);
 	if (error != 0) {
@@ -99,6 +102,13 @@ zwl_compose_open(
 			printf("ZWL GLASS unavailable errno=%d\n", error);
 			server->glass = 0;
 		}
+	}
+
+	/* The start's images' layout moves, submitted and waited for once. */
+	result = zwl_host_image_batch_end(compose);
+	if (result != VK_SUCCESS) {
+		printf("ZWL VULKAN_ERROR operation=setup-layout result=%d\n", (int)result);
+		return EIO;
 	}
 
 	/* Succeeded: window mode can open its output. */
