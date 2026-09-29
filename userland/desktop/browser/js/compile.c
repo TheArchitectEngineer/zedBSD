@@ -47,6 +47,7 @@ static struct js_target *compile_target_push(struct js_function_compiler *fc, in
 static void compile_target_pop(struct js_function_compiler *fc, struct js_target *target);
 static void compile_for(struct js_function_compiler *fc, struct js_node *node);
 static void compile_for_in(struct js_function_compiler *fc, struct js_node *node);
+static void compile_for_of(struct js_function_compiler *fc, struct js_node *node);
 static void compile_while(struct js_function_compiler *fc, struct js_node *node);
 static void compile_do_while(struct js_function_compiler *fc, struct js_node *node);
 static void compile_jump_statement(struct js_function_compiler *fc, struct js_node *node);
@@ -784,7 +785,8 @@ compile_statement(
 		compile_class_declaration(fc, node);
 		break;
 	case JS_NODE_FOR_OF:
-		js_compile_unsupported(fc->compiler, node, "for-of");
+		compile_for_of(fc, node);
+		break;
 	case JS_NODE_WITH:
 		js_compile_unsupported(fc->compiler, node, "with");
 	default:
@@ -1087,6 +1089,127 @@ compile_for_in(
 	compile_statement(fc, node->fourth);
 	js_emit_jump(fc, VM_OP_JUMP, 0, target->continue_label);
 	compile_target_pop(fc, target);
+	if (node->scope != NULL)
+		js_scope_leave(fc, saved_scope, saved_env);
+	fc->temp_top = mark;
+}
+
+/*
+ * Compiles a for-of statement (ws074-p087): the body runs once for each
+ * value of the iteration, assigned to the left side.  A way out of the
+ * loop before the iteration ends (break, a return, a jump further out, an
+ * exception) closes the iteration first: the body is protected like a try
+ * statement's block whose finally block closes it.
+ */
+static void
+compile_for_of(
+	struct js_function_compiler *fc,
+	struct js_node *node)
+{
+	struct js_finally *handler;
+	struct js_target *target;
+	struct js_node *left;
+	struct js_scope *saved_scope;
+	uint32_t saved_env;
+	uint32_t mark;
+	uint32_t iterable;
+	uint32_t iterator;
+	uint32_t value;
+	uint32_t start;
+	uint32_t protected_end;
+	uint32_t landing;
+	uint32_t ended;
+	uint32_t loud;
+	int lexical;
+
+	/* for await is an async iteration, which is not here yet. */
+	if ((node->flags & JS_FLAG_AWAIT) != 0U)
+		js_compile_unsupported(fc->compiler, node, "for await");
+
+	/* The left side: a let's or const's name, a var's name, or a target. */
+	mark = fc->temp_top;
+	left = node->first;
+	lexical = 0;
+	if (left->kind == JS_NODE_VARIABLES) {
+		if (left->op != JS_P_VAR)
+			lexical = 1;
+		left = left->first->first;
+	}
+
+	/* The iteration of the value (held for the whole loop). */
+	iterator = js_temp(fc);
+	value = js_temp(fc);
+	iterable = js_temp(fc);
+	js_compile_expression(fc, node->second, iterable);
+	js_emit2(fc, VM_OP_ITER_START, iterator, iterable);
+
+	/* A let or const on the left has its scope around the body. */
+	saved_scope = fc->scope;
+	saved_env = fc->env_register;
+	if (node->scope != NULL)
+		js_scope_enter(fc, node->scope, &saved_scope, &saved_env);
+
+	/* The body is protected: its ways out go through the close, with a completion code as a finally block's. */
+	handler = wb_arena_zalloc(fc->compiler->arena, sizeof(*handler));
+	if (handler == NULL)
+		js_compile_out_of_memory(fc->compiler);
+	handler->outer = fc->finally;
+	handler->entry_label = js_label_new(fc);
+	handler->kind_register = js_temp(fc);
+	handler->value_register = js_temp(fc);
+	handler->next_code = JS_COMPLETION_JUMPS;
+	fc->finally = handler;
+	fc->finally_depth++;
+
+	/* The head: the next value, or out of the loop when the iteration has ended. */
+	ended = js_label_new(fc);
+	target = compile_target_push(fc, 1);
+	start = js_here(fc);
+	js_label_place(fc, target->continue_label);
+	js_emit0(fc, VM_OP_LOOP_HINT);
+	js_emit_for_of_next(fc, value, iterator, ended);
+
+	/* Each run of the body has its own let or const binding: a new environment for it. */
+	if (node->scope != NULL && node->scope->has_env)
+		js_emit3(fc, VM_OP_NEW_ENV, node->scope->env_register, saved_env, node->scope->env_count);
+
+	/* The value to the left side, then the body, then the next value. */
+	if (lexical) {
+		js_bind_pattern(fc, left, value, JS_BIND_INIT);
+	} else {
+		js_store_target(fc, left, value);
+	}
+	compile_statement(fc, node->fourth);
+	js_emit_jump(fc, VM_OP_JUMP, 0, target->continue_label);
+	protected_end = js_here(fc);
+
+	/* The close is outside what it protects. */
+	fc->finally = handler->outer;
+	fc->finally_depth--;
+
+	/* break of this loop closes the iteration and leaves. */
+	compile_target_pop(fc, target);
+	js_emit2(fc, VM_OP_ITER_CLOSE, iterator, 0);
+	js_emit_jump(fc, VM_OP_JUMP, 0, ended);
+
+	/* An exception from the body arrives with its value, completing by a throw. */
+	landing = js_label_new(fc);
+	js_label_place(fc, landing);
+	js_emit_handler(fc, start, protected_end, landing, handler->value_register);
+	js_emit2(fc, VM_OP_LOAD_INT, handler->kind_register, JS_COMPLETION_THROW);
+
+	/* The close: quiet for an exception (it keeps its own), then where the completion goes. */
+	js_label_place(fc, handler->entry_label);
+	loud = js_label_new(fc);
+	compile_dispatch_case(fc, handler->kind_register, JS_COMPLETION_THROW, loud);
+	js_emit2(fc, VM_OP_ITER_CLOSE, iterator, 1);
+	js_emit1(fc, VM_OP_THROW, handler->value_register);
+	js_label_place(fc, loud);
+	js_emit2(fc, VM_OP_ITER_CLOSE, iterator, 0);
+	compile_finally_dispatch(fc, handler);
+
+	/* The loop's end, outside the left side's scope. */
+	js_label_place(fc, ended);
 	if (node->scope != NULL)
 		js_scope_leave(fc, saved_scope, saved_env);
 	fc->temp_top = mark;

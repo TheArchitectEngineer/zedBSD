@@ -27,6 +27,7 @@
 #define FUNCTION_BOUND_THIS	1U
 #define FUNCTION_BOUND_ARGS	2U
 
+static int function_has_instance(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int function_call_constructor(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int function_call(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int function_apply(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -47,6 +48,7 @@ js_builtin_install_function(
 	struct vm_realm *realm)
 {
 	struct vm_function *constructor;
+	struct vm_function *has_instance;
 	struct vm_object *prototype;
 	struct vm_accessor *accessor;
 	vm_value thrower;
@@ -68,6 +70,15 @@ js_builtin_install_function(
 		error = js_builtin_method(realm, prototype, "toString", 0, function_to_string);
 	if (error != 0)
 		return error;
+
+	/* Symbol.hasInstance (neither writable, enumerable nor configurable), which instanceof recognizes (ws074-p087). */
+	error = js_builtin_function(realm, "[Symbol.hasInstance]", 1, function_has_instance, NULL, &has_instance);
+	if (error != 0)
+		return error;
+	error = js_builtin_symbol_value(realm, prototype, VM_SYMBOL_HAS_INSTANCE, vm_value_cell(has_instance), 0);
+	if (error != 0)
+		return error;
+	realm->intrinsics[VM_INTRINSIC_HAS_INSTANCE] = &has_instance->object;
 
 	/* caller and arguments: accessors that throw (AddRestrictedFunctionProperties). */
 	thrower = vm_value_cell(realm->intrinsics[VM_INTRINSIC_THROW_TYPE_ERROR]);
@@ -589,5 +600,25 @@ function_append_text(
 		return error;
 
 	/* Succeeded: the text is appended. */
+	return 0;
+}
+
+/* Function.prototype[Symbol.hasInstance](value): whether the value is an instance of this by its prototype chain. */
+static int
+function_has_instance(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* OrdinaryHasInstance. */
+	status = vm_ordinary_has_instance(realm, this_value, js_argument(args, count, 0), result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the answer. */
 	return 0;
 }

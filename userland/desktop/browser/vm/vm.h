@@ -431,7 +431,42 @@ enum vm_intrinsic {
 	VM_INTRINSIC_GENERATOR_PROTOTYPE,
 	VM_INTRINSIC_GENERATOR_FUNCTION_PROTOTYPE,
 	VM_INTRINSIC_ASYNC_FUNCTION_PROTOTYPE,
+	VM_INTRINSIC_ITERATOR_PROTOTYPE,
+	VM_INTRINSIC_ARRAY_ITERATOR_PROTOTYPE,
+	VM_INTRINSIC_ARRAY_VALUES,
+	VM_INTRINSIC_STRING_ITERATOR,
+	VM_INTRINSIC_HAS_INSTANCE,
+	VM_INTRINSIC_SYMBOL_REGISTRY,
+	VM_INTRINSIC_MAP_ITERATOR_PROTOTYPE,
+	VM_INTRINSIC_SET_ITERATOR_PROTOTYPE,
+	VM_INTRINSIC_STRING_ITERATOR_PROTOTYPE,
+	VM_INTRINSIC_MAP_PROTOTYPE,
+	VM_INTRINSIC_SET_PROTOTYPE,
+	VM_INTRINSIC_WEAK_MAP_PROTOTYPE,
+	VM_INTRINSIC_WEAK_SET_PROTOTYPE,
 	VM_INTRINSICS
+};
+
+/*
+ * The well-known symbols (ws074-p087), which every realm of a heap makes
+ * when it is made (the engine's own operations look them up, before any
+ * built-in exists).
+ */
+enum vm_well_known {
+	VM_SYMBOL_ASYNC_ITERATOR,
+	VM_SYMBOL_HAS_INSTANCE,
+	VM_SYMBOL_IS_CONCAT_SPREADABLE,
+	VM_SYMBOL_ITERATOR,
+	VM_SYMBOL_MATCH,
+	VM_SYMBOL_MATCH_ALL,
+	VM_SYMBOL_REPLACE,
+	VM_SYMBOL_SEARCH,
+	VM_SYMBOL_SPECIES,
+	VM_SYMBOL_SPLIT,
+	VM_SYMBOL_TO_PRIMITIVE,
+	VM_SYMBOL_TO_STRING_TAG,
+	VM_SYMBOL_UNSCOPABLES,
+	VM_SYMBOLS
 };
 
 /* The error kinds of vm_throw_error, in the order of their intrinsic prototypes. */
@@ -454,12 +489,14 @@ struct vm_env;
  * A symbol: a unique property key with a description (a string or
  * undefined).  A private name (a class's #x, ws074-p085) is a symbol too,
  * marked private_name: it is never listed among an object's keys, and
- * only the class's code can read it.
+ * only the class's code can read it.  registered marks a symbol of the
+ * global registry (Symbol.for, ws074-p087), whose key is its description.
  */
 struct vm_symbol {
 	struct vm_cell cell;
 	vm_value description;
 	int private_name;
+	int registered;
 };
 
 /*
@@ -480,7 +517,12 @@ enum vm_object_kind {
 	VM_KIND_REGEXP,
 	VM_KIND_PLATFORM,
 	VM_KIND_PROMISE,
-	VM_KIND_GENERATOR
+	VM_KIND_GENERATOR,
+	VM_KIND_ITERATOR,
+	VM_KIND_MAP,
+	VM_KIND_SET,
+	VM_KIND_WEAK_MAP,
+	VM_KIND_WEAK_SET
 };
 
 /*
@@ -600,6 +642,7 @@ struct vm_function {
  * throw_value was last seen leaving a bytecode frame without a handler
  * (throw_line 0 when that place is not known); the embedder reads them
  * with vm_throw_site to report an uncaught exception's place.
+ * symbols are the well-known symbols (enum vm_well_known).
  * rejections lists the promises rejected while nothing handled them
  * (ws074-p086), which the end of a checkpoint reports unless a handler
  * came meanwhile; reporting_rejection is set while the report of one runs,
@@ -612,6 +655,7 @@ struct vm_realm {
 	struct vm_object *function_prototype;
 	struct vm_object *array_prototype;
 	struct vm_object *intrinsics[VM_INTRINSICS];
+	struct vm_symbol *symbols[VM_SYMBOLS];
 	struct vm_object *lexicals;
 	vm_value exception;
 	vm_value throw_value;
@@ -741,6 +785,7 @@ int vm_set(struct vm_realm *realm, vm_value base, vm_value key, vm_value value, 
 int vm_delete(struct vm_realm *realm, vm_value base, vm_value key, int strict, vm_value *result);
 int vm_in(struct vm_realm *realm, vm_value key, vm_value object, vm_value *result);
 int vm_instanceof(struct vm_realm *realm, vm_value value, vm_value constructor, vm_value *result);
+int vm_ordinary_has_instance(struct vm_realm *realm, vm_value constructor, vm_value value, vm_value *result);
 int vm_define_data(struct vm_realm *realm, vm_value object, vm_value key, vm_value value);
 int vm_define_accessor(struct vm_realm *realm, vm_value object, vm_value key, vm_value function, int setter);
 int vm_get_global(struct vm_realm *realm, vm_value key, int for_typeof, vm_value *result);
@@ -791,6 +836,9 @@ int vm_code_is_suspendable(const struct vm_function *function);
 /* Spreading and destructuring (spread.c). */
 int vm_iter_start(struct vm_realm *realm, vm_value value, vm_value *iterator);
 int vm_iter_next(struct vm_realm *realm, vm_value iterator, vm_value *value, int *done);
+int vm_iter_close(struct vm_realm *realm, vm_value iterator, int quiet);
+vm_value vm_symbol_key(const struct vm_realm *realm, int which);
+int vm_get_method(struct vm_realm *realm, vm_value value, vm_value key, vm_value *method);
 int vm_iter_rest(struct vm_realm *realm, vm_value iterator, vm_value *array);
 int vm_array_spread(struct vm_realm *realm, vm_value array, vm_value value);
 int vm_copy_data_properties(struct vm_realm *realm, vm_value target, vm_value source);

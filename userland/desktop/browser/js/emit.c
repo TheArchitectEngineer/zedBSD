@@ -365,6 +365,24 @@ js_emit_for_in_next(
 }
 
 /*
+ * Writes a for-of loop's step: the iteration's next value into a register,
+ * or a jump to the label once it has ended (ws074-p087).
+ */
+void
+js_emit_for_of_next(
+	struct js_function_compiler *fc,
+	uint32_t value_register,
+	uint32_t iterator_register,
+	uint32_t label)
+{
+	uint32_t start;
+
+	/* The registers, then the target. */
+	start = js_emit3(fc, VM_OP_FOR_OF_NEXT, value_register, iterator_register, 0);
+	emit_patch(fc, start + 3U, start, label);
+}
+
+/*
  * Adds an exception handler: an exception thrown in [start, end) lands at
  * the label with the exception in a register.
  */

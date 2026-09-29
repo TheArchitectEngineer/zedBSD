@@ -321,6 +321,7 @@ void js_label_place(struct js_function_compiler *fc, uint32_t label);
 uint32_t js_here(const struct js_function_compiler *fc);
 void js_emit_jump(struct js_function_compiler *fc, uint32_t opcode, uint32_t test_register, uint32_t label);
 void js_emit_for_in_next(struct js_function_compiler *fc, uint32_t key_register, uint32_t iterator_register, uint32_t label);
+void js_emit_for_of_next(struct js_function_compiler *fc, uint32_t value_register, uint32_t iterator_register, uint32_t label);
 void js_emit_handler(struct js_function_compiler *fc, uint32_t start, uint32_t end, uint32_t label, uint32_t exception_register);
 uint32_t js_constant(struct js_function_compiler *fc, vm_value value);
 uint32_t js_constant_string(struct js_function_compiler *fc, const uint16_t *text, size_t length);

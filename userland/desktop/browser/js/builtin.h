@@ -37,6 +37,28 @@ int js_builtin_install_regexp(struct vm_realm *realm);
 int js_builtin_install_date(struct vm_realm *realm);
 int js_builtin_install_promise(struct vm_realm *realm);
 int js_builtin_install_generator(struct vm_realm *realm);
+int js_builtin_install_symbol(struct vm_realm *realm);
+int js_builtin_install_iterator(struct vm_realm *realm);
+int js_builtin_install_collection(struct vm_realm *realm);
+
+/* Symbols (builtin_symbol.c). */
+int js_builtin_symbol_value(struct vm_realm *realm, struct vm_object *object, int which, vm_value value, uint32_t attributes);
+int js_builtin_tag(struct vm_realm *realm, struct vm_object *object, const char *tag);
+int js_symbol_descriptive_string(struct vm_realm *realm, struct vm_symbol *symbol, vm_value *result);
+int js_builtin_species(struct vm_realm *realm, struct vm_object *constructor);
+int js_builtin_install_tags(struct vm_realm *realm);
+
+/* Iterators (builtin_iterator.c) and the collections they walk (builtin_collection.c). */
+#define JS_ITERATE_KEYS		0U
+#define JS_ITERATE_VALUES	1U
+#define JS_ITERATE_ENTRIES	2U
+#define JS_ITERATOR_ARRAY	0U
+#define JS_ITERATOR_STRING	1U
+#define JS_ITERATOR_MAP		2U
+#define JS_ITERATOR_SET		3U
+int js_iterator_create(struct vm_realm *realm, uint32_t family, vm_value source, uint32_t kind, vm_value *result);
+int js_iterator_result(struct vm_realm *realm, vm_value value, int done, vm_value *result);
+int js_collection_step(vm_value collection, uint32_t *index, vm_value *key, vm_value *value);
 
 /* RegExp's algorithms that String.prototype's methods use (builtin_regexp.c). */
 int js_regexp_is(vm_value value);

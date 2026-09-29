@@ -213,6 +213,8 @@ string_call(
 	vm_value *result)
 {
 	struct vm_string *string;
+	struct vm_cell *cell;
+	int is_cell;
 	int status;
 
 	UNUSED_PARAMETER(this_value);
@@ -221,6 +223,16 @@ string_call(
 	if (count == 0) {
 		status = js_builtin_string(realm, "", result);
 		return status;
+	}
+
+	/* A symbol says what it is (String(symbol) is its descriptive string, ws074-p087). */
+	is_cell = vm_value_is_cell(args[0]);
+	if (is_cell) {
+		cell = vm_value_as_cell(args[0]);
+		if (cell->type == &vm_symbol_type) {
+			status = js_symbol_descriptive_string(realm, (struct vm_symbol *)cell, result);
+			return status;
+		}
 	}
 
 	/* The string. */

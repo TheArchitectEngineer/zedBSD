@@ -13,8 +13,8 @@
  * %AsyncFunction.prototype%.
  *
  * Not in this pass: the GeneratorFunction and AsyncFunction constructors
- * (functions from source text), %IteratorPrototype%'s Symbol.iterator and
- * the toStringTag properties (they need Symbol).
+ * (functions from source text).  The toStringTag properties come from
+ * js_builtin_install_tags (ws074-p087).
  */
 
 #include "js/builtin.h"
@@ -41,10 +41,8 @@ js_builtin_install_generator(
 	struct vm_object *async_prototype;
 	int error;
 
-	/* %IteratorPrototype%, which every built-in iterator inherits from. */
-	iterator_prototype = vm_object_create(realm->heap, realm->object_prototype);
-	if (iterator_prototype == NULL)
-		return ENOMEM;
+	/* %IteratorPrototype% (builtin_iterator.c), which every built-in iterator inherits from. */
+	iterator_prototype = realm->intrinsics[VM_INTRINSIC_ITERATOR_PROTOTYPE];
 
 	/* %GeneratorPrototype%, with the methods that resume a generator. */
 	generator_prototype = vm_object_create(realm->heap, iterator_prototype);

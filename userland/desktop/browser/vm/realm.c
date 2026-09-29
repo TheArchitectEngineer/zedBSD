@@ -31,6 +31,24 @@ static void realm_trace(struct vm_heap *heap, void *context);
 static int realm_empty_function(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int realm_define_value(struct vm_realm *realm, const char *name, vm_value value);
 static void realm_report_rejections(struct vm_realm *realm, vm_job_report report, void *context);
+static int realm_make_symbols(struct vm_realm *realm);
+
+/* The descriptions of the well-known symbols, in the order of enum vm_well_known. */
+static const char *const realm_symbol_names[VM_SYMBOLS] = {
+	"Symbol.asyncIterator",
+	"Symbol.hasInstance",
+	"Symbol.isConcatSpreadable",
+	"Symbol.iterator",
+	"Symbol.match",
+	"Symbol.matchAll",
+	"Symbol.replace",
+	"Symbol.search",
+	"Symbol.species",
+	"Symbol.split",
+	"Symbol.toPrimitive",
+	"Symbol.toStringTag",
+	"Symbol.unscopables"
+};
 
 /*
  * Makes a realm in a heap with its intrinsic objects and global object.
@@ -194,6 +212,18 @@ vm_run_jobs(
 	return 0;
 }
 
+/*
+ * Reports a well-known symbol of a realm as a property key.
+ */
+vm_value
+vm_symbol_key(
+	const struct vm_realm *realm,
+	int which)
+{
+	/* The symbol's value. */
+	return vm_value_cell(realm->symbols[which]);
+}
+
 /* Makes the intrinsic objects and the global object, each held by the realm as soon as it is made. */
 static int
 realm_fill(
@@ -241,6 +271,11 @@ realm_fill(
 	if (error != 0)
 		return error;
 
+	/* The well-known symbols. */
+	error = realm_make_symbols(realm);
+	if (error != 0)
+		return error;
+
 	/* The global values: undefined, NaN and Infinity, which cannot be changed. */
 	error = realm_define_value(realm, "undefined", VM_VALUE_UNDEFINED);
 	if (error != 0)
@@ -280,6 +315,12 @@ realm_trace(
 	for (index = 0; index < VM_INTRINSICS; index++) {
 		if (realm->intrinsics[index] != NULL)
 			vm_heap_mark(heap, &realm->intrinsics[index]->cell);
+	}
+
+	/* The well-known symbols. */
+	for (index = 0; index < VM_SYMBOLS; index++) {
+		if (realm->symbols[index] != NULL)
+			vm_heap_mark(heap, &realm->symbols[index]->cell);
 	}
 
 	/* The global object, the exception being thrown, and the native call's callee and new.target. */
@@ -386,4 +427,26 @@ realm_report_rejections(
 
 	/* The list is spent. */
 	wb_vector_clear(&realm->rejections);
+}
+
+/* Makes the well-known symbols of a realm, each with its description. */
+static int
+realm_make_symbols(
+	struct vm_realm *realm)
+{
+	struct vm_string *description;
+	int index;
+
+	/* Each symbol, held by the realm as soon as it is made. */
+	for (index = 0; index < (int)VM_SYMBOLS; index++) {
+		description = vm_string_from_utf8(realm->heap, realm_symbol_names[index], strlen(realm_symbol_names[index]));
+		if (description == NULL)
+			return ENOMEM;
+		realm->symbols[index] = vm_symbol_create(realm->heap, vm_value_cell(description));
+		if (realm->symbols[index] == NULL)
+			return ENOMEM;
+	}
+
+	/* Succeeded: the realm has its symbols. */
+	return 0;
 }

@@ -44,6 +44,7 @@ enum operation_type {
 };
 
 static int operation_type(vm_value value);
+static int operation_exotic_primitive(struct vm_realm *realm, vm_value value, vm_value exotic, int hint, vm_value *result);
 static int operation_call_method(struct vm_realm *realm, vm_value object, const char *name, int *done, vm_value *result);
 static int operation_number_string(struct vm_realm *realm, double number, struct vm_string **string);
 static double operation_parse_number(const struct vm_string *string);
@@ -110,6 +111,7 @@ vm_to_primitive(
 	struct vm_object *object;
 	const char *first;
 	const char *second;
+	vm_value exotic;
 	int is_object;
 	int done;
 	int status;
@@ -120,7 +122,18 @@ vm_to_primitive(
 	if (!is_object)
 		return 0;
 
-	/* A Date's default hint is string, as its @@toPrimitive has it (ws074-p076; there are no symbols yet). */
+	/* The object's Symbol.toPrimitive decides when it has one (ws074-p087). */
+	status = vm_get_method(realm, value, vm_symbol_key(realm, VM_SYMBOL_TO_PRIMITIVE), &exotic);
+	if (status != 0)
+		return status;
+	if (exotic != VM_VALUE_UNDEFINED) {
+		status = operation_exotic_primitive(realm, value, exotic, hint, result);
+		if (status != 0)
+			return status;
+		return 0;
+	}
+
+	/* A Date's default hint is string, as its @@toPrimitive has it (for a Date whose @@toPrimitive was removed too). */
 	object = (struct vm_object *)vm_value_as_cell(value);
 	if (hint == VM_HINT_DEFAULT && object->kind == VM_KIND_DATE)
 		hint = VM_HINT_STRING;
@@ -1492,5 +1505,50 @@ operation_name_message(
 	wb_buffer_release(&name);
 
 	/* Succeeded: the message is written. */
+	return 0;
+}
+
+/*
+ * Calls an object's Symbol.toPrimitive with the hint's name ("default",
+ * "number" or "string"); what it returns must be a primitive.
+ */
+static int
+operation_exotic_primitive(
+	struct vm_realm *realm,
+	vm_value value,
+	vm_value exotic,
+	int hint,
+	vm_value *result)
+{
+	struct vm_string *name;
+	const char *text;
+	vm_value argument;
+	int is_object;
+	int status;
+
+	/* The hint's name. */
+	text = "default";
+	if (hint == VM_HINT_NUMBER)
+		text = "number";
+	if (hint == VM_HINT_STRING)
+		text = "string";
+	name = vm_string_from_utf8(realm->heap, text, strlen(text));
+	if (name == NULL)
+		return ENOMEM;
+	argument = vm_value_cell(name);
+
+	/* The call. */
+	status = vm_call(realm, exotic, value, &argument, 1, result);
+	if (status != 0)
+		return status;
+
+	/* An object is not a primitive. */
+	is_object = vm_value_is_object(*result);
+	if (is_object) {
+		status = vm_throw_type_error(realm, "Cannot convert object to primitive value");
+		return status;
+	}
+
+	/* Succeeded: the primitive. */
 	return 0;
 }

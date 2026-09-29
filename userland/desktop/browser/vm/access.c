@@ -134,6 +134,44 @@ vm_get(
 }
 
 /*
+ * Reads a method of a value (GetMethod): undefined for undefined or null,
+ * a TypeError for anything else that cannot be called.
+ */
+int
+vm_get_method(
+	struct vm_realm *realm,
+	vm_value value,
+	vm_value key,
+	vm_value *method)
+{
+	int callable;
+	int status;
+
+	/* The property. */
+	*method = VM_VALUE_UNDEFINED;
+	status = vm_get(realm, value, key, method);
+	if (status != 0)
+		return status;
+
+	/* Undefined and null say there is no method. */
+	if (*method == VM_VALUE_UNDEFINED || *method == VM_VALUE_NULL) {
+		*method = VM_VALUE_UNDEFINED;
+		return 0;
+	}
+
+	/* Anything else must be callable. */
+	callable = vm_value_is_callable(*method);
+	if (!callable) {
+		*method = VM_VALUE_UNDEFINED;
+		status = vm_throw_type_error(realm, "method is not a function");
+		return status;
+	}
+
+	/* Succeeded: the method. */
+	return 0;
+}
+
+/*
  * Puts a property of any value as sloppy code does (a refused assignment
  * is ignored).
  */
@@ -353,6 +391,66 @@ vm_instanceof(
 	vm_value constructor,
 	vm_value *result)
 {
+	vm_value method;
+	vm_value answer;
+	vm_value builtin;
+	int ordinary;
+	int truth;
+	int callable;
+	int is_object;
+	int status;
+
+	/* An object's Symbol.hasInstance answers for it, unless it is Function.prototype's own (ws074-p087). */
+	*result = VM_VALUE_FALSE;
+	is_object = vm_value_is_object(constructor);
+	if (is_object) {
+		status = vm_get_method(realm, constructor, vm_symbol_key(realm, VM_SYMBOL_HAS_INSTANCE), &method);
+		if (status != 0)
+			return status;
+		ordinary = 0;
+		if (realm->intrinsics[VM_INTRINSIC_HAS_INSTANCE] != NULL) {
+			builtin = vm_value_cell(realm->intrinsics[VM_INTRINSIC_HAS_INSTANCE]);
+			if (method == builtin)
+				ordinary = 1;
+		}
+		if (method != VM_VALUE_UNDEFINED && !ordinary) {
+			status = vm_call(realm, method, constructor, &value, 1, &answer);
+			if (status != 0)
+				return status;
+			truth = vm_to_boolean(answer);
+			*result = vm_value_boolean(truth);
+			return 0;
+		}
+	}
+
+	/* Otherwise only a callable right side answers instanceof. */
+	callable = vm_value_is_callable(constructor);
+	if (!callable) {
+		status = vm_throw_type_error(realm, "Right-hand side of 'instanceof' is not callable");
+		return status;
+	}
+
+	/* The prototype chain answers. */
+	status = vm_ordinary_has_instance(realm, constructor, value, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the answer is stored. */
+	return 0;
+}
+
+/*
+ * Tells whether a value is an instance of a constructor by its prototype
+ * chain (OrdinaryHasInstance, Function.prototype[Symbol.hasInstance]): a
+ * value that cannot be called has no instances.
+ */
+int
+vm_ordinary_has_instance(
+	struct vm_realm *realm,
+	vm_value constructor,
+	vm_value value,
+	vm_value *result)
+{
 	struct vm_object *object;
 	vm_value key;
 	vm_value prototype;
@@ -361,13 +459,11 @@ vm_instanceof(
 	int is_object;
 	int status;
 
-	/* Only a callable right side answers instanceof. */
+	/* Only a function has instances. */
 	*result = VM_VALUE_FALSE;
 	callable = vm_value_is_callable(constructor);
-	if (!callable) {
-		status = vm_throw_type_error(realm, "Right-hand side of 'instanceof' is not callable");
-		return status;
-	}
+	if (!callable)
+		return 0;
 
 	/* A primitive is an instance of nothing. */
 	is_object = vm_value_is_object(value);
