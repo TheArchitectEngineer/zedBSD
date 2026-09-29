@@ -6,9 +6,9 @@
       "path": "plan/master.md",
       "number": 1,
       "url": "https://github.com/awemorris/zedBSD/issues/1",
-      "remote_updated_at": "2026-09-29T01:06:11Z",
-      "remote_hash": "b4a51665bb3e36f6c0174cd7e11432f78acbaa4ef73b6baca48e6b35d4682332",
-      "local_hash": "42ccf1a528dd5ae10c0609ed03bda1e4ee2ba94e77341a305acc10a63327b147",
+      "remote_updated_at": "2026-09-29T02:35:22Z",
+      "remote_hash": "c64a1b3a3ead8b71987cefd046954dcef678c9821c7dd7f185994a79e7ba9c6e",
+      "local_hash": "05df98e7b495e57fb54d411a3906aa92d82e0189c5aa6da6c36fcae9d5371a12",
       "freshness": "published"
     },
     "ws001": {
@@ -249,7 +249,7 @@
       "path": "plan/ws001/phase000/phase.md",
       "number": 28,
       "url": "https://github.com/awemorris/zedBSD/issues/28",
-      "remote_updated_at": "2026-09-29T01:06:42Z",
+      "remote_updated_at": "2026-09-29T02:35:29Z",
       "remote_hash": "a6ec64b2b3a51e17335d24598894d6fbc0d9c10e21671c54433352dbb4cd1be9",
       "local_hash": "7a2900e89f9aac97794894050e68274715ebb57a9582af12a210a20c35a49070",
       "freshness": "published"
@@ -258,7 +258,7 @@
       "path": "plan/ws001/phase001/phase.md",
       "number": 29,
       "url": "https://github.com/awemorris/zedBSD/issues/29",
-      "remote_updated_at": "2026-09-29T01:06:46Z",
+      "remote_updated_at": "2026-09-29T02:35:34Z",
       "remote_hash": "154842ae7419964d7b985b95411709a45013621d8c14bdc4d632471ef3906407",
       "local_hash": "30437f3ece2767fe91d7ff339653582ff3e7c914ea6fe2c66ea85a436129e04d",
       "freshness": "published"
@@ -267,7 +267,7 @@
       "path": "plan/ws001/phase002/phase.md",
       "number": 30,
       "url": "https://github.com/awemorris/zedBSD/issues/30",
-      "remote_updated_at": "2026-09-29T01:06:50Z",
+      "remote_updated_at": "2026-09-29T02:35:38Z",
       "remote_hash": "2bd0975937d70499854675760548282df3157b481b05cd8848247a7b937592b4",
       "local_hash": "d048823853451faa3b8360a281cf900c7f2f418589b37cd0a0658f72e55cd982",
       "freshness": "published"
@@ -276,7 +276,7 @@
       "path": "plan/ws001/phase003/phase.md",
       "number": 31,
       "url": "https://github.com/awemorris/zedBSD/issues/31",
-      "remote_updated_at": "2026-09-29T01:06:54Z",
+      "remote_updated_at": "2026-09-29T02:35:42Z",
       "remote_hash": "94b81edd5415f796f1cf65b1dc0e27bd7ecad4ed1c58e1f40b608dca431a5791",
       "local_hash": "a822d671dcf02a4811281e933f1be5ad155710e4ab673c9f864b8be0de80d76b",
       "freshness": "published"
@@ -285,7 +285,7 @@
       "path": "plan/ws001/phase004/phase.md",
       "number": 32,
       "url": "https://github.com/awemorris/zedBSD/issues/32",
-      "remote_updated_at": "2026-09-29T01:06:58Z",
+      "remote_updated_at": "2026-09-29T02:35:46Z",
       "remote_hash": "418326a066fef15d7ad4ce1493da6f8b567c612c334dabdfcc9683772c9a2823",
       "local_hash": "913b68bca246e6f0a571403a75279299bd58c1dbc0f485fdc8c3b3c04dc2a16e",
       "freshness": "published"
@@ -294,7 +294,7 @@
       "path": "plan/ws001/phase005/phase.md",
       "number": 33,
       "url": "https://github.com/awemorris/zedBSD/issues/33",
-      "remote_updated_at": "2026-09-29T01:07:03Z",
+      "remote_updated_at": "2026-09-29T02:35:51Z",
       "remote_hash": "72e9498620ea12b237f95808ddc6d3702e3a6011eed7d22f6731bd5af1b7849e",
       "local_hash": "6f77a1e06647e4308b9bdb195865e011b0ac1bffbcf7e36fe39a6f2124b3f801",
       "freshness": "published"
@@ -303,7 +303,7 @@
       "path": "plan/ws001/phase006/phase.md",
       "number": 34,
       "url": "https://github.com/awemorris/zedBSD/issues/34",
-      "remote_updated_at": "2026-09-29T01:07:07Z",
+      "remote_updated_at": "2026-09-29T02:35:55Z",
       "remote_hash": "3da077884b92c9d8316d3f5729284d4255a76f809e8547ff695fedd6ea3ab82d",
       "local_hash": "0f9547f0355243b1aa4ed28d1dd3799d80b31554782621fda98c3d0ed0e7b0a7",
       "freshness": "published"
@@ -312,7 +312,7 @@
       "path": "plan/ws001/phase007/phase.md",
       "number": 35,
       "url": "https://github.com/awemorris/zedBSD/issues/35",
-      "remote_updated_at": "2026-09-29T01:07:11Z",
+      "remote_updated_at": "2026-09-29T02:35:59Z",
       "remote_hash": "c0ea4696380e106d8354df8952eefb14cb29bb7d6e5d598255c3a7ce29c51885",
       "local_hash": "e3ffd71b25231796265a16879b8ff6928db3ae35a7ccd3ded67ae0420dd7a008",
       "freshness": "published"
@@ -321,7 +321,7 @@
       "path": "plan/ws001/phase008/phase.md",
       "number": 36,
       "url": "https://github.com/awemorris/zedBSD/issues/36",
-      "remote_updated_at": "2026-09-29T01:07:15Z",
+      "remote_updated_at": "2026-09-29T02:36:03Z",
       "remote_hash": "fb3ee8b92a0ba4f7ddbf6e7a4f776bca7b7ae447b63bff8e51902b3c2538074a",
       "local_hash": "24226ab843e363088dafb1b2b835e6a0ef3e73dd6bb26c9426d902b32595f32b",
       "freshness": "published"
@@ -330,7 +330,7 @@
       "path": "plan/ws001/phase009/phase.md",
       "number": 37,
       "url": "https://github.com/awemorris/zedBSD/issues/37",
-      "remote_updated_at": "2026-09-29T01:07:20Z",
+      "remote_updated_at": "2026-09-29T02:36:07Z",
       "remote_hash": "9fa55014e1c42ff0b521f48576ff0cf448194d7ca7dbec84813fc989b7037e83",
       "local_hash": "e0b68a129022a2388b31dfb0b0c192b3293754b11c6cf2e07fe3bda26eb01bdf",
       "freshness": "published"
@@ -339,7 +339,7 @@
       "path": "plan/ws001/phase010/phase.md",
       "number": 38,
       "url": "https://github.com/awemorris/zedBSD/issues/38",
-      "remote_updated_at": "2026-09-29T01:07:24Z",
+      "remote_updated_at": "2026-09-29T02:36:11Z",
       "remote_hash": "15b8bb2068863b293422bffe8ecca31c700aff562a6582941208c5d684bcf600",
       "local_hash": "1fa832b64a17f8a869d12c8b113923d54d7f3c25012073ca6040395ba1437053",
       "freshness": "published"
@@ -348,7 +348,7 @@
       "path": "plan/ws001/phase011/phase.md",
       "number": 39,
       "url": "https://github.com/awemorris/zedBSD/issues/39",
-      "remote_updated_at": "2026-09-29T01:07:29Z",
+      "remote_updated_at": "2026-09-29T02:36:16Z",
       "remote_hash": "b1b2d5411085b3314bb1874294b7f86bc93b3bb7f433509c60ad0ec8734499f1",
       "local_hash": "337ea3040cbd548c8f43c0b6a3df1f65c6dbdf0b9f1159eada52d11ee3bae155",
       "freshness": "published"
@@ -357,7 +357,7 @@
       "path": "plan/ws001/phase012/phase.md",
       "number": 40,
       "url": "https://github.com/awemorris/zedBSD/issues/40",
-      "remote_updated_at": "2026-09-29T01:07:33Z",
+      "remote_updated_at": "2026-09-29T02:36:20Z",
       "remote_hash": "d345caff07d62c4fdeb12d23490daeab2758e63ce8c59691938343537b226242",
       "local_hash": "0a8a92fc16518b961e4e08420bd024b40bd6fdbef24249e59f1641c8300f19d2",
       "freshness": "published"
@@ -366,7 +366,7 @@
       "path": "plan/ws001/phase013/phase.md",
       "number": 41,
       "url": "https://github.com/awemorris/zedBSD/issues/41",
-      "remote_updated_at": "2026-09-29T01:07:38Z",
+      "remote_updated_at": "2026-09-29T02:36:24Z",
       "remote_hash": "a9ef89707d8695e827cdfd9c01458cc1abf252383d74e5dd598001932d229839",
       "local_hash": "b8615644b9ba22afc44740f55a30b84fca375c2adf98fa245ee30e810cfcfadd",
       "freshness": "published"
@@ -375,7 +375,7 @@
       "path": "plan/ws001/phase014/phase.md",
       "number": 42,
       "url": "https://github.com/awemorris/zedBSD/issues/42",
-      "remote_updated_at": "2026-09-29T01:07:42Z",
+      "remote_updated_at": "2026-09-29T02:36:29Z",
       "remote_hash": "072de617e422b3ed49c6f68eaa9f4c53ba20b9a5806966fa87ac88778ff5c05b",
       "local_hash": "6e9572015588533ac18f53f36e0ad1b72cb91b133586b3531d541b7be773ee50",
       "freshness": "published"
@@ -384,7 +384,7 @@
       "path": "plan/ws001/phase015/phase.md",
       "number": 43,
       "url": "https://github.com/awemorris/zedBSD/issues/43",
-      "remote_updated_at": "2026-09-29T01:07:46Z",
+      "remote_updated_at": "2026-09-29T02:36:33Z",
       "remote_hash": "045062c77068dab5a9b0cf9f9b7f51096e8890d460390ccacb244e3106eca6c5",
       "local_hash": "a7ebcd93fcf76280bd9d323ba052e7a7015c8290330bb83b319b0efa8e6d96e1",
       "freshness": "published"
@@ -393,7 +393,7 @@
       "path": "plan/ws001/phase016/phase.md",
       "number": 44,
       "url": "https://github.com/awemorris/zedBSD/issues/44",
-      "remote_updated_at": "2026-09-29T01:07:50Z",
+      "remote_updated_at": "2026-09-29T02:36:37Z",
       "remote_hash": "b2d758a3259243a78e8fa9df1bf5f053e102620eee628a507762ad1228a5e23e",
       "local_hash": "efad4102515a536829e1e83e77b618685f5b8b6ab1b6029c07b866157c9581cc",
       "freshness": "published"
@@ -402,7 +402,7 @@
       "path": "plan/ws001/phase017/phase.md",
       "number": 45,
       "url": "https://github.com/awemorris/zedBSD/issues/45",
-      "remote_updated_at": "2026-09-29T01:07:54Z",
+      "remote_updated_at": "2026-09-29T02:36:41Z",
       "remote_hash": "630c5601e93fad5f0d4ba8c3b3f16b3bb0a8192312d47ab99849bd7d72f8c41d",
       "local_hash": "9656d9f580676f4a971a966d8895058d6c974f4d2dc6f6b8884695d78d82df07",
       "freshness": "published"
@@ -411,7 +411,7 @@
       "path": "plan/ws001/phase018/phase.md",
       "number": 46,
       "url": "https://github.com/awemorris/zedBSD/issues/46",
-      "remote_updated_at": "2026-09-29T01:07:59Z",
+      "remote_updated_at": "2026-09-29T02:36:45Z",
       "remote_hash": "6bd1f6246b0502f0f6439bda03fe1aa0d40b072df77079e5c0b0d8d0498cb8fa",
       "local_hash": "d8b44b53215aa7f5e61f93ef43fe101344988125504c9b17f777b58769582fa9",
       "freshness": "published"
@@ -420,7 +420,7 @@
       "path": "plan/ws001/phase019/phase.md",
       "number": 47,
       "url": "https://github.com/awemorris/zedBSD/issues/47",
-      "remote_updated_at": "2026-09-29T01:08:03Z",
+      "remote_updated_at": "2026-09-29T02:36:49Z",
       "remote_hash": "95210ce304c26d2d12f775f3c7f98b98e71934e5c010bcd794ada13900db4e79",
       "local_hash": "eba1fed1aaa736747d9994cdabdccf7a443b76e9a0c750554c11e5ea57b19e8e",
       "freshness": "published"
@@ -438,7 +438,7 @@
       "path": "plan/ws001/phase021/phase.md",
       "number": 49,
       "url": "https://github.com/awemorris/zedBSD/issues/49",
-      "remote_updated_at": "2026-09-29T01:08:12Z",
+      "remote_updated_at": "2026-09-29T02:36:54Z",
       "remote_hash": "d5f86385974b89c51125d5036ad7e935a683e4f1e88c56301eea8c56c80755c0",
       "local_hash": "d4ccbaa9172a84bb175a70a038f9c586ea2d670094d17d9d263a6f6018d46155",
       "freshness": "published"
@@ -447,7 +447,7 @@
       "path": "plan/ws001/phase022/phase.md",
       "number": 50,
       "url": "https://github.com/awemorris/zedBSD/issues/50",
-      "remote_updated_at": "2026-09-29T01:08:16Z",
+      "remote_updated_at": "2026-09-29T02:36:58Z",
       "remote_hash": "ae8f3f025a87368a07bede774e74ebc2be11d2c2ca8ca3bec45af2e893c8eb2c",
       "local_hash": "5286bbdc117412a46334bb447d69962b74ab5feb81b104b0ac52e417d9d369a6",
       "freshness": "published"
@@ -456,7 +456,7 @@
       "path": "plan/ws001/phase023/phase.md",
       "number": 51,
       "url": "https://github.com/awemorris/zedBSD/issues/51",
-      "remote_updated_at": "2026-09-29T01:08:21Z",
+      "remote_updated_at": "2026-09-29T02:37:02Z",
       "remote_hash": "12ddceb4e403865462e3069328cb230a3d8fce0303a57558bbeaac02e7f21312",
       "local_hash": "905ae400db392b2c2127929e18b592c70b986f9381070de6b378029c537df7b6",
       "freshness": "published"
@@ -465,7 +465,7 @@
       "path": "plan/ws001/phase085/phase.md",
       "number": 52,
       "url": "https://github.com/awemorris/zedBSD/issues/52",
-      "remote_updated_at": "2026-09-29T01:09:37Z",
+      "remote_updated_at": "2026-09-29T02:37:13Z",
       "remote_hash": "407fd2fa55d8b1a623e0dbabec701f2e7597d06e167b43f4d28329f31892e8f5",
       "local_hash": "bd11e76709b8e62d53e9ed34cbe4a25d478e52de78438078bb9502649e2924f5",
       "freshness": "published"
@@ -669,7 +669,7 @@
       "path": "plan/ws004/phase001/phase.md",
       "number": 92,
       "url": "https://github.com/awemorris/zedBSD/issues/92",
-      "remote_updated_at": "2026-09-29T01:09:53Z",
+      "remote_updated_at": "2026-09-29T02:37:19Z",
       "remote_hash": "1c06e7cd46e8dfb0de0bcaeb602ecdcf4e0117b7e634a633bc8a1d8d38236f79",
       "local_hash": "114ddc15a9894dc1513210a9c05a75f5c0a9c8ab3691057f9f17c6c6d11fbcc5",
       "freshness": "published"
@@ -678,7 +678,7 @@
       "path": "plan/ws004/phase002/phase.md",
       "number": 93,
       "url": "https://github.com/awemorris/zedBSD/issues/93",
-      "remote_updated_at": "2026-09-29T01:09:57Z",
+      "remote_updated_at": "2026-09-29T02:37:23Z",
       "remote_hash": "892717c84d116bff13d17af3e2d89d4e721a08708769d941fe31d72b9c91b961",
       "local_hash": "32ee57523f09f271eb98cc7e98f903d0e9b24c2b87cad89595f89bbab32906e7",
       "freshness": "published"
@@ -687,7 +687,7 @@
       "path": "plan/ws004/phase003/phase.md",
       "number": 94,
       "url": "https://github.com/awemorris/zedBSD/issues/94",
-      "remote_updated_at": "2026-09-29T01:10:01Z",
+      "remote_updated_at": "2026-09-29T02:37:27Z",
       "remote_hash": "20a1fc7ad705709d41649d9eb1d5d443a871dc49bf757fe32f62dbc031fea9b4",
       "local_hash": "2d9c4377330c7410bca519e4c93ab6516d5dcf2b160902c4fb89f5f2b3dbd816",
       "freshness": "published"
@@ -696,7 +696,7 @@
       "path": "plan/ws004/phase004/phase.md",
       "number": 95,
       "url": "https://github.com/awemorris/zedBSD/issues/95",
-      "remote_updated_at": "2026-09-29T01:10:06Z",
+      "remote_updated_at": "2026-09-29T02:37:31Z",
       "remote_hash": "14db176ee0830e4f64319f59268a7474386fe7eac0207814cb9ab5dfdc1434fc",
       "local_hash": "01666766a883042b81a39b607708133c84b8f732cb774776cd80beb2b61c4548",
       "freshness": "published"
@@ -714,7 +714,7 @@
       "path": "plan/ws004/phase006/phase.md",
       "number": 97,
       "url": "https://github.com/awemorris/zedBSD/issues/97",
-      "remote_updated_at": "2026-09-29T01:10:15Z",
+      "remote_updated_at": "2026-09-29T02:37:36Z",
       "remote_hash": "da7bfa62040d96c2def1e814d2bee830927346f9ac7752032467c05ca7f1fa1f",
       "local_hash": "7a7e48d82df0c1c331a58fbc164a1cca2176fc6cadf0f1a7472889f8b9626923",
       "freshness": "published"
@@ -723,7 +723,7 @@
       "path": "plan/ws004/phase007/phase.md",
       "number": 98,
       "url": "https://github.com/awemorris/zedBSD/issues/98",
-      "remote_updated_at": "2026-09-29T01:10:19Z",
+      "remote_updated_at": "2026-09-29T02:37:40Z",
       "remote_hash": "8c02544b9d81705b00661727e0903d757bfa508b199809e37493873f0a7d4c1a",
       "local_hash": "828df1408cf4383d09f8497f110c0d35664f2826fbf4c5a6afd5d68d054ce9ba",
       "freshness": "published"
@@ -732,7 +732,7 @@
       "path": "plan/ws004/phase008/phase.md",
       "number": 99,
       "url": "https://github.com/awemorris/zedBSD/issues/99",
-      "remote_updated_at": "2026-09-29T01:10:23Z",
+      "remote_updated_at": "2026-09-29T02:37:44Z",
       "remote_hash": "2f76595abec2ecdd6341471ca80235fd3c49987e389d3be7c83e90ed467facfb",
       "local_hash": "345ea89ae26bc5d2f46973d0e7000bc4e8da630983c65f2f6e88034f5e1c4d56",
       "freshness": "published"
@@ -741,7 +741,7 @@
       "path": "plan/ws004/phase009/phase.md",
       "number": 100,
       "url": "https://github.com/awemorris/zedBSD/issues/100",
-      "remote_updated_at": "2026-09-29T01:10:28Z",
+      "remote_updated_at": "2026-09-29T02:37:48Z",
       "remote_hash": "7fa86454c8f255f2a05e5f2a1b0d7d0f6defe0f518115f857fa68e40128d4f43",
       "local_hash": "510b96f8eb61086167cacf9385b6c1426a6c670139a709197073d1532b368e3d",
       "freshness": "published"
@@ -750,7 +750,7 @@
       "path": "plan/ws004/phase010/phase.md",
       "number": 101,
       "url": "https://github.com/awemorris/zedBSD/issues/101",
-      "remote_updated_at": "2026-09-29T01:10:32Z",
+      "remote_updated_at": "2026-09-29T02:37:52Z",
       "remote_hash": "517c2c76b9b61ff1d6ef5b186710527a475785c9e9a17b60f35fc76ba2f132d6",
       "local_hash": "6843343b26955771e1c406d12e6337344dee6eea410cf1e33202b5231a8cf7cb",
       "freshness": "published"
@@ -759,7 +759,7 @@
       "path": "plan/ws004/phase011/phase.md",
       "number": 102,
       "url": "https://github.com/awemorris/zedBSD/issues/102",
-      "remote_updated_at": "2026-09-29T01:10:36Z",
+      "remote_updated_at": "2026-09-29T02:37:56Z",
       "remote_hash": "6f64c2a13e7ffaf1b832bdb20a08642062b34cfd4c9056ee80cebfecc0e28dfd",
       "local_hash": "5baa415c558ce76e5dcbe8b0c0fb0304f53f8b8e8acd63f715e716ee194731e4",
       "freshness": "published"
@@ -768,7 +768,7 @@
       "path": "plan/ws004/phase012/phase.md",
       "number": 103,
       "url": "https://github.com/awemorris/zedBSD/issues/103",
-      "remote_updated_at": "2026-09-29T01:10:40Z",
+      "remote_updated_at": "2026-09-29T02:38:00Z",
       "remote_hash": "315f223f762131253580fa888be7122fd3eece574bf4af9e77dc16dc081d508b",
       "local_hash": "adf434c1a11a5ea547b5b2659c13499676f9a2eea949801c5800060916aae70b",
       "freshness": "published"
@@ -777,7 +777,7 @@
       "path": "plan/ws004/phase013/phase.md",
       "number": 104,
       "url": "https://github.com/awemorris/zedBSD/issues/104",
-      "remote_updated_at": "2026-09-29T01:10:44Z",
+      "remote_updated_at": "2026-09-29T02:38:04Z",
       "remote_hash": "175f90471125b9747d9ee9ba69f70994484c0858adac9c881d139633039ae813",
       "local_hash": "dc907c6fa9ecc984f9da30d2de3f25d41857fab45782a335279f007e8b76cb3c",
       "freshness": "published"
@@ -786,7 +786,7 @@
       "path": "plan/ws004/phase014/phase.md",
       "number": 105,
       "url": "https://github.com/awemorris/zedBSD/issues/105",
-      "remote_updated_at": "2026-09-29T01:10:49Z",
+      "remote_updated_at": "2026-09-29T02:38:09Z",
       "remote_hash": "73899ace33e32dcf4d730a76d049e6082e5522326f36b7c5b1bf4178c7560cb1",
       "local_hash": "2acb137805c47f0980c055bb2556356b98e35dbd6f2f72b355acd594b50883a6",
       "freshness": "published"
@@ -795,7 +795,7 @@
       "path": "plan/ws004/phase015/phase.md",
       "number": 106,
       "url": "https://github.com/awemorris/zedBSD/issues/106",
-      "remote_updated_at": "2026-09-29T01:10:53Z",
+      "remote_updated_at": "2026-09-29T02:38:13Z",
       "remote_hash": "fb7a9a46710a7cc55ac48ca4b207f467bfe9fcdba83d44ad994638494fea593f",
       "local_hash": "97601c860431861ec6b434d9fcfcbb60c5e3c20d0aec2cff779b29b990337313",
       "freshness": "published"
@@ -804,7 +804,7 @@
       "path": "plan/ws004/phase016/phase.md",
       "number": 107,
       "url": "https://github.com/awemorris/zedBSD/issues/107",
-      "remote_updated_at": "2026-09-29T01:10:57Z",
+      "remote_updated_at": "2026-09-29T02:38:17Z",
       "remote_hash": "3b754b6561ec42ae619576ab94e08b9fbd70d8a2f5c0c5b6997e6ce06c075b7b",
       "local_hash": "b8763d8ac7095d6e18878399cd86f87e2acd72af6912b8921a8926b2f159bb89",
       "freshness": "published"
@@ -813,7 +813,7 @@
       "path": "plan/ws004/phase017/phase.md",
       "number": 108,
       "url": "https://github.com/awemorris/zedBSD/issues/108",
-      "remote_updated_at": "2026-09-29T01:11:02Z",
+      "remote_updated_at": "2026-09-29T02:38:21Z",
       "remote_hash": "f4b9ae65507c980199d14f449bae742d1b2da123500ff38ccb3b6c9cb44bf834",
       "local_hash": "7e624a0c25278828184d342e4edd8fae562e14c3d78733b9b84ed5e286db1638",
       "freshness": "published"
@@ -822,7 +822,7 @@
       "path": "plan/ws004/phase018/phase.md",
       "number": 109,
       "url": "https://github.com/awemorris/zedBSD/issues/109",
-      "remote_updated_at": "2026-09-29T01:11:06Z",
+      "remote_updated_at": "2026-09-29T02:38:25Z",
       "remote_hash": "b3b72ad41a4328a281051b02cd532f0d4af768ada428175ecd477d1704c32b11",
       "local_hash": "248181e00b4c7f74f82b552c8b16131fec12419b499f6f654cbd992cbd86d09a",
       "freshness": "published"
@@ -831,7 +831,7 @@
       "path": "plan/ws004/phase019/phase.md",
       "number": 110,
       "url": "https://github.com/awemorris/zedBSD/issues/110",
-      "remote_updated_at": "2026-09-29T01:11:10Z",
+      "remote_updated_at": "2026-09-29T02:38:29Z",
       "remote_hash": "da3f916fd38a45e59d0dcd7d678e71ffebec88eb3ce0a9b818422625befd1671",
       "local_hash": "4ec1d1717c4c9b6489a88c386ccd31a586fd283dffbad66539012b4eaa33f256",
       "freshness": "published"
@@ -840,7 +840,7 @@
       "path": "plan/ws004/phase020/phase.md",
       "number": 111,
       "url": "https://github.com/awemorris/zedBSD/issues/111",
-      "remote_updated_at": "2026-09-29T01:11:14Z",
+      "remote_updated_at": "2026-09-29T02:38:33Z",
       "remote_hash": "60c7a00a27a0b6d6bea23aa1c6eb99f24cdf2492dcd49d06b546a485dab784da",
       "local_hash": "6b8bd5dfed1d7bbd55ed2b3f021b0ef6b022b3386a459825e3084bfaafe34a4b",
       "freshness": "published"
@@ -858,7 +858,7 @@
       "path": "plan/ws004/phase022/phase.md",
       "number": 113,
       "url": "https://github.com/awemorris/zedBSD/issues/113",
-      "remote_updated_at": "2026-09-29T01:11:23Z",
+      "remote_updated_at": "2026-09-29T02:38:38Z",
       "remote_hash": "b03ca38542011ebd767478f330ab444b04793ad056fc67072a2f09b2acd4e4f2",
       "local_hash": "31cb0f2573dbab82a8c023888f4bd71fb1d6cd3326b93c186fecaedc102448ff",
       "freshness": "published"
@@ -867,7 +867,7 @@
       "path": "plan/ws004/phase023/phase.md",
       "number": 114,
       "url": "https://github.com/awemorris/zedBSD/issues/114",
-      "remote_updated_at": "2026-09-29T01:11:27Z",
+      "remote_updated_at": "2026-09-29T02:38:42Z",
       "remote_hash": "a2257a15b724110e6fbcb668b20b883a70b48281b3b57863ead4c0d26a3a4fb2",
       "local_hash": "a4e683d68a345738df764a65cf052ae52597c8c72792d58055709a8cadf62e5b",
       "freshness": "published"
@@ -876,7 +876,7 @@
       "path": "plan/ws004/phase024/phase.md",
       "number": 115,
       "url": "https://github.com/awemorris/zedBSD/issues/115",
-      "remote_updated_at": "2026-09-29T01:11:32Z",
+      "remote_updated_at": "2026-09-29T02:38:46Z",
       "remote_hash": "0238a099d16826d8456b9f396959c7b137db682e6aaa772d376bb86708babe99",
       "local_hash": "d9f76def590ab237ea8e4090e90f6e34e8d1265195dc452a00a314c6ffd2e768",
       "freshness": "published"
@@ -894,7 +894,7 @@
       "path": "plan/ws004/phase026/phase.md",
       "number": 117,
       "url": "https://github.com/awemorris/zedBSD/issues/117",
-      "remote_updated_at": "2026-09-29T01:11:40Z",
+      "remote_updated_at": "2026-09-29T02:38:50Z",
       "remote_hash": "7ab09955a4c51bc4adba30e364d898b231eb915064348aa91dad02bdb2228766",
       "local_hash": "923ab774d13e757d9129de1ff7a3034d097d68d0ba3853869d2a86f9accf6c19",
       "freshness": "published"
@@ -903,7 +903,7 @@
       "path": "plan/ws004/phase027/phase.md",
       "number": 118,
       "url": "https://github.com/awemorris/zedBSD/issues/118",
-      "remote_updated_at": "2026-09-29T01:11:44Z",
+      "remote_updated_at": "2026-09-29T02:38:55Z",
       "remote_hash": "223438aa429e28024137e6cccada888feff45ca332e8fc68c924e464701c369b",
       "local_hash": "008f575a957d04f3f115abccf6b86051792d1d4237b954d0a37ebc5b2609fec1",
       "freshness": "published"
@@ -939,7 +939,7 @@
       "path": "plan/ws004/phase031/phase.md",
       "number": 122,
       "url": "https://github.com/awemorris/zedBSD/issues/122",
-      "remote_updated_at": "2026-09-29T01:12:02Z",
+      "remote_updated_at": "2026-09-29T02:39:00Z",
       "remote_hash": "bc22544e54df4b85e19063eca70fafc1dd079151cf60a75e496cd63f31a9614a",
       "local_hash": "8778cb47b36be59f3218632b4d3fd6d51b07323c05e7446a3398e69815edb49e",
       "freshness": "published"
@@ -948,7 +948,7 @@
       "path": "plan/ws004/phase032/phase.md",
       "number": 123,
       "url": "https://github.com/awemorris/zedBSD/issues/123",
-      "remote_updated_at": "2026-09-29T01:12:06Z",
+      "remote_updated_at": "2026-09-29T02:39:04Z",
       "remote_hash": "00d152e02ed7538576856795a2153ffdd42f6a6d9f21670648dc005ecb9b27a0",
       "local_hash": "1ee89d61a83862dc6b0c4b1fc5b2a670479c6a32fb611b489aed735e93401f09",
       "freshness": "published"
@@ -957,7 +957,7 @@
       "path": "plan/ws004/phase033/phase.md",
       "number": 124,
       "url": "https://github.com/awemorris/zedBSD/issues/124",
-      "remote_updated_at": "2026-09-29T01:12:11Z",
+      "remote_updated_at": "2026-09-29T02:39:09Z",
       "remote_hash": "3a85511d98728b77f3ffcd8d37b1da096637b1c166f247230d87dc80792cf620",
       "local_hash": "8e70d2199c5991d6f728bcc80f1b5daac8e0ca8ed00bc2a96cc12837adea8369",
       "freshness": "published"
@@ -984,7 +984,7 @@
       "path": "plan/ws004/phase036/phase.md",
       "number": 127,
       "url": "https://github.com/awemorris/zedBSD/issues/127",
-      "remote_updated_at": "2026-09-29T01:12:23Z",
+      "remote_updated_at": "2026-09-29T02:39:13Z",
       "remote_hash": "2fd9b812dab9c045aeecc1b92db43086d51d58bbd0120c414fc656316da8919c",
       "local_hash": "b6c9cf8d08ea63b181b824c63e09c7465951b6806bdca05d70b66a41c8f78971",
       "freshness": "published"
@@ -993,7 +993,7 @@
       "path": "plan/ws004/phase037/phase.md",
       "number": 128,
       "url": "https://github.com/awemorris/zedBSD/issues/128",
-      "remote_updated_at": "2026-09-29T01:12:27Z",
+      "remote_updated_at": "2026-09-29T02:39:18Z",
       "remote_hash": "c97289d10412162f2cdc24c10b7fe9ecce72917acb607536c6584586999def08",
       "local_hash": "8481287d0029abd78e599ce61e7cc11493971e2a4abd9fb6b50521339e40475d",
       "freshness": "published"
@@ -1020,7 +1020,7 @@
       "path": "plan/ws004/phase040/phase.md",
       "number": 131,
       "url": "https://github.com/awemorris/zedBSD/issues/131",
-      "remote_updated_at": "2026-09-29T01:12:39Z",
+      "remote_updated_at": "2026-09-29T02:39:22Z",
       "remote_hash": "22d45d0c0f67e41565982df66cf1b59ef3f00523f49cb91c86e37af255a588f4",
       "local_hash": "4a00f1e627c238286f3597c1f30256596f8da53aa913be86a9ca1b5ead11678a",
       "freshness": "published"
@@ -1029,7 +1029,7 @@
       "path": "plan/ws004/phase041/phase.md",
       "number": 132,
       "url": "https://github.com/awemorris/zedBSD/issues/132",
-      "remote_updated_at": "2026-09-29T01:12:44Z",
+      "remote_updated_at": "2026-09-29T02:39:27Z",
       "remote_hash": "25cbb472a6388558033cefe7a5819b4ad5876513fce603f77288c69a0fa81fc9",
       "local_hash": "459223a489822c15d29d5e169eb4c5970e1a4230e4d7842b849dc503202158f2",
       "freshness": "published"
@@ -1038,7 +1038,7 @@
       "path": "plan/ws004/phase042/phase.md",
       "number": 133,
       "url": "https://github.com/awemorris/zedBSD/issues/133",
-      "remote_updated_at": "2026-09-29T01:12:48Z",
+      "remote_updated_at": "2026-09-29T02:39:31Z",
       "remote_hash": "2b7e0fba8f9b4578c2bf163851b4d73df9fdcebd2db0726d484f7651505a2f33",
       "local_hash": "758eb284b7be47196231f4bae3573bd6b389e6b658673e5826a0451e33b8bea9",
       "freshness": "published"
@@ -1047,7 +1047,7 @@
       "path": "plan/ws004/phase043/phase.md",
       "number": 134,
       "url": "https://github.com/awemorris/zedBSD/issues/134",
-      "remote_updated_at": "2026-09-29T01:12:52Z",
+      "remote_updated_at": "2026-09-29T02:39:35Z",
       "remote_hash": "6a581e5da67432f7c7e95ec79459144a2fba38120596b73e577b275856030245",
       "local_hash": "0f82bdd5230248c2133bc9205f9f6c60c13e793c6e76db6c471496b491516b45",
       "freshness": "published"
@@ -1056,7 +1056,7 @@
       "path": "plan/ws004/phase044/phase.md",
       "number": 135,
       "url": "https://github.com/awemorris/zedBSD/issues/135",
-      "remote_updated_at": "2026-09-29T01:12:57Z",
+      "remote_updated_at": "2026-09-29T02:39:39Z",
       "remote_hash": "b3f7020804e938f06dd100c600cace1159aaf98c418a88f1ba93ecf0c8cdd8b3",
       "local_hash": "836e713c07e5ce31a653dac0cd55cf1349b3aef3d2c017f462aa82179a3366a3",
       "freshness": "published"
@@ -1065,7 +1065,7 @@
       "path": "plan/ws004/phase045/phase.md",
       "number": 136,
       "url": "https://github.com/awemorris/zedBSD/issues/136",
-      "remote_updated_at": "2026-09-29T01:13:01Z",
+      "remote_updated_at": "2026-09-29T02:39:43Z",
       "remote_hash": "0b261755f428db7945dbe610eb861314b9a6eb7c266195cb515dc5975b953fcf",
       "local_hash": "d4af1f3a8c157ca3027028029413f37164a1158de07798a2abd29337ffb1965d",
       "freshness": "published"
@@ -1074,7 +1074,7 @@
       "path": "plan/ws004/phase046/phase.md",
       "number": 137,
       "url": "https://github.com/awemorris/zedBSD/issues/137",
-      "remote_updated_at": "2026-09-29T01:13:05Z",
+      "remote_updated_at": "2026-09-29T02:39:48Z",
       "remote_hash": "b0e547f0f2855b1a4a89b0afd9ac027ecaf8625b66907f1b8c5704c5a9262cc9",
       "local_hash": "8cb05739df2cfcbe5a3c90b07e9329b79a7713fa36aab16e43f48308312d6ea5",
       "freshness": "published"
@@ -1083,7 +1083,7 @@
       "path": "plan/ws004/phase047/phase.md",
       "number": 138,
       "url": "https://github.com/awemorris/zedBSD/issues/138",
-      "remote_updated_at": "2026-09-29T01:13:10Z",
+      "remote_updated_at": "2026-09-29T02:39:52Z",
       "remote_hash": "83d1eb3fd833d7e2793dcc4883a58f223c895fca176ebb6110c2bf4f61e8f5d3",
       "local_hash": "b59c72690a42a2ea6872ea610fb558153a944666de7c10725bf31c8954726720",
       "freshness": "published"
@@ -1092,7 +1092,7 @@
       "path": "plan/ws004/phase048/phase.md",
       "number": 139,
       "url": "https://github.com/awemorris/zedBSD/issues/139",
-      "remote_updated_at": "2026-09-29T01:13:14Z",
+      "remote_updated_at": "2026-09-29T02:39:56Z",
       "remote_hash": "17d5cb0432d3e224a0d2097eab827163d8729a1844e478c26d35b0ef04cad746",
       "local_hash": "f0895ca424a6f97a6ebe623f27c5acee57f09fd9602709ac5577859734f1b33a",
       "freshness": "published"
@@ -1101,7 +1101,7 @@
       "path": "plan/ws004/phase049/phase.md",
       "number": 140,
       "url": "https://github.com/awemorris/zedBSD/issues/140",
-      "remote_updated_at": "2026-09-29T01:13:18Z",
+      "remote_updated_at": "2026-09-29T02:40:00Z",
       "remote_hash": "b832f08c23448a0d95ec11636ad42314e4396f814f10722d8aee59d828d74a0d",
       "local_hash": "788418b37261921e95b638992b2e699c4eb10ca476b69cef07780f23800f9557",
       "freshness": "published"
@@ -1110,7 +1110,7 @@
       "path": "plan/ws004/phase050/phase.md",
       "number": 141,
       "url": "https://github.com/awemorris/zedBSD/issues/141",
-      "remote_updated_at": "2026-09-29T01:13:22Z",
+      "remote_updated_at": "2026-09-29T02:40:04Z",
       "remote_hash": "c9a7752c5d85bd92f5decf3c677cd3c971a083a2890a0d6634cd366e961ab84b",
       "local_hash": "1fb8f9c62a5c9f6ee3f9200ebd83929f531328413df57b6cacbdcee2ad4f463b",
       "freshness": "published"
@@ -1119,7 +1119,7 @@
       "path": "plan/ws005/phase001/phase.md",
       "number": 142,
       "url": "https://github.com/awemorris/zedBSD/issues/142",
-      "remote_updated_at": "2026-09-29T01:13:31Z",
+      "remote_updated_at": "2026-09-29T02:40:09Z",
       "remote_hash": "c21a76d1849ba79b49d3677bd403274f3a980093d76e80a2d462fb6085566295",
       "local_hash": "c8304cfde05d290280538142e8718066502774d31033f62c2efc3ae1ac11ee8d",
       "freshness": "published"
@@ -1128,7 +1128,7 @@
       "path": "plan/ws005/phase002/phase.md",
       "number": 143,
       "url": "https://github.com/awemorris/zedBSD/issues/143",
-      "remote_updated_at": "2026-09-29T01:13:35Z",
+      "remote_updated_at": "2026-09-29T02:40:14Z",
       "remote_hash": "1df6193db7f9f7857bec77611931ab12ca4a723c56c9b4e16df509d15852620a",
       "local_hash": "7a6a2aabb4e58678041e5463e6f4520a560d1ac2d62a401ef4df2bbabf7bd69f",
       "freshness": "published"
@@ -1137,7 +1137,7 @@
       "path": "plan/ws005/phase003/phase.md",
       "number": 144,
       "url": "https://github.com/awemorris/zedBSD/issues/144",
-      "remote_updated_at": "2026-09-29T01:13:40Z",
+      "remote_updated_at": "2026-09-29T02:40:19Z",
       "remote_hash": "87640cd6620b55b0c45c811b22a48ee1c07b31f79e69d10ba20489be0c7e1918",
       "local_hash": "bff03bd715fc5e4b75a7d8a0c956054ee6e0c3f9f940d0327cc7114a0bbafcd3",
       "freshness": "published"
@@ -1146,7 +1146,7 @@
       "path": "plan/ws005/phase004/phase.md",
       "number": 145,
       "url": "https://github.com/awemorris/zedBSD/issues/145",
-      "remote_updated_at": "2026-09-29T01:13:44Z",
+      "remote_updated_at": "2026-09-29T02:40:23Z",
       "remote_hash": "79bd485f56a07002100c72d51b3a81100f4a31ce40a9b774806270f27480c26e",
       "local_hash": "d666d4b215f7d75059f86afff1d87a1cfcffcc05359bcd47bb29efaf2aeeb1f8",
       "freshness": "published"
@@ -1155,7 +1155,7 @@
       "path": "plan/ws005/phase005/phase.md",
       "number": 146,
       "url": "https://github.com/awemorris/zedBSD/issues/146",
-      "remote_updated_at": "2026-09-29T01:13:48Z",
+      "remote_updated_at": "2026-09-29T02:40:27Z",
       "remote_hash": "7ebeccabb0176e453b3c4d796e31bda4bd7c395f19483ce090ed4afbf413bff7",
       "local_hash": "94276bd941c163497c0e34417c8f906ad8dca3b5e1641afb4816d8f4080e7560",
       "freshness": "published"
@@ -1164,7 +1164,7 @@
       "path": "plan/ws005/phase006/phase.md",
       "number": 147,
       "url": "https://github.com/awemorris/zedBSD/issues/147",
-      "remote_updated_at": "2026-09-29T01:13:53Z",
+      "remote_updated_at": "2026-09-29T02:40:31Z",
       "remote_hash": "488cf3339df383affa50823efe5079784ea156ca9dbf4794072ee793eb4e73e0",
       "local_hash": "3f1f0379d3b042e3bb5eba3b8d141ce5935ef815df32c3e3b820d9a93ba26e58",
       "freshness": "published"
@@ -1173,7 +1173,7 @@
       "path": "plan/ws005/phase007/phase.md",
       "number": 148,
       "url": "https://github.com/awemorris/zedBSD/issues/148",
-      "remote_updated_at": "2026-09-29T01:13:58Z",
+      "remote_updated_at": "2026-09-29T02:40:35Z",
       "remote_hash": "0f9b023c731a8b2fd636059b3a6ca10f25e7d3881e4a49fe9ba33d5638e95a47",
       "local_hash": "f3e20dda3ad2a44bda7a9ef98470ffd7548ac112fc8afb853aa3da12ae8b2a90",
       "freshness": "published"
@@ -1182,7 +1182,7 @@
       "path": "plan/ws005/phase008/phase.md",
       "number": 149,
       "url": "https://github.com/awemorris/zedBSD/issues/149",
-      "remote_updated_at": "2026-09-29T01:14:02Z",
+      "remote_updated_at": "2026-09-29T02:40:39Z",
       "remote_hash": "70a2e1ee6eb52fbddd6ea4582bacf6317b736f22dc3f21ef759a3f98ee7e2b1f",
       "local_hash": "40b1b7e5dc6306752e4f99a6606b9cd723b7a443519d8f41aa6016e1e3df12ae",
       "freshness": "published"
@@ -1191,7 +1191,7 @@
       "path": "plan/ws005/phase009/phase.md",
       "number": 150,
       "url": "https://github.com/awemorris/zedBSD/issues/150",
-      "remote_updated_at": "2026-09-29T01:14:07Z",
+      "remote_updated_at": "2026-09-29T02:40:43Z",
       "remote_hash": "64b312fb28e5d9e77f1c321ea8d61d4af72d539623a8140949a0e6cd3f1df374",
       "local_hash": "7cd02f3d12b61309a8b8f09e857d6f47260e65ed8313861cb1c3af6e15ecfd45",
       "freshness": "published"
@@ -1200,7 +1200,7 @@
       "path": "plan/ws005/phase010/phase.md",
       "number": 151,
       "url": "https://github.com/awemorris/zedBSD/issues/151",
-      "remote_updated_at": "2026-09-29T01:14:11Z",
+      "remote_updated_at": "2026-09-29T02:40:48Z",
       "remote_hash": "fe97c1aa560256b7738d716a2b7ea686be2bd19f0f442c892b9f2c0174d2b81f",
       "local_hash": "ca5231523b9ad4436f1c0317faa14e2e33e48acc186ebb06df61a645d9a9be06",
       "freshness": "published"
@@ -1209,7 +1209,7 @@
       "path": "plan/ws005/phase011/phase.md",
       "number": 152,
       "url": "https://github.com/awemorris/zedBSD/issues/152",
-      "remote_updated_at": "2026-09-29T01:14:15Z",
+      "remote_updated_at": "2026-09-29T02:40:52Z",
       "remote_hash": "4a456da9c7e09d6479eaee10b627f91d0c05ed097b08b7eca84a4091ac387fc9",
       "local_hash": "94be3a2e5f22120394d5bcd27da74fa0fdd8fb079d07a2692c53fa3e55e72d49",
       "freshness": "published"
@@ -1218,7 +1218,7 @@
       "path": "plan/ws005/phase012/phase.md",
       "number": 153,
       "url": "https://github.com/awemorris/zedBSD/issues/153",
-      "remote_updated_at": "2026-09-29T01:14:20Z",
+      "remote_updated_at": "2026-09-29T02:40:56Z",
       "remote_hash": "f46dadf8d959b44c73fad41bcd730377df59cbced04aae8f80d127c11b4818bf",
       "local_hash": "766bb3364242519af3565f2b07616104d5f14fa1e0cb437634a0a800f3d09e56",
       "freshness": "published"
@@ -1282,7 +1282,7 @@
       "path": "plan/ws007/phase001/phase.md",
       "number": 165,
       "url": "https://github.com/awemorris/zedBSD/issues/165",
-      "remote_updated_at": "2026-09-29T01:14:38Z",
+      "remote_updated_at": "2026-09-29T02:41:03Z",
       "remote_hash": "bb6c42ef2251fee01f0f38b84b2ff71e2e1aa36abe5f455807c300893c8c50db",
       "local_hash": "8842a0bd49f113e2868885ede054b814efdee8c030baeb5b712aa2994940b6d6",
       "freshness": "published"
@@ -1300,7 +1300,7 @@
       "path": "plan/ws007/phase003/phase.md",
       "number": 167,
       "url": "https://github.com/awemorris/zedBSD/issues/167",
-      "remote_updated_at": "2026-09-29T01:14:46Z",
+      "remote_updated_at": "2026-09-29T02:41:07Z",
       "remote_hash": "a2d55a40c6df4338ff516a75bcf4c08c5df851d40380885c22c449f899912c4d",
       "local_hash": "7b15f0e2734ce661a3674a55b0f33bea0ae01b772ca642a8a35bc3af680a6665",
       "freshness": "published"
@@ -1368,7 +1368,7 @@
       "path": "plan/ws009/phase001/phase.md",
       "number": 179,
       "url": "https://github.com/awemorris/zedBSD/issues/179",
-      "remote_updated_at": "2026-09-29T01:15:03Z",
+      "remote_updated_at": "2026-09-29T02:41:13Z",
       "remote_hash": "16c33b4f13d5943eb1e458c68099deef33f4dd8f89b7f6837079d7147043a5d2",
       "local_hash": "fbdf82f162fbb7105e90e19f8538c8d34bd2dddaafec8ba6223678314a6c1f0c",
       "freshness": "published"
@@ -1377,7 +1377,7 @@
       "path": "plan/ws009/phase002/phase.md",
       "number": 180,
       "url": "https://github.com/awemorris/zedBSD/issues/180",
-      "remote_updated_at": "2026-09-29T01:15:07Z",
+      "remote_updated_at": "2026-09-29T02:41:17Z",
       "remote_hash": "1c0e1822015ceb9f1fdbe854bbb2795c3896441e0487cb9c0f7ca5ee9c8cedd5",
       "local_hash": "7b967cf266fd36bc191760e96a7215f03d36b96d61c2b36c6c2732c40455c588",
       "freshness": "published"
@@ -1386,7 +1386,7 @@
       "path": "plan/ws009/phase003/phase.md",
       "number": 181,
       "url": "https://github.com/awemorris/zedBSD/issues/181",
-      "remote_updated_at": "2026-09-29T01:15:11Z",
+      "remote_updated_at": "2026-09-29T02:41:21Z",
       "remote_hash": "dd2d98b8807b20f25ec80b95748a4c23a1aa0cf588c9533eb3786e87fe7d2430",
       "local_hash": "26fc62cd14f236a9f6790e1e5ef5116677e337c4db9ac7895c30504155404613",
       "freshness": "published"
@@ -1395,7 +1395,7 @@
       "path": "plan/ws009/phase004/phase.md",
       "number": 182,
       "url": "https://github.com/awemorris/zedBSD/issues/182",
-      "remote_updated_at": "2026-09-29T01:15:15Z",
+      "remote_updated_at": "2026-09-29T02:41:25Z",
       "remote_hash": "3584916173f3aaccfa9ac5adeecd9b560b9d3ed3cdcd06d50201a5dbaff68e53",
       "local_hash": "c55e8f205a19e3fb90025a445c57e444d53d1a20b945cf037ca10f787994b775",
       "freshness": "published"
@@ -1404,7 +1404,7 @@
       "path": "plan/ws009/phase005/phase.md",
       "number": 183,
       "url": "https://github.com/awemorris/zedBSD/issues/183",
-      "remote_updated_at": "2026-09-29T01:15:19Z",
+      "remote_updated_at": "2026-09-29T02:41:30Z",
       "remote_hash": "b5c43f1a37b7dc68a586224ddf6063e5d16268b8a5f500821d259f51dbef4422",
       "local_hash": "58fa54b69b19fa3ae024880acfa729a30302a1fa1b613eba617f6b8b457e7383",
       "freshness": "published"
@@ -1413,7 +1413,7 @@
       "path": "plan/ws009/phase006/phase.md",
       "number": 184,
       "url": "https://github.com/awemorris/zedBSD/issues/184",
-      "remote_updated_at": "2026-09-29T01:15:24Z",
+      "remote_updated_at": "2026-09-29T02:41:34Z",
       "remote_hash": "319d6b0993783553ff381a072b04091a56aa505b5128dd50ce176d79ca4941cc",
       "local_hash": "0111f6a29d60ee5375bcce4d09af0620f7ff829611b544336c044633806e7b60",
       "freshness": "published"
@@ -1422,7 +1422,7 @@
       "path": "plan/ws009/phase007/phase.md",
       "number": 185,
       "url": "https://github.com/awemorris/zedBSD/issues/185",
-      "remote_updated_at": "2026-09-29T01:15:28Z",
+      "remote_updated_at": "2026-09-29T02:41:38Z",
       "remote_hash": "979403924612c88b53cbdf1c924f8937152b829cfe13ea2675d8a252af680df9",
       "local_hash": "58fcbce35accf153e59acbcd2d35b460f8dcf96f3bd7fb8ce683dc88998acb53",
       "freshness": "published"
@@ -1431,7 +1431,7 @@
       "path": "plan/ws009/phase008/phase.md",
       "number": 186,
       "url": "https://github.com/awemorris/zedBSD/issues/186",
-      "remote_updated_at": "2026-09-29T01:15:32Z",
+      "remote_updated_at": "2026-09-29T02:41:42Z",
       "remote_hash": "46930a93aa28c48dd489409f9b31c60c4fd12816c2b44b2b386994442480f7fd",
       "local_hash": "550814c09f13d41ce8ba6f7dbc6ec7da2c5da8403eedbb0975ff72c821f2111f",
       "freshness": "published"
@@ -1549,7 +1549,7 @@
       "path": "plan/ws013/phase002/phase.md",
       "number": 208,
       "url": "https://github.com/awemorris/zedBSD/issues/208",
-      "remote_updated_at": "2026-09-29T01:15:57Z",
+      "remote_updated_at": "2026-09-29T02:41:49Z",
       "remote_hash": "58ac49875e5c0f109206f64e854bfc312d39d9069519aea4b58a92f9ecb0e0f1",
       "local_hash": "a4529bcad0ec3a32a19de283428932c68e7bd84e19d95a9e06b7302202fbb4d2",
       "freshness": "published"
@@ -1558,7 +1558,7 @@
       "path": "plan/ws013/phase003/phase.md",
       "number": 209,
       "url": "https://github.com/awemorris/zedBSD/issues/209",
-      "remote_updated_at": "2026-09-29T01:16:01Z",
+      "remote_updated_at": "2026-09-29T02:41:53Z",
       "remote_hash": "8cea91c860cbced8fca2f9448b004be2e50efdf9bfeeab6f8101e50a8ed98148",
       "local_hash": "85a16e576821e486bff64cb880435d05d06c3129a8c719b716fcea605edab4f6",
       "freshness": "published"
@@ -1567,7 +1567,7 @@
       "path": "plan/ws013/phase004/phase.md",
       "number": 210,
       "url": "https://github.com/awemorris/zedBSD/issues/210",
-      "remote_updated_at": "2026-09-29T01:16:05Z",
+      "remote_updated_at": "2026-09-29T02:41:57Z",
       "remote_hash": "26a52866b38938193d3d096c92988f2f017fd0a26e2664d5eaded0ea40367499",
       "local_hash": "fbfc936a47e2fa796ccbe7f799fe0e5ba4ae2eec0ba7f16bd21136a59c7a8f76",
       "freshness": "published"
@@ -1576,7 +1576,7 @@
       "path": "plan/ws013/phase005/phase.md",
       "number": 211,
       "url": "https://github.com/awemorris/zedBSD/issues/211",
-      "remote_updated_at": "2026-09-29T01:16:10Z",
+      "remote_updated_at": "2026-09-29T02:42:01Z",
       "remote_hash": "da2ce1aada46f2af5b7230e9e1016f657742d2f7de2712cc015325c3a8f88e44",
       "local_hash": "e8e4db54b1c0e1420f059ca0a375155a8bdce95fa75681afaa09cdabcda8e3fc",
       "freshness": "published"
@@ -1585,7 +1585,7 @@
       "path": "plan/ws013/phase006/phase.md",
       "number": 212,
       "url": "https://github.com/awemorris/zedBSD/issues/212",
-      "remote_updated_at": "2026-09-29T01:16:14Z",
+      "remote_updated_at": "2026-09-29T02:42:05Z",
       "remote_hash": "43638ad3a837646c254b9a16de2f0d9539c6e71dacdb65214a3cb6803ee09a93",
       "local_hash": "56f67d65f0f954b5cb1fa1782b313a2ea8c7502e58ce17ccf2f6007e6f659280",
       "freshness": "published"
@@ -8888,6 +8888,18 @@
       "remote_updated_at": "2026-09-29T01:41:14Z",
       "remote_hash": "d9e571fc071ce8456dc8a7c55e9ce6d924671f0b9016cae07c7eb02b4d33ed02",
       "local_hash": "2919fb79e45cd94357336de0aa547d8cadc8d3f829f424432bd171aa5da54974",
+      "freshness": "published"
+    },
+    "ws084": {
+      "path": "plan/ws084/ws.md",
+      "number": 922,
+      "url": "https://github.com/awemorris/zedBSD/issues/922",
+      "node_id": "I_kwDOT3uw488AAAABTzpqFQ",
+      "id": 5624195605,
+      "kind": "WS",
+      "remote_updated_at": "2026-09-29T02:35:18Z",
+      "remote_hash": "f5d213baeca3d84e2295ee302c84a7df539e52d6d5a995f6c9b600d5dc5ae815",
+      "local_hash": "73ddb58f2ae9d22eefb21c4c5b06f61b7b552d5141b1c9bd50623f67f1c3fcf3",
       "freshness": "published"
     }
   }
