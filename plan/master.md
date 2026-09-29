@@ -147,7 +147,9 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS081](ws081/ws.md) | MG006 | touch の操作の質: 慣性のある scroll と、低い fps の安い touch panel の数式による補間・予測。HID の driver・compositor・ブラウザ（と Keiland の app）にまたがる計画をこの 1 か所で（2026-09-28 ユーザー） | incomplete | p001（設計、[design.md](ws081/design.md)）・p003（補間・予測の library `libkeiland/motion.c`、host で 426009 の検査 ok）cleared（2026-09-29）。p002（1 報告 1 時刻・Scan Time の `MSC_TIMESTAMP`・注入の device の Scan Time、input-inject・touchinject の規約の是正）cleared（2026-09-29、host と QEMU の guest）。p004（compositor で τ・resampling、libkeiland の `keiland_motion_*` の公開、`KEILAND_VERSION` 9）cleared（2026-09-29、QEMU の機能の確認。滑らかさの数値は host と実機 p007）。p005（libkeiland の scroller・gesture、`KEILAND_VERSION` 10）・p012（PDF Viewer の慣性の scroll・pinch・page の flick）cleared（2026-09-29）。p013（Notes: ペンは線、指は scroll・pinch・double tap、掌の除外）・p011（Terminal の慣性の scroll、長押しで単語の選択）cleared（2026-09-29）。p014（指の drag and drop、Terminal の選択の指の drag）cleared。次の枠: p010（Files、worktree に未 commit の途中の変更）→ p015（Notes の「指で書く」の切り替え、2026-09-29 ユーザーの決定）→ p006 → p007（実機）。subagent は Noct を build しないので image の build と boot test は main が行う。design §10 の 6 項目はユーザーの確認待ち（既定の案で進む） |
 | [WS082](ws082/ws.md) | MG002 | Linux の `/dev/kvm` の移植の検討（eventfd 等の非 POSIX の fd の代わりに unix socket の message で MMIO・IRQ の通知。ioctl を直接の移植・別の仕組みでの代替・実装不能に分類）（2026-09-28 ユーザー） | incomplete | p001 cleared（[study.md](ws082/study.md)）。§10 の 11 項目のユーザーの判断待ち |
 | [WS083](ws083/ws.md) | MG006 | Vulkan Video の拡張（`VK_KHR_video_queue`・`video_decode_queue`・`video_decode_h264`）と i915 の VCS・MFX の対応、最初の目標は H.264 の decode（2026-09-28 ユーザー。OSC のデモには必須ではない） | planning | p001（設計）から。デモの後 |
-| [WS084](ws084/ws.md) | MG006 | i915 の firmware の画面の引き継ぎ（素の実機の UEFI の起動で GOP が点けた pipe を N1 で止めて driver のものにし、デスクトップを出す）（2026-09-29 ユーザー、main が実装） | incomplete | p001 実装済み、素の 5330 での試験待ち |
+| [WS084](ws084/ws.md) | MG006 | i915 の firmware の画面の引き継ぎ（素の実機の UEFI の起動で GOP が点けた pipe を N1 で止めて driver のものにし、デスクトップを出す）（2026-09-29 ユーザー、main が実装） | incomplete | p001・p002 cleared（2026-09-29、素の 5330 で takeover → LCD の Keiland、24.5 present/s）。残り: parity との乖離 1〜3 の整理 |
+| [WS086](ws086/ws.md) | MG002 | ls の出力を GNU ls と同じにする（端末なら既定で列、端末の幅）（2026-09-29 ユーザー） | planning | p001 から |
+| [WS087](ws087/ws.md) | MG002 | /bin/sh の対話の行編集: 矢印キーの履歴（BUG-103）と Tab の補完（2026-09-29 ユーザー） | planning | p001 から |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -173,6 +175,8 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
+| venus-win32 の取り込み（WS085）: merge、Linux（Venus 1.3）の回帰と Windows（1.4）の両立 | ユーザーの方針（2026-09-29） | font と submodule の扱いの確認 |
+| WS087（sh の矢印キーの履歴・Tab の補完）、WS086（ls）、BUG-102（ping） | 実機の使い勝手（2026-09-29） | p001 から |
 | 実機の USB の demo の image（`build/demo-hdmi2`）の結果（HDMI の LCD での login・logout の目視、eDP、touch の USB の descriptor、Notes・PDF Viewer） | デモ | ユーザーが試験 |
 | WS074: amazon-goal.md の続き。p037（table の最小）・p027（RegExp）cleared（2026-09-29）。JS の Date の builtin を実装の途中で枠の上限で止まった（未 commit、worktree `.claude/worktrees/agent-a346b6e810eda5cb6` の js/builtin_date.c 等）。Chromium との一致: トップ 80.4%、検索 77.2% | ブラウザのデモの目標 | 次の枠でその worktree から再開 |
 | WS079: p009（規約）、CCITTFax・password の入力・thumbnail | PDF・Notes | p008 cleared |
@@ -336,6 +340,18 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | ACPI の統合 | WS049 の p001〜p005・p010〜p015（サブエージェント）を 2026-09-27 に main へ merge（driver は未 link）。2026-09-27 夜の判断で解決済み: (1) HAL の `hal_get_arch_handoff("acpi.rsdp")` は承認・適用済み（Guardrail の表）、(2) 対象機は Dell Latitude 5330（`ssh awe@10.0.30.3`、sudo で acpidump してよい）、(3) `_OSI` と (4) `/dev/acpi` の形はエージェントが決める | WS049、Guardrail |
 | aarch64 の toolchain（WS036） | WS036 の p026 を 2026-09-27 に main へ merge: LLVM の patch が zedbsd6 → zedbsd7（AArch64 zedbsd target）。main の `build/llvm` は `build/llvm-zedbsd7`（symlink）。2026-09-27 の判断で解決済み: (1) toolchain の cache は最新の patch level で更新し GitHub へ upload してよい（ユーザー「ツールチェインをGitHubにアップロードしてOKです」「Toolchain cacheは更新してください」）、(2) ws036-p027 の bootargs は案 A（parser を緩める、全 platform） | WS036、Guardrail |
 | UFS の v2 の journal（WS063） | `--profile=journal-snapshot` の v2 の tail の journal の volume は v2 のまま（v3 へ移さない。v2 の locator が volume の末尾の snapshot の領域と並ぶため）。2026-09-27 ユーザー「じゃあとりあえず今のままでOKです。」→ **案 A（今のまま）で確定**。スナップショットの機能を設計するときに見直す | WS063 |
+
+### 2026-09-29 のユーザーの判断（有効なもの）
+
+| 項目 | 決定 | 記録先 |
+| --- | --- | --- |
+| 表示の build の既定 | ユーザー:「GPUの問題は解決したとみなして、以後はロゴを出してメッセージを隠すビルドにしましょう。ふたたびGPUドライバの修正をするとき、ロゴを無効にしましょう。」→ demo・実機の image は既定（logo と `kmsg=quiet`、`plan/ws075/demo/build-demo-image.sh BUILD`）。GPU の driver を直す Phase だけ `ZEDBSD_GRAPHICAL_BOOT=n "ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"`（logo を消し kernel の message を画面に残す） | Guardrail、WS084 |
+| LCD のみの構成 | ユーザー:「HDMIはいったんやめて、LCDのみの構成にします。」→ demo の既定 `display=edp`。HDMI の LCD は WS075 に戻す | WS084、WS075 |
+| サブエージェント | ユーザー:「サブエージェントの禁止は解除します。ですが、まずは実機の問題をクリアしてから、その先にサブエージェントを展開します。」→ AGENTS.md を更新 | AGENTS.md |
+| ping | ユーザー:「ユーザkeiがpingできません。ネットワーク権限がないようです。」→ raw socket が superuser だけ。直し方（setuid・ICMP の datagram socket・group）は未決 | [BUG-102](bugs/BUG-102.md) |
+| ls | ユーザー:「lsの結果が1つずつ改行されています。GNU lsと同じにしたいです。」 | [WS086](ws086/ws.md) |
+| sh の行編集 | ユーザー:「/bin/shが上下キーでヒストリーをたどれないようです。たどれるようにしたいです。」「/bin/shがタブキーの補間を使えません。使えるようにしたいです。」 | [WS087](ws087/ws.md)、[BUG-103](bugs/BUG-103.md) |
+| Windows の Venus | ユーザー:「GitHubのorigin/venus-win32ブランチに、QEMUのWindows版でVenusを利用できるようにした特殊ビルドにおいてKeiが動作するようにしたパッチがあります。これを取り込んで、WindowsのVenusも利用でき、かつ、我々のテスト環境のLinuxでのVenusも利用できるように、していきます。ちなみにWindowsの方がVenus 1.4, LinuxがVenus 1.3でした。」→ branch（`origin/venus-win32` 94908af8、分岐点 9c52dddc）を main に取り込む。branch の WS085（Windows 版 WINQ-EMU の Venus）・BUG-100・BUG-101・q496〜q499 の ID をそのまま使い、WS085 の目標に「Windows（Venus 1.4）と Linux（Venus 1.3）の両方で動く」を足す。main の新しい ID は WS086 以降・BUG-102 以降。確認の要る点: branch は font（Inter・JetBrains Mono・Droid Sans Fallback）を git に入れ（今までは `build/ws035-fonts/` の git の外）、`.gitmodules` で vendor の submodule（QEMU・virglrenderer の fork、raspberrypi-firmware）を足している | WS085（branch） |
 
 ### 主な依存関係
 
