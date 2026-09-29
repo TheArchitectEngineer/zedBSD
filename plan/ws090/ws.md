@@ -27,3 +27,7 @@ Resume point: p001（設計）から
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws090-p001 | 設計 | planning | — |
+
+## 2026-09-29 の申し送り（main）
+
+- WS089（Settings）は files の `canvas.c`・`text.c`・`icons.c` と `artwork/mark.c` を source のまま共有して compile している（ws089-p002）。files に target 別の CPPFLAGS が付くと中身が変わりうる。共有の library にするときの最初の対象の候補（F-038 を昇格したもの）。
