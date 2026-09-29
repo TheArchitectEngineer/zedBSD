@@ -2863,6 +2863,20 @@ frame_under_pointer(
 	enum shell_hit hit;
 	uint32_t edges;
 
+	/*
+	 * The screen's own strips take a press before any frame (zwl_glass_button):
+	 * the system bar, the desktops' swipe at the left and right edges, and
+	 * Wiseview's at the bottom.  A frame there shows no resize arrow.
+	 */
+	if (server->pointer_y < ZWL_GLASS_BAR)
+		return 0U;
+	if (server->pointer_y >= (int32_t)server->height - WISEVIEW_EDGE)
+		return 0U;
+	if (server->pointer_x < DESKTOP_EDGE)
+		return 0U;
+	if (server->pointer_x >= (int32_t)server->width - DESKTOP_EDGE)
+		return 0U;
+
 	/* The top window at the pointer, when it is its frame that is there. */
 	surface = window_at(server, server->pointer_x, server->pointer_y, &hit);
 	if (surface == NULL || hit != HIT_FRAME)

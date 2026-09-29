@@ -59,6 +59,17 @@
 /* The smallest window a resize makes, whatever the client's minimum. */
 #define RESIZE_MINIMUM		64
 
+/*
+ * How long after a resize ends a client's image of another size than the
+ * last one asked for is still taken as drawn before the client read the
+ * last configure (ws035-p128): until then the anchor stays.  Files on Venus
+ * takes about 330 ms a frame and was seen to commit three frames of an
+ * earlier size, over about a second, after acknowledging the last
+ * configure.  Keeping the anchor longer only keeps the dragged window's far
+ * edges in place a little longer.
+ */
+#define RESIZE_STALE_MS		3000U
+
 static int toplevel_set_parent(struct zwl_object *toplevel, const unsigned char *bytes, size_t size);
 static int toplevel_size_hint(struct zwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int toplevel_move(struct zwl_object *toplevel, struct zwl_object *surface, const unsigned char *bytes, size_t size);
@@ -153,6 +164,7 @@ zwl_toplevel_committed(
 	struct zwl_server *server,
 	struct zwl_object *surface)
 {
+	uint64_t now;
 	int32_t geometry_x;
 	int32_t geometry_y;
 	int32_t width;
@@ -187,18 +199,30 @@ zwl_toplevel_committed(
 
 	/*
 	 * After it, the anchor goes with the first image of the last size, or
-	 * the first drawn after the client acknowledged the last configure (a
-	 * client may draw a size of its own, a terminal a whole number of
-	 * cells).
+	 * with an image of a size of the client's own (a terminal draws a whole
+	 * number of cells) once the client has acknowledged the last configure.
 	 */
 	if (width == (int32_t)surface->window_width && height == (int32_t)surface->window_height) {
 		resize_settle(surface, width, height);
 		return;
 	}
 
-	/* Succeeded: the anchor goes once the last configure is drawn. */
-	if (surface->acked_serial == surface->resize_final_serial)
-		resize_settle(surface, width, height);
+	/*
+	 * A client that acknowledged the last configure may still commit an
+	 * image it drew before reading it (Files acknowledges a configure when
+	 * it arrives and draws later), so another size settles the anchor only
+	 * once RESIZE_STALE_MS have passed since the resize ended.
+	 */
+	if (surface->acked_serial != surface->resize_final_serial)
+		return;
+
+	/* An image soon after the end may be one drawn before the last configure was read. */
+	now = zwl_milliseconds();
+	if (now - surface->resize_end_ms < RESIZE_STALE_MS)
+		return;
+
+	/* Succeeded: the client keeps a size of its own; the anchor goes. */
+	resize_settle(surface, width, height);
 }
 
 /*
@@ -310,6 +334,7 @@ zwl_toplevel_button(
 	if (error != 0)
 		printf("ZWL RESIZE configure errno=%d\n", error);
 	surface->resize_final_serial = surface->configure_serial;
+	surface->resize_end_ms = zwl_milliseconds();
 	printf("ZWL RESIZE end surface=%u width=%u height=%u\n", surface->id, surface->window_width, surface->window_height);
 
 	/* A client that has drawn the last size already needs the anchor no more. */

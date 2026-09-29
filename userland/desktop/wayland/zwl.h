@@ -360,7 +360,9 @@ struct zwl_object {
 	 * drags and the right and bottom edges on the output that stay while
 	 * the left or top edge is dragged (the anchor; no edges when there is
 	 * none); the serial of the configure sent when the resize ended, and
-	 * the last serial the client acknowledged (xdg_surface.ack_configure).
+	 * when it ended (ms, ws035-p128: an image drawn before the client read
+	 * that configure may still come after it acknowledged it), and the last
+	 * serial the client acknowledged (xdg_surface.ack_configure).
 	 */
 	int32_t min_width;
 	int32_t min_height;
@@ -370,6 +372,7 @@ struct zwl_object {
 	int32_t resize_right;
 	int32_t resize_bottom;
 	uint32_t resize_final_serial;
+	uint64_t resize_end_ms;
 	uint32_t acked_serial;
 	/*
 	 * Sub-surfaces (subsurface.c, ws035-p077).  A surface with the role has
