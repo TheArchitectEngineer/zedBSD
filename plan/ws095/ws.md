@@ -37,4 +37,5 @@ Resume point: p003（辞書の package、100 文の計測 X＋補い 92/100、�
 | ws095-p008 | zdesktop の自前の field（titlebar の検索）と Files の field | planning | p005・p006 |
 | ws095-p009 | Browser の text field | planning | p006 |
 | ws095-p010 | PS/2 の日本語の key の写し（条件付き: JIS の PS/2 keyboard の利用者が出た時、F-058 と一緒に。5330 は PS/2 だが US 配列で日本語の key が無い。main 2026-09-29） | planning | JIS の PS/2 の利用者（F-058） |
-| ws095-p011 | 全体の規約の適合、guest の回帰（実機の確認は別に記録） | planning | p002〜p009 |
+| ws095-p011 | 全体の規約の適合、guest の回帰（実機の確認は別に記録） | planning | p002〜p009・p012 |
+| ws095-p012 | 補いの辞書を千語へ広げ、補いの辞書の候補に活用の種類の注釈（SKK の `;…`）を足して engine が読む。held-out の文 100 以上を書き下ろし、拡張の前後で測る（ユーザーの答え 2026-09-29 夜） | planning | p003・p004 |

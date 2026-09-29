@@ -422,6 +422,15 @@ p003 の結果（2026-09-29、案）: `userland/desktop/ime/dict/SKK-JISYO.kei` 
 基本の動詞（読む・買う・分かる・終わる 等、同じ読みの X の語より先に出したい語）、基本の形容詞（i と k の見出しの組）。語の一覧と相談の点は
 [phase003/phase.md](phase003/phase.md)。量と語はユーザーの答えで直す。
 
+**p003 の相談の答え（ユーザー、2026-09-29 夜、main 経由）**:
+1. 量: 千語まで広げる。
+2. かなを先に出す語: このままでよい。広げる時も同じ考え方（日常で多い方を先に、かなで書くのが普通の語はかなを先に）。
+3. 同じ読みの動詞の順: このままでよい。
+4. 外来語: 日常（食べ物・街・暮らし）と IT（computer・software）を半分ずつ。
+5. 活用の種類の注釈: 足す。補いの辞書の候補に SKK の注釈（`;…`）で活用の種類を書けるようにし、engine がそれを読む。辞書の形は SKK と互換のまま、
+   REmacs の X はそのままにして、補いの辞書で上書きする。
+→ ws095-p012（p004 の後）で行う。過剰な適合を避けるため、別の文の集合（held-out、100 文以上）を書き下ろし、拡張の前後で測る。
+
 ### 9.3 品質の計測（p003）
 
 - 道具: `plan/ws095/tests/ja-sentences.tsv`（日常の 100 文、読みと期待の表記、この project の書き下ろし）と `plan/ws095/tests/measure.sh`
@@ -530,7 +539,8 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
 | ws095-p008 | zdesktop の自前の field（titlebar の検索、§4.4）と Files の field | wayland の titlebar-shell、files | p005・p006 |
 | ws095-p009 | Browser の text field（`form.c`、UTF-16 の caret の変換） | browser | p006 |
 | ws095-p010 | PS/2 の日本語の key の写し（条件付き: JIS の PS/2 keyboard の利用者が出た時、F-058 と一緒に。5330 の内蔵 keyboard は PS/2 だが US 配列（D7）で日本語の key が無い。main 2026-09-29。driver の変更で HAL ではない） | `src/drivers/platform/pcat/ps2-8042.c` | JIS の PS/2 の利用者（F-058） |
-| ws095-p011 | 全体の規約の適合（coding-style の全文）、guest の回帰。実機の確認は人の作業として別に記録 | — | p002〜p009（p010 は行った時だけ） |
+| ws095-p011 | 全体の規約の適合（coding-style の全文）、guest の回帰。実機の確認は人の作業として別に記録 | — | p002〜p009・p012（p010 は行った時だけ） |
+| ws095-p012 | 補いの辞書の千語への拡張と活用の種類の注釈（§9.2 の「p003 の相談の答え」） | `userland/desktop/ime/dict/SKK-JISYO.kei`、`ja-dict.c`・`ja-segment.c`（注釈を読む）、held-out の文と計測 | p003・p004 |
 
 ## 14. 人間の判断が要る点（既定を選んで進める）
 
