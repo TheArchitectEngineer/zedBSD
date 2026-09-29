@@ -438,7 +438,7 @@ p003 の結果（2026-09-29、案）: `userland/desktop/ime/dict/SKK-JISYO.kei` 
 
 | key | 動作 | 理由 |
 | --- | --- | --- |
-| **Super+Space** | 次の言語（direct → ja → direct） | macOS の Ctrl+Space、Windows の Win+Space、GNOME の Super+Space と同じ系統。zdesktop・app は Super+Space を使っていない（Super+Tab・Super+L だけ。app の menu の item は Super を持てる（`menu-shell.c:2099-2100`）が、切り替えは menu より前で取るので衝突しない） |
+| **Alt+Space** | 次の言語（direct → ja → direct） | **ユーザーの指示（2026-09-29 夜）**「IMEのON/OFFは、ひとまずAlt+Spaceがいいです。」（D7 の Super+Space を置き換えた）。US の keyboard で押せる |
 | **半角/全角**（JIS の keyboard） | direct ⇄ ja の切り替え | Windows の日本語の既定。ただし USB の JIS の keyboard では KEY_GRAVE で来るので §10.3 |
 | **変換**（Henkan、evdev 92） | direct の時は ja にする。ja の時は IME に渡す（変換中なら次の候補・再変換） | Windows 10 以降の IME の設定「無変換・変換で オフ・オン」。変換中の 変換 は「変換」の意味を保つ（R: D3） |
 | **無変換**（Muhenkan、evdev 94） | direct にする | 同上 |
@@ -447,6 +447,13 @@ p003 の結果（2026-09-29、案）: `userland/desktop/ime/dict/SKK-JISYO.kei` 
 
 - 切り替えの key は zdesktop が取る（§4.2 の 1）ので、どの app でも同じに効き、IME が変換中でも効く（切り替えの時は未確定の文字を確定する。§14 D6）。
 - Ctrl+Space は使わない（Emacs の mark、Terminal の NUL と衝突するため）。
+- **Alt+Space の衝突の確認（2026-09-29、source で確かめた）**: Windows では Alt+Space は窓の System Menu の key だが、zdesktop には窓の menu を
+  Alt+Space で開く機能は無い（menu は F10、`menu-shell.c:702-750`。Space を見るのは menu が開いている間の行の選択 `menu-shell.c:1787` と
+  Wiseview の間 `shell.c:3688` だけ）。Files（Alt+←→ だけ、`files/ui-input.c:1008-1010`）・Text Editor（Ctrl・Alt・Super の組み合わせは文字に
+  しない、`textedit/keys.c:53`）・PDF Viewer・Settings・Browser にも Alt+Space の割り当ては無い。app の menu の item の shortcut にも無い。
+  **ぶつかる所は 1 つ**: Terminal は Alt の組み合わせを ESC＋文字（meta）として pty に送る（`terminal/keys.c:160-166`）ので、今は Alt+Space が
+  ESC＋空白（Emacs の M-SPC）として shell に届く。IME を優先する方針（main の指示）で、zdesktop が Alt+Space を先に取り、Terminal には届かなく
+  なる。REmacs は M-SPC を使っていない（`editor/keymap.noct` は C-SPC だけ）。X11 の app（keiland-x11 の下）にも zdesktop が先に取るので届かない。
 
 ### 10.2 key の code
 
@@ -464,7 +471,7 @@ USB の JIS の keyboard の 半角/全角 は HID の usage 0x35（US の `` ` 
 
 **決定（ユーザー、2026-09-29、D7）**: デモ機（5330）の keyboard は US 配列なので、JIS の配列の設定（Settings・keymap・Terminal と Text Editor の
 `keys.c`）と 半角/全角 の key は後回しにし、WS095 には入れない。WS の外の後の候補として main に渡す（master の Future Work への登録は main が行う）。
-この WS の切り替えは Super+Space（US の keyboard で押せる）で、変換・無変換・カタカナ/ひらがな・かな・英数 の key は来れば受ける（§10.1）。
+この WS の切り替えは Alt+Space（ユーザーの指示 2026-09-29 夜。US の keyboard で押せる）で、変換・無変換・カタカナ/ひらがな・かな・英数 の key は来れば受ける（§10.1）。
 
 ## 11. app の側（text-input-v3 の対応）
 
@@ -503,7 +510,7 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
   QMP で key の列を送る（qcode に henkan 等があるかは p004 で確かめる）。確かめる事柄:
   - protocol: done の serial が text input の commit の数と等しい、IME の serial が合わない時も文字が届く、4000 byte と UTF-8 の境界、popup が
     active の間だけ見える。
-  - key の経路: Super+Space の切り替え、変換、確定、Esc、password の field で素通し、直接入力で grab を通らない、press の後に grab が付いて release が
+  - key の経路: Alt+Space の切り替え、変換、確定、Esc、password の field で素通し、直接入力で grab を通らない、press の後に grab が付いて release が
     来る、key を押したまま IME を kill しても client の repeat が止まる、IME を STOP（ハング）させて 500 ms 後に素通しになる、変換中の focus の変化で
     preedit が確定される、変換中の lock で候補が出ない。
   - 候補の窓と indicator は画面を撮って目で確かめる（全画面の窓の上でも出ること）。直接入力の遅延が増えないこと。
@@ -535,7 +542,7 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
 | D4 | 単語の登録 | 最初の版では作らない（学習は候補の順だけ） | 変換で見つからない時に登録の小窓（SKK の再帰の登録） |
 | D5 | 直接入力の時も key を IME に通すか | **通さない**（レビューで変更: zdesktop が status で今の言語を知っているので grab を飛ばす。IME のハング・遅延が英字の入力に影響しない） | 通す（input-method-v2 の素直な形。IME が全ての key を見る） |
 | D6 | 言語の切り替えの時の未確定の文字 | 確定する（Windows と同じ） | 破棄する |
-| D7 | JIS の keyboard の配列（半角/全角 が KEY_GRAVE、¥・ろ の key） | **決定（ユーザー、2026-09-29）**: デモ機（5330）の keyboard は US 配列。JIS の配列と 半角/全角 は後回しで WS095 には入れない（WS の外の後の候補）。切り替えは US の keyboard で押せる Super+Space。変換・無変換・カタカナ/ひらがな が来たら受ける。内蔵の keyboard が PS/2 か USB か（p010 の要否）は実機の image を作る時に main が確かめる | WS095 で JIS の配列の選択まで作る |
+| D7 | JIS の keyboard の配列（半角/全角 が KEY_GRAVE、¥・ろ の key） | **決定（ユーザー、2026-09-29）**: デモ機（5330）の keyboard は US 配列。JIS の配列と 半角/全角 は後回しで WS095 には入れない（WS の外の後の候補）。切り替えは US の keyboard で押せる key（D7 では Super+Space としたが、**ユーザーの指示（2026-09-29 夜）で Alt+Space** に置き換えた、§10.1）。変換・無変換・カタカナ/ひらがな が来たら受ける。内蔵の keyboard が PS/2 か USB か（p010 の要否）は実機の image を作る時に main が確かめる | WS095 で JIS の配列の選択まで作る |
 | D8 | IME の program の名前 | `/usr/libexec/keiland-ime`（内部の名前、画面には出さない） | `/bin/ime` など |
 | D9 | 候補の窓の見た目 | wl_shm で Kei の見た目（白の card、角丸、選んだ行を強調、番号 1〜9 で選べる）。glass の効果は付けない | glass（zdesktop の glass の拡張を popup に広げる） |
 | D10 | focus が移る時の未確定の文字（レビューで追加） | zdesktop が旧い field に確定して送る（Windows の IME と同じ。打ちかけを失わない） | 破棄する（text-input-v3 の素直な形） |
