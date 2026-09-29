@@ -21,8 +21,8 @@ empty 0 false
 fragment I,B 0
 append #comment,I,B,#text,U,#text xy
 remove2 #comment,I,B,#text,U
-hierarchy true
-not a child true
+hierarchy true true HierarchyRequestError 3
+not a child true true NotFoundError 8
 not a node true
 illegal true
 constructor true

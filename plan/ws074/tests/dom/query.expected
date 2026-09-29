@@ -9,7 +9,7 @@ link check HTML
 true true false true
 outer note true null
 EM 2 null
-yes,yes,yes,yes
-matches threw
+SyntaxError 12,SyntaxError 12,SyntaxError 12,SyntaxError 12
+matches threw SyntaxError
 null 0
 4 5

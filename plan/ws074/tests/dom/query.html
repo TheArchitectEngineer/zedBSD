@@ -30,10 +30,10 @@ fragment.appendChild(made);
 console.log(fragment.querySelector(".made em").tagName, fragment.querySelectorAll("*").length, document.querySelector(".made"));
 var threw = [];
 ["", "!!", "a[", "div >"].forEach(function (text) {
-  try { document.querySelector(text); threw.push("no"); } catch (error) { threw.push("yes"); }
+  try { document.querySelector(text); threw.push("no"); } catch (error) { threw.push(error.name + " " + error.code); }
 });
 console.log(threw.join(","));
-try { inner.matches("::"); console.log("no"); } catch (error) { console.log("matches threw"); }
+try { inner.matches("::"); console.log("no"); } catch (error) { console.log("matches threw " + error.name); }
 console.log(document.querySelector("p::before"), document.querySelectorAll("li:hover").length);
 var all = document.querySelectorAll("li");
 document.getElementById("list").appendChild(document.createElement("li"));

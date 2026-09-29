@@ -8,8 +8,8 @@ element true d
 detached null
 text t&lt;<!--c--><u>u</u
 outer set t&lt;<!--c--><u>u</u><b class="c">b&amp;</b><q>q</q><q>r</q><script>console.log("ran")</script>text<em>e</em>
-position threw true
-document child threw true
+position threw SyntaxError 12
+document child threw NoModificationAllowedError 7
 no parent <div></div>
 template <td>z</td> 1 0 #document-fragment
 parsed template I 0 true

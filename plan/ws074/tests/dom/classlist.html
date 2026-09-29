@@ -18,9 +18,9 @@ console.log(list.toggle("two"), a.className, list.toggle("two"), a.className);
 console.log(list.toggle("four", false), list.toggle("three", true), a.className);
 console.log(list.replace("three", "3"), list.replace("none", "x"), a.className, String(list));
 var threw = [];
-try { list.add(""); } catch (error) { threw.push("empty"); }
-try { list.add("a b"); } catch (error) { threw.push("space"); }
-try { list.toggle(""); } catch (error) { threw.push("toggle"); }
+try { list.add(""); } catch (error) { threw.push("empty " + error.name + " " + error.code); }
+try { list.add("a b"); } catch (error) { threw.push("space " + error.name + " " + error.code); }
+try { list.toggle(""); } catch (error) { threw.push("toggle " + error.name); }
 console.log(threw.join(","), a.className);
 var b = document.getElementById("b");
 b.classList.remove("x");

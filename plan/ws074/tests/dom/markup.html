@@ -28,8 +28,8 @@ d.insertAdjacentText("afterbegin", "t<");
 console.log("text " + d.innerHTML.slice(0, 20));
 d.querySelector("i").outerHTML = "<q>q</q><q>r</q>";
 console.log("outer set " + d.innerHTML);
-try { d.insertAdjacentHTML("middle", "x"); } catch (x) { console.log("position threw " + (x instanceof Error)); }
-try { document.documentElement.outerHTML = "<p>"; } catch (x) { console.log("document child threw " + (x instanceof Error)); }
+try { d.insertAdjacentHTML("middle", "x"); } catch (x) { console.log("position threw " + x.name + " " + x.code); }
+try { document.documentElement.outerHTML = "<p>"; } catch (x) { console.log("document child threw " + x.name + " " + x.code); }
 var loose = document.createElement("div");
 loose.outerHTML = "<p>p</p>";
 console.log("no parent " + loose.outerHTML);

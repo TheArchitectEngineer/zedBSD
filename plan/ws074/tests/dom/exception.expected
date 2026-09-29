@@ -1,0 +1,16 @@
+made NotFoundError|8|the message
+defaults [Error] 0 []
+unknown name SomethingElse 0
+instance true true true
+string NotFoundError: the message | Error
+constants 1 3 8 12 22 25 11
+codes IndexSizeError=1 HierarchyRequestError=3 InvalidCharacterError=5 NoModificationAllowedError=7 NotSupportedError=9 InvalidStateError=11 SyntaxError=12 SecurityError=18 NetworkError=19 AbortError=20 QuotaExceededError=22 TimeoutError=23 DataCloneError=25 EncodingError=0 NotAllowedError=0
+hierarchy true HierarchyRequestError 3
+not found true NotFoundError 8
+character true InvalidCharacterError 5
+syntax true SyntaxError 12
+token true InvalidCharacterError 5
+position true SyntaxError 12
+computed true NoModificationAllowedError 7
+type error false TypeError undefined
+script AbortError 20 thrown by a script
