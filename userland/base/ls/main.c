@@ -8,28 +8,40 @@
  */
 
 /*
- * Lists directory contents (POSIX XCU ls).
+ * Lists directory contents (POSIX XCU ls, laid out as GNU ls lays it out).
  *
- *	ls [-adFhiLlRrt1C] [file...]
+ *	ls [-1aCdFhiLlmNqRrtx] [-T cols] [-w cols] [file...]
  *
  * With no operand the current directory is listed.  Operands that are not
  * directories (all of them with -d) are listed first as one sorted group,
  * then each directory's contents, with its name as a header when there
- * are several operands.  -l writes the long format, -C columns 80 wide,
- * and -1 (the default) one name to a line.
+ * are several operands.
+ *
+ * Written to a terminal, the names go in columns filled down the page
+ * (-C) as wide as the terminal, quoted as a shell would need them;
+ * written anywhere else, one to a line (-1) as they are.  Names are taken
+ * as UTF-8 in any locale, unlike GNU ls, which escapes every byte past
+ * ASCII in the C locale.  -x fills the
+ * columns across, -m separates the names with commas and -l writes the
+ * long format; the last of these on the command line wins.
  */
 
 #include "userland/base/common/command.h"
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <grp.h>
+#include <locale.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <wchar.h>
+#include <wctype.h>
 
 /* The longest path ls builds by joining a directory and a name. */
 #define LS_PATH_CAPACITY 1024U
@@ -37,39 +49,100 @@
 /* How deep -R goes before it reports a loop. */
 #define LS_RECURSION_LIMIT 64
 
-/* The width of the terminal that -C fills. */
-#define LS_COLUMNS_WIDTH 80U
+/* The width filled when neither -w, the terminal nor COLUMNS gives one. */
+#define LS_DEFAULT_LINE_WIDTH 80U
+
+/* The distance between tab stops when neither -T nor TABSIZE gives one. */
+#define LS_DEFAULT_TAB_SIZE 8U
+
+/* The narrowest column: one character and the two spaces after it. */
+#define LS_MIN_COLUMN_WIDTH 3U
 
 /* The age past which the long format shows the year instead of the time: six months. */
 #define LS_RECENT_SECONDS 15552000
 
+/* The status ls ends with when an option's value is not valid, as GNU ls. */
+#define LS_STATUS_INVALID_VALUE 2
+
+/* The characters -F marks names with, which must be quoted in a name so a mark reads as one. */
+#define LS_CLASSIFY_QUOTED "*=>@|"
+
+/* The character that ends a directory header, which must be quoted in the directory's name. */
+#define LS_HEADER_QUOTED ":"
+
 /*
- * The options of one run of ls, each 0 or 1.  main() fills it from the
- * command line, and everything else only reads it.
+ * How the names of a listing are laid out.
+ */
+enum ls_format {
+	LS_FORMAT_ONE_PER_LINE,	/* -1: one name to a line */
+	LS_FORMAT_COLUMNS,	/* -C: columns filled down */
+	LS_FORMAT_ACROSS,	/* -x: columns filled across */
+	LS_FORMAT_COMMAS,	/* -m: names separated by commas */
+	LS_FORMAT_LONG		/* -l: the long format */
+};
+
+/*
+ * How a name is written.
+ */
+enum ls_quoting {
+	LS_QUOTING_LITERAL,	/* as it is */
+	LS_QUOTING_SHELL	/* quoted as a shell needs it, with $'\ooo' for what cannot be shown */
+};
+
+/*
+ * What one character of a name asks of the shell quoting.
+ */
+enum ls_shell_class {
+	LS_SHELL_PLAIN,		/* letters, digits and % + , - . / : ] _ */
+	LS_SHELL_SPACE,		/* a space: quoted, and still fine inside double quotes */
+	LS_SHELL_SPECIAL,	/* a character the shell acts on, such as $ or * */
+	LS_SHELL_LEADING,	/* # and ~, which the shell acts on at the start of a word */
+	LS_SHELL_ALONE,		/* { and }, which the shell acts on as a whole word */
+	LS_SHELL_APOSTROPHE,	/* ', which single quotes cannot hold */
+	LS_SHELL_CONTROL,	/* a control character with a C escape, such as \t */
+	LS_SHELL_OTHER		/* anything else: printable or not by the locale */
+};
+
+/*
+ * The options of one run of ls.  main() fills it from the command line
+ * and the environment, and everything else only reads it.
  */
 struct options {
 	int all;		/* -a: names starting with a dot too */
 	int directory;		/* -d: a directory operand as itself */
 	int classify;		/* -F: a mark after the name for the type */
 	int human;		/* -h: sizes with a unit */
-	int long_format;	/* -l: the long format */
 	int recursive;		/* -R: the subdirectories too */
 	int reverse;		/* -r: the order reversed */
 	int time_sort;		/* -t: newest first */
-	int one;		/* -1 (and -l): one name to a line */
-	int columns;		/* -C: names in columns */
 	int inode;		/* -i: the file serial number first */
 	int follow;		/* -L: what a symbolic link points to */
+	int format;		/* an ls_format: -1, -C, -x, -m or -l, the last given */
+	int format_given;	/* 1 when the command line chose the format */
+	int literal;		/* -N: names never quoted */
+	int quoting;		/* an ls_quoting */
+	int hide_control;	/* -q, or a terminal: a character that cannot be shown written as ? */
+	int align_quotes;	/* in a listing with a quoted name, the others get a space before them */
+	int width_given;	/* 1 when -w gave the width */
+	size_t line_width;	/* the width -C, -x and -m fill, 0 for no limit */
+	int tab_given;		/* 1 when -T gave the tab size */
+	size_t tab_size;	/* the distance between tab stops, 0 for spaces only */
 };
 
 /*
- * One name to list, with its status.  The name is allocated by the entry,
- * except for the one list_operand() builds around its operand.
+ * One name to list, with its status and the text it is written as.
+ *
+ * The name is allocated by the entry, except for the one list_operand()
+ * builds around its operand.  The shown text is filled by prepare_names()
+ * just before the entry is written and freed with the entry.
  */
 struct entry {
 	char *name;
 	struct stat status;
 	int status_valid;	/* 0 when the status could not be read */
+	char *shown;		/* the name as written: quoted, or with ? for what cannot be shown */
+	size_t shown_width;	/* the columns of the terminal the shown name takes */
+	int quoted;		/* 1 when the shown name is enclosed in quotes */
 };
 
 /*
@@ -83,6 +156,39 @@ struct long_widths {
 	size_t size;
 };
 
+/*
+ * What the names of one listing share: the digits of the widest serial
+ * number (-i), and whether any name is quoted, so that the others get a
+ * space before them and the names line up.
+ */
+struct name_layout {
+	size_t inode_width;
+	int some_quoted;
+};
+
+/*
+ * One candidate number of columns for -C and -x, while the names are
+ * measured: the width of each column so far, the length of the line they
+ * add up to, and whether that line still fits.
+ */
+struct column_fit {
+	int fits;
+	size_t line_length;
+	size_t *widths;
+};
+
+/*
+ * A string being built with room reserved for the longest result, so
+ * that appending never fails.
+ */
+struct text_writer {
+	char *text;
+	size_t length;
+};
+
+static int parse_options(int argc, char **argv, struct options *options, char ***operands, int *operand_count);
+static void settle_layout(struct options *options);
+static int parse_count(const char *text, size_t *value);
 static int finish_output(int failed);
 static int list_operands(int count, char **names, const struct options *options);
 static int operand_status(const char *name, const struct options *options, struct stat *status);
@@ -95,23 +201,62 @@ static char *copy_string(const char *text);
 static int join_path(const char *directory, const char *name, char *out, size_t capacity);
 static void sort_entries(struct entry *items, size_t count, const struct options *options);
 static int compare(const struct entry *left, const struct entry *right, const struct options *options);
-static int print_entries(const char *path, struct entry *items, size_t count, const struct options *options);
-static int print_long_entries(const char *path, struct entry *items, size_t count, const struct options *options);
-static void print_columns(const struct entry *items, size_t count, const struct options *options);
+static int print_entries(const char *path, struct entry *items, size_t count, const struct options *options, int total);
+static int prepare_names(struct entry *items, size_t count, const struct options *options, struct name_layout *layout);
+static int print_long_entries(const char *path, struct entry *items, size_t count, const struct options *options, const struct name_layout *layout, int total);
+static void print_one_per_line(const struct entry *items, size_t count, const struct options *options, const struct name_layout *layout);
+static int print_columns(const struct entry *items, size_t count, const struct options *options, const struct name_layout *layout, int down);
+static int fit_columns(const struct entry *items, size_t count, const struct options *options, const struct name_layout *layout, int down, struct column_fit **result, size_t *result_columns);
+static void print_down(const struct entry *items, size_t count, const struct options *options, const struct name_layout *layout, const struct column_fit *fit, size_t columns);
+static void print_across(const struct entry *items, size_t count, const struct options *options, const struct name_layout *layout, const struct column_fit *fit, size_t columns);
+static void print_separated(const struct entry *items, size_t count, const struct options *options, const struct name_layout *layout, char separator);
+static void indent(size_t from, size_t to, const struct options *options);
+static size_t name_length(const struct entry *item, const struct options *options, const struct name_layout *layout);
+static void print_name(const struct entry *item, const struct options *options, const struct name_layout *layout);
+static int name_padded(const struct entry *item, const struct options *options, const struct name_layout *layout);
+static void inode_text(const struct entry *item, char out[24]);
+static void print_header(const char *path, const struct options *options);
+static int quote_name(const char *name, const struct options *options, const char *quoted_too, char **shown, size_t *width, int *quoted);
+static int quote_shell(const char *name, size_t length, const char *quoted_too, struct text_writer *writer);
+static int shell_class(const char *name, size_t length, size_t at);
+static void shell_escape_quote(const char *name, size_t length, struct text_writer *writer);
+static void hide_unprintable(const char *name, size_t length, struct text_writer *writer, size_t *width);
+static size_t character_length(const char *text, size_t length, size_t at, int *printable);
+static size_t display_width(const char *text, size_t length);
+static void write_bytes(struct text_writer *writer, const char *bytes, size_t length);
+static void write_char(struct text_writer *writer, char character);
 static void measure_long(const struct entry *items, size_t count, const struct options *options, struct long_widths *widths);
 static void human_size(off_t value, char out[16]);
 static const char *uid_name(uid_t id, char out[24]);
 static const char *gid_name(gid_t id, char out[24]);
-static int print_long(const char *directory, const struct entry *item, const struct options *options, const struct long_widths *widths);
+static int print_long(const char *directory, const struct entry *item, const struct options *options, const struct long_widths *widths, const struct name_layout *layout);
+static void print_link_target(const char *path, const struct options *options);
 static void mode_text(mode_t mode, char out[11]);
 static char type_char(mode_t mode);
 static void ls_time(time_t value, char out[32]);
 static int days_in_year(long long year);
 static int days_in_month(int month, long long year);
-static void print_name(const struct entry *item, const struct options *options);
-static size_t inode_width(const struct entry *item, const struct options *options);
-static char suffix(mode_t mode);
+static char type_mark(mode_t mode);
 static void free_entries(struct entry *items, size_t count);
+
+/*
+ * The long forms of the options, which GNU ls also takes.
+ */
+static const struct command_long_option ls_long_options[] = {
+	{"all", COMMAND_VALUE_NONE, 'a'},
+	{"classify", COMMAND_VALUE_NONE, 'F'},
+	{"dereference", COMMAND_VALUE_NONE, 'L'},
+	{"directory", COMMAND_VALUE_NONE, 'd'},
+	{"hide-control-chars", COMMAND_VALUE_NONE, 'q'},
+	{"human-readable", COMMAND_VALUE_NONE, 'h'},
+	{"inode", COMMAND_VALUE_NONE, 'i'},
+	{"literal", COMMAND_VALUE_NONE, 'N'},
+	{"recursive", COMMAND_VALUE_NONE, 'R'},
+	{"reverse", COMMAND_VALUE_NONE, 'r'},
+	{"tabsize", COMMAND_VALUE_REQUIRED, 'T'},
+	{"width", COMMAND_VALUE_REQUIRED, 'w'},
+	{NULL, 0, 0}
+};
 
 /*
  * Runs ls.
@@ -122,77 +267,27 @@ main(
 	char **argv)
 {
 	struct options options;
-	const char *letter;
-	int index;
+	char **operands;
+	int operand_count;
 	int failed;
 	int listed;
-	int operands;
-	int compare_dashes;
 
-	/* Each option word, which may join several letters; -- ends them. */
-	memset(&options, 0, sizeof(options));
-	for (index = 1; index < argc; index++) {
-		if (argv[index][0] != '-' || argv[index][1] == '\0')
-			break;
-		compare_dashes = strcmp(argv[index], "--");
-		if (compare_dashes == 0) {
-			index++;
-			break;
-		}
+	/*
+	 * Names are UTF-8 whatever the locale says, because Kei supports no
+	 * other encoding (the user's decision of 2026-09-29): a printable
+	 * character is written as it is and measured by its width.  Without a
+	 * UTF-8 locale in the C library the names fall back to single bytes.
+	 */
+	(void)setlocale(LC_CTYPE, "C.UTF-8");
 
-		/* Each letter of the word. */
-		for (letter = argv[index] + 1; *letter != '\0'; letter++) {
-			/* Chooses the option by its letter. */
-			switch (*letter) {
-			case 'a':
-				options.all = 1;
-				break;
-			case 'd':
-				options.directory = 1;
-				break;
-			case 'F':
-				options.classify = 1;
-				break;
-			case 'h':
-				options.human = 1;
-				break;
-			case 'i':
-				options.inode = 1;
-				break;
-			case 'L':
-				options.follow = 1;
-				break;
-			case 'l':
-				options.long_format = 1;
-				options.one = 1;
-				break;
-			case 'R':
-				options.recursive = 1;
-				break;
-			case 'r':
-				options.reverse = 1;
-				break;
-			case 't':
-				options.time_sort = 1;
-				break;
-			case '1':
-				options.one = 1;
-				options.columns = 0;
-				break;
-			case 'C':
-				options.columns = 1;
-				options.one = 0;
-				break;
-			default:
-				fprintf(stderr, "usage: ls [-adFhiLlRrt1C] [file...]\n");
-				return 1;
-			}
-		}
-	}
+	/* The options, from the command line and then the environment. */
+	failed = parse_options(argc, argv, &options, &operands, &operand_count);
+	if (failed != 0)
+		return failed;
+	settle_layout(&options);
 
 	/* No operand lists the current directory. */
-	operands = argc - index;
-	if (operands == 0) {
+	if (operand_count == 0) {
 		listed = list_operand(".", &options, 0);
 		failed = 1;
 		if (listed)
@@ -202,7 +297,7 @@ main(
 	}
 
 	/* The operands: files first as one sorted group, then each directory. */
-	failed = list_operands(operands, argv + index, &options);
+	failed = list_operands(operand_count, operands, &options);
 	failed = finish_output(failed);
 
 	/* Reports a failure, which the status already says. */
@@ -210,6 +305,260 @@ main(
 		return failed;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Reads the options from the command line in the GNU order (options may
+ * follow operands unless POSIXLY_CORRECT is set).  Returns 0 with the
+ * operands, or the status ls ends with after a message.
+ */
+static int
+parse_options(
+	int argc,
+	char **argv,
+	struct options *options,
+	char ***operands,
+	int *operand_count)
+{
+	struct command_options scan;
+	int code;
+	int parsed;
+
+	/* Nothing chosen yet. */
+	memset(options, 0, sizeof(*options));
+	options->format = LS_FORMAT_ONE_PER_LINE;
+	options->line_width = LS_DEFAULT_LINE_WIDTH;
+	options->tab_size = LS_DEFAULT_TAB_SIZE;
+
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "ls";
+	scan.letters = "1aCdFhiLlmNqRrtxT:w:";
+	scan.names = ls_long_options;
+	command_options_start(&scan);
+
+	/* Each option in turn. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
+			break;
+
+		/* Chooses what the option sets. */
+		switch (code) {
+		case 'a':
+			options->all = 1;
+			break;
+		case 'd':
+			options->directory = 1;
+			break;
+		case 'F':
+			options->classify = 1;
+			break;
+		case 'h':
+			options->human = 1;
+			break;
+		case 'i':
+			options->inode = 1;
+			break;
+		case 'L':
+			options->follow = 1;
+			break;
+		case 'N':
+			options->literal = 1;
+			break;
+		case 'q':
+			options->hide_control = 1;
+			break;
+		case 'R':
+			options->recursive = 1;
+			break;
+		case 'r':
+			options->reverse = 1;
+			break;
+		case 't':
+			options->time_sort = 1;
+			break;
+		case 'l':
+			options->format = LS_FORMAT_LONG;
+			options->format_given = 1;
+			break;
+		case '1':
+			options->format = LS_FORMAT_ONE_PER_LINE;
+			options->format_given = 1;
+			break;
+		case 'C':
+			options->format = LS_FORMAT_COLUMNS;
+			options->format_given = 1;
+			break;
+		case 'x':
+			options->format = LS_FORMAT_ACROSS;
+			options->format_given = 1;
+			break;
+		case 'm':
+			options->format = LS_FORMAT_COMMAS;
+			options->format_given = 1;
+			break;
+		case 'w':
+			/* A width too large to hold is no limit, as GNU ls takes it. */
+			parsed = parse_count(scan.value, &options->line_width);
+			if (parsed < 0) {
+				fprintf(stderr, "ls: invalid line width: '%s'\n", scan.value);
+				return LS_STATUS_INVALID_VALUE;
+			}
+			if (parsed > 0)
+				options->line_width = 0;
+			options->width_given = 1;
+			break;
+		case 'T':
+			/* A tab size must be a count that fits. */
+			parsed = parse_count(scan.value, &options->tab_size);
+			if (parsed < 0) {
+				fprintf(stderr, "ls: invalid tab size: '%s'\n", scan.value);
+				return LS_STATUS_INVALID_VALUE;
+			}
+			if (parsed > 0) {
+				fprintf(stderr, "ls: invalid tab size: '%s': %s\n", scan.value, strerror(EOVERFLOW));
+				return LS_STATUS_INVALID_VALUE;
+			}
+			options->tab_given = 1;
+			break;
+		default:
+			fprintf(stderr, "usage: ls [-1aCdFhiLlmNqRrtx] [-T cols] [-w cols] [file...]\n");
+			return 1;
+		}
+	}
+
+	/* Succeeded: the operands the scan set aside. */
+	*operands = scan.operands;
+	*operand_count = scan.operand_count;
+	return 0;
+}
+
+/*
+ * Settles what the command line left to the output and the environment:
+ * the format, the quoting, the width and the tab size, as GNU ls does.
+ */
+static void
+settle_layout(
+	struct options *options)
+{
+	struct winsize window;
+	const char *variable;
+	int terminal;
+	int error;
+	int parsed;
+	int width_known;
+	int uses_width;
+
+	/* A terminal gets columns, quoting and ? for what it cannot show. */
+	terminal = isatty(STDOUT_FILENO);
+	if (!options->format_given && terminal)
+		options->format = LS_FORMAT_COLUMNS;
+	if (terminal)
+		options->hide_control = 1;
+	options->quoting = LS_QUOTING_LITERAL;
+	if (terminal && !options->literal)
+		options->quoting = LS_QUOTING_SHELL;
+
+	/* Only the formats that fill a line look for its width and the tab size. */
+	uses_width = 0;
+	if (options->format == LS_FORMAT_COLUMNS)
+		uses_width = 1;
+	if (options->format == LS_FORMAT_ACROSS)
+		uses_width = 1;
+	if (options->format == LS_FORMAT_COMMAS)
+		uses_width = 1;
+
+	/* The width: -w, then the terminal's, then COLUMNS, then 80. */
+	width_known = options->width_given;
+	if (uses_width && !width_known && terminal) {
+		error = ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+		if (error == 0 && window.ws_col > 0) {
+			options->line_width = window.ws_col;
+			width_known = 1;
+		}
+	}
+
+	/* COLUMNS, when it is set and not empty; a value too large is no limit. */
+	variable = NULL;
+	if (uses_width && !width_known)
+		variable = getenv("COLUMNS");
+	if (variable != NULL && variable[0] != '\0') {
+		parsed = parse_count(variable, &options->line_width);
+		if (parsed > 0)
+			options->line_width = 0;
+		if (parsed < 0) {
+			fprintf(stderr, "ls: ignoring invalid width in environment variable COLUMNS: '%s'\n", variable);
+			options->line_width = LS_DEFAULT_LINE_WIDTH;
+		}
+	}
+
+	/* TABSIZE, unless -T gave the tab size. */
+	variable = NULL;
+	if (uses_width && !options->tab_given)
+		variable = getenv("TABSIZE");
+	if (variable != NULL) {
+		parsed = parse_count(variable, &options->tab_size);
+		if (parsed != 0) {
+			fprintf(stderr, "ls: ignoring invalid tab size in environment variable TABSIZE: '%s'\n", variable);
+			options->tab_size = LS_DEFAULT_TAB_SIZE;
+		}
+	}
+
+	/*
+	 * Names line up behind a quote only where they are lined up at all:
+	 * in columns that have a width and in the long format.
+	 */
+	options->align_quotes = 0;
+	if (options->quoting == LS_QUOTING_SHELL) {
+		if (options->format == LS_FORMAT_LONG) {
+			options->align_quotes = 1;
+		} else if (options->format == LS_FORMAT_COLUMNS && options->line_width != 0) {
+			options->align_quotes = 1;
+		} else if (options->format == LS_FORMAT_ACROSS && options->line_width != 0) {
+			options->align_quotes = 1;
+		}
+	}
+}
+
+/*
+ * Reads a count as GNU ls reads -w and -T: decimal, octal with a leading
+ * 0 or hexadecimal with 0x, and nothing after the digits.  Returns 0, 1
+ * when the count is too large to hold, and -1 when it is not a count.
+ */
+static int
+parse_count(
+	const char *text,
+	size_t *value)
+{
+	const char *start;
+	char *end;
+	unsigned long long count;
+
+	/* Blanks may come first, as strtoull takes them, but not a sign. */
+	start = text;
+	while (*start == ' ' || (*start >= '\t' && *start <= '\r'))
+		start++;
+	if (*start == '-' || *start == '\0')
+		return -1;
+
+	/* The digits, which must be all there is. */
+	errno = 0;
+	count = strtoull(start, &end, 0);
+	if (end == start || *end != '\0')
+		return -1;
+
+	/* A count past what the type holds. */
+	if (errno == ERANGE)
+		return 1;
+	if (count > (unsigned long long)(size_t)-1)
+		return 1;
+
+	/* Succeeded: the count. */
+	*value = (size_t)count;
 	return 0;
 }
 
@@ -253,7 +602,6 @@ list_operands(
 	char **names,
 	const struct options *options)
 {
-	struct long_widths widths;
 	struct entry *files;
 	struct entry *directories;
 	struct entry *entry;
@@ -309,15 +657,10 @@ list_operands(
 
 	/* The files, sorted together; in the long format without a total. */
 	sort_entries(files, file_count, options);
-	if (file_count > 0 && options->long_format) {
-		measure_long(files, file_count, options, &widths);
-		for (index = 0; index < file_count; index++) {
-			listed = print_long("", &files[index], options, &widths);
-			if (!listed && failed == 0)
-				failed = 1;
-		}
-	} else if (file_count > 0) {
-		print_entries("", files, file_count, options);
+	if (file_count > 0) {
+		listed = print_entries("", files, file_count, options, 0);
+		if (!listed && failed == 0)
+			failed = 1;
 	}
 
 	/* Each directory, after a blank line when something came before it. */
@@ -384,7 +727,6 @@ list_operand(
 	const struct options *options,
 	int header)
 {
-	struct long_widths widths;
 	struct stat status;
 	struct entry item;
 	int error;
@@ -407,24 +749,19 @@ list_operand(
 		return 1;
 	}
 
-	/* Anything else is listed as itself. */
+	/* Anything else is listed as itself, a group of one without a total. */
 	memset(&item, 0, sizeof(item));
 	item.name = (char *)path;
 	item.status = status;
 	item.status_valid = 1;
+	listed = print_entries("", &item, 1, options, 0);
+	free(item.shown);
 
-	/* In the long format. */
-	if (options->long_format) {
-		measure_long(&item, 1, options, &widths);
-		listed = print_long("", &item, options, &widths);
-		if (!listed)
-			return 0;
-		return 1;
-	}
+	/* Reports an entry that could not be listed. */
+	if (!listed)
+		return 0;
 
-	/* Succeeded: by its name. */
-	print_name(&item, options);
-	putchar('\n');
+	/* Succeeded. */
 	return 1;
 }
 
@@ -460,11 +797,11 @@ list_directory(
 		return 0;
 	}
 
-	/* The header, then the entries. */
+	/* The header, then the entries with the total of their blocks. */
 	ok = 1;
 	if (header)
-		printf("%s:\n", path);
-	printed = print_entries(path, items, count, options);
+		print_header(path, options);
+	printed = print_entries(path, items, count, options, 1);
 	if (!printed)
 		ok = 0;
 
@@ -658,7 +995,8 @@ read_entries(
 			*items = larger;
 		}
 
-		/* The name. */
+		/* The name; the text it is written as comes later. */
+		(*items)[*count].shown = NULL;
 		(*items)[*count].name = copy_string(name);
 		if ((*items)[*count].name == NULL)
 			return 0;
@@ -799,57 +1137,134 @@ compare(
 }
 
 /*
- * Writes a group of entries: in the long format, one to a line, or in
- * columns.  Returns 1, or 0 when an entry could not be listed.
+ * Writes a group of entries in the chosen format; in the long format a
+ * directory's entries (total set) come after the total of their blocks.
+ * Returns 1, or 0 when an entry could not be listed.
  */
 static int
 print_entries(
 	const char *path,
 	struct entry *items,
 	size_t count,
-	const struct options *options)
+	const struct options *options,
+	int total)
 {
-	size_t index;
+	struct name_layout layout;
+	int prepared;
 	int printed;
 
-	/* The long format, with a total. */
-	if (options->long_format) {
-		printed = print_long_entries(path, items, count, options);
+	/* The names as they are written, and what the listing shares. */
+	prepared = prepare_names(items, count, options, &layout);
+	if (!prepared) {
+		fprintf(stderr, "ls: out of memory\n");
+		return 0;
+	}
+
+	/* The long format, which also writes a total for an empty directory. */
+	if (options->format == LS_FORMAT_LONG) {
+		printed = print_long_entries(path, items, count, options, &layout, total);
 		if (!printed)
 			return 0;
 		return 1;
 	}
 
-	/* One name to a line, unless -C. */
-	if (options->one || !options->columns) {
-		for (index = 0; index < count; index++) {
-			print_name(&items[index], options);
-			putchar('\n');
-		}
-
-		/* Every name is listed. */
+	/* Every other format writes nothing at all for no names. */
+	if (count == 0)
 		return 1;
+
+	/* Chooses the layout of the names. */
+	switch (options->format) {
+	case LS_FORMAT_COLUMNS:
+		printed = print_columns(items, count, options, &layout, 1);
+		break;
+	case LS_FORMAT_ACROSS:
+		printed = print_columns(items, count, options, &layout, 0);
+		break;
+	case LS_FORMAT_COMMAS:
+		print_separated(items, count, options, &layout, ',');
+		printed = 1;
+		break;
+	default:
+		print_one_per_line(items, count, options, &layout);
+		printed = 1;
+		break;
 	}
 
-	/* Succeeded: in columns. */
-	print_columns(items, count, options);
+	/* Reports names that could not be laid out. */
+	if (!printed) {
+		fprintf(stderr, "ls: out of memory\n");
+		return 0;
+	}
+
+	/* Succeeded. */
 	return 1;
 }
 
 /*
- * Writes a directory's entries in the long format after the total of their
- * blocks.  Returns 1, or 0 when an entry could not be listed.
+ * Finds the text each entry is written as, and what the listing shares:
+ * the digits of its widest serial number and whether any name is quoted.
+ * Returns 1, or 0 without memory.
+ */
+static int
+prepare_names(
+	struct entry *items,
+	size_t count,
+	const struct options *options,
+	struct name_layout *layout)
+{
+	char digits[24];
+	const char *quoted_too;
+	size_t length;
+	size_t index;
+	int quoted;
+
+	/* -F marks names with characters that a name containing them must be quoted for. */
+	quoted_too = NULL;
+	if (options->classify)
+		quoted_too = LS_CLASSIFY_QUOTED;
+
+	/* Each entry's text, and the widest serial number. */
+	layout->inode_width = 0;
+	layout->some_quoted = 0;
+	for (index = 0; index < count; index++) {
+		free(items[index].shown);
+		items[index].shown = NULL;
+		quoted = quote_name(items[index].name, options, quoted_too, &items[index].shown, &items[index].shown_width, &items[index].quoted);
+		if (!quoted)
+			return 0;
+
+		/* A quoted name makes the others line up behind a space. */
+		if (items[index].quoted)
+			layout->some_quoted = 1;
+
+		/* The digits of the serial number, or ? without the status. */
+		inode_text(&items[index], digits);
+		length = strlen(digits);
+		if (length > layout->inode_width)
+			layout->inode_width = length;
+	}
+
+	/* Succeeded: every name has its text. */
+	return 1;
+}
+
+/*
+ * Writes a group of entries in the long format, after the total of their
+ * blocks when it is a directory's.  Returns 1, or 0 when an entry could
+ * not be listed.
  */
 static int
 print_long_entries(
 	const char *path,
 	struct entry *items,
 	size_t count,
-	const struct options *options)
+	const struct options *options,
+	const struct name_layout *layout,
+	int total)
 {
 	struct long_widths widths;
 	unsigned long long blocks;
-	char total[24];
+	char total_text[24];
 	size_t index;
 	int printed;
 	int ok;
@@ -862,20 +1277,20 @@ print_long_entries(
 			blocks += (unsigned long long)items[index].status.st_blocks;
 	}
 
-	/* The total in kilobytes, or with -h in bytes with a unit. */
-	if (options->human) {
-		human_size((off_t)(blocks * 512ULL), total);
-	} else {
-		snprintf(total, sizeof(total), "%llu", (blocks + 1ULL) / 2ULL);
+	/* The total in kilobytes, or with -h in bytes with a unit, for a directory. */
+	if (total) {
+		if (options->human) {
+			human_size((off_t)(blocks * 512ULL), total_text);
+		} else {
+			snprintf(total_text, sizeof(total_text), "%llu", (blocks + 1ULL) / 2ULL);
+		}
+		printf("total %s\n", total_text);
 	}
-
-	/* The line of the total. */
-	printf("total %s\n", total);
 
 	/* Each entry. */
 	ok = 1;
 	for (index = 0; index < count; index++) {
-		printed = print_long(path, &items[index], options, &widths);
+		printed = print_long(path, &items[index], options, &widths, layout);
 		if (!printed)
 			ok = 0;
 	}
@@ -888,72 +1303,1009 @@ print_long_entries(
 	return 1;
 }
 
-/*
- * Writes names in columns that fill 80 characters, down each column first
- * (-C).  Every column is as wide as the widest name, counting a -F mark
- * whether or not the name gets one, and two spaces.
- */
+/* Writes one name to a line (-1). */
 static void
+print_one_per_line(
+	const struct entry *items,
+	size_t count,
+	const struct options *options,
+	const struct name_layout *layout)
+{
+	size_t index;
+
+	/* Each name on its own line. */
+	for (index = 0; index < count; index++) {
+		print_name(&items[index], options, layout);
+		putchar('\n');
+	}
+}
+
+/*
+ * Writes names in columns as GNU ls does, filled down each column (-C) or
+ * across each row (-x).  Without a limit on the width they all go on one
+ * line.  Returns 1, or 0 without memory.
+ */
+static int
 print_columns(
 	const struct entry *items,
 	size_t count,
-	const struct options *options)
+	const struct options *options,
+	const struct name_layout *layout,
+	int down)
 {
-	size_t width;
-	size_t length;
+	struct column_fit *fits;
 	size_t columns;
+	int fitted;
+
+	/* No limit on the width: one line, the names two spaces apart. */
+	if (options->line_width == 0) {
+		print_separated(items, count, options, layout, ' ');
+		return 1;
+	}
+
+	/* The most columns that fit, with the width of each. */
+	fitted = fit_columns(items, count, options, layout, down, &fits, &columns);
+	if (!fitted)
+		return 0;
+
+	/* The names in those columns. */
+	if (down) {
+		print_down(items, count, options, layout, &fits[columns - 1U], columns);
+	} else {
+		print_across(items, count, options, layout, &fits[columns - 1U], columns);
+	}
+
+	/* The measures are done with; the widths of every candidate are one block. */
+	free(fits[0].widths);
+	free(fits);
+
+	/* Succeeded. */
+	return 1;
+}
+
+/*
+ * Finds how many columns the names fit in, as GNU ls finds it: every
+ * number of columns up to the most that could fit is measured at once,
+ * each column as wide as its longest name and the two spaces after it
+ * (none after the last), and the largest number whose line stays shorter
+ * than the width wins.  Returns 1 with the measures (the caller frees
+ * result[0].widths and result), or 0 without memory.
+ */
+static int
+fit_columns(
+	const struct entry *items,
+	size_t count,
+	const struct options *options,
+	const struct name_layout *layout,
+	int down,
+	struct column_fit **result,
+	size_t *result_columns)
+{
+	struct column_fit *fits;
+	size_t *widths;
+	size_t most;
+	size_t candidates;
+	size_t slots;
+	size_t index;
+	size_t candidate;
+	size_t slot;
+	size_t length;
+	size_t needed;
+	size_t columns;
+
+	/* No more columns than the narrowest ones fill, nor than there are names. */
+	most = options->line_width / LS_MIN_COLUMN_WIDTH;
+	if (options->line_width % LS_MIN_COLUMN_WIDTH != 0)
+		most++;
+	candidates = count;
+	if (most > 0 && most < count)
+		candidates = most;
+
+	/* One measure for each number of columns, 1 to candidates. */
+	fits = calloc(candidates, sizeof(*fits));
+	if (fits == NULL)
+		return 0;
+
+	/* The widths of all the candidates: 1 + 2 + ... + candidates of them. */
+	if (candidates > ((size_t)-1 / sizeof(*widths) - 1U) / candidates) {
+		free(fits);
+		return 0;
+	}
+	slots = candidates * (candidates + 1U) / 2U;
+	widths = malloc(slots * sizeof(*widths));
+	if (widths == NULL) {
+		free(fits);
+		return 0;
+	}
+
+	/* Each candidate starts with every column at the narrowest. */
+	slots = 0;
+	for (candidate = 0; candidate < candidates; candidate++) {
+		fits[candidate].fits = 1;
+		fits[candidate].line_length = (candidate + 1U) * LS_MIN_COLUMN_WIDTH;
+		fits[candidate].widths = widths + slots;
+		for (slot = 0; slot <= candidate; slot++)
+			fits[candidate].widths[slot] = LS_MIN_COLUMN_WIDTH;
+		slots += candidate + 1U;
+	}
+
+	/* Each name widens its column in every candidate that still fits. */
+	for (index = 0; index < count; index++) {
+		length = name_length(&items[index], options, layout);
+		for (candidate = 0; candidate < candidates; candidate++) {
+			if (!fits[candidate].fits)
+				continue;
+
+			/* The column the name falls in with candidate + 1 columns. */
+			if (down) {
+				slot = index / ((count + candidate) / (candidate + 1U));
+			} else {
+				slot = index % (candidate + 1U);
+			}
+
+			/* Two spaces follow a name in every column but the last. */
+			needed = length;
+			if (slot != candidate)
+				needed += 2U;
+
+			/* A wider column lengthens the line, which may no longer fit. */
+			if (fits[candidate].widths[slot] < needed) {
+				fits[candidate].line_length += needed - fits[candidate].widths[slot];
+				fits[candidate].widths[slot] = needed;
+				fits[candidate].fits = 0;
+				if (fits[candidate].line_length < options->line_width)
+					fits[candidate].fits = 1;
+			}
+		}
+	}
+
+	/* The most columns that still fit; one always does. */
+	columns = candidates;
+	while (columns > 1U && !fits[columns - 1U].fits)
+		columns--;
+
+	/* Succeeded: the measures and the number of columns. */
+	*result = fits;
+	*result_columns = columns;
+	return 1;
+}
+
+/* Writes names in columns filled down each column first (-C). */
+static void
+print_down(
+	const struct entry *items,
+	size_t count,
+	const struct options *options,
+	const struct name_layout *layout,
+	const struct column_fit *fit,
+	size_t columns)
+{
 	size_t rows;
 	size_t row;
 	size_t column;
 	size_t index;
-	size_t used;
-	char mark;
+	size_t position;
+	size_t length;
+	size_t width;
 
-	/* The width of a column. */
-	width = 1;
-	for (index = 0; index < count; index++) {
-		length = strlen(items[index].name) + inode_width(&items[index], options);
-		if (options->classify)
-			length++;
-		if (length > width)
-			width = length;
-	}
+	/* As many rows as the columns need. */
+	rows = count / columns;
+	if (count % columns != 0)
+		rows++;
 
-	/* Two spaces separate the columns. */
-	width += 2U;
-
-	/* As many columns as fit, and the rows they need. */
-	columns = LS_COLUMNS_WIDTH / width;
-	if (columns == 0)
-		columns = 1;
-	rows = (count + columns - 1U) / columns;
-
-	/* Each row, taking every rows-th entry. */
+	/* Each row takes every rows-th name, starting with its own. */
 	for (row = 0; row < rows; row++) {
-		for (column = 0; column < columns; column++) {
-			index = column * rows + row;
+		column = 0;
+		index = row;
+		position = 0;
+		for (;;) {
+			/* The name, in a column as wide as the widest in it. */
+			length = name_length(&items[index], options, layout);
+			width = fit->widths[column];
+			column++;
+			print_name(&items[index], options, layout);
+
+			/* The last name of the row has nothing after it. */
+			index += rows;
 			if (index >= count)
-				continue;
+				break;
 
-			/* The name, and what it took of the column. */
-			print_name(&items[index], options);
-			used = inode_width(&items[index], options) + strlen(items[index].name);
-			mark = '\0';
-			if (options->classify && items[index].status_valid)
-				mark = suffix(items[index].status.st_mode);
-			if (mark != '\0')
-				used++;
-
-			/* Spaces to the next column, unless this is the last name of the row. */
-			if (column + 1U < columns && index + rows < count) {
-				for (; used < width; used++)
-					putchar(' ');
-			}
+			/* Blanks to the next column. */
+			indent(position + length, position + width, options);
+			position += width;
 		}
 
 		/* The row ends. */
 		putchar('\n');
 	}
+}
+
+/* Writes names in columns filled across each row first (-x). */
+static void
+print_across(
+	const struct entry *items,
+	size_t count,
+	const struct options *options,
+	const struct name_layout *layout,
+	const struct column_fit *fit,
+	size_t columns)
+{
+	size_t index;
+	size_t column;
+	size_t position;
+	size_t length;
+	size_t width;
+
+	/* The first name. */
+	print_name(&items[0], options, layout);
+	length = name_length(&items[0], options, layout);
+	width = fit->widths[0];
+	position = 0;
+
+	/* Each other name: on a new line at the first column, or after blanks to its column. */
+	for (index = 1; index < count; index++) {
+		column = index % columns;
+		if (column == 0) {
+			putchar('\n');
+			position = 0;
+		} else {
+			indent(position + length, position + width, options);
+			position += width;
+		}
+
+		/* The name, and the width of the column it is in. */
+		print_name(&items[index], options, layout);
+		length = name_length(&items[index], options, layout);
+		width = fit->widths[column];
+	}
+
+	/* The last row ends. */
+	putchar('\n');
+}
+
+/*
+ * Writes names separated by a character and a space (-m with a comma, and
+ * -C or -x with a space when there is no limit on the width), starting a
+ * new line when the next name would reach the width.
+ */
+static void
+print_separated(
+	const struct entry *items,
+	size_t count,
+	const struct options *options,
+	const struct name_layout *layout,
+	char separator)
+{
+	size_t position;
+	size_t length;
+	size_t index;
+	int fits;
+
+	/* Each name, after the separator from the one before it. */
+	position = 0;
+	for (index = 0; index < count; index++) {
+		length = 0;
+		if (options->line_width != 0)
+			length = name_length(&items[index], options, layout);
+
+		/* The name stays on the line when it ends before the width. */
+		if (index != 0) {
+			fits = 0;
+			if (options->line_width == 0) {
+				fits = 1;
+			} else if (position + length + 2U < options->line_width) {
+				fits = 1;
+			}
+
+			/* The separator, then a space or a new line. */
+			putchar(separator);
+			if (fits) {
+				putchar(' ');
+				position += 2U;
+			} else {
+				putchar('\n');
+				position = 0;
+			}
+		}
+
+		/* The name. */
+		print_name(&items[index], options, layout);
+		position += length;
+	}
+
+	/* The line ends. */
+	putchar('\n');
+}
+
+/*
+ * Writes blanks from one column of the line to another: a tab wherever it
+ * reaches a tab stop no further than the target, and spaces otherwise.
+ */
+static void
+indent(
+	size_t from,
+	size_t to,
+	const struct options *options)
+{
+	size_t tab;
+
+	/* Each step toward the target. */
+	tab = options->tab_size;
+	while (from < to) {
+		if (tab != 0 && to / tab > (from + 1U) / tab) {
+			/* A tab to the next stop. */
+			putchar('\t');
+			from += tab - from % tab;
+		} else {
+			/* A space. */
+			putchar(' ');
+			from++;
+		}
+	}
+}
+
+/*
+ * Returns the columns a name takes with what goes with it: the serial
+ * number and a space (-i), the space that lines it up with quoted names,
+ * and the mark of its type (-F).
+ */
+static size_t
+name_length(
+	const struct entry *item,
+	const struct options *options,
+	const struct name_layout *layout)
+{
+	char digits[24];
+	size_t length;
+	int padded;
+	char mark;
+
+	/* -i: the serial number, as wide as the widest except with -m, and a space. */
+	length = 0;
+	if (options->inode) {
+		if (options->format == LS_FORMAT_COMMAS) {
+			inode_text(item, digits);
+			length += strlen(digits) + 1U;
+		} else {
+			length += layout->inode_width + 1U;
+		}
+	}
+
+	/* The name as written, with the space that lines it up. */
+	length += item->shown_width;
+	padded = name_padded(item, options, layout);
+	if (padded)
+		length++;
+
+	/* -F: the mark, when the type has one. */
+	if (options->classify && item->status_valid) {
+		mark = type_mark(item->status.st_mode);
+		if (mark != '\0')
+			length++;
+	}
+
+	/* Succeeded: the columns. */
+	return length;
+}
+
+/*
+ * Writes a name with what goes with it: the serial number (-i), the space
+ * that lines it up with quoted names, and the mark of its type (-F).
+ */
+static void
+print_name(
+	const struct entry *item,
+	const struct options *options,
+	const struct name_layout *layout)
+{
+	char digits[24];
+	int width;
+	int padded;
+	char mark;
+
+	/* -i: the serial number, right-aligned except with -m. */
+	if (options->inode) {
+		inode_text(item, digits);
+		width = (int)layout->inode_width;
+		if (options->format == LS_FORMAT_COMMAS)
+			width = 0;
+		printf("%*s ", width, digits);
+	}
+
+	/* The name, after a space when others in the listing are quoted. */
+	padded = name_padded(item, options, layout);
+	if (padded)
+		putchar(' ');
+	fputs(item->shown, stdout);
+
+	/* -F: the mark, when the type has one. */
+	if (options->classify && item->status_valid) {
+		mark = type_mark(item->status.st_mode);
+		if (mark != '\0')
+			putchar(mark);
+	}
+}
+
+/* Returns 1 when a name gets a space before it to line up with the quoted names of its listing. */
+static int
+name_padded(
+	const struct entry *item,
+	const struct options *options,
+	const struct name_layout *layout)
+{
+	/* Only a name without quotes, in a lined-up format, among quoted ones. */
+	if (!options->align_quotes)
+		return 0;
+	if (!layout->some_quoted)
+		return 0;
+	if (item->quoted)
+		return 0;
+
+	/* Succeeded: it is padded. */
+	return 1;
+}
+
+/* Writes the serial number of an entry, or ? when its status is unknown. */
+static void
+inode_text(
+	const struct entry *item,
+	char out[24])
+{
+	/* The number, when the status was read. */
+	if (item->status_valid) {
+		snprintf(out, 24, "%lu", (unsigned long)item->status.st_ino);
+		return;
+	}
+
+	/* No status, no number. */
+	snprintf(out, 24, "?");
+}
+
+/* Writes the header of a directory's listing: its name, quoted when it has a colon too, and a colon. */
+static void
+print_header(
+	const char *path,
+	const struct options *options)
+{
+	char *shown;
+	size_t width;
+	int quoted;
+	int written;
+
+	/* The name as written; without memory, as it is. */
+	shown = NULL;
+	written = quote_name(path, options, LS_HEADER_QUOTED, &shown, &width, &quoted);
+	if (!written) {
+		printf("%s:\n", path);
+		return;
+	}
+
+	/* The header line. */
+	printf("%s:\n", shown);
+	free(shown);
+}
+
+/*
+ * Finds the text a name is written as and the columns it takes: quoted as
+ * a shell needs it, with ? for what cannot be shown, or as it is.
+ * quoted_too lists characters that make a shell-quoted name need quotes
+ * even though the shell would not.  Returns 1 with an allocated text the
+ * caller frees, or 0 without memory.
+ */
+static int
+quote_name(
+	const char *name,
+	const struct options *options,
+	const char *quoted_too,
+	char **shown,
+	size_t *width,
+	int *quoted)
+{
+	struct text_writer writer;
+	size_t length;
+
+	/* Room for the longest text: a name of escapes is 7 bytes for each of its bytes. */
+	length = strlen(name);
+	if (length > ((size_t)-1 - 8U) / 8U)
+		return 0;
+	writer.text = malloc(length * 8U + 8U);
+	if (writer.text == NULL)
+		return 0;
+	writer.length = 0;
+
+	/* Chooses how the name is written. */
+	*quoted = 0;
+	if (options->quoting == LS_QUOTING_SHELL) {
+		/* Quoted for a shell, which leaves only printable characters to measure. */
+		*quoted = quote_shell(name, length, quoted_too, &writer);
+		*width = display_width(writer.text, writer.length);
+	} else if (options->hide_control) {
+		/* As it is, with ? for what cannot be shown. */
+		hide_unprintable(name, length, &writer, width);
+	} else {
+		/* As it is. */
+		write_bytes(&writer, name, length);
+		*width = display_width(name, length);
+	}
+
+	/* Succeeded: the text, ended. */
+	writer.text[writer.length] = '\0';
+	*shown = writer.text;
+	return 1;
+}
+
+/*
+ * Writes a name in the shell-escape style of GNU ls: as it is when a
+ * shell would read it as it is, and otherwise in quotes.  Returns 1 when
+ * the name was quoted.
+ */
+static int
+quote_shell(
+	const char *name,
+	size_t length,
+	const char *quoted_too,
+	struct text_writer *writer)
+{
+	size_t at;
+	size_t bytes;
+	int class;
+	int needs_quotes;
+	int double_quotes;
+	int apostrophe;
+	int printable;
+	int listed;
+
+	/* What each character asks: quotes, and whether double quotes could hold it. */
+	needs_quotes = 0;
+	double_quotes = 1;
+	apostrophe = 0;
+	at = 0;
+	if (length == 0)
+		needs_quotes = 1;
+	while (at < length) {
+		class = shell_class(name, length, at);
+		bytes = 1;
+
+		/* Chooses what the character asks of the quoting. */
+		switch (class) {
+		case LS_SHELL_PLAIN:
+			break;
+		case LS_SHELL_SPACE:
+			needs_quotes = 1;
+			break;
+		case LS_SHELL_APOSTROPHE:
+			needs_quotes = 1;
+			apostrophe = 1;
+			break;
+		case LS_SHELL_OTHER:
+			/* A character the locale cannot print must be escaped. */
+			bytes = character_length(name, length, at, &printable);
+			if (!printable) {
+				needs_quotes = 1;
+				double_quotes = 0;
+			}
+			break;
+		default:
+			/* The shell acts on it, and double quotes would not keep it plain. */
+			needs_quotes = 1;
+			double_quotes = 0;
+			break;
+		}
+
+		/* A character the caller lists needs quotes too. */
+		if (!needs_quotes && bytes == 1U && quoted_too != NULL) {
+			listed = 0;
+			if (name[at] != '\0' && strchr(quoted_too, name[at]) != NULL)
+				listed = 1;
+			if (listed)
+				needs_quotes = 1;
+		}
+
+		/* The next character. */
+		at += bytes;
+	}
+
+	/* A name a shell reads as it is. */
+	if (!needs_quotes) {
+		write_bytes(writer, name, length);
+		return 0;
+	}
+
+	/* A name whose only trouble is an apostrophe reads best in double quotes. */
+	if (apostrophe && double_quotes) {
+		write_char(writer, '"');
+		write_bytes(writer, name, length);
+		write_char(writer, '"');
+		return 1;
+	}
+
+	/* Succeeded: in single quotes, with escapes for what cannot be shown. */
+	shell_escape_quote(name, length, writer);
+	return 1;
+}
+
+/*
+ * Returns the ls_shell_class of the character at a place in a name.  #
+ * and ~ count only at the start, and { and } only as the whole name.
+ */
+static int
+shell_class(
+	const char *name,
+	size_t length,
+	size_t at)
+{
+	unsigned char byte;
+	int alphanumeric;
+
+	/* Letters and digits are plain. */
+	byte = (unsigned char)name[at];
+	alphanumeric = 0;
+	if (byte >= 'a' && byte <= 'z')
+		alphanumeric = 1;
+	if (byte >= 'A' && byte <= 'Z')
+		alphanumeric = 1;
+	if (byte >= '0' && byte <= '9')
+		alphanumeric = 1;
+	if (alphanumeric)
+		return LS_SHELL_PLAIN;
+
+	/* Chooses the class of any other character. */
+	switch (byte) {
+	case '%':
+	case '+':
+	case ',':
+	case '-':
+	case '.':
+	case '/':
+	case ':':
+	case ']':
+	case '_':
+		return LS_SHELL_PLAIN;
+	case ' ':
+		return LS_SHELL_SPACE;
+	case '\'':
+		return LS_SHELL_APOSTROPHE;
+	case '#':
+	case '~':
+		/* Only a word's first character starts a comment or a home directory. */
+		if (at == 0)
+			return LS_SHELL_LEADING;
+		return LS_SHELL_PLAIN;
+	case '{':
+	case '}':
+		/* Only a word of just the brace is a brace group. */
+		if (length == 1U)
+			return LS_SHELL_ALONE;
+		return LS_SHELL_PLAIN;
+	case '!':
+	case '"':
+	case '$':
+	case '&':
+	case '(':
+	case ')':
+	case '*':
+	case ';':
+	case '<':
+	case '=':
+	case '>':
+	case '?':
+	case '[':
+	case '\\':
+	case '^':
+	case '`':
+	case '|':
+		return LS_SHELL_SPECIAL;
+	case '\a':
+	case '\b':
+	case '\f':
+	case '\n':
+	case '\r':
+	case '\t':
+	case '\v':
+		return LS_SHELL_CONTROL;
+	default:
+		break;
+	}
+
+	/* Anything else is printable or not by the locale. */
+	return LS_SHELL_OTHER;
+}
+
+/*
+ * Writes a name in single quotes.  An apostrophe is written '\'', and a
+ * run of characters that cannot be shown leaves the quotes for $'...'
+ * with a C escape or three octal digits for each byte.
+ */
+static void
+shell_escape_quote(
+	const char *name,
+	size_t length,
+	struct text_writer *writer)
+{
+	static const char control_letters[] = "abtnvfr";
+	char digits[5];
+	size_t at;
+	size_t bytes;
+	size_t index;
+	int class;
+	int printable;
+	int escaping;
+	unsigned char byte;
+
+	/* Each character, inside the opening quote. */
+	write_char(writer, '\'');
+	escaping = 0;
+	at = 0;
+	while (at < length) {
+		class = shell_class(name, length, at);
+		byte = (unsigned char)name[at];
+		bytes = 1;
+		printable = 1;
+		if (class == LS_SHELL_OTHER)
+			bytes = character_length(name, length, at, &printable);
+
+		/* Chooses how the character is written. */
+		if (class == LS_SHELL_CONTROL) {
+			/* A control character with a C escape: \a is 7, the rest follow it in order. */
+			if (!escaping)
+				write_bytes(writer, "'$'", 3);
+			escaping = 1;
+			write_char(writer, '\\');
+			write_char(writer, control_letters[byte - '\a']);
+		} else if (class == LS_SHELL_APOSTROPHE) {
+			/* An apostrophe closes any quotes, is escaped, and opens plain quotes again. */
+			write_bytes(writer, "'\\''", 4);
+			escaping = 0;
+		} else if (!printable) {
+			/* Each byte of what cannot be shown as three octal digits. */
+			if (!escaping)
+				write_bytes(writer, "'$'", 3);
+			escaping = 1;
+			for (index = 0; index < bytes; index++) {
+				byte = (unsigned char)name[at + index];
+				snprintf(digits, sizeof(digits), "\\%03o", (unsigned)byte);
+				write_bytes(writer, digits, 4);
+			}
+		} else {
+			/* A printable character, after leaving $'...' for plain quotes. */
+			if (escaping)
+				write_bytes(writer, "''", 2);
+			escaping = 0;
+			write_bytes(writer, name + at, bytes);
+		}
+
+		/* The next character. */
+		at += bytes;
+	}
+
+	/* The closing quote, of whichever quotes are open. */
+	write_char(writer, '\'');
+}
+
+/*
+ * Writes a name as it is, with ? for each character the locale cannot
+ * show (-q, and a terminal with -N), and finds the columns it takes.
+ */
+static void
+hide_unprintable(
+	const char *name,
+	size_t length,
+	struct text_writer *writer,
+	size_t *width)
+{
+	mbstate_t state;
+	wchar_t character;
+	size_t at;
+	size_t bytes;
+	size_t multibyte;
+	int columns;
+	unsigned char byte;
+	int printable;
+
+	/* In a locale of single bytes, each byte is printable or a ?. */
+	multibyte = MB_CUR_MAX;
+	if (multibyte == 1U) {
+		for (at = 0; at < length; at++) {
+			byte = (unsigned char)name[at];
+			printable = isprint(byte);
+			if (printable) {
+				write_char(writer, (char)byte);
+			} else {
+				write_char(writer, '?');
+			}
+		}
+
+		/* Every byte takes a column. */
+		*width = length;
+		return;
+	}
+
+	/* Otherwise each character, which may be several bytes. */
+	*width = 0;
+	at = 0;
+	while (at < length) {
+		/* Printable ASCII is itself. */
+		byte = (unsigned char)name[at];
+		if (byte >= ' ' && byte <= '~') {
+			write_char(writer, (char)byte);
+			*width += 1U;
+			at++;
+			continue;
+		}
+
+		/* Anything else is decoded by the locale. */
+		memset(&state, 0, sizeof(state));
+		bytes = mbrtowc(&character, name + at, length - at, &state);
+		if (bytes == (size_t)-1) {
+			/* A byte that starts no character is a ?. */
+			write_char(writer, '?');
+			*width += 1U;
+			at++;
+			continue;
+		}
+		if (bytes == (size_t)-2) {
+			/* A character cut off by the end of the name is a ?. */
+			write_char(writer, '?');
+			*width += 1U;
+			break;
+		}
+		if (bytes == 0)
+			bytes = 1;
+
+		/* A character with a width is itself, and any other a ?. */
+		columns = wcwidth(character);
+		if (columns >= 0) {
+			write_bytes(writer, name + at, bytes);
+			*width += (size_t)columns;
+		} else {
+			write_char(writer, '?');
+			*width += 1U;
+		}
+		at += bytes;
+	}
+}
+
+/*
+ * Returns the number of bytes of the character at a place in a text, and
+ * whether the locale can print it.  A byte that starts no character is a
+ * character of its own that cannot be printed; a character cut off by the
+ * end of the text takes the rest of it.
+ */
+static size_t
+character_length(
+	const char *text,
+	size_t length,
+	size_t at,
+	int *printable)
+{
+	mbstate_t state;
+	wchar_t character;
+	size_t multibyte;
+	size_t bytes;
+	int printing;
+
+	/* In a locale of single bytes, the byte is the character. */
+	multibyte = MB_CUR_MAX;
+	if (multibyte == 1U) {
+		printing = isprint((unsigned char)text[at]);
+		*printable = 0;
+		if (printing)
+			*printable = 1;
+		return 1;
+	}
+
+	/* Otherwise the locale decodes it. */
+	memset(&state, 0, sizeof(state));
+	bytes = mbrtowc(&character, text + at, length - at, &state);
+	if (bytes == (size_t)-1) {
+		*printable = 0;
+		return 1;
+	}
+	if (bytes == (size_t)-2) {
+		*printable = 0;
+		return length - at;
+	}
+	if (bytes == 0)
+		bytes = 1;
+
+	/* Succeeded: the character's bytes, and whether it prints. */
+	printing = iswprint((wint_t)character);
+	*printable = 0;
+	if (printing)
+		*printable = 1;
+	return bytes;
+}
+
+/*
+ * Returns the columns of a terminal a text takes, as GNU ls counts them:
+ * a character by its width, a control character none, and a byte that
+ * starts no character one.
+ */
+static size_t
+display_width(
+	const char *text,
+	size_t length)
+{
+	mbstate_t state;
+	wchar_t character;
+	size_t multibyte;
+	size_t width;
+	size_t at;
+	size_t bytes;
+	int columns;
+	int printing;
+	int control;
+
+	/* In a locale of single bytes, each printable byte takes a column. */
+	width = 0;
+	multibyte = MB_CUR_MAX;
+	if (multibyte == 1U) {
+		for (at = 0; at < length; at++) {
+			printing = isprint((unsigned char)text[at]);
+			if (printing)
+				width++;
+		}
+
+		/* The printable bytes. */
+		return width;
+	}
+
+	/* Otherwise each character the locale decodes. */
+	at = 0;
+	while (at < length) {
+		memset(&state, 0, sizeof(state));
+		bytes = mbrtowc(&character, text + at, length - at, &state);
+		if (bytes == (size_t)-1) {
+			/* A byte that starts no character takes a column. */
+			width++;
+			at++;
+			continue;
+		}
+		if (bytes == (size_t)-2) {
+			/* So does a character cut off by the end. */
+			width++;
+			break;
+		}
+		if (bytes == 0)
+			bytes = 1;
+
+		/* A character by its width; one without a width takes a column unless it is a control. */
+		columns = wcwidth(character);
+		if (columns >= 0) {
+			width += (size_t)columns;
+		} else {
+			control = iswcntrl((wint_t)character);
+			if (!control)
+				width++;
+		}
+		at += bytes;
+	}
+
+	/* Succeeded: the columns. */
+	return width;
+}
+
+/* Appends bytes to a text that has room for them. */
+static void
+write_bytes(
+	struct text_writer *writer,
+	const char *bytes,
+	size_t length)
+{
+	/* The bytes after what is there. */
+	memcpy(writer->text + writer->length, bytes, length);
+	writer->length += length;
+}
+
+/* Appends one character to a text that has room for it. */
+static void
+write_char(
+	struct text_writer *writer,
+	char character)
+{
+	/* The character after what is there. */
+	writer->text[writer->length] = character;
+	writer->length++;
 }
 
 /* Finds the widths of the columns of the long format for a group of entries. */
@@ -1127,10 +2479,11 @@ print_long(
 	const char *directory,
 	const struct entry *item,
 	const struct options *options,
-	const struct long_widths *widths)
+	const struct long_widths *widths,
+	const struct name_layout *layout)
 {
-	char target[LS_PATH_CAPACITY];
 	char path[LS_PATH_CAPACITY];
+	char digits[24];
 	char mode[11];
 	char size[32];
 	char when[32];
@@ -1138,9 +2491,10 @@ print_long(
 	char group_buffer[24];
 	const char *user;
 	const char *group;
-	ssize_t length;
 	int joined;
 	int link;
+	int padded;
+	char mark;
 
 	/* Nothing is known of an entry without its status. */
 	if (!item->status_valid) {
@@ -1161,12 +2515,14 @@ print_long(
 	user = uid_name(item->status.st_uid, user_buffer);
 	group = gid_name(item->status.st_gid, group_buffer);
 
-	/* -i: the file serial number first. */
-	if (options->inode)
-		printf("%lu ", (unsigned long)item->status.st_ino);
+	/* -i: the file serial number first, as wide as the widest. */
+	if (options->inode) {
+		inode_text(item, digits);
+		printf("%*s ", (int)layout->inode_width, digits);
+	}
 
-	/* The columns and the name. */
-	printf("%s %*lu %-*s %-*s %*s %s %s",
+	/* The columns. */
+	printf("%s %*lu %-*s %-*s %*s %s ",
 	       mode,
 	       (int)widths->links,
 	       (unsigned long)item->status.st_nlink,
@@ -1176,25 +2532,82 @@ print_long(
 	       group,
 	       (int)widths->size,
 	       size,
-	       when,
-	       item->name);
+	       when);
+
+	/* The name, after a space when others in the listing are quoted. */
+	padded = name_padded(item, options, layout);
+	if (padded)
+		putchar(' ');
+	fputs(item->shown, stdout);
 
 	/* A symbolic link: where it points, when that can be read. */
 	link = S_ISLNK(item->status.st_mode);
 	if (link) {
 		joined = join_path(directory, item->name, path, sizeof(path));
-		length = -1;
 		if (joined)
-			length = readlink(path, target, sizeof(target) - 1U);
-		if (length >= 0) {
-			target[length] = '\0';
-			printf(" -> %s", target);
-		}
+			print_link_target(path, options);
+	} else if (options->classify) {
+		/* -F: the mark of the type, when it has one. */
+		mark = type_mark(item->status.st_mode);
+		if (mark != '\0')
+			putchar(mark);
 	}
 
 	/* Succeeded: the line ends. */
 	putchar('\n');
 	return 1;
+}
+
+/*
+ * Writes " -> " and where a symbolic link points, quoted as a name is,
+ * with -F the mark of the type of what it points to.  Nothing is written
+ * when the link cannot be read.
+ */
+static void
+print_link_target(
+	const char *path,
+	const struct options *options)
+{
+	char target[LS_PATH_CAPACITY];
+	struct stat status;
+	const char *quoted_too;
+	char *shown;
+	ssize_t length;
+	size_t width;
+	int quoted;
+	int written;
+	int error;
+	char mark;
+
+	/* The target, which may not be readable. */
+	length = readlink(path, target, sizeof(target) - 1U);
+	if (length < 0)
+		return;
+	target[length] = '\0';
+
+	/* The target as a name is written; without memory, as it is. */
+	quoted_too = NULL;
+	if (options->classify)
+		quoted_too = LS_CLASSIFY_QUOTED;
+	fputs(" -> ", stdout);
+	shown = NULL;
+	written = quote_name(target, options, quoted_too, &shown, &width, &quoted);
+	if (written) {
+		fputs(shown, stdout);
+		free(shown);
+	} else {
+		fputs(target, stdout);
+	}
+
+	/* -F: the mark of what the link points to, when it leads somewhere. */
+	if (options->classify) {
+		error = stat(path, &status);
+		if (error == 0) {
+			mark = type_mark(status.st_mode);
+			if (mark != '\0')
+				putchar(mark);
+		}
+	}
 }
 
 /* Writes the ten characters of a mode: the type, then rwx for each class with s and t. */
@@ -1375,51 +2788,16 @@ days_in_month(
 	return lengths[month];
 }
 
-/* Writes a name, after its serial number with -i and before its mark with -F. */
-static void
-print_name(
-	const struct entry *item,
-	const struct options *options)
-{
-	char mark;
-
-	/* -i: the file serial number before the name. */
-	if (options->inode && item->status_valid)
-		printf("%lu ", (unsigned long)item->status.st_ino);
-	printf("%s", item->name);
-
-	/* -F: the mark of the type, when it has one. */
-	if (options->classify && item->status_valid) {
-		mark = suffix(item->status.st_mode);
-		if (mark != '\0')
-			putchar(mark);
-	}
-}
-
-/* Returns the width -i adds before a name: the serial number and a space. */
-static size_t
-inode_width(
-	const struct entry *item,
-	const struct options *options)
-{
-	char digits[32];
-	int length;
-
-	/* Nothing without -i or without the status. */
-	if (!options->inode || !item->status_valid)
-		return 0;
-
-	/* Succeeded: the digits and the space. */
-	length = snprintf(digits, sizeof(digits), "%lu ", (unsigned long)item->status.st_ino);
-	return (size_t)length;
-}
-
-/* Returns the -F mark for the type of a file, or 0 for none. */
+/*
+ * Returns the -F mark for the type of a file, or 0 for none: / for a
+ * directory, @ for a link, | for a FIFO, = for a socket, and * for a
+ * regular file that someone may execute.
+ */
 static char
-suffix(
+type_mark(
 	mode_t mode)
 {
-	/* A directory, a link, a FIFO, a socket. */
+	/* Chooses the mark by the type. */
 	switch (mode & S_IFMT) {
 	case S_IFDIR:
 		return '/';
@@ -1429,19 +2807,21 @@ suffix(
 		return '|';
 	case S_IFSOCK:
 		return '=';
-	default:
+	case S_IFREG:
 		break;
+	default:
+		return '\0';
 	}
 
-	/* An executable file. */
+	/* A regular file someone may execute. */
 	if ((mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0)
 		return '*';
 
-	/* Anything else has none. */
+	/* Any other regular file has none. */
 	return '\0';
 }
 
-/* Frees entries and their names. */
+/* Frees entries, their names and the texts they were written as. */
 static void
 free_entries(
 	struct entry *items,
@@ -1449,8 +2829,10 @@ free_entries(
 {
 	size_t index;
 
-	/* Each name, then the array. */
-	for (index = 0; index < count; index++)
+	/* Each name and text, then the array. */
+	for (index = 0; index < count; index++) {
 		free(items[index].name);
+		free(items[index].shown);
+	}
 	free(items);
 }
