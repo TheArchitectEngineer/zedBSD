@@ -93,6 +93,7 @@ static const char view_shifted_keys[VIEW_KEY_TABLE_SIZE] = {
 };
 
 static size_t current_page(const struct pv_app *app);
+static int toggle_key(const struct pv_event *event);
 static void clamp_view(struct pv_app *app);
 static void show_page(struct pv_app *app, size_t index);
 static void start_turn(struct pv_app *app, int direction);
@@ -250,6 +251,21 @@ pv_app_event(
 	struct pv_event local;
 	int sidebar;
 	int taken;
+
+	/* Each key pressed or repeated is logged for the tests (BUG-111). */
+	if (event->type == PV_EVENT_KEY && event->pressed)
+		pv_log("KEY key=%u modifiers=%u repeat=%d", event->key, event->modifiers, event->repeat);
+
+	/*
+	 * A key held repeats only where more of the same makes sense (moving,
+	 * zooming); a key that opens, closes, toggles or confirms does not, since
+	 * a late release would do it again (BUG-111).
+	 */
+	if (event->type == PV_EVENT_KEY && event->repeat) {
+		taken = toggle_key(event);
+		if (taken)
+			return;
+	}
 
 	/* The password card is in front of everything. */
 	if (app->asking_password) {
@@ -1295,6 +1311,42 @@ zoom_by(
 	/* The same point in the middle again. */
 	keep_anchor(app, page, fraction);
 	pv_log("ZOOM scale=%.3f", scale);
+}
+
+/* Tells whether a key opens, closes, toggles or confirms something, so that its repeat is ignored. */
+static int
+toggle_key(
+	const struct pv_event *event)
+{
+	/* With Control: open, close, quit, annotate, and the zoom's reset. */
+	if ((event->modifiers & PV_MOD_CTRL) != 0) {
+		switch (event->key) {
+		case PV_KEY_O:
+		case PV_KEY_W:
+		case PV_KEY_Q:
+		case PV_KEY_E:
+		case PV_KEY_0:
+			return 1;
+		default:
+			return 0;
+		}
+	}
+
+	/* Alone: the thumbnails, the ends of the document, and the confirming and cancelling keys. */
+	switch (event->key) {
+	case PV_KEY_F9:
+	case PV_KEY_HOME:
+	case PV_KEY_END:
+	case PV_KEY_ENTER:
+	case PV_KEY_KP_ENTER:
+	case PV_KEY_ESCAPE:
+		return 1;
+	default:
+		break;
+	}
+
+	/* The rest may repeat. */
+	return 0;
 }
 
 /* Scrolls so that a place (a share of a page's height) is in the middle of the view. */

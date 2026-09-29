@@ -203,6 +203,7 @@ int pv_window_dispatch(struct pv_window *window, int timeout);
 int pv_window_take(struct pv_window *window, struct pv_event *event);
 int pv_window_take_touch(struct pv_window *window, struct pv_touch_event *event);
 int pv_window_repeat(struct pv_window *window, uint64_t now);
+int pv_window_repeat_wait(const struct pv_window *window, uint64_t now);
 void pv_window_action(struct pv_window *window, uint32_t action);
 void pv_window_title(struct pv_window *window, const char *title);
 void pv_window_close(struct pv_window *window);

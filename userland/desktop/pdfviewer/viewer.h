@@ -89,8 +89,9 @@ enum pv_event_type {
 
 /*
  * One input: where the pointer was, what happened, the modifiers held and
- * when (milliseconds of the monotonic clock).  Only the fields of its type
- * are meaningful.
+ * when (milliseconds of the monotonic clock), and for a key whether it is a
+ * repeat of a key held (BUG-111).  Only the fields of its type are
+ * meaningful.
  */
 struct pv_event {
 	enum pv_event_type type;
@@ -103,6 +104,7 @@ struct pv_event {
 	uint32_t modifiers;
 	uint64_t time;
 	uint32_t action;
+	int repeat;
 };
 
 /*

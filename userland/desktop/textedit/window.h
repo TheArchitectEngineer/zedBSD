@@ -280,6 +280,7 @@ int te_window_dispatch(struct te_window *window, int timeout);
 int te_window_take(struct te_window *window, struct te_event *event);
 int te_window_take_touch(struct te_window *window, struct te_touch_event *event);
 int te_window_repeat(struct te_window *window, uint64_t now);
+int te_window_repeat_wait(const struct te_window *window, uint64_t now);
 struct te_event *te_window_push(struct te_window *window, enum te_event_type type);
 void te_window_action(struct te_window *window, uint32_t action);
 void te_window_title(struct te_window *window, const char *title);
