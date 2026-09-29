@@ -116,6 +116,12 @@ enum vm_opcode {
 	VM_OP_FOR_IN_NEXT,	/* R dst, R iterator, J target when there is no next key */
 	VM_OP_TO_PROPERTY_KEY,	/* R dst, R value: a computed key, converted where it is written */
 	VM_OP_NEW_REGEXP,	/* R dst, C pattern, C flags: a regular expression literal's new object (ws074-p027) */
+	VM_OP_TO_STRING,	/* R dst, R value: ToString (a template's substitution, ws074-p078) */
+	VM_OP_LOAD_EMPTY,	/* R dst: the empty value, a let or const binding before its declaration runs */
+	VM_OP_CHECK_INIT,	/* R value, C name: a ReferenceError when the value is still the empty value */
+	VM_OP_THROW_ERROR,	/* I kind (enum vm_error_kind), C message: throws a new error of the kind */
+	VM_OP_DEFINE_GLOBAL_LEXICAL,	/* C key, I const: a script's top-level let or const, before its declaration runs */
+	VM_OP_INIT_GLOBAL_LEXICAL,	/* C key, R value: the declaration of a script's top-level let or const runs */
 
 	/* Wasm (raw values). */
 	VM_OP_I32_CONST,	/* R dst, I value */
