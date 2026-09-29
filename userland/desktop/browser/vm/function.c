@@ -366,7 +366,7 @@ vm_call(
 	/* A bytecode function runs in the interpreter; a class's constructor only with new. */
 	function = (struct vm_function *)vm_value_as_cell(callee);
 	if (function->code != NULL && (function->code->flags & VM_CODE_CLASS) != 0U) {
-		status = vm_throw_type_error(realm, "Class constructor cannot be invoked without 'new'");
+		status = vm_throw_class_call(realm, function);
 		return status;
 	}
 	if (function->code != NULL) {

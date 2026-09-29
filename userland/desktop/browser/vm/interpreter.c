@@ -1178,7 +1178,7 @@ interpreter_call(
 	/* A class's constructor runs only with new. */
 	function = (struct vm_function *)vm_value_as_cell(callee);
 	if (function->code != NULL && (function->code->flags & VM_CODE_CLASS) != 0U) {
-		status = vm_throw_type_error(run->realm, "Class constructor cannot be invoked without 'new'");
+		status = vm_throw_class_call(run->realm, function);
 		return status;
 	}
 

@@ -19,6 +19,7 @@
 #include "vm/internal.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
 static int class_private_find(struct vm_realm *realm, vm_value object, vm_value key, struct vm_property *property, int *found);
@@ -226,6 +227,35 @@ vm_get_super(
 
 	/* Succeeded: the getter's value. */
 	return 0;
+}
+
+/* Throws the TypeError of a class's constructor called without new, naming the class. */
+int
+vm_throw_class_call(
+	struct vm_realm *realm,
+	struct vm_function *function)
+{
+	struct wb_buffer name;
+	char text[200];
+	int status;
+
+	/* The class's name as UTF-8 (a constructor's code is named after its class). */
+	wb_buffer_init(&name);
+	if (function->code->name != NULL) {
+		status = vm_string_to_utf8(function->code->name, &name);
+		if (status != 0) {
+			wb_buffer_release(&name);
+			return status;
+		}
+	}
+
+	/* The message, as Chromium words it. */
+	snprintf(text, sizeof(text), "Class constructor %.120s cannot be invoked without 'new'", wb_buffer_string(&name));
+	wb_buffer_release(&name);
+	status = vm_throw_type_error(realm, text);
+
+	/* Reports the throw. */
+	return status;
 }
 
 /*
