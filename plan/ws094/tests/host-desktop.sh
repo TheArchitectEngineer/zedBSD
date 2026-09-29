@@ -9,4 +9,8 @@ out=build/ws071-host
 objects=$(ls $out/obj/*.o | grep -v '/host-')
 ${CC:-cc} -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -Iuserland/desktop/files \
     -o $out/host-desktop plan/ws094/tests/host-desktop.c $objects -lm || exit 1
-$out/host-desktop
+temporary=$(mktemp -d)
+$out/host-desktop "$temporary"
+status=$?
+rm -rf "$temporary"
+exit $status

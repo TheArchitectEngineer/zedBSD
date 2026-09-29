@@ -256,6 +256,56 @@ struct fm_visit {
  * One tab: its history (like a browser's), the place it shows now and
  * where in it the user is.
  */
+/*
+ * One item's place on the desktop (ws094-p004): its cell, the column
+ * counted from the right edge (0 the rightmost) and the row from the top;
+ * column -1 when the desktop has no cell left for it.
+ */
+struct fm_desktop_place {
+	int column;
+	int row;
+};
+
+/*
+ * A place the user gave an item (by moving it), kept in the desktop's
+ * layout file by the item's name.
+ */
+struct fm_desktop_saved {
+	char name[FM_NAME_MAX];
+	int column;
+	int row;
+};
+
+/*
+ * The desktop's state (files --desktop, ws094-p004): each item's place
+ * (places, one an entry of the tab's listing, remade when the listing or
+ * the size changes), the saved places read from the layout file (loaded
+ * says they were read), the size laid out
+ * for, the listing laid out (its count and time), the rubber band being
+ * dragged (band, from its start to the pointer), the last left click (for
+ * a double click: its item and time), and the number of items the last
+ * logged layout had plus one (0 before the first).
+ */
+struct fm_desktop {
+	struct fm_desktop_place *places;
+	size_t place_count;
+	struct fm_desktop_saved *saved;
+	size_t saved_count;
+	int loaded;
+	int width;
+	int height;
+	size_t laid_count;
+	time_t laid_modified;
+	int band;
+	int band_x;
+	int band_y;
+	int pointer_x;
+	int pointer_y;
+	int click_index;
+	uint64_t click_ms;
+	int logged;
+};
+
 struct fm_tab {
 	struct fm_visit history[FM_HISTORY];
 	int history_count;
@@ -949,11 +999,11 @@ struct fm_app {
 	/*
 	 * The desktop mode (files --desktop, ws094-p003): the icons of the tab's
 	 * folder (~/Desktop) on zdesktop's desktop surface instead of the
-	 * window; desktop_logged is one more than the number of items the last
-	 * logged layout had (0 before the first; a changed count logs it again).
+	 * window, and their places, the saved places and the pointer's state
+	 * (ui-desktop.c, desktop-layout.c).
 	 */
 	int desktop;
-	int desktop_logged;
+	struct fm_desktop desk;
 
 	/* Whether the window is docked (maximized): its panels keep a gap from the screen's edges on glass. */
 	int docked;
@@ -1211,9 +1261,22 @@ void fm_ui_event(struct fm_app *app, const struct fm_event *event);
 void fm_ui_tick(struct fm_app *app, uint64_t now);
 void fm_ui_draw(struct fm_app *app, struct fm_canvas *canvas);
 
-/* The desktop's icons (ui-desktop.c, ws094-p003). */
+/* The desktop's icons and their input (ui-desktop.c, ws094-p003, p004). */
 void fm_desktop_draw(struct fm_app *app, struct fm_canvas *canvas);
-int fm_desktop_cell(int index, int width, int height, int *column, int *row, struct fm_rect *rect);
+void fm_desktop_event(struct fm_app *app, const struct fm_event *event);
+void fm_desktop_open_selected(struct fm_app *app);
+int fm_desktop_item_at(struct fm_app *app, int x, int y);
+
+/* The desktop's grid and its layout file (desktop-layout.c, ws094-p004). */
+void fm_desktop_grid(int width, int height, int *columns, int *rows);
+int fm_desktop_cell_rect(int column, int row, int width, int height, struct fm_rect *rect);
+void fm_desktop_arrange(const char *const *names, size_t count, const struct fm_desktop_saved *saved, size_t saved_count, int width, int height, struct fm_desktop_place *places);
+int fm_desktop_layout_path(char *path, size_t size);
+int fm_desktop_layout_read(const char *path, struct fm_desktop_saved **saved, size_t *count);
+int fm_desktop_layout_write(const char *path, const struct fm_desktop_saved *saved, size_t count);
+int fm_desktop_layout_set(struct fm_desktop *desk, const char *name, int column, int row);
+int fm_desktop_clean_up(struct fm_desktop *desk);
+void fm_desktop_release(struct fm_desktop *desk);
 void fm_ui_hit(struct fm_app *app, const struct fm_rect *rect, unsigned kind, int index);
 size_t fm_ui_panels(struct fm_app *app, struct fm_panel *panels, size_t capacity);
 struct fm_tab *fm_ui_tab(struct fm_app *app);
