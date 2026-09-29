@@ -153,6 +153,14 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS087](ws087/ws.md) | MG002 | /bin/sh の対話の行編集: 矢印キーの履歴（BUG-103）と Tab の補完（2026-09-29 ユーザー） | incomplete | 2026-09-29: p001（原因: 履歴の file が無い、矢印の履歴 32 行）cleared。libedit への GNU Readline 名の追加を許可。次: p002 履歴の file → p003 Tab の補完。実機の上キーの確認が残る |
 | [WS088](ws088/ws.md) | MG006 | Windows で動く Kei-nightly.zip を CI で配布する（元の zip を clang の cache と同じ Release `rev-0` に置いて再利用し、CI が hdd-image.img を入れる）（2026-09-29 ユーザー） | incomplete | 2026-09-29: p001 は draft（整理した元の zip 56 MB、LICENSES・THIRD-PARTY、DLL は MSYS2 と一致）。fork の commit と zip の中身の確認がユーザー待ち。次: p003 の準備 |
 | [WS089](ws089/ws.md) | MG006 | 設定のアプリ（Settings: 左に項目の pane、右に設定、浮いたすりガラスの pane）（2026-09-29 ユーザー、デモの優先事項） | planning | p001（設計）から |
+| [WS090](ws090/ws.md) | MG006 | widget・control の共有 library（少なくとも慣性の smooth scroll、独自の部品）（2026-09-29 ユーザー） | planning | p001（設計）から |
+| [WS091](ws091/ws.md) | MG006 | 画像 viewer（2026-09-29 ユーザー） | planning | p001 から |
+| [WS092](ws092/ws.md) | MG006 | text editor（simple）（2026-09-29 ユーザー） | planning | p001 から |
+| [WS093](ws093/ws.md) | MG006 | Files から app の起動（画像・text の double click、file の種類と app の対応）（2026-09-29 ユーザー） | planning | p001 から。WS091・WS092 に依存 |
+| [WS094](ws094/ws.md) | MG006 | desktop の file の icon（`~/Desktop`）（2026-09-29 ユーザー） | planning | p001 から |
+| [WS095](ws095/ws.md) | MG006 | IME（Wayland の input-method-v2・text-input-v3、単一の IME・複数言語、まず日本語、REmacs の辞書）（2026-09-29 ユーザー） | planning | p001 から |
+| [WS096](ws096/ws.md) | MG002 | Qt6（core・gui・widgets）の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
+| [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -370,6 +378,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | sh のプロンプト（2026-09-29） | ユーザー:「/bin/shで、ホームディレクトリにいるときにプロンプトに /home/kei と表示されるので、これを ~ にできるようにしたいです。」→ 既定のプロンプトで `$HOME` を `~` に（bash の `\w` と同じ） | WS087 |
 | 窓の四隅のリサイズ（2026-09-29） | ユーザー:「ウィンドウの四隅がリサイズ領域になっていないようです。ウィンドウの四隅でリサイズ可能にしてほしいです。」 | WS035 |
 | 設定のアプリ（2026-09-29） | ユーザー:「これもOSCデモで使う優先事項にしたいですが、設定画面のアプリを作ってほしいです。添付がイメージです。あくまでもイメージなので、この通りでなくていいです。左側に項目のペイン、右側に設定項目。フローティングでセパレート。」 | [WS089](ws089/ws.md) |
+| 追加の要望（2026-09-29 夜） | ユーザー: widget・control の共有 library（慣性の smooth scroll は少なくとも）、画像 viewer、text editor（simple）、Files から app の起動、desktop の file の icon、IME（Wayland の標準、単一の IME・複数言語、まず日本語、名詞＋助詞・動詞＋送り仮名 程度、REmacs の辞書、足りない分は要相談）、デモの後に Qt6（core・gui・widgets）と GTK4 の完全な書き下ろしの互換（API の interface だけ、zlib）。REmacs の辞書: ユーザー「REmacsは私が著作権者なので、気にしなくていいです。」 | WS090〜WS097 |
 
 ### 主な依存関係
 
