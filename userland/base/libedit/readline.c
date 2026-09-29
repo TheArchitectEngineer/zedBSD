@@ -551,6 +551,8 @@ readline(
 		rl_point = (int)point;
 		rl_end = (int)length;
 		update_display(line, old_length, old_point, length, point, line_changed_from);
+
+		/* A Tab that found nothing to do rings the bell after the line is drawn. */
 		if (completion_bell)
 			write_bell();
 
@@ -1362,11 +1364,13 @@ complete_ask(
 	if (length > 0)
 		(void)write_all(question, (size_t)length);
 
-	/* One key answers it; a failed read is a no. */
+	/* One key answers it, and the list or the line starts below the question. */
 	do
 		received = read(STDIN_FILENO, &answer, 1);
 	while (received < 0 && errno == EINTR);
 	(void)write_all("\n", 1);
+
+	/* A failed read is a no. */
 	if (received != 1)
 		return 0;
 

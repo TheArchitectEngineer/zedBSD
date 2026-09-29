@@ -278,8 +278,10 @@ sh_history_size_changed(
 {
 	int limit;
 
-	/* The editor follows only once the shell keeps a history at all. */
+	/* The hook is registered for HISTSIZE alone, so the name says nothing new. */
 	(void)name;
+
+	/* The editor follows only once the shell keeps a history at all. */
 	if (!history_file_enabled)
 		return;
 
@@ -487,6 +489,8 @@ history_file_read(
 		while (count < 0 && errno == EINTR);
 		if (count <= 0)
 			break;
+
+		/* The part read joins the text. */
 		*length += (size_t)count;
 	}
 
