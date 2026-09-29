@@ -2,10 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし（2026-09-27 から subagent の運用）
-Last finished Queue: q495（ws068-p024 cleared。GLES 3.0 の API（1））。その後の作業は下の 2026-09-28 の節
+Last finished Queue: q496（ws073-p028 cleared。Remacs 用 Noct の build）。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-09-29 q496
+
+[q496](queue-q496.md): Remacs 用の host Noct の build を canonical host Noct に統合し、取得する Remacs source の `.nb` を現行 Noct の `.nbc` に合わせる patch を適用。Noct smoke と Remacs package target は PASS。全体の `make` は clang package の build の途中で中断し、image と boot は未確認。GitHub へは未公開。
 
 ## 最新: 2026-09-28 の 3 つの 5 時間の周期（subagent の運用、Queue の外）
 
