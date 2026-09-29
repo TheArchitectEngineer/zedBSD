@@ -24,7 +24,7 @@ guest "ps -A -o pid,comm | awk '\$2 == \"/bin/wayland\" || \$2 == \"/bin/wlshm\"
 export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null &
 w=0; while ! grep -q 'ZWL READY' /tmp/zdesktop.log && [ \$w -lt 60 ]; do sleep 1; w=\$((w+1)); done
 i=1; while [ \$i -le $clients ]; do /bin/wlshm --size=120x90 --color=ff\$(printf %02x%02x%02x \$((i*5%256)) \$((i*37%256)) \$((i*91%256))) --frames=100000 --delay-ms=200 --token=s\$i > /tmp/s\$i.log 2>&1 </dev/null & sleep \${STAGGER:-0.3}; i=\$((i+1)); done
-i=1; while [ \$i -le 4 ]; do /bin/wltest --windowed --size=200x150 --color=dfe9f7 --frames=3600 --delay-ms=200 --token=e\$i > /tmp/e\$i.log 2>&1 </dev/null & sleep 1; i=\$((i+1)); done
+i=1; while [ \$i -le 4 ]; do /bin/wltest --windowed --size=200x150 --color=dfe9f7 --frames=3600 --delay-ms=200 --token=e\$i > /tmp/e\$i.log 2>&1 </dev/null & sleep \${STAGGER:-1}; i=\$((i+1)); done
 sleep 20; echo started" | tail -1
 guest '/tmp/resources' | tee "$out/resources-during.txt"
 python3 plan/ws035/tests/zdesktop-shot.py "$out/desktop.png" --runtime "$GUEST_RUNTIME" 2>&1 | tail -1
