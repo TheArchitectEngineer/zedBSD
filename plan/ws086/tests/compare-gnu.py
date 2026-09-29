@@ -34,7 +34,9 @@ ASCII_ODD = ["plain", "with space", "it's", "dollar$x", "ctl\x01x", "nl\nx", "#h
              "\"dq\"", "both'\"", "a\x01'b", "\x01", "a@b", "it's x", "#", "a\x1b[1m",
              "back\\slash", "a:b", "star*", "pipe|", "semi;", "paren(", "brace{x",
              "caret^", "tick`", "amp&", "lt<", "gt>", "bang!", "del\x7f", "per%cent",
-             "plus+", "comma,", "under_score", "dot.dot", "'lead", "trail'"]
+             "plus+", "comma,", "under_score", "dot.dot", "'lead", "trail'",
+             # ws086-p003: an apostrophe with # ~ { } decides between double and single quotes.
+             "it's#x", "#it's", "it's{x", "~it's", "it's~", "it's@", "{it's}"]
 
 UTF8_ODD = ["あいう", "日本語のファイル", "é", "café au lait", "emoji\U0001f600",
             "bad\xffx", "cut\xe3\x81", "zero​width", "comb́ining", "中 文",
