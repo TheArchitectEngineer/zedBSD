@@ -17,7 +17,9 @@ kept as PNG in OUT.
 GUEST_RUNTIME defaults to build/ws073-mix.  Prints CONSOLE-MIDBOOT:PASS.
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 """
+import hashlib
 import importlib.util
+import multiprocessing
 import os
 import re
 import subprocess
@@ -33,6 +35,17 @@ spec.loader.exec_module(boot_test)
 KERNEL = re.compile(r"^(vfs|usb[-a-z0-9]*|input|nvme|xhci|ehci|uhci|pci|loop[0-9]|swap|boot|acpi|hda|net|"
 		    r"cdc[-a-z]*|sd[a-z]|disk|fat|ufs|tty|smp|cpu[0-9]*|kernel|graphics|i915|venus|rtl[0-9a-z]*|"
 		    r"wifi|ax211|kern|xhci[0-9]*): ")
+
+
+FONT = None
+
+
+def read_frame(path):
+	"""Reads one frame's text (run in a worker process)."""
+	global FONT
+	if FONT is None:
+		FONT = boot_test.load_font(ROOT / "src/drivers/platform/pcat/graphics/vgafont.c")
+	return boot_test.read_text(Path(path), FONT)
 
 
 def guest(*words, timeout=600):
@@ -72,9 +85,18 @@ def main():
 					break
 			time.sleep(0.03)
 		frames = len(paths)
-		seen = {}
+
+		# Reads each distinct frame once, the frames in parallel.
+		first_of = {}
 		for number, frame in enumerate(paths, 1):
-			for line in boot_test.read_text(frame, font):
+			digest = hashlib.sha1(frame.read_bytes()).hexdigest()
+			first_of.setdefault(digest, (number, frame))
+		distinct = sorted(first_of.values())
+		with multiprocessing.Pool() as pool:
+			texts = pool.map(read_frame, [str(frame) for number, frame in distinct])
+		seen = {}
+		for (number, frame), lines in zip(distinct, texts):
+			for line in lines:
 				line = line.rstrip()
 				if KERNEL.match(line) and line not in seen:
 					seen[line] = number
@@ -100,11 +122,11 @@ def main():
 			frame.unlink(missing_ok=True)
 		if suspects:
 			mixed_boots += 1
-			print(f"boot {boot}: {frames} frames, {len(seen)} kernel lines, suspect lines:")
+			print(f"boot {boot}: {frames} frames ({len(distinct)} distinct), {len(seen)} kernel lines, suspect lines:")
 			for line in suspects:
 				print(f"    [frame {seen[line]}] {line}")
 		else:
-			print(f"boot {boot}: {frames} frames, {len(seen)} kernel lines, all in dmesg")
+			print(f"boot {boot}: {frames} frames ({len(distinct)} distinct), {len(seen)} kernel lines, all in dmesg")
 	guest("stop")
 	print(f"boots {count}, compared {compared}, boots with suspect lines {mixed_boots}")
 	print("CONSOLE-MIDBOOT:PASS" if compared == count and mixed_boots == 0 else "CONSOLE-MIDBOOT:FAIL")
