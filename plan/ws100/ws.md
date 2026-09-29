@@ -27,9 +27,16 @@ Resume point: p001（設計）から。基準の案はユーザーの確認待�
 | A4 | 音量を変えるたびに短い確かめの音（約 100 ms）が、その音量で鳴る。連続の操作では重ならない | QEMU（`intel-hda` と `hda-duplex` を wav に録る）、実機はユーザーの耳 |
 | A5 | 音量は再起動の後も保たれる（利用者の設定の file） | QEMU の自動の試験 |
 | A6 | audiod が無い、または音の device が無いときは、icon が「音なし」の印になり、popup にその旨を出す。落ちない | QEMU（audio の device なし） |
-| A7 | 5330 の実機の内蔵の speaker と headphone の端子から音が出る（HDA 8086:51c8、Alder Lake-P） | 実機（ユーザー） |
+| A7 | 5330 の実機の内蔵の speaker と headphone の端子から音が出る（HDA 8086:51c8、Alder Lake-P）。**デモに必須ではない**（下の判断） | 実機（ユーザー） |
 
 動画の再生と、app ごとの音量は範囲の外（デモの後）。
+
+## ユーザーの判断（2026-09-30）
+
+「HDAが鳴らない場合は、デモでは鳴らさなくてもクリティカルではないことにしておきましょう。legacy modeのHDAはfirmwareがいらないのではないかなと
+期待しています。legacy modeが削除されたとかだったら困りますが。」→ A7 はデモに必須ではない。p001 でまず legacy の HDA（DSP を使わない、firmware
+不要の経路）で 5330 が鳴るかを調べる。鳴らなければ A1〜A6（icon・slider・設定・無音の扱い）だけでデモに出し、A7 は Future Work に回す。
+legacy の HDA が 5330 の firmware の設定で無効にされていないか（PCI の class が 0x0403 の HDA として見えるか、BIOS の audio の DSP の設定）も確かめる。
 
 ## 前提と危険
 
