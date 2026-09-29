@@ -46,7 +46,9 @@ enum js_binding_kind {
 	JS_BINDING_CATCH,
 	JS_BINDING_CALLEE,
 	JS_BINDING_ARGUMENTS,
-	JS_BINDING_THIS
+	JS_BINDING_THIS,
+	JS_BINDING_LET,
+	JS_BINDING_CONST
 };
 
 /*
@@ -61,7 +63,8 @@ extern const uint16_t js_this_name[JS_THIS_NAME_LENGTH];
 enum js_scope_kind {
 	JS_SCOPE_FUNCTION,
 	JS_SCOPE_CATCH,
-	JS_SCOPE_CALLEE
+	JS_SCOPE_CALLEE,
+	JS_SCOPE_BLOCK
 };
 
 /*
@@ -81,17 +84,30 @@ struct js_binding {
 };
 
 /*
- * One scope: a function's own (its parameters and vars), a catch clause's
- * (its parameter) or a named function expression's (its name).  A scope
- * belongs to the function whose code runs in it; the chain of parents
- * reaches the program's scope.  Scopes live in the program's arena.
+ * One scope: a function's own (its parameters, vars and the let and const
+ * of its body), a catch clause's (its parameter), a named function
+ * expression's (its name), or a block's (the let and const of a block, a
+ * for statement's head or a switch's cases).  A scope belongs to the
+ * function whose code runs in it; the chain of parents reaches the
+ * program's scope.  Scopes live in the program's arena.
+ *
+ * A block scope whose bindings a nested function captures has an
+ * environment of its own (has_env), made each time the block is entered
+ * (so each run of a loop's body has its own), with env_count slots, kept
+ * in the register env_register; functions lists the function
+ * declarations made when the block is entered.
  */
 struct js_scope {
 	struct js_scope *parent;
 	struct js_scope *next_in_function;
 	struct js_function_info *function;
 	struct js_binding *bindings;
+	struct js_hoisted *functions;
+	struct js_hoisted *functions_last;
 	int kind;
+	int has_env;
+	uint32_t env_count;
+	uint32_t env_register;
 };
 
 /*
@@ -114,6 +130,17 @@ struct js_global_name {
 };
 
 /*
+ * A let or const at the top level of the program: a binding of the
+ * realm's record the scripts share rather than of a scope.
+ */
+struct js_global_lexical {
+	struct js_global_lexical *next;
+	const uint16_t *name;
+	size_t length;
+	int is_const;
+};
+
+/*
  * What the scope pass learned of one function (or of the program): its
  * scopes, the declarations to hoist, and whether it needs an environment.
  */
@@ -127,6 +154,7 @@ struct js_function_info {
 	struct js_hoisted *hoisted_last;
 	struct js_global_name *global_vars;
 	struct js_global_name *global_vars_last;
+	struct js_global_lexical *global_lexicals;
 	struct js_node *unsupported;
 	int program;
 	int strict;
@@ -291,6 +319,8 @@ void js_compile_expression(struct js_function_compiler *fc, struct js_node *node
 void js_compile_expression_named(struct js_function_compiler *fc, struct js_node *node, uint32_t target, const uint16_t *name, size_t length);
 void js_load_binding(struct js_function_compiler *fc, const uint16_t *name, size_t length, uint32_t target);
 void js_store_binding(struct js_function_compiler *fc, const struct js_node *node, const uint16_t *name, size_t length, uint32_t source);
+void js_init_binding(struct js_function_compiler *fc, const uint16_t *name, size_t length, uint32_t source);
+void js_emit_throw_error(struct js_function_compiler *fc, int kind, const char *text);
 void js_store_target(struct js_function_compiler *fc, struct js_node *target, uint32_t source);
 
 #endif

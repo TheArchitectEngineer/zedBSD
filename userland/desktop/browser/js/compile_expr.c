@@ -190,7 +190,7 @@ js_load_binding(
 	uint32_t hops;
 	uint32_t key;
 
-	/* A global. */
+	/* A global (or a script's top-level let or const, which the global lookup checks). */
 	binding = js_scope_resolve(fc, name, length, &hops);
 	if (binding == NULL) {
 		key = js_constant_key(fc, name, length);
@@ -198,20 +198,26 @@ js_load_binding(
 		return;
 	}
 
-	/* A captured binding in an environment. */
+	/* A captured binding in an environment, or a binding of this function's frame. */
 	if (binding->in_env) {
 		js_emit4(fc, VM_OP_GET_ENV, target, fc->env_register, hops, binding->location);
-		return;
+	} else {
+		js_emit2(fc, VM_OP_MOV, target, binding->location);
 	}
 
-	/* A binding of this function's frame. */
-	js_emit2(fc, VM_OP_MOV, target, binding->location);
+	/* A let or const cannot be read before its declaration runs. */
+	if (binding->kind == JS_BINDING_LET || binding->kind == JS_BINDING_CONST) {
+		key = js_constant_key(fc, name, length);
+		js_emit2(fc, VM_OP_CHECK_INIT, target, key);
+	}
 }
 
 /*
  * Writes a register's value to a name: its register, its environment's
  * slot, or the global object.  A named function expression's own name
- * cannot be written (silently in sloppy code, a TypeError in strict code).
+ * cannot be written (silently in sloppy code, a TypeError in strict code);
+ * a let or const cannot be written before its declaration runs, and a
+ * const not at all.
  */
 void
 js_store_binding(
@@ -224,10 +230,12 @@ js_store_binding(
 	struct js_binding *binding;
 	uint32_t hops;
 	uint32_t key;
+	uint32_t mark;
+	uint32_t current;
 
 	UNUSED_PARAMETER(node);
 
-	/* A global. */
+	/* A global (or a script's top-level let or const, which the global assignment checks). */
 	binding = js_scope_resolve(fc, name, length, &hops);
 	if (binding == NULL) {
 		key = js_constant_key(fc, name, length);
@@ -242,6 +250,18 @@ js_store_binding(
 		return;
 	}
 
+	/* A let or const: its declaration must have run, and a const is never assigned. */
+	if (binding->kind == JS_BINDING_LET || binding->kind == JS_BINDING_CONST) {
+		mark = fc->temp_top;
+		current = js_temp(fc);
+		js_load_binding(fc, name, length, current);
+		fc->temp_top = mark;
+		if (binding->kind == JS_BINDING_CONST) {
+			js_emit_throw_error(fc, VM_ERROR_TYPE, "Assignment to constant variable.");
+			return;
+		}
+	}
+
 	/* A captured binding in an environment. */
 	if (binding->in_env) {
 		js_emit4(fc, VM_OP_PUT_ENV, fc->env_register, hops, binding->location, source);
@@ -250,6 +270,63 @@ js_store_binding(
 
 	/* A binding of this function's frame. */
 	js_emit2(fc, VM_OP_MOV, binding->location, source);
+}
+
+/*
+ * Runs the declaration of a let or const: the name takes its first value
+ * (a const too), in its register, its environment's slot, or the realm's
+ * record of the scripts' top-level ones.
+ */
+void
+js_init_binding(
+	struct js_function_compiler *fc,
+	const uint16_t *name,
+	size_t length,
+	uint32_t source)
+{
+	struct js_binding *binding;
+	uint32_t hops;
+	uint32_t key;
+
+	/* The program's top level: the realm's record. */
+	binding = js_scope_resolve(fc, name, length, &hops);
+	if (binding == NULL) {
+		key = js_constant_key(fc, name, length);
+		js_emit2(fc, VM_OP_INIT_GLOBAL_LEXICAL, key, source);
+		return;
+	}
+
+	/* A captured binding in an environment. */
+	if (binding->in_env) {
+		js_emit4(fc, VM_OP_PUT_ENV, fc->env_register, hops, binding->location, source);
+		return;
+	}
+
+	/* A binding of this function's frame. */
+	js_emit2(fc, VM_OP_MOV, binding->location, source);
+}
+
+/*
+ * Throws a new error of a kind (enum vm_error_kind) with a message when
+ * the code runs.
+ */
+void
+js_emit_throw_error(
+	struct js_function_compiler *fc,
+	int kind,
+	const char *text)
+{
+	struct vm_string *string;
+	uint32_t constant;
+
+	/* The message as a constant. */
+	string = vm_string_from_utf8(fc->compiler->realm->heap, text, strlen(text));
+	if (string == NULL)
+		js_compile_out_of_memory(fc->compiler);
+	constant = js_constant(fc, vm_value_cell(string));
+
+	/* The throw. */
+	js_emit2(fc, VM_OP_THROW_ERROR, (uint32_t)kind, constant);
 }
 
 /*
