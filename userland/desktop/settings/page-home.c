@@ -53,6 +53,9 @@ se_home_draw(
 {
 	int y;
 
+	/* The disks' use now, for Storage's tile. */
+	se_look_volumes(app);
+
 	/* Each group in the list's order. */
 	y = home_group(app, canvas, SE_GROUP_CONNECTIVITY, "Connectivity", x, top, width);
 	y = home_group(app, canvas, SE_GROUP_PERSONALIZATION, "Personalization", x, y + HOME_GROUP_GAP, width);
@@ -200,6 +203,7 @@ home_state(
 {
 	const struct keiland_network_state *state;
 	const char *address;
+	char free_text[32];
 	int live;
 
 	/* No dot unless a connection is described. */
@@ -238,6 +242,33 @@ home_state(
 		}
 
 		/* The state is in the text. */
+		return 1;
+	case SE_PAGE_APPEARANCE:
+		/* The windows' opacity. */
+		if (app->look.opacity >= 100) {
+			(void)snprintf(text, size, "%s", "Opaque windows");
+		} else {
+			(void)snprintf(text, size, "Window opacity %d%%", app->look.opacity);
+		}
+
+		/* The state is in the text. */
+		return 1;
+	case SE_PAGE_WALLPAPER:
+		/* The picture's name. */
+		(void)snprintf(text, size, "%s", se_look_wallpaper_name(app));
+		return 1;
+	case SE_PAGE_DISPLAY:
+		/* The screen's mode, when known. */
+		if (app->about.display[0] == '\0')
+			return 0;
+		(void)snprintf(text, size, "%s", app->about.display);
+		return 1;
+	case SE_PAGE_STORAGE:
+		/* What is left on the first disk. */
+		if (app->look.volume_count == 0U)
+			return 0;
+		se_bytes_text(app->look.volumes[0].available, free_text, sizeof(free_text));
+		(void)snprintf(text, size, "%s available", free_text);
 		return 1;
 	case SE_PAGE_ABOUT:
 		/* The name of the system and the machine, when known. */

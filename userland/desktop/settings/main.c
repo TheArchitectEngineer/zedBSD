@@ -154,8 +154,9 @@ main(
 	main_about_window();
 	se_ui_init(&main_app, &main_text, options.page);
 
-	/* The network's watch (a daemon not running yet is found later). */
+	/* The network's watch (a daemon not running yet is found later), and the user's preferences. */
 	se_network_open(&main_app);
+	se_look_open(&main_app);
 
 	/* Glass when zdesktop can show the window see-through (the frame's ground is then left clear). */
 	main_app.glass = se_glass_open(&main_glass, &main_window, &main_present);
@@ -187,6 +188,7 @@ main(
 
 	/* Everything goes, the network's watch, then the titlebar, the menus and the glass before the window they belong to. */
 	se_network_close(&main_app);
+	se_look_close(&main_app);
 	se_titlebar_close(&main_titlebar);
 	se_menu_close(&main_menu);
 	se_glass_close(&main_glass);
@@ -404,6 +406,7 @@ main_loop(
 		/* Time passes for the interface (the minute About shows), and the network reports. */
 		se_ui_tick(&main_app, now);
 		se_network_poll(&main_app, now);
+		se_look_poll(&main_app, now);
 		if (main_app.dirty != 0)
 			inputs++;
 

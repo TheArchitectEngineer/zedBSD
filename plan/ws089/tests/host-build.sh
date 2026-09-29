@@ -27,9 +27,9 @@ for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cma
 	"$cc" -O2 -g -w -I$out/include -Iuserland/desktop/libtruetype -c "$file" -o "$object"
 	objects="$objects $object"
 done
-for file in userland/desktop/files/canvas.c userland/desktop/files/text.c userland/desktop/files/icons.c userland/desktop/artwork/mark.c; do
+for file in userland/desktop/files/canvas.c userland/desktop/files/text.c userland/desktop/files/icons.c userland/desktop/artwork/mark.c userland/desktop/libkeiland/preferences.c; do
 	object="$out/obj/shared-$(basename "$file" .c).o"
-	"$cc" -O2 -g -Wall -Werror -I$out/include -c "$file" -o "$object"
+	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -c "$file" -o "$object"
 	objects="$objects $object"
 done
 for file in $src/*.c; do

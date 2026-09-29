@@ -43,6 +43,9 @@
 #define WIDGETS_TOGGLE_WIDTH	44
 #define WIDGETS_TOGGLE_HEIGHT	24
 
+/* A slider's height (the knob's room). */
+#define WIDGETS_SLIDER_HEIGHT	28
+
 /* A button's height, its side margins and its text size. */
 #define WIDGETS_BUTTON_HEIGHT	32
 #define WIDGETS_BUTTON_SIDE	16
@@ -300,6 +303,82 @@ se_toggle_draw(
 		rect.height = WIDGETS_TOGGLE_HEIGHT + 8;
 		se_ui_hit(app, &rect, SE_HIT_CONTROL, index);
 	}
+}
+
+/*
+ * Draws a slider from (x, y), width long: a track filled in the accent up
+ * to a fraction (0..1) and a white knob there, faded when it does nothing.
+ * An enabled slider is a page's control (index) whose rectangle is given
+ * back for a drag (se_slider_fraction).
+ */
+void
+se_slider_draw(
+	struct se_app *app,
+	struct fm_canvas *canvas,
+	int x,
+	int y,
+	int width,
+	float fraction,
+	int enabled,
+	int index,
+	struct fm_rect *rect)
+{
+	fm_color fill;
+	float knob_x;
+	float middle;
+
+	/* Within the track. */
+	if (fraction < 0.0f)
+		fraction = 0.0f;
+	if (fraction > 1.0f)
+		fraction = 1.0f;
+
+	/* The track, then the part up to the knob in the accent (faded when it does nothing). */
+	middle = (float)y + (float)WIDGETS_SLIDER_HEIGHT * 0.5f;
+	knob_x = (float)x + fraction * (float)width;
+	fill = SE_COLOR_ACCENT;
+	if (enabled == 0)
+		fill = fm_color_mix(SE_COLOR_ACCENT, FM_RGB(0xeef1f5), 0.6f);
+	fm_canvas_round(canvas, (float)x, middle - 3.0f, (float)width, 6.0f, 3.0f, FM_RGB(0xd3d9e2));
+	fm_canvas_round(canvas, (float)x, middle - 3.0f, knob_x - (float)x, 6.0f, 3.0f, fill);
+
+	/* The knob, with a quiet ring round it. */
+	fm_canvas_circle(canvas, knob_x, middle, 11.0f, FM_RGBA(0x5a6b85, 50));
+	fm_canvas_circle(canvas, knob_x, middle, 10.0f, FM_RGB(0xffffff));
+
+	/* The whole track takes presses and drags (a little taller than it looks). */
+	rect->x = x - 12;
+	rect->y = y;
+	rect->width = width + 24;
+	rect->height = WIDGETS_SLIDER_HEIGHT;
+	if (enabled != 0)
+		se_ui_hit(app, rect, SE_HIT_CONTROL, index);
+}
+
+/*
+ * Reports where along a slider a pointer at x is, from 0 (its left end)
+ * to 1 (its right end).
+ */
+float
+se_slider_fraction(
+	const struct fm_rect *rect,
+	int x)
+{
+	float fraction;
+
+	/* The track lies 12 pixels inside the rectangle at each end. */
+	fraction = (float)(x - rect->x - 12) / (float)(rect->width - 24);
+
+	/* Before the left end. */
+	if (fraction < 0.0f)
+		return 0.0f;
+
+	/* After the right end. */
+	if (fraction > 1.0f)
+		return 1.0f;
+
+	/* On the track. */
+	return fraction;
 }
 
 /*
