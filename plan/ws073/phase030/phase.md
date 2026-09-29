@@ -1,8 +1,8 @@
 <!-- awesome-plan project=zedbsd record=ws073-p030 -->
 
-# ws073-p030: sshd-session の子の SIGSEGV（BUG-051）の再現と原因
+# ws073-p030: sshd の SIGSEGV（BUG-051）: signal の frame が amd64 の red zone を壊す
 
-Status: in-progress（2026-09-29）
+Status: cleared（2026-09-29）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-051](../../bugs/BUG-051.md)
@@ -58,7 +58,48 @@ Queue: main が WS073 のサブエージェント（`wt/ws073`）に割り当て
   SHA-512（`-0xf8(%rbp)`）。どれも fork を繰り返す process（sshd の listener・privsep の子）で、register の probe（fork しない checker）では出ない。
   → (c) stack の page の中身が 0 に見える（fork の COW・fault-around・TLB の失効）が最有力。
 
+### 3 回目の観測（main から、ws073-p033 = BUG-106 の調査）
+
+WS081 の pen の image で ssh を約 500 回流した間に `kern: pid 12 killed by signal 11 (vector 14) at 0x100300c64, address 0x38`（sshd の listener）。
+image の layout が無く library は未特定。同じ種類（共有 library の中、NULL + 小さな offset の読み）。
+
+### gdbstub で落ちる瞬間を捕まえた（[tests/bug051-gdb.py](../tests/bug051-gdb.py)、[tests/bug051-load.sh](../tests/bug051-load.sh)）
+
+`exit1_signal`（rdi = 11）に hardware breakpoint、止めた CPU の TSS の rsp0 から user の割り込みの frame を読む。1 回目の捕獲（`build/ws073-p030/gdb1.log`）:
+
+- `rip=0x100435ead`（`sha512_block_data_order`、`mov -0xf8(%rbp),%rax; mov %r12,(%rax)`）、`rbp=0x7fffffffe730`、**`rsp=0x7fffffffe650` = rbp - 0xe0**。
+- 今の page table で読んだ stack: `rbp-0x140`〜`rbp-0xf8`（= rsp-0x60〜rsp-0x18）の 10 語が **全て 0**、`rbp-0xf0` 以上は正しい値。
+- 読まれた slot（`rbp-0xf8` = rsp-0x18）は **%rsp より下**、System V amd64 の **red zone**（%rsp の下 128 byte、leaf の関数が %rsp を動かさずに使ってよい）の中。
+
+### 原因
+
+`src/kern/signal.c` の signal の配達は、handler の frame を **中断した %rsp の真下から** 積んでいた（`sp = interrupted_sp`）。amd64 の ABI では
+%rsp の下 128 byte は中断された関数の生きた変数の置き場で、handler から戻ると frame の中身（多くが 0）で壊れている。zedBSD の userland は
+`-mno-red-zone` で build するので出ず、red zone を使う外部の package（OpenSSL の libcrypto の leaf の関数 `ChaCha20_ctr32`・`AES_encrypt`・
+`sha512_block_data_order`）が、SIGCHLD などの handler を持つ process（sshd の listener、privsep の子）で signal を受けた時だけ落ちた。
+kernel の register・TLB・COW は無関係（register の probe で 0 件）。Linux も x86-64 で 128 byte を空ける。
+
+### 修正
+
+`src/kern/signal.c`: `SIGNAL_USER_RED_ZONE`（amd64 は 128、他の user ABI は 0）を定め、中断した stack の上に積む時は `interrupted_sp - SIGNAL_USER_RED_ZONE`
+から始める（alternate stack に切り替える時はその top から、従来どおり）。HAL の API は変えていない（kern の側の user ABI の定数。HAL の arch の header の
+定数にする案もあるが、それは HAL の API の変更で承認が要る）。
+
+### 確認
+
+- red zone の probe（`regcheck_red_zone`: leaf の asm が %rsp の下 128 byte に 16 語を置いて検査、handler 付きの SIGUSR1 を 0.2 ms ごと）:
+  修正前の kernel で 4 checker 全て即座に `slot 100`（red zone）FAIL（`build/ws073-p030/redzone-before.txt`）、Linux の host では PASS。
+  修正後の kernel で 120 s・6 checker `REGCHECK:PASS`（約 4.9 万 pass・36 万 signal、`redzone-after.txt`）。
+- SSH の再現（`sh plan/ws073/tests/bug051-load.sh 200`: regcheck の負荷 ＋ 2 本並列の chacha20 の session）: 修正前は 99 s で 2 process が落ちた
+  （別の 200 s の実行でも sha512 で 1 回、gdb で捕獲）。修正後 200 s で **1092 session・失敗 0・`killed by signal` 0**。
+- build（`build-image-noclang.sh`）`check-amd64-native-image: OK`、signal.c の warning 0、style-diff findings 0。boot test PASS（`build/ws073-p030/boot-test/login.png`）。
+- 未実施: 実機、i386・arm64 の image（修正は amd64 だけで値を変え、他は 0 で従来どおり）。
+
+### 別の発見（範囲外、未修正、main に起票を依頼）
+
+system 全体の socket の上限 `SOCKET_MAX 32U`（`include/kern/net/socket.h`）。SSH の session を 6 本並列にすると `socketpair: Too many open files in system`
+（ENFILE）で sshd・sshd-session が失敗し、OpenSSH の PerSourcePenalties が host を一時締め出す。静かな guest で 9、session 1 つで約 3〜4 使う。
+
 ## Resume point
 
-同じ負荷（regcheck ＋ 2 本並列の session）で再現し、gdbstub で `exit1_signal`（rdi = 11）に止める。落ちた thread の trap frame から user の %rbp を取り、
-`%rbp - off` の slot を今の page table で読む（0 か、正しい pointer か）。正しい値なら fault の時に古い TLB・別の page を読んだ、0 なら page の中身が失われた。
+完了。BUG-106（ssh -tt の出力の欠け）が BUG-051 の現れなら、この修正の image で再確認する（ws073-p033 の担当）。次は BUG-039・BUG-031 の確認。
