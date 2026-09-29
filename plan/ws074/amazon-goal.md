@@ -91,6 +91,7 @@ master.md の決定の行）。この文書は [ws074-p067](phase067/phase.md) �
 | 12a | [ws074-p078](phase078/phase.md) | let・const・arrow・template（p028 から分けた） | **cleared**（2026-09-29。Uncaught top 10 → 7、search 15 → 9、let/const・arrow・template の誤り 0。画素は不変。次の blocker: default・rest の引数（top 2、search 4）、optional chaining（search 1）、`TextEncoder`（1）） |
 | 12b | [ws074-p031](phase031/phase.md) | Amazon が要る DOM: Selectors API（querySelector・matches・closest）、geometry（getBoundingClientRect ほか）、classList・dataset、inline style（CSSStyleDeclaration） | **cleared**（2026-09-29。top の DOM の Uncaught 4 → 0（querySelector・getBoundingClientRect）、AUI の `element.style` の検出も 0。p078 と合わせて top 3・search 9。画素は不変。残り: getComputedStyle・innerHTML・offset・scrollIntoView） |
 | 12c | [ws074-p079](phase079/phase.md) | destructuring・default・rest・spread・optional chaining（p028 から分けた） | **cleared**（2026-09-29。これらの誤りは 0、Uncaught の数は top 7・search 9 のまま: その先の async function・for-of・class で止まる。画素は不変） |
+| 12d | [ws074-p080](phase080/phase.md) | Encoding API（TextEncoder・TextDecoder、UTF-8）と Web Storage（localStorage・sessionStorage、origin ごと、localStorage は file） | **cleared**（2026-09-29。**guest の live の amazon.co.jp の top の Uncaught 0**。capture の top は async 1・for-of 1、search は async 2・class 2・for-of 1（search の `(at 1:1)` 2 件は class の SyntaxError の連鎖）。型付き配列は js の側の計画へ） |
 
 順の理由: 1 で検索できる（デモの操作）。2〜5 が見た目の大部分（外の CSS、変数と calc と @media、selector、flex）。6〜11 は細部と速さ。
 JS（12）はデモの配置に要らないので最後。Google 用の p063（SVG）・p065（challenge）・p066（Google の結果）はデモの列から外す（planned のまま）。
