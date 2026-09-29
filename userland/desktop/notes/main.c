@@ -35,10 +35,12 @@
  * new notebook starts.  Ctrl+O has no file chooser to open another file
  * with yet, and says so.
  *
- * ws081-p013: the fingers never write.  One finger scrolls a page zoomed
+ * ws081-p013: the fingers do not write.  One finger scrolls a page zoomed
  * past the window (with inertia), two fingers zoom, a double tap zooms in
  * or back to the whole page, and a tap on the toolbar presses its button;
- * a palm near the pen is left alone (touch.c).
+ * a palm near the pen is left alone (touch.c).  ws081-p015: while the
+ * toolbar's Finger is on, one finger writes as the pointer does and two
+ * fingers scroll and zoom.
  *
  * --timeout-s ends Notes after that many seconds as if it were closed (the
  * tests use it to bound a run).  The lines starting with "NOTES" on the
@@ -149,6 +151,15 @@ struct notes_app {
 	int drawn_zooming;
 
 	/*
+	 * Writing with a finger (ws081-p015): whether it is on (the toolbar's
+	 * Finger), and whether the contact under way is a writing finger's (its
+	 * later events belong to it only while it is; the pointer or the pen
+	 * taking the contact over clears it).
+	 */
+	int finger_write;
+	int finger_contact;
+
+	/*
 	 * The page's picture (render.c) as the last frame left it: the page it
 	 * shows, the renderer's serial of the picture, the document's reshaped
 	 * count and the scale when it was drawn, and how many of the page's
@@ -245,6 +256,8 @@ static void app_action(struct notes_app *app, uint32_t action);
 static void app_key(struct notes_app *app, const struct notes_key *key);
 static void app_input(struct notes_app *app, const struct notes_input *input);
 static void app_touch(struct notes_app *app);
+static void app_finger(struct notes_app *app);
+static void app_abort_contact(struct notes_app *app);
 static void app_hover(struct notes_app *app, const struct notes_input *input);
 static void app_sample(struct notes_app *app, const struct notes_input *input);
 static void app_end_contact(struct notes_app *app, const struct notes_input *input);
@@ -872,6 +885,7 @@ app_state(
 
 	/* The window's state and the status line. */
 	state->fullscreen = app->window.fullscreen;
+	state->finger_write = app->finger_write;
 	state->status = app->status;
 }
 
@@ -988,6 +1002,20 @@ app_action(
 		if (app->window.fullscreen)
 			notes_window_set_fullscreen(&app->window, 0);
 		break;
+	case NOTES_ACTION_FINGER:
+		/* One finger writes, or scrolls again (a line under way is kept); the status says which. */
+		app->finger_write = !app->finger_write;
+		notes_touch_write_mode(&app->touch, app->finger_write, notes_touch_clock());
+		app_finger(app);
+		printf("NOTES FINGER write=%d\n", app->finger_write);
+		if (app->finger_write) {
+			app_status(app, "One finger writes, two fingers scroll");
+		} else {
+			app_status(app, "Fingers scroll and zoom");
+		}
+
+		/* Nothing else. */
+		break;
 	default:
 		break;
 	}
@@ -1089,12 +1117,17 @@ app_input(
 	float width;
 	int near;
 
-	/* The pen near the window or gone tells a palm from a finger (ws081-p013). */
+	/*
+	 * The pen near the window or gone tells a palm from a finger
+	 * (ws081-p013).  A line a palm was writing is taken back now, before
+	 * the pen's own contact starts (ws081-p015).
+	 */
 	if (input->source != NOTES_SOURCE_POINTER) {
 		near = 1;
 		if (input->kind == NOTES_INPUT_LEAVE)
 			near = 0;
 		notes_touch_pen(&app->touch, near, notes_touch_clock());
+		app_finger(app);
 	}
 
 	/* The pen's mark follows the pen, over the window or in contact. */
@@ -1211,6 +1244,9 @@ app_touch(
 	float y;
 	float scale;
 	int taken;
+
+	/* A writing finger's line. */
+	app_finger(app);
 
 	/* Each tap on the toolbar presses the button under it. */
 	for (;;) {
@@ -1367,8 +1403,99 @@ app_end_contact(
 	/* The frames the contact took, for the tests' line. */
 	app_frame_report(app);
 
-	/* No contact is under way. */
+	/* No contact is under way, and no finger's. */
 	app->contact = MAIN_CONTACT_NONE;
+	app->finger_contact = 0;
+	app->redraw = 1;
+}
+
+/*
+ * Carries out a writing finger's events (ws081-p015): its line is drawn
+ * (or erased along) as the pointer's would be, with the pointer's fixed
+ * pressure, and a line taken back is dropped.  Once the pointer or the pen
+ * takes the contact over, the finger's later events are left alone.
+ */
+static void
+app_finger(
+	struct notes_app *app)
+{
+	struct notes_touch_write write;
+	struct notes_input input;
+	int taken;
+
+	/* Each event in turn. */
+	for (;;) {
+		taken = notes_touch_take_write(&app->touch, &write);
+		if (!taken)
+			break;
+
+		/* The pointer's input at the finger's place and time. */
+		memset(&input, 0, sizeof(input));
+		input.source = NOTES_SOURCE_POINTER;
+		input.x = write.x;
+		input.y = write.y;
+		input.pressure = NOTES_POINTER_PRESSURE;
+		input.time_ms = write.time_ms;
+
+		/* What the event does to the finger's contact. */
+		switch (write.kind) {
+		case NOTES_TOUCH_WRITE_BEGIN:
+			/* A contact starts as the pointer's press starts one; the finger owns it while it draws or erases. */
+			input.kind = NOTES_INPUT_DOWN;
+			app_input(app, &input);
+			app->finger_contact = 0;
+			if (app->contact == MAIN_CONTACT_DRAW ||
+			    app->contact == MAIN_CONTACT_ERASE)
+				app->finger_contact = 1;
+			break;
+		case NOTES_TOUCH_WRITE_MOTION:
+			/* A point of the finger's line. */
+			input.kind = NOTES_INPUT_MOTION;
+			if (app->finger_contact)
+				app_input(app, &input);
+			break;
+		case NOTES_TOUCH_WRITE_END:
+			/* The line ends and goes on the page. */
+			input.kind = NOTES_INPUT_UP;
+			if (app->finger_contact)
+				app_input(app, &input);
+			break;
+		case NOTES_TOUCH_WRITE_ABORT:
+			/* The line is taken back. */
+			if (app->finger_contact)
+				app_abort_contact(app);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+/*
+ * Takes back the contact under way without keeping it: a stroke being
+ * drawn is dropped (its number is not used again), and an eraser drag's
+ * removals so far stay as one change.
+ */
+static void
+app_abort_contact(
+	struct notes_app *app)
+{
+	/* The stroke never reaches the page. */
+	if (app->contact == MAIN_CONTACT_DRAW && app->live != NULL) {
+		notes_stroke_free(app->live);
+		app->live = NULL;
+		printf("NOTES ABORT stroke page=%lu strokes=%lu\n", (unsigned long)app->page,
+		       (unsigned long)app->document.pages[app->page]->stroke_count);
+		fflush(stdout);
+	}
+
+	/* An eraser drag's removals are one change from now on. */
+	if (app->contact == MAIN_CONTACT_ERASE)
+		notes_document_erase_end(&app->document);
+
+	/* No contact is under way, and no finger's. */
+	app->contact = MAIN_CONTACT_NONE;
+	app->finger_contact = 0;
 	app->redraw = 1;
 }
 

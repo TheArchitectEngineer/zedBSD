@@ -12,7 +12,14 @@
  * stretching past its edges (libkeiland's scroller); two fingers zoom
  * about the place between them; a double tap zooms in twice about the
  * tapped place, or back to the whole page; a tap on the toolbar presses its
- * button.  A finger never writes.
+ * button.
+ *
+ * While writing with a finger is on (the toolbar's Finger, ws081-p015),
+ * one finger on the page writes instead, as the pointer does, and two
+ * fingers scroll and zoom: a second finger that comes while the first has
+ * only just begun (NOTES_TOUCH_WRITE_GRACE_MS, NOTES_TOUCH_WRITE_SLOP)
+ * takes the line back and the two scroll and zoom; a later one is left
+ * alone.  Off, a finger never writes.
  *
  * A palm resting on the screen while the pen writes is not a finger: the
  * touch screen lifts a contact it does not trust (HID Confidence 0, the
@@ -54,6 +61,21 @@
 /* How many toolbar taps wait for the main loop at most. */
 #define NOTES_TOUCH_TAPS	4U
 
+/* The kinds of a writing finger's events: it touches, moves, lifts, or its line is taken back. */
+#define NOTES_TOUCH_WRITE_BEGIN		0U
+#define NOTES_TOUCH_WRITE_MOTION	1U
+#define NOTES_TOUCH_WRITE_END		2U
+#define NOTES_TOUCH_WRITE_ABORT		3U
+
+/* How many of a writing finger's events wait for the main loop at most. */
+#define NOTES_TOUCH_WRITES	256U
+
+/* How long after a writing finger touched a second finger still takes its line back, in milliseconds. */
+#define NOTES_TOUCH_WRITE_GRACE_MS	250U
+
+/* How far a writing finger may have moved and a second finger still take its line back, in pixels. */
+#define NOTES_TOUCH_WRITE_SLOP		12.0f
+
 /*
  * One touch input: its kind (NOTES_TOUCH_*), the finger (wl_touch's id),
  * where in the window (surface pixels; not for UP and CANCEL), the
@@ -68,6 +90,18 @@ struct notes_touch_event {
 	float y;
 	uint32_t time;
 	uint64_t arrival;
+};
+
+/*
+ * One event of a writing finger: its kind (NOTES_TOUCH_WRITE_*), where in
+ * the window (surface pixels) and when (milliseconds of CLOCK_MONOTONIC,
+ * the low 32 bits, as the pointer's events carry).
+ */
+struct notes_touch_write {
+	unsigned kind;
+	float x;
+	float y;
+	uint32_t time_ms;
 };
 
 /*
@@ -102,6 +136,12 @@ struct notes_touch_finger {
  * when the zoom began; zooming is what the frame asks (the page's picture
  * may be stretched rather than drawn again).  bounds_* are the scroller's
  * bounds as last set.
+ *
+ * write_mode says one finger writes (the toolbar's Finger); writing that a
+ * finger writes now: writer_id is that finger, writer_down_us when it
+ * touched, writer_x and writer_y its last place, writer_time_us the time
+ * of its last event, and writer_path how far it has moved in all (pixels).
+ * writes are its events not yet taken, oldest first.
  */
 struct notes_touch {
 	struct keiland_gesture *gesture;
@@ -136,6 +176,18 @@ struct notes_touch {
 	float tap_y[NOTES_TOUCH_TAPS];
 	unsigned tap_count;
 
+	/* Writing with a finger. */
+	int write_mode;
+	int writing;
+	int32_t writer_id;
+	uint64_t writer_down_us;
+	uint64_t writer_time_us;
+	float writer_x;
+	float writer_y;
+	float writer_path;
+	struct notes_touch_write writes[NOTES_TOUCH_WRITES];
+	unsigned write_count;
+
 	/* The layout. */
 	float width;
 	float height;
@@ -168,6 +220,8 @@ void notes_touch_pen(struct notes_touch *touch, int near, uint64_t now);
 int notes_touch_tick(struct notes_touch *touch, uint64_t now);
 void notes_touch_view(const struct notes_touch *touch, float *x, float *y, float *scale);
 int notes_touch_take_tap(struct notes_touch *touch, float *x, float *y);
+void notes_touch_write_mode(struct notes_touch *touch, int on, uint64_t now);
+int notes_touch_take_write(struct notes_touch *touch, struct notes_touch_write *write);
 void notes_touch_top(struct notes_touch *touch);
 uint64_t notes_touch_clock(void);
 

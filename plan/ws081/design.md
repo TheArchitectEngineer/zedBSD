@@ -452,6 +452,14 @@ scroll、二本指で拡大。Notes: 指で線）は app ごとの Phase で決�
   - Notes は、ペンが窓の近くにある間と離れて 500 ms の間は、新しい指を掌として無視する。
   - ペンが来た時に頁の上にある指は cancel し、離れるまで無視する。glide している頁はその場で止める。
 
+**Notes の「指で書く」（2026-09-29 ユーザーの決定、ws081-p015）**
+- 既定は上のとおり（指は書かない）。toolbar の「Finger」を入れた間だけ、頁の上の一本指が pointer と同じく選んだ道具で書く（消しゴムなら消す）。
+- 書く指の報告は間引かずに線の点にする。報告の間は libpdf の outline の centripetal Catmull-Rom がつなぐ（§3.8 の spline）。§3.8 の予測の尾は入れていない。
+- 二本指は scroll・pinch。書き始めて 250 ms 未満か 12 px 未満の動きのうちに二本目が触れたら、書きかけの線を取り消し（頁に残さない）、
+  二本とも scroll・pinch に渡す。それより後の二本目は無視する。
+- 入の間も toolbar の tap は button を押す。一本指の double tap は点を二つ書き、拡大しない。
+- 掌の規則は同じ。ペンが近づいた時に書いている指の線は取り消す。glide している頁は書く指の下で止まる。
+
 ## 6. library の置き場所と API（p003・p005）
 
 - **置き場所**: `userland/desktop/libkeiland/motion.c`（resampling・速度・率・空き・雑音・device の時刻、p003）と `scroll.c`（fling・端・scroller・gesture、p005）。

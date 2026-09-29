@@ -18,7 +18,8 @@
  * alpha: transparent around the card, so the desk shows there, and
  * translucent in the card, so the desk's colours show through the glass.
  *
- * From the left the card holds the tools (Pen, Marker, Eraser), five
+ * From the left the card holds the tools (Pen, Marker, Eraser), the
+ * switch that lets one finger write (Finger, in blue while it is on), five
  * colours, three widths, Undo and Redo, the page's number between the
  * previous and next page buttons, a new page, and Save.  The card is laid
  * out once to measure it and drawn centred; its width does not depend on
@@ -380,6 +381,7 @@ ui_layout(
 	int32_t x;
 	int32_t text_width;
 	int32_t slack;
+	uint32_t chosen;
 	unsigned index;
 	float radius;
 	float cx;
@@ -402,6 +404,14 @@ ui_layout(
 	slack = ui_eraser_slack(ui, state);
 	ui_separator(ui, x + (UI_GAP + slack) / 2 - 1);
 	x += UI_GAP + slack;
+
+	/* Writing with a finger, on a pale blue pill in blue while it is on (ws081-p015). */
+	chosen = NOTES_ACTION_NONE;
+	if (state->finger_write)
+		chosen = NOTES_ACTION_FINGER;
+	x = ui_label_button(ui, x, "Finger", NOTES_ACTION_FINGER, chosen, 1);
+	ui_separator(ui, x + UI_GAP / 2 - 1);
+	x += UI_GAP;
 
 	/* The colours of the pen, or of the highlighter while it is chosen. */
 	colors = ui_pen_colors;

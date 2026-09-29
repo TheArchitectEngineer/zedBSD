@@ -20,6 +20,14 @@
  * there moves nothing; a finger near the pen, or just after it left, is a
  * palm and moves nothing, and the pen coming near cancels a drag and stops
  * a glide; another page starts at its top.
+ *
+ * ws081-p015, writing with a finger: off, a finger writes nothing; on, one
+ * finger's every report is a point of its line and the page stays; two
+ * fingers put down together take the line back and scroll or zoom; a
+ * second finger long after is left alone; the toolbar still takes a tap;
+ * the pen coming near, the compositor's cancel and turning the mode off
+ * end or take back the line; a double tap zooms nothing; a gliding page
+ * stops under a writing finger.
  */
 
 #include "../../../userland/desktop/notes/touch.h"
@@ -68,6 +76,8 @@ static void test_scroll(void);
 static void test_double_tap(void);
 static void test_toolbar(void);
 static void test_palm(void);
+static void take_writes(unsigned *counts, struct notes_touch_write *first, struct notes_touch_write *last);
+static void test_write(void);
 
 /*
  * Runs every test and reports the result.
@@ -90,6 +100,7 @@ main(void)
 	test_double_tap();
 	test_toolbar();
 	test_palm();
+	test_write();
 	notes_touch_close(&touch);
 
 	/* Reports a failure. */
@@ -551,4 +562,202 @@ test_palm(void)
 	notes_touch_top(&touch);
 	notes_touch_view(&touch, &x, &y, &scale);
 	check(fabsf(y - (TEST_TOP + TEST_MARGIN)) < 0.01f, "another page starts at its top: %.1f", (double)y);
+}
+
+/*
+ * Takes every writing finger's event waiting: how many of each kind
+ * (NOTES_TOUCH_WRITE_* index the counts), and the first and the last.
+ */
+static void
+take_writes(
+	unsigned *counts,
+	struct notes_touch_write *first,
+	struct notes_touch_write *last)
+{
+	struct notes_touch_write write;
+	int taken;
+	int index;
+
+	/* None counted yet. */
+	for (index = 0; index < 4; index++)
+		counts[index] = 0;
+	memset(first, 0, sizeof(*first));
+	memset(last, 0, sizeof(*last));
+
+	/* Each in turn. */
+	for (;;) {
+		taken = notes_touch_take_write(&touch, &write);
+		if (!taken)
+			break;
+		if (counts[0] + counts[1] + counts[2] + counts[3] == 0U)
+			*first = write;
+		*last = write;
+		if (write.kind < 4U)
+			counts[write.kind]++;
+	}
+}
+
+/* Writing with a finger (ws081-p015). */
+static void
+test_write(void)
+{
+	struct notes_touch_write first;
+	struct notes_touch_write last;
+	unsigned counts[4];
+	float x;
+	float y;
+	float scale;
+	float after_x;
+	float after_y;
+	float zoom;
+	float tap_x;
+	float tap_y;
+	int taps;
+	int k;
+
+	/* Off: a finger's drag writes nothing. */
+	notes_touch_top(&touch);
+	rest();
+	stroke(1, 500.0f, 600.0f, 0.0f, -100.0f, 200.0f, 1, 1);
+	rest();
+	take_writes(counts, &first, &last);
+	check(counts[0] + counts[1] + counts[2] + counts[3] == 0U, "off, a finger writes nothing");
+
+	/* On: one finger's line, every report a point, and the page stays. */
+	notes_touch_top(&touch);
+	rest();
+	notes_touch_write_mode(&touch, 1, clock_us);
+	notes_touch_view(&touch, &x, &y, &scale);
+	stroke(1, 500.0f, 600.0f, 200.0f, 50.0f, 300.0f, 1, 1);
+	rest();
+	take_writes(counts, &first, &last);
+	check(counts[NOTES_TOUCH_WRITE_BEGIN] == 1U && counts[NOTES_TOUCH_WRITE_MOTION] == 17U && counts[NOTES_TOUCH_WRITE_END] == 1U &&
+	      counts[NOTES_TOUCH_WRITE_ABORT] == 0U, "one finger writes a line of every report: %u %u %u %u", counts[0], counts[1], counts[2], counts[3]);
+	check(first.kind == NOTES_TOUCH_WRITE_BEGIN && first.x == 500.0f && first.y == 600.0f, "the line begins where the finger touched");
+	/* The last of the 17 reports in 300 ms was 17 x 16.667 ms in. */
+	check(last.kind == NOTES_TOUCH_WRITE_END && fabsf(last.x - 688.9f) < 0.5f && fabsf(last.y - 647.2f) < 0.5f,
+	      "and ends at its last report: %.1f,%.1f", (double)last.x, (double)last.y);
+	check(last.time_ms > first.time_ms + 250U, "with the fingers' times: %u..%u", first.time_ms, last.time_ms);
+	notes_touch_view(&touch, &after_x, &after_y, &scale);
+	check(after_x == x && after_y == y, "the page stays while a finger writes");
+
+	/* Two fingers down one a moment after the other: the line is taken back and they scroll. */
+	finger(NOTES_TOUCH_DOWN, 1, 400.0f, 600.0f);
+	clock_us += 30000U;
+	finger(NOTES_TOUCH_DOWN, 2, 600.0f, 600.0f);
+	for (k = 1; k <= 10; k++) {
+		clock_us += TEST_REPORT_US;
+		finger(NOTES_TOUCH_MOTION, 1, 400.0f, 600.0f - 20.0f * (float)k);
+		finger(NOTES_TOUCH_MOTION, 2, 600.0f, 600.0f - 20.0f * (float)k);
+		frame_tick();
+	}
+
+	/* Both lift. */
+	clock_us += 4000U;
+	finger(NOTES_TOUCH_UP, 1, 0.0f, 0.0f);
+	finger(NOTES_TOUCH_UP, 2, 0.0f, 0.0f);
+	rest();
+	take_writes(counts, &first, &last);
+	check(counts[NOTES_TOUCH_WRITE_BEGIN] == 1U && counts[NOTES_TOUCH_WRITE_ABORT] == 1U && counts[NOTES_TOUCH_WRITE_END] == 0U,
+	      "a second finger takes a line just begun back: %u %u %u %u", counts[0], counts[1], counts[2], counts[3]);
+	check(last.kind == NOTES_TOUCH_WRITE_ABORT, "the take-back is the line's last event");
+	notes_touch_view(&touch, &after_x, &after_y, &scale);
+	check(after_y < y - 100.0f, "and two fingers scroll: %.1f from %.1f", (double)after_y, (double)y);
+
+	/* A second finger soon after, though the first already moved: still taken back. */
+	stroke(1, 400.0f, 500.0f, 60.0f, 0.0f, 100.0f, 1, 0);
+	stroke(2, 700.0f, 500.0f, 0.0f, 0.0f, 50.0f, 1, 0);
+	clock_us += 4000U;
+	finger(NOTES_TOUCH_UP, 1, 0.0f, 0.0f);
+	finger(NOTES_TOUCH_UP, 2, 0.0f, 0.0f);
+	rest();
+	take_writes(counts, &first, &last);
+	check(counts[NOTES_TOUCH_WRITE_ABORT] == 1U && counts[NOTES_TOUCH_WRITE_END] == 0U,
+	      "a second finger within the grace takes a moving line back: %u %u %u %u", counts[0], counts[1], counts[2], counts[3]);
+
+	/* Two fingers together pinch: the line is taken back and they zoom. */
+	zoom = touch.zoom;
+	pinch(512.0f, 500.0f, 300.0f, 200.0f, 10);
+	rest();
+	take_writes(counts, &first, &last);
+	check(counts[NOTES_TOUCH_WRITE_ABORT] == 1U && counts[NOTES_TOUCH_WRITE_END] == 0U, "two fingers together write nothing");
+	check(touch.zoom < zoom - 0.2f, "and zoom: %.3f from %.3f", (double)touch.zoom, (double)zoom);
+
+	/* A second finger long after the line began is left alone; the line goes on. */
+	notes_touch_view(&touch, &x, &y, &scale);
+	stroke(1, 300.0f, 500.0f, 200.0f, 0.0f, 400.0f, 1, 0);
+	stroke(2, 700.0f, 600.0f, 0.0f, -150.0f, 150.0f, 1, 0);
+	stroke(1, 500.0f, 500.0f, 0.0f, 100.0f, 200.0f, 0, 1);
+	clock_us += 4000U;
+	finger(NOTES_TOUCH_UP, 2, 0.0f, 0.0f);
+	rest();
+	take_writes(counts, &first, &last);
+	check(counts[NOTES_TOUCH_WRITE_BEGIN] == 1U && counts[NOTES_TOUCH_WRITE_ABORT] == 0U && counts[NOTES_TOUCH_WRITE_END] == 1U,
+	      "a late second finger leaves the line alone: %u %u %u %u", counts[0], counts[1], counts[2], counts[3]);
+	/* The last of the 11 reports in 200 ms was 11 x 16.667 ms in. */
+	check(fabsf(last.y - 591.7f) < 0.5f, "which ends at the first finger's last report: %.1f", (double)last.y);
+	notes_touch_view(&touch, &after_x, &after_y, &scale);
+	check(after_x == x && after_y == y, "and the page stays");
+
+	/* The toolbar still takes a tap. */
+	finger(NOTES_TOUCH_DOWN, 1, 300.0f, 30.0f);
+	run(70.0);
+	finger(NOTES_TOUCH_UP, 1, 0.0f, 0.0f);
+	rest();
+	taps = notes_touch_take_tap(&touch, &tap_x, &tap_y);
+	take_writes(counts, &first, &last);
+	check(taps == 1 && counts[NOTES_TOUCH_WRITE_BEGIN] == 0U, "a tap on the toolbar is a tap, not a line");
+
+	/* A double tap writes two dots and zooms nothing. */
+	zoom = touch.zoom;
+	finger(NOTES_TOUCH_DOWN, 1, 500.0f, 500.0f);
+	run(60.0);
+	finger(NOTES_TOUCH_UP, 1, 0.0f, 0.0f);
+	run(100.0);
+	finger(NOTES_TOUCH_DOWN, 2, 501.0f, 501.0f);
+	run(60.0);
+	finger(NOTES_TOUCH_UP, 2, 0.0f, 0.0f);
+	rest();
+	take_writes(counts, &first, &last);
+	check(counts[NOTES_TOUCH_WRITE_BEGIN] == 2U && counts[NOTES_TOUCH_WRITE_END] == 2U && touch.zoom == zoom,
+	      "a double tap writes two dots and zooms nothing (%.3f)", (double)touch.zoom);
+
+	/* The pen coming near takes the line back, and the finger writes no more. */
+	stroke(1, 500.0f, 500.0f, 100.0f, 0.0f, 200.0f, 1, 0);
+	notes_touch_pen(&touch, 1, clock_us);
+	stroke(1, 600.0f, 500.0f, 100.0f, 0.0f, 200.0f, 0, 1);
+	take_writes(counts, &first, &last);
+	check(counts[NOTES_TOUCH_WRITE_ABORT] == 1U && last.kind == NOTES_TOUCH_WRITE_ABORT, "the pen takes a palm's line back");
+	notes_touch_pen(&touch, 0, clock_us);
+	run(1000.0);
+
+	/* The compositor's cancel takes the line back. */
+	stroke(1, 500.0f, 500.0f, 100.0f, 0.0f, 200.0f, 1, 0);
+	finger(NOTES_TOUCH_CANCEL, -1, 0.0f, 0.0f);
+	take_writes(counts, &first, &last);
+	check(counts[NOTES_TOUCH_WRITE_ABORT] == 1U && last.kind == NOTES_TOUCH_WRITE_ABORT, "a cancel takes the line back");
+
+	/* Turned off while a finger writes: the line ends there and the finger writes no more. */
+	stroke(1, 500.0f, 500.0f, 100.0f, 0.0f, 200.0f, 1, 0);
+	notes_touch_write_mode(&touch, 0, clock_us);
+	stroke(1, 600.0f, 500.0f, 100.0f, 0.0f, 200.0f, 0, 1);
+	rest();
+	take_writes(counts, &first, &last);
+	check(counts[NOTES_TOUCH_WRITE_END] == 1U && last.kind == NOTES_TOUCH_WRITE_END && fabsf(last.x - 591.7f) < 0.5f,
+	      "turned off, the line ends at the finger's last report: %.1f", (double)last.x);
+
+	/* A gliding page stops under a finger that writes. */
+	notes_touch_top(&touch);
+	stroke(1, 500.0f, 600.0f, 0.0f, -300.0f, 100.0f, 1, 1);
+	run(100.0);
+	check(touch.moving, "the page glides");
+	notes_touch_write_mode(&touch, 1, clock_us);
+	finger(NOTES_TOUCH_DOWN, 1, 500.0f, 500.0f);
+	notes_touch_view(&touch, &x, &y, &scale);
+	run(300.0);
+	notes_touch_view(&touch, &after_x, &after_y, &scale);
+	check(!touch.moving && after_y == y, "a writing finger stops it: %.1f then %.1f", (double)y, (double)after_y);
+	finger(NOTES_TOUCH_UP, 1, 0.0f, 0.0f);
+	take_writes(counts, &first, &last);
+	notes_touch_write_mode(&touch, 0, clock_us);
 }

@@ -92,6 +92,7 @@
 #define NOTES_ACTION_CLOSE		11U
 #define NOTES_ACTION_FULLSCREEN	12U
 #define NOTES_ACTION_LEAVE_FULLSCREEN	13U
+#define NOTES_ACTION_FINGER		14U
 #define NOTES_ACTION_COLOR		20U
 #define NOTES_ACTION_WIDTH		30U
 
@@ -248,7 +249,8 @@ struct notes_button {
  * NOTES_ACTION_PEN, _HIGHLIGHTER or _ERASER) and whether the eraser cuts
  * parts, the colour's and the width's index, the page and the count,
  * whether undo and redo can go, whether there are unsaved changes and
- * fullscreen, and a status line.
+ * fullscreen, whether one finger writes (the toolbar's Finger,
+ * ws081-p015), and a status line.
  */
 struct notes_ui_state {
 	unsigned tool;
@@ -261,6 +263,7 @@ struct notes_ui_state {
 	int can_redo;
 	int dirty;
 	int fullscreen;
+	int finger_write;
 	const char *status;
 };
 
