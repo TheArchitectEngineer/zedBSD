@@ -28,6 +28,9 @@
 
 struct truetype_face;
 
+/* Marks a parameter a callback's signature requires but the viewer does not use. */
+#define UNUSED_PARAMETER(name)	((void)(name))
+
 /* The window's size when it opens. */
 #define IV_WIDTH		1000U
 #define IV_HEIGHT		720U

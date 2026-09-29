@@ -52,6 +52,23 @@
 /* The JPEG APP1 marker, which carries EXIF. */
 #define IMAGE_JPEG_APP1		(JPEG_APP0 + 1)
 
+/* The longest side any decoder accepts before the image is refused as too large. */
+#define IMAGE_SIDE_MAX		32768U
+
+/*
+ * The kind of file an image is, told by its first bytes.
+ *
+ * The kind picks the decoder; UNREADABLE and OTHER are refused with their
+ * own reasons.
+ */
+enum image_kind {
+	IMAGE_KIND_UNREADABLE,
+	IMAGE_KIND_OTHER,
+	IMAGE_KIND_PNG,
+	IMAGE_KIND_JPEG,
+	IMAGE_KIND_GIF
+};
+
 /*
  * A JPEG being read: libjpeg's error manager, which jumps back here
  * instead of ending the program, and where it jumps to.
@@ -72,7 +89,7 @@ struct image_picture {
 	int has_alpha;
 };
 
-static int image_kind(const char *path, const char **format);
+static enum image_kind image_kind(const char *path, const char **format, int *error);
 static int image_png(struct iv_image *image, struct image_picture *picture);
 static int image_jpeg(struct iv_image *image, struct image_picture *picture);
 static void image_jpeg_exit(j_common_ptr info);
@@ -88,7 +105,7 @@ static int image_halve(const uint32_t *pixels, int width, int height, uint32_t *
 static int image_fit(struct iv_image *image, struct image_picture *picture, int max_dimension);
 static void image_checker(uint32_t *pixels, int width, int height);
 static int image_levels(struct iv_image *image);
-static int image_refuse(struct iv_image *image, int error, const char *reason);
+static void image_refuse(struct iv_image *image, int error, const char *reason);
 static unsigned image_read16(const unsigned char *data, int big_endian);
 static unsigned long image_read32(const unsigned char *data, int big_endian);
 
@@ -107,8 +124,9 @@ iv_image_load(
 	int max_dimension)
 {
 	struct image_picture picture;
+	enum image_kind kind;
 	uint64_t started;
-	int kind;
+	uint64_t elapsed;
 	int error;
 
 	/* Nothing decoded yet; the path is kept even when decoding fails.  The time it takes is logged. */
@@ -118,24 +136,27 @@ iv_image_load(
 	memset(&picture, 0, sizeof(picture));
 
 	/* The kind of image, by the file's first bytes. */
-	kind = image_kind(path, &image->format);
+	error = 0;
+	kind = image_kind(path, &image->format, &error);
 
 	/* Decodes it by its kind. */
 	switch (kind) {
-	case 1:
+	case IMAGE_KIND_PNG:
 		error = image_png(image, &picture);
 		break;
-	case 2:
+	case IMAGE_KIND_JPEG:
 		error = image_jpeg(image, &picture);
 		break;
-	case 3:
+	case IMAGE_KIND_GIF:
 		error = image_gif(image, &picture);
 		break;
-	case -1:
-		error = image_refuse(image, errno, "The file cannot be read");
+	case IMAGE_KIND_UNREADABLE:
+		image_refuse(image, error, "The file cannot be read");
+		error = image->error;
 		break;
 	default:
-		error = image_refuse(image, EINVAL, "This is not a PNG, JPEG or GIF image");
+		error = EINVAL;
+		image_refuse(image, error, "This is not a PNG, JPEG or GIF image");
 		break;
 	}
 
@@ -150,26 +171,39 @@ iv_image_load(
 	if (error != 0) {
 		free(picture.pixels);
 		iv_image_free(image);
-		(void)image_refuse(image, error, "There is not enough memory for this image");
+		image_refuse(image, error, "There is not enough memory for this image");
 		return error;
 	}
 
-	/* Transparent parts over the checkerboard, and the levels of a still image. */
+	/* An animated image is ready as its frames; the rest is for a still image. */
 	if (image->frame_count == 0U) {
+		/* Transparent parts are laid over the checkerboard once, here. */
 		if (image->has_alpha)
 			image_checker(image->levels[0].pixels, image->width, image->height);
+
+		/* The levels of halves for showing the image small. */
 		error = image_levels(image);
 		if (error != 0) {
 			iv_image_free(image);
-			(void)image_refuse(image, error, "There is not enough memory for this image");
+			image_refuse(image, error, "There is not enough memory for this image");
 			return error;
 		}
 	}
 
+	/* Logs the decoded image and the time it took. */
+	elapsed = iv_clock() - started;
+	iv_log("IMAGE path=%s format=%s width=%d height=%d file=%dx%d levels=%lu frames=%lu ms=%llu",
+	       image->path,
+	       image->format,
+	       image->width,
+	       image->height,
+	       image->file_width,
+	       image->file_height,
+	       (unsigned long)image->level_count,
+	       (unsigned long)image->frame_count,
+	       (unsigned long long)elapsed);
+
 	/* Succeeded: the image can be shown. */
-	iv_log("IMAGE path=%s format=%s width=%d height=%d file=%dx%d levels=%lu frames=%lu ms=%llu", image->path, image->format, image->width,
-	    image->height, image->file_width, image->file_height, (unsigned long)image->level_count, (unsigned long)image->frame_count,
-	    (unsigned long long)(iv_clock() - started));
 	return 0;
 }
 
@@ -193,9 +227,11 @@ iv_image_free(
 	for (index = first; index < image->level_count; index++)
 		free(image->levels[index].pixels);
 
-	/* The frames and their delays. */
+	/* The frames. */
 	for (index = 0; index < image->frame_count; index++)
 		free(image->frames[index]);
+
+	/* The tables of the frames and their delays. */
 	free(image->frames);
 	free(image->delays);
 
@@ -231,12 +267,16 @@ iv_image_orientation(
 	int big_endian;
 	int match;
 
-	/* The block starts "Exif" and two zeros, then the TIFF header. */
+	/* A block too short for the "Exif" header and a TIFF header has no orientation. */
 	if (size < 14U)
 		return 1;
+
+	/* The block starts "Exif" and two zeros, then the TIFF header. */
 	match = memcmp(data, "Exif\0\0", 6U);
 	if (match != 0)
 		return 1;
+
+	/* The TIFF header and the rest of the block, which the offsets count from. */
 	tiff = data + 6;
 	tiff_size = size - 6U;
 
@@ -258,10 +298,13 @@ iv_image_orientation(
 	directory = image_read32(tiff + 4, big_endian);
 	if (directory > tiff_size - 2U)
 		return 1;
+
+	/* The number of entries in the directory. */
 	count = image_read16(tiff + directory, big_endian);
 
 	/* Looks through the directory's entries (twelve bytes each) for the orientation. */
 	for (index = 0; index < count; index++) {
+		/* An entry past the end of the block ends the search. */
 		offset = directory + 2U + (unsigned long)index * 12U;
 		if (offset > tiff_size - 12U)
 			return 1;
@@ -275,6 +318,8 @@ iv_image_orientation(
 		type = image_read16(tiff + offset + 2U, big_endian);
 		if (type != IMAGE_TIFF_SHORT)
 			return 1;
+
+		/* The value, which must be one of the eight orientations. */
 		value = image_read16(tiff + offset + 8U, big_endian);
 		if (value < 1U || value > 8U)
 			return 1;
@@ -307,6 +352,7 @@ iv_image_is_name(
 
 	/* Compares it with each extension shown. */
 	for (index = 0; index < sizeof(extensions) / sizeof(extensions[0]); index++) {
+		/* The extension, in any case. */
 		match = strcasecmp(dot, extensions[index]);
 		if (match == 0)
 			return 1;
@@ -316,11 +362,12 @@ iv_image_is_name(
 	return 0;
 }
 
-/* Tells the kind of image by the file's first bytes: 1 PNG, 2 JPEG, 3 GIF, 0 another file, -1 an unreadable one. */
-static int
+/* Tells the kind of image by the file's first bytes; an unreadable file leaves its errno value in *error. */
+static enum image_kind
 image_kind(
 	const char *path,
-	const char **format)
+	const char **format,
+	int *error)
 {
 	static const unsigned char png[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
 	unsigned char head[8];
@@ -328,38 +375,46 @@ image_kind(
 	FILE *file;
 	int match;
 
-	/* The first eight bytes. */
-	errno = 0;
+	/* Opens the file; a file that cannot be opened is unreadable, never a success. */
+	*format = "unknown";
 	file = fopen(path, "rb");
-	if (file == NULL)
-		return -1;
+	if (file == NULL) {
+		*error = errno;
+		if (*error == 0)
+			*error = EIO;
+		return IMAGE_KIND_UNREADABLE;
+	}
+
+	/* Reads the first eight bytes, which tell every kind shown. */
 	memset(head, 0, sizeof(head));
 	count = fread(head, 1U, sizeof(head), file);
 	fclose(file);
-	*format = "unknown";
 
 	/* PNG's signature. */
 	match = memcmp(head, png, sizeof(png));
 	if (count == sizeof(head) && match == 0) {
 		*format = "PNG";
-		return 1;
+		return IMAGE_KIND_PNG;
 	}
 
 	/* A JPEG starts with SOI and another marker. */
-	if (count >= 3U && head[0] == 0xff && head[1] == 0xd8 && head[2] == 0xff) {
+	if (count >= 3U &&
+	    head[0] == 0xff &&
+	    head[1] == 0xd8 &&
+	    head[2] == 0xff) {
 		*format = "JPEG";
-		return 2;
+		return IMAGE_KIND_JPEG;
 	}
 
 	/* A GIF starts GIF87a or GIF89a. */
 	match = memcmp(head, "GIF8", 4U);
 	if (count >= 6U && match == 0) {
 		*format = "GIF";
-		return 3;
+		return IMAGE_KIND_GIF;
 	}
 
 	/* Another kind of file. */
-	return 0;
+	return IMAGE_KIND_OTHER;
 }
 
 /* Decodes a PNG with libpng's simplified API into a picture. */
@@ -381,16 +436,27 @@ image_png(
 	status = png_image_begin_read_from_file(&png, image->path);
 	if (status == 0) {
 		iv_log("IMAGE png refused path=%s message=%s", image->path, png.message);
+
+		/* libpng's simplified API refuses an interlaced file by name. */
 		interlaced = strstr(png.message, "nterlace");
-		if (interlaced != NULL)
-			return image_refuse(image, ENOTSUP, "Interlaced PNG images are not supported");
-		return image_refuse(image, EINVAL, "The PNG image is damaged");
+		if (interlaced != NULL) {
+			image_refuse(image, ENOTSUP, "Interlaced PNG images are not supported");
+			return ENOTSUP;
+		}
+
+		/* Any other refusal is a damaged file. */
+		image_refuse(image, EINVAL, "The PNG image is damaged");
+		return EINVAL;
 	}
 
 	/* A size the viewer can hold at all. */
-	if (png.width == 0U || png.height == 0U || png.width > 32768U || png.height > 32768U) {
+	if (png.width == 0U ||
+	    png.height == 0U ||
+	    png.width > IMAGE_SIDE_MAX ||
+	    png.height > IMAGE_SIDE_MAX) {
 		png_image_free(&png);
-		return image_refuse(image, E2BIG, "The image is too large");
+		image_refuse(image, E2BIG, "The image is too large");
+		return E2BIG;
 	}
 
 	/* Room for the pixels as 8-bit RGBA. */
@@ -399,7 +465,8 @@ image_png(
 	bytes = malloc(count * 4U);
 	if (bytes == NULL) {
 		png_image_free(&png);
-		return image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		return ENOMEM;
 	}
 
 	/* The pixels. */
@@ -408,14 +475,16 @@ image_png(
 		iv_log("IMAGE png failed path=%s message=%s", image->path, png.message);
 		free(bytes);
 		png_image_free(&png);
-		return image_refuse(image, EINVAL, "The PNG image is damaged");
+		image_refuse(image, EINVAL, "The PNG image is damaged");
+		return EINVAL;
 	}
 
 	/* The picture, premultiplied. */
 	picture->pixels = malloc(count * sizeof(uint32_t));
 	if (picture->pixels == NULL) {
 		free(bytes);
-		return image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		return ENOMEM;
 	}
 
 	/* Its size; opaque until a pixel says otherwise. */
@@ -426,6 +495,8 @@ image_png(
 	/* Each pixel's straight RGBA into a premultiplied word. */
 	for (index = 0; index < count; index++) {
 		picture->pixels[index] = image_premultiply(bytes[index * 4U], bytes[index * 4U + 1U], bytes[index * 4U + 2U], bytes[index * 4U + 3U]);
+
+		/* A pixel that lets anything through makes the picture need the checkerboard. */
 		if (bytes[index * 4U + 3U] != 255U)
 			picture->has_alpha = 1;
 	}
@@ -463,8 +534,13 @@ image_jpeg(
 
 	/* The file. */
 	file = fopen(image->path, "rb");
-	if (file == NULL)
-		return image_refuse(image, errno, "The file cannot be read");
+	if (file == NULL) {
+		error = errno;
+		if (error == 0)
+			error = EIO;
+		image_refuse(image, error, "The file cannot be read");
+		return error;
+	}
 
 	/* A decompressor whose errors come back here. */
 	memset(&info, 0, sizeof(info));
@@ -483,7 +559,8 @@ image_jpeg(
 		free(row);
 		free(picture->pixels);
 		picture->pixels = NULL;
-		return image_refuse(image, EINVAL, "The JPEG image is damaged or of a kind not supported");
+		image_refuse(image, EINVAL, "The JPEG image is damaged or of a kind not supported");
+		return EINVAL;
 	}
 
 	/* The decompressor, reading the file. */
@@ -496,12 +573,12 @@ image_jpeg(
 	orientation = image_jpeg_orientation(&info);
 
 	/* RGB out, except CMYK, which is turned into RGB here. */
-	cmyk = 0;
 	if (info.jpeg_color_space == JCS_CMYK || info.jpeg_color_space == JCS_YCCK) {
 		info.out_color_space = JCS_CMYK;
 		cmyk = 1;
 	} else {
 		info.out_color_space = JCS_RGB;
+		cmyk = 0;
 	}
 
 	/* The decoding starts; Adobe's marker says whether CMYK is stored inverted. */
@@ -509,23 +586,37 @@ image_jpeg(
 	(void)jpeg_start_decompress(&info);
 
 	/* A size the viewer can hold at all. */
-	if (info.output_width == 0U || info.output_height == 0U || info.output_width > 32768U || info.output_height > 32768U) {
+	if (info.output_width == 0U ||
+	    info.output_height == 0U ||
+	    info.output_width > IMAGE_SIDE_MAX ||
+	    info.output_height > IMAGE_SIDE_MAX) {
 		jpeg_destroy_decompress(&info);
 		fclose(file);
-		return image_refuse(image, E2BIG, "The image is too large");
+		image_refuse(image, E2BIG, "The image is too large");
+		return E2BIG;
 	}
 
-	/* The picture and a row of samples. */
+	/* The picture's size; a JPEG is always opaque. */
 	picture->width = (int)info.output_width;
 	picture->height = (int)info.output_height;
 	picture->has_alpha = 0;
+
+	/* Room for the picture's pixels. */
 	picture->pixels = malloc((size_t)picture->width * (size_t)picture->height * sizeof(uint32_t));
-	row = malloc((size_t)picture->width * (size_t)info.output_components);
-	if (picture->pixels == NULL || row == NULL) {
+	if (picture->pixels == NULL) {
 		jpeg_destroy_decompress(&info);
 		fclose(file);
-		free(row);
-		return image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		return ENOMEM;
+	}
+
+	/* Room for one row of samples as libjpeg gives them. */
+	row = malloc((size_t)picture->width * (size_t)info.output_components);
+	if (row == NULL) {
+		jpeg_destroy_decompress(&info);
+		fclose(file);
+		image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		return ENOMEM;
 	}
 
 	/* Each row, into opaque words. */
@@ -536,12 +627,15 @@ image_jpeg(
 
 		/* Turns the row's samples into the picture's row. */
 		for (x = 0; x < info.output_width; x++) {
+			/* A CMYK row has four samples a pixel, an RGB row three. */
 			if (cmyk) {
-				/* Adobe's CMYK is stored inverted; plain CMYK is not. */
+				/* The pixel's four inks as libjpeg gives them. */
 				cyan = line[x * 4U];
 				magenta = line[x * 4U + 1U];
 				yellow = line[x * 4U + 2U];
 				black = line[x * 4U + 3U];
+
+				/* Adobe's CMYK is stored inverted; plain CMYK is not, and is inverted here. */
 				if (!inverted) {
 					cyan = 255U - cyan;
 					magenta = 255U - magenta;
@@ -549,10 +643,11 @@ image_jpeg(
 					black = 255U - black;
 				}
 
-				/* An RGB or CMYK pixel, now in RGB, into the picture. */
+				/* The inks, now as light, into the picture. */
 				picture->pixels[(size_t)(info.output_scanline - 1U) * (size_t)picture->width + x] =
 				    image_premultiply(cyan * black / 255U, magenta * black / 255U, yellow * black / 255U, 255U);
 			} else {
+				/* The RGB pixel into the picture. */
 				picture->pixels[(size_t)(info.output_scanline - 1U) * (size_t)picture->width + x] =
 				    image_premultiply(line[x * 3U], line[x * 3U + 1U], line[x * 3U + 2U], 255U);
 			}
@@ -569,8 +664,10 @@ image_jpeg(
 	image->file_width = picture->width;
 	image->file_height = picture->height;
 	error = image_orient(picture, orientation);
-	if (error != 0)
-		return image_refuse(image, error, "There is not enough memory for this image");
+	if (error != 0) {
+		image_refuse(image, error, "There is not enough memory for this image");
+		return error;
+	}
 
 	/* The file's size, turned the same way. */
 	if (orientation >= 5) {
@@ -600,9 +697,9 @@ image_jpeg_quiet(
 	j_common_ptr info,
 	int level)
 {
-	/* A warning changes nothing the viewer shows. */
-	(void)info;
-	(void)level;
+	/* A warning changes nothing the viewer shows, so it is dropped. */
+	UNUSED_PARAMETER(info);
+	UNUSED_PARAMETER(level);
 }
 
 /* Reads a JPEG's orientation from its saved APP1 markers (1 when there is none). */
@@ -614,7 +711,10 @@ image_jpeg_orientation(
 	int orientation;
 
 	/* The first APP1 that is EXIF gives it. */
-	for (marker = info->marker_list; marker != NULL; marker = marker->next) {
+	for (marker = info->marker_list;
+	     marker != NULL;
+	     marker = marker->next) {
+		/* Another kind of marker says nothing of the orientation. */
 		if (marker->marker != IMAGE_JPEG_APP1)
 			continue;
 
@@ -643,18 +743,27 @@ image_gif(
 	/* The file and its records. */
 	error = 0;
 	gif = DGifOpenFileName(image->path, &error);
-	if (gif == NULL)
-		return image_refuse(image, EINVAL, "The GIF image is damaged");
+	if (gif == NULL) {
+		image_refuse(image, EINVAL, "The GIF image is damaged");
+		return EINVAL;
+	}
+
+	/* Reads every frame's record at once. */
 	status = DGifSlurp(gif);
 	if (status != GIF_OK || gif->ImageCount < 1) {
 		(void)DGifCloseFile(gif, &error);
-		return image_refuse(image, EINVAL, "The GIF image is damaged");
+		image_refuse(image, EINVAL, "The GIF image is damaged");
+		return EINVAL;
 	}
 
 	/* A screen of a size the viewer can hold at all. */
-	if (gif->SWidth <= 0 || gif->SHeight <= 0 || gif->SWidth > 32768 || gif->SHeight > 32768) {
+	if (gif->SWidth <= 0 ||
+	    gif->SHeight <= 0 ||
+	    gif->SWidth > (int)IMAGE_SIDE_MAX ||
+	    gif->SHeight > (int)IMAGE_SIDE_MAX) {
 		(void)DGifCloseFile(gif, &error);
-		return image_refuse(image, E2BIG, "The image is too large");
+		image_refuse(image, E2BIG, "The image is too large");
+		return E2BIG;
 	}
 
 	/* The screen the frames are composed on, clear to start with. */
@@ -662,7 +771,8 @@ image_gif(
 	screen = calloc(count, sizeof(uint32_t));
 	if (screen == NULL) {
 		(void)DGifCloseFile(gif, &error);
-		return image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		return ENOMEM;
 	}
 
 	/* Every frame (an animated GIF), or the first frame only. */
@@ -670,13 +780,16 @@ image_gif(
 	if (error != 0) {
 		free(screen);
 		(void)DGifCloseFile(gif, &error);
-		return image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		image_refuse(image, ENOMEM, "There is not enough memory for this image");
+		return ENOMEM;
 	}
 
 	/* A still GIF's picture is the screen after its one frame; an animated one's is its first frame. */
 	picture->width = gif->SWidth;
 	picture->height = gif->SHeight;
 	picture->has_alpha = 1;
+
+	/* The screen is the still picture, or only the frames' scratch. */
 	if (image->frame_count == 0U) {
 		picture->pixels = screen;
 	} else {
@@ -710,11 +823,25 @@ image_gif_frames(
 	size_t bytes;
 	int index;
 	int status;
+	int first_only;
 
-	/* One frame, or too many to keep: the first frame only. */
+	/*
+	 * One frame, or frames too many to keep (their total overflowing, or
+	 * over the limit), leave the first frame only.
+	 */
 	count = (size_t)gif->SWidth * (size_t)gif->SHeight;
 	bytes = count * sizeof(uint32_t) * (size_t)gif->ImageCount;
-	if (gif->ImageCount == 1 || bytes / (size_t)gif->ImageCount / sizeof(uint32_t) != count || bytes > IV_FRAMES_BYTES_MAX) {
+	first_only = 0;
+	if (gif->ImageCount == 1) {
+		first_only = 1;
+	} else if (bytes / (size_t)gif->ImageCount / sizeof(uint32_t) != count) {
+		first_only = 1;
+	} else if (bytes > IV_FRAMES_BYTES_MAX) {
+		first_only = 1;
+	}
+
+	/* Composes the first frame on the screen, with its transparent colour if it has one. */
+	if (first_only) {
 		memset(&control, 0, sizeof(control));
 		control.TransparentColor = NO_TRANSPARENT_COLOR;
 		(void)DGifSavedExtensionToGCB(gif, 0, &control);
@@ -724,19 +851,24 @@ image_gif_frames(
 		return 0;
 	}
 
-	/* The frames, their delays, and a copy of the screen for DISPOSE_PREVIOUS. */
+	/* The table of the composed frames. */
 	image->frames = calloc((size_t)gif->ImageCount, sizeof(image->frames[0]));
 	if (image->frames == NULL)
 		return ENOMEM;
+
+	/* The table of the frames' delays. */
 	image->delays = calloc((size_t)gif->ImageCount, sizeof(image->delays[0]));
 	if (image->delays == NULL)
 		return ENOMEM;
+
+	/* A copy of the screen for a frame that DISPOSE_PREVIOUS undoes. */
 	saved = malloc(count * sizeof(uint32_t));
 	if (saved == NULL)
 		return ENOMEM;
 
 	/* Each frame: drawn over what the one before left, kept, then disposed of. */
 	for (index = 0; index < gif->ImageCount; index++) {
+		/* The frame's control block; a frame without one is drawn over and kept for the default time. */
 		memset(&control, 0, sizeof(control));
 		control.TransparentColor = NO_TRANSPARENT_COLOR;
 		status = DGifSavedExtensionToGCB(gif, index, &control);
@@ -748,6 +880,8 @@ image_gif_frames(
 		/* A frame to be undone keeps the screen before it. */
 		if (control.DisposalMode == DISPOSE_PREVIOUS)
 			memcpy(saved, screen, count * sizeof(uint32_t));
+
+		/* The frame over what the frames before it left. */
 		image_gif_draw(gif, index, control.TransparentColor, screen);
 
 		/* The composed frame over the checkerboard. */
@@ -803,6 +937,8 @@ image_gif_draw(
 	map = frame->ImageDesc.ColorMap;
 	if (map == NULL)
 		map = gif->SColorMap;
+
+	/* A frame without colours or pixels draws nothing. */
 	if (map == NULL || frame->RasterBits == NULL)
 		return;
 
@@ -822,6 +958,8 @@ image_gif_draw(
 			value = frame->RasterBits[(size_t)y * (size_t)frame->ImageDesc.Width + (size_t)x];
 			if ((int)value == transparent || (int)value >= map->ColorCount)
 				continue;
+
+			/* The map's colour, opaque, onto the screen. */
 			colour = &map->Colors[value];
 			screen[(size_t)screen_y * (size_t)gif->SWidth + (size_t)screen_x] = image_premultiply(colour->Red, colour->Green, colour->Blue, 255U);
 		}
@@ -847,6 +985,7 @@ image_gif_clear(
 
 		/* The row, within the screen. */
 		for (x = frame->Left; x < frame->Left + frame->Width; x++) {
+			/* A part of the rectangle off the screen has nothing to clear. */
 			if (x >= 0 && x < gif->SWidth)
 				screen[(size_t)y * (size_t)gif->SWidth + (size_t)x] = 0U;
 		}
@@ -872,7 +1011,7 @@ image_premultiply(
 	word |= (uint32_t)green << 8;
 	word |= (uint32_t)blue;
 
-	/* Reports the word. */
+	/* Reports the premultiplied pixel. */
 	return word;
 }
 
@@ -986,6 +1125,8 @@ image_halve(
 	/* The half size, at least one pixel. */
 	half_width = (width + 1) / 2;
 	half_height = (height + 1) / 2;
+
+	/* Room for the half. */
 	half = malloc((size_t)half_width * (size_t)half_height * sizeof(uint32_t));
 	if (half == NULL)
 		return ENOMEM;
@@ -1006,6 +1147,8 @@ image_halve(
 					source_x = x * 2 + dx;
 					if (source_x >= width)
 						source_x = width - 1;
+
+					/* The covered pixel. */
 					pixel = pixels[(size_t)source_y * (size_t)width + (size_t)source_x];
 
 					/* Each channel of the pixel into its sum. */
@@ -1053,28 +1196,41 @@ image_fit(
 
 	/* Halves it while it is too large (an animated image's frames each). */
 	for (;;) {
+		/* Too many pixels in all, or a side longer than the caller allows. */
 		too_large = 0;
-		if ((size_t)width * (size_t)height > IV_IMAGE_PIXELS_MAX)
+		if ((size_t)width * (size_t)height > IV_IMAGE_PIXELS_MAX) {
 			too_large = 1;
-		if (max_dimension > 0 && (width > max_dimension || height > max_dimension))
+		} else if (max_dimension > 0 && width > max_dimension) {
 			too_large = 1;
-		if (!too_large || (width == 1 && height == 1))
+		} else if (max_dimension > 0 && height > max_dimension) {
+			too_large = 1;
+		}
+
+		/* A picture that fits, or a single pixel, is not halved again. */
+		if (!too_large)
+			break;
+		if (width == 1 && height == 1)
 			break;
 
-		/* An animated image's frames. */
+		/* An animated image's frames each, or the still picture. */
 		if (image->frame_count != 0U) {
 			for (index = 0; index < image->frame_count; index++) {
+				/* The frame's half. */
 				error = image_halve(image->frames[index], width, height, &half, &picture->width, &picture->height);
 				if (error != 0)
 					return error;
+
+				/* The half replaces the frame. */
 				free(image->frames[index]);
 				image->frames[index] = half;
 			}
 		} else {
-			/* A still picture. */
+			/* The picture's half. */
 			error = image_halve(picture->pixels, width, height, &half, &picture->width, &picture->height);
 			if (error != 0)
 				return error;
+
+			/* The half replaces the picture. */
 			free(picture->pixels);
 			picture->pixels = half;
 		}
@@ -1092,6 +1248,8 @@ image_fit(
 	image->levels[0].width = width;
 	image->levels[0].height = height;
 	image->level_count = 1;
+
+	/* An animated image's level 0 is its first frame; a still one's is the picture, now the image's. */
 	if (image->frame_count != 0U) {
 		image->levels[0].pixels = image->frames[0];
 	} else {
@@ -1126,10 +1284,12 @@ image_checker(
 			if (alpha == 255U)
 				continue;
 
-			/* The square under it. */
-			square = IMAGE_CHECKER_LIGHT;
-			if (((x / IMAGE_CHECKER_SIDE) + (y / IMAGE_CHECKER_SIDE)) % 2 != 0)
+			/* The square under it: light and dark alternate along both axes. */
+			if (((x / IMAGE_CHECKER_SIDE) + (y / IMAGE_CHECKER_SIDE)) % 2 != 0) {
 				square = IMAGE_CHECKER_DARK;
+			} else {
+				square = IMAGE_CHECKER_LIGHT;
+			}
 
 			/* Each colour: the pixel's plus what it lets through of the square. */
 			out = 0xff000000U;
@@ -1159,11 +1319,13 @@ image_levels(
 		if (level->width <= IV_LEVEL_SMALLEST && level->height <= IV_LEVEL_SMALLEST)
 			break;
 
-		/* The next level. */
+		/* The next level, the last one's half. */
 		half = &image->levels[image->level_count];
 		error = image_halve(level->pixels, level->width, level->height, &half->pixels, &half->width, &half->height);
 		if (error != 0)
 			return error;
+
+		/* The level counts only once its pixels exist, so that freeing the image frees it. */
 		image->level_count++;
 	}
 
@@ -1171,8 +1333,8 @@ image_levels(
 	return 0;
 }
 
-/* Leaves an image empty with an errno value and the reason in the viewer's words; returns the errno value. */
-static int
+/* Records why an image is empty: an errno value (never 0) and the reason in the viewer's words. */
+static void
 image_refuse(
 	struct iv_image *image,
 	int error,
@@ -1182,13 +1344,10 @@ image_refuse(
 	if (error == 0)
 		error = EIO;
 
-	/* The error and its reason. */
+	/* The error and its reason, for the card that says the image cannot be shown. */
 	image->error = error;
 	snprintf(image->reason, sizeof(image->reason), "%s", reason);
 	iv_log("IMAGE refused path=%s error=%d reason=%s", image->path, error, reason);
-
-	/* Reports the error. */
-	return error;
 }
 
 /* Reads a 16-bit number in a byte order. */
