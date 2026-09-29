@@ -40,6 +40,9 @@ done
 mkdir -p "$build"
 accounts=$build/demo-accounts
 plan/ws035/demo/demo-accounts.sh "$accounts"
+# The guest harness's public key lets plan/tools/guest/guest.sh-style ssh reach root on the machine.
+key=plan/tmp/guest/id_ed25519.pub
+[ -f "$key" ] && extra="$extra --file /root/.ssh/authorized_keys=$key --mode /root/.ssh/authorized_keys=0600 --mode /root/.ssh=0700"
 extra="$extra --file /etc/passwd=$accounts/passwd --file /etc/group=$accounts/group --file /etc/shadow=$accounts/shadow"
 make -j"$(nproc)" ZEDBSD_CONFIG=plan/ws075/demo/config-demo-hdmi.mk BUILD="$build" I915_TEST_VBT=$vbt \
 	"ZEDBSD_TEST_EXTRA_FILES=$extra" ZEDBSD_TEST_IMAGE_TAG=demo-hdmi "$@" disk-image

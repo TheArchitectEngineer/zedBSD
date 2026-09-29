@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし（main が実装、2026-09-29 ユーザーの指示）
-Resume point: p001 の実装は済み（kernel の build は warning 0）。素の 5330 での試験（USB の image `build/demo-takeover`）はユーザー待ち
+Resume point: 2026-09-29 午後: ユーザーの実機の報告「LCD の scanout が有効にならない、テスト用の sshd が起動しない、ping は通る」。ユーザー:「takeover のコードは残っているが組み込み方が甘い」。sshd は demo の config に openssh が無かったのが原因 → `config-demo-hdmi.mk` に openssl・openssh、root に harness の鍵（`build-demo-image.sh`）。image `build/demo-hdmi3/hdd-image.img`（main e2c7f29e + この変更、p001 を含む）。次: その image で ssh して dmesg の `i915: N0`・`takeover:`・`resident display` を読み、組み込みを直す
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
