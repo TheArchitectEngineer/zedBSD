@@ -80,7 +80,11 @@
 #define STORAGE_INPUT		1U
 #define STORAGE_UNIFORM		2U
 #define STORAGE_OUTPUT		3U
+#define STORAGE_WORKGROUP	4U
 #define BUILT_IN_POSITION	0U
+
+/* The execution model of a compute shader (GLCompute). */
+#define SPIRV_MODEL_COMPUTE	5U
 
 /* The value of a decoration an id does not have. */
 #define SPIRV_NONE		0xffffffffU
@@ -1121,6 +1125,20 @@ spirv_variable(
 
 	/* The storage buffer a vertex shader captures outputs into (transform feedback) is the link's, not the interface's. */
 	if (storage == STORAGE_UNIFORM && module->bindings[id] == GLES_CAPTURE_BINDING)
+		return 0;
+
+	/*
+	 * A compute shader's shader storage blocks (ws101-p009: the GLSL
+	 * compiler's link lists them) and its shared variables are not the
+	 * uniforms' interface either.
+	 */
+	if (storage == STORAGE_UNIFORM &&
+	    module->model == SPIRV_MODEL_COMPUTE &&
+	    module->bindings[id] != SPIRV_NONE &&
+	    module->bindings[id] >= GLES_STORAGE_FIRST_BINDING &&
+	    module->bindings[id] < GLES_STORAGE_FIRST_BINDING + GLES_STORAGE_BINDINGS)
+		return 0;
+	if (storage == STORAGE_WORKGROUP && module->model == SPIRV_MODEL_COMPUTE)
 		return 0;
 
 	/* A uniform block other than the default one (binding 0): its binding and its type's name are recorded. */

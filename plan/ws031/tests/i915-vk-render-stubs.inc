@@ -262,26 +262,56 @@ kern_free(
 }
 
 /*
- * The device mutex (vkAllocateMemory takes it to find an imported resource):
- * the fixture runs one thread, so taking it does nothing.
+ * The mutexes (the device's, which vkAllocateMemory takes to find an
+ * imported resource, and the executor's object table and allocation list,
+ * ws075-p025): the fixture runs one thread, so taking one waits for nothing,
+ * but the held ones are remembered, so a mutex taken again by its holder (a
+ * deadlock in the kernel) or given back when not held fails the fixture.
  */
+static struct mutex *stub_mutexes_held[8];
+
+int
+mutex_init(
+	struct mutex *mutex,
+	enum lock_rank rank,
+	const char *name)
+{
+	/* Nothing to set up. */
+	(void)mutex;
+	(void)rank;
+	(void)name;
+	return 0;
+}
+
 void
 mutex_lock(
 	struct mutex *mutex)
 {
-	/* Nothing to wait for. */
-	(void)mutex;
+	unsigned index;
+
+	/* Not held already, and one more held. */
+	for (index = 0U; index < 8U; index++)
+		assert(stub_mutexes_held[index] != mutex);
+	for (index = 0U; index < 8U && stub_mutexes_held[index] != NULL; index++)
+		;
+	assert(index < 8U);
+	stub_mutexes_held[index] = mutex;
 }
 
 /*
- * Gives the device mutex back.
+ * Gives a mutex back.
  */
 void
 mutex_unlock(
 	struct mutex *mutex)
 {
-	/* Nothing to release. */
-	(void)mutex;
+	unsigned index;
+
+	/* It was held. */
+	for (index = 0U; index < 8U && stub_mutexes_held[index] != mutex; index++)
+		;
+	assert(index < 8U);
+	stub_mutexes_held[index] = NULL;
 }
 
 /*

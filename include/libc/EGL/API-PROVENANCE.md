@@ -1,4 +1,4 @@
-# EGL and OpenGL ES declaration provenance (WS068 p002)
+# EGL and OpenGL ES declaration provenance (WS068 p002; `GLES3/gl31.h` ws101-p009)
 
 These are the Khronos Group's public API headers, copied unchanged.  They are
 declarations, not implementation code; zedBSD's libEGL, libGLESv2 and
@@ -15,6 +15,7 @@ userland/desktop/libglesv2, userland/desktop/libwayland-egl).
 | `GLES2/gl2ext.h` | KhronosGroup/OpenGL-Registry `1cdd228e34966dd6b95bd203e9f84faba0f371a1` `api/GLES2/gl2ext.h` | `9afc725e9dda7c8b476e7337e75b22fa660ed462c169e203ec28c10e62f91f4c` | MIT |
 | `GLES2/gl2platform.h` | KhronosGroup/OpenGL-Registry `1cdd228e34966dd6b95bd203e9f84faba0f371a1` `api/GLES2/gl2platform.h` | `f5da0747540a50be5f44aad264aae45bdf157a192c40f17487dd9a2f99c71b6c` | Apache-2.0 |
 | `GLES3/gl3.h` | KhronosGroup/OpenGL-Registry `1cdd228e34966dd6b95bd203e9f84faba0f371a1` `api/GLES3/gl3.h` | `a0e4880142bd059bd4d7446f257920b5020b8bbb0a86eb0149cbd1ea2fcf8cb0` | MIT |
+| `GLES3/gl31.h` | KhronosGroup/OpenGL-Registry `1cdd228e34966dd6b95bd203e9f84faba0f371a1` `api/GLES3/gl31.h` | `bb17bfde4aeba912d3686a0cc68ac04710ddacbcc5df7354994927747357daf3` | MIT |
 | `GLES3/gl3platform.h` | KhronosGroup/OpenGL-Registry `1cdd228e34966dd6b95bd203e9f84faba0f371a1` `api/GLES3/gl3platform.h` | `a9e060dae5a2b11c5a889b679692b7089a10a7e03ebfbb6cf28217f6e322fb08` | Apache-2.0 |
 
 `eglplatform.h` picks the Wayland native types (`struct wl_display *`,

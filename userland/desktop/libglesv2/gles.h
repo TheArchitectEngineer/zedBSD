@@ -34,6 +34,7 @@
 #include "../libegl/zegl.h"
 
 #include <GLES3/gl3.h>
+#include <GLES3/gl31.h>
 #include <GLES2/gl2ext.h>
 
 #include <stddef.h>
@@ -195,6 +196,16 @@
 #define GLES_CAPTURE_BINDING	48U
 #define GLES_CAPTURE_HEADER	4U
 #define GLES_CAPTURE_COMPONENTS	64U
+
+/*
+ * Shader storage buffers (OpenGL ES 3.1's compute, ws101-p009): how many
+ * indexed binding points a context has (OpenGL ES 3.1's minimum, which
+ * fits the four storage buffers a stage of the i915 device reads), and
+ * the descriptor binding of binding point 0 (glsl.h's
+ * GLSL_STORAGE_FIRST_BINDING; binding point n is at this more n).
+ */
+#define GLES_STORAGE_BINDINGS	4U
+#define GLES_STORAGE_FIRST_BINDING 56U
 
 /* The longest name of an attribute or a uniform, with its terminator. */
 #define GLES_NAME		64U
@@ -760,6 +771,20 @@ struct gles_feedback {
 };
 
 /*
+ * One shader storage block of a linked compute program (ws101-p009): its
+ * name, the binding point it reads (its descriptor binding is
+ * GLES_STORAGE_FIRST_BINDING more), the bytes before its run-time array
+ * (the whole block without one), and whether the shader only reads it (a
+ * buffer bound to a block it may write is one the device writes).
+ */
+struct gles_storage {
+	char name[GLES_NAME];
+	GLuint binding;
+	uint32_t size;
+	int readonly;
+};
+
+/*
  * One uniform location: the uniform and the element of it.
  */
 struct gles_location {
@@ -776,10 +801,11 @@ struct gles_program {
 	int kind;
 	GLuint name;
 
-	/* The attached shaders (a geometry shader only in desktop GL, libGL). */
+	/* The attached shaders (a geometry shader only in desktop GL, libGL; a compute shader alone, OpenGL ES 3.1). */
 	struct gles_shader *vertex;
 	struct gles_shader *fragment;
 	struct gles_shader *geometry;
+	struct gles_shader *compute;
 
 	/* The locations glBindAttribLocation gave, by name, for the next link. */
 	char bound_names[GLES_ATTRIBS][GLES_NAME];
@@ -856,6 +882,16 @@ struct gles_program {
 	/* The named uniform blocks, by their bindings less 32. */
 	struct gles_block blocks[GLES_NAMED_BLOCKS];
 	unsigned block_count;
+
+	/*
+	 * A linked compute program's pipeline (VK_NULL_HANDLE for a program of
+	 * the other stages), its workgroup size and its shader storage blocks
+	 * (ws101-p009).
+	 */
+	VkPipeline compute_pipeline;
+	GLint local_size[3];
+	struct gles_storage storages[GLES_STORAGE_BINDINGS];
+	unsigned storage_count;
 
 	/* Whether glDeleteProgram waits for the program to stop being current. */
 	int delete_pending;
@@ -1107,6 +1143,17 @@ struct gles_state {
 	/* The indexed binding points of uniform buffers and of transform feedback buffers. */
 	struct gles_buffer_range uniform_ranges[GLES_UNIFORM_BINDINGS];
 	struct gles_buffer_range feedback_ranges[GLES_FEEDBACK_BINDINGS];
+
+	/*
+	 * OpenGL ES 3.1's compute (ws101-p009): whether the context offers it
+	 * (gles_state decides from the device), the buffers bound to
+	 * GL_SHADER_STORAGE_BUFFER and GL_DISPATCH_INDIRECT_BUFFER, and the
+	 * shader storage buffers' indexed binding points.
+	 */
+	int compute;
+	struct gles_buffer *storage_buffer;
+	struct gles_buffer *dispatch_buffer;
+	struct gles_buffer_range storage_ranges[GLES_STORAGE_BINDINGS];
 
 	/* The vertex attributes (the bound vertex array's). */
 	struct gles_attrib attribs[GLES_ATTRIBS];
@@ -1465,6 +1512,8 @@ void gles_pipelines_forget(struct gles_state *state, uint64_t program);
 int gles_read_rgba(struct zegl_context *context, GLint x, GLint y, GLsizei width, GLsizei height, unsigned char *rows);
 int gles_read_pixels(struct zegl_context *context, GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, int clamped, unsigned char *rows);
 uint32_t *gles_expand(GLenum mode, const uint32_t *indices, uint32_t first, GLsizei count, int rotate, uint32_t *expanded);
+int gles_draw_blocks(struct zegl_context *context, struct gles_state *state, VkDescriptorBufferInfo *blocks);
+VkDescriptorSet gles_draw_descriptors(struct gles_state *state, const VkDescriptorBufferInfo *blocks, const VkDescriptorBufferInfo *capture, const VkDescriptorBufferInfo *storages, uint32_t *offset);
 
 /*
  * What the SPIR-V of a shader says about its interface.
@@ -1479,7 +1528,7 @@ struct gles_spirv_variable {
 };
 
 struct gles_spirv {
-	/* The stage: 0 vertex, 4 fragment (SPIR-V's execution models). */
+	/* The stage: 0 vertex, 4 fragment, 5 compute (SPIR-V's execution models). */
 	uint32_t model;
 
 	/* The inputs and outputs by location (built-ins left out). */

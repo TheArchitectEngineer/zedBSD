@@ -88,7 +88,7 @@ stop)
 	ssh "$host" "pgrep -f '^qemu-system-x86_64.*$remote' > /dev/null && sudo -n python3 $remote/h4-ctl.py quit; sleep 2; true"
 	"$0" fetch "$out"
 	scp -q plan/ws031/tests/ufs-cat.py tools/build/check-ufs-image.py "$host:bigbang/"
-	ssh "$host" "python3 bigbang/ufs-cat.py $remote/guest.img /var/log/sessiond.log /var/log/greeter.log /var/log/messages /run/user/0/session.log" \
+	ssh "$host" "python3 bigbang/ufs-cat.py $remote/guest.img /var/log/sessiond.log /var/log/greeter.log /var/log/messages /run/user/0/session.log /run/user/1000/session.log" \
 		> "$out/guest-logs.txt" 2>&1
 	rm -f "$out/.running"
 	while [ -f "$out/.locked" ]; do sleep 1; done

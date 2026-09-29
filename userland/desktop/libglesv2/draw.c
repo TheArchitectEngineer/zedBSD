@@ -56,8 +56,6 @@ static int draw_texture_matches(const struct gles_texture *texture, unsigned kin
 static void draw_raster(struct gles_state *state, const struct gles_target *target, uint32_t topology, struct gles_raster *raster);
 static uint32_t draw_channels(const struct gles_state *state, unsigned index);
 static VkPipeline draw_pipeline(struct gles_state *state, const struct gles_target *target, const struct gles_raster *raster, const struct gles_vertex_layout *layout);
-static int draw_blocks(struct zegl_context *context, struct gles_state *state, VkDescriptorBufferInfo *blocks);
-static VkDescriptorSet draw_descriptors(struct gles_state *state, const VkDescriptorBufferInfo *blocks, const VkDescriptorBufferInfo *capture, uint32_t *offset);
 static void draw_vertex_attrib_integer(GLuint index, GLenum type, const uint32_t *values);
 static void draw_dynamic(struct gles_state *state, struct zegl_context *context, const struct gles_target *target);
 static VkRect2D draw_scissor_rect(struct gles_state *state, const struct gles_target *target);
@@ -1440,8 +1438,8 @@ draw_program(
 		return;
 	}
 
-	/* A linked program. */
-	if (state->program == NULL || !state->program->linked) {
+	/* A linked program of the draw's stages (a compute program only dispatches, ws101-p009). */
+	if (state->program == NULL || !state->program->linked || state->program->compute_pipeline != VK_NULL_HANDLE) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
@@ -1549,7 +1547,7 @@ draw_program(
 	}
 
 	/* The buffer ranges the named uniform blocks read. */
-	status = draw_blocks(context, state, blocks);
+	status = gles_draw_blocks(context, state, blocks);
 	if (status != 0)
 		return;
 
@@ -1580,7 +1578,7 @@ draw_program(
 	}
 
 	/* The descriptors. */
-	set = draw_descriptors(state, blocks, capture_buffer, &dynamic_offset);
+	set = gles_draw_descriptors(state, blocks, capture_buffer, NULL, &dynamic_offset);
 	if (set == VK_NULL_HANDLE) {
 		gles_report("the descriptors", -1);
 		gles_error(context, GL_OUT_OF_MEMORY);
@@ -3007,8 +3005,8 @@ draw_pipeline(
  * describes it.  Returns 0, or -1 with the error recorded when a block's
  * binding point has no buffer, or a range smaller than the block.
  */
-static int
-draw_blocks(
+int
+gles_draw_blocks(
 	struct zegl_context *context,
 	struct gles_state *state,
 	VkDescriptorBufferInfo *blocks)
@@ -3083,21 +3081,24 @@ draw_blocks(
  * Returns a descriptor set for the current program: its uniform block
  * (dynamic: the offset of this draw's copy in the stream is returned in
  * *offset), each sampler's texture (black when the unit has none that
- * can be sampled), and the named blocks' buffer ranges.  A draw with the
- * same program, stream buffer, textures and ranges as the one before
- * reuses its set.  VK_NULL_HANDLE when there is no memory.
+ * can be sampled), the named blocks' buffer ranges, a draw's capture
+ * buffer (NULL: none) and a dispatch's shader storage blocks' ranges (by
+ * the program's blocks; NULL: none, ws101-p009).  A draw with the same
+ * program, stream buffer, textures and ranges as the one before reuses
+ * its set.  VK_NULL_HANDLE when there is no memory.
  */
-static VkDescriptorSet
-draw_descriptors(
+VkDescriptorSet
+gles_draw_descriptors(
 	struct gles_state *state,
 	const VkDescriptorBufferInfo *blocks,
 	const VkDescriptorBufferInfo *capture,
+	const VkDescriptorBufferInfo *storages,
 	uint32_t *offset)
 {
 	VkDescriptorPoolSize sizes[5];
 	VkDescriptorPoolCreateInfo create;
 	VkDescriptorSetAllocateInfo allocate;
-	VkWriteDescriptorSet writes[GLES_UNITS + 2U + GLES_NAMED_BLOCKS];
+	VkWriteDescriptorSet writes[GLES_UNITS + 2U + GLES_NAMED_BLOCKS + GLES_STORAGE_BINDINGS];
 	VkDescriptorBufferInfo block;
 	VkDescriptorImageInfo images[GLES_UNITS];
 	VkBufferView texel_views[GLES_UNITS];
@@ -3233,11 +3234,11 @@ draw_descriptors(
 	if (differs != 0)
 		same = 0;
 
-	/* The same blocks' ranges too; a draw's capture buffer is its own. */
+	/* The same blocks' ranges too; a draw's capture buffer and a dispatch's storage buffers are their own. */
 	differs = 0;
 	if (same && program->block_count != 0U)
 		differs = memcmp(cache->blocks, blocks, program->block_count * sizeof(blocks[0]));
-	if (differs != 0 || capture != NULL)
+	if (differs != 0 || capture != NULL || storages != NULL)
 		same = 0;
 	if (same)
 		return cache->set;
@@ -3268,7 +3269,7 @@ draw_descriptors(
 		sizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		sizes[2].descriptorCount = DRAW_POOL_SETS * GLES_NAMED_BLOCKS;
 		sizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-		sizes[3].descriptorCount = DRAW_POOL_SETS;
+		sizes[3].descriptorCount = DRAW_POOL_SETS * (1U + GLES_STORAGE_BINDINGS);
 		sizes[4].type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
 		sizes[4].descriptorCount = DRAW_POOL_SETS * GLES_UNITS;
 		memset(&create, 0, sizeof(create));
@@ -3343,6 +3344,17 @@ draw_descriptors(
 		writes[count].descriptorCount = 1U;
 		writes[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		writes[count].pBufferInfo = &blocks[index];
+		count++;
+	}
+
+	/* A dispatch's shader storage blocks' ranges (ws101-p009), by the program's blocks. */
+	for (index = 0U; storages != NULL && index < program->storage_count; index++) {
+		writes[count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writes[count].dstSet = set;
+		writes[count].dstBinding = GLES_STORAGE_FIRST_BINDING + program->storages[index].binding;
+		writes[count].descriptorCount = 1U;
+		writes[count].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		writes[count].pBufferInfo = &storages[index];
 		count++;
 	}
 

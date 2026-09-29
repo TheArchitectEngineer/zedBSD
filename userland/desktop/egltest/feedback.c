@@ -174,11 +174,11 @@ egltest_feedback_start(void)
 	feedback_more();
 	feedback_errors();
 
-	/* OpenGL ES 3.0. */
+	/* OpenGL ES 3.0 or later (3.1 where the device offers compute, ws101-p009). */
 	version = glGetString(GL_VERSION);
 	same = 1;
 	if (version != NULL)
-		same = strncmp((const char *)version, "OpenGL ES 3.0", 13U);
+		same = strncmp((const char *)version, "OpenGL ES 3.", 12U);
 	feedback_outcomes[5] = 0;
 	if (same == 0)
 		feedback_outcomes[5] = 1;

@@ -41,19 +41,17 @@
 static int i915_gfx_bind_image(struct i915_render_session *session, struct i915_gfx_memory *memory, uint64_t resource, uint64_t offset);
 static int i915_gfx_bind_buffer(struct i915_render_session *session, struct i915_gfx_memory *memory, uint64_t resource, uint64_t offset);
 static struct i915_gem_object *memory_import_object(struct i915_render_session *session, uint32_t resource);
+static int i915_gfx_memory_attach(struct i915_gfx_memory *memory, struct i915_gem_object *object);
+static void i915_gfx_memory_publish(struct i915_render_device *vk, struct i915_gfx_memory *memory);
 
 /*
- * Every live VkDeviceMemory, newest first.
- *
- * A blob finds the allocation it is the storage of here, by the executor
- * device, the open of the node and the allocation's identity (every process
- * numbers its allocations from the same start).  An allocation joins the list once
- * it is published and leaves it on vkFreeMemory.  The list takes no lock of
- * its own; it relies on its callers not running an executor command and a
- * blob attach or detach at once.  XXX: the list is shared by every executor
- * device and session rather than kept by its owner.
+ * The executor device keeps every live VkDeviceMemory of its sessions on a
+ * list (vk->memories), newest first, under its lock (vk->memories_lock).  A
+ * blob finds the allocation it is the storage of there, by the open of the
+ * node and the allocation's identity (every process numbers its allocations
+ * from the same start).  An allocation joins the list once it is published
+ * and leaves it on vkFreeMemory.
  */
-static struct i915_gfx_memory *i915_gfx_memories;
 
 /*
  * Returns the CPU view of `bytes` bytes of a memory range.
@@ -135,14 +133,36 @@ drv_i915_render_blob_attach(
 	struct i915_gem_object *object)
 {
 	struct i915_gfx_memory *memory;
+	int error;
 
-	/* Looks for the allocation of this device and open that the blob names. */
-	for (memory = i915_gfx_memories; memory != NULL; memory = memory->next) {
-		/* Stops at an allocation of this device and open with the blob's identity. */
-		if (memory->vk == vk && memory->gpu == gpu && memory->identity == blob_id)
+	/* Looks for the allocation of this open that the blob names, and makes the blob its storage. */
+	mutex_lock(&vk->memories_lock);
+
+	for (memory = vk->memories; memory != NULL; memory = memory->next) {
+		/* Stops at an allocation of this open with the blob's identity. */
+		if (memory->gpu == gpu && memory->identity == blob_id)
 			break;
 	}
 
+	/* Makes the blob the storage of the one found. */
+	error = i915_gfx_memory_attach(memory, object);
+
+	mutex_unlock(&vk->memories_lock);
+
+	/* Reports whether the blob is the allocation's storage now. */
+	return error;
+}
+
+/*
+ * Makes a blob the storage of an allocation found on the list; the caller
+ * holds the list's lock.  Returns ENOENT for no allocation, EINVAL for one
+ * that has storage or is larger than the blob.
+ */
+static int
+i915_gfx_memory_attach(
+	struct i915_gfx_memory *memory,
+	struct i915_gem_object *object)
+{
 	/* No allocation has that identity. */
 	if (memory == NULL)
 		return ENOENT;
@@ -174,11 +194,15 @@ drv_i915_render_blob_detach(
 	struct i915_gfx_memory *memory;
 
 	/* Forgets the blob in every allocation of this device it backs. */
-	for (memory = i915_gfx_memories; memory != NULL; memory = memory->next) {
-		/* An allocation of this device whose storage is the blob loses it. */
-		if (memory->vk == vk && memory->object == object)
+	mutex_lock(&vk->memories_lock);
+
+	for (memory = vk->memories; memory != NULL; memory = memory->next) {
+		/* An allocation whose storage is the blob loses it. */
+		if (memory->object == object)
 			memory->object = NULL;
 	}
+
+	mutex_unlock(&vk->memories_lock);
 }
 
 /*
@@ -193,9 +217,13 @@ drv_i915_gfx_memory_release(
 	struct i915_gfx_memory *memory)
 {
 	struct i915_gfx_memory **link;
+	struct i915_render_device *vk;
 
-	/* Takes the allocation off the list where it is found. */
-	for (link = &i915_gfx_memories;
+	/* Takes the allocation off its device's list where it is found. */
+	vk = memory->vk;
+	mutex_lock(&vk->memories_lock);
+
+	for (link = &vk->memories;
 	     *link != NULL;
 	     link = &(*link)->next) {
 		if (*link == memory) {
@@ -203,6 +231,8 @@ drv_i915_gfx_memory_release(
 			break;
 		}
 	}
+
+	mutex_unlock(&vk->memories_lock);
 
 	/* Frees the record; the storage is the blob's, which its open releases. */
 	kern_free(memory);
@@ -342,10 +372,8 @@ drv_i915_gfx_allocate_memory(
 	 */
 	if (memory != NULL) {
 		published = drv_i915_object_lookup(session, I915_VK_OBJ_MEMORY, identity);
-		if (published == memory) {
-			memory->next = i915_gfx_memories;
-			i915_gfx_memories = memory;
-		}
+		if (published == memory)
+			i915_gfx_memory_publish(session->vk, memory);
 	}
 
 	/* Succeeded: the reply carries the result of the allocation. */
@@ -589,4 +617,19 @@ i915_gfx_bind_buffer(
 	buffer->memory = memory;
 	buffer->offset = offset;
 	return 0;
+}
+
+/* Puts a published allocation at the head of its device's list, where blob attach finds it. */
+static void
+i915_gfx_memory_publish(
+	struct i915_render_device *vk,
+	struct i915_gfx_memory *memory)
+{
+	/* Links it in. */
+	mutex_lock(&vk->memories_lock);
+
+	memory->next = vk->memories;
+	vk->memories = memory;
+
+	mutex_unlock(&vk->memories_lock);
 }

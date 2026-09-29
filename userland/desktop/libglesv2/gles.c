@@ -55,12 +55,14 @@ static void gles_release(struct zegl_context *context);
 static int gles_capability(struct gles_state *state, GLenum cap, int **flag);
 static unsigned gles_integers(struct zegl_context *context, struct gles_state *state, GLenum pname, GLint *values);
 static unsigned gles_integers_es3(struct gles_state *state, GLenum pname, GLint *values);
+static unsigned gles_integers_compute(struct gles_state *state, GLenum pname, GLint *values);
 static GLint gles_buffer_name(const struct gles_buffer *buffer);
 static GLenum gles_draw_buffer(struct gles_state *state, GLenum index);
 static GLenum gles_read_buffer(struct gles_state *state);
 static GLenum gles_read_pair(struct gles_state *state, GLenum pname);
 static void gles_blend_buffer(GLenum target, GLuint index, int on);
 static int gles_version_three(struct zegl_context *context);
+static int gles_compute_offered(struct zegl_context *context, const VkPhysicalDeviceLimits *limits);
 static unsigned gles_desktop_integers(struct gles_state *state, GLenum pname, GLint *values);
 static unsigned gles_floats(struct zegl_context *context, struct gles_state *state, GLenum pname, GLfloat *values);
 
@@ -157,6 +159,9 @@ gles_state(
 	/* The default transform feedback object is bound. */
 	state->default_feedback.bound = 1;
 	state->feedback = &state->default_feedback;
+
+	/* Whether the context offers OpenGL ES 3.1's compute (ws101-p009). */
+	state->compute = gles_compute_offered(context, &state->limits);
 
 	/* Every array four floats and disabled, every current value the floats (0, 0, 0, 1). */
 	for (index = 0U; index < GLES_ATTRIBS; index++) {
@@ -1243,6 +1248,12 @@ glGetInteger64v(
 		return;
 	}
 
+	/* The largest shader storage block, the device's largest storage buffer range (ws101-p009). */
+	if (pname == GL_MAX_SHADER_STORAGE_BLOCK_SIZE && state->compute) {
+		data[0] = (GLint64)state->limits.maxStorageBufferRange;
+		return;
+	}
+
 	/* An integer state. */
 	count = gles_integers(context, state, pname, integers);
 	for (index = 0U; index < count; index++)
@@ -1345,8 +1356,10 @@ glGetString(
 	GLenum name)
 {
 	struct zegl_context *context;
+	struct gles_state *state;
 	const GLubyte *layer;
 	int three;
+	int compute;
 
 	/* Without a current context there are no strings. */
 	context = gles_context();
@@ -1360,18 +1373,30 @@ glGetString(
 			return layer;
 	}
 
-	/* The string asked for (OpenGL ES 3.0's when the device captures outputs). */
+	/*
+	 * The string asked for: OpenGL ES 3.0's when the device captures
+	 * outputs, 3.1's when the context offers compute too (ws101-p009: the
+	 * compute part of 3.1; the rest of 3.1's calls record errors).
+	 */
 	three = gles_version_three(context);
+	state = gles_state(context);
+	compute = 0;
+	if (state != NULL)
+		compute = state->compute;
 	switch (name) {
 	case GL_VENDOR:
 		return (const GLubyte *)"Kei";
 	case GL_RENDERER:
 		return (const GLubyte *)"Kei OpenGL ES on Vulkan";
 	case GL_VERSION:
+		if (compute)
+			return (const GLubyte *)"OpenGL ES 3.1 Kei";
 		if (three)
 			return (const GLubyte *)"OpenGL ES 3.0 Kei";
 		return (const GLubyte *)"OpenGL ES 2.0 Kei";
 	case GL_SHADING_LANGUAGE_VERSION:
+		if (compute)
+			return (const GLubyte *)"OpenGL ES GLSL ES 3.10";
 		if (three)
 			return (const GLubyte *)"OpenGL ES GLSL ES 3.00";
 		return (const GLubyte *)"OpenGL ES GLSL ES 1.00";
@@ -1762,7 +1787,7 @@ gles_integers(
 			values[0] = 3;
 		return 1U;
 	case GL_MINOR_VERSION:
-		values[0] = 0;
+		values[0] = state->compute;
 		return 1U;
 	case GL_VIEWPORT:
 		memcpy(values, context->gles.viewport, 4U * sizeof(GLint));
@@ -2139,7 +2164,79 @@ gles_integers_es3(
 		break;
 	}
 
+	/* OpenGL ES 3.1's compute states, in a context that offers it. */
+	if (state->compute)
+		return gles_integers_compute(state, pname, values);
+
 	/* Not an integer state. */
+	return 0U;
+}
+
+/*
+ * Writes one of OpenGL ES 3.1's compute states (ws101-p009: bindings and
+ * limits, the device's where it has one; image and atomic counter limits
+ * are 0, as they are not offered); returns how many, 0 when the name is
+ * not one.
+ */
+static unsigned
+gles_integers_compute(
+	struct gles_state *state,
+	GLenum pname,
+	GLint *values)
+{
+	/* The states, one by one. */
+	switch (pname) {
+	case GL_SHADER_STORAGE_BUFFER_BINDING:
+		values[0] = gles_buffer_name(state->storage_buffer);
+		return 1U;
+	case GL_DISPATCH_INDIRECT_BUFFER_BINDING:
+		values[0] = gles_buffer_name(state->dispatch_buffer);
+		return 1U;
+	case GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS:
+		values[0] = (GLint)state->limits.maxComputeWorkGroupInvocations;
+		return 1U;
+	case GL_MAX_COMPUTE_SHARED_MEMORY_SIZE:
+		values[0] = (GLint)state->limits.maxComputeSharedMemorySize;
+		return 1U;
+	case GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS:
+	case GL_MAX_COMBINED_SHADER_STORAGE_BLOCKS:
+	case GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS:
+		values[0] = (GLint)GLES_STORAGE_BINDINGS;
+		return 1U;
+	case GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS:
+	case GL_MAX_FRAGMENT_SHADER_STORAGE_BLOCKS:
+		values[0] = 0;
+		return 1U;
+	case GL_MAX_SHADER_STORAGE_BLOCK_SIZE:
+		values[0] = INT32_MAX;
+		if (state->limits.maxStorageBufferRange < (uint32_t)INT32_MAX)
+			values[0] = (GLint)state->limits.maxStorageBufferRange;
+		return 1U;
+	case GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT:
+		values[0] = (GLint)state->limits.minStorageBufferOffsetAlignment;
+		return 1U;
+	case GL_MAX_COMPUTE_UNIFORM_BLOCKS:
+		values[0] = (GLint)GLES_STAGE_BLOCKS;
+		return 1U;
+	case GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS:
+		values[0] = (GLint)GLES_UNITS;
+		return 1U;
+	case GL_MAX_COMPUTE_UNIFORM_COMPONENTS:
+		values[0] = 1024;
+		return 1U;
+	case GL_MAX_COMBINED_COMPUTE_UNIFORM_COMPONENTS:
+		values[0] = 1024 + (GLint)GLES_STAGE_BLOCKS * GLES_UNIFORM_BLOCK_SIZE / 4;
+		return 1U;
+	case GL_MAX_COMPUTE_ATOMIC_COUNTERS:
+	case GL_MAX_COMPUTE_ATOMIC_COUNTER_BUFFERS:
+	case GL_MAX_COMPUTE_IMAGE_UNIFORMS:
+		values[0] = 0;
+		return 1U;
+	default:
+		break;
+	}
+
+	/* Not a compute state. */
 	return 0U;
 }
 
@@ -2228,6 +2325,63 @@ gles_version_three(
 
 	/* Succeeded: OpenGL ES 3.0. */
 	return 1;
+}
+
+/*
+ * Reports whether a context offers OpenGL ES 3.1's compute (ws101-p009):
+ * an OpenGL ES 3 context (not libGL's desktop GL) of OpenGL ES 3.0, whose
+ * queue runs compute, on a device whose limits are at least OpenGL ES
+ * 3.1's minimums (workgroups, shared memory, four storage buffers a
+ * stage, 2^27 bytes of a storage buffer).
+ */
+static int
+gles_compute_offered(
+	struct zegl_context *context,
+	const VkPhysicalDeviceLimits *limits)
+{
+	VkQueueFamilyProperties *families;
+	uint32_t count;
+	int compute;
+
+	/* An OpenGL ES 3 context of OpenGL ES 3.0 (the device's feature gles_version_three asks for; the state is being made), not desktop GL's. */
+	if (!context->display->features.vertexPipelineStoresAndAtomics ||
+	    gles_fixed != NULL ||
+	    context->version < 3)
+		return 0;
+
+	/* OpenGL ES 3.1's minimums of the compute limits. */
+	if (limits->maxComputeWorkGroupInvocations < 128U ||
+	    limits->maxComputeWorkGroupSize[0] < 128U ||
+	    limits->maxComputeWorkGroupSize[1] < 128U ||
+	    limits->maxComputeWorkGroupSize[2] < 64U ||
+	    limits->maxComputeWorkGroupCount[0] < 65535U ||
+	    limits->maxComputeWorkGroupCount[1] < 65535U ||
+	    limits->maxComputeWorkGroupCount[2] < 65535U ||
+	    limits->maxComputeSharedMemorySize < 16384U)
+		return 0;
+
+	/* And of the storage buffers. */
+	if (limits->maxPerStageDescriptorStorageBuffers < GLES_STORAGE_BINDINGS ||
+	    limits->maxDescriptorSetStorageBuffers < GLES_STORAGE_BINDINGS ||
+	    limits->maxStorageBufferRange < (1U << 27))
+		return 0;
+
+	/* The display's queue family, which must run compute too. */
+	count = 0U;
+	vkGetPhysicalDeviceQueueFamilyProperties(context->display->physical, &count, NULL);
+	if (context->display->family >= count)
+		return 0;
+	families = calloc(count, sizeof(*families));
+	if (families == NULL)
+		return 0;
+	vkGetPhysicalDeviceQueueFamilyProperties(context->display->physical, &count, families);
+	compute = 0;
+	if (context->display->family < count && (families[context->display->family].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0U)
+		compute = 1;
+	free(families);
+
+	/* Succeeded: whether it runs compute. */
+	return compute;
 }
 
 /* Writes one of desktop GL's integer states (libGL); returns how many values, 0 when the name is not one. */

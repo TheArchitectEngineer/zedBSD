@@ -69,6 +69,14 @@ drv_i915_render_attach(
 		return error;
 	}
 
+	/* The lock of the list of allocations (none yet). */
+	error = mutex_init(&vk->memories_lock, LOCK_RANK_DEVICE, "i915 vk memories");
+	if (error != 0) {
+		drv_i915_object_table_destroy(vk->objects);
+		kern_free(vk);
+		return error;
+	}
+
 	/* Fills the capset that lets libvulkan accept the node as a Vulkan backend. */
 	i915_render_capset_fill(vk);
 
