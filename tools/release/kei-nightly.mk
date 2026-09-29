@@ -21,8 +21,10 @@ KEI_NIGHTLY_BASE_URL := https://github.com/awemorris/zedBSD/releases/download/$(
 KEI_NIGHTLY_BASE_ARCHIVE := $(abspath build/releases/$(KEI_NIGHTLY_BASE_ASSET))
 KEI_NIGHTLY_IMAGE ?= $(BUILD)/hdd-image.img
 KEI_NIGHTLY_ZIP ?= $(BUILD)/Kei-nightly.zip
-# Set to 1 only to try a draft base archive locally; never in CI.
-KEI_NIGHTLY_ALLOW_DRAFT ?=
+# 1 accepts a draft base archive.  The draft (fork commits unconfirmed) is on
+# the rev-0 release by the user's decision (2026-09-29, ws088-p002); set this
+# back to empty once the base is rebuilt with the fork commits.
+KEI_NIGHTLY_ALLOW_DRAFT ?= 1
 
 .PHONY: kei-nightly-base kei-nightly-zip
 kei-nightly-base:
