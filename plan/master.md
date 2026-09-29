@@ -1,10 +1,9 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし（subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
+Active Queue: [q499](queue.md) / ws085-p001（Windows Venusの表示と速度、2026-09-29 ユーザー指示。vendor forkの直接変更を追加許可）。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
-Next（2026-09-29 に整理。main d1c3f097 で build と boot test PASS（batch119、QEMU）。batch116・117 は `include/libc/pdf.h` と UAPI の input の追加で sysroot と clang・libcxx 等の package を再 build し、warning は外部の package の source だけ。共有の toolchain の tree は lock のまま、llvm-source の manifest 一致）: 実機の USB の demo の image を新しくした（`build/demo-hdmi2/hdd-image.img`、main 2b07ca13 の時点、
-root の password は `build/demo-hdmi2/demo-accounts/root-password`、QEMU・実機の起動は未実施）。ユーザーが実機で試す（HDMI の LCD での login・logout の目視、touch の USB）。
+Next（2026-09-29 夕に更新）: **素の 5330 で firmware の画面の takeover → 内蔵 LCD の Keiland が動作**（WS084 p001・p002 cleared、image `build/demo-lcd3/hdd-image.img`、ユーザー「完璧です」）。HDMI の LCD はいったん外し LCD のみの構成（demo の既定 `display=edp`）。GT は RP0 の要求で操作中 24.5 present/s（RPS の割込みは F-054）。
 次の周期（demo critical）: WS074 の direction → p072 → p037（[amazon-goal.md](ws074/amazon-goal.md)）、WS079 p009（規約）と CCITTFax・password の入力・thumbnail、
 WS075 p007〜p010 と BUG-058（p017 uncleared）、WS035 の F-048。WS082 は study.md §10 の 11 項目のユーザーの判断待ち。WS080 はデモ critical の後。
 <!-- awesome-plan-current:end -->
@@ -52,9 +51,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | Goal | 当面の成果 | Milestone | 担当 | 出典 |
 | --- | --- | --- | --- | --- |
-| **fg010** | **2026-10-17 の Open Source Conference Tokyo Fall のデモに向けて、Wayland デスクトップ（zdesktop）を完成させる** | MG006 | [WS035](ws035/ws.md)（zdesktop・合成・タスクバー）。GPU の土台は [WS014](ws014/ws.md)・[WS031](ws031/ws.md) | 2026-09-24 ユーザー指示 |
+| **fg010** | **2026-10-17 の Open Source Conference Tokyo Fall のデモに向けて、Kei Operating System を仕上げる**: Dell Latitude 5330 の実機（HDMI の 10 インチの touch LCD + AES pen、USB boot）で graphical login から Keiland のデスクトップ、demo critical のアプリ（Notes・PDF Viewer・ブラウザ（amazon.co.jp）・Files・terminal）が動く | MG006 | [WS035](ws035/ws.md)（Keiland）、[WS075](ws075/ws.md)（i915・HDMI）、[WS079](ws079/ws.md)（Notes・PDF Viewer）、[WS074](ws074/ws.md)（ブラウザ）、[WS081](ws081/ws.md)（touch）。GPU の土台は [WS014](ws014/ws.md)・[WS031](ws031/ws.md) | 2026-09-24 ユーザー指示、2026-09-28 のデモの範囲と機材（下の判断の表）、2026-09-29 に記述を更新 |
 
-デモの platform は amd64（QEMU と実機）と想定している（仮定。ユーザーの確認が要る）。以前の focus（fg004 インストーラの実機、
+デモの platform は amd64 の実機（Dell Latitude 5330、HDMI + USB、2026-09-28 ユーザーの回答）。開発の試験は QEMU（amd64）で行い、実機の証拠と分けて書く。以前の focus（fg004 インストーラの実機、
 fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残すが、現在は優先しない。
 
 ### fg010 に必要な判断
@@ -108,10 +107,10 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS041](ws041/ws.md) | MG006 | 起きた thread の即時実行 | completed | — |
 | [WS042](ws042/ws.md) | MG002 | `/bin/sh` の POSIX 互換性 | completed | — |
 | [WS043](ws043/ws.md) | MG002 | base の utility を POSIX に（sed・grep・awk ほか） | completed | — |
-| [WS045](ws045/ws.md) | MG002 | base の text utility の GNU 拡張（sed・awk・grep ほか） | incomplete | p001〜p009 cleared（サブエージェント、2026-09-27 に main へ merge）。GNU の case 515/515、POSIX 492/492、7 package の configure の比較が同じ。**判断待ち 3 点**（dirname の複数 operand、mktemp・install・base64 の追加、xargs の持ち主）。amd64 以外の image は未実施 |
+| [WS045](ws045/ws.md) | MG002 | base の text utility の GNU 拡張（sed・awk・grep ほか） | incomplete | p001〜p009 cleared（サブエージェント、2026-09-27 に main へ merge）。GNU の case 515/515、POSIX 492/492、7 package の configure の比較が同じ。3 点は 2026-09-27 夜に決定（dirname は GNU 風、mktemp・install・base64 は追加、xargs は WS001 でよい → WS001）。amd64 以外の image は未実施 |
 | [WS046](ws046/ws.md) | MG002 | GNU 互換の make（autotools の出力を実行できる範囲。並列・jobserver は WS064） | incomplete | p002〜p004・p006 cleared。p007 uncleared（BUG-033 の主因を直した）。p009・p012 cleared（BUG-033: configure 204〜252 → 91 秒、link 0.36 秒、file の fault 15 µs/page）。p013 cleared（libc の mount の一覧の API。coreutils の cross build が通った）。次は p014（p011 の当て直し）・p005 |
 | [WS047](ws047/ws.md) | MG001 | build.sh と Noct による build system（TUI・kernel・base・packages を別の system に。Makefile は当面残す） | planning | p001 調査と設計 |
-| [WS048](ws048/ws.md) | MG008 | Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード） | incomplete | p001〜p003 cleared（FDT、brcmstb の PCIe、firmware の mailbox と VL805 の firmware。host 試験と QEMU の起動、実機は未実施）。**p004 は hal.h の差分（`hal_pmem_map_uncached`）の承認待ち**（ws048/proposed/）。2026-09-27 サブエージェント、main へ merge |
+| [WS048](ws048/ws.md) | MG008 | Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード） | incomplete | p001〜p003 cleared（FDT、brcmstb の PCIe、firmware の mailbox と VL805 の firmware。host 試験と QEMU の起動、実機は未実施）。p004 cleared（承認済みの hal.h の差分 `hal_pmem_map_uncached` を適用、実機は未実施）。p005 は config の有効化が残り uncleared。2026-09-27 サブエージェント、main へ merge |
 | [WS044](ws044/ws.md) | MG008 | rpi4 を開発に使える形に（console の font、FAT32 の boot、lldb） | incomplete | p001 font・p002 FAT32 の boot partition（QEMU）・p005 cleared。p003（lldb）ほかは WS036 の agent。実機は未実施 |
 | [WS049](ws049/ws.md) | MG003 | kernel 内の ACPI AML interpreter | incomplete | p001〜p006・p010〜p015 cleared（p006 kernel への統合: 承認済みの `acpi.rsdp` の差分を適用、amd64 の既定で ACPI の driver が起動、guest の `/dev/acpi` が host の dump と一致。2026-09-27 merge）。次は p007。ACPI はデスクトップが片付くかリミットが余るとき（2026-09-27 方針） |
 | [WS050](ws050/ws.md) | MG003 | USB-C の UCSI driver | planning | WS049 が前提 |
@@ -127,7 +126,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS060](ws060/ws.md) | MG004 | UFS の journal の commit を batch にして名前の操作を速くする（BUG-040）。journal を既定にする前提（WS063） | completed | 2026-09-27 完了（規約は WS063-p002 で）。p001 は p002・p003 に置き換えて canceled |
 | [WS061](ws061/ws.md) | MG002 | expat の configure と compile を Linux と同等の水準にする（fg011） | incomplete | 受け入れの計測は達成（q449 の後）: configure 8.2〜8.9 秒（host 10.7）、make（直列）11.3 秒（host `-j1` 15.5）、`cc t.c -o t` 76〜84 ms（host 83〜85）。残り: 規約の Phase ws061-p011（最後） |
 | [WS062](ws062/ws.md) | MG004 | amd64 の disk image を ESP の vmunix・UFS の root partition・swap partition に（2026-09-25 ユーザー指示） | completed | 2026-09-27 完了（p004: 規約の全文。zedimage-host の出力が同じ） |
-| [WS063](ws063/ws.md) | MG004 | UFS の journal を既定にする（journal の無い image は mount の時に作る、`nojournal`）（2026-09-26 ユーザー指示） | completed | 2026-09-27 完了（p002: 規約の全文と回帰、crash の試験 v3・v2・root）。v2 の tail の journal は v2 のまま（判断待ち、既定）。制限: transaction ごとの解放 block の追跡は 8192 まで |
+| [WS063](ws063/ws.md) | MG004 | UFS の journal を既定にする（journal の無い image は mount の時に作る、`nojournal`）（2026-09-26 ユーザー指示） | completed | 2026-09-27 完了（p002: 規約の全文と回帰、crash の試験 v3・v2・root）。v2 の tail の journal は v2 のまま（2026-09-27 ユーザーが案 A で確定）。制限: transaction ごとの解放 block の追跡は 8192 まで |
 | [WS064](ws064/ws.md) | MG002 | base の make の並列（`-j`）と、並列の make の時間を host と同等以上に（2026-09-26 ユーザー指示） | completed | 2026-09-27 完了（p003: 規約の全文、make・sh・kernel の lock・vmspace の fork・libc の posix_spawn。guest の make-diff 100/100、fork・vfork・posix_spawn の試験、expat の configure が同じ。時間は未測定） |
 | [WS065](ws065/ws.md) | MG002 | `/bin/sh` に POSIX が未規定とする bash 拡張を足す（2026-09-26 ユーザー指示） | completed | 2026-09-27 完了（p004: 規約の全文、host の sh-diff と guest の expat の configure が同じ） |
 | [WS067](ws067/ws.md) | MG002 | `/dev/fd` を呼んだ process の descriptor に合わせる（BUG-054、2026-09-26 ユーザー「最優先」） | completed | BUG-054 resolved（QEMU）。p001・p002 cleared |
@@ -137,7 +136,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS070](ws070/ws.md) | MG006 | zdesktop の System Menu: client がメニューの意味を渡し、zdesktop が浮いたタイトルバーとシステムバーに描く（`xdg_toplevel_menu_v1`、libzdesktop で包む）（2026-09-27 ユーザー指示） | completed | completed（2026-09-27）: System Menu と Titlebar（MENU・CONTROLS・TABS）。残りは Future Work（F-042・F-043・F-045）、i915 実機は WS075 |
 | [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | completed | completed（2026-09-27）: zdesktop-files の最初の版（すりガラスの付箋の pane、タブ、titlebar の CONTROLS、context menu、PNG の thumbnail、DnD、configure_bounds）。残りは Future Work（F-032〜F-041・F-044）、i915 実機は WS075、窓の外への DnD は WS035 |
 | [WS072](ws072/ws.md) | MG004 | write cached の UFS の format の lease（BUG-060）と、NVMe の timeout の後の回復で root の mount が ETIMEDOUT になる（BUG-059）（2026-09-27、サブエージェント） | completed | 2026-09-27 完了（p001 BUG-060: write cached の format の lease、p002 BUG-059: NVMe の timeout の後の再発行） |
-| [WS073](ws073/ws.md) | MG002 | Bug Board の bug の解消（2026-09-27 ユーザー「バグリストに載っているものを解決するサブエージェントを1つ追加しましょう。」）。WS072・WS056（BUG-046）・WS001（BUG-050）の担当と性能の bug（BUG-027・033）を除く | incomplete | 2026-09-28: BUG-075・079〜084・086〜090 を解決。次: BUG-093 → BUG-051 |
+| [WS073](ws073/ws.md) | MG002 | Bug Board の bug の解消（2026-09-27 ユーザー「バグリストに載っているものを解決するサブエージェントを1つ追加しましょう。」）。WS072・WS056（BUG-046）・WS001（BUG-050）の担当と性能の bug（BUG-027・033）を除く | incomplete | 2026-09-29: BUG-100（Remacs 用 Noct の build）を解決。q498 で通常の `make` が完走。次: BUG-093 → BUG-051 |
 | [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | 2026-09-28: p016〜p021・p050〜p058 cleared。ブラウザは部品になった: `libbrowser.so`（`include/libc/browser.h`、36 の API）、`/bin/browser` はその上の shell、2 つ目の使い手 `browser-probe`。次: p031（DOM の focus 等）・p032（form の部品）・p009（外部 stylesheet の URL） |
 | [WS075](ws075/ws.md) | MG006 | i915 の高度化: 今日のデスクトップ（zdesktop の glass・backdrop のぼかし・タブ）とグラフィックス（GLES 2/3、GL 3.0〜3.2）を Latitude 5330 の i915 のネイティブ実行器で動かす（compiler の inlining・F-022・F-023 の不足、性能と安定）（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」） | incomplete | 2026-09-28: p006 は増分 6 まで実機で確認、HDMI の主出力（p011 H1・p012 H2・p013 H4）、BUG-091（p014）、p015（BUG-085 の再試験、途中）。デモの image: `plan/ws075/demo/build-demo-image.sh` |
 | [WS076](ws076/ws.md) | MG002 | libc の libm を自前で正しく書き直す（src/libc、誤差 1 ulp 以内、fmod 等は正確）（2026-09-28 ユーザー「libmは独自に書いてください。libcのツリーに入れてください。」） | completed | 2026-09-28 完了（`src/libc/math/`、群 B は全件で正しく丸め、BUG-078 解決）。F-046・F-047 へ移管 |
@@ -145,15 +144,22 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS078](ws078/ws.md) | MG006 | Kei Operating System への名前の移行（2026-09-28 ユーザーの決定: OS の名前 Kei、カーネルの内部名 zedbsd、Keiland、`/bin/wayland`・`/bin/xserver`・`/bin/browser`、`KERN_` の接頭辞、ロゴは Kei の 3 文字） | incomplete | 2026-09-28: p002・p003・p006・BUG-080・retro への移動は済み、p004 はほぼ済み。残り: 注釈と log の名前、p005 |
 | [WS079](ws079/ws.md) | MG006 | 手書きノート（Notes、筆圧 4096 段階の USB のペンタブレット、PDF に保存し編集の metadata を持つ）と PDF Viewer（scroll と page の swipe）、上の右端から左下へのスワイプで Notes を起動・最前面・全画面（2026-09-28 ユーザー） | incomplete | p002〜p008・p010〜p015 cleared（p015: CCITTFax、password の入力、thumbnail、2026-09-29）。p009（規約）cleared（2026-09-29、main が pen の image で guest 試験 3 本 PASS。input-inject・touchinject の規約は WS081 p002 へ移管）。残り: JBIG2・JPX、password の入力は US の ASCII だけ、実機は未実施 |
 | [WS080](ws080/ws.md) | MG002 | `ld.coff`: Win64 PE32+ の動的ローダ（PE/COFF の mapping・relocation・DLL・import/export・Microsoft x64 ABI・最小の TEB/PEB・GS base）。NT の loader は再現せず `AddressOfEntryPoint` へ直接。互換の DLL は上に積む（2026-09-28 ユーザーの仕様 [spec.md](ws080/spec.md)） | planning | p001（設計）から。GS base は swapgs（案 A）に決定、差分は p001 で承認を得る。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/`（商標のため Win64 の名前を OS に出さない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/`。橋の DLL は置かず互換の DLL が zedBSD の UAPI を直接呼び Wayland と直接通信。判断待ち: 優先度 |
-| [WS081](ws081/ws.md) | MG006 | touch の操作の質: 慣性のある scroll と、低い fps の安い touch panel の数式による補間・予測。HID の driver・compositor・ブラウザ（と Keiland の app）にまたがる計画をこの 1 か所で（2026-09-28 ユーザー） | incomplete | p001（設計、[design.md](ws081/design.md)）・p003（補間・予測の library `libkeiland/motion.c`、host で 426009 の検査 ok）cleared（2026-09-29）。p002（1 報告 1 時刻・Scan Time の `MSC_TIMESTAMP`・注入の device の Scan Time、input-inject・touchinject の規約の是正）cleared（2026-09-29、host と QEMU の guest）。p004（compositor で τ・resampling、libkeiland の `keiland_motion_*` の公開、`KEILAND_VERSION` 9）cleared（2026-09-29、QEMU の機能の確認。滑らかさの数値は host と実機 p007）。p005（libkeiland の scroller・gesture、`KEILAND_VERSION` 10）・p012（PDF Viewer の慣性の scroll・pinch・page の flick）cleared（2026-09-29）。p013（Notes: ペンは線、指は scroll・pinch・double tap、掌の除外）・p011（Terminal の慣性の scroll、長押しで単語の選択）cleared（2026-09-29）。次: touch の drag and drop（compositor の data.c）→ p010（Files）。subagent は Noct を build しないので image の build と boot test は main が行う。design §10 の 6 項目はユーザーの確認待ち（既定の案で進む） |
+| [WS081](ws081/ws.md) | MG006 | touch の操作の質: 慣性のある scroll と、低い fps の安い touch panel の数式による補間・予測。HID の driver・compositor・ブラウザ（と Keiland の app）にまたがる計画をこの 1 か所で（2026-09-28 ユーザー） | incomplete | p001（設計、[design.md](ws081/design.md)）・p003（補間・予測の library `libkeiland/motion.c`、host で 426009 の検査 ok）cleared（2026-09-29）。p002（1 報告 1 時刻・Scan Time の `MSC_TIMESTAMP`・注入の device の Scan Time、input-inject・touchinject の規約の是正）cleared（2026-09-29、host と QEMU の guest）。p004（compositor で τ・resampling、libkeiland の `keiland_motion_*` の公開、`KEILAND_VERSION` 9）cleared（2026-09-29、QEMU の機能の確認。滑らかさの数値は host と実機 p007）。p005（libkeiland の scroller・gesture、`KEILAND_VERSION` 10）・p012（PDF Viewer の慣性の scroll・pinch・page の flick）cleared（2026-09-29）。p013（Notes: ペンは線、指は scroll・pinch・double tap、掌の除外）・p011（Terminal の慣性の scroll、長押しで単語の選択）cleared（2026-09-29）。p014（指の drag and drop、Terminal の選択の指の drag）cleared。次の枠: p010（Files、worktree に未 commit の途中の変更）→ p015（Notes の「指で書く」の切り替え、2026-09-29 ユーザーの決定）→ p006 → p007（実機）。subagent は Noct を build しないので image の build と boot test は main が行う。design §10 の 6 項目はユーザーの確認待ち（既定の案で進む） |
 | [WS082](ws082/ws.md) | MG002 | Linux の `/dev/kvm` の移植の検討（eventfd 等の非 POSIX の fd の代わりに unix socket の message で MMIO・IRQ の通知。ioctl を直接の移植・別の仕組みでの代替・実装不能に分類）（2026-09-28 ユーザー） | incomplete | p001 cleared（[study.md](ws082/study.md)）。§10 の 11 項目のユーザーの判断待ち |
 | [WS083](ws083/ws.md) | MG006 | Vulkan Video の拡張（`VK_KHR_video_queue`・`video_decode_queue`・`video_decode_h264`）と i915 の VCS・MFX の対応、最初の目標は H.264 の decode（2026-09-28 ユーザー。OSC のデモには必須ではない） | planning | p001（設計）から。デモの後 |
+| [WS084](ws084/ws.md) | MG006 | i915 の firmware の画面の引き継ぎ（素の実機の UEFI の起動で GOP が点けた pipe を N1 で止めて driver のものにし、デスクトップを出す）（2026-09-29 ユーザー、main が実装） | incomplete | p001・p002 cleared（2026-09-29、素の 5330 で takeover → LCD の Keiland、24.5 present/s）。残り: parity との乖離 1〜3 の整理 |
+| [WS085](ws085/ws.md) | MG006 | Windows版WINQ-EMUのVenusでデスクトップを表示する（2026-09-29 ユーザー） | incomplete | p001 実行中。mapped blob scanoutでデスクトップを表示。SDL→仮想USB HIDタッチを実装しQMP 2指注入でメニューを確認。Files起動停止の共有画像通信を修正し開閉・再起動とTerminal同時起動を確認。物理タッチと表示所有者切替は未試験 |
+| [WS086](ws086/ws.md) | MG002 | ls の出力を GNU ls と同じにする（端末なら既定で列、端末の幅）（2026-09-29 ユーザー） | planning | p001 から |
+| [WS087](ws087/ws.md) | MG002 | /bin/sh の対話の行編集: 矢印キーの履歴（BUG-103）と Tab の補完（2026-09-29 ユーザー） | planning | p001 から |
+| [WS088](ws088/ws.md) | MG006 | Windows で動く Kei-nightly.zip を CI で配布する（元の zip を clang の cache と同じ Release `rev-0` に置いて再利用し、CI が hdd-image.img を入れる）（2026-09-29 ユーザー） | planning | p001 から。WS085 の取り込みに依存 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
 ## WS の優先順位
 
 依存による実行順とは別のもの。Queue の権限は変えない。2026-09-28 に整理（それ以前の順は git の履歴にある）。
+
+0. **現在のユーザー指示**: WS085（Windows hostのVenus、q499）。
 
 **運用（ユーザー、2026-09-27〜28）**: 作業用のサブエージェントを N=1〜4（通常は 3〜4。2026-09-28 の枠はユーザーの指示で N=5）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
 N=0 になったら実装をまとめて計画（master・ws.md・queue・Future Work・Bug Board）を整理する。試験は amd64 だけ、Phase の終わりに。
@@ -173,8 +179,10 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
+| venus-win32 の取り込み（WS085）: merge（submodule を外す、font の license）、Linux（Venus 1.3）の回帰と Windows（1.4）の両立 → WS088（Kei-nightly.zip の CI） | ユーザーの方針（2026-09-29） | 条件は決定済み |
+| WS087（sh の矢印キーの履歴・Tab の補完）、WS086（ls）、BUG-102（ping） | 実機の使い勝手（2026-09-29） | p001 から |
 | 実機の USB の demo の image（`build/demo-hdmi2`）の結果（HDMI の LCD での login・logout の目視、eDP、touch の USB の descriptor、Notes・PDF Viewer） | デモ | ユーザーが試験 |
-| WS074: p037（table の最小）→ amazon-goal.md の続き。p035・p060・p062・p070〜p075（direction・grid・intrinsic の幅・container の単位）cleared（2026-09-29）。Chromium との一致: トップ 80.4%（ink 76.6%）、検索 77.2%（ink 34.7%） | ブラウザのデモの目標 | subagent 実行中 |
+| WS074: amazon-goal.md の続き。p037（table の最小）・p027（RegExp）cleared（2026-09-29）。JS の Date の builtin を実装の途中で枠の上限で止まった（未 commit、worktree `.claude/worktrees/agent-a346b6e810eda5cb6` の js/builtin_date.c 等）。Chromium との一致: トップ 80.4%、検索 77.2% | ブラウザのデモの目標 | 次の枠でその worktree から再開 |
 | WS079: p009（規約）、CCITTFax・password の入力・thumbnail | PDF・Notes | p008 cleared |
 | WS075: p007〜p010、BUG-058（p017 は 6 回で再現せず uncleared）、BUG-095 | i915 | 実機の LCD の目視の後 |
 | WS035: p121〜p123 cleared（2026-09-29: 見える旧名、Notes の toolbar と title の区切り、App Home の線画のアイコン 10 枚）、p124（title bar・bar・Wiseview の app の印を同じ絵に）・p125（試験が greeter を止める、zdesktop-guest.sh の stop）cleared。残り: 実機（i915 での atlas の新しい行、browser の窓の印）、他の道具（plan/tools/titlebar/・plan/ws079/tests/）の greeter の前提、guest.py の二重起動の検査、F-048 | Keiland | — |
@@ -328,12 +336,29 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | デモの利用者・KVM の検討の時期（2026-09-28） | ユーザーの回答: デモは**名前のある利用者**でログインする（指定が無いので利用者名 `kei`、表示名「Kei」。root で空の password のログインはデモの image から外す）。WS082（KVM の検討）は**空いた枠で始める** |
 | toolchain の保護と subagent の範囲（2026-09-28） | ユーザー:「再発防止のため、ツールチェインはメインエージェントの許可がないと変更できないようにしましょう。また、サブエージェントの修正可能範囲を明示しましょう。」→ AGENTS.md の「禁止と承認」に 2 つの規則、`plan/tools/toolchain-lock.sh`（共有の toolchain の tree の directory を読み取り専用に、main だけが一時的に unlock）。経緯: 15:55〜15:57 に古い Makefile の worktree の build が共有の `build/llvm-source` に clang・libcxx の package の patch 5 つ（41 file）を当てた。main が patch -R で戻し、manifest の全 file の SHA-256 と file の一覧の一致を確認（BUG-096） |
 | HDMI の主出力（2026-09-28） | ユーザーの回答: 蓋は開けたまま（ACPI 未実装で sleep させない）、デモは HDMI + USB（USB-C は時間が余れば）、LCD は 1920x1080 の見込み、HDMI が無ければ内蔵画面で起動、音は出さない（DVI）、H1 の調査で 5330 を占有してよい、ssh の alias を 10.0.30.3 に書き直す（main が実施）→ [hdmi-main-output.md](ws075/hdmi-main-output.md) |
+| 既定の image と login（2026-09-29） | ユーザー: root の password を root、kei の password を kei、見つかった外部の display → 内蔵の LCD の順、make の既定の hdd-image.img でデスクトップを試せる、既定で自動の graphical login → base の passwd・group・shadow に kei（uid 1000、network）と SHA-512 の password、i915 は display= が無い・auto・hdmi で HDMI を先に探し、edp・panel で内蔵（boot の parser も受ける）、menuconfig の既定を amd64 に、Venus・i915 を amd64 で既定 y、sessiond が `/etc/keiland/autologin`（既定 kei、root は拒む）の利用者を boot で 1 回 login（Log Out の後は greeter）。serial・pc98 の試験の login は password を送る。確認: 既定の config で image の build と boot test PASS、Venus の guest で greeter を経ずに desktop（`build/ws035-shots/default-image-20260929-autologin.png`）。既定の image は font を持たず文字が出ない、guest の harness の SSH の鍵も無い。実機は未実施 |
+| Notes の指（2026-09-29） | 実機の AES ペンがまだ認識されていない件で、Notes の指の扱いをユーザーに確認:「切り替えを付ける」→ 既定は指で scroll・pinch（掌の誤りの線を防ぐ）、toolbar の切り替えで一本指で線を引ける（その間は二本指で scroll・pinch）。ws081-p015 |
 | デモの image の root（2026-09-28） | root を lock し su も無いと実機で管理の作業ができない件でユーザーの回答:「root に password を設定する」→ `plan/ws035/demo/demo-accounts.sh` が root に password を付ける（`DEMO_ROOT_PASSWORD`、無ければ 12 文字の乱数。`BUILD/demo-accounts/root-password`（0600、git に入れない）に書く。image には SHA-512 crypt だけ）。空の password の root は引き続き無し。kei は password 無しのまま |
 | System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
-| Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、**hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）の承認待ち**。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）ことの確認も待つ。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |
-| ACPI の統合 | WS049 の p001〜p005・p010〜p015（サブエージェント）を 2026-09-27 に main へ merge（driver は未 link）。**判断待ち**: (1) HAL の差分 `hal_get_arch_handoff("acpi.rsdp")`（ws049/proposed/hal-acpi-rsdp.diff、hal.h は変えないが HAL の責務の追加）の承認、(2) 対象機を Dell Latitude 5330 とし Linux の `sudo acpidump -b` の table を得る、(3) `_OSI` は既定で Windows 2000〜2022 を名乗る（ACPICA と同じ）でよいか、(4) `/dev/acpi` は text の読み書き（UAPI を足さない、device 番号 0x000B0000）か ioctl か `/dev/system` への統合か | WS049、Guardrail |
-| aarch64 の toolchain（WS036） | WS036 の p026 を 2026-09-27 に main へ merge: LLVM の patch が zedbsd6 → zedbsd7（AArch64 zedbsd target）。main の `build/llvm` は `build/llvm-zedbsd7`（symlink）、作業中のサブエージェントは main を merge するまで `build/llvm-zedbsd6`。**判断待ち**: (1) GitHub の Release rev-0 の toolchain cache が zedbsd6 のままで、`make toolchain-cache` と CI の identity 検査が落ちる。zedbsd7 の archive（`make llvm-host-archive`）の upload と `ZEDBSD_LLVM_CACHE_SHA256` の更新（push・公開はユーザーの指示で）。(2) ws036-p027: Pi の firmware の bootargs には `=` の無い token（rootwait 等）があり kernel の parser が拒む。案 A（parser を緩める、全 platform）・B（rpi4 の HAL が区切りの後を渡す）・C（boot partition の file を読む）・D（今のまま、既定） | WS036、Guardrail |
+| Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）を足した: **2026-09-27 夜に承認・適用済み**（Guardrail の表）。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |
+| ACPI の統合 | WS049 の p001〜p005・p010〜p015（サブエージェント）を 2026-09-27 に main へ merge（driver は未 link）。2026-09-27 夜の判断で解決済み: (1) HAL の `hal_get_arch_handoff("acpi.rsdp")` は承認・適用済み（Guardrail の表）、(2) 対象機は Dell Latitude 5330（`ssh awe@10.0.30.3`、sudo で acpidump してよい）、(3) `_OSI` と (4) `/dev/acpi` の形はエージェントが決める | WS049、Guardrail |
+| aarch64 の toolchain（WS036） | WS036 の p026 を 2026-09-27 に main へ merge: LLVM の patch が zedbsd6 → zedbsd7（AArch64 zedbsd target）。main の `build/llvm` は `build/llvm-zedbsd7`（symlink）。2026-09-27 の判断で解決済み: (1) toolchain の cache は最新の patch level で更新し GitHub へ upload してよい（ユーザー「ツールチェインをGitHubにアップロードしてOKです」「Toolchain cacheは更新してください」）、(2) ws036-p027 の bootargs は案 A（parser を緩める、全 platform） | WS036、Guardrail |
 | UFS の v2 の journal（WS063） | `--profile=journal-snapshot` の v2 の tail の journal の volume は v2 のまま（v3 へ移さない。v2 の locator が volume の末尾の snapshot の領域と並ぶため）。2026-09-27 ユーザー「じゃあとりあえず今のままでOKです。」→ **案 A（今のまま）で確定**。スナップショットの機能を設計するときに見直す | WS063 |
+
+### 2026-09-29 のユーザーの判断（有効なもの）
+
+| 項目 | 決定 | 記録先 |
+| --- | --- | --- |
+| 表示の build の既定 | ユーザー:「GPUの問題は解決したとみなして、以後はロゴを出してメッセージを隠すビルドにしましょう。ふたたびGPUドライバの修正をするとき、ロゴを無効にしましょう。」→ demo・実機の image は既定（logo と `kmsg=quiet`、`plan/ws075/demo/build-demo-image.sh BUILD`）。GPU の driver を直す Phase だけ `ZEDBSD_GRAPHICAL_BOOT=n "ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"`（logo を消し kernel の message を画面に残す） | Guardrail、WS084 |
+| LCD のみの構成 | ユーザー:「HDMIはいったんやめて、LCDのみの構成にします。」→ demo の既定 `display=edp`。HDMI の LCD は WS075 に戻す | WS084、WS075 |
+| サブエージェント | ユーザー:「サブエージェントの禁止は解除します。ですが、まずは実機の問題をクリアしてから、その先にサブエージェントを展開します。」→ AGENTS.md を更新 | AGENTS.md |
+| ping | ユーザー:「ユーザkeiがpingできません。ネットワーク権限がないようです。」→ raw socket が superuser だけ。直し方（setuid・ICMP の datagram socket・group）は未決 | [BUG-102](bugs/BUG-102.md) |
+| ls | ユーザー:「lsの結果が1つずつ改行されています。GNU lsと同じにしたいです。」 | [WS086](ws086/ws.md) |
+| sh の行編集 | ユーザー:「/bin/shが上下キーでヒストリーをたどれないようです。たどれるようにしたいです。」「/bin/shがタブキーの補間を使えません。使えるようにしたいです。」 | [WS087](ws087/ws.md)、[BUG-103](bugs/BUG-103.md) |
+| Windows の Venus | ユーザー:「GitHubのorigin/venus-win32ブランチに、QEMUのWindows版でVenusを利用できるようにした特殊ビルドにおいてKeiが動作するようにしたパッチがあります。これを取り込んで、WindowsのVenusも利用でき、かつ、我々のテスト環境のLinuxでのVenusも利用できるように、していきます。ちなみにWindowsの方がVenus 1.4, LinuxがVenus 1.3でした。」→ branch（`origin/venus-win32` 94908af8、分岐点 9c52dddc）を main に取り込む。branch の WS085（Windows 版 WINQ-EMU の Venus）・BUG-100・BUG-101・q496〜q499 の ID をそのまま使い、WS085 の目標に「Windows（Venus 1.4）と Linux（Venus 1.3）の両方で動く」を足す。main の新しい ID は WS086 以降・BUG-102 以降。確認の要る点: branch は font（Inter・JetBrains Mono・Droid Sans Fallback）を git に入れ（今までは `build/ws035-fonts/` の git の外）、`.gitmodules` で vendor の submodule（QEMU・virglrenderer の fork、raspberrypi-firmware）を足している | WS085（branch） |
+| venus-win32 の取り込みの条件 | ユーザー:「フォントは、ライセンスが問題なければ、gitに入れてOKです。ライセンスファイルが必要なら置いてください。ライセンスに問題があれば別のフォントに置き換えてください。」「submoduleはミスなのでいらないです。」→ 取り込むとき `.gitmodules` と `vendor/` の submodule を外す。font は license を確かめて git に入れる（Inter・JetBrains Mono は OFL 1.1、Droid Sans Fallback は Apache 2.0 の見込み。license の file は branch にある） | WS085（branch） |
+| ping（決定） | ユーザー:「pingをsetuidにします。これはBSD系OSだからです。」→ ping を setuid root で install し、raw socket を開いた後に権限を落とす | [BUG-102](bugs/BUG-102.md) |
+| Kei-nightly.zip | ユーザー:「~/Kei-nightly.zipを置きました。…Kei-nightly.zipは、clangのキャッシュと同じReleaseにアップロードして再利用して、CIでhdd-image.imgが入ったKei-nightly.zipを配布できるようにしましょう。」 | [WS088](ws088/ws.md) |
 
 ### 主な依存関係
 

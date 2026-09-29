@@ -33,6 +33,16 @@ int js_builtin_install_boolean(struct vm_realm *realm);
 int js_builtin_install_number(struct vm_realm *realm);
 int js_builtin_install_math(struct vm_realm *realm);
 int js_builtin_install_global(struct vm_realm *realm);
+int js_builtin_install_regexp(struct vm_realm *realm);
+
+/* RegExp's algorithms that String.prototype's methods use (builtin_regexp.c). */
+int js_regexp_is(vm_value value);
+int js_regexp_create(struct vm_realm *realm, vm_value pattern, vm_value flags, vm_value *result);
+int js_regexp_symbol_match(struct vm_realm *realm, vm_value regexp, struct vm_string *string, vm_value *result);
+int js_regexp_symbol_replace(struct vm_realm *realm, vm_value regexp, struct vm_string *string, vm_value replace_value, vm_value *result);
+int js_regexp_symbol_search(struct vm_realm *realm, vm_value regexp, struct vm_string *string, vm_value *result);
+int js_regexp_symbol_split(struct vm_realm *realm, vm_value regexp, struct vm_string *string, vm_value limit, vm_value *result);
+int js_regexp_substitution(struct vm_realm *realm, struct vm_string *matched, struct vm_string *string, size_t position, const vm_value *captures, uint32_t capture_count, vm_value named, struct vm_string *replacement, vm_value *result);
 
 /* Evaluating source text for eval and the Function constructor (builtin_global.c). */
 int js_builtin_evaluate(struct vm_realm *realm, const struct vm_string *source, int strict, vm_value *result);

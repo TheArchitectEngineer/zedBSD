@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001〜p005・p011〜p014 は cleared（2026-09-29）。次は p010（Files、p014 の指の drag and drop の後）。HID の driver・Wayland の compositor・ブラウザ（と Keiland の app）にまたがる計画はこの WS の 1 か所で行う
+Resume point: p001〜p005・p011〜p014 は cleared（2026-09-29）。p010（Files）は実装の途中で枠の上限で止まった: 未 commit の変更が worktree `.claude/worktrees/agent-abe8d4ea8794ae4fc` に残る（files の main.c・window.c・window.h・Makefile、libkeiland の motion.c、試験 host-filestouch.c・p010-guest.sh、host-scroll.c）。次の枠: その worktree から p010 を再開 → p015（Notes の指で書く切り替え、ユーザーの決定）→ p006（ブラウザ）→ p007（実機）→ p009。BUG-099 は診断を入れて tracking
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）
@@ -54,6 +54,7 @@ p005 を scroller・gesture の library と app ごとの適用に分ける、p0
 | [ws081-p011](phase011/phase.md) | Terminal への適用（scrollback の px 単位の慣性の scroll、tap の click、長押しからの単語の選択） | cleared | p005 |
 | [ws081-p012](phase012/phase.md) | PDF Viewer への適用（scroll と慣性、二本指の拡大、page mode の swipe） | cleared | p005 |
 | [ws081-p013](phase013/phase.md) | Notes の指の scroll・pinch・double tap・toolbar の tap と掌の判定（ペンは線。design §3.8 の指の線は main の指示で取りやめ、§5.6） | cleared | p005 |
+| ws081-p015 | Notes の「指で書く」の切り替え（2026-09-29 ユーザーの決定: 既定は今のまま指は scroll・pinch。toolbar に切り替えを足し、入れた間は一本指で線、二本指で scroll・pinch。実機でペンが使えない場合のデモの備え） | planned | p013 |
 | ws081-p006 | ブラウザの慣性の scroll と touch の入力（browser の shell） | planning | p005、WS074（`browser.h` の scroll の範囲・overscroll） |
 | ws081-p007 | 実機の 10 インチの touch LCD での調整（報告の率の実測、係数の調整） | planning | p005、p006、touch の USB |
 | ws081-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |

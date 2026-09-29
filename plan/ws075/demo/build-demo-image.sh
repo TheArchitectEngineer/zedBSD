@@ -1,10 +1,10 @@
 #!/bin/sh
 # ws075-p013 (H4): builds the demonstration image (plan/ws075/demo/config-demo-hdmi.mk): the graphical boot to the
 # greeter and the session on the HDMI display (display=hdmi), App Home with the demonstration's applications
-# (plan/ws035/demo/apps.conf: Files, Notes, Terminal, PDF Viewer, Browser, Model viewer, Gears, X terminal), and the fonts and the
-# wallpaper, which are not in git (build/ws035-fonts/, build/ws035-wallpaper/).  The demonstration's accounts
+# (plan/ws035/demo/apps.conf: Files, Notes, Terminal, PDF Viewer, Browser, Model viewer, Gears, X terminal), and the
+# wallpaper, which is not in git (build/ws035-wallpaper/).  The demonstration's accounts
 # (ws035-p120, plan/ws035/demo/demo-accounts.sh): the person kei, shown as "Kei", logs in without a password (Enter
-# at the greeter and at the lock screen); root has a password (DEMO_ROOT_PASSWORD, or a random one in BUILD/demo-accounts/root-password).  sessiond waits for the i915's GPU node while the kernel reports the device still attaching
+# the passwords are root and kei); kei is logged in by itself at boot.  sessiond waits for the i915's GPU node while the kernel reports the device still attaching
 # (hw.gpu.attaching, BUG-092).
 #
 #   plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough] [MAKE ARGUMENTS...]     (default build/demo-hdmi)
@@ -27,19 +27,14 @@ if [ "${1:-}" = passthrough ]; then
 	shift
 fi
 extra="--file /etc/keiland/apps.conf=plan/ws035/demo/apps.conf"
-for pair in \
-	keiland.ttf=build/ws035-fonts/Inter.ttf \
-	keiland-OFL.txt=build/ws035-fonts/OFL.txt \
-	keiland-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf \
-	keiland-mono-OFL.txt=build/ws035-fonts/JetBrainsMono-OFL.txt \
-	keiland-fallback.ttf=build/ws035-fonts/DroidSansFallbackFull.ttf \
-	keiland-fallback-LICENSE.txt=build/ws035-fonts/DroidSansFallback-LICENSE.txt; do
-	[ -f "${pair#*=}" ] && extra="$extra --file /usr/share/fonts/$pair"
-done
+# The fonts and their licenses come with the compositor's package (userland/desktop/fonts/).
 [ -f build/ws035-wallpaper/wallpaper-1080.ppm ] && extra="$extra --file /usr/share/keiland/wallpaper.ppm=build/ws035-wallpaper/wallpaper-1080.ppm"
 mkdir -p "$build"
 accounts=$build/demo-accounts
 plan/ws035/demo/demo-accounts.sh "$accounts"
+# The guest harness's public key lets plan/tools/guest/guest.sh-style ssh reach root on the machine.
+key=plan/tmp/guest/id_ed25519.pub
+[ -f "$key" ] && extra="$extra --file /root/.ssh/authorized_keys=$key --mode /root/.ssh/authorized_keys=0600 --mode /root/.ssh=0700"
 extra="$extra --file /etc/passwd=$accounts/passwd --file /etc/group=$accounts/group --file /etc/shadow=$accounts/shadow"
 make -j"$(nproc)" ZEDBSD_CONFIG=plan/ws075/demo/config-demo-hdmi.mk BUILD="$build" I915_TEST_VBT=$vbt \
 	"ZEDBSD_TEST_EXTRA_FILES=$extra" ZEDBSD_TEST_IMAGE_TAG=demo-hdmi "$@" disk-image

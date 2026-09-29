@@ -56,7 +56,8 @@ enum values_shorthand {
 	SHORT_GRID_ROW,
 	SHORT_GRID_AREA,
 	SHORT_PLACE_ITEMS,
-	SHORT_CONTAINER
+	SHORT_CONTAINER,
+	SHORT_BORDER_SPACING
 };
 
 /*
@@ -244,6 +245,7 @@ static const struct values_name values_names[] = {
 	{ "grid-row-start", CSS_PROP_GRID_ROW_START },
 	{ "grid-row-end", CSS_PROP_GRID_ROW_END },
 	{ "container-type", CSS_PROP_CONTAINER_TYPE },
+	{ "border-collapse", CSS_PROP_BORDER_COLLAPSE },
 	{ "-webkit-clip-path", CSS_PROP_CLIP_PATH },
 	{ "flex", SHORT_FLEX },
 	{ "-webkit-flex", SHORT_FLEX },
@@ -271,6 +273,7 @@ static const struct values_name values_names[] = {
 	{ "grid-area", SHORT_GRID_AREA },
 	{ "place-items", SHORT_PLACE_ITEMS },
 	{ "container", SHORT_CONTAINER },
+	{ "border-spacing", SHORT_BORDER_SPACING },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -341,13 +344,15 @@ static const struct values_keyword values_display[] = {
 	{ "list-item", CSS_DISPLAY_LIST_ITEM },
 	{ "none", CSS_DISPLAY_NONE },
 	{ "table", CSS_DISPLAY_TABLE },
-	{ "inline-table", CSS_DISPLAY_TABLE },
+	{ "inline-table", CSS_DISPLAY_INLINE_TABLE },
 	{ "table-row", CSS_DISPLAY_TABLE_ROW },
 	{ "table-cell", CSS_DISPLAY_TABLE_CELL },
-	{ "table-row-group", CSS_DISPLAY_BLOCK },
-	{ "table-header-group", CSS_DISPLAY_BLOCK },
-	{ "table-footer-group", CSS_DISPLAY_BLOCK },
-	{ "table-caption", CSS_DISPLAY_BLOCK },
+	{ "table-row-group", CSS_DISPLAY_TABLE_ROW_GROUP },
+	{ "table-header-group", CSS_DISPLAY_TABLE_ROW_GROUP },
+	{ "table-footer-group", CSS_DISPLAY_TABLE_ROW_GROUP },
+	{ "table-caption", CSS_DISPLAY_TABLE_CAPTION },
+	{ "table-column", CSS_DISPLAY_TABLE_COLUMN },
+	{ "table-column-group", CSS_DISPLAY_TABLE_COLUMN },
 	{ "flex", CSS_DISPLAY_FLEX },
 	{ "inline-flex", CSS_DISPLAY_FLEX },
 	{ "-webkit-flex", CSS_DISPLAY_FLEX },
@@ -358,6 +363,13 @@ static const struct values_keyword values_display[] = {
 	{ "inline-grid", CSS_DISPLAY_GRID },
 	{ "flow-root", CSS_DISPLAY_BLOCK },
 	{ "contents", CSS_DISPLAY_CONTENTS },
+	{ NULL, 0 }
+};
+
+/* The keywords of border-collapse (ws074-p037). */
+static const struct values_keyword values_border_collapse[] = {
+	{ "separate", 0 },
+	{ "collapse", 1 },
 	{ NULL, 0 }
 };
 
@@ -1010,6 +1022,9 @@ css_parse_property(
 		return values_grid_pair(CSS_PROP_GRID_ROW_START, CSS_PROP_GRID_ROW_END, tokens, count, out, out_count);
 	case SHORT_GRID_AREA:
 		return values_grid_area(tokens, count, out, out_count);
+	case SHORT_BORDER_SPACING:
+		/* One length for both directions, or across then down. */
+		return values_pair(parse, CSS_PROP_BORDER_SPACING_X, CSS_PROP_BORDER_SPACING_Y, tokens, count, out, out_count);
 	case SHORT_CONTAINER:
 		/* container: a name, then a slash and the type (the name is not kept in this pass). */
 		first = (int)values_split_at(tokens, count, CSS_TOKEN_DELIM, '/');
@@ -1522,6 +1537,9 @@ values_single(
 	case CSS_PROP_CONTAINER_TYPE:
 		table = values_container_type;
 		break;
+	case CSS_PROP_BORDER_COLLAPSE:
+		table = values_border_collapse;
+		break;
 	case CSS_PROP_WHITE_SPACE:
 		table = values_white_space;
 		break;
@@ -1603,8 +1621,8 @@ values_single(
 		return 0;
 	}
 
-	/* outline-offset: a length. */
-	if (property == CSS_PROP_OUTLINE_OFFSET)
+	/* outline-offset and border-spacing: a length. */
+	if (property == CSS_PROP_OUTLINE_OFFSET || property == CSS_PROP_BORDER_SPACING_X || property == CSS_PROP_BORDER_SPACING_Y)
 		return values_length(&tokens[0], 0, value);
 
 	/* flex-grow and flex-shrink: a number that is not negative. */

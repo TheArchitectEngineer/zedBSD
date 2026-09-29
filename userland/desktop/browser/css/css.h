@@ -79,7 +79,11 @@ enum css_display {
 	CSS_DISPLAY_TABLE_CELL,
 	CSS_DISPLAY_FLEX,
 	CSS_DISPLAY_CONTENTS,
-	CSS_DISPLAY_GRID
+	CSS_DISPLAY_GRID,
+	CSS_DISPLAY_TABLE_ROW_GROUP,
+	CSS_DISPLAY_TABLE_CAPTION,
+	CSS_DISPLAY_INLINE_TABLE,
+	CSS_DISPLAY_TABLE_COLUMN
 };
 
 /* The values of position. */
@@ -455,6 +459,10 @@ struct css_style {
 	int text_align;
 	int direction;
 	int container_type;
+
+	/* Tables (ws074-p037): the spacing between the cells (across, then down, in pixels), and whether the borders collapse. */
+	float border_spacing[2];
+	int border_collapse;
 	int white_space;
 	int underline;
 	int list_style;

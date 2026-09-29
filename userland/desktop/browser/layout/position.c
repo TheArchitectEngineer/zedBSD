@@ -294,8 +294,10 @@ layout_content_width(
 	if (box->replaced)
 		return box->width;
 
-	/* A grid is as wide as its columns at their content's sizes (ws074-p072). */
+	/* A grid or a table is as wide as its columns at their content's sizes (ws074-p072, ws074-p037). */
 	if (box->style.display == CSS_DISPLAY_GRID)
+		return box->grid_content;
+	if (box->style.display == CSS_DISPLAY_TABLE || box->style.display == CSS_DISPLAY_INLINE_TABLE)
 		return box->grid_content;
 
 	/* A row of flex items is as wide as the items were before they flexed. */

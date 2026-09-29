@@ -157,9 +157,11 @@ def all_option_files() -> list[Path]:
 
 
 def defaults() -> dict[str, object]:
+    # amd64 is the default target (2026-09-29 user decision): the default image
+    # is the one that starts the desktop.
     values: dict[str, object] = {
-        "ZEDBSD_PLATFORM": "i386",
-        "ZEDBSD_VARIANT": variant_default("i386"),
+        "ZEDBSD_PLATFORM": "amd64",
+        "ZEDBSD_VARIANT": variant_default("amd64"),
     }
     for path in all_option_files():
         for key, kind, _label, _targets, default, _choices in read_rows(path, 6):
@@ -192,15 +194,15 @@ def load(path: Path) -> dict[str, object]:
             if row[3] == "y" and row[4].startswith("packages/"):
                 selected.add(row[0])
     if str(values.get("ZEDBSD_PLATFORM")) not in {item[0] for item in PLATFORMS}:
-        values["ZEDBSD_PLATFORM"] = "i386"
+        values["ZEDBSD_PLATFORM"] = "amd64"
     normalize_target(values)
     return values
 
 
 def normalize_target(values: dict[str, object]) -> None:
-    platform = str(values.get("ZEDBSD_PLATFORM", "i386"))
+    platform = str(values.get("ZEDBSD_PLATFORM", "amd64"))
     if platform not in {item[0] for item in PLATFORMS}:
-        platform = "i386"
+        platform = "amd64"
         values["ZEDBSD_PLATFORM"] = platform
     allowed_variants = {value for value, _label in variants_for_platform(platform)}
     if str(values.get("ZEDBSD_VARIANT", "")) not in allowed_variants:

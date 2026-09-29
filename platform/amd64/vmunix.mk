@@ -1598,12 +1598,13 @@ $(AMD64_BOOT_LOGO): tools/build/make-boot-splash.py userland/desktop/artwork/kei
 
 # The BIOS image's zedbsd.cfg gets the graphical boot's lines too when ZEDBSD_GRAPHICAL_BOOT is y
 # (ws035-p099; the BIOS loader draws the logo on its VBE framebuffer).
-AMD64_BIOS_ZEDBSD_CONFIG := $(BUILD)/zedbsd-bios-graphical-$(ZEDBSD_GRAPHICAL_BOOT).cfg
+AMD64_BIOS_ZEDBSD_CONFIG := $(BUILD)/zedbsd-bios-graphical-$(ZEDBSD_GRAPHICAL_BOOT)-kmsg-$(ZEDBSD_BOOT_KERNEL_MESSAGES).cfg
 
 $(AMD64_BIOS_ZEDBSD_CONFIG): $(AMD64_ZEDBSD_CONFIG)
 	@mkdir -p $(dir $@)
 	cp $< $@.tmp
-	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),printf '%s\n' logo=logo.ppm kmsg=quiet login=graphical >> $@.tmp)
+	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),printf '%s\n' logo=logo.ppm login=graphical >> $@.tmp)
+	$(if $(filter n,$(ZEDBSD_BOOT_KERNEL_MESSAGES)),printf '%s\n' kmsg=quiet >> $@.tmp)
 	mv -f $@.tmp $@
 
 $(BUILD)/bios-hdd-image.img: $(BUILD)/bootloader/stage1.bin \
@@ -1684,8 +1685,8 @@ ifeq ($(ZEDBSD_VARIANT),native)
 AMD64_BOOT_EXTRA_EMPTY :=
 AMD64_BOOT_EXTRA_SPACE := $(AMD64_BOOT_EXTRA_EMPTY) $(AMD64_BOOT_EXTRA_EMPTY)
 AMD64_BOOT_EXTRA_TAG := $(if $(strip $(ZEDBSD_BOOT_EXTRA_LINES)),-$(subst $(AMD64_BOOT_EXTRA_SPACE),+,$(strip $(ZEDBSD_BOOT_EXTRA_LINES))))
-AMD64_NATIVE_UEFI_ZEDBSD_CONFIG := $(BUILD)/zedbsd-native-uefi-graphical-$(ZEDBSD_GRAPHICAL_BOOT)$(AMD64_BOOT_EXTRA_TAG).cfg
-AMD64_GRAPHICAL_BOOT_LINES := logo=logo.ppm kmsg=quiet login=graphical
+AMD64_NATIVE_UEFI_ZEDBSD_CONFIG := $(BUILD)/zedbsd-native-uefi-graphical-$(ZEDBSD_GRAPHICAL_BOOT)-kmsg-$(ZEDBSD_BOOT_KERNEL_MESSAGES)$(AMD64_BOOT_EXTRA_TAG).cfg
+AMD64_GRAPHICAL_BOOT_LINES := logo=logo.ppm login=graphical
 AMD64_NATIVE_ROOT_MIB ?= 1024
 AMD64_NATIVE_ROOT_INODES ?= 65536
 AMD64_NATIVE_SWAP_MIB ?= 1024
@@ -1709,6 +1710,7 @@ $(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG): $(AMD64_PLATFORM)/zedbsd-native-uefi.cfg
 	cp $< $@.tmp
 	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),grep -v '^video=' $< > $@.tmp)
 	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),printf '%s\n' $(AMD64_GRAPHICAL_BOOT_LINES) >> $@.tmp)
+	$(if $(filter n,$(ZEDBSD_BOOT_KERNEL_MESSAGES)),printf '%s\n' kmsg=quiet >> $@.tmp)
 	$(if $(strip $(ZEDBSD_BOOT_EXTRA_LINES)),printf '%s\n' $(ZEDBSD_BOOT_EXTRA_LINES) >> $@.tmp)
 	mv -f $@.tmp $@
 

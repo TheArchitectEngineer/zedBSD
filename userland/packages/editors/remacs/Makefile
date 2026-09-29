@@ -15,8 +15,9 @@ REMACS_REPOSITORY ?= https://github.com/awemorris/remacs.git
 REMACS_GIT_REF ?= main
 REMACS_SOURCE_DIR := build/sources/remacs
 REMACS_SOURCE_STAMP := $(REMACS_SOURCE_DIR)/.zedbsd-source
-REMACS_HOST_NOCT_DIR := build/host-noct-package
-REMACS_HOST_NOCT := $(REMACS_HOST_NOCT_DIR)/noct
+REMACS_PATCH := $(ZEDBSD_REMACS_DIR)patches/0001-use-noct2-bytecode-extension.patch
+REMACS_PATCH_STAMP := $(REMACS_SOURCE_DIR)/.zedbsd-noct2-patch
+REMACS_HOST_NOCT := $(NOCT_HOST_ARTIFACT)
 REMACS_NAP := $(BUILD)/packages/editors/remacs/remacs.nap
 REMACS_DICTIONARY := $(REMACS_SOURCE_DIR)/dict/SKK-JISYO.remacs
 
@@ -39,19 +40,22 @@ $(REMACS_SOURCE_STAMP):
 		$(REMACS_REPOSITORY) $(REMACS_SOURCE_DIR)
 	@git -C $(REMACS_SOURCE_DIR) rev-parse HEAD > $@
 
-$(REMACS_HOST_NOCT): $(NOCT_SOURCE_STAMP) | noct-target-source-verify
-	cmake -S $(NOCT_SOURCE_DIR) \
-		-B $(REMACS_HOST_NOCT_DIR) -DCMAKE_BUILD_TYPE=Release \
-		-DNOCT_ENABLE_STATIC=ON -DNOCT_ENABLE_CLI=ON \
-		-DNOCT_ENABLE_JIT=ON -DNOCT_ENABLE_API=ON \
-		-DNOCT_ENABLE_API_SYSTEM=ON -DNOCT_ENABLE_API_CONSOLE=ON \
-		-DNOCT_ENABLE_API_FILE=ON -DNOCT_ENABLE_API_TERM=ON \
-		-DNOCT_ENABLE_REPL=ON -DNOCT_ENABLE_BCBACKEND=ON \
-		-DNOCT_ENABLE_OPTIMIZER=ON -DNOCT_ENABLE_INSTALL=OFF
-	cmake --build $(REMACS_HOST_NOCT_DIR) --target noctcli \
-		--parallel $(ZEDBSD_BUILD_JOBS)
+$(REMACS_PATCH_STAMP): $(REMACS_SOURCE_STAMP) $(REMACS_PATCH)
+	@set -eu; \
+	script='$(REMACS_SOURCE_DIR)/tools/build-nap.sh'; \
+	if grep -Fqx 'mv "$$OUT/remacs-all.nb" "$$OUT/remacs.nap"' "$$script"; then \
+		patch --batch --forward --fuzz=0 -d $(REMACS_SOURCE_DIR) -p1 < $(REMACS_PATCH); \
+	elif grep -Fqx 'mv "$$OUT/remacs-all.nbc" "$$OUT/remacs.nap"' "$$script"; then \
+		:; \
+	elif grep -Eq -- '--compile --app .*remacs\.nap' "$$script"; then \
+		: "the current Remacs compiles remacs.nap itself (no .nb step to patch)"; \
+	else \
+		echo 'Remacs: unexpected bytecode output rule in tools/build-nap.sh' >&2; \
+		exit 1; \
+	fi
+	@touch $@
 
-$(REMACS_NAP): $(REMACS_SOURCE_STAMP) $(REMACS_HOST_NOCT)
+$(REMACS_NAP): $(REMACS_PATCH_STAMP) $(NOCT_HOST_BUILD_STAMP)
 	$(MAKE) -C $(REMACS_SOURCE_DIR) NOCT=$(abspath $(REMACS_HOST_NOCT)) all
 	@mkdir -p $(dir $@)
 	cp -f $(REMACS_SOURCE_DIR)/build/remacs.nap $@

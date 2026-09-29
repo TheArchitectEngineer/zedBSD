@@ -21,6 +21,8 @@ static struct networkd_lan_interface *find_interface(struct networkd_lan *,
 						     const char *);
 static const struct networkd_lan_policy *find_policy(
 	const struct networkd_lan *, const char *);
+static const struct networkd_lan_policy *policy_for(
+	const struct networkd_lan *, const char *);
 static struct networkd_lan_interface *find_by_index(struct networkd_lan *,
 						    uint32_t);
 static int name_valid(const char *);
@@ -359,9 +361,9 @@ networkd_lan_next(
 		/* Only an interface with a cable and no configuration. */
 		if (item->state != NETWORKD_LAN_PENDING || !item->carrier)
 			continue;
-		policy = find_policy(lan, item->name);
+		policy = policy_for(lan, item->name);
 
-		/* An interface the configuration does not name is left alone. */
+		/* An interface the configuration disables is left alone. */
 		if (policy == NULL ||
 		    policy->mode == NETWORKD_LAN_MODE_DISABLED)
 			continue;
@@ -386,9 +388,9 @@ networkd_lan_next(
 		/* Only a present interface without a cable, not raised yet. */
 		if (item->carrier || item->raised)
 			continue;
-		policy = find_policy(lan, item->name);
+		policy = policy_for(lan, item->name);
 
-		/* An interface the configuration does not name is left alone. */
+		/* An interface the configuration disables is left alone. */
 		if (policy == NULL ||
 		    policy->mode == NETWORKD_LAN_MODE_DISABLED)
 			continue;
@@ -568,6 +570,51 @@ find_by_index(
 
 	/* Reports that no result is available. */
 	return NULL;
+}
+
+/*
+ * The DHCP timeout, in seconds, of an interface the configuration does not
+ * name (the same default net gives a configured "dhcp" without a timeout).
+ */
+#define NETWORKD_LAN_DEFAULT_DHCP_SECONDS	10U
+
+/*
+ * Reports what an interface is to be told: its record in the
+ * configuration, or, for a wired interface the configuration does not
+ * name, DHCP (2026-09-29 user decision: interfaces come and go with the
+ * adapters plugged in, so one that is not named takes an address by
+ * itself).  A wireless interface ("wlan...") is the wireless manager's,
+ * which asks for its address when it has associated, and gets no default.
+ * The default lives in one buffer the next call overwrites; the caller
+ * copies it before asking again.
+ */
+static const struct networkd_lan_policy *
+policy_for(
+	const struct networkd_lan *lan,
+	const char *name)
+{
+	static struct networkd_lan_policy fallback;
+	const struct networkd_lan_policy *policy;
+	int wireless;
+
+	/* The configuration's record, when there is one. */
+	policy = find_policy(lan, name);
+	if (policy != NULL)
+		return policy;
+
+	/* A wireless interface is not a cable's. */
+	wireless = strncmp(name, "wlan", 4U) == 0;
+	if (wireless)
+		return NULL;
+
+	/* DHCP, as a configured "dhcp" without a timeout would be. */
+	memset(&fallback, 0, sizeof(fallback));
+	strncpy(fallback.interface, name, sizeof(fallback.interface) - 1U);
+	fallback.mode = NETWORKD_LAN_MODE_DHCP;
+	fallback.dhcp_timeout = NETWORKD_LAN_DEFAULT_DHCP_SECONDS;
+
+	/* Reports the default. */
+	return &fallback;
 }
 
 /* Supports the find policy operation. */

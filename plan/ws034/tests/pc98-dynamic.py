@@ -32,7 +32,7 @@ def main() -> int:
 			guest.wait(r"login: *$", 300)
 			guest.send("root")
 			guest.wait(r"Password:", 30)
-			guest.send("")
+			guest.send("root")
 			guest.wait(r"[#$] *$", 60)
 			guest.send("clear; uname -m; date; ls /lib; echo DYNAMIC-DONE")
 			guest.wait(r"^DYNAMIC-DONE", 300)

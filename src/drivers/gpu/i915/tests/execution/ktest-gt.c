@@ -1489,15 +1489,15 @@ i915_ktest_gt_rps(
 	t->fake.wt_n = 0U;
 	drv_i915_rps_enable(&t->rps, &t->mmio);
 
-	/* RP_IDLE_HYSTERSIS is programmed, then RPNSWREQ asks for the minimum. */
+	/* RP_IDLE_HYSTERSIS is programmed, then RPNSWREQ asks for RP0 (ws084: no RPS interrupts raise it). */
 	hysteresis = i915_fake_wt_find(&t->fake, 0xa070U, 0xaU, 0xffffffffU);
-	request = i915_fake_wt_find(&t->fake, 0xa008U, 6U << 23, 0xffffffffU);
+	request = i915_fake_wt_find(&t->fake, 0xa008U, 30U << 23, 0xffffffffU);
 	drv_i915_ktest_check(
 		ktest,
 		t->rps.enabled == 1 &&
 		    hysteresis >= 0 &&
 		    request >= 0,
-		"p6b: P6B-RPS enable programs RP_IDLE_HYSTERSIS then RPNSWREQ=min");
+		"p6b: P6B-RPS enable programs RP_IDLE_HYSTERSIS then RPNSWREQ=RP0");
 }
 
 /* Checks the Gen12 forcewake domain map the register access classifies with. */

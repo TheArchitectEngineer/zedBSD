@@ -334,6 +334,8 @@ block_content(
 		error = layout_flex(tree, box);
 	} else if (box->style.display == CSS_DISPLAY_GRID) {
 		error = layout_grid(tree, box);
+	} else if (box->style.display == CSS_DISPLAY_TABLE || box->style.display == CSS_DISPLAY_INLINE_TABLE) {
+		error = layout_table(tree, box);
 	} else if (box->children_inline) {
 		error = layout_inline(tree, box);
 	} else {
@@ -378,6 +380,10 @@ block_owns_context(
 	if (box->style.display == CSS_DISPLAY_FLEX)
 		return 1;
 	if (box->style.display == CSS_DISPLAY_GRID)
+		return 1;
+	if (box->style.display == CSS_DISPLAY_TABLE || box->style.display == CSS_DISPLAY_INLINE_TABLE)
+		return 1;
+	if (box->style.display == CSS_DISPLAY_TABLE_CAPTION)
 		return 1;
 
 	/* A flex or grid item. */

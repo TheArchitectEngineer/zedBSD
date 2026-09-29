@@ -602,11 +602,15 @@ drv_i915_display_register(
 
 	/*
 	 * An active crtc at probe time is the firmware display.  The reference
-	 * only logs a failed initial modeset and continues; without the
+	 * only logs a failed initial modeset and continues; when N0 decided the
+	 * takeover (ws084-p001), the resident display start reads it out and
+	 * stops it before its first write, so the start goes on.  Without the
 	 * takeover this start stops here, because it would otherwise leave that
 	 * display untouched and unaccounted for.
 	 */
-	if (dprobe->initial_commit_unimplemented) {
+	if (dprobe->initial_commit_unimplemented && display->n0.takeover)
+		kern_logf("i915: the firmware display (%u active crtc) is left to the resident start's takeover (N1)\n", dprobe->active_crtcs);
+	if (dprobe->initial_commit_unimplemented && !display->n0.takeover) {
 		drv_i915_trace_record(&device->gt.trace, 0U, I915_TRACE_UNIMPLEMENTED, "intel_initial_commit", dprobe->active_crtcs, 0U);
 		device->stage = "intel_initial_commit";
 		return ENOTSUP;
@@ -2266,8 +2270,17 @@ i915_driver_register(
 	/*
 	 * intel_power_domains_enable(): the INIT reference taken during
 	 * init_hw is released, and every well nothing references powers down.
+	 * With the firmware display left to the takeover, nothing references
+	 * its wells yet (the reference's intel_initial_commit() has taken them
+	 * over by now), so the INIT reference is kept until the takeover
+	 * (ws084, as the N1 parity run on the machine).
 	 */
-	drv_i915_power_domains_enable(p, &display->dcore);
+	if (display->n0.takeover) {
+		p->power_domains_enable_deferred = 1;
+		kern_logf("i915: P7 power_domains_enable: deferred (the INIT reference is kept until the takeover)\n");
+	} else {
+		drv_i915_power_domains_enable(p, &display->dcore);
+	}
 
 	/* intel_runtime_pm_enable(): the probe reference the PCI core took goes back. */
 	drv_i915_rpm_put(&device->gt.probe_pm);

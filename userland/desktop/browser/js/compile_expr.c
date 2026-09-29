@@ -81,6 +81,11 @@ js_compile_expression_named(
 		constant = js_constant_string(fc, node->text, node->text_length);
 		js_emit2(fc, VM_OP_LOAD_CONST, target, constant);
 		break;
+	case JS_NODE_REGEXP:
+		/* A new object at each evaluation, from the pattern (the body) and the flags (the raw text after it). */
+		constant = js_constant_string(fc, node->text, node->text_length);
+		js_emit3(fc, VM_OP_NEW_REGEXP, target, constant, js_constant_string(fc, node->raw, node->raw_length));
+		break;
 	case JS_NODE_TRUE:
 		js_load_value(fc, target, VM_VALUE_TRUE);
 		break;

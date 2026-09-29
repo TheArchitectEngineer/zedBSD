@@ -187,7 +187,7 @@ static void i915_ddi_get_config(struct intel_encoder *encoder, struct intel_crtc
 static void i915_ddi_get_clock(struct intel_encoder *encoder, struct intel_crtc_state *crtc_state, struct intel_shared_dpll *pll);
 static struct intel_shared_dpll *i915_icl_ddi_get_pll_reg(struct drm_i915_private *i915, i915_reg_t reg, u32 clk_sel_mask, u32 clk_sel_shift);
 static struct intel_shared_dpll *i915_icl_ddi_combo_get_pll(struct intel_encoder *encoder);
-static void i915_icl_ddi_combo_get_config(struct intel_encoder *encoder, struct intel_crtc_state *crtc_state) __maybe_unused;
+static void i915_icl_ddi_combo_get_config(struct intel_encoder *encoder, struct intel_crtc_state *crtc_state);
 static void i915_ddi_sync_state(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_ddi_get_power_domains(struct intel_encoder *encoder, struct intel_crtc_state *crtc_state);
 static bool i915_icl_ddi_is_clock_enabled_reg(struct drm_i915_private *i915, i915_reg_t reg, u32 clk_off);
@@ -519,11 +519,25 @@ void
 drv_i915_lcd_ms_bind_readout(
 	struct intel_encoder *encoder)
 {
+	struct drm_i915_private *i915;
+	enum phy phy;
+
 	/* Binds the hooks the readout reaches through the encoder. */
 	encoder->get_hw_state = i915_ddi_get_hw_state;
 	encoder->get_config = i915_ddi_get_config;
 	encoder->sync_state = i915_ddi_sync_state;
 	encoder->get_power_domains = i915_ddi_get_power_domains;
+
+	/*
+	 * A combo PHY port reads its PLL too (icl_ddi_combo_get_config(), as
+	 * intel_ddi_init() binds it from display 11).  Without it the crtc
+	 * state names no PLL, the sanitize turns off the PLL the firmware's
+	 * pipe runs on, and that pipe can no longer stop (ws084).
+	 */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
+	if (drv_i915_phy_is_combo(i915, phy))
+		encoder->get_config = i915_icl_ddi_combo_get_config;
 }
 
 /*
@@ -3938,15 +3952,13 @@ i915_ddi_get_clock(
 	struct intel_shared_dpll *pll)
 {
 	struct drm_i915_private *i915;
-	struct drm_i915_private *cur_i915;
 	enum icl_port_dpll_id port_dpll_id;
 	struct icl_port_dpll *port_dpll;
 	bool pll_active;
 	bool warned;
 
-	/* Finds the devices and the crtc state's default port PLL slot. */
+	/* Finds the device and the crtc state's default port PLL slot. */
 	i915 = i915_lcd_to_i915(encoder->base.dev);
-	cur_i915 = i915_ddi_cur_i915(encoder);
 	port_dpll_id = ICL_PORT_DPLL_DEFAULT;
 	port_dpll = &crtc_state->icl_port_dplls[port_dpll_id];
 
@@ -3960,8 +3972,13 @@ i915_ddi_get_clock(
 	pll_active = drv_i915_dpll_get_hw_state(i915, pll, &port_dpll->hw_state);
 	(void)I915_LCD_DRM_WARN_ON(&i915->drm, !pll_active);
 
-	/* Makes the slot the active one. */
-	I915_TAKEOVER_ICL_SET_ACTIVE_PORT_DPLL(cur_i915, crtc_state, port_dpll_id);
+	/*
+	 * Makes the slot the active one (icl_set_active_port_dpll()).  The
+	 * frequency below reads the PLL it names, so this is not a recorded
+	 * step: a NULL PLL there faulted the bare-metal takeover (ws084).
+	 */
+	crtc_state->shared_dpll = port_dpll->pll;
+	crtc_state->dpll_hw_state = port_dpll->hw_state;
 
 	/* Computes the port clock of the crtc's PLL. */
 	crtc_state->port_clock = drv_i915_dpll_get_freq(i915, crtc_state->shared_dpll,
@@ -4015,11 +4032,8 @@ i915_icl_ddi_combo_get_pll(
  * Reads the PLL and the configuration of a combo PHY port (the Linux
  * icl_ddi_combo_get_config()).
  *
- * XXX: never bound.  The Linux intel_ddi_init() binds this as the
- * get_config hook of a combo PHY; the readout binding here binds
- * intel_ddi_get_config() instead (the PLL is read out with the device's
- * DPLL pool), so this and the two PLL lookups above it are not reached.
- * Kept as the old tree had them.
+ * The takeover readout binds it for a combo PHY port
+ * (drv_i915_lcd_ms_bind_readout()), as the Linux intel_ddi_init() does.
  */
 static void
 i915_icl_ddi_combo_get_config(

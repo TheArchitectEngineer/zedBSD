@@ -34,6 +34,7 @@ vulkan_wsi_shared_image_create(
 	struct vulkan_external_image_info external;
 	VkImageCreateInfo create;
 	VkMemoryAllocateInfo allocate;
+	VkExportMemoryAllocateInfo export;
 	VkMemoryRequirements requirements;
 	VkImageSubresource subresource;
 	VkSubresourceLayout layout;
@@ -60,6 +61,9 @@ vulkan_wsi_shared_image_create(
 	memset(&external, 0, sizeof(external));
 	external.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
 	external.handle_types = VULKAN_EXTERNAL_MEMORY_DMABUF;
+	if (device->object.context->xml_version == VK_MAKE_VERSION(1, 4, 343) &&
+	    device->object.context->copy_display == VK_FALSE)
+		external.handle_types = VULKAN_EXTERNAL_MEMORY_OPAQUE;
 
 	/* One progressive color image supports GPU copies and later renderer sampling. */
 	memset(&create, 0, sizeof(create));
@@ -86,6 +90,26 @@ vulkan_wsi_shared_image_create(
 	memset(&requirements, 0, sizeof(requirements));
 	vkGetImageMemoryRequirements((VkDevice)device, *image, &requirements);
 
+	/* A paired Windows host maps native scanout memory for its display. */
+	if (device->object.context->xml_version == VK_MAKE_VERSION(1, 4, 343) &&
+	    device->object.context->copy_display == VK_FALSE) {
+		for (type = 0U; type < device->physical->memory.memoryTypeCount; type++) {
+			VkMemoryPropertyFlags flags =
+			    device->physical->memory.memoryTypes[type].propertyFlags;
+			if ((requirements.memoryTypeBits & (1U << type)) != 0U &&
+			    (flags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) ==
+			    (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+				break;
+		}
+		if (type == device->physical->memory.memoryTypeCount) {
+			error = VK_ERROR_FEATURE_NOT_PRESENT;
+			goto cleanup;
+		}
+		goto selected;
+	}
+
 	/* Select the first actual memory type compatible with this image's requirements. */
 	for (type = 0U; type < device->physical->memory.memoryTypeCount; type++) {
 		/* The renderer's compatibility mask determines which allocation type may be bound. */
@@ -99,9 +123,18 @@ vulkan_wsi_shared_image_create(
 		goto cleanup;
 	}
 
+selected:
+
 	/* The shared allocation remains GPU-only even when its chosen heap also permits host access. */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	if (device->object.context->xml_version == VK_MAKE_VERSION(1, 4, 343) &&
+	    device->object.context->copy_display == VK_FALSE) {
+		memset(&export, 0, sizeof(export));
+		export.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+		export.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+		allocate.pNext = &export;
+	}
 	allocate.allocationSize = requirements.size;
 	allocate.memoryTypeIndex = type;
 	error = vulkan_memory_allocate_placed((VkDevice)device, &allocate, allocator, placement, memory);
@@ -181,6 +214,7 @@ vulkan_wsi_shared_image_import(
 	struct vulkan_external_image_info external;
 	VkImageCreateInfo create;
 	VkMemoryAllocateInfo allocate;
+	VkExportMemoryAllocateInfo export;
 	VkMemoryRequirements requirements;
 	VkImageSubresource subresource;
 	VkSubresourceLayout layout;
@@ -222,6 +256,9 @@ vulkan_wsi_shared_image_import(
 	memset(&external, 0, sizeof(external));
 	external.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
 	external.handle_types = VULKAN_EXTERNAL_MEMORY_DMABUF;
+	if (device->object.context->xml_version == VK_MAKE_VERSION(1, 4, 343) &&
+	    device->object.context->copy_display == VK_FALSE)
+		external.handle_types = VULKAN_EXTERNAL_MEMORY_OPAQUE;
 
 	/* Geometry and usage exactly reproduce the allocation's immutable exported description. */
 	memset(&create, 0, sizeof(create));
@@ -271,6 +308,13 @@ vulkan_wsi_shared_image_import(
 	/* The renderer imports the attached resource without allocating a replacement pixel store. */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	if (device->object.context->xml_version == VK_MAKE_VERSION(1, 4, 343) &&
+	    device->object.context->copy_display == VK_FALSE) {
+		memset(&export, 0, sizeof(export));
+		export.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+		export.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+		allocate.pNext = &export;
+	}
 	allocate.allocationSize = request.image.allocation_bytes;
 	allocate.memoryTypeIndex = request.image.memory_type;
 	error = vulkan_memory_import(

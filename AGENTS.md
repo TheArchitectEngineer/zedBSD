@@ -623,7 +623,8 @@ primary docs for operational syntax:
 
 ## 実行体制と Queue
 
-- エージェントは一つで、計画の書き手と Queue の実行者を兼ねる。**サブエージェントは使わない。並列にもしない。**
+- メインのエージェントが計画の書き手と merge を担う。サブエージェントの禁止は 2026-09-29 にユーザーが解除した
+  （worktree の branch で Phase を実行させ、数と停止は master の「WS の優先順位」の運用に従う。修正可能範囲は下の「禁止と承認」）。
   長い処理（build・QEMU・取得）は background で走らせて待つ。commit は自分の path だけ（`git commit -m WIP -- <path>...`）。
 - Queue に入れる Phase は 1 つ。依存を満たし、人間の判断が要らないことを確かめて入れる。大きすぎる Phase は計画の段階で分ける。
 - Phase が終わったら結果を記録し（phase.md、ws.md の表、queue、history、master の Active Queue）、`git commit -m WIP` して次の Queue を作る。

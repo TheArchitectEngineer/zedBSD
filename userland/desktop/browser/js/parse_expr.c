@@ -21,7 +21,10 @@
  */
 
 #include "js/internal.h"
+#include "js/regexp.h"
 
+#include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
 /* The precedence of the binary operators (0: not a binary operator). */
@@ -42,6 +45,7 @@ enum expr_precedence {
 };
 
 static struct js_node *expr_assignment_cover(struct js_parser *parser);
+static void expr_check_regexp(struct js_parser *parser, const struct js_token *token);
 static struct js_node *expr_arrow(struct js_parser *parser, struct js_node *parameters, uint32_t flags, uint32_t start, uint32_t line, uint32_t column);
 static struct js_node *expr_yield(struct js_parser *parser);
 static struct js_node *expr_conditional(struct js_parser *parser);
@@ -1393,6 +1397,41 @@ expr_import(
 	return node;
 }
 
+/*
+ * Checks a regular expression literal's flags and pattern (ws074-p027):
+ * an invalid one is an early error, as the specification wants it.
+ */
+static void
+expr_check_regexp(
+	struct js_parser *parser,
+	const struct js_token *token)
+{
+	struct js_regexp_program *program;
+	const char *message;
+	char text[120];
+	unsigned flags;
+	int error;
+
+	/* The flags. */
+	error = js_regexp_parse_flags(token->raw, token->raw_length, &flags);
+	if (error != 0)
+		js_fail(parser, "Invalid regular expression flags");
+
+	/* The pattern compiles (the program itself is made again when the literal runs). */
+	error = js_regexp_compile(token->text, token->text_length, flags, &program, &message);
+	if (error == ENOMEM)
+		js_fail(parser, "out of memory");
+	if (error != 0) {
+		if (message == NULL)
+			message = "syntax error";
+		snprintf(text, sizeof(text), "Invalid regular expression: %s", message);
+		js_fail(parser, text);
+	}
+
+	/* The check's program is not kept. */
+	js_regexp_free(program);
+}
+
 /* Parses a primary expression. */
 static struct js_node *
 expr_primary(
@@ -1425,6 +1464,7 @@ expr_primary(
 		node = expr_template(parser, 0);
 		return node;
 	case JS_TOKEN_REGEXP:
+		expr_check_regexp(parser, token);
 		node = js_node_new(parser, JS_NODE_REGEXP);
 		node->text = token->text;
 		node->word = token->word;

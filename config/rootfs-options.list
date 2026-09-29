@@ -1,3 +1,4 @@
 # key|kind|label|platforms|default|choices
 ZEDBSD_ROOTFS_DEVELOPMENT|bool|Install development files (/usr/include, .so links, .pc, .a)|*|y|
-ZEDBSD_GRAPHICAL_BOOT|bool|Graphical boot: boot logo, kernel messages to dmesg only, graphical login (n for kernel development)|amd64|y|
+ZEDBSD_GRAPHICAL_BOOT|bool|Graphical boot: boot logo and graphical login (n for kernel development)|amd64|y|
+ZEDBSD_BOOT_KERNEL_MESSAGES|bool|Show kernel messages on the screen at boot (n: dmesg only, kmsg=quiet)|amd64|n|
