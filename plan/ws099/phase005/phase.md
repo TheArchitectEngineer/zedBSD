@@ -4,7 +4,7 @@
 
 Phase ID: `ws099-p005`
 Parent: [WS099](../ws.md)
-Status: uncleared（2026-09-30、サブエージェント、worktree `wt/ws035`。compositor の側は直した。残りは client の副次の文字の色で、WS089・WS071 の source の変更が要る）
+Status: cleared（2026-09-30、サブエージェント、worktree `wt/ws035`。QEMU の Venus、実機は未実施。1 回目の報告は uncleared（client の色が残り）、main の許可で色を変えて cleared）
 Phase disposition: normal
 Queue: なし（2026-09-30 main の割り当て「p005: C7 の残り: client が描くガラスの上の文字の contrast を測り、足りなければ直す」。すりガラスは残すと
 ユーザーが決めた（2026-09-30））
@@ -55,6 +55,25 @@ native の compiler の制約）。build: desktop の warning 0。
 
 `criteria.sh build/ws099-p005-after.img … C8 C9`（`build/ws099-p005-regress/results.txt`）: C8（p134）と C9 の 9 本（p052・p053・p072・p076・p126・p128・p134・p137・p138）が全て PASS。
 
+## 続き: client の副次の文字の色（2026-09-30、main の許可）
+
+main の許可（「変更は色の定数だけ。libkeiui の theme の Files の値も揃える。host の描画の試験が期待の色を持てば合わせる」）で、
+`0x6b7585` → `0x56606f`（輝度 0.175 → 約 0.115）:
+- `userland/desktop/settings/settings.h` の `SE_COLOR_TEXT_SECONDARY`
+- `userland/desktop/files/files.h` の `FM_COLOR_TEXT_SECONDARY`
+- `userland/desktop/libkeiui/theme.c` の `theme_light` の `text_secondary`
+
+同じ値の他の定数（Files の drag の線 `DRAG_COLOR_LINK`、libkeiland の file chooser の `DRAW_TEXT_SECONDARY`、Notes の `UI_TEXT_SECONDARY`）は
+許可の範囲の外なので変えていない。
+
+- host の描画の試験 `plan/ws090/tests/host-draw.sh build/ws099-p005/host-draw`: 13/13 PASS、違う画素 0（試験の `0x6b7585` は比べる両側に
+  直の値で渡しているので変えなくてよい）。
+- build（`build/ws099-p005-colors.img`）: desktop の warning 0。
+- `criteria.sh build/ws099-p005-colors.img … C7`（`build/ws099-p005-colors/`）: **72/72 PASS、最小 4.68**（Twilight の Files の群の見出し）。
+  副次の文字は 4.68〜5.89（前は 3.43〜4.31）。主な文字は前と同じ（最小 10.77）。別の記録の f-inactive・f-hint は変わらない
+  （使えない項目と空の案内は基準の外とする案をユーザーの判断の表に載せた、main）。
+- 画面: `build/ws099-p005-colors/c7/`（例 `Aurora-settings.png`・`Twilight-files.png`）。
+
 ## Resume point
 
-2026-09-30: compositor の側は済み。C7 を満たすには client の副次の文字の色の変更（WS089・WS071、または main の許可）が要る。その後 `criteria.sh … C7` で確かめる。
+2026-09-30: cleared。C7 は 6 枚の壁紙で 72/72 が 4.5 以上。
