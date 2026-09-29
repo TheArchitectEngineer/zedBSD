@@ -9,7 +9,8 @@
  * ws075-p022: an independent check of the software scoreboard of a Gen12 kernel the i915 compiler made
  * (compiler/eu.c, drv_i915_eu_schedule()).  It walks the kernel in order and keeps, per token (SBID), the
  * registers the out-of-order instruction (MATH, SEND) holding it will still write and still read; a
- * sync.nop on $n.dst frees the token, one on $n.src forgets its reads.  It fails (returns the index of the
+ * sync.nop on $n.dst frees the token, one on $n.src forgets its reads (and frees the token of a message that
+ * writes no register, as the encoder has always taken it).  It fails (returns the index of the
  * instruction, or -1 when the kernel is sound):
  *
  *   - an instruction that reads or writes a register an in-flight token will write (not waited for .dst);
@@ -147,6 +148,9 @@ sbc_check(const uint32_t *code, unsigned count)
 			} else if ((swsb & 0xF0U) == 0x30U) {
 				tokens[swsb & 0xFU].reads[0].count = 0U;
 				tokens[swsb & 0xFU].reads[1].count = 0U;
+				/* a message with no register to write back has nothing left to wait for (the encoder's store) */
+				if (tokens[swsb & 0xFU].write.count == 0U)
+					tokens[swsb & 0xFU].busy = 0;
 			}
 			continue;
 		}

@@ -192,6 +192,5 @@ uint32_t drv_i915_eu_if(struct i915_eu_buf *buffer, enum i915_eu_flag flag);
 uint32_t drv_i915_eu_endif(struct i915_eu_buf *buffer);
 void drv_i915_eu_patch_if(struct i915_eu_buf *buffer, uint32_t if_position, uint32_t endif_position);
 void drv_i915_eu_patch_endif(struct i915_eu_buf *buffer, uint32_t endif_position, uint32_t target);
-int drv_i915_eu_schedule(struct i915_eu_buf *buffer);
 
 #endif /* DRIVERS_GPU_I915_COMPILER_EU_H */

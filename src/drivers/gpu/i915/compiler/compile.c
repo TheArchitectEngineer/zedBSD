@@ -590,15 +590,6 @@ drv_i915_shader_compile(
 		return EINVAL;
 	}
 
-	/* Moves the waits for the out-of-order instructions to where their registers are used. */
-	error = drv_i915_eu_schedule(&state.code);
-	if (error != 0) {
-		drv_i915_eu_free(&state.code);
-		kern_free(state.value_grf);
-		kern_free(binary);
-		return error;
-	}
-
 	/* Reads the encoded words; an empty kernel still gets one byte of storage. */
 	words = drv_i915_eu_data(&state.code, &bytes);
 	if (bytes == 0U) {
