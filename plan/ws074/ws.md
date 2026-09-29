@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: 2026-09-28: p059（Google の調査）・p067（amazon.co.jp の調査）・p032（form）・p068（外の stylesheet と rule の索引）・p061（CSS の値）・p069（selector と ::before・::after）cleared。p035（flexbox の最小）・p060（inline-block と vertical-align）・p062（角丸・影・opacity・outline）・p070（@font-face）・p071（大きな page の速さ）・p073（direction の最小）・p072（grid の最小）・p074（intrinsic の幅）・p075（container query の単位）・p037（table の最小）・p027（RegExp）cleared（2026-09-29）。guest の窓の試験は main の sysroot の複写で worktree の image を作って行う（p035 の phase.md）。デモの目標は amazon.co.jp、版と Phase の列は [amazon-goal.md](amazon-goal.md)。guest の窓で live の Amazon のトップから「kei」を検索して結果の page が出る。p076（JS の `Date`）cleared（2026-09-29。test262 15762 → 16393、Amazon の `Date is not defined` 24 → 0）。p077（Amazon が要る window の環境の最小: navigator・screen・performance・location・Image・document.cookie 等と Uncaught の位置）cleared（2026-09-29。AUI の `P` が定義され、top の Uncaught 49 → 10、search 44 → 15、search 画素 72.92% → 76.04%）。次（main の指示）: p028（let/const・arrow・template）。その後 p031（`querySelector`・`getBoundingClientRect`）
+Resume point: 2026-09-29: p076（Date）・p077（window の環境の最小と Uncaught の位置）・p078（let・const・arrow・template）・p079（destructuring・default・rest・spread・optional chaining）cleared（test262 15762 → 18558、Amazon の top の Uncaught 49 → 7、search 44 → 9）。p028 から p078・p079 を分けた。前の記録は下の表と各 phase.md。デモの目標は amazon.co.jp（[amazon-goal.md](amazon-goal.md)）。Amazon の script の次の blocker: async function・for-of・class（p028・p029 の残り）、`getBoundingClientRect`・`querySelector`（p031、別の worktree の ws074-dom）。次（案）: p028 の残りを class と Symbol・iterator・for-of に分け、async は p029（generator・Promise と一緒）
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -125,7 +125,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p025](phase025/phase.md) | JS の compiler（ES5 の核）、`--js` の shell、test262 の runner。最初の数（4992/47792、ES5 1457/8087） | cleared | p024 |
 | [ws074-p026](phase026/phase.md) | 組み込み 1a: Object・Function（bind・Function の構築子）・Error の類（engine の誤りも object に）・Boolean・Number（自前の最短の十進表記と十進の読み取り、toFixed 等）・Math・global の関数、native の構築子（2026-09-28 に Array・String・JSON を p046 へ分けた。9327/47792、ES5 4822/8087） | cleared | p025 |
 | [ws074-p027](phase027/phase.md) | RegExp の engine と String の regex の method | cleared（2026-09-29。自前の backtracking の engine、RegExp と String の match・replace・replaceAll・search・split。test262 14255 → 15762、ES5 6786 → 7592。v flag・`\p`・modifier・matchAll・Symbol の差し替えは残り） | p026 |
-| ws074-p028 | ES2015 の意味 1（2026-09-29 に let・const・TDZ・arrow・template を p078 へ分けた）: class、destructuring（default・rest の引数を含む）、spread、Symbol、iterator、for-of、Map・Set・Weak* | planned | p026、p078 |
+| ws074-p028 | ES2015 の意味 1（2026-09-29 に let・const・TDZ・arrow・template を p078 へ、destructuring・default・rest・spread・optional chaining を p079 へ分けた）: class、Symbol、iterator の protocol と for-of、Map・Set・Weak* | planned | p026、p079 |
 | ws074-p029 | ES2015 の意味 2: generator、Promise と microtask、async・await、Proxy・Reflect、TypedArray・ArrayBuffer・DataView、Date、BigInt | planned | p028 |
 | [ws074-p030](phase030/phase.md) | DOM の binding（interface の表、生成器は後回し）、window・document・Node・Element・Event の基本、console、`<script>` の実行、timer、event loop と microtask の queue（2026-09-28 に WPT の testharness の runner を p047 へ分けた） | cleared | p014、p046（p029 から縮めた: microtask の queue はこの Phase で作った） |
 | ws074-p031 | event（dispatch・入力）、innerHTML、querySelector、classList、CSSOM の inline style、getComputedStyle、geometry、変更の後の再計算 | planned | p030 |
@@ -171,6 +171,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p076](phase076/phase.md) | JS の `Date`（p065 から分けた。amazon-goal の 12 の一部、Amazon の script の最初の blocker）: 構築子・`now`・`parse`（ISO と legacy の形）・`UTC`、local と UTC の getter と setter、文字列の形、`toJSON`、Annex B | cleared（2026-09-29。test262 15762 → 16393、ES5 7592 → 7732、`built-ins/Date` 480/618。Amazon の top の `Date is not defined` 24 → 0。`Symbol.toPrimitive`・Temporal・Intl は残り） | p026、p046 |
 | [ws074-p077](phase077/phase.md) | Amazon が要る window の環境の最小（p065 から分けた）: Uncaught の位置（bytecode の位置の表）、`navigator`・`screen`・`performance`・`location`（読むだけ）・`Image` と `HTMLImageElement`・`document.cookie`・`URL`・`hidden` 等、window の plain な property | cleared（2026-09-29。AUI の `P` が定義され、Amazon の top の Uncaught 49 → 10、search 44 → 15、search 画素 72.92% → 76.04%。location の移動は p064） | p030、p076 |
 | [ws074-p078](phase078/phase.md) | ES2015 の構文 1a（p028 から分けた）: let・const（block scope、TDZ、反復ごとの binding、script 間の global の lexical な record）、arrow function、template literal（tagged を含む）、Uncaught の早期の誤り（二重の宣言） | cleared（2026-09-29。test262 16393 → 17190、Amazon の Uncaught top 10 → 7、search 15 → 9） | p025、p077 |
+| [ws074-p079](phase079/phase.md) | ES2015 の構文 1b（p028 から分けた）: destructuring（宣言・代入・引数・catch・for-in）、default・rest の引数、spread（配列・呼び出し・new・object）、optional chaining。反復は配列・arguments・文字列だけ（Symbol.iterator は p028） | cleared（2026-09-29。test262 17190 → 18558。Amazon の default・rest・optional chaining の誤り 0、次は async・for-of・class） | p078 |
 
 ## 後の WS・Future Work の候補
 
