@@ -49,6 +49,16 @@ static void scope_visit(struct js_compiler *compiler, struct js_scope *scope, st
 static void scope_visit_try(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
 static void scope_reference(struct js_compiler *compiler, struct js_scope *scope, const uint16_t *name, size_t length);
 static int scope_has_own_arguments(const struct js_function_info *info);
+static void scope_arrow_this(struct js_compiler *compiler, struct js_scope *scope);
+
+/*
+ * The hidden binding of a function's this that its arrow functions read:
+ * "#this", which no identifier can be.  A constant for the life of the
+ * program.
+ */
+const uint16_t js_this_name[JS_THIS_NAME_LENGTH] = {
+	'#', 't', 'h', 'i', 's'
+};
 static void scope_arguments_var(struct js_function_info *info);
 
 /*
@@ -460,6 +470,9 @@ scope_visit(
 	case JS_NODE_TRY:
 		scope_visit_try(compiler, scope, node);
 		return;
+	case JS_NODE_THIS:
+		scope_arrow_this(compiler, scope);
+		return;
 	case JS_NODE_MEMBER:
 		/* The object; the property only when computed. */
 		scope_visit(compiler, scope, node->first);
@@ -556,6 +569,32 @@ scope_reference(
 			return;
 		}
 	}
+}
+
+/*
+ * Gives an arrow function the this of the function around it: that
+ * function keeps its this in a hidden binding, which the arrow captures
+ * (an ordinary function's own this needs nothing).
+ */
+static void
+scope_arrow_this(
+	struct js_compiler *compiler,
+	struct js_scope *scope)
+{
+	struct js_function_info *owner;
+
+	/* An ordinary function (or the program) reads its own this. */
+	owner = scope->function;
+	if (owner->program || (owner->node->flags & JS_FLAG_ARROW) == 0U)
+		return;
+
+	/* The nearest function around it that is not an arrow function (the program at the latest). */
+	while (!owner->program && (owner->node->flags & JS_FLAG_ARROW) != 0U)
+		owner = owner->parent;
+
+	/* Its hidden binding, which the arrow's use captures. */
+	scope_declare(compiler, owner->scope, js_this_name, JS_THIS_NAME_LENGTH, JS_BINDING_THIS);
+	scope_reference(compiler, scope, js_this_name, JS_THIS_NAME_LENGTH);
 }
 
 /*

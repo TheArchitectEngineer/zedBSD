@@ -230,8 +230,6 @@ js_compile_function(
 
 	/* What the language does not have in this compiler yet. */
 	info = node->scope->function;
-	if ((node->flags & JS_FLAG_ARROW) != 0U)
-		js_compile_unsupported(compiler, node, "arrow functions");
 	if ((node->flags & JS_FLAG_GENERATOR) != 0U)
 		js_compile_unsupported(compiler, node, "generators");
 	if ((node->flags & JS_FLAG_ASYNC) != 0U)
@@ -254,6 +252,11 @@ js_compile_function(
 	compile_prepare(fc);
 	if (info->program) {
 		js_compile_statements(fc, node->first);
+	} else if ((node->flags & JS_FLAG_EXPRESSION_BODY) != 0U) {
+		/* An arrow function's expression body is its return value. */
+		result = js_temp(fc);
+		js_compile_expression(fc, node->second, result);
+		js_emit1(fc, VM_OP_RETURN, result);
 	} else {
 		js_compile_statements(fc, node->second);
 	}
@@ -454,6 +457,7 @@ compile_prologue(
 	struct js_function_info *info;
 	struct js_scope *scope;
 	struct js_binding *binding;
+	uint32_t this_value;
 	uint32_t callee;
 
 	/* The environment of the code around it, then its own on top when it has captured bindings. */
@@ -461,6 +465,20 @@ compile_prologue(
 	js_emit1(fc, VM_OP_LOAD_CLOSURE_ENV, fc->env_register);
 	if (info->has_env)
 		js_emit3(fc, VM_OP_NEW_ENV, fc->env_register, fc->env_register, env_count);
+
+	/* The hidden binding of this, which the arrow functions inside read. */
+	for (binding = info->scope->bindings; binding != NULL; binding = binding->next) {
+		if (binding->kind != JS_BINDING_THIS)
+			continue;
+		if (binding->in_env) {
+			this_value = js_temp(fc);
+			js_emit1(fc, VM_OP_LOAD_THIS, this_value);
+			js_emit4(fc, VM_OP_PUT_ENV, fc->env_register, 0, binding->location, this_value);
+			fc->temp_top--;
+		} else {
+			js_emit1(fc, VM_OP_LOAD_THIS, binding->location);
+		}
+	}
 
 	/* The captured parameters and arguments object move into the environment. */
 	for (binding = info->scope->bindings; binding != NULL; binding = binding->next) {
@@ -551,8 +569,8 @@ compile_flags(
 	if (info->arguments != NULL)
 		flags |= VM_CODE_ARGUMENTS;
 
-	/* An ordinary function (not the program, not a method or an accessor) can be called with new. */
-	if (!info->program && (info->node->flags & JS_FLAG_METHOD) == 0U)
+	/* An ordinary function (not the program, not a method, an accessor or an arrow function) can be called with new. */
+	if (!info->program && (info->node->flags & (JS_FLAG_METHOD | JS_FLAG_ARROW)) == 0U)
 		flags |= VM_CODE_CONSTRUCTOR;
 
 	/* Reports the flags. */

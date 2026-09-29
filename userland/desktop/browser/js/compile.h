@@ -45,8 +45,17 @@ enum js_binding_kind {
 	JS_BINDING_FUNCTION,
 	JS_BINDING_CATCH,
 	JS_BINDING_CALLEE,
-	JS_BINDING_ARGUMENTS
+	JS_BINDING_ARGUMENTS,
+	JS_BINDING_THIS
 };
+
+/*
+ * The name of the hidden binding that keeps a function's this for the
+ * arrow functions inside it (a name no identifier can have), and its
+ * length.
+ */
+#define JS_THIS_NAME_LENGTH	5U
+extern const uint16_t js_this_name[JS_THIS_NAME_LENGTH];
 
 /* The kinds of scope. */
 enum js_scope_kind {

@@ -104,6 +104,13 @@ js_compile_expression_named(
 		js_load_value(fc, target, VM_VALUE_NULL);
 		break;
 	case JS_NODE_THIS:
+		/* An arrow function reads the this of the function around it. */
+		if ((fc->info->node->flags & JS_FLAG_ARROW) != 0U && !fc->info->program) {
+			js_load_binding(fc, js_this_name, JS_THIS_NAME_LENGTH, target);
+			break;
+		}
+
+		/* Any other function its own. */
 		js_emit1(fc, VM_OP_LOAD_THIS, target);
 		break;
 	case JS_NODE_IDENTIFIER:
