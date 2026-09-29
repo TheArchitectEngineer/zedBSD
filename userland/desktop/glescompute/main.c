@@ -21,9 +21,10 @@
  *
  * Each step prints "GLESCOMPUTE <step> PASS" or "... FAIL <why>", and the
  * run ends with "GLESCOMPUTE DONE failures=N"; the exit status is 0 only
- * when nothing failed.
+ * when nothing failed.  --no-indirect leaves the indirect step out (a
+ * device whose executor has no indirect dispatch yet: ws101-p010's i915).
  *
- *   glescompute [--platform=auto|surfaceless|default] [--repeat=N]
+ *   glescompute [--platform=auto|surfaceless|default] [--repeat=N] [--no-indirect]
  */
 
 #include <EGL/egl.h>
@@ -149,7 +150,7 @@ static const char glescompute_vertex_source[] =
 /* The steps that failed so far. */
 static int glescompute_failures;
 
-static int glescompute_options(int argc, char **argv, int *platform, int *repeat);
+static int glescompute_options(int argc, char **argv, int *platform, int *repeat, int *indirect);
 static int glescompute_platform(const char *name);
 static int glescompute_open(struct glescompute_egl *egl, int platform);
 static void glescompute_close(struct glescompute_egl *egl);
@@ -182,10 +183,11 @@ main(
 	const char *renderer;
 	int platform;
 	int repeat;
+	int indirect;
 	int status;
 
 	/* The options. */
-	status = glescompute_options(argc, argv, &platform, &repeat);
+	status = glescompute_options(argc, argv, &platform, &repeat, &indirect);
 	if (status != 0)
 		return 2;
 
@@ -201,13 +203,21 @@ main(
 	printf("GLESCOMPUTE CONTEXT platform=%s renderer=%s\n", egl.platform, renderer);
 	fflush(stdout);
 
-	/* The version and the limits, then each shader, then the refused calls. */
+	/* The version and the limits, then the first shaders. */
 	glescompute_version();
 	glescompute_limits();
 	glescompute_add();
 	glescompute_noct();
 	glescompute_shared();
-	glescompute_indirect();
+
+	/* The indirect step, unless it is left out. */
+	if (indirect) {
+		glescompute_indirect();
+	} else {
+		printf("GLESCOMPUTE indirect SKIP\n");
+	}
+
+	/* The rest: chained dispatches, the release, the repeats, the refused calls. */
 	glescompute_chain();
 	glescompute_release(&egl);
 	glescompute_repeat(repeat);
@@ -230,14 +240,16 @@ glescompute_options(
 	int argc,
 	char **argv,
 	int *platform,
-	int *repeat)
+	int *repeat,
+	int *indirect)
 {
 	int index;
 	int differs;
 
-	/* The defaults: Noct's order of platforms, and the default number of repeats. */
+	/* The defaults: Noct's order of platforms, the default number of repeats, every step. */
 	*platform = GLESCOMPUTE_PLATFORM_AUTO;
 	*repeat = GLESCOMPUTE_REPEAT;
+	*indirect = 1;
 
 	/* Each option. */
 	for (index = 1; index < argc; index++) {
@@ -257,13 +269,20 @@ glescompute_options(
 			continue;
 		}
 
+		/* The indirect step left out. */
+		differs = strcmp(argv[index], "--no-indirect");
+		if (differs == 0) {
+			*indirect = 0;
+			continue;
+		}
+
 		/* Anything else. */
 		break;
 	}
 
 	/* An option not known, or a platform that is not one. */
 	if (index < argc) {
-		fprintf(stderr, "usage: glescompute [--platform=auto|surfaceless|default] [--repeat=N]\n");
+		fprintf(stderr, "usage: glescompute [--platform=auto|surfaceless|default] [--repeat=N] [--no-indirect]\n");
 		return -1;
 	}
 
