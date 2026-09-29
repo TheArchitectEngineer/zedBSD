@@ -44,6 +44,8 @@ js_install_builtins(
 	if (error == 0)
 		error = js_builtin_install_regexp(realm);
 	if (error == 0)
+		error = js_builtin_install_date(realm);
+	if (error == 0)
 		error = js_builtin_install_json(realm);
 	if (error == 0)
 		error = js_builtin_install_boolean(realm);

@@ -50,6 +50,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_string.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_regexp.c \
 	$(KEILAND_BROWSER_DIR)/js/regexp.c \
+	$(KEILAND_BROWSER_DIR)/js/builtin_date.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_json.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_number.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_math.c \
