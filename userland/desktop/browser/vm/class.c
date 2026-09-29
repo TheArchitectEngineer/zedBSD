@@ -63,6 +63,8 @@ vm_class_setup(
 			status = vm_throw_type_error(realm, "Class extends value is not a constructor or null");
 			return status;
 		}
+
+		/* Its prototype property, an object or null. */
 		key = vm_key_from_ascii(realm->heap, "prototype");
 		if (key == VM_VALUE_EMPTY)
 			return ENOMEM;
@@ -156,6 +158,8 @@ vm_define_method(
 		getter = accessor->getter;
 		setter = accessor->setter;
 	}
+
+	/* The new half replaces its own. */
 	if (kind == 1U) {
 		getter = function;
 	} else {
@@ -200,6 +204,8 @@ vm_get_super(
 		status = vm_throw_error(realm, VM_ERROR_SYNTAX, "'super' keyword unexpected here");
 		return status;
 	}
+
+	/* The home object's prototype, where super looks. */
 	object = ((struct vm_object *)vm_value_as_cell(home))->prototype;
 	if (object == NULL) {
 		status = vm_throw_type_error(realm, "Cannot read properties of null");
@@ -340,6 +346,8 @@ vm_private_set(
 			status = vm_throw_type_error(realm, "Private method is not writable");
 			return status;
 		}
+
+		/* A field takes the value. */
 		*property.value = value;
 		return 0;
 	}

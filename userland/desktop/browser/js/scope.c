@@ -750,6 +750,8 @@ scope_declare_lexicals(
 			} else {
 				scope_declare_lexical(compiler, scope, node, JS_BINDING_LET);
 			}
+
+			/* The next statement. */
 			continue;
 		}
 
@@ -1236,10 +1238,14 @@ scope_visit_class(
 		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_COMPUTED) != 0U)
 			has_private = 1;
 	}
+
+	/* The class's scope, when it needs one. */
 	if (named || has_private) {
 		inner = scope_new(compiler, scope, scope->function, JS_SCOPE_BLOCK);
 		node->scope = inner;
 	}
+
+	/* Its own name. */
 	if (named)
 		scope_declare(compiler, inner, node->text, node->text_length, JS_BINDING_CONST);
 
@@ -1258,6 +1264,8 @@ scope_visit_class(
 			scope_declare(compiler, inner, private_text, member->raw_length, JS_BINDING_CONST);
 			continue;
 		}
+
+		/* Only private names are left. */
 		if (member->first->kind != JS_NODE_PRIVATE_NAME)
 			continue;
 		private_text = js_private_name(compiler, member->first, &private_length);
@@ -1278,6 +1286,8 @@ scope_visit_class(
 				constructor = member->second;
 				continue;
 			}
+
+			/* Any other method has its own function's scope. */
 			scope_function(compiler, inner, member->second, 0);
 			continue;
 		}

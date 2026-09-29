@@ -406,6 +406,8 @@ js_compile_class(
 		name = node->text;
 		length = node->text_length;
 	}
+
+	/* The constructor's code. */
 	code = js_compile_function(fc->compiler, fc, node->third, name, length);
 	constant = js_constant(fc, vm_value_cell(code));
 	js_emit3(fc, VM_OP_NEW_CLOSURE, constructor, constant, fc->env_register);
@@ -421,6 +423,8 @@ js_compile_class(
 			js_init_binding(fc, member->raw, member->raw_length, statics);
 			continue;
 		}
+
+		/* Only methods are left (the constructor was made above). */
 		if (member->kind != JS_NODE_METHOD || member->op == JS_PROPERTY_CONSTRUCTOR)
 			continue;
 		expr_class_method(fc, member, constructor, prototype);
@@ -463,6 +467,7 @@ js_compile_fields(
 	uint32_t key;
 	uint32_t constant;
 	int is_static;
+	int seen;
 
 	/* this, the object the fields go on. */
 	mark = fc->temp_top;
@@ -477,7 +482,8 @@ js_compile_fields(
 			continue;
 		if (member->first->kind != JS_NODE_PRIVATE_NAME)
 			continue;
-		if (expr_private_seen(class_node, member))
+		seen = expr_private_seen(class_node, member);
+		if (seen)
 			continue;
 		expr_private_key(fc, member->first, key);
 		js_emit1(fc, VM_OP_LOAD_HOME, value);
@@ -672,6 +678,8 @@ expr_super_call(
 		first = expr_arguments(fc, node->second, &count);
 		js_emit3(fc, VM_OP_SUPER_CONSTRUCT, target, first, count);
 	}
+
+	/* The temporaries are free again. */
 	fc->temp_top = mark;
 
 	/* The arrow functions inside read this through the hidden binding, set now. */
@@ -2021,6 +2029,8 @@ expr_member_parts(
 		} else {
 			js_emit2(fc, VM_OP_LOAD_CONST, key, js_constant_key(fc, member->second->text, member->second->text_length));
 		}
+
+		/* super's key is ready. */
 		return;
 	}
 

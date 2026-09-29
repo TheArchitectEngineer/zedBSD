@@ -369,6 +369,8 @@ vm_call(
 		status = vm_throw_class_call(realm, function);
 		return status;
 	}
+
+	/* Any other bytecode function runs. */
 	if (function->code != NULL) {
 		status = vm_interpret(function->realm, function, this_value, args, count, result);
 		return status;

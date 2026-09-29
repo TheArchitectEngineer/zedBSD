@@ -1330,6 +1330,8 @@ interpreter_return(
 			status = vm_throw_type_error(realm, "Derived constructors may only return object or undefined");
 			return status;
 		}
+
+		/* Any other value that is not an object gives this. */
 		if (!is_object)
 			value = frame[FRAME_THIS];
 
@@ -1628,6 +1630,8 @@ interpreter_super_construct(
 		status = vm_throw_reference_error(realm, "Super constructor may only be called once");
 		return status;
 	}
+
+	/* this is bound now. */
 	realm->stack[run->base + FRAME_THIS] = made;
 
 	/* Succeeded: super() is this. */
