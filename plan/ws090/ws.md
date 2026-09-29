@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p002 in-progress（2026-09-29）。J1・J5 は既定で決定（main）、ユーザーの判断「scroll は 2 本指、共通部品」を design.md §6.1 に反映
+Resume point: p002 cleared（2026-09-29、`libkeiui` KUI_VERSION 1: canvas・text・icons・theme）。次は p003（scroll view・入力の層・`kui_text_touch`）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -27,7 +27,7 @@ Resume point: p002 in-progress（2026-09-29）。J1・J5 は既定で決定（ma
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws090-p001](phase001/phase.md) | 設計（[design.md](design.md)） | cleared（2026-09-29） | — |
-| ws090-p002 | libkeiui の骨組みと描画の層（canvas・text・icons・theme）（Settings の書き換えは p007 へ） | in-progress | p001 |
+| [ws090-p002](phase002/phase.md) | libkeiui の骨組みと描画の層（canvas・text・icons・theme）（Settings の書き換えは p007 へ） | cleared（2026-09-29。`libkeiui.so` warning 0、host 13/13 で Files・Settings と byte で一致） | p001 |
 | ws090-p003 | scroll view（`kui_scroll`）と入力の層（`kui_ui`）と文字の view の touch（`kui_text_touch`: 1 本指で選択・2 本指で scroll、2026-09-29 ユーザー） | planning | p002 |
 | ws090-p004 | 窓の土台（`kui_window`、Vulkan・shm・無し）、Text Editor の窓・present・touch・clipboard | planning | p003 |
 | ws090-p005 | 部品（button・switch・slider・field・list・sidebar・card・row・header・dialog・chip・progress）と見本の program | planning | p003 |

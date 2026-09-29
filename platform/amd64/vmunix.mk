@@ -855,6 +855,19 @@ $(DYNAMIC_DIR)/libtruetype.so: $(DYNAMIC_TRUETYPE_OBJS) $(DYNAMIC_DIR)/libc.so \
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libc.so --soname libtruetype.so $@
 
+# The desktop's shared widgets (WS090): so far the drawing layer, which
+# draws its text with libtruetype and needs nothing else but the C library.
+DYNAMIC_KEIUI_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libkeiui)
+
+$(DYNAMIC_DIR)/libkeiui.so: $(DYNAMIC_KEIUI_OBJS) $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so \
+	userland/desktop/libkeiui/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libkeiui.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/desktop/libkeiui/exports.map \
+ $(DYNAMIC_KEIUI_OBJS) -L$(DYNAMIC_DIR) -l:libtruetype.so -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
+ --needed libtruetype.so --needed libc.so --soname libkeiui.so $@
+
 # libz-compat (ws071-p010): the zlib interface of the base programs; it needs nothing but the C library.
 DYNAMIC_Z_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libz-compat)
 
