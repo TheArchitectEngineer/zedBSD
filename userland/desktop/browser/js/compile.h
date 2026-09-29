@@ -38,6 +38,17 @@
 #define JS_COMPLETION_RETURN	2
 #define JS_COMPLETION_JUMPS	3
 
+/*
+ * How js_bind_pattern writes the names of a pattern: as an assignment's
+ * targets, as a var's (or a parameter's or a catch clause's) names, or as
+ * a let's or const's names being declared.
+ */
+enum js_bind_mode {
+	JS_BIND_ASSIGN,
+	JS_BIND_VAR,
+	JS_BIND_INIT
+};
+
 /* The kinds of binding. */
 enum js_binding_kind {
 	JS_BINDING_PARAMETER,
@@ -323,6 +334,7 @@ void js_compile_expression_named(struct js_function_compiler *fc, struct js_node
 void js_load_binding(struct js_function_compiler *fc, const uint16_t *name, size_t length, uint32_t target);
 void js_store_binding(struct js_function_compiler *fc, const struct js_node *node, const uint16_t *name, size_t length, uint32_t source);
 void js_init_binding(struct js_function_compiler *fc, const uint16_t *name, size_t length, uint32_t source);
+void js_bind_pattern(struct js_function_compiler *fc, struct js_node *target, uint32_t value, int mode);
 void js_emit_throw_error(struct js_function_compiler *fc, int kind, const char *text);
 void js_store_target(struct js_function_compiler *fc, struct js_node *target, uint32_t source);
 

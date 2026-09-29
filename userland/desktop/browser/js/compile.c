@@ -694,13 +694,26 @@ compile_variables(
 	struct js_node *target;
 	uint32_t mark;
 	uint32_t value;
+	int mode;
 
 	/* Each declarator: a name, which a let or const binds (undefined without an initializer), and a var assigns when it has an initializer. */
 	mark = fc->temp_top;
 	for (declarator = node->first; declarator != NULL; declarator = declarator->next) {
 		target = declarator->first;
-		if (target->kind != JS_NODE_IDENTIFIER)
-			js_compile_unsupported(fc->compiler, target, "destructuring");
+
+		/* A pattern takes the parts of its initializer (a var's, a let's or a const's). */
+		if (target->kind != JS_NODE_IDENTIFIER) {
+			if (declarator->second == NULL)
+				continue;
+			value = js_temp(fc);
+			js_compile_expression(fc, declarator->second, value);
+			mode = JS_BIND_VAR;
+			if (node->op != JS_P_VAR)
+				mode = JS_BIND_INIT;
+			js_bind_pattern(fc, target, value, mode);
+			fc->temp_top = mark;
+			continue;
+		}
 
 		/* A let or const: its declaration gives the binding its first value. */
 		if (node->op != JS_P_VAR) {
@@ -920,9 +933,7 @@ compile_for_in(
 			lexical = 1;
 		declarator = left->first;
 		left = declarator->first;
-		if (left->kind != JS_NODE_IDENTIFIER)
-			js_compile_unsupported(fc->compiler, left, "destructuring");
-		if (declarator->second != NULL && !lexical) {
+		if (declarator->second != NULL && !lexical && left->kind == JS_NODE_IDENTIFIER) {
 			value = js_temp(fc);
 			js_compile_expression(fc, declarator->second, value);
 			js_store_binding(fc, left, left->text, left->text_length, value);
@@ -953,9 +964,9 @@ compile_for_in(
 	if (node->scope != NULL && node->scope->has_env)
 		js_emit3(fc, VM_OP_NEW_ENV, node->scope->env_register, saved_env, node->scope->env_count);
 
-	/* The key to the left side (the declaration of a let or const), then the body, then the next key. */
+	/* The key to the left side (the declaration of a let or const, the parts of a pattern), then the body, then the next key. */
 	if (lexical) {
-		js_init_binding(fc, left->text, left->text_length, key);
+		js_bind_pattern(fc, left, key, JS_BIND_INIT);
 	} else {
 		js_store_target(fc, left, key);
 	}
@@ -1377,8 +1388,8 @@ compile_catch(
 	fc->scope = node->scope;
 	parameter = node->second;
 	if (parameter != NULL && parameter->kind != JS_NODE_IDENTIFIER)
-		js_compile_unsupported(fc->compiler, parameter, "destructuring");
-	if (parameter != NULL)
+		js_bind_pattern(fc, parameter, caught, JS_BIND_VAR);
+	if (parameter != NULL && parameter->kind == JS_NODE_IDENTIFIER)
 		js_store_binding(fc, parameter, parameter->text, parameter->text_length, caught);
 	fc->temp_top = mark;
 

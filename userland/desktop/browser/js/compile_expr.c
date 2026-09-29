@@ -44,6 +44,12 @@ static uint32_t expr_arguments(struct js_function_compiler *fc, struct js_node *
 static void expr_throw_text(struct js_function_compiler *fc, const char *text);
 static struct js_node *expr_unwrap(struct js_node *node);
 static void expr_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_bind_leaf(struct js_function_compiler *fc, struct js_node *target, uint32_t value, int mode);
+static void expr_bind_default(struct js_function_compiler *fc, struct js_node *pattern, uint32_t value, int mode);
+static void expr_bind_object(struct js_function_compiler *fc, struct js_node *pattern, uint32_t value, int mode);
+static void expr_bind_array(struct js_function_compiler *fc, struct js_node *pattern, uint32_t value, int mode);
+static int expr_has_spread(const struct js_node *list);
+static void expr_spread_list(struct js_function_compiler *fc, struct js_node *list, uint32_t array);
 static void expr_optional_chain(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
 static void expr_optional_check(struct js_function_compiler *fc, const struct js_node *node, uint32_t value);
 static void expr_tagged_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
@@ -312,6 +318,37 @@ js_init_binding(
 }
 
 /*
+ * Binds the names of a pattern (an array or object pattern, a name, or
+ * for an assignment any target) to the parts of a register's value.
+ */
+void
+js_bind_pattern(
+	struct js_function_compiler *fc,
+	struct js_node *target,
+	uint32_t value,
+	int mode)
+{
+	struct js_node *place;
+
+	/* The kind of target. */
+	place = expr_unwrap(target);
+	switch (place->kind) {
+	case JS_NODE_ARRAY_PATTERN:
+		expr_bind_array(fc, place, value, mode);
+		break;
+	case JS_NODE_OBJECT_PATTERN:
+		expr_bind_object(fc, place, value, mode);
+		break;
+	case JS_NODE_ASSIGNMENT_PATTERN:
+		expr_bind_default(fc, place, value, mode);
+		break;
+	default:
+		expr_bind_leaf(fc, place, value, mode);
+		break;
+	}
+}
+
+/*
  * Throws a new error of a kind (enum vm_error_kind) with a message when
  * the code runs.
  */
@@ -368,9 +405,11 @@ js_store_target(
 		return;
 	}
 
-	/* Patterns come with destructuring. */
-	if (place->kind == JS_NODE_ARRAY_PATTERN || place->kind == JS_NODE_OBJECT_PATTERN)
-		js_compile_unsupported(fc->compiler, place, "destructuring");
+	/* A pattern takes the parts of the value. */
+	if (place->kind == JS_NODE_ARRAY_PATTERN || place->kind == JS_NODE_OBJECT_PATTERN) {
+		js_bind_pattern(fc, place, source, JS_BIND_ASSIGN);
+		return;
+	}
 
 	/* Anything else is evaluated, then cannot be assigned. */
 	mark = fc->temp_top;
@@ -601,6 +640,221 @@ expr_template_strings(
 	fc->temp_top = mark;
 }
 
+/* Writes a value to one name (or, for an assignment, one target) of a pattern. */
+static void
+expr_bind_leaf(
+	struct js_function_compiler *fc,
+	struct js_node *target,
+	uint32_t value,
+	int mode)
+{
+	/* A let's or const's name is declared. */
+	if (mode == JS_BIND_INIT && target->kind == JS_NODE_IDENTIFIER) {
+		js_init_binding(fc, target->text, target->text_length, value);
+		return;
+	}
+
+	/* A var's name, or any target of an assignment. */
+	js_store_target(fc, target, value);
+}
+
+/* Binds a pattern with a default: the default replaces a value that is undefined. */
+static void
+expr_bind_default(
+	struct js_function_compiler *fc,
+	struct js_node *pattern,
+	uint32_t value,
+	int mode)
+{
+	struct js_node *inner;
+	uint32_t mark;
+	uint32_t chosen;
+	uint32_t test;
+	uint32_t given;
+
+	/* The value, kept apart from the register it came in. */
+	mark = fc->temp_top;
+	chosen = js_temp(fc);
+	test = js_temp(fc);
+	js_emit2(fc, VM_OP_MOV, chosen, value);
+
+	/* Only undefined takes the default (an anonymous function takes a name's name). */
+	given = js_label_new(fc);
+	js_load_value(fc, test, VM_VALUE_UNDEFINED);
+	js_emit3(fc, VM_OP_STRICT_EQ, test, chosen, test);
+	js_emit_jump(fc, VM_OP_JUMP_IF_FALSE, test, given);
+	inner = expr_unwrap(pattern->first);
+	if (inner->kind == JS_NODE_IDENTIFIER) {
+		js_compile_expression_named(fc, pattern->second, chosen, inner->text, inner->text_length);
+	} else {
+		js_compile_expression(fc, pattern->second, chosen);
+	}
+	js_label_place(fc, given);
+
+	/* The target takes the value chosen. */
+	js_bind_pattern(fc, pattern->first, chosen, mode);
+	fc->temp_top = mark;
+}
+
+/*
+ * Binds an object pattern: each property's target takes the value's
+ * property, and a rest takes a new object of the other own enumerable
+ * properties.  undefined and null cannot be destructured.
+ */
+static void
+expr_bind_object(
+	struct js_function_compiler *fc,
+	struct js_node *pattern,
+	uint32_t value,
+	int mode)
+{
+	struct js_node *property;
+	uint32_t mark;
+	uint32_t excluded;
+	uint32_t key;
+	uint32_t part;
+	uint32_t constant;
+	int has_rest;
+
+	/* undefined and null have no properties to take. */
+	js_emit1(fc, VM_OP_CHECK_COERCIBLE, value);
+
+	/* With a rest, the keys taken are listed to leave them out of it. */
+	mark = fc->temp_top;
+	excluded = js_temp(fc);
+	key = js_temp(fc);
+	part = js_temp(fc);
+	has_rest = 0;
+	for (property = pattern->first; property != NULL; property = property->next) {
+		if (property->kind == JS_NODE_REST)
+			has_rest = 1;
+	}
+	if (has_rest)
+		js_emit1(fc, VM_OP_NEW_ARRAY, excluded);
+
+	/* Each property in order. */
+	for (property = pattern->first; property != NULL; property = property->next) {
+		/* The rest: the properties not taken. */
+		if (property->kind == JS_NODE_REST) {
+			js_emit3(fc, VM_OP_OBJECT_REST, part, value, excluded);
+			js_bind_pattern(fc, property->first, part, mode);
+			continue;
+		}
+
+		/* The key: computed into a register, or a constant. */
+		if ((property->flags & JS_FLAG_COMPUTED) != 0U) {
+			js_compile_expression(fc, property->first, key);
+			js_emit2(fc, VM_OP_TO_PROPERTY_KEY, key, key);
+			js_emit3(fc, VM_OP_GET_ELEM, part, value, key);
+		} else {
+			constant = expr_property_key(fc, property->first);
+			js_emit2(fc, VM_OP_LOAD_CONST, key, constant);
+			js_emit3(fc, VM_OP_GET_PROP, part, value, constant);
+		}
+
+		/* A key taken is left out of the rest. */
+		if (has_rest)
+			js_emit2(fc, VM_OP_ARRAY_PUSH, excluded, key);
+
+		/* The property's target takes its value. */
+		js_bind_pattern(fc, property->second, part, mode);
+	}
+
+	/* The temporaries are free again. */
+	fc->temp_top = mark;
+}
+
+/*
+ * Binds an array pattern: the value is iterated, each element's target
+ * takes the next value (undefined past the end), a hole skips one, and a
+ * rest takes an array of the values left.
+ */
+static void
+expr_bind_array(
+	struct js_function_compiler *fc,
+	struct js_node *pattern,
+	uint32_t value,
+	int mode)
+{
+	struct js_node *element;
+	uint32_t mark;
+	uint32_t iterator;
+	uint32_t part;
+
+	/* The iteration of the value. */
+	mark = fc->temp_top;
+	iterator = js_temp(fc);
+	part = js_temp(fc);
+	js_emit2(fc, VM_OP_ITER_START, iterator, value);
+
+	/* Each element in order. */
+	for (element = pattern->first; element != NULL; element = element->next) {
+		/* The rest: an array of the values left. */
+		if (element->kind == JS_NODE_REST) {
+			js_emit2(fc, VM_OP_ITER_REST, part, iterator);
+			js_bind_pattern(fc, element->first, part, mode);
+			continue;
+		}
+
+		/* The next value, which a hole skips. */
+		js_emit2(fc, VM_OP_ITER_NEXT, part, iterator);
+		if (element->kind == JS_NODE_HOLE)
+			continue;
+
+		/* The element's target takes it. */
+		js_bind_pattern(fc, element, part, mode);
+	}
+
+	/* The temporaries are free again. */
+	fc->temp_top = mark;
+}
+
+/* Tells whether a list of arguments has a spread. */
+static int
+expr_has_spread(
+	const struct js_node *list)
+{
+	/* Each argument. */
+	for (; list != NULL; list = list->next) {
+		if (list->kind == JS_NODE_SPREAD)
+			return 1;
+	}
+
+	/* None is a spread. */
+	return 0;
+}
+
+/* Gathers a list of arguments with spreads into a new array. */
+static void
+expr_spread_list(
+	struct js_function_compiler *fc,
+	struct js_node *list,
+	uint32_t array)
+{
+	struct js_node *argument;
+	uint32_t mark;
+	uint32_t value;
+
+	/* The array. */
+	js_emit1(fc, VM_OP_NEW_ARRAY, array);
+
+	/* Each argument: a spread's values, or the value. */
+	mark = fc->temp_top;
+	value = js_temp(fc);
+	for (argument = list; argument != NULL; argument = argument->next) {
+		if (argument->kind == JS_NODE_SPREAD) {
+			js_compile_expression(fc, argument->first, value);
+			js_emit2(fc, VM_OP_ARRAY_SPREAD, array, value);
+		} else {
+			js_compile_expression(fc, argument, value);
+			js_emit2(fc, VM_OP_ARRAY_PUSH, array, value);
+		}
+	}
+
+	/* The temporaries are free again. */
+	fc->temp_top = mark;
+}
+
 /* Compiles a function expression: its code unit, and a closure over the running environment. */
 static void
 expr_function(
@@ -650,9 +904,12 @@ expr_array(
 			continue;
 		}
 
-		/* Spread comes later. */
-		if (element->kind == JS_NODE_SPREAD)
-			js_compile_unsupported(fc->compiler, element, "spread");
+		/* A spread appends every value of its iterable. */
+		if (element->kind == JS_NODE_SPREAD) {
+			js_compile_expression(fc, element->first, value);
+			js_emit2(fc, VM_OP_ARRAY_SPREAD, target, value);
+			continue;
+		}
 
 		/* The value at the end. */
 		js_compile_expression(fc, element, value);
@@ -688,8 +945,12 @@ expr_object(
 	key = js_temp(fc);
 	value = js_temp(fc);
 	for (property = node->first; property != NULL; property = property->next) {
-		if (property->op == JS_PROPERTY_SPREAD)
-			js_compile_unsupported(fc->compiler, property, "spread");
+		/* A spread copies the own enumerable properties of its value. */
+		if (property->op == JS_PROPERTY_SPREAD) {
+			js_compile_expression(fc, property->second, value);
+			js_emit2(fc, VM_OP_COPY_DATA, target, value);
+			continue;
+		}
 
 		/* The key: computed into a register, or a constant (loaded when an instruction needs it in one). */
 		key_node = property->first;
@@ -1193,9 +1454,18 @@ expr_assign(
 		return;
 	}
 
-	/* A pattern comes with destructuring; a call cannot be assigned. */
-	if (left->kind == JS_NODE_ARRAY_PATTERN || left->kind == JS_NODE_OBJECT_PATTERN)
-		js_compile_unsupported(fc->compiler, left, "destructuring");
+	/* A pattern takes the parts of the value, which is the assignment's value. */
+	if (left->kind == JS_NODE_ARRAY_PATTERN || left->kind == JS_NODE_OBJECT_PATTERN) {
+		mark = fc->temp_top;
+		right = js_temp(fc);
+		js_compile_expression(fc, node->second, right);
+		js_bind_pattern(fc, left, right, JS_BIND_ASSIGN);
+		js_emit2(fc, VM_OP_MOV, target, right);
+		fc->temp_top = mark;
+		return;
+	}
+
+	/* A call cannot be assigned. */
 	if (left->kind != JS_NODE_IDENTIFIER && left->kind != JS_NODE_MEMBER) {
 		js_compile_expression(fc, node->second, target);
 		js_store_target(fc, left, target);
@@ -1399,6 +1669,8 @@ expr_call(
 	uint32_t key;
 	uint32_t first;
 	uint32_t count;
+	uint32_t arguments;
+	int spread;
 
 	/* Super calls come later. */
 	callee = expr_unwrap(node->first);
@@ -1421,6 +1693,16 @@ expr_call(
 	/* ?.() leaves the chain when the function is undefined or null. */
 	expr_optional_check(fc, node, function);
 
+	/* With a spread, the arguments are gathered in an array. */
+	spread = expr_has_spread(node->second);
+	if (spread) {
+		arguments = js_temp(fc);
+		expr_spread_list(fc, node->second, arguments);
+		js_emit4(fc, VM_OP_CALL_ARRAY, target, function, this_value, arguments);
+		fc->temp_top = mark;
+		return;
+	}
+
 	/* The arguments, then the call. */
 	first = expr_arguments(fc, node->second, &count);
 	js_emit5(fc, VM_OP_CALL, target, function, this_value, first, count);
@@ -1436,13 +1718,25 @@ expr_new(
 {
 	uint32_t mark;
 	uint32_t constructor;
+	uint32_t arguments;
 	uint32_t first;
 	uint32_t count;
+	int spread;
 
 	/* The constructor (it is also new.target). */
 	mark = fc->temp_top;
 	constructor = js_temp(fc);
 	js_compile_expression(fc, node->first, constructor);
+
+	/* With a spread, the arguments are gathered in an array. */
+	spread = expr_has_spread(node->second);
+	if (spread) {
+		arguments = js_temp(fc);
+		expr_spread_list(fc, node->second, arguments);
+		js_emit3(fc, VM_OP_CONSTRUCT_ARRAY, target, constructor, arguments);
+		fc->temp_top = mark;
+		return;
+	}
 
 	/* The arguments, then the construction. */
 	first = expr_arguments(fc, node->second, &count);
@@ -1465,8 +1759,6 @@ expr_arguments(
 	*count = 0;
 	first = fc->temp_top;
 	for (argument = list; argument != NULL; argument = argument->next) {
-		if (argument->kind == JS_NODE_SPREAD)
-			js_compile_unsupported(fc->compiler, argument, "spread");
 		js_temp(fc);
 		(*count)++;
 	}

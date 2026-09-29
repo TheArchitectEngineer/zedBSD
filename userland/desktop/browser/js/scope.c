@@ -456,7 +456,7 @@ scope_declare_target(
 		return;
 	}
 
-	/* A pattern's elements (the code pass refuses patterns for now, but their names are still declared). */
+	/* A pattern's elements, a default's or a rest's target. */
 	for (element = target->first; element != NULL; element = element->next) {
 		if (element->kind == JS_NODE_PROPERTY) {
 			scope_declare_target(compiler, info, element->second);
@@ -566,8 +566,10 @@ scope_visit_try(
 		node->scope = clause;
 		if (node->second != NULL && node->second->kind == JS_NODE_IDENTIFIER)
 			scope_declare(compiler, clause, node->second->text, node->second->text_length, JS_BINDING_CATCH);
-		if (node->second != NULL && node->second->kind != JS_NODE_IDENTIFIER)
+		if (node->second != NULL && node->second->kind != JS_NODE_IDENTIFIER) {
+			scope_declare_lexical(compiler, clause, node->second, JS_BINDING_CATCH);
 			scope_visit(compiler, clause, node->second);
+		}
 		scope_visit_list(compiler, clause, node->third);
 	}
 
@@ -691,7 +693,7 @@ scope_declare_lexical(
 		return;
 	}
 
-	/* A pattern's elements (the code pass refuses patterns for now, but their names are still declared). */
+	/* A pattern's elements, a default's or a rest's target. */
 	for (element = target->first; element != NULL; element = element->next) {
 		if (element->kind == JS_NODE_PROPERTY) {
 			scope_declare_lexical(compiler, scope, element->second, kind);
@@ -701,7 +703,7 @@ scope_declare_lexical(
 	}
 }
 
-/* Lists a let or const name of the program's top level for the realm's record (a pattern's names are refused by the code pass). */
+/* Lists the let or const names of the program's top level (a name, or the names inside a pattern) for the realm's record. */
 static void
 scope_global_lexical(
 	struct js_compiler *compiler,
@@ -712,11 +714,24 @@ scope_global_lexical(
 	struct js_global_lexical *lexical;
 	struct js_global_lexical *listed;
 	struct js_global_name *global;
+	struct js_node *element;
 	int same;
 
-	/* Only a name is listed. */
-	if (target == NULL || target->kind != JS_NODE_IDENTIFIER)
+	/* Nothing to list. */
+	if (target == NULL)
 		return;
+
+	/* A pattern's elements, a default's or a rest's target. */
+	if (target->kind != JS_NODE_IDENTIFIER) {
+		for (element = target->first; element != NULL; element = element->next) {
+			if (element->kind == JS_NODE_PROPERTY) {
+				scope_global_lexical(compiler, info, element->second, is_const);
+			} else {
+				scope_global_lexical(compiler, info, element, is_const);
+			}
+		}
+		return;
+	}
 
 	/* The script may not declare the name twice, nor as a var or a function too. */
 	for (listed = info->global_lexicals; listed != NULL; listed = listed->next) {

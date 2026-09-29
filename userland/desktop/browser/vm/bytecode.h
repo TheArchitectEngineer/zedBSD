@@ -122,6 +122,16 @@ enum vm_opcode {
 	VM_OP_THROW_ERROR,	/* I kind (enum vm_error_kind), C message: throws a new error of the kind */
 	VM_OP_DEFINE_GLOBAL_LEXICAL,	/* C key, I const: a script's top-level let or const, before its declaration runs */
 	VM_OP_INIT_GLOBAL_LEXICAL,	/* C key, R value: the declaration of a script's top-level let or const runs */
+	VM_OP_ITER_START,	/* R dst, R value: an iteration of the value (ws074-p079) */
+	VM_OP_ITER_NEXT,	/* R dst, R iteration: its next value, undefined once it has ended */
+	VM_OP_ITER_REST,	/* R dst, R iteration: an array of the values it has left */
+	VM_OP_ARRAY_SPREAD,	/* R array, R value: every value of the iterable appended */
+	VM_OP_COPY_DATA,	/* R object, R value: the value's own enumerable properties copied */
+	VM_OP_OBJECT_REST,	/* R dst, R value, R excluded keys (an array): an object pattern's rest */
+	VM_OP_CALL_ARRAY,	/* R dst, R function, R this, R arguments (an array) */
+	VM_OP_CONSTRUCT_ARRAY,	/* R dst, R constructor, R arguments (an array) */
+	VM_OP_CHECK_COERCIBLE,	/* R value: a TypeError for undefined and null (an object pattern's value) */
+	VM_OP_ARGS_REST,	/* R dst, R arguments object, I first: an array of the arguments from the first (a rest parameter) */
 
 	/* Wasm (raw values). */
 	VM_OP_I32_CONST,	/* R dst, I value */
