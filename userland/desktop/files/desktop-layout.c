@@ -17,6 +17,11 @@
  * $XDG_CONFIG_HOME/keiland/desktop-layout (or ~/.config/...), one line an
  * item the user placed: NAME<TAB>COLUMN<TAB>ROW.  It is written to a new
  * file beside it and renamed over it.
+ *
+ * The places the items are shown at are also kept by name in memory
+ * (ws094-p005), and a new layout keeps them after the saved ones, so that
+ * an item made or pasted takes a free cell and the others stay where they
+ * were; a renamed item keeps its cell under its new name.
  */
 
 #include "files.h"
@@ -436,10 +441,13 @@ fm_desktop_clean_up(
 	char path[FM_PATH_MAX];
 	int error;
 
-	/* No saved places, and a new layout. */
+	/* No saved places, nor the places shown, and a new layout. */
 	free(desk->saved);
 	desk->saved = NULL;
 	desk->saved_count = 0;
+	free(desk->shown);
+	desk->shown = NULL;
+	desk->shown_count = 0;
 	desk->laid_count = (size_t)-1;
 
 	/* No file. */
@@ -456,15 +464,97 @@ fm_desktop_clean_up(
 }
 
 /*
- * Frees the desktop's places and saved places.
+ * Gives an item's place a new name (the item was renamed), in the places
+ * shown and in the saved places, whose file is written again when the
+ * item had one.  Returns 0 or an errno value.
+ */
+int
+fm_desktop_layout_rename(
+	struct fm_desktop *desk,
+	const char *old_name,
+	const char *new_name)
+{
+	char path[FM_PATH_MAX];
+	int found;
+	int error;
+
+	/* The place it is shown at keeps it under its new name. */
+	found = layout_saved_index(desk->shown, desk->shown_count, old_name);
+	if (found >= 0)
+		snprintf(desk->shown[found].name, sizeof(desk->shown[found].name), "%s", new_name);
+
+	/* An item the user did not place has nothing saved. */
+	found = layout_saved_index(desk->saved, desk->saved_count, old_name);
+	if (found < 0)
+		return 0;
+
+	/* The saved place under the new name, and the file. */
+	snprintf(desk->saved[found].name, sizeof(desk->saved[found].name), "%s", new_name);
+	error = fm_desktop_layout_path(path, sizeof(path));
+	if (error != 0)
+		return error;
+	error = fm_desktop_layout_write(path, desk->saved, desk->saved_count);
+	fm_log("DESKTOP saved-rename from=%s to=%s error=%d", old_name, new_name, error);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the saved place follows the item. */
+	return 0;
+}
+
+/*
+ * Remembers where the items of a layout are shown (names and the
+ * desktop's places, in the same order), for the next layout.  Returns 0 or
+ * ENOMEM (the places shown before are then forgotten).
+ */
+int
+fm_desktop_remember(
+	struct fm_desktop *desk,
+	const char *const *names,
+	size_t count)
+{
+	struct fm_desktop_saved *shown;
+	size_t index;
+
+	/* The places shown before go. */
+	free(desk->shown);
+	desk->shown = NULL;
+	desk->shown_count = 0;
+
+	/* Room for every placed item. */
+	shown = calloc(count + 1U, sizeof(shown[0]));
+	if (shown == NULL)
+		return ENOMEM;
+	desk->shown = shown;
+
+	/* Each item that has a cell, by its name. */
+	for (index = 0; index < count && index < desk->place_count; index++) {
+		/* An item without a cell is placed afresh next time. */
+		if (desk->places[index].column < 0)
+			continue;
+
+		/* Its name and cell. */
+		snprintf(shown[desk->shown_count].name, sizeof(shown[desk->shown_count].name), "%s", names[index]);
+		shown[desk->shown_count].column = desk->places[index].column;
+		shown[desk->shown_count].row = desk->places[index].row;
+		desk->shown_count++;
+	}
+
+	/* Succeeded: the next layout keeps these places. */
+	return 0;
+}
+
+/*
+ * Frees the desktop's places, saved places and places shown.
  */
 void
 fm_desktop_release(
 	struct fm_desktop *desk)
 {
-	/* Both arrays, and nothing is left. */
+	/* The arrays, and nothing is left. */
 	free(desk->places);
 	free(desk->saved);
+	free(desk->shown);
 	memset(desk, 0, sizeof(*desk));
 }
 
