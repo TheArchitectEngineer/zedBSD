@@ -32,6 +32,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/vm/operation.c \
 	$(KEILAND_BROWSER_DIR)/vm/access.c \
 	$(KEILAND_BROWSER_DIR)/vm/spread.c \
+	$(KEILAND_BROWSER_DIR)/vm/class.c \
 	$(KEILAND_BROWSER_DIR)/vm/interpreter.c \
 	$(KEILAND_BROWSER_DIR)/js/lexer.c \
 	$(KEILAND_BROWSER_DIR)/js/parser.c \

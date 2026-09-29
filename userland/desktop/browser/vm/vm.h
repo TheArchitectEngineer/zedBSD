@@ -447,11 +447,14 @@ struct vm_env;
 
 /*
  * A symbol: a unique property key with a description (a string or
- * undefined).
+ * undefined).  A private name (a class's #x, ws074-p085) is a symbol too,
+ * marked private_name: it is never listed among an object's keys, and
+ * only the class's code can read it.
  */
 struct vm_symbol {
 	struct vm_cell cell;
 	vm_value description;
+	int private_name;
 };
 
 /*
@@ -732,6 +735,17 @@ int vm_define_global_function(struct vm_realm *realm, vm_value key, vm_value fun
 int vm_delete_global(struct vm_realm *realm, vm_value key, vm_value *result);
 int vm_define_global_lexical(struct vm_realm *realm, vm_value key, int is_const);
 
+/* Classes (class.c). */
+int vm_class_setup(struct vm_realm *realm, vm_value constructor, vm_value parent, vm_value *prototype);
+int vm_define_method(struct vm_realm *realm, vm_value home, vm_value key, vm_value function, uint32_t kind);
+int vm_get_super(struct vm_realm *realm, vm_value home, vm_value key, vm_value this_value, vm_value *result);
+int vm_throw_class_call(struct vm_realm *realm, struct vm_function *function);
+int vm_private_get(struct vm_realm *realm, vm_value object, vm_value key, vm_value *result);
+int vm_private_set(struct vm_realm *realm, vm_value object, vm_value key, vm_value value);
+int vm_private_define(struct vm_realm *realm, vm_value object, vm_value key, vm_value value);
+int vm_private_copy(struct vm_realm *realm, vm_value target, vm_value source, vm_value key);
+int vm_private_in(struct vm_realm *realm, vm_value key, vm_value object, vm_value *result);
+
 /* Spreading and destructuring (spread.c). */
 int vm_iter_start(struct vm_realm *realm, vm_value value, vm_value *iterator);
 int vm_iter_next(struct vm_realm *realm, vm_value iterator, vm_value *value, int *done);
@@ -750,6 +764,6 @@ int vm_for_in_next(struct vm_realm *realm, vm_value iterator, vm_value *key, int
 
 /* The interpreter (interpreter.c). */
 int vm_interpret(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-int vm_interpret_construct(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int vm_interpret_construct(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value new_target, vm_value *result);
 
 #endif

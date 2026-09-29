@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: 2026-09-29: p076（Date）・p077（window の環境の最小と Uncaught の位置）・p078（let・const・arrow・template）・p079（destructuring・default・rest・spread・optional chaining）cleared（test262 15762 → 18558、Amazon の top の Uncaught 49 → 7、search 44 → 9）。p028 から p078・p079 を分けた。前の記録は下の表と各 phase.md。デモの目標は amazon.co.jp（[amazon-goal.md](amazon-goal.md)）。Amazon の script の次の blocker: async function・for-of・class（p028・p029 の残り）、`getBoundingClientRect`・`querySelector`（p031、別の worktree の ws074-dom）。次（案）: p028 の残りを class と Symbol・iterator・for-of に分け、async は p029（generator・Promise と一緒）
+Resume point: 2026-09-29: p076（Date）・p077（window の環境）・p078（let・const・arrow・template）・p079（destructuring・default・rest・spread・optional chaining）cleared。**p085（class）in-progress**: 実装と host の回帰は済み（test262 21801/47792）、確認の残り（test262 の比較、ASan、Amazon の写真、guest、boot）は [phase085](phase085/phase.md) の Resume point。デモの目標は amazon.co.jp（[amazon-goal.md](amazon-goal.md)）。計画中の Phase の順（main の指示）: p085 class の確認 → Symbol・iterator の protocol・for-of（p028 の残りから切り出す）→ 型付き配列（ArrayBuffer・TypedArray・DataView、TextEncoder.encode の Uint8Array のため）と p029（generator・Promise・async）。Amazon の次の blocker は async（top 1、search 4）と for-of（各 1）なので、p029 の async を型付き配列より先にするのがよい（判断は次の担当）。Phase の番号は DOM の側（ws074-dom）と衝突しないよう main と合わせる
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -125,7 +125,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p025](phase025/phase.md) | JS の compiler（ES5 の核）、`--js` の shell、test262 の runner。最初の数（4992/47792、ES5 1457/8087） | cleared | p024 |
 | [ws074-p026](phase026/phase.md) | 組み込み 1a: Object・Function（bind・Function の構築子）・Error の類（engine の誤りも object に）・Boolean・Number（自前の最短の十進表記と十進の読み取り、toFixed 等）・Math・global の関数、native の構築子（2026-09-28 に Array・String・JSON を p046 へ分けた。9327/47792、ES5 4822/8087） | cleared | p025 |
 | [ws074-p027](phase027/phase.md) | RegExp の engine と String の regex の method | cleared（2026-09-29。自前の backtracking の engine、RegExp と String の match・replace・replaceAll・search・split。test262 14255 → 15762、ES5 6786 → 7592。v flag・`\p`・modifier・matchAll・Symbol の差し替えは残り） | p026 |
-| ws074-p028 | ES2015 の意味 1（2026-09-29 に let・const・TDZ・arrow・template を p078 へ、destructuring・default・rest・spread・optional chaining を p079 へ分けた）: class、Symbol、iterator の protocol と for-of、Map・Set・Weak* | planned | p026、p079 |
+| ws074-p028 | ES2015 の意味 1（2026-09-29 に let・const・TDZ・arrow・template を p078 へ、destructuring・default・rest・spread・optional chaining を p079 へ、class を p085 へ分けた）: Symbol、iterator の protocol と for-of、Map・Set・Weak*（次の Phase として切り出す予定） | planned | p026、p085 |
 | ws074-p029 | ES2015 の意味 2: generator、Promise と microtask、async・await、Proxy・Reflect、TypedArray・ArrayBuffer・DataView、Date、BigInt | planned | p028 |
 | [ws074-p030](phase030/phase.md) | DOM の binding（interface の表、生成器は後回し）、window・document・Node・Element・Event の基本、console、`<script>` の実行、timer、event loop と microtask の queue（2026-09-28 に WPT の testharness の runner を p047 へ分けた） | cleared | p014、p046（p029 から縮めた: microtask の queue はこの Phase で作った） |
 | [ws074-p031](phase031/phase.md) | Amazon の script が要る DOM の API（2026-09-29 に絞った）: querySelector・querySelectorAll・matches・closest、getBoundingClientRect・getClientRects・DOMRect・client/offset/scroll の大きさ・scrollX/Y（問われた時に layout）、classList・dataset、inline style（CSSStyleDeclaration）。getComputedStyle・innerHTML・offsetTop/Left・scrollTo は残り | cleared（2026-09-29。Amazon top の DOM の Uncaught 4 → 0、DOM の試験 4 つを追加、guest 12/12） | p030 |
@@ -174,6 +174,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p079](phase079/phase.md) | ES2015 の構文 1b（p028 から分けた）: destructuring（宣言・代入・引数・catch・for-in）、default・rest の引数、spread（配列・呼び出し・new・object）、optional chaining。反復は配列・arguments・文字列だけ（Symbol.iterator は p028） | cleared（2026-09-29。test262 17190 → 18558。Amazon の default・rest・optional chaining の誤り 0、次は async・for-of・class） | p078 |
 | [ws074-p080](phase080/phase.md) | Encoding API（TextEncoder・TextDecoder、UTF-8）と Web Storage（Storage・sessionStorage・localStorage、origin ごと、localStorage は file に保存、5 MiB の上限）。bind/・page/ の側（p031 の後の Amazon の blocker） | cleared（2026-09-29。Amazon の TextEncoder・sessionStorage の Uncaught 0、guest の live の top は Uncaught 0、DOM の試験 2 つを追加） | p030、p031 |
 | [ws074-p081](phase081/phase.md) | HTML の断片の parse と直列化（innerHTML・outerHTML・insertAdjacentHTML・insertAdjacentElement・insertAdjacentText）。Amazon の script での使用が最も多い DOM の API（調べは phase.md） | in-progress（2026-09-29 に引き継ぎ。断片の parse（html5lib の fragment 206/206）・直列化・binding は commit 済み、template.content・試験・ASan・guest が残り） | p005、p030、p031 |
+| [ws074-p085](phase085/phase.md) | class（p028 から分けた。p080〜p084 は DOM の側と衝突しないように空けた）: 宣言と式、constructor（既定を含む）、method・accessor・static、extends・super・new.target、public と private の field・method、static block | in-progress（2026-09-29。実装と host の回帰は済み、test262 18558 → 21801。確認の残りは phase.md の Resume point） | p078、p079 |
 
 ## 後の WS・Future Work の候補
 

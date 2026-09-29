@@ -53,9 +53,15 @@ static void scope_declare_target(struct js_compiler *compiler, struct js_functio
 static void scope_visit_list(struct js_compiler *compiler, struct js_scope *scope, struct js_node *list);
 static void scope_visit(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
 static void scope_visit_try(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
-static void scope_reference(struct js_compiler *compiler, struct js_scope *scope, const uint16_t *name, size_t length);
+static int scope_reference(struct js_compiler *compiler, struct js_scope *scope, const uint16_t *name, size_t length);
 static int scope_has_own_arguments(const struct js_function_info *info);
 static void scope_arrow_this(struct js_compiler *compiler, struct js_scope *scope);
+static void scope_arrow_home(struct js_compiler *compiler, struct js_scope *scope);
+static void scope_visit_class(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
+static struct js_node *scope_default_constructor(struct js_compiler *compiler, struct js_node *node);
+static struct js_node *scope_new_node(struct js_compiler *compiler, int kind, const struct js_node *place);
+static const uint16_t *scope_field_key_name(struct js_compiler *compiler, struct js_node *member, uint32_t ordinal);
+static void scope_check_private_pair(struct js_compiler *compiler, const struct js_node *class_node, const struct js_node *member);
 static struct js_scope *scope_lexical_block(struct js_compiler *compiler, struct js_scope *parent, struct js_node *list, int switch_cases);
 static int scope_declare_lexicals(struct js_compiler *compiler, struct js_scope *scope, struct js_node *list);
 static void scope_declare_lexical(struct js_compiler *compiler, struct js_scope *scope, struct js_node *target, int kind);
@@ -78,6 +84,17 @@ static void scope_block_function(struct js_compiler *compiler, struct js_scope *
 const uint16_t js_this_name[JS_THIS_NAME_LENGTH] = {
 	'#', 't', 'h', 'i', 's'
 };
+
+/*
+ * The hidden binding of a method's home object that its arrow functions
+ * read for super: "#home".  A constant for the life of the program.
+ */
+const uint16_t js_home_name[JS_HOME_NAME_LENGTH] = {
+	'#', 'h', 'o', 'm', 'e'
+};
+
+/* The name of a derived class's default constructor's rest parameter (a constant for the life of the program). */
+static const uint16_t scope_args_name[4] = { 'a', 'r', 'g', 's' };
 static void scope_arguments_var(struct js_function_info *info);
 
 /*
@@ -138,6 +155,39 @@ js_scope_resolve(
 
 	/* No scope declares it: a global. */
 	return NULL;
+}
+
+/*
+ * Reports the name of the hidden binding that holds a private name's key:
+ * "#" and the name (the node's text is without it), made once and kept in
+ * the node's raw text.
+ */
+const uint16_t *
+js_private_name(
+	struct js_compiler *compiler,
+	struct js_node *node,
+	size_t *length)
+{
+	uint16_t *text;
+
+	/* Made already. */
+	if (node->raw != NULL) {
+		*length = node->raw_length;
+		return node->raw;
+	}
+
+	/* "#" and the name, in the arena. */
+	text = wb_arena_alloc(compiler->arena, (node->text_length + 1U) * sizeof(uint16_t));
+	if (text == NULL)
+		js_compile_out_of_memory(compiler);
+	text[0] = '#';
+	memcpy(text + 1, node->text, node->text_length * sizeof(uint16_t));
+	node->raw = text;
+	node->raw_length = node->text_length + 1U;
+
+	/* Succeeded: the binding's name. */
+	*length = node->raw_length;
+	return text;
 }
 
 /* Makes the information of a function (or the program): its scopes, its declarations, and the resolution of its names. */
@@ -519,6 +569,10 @@ scope_visit(
 	struct js_scope *scope,
 	struct js_node *node)
 {
+	const uint16_t *private_text;
+	size_t private_length;
+	int found;
+
 	/* The kinds whose children are not all names in use. */
 	switch (node->kind) {
 	case JS_NODE_IDENTIFIER:
@@ -537,6 +591,13 @@ scope_visit(
 	case JS_NODE_BLOCK:
 		scope_visit_block(compiler, scope, node);
 		return;
+	case JS_NODE_CLASS:
+	case JS_NODE_CLASS_DECLARATION:
+		scope_visit_class(compiler, scope, node);
+		return;
+	case JS_NODE_SUPER:
+		scope_arrow_home(compiler, scope);
+		return;
 	case JS_NODE_FOR:
 	case JS_NODE_FOR_IN:
 	case JS_NODE_FOR_OF:
@@ -546,9 +607,9 @@ scope_visit(
 		scope_visit_switch(compiler, scope, node);
 		return;
 	case JS_NODE_MEMBER:
-		/* The object; the property only when computed. */
+		/* The object; the property only when computed or private. */
 		scope_visit(compiler, scope, node->first);
-		if ((node->flags & JS_FLAG_COMPUTED) != 0U)
+		if ((node->flags & JS_FLAG_COMPUTED) != 0U || node->second->kind == JS_NODE_PRIVATE_NAME)
 			scope_visit(compiler, scope, node->second);
 		return;
 	case JS_NODE_PROPERTY:
@@ -561,6 +622,12 @@ scope_visit(
 			scope_visit(compiler, scope, node->second);
 		return;
 	case JS_NODE_PRIVATE_NAME:
+		/* #x (in #x in o, or a member's key): its class's hidden binding, which an enclosing class must declare. */
+		private_text = js_private_name(compiler, node, &private_length);
+		found = scope_reference(compiler, scope, private_text, private_length);
+		if (!found)
+			js_compile_fail(compiler, node, "Private field must be declared in an enclosing class");
+		return;
 	case JS_NODE_META_PROPERTY:
 	case JS_NODE_IMPORT_SPECIFIER:
 	case JS_NODE_EXPORT_SPECIFIER:
@@ -607,8 +674,8 @@ scope_visit_try(
 	scope_visit_list(compiler, scope, node->fourth);
 }
 
-/* Resolves a name used in a scope, marking a binding of an outer function captured. */
-static void
+/* Resolves a name used in a scope, marking a binding of an outer function captured; reports whether a scope declares it. */
+static int
 scope_reference(
 	struct js_compiler *compiler,
 	struct js_scope *scope,
@@ -646,9 +713,12 @@ scope_reference(
 			}
 
 			/* Resolved. */
-			return;
+			return 1;
 		}
 	}
+
+	/* No scope declares it: a global. */
+	return 0;
 }
 
 /*
@@ -669,9 +739,23 @@ scope_declare_lexicals(
 	int found;
 	int lexical;
 
-	/* Each statement that is a let or const declaration. */
+	/* Each statement that is a let, const or class declaration. */
 	found = 0;
 	for (node = list; node != NULL; node = node->next) {
+		/* A class declaration's name is a let. */
+		if (node->kind == JS_NODE_CLASS_DECLARATION && node->text != NULL) {
+			found = 1;
+			if (scope->kind == JS_SCOPE_FUNCTION && scope->function->program) {
+				scope_global_lexical(compiler, scope->function, node, 0);
+			} else {
+				scope_declare_lexical(compiler, scope, node, JS_BINDING_LET);
+			}
+
+			/* The next statement. */
+			continue;
+		}
+
+		/* A let or const declaration. */
 		lexical = scope_is_lexical(node);
 		if (!lexical)
 			continue;
@@ -714,8 +798,8 @@ scope_declare_lexical(
 	if (target == NULL)
 		return;
 
-	/* A name, which the scope may not declare already (a parameter, a var, a function or another let or const). */
-	if (target->kind == JS_NODE_IDENTIFIER) {
+	/* A name (or a class declaration's), which the scope may not declare already (a parameter, a var, a function or another let or const). */
+	if (target->kind == JS_NODE_IDENTIFIER || target->kind == JS_NODE_CLASS_DECLARATION) {
 		declared = scope_find(scope, target->text, target->text_length);
 		if (declared != NULL)
 			scope_redeclared(compiler, target);
@@ -751,8 +835,8 @@ scope_global_lexical(
 	if (target == NULL)
 		return;
 
-	/* A pattern's elements, a default's or a rest's target. */
-	if (target->kind != JS_NODE_IDENTIFIER) {
+	/* A pattern's elements, a default's or a rest's target (a class declaration is listed by its name). */
+	if (target->kind != JS_NODE_IDENTIFIER && target->kind != JS_NODE_CLASS_DECLARATION) {
 		for (element = target->first; element != NULL; element = element->next) {
 			if (element->kind == JS_NODE_PROPERTY) {
 				scope_global_lexical(compiler, info, element->second, is_const);
@@ -1108,6 +1192,334 @@ scope_block_function(
 
 	/* The declaration is the last now. */
 	block->functions_last = entry;
+}
+
+/*
+ * Resolves the names of a class and makes the scopes of its functions: its
+ * heritage (outside), a scope with its own name for a named class
+ * expression, its methods, its constructor (the default one made when it
+ * has none) whose scope the instance fields' initializers are resolved in,
+ * and a function for its static fields and blocks.  The constructor is
+ * noted in the class node's third, the static function in its fourth.
+ */
+static void
+scope_visit_class(
+	struct js_compiler *compiler,
+	struct js_scope *scope,
+	struct js_node *node)
+{
+	struct js_scope *inner;
+	struct js_node *member;
+	struct js_node *constructor;
+	struct js_node *statics;
+	struct js_function_info *info;
+	struct js_binding *declared;
+	const uint16_t *private_text;
+	size_t private_length;
+	uint32_t computed;
+	int has_static;
+	int has_private;
+	int named;
+
+	/* The heritage, in the scope around the class. */
+	if (node->first != NULL)
+		scope_visit(compiler, scope, node->first);
+
+	/* A named class sees its own name as a const (apart from a declaration's outer let), and the class's code its private names. */
+	inner = scope;
+	node->scope = NULL;
+	named = 0;
+	if (node->text != NULL)
+		named = 1;
+	has_private = 0;
+	for (member = node->second; member != NULL; member = member->next) {
+		if ((member->kind == JS_NODE_METHOD || member->kind == JS_NODE_FIELD) && member->first->kind == JS_NODE_PRIVATE_NAME)
+			has_private = 1;
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_COMPUTED) != 0U)
+			has_private = 1;
+	}
+
+	/* The class's scope, when it needs one. */
+	if (named || has_private) {
+		inner = scope_new(compiler, scope, scope->function, JS_SCOPE_BLOCK);
+		node->scope = inner;
+	}
+
+	/* Its own name. */
+	if (named)
+		scope_declare(compiler, inner, node->text, node->text_length, JS_BINDING_CONST);
+
+	/*
+	 * Each private name is a const of the class's scope (a getter and a
+	 * setter share one), and so is each computed field name, which the
+	 * class evaluates once for its constructor to use.
+	 */
+	computed = 0;
+	for (member = node->second; member != NULL && has_private; member = member->next) {
+		if (member->kind != JS_NODE_METHOD && member->kind != JS_NODE_FIELD)
+			continue;
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_COMPUTED) != 0U) {
+			private_text = scope_field_key_name(compiler, member, computed);
+			computed++;
+			scope_declare(compiler, inner, private_text, member->raw_length, JS_BINDING_CONST);
+			continue;
+		}
+
+		/* Only private names are left. */
+		if (member->first->kind != JS_NODE_PRIVATE_NAME)
+			continue;
+		private_text = js_private_name(compiler, member->first, &private_length);
+		declared = scope_find(inner, private_text, private_length);
+		if (declared != NULL)
+			scope_check_private_pair(compiler, node, member);
+		scope_declare(compiler, inner, private_text, private_length, JS_BINDING_CONST);
+	}
+
+	/* Each method (a computed key in the class's scope), and the constructor found. */
+	constructor = NULL;
+	has_static = 0;
+	for (member = node->second; member != NULL; member = member->next) {
+		if (member->kind == JS_NODE_METHOD) {
+			if ((member->flags & JS_FLAG_COMPUTED) != 0U)
+				scope_visit(compiler, inner, member->first);
+			if (member->op == JS_PROPERTY_CONSTRUCTOR) {
+				constructor = member->second;
+				continue;
+			}
+
+			/* Any other method has its own function's scope. */
+			scope_function(compiler, inner, member->second, 0);
+			continue;
+		}
+
+		/* A computed field key is evaluated with the class; a static field or block runs in the static function. */
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_COMPUTED) != 0U)
+			scope_visit(compiler, inner, member->first);
+		if ((member->flags & JS_FLAG_STATIC) != 0U || member->kind == JS_NODE_STATIC_BLOCK)
+			has_static = 1;
+	}
+
+	/* The constructor, the default one when the class has none. */
+	if (constructor == NULL)
+		constructor = scope_default_constructor(compiler, node);
+	node->third = constructor;
+	info = scope_function(compiler, inner, constructor, 0);
+	info->class_node = node;
+
+	/*
+	 * The instance fields' initializers run in the constructor, which also
+	 * uses the private names of the instance fields and methods (a use the
+	 * code pass makes, so the names are captured).
+	 */
+	for (member = node->second; member != NULL; member = member->next) {
+		if ((member->flags & JS_FLAG_STATIC) != 0U)
+			continue;
+		if (member->kind != JS_NODE_FIELD && member->kind != JS_NODE_METHOD)
+			continue;
+		if (member->first->kind == JS_NODE_PRIVATE_NAME)
+			scope_visit(compiler, info->scope, member->first);
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_COMPUTED) != 0U)
+			scope_reference(compiler, info->scope, member->raw, member->raw_length);
+		if (member->kind == JS_NODE_FIELD && member->second != NULL)
+			scope_visit(compiler, info->scope, member->second);
+	}
+
+	/* Without static fields or blocks, that is all. */
+	node->fourth = NULL;
+	if (!has_static)
+		return;
+
+	/* The static function (a method, whose this is the class). */
+	statics = scope_new_node(compiler, JS_NODE_FUNCTION, node);
+	statics->flags = JS_FLAG_METHOD | JS_FLAG_STRICT | JS_FLAG_STATIC_INIT;
+	node->fourth = statics;
+	info = scope_function(compiler, inner, statics, 0);
+	info->class_node = node;
+
+	/* Its fields' private names and values, and its blocks' statements (whose vars are the function's). */
+	for (member = node->second; member != NULL; member = member->next) {
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_STATIC) != 0U && member->first->kind == JS_NODE_PRIVATE_NAME)
+			scope_visit(compiler, info->scope, member->first);
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_STATIC) != 0U && (member->flags & JS_FLAG_COMPUTED) != 0U)
+			scope_reference(compiler, info->scope, member->raw, member->raw_length);
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_STATIC) != 0U && member->second != NULL)
+			scope_visit(compiler, info->scope, member->second);
+		if (member->kind != JS_NODE_STATIC_BLOCK)
+			continue;
+		scope_declarations(compiler, info, member->first);
+		scope_declare_lexicals(compiler, info->scope, member->first);
+		scope_visit_list(compiler, info->scope, member->first);
+	}
+}
+
+/*
+ * Makes the default constructor of a class that has none: constructor()
+ * {}, or for a derived class constructor(...args) { super(...args); }.
+ */
+static struct js_node *
+scope_default_constructor(
+	struct js_compiler *compiler,
+	struct js_node *node)
+{
+	struct js_node *function;
+	struct js_node *rest;
+	struct js_node *name;
+	struct js_node *statement;
+	struct js_node *call;
+	struct js_node *spread;
+
+	/* The function, a strict method. */
+	function = scope_new_node(compiler, JS_NODE_FUNCTION, node);
+	function->flags = JS_FLAG_METHOD | JS_FLAG_STRICT;
+	if (node->first == NULL)
+		return function;
+
+	/* A derived class's: the rest parameter args. */
+	rest = scope_new_node(compiler, JS_NODE_REST, node);
+	name = scope_new_node(compiler, JS_NODE_IDENTIFIER, node);
+	name->text = scope_args_name;
+	name->text_length = 4;
+	rest->first = name;
+	function->first = rest;
+
+	/* Its body: super(...args). */
+	statement = scope_new_node(compiler, JS_NODE_EXPRESSION_STATEMENT, node);
+	call = scope_new_node(compiler, JS_NODE_CALL, node);
+	call->first = scope_new_node(compiler, JS_NODE_SUPER, node);
+	spread = scope_new_node(compiler, JS_NODE_SPREAD, node);
+	name = scope_new_node(compiler, JS_NODE_IDENTIFIER, node);
+	name->text = scope_args_name;
+	name->text_length = 4;
+	spread->first = name;
+	call->second = spread;
+	statement->first = call;
+	function->second = statement;
+
+	/* Succeeded: the constructor. */
+	return function;
+}
+
+/*
+ * Names the hidden const that keeps a computed field name's key: "#" and
+ * the field's ordinal among the class's computed fields (no private name
+ * starts with a digit), kept in the field node's raw text.
+ */
+static const uint16_t *
+scope_field_key_name(
+	struct js_compiler *compiler,
+	struct js_node *member,
+	uint32_t ordinal)
+{
+	uint16_t *text;
+	char digits[16];
+	size_t length;
+	size_t index;
+
+	/* The ordinal's digits. */
+	snprintf(digits, sizeof(digits), "%u", (unsigned)ordinal);
+	length = strlen(digits);
+
+	/* "#" and the digits, in the arena. */
+	text = wb_arena_alloc(compiler->arena, (length + 1U) * sizeof(uint16_t));
+	if (text == NULL)
+		js_compile_out_of_memory(compiler);
+	text[0] = '#';
+	for (index = 0; index < length; index++)
+		text[index + 1U] = (uint16_t)digits[index];
+
+	/* Succeeded: the name, kept on the node. */
+	member->raw = text;
+	member->raw_length = length + 1U;
+	return text;
+}
+
+/*
+ * Fails the compilation when a private name a class declares again is not
+ * the other half of a getter and setter pair (both static or neither).
+ */
+static void
+scope_check_private_pair(
+	struct js_compiler *compiler,
+	const struct js_node *class_node,
+	const struct js_node *member)
+{
+	const struct js_node *earlier;
+	int same;
+	int pairs;
+
+	/* Each earlier member with the same private name. */
+	pairs = 0;
+	for (earlier = class_node->second; earlier != member; earlier = earlier->next) {
+		if (earlier->kind != JS_NODE_METHOD && earlier->kind != JS_NODE_FIELD)
+			continue;
+		if (earlier->first->kind != JS_NODE_PRIVATE_NAME)
+			continue;
+		same = js_text_equal(earlier->first->text, earlier->first->text_length, member->first->text, member->first->text_length);
+		if (!same)
+			continue;
+
+		/* Only a getter and a setter of the same kind make a pair. */
+		if (earlier->kind != JS_NODE_METHOD || member->kind != JS_NODE_METHOD)
+			js_compile_fail(compiler, member, "Identifier has already been declared");
+		if ((earlier->flags & JS_FLAG_STATIC) != (member->flags & JS_FLAG_STATIC))
+			js_compile_fail(compiler, member, "Identifier has already been declared");
+		if (!((earlier->op == JS_PROPERTY_GET && member->op == JS_PROPERTY_SET) ||
+		    (earlier->op == JS_PROPERTY_SET && member->op == JS_PROPERTY_GET)))
+			js_compile_fail(compiler, member, "Identifier has already been declared");
+		pairs++;
+	}
+
+	/* A third member of the name. */
+	if (pairs > 1)
+		js_compile_fail(compiler, member, "Identifier has already been declared");
+}
+
+/* Makes a node of the compiler's own, placed where another is in the source. */
+static struct js_node *
+scope_new_node(
+	struct js_compiler *compiler,
+	int kind,
+	const struct js_node *place)
+{
+	struct js_node *node;
+
+	/* A zeroed node in the program's arena. */
+	node = wb_arena_zalloc(compiler->arena, sizeof(*node));
+	if (node == NULL)
+		js_compile_out_of_memory(compiler);
+	node->kind = kind;
+	node->line = place->line;
+	node->column = place->column;
+	node->offset = place->offset;
+
+	/* Succeeded: the node. */
+	return node;
+}
+
+/*
+ * Gives an arrow function the home object of the method around it for
+ * super: that method keeps it in a hidden binding the arrow captures.
+ */
+static void
+scope_arrow_home(
+	struct js_compiler *compiler,
+	struct js_scope *scope)
+{
+	struct js_function_info *owner;
+
+	/* An ordinary function reads its own home object. */
+	owner = scope->function;
+	if (owner->program || (owner->node->flags & JS_FLAG_ARROW) == 0U)
+		return;
+
+	/* The nearest function around it that is not an arrow function. */
+	while (!owner->program && (owner->node->flags & JS_FLAG_ARROW) != 0U)
+		owner = owner->parent;
+
+	/* Its hidden binding, which the arrow's use captures, and this, the receiver of super's properties. */
+	scope_declare(compiler, owner->scope, js_home_name, JS_HOME_NAME_LENGTH, JS_BINDING_HOME);
+	scope_reference(compiler, scope, js_home_name, JS_HOME_NAME_LENGTH);
+	scope_arrow_this(compiler, scope);
 }
 
 /*
