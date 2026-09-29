@@ -202,6 +202,29 @@ se_ui_action(
 }
 
 /*
+ * Lets time pass: a page that shows the time since the machine started
+ * (About) is drawn again when the minute changes.
+ */
+void
+se_ui_tick(
+	struct se_app *app,
+	uint64_t now)
+{
+	uint64_t minute;
+
+	/* The minute now, and the time for whatever is drawn. */
+	minute = now / 60000U;
+	app->now = now;
+	if (minute == app->minute)
+		return;
+
+	/* A new minute: About shows it. */
+	app->minute = minute;
+	if (app->page == SE_PAGE_ABOUT)
+		app->dirty = 1;
+}
+
+/*
  * Shows a page: the history keeps the page being left, and anything
  * forward of it is dropped (as a browser does).
  */

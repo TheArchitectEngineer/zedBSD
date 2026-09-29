@@ -426,6 +426,9 @@ struct se_app {
 	unsigned press_kind;
 	int press_index;
 
+	/* The minute of the clock last drawn (About shows how long the machine has run). */
+	uint64_t minute;
+
 	/* What the window is asked to do (SE_REQUEST_*), taken by the main loop. */
 	unsigned request;
 
@@ -441,6 +444,7 @@ const struct se_page *se_page_find(const char *word);
 void se_ui_init(struct se_app *app, struct fm_text *text, unsigned page);
 void se_ui_event(struct se_app *app, const struct se_event *event);
 void se_ui_action(struct se_app *app, uint32_t action);
+void se_ui_tick(struct se_app *app, uint64_t now);
 void se_ui_draw(struct se_app *app, struct fm_canvas *canvas);
 size_t se_ui_panels(struct se_app *app, struct se_panel *panels, size_t capacity);
 void se_ui_hit(struct se_app *app, const struct fm_rect *rect, unsigned kind, int index);
