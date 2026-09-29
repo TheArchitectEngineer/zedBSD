@@ -7,6 +7,11 @@
 形は PDF Viewer（`userland/desktop/pdfviewer/`: window・present・canvas・menu・titlebar・touch）、文字は Files の `text.c`（glyph の cache と fallback の font）、
 clipboard と PRIMARY は Terminal（`userland/desktop/terminal/clipboard.c`・`primary.c`）、key の文字は Terminal の `keys.c`（US の配列）に合わせる。
 
+**2026-09-29 の変更**（ユーザー「テキストエディタのファイルピッカーは、KeiのUIライブラリに入れるのがいいと思いました。」）: Open・Save As の file chooser は
+app の中に作らず、共有の library（libkeiland の `keiland_file_chooser_*`）の部品として ws092-p003 で作る。editor は `te_host.choose` を呼び、
+答え（path、取り消しは空）を `TE_EVENT_CHOSEN` で受ける。置き換えの確認も chooser が行う。下の §2 の `chooser.c`、§4 の chooser、置き換えの dialog は
+それに置き換わった。paste の受け取りは同期にした（Terminal と同じ、2 秒の上限）。
+
 ## 1. 名前と範囲
 
 - program `/bin/textedit`、application ID `textedit`、画面の名前は **Text Editor**（App Home の tile、window の title「<file 名> — Text Editor」、
@@ -34,7 +39,7 @@ desktop の app の型（app ごとに window・present・canvas・text を持�
 | `edit.c` | 編集の操作: cursor の移動（文字・語・行・page・文書）、選択、入力、削除、自動の字下げ、key の解釈 | 新規 |
 | `find.c` | 検索（大文字小文字を無視、次・前、見える範囲の一致） | 新規 |
 | `draw.c` | canvas: card、gutter、本文、選択・一致・cursor、status の chip、dialog（未保存の確認）、chooser、message | pdfviewer `draw.c` |
-| `chooser.c` | Open と Save As の file chooser（Save As は名前の field） | pdfviewer `chooser.c` |
+| （p003）| Open と Save As の file chooser は libkeiland の部品（上の 2026-09-29 の変更） | — |
 | `clipboard.c`・`primary.c` | wl_data_device（copy・paste）と primary selection | terminal の同名 |
 | `keys.c` | evdev の code → 文字（US の配列、Shift） | terminal `keys.c` |
 | `touch.c`・`touch.h` | wl_touch → `keiland_gesture`・`keiland_scroller`（scroll・慣性・rubber band）、tap・double tap・long press | pdfviewer `touch.c` |

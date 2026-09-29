@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計、[design.md](design.md)）cleared（2026-09-29）。次は p002（実装）
+Resume point: p001・p002 cleared（2026-09-29）。次は p003（libkeiland の file chooser、2026-09-29 ユーザーの方針で分けた）→ p004（規約・回帰）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -24,5 +24,6 @@ Resume point: p001（設計、[design.md](design.md)）cleared（2026-09-29）�
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws092-p001](phase001/phase.md) | 設計（[design.md](design.md)） | cleared（2026-09-29） | — |
-| ws092-p002 | 実装: 文書・undo・file・表示の行・編集・検索・clipboard と PRIMARY・touch・menu と titlebar、`/bin/textedit FILE`、App Home と image への登録 | planning | p001 |
-| ws092-p003 | 全文の規約と回帰 | planning | p002 |
+| [ws092-p002](phase002/phase.md) | 実装: 文書・undo・file・表示の行・編集・検索・clipboard と PRIMARY・touch・menu と titlebar、`/bin/textedit FILE`、App Home と image への登録（file chooser を除く） | cleared（2026-09-29。host 34/34、QEMU の desktop で開く・編集・保存・検索・dialog・context menu・App Home） | p001 |
+| ws092-p003 | file chooser を共有の library（libkeiland の `keiland_file_chooser_*`）に作り、editor の Open・Save As につなぐ（2026-09-29 ユーザー「テキストエディタのファイルピッカーは、KeiのUIライブラリに入れるのがいいと思いました。」） | planning | p002 |
+| ws092-p004 | 全文の規約と回帰 | planning | p003 |
