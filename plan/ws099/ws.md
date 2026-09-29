@@ -54,4 +54,5 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 | [ws099-p003](phase003/phase.md) | BUG-115: `plan/ws035/tests/` の固定の `sleep N`（42 本・43 箇所）を、compositor の log の `ZWL READY` を待つ形に（試験の側の直し） | cleared（2026-09-30: 古い image で p072 PASS（前は FAIL）、C9 の 9 本 PASS） | p001 |
 | [ws099-p004](phase004/phase.md) | C1 の残り: 起動と Shut Down の替わり目を両方の画面（VGA と Venus）で撮る試験（`c1-watch.py`・`c1-boot-shutdown.sh`）、criteria.sh の C1 に入れ、p126 に `--no-black` | cleared（2026-09-30: 起動・Shut Down とも黒 0・文字 0、Shut Down の後は greeter の絵のまま機械が止まる） | p001 |
 | [ws099-p005](phase005/phase.md) | C7 の残り: client が描くガラスの上の文字の contrast を測る（c7-contrast.sh に Settings と Files）。compositor のガラスに明るさの下限（panel.frag）、Settings・Files・libkeiui の副次の文字の色 `0x6b7585` → `0x56606f`（main の許可） | cleared（2026-09-30: C7 72/72 が 4.5 以上、最小 4.68（前 1.91）） | p001 |
+| [ws099-p007](phase007/phase.md) | BUG-118: client の cursor（隠す・surface・shape）をその client の窓の本体の上だけに、他は矢印（cursor.c・compose.c）。試験 cursor-owner.sh を C9 に | cleared（2026-09-30: 変更前 FAIL・変更後 PASS、C8・C9 PASS） | p001 |
 | ws099-p006（案） | C6: 実機（5330）の pointer の遅延の計測（WS075 の measure-apps.sh）。WS075 の p023 と合わせる | planning | p001・WS075 |

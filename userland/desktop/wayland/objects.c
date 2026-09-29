@@ -466,6 +466,10 @@ zwl_client_destroy(
 	/* The input method's connection lets go of what it held (input-method.c). */
 	zwl_ime_client_gone(client);
 
+	/* The cursor this client chose goes back to the arrow (BUG-118). */
+	if (server->cursor_client == client)
+		zwl_cursor_default(server);
+
 	/* Fatal status suppresses events while destructors unwind dependent objects. */
 	client->fatal = 1;
 	printf("ZWL CLEANUP client=%llu objects=%u unread_fds=%u\n", (unsigned long long)client->number, client->object_count, client->right_count);

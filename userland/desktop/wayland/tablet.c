@@ -1488,6 +1488,7 @@ tool_set_cursor(
 	/* No surface hides the cursor; a surface becomes it with its hotspot. */
 	server->dirty = 1;
 	server->cursor_shape = 0;
+	server->cursor_client = tool->client;
 	device->cursor_set = 1;
 	if (surface == NULL) {
 		server->cursor_surface = NULL;
