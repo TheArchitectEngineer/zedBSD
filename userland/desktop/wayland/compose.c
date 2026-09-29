@@ -343,7 +343,7 @@ zwl_compose_draw(
 	server->damaged = 0;
 	server->frame++;
 	if (server->log_frames)
-		printf("ZWL COMPOSE frame=%llu image=%u windows=%u\n", (unsigned long long)server->frame, image, count);
+		printf("ZWL COMPOSE frame=%llu image=%u windows=%u at_ms=%llu\n", (unsigned long long)server->frame, image, count, (unsigned long long)zwl_milliseconds());
 
 	/* Succeeded: one frame is in flight. */
 	return 0;
