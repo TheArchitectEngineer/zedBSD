@@ -2,7 +2,7 @@
 
 # ws094-p004: 選択・開く・keyboard・配置の保存と Clean Up
 
-Status: uncleared（2026-09-30、main のラップアップで途中で止めた。未完了の確認は下の Resume point）
+Status: cleared（2026-09-30、2 回目の attempt で残りの確認を済ませた。QEMU の Venus、実機は未実施。1 回目はラップアップで uncleared）
 Disposition: normal
 Parent: [WS094](../ws.md)
 Queue: main の依頼（2026-09-30、worktree `.claude/worktrees/ws094-desktop`、branch `wt/ws094`、`git merge main -m WIP` の後）
@@ -39,9 +39,28 @@ keyboard（矢印・Ctrl+A・Esc）、配置の保存（`~/.config/keiland/deskt
 - 回帰: `plan/tools/files/files-open.sh mouse`、probe の `desktop-guest.sh`、`plan/tools/files/host-model.sh`、boot test（このラウンドでは未実施）。
 - 実機は未実施。
 
+## 2 回目の attempt（2026-09-30、サブエージェント、worktree `ws094-desktop`）
+
+main（30631974）を取り込んで、残りの確認を行った。source（Files・compositor）は変えていない。変えたのは試験だけ。
+
+| 確認 | 命令 | 結果 |
+| --- | --- | --- |
+| build | `make … BUILD=build/ws094-amd64 build/ws094-amd64/bin/files …/bin/wayland …/dynamic/libkeiland.so`、`…/bin/imageview …/bin/textedit` | rc 0、warning 0 |
+| host | `host-desktop.sh`、`plan/tools/files/host-model.sh` | PASS、PASS |
+| guest: 保存した場所への配置（新しい手順 `saved`） | `files-desktop-guest.sh build/ws094-shots/p004 install show input saved` | PASS: layout の file（`notes.txt<TAB>2<TAB>3`）を置いてから起こすと `ZFILES DESKTOP place name=notes.txt column=2 row=3 x=976 y=328`、他の 4 つは 1 列目の空いた cell（Projects 0,0・photo.png 0,1・report.pdf 0,2・script.sh 0,3）。`saved.png` |
+| band の画面の撮り直し | 同上（手順 `input`） | 最後の motion の後にもう 1 つ小さく動かして 1.2 秒待ってから撮るようにした。`band.png` に band の枠と、3 つの項目の選択（淡い地と青い pill）が写る |
+| 回帰: probe | `desktop-guest.sh build/ws094-shots/p004-probe2 install role refuse input home-drag dnd restart` | 1・2 回目は FAIL（dnd・restart）→ 試験を直して **PASS**（下） |
+| 回帰: Files | `BIN=build/ws094-amd64 files-open.sh build/ws094-shots/p004-open mouse` | PASS |
+| boot test | `plan/tools/boot-test.sh build/ws094-run/disk.img`（この worktree の compositor・Files・library を入れた disk） | PASS（`build/ws094-boot-test/login.png`） |
+
+probe の回帰の失敗の切り分け（試験の側、code の回帰ではない）:
+- dnd: `b60f8a38`（p002 の後、BUG-113 の確認）で手順 `input` の最後に Files の窓を閉じる確認が足され、Files の窓から drag する `dnd` に窓が無くなった
+  （`dnd.png` に窓が無い）。`dnd` が自分で Files の窓（`/tmp/dhome/Docs`）を開くようにした。
+- restart: 固定の 45 秒の後に「起動 4 回で上限」を見ていた。同じ guest で単独に時刻を付けて見ると、6・11・16・21 秒に起動し 26 秒で `start-limit starts=4`
+  （code は期待どおり）。他の手順の後では遅く、45 秒に届かない実行があった（p002-final でも同じ失敗）。上限の行を最大 90 秒待つ形にした。
+
+未実施: Clean Up の画面からの操作（p005 の context menu）、icon を動かす操作（p006）、実機。
+
 ## Resume point
 
-1. `git merge main -m WIP`。
-2. build: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws094-amd64 build/ws094-amd64/bin/files`（wayland・imageview・textedit は build 済み）。
-3. `files-desktop-guest.sh` に手順 `saved`（`/tmp/dhome/.config/keiland/desktop-layout` に `notes.txt<TAB>2<TAB>3` を置いてから compositor を起こし、`ZFILES DESKTOP place name=notes.txt column=2 row=3` と画面）を足して流す。band の画面を撮り直す。
-4. 回帰（上の「未実施」）と boot test を流し、cleared にして ws.md を更新する。
+2026-09-30: cleared。次は p005（context menu・名前の変更・Trash・Copy・Paste・New Folder・Show in Files）。
