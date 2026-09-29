@@ -526,6 +526,7 @@ text_glyph(
 	struct te_glyph *glyph;
 	unsigned glyph_index;
 	int face_index;
+	uint32_t weight;
 	uint32_t key;
 	int error;
 
@@ -543,7 +544,10 @@ text_glyph(
 	}
 
 	/* The key: glyph, size, face and weight (never zero, which marks an empty slot). */
-	key = (glyph_index & 0xffffU) | ((uint32_t)pixels << 16) | ((uint32_t)face_index << 23) | ((uint32_t)(bold != 0) << 24) | 0x80000000U;
+	weight = 0U;
+	if (bold != 0)
+		weight = 1U;
+	key = (glyph_index & 0xffffU) | ((uint32_t)pixels << 16) | ((uint32_t)face_index << 23) | (weight << 24) | 0x80000000U;
 
 	/* A glyph drawn before is in its slot. */
 	glyph = text_slot(text, key);
