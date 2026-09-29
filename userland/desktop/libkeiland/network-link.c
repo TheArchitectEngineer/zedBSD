@@ -78,6 +78,8 @@ keiland_network_get_links(
 		(void)close(descriptor);
 		return 0;
 	}
+
+	/* The kernel fills it. */
 	config.ifc_buf = (uint64_t)(uintptr_t)requests;
 	status = ioctl(descriptor, SIOCGIFCONF, &config);
 	if (status != 0) {

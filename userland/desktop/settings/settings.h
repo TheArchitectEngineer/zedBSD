@@ -23,6 +23,8 @@
 
 #include "../files/canvas.h"
 
+#include <keiland.h>
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -86,6 +88,12 @@
 
 /* The evdev codes of the keys the interface acts on. */
 #define SE_KEY_ESC		1U
+#define SE_KEY_BACKSPACE	14U
+#define SE_KEY_TAB		15U
+#define SE_KEY_ENTER		28U
+#define SE_KEY_LEFTSHIFT	42U
+#define SE_KEY_RIGHTSHIFT	54U
+#define SE_KEY_SPACE		57U
 #define SE_KEY_Q		16U
 #define SE_KEY_W		17U
 #define SE_KEY_HOME		102U
@@ -215,7 +223,9 @@ struct se_app;
  * that shows only its frame and "coming in a later version".  draw lays
  * the page's cards out from a top edge within a column and returns the
  * bottom edge of what it drew; press carries out a click on one of the
- * page's own controls (its hit index); both may be NULL.
+ * page's own controls (its hit index); key takes a key press first and
+ * returns 1 when it used it (a text field has the keyboard); any may be
+ * NULL.
  */
 struct se_page {
 	unsigned id;
@@ -228,6 +238,7 @@ struct se_page {
 	int ready;
 	int (*draw)(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 	void (*press)(struct se_app *app, int index);
+	int (*key)(struct se_app *app, const struct se_event *event);
 };
 
 /*
@@ -272,6 +283,81 @@ struct se_panel {
 	struct fm_rect rect;
 	int radius;
 	unsigned kind;
+};
+
+/* How many networks, interfaces, DNS servers and saved networks Settings keeps. */
+#define SE_NETWORK_SCAN		KEILAND_NETWORK_SCAN_MAX
+#define SE_NETWORK_LINKS	KEILAND_NETWORK_LINKS_MAX
+#define SE_NETWORK_DNS		KEILAND_NETWORK_DNS_MAX
+#define SE_NETWORK_SAVED	32U
+
+/* How many seconds of the network's activity the graph keeps (one sample a second). */
+#define SE_USAGE_SAMPLES	120U
+
+/* The bytes of a message the network pages show, and of a key typed (63 characters and its NUL). */
+#define SE_MESSAGE		160U
+#define SE_KEY_TEXT		64U
+
+/*
+ * The steps of joining a network whose key was just typed: the key is
+ * saved, the daemon is told the saved networks changed, and the network is
+ * joined.
+ */
+enum se_join_step {
+	SE_JOIN_NONE,
+	SE_JOIN_PROFILES,
+	SE_JOIN_CONNECT
+};
+
+/*
+ * A line of text being typed: its characters (ASCII) and how many there
+ * are.  A key's text is wiped when the field is closed.
+ */
+struct se_field {
+	char text[SE_KEY_TEXT];
+	size_t length;
+};
+
+/*
+ * What the network pages show, and what they have asked of the daemon
+ * (network.c keeps it up to date; the host tests fill it by hand).
+ *
+ * state, scan, links, dns and saved are the last reports.  request is the
+ * daemon's request outstanding (KEILAND_NETWORK_REQUEST_NONE when none);
+ * join_step and join_ssid carry a join with a new key through its steps.
+ * key_ssid names the network whose key is being typed (empty when the key
+ * form is closed).  The usage ring holds the bytes a second received and
+ * sent, newest at usage_next - 1.
+ */
+struct se_network {
+	int live;
+	struct keiland_network *handle;
+	struct keiland_network_state state;
+	struct keiland_network_ap scan[SE_NETWORK_SCAN];
+	size_t scan_count;
+	uint64_t scanned_at;
+	struct keiland_network_link links[SE_NETWORK_LINKS];
+	size_t link_count;
+	char dns[SE_NETWORK_DNS][KEILAND_NETWORK_ADDRESS_MAX];
+	size_t dns_count;
+	char saved[SE_NETWORK_SAVED][KEILAND_NETWORK_SSID_MAX];
+	size_t saved_count;
+	unsigned request;
+	unsigned join_step;
+	char join_ssid[KEILAND_NETWORK_SSID_MAX];
+	char key_ssid[KEILAND_NETWORK_SSID_MAX];
+	struct se_field key;
+	int key_shown;
+	char message[SE_MESSAGE];
+	int message_bad;
+	uint64_t polled_at;
+	uint64_t sampled_at;
+	uint64_t received_total;
+	uint64_t sent_total;
+	uint32_t received[SE_USAGE_SAMPLES];
+	uint32_t sent[SE_USAGE_SAMPLES];
+	unsigned usage_count;
+	unsigned usage_next;
 };
 
 /*
@@ -434,6 +520,9 @@ struct se_app {
 
 	/* What About shows of the machine. */
 	struct se_about about;
+
+	/* What the network pages show and have asked of the daemon. */
+	struct se_network network;
 };
 
 /* The table of pages (pages.c). */
@@ -461,9 +550,37 @@ int se_card_begin(struct se_app *app, struct fm_canvas *canvas, int x, int top, 
 int se_card_height(int rows, int titled);
 int se_row_value(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, const char *label, const char *value, int last);
 void se_mark_draw(struct fm_canvas *canvas, int x, int y, unsigned pixels, float opacity);
+void se_toggle_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int on, int enabled, int index);
+int se_button_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, const char *label, int primary, int enabled, int index);
+int se_button_width(struct se_app *app, const char *label);
+void se_dot_draw(struct fm_canvas *canvas, float cx, float cy, fm_color color);
+void se_signal_draw(struct fm_canvas *canvas, float x, float y, int rssi, fm_color color);
+void se_bytes_text(uint64_t bytes, char *text, size_t size);
 
 /* The line pictures (glyphs.c). */
 void se_glyph_draw(struct fm_canvas *canvas, unsigned glyph, float x, float y, float size, fm_color color);
+
+/* The network pages (page-network.c). */
+int se_network_page_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_wifi_page_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_ethernet_page_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+void se_network_press(struct se_app *app, int index);
+int se_network_key(struct se_app *app, const struct se_event *event);
+
+/* The network's backend (network.c; the host tests have their own). */
+void se_network_open(struct se_app *app);
+void se_network_poll(struct se_app *app, uint64_t now);
+int se_network_wait(struct se_app *app);
+void se_network_close(struct se_app *app);
+void se_network_wifi(struct se_app *app, int on);
+void se_network_scan(struct se_app *app);
+void se_network_join(struct se_app *app, const char *ssid);
+void se_network_join_key(struct se_app *app, const char *ssid, const char *key);
+void se_network_disconnect(struct se_app *app);
+
+/* The text fields (widgets.c). */
+int se_field_key(struct se_field *field, const struct se_event *event);
+void se_field_clear(struct se_field *field);
 
 /* The pages' drawing (page-home.c, page-about.c, page-soon.c). */
 int se_home_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);

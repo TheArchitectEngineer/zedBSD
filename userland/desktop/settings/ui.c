@@ -880,10 +880,22 @@ ui_key(
 	const struct se_event *event)
 {
 	const struct fm_rect *pane;
+	const struct se_page *page;
+	int used;
 
 	/* Only a press does anything. */
 	if (event->pressed == 0)
 		return;
+
+	/* The page takes the key first (a text field that has the keyboard). */
+	page = &se_pages[app->page];
+	if (page->key != NULL) {
+		used = page->key(app, event);
+		if (used != 0) {
+			app->dirty = 1;
+			return;
+		}
+	}
 
 	/* Alt with the arrows walks the history. */
 	if ((event->modifiers & SE_MOD_ALT) != 0U) {

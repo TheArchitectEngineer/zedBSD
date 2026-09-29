@@ -15,9 +15,12 @@
  *   --font=PATH        the font (default userland/desktop/fonts/Inter.ttf)
  *   --size=WxH         the window's size (default 1180x800)
  *   --page=WORD        the page shown first (default Home)
+ *   --network=SCENARIO a made-up network (host-network.c: wifi, wired, absent, down; default wifi)
  *
  * Actions, run in order:
  *   move=X,Y  click=X,Y  scroll=PIXELS  key=CODE[:MODS]  action=N
+ *   text=STRING        (types lower-case letters and digits as keys)
+ *   control=N          (clicks the page's control N of the last frame)
  *   tb=CONTROL:DETAIL  (a titlebar control chosen)
  *   draw=PATH          (draws the frame into a PPM picture)
  *   hits               (prints the clickable regions of the last frame)
@@ -30,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+void host_network_fake(struct se_app *app, const char *scenario);
 static int host_write_ppm(const char *path, const uint32_t *pixels, int width, int height);
 static void host_event(struct se_app *app, unsigned type, int x, int y, uint32_t button, int pressed, uint32_t key, uint32_t modifiers);
 
@@ -47,6 +51,11 @@ main(
 	struct se_menu_state menu;
 	const struct se_page *page;
 	const char *font;
+	const char *scenario;
+	const char *typed;
+	static const char letters[] = "qwertyuiop\0\0\0\0asdfghjkl\0\0\0\0\0zxcvbnm";
+	static const char digits[] = "1234567890";
+	const char *found;
 	uint32_t *pixels;
 	unsigned start;
 	unsigned code;
@@ -63,11 +72,14 @@ main(
 	width = SE_WIDTH;
 	height = SE_HEIGHT;
 	start = SE_PAGE_HOME;
+	scenario = "wifi";
 	for (index = 1; index < argc && strncmp(argv[index], "--", 2) == 0; index++) {
 		if (strncmp(argv[index], "--font=", 7) == 0)
 			font = argv[index] + 7;
 		if (strncmp(argv[index], "--size=", 7) == 0)
 			(void)sscanf(argv[index] + 7, "%dx%d", &width, &height);
+		if (strncmp(argv[index], "--network=", 10) == 0)
+			scenario = argv[index] + 10;
 		if (strncmp(argv[index], "--page=", 7) == 0) {
 			page = se_page_find(argv[index] + 7);
 			if (page != NULL)
@@ -91,6 +103,7 @@ main(
 	(void)snprintf(app.about.graphics, sizeof(app.about.graphics), "%s", "Host test (no GPU)");
 	(void)snprintf(app.about.display, sizeof(app.about.display), "%dx%d", width, height);
 	app.now = 3723000U;
+	host_network_fake(&app, scenario);
 	se_ui_init(&app, &text, start);
 	se_ui_draw(&app, &canvas);
 
@@ -115,6 +128,34 @@ main(
 		} else if (sscanf(argv[index], "key=%u", &code) == 1) {
 			host_event(&app, SE_EVENT_KEY, 0, 0, 0, 1, code, 0);
 			host_event(&app, SE_EVENT_KEY, 0, 0, 0, 0, code, 0);
+		} else if (strncmp(argv[index], "text=", 5) == 0) {
+			for (typed = argv[index] + 5; *typed != '\0'; typed++) {
+				found = strchr(digits, *typed);
+				code = 0;
+				if (found != NULL)
+					code = 2U + (unsigned)(found - digits);
+				found = memchr(letters, *typed, sizeof(letters) - 1U);
+				if (*typed >= 'a' && *typed <= 'z' && found != NULL)
+					code = 16U + (unsigned)(found - letters);
+				if (code != 0U) {
+					host_event(&app, SE_EVENT_KEY, 0, 0, 0, 1, code, 0);
+					host_event(&app, SE_EVENT_KEY, 0, 0, 0, 0, code, 0);
+				}
+			}
+		} else if (sscanf(argv[index], "control=%u", &code) == 1) {
+			for (x = app.hit_count - 1; x >= 0; x--) {
+				if (app.hits[x].kind == SE_HIT_CONTROL && app.hits[x].index == (int)code)
+					break;
+			}
+			if (x < 0) {
+				fprintf(stderr, "no control %u\n", code);
+				return 2;
+			}
+			y = app.hits[x].rect.y + app.hits[x].rect.height / 2;
+			code = (unsigned)(app.hits[x].rect.x + app.hits[x].rect.width / 2);
+			host_event(&app, SE_EVENT_MOTION, (int)code, y, 0, 0, 0, 0);
+			host_event(&app, SE_EVENT_BUTTON, (int)code, y, SE_BUTTON_LEFT, 1, 0, 0);
+			host_event(&app, SE_EVENT_BUTTON, (int)code, y, SE_BUTTON_LEFT, 0, 0, 0);
 		} else if (sscanf(argv[index], "action=%u", &code) == 1) {
 			se_ui_action(&app, code);
 		} else if (sscanf(argv[index], "tb=%u:%u", &code, &mods) == 2) {

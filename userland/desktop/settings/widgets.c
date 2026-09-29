@@ -17,6 +17,7 @@
 
 #include "../artwork/mark.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /* The header's text sizes: the page's name and its summary. */
@@ -37,6 +38,22 @@
 
 /* The largest Kei mark drawn, in pixels a side (its layers are kept rendered at the last size). */
 #define WIDGETS_MARK_MAX	160U
+
+/* A switch's size. */
+#define WIDGETS_TOGGLE_WIDTH	44
+#define WIDGETS_TOGGLE_HEIGHT	24
+
+/* A button's height, its side margins and its text size. */
+#define WIDGETS_BUTTON_HEIGHT	32
+#define WIDGETS_BUTTON_SIDE	16
+#define WIDGETS_TEXT_BUTTON	14U
+
+/* The keys of a US keyboard by their evdev codes (from code 2), without and with Shift; 0 is a key that types nothing. */
+static const char widgets_keys[] = "1234567890-=\0\0qwertyuiop[]\0\0asdfghjkl;'`\0\\zxcvbnm,./";
+static const char widgets_shifted[] = "!@#$%^&*()_+\0\0QWERTYUIOP{}\0\0ASDFGHJKL:\"~\0|ZXCVBNM<>?";
+
+/* The first evdev code the tables above start from. */
+#define WIDGETS_KEY_FIRST	2U
 
 /*
  * Draws a page's header: its name large and its summary under it.
@@ -232,4 +249,298 @@ se_mark_draw(
 		alpha = (uint32_t)((float)colours[layer][1] * opacity + 0.5f);
 		fm_canvas_mask(canvas, x, y, layers[layer], (int)pixels, (int)pixels, pixels, FM_RGBA(colours[layer][0], alpha));
 	}
+}
+
+/*
+ * Draws a switch with its top left at (x, y): the accent with the knob on
+ * the right when on, grey with the knob on the left when off, faded when
+ * it does nothing.  An enabled switch is a page's control (index).
+ */
+void
+se_toggle_draw(
+	struct se_app *app,
+	struct fm_canvas *canvas,
+	int x,
+	int y,
+	int on,
+	int enabled,
+	int index)
+{
+	struct fm_rect rect;
+	fm_color track;
+	fm_color knob;
+	float knob_x;
+
+	/* The track's colour and the knob's place. */
+	track = FM_RGB(0xc9d1dc);
+	knob_x = (float)x + 12.0f;
+	if (on != 0) {
+		track = SE_COLOR_ACCENT;
+		knob_x = (float)(x + WIDGETS_TOGGLE_WIDTH) - 12.0f;
+	}
+
+	/* The knob is white. */
+	knob = FM_RGB(0xffffff);
+
+	/* A switch that does nothing is faded. */
+	if (enabled == 0) {
+		track = fm_color_mix(track, FM_RGB(0xeef1f5), 0.6f);
+		knob = FM_RGB(0xf6f7f9);
+	}
+
+	/* The track and the knob. */
+	fm_canvas_round(canvas, (float)x, (float)y, (float)WIDGETS_TOGGLE_WIDTH, (float)WIDGETS_TOGGLE_HEIGHT, (float)WIDGETS_TOGGLE_HEIGHT * 0.5f, track);
+	fm_canvas_circle(canvas, knob_x, (float)y + (float)WIDGETS_TOGGLE_HEIGHT * 0.5f, 9.5f, knob);
+
+	/* An enabled switch is clickable. */
+	if (enabled != 0) {
+		rect.x = x - 4;
+		rect.y = y - 4;
+		rect.width = WIDGETS_TOGGLE_WIDTH + 8;
+		rect.height = WIDGETS_TOGGLE_HEIGHT + 8;
+		se_ui_hit(app, &rect, SE_HIT_CONTROL, index);
+	}
+}
+
+/*
+ * Reports how wide a button with a label is.
+ */
+int
+se_button_width(
+	struct se_app *app,
+	const char *label)
+{
+	int text;
+
+	/* The label and the margins. */
+	text = fm_text_width(app->text, label, strlen(label), WIDGETS_TEXT_BUTTON, 1);
+
+	/* The button's width. */
+	return text + 2 * WIDGETS_BUTTON_SIDE;
+}
+
+/*
+ * Draws a button with its top left at (x, y): the accent with white text
+ * when primary, else a white one with an edge; darker under the pointer,
+ * faded when it does nothing.  An enabled button is a page's control
+ * (index).  Returns its width.
+ */
+int
+se_button_draw(
+	struct se_app *app,
+	struct fm_canvas *canvas,
+	int x,
+	int y,
+	const char *label,
+	int primary,
+	int enabled,
+	int index)
+{
+	struct fm_rect rect;
+	fm_color ground;
+	fm_color edge;
+	fm_color ink;
+	int width;
+	int lit;
+
+	/* The button's size. */
+	width = se_button_width(app, label);
+	rect.x = x;
+	rect.y = y;
+	rect.width = width;
+	rect.height = WIDGETS_BUTTON_HEIGHT;
+
+	/* Its colours: the accent for the primary one, white for the others. */
+	ground = FM_RGBA(0xffffff, 225);
+	edge = FM_RGBA(0x8a96aa, 70);
+	ink = SE_COLOR_TEXT;
+	if (primary != 0) {
+		ground = SE_COLOR_ACCENT;
+		edge = SE_COLOR_ACCENT;
+		ink = FM_RGB(0xffffff);
+	}
+
+	/* Darker under the pointer, faded when it does nothing. */
+	lit = se_ui_lit(app, SE_HIT_CONTROL, index);
+	if (enabled != 0 && lit != 0)
+		ground = fm_color_mix(ground, FM_RGB(0x1e2632), 0.08f);
+	if (enabled == 0) {
+		ground = fm_color_mix(ground, FM_RGB(0xeef1f5), 0.6f);
+		ink = SE_COLOR_TEXT_FAINT;
+	}
+
+	/* The button and its label, centred. */
+	fm_canvas_round(canvas, (float)x, (float)y, (float)width, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, ground);
+	fm_canvas_round_border(canvas, (float)x, (float)y, (float)width, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, 1.0f, edge);
+	(void)fm_text_draw(app->text, canvas, x + WIDGETS_BUTTON_SIDE, fm_text_center(WIDGETS_TEXT_BUTTON, y, WIDGETS_BUTTON_HEIGHT), label, strlen(label), WIDGETS_TEXT_BUTTON, 1, ink);
+
+	/* An enabled button is clickable. */
+	if (enabled != 0)
+		se_ui_hit(app, &rect, SE_HIT_CONTROL, index);
+
+	/* The button's width. */
+	return width;
+}
+
+/*
+ * Draws a status dot (green for connected, grey for not) centred at (cx, cy).
+ */
+void
+se_dot_draw(
+	struct fm_canvas *canvas,
+	float cx,
+	float cy,
+	fm_color color)
+{
+	/* A small filled circle. */
+	fm_canvas_circle(canvas, cx, cy, 4.5f, color);
+}
+
+/*
+ * Draws a signal's four bars with their bottom left at (x, y): as many
+ * full as the strength (dBm) earns, the rest faint.
+ */
+void
+se_signal_draw(
+	struct fm_canvas *canvas,
+	float x,
+	float y,
+	int rssi,
+	fm_color color)
+{
+	fm_color bar;
+	float height;
+	int bars;
+	int index;
+
+	/* The bars the strength earns: four above -55 dBm, one below -75. */
+	bars = 1;
+	if (rssi > -75)
+		bars = 2;
+	if (rssi > -65)
+		bars = 3;
+	if (rssi > -55)
+		bars = 4;
+
+	/* Each bar, taller to the right. */
+	for (index = 0; index < 4; index++) {
+		bar = color;
+		if (index >= bars)
+			bar = FM_RGBA(0x8a96aa, 90);
+		height = 4.0f + 3.5f * (float)index;
+		fm_canvas_round(canvas, x + 5.0f * (float)index, y - height, 3.0f, height, 1.0f, bar);
+	}
+}
+
+/*
+ * Writes a number of bytes as text in the largest unit under a thousand
+ * of it (B, KB, MB, GB).
+ */
+void
+se_bytes_text(
+	uint64_t bytes,
+	char *text,
+	size_t size)
+{
+	static const char *const units[] = { "KB", "MB", "GB", "TB" };
+	double value;
+	unsigned unit;
+
+	/* Under a kilobyte, whole bytes. */
+	if (bytes < 1000U) {
+		(void)snprintf(text, size, "%u B", (unsigned)bytes);
+		return;
+	}
+
+	/* The largest unit the value is at least one of. */
+	value = (double)bytes / 1000.0;
+	unit = 0;
+	while (value >= 1000.0 && unit + 1U < sizeof(units) / sizeof(units[0])) {
+		value /= 1000.0;
+		unit++;
+	}
+
+	/* One decimal under ten, none above. */
+	if (value < 10.0) {
+		(void)snprintf(text, size, "%.1f %s", value, units[unit]);
+	} else {
+		(void)snprintf(text, size, "%.0f %s", value, units[unit]);
+	}
+}
+
+/*
+ * Types a key press into a text field: a character of a US keyboard
+ * (Shift held for the other of the key), or Backspace.  Returns 1 when the
+ * field used the key.
+ */
+int
+se_field_key(
+	struct se_field *field,
+	const struct se_event *event)
+{
+	unsigned offset;
+	char typed;
+
+	/* A key with Ctrl, Alt or Super held is a shortcut, not a character. */
+	if ((event->modifiers & (SE_MOD_CTRL | SE_MOD_ALT | SE_MOD_SUPER)) != 0U)
+		return 0;
+
+	/* Backspace takes the last character away. */
+	if (event->key == SE_KEY_BACKSPACE) {
+		if (field->length > 0) {
+			field->length--;
+			field->text[field->length] = '\0';
+		}
+
+		/* The field used the key, also when it was empty. */
+		return 1;
+	}
+
+	/* The space. */
+	typed = '\0';
+	if (event->key == SE_KEY_SPACE)
+		typed = ' ';
+
+	/* The key's character, shifted when Shift is held. */
+	if (event->key >= WIDGETS_KEY_FIRST && event->key < WIDGETS_KEY_FIRST + sizeof(widgets_keys) - 1U) {
+		offset = event->key - WIDGETS_KEY_FIRST;
+		typed = widgets_keys[offset];
+		if ((event->modifiers & SE_MOD_SHIFT) != 0U)
+			typed = widgets_shifted[offset];
+	}
+
+	/* A key that types nothing is not the field's. */
+	if (typed == '\0')
+		return 0;
+
+	/* A full field keeps what it has. */
+	if (field->length + 1U >= sizeof(field->text))
+		return 1;
+
+	/* The character at the end. */
+	field->text[field->length] = typed;
+	field->length++;
+	field->text[field->length] = '\0';
+
+	/* The field used the key. */
+	return 1;
+}
+
+/*
+ * Empties a text field, wiping what was typed (a key's text).
+ */
+void
+se_field_clear(
+	struct se_field *field)
+{
+	volatile char *byte;
+	size_t index;
+
+	/* Every byte, through a volatile pointer so that the wipe stays. */
+	byte = field->text;
+	for (index = 0; index < sizeof(field->text); index++)
+		byte[index] = '\0';
+
+	/* Nothing typed. */
+	field->length = 0;
 }

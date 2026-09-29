@@ -21,7 +21,10 @@
  *                    "Cafe Guest" (fair, open), "Neighbor 5G" (weak,
  *                    secured, with no saved profile)
  *   WIFI_CONNECT     joins a listed network with a profile; "Neighbor 5G"
- *                    is refused with ENOENT (no saved profile)
+ *                    is refused with ENOENT (no saved profile) until the
+ *                    saved profiles changed
+ *   WIFI_PROFILES_CHANGED   (ws089-p003: Settings saved a key) from then on
+ *                    "Neighbor 5G" has a profile too
  *   WIFI_DISCONNECT, WIFI_DISABLE, WIFI_ENABLE   as networkd's states
  *
  * It starts with the Wi-Fi on and not connected, logs each request
@@ -54,11 +57,14 @@
 
 /*
  * The stand-in's network: the Wi-Fi's state as networkd names it, the SSID
- * it is on (empty when none), and the watchers' connections (-1 when free).
+ * it is on (empty when none), whether the saved profiles changed (which
+ * gives "Neighbor 5G" a profile), and the watchers' connections (-1 when
+ * free).
  */
 struct probe_network {
 	const char *wifi;
 	char ssid[33];
+	int profiles_changed;
 	int watchers[PROBE_WATCHERS];
 	uint32_t watcher_ids[PROBE_WATCHERS];
 };
@@ -312,6 +318,11 @@ probe_answer(
 		probe_send(client, request->request_id, request->opcode, NETWORKD_RESULT_OK, 0, NULL);
 		probe_notify();
 		break;
+	case NETWORKD_OP_WIFI_PROFILES_CHANGED:
+		/* A key was saved: the network without a profile has one from now on. */
+		probe.profiles_changed = 1;
+		probe_send(client, request->request_id, request->opcode, NETWORKD_RESULT_OK, 0, NULL);
+		break;
 	default:
 		probe_send(client, request->request_id, request->opcode, NETWORKD_RESULT_ERROR, EINVAL, NULL);
 		break;
@@ -359,9 +370,9 @@ probe_join(
 {
 	int differs;
 
-	/* No profile. */
+	/* No profile (the unknown network has one once the saved profiles changed). */
 	differs = strcmp(ssid, PROBE_UNKNOWN);
-	if (differs == 0 || ssid[0] == '\0') {
+	if ((differs == 0 && probe.profiles_changed == 0) || ssid[0] == '\0') {
 		probe_send(client, request->request_id, request->opcode, NETWORKD_RESULT_ERROR, ENOENT, NULL);
 		return;
 	}
