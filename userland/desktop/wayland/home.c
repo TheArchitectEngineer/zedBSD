@@ -886,6 +886,7 @@ home_read_apps(
 		home_add_app("Files", "/bin/files", "files file manager folder finder browse", 0x2f7cf6U, "files");
 		home_add_app("Notes", "/bin/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U, "notes");
 		home_add_app("PDF Viewer", "/bin/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
+		home_add_app("Image Viewer", "/bin/imageview", "image picture photo viewer png jpeg gif", 0x3fa36bU, "image");
 		home_add_app("Browser", "/bin/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U, "browser");
 	}
 

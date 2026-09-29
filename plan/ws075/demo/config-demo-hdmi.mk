@@ -9,6 +9,8 @@ include plan/ws031/tests/config-zdesktop-hw.mk
 # The handwriting demonstration (WS079): Notes and PDF Viewer (with libpdf and libjpeg-compat); App Home lists them
 # (plan/ws035/demo/apps.conf) only when they are in the image.
 ZEDBSD_USER_PROGRAMS += libjpeg-compat libpdf notes pdfviewer
+# The image viewer (WS091) and its image libraries; App Home lists it the same way.
+ZEDBSD_USER_PROGRAMS += libz-compat libpng-compat libgif-compat imageview
 ZEDBSD_GRAPHICAL_BOOT := y
 ZEDBSD_BOOT_EXTRA_LINES ?= display=edp
 # The OpenSSH server for looking into the machine while it shows the demonstration (2026-09-29: on bare metal the
