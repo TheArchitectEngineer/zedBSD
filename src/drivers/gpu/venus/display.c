@@ -581,6 +581,7 @@ display_console_update(
 		if (quiet != 0 && now < engine->hold_until)
 			return 0;
 
+		/* Withdraws the held picture so the console below can take scanout zero. */
 		error = display_hold_end(controller);
 		if (error != 0)
 			return error;
@@ -1446,10 +1447,12 @@ display_hold_permitted(
 	if (failed != 0U)
 		return 0;
 
-	/* The console worker ends a hold at its deadline, so it must be there and staying. */
+	/* The console worker ends a hold at its deadline, so it must be there. */
 	engine = controller->display;
 	if (engine->console_worker == NULL)
 		return 0;
+
+	/* A worker being stopped for detach or recovery will not wake at the deadline. */
 	stopping = __atomic_load_n(&engine->console_stopping, __ATOMIC_ACQUIRE);
 	if (stopping != 0U)
 		return 0;
@@ -1499,6 +1502,7 @@ display_hold_replaced(
 	struct venus_display_output *output)
 {
 	struct venus_display_engine *engine;
+	uint64_t now;
 	uint64_t held;
 
 	/* Only an application frame on the primary output replaces the held picture. */
@@ -1510,7 +1514,10 @@ display_hold_replaced(
 
 	/* The held share was already released by the new selection; the hold is over. */
 	engine->holding = 0U;
-	held = (sched_ticks() - engine->hold_since) * 1000U / KERN_CLOCK_HZ;
+
+	/* Records how long the screen showed the ended lease's picture, for the hand-over's measurement. */
+	now = sched_ticks();
+	held = (now - engine->hold_since) * 1000U / KERN_CLOCK_HZ;
 	kern_logf(
 		"venus: the next lease's first frame after holding the last picture for %llu ms\n",
 		(unsigned long long)held);
@@ -1541,7 +1548,7 @@ display_hold_end(
 
 	/* The hold ends first, so a failed withdrawal is not retried by a worker without a deadline. */
 	engine->holding = 0U;
-	kern_logf("venus: the held picture was withdrawn for the console\n");
+	kern_logf("venus: the held picture was withdrawn for the console or a legacy scanout\n");
 
 	/* A hold whose blob was already released has nothing on the screen to withdraw. */
 	if (output->shared_front == NULL)

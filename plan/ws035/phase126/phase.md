@@ -4,7 +4,7 @@
 
 Phase ID: `ws035-p126`
 Parent: [WS035](../ws.md)
-Status: in-progress（2026-09-29、サブエージェント、worktree `wt/ws035`）
+Status: cleared（2026-09-29、サブエージェント、worktree `wt/ws035`。QEMU の Venus、実機は未実施）
 Phase disposition: normal
 Queue: なし（2026-09-29 main の割り当て「F-048（login・Log Out の表示の引き継ぎの黒、約 1.1 秒）を無くす」。デモ（2026-10-17）に必須の仕上げ）
 Future Work: [F-048](../../future-work.md)（行の更新は main に依頼する）
@@ -51,15 +51,76 @@ snapshot（p101 で黒）を描くことから来る。その後の取る側の 
 - 次の lease が claim したが frame を出さずに release した: 保ちは続け、期限は延ばさない（最初の release の時刻から 10 秒）。
 - controller の reset・detach: 今の持ち主の出力と同じ（reset が全ての scanout の参照を終える）。
 
-## 実装
+## 実装（2026-09-29）
 
-（実装後に記す）
+`src/drivers/gpu/venus/display.c` だけ（HAL・UAPI・libvulkan・userland は変えていない）:
 
-## 検証
+- engine に保ちの状態（`holding`・`hold_since`・`hold_until`、controller の mutex の下）と `VENUS_DISPLAY_HOLD_TICKS`（10 秒）。
+- `display_release_output()`: `display_hold_permitted()`（上の 4 条件）が真なら、`SET_SCANOUT` の resource 0 を送らず、`shared_front`（share の
+  hold）を持ち主の無い主の出力に残し、`display_hold_begin()` で期限を始める（既に保っているなら期限を延ばさない）。private の front・back は
+  scanout されていないので今までどおり放す。保たないときは主の出力の保ちを終える（`holding = 0`）。
+- `display_blob_frame()`・`display_frame()`: 新しい画を選んで前の `shared_front` を放した後に `display_hold_replaced()`（保ちを終え、保った ms を log）。
+- `display_console_update()`: 持ち主が無く保っている間は、quiet かつ期限の前なら何も描かない。そうでなければ `display_hold_end()`
+  （scanout を外し share を放す）の後に今までどおり console を描く。worker は保っている間だけ `hold_until` を期限に眠る。
+- `drv_venus_display_legacy_available_locked()`: legacy の scanout 0 の前に `display_hold_end()`。
+- kernel の log（ring、quiet なら画面に出ない）: `venus: lease released; holding the last picture`・`venus: the next lease's first frame after
+  holding the last picture for N ms`・`venus: the held picture was withdrawn for the console or a legacy scanout`。
 
-（実装後に記す）
+試験の道具 `plan/ws035/tests/zdesktop-p126.sh`（新）: graphical の login の image（boot で kei を自動 login）で、App Home の Log Out →
+greeter → kei の password と Enter の login を CYCLES 回、各替わり目を `frames.py` で撮り続け、黒の画の数と黒の時間（最初の黒から次の黒で
+ない画まで、画は約 0.1〜0.2 秒ごと）を出す。文字 console の画・替わり目の手順の欠けは FAIL、`--no-black` なら黒も FAIL。dmesg の保ちの行を
+`OUTDIR/dmesg-hold.txt` に。p101 の `zdesktop-p101.sh` は root の login の前提（今の image は kei の自動 login と password）で古い。
+
+## 検証（amd64、Linux host の Venus の guest（`zdesktop-guest.sh`、1280x800、`GUEST_RUNTIME=build/ws035-run`）、graphical の login の image、2026-09-29）
+
+**前**（`build/p126-before.img`、変更前の同じ tree）: `zdesktop-p126.sh build/p126-before 3`（手順は全て ok）
+
+| 替わり目 | 1 | 2 | 3 |
+| --- | --- | --- | --- |
+| Log Out（session → greeter）の黒 | 8 枚・1409 ms | 13 枚・1368 ms | 7 枚・1422 ms |
+| login（greeter → session）の黒 | 9 枚・1500 ms | 10 枚・1748 ms | 8 枚・1395 ms |
+
+**後**（`build/p126-final.img`、最終の source）: `zdesktop-p126.sh build/p126-final 3 --no-black` **PASS**: 6 回の替わり目の全てで
+**黒 0 枚・文字 console 0 枚**（Log Out 85・80・78 枚、login 78・78・76 枚）。dmesg: 6 回とも `lease released; holding the last picture` →
+`the next lease's first frame after holding the last picture for` 1261〜1379 ms（この間、画面は前の持ち主の最後の画: login は greeter の
+「Starting session...」、Log Out は desktop）。同じ試験を途中の build（`build/p126-after.img`、comment と log の文言の前）でも 3 周 PASS
+（保った時間 1159〜1602 ms）。
+
+保ちの終わりの他の経路（`build/p126-after.img`）:
+
+- **期限**: session の中で `service stop greeter`（sessiond と session の compositor が終わり、次の lease は来ない）→ 最後の画が約 10 秒残り、
+  `the held picture was withdrawn` の後に黒（隠れた console の snapshot、1920x1072）。その後 `service start greeter` で自動 login の session が
+  普通に画を出す（`zdesktop-check.py` PASS、`p126-20260929-restart-after-hold-end.png`）。
+- **console の表示**（reveal）: `service stop greeter` の後、期限の前に `/dev/console` を読む → 期限より前（stop の後 10 秒以内）に文字 console
+  （`kern_text_reveal` → log が loud → worker が保ちを終える）。
+- **loud の console**（reveal の後）: 次の Log Out・login は保たない（dmesg に新しい `holding` が無い）。替わり目に文字 console が 7 枚ずつ出る
+  （p126 の前の、loud の構成での今までの動き）。
+
+- faults: `build/p126-after.img` の 3 周の後の dmesg に `venus: shared allocation ... retained`・transport の失敗・`killed by signal` は無い
+  （`build/p126-final.img` の run では dmesg の保ちの行だけを見た）。前の image の最初の guest の起動で 1 度 `kern: pid 135 killed by signal 11
+  (vector 14) at 0xaf0bc, address 0x18` を見た（この変更の前の image、何の process かは未調査。範囲外として main へ）。
+- build: `plan/ws035/tests/build-login-image.sh build/amd64 graphical`（worktree の `build/amd64`、sysroot は `sysroot-amd64` で同じ dir に作った）、
+  kernel は `-Werror` で warning 0。
+- boot test: `plan/tools/boot-test.sh build/p126-after.img`（GPU の無い q35、sessiond は表示が無く console の login）PASS
+  （`build/ws035-shots/p126-20260929-boot-test.png`）。
+- 規約: `plan/tools/style-check.py src/drivers/gpu/venus/display.c` の指摘は HEAD の前と同じ 27 件（全て既存の形、新しい指摘 0）。`git diff --check` 清浄。
+- 画面（`build/ws035-shots/`）: `p126-20260929-login-held-greeter.png`（login の替わり目、保った greeter の「Starting session...」）、
+  `-login-desktop.png`（次の frame）、`-logout-held-desktop.png`（Log Out の替わり目、保った desktop）、`-logout-greeter.png`、前の黒
+  `-before-login-black.png`。
+
+未実施: 実機（i915 は ws075-p016 の別の実装、この変更は Venus だけ）。demo の image（`config-amd64-demo-venus.mk`、1920x1280）の demo-walk
+（同じ driver の経路で、image の build の時間のため省いた）。host の単体試験（Venus の display の host 試験は無い）。
+
+## 制限と残り
+
+- **loud の console では保たない**: `ZEDBSD_BOOT_KERNEL_MESSAGES=y`（2026-09-29 のユーザーの決定の「起動の kernel の message を画面に出す」）の
+  graphical boot、または reveal の後は、替わり目に今までどおり文字 console が約 1.4 秒出る。そこで保つと、手で起こした zdesktop を終えた後に
+  shell の文字が最大 10 秒見えなくなる。loud でも保つか（例: 保つ間の text の変化で終える）は人間の判断（main・ユーザーへ）。
+- F-048 の本案（lease を持った fd の受け渡しと kernel の revoke）は未着手のまま。黒は無くなったが、替わり目の約 1.3 秒は前の持ち主の画の
+  まま止まって見える（入力は効かない）。
+- `zdesktop-p101.sh` は今の image（kei の自動 login、password）に合わない。p126 の試験が同じ替わり目を覆う。
 
 ## Resume point
 
-2026-09-29: 設計を決めた（B）。worktree の `build/amd64` に sysroot と graphical の login の image を build 中（前の状態の計測用）。
-次: 前の状態を `zdesktop-p101.sh` で計り、display.c を変えて build（warning 0）、同じ試験で後の状態を計る。
+2026-09-29: cleared。次は ws.md の残り（デモの通しの不具合）から人間の判断が要らないもの。F-048 の行の更新（Venus は p126 で黒を無くした、
+本案と loud の console は残り）は main に依頼。
