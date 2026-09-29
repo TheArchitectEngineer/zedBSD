@@ -172,6 +172,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p077](phase077/phase.md) | Amazon が要る window の環境の最小（p065 から分けた）: Uncaught の位置（bytecode の位置の表）、`navigator`・`screen`・`performance`・`location`（読むだけ）・`Image` と `HTMLImageElement`・`document.cookie`・`URL`・`hidden` 等、window の plain な property | cleared（2026-09-29。AUI の `P` が定義され、Amazon の top の Uncaught 49 → 10、search 44 → 15、search 画素 72.92% → 76.04%。location の移動は p064） | p030、p076 |
 | [ws074-p078](phase078/phase.md) | ES2015 の構文 1a（p028 から分けた）: let・const（block scope、TDZ、反復ごとの binding、script 間の global の lexical な record）、arrow function、template literal（tagged を含む）、Uncaught の早期の誤り（二重の宣言） | cleared（2026-09-29。test262 16393 → 17190、Amazon の Uncaught top 10 → 7、search 15 → 9） | p025、p077 |
 | [ws074-p079](phase079/phase.md) | ES2015 の構文 1b（p028 から分けた）: destructuring（宣言・代入・引数・catch・for-in）、default・rest の引数、spread（配列・呼び出し・new・object）、optional chaining。反復は配列・arguments・文字列だけ（Symbol.iterator は p028） | cleared（2026-09-29。test262 17190 → 18558。Amazon の default・rest・optional chaining の誤り 0、次は async・for-of・class） | p078 |
+| [ws074-p080](phase080/phase.md) | Encoding API（TextEncoder・TextDecoder、UTF-8）と Web Storage（Storage・sessionStorage・localStorage、origin ごと、localStorage は file に保存、5 MiB の上限）。bind/・page/ の側（p031 の後の Amazon の blocker） | cleared（2026-09-29。Amazon の TextEncoder・sessionStorage の Uncaught 0、guest の live の top は Uncaught 0、DOM の試験 2 つを追加） | p030、p031 |
 
 ## 後の WS・Future Work の候補
 
