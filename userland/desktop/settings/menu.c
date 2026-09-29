@@ -6,7 +6,7 @@
  */
 
 /*
- * The menus of Settings: File, View, Go (the history and every page, by
+ * The menus of Settings: File, Edit (Find), View, Go (the history and every page, by
  * group), Window and Help.
  *
  * zdesktop draws them (in the window's floating title bar, or in the
@@ -30,6 +30,7 @@
 #define MENU_GO			3U
 #define MENU_WINDOW		4U
 #define MENU_HELP		5U
+#define MENU_EDIT		6U
 
 /* The Go menu's submenus, one a group of pages. */
 #define MENU_GROUP_FIRST	10U
@@ -72,6 +73,8 @@ struct menu_item {
 static const struct menu_item menu_items[] = {
 	{ MENU_FILE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "File", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_ACTION_ID(SE_ACTION_CLOSE_WINDOW), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Close Window", SE_ACTION_CLOSE_WINDOW, KEILAND_MENU_ROLE_CLOSE, MENU_CTRL, 'w' },
+	{ MENU_EDIT, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Edit", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ACTION_ID(SE_ACTION_FIND), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Find", SE_ACTION_FIND, KEILAND_MENU_ROLE_FIND, MENU_CTRL, 'f' },
 	{ MENU_VIEW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "View", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_ACTION_ID(SE_ACTION_SHOW_SIDEBAR), MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Show Sidebar", SE_ACTION_SHOW_SIDEBAR, KEILAND_MENU_ROLE_NONE, MENU_CTRL_ALT, 's' },
 	{ MENU_GO, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Go", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },

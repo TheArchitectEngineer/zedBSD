@@ -197,6 +197,9 @@ se_ui_action(
 	case SE_ACTION_ABOUT:
 		se_ui_go(app, SE_PAGE_ABOUT);
 		break;
+	case SE_ACTION_FIND:
+		se_search_focus(app);
+		break;
 	default:
 		break;
 	}
@@ -227,7 +230,8 @@ se_ui_tick(
 
 /*
  * Shows a page: the history keeps the page being left, and anything
- * forward of it is dropped (as a browser does).
+ * forward of it is dropped (as a browser does).  A search being shown
+ * ends, so that the page is seen.
  */
 void
 se_ui_go(
@@ -236,8 +240,15 @@ se_ui_go(
 {
 	int index;
 
-	/* A page outside the table, or the one shown, changes nothing. */
-	if (page >= SE_PAGES || page == app->page)
+	/* A page outside the table changes nothing. */
+	if (page >= SE_PAGES)
+		return;
+
+	/* The search's results give way to the page chosen. */
+	se_search_end(app);
+
+	/* The page shown stays, without a new step. */
+	if (page == app->page)
 		return;
 
 	/* A full history drops its oldest step. */
@@ -398,17 +409,28 @@ se_ui_titlebar_state(
 	state->can_back = 0;
 	if (app->history_index > 0)
 		state->can_back = 1;
+
+	/* A search shown can always go back to its page. */
+	if (app->search.active != 0)
+		state->can_back = 1;
 	state->can_forward = 0;
 	if (app->history_index + 1 < app->history_count)
 		state->can_forward = 1;
 
-	/* The breadcrumb: Settings, and the page unless it is Home. */
+	/* The breadcrumb: Settings, and the search or the page unless it is Home. */
 	(void)snprintf(state->parts[0], sizeof(state->parts[0]), "%s", "Settings");
 	state->part_count = 1;
-	if (app->page != SE_PAGE_HOME) {
+	if (app->search.active != 0) {
+		(void)snprintf(state->parts[1], sizeof(state->parts[1]), "%s", "Search");
+		state->part_count = 2;
+	} else if (app->page != SE_PAGE_HOME) {
 		(void)snprintf(state->parts[1], sizeof(state->parts[1]), "%s", se_pages[app->page].name);
 		state->part_count = 2;
 	}
+
+	/* The search's query, and the last request for its field to have the keyboard. */
+	(void)snprintf(state->query, sizeof(state->query), "%s", app->search.query);
+	state->focus_serial = app->search.focus_serial;
 
 	/* The list of pages. */
 	state->sidebar = app->show_sidebar;
@@ -422,7 +444,25 @@ se_ui_titlebar(
 	struct se_app *app,
 	const struct se_titlebar_event *event)
 {
-	/* Only a control chosen does anything yet (the search comes in ws089-p008). */
+	/* The search's text as typed searches at once (the tables are small). */
+	if (event->kind == SE_TITLEBAR_CHANGED && event->id == SE_CONTROL_SEARCH) {
+		se_search_set(app, event->text);
+		return;
+	}
+
+	/* The search's editing ended: Enter opens the first result, Esc ends the search, leaving keeps it. */
+	if (event->kind == SE_TITLEBAR_DONE && event->id == SE_CONTROL_SEARCH) {
+		if (event->detail == KEILAND_TEXT_SUBMITTED) {
+			(void)se_search_open_first(app);
+		} else if (event->detail == KEILAND_TEXT_CANCELLED) {
+			se_search_end(app);
+		}
+
+		/* Nothing else is done with the field's end. */
+		return;
+	}
+
+	/* Otherwise only a control chosen does anything. */
 	if (event->kind != SE_TITLEBAR_ACTIVATED)
 		return;
 
@@ -438,9 +478,12 @@ se_ui_titlebar(
 		se_ui_go(app, SE_PAGE_HOME);
 		break;
 	case SE_CONTROL_PATH:
-		/* The breadcrumb's first part is Home; the last is the page shown. */
+		/* The breadcrumb's first part is Home; the last is the page shown (or the search). */
 		if (event->detail == 0U)
 			se_ui_go(app, SE_PAGE_HOME);
+		break;
+	case SE_CONTROL_SEARCH:
+		/* zdesktop gives the field the keyboard itself; the typing arrives as text. */
 		break;
 	case SE_CONTROL_SIDEBAR:
 		se_ui_action(app, SE_ACTION_SHOW_SIDEBAR);
@@ -698,10 +741,16 @@ ui_draw_page(
 	width = panel->width - 2 * UI_PAGE_SIDE;
 	page = &se_pages[app->page];
 
-	/* The header, then the page's own cards. */
-	bottom = se_page_header(app, canvas, page, x, panel->y + UI_PAGE_TOP - app->page_scroll, width);
-	if (page->draw != NULL)
-		bottom = page->draw(app, canvas, x, bottom + UI_PAGE_HEADER_GAP, width);
+	/* The search's results in place of the page while a query is typed; else the header, then the page's own cards. */
+	if (app->search.active != 0) {
+		bottom = se_search_draw(app, canvas, x, panel->y + UI_PAGE_TOP - app->page_scroll, width);
+	} else {
+		bottom = se_page_header(app, canvas, page, x, panel->y + UI_PAGE_TOP - app->page_scroll, width);
+		if (page->draw != NULL)
+			bottom = page->draw(app, canvas, x, bottom + UI_PAGE_HEADER_GAP, width);
+	}
+
+	/* The pane's clip ends with the page. */
 	fm_canvas_clip_pop(canvas);
 
 	/* How tall the page is, for its scroll; a page that shrank below its scroll comes back up next frame. */
@@ -746,7 +795,9 @@ ui_hit_at(
 		pane = NULL;
 		if (hit->kind == SE_HIT_PAGE_ROW)
 			pane = &app->layout.sidebar;
-		if (hit->kind == SE_HIT_TILE || hit->kind == SE_HIT_CONTROL)
+		if (hit->kind == SE_HIT_TILE ||
+		    hit->kind == SE_HIT_CONTROL ||
+		    hit->kind == SE_HIT_RESULT)
 			pane = &app->layout.page;
 
 		/* A region scrolled out of its pane does not take the point. */
@@ -843,6 +894,12 @@ ui_click(
 		return;
 	}
 
+	/* A result of the search opens its page. */
+	if (kind == SE_HIT_RESULT) {
+		se_search_press(app, index);
+		return;
+	}
+
 	/* A page's own control is the page's to carry out. */
 	if (kind == SE_HIT_CONTROL) {
 		page = &se_pages[app->page];
@@ -891,9 +948,30 @@ ui_key(
 	if (event->pressed == 0)
 		return;
 
-	/* The page takes the key first (a text field that has the keyboard). */
+	/* Ctrl+F gives the keyboard to the titlebar's search (when zdesktop's menus did not take it). */
+	if ((event->modifiers & SE_MOD_CTRL) != 0U && event->key == SE_KEY_F) {
+		se_search_focus(app);
+		return;
+	}
+
+	/* While the search's results are shown, Enter and Esc are the search's. */
+	if (app->search.active != 0) {
+		/* Enter opens the first result. */
+		if (event->key == SE_KEY_ENTER) {
+			(void)se_search_open_first(app);
+			return;
+		}
+
+		/* Esc ends the search. */
+		if (event->key == SE_KEY_ESC) {
+			se_search_end(app);
+			return;
+		}
+	}
+
+	/* The page takes the key first (a text field that has the keyboard), unless the results hide it. */
 	page = &se_pages[app->page];
-	if (page->key != NULL) {
+	if (page->key != NULL && app->search.active == 0) {
 		used = page->key(app, event);
 		if (used != 0) {
 			app->dirty = 1;
@@ -996,6 +1074,12 @@ static void
 ui_back(
 	struct se_app *app)
 {
+	/* A search shown goes back to the page it covers. */
+	if (app->search.active != 0) {
+		se_search_end(app);
+		return;
+	}
+
 	/* The first step has nothing before it. */
 	if (app->history_index <= 0)
 		return;
@@ -1017,6 +1101,9 @@ ui_forward(
 	/* The newest step has nothing after it. */
 	if (app->history_index + 1 >= app->history_count)
 		return;
+
+	/* A search shown gives way to the step after. */
+	se_search_end(app);
 
 	/* The step after, from its top. */
 	app->history_index++;
@@ -1053,7 +1140,8 @@ ui_clamp(
 /*
  * Lists the page's controls in the log when they differ from the last
  * list ("ZSETTINGS CONTROL index=N x= y= width= height=", window
- * coordinates), so that a test finds a control it is to click.
+ * coordinates; a search's result is a RESULT line), so that a test finds
+ * a control it is to click.
  */
 static void
 ui_log_controls(
@@ -1070,7 +1158,7 @@ ui_log_controls(
 	same = 1;
 	for (index = 0; index < app->hit_count; index++) {
 		hit = &app->hits[index];
-		if (hit->kind != SE_HIT_CONTROL)
+		if (hit->kind != SE_HIT_CONTROL && hit->kind != SE_HIT_RESULT)
 			continue;
 
 		/* A control past the logged ones, or that differs from the one logged at its place. */
@@ -1096,6 +1184,10 @@ ui_log_controls(
 	se_log("LAYOUT page=%s controls=%d", se_pages[app->page].word, count);
 	for (index = 0; index < count; index++) {
 		hit = &app->logged[index];
-		se_log("CONTROL index=%d x=%d y=%d width=%d height=%d", hit->index, hit->rect.x, hit->rect.y, hit->rect.width, hit->rect.height);
+		if (hit->kind == SE_HIT_RESULT) {
+			se_log("RESULT index=%d x=%d y=%d width=%d height=%d", hit->index, hit->rect.x, hit->rect.y, hit->rect.width, hit->rect.height);
+		} else {
+			se_log("CONTROL index=%d x=%d y=%d width=%d height=%d", hit->index, hit->rect.x, hit->rect.y, hit->rect.width, hit->rect.height);
+		}
 	}
 }

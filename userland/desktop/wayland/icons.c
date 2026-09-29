@@ -10,7 +10,8 @@
  * plan/ws070/titlebar-design.md section 7): back, forward, home, search,
  * the views, and the other roles; and the pictures on App Home's tiles
  * (ws035-p123): Files, Notes, Terminal, PDF Viewer, Browser, the model
- * viewer, Gears, the X terminal, Lock Screen, Log Out and Text Editor.  They are drawn
+ * viewer, Gears, the X terminal, Lock Screen, Log Out, Text Editor and
+ * Settings.  They are drawn
  * here as line art, not taken from any icon set or font.
  *
  * Each icon is a few strokes, arcs, rings, dots and rounded boxes (filled
@@ -323,6 +324,24 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_SEGMENT, 8.0f, 16.0f, 11.5f, 16.0f, 0.0f },
 		{ ICON_SEGMENT, 14.0f, 14.0f, 14.0f, 18.0f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/*
+	 * Settings (WS089): the outline of a cog, eight teeth round a ring and a
+	 * small ring at its hub, drawn in lines so that it is not taken for
+	 * Gears' filled wheel.
+	 */
+	{
+		{ ICON_RING, 12.0f, 12.0f, 6.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 19.30f, 12.00f, 20.70f, 12.00f, 3.0f },
+		{ ICON_SEGMENT, 17.16f, 17.16f, 18.15f, 18.15f, 3.0f },
+		{ ICON_SEGMENT, 12.00f, 19.30f, 12.00f, 20.70f, 3.0f },
+		{ ICON_SEGMENT, 6.84f, 17.16f, 5.85f, 18.15f, 3.0f },
+		{ ICON_SEGMENT, 4.70f, 12.00f, 3.30f, 12.00f, 3.0f },
+		{ ICON_SEGMENT, 6.84f, 6.84f, 5.85f, 5.85f, 3.0f },
+		{ ICON_SEGMENT, 12.00f, 4.70f, 12.00f, 3.30f, 3.0f },
+		{ ICON_SEGMENT, 17.16f, 6.84f, 18.15f, 5.85f, 3.0f },
+		{ ICON_RING, 12.0f, 12.0f, 2.3f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	}
 };
 
@@ -342,7 +361,8 @@ static const char *const icon_app_names[GLASS_ICON_APPS] = {
 	"xterm",
 	"lock",
 	"logout",
-	"text"
+	"text",
+	"settings"
 };
 
 /* The known programs' windows, found by their exact application ID. */
@@ -356,7 +376,8 @@ static const struct icon_app_id icon_app_ids[] = {
 	{ "mview", GLASS_ICON_APP_MODEL, 0xe07a5aU },
 	{ "Gears", GLASS_ICON_APP_GEARS, 0xd05a3aU },
 	{ "XTerminal", GLASS_ICON_APP_XTERM, 0x4a4a78U },
-	{ "textedit", GLASS_ICON_APP_TEXT, 0x1f9e9aU }
+	{ "textedit", GLASS_ICON_APP_TEXT, 0x1f9e9aU },
+	{ "settings", GLASS_ICON_APP_SETTINGS, 0x6b7a8fU }
 };
 
 static float icon_distance(const struct icon_part *part, float x, float y);

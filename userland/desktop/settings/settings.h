@@ -96,6 +96,7 @@
 #define SE_KEY_SPACE		57U
 #define SE_KEY_Q		16U
 #define SE_KEY_W		17U
+#define SE_KEY_F		33U
 #define SE_KEY_HOME		102U
 #define SE_KEY_UP		103U
 #define SE_KEY_PAGE_UP		104U
@@ -250,7 +251,8 @@ enum se_hit_kind {
 	SE_HIT_SIDEBAR,
 	SE_HIT_PAGE,
 	SE_HIT_TILE,
-	SE_HIT_CONTROL
+	SE_HIT_CONTROL,
+	SE_HIT_RESULT
 };
 
 /*
@@ -390,6 +392,7 @@ enum se_action {
 	SE_ACTION_MINIMIZE,
 	SE_ACTION_ZOOM,
 	SE_ACTION_ABOUT,
+	SE_ACTION_FIND,
 	SE_ACTION_PAGE_FIRST = 100
 };
 
@@ -414,20 +417,26 @@ enum se_control {
 	SE_CONTROL_FORWARD,
 	SE_CONTROL_HOME,
 	SE_CONTROL_PATH,
+	SE_CONTROL_SEARCH,
 	SE_CONTROL_SIDEBAR
 };
 
 /*
  * What the titlebar shows of the window's state: whether the history can
- * go back and forward, the parts of the breadcrumb, and whether the list
- * of pages is shown.  titlebar.c sends it to zdesktop when it differs from
- * what the titlebar shows.
+ * go back and forward, the parts of the breadcrumb, the search's query,
+ * and whether the list of pages is shown.  focus_serial moves each time
+ * the window asks for the search field to have the keyboard (Ctrl+F);
+ * titlebar.c gives it the keyboard when the serial differs from the one
+ * it last sent.  titlebar.c sends the state to zdesktop when it differs
+ * from what the titlebar shows.
  */
 struct se_titlebar_state {
 	int can_back;
 	int can_forward;
 	int part_count;
 	char parts[SE_CRUMBS][SE_TITLEBAR_PART];
+	char query[SE_TITLEBAR_TEXT];
+	unsigned focus_serial;
 	int sidebar;
 };
 
@@ -461,6 +470,38 @@ struct se_menu_state {
 	int can_forward;
 	int sidebar;
 	unsigned page;
+};
+
+/* The bytes of a search's query with its NUL, and how many results it lists at most. */
+#define SE_SEARCH_QUERY		128U
+#define SE_SEARCH_RESULTS	48U
+
+/*
+ * One thing a search found: a page, or one setting on a page (setting is
+ * then its name, NULL for the page itself).
+ */
+struct se_search_result {
+	unsigned page;
+	const char *setting;
+};
+
+/*
+ * The search of the titlebar (search.c, ws089-p008): the query as typed,
+ * and what it found.
+ *
+ * While the query has a word in it (active), the page pane shows the
+ * results in place of the page, which stays the history's step; ending the
+ * search (Esc, a result or a page chosen) shows the page again.  The
+ * results point into the tables of pages and of settings, which live for
+ * the whole run.  focus_serial moves when the field is to have the
+ * keyboard (see se_titlebar_state).
+ */
+struct se_search {
+	char query[SE_SEARCH_QUERY];
+	int active;
+	struct se_search_result results[SE_SEARCH_RESULTS];
+	unsigned count;
+	unsigned focus_serial;
 };
 
 /*
@@ -529,6 +570,9 @@ struct se_app {
 	/* What About shows of the machine. */
 	struct se_about about;
 
+	/* The titlebar's search and what it found. */
+	struct se_search search;
+
 	/* What the network pages show and have asked of the daemon. */
 	struct se_network network;
 };
@@ -589,6 +633,14 @@ void se_network_disconnect(struct se_app *app);
 /* The text fields (widgets.c). */
 int se_field_key(struct se_field *field, const struct se_event *event);
 void se_field_clear(struct se_field *field);
+
+/* The search (search.c). */
+void se_search_set(struct se_app *app, const char *query);
+void se_search_end(struct se_app *app);
+void se_search_focus(struct se_app *app);
+int se_search_open_first(struct se_app *app);
+int se_search_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+void se_search_press(struct se_app *app, int index);
 
 /* The pages' drawing (page-home.c, page-about.c, page-soon.c). */
 int se_home_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);

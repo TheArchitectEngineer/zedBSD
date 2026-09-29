@@ -8,12 +8,14 @@
 /*
  * The Home page: every page as a tile, by group, so that a page can be
  * found by its picture.  The titlebar's Home control and the breadcrumb's
- * first part open it.  (The tiles' live state, "Connected" or "Volume
- * 60%", comes with ws089-p008.)
+ * first part open it.  A page that works shows its state now on its tile
+ * ("Connected · ue0", ws089-p008), with a dot when the state is a
+ * connection; the others show their summary.
  */
 
 #include "settings.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /* A tile's narrowest width (tiles widen to fill a row), its height and the space between two, and the texts' sizes. */
@@ -28,8 +30,14 @@
 #define HOME_GROUP_GAP		22
 #define HOME_GROUP_TITLE	26
 
+/* The bytes of a tile's state line with its NUL. */
+#define HOME_STATE		96
+
 static int home_group(struct se_app *app, struct fm_canvas *canvas, unsigned group, const char *title, int x, int top, int width);
 static void home_tile(struct se_app *app, struct fm_canvas *canvas, const struct se_page *page, int x, int y, int width);
+static int home_state(const struct se_app *app, unsigned page, char *text, size_t size, int *dot);
+static int home_wifi_state(const struct keiland_network_state *state, char *text, size_t size, int *dot);
+static const char *home_address(const struct se_network *network, const char *name);
 
 /*
  * Draws the Home page's groups of tiles from a top edge; returns the edge
@@ -116,9 +124,14 @@ home_tile(
 	int width)
 {
 	struct fm_rect tile;
+	char state[HOME_STATE];
+	const char *line;
 	fm_color ground;
 	fm_color glyph;
 	fm_color summary;
+	int live;
+	int dot;
+	int left;
 	int lit;
 
 	/* The tile, a little darker under the pointer. */
@@ -144,10 +157,174 @@ home_tile(
 	/* The picture at the tile's upper left. */
 	se_glyph_draw(canvas, page->glyph, (float)x + 16.0f, (float)y + 14.0f, 26.0f, glyph);
 
-	/* The name and the summary. */
+	/* The name. */
 	(void)fm_text_draw_fit(app->text, canvas, x + 16, y + 62, page->name, HOME_TEXT_NAME, 1, tile.width - 28, SE_COLOR_TEXT);
-	(void)fm_text_draw_fit(app->text, canvas, x + 16, y + 80, page->summary, HOME_TEXT_SUMMARY, 0, tile.width - 28, summary);
+
+	/* Under it the page's state now, when it has one, else its summary. */
+	line = page->summary;
+	dot = 0;
+	live = home_state(app, page->id, state, sizeof(state), &dot);
+	if (live != 0)
+		line = state;
+
+	/* A connection's state starts with a green or grey dot. */
+	left = x + 16;
+	if (dot > 0) {
+		se_dot_draw(canvas, (float)left + 4.0f, (float)y + 76.0f, SE_COLOR_GOOD);
+		left += 14;
+	} else if (dot < 0) {
+		se_dot_draw(canvas, (float)left + 4.0f, (float)y + 76.0f, SE_COLOR_TEXT_FAINT);
+		left += 14;
+	}
+
+	/* The line itself, after the dot. */
+	(void)fm_text_draw_fit(app->text, canvas, left, y + 80, line, HOME_TEXT_SUMMARY, 0, tile.width - 12 - (left - x), summary);
 
 	/* A click opens the page. */
 	se_ui_hit(app, &tile, SE_HIT_TILE, (int)page->id);
+}
+
+/*
+ * Says a page's state now for its tile: the network's pages from what the
+ * daemon reported, About from the machine.  Returns 1 with the text (and
+ * dot 1 for a connection, -1 for none, 0 when no dot fits), or 0 for a
+ * page that shows its summary.
+ */
+static int
+home_state(
+	const struct se_app *app,
+	unsigned page,
+	char *text,
+	size_t size,
+	int *dot)
+{
+	const struct keiland_network_state *state;
+	const char *address;
+	int live;
+
+	/* No dot unless a connection is described. */
+	state = &app->network.state;
+	*dot = 0;
+
+	/* Each page that has a state. */
+	switch (page) {
+	case SE_PAGE_WIFI:
+		live = home_wifi_state(state, text, size, dot);
+		return live;
+	case SE_PAGE_ETHERNET:
+		/* The wired interface in use, or none. */
+		if (state->reachable != 0 && state->wired[0] != '\0') {
+			(void)snprintf(text, size, "Connected \xc2\xb7 %s", state->wired);
+			*dot = 1;
+		} else {
+			(void)snprintf(text, size, "%s", "Not connected");
+			*dot = -1;
+		}
+
+		/* The state is in the text. */
+		return 1;
+	case SE_PAGE_NETWORK:
+		/* Online with the address in use, or offline. */
+		address = home_address(&app->network, state->interface);
+		if (state->reachable != 0 && state->connected != 0 && address != NULL) {
+			(void)snprintf(text, size, "Online \xc2\xb7 %s", address);
+			*dot = 1;
+		} else if (state->reachable != 0 && state->connected != 0) {
+			(void)snprintf(text, size, "Online \xc2\xb7 %s", state->interface);
+			*dot = 1;
+		} else {
+			(void)snprintf(text, size, "%s", "Offline");
+			*dot = -1;
+		}
+
+		/* The state is in the text. */
+		return 1;
+	case SE_PAGE_ABOUT:
+		/* The name of the system and the machine, when known. */
+		if (app->about.machine[0] == '\0')
+			return 0;
+		(void)snprintf(text, size, "Kei \xc2\xb7 %s", app->about.machine);
+		return 1;
+	default:
+		break;
+	}
+
+	/* The page shows its summary. */
+	return 0;
+}
+
+/* Says the Wi-Fi's state for its tile; returns 1 (the Wi-Fi always has a state). */
+static int
+home_wifi_state(
+	const struct keiland_network_state *state,
+	char *text,
+	size_t size,
+	int *dot)
+{
+	/* The daemon out of reach. */
+	if (state->reachable == 0) {
+		(void)snprintf(text, size, "%s", "Unavailable");
+		return 1;
+	}
+
+	/* Each state of the radio. */
+	switch (state->wifi) {
+	case KEILAND_WIFI_ABSENT:
+		(void)snprintf(text, size, "%s", "No Wi-Fi radio");
+		break;
+	case KEILAND_WIFI_OFF:
+		(void)snprintf(text, size, "%s", "Off");
+		*dot = -1;
+		break;
+	case KEILAND_WIFI_SEARCHING:
+		(void)snprintf(text, size, "%s", "Searching");
+		*dot = -1;
+		break;
+	case KEILAND_WIFI_CONNECTING:
+		(void)snprintf(text, size, "Joining %s", state->ssid);
+		*dot = -1;
+		break;
+	case KEILAND_WIFI_CONNECTED:
+		(void)snprintf(text, size, "Connected \xc2\xb7 %s", state->ssid);
+		*dot = 1;
+		break;
+	default:
+		(void)snprintf(text, size, "%s", "On, not connected");
+		*dot = -1;
+		break;
+	}
+
+	/* Succeeded: the state is in the text. */
+	return 1;
+}
+
+/* Finds an interface's IPv4 address, or NULL when it has none or is not known. */
+static const char *
+home_address(
+	const struct se_network *network,
+	const char *name)
+{
+	size_t index;
+	int differs;
+
+	/* An empty name is no interface. */
+	if (name[0] == '\0')
+		return NULL;
+
+	/* Each interface's name. */
+	for (index = 0; index < network->link_count; index++) {
+		differs = strcmp(network->links[index].name, name);
+		if (differs != 0)
+			continue;
+
+		/* The interface without an address has none to show. */
+		if (network->links[index].address[0] == '\0')
+			return NULL;
+
+		/* Succeeded: its address. */
+		return network->links[index].address;
+	}
+
+	/* No interface has that name. */
+	return NULL;
 }
