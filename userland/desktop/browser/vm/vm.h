@@ -731,6 +731,15 @@ int vm_define_global_var(struct vm_realm *realm, vm_value key);
 int vm_define_global_function(struct vm_realm *realm, vm_value key, vm_value function);
 int vm_delete_global(struct vm_realm *realm, vm_value key, vm_value *result);
 int vm_define_global_lexical(struct vm_realm *realm, vm_value key, int is_const);
+
+/* Spreading and destructuring (spread.c). */
+int vm_iter_start(struct vm_realm *realm, vm_value value, vm_value *iterator);
+int vm_iter_next(struct vm_realm *realm, vm_value iterator, vm_value *value, int *done);
+int vm_iter_rest(struct vm_realm *realm, vm_value iterator, vm_value *array);
+int vm_array_spread(struct vm_realm *realm, vm_value array, vm_value value);
+int vm_copy_data_properties(struct vm_realm *realm, vm_value target, vm_value source);
+int vm_object_rest(struct vm_realm *realm, vm_value source, vm_value excluded, vm_value *result);
+int vm_call_array(struct vm_realm *realm, vm_value function, vm_value this_value, vm_value array, int construct, vm_value *result);
 int vm_init_global_lexical(struct vm_realm *realm, vm_value key, vm_value value);
 int vm_to_object(struct vm_realm *realm, vm_value value, vm_value *object);
 int vm_get_own_descriptor(struct vm_object *object, vm_value key, struct vm_descriptor *descriptor);

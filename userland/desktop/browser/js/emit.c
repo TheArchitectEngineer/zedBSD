@@ -51,9 +51,10 @@ js_emit_begin(
 	wb_vector_init(&fc->patches, sizeof(struct js_patch));
 	wb_vector_init(&fc->positions, sizeof(struct vm_position));
 
-	/* No source position until the first expression or statement. */
+	/* No source position until the first expression or statement, and no optional chain. */
 	fc->line = 0;
 	fc->column = 0;
+	fc->chain_label = JS_LABEL_UNPLACED;
 
 	/* No table of constant indices until the first constant. */
 	fc->constant_index = NULL;
@@ -621,6 +622,7 @@ js_emit_finish(
 	model.position_count = (uint32_t)fc->positions.count;
 	model.flags = flags;
 	model.arguments_register = fc->arguments_register;
+	model.length = fc->info->length;
 	model.name = string;
 
 	/* The checked unit (a unit that fails the check is the compiler's fault). */
