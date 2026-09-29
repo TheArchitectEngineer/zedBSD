@@ -22,6 +22,9 @@
  *   text=STRING        (types lower-case letters and digits as keys)
  *   control=N          (clicks the page's control N of the last frame)
  *   tb=CONTROL:DETAIL  (a titlebar control chosen)
+ *   search=TEXT        (the titlebar's search field's text as typed; '_' is a space)
+ *   searchdone=HOW     (the search field's editing ended: 0 Enter, 1 Esc, 2 left)
+ *   result=N           (clicks the search's result N of the last frame)
  *   draw=PATH          (draws the frame into a PPM picture)
  *   hits               (prints the clickable regions of the last frame)
  *   state              (prints what the titlebar and the menus show)
@@ -56,7 +59,9 @@ main(
 	static const char letters[] = "qwertyuiop\0\0\0\0asdfghjkl\0\0\0\0\0zxcvbnm";
 	static const char digits[] = "1234567890";
 	const char *found;
+	char *space;
 	uint32_t *pixels;
+	unsigned kind;
 	unsigned start;
 	unsigned code;
 	unsigned mods;
@@ -142,9 +147,29 @@ main(
 					host_event(&app, SE_EVENT_KEY, 0, 0, 0, 0, code, 0);
 				}
 			}
-		} else if (sscanf(argv[index], "control=%u", &code) == 1) {
+		} else if (strncmp(argv[index], "search=", 7) == 0) {
+			memset(&event, 0, sizeof(event));
+			event.kind = SE_TITLEBAR_CHANGED;
+			event.id = SE_CONTROL_SEARCH;
+			(void)snprintf(event.text, sizeof(event.text), "%s", argv[index] + 7);
+			for (space = event.text; *space != '\0'; space++) {
+				if (*space == '_')
+					*space = ' ';
+			}
+			se_ui_titlebar(&app, &event);
+		} else if (sscanf(argv[index], "searchdone=%u", &code) == 1) {
+			memset(&event, 0, sizeof(event));
+			event.kind = SE_TITLEBAR_DONE;
+			event.id = SE_CONTROL_SEARCH;
+			event.detail = code;
+			(void)snprintf(event.text, sizeof(event.text), "%s", app.search.query);
+			se_ui_titlebar(&app, &event);
+		} else if (sscanf(argv[index], "control=%u", &code) == 1 || sscanf(argv[index], "result=%u", &code) == 1) {
+			kind = SE_HIT_CONTROL;
+			if (strncmp(argv[index], "result=", 7) == 0)
+				kind = SE_HIT_RESULT;
 			for (x = app.hit_count - 1; x >= 0; x--) {
-				if (app.hits[x].kind == SE_HIT_CONTROL && app.hits[x].index == (int)code)
+				if (app.hits[x].kind == kind && app.hits[x].index == (int)code)
 					break;
 			}
 			if (x < 0) {
@@ -177,7 +202,7 @@ main(
 		} else if (strcmp(argv[index], "state") == 0) {
 			se_ui_titlebar_state(&app, &titlebar);
 			se_ui_menu_state(&app, &menu);
-			printf("STATE page=%s back=%d forward=%d parts=%d last=%s sidebar=%d menu-page=%u\n", se_pages[app.page].word, titlebar.can_back, titlebar.can_forward, titlebar.part_count, titlebar.parts[titlebar.part_count - 1], titlebar.sidebar, menu.page);
+			printf("STATE page=%s back=%d forward=%d parts=%d last=%s sidebar=%d menu-page=%u search=%d query=%s results=%u focus=%u\n", se_pages[app.page].word, titlebar.can_back, titlebar.can_forward, titlebar.part_count, titlebar.parts[titlebar.part_count - 1], titlebar.sidebar, menu.page, app.search.active, titlebar.query, app.search.count, titlebar.focus_serial);
 		} else {
 			fprintf(stderr, "unknown action %s\n", argv[index]);
 			return 2;

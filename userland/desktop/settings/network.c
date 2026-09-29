@@ -36,7 +36,7 @@
 #define NETWORK_POLL_MS		250
 
 static void network_read_files(struct se_app *app);
-static void network_read_links(struct se_app *app, uint64_t now);
+static int network_read_links(struct se_app *app, uint64_t now);
 static void network_finished(struct se_app *app);
 static void network_send(struct se_app *app, unsigned request, const char *ssid);
 static void network_message(struct se_app *app, int bad, const char *format, const char *ssid);
@@ -66,7 +66,7 @@ se_network_open(
 	network->request = KEILAND_NETWORK_REQUEST_NONE;
 
 	/* What is known without the daemon: the interfaces, the servers and the saved networks. */
-	network_read_links(app, app->now);
+	(void)network_read_links(app, app->now);
 	network_read_files(app);
 	se_log("NETWORK open links=%lu dns=%lu saved=%lu", (unsigned long)network->link_count, (unsigned long)network->dns_count, (unsigned long)network->saved_count);
 }
@@ -82,6 +82,7 @@ se_network_poll(
 {
 	struct se_network *network;
 	unsigned changed;
+	int addresses;
 	int shown;
 	int error;
 	int radio;
@@ -118,10 +119,12 @@ se_network_poll(
 	if ((changed & KEILAND_NETWORK_CHANGED_DONE) != 0U)
 		network_finished(app);
 
-	/* The interfaces and the activity, once a second; a shown page is drawn again. */
+	/* The interfaces and the activity, once a second; a shown page is drawn again, and Home when an address changed. */
 	if (now - network->sampled_at >= NETWORK_LINKS_MS) {
-		network_read_links(app, now);
+		addresses = network_read_links(app, now);
 		if (shown != 0)
+			app->dirty = 1;
+		if (addresses != 0 && app->page == SE_PAGE_HOME)
 			app->dirty = 1;
 	}
 
@@ -300,13 +303,21 @@ network_read_files(
 	network->saved_count = count;
 }
 
-/* Reads the interfaces, and records a second of activity (the bytes of every interface but the loopback). */
-static void
+/*
+ * Reads the interfaces, and records a second of activity (the bytes of
+ * every interface but the loopback).  Returns 1 when the interfaces or
+ * their addresses differ from the last reading (Home shows an address).
+ */
+static int
 network_read_links(
 	struct se_app *app,
 	uint64_t now)
 {
 	struct se_network *network;
+	char addresses[SE_NETWORK_LINKS][KEILAND_NETWORK_ADDRESS_MAX];
+	size_t old_count;
+	int differs;
+	int moved;
 	uint64_t received;
 	uint64_t sent;
 	uint64_t elapsed;
@@ -315,12 +326,27 @@ network_read_links(
 	size_t count;
 	size_t index;
 
-	/* The interfaces, as many as are kept. */
+	/* The addresses of the last reading, to tell whether they moved. */
 	network = &app->network;
+	old_count = network->link_count;
+	for (index = 0; index < old_count; index++)
+		(void)snprintf(addresses[index], sizeof(addresses[index]), "%s", network->links[index].address);
+
+	/* The interfaces, as many as are kept. */
 	count = keiland_network_get_links(network->links, SE_NETWORK_LINKS);
 	if (count > SE_NETWORK_LINKS)
 		count = SE_NETWORK_LINKS;
 	network->link_count = count;
+
+	/* Interfaces that came or went, or an address that changed, count as moved. */
+	moved = 0;
+	if (count != old_count)
+		moved = 1;
+	for (index = 0; moved == 0 && index < count; index++) {
+		differs = strcmp(addresses[index], network->links[index].address);
+		if (differs != 0)
+			moved = 1;
+	}
 
 	/* The bytes of every interface but the loopback. */
 	received = 0;
@@ -355,6 +381,9 @@ network_read_links(
 	network->received_total = received;
 	network->sent_total = sent;
 	network->sampled_at = now;
+
+	/* Succeeded: whether the interfaces moved. */
+	return moved;
 }
 
 /* Carries on after a request finished: the next step of a join, or a message about the outcome. */

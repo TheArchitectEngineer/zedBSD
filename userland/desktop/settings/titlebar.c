@@ -8,7 +8,8 @@
 /*
  * The window's titlebar in zdesktop (WS070's CONTROLS presentation, the
  * file manager's way, ws071-p014): Back, Forward and Home, the breadcrumb
- * (Settings and the page), and the list of pages' switch, drawn by zdesktop
+ * (Settings and the page), the search field (ws089-p008) and the list of
+ * pages' switch, drawn by zdesktop
  * in the floating titlebar, or in the system bar while the window is
  * docked.  What the user does with them is queued for the main loop.
  */
@@ -37,6 +38,7 @@ static const struct titlebar_control titlebar_controls[] = {
 	{ SE_CONTROL_FORWARD, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Forward" },
 	{ SE_CONTROL_HOME, KEILAND_CONTROL_HOME, KEILAND_PRIORITY_PRIMARY, 0U, "Home" },
 	{ SE_CONTROL_PATH, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, 0U, "Location" },
+	{ SE_CONTROL_SEARCH, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, 0U, "Search" },
 	{ SE_CONTROL_SIDEBAR, KEILAND_CONTROL_SIDEBAR, KEILAND_PRIORITY_SECONDARY, 0U, "Sidebar" }
 };
 
@@ -271,12 +273,13 @@ titlebar_build(
 	return 0;
 }
 
-/* Shows a state in the titlebar in one transaction; returns 0 or an errno value. */
+/* Shows a state in the titlebar in one transaction, then gives the search field the keyboard when asked; returns 0 or an errno value. */
 static int
 titlebar_state(
 	struct se_titlebar *titlebar,
 	const struct se_titlebar_state *state)
 {
+	int asked;
 	int error;
 
 	/* The transaction. */
@@ -298,8 +301,18 @@ titlebar_state(
 	if (error != 0)
 		return error;
 
-	/* The log line the tests read: the history's steps and the breadcrumb's last part. */
-	se_log("TITLEBAR state back=%d forward=%d parts=%d last=%s sidebar=%d", state->can_back, state->can_forward, state->part_count, state->parts[state->part_count - 1], state->sidebar);
+	/* The search field, when the window asked for it to have the keyboard since the last state (Ctrl+F). */
+	asked = 0;
+	if (state->focus_serial != titlebar->shown.focus_serial)
+		asked = 1;
+	if (asked != 0) {
+		error = keiland_titlebar_focus_control(titlebar->titlebar, SE_CONTROL_SEARCH, KEILAND_FOCUS_FIELD);
+		if (error != 0)
+			se_log("TITLEBAR focus-failed errno=%d", error);
+	}
+
+	/* The log line the tests read: the history's steps, the breadcrumb's last part, the query and the field given the keyboard now. */
+	se_log("TITLEBAR state back=%d forward=%d parts=%d last=%s sidebar=%d query=%s focus=%d", state->can_back, state->can_forward, state->part_count, state->parts[state->part_count - 1], state->sidebar, state->query, asked);
 
 	/* Succeeded: the titlebar shows the state. */
 	titlebar->shown = *state;
@@ -327,6 +340,10 @@ titlebar_state_controls(
 		parts[index] = state->parts[index];
 	if (error == 0)
 		error = keiland_titlebar_set_breadcrumb(object, SE_CONTROL_PATH, parts, (size_t)state->part_count);
+
+	/* The search's query, and what the field shows when empty. */
+	if (error == 0)
+		error = keiland_titlebar_set_control_text(object, SE_CONTROL_SEARCH, state->query, "Search settings");
 
 	/* The list of pages, checked while it is shown. */
 	if (error == 0)
