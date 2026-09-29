@@ -50,6 +50,33 @@ top-local-noscript 79.80%、search-local-noscript 77.16%。worktree の `build/p
   左の filter の列の行の高さ（下に行くほどずれる）。
 - 文字: 太字の見出しの幅が違い折り返しが変わる（「間もなく終了のセー／ル」）。
 
+### 3. 原因の特定（getComputedStyle と getBoundingClientRect の probe を頁の末尾に足し、Chromium と同じ probe を比べた）
+
+- **百分率の高さが解決されない（layout 全体）**: `layout/block.c` は `height`・`min-height`・`max-height` の px だけを見て、
+  `%` は auto として扱う。小さな頁で確かめた: `height:300px` の `ul` の中の float の `li`（`height:100%`）は Chromium 300 px・
+  私たち 20 px（内容の高さ）、`height:200px` の中の inline-block（`height:100%`）は Chromium 200・私たち 0。
+  - top の card: `li.gwm-window-tile`（`float:left; height:100%`、`ul#gwm-window` は 489.6 px）の中の card の `height:100%` の
+    連鎖が、私たちでは内容の高さ（200 px）になる（Chromium 489.6 px）。その中の grid（`grid-template-rows: repeat(2,1fr)`）の行も
+    高さを持たず、tile の画像（`height:100%`・`object-fit:contain`）が自然の高さ（745 px）になって切られる。
+  - search の結果の画像: `img.s-image`（`position:absolute; max-width:100%; max-height:100%`、224 px の正方形の枠）の
+    `max-height:100%` が効かず、Chromium の 159x224 に対し私たちは 224x224（縦横比が崩れ、左右に広がる）。
+- **flex item の自動の最小の大きさ（直した）**: `min-width` の初期値が px の 0 で、flex の row の item が内容より狭く縮んでいた。
+  header の 2 段目の「☰ すべて」（`#nav-hamburger-menu`、`display:flex`）が 21.7 px に縮み、icon の幅が 0、文字が隣の
+  「Amazonポイント」に重なっていた（Chromium 80.5 px）。
+- **太字の文字の幅**: Latin の太字が Chromium より広い（"Amazon Basics" 14px bold: 私たち 114.3、Chromium 104.8。日本語の太字は
+  42 と 45）。見出しの折り返しが変わる（top の「間もなく終了のセー／ル」）。通常の太さの文字の幅は一致した（fallback の font を
+  渡したとき）。
+
+## この Phase で直したもの
+
+- `css/cascade.c`: `min-width`・`min-height` の初期値を `auto`（`CSS_UNIT_AUTO`、layout では 0 と同じ）にした。
+- `layout/flex.c`: row の item の自動の最小の大きさ（CSS Flexbox 4.5）: `min-width:auto` で内容が scroll しない item は、
+  line が縮む時だけ内容の min-content の幅（`width` が px でより狭ければそれ、`max-width` の内）より狭くならない。
+  column の item は前と同じ（0 まで縮む）。
+- 効果: header の hamburger が Chromium と同じ形（80 px 前後、icon と文字が並ぶ）。画素は top-local 64.47 → 64.29%、search-local
+  76.04 → 75.85%（hamburger が広がり 2 段目の項目が右へずれ、Chromium が隠す最後の項目（「新着商品」）が私たちでは出るため）。
+- 確かめ: golden 76/76（変わらず）。他の回帰は下の「確認」。
+
 ## Resume point
 
-- 2026-09-29: 調べの途中（上）。残り: 項目 2 の各々の原因の CSS の特定と面積の見積り、Phase の案の表、小さく直せるものの修正。
+- 2026-09-29: 原因の特定まで済み、flex の自動の最小の大きさを直した。残り: 回帰（plain・ASan）、Phase の案の表、記録。
