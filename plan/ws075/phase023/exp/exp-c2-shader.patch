@@ -1,0 +1,27 @@
+diff --git a/src/drivers/gpu/i915/render/pipeline.c b/src/drivers/gpu/i915/render/pipeline.c
+index b690bcab..9c6d34ea 100644
+--- a/src/drivers/gpu/i915/render/pipeline.c
++++ b/src/drivers/gpu/i915/render/pipeline.c
+@@ -28,6 +28,7 @@
+ #include <libc/vulkan/vulkan_core.h>
+ 
+ #include <uapi/errno.h>
++#include "../../../../../plan/ws075/phase023/exp/panel-exp.inc"
+ #include <stddef.h>
+ #include <stdint.h>
+ 
+@@ -128,6 +129,14 @@ drv_i915_gfx_create_shader(
+ 	if (info.codeSize > I915_GFX_MAX_SHADER_BYTES)
+ 		return EINVAL;
+ 
++	/* ws075-p023 experiment: the compositor's panel.frag is replaced by its glass-solid variant. */
++	if (info.codeSize == sizeof(i915_exp_panel_original) &&
++	    kern_memcmp(info.pCode, i915_exp_panel_original, sizeof(i915_exp_panel_original)) == 0) {
++		info.pCode = i915_exp_panel_glass_solid;
++		info.codeSize = sizeof(i915_exp_panel_glass_solid);
++		kern_logf("i915: ws075-p023 experiment: panel.frag replaced by the glass-solid variant\n");
++	}
++
+ 	/* Allocates the module with room for its words behind it. */
+ 	words = (uint32_t)(info.codeSize / 4U);
+ 	shader = kern_calloc(1U, sizeof(*shader) + (size_t)words * 4U);
