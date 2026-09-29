@@ -1,0 +1,33 @@
+--- a/.github/workflows/ci.yml	2026-09-29 19:22:02.651781871 +0900
++++ b/.github/workflows/ci.yml	2026-09-29 19:22:02.675781840 +0900
+@@ -40,11 +40,20 @@
+           # The 2 GiB native image is published gzip-compressed.
+           gzip -9 -c build/amd64/hdd-image.img > artifacts/zedbsd-amd64.img.gz
+ 
++      - name: Package Kei-nightly.zip
++        run: |
++          # The Windows package (WINQ-EMU QEMU with Venus) comes from the
++          # rev-0 release, verified by the SHA-256 in tools/release/kei-nightly.mk.
++          make kei-nightly-zip
++          cp build/amd64/Kei-nightly.zip artifacts/Kei-nightly.zip
++
+       - name: Upload binary
+         uses: actions/upload-artifact@v4
+         with:
+           name: artifacts
+-          path: artifacts/*.img.gz
++          path: |
++            artifacts/*.img.gz
++            artifacts/Kei-nightly.zip
+ 
+   release:
+     name: Create GitHub Release
+@@ -79,6 +88,8 @@
+             | CPU     | Machine      | File                  | Description                                             |
+             |---------|--------------|-----------------------|---------------------------------------------------------|
+             | amd64   | PC (UEFI)    | `zedbsd-amd64.img.gz` | USB image, gzip-compressed (`gunzip` before writing).   |
++            | amd64   | Windows      | `Kei-nightly.zip`     | Kei in QEMU with Vulkan (Venus). Unzip and run `boot.bat`. |
+ 
+           files: |
+             artifacts/zedbsd-amd64.img.gz
++            artifacts/Kei-nightly.zip

@@ -64,6 +64,7 @@
 #define HID_USAGE_PAGE_GENERIC_DESKTOP	0x01U
 #define HID_USAGE_PAGE_KEYBOARD		0x07U
 #define HID_USAGE_PAGE_BUTTON		0x09U
+#define HID_USAGE_PAGE_CONSUMER		0x0cU
 #define HID_USAGE_PAGE_DIGITIZER	0x0dU
 
 /* The application collections of the Digitizer page that hold a pen. */
@@ -98,6 +99,8 @@
 #define HID_USAGE_X			0x30U
 #define HID_USAGE_Y			0x31U
 #define HID_USAGE_WHEEL			0x38U
+/* The Consumer page's horizontal scroll (AC Pan), which mice send beside the wheel. */
+#define HID_USAGE_AC_PAN		0x0238U
 #define HID_USAGE_KEYBOARD_ERROR_MIN	0x01U
 #define HID_USAGE_KEYBOARD_ERROR_MAX	0x03U
 
@@ -328,6 +331,7 @@ static void local_clear(struct hid_local_state *local);
 static int usage_value(const struct hid_global_state *global, const uint8_t *data, size_t size, uint32_t *result);
 static int local_validate(const struct hid_local_state *local);
 static int local_usage_at(const struct hid_local_state *local, uint32_t index, uint32_t *usage);
+static int local_names_keyboard(const struct hid_local_state *local);
 static struct hid_report_description * find_report(struct hid_report_layout *layout, uint8_t id);
 static const struct hid_report_description * find_report_const(const struct hid_report_layout *layout, uint8_t id);
 static int add_report(struct hid_report_layout *layout, uint8_t id, struct hid_report_description **result);
@@ -1846,6 +1850,31 @@ local_validate(
 	return local->range_open ? EINVAL : 0;
 }
 
+/* Asks whether any usage collected for the next main item is a keyboard usage. */
+static int
+local_names_keyboard(
+	const struct hid_local_state *local)
+{
+	const struct hid_local_usage_span *span;
+	size_t span_index;
+
+	/* Looks at both ends of every usage and range. */
+	for (span_index = 0; span_index < local->usage_count; span_index++) {
+		span = &local->usages[span_index];
+
+		/* A range that starts on the keyboard page names keys. */
+		if ((span->minimum >> 16U) == HID_USAGE_PAGE_KEYBOARD)
+			return 1;
+
+		/* A range that ends on the keyboard page names keys too. */
+		if ((span->maximum >> 16U) == HID_USAGE_PAGE_KEYBOARD)
+			return 1;
+	}
+
+	/* No usage is on the keyboard page. */
+	return 0;
+}
+
 /* Reports the usage that belongs to one field of an array. */
 static int
 local_usage_at(
@@ -2302,6 +2331,24 @@ usage_to_event(
 		return 0;
 	}
 
+	/* A relative AC Pan is the horizontal wheel of a mouse. */
+	if (page == HID_USAGE_PAGE_CONSUMER) {
+		/* Ignores every other consumer control. */
+		if (value != HID_USAGE_AC_PAN)
+			return 0;
+
+		/* Ignores a pan that reports a position rather than a motion. */
+		if ((input_flags & HID_INPUT_RELATIVE) == 0)
+			return 0;
+
+		/* Reports the pan as horizontal wheel motion. */
+		*type = EV_REL;
+		*code = REL_HWHEEL;
+		*kind = HID_FIELD_AXIS;
+		/* Reports the mapped event. */
+		return 1;
+	}
+
 	/* Handles the page condition. */
 	if (page != HID_USAGE_PAGE_GENERIC_DESKTOP)
 		return 0;
@@ -2432,8 +2479,14 @@ add_field(
 	if (layout->field_count >= HID_REPORT_FIELD_COUNT_MAX)
 		return E2BIG;
 
-	/* Handles the kind condition. */
-	if (kind != HID_FIELD_KEYBOARD_ARRAY) {
+	/*
+	 * Refuses a second field for the same axis or pen switch in one
+	 * report, which would leave its value ambiguous.  A key may have
+	 * several fields: two keyboard usages can stand for one key (the US
+	 * Backslash 0x31 and the ISO Non-US # 0x32 are both KEY_BACKSLASH),
+	 * and the decoder holds a key while any of its fields is set.
+	 */
+	if (kind != HID_FIELD_KEYBOARD_ARRAY && kind != HID_FIELD_KEY) {
 		/* Process each remaining element. */
 		for (index = 0; index < layout->field_count; index++) {
 			/* Handles the field condition. */
@@ -2549,6 +2602,7 @@ parse_input(
 	int32_t resolution;
 	int in_pen;
 	int in_touch;
+	int keyboard_array;
 	int found;
 	int error;
 
@@ -2640,7 +2694,20 @@ parse_input(
 
 	/* Checks the active flags. */
 	if ((flags & HID_INPUT_VARIABLE) == 0) {
-		/* Checks the parser state. */
+		/*
+		 * Skips an array that names no keyboard usage: the driver maps
+		 * only keyboard arrays, and the others (a system control list,
+		 * a vendor channel) report nothing it publishes.
+		 */
+		keyboard_array = local_names_keyboard(&parser->local);
+		if (!keyboard_array) {
+			report->bit_count += bits;
+
+			/* Succeeded. */
+			return 0;
+		}
+
+		/* Refuses a keyboard array that is not one range of usages. */
 		if (parser->local.usage_count != 1U ||
 		    !parser->local.usages[0].is_range) {
 			/* Failed. */

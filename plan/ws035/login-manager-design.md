@@ -139,4 +139,7 @@ uid で動くこと（`ps`）、log out で greeter に戻ること。i915 実�
 - 残り: g4（継ぎ目の無い引き継ぎ）、g5（画面の lock）、kernel の revoke、BIOS の loader の logo。
 - p099（BIOS の loader の logo）。p101（g4 の一通り）: 文字 console を出さない引き継ぎ（隠れた console の snapshot は黒、
   READY・GO・RELEASED の手順、Log Out でも greeter を先に起こす）。§5 の fd の受け渡し（黒の約 1.1 秒も無くす）は残り（Future Work F-048）。
+- p126（F-048 の代案、2026-09-29）: Venus の driver が lease の release で主の出力の blob の最後の画を保ち、次の lease の最初の frame で
+  置き換える（quiet の console のときだけ、10 秒の期限）。login・Log Out の黒（Venus で 1.4〜1.7 秒）は 0 に。i915 は ws075-p016 の同じ考え。
+  §5 の fd の受け渡しと revoke は残り。
 - p102（g5）: 画面の lock（Super+L・Lock Screen・入力の無い時間）、解除は sessiond の `UNLOCK`（§7-7 のとおり）。

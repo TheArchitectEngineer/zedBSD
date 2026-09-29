@@ -29,6 +29,7 @@
 #define EMIT_INDEX_FIRST	64U
 
 static void emit_push(struct js_function_compiler *fc, uint32_t word);
+static void emit_note_position(struct js_function_compiler *fc, uint32_t offset);
 static uint32_t emit_hash(vm_value value, uint32_t capacity);
 static void emit_index_grow(struct js_function_compiler *fc);
 static void emit_patch(struct js_function_compiler *fc, uint32_t word, uint32_t instruction, uint32_t label);
@@ -48,11 +49,42 @@ js_emit_begin(
 	wb_vector_init(&fc->handlers, sizeof(struct vm_handler));
 	wb_vector_init(&fc->labels, sizeof(uint32_t));
 	wb_vector_init(&fc->patches, sizeof(struct js_patch));
+	wb_vector_init(&fc->positions, sizeof(struct vm_position));
+
+	/* No source position until the first expression or statement. */
+	fc->line = 0;
+	fc->column = 0;
 
 	/* No table of constant indices until the first constant. */
 	fc->constant_index = NULL;
 	fc->constant_capacity = 0;
 	fc->released = 0;
+}
+
+/*
+ * Makes a node's source position the current one, keeping the one before
+ * so the caller can restore it once the node is compiled (the parent's
+ * own instructions, written after its children, then carry the parent's
+ * position).
+ */
+void
+js_emit_at(
+	struct js_function_compiler *fc,
+	const struct js_node *node,
+	uint32_t *saved_line,
+	uint32_t *saved_column)
+{
+	/* Keeps the position before. */
+	*saved_line = fc->line;
+	*saved_column = fc->column;
+
+	/* A node the parser made without a position keeps the current one. */
+	if (node->line == 0)
+		return;
+
+	/* The node's position is where its instructions come from. */
+	fc->line = node->line;
+	fc->column = node->column;
 }
 
 /*
@@ -73,6 +105,7 @@ js_emit_release(
 	wb_vector_release(&fc->handlers);
 	wb_vector_release(&fc->labels);
 	wb_vector_release(&fc->patches);
+	wb_vector_release(&fc->positions);
 	free(fc->constant_index);
 	fc->constant_index = NULL;
 	fc->released = 1;
@@ -91,8 +124,9 @@ js_emit(
 	uint32_t start;
 	uint32_t index;
 
-	/* The opcode, then each operand. */
+	/* The source position the instruction comes from, then the opcode and each operand. */
 	start = js_here(fc);
+	emit_note_position(fc, start);
 	emit_push(fc, opcode);
 	for (index = 0; index < operand_count; index++)
 		emit_push(fc, operands[index]);
@@ -583,6 +617,8 @@ js_emit_finish(
 	model.constant_count = (uint32_t)fc->constants.count;
 	model.handlers = fc->handlers.items;
 	model.handler_count = (uint32_t)fc->handlers.count;
+	model.positions = fc->positions.items;
+	model.position_count = (uint32_t)fc->positions.count;
 	model.flags = flags;
 	model.arguments_register = fc->arguments_register;
 	model.name = string;
@@ -601,6 +637,46 @@ js_emit_finish(
 
 	/* Succeeded: the code unit. */
 	return code;
+}
+
+/*
+ * Records that the instructions from an offset on come from the current
+ * source position, unless the last record already says so.
+ */
+static void
+emit_note_position(
+	struct js_function_compiler *fc,
+	uint32_t offset)
+{
+	struct vm_position *last;
+	struct vm_position made;
+	int error;
+
+	/* Nothing compiled yet has no position to record. */
+	if (fc->line == 0)
+		return;
+
+	/* The last record covers this instruction when its position is the same. */
+	if (fc->positions.count != 0) {
+		last = wb_vector_at(&fc->positions, fc->positions.count - 1U);
+		if (last->line == fc->line && last->column == fc->column)
+			return;
+
+		/* A record with no instruction yet is replaced rather than kept. */
+		if (last->offset == offset) {
+			last->line = fc->line;
+			last->column = fc->column;
+			return;
+		}
+	}
+
+	/* A new record from this instruction on. */
+	made.offset = offset;
+	made.line = fc->line;
+	made.column = fc->column;
+	error = wb_vector_push(&fc->positions, &made);
+	if (error != 0)
+		js_compile_out_of_memory(fc->compiler);
 }
 
 /* Appends one word to the code. */

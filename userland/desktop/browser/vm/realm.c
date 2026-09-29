@@ -49,6 +49,7 @@ vm_realm_create(
 		return ENOMEM;
 	made->heap = heap;
 	made->exception = VM_VALUE_UNDEFINED;
+	made->throw_value = VM_VALUE_UNDEFINED;
 	made->callee = VM_VALUE_UNDEFINED;
 	made->new_target = VM_VALUE_UNDEFINED;
 
@@ -256,6 +257,7 @@ realm_trace(
 	if (realm->global != NULL)
 		vm_heap_mark(heap, &realm->global->cell);
 	vm_heap_mark_value(heap, realm->exception);
+	vm_heap_mark_value(heap, realm->throw_value);
 	vm_heap_mark_value(heap, realm->callee);
 	vm_heap_mark_value(heap, realm->new_target);
 

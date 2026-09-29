@@ -582,6 +582,10 @@ struct vm_function {
  * native function calling a script function does.  host is what the
  * embedder keeps with the realm (the DOM binding's window), and jobs the
  * queue of microtasks (struct vm_job) the next checkpoint runs.
+ * throw_value, throw_line and throw_column are where the exception
+ * throw_value was last seen leaving a bytecode frame without a handler
+ * (throw_line 0 when that place is not known); the embedder reads them
+ * with vm_throw_site to report an uncaught exception's place.
  */
 struct vm_realm {
 	struct vm_heap *heap;
@@ -591,6 +595,9 @@ struct vm_realm {
 	struct vm_object *array_prototype;
 	struct vm_object *intrinsics[VM_INTRINSICS];
 	vm_value exception;
+	vm_value throw_value;
+	uint32_t throw_line;
+	uint32_t throw_column;
 	vm_value callee;
 	vm_value new_target;
 	vm_value *stack;
@@ -663,6 +670,7 @@ int vm_construct_prototype(struct vm_realm *realm, vm_value new_target, struct v
 int vm_construct(struct vm_realm *realm, vm_value constructor, const vm_value *args, unsigned count, vm_value new_target, vm_value *result);
 int vm_call(struct vm_realm *realm, vm_value callee, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int vm_throw(struct vm_realm *realm, vm_value exception);
+int vm_throw_site(const struct vm_realm *realm, vm_value exception, uint32_t *line, uint32_t *column);
 
 /* Realms (realm.c). */
 int vm_realm_create(struct vm_heap *heap, struct vm_realm **realm);

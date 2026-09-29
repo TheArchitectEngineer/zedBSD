@@ -47,11 +47,36 @@ enum bind_console_level {
 
 /*
  * What the window asks of its host: where the console's lines go (one
- * line of UTF-8 text at a level, without its line feed).
+ * line of UTF-8 text at a level, without its line feed), the User-Agent
+ * navigator reports, the parts of the document's location (a
+ * BIND_LOCATION_*, written as UTF-8), and document.cookie's reading and
+ * writing (the cookies a script may see, and one cookie set in the form
+ * of a Set-Cookie header).  A NULL callback reads as nothing and writes
+ * nothing.
  */
 struct bind_host {
 	void *context;
 	void (*console)(void *context, int level, const char *text, size_t length);
+	const char *user_agent;
+	int (*location)(void *context, int part, struct wb_buffer *out);
+	int (*cookie_get)(void *context, struct wb_buffer *out);
+	int (*cookie_set)(void *context, const char *text, size_t length);
+};
+
+/*
+ * The parts of the document's location the host's location callback
+ * writes (the parts of the URL interface).
+ */
+enum bind_location_part_index {
+	BIND_LOCATION_HREF,
+	BIND_LOCATION_ORIGIN,
+	BIND_LOCATION_PROTOCOL,
+	BIND_LOCATION_HOST,
+	BIND_LOCATION_HOSTNAME,
+	BIND_LOCATION_PORT,
+	BIND_LOCATION_PATHNAME,
+	BIND_LOCATION_SEARCH,
+	BIND_LOCATION_HASH
 };
 
 /*

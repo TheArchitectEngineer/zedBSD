@@ -14,8 +14,8 @@
  * Domain attribute, which must domain-match the host), a path (its Path
  * attribute, or the request path's directory), and flags: host-only
  * (without a Domain) and Secure.  Expires and Max-Age only delete a
- * cookie when they are in the past (every kept cookie lasts the session);
- * HttpOnly is kept for document.cookie (later).
+ * cookie when they are in the past (every kept cookie lasts the session).
+ * A script (document.cookie) neither sees nor sets an HttpOnly cookie.
  */
 
 #include "net/net.h"
@@ -50,6 +50,8 @@ static struct cookie cookie_jar[COOKIE_MAX];
 /* How many entries of cookie_jar are in use (the first ones). */
 static size_t cookie_count;
 
+static int cookie_store(const struct net_url *url, const char *header, size_t length, int from_script);
+static int cookie_pairs(const struct net_url *url, int for_script, struct wb_buffer *out);
 static char *cookie_copy(const char *text, size_t length);
 static void cookie_free(struct cookie *cookie);
 static void cookie_remove(size_t index);
@@ -70,6 +72,98 @@ net_cookie_store(
 	const struct net_url *url,
 	const char *header,
 	size_t length)
+{
+	int error;
+
+	/* A response may set any cookie. */
+	error = cookie_store(url, header, length, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the jar is up to date. */
+	return 0;
+}
+
+/*
+ * Keeps the cookie a script sets with document.cookie on a document of a
+ * URL, in the form of a Set-Cookie header.  A cookie marked HttpOnly, and
+ * one that would replace an HttpOnly cookie, is ignored.  Returns 0 or
+ * ENOMEM.
+ */
+int
+net_cookie_store_script(
+	const struct net_url *url,
+	const char *text,
+	size_t length)
+{
+	int error;
+
+	/* A script may not touch the cookies only HTTP sees. */
+	error = cookie_store(url, text, length, 1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the jar is up to date. */
+	return 0;
+}
+
+/*
+ * Appends the Cookie header of a request to a URL ("Cookie: a=b; c=d"
+ * and CR LF), when any cookie is for it.
+ */
+int
+net_cookie_header(
+	const struct net_url *url,
+	struct wb_buffer *out)
+{
+	struct wb_buffer pairs;
+	int error;
+
+	/* The name and value pairs of every cookie for the URL. */
+	wb_buffer_init(&pairs);
+	error = cookie_pairs(url, 0, &pairs);
+
+	/* The header, when there is a cookie. */
+	if (error == 0 && pairs.length != 0)
+		error = wb_buffer_printf(out, "Cookie: %s\r\n", wb_buffer_string(&pairs));
+	wb_buffer_release(&pairs);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the header is written (or there was none to write). */
+	return 0;
+}
+
+/*
+ * Appends what document.cookie reads on a document of a URL: the pairs of
+ * the cookies for it that are not HttpOnly ("a=b; c=d", or nothing).
+ */
+int
+net_cookie_string(
+	const struct net_url *url,
+	struct wb_buffer *out)
+{
+	int error;
+
+	/* The pairs a script may see. */
+	error = cookie_pairs(url, 1, out);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the pairs are written. */
+	return 0;
+}
+
+/*
+ * Keeps the cookie of a Set-Cookie header (or of document.cookie when
+ * from_script is set, which leaves HttpOnly cookies alone).
+ */
+static int
+cookie_store(
+	const struct net_url *url,
+	const char *header,
+	size_t length,
+	int from_script)
 {
 	struct cookie cookie;
 	struct wb_buffer path;
@@ -182,13 +276,27 @@ net_cookie_store(
 		return ENOMEM;
 	}
 
+	/* A script cannot set a cookie only HTTP may see. */
+	if (from_script && cookie.http_only) {
+		cookie_free(&cookie);
+		return 0;
+	}
+
 	/* A cookie of the same name, domain and path is replaced (or only removed when expired). */
 	for (index = 0; index < cookie_count; index++) {
 		matches = cookie_same(&cookie_jar[index], &cookie);
-		if (matches) {
-			cookie_remove(index);
-			break;
+		if (!matches)
+			continue;
+
+		/* A script cannot replace an HttpOnly cookie either. */
+		if (from_script && cookie_jar[index].http_only) {
+			cookie_free(&cookie);
+			return 0;
 		}
+
+		/* The old cookie gives way. */
+		cookie_remove(index);
+		break;
 	}
 
 	/* An expired cookie is only removed. */
@@ -208,12 +316,13 @@ net_cookie_store(
 }
 
 /*
- * Appends the Cookie header of a request to a URL ("Cookie: a=b; c=d"
- * and CR LF), when any cookie is for it.
+ * Appends the name and value pairs of the cookies for a URL, separated by
+ * "; " (only the ones a script may see when for_script is set).
  */
-int
-net_cookie_header(
+static int
+cookie_pairs(
 	const struct net_url *url,
+	int for_script,
 	struct wb_buffer *out)
 {
 	const struct cookie *cookie;
@@ -246,12 +355,13 @@ net_cookie_header(
 		if (!matches || (cookie->secure && !is_https))
 			continue;
 
-		/* "Cookie: " before the first, "; " between them. */
-		if (!written) {
-			error = wb_buffer_append_string(out, "Cookie: ");
-		} else {
+		/* A script does not see an HttpOnly cookie. */
+		if (for_script && cookie->http_only)
+			continue;
+
+		/* "; " between them. */
+		if (written)
 			error = wb_buffer_append_string(out, "; ");
-		}
 
 		/* The name (when it has one) and the value. */
 		written = 1;
@@ -261,13 +371,11 @@ net_cookie_header(
 			error = wb_buffer_append_string(out, cookie->value);
 	}
 
-	/* The end of the header line. */
-	if (error == 0 && written)
-		error = wb_buffer_append_string(out, "\r\n");
+	/* Reports a buffer that could not grow. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the header is written (or there was none to write). */
+	/* Succeeded: the pairs are written (or there was none). */
 	return 0;
 }
 

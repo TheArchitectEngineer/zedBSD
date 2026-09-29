@@ -13,7 +13,8 @@ KEILAND_BROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/main.c \
 	$(KEILAND_BROWSER_DIR)/shell/window.c \
 	$(KEILAND_BROWSER_DIR)/shell/present.c \
 	$(KEILAND_BROWSER_DIR)/shell/titlebar.c \
-	$(KEILAND_BROWSER_DIR)/shell/keys.c
+	$(KEILAND_BROWSER_DIR)/shell/keys.c \
+	$(KEILAND_BROWSER_DIR)/shell/touch.c
 
 # The pages the browser brings: the start page it opens without an argument (App Home starts it with
 # the same page) and the pages it links to.

@@ -531,6 +531,9 @@ int sh_job_has_stopped(void);
 
 /* History. */
 void sh_history_add(const char *);
+void sh_history_load(void);
+void sh_history_save(const char *);
+void sh_history_size_changed(const char *);
 int sh_fc_builtin(int, char **);
 
 /* Builtins. */

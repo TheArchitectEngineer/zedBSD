@@ -187,6 +187,8 @@ struct js_patch {
  * The code pass's state for one function: the code unit being written
  * (words, constants, handlers, labels), the registers, where names are
  * looked up, and the statements break, continue and return must leave.
+ * line and column are the source position of the expression or statement
+ * being compiled, which the next instruction is recorded at (positions).
  *
  * It lives in the arena; its vectors are malloc'd and freed when the
  * function is finished, or by js_compile after a failure (the chain of
@@ -201,6 +203,9 @@ struct js_function_compiler {
 	struct wb_vector handlers;
 	struct wb_vector labels;
 	struct wb_vector patches;
+	struct wb_vector positions;
+	uint32_t line;
+	uint32_t column;
 	uint32_t *constant_index;
 	uint32_t constant_capacity;
 	struct js_scope *scope;
@@ -243,6 +248,7 @@ struct js_binding *js_scope_resolve(const struct js_function_compiler *fc, const
 
 /* Writing code (emit.c). */
 void js_emit_begin(struct js_function_compiler *fc);
+void js_emit_at(struct js_function_compiler *fc, const struct js_node *node, uint32_t *saved_line, uint32_t *saved_column);
 void js_emit_release(struct js_function_compiler *fc);
 uint32_t js_emit(struct js_function_compiler *fc, uint32_t opcode, uint32_t operand_count, const uint32_t *operands);
 uint32_t js_emit0(struct js_function_compiler *fc, uint32_t opcode);

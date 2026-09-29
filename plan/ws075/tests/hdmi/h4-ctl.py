@@ -29,6 +29,9 @@ kernel's log (run.log, the debugcon: every record, also on a quiet boot).
                                   the tablet moves 40 pixels and PLANE_SURFLIVE is read with xp until it changes (or
                                   3 s pass); then 3 s without input count the flips the idle desktop makes.  One line
                                   per trial in latency.log and on the output
+    h4-ctl.py rate PIPE SECONDS   (ws075-p008) the flips per second of PIPE while the pointer keeps moving: the tablet
+                                  moves back and forth by 40 pixels every 8 ms for SECONDS, and PLANE_SURFLIVE is read
+                                  between the moves; one line in latency.log and on the output
     h4-ctl.py quit                ends QEMU
 """
 import json
@@ -370,6 +373,35 @@ def latency(f, pipe, count):
         print(f'latency: {len(done)}/{count} flipped, median {done[len(done) // 2]:.1f} ms, min {done[0]:.1f}, max {done[-1]:.1f}')
 
 
+def rate(f, pipe, seconds):
+    """Counts the flips of the pipe while the pointer keeps moving (the presentation rate under input)."""
+    bar = graphics_bar(f)
+    if bar is None:
+        raise SystemExit('h4-ctl: rate: no passthrough graphics BAR')
+    width, height = size()
+    flips = 0
+    moves = 0
+    last = surflive(f, bar, pipe)
+    start = time.monotonic()
+    next_move = start
+    while time.monotonic() - start < seconds:
+        now = time.monotonic()
+        if now >= next_move:
+            x = width // 2 + (40 if moves % 2 == 0 else -40)
+            tablet(f, x, height // 2, width, height)
+            moves += 1
+            next_move = now + 0.008
+        live = surflive(f, bar, pipe)
+        if live != last:
+            flips += 1
+            last = live
+    elapsed = time.monotonic() - start
+    line = f'rate: {flips} flips in {elapsed:.1f} s ({flips / elapsed:.1f}/s) with {moves} pointer moves'
+    with open(os.path.join(DIR, 'latency.log'), 'a') as log:
+        log.write(f'# rate {time.strftime("%H:%M:%S")} pipe {pipe}\n' + line + '\n')
+    print(line)
+
+
 def main():
     command = sys.argv[1]
     if command == 'watch':
@@ -391,6 +423,8 @@ def main():
         print(hmp(f, ' '.join(sys.argv[2:])))
     elif command == 'latency':
         latency(f, sys.argv[2], int(sys.argv[3]))
+    elif command == 'rate':
+        rate(f, sys.argv[2], float(sys.argv[3]))
     elif command == 'quit':
         print(qmp(f, 'quit'))
     else:

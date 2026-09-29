@@ -33,6 +33,17 @@ static int element_remove_attribute(struct vm_realm *realm, vm_value this_value,
 static int element_has_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_click(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_attribute_name(struct vm_realm *realm, const struct dom_element *element, vm_value value, struct vm_string **name);
+static int image_src_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int image_src_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int image_alt_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int image_alt_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int image_width_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int image_width_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int image_height_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int image_height_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int image_complete(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int image_natural_size(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int image_dimension(struct vm_realm *realm, vm_value this_value, const char *name, vm_value *result);
 static int element_reflect_get(struct vm_realm *realm, vm_value this_value, const char *name, vm_value *result);
 static int element_reflect_set(struct vm_realm *realm, vm_value this_value, const char *name, const vm_value *args, unsigned count);
 
@@ -102,6 +113,30 @@ static const struct bind_operation html_element_operations[] = {
  */
 const struct bind_interface bind_html_element_interface = {
 	"HTMLElement", BIND_ELEMENT, 0, NULL, html_element_attributes, html_element_operations, NULL
+};
+
+/*
+ * The attributes of HTMLImageElement.  The table is constant for the life
+ * of the program.
+ */
+static const struct bind_attribute image_attributes[] = {
+	{ "src", image_src_get, image_src_set },
+	{ "alt", image_alt_get, image_alt_set },
+	{ "width", image_width_get, image_width_set },
+	{ "height", image_height_get, image_height_set },
+	{ "complete", image_complete, NULL },
+	{ "naturalWidth", image_natural_size, NULL },
+	{ "naturalHeight", image_natural_size, NULL },
+	{ NULL, NULL, NULL }
+};
+
+/*
+ * The HTMLImageElement interface (img elements', and new Image()'s).  An
+ * image a script makes is not loaded in this pass: it is complete and
+ * has no natural size.
+ */
+const struct bind_interface bind_html_image_element_interface = {
+	"HTMLImageElement", BIND_HTML_ELEMENT, 0, NULL, image_attributes, NULL, NULL
 };
 
 /*
@@ -672,6 +707,283 @@ element_attribute_name(
 		return status;
 
 	/* Succeeded: the name is found. */
+	return 0;
+}
+
+/* Reports the src attribute, or the empty string (src). */
+static int
+image_src_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The reflected attribute. */
+	status = element_reflect_get(realm, this_value, "src", result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the attribute is reported. */
+	return 0;
+}
+
+/* Sets the src attribute (src). */
+static int
+image_src_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* The reflected attribute. */
+	*result = VM_VALUE_UNDEFINED;
+	status = element_reflect_set(realm, this_value, "src", args, count);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the attribute is set. */
+	return 0;
+}
+
+/* Reports the alt attribute, or the empty string (alt). */
+static int
+image_alt_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The reflected attribute. */
+	status = element_reflect_get(realm, this_value, "alt", result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the attribute is reported. */
+	return 0;
+}
+
+/* Sets the alt attribute (alt). */
+static int
+image_alt_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* The reflected attribute. */
+	*result = VM_VALUE_UNDEFINED;
+	status = element_reflect_set(realm, this_value, "alt", args, count);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the attribute is set. */
+	return 0;
+}
+
+/* Reports the width attribute as a whole number of pixels, 0 when it has none (width). */
+static int
+image_width_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The attribute's number. */
+	status = image_dimension(realm, this_value, "width", result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the size is reported. */
+	return 0;
+}
+
+/* Sets the width attribute to a number's text (width). */
+static int
+image_width_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* The reflected attribute. */
+	*result = VM_VALUE_UNDEFINED;
+	status = element_reflect_set(realm, this_value, "width", args, count);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the attribute is set. */
+	return 0;
+}
+
+/* Reports the height attribute as a whole number of pixels, 0 when it has none (height). */
+static int
+image_height_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The attribute's number. */
+	status = image_dimension(realm, this_value, "height", result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the size is reported. */
+	return 0;
+}
+
+/* Sets the height attribute to a number's text (height). */
+static int
+image_height_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* The reflected attribute. */
+	*result = VM_VALUE_UNDEFINED;
+	status = element_reflect_set(realm, this_value, "height", args, count);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the attribute is set. */
+	return 0;
+}
+
+/* Reports whether the image is complete: always, since an image a script makes is not loaded (complete). */
+static int
+image_complete(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* this must be an element. */
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: true. */
+	*result = VM_VALUE_TRUE;
+	return 0;
+}
+
+/* Reports the image's natural width or height: 0, since it is not loaded (naturalWidth, naturalHeight). */
+static int
+image_natural_size(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* this must be an element. */
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: no size. */
+	*result = vm_value_int32(0);
+	return 0;
+}
+
+/* Reads a size attribute's leading digits as a number of pixels (0 without digits). */
+static int
+image_dimension(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const char *name,
+	vm_value *result)
+{
+	const struct vm_string *text;
+	vm_value attribute;
+	uint16_t unit;
+	size_t index;
+	int32_t pixels;
+	int status;
+
+	/* The attribute's text. */
+	status = element_reflect_get(realm, this_value, name, &attribute);
+	if (status != 0)
+		return status;
+	text = (const struct vm_string *)vm_value_as_cell(attribute);
+
+	/* Skips the leading spaces. */
+	pixels = 0;
+	index = 0;
+	while (index < text->length) {
+		unit = vm_string_at(text, index);
+		if (unit != ' ' && unit != '\t' && unit != '\n')
+			break;
+		index++;
+	}
+
+	/* Accumulates the digits. */
+	for (; index < text->length; index++) {
+		/* The digits end at anything else. */
+		unit = vm_string_at(text, index);
+		if (unit < '0' || unit > '9')
+			break;
+
+		/* A number too large to grow further keeps its value so far. */
+		if (pixels > 100000000)
+			break;
+
+		/* One more decimal place. */
+		pixels = pixels * 10 + (int32_t)(unit - '0');
+	}
+
+	/* Succeeded: the number. */
+	*result = vm_value_int32(pixels);
 	return 0;
 }
 

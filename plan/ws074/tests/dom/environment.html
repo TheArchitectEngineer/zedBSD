@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Environment</title></head>
+<body>
+<img id="picture" src="nothing.png" alt="a picture" width="30" height="20">
+<script>
+// ws074-p077: navigator, screen, performance, location, Image and the document's plain attributes.
+// Only what every browser reports alike on a file: page is printed (not the agent, the sizes or the clock).
+// document.characterSet is UTF-8 here since the parser reads UTF-8 only in this pass.
+console.log(typeof navigator, typeof Navigator, navigator instanceof Navigator, navigator.onLine);
+console.log(navigator.appCodeName, navigator.appName, navigator.product, typeof navigator.userAgent, navigator.hasOwnProperty("onLine"));
+console.log(navigator.userAgent.indexOf(navigator.appVersion) > 0, Array.isArray(navigator.languages), navigator.javaEnabled(), navigator.webdriver);
+console.log(typeof screen.width, screen.colorDepth, screen.pixelDepth, screen instanceof Screen);
+console.log(typeof performance.now(), performance.now() >= 0, typeof performance.timing.navigationStart, performance.timeOrigin > 1.7e12);
+console.log(Array.isArray(performance.getEntriesByType("resource")), performance.mark("x") === undefined || typeof performance.mark("y") === "object");
+console.log(location.protocol, location.host, location.search, location.hash, location.href === document.URL, String(location) === location.href);
+console.log(location.pathname.slice(-16), document.location === location, location instanceof Location);
+console.log(document.compatMode, document.characterSet, document.referrer === "", document.hidden, document.visibilityState);
+console.log(window.top === window, window.parent === window, window.opener, window.devicePixelRatio > 0, typeof outerWidth);
+var image = new Image(8, 9);
+console.log(image.tagName, image.width, image.height, image.complete, image instanceof HTMLImageElement, Image.prototype === HTMLImageElement.prototype);
+var picture = document.getElementById("picture");
+console.log(picture instanceof HTMLImageElement, picture.width, picture.height, picture.alt, picture.getAttribute("src"));
+picture.alt = "changed";
+picture.width = 44;
+console.log(picture.getAttribute("alt"), picture.getAttribute("width"), picture.width);
+console.log(typeof document.cookie);
+</script>
+</body>
+</html>

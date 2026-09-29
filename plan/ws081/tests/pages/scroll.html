@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>scroll</title>
+<style>
+html { background: rgb(10, 200, 30); }
+body { margin: 0; }
+#top { height: 100px; background: rgb(220, 20, 20); }
+#long { height: 3000px; }
+#end { height: 100px; background: rgb(20, 20, 220); }
+</style>
+</head>
+<body>
+<div id="top"></div>
+<div id="long"></div>
+<div id="end"></div>
+<script>
+window.addEventListener("wheel", function (event) {
+  console.log("wheel " + event.deltaY);
+});
+</script>
+</body>
+</html>

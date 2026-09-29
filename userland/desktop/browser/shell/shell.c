@@ -16,13 +16,16 @@
  * pointer's moves, buttons, wheel and leaving, the keys with the DOM's
  * names (keys.c), and the keyboard's focus.  The view does what the input
  * means for the page (scrolling, links, the focus, the history's keys).
+ * ws081-p006: the touch screen's fingers (touch.c) scroll the page with
+ * inertia and stretch it past its ends (the view's placed scroll and
+ * overscroll), and click with taps and long presses.
  * The shell keeps its own shortcuts, which the page never sees: Ctrl+Q and
  * Ctrl+W close the window, and Ctrl+L edits the location; the titlebar's
  * controls step through the history and reload.
  *
  * The program writes lines to standard output that the guest tests read
  * (ZBROWSER READY, FRAME, LINK, NAVIGATE, TITLEBAR, CONSOLE, LOADING,
- * STOPPED, ERROR); they are its diagnostic interface.
+ * STOPPED, ERROR, TOUCH); they are its diagnostic interface.
  */
 
 #include "shell/internal.h"
@@ -41,6 +44,11 @@
  * What the window mode holds while it runs: the view, the window with its
  * titlebar and presenter, whether the view must be drawn again, and
  * whether the window is up (the view's first page is loaded before it).
+ *
+ * The fingers (touch.c, ws081-p006): their gestures and scroller (without
+ * them fingers do nothing), in how many milliseconds they want the next
+ * round (-1: none), and the number of the page shown, which each page
+ * committed moves on (a new page's scroll is taken over by the fingers).
  */
 struct shell_state {
 	struct browser_view *view;
@@ -49,6 +57,9 @@ struct shell_state {
 	struct shell_present present;
 	int dirty;
 	int ready;
+	struct shell_touch touch;
+	int touch_due;
+	unsigned long page_number;
 };
 
 static void shell_show_state(struct shell_state *state);
@@ -69,6 +80,8 @@ static void shell_load(void *context, struct browser_view *view, enum browser_lo
 static enum browser_policy shell_link(void *context, struct browser_view *view, const char *href);
 static void shell_console(void *context, struct browser_view *view, int level, const char *text, size_t length);
 static void shell_script_error(void *context, struct browser_view *view, int error);
+static void shell_touch_round(struct shell_state *state);
+static void shell_touch_pointer(struct shell_state *state, const struct shell_touch_pointer *made);
 
 /*
  * Runs the browser in a zdesktop window until it is closed.
@@ -122,6 +135,14 @@ shell_run(
 	if (error != 0) {
 		fprintf(stderr, "browser: cannot start the network: %s\n", strerror(error));
 		return 1;
+	}
+
+	/* The fingers; without memory for them they do nothing. */
+	state.touch_due = -1;
+	error = shell_touch_open(&state.touch);
+	if (error != 0) {
+		printf("ZBROWSER ERROR touch error=%d\n", error);
+		fflush(stdout);
 	}
 
 	/* The start page, read before the window opens. */
@@ -202,6 +223,8 @@ shell_run(
 		network = browser_view_timeout(state.view);
 		if (network >= 0 && (timeout < 0 || network < timeout))
 			timeout = network;
+		if (state.touch_due >= 0 && (timeout < 0 || state.touch_due < timeout))
+			timeout = state.touch_due;
 		net_count = browser_view_poll_fds(state.view, net_fds, SHELL_NET_FDS);
 		status = shell_window_dispatch(&state.window, timeout, net_fds, net_count);
 		if (status != 0) {
@@ -224,6 +247,9 @@ shell_run(
 				break;
 			shell_titlebar_input(&state, &titlebar_event);
 		}
+
+		/* The fingers: the scroll they move and the clicks they make. */
+		shell_touch_round(&state);
 
 		/* The view's work: the network, the page's timers, and the layout they changed. */
 		browser_view_process(state.view, net_fds, net_count);
@@ -545,9 +571,10 @@ shell_release(
 	if (state->window.display != NULL)
 		shell_window_close(&state->window);
 
-	/* The view, with its page, its history and its network. */
+	/* The view, with its page, its history and its network, and the fingers that moved it. */
 	browser_view_destroy(state->view);
 	state->view = NULL;
+	shell_touch_close(&state->touch);
 }
 
 /* The view's callback: its content changed and is drawn in the next frame. */
@@ -593,6 +620,9 @@ shell_committed(
 	state = context;
 	if (state->ready)
 		shell_show_state(state);
+
+	/* Another page, whose scroll the fingers take over. */
+	state->page_number++;
 }
 
 /* The view's callback: a load started (LOADING), was stopped (STOPPED) or failed (ERROR). */
@@ -662,4 +692,91 @@ shell_script_error(
 	UNUSED_PARAMETER(view);
 	printf("ZBROWSER ERROR script error=%s\n", strerror(error));
 	fflush(stdout);
+}
+
+/*
+ * Runs the fingers for one round (ws081-p006): gives them the page's scroll
+ * and range, their events and the time, places the scroll and the
+ * overscroll they set, and gives the view the clicks they made.  With no
+ * finger down and nothing gliding there is nothing to do.
+ */
+static void
+shell_touch_round(
+	struct shell_state *state)
+{
+	struct shell_touch_pointer made;
+	double largest_x;
+	double largest_y;
+	double scroll;
+	double overscroll;
+	unsigned index;
+	int moved;
+	int taken;
+	int error;
+
+	/* Nothing touches and nothing glides. */
+	if (state->window.touch_count == 0U && state->touch_due < 0)
+		return;
+
+	/* The page as it is: its scroll, how far it scrolls, and the view's height. */
+	error = browser_view_scroll_range(state->view, &largest_x, &largest_y);
+	if (error != 0)
+		largest_y = 0.0;
+	shell_touch_layout(&state->touch, state->page_number, browser_view_scroll_y(state->view), largest_y,
+	    (double)state->present.extent.height);
+
+	/* The fingers' events. */
+	for (index = 0; index < state->window.touch_count; index++)
+		shell_touch_event(&state->touch, &state->window.touches[index]);
+
+	/* The queue is empty again: the window fills it from the next read. */
+	state->window.touch_count = 0U;
+
+	/* Time moves on for them, and they say when they want the next round. */
+	state->touch_due = shell_touch_tick(&state->touch, shell_touch_clock());
+
+	/* The scroll and the stretch they set (the view asks to be drawn again when they change). */
+	moved = shell_touch_scroll(&state->touch, &scroll, &overscroll);
+	if (moved) {
+		(void)browser_view_scroll_to(state->view, 0.0, scroll);
+		(void)browser_view_set_overscroll(state->view, 0.0, overscroll);
+	}
+
+	/* The pointer's events they made, in order. */
+	for (;;) {
+		taken = shell_touch_take_pointer(&state->touch, &made);
+		if (!taken)
+			break;
+		shell_touch_pointer(state, &made);
+	}
+}
+
+/* Gives the view one pointer event the fingers made: the pointer moves there, or a button is pressed or let go. */
+static void
+shell_touch_pointer(
+	struct shell_state *state,
+	const struct shell_touch_pointer *made)
+{
+	uint32_t modifiers;
+	int pressed;
+	int error;
+
+	/* The modifiers held on the keyboard. */
+	modifiers = shell_key_modifiers(state->window.modifiers);
+
+	/* A motion, or a button. */
+	if (made->kind == SHELL_TOUCH_POINTER_MOTION) {
+		error = browser_view_pointer_move(state->view, made->x, made->y, modifiers);
+	} else {
+		pressed = 0;
+		if (made->kind == SHELL_TOUCH_POINTER_PRESS)
+			pressed = 1;
+		error = browser_view_pointer_button(state->view, made->x, made->y, made->button, pressed, modifiers);
+	}
+
+	/* A failure of the page's scripts or its layout is reported and the window goes on. */
+	if (error != 0) {
+		printf("ZBROWSER ERROR touch-click error=%s\n", strerror(error));
+		fflush(stdout);
+	}
 }

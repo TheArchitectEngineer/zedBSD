@@ -2,12 +2,14 @@
 
 # ws081-p006: ブラウザの慣性の scroll と touch の入力（browser の shell）
 
+1 回目の試み（2026-09-29）は、下の「確かめたこと」の時点で API が無かったので uncleared で止めた。2 回目は main の判断（同日）で API を足し、cleared にした（下の「2 回目」）。
+
 <!-- awesome-plan-current:start -->
-Status: uncleared（2026-09-29、WS081 の作業用サブエージェント。実装に入る前に止めた: 依存する WS074 の `browser.h` の API が main に無い）
+Status: cleared（2026-09-29、WS081 の作業用サブエージェント。2 回目の試み。main の判断で view の API（`browser.h` version 2）を足し、shell に wl_touch・慣性の scroll・rubber band・tap と長押しの click を入れた。host 試験と QEMU の guest 試験（main の pen の image）。実機は未実施）
 Disposition: normal
 Parent: [WS081](../ws.md)
-Queue: main の指示（2026-09-29 夕「p010 → p015 → p006」、同日「要る WS074 の出力が main に無ければ uncleared で終え、要る API を報告」）。Awesome Plan の Queue の item ではない
-Resume point: WS074 が下の「要る API」を `include/libc/browser.h` に入れて main に merge された後。shell（`userland/desktop/browser/shell/`）に wl_touch と libkeiland の scroller・gesture を入れる
+Queue: main の指示（2026-09-29 夕「p010 → p015 → p006」、同日「要る API の 1〜3 を WS074 の view の側に足し、shell で p006 を実装」）。Awesome Plan の Queue の item ではない
+Resume point: なし（入れ子の scroller の `scroll_by`、頁の script への TouchEvent（上の 4・5）は今回入れない。WS074 の計画に合わせて別の Phase）
 <!-- awesome-plan-current:end -->
 
 ## 目的
@@ -68,3 +70,68 @@ shell の側（WS081 p006 で行うこと）: wl_touch の bind、libkeiland の
 
 - 上の 1〜3 を WS074 に依頼する（main が WS074 に依頼する、2026-09-29 の指示）。4・5 は WS074 の計画（入れ子の scroller・TouchEvent）と合わせて決める。
 - 代わりの案（意見としては取らない）: 今の `browser_view_wheel` だけで慣性を作る。rubber band は無く、glide の間に script へ偽の WheelEvent が出続ける。
+
+## 2 回目（2026-09-29）: main の判断
+
+main の判断: 要る API の 1〜3 を、この Phase で WS074 の view の側に足す。
+- 足す場所は `include/libc/browser.h` と `userland/desktop/browser/view/` で、`BROWSER_API_VERSION` を上げる。
+- WheelEvent は出さず、範囲に抑え、redraw の callback を呼ぶ。overscroll は内容をずらし、隙間は頁の背景色で埋める。
+- js・layout・loader の内部には触れない。4・5 は入れない。WS074 の plan は変えない（main が WS074 に知らせる）。
+
+### 足した API（WS074 の側、`BROWSER_API_VERSION` 1 → 2）
+
+| API | 内容 |
+| --- | --- |
+| `int browser_view_scroll_to(view, x, y)` | 頁の根の scroll を px で置く。layout を最新にしてから `[0, 最大]` に抑える（`view_clamp_scroll`）。変わったら redraw の callback を呼ぶ。WheelEvent は出さない。頁が無ければ ENOENT。横の scroll は engine に無いので x は使わない |
+| `int browser_view_scroll_range(view, &largest_x, &largest_y)` | 今の layout の文書の高さ − view の高さ（0 以上）。横は 0。頁が無ければ ENOENT と 0 |
+| `int browser_view_set_overscroll(view, dx, dy)` | scroll を変えずに、描く時の scroll を `scroll_y − dy` にする。内容は dy だけ下へずれ、隙間は paint がはじめに塗る canvas の色（頁の背景）になる。±view の高さに抑える。変わったら redraw。新しい頁では 0 に戻る。pointer の位置の計算には入れない（一時的な見た目）。dx は使わない |
+
+- 実装は `view.c` だけ（`struct browser_view` に `overscroll_y`、描画の 4 か所で `view_drawn_scroll`）。paint・layout・js・loader・page は変えていない。
+- 頁への `scroll` event は出していない。engine は今、wheel・key の scroll でも `scroll` event を出さない（page の側に出す手段が無い）。
+  出すには page・js の変更が要るので、今回の範囲の外（WS074 へ）。
+
+### shell の側（WS081）
+
+| file | 内容 |
+| --- | --- |
+| `userland/desktop/browser/shell/touch.h`・`touch.c`（新） | Wayland と engine に依存しない（host で試験できる）。libkeiland の gesture・scroller。`shell_touch_layout`（頁の番号、scroll、範囲、view の高さ。外で変わった scroll・別の頁は引き取り、glide を止め、伸びを 0 に）、`_event`、`_tick`、`_scroll`（範囲の中の scroll と、範囲の外の分を overscroll に）、`_take_pointer`、`_clock` |
+| 同上の動き | 一本指・二本指（重心）の drag で scroll、flick で glide、端の先は rubber band（scroller の f⁻¹）で伸びてばねで戻る。glide を tap で catch（click しない）。tap は primary の click（motion・press・release）。長押しを動かさずに離すと secondary の click。長押しの後に動かすと scroll（click なし）。compositor の cancel は glide なし。`ZBROWSER TOUCH …` の log（stdout） |
+| `shell/window.c`・`internal.h` | seat の TOUCH の capability で `wl_touch` を bind。down・up・motion・cancel を touch の queue（256）に入れる。queue があれば poll を待たない。閉じる時に `wl_touch_destroy` |
+| `shell/shell.c` | 毎回の round（`shell_touch_round`、指が無く glide も無ければ何もしない）で、`browser_view_scroll_range`・`browser_view_scroll_y` を指に渡し、event を渡し、tick し、`browser_view_scroll_to`・`browser_view_set_overscroll` で置き、作った pointer の event を `browser_view_pointer_move`・`_button` で渡す。tick の待ちを loop の timeout に入れる。`committed` の callback で頁の番号を進める |
+| `userland/desktop/browser/Makefile` | `shell/touch.c` |
+
+### 確認（実行したもの）
+
+| 確認 | 結果 |
+| --- | --- |
+| `sh plan/ws074/tests/host-build.sh plain`・`asan`（engine と WS074 の host 試験） | rc=0、warning 0 |
+| WS074 の回帰（plain）: `golden-dumps.sh dom style layout paint`、host-view・host-form・host-link・host-position・host-text | golden 76/76、host-view 59/59、host-form 28/28、host-link 22/22、host-position 19/19、host-text 20/20（全て 0 failed） |
+| 同上（ASan、`ASAN_OPTIONS=detect_stack_use_after_return=0`） | golden 76/76、host-view 59/59、host-form 28/28、host-link 22/22、host-position 19/19 |
+| [run-browser-scroll.sh](../tests/run-browser-scroll.sh)（[host-browser-scroll.c](../tests/host-browser-scroll.c)、[pages/scroll.html](../tests/pages/scroll.html)。engine の host の object と link）、plain と ASan | 25 checks、0 failed |
+| 同上の中身 | 頁が無いと ENOENT。範囲は 3200 − 300 = 2900。`scroll_to(1234.5)` はその位置で、redraw を呼び、WheelEvent は出ない（比較の wheel は出る）。同じ位置は redraw しない。上・下の外は端に抑える。端の青い block が描かれる。overscroll 50 で上 50 px が canvas の緑、赤い block が 50 px 下へ、scroll は不変。末尾で −40 は下に canvas。上限は view の高さ。新しい頁では 0 |
+| [run-browsertouch.sh](../tests/run-browsertouch.sh)（[host-browsertouch.c](../tests/host-browsertouch.c)、touch.c と libkeiland、`-Wconversion -Werror`）、plain と ASan | 21 checks、ok |
+| 同上の中身 | flick（3000 px/s）で進み、glide して fling の距離（±15%）で止まり、伸び・click は無い。上端で 200 px 引くと指より少なく伸び（30〜190）、離すとばねで 0。末尾で逆向きに伸び、戻る。末尾への fling は伸びてから末尾で止まる。tap は primary の click（その点）で scroll しない。glide を止めた tap は click しない。長押しを離すと secondary の click、長押しの後の drag は scroll で click なし。二本指は重心で scroll。外で置かれた scroll・同じ scroll の別の頁は glide を止め、指があれば新しい scroll から drag を続ける。cancel は glide なし |
+| mutation（scratchpad の script、10 個: overscroll の計算、catch の tap、長押し、長押しの後の drag、外の scroll の検出、頁の番号、fling の速度、repress、範囲の上限 ほか） | 10 個すべてが FAIL（頁の番号の mutation は、同じ scroll の別の頁の試験を足して検出） |
+| `make -j16 ZEDBSD_CONFIG=plan/ws079/tests/config-amd64-pen.mk BUILD=build/amd64 build/amd64/bin/browser build/amd64/dynamic/libbrowser.so`（`-Werror`） | rc=0、`warning:`・`error:` 0 |
+| [p006-guest.sh](../tests/p006-guest.sh)（worktree の `build/ws081-main-pen.img` の guest に compositor・browser・libbrowser・libgif-compat・libkeiland 等・touchinject と [pages/touch.html](../tests/pages/touch.html) を SSH で置く。browser 900x640） | **PASS**（ok 13 項目） |
+| 同上の中身 | 頁の上端に赤い block（画面の pixel）。tap で `mousedown button=0`・`click button=0`。長押しを離すと `ZBROWSER TOUCH context`・`mousedown button=2`。上への flick（1471 px/s）で離した後に 512 px glide、頁の wheel event は 0。下への flick で上端に戻る（`rest scroll=0`）。上端で 200 px 引いて保つと、画面の上に canvas の緑が見え（stretched）、離すと `rest scroll=0` で赤い block が上端に戻る。compositor の ERROR/FAILED 0、`ZBROWSER ERROR` 0 |
+| `plan/tools/style-check.py`・`plan/ws081/temp/style-extra.py`（view.c・browser.h・shell の touch.c・touch.h・shell.c・window.c・internal.h、host 試験 2 つ） | この Phase の行の指摘 0。window.c:179 の joined-check、view.c:519・554 の return-call は既存の行 |
+
+画面（QEMU）は worktree の `build/ws081-shots/ws081-p006-20260929-*.png` です（元は `build/ws081-p006-guest/`）。
+
+- `-start.png`: 開いた所（上端に赤い block）
+- `-flicked.png`: flick と glide の後
+- `-stretched.png`: 上端の先へ引いて保った所（上に canvas の緑が約 100 px、赤い block が下へずれている）
+- `-sprung.png`: 離してばねで戻った所
+
+### 未実施・制限
+
+- 実機は未確認（p007）。
+- WS074 の guest の試験（browser-p056 等、browser の image）は流していない。shell の今までの入力の経路は変えていない。回帰は host の試験だけ。
+- 頁への `scroll` event は出ない（engine の既存の制限。page・js の変更が要る）。
+- 入れ子の scroller（`overflow: auto`）と scroll chaining（上の 4）、TouchEvent・PointerEvent・`touch-action`（上の 5）は入れていない。
+  指は常に頁の根を scroll し、頁の script は指の tap を mouse の event として受ける。
+- 横の scroll は engine に無い（x・dx は使わない）。二本指の拡大（頁の zoom）は無い。
+- overscroll の間の pointer の位置は、ずらした見た目を考えない（一時的な見た目なので）。
+- guest の log では、速い flick で離した時の scroll が指の動きより小さい（drag の resampling の遅れ。fling が残りを運ぶ）。逆向きの flick の始まりに 2 px 戻る記録が 1 件ある（`drag scroll=555` → `release scroll=557`）。手触りの確認は p007 の実機で行う。
+- boot test は main に依頼する（subagent は image を build しない）。

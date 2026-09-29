@@ -36,6 +36,9 @@
 #ifndef DRIVERS_GPU_I915_IRQ_H
 #define DRIVERS_GPU_I915_IRQ_H
 
+#include <kern/lock.h>
+#include <kern/waitq.h>
+
 #include <stdint.h>
 
 struct i915_mmio;
@@ -193,6 +196,23 @@ struct i915_irq_dev {
 	 */
 	volatile unsigned handler_entries, handler_exits;
 
+	/*
+	 * Where a thread waits for the engines' next interrupt.
+	 *
+	 * The handler wakes the queue on every user interrupt (the final
+	 * breadcrumb of a request) and every context switch (new entries in
+	 * the context status buffer), so the request worker sleeps until its
+	 * request can have ended instead of polling.  engine_lock is the
+	 * queue's condition lock.  Install prepares both before the handler is
+	 * attached and sets engine_wait_ready; they stay for the device's life.
+	 */
+	struct spinlock engine_lock;
+	struct wait_queue engine_waitq;
+	int engine_wait_ready;
+
+	/* How many engine interrupts woke the queue. */
+	volatile unsigned engine_wakeups;
+
 	/* drv_i915_synchronize_irq() calls and the ways they failed. */
 	unsigned sync_calls, sync_timeouts, sync_time_faults;
 
@@ -208,6 +228,8 @@ struct i915_irq_dev {
 int drv_i915_irq_install(struct i915_irq_dev *irq);
 void drv_i915_irq_uninstall(struct i915_irq_dev *irq);
 int drv_i915_synchronize_irq(struct i915_irq_dev *irq);
+uint64_t drv_i915_irq_engine_sequence(struct i915_irq_dev *irq);
+int drv_i915_irq_engine_wait(struct i915_irq_dev *irq, uint64_t observed, unsigned ticks);
 
 void drv_i915_irq_reset(struct i915_irq_dev *irq);
 void drv_i915_irq_postinstall(struct i915_irq_dev *irq);
