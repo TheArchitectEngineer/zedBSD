@@ -19,6 +19,7 @@ exited with, so that a caller can treat it as the command itself.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import socket
 import sys
@@ -86,8 +87,8 @@ def login(console: Console, user: str) -> None:
 	console.read_until(re.compile(r"[Pp]assword"), timeout=30.0)
 	console.forget()
 
-	# The account has no password; the empty line is the answer to the ask.
-	console.send("")
+	# The password is the account's name (2026-09-29: root is root, kei is kei), or ZEDBSD_GUEST_PASSWORD.
+	console.send(os.environ.get("ZEDBSD_GUEST_PASSWORD", user))
 	console.read_until(PROMPT, timeout=60.0)
 	console.forget()
 

@@ -8,10 +8,12 @@
 /*
  * The choice of the resident node's output (ws075-p012).
  *
- * The resident node has one display.  By default it is the eDP panel; the
- * boot parameter display=hdmi makes it the HDMI display of DDI B when a
- * sink is connected at the device start, so a demonstration shows one
- * full screen on an external monitor while the panel stays dark.  The
+ * The resident node has one display.  An external display found at the
+ * device start comes first: by default (no display=, display=auto or
+ * display=hdmi) it is the HDMI display of DDI B when a sink is connected,
+ * so the machine shows one full screen on the external monitor while the
+ * panel stays dark, and the eDP panel otherwise (2026-09-29 user decision).
+ * display=edp (or display=panel) keeps the panel even with a sink.  The
  * HDMI output runs on pipe B in DVI mode (no infoframes, no audio): the
  * combination the HDMI-B test scenario proved on this machine.
  *
@@ -156,8 +158,9 @@ static uint32_t i915_output_cvt_vsync(uint32_t width, uint32_t height);
  * Chooses the output of the resident node from display= and the HDMI sink
  * connected now.
  *
- * Anything but display=hdmi with a connected sink whose mode the WRPLL
- * can serve leaves the panel as the output; the reason is logged.
+ * Without display=edp or display=panel, a connected sink whose mode the
+ * WRPLL can serve is the output; anything else leaves the panel as the
+ * output, and the reason is logged.
  */
 void
 drv_i915_display_output_select(
@@ -173,17 +176,18 @@ drv_i915_display_output_select(
 	/* The panel until HDMI is chosen and proven. */
 	kern_memset(&display->output, 0, sizeof(display->output));
 
-	/* display= names the output; without it, or with auto, the panel is it. */
+	/* display=edp and display=panel keep the panel; without display=, auto and hdmi look for the external display first. */
 	parameters = kern_boot_parameters_current();
 	wanted = kern_boot_parameters_value(parameters, KERN_BOOT_PARAMETER_DISPLAY);
-	if (wanted == NULL) {
-		kern_logf("i915: display output: eDP panel (no display=, the default)\n");
+	if (wanted == NULL)
+		wanted = "auto";
+	compared = kern_strcmp(wanted, "edp");
+	if (compared == 0) {
+		kern_logf("i915: display output: eDP panel (display=%s)\n", wanted);
 		return;
 	}
-
-	/* display=auto is the panel too. */
-	compared = kern_strcmp(wanted, "hdmi");
-	if (compared != 0) {
+	compared = kern_strcmp(wanted, "panel");
+	if (compared == 0) {
 		kern_logf("i915: display output: eDP panel (display=%s)\n", wanted);
 		return;
 	}
@@ -193,7 +197,7 @@ drv_i915_display_output_select(
 	error = i915_output_hdmi(display, &reason);
 	if (error != 0) {
 		kern_memset(&display->output, 0, sizeof(display->output));
-		kern_logf("i915: display output: eDP panel (display=hdmi, but %s: rc=%d)\n", reason, error);
+		kern_logf("i915: display output: eDP panel (display=%s, but %s: rc=%d)\n", wanted, reason, error);
 		return;
 	}
 

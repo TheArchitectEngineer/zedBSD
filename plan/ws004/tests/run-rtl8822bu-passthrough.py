@@ -336,7 +336,7 @@ def main():
         start = len(guest.raw)
         guest.send('root')
         guest.wait('Password:', start)
-        guest.send('')
+        guest.send('root')
         guest.wait(r'root@[^\s]*:[^\n]*\$ ?$', start)
         emit('logged-in')
         start = len(guest.raw)

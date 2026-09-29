@@ -38,7 +38,7 @@ def main() -> int:
 			guest.wait(r"login: *$", 300)
 			guest.send("root")
 			guest.wait(r"Password:", 30)
-			guest.send("")
+			guest.send("root")
 			guest.wait(r"[#$] *$", 60)
 			for command, label in RUNS:
 				guest.send("clear; wakebench " + command)

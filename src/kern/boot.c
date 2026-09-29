@@ -322,7 +322,7 @@ kern_boot_parameters_parse(
 	return 0;
 }
 
-/* Checks the word of kmsg= (quiet or console), login= (graphical or console) or display= (hdmi or auto). */
+/* Checks the word of kmsg= (quiet or console), login= (graphical or console) or display= (auto, hdmi, edp or panel). */
 static int
 parameter_word(
 	enum kern_boot_parameter_key key,
@@ -332,11 +332,15 @@ parameter_word(
 	int console;
 	int other;
 
-	/* display= takes the automatic choice (the panel) or HDMI. */
+	/* display= takes the automatic choice (the external display, then the panel), HDMI, or the panel (edp, panel). */
 	if (key == KERN_BOOT_PARAMETER_DISPLAY) {
 		other = parameter_text_is(value, length, "auto");
 		if (!other)
 			other = parameter_text_is(value, length, "hdmi");
+		if (!other)
+			other = parameter_text_is(value, length, "edp");
+		if (!other)
+			other = parameter_text_is(value, length, "panel");
 		if (!other)
 			return EINVAL;
 

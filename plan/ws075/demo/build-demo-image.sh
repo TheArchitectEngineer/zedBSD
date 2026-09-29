@@ -4,7 +4,7 @@
 # (plan/ws035/demo/apps.conf: Files, Notes, Terminal, PDF Viewer, Browser, Model viewer, Gears, X terminal), and the fonts and the
 # wallpaper, which are not in git (build/ws035-fonts/, build/ws035-wallpaper/).  The demonstration's accounts
 # (ws035-p120, plan/ws035/demo/demo-accounts.sh): the person kei, shown as "Kei", logs in without a password (Enter
-# at the greeter and at the lock screen); root has a password (DEMO_ROOT_PASSWORD, or a random one in BUILD/demo-accounts/root-password).  sessiond waits for the i915's GPU node while the kernel reports the device still attaching
+# the passwords are root and kei); kei is logged in by itself at boot.  sessiond waits for the i915's GPU node while the kernel reports the device still attaching
 # (hw.gpu.attaching, BUG-092).
 #
 #   plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough] [MAKE ARGUMENTS...]     (default build/demo-hdmi)

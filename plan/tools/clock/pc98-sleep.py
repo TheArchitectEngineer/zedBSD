@@ -120,7 +120,7 @@ def main() -> int:
 			guest.wait(r"login: *$", 300)
 			guest.send("root")
 			guest.wait(r"Password:", 30)
-			guest.send("")
+			guest.send("root")
 			guest.wait(r"[#$] *$", 60)
 			timings = {}
 			for label, seconds in (("base", 0), ("sleep", args.sleep)):

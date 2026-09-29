@@ -195,8 +195,11 @@ CONFIG_DRIVER_PCI_UHCI ?= y
 CONFIG_DRIVER_PCI_EHCI ?= y
 CONFIG_DRIVER_PCI_XHCI ?= y
 CONFIG_DRIVER_PCI_NVME ?= y
-CONFIG_DRIVER_PCI_VENUS ?= n
-CONFIG_DRIVER_PCI_I915 ?= n
+# The GPU drivers are on by default where they build (amd64), so the default
+# image starts the desktop: Venus on QEMU, the i915 on Intel machines
+# (2026-09-29 user decision).
+CONFIG_DRIVER_PCI_VENUS ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
+CONFIG_DRIVER_PCI_I915 ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 # HD Audio is on by default where its driver builds (amd64); a config written
 # by the menu names it explicitly.
 CONFIG_DRIVER_PCI_HDA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
