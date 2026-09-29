@@ -193,8 +193,8 @@ N=0 になったら実装をまとめて計画（master・ws.md・Future Work・
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
 | 実機の image `build/demo-lcd8` の確認（LCD の takeover、10 app の軽さ、Files → Image Viewer・Text Editor、Settings、デスクトップの icon、Terminal の角、Notes の全画面を解く、USB マウス・sh の履歴・プロンプトの `~`） | デモ | ユーザーが試験 |
-| WS075 p023: compositor の panel.frag の分岐の中の ALU を飛ぶ（見積もり 1 run 8.8 → 4.9 ms）。すりガラスは残す案（ユーザーの判断待ち） | 窓が多いときの軽さ | p023 の計測済み |
-| WS035: BUG-115（p072 の errno=5）、p135（暗い壁紙の上の glass の文字、すりガラスの判断の後）、ぼかしの pass（約 80 ms） | Keiland | 各 ticket |
+| WS075 p023: compositor の panel.frag の分岐の中の ALU を飛ぶ（見積もり 1 run 8.8 → 4.9 ms）。すりガラスは残す（2026-09-30 ユーザーの決定） | 窓が多いときの軽さ | p023 の計測済み |
+| WS035: BUG-115（p072 の errno=5）、p135（暗い壁紙の上の glass の文字、すりガラスを残すと決まったので再開できる）、ぼかしの pass（約 80 ms） | Keiland | 各 ticket |
 | WS073: BUG-030 の受け入れの残り（KVM 2×20・boot test）、BUG-116（EP0 の event の取りこぼし、BUG-036 と同じ系統か） | 安定性 | phase041 |
 | WS094 p004 の残り（保存した場所への配置の guest の確認・回帰・boot test）→ p005〜p007 | デスクトップの icon | phase004 の Resume point |
 | WS090 p004（窓の土台と Text Editor の libkeiui への移行、文字の編集の touch） | 共通の部品 | p003 cleared |
@@ -297,6 +297,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | デモに必須の追加（2026-09-29 夜） | ユーザーの回答: 新しい要望のうちデモ（10/17）に必須は「画像 viewer と text editor」（WS091・WS092、Files からの起動 WS093 を含む）。WS090（widget の library）・WS094（desktop の icon）・WS095（IME）はデモに必須ではない。窓の縁の resize は四隅に加えて辺も入れた（ws035-p128、設計の「枠と角＝resize」どおり） | WS091〜WS093、WS035 |
 | デモまでの進め方（2026-09-29 夜） | ユーザー:「実は、すでにデモに耐えられるだけの完成度にはなっています。…いちおう、当日までOSCでのデモという目標は掲げたままにします。まだ当日まで時間があるので、新規実装をどんどん行って、デモの1週間前くらいから、バグ修正とデモ実機での調整のみの期間に入ろうかなと思っています。」→ fg010 は保つ。**2026-10-10 ごろまでは新規実装**（デモに必須でない WS090・WS094・WS095・WS080 等も進めてよい）、**2026-10-10 ごろ〜10-17 は bug の修正と実機（5330）での調整だけ**（新しい機能は入れない） | WS の優先順位 |
 | 文字の編集の touch（2026-09-29 夜） | ユーザー:「スクロールは2本指にするのと、共通部品にしましょう。」（Text Editor の touch の選択について）→ 文字を編集する view（Text Editor・text field）では 1 本指の drag を選択、scroll を 2 本指にし、WS090 の共通の部品（libkeiui）で作って Text Editor へ入れる。Files・Image Viewer などの 1 本指の pan は変えない（main の解釈） | WS090、WS092 |
+| compositor の速さとすりガラス（2026-09-30） | ws075-p023 の実機の計測（10 app）: すりガラスを切っても compositor の 1 run は縮まず（8.8 → 9.2・8.9 ms）、分岐の中の ALU を飛ぶと 4.9 ms の見込み。ユーザー:「分岐の中の計算を飛ばす、にしますので記録しておいてください。」→ すりガラスは残し、WS075 p023 で panel.frag の分岐の中の ALU を飛ぶ実装をする。WS035 p135（暗い壁紙の上の glass の文字）はすりガラスを残す前提で再開できる | WS075、WS035 |
 | ファイルピッカー（2026-09-29 夜） | ユーザー:「テキストエディタのファイルピッカーは、KeiのUIライブラリに入れるのがいいと思いました。」→ Open・Save As の chooser を app ごとに持たず、共有の library（今は libkeiland、WS090 の最初の部品）に置く。作るのは WS092 のエージェント、WS091（画像 viewer）・WS089（Settings）・Notes・PDF Viewer が順に使う | WS090、WS092、WS091 |
 | サブエージェントの運用（2026-09-29 夕） | ユーザー:「サブエージェントを使って作業します。N=6で、6エージェントを起動します。メインエージェントであるあなたは、サブエージェントに依頼して、結果を受け取ってマージする、プランナーです。サブエージェントは、5時間の利用制限に到達したときに強制終了されてしまうので、そのときに作業内容が失われます。そこで、こまめにメインエージェントに依頼して、マージを行います。また、強制終了した場合もサルベージ可能なように、作業ディレクトリを構成します。5時間制限の残り時間と使用率から、N=0からN=6の間で調整していきます。サブエージェントにはラップアップを依頼することで、キリのいいところで終了が可能です。」→ worktree は固定の path と branch（`.claude/worktrees/wsNNN-<名前>`・`wt/wsNNN`、前の枠の 2 つは元の path）、build が通るたびに WIP commit、1 回の依頼は 1 Phase、終わるたびに main が merge して同じエージェントに続きを依頼、強制終了は branch と未 commit の差分から回収 | queue.md |
 | サブエージェントの effort（2026-09-29 夜） | ユーザー:「いくつかのエージェントは、Opus 5.5のMidで動かすように、エージェント設定を変更したいです。明示的にHighのままにしたいのは、i915、Keilandデスクトップ (WS035）、カーネル、バグフィックス、あたりです。そのほかは、特にブラウザは、Midにしたいです。これは試行回数が大きいですからね。」→ `.claude/agents/phase-runner-mid.md`（effort: medium）を足した。High（`phase-runner`）: i915（WS075）・kernel・bug の修正（Keiland の bug を除く）。Mid（`phase-runner-mid`）: Keiland のデスクトップ（WS035、その bug を含む。2026-09-29 ユーザー「KeilandのサブエージェントもMidにします。」）・touch（WS081、同日「WS081もMidにします。」）・ブラウザ（WS074）・アプリ（WS089・WS091・WS092）・IME（WS095）ほか。走っているエージェントは次の Phase の区切りで Mid の新しいエージェントに引き継ぐ | queue.md |
