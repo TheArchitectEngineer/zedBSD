@@ -82,3 +82,11 @@ image の draw でも 8 回の sampler の message を出す。Venus（host の 
 `ctl`（apps8 の click）が **RPS の agent の QEMU**（共有の `~/bigbang/h4`）に届いた（20:37〜20:40 頃、App Home の app を開いた）。
 対策: start は lock を得たら OUTDIR を `/tmp/i915-h4-owner` に書き、`ctl`・`fetch`・`stop` はこの tree の run が lock を持つときだけ動く
 （持たない `stop` は自分の待ちだけを終える）。start を timeout で括らない（script の説明に書いた）。
+
+## 計り直し（2026-09-29、ws075-p021 の後）
+
+10 app の desktop（Gears が回る）: 8.1 flip/s・latency 中央値 31.5 ms。engine は 57% 塞がり（compositor 49%・1 run 8.5 ms、X server 5%、
+zgears 2%）、CPU は約 60% が idle。compositor の frame は自分の GPU の時間（run あたり 8.5 ms × frame あたり数 run）でほぼ決まり、同期の往復の
+待ち（他の client の batch の後ろ）は小さい。非同期化で縮むのは compositor の CPU と GPU の重なりの分だけの見込み（推測）。
+次の候補（新しい Phase、main の判断）: compiler の段 2（分岐の中の ALU を飛ぶ）か encoder の scoreboard の直列の緩和（send の結果を
+使う直前まで待たない）。どちらも compositor の GPU の時間を直接縮める。
