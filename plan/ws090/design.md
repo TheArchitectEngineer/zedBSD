@@ -151,6 +151,25 @@ void kui_window_redraw(struct kui_window *window);       /* 次の frame で lis
 - 動いている間（glide・rubber band）は `kui_ui_end` が 1 を返し、窓は次の frame を描く（app に timer の義務は無い）。
 - Terminal（行の単位の scroll）と Notes（ペンと 2 本指の区別）は自分の Vulkan で描くので、scroll の model（`kui_scroll` の位置と慣性、描画なし）だけを使う。
 
+## 6.1 文字を編集する view の touch（`kui_text_touch`、2026-09-29 ユーザー）
+
+ユーザーの判断（main 経由）「スクロールは2本指にするのと、共通部品にしましょう。」→ 文字を編集する view（Text Editor の本文、text field）では、
+**1 本指の drag は選択、scroll は 2 本指**。これを libkeiui の共通の部品にする。Files・Image Viewer・PDF Viewer・list の 1 本指の pan は変えない（main の解釈）。
+
+| 指の動き | 意味 |
+| --- | --- |
+| tap | caret を置く（選択を消す）。glide 中の tap は止めるだけ |
+| double tap | 語を選ぶ |
+| 1 本指の drag | 押した所から選択を広げる。view の上端・下端（field は左右の端）から 24 px の内に入ると、その距離に比例して自動で scroll |
+| 2 本指の drag | scroll（`kui_scroll` の慣性と rubber band、2 本の重心）。2 本指の判定は drag の始まり（8 px 動いた時）の指の数。1 本指で選択を始めた後に 2 本目が来ても選択のまま |
+| long press（500 ms、動かない） | context menu（今の Text Editor と同じ）。その後に動かしても何もしない |
+| つまみ | **作る**（決定）。touch で選択した時だけ、選択の両端に小さな丸（直径 12 px、accent）を出し、その丸（当たりは 44 px の円）を drag すると端を動かす。pointer か key で選択を変えると消える。1 本指の drag が選択になったので、範囲を後から直す手段として要る |
+
+- 部品の形: `struct kui_text_touch` を view が持ち、view は「点 → 文字の位置」「位置 → caret の矩形」の 2 つの関数を渡す（Text Editor の layout と
+  field の両方が満たせる形）。結果は caret・選択の範囲・context menu の要求・scroll の量として返す。
+- 作る Phase: p003（入力の層と scroll と一緒に）。Text Editor へ入れるのは p004（窓の移行と一緒に）、text field（`kui_field`）は p005。
+- design.md §2.1 の旧 J10（textedit の「選択のつまみは作らない」、plan/ws092/design.md）はこの判断で置き換わる。
+
 ## 7. file chooser の移動
 
 - `keiland_file_chooser_*` を `kui_file_chooser_*` として libkeiui に移す（API の形は同じ、options と listener も同じ意味）。中身は部品
@@ -172,9 +191,9 @@ void kui_window_redraw(struct kui_window *window);       /* 次の frame で lis
 
 | 順 | 対象 | 理由 |
 | --- | --- | --- |
-| 1 | Settings（描画の層） | すでに Files の canvas・text・icons を source のまま共有している（F-038）。source を 1 つにする最初の使い手。**WS089 が作業中**なので、WS089 の Phase の合間に main と時期を決める |
+| 1 | （library の本体 p002〜p006） | Settings の描画の層は当初 1 番の予定だったが、WS089 が作業中のため p007 へ回した（2026-09-29 main） |
 | 2 | Text Editor | 最も新しく小さい Vulkan の app（WS092 完了）。窓の土台・scroll view・dialog・chip・file chooser を一通り使う。移した後の回帰は `plan/tools/textedit/host-core.sh` と QEMU |
-| 3 | Settings（部品と窓） | button・switch・field・card・row・sidebar の主な使い手 |
+| 3 | Settings（描画・部品・窓） | Files の source の共有（F-038）を替え、button・switch・field・card・row・sidebar の主な使い手になる。WS089 の完了の後 |
 | 4 | PDF Viewer・Image Viewer | 自前の chooser を `kui_file_chooser` へ、touch と present。Image Viewer は画像の層（§5）を決める |
 | 5 | Files | 最大（2.9 万行）で固有の UI（grid・tabs・preview・drag and drop）が多い。canvas・text・icons・scroll・field・list から段階に |
 | 6 | Terminal・Notes | 窓（見せ方は「無し」）と scroll の model だけ（描画は自分の Vulkan） |
@@ -188,12 +207,12 @@ void kui_window_redraw(struct kui_window *window);       /* 次の frame で lis
 | Phase | 目的 | 受け入れ | 依存 |
 | --- | --- | --- | --- |
 | ws090-p001 | 設計（この文書） | 設計の見直しを終えた文書 | — |
-| ws090-p002 | libkeiui の骨組みと描画の層（canvas・text・icons・theme）、build の規則、host の試験（描画を PPM に書いて比べる）。**Settings の Files の source の共有を libkeiui に替える**（Settings の `fm_canvas_*`・`fm_text_*`・`fm_icon_*` の呼び出しを `kui_` に書き換える。Files 自身は p009 まで今の source のまま） | Settings の画面が前と同じ（QEMU の画面を並べる）、host 試験、build warning 0 | p001、**WS089 の作業の合間**（Settings の source を同時に変えないよう main が時期を決める） |
-| ws090-p003 | scroll view（`kui_scroll`）と入力の層（`kui_ui`・input）、host の試験（wheel の glide・key・慣性の時刻の列） | host 試験（scroller の既存の試験と同じ数式）、Text Editor の本文の scroll を `kui_scroll` に替えて QEMU で wheel・touch | p002 |
-| ws090-p004 | 窓の土台（`kui_window`、Vulkan・shm・無しの見せ方、clipboard）。Text Editor の窓・present・touch・clipboard を移す（dialog・chip は p005 の部品ができてから p006 で） | Text Editor の QEMU の確認（ws092-p005 と同じ項目: touch・PRIMARY・clipboard・Files から開く）、host-core 34/34 | p003 |
+| ws090-p002 | libkeiui の骨組みと描画の層（canvas・text・icons・theme）、build の規則、host の試験（描画を PPM に書いて比べる、Files の実装と同じ絵になること）。**Settings の書き換えは p007 へ**（2026-09-29 main: WS089 が Settings の source を触っている間は変えない） | host 試験（Files の実装との一致と期待の絵）、`libkeiui.so` の build warning 0 | p001 |
+| ws090-p003 | scroll view（`kui_scroll`）と入力の層（`kui_ui`・input）と文字の view の touch（`kui_text_touch`、§6.1）、host の試験（wheel の glide・key・慣性の時刻の列、1 本指と 2 本指の区別・つまみ） | host 試験（scroller の既存の試験と同じ数式）、Text Editor の本文の scroll を `kui_scroll` に替えて QEMU で wheel・touch | p002 |
+| ws090-p004 | 窓の土台（`kui_window`、Vulkan・shm・無しの見せ方、clipboard）。Text Editor の窓・present・touch（`kui_text_touch`: 1 本指で選択、2 本指で scroll）・clipboard を移す（dialog・chip は p005 の部品ができてから p006 で） | Text Editor の QEMU の確認（ws092-p005 と同じ項目: touch・PRIMARY・clipboard・Files から開く）、host-core 34/34 | p003 |
 | ws090-p005 | 部品（button・switch・slider・field・list・sidebar・card・row・header・dialog・chip・progress）と見本の program（`/bin/kuidemo`、画面の試験用） | 部品ごとの host 試験、見本の画面、QEMU で pointer・key・touch | p003 |
 | ws090-p006 | file chooser を libkeiui へ（部品と shm の窓で作り直す）、libkeiland から取り除き KEILAND_VERSION を上げる、Text Editor の chooser・dialog・chip を部品に替える | 移した host-chooser の試験、QEMU で Open・Save As・上書き・取り消し | p004・p005 |
-| ws090-p007 | Settings を部品と窓の土台へ（WS089 と時期を合わせる） | Settings の画面が前と同じ、WS089 の試験 | p005、WS089 |
+| ws090-p007 | Settings を libkeiui へ: 描画の層（Files の source の共有を替える、p002 から移した）、部品と窓の土台（WS089 が終わってから） | Settings の画面が前と同じ（QEMU の画面を並べる）、WS089 の試験 | p005、WS089 の完了 |
 | ws090-p008 | PDF Viewer と Image Viewer を移す（chooser、touch、窓。Image Viewer の画像の層） | 各 app の QEMU の確認 | p006 |
 | ws090-p009 | Files（その 1）: 描画の層（canvas・text・icons・theme）と scroll view を libkeiui に替える | Files の既存の試験（`plan/tools/files/`）と画面が前と同じ | p003 |
 | ws090-p010 | Files（その 2）: field・list・sidebar・dialog・chip を部品に、窓の土台を `kui_window` に | 同上、QEMU で pointer・key・touch | p009、p005、p004 |
