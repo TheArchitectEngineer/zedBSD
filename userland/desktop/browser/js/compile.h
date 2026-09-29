@@ -59,8 +59,13 @@ enum js_binding_kind {
 	JS_BINDING_ARGUMENTS,
 	JS_BINDING_THIS,
 	JS_BINDING_LET,
-	JS_BINDING_CONST
+	JS_BINDING_CONST,
+	JS_BINDING_HOME
 };
+
+/* The name of the hidden binding that keeps a method's home object for the arrow functions inside it, and its length. */
+#define JS_HOME_NAME_LENGTH	5U
+extern const uint16_t js_home_name[JS_HOME_NAME_LENGTH];
 
 /*
  * The name of the hidden binding that keeps a function's this for the
@@ -167,6 +172,7 @@ struct js_function_info {
 	struct js_global_name *global_vars_last;
 	struct js_global_lexical *global_lexicals;
 	struct js_node *rest;
+	struct js_node *class_node;
 	int simple_parameters;
 	uint32_t length;
 	int program;
@@ -337,6 +343,10 @@ void js_load_binding(struct js_function_compiler *fc, const uint16_t *name, size
 void js_store_binding(struct js_function_compiler *fc, const struct js_node *node, const uint16_t *name, size_t length, uint32_t source);
 void js_init_binding(struct js_function_compiler *fc, const uint16_t *name, size_t length, uint32_t source);
 void js_bind_pattern(struct js_function_compiler *fc, struct js_node *target, uint32_t value, int mode);
+void js_compile_class(struct js_function_compiler *fc, struct js_node *node, uint32_t target, const uint16_t *name, size_t length);
+void js_compile_fields(struct js_function_compiler *fc, struct js_node *class_node, int statics);
+void js_scope_enter(struct js_function_compiler *fc, struct js_scope *scope, struct js_scope **saved_scope, uint32_t *saved_env);
+void js_scope_leave(struct js_function_compiler *fc, struct js_scope *saved_scope, uint32_t saved_env);
 void js_emit_throw_error(struct js_function_compiler *fc, int kind, const char *text);
 void js_store_target(struct js_function_compiler *fc, struct js_node *target, uint32_t source);
 

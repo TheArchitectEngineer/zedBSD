@@ -56,6 +56,10 @@ static void scope_visit_try(struct js_compiler *compiler, struct js_scope *scope
 static void scope_reference(struct js_compiler *compiler, struct js_scope *scope, const uint16_t *name, size_t length);
 static int scope_has_own_arguments(const struct js_function_info *info);
 static void scope_arrow_this(struct js_compiler *compiler, struct js_scope *scope);
+static void scope_arrow_home(struct js_compiler *compiler, struct js_scope *scope);
+static void scope_visit_class(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
+static struct js_node *scope_default_constructor(struct js_compiler *compiler, struct js_node *node);
+static struct js_node *scope_new_node(struct js_compiler *compiler, int kind, const struct js_node *place);
 static struct js_scope *scope_lexical_block(struct js_compiler *compiler, struct js_scope *parent, struct js_node *list, int switch_cases);
 static int scope_declare_lexicals(struct js_compiler *compiler, struct js_scope *scope, struct js_node *list);
 static void scope_declare_lexical(struct js_compiler *compiler, struct js_scope *scope, struct js_node *target, int kind);
@@ -78,6 +82,17 @@ static void scope_block_function(struct js_compiler *compiler, struct js_scope *
 const uint16_t js_this_name[JS_THIS_NAME_LENGTH] = {
 	'#', 't', 'h', 'i', 's'
 };
+
+/*
+ * The hidden binding of a method's home object that its arrow functions
+ * read for super: "#home".  A constant for the life of the program.
+ */
+const uint16_t js_home_name[JS_HOME_NAME_LENGTH] = {
+	'#', 'h', 'o', 'm', 'e'
+};
+
+/* The name of a derived class's default constructor's rest parameter (a constant for the life of the program). */
+static const uint16_t scope_args_name[4] = { 'a', 'r', 'g', 's' };
 static void scope_arguments_var(struct js_function_info *info);
 
 /*
@@ -537,6 +552,13 @@ scope_visit(
 	case JS_NODE_BLOCK:
 		scope_visit_block(compiler, scope, node);
 		return;
+	case JS_NODE_CLASS:
+	case JS_NODE_CLASS_DECLARATION:
+		scope_visit_class(compiler, scope, node);
+		return;
+	case JS_NODE_SUPER:
+		scope_arrow_home(compiler, scope);
+		return;
 	case JS_NODE_FOR:
 	case JS_NODE_FOR_IN:
 	case JS_NODE_FOR_OF:
@@ -669,9 +691,21 @@ scope_declare_lexicals(
 	int found;
 	int lexical;
 
-	/* Each statement that is a let or const declaration. */
+	/* Each statement that is a let, const or class declaration. */
 	found = 0;
 	for (node = list; node != NULL; node = node->next) {
+		/* A class declaration's name is a let. */
+		if (node->kind == JS_NODE_CLASS_DECLARATION && node->text != NULL) {
+			found = 1;
+			if (scope->kind == JS_SCOPE_FUNCTION && scope->function->program) {
+				scope_global_lexical(compiler, scope->function, node, 0);
+			} else {
+				scope_declare_lexical(compiler, scope, node, JS_BINDING_LET);
+			}
+			continue;
+		}
+
+		/* A let or const declaration. */
 		lexical = scope_is_lexical(node);
 		if (!lexical)
 			continue;
@@ -714,8 +748,8 @@ scope_declare_lexical(
 	if (target == NULL)
 		return;
 
-	/* A name, which the scope may not declare already (a parameter, a var, a function or another let or const). */
-	if (target->kind == JS_NODE_IDENTIFIER) {
+	/* A name (or a class declaration's), which the scope may not declare already (a parameter, a var, a function or another let or const). */
+	if (target->kind == JS_NODE_IDENTIFIER || target->kind == JS_NODE_CLASS_DECLARATION) {
 		declared = scope_find(scope, target->text, target->text_length);
 		if (declared != NULL)
 			scope_redeclared(compiler, target);
@@ -751,8 +785,8 @@ scope_global_lexical(
 	if (target == NULL)
 		return;
 
-	/* A pattern's elements, a default's or a rest's target. */
-	if (target->kind != JS_NODE_IDENTIFIER) {
+	/* A pattern's elements, a default's or a rest's target (a class declaration is listed by its name). */
+	if (target->kind != JS_NODE_IDENTIFIER && target->kind != JS_NODE_CLASS_DECLARATION) {
 		for (element = target->first; element != NULL; element = element->next) {
 			if (element->kind == JS_NODE_PROPERTY) {
 				scope_global_lexical(compiler, info, element->second, is_const);
@@ -1108,6 +1142,196 @@ scope_block_function(
 
 	/* The declaration is the last now. */
 	block->functions_last = entry;
+}
+
+/*
+ * Resolves the names of a class and makes the scopes of its functions: its
+ * heritage (outside), a scope with its own name for a named class
+ * expression, its methods, its constructor (the default one made when it
+ * has none) whose scope the instance fields' initializers are resolved in,
+ * and a function for its static fields and blocks.  The constructor is
+ * noted in the class node's third, the static function in its fourth.
+ */
+static void
+scope_visit_class(
+	struct js_compiler *compiler,
+	struct js_scope *scope,
+	struct js_node *node)
+{
+	struct js_scope *inner;
+	struct js_node *member;
+	struct js_node *constructor;
+	struct js_node *statics;
+	struct js_function_info *info;
+	int has_static;
+
+	/* The heritage, in the scope around the class. */
+	if (node->first != NULL)
+		scope_visit(compiler, scope, node->first);
+
+	/* A named class expression sees its own name as a const. */
+	inner = scope;
+	node->scope = NULL;
+	if (node->kind == JS_NODE_CLASS && node->text != NULL) {
+		inner = scope_new(compiler, scope, scope->function, JS_SCOPE_BLOCK);
+		scope_declare(compiler, inner, node->text, node->text_length, JS_BINDING_CONST);
+		node->scope = inner;
+	}
+
+	/* Each method (a computed key in the class's scope), and the constructor found. */
+	constructor = NULL;
+	has_static = 0;
+	for (member = node->second; member != NULL; member = member->next) {
+		if (member->kind == JS_NODE_METHOD) {
+			if ((member->flags & JS_FLAG_COMPUTED) != 0U)
+				scope_visit(compiler, inner, member->first);
+			if (member->op == JS_PROPERTY_CONSTRUCTOR) {
+				constructor = member->second;
+				continue;
+			}
+			scope_function(compiler, inner, member->second, 0);
+			continue;
+		}
+
+		/* A computed field key is evaluated with the class; a static field or block runs in the static function. */
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_COMPUTED) != 0U)
+			scope_visit(compiler, inner, member->first);
+		if ((member->flags & JS_FLAG_STATIC) != 0U || member->kind == JS_NODE_STATIC_BLOCK)
+			has_static = 1;
+	}
+
+	/* The constructor, the default one when the class has none. */
+	if (constructor == NULL)
+		constructor = scope_default_constructor(compiler, node);
+	node->third = constructor;
+	info = scope_function(compiler, inner, constructor, 0);
+	info->class_node = node;
+
+	/* The instance fields' initializers run in the constructor. */
+	for (member = node->second; member != NULL; member = member->next) {
+		if (member->kind != JS_NODE_FIELD || (member->flags & JS_FLAG_STATIC) != 0U)
+			continue;
+		if (member->second != NULL)
+			scope_visit(compiler, info->scope, member->second);
+	}
+
+	/* Without static fields or blocks, that is all. */
+	node->fourth = NULL;
+	if (!has_static)
+		return;
+
+	/* The static function (a method, whose this is the class). */
+	statics = scope_new_node(compiler, JS_NODE_FUNCTION, node);
+	statics->flags = JS_FLAG_METHOD | JS_FLAG_STRICT | JS_FLAG_STATIC_INIT;
+	node->fourth = statics;
+	info = scope_function(compiler, inner, statics, 0);
+	info->class_node = node;
+
+	/* Its fields' values and its blocks' statements (whose vars are the function's). */
+	for (member = node->second; member != NULL; member = member->next) {
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_STATIC) != 0U && member->second != NULL)
+			scope_visit(compiler, info->scope, member->second);
+		if (member->kind != JS_NODE_STATIC_BLOCK)
+			continue;
+		scope_declarations(compiler, info, member->first);
+		scope_declare_lexicals(compiler, info->scope, member->first);
+		scope_visit_list(compiler, info->scope, member->first);
+	}
+}
+
+/*
+ * Makes the default constructor of a class that has none: constructor()
+ * {}, or for a derived class constructor(...args) { super(...args); }.
+ */
+static struct js_node *
+scope_default_constructor(
+	struct js_compiler *compiler,
+	struct js_node *node)
+{
+	struct js_node *function;
+	struct js_node *rest;
+	struct js_node *name;
+	struct js_node *statement;
+	struct js_node *call;
+	struct js_node *spread;
+
+	/* The function, a strict method. */
+	function = scope_new_node(compiler, JS_NODE_FUNCTION, node);
+	function->flags = JS_FLAG_METHOD | JS_FLAG_STRICT;
+	if (node->first == NULL)
+		return function;
+
+	/* A derived class's: the rest parameter args. */
+	rest = scope_new_node(compiler, JS_NODE_REST, node);
+	name = scope_new_node(compiler, JS_NODE_IDENTIFIER, node);
+	name->text = scope_args_name;
+	name->text_length = 4;
+	rest->first = name;
+	function->first = rest;
+
+	/* Its body: super(...args). */
+	statement = scope_new_node(compiler, JS_NODE_EXPRESSION_STATEMENT, node);
+	call = scope_new_node(compiler, JS_NODE_CALL, node);
+	call->first = scope_new_node(compiler, JS_NODE_SUPER, node);
+	spread = scope_new_node(compiler, JS_NODE_SPREAD, node);
+	name = scope_new_node(compiler, JS_NODE_IDENTIFIER, node);
+	name->text = scope_args_name;
+	name->text_length = 4;
+	spread->first = name;
+	call->second = spread;
+	statement->first = call;
+	function->second = statement;
+
+	/* Succeeded: the constructor. */
+	return function;
+}
+
+/* Makes a node of the compiler's own, placed where another is in the source. */
+static struct js_node *
+scope_new_node(
+	struct js_compiler *compiler,
+	int kind,
+	const struct js_node *place)
+{
+	struct js_node *node;
+
+	/* A zeroed node in the program's arena. */
+	node = wb_arena_zalloc(compiler->arena, sizeof(*node));
+	if (node == NULL)
+		js_compile_out_of_memory(compiler);
+	node->kind = kind;
+	node->line = place->line;
+	node->column = place->column;
+	node->offset = place->offset;
+
+	/* Succeeded: the node. */
+	return node;
+}
+
+/*
+ * Gives an arrow function the home object of the method around it for
+ * super: that method keeps it in a hidden binding the arrow captures.
+ */
+static void
+scope_arrow_home(
+	struct js_compiler *compiler,
+	struct js_scope *scope)
+{
+	struct js_function_info *owner;
+
+	/* An ordinary function reads its own home object. */
+	owner = scope->function;
+	if (owner->program || (owner->node->flags & JS_FLAG_ARROW) == 0U)
+		return;
+
+	/* The nearest function around it that is not an arrow function. */
+	while (!owner->program && (owner->node->flags & JS_FLAG_ARROW) != 0U)
+		owner = owner->parent;
+
+	/* Its hidden binding, which the arrow's use captures, and this, the receiver of super's properties. */
+	scope_declare(compiler, owner->scope, js_home_name, JS_HOME_NAME_LENGTH, JS_BINDING_HOME);
+	scope_reference(compiler, scope, js_home_name, JS_HOME_NAME_LENGTH);
+	scope_arrow_this(compiler, scope);
 }
 
 /*
