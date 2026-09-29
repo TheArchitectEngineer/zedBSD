@@ -55,6 +55,10 @@ js_install_builtins(
 		error = js_builtin_install_math(realm);
 	if (error == 0)
 		error = js_builtin_install_global(realm);
+	if (error == 0)
+		error = js_builtin_install_promise(realm);
+	if (error == 0)
+		error = js_builtin_install_generator(realm);
 	if (error != 0)
 		return error;
 

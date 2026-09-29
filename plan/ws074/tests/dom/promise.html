@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Promise</title>
+<script>
+// ws074-p086: promises and async functions in a page: the checkpoint after each script, timers and events.
+console.log("head script");
+Promise.resolve("head").then(function (x) { console.log("microtask of the", x, "script"); });
+async function sleep(ms) {
+  await new Promise(function (resolve) { setTimeout(resolve, ms); });
+  return ms;
+}
+</script>
+</head>
+<body>
+<p id="target">target</p>
+<script>
+console.log("body script");
+(async function () {
+  console.log("async starts");
+  var waited = await sleep(20);
+  console.log("slept", waited);
+  var parts = await Promise.all([sleep(10), sleep(5), "now"]);
+  console.log("all slept", parts.join(","));
+  try {
+    await new Promise(function (resolve, reject) { setTimeout(function () { reject(new Error("late")); }, 5); });
+  } catch (e) {
+    console.log("caught", e.message);
+  }
+  document.getElementById("target").click();
+  console.log("after click");
+})();
+document.getElementById("target").addEventListener("click", function () {
+  console.log("click listener");
+  Promise.resolve().then(function () { console.log("microtask of the listener"); });
+});
+console.log("end of body script");
+window.addEventListener("load", function () {
+  console.log("load");
+  setTimeout(function () {
+    Promise.reject(new Error("nobody handles this"));
+    var handled = Promise.reject(new Error("handled later"));
+    handled.catch(function (e) { console.log("handled", e.message); });
+    console.log("end of the rejections");
+  }, 100);
+});
+</script>
+</body>
+</html>

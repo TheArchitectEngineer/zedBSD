@@ -61,7 +61,11 @@
 /*
  * One run of the interpreter: the realm, the base of the run's entry frame
  * and of the frame running, the offset of the instruction to run in that
- * frame's code, and the value the entry frame returned.
+ * frame's code, and the value the entry frame returned.  A run of a
+ * generator or an async function has its generator, which the entry
+ * frame's suspend instruction saves the frame to; suspended then says the
+ * run ended there (result is the value yielded or awaited) rather than by
+ * returning.
  */
 struct interpreter {
 	struct vm_realm *realm;
@@ -70,11 +74,14 @@ struct interpreter {
 	uint32_t pc;
 	struct vm_code *code;
 	vm_value result;
+	struct vm_generator *generator;
+	int suspended;
 };
 
 static int interpreter_push(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, uint32_t caller, uint32_t return_pc, uint64_t result_slot, uint32_t *base);
 static int interpreter_arguments(struct vm_realm *realm, struct vm_function *function, const vm_value *args, unsigned count, vm_value *arguments);
-static int interpreter_enter(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, uint64_t result_slot, vm_value new_target, vm_value *result);
+static int interpreter_enter(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, uint64_t result_slot, vm_value new_target, struct interpreter *run);
+static int interpreter_suspend(struct interpreter *run, const uint32_t *words, vm_value *registers, uint32_t next);
 static int interpreter_run(struct interpreter *run);
 static int interpreter_step(struct interpreter *run);
 static int interpreter_step_js(struct interpreter *run, const uint32_t *words, vm_value *registers);
@@ -113,10 +120,21 @@ vm_interpret(
 	unsigned count,
 	vm_value *result)
 {
+	struct interpreter run;
+	int suspendable;
 	int status;
 
+	/* A generator function makes its generator, an async function runs up to its first await (ws074-p086). */
+	suspendable = vm_code_is_suspendable(function);
+	if (suspendable) {
+		status = vm_generator_call(realm, function, this_value, args, count, result);
+		return status;
+	}
+
 	/* An ordinary call. */
-	status = interpreter_enter(realm, function, this_value, args, count, 0, VM_VALUE_UNDEFINED, result);
+	memset(&run, 0, sizeof(run));
+	status = interpreter_enter(realm, function, this_value, args, count, 0, VM_VALUE_UNDEFINED, &run);
+	*result = run.result;
 	if (status != 0)
 		return status;
 
@@ -140,10 +158,13 @@ vm_interpret_construct(
 	vm_value new_target,
 	vm_value *result)
 {
+	struct interpreter run;
 	int status;
 
 	/* A call whose frame is marked as a construction. */
-	status = interpreter_enter(realm, function, this_value, args, count, FRAME_CONSTRUCT, new_target, result);
+	memset(&run, 0, sizeof(run));
+	status = interpreter_enter(realm, function, this_value, args, count, FRAME_CONSTRUCT, new_target, &run);
+	*result = run.result;
 	if (status != 0)
 		return status;
 
@@ -151,7 +172,117 @@ vm_interpret_construct(
 	return 0;
 }
 
-/* Enters the interpreter from C with an entry frame for a function; the result slot says whether it is a construction. */
+/*
+ * Starts the run of a generator or an async function from C: its frame
+ * with the arguments, run until it returns or suspends (generator keeps
+ * the frame then, and *suspended says so).  Stores the value returned,
+ * yielded or awaited; returns 0, VM_THROWN or an errno value.
+ */
+int
+vm_interpret_start(
+	struct vm_realm *realm,
+	struct vm_function *function,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	struct vm_generator *generator,
+	vm_value *result,
+	int *suspended)
+{
+	struct interpreter run;
+	int status;
+
+	/* A call whose run saves its frame to the generator when it suspends. */
+	memset(&run, 0, sizeof(run));
+	run.generator = generator;
+	status = interpreter_enter(realm, function, this_value, args, count, 0, VM_VALUE_UNDEFINED, &run);
+	*result = run.result;
+	*suspended = run.suspended;
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the value it returned or suspended with. */
+	return 0;
+}
+
+/*
+ * Resumes a suspended generator or async function from C: its frame back
+ * on the stack, with the value and how (VM_RESUME_*) in the suspend
+ * instruction's registers, run until it returns or suspends again.
+ * Stores the value returned, yielded or awaited; returns 0, VM_THROWN or
+ * an errno value.
+ */
+int
+vm_interpret_resume(
+	struct vm_realm *realm,
+	struct vm_generator *generator,
+	vm_value value,
+	int how,
+	vm_value *result,
+	int *suspended)
+{
+	struct interpreter run;
+	struct vm_code *code;
+	vm_value *frame;
+	uint32_t size;
+	int status;
+
+	/* Too many entries from C, or a frame that does not fit, is a stack overflow for the script. */
+	*result = VM_VALUE_UNDEFINED;
+	*suspended = 0;
+	code = generator->function->code;
+	size = FRAME_HEADER + code->register_count;
+	if (realm->depth >= INTERPRETER_DEPTH_MAX || size > realm->stack_capacity - realm->stack_top) {
+		status = vm_throw_range_error(realm, "Maximum call stack size exceeded");
+		return status;
+	}
+
+	/* A generator that never suspended has no frame to go back to. */
+	if (generator->registers == NULL || generator->register_count != code->register_count)
+		return EINVAL;
+
+	/* The entry frame as it was when it suspended. */
+	memset(&run, 0, sizeof(run));
+	run.realm = realm;
+	run.entry = realm->stack_top;
+	run.base = run.entry;
+	frame = &realm->stack[run.base];
+	realm->stack_top += size;
+	frame[FRAME_CALLER] = 0;
+	frame[FRAME_RETURN] = 0;
+	frame[FRAME_FUNCTION] = vm_value_cell(generator->function);
+	frame[FRAME_RESULT] = 0;
+	frame[FRAME_THIS] = generator->this_value;
+	frame[FRAME_ARGC] = generator->argument_count;
+	frame[FRAME_NEW_TARGET] = generator->new_target;
+	memcpy(&frame[FRAME_HEADER], generator->registers, (size_t)code->register_count * sizeof(vm_value));
+
+	/* What the resumption brings, in the suspend instruction's registers. */
+	frame[FRAME_HEADER + generator->value_register] = value;
+	frame[FRAME_HEADER + generator->how_register] = vm_value_int32(how);
+
+	/* Runs it from after the suspend instruction, one more entry from C while it runs. */
+	run.code = code;
+	run.pc = generator->pc;
+	run.generator = generator;
+	realm->depth++;
+	status = interpreter_run(&run);
+	realm->depth--;
+	*result = run.result;
+	*suspended = run.suspended;
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the value it returned or suspended with. */
+	return 0;
+}
+
+/*
+ * Enters the interpreter from C with an entry frame for a function; the
+ * result slot says whether it is a construction.  run is the caller's
+ * (its generator, when it has one, is kept); its result is the function's
+ * result, undefined when it failed.
+ */
 static int
 interpreter_enter(
 	struct vm_realm *realm,
@@ -161,38 +292,45 @@ interpreter_enter(
 	unsigned count,
 	uint64_t result_slot,
 	vm_value new_target,
-	vm_value *result)
+	struct interpreter *run)
 {
-	struct interpreter run;
+	struct vm_generator *generator;
 	int status;
 
+	/* The run, with the generator the caller gave. */
+	generator = NULL;
+	if (run->generator != NULL)
+		generator = run->generator;
+	memset(run, 0, sizeof(*run));
+	run->realm = realm;
+	run->generator = generator;
+	run->result = VM_VALUE_UNDEFINED;
+
 	/* Too many entries from C is a stack overflow for the script. */
-	*result = VM_VALUE_UNDEFINED;
 	if (realm->depth >= INTERPRETER_DEPTH_MAX) {
 		status = vm_throw_range_error(realm, "Maximum call stack size exceeded");
 		return status;
 	}
 
 	/* The entry frame: no caller. */
-	memset(&run, 0, sizeof(run));
-	run.realm = realm;
-	run.entry = realm->stack_top;
-	status = interpreter_push(realm, function, this_value, args, count, 0, 0, result_slot, &run.base);
+	run->entry = realm->stack_top;
+	status = interpreter_push(realm, function, this_value, args, count, 0, 0, result_slot, &run->base);
 	if (status != 0)
 		return status;
-	realm->stack[run.base + FRAME_NEW_TARGET] = new_target;
-	run.code = function->code;
-	run.pc = 0;
+	realm->stack[run->base + FRAME_NEW_TARGET] = new_target;
+	run->code = function->code;
+	run->pc = 0;
 
 	/* Runs it, one more entry from C while it runs. */
 	realm->depth++;
-	status = interpreter_run(&run);
+	status = interpreter_run(run);
 	realm->depth--;
-	if (status != 0)
+	if (status != 0) {
+		run->result = VM_VALUE_UNDEFINED;
 		return status;
+	}
 
-	/* Succeeded: the function's result. */
-	*result = run.result;
+	/* Succeeded: the function's result is the run's. */
 	return 0;
 }
 
@@ -430,6 +568,9 @@ interpreter_step(
 		return status;
 	case VM_OP_THROW:
 		status = vm_throw(run->realm, registers[words[1]]);
+		return status;
+	case VM_OP_SUSPEND:
+		status = interpreter_suspend(run, words, registers, next);
 		return status;
 	default:
 		break;
@@ -1165,6 +1306,7 @@ interpreter_call(
 	vm_value value;
 	uint32_t base;
 	int callable;
+	int suspendable;
 	int status;
 
 	/* Only functions can be called. */
@@ -1180,6 +1322,19 @@ interpreter_call(
 	if (function->code != NULL && (function->code->flags & VM_CODE_CLASS) != 0U) {
 		status = vm_throw_class_call(run->realm, function);
 		return status;
+	}
+
+	/* A generator or an async function runs from C, which keeps its frame apart when it suspends (ws074-p086). */
+	suspendable = vm_code_is_suspendable(function);
+	if (suspendable) {
+		status = vm_generator_call(function->realm, function, registers[words[3]], &registers[words[4]], words[5], &value);
+		if (status != 0)
+			return status;
+
+		/* The generator or the promise is in the register and the caller goes on. */
+		registers[words[1]] = value;
+		run->pc = next;
+		return 0;
 	}
 
 	/* A bytecode function: its frame, whose caller goes on after the call. */
@@ -1361,6 +1516,56 @@ interpreter_return(
 
 	/* Succeeded: the caller runs next. */
 	return 0;
+}
+
+/*
+ * Suspends the run of a generator or an async function at a suspend
+ * instruction: its entry frame's registers and where it goes on are saved
+ * to the run's generator, the frame is popped, and the run ends with the
+ * value yielded or awaited.
+ */
+static int
+interpreter_suspend(
+	struct interpreter *run,
+	const uint32_t *words,
+	vm_value *registers,
+	uint32_t next)
+{
+	struct vm_generator *generator;
+	vm_value *frame;
+	uint32_t count;
+
+	/* Only the entry frame of a generator's run can suspend (the compiler writes the instruction nowhere else). */
+	generator = run->generator;
+	frame = &run->realm->stack[run->base];
+	if (generator == NULL || run->base != run->entry)
+		return EINVAL;
+
+	/* The place for the registers, made when the run first suspends. */
+	count = run->code->register_count;
+	if (generator->registers == NULL) {
+		generator->registers = malloc((size_t)count * sizeof(vm_value) + 1U);
+		if (generator->registers == NULL)
+			return ENOMEM;
+		generator->register_count = count;
+	}
+
+	/* The frame: its registers, its header's values and where it goes on. */
+	memcpy(generator->registers, registers, (size_t)count * sizeof(vm_value));
+	generator->this_value = frame[FRAME_THIS];
+	generator->argument_count = frame[FRAME_ARGC];
+	generator->new_target = frame[FRAME_NEW_TARGET];
+	generator->pc = next;
+	generator->value_register = words[2];
+	generator->how_register = words[3];
+
+	/* The frame is popped, and the run ends with the value. */
+	run->result = registers[words[1]];
+	run->suspended = 1;
+	run->realm->stack_top = run->base;
+
+	/* Succeeded: the run is over until the generator is resumed. */
+	return INTERPRETER_DONE;
 }
 
 /*

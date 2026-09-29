@@ -33,6 +33,8 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/vm/access.c \
 	$(KEILAND_BROWSER_DIR)/vm/spread.c \
 	$(KEILAND_BROWSER_DIR)/vm/class.c \
+	$(KEILAND_BROWSER_DIR)/vm/promise.c \
+	$(KEILAND_BROWSER_DIR)/vm/generator.c \
 	$(KEILAND_BROWSER_DIR)/vm/interpreter.c \
 	$(KEILAND_BROWSER_DIR)/js/lexer.c \
 	$(KEILAND_BROWSER_DIR)/js/parser.c \
@@ -57,6 +59,8 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_number.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_math.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_global.c \
+	$(KEILAND_BROWSER_DIR)/js/builtin_promise.c \
+	$(KEILAND_BROWSER_DIR)/js/builtin_generator.c \
 	$(KEILAND_BROWSER_DIR)/js/tool.c \
 	$(KEILAND_BROWSER_DIR)/html/input.c \
 	$(KEILAND_BROWSER_DIR)/html/entities-table.c \

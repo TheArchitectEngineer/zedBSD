@@ -319,9 +319,15 @@ bind_report_exception(
 	int known;
 	int error;
 
-	/* The line: the prefix and the exception's text. */
+	/* The line: the prefix (a promise's rejection nothing handled says so, ws074-p086) and the exception's text. */
 	wb_buffer_init(&line);
-	error = wb_buffer_append_string(&line, "Uncaught ");
+	if (window->realm->reporting_rejection) {
+		error = wb_buffer_append_string(&line, "Uncaught (in promise) ");
+	} else {
+		error = wb_buffer_append_string(&line, "Uncaught ");
+	}
+
+	/* The exception's text. */
 	if (error == 0)
 		error = js_exception_text(window->realm, exception, &line);
 
