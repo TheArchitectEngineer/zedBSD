@@ -30,3 +30,14 @@ Resume point: p001。Windows QEMUのmapped blob scanoutでデスクトップを�
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws085-p001](phase001/phase.md) | paired Windows rendererの同期契約、copy fallback、mapped blob scanout、SDLマルチタッチ入力を検証 | in-progress | — |
+
+### 取り込みの後の確認（2026-09-29 main）
+
+- merge commit dac0ed2b（main dc339f71 + origin/venus-win32 94908af8）。衝突は plan/master.md（WS の一覧）と plan/known-bugs.md（BUG-100〜103 を全部残す）。
+- Venus の変更の読み: kernel（`venus/transport.c`・`share.c`）と libvulkan（`context.c` 等）は、Windows の renderer が名乗る vendor の flag 15（host scanout）と
+  protocol の版 1.4.343 を受け入れる分岐の追加で、Linux の renderer（flag 7、1.3.269）の経路は変わらない。
+- build の不具合: branch の BUG-100 の Remacs の patch の規則は `.nb`・`.nbc` の 2 つの書き方だけを想定し、最新の Remacs（1a72439、`noct --compile --app` で
+  `remacs.nap` を直接作る）で「unexpected bytecode output rule」で止まった。`userland/packages/editors/remacs/Makefile` にその形を足した（patch は不要）。
+- Linux の Venus（1.3）: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws085-ci disk-image`（CI と同じ構成、warning 0）を
+  `plan/ws035/tests/zdesktop-guest.sh` で起動し、desktop（壁紙・システムバー・時計の文字）が出た（`build/ws085-ci/desktop.png`）。アプリの起動の試験は未実施。
+- Windows（1.4）: 未実施（ユーザー）。
