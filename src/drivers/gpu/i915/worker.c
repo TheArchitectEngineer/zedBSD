@@ -1338,6 +1338,7 @@ i915_worker_queue_sync(
 	struct i915_worker *worker;
 	uint64_t observed;
 	unsigned long irq;
+	int behind;
 
 	/* A worker that is not serving does nothing. */
 	worker = device->worker;
@@ -1349,6 +1350,13 @@ i915_worker_queue_sync(
 	/* Queues the item and wakes the worker under the IRQ lock. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 
+	/* A batch queued behind other work will not start at once (ws075-p020). */
+	behind = 0;
+	if (item->kind == I915_WORKER_SYNC_BATCH &&
+	    (worker->sync_head != NULL ||
+	     worker->run_head != NULL))
+		behind = 1;
+
 	if (worker->sync_tail == NULL) {
 		worker->sync_head = item;
 	} else {
@@ -1358,13 +1366,25 @@ i915_worker_queue_sync(
 	worker->sync_tail = item;
 	waitq_wake_all(&worker->work);
 
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* The caller waits on a batch the GT has not started: the GT frequency is boosted until it is done (Linux's waitboost). */
+	if (behind)
+		drv_i915_rps_boost_begin(&device->gt.init.rps);
+
 	/* Sleeps in bounded steps until the worker marks the item done. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
 	while (item->done == 0) {
 		observed = waitq_sequence(&worker->sync_done);
 		(void)waitq_sleep(&worker->sync_done, &device->irq_lock, observed, sched_ticks() + I915_WORKER_SLEEP_TICKS, 0U);
 	}
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* The boost's waiter is done. */
+	if (behind)
+		drv_i915_rps_boost_end(&device->gt.init.rps);
 
 	/* Reports how the item ended. */
 	if (item->error != 0)

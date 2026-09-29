@@ -59,6 +59,16 @@
 #define I915_IRQ_GT_BANKS		2U
 
 /*
+ * The GT power management source: its bit in GT bank 0 and its instance in
+ * the OTHER class (intel_gt_regs.h: GEN11_GTPM, OTHER_GTPM_INSTANCE).
+ */
+#define I915_IRQ_GTPM_BIT		16U
+#define I915_IRQ_GTPM_INSTANCE		1U
+
+/* How many pending GTPM identities a reset clears at most before it gives up. */
+#define I915_IRQ_GTPM_RESETS		16U
+
+/*
  * How long drv_i915_synchronize_irq() waits for the handler, and the step
  * it waits in, both in microseconds.
  */
@@ -72,6 +82,7 @@ static uint32_t i915_gt_engine_identity(struct i915_irq_dev *irq, unsigned bank,
 static void i915_gt_engine_irq(struct i915_irq_dev *irq, uint32_t iir);
 static void i915_engine_wake(struct i915_irq_dev *irq);
 static int i915_gt_engine_known(struct i915_irq_dev *irq, unsigned engine_class, unsigned instance);
+static void i915_gt_pm_irq(struct i915_irq_dev *irq, uint32_t intr);
 static void i915_gt_identity_handler(struct i915_irq_dev *irq, uint32_t identity);
 static void i915_gt_bank_handler(struct i915_irq_dev *irq, unsigned bank);
 static void i915_irq_handler_body(int vector, hal_irq_ack_t acknowledge, void *argument);
@@ -495,6 +506,33 @@ drv_i915_gen11_gt_irq_handler(
 }
 
 /*
+ * Clears the GT power management source of GT bank 0 while it is pending.
+ *
+ * This is gen11_rps_reset_interrupts() -> gen11_gt_reset_one_iir(): a
+ * pending bit cannot be cleared without serving its identity first.  The
+ * caller has the RPS events masked, so the handler does not race it for
+ * this bit.
+ */
+void
+drv_i915_gt_pm_reset_iir(
+	struct i915_irq_dev *irq)
+{
+	uint32_t intr_dw;
+	unsigned round;
+
+	/* Serves and clears the source while it stays pending, a few times at most. */
+	for (round = 0U; round < I915_IRQ_GTPM_RESETS; round++) {
+		intr_dw = drv_i915_raw_read32(irq->m, GEN11_GT_INTR_DW(0U));
+		if ((intr_dw & (1U << I915_IRQ_GTPM_BIT)) == 0U)
+			return;
+
+		/* The identity first, then the bit, or the register stays locked for everybody. */
+		(void)i915_gt_engine_identity(irq, 0U, I915_IRQ_GTPM_BIT);
+		drv_i915_raw_write32(irq->m, GEN11_GT_INTR_DW(0U), 1U << I915_IRQ_GTPM_BIT);
+	}
+}
+
+/*
  * Masks, disables and clears one interrupt register set.
  *
  * This is gen3_irq_reset(): IMR all set, IER cleared, then IIR cleared
@@ -719,6 +757,24 @@ i915_engine_wake(
 	spin_unlock_irqrestore(&irq->engine_lock, flags);
 }
 
+/* Hands the GT power management events to the RPS handler, when RPS has registered one; runs in the handler. */
+static void
+i915_gt_pm_irq(
+	struct i915_irq_dev *irq,
+	uint32_t intr)
+{
+	void (*handler)(void *context, uint32_t pm_iir);
+
+	/* Without a registered handler the events are only counted. */
+	handler = irq->pm_handler;
+	if (handler == NULL)
+		return;
+
+	/* One more served GTPM identity. */
+	irq->gt_pm_intrs++;
+	handler(irq->pm_context, intr);
+}
+
 /* Reports nonzero when an engine of this class and instance exists. */
 static int
 i915_gt_engine_known(
@@ -779,9 +835,11 @@ i915_gt_identity_handler(
 		}
 	}
 
-	/* GuC, GTPM (RPS), KCR and GSC have no bottom half in this port. */
+	/* GTPM (RPS) goes to its handler (ws075-p020); GuC, KCR and GSC have no bottom half in this port. */
 	if (engine_class == (unsigned)I915_OTHER_CLASS) {
 		irq->gt_other_intrs++;
+		if (instance == I915_IRQ_GTPM_INSTANCE)
+			i915_gt_pm_irq(irq, intr);
 		return;
 	}
 

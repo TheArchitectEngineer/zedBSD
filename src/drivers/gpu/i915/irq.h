@@ -213,6 +213,18 @@ struct i915_irq_dev {
 	/* How many engine interrupts woke the queue. */
 	volatile unsigned engine_wakeups;
 
+	/*
+	 * The GT power management (RPS) handler the GTPM identity's events go
+	 * to, and its argument (ws075-p020).  gt-power.c sets the argument
+	 * before the handler when RPS starts and clears the handler first when
+	 * it stops; a NULL handler leaves the events counted only.
+	 */
+	void (*volatile pm_handler)(void *context, uint32_t pm_iir);
+	void *volatile pm_context;
+
+	/* How many GTPM identities the handler served. */
+	volatile unsigned gt_pm_intrs;
+
 	/* drv_i915_synchronize_irq() calls and the ways they failed. */
 	unsigned sync_calls, sync_timeouts, sync_time_faults;
 
@@ -230,6 +242,7 @@ void drv_i915_irq_uninstall(struct i915_irq_dev *irq);
 int drv_i915_synchronize_irq(struct i915_irq_dev *irq);
 uint64_t drv_i915_irq_engine_sequence(struct i915_irq_dev *irq);
 int drv_i915_irq_engine_wait(struct i915_irq_dev *irq, uint64_t observed, unsigned ticks);
+void drv_i915_gt_pm_reset_iir(struct i915_irq_dev *irq);
 
 void drv_i915_irq_reset(struct i915_irq_dev *irq);
 void drv_i915_irq_postinstall(struct i915_irq_dev *irq);
