@@ -548,7 +548,9 @@ look_thumbnail(
 	/* The header: P6, the width, the height and the largest value (255), one space before the pixels. */
 	at = 2;
 	error = EINVAL;
-	if (size > 2U && data[0] == 'P' && data[1] == '6')
+	if (size > 2U &&
+	    data[0] == 'P' &&
+	    data[1] == '6')
 		error = 0;
 	if (error == 0)
 		error = look_ppm_number(data, size, &at, &width);
@@ -556,10 +558,15 @@ look_thumbnail(
 		error = look_ppm_number(data, size, &at, &height);
 	if (error == 0)
 		error = look_ppm_number(data, size, &at, &maximum);
-	if (error == 0 && (maximum != 255U || width == 0U || height == 0U))
+	if (error == 0 &&
+	    (maximum != 255U ||
+	     width == 0U ||
+	     height == 0U))
 		error = EINVAL;
 	at++;
-	if (error == 0 && (size < at || (size - at) / 3U / width < height))
+	if (error == 0 &&
+	    (size < at ||
+	     (size - at) / 3U / width < height))
 		error = EINVAL;
 	if (error != 0) {
 		free(data);
@@ -635,7 +642,10 @@ look_ppm_number(
 		if (data[*at] == '#') {
 			while (*at < size && data[*at] != '\n')
 				(*at)++;
-		} else if (data[*at] == ' ' || data[*at] == '\t' || data[*at] == '\n' || data[*at] == '\r') {
+		} else if (data[*at] == ' ' ||
+			   data[*at] == '\t' ||
+			   data[*at] == '\n' ||
+			   data[*at] == '\r') {
 			(*at)++;
 		} else {
 			break;
@@ -645,7 +655,10 @@ look_ppm_number(
 	/* The digits, at most seven. */
 	*number = 0;
 	digits = 0;
-	while (*at < size && data[*at] >= '0' && data[*at] <= '9' && digits < 7U) {
+	while (*at < size &&
+	       data[*at] >= '0' &&
+	       data[*at] <= '9' &&
+	       digits < 7U) {
 		*number = *number * 10U + (unsigned)(data[*at] - '0');
 		(*at)++;
 		digits++;
@@ -679,7 +692,9 @@ look_file(
 	/* Its length, within the limit. */
 	status = fseek(file, 0L, SEEK_END);
 	length = ftell(file);
-	if (status != 0 || length <= 0 || (unsigned long)length > LOOK_PICTURE_MAX) {
+	if (status != 0 ||
+	    length <= 0 ||
+	    (unsigned long)length > LOOK_PICTURE_MAX) {
 		(void)fclose(file);
 		errno = EFBIG;
 		return NULL;
