@@ -23,6 +23,10 @@ Queue: main が割り当て（2026-09-29、worktree `.claude/worktrees/ws095-ime
 - **5330 の内蔵 keyboard は PS/2**（ユーザーの回答）: p010 は main の指示で「必要」にした（design §13、ws.md）。気づいた点: D7 で配列は US で、
   US 配列の PS/2 keyboard には 変換・無変換・かな の key が無いので、p010 はデモでは効かない（main に確認を依頼）。
 - JIS の配列の件は main が Future Work に登録する。
+- **切り替えの key（ユーザーの指示、2026-09-29 夜、main 経由）**: 「IMEのON/OFFは、ひとまずAlt+Spaceがいいです。」→ D7 の Super+Space を Alt+Space に
+  置き換えた（design §10.1・§14 D7）。衝突を source で確かめた: zdesktop・Files・Text Editor・PDF Viewer・Settings・Browser・app の menu に
+  Alt+Space の割り当ては無い。Terminal だけが Alt+Space を ESC＋空白（M-SPC）として pty に送っており、IME を優先する方針で届かなくなる（REmacs は
+  M-SPC を使わない）。切り替えは zdesktop の側（p004）の仕事で、engine の source（`ja-keys.c`）に切り替えの処理は無いので、source の変更は要らない。
 
 ## 結果
 
