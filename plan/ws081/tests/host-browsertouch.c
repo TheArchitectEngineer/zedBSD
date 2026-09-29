@@ -41,17 +41,25 @@
 /* The touch screen under test. */
 static struct shell_touch touch;
 
-/* The page as the view has it: its token, its scroll (within the document) and its overscroll. */
+/* The page's token as the view has it (another page is another number). */
 static unsigned long page_token;
+
+/* The page's scroll as the view keeps it, within the document. */
 static double page_scroll;
+
+/* The page's overscroll as the view last got it. */
 static double page_overscroll;
 
-/* The largest and the smallest overscroll seen since the last reset. */
+/* The largest overscroll seen since the last reset. */
 static double stretch_most;
+
+/* The smallest overscroll seen since the last reset. */
 static double stretch_least;
 
 /* The pointer events taken since the last reset. */
 static struct shell_touch_pointer made[64];
+
+/* How many of made hold events. */
 static unsigned made_count;
 
 /* The test's clock, microseconds. */
