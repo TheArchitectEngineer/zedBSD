@@ -880,17 +880,18 @@ $(DYNAMIC_DIR)/libtruetype.so: $(DYNAMIC_TRUETYPE_OBJS) $(DYNAMIC_DIR)/libc.so \
 
 # The desktop's shared widgets (WS090): the drawing layer draws its text
 # with libtruetype; the scroll and the input use libkeiland's scroller and
-# gestures.
+# gestures; the window speaks Wayland and shows its frames with Vulkan.
 DYNAMIC_KEIUI_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libkeiui)
 
-$(DYNAMIC_DIR)/libkeiui.so: $(DYNAMIC_KEIUI_OBJS) $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libc.so \
+$(DYNAMIC_DIR)/libkeiui.so: $(DYNAMIC_KEIUI_OBJS) $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libkeiland.so \
+	$(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
 	userland/desktop/libkeiui/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libkeiui.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libkeiui/exports.map \
- $(DYNAMIC_KEIUI_OBJS) -L$(DYNAMIC_DIR) -l:libtruetype.so -l:libkeiland.so -l:libc.so -o $@
+ $(DYNAMIC_KEIUI_OBJS) -L$(DYNAMIC_DIR) -l:libtruetype.so -l:libkeiland.so -l:libwayland-client.so -l:libvulkan.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
- --needed libtruetype.so --needed libkeiland.so --needed libc.so --soname libkeiui.so $@
+ --needed libtruetype.so --needed libkeiland.so --needed libwayland-client.so --needed libvulkan.so --needed libc.so --soname libkeiui.so $@
 
 # libz-compat (ws071-p010): the zlib interface of the base programs; it needs nothing but the C library.
 DYNAMIC_Z_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libz-compat)
@@ -1422,7 +1423,7 @@ DYNAMIC_TEXTEDIT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,texte
 
 $(BUILD)/bin/textedit: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_TEXTEDIT_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libkeiui.so $(DYNAMIC_DIR)/libtruetype.so \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
@@ -1431,9 +1432,9 @@ $(BUILD)/bin/textedit: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_TEXTEDIT_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libkeiui.so -l:libtruetype.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libkeiui.so --needed libtruetype.so \
  --needed libc.so $@
 
 # The Web browser engine (WS074, libbrowser since ws074-p057) keeps its modules in subdirectories of

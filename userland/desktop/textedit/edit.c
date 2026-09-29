@@ -246,7 +246,7 @@ te_edit_key(
 	}
 
 	/* A character. */
-	codepoint = te_key_character(event->key, event->modifiers);
+	codepoint = kui_key_character(event->key, event->modifiers);
 	if (codepoint == 0U)
 		return 0;
 	done = edit_type(app, codepoint);
@@ -632,10 +632,8 @@ te_edit_reveal(
 			app->scroll_x = left + (double)app->cell - (double)text.width;
 	}
 
-	/* The wheel's glide stops where the view is now. */
+	/* The scroll stops where the view is now (a glide or a flight ends there). */
 	te_app_clamp(app);
-	app->target_y = app->scroll_y;
-	app->gliding = 0;
 	app->dirty = 1;
 }
 

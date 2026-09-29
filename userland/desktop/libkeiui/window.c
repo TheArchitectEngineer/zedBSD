@@ -6,17 +6,18 @@
  */
 
 /*
- * The Wayland window of Text Editor (PDF Viewer's window.c): an xdg-shell
- * toplevel and the seat's pointer and keyboard, whose input becomes
- * te_event values in a queue the main loop hands to the editor, and the
- * seat's touch screen, whose wl_touch events wait in a queue of their own
- * for touch.c.  The keyboard's focus coming and going is an input too (the
- * cursor blinks only with it), and the last input's serial is kept for the
- * clipboard and the primary selection (clipboard.c, primary.c), whose
- * managers are bound here.
+ * The window of the library (ws090-p004, Text Editor's window.c moved
+ * here, itself PDF Viewer's): an xdg-shell toplevel of its own connection,
+ * and its seat's pointer, keyboard and touch screen, whose input becomes
+ * kui_window_event values in a queue the application takes.  The last
+ * input's serial is kept for the clipboard and the primary selection
+ * (clipboard.c, primary.c), whose managers are bound here, and for the
+ * context menus.
  *
  * zdesktop does not repeat keys, so a key held past the repeat delay is
- * pressed again on each interval.
+ * pressed again on each interval -- only by kui_window_repeat, which the
+ * application calls after a dispatch, so that a release read in the same
+ * dispatch stops it first (BUG-111).
  */
 
 #include "window.h"
@@ -25,6 +26,7 @@
 #include <poll.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 /* The seat version the window understands (frames and discrete axes). */
@@ -35,7 +37,10 @@
 #define WINDOW_REPEAT_INTERVAL	40U
 
 /* How many pixels one unit of scrolling moves (zdesktop sends 15 units a wheel notch). */
-#define WINDOW_SCROLL_SCALE	4
+#define WINDOW_SCROLL_SCALE	4.0
+
+/* The oldest a wl_touch time may be and still be taken (older is another clock), in milliseconds. */
+#define WINDOW_TOUCH_BEHIND	2000U
 
 /* The modifier bits of wl_keyboard.modifiers as zdesktop reports them. */
 #define WINDOW_WAYLAND_SHIFT	0x01U
@@ -79,13 +84,15 @@ static void window_keyboard_key(void *data, struct wl_keyboard *keyboard, uint32
 static void window_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
 static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
 static int window_modifier_key(uint32_t key);
-static void window_touch_push(struct te_window *window, enum te_touch_type type, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
+static void window_touch_push(struct kui_window *window, unsigned kind, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_down(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_up(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, int32_t id);
 static void window_touch_motion(void *data, struct wl_touch *touch, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_frame(void *data, struct wl_touch *touch);
 static void window_touch_cancel(void *data, struct wl_touch *touch);
-static int window_touch_foreign(struct te_window *window, int32_t id, int forget);
+static int window_touch_foreign(struct kui_window *window, int32_t id, int forget);
+static struct kui_window_event *window_push(struct kui_window *window, unsigned kind);
+static int window_setup(struct kui_window *window, const struct kui_window_options *options);
 
 /* The registry's callbacks, for as long as the registry lives. */
 static const struct wl_registry_listener registry_listener = {
@@ -131,117 +138,111 @@ static const struct wl_keyboard_listener keyboard_listener = {
 };
 
 /*
- * Connects to the compositor and makes a toplevel window of a size with
- * a title and an application ID.
+ * Connects to the compositor and makes a toplevel window, configured and
+ * ready to be drawn into (the presenter made, except for
+ * KUI_PRESENT_NONE).
  *
- * Returns 0 once the first configure is acknowledged, or -1 with errno set.
+ * Returns NULL with errno set: EINVAL (no options, an unknown way of
+ * showing), a connection's error, EOPNOTSUPP (no compositor or shell, or
+ * no shared memory for KUI_PRESENT_SHM), EPROTO (no configure), ENOMEM,
+ * EIO (Vulkan refused).
  */
-int
-te_window_open(
-	struct te_window *window,
-	const char *display,
-	uint32_t width,
-	uint32_t height,
-	const char *title,
-	const char *application)
+struct kui_window *
+kui_window_open(
+	const struct kui_window_options *options)
 {
-	int status;
+	struct kui_window *window;
+	int error;
 
-	/* The size the window asks for until the compositor gives one. */
-	memset(window, 0, sizeof(*window));
-	window->width = width;
-	window->height = height;
-	window->preferred_width = width;
-	window->preferred_height = height;
-	window->repeat_delay = WINDOW_REPEAT_DELAY;
-	window->repeat_interval = WINDOW_REPEAT_INTERVAL;
-
-	/* The connection. */
-	window->display = wl_display_connect(display);
-	if (window->display == NULL)
-		return -1;
-
-	/* The globals: the compositor, the shell and the seat. */
-	window->registry = wl_display_get_registry(window->display);
-	if (window->registry == NULL)
-		return -1;
-
-	/* Listens for the globals the compositor announces. */
-	status = wl_registry_add_listener(window->registry, &registry_listener, window);
-	if (status != 0)
-		return -1;
-
-	/* Waits until every global has been announced. */
-	status = wl_display_roundtrip(window->display);
-	if (status < 0)
-		return -1;
-
-	/* The clipboard and the primary selection, through the seat (without them the editor keeps its own). */
-	te_clipboard_start(window);
-	te_primary_start(window);
-
-	/* A window needs a compositor and a shell. */
-	if (window->compositor == NULL || window->shell == NULL) {
-		errno = EOPNOTSUPP;
-		return -1;
+	/* Only the three ways of showing. */
+	if (options == NULL || options->present > KUI_PRESENT_NONE) {
+		errno = EINVAL;
+		return NULL;
 	}
 
-	/* The surface. */
-	window->surface = wl_compositor_create_surface(window->compositor);
-	if (window->surface == NULL)
-		return -1;
+	/* The record. */
+	window = calloc(1, sizeof(*window));
+	if (window == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
 
-	/* The surface becomes an xdg surface. */
-	window->role = xdg_wm_base_get_xdg_surface(window->shell, window->surface);
-	if (window->role == NULL)
-		return -1;
-
-	/* Listens for its configures. */
-	status = xdg_surface_add_listener(window->role, &surface_listener, window);
-	if (status != 0)
-		return -1;
-
-	/* The xdg surface becomes a toplevel window. */
-	window->toplevel = xdg_surface_get_toplevel(window->role);
-	if (window->toplevel == NULL)
-		return -1;
-
-	/* Listens for its size and its close request. */
-	status = xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window);
-	if (status != 0)
-		return -1;
-
-	/* The title the compositor shows and the application's identity. */
-	xdg_toplevel_set_title(window->toplevel, title);
-	xdg_toplevel_set_app_id(window->toplevel, application);
-	wl_surface_commit(window->surface);
-
-	/* The first configure (and the seat's devices) before anything is drawn. */
-	status = wl_display_roundtrip(window->display);
-	if (status < 0)
-		return -1;
-
-	/* A compositor that did not configure the window cannot take its images. */
-	if (window->configured == 0) {
-		errno = EPROTO;
-		return -1;
+	/* The connection, the globals, the surface and its first configure. */
+	error = window_setup(window, options);
+	if (error != 0) {
+		kui_window_close(window);
+		errno = error;
+		return NULL;
 	}
 
 	/* Succeeded: the window can be drawn into. */
-	window->resized = 0;
-	return 0;
+	return window;
+}
+
+/*
+ * Destroys the window's objects and disconnects.
+ */
+void
+kui_window_close(
+	struct kui_window *window)
+{
+	/* No window, nothing to close. */
+	if (window == NULL)
+		return;
+
+	/* The presenter before the surface it shows on. */
+	if (window->present == KUI_PRESENT_VULKAN)
+		keiui_present_close(&window->vulkan);
+	keiui_shm_close(window);
+
+	/* The clipboard and the primary selection before the seat they belong to. */
+	keiui_clipboard_close(window);
+	keiui_primary_close(window);
+	free(window->clipboard);
+	free(window->primary_text);
+
+	/* The devices and the seat. */
+	if (window->touch != NULL)
+		wl_touch_destroy(window->touch);
+	if (window->pointer != NULL)
+		wl_pointer_destroy(window->pointer);
+	if (window->keyboard != NULL)
+		wl_keyboard_destroy(window->keyboard);
+	if (window->seat != NULL)
+		wl_seat_destroy(window->seat);
+
+	/* The roles before the surface, the surface before the globals that made it. */
+	if (window->toplevel != NULL)
+		xdg_toplevel_destroy(window->toplevel);
+	if (window->role != NULL)
+		xdg_surface_destroy(window->role);
+	if (window->surface != NULL)
+		wl_surface_destroy(window->surface);
+	if (window->shell != NULL)
+		xdg_wm_base_destroy(window->shell);
+	if (window->shm != NULL)
+		wl_shm_destroy(window->shm);
+	if (window->compositor != NULL)
+		wl_compositor_destroy(window->compositor);
+	if (window->registry != NULL)
+		wl_registry_destroy(window->registry);
+
+	/* The connection last, then the record. */
+	if (window->display != NULL)
+		wl_display_disconnect(window->display);
+	free(window);
 }
 
 /*
  * Waits up to a timeout (milliseconds, -1 for ever) for the compositor's
- * events and runs them; they queue input for te_window_take.
+ * events and runs them; they queue input for kui_window_take.
  *
  * Returns 0, or -1 when the connection is broken.
  */
 int
-te_window_dispatch(
-	struct te_window *window,
-	int timeout)
+kui_window_dispatch(
+	struct kui_window *window,
+	int timeout_ms)
 {
 	struct pollfd descriptor;
 	int status;
@@ -271,13 +272,13 @@ te_window_dispatch(
 
 	/* Nothing is waited for while input is already queued. */
 	if (window->event_count != 0U)
-		timeout = 0;
+		timeout_ms = 0;
 
 	/* Waits for the compositor. */
 	descriptor.fd = wl_display_get_fd(window->display);
 	descriptor.events = POLLIN;
 	descriptor.revents = 0;
-	status = poll(&descriptor, 1, timeout);
+	status = poll(&descriptor, 1, timeout_ms);
 
 	/* Reads the compositor's events, or gives the reservation back. */
 	if (status > 0 && (descriptor.revents & POLLIN) != 0) {
@@ -304,33 +305,13 @@ te_window_dispatch(
 }
 
 /*
- * Takes the oldest queued touch input; zero when there is none.
+ * Takes the oldest queued input.  Returns 1 with it in *event, 0 when
+ * there is none.
  */
 int
-te_window_take_touch(
-	struct te_window *window,
-	struct te_touch_event *event)
-{
-	/* An empty queue. */
-	if (window->touch_count == 0U)
-		return 0;
-
-	/* The oldest touch input, and the queue moves on. */
-	*event = window->touches[window->touch_first];
-	window->touch_first = (window->touch_first + 1U) % TE_WINDOW_TOUCHES;
-	window->touch_count--;
-
-	/* Succeeded: one touch input taken. */
-	return 1;
-}
-
-/*
- * Takes the oldest queued input; zero when there is none.
- */
-int
-te_window_take(
-	struct te_window *window,
-	struct te_event *event)
+kui_window_take(
+	struct kui_window *window,
+	struct kui_window_event *event)
 {
 	/* An empty queue. */
 	if (window->event_count == 0U)
@@ -338,7 +319,7 @@ te_window_take(
 
 	/* The oldest input, and the queue moves on. */
 	*event = window->events[window->event_first];
-	window->event_first = (window->event_first + 1U) % TE_WINDOW_EVENTS;
+	window->event_first = (window->event_first + 1U) % KEIUI_WINDOW_EVENTS;
 	window->event_count--;
 
 	/* Succeeded: one input taken. */
@@ -346,29 +327,53 @@ te_window_take(
 }
 
 /*
- * Presses the held key again when its repeat is due, and reports in how
- * many milliseconds the next repeat is due (-1 when no key is held).
+ * Queues an input of the application's own (a code of its choosing, as a
+ * KUI_WINDOW_POST event) after the inputs queued so far: a choice heard
+ * through another object during the dispatch keeps its place among the
+ * window's keys.
+ */
+void
+kui_window_post(
+	struct kui_window *window,
+	uint32_t code)
+{
+	struct kui_window_event *event;
+
+	/* The input; a full queue drops it. */
+	event = window_push(window, KUI_WINDOW_POST);
+	if (event == NULL)
+		return;
+	event->code = code;
+}
+
+/*
+ * Presses the held key again when its repeat is due (the application
+ * calls it after a dispatch), and reports in how many milliseconds the
+ * next repeat is due (-1 when no key is held).
  */
 int
-te_window_repeat(
-	struct te_window *window,
-	uint64_t now)
+kui_window_repeat(
+	struct kui_window *window,
+	uint64_t now_us)
 {
-	struct te_event *event;
+	struct kui_window_event *event;
+	uint64_t now;
 
 	/* No key held. */
 	if (window->repeat_key == 0U)
 		return -1;
 
 	/* Not yet time: the wait until it is. */
+	now = now_us / 1000U;
 	if (now < window->repeat_at)
 		return (int)(window->repeat_at - now);
 
 	/* The key once more. */
-	event = te_window_push(window, TE_EVENT_KEY);
+	event = window_push(window, KUI_WINDOW_KEY);
 	if (event != NULL) {
-		event->key = window->repeat_key;
+		event->code = window->repeat_key;
 		event->pressed = 1;
+		event->repeated = 1;
 	}
 
 	/* The next repeat is one interval later. */
@@ -385,15 +390,18 @@ te_window_repeat(
  * repeat is pressed (BUG-111).
  */
 int
-te_window_repeat_wait(
-	const struct te_window *window,
-	uint64_t now)
+kui_window_repeat_wait(
+	const struct kui_window *window,
+	uint64_t now_us)
 {
+	uint64_t now;
+
 	/* No key held. */
 	if (window->repeat_key == 0U)
 		return -1;
 
 	/* Due already. */
+	now = now_us / 1000U;
 	if (now >= window->repeat_at)
 		return 0;
 
@@ -402,29 +410,11 @@ te_window_repeat_wait(
 }
 
 /*
- * Queues an action of the menus or the titlebar among the window's inputs,
- * so that it is carried out in the order it came.
- */
-void
-te_window_action(
-	struct te_window *window,
-	uint32_t action)
-{
-	struct te_event *event;
-
-	/* The input; a full queue drops it. */
-	event = te_window_push(window, TE_EVENT_ACTION);
-	if (event == NULL)
-		return;
-	event->action = action;
-}
-
-/*
  * Sets the title the compositor shows.
  */
 void
-te_window_title(
-	struct te_window *window,
+kui_window_set_title(
+	struct kui_window *window,
 	const char *title)
 {
 	/* The request, sent with the next flush. */
@@ -432,83 +422,352 @@ te_window_title(
 }
 
 /*
- * Destroys the window's objects and disconnects.
+ * Reports the size the compositor gives the window (the one a frame is
+ * drawn at after kui_window_present_resize).
  */
 void
-te_window_close(
-	struct te_window *window)
+kui_window_size(
+	const struct kui_window *window,
+	uint32_t *width,
+	uint32_t *height)
 {
-	/* The clipboard and the primary selection before the seat they belong to. */
-	te_clipboard_close(window);
-	te_primary_close(window);
-	free(window->clipboard);
-	free(window->primary_text);
+	/* The configured size. */
+	*width = window->width;
+	*height = window->height;
+}
 
-	/* The devices and the seat. */
-	if (window->touch != NULL)
-		wl_touch_destroy(window->touch);
-	if (window->pointer != NULL)
-		wl_pointer_destroy(window->pointer);
-	if (window->keyboard != NULL)
-		wl_keyboard_destroy(window->keyboard);
-	if (window->seat != NULL)
-		wl_seat_destroy(window->seat);
+/*
+ * Makes the presenter fit the window's size and reports the size a frame
+ * is drawn at.  Returns 0, or EIO when Vulkan refused.
+ */
+int
+kui_window_present_resize(
+	struct kui_window *window,
+	uint32_t *width,
+	uint32_t *height)
+{
+	VkResult result;
 
-	/* The roles before the surface, the surface before the globals that made it. */
-	if (window->toplevel != NULL)
-		xdg_toplevel_destroy(window->toplevel);
-	if (window->role != NULL)
-		xdg_surface_destroy(window->role);
-	if (window->surface != NULL)
-		wl_surface_destroy(window->surface);
-	if (window->shell != NULL)
-		xdg_wm_base_destroy(window->shell);
-	if (window->compositor != NULL)
-		wl_compositor_destroy(window->compositor);
-	if (window->registry != NULL)
-		wl_registry_destroy(window->registry);
+	/* Vulkan: a swapchain of the size, whose extent may differ. */
+	if (window->present == KUI_PRESENT_VULKAN) {
+		result = keiui_present_resize(&window->vulkan, window->width, window->height);
+		if (result != VK_SUCCESS)
+			return EIO;
+		*width = window->vulkan.extent.width;
+		*height = window->vulkan.extent.height;
+		return 0;
+	}
 
-	/* The connection last. */
-	if (window->display != NULL)
-		wl_display_disconnect(window->display);
-	memset(window, 0, sizeof(*window));
+	/* Shared memory, or the application's own drawing: the window's size. */
+	*width = window->width;
+	*height = window->height;
+	window->shm_width = window->width;
+	window->shm_height = window->height;
+
+	/* Succeeded: frames are drawn at that size. */
+	return 0;
+}
+
+/*
+ * Shows a frame (premultiplied 0xAARRGGBB words, stride words a row) of
+ * the size kui_window_present_resize reported.  Returns 0, EAGAIN when it
+ * could not be shown now (the swapchain is out of date: resize and draw
+ * again; no shared-memory buffer is free: draw again later), EINVAL for
+ * KUI_PRESENT_NONE, or EIO.
+ */
+int
+kui_window_present(
+	struct kui_window *window,
+	const uint32_t *pixels,
+	size_t stride)
+{
+	VkResult result;
+	int error;
+
+	/* Shared memory. */
+	if (window->present == KUI_PRESENT_SHM) {
+		error = keiui_shm_present(window, pixels, stride);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* The application draws its own frames. */
+	if (window->present != KUI_PRESENT_VULKAN)
+		return EINVAL;
+
+	/* Vulkan: out of date asks for a resize and another frame. */
+	result = keiui_present_frame(&window->vulkan, pixels, stride);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+		return EAGAIN;
+	if (result != VK_SUCCESS)
+		return EIO;
+
+	/* Succeeded: the frame is shown. */
+	return 0;
+}
+
+/*
+ * Tells whether the frames are blended by their alpha (a see-through
+ * swapchain, or shared memory), which zdesktop's glass needs.
+ */
+int
+kui_window_see_through(
+	const struct kui_window *window)
+{
+	/* Shared memory is ARGB, blended by its alpha. */
+	if (window->present == KUI_PRESENT_SHM)
+		return 1;
+
+	/* Vulkan: when the swapchain is premultiplied. */
+	if (window->present == KUI_PRESENT_VULKAN && window->vulkan.premultiplied)
+		return 1;
+
+	/* Opaque. */
+	return 0;
+}
+
+/*
+ * Reports the window's connection (for libkeiland's menus, titlebar and glass).
+ */
+struct wl_display *
+kui_window_display(
+	const struct kui_window *window)
+{
+	/* The connection. */
+	return window->display;
+}
+
+/*
+ * Reports the window's surface.
+ */
+struct wl_surface *
+kui_window_surface(
+	const struct kui_window *window)
+{
+	/* The surface. */
+	return window->surface;
+}
+
+/*
+ * Reports the window's toplevel.
+ */
+struct xdg_toplevel *
+kui_window_toplevel(
+	const struct kui_window *window)
+{
+	/* The toplevel. */
+	return window->toplevel;
+}
+
+/*
+ * Reports the serial of the window's last input.
+ */
+uint32_t
+kui_window_serial(
+	const struct kui_window *window)
+{
+	/* The serial. */
+	return window->serial;
+}
+
+/*
+ * Reports the serial of the last press of a button or a finger on the
+ * window (a context menu opens for a press).
+ */
+uint32_t
+kui_window_press_serial(
+	const struct kui_window *window)
+{
+	/* The press's serial. */
+	return window->press_serial;
+}
+
+/*
+ * Takes the serial of an input the application heard through another
+ * object (a System Menu's or a titlebar's choice), so that a selection set
+ * in answer carries it.
+ */
+void
+kui_window_set_serial(
+	struct kui_window *window,
+	uint32_t serial)
+{
+	/* The latest input's serial. */
+	window->serial = serial;
+}
+
+/*
+ * Reports the window's seat (for a context menu's popup).
+ */
+struct wl_seat *
+kui_window_seat(
+	const struct kui_window *window)
+{
+	/* The seat. */
+	return window->seat;
+}
+
+/*
+ * Reports the monotonic clock in microseconds (the clock of the library's
+ * times).
+ */
+uint64_t
+kui_clock_us(void)
+{
+	struct timespec now;
+
+	/* The monotonic clock. */
+	(void)clock_gettime(CLOCK_MONOTONIC, &now);
+
+	/* Reports it in microseconds. */
+	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
+}
+
+/*
+ * Reports the monotonic clock in milliseconds.
+ */
+uint64_t
+keiui_clock_ms(void)
+{
+	uint64_t now;
+
+	/* The microseconds' clock. */
+	now = kui_clock_us();
+
+	/* Reports it in milliseconds. */
+	return now / 1000U;
+}
+
+/* Connects, binds the globals, makes the surface and its toplevel, waits for the first configure and makes the presenter; 0 or an errno value. */
+static int
+window_setup(
+	struct kui_window *window,
+	const struct kui_window_options *options)
+{
+	VkResult result;
+	int status;
+
+	/* The size the window asks for until the compositor gives one, and the key repeat's defaults. */
+	window->width = options->width;
+	window->height = options->height;
+	window->preferred_width = options->width;
+	window->preferred_height = options->height;
+	window->repeat_delay = WINDOW_REPEAT_DELAY;
+	window->repeat_interval = WINDOW_REPEAT_INTERVAL;
+	window->present = options->present;
+
+	/* The connection. */
+	window->display = wl_display_connect(options->display);
+	if (window->display == NULL)
+		return errno;
+
+	/* The globals: the compositor, shared memory, the shell, the seat and the selections' managers. */
+	window->registry = wl_display_get_registry(window->display);
+	if (window->registry == NULL)
+		return ENOMEM;
+	status = wl_registry_add_listener(window->registry, &registry_listener, window);
+	if (status != 0)
+		return EINVAL;
+	status = wl_display_roundtrip(window->display);
+	if (status < 0)
+		return EPROTO;
+
+	/* The clipboard and the primary selection, through the seat (without them the window keeps its own copies). */
+	keiui_clipboard_start(window);
+	keiui_primary_start(window);
+
+	/* A window needs a compositor and a shell, and shared memory to show frames through it. */
+	if (window->compositor == NULL || window->shell == NULL)
+		return EOPNOTSUPP;
+	if (window->present == KUI_PRESENT_SHM && window->shm == NULL)
+		return EOPNOTSUPP;
+
+	/* The surface, as an xdg surface. */
+	window->surface = wl_compositor_create_surface(window->compositor);
+	if (window->surface == NULL)
+		return ENOMEM;
+	window->role = xdg_wm_base_get_xdg_surface(window->shell, window->surface);
+	if (window->role == NULL)
+		return ENOMEM;
+	status = xdg_surface_add_listener(window->role, &surface_listener, window);
+	if (status != 0)
+		return EINVAL;
+
+	/* A toplevel window with its size and close request heard. */
+	window->toplevel = xdg_surface_get_toplevel(window->role);
+	if (window->toplevel == NULL)
+		return ENOMEM;
+	status = xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window);
+	if (status != 0)
+		return EINVAL;
+
+	/* The title the compositor shows and the application's identity. */
+	if (options->title != NULL)
+		xdg_toplevel_set_title(window->toplevel, options->title);
+	if (options->application != NULL)
+		xdg_toplevel_set_app_id(window->toplevel, options->application);
+	wl_surface_commit(window->surface);
+
+	/* The first configure (and the seat's devices) before anything is drawn. */
+	status = wl_display_roundtrip(window->display);
+	if (status < 0)
+		return EPROTO;
+	if (window->configured == 0)
+		return EPROTO;
+
+	/* The size given is not news to the application. */
+	window->event_count = 0;
+
+	/* The Vulkan presenter over the surface. */
+	if (window->present == KUI_PRESENT_VULKAN) {
+		result = keiui_present_open(&window->vulkan, window);
+		if (result != VK_SUCCESS)
+			return EIO;
+	}
+
+	/* Succeeded: the window is configured. */
+	window->shm_width = window->width;
+	window->shm_height = window->height;
+	return 0;
 }
 
 /*
  * Queues a new input of a kind at the pointer's place with the modifiers
- * held (for the window's events, the menus and the titlebar); NULL when the
- * queue is full.
+ * held; NULL when the queue is full (the input is dropped).
  */
-struct te_event *
-te_window_push(
-	struct te_window *window,
-	enum te_event_type type)
+static struct kui_window_event *
+window_push(
+	struct kui_window *window,
+	unsigned kind)
 {
-	struct te_event *event;
+	struct kui_window_event *event;
 	unsigned slot;
 
 	/* A full queue drops the input (the user is far ahead of the program). */
-	if (window->event_count == TE_WINDOW_EVENTS)
+	if (window->event_count == KEIUI_WINDOW_EVENTS)
 		return NULL;
 
 	/* The slot after the last one queued. */
-	slot = (window->event_first + window->event_count) % TE_WINDOW_EVENTS;
+	slot = (window->event_first + window->event_count) % KEIUI_WINDOW_EVENTS;
 	window->event_count++;
 
 	/* The input, with what every input carries. */
 	event = &window->events[slot];
 	memset(event, 0, sizeof(*event));
-	event->type = type;
+	event->kind = kind;
 	event->x = window->pointer_x;
 	event->y = window->pointer_y;
 	event->modifiers = window->modifiers;
-	event->time = te_clock();
+	event->serial = window->serial;
+	event->arrival_us = kui_clock_us();
+	event->time_us = event->arrival_us;
 
 	/* Reports the queued input for its details. */
 	return event;
 }
 
-/* Binds the compositor, the shell, the clipboard's and the primary selection's managers, and the first seat. */
+/* Binds the compositor, shared memory, the shell, the clipboard's and the primary selection's managers, and the first seat. */
 static void
 window_global(
 	void *data,
@@ -517,7 +776,7 @@ window_global(
 	const char *interface,
 	uint32_t version)
 {
-	struct te_window *window;
+	struct kui_window *window;
 	int match;
 
 	/* The compositor makes surfaces; version 4 is enough. */
@@ -541,17 +800,24 @@ window_global(
 		return;
 	}
 
+	/* Shared memory, for frames shown through it. */
+	match = strcmp(interface, "wl_shm");
+	if (match == 0 && window->shm == NULL) {
+		window->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1U);
+		return;
+	}
+
 	/* The clipboard's manager. */
 	match = strcmp(interface, "wl_data_device_manager");
 	if (match == 0 && window->data_manager == NULL) {
-		te_clipboard_bind(window, registry, name, version);
+		keiui_clipboard_bind(window, registry, name, version);
 		return;
 	}
 
 	/* The primary selection's manager. */
 	match = strcmp(interface, "zwp_primary_selection_device_manager_v1");
 	if (match == 0 && window->primary_manager == NULL) {
-		te_primary_bind(window, registry, name);
+		keiui_primary_bind(window, registry, name);
 		return;
 	}
 
@@ -598,7 +864,7 @@ window_configure(
 	struct xdg_surface *surface,
 	uint32_t serial)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* The acknowledgement comes before any image of the new state. */
 	window = data;
@@ -615,7 +881,8 @@ window_toplevel_configure(
 	int32_t height,
 	struct wl_array *states)
 {
-	struct te_window *window;
+	struct kui_window *window;
+	int resized;
 
 	/* The states change nothing here. */
 	(void)toplevel;
@@ -637,16 +904,21 @@ window_toplevel_configure(
 	}
 
 	/* A new width marks the window resized. */
+	resized = 0;
 	if (width > 0 && (uint32_t)width != window->width) {
 		window->width = (uint32_t)width;
-		window->resized = 1;
+		resized = 1;
 	}
 
 	/* And so does a new height. */
 	if (height > 0 && (uint32_t)height != window->height) {
 		window->height = (uint32_t)height;
-		window->resized = 1;
+		resized = 1;
 	}
+
+	/* The application hears of a new size. */
+	if (resized)
+		(void)window_push(window, KUI_WINDOW_RESIZE);
 }
 
 /* The compositor asks the window to close (its close button). */
@@ -655,12 +927,12 @@ window_toplevel_close(
 	void *data,
 	struct xdg_toplevel *toplevel)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
-	/* The main loop ends the program. */
+	/* The application decides (it may ask about unsaved work first). */
 	(void)toplevel;
 	window = data;
-	window->closed = 1;
+	(void)window_push(window, KUI_WINDOW_CLOSE);
 }
 
 /* Keeps the largest size the compositor lets the window choose for itself (0: not known). */
@@ -671,7 +943,7 @@ window_toplevel_bounds(
 	int32_t width,
 	int32_t height)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* The width, when known. */
 	(void)toplevel;
@@ -693,7 +965,7 @@ window_seat_capabilities(
 	struct wl_seat *seat,
 	uint32_t capabilities)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* A pointer, once. */
 	window = data;
@@ -741,9 +1013,9 @@ window_pointer_enter(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
-	/* Another surface of the program (the file chooser's) is not the editor's. */
+	/* Another surface of the program (the file chooser's) is not the window's. */
 	(void)pointer;
 	window = data;
 	window->pointer_ours = 0;
@@ -753,9 +1025,9 @@ window_pointer_enter(
 
 	/* The pointer's place, as a motion. */
 	window->serial = serial;
-	window->pointer_x = wl_fixed_to_int(x);
-	window->pointer_y = wl_fixed_to_int(y);
-	(void)te_window_push(window, TE_EVENT_MOTION);
+	window->pointer_x = wl_fixed_to_double(x);
+	window->pointer_y = wl_fixed_to_double(y);
+	(void)window_push(window, KUI_WINDOW_MOTION);
 }
 
 /* The pointer leaves the window. */
@@ -766,9 +1038,9 @@ window_pointer_leave(
 	uint32_t serial,
 	struct wl_surface *surface)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
-	/* Only leaving the editor's own surface matters. */
+	/* Only leaving the window's own surface matters. */
 	(void)pointer;
 	(void)serial;
 	window = data;
@@ -777,7 +1049,7 @@ window_pointer_leave(
 	window->pointer_ours = 0;
 
 	/* The view hears that the pointer left. */
-	(void)te_window_push(window, TE_EVENT_LEAVE);
+	(void)window_push(window, KUI_WINDOW_LEAVE);
 }
 
 /* The pointer moves over the window. */
@@ -789,9 +1061,9 @@ window_pointer_motion(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
-	/* Only over the editor's own surface. */
+	/* Only over the window's own surface. */
 	(void)pointer;
 	(void)time;
 	window = data;
@@ -799,9 +1071,9 @@ window_pointer_motion(
 		return;
 
 	/* The new place, as a motion. */
-	window->pointer_x = wl_fixed_to_int(x);
-	window->pointer_y = wl_fixed_to_int(y);
-	(void)te_window_push(window, TE_EVENT_MOTION);
+	window->pointer_x = wl_fixed_to_double(x);
+	window->pointer_y = wl_fixed_to_double(y);
+	(void)window_push(window, KUI_WINDOW_MOTION);
 }
 
 /* A pointer button is pressed or let go. */
@@ -814,10 +1086,10 @@ window_pointer_button(
 	uint32_t button,
 	uint32_t state)
 {
-	struct te_window *window;
-	struct te_event *event;
+	struct kui_window *window;
+	struct kui_window_event *event;
 
-	/* Only over the editor's own surface. */
+	/* Only over the window's own surface. */
 	(void)pointer;
 	(void)time;
 	window = data;
@@ -828,10 +1100,10 @@ window_pointer_button(
 	window->serial = serial;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
 		window->press_serial = serial;
-	event = te_window_push(window, TE_EVENT_BUTTON);
+	event = window_push(window, KUI_WINDOW_BUTTON);
 	if (event == NULL)
 		return;
-	event->button = button;
+	event->code = button;
 	event->pressed = 0;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
 		event->pressed = 1;
@@ -846,10 +1118,10 @@ window_pointer_axis(
 	uint32_t axis,
 	wl_fixed_t value)
 {
-	struct te_window *window;
-	struct te_event *event;
+	struct kui_window *window;
+	struct kui_window_event *event;
 
-	/* Only over the editor's own surface. */
+	/* Only over the window's own surface. */
 	(void)pointer;
 	(void)time;
 	window = data;
@@ -857,13 +1129,13 @@ window_pointer_axis(
 		return;
 
 	/* The distance, scaled to the window's pixels, on its axis. */
-	event = te_window_push(window, TE_EVENT_AXIS);
+	event = window_push(window, KUI_WINDOW_AXIS);
 	if (event == NULL)
 		return;
 	if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
-		event->scroll = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
+		event->dy = (double)wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
 	else
-		event->scroll_x = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
+		event->dx = (double)wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
 }
 
 /* A group of pointer events ends; each was queued as it came. */
@@ -920,7 +1192,7 @@ window_pointer_axis_discrete(
 	(void)discrete;
 }
 
-/* Closes the keymap file: keys arrive as evdev codes and the editor has its own layout (keys.c). */
+/* Closes the keymap file: keys arrive as evdev codes and the library has its own layout (input.c). */
 static void
 window_keyboard_keymap(
 	void *data,
@@ -938,7 +1210,7 @@ window_keyboard_keymap(
 		(void)close(fd);
 }
 
-/* Focus arrives: no key is held yet as far as the window is concerned, and the editor hears of it. */
+/* Focus arrives: no key is held yet as far as the window is concerned, and the application hears of it. */
 static void
 window_keyboard_enter(
 	void *data,
@@ -947,8 +1219,8 @@ window_keyboard_enter(
 	struct wl_surface *surface,
 	struct wl_array *keys)
 {
-	struct te_window *window;
-	struct te_event *event;
+	struct kui_window *window;
+	struct kui_window_event *event;
 
 	/* Keys already held when focus came are not pressed again. */
 	(void)keyboard;
@@ -956,7 +1228,7 @@ window_keyboard_enter(
 	window = data;
 	window->repeat_key = 0U;
 
-	/* Another surface of the program (the file chooser's) has the keys, not the editor. */
+	/* Another surface of the program (the file chooser's) has the keys, not the window. */
 	window->keyboard_ours = 0;
 	if (surface == NULL || surface != window->surface)
 		return;
@@ -964,7 +1236,7 @@ window_keyboard_enter(
 	window->serial = serial;
 
 	/* The focus came. */
-	event = te_window_push(window, TE_EVENT_FOCUS);
+	event = window_push(window, KUI_WINDOW_FOCUS);
 	if (event != NULL)
 		event->pressed = 1;
 }
@@ -977,9 +1249,9 @@ window_keyboard_leave(
 	uint32_t serial,
 	struct wl_surface *surface)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
-	/* Only leaving the editor's own surface matters. */
+	/* Only leaving the window's own surface matters. */
 	(void)keyboard;
 	(void)serial;
 	window = data;
@@ -992,7 +1264,7 @@ window_keyboard_leave(
 	window->modifiers = 0U;
 
 	/* The focus went. */
-	(void)te_window_push(window, TE_EVENT_FOCUS);
+	(void)window_push(window, KUI_WINDOW_FOCUS);
 }
 
 /* A key is pressed (it repeats while held) or let go. */
@@ -1005,11 +1277,11 @@ window_keyboard_key(
 	uint32_t key,
 	uint32_t state)
 {
-	struct te_window *window;
-	struct te_event *event;
+	struct kui_window *window;
+	struct kui_window_event *event;
 	int modifier;
 
-	/* Only while the editor's own surface has the keys. */
+	/* Only while the window's own surface has the keys. */
 	(void)keyboard;
 	(void)time;
 	window = data;
@@ -1018,9 +1290,9 @@ window_keyboard_key(
 
 	/* The key as an input; its serial may set a selection. */
 	window->serial = serial;
-	event = te_window_push(window, TE_EVENT_KEY);
+	event = window_push(window, KUI_WINDOW_KEY);
 	if (event != NULL) {
-		event->key = key;
+		event->code = key;
 		event->pressed = 0;
 		if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
 			event->pressed = 1;
@@ -1037,11 +1309,11 @@ window_keyboard_key(
 	modifier = window_modifier_key(key);
 	if (modifier == 0) {
 		window->repeat_key = key;
-		window->repeat_at = te_clock() + window->repeat_delay;
+		window->repeat_at = keiui_clock_ms() + window->repeat_delay;
 	}
 }
 
-/* Keeps the modifiers held, in the editor's own bits. */
+/* Keeps the modifiers held, in the window's own bits. */
 static void
 window_keyboard_modifiers(
 	void *data,
@@ -1052,7 +1324,7 @@ window_keyboard_modifiers(
 	uint32_t locked,
 	uint32_t group)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* Only the held modifiers count; zdesktop latches and locks nothing. */
 	(void)keyboard;
@@ -1063,13 +1335,13 @@ window_keyboard_modifiers(
 	window = data;
 	window->modifiers = 0U;
 	if ((depressed & WINDOW_WAYLAND_SHIFT) != 0U)
-		window->modifiers |= TE_MOD_SHIFT;
+		window->modifiers |= KUI_MOD_SHIFT;
 	if ((depressed & WINDOW_WAYLAND_CTRL) != 0U)
-		window->modifiers |= TE_MOD_CTRL;
+		window->modifiers |= KUI_MOD_CTRL;
 	if ((depressed & WINDOW_WAYLAND_ALT) != 0U)
-		window->modifiers |= TE_MOD_ALT;
+		window->modifiers |= KUI_MOD_ALT;
 	if ((depressed & WINDOW_WAYLAND_SUPER) != 0U)
-		window->modifiers |= TE_MOD_SUPER;
+		window->modifiers |= KUI_MOD_SUPER;
 }
 
 /* Takes the compositor's repeat rate and delay, when it gives a rate. */
@@ -1080,7 +1352,7 @@ window_keyboard_repeat(
 	int32_t rate,
 	int32_t delay)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* A positive rate is keys per second. */
 	(void)keyboard;
@@ -1116,36 +1388,34 @@ window_modifier_key(
 	return 0;
 }
 
-/* Queues a touch input with the time the window read it; a full queue drops it. */
+/* Queues a touch input with its time turned into the monotonic clock's microseconds. */
 static void
 window_touch_push(
-	struct te_window *window,
-	enum te_touch_type type,
+	struct kui_window *window,
+	unsigned kind,
 	uint32_t time,
 	int32_t id,
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	struct te_touch_event *event;
-	unsigned slot;
+	struct kui_window_event *event;
+	uint64_t arrival_ms;
+	uint32_t behind;
 
-	/* A full queue drops the input (the fingers are far ahead of the program). */
-	if (window->touch_count == TE_WINDOW_TOUCHES)
+	/* The input; a full queue drops it. */
+	event = window_push(window, kind);
+	if (event == NULL)
 		return;
-
-	/* The slot after the last one queued. */
-	slot = (window->touch_first + window->touch_count) % TE_WINDOW_TOUCHES;
-	window->touch_count++;
-
-	/* The input. */
-	event = &window->touches[slot];
-	memset(event, 0, sizeof(*event));
-	event->type = type;
 	event->id = id;
 	event->x = wl_fixed_to_double(x);
 	event->y = wl_fixed_to_double(y);
-	event->time = time;
-	event->arrival = te_touch_clock();
+
+	/* The event's time: the compositor's milliseconds (the low 32 bits) behind the reading, else the reading's time. */
+	arrival_ms = event->arrival_us / 1000U;
+	behind = (uint32_t)arrival_ms - time;
+	event->time_us = event->arrival_us;
+	if (kind != KUI_WINDOW_TOUCH_CANCEL && behind <= WINDOW_TOUCH_BEHIND)
+		event->time_us = (arrival_ms - behind) * 1000U;
 }
 
 /* A finger touches the window. */
@@ -1160,15 +1430,15 @@ window_touch_down(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* A finger on another surface of the program (the file chooser's) is remembered and left alone. */
 	(void)touch;
 	window = data;
 	if (surface == NULL || surface != window->surface) {
-		if (window->foreign_touch_count < TE_WINDOW_FOREIGN_TOUCHES) {
-			window->foreign_touches[window->foreign_touch_count] = id;
-			window->foreign_touch_count++;
+		if (window->foreign_count < KEIUI_WINDOW_FOREIGN) {
+			window->foreign[window->foreign_count] = id;
+			window->foreign_count++;
 		}
 
 		/* The chooser follows it itself. */
@@ -1178,7 +1448,7 @@ window_touch_down(
 	/* Queued, its serial kept for a long press's context menu. */
 	window->serial = serial;
 	window->press_serial = serial;
-	window_touch_push(window, TE_TOUCH_DOWN, time, id, x, y);
+	window_touch_push(window, KUI_WINDOW_TOUCH_DOWN, time, id, x, y);
 }
 
 /* A finger lifts. */
@@ -1200,7 +1470,7 @@ window_touch_up(
 		return;
 
 	/* Queued, with no place. */
-	window_touch_push(data, TE_TOUCH_UP, time, id, 0, 0);
+	window_touch_push(data, KUI_WINDOW_TOUCH_UP, time, id, 0, 0);
 }
 
 /* A finger moves. */
@@ -1215,14 +1485,14 @@ window_touch_motion(
 {
 	int foreign;
 
-	/* A finger of another surface is not the editor's. */
+	/* A finger of another surface is not the window's. */
 	(void)touch;
 	foreign = window_touch_foreign(data, id, 0);
 	if (foreign)
 		return;
 
 	/* Queued. */
-	window_touch_push(data, TE_TOUCH_MOTION, time, id, x, y);
+	window_touch_push(data, KUI_WINDOW_TOUCH_MOTION, time, id, x, y);
 }
 
 /* The end of a frame of touch events: each event was queued as it came. */
@@ -1242,39 +1512,39 @@ window_touch_cancel(
 	void *data,
 	struct wl_touch *touch)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
-	/* Every finger goes, the other surfaces' too; the editor's are cancelled. */
+	/* Every finger goes, the other surfaces' too; the window's are cancelled. */
 	(void)touch;
 	window = data;
-	window->foreign_touch_count = 0;
-	window_touch_push(data, TE_TOUCH_CANCEL, 0, -1, 0, 0);
+	window->foreign_count = 0;
+	window_touch_push(data, KUI_WINDOW_TOUCH_CANCEL, 0, -1, 0, 0);
 }
 
 /* Tells whether a finger is down on another surface of the program, and forgets it when asked (its lift). */
 static int
 window_touch_foreign(
-	struct te_window *window,
+	struct kui_window *window,
 	int32_t id,
 	int forget)
 {
 	unsigned index;
 
 	/* Each finger of the other surfaces. */
-	for (index = 0; index < window->foreign_touch_count; index++) {
-		if (window->foreign_touches[index] != id)
+	for (index = 0; index < window->foreign_count; index++) {
+		if (window->foreign[index] != id)
 			continue;
 
 		/* Found: forgotten at its lift, the last one taking its slot. */
 		if (forget) {
-			window->foreign_touch_count--;
-			window->foreign_touches[index] = window->foreign_touches[window->foreign_touch_count];
+			window->foreign_count--;
+			window->foreign[index] = window->foreign[window->foreign_count];
 		}
 
 		/* One of another surface's. */
 		return 1;
 	}
 
-	/* One of the editor's own. */
+	/* One of the window's own. */
 	return 0;
 }

@@ -36,8 +36,6 @@
 /* How often the view moves while it glides or a selection is dragged past the edge, in milliseconds. */
 #define APP_FRAME_MS		16
 
-/* How quickly the wheel's glide reaches its target: its time constant in milliseconds. */
-#define APP_GLIDE_MS		70.0
 
 /* The fewest columns a wrapped text is laid out in, and the fewest digits of the line numbers. */
 #define APP_COLUMNS_MIN		8U
@@ -65,6 +63,9 @@ static void app_pointer(struct te_app *app, const struct te_event *event);
 static void app_press(struct te_app *app, const struct te_event *event);
 static void app_drag(struct te_app *app);
 static void app_wheel(struct te_app *app, const struct te_event *event);
+static size_t app_view_position(void *data, double x, double y);
+static void app_view_caret(void *data, size_t position, struct kui_rect *rect);
+static void app_view_word(void *data, size_t position, size_t *start, size_t *end);
 static void app_key(struct te_app *app, const struct te_event *event);
 static void app_find_text(struct te_app *app, const struct te_event *event);
 static void app_request(struct te_app *app, enum te_after after);
@@ -81,6 +82,18 @@ static void app_choose(struct te_app *app, int saving);
 static void app_chosen(struct te_app *app, const struct te_event *event);
 static int app_inside(const struct te_rect *rect, int x, int y);
 static void app_error_message(struct te_app *app, const char *what, const char *name, int error);
+
+/*
+ * The text's answers to the fingers' selection (libkeiui's text view
+ * touch), in the text's content coordinates: the position at a point, the
+ * cursor's rectangle at a position, and the word around a position.  The
+ * table is constant for the program's life.
+ */
+static const struct kui_text_view app_text_view = {
+	app_view_position,
+	app_view_caret,
+	app_view_word
+};
 
 /*
  * Starts the editor with an empty Untitled document, at a size, with the
@@ -107,6 +120,12 @@ te_app_init(
 	app->wrap = 1;
 	app->focused = 1;
 
+	/* The view's scroll (both ways; across only while lines are not wrapped) and the fingers' selection. */
+	error = kui_scroll_init(&app->scroll, KUI_SCROLL_X | KUI_SCROLL_Y);
+	if (error != 0)
+		te_log("FAILED operation=scroll error=%d", error);
+	kui_text_touch_init(&app->touch, &app_text_view, app);
+
 	/* The empty document, its history and its rows. */
 	error = te_buffer_init(&app->buffer, "", 0U);
 	if (error != 0)
@@ -128,7 +147,8 @@ void
 te_app_release(
 	struct te_app *app)
 {
-	/* The rows, the history and the document. */
+	/* The view's scroll, the rows, the history and the document. */
+	kui_scroll_release(&app->scroll);
 	te_layout_free(&app->layout);
 	te_undo_free(&app->undo);
 	te_buffer_free(&app->buffer);
@@ -297,6 +317,12 @@ te_app_event(
 
 	/* The line numbers may have grown a digit, which narrows the text. */
 	app_fit(app);
+
+	/* A selection the keys or the pointer changed is no longer the fingers' (their handles go). */
+	if (app->touch.handles) {
+		if (app->touch.anchor != app->anchor || app->touch.caret != app->cursor)
+			kui_text_touch_set_selection(&app->touch, app->anchor, app->cursor);
+	}
 }
 
 /*
@@ -404,17 +430,12 @@ te_app_tick(
 	struct te_app *app,
 	uint64_t now)
 {
-	double elapsed;
-	double share;
-	double left;
 	uint64_t since;
+	int moving;
 	int due;
 	int wait;
 
 	/* The time, and nothing due yet. */
-	elapsed = 0.0;
-	if (app->now != 0U && now > app->now)
-		elapsed = (double)(now - app->now);
 	app->now = now;
 	due = -1;
 
@@ -428,21 +449,10 @@ te_app_tick(
 		}
 	}
 
-	/* The wheel's glide: the view closes on its target, and stops within half a pixel. */
-	if (app->gliding) {
-		share = 1.0 - exp(-elapsed / APP_GLIDE_MS);
-		app->scroll_y += (app->target_y - app->scroll_y) * share;
-		left = fabs(app->target_y - app->scroll_y);
-		if (left < 0.5) {
-			app->scroll_y = app->target_y;
-			app->gliding = 0;
-		}
-
-		/* The view moved. */
-		app->dirty = 1;
-		if (app->gliding && (due < 0 || due > APP_FRAME_MS))
-			due = APP_FRAME_MS;
-	}
+	/* The view where its scroll has it (the wheel's glide, the fingers' flight); a moving view wants frames. */
+	moving = te_app_sync_scroll(app, now * 1000U);
+	if (moving && (due < 0 || due > APP_FRAME_MS))
+		due = APP_FRAME_MS;
 
 	/* A selection dragged past the edge scrolls the view and follows the pointer. */
 	if (app->selecting) {
@@ -499,7 +509,6 @@ te_app_relayout(
 	if (error != 0)
 		te_log("LAYOUT failed error=%d", error);
 	te_app_clamp(app);
-	app->target_y = app->scroll_y;
 	app->dirty = 1;
 }
 
@@ -510,21 +519,89 @@ void
 te_app_clamp(
 	struct te_app *app)
 {
-	double largest;
+	struct te_rect text;
+	double largest_x;
+	double largest_y;
 
 	/* Down no further than the last row at the bottom. */
-	largest = te_app_max_scroll_y(app);
-	if (app->scroll_y > largest)
-		app->scroll_y = largest;
+	largest_y = te_app_max_scroll_y(app);
+	if (app->scroll_y > largest_y)
+		app->scroll_y = largest_y;
 	if (app->scroll_y < 0.0)
 		app->scroll_y = 0.0;
 
 	/* Across no further than the widest line (never, with wrapping). */
-	largest = te_app_max_scroll_x(app);
-	if (app->scroll_x > largest)
-		app->scroll_x = largest;
+	largest_x = te_app_max_scroll_x(app);
+	if (app->scroll_x > largest_x)
+		app->scroll_x = largest_x;
 	if (app->scroll_x < 0.0)
 		app->scroll_x = 0.0;
+
+	/* The scroll's sizes: the text's viewport and as much more as it scrolls. */
+	te_app_text_rect(app, &text);
+	kui_scroll_set_size(&app->scroll, (double)text.width + largest_x, (double)text.height + largest_y, (double)text.width, (double)text.height);
+
+	/* A place the editor chose (a reveal, a drag past the edge, a new file) moves the scroll there at once. */
+	if (app->scroll_x != app->scroll.x || app->scroll_y != app->scroll.y)
+		kui_scroll_move_to(&app->scroll, app->scroll_x, app->scroll_y, 0, app->now * 1000U);
+}
+
+/*
+ * Moves the view's scroll on to a time and takes its place as the place
+ * drawn.  Returns 1 while it moves by itself (the wheel's glide, the
+ * fingers' flight).
+ */
+int
+te_app_sync_scroll(
+	struct te_app *app,
+	uint64_t now_us)
+{
+	int moving;
+
+	/* The scroll at the time. */
+	moving = kui_scroll_step(&app->scroll, now_us);
+
+	/* A new place is drawn. */
+	if (app->scroll.x != app->scroll_x || app->scroll.y != app->scroll_y) {
+		app->scroll_x = app->scroll.x;
+		app->scroll_y = app->scroll.y;
+		app->dirty = 1;
+	}
+
+	/* Reports whether it moves on. */
+	return moving;
+}
+
+/*
+ * Takes what the fingers did to the text (libkeiui's text view touch): the
+ * selection they made, and a long press's context menu.
+ */
+void
+te_app_touch(
+	struct te_app *app)
+{
+	unsigned changes;
+
+	/* What changed. */
+	changes = kui_text_touch_take(&app->touch);
+
+	/* The fingers' selection becomes the editor's. */
+	if (changes != 0U)
+		te_log("TOUCH changes=%u anchor=%lu caret=%lu handles=%d", changes, (unsigned long)app->touch.anchor, (unsigned long)app->touch.caret, app->touch.handles);
+	if ((changes & KUI_TEXT_TOUCH_SELECTION) != 0U) {
+		te_edit_select(app, app->touch.anchor, app->touch.caret);
+		app->dirty = 1;
+	}
+
+	/* The context menu at the finger. */
+	if ((changes & KUI_TEXT_TOUCH_MENU) != 0U && app->host.context_menu != NULL)
+		app->host.context_menu(app->host.data, (int)app->touch.menu_x, (int)app->touch.menu_y);
+
+	/* The handles came or went (a drag's end, a key's selection): the frame shows it. */
+	if (app->touch.handles != app->handles_shown) {
+		app->handles_shown = app->touch.handles;
+		app->dirty = 1;
+	}
 }
 
 /*
@@ -873,8 +950,6 @@ app_replace(
 	app->goal_valid = 0;
 	app->scroll_x = 0.0;
 	app->scroll_y = 0.0;
-	app->target_y = 0.0;
-	app->gliding = 0;
 	te_app_relayout(app);
 	app->title_changed = 1;
 	app->dirty = 1;
@@ -1032,7 +1107,6 @@ app_drag(
 	if (step != 0.0) {
 		app->scroll_y += step;
 		te_app_clamp(app);
-		app->target_y = app->scroll_y;
 		app->dirty = 1;
 	}
 
@@ -1068,8 +1142,6 @@ app_wheel(
 	struct te_app *app,
 	const struct te_event *event)
 {
-	double largest;
-
 	/* A dialog keeps the view still. */
 	if (app->dialog != TE_DIALOG_NONE)
 		return;
@@ -1083,26 +1155,9 @@ app_wheel(
 		return;
 	}
 
-	/* Across: at once. */
-	if (event->scroll_x != 0) {
-		app->scroll_x += (double)event->scroll_x;
-		te_app_clamp(app);
-		app->dirty = 1;
-	}
-
-	/* Down or up: the view glides to the new place, within the text. */
-	if (event->scroll != 0) {
-		if (!app->gliding)
-			app->target_y = app->scroll_y;
-		app->target_y += (double)event->scroll;
-		largest = te_app_max_scroll_y(app);
-		if (app->target_y < 0.0)
-			app->target_y = 0.0;
-		if (app->target_y > largest)
-			app->target_y = largest;
-		app->gliding = 1;
-		app->dirty = 1;
-	}
+	/* Otherwise the view glides to the new place, within the text (libkeiui's scroll). */
+	kui_scroll_wheel(&app->scroll, (double)event->scroll_x, (double)event->scroll, app->now * 1000U);
+	app->dirty = 1;
 }
 
 /* Takes a key: a dialog's, F3, or the text's. */
@@ -1580,4 +1635,58 @@ app_error_message(
 
 	/* Shown. */
 	te_app_message(app, message);
+}
+
+/* The fingers' answer: the position nearest a point of the text's content. */
+static size_t
+app_view_position(
+	void *data,
+	double x,
+	double y)
+{
+	struct te_app *app;
+	struct te_rect text;
+	size_t position;
+
+	/* The point in the window, where the editor finds positions. */
+	app = data;
+	te_app_text_rect(app, &text);
+	position = te_edit_position_at(app, (int)(x - app->scroll_x) + text.x, (int)(y - app->scroll_y) + text.y);
+
+	/* Reports the position. */
+	return position;
+}
+
+/* The fingers' answer: the cursor's rectangle at a position, in the text's content. */
+static void
+app_view_caret(
+	void *data,
+	size_t position,
+	struct kui_rect *rect)
+{
+	struct te_app *app;
+	size_t row;
+	size_t column;
+
+	/* The row and the cell of the position. */
+	app = data;
+	te_layout_place(&app->layout, &app->buffer, position, &row, &column);
+
+	/* The cursor's bar there, a row tall. */
+	rect->x = (int)column * app->cell;
+	rect->y = (int)row * app->row_height;
+	rect->width = 2;
+	rect->height = app->row_height;
+}
+
+/* The fingers' answer: the word around a position. */
+static void
+app_view_word(
+	void *data,
+	size_t position,
+	size_t *start,
+	size_t *end)
+{
+	/* The editor's word (a run of one kind of character). */
+	te_edit_word(data, position, start, end);
 }

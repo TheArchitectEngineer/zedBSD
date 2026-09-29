@@ -21,3 +21,6 @@ ZEDBSD_USER_PROGRAMS += openssl openssh
 # its Sound page speaks to (the default rc.conf starts audiod; the kernel here has no HDA driver yet, so audiod finds
 # no device until one is added).
 ZEDBSD_USER_PROGRAMS += settings audiod
+# ws090-p004 (main's permission 2026-09-29): the desktop's shared widgets (libkeiui), which Text Editor's window,
+# scroll and touch come from.
+ZEDBSD_USER_PROGRAMS += libkeiui
