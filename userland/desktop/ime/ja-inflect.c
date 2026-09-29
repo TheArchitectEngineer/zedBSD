@@ -280,8 +280,10 @@ ja_inflect_suru_ends(
 	/* Walks the forms of する. */
 	inflect_walk(text, start, TAIL_SURU, ends);
 
-	/* The stem し alone is no word of its own, and nothing is no form. */
+	/* Nothing is no form. */
 	ends[start] = false;
+
+	/* The stem し alone is no word of its own. */
 	if (start + 1U <= text->unit_count)
 		ends[start + 1U] = false;
 }
@@ -298,8 +300,10 @@ ja_inflect_kuru_ends(
 	/* Walks the forms of 来る. */
 	inflect_walk(text, start, TAIL_KURU, ends);
 
-	/* The stems き and こ alone are no word of their own (木, 子), and nothing is no form. */
+	/* Nothing is no form. */
 	ends[start] = false;
+
+	/* The stems き and こ alone are no word of their own (木, 子). */
 	if (start + 1U <= text->unit_count)
 		ends[start + 1U] = false;
 }
@@ -331,6 +335,8 @@ ja_particle_ends(
 			continue;
 
 		ends[end] = true;
+
+		/* A particle ending the sentence after it. */
 		for (j = 0; inflect_finals[j] != NULL; j++) {
 			matched = ja_text_match(text, end, inflect_finals[j], &final_end);
 			if (matched)
@@ -521,6 +527,8 @@ inflect_godan(
 		/* 書いた; 行く alone takes っ (行った). */
 		if (code == 0x3044U)
 			inflect_walk(text, position + 1U, TAIL_PAST, ends);
+
+		/* The っ of 行った, after the い of 行. */
 		if (code == 0x3063U && previous == 0x3044U)
 			inflect_walk(text, position + 1U, TAIL_PAST, ends);
 		break;

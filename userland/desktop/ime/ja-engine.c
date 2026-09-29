@@ -33,6 +33,9 @@
 #define ENGINE_PRESSES_WINDOW	2U
 
 static bool engine_append_units(struct ja_core *core, const struct ja_romaji_result *result);
+static void engine_commit_conversion(struct ja_core *core, struct ime_output *out);
+static void engine_commit_composition(struct ja_core *core, struct ime_output *out);
+static void engine_output_conversion(const struct ja_core *core, struct ime_output *out);
 static void engine_flush_romaji(struct ja_core *core);
 static void engine_fill_segment(struct ja_core *core, const struct ja_text *text, size_t index, size_t start, size_t end);
 static size_t engine_split_from(struct ja_core *core, const struct ja_text *text, size_t first, size_t start);
@@ -40,6 +43,7 @@ static size_t engine_form_text(const struct ja_core *core, const struct ja_segme
 static void engine_key(struct ime_engine *engine, const struct ime_key *key, struct ime_output *out);
 static void engine_reset(struct ime_engine *engine, bool commit, struct ime_output *out);
 static void engine_surrounding(struct ime_engine *engine, const char *text, uint32_t cursor, uint32_t anchor);
+static void engine_content_type(struct ime_engine *engine, uint32_t hint, uint32_t purpose);
 static void engine_destroy(struct ime_engine *engine);
 
 /*
@@ -51,6 +55,7 @@ static const struct ime_engine_ops engine_ops = {
 	engine_key,
 	engine_reset,
 	engine_surrounding,
+	engine_content_type,
 	engine_destroy
 };
 
@@ -145,8 +150,9 @@ ja_core_open(
 		core->lexicon.dict_count++;
 	}
 
-	/* Succeeded: the engine rests with nothing composed. */
+	/* Succeeded: the engine rests with nothing composed, and learns. */
 	ja_romaji_reset(&core->romaji);
+	core->learning = true;
 	return 0;
 }
 
@@ -348,6 +354,8 @@ ja_core_convert(
 
 	/* A lone n and the other pending letters end first. */
 	engine_flush_romaji(core);
+
+	/* Nothing to convert. */
 	if (core->unit_count == 0U)
 		return false;
 
@@ -538,6 +546,8 @@ ja_core_apply_form(
 	/* A composition becomes one segment first. */
 	if (!core->converting) {
 		engine_flush_romaji(core);
+
+		/* Nothing is composed to give a form to. */
 		if (core->unit_count == 0U)
 			return;
 
@@ -584,57 +594,14 @@ ja_core_commit(
 	struct ja_core *core,
 	struct ime_output *out)
 {
-	struct ja_text *text;
-	struct ja_segment *segment;
-	char bytes[8];
-	size_t used;
-	size_t i;
-	bool learned;
-	int error;
-
-	/* A conversion commits its chosen candidates and learns them. */
+	/* A conversion commits its chosen candidates; a composition its characters. */
 	if (core->converting) {
-		text = malloc(sizeof(*text));
-		learned = false;
-		if (text != NULL)
-			ja_text_build(text, core->units, core->unit_count);
-
-		for (i = 0; i < core->segment_count; i++) {
-			segment = &core->segments[i];
-			if (segment->candidate_count == 0U)
-				continue;
-
-			(void)ime_output_append_commit(out, segment->candidates[segment->selected],
-						       strlen(segment->candidates[segment->selected]));
-
-			/* A segment with one candidate had no choice to learn. */
-			if (text == NULL || segment->candidate_count < 2U || core->lexicon.user == NULL)
-				continue;
-
-			error = ja_user_learn(&core->user, text->bytes + text->offsets[segment->start],
-					      text->offsets[segment->end] - text->offsets[segment->start],
-					      segment->candidates[segment->selected]);
-			if (error == 0)
-				learned = true;
-		}
-
-		free(text);
-
-		/* The choices outlive the input method. */
-		if (learned)
-			(void)ja_user_save(&core->user);
-
-		ja_core_clear(core);
-		return;
+		engine_commit_conversion(core, out);
+	} else {
+		engine_commit_composition(core, out);
 	}
 
-	/* A composition commits its characters as they are. */
-	engine_flush_romaji(core);
-	for (i = 0; i < core->unit_count; i++) {
-		used = ja_utf8_encode(core->units[i].code, bytes);
-		(void)ime_output_append_commit(out, bytes, used);
-	}
-
+	/* The engine rests with nothing composed. */
 	ja_core_clear(core);
 }
 
@@ -647,11 +614,9 @@ ja_core_output(
 	const struct ja_core *core,
 	struct ime_output *out)
 {
-	const struct ja_segment *segment;
-	const char *candidate;
-	size_t length;
 	size_t i;
 
+	/* Starts from nothing shown. */
 	out->preedit_length = 0;
 	out->preedit[0] = '\0';
 	out->cursor_begin = 0;
@@ -660,38 +625,9 @@ ja_core_output(
 	out->candidate_selected = 0;
 	out->candidates_shown = false;
 
-	/* A conversion shows its chosen candidates, the segment in focus as the cursor range. */
+	/* A conversion shows its chosen candidates and the window's state. */
 	if (core->converting) {
-		for (i = 0; i < core->segment_count; i++) {
-			segment = &core->segments[i];
-			if (segment->candidate_count == 0U)
-				continue;
-
-			candidate = segment->candidates[segment->selected];
-			length = strlen(candidate);
-			if (out->preedit_length + length >= IME_TEXT_MAX)
-				break;
-
-			if (i == core->focus)
-				out->cursor_begin = (int32_t)out->preedit_length;
-			memcpy(out->preedit + out->preedit_length, candidate, length);
-			out->preedit_length += length;
-			if (i == core->focus)
-				out->cursor_end = (int32_t)out->preedit_length;
-		}
-
-		out->preedit[out->preedit_length] = '\0';
-
-		/* The candidates of the segment in focus. */
-		segment = &core->segments[core->focus];
-		for (i = 0; i < segment->candidate_count && i < IME_CANDIDATES_MAX; i++)
-			strcpy(out->candidates[i], segment->candidates[i]);
-
-		out->candidate_count = segment->candidate_count;
-		out->candidate_selected = segment->selected;
-		if (segment->presses >= ENGINE_PRESSES_WINDOW)
-			out->candidates_shown = true;
-		out->composing = true;
+		engine_output_conversion(core, out);
 		return;
 	}
 
@@ -704,9 +640,150 @@ ja_core_output(
 	out->preedit[out->preedit_length] = '\0';
 	out->cursor_begin = (int32_t)out->preedit_length;
 	out->cursor_end = (int32_t)out->preedit_length;
+
+	/* Something is being composed when the preedit is not empty. */
 	out->composing = false;
 	if (out->preedit_length != 0U)
 		out->composing = true;
+}
+
+/*
+ * Commits the chosen candidates of a conversion, and teaches the user
+ * dictionary each segment's choice.
+ */
+static void
+engine_commit_conversion(
+	struct ja_core *core,
+	struct ime_output *out)
+{
+	struct ja_text *text;
+	struct ja_segment *segment;
+	const char *chosen;
+	size_t i;
+	bool learned;
+	int error;
+
+	/* Reads the composition, for the readings the choices are learned under. */
+	text = malloc(sizeof(*text));
+	if (text != NULL)
+		ja_text_build(text, core->units, core->unit_count);
+
+	/* Commits each segment's choice in turn. */
+	learned = false;
+	for (i = 0; i < core->segment_count; i++) {
+		segment = &core->segments[i];
+		if (segment->candidate_count == 0U)
+			continue;
+
+		chosen = segment->candidates[segment->selected];
+		(void)ime_output_append_commit(out, chosen, strlen(chosen));
+
+		/*
+		 * A segment with one candidate had no choice to learn; nothing is
+		 * learned in a secret field, or without memory or a dictionary.
+		 */
+		if (!core->learning || text == NULL || segment->candidate_count < 2U || core->lexicon.user == NULL)
+			continue;
+
+		/* Puts the choice first for the segment's reading. */
+		error = ja_user_learn(&core->user, text->bytes + text->offsets[segment->start],
+				      text->offsets[segment->end] - text->offsets[segment->start], chosen);
+		if (error == 0)
+			learned = true;
+	}
+
+	free(text);
+
+	/* The choices outlive the input method. */
+	if (learned)
+		(void)ja_user_save(&core->user);
+}
+
+/*
+ * Commits the characters of a composition as they are.
+ */
+static void
+engine_commit_composition(
+	struct ja_core *core,
+	struct ime_output *out)
+{
+	char bytes[8];
+	size_t used;
+	size_t i;
+
+	/* A lone n and the other pending letters end first. */
+	engine_flush_romaji(core);
+
+	/* Writes each character. */
+	for (i = 0; i < core->unit_count; i++) {
+		used = ja_utf8_encode(core->units[i].code, bytes);
+		(void)ime_output_append_commit(out, bytes, used);
+	}
+}
+
+/*
+ * Fills an output with a conversion: its chosen candidates with the
+ * segment in focus as the cursor range, and that segment's candidates.
+ */
+static void
+engine_output_conversion(
+	const struct ja_core *core,
+	struct ime_output *out)
+{
+	const struct ja_segment *segment;
+	const char *candidate;
+	size_t length;
+	size_t i;
+
+	/* Writes each segment's choice, as much as one message carries. */
+	for (i = 0; i < core->segment_count; i++) {
+		segment = &core->segments[i];
+		if (segment->candidate_count == 0U)
+			continue;
+
+		candidate = segment->candidates[segment->selected];
+		length = strlen(candidate);
+		if (out->preedit_length + length >= IME_TEXT_MAX)
+			break;
+
+		/* The segment in focus is the cursor range. */
+		if (i == core->focus) {
+			out->cursor_begin = (int32_t)out->preedit_length;
+			out->cursor_end = (int32_t)(out->preedit_length + length);
+		}
+
+		memcpy(out->preedit + out->preedit_length, candidate, length);
+		out->preedit_length += length;
+	}
+
+	out->preedit[out->preedit_length] = '\0';
+
+	/* The candidates of the segment in focus. */
+	segment = &core->segments[core->focus];
+	for (i = 0; i < segment->candidate_count && i < IME_CANDIDATES_MAX; i++)
+		strcpy(out->candidates[i], segment->candidates[i]);
+
+	out->candidate_count = segment->candidate_count;
+	out->candidate_selected = segment->selected;
+
+	/* The window opens once the next candidate has been asked for twice. */
+	if (segment->presses >= ENGINE_PRESSES_WINDOW)
+		out->candidates_shown = true;
+
+	out->composing = true;
+}
+
+/*
+ * Turns learning the user's choices on or off (off in a field whose text
+ * is secret).
+ */
+void
+ja_core_set_learning(
+	struct ja_core *core,
+	bool learning)
+{
+	/* Read by each commit. */
+	core->learning = learning;
 }
 
 /*
@@ -931,6 +1008,32 @@ engine_surrounding(
 	UNUSED_PARAMETER(text);
 	UNUSED_PARAMETER(cursor);
 	UNUSED_PARAMETER(anchor);
+}
+
+/*
+ * Takes what the field holds: in a field whose text is secret (a
+ * password, a PIN, or text the application marks sensitive or hidden)
+ * nothing is learned.
+ */
+static void
+engine_content_type(
+	struct ime_engine *engine,
+	uint32_t hint,
+	uint32_t purpose)
+{
+	struct ja_core *core;
+	bool secret;
+
+	core = engine->state;
+
+	/* Any sign of a secret turns learning off. */
+	secret = false;
+	if ((hint & (IME_HINT_SENSITIVE_DATA | IME_HINT_HIDDEN_TEXT)) != 0U)
+		secret = true;
+	if (purpose == IME_PURPOSE_PASSWORD || purpose == IME_PURPOSE_PIN)
+		secret = true;
+
+	ja_core_set_learning(core, !secret);
 }
 
 /*

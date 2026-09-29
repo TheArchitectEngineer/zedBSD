@@ -689,6 +689,20 @@ test_engine_keys(void)
 	      "keys: a long composition stops at its limit (%zu bytes)", out->preedit_length);
 	engine.ops->reset(&engine, false, out);
 
+	/* A secret field teaches nothing: 渡 chosen there does not come first later. */
+	engine.ops->content_type(&engine, IME_HINT_SENSITIVE_DATA, 0);
+	type_text(&engine, "watasi", out);
+	key_code(&engine, IME_KEY_SPACE, 0, out);
+	key_code(&engine, IME_KEY_SPACE, 0, out);
+	key_code(&engine, IME_KEY_SPACE, 0, out);
+	check(strcmp(out->preedit, "渡") == 0, "keys: 渡 is chosen in a sensitive field (got %s)", out->preedit);
+	key_code(&engine, IME_KEY_ENTER, 0, out);
+	engine.ops->content_type(&engine, 0, 0);
+	type_text(&engine, "watasi", out);
+	key_code(&engine, IME_KEY_SPACE, 0, out);
+	check(strcmp(out->preedit, "渡し") == 0, "keys: the choice in the sensitive field was not learned (got %s)", out->preedit);
+	engine.ops->reset(&engine, false, out);
+
 	/* The arrows while composing do not reach the application. */
 	type_text(&engine, "ka", out);
 	key_code(&engine, IME_KEY_LEFT, 0, out);

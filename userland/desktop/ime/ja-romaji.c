@@ -379,8 +379,11 @@ romaji_emit(
 	memset(unit, 0, sizeof(*unit));
 	unit->code = code;
 	unit->kind = kind;
+
+	/* Keeps as many of the letters typed as fit, terminated. */
 	if (raw_length >= JA_RAW_MAX)
 		raw_length = JA_RAW_MAX - 1U;
+
 	memcpy(unit->raw, raw, raw_length);
 	result->count++;
 }

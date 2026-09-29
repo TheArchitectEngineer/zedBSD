@@ -20,6 +20,7 @@
 static void direct_key(struct ime_engine *engine, const struct ime_key *key, struct ime_output *out);
 static void direct_reset(struct ime_engine *engine, bool commit, struct ime_output *out);
 static void direct_surrounding(struct ime_engine *engine, const char *text, uint32_t cursor, uint32_t anchor);
+static void direct_content_type(struct ime_engine *engine, uint32_t hint, uint32_t purpose);
 static void direct_destroy(struct ime_engine *engine);
 
 /*
@@ -31,6 +32,7 @@ static const struct ime_engine_ops direct_ops = {
 	direct_key,
 	direct_reset,
 	direct_surrounding,
+	direct_content_type,
 	direct_destroy
 };
 
@@ -96,6 +98,20 @@ direct_surrounding(
 	UNUSED_PARAMETER(text);
 	UNUSED_PARAMETER(cursor);
 	UNUSED_PARAMETER(anchor);
+}
+
+/*
+ * Does not use what the field holds.
+ */
+static void
+direct_content_type(
+	struct ime_engine *engine,
+	uint32_t hint,
+	uint32_t purpose)
+{
+	UNUSED_PARAMETER(engine);
+	UNUSED_PARAMETER(hint);
+	UNUSED_PARAMETER(purpose);
 }
 
 /*

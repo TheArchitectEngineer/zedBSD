@@ -765,6 +765,8 @@ segment_add_core_candidates(
 
 	/* A noun that is the whole word. */
 	key_length = text->offsets[core_end] - text->offsets[start];
+
+	/* Only a reading no longer than a headword can be one. */
 	if (core_end - start <= JA_HEADWORD_MAX) {
 		segment_add_nouns(lexicon, start_bytes, key_length, text->bytes + text->offsets[core_end],
 				  text->offsets[end] - text->offsets[core_end], segment);
@@ -844,6 +846,8 @@ segment_add_katakana(
 	while (position < text->offsets[core_end]) {
 		used = ja_utf8_decode(text->bytes + position, text->offsets[core_end] - position, &code);
 		position += used;
+
+		/* A candidate that would be too long is left out. */
 		if (length + 4U >= sizeof(written))
 			return;
 
@@ -883,6 +887,8 @@ segment_add_full_width(
 	while (position < text->offsets[end]) {
 		used = ja_utf8_decode(text->bytes + position, text->offsets[end] - position, &code);
 		position += used;
+
+		/* A candidate that would be too long is left out. */
 		if (length + 4U >= sizeof(written))
 			return;
 

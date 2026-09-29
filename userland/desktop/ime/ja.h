@@ -214,6 +214,7 @@ struct ja_core {
 	bool has_supplement;
 	struct ja_user user;
 	struct ja_lexicon lexicon;
+	bool learning;
 	int system_error;
 	int supplement_error;
 	int user_error;
@@ -283,6 +284,7 @@ void ja_core_resize_focus(struct ja_core *core, int step);
 void ja_core_apply_form(struct ja_core *core, enum ja_form form);
 void ja_core_commit(struct ja_core *core, struct ime_output *out);
 void ja_core_output(const struct ja_core *core, struct ime_output *out);
+void ja_core_set_learning(struct ja_core *core, bool learning);
 
 /* ja-keys.c */
 void ja_keys_handle(struct ja_core *core, const struct ime_key *key, struct ime_output *out);

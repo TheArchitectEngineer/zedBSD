@@ -37,6 +37,15 @@
 #define IME_CANDIDATES_MAX	40U
 #define IME_CANDIDATE_MAX	160U
 
+/*
+ * The content hints and purposes of text-input-unstable-v3 an engine acts
+ * on: a field whose text is secret teaches the engine nothing.
+ */
+#define IME_HINT_HIDDEN_TEXT	0x40U
+#define IME_HINT_SENSITIVE_DATA	0x80U
+#define IME_PURPOSE_PASSWORD	8U
+#define IME_PURPOSE_PIN		9U
+
 /* The modifiers held with a key. */
 #define IME_MOD_SHIFT		0x01U
 #define IME_MOD_CTRL		0x02U
@@ -120,7 +129,8 @@ struct ime_output {
  * composed, either committing it into the output (on switching languages)
  * or dropping it (on deactivation, when zdesktop has already committed the
  * preedit itself); surrounding tells the engine the text around the
- * cursor; destroy frees the engine.
+ * cursor; content_type tells it what the field holds (the hints and the
+ * purpose of text-input-v3); destroy frees the engine.
  */
 struct ime_engine_ops {
 	const char *id;
@@ -128,6 +138,7 @@ struct ime_engine_ops {
 	void (*key)(struct ime_engine *engine, const struct ime_key *key, struct ime_output *out);
 	void (*reset)(struct ime_engine *engine, bool commit, struct ime_output *out);
 	void (*surrounding)(struct ime_engine *engine, const char *text, uint32_t cursor, uint32_t anchor);
+	void (*content_type)(struct ime_engine *engine, uint32_t hint, uint32_t purpose);
 	void (*destroy)(struct ime_engine *engine);
 };
 
