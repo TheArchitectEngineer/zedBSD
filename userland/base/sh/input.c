@@ -818,10 +818,11 @@ fill_terminal(
 	if (line == NULL)
 		return 0;
 
-	/* Keeps the line in the histories, unless it is empty. */
+	/* Keeps the line in the histories and the history file, unless it is empty. */
 	if (line[0] != '\0') {
 		add_history(line);
 		sh_history_add(line);
+		sh_history_save(line);
 	}
 
 	/* The line is the source's text, with its newline. */

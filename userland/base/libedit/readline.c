@@ -15,7 +15,8 @@
  * readline() puts the terminal in raw mode and edits one line with emacs
  * keys (the arrows, Ctrl-A, Ctrl-E and the like) or, when rl_editing_mode
  * is 0, with the vi keys of XCU sh's vi-mode.  The history keeps the last
- * HISTORY_MAX lines that the caller adds.
+ * HISTORY_MAX lines that the caller adds, or as many as stifle_history()
+ * names.
  */
 
 #include "readline/readline.h"
@@ -27,7 +28,7 @@
 #include <termios.h>
 #include <unistd.h>
 
-/* How many lines the history keeps; the oldest goes when it is full. */
+/* How many lines the history keeps until stifle_history() names another number. */
 #define HISTORY_MAX 32
 
 /* The first size of a line buffer, which doubles as the line grows. */
@@ -130,10 +131,20 @@ int history_length;
 /*
  * The history, oldest first.
  *
- * The first history_length entries hold lines this file allocated; the
- * rest are empty.
+ * The array grows as lines are added, up to history_limit entries.  The
+ * first history_length entries hold lines this file allocated; the rest of
+ * the history_capacity entries are empty.
  */
-static HIST_ENTRY history_entries[HISTORY_MAX];
+static HIST_ENTRY *history_entries;
+
+/* How many entries the history_entries array has room for. */
+static int history_capacity;
+
+/*
+ * How many lines the history keeps: HISTORY_MAX, or what stifle_history()
+ * set.  When a line is added to a full history the oldest one goes.
+ */
+static int history_limit = HISTORY_MAX;
 
 /*
  * The entry the history keys have walked to.
@@ -159,6 +170,8 @@ static size_t line_changed_from;
  */
 static struct vi_state vi_state;
 
+static void history_drop_oldest(void);
+static int history_grow(void);
 static char *duplicate(const char *text);
 static int write_all(const char *bytes, size_t size);
 static enum line_result emacs_key(const struct edit_line *edit, unsigned char byte);
@@ -241,9 +254,14 @@ add_history(
 	const char *line)
 {
 	char *copy;
+	int grown;
 
 	/* An empty line is not worth recalling. */
 	if (line == NULL || line[0] == '\0')
+		return;
+
+	/* A history stifled to nothing keeps no line. */
+	if (history_limit == 0)
 		return;
 
 	/* The history keeps a copy; without memory the line is not kept. */
@@ -252,17 +270,41 @@ add_history(
 		return;
 
 	/* A full history drops its oldest entry, and the numbers move up. */
-	if (history_length == HISTORY_MAX) {
-		free(history_entries[0].line);
-		memmove(&history_entries[0], &history_entries[1], (HISTORY_MAX - 1U) * sizeof(history_entries[0]));
-		history_length--;
-		history_base++;
+	if (history_length >= history_limit)
+		history_drop_oldest();
+
+	/* Room for one more entry; without memory the line is not kept. */
+	grown = history_grow();
+	if (!grown) {
+		free(copy);
+		return;
 	}
 
 	/* The line is the newest entry, and the walk starts past it. */
 	history_entries[history_length].line = copy;
 	history_entries[history_length].timestamp = NULL;
 	history_length++;
+	history_position = history_length;
+}
+
+/*
+ * Keeps at most max entries from now on (a negative max counts as 0), and
+ * drops the oldest entries over it now.
+ */
+void
+stifle_history(
+	int max)
+{
+	/* A negative limit keeps nothing, as GNU Readline treats it. */
+	if (max < 0)
+		max = 0;
+
+	/* The oldest entries over the new limit go, and the numbers move up. */
+	history_limit = max;
+	while (history_length > history_limit)
+		history_drop_oldest();
+
+	/* The walk starts again past the newest entry. */
 	history_position = history_length;
 }
 
@@ -469,6 +511,61 @@ readline(
 	rl_point = (int)point;
 	rl_end = (int)length;
 	return line;
+}
+
+/* Frees the oldest history entry and moves the others down; the numbers move up. */
+static void
+history_drop_oldest(
+	void)
+{
+	/* An empty history has nothing to drop. */
+	if (history_length == 0)
+		return;
+
+	/* The oldest line goes and the newer entries take its place. */
+	free(history_entries[0].line);
+	memmove(&history_entries[0], &history_entries[1], (size_t)(history_length - 1) * sizeof(history_entries[0]));
+	history_length--;
+	history_entries[history_length].line = NULL;
+	history_entries[history_length].timestamp = NULL;
+	history_base++;
+}
+
+/* Makes room for one more history entry; returns 1, or 0 without memory. */
+static int
+history_grow(
+	void)
+{
+	HIST_ENTRY *larger;
+	int capacity;
+
+	/* An array with a free entry stays. */
+	if (history_length < history_capacity)
+		return 1;
+
+	/* The array doubles, from room for HISTORY_MAX lines, but not past the limit. */
+	capacity = HISTORY_MAX;
+	if (history_capacity > 0) {
+		capacity = history_capacity;
+		if (capacity > history_limit / 2)
+			capacity = history_limit;
+		else
+			capacity *= 2;
+	}
+
+	/* The limit may be below the first size, but never below one more entry. */
+	if (capacity <= history_length)
+		capacity = history_length + 1;
+
+	/* The larger array. */
+	larger = realloc(history_entries, (size_t)capacity * sizeof(history_entries[0]));
+	if (larger == NULL)
+		return 0;
+
+	/* Succeeded: the array has room for one more entry. */
+	history_entries = larger;
+	history_capacity = capacity;
+	return 1;
 }
 
 /* Returns a copy of a string in allocated memory, or NULL without memory. */
