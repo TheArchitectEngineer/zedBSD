@@ -21,8 +21,11 @@
  * and the touch of a view of editable text.  The third (KUI_VERSION 3) is
  * the window: a Wayland toplevel whose input arrives as a queue of
  * events, whose CPU-drawn frames are shown through Vulkan or shared
- * memory, and which holds the clipboard and the primary selection.  Later
- * versions add the widgets.
+ * memory, and which holds the clipboard and the primary selection.  The
+ * fourth (KUI_VERSION 4) is the widgets: buttons, switches, sliders, text
+ * fields, lists, sidebars, cards and their rows, dialogs, chips and
+ * progress bars, drawn in the Kei look of Files and Settings, and the
+ * keyboard's focus among them.
  *
  * Times are CLOCK_MONOTONIC microseconds throughout (the clock of
  * libkeiland's touch motion, scroller and gestures).
@@ -44,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection). */
-#define KUI_VERSION	3U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls). */
+#define KUI_VERSION	4U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -304,6 +307,24 @@ struct kui_theme {
 	unsigned text_body;
 	unsigned text_small;
 	unsigned text_title;
+
+	/*
+	 * KUI_VERSION 4 (Settings' values, plan/ws089): a card within a page
+	 * and its edge, the line between a card's rows, a control's ground and
+	 * edge, a switch's track when off, good and bad news, a control's
+	 * height, and a switch's size.
+	 */
+	kui_color card;
+	kui_color card_edge;
+	kui_color row_separator;
+	kui_color control;
+	kui_color control_edge;
+	kui_color track;
+	kui_color good;
+	kui_color bad;
+	int control_height;
+	int switch_width;
+	int switch_height;
 };
 
 /* The theme (theme.c). */
@@ -526,6 +547,7 @@ struct kui_ui;
 #define KUI_HIT_ACTIVE		2U	/* a press on it is held */
 #define KUI_HIT_CLICKED	4U	/* pressed and released on it since the last frame */
 #define KUI_HIT_DOUBLE		8U	/* the click was the second of a double click or tap */
+#define KUI_HIT_FOCUSED	16U	/* it has the keyboard's focus (a widget that takes the keyboard) */
 
 /* The input no part took. */
 #define KUI_EVENT_PRESS		1U
@@ -551,6 +573,8 @@ struct kui_event {
 	double dy;
 	unsigned fingers;
 	uint32_t region;
+	uint32_t code;
+	unsigned modifiers;
 };
 
 struct kui_ui *kui_ui_create(void);
@@ -693,6 +717,102 @@ int kui_window_can_paste(const struct kui_window *window);
 void kui_window_select(struct kui_window *window, const char *text, size_t length);
 size_t kui_window_paste_primary(struct kui_window *window, char *text, size_t size);
 uint64_t kui_clock_us(void);
+
+/*
+ * The widgets (widgets.c, field.c, list.c, cards.c; KUI_VERSION 4,
+ * plan/ws090/design.md section 3): each is drawn by one call during a
+ * frame, which also records where it is for the input and reports what
+ * the input did to it since the last frame (the immediate way of section
+ * 2).  What a widget remembers between frames -- a field's text, a list's
+ * selection and scroll -- is the application's, in a small struct it
+ * keeps.  A widget draws with a style: the canvas of the frame, the text,
+ * the theme, and whether the window stands on glass.
+ *
+ * The keyboard's focus is on one widget at a time (by id and index).  A
+ * click or a tap on a widget that takes the keyboard gives it the focus;
+ * Tab and Shift+Tab move it through those widgets in the order they were
+ * drawn.  The keys a focused widget does not take, and every key while no
+ * widget has the focus, are the application's (KUI_EVENT_KEY).
+ */
+struct kui_style {
+	struct kui_canvas *canvas;
+	struct kui_text *text;
+	const struct kui_theme *theme;
+	int glass;
+};
+
+/* A key no widget took (an event's kind; kui_event's code and modifiers name it). */
+#define KUI_EVENT_KEY		9U
+
+/* A button's look and state (bits). */
+#define KUI_BUTTON_PRIMARY	1U
+#define KUI_BUTTON_DANGER	2U
+#define KUI_BUTTON_DISABLED	4U
+
+/* What a text field reports (bits). */
+#define KUI_FIELD_CHANGED	1U
+#define KUI_FIELD_SUBMITTED	2U
+#define KUI_FIELD_CANCELLED	4U
+
+/* What a list reports (bits). */
+#define KUI_LIST_SELECTED	1U
+#define KUI_LIST_ACTIVATED	2U
+
+/* The longest text a field holds, with its NUL. */
+#define KUI_FIELD_MAX		512U
+
+/*
+ * A one-line text field's state: its UTF-8 text, the caret and the other
+ * end of the selection (byte offsets on character boundaries), how far the
+ * text is scrolled across, and whether its characters are shown as dots.
+ */
+struct kui_field {
+	char text[KUI_FIELD_MAX];
+	size_t length;
+	size_t caret;
+	size_t anchor;
+	int scroll;
+	int secret;
+};
+
+/*
+ * A list's state: how many items it has, the one selected (-1 for none),
+ * and its scroll.
+ */
+struct kui_list {
+	size_t count;
+	long selected;
+	struct kui_scroll scroll;
+};
+
+/* The keyboard's focus, and where the pointer is for a widget that follows it. */
+int kui_ui_key(struct kui_ui *ui, uint32_t key, int pressed, unsigned modifiers);
+void kui_ui_set_focus(struct kui_ui *ui, uint32_t id, uint32_t index);
+void kui_ui_clear_focus(struct kui_ui *ui);
+int kui_ui_has_focus(const struct kui_ui *ui, uint32_t id, uint32_t index);
+void kui_ui_pointer(const struct kui_ui *ui, double *x, double *y);
+
+/* The widgets, each drawn and asked by one call during a frame. */
+int kui_button(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *rect, const char *label, unsigned flags);
+int kui_button_width(const struct kui_style *style, const char *label);
+int kui_switch(struct kui_ui *ui, const struct kui_style *style, uint32_t id, int x, int y, int *on, unsigned flags);
+int kui_slider(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *rect, double minimum, double maximum, double step, double *value);
+void kui_field_set(struct kui_field *field, const char *text);
+unsigned kui_field(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *rect, struct kui_field *field, const char *placeholder);
+int kui_list_init(struct kui_list *list);
+void kui_list_release(struct kui_list *list);
+unsigned kui_list_begin(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *rect, struct kui_list *list, size_t count, size_t *first, size_t *last);
+unsigned kui_list_row(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *rect, struct kui_list *list, size_t index, struct kui_rect *row, kui_color *ink);
+void kui_list_end(struct kui_ui *ui, const struct kui_style *style, const struct kui_rect *rect, struct kui_list *list);
+int kui_sidebar_section(const struct kui_style *style, int x, int y, int width, const char *title);
+int kui_sidebar_item(struct kui_ui *ui, const struct kui_style *style, uint32_t id, uint32_t index, const struct kui_rect *rect, enum kui_icon icon, const char *label, int current);
+void kui_panel(const struct kui_style *style, const struct kui_rect *rect, int sidebar);
+int kui_card(const struct kui_style *style, const struct kui_rect *rect, const char *title, const char *subtitle);
+int kui_row(const struct kui_style *style, int x, int y, int width, const char *label, const char *value, int last);
+int kui_header(const struct kui_style *style, int x, int y, int width, const char *title, const char *summary);
+int kui_dialog(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *area, const char *title, const char *body, const char *const *labels, int count);
+void kui_chip(const struct kui_style *style, int centre_x, int bottom, const char *message);
+void kui_progress(const struct kui_style *style, const struct kui_rect *rect, double fraction, uint64_t now_us);
 
 #ifdef __cplusplus
 }

@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p004 cleared（2026-09-30、KUI_VERSION 3: `kui_window`、Text Editor は libkeiui の窓・scroll・文字の touch を使う）。次は p005（部品と見本の program）
+Resume point: p005 cleared（2026-09-30、KUI_VERSION 4: 部品と keyboard の focus、見本の `/bin/kuidemo` は試験の image だけ）。次は p006（file chooser を libkeiui へ）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -30,7 +30,7 @@ Resume point: p004 cleared（2026-09-30、KUI_VERSION 3: `kui_window`、Text Edi
 | [ws090-p002](phase002/phase.md) | libkeiui の骨組みと描画の層（canvas・text・icons・theme）（Settings の書き換えは p007 へ） | cleared（2026-09-29。`libkeiui.so` warning 0、host 13/13 で Files・Settings と byte で一致） | p001 |
 | [ws090-p003](phase003/phase.md) | scroll view（`kui_scroll`）と入力の層（`kui_ui`）と文字の view の touch（`kui_text_touch`: 1 本指で選択・2 本指で scroll、2026-09-29 ユーザー） | cleared（2026-09-29。KUI_VERSION 2、host 63/63、慣性は scroller と frame ごとに一致。Text Editor への組み込みと QEMU は p004） | p002 |
 | [ws090-p004](phase004/phase.md) | 窓の土台（`kui_window`、Vulkan・shm・無し）、Text Editor の窓・present・touch（`kui_text_touch`・`kui_scroll`）・clipboard、image への登録 | cleared（2026-09-30。KUI_VERSION 3、QEMU で開く・編集・保存・1 本指の選択・つまみ・2 本指の scroll・double tap・long press・wheel・clipboard・PRIMARY、host 34/63/13/75、boot PASS） | p003 |
-| ws090-p005 | 部品（button・switch・slider・field・list・sidebar・card・row・header・dialog・chip・progress）と見本の program | planning | p003 |
+| [ws090-p005](phase005/phase.md) | 部品（button・switch・slider・field・list・sidebar・card・row・header・dialog・chip・progress）と見本の program | cleared（2026-09-30。KUI_VERSION 4、host 94/94、QEMU で pointer・key・touch・dialog と Text Editor の回帰、boot PASS） | p003 |
 | ws090-p006 | file chooser を libkeiui へ、libkeiland から取り除く（KEILAND_VERSION）、Text Editor の chooser・dialog・chip | planning | p004・p005 |
 | ws090-p007 | Settings を libkeiui へ（描画の層の共有の置き換えを含む） | planning | p005、WS089 の完了 |
 | ws090-p008 | PDF Viewer・Image Viewer を移す | planning | p006 |
