@@ -68,6 +68,8 @@ main(
 				if (tested[at] != reference[at])
 					differing++;
 			}
+
+			/* A layer with any differing pixel fails the comparison. */
 			if (differing != 0U) {
 				printf("size=%u layer=%u differing=%u FAIL\n", pixels, layer, differing);
 				status = 1;
@@ -75,10 +77,18 @@ main(
 		}
 	}
 
-	/* The times and the verdict. */
+	/* The times. */
 	printf("tested %.3f s, reference %.3f s\n", tested_seconds, reference_seconds);
-	printf("mark-compare: %s\n", status == 0 ? "PASS" : "FAIL");
-	return status;
+
+	/* The verdict. */
+	if (status != 0) {
+		printf("mark-compare: FAIL\n");
+		return status;
+	}
+
+	/* Succeeded: every layer is the same at every size. */
+	printf("mark-compare: PASS\n");
+	return 0;
 }
 
 /* Reports a monotonic time in seconds. */

@@ -72,6 +72,8 @@ zwl_compose_open(
 		printf("ZWL VULKAN_ERROR operation=device result=%d\n", (int)result);
 		return EIO;
 	}
+
+	/* How long the device took (ZWL STARTUP, ws035-p129). */
 	printf("ZWL STARTUP step=vulkan-device ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 	started = zwl_milliseconds();
 
@@ -112,6 +114,7 @@ zwl_compose_output_open(
 	struct zwl_server *server)
 {
 	struct zwl_compose *compose;
+	uint64_t started;
 	VkResult result;
 
 	/* An open output needs nothing. */
@@ -120,6 +123,7 @@ zwl_compose_output_open(
 		return 0;
 
 	/* The display plane's surface at the compositor's size. */
+	started = zwl_milliseconds();
 	result = vkdemo_display_open(compose->instance, compose->physical, server->width, server->height, &compose->output);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=display result=%d\n", (int)result);
@@ -127,6 +131,8 @@ zwl_compose_output_open(
 	}
 
 	/* Its FIFO swapchain. */
+	printf("ZWL STARTUP step=output-display ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	started = zwl_milliseconds();
 	result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
 	if (result != VK_SUCCESS ||
 	    compose->output.image_count > ZWL_SWAPCHAIN_MAX) {
@@ -136,6 +142,8 @@ zwl_compose_output_open(
 	}
 
 	/* The pass and pipelines follow the output's format, which does not change. */
+	printf("ZWL STARTUP step=output-swapchain ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	started = zwl_milliseconds();
 	if (compose->pass == VK_NULL_HANDLE) {
 		compose->format = compose->output.format;
 		result = compose_pass(compose);
@@ -147,6 +155,8 @@ zwl_compose_output_open(
 	}
 
 	/* A view, framebuffer and semaphore for each swapchain image. */
+	printf("ZWL STARTUP step=output-pipelines ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	started = zwl_milliseconds();
 	result = compose_targets(compose);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=targets result=%d\n", (int)result);
@@ -156,6 +166,7 @@ zwl_compose_output_open(
 	}
 
 	/* No image has been drawn yet: the first frame of each is drawn whole. */
+	printf("ZWL STARTUP step=output-targets ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 	memset(compose->image_frames, 0, sizeof(compose->image_frames));
 
 	/* Succeeded: window mode owns the display through the swapchain. */

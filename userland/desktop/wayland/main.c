@@ -129,6 +129,8 @@ main(
 			zwl_compose_close(&server);
 			error = 0;
 		}
+
+		/* How long the device, the wallpaper and the glyphs took (ZWL STARTUP). */
 		step_start = startup_step("compose", step_start);
 	}
 
@@ -150,6 +152,8 @@ main(
 		} else {
 			printf("ZWL KEYMAP format=none errno=%d\n", keymap_error);
 		}
+
+		/* How long the keymap took. */
 		step_start = startup_step("keymap", step_start);
 	}
 
