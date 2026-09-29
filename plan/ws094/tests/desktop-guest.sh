@@ -152,6 +152,10 @@ for step in "$@"; do
 		;;
 	dnd)
 		# note.txt is the first row of the Files window's list view; it is dragged out to the desktop's right side.
+		# The step opens its own Files window (ws094-p004: input closes its window since b60f8a38, which left dnd with
+		# none).
+		guest "$env mkdir -p /tmp/dhome/Docs; echo hello > /tmp/dhome/Docs/note.txt; /bin/files --token=f2 --timeout-s=800 --width=700 --height=500 /tmp/dhome/Docs > /tmp/f2.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
+		expect_log /tmp/f2.log 'ZFILES READY'
 		keys '<ctrl-2>'
 		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 		wx=${1:-0}; wy=${2:-0}
@@ -173,7 +177,15 @@ for step in "$@"; do
 		;;
 	restart)
 		compositor '--desktop-client=/tmp/desktop-probe\ --timeout-s=3'
-		sleep 45
+		# Up to 90 s for the limit (alone it comes in about 25 s; after the other steps the guest can be slower: ws094-p004
+		# replaced a fixed 45 s wait, which some runs did not reach).
+		i=0
+		while [ $i -lt 45 ]; do
+			found=$(guest "grep -ac 'ZWL DESKTOP start-limit' /tmp/zdesktop.log" | tail -1)
+			[ "${found:-0}" -gt 0 ] 2>/dev/null && break
+			i=$((i + 1))
+			sleep 2
+		done
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP start pid=[0-9]+ command=/tmp/desktop-probe --timeout-s=3'
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP role client='
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP exited pid='

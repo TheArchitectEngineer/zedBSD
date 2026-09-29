@@ -36,6 +36,18 @@
 /* How long an answer is waited for, in milliseconds. */
 #define TEST_ANSWER_MS	3000
 
+/* The words the client carries out. */
+enum test_word {
+	TEST_WORD_VOLUME,
+	TEST_WORD_MUTE,
+	TEST_WORD_FEEDBACK,
+	TEST_WORD_GET,
+	TEST_WORD_SLEEP,
+	TEST_WORD_RAW,
+	TEST_WORD_UNKNOWN
+};
+
+static enum test_word test_word_of(const char *word);
 static int test_connect(void);
 static int test_send(int fd, const void *message, uint32_t length);
 static int test_answer(int fd, uint32_t serial);
@@ -57,10 +69,10 @@ main(
 	struct audiod_volume volume;
 	struct audiod_subscribe subscribe;
 	struct audiod_header header;
+	enum test_word word;
 	int index;
 	int fd;
 	int error;
-	int same;
 
 	/* The connection and HELLO. */
 	fd = test_connect();
@@ -68,6 +80,8 @@ main(
 		printf("FEEDBACKTEST FAIL connect errno=%d\n", errno);
 		return 1;
 	}
+
+	/* HELLO, answered by WELCOME. */
 	memset(&hello, 0, sizeof(hello));
 	hello.header.type = AUDIOD_HELLO;
 	hello.header.length = sizeof(hello);
@@ -82,8 +96,8 @@ main(
 	/* Each word in order. */
 	for (index = 1; index < argc; index++) {
 		error = 0;
-		same = strcmp(argv[index], "volume");
-		if (same == 0 && index + 1 < argc) {
+		word = test_word_of(argv[index]);
+		if (word == TEST_WORD_VOLUME && index + 1 < argc) {
 			/* The device volume, unmuted. */
 			memset(&volume, 0, sizeof(volume));
 			volume.header.type = AUDIOD_DEVICE_VOLUME;
@@ -95,7 +109,7 @@ main(
 			if (error == 0)
 				error = test_answer(fd, volume.header.serial);
 			index++;
-		} else if (strcmp(argv[index], "mute") == 0) {
+		} else if (word == TEST_WORD_MUTE) {
 			/* Full, muted. */
 			memset(&volume, 0, sizeof(volume));
 			volume.header.type = AUDIOD_DEVICE_VOLUME;
@@ -107,7 +121,7 @@ main(
 			error = test_send(fd, &volume, sizeof(volume));
 			if (error == 0)
 				error = test_answer(fd, volume.header.serial);
-		} else if (strcmp(argv[index], "feedback") == 0) {
+		} else if (word == TEST_WORD_FEEDBACK) {
 			/* The feedback sound. */
 			memset(&header, 0, sizeof(header));
 			header.type = AUDIOD_FEEDBACK;
@@ -116,7 +130,7 @@ main(
 			error = test_send(fd, &header, sizeof(header));
 			if (error == 0)
 				error = test_answer(fd, header.serial);
-		} else if (strcmp(argv[index], "get") == 0) {
+		} else if (word == TEST_WORD_GET) {
 			/* SUBSCRIBE: DONE, then the volume. */
 			memset(&subscribe, 0, sizeof(subscribe));
 			subscribe.header.type = AUDIOD_SUBSCRIBE;
@@ -128,11 +142,11 @@ main(
 				error = test_answer(fd, subscribe.header.serial);
 			if (error == 0)
 				error = test_answer(fd, 0U);
-		} else if (strcmp(argv[index], "sleep") == 0 && index + 1 < argc) {
+		} else if (word == TEST_WORD_SLEEP && index + 1 < argc) {
 			/* A wait. */
 			test_sleep((unsigned)atoi(argv[index + 1]));
 			index++;
-		} else if (strcmp(argv[index], "raw") == 0 && index + 1 < argc) {
+		} else if (word == TEST_WORD_RAW && index + 1 < argc) {
 			/* A request of any type, the header only. */
 			memset(&header, 0, sizeof(header));
 			header.type = (uint32_t)atoi(argv[index + 1]);
@@ -158,6 +172,28 @@ main(
 	printf("FEEDBACKTEST end\n");
 	close(fd);
 	return 0;
+}
+
+/* Gives the kind of a word. */
+static enum test_word
+test_word_of(
+	const char *word)
+{
+	static const char *const names[TEST_WORD_UNKNOWN] = {
+		"volume", "mute", "feedback", "get", "sleep", "raw"
+	};
+	unsigned index;
+	int same;
+
+	/* Each known word. */
+	for (index = 0U; index < TEST_WORD_UNKNOWN; index++) {
+		same = strcmp(word, names[index]);
+		if (same == 0)
+			return (enum test_word)index;
+	}
+
+	/* Succeeded: not a word the client knows. */
+	return TEST_WORD_UNKNOWN;
 }
 
 /* Connects to audiod's socket; returns the descriptor or -1. */
@@ -233,6 +269,7 @@ test_answer(
 	ssize_t count;
 	int ready;
 
+	/* Until the answer asked for. */
 	for (;;) {
 		/* A whole message kept: taken out and looked at. */
 		if (pending_used >= sizeof(header)) {
@@ -241,6 +278,8 @@ test_answer(
 				printf("FEEDBACKTEST FAIL answer length=%u\n", header.length);
 				return 1;
 			}
+
+			/* A whole message: taken out of the bytes kept. */
 			if (pending_used >= header.length) {
 				memset(&message, 0, sizeof(message));
 				memcpy(&message, pending, header.length);
@@ -252,15 +291,21 @@ test_answer(
 					printf("FEEDBACKTEST welcome device=%u rate=%u\n", message.welcome.device, message.welcome.rate);
 					return 0;
 				}
+
+				/* A result for the serial. */
 				if ((message.header.type == AUDIOD_DONE || message.header.type == AUDIOD_ERROR) &&
 				    message.header.serial == serial && serial != 0U) {
 					printf("FEEDBACKTEST done type=%u error=%u\n", message.header.type, message.result.error);
 					return 0;
 				}
+
+				/* A volume report, when one is asked for. */
 				if (message.header.type == AUDIOD_VOLUME_CHANGED && serial == 0U) {
 					printf("FEEDBACKTEST volume left=%u right=%u muted=%u\n", message.volume.left, message.volume.right, message.volume.muted);
 					return 0;
 				}
+
+				/* Anything else is passed over. */
 				continue;
 			}
 		}
@@ -274,11 +319,15 @@ test_answer(
 			printf("FEEDBACKTEST FAIL answer serial=%u timeout\n", serial);
 			return 1;
 		}
+
+		/* The bytes that came. */
 		count = recv(fd, pending + pending_used, sizeof(pending) - pending_used, 0);
 		if (count <= 0) {
 			printf("FEEDBACKTEST FAIL answer serial=%u closed\n", serial);
 			return 1;
 		}
+
+		/* Kept after the ones before. */
 		pending_used += (size_t)count;
 	}
 }

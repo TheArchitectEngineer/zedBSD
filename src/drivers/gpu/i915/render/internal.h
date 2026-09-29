@@ -18,12 +18,14 @@
 #ifndef DRIVERS_GPU_I915_RENDER_INTERNAL_H
 #define DRIVERS_GPU_I915_RENDER_INTERNAL_H
 
+#include <kern/lock.h>
 #include <stddef.h>
 #include <stdint.h>
 
 struct i915_device;
 struct i915_session;
 struct i915_gem_object;
+struct i915_gfx_memory;
 struct i915_gfx_session;
 struct i915_object_table;
 
@@ -137,6 +139,15 @@ struct i915_render_device {
 
 	/* Every Vulkan object the sessions of this device created, by kind and identity. */
 	struct i915_object_table *objects;
+
+	/*
+	 * Every live VkDeviceMemory of the device's sessions, newest first, and
+	 * the lock of the list: a session's command stream, another session's
+	 * and a blob's attach or detach change or search it at once on
+	 * different CPUs (BUG-117).
+	 */
+	struct i915_gfx_memory *memories;
+	struct mutex memories_lock;
 
 	/* The capset libvulkan reads before it opens the node, and its length in bytes. */
 	uint32_t capset[I915_RENDER_CAPSET_WORDS];

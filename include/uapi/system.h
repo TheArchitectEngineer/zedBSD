@@ -278,6 +278,12 @@ _Static_assert(offsetof(struct system_usb_device_info, driver) == 32U,
 	_IOWR(KERN_SYSTEM_IOC_GROUP, 13, struct system_pci_device_info)
 #define KERN_SYSTEM_GET_USB_DEVICE                                           \
 	_IOWR(KERN_SYSTEM_IOC_GROUP, 14, struct system_usb_device_info)
+/*
+ * Turns the machine's power off (ACPI S5 on a PC), after the same
+ * preparation as KERN_SYSTEM_HALT.  Only init may ask.  A platform that
+ * cannot cut its own power answers EOPNOTSUPP, and the caller halts instead.
+ */
+#define KERN_SYSTEM_POWEROFF _IO(KERN_SYSTEM_IOC_GROUP, 16)
 
 #ifdef __cplusplus
 }

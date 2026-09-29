@@ -171,12 +171,16 @@ audiod_mix_period(
 	uint32_t i;
 	uint32_t channel;
 	uint32_t volume[2];
+	int16_t sample16;
+	int32_t sample32;
 	int missing;
 
+	/* The period, started from silence. */
 	frames = device->period_frames;
 	mix = device->mix;
 	memset(mix, 0, (size_t)frames * 2U * sizeof(*mix));
 
+	/* Every running playback stream of every client. */
 	for (client = audiod_clients; client != NULL; client = client->next) {
 		for (stream = client->streams; stream != NULL; stream = stream->next) {
 			if (stream->direction != AUDIOD_PLAYBACK ||
@@ -184,12 +188,19 @@ audiod_mix_period(
 				continue;
 			shm = stream->shm;
 
-			/* A fault in memory the client shrank ends this stream only. */
+			/*
+			 * A fault in memory the client shrank ends this stream only.
+			 * sigsetjmp stays in the condition: the C standard allows it
+			 * only there or as a statement of its own, not in an
+			 * assignment (an exception to the call-in-condition rule).
+			 */
 			if (sigsetjmp(audiod_bus_jump, 1) != 0) {
 				audiod_bus_armed = 0;
 				stream->broken = 1;
 				continue;
 			}
+
+			/* From here a fault jumps back above. */
 			audiod_bus_armed = 1;
 
 			/* The client's position is checked, not trusted. */
@@ -204,8 +215,15 @@ audiod_mix_period(
 				continue;
 			}
 
-			volume[0] = stream->muted ? 0U : stream->volume_left;
-			volume[1] = stream->muted ? 0U : stream->volume_right;
+			/* The stream's volume; muted is silence. */
+			volume[0] = stream->volume_left;
+			volume[1] = stream->volume_right;
+			if (stream->muted) {
+				volume[0] = 0U;
+				volume[1] = 0U;
+			}
+
+			/* Each frame of the period, while the stream has one (interpolated between two when the rates differ). */
 			missing = 0;
 			for (i = 0; i < frames; i++) {
 				index = stream->phase >> 32;
@@ -214,19 +232,28 @@ audiod_mix_period(
 					missing = 1;
 					break;
 				}
+
+				/* The frame, and the next one's share of it. */
 				fetch(stream, read_position + index, a);
 				if (fraction != 0) {
 					fetch(stream, read_position + index + 1, b);
-					for (channel = 0; channel < 2; channel++)
+					for (channel = 0; channel < 2; channel++) {
 						a[channel] += ((b[channel] - a[channel]) *
 						    (int64_t)(fraction >> 16)) >> 16;
+					}
 				}
+
+				/* Added to the mix at the stream's volume. */
 				for (channel = 0; channel < 2; channel++) {
 					value = (a[channel] * (int64_t)volume[channel]) >> 16;
 					mix[i * 2 + channel] += value;
 				}
+
+				/* On through the stream. */
 				stream->phase += stream->step;
 			}
+
+			/* The stream's memory is no longer touched. */
 			audiod_bus_armed = 0;
 
 			/* Gives the consumed frames back to the client. */
@@ -281,20 +308,18 @@ audiod_mix_period(
 	for (i = 0; i < frames * 2U; i++) {
 		value = mix[i];
 		if (device->format == AUDIOD_FORMAT_S16_LE) {
-			int16_t sample;
-
+			/* S16: the top 16 bits, saturated. */
 			value >>= 16;
 			if (value > 32767)
 				value = 32767;
 			if (value < -32768)
 				value = -32768;
-			sample = (int16_t)value;
-			memcpy(out + i * 2U, &sample, 2);
+			sample16 = (int16_t)value;
+			memcpy(out + i * 2U, &sample16, 2);
 		} else {
-			int32_t sample;
-
-			sample = clamp32(value);
-			memcpy(out + i * 4U, &sample, 4);
+			/* S32: saturated. */
+			sample32 = clamp32(value);
+			memcpy(out + i * 4U, &sample32, 4);
 		}
 	}
 }

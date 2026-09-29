@@ -180,6 +180,19 @@ kern_platform_halt(
 }
 
 /*
+ * Turns the power off through the HAL, halting if that returns.
+ */
+int
+kern_platform_poweroff(
+	void)
+{
+	/* The HAL's power-off does not return on this platform. */
+	hal_poweroff();
+	for (;;)
+		hal_halt();
+}
+
+/*
  * Reboots the machine.
  */
 void

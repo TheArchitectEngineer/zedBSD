@@ -275,6 +275,9 @@ drv_acpi_gpe_install(
 bool
 drv_acpi_sci_interrupt(void);
 
+int
+drv_acpi_poweroff(void);
+
 void
 drv_acpi_events_process(void);
 
