@@ -4,10 +4,10 @@
 The same trees of names are made in the guest (over SSH, plan/tools/guest)
 and on the host.  The guest's ls runs on a pseudo-terminal (ssh -tt, with
 stty setting its width) and into a pipe; the host's GNU ls runs the same
-way (plan/ws086/tests/tty-run.py's method) in C.UTF-8.  The terminal turns
+way (plan/tools/ls/tty-run.py's method) in C.UTF-8.  The terminal turns
 \\n into \\r\\n on the way out of the guest, which is undone before comparing.
 
-  GUEST_RUNTIME=... python3 plan/ws086/tests/guest-compare.py [--gnu /bin/ls]
+  GUEST_RUNTIME=... python3 plan/tools/ls/guest-compare.py [--gnu /bin/ls]
 
 The guest must be running (plan/tools/guest/guest.sh start IMAGE).
 Prints one line per difference and a count; exits 1 when anything differs.

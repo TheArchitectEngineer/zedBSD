@@ -3,7 +3,7 @@
 given width and writes what it printed, byte for byte, to standard output.
 Standard error stays on the caller's standard error.
 
-  python3 plan/ws086/tests/tty-run.py COLUMNS COMMAND [ARG...]
+  python3 plan/tools/ls/tty-run.py COLUMNS COMMAND [ARG...]
 
 COLUMNS 0 leaves the terminal's window size at 0x0 (as a serial line may).
 The exit status is the command's.

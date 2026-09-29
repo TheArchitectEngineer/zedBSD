@@ -10,7 +10,7 @@ Kei's ls takes names as UTF-8 in every locale (user's decision of
 2026-09-29), while GNU ls escapes every byte past ASCII in the C locale, so
 the trees with such names are compared in C.UTF-8 only.
 
-  python3 plan/ws086/tests/compare-gnu.py OUR_LS [--gnu /bin/ls] [--verbose]
+  python3 plan/tools/ls/compare-gnu.py OUR_LS [--gnu /bin/ls] [--verbose]
 
 Prints one line per difference and a count; exits 1 when anything differs.
 """
