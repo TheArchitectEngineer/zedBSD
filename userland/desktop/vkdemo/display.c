@@ -118,6 +118,26 @@ vkdemo_display_open(
 }
 
 /*
+ * Chooses the surface's format, the one vkdemo_display_create_swapchain
+ * will use, without creating a swapchain (which would claim the display).
+ */
+VkResult
+vkdemo_display_choose_format(
+	VkPhysicalDevice physical,
+	struct vkdemo_display *display)
+{
+	VkResult status;
+
+	/* The same choice as the swapchain's. */
+	status = choose_format(physical, display->surface, &display->format);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: display->format names the swapchain's format. */
+	return VK_SUCCESS;
+}
+
+/*
  * Create readable color attachments from the surface's supported FIFO contract.
  */
 VkResult

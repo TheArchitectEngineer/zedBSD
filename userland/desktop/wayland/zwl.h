@@ -910,6 +910,7 @@ int zwl_unscan(struct zwl_server *server);
 void zwl_schedule(struct zwl_server *server);
 void zwl_frame_done(struct zwl_server *server);
 int zwl_compose_open(struct zwl_server *server);
+int zwl_compose_output_prepare(struct zwl_server *server);
 int zwl_compose_output_open(struct zwl_server *server);
 void zwl_compose_output_close(struct zwl_server *server);
 int zwl_compose_draw(struct zwl_server *server);
