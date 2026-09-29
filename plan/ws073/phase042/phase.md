@@ -2,12 +2,12 @@
 
 # ws073-p042: BUG-116（xHCI の event の取りこぼし: EP0 の control が 1 秒、bulk の READ が 30 秒で時間切れ）の原因と修正
 
-Status: in-progress（2026-09-30。原因の特定と修正、build、少数回の再現の試験、boot test まで。受け入れの本数の試験は試験の担当）
+Status: cleared（2026-09-30、試験の担当の受け入れの試験。下の「受け入れの試験の結果」）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-116](../../bugs/BUG-116.md)（関係: [BUG-036](../../bugs/BUG-036.md) の列挙の時間切れも同じ機構と見られる）
 Queue: main の依頼（2026-09-30「BUG-116 をなるべく短時間で修正」）。Queue の ID は main が記録する
-Resume point: 下の「試験の担当への引き継ぎ」の本数の試験を行い、通れば cleared にし BUG-116 を resolved にする
+Resume point: なし（cleared）。残課題は下の「残課題」
 
 ## 範囲
 
@@ -89,6 +89,29 @@ runner は `build/ws073-p042/run.sh LABEL MODE BOOTS PASSES`（2 本並列、各
    再試行の行）も同じ試験で数え、0 なら BUG-036 の「時間切れの原因」の欄にこの Phase を書く（resolved にするかは main の判断）。
 5. 時間切れが出た場合: `dmesg` の `xhci: cancel ... pending-events=N iman=I erdp=E` を見る。N>0 かつ E の bit 3（EHB）=1 なら別の取りこぼしの経路で、
    その dmesg を保存して報告する。N=0 なら controller/QEMU 側（BUG-030 の形）。
+
+## 受け入れの試験の結果（2026-09-30、試験の担当、QEMU。実機は未実施）
+
+始める前に `git merge main -m WIP`（5d0c5ba8。`plan/known-bugs.md` の conflict は BUG-116 の行を worktree の側、BUG-115・117〜119 を main の側で解決）。
+merge で USB・PCI の source は変わっていない。image は `build/ws073-p042/guest.img`（中の vmunix は 04:07 の `build/amd64/vmunix` と `cmp` で同一）。
+runner は `build/ws073-p042/run.sh`、集計は `build/ws073-p042/summ.sh LABEL`。判定は SSH の `dmesg` だけ。
+
+| 試験 | 回数 | SSH | `xhci: cancel` | attach-failed | `error=`（usb-storage を含む） | usb-hid の無い回 | 列挙の再試行（BUG-036） | `dd` 2216689664 bytes | 1 回の時間 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TCG 2×20、起動のみ（`build/ws073-p042/tcg20/`） | 40 | 40/40 | 0 | 0 | 0 | 0 | 0 | （丸読みなし） | 19〜30 秒 |
+| KVM 2×20、丸読み 1 回（`build/ws073-p042/kvm20/`） | 40 | 40/40 | 0 | 0 | 0 | 0 | 0 | 40/40 | 311〜497 秒 |
+
+修正前の同じ条件（p041 の受け入れの試験）: TCG 75 回で cancel 16・keyboard の失敗 8・列挙の再試行 9、KVM 40 回で cancel 8（usb-storage の READ の
+30 秒の時間切れ 1 を含む）・keyboard の失敗 3・列挙の再試行 4。
+
+回帰:
+- boot test（`BOOT_MODE=uefi-usb bash plan/tools/boot-test.sh build/ws073-p042/guest.img`）: PASS、`build/ws073-p042/boot-test-accept/login.png`
+  （usb-hid の attach と login prompt、usb-storage の error なし）。
+- `serial.py`: mirror を on にした kernel（config.mk の複写で `CONFIG_PCAT_SERIAL_MIRROR := y`、HEAD の source、warning 0）の image
+  `build/ws073-p042/serial-accept/guest.img` を USB から KVM で起動し、serial で root の login（この image の base は root の password が空なので、Password の prompt に
+  空で入る）→ `serial.py run` で `id` が uid=0、`xhci: cancel|attach-failed|error=` が 0、usb-hid あり。worktree の `build/amd64` は通常の config に戻した。
+
+判定: 受け入れ（1・2 で 0、3 が通る）を満たす。cleared。BUG-116 を resolved にした。BUG-036 の列挙の時間切れも 80 回で 0（この Phase の修正の後）。
 
 ## 残課題
 
