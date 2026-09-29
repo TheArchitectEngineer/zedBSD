@@ -102,6 +102,7 @@ static int geometry_offset(struct vm_realm *realm, vm_value this_value, int top,
 static int geometry_scroll_arguments(struct vm_realm *realm, const vm_value *args, unsigned count, double *x, double *y, int *given_x, int *given_y);
 static void geometry_scroll_move(struct bind_window *window, double x, double y);
 static double geometry_finite(double value);
+static int geometry_stops_offset(const struct dom_node *node);
 static int geometry_rect_create(struct bind_window *window, double x, double y, double width, double height, vm_value *value);
 static int geometry_rect_of(struct vm_realm *realm, vm_value value, struct geometry_rect **rect);
 static int geometry_rect_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -870,6 +871,9 @@ bind_scroll_into_view(
 	int present;
 	int found;
 	int is_object;
+	int end;
+	int center;
+	int nearest;
 	int status;
 
 	/* The element and where its block edge goes (start unless the argument says). */
@@ -901,14 +905,24 @@ bind_scroll_into_view(
 	if (!found)
 		return 0;
 
+	/* Which edge the argument names. */
+	end = 0;
+	center = 0;
+	nearest = 0;
+	if (block != NULL) {
+		end = vm_string_equal_ascii(block, "end");
+		center = vm_string_equal_ascii(block, "center");
+		nearest = vm_string_equal_ascii(block, "nearest");
+	}
+
 	/* The place the document scrolls down to, by the block edge. */
 	geometry_scroll(window, &scroll_x, &scroll_y);
 	y = box.y;
-	if (block != NULL && vm_string_equal_ascii(block, "end")) {
+	if (end) {
 		y = box.y + box.height - window->viewport_height;
-	} else if (block != NULL && vm_string_equal_ascii(block, "center")) {
+	} else if (center) {
 		y = box.y + (box.height - window->viewport_height) / 2.0;
-	} else if (block != NULL && vm_string_equal_ascii(block, "nearest")) {
+	} else if (nearest) {
 		/* Already in view stays; otherwise the nearer edge. */
 		y = scroll_y;
 		if (box.y < scroll_y) {
@@ -1483,6 +1497,8 @@ geometry_offset_parent(
 	int position;
 	int found;
 	int root;
+	int body;
+	int stops;
 	int error;
 
 	/* The root and the body have none. */
@@ -1490,7 +1506,8 @@ geometry_offset_parent(
 	root = geometry_is_root(window, element);
 	if (root)
 		return 0;
-	if (dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_BODY))
+	body = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_BODY);
+	if (body)
 		return 0;
 
 	/* Nor does an element without a box. */
@@ -1512,16 +1529,15 @@ geometry_offset_parent(
 		if (error != 0)
 			return error;
 
-		/* A positioned one, or the body. */
-		if (position != CSS_POSITION_STATIC || dom_element_is(walk, DOM_NS_HTML, DOM_TAG_BODY)) {
+		/* A positioned one. */
+		if (position != CSS_POSITION_STATIC) {
 			*parent = ancestor;
 			return 0;
 		}
 
-		/* A table cell or a table. */
-		if (dom_element_is(walk, DOM_NS_HTML, DOM_TAG_TD) ||
-		    dom_element_is(walk, DOM_NS_HTML, DOM_TAG_TH) ||
-		    dom_element_is(walk, DOM_NS_HTML, DOM_TAG_TABLE)) {
+		/* The body, a table cell or a table. */
+		stops = geometry_stops_offset(walk);
+		if (stops) {
 			*parent = ancestor;
 			return 0;
 		}
@@ -1691,4 +1707,24 @@ geometry_finite(
 
 	/* Succeeded: the number. */
 	return value;
+}
+
+/* Tells whether a static ancestor is an offset parent: the body, a td, a th or a table element. */
+static int
+geometry_stops_offset(
+	const struct dom_node *node)
+{
+	static const int tags[] = { DOM_TAG_BODY, DOM_TAG_TD, DOM_TAG_TH, DOM_TAG_TABLE };
+	size_t index;
+	int is;
+
+	/* Each of the elements. */
+	for (index = 0; index < sizeof(tags) / sizeof(tags[0]); index++) {
+		is = dom_element_is(node, DOM_NS_HTML, tags[index]);
+		if (is)
+			return 1;
+	}
+
+	/* Any other element is not. */
+	return 0;
 }

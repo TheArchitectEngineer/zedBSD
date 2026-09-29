@@ -131,6 +131,11 @@ static int computed_find(const struct vm_string *name, int *property);
 static int computed_write(struct bind_window *window, struct dom_element *element, int property, struct wb_units *out);
 static int computed_write_used(const struct css_style *style, const struct bind_box *box, int found, int property, struct wb_units *out);
 static int computed_write_keyword(const struct css_style *style, int property, struct wb_units *out);
+static int computed_write_overflow(const struct css_style *style, struct wb_units *out);
+static int computed_write_url(const struct vm_string *url, struct wb_units *out);
+static int computed_needs_quotes(const struct vm_string *family);
+static int computed_write_percent(const struct css_length *length, struct wb_units *out);
+static int computed_write_url_quoted(const struct vm_string *text, struct wb_units *out);
 static int computed_write_offset(const struct css_style *style, int side, struct wb_units *out);
 static int computed_write_font_family(const struct css_style *style, struct wb_units *out);
 static int computed_write_tracks(const struct css_style *style, struct wb_units *out);
@@ -418,8 +423,11 @@ const char *
 bind_computed_name(
 	size_t index)
 {
+	size_t count;
+
 	/* Past the end there is none. */
-	if (index >= bind_computed_count())
+	count = bind_computed_count();
+	if (index >= count)
 		return NULL;
 
 	/* Succeeded: the name. */
@@ -526,6 +534,8 @@ computed_write_used(
 {
 	double width;
 	double height;
+	double value;
+	int has_used;
 	int used;
 	int error;
 
@@ -542,68 +552,58 @@ computed_write_used(
 		height -= box->border_top + box->border_bottom + box->padding_top + box->padding_bottom;
 	}
 
-	/* Chooses by the property. */
+	/* The used value of the properties that have one. */
+	value = 0.0;
+	has_used = 0;
 	switch (property) {
 	case COMPUTED_WIDTH:
-		/* The used width, or the computed one. */
-		if (used) {
-			error = computed_pixels(width, out);
-			return error;
-		}
-		error = computed_length(&style->width, out);
-		return error;
+		has_used = used;
+		value = width;
+		break;
 	case COMPUTED_HEIGHT:
-		/* The used height, or the computed one. */
-		if (used) {
-			error = computed_pixels(height, out);
-			return error;
-		}
-		error = computed_length(&style->height, out);
-		return error;
+		has_used = used;
+		value = height;
+		break;
 	case COMPUTED_MARGIN_TOP:
+		has_used = found;
+		value = box->margin_top;
+		break;
 	case COMPUTED_MARGIN_RIGHT:
+		has_used = found;
+		value = box->margin_right;
+		break;
 	case COMPUTED_MARGIN_BOTTOM:
+		has_used = found;
+		value = box->margin_bottom;
+		break;
 	case COMPUTED_MARGIN_LEFT:
-		/* The used margin of an element with a box. */
-		if (!found) {
-			error = computed_length(&style->margin[property - COMPUTED_MARGIN_TOP], out);
-			return error;
-		}
-
-		/* By the side. */
-		if (property == COMPUTED_MARGIN_TOP) {
-			error = computed_pixels(box->margin_top, out);
-		} else if (property == COMPUTED_MARGIN_RIGHT) {
-			error = computed_pixels(box->margin_right, out);
-		} else if (property == COMPUTED_MARGIN_BOTTOM) {
-			error = computed_pixels(box->margin_bottom, out);
-		} else {
-			error = computed_pixels(box->margin_left, out);
-		}
-		return error;
+		has_used = found;
+		value = box->margin_left;
+		break;
 	case COMPUTED_PADDING_TOP:
+		has_used = found;
+		value = box->padding_top;
+		break;
 	case COMPUTED_PADDING_RIGHT:
+		has_used = found;
+		value = box->padding_right;
+		break;
 	case COMPUTED_PADDING_BOTTOM:
+		has_used = found;
+		value = box->padding_bottom;
+		break;
 	case COMPUTED_PADDING_LEFT:
-		/* The used padding of an element with a box. */
-		if (!found) {
-			error = computed_length(&style->padding[property - COMPUTED_PADDING_TOP], out);
-			return error;
-		}
-
-		/* By the side. */
-		if (property == COMPUTED_PADDING_TOP) {
-			error = computed_pixels(box->padding_top, out);
-		} else if (property == COMPUTED_PADDING_RIGHT) {
-			error = computed_pixels(box->padding_right, out);
-		} else if (property == COMPUTED_PADDING_BOTTOM) {
-			error = computed_pixels(box->padding_bottom, out);
-		} else {
-			error = computed_pixels(box->padding_left, out);
-		}
-		return error;
+		has_used = found;
+		value = box->padding_left;
+		break;
 	default:
 		break;
+	}
+
+	/* A used value, in pixels. */
+	if (has_used) {
+		error = computed_pixels(value, out);
+		return error;
 	}
 
 	/* Every other property's computed value. */
@@ -642,13 +642,7 @@ computed_write_keyword(
 		error = computed_name(computed_visibilities, 2, style->visibility, out);
 		break;
 	case COMPUTED_OVERFLOW:
-		/* One keyword when the two axes agree, otherwise both. */
-		error = computed_name(computed_overflows, 5, style->overflow_x, out);
-		if (error == 0 && style->overflow_y != style->overflow_x) {
-			error = computed_ascii(" ", out);
-			if (error == 0)
-				error = computed_name(computed_overflows, 5, style->overflow_y, out);
-		}
+		error = computed_write_overflow(style, out);
 		break;
 	case COMPUTED_OVERFLOW_X:
 		error = computed_name(computed_overflows, 5, style->overflow_x, out);
@@ -658,6 +652,24 @@ computed_write_keyword(
 		break;
 	case COMPUTED_BOX_SIZING:
 		error = computed_name(computed_box_sizings, 2, style->box_sizing, out);
+		break;
+	case COMPUTED_WIDTH:
+		error = computed_length(&style->width, out);
+		break;
+	case COMPUTED_HEIGHT:
+		error = computed_length(&style->height, out);
+		break;
+	case COMPUTED_MARGIN_TOP:
+	case COMPUTED_MARGIN_RIGHT:
+	case COMPUTED_MARGIN_BOTTOM:
+	case COMPUTED_MARGIN_LEFT:
+		error = computed_length(&style->margin[property - COMPUTED_MARGIN_TOP], out);
+		break;
+	case COMPUTED_PADDING_TOP:
+	case COMPUTED_PADDING_RIGHT:
+	case COMPUTED_PADDING_BOTTOM:
+	case COMPUTED_PADDING_LEFT:
+		error = computed_length(&style->padding[property - COMPUTED_PADDING_TOP], out);
 		break;
 	case COMPUTED_MIN_WIDTH:
 		error = computed_length(&style->min_width, out);
@@ -705,13 +717,10 @@ computed_write_keyword(
 		/* None, or the URL in quotes. */
 		if (style->background_image == NULL) {
 			error = computed_ascii("none", out);
-			break;
+		} else {
+			error = computed_write_url(style->background_image, out);
 		}
-		error = computed_ascii("url(\"", out);
-		if (error == 0)
-			error = vm_string_append_units(style->background_image, out);
-		if (error == 0)
-			error = computed_ascii("\")", out);
+
 		break;
 	case COMPUTED_OPACITY:
 		error = computed_number(style->opacity, out);
@@ -720,9 +729,10 @@ computed_write_keyword(
 		/* Auto, or the level. */
 		if (style->z_index_auto) {
 			error = computed_ascii("auto", out);
-			break;
+		} else {
+			error = computed_number(style->z_index, out);
 		}
-		error = computed_number(style->z_index, out);
+
 		break;
 	case COMPUTED_FONT_SIZE:
 		error = computed_pixels(style->font_size, out);
@@ -734,9 +744,10 @@ computed_write_keyword(
 		/* Italic, or normal. */
 		if (style->font_italic) {
 			error = computed_ascii("italic", out);
-			break;
+		} else {
+			error = computed_ascii("normal", out);
 		}
-		error = computed_ascii("normal", out);
+
 		break;
 	case COMPUTED_FONT_FAMILY:
 		error = computed_write_font_family(style, out);
@@ -745,9 +756,10 @@ computed_write_keyword(
 		/* A number is that many times the font size. */
 		if (style->line_height.unit == CSS_UNIT_NUMBER) {
 			error = computed_pixels(style->line_height.value * style->font_size, out);
-			break;
+		} else {
+			error = computed_length(&style->line_height, out);
 		}
-		error = computed_length(&style->line_height, out);
+
 		break;
 	case COMPUTED_TEXT_ALIGN:
 		error = computed_name(computed_text_aligns, 6, style->text_align, out);
@@ -762,9 +774,10 @@ computed_write_keyword(
 		/* A length, or a keyword. */
 		if (style->vertical_align == CSS_VALIGN_LENGTH) {
 			error = computed_length(&style->vertical_offset, out);
-			break;
+		} else {
+			error = computed_name(computed_vertical_aligns, 8, style->vertical_align, out);
 		}
-		error = computed_name(computed_vertical_aligns, 8, style->vertical_align, out);
+
 		break;
 	case COMPUTED_LIST_STYLE_TYPE:
 		error = computed_name(computed_list_styles, 5, style->list_style, out);
@@ -881,7 +894,6 @@ computed_write_font_family(
 	struct wb_units *out)
 {
 	const struct vm_string *family;
-	uint16_t unit;
 	size_t index;
 	int quoted;
 	int error;
@@ -897,30 +909,17 @@ computed_write_font_family(
 				return error;
 		}
 
-		/* Whether the name needs quotes. */
-		quoted = 0;
-		for (unit = 0; unit < family->length && !quoted; unit++) {
-			if (!((vm_string_at(family, unit) >= 'a' && vm_string_at(family, unit) <= 'z') ||
-			      (vm_string_at(family, unit) >= 'A' && vm_string_at(family, unit) <= 'Z') ||
-			      (vm_string_at(family, unit) >= '0' && vm_string_at(family, unit) <= '9') ||
-			      vm_string_at(family, unit) == '-'))
-				quoted = 1;
+		/* The name, in quotes when it needs them. */
+		quoted = computed_needs_quotes(family);
+		if (quoted) {
+			error = computed_write_url_quoted(family, out);
+		} else {
+			error = vm_string_append_units(family, out);
 		}
 
-		/* The name, in quotes when it needs them. */
-		if (quoted) {
-			error = computed_ascii("\"", out);
-			if (error != 0)
-				return error;
-		}
-		error = vm_string_append_units(family, out);
+		/* A failed name. */
 		if (error != 0)
 			return error;
-		if (quoted) {
-			error = computed_ascii("\"", out);
-			if (error != 0)
-				return error;
-		}
 	}
 
 	/* Succeeded: the families are written. */
@@ -949,11 +948,13 @@ computed_write_tracks(
 	/* Each track, separated by spaces. */
 	for (index = 0; index < style->column_count; index++) {
 		track = &style->columns[index];
-		error = 0;
-		if (index > 0)
+
+		/* A space before all but the first. */
+		if (index > 0) {
 			error = computed_ascii(" ", out);
-		if (error != 0)
-			return error;
+			if (error != 0)
+				return error;
+		}
 
 		/* By its kind. */
 		if (track->kind == CSS_TRACK_FR) {
@@ -965,12 +966,143 @@ computed_write_tracks(
 		} else {
 			error = computed_length(&track->size, out);
 		}
+
+		/* A failed track. */
 		if (error != 0)
 			return error;
 	}
 
 	/* Succeeded: the tracks are written. */
 	return 0;
+}
+
+/* Writes overflow: one keyword when the two axes agree, otherwise both. */
+static int
+computed_write_overflow(
+	const struct css_style *style,
+	struct wb_units *out)
+{
+	int error;
+
+	/* The horizontal axis's. */
+	error = computed_name(computed_overflows, 5, style->overflow_x, out);
+	if (error != 0)
+		return error;
+
+	/* The same on both is one keyword. */
+	if (style->overflow_y == style->overflow_x)
+		return 0;
+
+	/* Succeeded: the vertical axis's after a space. */
+	error = computed_ascii(" ", out);
+	if (error != 0)
+		return error;
+	error = computed_name(computed_overflows, 5, style->overflow_y, out);
+	return error;
+}
+
+/* Writes a URL as url("...") (background-image). */
+static int
+computed_write_url(
+	const struct vm_string *url,
+	struct wb_units *out)
+{
+	int error;
+
+	/* The function around the quoted URL. */
+	error = computed_ascii("url(", out);
+	if (error != 0)
+		return error;
+	error = computed_write_url_quoted(url, out);
+	if (error != 0)
+		return error;
+	error = computed_ascii(")", out);
+	return error;
+}
+
+/* Writes a string in double quotes. */
+static int
+computed_write_url_quoted(
+	const struct vm_string *text,
+	struct wb_units *out)
+{
+	int error;
+
+	/* The quotes around the string. */
+	error = computed_ascii("\"", out);
+	if (error != 0)
+		return error;
+	error = vm_string_append_units(text, out);
+	if (error != 0)
+		return error;
+	error = computed_ascii("\"", out);
+	return error;
+}
+
+/* Tells whether a font family's name is written in quotes: it has a character other than a letter, a digit or a hyphen. */
+static int
+computed_needs_quotes(
+	const struct vm_string *family)
+{
+	size_t index;
+	uint16_t unit;
+
+	/* Each character. */
+	for (index = 0; index < family->length; index++) {
+		unit = vm_string_at(family, index);
+		if (unit >= 'a' && unit <= 'z')
+			continue;
+		if (unit >= 'A' && unit <= 'Z')
+			continue;
+		if (unit >= '0' && unit <= '9')
+			continue;
+		if (unit == '-')
+			continue;
+		return 1;
+	}
+
+	/* Every character is plain. */
+	return 0;
+}
+
+/* Writes a percentage, in calc() with the pixels it has added. */
+static int
+computed_write_percent(
+	const struct css_length *length,
+	struct wb_units *out)
+{
+	const char *sign;
+	int error;
+
+	/* A plain percentage. */
+	if (length->offset == 0.0f) {
+		error = computed_number(length->value, out);
+		if (error != 0)
+			return error;
+		error = computed_ascii("%", out);
+		return error;
+	}
+
+	/* The sign between the two parts. */
+	sign = "% + ";
+	if (length->offset < 0.0f)
+		sign = "% - ";
+
+	/* Succeeded: calc(P% + Npx). */
+	error = computed_ascii("calc(", out);
+	if (error != 0)
+		return error;
+	error = computed_number(length->value, out);
+	if (error != 0)
+		return error;
+	error = computed_ascii(sign, out);
+	if (error != 0)
+		return error;
+	error = computed_pixels(fabsf(length->offset), out);
+	if (error != 0)
+		return error;
+	error = computed_ascii(")", out);
+	return error;
 }
 
 /* Writes the name of a keyword from a table, or nothing for a value past its end. */
@@ -1007,21 +1139,7 @@ computed_length(
 		return error;
 	case CSS_UNIT_PERCENT:
 		/* A percentage, in calc() when pixels are added to it. */
-		if (length->offset == 0.0f) {
-			error = computed_number(length->value, out);
-			if (error == 0)
-				error = computed_ascii("%", out);
-			return error;
-		}
-		error = computed_ascii("calc(", out);
-		if (error == 0)
-			error = computed_number(length->value, out);
-		if (error == 0)
-			error = computed_ascii(length->offset < 0.0f ? "% - " : "% + ", out);
-		if (error == 0)
-			error = computed_pixels(fabs(length->offset), out);
-		if (error == 0)
-			error = computed_ascii(")", out);
+		error = computed_write_percent(length, out);
 		return error;
 	case CSS_UNIT_AUTO:
 		error = computed_ascii("auto", out);
@@ -1082,16 +1200,16 @@ computed_number(
 {
 	char text[64];
 	double whole;
+	double size;
 
 	/* Negative zero, or a number that is not one, is 0. */
 	if (value == 0.0 || value != value)
 		value = 0.0;
 
-	/* A whole number, or six significant digits. */
+	/* A whole or a large number without a point, any other with six significant digits. */
 	whole = floor(value);
-	if (whole == value && fabs(value) < 1e15) {
-		snprintf(text, sizeof(text), "%.0f", value);
-	} else if (fabs(value) >= 1e6) {
+	size = fabs(value);
+	if (whole == value || size >= 1e6) {
 		snprintf(text, sizeof(text), "%.0f", value);
 	} else {
 		snprintf(text, sizeof(text), "%.6g", value);
@@ -1112,7 +1230,9 @@ computed_color(
 {
 	char text[64];
 	unsigned alpha;
+	unsigned back;
 	double fraction;
+	double rounded;
 	double scale;
 	int digits;
 
@@ -1124,15 +1244,19 @@ computed_color(
 		return computed_ascii(text, out);
 	}
 
-	/* The shortest fraction whose byte is the alpha's. */
+	/* The shortest fraction (up to three decimals) whose byte is the alpha's. */
 	fraction = alpha / 255.0;
-	for (digits = 1; digits < 3; digits++) {
+	rounded = fraction;
+	for (digits = 1; digits <= 3; digits++) {
 		scale = pow(10.0, digits);
-		if ((unsigned)floor(floor(fraction * scale + 0.5) / scale * 255.0 + 0.5) == alpha)
+		rounded = floor(fraction * scale + 0.5) / scale;
+		back = (unsigned)floor(rounded * 255.0 + 0.5);
+		if (back == alpha)
 			break;
 	}
-	scale = pow(10.0, digits);
-	fraction = floor(fraction * scale + 0.5) / scale;
+
+	/* The fraction found, or the one of three decimals. */
+	fraction = rounded;
 
 	/* Succeeded: the color with its alpha. */
 	snprintf(text, sizeof(text), "rgba(%u, %u, %u, %g)", (unsigned)((color >> 16) & 0xffU), (unsigned)((color >> 8) & 0xffU),
