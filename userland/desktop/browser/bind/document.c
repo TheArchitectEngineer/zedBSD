@@ -31,6 +31,17 @@ static int document_create_element(struct vm_realm *realm, vm_value this_value, 
 static int document_create_text_node(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_create_comment(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_create_fragment(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_cookie_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_cookie_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_url(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_domain(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_location(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_referrer(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_hidden(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_visibility_state(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_compat_mode(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_character_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_constant_string(struct vm_realm *realm, vm_value this_value, const char *text, vm_value *result);
 static int document_create_character_data(struct vm_realm *realm, vm_value this_value, int type, const vm_value *args, unsigned count, vm_value *result);
 
 /*
@@ -44,6 +55,18 @@ static const struct bind_attribute document_attributes[] = {
 	{ "doctype", document_doctype, NULL },
 	{ "title", document_title_get, document_title_set },
 	{ "readyState", document_ready_state, NULL },
+	{ "cookie", document_cookie_get, document_cookie_set },
+	{ "URL", document_url, NULL },
+	{ "documentURI", document_url, NULL },
+	{ "domain", document_domain, NULL },
+	{ "location", document_location, NULL },
+	{ "referrer", document_referrer, NULL },
+	{ "hidden", document_hidden, NULL },
+	{ "visibilityState", document_visibility_state, NULL },
+	{ "compatMode", document_compat_mode, NULL },
+	{ "characterSet", document_character_set, NULL },
+	{ "charset", document_character_set, NULL },
+	{ "inputEncoding", document_character_set, NULL },
 	{ "defaultView", document_default_view, NULL },
 	{ "children", bind_children, NULL },
 	{ "firstElementChild", bind_first_element_child_get, NULL },
@@ -433,6 +456,338 @@ document_ready_state(
 		return status;
 
 	/* Succeeded: the state is reported. */
+	return 0;
+}
+
+/*
+ * Reports the cookies a script may see for the document's URL, as the
+ * host keeps them ("a=b; c=d", or the empty string) (cookie).
+ */
+static int
+document_cookie_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_document *document;
+	struct bind_window *window;
+	struct wb_buffer text;
+	struct vm_string *string;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The document. */
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+
+	/* The host writes the cookies. */
+	window = bind_window_of(realm);
+	wb_buffer_init(&text);
+	if (window->host.cookie_get != NULL)
+		status = window->host.cookie_get(window->host.context, &text);
+	if (status != 0) {
+		wb_buffer_release(&text);
+		return status;
+	}
+
+	/* The string, from the UTF-8 text. */
+	string = vm_string_from_utf8(realm->heap, wb_buffer_string(&text), text.length);
+	wb_buffer_release(&text);
+	if (string == NULL)
+		return ENOMEM;
+
+	/* Succeeded: the cookies are reported. */
+	*result = vm_value_cell(string);
+	return 0;
+}
+
+/* Sets one cookie of the document's URL, written as a Set-Cookie header would be (cookie). */
+static int
+document_cookie_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_document *document;
+	struct bind_window *window;
+	struct vm_string *value;
+	struct wb_buffer text;
+	int status;
+
+	/* The document and the text. */
+	*result = VM_VALUE_UNDEFINED;
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+	status = bind_to_string(realm, js_argument(args, count, 0), &value);
+	if (status != 0)
+		return status;
+
+	/* A host that keeps no cookies drops it. */
+	window = bind_window_of(realm);
+	if (window->host.cookie_set == NULL)
+		return 0;
+
+	/* The text as UTF-8, handed to the host. */
+	wb_buffer_init(&text);
+	status = vm_string_to_utf8(value, &text);
+	if (status == 0)
+		status = window->host.cookie_set(window->host.context, wb_buffer_string(&text), text.length);
+	wb_buffer_release(&text);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the cookie is set (or refused, as the host decides). */
+	return 0;
+}
+
+/* Reports the document's URL (URL, documentURI). */
+static int
+document_url(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_document *document;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The document. */
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+
+	/* The location's whole URL. */
+	status = bind_location_part(bind_window_of(realm), BIND_LOCATION_HREF, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the URL is reported. */
+	return 0;
+}
+
+/* Reports the document's host name (domain). */
+static int
+document_domain(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_document *document;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The document. */
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+
+	/* The location's host name. */
+	status = bind_location_part(bind_window_of(realm), BIND_LOCATION_HOSTNAME, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the domain is reported. */
+	return 0;
+}
+
+/* Reports the window's Location object (location). */
+static int
+document_location(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_document *document;
+	struct bind_window *window;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The document. */
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+
+	/* A window made without its environment has no location. */
+	window = bind_window_of(realm);
+	if (window->location == NULL) {
+		*result = VM_VALUE_NULL;
+		return 0;
+	}
+
+	/* Succeeded: the window's location. */
+	*result = vm_value_cell(window->location);
+	return 0;
+}
+
+/* Reports the page that led to the document: none is known in this pass (referrer). */
+static int
+document_referrer(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The empty string. */
+	status = document_constant_string(realm, this_value, "", result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the referrer is reported. */
+	return 0;
+}
+
+/* Reports whether the document is hidden: the page is shown while it runs (hidden). */
+static int
+document_hidden(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_document *document;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The document. */
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: not hidden. */
+	*result = VM_VALUE_FALSE;
+	return 0;
+}
+
+/* Reports the document's visibility: visible (visibilityState). */
+static int
+document_visibility_state(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The page is shown while it runs. */
+	status = document_constant_string(realm, this_value, "visible", result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the state is reported. */
+	return 0;
+}
+
+/* Reports the document's mode: CSS1Compat, or BackCompat in quirks mode (compatMode). */
+static int
+document_compat_mode(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_document *document;
+	const char *mode;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The document. */
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+
+	/* Only full quirks mode is BackCompat; limited quirks is standards mode to scripts. */
+	mode = "CSS1Compat";
+	if (document->quirks == DOM_QUIRKS)
+		mode = "BackCompat";
+	status = bind_string(realm, mode, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the mode is reported. */
+	return 0;
+}
+
+/* Reports the document's encoding: UTF-8, the one the parser reads in this pass (characterSet). */
+static int
+document_character_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The encoding's name. */
+	status = document_constant_string(realm, this_value, "UTF-8", result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the encoding is reported. */
+	return 0;
+}
+
+/* Reports a fixed string for a document attribute (this must be a document). */
+static int
+document_constant_string(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const char *text,
+	vm_value *result)
+{
+	struct dom_document *document;
+	int status;
+
+	/* The document. */
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+
+	/* The string. */
+	status = bind_string(realm, text, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the string is reported. */
 	return 0;
 }
 

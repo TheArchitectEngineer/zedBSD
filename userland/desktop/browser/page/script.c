@@ -18,6 +18,7 @@
  */
 
 #include "page/page.h"
+#include "net/net.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -31,10 +32,31 @@
 #define SCRIPT_SETTLE_ROUNDS	100000
 
 static void script_console(void *context, int level, const char *text, size_t length);
+static int script_location(void *context, int part, struct wb_buffer *out);
+static int script_cookie_get(void *context, struct wb_buffer *out);
+static int script_cookie_set(void *context, const char *text, size_t length);
+static int script_url(const struct page *page, struct net_url *url);
 static int script_type_runs(const struct dom_element *script);
 static int script_attribute(struct page *page, const struct dom_element *element, const char *name, struct dom_attribute **attribute);
 static int script_run_file(struct page *page, const struct vm_string *src);
 static int script_ascii_equal_folded(const struct vm_string *string, const char *ascii);
+
+/*
+ * The part of a URL (a NET_URL_*) each part of the window's location
+ * reads, in the order of the BIND_LOCATION_* values.  The table is
+ * constant for the life of the program.
+ */
+static const int script_location_parts[] = {
+	NET_URL_HREF,
+	NET_URL_ORIGIN,
+	NET_URL_PROTOCOL,
+	NET_URL_HOST,
+	NET_URL_HOSTNAME,
+	NET_URL_PORT,
+	NET_URL_PATHNAME,
+	NET_URL_SEARCH,
+	NET_URL_HASH
+};
 
 /*
  * The MIME types of a classic script's type attribute, in lower case (the
@@ -80,9 +102,14 @@ page_start_scripts(
 	if (error != 0)
 		return error;
 
-	/* The window, whose console goes to the page's. */
+	/* The window, whose console goes to the page's, and whose location and cookies are the page's URL's. */
+	memset(&host, 0, sizeof(host));
 	host.context = page;
 	host.console = script_console;
+	host.user_agent = NET_USER_AGENT;
+	host.location = script_location;
+	host.cookie_get = script_cookie_get;
+	host.cookie_set = script_cookie_set;
 	error = bind_window_create(page->realm, page->document, &host, &page->window);
 	if (error != 0)
 		return error;
@@ -298,6 +325,132 @@ script_console(
 
 	/* Otherwise the line goes to standard error. */
 	fprintf(stderr, "console: %.*s\n", (int)length, text);
+}
+
+/*
+ * Writes a part of the page's location (a BIND_LOCATION_*; the window's
+ * host callback, context is the page): about:blank's for a page without
+ * a location.
+ */
+static int
+script_location(
+	void *context,
+	int part,
+	struct wb_buffer *out)
+{
+	struct net_url url;
+	int error;
+
+	/* A part outside the table writes nothing. */
+	if (part < 0 || part > BIND_LOCATION_HASH)
+		return 0;
+
+	/* The page's URL. */
+	error = script_url(context, &url);
+	if (error == ENOMEM)
+		return error;
+	if (error != 0) {
+		error = net_url_parse("about:blank", strlen("about:blank"), NULL, &url);
+		if (error != 0)
+			return error;
+	}
+
+	/* The part, as the URL interface writes it. */
+	error = net_url_component(&url, script_location_parts[part], out);
+	net_url_release(&url);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the part is written. */
+	return 0;
+}
+
+/* Writes the cookies a script may see for the page's URL (the window's host callback). */
+static int
+script_cookie_get(
+	void *context,
+	struct wb_buffer *out)
+{
+	struct net_url url;
+	int error;
+
+	/* A page without a URL has no cookies. */
+	error = script_url(context, &url);
+	if (error == ENOMEM)
+		return error;
+	if (error != 0)
+		return 0;
+
+	/* The jar's pairs for the URL. */
+	error = net_cookie_string(&url, out);
+	net_url_release(&url);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the cookies are written. */
+	return 0;
+}
+
+/* Keeps a cookie a script set on the page (the window's host callback). */
+static int
+script_cookie_set(
+	void *context,
+	const char *text,
+	size_t length)
+{
+	struct net_url url;
+	int error;
+
+	/* A page without a URL keeps no cookies. */
+	error = script_url(context, &url);
+	if (error == ENOMEM)
+		return error;
+	if (error != 0)
+		return 0;
+
+	/* The jar keeps it, unless it would touch an HttpOnly cookie. */
+	error = net_cookie_store_script(&url, text, length);
+	net_url_release(&url);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the cookie is kept (or refused). */
+	return 0;
+}
+
+/*
+ * Parses the page's location as a URL: its URL, or file: for the
+ * absolute path of a file.  Returns EINVAL for a page without a location.
+ */
+static int
+script_url(
+	const struct page *page,
+	struct net_url *url)
+{
+	struct wb_buffer text;
+	int error;
+
+	/* A page without a location. */
+	if (page->base == NULL)
+		return EINVAL;
+
+	/* A path becomes a file: URL. */
+	wb_buffer_init(&text);
+	if (page->base[0] == '/') {
+		error = wb_buffer_printf(&text, "file://%s", page->base);
+	} else {
+		error = wb_buffer_append_string(&text, page->base);
+	}
+
+	/* The URL. */
+	if (error == 0)
+		error = net_url_parse(wb_buffer_string(&text), text.length, NULL, url);
+	wb_buffer_release(&text);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller releases the URL. */
+	return 0;
 }
 
 /* Tells whether a script element's type attribute asks for a classic script. */

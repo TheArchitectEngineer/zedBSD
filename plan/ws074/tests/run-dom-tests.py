@@ -91,6 +91,8 @@ def main():
             output = run.stdout
             if run.returncode != 0:
                 output += "(exit status %d: %s)\n" % (run.returncode, run.stderr.strip())
+        # The place of an uncaught exception ("(at LINE:COLUMN)") is ours; Chromium's console writes it apart.
+        output = re.sub(r" \(at \d+:\d+\)$", "", output, flags=re.M)
         if compare(name, output):
             passed += 1
     print("dom-tests %d/%d" % (passed, len(tests())))

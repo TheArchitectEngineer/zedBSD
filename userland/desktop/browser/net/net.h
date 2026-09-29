@@ -22,6 +22,9 @@
 
 #include "base/base.h"
 
+/* The User-Agent the browser sends, which navigator.userAgent reports too. */
+#define NET_USER_AGENT		"browser/0.1 (Kei)"
+
 /*
  * A parsed URL.
  *
@@ -169,6 +172,8 @@ int net_loader_takes(const char *location);
 /* Cookies (cookie.c). */
 int net_cookie_store(const struct net_url *url, const char *header, size_t length);
 int net_cookie_header(const struct net_url *url, struct wb_buffer *out);
+int net_cookie_store_script(const struct net_url *url, const char *text, size_t length);
+int net_cookie_string(const struct net_url *url, struct wb_buffer *out);
 
 /* data: URLs (data.c). */
 int net_data_parse(const struct net_url *url, struct net_data *data);

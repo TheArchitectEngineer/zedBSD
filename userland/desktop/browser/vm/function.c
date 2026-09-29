@@ -454,6 +454,32 @@ vm_throw(
 	return VM_THROWN;
 }
 
+/*
+ * Finds where an exception left the bytecode it was thrown in.
+ *
+ * Returns 1 with the source line and column of the instruction that threw
+ * it (or that called the native function that did), or 0 when the realm
+ * has no place for that exception.
+ */
+int
+vm_throw_site(
+	const struct vm_realm *realm,
+	vm_value exception,
+	uint32_t *line,
+	uint32_t *column)
+{
+	/* The place recorded is another exception's, or not known. */
+	if (realm->throw_value != exception)
+		return 0;
+	if (realm->throw_line == 0)
+		return 0;
+
+	/* Succeeded: the place the exception was thrown from. */
+	*line = realm->throw_line;
+	*column = realm->throw_column;
+	return 1;
+}
+
 /* Marks what a function refers to: what every object refers to, and its code (its realm's objects are the realm's tracer's). */
 static void
 function_trace(

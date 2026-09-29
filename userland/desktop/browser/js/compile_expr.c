@@ -70,7 +70,12 @@ js_compile_expression_named(
 	const uint16_t *name,
 	size_t length)
 {
+	uint32_t saved_line;
+	uint32_t saved_column;
 	uint32_t constant;
+
+	/* The expression's instructions carry its source position. */
+	js_emit_at(fc, node, &saved_line, &saved_column);
 
 	/* Each kind of expression. */
 	switch (node->kind) {
@@ -148,6 +153,10 @@ js_compile_expression_named(
 	default:
 		expr_unsupported(fc, node);
 	}
+
+	/* The enclosing expression's later instructions carry its own position again. */
+	fc->line = saved_line;
+	fc->column = saved_column;
 }
 
 /*

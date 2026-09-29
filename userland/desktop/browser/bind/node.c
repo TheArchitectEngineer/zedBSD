@@ -1393,6 +1393,8 @@ node_prototype_index(
 	switch (node->type) {
 	case DOM_ELEMENT:
 		element = (const struct dom_element *)node;
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG)
+			return BIND_HTML_IMAGE_ELEMENT;
 		if (element->ns == DOM_NS_HTML)
 			return BIND_HTML_ELEMENT;
 		return BIND_ELEMENT;

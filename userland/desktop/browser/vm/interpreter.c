@@ -1277,6 +1277,20 @@ interpreter_unwind(
 	/* From the instruction that threw, frame by frame. */
 	realm = run->realm;
 	throw_pc = run->pc;
+
+	/*
+	 * A new exception's place is the instruction that threw it; an
+	 * exception coming back out of a nested run keeps the place the inner
+	 * run found.
+	 */
+	if (realm->throw_value != realm->exception) {
+		realm->throw_value = realm->exception;
+		realm->throw_line = 0;
+		realm->throw_column = 0;
+		vm_code_position(run->code, throw_pc, &realm->throw_line, &realm->throw_column);
+	}
+
+	/* Looks for a handler in each frame outwards. */
 	for (;;) {
 		/* A handler of this frame whose range holds the instruction. */
 		for (index = 0; index < run->code->handler_count; index++) {
@@ -1288,6 +1302,10 @@ interpreter_unwind(
 			realm->stack[run->base + FRAME_HEADER + handler->exception_register] = realm->exception;
 			realm->exception = VM_VALUE_UNDEFINED;
 			run->pc = handler->handler;
+
+			/* A caught exception's place is forgotten, so throwing it again records the new place. */
+			realm->throw_value = VM_VALUE_UNDEFINED;
+			realm->throw_line = 0;
 			return 0;
 		}
 

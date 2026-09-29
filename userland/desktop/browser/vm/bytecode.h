@@ -159,6 +159,18 @@ struct vm_handler {
 };
 
 /*
+ * Where in the source an instruction came from: the instructions from
+ * offset (a word offset) up to the next position's were compiled from the
+ * expression or statement at line and column (1-based, in the script's
+ * text).  It is only for reporting an uncaught exception's place.
+ */
+struct vm_position {
+	uint32_t offset;
+	uint32_t line;
+	uint32_t column;
+};
+
+/*
  * A code unit: one function's instructions and what they refer to.
  *
  * The words, the constants and the handlers are malloc'd copies freed with
@@ -176,6 +188,8 @@ struct vm_code {
 	vm_value *constants;
 	struct vm_handler *handlers;
 	uint32_t handler_count;
+	struct vm_position *positions;
+	uint32_t position_count;
 	uint32_t flags;
 	uint32_t arguments_register;
 	uint32_t reserved;
@@ -214,6 +228,7 @@ extern const struct vm_opcode_info vm_opcodes[VM_OPCODE_COUNT];
 extern const struct vm_cell_type vm_code_type;
 int vm_code_create(struct vm_heap *heap, const struct vm_code *model, struct vm_code **code, uint32_t *bad_offset);
 int vm_code_dump(const struct vm_code *code, struct wb_buffer *out);
+int vm_code_position(const struct vm_code *code, uint32_t offset, uint32_t *line, uint32_t *column);
 
 /* Bytecode functions and environments (function.c). */
 extern const struct vm_cell_type vm_env_type;
