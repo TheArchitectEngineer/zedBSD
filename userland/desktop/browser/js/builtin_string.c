@@ -44,6 +44,7 @@ struct string_entry {
 #define STRING_TRIM_START	1
 #define STRING_TRIM_END		2
 
+static int string_delegate(struct vm_realm *realm, vm_value this_value, vm_value argument, int which, const vm_value *extra, unsigned extra_count, int *done, vm_value *result);
 static int string_call(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int string_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int string_from_char_code(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -1689,7 +1690,13 @@ string_match(
 	struct vm_string *string;
 	vm_value regexp;
 	int is_regexp;
+	int done;
 	int status;
+
+	/* An object's Symbol.match does the work (ws074-p087). */
+	status = string_delegate(realm, this_value, js_argument(args, count, 0), VM_SYMBOL_MATCH, NULL, 0, &done, result);
+	if (status != 0 || done)
+		return status;
 
 	/* The string, and the regular expression (one made from anything else). */
 	status = string_this(realm, this_value, "match", &string);
@@ -1722,8 +1729,16 @@ string_replace(
 	vm_value *result)
 {
 	struct vm_string *string;
+	vm_value replacement;
 	int is_regexp;
+	int done;
 	int status;
+
+	/* An object's Symbol.replace does the work (ws074-p087). */
+	replacement = js_argument(args, count, 1);
+	status = string_delegate(realm, this_value, js_argument(args, count, 0), VM_SYMBOL_REPLACE, &replacement, 1, &done, result);
+	if (status != 0 || done)
+		return status;
 
 	/* A regular expression replaces by its own algorithm. */
 	status = string_this(realm, this_value, "replace", &string);
@@ -1825,7 +1840,13 @@ string_search(
 	struct vm_string *string;
 	vm_value regexp;
 	int is_regexp;
+	int done;
 	int status;
+
+	/* An object's Symbol.search does the work (ws074-p087). */
+	status = string_delegate(realm, this_value, js_argument(args, count, 0), VM_SYMBOL_SEARCH, NULL, 0, &done, result);
+	if (status != 0 || done)
+		return status;
 
 	/* The string, and the regular expression (one made from anything else). */
 	status = string_this(realm, this_value, "search", &string);
@@ -1873,11 +1894,17 @@ string_split(
 	uint32_t found;
 	int is_regexp;
 	int present;
+	int done;
 	int status;
 
-	/* A regular expression splits by its own algorithm. */
+	/* An object's Symbol.split does the work (ws074-p087). */
 	separator_value = js_argument(args, count, 0);
 	limit_value = js_argument(args, count, 1);
+	status = string_delegate(realm, this_value, separator_value, VM_SYMBOL_SPLIT, &limit_value, 1, &done, result);
+	if (status != 0 || done)
+		return status;
+
+	/* A regular expression splits by its own algorithm. */
 	status = string_this(realm, this_value, "split", &string);
 	if (status != 0)
 		return status;
@@ -2159,5 +2186,58 @@ string_position(
 	if (number > (double)length)
 		number = (double)length;
 	*position = (uint32_t)number;
+	return 0;
+}
+
+/*
+ * Lets an object argument of match, replace, search or split do the work
+ * with its method keyed by a well-known symbol (the RegExp's, or a
+ * user's): the method is called on it with this (not undefined or null)
+ * and the extra arguments.  *done says it ran.
+ */
+static int
+string_delegate(
+	struct vm_realm *realm,
+	vm_value this_value,
+	vm_value argument,
+	int which,
+	const vm_value *extra,
+	unsigned extra_count,
+	int *done,
+	vm_value *result)
+{
+	vm_value method;
+	vm_value arguments[2];
+	int is_object;
+	int status;
+
+	/* this must not be undefined or null. */
+	*done = 0;
+	if (this_value == VM_VALUE_UNDEFINED || this_value == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "String.prototype method called on null or undefined");
+		return status;
+	}
+
+	/* Only an object's method counts. */
+	is_object = vm_value_is_object(argument);
+	if (!is_object)
+		return 0;
+	status = vm_get_method(realm, argument, vm_symbol_key(realm, which), &method);
+	if (status != 0)
+		return status;
+	if (method == VM_VALUE_UNDEFINED)
+		return 0;
+
+	/* The call with this and the extra argument. */
+	arguments[0] = this_value;
+	arguments[1] = VM_VALUE_UNDEFINED;
+	if (extra_count > 0)
+		arguments[1] = extra[0];
+	*done = 1;
+	status = vm_call(realm, method, argument, arguments, 2, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the method's result. */
 	return 0;
 }

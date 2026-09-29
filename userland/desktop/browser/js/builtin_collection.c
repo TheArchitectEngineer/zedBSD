@@ -83,6 +83,8 @@ static int collection_values(struct vm_realm *realm, vm_value this_value, const 
 static int collection_entries(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int collection_iterator(struct vm_realm *realm, vm_value this_value, uint32_t iterate, vm_value *result);
 static int collection_this(struct vm_realm *realm, vm_value value, uint32_t kinds, struct collection_table **table);
+static uint32_t collection_bits(const struct vm_realm *realm);
+static int collection_define(struct vm_realm *realm, struct vm_object *object, const char *name, unsigned length, vm_native native, uint32_t bit, struct vm_function **function);
 static int collection_weak_key(vm_value key);
 static vm_value collection_normalize(vm_value key);
 static uint32_t collection_hash(vm_value key);
@@ -123,7 +125,7 @@ static const struct collection_method collection_methods[] = {
 	{ "forEach", 1, collection_for_each, COLLECTION_MAP_BIT | COLLECTION_SET_BIT },
 	{ "keys", 0, collection_keys, COLLECTION_MAP_BIT },
 	{ "values", 0, collection_values, COLLECTION_MAP_BIT },
-	{ "entries", 0, collection_entries, COLLECTION_MAP_BIT | COLLECTION_SET_BIT },
+	{ "entries", 0, collection_entries, COLLECTION_SET_BIT },
 	{ NULL, 0, NULL, 0 }
 };
 
@@ -240,8 +242,8 @@ collection_install_one(
 	const struct collection_method *method;
 	struct vm_function *constructor;
 	struct vm_function *function;
+	struct vm_accessor *accessor;
 	struct vm_object *made;
-	vm_value iterator;
 	uint32_t bit;
 	int error;
 
@@ -255,35 +257,37 @@ collection_install_one(
 	constructor->data = vm_value_int32((int32_t)kind);
 	realm->intrinsics[VM_INTRINSIC_MAP_PROTOTYPE + (kind - VM_KIND_MAP)] = made;
 
-	/* The methods of this kind. */
+	/* The methods of this kind, each knowing the kind its this must be (its data). */
 	bit = 1U << (kind - VM_KIND_MAP);
 	for (method = collection_methods; method->name != NULL; method++) {
 		if ((method->kinds & bit) == 0U)
 			continue;
-		error = js_builtin_method(realm, made, method->name, method->length, method->native);
+		error = collection_define(realm, made, method->name, method->length, method->native, bit, &function);
 		if (error != 0)
 			return error;
 	}
 
 	/* Map and Set: size, the iterator (entries for a Map, values for a Set) and species. */
 	if (kind == VM_KIND_MAP || kind == VM_KIND_SET) {
-		error = js_builtin_accessor(realm, made, "size", collection_size, NULL);
+		error = js_builtin_function(realm, "get size", 0, collection_size, NULL, &function);
+		if (error != 0)
+			return error;
+		function->data = vm_value_int32((int32_t)bit);
+		accessor = vm_accessor_create(realm->heap, vm_value_cell(function), VM_VALUE_UNDEFINED);
+		if (accessor == NULL)
+			return ENOMEM;
+		error = js_builtin_value(realm, made, "size", vm_value_cell(accessor), VM_PROPERTY_ACCESSOR | VM_PROPERTY_CONFIGURABLE);
 		if (error != 0)
 			return error;
 		if (kind == VM_KIND_MAP) {
-			error = vm_get(realm, vm_value_cell(made), vm_key_from_ascii(realm->heap, "entries"), &iterator);
+			error = collection_define(realm, made, "entries", 0, collection_entries, bit, &function);
 		} else {
-			error = js_builtin_function(realm, "values", 0, collection_values, NULL, &function);
-			iterator = VM_VALUE_UNDEFINED;
+			error = collection_define(realm, made, "values", 0, collection_values, bit, &function);
 			if (error == 0)
-				iterator = vm_value_cell(function);
-			if (error == 0)
-				error = js_builtin_value(realm, made, "values", iterator, JS_BUILTIN_METHOD);
-			if (error == 0)
-				error = js_builtin_value(realm, made, "keys", iterator, JS_BUILTIN_METHOD);
+				error = js_builtin_value(realm, made, "keys", vm_value_cell(function), JS_BUILTIN_METHOD);
 		}
 		if (error == 0)
-			error = js_builtin_symbol_value(realm, made, VM_SYMBOL_ITERATOR, iterator, JS_BUILTIN_METHOD);
+			error = js_builtin_symbol_value(realm, made, VM_SYMBOL_ITERATOR, vm_value_cell(function), JS_BUILTIN_METHOD);
 		if (error == 0)
 			error = js_builtin_species(realm, &constructor->object);
 		if (error != 0)
@@ -469,7 +473,7 @@ collection_get(
 
 	/* The table. */
 	*result = VM_VALUE_UNDEFINED;
-	status = collection_this(realm, this_value, COLLECTION_MAP_BIT | COLLECTION_WEAK_MAP_BIT, &table);
+	status = collection_this(realm, this_value, collection_bits(realm), &table);
 	if (status != 0)
 		return status;
 
@@ -499,7 +503,7 @@ collection_set(
 
 	/* The table. */
 	*result = VM_VALUE_UNDEFINED;
-	status = collection_this(realm, this_value, COLLECTION_MAP_BIT | COLLECTION_WEAK_MAP_BIT, &table);
+	status = collection_this(realm, this_value, collection_bits(realm), &table);
 	if (status != 0)
 		return status;
 
@@ -537,7 +541,7 @@ collection_add(
 
 	/* The table. */
 	*result = VM_VALUE_UNDEFINED;
-	status = collection_this(realm, this_value, COLLECTION_SET_BIT | COLLECTION_WEAK_SET_BIT, &table);
+	status = collection_this(realm, this_value, collection_bits(realm), &table);
 	if (status != 0)
 		return status;
 
@@ -576,7 +580,7 @@ collection_has(
 
 	/* The table (of any of the four). */
 	*result = VM_VALUE_FALSE;
-	status = collection_this(realm, this_value, COLLECTION_MAP_BIT | COLLECTION_SET_BIT | COLLECTION_WEAK_MAP_BIT | COLLECTION_WEAK_SET_BIT, &table);
+	status = collection_this(realm, this_value, collection_bits(realm), &table);
 	if (status != 0)
 		return status;
 
@@ -605,7 +609,7 @@ collection_delete(
 
 	/* The table (of any of the four). */
 	*result = VM_VALUE_FALSE;
-	status = collection_this(realm, this_value, COLLECTION_MAP_BIT | COLLECTION_SET_BIT | COLLECTION_WEAK_MAP_BIT | COLLECTION_WEAK_SET_BIT, &table);
+	status = collection_this(realm, this_value, collection_bits(realm), &table);
 	if (status != 0)
 		return status;
 
@@ -635,7 +639,7 @@ collection_clear(
 
 	/* The table. */
 	*result = VM_VALUE_UNDEFINED;
-	status = collection_this(realm, this_value, COLLECTION_MAP_BIT | COLLECTION_SET_BIT, &table);
+	status = collection_this(realm, this_value, collection_bits(realm), &table);
 	if (status != 0)
 		return status;
 
@@ -673,7 +677,7 @@ collection_size(
 
 	/* A Map or a Set. */
 	*result = VM_VALUE_UNDEFINED;
-	status = collection_this(realm, this_value, COLLECTION_MAP_BIT | COLLECTION_SET_BIT, &table);
+	status = collection_this(realm, this_value, collection_bits(realm), &table);
 	if (status != 0)
 		return status;
 
@@ -702,7 +706,7 @@ collection_for_each(
 
 	/* The table and the callback. */
 	*result = VM_VALUE_UNDEFINED;
-	status = collection_this(realm, this_value, COLLECTION_MAP_BIT | COLLECTION_SET_BIT, &table);
+	status = collection_this(realm, this_value, collection_bits(realm), &table);
 	if (status != 0)
 		return status;
 	callback = js_argument(args, count, 0);
@@ -803,7 +807,7 @@ collection_iterator(
 
 	/* A Map or a Set. */
 	*result = VM_VALUE_UNDEFINED;
-	status = collection_this(realm, this_value, COLLECTION_MAP_BIT | COLLECTION_SET_BIT, &table);
+	status = collection_this(realm, this_value, collection_bits(realm), &table);
 	if (status != 0)
 		return status;
 
@@ -849,6 +853,48 @@ collection_this(
 	/* Anything else. */
 	status = vm_throw_type_error(realm, "Method called on incompatible receiver");
 	return status;
+}
+
+/* Reports the kinds the running method takes as its this (its data, the bit of its prototype's kind). */
+static uint32_t
+collection_bits(
+	const struct vm_realm *realm)
+{
+	struct vm_function *function;
+
+	/* The method's data. */
+	function = (struct vm_function *)vm_value_as_cell(realm->callee);
+
+	/* Reports the bits. */
+	return (uint32_t)vm_value_as_int32(function->data);
+}
+
+/* Defines a collection's method whose data is the bit of the kind its this must be. */
+static int
+collection_define(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	const char *name,
+	unsigned length,
+	vm_native native,
+	uint32_t bit,
+	struct vm_function **function)
+{
+	int error;
+
+	/* The function, knowing its kind. */
+	error = js_builtin_function(realm, name, length, native, NULL, function);
+	if (error != 0)
+		return error;
+	(*function)->data = vm_value_int32((int32_t)bit);
+
+	/* The property. */
+	error = js_builtin_value(realm, object, name, vm_value_cell(*function), JS_BUILTIN_METHOD);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the method is defined. */
+	return 0;
 }
 
 /* Tells whether a value can be a weak collection's key: an object, or a symbol not in the registry. */

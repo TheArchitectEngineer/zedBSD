@@ -64,6 +64,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_symbol.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_iterator.c \
 	$(KEILAND_BROWSER_DIR)/js/builtin_collection.c \
+	$(KEILAND_BROWSER_DIR)/js/builtin_uri.c \
 	$(KEILAND_BROWSER_DIR)/js/tool.c \
 	$(KEILAND_BROWSER_DIR)/html/input.c \
 	$(KEILAND_BROWSER_DIR)/html/entities-table.c \

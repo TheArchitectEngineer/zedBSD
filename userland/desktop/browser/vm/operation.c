@@ -108,12 +108,8 @@ vm_to_primitive(
 	int hint,
 	vm_value *result)
 {
-	struct vm_object *object;
-	const char *first;
-	const char *second;
 	vm_value exotic;
 	int is_object;
-	int done;
 	int status;
 
 	/* A primitive is itself. */
@@ -122,7 +118,7 @@ vm_to_primitive(
 	if (!is_object)
 		return 0;
 
-	/* The object's Symbol.toPrimitive decides when it has one (ws074-p087). */
+	/* The object's Symbol.toPrimitive decides when it has one (ws074-p087; Date.prototype has one). */
 	status = vm_get_method(realm, value, vm_symbol_key(realm, VM_SYMBOL_TO_PRIMITIVE), &exotic);
 	if (status != 0)
 		return status;
@@ -133,10 +129,31 @@ vm_to_primitive(
 		return 0;
 	}
 
-	/* A Date's default hint is string, as its @@toPrimitive has it (for a Date whose @@toPrimitive was removed too). */
-	object = (struct vm_object *)vm_value_as_cell(value);
-	if (hint == VM_HINT_DEFAULT && object->kind == VM_KIND_DATE)
-		hint = VM_HINT_STRING;
+	/* Otherwise valueOf and toString. */
+	status = vm_ordinary_to_primitive(realm, value, hint, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the primitive. */
+	return 0;
+}
+
+/*
+ * Converts an object to a primitive through its valueOf and toString
+ * methods (OrdinaryToPrimitive): toString first for the string hint,
+ * valueOf first otherwise.
+ */
+int
+vm_ordinary_to_primitive(
+	struct vm_realm *realm,
+	vm_value value,
+	int hint,
+	vm_value *result)
+{
+	const char *first;
+	const char *second;
+	int done;
+	int status;
 
 	/* A string hint tries toString first; the others valueOf. */
 	first = "valueOf";

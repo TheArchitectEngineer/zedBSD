@@ -40,6 +40,7 @@ int js_builtin_install_generator(struct vm_realm *realm);
 int js_builtin_install_symbol(struct vm_realm *realm);
 int js_builtin_install_iterator(struct vm_realm *realm);
 int js_builtin_install_collection(struct vm_realm *realm);
+int js_builtin_install_uri(struct vm_realm *realm);
 
 /* Symbols (builtin_symbol.c). */
 int js_builtin_symbol_value(struct vm_realm *realm, struct vm_object *object, int which, vm_value value, uint32_t attributes);

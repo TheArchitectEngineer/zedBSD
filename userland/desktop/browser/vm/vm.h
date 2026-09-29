@@ -756,6 +756,7 @@ double vm_number_parse_radix(const char *text, size_t length, int radix);
 /* JavaScript's operations on values (operation.c). */
 int vm_to_boolean(vm_value value);
 int vm_to_primitive(struct vm_realm *realm, vm_value value, int hint, vm_value *result);
+int vm_ordinary_to_primitive(struct vm_realm *realm, vm_value value, int hint, vm_value *result);
 int vm_to_number(struct vm_realm *realm, vm_value value, double *number);
 int vm_to_int32(struct vm_realm *realm, vm_value value, int32_t *number);
 int vm_to_uint32(struct vm_realm *realm, vm_value value, uint32_t *number);

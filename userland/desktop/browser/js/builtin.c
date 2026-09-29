@@ -58,6 +58,8 @@ js_install_builtins(
 	if (error == 0)
 		error = js_builtin_install_global(realm);
 	if (error == 0)
+		error = js_builtin_install_uri(realm);
+	if (error == 0)
 		error = js_builtin_install_iterator(realm);
 	if (error == 0)
 		error = js_builtin_install_promise(realm);
