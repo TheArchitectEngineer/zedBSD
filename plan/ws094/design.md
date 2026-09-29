@@ -34,7 +34,9 @@ compositor の変更は role と重ね順・入力・起動に限る。
 - **重ね順**: 壁紙の直後、全ての toplevel・subsurface・popup の下。**4 つの仮想 desktop のどれでも同じ 1 枚**を示す（`~/Desktop` は 1 つ）。
   全画面の窓の下では描かない（見えない）。
 - **合成**: premultiplied alpha で壁紙の上に重ねる（透明の所は壁紙が見える）。backdrop（窓の glass）の「窓の下の景色」に含める。
-  App Home を開く時の「desktop の層」（壁紙と窓が右下へ縮む）に含め、Wiseview では窓の tile の背景（縮んだ壁紙）の上に縮めて描く。
+  App Home を開く時の「desktop の層」（壁紙と窓が右下へ縮む）に含める。Wiseview の間は描かない（窓の tile だけ。p002 で決めた）。
+  backdrop は他の窓の上にある窓の glass の分だけ作られるので、一番下の窓の glass はこれまでどおりぼかした壁紙だけを映す（desktop の icon は
+  映らない。p002 の制限）。
 - **入力**: pointer・touch は、どの窓の上でもない所で desktop surface に届く。ただし compositor の gesture（左上の hot corner の drag、下端からの
   Wiseview の swipe、端からの仮想 desktop の swipe）が先に取る。keyboard focus は desktop surface を click した時に移り、窓を click すると窓へ。
   focus の切り替え（Alt+Tab 等）・Wiseview の tile・window の一覧・システムバーの窓の印には出さない。最後の窓が閉じても focus は自動では

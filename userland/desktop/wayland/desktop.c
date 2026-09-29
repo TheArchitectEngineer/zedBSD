@@ -272,14 +272,19 @@ zwl_desktop_tick(
 
 	/* A new place (the output's size, the look) is configured again. */
 	desktop_place(server, &x, &y, &width, &height);
-	if (x != desk.x || y != desk.y || width != desk.width || height != desk.height) {
+	if (x != desk.x ||
+	    y != desk.y ||
+	    width != desk.width ||
+	    height != desk.height) {
 		error = desktop_configure(server);
 		if (error != 0)
 			printf("ZWL DESKTOP configure-failed errno=%d\n", error);
 	}
 
 	/* A frame that does not draw the desktop (a fullscreen window, the lock screen) still answers its callbacks. */
-	if (!server->windowed || server->locked || server->greeter)
+	if (!server->windowed ||
+	    server->locked ||
+	    server->greeter)
 		zwl_callbacks_done(&desk.surface->committed_callbacks);
 }
 
@@ -674,6 +679,8 @@ desktop_start(
 		desk.starts = 0U;
 		desk.starts_ms = now;
 	}
+
+	/* Too many starts in the minute stop the starts for good. */
 	if (desk.starts >= DESKTOP_STARTS) {
 		desk.limited = 1;
 		printf("ZWL DESKTOP start-limit starts=%u\n", desk.starts);

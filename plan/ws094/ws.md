@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: main の依頼（worktree `.claude/worktrees/ws094-desktop`、branch `wt/ws094`）
-Resume point: p001（設計、[design.md](design.md)）cleared。次は p002（compositor の desktop surface。WS035 の source なので main の許可と順が要る）
+Resume point: p001・p002 cleared（compositor の desktop surface を probe で QEMU の Venus で確認）。次は p003（libkeiland の client と Files の `--desktop`）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -24,7 +24,7 @@ Resume point: p001（設計、[design.md](design.md)）cleared。次は p002（c
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws094-p001](phase001/phase.md) | 設計（[design.md](design.md)、J1〜J7 は既定: Files が背景の層の client として描く） | cleared（2026-09-29） | — |
-| ws094-p002 | compositor: `keiland_desktop_v1`（role・token・configure）、重ね順・合成・入力・focus・popup・DnD の対象、`--session` での起動と起こし直し、probe | planned | p001、main の許可（WS035 の source） |
+| [ws094-p002](phase002/phase.md) | compositor: `keiland_desktop_v1`（role・token・configure）、重ね順・合成・入力・focus・popup・DnD の対象、`--session` での起動と起こし直し、probe | cleared（2026-09-30） | p001、main の許可（WS035 の source） |
 | ws094-p003 | libkeiland の client の API と Files の `--desktop` の骨組み（`~/Desktop` の icon を右上から描く、監視） | planned | p002、main の許可（libkeiland） |
 | ws094-p004 | 選択・開く（WS093）・keyboard・配置の保存と Clean Up | planned | p003 |
 | ws094-p005 | context menu（項目・空いた所）・名前の変更・Trash・Copy・Paste・New Folder・Show in Files | planned | p004 |

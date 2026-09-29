@@ -252,6 +252,7 @@ main(
 	char token[128];
 	unsigned timeout;
 	time_t started;
+	time_t now;
 	int status;
 	int error;
 
@@ -262,6 +263,8 @@ main(
 		snprintf(token, sizeof(token), "%s", inherited);
 		probe.token = token;
 	}
+
+	/* The command line. */
 	error = parse(argc, argv, &timeout);
 	if (error != 0) {
 		fprintf(stderr, "usage: desktop-probe [--token=TOKEN] [--timeout-s=N]\n");
@@ -284,7 +287,10 @@ main(
 	probe.registry = wl_display_get_registry(probe.display);
 	(void)wl_registry_add_listener(probe.registry, &registry_listener, NULL);
 	status = wl_display_roundtrip(probe.display);
-	if (status < 0 || probe.compositor == NULL || probe.shm == NULL || probe.manager == NULL) {
+	if (status < 0 ||
+	    probe.compositor == NULL ||
+	    probe.shm == NULL ||
+	    probe.manager == NULL) {
 		printf("DESKPROBE failed what=globals\n");
 		return 1;
 	}
@@ -326,7 +332,8 @@ main(
 		(void)wl_display_flush(probe.display);
 
 		/* The timeout. */
-		if (timeout != 0U && time(NULL) - started >= (time_t)timeout) {
+		now = time(NULL);
+		if (timeout != 0U && now - started >= (time_t)timeout) {
 			printf("DESKPROBE done reason=timeout\n");
 			fflush(stdout);
 			return 0;

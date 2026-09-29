@@ -11,6 +11,7 @@
 #   home      App Home opens with the desktop in the layer that slides aside (home.png), and closes
 #   home-drag a drag from the top-left corner held half way: the yellow square moves and shrinks with the layer (home-drag.png)
 #   dnd       a file dragged out of the Files window and over no window reaches the probe (dnd enter)
+#   touch     (the pen image) a tap where no window is reaches the probe by wl_touch, and gives it the keyboard
 #   restart   zdesktop run again with --desktop-client=the probe --timeout-s=3: started with a token, started again
 #             after it ends, and no more than four times a minute (start-limit)
 # The steps read zdesktop's log and the probe's through SSH, and the pictures; nothing reads the console.
@@ -118,7 +119,7 @@ for step in "$@"; do
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP unfocus via=window'
 		expect_log /tmp/probe.log 'DESKPROBE focus out'
 		shot window.png
-		set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 		wx=${1:-0}; wy=${2:-0}
 		echo "files at $wx,$wy"
 		# A press beside the window gives the desktop the keyboard, a press on the window takes it back.
@@ -146,7 +147,7 @@ for step in "$@"; do
 	dnd)
 		# note.txt is the first row of the Files window's list view; it is dragged out to the desktop's right side.
 		keys '<ctrl-2>'
-		set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 		wx=${1:-0}; wy=${2:-0}
 		pointer move $((wx + 400)) $((wy + 114)) sleep 300 down sleep 100 move $((wx + 420)) $((wy + 120)) sleep 80 move $((wx + 460)) $((wy + 140)) sleep 80 \
 			move 1100 600 sleep 150 move 1180 650 sleep 150 move 1200 680 sleep 600
@@ -154,6 +155,15 @@ for step in "$@"; do
 		shot dnd.png
 		pointer up sleep 800
 		expect_log /tmp/probe.log 'DESKPROBE dnd (drop|leave)'
+		;;
+	touch)
+		# (the pen image, /bin/touchinject) a tap where no window is reaches the probe by wl_touch.
+		printf 'size 1279 799 2\nwait 2600\ndown 1 500 500\nwait 80\nup 1\nhold 800\n' > "$out/tap.script"
+		put "$out/tap.script" /tmp/tap.script
+		result=$(guest "/bin/touchinject /tmp/tap.script 2>&1; echo replay=\$?")
+		printf '%s\n' "$result" | grep -q '^replay=0$' || { echo "touchinject: FAILED"; status=1; }
+		expect_log /tmp/probe.log 'DESKPROBE touch down id=[0-9]+ x=500 y=466'
+		expect_log /tmp/zdesktop.log 'ZWL DESKTOP focus client='
 		;;
 	restart)
 		compositor '--desktop-client=/tmp/desktop-probe\ --timeout-s=3'
