@@ -167,8 +167,10 @@ share_export(
 		return EOPNOTSUPP;
 	}
 
-	/* Native opaque allocations share within this GPU but cannot become DMA scanout images. */
-	if (image != NULL && (resource->blob_flags & GPU_BLOB_CROSS_DEVICE) == 0U) {
+	/* The paired Windows scanout consumes same-device opaque allocations. */
+	if (image != NULL &&
+	    (resource->blob_flags & GPU_BLOB_CROSS_DEVICE) == 0U &&
+	    controller->transport.host_scanout == 0U) {
 		mutex_unlock(&controller->mutex);
 		return EOPNOTSUPP;
 	}

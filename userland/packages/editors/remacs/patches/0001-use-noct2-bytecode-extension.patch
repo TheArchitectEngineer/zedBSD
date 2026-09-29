@@ -1,0 +1,5 @@
+--- a/tools/build-nap.sh
++++ b/tools/build-nap.sh
+@@ -42 +42 @@
+-mv "$OUT/remacs-all.nb" "$OUT/remacs.nap"
++mv "$OUT/remacs-all.nbc" "$OUT/remacs.nap"

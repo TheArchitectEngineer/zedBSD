@@ -815,6 +815,8 @@ display_import_image(
 	/* Failed imports publish no image wrapper and leave the caller's fd untouched. */
 	*result = NULL;
 	lease = private_lease;
+	if (lease->device->object.context->copy_display != VK_FALSE)
+		return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
 	/* A query is permission to trial sharing, never a promise that placement or physical backing will import. */
 	if ((lease->constraints.flags & GPU_SCANOUT_SHARED) == 0U)

@@ -255,10 +255,12 @@ USERLAND_$(1)_DATA := $(13)
 USERLAND_$(1)_HEADERS := $(14)
 USERLAND_$(1)_INSTALL_DIR := $(if $(15),$(15),bin)
 endef
-USERLAND_PACKAGE_MAKEFILES := $(sort \
+# The retired userland/noct checkout is not a package source. An old
+# submodule worktree may remain locally; never include its nested Makefiles.
+USERLAND_PACKAGE_MAKEFILES := $(filter-out userland/noct/%,$(sort \
 	$(wildcard userland/*/Makefile) \
 	$(wildcard userland/*/*/Makefile) \
-	$(wildcard userland/*/*/*/Makefile))
+	$(wildcard userland/*/*/*/Makefile)))
 include $(USERLAND_PACKAGE_MAKEFILES)
 ZEDBSD_ALL_USER_PROGRAMS := $(foreach program,$(USERLAND_PACKAGES),\
 	$(if $(filter y,$(USERLAND_$(program)_SELECTABLE)),$(program)))
@@ -463,7 +465,7 @@ list-targets:
 # The LLVM source is verified, and the host generators the clang package's
 # cross build runs are built from it, here: with the binary cache nothing else
 # does either before packages start using (and patching) that source tree.
-toolchain: $(NOCT_HOST_BUILD_STAMP) noct-toolchain-smoke llvm-toolchain \
+toolchain: $(NOCT_HOST_BUILD_STAMP) llvm-toolchain \
 	sysroots $(ZEDBSD_LLVM_SOURCE_VERIFIED) $(ZEDBSD_LLVM_NATIVE_STAMP)
 
 .PHONY: download
