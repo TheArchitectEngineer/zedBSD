@@ -167,6 +167,10 @@ host_js_run(
 	/* The run, and its result. */
 	wb_buffer_clear(&host_js_printed);
 	status = js_run_script(realm, units.data, units.length, 0, &completion, &error);
+
+	/* The microtasks the test queued (an asynchronous test's promises, ws074-p086). */
+	if (status == 0)
+		status = vm_run_jobs(realm, NULL, NULL);
 	wb_buffer_init(&out);
 	host_js_report(realm, status, &error, &out);
 	printf("%s\t%s\t%s\n", path, mode, wb_buffer_string(&out));

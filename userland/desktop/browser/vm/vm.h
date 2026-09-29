@@ -426,6 +426,11 @@ enum vm_intrinsic {
 	VM_INTRINSIC_REGEXP_PROTOTYPE,
 	VM_INTRINSIC_REGEXP,
 	VM_INTRINSIC_DATE_PROTOTYPE,
+	VM_INTRINSIC_PROMISE_PROTOTYPE,
+	VM_INTRINSIC_PROMISE,
+	VM_INTRINSIC_GENERATOR_PROTOTYPE,
+	VM_INTRINSIC_GENERATOR_FUNCTION_PROTOTYPE,
+	VM_INTRINSIC_ASYNC_FUNCTION_PROTOTYPE,
 	VM_INTRINSICS
 };
 
@@ -473,7 +478,9 @@ enum vm_object_kind {
 	VM_KIND_SYMBOL,
 	VM_KIND_DATE,
 	VM_KIND_REGEXP,
-	VM_KIND_PLATFORM
+	VM_KIND_PLATFORM,
+	VM_KIND_PROMISE,
+	VM_KIND_GENERATOR
 };
 
 /*
@@ -593,6 +600,10 @@ struct vm_function {
  * throw_value was last seen leaving a bytecode frame without a handler
  * (throw_line 0 when that place is not known); the embedder reads them
  * with vm_throw_site to report an uncaught exception's place.
+ * rejections lists the promises rejected while nothing handled them
+ * (ws074-p086), which the end of a checkpoint reports unless a handler
+ * came meanwhile; reporting_rejection is set while the report of one runs,
+ * so the embedder writes it as a promise's ("Uncaught (in promise)").
  */
 struct vm_realm {
 	struct vm_heap *heap;
@@ -614,11 +625,15 @@ struct vm_realm {
 	unsigned depth;
 	void *host;
 	struct wb_vector jobs;
+	struct wb_vector rejections;
+	int reporting_rejection;
 };
 
 /*
  * One microtask: a function to call with one argument (queueMicrotask's
- * callback, and later a promise's reaction).
+ * callback), or a promise's job (a cell of vm_promise_job_type: a
+ * reaction, or the resolution of a promise with a thenable) with its
+ * argument.
  */
 struct vm_job {
 	vm_value callback;
@@ -745,6 +760,33 @@ int vm_private_set(struct vm_realm *realm, vm_value object, vm_value key, vm_val
 int vm_private_define(struct vm_realm *realm, vm_value object, vm_value key, vm_value value);
 int vm_private_copy(struct vm_realm *realm, vm_value target, vm_value source, vm_value key);
 int vm_private_in(struct vm_realm *realm, vm_value key, vm_value object, vm_value *result);
+
+/* The states of a promise. */
+#define VM_PROMISE_PENDING		0U
+#define VM_PROMISE_FULFILLED		1U
+#define VM_PROMISE_REJECTED		2U
+
+/* How a generator or an async function is resumed: with a value, with an exception, or told to return. */
+#define VM_RESUME_NEXT			0
+#define VM_RESUME_THROW			1
+#define VM_RESUME_RETURN		2
+
+/* Promises (promise.c, ws074-p086). */
+extern const struct vm_cell_type vm_promise_type;
+extern const struct vm_cell_type vm_promise_job_type;
+int vm_value_is_promise(vm_value value);
+int vm_promise_create(struct vm_realm *realm, struct vm_object *prototype, vm_value *promise);
+int vm_promise_state(vm_value promise, vm_value *result);
+int vm_promise_resolving_functions(struct vm_realm *realm, vm_value promise, vm_value *resolve, vm_value *reject);
+int vm_promise_resolve(struct vm_realm *realm, vm_value promise, vm_value resolution);
+int vm_promise_reject(struct vm_realm *realm, vm_value promise, vm_value reason);
+int vm_promise_then(struct vm_realm *realm, vm_value promise, vm_value on_fulfilled, vm_value on_rejected, vm_value derived, vm_value resolve, vm_value reject);
+int vm_promise_run_job(struct vm_realm *realm, vm_value job, vm_value argument);
+
+/* Generators and async functions (generator.c, ws074-p086). */
+int vm_generator_call(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int vm_generator_resume(struct vm_realm *realm, vm_value generator, vm_value value, int how, vm_value *result, int *done);
+int vm_code_is_suspendable(const struct vm_function *function);
 
 /* Spreading and destructuring (spread.c). */
 int vm_iter_start(struct vm_realm *realm, vm_value value, vm_value *iterator);

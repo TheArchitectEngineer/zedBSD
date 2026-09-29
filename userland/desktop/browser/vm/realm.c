@@ -30,6 +30,7 @@ static int realm_fill(struct vm_realm *realm);
 static void realm_trace(struct vm_heap *heap, void *context);
 static int realm_empty_function(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int realm_define_value(struct vm_realm *realm, const char *name, vm_value value);
+static void realm_report_rejections(struct vm_realm *realm, vm_job_report report, void *context);
 
 /*
  * Makes a realm in a heap with its intrinsic objects and global object.
@@ -63,6 +64,7 @@ vm_realm_create(
 	/* The stack's size, empty. */
 	made->stack_capacity = REALM_STACK_SLOTS;
 	wb_vector_init(&made->jobs, sizeof(struct vm_job));
+	wb_vector_init(&made->rejections, sizeof(vm_value));
 
 	/* The tracer. */
 	error = vm_heap_add_tracer(heap, realm_trace, made);
@@ -99,6 +101,7 @@ vm_realm_destroy(
 	/* The tracer, then the stack and the realm. */
 	vm_heap_remove_tracer(realm->heap, realm_trace, realm);
 	wb_vector_release(&realm->jobs);
+	wb_vector_release(&realm->rejections);
 	free(realm->stack);
 	free(realm);
 }
@@ -143,7 +146,10 @@ vm_run_jobs(
 	struct vm_job *queued;
 	struct vm_job job;
 	vm_value ignored;
+	struct vm_cell *cell;
 	size_t next;
+	int is_promise_job;
+	int is_cell;
 	int status;
 
 	/* Takes the jobs from the front while there are any (a job may queue more at the end). */
@@ -153,8 +159,19 @@ vm_run_jobs(
 		job = *queued;
 		next++;
 
-		/* Calls the job; an exception is reported and cleared. */
-		status = vm_call(realm, job.callback, VM_VALUE_UNDEFINED, &job.argument, 1, &ignored);
+		/* Runs the job (a promise's, or a function to call); an exception is reported and cleared. */
+		is_promise_job = 0;
+		is_cell = vm_value_is_cell(job.callback);
+		if (is_cell) {
+			cell = vm_value_as_cell(job.callback);
+			if (cell->type == &vm_promise_job_type)
+				is_promise_job = 1;
+		}
+		if (is_promise_job) {
+			status = vm_promise_run_job(realm, job.callback, job.argument);
+		} else {
+			status = vm_call(realm, job.callback, VM_VALUE_UNDEFINED, &job.argument, 1, &ignored);
+		}
 		if (status == VM_THROWN) {
 			if (report != NULL)
 				report(realm, realm->exception, context);
@@ -165,8 +182,11 @@ vm_run_jobs(
 		}
 	}
 
-	/* Succeeded: the queue is empty. */
+	/* The queue is empty; the rejections nothing handled are reported. */
 	wb_vector_clear(&realm->jobs);
+	realm_report_rejections(realm, report, context);
+
+	/* Succeeded: the queue is empty. */
 	return 0;
 }
 
@@ -275,6 +295,9 @@ realm_trace(
 		vm_heap_mark_value(heap, job->argument);
 	}
 
+	/* The promises rejected while unhandled, waiting for the checkpoint's report. */
+	vm_promise_trace_rejections(heap, realm);
+
 	/* Every word of the used stack that could point at a cell (boxed and raw values share it). */
 	for (slot = 0; slot < realm->stack_top; slot++)
 		vm_heap_mark_word(heap, (uintptr_t)realm->stack[slot]);
@@ -321,4 +344,42 @@ realm_define_value(
 
 	/* Succeeded: the value is defined. */
 	return 0;
+}
+
+/*
+ * Reports each promise of the realm's list of rejections that is still
+ * unhandled (a rejection nothing handled by the end of the checkpoint),
+ * with reporting_rejection set so the embedder writes it as a promise's,
+ * and empties the list.
+ */
+static void
+realm_report_rejections(
+	struct vm_realm *realm,
+	vm_job_report report,
+	void *context)
+{
+	struct vm_promise *object;
+	vm_value *promise;
+	vm_value reason;
+	size_t index;
+	int state;
+
+	/* Each promise, in the order it was rejected (a report runs no script, so the list does not change). */
+	for (index = 0; index < realm->rejections.count; index++) {
+		promise = wb_vector_at(&realm->rejections, index);
+		object = (struct vm_promise *)vm_value_as_cell(*promise);
+		if (object->handled)
+			continue;
+
+		/* The reason, reported as a promise's. */
+		state = vm_promise_state(*promise, &reason);
+		if (report == NULL || state != (int)VM_PROMISE_REJECTED)
+			continue;
+		realm->reporting_rejection = 1;
+		report(realm, reason, context);
+		realm->reporting_rejection = 0;
+	}
+
+	/* The list is spent. */
+	wb_vector_clear(&realm->rejections);
 }

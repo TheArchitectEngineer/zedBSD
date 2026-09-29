@@ -145,6 +145,7 @@ enum vm_opcode {
 	VM_OP_PRIVATE_DEFINE,	/* R object, R private name, R value: a private field */
 	VM_OP_PRIVATE_COPY,	/* R object, R source, R private name: a private method the prototype keeps, onto an instance */
 	VM_OP_PRIVATE_IN,	/* R dst, R private name, R object: #x in object */
+	VM_OP_SUSPEND,		/* R value, R sent, R how: a generator yields (an async function awaits) the value; resumed, sent and how (VM_RESUME_*) hold what came (ws074-p086) */
 
 	/* Wasm (raw values). */
 	VM_OP_I32_CONST,	/* R dst, I value */
@@ -242,6 +243,12 @@ struct vm_code {
 
 /* A derived class's constructor: new gives it no this; its super call makes it. */
 #define VM_CODE_DERIVED		0x20U
+
+/* A generator function: a call makes a generator, which runs the code up to each yield (ws074-p086). */
+#define VM_CODE_GENERATOR	0x40U
+
+/* An async function: a call runs the code up to its first await and returns a promise (ws074-p086). */
+#define VM_CODE_ASYNC		0x80U
 
 /*
  * An environment: the variables of one function (or script) that the

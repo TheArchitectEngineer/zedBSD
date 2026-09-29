@@ -25,6 +25,7 @@
 static void function_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void function_env_trace(struct vm_heap *heap, struct vm_cell *cell);
 static int function_add_prototype(struct vm_realm *realm, struct vm_function *function);
+static int function_add_generator_prototype(struct vm_realm *realm, struct vm_function *function);
 
 /* The cell type of functions: objects that also hold their realm's objects through the realm's tracer. */
 const struct vm_cell_type vm_function_type = {
@@ -176,6 +177,19 @@ vm_closure_create(
 		if (error != 0)
 			return NULL;
 	}
+
+	/* A generator function: its prototype object (its generators' prototype), and it inherits from %GeneratorFunction.prototype%. */
+	if ((code->flags & VM_CODE_GENERATOR) != 0U) {
+		error = function_add_generator_prototype(realm, function);
+		if (error != 0)
+			return NULL;
+		if (realm->intrinsics[VM_INTRINSIC_GENERATOR_FUNCTION_PROTOTYPE] != NULL)
+			function->object.prototype = realm->intrinsics[VM_INTRINSIC_GENERATOR_FUNCTION_PROTOTYPE];
+	}
+
+	/* An async function inherits from %AsyncFunction.prototype%. */
+	if ((code->flags & VM_CODE_ASYNC) != 0U && realm->intrinsics[VM_INTRINSIC_ASYNC_FUNCTION_PROTOTYPE] != NULL)
+		function->object.prototype = realm->intrinsics[VM_INTRINSIC_ASYNC_FUNCTION_PROTOTYPE];
 
 	/* Succeeded: the closure. */
 	return function;
@@ -571,5 +585,40 @@ function_add_prototype(
 		return error;
 
 	/* Succeeded: the constructor has its prototype. */
+	return 0;
+}
+
+/*
+ * Gives a generator function its prototype object: the prototype of the
+ * generators it makes, which inherits from %GeneratorPrototype% and has no
+ * constructor property.
+ */
+static int
+function_add_generator_prototype(
+	struct vm_realm *realm,
+	struct vm_function *function)
+{
+	struct vm_object *parent;
+	struct vm_object *prototype;
+	vm_value key;
+	int error;
+
+	/* The object, from %GeneratorPrototype% (Object.prototype before the built-ins). */
+	parent = realm->intrinsics[VM_INTRINSIC_GENERATOR_PROTOTYPE];
+	if (parent == NULL)
+		parent = realm->object_prototype;
+	prototype = vm_object_create(realm->heap, parent);
+	if (prototype == NULL)
+		return ENOMEM;
+
+	/* The function's prototype property: writable only. */
+	key = vm_key_from_ascii(realm->heap, "prototype");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	error = vm_object_define(realm->heap, &function->object, key, vm_value_cell(prototype), VM_PROPERTY_WRITABLE);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the generator function has its prototype. */
 	return 0;
 }

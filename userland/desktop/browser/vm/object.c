@@ -110,6 +110,8 @@ vm_value_is_object(
 		return 1;
 	if (cell->type == &vm_function_type)
 		return 1;
+	if (cell->type == &vm_promise_type)
+		return 1;
 
 	/* Strings and symbols are primitives. */
 	return 0;

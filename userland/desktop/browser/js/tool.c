@@ -29,6 +29,7 @@
 static int tool_dump_ast(const char *path, unsigned how);
 static int tool_run(const char *path, unsigned how, int dump_code, const void *stack_base);
 static int tool_report(struct vm_realm *realm, const char *path, int status, const struct js_syntax_error *error);
+static void tool_report_job(struct vm_realm *realm, vm_value exception, void *context);
 static int tool_dump_code(struct vm_realm *realm, const struct wb_units *units, unsigned how, struct js_syntax_error *error);
 static int tool_dump_unit(const struct vm_code *code, struct wb_buffer *out);
 static int tool_read(const char *path, struct wb_units *units);
@@ -197,6 +198,10 @@ tool_run(
 	else
 		status = js_run_script(realm, units.data, units.length, how, &completion, &error);
 
+	/* The microtasks the script queued (its promises' reactions and awaits, ws074-p086). */
+	if (!dump_code && status == 0)
+		status = vm_run_jobs(realm, tool_report_job, NULL);
+
 	/* The source is no longer needed; why the script did not run to its end is said. */
 	wb_units_release(&units);
 	exit_status = tool_report(realm, path, status, &error);
@@ -252,6 +257,28 @@ tool_report(
 	/* Any other failure. */
 	fprintf(stderr, "browser: cannot run %s: %s\n", path, strerror(status));
 	return 1;
+}
+
+/* Says on standard error what a microtask threw, or a promise rejected with while nothing handled it. */
+static void
+tool_report_job(
+	struct vm_realm *realm,
+	vm_value exception,
+	void *context)
+{
+	struct wb_buffer text;
+	int described;
+
+	UNUSED_PARAMETER(context);
+
+	/* The exception's text, as a browser's console writes an uncaught one. */
+	wb_buffer_init(&text);
+	described = js_exception_text(realm, exception, &text);
+	if (described == 0 && realm->reporting_rejection)
+		fprintf(stderr, "Uncaught (in promise) %s\n", wb_buffer_string(&text));
+	else if (described == 0)
+		fprintf(stderr, "Uncaught %s\n", wb_buffer_string(&text));
+	wb_buffer_release(&text);
 }
 
 /* Compiles a script and writes its code units (the program's, then each function's inside it). */

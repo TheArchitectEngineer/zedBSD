@@ -138,6 +138,105 @@ struct vm_heap {
 	struct vm_shape *root_shape;
 };
 
+/* The states of a generator (or of an async function's run). */
+#define VM_GENERATOR_START		0U
+#define VM_GENERATOR_SUSPENDED		1U
+#define VM_GENERATOR_RUNNING		2U
+#define VM_GENERATOR_DONE		3U
+
+/*
+ * The run of a generator or an async function between its steps: the
+ * function, the this value, new.target and the argument count of its
+ * frame, and the frame's registers while it is suspended.
+ *
+ * A generator object (VM_KIND_GENERATOR) holds one as its internal value;
+ * an async function's is held by the reaction that resumes it and by its
+ * frame while it runs.  registers is malloc'd with register_count values
+ * (the code's) when the run first suspends and freed when the run ends;
+ * pc is where the run goes on, and value_register and how_register are
+ * the suspend instruction's registers that take what the resumption
+ * brings.  promise is an async function's promise (undefined for a
+ * generator).
+ */
+struct vm_generator {
+	struct vm_cell cell;
+	struct vm_function *function;
+	vm_value this_value;
+	vm_value new_target;
+	vm_value argument_count;
+	vm_value promise;
+	vm_value *registers;
+	uint32_t register_count;
+	uint32_t state;
+	uint32_t pc;
+	uint32_t value_register;
+	uint32_t how_register;
+	uint32_t reserved;
+};
+
+/*
+ * A promise: an object with its state (VM_PROMISE_*), its value or reason
+ * once settled, and the reactions waiting for it while it is pending, in
+ * the order they came.  handled says a reaction was ever added (an
+ * unhandled rejection is reported); resolved says the promise's own
+ * resolution (vm_promise_resolve) has been decided, which a second one
+ * does not change.
+ */
+struct vm_promise {
+	struct vm_object object;
+	uint32_t state;
+	uint32_t handled;
+	uint32_t resolved;
+	uint32_t reserved;
+	vm_value result;
+	struct vm_promise_job *first;
+	struct vm_promise_job *last;
+};
+
+/* The kinds of promise job. */
+#define VM_JOB_REACTION			0U
+#define VM_JOB_THENABLE			1U
+#define VM_JOB_AWAIT			2U
+
+/*
+ * A job a promise queues, in a cell so the realm's queue holds it like a
+ * callback.
+ *
+ * A reaction (VM_JOB_REACTION) is what then added: its two handlers and
+ * the derived promise it settles (derived; resolve and reject are that
+ * promise's resolving functions when a constructor other than Promise
+ * made it, the empty value when the promise is settled directly, and
+ * derived is undefined when nothing is settled).  An await
+ * (VM_JOB_AWAIT) resumes generator with the settled value.  Both wait in
+ * their promise's list (next) and are queued once it settles, with
+ * rejected saying which way.  A thenable job (VM_JOB_THENABLE) resolves
+ * derived by calling then (on_fulfilled) on the thenable (its argument).
+ */
+struct vm_promise_job {
+	struct vm_cell cell;
+	struct vm_promise_job *next;
+	uint32_t kind;
+	uint32_t rejected;
+	vm_value on_fulfilled;
+	vm_value on_rejected;
+	vm_value derived;
+	vm_value resolve;
+	vm_value reject;
+	struct vm_generator *generator;
+};
+
+/* The interpreter's runs of generators (interpreter.c). */
+int vm_interpret_start(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, struct vm_generator *generator, vm_value *result, int *suspended);
+int vm_interpret_resume(struct vm_realm *realm, struct vm_generator *generator, vm_value value, int how, vm_value *result, int *suspended);
+
+/* Generators (generator.c). */
+extern const struct vm_cell_type vm_generator_type;
+int vm_generator_continue(struct vm_realm *realm, struct vm_generator *generator, vm_value value, int how);
+
+/* Promises (promise.c). */
+int vm_promise_await(struct vm_realm *realm, vm_value value, struct vm_generator *generator);
+void vm_promise_trace_rejections(struct vm_heap *heap, struct vm_realm *realm);
+
 /* The atom table (atom.c). */
 void vm_atom_table_trace(struct vm_heap *heap);
 void vm_atom_table_release(struct vm_heap *heap);

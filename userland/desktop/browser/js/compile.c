@@ -231,14 +231,13 @@ js_compile_function(
 	struct js_function_info *info;
 	struct vm_code *code;
 	uint32_t result;
+	uint32_t how;
 	uint32_t flags;
 
 	/* What the language does not have in this compiler yet. */
 	info = node->scope->function;
-	if ((node->flags & JS_FLAG_GENERATOR) != 0U)
-		js_compile_unsupported(compiler, node, "generators");
-	if ((node->flags & JS_FLAG_ASYNC) != 0U)
-		js_compile_unsupported(compiler, node, "async functions");
+	if ((node->flags & JS_FLAG_GENERATOR) != 0U && (node->flags & JS_FLAG_ASYNC) != 0U)
+		js_compile_unsupported(compiler, node, "async generators");
 
 	/* The function's state, in the arena, the innermost being compiled. */
 	fc = wb_arena_zalloc(compiler->arena, sizeof(*fc));
@@ -253,6 +252,14 @@ js_compile_function(
 
 	/* The registers and the environment, the prologue, then the body. */
 	compile_prepare(fc);
+
+	/* A generator's call ends here, after its parameters; the first next goes on from here (ws074-p086). */
+	if ((node->flags & JS_FLAG_GENERATOR) != 0U) {
+		result = js_temp(fc);
+		how = js_temp(fc);
+		js_load_value(fc, result, VM_VALUE_UNDEFINED);
+		js_emit3(fc, VM_OP_SUSPEND, result, result, how);
+	}
 	if ((node->flags & JS_FLAG_STATIC_INIT) != 0U) {
 		/* A class's static function: its static fields and blocks. */
 		js_compile_fields(fc, info->class_node, 1);
@@ -695,9 +702,15 @@ compile_flags(
 			flags |= VM_CODE_DERIVED;
 	}
 
-	/* An ordinary function (not the program, not a method, an accessor or an arrow function) can be called with new. */
-	if (!info->program && (info->node->flags & (JS_FLAG_METHOD | JS_FLAG_ARROW)) == 0U)
+	/* An ordinary function (not the program, not a method, an accessor, an arrow, a generator or an async function) can be called with new. */
+	if (!info->program && (info->node->flags & (JS_FLAG_METHOD | JS_FLAG_ARROW | JS_FLAG_GENERATOR | JS_FLAG_ASYNC)) == 0U)
 		flags |= VM_CODE_CONSTRUCTOR;
+
+	/* A generator function, or an async function (ws074-p086). */
+	if (!info->program && (info->node->flags & JS_FLAG_GENERATOR) != 0U)
+		flags |= VM_CODE_GENERATOR;
+	if (!info->program && (info->node->flags & JS_FLAG_ASYNC) != 0U)
+		flags |= VM_CODE_ASYNC;
 
 	/* Reports the flags. */
 	return flags;

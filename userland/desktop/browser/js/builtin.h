@@ -35,6 +35,8 @@ int js_builtin_install_math(struct vm_realm *realm);
 int js_builtin_install_global(struct vm_realm *realm);
 int js_builtin_install_regexp(struct vm_realm *realm);
 int js_builtin_install_date(struct vm_realm *realm);
+int js_builtin_install_promise(struct vm_realm *realm);
+int js_builtin_install_generator(struct vm_realm *realm);
 
 /* RegExp's algorithms that String.prototype's methods use (builtin_regexp.c). */
 int js_regexp_is(vm_value value);

@@ -61,6 +61,8 @@ static void expr_spread_list(struct js_function_compiler *fc, struct js_node *li
 static void expr_optional_chain(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
 static void expr_optional_check(struct js_function_compiler *fc, const struct js_node *node, uint32_t value);
 static void expr_tagged_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_yield(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_await(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
 static void expr_template_strings(struct js_function_compiler *fc, struct js_node *template, uint32_t target);
 static void expr_unsupported(struct js_function_compiler *fc, struct js_node *node);
 
@@ -178,6 +180,12 @@ js_compile_expression_named(
 		break;
 	case JS_NODE_TAGGED_TEMPLATE:
 		expr_tagged_template(fc, node, target);
+		break;
+	case JS_NODE_YIELD:
+		expr_yield(fc, node, target);
+		break;
+	case JS_NODE_AWAIT:
+		expr_await(fc, node, target);
 		break;
 	case JS_NODE_SEQUENCE:
 		/* Each expression in order; the last one's value stays. */
@@ -2312,6 +2320,90 @@ expr_unwrap(
 
 	/* The expression inside. */
 	return node;
+}
+
+/*
+ * Compiles yield in a generator (ws074-p086): the generator suspends with
+ * the value; resumed, the expression's value is what next sent, a throw
+ * throws what came, and a return returns it through the finally blocks
+ * around.  yield* is not supported yet.
+ */
+static void
+expr_yield(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	uint32_t value;
+	uint32_t how;
+	uint32_t test;
+	uint32_t goes_on;
+	uint32_t returns;
+
+	/* Delegating to another iterable needs the iterator protocol (Symbol.iterator). */
+	if ((node->flags & JS_FLAG_DELEGATE) != 0U)
+		js_compile_unsupported(fc->compiler, node, "yield*");
+
+	/* The value yielded (undefined without one). */
+	value = js_temp(fc);
+	how = js_temp(fc);
+	if (node->first != NULL) {
+		js_compile_expression(fc, node->first, value);
+	} else {
+		js_load_value(fc, value, VM_VALUE_UNDEFINED);
+	}
+
+	/* The suspension; resumed, target has what came and how says how it came. */
+	js_emit3(fc, VM_OP_SUSPEND, value, target, how);
+
+	/* next goes on with the value (how is 0, which is false). */
+	goes_on = js_label_new(fc);
+	js_emit_jump(fc, VM_OP_JUMP_IF_FALSE, how, goes_on);
+
+	/* return returns the value; throw throws it. */
+	test = js_temp(fc);
+	returns = js_label_new(fc);
+	js_emit2(fc, VM_OP_LOAD_INT, test, VM_RESUME_RETURN);
+	js_emit3(fc, VM_OP_STRICT_EQ, test, how, test);
+	js_emit_jump(fc, VM_OP_JUMP_IF_TRUE, test, returns);
+	js_emit1(fc, VM_OP_THROW, target);
+	js_label_place(fc, returns);
+	js_emit_return(fc, target);
+
+	/* The generator goes on here with the value in target. */
+	js_label_place(fc, goes_on);
+}
+
+/*
+ * Compiles await in an async function (ws074-p086): the function suspends
+ * waiting for the value; resumed, the expression's value is what the
+ * promise was fulfilled with, or its reason is thrown here.
+ */
+static void
+expr_await(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	uint32_t value;
+	uint32_t how;
+	uint32_t goes_on;
+
+	/* The value awaited. */
+	value = js_temp(fc);
+	how = js_temp(fc);
+	js_compile_expression(fc, node->first, value);
+
+	/* The suspension; resumed, target has the value or the reason. */
+	js_emit3(fc, VM_OP_SUSPEND, value, target, how);
+
+	/* A fulfilled promise goes on with its value; a rejected one throws its reason. */
+	goes_on = js_label_new(fc);
+	js_emit_jump(fc, VM_OP_JUMP_IF_FALSE, how, goes_on);
+	js_emit1(fc, VM_OP_THROW, target);
+
+	/* The function goes on here with the value in target. */
+	js_label_place(fc, goes_on);
 }
 
 /* Refuses an expression the compiler does not support yet, naming what it is. */

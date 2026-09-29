@@ -1954,6 +1954,12 @@ object_tag(
 		return "Date";
 	case VM_KIND_REGEXP:
 		return "RegExp";
+	case VM_KIND_PROMISE:
+		/* Promise.prototype[Symbol.toStringTag] until Symbol arrives. */
+		return "Promise";
+	case VM_KIND_GENERATOR:
+		/* %GeneratorPrototype%[Symbol.toStringTag] until Symbol arrives. */
+		return "Generator";
 	default:
 		break;
 	}
