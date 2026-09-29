@@ -34,12 +34,59 @@ enum markup_position {
 	MARKUP_AFTER_END
 };
 
+static int markup_template_content(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int markup_element_this(struct vm_realm *realm, vm_value this_value, struct dom_element **element);
 static int markup_serialize(struct vm_realm *realm, const struct dom_node *node, int self, vm_value *result);
 static int markup_parse(struct vm_realm *realm, struct dom_element *context, vm_value text, struct dom_node **fragment);
 static int markup_context(struct bind_window *window, struct dom_node *node, struct dom_element **context);
 static int markup_position(struct vm_realm *realm, vm_value value, int *position);
 static int markup_insert(struct vm_realm *realm, struct dom_element *element, int position, struct dom_node *node, int *inserted);
+
+/*
+ * The attributes of HTMLTemplateElement.  The table is constant for the
+ * life of the program.
+ */
+static const struct bind_attribute template_attributes[] = {
+	{ "content", markup_template_content, NULL },
+	{ NULL, NULL, NULL }
+};
+
+/*
+ * The HTMLTemplateElement interface (template elements').
+ */
+const struct bind_interface bind_html_template_element_interface = {
+	"HTMLTemplateElement", BIND_HTML_ELEMENT, 0, NULL, template_attributes, NULL, NULL
+};
+
+/*
+ * Finds where an element's children go for markup: a template's
+ * contents, made when the template has none yet (a template a script
+ * made or copied), or the element itself.
+ */
+int
+bind_template_contents(
+	struct dom_element *element,
+	struct dom_node **contents)
+{
+	int template;
+
+	/* An element other than a template holds its own children. */
+	*contents = &element->node;
+	template = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_TEMPLATE);
+	if (!template)
+		return 0;
+
+	/* A template without contents gets them. */
+	if (element->content == NULL) {
+		element->content = dom_fragment_create(element->node.document);
+		if (element->content == NULL)
+			return ENOMEM;
+	}
+
+	/* Succeeded: the template's contents. */
+	*contents = element->content;
+	return 0;
+}
 
 /*
  * Reports the HTML of an element's children, or of a template's contents
@@ -98,9 +145,9 @@ bind_inner_html_set(
 		return status;
 
 	/* A template's contents take the nodes, and any other element's children. */
-	target = &element->node;
-	if (element->content != NULL)
-		target = element->content;
+	status = bind_template_contents(element, &target);
+	if (status != 0)
+		return status;
 
 	/* The old children go. */
 	while (target->first_child != NULL)
@@ -350,6 +397,37 @@ bind_insert_adjacent_text(
 
 	/* Succeeded: it is inserted (nowhere is no failure). */
 	status = markup_insert(realm, element, position, text, &inserted);
+	if (status != 0)
+		return status;
+	return 0;
+}
+
+/* Reports a template's contents, a DocumentFragment (content). */
+static int
+markup_template_content(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	struct dom_node *contents;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The element and its contents. */
+	status = markup_element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	status = bind_template_contents(element, &contents);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the contents' object. */
+	status = bind_wrap(bind_window_of(realm), contents, result);
 	if (status != 0)
 		return status;
 	return 0;

@@ -57,6 +57,7 @@ enum bind_interface_index {
 	BIND_TEXT_ENCODER,
 	BIND_TEXT_DECODER,
 	BIND_STORAGE,
+	BIND_HTML_TEMPLATE_ELEMENT,
 	BIND_INTERFACES
 };
 
@@ -252,8 +253,10 @@ extern const struct bind_interface bind_css_style_declaration_interface;
 extern const struct bind_interface bind_text_encoder_interface;
 extern const struct bind_interface bind_text_decoder_interface;
 extern const struct bind_interface bind_storage_interface;
+extern const struct bind_interface bind_html_template_element_interface;
 
 /* Markup (markup.c, ws074-p081). */
+int bind_template_contents(struct dom_element *element, struct dom_node **contents);
 int bind_inner_html_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_inner_html_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_outer_html_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
