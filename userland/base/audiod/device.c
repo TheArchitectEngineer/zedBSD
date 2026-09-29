@@ -115,6 +115,14 @@ audiod_device_open(
 
 	device->mixer = open("/dev/mixer0", O_RDWR);
 	device->timer_next_ns = audiod_now_ns();
+
+	/* The volume audiod applies itself until the device takes one (ws100-p002): full and unmuted. */
+	device->soft_left = 100U;
+	device->soft_right = 100U;
+	device->soft_muted = 0U;
+
+	/* The feedback sound for the device's rate; without it AUDIOD_FEEDBACK plays nothing. */
+	(void)audiod_feedback_make(device);
 	return 0;
 }
 
@@ -204,7 +212,11 @@ audiod_device_start_capture(
 	read_capture(device);
 }
 
-/* Sets the device volume, in percent. */
+/*
+ * Sets the device volume, in percent: the device's own volume when it has
+ * one, otherwise audiod applies it to what it mixes (ws100-p002; before, a
+ * device without a volume ignored the request).
+ */
 void
 audiod_device_set_volume(
 	struct audiod_device *device,
@@ -213,14 +225,31 @@ audiod_device_set_volume(
 	uint32_t muted)
 {
 	struct audio_volume volume;
+	int error;
 
-	if (device->mixer < 0)
+	/* Kept for audiod's own volume and for the reports. */
+	device->soft_left = left;
+	device->soft_right = right;
+	device->soft_muted = muted;
+
+	/* The device's own volume, when it takes one. */
+	error = -1;
+	if (device->mixer >= 0) {
+		volume.left = left;
+		volume.right = right;
+		volume.muted = muted;
+		volume.reserved = 0;
+		error = ioctl(device->mixer, KERN_AUDIO_SET_VOLUME, &volume);
+	}
+
+	/* Taken: audiod leaves what it mixes as it is. */
+	if (error == 0) {
+		device->soft = 0;
 		return;
-	volume.left = left;
-	volume.right = right;
-	volume.muted = muted;
-	volume.reserved = 0;
-	(void)ioctl(device->mixer, KERN_AUDIO_SET_VOLUME, &volume);
+	}
+
+	/* Otherwise audiod applies it. */
+	device->soft = 1;
 }
 
 /* Reads the device volume, in percent; full and unmuted without a mixer. */
@@ -236,12 +265,39 @@ audiod_device_get_volume(
 	*left = 100;
 	*right = 100;
 	*muted = 0;
+
+	/* The volume audiod applies itself is the one in force (ws100-p002). */
+	if (device->soft) {
+		*left = device->soft_left;
+		*right = device->soft_right;
+		*muted = device->soft_muted;
+		return;
+	}
+
+	/* Otherwise the device's own. */
 	if (device->mixer >= 0 &&
 	    ioctl(device->mixer, KERN_AUDIO_GET_VOLUME, &volume) == 0) {
 		*left = volume.left;
 		*right = volume.right;
 		*muted = volume.muted;
 	}
+}
+
+/*
+ * Plays the feedback sound from its start (AUDIOD_FEEDBACK, ws100-p002):
+ * a sound still playing starts again, so quick changes never overlap.
+ * Without a device, or without the sound, nothing plays.
+ */
+void
+audiod_device_feedback(
+	struct audiod_device *device)
+{
+	/* Nothing to play, or nowhere to play it. */
+	if (device->feedback == NULL || device->dsp < 0)
+		return;
+
+	/* From its first frame, mixed from the next period on (mix.c). */
+	device->feedback_next = 0;
 }
 
 /*
