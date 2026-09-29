@@ -515,6 +515,8 @@ touch_up(
 			touch_pointer(touch, FM_TOUCH_POINTER_RELEASE, FM_TOUCH_LEFT, touch->last_x, touch->last_y, event->arrival);
 			touch->mode = TOUCH_MODE_NONE;
 		}
+
+		/* The other fingers do nothing. */
 		return;
 	}
 
@@ -538,6 +540,8 @@ touch_up(
 			touch_pointer(touch, FM_TOUCH_POINTER_RELEASE, FM_TOUCH_RIGHT, touch->press_x, touch->press_y, event->arrival);
 			fprintf(stderr, "ZFILES TOUCH context x=%.0f y=%.0f\n", touch->press_x, touch->press_y);
 		}
+
+		/* The long press is over. */
 		touch->holding = 0;
 		touch->held = 0;
 	}

@@ -65,6 +65,9 @@ struct main_options {
  * the window's input queue and the app are too large for the stack.
  */
 static struct fm_window main_window;
+static struct fm_present main_present;
+static struct fm_app main_app;
+static struct fm_text main_text;
 
 /*
  * The touch screen (touch.c, ws081-p010): the fingers' gestures and
@@ -74,9 +77,6 @@ static struct fm_touch main_touch;
 
 /* In how many milliseconds the fingers want the next round (-1: none). */
 static int main_touch_due = -1;
-static struct fm_present main_present;
-static struct fm_app main_app;
-static struct fm_text main_text;
 
 /*
  * The window's menus in zdesktop, opened with the window and closed before
@@ -904,16 +904,19 @@ main_touch_round(void)
 			event->area = main_touch_area((int)event->x, (int)event->y);
 		fm_touch_event(&main_touch, event);
 	}
+
+	/* The queue is empty again: the window fills it from the next read. */
 	main_window.touch_count = 0U;
 
-	/* Time moves on for them; a new scroll is shown. */
+	/* Time moves on for them, and they say when they want the next round. */
 	main_touch_due = fm_touch_tick(&main_touch, fm_touch_clock());
+
+	/* A new scroll they set is shown in its area. */
 	moved = fm_touch_scroll(&main_touch, &which, &scroll);
 	if (moved && which == FM_TOUCH_CONTENT) {
 		tab->scroll = scroll;
 		main_app.dirty = 1;
-	}
-	if (moved && which == FM_TOUCH_SIDEBAR) {
+	} else if (moved && which == FM_TOUCH_SIDEBAR) {
 		main_app.sidebar_scroll = scroll;
 		main_app.dirty = 1;
 	}
@@ -941,21 +944,42 @@ main_touch_area(
 	int index;
 
 	/* A dialog, Quick Look or the information card over everything takes the finger as the pointer. */
-	if (main_app.dialog != 0U || main_app.quicklook != 0 || main_app.info_open != 0)
+	if (main_app.dialog != 0U)
+		return FM_TOUCH_OTHER;
+	if (main_app.quicklook != 0)
+		return FM_TOUCH_OTHER;
+	if (main_app.info_open != 0)
 		return FM_TOUCH_OTHER;
 
-	/* What the last frame drew there: a button, a tab, a header or a region over the window is clicked. */
+	/* What the last frame drew there. */
 	(void)fm_input_hit_at(&main_app, x, y, &kind, &index);
-	if (kind == FM_HIT_OVERLAY || kind == FM_HIT_BUTTON || kind == FM_HIT_TAB || kind == FM_HIT_TAB_CLOSE ||
-	    kind == FM_HIT_SCOPE || kind == FM_HIT_HEADER || kind == FM_HIT_SECTION)
-		return FM_TOUCH_OTHER;
 
-	/* The sidebar, or the content. */
-	if (x >= main_app.layout.sidebar.x && x < main_app.layout.sidebar.x + main_app.layout.sidebar.width &&
-	    y >= main_app.layout.sidebar.y && y < main_app.layout.sidebar.y + main_app.layout.sidebar.height)
+	/* A button, a tab, a header or a region over the window is clicked, not scrolled. */
+	switch (kind) {
+	case FM_HIT_OVERLAY:
+	case FM_HIT_BUTTON:
+	case FM_HIT_TAB:
+	case FM_HIT_TAB_CLOSE:
+	case FM_HIT_SCOPE:
+	case FM_HIT_HEADER:
+	case FM_HIT_SECTION:
+		return FM_TOUCH_OTHER;
+	default:
+		break;
+	}
+
+	/* The sidebar scrolls. */
+	if (x >= main_app.layout.sidebar.x &&
+	    x < main_app.layout.sidebar.x + main_app.layout.sidebar.width &&
+	    y >= main_app.layout.sidebar.y &&
+	    y < main_app.layout.sidebar.y + main_app.layout.sidebar.height)
 		return FM_TOUCH_SIDEBAR;
-	if (x >= main_app.layout.content.x && x < main_app.layout.content.x + main_app.layout.content.width &&
-	    y >= main_app.layout.content.y && y < main_app.layout.content.y + main_app.layout.content.height)
+
+	/* The items scroll. */
+	if (x >= main_app.layout.content.x &&
+	    x < main_app.layout.content.x + main_app.layout.content.width &&
+	    y >= main_app.layout.content.y &&
+	    y < main_app.layout.content.y + main_app.layout.content.height)
 		return FM_TOUCH_CONTENT;
 
 	/* Anything else is clicked. */
