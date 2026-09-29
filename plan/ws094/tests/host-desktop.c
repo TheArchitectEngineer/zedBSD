@@ -51,6 +51,8 @@ main(
 		fprintf(stderr, "usage: host-desktop TEMPORARY-FOLDER\n");
 		return 2;
 	}
+
+	/* The configuration folder under it. */
 	snprintf(config, sizeof(config), "%s/config", argv[1]);
 	setenv("XDG_CONFIG_HOME", config, 1);
 

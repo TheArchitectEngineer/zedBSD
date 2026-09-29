@@ -338,6 +338,8 @@ fm_desktop_layout_write(
 			(void)mkdir(folder, 0755);
 			*slash = '/';
 		}
+
+		/* The keiland folder in it. */
 		(void)mkdir(folder, 0755);
 	}
 

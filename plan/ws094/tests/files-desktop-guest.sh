@@ -6,6 +6,8 @@
 #   show      the desktop: the role taken, configured 1280x766, the five items laid out from the top-right corner down
 #             (ZFILES DESKTOP place/ready), a picture (desktop.png)
 #   watch     a file added to ~/Desktop appears within a few seconds (items=6, added.png), and goes when it is removed
+#   input     click, arrow, Enter (the started program has no token), a double click on a folder (a new window), a
+#             rubber band (selected.png, folder.png, band.png)
 #   window    a Files window opens over the icons (window.png)
 # The steps read zdesktop's log (Files, started by zdesktop, writes there too) through SSH, and the pictures; nothing
 # reads the console.
@@ -22,6 +24,7 @@ status=0
 guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null; }
 put() { timeout 120 python3 plan/tools/guest/guest.py put "$1" "$2" >/dev/null 2>&1 </dev/null || { echo "put $1: FAILED"; status=1; }; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
+keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@" >/dev/null; sleep 0.7; }
 shot() {
 	python3 plan/ws035/tests/zdesktop-check.py "$out/$1" --runtime "$GUEST_RUNTIME" >/dev/null
 	echo "shot $1"
@@ -85,6 +88,37 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		sleep 3
 		found=$(guest "grep -ac 'ZFILES DESKTOP ready items=5' /tmp/zdesktop.log" | tail -1)
 		[ "${found:-0}" -ge 2 ] 2>/dev/null && echo "removed: ok" || { echo "removed: MISSING"; status=1; }
+		;;
+	input)
+		# Icons are placed from the top-right corner: 1 Projects (1216,90), 2 notes.txt (1216,194), 3 photo.png (1216,298).
+		# ~/.config/keiland/open-with sends plain text to "Env" (env > ~/env.txt): the program a double click starts
+		# must not have the desktop's token.
+		guest 'mkdir -p /tmp/dhome/.config/keiland; printf "text/plain\tEnv\tenv > /tmp/dhome/env.txt\n" > /tmp/dhome/.config/keiland/open-with; rm -f /tmp/dhome/env.txt' >/dev/null
+		pointer move 1216 298 sleep 300 down sleep 60 up sleep 700
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP select name=photo.png selected=1'
+		shot selected.png
+		keys '<up>'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP select name=notes.txt selected=1 via=arrow'
+		keys '<ret>'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP open via=enter'
+		expect_log /tmp/zdesktop.log 'ZFILES OPEN path=/tmp/dhome/Desktop/notes.txt app=Env error=0'
+		sleep 2
+		token=$(guest 'grep -c KEILAND_DESKTOP_TOKEN /tmp/dhome/env.txt; grep -c "^HOME=" /tmp/dhome/env.txt' | tail -2 | tr '\n' ' ')
+		[ "$token" = "0 1 " ] && echo "token: not inherited ok" || { echo "token: ($token) MISSING"; status=1; }
+		# A double click on the folder opens a new Files window on it.
+		pointer move 1216 90 sleep 300 down sleep 50 up sleep 80 down sleep 50 up sleep 3000
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP open name=Projects via=double-click'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP open-folder path=/tmp/dhome/Desktop/Projects error=0'
+		expect_log /tmp/zdesktop.log 'ZWL MAP client=[0-9]+ '
+		shot folder.png
+		guest 'for p in $(ps -A -o pid,args | grep -E "[f]iles" | awk "{print \$1}"); do :; done' >/dev/null
+		# A rubber band from empty desktop over the first column selects its items.
+		pointer move 1100 60 sleep 300 down sleep 100 move 1150 200 sleep 100 move 1260 330 sleep 400
+		shot band.png
+		pointer up sleep 500
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP band start x=1100 y=26'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP band end first=0'
+		keys '<esc>'
 		;;
 	window)
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; /bin/files --token=w --timeout-s=800 --width=800 --height=560 /tmp/dhome/Desktop > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null

@@ -161,13 +161,17 @@ fm_desktop_event(
 		/* The left button: a press selects, opens or starts a band; its release ends the band. */
 		if (event->button != FM_BUTTON_LEFT)
 			break;
+
+		/* A press, or the release of a band. */
 		if (event->pressed) {
 			desktop_press(app, event);
 		} else if (desk->band) {
 			desk->band = 0;
 			app->dirty = 1;
-			fm_log("DESKTOP band end selected=%d", fm_select_first(fm_ui_tab(app)) >= 0);
+			fm_log("DESKTOP band end first=%d", fm_select_first(fm_ui_tab(app)));
 		}
+
+		/* Nothing more for a button. */
 		break;
 	case FM_EVENT_MOTION:
 		/* A band follows the pointer and selects what it touches. */
@@ -175,6 +179,8 @@ fm_desktop_event(
 			desktop_band_select(app);
 			app->dirty = 1;
 		}
+
+		/* Nothing more for a motion. */
 		break;
 	case FM_EVENT_KEY:
 		/* A key press. */
@@ -561,6 +567,8 @@ desktop_arrow(
 		fm_select_only(tab, 0);
 		return;
 	}
+
+	/* The cursor's cell must be on the desktop. */
 	placed = fm_desktop_cell_rect(desk->places[tab->cursor].column, desk->places[tab->cursor].row, desk->width, desk->height, &from);
 	if (!placed)
 		return;
