@@ -152,6 +152,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS086](ws086/ws.md) | MG002 | ls の出力を GNU ls と同じにする（端末なら既定で列、端末の幅）（2026-09-29 ユーザー） | incomplete | 2026-09-29: p001（GNU ls との差と設計）cleared。名前は locale に関わらず UTF-8（ユーザー決定）。次: p002 実装 |
 | [WS087](ws087/ws.md) | MG002 | /bin/sh の対話の行編集: 矢印キーの履歴（BUG-103）と Tab の補完（2026-09-29 ユーザー） | incomplete | 2026-09-29: p001（原因: 履歴の file が無い、矢印の履歴 32 行）cleared。libedit への GNU Readline 名の追加を許可。次: p002 履歴の file → p003 Tab の補完。実機の上キーの確認が残る |
 | [WS088](ws088/ws.md) | MG006 | Windows で動く Kei-nightly.zip を CI で配布する（元の zip を clang の cache と同じ Release `rev-0` に置いて再利用し、CI が hdd-image.img を入れる）（2026-09-29 ユーザー） | incomplete | 2026-09-29: p001 は draft（整理した元の zip 56 MB、LICENSES・THIRD-PARTY、DLL は MSYS2 と一致）。fork の commit と zip の中身の確認がユーザー待ち。次: p003 の準備 |
+| [WS089](ws089/ws.md) | MG006 | 設定のアプリ（Settings: 左に項目の pane、右に設定、浮いたすりガラスの pane）（2026-09-29 ユーザー、デモの優先事項） | planning | p001（設計）から |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -367,6 +368,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | Kei-nightly.zip の base（2026-09-29） | ユーザー:「今の下書きを今すぐ upload」→ draft の base（`kei-nightly-base-winq-a10-1.zip`、SHA-256 81120981…）を rev-0 に upload（main が読み戻しで一致を確認）、`KEI_NIGHTLY_ALLOW_DRAFT ?= 1`。fork の commit が確定したら作り直して差し替える | WS088 |
 | sh のプロンプト（2026-09-29） | ユーザー:「/bin/shで、ホームディレクトリにいるときにプロンプトに /home/kei と表示されるので、これを ~ にできるようにしたいです。」→ 既定のプロンプトで `$HOME` を `~` に（bash の `\w` と同じ） | WS087 |
 | 窓の四隅のリサイズ（2026-09-29） | ユーザー:「ウィンドウの四隅がリサイズ領域になっていないようです。ウィンドウの四隅でリサイズ可能にしてほしいです。」 | WS035 |
+| 設定のアプリ（2026-09-29） | ユーザー:「これもOSCデモで使う優先事項にしたいですが、設定画面のアプリを作ってほしいです。添付がイメージです。あくまでもイメージなので、この通りでなくていいです。左側に項目のペイン、右側に設定項目。フローティングでセパレート。」 | [WS089](ws089/ws.md) |
 
 ### 主な依存関係
 
