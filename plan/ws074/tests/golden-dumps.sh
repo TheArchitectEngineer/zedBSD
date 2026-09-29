@@ -12,6 +12,9 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
+# ws074-p080: localStorage goes under XDG_DATA_HOME; the dumps keep it under build/, away from ~/.local/share.
+XDG_DATA_HOME=$(pwd)/build/ws074-host-data
+export XDG_DATA_HOME
 program=build/ws074-host/plain/browser
 update=0
 while [ $# -gt 0 ]; do
