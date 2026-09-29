@@ -44,6 +44,13 @@ if [ -f userland/desktop/libkeiland/recent.c ]; then
 	objects="$objects $out/obj/zdesktop-recent.o"
 fi
 
+# libkeiland's gesture, scroller and motion (files/touch.c uses them since ws081-p010; ws093-p003).
+for file in userland/desktop/libkeiland/gesture.c userland/desktop/libkeiland/scroll.c userland/desktop/libkeiland/motion.c; do
+	object="$out/obj/keiland-$(basename "$file" .c).o"
+	"$cc" $flags -c "$file" -o "$object"
+	objects="$objects $object"
+done
+
 # files without the window, the presenter, the menus, the titlebar and the glass.
 for file in $src/*.c; do
 	case $(basename "$file") in

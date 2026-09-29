@@ -42,6 +42,7 @@
 #define MENU_TAGS		11U
 #define MENU_SORT		12U
 #define MENU_COLUMNS		13U
+#define MENU_ALWAYS_WITH	14U
 
 /* The items that do nothing yet (the views and the place of later versions). */
 #define MENU_VIEW_COLUMNS	20U
@@ -50,6 +51,9 @@
 
 /* The separators' IDs start here. */
 #define MENU_LINE		30U
+
+/* The separator of Always Open With, before Use System Default (past the fixed separators). */
+#define MENU_ALWAYS_LINE	41U
 
 /* An item that carries out an action has the action's ID moved past the others. */
 #define MENU_ACTION_ID(action)	(1000U + (uint32_t)(action))
@@ -97,6 +101,7 @@ static const struct menu_item menu_items[] = {
 	{ MENU_ACTION_ID(FM_ACTION_NEW_FOLDER), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "New Folder", FM_ACTION_NEW_FOLDER, KEILAND_MENU_ROLE_NONE, MENU_CTRL_SHIFT, 'n' },
 	{ MENU_ACTION_ID(FM_ACTION_OPEN), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Open", FM_ACTION_OPEN, KEILAND_MENU_ROLE_OPEN, MENU_CTRL, 'o' },
 	{ MENU_OPEN_WITH, MENU_FILE, KEILAND_MENU_ITEM_SUBMENU, "Open With", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ALWAYS_WITH, MENU_FILE, KEILAND_MENU_ITEM_SUBMENU, "Always Open With", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_LINE, MENU_FILE, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_ACTION_ID(FM_ACTION_GET_INFO), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Get Info", FM_ACTION_GET_INFO, KEILAND_MENU_ROLE_NONE, MENU_CTRL, 'i' },
 	{ MENU_ACTION_ID(FM_ACTION_TRASH), MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Move to Trash", FM_ACTION_TRASH, KEILAND_MENU_ROLE_DELETE, 0U, 0U },
@@ -191,6 +196,7 @@ static int menu_add_slots(struct fm_menu *menu);
 static int menu_state(struct fm_menu *menu, const struct fm_menu_state *state);
 static int menu_state_items(struct keiland_menu *model, const struct fm_menu_state *state);
 static int menu_state_slots(struct keiland_menu *model, const struct fm_menu_state *state);
+static int menu_state_always(struct keiland_menu *model, const struct fm_menu_state *state);
 
 /* What the window menu tells the window: only the choices. */
 static const struct keiland_window_menu_listener menu_listener = {
@@ -569,6 +575,38 @@ menu_add_slots(
 			return error;
 	}
 
+	/* The ways that can become the default of the selection's type (ws093-p003). */
+	for (index = 0; index < FM_OPENERS; index++) {
+		item.id = MENU_ACTION_ID(FM_ACTION_ALWAYS_WITH_FIRST + index);
+		item.parent = MENU_ALWAYS_WITH;
+		item.type = KEILAND_MENU_ITEM_NORMAL;
+		item.label = "-";
+		item.action = FM_ACTION_ALWAYS_WITH_FIRST + index;
+		error = menu_add(menu, &item);
+		if (error != 0)
+			return error;
+	}
+
+	/* A line, then the way back to the system's default. */
+	item.id = MENU_ALWAYS_LINE;
+	item.parent = MENU_ALWAYS_WITH;
+	item.type = KEILAND_MENU_ITEM_SEPARATOR;
+	item.label = "";
+	item.action = 0U;
+	error = menu_add(menu, &item);
+	if (error != 0)
+		return error;
+
+	/* Use System Default. */
+	item.id = MENU_ACTION_ID(FM_ACTION_USE_SYSTEM_DEFAULT);
+	item.parent = MENU_ALWAYS_WITH;
+	item.type = KEILAND_MENU_ITEM_NORMAL;
+	item.label = "Use System Default";
+	item.action = FM_ACTION_USE_SYSTEM_DEFAULT;
+	error = menu_add(menu, &item);
+	if (error != 0)
+		return error;
+
 	/* The tags. */
 	for (index = 0; index < FM_TAGS; index++) {
 		item.id = MENU_ACTION_ID(FM_ACTION_TAG_FIRST + index);
@@ -614,6 +652,8 @@ menu_state(
 	error = menu_state_items(menu->menu, state);
 	if (error == 0)
 		error = menu_state_slots(menu->menu, state);
+	if (error == 0)
+		error = menu_state_always(menu->menu, state);
 
 	/*
 	 * A refused change still ends the transaction, so that the menu is not
@@ -794,5 +834,56 @@ menu_state_slots(
 		return error;
 
 	/* Succeeded: the variable items show the state. */
+	return 0;
+}
+
+/*
+ * Shows Always Open With (ws093-p003): enabled with the selection's ways,
+ * each way named in its slot (the rest hidden), and Use System Default
+ * enabled when the user chose a default for the selection's type.
+ */
+static int
+menu_state_always(
+	struct keiland_menu *model,
+	const struct fm_menu_state *state)
+{
+	uint32_t id;
+	int enabled;
+	int shown;
+	int index;
+	int error;
+
+	/* The submenu, while the selection has ways to open it. */
+	enabled = 0;
+	if (state->opener_count > 0)
+		enabled = 1;
+	error = keiland_menu_set_enabled(model, MENU_ALWAYS_WITH, enabled);
+	if (error != 0)
+		return error;
+
+	/* Each slot: a way named, or hidden when the selection has fewer ways. */
+	for (index = 0; index < FM_OPENERS; index++) {
+		/* The slot's way, when there is one. */
+		id = MENU_ACTION_ID(FM_ACTION_ALWAYS_WITH_FIRST + (unsigned)index);
+		shown = 0;
+		if (index < state->opener_count) {
+			shown = 1;
+			error = keiland_menu_set_label(model, id, state->openers[index]);
+			if (error != 0)
+				return error;
+		}
+
+		/* The slot shown only with a way. */
+		error = keiland_menu_set_visible(model, id, shown);
+		if (error != 0)
+			return error;
+	}
+
+	/* Use System Default, when there is a choice of the user's to take back. */
+	error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_USE_SYSTEM_DEFAULT), state->user_default);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the submenu shows the state. */
 	return 0;
 }
