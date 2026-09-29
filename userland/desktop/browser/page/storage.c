@@ -251,6 +251,8 @@ storage_set(
 		item = wb_vector_at(&storage->items, index);
 		bytes -= (item->key_length + item->value_length) * 2U;
 	}
+
+	/* An item that would take the area past its quota is refused. */
 	if (bytes > STORAGE_QUOTA_BYTES)
 		return ENOSPC;
 
@@ -269,6 +271,8 @@ storage_set(
 		item->value = copy;
 		item->value_length = value_length;
 	}
+
+	/* The area's bytes with the item. */
 	storage->bytes = bytes;
 
 	/* Succeeded: the item is set, and a local area saved. */
@@ -383,6 +387,8 @@ storage_area_of(
 		free(origin);
 		return ENOMEM;
 	}
+
+	/* Its origin and kind; only a local area of a web or file: page is saved. */
 	made->origin = origin;
 	made->area = area;
 	made->saved = 0;
@@ -443,8 +449,12 @@ storage_origin(
 			error = wb_buffer_append_string(&text, "file://");
 			*saved = 1;
 		}
+
+		/* The URL is done with. */
 		net_url_release(&url);
 	}
+
+	/* An origin that could not be written. */
 	if (error != 0) {
 		wb_buffer_release(&text);
 		return error;
@@ -578,6 +588,8 @@ storage_insert(
 		free(item.key);
 		return ENOMEM;
 	}
+
+	/* Their lengths. */
 	item.key_length = key_length;
 	item.value_length = value_length;
 
@@ -588,6 +600,8 @@ storage_insert(
 		free(item.value);
 		return ENOMEM;
 	}
+
+	/* The item at index, the later ones one place up. */
 	items = area->items.items;
 	memmove(&items[index + 1U], &items[index], (area->items.count - 1U - index) * sizeof(*items));
 	items[index] = item;
@@ -655,6 +669,8 @@ storage_path(
 			return ENOENT;
 		error = wb_buffer_printf(path, "%s/.local/share/%s/", home, STORAGE_DIRECTORY);
 	}
+
+	/* A path that could not be written. */
 	if (error != 0)
 		return error;
 
@@ -700,6 +716,8 @@ storage_make_directories(
 		if (error != 0)
 			break;
 	}
+
+	/* The copy is done with. */
 	free(copy);
 
 	/* A directory that could not be made. */
@@ -731,6 +749,7 @@ storage_load(
 	uint32_t key_length;
 	uint32_t value_length;
 	uint16_t unit;
+	int differs;
 	int present;
 	int error;
 
@@ -749,7 +768,10 @@ storage_load(
 	/* A file that does not start with the magic line is not read. */
 	bytes = (const unsigned char *)file.data;
 	magic = strlen(STORAGE_MAGIC);
-	if (file.length < magic || memcmp(bytes, STORAGE_MAGIC, magic) != 0) {
+	differs = 1;
+	if (file.length >= magic)
+		differs = memcmp(bytes, STORAGE_MAGIC, magic);
+	if (differs != 0) {
 		wb_buffer_release(&file);
 		return EINVAL;
 	}
@@ -785,6 +807,8 @@ storage_load(
 			error = wb_units_append(&value, &unit, 1);
 			at += 2U;
 		}
+
+		/* An item that could not be read ends the reading. */
 		if (error != 0)
 			break;
 
@@ -796,6 +820,8 @@ storage_load(
 		if (error == 0)
 			area->bytes += (key.length + value.length) * 2U;
 	}
+
+	/* The buffers are done with. */
 	wb_units_release(&key);
 	wb_units_release(&value);
 	wb_buffer_release(&file);
@@ -855,6 +881,8 @@ storage_save(
 			(void)unlink(wb_buffer_string(&temporary));
 		}
 	}
+
+	/* The buffers are done with. */
 	wb_buffer_release(&out);
 	wb_buffer_release(&path);
 	wb_buffer_release(&temporary);

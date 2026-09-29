@@ -57,6 +57,8 @@ static int encoding_encoder_check(struct vm_realm *realm, vm_value value);
 static int encoding_label_is_utf8(const struct vm_string *label);
 static int encoding_bytes(struct vm_realm *realm, vm_value input, struct wb_buffer *bytes);
 static int encoding_decode_bytes(struct vm_realm *realm, struct encoding_decoder *decoder, const unsigned char *bytes, size_t length, int stream, struct wb_units *out);
+static int encoding_step(struct encoding_decoder *decoder, unsigned byte, struct wb_units *out, int *consumed, int *error);
+static int encoding_error(struct vm_realm *realm, struct encoding_decoder *decoder, struct wb_units *out);
 static int encoding_emit(struct encoding_decoder *decoder, uint32_t code_point, struct wb_units *out);
 static void encoding_reset(struct encoding_decoder *decoder);
 static size_t encoding_next_code_point(const struct vm_string *string, size_t index, uint32_t *code_point);
@@ -231,6 +233,8 @@ encoding_encode(
 		if (status != 0)
 			return status;
 	}
+
+	/* Its characters. */
 	status = bind_to_string(realm, input_value, &input);
 	if (status != 0)
 		return status;
@@ -715,6 +719,8 @@ encoding_label_is_utf8(
 		folded[made] = (char)unit;
 		made++;
 	}
+
+	/* The folded label ends. */
 	folded[made] = '\0';
 
 	/* Compares it with each of UTF-8's labels. */
@@ -802,79 +808,22 @@ encoding_decode_bytes(
 	struct wb_units *out)
 {
 	size_t index;
-	unsigned byte;
+	int consumed;
 	int error;
 	int status;
 
-	/* Each byte. */
+	/* Each byte; one that ends a sequence as an error is read again as the start of the next. */
 	index = 0;
 	while (index < length) {
-		byte = bytes[index];
-		error = 0;
-
-		/* Chooses what the byte does. */
-		if (decoder->needed == 0) {
-			/* The first byte of a sequence. */
-			if (byte <= 0x7fU) {
-				status = encoding_emit(decoder, byte, out);
-			} else if (byte >= 0xc2U && byte <= 0xdfU) {
-				decoder->needed = 1;
-				decoder->code_point = byte & 0x1fU;
-				status = 0;
-			} else if (byte >= 0xe0U && byte <= 0xefU) {
-				if (byte == 0xe0U)
-					decoder->lower = 0xa0U;
-				if (byte == 0xedU)
-					decoder->upper = 0x9fU;
-				decoder->needed = 2;
-				decoder->code_point = byte & 0x0fU;
-				status = 0;
-			} else if (byte >= 0xf0U && byte <= 0xf4U) {
-				if (byte == 0xf0U)
-					decoder->lower = 0x90U;
-				if (byte == 0xf4U)
-					decoder->upper = 0x8fU;
-				decoder->needed = 3;
-				decoder->code_point = byte & 0x07U;
-				status = 0;
-			} else {
-				/* A byte that starts nothing. */
-				error = 1;
-				status = 0;
-			}
-			index++;
-		} else if (byte < decoder->lower || byte > decoder->upper) {
-			/* A byte that does not continue the sequence ends it as an error and starts anew (it is not consumed). */
-			encoding_reset(decoder);
-			error = 1;
-			status = 0;
-		} else {
-			/* A byte that continues it. */
-			decoder->lower = 0x80U;
-			decoder->upper = 0xbfU;
-			decoder->code_point = (decoder->code_point << 6) | (byte & 0x3fU);
-			decoder->seen++;
-			status = 0;
-			if (decoder->seen == decoder->needed) {
-				status = encoding_emit(decoder, decoder->code_point, out);
-				encoding_reset(decoder);
-			}
-			index++;
-		}
-
-		/* A failure to append. */
+		status = encoding_step(decoder, bytes[index], out, &consumed, &error);
 		if (status != 0)
 			return status;
+		if (consumed)
+			index++;
 
-		/* An error throws when fatal, and is otherwise the replacement character. */
-		if (error && decoder->fatal) {
-			encoding_reset(decoder);
-			decoder->bom_seen = 0;
-			status = vm_throw_type_error(realm, "Failed to execute 'decode' on 'TextDecoder': The encoded data was not valid.");
-			return status;
-		}
+		/* An error. */
 		if (error) {
-			status = encoding_emit(decoder, ENCODING_REPLACEMENT, out);
+			status = encoding_error(realm, decoder, out);
 			if (status != 0)
 				return status;
 		}
@@ -884,23 +833,120 @@ encoding_decode_bytes(
 	if (stream)
 		return 0;
 
-	/* Otherwise an unfinished sequence is an error. */
+	/* Otherwise the stream ends here, and an unfinished sequence is an error. */
 	error = 0;
 	if (decoder->needed != 0)
 		error = 1;
 	encoding_reset(decoder);
-	decoder->bom_seen = 0;
-	if (error && decoder->fatal) {
-		status = vm_throw_type_error(realm, "Failed to execute 'decode' on 'TextDecoder': The encoded data was not valid.");
-		return status;
-	}
 	if (error) {
-		status = wb_units_append_code_point(out, ENCODING_REPLACEMENT);
+		status = encoding_error(realm, decoder, out);
 		if (status != 0)
 			return status;
 	}
 
-	/* Succeeded: the characters are appended. */
+	/* Succeeded: the characters are appended, and the next call starts a new stream. */
+	decoder->bom_seen = 0;
+	return 0;
+}
+
+/*
+ * Feeds one byte to the UTF-8 decoder: reports whether the byte was used
+ * (a byte that cannot continue the sequence under way ends it and is read
+ * again) and whether it made an error, and appends a finished code point.
+ */
+static int
+encoding_step(
+	struct encoding_decoder *decoder,
+	unsigned byte,
+	struct wb_units *out,
+	int *consumed,
+	int *error)
+{
+	int status;
+
+	/* A byte that continues the sequence under way. */
+	*consumed = 1;
+	*error = 0;
+	if (decoder->needed != 0) {
+		/* One out of the range the sequence allows ends it as an error, and is not used. */
+		if (byte < decoder->lower || byte > decoder->upper) {
+			encoding_reset(decoder);
+			*consumed = 0;
+			*error = 1;
+			return 0;
+		}
+
+		/* It adds six bits; the last one finishes the code point. */
+		decoder->lower = 0x80U;
+		decoder->upper = 0xbfU;
+		decoder->code_point = (decoder->code_point << 6) | (byte & 0x3fU);
+		decoder->seen++;
+		if (decoder->seen < decoder->needed)
+			return 0;
+
+		/* The code point is finished. */
+		status = encoding_emit(decoder, decoder->code_point, out);
+		encoding_reset(decoder);
+		return status;
+	}
+
+	/* The first byte of a sequence: ASCII is a code point of its own. */
+	if (byte <= 0x7fU) {
+		status = encoding_emit(decoder, byte, out);
+		return status;
+	}
+
+	/* The lead byte of a sequence of two, three or four; the narrower ranges keep out overlong and surrogate forms. */
+	if (byte >= 0xc2U && byte <= 0xdfU) {
+		decoder->needed = 1;
+		decoder->code_point = byte & 0x1fU;
+	} else if (byte >= 0xe0U && byte <= 0xefU) {
+		decoder->needed = 2;
+		decoder->code_point = byte & 0x0fU;
+		if (byte == 0xe0U)
+			decoder->lower = 0xa0U;
+		if (byte == 0xedU)
+			decoder->upper = 0x9fU;
+	} else if (byte >= 0xf0U && byte <= 0xf4U) {
+		decoder->needed = 3;
+		decoder->code_point = byte & 0x07U;
+		if (byte == 0xf0U)
+			decoder->lower = 0x90U;
+		if (byte == 0xf4U)
+			decoder->upper = 0x8fU;
+	} else {
+		/* A byte that starts nothing. */
+		*error = 1;
+	}
+
+	/* Succeeded: the byte is used. */
+	return 0;
+}
+
+/*
+ * Handles a decoding error: a fatal decoder throws a TypeError (and its
+ * stream starts anew), any other appends the replacement character.
+ */
+static int
+encoding_error(
+	struct vm_realm *realm,
+	struct encoding_decoder *decoder,
+	struct wb_units *out)
+{
+	int status;
+
+	/* A fatal decoder throws. */
+	if (decoder->fatal) {
+		encoding_reset(decoder);
+		decoder->bom_seen = 0;
+		status = vm_throw_type_error(realm, "Failed to execute 'decode' on 'TextDecoder': The encoded data was not valid.");
+		return status;
+	}
+
+	/* Succeeded: the replacement character. */
+	status = encoding_emit(decoder, ENCODING_REPLACEMENT, out);
+	if (status != 0)
+		return status;
 	return 0;
 }
 
