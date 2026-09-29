@@ -1,5 +1,3 @@
-/* -*- coding: utf-8; tab-width: 8; indent-tabs-mode: t; -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -43,40 +41,60 @@
 #define HAVE_XY_SCALE	0x0040U
 #define HAVE_MATRIX	0x0080U
 
-static int load_simple(struct truetype_face *face, const uint8_t *glyf,
-		       uint32_t length, struct truetype_outline *outline);
-static int load_composite(struct truetype_face *face, const uint8_t *glyf,
-			  uint32_t length, struct truetype_outline *outline,
-			  unsigned depth);
-static void emit_quadratic(struct truetype_outline *outline,
-			   struct truetype_point start,
-			   struct truetype_point control,
-			   struct truetype_point end);
+static int load_simple(struct truetype_face *face, const uint8_t *glyf, uint32_t length, struct truetype_outline *outline);
+static int read_flags(const uint8_t *glyf, uint32_t length, unsigned count, uint32_t *position, uint8_t *flags);
+static int read_coordinates(const uint8_t *glyf, uint32_t length, unsigned count, const uint8_t *flags, uint8_t short_flag, uint8_t same_flag, uint32_t *position, float *values);
+static int trace_contour(struct truetype_outline *outline, const struct truetype_point *raw, unsigned first, unsigned last);
+static int load_composite(struct truetype_face *face, const uint8_t *glyf, uint32_t length, struct truetype_outline *outline, unsigned depth);
+static void emit_quadratic(struct truetype_outline *outline, struct truetype_point start, struct truetype_point control, struct truetype_point end);
 
 /*
- * Returns the scale between font units and pixels.
+ * Reports the scale between font units and pixels.
  */
 float
 truetype_scale(
 	const struct truetype_face *face)
 {
+	/* The pixels of an em over the units of an em. */
 	return (float)face->pixels / (float)face->units_per_em;
 }
 
+/*
+ * Scales a measurement in font units to whole pixels, rounding up.
+ */
 int
 truetype_scale_up(
 	const struct truetype_face *face,
 	int value)
 {
-	return (int)ceilf((float)value * truetype_scale(face));
+	float scale;
+	float scaled;
+
+	/* The measurement in pixels, and the whole pixel at or above it. */
+	scale = truetype_scale(face);
+	scaled = ceilf((float)value * scale);
+
+	/* Reports the whole pixels. */
+	return (int)scaled;
 }
 
+/*
+ * Scales a measurement in font units to whole pixels, rounding down.
+ */
 int
 truetype_scale_down(
 	const struct truetype_face *face,
 	int value)
 {
-	return (int)floorf((float)value * truetype_scale(face));
+	float scale;
+	float scaled;
+
+	/* The measurement in pixels, and the whole pixel at or below it. */
+	scale = truetype_scale(face);
+	scaled = floorf((float)value * scale);
+
+	/* Reports the whole pixels. */
+	return (int)scaled;
 }
 
 /*
@@ -91,43 +109,44 @@ truetype_glyph_range(
 	uint32_t *offset,
 	uint32_t *length)
 {
-	uint32_t start, end;
+	uint32_t start;
+	uint32_t end;
 
-	/* Handles a glyph this font does not have. */
+	/* Refuses a glyph this font does not have. */
 	if (glyph >= face->glyph_count)
 		return EINVAL;
 
-	/* Handles the selected index format. */
+	/* Reads the glyph's start and the next glyph's, by the index's format. */
 	if (face->long_loca) {
-		/* Handles a loca table too short for this glyph. */
+		/* Refuses a loca table too short for this glyph. */
 		if ((uint32_t)(glyph + 1U) * 4U + 4U > face->loca_size)
 			return EINVAL;
+
+		/* The long format stores the offsets as they are. */
 		start = truetype_u32(face->loca + (size_t)glyph * 4U);
 		end = truetype_u32(face->loca + (size_t)(glyph + 1U) * 4U);
 	} else {
-		/* Handles a loca table too short for this glyph. */
+		/* Refuses a loca table too short for this glyph. */
 		if ((uint32_t)(glyph + 1U) * 2U + 2U > face->loca_size)
 			return EINVAL;
 
 		/* The short format stores half the offset. */
-		start = (uint32_t)truetype_u16(
-			face->loca + (size_t)glyph * 2U) * 2U;
-		end = (uint32_t)truetype_u16(
-			face->loca + (size_t)(glyph + 1U) * 2U) * 2U;
+		start = (uint32_t)truetype_u16(face->loca + (size_t)glyph * 2U) * 2U;
+		end = (uint32_t)truetype_u16(face->loca + (size_t)(glyph + 1U) * 2U) * 2U;
 	}
 
-	/* Handles an entry that names a range outside glyf. */
+	/* Refuses an entry that names a range outside glyf. */
 	if (end < start || end > face->glyf_size)
 		return EINVAL;
+
+	/* Succeeded: the glyph's place and length in glyf. */
 	*offset = start;
 	*length = end - start;
-
-	/* Succeeded. */
 	return 0;
 }
 
 /*
- * Implements the truetype advance operation.
+ * Reports a glyph's advance width in whole pixels.
  *
  * hmtx holds one entry per glyph up to hmetric_count, after which every
  * glyph keeps the last advance: a monospaced tail is stored once.
@@ -139,67 +158,128 @@ truetype_advance(
 	int *advance)
 {
 	unsigned index;
+	int units;
 
-	/* Handles a font with no advance widths at all. */
+	/* Refuses a font with no advance widths at all. */
 	if (face->hmetric_count == 0)
 		return EINVAL;
-	index = glyph < face->hmetric_count ?
-		glyph : (unsigned)(face->hmetric_count - 1U);
 
-	/* Handles an entry the table does not hold. */
+	/* The glyph's own entry, or the last one for a glyph of the tail. */
+	index = glyph;
+	if (glyph >= face->hmetric_count)
+		index = (unsigned)(face->hmetric_count - 1U);
+
+	/* Refuses an entry the table does not hold. */
 	if ((uint32_t)index * 4U + 2U > face->hmtx_size)
 		return EINVAL;
-	*advance = truetype_scale_up(
-		face, (int)truetype_u16(face->hmtx + (size_t)index * 4U));
 
-	/* Succeeded. */
+	/* Succeeded: the advance in font units, rounded up to pixels. */
+	units = (int)truetype_u16(face->hmtx + (size_t)index * 4U);
+	*advance = truetype_scale_up(face, units);
 	return 0;
 }
 
 /*
- * Turns one quadratic curve into line segments.
+ * Adds one glyph's outline, in pixels, to an outline: a simple glyph's
+ * contours, or a composite glyph's components (depth counts the nesting).
  *
- * The number of segments follows how far the control point sits from the
- * chord: a nearly straight curve needs one, a tight one needs more.  At the
- * sizes a screen uses this is never many.
+ * Returns 0 (a glyph without an outline adds nothing), EINVAL for a glyph
+ * the font does not hold whole, ENOTSUP for more contours or points than
+ * an outline holds, ENOSPC when the outline fills up, or ELOOP for
+ * components nested too deep.
  */
-static void
-emit_quadratic(
+int
+truetype_outline_load(
+	struct truetype_face *face,
+	unsigned glyph,
 	struct truetype_outline *outline,
-	struct truetype_point start,
-	struct truetype_point control,
-	struct truetype_point end)
+	unsigned depth)
 {
-	float deviation, x, y, t, u;
-	unsigned steps, step;
+	const uint8_t *entry;
+	uint32_t offset;
+	uint32_t length;
+	int contours;
+	int error;
 
-	deviation = fabsf(control.x - (start.x + end.x) * 0.5f) +
-		    fabsf(control.y - (start.y + end.y) * 0.5f);
-	steps = (unsigned)(deviation * 0.5f) + 2U;
+	/* Finds the glyph in glyf. */
+	error = truetype_glyph_range(face, glyph, &offset, &length);
+	if (error != 0)
+		return error;
 
-	/* Handles a curve that would cost more segments than it is worth. */
-	if (steps > 16U)
-		steps = 16U;
+	/* A glyph with no outline, which is what a space is, adds nothing. */
+	if (length == 0)
+		return 0;
 
-	/* Process each segment of the curve. */
-	for (step = 1; step <= steps; step++) {
-		/* Stops rather than overrunning the point array. */
-		if (outline->point_count >= TRUETYPE_POINTS_MAX)
-			return;
-		t = (float)step / (float)steps;
-		u = 1.0f - t;
-		x = u * u * start.x + 2.0f * u * t * control.x + t * t * end.x;
-		y = u * u * start.y + 2.0f * u * t * control.y + t * t * end.y;
-		outline->points[outline->point_count].x = x;
-		outline->points[outline->point_count].y = y;
-		outline->points[outline->point_count].on_curve = 1U;
-		outline->point_count++;
+	/* Refuses an entry too short to hold its own header. */
+	if (length < 10U)
+		return EINVAL;
+	entry = face->glyf + offset;
+	contours = truetype_s16(entry);
+
+	/* A count of contours makes a simple glyph, a negative one a composite. */
+	if (contours >= 0) {
+		error = load_simple(face, entry, length, outline);
+	} else {
+		error = load_composite(face, entry, length, outline, depth);
 	}
+
+	/* Reports why the glyph could not be added. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the glyph's outline is added. */
+	return 0;
 }
 
 /*
- * Reads a simple glyph: its contours, flags and coordinates.
+ * Reports the box around an outline's points (all zero for an empty one).
  */
+void
+truetype_outline_bounds(
+	const struct truetype_outline *outline,
+	float *minimum_x,
+	float *minimum_y,
+	float *maximum_x,
+	float *maximum_y)
+{
+	unsigned index;
+
+	/* An outline with nothing in it has an empty box. */
+	if (outline->point_count == 0) {
+		*minimum_x = 0.0f;
+		*minimum_y = 0.0f;
+		*maximum_x = 0.0f;
+		*maximum_y = 0.0f;
+		return;
+	}
+
+	/* The box starts at the first point. */
+	*minimum_x = outline->points[0].x;
+	*maximum_x = outline->points[0].x;
+	*minimum_y = outline->points[0].y;
+	*maximum_y = outline->points[0].y;
+
+	/* Widens the box to each other point. */
+	for (index = 1; index < outline->point_count; index++) {
+		/* A point further left than any before it. */
+		if (outline->points[index].x < *minimum_x)
+			*minimum_x = outline->points[index].x;
+
+		/* A point further right than any before it. */
+		if (outline->points[index].x > *maximum_x)
+			*maximum_x = outline->points[index].x;
+
+		/* A point lower than any before it. */
+		if (outline->points[index].y < *minimum_y)
+			*minimum_y = outline->points[index].y;
+
+		/* A point higher than any before it. */
+		if (outline->points[index].y > *maximum_y)
+			*maximum_y = outline->points[index].y;
+	}
+}
+
+/* Reads a simple glyph (its contours, flags and coordinates) into the outline, in pixels. */
 static int
 load_simple(
 	struct truetype_face *face,
@@ -208,234 +288,338 @@ load_simple(
 	struct truetype_outline *outline)
 {
 	struct truetype_point raw[TRUETYPE_POINTS_MAX];
-	struct truetype_point start, previous, current, implied;
+	float values[TRUETYPE_POINTS_MAX];
 	uint8_t flags[TRUETYPE_POINTS_MAX];
-	uint32_t position, instructions;
-	unsigned contours, count, index, first, last, repeat, contour;
-	unsigned started, have_control;
-	float scale, x, y;
-	int value;
+	uint32_t position;
+	uint32_t instructions;
+	unsigned contours;
+	unsigned count;
+	unsigned index;
+	unsigned first;
+	unsigned last;
+	unsigned contour;
+	float scale;
+	int error;
 
+	/* The number of contours. */
 	contours = truetype_u16(glyf);
 
-	/* Handles a glyph with more contours than this holds. */
+	/* Refuses a glyph with more contours than an outline holds. */
 	if (contours > TRUETYPE_CONTOURS_MAX)
 		return ENOTSUP;
 
-	/* Handles a header the entry does not hold. */
+	/* Refuses a header the entry does not hold. */
 	if (length < 10U + (uint32_t)contours * 2U + 2U)
 		return EINVAL;
+
+	/* The number of points: one past the last contour's end point. */
 	count = truetype_u16(glyf + 10U + (size_t)(contours - 1U) * 2U) + 1U;
 
-	/* Handles a glyph with more points than this holds. */
+	/* Refuses a glyph with more points than an outline holds. */
 	if (count > TRUETYPE_POINTS_MAX)
 		return ENOTSUP;
+
+	/* The instructions after the end points, which are not followed. */
 	position = 10U + (uint32_t)contours * 2U;
 	instructions = truetype_u16(glyf + position);
 	position += 2U;
 
-	/* Handles instructions the entry does not hold. */
+	/* Refuses instructions the entry does not hold, and passes over them. */
 	if (instructions > length - position)
 		return EINVAL;
 	position += instructions;
-	index = 0;
 
-	/* Process each flag, which may repeat. */
-	while (index < count) {
-		/* Handles a flag the entry does not hold. */
-		if (position >= length)
-			return EINVAL;
-		flags[index] = glyf[position];
-		position++;
-		index++;
+	/* Reads each point's flags. */
+	error = read_flags(glyf, length, count, &position, flags);
+	if (error != 0)
+		return error;
 
-		/* Handles a flag that is not repeated. */
-		if ((flags[index - 1U] & REPEAT) == 0)
-			continue;
+	/* Reads the x coordinates. */
+	error = read_coordinates(glyf, length, count, flags, X_SHORT, X_SAME, &position, values);
+	if (error != 0)
+		return error;
 
-		/* Handles a repeat count the entry does not hold. */
-		if (position >= length)
-			return EINVAL;
-		repeat = glyf[position];
-		position++;
+	/* The points' x, in pixels. */
+	scale = truetype_scale(face);
+	for (index = 0; index < count; index++)
+		raw[index].x = values[index];
 
-		/* Process each repetition. */
-		while (repeat > 0 && index < count) {
-			flags[index] = flags[index - 1U];
-			index++;
-			repeat--;
-		}
-	}
-	value = 0;
+	/* Reads the y coordinates. */
+	error = read_coordinates(glyf, length, count, flags, Y_SHORT, Y_SAME, &position, values);
+	if (error != 0)
+		return error;
 
-	/* Process each x coordinate, which is stored as a difference. */
+	/* The points' y, and whether each is on the curve. */
 	for (index = 0; index < count; index++) {
-		/* Handles the short form, whose sign is in another flag. */
-		if ((flags[index] & X_SHORT) != 0) {
-			/* Handles a coordinate the entry does not hold. */
-			if (position >= length)
-				return EINVAL;
-			value += (flags[index] & X_SAME) != 0 ?
-				(int)glyf[position] : -(int)glyf[position];
-			position++;
-		} else if ((flags[index] & X_SAME) == 0) {
-			/* Handles a coordinate the entry does not hold. */
-			if (position + 2U > length)
-				return EINVAL;
-			value += truetype_s16(glyf + position);
-			position += 2U;
-		}
-		raw[index].x = (float)value;
-	}
-	value = 0;
-
-	/* Process each y coordinate. */
-	for (index = 0; index < count; index++) {
-		/* Handles the short form, whose sign is in another flag. */
-		if ((flags[index] & Y_SHORT) != 0) {
-			/* Handles a coordinate the entry does not hold. */
-			if (position >= length)
-				return EINVAL;
-			value += (flags[index] & Y_SAME) != 0 ?
-				(int)glyf[position] : -(int)glyf[position];
-			position++;
-		} else if ((flags[index] & Y_SAME) == 0) {
-			/* Handles a coordinate the entry does not hold. */
-			if (position + 2U > length)
-				return EINVAL;
-			value += truetype_s16(glyf + position);
-			position += 2U;
-		}
-		raw[index].y = (float)value;
+		raw[index].y = values[index];
 		raw[index].on_curve = (flags[index] & ON_CURVE) != 0;
 	}
-	scale = truetype_scale(face);
 
 	/* The outline is kept in pixels, with y growing upward as the font has it. */
 	for (index = 0; index < count; index++) {
 		raw[index].x *= scale;
 		raw[index].y *= scale;
 	}
-	first = 0;
 
-	/* Process each contour, turning its curves into segments. */
+	/* Traces each contour, turning its curves into segments. */
+	first = 0;
 	for (contour = 0; contour < contours; contour++) {
+		/* The contour's last point. */
 		last = truetype_u16(glyf + 10U + (size_t)contour * 2U);
 
-		/* Handles an end point outside the point list. */
+		/* Refuses an end point outside the point list, or before the contour's first. */
 		if (last >= count || last < first)
 			return EINVAL;
 
-		/* Skips a contour with nothing in it. */
-		if (last < first) {
-			first = last + 1U;
-			continue;
-		}
+		/* Adds the contour's segments. */
+		error = trace_contour(outline, raw, first, last);
+		if (error != 0)
+			return error;
 
-		/*
-		 * A contour may begin on a control point, in which case the
-		 * start is the midpoint between it and the last point, or
-		 * the last point itself when that one is on the curve.
-		 */
-		if (raw[first].on_curve) {
-			start = raw[first];
-			index = first + 1U;
-		} else if (raw[last].on_curve) {
-			start = raw[last];
-			index = first;
-		} else {
-			start.x = (raw[first].x + raw[last].x) * 0.5f;
-			start.y = (raw[first].y + raw[last].y) * 0.5f;
-			start.on_curve = 1U;
-			index = first;
-		}
-
-		/* Stops rather than overrunning the point array. */
-		if (outline->point_count >= TRUETYPE_POINTS_MAX)
-			return ENOSPC;
-		outline->points[outline->point_count] = start;
-		outline->point_count++;
-		previous = start;
-		have_control = 0;
-		started = 0;
-		x = 0.0f;
-		y = 0.0f;
-
-		/* Process each point of the contour, wrapping to the start. */
-		while (started <= last - first) {
-			current = raw[first + (index - first) %
-					 (last - first + 1U)];
-			index++;
-			started++;
-
-			/* Handles an on-curve point, which ends any curve. */
-			if (current.on_curve) {
-				/* Handles the curve waiting for its end. */
-				if (have_control) {
-					implied.x = x;
-					implied.y = y;
-					implied.on_curve = 0U;
-					emit_quadratic(outline, previous,
-						       implied, current);
-					have_control = 0;
-				} else {
-					/* Stops rather than overrunning. */
-					if (outline->point_count >=
-					    TRUETYPE_POINTS_MAX)
-						return ENOSPC;
-					outline->points[outline->point_count] =
-						current;
-					outline->point_count++;
-				}
-				previous = current;
-				continue;
-			}
-
-			/*
-			 * Two control points in a row imply an on-curve point
-			 * halfway between them, which ends the first curve.
-			 */
-			if (have_control) {
-				implied.x = (x + current.x) * 0.5f;
-				implied.y = (y + current.y) * 0.5f;
-				implied.on_curve = 1U;
-				current.on_curve = 0U;
-				previous.on_curve = 1U;
-				emit_quadratic(outline, previous,
-					       (struct truetype_point){
-						       x, y, 0U}, implied);
-				previous = implied;
-			}
-			x = current.x;
-			y = current.y;
-			have_control = 1U;
-		}
-
-		/* Closes the contour back to where it started. */
-		if (have_control) {
-			emit_quadratic(outline, previous,
-				       (struct truetype_point){x, y, 0U},
-				       start);
-		} else if (outline->point_count < TRUETYPE_POINTS_MAX) {
-			outline->points[outline->point_count] = start;
-			outline->point_count++;
-		}
-
-		/* Stops rather than overrunning the contour array. */
-		if (outline->contour_count >= TRUETYPE_CONTOURS_MAX)
-			return ENOSPC;
-		outline->ends[outline->contour_count] = outline->point_count;
-		outline->contour_count++;
+		/* The next contour starts after this one. */
 		first = last + 1U;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the glyph's contours are added. */
 	return 0;
 }
 
 /*
- * Reads a composite glyph: other glyphs placed at offsets.
+ * Reads a simple glyph's flags, one a point; a flag with REPEAT is followed
+ * by how many more points have the same flag.
  */
+static int
+read_flags(
+	const uint8_t *glyf,
+	uint32_t length,
+	unsigned count,
+	uint32_t *position,
+	uint8_t *flags)
+{
+	unsigned index;
+	unsigned repeat;
+
+	/* Reads each flag until every point has one. */
+	index = 0;
+	while (index < count) {
+		/* Refuses a flag the entry does not hold. */
+		if (*position >= length)
+			return EINVAL;
+
+		/* The point's flag. */
+		flags[index] = glyf[*position];
+		(*position)++;
+		index++;
+
+		/* A flag without REPEAT is the only one. */
+		if ((flags[index - 1U] & REPEAT) == 0)
+			continue;
+
+		/* Refuses a repeat count the entry does not hold. */
+		if (*position >= length)
+			return EINVAL;
+
+		/* The number of points that repeat it. */
+		repeat = glyf[*position];
+		(*position)++;
+
+		/* Gives the following points the same flag, within the glyph's points. */
+		while (repeat > 0 && index < count) {
+			flags[index] = flags[index - 1U];
+			index++;
+			repeat--;
+		}
+	}
+
+	/* Succeeded: every point has its flag. */
+	return 0;
+}
+
+/*
+ * Reads a simple glyph's x or y coordinates, which are stored as
+ * differences: a short one is a byte whose sign is the same flag, a long
+ * one two bytes, and a point with the same flag and no short one keeps the
+ * coordinate before it.
+ */
+static int
+read_coordinates(
+	const uint8_t *glyf,
+	uint32_t length,
+	unsigned count,
+	const uint8_t *flags,
+	uint8_t short_flag,
+	uint8_t same_flag,
+	uint32_t *position,
+	float *values)
+{
+	unsigned index;
+	int value;
+
+	/* Adds each difference to the coordinate before it, from zero. */
+	value = 0;
+	for (index = 0; index < count; index++) {
+		if ((flags[index] & short_flag) != 0) {
+			/* The short form: refuses a byte the entry does not hold. */
+			if (*position >= length)
+				return EINVAL;
+
+			/* The byte, positive when the same flag is set. */
+			if ((flags[index] & same_flag) != 0) {
+				value += (int)glyf[*position];
+			} else {
+				value -= (int)glyf[*position];
+			}
+
+			/* Past the byte. */
+			(*position)++;
+		} else if ((flags[index] & same_flag) == 0) {
+			/* The long form: refuses two bytes the entry does not hold. */
+			if (*position + 2U > length)
+				return EINVAL;
+
+			/* The signed difference. */
+			value += truetype_s16(glyf + *position);
+			*position += 2U;
+		}
+
+		/* The point's coordinate. */
+		values[index] = (float)value;
+	}
+
+	/* Succeeded: every point has its coordinate. */
+	return 0;
+}
+
+/*
+ * Adds one contour of a simple glyph to the outline: its points from first
+ * to last, the curves between control points turned into segments, closed
+ * back to where it started.
+ */
+static int
+trace_contour(
+	struct truetype_outline *outline,
+	const struct truetype_point *raw,
+	unsigned first,
+	unsigned last)
+{
+	struct truetype_point start;
+	struct truetype_point previous;
+	struct truetype_point current;
+	struct truetype_point implied;
+	struct truetype_point control;
+	unsigned index;
+	unsigned started;
+	unsigned have_control;
+	float x;
+	float y;
+
+	/*
+	 * A contour may begin on a control point, in which case the start is
+	 * the midpoint between it and the last point, or the last point itself
+	 * when that one is on the curve.
+	 */
+	if (raw[first].on_curve) {
+		start = raw[first];
+		index = first + 1U;
+	} else if (raw[last].on_curve) {
+		start = raw[last];
+		index = first;
+	} else {
+		start.x = (raw[first].x + raw[last].x) * 0.5f;
+		start.y = (raw[first].y + raw[last].y) * 0.5f;
+		start.on_curve = 1U;
+		index = first;
+	}
+
+	/* Stops rather than overrunning the point array. */
+	if (outline->point_count >= TRUETYPE_POINTS_MAX)
+		return ENOSPC;
+
+	/* The contour starts at its start, with no control point waiting. */
+	outline->points[outline->point_count] = start;
+	outline->point_count++;
+	previous = start;
+	have_control = 0;
+	started = 0;
+	x = 0.0f;
+	y = 0.0f;
+
+	/* Follows each point of the contour, wrapping to its first. */
+	while (started <= last - first) {
+		/* The next point. */
+		current = raw[first + (index - first) % (last - first + 1U)];
+		index++;
+		started++;
+
+		/* An on-curve point ends the curve waiting for it, or is a line's end. */
+		if (current.on_curve) {
+			if (have_control) {
+				/* The curve through the waiting control point. */
+				implied.x = x;
+				implied.y = y;
+				implied.on_curve = 0U;
+				emit_quadratic(outline, previous, implied, current);
+				have_control = 0;
+			} else {
+				/* Stops rather than overrunning. */
+				if (outline->point_count >= TRUETYPE_POINTS_MAX)
+					return ENOSPC;
+
+				/* The line's end. */
+				outline->points[outline->point_count] = current;
+				outline->point_count++;
+			}
+
+			/* The next curve or line starts here. */
+			previous = current;
+			continue;
+		}
+
+		/*
+		 * Two control points in a row imply an on-curve point halfway
+		 * between them, which ends the first curve.
+		 */
+		if (have_control) {
+			implied.x = (x + current.x) * 0.5f;
+			implied.y = (y + current.y) * 0.5f;
+			implied.on_curve = 1U;
+			current.on_curve = 0U;
+			previous.on_curve = 1U;
+			control.x = x;
+			control.y = y;
+			control.on_curve = 0U;
+			emit_quadratic(outline, previous, control, implied);
+			previous = implied;
+		}
+
+		/* The control point waits for the curve's end. */
+		x = current.x;
+		y = current.y;
+		have_control = 1U;
+	}
+
+	/* Closes the contour back to where it started: by a curve, or by a line when there is room. */
+	if (have_control) {
+		control.x = x;
+		control.y = y;
+		control.on_curve = 0U;
+		emit_quadratic(outline, previous, control, start);
+	} else if (outline->point_count < TRUETYPE_POINTS_MAX) {
+		outline->points[outline->point_count] = start;
+		outline->point_count++;
+	}
+
+	/* Stops rather than overrunning the contour array. */
+	if (outline->contour_count >= TRUETYPE_CONTOURS_MAX)
+		return ENOSPC;
+
+	/* Succeeded: the contour ends at the outline's last point. */
+	outline->ends[outline->contour_count] = outline->point_count;
+	outline->contour_count++;
+	return 0;
+}
+
+/* Reads a composite glyph: other glyphs placed at offsets. */
 static int
 load_composite(
 	struct truetype_face *face,
@@ -445,27 +629,42 @@ load_composite(
 	unsigned depth)
 {
 	uint32_t position;
-	unsigned flags, component, first, index;
-	float offset_x, offset_y, scale;
+	uint32_t arguments;
+	unsigned flags;
+	unsigned component;
+	unsigned first;
+	unsigned index;
+	float offset_x;
+	float offset_y;
+	float scale;
 	int error;
 
-	/* Handles a font that nests components deeper than this follows. */
+	/* Refuses a font that nests components deeper than this follows. */
 	if (depth >= TRUETYPE_COMPOSITE_DEPTH)
 		return ELOOP;
+
+	/* The components start after the header. */
 	position = 10U;
 	scale = truetype_scale(face);
 
-	/* Process each component. */
+	/* Adds each component, until one says it is the last. */
 	do {
-		/* Handles a component header the entry does not hold. */
+		/* Refuses a component header the entry does not hold. */
 		if (position + 4U > length)
 			return EINVAL;
+
+		/* The component's flags and glyph. */
 		flags = truetype_u16(glyf + position);
 		component = truetype_u16(glyf + position + 2U);
 		position += 4U;
 
-		/* Handles arguments the entry does not hold. */
-		if (position + ((flags & ARG_WORDS) != 0 ? 4U : 2U) > length)
+		/* The arguments are two words or two bytes. */
+		arguments = 2U;
+		if ((flags & ARG_WORDS) != 0)
+			arguments = 4U;
+
+		/* Refuses arguments the entry does not hold. */
+		if (position + arguments > length)
 			return EINVAL;
 
 		/*
@@ -483,7 +682,7 @@ load_composite(
 			position += 2U;
 		}
 
-		/* Handles alignment by point number, which is not followed. */
+		/* Alignment by point number is not followed: the component stays where it is. */
 		if ((flags & ARGS_XY) == 0) {
 			offset_x = 0.0f;
 			offset_y = 0.0f;
@@ -502,14 +701,13 @@ load_composite(
 		else if ((flags & HAVE_MATRIX) != 0)
 			position += 8U;
 
-		/* Handles a transform the entry does not hold. */
+		/* Refuses a transform the entry does not hold. */
 		if (position > length)
 			return EINVAL;
-		first = outline->point_count;
-		error = truetype_outline_load(face, component, outline,
-					      depth + 1U);
 
-		/* Reports the failure. */
+		/* Adds the component glyph's outline, one level deeper. */
+		first = outline->point_count;
+		error = truetype_outline_load(face, component, outline, depth + 1U);
 		if (error != 0)
 			return error;
 
@@ -520,90 +718,56 @@ load_composite(
 		}
 	} while ((flags & MORE_COMPONENTS) != 0);
 
-	/* Succeeded. */
+	/* Succeeded: every component is added. */
 	return 0;
 }
 
 /*
- * Implements the truetype outline load operation.
+ * Turns one quadratic curve into line segments.
+ *
+ * The number of segments follows how far the control point sits from the
+ * chord: a nearly straight curve needs one, a tight one needs more.  At the
+ * sizes a screen uses this is never many.
  */
-int
-truetype_outline_load(
-	struct truetype_face *face,
-	unsigned glyph,
+static void
+emit_quadratic(
 	struct truetype_outline *outline,
-	unsigned depth)
+	struct truetype_point start,
+	struct truetype_point control,
+	struct truetype_point end)
 {
-	const uint8_t *entry;
-	uint32_t offset, length;
-	int contours, error;
+	float deviation;
+	float x;
+	float y;
+	float t;
+	float u;
+	unsigned steps;
+	unsigned step;
 
-	error = truetype_glyph_range(face, glyph, &offset, &length);
+	/* How far the control point sits from the chord's middle, which decides the segments. */
+	deviation = fabsf(control.x - (start.x + end.x) * 0.5f) + fabsf(control.y - (start.y + end.y) * 0.5f);
+	steps = (unsigned)(deviation * 0.5f) + 2U;
 
-	/* Reports the failure. */
-	if (error != 0)
-		return error;
+	/* A curve is never worth more than sixteen segments. */
+	if (steps > 16U)
+		steps = 16U;
 
-	/* Handles a glyph with no outline, which is what a space is. */
-	if (length == 0)
-		return 0;
+	/* Adds the end of each segment along the curve. */
+	for (step = 1; step <= steps; step++) {
+		/* Stops rather than overrunning the point array. */
+		if (outline->point_count >= TRUETYPE_POINTS_MAX)
+			return;
 
-	/* Handles an entry too short to hold its own header. */
-	if (length < 10U)
-		return EINVAL;
-	entry = face->glyf + offset;
-	contours = truetype_s16(entry);
+		/* The curve's point at the step. */
+		t = (float)step / (float)steps;
+		u = 1.0f - t;
+		x = u * u * start.x + 2.0f * u * t * control.x + t * t * end.x;
+		y = u * u * start.y + 2.0f * u * t * control.y + t * t * end.y;
 
-	/* Handles the selected glyph form. */
-	if (contours >= 0)
-		return load_simple(face, entry, length, outline);
-
-	/* Returns the computed result. */
-	return load_composite(face, entry, length, outline, depth);
-}
-
-/*
- * Implements the truetype outline bounds operation.
- */
-void
-truetype_outline_bounds(
-	const struct truetype_outline *outline,
-	float *minimum_x,
-	float *minimum_y,
-	float *maximum_x,
-	float *maximum_y)
-{
-	unsigned index;
-
-	/* Handles an outline with nothing in it. */
-	if (outline->point_count == 0) {
-		*minimum_x = 0.0f;
-		*minimum_y = 0.0f;
-		*maximum_x = 0.0f;
-		*maximum_y = 0.0f;
-		return;
-	}
-	*minimum_x = outline->points[0].x;
-	*maximum_x = outline->points[0].x;
-	*minimum_y = outline->points[0].y;
-	*maximum_y = outline->points[0].y;
-
-	/* Process each point. */
-	for (index = 1; index < outline->point_count; index++) {
-		/* Handles a point further left than any before it. */
-		if (outline->points[index].x < *minimum_x)
-			*minimum_x = outline->points[index].x;
-
-		/* Handles a point further right than any before it. */
-		if (outline->points[index].x > *maximum_x)
-			*maximum_x = outline->points[index].x;
-
-		/* Handles a point lower than any before it. */
-		if (outline->points[index].y < *minimum_y)
-			*minimum_y = outline->points[index].y;
-
-		/* Handles a point higher than any before it. */
-		if (outline->points[index].y > *maximum_y)
-			*maximum_y = outline->points[index].y;
+		/* Adds it, on the curve. */
+		outline->points[outline->point_count].x = x;
+		outline->points[outline->point_count].y = y;
+		outline->points[outline->point_count].on_curve = 1U;
+		outline->point_count++;
 	}
 }

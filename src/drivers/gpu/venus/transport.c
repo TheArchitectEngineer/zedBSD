@@ -36,6 +36,7 @@
 #define VENUS_VENDOR_CAPSET_MAGIC	0x5a424453U
 #define VENUS_VENDOR_STRICT_FLAGS	3U
 #define VENUS_VENDOR_QUIESCE_FLAGS	7U
+#define VENUS_VENDOR_HOST_SCANOUT_FLAGS	15U
 
 static int venus_capabilities(struct venus_transport *transport);
 static int venus_capability(struct venus_transport *transport, unsigned offset, unsigned length, unsigned type);
@@ -1855,6 +1856,7 @@ venus_strict_queue_find(
 	/* Unknown and stock capability layouts preserve discovery without claiming strict completion. */
 	transport->strict_queue = 0U;
 	transport->quiesce = 0U;
+	transport->host_scanout = 0U;
 	if (transport->capset_size != VENUS_VENDOR_CAPSET_BYTES)
 		return 0;
 
@@ -1881,10 +1883,15 @@ venus_strict_queue_find(
 	magic = drv_venus_load32(response + VENUS_HEADER_BYTES + 160U);
 	flags = drv_venus_load32(response + VENUS_HEADER_BYTES + 164U);
 	if (magic == VENUS_VENDOR_CAPSET_MAGIC &&
-	    (flags == VENUS_VENDOR_STRICT_FLAGS || flags == VENUS_VENDOR_QUIESCE_FLAGS)) {
+	    (flags == VENUS_VENDOR_STRICT_FLAGS ||
+	     flags == VENUS_VENDOR_QUIESCE_FLAGS ||
+	     flags == VENUS_VENDOR_HOST_SCANOUT_FLAGS)) {
 		transport->strict_queue = 1U;
-		if (flags == VENUS_VENDOR_QUIESCE_FLAGS)
+		if (flags == VENUS_VENDOR_QUIESCE_FLAGS ||
+		    flags == VENUS_VENDOR_HOST_SCANOUT_FLAGS)
 			transport->quiesce = 1U;
+		if (flags == VENUS_VENDOR_HOST_SCANOUT_FLAGS)
+			transport->host_scanout = 1U;
 	}
 
 	/* Succeeded: legacy discovery remains usable when strict jobs are unavailable. */

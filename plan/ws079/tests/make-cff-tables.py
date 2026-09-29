@@ -62,10 +62,14 @@ print('''};
 const unsigned short pdf_cff_expert_charset[] = {''')
 print(numbers(expert[1:]))
 print('''};
+
+/* The number of glyphs the Expert charset names. */
 const size_t pdf_cff_expert_charset_count = sizeof(pdf_cff_expert_charset) / sizeof(pdf_cff_expert_charset[0]);
 
 /* The predefined ExpertSubset charset: the SIDs of glyphs 1 onward. */
 const unsigned short pdf_cff_expert_subset_charset[] = {''')
 print(numbers(expert_subset[1:]))
 print('''};
+
+/* The number of glyphs the ExpertSubset charset names. */
 const size_t pdf_cff_expert_subset_charset_count = sizeof(pdf_cff_expert_subset_charset) / sizeof(pdf_cff_expert_subset_charset[0]);''')

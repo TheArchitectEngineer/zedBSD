@@ -10,14 +10,23 @@
 # plan/ws035/tests/zdesktop-shot.py.
 #
 #   plan/ws035/tests/zdesktop-guest.sh start [IMAGE]
-#   plan/ws035/tests/zdesktop-guest.sh stop
+#   plan/ws035/tests/zdesktop-guest.sh stop     (the last started guest, unless GUEST_RUNTIME names another)
 #
 # Host set-up, once per boot of the host (sudo is allowed on this host):
 #   scp -r awe@10.0.10.25:/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install \
 #       build/ws035-sq-venus/
 #   sudo modprobe vgem && sudo chmod 0666 /dev/dri/renderD128
+#
+# ws035-p125: start first stops a guest still running in the same runtime directory (start copies the image over
+# the disk that guest is using, and the old emulator would be left running unrecorded), and records the runtime it
+# used in build/.zdesktop-guest-runtime; stop without GUEST_RUNTIME stops the guest of that record, so a guest started
+# with another runtime (plan/tools/files/files-guest.sh's build/ws071-run, a test's own) is not left running.
 set -eu
 cd "$(dirname -- "$0")/../../.."
+last_runtime=$PWD/build/.zdesktop-guest-runtime
+if [ -z "${GUEST_RUNTIME:-}" ] && [ "${1:-start}" = stop ] && [ -s "$last_runtime" ]; then
+	GUEST_RUNTIME=$(cat "$last_runtime")
+fi
 export GUEST_RUNTIME="${GUEST_RUNTIME:-$PWD/build/ws035-sq-run}"
 export LIBGL_ALWAYS_SOFTWARE=1
 export MESA_LOADER_DRIVER_OVERRIDE=zink
@@ -39,6 +48,9 @@ fi
 case "$command" in
 start)
 	image=${2:-build/ws035-sq/hdd-image.img}
+	python3 plan/tools/guest/guest.py stop >/dev/null
+	mkdir -p build
+	printf '%s\n' "$GUEST_RUNTIME" > "$last_runtime"
 	exec python3 plan/tools/guest/guest.py start "$image" \
 	    --symbols build/ws035-sq/vmunix \
 	    --qemu-extra "-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem -device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem=256M,max_outputs=1$size -display egl-headless,rendernode=/dev/dri/renderD128 -vnc unix:$GUEST_RUNTIME/vnc.sock,display=venus -device usb-tablet,bus=xhci.0,port=4"

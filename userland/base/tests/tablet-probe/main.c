@@ -368,7 +368,9 @@ probe_options(
 		if (same != 0)
 			return -1;
 		value = strtoul(arguments[index] + 12, &end, 10);
-		if (*end != '\0' || value == 0UL || value > 3600UL)
+		if (*end != '\0' ||
+		    value == 0UL ||
+		    value > 3600UL)
 			return -1;
 		*timeout = (unsigned)value;
 	}
@@ -398,7 +400,9 @@ probe_connect(
 		return EIO;
 
 	/* The probe needs the compositor, wl_shm, the shell and a seat. */
-	if (probe->compositor == NULL || probe->shm == NULL || probe->shell == NULL)
+	if (probe->compositor == NULL ||
+	    probe->shm == NULL ||
+	    probe->shell == NULL)
 		return EOPNOTSUPP;
 	if (probe->seat == NULL)
 		return EOPNOTSUPP;

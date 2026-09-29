@@ -2,10 +2,22 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし（2026-09-27 から subagent の運用）
-Last finished Queue: q495（ws068-p024 cleared。GLES 3.0 の API（1））。その後の作業は下の 2026-09-28 の節
+Last finished Queue: q498（ws073-p028 cleared。Noct smoke を外し `make` が完走）。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-09-29 q498
+
+[q498](queue-q498.md): `toolchain` の Noct smoke 依存を削除。`make toolchain-cache` は既存のホスト用 LLVM を受け入れた。ゲスト用 clang のソースビルドを終え、`make -j16` と通常の `make` が image の検査まで PASS。QEMU・実機は未実施。GitHub へは未公開。
+
+## 最新: 2026-09-29 q497
+
+[q497](queue-q497.md): q496 の修正後、すでに `.nbc` に直した Remacs source への patch 再適用が失敗。patch rule を適用済みなら通すよう修正し、未適用の source と既適用の source の両方で確認。全体の `make` は未実施。GitHub へは未公開。
+
+## 最新: 2026-09-29 q496
+
+[q496](queue-q496.md): Remacs 用の host Noct の build を canonical host Noct に統合し、取得する Remacs source の `.nb` を現行 Noct の `.nbc` に合わせる patch を適用。Noct smoke と Remacs package target は PASS。全体の `make` は clang package の build の途中で中断し、image と boot は未確認。GitHub へは未公開。
 
 ## 最新: 2026-09-28 の 3 つの 5 時間の周期（subagent の運用、Queue の外）
 

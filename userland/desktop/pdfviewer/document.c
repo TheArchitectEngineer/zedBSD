@@ -12,6 +12,12 @@
  * shown, and rasterized on white at the scale it is shown at; the raster
  * is kept until the scale changes or the cache needs its memory, the least
  * recently shown page going first.
+ *
+ * A page's thumbnail (ws079-p015) is rasterized once to fit the sidebar's
+ * box.  A page interpreted only for its thumbnail gives its display list
+ * up again, so that a long document's thumbnails do not keep every page's
+ * list; the thumbnails far from the sidebar's view go when they pass their
+ * share of memory.
  */
 
 #include "viewer.h"
@@ -31,21 +37,29 @@
 /* The white of a page. */
 #define DOCUMENT_PAGE_WHITE	0xffffffffU
 
+/* The memory the thumbnails may take together before those out of view go. */
+#define DOCUMENT_THUMBNAIL_BYTES	((size_t)32 * 1024 * 1024)
+
 static int usable_size(double width, double height);
+static int interpret(struct pv_document *document, size_t index);
+static void drop_thumbnail(struct pv_document *document, struct pv_page *page);
 static void drop_raster(struct pv_document *document, struct pv_page *page);
 static void evict(struct pv_document *document, size_t needed, size_t keep);
 
 /*
- * Opens a PDF file and reads the shown size of each of its pages.
+ * Opens a PDF file with a password (NULL: none) and reads the shown size of
+ * each of its pages.
  *
  * Returns 0, or an errno value (libpdf's: ENOTSUP for a PDF that uses what
- * the reader does not read yet, PDF_EFORMAT for a malformed one, EINVAL for
- * a document without pages).
+ * the reader does not read yet, PDF_EFORMAT for a malformed one,
+ * PDF_EPASSWORD for an encrypted one the password does not open, EINVAL
+ * for a document without pages).
  */
 int
 pv_document_open(
 	struct pv_document *document,
-	const char *path)
+	const char *path,
+	const char *password)
 {
 	struct pdf_page_box box;
 	size_t index;
@@ -57,7 +71,7 @@ pv_document_open(
 	snprintf(document->path, sizeof(document->path), "%s", path);
 
 	/* Opens the file with libpdf. */
-	error = pdf_document_open(path, &document->document);
+	error = pdf_document_open_password(path, password, &document->document);
 	if (error != 0) {
 		document->document = NULL;
 		return error;
@@ -89,6 +103,8 @@ pv_document_open(
 				document->pages[index].height = box.height;
 			}
 		}
+
+		/* The widest and the tallest page, which the scroll mode fits. */
 		if (document->pages[index].width > document->widest)
 			document->widest = document->pages[index].width;
 		if (document->pages[index].height > document->tallest)
@@ -108,11 +124,14 @@ pv_document_close(
 {
 	size_t index;
 
-	/* Frees each page's list and raster. */
+	/* Frees each page's list, raster and thumbnail. */
 	for (index = 0; document->pages != NULL && index < document->count; index++) {
 		pdf_display_list_destroy(document->pages[index].list);
 		free(document->pages[index].raster);
+		free(document->pages[index].thumbnail);
 	}
+
+	/* The pages themselves. */
 	free(document->pages);
 
 	/* Closes libpdf's document. */
@@ -158,19 +177,7 @@ pv_document_raster(
 	*shown = page;
 
 	/* Interprets the page once; a page that cannot be interpreted stays blank. */
-	if (page->list == NULL && page->list_error == 0) {
-		started = pv_clock();
-		error = pdf_page_render(document->document, index, &page->list);
-		if (error != 0) {
-			page->list = NULL;
-			page->list_error = error;
-			pv_log("PAGE index=%lu render-error=%d", (unsigned long)index, error);
-		} else {
-			document->flags |= page->list->flags;
-			pv_log("PAGE index=%lu items=%lu flags=%u ms=%lu", (unsigned long)index, (unsigned long)page->list->count, page->list->flags,
-			    (unsigned long)(pv_clock() - started));
-		}
-	}
+	(void)interpret(document, index);
 
 	/* A raster at the scale is kept. */
 	if (page->raster != NULL) {
@@ -243,6 +250,174 @@ pv_document_trim(
 			continue;
 		drop_raster(document, &document->pages[index]);
 	}
+}
+
+/*
+ * Makes a page's thumbnail, once: the page on white, scaled to fit the
+ * sidebar's box.
+ *
+ * Returns 0 (a page that cannot be interpreted has a white thumbnail), or
+ * ENOMEM.
+ */
+int
+pv_document_thumbnail(
+	struct pv_document *document,
+	size_t index,
+	const struct pv_page **shown)
+{
+	struct pv_page *page;
+	uint32_t *pixels;
+	uint64_t started;
+	double scale;
+	double tall_scale;
+	size_t count;
+	size_t cell;
+	int interpreted_here;
+	int width;
+	int height;
+	int error;
+
+	/* Refuses a page the document does not have. */
+	if (index >= document->count)
+		return EINVAL;
+	page = &document->pages[index];
+	*shown = page;
+
+	/* A thumbnail is made once. */
+	if (page->thumbnail != NULL)
+		return 0;
+
+	/* The scale that fits the page in the box, and the thumbnail's size. */
+	scale = (double)PV_THUMBNAIL_WIDTH / page->width;
+	tall_scale = (double)PV_THUMBNAIL_HEIGHT / page->height;
+	if (tall_scale < scale)
+		scale = tall_scale;
+	width = (int)ceil(page->width * scale - 1e-6);
+	height = (int)ceil(page->height * scale - 1e-6);
+	if (width < 1)
+		width = 1;
+	if (height < 1)
+		height = 1;
+
+	/* Allocates it on white. */
+	count = (size_t)width * (size_t)height;
+	pixels = malloc(count * 4);
+	if (pixels == NULL)
+		return ENOMEM;
+	for (cell = 0; cell < count; cell++)
+		pixels[cell] = DOCUMENT_PAGE_WHITE;
+
+	/* Interprets the page when it has not been. */
+	interpreted_here = 0;
+	if (page->list == NULL && page->list_error == 0)
+		interpreted_here = 1;
+	(void)interpret(document, index);
+
+	/* Draws the page's list, when it has one. */
+	if (page->list != NULL) {
+		started = pv_clock();
+		error = pdf_display_list_rasterize(page->list, pixels, (size_t)width, (size_t)width, (size_t)height, scale, 0.0, 0.0);
+		if (error != 0)
+			pv_log("THUMBNAIL index=%lu raster-error=%d", (unsigned long)index, error);
+		pv_log("THUMBNAIL index=%lu size=%dx%d ms=%lu", (unsigned long)index, width, height, (unsigned long)(pv_clock() - started));
+	}
+
+	/* A list made only for the thumbnail is given up while the page is not shown. */
+	if (interpreted_here && page->raster == NULL) {
+		pdf_display_list_destroy(page->list);
+		page->list = NULL;
+	}
+
+	/* Succeeded: the page keeps its thumbnail. */
+	page->thumbnail = pixels;
+	page->thumbnail_width = width;
+	page->thumbnail_height = height;
+	document->thumbnail_bytes += count * 4;
+	return 0;
+}
+
+/*
+ * Frees the thumbnails of the pages outside a range, which the sidebar no
+ * longer shows, while the thumbnails take more than their share of memory.
+ */
+void
+pv_document_trim_thumbnails(
+	struct pv_document *document,
+	size_t keep_first,
+	size_t keep_last)
+{
+	size_t index;
+
+	/* Nothing goes while the thumbnails fit. */
+	if (document->thumbnail_bytes <= DOCUMENT_THUMBNAIL_BYTES)
+		return;
+
+	/* Frees each thumbnail outside the range. */
+	for (index = 0; index < document->count; index++) {
+		if (index >= keep_first && index <= keep_last)
+			continue;
+		drop_thumbnail(document, &document->pages[index]);
+	}
+}
+
+/*
+ * Interprets a page into its display list once, logging the outcome; a
+ * page that cannot be interpreted keeps the error and stays blank.
+ *
+ * Returns 0, or libpdf's error for the page.
+ */
+static int
+interpret(
+	struct pv_document *document,
+	size_t index)
+{
+	struct pv_page *page;
+	uint64_t started;
+	int error;
+
+	/* A page is interpreted once. */
+	page = &document->pages[index];
+	if (page->list != NULL)
+		return 0;
+	if (page->list_error != 0)
+		return page->list_error;
+
+	/* Interprets it, timing it for the log. */
+	started = pv_clock();
+	error = pdf_page_render(document->document, index, &page->list);
+	if (error != 0) {
+		page->list = NULL;
+		page->list_error = error;
+		pv_log("PAGE index=%lu render-error=%d", (unsigned long)index, error);
+		return error;
+	}
+
+	/* Succeeded: the flags of what the page left out join the document's. */
+	document->flags |= page->list->flags;
+	pv_log("PAGE index=%lu items=%lu flags=%u ms=%lu", (unsigned long)index, (unsigned long)page->list->count, page->list->flags,
+	    (unsigned long)(pv_clock() - started));
+	return 0;
+}
+
+/* Frees a page's thumbnail and uncounts its bytes. */
+static void
+drop_thumbnail(
+	struct pv_document *document,
+	struct pv_page *page)
+{
+	size_t bytes;
+
+	/* Nothing to free for a page without one. */
+	if (page->thumbnail == NULL)
+		return;
+
+	/* Uncounts and frees it. */
+	bytes = (size_t)page->thumbnail_width * (size_t)page->thumbnail_height * 4;
+	document->thumbnail_bytes -= bytes;
+	free(page->thumbnail);
+	page->thumbnail = NULL;
+	page->thumbnail_width = 0;
+	page->thumbnail_height = 0;
 }
 
 /* Tells whether a page's shown size is one the viewer can lay out (1 to 20,000 points a side). */

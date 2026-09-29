@@ -73,7 +73,7 @@ main(
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: zdesktop [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: wayland [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
 		return 2;
 	}
 
@@ -82,7 +82,7 @@ main(
 		server.lock_idle_ms = MAIN_LOCK_IDLE_MS;
 	server.lock_input_ms = zwl_milliseconds();
 
-	/* The session's descriptor to sessiond does not go to the programs zdesktop starts, and is read without waiting. */
+	/* The session's descriptor to sessiond does not go to the programs the compositor starts, and is read without waiting. */
 	if (server.control_fd >= 0) {
 		(void)fcntl(server.control_fd, F_SETFD, FD_CLOEXEC);
 		(void)fcntl(server.control_fd, F_SETFL, fcntl(server.control_fd, F_GETFL) | O_NONBLOCK);
@@ -91,7 +91,7 @@ main(
 	/* The login screen is the glass look's, and asks sessiond on a descriptor it was given. */
 	if (server.greeter) {
 		if (server.auth_fd < 0) {
-			fprintf(stderr, "zdesktop: --greeter needs --auth-fd=N\n");
+			fprintf(stderr, "wayland: --greeter needs --auth-fd=N\n");
 			return 2;
 		}
 
@@ -171,7 +171,7 @@ main(
 }
 
 /*
- * Asks the event loop to end zdesktop in order, as SIGTERM does: the login
+ * Asks the event loop to end the compositor in order, as SIGTERM does: the login
  * screen after a login, a session at its Log Out.
  */
 void

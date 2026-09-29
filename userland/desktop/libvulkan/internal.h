@@ -284,6 +284,7 @@ struct vulkan_context {
 	uint32_t external_memory_type;
 	VkBool32 strict_queue;
 	VkBool32 native_quiescence;
+	VkBool32 copy_display;
 	uint64_t max_resource_bytes;
 	uint32_t capabilities;
 	uint64_t stream_handle;

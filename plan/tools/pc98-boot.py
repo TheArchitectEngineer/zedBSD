@@ -60,7 +60,7 @@ def main() -> int:
 			save(guest.screen(), output / "login.png")
 			guest.send("root")
 			guest.wait(r"Password:", 30)
-			guest.send("")
+			guest.send("root")
 			guest.wait(r"[#$] *$", 60)
 			guest.send("uname -a; echo WSDONE")
 			guest.wait(r"^WSDONE *$", 60)

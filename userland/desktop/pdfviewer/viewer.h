@@ -14,7 +14,10 @@
  * libpdf's CPU rasterizer at the zoom in force; the rasters are kept in a
  * cache and copied into the frame.  The view (view.c) lays the pages out
  * in one of two modes: a vertical continuous scroll, or one page at a time
- * turned by a sideways drag (a swipe) or the keys.
+ * turned by a sideways drag (a swipe) or the keys.  ws079-p015: a sidebar
+ * of page thumbnails on the left, and a card that asks for the password
+ * of an encrypted document.  ws081-p012: the touch screen (touch.c) scrolls
+ * with inertia, zooms with two fingers and swipes pages.
  */
 
 #ifndef PDFVIEWER_VIEWER_H
@@ -34,6 +37,9 @@ struct truetype_face;
 /* The longest path the viewer keeps. */
 #define PV_PATH_MAX		1024
 
+/* The longest password the password card takes, in bytes (revisions 5 and 6 of PDF encryption count 127). */
+#define PV_PASSWORD_MAX		127
+
 /* The modifiers of an input. */
 #define PV_MOD_SHIFT		0x01U
 #define PV_MOD_CTRL		0x02U
@@ -46,14 +52,17 @@ struct truetype_face;
 #define PV_KEY_MINUS		12U
 #define PV_KEY_EQUAL		13U
 #define PV_KEY_BACKSPACE	14U
+#define PV_KEY_TAB		15U
 #define PV_KEY_Q		16U
 #define PV_KEY_W		17U
 #define PV_KEY_E		18U
 #define PV_KEY_O		24U
 #define PV_KEY_ENTER		28U
 #define PV_KEY_SPACE		57U
+#define PV_KEY_F9		67U
 #define PV_KEY_KP_MINUS		74U
 #define PV_KEY_KP_PLUS		78U
+#define PV_KEY_KP_ENTER		96U
 #define PV_KEY_HOME		102U
 #define PV_KEY_UP		103U
 #define PV_KEY_PAGE_UP		104U
@@ -116,7 +125,8 @@ enum pv_action {
 	PV_ACTION_PREVIOUS,
 	PV_ACTION_NEXT,
 	PV_ACTION_FIRST,
-	PV_ACTION_LAST
+	PV_ACTION_LAST,
+	PV_ACTION_THUMBNAILS
 };
 
 /*
@@ -163,8 +173,9 @@ struct pv_text {
 
 /*
  * One page of the open document: its shown size in points, its display
- * list once interpreted (NULL before), and its raster at one scale once
- * drawn.  used orders the rasters for the cache's eviction.
+ * list once interpreted (NULL before), its raster at one scale once
+ * drawn, and its thumbnail once drawn for the sidebar (NULL before).  used
+ * orders the rasters for the cache's eviction.
  */
 struct pv_page {
 	double width;
@@ -176,11 +187,15 @@ struct pv_page {
 	int raster_height;
 	double raster_scale;
 	uint64_t used;
+	uint32_t *thumbnail;
+	int thumbnail_width;
+	int thumbnail_height;
 };
 
 /*
  * The open document: its path, libpdf's document, its pages, the bytes the
- * page rasters take, and the flags of the pages drawn so far.
+ * page rasters and the thumbnails take, and the flags of the pages drawn
+ * so far.
  */
 struct pv_document {
 	char path[PV_PATH_MAX];
@@ -190,6 +205,7 @@ struct pv_document {
 	double widest;
 	double tallest;
 	size_t raster_bytes;
+	size_t thumbnail_bytes;
 	uint64_t clock;
 	unsigned flags;
 };
@@ -233,6 +249,23 @@ struct pv_chooser {
  * shown_flags gathers the display-list flags (PDF_DISPLAY_*) of the pages
  * the last frame drew, which decide whether the frame says that some
  * content could not be shown; notice_shown is whether it last said so.
+ *
+ * window_width is the window's width; width is the part the pages are
+ * laid out in, the window less the sidebar while it is shown (thumbnails
+ * asks for it, and a document is open).  thumbnail_scroll is the top of the
+ * sidebar's view of its column of thumbnails, in pixels, and
+ * thumbnail_followed the page it last scrolled into view; a press in the
+ * sidebar (thumbnail_pressed) chooses a page unless it drags the column.
+ *
+ * asking_password says the password card is shown for password_path, an
+ * encrypted document the empty password did not open; password holds what
+ * has been typed (never logged, cleared after each try), and
+ * password_wrong says the last try was refused.
+ *
+ * ws081-p012: touching says fingers are on the pages or the content glides
+ * after them (touch.c), and zooming that two fingers are changing the zoom:
+ * while zooming, the frame shows the pages' rasters stretched to the new
+ * scale instead of drawing them again, until the fingers stop.
  */
 struct pv_app {
 	struct pv_document document;
@@ -240,6 +273,7 @@ struct pv_app {
 	enum pv_mode mode;
 	enum pv_fit fit;
 	double zoom;
+	int window_width;
 	int width;
 	int height;
 	double scroll_x;
@@ -274,14 +308,40 @@ struct pv_app {
 	int dirty;
 	unsigned shown_flags;
 	int notice_shown;
+	int thumbnails;
+	double thumbnail_scroll;
+	size_t thumbnail_followed;
+	int thumbnail_pressed;
+	int thumbnail_dragging;
+	int thumbnail_press_y;
+	double thumbnail_press_scroll;
+	int asking_password;
+	char password_path[PV_PATH_MAX];
+	char password[PV_PASSWORD_MAX + 1];
+	size_t password_length;
+	int password_wrong;
 	struct pv_text *text;
+	int touching;
+	int zooming;
+};
+
+/*
+ * A place in the document: a page, and a point on it in points from its
+ * top left corner.  Two fingers keep one under them while they zoom.
+ */
+struct pv_place {
+	size_t page;
+	double x;
+	double y;
 };
 
 /* The document and its page cache (document.c). */
-int pv_document_open(struct pv_document *document, const char *path);
+int pv_document_open(struct pv_document *document, const char *path, const char *password);
 void pv_document_close(struct pv_document *document);
 int pv_document_raster(struct pv_document *document, size_t index, double scale, const struct pv_page **page);
 void pv_document_trim(struct pv_document *document, size_t keep_first, size_t keep_last);
+int pv_document_thumbnail(struct pv_document *document, size_t index, const struct pv_page **page);
+void pv_document_trim_thumbnails(struct pv_document *document, size_t keep_first, size_t keep_last);
 
 /* The view: layout, navigation and input (view.c). */
 void pv_app_init(struct pv_app *app, struct pv_text *text, int width, int height);
@@ -301,12 +361,42 @@ double pv_app_content_height(const struct pv_app *app);
 double pv_app_content_width(const struct pv_app *app);
 void pv_app_message(struct pv_app *app, const char *message, uint64_t duration);
 void pv_chooser_layout(const struct pv_app *app, int *x, int *y, int *width, int *height, size_t *rows);
+int pv_app_sidebar_width(const struct pv_app *app);
+void pv_app_clamp(struct pv_app *app);
+void pv_app_zoom_to(struct pv_app *app, double scale);
+double pv_app_page_left(const struct pv_app *app, size_t index);
+void pv_app_place_at(const struct pv_app *app, double x, double y, struct pv_place *place);
+void pv_app_show_place(struct pv_app *app, const struct pv_place *place, double x, double y);
+void pv_app_swipe_end(struct pv_app *app, double velocity, int may_turn);
+void pv_thumbnail_range(const struct pv_app *app, size_t *first, size_t *last);
+void pv_thumbnail_place(const struct pv_app *app, size_t index, int *x, int *y, int *width, int *height);
+void pv_password_layout(const struct pv_app *app, int *x, int *y, int *width, int *height);
 
 /* The sizes of the layout, which the view and the frame share. */
 #define PV_MARGIN		16
 #define PV_GAP			16
 #define PV_CHOOSER_HEADER	52
 #define PV_CHOOSER_ROW		34
+
+/*
+ * The sidebar of thumbnails: its width, the box a thumbnail fits in, the
+ * height of one page's slot (the box, its number and the space around),
+ * and the space above the first slot.  The sidebar is shown only in a
+ * window wide enough to leave PV_SIDEBAR_ROOM for the pages.
+ */
+#define PV_SIDEBAR_WIDTH	168
+#define PV_SIDEBAR_ROOM		240
+#define PV_THUMBNAIL_WIDTH	112
+#define PV_THUMBNAIL_HEIGHT	146
+#define PV_THUMBNAIL_SLOT	186
+#define PV_THUMBNAIL_TOP	10
+
+/* The password card's size, and its buttons' size and inset from its corner. */
+#define PV_PASSWORD_WIDTH	420
+#define PV_PASSWORD_HEIGHT	214
+#define PV_PASSWORD_BUTTON_WIDTH	96
+#define PV_PASSWORD_BUTTON_HEIGHT	34
+#define PV_PASSWORD_BUTTON_INSET	20
 
 /* The frame (draw.c). */
 void pv_draw(struct pv_app *app, struct pv_canvas *canvas);
@@ -321,6 +411,7 @@ void pv_canvas_fill(struct pv_canvas *canvas, int x, int y, int width, int heigh
 void pv_canvas_blend(struct pv_canvas *canvas, int x, int y, int width, int height, uint32_t color);
 void pv_canvas_round(struct pv_canvas *canvas, int x, int y, int width, int height, int radius, uint32_t color);
 void pv_canvas_copy(struct pv_canvas *canvas, int x, int y, const uint32_t *pixels, int width, int height);
+void pv_canvas_stretch(struct pv_canvas *canvas, int x, int y, int width, int height, const uint32_t *pixels, int source_width, int source_height);
 void pv_canvas_mask(struct pv_canvas *canvas, int x, int y, const unsigned char *mask, int width, int height, uint32_t color);
 
 /* The text (text.c). */

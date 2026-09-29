@@ -19,8 +19,16 @@
  * tracking identifier of -1 lifts it, BTN_TOUCH says whether any finger
  * touches, and ABS_X/ABS_Y follow the oldest finger for readers that know
  * only one.  This file turns decoded reports into that ordered event list.
- * A finger the frame no longer reports is lifted.  It touches no hardware,
- * so the host tests run it unchanged.
+ * A finger the frame no longer reports is lifted.
+ *
+ * A screen with a Scan Time (its own clock, in the report beside the
+ * Contact Count) also gets MSC_TIMESTAMP before each SYN_REPORT: the time
+ * on the screen's clock in microseconds, counted from zero after a second
+ * without reports, so that a reader can tell when the screen scanned each
+ * frame (plan/ws081/design.md section 2).  While a finger touches, such a
+ * screen writes every frame, changed or not, so that the reports' pace
+ * reaches the reader.  The file touches no hardware, so the host tests run
+ * it unchanged.
  */
 
 #include <drivers/usb/hid-touch.h>
@@ -50,7 +58,7 @@ struct touch_entry {
 };
 
 /*
- * The fingers and the Contact Count of one report.
+ * The fingers, the Contact Count and the Scan Time of one report.
  *
  * One instance lives on the stack for the translation of one report.
  */
@@ -60,9 +68,12 @@ struct touch_report {
 	unsigned finger_count;
 	int count_present;
 	int32_t count;
+	int scan_present;
+	int32_t scan;
 };
 
 static void collect_report(const struct hid_report_input *input, struct touch_report *report);
+static void scan_take(struct hid_touch_state *state, const struct touch_report *report, uint64_t milliseconds);
 static void frame_begin(struct hid_touch_state *state);
 static void take_entry(struct hid_touch_state *state, const struct touch_entry *entry, unsigned finger);
 static struct hid_touch_slot * slot_of_contact(struct hid_touch_state *state, int32_t contact_id);
@@ -120,6 +131,10 @@ drv_hid_touch_describe(
 	describe_capability(description, EV_ABS, ABS_MT_TRACKING_ID);
 	describe_capability(description, EV_ABS, ABS_MT_POSITION_X);
 	describe_capability(description, EV_ABS, ABS_MT_POSITION_Y);
+
+	/* A screen with a Scan Time also stamps its frames with it. */
+	if (info->scan_time_present)
+		describe_capability(description, EV_MSC, MSC_TIMESTAMP);
 
 	/* The oldest finger's position, over the fingers' own range. */
 	description->axis_count = 0;
@@ -196,6 +211,52 @@ drv_hid_touch_reset(
 	state->reserved = 0;
 	state->pointer_x = 0;
 	state->pointer_y = 0;
+
+	/* No Scan Time until drv_hid_touch_set_scan_time() gives one. */
+	state->scan_time = 0;
+	state->scan_seen = 0;
+	state->scan_reserved[0] = 0;
+	state->scan_reserved[1] = 0;
+	state->scan_modulus = 0;
+	state->scan_unit_ns = 0;
+	state->scan_last = 0;
+	state->scan_last_ms = 0;
+	state->scan_elapsed_ns = 0;
+	state->report_timestamp = 0;
+	state->frame_timestamp = 0;
+}
+
+/*
+ * Tells the state machine the screen's Scan Time, from the description of
+ * its reports (after drv_hid_touch_reset(), which forgets it).
+ *
+ * A screen without one, or with a Scan Time that cannot count (a logical
+ * maximum below one), writes no MSC_TIMESTAMP.
+ */
+void
+drv_hid_touch_set_scan_time(
+	struct hid_touch_state *state,
+	const struct hid_report_touch_info *info)
+{
+	/* Nothing is counted until a Scan Time is known. */
+	state->scan_time = 0;
+	state->scan_seen = 0;
+	state->scan_elapsed_ns = 0;
+	state->report_timestamp = 0;
+	state->frame_timestamp = 0;
+
+	/* A screen without a Scan Time that counts writes none. */
+	if (info == NULL || !info->scan_time_present)
+		return;
+	if (info->scan_time_maximum < 1)
+		return;
+
+	/* The Scan Time wraps after its logical maximum, in its unit (100 us when none of time is given). */
+	state->scan_modulus = (uint32_t)info->scan_time_maximum + 1U;
+	state->scan_unit_ns = info->scan_time_unit_ns;
+	if (state->scan_unit_ns == 0U)
+		state->scan_unit_ns = HID_TOUCH_SCAN_TIME_UNIT_NS;
+	state->scan_time = 1;
 }
 
 /*
@@ -222,6 +283,27 @@ drv_hid_touch_report_is_touch(
 }
 
 /*
+ * Turns one decoded touch report into the ordered evdev events, without a
+ * host time (a Scan Time is then never counted from zero again).
+ */
+int
+drv_hid_touch_translate(
+	struct hid_touch_state *state,
+	const struct hid_report_input *input,
+	struct hid_touch_output *output)
+{
+	int error;
+
+	/* The report, with no time of its own. */
+	error = drv_hid_touch_translate_at(state, input, HID_TOUCH_TIME_UNKNOWN, output);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the report's events are in output. */
+	return 0;
+}
+
+/*
  * Turns one decoded touch report into the ordered evdev events.
  *
  * With a Contact Count, a report whose count is not zero starts a frame of
@@ -231,12 +313,16 @@ drv_hid_touch_report_is_touch(
  * it stands, without lifting the fingers it did not get to.  Without a
  * Contact Count every report is a whole frame of the fingers whose tip
  * touches.  Either way a finger a whole frame does not report touching is
- * lifted, and a frame that changed nothing writes nothing.
+ * lifted, and a frame that changed nothing writes nothing (unless the
+ * screen has a Scan Time and a finger touches).  milliseconds is when the
+ * report arrived (HID_TOUCH_TIME_UNKNOWN when the caller does not know);
+ * a second without reports counts the Scan Time from zero again.
  */
 int
-drv_hid_touch_translate(
+drv_hid_touch_translate_at(
 	struct hid_touch_state *state,
 	const struct hid_report_input *input,
+	uint64_t milliseconds,
 	struct hid_touch_output *output)
 {
 	struct touch_report report;
@@ -246,6 +332,9 @@ drv_hid_touch_translate(
 	/* Starts an empty event list and reads the report's fingers. */
 	output->event_count = 0;
 	collect_report(input, &report);
+
+	/* Moves the screen's clock on to this report. */
+	scan_take(state, &report, milliseconds);
 
 	/* Without a Contact Count the report is a whole frame. */
 	if (!report.count_present) {
@@ -340,6 +429,8 @@ collect_report(
 	report->finger_count = 0;
 	report->count_present = 0;
 	report->count = 0;
+	report->scan_present = 0;
+	report->scan = 0;
 
 	/* Stores each touch value under its finger and its item. */
 	for (index = 0; index < input->value_count; index++) {
@@ -353,6 +444,13 @@ collect_report(
 		if (value->code == HID_TOUCH_CONTACT_COUNT_CODE) {
 			report->count_present = 1;
 			report->count = value->value;
+			continue;
+		}
+
+		/* So does the Scan Time. */
+		if (value->code == HID_TOUCH_SCAN_TIME_CODE) {
+			report->scan_present = 1;
+			report->scan = value->value;
 			continue;
 		}
 
@@ -398,6 +496,58 @@ collect_report(
 	}
 }
 
+/*
+ * Counts the screen's clock on to one report: the steps of its Scan Time
+ * since the last report (across a wrap), in nanoseconds.  The first report,
+ * and a report after a second of silence, count from zero again.
+ */
+static void
+scan_take(
+	struct hid_touch_state *state,
+	const struct touch_report *report,
+	uint64_t milliseconds)
+{
+	uint32_t raw;
+	uint32_t step;
+	int restart;
+
+	/* Nothing to count without a Scan Time, or in a report without one. */
+	if (!state->scan_time)
+		return;
+	if (!report->scan_present)
+		return;
+
+	/* The raw value within the Scan Time's range. */
+	raw = (uint32_t)report->scan % state->scan_modulus;
+
+	/* The first report, or one after a second of silence, starts the count again. */
+	restart = 0;
+	if (!state->scan_seen) {
+		restart = 1;
+	} else if (milliseconds != HID_TOUCH_TIME_UNKNOWN &&
+		   state->scan_last_ms != HID_TOUCH_TIME_UNKNOWN &&
+		   milliseconds >= state->scan_last_ms &&
+		   milliseconds - state->scan_last_ms >= HID_TOUCH_SCAN_TIME_RESTART_MS) {
+		restart = 1;
+	}
+
+	/* Counts from zero, or adds the steps since the last report. */
+	if (restart) {
+		state->scan_elapsed_ns = 0;
+	} else {
+		step = raw - state->scan_last;
+		if (raw < state->scan_last)
+			step = raw + (state->scan_modulus - state->scan_last);
+		state->scan_elapsed_ns += (uint64_t)step * state->scan_unit_ns;
+	}
+
+	/* Remembers this report and its time on the screen's clock, in microseconds (wrapping). */
+	state->scan_last = raw;
+	state->scan_last_ms = milliseconds;
+	state->scan_seen = 1;
+	state->report_timestamp = (uint32_t)(state->scan_elapsed_ns / 1000U);
+}
+
 /* Starts building a frame: no finger has been reported touching in it yet. */
 static void
 frame_begin(
@@ -409,9 +559,10 @@ frame_begin(
 	for (index = 0; index < state->slot_count; index++)
 		state->slots[index].seen = 0;
 
-	/* No finger of the frame has come yet. */
+	/* No finger of the frame has come yet; the frame is stamped with this report's time. */
 	state->expected = 0;
 	state->received = 0;
+	state->frame_timestamp = state->report_timestamp;
 }
 
 /*
@@ -612,6 +763,19 @@ frame_write(
 	error = write_pointer(state, output);
 	if (error != 0)
 		return error;
+
+	/*
+	 * A screen with a Scan Time stamps a frame that changed something,
+	 * and every frame while a finger touches: the pace of its reports is
+	 * news to a reader even when nothing moved.
+	 */
+	if (state->scan_time &&
+	    (output->event_count != first_event ||
+	     state->touching)) {
+		error = append_event(output, EV_MSC, MSC_TIMESTAMP, (int32_t)state->frame_timestamp);
+		if (error != 0)
+			return error;
+	}
 
 	/* A frame that changed nothing writes nothing. */
 	if (output->event_count == first_event)

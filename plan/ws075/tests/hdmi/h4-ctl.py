@@ -25,6 +25,10 @@ kernel's log (run.log, the debugcon: every record, also on a quiet boot).
                                   other commands can run meanwhile): pipe B's TRANSCONF, PLANE_CTL, PLANE_SURFLIVE and
                                   frame counter, read with xp through the passthrough BAR; one line per change in
                                   watch.log (ms since the start, the four values); h4-blank.py reads it
+    h4-ctl.py latency PIPE COUNT  (ws084) the time from a pointer move to the next flip on PIPE (A or B): COUNT times,
+                                  the tablet moves 40 pixels and PLANE_SURFLIVE is read with xp until it changes (or
+                                  3 s pass); then 3 s without input count the flips the idle desktop makes.  One line
+                                  per trial in latency.log and on the output
     h4-ctl.py quit                ends QEMU
 """
 import json
@@ -316,6 +320,56 @@ def watch(seconds, interval_ms):
     print(f'watch: {samples} samples in {int(time.time() - start)} s')
 
 
+def surflive(f, bar, pipe):
+    """The live surface address of a pipe's primary plane, read through the passthrough BAR."""
+    found = re.search(r':\s*(0x[0-9a-f]+)', hmp(f, f'xp /1wx 0x{bar + SURFLIVE[pipe]:x}'))
+    return int(found.group(1), 16) & 0xfffff000 if found else -1
+
+
+def latency(f, pipe, count):
+    """Times each pointer move to the next flip on the pipe, then counts the flips of an idle desktop."""
+    bar = graphics_bar(f)
+    if bar is None:
+        raise SystemExit('h4-ctl: latency: no passthrough graphics BAR')
+    width, height = size()
+    results = []
+    with open(os.path.join(DIR, 'latency.log'), 'a') as log:
+        log.write(f'# latency {time.strftime("%H:%M:%S")} pipe {pipe} bar 0x{bar:x} {width}x{height}\n')
+        for trial in range(count):
+            x = width // 2 + (40 if trial % 2 == 0 else -40)
+            before = surflive(f, bar, pipe)
+            start = time.monotonic()
+            tablet(f, x, height // 2, width, height)
+            reads = 0
+            now = before
+            while now == before and time.monotonic() - start < 3.0:
+                now = surflive(f, bar, pipe)
+                reads += 1
+            ms = (time.monotonic() - start) * 1000.0
+            flipped = now != before
+            results.append(ms if flipped else None)
+            line = f'trial {trial}: {"flip" if flipped else "NO flip"} after {ms:.1f} ms ({reads} reads, 0x{before:08x} -> 0x{now:08x})'
+            log.write(line + '\n')
+            print(line)
+            time.sleep(0.5)
+        # The idle desktop: the flips in 3 s without input.
+        flips = 0
+        last = surflive(f, bar, pipe)
+        start = time.monotonic()
+        while time.monotonic() - start < 3.0:
+            now = surflive(f, bar, pipe)
+            if now != last:
+                flips += 1
+                last = now
+        line = f'idle: {flips} flips in 3 s'
+        log.write(line + '\n')
+        print(line)
+    done = [r for r in results if r is not None]
+    if done:
+        done.sort()
+        print(f'latency: {len(done)}/{count} flipped, median {done[len(done) // 2]:.1f} ms, min {done[0]:.1f}, max {done[-1]:.1f}')
+
+
 def main():
     command = sys.argv[1]
     if command == 'watch':
@@ -335,6 +389,8 @@ def main():
         keys(f, ' '.join(sys.argv[2:]))
     elif command == 'hmp':
         print(hmp(f, ' '.join(sys.argv[2:])))
+    elif command == 'latency':
+        latency(f, sys.argv[2], int(sys.argv[3]))
     elif command == 'quit':
         print(qmp(f, 'quit'))
     else:

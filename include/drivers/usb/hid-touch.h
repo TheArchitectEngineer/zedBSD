@@ -39,6 +39,18 @@
 /* The code of the report's Contact Count, which belongs to no finger. */
 #define HID_TOUCH_CONTACT_COUNT_CODE	0x1000U
 
+/* The code of the report's Scan Time, which belongs to no finger either. */
+#define HID_TOUCH_SCAN_TIME_CODE	0x1001U
+
+/* The unit of a Scan Time whose descriptor gives none of time (100 us, as Windows requires). */
+#define HID_TOUCH_SCAN_TIME_UNIT_NS	100000U
+
+/* After this long without a report (milliseconds) the Scan Time is counted from zero again. */
+#define HID_TOUCH_SCAN_TIME_RESTART_MS	1000U
+
+/* The time given to drv_hid_touch_translate_at() when the caller has none. */
+#define HID_TOUCH_TIME_UNKNOWN		UINT64_MAX
+
 /* The most Finger collections one report may carry; later ones are ignored. */
 #define HID_TOUCH_CONTACTS_MAX		16U
 
@@ -56,12 +68,12 @@
 /*
  * The most events one report can turn into: an unfinished frame closed early
  * and a whole frame, each at most four events a slot, BTN_TOUCH, ABS_X,
- * ABS_Y and SYN_REPORT.
+ * ABS_Y, MSC_TIMESTAMP and SYN_REPORT.
  */
-#define HID_TOUCH_EVENT_MAX		(2U * (4U * HID_TOUCH_SLOTS_MAX + 4U))
+#define HID_TOUCH_EVENT_MAX		(2U * (4U * HID_TOUCH_SLOTS_MAX + 5U))
 
-/* The capabilities and axes a touch screen declares. */
-#define HID_TOUCH_CAPABILITY_COUNT	8U
+/* The capabilities (MSC_TIMESTAMP only with a Scan Time) and axes a touch screen declares. */
+#define HID_TOUCH_CAPABILITY_COUNT	9U
 #define HID_TOUCH_AXIS_COUNT		6U
 
 /*
@@ -117,6 +129,23 @@ struct hid_touch_state {
 	uint8_t reserved;
 	int32_t pointer_x;
 	int32_t pointer_y;
+	/*
+	 * The Scan Time, when drv_hid_touch_set_scan_time() said the screen
+	 * has one: its wrap (logical maximum + 1) and unit, the last report's
+	 * raw value and host time, the time elapsed on the screen's clock since
+	 * it was last counted from zero, and the MSC_TIMESTAMP of the report
+	 * being taken and of the frame being built (the frame's first report).
+	 */
+	uint8_t scan_time;
+	uint8_t scan_seen;
+	uint8_t scan_reserved[2];
+	uint32_t scan_modulus;
+	uint32_t scan_unit_ns;
+	uint32_t scan_last;
+	uint64_t scan_last_ms;
+	uint64_t scan_elapsed_ns;
+	uint32_t report_timestamp;
+	uint32_t frame_timestamp;
 };
 
 /*
@@ -156,5 +185,8 @@ int drv_hid_touch_describe(const struct hid_report_touch_info *, struct hid_touc
 void drv_hid_touch_reset(struct hid_touch_state *, unsigned);
 int drv_hid_touch_report_is_touch(const struct hid_report_input *);
 int drv_hid_touch_translate(struct hid_touch_state *, const struct hid_report_input *, struct hid_touch_output *);
+int drv_hid_touch_translate_at(struct hid_touch_state *, const struct hid_report_input *, uint64_t,
+	struct hid_touch_output *);
+void drv_hid_touch_set_scan_time(struct hid_touch_state *, const struct hid_report_touch_info *);
 
 #endif

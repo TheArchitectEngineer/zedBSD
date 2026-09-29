@@ -217,9 +217,11 @@ drv_i915_rps_init(
 }
 
 /*
- * Requests the minimum frequency and starts frequency management.
+ * Requests RP0 and starts frequency management.
  *
- * Follows Linux intel_rps_enable() -> gen9_rps_enable() and rps_reset().
+ * Follows Linux intel_rps_enable() -> gen9_rps_enable(); the request is
+ * RP0 instead of rps_reset()'s minimum, since the RPS interrupts that
+ * would raise it are not ported.
  */
 void
 drv_i915_rps_enable(
@@ -236,8 +238,14 @@ drv_i915_rps_enable(
 	 */
 	drv_i915_write32(mmio, GEN6_RP_IDLE_HYSTERSIS, 0xaU);
 
-	/* Requests the minimum frequency, as rps_reset() -> gen6_rps_set() does. */
-	drv_i915_write32(mmio, GEN6_RPNSWREQ, GEN9_FREQUENCY(rps->min_freq));
+	/*
+	 * Requests RP0, the highest fused frequency.  Linux's rps_reset()
+	 * requests the minimum and then follows the load with the RPS
+	 * up/down interrupts, which are not ported: at the minimum the GT
+	 * stayed at a twelfth of RP0 on the 5330 and the desktop drew about
+	 * eight frames a second (ws084).  The PCODE may still grant less.
+	 */
+	drv_i915_write32(mmio, GEN6_RPNSWREQ, GEN9_FREQUENCY(rps->max_freq));
 
 	/* A frequency is now requested. */
 	rps->enabled = 1;

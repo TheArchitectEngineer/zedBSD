@@ -458,7 +458,9 @@ zwl_corner_showing(
 	void)
 {
 	/* An armed contact that has not timed out. */
-	if (corner.contact.active && corner.contact.armed && !corner.contact.expired)
+	if (corner.contact.active &&
+	    corner.contact.armed &&
+	    !corner.contact.expired)
 		return 1;
 
 	/* The hint settling after the contact ended. */
@@ -561,6 +563,8 @@ zwl_corner_draw(
 		shape.color[2] = 0.92f;
 		shape.color[3] = 0.60f;
 	}
+
+	/* The disc's edge and fade, drawn. */
 	shape.edge = 0.85f;
 	shape.opacity = opacity;
 	glass_shape_draw(server, command, &shape);
@@ -580,6 +584,8 @@ zwl_corner_draw(
 		shape.color[2] = 0.95f;
 		shape.color[3] = 0.95f;
 	}
+
+	/* The rim's fade, drawn. */
 	shape.opacity = opacity;
 	glass_shape_draw(server, command, &shape);
 
@@ -700,6 +706,8 @@ corner_on_diagonal(
 		shorter = dy;
 		longer = dx;
 	}
+
+	/* A movement outside the cone about the diagonal is off it. */
 	if (shorter * CORNER_CONE_DENOMINATOR < longer * CORNER_CONE_NUMERATOR)
 		return 0;
 

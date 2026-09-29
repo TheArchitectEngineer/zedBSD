@@ -78,7 +78,7 @@ zwl_compose_open(
 		return EIO;
 	}
 
-	/* zdesktop's arrow cursor. */
+	/* the compositor's arrow cursor. */
 	error = zwl_arrow_create(server);
 	if (error != 0) {
 		printf("ZWL VULKAN_ERROR operation=arrow\n");
@@ -480,7 +480,7 @@ compose_device(
 	/* The instance, with the display extensions and those the external fd extensions need (Vulkan 1.0). */
 	memset(&application, 0, sizeof(application));
 	application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	application.pApplicationName = "zdesktop";
+	application.pApplicationName = "wayland";
 	application.apiVersion = VK_API_VERSION_1_0;
 	memset(&instance, 0, sizeof(instance));
 	instance.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -1488,7 +1488,7 @@ compose_record(
 
 /*
  * Draws the cursor at the pointer: the client's cursor surface (its hotspot
- * at the pointer), or zdesktop's arrow (its tip), with alpha; nothing when
+ * at the pointer), or the compositor's arrow (its tip), with alpha; nothing when
  * hidden (design D8).
  */
 static void
@@ -1502,7 +1502,7 @@ compose_cursor(
 	int32_t hotspot_x;
 	int32_t hotspot_y;
 
-	/* A drag and drop's icon under the cursor (its surface's corner at the pointer), or zdesktop's badge in the glass look (data.c). */
+	/* A drag and drop's icon under the cursor (its surface's corner at the pointer), or the compositor's badge in the glass look (data.c). */
 	if (server->dnd_active) {
 		surface = server->dnd_icon;
 		image = NULL;

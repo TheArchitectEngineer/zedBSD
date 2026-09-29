@@ -63,6 +63,9 @@
 /* How long, in nanoseconds, sessiond pauses before it looks for the display again. */
 #define MAIN_DISPLAY_POLL_NS	100000000L
 
+/* The file naming the account logged in by itself at boot (2026-09-29 user decision); without it, the greeter. */
+#define MAIN_AUTOLOGIN_PATH	"/etc/keiland/autologin"
+
 /* Set by SIGTERM and SIGINT: sessiond ends its greeter or session and stops. */
 volatile sig_atomic_t sessiond_stopping;
 
@@ -73,6 +76,7 @@ static int main_wait_display(void);
 static unsigned main_gpu_attaching(void);
 static void main_stop(int signal_number);
 static void main_open_log(void);
+static int main_autologin(struct sessiond_account *account);
 
 /*
  * Runs the session manager until it is stopped or gives the console back.
@@ -145,6 +149,16 @@ main(
 	/* The greeter, then a session for each login, until stopped. */
 	sessiond_log("SESSIOND START greeter=%s session=%s pid=%ld", daemon.greeter, daemon.session, (long)getpid());
 	failures = 0;
+
+	/* The account /etc/keiland/autologin names is logged in once at boot; its Log Out brings the greeter. */
+	memset(&account, 0, sizeof(account));
+	error = main_autologin(&account);
+	if (error == 0) {
+		sessiond_log("SESSIOND AUTOLOGIN user=%s", account.passwd.pw_name);
+		syslog(LOG_NOTICE, "automatic login of %s", account.passwd.pw_name);
+		(void)sessiond_session_run(&daemon, &account);
+		memset(&account, 0, sizeof(account));
+	}
 	while (!sessiond_stopping) {
 		end = sessiond_greeter_run(&daemon, &account);
 
@@ -508,4 +522,51 @@ main_open_log(
 	(void)dup2(descriptor, STDERR_FILENO);
 	(void)close(descriptor);
 	setvbuf(stdout, NULL, _IOLBF, 0);
+}
+
+/*
+ * Looks up the account /etc/keiland/autologin names (its first line) for
+ * the login at boot.  Returns 0, or ENOENT when there is no such file or
+ * no such account (root is never logged in by itself).
+ */
+static int
+main_autologin(
+	struct sessiond_account *account)
+{
+	struct passwd *found;
+	char name[64];
+	size_t length;
+	FILE *file;
+	char *line;
+	int error;
+
+	/* The file's first line, without its newline. */
+	file = fopen(MAIN_AUTOLOGIN_PATH, "r");
+	if (file == NULL)
+		return ENOENT;
+	line = fgets(name, sizeof(name), file);
+	(void)fclose(file);
+	if (line == NULL)
+		return ENOENT;
+	length = strcspn(name, "\r\n \t");
+	name[length] = '\0';
+	if (length == 0U)
+		return ENOENT;
+
+	/* The account by its name. */
+	found = NULL;
+	error = getpwnam_r(name, &account->passwd, account->buffer, sizeof(account->buffer), &found);
+	if (error != 0 || found == NULL) {
+		sessiond_log("SESSIOND AUTOLOGIN no account=%s", name);
+		return ENOENT;
+	}
+
+	/* root is not logged in without a password. */
+	if (account->passwd.pw_uid == 0) {
+		sessiond_log("SESSIOND AUTOLOGIN refused account=%s uid=0", name);
+		return ENOENT;
+	}
+
+	/* Succeeded: the account to log in. */
+	return 0;
 }

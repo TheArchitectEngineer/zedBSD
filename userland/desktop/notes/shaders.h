@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 
+/* The SPIR-V of shaders/draw.vert, validated for Vulkan 1.0. */
 static const uint32_t notes_draw_vert[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000030U, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
@@ -61,6 +62,7 @@ static const uint32_t notes_draw_vert[] = {
 	0x0000002dU, 0x0003003eU, 0x0000002cU, 0x0000002eU, 0x000100fdU, 0x00010038U,
 };
 
+/* The SPIR-V of shaders/fill.frag, validated for Vulkan 1.0. */
 static const uint32_t notes_fill_frag[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000027U, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
@@ -95,6 +97,7 @@ static const uint32_t notes_fill_frag[] = {
 	0x00000026U, 0x000100fdU, 0x00010038U,
 };
 
+/* The SPIR-V of shaders/texture.frag, validated for Vulkan 1.0. */
 static const uint32_t notes_texture_frag[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000018U, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,

@@ -17,7 +17,7 @@ mkdir -p "$out"
 guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
-stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[s]eat-probe" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[s]eat-probe" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[s]eat-probe" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[s]eat-probe" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
 # Fails the run unless a log has (within a few seconds) as many lines matching a pattern as asked (default 1).
@@ -49,11 +49,11 @@ expect_log /tmp/k.log 'SEATPROBE ready run=k'
 expect_log /tmp/k.log 'SEATPROBE keymap format=1 size=[0-9]{4,} text=1 terminated=1'
 expect_log /tmp/k.log 'SEATPROBE repeat rate=25 delay=400'
 expect_log /tmp/k.log 'SEATPROBE output version=4'
-expect_log /tmp/k.log 'SEATPROBE output geometry x=0 y=0 make=zed model=fullscreen'
+expect_log /tmp/k.log 'SEATPROBE output geometry x=0 y=0 make=Unknown model=Unknown'
 expect_log /tmp/k.log 'SEATPROBE output mode flags=3 width=1280 height=800 refresh=[0-9]+'
 expect_log /tmp/k.log 'SEATPROBE output scale=1'
-expect_log /tmp/k.log 'SEATPROBE output name=ZDESKTOP-1'
-expect_log /tmp/k.log 'SEATPROBE output description=zdesktop output 1280x800'
+expect_log /tmp/k.log 'SEATPROBE output name=DISPLAY-1'
+expect_log /tmp/k.log 'SEATPROBE output description=Display 1280x800'
 expect_log /tmp/k.log 'SEATPROBE output done'
 expect_log /tmp/k.log 'SEATPROBE focus'
 check "$out/seat.png" >/dev/null

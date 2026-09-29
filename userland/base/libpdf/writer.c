@@ -611,6 +611,8 @@ pdf_writer_attach_file(
 		free(attachment.mime_type);
 		return ENOMEM;
 	}
+
+	/* The bytes and their count. */
 	if (size != 0)
 		memcpy(attachment.data, data, size);
 	attachment.size = size;
@@ -982,7 +984,9 @@ pdf_buffer_append_number(
 		length--;
 
 	/* A negative number that rounded to zero is written as zero. */
-	if (length == 2 && text[0] == '-' && text[1] == '0') {
+	if (length == 2 &&
+	    text[0] == '-' &&
+	    text[1] == '0') {
 		text[0] = '0';
 		length = 1;
 	}
@@ -1007,7 +1011,9 @@ pdf_buffer_append_literal_string(
 
 	/* Copies each character, escaping parentheses and backslashes. */
 	for (character = text; *character != '\0'; character++) {
-		if (*character == '(' || *character == ')' || *character == '\\') {
+		if (*character == '(' ||
+		    *character == ')' ||
+		    *character == '\\') {
 			escaped[0] = '\\';
 			escaped[1] = *character;
 			pdf_buffer_append(buffer, escaped, 2);
@@ -1562,7 +1568,10 @@ mime_type_is_valid(
 			continue;
 		if (*character >= '0' && *character <= '9')
 			continue;
-		if (*character == '.' || *character == '+' || *character == '-' || *character == '/')
+		if (*character == '.' ||
+		    *character == '+' ||
+		    *character == '-' ||
+		    *character == '/')
 			continue;
 		return 0;
 	}
@@ -1603,6 +1612,8 @@ write_document(
 		if (writer->images[index].alpha != NULL)
 			next_object++;
 	}
+
+	/* The attached file and its specification come last. */
 	file_object = next_object;
 	object_count = file_object;
 	if (writer->has_attachment)

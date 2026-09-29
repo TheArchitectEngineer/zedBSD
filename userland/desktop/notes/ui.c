@@ -106,6 +106,7 @@ static int32_t ui_text_width(struct notes_ui *ui, const char *text);
 static void ui_text(struct notes_ui *ui, int32_t x, int32_t y, const char *text, uint32_t rgb);
 static int32_t ui_label_button(struct notes_ui *ui, int32_t x, const char *label, uint32_t action, uint32_t chosen, int enabled);
 static int32_t ui_eraser_button(struct notes_ui *ui, int32_t x, const struct notes_ui_state *state);
+static int32_t ui_eraser_slack(struct notes_ui *ui, const struct notes_ui_state *state);
 static void ui_add_button(struct notes_ui *ui, int32_t x, int32_t y, int32_t width, int32_t height, uint32_t action);
 static uint32_t ui_codepoint(char byte);
 
@@ -119,8 +120,10 @@ static const uint32_t ui_marker_colors[NOTES_COLORS] = {
 	0xfacc1566U, 0x60a5fa66U, 0xf472b666U, 0x4ade8066U, 0xfb923c66U
 };
 
-/* The pen's and the highlighter's widths in points: fine, medium, bold. */
+/* The pen's widths in points: fine, medium, bold. */
 static const float ui_pen_widths[NOTES_WIDTHS] = { 1.5f, 3.0f, 6.0f };
+
+/* The highlighter's widths in points: fine, medium, bold. */
 static const float ui_marker_widths[NOTES_WIDTHS] = { 10.0f, 16.0f, 24.0f };
 
 /*
@@ -376,6 +379,7 @@ ui_layout(
 	const float *widths;
 	int32_t x;
 	int32_t text_width;
+	int32_t slack;
 	unsigned index;
 	float radius;
 	float cx;
@@ -388,8 +392,16 @@ ui_layout(
 	x = ui_label_button(ui, x, "Pen", NOTES_ACTION_PEN, state->tool, 1);
 	x = ui_label_button(ui, x, "Marker", NOTES_ACTION_HIGHLIGHTER, state->tool, 1);
 	x = ui_eraser_button(ui, x, state);
-	ui_separator(ui, x + UI_GAP / 2 - 1);
-	x += UI_GAP;
+
+	/*
+	 * The eraser's place keeps room for its longer label, so the buttons
+	 * after it stay put when its mode changes.  While it says "Eraser",
+	 * that room widens the gap after the tools, with the separator in its
+	 * middle, instead of the gap before the label (ws035-p122).
+	 */
+	slack = ui_eraser_slack(ui, state);
+	ui_separator(ui, x + (UI_GAP + slack) / 2 - 1);
+	x += UI_GAP + slack;
 
 	/* The colours of the pen, or of the highlighter while it is chosen. */
 	colors = ui_pen_colors;
@@ -900,8 +912,10 @@ ui_label_button(
 
 /*
  * Draws the eraser's button: "Eraser" while it removes whole strokes,
- * "Part Eraser" while it cuts parts.  It is as wide as the longer label
- * either way, so the buttons after it do not move when the mode changes.
+ * "Part Eraser" while it cuts parts.  Like the other tools its label
+ * starts 12 pixels in and its pill fits the label; the room its longer
+ * label needs is left after it (ui_eraser_slack), so the buttons after it
+ * do not move when the mode changes.
  */
 static int32_t
 ui_eraser_button(
@@ -911,17 +925,13 @@ ui_eraser_button(
 {
 	const char *label;
 	int32_t width;
-	int32_t label_width;
-	int32_t widest;
 	uint32_t rgb;
 
-	/* The label of the mode, and the width of the longer one with room on both sides. */
+	/* The label of the mode, with room on both sides (a fixed width without the font). */
 	label = "Eraser";
 	if (state->erase_parts)
 		label = "Part Eraser";
-	label_width = ui_text_width(ui, label);
-	widest = ui_text_width(ui, "Part Eraser");
-	width = widest + 24;
+	width = ui_text_width(ui, label) + 24;
 	if (ui->face == NULL)
 		width = 44;
 
@@ -933,12 +943,37 @@ ui_eraser_button(
 		rgb = UI_ACCENT;
 	}
 
-	/* The label, centred in the button. */
-	ui_text(ui, x + (width - label_width) / 2, UI_BUTTON_TOP, label, rgb);
+	/* The label, where the other tools have theirs. */
+	ui_text(ui, x + 12, UI_BUTTON_TOP, label, rgb);
 	ui_add_button(ui, x, UI_BUTTON_TOP, width, UI_BUTTON_HEIGHT, NOTES_ACTION_ERASER);
 
-	/* Reports where the next button goes. */
+	/* Reports where the next button would go. */
 	return x + width + 2;
+}
+
+/* Measures the room the eraser's button leaves unused: how much wider "Part Eraser" is than the label shown. */
+static int32_t
+ui_eraser_slack(
+	struct notes_ui *ui,
+	const struct notes_ui_state *state)
+{
+	int32_t label_width;
+	int32_t widest;
+
+	/* Without the font every button is as wide, and so is the eraser's in either mode. */
+	if (ui->face == NULL)
+		return 0;
+
+	/* "Part Eraser" is the longer label; while it shows there is no room left. */
+	if (state->erase_parts)
+		return 0;
+
+	/* The two labels' widths. */
+	label_width = ui_text_width(ui, "Eraser");
+	widest = ui_text_width(ui, "Part Eraser");
+
+	/* Reports the difference. */
+	return widest - label_width;
 }
 
 /* Adds a button's rectangle and action, when there is room. */

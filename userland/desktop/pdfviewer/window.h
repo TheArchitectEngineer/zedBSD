@@ -16,6 +16,7 @@
 #define PDFVIEWER_WINDOW_H
 
 #include "viewer.h"
+#include "touch.h"
 
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
@@ -25,6 +26,9 @@
 
 /* How many inputs wait for the main loop at most. */
 #define PV_WINDOW_EVENTS	256U
+
+/* How many touch inputs wait for the main loop at most (ws081-p012). */
+#define PV_WINDOW_TOUCHES	256U
 
 /*
  * The Wayland window: its globals, its surface and roles, the size the
@@ -41,6 +45,7 @@ struct pv_window {
 	struct wl_seat *seat;
 	struct wl_pointer *pointer;
 	struct wl_keyboard *keyboard;
+	struct wl_touch *touch;
 
 	/* The window: its surface and roles. */
 	struct wl_surface *surface;
@@ -77,6 +82,11 @@ struct pv_window {
 	struct pv_event events[PV_WINDOW_EVENTS];
 	unsigned event_first;
 	unsigned event_count;
+
+	/* The touch inputs waiting, a ring of their own (ws081-p012): the oldest's slot and how many. */
+	struct pv_touch_event touches[PV_WINDOW_TOUCHES];
+	unsigned touch_first;
+	unsigned touch_count;
 };
 
 /*
@@ -158,6 +168,7 @@ struct pv_state {
 	size_t count;
 	int mode;
 	int fit;
+	int thumbnails;
 };
 
 /*
@@ -190,6 +201,7 @@ struct pv_titlebar {
 int pv_window_open(struct pv_window *window, const char *display, uint32_t width, uint32_t height, const char *title, const char *application);
 int pv_window_dispatch(struct pv_window *window, int timeout);
 int pv_window_take(struct pv_window *window, struct pv_event *event);
+int pv_window_take_touch(struct pv_window *window, struct pv_touch_event *event);
 int pv_window_repeat(struct pv_window *window, uint64_t now);
 void pv_window_action(struct pv_window *window, uint32_t action);
 void pv_window_title(struct pv_window *window, const char *title);

@@ -93,10 +93,14 @@ pv_chooser_open(
 			if (!is_pdf)
 				continue;
 		}
+
+		/* The entry is listed. */
 		snprintf(entries[count].name, sizeof(entries[count].name), "%s", entry->d_name);
 		entries[count].folder = is_folder;
 		count++;
 	}
+
+	/* The folder is read. */
 	closedir(directory);
 
 	/* Folders first, by name (the parent stays first). */
@@ -106,6 +110,8 @@ pv_chooser_open(
 		if (differs == 0)
 			has_parent = 1;
 	}
+
+	/* Sorts the entries after the parent. */
 	if (count > 1)
 		qsort(entries + has_parent, count - (size_t)has_parent, sizeof(entries[0]), compare_entries);
 
@@ -176,6 +182,8 @@ pv_chooser_path(
 	} else {
 		written = snprintf(path, size, "%s/%s", chooser->folder, chooser->entries[index].name);
 	}
+
+	/* | (size_t)written >= size)|A path longer than the room is refused. */
 	if (written < 0 || (size_t)written >= size)
 		return ENAMETOOLONG;
 

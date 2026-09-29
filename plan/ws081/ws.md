@@ -3,13 +3,13 @@
 # WS081: touch の操作の質（慣性のある scroll と、低い fps の touch の補間）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から。HID の driver・Wayland の compositor・ブラウザ（と Keiland の app）にまたがる計画はこの WS の 1 か所で行う
+Resume point: p001〜p005・p011〜p014 は cleared（2026-09-29）。p010（Files）は実装の途中で枠の上限で止まった: 未 commit の変更が worktree `.claude/worktrees/agent-abe8d4ea8794ae4fc` に残る（files の main.c・window.c・window.h・Makefile、libkeiland の motion.c、試験 host-filestouch.c・p010-guest.sh、host-scroll.c）。次の枠: その worktree から p010 を再開 → p015（Notes の指で書く切り替え、ユーザーの決定）→ p006（ブラウザ）→ p007（実機）→ p009。BUG-099 は診断を入れて tracking
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザー）
@@ -37,15 +37,26 @@ Waylandコンポジタ、ブラウザの3つに渡る実装と調整が必要な
   library（libkeiland）にする。
 - **試験**: touchinject（WS079 p012）で報告の率・jitter を変えた合成の入力（30・60・90・120 Hz、不揃い）を作り、補間の誤差と見た目を測る。
 
-## Phase（案）
+## Phase
+
+2026-09-29 main の判断（design §8・§11）: p002 の範囲の変更を承認、注入の device と touchinject の Scan Time は p002 に、library の置き場所を承認、
+p005 を scroller・gesture の library と app ごとの適用に分ける、p006 は WS074 に依存。design §10 のユーザーの判断は main が伝え、返事までは既定の案で進める。
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws081-p001 | 設計（上の項目、数式の比較の host の試験を含む） | planning | WS079 p012・p013 |
-| ws081-p002 | kernel: HID の報告の時刻の精度、報告の率の測定と公開 | planning | p001 |
-| ws081-p003 | 補間・予測の library（host で試験、率・jitter ごとの誤差の測定） | planning | p001 |
-| ws081-p004 | compositor: resampling・予測の適用、scroll の gesture の判定と app への渡し方、window の drag・Notes の線への適用 | planning | p002、p003 |
-| ws081-p005 | 慣性の scroll の共通の実装（libkeiland）と Files・Terminal・PDF Viewer への適用 | planning | p004 |
-| ws081-p006 | ブラウザ（libbrowser）の慣性の scroll と touch の入力 | planning | p004、WS074 |
+| [ws081-p001](phase001/phase.md) | 設計（上の項目、数式の比較の host の試験を含む）→ [design.md](design.md) | cleared | WS079 p012・p013 |
+| [ws081-p002](phase002/phase.md) | kernel: 1 報告 1 時刻（URB の完了の時刻）と Scan Time の `EV_MSC`/`MSC_TIMESTAMP`、input の層の `EV_MSC`、注入の device と touchinject の Scan Time・µs の間隔（率の測定は p003）、WS079 p009 から移管の規約の是正 | cleared | p001 |
+| [ws081-p003](phase003/phase.md) | 補間・予測の library（host で試験、率・jitter ごとの誤差の測定）→ `userland/desktop/libkeiland/motion.c`（公開は p004） | cleared | p001 |
+| [ws081-p004](phase004/phase.md) | compositor: resampling・予測の適用（window の drag・端のジェスチャー）、wl_touch の時刻（Scan Time の τ）、library の公開（Makefile・exports.map・keiland.h） | cleared | p002、p003 |
+| [ws081-p005](phase005/phase.md) | 慣性の scroll と touch の gesture の共通の library（libkeiland の scroller・gesture、host 試験、`KEILAND_VERSION` 10） | cleared | p004 |
+| [ws081-p014](phase014/phase.md) | 指の drag and drop（compositor の `data.c`・`touch.c`: wl_touch の down の serial で start_drag を受け、drag を指に付ける）と Terminal の選択の文字の指の drag（main の判断 (1)、2026-09-29） | cleared | p011 |
+| [ws081-p010](phase010/phase.md) | Files への適用（tap・長押し・scroll と慣性、指の drag and drop） | planned | p005、p014 |
+| [ws081-p011](phase011/phase.md) | Terminal への適用（scrollback の px 単位の慣性の scroll、tap の click、長押しからの単語の選択） | cleared | p005 |
+| [ws081-p012](phase012/phase.md) | PDF Viewer への適用（scroll と慣性、二本指の拡大、page mode の swipe） | cleared | p005 |
+| [ws081-p013](phase013/phase.md) | Notes の指の scroll・pinch・double tap・toolbar の tap と掌の判定（ペンは線。design §3.8 の指の線は main の指示で取りやめ、§5.6） | cleared | p005 |
+| ws081-p015 | Notes の「指で書く」の切り替え（2026-09-29 ユーザーの決定: 既定は今のまま指は scroll・pinch。toolbar に切り替えを足し、入れた間は一本指で線、二本指で scroll・pinch。実機でペンが使えない場合のデモの備え） | planned | p013 |
+| ws081-p006 | ブラウザの慣性の scroll と touch の入力（browser の shell） | planning | p005、WS074（`browser.h` の scroll の範囲・overscroll） |
 | ws081-p007 | 実機の 10 インチの touch LCD での調整（報告の率の実測、係数の調整） | planning | p005、p006、touch の USB |
 | ws081-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
+
+touchpad の二本指の scroll（目標 1）の Phase は、design §10 の 4 のユーザーの判断の後に置く。

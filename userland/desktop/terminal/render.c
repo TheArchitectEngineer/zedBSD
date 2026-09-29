@@ -879,8 +879,8 @@ render_vertices(
 	VkMemoryRequirements requirements;
 	VkResult error;
 
-	/* Every cell's two triangles and the cursor's. */
-	renderer->vertex_capacity = ((size_t)TERMINAL_MAX_COLUMNS * TERMINAL_MAX_ROWS + 1U) * RENDER_CELL_VERTICES;
+	/* Every cell's two triangles (four rows more, for a view between lines and the padding, ws081-p011) and the cursor's. */
+	renderer->vertex_capacity = ((size_t)TERMINAL_MAX_COLUMNS * (TERMINAL_MAX_ROWS + 4U) + 1U) * RENDER_CELL_VERTICES;
 	memset(&buffer, 0, sizeof(buffer));
 	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	buffer.size = renderer->vertex_capacity * RENDER_VERTEX_FLOATS * sizeof(float);
@@ -1099,8 +1099,15 @@ render_build(
 	uint32_t background;
 	unsigned long line;
 	unsigned long cursor_line;
+	long long signed_line;
+	long long oldest;
+	long long newest;
+	long long top;
+	size_t used;
 	unsigned column;
-	unsigned row;
+	int row;
+	int first_row;
+	int last_row;
 	int inside;
 	int selected;
 	unsigned slot;
@@ -1114,11 +1121,38 @@ render_build(
 	/* The cursor's line, which the window shows only when the view reaches it (ws035-p114). */
 	cursor_line = screen->scrolled + screen->cursor_row;
 
-	/* Each cell of the lines the view shows, row after row, from the padded top left. */
+	/*
+	 * The rows the view shows, moved down by its offset within a line
+	 * (ws081-p011): the rows that meet the window, of the lines the
+	 * terminal keeps (past either end nothing is drawn).
+	 */
+	first_row = 0;
+	last_row = (int)screen->rows - 1;
+	if (screen->view_offset > 0)
+		first_row = -((screen->view_offset + (int)font->cell_height - 1) / (int)font->cell_height);
+	if (screen->view_offset < 0)
+		last_row = (int)screen->rows - 1 + (-screen->view_offset + (int)font->cell_height - 1) / (int)font->cell_height;
+	oldest = (long long)screen->scrolled - (long long)screen->history_count;
+	newest = (long long)screen->scrolled + (long long)screen->rows - 1;
+	top = (long long)screen->scrolled - (long long)screen->view;
+
+	/* Each cell of those lines, row after row, from the padded top left. */
 	start = renderer->vertex_map;
 	vertex = start;
-	for (row = 0U; row < screen->rows; row++) {
-		line = terminal_screen_view_line(screen, row);
+	for (row = first_row; row <= last_row; row++) {
+		/* A line the terminal keeps, whose row meets the window. */
+		signed_line = top + (long long)row;
+		if (signed_line < oldest || signed_line > newest)
+			continue;
+		y = (float)((int)TERMINAL_PADDING + row * (int)font->cell_height + screen->view_offset);
+		if (y + (float)font->cell_height <= 0.0f || y >= (float)renderer->extent.height)
+			continue;
+
+		/* A row that would not fit the vertex buffer is not drawn (the buffer holds the most rows a window shows). */
+		used = (size_t)(vertex - start) / RENDER_VERTEX_FLOATS;
+		if (used + (size_t)screen->columns * RENDER_CELL_VERTICES > renderer->vertex_capacity)
+			break;
+		line = (unsigned long)signed_line;
 		for (column = 0U; column < screen->columns; column++) {
 			/* The line's cell; a line the terminal no longer keeps shows blanks. */
 			cell = terminal_screen_line_cell(screen, column, line);
@@ -1151,7 +1185,6 @@ render_build(
 
 			/* The cell's two triangles. */
 			x = (float)(TERMINAL_PADDING + column * font->cell_width);
-			y = (float)(TERMINAL_PADDING + row * font->cell_height);
 			vertex = render_quad(vertex, font, x, y, (float)font->cell_width, (float)font->cell_height, slot, foreground, background);
 		}
 	}

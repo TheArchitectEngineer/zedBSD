@@ -246,8 +246,9 @@ put_pen(struct descriptor *descriptor)
 /*
  * Builds a touch screen of a number of fingers per report: the Touch Screen
  * application collection, report ID 1, the fingers, a Scan Time (which the
- * driver ignores) and, with WITH_COUNT, a Contact Count 0..16, and a feature
- * report 3 with the Contact Count Maximum (which the driver does not read).
+ * driver reports as MSC_TIMESTAMP, ws081-p002) and, with WITH_COUNT, a Contact
+ * Count 0..16, and a feature report 3 with the Contact Count Maximum (which
+ * the driver does not read).
  */
 static void
 build(struct descriptor *descriptor, unsigned fingers, unsigned flags)
@@ -490,7 +491,7 @@ test_ten_fingers(void)
 	/* The device it is published as. */
 	error = drv_hid_touch_describe(&touch, &description);
 	check(error == 0 && description.slots == 10, "ten slots");
-	check(description.capability_count == 8, "eight capabilities");
+	check(description.capability_count == 9, "nine capabilities (MSC_TIMESTAMP for the Scan Time, ws081-p002)");
 	found = 0;
 	for (index = 0; index < description.capability_count; index++) {
 		if (description.capabilities[index].type == EV_KEY &&

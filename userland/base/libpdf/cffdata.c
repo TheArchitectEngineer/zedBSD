@@ -448,6 +448,8 @@ const unsigned short pdf_cff_expert_charset[] = {
 	358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373,
 	374, 375, 376, 377, 378
 };
+
+/* The number of glyphs the Expert charset names. */
 const size_t pdf_cff_expert_charset_count = sizeof(pdf_cff_expert_charset) / sizeof(pdf_cff_expert_charset[0]);
 
 /* The predefined ExpertSubset charset: the SIDs of glyphs 1 onward. */
@@ -459,4 +461,6 @@ const unsigned short pdf_cff_expert_subset_charset[] = {
 	164, 169, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340,
 	341, 342, 343, 344, 345, 346
 };
+
+/* The number of glyphs the ExpertSubset charset names. */
 const size_t pdf_cff_expert_subset_charset_count = sizeof(pdf_cff_expert_subset_charset) / sizeof(pdf_cff_expert_subset_charset[0]);

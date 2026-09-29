@@ -397,6 +397,11 @@ drv_input_capability_bits(
 		*size = sizeof(state->abs_bits);
 		/* Succeeded. */
 		return 0;
+	case EV_MSC:
+		/* The miscellaneous codes (a touch screen's scan time). */
+		*bits = (const uint8_t *)state->msc_bits;
+		*size = sizeof(state->msc_bits);
+		return 0;
 	default:
 		/* Failed. */
 		return EINVAL;
@@ -523,6 +528,10 @@ drv_input_capability_event(
 		state->abs_info[code].value = value;
 
 		/* Reports operation failure. */
+		return 1;
+	} else if (type == EV_MSC && code <= MSC_MAX &&
+		   bit_test(state->msc_bits, code)) {
+		/* A declared miscellaneous event passes; it changes no state. */
 		return 1;
 	}
 
@@ -843,7 +852,7 @@ drv_input_device_unregister(
 }
 
 /*
- * Publishes one report of events from a device.
+ * Publishes one event from a device, stamped with the time it is handed on.
  */
 void
 drv_input_device_emit(
@@ -852,15 +861,35 @@ drv_input_device_emit(
 	uint16_t code,
 	int32_t value)
 {
-	struct input_report report;
 	uint64_t milliseconds;
+
+	/* The event is stamped now. */
+	milliseconds = clock_milliseconds(NULL);
+	drv_input_device_emit_at(device, type, code, value, milliseconds);
+}
+
+/*
+ * Publishes one event from a device, stamped with a time the caller took.
+ *
+ * A driver stamps every event of one report with the time the report
+ * arrived, so that the events of one frame share one time and a reader
+ * sees when the device sent it, not when a worker thread handed it on.
+ */
+void
+drv_input_device_emit_at(
+	struct input_device *device,
+	uint16_t type,
+	uint16_t code,
+	int32_t value,
+	uint64_t milliseconds)
+{
+	struct input_report report;
 	unsigned long irq, publication_irq;
 	int published = 0;
 
-	/* Handles the device availability. */
+	/* Refuses a missing device. */
 	if (device == NULL)
 		return;
-	milliseconds = clock_milliseconds(NULL);
 	report_init(&report, device);
 	report_event(&report, milliseconds, type, code, value, NULL);
 	publication_irq = spin_lock_irqsave(&device->publication_lock);
@@ -1616,6 +1645,11 @@ capability_bits_mutable(
 		*size = sizeof(state->abs_bits);
 		/* Succeeded. */
 		return 0;
+	case EV_MSC:
+		/* The miscellaneous codes (a touch screen's scan time). */
+		*bits = state->msc_bits;
+		*size = sizeof(state->msc_bits);
+		return 0;
 	default:
 		/* Failed. */
 		return EINVAL;
@@ -1642,6 +1676,9 @@ capability_code_valid(
 	case EV_ABS:
 		/* Returns the computed result. */
 		return code <= ABS_MAX;
+	case EV_MSC:
+		/* A miscellaneous code the bitmap has room for. */
+		return code <= MSC_MAX;
 	default:
 		/* Succeeded. */
 		return 0;

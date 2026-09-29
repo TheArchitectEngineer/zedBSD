@@ -91,6 +91,13 @@ int drv_input_device_register(const struct input_device_info *,
 			  struct input_device **);
 void drv_input_device_unregister(struct input_device *);
 void drv_input_device_emit(struct input_device *, uint16_t, uint16_t, int32_t);
+/*
+ * Emits one event stamped with a time the caller took (CLOCK_MONOTONIC
+ * milliseconds): a driver gives every event of one report the time the
+ * report arrived, not the time each event is handed on.
+ */
+void drv_input_device_emit_at(struct input_device *, uint16_t, uint16_t, int32_t,
+	uint64_t);
 void drv_input_device_emit_key_event(struct input_device *,
 	const struct kern_key_event *);
 int drv_input_subscribe(struct input_subscription *, input_subscriber_callback_t,

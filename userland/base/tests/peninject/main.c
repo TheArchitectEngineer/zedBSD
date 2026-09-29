@@ -212,8 +212,12 @@ main(
 		status = replay(NULL);
 	}
 
-	/* Succeeded or failed as the replay did. */
-	return status;
+	/* Reports a replay that failed. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the whole script was replayed. */
+	return 0;
 }
 
 /* Replays one script through the injector. */
@@ -387,8 +391,12 @@ run_command(
 		break;
 	}
 
-	/* Succeeded or failed as the command did. */
-	return status;
+	/* Reports a command that failed. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the command ran. */
+	return 0;
 }
 
 /* Runs size: declares the pen; it must be the first command. */
@@ -778,6 +786,7 @@ check(void)
 	int second;
 	int error;
 	unsigned index;
+	const char *verdict;
 
 	/* Nothing has been checked yet. */
 	memset(&result, 0, sizeof(result));
@@ -880,8 +889,11 @@ check(void)
 	/* Closing the first open removes the pen. */
 	close(first);
 
-	/* Reports the totals. */
-	printf("PENCHECK result=%s passed=%u failed=%u\n", result.failed == 0 ? "ok" : "FAIL", result.passed, result.failed);
+	/* Reports the totals: ok when no check failed. */
+	verdict = "ok";
+	if (result.failed != 0)
+		verdict = "FAIL";
+	printf("PENCHECK result=%s passed=%u failed=%u\n", verdict, result.passed, result.failed);
 	if (result.failed != 0)
 		return 1;
 
@@ -1015,6 +1027,7 @@ dump(
 	int found;
 	int ready;
 	int fd;
+	int ended;
 
 	/* Waits for the node, which appears when the pen is declared. */
 	deadline = now_ms() + milliseconds;
@@ -1073,7 +1086,11 @@ dump(
 		if (bytes < 0 && errno == EAGAIN)
 			continue;
 		if (bytes <= 0) {
-			printf("PENDUMP end events=%lu reason=gone errno=%d\n", total, bytes < 0 ? errno : 0);
+			/* The error of a failed read, none for the end of the node. */
+			ended = 0;
+			if (bytes < 0)
+				ended = errno;
+			printf("PENDUMP end events=%lu reason=gone errno=%d\n", total, ended);
 			break;
 		}
 

@@ -114,6 +114,7 @@ struct venus_transport {
 	uint16_t queue_size;
 	unsigned strict_queue;
 	unsigned quiesce;
+	unsigned host_scanout;
 	uint32_t features;
 	uint16_t available;
 	uint16_t used;

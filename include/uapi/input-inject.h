@@ -30,6 +30,13 @@
  * and runs them through the USB touch screen's state machine, so readers
  * see what a USB touch screen would give them.
  *
+ * A touch setup whose reserved word has INPUT_INJECT_TOUCH_SCAN_TIME set
+ * declares a screen with a Scan Time (its own clock, 100 us a unit,
+ * wrapping at 65536): each frame's reserved word is then its Scan Time
+ * (0..65535), and readers get MSC_TIMESTAMP before each SYN_REPORT, as from
+ * a USB touch screen with one.  Without it a frame's reserved word is 0.
+ * Every other bit of the setup's reserved word is 0.
+ *
  * The device appears as /dev/input/eventN.  Closing the file removes it.
  */
 
@@ -54,6 +61,11 @@ extern "C" {
 #define INPUT_INJECT_TOUCH_CONTACTS	10U
 #define INPUT_INJECT_CONTACT_ID_MAX	255
 
+/* A touch setup's reserved word: the frames carry a Scan Time (100 us units, 0..INPUT_INJECT_SCAN_TIME_MAX). */
+#define INPUT_INJECT_TOUCH_SCAN_TIME	1U
+#define INPUT_INJECT_SCAN_TIME_MAX	65535U
+
+/* The first write on an open: the device it declares. */
 struct input_inject_setup {
 	uint32_t magic;
 	uint32_t kind;
@@ -61,6 +73,7 @@ struct input_inject_setup {
 	int32_t y_max;
 	/* Touch: fingers per report (1..INPUT_INJECT_TOUCH_CONTACTS); pen: 0. */
 	uint32_t report_contacts;
+	/* Touch: 0 or INPUT_INJECT_TOUCH_SCAN_TIME; pen: 0. */
 	uint32_t reserved;
 };
 
@@ -77,6 +90,7 @@ struct input_inject_contact {
 /* One frame of a touch screen: count fingers (0 lifts every finger). */
 struct input_inject_touch_frame {
 	uint32_t count;
+	/* The frame's Scan Time on a screen declared with one; otherwise 0. */
 	uint32_t reserved;
 	struct input_inject_contact contacts[INPUT_INJECT_TOUCH_CONTACTS];
 };

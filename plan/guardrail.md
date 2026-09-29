@@ -37,6 +37,8 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
   機能の回帰は guest を起動しない host の試験で行い、guest の操作はシリアル（`plan/tools/guest/serial.py`）か SSH
   （`plan/tools/guest/guest.sh`）で対話する。不具合の解析は QEMU の gdbstub・monitor・QMP で行う。詳細は [Master](master.md) の Tools 節。
 - 回帰の範囲は Phase の性質で決める。コードの意味を変えない refactor は build（warning 0）と最後の boot test だけ。
+- 表示の build（2026-09-29 ユーザー）: demo・実機の image は既定（logo を出し `kmsg=quiet`）。GPU の driver を直す Phase では logo を無効にし
+  kernel の message を画面に残す（`ZEDBSD_GRAPHICAL_BOOT=n "ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"`）。
 - ユーザーの受け入れの範囲を守る。取り下げられた網羅的な異常系試験・繰り返しの実機起動・免除された実機関門を戻さない。
   QEMU の証拠と実機の証拠を分けて書く。
 

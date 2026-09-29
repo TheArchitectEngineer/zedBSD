@@ -155,6 +155,8 @@ pdf_stroke_path(
 		if (error != 0)
 			break;
 	}
+
+	/* The subpath's points are not needed any more. */
 	free(line.points);
 
 	/* Reports a failure with nothing kept. */
@@ -436,6 +438,8 @@ stroke_dashed(
 		if (dash.on && dash_line.count >= 2)
 			error = stroke_open(dash_line.points, dash_line.count, 0, style, output);
 	}
+
+	/* The dash's points are not needed any more; a failure is reported after them. */
 	free(dash_line.points);
 	if (error != 0)
 		return error;
@@ -503,6 +507,8 @@ dash_segment(
 		} else {
 			error = line_append(dash_line, x, y);
 		}
+
+		/* Reports a dash that could not be stroked or grown. */
 		if (error != 0)
 			return error;
 
@@ -765,7 +771,9 @@ emit_join(
 	/* A straight corner needs no join. */
 	cross = in_x * out_y - in_y * out_x;
 	dot = in_x * out_x + in_y * out_y;
-	if (cross < 1e-12 && cross > -1e-12 && dot > 0.0)
+	if (cross < 1e-12 &&
+	    cross > -1e-12 &&
+	    dot > 0.0)
 		return 0;
 
 	/* The outer side: the normals' side opposite the turn. */
@@ -982,6 +990,8 @@ emit_polygon(
 		output->points[output->point_count] = corners[index];
 		output->point_count++;
 	}
+
+	/* The polygon is closed. */
 	output->verbs[output->verb_count] = PDF_PATH_CLOSE;
 	output->verb_count++;
 
@@ -1064,6 +1074,8 @@ dash_start(
 			dash->left -= phase;
 			break;
 		}
+
+		/* The phase passes the whole entry: the next entry starts. */
 		phase -= dash->left;
 		dash->index = (dash->index + 1) % dash->count;
 		dash->left = dash->pattern[dash->index];

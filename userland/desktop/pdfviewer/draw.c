@@ -6,12 +6,18 @@
  */
 
 /*
- * The frame of PDF Viewer: the pages where the view lays them out, the
- * page indicator, the notice that a page drawn has content libpdf could
- * not show, the message, and the file chooser over everything.
+ * The frame of PDF Viewer: the sidebar of thumbnails on the left while it
+ * is shown, and beside it the pages where the view lays them out, the page
+ * indicator, the notice that a page drawn has content libpdf could not
+ * show, the message, and the file chooser over them; the password card over
+ * everything.
  *
  * The pages come from the document's cache of rasters (document.c), made
- * when a page is first drawn at the scale in force.
+ * when a page is first drawn at the scale in force.  The pages' part of the
+ * frame is a canvas over the frame's pixels right of the sidebar, so that
+ * everything laid out for the pages draws there as in a window of its own.
+ * A thumbnail not drawn yet is a white page with its number; the view
+ * draws thumbnails while it waits (pv_app_prefetch()).
  */
 
 #include "viewer.h"
@@ -38,6 +44,16 @@
 #define DRAW_NOTICE		0xf2f7f8faU
 #define DRAW_NOTICE_TEXT	0xff3a4150U
 #define DRAW_NOTICE_MARK	0xffe0a526U
+#define DRAW_SIDEBAR		0xffeceef2U
+#define DRAW_SIDEBAR_EDGE	0xffcfd3daU
+#define DRAW_CURRENT		0x402f7cf6U
+#define DRAW_CURRENT_EDGE	0xff2f7cf6U
+#define DRAW_FIELD		0xffffffffU
+#define DRAW_FIELD_EDGE		0xffb9bfc9U
+#define DRAW_WRONG		0xffc0392bU
+#define DRAW_BUTTON		0xffe3e6ebU
+#define DRAW_BUTTON_DEFAULT	0xff2f7cf6U
+#define DRAW_LOCK		0xff5a6070U
 
 /* What the notice says, and the display-list flags that call for it. */
 #define DRAW_NOTICE_WORDS	"Some content could not be shown"
@@ -56,6 +72,10 @@ static void draw_notice(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_message(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_chooser(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_centred(struct pv_app *app, struct pv_canvas *canvas, int baseline, const char *text, unsigned pixels, uint32_t color);
+static void draw_sidebar(struct pv_app *app, struct pv_canvas *canvas, int width);
+static void draw_thumbnail(struct pv_app *app, struct pv_canvas *canvas, size_t index, size_t current);
+static void draw_password(struct pv_app *app, struct pv_canvas *canvas);
+static void draw_button(struct pv_app *app, struct pv_canvas *canvas, int x, int y, const char *label, int is_default);
 
 /*
  * Draws the frame.
@@ -65,27 +85,49 @@ pv_draw(
 	struct pv_app *app,
 	struct pv_canvas *canvas)
 {
+	struct pv_canvas pages;
+	int sidebar;
+
 	/* The ground; the pages drawn gather their flags anew. */
 	pv_canvas_fill(canvas, 0, 0, canvas->width, canvas->height, DRAW_BACKGROUND);
 	app->shown_flags = 0;
 
+	/* The sidebar, when it is shown. */
+	sidebar = pv_app_sidebar_width(app);
+	if (sidebar > canvas->width)
+		sidebar = canvas->width;
+	if (sidebar > 0)
+		draw_sidebar(app, canvas, sidebar);
+
+	/* The pages' canvas: the frame right of the sidebar. */
+	pages.pixels = canvas->pixels + sidebar;
+	pages.stride = canvas->stride;
+	pages.width = canvas->width - sidebar;
+	pages.height = canvas->height;
+
 	/* The pages, by the mode, or the empty window's hint. */
 	if (!app->has_document) {
-		draw_empty(app, canvas);
+		draw_empty(app, &pages);
 	} else if (app->mode == PV_MODE_SCROLL) {
-		draw_scroll(app, canvas);
+		draw_scroll(app, &pages);
 	} else {
-		draw_single(app, canvas);
+		draw_single(app, &pages);
 	}
 
-	/* The page indicator, the notice, the message and the chooser over the pages. */
+	/* The page indicator, the notice, the message and the chooser over the pages (the chooser dims the sidebar too). */
 	if (app->has_document && app->indicator_until != 0)
-		draw_indicator(app, canvas);
-	draw_notice(app, canvas);
+		draw_indicator(app, &pages);
+	draw_notice(app, &pages);
 	if (app->message[0] != '\0')
-		draw_message(app, canvas);
-	if (app->choosing)
-		draw_chooser(app, canvas);
+		draw_message(app, &pages);
+	if (app->choosing) {
+		pv_canvas_blend(canvas, 0, 0, sidebar, canvas->height, DRAW_DIM);
+		draw_chooser(app, &pages);
+	}
+
+	/* The password card over everything. */
+	if (app->asking_password)
+		draw_password(app, canvas);
 	app->dirty = 0;
 }
 
@@ -110,12 +152,24 @@ draw_page(
 	height = (int)ceil(app->document.pages[index].height * scale - 1e-6);
 
 	/* Nothing to draw for a page outside the frame. */
-	if (x >= canvas->width || y >= canvas->height || x + width <= 0 || y + height <= 0)
+	if (x >= canvas->width ||
+	    y >= canvas->height ||
+	    x + width <= 0 ||
+	    y + height <= 0)
 		return;
 
 	/* A soft shadow and a thin edge around it. */
 	pv_canvas_blend(canvas, x - 1, y + 2, width + 2, height + 2, DRAW_SHADOW);
 	pv_canvas_blend(canvas, x - 1, y - 1, width + 2, height + 2, DRAW_EDGE);
+
+	/* While two fingers zoom, a raster at another scale is stretched rather than drawn again (ws081-p012). */
+	page = &app->document.pages[index];
+	if (app->zooming && page->raster != NULL) {
+		if (page->list != NULL)
+			app->shown_flags |= page->list->flags;
+		pv_canvas_stretch(canvas, x, y, width, height, page->raster, page->raster_width, page->raster_height);
+		return;
+	}
 
 	/* The raster at the scale; a page without one is white. */
 	error = pv_document_raster(&app->document, index, scale, &page);
@@ -125,6 +179,8 @@ draw_page(
 		pv_canvas_fill(canvas, x, y, width, height, 0xffffffffU);
 		return;
 	}
+
+	/* The page's raster. */
 	pv_canvas_copy(canvas, x, y, page->raster, page->raster_width, page->raster_height);
 }
 
@@ -402,6 +458,8 @@ draw_chooser(
 			break;
 		folder++;
 	}
+
+	/* The folder, and a line under the header. */
 	pv_text_draw(app->text, canvas, x + 18, y + 44, folder, 13U, DRAW_HINT);
 	pv_canvas_fill(canvas, x + 12, y + PV_CHOOSER_HEADER - 1, width - 24, 1, 0xffd4d7dcU);
 
@@ -428,12 +486,208 @@ draw_chooser(
 			pv_canvas_round(canvas, x + 22, row_y + 8, 14, 18, 2, DRAW_FILE);
 			snprintf(line, sizeof(line), "%s", entry->name);
 		}
+
+		/* The entry's name. */
 		pv_text_draw(app->text, canvas, x + 48, row_y + 22, line, DRAW_TEXT, DRAW_TITLE);
 	}
 
 	/* An empty folder says so. */
 	if (app->chooser.count == 0)
 		pv_text_draw(app->text, canvas, x + 18, y + PV_CHOOSER_HEADER + 24, "No PDF files here", DRAW_TEXT, DRAW_HINT);
+}
+
+/*
+ * Draws the sidebar: its panel and edge, and the slot of each page that
+ * meets its view, the page in view marked.  The thumbnails far from the
+ * view may go afterwards.
+ */
+static void
+draw_sidebar(
+	struct pv_app *app,
+	struct pv_canvas *canvas,
+	int width)
+{
+	struct pv_canvas panel;
+	size_t first;
+	size_t last;
+	size_t index;
+	size_t current;
+
+	/* The sidebar's own canvas, so that nothing drawn in it spills onto the pages. */
+	panel.pixels = canvas->pixels;
+	panel.stride = canvas->stride;
+	panel.width = width;
+	panel.height = canvas->height;
+
+	/* The panel, and its edge towards the pages. */
+	pv_canvas_fill(&panel, 0, 0, width, panel.height, DRAW_SIDEBAR);
+	pv_canvas_fill(&panel, width - 1, 0, 1, panel.height, DRAW_SIDEBAR_EDGE);
+
+	/* The slots in view; nothing more for a document without pages. */
+	pv_thumbnail_range(app, &first, &last);
+	if (last < first)
+		return;
+	current = pv_app_current_page(app);
+	for (index = first; index <= last; index++)
+		draw_thumbnail(app, &panel, index, current);
+
+	/* The thumbnails far from the view may go when they take too much memory. */
+	if (first > 16) {
+		first -= 16;
+	} else {
+		first = 0;
+	}
+
+	/* Frees those outside sixteen slots around the view. */
+	pv_document_trim_thumbnails(&app->document, first, last + 16);
+}
+
+/*
+ * Draws one page's slot in the sidebar: the mark of the page in view, the
+ * thumbnail (a white page until it is drawn) with a shadow and an edge, and
+ * the page's number under it.
+ */
+static void
+draw_thumbnail(
+	struct pv_app *app,
+	struct pv_canvas *canvas,
+	size_t index,
+	size_t current)
+{
+	const struct pv_page *page;
+	char number[32];
+	int x;
+	int y;
+	int width;
+	int height;
+	int label_width;
+	int baseline;
+
+	/* Where the thumbnail stands, and the baseline of its number. */
+	pv_thumbnail_place(app, index, &x, &y, &width, &height);
+	baseline = y + height + 20;
+
+	/* The page in view: a tinted band behind its slot and a blue edge around its thumbnail. */
+	if (index == current) {
+		pv_canvas_round(canvas, 8, y - 6, canvas->width - 17, height + 34, 8, DRAW_CURRENT);
+		pv_canvas_round(canvas, x - 3, y - 3, width + 6, height + 6, 3, DRAW_CURRENT_EDGE);
+	}
+
+	/* A soft shadow and a thin edge. */
+	pv_canvas_blend(canvas, x - 1, y + 1, width + 2, height + 2, DRAW_SHADOW);
+	pv_canvas_blend(canvas, x - 1, y - 1, width + 2, height + 2, DRAW_EDGE);
+
+	/* The thumbnail once drawn, or a white page. */
+	page = &app->document.pages[index];
+	if (page->thumbnail != NULL) {
+		pv_canvas_copy(canvas, x, y, page->thumbnail, page->thumbnail_width, page->thumbnail_height);
+	} else {
+		pv_canvas_fill(canvas, x, y, width, height, 0xffffffffU);
+	}
+
+	/* The page's number, centred under it. */
+	snprintf(number, sizeof(number), "%lu", (unsigned long)(index + 1));
+	label_width = pv_text_width(app->text, number, 13U);
+	pv_text_draw(app->text, canvas, (canvas->width - label_width) / 2, baseline, number, 13U, DRAW_TITLE);
+}
+
+/*
+ * Draws the password card over the dimmed frame: what it asks, the field
+ * with a dot for each character typed and the caret, a word when the last
+ * password was refused, and the Cancel and Open buttons.
+ */
+static void
+draw_password(
+	struct pv_app *app,
+	struct pv_canvas *canvas)
+{
+	char dots[3 * PV_PASSWORD_MAX + 1];
+	char line[PV_PATH_MAX + 64];
+	const char *name;
+	size_t index;
+	int x;
+	int y;
+	int width;
+	int height;
+	int field_y;
+	int dots_width;
+	int open_x;
+	int buttons_y;
+
+	/* The frame dimmed, and the card with a soft shadow. */
+	pv_canvas_blend(canvas, 0, 0, canvas->width, canvas->height, DRAW_DIM);
+	pv_password_layout(app, &x, &y, &width, &height);
+	pv_canvas_round(canvas, x + 1, y + 3, width, height, 14, DRAW_SHADOW);
+	pv_canvas_round(canvas, x, y, width, height, 14, DRAW_CARD);
+
+	/* A small padlock: its shackle and its body. */
+	pv_canvas_round(canvas, x + 24, y + 20, 16, 16, 8, DRAW_LOCK);
+	pv_canvas_round(canvas, x + 27, y + 23, 10, 12, 5, DRAW_CARD);
+	pv_canvas_round(canvas, x + 21, y + 30, 22, 17, 4, DRAW_LOCK);
+
+	/* What the card asks, and for which file. */
+	name = strrchr(app->password_path, '/');
+	if (name == NULL) {
+		name = app->password_path;
+	} else {
+		name++;
+	}
+
+	/* The title beside the padlock, and the file's name under it. */
+	pv_text_draw(app->text, canvas, x + 56, y + 38, "This document is protected", DRAW_TEXT_LARGE, DRAW_TITLE);
+	snprintf(line, sizeof(line), "Enter the password to open %s.", name);
+	pv_text_draw(app->text, canvas, x + 24, y + 78, line, 14U, DRAW_HINT);
+
+	/* The field: a dot for each character typed, and the caret after them. */
+	field_y = y + 94;
+	pv_canvas_round(canvas, x + 23, field_y - 1, width - 46, 38, 8, DRAW_FIELD_EDGE);
+	pv_canvas_round(canvas, x + 24, field_y, width - 48, 36, 7, DRAW_FIELD);
+	dots[0] = '\0';
+	for (index = 0; index < app->password_length; index++)
+		strcat(dots, "\xe2\x80\xa2");
+	dots_width = pv_text_width(app->text, dots, 16U);
+	if (dots_width > width - 72)
+		dots_width = width - 72;
+	pv_text_draw(app->text, canvas, x + 36, field_y + 24, dots, 16U, DRAW_TITLE);
+	pv_canvas_fill(canvas, x + 38 + dots_width, field_y + 9, 2, 19, DRAW_CURRENT_EDGE);
+
+	/* The refusal of the last password, in red under the field. */
+	if (app->password_wrong)
+		pv_text_draw(app->text, canvas, x + 24, field_y + 58, "The password is not correct.", 14U, DRAW_WRONG);
+
+	/* Cancel, and Open, the default, in the bottom right corner. */
+	open_x = x + width - PV_PASSWORD_BUTTON_INSET - PV_PASSWORD_BUTTON_WIDTH;
+	buttons_y = y + height - PV_PASSWORD_BUTTON_INSET - PV_PASSWORD_BUTTON_HEIGHT;
+	draw_button(app, canvas, open_x - 12 - PV_PASSWORD_BUTTON_WIDTH, buttons_y, "Cancel", 0);
+	draw_button(app, canvas, open_x, buttons_y, "Open", 1);
+}
+
+/* Draws a button of the password card with its label centred; the default button is blue with white words. */
+static void
+draw_button(
+	struct pv_app *app,
+	struct pv_canvas *canvas,
+	int x,
+	int y,
+	const char *label,
+	int is_default)
+{
+	uint32_t fill;
+	uint32_t ink;
+	int label_width;
+
+	/* The colours by the kind of button. */
+	fill = DRAW_BUTTON;
+	ink = DRAW_TITLE;
+	if (is_default) {
+		fill = DRAW_BUTTON_DEFAULT;
+		ink = 0xffffffffU;
+	}
+
+	/* The button and its label. */
+	pv_canvas_round(canvas, x, y, PV_PASSWORD_BUTTON_WIDTH, PV_PASSWORD_BUTTON_HEIGHT, 9, fill);
+	label_width = pv_text_width(app->text, label, DRAW_TEXT);
+	pv_text_draw(app->text, canvas, x + (PV_PASSWORD_BUTTON_WIDTH - label_width) / 2, y + 23, label, DRAW_TEXT, ink);
 }
 
 /* Draws a line of text centred across the frame. */

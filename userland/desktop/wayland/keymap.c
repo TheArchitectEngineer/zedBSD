@@ -7,13 +7,13 @@
 
 /*
  * The keyboard's XKB keymap (ws035-p078): a US layout that toolkits
- * compile with libxkbcommon to turn the evdev key codes zdesktop sends into
+ * compile with libxkbcommon to turn the evdev key codes the compositor sends into
  * characters.
  *
  * The keymap is complete in itself (no include statements), as the
  * wl_keyboard.keymap format xkb_v1 asks.  Its key codes are the evdev codes
  * plus 8; its real modifiers are in the standard order, so the masks
- * zdesktop sends in wl_keyboard.modifiers (Shift 0x1, Lock 0x2, Control
+ * the compositor sends in wl_keyboard.modifiers (Shift 0x1, Lock 0x2, Control
  * 0x4, Mod1 = Alt 0x8, Mod2 = NumLock 0x10, Mod4 = Super 0x40) mean the same
  * to the client.  It is written once to a file at start-up, and each
  * keyboard gets a read-only descriptor of it.
@@ -33,7 +33,7 @@
  */
 static const char keymap_text[] =
 	"xkb_keymap {\n"
-	"xkb_keycodes \"zedbsd\" {\n"
+	"xkb_keycodes \"evdev\" {\n"
 	"\tminimum = 8;\n"
 	"\tmaximum = 255;\n"
 	"\t<ESC> = 9; <AE01> = 10; <AE02> = 11; <AE03> = 12; <AE04> = 13; <AE05> = 14;\n"
@@ -60,7 +60,7 @@ static const char keymap_text[] =
 	"\tindicator 1 = \"Caps Lock\";\n"
 	"\tindicator 2 = \"Num Lock\";\n"
 	"};\n"
-	"xkb_types \"zedbsd\" {\n"
+	"xkb_types \"basic\" {\n"
 	"\tvirtual_modifiers NumLock,Alt,Super;\n"
 	"\ttype \"ONE_LEVEL\" {\n"
 	"\t\tmodifiers = none;\n"
@@ -89,7 +89,7 @@ static const char keymap_text[] =
 	"\t\tlevel_name[Level2] = \"Number\";\n"
 	"\t};\n"
 	"};\n"
-	"xkb_compatibility \"zedbsd\" {\n"
+	"xkb_compatibility \"basic\" {\n"
 	"\tvirtual_modifiers NumLock,Alt,Super;\n"
 	"\tinterpret.useModMapMods = AnyLevel;\n"
 	"\tinterpret.repeat = False;\n"
@@ -107,7 +107,7 @@ static const char keymap_text[] =
 	"\tindicator \"Caps Lock\" { whichModState = locked; modifiers = Lock; };\n"
 	"\tindicator \"Num Lock\" { whichModState = locked; modifiers = NumLock; };\n"
 	"};\n"
-	"xkb_symbols \"zedbsd\" {\n"
+	"xkb_symbols \"us\" {\n"
 	"\tname[group1] = \"English (US)\";\n"
 	"\tkey <ESC> { [ Escape ] };\n"
 	"\tkey <AE01> { [ 1, exclam ] };\n"

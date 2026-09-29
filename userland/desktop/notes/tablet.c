@@ -601,9 +601,13 @@ tool_frame(
 	if (state->touching && !state->down) {
 		state->down = 1;
 		tool_event(state, NOTES_INPUT_DOWN, time);
-	} else if (state->down && state->moved && !state->lifting) {
+	} else if (state->down &&
+	           state->moved &&
+	           !state->lifting) {
 		tool_event(state, NOTES_INPUT_MOTION, time);
-	} else if (!state->down && state->near && state->moved) {
+	} else if (!state->down &&
+	           state->near &&
+	           state->moved) {
 		/* A move over the window without touching it. */
 		tool_event(state, NOTES_INPUT_HOVER, time);
 	}

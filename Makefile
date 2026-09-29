@@ -195,8 +195,11 @@ CONFIG_DRIVER_PCI_UHCI ?= y
 CONFIG_DRIVER_PCI_EHCI ?= y
 CONFIG_DRIVER_PCI_XHCI ?= y
 CONFIG_DRIVER_PCI_NVME ?= y
-CONFIG_DRIVER_PCI_VENUS ?= n
-CONFIG_DRIVER_PCI_I915 ?= n
+# The GPU drivers are on by default where they build (amd64), so the default
+# image starts the desktop: Venus on QEMU, the i915 on Intel machines
+# (2026-09-29 user decision).
+CONFIG_DRIVER_PCI_VENUS ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
+CONFIG_DRIVER_PCI_I915 ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 # HD Audio is on by default where its driver builds (amd64); a config written
 # by the menu names it explicitly.
 CONFIG_DRIVER_PCI_HDA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
@@ -252,10 +255,12 @@ USERLAND_$(1)_DATA := $(13)
 USERLAND_$(1)_HEADERS := $(14)
 USERLAND_$(1)_INSTALL_DIR := $(if $(15),$(15),bin)
 endef
-USERLAND_PACKAGE_MAKEFILES := $(sort \
+# The retired userland/noct checkout is not a package source. An old
+# submodule worktree may remain locally; never include its nested Makefiles.
+USERLAND_PACKAGE_MAKEFILES := $(filter-out userland/noct/%,$(sort \
 	$(wildcard userland/*/Makefile) \
 	$(wildcard userland/*/*/Makefile) \
-	$(wildcard userland/*/*/*/Makefile))
+	$(wildcard userland/*/*/*/Makefile)))
 include $(USERLAND_PACKAGE_MAKEFILES)
 ZEDBSD_ALL_USER_PROGRAMS := $(foreach program,$(USERLAND_PACKAGES),\
 	$(if $(filter y,$(USERLAND_$(program)_SELECTABLE)),$(program)))
@@ -460,7 +465,7 @@ list-targets:
 # The LLVM source is verified, and the host generators the clang package's
 # cross build runs are built from it, here: with the binary cache nothing else
 # does either before packages start using (and patching) that source tree.
-toolchain: $(NOCT_HOST_BUILD_STAMP) noct-toolchain-smoke llvm-toolchain \
+toolchain: $(NOCT_HOST_BUILD_STAMP) llvm-toolchain \
 	sysroots $(ZEDBSD_LLVM_SOURCE_VERIFIED) $(ZEDBSD_LLVM_NATIVE_STAMP)
 
 .PHONY: download
@@ -891,6 +896,12 @@ ZEDBSD_ROOTFS_DEVELOPMENT ?= y
 # amd64 native zedbsd.cfg gets; the same lines can be edited on a machine's
 # ESP afterwards (docs/reference/kernel-boot-parameters.md).
 ZEDBSD_GRAPHICAL_BOOT ?= y
+# 2026-09-29 user decision: whether the kernel's messages are shown on the
+# screen at boot is a build menu choice of its own ("Show kernel messages at
+# boot").  n writes kmsg=quiet (dmesg keeps them); y leaves them on the
+# screen, also under the graphical boot.  A config that does not name it keeps
+# the old behaviour: quiet with the graphical boot, shown without it.
+ZEDBSD_BOOT_KERNEL_MESSAGES ?= $(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),n,y)
 # A target without a sysroot has no development files.
 ifeq ($(strip $(ZEDBSD_TARGET_SYSROOT)),)
 override ZEDBSD_ROOTFS_DEVELOPMENT := n

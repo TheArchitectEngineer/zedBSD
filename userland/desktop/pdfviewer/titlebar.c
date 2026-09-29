@@ -7,8 +7,9 @@
 
 /*
  * The titlebar of PDF Viewer in zdesktop (WS070's CONTROLS presentation):
- * the previous and the next page, where the view is ("Page 3 of 10"), the
- * two modes, the zoom, the two fits, and "Annotate in Notes".
+ * the sidebar of page thumbnails (ws079-p015), the previous and the next
+ * page, where the view is ("Page 3 of 10"), the two modes, the zoom, the
+ * two fits, and "Annotate in Notes".
  *
  * zdesktop draws the controls and makes them give way when the room runs
  * short (into its "..." popup, which also holds the menus); a control
@@ -34,6 +35,7 @@
 #define CONTROL_FIT_WIDTH	8U
 #define CONTROL_FIT_PAGE	9U
 #define CONTROL_ANNOTATE	10U
+#define CONTROL_THUMBNAILS	11U
 
 /*
  * One control of the model: its ID, role, priority, segmented group,
@@ -54,6 +56,7 @@ struct titlebar_control {
  * Annotate are ungrouped generic controls; the modes are the view pair.
  */
 static const struct titlebar_control titlebar_controls[] = {
+	{ CONTROL_THUMBNAILS, KEILAND_CONTROL_SIDEBAR, KEILAND_PRIORITY_PRIMARY, 0U, "Page Thumbnails", PV_ACTION_THUMBNAILS },
 	{ CONTROL_PREVIOUS, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Previous Page", PV_ACTION_PREVIOUS },
 	{ CONTROL_NEXT, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Next Page", PV_ACTION_NEXT },
 	{ CONTROL_PAGE, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_NORMAL, 0U, "No document", PV_ACTION_NONE },
@@ -297,6 +300,8 @@ titlebar_state(
 		error = keiland_titlebar_set_control_state(object, CONTROL_FIT_PAGE, state->has_document, fitting_page);
 	if (error == 0)
 		error = keiland_titlebar_set_control_state(object, CONTROL_ANNOTATE, state->has_document, 0);
+	if (error == 0)
+		error = keiland_titlebar_set_control_state(object, CONTROL_THUMBNAILS, state->has_document, state->thumbnails);
 
 	/* A refused change still ends the transaction. */
 	if (error != 0) {

@@ -17,9 +17,11 @@
 	(INPUT_BIT_WORDS(REL_MAX) * sizeof(unsigned long))
 #define INPUT_ABS_BITS_SIZE                                                    \
 	(INPUT_BIT_WORDS(ABS_MAX) * sizeof(unsigned long))
+#define INPUT_MSC_BITS_SIZE                                                    \
+	(INPUT_BIT_WORDS(MSC_MAX) * sizeof(unsigned long))
 #define INPUT_CAPABILITY_COUNT_MAX                                             \
 	((EV_MAX + 1U) + (KEY_MAX + 1U) + (REL_MAX + 1U) +                 \
-	 (ABS_MAX + 1U))
+	 (ABS_MAX + 1U) + (MSC_MAX + 1U))
 
 struct input_capability {
 	uint16_t type;
@@ -36,6 +38,8 @@ struct input_capability_state {
 	unsigned long key_bits[INPUT_BIT_WORDS(KEY_MAX)];
 	unsigned long rel_bits[INPUT_BIT_WORDS(REL_MAX)];
 	unsigned long abs_bits[INPUT_BIT_WORDS(ABS_MAX)];
+	/* The EV_MSC codes the device sends; they carry no state. */
+	unsigned long msc_bits[INPUT_BIT_WORDS(MSC_MAX)];
 	unsigned long abs_configured[INPUT_BIT_WORDS(ABS_MAX)];
 	unsigned long key_state[INPUT_BIT_WORDS(KEY_MAX)];
 	struct input_absinfo abs_info[ABS_MAX + 1U];

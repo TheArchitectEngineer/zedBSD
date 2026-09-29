@@ -22,6 +22,7 @@
 #include <keiland.h>
 
 #include "notes.h"
+#include "touch.h"
 
 /*
  * The toolbar's band in pixels, above the page area: the glass card of the
@@ -45,11 +46,20 @@
 #define NOTES_KEYS		64U
 #define NOTES_ACTIONS		32U
 
+/* How many touch inputs wait for the main loop at most (ws081-p013). */
+#define NOTES_TOUCH_EVENTS	256U
+
 /* The most tablet tools (a pen's tip and eraser end are two) Notes follows. */
 #define NOTES_TABLET_TOOLS	8U
 
 /* The most buttons the toolbar has. */
 #define NOTES_BUTTONS		32U
+
+/*
+ * The largest page picture, in pixels on either side (ws081-p013: a page
+ * zoomed by the fingers is larger than the window; Vulkan guarantees 4096).
+ */
+#define NOTES_PICTURE_MAX	4096U
 
 /* The pen's colours and widths the toolbar offers. */
 #define NOTES_COLORS		5U
@@ -155,7 +165,10 @@ struct notes_tablet_tool {
  *
  * The pointer's left button is turned into NOTES_SOURCE_POINTER input
  * events (window.c); a tablet's tools add pen and eraser events with their
- * pressure and tilt through notes_window_input() (tablet.c).
+ * pressure and tilt through notes_window_input() (tablet.c).  ws081-p013:
+ * the touch screen's wl_touch events wait in a queue of their own for
+ * touch.c (a window with wl_touch hears fingers only by it, so a finger no
+ * longer writes as the pointer).
  */
 struct notes_window {
 	/* The connection and the globals bound from it. */
@@ -166,6 +179,7 @@ struct notes_window {
 	struct wl_seat *seat;
 	struct wl_keyboard *keyboard;
 	struct wl_pointer *pointer;
+	struct wl_touch *touch;
 
 	/* The window: its surface and roles. */
 	struct wl_surface *surface;
@@ -201,6 +215,10 @@ struct notes_window {
 	unsigned key_count;
 	uint32_t actions[NOTES_ACTIONS];
 	unsigned action_count;
+
+	/* The touch inputs not yet taken by the main loop, oldest first (a full queue drops the newest). */
+	struct notes_touch_event touches[NOTES_TOUCH_EVENTS];
+	unsigned touch_count;
 
 	/* The System Menu (menu.c): the service (NULL without one), the menu and its place on the window. */
 	struct keiland_menu_service *menu_service;
@@ -371,13 +389,18 @@ struct notes_renderer {
 	 * from -- a cleared picture, or the picture as the last frame left it
 	 * (to add strokes on top) -- and sampled by the frame.  Its size in
 	 * pixels (0: not made), and a serial that grows each time it is made
-	 * again, which tells the caller that its content is gone.
+	 * again, which tells the caller that its content is gone.  The picture
+	 * has a stencil buffer of its own, of its size (ws081-p013: a zoomed
+	 * page is larger than the window's).
 	 */
 	VkRenderPass page_clear_pass;
 	VkRenderPass page_load_pass;
 	VkImage page;
 	VkDeviceMemory page_memory;
 	VkImageView page_view;
+	VkImage page_stencil;
+	VkDeviceMemory page_stencil_memory;
+	VkImageView page_stencil_view;
 	VkFramebuffer page_framebuffer;
 	uint32_t page_width;
 	uint32_t page_height;

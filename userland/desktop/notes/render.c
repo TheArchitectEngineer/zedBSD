@@ -56,6 +56,7 @@ static VkResult render_device(struct notes_renderer *renderer);
 static VkResult render_swapchain(struct notes_renderer *renderer, uint32_t width, uint32_t height, VkSwapchainKHR old);
 static VkResult render_stencil_format(struct notes_renderer *renderer);
 static VkResult render_stencil(struct notes_renderer *renderer);
+static VkResult render_stencil_image(struct notes_renderer *renderer, uint32_t width, uint32_t height, VkImage *image, VkDeviceMemory *memory, VkImageView *view);
 static void render_stencil_free(struct notes_renderer *renderer);
 static VkResult render_pass(struct notes_renderer *renderer);
 static VkResult render_page_pass(struct notes_renderer *renderer, int load, VkRenderPass *pass);
@@ -247,8 +248,8 @@ notes_renderer_resize(
 }
 
 /*
- * Makes the page's picture at a size in pixels, unless it has that size
- * already.
+ * Makes the page's picture at a size in pixels (at most NOTES_PICTURE_MAX
+ * either way), with its stencil buffer, unless it has that size already.
  *
  * A picture made again is empty and has a new page_serial: the caller
  * draws the whole page into it with the next frame.
@@ -268,11 +269,15 @@ notes_renderer_page(
 	VkWriteDescriptorSet write;
 	VkResult error;
 
-	/* The picture is at most the window's size, which the stencil buffer has. */
-	if (width == 0U || width > renderer->extent.width)
-		width = renderer->extent.width;
-	if (height == 0U || height > renderer->extent.height)
-		height = renderer->extent.height;
+	/* The picture is at most NOTES_PICTURE_MAX either way (it has a stencil buffer of its own), and never empty. */
+	if (width == 0U)
+		width = 1U;
+	if (width > NOTES_PICTURE_MAX)
+		width = NOTES_PICTURE_MAX;
+	if (height == 0U)
+		height = 1U;
+	if (height > NOTES_PICTURE_MAX)
+		height = NOTES_PICTURE_MAX;
 
 	/* A picture of the size stands. */
 	if (renderer->page != VK_NULL_HANDLE &&
@@ -333,9 +338,15 @@ notes_renderer_page(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The framebuffer over the picture and the window's stencil buffer, which is at least as large. */
+	/* The picture's own stencil buffer, of its size. */
+	error = render_stencil_image(renderer, width, height, &renderer->page_stencil, &renderer->page_stencil_memory,
+				     &renderer->page_stencil_view);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The framebuffer over the picture and its stencil buffer. */
 	attachments[0] = renderer->page_view;
-	attachments[1] = renderer->stencil_view;
+	attachments[1] = renderer->page_stencil_view;
 	memset(&framebuffer, 0, sizeof(framebuffer));
 	framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 	framebuffer.renderPass = renderer->page_clear_pass;
@@ -822,6 +833,28 @@ static VkResult
 render_stencil(
 	struct notes_renderer *renderer)
 {
+	VkResult error;
+
+	/* The window's stencil buffer. */
+	error = render_stencil_image(renderer, renderer->extent.width, renderer->extent.height, &renderer->stencil,
+				     &renderer->stencil_memory, &renderer->stencil_view);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the stencil buffer. */
+	return VK_SUCCESS;
+}
+
+/* Makes a stencil buffer of a size: its image, its memory and the view a framebuffer attaches. */
+static VkResult
+render_stencil_image(
+	struct notes_renderer *renderer,
+	uint32_t width,
+	uint32_t height,
+	VkImage *stencil,
+	VkDeviceMemory *memory,
+	VkImageView *stencil_view)
+{
 	VkImageCreateInfo image;
 	VkMemoryRequirements requirements;
 	VkImageViewCreateInfo view;
@@ -832,8 +865,8 @@ render_stencil(
 	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image.imageType = VK_IMAGE_TYPE_2D;
 	image.format = renderer->stencil_format;
-	image.extent.width = renderer->extent.width;
-	image.extent.height = renderer->extent.height;
+	image.extent.width = width;
+	image.extent.height = height;
 	image.extent.depth = 1U;
 	image.mipLevels = 1U;
 	image.arrayLayers = 1U;
@@ -843,33 +876,33 @@ render_stencil(
 	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	renderer->operation = "vkCreateImage";
-	error = vkCreateImage(renderer->device, &image, NULL, &renderer->stencil);
+	error = vkCreateImage(renderer->device, &image, NULL, stencil);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Its memory, on the device when it can be. */
-	vkGetImageMemoryRequirements(renderer->device, renderer->stencil, &requirements);
-	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &renderer->stencil_memory);
+	vkGetImageMemoryRequirements(renderer->device, *stencil, &requirements);
+	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memory);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Binds the memory to the image. */
 	renderer->operation = "vkBindImageMemory";
-	error = vkBindImageMemory(renderer->device, renderer->stencil, renderer->stencil_memory, 0U);
+	error = vkBindImageMemory(renderer->device, *stencil, *memory, 0U);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* The view the framebuffers attach. */
 	memset(&view, 0, sizeof(view));
 	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	view.image = renderer->stencil;
+	view.image = *stencil;
 	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	view.format = renderer->stencil_format;
 	view.subresourceRange.aspectMask = renderer->stencil_aspect;
 	view.subresourceRange.levelCount = 1U;
 	view.subresourceRange.layerCount = 1U;
 	renderer->operation = "vkCreateImageView";
-	error = vkCreateImageView(renderer->device, &view, NULL, &renderer->stencil_view);
+	error = vkCreateImageView(renderer->device, &view, NULL, stencil_view);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -1078,6 +1111,19 @@ render_page_free(
 		vkDestroyImage(renderer->device, renderer->page, NULL);
 	if (renderer->page_memory != VK_NULL_HANDLE)
 		vkFreeMemory(renderer->device, renderer->page_memory, NULL);
+
+	/* Its stencil buffer. */
+	if (renderer->page_stencil_view != VK_NULL_HANDLE)
+		vkDestroyImageView(renderer->device, renderer->page_stencil_view, NULL);
+	if (renderer->page_stencil != VK_NULL_HANDLE)
+		vkDestroyImage(renderer->device, renderer->page_stencil, NULL);
+	if (renderer->page_stencil_memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, renderer->page_stencil_memory, NULL);
+	renderer->page_stencil_view = VK_NULL_HANDLE;
+	renderer->page_stencil = VK_NULL_HANDLE;
+	renderer->page_stencil_memory = VK_NULL_HANDLE;
+
+	/* Nothing is left. */
 	renderer->page_framebuffer = VK_NULL_HANDLE;
 	renderer->page_view = VK_NULL_HANDLE;
 	renderer->page = VK_NULL_HANDLE;

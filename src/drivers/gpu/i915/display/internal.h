@@ -1899,6 +1899,7 @@ struct i915_native_report {
 	uint32_t driver_ggtt_first, ggtt_pages;
 	int overlap;
 	int proceed;
+	int takeover;                   /* PROCEED with a firmware display the start takes over first (N1) */
 	const char *reason;
 	/* */
 	uint32_t pwr_well_ctl;          /* the driver request register (STATE bits) as read: all-ones = READ_ERROR */

@@ -189,6 +189,60 @@ pv_canvas_copy(
 }
 
 /*
+ * Copies opaque pixels (source_width words a row) stretched or shrunk to a
+ * width and a height with their top left at a place: each pixel takes the
+ * source pixel under its centre (ws081-p012, a page while two fingers
+ * zoom, until it is drawn again at the new scale).
+ */
+void
+pv_canvas_stretch(
+	struct pv_canvas *canvas,
+	int x,
+	int y,
+	int width,
+	int height,
+	const uint32_t *pixels,
+	int source_width,
+	int source_height)
+{
+	uint32_t *row;
+	const uint32_t *source;
+	long source_x;
+	long source_y;
+	int first_x;
+	int first_y;
+	int shown_width;
+	int shown_height;
+	int line;
+	int column;
+
+	/* Nothing to stretch from or to. */
+	if (width <= 0 ||
+	    height <= 0 ||
+	    source_width <= 0 ||
+	    source_height <= 0)
+		return;
+
+	/* The part of the stretched pixels within the canvas. */
+	first_x = x;
+	first_y = y;
+	shown_width = width;
+	shown_height = height;
+	clip_span(canvas, &first_x, &first_y, &shown_width, &shown_height);
+
+	/* Each pixel of that part takes the source pixel under its centre. */
+	for (line = 0; line < shown_height; line++) {
+		source_y = ((long)(first_y + line - y) * 2L + 1L) * (long)source_height / (2L * (long)height);
+		row = canvas->pixels + (size_t)(first_y + line) * canvas->stride + (size_t)first_x;
+		source = pixels + (size_t)source_y * (size_t)source_width;
+		for (column = 0; column < shown_width; column++) {
+			source_x = ((long)(first_x + column - x) * 2L + 1L) * (long)source_width / (2L * (long)width);
+			row[column] = source[source_x];
+		}
+	}
+}
+
+/*
  * Blends a colour through an 8-bit coverage mask (a glyph), width bytes a
  * row, with its top left at a place.
  */
@@ -237,6 +291,8 @@ clip_span(
 		*width += *x;
 		*x = 0;
 	}
+
+	/* The top edge. */
 	if (*y < 0) {
 		*height += *y;
 		*y = 0;

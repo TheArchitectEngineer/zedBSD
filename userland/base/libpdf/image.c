@@ -168,6 +168,8 @@ decode_image(
 	} else {
 		error = decode_samples(document, stream, data, size, *width, *height, created);
 	}
+
+	/* The decoded bytes are not needed any more; a failed decode frees its pixels. */
 	free(owned);
 	if (error != 0) {
 		free(created);
@@ -263,6 +265,8 @@ read_space(
 			result->components = 1;
 			return 0;
 		}
+
+		/* Three components for RGB. */
 		is_name = pdf_object_is_name(space, "DeviceRGB");
 		if (is_name == 0)
 			is_name = pdf_object_is_name(space, "RGB");
@@ -270,6 +274,8 @@ read_space(
 			result->components = 3;
 			return 0;
 		}
+
+		/* Four for CMYK. */
 		is_name = pdf_object_is_name(space, "DeviceCMYK");
 		if (is_name == 0)
 			is_name = pdf_object_is_name(space, "CMYK");
@@ -295,6 +301,8 @@ read_space(
 		result->components = 1;
 		return 0;
 	}
+
+	/* The calibrated RGB space has three. */
 	is_name = pdf_object_is_name(family, "CalRGB");
 	if (is_name) {
 		result->components = 3;
@@ -316,7 +324,9 @@ read_space(
 			return error;
 		if (count->type != PDF_OBJECT_INTEGER)
 			return PDF_EFORMAT;
-		if (count->integer != 1 && count->integer != 3 && count->integer != 4)
+		if (count->integer != 1 &&
+		    count->integer != 3 &&
+		    count->integer != 4)
 			return ENOTSUP;
 		result->components = (int)count->integer;
 		return 0;
@@ -404,6 +414,8 @@ read_palette(
 		free(owned);
 		return ENOMEM;
 	}
+
+	/* Copies the palette's bytes, at most its full size. */
 	if (size > needed)
 		size = needed;
 	memcpy(palette, data, size);
@@ -658,10 +670,14 @@ decode_jpeg(
 					yellow = 255U - yellow;
 					black = 255U - black;
 				}
+
+				/* The ink subtracted from white: each colour times the black's lightness. */
 				pixel[0] = (unsigned char)(cyan * black / 255U);
 				pixel[1] = (unsigned char)(magenta * black / 255U);
 				pixel[2] = (unsigned char)(yellow * black / 255U);
 			}
+
+			/* A JPEG is opaque. */
 			pixel[3] = 255;
 		}
 	}
@@ -734,6 +750,8 @@ store_color(
 			pixel[1] = (unsigned char)((255U - entry[1]) * (255U - entry[3]) / 255U);
 			pixel[2] = (unsigned char)((255U - entry[2]) * (255U - entry[3]) / 255U);
 		}
+
+		/* The base space's colour is the pixel's. */
 		return;
 	}
 
@@ -892,6 +910,8 @@ apply_soft_mask(
 			pixels[(y * width + x) * 4 + 3] = mask_pixels[(mask_y * mask_width + mask_x) * 4];
 		}
 	}
+
+	/* The mask's own pixels are not needed any more. */
 	free(mask_pixels);
 
 	/* Succeeded: the alpha is the mask's. */

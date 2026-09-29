@@ -35,6 +35,7 @@ def main():
              "#include <stdint.h>", ""]
     for source, name in SHADERS:
         words = compile_shader(HERE / source)
+        lines.append("/* The SPIR-V of shaders/%s, validated for Vulkan 1.0. */" % source)
         lines.append("static const uint32_t %s[] = {" % name)
         for index in range(0, len(words), 6):
             chunk = ", ".join("0x%08xU" % word for word in words[index:index + 6])

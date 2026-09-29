@@ -17,6 +17,8 @@
  * (Ctrl+E) starts /bin/notes on the file.  The outcome is one line on
  * standard error: PDFVIEWER DONE with the reason, or PDFVIEWER FAILED
  * naming what failed; PDFVIEWER READY says the first frame is shown.
+ * ws081-p012: the touch screen scrolls with inertia, zooms with two
+ * fingers and swipes pages (touch.c).
  */
 
 #include "window.h"
@@ -61,24 +63,40 @@ struct main_options {
 /*
  * The program's parts, for the whole run.  They are file-scope because
  * the window's input queue and the viewer are too large for the stack.
+ *
+ * The window: the Wayland connection and surface, and the input queue,
+ * from the start of the run to its end.
  */
 static struct pv_window main_window;
+
+/* The presenter: Vulkan's swapchain over the window, made after it and closed before it. */
 static struct pv_present main_present;
+
+/* The viewer: the document and the view, made once the swapchain's size is known. */
 static struct pv_app main_app;
+
+/* The font the frame's words are drawn in, open for the whole run (without it the frame has no words). */
 static struct pv_text main_text;
 
 /*
- * The window's menus and titlebar in zdesktop, opened with the window and
- * closed before it; either may be absent (a compositor without them).
+ * The window's menus in the compositor, opened with the window and closed
+ * before it; absent with a compositor without them.
  */
 static struct pv_menu main_menu;
+
+/* The window's titlebar controls in the compositor, with the same life as the menus. */
 static struct pv_titlebar main_titlebar;
 
+/* The touch screen's gestures and scroller, made with the viewer (without them fingers do nothing). */
+static struct pv_touch main_touch;
+
 /*
- * The frame being drawn: ordinary memory the size of the swapchain, and
- * the canvas over it.  They are remade when the window changes size.
+ * The frame being drawn: ordinary memory the size of the swapchain, remade
+ * (and the canvas with it) when the window changes size.
  */
 static uint32_t *main_pixels;
+
+/* The canvas over main_pixels, which the viewer draws each frame into. */
 static struct pv_canvas main_canvas;
 
 /* The environment a started program inherits. */
@@ -145,6 +163,11 @@ main(
 	if (options.file != NULL)
 		(void)pv_app_open(&main_app, options.file);
 
+	/* The touch screen; without memory for it the fingers do nothing. */
+	error = pv_touch_open(&main_touch);
+	if (error != 0)
+		pv_log("TOUCH failed errno=%d", error);
+
 	/* The menus and the titlebar; a window without them goes on with its keys. */
 	main_state(&state);
 	error = pv_menu_open(&main_menu, &main_window, &state);
@@ -152,6 +175,8 @@ main(
 		pv_log("MENU failed errno=%d", error);
 		pv_menu_close(&main_menu);
 	}
+
+	/* The titlebar's controls. */
 	error = pv_titlebar_open(&main_titlebar, &main_window, &state);
 	if (error != 0) {
 		pv_log("TITLEBAR failed errno=%d", error);
@@ -164,6 +189,7 @@ main(
 	/* Everything goes, the titlebar, the menus and the viewer before the window they belong to. */
 	pv_titlebar_close(&main_titlebar);
 	pv_menu_close(&main_menu);
+	pv_touch_close(&main_touch);
 	pv_app_release(&main_app);
 	free(main_pixels);
 	pv_present_close(&main_present);
@@ -238,6 +264,8 @@ main_parse(
 				options->page_mode = 1;
 				continue;
 			}
+
+			/* The scroll mode is the default; anything else is a usage error. */
 			match = strcmp(value, "scroll");
 			if (match != 0)
 				return -1;
@@ -319,6 +347,7 @@ static int
 main_loop(
 	const struct main_options *options)
 {
+	struct pv_touch_event touch;
 	struct pv_event event;
 	struct pv_state state;
 	uint64_t started;
@@ -336,6 +365,8 @@ main_loop(
 		fprintf(stderr, "PDFVIEWER FAILED operation=canvas\n");
 		return -1;
 	}
+
+	/* The document given on the command line, and the first frame. */
 	main_opened();
 	status = main_frame();
 	if (status != 0)
@@ -354,6 +385,9 @@ main_loop(
 		due = pv_window_repeat(&main_window, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
+		due = pv_touch_tick(&main_touch, &main_app, pv_touch_clock());
+		if (due >= 0 && due < timeout)
+			timeout = due;
 		if (main_app.dirty)
 			timeout = 0;
 
@@ -363,6 +397,8 @@ main_loop(
 			if (prefetched)
 				timeout = 0;
 		}
+
+		/* Waits; a lost connection ends the run. */
 		status = pv_window_dispatch(&main_window, timeout);
 		if (status != 0) {
 			pv_log("DONE reason=disconnected");
@@ -380,6 +416,14 @@ main_loop(
 			pv_app_event(&main_app, &event);
 		}
 
+		/* Every touch queued. */
+		for (;;) {
+			taken = pv_window_take_touch(&main_window, &touch);
+			if (taken == 0)
+				break;
+			pv_touch_event(&main_touch, &main_app, &touch);
+		}
+
 		/* A document opened: its title and the recent files; an annotation asked for: Notes. */
 		main_opened();
 		if (main_app.want_annotate) {
@@ -387,8 +431,9 @@ main_loop(
 			main_annotate();
 		}
 
-		/* Time passes for the viewer; the menus and the titlebar show its state. */
+		/* Time passes for the viewer and the fingers; the menus and the titlebar show its state. */
 		(void)pv_app_tick(&main_app, now);
+		(void)pv_touch_tick(&main_touch, &main_app, pv_touch_clock());
 		main_state(&state);
 		pv_menu_refresh(&main_menu, &state);
 		pv_titlebar_refresh(&main_titlebar, &state);
@@ -420,6 +465,8 @@ main_loop(
 				fprintf(stderr, "PDFVIEWER FAILED operation=%s result=%d\n", main_present.operation, status);
 				return -1;
 			}
+
+			/* A canvas of the new size. */
 			status = main_canvas_make();
 			if (status != 0)
 				return -1;
@@ -463,6 +510,8 @@ main_frame(void)
 			fprintf(stderr, "PDFVIEWER FAILED operation=%s result=%d\n", main_present.operation, (int)result);
 			return -1;
 		}
+
+		/* A canvas of the swapchain's size. */
 		status = main_canvas_make();
 		if (status != 0)
 			return -1;
@@ -512,6 +561,7 @@ main_state(
 	state->page = pv_app_current_page(&main_app);
 	state->mode = (int)main_app.mode;
 	state->fit = (int)main_app.fit;
+	state->thumbnails = main_app.thumbnails;
 }
 
 /* After a document opened: the window's title names it, and it joins the recent files. */
@@ -536,7 +586,9 @@ main_opened(void)
 	} else {
 		name++;
 	}
-	snprintf(title, sizeof(title), "%s - PDF Viewer", name);
+
+	/* The window's title. */
+	snprintf(title, sizeof(title), "%s \xe2\x80\x94 PDF Viewer", name);
 	pv_window_title(&main_window, title);
 
 	/* The recent files, by the absolute path. */
