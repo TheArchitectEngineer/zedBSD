@@ -24,7 +24,7 @@ p088のdynamic topは69.23%/ink 61.20%、Uncaught 9。`fetch`、`MutationObserve
 
 ## 中間結果（2026-09-30）
 
-- `atob`・`btoa`、observerの基本形、`document.elementFromPoint`・`elementsFromPoint`、GETの`fetch`とResponseの`text`・`json`を実装した。Chromiumと共通の`web-api.html`を追加し、DOM回帰21/21、JS回帰14/14、ASan・UBSanのDOM回帰21/21、style-check 0、host build warning 0。
+- `atob`・`btoa`、初回のlayout recordを渡すobserver、`document.elementFromPoint`・`elementsFromPoint`、GETの`fetch`とResponseの`text`・`json`、最小の`XMLHttpRequest`を実装した。Chromiumと共通の`web-api.html`を追加し、DOM回帰21/21、JS回帰14/14、ASan・UBSanのDOM回帰21/21、style-check 0、host build warning 0。
 - `amazon-capture.py`がscript文字列内の一重引用符の`<img src>`を二重引用符へ変え、正しいAmazonのscriptを壊していた。元の引用符を保持して再生成し、隠れていたFlyout templateを走らせた。
 - templateが生成するsloppy modeの`with`をVMへ実装した。内側からobjectのpropertyを探し、無ければ静的bindingへ戻る。これで`not supported yet: with`は消えた。
-- headless timerは100 roundで有界になり、dynamic topは約32秒、65.79%/ink 57.19%、Uncaught 4。capture修正前の69.23%との直接比較はできない（以前は壊れたscriptをChromiumもbrowserも実行していた）。残りはpromiseのnull参照2、CSAの未登録module由来のcallable 1、LatencyInteractiveAsset 1。`fetch`の非同期loader接続と実observer、XHRはまだ残る。
+- headless timerは100 roundで有界になった。dynamic topは約32秒、XHR前65.79%/ink 57.19%からXHR後69.64%/ink 62.10%へ改善し、Uncaught 4。capture修正前の69.23%との直接比較はできない（以前は壊れたscriptをChromiumもbrowserも実行していた）。dynamic searchは約65秒、73.79%/ink 28.78%、Uncaught 5。残りは`fetch`・XHRの非同期loader接続、MutationObserverの変更通知、searchの`URLSearchParams`・`Intl`等。

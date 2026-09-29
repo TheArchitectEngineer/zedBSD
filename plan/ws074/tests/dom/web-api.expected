@@ -4,5 +4,6 @@ btoa error InvalidCharacterError
 observers function function 0
 point function true true
 with 8 5 6
+xhr 200 xhr-ok 4 true true
 response true 200 function
 fetch console.log("external"); 42 true

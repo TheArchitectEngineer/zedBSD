@@ -83,6 +83,7 @@ static int environment_install_screen(struct bind_window *window);
 static int environment_install_performance(struct bind_window *window);
 static int environment_install_location(struct bind_window *window);
 static int environment_install_image(struct bind_window *window);
+static int environment_install_xhr(struct bind_window *window);
 static int environment_install_observers(struct bind_window *window);
 static int environment_install_window(struct bind_window *window);
 static int environment_instance(struct bind_window *window, int interface, const char *global, struct vm_object **object);
@@ -112,12 +113,25 @@ static int environment_fetch(struct vm_realm *realm, vm_value this_value, const 
 static int environment_response_text(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_response_json(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_headers_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_xhr_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_xhr_open(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_xhr_send(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_xhr_abort(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_xhr_header(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_xhr_headers(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_xhr_nothing(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_xhr_put(struct vm_realm *realm, vm_value object, const char *name, vm_value value);
+static int environment_xhr_get(struct vm_realm *realm, vm_value object, const char *name, vm_value *value);
+static int environment_xhr_fire(struct vm_realm *realm, vm_value object, const char *type);
 static int environment_response(struct vm_realm *realm, const struct wb_buffer *bytes, const struct wb_buffer *url, vm_value *result);
 static int environment_settle_promise(struct vm_realm *realm, vm_value value, int reject, vm_value *result);
 static int environment_observer_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_observer_observe(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_observer_nothing(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_observer_records(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_observer_entry(struct bind_window *window, vm_value target, int type, vm_value *entry);
+static int environment_observer_rect(struct vm_realm *realm, double x, double y, double width, double height, vm_value *result);
+static int environment_observer_size(struct vm_realm *realm, double width, double height, vm_value *result);
 static int environment_base64_value(uint16_t unit);
 
 /*
@@ -338,6 +352,11 @@ bind_environment_install(
 
 	/* Image. */
 	error = environment_install_image(window);
+	if (error != 0)
+		return error;
+
+	/* XMLHttpRequest, used by page components that predate fetch. */
+	error = environment_install_xhr(window);
 	if (error != 0)
 		return error;
 
@@ -619,6 +638,421 @@ environment_install_image(
 
 	/* Succeeded: Image is on the global object. */
 	return 0;
+}
+
+/* Makes the XMLHttpRequest constructor and its small response interface. */
+static int
+environment_install_xhr(
+	struct bind_window *window)
+{
+	static const char *const names[] = { "UNSENT", "OPENED", "HEADERS_RECEIVED", "LOADING", "DONE" };
+	struct vm_realm *realm;
+	struct vm_function *constructor;
+	struct vm_object *prototype;
+	vm_value value;
+	size_t index;
+	int status;
+
+	/* The prototype holds the request methods. */
+	realm = window->realm;
+	prototype = vm_object_create(realm->heap, realm->object_prototype);
+	if (prototype == NULL)
+		return ENOMEM;
+	status = js_builtin_method(realm, prototype, "open", 2, environment_xhr_open);
+	if (status == 0)
+		status = js_builtin_method(realm, prototype, "send", 1, environment_xhr_send);
+	if (status == 0)
+		status = js_builtin_method(realm, prototype, "abort", 0, environment_xhr_abort);
+	if (status == 0)
+		status = js_builtin_method(realm, prototype, "setRequestHeader", 2, environment_xhr_nothing);
+	if (status == 0)
+		status = js_builtin_method(realm, prototype, "overrideMimeType", 1, environment_xhr_nothing);
+	if (status == 0)
+		status = js_builtin_method(realm, prototype, "getResponseHeader", 1, environment_xhr_header);
+	if (status == 0)
+		status = js_builtin_method(realm, prototype, "getAllResponseHeaders", 0, environment_xhr_headers);
+	if (status != 0)
+		return status;
+
+	/* The constructor keeps its prototype in native data. */
+	status = js_builtin_function(realm, "XMLHttpRequest", 0, bind_illegal_constructor, environment_xhr_construct, &constructor);
+	if (status != 0)
+		return status;
+	constructor->data = vm_value_cell(prototype);
+	value = vm_value_cell(prototype);
+	status = js_builtin_value(realm, &constructor->object, "prototype", value, 0);
+	if (status == 0)
+		status = js_builtin_value(realm, prototype, "constructor", vm_value_cell(constructor), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, realm->global, "XMLHttpRequest", vm_value_cell(constructor), JS_BUILTIN_METHOD);
+	if (status != 0)
+		return status;
+
+	/* The ready-state constants are available on both the constructor and instances. */
+	for (index = 0; index < 5U; index++) {
+		status = js_builtin_value(realm, &constructor->object, names[index], vm_value_int32((int32_t)index), 0);
+		if (status == 0)
+			status = js_builtin_value(realm, prototype, names[index], vm_value_int32((int32_t)index), 0);
+		if (status != 0)
+			return status;
+	}
+
+	/* Succeeded: the constructor is installed. */
+	return 0;
+}
+
+/* Makes a request object in the UNSENT state. */
+static int
+environment_xhr_construct(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	static const char *const null_properties[] = {
+		"onreadystatechange", "onload", "onerror", "onloadend", "onabort", "ontimeout", "onprogress", NULL
+	};
+	struct vm_function *callee;
+	struct vm_object *prototype;
+	struct vm_object *request;
+	struct vm_object *upload;
+	vm_value empty;
+	size_t index;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The native constructor's data is XMLHttpRequest.prototype. */
+	callee = js_builtin_callee(realm);
+	prototype = (struct vm_object *)vm_value_as_cell(callee->data);
+	request = vm_object_create(realm->heap, prototype);
+	if (request == NULL)
+		return ENOMEM;
+	upload = vm_object_create(realm->heap, realm->object_prototype);
+	if (upload == NULL)
+		return ENOMEM;
+	status = bind_string(realm, "", &empty);
+	if (status != 0)
+		return status;
+
+	/* The response state and commonly tested request options. */
+	status = js_builtin_value(realm, request, "readyState", vm_value_int32(0), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, request, "status", vm_value_int32(0), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, request, "statusText", empty, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, request, "responseText", empty, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, request, "response", empty, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, request, "responseURL", empty, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, request, "responseType", empty, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, request, "timeout", vm_value_int32(0), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, request, "withCredentials", VM_VALUE_FALSE, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, request, "upload", vm_value_cell(upload), VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		return status;
+
+	/* Event handler properties begin as null. */
+	for (index = 0; null_properties[index] != NULL; index++) {
+		status = js_builtin_value(realm, request, null_properties[index], VM_VALUE_NULL, VM_PROPERTY_DEFAULT);
+		if (status != 0)
+			return status;
+	}
+
+	/* Succeeded: the new request. */
+	*result = vm_value_cell(request);
+	return 0;
+}
+
+/* Records the method and URL, moving a request to OPENED. */
+static int
+environment_xhr_open(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *method;
+	struct vm_string *url;
+	int is_object;
+	int status;
+
+	/* The method belongs to a request object. */
+	is_object = vm_value_is_object(this_value);
+	if (!is_object)
+		return bind_throw_illegal(realm);
+	status = bind_to_string(realm, js_argument(args, count, 0), &method);
+	if (status == 0)
+		status = bind_to_string(realm, js_argument(args, count, 1), &url);
+	if (status == 0)
+		status = environment_xhr_put(realm, this_value, "__zedbsdMethod", vm_value_cell(method));
+	if (status == 0)
+		status = environment_xhr_put(realm, this_value, "__zedbsdURL", vm_value_cell(url));
+	if (status == 0)
+		status = environment_xhr_put(realm, this_value, "readyState", vm_value_int32(1));
+	if (status == 0)
+		status = environment_xhr_fire(realm, this_value, "readystatechange");
+	if (status != 0)
+		return status;
+	*result = VM_VALUE_UNDEFINED;
+	return 0;
+}
+
+/* Performs one request and dispatches its completion handlers. */
+static int
+environment_xhr_send(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct vm_string *url;
+	struct vm_string *text;
+	struct vm_string *location;
+	struct wb_buffer href;
+	struct wb_buffer bytes;
+	struct wb_buffer final_url;
+	vm_value value;
+	int fetched;
+	int is_object;
+	int is_string;
+	int status;
+	const char *event_type;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	is_object = vm_value_is_object(this_value);
+	if (!is_object)
+		return bind_throw_illegal(realm);
+	status = environment_xhr_get(realm, this_value, "__zedbsdURL", &value);
+	if (status != 0)
+		return status;
+	is_string = vm_value_is_string(value);
+	if (!is_string)
+		return vm_throw_type_error(realm, "XMLHttpRequest.open must be called before send.");
+	url = (struct vm_string *)vm_value_as_cell(value);
+
+	/* The host fetcher resolves the URL against the page. */
+	wb_buffer_init(&href);
+	wb_buffer_init(&bytes);
+	wb_buffer_init(&final_url);
+	status = vm_string_to_utf8(url, &href);
+	window = bind_window_of(realm);
+	if (status == 0 && window->host.fetch == NULL)
+		status = ENOSYS;
+	if (status == 0)
+		status = window->host.fetch(window->host.context, wb_buffer_string(&href), &bytes, &final_url);
+	fetched = status == 0;
+
+	/* A successful response exposes its body and final URL. */
+	if (fetched) {
+		text = vm_string_from_utf8(realm->heap, (const char *)bytes.data, bytes.length);
+		location = vm_string_from_utf8(realm->heap, wb_buffer_string(&final_url), final_url.length);
+		if (text == NULL || location == NULL)
+			status = ENOMEM;
+		if (status == 0)
+			status = environment_xhr_put(realm, this_value, "status", vm_value_int32(200));
+		if (status == 0)
+			status = environment_xhr_put(realm, this_value, "responseText", vm_value_cell(text));
+		if (status == 0)
+			status = environment_xhr_put(realm, this_value, "response", vm_value_cell(text));
+		if (status == 0)
+			status = environment_xhr_put(realm, this_value, "responseURL", vm_value_cell(location));
+	} else {
+		/* Network failure is reported by the error event, not thrown from send. */
+		status = environment_xhr_put(realm, this_value, "status", vm_value_int32(0));
+	}
+
+	/* Temporary network buffers are done. */
+	wb_buffer_release(&href);
+	wb_buffer_release(&bytes);
+	wb_buffer_release(&final_url);
+	if (status != 0)
+		return status;
+
+	/* DONE, then load or error, and loadend. */
+	status = environment_xhr_put(realm, this_value, "readyState", vm_value_int32(4));
+	if (status == 0)
+		status = environment_xhr_fire(realm, this_value, "readystatechange");
+	event_type = "error";
+	if (fetched)
+		event_type = "load";
+	if (status == 0)
+		status = environment_xhr_fire(realm, this_value, event_type);
+	if (status == 0)
+		status = environment_xhr_fire(realm, this_value, "loadend");
+	if (status != 0)
+		return status;
+	*result = VM_VALUE_UNDEFINED;
+	return 0;
+}
+
+/* Resets a request to UNSENT and reports abort. */
+static int
+environment_xhr_abort(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	status = environment_xhr_put(realm, this_value, "readyState", vm_value_int32(0));
+	if (status == 0)
+		status = environment_xhr_fire(realm, this_value, "abort");
+	if (status != 0)
+		return status;
+	*result = VM_VALUE_UNDEFINED;
+	return 0;
+}
+
+/* No response headers are retained in this first pass. */
+static int
+environment_xhr_header(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	UNUSED_PARAMETER(realm);
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	*result = VM_VALUE_NULL;
+	return 0;
+}
+
+/* The empty response-header block. */
+static int
+environment_xhr_headers(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	return bind_string(realm, "", result);
+}
+
+/* Accepts setRequestHeader and overrideMimeType. */
+static int
+environment_xhr_nothing(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	UNUSED_PARAMETER(realm);
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	*result = VM_VALUE_UNDEFINED;
+	return 0;
+}
+
+/* Writes one named request property. */
+static int
+environment_xhr_put(
+	struct vm_realm *realm,
+	vm_value object,
+	const char *name,
+	vm_value value)
+{
+	vm_value key;
+
+	/* The atom is the property's key. */
+	key = vm_key_from_ascii(realm->heap, name);
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	return vm_put(realm, object, key, value);
+}
+
+/* Reads one named request property. */
+static int
+environment_xhr_get(
+	struct vm_realm *realm,
+	vm_value object,
+	const char *name,
+	vm_value *value)
+{
+	vm_value key;
+
+	/* The atom is the property's key. */
+	key = vm_key_from_ascii(realm->heap, name);
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	return vm_get(realm, object, key, value);
+}
+
+/* Calls an XMLHttpRequest handler property when it is callable. */
+static int
+environment_xhr_fire(
+	struct vm_realm *realm,
+	vm_value object,
+	const char *type)
+{
+	struct bind_window *window;
+	struct vm_object *event;
+	vm_value callback;
+	vm_value event_value;
+	vm_value ignored;
+	int callable;
+	int status;
+	char name[40];
+
+	/* Finds onTYPE. */
+	snprintf(name, sizeof(name), "on%s", type);
+	status = environment_xhr_get(realm, object, name, &callback);
+	if (status != 0)
+		return status;
+	callable = vm_value_is_callable(callback);
+	if (!callable)
+		return 0;
+
+	/* A small event gives handlers their type and target. */
+	event = vm_object_create(realm->heap, realm->object_prototype);
+	if (event == NULL)
+		return ENOMEM;
+	status = bind_string(realm, type, &event_value);
+	if (status == 0)
+		status = js_builtin_value(realm, event, "type", event_value, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, event, "target", object, VM_PROPERTY_DEFAULT);
+	if (status == 0) {
+		event_value = vm_value_cell(event);
+		status = vm_call(realm, callback, object, &event_value, 1, &ignored);
+	}
+
+	/* Event-handler exceptions are reported without making send throw. */
+	if (status == VM_THROWN) {
+		window = bind_window_of(realm);
+		bind_report_exception(window, realm->exception);
+		realm->exception = VM_VALUE_UNDEFINED;
+		status = 0;
+	}
+
+	/* Reports the call or allocation outcome. */
+	return status;
 }
 
 /*
@@ -1734,7 +2168,7 @@ environment_observer_construct(
 	return 0;
 }
 
-/* Accepts one observation target; change delivery is not connected yet. */
+/* Begins observing one target and queues its initial layout observation. */
 static int
 environment_observer_observe(
 	struct vm_realm *realm,
@@ -1743,12 +2177,36 @@ environment_observer_observe(
 	unsigned count,
 	vm_value *result)
 {
-	UNUSED_PARAMETER(realm);
+	struct bind_window *window;
+	struct vm_function *callee;
+	struct vm_object *data;
+	vm_value entry;
+	vm_value entries;
+	vm_value callback;
+	vm_value target;
+	int type;
+	int status;
+
 	UNUSED_PARAMETER(this_value);
-	UNUSED_PARAMETER(args);
-	UNUSED_PARAMETER(count);
 	*result = VM_VALUE_UNDEFINED;
-	return 0;
+
+	/* Mutation delivery waits for the DOM mutation queue; layout observers report their initial state. */
+	callee = js_builtin_callee(realm);
+	data = (struct vm_object *)vm_value_as_cell(callee->data);
+	callback = data->elements[0];
+	type = vm_value_as_int32(data->elements[1]);
+	if (type == 0)
+		return 0;
+
+	/* A layout observation is delivered as one microtask record. */
+	target = js_argument(args, count, 0);
+	window = bind_window_of(realm);
+	status = environment_observer_entry(window, target, type, &entry);
+	if (status == 0)
+		status = js_builtin_array(realm, &entry, 1, &entries);
+	if (status == 0)
+		status = vm_enqueue_job(realm, callback, entries);
+	return status;
 }
 
 /* Takes disconnect and unobserve without retaining targets in this first pass. */
@@ -1781,6 +2239,162 @@ environment_observer_records(
 	UNUSED_PARAMETER(args);
 	UNUSED_PARAMETER(count);
 	return js_builtin_array(realm, NULL, 0, result);
+}
+
+/* Makes the initial IntersectionObserver or ResizeObserver entry for a target. */
+static int
+environment_observer_entry(
+	struct bind_window *window,
+	vm_value target,
+	int type,
+	vm_value *entry)
+{
+	struct vm_realm *realm;
+	struct vm_object *record;
+	struct dom_node *node;
+	struct bind_box box;
+	vm_value rect;
+	vm_value root;
+	vm_value sizes;
+	double scroll_x;
+	double scroll_y;
+	double x;
+	double y;
+	int visible;
+	int found;
+	int status;
+
+	/* Observers only accept elements. */
+	realm = window->realm;
+	node = bind_node_of(target);
+	if (node == NULL || node->type != DOM_ELEMENT)
+		return vm_throw_type_error(realm, "The observation target is not an Element.");
+
+	/* Its border box in viewport coordinates. */
+	memset(&box, 0, sizeof(box));
+	found = 0;
+	if (window->host.node_box != NULL)
+		found = window->host.node_box(window->host.context, node, &box);
+	scroll_x = 0.0;
+	scroll_y = 0.0;
+	if (window->host.scroll != NULL)
+		window->host.scroll(window->host.context, &scroll_x, &scroll_y);
+	x = box.x - scroll_x;
+	y = box.y - scroll_y;
+	status = environment_observer_rect(realm, x, y, box.width, box.height, &rect);
+	if (status != 0)
+		return status;
+
+	/* Every record names the observed element. */
+	record = vm_object_create(realm->heap, realm->object_prototype);
+	if (record == NULL)
+		return ENOMEM;
+	status = js_builtin_value(realm, record, "target", target, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		return status;
+
+	/* Intersection records include the viewport root and the visible state. */
+	if (type == 1) {
+		visible = found && box.width > 0.0 && box.height > 0.0 && x < window->viewport_width && y < window->viewport_height &&
+		    x + box.width > 0.0 && y + box.height > 0.0;
+		status = environment_observer_rect(realm, 0.0, 0.0, window->viewport_width, window->viewport_height, &root);
+		if (status == 0)
+			status = js_builtin_value(realm, record, "time", vm_value_number(window->now), VM_PROPERTY_DEFAULT);
+		if (status == 0)
+			status = js_builtin_value(realm, record, "rootBounds", root, VM_PROPERTY_DEFAULT);
+		if (status == 0)
+			status = js_builtin_value(realm, record, "boundingClientRect", rect, VM_PROPERTY_DEFAULT);
+		if (status == 0)
+			status = js_builtin_value(realm, record, "intersectionRect", rect, VM_PROPERTY_DEFAULT);
+		if (status == 0)
+			status = js_builtin_value(realm, record, "isIntersecting", vm_value_boolean(visible), VM_PROPERTY_DEFAULT);
+		if (status == 0)
+			status = js_builtin_value(realm, record, "intersectionRatio", vm_value_int32(visible), VM_PROPERTY_DEFAULT);
+	}
+
+	/* Resize records include the content rectangle and all three size arrays. */
+	if (type == 2) {
+		status = js_builtin_value(realm, record, "contentRect", rect, VM_PROPERTY_DEFAULT);
+		if (status == 0)
+			status = environment_observer_size(realm, box.width, box.height, &sizes);
+		if (status == 0)
+			status = js_builtin_value(realm, record, "contentBoxSize", sizes, VM_PROPERTY_DEFAULT);
+		if (status == 0)
+			status = js_builtin_value(realm, record, "borderBoxSize", sizes, VM_PROPERTY_DEFAULT);
+		if (status == 0)
+			status = js_builtin_value(realm, record, "devicePixelContentBoxSize", sizes, VM_PROPERTY_DEFAULT);
+	}
+
+	/* An allocation or property failure stops delivery. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the microtask owns the record through its array. */
+	*entry = vm_value_cell(record);
+	return 0;
+}
+
+/* Makes a DOMRect-shaped plain object. */
+static int
+environment_observer_rect(
+	struct vm_realm *realm,
+	double x,
+	double y,
+	double width,
+	double height,
+	vm_value *result)
+{
+	struct vm_object *rect;
+	int status;
+
+	/* Each DOMRect field is an ordinary number. */
+	rect = vm_object_create(realm->heap, realm->object_prototype);
+	if (rect == NULL)
+		return ENOMEM;
+	status = js_builtin_value(realm, rect, "x", vm_value_number(x), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, rect, "y", vm_value_number(y), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, rect, "width", vm_value_number(width), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, rect, "height", vm_value_number(height), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, rect, "top", vm_value_number(y), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, rect, "right", vm_value_number(x + width), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, rect, "bottom", vm_value_number(y + height), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, rect, "left", vm_value_number(x), VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		return status;
+	*result = vm_value_cell(rect);
+	return 0;
+}
+
+/* Makes the one-item ResizeObserverSize sequence. */
+static int
+environment_observer_size(
+	struct vm_realm *realm,
+	double width,
+	double height,
+	vm_value *result)
+{
+	struct vm_object *size;
+	vm_value item;
+	int status;
+
+	/* One size record is enough for a single CSS box. */
+	size = vm_object_create(realm->heap, realm->object_prototype);
+	if (size == NULL)
+		return ENOMEM;
+	status = js_builtin_value(realm, size, "inlineSize", vm_value_number(width), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, size, "blockSize", vm_value_number(height), VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		return status;
+	item = vm_value_cell(size);
+	return js_builtin_array(realm, &item, 1, result);
 }
 
 /* Reports a Base64 alphabet character's six-bit value, or -1. */

@@ -38,6 +38,12 @@ var withAssigned = 0;
 function readWith(object) { with (object) { return value + withFallback; } }
 with (withObject) { value = 5; withAssigned = 6; }
 console.log("with", readWith(withObject), withObject.value, withAssigned);
+var xhrLoaded = false;
+var xhr = new XMLHttpRequest();
+xhr.open("GET", "data:text/plain,xhr-ok", false);
+xhr.onload = function () { xhrLoaded = true; };
+xhr.send();
+console.log("xhr", xhr.status, xhr.responseText, xhr.readyState, xhrLoaded, "withCredentials" in xhr);
 
 var fetchedText = "";
 var fetchedAnswer = 0;
