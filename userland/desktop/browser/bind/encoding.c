@@ -277,6 +277,7 @@ encoding_encode_into(
 {
 	unsigned char bytes[4];
 	struct vm_string *input;
+	struct vm_string *length_atom;
 	struct vm_object *report;
 	vm_value destination;
 	vm_value length_value;
@@ -305,10 +306,10 @@ encoding_encode_into(
 	}
 
 	/* How many bytes it holds. */
-	status = bind_string(realm, "length", &length_value);
-	if (status != 0)
-		return status;
-	status = vm_get(realm, destination, length_value, &length_value);
+	length_atom = vm_atom_from_ascii(realm->heap, "length");
+	if (length_atom == NULL)
+		return ENOMEM;
+	status = vm_get(realm, destination, vm_value_cell(length_atom), &length_value);
 	if (status != 0)
 		return status;
 	status = vm_to_uint32(realm, length_value, &capacity);
@@ -737,6 +738,7 @@ encoding_bytes(
 	vm_value input,
 	struct wb_buffer *bytes)
 {
+	struct vm_string *length_atom;
 	vm_value length_value;
 	vm_value element;
 	uint32_t length;
@@ -754,10 +756,10 @@ encoding_bytes(
 	}
 
 	/* How many. */
-	status = bind_string(realm, "length", &length_value);
-	if (status != 0)
-		return status;
-	status = vm_get(realm, input, length_value, &length_value);
+	length_atom = vm_atom_from_ascii(realm->heap, "length");
+	if (length_atom == NULL)
+		return ENOMEM;
+	status = vm_get(realm, input, vm_value_cell(length_atom), &length_value);
 	if (status != 0)
 		return status;
 	status = vm_to_uint32(realm, length_value, &length);

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Storage</title></head>
+<body>
+<script>
+// ws074-p080: Web Storage.  Both areas are cleared first (a browser keeps localStorage between runs), and the
+// keys are listed sorted (the order of key(n) is the browser's own).
+function keys(storage) {
+  var list = [];
+  for (var i = 0; i < storage.length; i++) list.push(storage.key(i));
+  return list.sort().join(",");
+}
+console.log(typeof localStorage, typeof sessionStorage, localStorage === localStorage, localStorage instanceof Storage, localStorage !== sessionStorage);
+localStorage.clear();
+sessionStorage.clear();
+console.log(localStorage.length, sessionStorage.length, localStorage.getItem("missing"), localStorage.key(0));
+localStorage.setItem("b", "2");
+localStorage.setItem("a", 1);
+localStorage.setItem("c", null);
+localStorage.setItem("a", "one");
+console.log(localStorage.length, keys(localStorage), localStorage.getItem("a"), localStorage.getItem("c"), typeof localStorage.getItem("b"));
+localStorage.removeItem("b");
+localStorage.removeItem("never");
+console.log(localStorage.length, localStorage.getItem("b"), keys(localStorage));
+sessionStorage.setItem("s", "v");
+sessionStorage.setItem("日本", "語 😀");
+sessionStorage.setItem("", "empty key");
+console.log(sessionStorage.getItem("s"), localStorage.getItem("s"), sessionStorage.length, sessionStorage.getItem("日本"), sessionStorage.getItem(""));
+console.log(localStorage.key(99), typeof Storage.prototype.setItem, typeof localStorage.clear);
+localStorage.clear();
+sessionStorage.clear();
+console.log(localStorage.length, sessionStorage.length, localStorage.getItem("a"));
+</script>
+</body>
+</html>

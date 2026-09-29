@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Encoding</title></head>
+<body>
+<script>
+// ws074-p080: TextEncoder and TextDecoder (UTF-8).  The engine has no typed arrays yet, so the bytes are a
+// Uint8Array where there is one and an array otherwise; both are printed through Array.prototype.join.
+function bytes(list) { return typeof Uint8Array !== "undefined" ? new Uint8Array(list) : list; }
+function show(list) { return Array.prototype.join.call(list, ","); }
+var encoder = new TextEncoder();
+console.log(encoder.encoding, show(encoder.encode("aé€😀")), encoder.encode().length, encoder.encode("").length);
+console.log(show(encoder.encode("x\ud800y\udc00z")), show(encoder.encode(12)), show(encoder.encode("\u0000")));
+var target = bytes([0, 0, 0, 0, 0]);
+var report = encoder.encodeInto("a€bé", target);
+console.log(report.read, report.written, show(target));
+var decoder = new TextDecoder();
+console.log(decoder.encoding, decoder.fatal, decoder.ignoreBOM, decoder.decode());
+console.log(decoder.decode(bytes([0xef, 0xbb, 0xbf, 0x61, 0xc3, 0xa9, 0xe2, 0x82, 0xac, 0xf0, 0x9f, 0x98, 0x80])));
+console.log(JSON.stringify(decoder.decode(bytes([0x61, 0xff, 0xc3, 0x28, 0xe2, 0x82, 0x41, 0xf0, 0x9f, 0x98, 0xed, 0xa0, 0x80, 0xc0, 0xaf, 0xf4, 0x90]))));
+console.log(decoder.decode(bytes([0xe2, 0x82]), { stream: true }) + "|" + decoder.decode(bytes([0xac])) + "|" + JSON.stringify(decoder.decode(bytes([0xe2, 0x82]))));
+console.log(decoder.decode(bytes([0xef, 0xbb]), { stream: true }).length, decoder.decode(bytes([0xbf, 0x62])));
+console.log(new TextDecoder("UTF8", { ignoreBOM: true }).decode(bytes([0xef, 0xbb, 0xbf, 0x62])).length, new TextDecoder(" utf-8 ").encoding, new TextDecoder("unicode-1-1-utf-8").encoding);
+var fatal = new TextDecoder("utf-8", { fatal: true });
+console.log(fatal.fatal, fatal.decode(bytes([0x61, 0x62])));
+var threw = [];
+try { new TextDecoder("latin-1x"); } catch (error) { threw.push(error instanceof RangeError); }
+try { fatal.decode(bytes([0x61, 0xff])); } catch (error) { threw.push(error instanceof TypeError); }
+try { fatal.decode(bytes([0xe2, 0x82])); } catch (error) { threw.push(error instanceof TypeError); }
+try { decoder.decode("abc"); } catch (error) { threw.push(error instanceof TypeError); }
+console.log(threw.join(","), fatal.decode(bytes([0x63])));
+console.log(new TextDecoder().decode(encoder.encode("round 日本 trip 😀")));
+</script>
+</body>
+</html>
