@@ -462,7 +462,7 @@ p003 の結果（2026-09-29、案）: `userland/desktop/ime/dict/SKK-JISYO.kei` 
   LANG5 は実際の JIS の keyboard ではまず送られない（半角/全角 は usage 0x35）。
 - PS/2（`src/drivers/platform/pcat/ps2-8042.c:66-121`）の表は 0x44 付近までで、日本語の key（set 1 の 0x70 かな・0x79 変換・0x7b 無変換・0x73 ろ・
   0x7d ¥）の写しが無い。ノート PC の内蔵 keyboard は i8042 経由が多い。デモの機械（5330）の内蔵 keyboard の接続（PS/2 か USB か）と配列は **未確認**。
-  PS/2 で JIS なら、写しを足す driver の Phase（ws095-p010、HAL ではない）を 5330 の確認の後に行う（§13）。
+  5330 の内蔵 keyboard は PS/2 だが US 配列（ユーザーの回答、2026-09-29）。写しを足す driver の Phase（ws095-p010、HAL ではない）は、JIS の PS/2 keyboard の利用者が出た時に F-058 と一緒に行う（§13、main の判断）。
 
 ### 10.3 JIS の keyboard の 半角/全角（WS の外、後の候補）
 
