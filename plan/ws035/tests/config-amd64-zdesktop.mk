@@ -9,4 +9,4 @@ ZEDBSD_USER_PROGRAMS += libvulkan libwayland-client libwayland-egl libegl libgle
 # ws035-p090: App Home's Files and Browser (the browser shows when its start page is there).
 ZEDBSD_USER_PROGRAMS += libz-compat libpng-compat files browser
 # ws079-p006: PDF Viewer and libpdf (with libjpeg-compat).
-ZEDBSD_USER_PROGRAMS += libjpeg-compat libpdf pdfviewer
+ZEDBSD_USER_PROGRAMS += libjpeg-compat libpdf pdfviewer textedit
