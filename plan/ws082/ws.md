@@ -3,7 +3,7 @@
 # WS082: Linux の `/dev/kvm` の移植の検討
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG002
 Related Milestones: —
 Objectives: O1
