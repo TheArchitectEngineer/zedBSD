@@ -111,11 +111,17 @@ greeter → kei の password と Enter の login を CYCLES 回、各替わり�
 未実施: 実機（i915 は ws075-p016 の別の実装、この変更は Venus だけ）。demo の image（`config-amd64-demo-venus.mk`、1920x1280）の demo-walk
 （同じ driver の経路で、image の build の時間のため省いた）。host の単体試験（Venus の display の host 試験は無い）。
 
+## 決定
+
+- 2026-09-29 ユーザー（main 経由）: 最後の画を保つのは **quiet の console（`kmsg=quiet`）のときだけ**。loud の console（`ZEDBSD_BOOT_KERNEL_MESSAGES=y`・reveal の後）では
+  今までどおり release で console の文字に戻る。
+
 ## 制限と残り
 
 - **loud の console では保たない**: `ZEDBSD_BOOT_KERNEL_MESSAGES=y`（2026-09-29 のユーザーの決定の「起動の kernel の message を画面に出す」）の
   graphical boot、または reveal の後は、替わり目に今までどおり文字 console が約 1.4 秒出る。そこで保つと、手で起こした zdesktop を終えた後に
-  shell の文字が最大 10 秒見えなくなる。loud でも保つか（例: 保つ間の text の変化で終える）は人間の判断（main・ユーザーへ）。
+  shell の文字が最大 10 秒見えなくなる。loud でも保つかは人間の判断として main へ送り、**決定（2026-09-29 ユーザー、main 経由）:「quiet の
+  ときだけ」**。今の形（`kmsg=quiet` のときだけ保つ）で確定（master の決定の表にも main が記録）。
 - F-048 の本案（lease を持った fd の受け渡しと kernel の revoke）は未着手のまま。黒は無くなったが、替わり目の約 1.3 秒は前の持ち主の画の
   まま止まって見える（入力は効かない）。
 - `zdesktop-p101.sh` は今の image（kei の自動 login、password）に合わない。p126 の試験が同じ替わり目を覆う。
