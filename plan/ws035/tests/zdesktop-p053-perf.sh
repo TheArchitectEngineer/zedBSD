@@ -22,7 +22,7 @@ for setup in gpu gpu3 shm shmband; do
 	run=1
 	while [ $run -le "$runs" ]; do
 		guest "$stop_all" >/dev/null
-		guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=60 --width=1280 --height=800 > /tmp/perf.log 2>&1 </dev/null & sleep 3; $others sleep 2; /bin/wltest --windowed --size=200x150 --color=0000ff --frames=3600 --token=g > /tmp/g.log 2>&1 </dev/null & sleep 5; a=\$(grep -c 'WLTEST FRAME' /tmp/g.log); sleep 30; b=\$(grep -c 'WLTEST FRAME' /tmp/g.log); c=\$(grep 'PERF compose' /tmp/perf.log | tail -1 | sed 's/.*frame_ms=//'); d=\$(grep 'PERF shm' /tmp/perf.log | tail -1 | sed 's/.*copy_ms=//'); echo \"$setup run=$run gpu_frames_30s=\$((b-a)) compose_frame_ms=\$c shm_copy_ms=\${d:-none}\""
+		guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=60 --width=1280 --height=800 > /tmp/perf.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/perf.log 2>/dev/null && break; sleep 0.5; done; sleep 1; $others sleep 2; /bin/wltest --windowed --size=200x150 --color=0000ff --frames=3600 --token=g > /tmp/g.log 2>&1 </dev/null & sleep 5; a=\$(grep -c 'WLTEST FRAME' /tmp/g.log); sleep 30; b=\$(grep -c 'WLTEST FRAME' /tmp/g.log); c=\$(grep 'PERF compose' /tmp/perf.log | tail -1 | sed 's/.*frame_ms=//'); d=\$(grep 'PERF shm' /tmp/perf.log | tail -1 | sed 's/.*copy_ms=//'); echo \"$setup run=$run gpu_frames_30s=\$((b-a)) compose_frame_ms=\$c shm_copy_ms=\${d:-none}\""
 		run=$((run + 1))
 	done
 done
