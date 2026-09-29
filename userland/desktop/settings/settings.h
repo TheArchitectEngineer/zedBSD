@@ -225,8 +225,9 @@ struct se_app;
  * the page's cards out from a top edge within a column and returns the
  * bottom edge of what it drew; press carries out a click on one of the
  * page's own controls (its hit index); key takes a key press first and
- * returns 1 when it used it (a text field has the keyboard); any may be
- * NULL.
+ * returns 1 when it used it (a text field has the keyboard); drag
+ * follows a press held on one of the page's controls (a slider) through
+ * its moves to its release; any may be NULL.
  */
 struct se_page {
 	unsigned id;
@@ -240,6 +241,17 @@ struct se_page {
 	int (*draw)(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 	void (*press)(struct se_app *app, int index);
 	int (*key)(struct se_app *app, const struct se_event *event);
+	void (*drag)(struct se_app *app, int index, int x, unsigned phase);
+};
+
+/*
+ * The phases of a drag on a page's control (a slider): the press, each
+ * move while the button is held, and the release (wherever it lands).
+ */
+enum se_drag_phase {
+	SE_DRAG_START,
+	SE_DRAG_MOVE,
+	SE_DRAG_END
 };
 
 /*
@@ -504,6 +516,67 @@ struct se_search {
 	unsigned focus_serial;
 };
 
+/* How many pictures the Wallpaper page offers besides the default, and the bytes of a path. */
+#define SE_WALLPAPERS		8U
+#define SE_PATH			256U
+
+/* How many file systems the Storage page shows. */
+#define SE_VOLUMES		6U
+
+/*
+ * One picture the Wallpaper page offers: its file, the name shown (the
+ * file's name without .ppm), and a small copy for its tile (empty until
+ * the page is first shown, or when the file cannot be read).
+ */
+struct se_wallpaper {
+	char path[SE_PATH];
+	char name[64];
+	struct fm_image thumbnail;
+	int read;
+};
+
+/*
+ * One file system the Storage page shows: where it is mounted and its
+ * sizes in bytes.
+ */
+struct se_volume {
+	char path[64];
+	uint64_t total;
+	uint64_t available;
+	uint64_t used;
+};
+
+/*
+ * The desktop's look and the user's preferences as Settings shows them
+ * (look.c, ws089-p004).
+ *
+ * preferences is the user's file (NULL, with open_error, when there is no
+ * home and nothing can be saved); it is read again once a second.  opacity
+ * is the windows' opacity shown (a drag moves it before it is written);
+ * wallpaper is the preferences' picture (empty for the default).  The
+ * pictures are found and read when the Wallpaper page is first shown; the
+ * default's (the session's --wallpaper) is wallpapers[0] when it exists.
+ * The slider's rectangle is the last frame's, for a drag.  The volumes are
+ * read when the Storage page is shown.
+ */
+struct se_look {
+	struct keiland_preferences *preferences;
+	int open_error;
+	uint64_t checked_at;
+	int opacity;
+	int dragging;
+	struct fm_rect slider;
+	char wallpaper[SE_PATH];
+	struct se_wallpaper wallpapers[SE_WALLPAPERS];
+	unsigned wallpaper_count;
+	int has_default;
+	int scanned;
+	struct se_volume volumes[SE_VOLUMES];
+	unsigned volume_count;
+	char message[SE_MESSAGE];
+	int message_bad;
+};
+
 /*
  * Settings in one window: the page shown and its history, the list's and
  * the page's scroll, what the last frame drew, and what the pointer is
@@ -575,6 +648,9 @@ struct se_app {
 
 	/* What the network pages show and have asked of the daemon. */
 	struct se_network network;
+
+	/* The desktop's look and the user's preferences. */
+	struct se_look look;
 };
 
 /* The table of pages (pages.c). */
@@ -633,6 +709,28 @@ void se_network_disconnect(struct se_app *app);
 /* The text fields (widgets.c). */
 int se_field_key(struct se_field *field, const struct se_event *event);
 void se_field_clear(struct se_field *field);
+
+/* The look and the preferences (look.c). */
+void se_look_open(struct se_app *app);
+void se_look_poll(struct se_app *app, uint64_t now);
+void se_look_close(struct se_app *app);
+void se_look_set_opacity(struct se_app *app, int percent);
+void se_look_set_wallpaper(struct se_app *app, int index);
+void se_look_scan(struct se_app *app);
+void se_look_volumes(struct se_app *app);
+const char *se_look_wallpaper_name(const struct se_app *app);
+
+/* The look's pages (page-look.c). */
+int se_appearance_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_wallpaper_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_display_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_storage_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+void se_look_press(struct se_app *app, int index);
+void se_look_drag(struct se_app *app, int index, int x, unsigned phase);
+
+/* A slider (widgets.c). */
+void se_slider_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width, float fraction, int enabled, int index, struct fm_rect *rect);
+float se_slider_fraction(const struct fm_rect *rect, int x);
 
 /* The search (search.c). */
 void se_search_set(struct se_app *app, const char *query);

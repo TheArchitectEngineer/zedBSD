@@ -11,6 +11,9 @@
  *
  *   settings-render [OPTION]... ACTION...
  *
+ * The preferences are the test's own, in build/ws089-host/render-home
+ * (HOME is set to it; run from the top of the tree).
+ *
  * Options (before the actions):
  *   --font=PATH        the font (default userland/desktop/fonts/Inter.ttf)
  *   --size=WxH         the window's size (default 1180x800)
@@ -19,6 +22,7 @@
  *
  * Actions, run in order:
  *   move=X,Y  click=X,Y  scroll=PIXELS  key=CODE[:MODS]  action=N
+ *   drag=X,Y,X2        (presses at X,Y, moves to X2 and lets go there)
  *   text=STRING        (types lower-case letters and digits as keys)
  *   control=N          (clicks the page's control N of the last frame)
  *   tb=CONTROL:DETAIL  (a titlebar control chosen)
@@ -35,6 +39,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 void host_network_fake(struct se_app *app, const char *scenario);
 static int host_write_ppm(const char *path, const uint32_t *pixels, int width, int height);
@@ -59,6 +65,7 @@ main(
 	static const char letters[] = "qwertyuiop\0\0\0\0asdfghjkl\0\0\0\0\0zxcvbnm";
 	static const char digits[] = "1234567890";
 	const char *found;
+	char home[1024];
 	char *space;
 	uint32_t *pixels;
 	unsigned kind;
@@ -109,6 +116,17 @@ main(
 	(void)snprintf(app.about.display, sizeof(app.about.display), "%dx%d", width, height);
 	app.now = 3723000U;
 	host_network_fake(&app, scenario);
+
+	/*
+	 * The preferences in a home of the test's own under build/ (never the
+	 * real home): build/ws089-host/render-home, an absolute path.
+	 */
+	if (getcwd(home, sizeof(home) - 64) == NULL)
+		return 1;
+	strcat(home, "/build/ws089-host/render-home");
+	(void)mkdir(home, 0700);
+	setenv("HOME", home, 1);
+	se_look_open(&app);
 	se_ui_init(&app, &text, start);
 	se_ui_draw(&app, &canvas);
 
@@ -120,6 +138,12 @@ main(
 			host_event(&app, SE_EVENT_MOTION, x, y, 0, 0, 0, 0);
 			host_event(&app, SE_EVENT_BUTTON, x, y, SE_BUTTON_LEFT, 1, 0, 0);
 			host_event(&app, SE_EVENT_BUTTON, x, y, SE_BUTTON_LEFT, 0, 0, 0);
+		} else if (sscanf(argv[index], "drag=%d,%d,%u", &x, &y, &code) == 3) {
+			host_event(&app, SE_EVENT_MOTION, x, y, 0, 0, 0, 0);
+			host_event(&app, SE_EVENT_BUTTON, x, y, SE_BUTTON_LEFT, 1, 0, 0);
+			host_event(&app, SE_EVENT_MOTION, (x + (int)code) / 2, y, 0, 0, 0, 0);
+			host_event(&app, SE_EVENT_MOTION, (int)code, y, 0, 0, 0, 0);
+			host_event(&app, SE_EVENT_BUTTON, (int)code, y, SE_BUTTON_LEFT, 0, 0, 0);
 		} else if (sscanf(argv[index], "scroll=%d", &y) == 1) {
 			memset(&wheel, 0, sizeof(wheel));
 			wheel.type = SE_EVENT_AXIS;

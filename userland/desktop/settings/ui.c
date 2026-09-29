@@ -827,8 +827,18 @@ ui_motion(
 	struct se_app *app,
 	const struct se_event *event)
 {
+	const struct se_page *page;
 	unsigned kind;
 	int index;
+
+	/* A press held on a page's control that drags (a slider) follows the pointer. */
+	page = &se_pages[app->page];
+	if (app->press_kind == SE_HIT_CONTROL &&
+	    page->drag != NULL &&
+	    app->search.active == 0) {
+		page->drag(app, app->press_index, event->x, SE_DRAG_MOVE);
+		return;
+	}
 
 	/* The region under the pointer; only a row, a tile or a control is lit. */
 	(void)ui_hit_at(app, event->x, event->y, &kind, &index);
@@ -851,6 +861,7 @@ ui_button(
 	struct se_app *app,
 	const struct se_event *event)
 {
+	const struct se_page *page;
 	unsigned kind;
 	int index;
 
@@ -861,13 +872,24 @@ ui_button(
 	/* The region under the pointer. */
 	(void)ui_hit_at(app, event->x, event->y, &kind, &index);
 
-	/* A press holds the region down. */
+	/* A press holds the region down; a page's control that drags starts its drag. */
+	page = &se_pages[app->page];
 	if (event->pressed != 0) {
 		app->press_kind = kind;
 		app->press_index = index;
 		app->dirty = 1;
+		if (kind == SE_HIT_CONTROL &&
+		    page->drag != NULL &&
+		    app->search.active == 0)
+			page->drag(app, index, event->x, SE_DRAG_START);
 		return;
 	}
+
+	/* The release ends a drag wherever it lands. */
+	if (app->press_kind == SE_HIT_CONTROL &&
+	    page->drag != NULL &&
+	    app->search.active == 0)
+		page->drag(app, app->press_index, event->x, SE_DRAG_END);
 
 	/* A release over the same region clicks it. */
 	if (kind == app->press_kind && index == app->press_index)

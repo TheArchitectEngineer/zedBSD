@@ -12,5 +12,9 @@ extra=$(python3 plan/tools/guest/guest.py extra-files | sed -n "s/^ZEDBSD_TEST_E
 [ -n "$extra" ] || { echo "build-settings-image: no guest files (plan/tools/guest/guest.py keys?)"; exit 1; }
 [ -f build/ws035-wallpaper/wallpaper.ppm ] && extra="$extra --file /usr/share/keiland/wallpaper.ppm=build/ws035-wallpaper/wallpaper.ppm"
 extra="$extra --file /etc/keiland/apps.conf=plan/ws035/demo/apps.conf"
+# ws089-p004: the Wallpaper page's test pictures (plan/ws089/tests/make-wallpapers.py), when made.
+for picture in build/ws089-wallpapers/*.ppm; do
+	[ -f "$picture" ] && extra="$extra --file /usr/share/keiland/wallpapers/$(basename "$picture")=$picture"
+done
 exec make -j"$(nproc)" ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-settings.mk BUILD="$build" \
     "ZEDBSD_TEST_EXTRA_FILES=$extra" disk-image
