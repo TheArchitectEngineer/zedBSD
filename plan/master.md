@@ -150,6 +150,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS084](ws084/ws.md) | MG006 | i915 の firmware の画面の引き継ぎ（素の実機の UEFI の起動で GOP が点けた pipe を N1 で止めて driver のものにし、デスクトップを出す）（2026-09-29 ユーザー、main が実装） | incomplete | p001・p002 cleared（2026-09-29、素の 5330 で takeover → LCD の Keiland、24.5 present/s）。残り: parity との乖離 1〜3 の整理 |
 | [WS086](ws086/ws.md) | MG002 | ls の出力を GNU ls と同じにする（端末なら既定で列、端末の幅）（2026-09-29 ユーザー） | planning | p001 から |
 | [WS087](ws087/ws.md) | MG002 | /bin/sh の対話の行編集: 矢印キーの履歴（BUG-103）と Tab の補完（2026-09-29 ユーザー） | planning | p001 から |
+| [WS088](ws088/ws.md) | MG006 | Windows で動く Kei-nightly.zip を CI で配布する（元の zip を clang の cache と同じ Release `rev-0` に置いて再利用し、CI が hdd-image.img を入れる）（2026-09-29 ユーザー） | planning | p001 から。WS085 の取り込みに依存 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -175,7 +176,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
-| venus-win32 の取り込み（WS085）: merge、Linux（Venus 1.3）の回帰と Windows（1.4）の両立 | ユーザーの方針（2026-09-29） | font と submodule の扱いの確認 |
+| venus-win32 の取り込み（WS085）: merge（submodule を外す、font の license）、Linux（Venus 1.3）の回帰と Windows（1.4）の両立 → WS088（Kei-nightly.zip の CI） | ユーザーの方針（2026-09-29） | 条件は決定済み |
 | WS087（sh の矢印キーの履歴・Tab の補完）、WS086（ls）、BUG-102（ping） | 実機の使い勝手（2026-09-29） | p001 から |
 | 実機の USB の demo の image（`build/demo-hdmi2`）の結果（HDMI の LCD での login・logout の目視、eDP、touch の USB の descriptor、Notes・PDF Viewer） | デモ | ユーザーが試験 |
 | WS074: amazon-goal.md の続き。p037（table の最小）・p027（RegExp）cleared（2026-09-29）。JS の Date の builtin を実装の途中で枠の上限で止まった（未 commit、worktree `.claude/worktrees/agent-a346b6e810eda5cb6` の js/builtin_date.c 等）。Chromium との一致: トップ 80.4%、検索 77.2% | ブラウザのデモの目標 | 次の枠でその worktree から再開 |
@@ -352,6 +353,9 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | ls | ユーザー:「lsの結果が1つずつ改行されています。GNU lsと同じにしたいです。」 | [WS086](ws086/ws.md) |
 | sh の行編集 | ユーザー:「/bin/shが上下キーでヒストリーをたどれないようです。たどれるようにしたいです。」「/bin/shがタブキーの補間を使えません。使えるようにしたいです。」 | [WS087](ws087/ws.md)、[BUG-103](bugs/BUG-103.md) |
 | Windows の Venus | ユーザー:「GitHubのorigin/venus-win32ブランチに、QEMUのWindows版でVenusを利用できるようにした特殊ビルドにおいてKeiが動作するようにしたパッチがあります。これを取り込んで、WindowsのVenusも利用でき、かつ、我々のテスト環境のLinuxでのVenusも利用できるように、していきます。ちなみにWindowsの方がVenus 1.4, LinuxがVenus 1.3でした。」→ branch（`origin/venus-win32` 94908af8、分岐点 9c52dddc）を main に取り込む。branch の WS085（Windows 版 WINQ-EMU の Venus）・BUG-100・BUG-101・q496〜q499 の ID をそのまま使い、WS085 の目標に「Windows（Venus 1.4）と Linux（Venus 1.3）の両方で動く」を足す。main の新しい ID は WS086 以降・BUG-102 以降。確認の要る点: branch は font（Inter・JetBrains Mono・Droid Sans Fallback）を git に入れ（今までは `build/ws035-fonts/` の git の外）、`.gitmodules` で vendor の submodule（QEMU・virglrenderer の fork、raspberrypi-firmware）を足している | WS085（branch） |
+| venus-win32 の取り込みの条件 | ユーザー:「フォントは、ライセンスが問題なければ、gitに入れてOKです。ライセンスファイルが必要なら置いてください。ライセンスに問題があれば別のフォントに置き換えてください。」「submoduleはミスなのでいらないです。」→ 取り込むとき `.gitmodules` と `vendor/` の submodule を外す。font は license を確かめて git に入れる（Inter・JetBrains Mono は OFL 1.1、Droid Sans Fallback は Apache 2.0 の見込み。license の file は branch にある） | WS085（branch） |
+| ping（決定） | ユーザー:「pingをsetuidにします。これはBSD系OSだからです。」→ ping を setuid root で install し、raw socket を開いた後に権限を落とす | [BUG-102](bugs/BUG-102.md) |
+| Kei-nightly.zip | ユーザー:「~/Kei-nightly.zipを置きました。…Kei-nightly.zipは、clangのキャッシュと同じReleaseにアップロードして再利用して、CIでhdd-image.imgが入ったKei-nightly.zipを配布できるようにしましょう。」 | [WS088](ws088/ws.md) |
 
 ### 主な依存関係
 
