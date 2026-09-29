@@ -44,5 +44,6 @@ void drv_i915_batch_zero(struct i915_gfx_batch *batch, uint32_t opcode, uint32_t
 void drv_i915_batch_words(struct i915_gfx_batch *batch, const uint32_t *words, unsigned count);
 void drv_i915_batch_pointer(struct i915_gfx_batch *batch, uint32_t opcode, uint32_t value);
 void drv_i915_batch_pipe_control(struct i915_gfx_batch *batch, uint32_t flags);
+void drv_i915_batch_pipe_control_hdc(struct i915_gfx_batch *batch, uint32_t flags);
 
 #endif

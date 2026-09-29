@@ -17,6 +17,7 @@
 
 #include "command.h"
 #include "codec.h"
+#include "compute.h"
 #include "fence.h"
 #include "gfx.h"
 #include "internal.h"
@@ -198,7 +199,7 @@ static int i915_execute_buffer_copy(struct i915_render_session *session, const s
 static int i915_execute_draw(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static void i915_execute_bind_pipeline(struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static void i915_execute_bind_set(struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
-static int i915_execute_dispatch(const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
+static int i915_execute_dispatch(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static int i915_command_buffer_execute(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf);
 static int i915_queue_submit(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 
@@ -3315,7 +3316,7 @@ i915_command_buffer_execute(
 			i915_execute_set_stencil(&state, op);
 			break;
 		case I915_GFX_OP_DISPATCH:
-			error = i915_execute_dispatch(&state, op);
+			error = i915_execute_dispatch(session, &state, op);
 			break;
 		default:
 			error = EINVAL;
@@ -3542,19 +3543,20 @@ i915_execute_bind_set(
 
 /*
  * Runs a recorded vkCmdDispatch: the bound compute pipeline over the
- * groups (ws101-p003).
+ * groups (ws101-p003, ws101-p004).
  *
  * A dispatch needs a prepared compute pipeline; a dispatch of no group does
  * nothing.  Returns EINVAL for a dispatch without a pipeline or past the
- * device's group counts.  XXX: the dispatch's batch is not written yet
- * (ws101-p004), so any other dispatch is refused with ENOTSUP.
+ * device's group counts, or the error of recording or running it.
  */
 static int
 i915_execute_dispatch(
+	struct i915_render_session *session,
 	const struct i915_gfx_draw_state *state,
 	const struct i915_gfx_op *op)
 {
 	const uint32_t *groups;
+	int error;
 
 	/* Refuses a dispatch with no prepared compute pipeline bound. */
 	if (state->compute_pipeline == NULL || state->compute_pipeline->kernels_ready == 0) {
@@ -3573,10 +3575,11 @@ i915_execute_dispatch(
 	if (groups[0] == 0U || groups[1] == 0U || groups[2] == 0U)
 		return 0;
 
-	/* XXX: the batch of a dispatch is ws101-p004. */
-	kern_logf("i915: vk: XXX unimplemented path: dispatch of %u x %u x %u groups (the dispatch's batch is not written yet)\n",
-		  groups[0],
-		  groups[1],
-		  groups[2]);
-	return ENOTSUP;
+	/* Records the dispatch into the submission's batch. */
+	error = drv_i915_gfx_dispatch(session, state, groups);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the dispatch is recorded. */
+	return 0;
 }

@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p003（実行器の object と記録）cleared（2026-09-30）。次は p004（dispatch の batch。前に ws031 の host の試験の stub の扱いを main に依頼、phase003 の「決めたこと」）と p008（GLSL ES 3.10）。判断 D1〜D5 は design.md §7
+Resume point: p004（実行器の batch、`render/compute.c`）cleared（2026-09-30）。次は p005（5330 の passthrough での bring-up と vkcs）と p008（GLSL ES 3.10）。IDD の SLM・barrier は p006 で binary の値を入れる。判断 D1〜D5 は design.md §7
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -58,9 +58,9 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | [ws101-p001](phase001/phase.md) | 設計: compiler（GLCompute・ID・SLM・barrier・atomic）、実行器（PIPELINE_SELECT GPGPU・MEDIA_VFE_STATE・interface descriptor・CURBE・GPGPU_WALKER・indirect）、GLES 3.1 の compute、Noct の accel を有効にする build の変更の案、試験と G3 の見本と N・倍率 | cleared（2026-09-30。[design.md](design.md)） | — |
 | [ws101-p002](phase002/phase.md) | compiler の核: GLCompute、LocalSize・LocalSizeId、built-in（LOAD_SYSTEM、GlobalInvocationID、NumWorkgroups の A64 の読み）、compute の register の約束と binary、thread spawner への EOT、LOAD_STORAGE の predicate、効果なしの decoration、OpArrayLength、stage の分岐の見直し、SSBO の A64 の atomic、複数の動的な index、拒否（design §1） | cleared（2026-09-30。host の試験 PASS、kernel の build PASS。GPU は p005） | p001 |
 | [ws101-p003](phase003/phase.md) | 実行器の object と記録: vkCreateComputePipelines（66）、bind point の分離、vkCmdDispatch（110）の記録（design §2.1） | cleared（2026-09-30。host の試験 PASS、kernel の build PASS。dispatch は p004 まで ENOTSUP） | p002 |
-| ws101-p004 | 実行器の batch: `render/compute.c`（IDD・CURBE・NumWorkgroups の置き場所・VFE・walker・3D への戻り・scratch 768 thread 分）、transfer_pending（dispatch と SSBO を書く draw）、HDC だけの PIPE_CONTROL、storage の range、WS101 の genxml の dumper（design §2.2〜§2.4） | planned | p003 |
+| [ws101-p004](phase004/phase.md) | 実行器の batch: `render/compute.c`（IDD・CURBE・NumWorkgroups の置き場所・VFE・walker・3D への戻り・scratch 768 thread 分）、transfer_pending（dispatch と SSBO を書く draw）、HDC だけの PIPE_CONTROL、storage の range、WS101 の genxml の dumper（design §2.2〜§2.4） | cleared（2026-09-30。host の試験 PASS（Mesa の genxml で batch と IDD を decode）、kernel の build PASS。IDD の SLM・barrier は p006、GPU は p005） | p003 |
 | ws101-p005 | 実機の bring-up と kernel の試験の場面 `vkcs`（ADD・ID・ODD・PUSH・ATOMIC-SSBO・MIXED・MANYOPS・SPILL）。eu-test の 1 thread の設定から段階的に（design §2.6・§5.1） | planned | p004 |
-| ws101-p006 | SLM・barrier・fence・SLM の atomic（IR・parser・EU、barrier の一様性の検査）、vkcs の SHARED・REDUCE・ODD-BARRIER・ATOMIC-SHARED・LOOP・REFUSE | planned | p005 |
+| ws101-p006 | SLM・barrier・fence・SLM の atomic（IR・parser・EU、barrier の一様性の検査）、binary の SLM・barrier と IDD の field（p004 の XXX）、vkcs の SHARED・REDUCE・ODD-BARRIER・ATOMIC-SHARED・LOOP・REFUSE | planned | p005 |
 | ws101-p007 | vkCmdDispatchIndirect（111）、0 の group、vkcs の INDIRECT・LENGTH・MANY、G1 の passthrough での受け入れの run（design §2.5） | planned | p006 |
 | ws101-p008 | GLSL ES 3.10 の compute（版・stage・SSBO std430・shared・built-in・barrier と規則・atomic・`.length()` → SPIR-V）、Noct の shader の形の fixture。host の試験（design §3.2） | planned | p001（p002〜p007 と並行できる）、D4（main の記録） |
 | ws101-p009 | libglesv2・libegl の ES 3.1 の compute の API（design §3.3）、`gl31.h`、export と stub、版の名乗り（D1）、libGL への漏れの分離、GLES の compute の試験の program。Venus で G2 | planned | p008、D1 |
