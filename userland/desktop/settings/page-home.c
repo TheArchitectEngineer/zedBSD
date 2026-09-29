@@ -95,6 +95,8 @@ home_group(
 			column = 0;
 			y += HOME_TILE_HEIGHT + HOME_TILE_GAP;
 		}
+
+		/* The tile in the next column. */
 		home_tile(app, canvas, &se_pages[id], x + column * (tile + HOME_TILE_GAP), y, tile);
 		column++;
 	}
@@ -138,6 +140,8 @@ home_tile(
 		glyph = SE_COLOR_ICON;
 		summary = SE_COLOR_TEXT_FAINT;
 	}
+
+	/* The picture at the tile's upper left. */
 	se_glyph_draw(canvas, page->glyph, (float)x + 16.0f, (float)y + 14.0f, 26.0f, glyph);
 
 	/* The name and the summary. */

@@ -144,6 +144,8 @@ about_trim(
 			text[written] = ' ';
 			written++;
 		}
+
+		/* The word's character. */
 		space = 0;
 		text[written] = text[read];
 		written++;

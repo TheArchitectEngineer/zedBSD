@@ -171,6 +171,8 @@ se_glyph_draw(
 			for (column = 0; column < 5; column++)
 				glyph_dot(&pen, 0.22f + 0.14f * (float)column, 0.40f + 0.13f * (float)row, 0.035f);
 		}
+
+		/* The space bar. */
 		glyph_segment(&pen, 0.32f, 0.64f, 0.68f, 0.64f);
 		break;
 	case SE_GLYPH_MOUSE:

@@ -523,12 +523,16 @@ main_canvas_make(void)
 	return 0;
 }
 
-/* Reports how long the loop may sleep: until a key repeats, or the idle limit. */
+/* Reports how long the loop may sleep: not at all while a frame is due, else until a key repeats, or the idle limit. */
 static int
 main_timeout(
 	uint64_t now)
 {
 	uint64_t wait;
+
+	/* A frame the last one asked for (a scroll it corrected) is drawn at once. */
+	if (main_app.dirty != 0)
+		return 0;
 
 	/* No key is held: the idle limit. */
 	if (main_window.repeat_key == 0U)

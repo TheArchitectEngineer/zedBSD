@@ -270,6 +270,12 @@ se_ui_draw(
 {
 	struct fm_rect whole;
 
+	/*
+	 * The frame is being brought up to date; drawing may ask for another
+	 * (a scroll it corrected), which the main loop then draws at once.
+	 */
+	app->dirty = 0;
+
 	/* The panes' places at this size, and no clickable region yet. */
 	app->width = canvas->width;
 	app->height = canvas->height;
@@ -291,9 +297,6 @@ se_ui_draw(
 	if (app->show_sidebar != 0)
 		ui_draw_sidebar(app, canvas);
 	ui_draw_page(app, canvas);
-
-	/* The frame is up to date. */
-	app->dirty = 0;
 }
 
 /*
@@ -586,6 +589,8 @@ ui_draw_sidebar(
 			current = 1;
 			current_row = row;
 		}
+
+		/* The row's ink, and its ground: the accent's for the page shown (grey without the focus), a shade under the pointer. */
 		ink = SE_COLOR_TEXT;
 		glyph = SE_COLOR_ICON;
 		bold = 0;
