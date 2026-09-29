@@ -21,11 +21,14 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <time.h>
+#include <unistd.h>
 
 /* How often the preferences are read again, in milliseconds. */
 #define LOOK_CHECK_MS		1000U
@@ -492,6 +495,9 @@ look_add_picture(
 	const char *name)
 {
 	struct se_wallpaper *wallpaper;
+	struct timespec started;
+	struct timespec finished;
+	long milliseconds;
 	int error;
 
 	/* A full list keeps the pictures it has. */
@@ -504,11 +510,14 @@ look_add_picture(
 	(void)snprintf(wallpaper->path, sizeof(wallpaper->path), "%s", path);
 	(void)snprintf(wallpaper->name, sizeof(wallpaper->name), "%s", name);
 
-	/* Its small copy. */
+	/* Its small copy, timed for the log (a slow disk shows as a long first frame of the page). */
+	(void)clock_gettime(CLOCK_MONOTONIC, &started);
 	error = look_thumbnail(path, &wallpaper->thumbnail);
 	if (error == 0)
 		wallpaper->read = 1;
-	se_log("LOOK picture path=%s error=%d", path, error);
+	(void)clock_gettime(CLOCK_MONOTONIC, &finished);
+	milliseconds = (long)(finished.tv_sec - started.tv_sec) * 1000L + (finished.tv_nsec - started.tv_nsec) / 1000000L;
+	se_log("LOOK picture path=%s error=%d ms=%ld", path, error, milliseconds);
 	app->look.wallpaper_count++;
 }
 
@@ -672,56 +681,75 @@ look_ppm_number(
 	return 0;
 }
 
-/* Reads a whole file (at most LOOK_PICTURE_MAX bytes); NULL with errno set when it cannot be read. */
+/* Reads a whole file (at most LOOK_PICTURE_MAX bytes) with large reads; NULL with errno set when it cannot be read. */
 static unsigned char *
 look_file(
 	const char *path,
 	size_t *size)
 {
+	struct stat status;
 	unsigned char *data;
-	FILE *file;
-	long length;
-	size_t count;
-	int status;
+	ssize_t count;
+	size_t done;
+	int descriptor;
+	int result;
+	int error;
 
 	/* The file. */
-	file = fopen(path, "rb");
-	if (file == NULL)
+	descriptor = open(path, O_RDONLY);
+	if (descriptor < 0)
 		return NULL;
 
 	/* Its length, within the limit. */
-	status = fseek(file, 0L, SEEK_END);
-	length = ftell(file);
-	if (status != 0 ||
-	    length <= 0 ||
-	    (unsigned long)length > LOOK_PICTURE_MAX) {
-		(void)fclose(file);
+	result = fstat(descriptor, &status);
+	if (result != 0 ||
+	    status.st_size <= 0 ||
+	    (uint64_t)status.st_size > LOOK_PICTURE_MAX) {
+		(void)close(descriptor);
 		errno = EFBIG;
 		return NULL;
 	}
 
-	/* Back to the start for the reading. */
-	rewind(file);
-
-	/* Every byte. */
-	data = malloc((size_t)length);
+	/* Room for every byte. */
+	data = malloc((size_t)status.st_size);
 	if (data == NULL) {
-		(void)fclose(file);
+		(void)close(descriptor);
 		errno = ENOMEM;
 		return NULL;
 	}
 
-	/* The bytes, and the file closed. */
-	count = fread(data, 1U, (size_t)length, file);
-	(void)fclose(file);
-	if (count != (size_t)length) {
+	/* The bytes, in as few reads as the file system gives. */
+	done = 0;
+	error = 0;
+	while (done < (size_t)status.st_size) {
+		count = read(descriptor, data + done, (size_t)status.st_size - done);
+		if (count < 0) {
+			error = errno;
+			break;
+		}
+
+		/* A file that ends early is short. */
+		if (count == 0) {
+			error = EIO;
+			break;
+		}
+
+		/* The bytes read. */
+		done += (size_t)count;
+	}
+
+	/* The file is not needed any more. */
+	(void)close(descriptor);
+
+	/* A failed reading gives nothing. */
+	if (error != 0) {
 		free(data);
-		errno = EIO;
+		errno = error;
 		return NULL;
 	}
 
 	/* Succeeded: the file's bytes. */
-	*size = count;
+	*size = done;
 	return data;
 }
 
