@@ -18,6 +18,7 @@ With --tls-dir (made by make-test-ca.sh) the same paths are also served over HTT
   /close                 an HTML page without a length, ended by closing the connection
   /cookie/set            sets two cookies (one for /cookie only) and redirects to /cookie/echo
   /cookie/echo           a page showing the Cookie header it was sent
+  /user-agent           a page showing the User-Agent header it was sent
   /script                a page whose script (/script.js, relative) writes into it
   /status/N              a page with status N
   /to-https              a redirect to the same host's https port, /pages/first.html
@@ -181,6 +182,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/cookie/echo":
             cookies = self.headers.get("Cookie", "")
             return self.send_page("<!DOCTYPE html><title>cookies</title><p id=cookies>%s</p>" % cookies)
+        if path == "/user-agent":
+            agent = self.headers.get("User-Agent", "")
+            return self.send_page("<!DOCTYPE html><title>agent</title><p id=agent>%s</p>" % agent)
         if path == "/script":
             return self.send_page("<!DOCTYPE html><title>script</title><p id=out>not run</p>"
                                   "<script src=\"script.js?v=1\"></script>")

@@ -24,6 +24,8 @@ import subprocess
 import sys
 import tempfile
 
+from comparison_config import CHROME_USER_AGENT
+
 try:
     from PIL import Image, ImageChops
 except ImportError as error:
@@ -33,7 +35,7 @@ except ImportError as error:
 
 
 ROOT = Path(__file__).resolve().parents[3]
-AGENT = "browser/0.1 (Kei)"
+AGENT = CHROME_USER_AGENT
 THRESHOLD = 16
 FONT_NAMES = (
     "Inter.ttf",
@@ -335,6 +337,13 @@ def main():
         }
         capture_manifest = capture_dir / "capture-manifest.json"
         if capture_manifest.is_file():
+            capture_data = json.loads(capture_manifest.read_text(encoding="utf-8"))
+            capture_agent = capture_data.get("user_agent")
+            if capture_agent != AGENT:
+                raise RuntimeError(
+                    "capture User-Agent differs from comparison User-Agent: %r"
+                    % capture_agent
+                )
             report["capture_manifest_sha256"] = sha256(capture_manifest)
 
         data_home = output / "browser-data"

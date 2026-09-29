@@ -2,10 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q504](queue-q504.md)（ws074-p095 cleared。Amazon検索欄の文字の位置）
+Last finished Queue: [q505](queue-q505.md)（ws074-p096 cleared。Mozilla日本語siteの固定比較corpusと一般化修正）
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-09-30 q505
+
+[q505](queue-q505.md): Mozilla日本語topと直接linkされた3 pageを固定Chrome User-Agentでcaptureし、Chromiumと比較。custom-propertyの`@supports`とbutton内の空白を修正し、topは70.71%/ink 62.52%から78.23%/ink 69.54%へ改善。GitHubへは未公開。
 
 ## 最新: 2026-09-30 q504
 

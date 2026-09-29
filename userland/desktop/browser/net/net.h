@@ -23,7 +23,9 @@
 #include "base/base.h"
 
 /* The User-Agent the browser sends, which navigator.userAgent reports too. */
-#define NET_USER_AGENT		"browser/0.1 (Kei)"
+#define NET_USER_AGENT		"Mozilla/5.0 (X11; Linux x86_64) " \
+				"AppleWebKit/537.36 (KHTML, like Gecko) " \
+				"Chrome/153.0.0.0 Safari/537.36"
 
 /*
  * A parsed URL.

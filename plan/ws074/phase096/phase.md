@@ -2,7 +2,7 @@
 
 # ws074-p096: 公開サイトの固定比較corpusと一般化修正
 
-Status: in-progress
+Status: cleared
 Disposition: normal
 Parent: [WS074](../ws.md)
 Queue: q505-i01
@@ -29,3 +29,32 @@ Mozilla日本語サイトを入口に、そこからたどれる同一originのp
 ## 初期取得（2026-09-30）
 
 固定Chrome User-AgentでMozilla日本語topはHTTP 200、最終URLは`https://www.mozilla.org/ja/`。展開後のHTMLは119,628 byteで、stylesheet 6、image 22、script 11、同一originの日本語link 17を含む。最初はtopから`/ja/products/`、`/ja/about/`、`/ja/about/manifesto/`へたどる。比較用の固定版ではscriptを除くが、linkの行先はmanifestに残す。
+
+
+## 結果（2026-09-30）
+
+- 取得・Chromium・browserのHTTP送信・`navigator.userAgent`を、Chrome for Testing 153と同じ固定User-Agentに揃えた。比較器はcapture manifestのUser-Agentが違うと停止する。
+- 汎用の`site-capture.py`を追加した。Mozilla日本語top、Products、Mozillaについて、Mozilla Manifestoを取得し、HTML・stylesheet・image・CSSの`url()`を`build/ws074-mozilla/`へ固定した。4 pageはHTTP 200、要求URLからredirectなし、challenge signalなし、asset 78件・取得失敗0。再実行は全pageをcacheから読み、manifestのSHA-256が一致した。
+- `@supports (--css: variables)`をcustom propertyの有効なfeature queryとして扱うようにした。MozillaのCSS variableを使うruleが有効になり、4 pageすべての指標が改善した。
+- UA stylesheetの`button { white-space: pre; }`をやめた。整形用の改行・字下げがbutton内の匿名boxになって高さを増やしていた。専用fixtureはChromiumと4/4 boxが1 px以内で一致した。
+
+| 固定page | 修正前 pixel / ink | 最終 pixel / ink | Uncaught |
+| --- | ---: | ---: | ---: |
+| Mozilla top | 70.71% / 62.52% | 78.23% / 69.54% | 0 |
+| Products | 93.19% / 16.46% | 94.83% / 31.35% | 0 |
+| Mozillaについて | 43.98% / 19.74% | 48.53% / 25.65% | 0 |
+| Mozilla Manifesto | 86.49% / 4.09% | 89.76% / 12.90% | 0 |
+
+比較reportは`build/ws074-mozilla-compare-final/report.json`、画像は同じdirectoryにある。取得物と比較結果はcommitしていない。
+
+## 回帰
+
+- host buildはplain・ASanともwarning 0。
+- `values`のcustom-property `@supports`と`button-whitespace`のlayout goldenをplain・ASanで一致させた。formは両方29/29。
+- HTTP/TLSはplain・ASanとも15/15で、送信User-Agentの完全一致を含む。
+- Pythonの変更fileは`py_compile`を通した。変更したC/headerの`style-check.py`は0件、`git diff --check`は0件。
+- scopeどおりguest・boot・smokeは実施していない。GitHubへは未公開。
+
+## 残りの候補
+
+Mozillaの固定assetにはWOFF2が8件あるがbrowserはまだWOFF2を読めず、文字の形とmetricの差が大きい。topの緑のflagはinline SVG不足で欠ける。どちらも既存の一般Phase候補として次のQueueに分ける。
