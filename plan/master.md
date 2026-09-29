@@ -1,11 +1,10 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: [q499](queue.md) / ws085-p001（Windows Venusの表示と速度、2026-09-29 ユーザー指示。vendor forkの直接変更を追加許可）。
-Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
-Next（2026-09-29 夕に更新）: **素の 5330 で firmware の画面の takeover → 内蔵 LCD の Keiland が動作**（WS084 p001・p002 cleared、image `build/demo-lcd3/hdd-image.img`、ユーザー「完璧です」）。HDMI の LCD はいったん外し LCD のみの構成（demo の既定 `display=edp`）。GT は RP0 の要求で操作中 24.5 present/s（RPS の割込みは F-054）。
-次の周期（demo critical）: WS074 の direction → p072 → p037（[amazon-goal.md](ws074/amazon-goal.md)）、WS079 p009（規約）と CCITTFax・password の入力・thumbnail、
-WS075 p007〜p010 と BUG-058（p017 uncleared）、WS035 の F-048。WS082 は study.md §10 の 11 項目のユーザーの判断待ち。WS080 はデモ critical の後。
+Active Queue: なし（2026-09-29〜30 はサブエージェントが worktree の branch で Phase を実行し、main が merge した。Queue の記録は各 ws.md と phase.md）。
+Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
+Next（2026-09-30 に更新）: 実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）でユーザーが確認。次の周期の候補は下の Upcoming Work Outlook。
+IME（WS095）とブラウザ（WS074）は一時的に人間が作業中（エージェントに割り当てない）。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -51,7 +50,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | Goal | 当面の成果 | Milestone | 担当 | 出典 |
 | --- | --- | --- | --- | --- |
-| **fg010** | **2026-10-17 の Open Source Conference Tokyo Fall のデモに向けて、Kei Operating System を仕上げる**: Dell Latitude 5330 の実機（HDMI の 10 インチの touch LCD + AES pen、USB boot）で graphical login から Keiland のデスクトップ、demo critical のアプリ（Notes・PDF Viewer・ブラウザ（amazon.co.jp）・Files・terminal）が動く | MG006 | [WS035](ws035/ws.md)（Keiland）、[WS075](ws075/ws.md)（i915・HDMI）、[WS079](ws079/ws.md)（Notes・PDF Viewer）、[WS074](ws074/ws.md)（ブラウザ）、[WS081](ws081/ws.md)（touch）。GPU の土台は [WS014](ws014/ws.md)・[WS031](ws031/ws.md) | 2026-09-24 ユーザー指示、2026-09-28 のデモの範囲と機材（下の判断の表）、2026-09-29 に記述を更新 |
+| **fg010** | **2026-10-17 の Open Source Conference Tokyo Fall のデモに向けて、Kei Operating System を仕上げる**: Dell Latitude 5330 の実機（内蔵 LCD、USB boot。HDMI の touch LCD は 2026-09-29 に外した）で graphical login から Keiland のデスクトップ、demo critical のアプリ（Image Viewer・Text Editor・Files・Settings・Notes・PDF Viewer・ブラウザ（amazon.co.jp）・terminal）が動く | MG006 | [WS035](ws035/ws.md)（Keiland）、[WS075](ws075/ws.md)（i915）、[WS089](ws089/ws.md)（Settings）、[WS091](ws091/ws.md)・[WS092](ws092/ws.md)・[WS093](ws093/ws.md)（画像・text・Files からの起動）、[WS079](ws079/ws.md)（Notes・PDF Viewer）、[WS074](ws074/ws.md)（ブラウザ）、[WS081](ws081/ws.md)（touch） | 2026-09-24 ユーザー指示、2026-09-29 のデモ critical の追加（画像 viewer と text editor）、2026-09-30 に記述を更新 |
 
 デモの platform は amd64 の実機（Dell Latitude 5330、HDMI + USB、2026-09-28 ユーザーの回答）。開発の試験は QEMU（amd64）で行い、実機の証拠と分けて書く。以前の focus（fg004 インストーラの実機、
 fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残すが、現在は優先しない。
@@ -169,16 +168,14 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 依存による実行順とは別のもの。Queue の権限は変えない。2026-09-28 に整理（それ以前の順は git の履歴にある）。
 
-0. **現在のユーザー指示**: WS085（Windows hostのVenus、q499）。
-
 **デモまでの期間（2026-09-29 ユーザー）**: 10-10 ごろまで新規実装を進め、10-10 ごろ〜10-17 は bug の修正と実機での調整だけにする。
 
 **優先の調整（2026-09-29 夜 ユーザー）**:「IMEはとりあえず変換できるようになったら、ブラッシュアップは後回しにして、Keilandを優先しましょう。Bug-030も優先です。Settingsはある程度動いたらブラッシュアップは後回しにします。」→ WS035（Keiland）と BUG-030（WS073）を先に。WS095 は p004（変換と確定）で一区切りにし、候補の窓の残り・辞書の拡張（p012）ほかは後回し。WS089 は p006 の後のブラッシュアップを後回し。
 
 **一時的に人間が作業（2026-09-30 ユーザー）**:「IMEとブラウザの作業は一時的に、人間が作業するので、作業しないでください。でも一時的です。」→ WS095（IME）と WS074（ブラウザ）はエージェントに割り当てない。その source（`userland/desktop/ime/`・`ime-probe/`、zdesktop の `ime.h`・`text-input.c`・`input-method.c`、`userland/desktop/browser/`・`libbrowser/`）と `plan/ws095/`・`plan/ws074/` を他の WS のエージェントも変えない。ユーザーが戻すと言うまで。
 
-**運用（ユーザー、2026-09-27〜28）**: 作業用のサブエージェントを N=1〜4（通常は 3〜4。2026-09-28 の枠はユーザーの指示で N=5）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
-N=0 になったら実装をまとめて計画（master・ws.md・queue・Future Work・Bug Board）を整理する。試験は amd64 だけ、Phase の終わりに。
+**運用（ユーザー、2026-09-27〜30）**: 作業用のサブエージェントを N=0〜9（2026-09-29 は N=9、1 時間に 5 時間の枠の約 25%）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
+N=0 になったら実装をまとめて計画（master・ws.md・Future Work・Bug Board）を整理する。試験は amd64 だけ、Phase の終わりに。effort は判断の表の「サブエージェントの effort」。
 
 1. **Keiland と名前**: WS035（Keiland の compositor・システムバー・login・lock）、WS078（Kei Operating System への改名）、 **WS079**（手書きの Notes・PDF Viewer・スワイプ）も Keiland の優先に入れる。
    WS071（File Manager、完了。続きは WS035 の Phase と Future Work）。
@@ -191,22 +188,19 @@ N=0 になったら実装をまとめて計画（master・ws.md・queue・Future
 
 ## Upcoming Work Outlook
 
-見込みであって、約束や実行許可ではない（2026-09-28 に整理）。
+見込みであって、約束や実行許可ではない（2026-09-30 に整理）。
 
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
-| venus-win32 の取り込み（WS085）: merge（submodule を外す、font の license）、Linux（Venus 1.3）の回帰と Windows（1.4）の両立 → WS088（Kei-nightly.zip の CI） | ユーザーの方針（2026-09-29） | 条件は決定済み |
-| WS087（sh の矢印キーの履歴・Tab の補完）、WS086（ls）、BUG-102（ping） | 実機の使い勝手（2026-09-29） | p001 から |
-| 実機の USB の demo の image（`build/demo-hdmi2`）の結果（HDMI の LCD での login・logout の目視、eDP、touch の USB の descriptor、Notes・PDF Viewer） | デモ | ユーザーが試験 |
-| WS074: amazon-goal.md の続き。p037（table の最小）・p027（RegExp）cleared（2026-09-29）。JS の Date の builtin を実装の途中で枠の上限で止まった（未 commit、worktree `.claude/worktrees/agent-a346b6e810eda5cb6` の js/builtin_date.c 等）。Chromium との一致: トップ 80.4%、検索 77.2% | ブラウザのデモの目標 | 次の枠でその worktree から再開 |
-| WS079: p009（規約）、CCITTFax・password の入力・thumbnail | PDF・Notes | p008 cleared |
-| WS075: p007〜p010、BUG-058（p017 は 6 回で再現せず uncleared）、BUG-095 | i915 | 実機の LCD の目視の後 |
-| WS035: p121〜p123 cleared（2026-09-29: 見える旧名、Notes の toolbar と title の区切り、App Home の線画のアイコン 10 枚）、p124（title bar・bar・Wiseview の app の印を同じ絵に）・p125（試験が greeter を止める、zdesktop-guest.sh の stop）cleared。残り: 実機（i915 での atlas の新しい行、browser の窓の印）、他の道具（plan/tools/titlebar/・plan/ws079/tests/）の greeter の前提、guest.py の二重起動の検査、F-048 | Keiland | — |
-| WS081: p001（touch の慣性・補間の設計） | touch の質 | — |
+| 実機の image `build/demo-lcd8` の確認（LCD の takeover、10 app の軽さ、Files → Image Viewer・Text Editor、Settings、デスクトップの icon、Terminal の角、Notes の全画面を解く、USB マウス・sh の履歴・プロンプトの `~`） | デモ | ユーザーが試験 |
+| WS075 p023: compositor の panel.frag の分岐の中の ALU を飛ぶ（見積もり 1 run 8.8 → 4.9 ms）。すりガラスは残す案（ユーザーの判断待ち） | 窓が多いときの軽さ | p023 の計測済み |
+| WS035: BUG-115（p072 の errno=5）、p135（暗い壁紙の上の glass の文字、すりガラスの判断の後）、ぼかしの pass（約 80 ms） | Keiland | 各 ticket |
+| WS073: BUG-030 の受け入れの残り（KVM 2×20・boot test）、BUG-116（EP0 の event の取りこぼし、BUG-036 と同じ系統か） | 安定性 | phase041 |
+| WS094 p004 の残り（保存した場所への配置の guest の確認・回帰・boot test）→ p005〜p007 | デスクトップの icon | phase004 の Resume point |
+| WS090 p004（窓の土台と Text Editor の libkeiui への移行、文字の編集の touch） | 共通の部品 | p003 cleared |
+| WS074（ブラウザ）p088〜p093、WS095（IME）p005〜: **一時的に人間が作業中** | — | ユーザーが戻すと言うまで |
+| WS098（IME のニューラル化）: 学習の corpus と license の判断から | IME の最後の仕上げ | WS095 の辞書の後 |
 | WS080: p001（ld.coff の設計） | デモ critical の後 | spec.md |
-| WS082: p002・p002b（study.md §10 の判断の後） | KVM | ユーザーの判断 |
-| WS073: BUG-093（Noct の patch の mtime）、BUG-051 | 安定性・開発 | 各 ticket |
-| WS078 の残り: 注釈・log の名前 | 改名 | — |
 
 ## Tools
 
