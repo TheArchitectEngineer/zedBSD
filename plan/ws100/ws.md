@@ -38,6 +38,16 @@ Resume point: p001（設計）から。基準の案はユーザーの確認待�
 不要の経路）で 5330 が鳴るかを調べる。鳴らなければ A1〜A6（icon・slider・設定・無音の扱い）だけでデモに出し、A7 は Future Work に回す。
 legacy の HDA が 5330 の firmware の設定で無効にされていないか（PCI の class が 0x0403 の HDA として見えるか、BIOS の audio の DSP の設定）も確かめる。
 
+## データシート（2026-09-30 main が調べた。ユーザー「legacy の経路があるかないかは、データシートを見るのがいいです。Core Ultraならlegacyがないかもしれないけど、Alder Lakeなら残っている気がするなあ。」）
+
+- Intel 600 Series Chipset Family On-Package PCH（Alder Lake-P）の datasheet（Intel EDC、ID 691222）の「Intel HD Audio Controller Capabilities」:
+  controller は **baseline の Intel HD Audio の動作（legacy DMA で codec と stream をやりとりし、音の処理は host の CPU）** と、Audio DSP の offload の
+  低電力の動作の両方を持つ、とある。つまり Alder Lake-P には legacy の経路が残っている（ユーザーの見立てどおり）。
+  - https://edc.intel.com/content/www/us/en/design/ipla/software-development-platforms/client/platforms/alder-lake-mobile-p/intel-600-series-chipset-family-on-package-platform-controller-hub-pch-datash/intel-high-definition-audio-interface-capabilities/
+  - desktop の 600 series（ID 648364）の同じ節も同じ記述。
+- 残る危険: 5330 の内蔵の speaker の amplifier や codec が HDA link の analog codec に付いているか（DMIC・SoundWire だけの構成でないか）。
+  p001 で Linux の `/sys/bus/hdaudio` や codec の dump、または Kei の pci-hda の codec の列挙で確かめる。
+
 ## 前提と危険
 
 - 音の経路は audiod（ws035-p009・p049・p050、unix socket と共有メモリ）と `src/drivers/pci/pci-hda.c`。QEMU の起動の log は `audiod: no device`
