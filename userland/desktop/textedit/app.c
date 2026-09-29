@@ -406,6 +406,7 @@ te_app_tick(
 {
 	double elapsed;
 	double share;
+	double left;
 	uint64_t since;
 	int due;
 	int wait;
@@ -431,10 +432,13 @@ te_app_tick(
 	if (app->gliding) {
 		share = 1.0 - exp(-elapsed / APP_GLIDE_MS);
 		app->scroll_y += (app->target_y - app->scroll_y) * share;
-		if (fabs(app->target_y - app->scroll_y) < 0.5) {
+		left = fabs(app->target_y - app->scroll_y);
+		if (left < 0.5) {
 			app->scroll_y = app->target_y;
 			app->gliding = 0;
 		}
+
+		/* The view moved. */
 		app->dirty = 1;
 		if (app->gliding && (due < 0 || due > APP_FRAME_MS))
 			due = APP_FRAME_MS;
@@ -909,6 +913,8 @@ app_pointer(
 			app->selecting = 0;
 			app->primary_changed = 1;
 		}
+
+		/* A release does nothing more. */
 		return;
 	}
 
@@ -931,6 +937,8 @@ app_press(
 	size_t position;
 	size_t start;
 	size_t end;
+	int distance_x;
+	int distance_y;
 	int near;
 	int inside;
 
@@ -963,8 +971,10 @@ app_press(
 		return;
 
 	/* A click soon after one near it counts with it (up to three). */
+	distance_x = abs(event->x - app->click_x);
+	distance_y = abs(event->y - app->click_y);
 	near = 0;
-	if (abs(event->x - app->click_x) <= APP_CLICK_DISTANCE && abs(event->y - app->click_y) <= APP_CLICK_DISTANCE)
+	if (distance_x <= APP_CLICK_DISTANCE && distance_y <= APP_CLICK_DISTANCE)
 		near = 1;
 	if (near && app->now - app->click_time <= APP_CLICK_MS && app->click_count < 3)
 		app->click_count++;
@@ -996,6 +1006,8 @@ app_press(
 		app->select_start = start;
 		app->select_end = end;
 	}
+
+	/* The pointer's moves drag the selection until the release. */
 	app->selecting = 1;
 }
 
@@ -1043,6 +1055,8 @@ app_drag(
 		if (end < app->select_end)
 			app->cursor = app->select_end;
 	}
+
+	/* The cursor shows where the drag is. */
 	app->goal_valid = 0;
 	app->blink_start = app->now;
 	app->dirty = 1;
@@ -1054,6 +1068,8 @@ app_wheel(
 	struct te_app *app,
 	const struct te_event *event)
 {
+	double largest;
+
 	/* A dialog keeps the view still. */
 	if (app->dialog != TE_DIALOG_NONE)
 		return;
@@ -1074,15 +1090,16 @@ app_wheel(
 		app->dirty = 1;
 	}
 
-	/* Down or up: the view glides to the new place. */
+	/* Down or up: the view glides to the new place, within the text. */
 	if (event->scroll != 0) {
 		if (!app->gliding)
 			app->target_y = app->scroll_y;
 		app->target_y += (double)event->scroll;
+		largest = te_app_max_scroll_y(app);
 		if (app->target_y < 0.0)
 			app->target_y = 0.0;
-		if (app->target_y > te_app_max_scroll_y(app))
-			app->target_y = te_app_max_scroll_y(app);
+		if (app->target_y > largest)
+			app->target_y = largest;
 		app->gliding = 1;
 		app->dirty = 1;
 	}
@@ -1136,6 +1153,8 @@ app_find_text(
 		while (length > 0U && ((unsigned char)event->text[length] & 0xc0U) == 0x80U)
 			length--;
 	}
+
+	/* The text copied. */
 	memcpy(app->find, event->text, length);
 	app->find[length] = '\0';
 	app->find_length = length;
@@ -1389,6 +1408,8 @@ app_dialog_choose(
 		} else {
 			app->after = TE_AFTER_NOTHING;
 		}
+
+		/* The unsaved changes are dealt with. */
 		break;
 	case TE_DIALOG_CHANGED:
 		/* Overwrite the file changed on the disk, or keep it. */
@@ -1469,6 +1490,8 @@ app_choose(
 		app->after = TE_AFTER_NOTHING;
 		return;
 	}
+
+	/* The editor waits for the answer. */
 	app->choosing = 1;
 	app->choosing_save = saving;
 	app->selecting = 0;

@@ -465,6 +465,7 @@ buffer_grow(
 {
 	size_t capacity;
 	size_t after;
+	size_t length;
 	char *larger;
 
 	/* A gap that is big enough stays. */
@@ -472,7 +473,8 @@ buffer_grow(
 		return 0;
 
 	/* The text may not grow past its limit. */
-	if (te_buffer_length(buffer) + needed > TE_TEXT_MAX)
+	length = te_buffer_length(buffer);
+	if (length + needed > TE_TEXT_MAX)
 		return ENOMEM;
 
 	/* Twice the size, or enough for the bytes and some slack. */
@@ -535,13 +537,15 @@ buffer_count_lines(
 	size_t length;
 	size_t index;
 	size_t count;
+	unsigned char byte;
 	int error;
 
 	/* How many lines: one, and one more after each newline. */
 	length = te_buffer_length(buffer);
 	count = 1U;
 	for (index = 0; index < length; index++) {
-		if (te_buffer_byte(buffer, index) == '\n')
+		byte = te_buffer_byte(buffer, index);
+		if (byte == '\n')
 			count++;
 	}
 
@@ -555,7 +559,8 @@ buffer_count_lines(
 	buffer->lines[0] = 0;
 	buffer->line_count = 1;
 	for (index = 0; index < length; index++) {
-		if (te_buffer_byte(buffer, index) != '\n')
+		byte = te_buffer_byte(buffer, index);
+		if (byte != '\n')
 			continue;
 		buffer->lines[buffer->line_count] = index + 1U;
 		buffer->line_count++;

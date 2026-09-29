@@ -62,10 +62,12 @@ te_file_read(
 	struct te_file_info *info)
 {
 	struct stat status;
+	const char *nul;
 	char *bytes;
 	size_t size;
 	int descriptor;
 	int error;
+	int folder;
 
 	/* Nothing known yet. */
 	memset(info, 0, sizeof(*info));
@@ -86,7 +88,8 @@ te_file_read(
 	}
 
 	/* A folder is not a text. */
-	if (S_ISDIR(status.st_mode)) {
+	folder = S_ISDIR(status.st_mode);
+	if (folder) {
 		close(descriptor);
 		return EISDIR;
 	}
@@ -114,7 +117,8 @@ te_file_read(
 	}
 
 	/* A NUL byte says it is not plain text. */
-	if (size != 0U && memchr(bytes, '\0', size) != NULL) {
+	nul = memchr(bytes, '\0', size);
+	if (nul != NULL) {
 		free(bytes);
 		return EILSEQ;
 	}
@@ -151,6 +155,7 @@ te_file_write(
 	char *real;
 	int descriptor;
 	int error;
+	int closed;
 
 	/* A link is saved through: the file it names is replaced, not the link. */
 	target = path;
@@ -182,7 +187,8 @@ te_file_write(
 	}
 
 	/* The new file is complete. */
-	if (close(descriptor) != 0 && error == 0)
+	closed = close(descriptor);
+	if (closed != 0 && error == 0)
 		error = errno;
 	if (error != 0) {
 		(void)unlink(temporary);
@@ -284,9 +290,13 @@ file_scan(
 	size_t lf;
 	size_t from;
 	size_t to;
+	int mark;
 
 	/* The byte order mark. */
-	if (*length >= FILE_BOM_LENGTH && memcmp(text, FILE_BOM, FILE_BOM_LENGTH) == 0) {
+	mark = 1;
+	if (*length >= FILE_BOM_LENGTH)
+		mark = memcmp(text, FILE_BOM, FILE_BOM_LENGTH);
+	if (mark == 0) {
 		memmove(text, text + FILE_BOM_LENGTH, *length - FILE_BOM_LENGTH);
 		*length -= FILE_BOM_LENGTH;
 		info->bom = 1;
@@ -315,6 +325,8 @@ file_scan(
 			text[to] = text[from];
 			to++;
 		}
+
+		/* The text is shorter by the CRs. */
 		*length = to;
 	}
 
@@ -448,8 +460,12 @@ file_flush(
 		count = write(descriptor, bytes + done, length - done);
 		if (count < 0 && errno == EINTR)
 			continue;
-		if (count <= 0)
-			return errno != 0 ? errno : EIO;
+		if (count < 0)
+			return errno;
+		if (count == 0)
+			return EIO;
+
+		/* The part written. */
 		done += (size_t)count;
 	}
 

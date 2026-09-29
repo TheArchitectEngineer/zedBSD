@@ -329,6 +329,7 @@ undo_joinable(
 	const struct te_undo_step *step)
 {
 	const struct te_undo_step *last;
+	const char *found;
 	int newline;
 
 	/* Only a change that may join, after a step still done and not saved since. */
@@ -346,7 +347,8 @@ undo_joinable(
 
 	/* A newline typed starts a new step. */
 	newline = 0;
-	if (step->length > 0U && memchr(step->text, '\n', step->length) != NULL)
+	found = memchr(step->text, '\n', step->length);
+	if (found != NULL)
 		newline = 1;
 	if (newline)
 		return 0;

@@ -223,6 +223,8 @@ te_edit_key(
 			te_edit_cut(app);
 			return 1;
 		}
+
+		/* Otherwise it deletes forward. */
 		edit_forward_delete(app, (event->modifiers & TE_MOD_CTRL) != 0U);
 		return 1;
 	case TE_KEY_ENTER:
@@ -325,6 +327,8 @@ te_edit_copy(
 		te_app_message(app, "Not enough memory to copy.");
 		return;
 	}
+
+	/* The text goes to the clipboard. */
 	te_buffer_copy(&app->buffer, start, end, text);
 	app->host.copy(app->host.data, text, end - start);
 	free(text);
@@ -506,9 +510,13 @@ te_edit_word(
 			*end = position;
 			return;
 		}
+
+		/* The character before is the word's. */
 		position = te_buffer_prev_char(&app->buffer, position);
 		codepoint = te_buffer_char(&app->buffer, position, &next);
 	}
+
+	/* The word is the run of that character's kind. */
 	kind = edit_class(codepoint);
 
 	/* Back over the same kind. */
@@ -1083,13 +1091,15 @@ edit_home(
 	size_t end;
 	size_t indent;
 	size_t line;
+	size_t line_start;
 	unsigned char byte;
 
 	/* The row's start. */
 	te_layout_place(&app->layout, &app->buffer, app->cursor, &row, &column);
 	te_layout_row_range(&app->layout, &app->buffer, row, &start, &end);
 	line = te_buffer_line_of(&app->buffer, app->cursor);
-	if (start != te_buffer_line_start(&app->buffer, line))
+	line_start = te_buffer_line_start(&app->buffer, line);
+	if (start != line_start)
 		return start;
 
 	/* The end of the line's indent. */
@@ -1351,6 +1361,8 @@ edit_newline(
 		te_app_message(app, "Not enough memory.");
 		return;
 	}
+
+	/* The newline, then the indent copied. */
 	text[0] = '\n';
 	te_buffer_copy(&app->buffer, line_start, indent, text + 1);
 
@@ -1380,8 +1392,10 @@ edit_indent(
 	size_t count;
 	size_t cursor_before;
 	size_t anchor_before;
+	size_t last_start;
 	unsigned group;
 	unsigned char byte;
+	const char *removed;
 
 	/* Within one line without Shift, a tab character. */
 	te_edit_selection(app, &start, &end);
@@ -1393,7 +1407,8 @@ edit_indent(
 	}
 
 	/* A selection ending at a line's start leaves that line alone. */
-	if (last > first && end == te_buffer_line_start(&app->buffer, last))
+	last_start = te_buffer_line_start(&app->buffer, last);
+	if (last > first && end == last_start)
 		last--;
 
 	/* Each line from the last (so the earlier places stay put), as one change. */
@@ -1412,19 +1427,23 @@ edit_indent(
 
 		/* Outdent: a tab, or up to four spaces, from the line's start. */
 		count = 0;
+		removed = "    ";
 		byte = te_buffer_byte(&app->buffer, at);
 		if (byte == '\t') {
 			count = 1;
+			removed = "\t";
 		} else {
-			while (count < 4U && te_buffer_byte(&app->buffer, at + count) == ' ')
+			while (count < 4U && byte == ' ') {
 				count++;
+				byte = te_buffer_byte(&app->buffer, at + count);
+			}
 		}
 
 		/* A line without an indent keeps its text. */
 		if (count == 0U)
 			continue;
 		edit_delete_raw(app, at, at + count);
-		(void)edit_record(app, TE_UNDO_DELETE, at, count == 1U && byte == '\t' ? "\t" : "    ", count, cursor_before, anchor_before, group, TE_MERGE_NONE);
+		(void)edit_record(app, TE_UNDO_DELETE, at, removed, count, cursor_before, anchor_before, group, TE_MERGE_NONE);
 	}
 
 	/* The whole lines stay selected. */

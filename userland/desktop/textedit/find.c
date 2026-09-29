@@ -58,6 +58,8 @@ te_find(
 				position = last + 1U;
 				*wrapped = 1;
 			}
+
+			/* The place before. */
 			position--;
 		} else if (position > last) {
 			position = 0;

@@ -185,6 +185,8 @@ te_touch_tick(
 		app->gliding = 0;
 		app->dirty = 1;
 	}
+
+	/* What the view was set to, to see a move made elsewhere. */
 	touch->written_x = app->scroll_x;
 	touch->written_y = app->scroll_y;
 
@@ -328,6 +330,8 @@ touch_gestures(
 				keiland_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
 				touch->pressed = 0;
 			}
+
+			/* The drag is over. */
 			touch->dragging = 0;
 			break;
 		case KEILAND_GESTURE_CANCEL:

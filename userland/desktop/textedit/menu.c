@@ -426,6 +426,8 @@ menu_state(
 		(void)keiland_menu_commit(model);
 		return error;
 	}
+
+	/* The changes are shown together. */
 	error = keiland_menu_commit(model);
 	if (error != 0)
 		return error;
@@ -448,6 +450,8 @@ menu_state(
 		(void)keiland_menu_commit(model);
 		return error;
 	}
+
+	/* The changes are shown together. */
 	error = keiland_menu_commit(model);
 	if (error != 0)
 		return error;

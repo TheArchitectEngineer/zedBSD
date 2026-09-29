@@ -301,6 +301,7 @@ te_layout_position(
 	size_t end;
 	size_t line;
 	size_t last;
+	size_t line_end;
 	size_t position;
 	size_t next;
 	size_t cells;
@@ -315,8 +316,9 @@ te_layout_position(
 	/* The row's bytes; a wrapped row ends before its last character. */
 	te_layout_row_range(layout, buffer, row, &start, &end);
 	line = te_layout_line_of_row(layout, row);
+	line_end = te_buffer_line_end(buffer, line);
 	last = end;
-	if (end != te_buffer_line_end(buffer, line) && end > start)
+	if (end != line_end && end > start)
 		last = te_buffer_prev_char(buffer, end);
 
 	/* The characters until the column is passed. */
@@ -519,6 +521,8 @@ layout_line_rows(
 			blank = 1;
 			blank_end = next;
 		}
+
+		/* The next character. */
 		position = next;
 	}
 
