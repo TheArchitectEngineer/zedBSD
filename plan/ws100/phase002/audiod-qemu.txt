@@ -1,0 +1,17 @@
+feedback: windows with sound: 22:8124 23:5557 26:8124 27:5557 30:8124 31:7922
+feedback: three sounds (6 windows) ok
+feedback: answered ok
+restart: windows with sound: 18:8124 19:5557 22:8124 23:8124 24:5557
+restart: no overlap (single 8124, largest 8124) ok
+soft: windows with sound: 22:8124 23:4115 26:257 30:16 31:16
+soft: peaks of the sounds: 8124 257 16
+soft: 100 > 50 > 10 > 0 (silent) ok
+soft: audiod reports 0 ok
+mute: windows with sound: 26:8124 27:7544
+mute: silent while muted, heard after ok
+hardware: windows with sound: 26:8124 27:2142 30:4047 31:2370 34:765 35:484
+hardware: the sounds are recorded ok
+no-device: device=0 ok
+no-device: FEEDBACK answered ok
+unknown: ERROR EINVAL ok
+audiod-qemu: PASS

@@ -18,13 +18,33 @@
 
 #include "userland/base/audiod/audiod.h"
 
+#include <stdlib.h>
 #include <string.h>
+
+/* The feedback sound (ws100-p002): its pitch, its length and rise in milliseconds, and its peak (-12 dBFS of the mix's scale). */
+#define FEEDBACK_HZ		880.0
+#define FEEDBACK_MS		100U
+#define FEEDBACK_RISE_MS	5U
+#define FEEDBACK_PEAK		536870912.0
+
+/*
+ * The device volume audiod applies itself, per percent: a 60 dB range in
+ * even steps (0.6 dB a percent, each step 10^(-0.03) of the one above, in
+ * 1/65536), 0 silent (ws100-p002).
+ */
+#define SOFT_UNITY		65536U
+#define SOFT_STEP		61162U
 
 static void fetch(const struct audiod_stream *stream, uint64_t position, int64_t sample[2]);
 static void store(struct audiod_stream *stream, uint64_t position, const int64_t sample[2]);
 static int32_t clamp32(int64_t value);
 static void audiod_played_store(struct audiod_shm_header *shm, uint64_t position, int64_t time_ns);
 static void device_to_stereo(const struct audiod_device *device, const uint8_t *in, uint32_t frames, int32_t *out);
+static void feedback_mix(struct audiod_device *device, int64_t *mix, uint32_t frames);
+static void soft_volume(const struct audiod_device *device, int64_t *mix, uint32_t frames);
+static uint32_t soft_gain(uint32_t percent);
+static double series_cos(double x);
+static double series_sin(double x);
 
 /* Reports the bytes of one frame. */
 uint32_t
@@ -59,6 +79,68 @@ audiod_stream_rates(
 	stream->phase = stream->direction == AUDIOD_CAPTURE ? (uint64_t)1 << 32 : 0;
 	stream->carry[0] = 0;
 	stream->carry[1] = 0;
+}
+
+/*
+ * Makes the feedback sound for the device's rate (ws100-p002): FEEDBACK_MS
+ * of a FEEDBACK_HZ sine that rises over FEEDBACK_RISE_MS and falls away to
+ * nothing, the same on both channels, at FEEDBACK_PEAK.  The sine comes
+ * from a two-term recurrence (no libm).  Returns 0, or -1 without memory
+ * (then no feedback sound plays).
+ */
+int
+audiod_feedback_make(
+	struct audiod_device *device)
+{
+	int32_t *frames;
+	double coefficient;
+	double previous;
+	double current;
+	double next;
+	double envelope;
+	double left;
+	uint32_t length;
+	uint32_t rise;
+	uint32_t index;
+
+	/* Its length and rise in frames. */
+	length = device->rate * FEEDBACK_MS / 1000U;
+	rise = device->rate * FEEDBACK_RISE_MS / 1000U;
+	if (length == 0U || rise == 0U || rise >= length)
+		return -1;
+
+	/* Room for it as stereo frames. */
+	frames = malloc((size_t)length * 2U * sizeof(*frames));
+	if (frames == NULL)
+		return -1;
+
+	/* The recurrence sin((n + 1) w) = 2 cos(w) sin(n w) - sin((n - 1) w), from sin(0) and sin(w). */
+	coefficient = 2.0 * series_cos(2.0 * 3.14159265358979323846 * FEEDBACK_HZ / (double)device->rate);
+	previous = 0.0;
+	current = series_sin(2.0 * 3.14159265358979323846 * FEEDBACK_HZ / (double)device->rate);
+
+	/* Each frame: the sine under its envelope, a straight rise and then a square fall to nothing. */
+	for (index = 0U; index < length; index++) {
+		if (index < rise) {
+			envelope = (double)index / (double)rise;
+		} else {
+			left = 1.0 - (double)(index - rise) / (double)(length - rise);
+			envelope = left * left;
+		}
+
+		/* The sample on both channels, and the next sine. */
+		frames[index * 2U] = (int32_t)(previous * envelope * FEEDBACK_PEAK);
+		frames[index * 2U + 1U] = frames[index * 2U];
+		next = coefficient * current - previous;
+		previous = current;
+		current = next;
+	}
+
+	/* Succeeded: the sound is kept, not playing until asked for. */
+	device->feedback = frames;
+	device->feedback_length = length;
+	device->feedback_next = length;
+	return 0;
 }
 
 /*
@@ -190,6 +272,10 @@ audiod_mix_period(
 			}
 		}
 	}
+
+	/* The feedback sound over the streams, then the volume audiod applies itself (ws100-p002). */
+	feedback_mix(device, mix, frames);
+	soft_volume(device, mix, frames);
 
 	/* Writes the mix in the device's format, saturating. */
 	for (i = 0; i < frames * 2U; i++) {
@@ -441,4 +527,119 @@ device_to_stereo(
 			}
 		}
 	}
+}
+
+/* Adds the playing part of the feedback sound to one period of the mix, and moves on. */
+static void
+feedback_mix(
+	struct audiod_device *device,
+	int64_t *mix,
+	uint32_t frames)
+{
+	uint32_t index;
+
+	/* Only while it plays. */
+	if (device->feedback == NULL)
+		return;
+
+	/* Each frame of the period, while the sound lasts. */
+	for (index = 0U; index < frames && device->feedback_next < device->feedback_length; index++) {
+		mix[index * 2U] += device->feedback[device->feedback_next * 2U];
+		mix[index * 2U + 1U] += device->feedback[device->feedback_next * 2U + 1U];
+		device->feedback_next++;
+	}
+}
+
+/* Applies the device volume audiod keeps itself (when the device has none) to one period of the mix. */
+static void
+soft_volume(
+	const struct audiod_device *device,
+	int64_t *mix,
+	uint32_t frames)
+{
+	uint32_t gain[2];
+	uint32_t index;
+
+	/* Only when the device does not take the volume. */
+	if (!device->soft)
+		return;
+
+	/* Each channel's factor; muted is silence. */
+	gain[0] = soft_gain(device->soft_left);
+	gain[1] = soft_gain(device->soft_right);
+	if (device->soft_muted) {
+		gain[0] = 0U;
+		gain[1] = 0U;
+	}
+
+	/* Every sample of the period. */
+	for (index = 0U; index < frames; index++) {
+		mix[index * 2U] = (mix[index * 2U] * (int64_t)gain[0]) >> 16;
+		mix[index * 2U + 1U] = (mix[index * 2U + 1U] * (int64_t)gain[1]) >> 16;
+	}
+}
+
+/* Gives the factor (in 1/65536) of a volume in percent: SOFT_STEP less per percent below 100, 0 at 0. */
+static uint32_t
+soft_gain(
+	uint32_t percent)
+{
+	uint32_t gain;
+	uint32_t step;
+
+	/* Silence, and full. */
+	if (percent == 0U)
+		return 0U;
+	if (percent >= 100U)
+		return SOFT_UNITY;
+
+	/* Down from full, one step a percent. */
+	gain = SOFT_UNITY;
+	for (step = percent; step < 100U; step++)
+		gain = (uint32_t)(((uint64_t)gain * SOFT_STEP) >> 16);
+
+	/* Succeeded: the factor. */
+	return gain;
+}
+
+/* Gives cos(x) for a small x (under 1) by its series, to x^14. */
+static double
+series_cos(
+	double x)
+{
+	double term;
+	double sum;
+	unsigned n;
+
+	/* Each term from the one before: -x^2 / ((2n - 1) 2n). */
+	term = 1.0;
+	sum = 1.0;
+	for (n = 1U; n <= 7U; n++) {
+		term = -term * x * x / (double)((2U * n - 1U) * 2U * n);
+		sum += term;
+	}
+
+	/* Succeeded: the sum. */
+	return sum;
+}
+
+/* Gives sin(x) for a small x (under 1) by its series, to x^15. */
+static double
+series_sin(
+	double x)
+{
+	double term;
+	double sum;
+	unsigned n;
+
+	/* Each term from the one before: -x^2 / (2n (2n + 1)). */
+	term = x;
+	sum = x;
+	for (n = 1U; n <= 7U; n++) {
+		term = -term * x * x / (double)(2U * n * (2U * n + 1U));
+		sum += term;
+	}
+
+	/* Succeeded: the sum. */
+	return sum;
 }

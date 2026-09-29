@@ -286,10 +286,14 @@ test_unported(void)
 	error = stub_execute(&fixture_wire, &reply_bytes);
 	assert(error == ENOTSUP);
 	assert(reply_bytes == STUB_REPLY_BYTES);
-	assert(strcmp(stub_log, "i915: vk: XXX unimplemented opcode 39 (sync)\n") == 0);
+	assert(strstr(stub_log, "i915: vk: XXX unimplemented opcode 39 (sync)\n") == stub_log);
 	assert(drv_i915_object_lookup(stub_session, I915_VK_OBJ_FENCE, FIXTURE_FENCE) != NULL);
 
-	/* vkCreateQueryPool is refused the same way. */
+	/*
+	 * vkCreateQueryPool is implemented (ws075-p006): the stream is accepted,
+	 * and on the host, with no GPU object for the counters, no pool is made
+	 * (ws075-p024).
+	 */
 	stub_wire_begin(&fixture_wire);
 	stub_put32(&fixture_wire, FIXTURE_CREATE_QUERY_POOL);
 	stub_put32(&fixture_wire, 1U);
@@ -305,8 +309,9 @@ test_unported(void)
 	stub_put64(&fixture_wire, 1U);
 	stub_put64(&fixture_wire, FIXTURE_QUERY_POOL);
 	error = stub_execute(&fixture_wire, &reply_bytes);
-	assert(error == ENOTSUP);
-	assert(strcmp(stub_log, "i915: vk: XXX unimplemented opcode 47 (sync)\n") == 0);
+	assert(error == 0);
+	assert(strstr(stub_log, "XXX") == NULL);
+	assert(drv_i915_object_lookup(stub_session, I915_VK_OBJ_QUERY_POOL, FIXTURE_QUERY_POOL) == NULL);
 
 	/* Closes the session with the fence alive: the close frees it and nothing stays allocated. */
 	stub_session_close();

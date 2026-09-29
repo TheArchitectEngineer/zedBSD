@@ -29,6 +29,15 @@ kernel's log (run.log, the debugcon: every record, also on a quiet boot).
                                   the tablet moves 40 pixels and PLANE_SURFLIVE is read with xp until it changes (or
                                   3 s pass); then 3 s without input count the flips the idle desktop makes.  One line
                                   per trial in latency.log and on the output
+    h4-ctl.py c6 PIPE COUNT X Y   (ws075-p024, WS099's C6) the time from a pointer move to the flip whose frame shows
+                                  the cursor there: COUNT times, 0.3 to 0.8 s apart (random, off the frame's phase), the
+                                  tablet goes to (X + 40, Y) and (X - 40, Y) in turn; before the move 16 pixels of four
+                                  rows just below the destination are read from the buffer on the screen, and after each
+                                  change of PLANE_SURFLIVE the same pixels of the new buffer: the first flip that shows
+                                  them changed (the composited cursor) ends the trial (3 s at most).  X, Y must be a
+                                  static part of the wallpaper (no window, no animation): the pointer clicks there
+                                  first, which shows the arrow again if a client (an X client) had hidden it.  One line per trial in c6.log; on the
+                                  output the samples and their median, 90th percentile and flips that did not show it
     h4-ctl.py rate PIPE SECONDS [X Y]  (ws075-p008; X Y: where the pointer moves, default the centre) the flips per second of PIPE while the pointer keeps moving: the tablet
                                   moves back and forth by 40 pixels every 8 ms for SECONDS, and PLANE_SURFLIVE is read
                                   between the moves; one line in latency.log and on the output
@@ -42,6 +51,7 @@ kernel's log (run.log, the debugcon: every record, also on a quiet boot).
 """
 import json
 import os
+import random
 import re
 import socket
 import sys
@@ -383,6 +393,91 @@ def latency(f, pipe, count):
         print(f'latency: {len(done)}/{count} flipped, median {done[len(done) // 2]:.1f} ms, min {done[0]:.1f}, max {done[-1]:.1f}')
 
 
+def buffer_words(f, address, count):
+    """COUNT 32-bit words at the kernel's virtual ADDRESS (a resident buffer's cpu address, as shot's memsave reads it),
+    read with x (empty when unreadable)."""
+    text = hmp(f, f'x /{count}wx 0x{address:x}')
+    words = []
+    for line in text.splitlines():
+        if ':' in line:
+            words += [int(v, 16) for v in re.findall(r'0x[0-9a-f]+', line.split(':', 1)[1])]
+    return words
+
+
+def cursor_pixels(f, geometry, live, x, y):
+    """16 pixels from X - 4 of the rows 2, 6, 10 and 14 below (X, Y) in the resident buffer scanned out at LIVE (an
+    arrow's hotspot is its tip, a text cursor's its middle)."""
+    width, height, pitch, addresses, surfaces = geometry
+    for key, surface in surfaces.items():
+        if live == surface & 0xfffff000:
+            base = addresses[key]
+            return tuple(buffer_words(f, base + (y + row) * pitch + (x - 4) * 4, 16) for row in (2, 6, 10, 14))
+    return None
+
+
+def percentile(values, fraction):
+    """The value at FRACTION of the sorted values (nearest rank)."""
+    ordered = sorted(values)
+    rank = max(1, int(fraction * len(ordered) + 0.999999))
+    return ordered[min(rank, len(ordered)) - 1]
+
+
+def c6(f, pipe, count, cx, cy):
+    """Times each pointer move to the first flip whose frame shows the cursor at its destination."""
+    bar = graphics_bar(f)
+    geometry = buffers()
+    if bar is None or geometry is None:
+        raise SystemExit('h4-ctl: c6: no passthrough graphics BAR or no resident buffers')
+    width, height = size()
+    samples = []
+    missed = 0
+    other = 0
+    with open(os.path.join(DIR, 'c6.log'), 'a') as log:
+        log.write(f'# c6 {time.strftime("%H:%M:%S")} pipe {pipe} at {cx} {cy} {width}x{height}\n')
+        # A click on the wallpaper where the trials start: a client that hid the cursor (an X client) keeps it hidden
+        # until the focus moves (zdesktop's seat.c), and the first trial must go somewhere else than the pointer is.
+        tablet(f, cx - 40, cy, width, height)
+        time.sleep(0.2)
+        button(f, True)
+        time.sleep(0.08)
+        button(f, False)
+        time.sleep(1.0)
+        for trial in range(count):
+            x = cx + (40 if trial % 2 == 0 else -40)
+            time.sleep(random.uniform(0.3, 0.8))
+            live = surflive(f, bar, pipe)
+            before = cursor_pixels(f, geometry, live, x, cy)
+            start = time.monotonic()
+            tablet(f, x, cy, width, height)
+            shown = None
+            flips = 0
+            last = live
+            while shown is None and time.monotonic() - start < 3.0:
+                now = surflive(f, bar, pipe)
+                if now == last:
+                    continue
+                at = time.monotonic()
+                last = now
+                flips += 1
+                if cursor_pixels(f, geometry, now, x, cy) != before:
+                    shown = (at - start) * 1000.0
+            if shown is None:
+                missed += 1
+                line = f'trial {trial}: not shown in 3 s ({flips} flips)'
+            else:
+                samples.append(shown)
+                other += flips - 1
+                line = f'trial {trial}: shown after {shown:.1f} ms, flip {flips}'
+            log.write(line + '\n')
+    if samples:
+        print('c6 samples: ' + ' '.join(f'{v:.1f}' for v in samples))
+        print(f'c6: {len(samples)}/{count} shown, median {percentile(samples, 0.5):.1f} ms, '
+              f'p90 {percentile(samples, 0.9):.1f} ms, min {min(samples):.1f}, max {max(samples):.1f}, '
+              f'{other} flips before the one that showed it, {missed} not shown')
+    else:
+        print(f'c6: 0/{count} shown')
+
+
 def rate(f, pipe, seconds, cx=None, cy=None):
     """Counts the flips of the pipe while the pointer keeps moving (the presentation rate under input)."""
     bar = graphics_bar(f)
@@ -475,6 +570,8 @@ def main():
         print(hmp(f, ' '.join(sys.argv[2:])))
     elif command == 'latency':
         latency(f, sys.argv[2], int(sys.argv[3]))
+    elif command == 'c6':
+        c6(f, sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]))
     elif command == 'rate':
         if len(sys.argv) >= 6:
             rate(f, sys.argv[2], float(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]))

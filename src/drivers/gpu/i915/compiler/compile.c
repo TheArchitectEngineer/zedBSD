@@ -458,6 +458,13 @@ struct i915_compile_state {
 	/* While a skipped region is lowered: nonzero, and its IF's position. */
 	int skip_active;
 	uint32_t skip_if;
+
+	/*
+	 * The condition value plus one whose "not zero" f0.0 holds for the
+	 * SELECT just lowered, zero for none: a SELECT right after one on the
+	 * same condition reuses the flag (ws075-p024).
+	 */
+	uint32_t select_flag;
 };
 
 static uint32_t i915_compile_sources(const struct i915_shader_ir_inst *inst);
@@ -754,6 +761,10 @@ i915_compile_attempt(
 	/* Each IR instruction lowers to a short EU sequence in order; spilled results are written out after it. */
 	for (index = 0U; index < ir->instruction_count; index++) {
 		state->index = index;
+
+		/* Only a SELECT's own compare writes f0.0 between two SELECTs; anything else may write it. */
+		if (ir->instructions[index].op != I915_IR_SELECT)
+			state->select_flag = 0U;
 		i915_compile_instruction(state, &ir->instructions[index]);
 		i915_compile_spill_results(state);
 		i915_compile_release(state, &ir->instructions[index]);
@@ -2686,16 +2697,19 @@ i915_compile_select(
 	/* Gives the result its register. */
 	dst = i915_compile_define(state, inst->dst, 1U);
 
-	/* Sets f0.0 where the condition is true: not zero. */
-	null = drv_i915_eu_null();
-	null.type = COMPILE_TYPE_D;
-	drv_i915_eu_cmp(&state->code,
-			I915_EU_COND_NE,
-			I915_EU_FLAG_F0_0,
-			0,
-			null,
-			drv_i915_eu_grf_d(condition_grf),
-			drv_i915_eu_imm_d(0U));
+	/* Sets f0.0 where the condition is true (not zero), unless the SELECT before set it for the same condition. */
+	if (state->select_flag != inst->src[0] + 1U) {
+		null = drv_i915_eu_null();
+		null.type = COMPILE_TYPE_D;
+		drv_i915_eu_cmp(&state->code,
+				I915_EU_COND_NE,
+				I915_EU_FLAG_F0_0,
+				0,
+				null,
+				drv_i915_eu_grf_d(condition_grf),
+				drv_i915_eu_imm_d(0U));
+		state->select_flag = inst->src[0] + 1U;
+	}
 
 	/* Takes the first value where the flag is set, the second elsewhere. */
 	drv_i915_eu_select(&state->code, I915_EU_FLAG_F0_0, drv_i915_eu_grf_d(dst), taken, other);

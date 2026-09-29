@@ -19,6 +19,7 @@
  */
 
 #include "extras.h"
+#include "popup.h"
 #include "toplevel.h"
 
 #include <errno.h>
@@ -278,6 +279,46 @@ zwl_cursor_frame(
 	printf("ZWL CURSOR frame edges=%u\n", edges);
 }
 
+/*
+ * Tells whether the cursor a client chose (hidden, its surface or its shape)
+ * is shown now: only while the pointer is over that client's window body,
+ * or while its popup holds the pointer; elsewhere (the desktop, the system
+ * bar, a title bar, another client's window) zdesktop's arrow is shown
+ * (BUG-118: an X terminal that hid the cursor hid it on the whole screen).
+ * zdesktop's own cursor, and the plain look, are always shown.
+ */
+int
+zwl_cursor_client_shown(
+	struct zwl_server *server)
+{
+	struct zwl_object *window;
+	unsigned shown;
+
+	/* zdesktop's own cursor, or the plain look (one window at its place): as it is. */
+	if (server->cursor_client == NULL || !server->glass)
+		return 1;
+
+	/* A popup's grab keeps the pointer with its client. */
+	shown = 1U;
+	if (!server->pointer_grabbed) {
+		/* The window whose body is under the pointer must be the client's. */
+		window = zwl_glass_body_at(server, server->pointer_x, server->pointer_y);
+		if (window == NULL || window->client != server->cursor_client)
+			shown = 0U;
+	}
+
+	/* The log says when it changes (for the tests). */
+	if (server->cursor_client_logged != shown + 1U) {
+		server->cursor_client_logged = shown + 1U;
+		printf("ZWL CURSOR client=%llu shown=%u\n", (unsigned long long)server->cursor_client->number, shown);
+	}
+
+	/* Succeeded: whether the client's cursor is shown. */
+	if (shown == 0U)
+		return 0;
+	return 1;
+}
+
 /* Makes a pointer's cursor-shape device. */
 static int
 device_create(
@@ -355,6 +396,7 @@ device_set_shape(
 	server->cursor_surface = NULL;
 	server->cursor_hidden = 0;
 	server->cursor_shape = shape;
+	server->cursor_client = device->client;
 	server->dirty = 1;
 
 	/* Succeeded: the log line the tests read. */
