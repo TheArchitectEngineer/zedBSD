@@ -9,8 +9,8 @@ Related Milestones: MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001・p002 cleared（2026-09-29）。次は p003（Tab の補完。libedit の変更は main が許可済み: GNU Readline と同じ名前・型の追加だけ）。
-(b)（同じ窓でも上が効かない）の原因は kernel の PS/2 driver が E0 の key を capability に入れず捨てること（QEMU で再現、[p002](phase002/phase.md)）。修正と実機の確認は main に依頼
+Resume point: p001・p002・p005 cleared（2026-09-29）。次は p006（既定の prompt の `~`、2026-09-29 ユーザー）、その後 p003（Tab の補完）→ p004。
+実機（5330）の確認手順は main が預かった（[p002](phase002/phase.md)）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -30,4 +30,6 @@ Resume point: p001・p002 cleared（2026-09-29）。次は p003（Tab の補完�
 | [ws087-p001](phase001/phase.md) | BUG-103 の原因（line editor が有効になる条件、Terminal の送る escape）と、Tab の補完の設計 | cleared（2026-09-29。同じ shell の中の矢印は QEMU の Terminal・ssh・serial で動く。shell ごとに履歴が空から始まる（`HISTFILE` が無い）のが有力な原因） | — |
 | [ws087-p002](phase002/phase.md) | 矢印キーの履歴（BUG-103 の修正）: 履歴の file（`HISTFILE`、既定 `~/.sh_history`）の読み込みと追記、libedit の履歴の大きさを `HISTSIZE` に（`stifle_history`） | cleared（2026-09-29。host 17/17、QEMU の ssh で新しい session から前の命令を呼べる。PS/2 の矢印が kernel で捨てられる件を発見し main へ） | p001 |
 | ws087-p003 | Tab の補完（libedit に GNU Readline と同じ名前の補完の hook と一覧、sh に `complete.c`。libedit の許可が要る） | planning | p001 |
+| [ws087-p005](phase005/phase.md) | PS/2 keyboard の E0 の key（矢印・Home・End・Delete ほか）が capability に無く捨てられる（BUG-103 の第 2 の原因、`ps2-8042.c`） | cleared（2026-09-29。PS/2 だけの QEMU で evdev と Terminal に届く、USB の回帰なし、boot test） | p002 |
+| ws087-p006 | 既定の prompt で `$HOME` を `~` に（2026-09-29 ユーザー「ホームディレクトリにいるときにプロンプトに /home/kei と表示されるので、これを ~ にできるようにしたいです。」） | planning | — |
 | ws087-p004 | 規約の全文との照合、回帰（WS042 の sh の試験） | planning | p002・p003 |
