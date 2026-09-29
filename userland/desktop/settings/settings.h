@@ -552,11 +552,14 @@ struct se_volume {
  *
  * preferences is the user's file (NULL, with open_error, when there is no
  * home and nothing can be saved); it is read again once a second.  opacity
- * is the windows' opacity shown (a drag moves it before it is written);
+ * is the windows' opacity shown (a drag moves it before it is written),
+ * and so are the pointer's speed (percent), natural scrolling and the
+ * keyboards' repeat (keys a second, milliseconds before it starts);
  * wallpaper is the preferences' picture (empty for the default).  The
  * pictures are found and read when the Wallpaper page is first shown; the
  * default's (the session's --wallpaper) is wallpapers[0] when it exists.
- * The slider's rectangle is the last frame's, for a drag.  The volumes are
+ * The sliders' rectangles are the last frame's, for a drag (slider for
+ * the opacity, sliders[] for the input pages' by their order).  The volumes are
  * read when the Storage page is shown.
  */
 struct se_look {
@@ -564,8 +567,13 @@ struct se_look {
 	int open_error;
 	uint64_t checked_at;
 	int opacity;
+	int pointer_speed;
+	int pointer_natural;
+	int repeat_rate;
+	int repeat_delay;
 	int dragging;
 	struct fm_rect slider;
+	struct fm_rect sliders[4];
 	char wallpaper[SE_PATH];
 	struct se_wallpaper wallpapers[SE_WALLPAPERS];
 	unsigned wallpaper_count;
@@ -715,6 +723,8 @@ void se_look_open(struct se_app *app);
 void se_look_poll(struct se_app *app, uint64_t now);
 void se_look_close(struct se_app *app);
 void se_look_set_opacity(struct se_app *app, int percent);
+void se_look_set_number(struct se_app *app, const char *key, int value, int fallback);
+int se_look_sound(void);
 void se_look_set_wallpaper(struct se_app *app, int index);
 void se_look_scan(struct se_app *app);
 void se_look_volumes(struct se_app *app);
@@ -727,6 +737,13 @@ int se_display_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top
 int se_storage_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 void se_look_press(struct se_app *app, int index);
 void se_look_drag(struct se_app *app, int index, int x, unsigned phase);
+
+/* The input and sound pages (page-input.c). */
+int se_mouse_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_keyboard_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_sound_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+void se_input_press(struct se_app *app, int index);
+void se_input_drag(struct se_app *app, int index, int x, unsigned phase);
 
 /* A slider (widgets.c). */
 void se_slider_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width, float fraction, int enabled, int index, struct fm_rect *rect);

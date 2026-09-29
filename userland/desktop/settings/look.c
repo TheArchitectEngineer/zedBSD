@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 
 /* How often the preferences are read again, in milliseconds. */
@@ -32,6 +33,20 @@
 /* The windows' opacity: its range and its default, in percent. */
 #define LOOK_OPACITY_MIN	85
 #define LOOK_OPACITY_MAX	100
+
+/* The input's keys: their ranges and defaults, as zdesktop takes them (userland/desktop/wayland/preferences.c). */
+#define LOOK_SPEED_MIN		25
+#define LOOK_SPEED_MAX		300
+#define LOOK_SPEED_DEFAULT	100
+#define LOOK_RATE_MIN		5
+#define LOOK_RATE_MAX		60
+#define LOOK_RATE_DEFAULT	25
+#define LOOK_DELAY_MIN		150
+#define LOOK_DELAY_MAX		1000
+#define LOOK_DELAY_DEFAULT	400
+
+/* Where the sound service listens (userland/base/audiod/protocol.h). */
+#define LOOK_SOUND_SOCKET	"/run/audiod.sock"
 
 /* The pictures: the default (the session's --wallpaper) and the folder of the others. */
 #define LOOK_DEFAULT_PICTURE	"/usr/share/keiland/wallpaper.ppm"
@@ -68,6 +83,10 @@ se_look_open(
 	/* Nothing read yet. */
 	look = &app->look;
 	look->opacity = LOOK_OPACITY_MAX;
+	look->pointer_speed = LOOK_SPEED_DEFAULT;
+	look->pointer_natural = 0;
+	look->repeat_rate = LOOK_RATE_DEFAULT;
+	look->repeat_delay = LOOK_DELAY_DEFAULT;
 	look->wallpaper[0] = '\0';
 
 	/* The file; without a home the pages still show the defaults. */
@@ -169,6 +188,55 @@ se_look_set_opacity(
 
 	/* The log line the tests read. */
 	se_log("LOOK set key=window.opacity value=%d error=%d", percent, error);
+}
+
+/*
+ * Saves a whole number under a key, which zdesktop takes within a second;
+ * the default value removes the key (the desktop's own).
+ */
+void
+se_look_set_number(
+	struct se_app *app,
+	const char *key,
+	int value,
+	int fallback)
+{
+	char text[16];
+	int error;
+
+	/* The key, or none for the default. */
+	if (value == fallback) {
+		error = look_write(app, key, NULL);
+	} else {
+		(void)snprintf(text, sizeof(text), "%d", value);
+		error = look_write(app, key, text);
+	}
+
+	/* The log line the tests read. */
+	se_log("LOOK set key=%s value=%d error=%d", key, value, error);
+}
+
+/*
+ * Tells whether the sound service is running (its socket is there).
+ */
+int
+se_look_sound(
+	void)
+{
+	struct stat status;
+	int result;
+
+	/* The service's socket. */
+	result = stat(LOOK_SOUND_SOCKET, &status);
+	if (result != 0)
+		return 0;
+
+	/* Only a socket counts. */
+	if ((status.st_mode & S_IFMT) != S_IFSOCK)
+		return 0;
+
+	/* The service is there. */
+	return 1;
 }
 
 /*
@@ -364,6 +432,12 @@ look_read(
 	/* The opacity, 100 when unset. */
 	look = &app->look;
 	look->opacity = keiland_preferences_get_int(look->preferences, "window.opacity", LOOK_OPACITY_MAX, LOOK_OPACITY_MIN, LOOK_OPACITY_MAX);
+
+	/* The pointer and the keyboards. */
+	look->pointer_speed = keiland_preferences_get_int(look->preferences, "pointer.speed", LOOK_SPEED_DEFAULT, LOOK_SPEED_MIN, LOOK_SPEED_MAX);
+	look->pointer_natural = keiland_preferences_get_int(look->preferences, "pointer.natural", 0, 0, 1);
+	look->repeat_rate = keiland_preferences_get_int(look->preferences, "keyboard.repeat.rate", LOOK_RATE_DEFAULT, LOOK_RATE_MIN, LOOK_RATE_MAX);
+	look->repeat_delay = keiland_preferences_get_int(look->preferences, "keyboard.repeat.delay", LOOK_DELAY_DEFAULT, LOOK_DELAY_MIN, LOOK_DELAY_MAX);
 
 	/* The picture; none, or one that is not an absolute path, is the default. */
 	error = keiland_preferences_get(look->preferences, "wallpaper", look->wallpaper, sizeof(look->wallpaper));
