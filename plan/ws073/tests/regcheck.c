@@ -15,7 +15,8 @@
  *   regcheck [SECONDS] [CHECKERS]
  *
  * Prints REGCHECK:PASS with the number of passes, or REGCHECK:FAIL and
- * the number of the register or stack slot that changed.
+ * the number of the register or stack slot that changed (100: a word of
+ * the red zone below %rsp, which a signal frame must not overwrite).
  */
 
 #include <signal.h>
@@ -29,6 +30,7 @@
 #include <unistd.h>
 
 uint64_t regcheck_spin(uint64_t iterations, uint64_t seed);
+uint64_t regcheck_red_zone(uint64_t iterations, uint64_t seed);
 
 static volatile sig_atomic_t signals_seen;
 
@@ -48,12 +50,19 @@ main(
 {
 	unsigned seconds, checkers, i, failed;
 	pid_t pids[64], loaders[3];
+	struct sigaction action;
 	int status;
 
 	seconds = argc > 1 ? (unsigned)atoi(argv[1]) : 60;
 	checkers = argc > 2 ? (unsigned)atoi(argv[2]) : 6;
 	if (checkers > 64)
 		checkers = 64;
+
+	/* Installs the handler before any checker exists, so none can be ended by an early signal. */
+	memset(&action, 0, sizeof(action));
+	action.sa_handler = scramble;
+	action.sa_flags = SA_RESTART;
+	(void)sigaction(SIGUSR1, &action, NULL);
 
 	/* Starts the checkers. */
 	for (i = 0; i < checkers; i++) {
@@ -124,20 +133,16 @@ checker(
 	unsigned index,
 	unsigned seconds)
 {
-	struct sigaction action;
 	time_t end;
 	uint64_t seed, passes, result;
-
-	memset(&action, 0, sizeof(action));
-	action.sa_handler = scramble;
-	action.sa_flags = SA_RESTART;
-	(void)sigaction(SIGUSR1, &action, NULL);
 
 	end = time(NULL) + (time_t)seconds;
 	seed = 0x1122334455667788ULL ^ ((uint64_t)index << 56);
 	passes = 0;
 	while (time(NULL) < end) {
 		result = regcheck_spin(200000, seed + passes);
+		if (result == 0 && regcheck_red_zone(200000, seed + passes) != 0)
+			result = 100;
 		if (result != 0) {
 			printf("REGCHECK:FAIL checker %u pass %llu slot %llu signals %d\n", index,
 			       (unsigned long long)passes, (unsigned long long)result, (int)signals_seen);

@@ -15,6 +15,14 @@
  * slot found changed (1-14 general, 15-30 xmm, 31-38 stack).
  *
  *   uint64_t regcheck_spin(uint64_t iterations, uint64_t seed);
+ *
+ * regcheck_red_zone(iterations, seed) is a leaf function that keeps sixteen
+ * values in the 128-byte red zone below %rsp (the System V amd64 ABI lets a
+ * leaf function do so without moving %rsp) and checks them on every pass.
+ * It returns 0, or the 1-based number of the first word found changed.
+ * A signal frame pushed over the red zone changes them (BUG-051).
+ *
+ *   uint64_t regcheck_red_zone(uint64_t iterations, uint64_t seed);
  */
 
 	.text
@@ -160,4 +168,32 @@ regcheck_spin:
 	popq	%rbp
 	ret
 	.size	regcheck_spin, .-regcheck_spin
+
+	.globl	regcheck_red_zone
+	.type	regcheck_red_zone, @function
+regcheck_red_zone:
+	/* Word k at -128 + 8 * k below %rsp holds seed + k. */
+	xorl	%ecx, %ecx
+1:	leaq	(%rsi,%rcx), %rax
+	movq	%rax, -128(%rsp,%rcx,8)
+	incq	%rcx
+	cmpq	$16, %rcx
+	jne	1b
+.Lred_pass:
+	xorl	%ecx, %ecx
+2:	leaq	(%rsi,%rcx), %rax
+	cmpq	%rax, -128(%rsp,%rcx,8)
+	jne	.Lred_bad
+	incq	%rcx
+	cmpq	$16, %rcx
+	jne	2b
+	decq	%rdi
+	jnz	.Lred_pass
+	xorl	%eax, %eax
+	ret
+.Lred_bad:
+	leaq	1(%rcx), %rax
+	ret
+	.size	regcheck_red_zone, .-regcheck_red_zone
+
 	.section .note.GNU-stack,"",@progbits
