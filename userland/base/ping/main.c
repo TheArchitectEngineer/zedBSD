@@ -9,6 +9,10 @@
 
 /*
  * Implements the zedBSD ping userland command.
+ *
+ * The program is installed set-user-ID root, as on the BSDs, because an
+ * ICMP echo needs a raw socket and only the superuser may open one.  It
+ * opens that socket first and then gives the privilege up for good.
  */
 
 #include "userland/base/net/netutil.h"
@@ -57,7 +61,8 @@ main(
 	uint16_t identifier;
 	unsigned transmitted, received, sequence, arg;
 	char numeric[16];
-	int descriptor, error;
+	int descriptor, error, socket_error;
+	uid_t real_user;
 	struct timespec retry;
 	struct timespec delay;
 
@@ -70,6 +75,28 @@ main(
 	transmitted = 0;
 	received = 0;
 	arg = 1;
+
+	/*
+	 * Opens the ICMP socket while the set-user-ID bit still lends the
+	 * superuser's privilege.  A failure is kept and reported after the
+	 * arguments have been checked, where the program always reported it.
+	 */
+	descriptor = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+	socket_error = errno;
+
+	/*
+	 * Gives the lent privilege up for good before any argument is read.
+	 * Setting the user identity as the superuser replaces the real, the
+	 * effective and the saved one, so it cannot be taken back later.
+	 */
+	real_user = getuid();
+	error = setuid(real_user);
+	if (error != 0) {
+		printf("ping: setuid: %s\n", strerror(errno));
+
+		/* Refuses to run with privilege it could not give up. */
+		return 1;
+	}
 
 	/* Process each remaining command-line operand. */
 	while (arg < (unsigned)argc && argv[arg][0] == '-') {
@@ -152,11 +179,10 @@ main(
 	freeaddrinfo(addresses);
 	inet_ntop(AF_INET, &peer.sin_addr, numeric, sizeof(numeric));
 	printf("PING %s (%s): 56 data bytes\n", argv[arg], numeric);
-	descriptor = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
 
-	/* Checks the file descriptor. */
+	/* Reports why the ICMP socket opened at the start is missing. */
 	if (descriptor < 0) {
-		printf("ping: socket: %s\n", strerror(errno));
+		printf("ping: socket: %s\n", strerror(socket_error));
 
 		/* Reports operation failure. */
 		return 1;
