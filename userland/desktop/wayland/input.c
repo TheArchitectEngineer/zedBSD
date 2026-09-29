@@ -733,7 +733,9 @@ apply_frame(
 	 * the hundredths of a pixel carried to the next report so that a slow
 	 * pointer still moves.
 	 */
-	if (server->pointer_speed != 100 && (delta_x != 0 || delta_y != 0)) {
+	if (server->pointer_speed != 100 &&
+	    (delta_x != 0 ||
+	     delta_y != 0)) {
 		delta_x = delta_x * server->pointer_speed + server->pointer_remainder_x;
 		delta_y = delta_y * server->pointer_speed + server->pointer_remainder_y;
 		server->pointer_remainder_x = delta_x % 100;
