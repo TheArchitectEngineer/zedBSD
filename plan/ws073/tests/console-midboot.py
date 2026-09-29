@@ -3,7 +3,8 @@
 
 Boots IMAGE COUNT times from USB with the WS073 guest harness (the USB and
 storage probes then log from several CPUs at once).  While each boot runs,
-the screen is taken through QMP every 0.15 s and read with the console font
+the screen is taken through QMP as fast as the monitor answers (about
+every 0.1 s) and every frame is read afterwards with the console font
 (plan/tools/boot-test.py's reader), so the lines of the middle of the boot
 are seen before they scroll away.  After the login prompt, the kernel's
 records are fetched (dmesg over SSH) and every kernel-looking line seen on
@@ -55,21 +56,28 @@ def main():
 			print(f"boot {boot}: start failed: {started.stdout} {started.stderr}")
 			continue
 		monitor = boot_test.Monitor(str(runtime / "qmp.sock"), timeout=30.0)
-		frame = out / "frame.ppm"
-		seen = {}
-		frames = 0
+		frames_dir = out / f"boot{boot}-frames"
+		frames_dir.mkdir(exist_ok=True)
+		# Takes frames as fast as the monitor gives them and reads them afterwards,
+		# so the fast-scrolling middle of the boot is not missed while one is read.
+		paths = []
 		deadline = time.monotonic() + 150
 		while time.monotonic() < deadline:
+			frame = frames_dir / f"f{len(paths) + 1:04d}.ppm"
 			monitor.screendump(frame)
-			frames += 1
-			lines = boot_test.read_text(frame, font)
-			for line in lines:
+			paths.append(frame)
+			if len(paths) % 20 == 0:
+				lines = boot_test.read_text(frame, font)
+				if any(re.search(r"^(?:\S+ )?login: ?", line) for line in lines):
+					break
+			time.sleep(0.03)
+		frames = len(paths)
+		seen = {}
+		for number, frame in enumerate(paths, 1):
+			for line in boot_test.read_text(frame, font):
 				line = line.rstrip()
 				if KERNEL.match(line) and line not in seen:
-					seen[line] = frames
-			if any(re.search(r"^(?:\S+ )?login: ?", line) for line in lines):
-				break
-			time.sleep(0.15)
+					seen[line] = number
 		waited = guest("wait", timeout=300)
 		if waited.returncode != 0:
 			print(f"boot {boot}: no SSH ({frames} frames, {len(seen)} kernel lines)")
@@ -84,6 +92,12 @@ def main():
 			    if line not in chunks and not any(chunk.startswith(line) for chunk in chunks)]
 		compared += 1
 		(out / f"boot{boot}-lines.txt").write_text("\n".join(seen) + "\n")
+		# Keeps the frames that show a suspect line, as PNG, and drops the others.
+		keep = {seen[line] for line in suspects}
+		for number, frame in enumerate(paths, 1):
+			if number in keep:
+				boot_test.write_png(frame, frame.with_suffix(".png"))
+			frame.unlink(missing_ok=True)
 		if suspects:
 			mixed_boots += 1
 			print(f"boot {boot}: {frames} frames, {len(seen)} kernel lines, suspect lines:")
