@@ -1147,6 +1147,8 @@ window_touch_down(
 			window->foreign_touches[window->foreign_touch_count] = id;
 			window->foreign_touch_count++;
 		}
+
+		/* The chooser follows it itself. */
 		return;
 	}
 
@@ -1245,6 +1247,8 @@ window_touch_foreign(
 			window->foreign_touch_count--;
 			window->foreign_touches[index] = window->foreign_touches[window->foreign_touch_count];
 		}
+
+		/* One of another surface's. */
 		return 1;
 	}
 

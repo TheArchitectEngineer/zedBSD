@@ -140,6 +140,19 @@ struct keiland_file_chooser {
 	void *data;
 };
 
+/*
+ * The shell binding the choosers of the process share, and the connection
+ * it belongs to; bound by the first chooser and kept for the process.
+ *
+ * zdesktop refuses xdg_wm_base.destroy while any xdg_surface of the
+ * client lives, the application's own window included (a protocol error
+ * that ends the connection), and it pings the client through one of its
+ * bindings, which must then still answer.  So the binding is never
+ * destroyed: it answers pings for as long as the process runs.
+ */
+static struct xdg_wm_base *chooser_kept_shell;
+static struct wl_display *chooser_kept_display;
+
 /* What the registry search found: the globals' names and versions (0 for none). */
 struct chooser_search {
 	uint32_t compositor;
@@ -286,6 +299,8 @@ keiland_file_chooser_open(
 		errno = ENOMEM;
 		return NULL;
 	}
+
+	/* The connection and who hears the answer. */
 	chooser->display = display;
 	chooser->listener = listener;
 	chooser->data = data;
@@ -359,7 +374,7 @@ keiland_file_chooser_destroy(
 	if (chooser->telling != NULL)
 		wl_callback_destroy(chooser->telling);
 
-	/* The seat's devices and the globals. */
+	/* The seat's devices and the globals (the shell stays, chooser_kept_shell). */
 	if (chooser->touch != NULL)
 		wl_touch_destroy(chooser->touch);
 	if (chooser->keyboard != NULL)
@@ -368,8 +383,6 @@ keiland_file_chooser_destroy(
 		wl_pointer_destroy(chooser->pointer);
 	if (chooser->seat != NULL)
 		wl_seat_destroy(chooser->seat);
-	if (chooser->shell != NULL)
-		xdg_wm_base_destroy(chooser->shell);
 	if (chooser->shm != NULL)
 		wl_shm_destroy(chooser->shm);
 	if (chooser->compositor != NULL)
@@ -405,6 +418,8 @@ chooser_bind(
 		wl_event_queue_destroy(queue);
 		return ENOMEM;
 	}
+
+	/* What the wrapper makes lives on the search's queue. */
 	wl_proxy_set_queue((struct wl_proxy *)wrapper, queue);
 
 	/* The globals, announced to this search alone. */
@@ -415,6 +430,8 @@ chooser_bind(
 		wl_event_queue_destroy(queue);
 		return ENOMEM;
 	}
+
+	/* Each global announced is noted. */
 	status = wl_registry_add_listener(registry, &chooser_registry_listener, &search);
 	if (status == 0)
 		(void)wl_display_roundtrip_queue(chooser->display, queue);
@@ -423,8 +440,13 @@ chooser_bind(
 	if (search.compositor != 0U && search.shm != 0U && search.shell != 0U) {
 		chooser->compositor = wl_registry_bind(registry, search.compositor, &wl_compositor_interface, search.compositor_version);
 		chooser->shm = wl_registry_bind(registry, search.shm, &wl_shm_interface, 1U);
-		chooser->shell = wl_registry_bind(registry, search.shell, &xdg_wm_base_interface, 1U);
+		if (chooser_kept_shell != NULL && chooser_kept_display == chooser->display)
+			chooser->shell = chooser_kept_shell;
+		else
+			chooser->shell = wl_registry_bind(registry, search.shell, &xdg_wm_base_interface, 1U);
 	}
+
+	/* The first seat, for the chooser's own pointer, keyboard and touch. */
 	if (search.seat != 0U)
 		chooser->seat = wl_registry_bind(registry, search.seat, &wl_seat_interface, search.seat_version);
 
@@ -441,13 +463,23 @@ chooser_bind(
 	/* The bound globals hear their events on the application's queue. */
 	wl_proxy_set_queue((struct wl_proxy *)chooser->compositor, NULL);
 	wl_proxy_set_queue((struct wl_proxy *)chooser->shm, NULL);
-	wl_proxy_set_queue((struct wl_proxy *)chooser->shell, NULL);
 	(void)wl_shm_add_listener(chooser->shm, &chooser_shm_listener, chooser);
-	(void)xdg_wm_base_add_listener(chooser->shell, &chooser_shell_listener, chooser);
+
+	/* A shell bound now is kept for the process, answering pings with no chooser of its own. */
+	if (chooser->shell != chooser_kept_shell) {
+		wl_proxy_set_queue((struct wl_proxy *)chooser->shell, NULL);
+		(void)xdg_wm_base_add_listener(chooser->shell, &chooser_shell_listener, NULL);
+		chooser_kept_shell = chooser->shell;
+		chooser_kept_display = chooser->display;
+	}
+
+	/* The seat's events too. */
 	if (chooser->seat != NULL) {
 		wl_proxy_set_queue((struct wl_proxy *)chooser->seat, NULL);
 		(void)wl_seat_add_listener(chooser->seat, &chooser_seat_listener, chooser);
 	}
+
+	/* The search's queue is empty and goes. */
 	wl_event_queue_destroy(queue);
 
 	/* Succeeded: the globals are the chooser's. */
@@ -517,23 +549,31 @@ chooser_window_gone(
 		return;
 	chooser->window_gone = 1;
 
-	/* The frame asked for, the glass, the roles, the surface. */
+	/* The frame asked for. */
 	if (chooser->frame != NULL) {
 		wl_callback_destroy(chooser->frame);
 		chooser->frame = NULL;
 	}
+
+	/* The glass. */
 	if (chooser->glass != NULL) {
 		keiland_glass_destroy(chooser->glass);
 		chooser->glass = NULL;
 	}
+
+	/* The toplevel role before the xdg surface. */
 	if (chooser->toplevel != NULL) {
 		xdg_toplevel_destroy(chooser->toplevel);
 		chooser->toplevel = NULL;
 	}
+
+	/* The xdg surface before the surface. */
 	if (chooser->role != NULL) {
 		xdg_surface_destroy(chooser->role);
 		chooser->role = NULL;
 	}
+
+	/* The surface, which takes the window off the screen. */
 	if (chooser->surface != NULL) {
 		wl_surface_destroy(chooser->surface);
 		chooser->surface = NULL;
@@ -614,6 +654,8 @@ chooser_buffer_ready(
 			if (error != 0)
 				return NULL;
 		}
+
+		/* Succeeded: a buffer free to draw into. */
 		return buffer;
 	}
 
@@ -660,19 +702,23 @@ chooser_buffer_make(
 		return errno;
 	}
 
-	/* The compositor's pool over it, and the buffer from the pool (the pool is not needed after). */
+	/* The compositor's pool over it. */
 	pool = wl_shm_create_pool(chooser->shm, descriptor, (int32_t)size);
 	close(descriptor);
 	if (pool == NULL) {
 		munmap(mapped, size);
 		return ENOMEM;
 	}
+
+	/* The buffer from the pool (the pool is not needed after). */
 	buffer->buffer = wl_shm_pool_create_buffer(pool, 0, width, height, width * 4, CHOOSER_FORMAT_ARGB8888);
 	wl_shm_pool_destroy(pool);
 	if (buffer->buffer == NULL) {
 		munmap(mapped, size);
 		return ENOMEM;
 	}
+
+	/* The compositor says when it gives the buffer back. */
 	(void)wl_buffer_add_listener(buffer->buffer, &chooser_buffer_listener, buffer);
 
 	/* Succeeded: the buffer, free to draw into. */
@@ -973,11 +1019,13 @@ chooser_configure(
 		kl_chooser_resize(&chooser->model, chooser->pending_width, chooser->pending_height);
 	chooser_sync_scroller(chooser);
 
-	/* A frame of the new size at once (a frame asked for before may never come for a hidden window). */
+	/* A frame asked for before may never come for a window not shown yet: it is dropped. */
 	if (chooser->frame != NULL) {
 		wl_callback_destroy(chooser->frame);
 		chooser->frame = NULL;
 	}
+
+	/* A frame of the new size at once. */
 	chooser_redraw(chooser);
 }
 

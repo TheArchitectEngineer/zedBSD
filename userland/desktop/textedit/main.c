@@ -813,6 +813,8 @@ main_choose(
 		options.mode = KEILAND_FILE_CHOOSER_SAVE;
 		options.name = name;
 	}
+
+	/* The editor's mark on the chooser, its folder, its filters and the interface's font. */
 	options.application = MAIN_APPLICATION;
 	options.folder = folder;
 	options.filters = main_filters;
@@ -848,6 +850,8 @@ main_chosen(
 		if (result == KEILAND_FILE_CHOOSER_CHOSEN)
 			snprintf(event->text, sizeof(event->text), "%s", path);
 	}
+
+	/* The log names the answer. */
 	te_log("CHOSEN result=%u path=%s", result, path);
 
 	/* The chooser is spent. */

@@ -141,6 +141,8 @@ kl_chooser_init(
 		if (filter->extensions != NULL)
 			snprintf(chooser->filters[index].extensions, sizeof(chooser->filters[index].extensions), "%s", filter->extensions);
 	}
+
+	/* How many there are, and the one chosen first. */
 	chooser->filter_count = options->filter_count;
 	chooser->filter = options->filter;
 
@@ -242,6 +244,7 @@ kl_chooser_go_recent(
 	struct stat status;
 	size_t count;
 	size_t index;
+	int regular;
 	int matches;
 	int error;
 
@@ -276,7 +279,8 @@ kl_chooser_go_recent(
 		error = stat(items[index].path, &status);
 		if (error != 0)
 			continue;
-		if (!S_ISREG(status.st_mode))
+		regular = S_ISREG(status.st_mode);
+		if (!regular)
 			continue;
 		matches = model_matches(chooser, model_base(items[index].path));
 		if (!matches)
@@ -300,11 +304,13 @@ kl_chooser_go_up(
 {
 	char parent[KL_CHOOSER_PATH_MAX];
 	char *slash;
+	int root;
 
 	/* Recent and the root have nothing above them. */
 	if (chooser->recent)
 		return;
-	if (strcmp(chooser->folder, "/") == 0)
+	root = strcmp(chooser->folder, "/");
+	if (root == 0)
 		return;
 
 	/* The path without its last part. */
@@ -419,6 +425,8 @@ kl_chooser_key(
 			chooser->confirm = 0;
 			return 1;
 		}
+
+		/* Nothing else while the question is asked. */
 		return 0;
 	}
 
@@ -439,6 +447,8 @@ kl_chooser_key(
 				chooser->focus = KL_FOCUS_NAME;
 			return 1;
 		}
+
+		/* Otherwise the chooser ends without a path. */
 		kl_chooser_cancel(chooser);
 		return 1;
 	case KL_KEY_ENTER:
@@ -448,6 +458,8 @@ kl_chooser_key(
 			(void)model_accept_path(chooser);
 			return 1;
 		}
+
+		/* Otherwise into the folder selected, or the answer. */
 		(void)model_accept(chooser);
 		return 1;
 	case KL_KEY_UP:
@@ -456,6 +468,8 @@ kl_chooser_key(
 			kl_chooser_go_up(chooser);
 			return 1;
 		}
+
+		/* Up alone: the item above. */
 		model_move(chooser, -1);
 		return 1;
 	case KL_KEY_DOWN:
@@ -500,6 +514,8 @@ kl_chooser_key(
 		changed |= model_field_key(chooser, &chooser->name, key, character);
 		return changed;
 	}
+
+	/* And so does the path's field. */
 	if (chooser->focus == KL_FOCUS_PATH) {
 		changed |= model_field_key(chooser, &chooser->path, key, character);
 		return changed;
@@ -772,6 +788,8 @@ kl_chooser_hit(
 			*index = place;
 			return KL_PART_PLACE;
 		}
+
+		/* The sidebar below its places. */
 		return KL_PART_NONE;
 	}
 
@@ -791,6 +809,8 @@ kl_chooser_hit(
 			*index = row;
 			return KL_PART_ROW;
 		}
+
+		/* The space after the items. */
 		return KL_PART_LIST;
 	}
 
@@ -882,6 +902,7 @@ model_places(
 	const char *home;
 	size_t index;
 	int folder;
+	int root;
 
 	/* Recent files, which only Open can choose from. */
 	chooser->place_count = 0;
@@ -891,7 +912,8 @@ model_places(
 	/* Home, when there is one. */
 	home = model_home();
 	folder = model_is_folder(home);
-	if (folder && strcmp(home, "/") != 0) {
+	root = strcmp(home, "/");
+	if (folder && root != 0) {
 		model_add_place(chooser, "Home", home, KL_ICON_HOME);
 
 		/* Its usual folders that exist. */
@@ -950,6 +972,7 @@ model_is_folder(
 	const char *path)
 {
 	struct stat status;
+	int folder;
 	int error;
 
 	/* What the path names. */
@@ -958,8 +981,11 @@ model_is_folder(
 		return 0;
 
 	/* Only a folder. */
-	if (!S_ISDIR(status.st_mode))
+	folder = S_ISDIR(status.st_mode);
+	if (!folder)
 		return 0;
+
+	/* Succeeded: a folder. */
 	return 1;
 }
 
@@ -974,6 +1000,8 @@ model_read(
 	struct stat status;
 	DIR *directory;
 	int matches;
+	int directory_item;
+	int same;
 	int error;
 
 	/* The items of the folder shown before go. */
@@ -989,7 +1017,11 @@ model_read(
 		item = readdir(directory);
 		if (item == NULL)
 			break;
-		if (strcmp(item->d_name, ".") == 0 || strcmp(item->d_name, "..") == 0)
+		same = strcmp(item->d_name, ".");
+		if (same == 0)
+			continue;
+		same = strcmp(item->d_name, "..");
+		if (same == 0)
 			continue;
 
 		/* A hidden item only when hidden items show. */
@@ -1003,7 +1035,8 @@ model_read(
 			continue;
 
 		/* A file shows only when it passes the filter. */
-		if (!S_ISDIR(status.st_mode)) {
+		directory_item = S_ISDIR(status.st_mode);
+		if (!directory_item) {
 			matches = model_matches(chooser, item->d_name);
 			if (!matches)
 				continue;
@@ -1014,6 +1047,8 @@ model_read(
 		if (error != 0)
 			break;
 	}
+
+	/* The folder is read. */
 	closedir(directory);
 
 	/* Folders first, then by name. */
@@ -1035,6 +1070,7 @@ model_add_entry(
 	struct kl_chooser_entry *grown;
 	struct kl_chooser_entry *entry;
 	size_t capacity;
+	int folder;
 
 	/* Room for one more. */
 	if (chooser->count == chooser->capacity) {
@@ -1063,7 +1099,8 @@ model_add_entry(
 
 	/* What it is, how large, and when it changed. */
 	entry->folder = 0;
-	if (S_ISDIR(status->st_mode))
+	folder = S_ISDIR(status->st_mode);
+	if (folder)
 		entry->folder = 1;
 	entry->size = (int64_t)status->st_size;
 	entry->modified = (int64_t)status->st_mtime;
@@ -1162,6 +1199,8 @@ model_matches(
 			if (same == 0)
 				return 1;
 		}
+
+		/* The next word. */
 		word += size;
 	}
 
@@ -1181,6 +1220,8 @@ model_reload(
 		kl_chooser_go_recent(chooser);
 		return;
 	}
+
+	/* The folder, from a copy (showing it rewrites chooser->folder). */
 	snprintf(folder, sizeof(folder), "%s", chooser->folder);
 	(void)kl_chooser_go(chooser, folder);
 }
@@ -1347,19 +1388,35 @@ model_accept_save(
 {
 	char path[KL_CHOOSER_PATH_MAX];
 	struct stat status;
+	const char *slash;
 	int writable;
+	int regular;
+	int folder;
+	int dots;
 	int error;
 
 	/* A name is needed. */
 	if (chooser->name.length == 0U)
 		return 0;
 
-	/* One part of a path, not the folder or its parent. */
-	if (strchr(chooser->name.text, '/') != NULL) {
+	/* One part of a path. */
+	slash = strchr(chooser->name.text, '/');
+	if (slash != NULL) {
 		model_message(chooser, "A name can't contain \"/\".", NULL);
 		return 0;
 	}
-	if (strcmp(chooser->name.text, ".") == 0 || strcmp(chooser->name.text, "..") == 0) {
+
+	/* Not the folder or its parent. */
+	dots = 0;
+	if (chooser->name.text[0] == '.') {
+		if (chooser->name.text[1] == '\0')
+			dots = 1;
+		else if (chooser->name.text[1] == '.' && chooser->name.text[2] == '\0')
+			dots = 1;
+	}
+
+	/* Such a name is refused. */
+	if (dots) {
 		model_message(chooser, "\"%s\" can't be used as a name.", chooser->name.text);
 		return 0;
 	}
@@ -1374,15 +1431,23 @@ model_accept_save(
 	model_join(chooser->folder, chooser->name.text, path, sizeof(path));
 	error = stat(path, &status);
 
+	/* What already has that name: a folder, a file, or something else. */
+	folder = 0;
+	regular = 0;
+	if (error == 0) {
+		folder = S_ISDIR(status.st_mode);
+		regular = S_ISREG(status.st_mode);
+	}
+
 	/* A folder of that name is gone into. */
-	if (error == 0 && S_ISDIR(status.st_mode)) {
+	if (folder) {
 		(void)kl_chooser_go(chooser, path);
 		model_field_set(&chooser->name, "", 0);
 		return 1;
 	}
 
 	/* Anything else of that name but a file cannot be replaced. */
-	if (error == 0 && !S_ISREG(status.st_mode)) {
+	if (error == 0 && !regular) {
 		model_message(chooser, "\"%s\" isn't a file.", chooser->name.text);
 		return 0;
 	}
@@ -1416,6 +1481,8 @@ model_accept_path(
 	const char *typed;
 	struct stat status;
 	char *slash;
+	int folder_named;
+	int regular;
 	int home;
 	int error;
 
@@ -1426,6 +1493,8 @@ model_accept_path(
 		if (typed[1] == '/' || typed[1] == '\0')
 			home = 1;
 	}
+
+	/* The path made whole. */
 	if (home) {
 		snprintf(path, sizeof(path), "%s%s", model_home(), typed + 1);
 	} else if (typed[0] == '/' || chooser->recent) {
@@ -1434,9 +1503,17 @@ model_accept_path(
 		model_join(chooser->folder, typed, path, sizeof(path));
 	}
 
-	/* A folder is shown, and the keyboard goes back. */
+	/* What the path names. */
 	error = stat(path, &status);
-	if (error == 0 && S_ISDIR(status.st_mode)) {
+	folder_named = 0;
+	regular = 0;
+	if (error == 0) {
+		folder_named = S_ISDIR(status.st_mode);
+		regular = S_ISREG(status.st_mode);
+	}
+
+	/* A folder is shown, and the keyboard goes back. */
+	if (folder_named) {
 		(void)kl_chooser_go(chooser, path);
 		chooser->focus = KL_FOCUS_LIST;
 		if (chooser->mode == KEILAND_FILE_CHOOSER_SAVE)
@@ -1446,10 +1523,12 @@ model_accept_path(
 
 	/* Open chooses a file that exists. */
 	if (chooser->mode == KEILAND_FILE_CHOOSER_OPEN) {
-		if (error != 0 || !S_ISREG(status.st_mode)) {
+		if (!regular) {
 			model_message(chooser, "There is no file \"%s\".", path);
 			return 0;
 		}
+
+		/* Succeeded: the file typed is the answer. */
 		model_answer(chooser, path);
 		return 1;
 	}
@@ -1461,6 +1540,8 @@ model_accept_path(
 		model_message(chooser, "There is no folder for \"%s\".", path);
 		return 0;
 	}
+
+	/* The folder part: the root keeps its slash. */
 	if (slash == folder)
 		slash[1] = '\0';
 	else
@@ -1576,6 +1657,8 @@ model_type_select(
 			model_select(chooser, (int)index);
 			return;
 		}
+
+		/* The item after it. */
 		index++;
 	}
 }
@@ -1647,6 +1730,8 @@ model_field_key(
 			field->cursor = field->length;
 			return 1;
 		}
+
+		/* Without Control, A types its letter. */
 		break;
 	default:
 		break;

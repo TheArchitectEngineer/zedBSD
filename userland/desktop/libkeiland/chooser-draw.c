@@ -37,10 +37,10 @@
 #define DRAW_BUTTON		32
 #define DRAW_ACCEPT_WIDTH	92
 #define DRAW_CANCEL_WIDTH	84
-#define DRAW_FILTER_WIDTH	156
+#define DRAW_FILTER_WIDTH	136
 
 /* The narrowest the name may be before the filter gives it its room (Save). */
-#define DRAW_NAME_MIN		150
+#define DRAW_NAME_MIN		110
 
 /* The question's card. */
 #define DRAW_CARD_WIDTH		392
@@ -159,6 +159,8 @@ kl_chooser_layout(
 		} else {
 			draw_set(&layout->filter, 0, 0, 0, 0);
 		}
+
+		/* The name takes the rest after its label. */
 		draw_set(&layout->name, left + 48, middle, right - left - 48, DRAW_BUTTON);
 	} else {
 		draw_set(&layout->filter, left, middle, DRAW_FILTER_WIDTH, DRAW_BUTTON);
@@ -312,6 +314,8 @@ draw_sidebar(
 		draw_place_icon(canvas, place->icon, row.x + 8, row.y + 6, ink);
 		(void)kl_text_draw_fit(text, canvas, row.x + 36, kl_text_center(DRAW_TEXT_SIDEBAR, row.y, row.height), place->label, DRAW_TEXT_SIDEBAR, current, row.width - 44, ink);
 	}
+
+	/* Drawing reaches the whole window again. */
 	kl_paint_unclip(canvas);
 }
 
@@ -394,14 +398,16 @@ draw_location(
 	uint32_t ink;
 	double middle_x;
 	double middle_y;
+	int top_folder;
 	int enabled;
 
 	/* The button: a round ground under the pointer, and an arrow, pale when there is nothing above. */
 	up = &chooser->layout.up;
 	enabled = 1;
+	top_folder = strcmp(chooser->folder, "/");
 	if (chooser->recent)
 		enabled = 0;
-	if (!chooser->recent && strcmp(chooser->folder, "/") == 0)
+	if (top_folder == 0)
 		enabled = 0;
 	ink = DRAW_ICON;
 	if (!enabled)
@@ -446,6 +452,8 @@ draw_location_text(
 	const char *start;
 	char *slash;
 	size_t length;
+	int inside;
+	int same;
 	int fits;
 
 	/* Recent is its own name. */
@@ -458,12 +466,21 @@ draw_location_text(
 	home = getenv("HOME");
 	rest = chooser->folder;
 	snprintf(parts, sizeof(parts), "Computer");
-	if (home != NULL && home[0] != '\0' && strcmp(home, "/") != 0) {
+	inside = 0;
+	length = 0;
+	if (home != NULL && home[0] == '/' && home[1] != '\0') {
 		length = strlen(home);
-		if (strncmp(chooser->folder, home, length) == 0 && (chooser->folder[length] == '/' || chooser->folder[length] == '\0')) {
-			snprintf(parts, sizeof(parts), "Home");
-			rest = chooser->folder + length;
+		same = strncmp(chooser->folder, home, length);
+		if (same == 0) {
+			if (chooser->folder[length] == '/' || chooser->folder[length] == '\0')
+				inside = 1;
 		}
+	}
+
+	/* A folder in the home folder starts from Home. */
+	if (inside) {
+		snprintf(parts, sizeof(parts), "Home");
+		rest = chooser->folder + length;
 	}
 
 	/* Each part after it, joined by the separator. */
@@ -521,7 +538,7 @@ draw_list(
 	int index;
 	int y;
 
-	/* The columns' titles, and the line under them. */
+	/* The columns' titles (Modified only when the list is wide enough). */
 	header = &chooser->layout.header;
 	list = &chooser->layout.list;
 	modified = 0;
@@ -534,6 +551,8 @@ draw_list(
 	} else {
 		(void)kl_text_draw(text, canvas, header->x + header->width - DRAW_SIZE_WIDTH + 4, kl_text_center(DRAW_TEXT_HEADER, header->y, header->height), "Size", 4U, DRAW_TEXT_HEADER, 0, DRAW_TEXT_SECONDARY);
 	}
+
+	/* The line under the titles. */
 	kl_paint_fill(canvas, header->x, header->y + header->height - 1, header->width, 1, DRAW_SEPARATOR);
 
 	/* An empty list says why. */
@@ -571,6 +590,8 @@ draw_list(
 		top = (double)list->y + chooser->scroll / maximum * ((double)list->height - length);
 		kl_paint_round(canvas, list->x + list->width - 5, (int)top, 4, (int)length, 2, KL_RGBA(0x46526a, 70));
 	}
+
+	/* Drawing reaches the whole window again. */
 	kl_paint_unclip(canvas);
 }
 
@@ -802,6 +823,8 @@ draw_field(
 		start = field->cursor;
 		end = field->anchor;
 	}
+
+	/* A selection shows as a band under its characters (paler without the keyboard). */
 	if (start != end) {
 		left = kl_text_width(text, field->text, start, DRAW_TEXT_ROW, 0);
 		right = kl_text_width(text, field->text, end, DRAW_TEXT_ROW, 0);

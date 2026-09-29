@@ -261,10 +261,10 @@ kl_paint_line(
 
 	/* The box the line and its ends cover. */
 	reach = thickness / 2.0 + 1.0;
-	left = (int)floor((x0 < x1 ? x0 : x1) - reach);
-	right = (int)ceil((x0 > x1 ? x0 : x1) + reach);
-	top = (int)floor((y0 < y1 ? y0 : y1) - reach);
-	bottom = (int)ceil((y0 > y1 ? y0 : y1) + reach);
+	left = (int)floor(fmin(x0, x1) - reach);
+	right = (int)ceil(fmax(x0, x1) + reach);
+	top = (int)floor(fmin(y0, y1) - reach);
+	bottom = (int)ceil(fmax(y0, y1) + reach);
 	length_squared = (x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0);
 
 	/* Each pixel of the box, covered by its centre's distance from the segment. */
@@ -305,10 +305,20 @@ kl_paint_circle(
 	double distance;
 	int column;
 	int line;
+	int left;
+	int right;
+	int top;
+	int bottom;
 
-	/* Each pixel of the circle's box, covered by how far inside the edge its centre is. */
-	for (line = (int)floor(y - radius - 1.0); line < (int)ceil(y + radius + 1.0); line++) {
-		for (column = (int)floor(x - radius - 1.0); column < (int)ceil(x + radius + 1.0); column++) {
+	/* The circle's box. */
+	left = (int)floor(x - radius - 1.0);
+	right = (int)ceil(x + radius + 1.0);
+	top = (int)floor(y - radius - 1.0);
+	bottom = (int)ceil(y + radius + 1.0);
+
+	/* Each pixel of the box, covered by how far inside the edge its centre is. */
+	for (line = top; line < bottom; line++) {
+		for (column = left; column < right; column++) {
 			distance = sqrt(((double)column + 0.5 - x) * ((double)column + 0.5 - x) + ((double)line + 0.5 - y) * ((double)line + 0.5 - y));
 			paint_blend_at(canvas, column, line, color, paint_coverage(radius + 0.5 - distance));
 		}
@@ -331,11 +341,21 @@ kl_paint_ring(
 	double reach;
 	int column;
 	int line;
+	int left;
+	int right;
+	int top;
+	int bottom;
 
-	/* Each pixel of the ring's box, covered by its centre's distance from the circle. */
+	/* The ring's box. */
 	reach = radius + thickness / 2.0 + 1.0;
-	for (line = (int)floor(y - reach); line < (int)ceil(y + reach); line++) {
-		for (column = (int)floor(x - reach); column < (int)ceil(x + reach); column++) {
+	left = (int)floor(x - reach);
+	right = (int)ceil(x + reach);
+	top = (int)floor(y - reach);
+	bottom = (int)ceil(y + reach);
+
+	/* Each pixel of the box, covered by its centre's distance from the circle. */
+	for (line = top; line < bottom; line++) {
+		for (column = left; column < right; column++) {
 			distance = sqrt(((double)column + 0.5 - x) * ((double)column + 0.5 - x) + ((double)line + 0.5 - y) * ((double)line + 0.5 - y));
 			paint_blend_at(canvas, column, line, color, paint_coverage(thickness / 2.0 + 0.5 - fabs(distance - radius)));
 		}
