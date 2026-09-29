@@ -12,8 +12,12 @@
  * align-items and align-self.  Each item is laid out as a block at the
  * main size the flexing gives it.  Not in this pass: align-content other
  * than start, wrap-reverse's order of lines, baselines (as start),
- * percentages of an indefinite height, and the automatic minimum size
- * (items shrink to zero at most).
+ * percentages of an indefinite height, and a column's automatic minimum
+ * size (its items shrink to zero at most).  A row's item whose min-width
+ * is auto (the initial value) and whose content does not scroll shrinks
+ * no narrower than its content's min-content width, or its width when
+ * that is given in pixels and narrower (the automatic minimum size,
+ * ws074-p084), measured only for a line that has to shrink.
  */
 
 #include "layout/layout.h"
@@ -39,6 +43,7 @@ struct flex_item {
 	layout_unit size;
 	layout_unit minimum;
 	layout_unit maximum;
+	int auto_minimum;
 };
 
 /*
@@ -58,6 +63,8 @@ struct flex_sizes {
 
 static int flex_collect(struct layout_box *box, struct flex_item **items, size_t *count);
 static int flex_base_size(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row, layout_unit available);
+static int flex_auto_minimums(struct layout_tree *tree, struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
+static int flex_min_content(struct layout_tree *tree, struct layout_box *box, layout_unit *width);
 static void flex_resolve(struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static int flex_lay_item(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
 static int flex_lay_sized(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
@@ -159,7 +166,12 @@ layout_flex(
 			end++;
 		}
 
-		/* The flexing, then each item laid out at its size. */
+		/* The automatic minimums of a line that has to shrink, the flexing, then each item laid out at its size. */
+		error = flex_auto_minimums(tree, items + start, end - start, available, gap_main);
+		if (error != 0) {
+			free(items);
+			return error;
+		}
 		flex_resolve(items + start, end - start, available, gap_main);
 		line_cross = 0;
 		for (index = start; index < end; index++) {
@@ -402,6 +414,11 @@ flex_base_size(
 	/* The limits: min-width and max-width (min-height and max-height for a column). */
 	item->minimum = 0;
 	item->maximum = -1;
+	item->auto_minimum = 0;
+	if (row &&
+	    child->style.min_width.unit == CSS_UNIT_AUTO &&
+	    (child->style.overflow_x == CSS_OVERFLOW_VISIBLE || child->style.overflow_x == CSS_OVERFLOW_CLIP))
+		item->auto_minimum = 1;
 	if (row) {
 		if (child->style.min_width.unit == CSS_UNIT_PX || child->style.min_width.unit == CSS_UNIT_PERCENT)
 			item->minimum = flex_length(&child->style.min_width, box->width) - sizing;
@@ -429,6 +446,110 @@ flex_base_size(
 	child->flex_hypothetical = item->base + item->frame + item->margin_start + item->margin_end;
 
 	/* Succeeded: the item has its hypothetical size. */
+	return 0;
+}
+
+/*
+ * Finds the automatic minimum size of the items of a line whose items do
+ * not fit (the others keep a minimum of zero, as they do not shrink): the
+ * content's min-content width, or the width given in pixels when that is
+ * narrower, within max-width.
+ */
+static int
+flex_auto_minimums(
+	struct layout_tree *tree,
+	struct flex_item *items,
+	size_t count,
+	layout_unit available,
+	layout_unit gap)
+{
+	struct layout_box *child;
+	layout_unit used;
+	layout_unit least;
+	layout_unit given;
+	size_t index;
+	int error;
+
+	/* A line without a definite size, or that fits, does not shrink. */
+	if (available < 0)
+		return 0;
+	used = 0;
+	for (index = 0; index < count; index++)
+		used += items[index].base + items[index].frame + items[index].margin_start + items[index].margin_end;
+	if (count > 1)
+		used += gap * (layout_unit)(count - 1U);
+	if (used <= available)
+		return 0;
+
+	/* Each item whose minimum is automatic. */
+	for (index = 0; index < count; index++) {
+		if (!items[index].auto_minimum)
+			continue;
+		child = items[index].box;
+
+		/* The content's narrowest width. */
+		error = flex_min_content(tree, child, &least);
+		if (error != 0)
+			return error;
+
+		/* A width in pixels that is narrower is the minimum instead. */
+		if (child->style.width.unit == CSS_UNIT_PX) {
+			given = layout_from_px(child->style.width.value);
+			if (child->style.box_sizing == CSS_BOX_SIZING_BORDER)
+				given -= items[index].frame;
+			if (given < least)
+				least = given;
+		}
+
+		/* Within max-width, and never above the base the item would shrink from. */
+		if (items[index].maximum >= 0 && least > items[index].maximum)
+			least = items[index].maximum;
+		if (least > items[index].base)
+			least = items[index].base;
+		if (least > items[index].minimum)
+			items[index].minimum = least;
+	}
+
+	/* Succeeded: the minimums are known. */
+	return 0;
+}
+
+/*
+ * Measures a box's min-content width: its content laid out with a line at
+ * every opportunity (as the intrinsic min-content width is measured).
+ */
+static int
+flex_min_content(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	layout_unit *width)
+{
+	struct layout_context context;
+	struct wb_vector floats;
+	struct css_length given;
+	int error;
+
+	/* A replaced box's content is its image, as wide as it is. */
+	*width = 0;
+	if (box->replaced) {
+		*width = box->width;
+		return 0;
+	}
+
+	/* The content at no width, with an auto width, while the tree measures. */
+	given = box->style.width;
+	box->style.width.unit = CSS_UNIT_AUTO;
+	tree->measuring++;
+	layout_context_begin(tree, &context, &floats);
+	error = layout_block(tree, box, 0);
+	layout_context_end(tree, &context);
+	tree->measuring--;
+	box->style.width = given;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the widest thing that could not be broken. */
+	*width = layout_content_width(box, 0);
 	return 0;
 }
 

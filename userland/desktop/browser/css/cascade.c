@@ -783,9 +783,9 @@ css_initial_style(
 	style->display = CSS_DISPLAY_INLINE;
 	style->width.unit = CSS_UNIT_AUTO;
 	style->height.unit = CSS_UNIT_AUTO;
-	style->min_width.unit = CSS_UNIT_PX;
+	style->min_width.unit = CSS_UNIT_AUTO;
 	style->max_width.unit = CSS_UNIT_NONE;
-	style->min_height.unit = CSS_UNIT_PX;
+	style->min_height.unit = CSS_UNIT_AUTO;
 	style->max_height.unit = CSS_UNIT_NONE;
 	for (side = 0; side < 4; side++) {
 		style->margin[side].unit = CSS_UNIT_PX;
