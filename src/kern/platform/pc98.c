@@ -210,6 +210,17 @@ kern_platform_halt(
 }
 
 /*
+ * Reports that the PC-98 has no software power-off; the caller halts.
+ */
+int
+kern_platform_poweroff(
+	void)
+{
+	/* The platform has no known power control register. */
+	return EOPNOTSUPP;
+}
+
+/*
  * Reboots the machine through the keyboard controller.
  */
 void
