@@ -93,7 +93,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		# Icons are placed from the top-right corner: 1 Projects (1216,90), 2 notes.txt (1216,194), 3 photo.png (1216,298).
 		# ~/.config/keiland/open-with sends plain text to "Env" (env > ~/env.txt): the program a double click starts
 		# must not have the desktop's token.
-		guest 'mkdir -p /tmp/dhome/.config/keiland; printf "text/plain\tEnv\tenv > /tmp/dhome/env.txt\n" > /tmp/dhome/.config/keiland/open-with; rm -f /tmp/dhome/env.txt' >/dev/null
+		guest 'mkdir -p /tmp/dhome/.config/keiland; printf "text/plain\tEnv\tenv > /tmp/dhome/env.txt # %%f\n" > /tmp/dhome/.config/keiland/open-with; rm -f /tmp/dhome/env.txt' >/dev/null
 		pointer move 1216 298 sleep 300 down sleep 60 up sleep 700
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP select name=photo.png selected=1'
 		shot selected.png
@@ -111,7 +111,9 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP open-folder path=/tmp/dhome/Desktop/Projects error=0'
 		expect_log /tmp/zdesktop.log 'ZWL MAP client=[0-9]+ '
 		shot folder.png
-		guest 'for p in $(ps -A -o pid,args | grep -E "[f]iles" | awk "{print \$1}"); do :; done' >/dev/null
+		# The folder's window (on top, with the keyboard) closes by Ctrl+W.
+		keys '<ctrl-w>'
+		sleep 1
 		# A rubber band from empty desktop over the first column selects its items.
 		pointer move 1100 60 sleep 300 down sleep 100 move 1150 200 sleep 100 move 1260 330 sleep 400
 		shot band.png
