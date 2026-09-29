@@ -89,8 +89,9 @@ extern void drv_i915_test_display_ktest(struct i915_device *device) __attribute_
  * The execution scenarios first, then the render scenarios "vkx" (the
  * Vulkan executor, driven once the node is served), "vkc" (the shader
  * compiler on the GPU, likewise), "vke1" (blending, uniform buffers and
- * several sampled images, likewise) and "vke2" (matrices, integers, loops,
- * sixteen varyings and attributes, likewise), then the display
+ * several sampled images, likewise), "vke2" (matrices, integers, loops,
+ * sixteen varyings and attributes, likewise) and "vkcs" (compute pipelines
+ * and dispatches, ws101-p005, likewise), then the display
  * scenarios; the display test suite is "display_ktest", apart from the unit
  * test suite "ktest".  The table never changes.
  */
@@ -106,6 +107,7 @@ static const struct i915_test_scenario i915_test_scenarios[] = {
 	{ "vkc", NULL, drv_i915_test_render_compiler },
 	{ "vke1", NULL, drv_i915_test_render_features },
 	{ "vke2", NULL, drv_i915_test_render_generality },
+	{ "vkcs", NULL, drv_i915_test_render_compute },
 	{ "lcdb", NULL, drv_i915_test_display_lcdb },
 	{ "lcdc", NULL, drv_i915_test_display_lcdc },
 	{ "lcdd", NULL, drv_i915_test_display_lcdd },

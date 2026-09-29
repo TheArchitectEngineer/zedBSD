@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p004（実行器の batch、`render/compute.c`）cleared（2026-09-30）。次は p005（5330 の passthrough での bring-up と vkcs）と p008（GLSL ES 3.10）。IDD の SLM・barrier は p006 で binary の値を入れる。判断 D1〜D5 は design.md §7
+Resume point: p005（実機の bring-up と vkcs）cleared（2026-09-30。vkcs 9/9、vkx・vke1・vke2・vkc の回帰 PASS）。次は p006（SLM・barrier）と p008（GLSL ES 3.10）。**p006 の前に main の判断**: 試験の kernel が AMD64_KERNEL_MAX_BYTES の残り 6.6 KB（phase005 の「決めたこと」）。判断 D1〜D5 は design.md §7
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -59,7 +59,7 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | [ws101-p002](phase002/phase.md) | compiler の核: GLCompute、LocalSize・LocalSizeId、built-in（LOAD_SYSTEM、GlobalInvocationID、NumWorkgroups の A64 の読み）、compute の register の約束と binary、thread spawner への EOT、LOAD_STORAGE の predicate、効果なしの decoration、OpArrayLength、stage の分岐の見直し、SSBO の A64 の atomic、複数の動的な index、拒否（design §1） | cleared（2026-09-30。host の試験 PASS、kernel の build PASS。GPU は p005） | p001 |
 | [ws101-p003](phase003/phase.md) | 実行器の object と記録: vkCreateComputePipelines（66）、bind point の分離、vkCmdDispatch（110）の記録（design §2.1） | cleared（2026-09-30。host の試験 PASS、kernel の build PASS。dispatch は p004 まで ENOTSUP） | p002 |
 | [ws101-p004](phase004/phase.md) | 実行器の batch: `render/compute.c`（IDD・CURBE・NumWorkgroups の置き場所・VFE・walker・3D への戻り・scratch 768 thread 分）、transfer_pending（dispatch と SSBO を書く draw）、HDC だけの PIPE_CONTROL、storage の range、WS101 の genxml の dumper（design §2.2〜§2.4） | cleared（2026-09-30。host の試験 PASS（Mesa の genxml で batch と IDD を decode）、kernel の build PASS。IDD の SLM・barrier は p006、GPU は p005） | p003 |
-| ws101-p005 | 実機の bring-up と kernel の試験の場面 `vkcs`（ADD・ID・ODD・PUSH・ATOMIC-SSBO・MIXED・MANYOPS・SPILL）。eu-test の 1 thread の設定から段階的に（design §2.6・§5.1） | planned | p004 |
+| [ws101-p005](phase005/phase.md) | 実機の bring-up と kernel の試験の場面 `vkcs`（ADD・ID・ODD・PUSH・ATOMIC-SSBO・MIXED・MANYOPS・SPILL）。eu-test の 1 thread の設定から段階的に（design §2.6・§5.1） | cleared（2026-09-30。5330 の passthrough で vkcs 9/9 PASS、回帰 vkx・vke1・vke2・vkc PASS。試験の kernel の大きさの残りが 6.6 KB） | p004 |
 | ws101-p006 | SLM・barrier・fence・SLM の atomic（IR・parser・EU、barrier の一様性の検査）、binary の SLM・barrier と IDD の field（p004 の XXX）、vkcs の SHARED・REDUCE・ODD-BARRIER・ATOMIC-SHARED・LOOP・REFUSE | planned | p005 |
 | ws101-p007 | vkCmdDispatchIndirect（111）、0 の group、vkcs の INDIRECT・LENGTH・MANY、G1 の passthrough での受け入れの run（design §2.5） | planned | p006 |
 | ws101-p008 | GLSL ES 3.10 の compute（版・stage・SSBO std430・shared・built-in・barrier と規則・atomic・`.length()` → SPIR-V）、Noct の shader の形の fixture。host の試験（design §3.2） | planned | p001（p002〜p007 と並行できる）、D4（main の記録） |
