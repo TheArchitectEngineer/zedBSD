@@ -85,8 +85,8 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | --- | --- | --- | --- | --- |
 | 1 | WS101 D1: libglesv2 が「OpenGL ES 3.1」を名乗るか | **決定（2026-09-30 朝 ユーザー「名乗ってOKです」）**: compute を持つ device では名乗り、未実装の 3.1 の関数は error の stub（WS068 の「実装した版を名乗る」方針の例外） | — | [WS101 design](ws101/design.md) |
 | 2 | WS101 D2: Noct の build の変更（toolchain）: accel を ON にする | **決定（2026-09-30 朝 ユーザー「許可、構成で選ぶ」）**: 構成の `ZEDBSD_NOCT_ACCEL := y` の amd64 の `/bin/noct` だけ ON。toolchain の変更は main が lock を外して行う | — | 同 §4.1 |
-| 3 | WS101 D3: G3 の見本の大きさ N = 4,000,000 と、CPU との倍率の目標 3 倍以上（伸ばせれば 10 倍） | 案のまま | ws101-p011 | 同 |
-| 4 | WS101 D5: デモの見本は整数だけでよいか（float を GPU に出すには Noct の意味を変える patch が要る） | 整数だけ | ws101-p011 | 同 |
+| 3 | WS101 D3: G3 の見本の大きさ N = 4,000,000 と、CPU との倍率の目標 3 倍以上（伸ばせれば 10 倍） | **決定（2026-09-30 朝 ユーザー「このまま」）**。CPU の時間を測ってから見直す | — | 同 |
+| 4 | WS101 D5: デモの見本は整数だけでよいか | **決定（2026-09-30 朝 ユーザー「整数だけでよい」）**。Noct の意味は変えない | — | 同 |
 | 5 | fg010 の台本（S1〜S14）と WS099 の基準 C1〜C10・WS100 の A1〜A7 の数値 | 案のまま | 随時 | 上の表、各 ws.md |
 | 7 | WS099 の C7: 空の一覧の案内（Files の「Files you open appear here.」、比 1.8〜2.0）を contrast の基準に入れるか。副次の文字の色を `0x6b7585` → `0x56606f` に暗くした（main が許可、Settings と Files、2026-09-30 夜） | 案内は基準の外（使えない項目として WCAG の対象外）。色の変更は戻せる | 随時 | ws099-p005 |
 | 8 | WS100: Settings の Sound の頁で音量を変えられるようにするか（p005、基準 A1〜A7 の外） | 入れない（system bar の音量だけ） | WS100 p004 の後 | [WS100 design](ws100/design.md) |
@@ -189,7 +189,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS091](ws091/ws.md) | MG006 | 画像 viewer（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU）: `/bin/imageview`、PNG・JPEG（EXIF の向き）・GIF（動く）、fit・拡大・pan・pinch・慣性、前後の画像、全画面。Files からの起動は WS093、実機の確認は残り |
 | [WS092](ws092/ws.md) | MG006 | text editor（simple）（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU）: `/bin/textedit`、共有の file chooser（libkeiland、KEILAND_VERSION 12）、touch・PRIMARY・clipboard・Files からの起動。実機は未実施。touch の drag での選択は無し |
 | [WS093](ws093/ws.md) | MG006 | Files から app の起動（画像・text の double click、file の種類と app の対応）（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU）: Files の double click・Enter・double tap で png・jpeg・gif → Image Viewer、text 系 → Text Editor、html → Browser、pdf → PDF Viewer。Always Open With と Use System Default（`~/.config/keiland/open-with`）。実機は未実施 |
-| [WS094](ws094/ws.md) | MG006 | desktop の file の icon（`~/Desktop`）（2026-09-29 ユーザー） | incomplete | p001〜p004 cleared 2026-09-30（QEMU）: compositor の desktop の層、Files `--desktop` が `~/Desktop` の icon を右上から並べる、選択（click・Ctrl・Shift・rubber band・矢印）、double click と Enter で開く、配置の保存。次は p005（context menu・名前の変更・Trash） |
+| [WS094](ws094/ws.md) | MG006 | desktop の file の icon（`~/Desktop`）（2026-09-29 ユーザー） | incomplete | p001〜p005 cleared 2026-09-30（QEMU）: compositor の desktop の層、Files `--desktop`、選択・開く・配置の保存、右 click の menu（項目・空き）・名前の変更・Paste・Trash・Clean Up。次は p006（drag と touch）→ p007（規約） |
 | [WS095](ws095/ws.md) | MG006 | IME（Wayland の input-method-v2・text-input-v3、単一の IME・複数言語、まず日本語、REmacs の辞書）（2026-09-29 ユーザー） | incomplete | p001〜p004 cleared 2026-09-29（設計、日本語の engine、辞書の package、zdesktop の仲介と IME の program: QEMU で Alt+Space → kanji → 漢字 → 確定）。p005（候補の窓と indicator）は書きかけで uncleared（`plan/ws095/p005-wip.patch`）。ユーザーの指示でブラッシュアップ（p005 の残り・p012 の辞書の拡張・p006〜p011）は後回し。既定の image には未登録 |
 | [WS096](ws096/ws.md) | MG002 | Qt6（core・gui・widgets）の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
