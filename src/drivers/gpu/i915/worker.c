@@ -1180,8 +1180,16 @@ i915_worker_run(
 		return error;
 	}
 
+	/* The engine is busy with the request from here: RPS follows the busy time (ws075-p020). */
+	drv_i915_rps_busy_begin(&device->gt.init.rps);
+
 	/* Waits for the request to end. */
 	error = i915_worker_wait(worker, rq, batch_va, label);
+
+	/* The engine is done with it, whichever way it ended. */
+	drv_i915_rps_busy_end(&device->gt.init.rps);
+
+	/* A request that did not end reports why. */
 	if (error != 0)
 		return error;
 

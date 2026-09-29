@@ -20,6 +20,7 @@
 #include "gt-power.h"
 #include "irq.h"
 #include "mmio.h"
+#include "perf.h"
 #include "power.h"
 #include "device-info.h"
 
@@ -43,8 +44,8 @@
 /* How long the stop waits for a running RPS work, in milliseconds. */
 #define I915_RPS_STOP_WAIT_MS			1000U
 
-/* How long the GT must show no activity before the idle check lowers its frequency, in milliseconds. */
-#define I915_RPS_IDLE_MS			100U
+/* The longest interval between two busy-time evaluations, in milliseconds (Linux's BUSY_MAX_EI). */
+#define I915_RPS_BUSY_MAX_EI_MS			20U
 
 /* How many frequency changes the log reports after the start. */
 #define I915_RPS_LOG_CHANGES			24U
@@ -68,9 +69,10 @@ static void i915_rps_set_thresholds(struct i915_rps *rps, struct i915_mmio *mmio
 static void i915_rps_set(struct i915_rps *rps, struct i915_mmio *mmio, uint32_t freq, int update);
 static void i915_rps_set_freq(struct i915_rps *rps, uint32_t freq);
 static void i915_rps_work(void *context);
-static unsigned long i915_rps_activity(const struct i915_rps *rps);
-static void i915_rps_arm_idle(struct i915_rps *rps);
-static void i915_rps_idle(void *context);
+static void i915_rps_enable_interrupts(struct i915_rps *rps, struct i915_irq_dev *irq, struct i915_mmio *mmio);
+static void i915_rps_start_ticking(struct i915_rps *rps);
+static void i915_rps_arm_tick(struct i915_rps *rps, unsigned delay_ms);
+static void i915_rps_tick(void *context);
 static void i915_rps_log(struct i915_rps *rps, const char *reason, uint32_t from, uint32_t events);
 
 /*
@@ -285,9 +287,19 @@ drv_i915_rps_init(
 	rps->pm_ier = 0U;
 	rps->waiters = 0U;
 	rps->work_ready = 0;
-	rps->timers_ready = 0;
-	rps->idle_seen = 0UL;
 	rps->logged = 0U;
+
+	/* Graphics version 12 follows the busy time, as Linux does with the engines' busy stats. */
+	rps->use_timer = 1;
+	rps->busy_total_ns = 0U;
+	rps->busy_since_ns = 0U;
+	rps->busy_runs = 0U;
+	rps->busy_seen_ns = 0U;
+	rps->tick_ns = 0U;
+	rps->interval_ms = 1U;
+	rps->ticking = 0;
+	rps->unparking = 0;
+	rps->timers_ready = 0;
 }
 
 /*
@@ -370,7 +382,6 @@ drv_i915_rps_start(
 	struct i915_irq_dev *irq,
 	struct i915_mmio *mmio)
 {
-	unsigned long flags;
 	uint32_t freq;
 	int error;
 
@@ -390,13 +401,15 @@ drv_i915_rps_start(
 	rps->work_ready = 1;
 	rps->mmio = mmio;
 
-	/* The idle check's timer, on the same queue (without it the frequency only follows the down events). */
-	error = drv_i915_timer_queue_create(&rps->timers, &rps->workqueue, "i915-rps-idle");
-	if (error == 0) {
-		drv_i915_delayed_work_init(&rps->idle_work, i915_rps_idle, rps);
-		rps->timers_ready = 1;
-	} else {
-		kern_logf("i915: rps: idle timer not created (%d)\n", error);
+	/* The evaluations' timer, on the same queue (without it the frequency stays where the start puts it). */
+	if (rps->use_timer != 0) {
+		error = drv_i915_timer_queue_create(&rps->timers, &rps->workqueue, "i915-rps-timer");
+		if (error == 0) {
+			drv_i915_delayed_work_init(&rps->tick_work, i915_rps_tick, rps);
+			rps->timers_ready = 1;
+		} else {
+			kern_logf("i915: rps: evaluation timer not created (%d)\n", error);
+		}
 	}
 
 	/*
@@ -409,46 +422,23 @@ drv_i915_rps_start(
 	i915_rps_set_freq(rps, freq);
 	rps->last_adj = 0;
 
-	/* Clears what the GTPM source may have pending before any of it is enabled (rps_reset_interrupts()). */
-	drv_i915_gt_pm_reset_iir(irq);
-	flags = spin_lock_irqsave(&rps->lock);
-
-	rps->pm_iir = 0U;
-
-	spin_unlock_irqrestore(&rps->lock, flags);
-
-	/* Registers the handler: its argument first, so the handler never runs without one. */
+	/* The busy-time evaluation needs no interrupt: it starts ticking now. */
 	rps->irq = irq;
-	irq->pm_context = rps;
-	__atomic_thread_fence(__ATOMIC_SEQ_CST);
-	irq->pm_handler = drv_i915_rps_irq;
+	if (rps->use_timer != 0) {
+		i915_rps_start_ticking(rps);
+	} else {
+		i915_rps_enable_interrupts(rps, irq, mmio);
+	}
 
-	/* Enables and unmasks the RPS events (gen6_gt_pm_enable_irq()). */
-	flags = spin_lock_irqsave(&rps->lock);
-
-	rps->pm_ier |= rps->pm_events;
-	i915_rps_write_ier(rps);
-	i915_rps_update_imr_locked(rps, rps->pm_events, rps->pm_events);
-
-	spin_unlock_irqrestore(&rps->lock, flags);
-
-	/* Lets the events through the mask that follows the frequency. */
-	drv_i915_write32(mmio, GEN6_PMINTRMSK, drv_i915_rps_pm_mask(rps, rps->last_freq));
-
-	/* The idle check watches from here on. */
-	rps->idle_seen = i915_rps_activity(rps);
-	i915_rps_arm_idle(rps);
-
-	/* The start's report, with the RP control and the PM mask as the GT reads them back. */
-	kern_logf("i915: rps: started min=%u RPe=%u RP0=%u freq=%u events=0x%x clock=%uHz rp_control=0x%x pmintrmsk=0x%x\n",
+	/* The start's report: the way the load is followed, the frequencies, and the RP control as the GT reads it back. */
+	kern_logf("i915: rps: started timer=%d min=%u RPe=%u RP0=%u freq=%u clock=%uHz rp_control=0x%x\n",
+	    rps->use_timer,
 	    rps->min_freq,
 	    rps->efficient_freq,
 	    rps->rp0_freq,
 	    rps->cur_freq,
-	    rps->pm_events,
 	    rps->clock_frequency,
-	    drv_i915_read32(mmio, GEN6_RP_CONTROL),
-	    drv_i915_read32(mmio, GEN6_PMINTRMSK));
+	    drv_i915_read32(mmio, GEN6_RP_CONTROL));
 
 	/* Succeeded: the frequency follows the load. */
 	return 0;
@@ -489,9 +479,9 @@ drv_i915_rps_stop(
 	irq->pm_handler = NULL;
 	(void)drv_i915_synchronize_irq(irq);
 
-	/* The idle check's timer goes first: it feeds the work's queue. */
+	/* The evaluations' timer goes first: it feeds the work's queue. */
 	if (rps->timers_ready != 0) {
-		(void)drv_i915_delayed_cancel_sync(&rps->timers, &rps->idle_work, sched_ticks() + KERN_MS_TO_TICKS(I915_RPS_STOP_WAIT_MS));
+		(void)drv_i915_delayed_cancel_sync(&rps->timers, &rps->tick_work, sched_ticks() + KERN_MS_TO_TICKS(I915_RPS_STOP_WAIT_MS));
 		drv_i915_timer_queue_destroy(&rps->timers);
 		rps->timers_ready = 0;
 	}
@@ -607,6 +597,71 @@ drv_i915_rps_boost_end(
 
 	if (rps->waiters != 0U)
 		rps->waiters--;
+
+	spin_unlock_irqrestore(&rps->lock, flags);
+}
+
+/*
+ * Notes that an engine starts running a request: its busy time counts from
+ * now.  A parked evaluation (the GT idle at the minimum) starts again, from
+ * the efficient frequency, as Linux's unpark does.  Called by the thread
+ * that runs the requests (ws075-p020), not in an interrupt.
+ */
+void
+drv_i915_rps_busy_begin(
+	struct i915_rps *rps)
+{
+	unsigned long flags;
+	uint64_t now;
+	int unpark;
+
+	/* The clock, before the lock. */
+	now = drv_i915_perf_now();
+
+	/* One more run under way; the first one starts the busy time. */
+	flags = spin_lock_irqsave(&rps->lock);
+
+	if (rps->busy_runs == 0U)
+		rps->busy_since_ns = now;
+	rps->busy_runs++;
+	unpark = 0;
+	if (rps->timers_ready != 0 && rps->ticking == 0) {
+		rps->ticking = 1;
+		rps->unparking = 1;
+		unpark = 1;
+	}
+
+	spin_unlock_irqrestore(&rps->lock, flags);
+
+	/* A parked evaluation starts again at once. */
+	if (unpark) {
+		rps->unparks++;
+		i915_rps_arm_tick(rps, 1U);
+	}
+}
+
+/*
+ * Notes that an engine finished running a request: the run's time adds to
+ * the busy time.
+ */
+void
+drv_i915_rps_busy_end(
+	struct i915_rps *rps)
+{
+	unsigned long flags;
+	uint64_t now;
+
+	/* The clock, before the lock. */
+	now = drv_i915_perf_now();
+
+	/* One fewer run; the last one adds the time since the first began (an unbalanced end changes nothing). */
+	flags = spin_lock_irqsave(&rps->lock);
+
+	if (rps->busy_runs != 0U) {
+		rps->busy_runs--;
+		if (rps->busy_runs == 0U && now > rps->busy_since_ns)
+			rps->busy_total_ns += now - rps->busy_since_ns;
+	}
 
 	spin_unlock_irqrestore(&rps->lock, flags);
 }
@@ -955,13 +1010,14 @@ i915_rps_set_freq(
 	/* The request and its thresholds. */
 	i915_rps_set(rps, mmio, freq, 1);
 
-	/* The interrupt limits and mask that follow the new frequency. */
-	drv_i915_write32(mmio, GEN6_RP_INTERRUPT_LIMITS, drv_i915_rps_limits(rps, freq));
-	drv_i915_write32(mmio, GEN6_PMINTRMSK, drv_i915_rps_pm_mask(rps, freq));
+	/* With the interrupts, their limits and mask follow the new frequency (intel_rps_has_interrupts()). */
+	if (rps->use_timer == 0) {
+		drv_i915_write32(mmio, GEN6_RP_INTERRUPT_LIMITS, drv_i915_rps_limits(rps, freq));
+		drv_i915_write32(mmio, GEN6_PMINTRMSK, drv_i915_rps_pm_mask(rps, freq));
+	}
 
-	/* The frequency the next decision starts from; above the minimum the idle check watches. */
+	/* The frequency the next decision starts from. */
 	rps->cur_freq = freq;
-	i915_rps_arm_idle(rps);
 }
 
 /*
@@ -1014,86 +1070,207 @@ i915_rps_work(
 	spin_unlock_irqrestore(&rps->lock, flags);
 }
 
-/* Counts the GT's activity the idle check compares: engine interrupts, up events and boosts. */
-static unsigned long
-i915_rps_activity(
-	const struct i915_rps *rps)
+/*
+ * Enables and unmasks the up and down events and registers the handler
+ * that takes them (the interrupt way, graphics versions 6 to 11: Linux
+ * rps_enable_interrupts()).
+ */
+static void
+i915_rps_enable_interrupts(
+	struct i915_rps *rps,
+	struct i915_irq_dev *irq,
+	struct i915_mmio *mmio)
 {
-	unsigned long activity;
+	unsigned long flags;
 
-	/* The events and boosts RPS itself saw. */
-	activity = (unsigned long)rps->up_events + (unsigned long)rps->boosts;
+	/* Clears what the GTPM source may have pending before any of it is enabled (rps_reset_interrupts()). */
+	drv_i915_gt_pm_reset_iir(irq);
+	flags = spin_lock_irqsave(&rps->lock);
 
-	/* The engines' interrupts (a request ended, a context switched). */
-	if (rps->irq != NULL)
-		activity += (unsigned long)rps->irq->engine_wakeups;
+	rps->pm_iir = 0U;
 
-	/* Reports the count. */
-	return activity;
+	spin_unlock_irqrestore(&rps->lock, flags);
+
+	/* Registers the handler: its argument first, so the handler never runs without one. */
+	irq->pm_context = rps;
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+	irq->pm_handler = drv_i915_rps_irq;
+
+	/* Enables and unmasks the RPS events (gen6_gt_pm_enable_irq()). */
+	flags = spin_lock_irqsave(&rps->lock);
+
+	rps->pm_ier |= rps->pm_events;
+	i915_rps_write_ier(rps);
+	i915_rps_update_imr_locked(rps, rps->pm_events, rps->pm_events);
+
+	spin_unlock_irqrestore(&rps->lock, flags);
+
+	/* Lets the events through the mask that follows the frequency. */
+	drv_i915_write32(mmio, GEN6_PMINTRMSK, drv_i915_rps_pm_mask(rps, rps->last_freq));
 }
 
-/* Arms the idle check while the frequency is above the minimum (an armed check keeps its deadline). */
+/* Starts the busy-time evaluations from the busy time and the clock of now. */
 static void
-i915_rps_arm_idle(
+i915_rps_start_ticking(
 	struct i915_rps *rps)
 {
-	/* Nothing to lower at the minimum, or before the start. */
+	unsigned long flags;
+	uint64_t now;
+
+	/* Without the timer there is nothing to start. */
 	if (rps->timers_ready == 0)
 		return;
-	if (rps->irq == NULL)
-		return;
-	if (rps->cur_freq <= rps->min_softlimit)
-		return;
 
-	/* The check, after the idle time. */
-	(void)drv_i915_delayed_queue(&rps->timers, &rps->idle_work, I915_RPS_IDLE_MS);
+	/* The baseline of the first evaluation. */
+	now = drv_i915_perf_now();
+	flags = spin_lock_irqsave(&rps->lock);
+
+	rps->busy_seen_ns = rps->busy_total_ns;
+	if (rps->busy_runs != 0U)
+		rps->busy_seen_ns += now - rps->busy_since_ns;
+	rps->tick_ns = now;
+	rps->interval_ms = 1U;
+	rps->ticking = 1;
+
+	spin_unlock_irqrestore(&rps->lock, flags);
+
+	/* The first evaluation. */
+	i915_rps_arm_tick(rps, 1U);
+}
+
+/* Arms the next busy-time evaluation after a delay (an armed one keeps its deadline). */
+static void
+i915_rps_arm_tick(
+	struct i915_rps *rps,
+	unsigned delay_ms)
+{
+	/* The evaluation, on the timer queue. */
+	(void)drv_i915_delayed_queue(&rps->timers, &rps->tick_work, delay_ms);
 }
 
 /*
- * Lowers the frequency of an idle GT: no engine interrupt, up event or
- * boost since the last check and no waiting client count as idle, and the
- * frequency drops as Linux's down timeout does (to the efficient frequency,
- * then to the minimum).  This stands in for Linux's park, which drops an
- * idle GT to its idle frequency; the down threshold events do not come
- * while the GT does nothing (ws075-p020, measured on the 5330).  Runs on
- * the work's queue, so it never races the work.
+ * Evaluates the engines' busy time since the last evaluation: busier than
+ * the up threshold goes up, idler than the down threshold goes down, as
+ * the up and down events would (Linux rps_timer() with rps_work()).  After
+ * a change the next evaluation comes in 1 ms, otherwise the interval
+ * doubles up to 20 ms.  The first evaluation after an unpark starts from
+ * the efficient frequency; an idle GT at the minimum with no waiting
+ * client parks the evaluations until the engines run again.  Runs on the
+ * work's queue, so it never races the work.
  */
 static void
-i915_rps_idle(
+i915_rps_tick(
 	void *context)
 {
 	struct i915_rps *rps;
 	unsigned long flags;
-	unsigned long activity;
+	uint64_t now;
+	uint64_t busy;
+	uint64_t busy_delta;
+	uint64_t elapsed;
+	uint32_t events;
 	uint32_t before;
 	uint32_t freq;
 	unsigned waiters;
+	int unparking;
+	int parked;
 	int step;
 
-	/* The activity since the last check, and whether a client waits. */
+	/* The busy time and the clock now, against the last evaluation. */
 	rps = context;
-	activity = i915_rps_activity(rps);
+	now = drv_i915_perf_now();
 	flags = spin_lock_irqsave(&rps->lock);
 
+	busy = rps->busy_total_ns;
+	if (rps->busy_runs != 0U && now > rps->busy_since_ns)
+		busy += now - rps->busy_since_ns;
 	waiters = rps->waiters;
+	unparking = rps->unparking;
+	rps->unparking = 0;
 
 	spin_unlock_irqrestore(&rps->lock, flags);
 
-	/* An idle GT goes down; a busy one is looked at again later. */
-	if (rps->mmio != NULL &&
-	    activity == rps->idle_seen &&
-	    waiters == 0U) {
+	/* What changed since the last evaluation. */
+	busy_delta = 0U;
+	if (busy > rps->busy_seen_ns)
+		busy_delta = busy - rps->busy_seen_ns;
+	elapsed = 0U;
+	if (now > rps->tick_ns)
+		elapsed = now - rps->tick_ns;
+	rps->busy_seen_ns = busy;
+	rps->tick_ns = now;
+	rps->ticks++;
+
+	/* Nothing to change once stopped. */
+	if (rps->mmio == NULL)
+		return;
+
+	/* An unpark starts the GT from the efficient frequency, or higher (intel_rps_unpark()). */
+	if (unparking) {
 		before = rps->cur_freq;
-		freq = drv_i915_rps_next_freq(rps, I915_RPS_DOWN_TIMEOUT, 0, &step);
+		freq = rps->cur_freq;
+		if (freq < rps->efficient_freq)
+			freq = rps->efficient_freq;
 		i915_rps_set_freq(rps, freq);
-		rps->last_adj = step;
-		rps->idle_drops++;
-		i915_rps_log(rps, "idle", before, I915_RPS_DOWN_TIMEOUT);
+		rps->last_adj = 0;
+		rps->interval_ms = 1U;
+		i915_rps_log(rps, "unpark", before, 0U);
+		i915_rps_arm_tick(rps, rps->interval_ms);
+		return;
 	}
 
-	/* The next check compares against now, while the frequency is above the minimum. */
-	rps->idle_seen = i915_rps_activity(rps);
-	i915_rps_arm_idle(rps);
+	/* Busier than the up threshold, idler than the down one, or neither. */
+	events = 0U;
+	if (elapsed != 0U &&
+	    100U * busy_delta > (uint64_t)rps->up_threshold * elapsed &&
+	    rps->cur_freq < rps->max_softlimit) {
+		events = I915_RPS_UP_THRESHOLD;
+		rps->up_events++;
+	} else if (elapsed != 0U &&
+	    100U * busy_delta < (uint64_t)rps->down_threshold * elapsed &&
+	    rps->cur_freq > rps->min_softlimit) {
+		events = I915_RPS_DOWN_THRESHOLD;
+		rps->down_events++;
+	}
+
+	/* An event moves the frequency and looks again soon; none resets the step. */
+	if (events != 0U) {
+		before = rps->cur_freq;
+		freq = drv_i915_rps_next_freq(rps, events, waiters != 0U, &step);
+		i915_rps_set_freq(rps, freq);
+		rps->last_adj = step;
+		rps->interval_ms = 1U;
+		i915_rps_log(rps, "busy", before, events);
+	} else {
+		rps->last_adj = 0;
+	}
+
+	/* An idle GT at the minimum with no waiter parks until the engines run again. */
+	parked = 0;
+	if (busy_delta == 0U &&
+	    waiters == 0U &&
+	    rps->cur_freq <= rps->min_softlimit) {
+		flags = spin_lock_irqsave(&rps->lock);
+
+		if (rps->busy_runs == 0U) {
+			rps->ticking = 0;
+			parked = 1;
+		}
+
+		spin_unlock_irqrestore(&rps->lock, flags);
+	}
+
+	/* Parked: no more evaluations until a run starts. */
+	if (parked) {
+		rps->parks++;
+		return;
+	}
+
+	/* The next evaluation, and the interval after it doubles up to the longest. */
+	i915_rps_arm_tick(rps, rps->interval_ms);
+	rps->interval_ms *= 2U;
+	if (rps->interval_ms > I915_RPS_BUSY_MAX_EI_MS)
+		rps->interval_ms = I915_RPS_BUSY_MAX_EI_MS;
 }
 
 /* Reports one frequency change in the log, for the first few after the start. */

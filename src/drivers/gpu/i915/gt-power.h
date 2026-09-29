@@ -12,10 +12,14 @@
  * media power gating let the idle units switch off.  RPS picks the GT clock.
  * Both follow the Linux intel_rc6.c and intel_rps.c paths that Alder Lake-P
  * takes with the GuC disabled: the driver writes the thresholds and the
- * enables itself.  RPS follows the load (ws075-p020): the GT's power
- * management interrupts say when the GT was busier or idler than the
- * thresholds, a work raises or lowers the requested frequency, and a client
- * waiting on work the GT has not started boosts it.
+ * enables itself.  RPS follows the load (ws075-p020) as Linux does for
+ * graphics version 12: an evaluation every few milliseconds compares the
+ * engines' busy time with the thresholds (Linux's rps_timer; the GT's own
+ * up/down interrupts, which versions 6 to 11 use and which are kept here,
+ * do not fire on Alder Lake-P), a work raises or lowers the requested
+ * frequency, a client waiting on work the GT has not started boosts it,
+ * and an idle GT at the minimum stops the evaluations until the engines
+ * run again.
  *
  * The PCODE mailbox that RPS reads the efficient frequency from belongs to
  * power.c; this file only uses it.
@@ -157,17 +161,33 @@ struct i915_rps {
 	int work_ready;
 
 	/*
-	 * The idle check that stands in for Linux's park (ws075-p020): the
-	 * timer queue that fires it on the work's queue (timers_ready says it
-	 * exists), and the count of the GT's activity (engine interrupts, up
-	 * events and boosts) it last saw.  Unchanged activity with no waiter
-	 * counts as the GT idle: the frequency drops to the efficient one,
-	 * then to the minimum.
+	 * How the load is followed: nonzero for the busy-time evaluation
+	 * (Linux's rps_timer over the engines' busy stats, graphics version
+	 * 12), zero for the GT's up/down interrupts (versions 6 to 11).
 	 */
+	int use_timer;
+
+	/*
+	 * The busy-time evaluation: the engines' busy time of the runs that
+	 * ended, when the runs under way began (busy_runs counts them), the
+	 * busy time and the clock at the last evaluation (nanoseconds), the
+	 * next evaluation's interval (1 ms after a change, doubling to 20 ms),
+	 * whether the evaluations run (zero: parked, the GT idle at the
+	 * minimum) and whether the next one starts the GT from the efficient
+	 * frequency (unpark).  busy_* and ticking are guarded by lock; the
+	 * timer queue fires the evaluations on the work's queue.
+	 */
+	uint64_t busy_total_ns;
+	uint64_t busy_since_ns;
+	unsigned busy_runs;
+	uint64_t busy_seen_ns;
+	uint64_t tick_ns;
+	unsigned interval_ms;
+	int ticking;
+	int unparking;
 	struct i915_timer_queue timers;
-	struct i915_delayed_work idle_work;
+	struct i915_delayed_work tick_work;
 	int timers_ready;
-	unsigned long idle_seen;
 
 	/* What happened, for the diagnostics: events, boosts, work runs and frequency changes. */
 	volatile unsigned up_events;
@@ -175,7 +195,9 @@ struct i915_rps {
 	volatile unsigned boosts;
 	volatile unsigned work_runs;
 	volatile unsigned changes;
-	volatile unsigned idle_drops;
+	volatile unsigned ticks;
+	volatile unsigned parks;
+	volatile unsigned unparks;
 
 	/* How many frequency changes the log has reported (the first few only). */
 	unsigned logged;
@@ -192,6 +214,8 @@ void drv_i915_rps_stop(struct i915_rps *rps);
 void drv_i915_rps_irq(void *context, uint32_t pm_iir);
 void drv_i915_rps_boost_begin(struct i915_rps *rps);
 void drv_i915_rps_boost_end(struct i915_rps *rps);
+void drv_i915_rps_busy_begin(struct i915_rps *rps);
+void drv_i915_rps_busy_end(struct i915_rps *rps);
 uint32_t drv_i915_rps_next_freq(const struct i915_rps *rps, uint32_t pm_iir, int client_boost, int *adj);
 uint32_t drv_i915_rps_pm_mask(const struct i915_rps *rps, uint32_t freq);
 uint32_t drv_i915_rps_limits(const struct i915_rps *rps, uint32_t freq);
