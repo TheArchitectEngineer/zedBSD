@@ -112,6 +112,14 @@ struct i915_worker_context {
 	struct i915_context *owner;
 
 	/*
+	 * How long the engine ran this context's requests, in nanoseconds, and
+	 * how many ran.  Only the worker adds to them; they are read with a
+	 * debugger to see which session keeps the engine busy (ws075-p018).
+	 */
+	uint64_t engine_ns;
+	uint32_t engine_runs;
+
+	/*
 	 * The address space the logical ring context names.  Only top_pd_dma is
 	 * read: it is the top table of the session's own address space.
 	 */
@@ -1125,6 +1133,7 @@ i915_worker_run(
 	struct i915_device *device;
 	struct i915_worker_context *record;
 	struct i915_gt_request *rq;
+	uint64_t start;
 	int error;
 
 	device = worker->device;
@@ -1189,8 +1198,11 @@ i915_worker_run(
 		return error;
 	}
 
-	/* Waits for the request to end. */
+	/* Waits for the request to end, counting the engine's time to its context. */
+	start = drv_i915_perf_now();
 	error = i915_worker_wait(worker, rq, batch_va, label);
+	record->engine_ns += drv_i915_perf_now() - start;
+	record->engine_runs++;
 	if (error != 0)
 		return error;
 
