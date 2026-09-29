@@ -47,7 +47,7 @@ Resume point: **引き継ぎ（2026-09-29 wrap up）**: p001・p002・p003 は c
 | [ws089-p002](phase002/phase.md) | アプリの骨格: 窓、present、glass の 2 枚の card、titlebar（Back・Forward・Home・Breadcrumb・Sidebar）と履歴、System Menu、左の項目の pane、右の頁の scroll、Home（tile）・About・準備中の頁、App Home の行 | cleared（2026-09-29、Venus の guest） | p001、link の規則（main の許可済み） |
 | ws089-p008 | 検索（titlebar の欄と結果の頁）と Home の tile の今の状態（Home の tile の頁は p002 で済み） | planning | p002 |
 | ws089-p007 | desktop の設定の仕組み: libkeiland の `keiland_preferences_*` と zdesktop の反映（[案](proposed/desktop-preferences.md)、main の許可が要る） | planning | p001、main の許可 |
-| ws089-p003 | Network・Wi-Fi・Ethernet の頁（networkd の状態と Wi-Fi の接続、link の詳細は [案](proposed/libkeiland-network-link.md)） | planning | p002（link の詳細は main の許可） |
+| [ws089-p003](phase003/phase.md) | Network・Wi-Fi・Ethernet の頁（networkd の状態、Wi-Fi の一覧・接続・切断・新しい network の鍵、address・DNS・通信量。[案](proposed/libkeiland-network-link.md)、networkd の protocol は変えない） | cleared（2026-09-29、Venus の guest。実機は未実施） | p002 |
 | ws089-p004 | Appearance・Wallpaper・Display・Storage の頁 | planning | p002, p007 |
 | ws089-p005 | Sound・Mouse・Touchpad・Keyboard の頁（音量は [案](proposed/libkeiland-audio.md)） | planning | p002, p007（音量は main の許可） |
 | ws089-p006 | 規約の全文との照合、回帰、デモの通し、App Home の絵とデモの image（[案](proposed/app-home-icon.md)、main の許可） | planning | p003〜p005, p008 |
