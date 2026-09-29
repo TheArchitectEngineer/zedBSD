@@ -17,4 +17,10 @@ KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire
 # App Home starts X11 applications through zdesktop-x11, which starts xserver when it is needed.
 ZEDBSD_PACKAGE_INPUTS += userland/desktop/wayland/keiland-x11
 ZEDBSD_PACKAGE_FILES += $(if $(filter wayland,$(ZEDBSD_USER_PROGRAMS)),--file /usr/libexec/keiland-x11=userland/desktop/wayland/keiland-x11)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,wayland,Wayland compositor,amd64,y,basic,$(KEILAND_SOURCES),y,desktop,desktop/wayland,desktop/libvulkan desktop/libtruetype desktop/libkeiland desktop/sessiond,0755,program,,,bin))
+KEILAND_FONT_DATA := /usr/share/fonts/keiland.ttf=userland/desktop/fonts/Inter.ttf \
+	/usr/share/fonts/keiland-mono.ttf=userland/desktop/fonts/JetBrainsMono-Regular.ttf \
+	/usr/share/fonts/keiland-fallback.ttf=userland/desktop/fonts/DroidSansFallbackFull.ttf \
+	/usr/share/licenses/keiland-fonts/Inter-OFL.txt=userland/desktop/fonts/Inter-OFL.txt \
+	/usr/share/licenses/keiland-fonts/JetBrainsMono-OFL.txt=userland/desktop/fonts/JetBrainsMono-OFL.txt \
+	/usr/share/licenses/keiland-fonts/DroidSansFallback-LICENSE.txt=userland/desktop/fonts/DroidSansFallback-LICENSE.txt
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,wayland,Wayland compositor,amd64,y,basic,$(KEILAND_SOURCES),y,desktop,desktop/wayland,desktop/libvulkan desktop/libtruetype desktop/libkeiland desktop/sessiond,0755,program,$(KEILAND_FONT_DATA),,bin))

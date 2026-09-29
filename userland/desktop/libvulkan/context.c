@@ -23,6 +23,7 @@
 #define VULKAN_REPLY_TRAILER_BYTES 20U
 #define VULKAN_TRANSPORT_TIMEOUT_NS UINT64_C(10000000000)
 #define VULKAN_PROTOCOL_XML_VERSION VK_MAKE_VERSION(1, 3, 269)
+#define VULKAN_WINQ_XML_VERSION VK_MAKE_VERSION(1, 4, 343)
 #define VULKAN_VENDOR_CAPSET_BYTES 168U
 #define VULKAN_VENDOR_CAPSET_MAGIC 0x5a424453U
 #define VULKAN_VENDOR_CAPSET_OPAQUE 1U
@@ -150,14 +151,16 @@ vulkan_context_open(
 	context->xml_version = vulkan_load_word(capset.data + 4);
 	timelines = vulkan_load_word(capset.data + 152);
 
-	/* Refuses a serialization contract that this independent codec has not implemented. */
+	/* The Windows fork accepts the 1.3.269 command subset, but needs copied scanout. */
 	if (context->wire_version != 1 ||
-	    context->xml_version != VULKAN_PROTOCOL_XML_VERSION ||
+	    (context->xml_version != VULKAN_PROTOCOL_XML_VERSION &&
+	     context->xml_version != VULKAN_WINQ_XML_VERSION) ||
 	    timelines == 0) {
 		cleanup = vulkan_context_close(context);
 		(void)cleanup;
 		return VK_ERROR_INCOMPATIBLE_DRIVER;
 	}
+	context->copy_display = context->xml_version == VULKAN_WINQ_XML_VERSION;
 
 	/*
 	 * An exact vendor suffix identifies the paired renderer's raw OPAQUE support.
