@@ -382,7 +382,7 @@ main_loop(
 		due = pv_app_tick(&main_app, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
-		due = pv_window_repeat(&main_window, now);
+		due = pv_window_repeat_wait(&main_window, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
 		due = pv_touch_tick(&main_touch, &main_app, pv_touch_clock());
@@ -405,10 +405,16 @@ main_loop(
 			return 0;
 		}
 
-		/* Every input queued (the menus' and the titlebar's choices among them). */
+		/*
+		 * A key held repeats once the compositor's input is in, so that its
+		 * release is seen first (BUG-111: a repeat pressed before the wait
+		 * made a key act twice when the loop had been busy).
+		 */
 		now = pv_clock();
 		main_app.now = now;
 		(void)pv_window_repeat(&main_window, now);
+
+		/* Every input queued (the menus' and the titlebar's choices among them). */
 		for (;;) {
 			taken = pv_window_take(&main_window, &event);
 			if (taken == 0)

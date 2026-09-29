@@ -460,7 +460,7 @@ main_loop(
 		due = te_app_tick(&main_app, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
-		due = te_window_repeat(&main_window, now);
+		due = te_window_repeat_wait(&main_window, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
 		due = te_touch_tick(&main_touch, &main_app, te_touch_clock());
@@ -476,10 +476,12 @@ main_loop(
 			return 0;
 		}
 
-		/* Every input queued (the menus' and the titlebar's among them). */
+		/* A key held repeats once the compositor's input is in, so that its release is seen first (BUG-111). */
 		now = te_clock();
 		main_app.now = now;
 		(void)te_window_repeat(&main_window, now);
+
+		/* Every input queued (the menus' and the titlebar's among them). */
 		for (;;) {
 			taken = te_window_take(&main_window, &event);
 			if (taken == 0)
