@@ -10,7 +10,7 @@
  * plan/ws070/titlebar-design.md section 7): back, forward, home, search,
  * the views, and the other roles; and the pictures on App Home's tiles
  * (ws035-p123): Files, Notes, Terminal, PDF Viewer, Browser, the model
- * viewer, Gears, the X terminal, Lock Screen and Log Out.  They are drawn
+ * viewer, Gears, the X terminal, Lock Screen, Log Out and Text Editor.  They are drawn
  * here as line art, not taken from any icon set or font.
  *
  * Each icon is a few strokes, arcs, rings, dots and rounded boxes (filled
@@ -304,6 +304,15 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_SEGMENT, 16.5f, 8.5f, 20.0f, 12.0f, 0.0f },
 		{ ICON_SEGMENT, 20.0f, 12.0f, 16.5f, 15.5f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Text Editor (WS092): a page with three lines of text, the cursor after the last. */
+	{
+		{ ICON_FRAME, 4.5f, 3.5f, 19.5f, 20.5f, 2.2f },
+		{ ICON_SEGMENT, 8.0f, 8.0f, 16.0f, 8.0f, 0.0f },
+		{ ICON_SEGMENT, 8.0f, 12.0f, 16.0f, 12.0f, 0.0f },
+		{ ICON_SEGMENT, 8.0f, 16.0f, 11.5f, 16.0f, 0.0f },
+		{ ICON_SEGMENT, 14.0f, 14.0f, 14.0f, 18.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	}
 };
 
@@ -321,7 +330,8 @@ static const char *const icon_app_names[GLASS_ICON_APPS] = {
 	"gears",
 	"xterm",
 	"lock",
-	"logout"
+	"logout",
+	"text"
 };
 
 /* The known programs' windows, found by their exact application ID. */
@@ -333,7 +343,8 @@ static const struct icon_app_id icon_app_ids[] = {
 	{ "browser", GLASS_ICON_APP_BROWSER, 0x3a8fd8U },
 	{ "mview", GLASS_ICON_APP_MODEL, 0xe07a5aU },
 	{ "Gears", GLASS_ICON_APP_GEARS, 0xd05a3aU },
-	{ "XTerminal", GLASS_ICON_APP_XTERM, 0x4a4a78U }
+	{ "XTerminal", GLASS_ICON_APP_XTERM, 0x4a4a78U },
+	{ "textedit", GLASS_ICON_APP_TEXT, 0x1f9e9aU }
 };
 
 static float icon_distance(const struct icon_part *part, float x, float y);

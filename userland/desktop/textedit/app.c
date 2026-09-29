@@ -8,7 +8,7 @@
 /*
  * The editor of Text Editor: the document's file (opening, saving, new),
  * the frame's layout, the pointer and the keys (with the dialogs and the
- * file chooser they may be for), the actions of the menus and the
+ * file chooser's answer), the actions of the menus and the
  * titlebar, and time (the cursor's blinking, the wheel's glide, a message
  * fading, a selection dragged past the edge).  plan/ws092/design.md
  * sections 3, 4, 6, 9 and 11.
@@ -77,13 +77,8 @@ static void app_dialog_key(struct te_app *app, const struct te_event *event);
 static void app_dialog_press(struct te_app *app, const struct te_event *event);
 static void app_dialog_choose(struct te_app *app, int button);
 static int app_dialog_buttons(const struct te_app *app);
-static void app_chooser_start(struct te_app *app, int saving);
-static void app_chooser_key(struct te_app *app, const struct te_event *event);
-static void app_chooser_press(struct te_app *app, const struct te_event *event);
-static void app_chooser_activate(struct te_app *app);
-static void app_chooser_confirm(struct te_app *app);
-static void app_chooser_show(struct te_app *app);
-static void app_chooser_name(struct te_app *app, const char *name);
+static void app_choose(struct te_app *app, int saving);
+static void app_chosen(struct te_app *app, const struct te_event *event);
 static int app_inside(const struct te_rect *rect, int x, int y);
 static void app_error_message(struct te_app *app, const char *what, const char *name, int error);
 
@@ -133,8 +128,7 @@ void
 te_app_release(
 	struct te_app *app)
 {
-	/* The chooser, the rows, the history and the document. */
-	te_chooser_close(&app->chooser);
+	/* The rows, the history and the document. */
 	te_layout_free(&app->layout);
 	te_undo_free(&app->undo);
 	te_buffer_free(&app->buffer);
@@ -255,8 +249,6 @@ te_app_resize(
 	app->width = width;
 	app->height = height;
 	te_app_relayout(app);
-	if (app->choosing)
-		app_chooser_show(app);
 	app->dirty = 1;
 }
 
@@ -298,6 +290,9 @@ te_app_event(
 		if (event->how == TE_FIND_SUBMITTED)
 			te_edit_find(app, 1, 0);
 		break;
+	case TE_EVENT_CHOSEN:
+		app_chosen(app, event);
+		break;
 	}
 
 	/* The line numbers may have grown a digit, which narrows the text. */
@@ -330,11 +325,11 @@ te_app_action(
 		app_save(app);
 		break;
 	case TE_ACTION_SAVE_AS:
-		app_chooser_start(app, 1);
+		app_choose(app, 1);
 		break;
 	case TE_ACTION_CLOSE:
 	case TE_ACTION_QUIT:
-		/* Quit closes a dialog or the chooser first, then asks like Close. */
+		/* Quit closes a dialog first (the chooser's answer is then ignored), then asks like Close. */
 		app->dialog = TE_DIALOG_NONE;
 		app->choosing = 0;
 		app_request(app, TE_AFTER_CLOSE);
@@ -702,7 +697,7 @@ te_app_tap(
 	/* A double tap in the text selects the word there. */
 	te_app_text_rect(app, &text);
 	inside = app_inside(&text, x, y);
-	if (count == 2 && inside && app->dialog == TE_DIALOG_NONE && !app->choosing) {
+	if (count == 2 && inside && app->dialog == TE_DIALOG_NONE) {
 		position = te_edit_position_at(app, x, y);
 		te_edit_word(app, position, &start, &end);
 		te_edit_select(app, start, end);
@@ -755,39 +750,6 @@ te_app_dialog_layout(
 		buttons[index].y = card->y + card->height - 20 - TE_BUTTON_HEIGHT;
 		right -= TE_BUTTON_WIDTH + 10;
 	}
-}
-
-/*
- * Gives the chooser's card, its list's rectangle, and how many rows the
- * list shows.
- */
-void
-te_app_chooser_layout(
-	const struct te_app *app,
-	struct te_rect *card,
-	struct te_rect *list,
-	size_t *rows)
-{
-	/* The card in the middle of the frame, within it. */
-	card->width = TE_CHOOSER_WIDTH;
-	card->height = TE_CHOOSER_HEIGHT;
-	if (card->width > app->width - 2 * TE_CARD_INSET)
-		card->width = app->width - 2 * TE_CARD_INSET;
-	if (card->height > app->height - 2 * TE_CARD_INSET)
-		card->height = app->height - 2 * TE_CARD_INSET;
-	card->x = (app->width - card->width) / 2;
-	card->y = (app->height - card->height) / 2;
-
-	/* The list between the header and the footer. */
-	list->x = card->x + 12;
-	list->y = card->y + TE_CHOOSER_HEADER;
-	list->width = card->width - 24;
-	list->height = card->height - TE_CHOOSER_HEADER - TE_CHOOSER_FOOTER;
-	if (list->height < TE_CHOOSER_ROW)
-		list->height = TE_CHOOSER_ROW;
-
-	/* Succeeded: the rows that fit. */
-	*rows = (size_t)(list->height / TE_CHOOSER_ROW);
 }
 
 /* Measures the body's text at its size: the cell's width, the row's height and the baseline. */
@@ -914,7 +876,7 @@ app_replace(
 	app->dirty = 1;
 }
 
-/* Takes the pointer's input: over a dialog or the chooser, or in the text. */
+/* Takes the pointer's input: over a dialog, or in the text. */
 static void
 app_pointer(
 	struct te_app *app,
@@ -927,12 +889,6 @@ app_pointer(
 	/* A dialog takes the pointer. */
 	if (app->dialog != TE_DIALOG_NONE) {
 		app_dialog_press(app, event);
-		return;
-	}
-
-	/* So does the chooser. */
-	if (app->choosing) {
-		app_chooser_press(app, event);
 		return;
 	}
 
@@ -1092,7 +1048,7 @@ app_drag(
 	app->dirty = 1;
 }
 
-/* The wheel: the chooser's list moves, Control changes the text's size, and otherwise the view glides. */
+/* The wheel: Control changes the text's size, and otherwise the view glides. */
 static void
 app_wheel(
 	struct te_app *app,
@@ -1101,16 +1057,6 @@ app_wheel(
 	/* A dialog keeps the view still. */
 	if (app->dialog != TE_DIALOG_NONE)
 		return;
-
-	/* The chooser's list moves a row a notch. */
-	if (app->choosing) {
-		if (event->scroll > 0 && app->chooser.first + 1U < app->chooser.count)
-			app->chooser.first++;
-		if (event->scroll < 0 && app->chooser.first > 0U)
-			app->chooser.first--;
-		app->dirty = 1;
-		return;
-	}
 
 	/* Control and the wheel change the text's size. */
 	if ((event->modifiers & TE_MOD_CTRL) != 0U) {
@@ -1142,7 +1088,7 @@ app_wheel(
 	}
 }
 
-/* Takes a key: a dialog's, the chooser's, F3 and Esc, or the text's. */
+/* Takes a key: a dialog's, F3, or the text's. */
 static void
 app_key(
 	struct te_app *app,
@@ -1157,12 +1103,6 @@ app_key(
 	/* A dialog takes the keys. */
 	if (app->dialog != TE_DIALOG_NONE) {
 		app_dialog_key(app, event);
-		return;
-	}
-
-	/* So does the chooser. */
-	if (app->choosing) {
-		app_chooser_key(app, event);
 		return;
 	}
 
@@ -1187,9 +1127,18 @@ app_find_text(
 	struct te_app *app,
 	const struct te_event *event)
 {
-	/* The text, kept for Find Next. */
-	snprintf(app->find, sizeof(app->find), "%s", event->text);
-	app->find_length = strlen(app->find);
+	size_t length;
+
+	/* The text, kept for Find Next (cut at a character's start when it is too long). */
+	length = strlen(event->text);
+	if (length >= sizeof(app->find)) {
+		length = sizeof(app->find) - 1U;
+		while (length > 0U && ((unsigned char)event->text[length] & 0xc0U) == 0x80U)
+			length--;
+	}
+	memcpy(app->find, event->text, length);
+	app->find[length] = '\0';
+	app->find_length = length;
 
 	/* Found as it is typed; an empty field only clears the marks. */
 	if (app->find_length != 0U)
@@ -1242,7 +1191,7 @@ app_after(
 		te_app_new(app);
 		break;
 	case TE_AFTER_OPEN:
-		app_chooser_start(app, 0);
+		app_choose(app, 0);
 		break;
 	case TE_AFTER_NOTHING:
 		break;
@@ -1258,7 +1207,7 @@ app_save(
 
 	/* Untitled: Save As. */
 	if (app->path[0] == '\0') {
-		app_chooser_start(app, 1);
+		app_choose(app, 1);
 		return;
 	}
 
@@ -1432,7 +1381,7 @@ app_dialog_choose(
 		/* Save (as, for Untitled), Don't Save, or Cancel. */
 		if (button == APP_BUTTON_FIRST) {
 			if (app->path[0] == '\0')
-				app_chooser_start(app, 1);
+				app_choose(app, 1);
 			else
 				(void)te_app_save(app, NULL);
 		} else if (button == APP_BUTTON_SECOND) {
@@ -1440,13 +1389,6 @@ app_dialog_choose(
 		} else {
 			app->after = TE_AFTER_NOTHING;
 		}
-		break;
-	case TE_DIALOG_REPLACE:
-		/* Replace the file chosen, or go back to the chooser. */
-		if (button == APP_BUTTON_FIRST)
-			(void)te_app_save(app, app->pending_path);
-		else
-			app_chooser_start(app, 1);
 		break;
 	case TE_DIALOG_CHANGED:
 		/* Overwrite the file changed on the disk, or keep it. */
@@ -1478,302 +1420,94 @@ app_dialog_buttons(
 	return 2;
 }
 
-/* Opens the chooser for Open or for Save As, at the document's folder (or the home folder). */
+/*
+ * Opens the file chooser (the window's) to open a file or to save as a
+ * name, at the document's folder (or the home folder); its answer comes
+ * back as a TE_EVENT_CHOSEN.
+ */
 static void
-app_chooser_start(
+app_choose(
 	struct te_app *app,
 	int saving)
 {
 	char folder[TE_PATH_MAX];
 	const char *home;
+	const char *name;
 	char *slash;
 	int error;
+
+	/* Without a chooser there is nothing to choose with. */
+	if (app->host.choose == NULL) {
+		te_app_message(app, "No file chooser is available.");
+		app->after = TE_AFTER_NOTHING;
+		return;
+	}
 
 	/* The document's folder, or home, or here. */
 	snprintf(folder, sizeof(folder), "%s", app->path);
 	slash = strrchr(folder, '/');
-	if (slash != NULL && slash != folder)
-		*slash = '\0';
-	else if (slash == folder)
+	if (slash == folder)
 		folder[1] = '\0';
-	if (app->path[0] == '\0' || slash == NULL) {
+	else if (slash != NULL)
+		*slash = '\0';
+	if (slash == NULL) {
 		home = getenv("HOME");
 		if (home == NULL || home[0] == '\0')
 			home = ".";
 		snprintf(folder, sizeof(folder), "%s", home);
 	}
 
-	/* The folder's list; one that cannot be read gives the root's. */
-	error = te_chooser_open(&app->chooser, folder);
-	if (error != 0)
-		error = te_chooser_open(&app->chooser, "/");
+	/* The name Save As starts with: the document's, or a new one. */
+	name = te_app_name(app);
+	if (app->path[0] == '\0')
+		name = "Untitled.txt";
+
+	/* The chooser; while it is open the editor waits for its answer. */
+	error = app->host.choose(app->host.data, saving, folder, name);
 	if (error != 0) {
-		app_error_message(app, "Can't list", folder, error);
+		app_error_message(app, "Can't show the files of", folder, error);
+		app->after = TE_AFTER_NOTHING;
 		return;
 	}
-
-	/* Save As starts with the document's name, all of it selected. */
-	app->chooser.saving = saving;
-	app_chooser_name(app, te_app_name(app));
-	app->chooser.name_all = 1;
-	if (saving && app->path[0] == '\0')
-		app_chooser_name(app, "Untitled.txt");
 	app->choosing = 1;
+	app->choosing_save = saving;
 	app->selecting = 0;
-	app->dirty = 1;
-	te_log("CHOOSER saving=%d folder=%s", saving, app->chooser.folder);
+	te_log("CHOOSER saving=%d folder=%s", saving, folder);
 }
 
-/* A key in the chooser: moves in the list, opens, goes up, types the name, or closes it. */
+/*
+ * The file chooser answered: a path to open or to save to (the chooser has
+ * already asked before replacing a file), or nothing when it was
+ * cancelled.
+ */
 static void
-app_chooser_key(
+app_chosen(
 	struct te_app *app,
 	const struct te_event *event)
 {
-	struct te_chooser *chooser;
-	uint32_t codepoint;
-	char bytes[4];
+	int saving;
 
-	/* The chooser. */
-	chooser = &app->chooser;
-	app->dirty = 1;
-
-	/* The key. */
-	switch (event->key) {
-	case TE_KEY_ESCAPE:
-		/* Closed: nothing waits any more. */
-		app->choosing = 0;
-		app->after = TE_AFTER_NOTHING;
+	/* An answer nobody waits for (Quit came meanwhile) is dropped. */
+	if (!app->choosing)
 		return;
-	case TE_KEY_UP:
-		if (chooser->selected > 0U)
-			chooser->selected--;
-		app_chooser_show(app);
-		return;
-	case TE_KEY_DOWN:
-		if (chooser->selected + 1U < chooser->count)
-			chooser->selected++;
-		app_chooser_show(app);
-		return;
-	case TE_KEY_HOME:
-		chooser->selected = 0;
-		app_chooser_show(app);
-		return;
-	case TE_KEY_END:
-		if (chooser->count > 0U)
-			chooser->selected = chooser->count - 1U;
-		app_chooser_show(app);
-		return;
-	case TE_KEY_ENTER:
-	case TE_KEY_KP_ENTER:
-		/* Save As saves the name typed; Open opens the entry. */
-		if (chooser->saving)
-			app_chooser_confirm(app);
-		else
-			app_chooser_activate(app);
-		return;
-	case TE_KEY_BACKSPACE:
-		/* Save As edits the name (all of it when it is selected); Open goes up. */
-		if (chooser->saving) {
-			if (chooser->name_all)
-				chooser->name_length = 0;
-			while (chooser->name_length > 0U) {
-				chooser->name_length--;
-				if (((unsigned char)chooser->name[chooser->name_length] & 0xc0U) != 0x80U)
-					break;
-			}
-			chooser->name[chooser->name_length] = '\0';
-			chooser->name_all = 0;
-		} else {
-			chooser->selected = 0;
-			app_chooser_activate(app);
-		}
-		return;
-	default:
-		break;
-	}
-
-	/* Ctrl+A selects the whole name. */
-	if (event->key == TE_KEY_A && (event->modifiers & TE_MOD_CTRL) != 0U) {
-		chooser->name_all = 1;
-		return;
-	}
-
-	/* A character goes into the name (in place of all of it when it is selected). */
-	codepoint = te_key_character(event->key, event->modifiers);
-	if (!chooser->saving || codepoint == 0U || codepoint == '/')
-		return;
-	if (chooser->name_all)
-		chooser->name_length = 0;
-	chooser->name_all = 0;
-	bytes[0] = (char)codepoint;
-	bytes[1] = '\0';
-	if (chooser->name_length + 1U < sizeof(chooser->name)) {
-		memcpy(chooser->name + chooser->name_length, bytes, 2U);
-		chooser->name_length++;
-	}
-}
-
-/* The pointer over the chooser: a click selects a row (twice, opens it), or chooses a button. */
-static void
-app_chooser_press(
-	struct te_app *app,
-	const struct te_event *event)
-{
-	struct te_rect buttons[APP_BUTTONS];
-	struct te_rect card;
-	struct te_rect list;
-	size_t rows;
-	size_t index;
-	int inside;
-	int again;
-
-	/* Only a left press. */
-	if (event->type != TE_EVENT_BUTTON || !event->pressed || event->button != TE_BUTTON_LEFT)
-		return;
-	te_app_chooser_layout(app, &card, &list, &rows);
-	app->dirty = 1;
-
-	/* The buttons at the bottom right: the default (Open or Save) and Cancel. */
-	buttons[0].width = TE_BUTTON_WIDTH;
-	buttons[0].height = TE_BUTTON_HEIGHT;
-	buttons[0].x = card.x + card.width - 16 - TE_BUTTON_WIDTH;
-	buttons[0].y = card.y + card.height - 14 - TE_BUTTON_HEIGHT;
-	buttons[1] = buttons[0];
-	buttons[1].x -= TE_BUTTON_WIDTH + 10;
-
-	/* The default button. */
-	inside = app_inside(&buttons[0], event->x, event->y);
-	if (inside) {
-		if (app->chooser.saving)
-			app_chooser_confirm(app);
-		else
-			app_chooser_activate(app);
-		return;
-	}
-
-	/* Cancel. */
-	inside = app_inside(&buttons[1], event->x, event->y);
-	if (inside) {
-		app->choosing = 0;
-		app->after = TE_AFTER_NOTHING;
-		return;
-	}
-
-	/* A row of the list. */
-	inside = app_inside(&list, event->x, event->y);
-	if (!inside)
-		return;
-	index = app->chooser.first + (size_t)((event->y - list.y) / TE_CHOOSER_ROW);
-	if (index >= app->chooser.count)
-		return;
-
-	/* The same row clicked again soon opens it; a file's name goes into Save As's name. */
-	again = 0;
-	if (index == app->chooser.selected && app->now - app->click_time <= APP_CLICK_MS)
-		again = 1;
-	app->click_time = app->now;
-	app->chooser.selected = index;
-	if (app->chooser.saving && !app->chooser.entries[index].folder)
-		app_chooser_name(app, app->chooser.entries[index].name);
-	if (again)
-		app_chooser_activate(app);
-}
-
-/* Opens the selected entry: a folder is listed, a file is opened (Open) or named (Save As). */
-static void
-app_chooser_activate(
-	struct te_app *app)
-{
-	char path[TE_PATH_MAX];
-	int error;
-
-	/* The entry's path. */
-	error = te_chooser_path(&app->chooser, app->chooser.selected, path, sizeof(path));
-	if (error != 0)
-		return;
-
-	/* A folder: its list. */
-	if (app->chooser.entries[app->chooser.selected].folder) {
-		error = te_chooser_open(&app->chooser, path);
-		if (error != 0)
-			app_error_message(app, "Can't open", path, error);
-		return;
-	}
-
-	/* Save As: the file's name is the one saved to. */
-	if (app->chooser.saving) {
-		app_chooser_name(app, app->chooser.entries[app->chooser.selected].name);
-		app_chooser_confirm(app);
-		return;
-	}
-
-	/* Open: the file becomes the document. */
-	error = te_app_open(app, path);
-	if (error == 0)
-		app->choosing = 0;
-}
-
-/* Save As's Save: the name typed in the folder listed, asking first before replacing another file. */
-static void
-app_chooser_confirm(
-	struct te_app *app)
-{
-	struct stat status;
-	int error;
-	int same;
-
-	/* The path. */
-	error = te_chooser_name_path(&app->chooser, app->pending_path, sizeof(app->pending_path));
-	if (error != 0) {
-		te_app_message(app, "Type a name for the file.");
-		return;
-	}
+	saving = app->choosing_save;
 	app->choosing = 0;
+	app->dirty = 1;
 
-	/* Another file of that name is replaced only when the answer is yes. */
-	error = stat(app->pending_path, &status);
-	same = strcmp(app->pending_path, app->path);
-	if (error == 0 && same != 0) {
-		app_dialog(app, TE_DIALOG_REPLACE);
+	/* Cancelled: nothing waits any more. */
+	if (event->text[0] == '\0') {
+		app->after = TE_AFTER_NOTHING;
 		return;
 	}
 
-	/* The save. */
-	(void)te_app_save(app, app->pending_path);
-}
+	/* Save As saves to the path, and goes on with what waited. */
+	if (saving) {
+		(void)te_app_save(app, event->text);
+		return;
+	}
 
-/* Keeps the selected row of the chooser's list in view. */
-static void
-app_chooser_show(
-	struct te_app *app)
-{
-	struct te_rect card;
-	struct te_rect list;
-	size_t rows;
-
-	/* The rows that fit. */
-	te_app_chooser_layout(app, &card, &list, &rows);
-	if (rows == 0U)
-		rows = 1U;
-
-	/* The first row shown moves until the selected one is among them. */
-	if (app->chooser.selected < app->chooser.first)
-		app->chooser.first = app->chooser.selected;
-	if (app->chooser.selected >= app->chooser.first + rows)
-		app->chooser.first = app->chooser.selected - rows + 1U;
-}
-
-/* Sets Save As's name. */
-static void
-app_chooser_name(
-	struct te_app *app,
-	const char *name)
-{
-	/* The name, cut to its room. */
-	snprintf(app->chooser.name, sizeof(app->chooser.name), "%s", name);
-	app->chooser.name_length = strlen(app->chooser.name);
-	app->chooser.name_all = 0;
+	/* Open opens it. */
+	(void)te_app_open(app, event->text);
 }
 
 /* Tells whether a point is in a rectangle. */

@@ -96,7 +96,8 @@ enum te_event_type {
 	TE_EVENT_ACTION,
 	TE_EVENT_FOCUS,
 	TE_EVENT_FIND_TEXT,
-	TE_EVENT_FIND_DONE
+	TE_EVENT_FIND_DONE,
+	TE_EVENT_CHOSEN
 };
 
 /*
@@ -104,7 +105,8 @@ enum te_event_type {
  * pressed, the wheel's distance in pixels (down and right are positive),
  * the key, the modifiers, the time in milliseconds, the action, whether
  * the focus came (pressed), how the find field's editing ended, and the
- * find field's text.
+ * find field's text or the path the file chooser chose (empty when it was
+ * cancelled).
  */
 struct te_event {
 	enum te_event_type type;
@@ -119,7 +121,7 @@ struct te_event {
 	uint64_t time;
 	uint32_t action;
 	unsigned how;
-	char text[TE_FIND_MAX];
+	char text[TE_PATH_MAX];
 };
 
 /* How the find field's editing ended (as the titlebar says). */
@@ -324,37 +326,10 @@ struct te_file_info {
 	off_t size;
 };
 
-/* How many entries the file chooser shows at most. */
-#define TE_CHOOSER_ENTRIES	2048
-
-/* One entry of the file chooser: its name and whether it is a folder. */
-struct te_entry {
-	char name[256];
-	int folder;
-};
-
-/*
- * The file chooser of Open and Save As: the folder shown, its entries
- * (folders first), the one selected and the first one shown, and for
- * Save As the name being typed.
- */
-struct te_chooser {
-	char folder[TE_PATH_MAX];
-	struct te_entry *entries;
-	size_t count;
-	size_t selected;
-	size_t first;
-	int saving;
-	char name[256];
-	size_t name_length;
-	int name_all;
-};
-
 /* The dialogs a frame may show over the text. */
 enum te_dialog {
 	TE_DIALOG_NONE = 0,
 	TE_DIALOG_UNSAVED,
-	TE_DIALOG_REPLACE,
 	TE_DIALOG_CHANGED,
 	TE_DIALOG_ABOUT
 };
@@ -370,8 +345,10 @@ enum te_after {
 /*
  * What the editor asks of the window: copy text to the clipboard, paste
  * the clipboard's text, make text the primary selection, paste the primary
- * selection, open the context menu at a place, and give the find field
- * the keyboard.  Any member may be NULL (the host tests leave them so).
+ * selection, open the context menu at a place, give the find field the
+ * keyboard, and open the file chooser (to open a file, or to save as a
+ * name in a folder; the path chosen comes back as a TE_EVENT_CHOSEN).  Any
+ * member may be NULL (the host tests leave them so).
  */
 struct te_host {
 	void *data;
@@ -381,6 +358,7 @@ struct te_host {
 	size_t (*paste_primary)(void *data, char *text, size_t size);
 	void (*context_menu)(void *data, int x, int y);
 	void (*find_focus)(void *data);
+	int (*choose)(void *data, int saving, const char *folder, const char *name);
 };
 
 /* A rectangle of the frame. */
@@ -465,10 +443,9 @@ struct te_app {
 	enum te_after after;
 	int dialog_hover;
 
-	/* The file chooser. */
+	/* Whether the file chooser is open, and for Save As. */
 	int choosing;
-	struct te_chooser chooser;
-	char pending_path[TE_PATH_MAX];
+	int choosing_save;
 
 	/* What the main loop does next: close, show a new title, log and remember a file opened, draw. */
 	int want_close;
@@ -567,12 +544,6 @@ size_t te_layout_columns_between(const struct te_layout *layout, const struct te
 int te_find(const struct te_buffer *buffer, const char *needle, size_t length, size_t from, int forward, size_t *start, int *wrapped);
 int te_find_at(const struct te_buffer *buffer, const char *needle, size_t length, size_t position);
 
-/* The file chooser (chooser.c). */
-int te_chooser_open(struct te_chooser *chooser, const char *folder);
-void te_chooser_close(struct te_chooser *chooser);
-int te_chooser_path(const struct te_chooser *chooser, size_t index, char *path, size_t size);
-int te_chooser_name_path(const struct te_chooser *chooser, char *path, size_t size);
-
 /* The keys' characters (keys.c). */
 uint32_t te_key_character(uint32_t key, uint32_t modifiers);
 
@@ -616,7 +587,6 @@ int te_app_modified(const struct te_app *app);
 void te_app_publish_primary(struct te_app *app);
 void te_app_tap(struct te_app *app, int x, int y, int count);
 void te_app_dialog_layout(const struct te_app *app, struct te_rect *card, struct te_rect *buttons, int *count);
-void te_app_chooser_layout(const struct te_app *app, struct te_rect *card, struct te_rect *list, size_t *rows);
 
 /* The frame (draw.c). */
 void te_draw(struct te_app *app, struct te_canvas *canvas);
@@ -631,11 +601,6 @@ uint64_t te_clock(void);
 #define TE_TEXT_SIDE		16
 #define TE_TEXT_TOP		12
 #define TE_GUTTER_PAD		12
-#define TE_CHOOSER_WIDTH	560
-#define TE_CHOOSER_HEIGHT	440
-#define TE_CHOOSER_HEADER	52
-#define TE_CHOOSER_ROW		30
-#define TE_CHOOSER_FOOTER	60
 #define TE_DIALOG_WIDTH		440
 #define TE_DIALOG_HEIGHT	156
 #define TE_BUTTON_WIDTH		104

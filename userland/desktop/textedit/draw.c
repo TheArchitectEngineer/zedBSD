@@ -9,7 +9,7 @@
  * The frame of Text Editor, drawn on the CPU (plan/ws092/design.md
  * section 4): the card, the line numbers, the rows of text with the
  * selection, the places found and the cursor, the scroll bar, the status
- * chip and the message, and over them a dialog or the file chooser.
+ * chip and the message, and over them a dialog.
  *
  * Only the rows in view are drawn.  The window is glass when zdesktop has
  * glass: the frame is then clear around the card, whose white lets the
@@ -51,9 +51,6 @@
 #define DRAW_BUTTON		0xffeef2f6U
 #define DRAW_BUTTON_LIT		0xffe2e8f0U
 #define DRAW_BUTTON_TEXT	0xff1e293bU
-#define DRAW_ROW_CHOSEN		0xffdbeafeU
-#define DRAW_FIELD		0xffffffffU
-#define DRAW_FIELD_EDGE		0xff93c5fdU
 
 /* How long the cursor shows and hides, in milliseconds (as the editor's). */
 #define DRAW_BLINK_MS		530U
@@ -77,7 +74,6 @@ static void draw_scroll(struct te_app *app, struct te_canvas *canvas, const stru
 static void draw_status(struct te_app *app, struct te_canvas *canvas);
 static void draw_message(struct te_app *app, struct te_canvas *canvas);
 static void draw_dialog(struct te_app *app, struct te_canvas *canvas);
-static void draw_chooser(struct te_app *app, struct te_canvas *canvas);
 static void draw_button(struct te_app *app, struct te_canvas *canvas, const struct te_rect *rect, const char *label, int primary, int lit);
 static void draw_chip(struct te_app *app, struct te_canvas *canvas, int x, int y, const char *text, uint32_t fill, uint32_t color);
 static size_t draw_count(struct te_app *app);
@@ -120,11 +116,9 @@ te_draw(
 	draw_status(app, canvas);
 	draw_message(app, canvas);
 
-	/* A dialog or the chooser over everything. */
+	/* A dialog over everything. */
 	if (app->dialog != TE_DIALOG_NONE)
 		draw_dialog(app, canvas);
-	if (app->choosing)
-		draw_chooser(app, canvas);
 
 	/* The frame is drawn. */
 	app->dirty = 0;
@@ -523,7 +517,6 @@ draw_dialog(
 	struct te_canvas *canvas)
 {
 	static const char *const unsaved[] = { "Save", "Don't Save", "Cancel" };
-	static const char *const replace[] = { "Replace", "Cancel" };
 	static const char *const changed[] = { "Overwrite", "Cancel" };
 	static const char *const about[] = { "OK" };
 	struct te_rect buttons[3];
@@ -551,16 +544,6 @@ draw_dialog(
 		words = "Your changes will be lost if you don't save them.";
 		labels = unsaved;
 		break;
-	case TE_DIALOG_REPLACE:
-		name = strrchr(app->pending_path, '/');
-		if (name == NULL)
-			name = app->pending_path;
-		else
-			name++;
-		snprintf(title, sizeof(title), "Replace \"%s\"?", name);
-		words = "A file with this name already exists.";
-		labels = replace;
-		break;
 	case TE_DIALOG_CHANGED:
 		snprintf(title, sizeof(title), "\"%s\" changed on disk.", name);
 		words = "Overwrite it with the text here?";
@@ -579,72 +562,6 @@ draw_dialog(
 	/* The buttons, the first the default. */
 	for (index = 0; index < count; index++)
 		draw_button(app, canvas, &buttons[index], labels[index], index == 0, index == app->dialog_hover);
-}
-
-/* Draws the file chooser: its title and folder, the list, and the name field and buttons. */
-static void
-draw_chooser(
-	struct te_app *app,
-	struct te_canvas *canvas)
-{
-	struct te_rect buttons[2];
-	struct te_rect card;
-	struct te_rect list;
-	struct te_rect field;
-	const struct te_entry *entry;
-	char label[300];
-	size_t rows;
-	size_t index;
-	int top;
-	int width;
-
-	/* The shade, and the panel. */
-	te_canvas_blend(canvas, 0, 0, canvas->width, canvas->height, DRAW_SHADE);
-	te_app_chooser_layout(app, &card, &list, &rows);
-	te_canvas_round(canvas, card.x - 1, card.y - 1, card.width + 2, card.height + 2, 15, DRAW_PANEL_EDGE);
-	te_canvas_round(canvas, card.x, card.y, card.width, card.height, 14, DRAW_PANEL);
-
-	/* The title, and the folder listed. */
-	(void)te_text_draw(app->ui, canvas, card.x + 16, card.y + 24, app->chooser.saving ? "Save As" : "Open", app->chooser.saving ? 7U : 4U, DRAW_TITLE_PIXELS, 1, DRAW_TITLE);
-	(void)te_text_draw_fit(app->ui, canvas, card.x + 16, card.y + 42, app->chooser.folder, DRAW_SMALL_PIXELS, 0, card.width - 32, DRAW_BODY);
-
-	/* The rows in view, the selected one tinted; a folder's name ends in a slash. */
-	te_canvas_clip(canvas, list.x, list.y, list.width, list.height);
-	for (index = app->chooser.first; index < app->chooser.count && index < app->chooser.first + rows; index++) {
-		entry = &app->chooser.entries[index];
-		top = list.y + (int)(index - app->chooser.first) * TE_CHOOSER_ROW;
-		if (index == app->chooser.selected)
-			te_canvas_round(canvas, list.x, top + 1, list.width, TE_CHOOSER_ROW - 2, 7, DRAW_ROW_CHOSEN);
-		snprintf(label, sizeof(label), "%s%s", entry->name, entry->folder ? "/" : "");
-		(void)te_text_draw_fit(app->ui, canvas, list.x + 12, te_text_center(TE_UI_PIXELS, top, TE_CHOOSER_ROW), label, TE_UI_PIXELS, 0, list.width - 24, DRAW_TEXT);
-	}
-	te_canvas_unclip(canvas);
-
-	/* The buttons at the bottom right: the default, and Cancel. */
-	buttons[0].width = TE_BUTTON_WIDTH;
-	buttons[0].height = TE_BUTTON_HEIGHT;
-	buttons[0].x = card.x + card.width - 16 - TE_BUTTON_WIDTH;
-	buttons[0].y = card.y + card.height - 14 - TE_BUTTON_HEIGHT;
-	buttons[1] = buttons[0];
-	buttons[1].x -= TE_BUTTON_WIDTH + 10;
-	draw_button(app, canvas, &buttons[0], app->chooser.saving ? "Save" : "Open", 1, 0);
-	draw_button(app, canvas, &buttons[1], "Cancel", 0, 0);
-
-	/* Save As's name field, left of the buttons, with its text selected or a caret after it. */
-	if (!app->chooser.saving)
-		return;
-	field.x = card.x + 16;
-	field.y = buttons[0].y;
-	field.width = buttons[1].x - 12 - field.x;
-	field.height = TE_BUTTON_HEIGHT;
-	te_canvas_round(canvas, field.x - 1, field.y - 1, field.width + 2, field.height + 2, 8, DRAW_FIELD_EDGE);
-	te_canvas_round(canvas, field.x, field.y, field.width, field.height, 7, DRAW_FIELD);
-	width = te_text_width(app->ui, app->chooser.name, app->chooser.name_length, TE_UI_PIXELS, 0);
-	if (app->chooser.name_all && app->chooser.name_length > 0U)
-		te_canvas_fill(canvas, field.x + 9, field.y + 7, width + 2, field.height - 14, DRAW_SELECTION);
-	(void)te_text_draw(app->ui, canvas, field.x + 10, te_text_center(TE_UI_PIXELS, field.y, field.height), app->chooser.name, app->chooser.name_length, TE_UI_PIXELS, 0, DRAW_TEXT);
-	if (!app->chooser.name_all)
-		te_canvas_fill(canvas, field.x + 11 + width, field.y + 7, 2, field.height - 14, DRAW_CURSOR);
 }
 
 /* Draws a button: the default one blue, the others pale; lit under the pointer. */
