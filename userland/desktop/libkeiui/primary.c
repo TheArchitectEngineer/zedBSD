@@ -6,14 +6,15 @@
  */
 
 /*
- * Text Editor's primary selection through zdesktop's (Terminal's
- * primary.c): the text selected becomes the primary selection (a source
- * offering UTF-8 and plain text), and a middle click pastes the primary
- * selection.  While the editor's own text is it, a paste takes it directly
+ * The window's primary selection through zdesktop's (ws090-p004, Text
+ * Editor's primary.c moved here, itself Terminal's): kui_window_select
+ * makes the text selected the primary selection (a source offering UTF-8
+ * and plain text), and kui_window_paste_primary receives it (a middle
+ * click).  While the window's own text is it, a paste takes it directly
  * (asking itself to write into a pipe it reads would wait on itself).
  *
  * Without the compositor's primary selection manager the primary selection
- * is the editor's own.
+ * is the window's own.
  */
 
 #include "window.h"
@@ -26,7 +27,7 @@
 #include <string.h>
 #include <unistd.h>
 
-/* The text types the editor offers and takes. */
+/* The text types the window offers and takes. */
 #define PRIMARY_TYPE_UTF8	"text/plain;charset=utf-8"
 #define PRIMARY_TYPE_PLAIN	"text/plain"
 
@@ -50,7 +51,7 @@ static const struct zwp_primary_selection_offer_v1_listener offer_listener = {
 	primary_type
 };
 
-/* The editor's source's events. */
+/* The window's source's events. */
 static const struct zwp_primary_selection_source_v1_listener source_listener = {
 	primary_send,
 	primary_cancelled
@@ -60,8 +61,8 @@ static const struct zwp_primary_selection_source_v1_listener source_listener = {
  * Binds the compositor's primary selection manager (from the registry).
  */
 void
-te_primary_bind(
-	struct te_window *window,
+keiui_primary_bind(
+	struct kui_window *window,
 	struct wl_registry *registry,
 	uint32_t name)
 {
@@ -73,8 +74,8 @@ te_primary_bind(
  * Gets the seat's primary selection device, once the globals are bound.
  */
 void
-te_primary_start(
-	struct te_window *window)
+keiui_primary_start(
+	struct kui_window *window)
 {
 	/* Nothing to share through. */
 	if (window->primary_manager == NULL || window->seat == NULL)
@@ -91,8 +92,8 @@ te_primary_start(
  * copy, sent from there.
  */
 void
-te_primary_set(
-	struct te_window *window,
+kui_window_select(
+	struct kui_window *window,
 	const char *text,
 	size_t length)
 {
@@ -122,17 +123,16 @@ te_primary_set(
 	zwp_primary_selection_source_v1_offer(window->primary_source, PRIMARY_TYPE_PLAIN);
 	zwp_primary_selection_device_v1_set_selection(window->primary_device, window->primary_source, window->serial);
 	(void)wl_display_flush(window->display);
-	te_log("PRIMARY set bytes=%lu", (unsigned long)length);
 }
 
 /*
  * Receives the primary selection's text into a buffer (a middle click):
- * the editor's own directly, another client's through a pipe (read until
+ * the window's own directly, another client's through a pipe (read until
  * its end or PRIMARY_RECEIVE_MS).  Returns the bytes (0 for none).
  */
 size_t
-te_primary_receive(
-	struct te_window *window,
+kui_window_paste_primary(
+	struct kui_window *window,
 	char *text,
 	size_t size)
 {
@@ -145,14 +145,13 @@ te_primary_receive(
 	int error;
 	int ready;
 
-	/* The editor's own text (or the only one, without the compositor's). */
+	/* The window's own text (or the only one, without the compositor's). */
 	if (window->primary_device == NULL || window->primary_source != NULL) {
 		length = window->primary_length;
 		if (length > size)
 			length = size;
 		if (length != 0U)
 			memcpy(text, window->primary_text, length);
-		te_log("PRIMARY paste own bytes=%lu", (unsigned long)length);
 		return length;
 	}
 
@@ -170,10 +169,10 @@ te_primary_receive(
 
 	/* The data, until the writer closes (or the time is up). */
 	length = 0;
-	deadline = te_clock() + PRIMARY_RECEIVE_MS;
+	deadline = keiui_clock_ms() + PRIMARY_RECEIVE_MS;
 	while (length < size) {
 		/* The time is up. */
-		now = te_clock();
+		now = keiui_clock_ms();
 		if (now >= deadline)
 			break;
 
@@ -196,7 +195,6 @@ te_primary_receive(
 	close(pipes[0]);
 
 	/* Succeeded: the bytes received. */
-	te_log("PRIMARY paste received bytes=%lu", (unsigned long)length);
 	return length;
 }
 
@@ -204,8 +202,8 @@ te_primary_receive(
  * Destroys the primary selection's objects (before the seat they belong to).
  */
 void
-te_primary_close(
-	struct te_window *window)
+keiui_primary_close(
+	struct kui_window *window)
 {
 	/* The offer, the source, the device and the manager. */
 	if (window->primary_offer != NULL)
@@ -229,7 +227,7 @@ primary_offer(
 	struct zwp_primary_selection_device_v1 *device,
 	struct zwp_primary_selection_offer_v1 *offer)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* The offer being described, with no text type yet. */
 	(void)device;
@@ -245,7 +243,7 @@ primary_selection(
 	struct zwp_primary_selection_device_v1 *device,
 	struct zwp_primary_selection_offer_v1 *offer)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* The offer before goes. */
 	(void)device;
@@ -258,17 +256,16 @@ primary_selection(
 	window->primary_offer_text = 0;
 	if (offer != NULL)
 		window->primary_offer_text = window->primary_pending_text;
-	te_log("PRIMARY offer text=%d", window->primary_offer_text);
 }
 
-/* Notes an offer's type: text is what the editor takes. */
+/* Notes an offer's type: text is what the window takes. */
 static void
 primary_type(
 	void *data,
 	struct zwp_primary_selection_offer_v1 *offer,
 	const char *mime_type)
 {
-	struct te_window *window;
+	struct kui_window *window;
 	int utf8;
 	int plain;
 
@@ -281,7 +278,7 @@ primary_type(
 		window->primary_pending_text = 1;
 }
 
-/* Writes the editor's selected text into another client's descriptor. */
+/* Writes the window's selected text into another client's descriptor. */
 static void
 primary_send(
 	void *data,
@@ -289,7 +286,7 @@ primary_send(
 	const char *mime_type,
 	int32_t fd)
 {
-	struct te_window *window;
+	struct kui_window *window;
 	size_t written;
 	ssize_t count;
 
@@ -309,7 +306,6 @@ primary_send(
 
 	/* The reader sees the end. */
 	close(fd);
-	te_log("PRIMARY send bytes=%lu", (unsigned long)written);
 }
 
 /* Another client's text is the primary selection now: the source goes. */
@@ -318,12 +314,11 @@ primary_cancelled(
 	void *data,
 	struct zwp_primary_selection_source_v1 *source)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* The source. */
 	window = data;
 	zwp_primary_selection_source_v1_destroy(source);
 	if (window->primary_source == source)
 		window->primary_source = NULL;
-	te_log("PRIMARY cancelled");
 }

@@ -36,6 +36,12 @@
 #define MAIN_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
 #define MAIN_UI_FONT		"/usr/share/fonts/keiland.ttf"
 
+/* How often frames are drawn while the fingers or the view's scroll move, in milliseconds. */
+#define MAIN_FRAME_MS		16
+
+/* The text view's id among the parts the fingers' input records. */
+#define MAIN_TEXT_REGION	1U
+
 /* How many frames in a row may find the swapchain out of date before the program gives up. */
 #define MAIN_STALE_LIMIT	8U
 
@@ -66,13 +72,29 @@ struct main_options {
  * The program's parts, for the whole run.  They are file-scope because
  * the window's input queue and the editor are too large for the stack.
  *
- * The window: the Wayland connection and surface, and the input queue,
- * from the start of the run to its end.
+ * The window: libkeiui's window (the Wayland connection and surface, the
+ * Vulkan presenter, the clipboard and the primary selection) and the
+ * editor's queue of inputs, from the start of the run to its end.
  */
 static struct te_window main_window;
 
-/* The presenter: Vulkan's swapchain over the window, made after it and closed before it. */
-static struct te_present main_present;
+/* The size frames are drawn at (the presenter's), set when the window opens and when it changes size. */
+static uint32_t main_width;
+static uint32_t main_height;
+
+/*
+ * The fingers' input (libkeiui): which part of the window a finger meant,
+ * the text view's touch (one finger selects, two scroll) and the scroll.
+ * Made with the window, destroyed before it.
+ */
+static struct kui_ui *main_input;
+
+/* Whether the fingers or the view's scroll still move (the loop draws the next frame soon). */
+static int main_moving;
+
+/* Whether the compositor asked to close the window or gave it a new size, since the loop last looked. */
+static int main_closed;
+static int main_resized;
 
 /* The editor: the document and the view, made once the swapchain's size is known. */
 static struct te_app main_app;
@@ -95,9 +117,6 @@ static struct te_titlebar main_titlebar;
 /* The window's glass, when zdesktop has glass and the swapchain is see-through. */
 static struct te_glass main_glass;
 
-/* The touch screen's gestures and scroller, made with the editor (without them fingers do nothing). */
-static struct te_touch main_touch;
-
 /*
  * The frame being drawn: ordinary memory the size of the swapchain, remade
  * (and the canvas with it) when the window changes size.
@@ -106,6 +125,10 @@ static uint32_t *main_pixels;
 
 /* The canvas over main_pixels, which the editor draws each frame into. */
 static struct te_canvas main_canvas;
+
+/* libkeiui's canvas over the same pixels, which the text view's handles are drawn with (made with main_canvas). */
+static struct kui_canvas main_handles;
+static int main_handles_made;
 
 /* The title the window shows now, to set it again only when it changes. */
 static char main_title[MAIN_TITLE_MAX];
@@ -146,6 +169,9 @@ static size_t main_paste_primary(void *data, char *text, size_t size);
 static void main_context_menu(void *data, int x, int y);
 static void main_find_focus(void *data);
 static int main_choose(void *data, int saving, const char *folder, const char *name);
+static void main_window_event(const struct kui_window_event *event);
+static void main_fingers(uint64_t now_us);
+static int main_resize(void);
 static void main_chosen(void *data, struct keiland_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 
 /*
@@ -157,8 +183,8 @@ main(
 	char **argv)
 {
 	struct main_options options;
+	struct kui_window_options window_options;
 	struct te_state state;
-	VkResult result;
 	int status;
 	int error;
 
@@ -180,37 +206,43 @@ main(
 	/* The chooser draws with the interface's font. */
 	main_ui_font = options.ui_font;
 
-	/* The window. */
-	status = te_window_open(&main_window, options.display, options.width, options.height, "Text Editor", MAIN_APPLICATION);
-	if (status != 0) {
+	/* The window, its frames shown with Vulkan. */
+	memset(&window_options, 0, sizeof(window_options));
+	window_options.display = options.display;
+	window_options.title = "Text Editor";
+	window_options.application = MAIN_APPLICATION;
+	window_options.width = options.width;
+	window_options.height = options.height;
+	window_options.present = KUI_PRESENT_VULKAN;
+	main_window.kui = kui_window_open(&window_options);
+	if (main_window.kui == NULL) {
 		fprintf(stderr, "TEXTEDIT FAILED operation=window error=%d\n", errno);
 		te_text_close(&main_ui);
 		te_text_close(&main_body);
 		return 1;
 	}
 
-	/* The presenter. */
-	result = te_present_open(&main_present, &main_window);
-	if (result != VK_SUCCESS) {
-		fprintf(stderr, "TEXTEDIT FAILED operation=%s result=%d\n", main_present.operation, (int)result);
-		te_present_close(&main_present);
-		te_window_close(&main_window);
+	/* The presenter's size, which the frames are drawn at. */
+	error = kui_window_present_resize(main_window.kui, &main_width, &main_height);
+	if (error != 0) {
+		fprintf(stderr, "TEXTEDIT FAILED operation=present error=%d\n", error);
+		kui_window_close(main_window.kui);
 		te_text_close(&main_ui);
 		te_text_close(&main_body);
 		return 1;
 	}
 
-	/* The editor at the swapchain's size, with the file when one was given, and the window's services. */
-	te_app_init(&main_app, &main_body, &main_ui, (int)main_present.extent.width, (int)main_present.extent.height);
+	/* The editor at that size, with the file when one was given, and the window's services. */
+	te_app_init(&main_app, &main_body, &main_ui, (int)main_width, (int)main_height);
 	main_host(&main_app);
-	main_app.glass = te_glass_open(&main_glass, &main_window, &main_present);
+	main_app.glass = te_glass_open(&main_glass, &main_window, kui_window_see_through(main_window.kui));
 	if (options.file != NULL)
 		(void)te_app_open(&main_app, options.file);
 
-	/* The touch screen; without memory for it the fingers do nothing. */
-	error = te_touch_open(&main_touch);
-	if (error != 0)
-		te_log("TOUCH failed errno=%d", error);
+	/* The fingers' input; without memory for it the fingers do nothing. */
+	main_input = kui_ui_create();
+	if (main_input == NULL)
+		te_log("TOUCH failed errno=%d", ENOMEM);
 
 	/* The menus and the titlebar; a window without them goes on with its keys. */
 	main_state(&state);
@@ -235,12 +267,13 @@ main(
 	main_chooser = NULL;
 	te_titlebar_close(&main_titlebar);
 	te_menu_close(&main_menu);
-	te_touch_close(&main_touch);
+	kui_ui_destroy(main_input);
 	te_glass_close(&main_glass);
 	te_app_release(&main_app);
+	if (main_handles_made)
+		kui_canvas_release(&main_handles);
 	free(main_pixels);
-	te_present_close(&main_present);
-	te_window_close(&main_window);
+	kui_window_close(main_window.kui);
 	te_text_close(&main_ui);
 	te_text_close(&main_body);
 
@@ -427,7 +460,7 @@ static int
 main_loop(
 	const struct main_options *options)
 {
-	struct te_touch_event touch;
+	struct kui_window_event window_event;
 	struct te_event event;
 	struct te_state state;
 	uint64_t started;
@@ -451,28 +484,27 @@ main_loop(
 	status = main_frame();
 	if (status != 0)
 		return -1;
-	te_log("READY width=%u height=%u lines=%lu", main_present.extent.width, main_present.extent.height, (unsigned long)main_app.buffer.line_count);
+	te_log("READY width=%u height=%u lines=%lu", main_width, main_height, (unsigned long)main_app.buffer.line_count);
 
 	/* Each round: input, time, and a frame when something changed. */
 	started = te_clock();
 	for (;;) {
-		/* Waits for the compositor, or until something is due. */
+		/* Waits for the compositor, or until something is due (the fingers and the view's scroll soon while they move). */
 		now = te_clock();
 		timeout = MAIN_IDLE_MS;
 		due = te_app_tick(&main_app, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
-		due = te_window_repeat_wait(&main_window, now);
+		due = kui_window_repeat_wait(main_window.kui, kui_clock_us());
 		if (due >= 0 && due < timeout)
 			timeout = due;
-		due = te_touch_tick(&main_touch, &main_app, te_touch_clock());
-		if (due >= 0 && due < timeout)
-			timeout = due;
+		if (main_moving && timeout > MAIN_FRAME_MS)
+			timeout = MAIN_FRAME_MS;
 		if (main_app.dirty)
 			timeout = 0;
 
 		/* Waits; a lost connection ends the run. */
-		status = te_window_dispatch(&main_window, timeout);
+		status = kui_window_dispatch(main_window.kui, timeout);
 		if (status != 0) {
 			te_log("DONE reason=disconnected");
 			return 0;
@@ -481,7 +513,15 @@ main_loop(
 		/* A key held repeats once the compositor's input is in, so that its release is seen first (BUG-111). */
 		now = te_clock();
 		main_app.now = now;
-		(void)te_window_repeat(&main_window, now);
+		(void)kui_window_repeat(main_window.kui, kui_clock_us());
+
+		/* The window's input: the pointer, the keys and the focus become the editor's, the fingers go to libkeiui. */
+		for (;;) {
+			taken = kui_window_take(main_window.kui, &window_event);
+			if (taken == 0)
+				break;
+			main_window_event(&window_event);
+		}
 
 		/* Every input queued (the menus' and the titlebar's among them). */
 		for (;;) {
@@ -491,13 +531,8 @@ main_loop(
 			te_app_event(&main_app, &event);
 		}
 
-		/* Every touch queued. */
-		for (;;) {
-			taken = te_window_take_touch(&main_window, &touch);
-			if (taken == 0)
-				break;
-			te_touch_event(&main_touch, &main_app, &touch);
-		}
+		/* The fingers at this time: their selection, taps and menus, and the view's scroll. */
+		main_fingers(kui_clock_us());
 
 		/* A chooser the editor no longer waits for (Quit came meanwhile) closes. */
 		if (main_chooser != NULL && !main_app.choosing) {
@@ -506,8 +541,8 @@ main_loop(
 		}
 
 		/* The close button asks like File > Close (unsaved changes are asked about). */
-		if (main_window.closed != 0) {
-			main_window.closed = 0;
+		if (main_closed != 0) {
+			main_closed = 0;
 			te_app_action(&main_app, TE_ACTION_CLOSE);
 		}
 
@@ -516,9 +551,8 @@ main_loop(
 		main_opened();
 		main_title_refresh();
 
-		/* Time passes for the editor and the fingers; the menus and the titlebar show its state. */
+		/* Time passes for the editor; the menus and the titlebar show its state. */
 		(void)te_app_tick(&main_app, now);
-		(void)te_touch_tick(&main_touch, &main_app, te_touch_clock());
 		main_state(&state);
 		te_menu_refresh(&main_menu, &state);
 		te_titlebar_refresh(&main_titlebar, &state);
@@ -536,19 +570,11 @@ main_loop(
 		}
 
 		/* A new size: a new swapchain and canvas, and a frame. */
-		if (main_window.resized != 0) {
-			main_window.resized = 0;
-			status = te_present_resize(&main_present, main_window.width, main_window.height);
-			if (status != VK_SUCCESS) {
-				fprintf(stderr, "TEXTEDIT FAILED operation=%s result=%d\n", main_present.operation, status);
-				return -1;
-			}
-
-			/* A canvas of the new size. */
-			status = main_canvas_make();
+		if (main_resized != 0) {
+			main_resized = 0;
+			status = main_resize();
 			if (status != 0)
 				return -1;
-			te_app_resize(&main_app, (int)main_present.extent.width, (int)main_present.extent.height);
 		}
 
 		/* A frame when something changed. */
@@ -564,42 +590,68 @@ main_loop(
 static int
 main_frame(void)
 {
-	VkResult result;
+	struct kui_rect clip;
+	struct te_rect text;
 	unsigned stale;
 	int status;
 
 	/* Tries until the frame is shown, remaking a stale swapchain a few times. */
 	for (stale = 0; stale < MAIN_STALE_LIMIT; stale++) {
-		/* The frame on the CPU, its glass card, and the frame shown in the window. */
+		/* The frame on the CPU, and the fingers' handles over the text (within it, and a knob's size around it). */
 		te_draw(&main_app, &main_canvas);
+		te_app_text_rect(&main_app, &text);
+		clip.x = text.x - KUI_TEXT_HANDLE;
+		clip.y = text.y;
+		clip.width = text.width + 2 * KUI_TEXT_HANDLE;
+		clip.height = text.height + KUI_TEXT_HANDLE;
+		kui_canvas_clip_push(&main_handles, &clip);
+		kui_text_touch_draw_handles(&main_app.touch, &main_handles, (double)text.x - main_app.scroll_x, (double)text.y - main_app.scroll_y, kui_theme_default());
+		kui_canvas_clip_pop(&main_handles);
+
+		/* Its glass card, and the frame shown in the window. */
 		te_glass_refresh(&main_glass, &main_app);
-		result = te_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width);
-		if (result == VK_SUCCESS)
+		status = kui_window_present(main_window.kui, main_pixels, (size_t)main_width);
+		if (status == 0)
 			return 0;
 
 		/* Anything but a stale swapchain is a failure. */
-		if (result != VK_ERROR_OUT_OF_DATE_KHR) {
-			fprintf(stderr, "TEXTEDIT FAILED operation=%s result=%d\n", main_present.operation, (int)result);
+		if (status != EAGAIN) {
+			fprintf(stderr, "TEXTEDIT FAILED operation=present error=%d\n", status);
 			return -1;
 		}
 
 		/* A stale swapchain is remade at the window's size, with a canvas to match. */
-		result = te_present_resize(&main_present, main_window.width, main_window.height);
-		if (result != VK_SUCCESS) {
-			fprintf(stderr, "TEXTEDIT FAILED operation=%s result=%d\n", main_present.operation, (int)result);
-			return -1;
-		}
-
-		/* A canvas of the swapchain's size. */
-		status = main_canvas_make();
+		status = main_resize();
 		if (status != 0)
 			return -1;
-		te_app_resize(&main_app, (int)main_present.extent.width, (int)main_present.extent.height);
 	}
 
 	/* The swapchain stayed out of date. */
 	fprintf(stderr, "TEXTEDIT FAILED operation=stale-swapchain\n");
 	return -1;
+}
+
+/* Remakes the presenter at the window's size, with a canvas to match; nonzero when it cannot. */
+static int
+main_resize(void)
+{
+	int status;
+
+	/* The presenter at the window's size. */
+	status = kui_window_present_resize(main_window.kui, &main_width, &main_height);
+	if (status != 0) {
+		fprintf(stderr, "TEXTEDIT FAILED operation=present error=%d\n", status);
+		return -1;
+	}
+
+	/* A canvas of the presenter's size. */
+	status = main_canvas_make();
+	if (status != 0)
+		return -1;
+	te_app_resize(&main_app, (int)main_width, (int)main_height);
+
+	/* Succeeded: frames are drawn at the new size. */
+	return 0;
 }
 
 /* Makes the frame's memory and canvas at the swapchain's size; nonzero when memory runs out. */
@@ -608,9 +660,10 @@ main_canvas_make(void)
 {
 	uint32_t *pixels;
 	size_t count;
+	int status;
 
 	/* The frame's memory. */
-	count = (size_t)main_present.extent.width * (size_t)main_present.extent.height;
+	count = (size_t)main_width * (size_t)main_height;
 	pixels = malloc(count * sizeof(pixels[0]));
 	if (pixels == NULL)
 		return -1;
@@ -619,11 +672,20 @@ main_canvas_make(void)
 
 	/* The canvas over it. */
 	main_canvas.pixels = main_pixels;
-	main_canvas.stride = main_present.extent.width;
-	main_canvas.width = (int)main_present.extent.width;
-	main_canvas.height = (int)main_present.extent.height;
+	main_canvas.stride = main_width;
+	main_canvas.width = (int)main_width;
+	main_canvas.height = (int)main_height;
 	te_canvas_unclip(&main_canvas);
 	main_app.dirty = 1;
+
+	/* libkeiui's canvas over the same pixels, for the handles. */
+	if (main_handles_made)
+		kui_canvas_release(&main_handles);
+	main_handles_made = 0;
+	status = kui_canvas_init(&main_handles, main_pixels, (size_t)main_width, (int)main_width, (int)main_height);
+	if (status != 0)
+		return -1;
+	main_handles_made = 1;
 
 	/* Succeeded: frames can be drawn. */
 	return 0;
@@ -671,7 +733,7 @@ main_title_refresh(void)
 	if (same == 0)
 		return;
 	snprintf(main_title, sizeof(main_title), "%s", title);
-	te_window_title(&main_window, main_title);
+	kui_window_set_title(main_window.kui, main_title);
 	te_log("TITLE %s", main_title);
 }
 
@@ -721,8 +783,12 @@ main_copy(
 	const char *text,
 	size_t length)
 {
+	struct te_window *window;
+
 	/* The window's clipboard. */
-	te_clipboard_set(data, text, length);
+	window = data;
+	kui_window_copy(window->kui, text, length);
+	te_log("CLIPBOARD set bytes=%lu", (unsigned long)length);
 }
 
 /* Pastes the clipboard's text into a buffer; reports its length. */
@@ -732,10 +798,13 @@ main_paste(
 	char *text,
 	size_t size)
 {
+	struct te_window *window;
 	size_t length;
 
 	/* The window's clipboard. */
-	length = te_clipboard_receive(data, text, size);
+	window = data;
+	length = kui_window_paste(window->kui, text, size);
+	te_log("CLIPBOARD paste received bytes=%lu", (unsigned long)length);
 
 	/* Succeeded: the length received. */
 	return length;
@@ -748,8 +817,12 @@ main_select(
 	const char *text,
 	size_t length)
 {
+	struct te_window *window;
+
 	/* The window's primary selection. */
-	te_primary_set(data, text, length);
+	window = data;
+	kui_window_select(window->kui, text, length);
+	te_log("PRIMARY set bytes=%lu", (unsigned long)length);
 }
 
 /* Pastes the primary selection's text into a buffer; reports its length. */
@@ -759,10 +832,13 @@ main_paste_primary(
 	char *text,
 	size_t size)
 {
+	struct te_window *window;
 	size_t length;
 
 	/* The window's primary selection. */
-	length = te_primary_receive(data, text, size);
+	window = data;
+	length = kui_window_paste_primary(window->kui, text, size);
+	te_log("PRIMARY paste bytes=%lu", (unsigned long)length);
 
 	/* Succeeded: the length received. */
 	return length;
@@ -829,7 +905,7 @@ main_choose(
 	options.font = main_ui_font;
 
 	/* The chooser's window over the editor's. */
-	main_chooser = keiland_file_chooser_open(window->display, window->toplevel, &options, &listener, window);
+	main_chooser = keiland_file_chooser_open(kui_window_display(window->kui), kui_window_toplevel(window->kui), &options, &listener, window);
 	if (main_chooser == NULL)
 		return errno;
 
@@ -864,4 +940,146 @@ main_chosen(
 	keiland_file_chooser_destroy(chooser);
 	if (chooser == main_chooser)
 		main_chooser = NULL;
+}
+
+/*
+ * Takes one input of the window: the pointer, the keys and the focus
+ * become the editor's inputs, the fingers go to the fingers' input, and a
+ * new size or the close button is noted for the loop.
+ */
+static void
+main_window_event(
+	const struct kui_window_event *event)
+{
+	struct te_event *input;
+
+	/* Every input carries the pointer's place and the modifiers (the same bits as the editor's). */
+	main_window.pointer_x = (int)event->x;
+	main_window.pointer_y = (int)event->y;
+	main_window.modifiers = event->modifiers;
+
+	/* What it is. */
+	switch (event->kind) {
+	case KUI_WINDOW_MOTION:
+		(void)te_window_push(&main_window, TE_EVENT_MOTION);
+		break;
+	case KUI_WINDOW_LEAVE:
+		(void)te_window_push(&main_window, TE_EVENT_LEAVE);
+		break;
+	case KUI_WINDOW_BUTTON:
+		/* The button and whether it went down. */
+		input = te_window_push(&main_window, TE_EVENT_BUTTON);
+		if (input == NULL)
+			break;
+		input->button = event->code;
+		input->pressed = event->pressed;
+		break;
+	case KUI_WINDOW_AXIS:
+		/* The wheel's distance down and across. */
+		input = te_window_push(&main_window, TE_EVENT_AXIS);
+		if (input == NULL)
+			break;
+		input->scroll = (int)event->dy;
+		input->scroll_x = (int)event->dx;
+		break;
+	case KUI_WINDOW_KEY:
+		/* The key and whether it went down. */
+		input = te_window_push(&main_window, TE_EVENT_KEY);
+		if (input == NULL)
+			break;
+		input->key = event->code;
+		input->pressed = event->pressed;
+		break;
+	case KUI_WINDOW_FOCUS:
+		input = te_window_push(&main_window, TE_EVENT_FOCUS);
+		if (input != NULL)
+			input->pressed = event->pressed;
+		break;
+	case KUI_WINDOW_TOUCH_DOWN:
+		te_log("TOUCH down id=%d x=%.0f y=%.0f", (int)event->id, event->x, event->y);
+		if (main_input != NULL)
+			(void)kui_ui_touch_down(main_input, event->id, event->time_us, event->arrival_us, event->x, event->y);
+		break;
+	case KUI_WINDOW_TOUCH_MOTION:
+		if (main_input != NULL)
+			(void)kui_ui_touch_motion(main_input, event->id, event->time_us, event->arrival_us, event->x, event->y);
+		break;
+	case KUI_WINDOW_TOUCH_UP:
+		te_log("TOUCH up id=%d", (int)event->id);
+		if (main_input != NULL)
+			(void)kui_ui_touch_up(main_input, event->id, event->time_us, event->arrival_us);
+		break;
+	case KUI_WINDOW_TOUCH_CANCEL:
+		if (main_input != NULL)
+			(void)kui_ui_touch_cancel(main_input, event->arrival_us);
+		break;
+	case KUI_WINDOW_RESIZE:
+		main_resized = 1;
+		break;
+	case KUI_WINDOW_CLOSE:
+		main_closed = 1;
+		break;
+	case KUI_WINDOW_POST:
+		/* An action of the menus or the titlebar, in its place among the keys. */
+		te_window_act(&main_window, event->code);
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+ * Moves the fingers' input on to a time: the text view is recorded (unless
+ * a dialog or the chooser covers it), the fingers' selection and context
+ * menu reach the editor, a tap elsewhere (a dialog's button) is a click,
+ * and the view is drawn where its scroll has it.
+ */
+static void
+main_fingers(
+	uint64_t now_us)
+{
+	struct kui_event event;
+	struct kui_rect region;
+	struct te_rect text;
+	int taken;
+
+	/* Without the fingers' input, only the view's scroll moves. */
+	main_moving = 0;
+	if (main_input == NULL) {
+		main_moving = te_app_sync_scroll(&main_app, now_us);
+		return;
+	}
+
+	/* The frame of the fingers' input: the text view, when nothing covers it. */
+	kui_ui_begin(main_input, now_us);
+	if (main_app.dialog == TE_DIALOG_NONE && !main_app.choosing) {
+		te_app_text_rect(&main_app, &text);
+		region.x = text.x;
+		region.y = text.y;
+		region.width = text.width;
+		region.height = text.height;
+		kui_ui_text_region(main_input, MAIN_TEXT_REGION, &region, &main_app.scroll, &main_app.touch);
+	}
+
+	/* The frame is recorded; whether something still moves. */
+	main_moving = kui_ui_end(main_input, now_us);
+
+	/* The fingers' selection and context menu. */
+	te_app_touch(&main_app);
+
+	/* What no part took: a tap is a click (a dialog's button), a long press elsewhere asks for the menu. */
+	for (;;) {
+		taken = kui_ui_take(main_input, &event);
+		if (taken == 0)
+			break;
+		if (event.kind == KUI_EVENT_TAP) {
+			te_log("TOUCH tap x=%.0f y=%.0f", event.x, event.y);
+			te_app_tap(&main_app, (int)event.x, (int)event.y, 1);
+		} else if (event.kind == KUI_EVENT_DOUBLE_TAP) {
+			te_app_tap(&main_app, (int)event.x, (int)event.y, 2);
+		}
+	}
+
+	/* The view where its scroll has it (a new place is drawn, the handles with it). */
+	(void)te_app_sync_scroll(&main_app, now_us);
 }

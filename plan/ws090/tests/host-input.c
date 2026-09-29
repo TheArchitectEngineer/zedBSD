@@ -661,14 +661,14 @@ test_text(void)
 	check(scroll.y == 0.0, "one finger does not scroll");
 	check(text.handles && !text.selecting, "the selection keeps its handles");
 
-	/* Dragging the caret's handle (under the caret at column 10, line 2) moves only the caret. */
+	/* Dragging the caret's handle (under the caret at column 10, line 2) 40 pixels down moves only the caret, two lines. */
 	test_now += SECOND;
 	anchor = text.anchor;
 	finger(ui, 1, 100.0, 66.0, 1);
 	swipe(ui, 1, 100.0, 66.0, 0.0, 40.0, 6, &scroll, &region, &text);
 	finger(ui, 1, 100.0, 106.0, 0);
 	frame(ui, &nowhere, &scroll, &region, &text, state);
-	check(text.anchor == anchor && text.caret == 5U * 81U + 10U, "the caret's handle moves the caret");
+	check(text.anchor == anchor && text.caret == 4U * 81U + 10U, "the caret's handle moves the caret, by the caret's line (not the knob's)");
 
 	/* Dragging the anchor's handle moves the other end. */
 	test_now += SECOND;
@@ -676,7 +676,7 @@ test_text(void)
 	swipe(ui, 1, 20.0, 26.0, 30.0, 20.0, 6, &scroll, &region, &text);
 	finger(ui, 1, 50.0, 46.0, 0);
 	frame(ui, &nowhere, &scroll, &region, &text, state);
-	check(text.anchor == 5U * 81U + 10U && text.caret == 2U * 81U + 5U, "the anchor's handle moves that end");
+	check(text.anchor == 4U * 81U + 10U && text.caret == 1U * 81U + 5U, "the anchor's handle moves that end");
 
 	/* Two fingers scroll and leave the selection. */
 	test_now += SECOND;

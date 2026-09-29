@@ -24,6 +24,7 @@
 #include <string.h>
 
 static int touch_near_handle(const struct kui_text_touch *touch, size_t position, double x, double y);
+static void touch_grip(struct kui_text_touch *touch, double x, double y);
 static double touch_edge_speed(double place, double size);
 
 /*
@@ -128,17 +129,20 @@ kui_text_touch_drag_begin(
 	size_t other;
 	int near;
 
-	/* The finger. */
+	/* The finger, with no grip on a handle yet. */
 	touch->finger_x = x;
 	touch->finger_y = y;
 	touch->selecting = 1;
 	touch->handle = KUI_TEXT_HANDLE_NONE;
+	touch->grip_x = 0.0;
+	touch->grip_y = 0.0;
 
 	/* A handle under the finger: the caret is always the end that moves, so the anchor is the other one. */
 	if (touch->handles) {
 		near = touch_near_handle(touch, touch->caret, x, y);
 		if (near) {
 			touch->handle = KUI_TEXT_HANDLE_CARET;
+			touch_grip(touch, x, y);
 			return;
 		}
 
@@ -149,6 +153,7 @@ kui_text_touch_drag_begin(
 			touch->caret = touch->anchor;
 			touch->anchor = other;
 			touch->handle = KUI_TEXT_HANDLE_ANCHOR;
+			touch_grip(touch, x, y);
 			return;
 		}
 	}
@@ -175,10 +180,10 @@ kui_text_touch_drag(
 	if (!touch->selecting)
 		return;
 
-	/* The caret where the finger is. */
+	/* The caret where the finger is (less its grip on a handle). */
 	touch->finger_x = x;
 	touch->finger_y = y;
-	position = touch->view->position_at(touch->data, x, y);
+	position = touch->view->position_at(touch->data, x - touch->grip_x, y - touch->grip_y);
 	if (position == touch->caret)
 		return;
 	touch->caret = position;
@@ -289,6 +294,21 @@ kui_text_touch_draw_handles(
 		kui_canvas_line(canvas, x, top, x, bottom, 2.0f, theme->accent);
 		kui_canvas_circle(canvas, x, bottom + (float)KUI_TEXT_HANDLE / 2.0f, (float)KUI_TEXT_HANDLE / 2.0f, theme->accent);
 	}
+}
+
+/* Keeps how far a finger on the caret's handle is from the middle of the caret. */
+static void
+touch_grip(
+	struct kui_text_touch *touch,
+	double x,
+	double y)
+{
+	struct kui_rect rect;
+
+	/* The caret's middle, and the finger's distance from it. */
+	touch->view->caret_rect(touch->data, touch->caret, &rect);
+	touch->grip_x = x - (double)rect.x;
+	touch->grip_y = y - ((double)rect.y + (double)rect.height / 2.0);
 }
 
 /* Tells whether a point is within a finger's reach of an end's handle. */

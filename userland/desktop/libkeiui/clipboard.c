@@ -6,15 +6,16 @@
  */
 
 /*
- * Text Editor's clipboard through zdesktop's (Terminal's clipboard.c,
- * without its drag and drop): Copy and Cut make the editor's text the
- * selection (a wl_data_source offering UTF-8 and plain text), and Paste
- * receives the selection's text through a pipe.  While the editor's own
- * text is the selection, a paste takes it directly (asking itself to
- * write into a pipe it reads would wait on itself).
+ * The window's clipboard through zdesktop's (ws090-p004, Text Editor's
+ * clipboard.c moved here, itself Terminal's without the drag and drop):
+ * kui_window_copy makes the application's text the selection (a
+ * wl_data_source offering UTF-8 and plain text), and kui_window_paste
+ * receives the selection's text through a pipe.  While the window's own
+ * text is the selection, a paste takes it directly (asking itself to write
+ * into a pipe it reads would wait on itself).
  *
  * Without a data device manager (another compositor) the clipboard is the
- * editor's own.
+ * window's own.
  */
 
 #include "window.h"
@@ -25,11 +26,11 @@
 #include <string.h>
 #include <unistd.h>
 
-/* The text types the editor offers and takes. */
+/* The text types the window offers and takes. */
 #define CLIPBOARD_TYPE_UTF8	"text/plain;charset=utf-8"
 #define CLIPBOARD_TYPE_PLAIN	"text/plain"
 
-/* The data device manager version the editor uses, and how long a paste waits for the text. */
+/* The data device manager version the window uses, and how long a paste waits for the text. */
 #define CLIPBOARD_VERSION	3U
 #define CLIPBOARD_RECEIVE_MS	2000U
 
@@ -66,7 +67,7 @@ static const struct wl_data_offer_listener offer_listener = {
 	clipboard_action
 };
 
-/* The editor's source's events. */
+/* The window's source's events. */
 static const struct wl_data_source_listener source_listener = {
 	clipboard_target,
 	clipboard_send,
@@ -80,8 +81,8 @@ static const struct wl_data_source_listener source_listener = {
  * Binds the compositor's data device manager (from the registry).
  */
 void
-te_clipboard_bind(
-	struct te_window *window,
+keiui_clipboard_bind(
+	struct kui_window *window,
 	struct wl_registry *registry,
 	uint32_t name,
 	uint32_t version)
@@ -94,11 +95,11 @@ te_clipboard_bind(
 
 /*
  * Gets the seat's data device, once the globals are bound (without a
- * manager or a seat the clipboard stays the editor's own).
+ * manager or a seat the clipboard stays the window's own).
  */
 void
-te_clipboard_start(
-	struct te_window *window)
+keiui_clipboard_start(
+	struct kui_window *window)
 {
 	/* Nothing to share through. */
 	if (window->data_manager == NULL || window->seat == NULL)
@@ -115,8 +116,8 @@ te_clipboard_start(
  * sent from there.
  */
 void
-te_clipboard_set(
-	struct te_window *window,
+kui_window_copy(
+	struct kui_window *window,
 	const char *text,
 	size_t length)
 {
@@ -146,17 +147,16 @@ te_clipboard_set(
 	wl_data_source_offer(window->data_source, CLIPBOARD_TYPE_PLAIN);
 	wl_data_device_set_selection(window->data_device, window->data_source, window->serial);
 	(void)wl_display_flush(window->display);
-	te_log("CLIPBOARD set bytes=%lu", (unsigned long)length);
 }
 
 /*
- * Receives the selection's text into a buffer (Paste): the editor's own
+ * Receives the selection's text into a buffer (Paste): the window's own
  * directly, another client's through a pipe read until its end or
  * CLIPBOARD_RECEIVE_MS.  Returns the bytes (0 for none).
  */
 size_t
-te_clipboard_receive(
-	struct te_window *window,
+kui_window_paste(
+	struct kui_window *window,
 	char *text,
 	size_t size)
 {
@@ -169,14 +169,13 @@ te_clipboard_receive(
 	int error;
 	int ready;
 
-	/* The editor's own text (or the only one, without the compositor's clipboard). */
+	/* The window's own text (or the only one, without the compositor's clipboard). */
 	if (window->data_device == NULL || window->data_source != NULL) {
 		length = window->clipboard_length;
 		if (length > size)
 			length = size;
 		if (length != 0U)
 			memcpy(text, window->clipboard, length);
-		te_log("CLIPBOARD paste own bytes=%lu", (unsigned long)length);
 		return length;
 	}
 
@@ -194,10 +193,10 @@ te_clipboard_receive(
 
 	/* The data, until the writer closes (or the time is up). */
 	length = 0;
-	deadline = te_clock() + CLIPBOARD_RECEIVE_MS;
+	deadline = keiui_clock_ms() + CLIPBOARD_RECEIVE_MS;
 	while (length < size) {
 		/* The time is up. */
-		now = te_clock();
+		now = keiui_clock_ms();
 		if (now >= deadline)
 			break;
 
@@ -220,16 +219,35 @@ te_clipboard_receive(
 	close(pipes[0]);
 
 	/* Succeeded: the bytes received. */
-	te_log("CLIPBOARD paste received bytes=%lu", (unsigned long)length);
 	return length;
+}
+
+/*
+ * Tells whether the selection offers text to paste (the window's own
+ * text, or another program's).
+ */
+int
+kui_window_can_paste(
+	const struct kui_window *window)
+{
+	/* The window's own text. */
+	if (window->data_source != NULL && window->clipboard_length != 0U)
+		return 1;
+
+	/* Another program's offer of text. */
+	if (window->data_offer != NULL && window->offer_text)
+		return 1;
+
+	/* Nothing to paste. */
+	return 0;
 }
 
 /*
  * Destroys the clipboard's objects (before the seat they belong to).
  */
 void
-te_clipboard_close(
-	struct te_window *window)
+keiui_clipboard_close(
+	struct kui_window *window)
 {
 	/* The offer, the source, the device and the manager. */
 	if (window->data_offer != NULL)
@@ -253,7 +271,7 @@ clipboard_offer(
 	struct wl_data_device *device,
 	struct wl_data_offer *offer)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* The offer being described, with no text type yet. */
 	(void)device;
@@ -262,7 +280,7 @@ clipboard_offer(
 	(void)wl_data_offer_add_listener(offer, &offer_listener, window);
 }
 
-/* A drag comes over the window: the editor takes no drops (Files' drops come with WS093). */
+/* A drag comes over the window: the window takes no drops (Files' drops come with WS093). */
 static void
 clipboard_enter(
 	void *data,
@@ -331,7 +349,7 @@ clipboard_selection(
 	struct wl_data_device *device,
 	struct wl_data_offer *offer)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* The last offer goes. */
 	(void)device;
@@ -344,17 +362,16 @@ clipboard_selection(
 	window->offer_text = 0;
 	if (offer != NULL)
 		window->offer_text = window->pending_text;
-	te_log("CLIPBOARD selection text=%d", window->offer_text);
 }
 
-/* Notes a type of the offer being described: either text type is what the editor takes. */
+/* Notes a type of the offer being described: either text type is what the window takes. */
 static void
 clipboard_type(
 	void *data,
 	struct wl_data_offer *offer,
 	const char *mime_type)
 {
-	struct te_window *window;
+	struct kui_window *window;
 	int utf8;
 	int plain;
 
@@ -406,7 +423,7 @@ clipboard_target(
 	(void)mime_type;
 }
 
-/* Writes the editor's copied text into the descriptor another client reads, and closes it. */
+/* Writes the window's copied text into the descriptor another client reads, and closes it. */
 static void
 clipboard_send(
 	void *data,
@@ -414,7 +431,7 @@ clipboard_send(
 	const char *mime_type,
 	int32_t fd)
 {
-	struct te_window *window;
+	struct kui_window *window;
 	size_t written;
 	ssize_t count;
 
@@ -434,16 +451,15 @@ clipboard_send(
 
 	/* The end of the text. */
 	close(fd);
-	te_log("CLIPBOARD sent bytes=%lu", (unsigned long)written);
 }
 
-/* The editor's text is not the selection any more: its source goes. */
+/* The window's text is not the selection any more: its source goes. */
 static void
 clipboard_cancelled(
 	void *data,
 	struct wl_data_source *source)
 {
-	struct te_window *window;
+	struct kui_window *window;
 
 	/* The source is destroyed; a paste now takes the other client's selection. */
 	window = data;

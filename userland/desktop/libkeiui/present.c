@@ -6,7 +6,8 @@
  */
 
 /*
- * The presenter of Text Editor (PDF Viewer's present.c): each frame
+ * The Vulkan presenter of the library's windows (ws090-p004, Text
+ * Editor's present.c moved here, itself PDF Viewer's): each frame
  * drawn on the CPU is written into a linear, host-visible image the size
  * of the window, and one quad copies it texel for pixel onto a swapchain
  * image of the window, with standard Vulkan and Wayland WSI.
@@ -33,29 +34,29 @@
 /* The quad's vertices: two triangles. */
 #define PRESENT_VERTICES	6U
 
-static VkResult present_device(struct te_present *present);
-static VkResult present_swapchain(struct te_present *present, uint32_t width, uint32_t height, VkSwapchainKHR old);
-static VkResult present_pass(struct te_present *present);
-static VkResult present_targets(struct te_present *present);
-static void present_targets_free(struct te_present *present);
-static VkResult present_commands(struct te_present *present);
-static VkResult present_memory(struct te_present *present, VkMemoryRequirements *requirements, VkDeviceMemory *memory);
-static VkResult present_descriptors(struct te_present *present);
-static VkResult present_canvas(struct te_present *present);
-static void present_canvas_free(struct te_present *present);
-static VkResult present_vertices(struct te_present *present);
-static VkResult present_pipeline(struct te_present *present);
-static VkResult present_module(struct te_present *present, const uint32_t *code, size_t size, VkShaderModule *module);
-static void present_record(struct te_present *present, uint32_t image);
+static VkResult present_device(struct keiui_present *present);
+static VkResult present_swapchain(struct keiui_present *present, uint32_t width, uint32_t height, VkSwapchainKHR old);
+static VkResult present_pass(struct keiui_present *present);
+static VkResult present_targets(struct keiui_present *present);
+static void present_targets_free(struct keiui_present *present);
+static VkResult present_commands(struct keiui_present *present);
+static VkResult present_memory(struct keiui_present *present, VkMemoryRequirements *requirements, VkDeviceMemory *memory);
+static VkResult present_descriptors(struct keiui_present *present);
+static VkResult present_canvas(struct keiui_present *present);
+static void present_canvas_free(struct keiui_present *present);
+static VkResult present_vertices(struct keiui_present *present);
+static VkResult present_pipeline(struct keiui_present *present);
+static VkResult present_module(struct keiui_present *present, const uint32_t *code, size_t size, VkShaderModule *module);
+static void present_record(struct keiui_present *present, uint32_t image);
 
 /*
  * Makes the Vulkan objects of the window: the device, the swapchain, the
  * canvas image and the pipeline that shows it.
  */
 VkResult
-te_present_open(
-	struct te_present *present,
-	struct te_window *window)
+keiui_present_open(
+	struct keiui_present *present,
+	struct kui_window *window)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
@@ -71,7 +72,7 @@ te_present_open(
 	extensions[1] = VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME;
 	memset(&application, 0, sizeof(application));
 	application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	application.pApplicationName = "textedit";
+	application.pApplicationName = "keiui";
 	application.apiVersion = VK_API_VERSION_1_0;
 	memset(&instance, 0, sizeof(instance));
 	instance.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -146,8 +147,8 @@ te_present_open(
  * Replaces the swapchain and the canvas image with ones of a new size.
  */
 VkResult
-te_present_resize(
-	struct te_present *present,
+keiui_present_resize(
+	struct keiui_present *present,
 	uint32_t width,
 	uint32_t height)
 {
@@ -192,8 +193,8 @@ te_present_resize(
  * the window; the caller resizes and draws again.
  */
 VkResult
-te_present_frame(
-	struct te_present *present,
+keiui_present_frame(
+	struct keiui_present *present,
 	const uint32_t *pixels,
 	size_t stride)
 {
@@ -206,16 +207,16 @@ te_present_frame(
 	VkResult error;
 
 	/* The frame's rows into the canvas image. */
-	started = te_clock();
+	started = keiui_clock_ms();
 	for (row = 0; row < present->extent.height; row++)
 		memcpy(present->canvas_map + (size_t)row * present->canvas_pitch, pixels + (size_t)row * stride, (size_t)present->extent.width * 4U);
-	present->copy_ms = (unsigned)(te_clock() - started);
+	present->copy_ms = (unsigned)(keiui_clock_ms() - started);
 
 	/* The image to draw into, once the compositor has given one back. */
-	started = te_clock();
+	started = keiui_clock_ms();
 	present->operation = "vkAcquireNextImageKHR";
 	error = vkAcquireNextImageKHR(present->device, present->swapchain, PRESENT_TIMEOUT, present->acquired, VK_NULL_HANDLE, &image);
-	present->acquire_ms = (unsigned)(te_clock() - started);
+	present->acquire_ms = (unsigned)(keiui_clock_ms() - started);
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 
@@ -262,18 +263,18 @@ te_present_frame(
 	info.swapchainCount = 1U;
 	info.pSwapchains = &present->swapchain;
 	info.pImageIndices = &image;
-	started = te_clock();
+	started = keiui_clock_ms();
 	present->operation = "vkQueuePresentKHR";
 	error = vkQueuePresentKHR(present->queue, &info);
-	present->present_ms = (unsigned)(te_clock() - started);
+	present->present_ms = (unsigned)(keiui_clock_ms() - started);
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 
 	/* The frame is finished before the host writes the canvas again. */
-	started = te_clock();
+	started = keiui_clock_ms();
 	present->operation = "vkWaitForFences";
 	error = vkWaitForFences(present->device, 1U, &present->fence, VK_TRUE, PRESENT_TIMEOUT);
-	present->wait_ms = (unsigned)(te_clock() - started);
+	present->wait_ms = (unsigned)(keiui_clock_ms() - started);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -285,8 +286,8 @@ te_present_frame(
  * Releases every Vulkan object, children before their parents.
  */
 void
-te_present_close(
-	struct te_present *present)
+keiui_present_close(
+	struct keiui_present *present)
 {
 	/* The device's objects, once nothing runs. */
 	if (present->device != VK_NULL_HANDLE) {
@@ -341,7 +342,7 @@ te_present_close(
 /* Chooses a physical device and a queue family that draws and presents to the surface, and makes the device. */
 static VkResult
 present_device(
-	struct te_present *present)
+	struct keiui_present *present)
 {
 	VkPhysicalDevice devices[8];
 	VkQueueFamilyProperties families[16];
@@ -416,7 +417,7 @@ present_device(
 /* Makes the swapchain at a size, in an 8-bit UNORM format, presenting in FIFO order. */
 static VkResult
 present_swapchain(
-	struct te_present *present,
+	struct keiui_present *present,
 	uint32_t width,
 	uint32_t height,
 	VkSwapchainKHR old)
@@ -508,7 +509,7 @@ present_swapchain(
 /* Makes the pass: one color attachment, fully overwritten by the quad and left for presenting. */
 static VkResult
 present_pass(
-	struct te_present *present)
+	struct keiui_present *present)
 {
 	VkAttachmentDescription attachment;
 	VkAttachmentReference reference;
@@ -554,7 +555,7 @@ present_pass(
 /* Makes a view, a framebuffer and a present semaphore for each swapchain image. */
 static VkResult
 present_targets(
-	struct te_present *present)
+	struct keiui_present *present)
 {
 	VkImage images[8];
 	VkImageViewCreateInfo view;
@@ -622,7 +623,7 @@ present_targets(
 /* Releases the objects of the swapchain's images (not the images, which are the swapchain's). */
 static void
 present_targets_free(
-	struct te_present *present)
+	struct keiui_present *present)
 {
 	uint32_t index;
 
@@ -645,7 +646,7 @@ present_targets_free(
 /* Makes the command pool and buffer, the frame's fence and the acquire semaphore. */
 static VkResult
 present_commands(
-	struct te_present *present)
+	struct keiui_present *present)
 {
 	VkCommandPoolCreateInfo pool;
 	VkCommandBufferAllocateInfo command;
@@ -697,7 +698,7 @@ present_commands(
 /* Allocates host-visible, coherent memory that meets the requirements. */
 static VkResult
 present_memory(
-	struct te_present *present,
+	struct keiui_present *present,
 	VkMemoryRequirements *requirements,
 	VkDeviceMemory *memory)
 {
@@ -736,7 +737,7 @@ present_memory(
 /* Makes the sampler, the set layout, the pool and the one set the canvas is bound through. */
 static VkResult
 present_descriptors(
-	struct te_present *present)
+	struct keiui_present *present)
 {
 	VkSamplerCreateInfo sampler;
 	VkDescriptorSetLayoutBinding binding;
@@ -807,7 +808,7 @@ present_descriptors(
 /* Makes the canvas image at the swapchain's size (linear, host-written, mapped for good) and binds it to the set. */
 static VkResult
 present_canvas(
-	struct te_present *present)
+	struct keiui_present *present)
 {
 	VkImageCreateInfo image;
 	VkMemoryRequirements requirements;
@@ -900,7 +901,7 @@ present_canvas(
 /* Releases the canvas image, its view and its memory. */
 static void
 present_canvas_free(
-	struct te_present *present)
+	struct keiui_present *present)
 {
 	/* The view, the image and the memory, where made. */
 	if (present->canvas_view != VK_NULL_HANDLE)
@@ -921,7 +922,7 @@ present_canvas_free(
 /* Makes the vertex buffer of the quad: the unit square, which the push constant stretches over the window. */
 static VkResult
 present_vertices(
-	struct te_present *present)
+	struct keiui_present *present)
 {
 	static const float quad[PRESENT_VERTICES * PRESENT_VERTEX_FLOATS] = {
 		0.0f, 0.0f, 0.0f, 0.0f,
@@ -974,7 +975,7 @@ present_vertices(
 /* Makes the pipeline that draws the canvas: one vec4 attribute, the canvas, the scale as a push constant. */
 static VkResult
 present_pipeline(
-	struct te_present *present)
+	struct keiui_present *present)
 {
 	static const VkDynamicState dynamic[] = {
 		VK_DYNAMIC_STATE_VIEWPORT,
@@ -999,12 +1000,12 @@ present_pipeline(
 	VkResult error;
 
 	/* The vertex shader module. */
-	error = present_module(present, textedit_canvas_vert, sizeof(textedit_canvas_vert), &vertex);
+	error = present_module(present, keiui_canvas_vert, sizeof(keiui_canvas_vert), &vertex);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* The fragment module; the vertex module goes when it cannot be made. */
-	error = present_module(present, textedit_canvas_frag, sizeof(textedit_canvas_frag), &fragment);
+	error = present_module(present, keiui_canvas_frag, sizeof(keiui_canvas_frag), &fragment);
 	if (error != VK_SUCCESS) {
 		vkDestroyShaderModule(present->device, vertex, NULL);
 		return error;
@@ -1117,7 +1118,7 @@ present_pipeline(
 /* Makes a shader module from SPIR-V words. */
 static VkResult
 present_module(
-	struct te_present *present,
+	struct keiui_present *present,
 	const uint32_t *code,
 	size_t size,
 	VkShaderModule *module)
@@ -1142,7 +1143,7 @@ present_module(
 /* Records the frame: the canvas made visible to the shader, then the quad over the whole image. */
 static void
 present_record(
-	struct te_present *present,
+	struct keiui_present *present,
 	uint32_t image)
 {
 	VkCommandBufferBeginInfo begin;

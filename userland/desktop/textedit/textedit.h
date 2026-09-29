@@ -16,6 +16,8 @@
 #ifndef TEXTEDIT_TEXTEDIT_H
 #define TEXTEDIT_TEXTEDIT_H
 
+#include <keiui.h>
+
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -408,11 +410,18 @@ struct te_app {
 	int line_numbers;
 	int wrap;
 
-	/* Where the view is scrolled to (pixels), and where the wheel is gliding it. */
+	/*
+	 * Where the view is scrolled to (pixels): the libkeiui scroll that
+	 * moves it (the wheel's glide, the fingers' drag and flight), and the
+	 * place drawn, copied from the scroll by te_app_sync_scroll.
+	 */
+	struct kui_scroll scroll;
 	double scroll_x;
 	double scroll_y;
-	double target_y;
-	int gliding;
+
+	/* The fingers' selection in the text (libkeiui's text view touch: one finger selects, two scroll), and whether its handles are drawn. */
+	struct kui_text_touch touch;
+	int handles_shown;
 
 	/* The keyboard's focus and the cursor's blinking. */
 	int focused;
@@ -454,9 +463,6 @@ struct te_app {
 	int primary_changed;
 	int dirty;
 	uint64_t now;
-
-	/* Whether fingers own the view (touch.c places it then). */
-	int touching;
 
 	/* Whether the window is glass (the frame leaves the desktop showing around the card). */
 	int glass;
@@ -544,9 +550,6 @@ size_t te_layout_columns_between(const struct te_layout *layout, const struct te
 int te_find(const struct te_buffer *buffer, const char *needle, size_t length, size_t from, int forward, size_t *start, int *wrapped);
 int te_find_at(const struct te_buffer *buffer, const char *needle, size_t length, size_t position);
 
-/* The keys' characters (keys.c). */
-uint32_t te_key_character(uint32_t key, uint32_t modifiers);
-
 /* Editing (edit.c). */
 int te_edit_insert_text(struct te_app *app, const char *text, size_t length, int merge);
 int te_edit_delete(struct te_app *app, size_t start, size_t end, int merge);
@@ -578,6 +581,8 @@ int te_app_tick(struct te_app *app, uint64_t now);
 void te_app_message(struct te_app *app, const char *message);
 void te_app_relayout(struct te_app *app);
 void te_app_clamp(struct te_app *app);
+int te_app_sync_scroll(struct te_app *app, uint64_t now_us);
+void te_app_touch(struct te_app *app);
 void te_app_text_rect(const struct te_app *app, struct te_rect *rect);
 void te_app_card(const struct te_app *app, struct te_rect *rect);
 double te_app_max_scroll_x(const struct te_app *app);

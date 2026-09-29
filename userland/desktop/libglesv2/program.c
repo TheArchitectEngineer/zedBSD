@@ -26,6 +26,11 @@
  * their type's name and no size or members), and a draw hands each block
  * the buffer range bound to the binding point glUniformBlockBinding gave
  * it.
+ *
+ * A compute shader (OpenGL ES 3.1, ws101-p009) is GLSL linked alone: the
+ * program has its uniforms and named blocks as above, its shader storage
+ * blocks (at bindings 56 on, from the GLSL compiler's link) and its
+ * workgroup size, and one compute pipeline made at the link.
  */
 
 #include "gles.h"
@@ -45,6 +50,12 @@
 /* The first version of GLSL ES that needs an OpenGL ES 3 context. */
 #define PROGRAM_ES3_VERSION	300U
 
+/* The first version of GLSL ES that needs a context offering OpenGL ES 3.1's compute (ws101-p009). */
+#define PROGRAM_ES31_VERSION	310U
+
+/* SPIR-V's execution model of a compute shader (GLCompute). */
+#define PROGRAM_MODEL_COMPUTE	5U
+
 /* Desktop GL's names of its 1D sampler types, which OpenGL ES has none of. */
 #define PROGRAM_SAMPLER_1D		0x8B5DU
 #define PROGRAM_SAMPLER_1D_SHADOW	0x8B61U
@@ -58,6 +69,10 @@ static int program_link(struct gles_state *state, struct gles_program *program, 
 static int program_link_code(struct gles_state *state, struct gles_program *program, const uint32_t *vertex_input, size_t vertex_words, const uint32_t *fragment_input, size_t fragment_words, const uint32_t *geometry_input, size_t geometry_words, char *log);
 static int program_link_geometry(struct gles_state *state, struct gles_program *program, const uint32_t *code, size_t words, char *log);
 static int program_link_glsl(struct gles_program *program, struct glsl_program *linked, char *log);
+static int program_link_compute(struct gles_state *state, struct gles_program *program, char *log);
+static int program_compute_storages(struct gles_state *state, struct gles_program *program, const struct glsl_program *linked, char *log);
+static int program_compute_pipeline(struct gles_state *state, struct gles_program *program, const uint32_t *code, size_t words, char *log);
+static void program_let_go(struct gles_state *state, struct gles_shader *shader);
 static void program_glsl_captures(struct gles_program *program, const struct glsl_program *linked);
 static void program_glsl_types(struct gles_program *program, const struct glsl_program *linked);
 static GLenum program_sampler_type(const struct glsl_uniform_info *info);
@@ -91,31 +106,10 @@ gles_program_release(
 	program_unlink(state, program);
 
 	/* The attached shaders let go. */
-	if (program->vertex != NULL) {
-		program->vertex->attached--;
-		if (program->vertex->delete_pending && program->vertex->attached == 0U) {
-			gles_names_remove(&state->objects, program->vertex->name);
-			gles_shader_release(program->vertex);
-		}
-	}
-
-	/* The fragment shader too. */
-	if (program->fragment != NULL) {
-		program->fragment->attached--;
-		if (program->fragment->delete_pending && program->fragment->attached == 0U) {
-			gles_names_remove(&state->objects, program->fragment->name);
-			gles_shader_release(program->fragment);
-		}
-	}
-
-	/* And the geometry shader. */
-	if (program->geometry != NULL) {
-		program->geometry->attached--;
-		if (program->geometry->delete_pending && program->geometry->attached == 0U) {
-			gles_names_remove(&state->objects, program->geometry->name);
-			gles_shader_release(program->geometry);
-		}
-	}
+	program_let_go(state, program->vertex);
+	program_let_go(state, program->fragment);
+	program_let_go(state, program->geometry);
+	program_let_go(state, program->compute);
 
 	/* The program. */
 	free(program->log);
@@ -156,7 +150,8 @@ glCreateShader(
 		return 0U;
 	if (type != GL_VERTEX_SHADER &&
 	    type != GL_FRAGMENT_SHADER &&
-	    (type != GL_GEOMETRY_SHADER || gles_fixed == NULL)) {
+	    (type != GL_GEOMETRY_SHADER || gles_fixed == NULL) &&
+	    (type != GL_COMPUTE_SHADER || !state->compute)) {
 		gles_error(context, GL_INVALID_ENUM);
 		return 0U;
 	}
@@ -287,6 +282,7 @@ glCompileShader(
 	GLuint name)
 {
 	struct zegl_context *context;
+	struct gles_state *state;
 	struct gles_shader *shader;
 	struct glsl_shader *compiled;
 	unsigned stage;
@@ -320,6 +316,8 @@ glCompileShader(
 		stage = GLSL_STAGE_FRAGMENT;
 	if (shader->type == GL_GEOMETRY_SHADER)
 		stage = GLSL_STAGE_GEOMETRY;
+	if (shader->type == GL_COMPUTE_SHADER)
+		stage = GLSL_STAGE_COMPUTE;
 	version = PROGRAM_ES_VERSION;
 	if (gles_fixed != NULL)
 		version = PROGRAM_DESKTOP_VERSION;
@@ -353,6 +351,17 @@ glCompileShader(
 		shader_version = glsl_shader_version(compiled, &es);
 		if (es && shader_version >= PROGRAM_ES3_VERSION && context->version < 3) {
 			program_log(&shader->log, "0:0: error: GLSL ES 3.00 needs an OpenGL ES 3 context\n");
+			glsl_shader_free(compiled);
+			compiled = NULL;
+		}
+	}
+
+	/* GLSL ES 3.10 needs a context that offers OpenGL ES 3.1's compute (ws101-p009). */
+	if (compiled != NULL && gles_fixed == NULL) {
+		shader_version = glsl_shader_version(compiled, &es);
+		state = gles_state(context);
+		if (es && shader_version >= PROGRAM_ES31_VERSION && (state == NULL || !state->compute)) {
+			program_log(&shader->log, "0:0: error: GLSL ES 3.10 needs an OpenGL ES 3.1 context\n");
 			glsl_shader_free(compiled);
 			compiled = NULL;
 		}
@@ -670,6 +679,8 @@ glAttachShader(
 		slot = &program->vertex;
 	if (shader->type == GL_GEOMETRY_SHADER)
 		slot = &program->geometry;
+	if (shader->type == GL_COMPUTE_SHADER)
+		slot = &program->compute;
 	if (*slot != NULL) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
@@ -710,6 +721,8 @@ glDetachShader(
 		program->fragment = NULL;
 	} else if (program->geometry == shader) {
 		program->geometry = NULL;
+	} else if (program->compute == shader) {
+		program->compute = NULL;
 	} else {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
@@ -855,6 +868,8 @@ glGetProgramiv(
 			*params += 1;
 		if (program->geometry != NULL)
 			*params += 1;
+		if (program->compute != NULL)
+			*params += 1;
 		return;
 	case GL_GEOMETRY_VERTICES_OUT:
 	case GL_GEOMETRY_INPUT_TYPE:
@@ -877,6 +892,22 @@ glGetProgramiv(
 			*params = (GLint)program->geometry_input;
 		if (pname == GL_GEOMETRY_OUTPUT_TYPE)
 			*params = (GLint)program->geometry_output;
+		return;
+	case GL_COMPUTE_WORK_GROUP_SIZE:
+		/* A linked compute program's (OpenGL ES 3.1, ws101-p009; not desktop GL's, libGL). */
+		if (gles_fixed != NULL) {
+			gles_error(context, GL_INVALID_ENUM);
+			return;
+		}
+
+		/* Linked with a compute shader. */
+		if (!program->linked || program->compute_pipeline == VK_NULL_HANDLE) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+
+		/* The three dimensions. */
+		memcpy(params, program->local_size, sizeof(program->local_size));
 		return;
 	case GL_ACTIVE_ATTRIBUTES:
 		*params = (GLint)program->attribute_count;
@@ -1011,6 +1042,8 @@ glGetAttachedShaders(
 		shaders[found++] = program->fragment->name;
 	if (program->geometry != NULL && found < maxCount)
 		shaders[found++] = program->geometry->name;
+	if (program->compute != NULL && found < maxCount)
+		shaders[found++] = program->compute->name;
 	if (count != NULL)
 		*count = found;
 }
@@ -2263,6 +2296,18 @@ program_link(
 	unsigned vertices;
 	int status;
 
+	/* A compute shader is linked alone (ws101-p009). */
+	if (program->compute != NULL) {
+		if (program->vertex != NULL || program->fragment != NULL || program->geometry != NULL) {
+			(void)snprintf(log, PROGRAM_LOG, "a compute shader cannot be linked with shaders of other stages\n");
+			return -1;
+		}
+
+		/* Its link. */
+		status = program_link_compute(state, program, log);
+		return status;
+	}
+
 	/* Two compiled shaders. */
 	if (program->vertex == NULL || program->fragment == NULL) {
 		(void)snprintf(log, PROGRAM_LOG, "a program needs a vertex and a fragment shader\n");
@@ -2375,6 +2420,212 @@ program_link_glsl(
 
 	/* Succeeded: the SPIR-V of both stages. */
 	return 0;
+}
+
+/*
+ * Links a compute shader alone (ws101-p009): the GLSL compiler's link,
+ * the workgroup size and the shader storage blocks, the uniforms and the
+ * named blocks, the layouts and the compute pipeline.  Returns 0, or -1
+ * with the log.
+ */
+static int
+program_link_compute(
+	struct gles_state *state,
+	struct gles_program *program,
+	char *log)
+{
+	struct glsl_program linked;
+	struct gles_spirv spirv;
+	char *glsl_log;
+	unsigned index;
+	int status;
+
+	/* Compiled GLSL (a SPIR-V binary of a compute shader is not taken). */
+	if (!program->compute->compiled || program->compute->glsl == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "the compute shader is not compiled GLSL\n");
+		return -1;
+	}
+
+	/* The compiler's link. */
+	status = glsl_link_compute(program->compute->glsl, &linked, &glsl_log);
+	if (status != 0) {
+		if (glsl_log != NULL) {
+			(void)snprintf(log, PROGRAM_LOG, "%s", glsl_log);
+		} else {
+			(void)snprintf(log, PROGRAM_LOG, "the GLSL link ran out of memory\n");
+		}
+
+		/* The compiler's log is copied. */
+		free(glsl_log);
+		return -1;
+	}
+
+	/* The workgroup size, and the shader storage blocks at the binding points there are. */
+	for (index = 0U; index < 3U; index++)
+		program->local_size[index] = (GLint)linked.local_size[index];
+	status = program_compute_storages(state, program, &linked, log);
+
+	/* The uniforms and the named blocks the SPIR-V has, which must be a compute shader's. */
+	if (status == 0) {
+		status = gles_spirv_reflect(linked.code[GLSL_STAGE_COMPUTE], linked.words[GLSL_STAGE_COMPUTE], &spirv, log, PROGRAM_LOG);
+		if (status == 0) {
+			if (spirv.model != PROGRAM_MODEL_COMPUTE) {
+				(void)snprintf(log, PROGRAM_LOG, "the SPIR-V stage is not a compute shader\n");
+				status = -1;
+			}
+
+			/* The named blocks at their bindings, and the uniforms. */
+			if (status == 0)
+				status = program_spirv_blocks(program, &spirv, GLSL_STAGE_COMPUTE, log);
+			if (status == 0)
+				status = program_merge(program, &spirv, log);
+			gles_spirv_free(&spirv);
+		}
+	}
+
+	/* The uniforms' GL types the SPIR-V does not tell, then the named blocks' members. */
+	if (status == 0) {
+		program_glsl_types(program, &linked);
+		status = program_glsl_blocks(program, &linked, log);
+	}
+
+	/* The layouts, read by the compute stage. */
+	if (status == 0) {
+		program->stages = VK_SHADER_STAGE_COMPUTE_BIT;
+		status = program_layout(state, program);
+		if (status != 0)
+			(void)snprintf(log, PROGRAM_LOG, "the device refused the program's layout\n");
+	}
+
+	/* The pipeline. */
+	if (status == 0)
+		status = program_compute_pipeline(state, program, linked.code[GLSL_STAGE_COMPUTE], linked.words[GLSL_STAGE_COMPUTE], log);
+	glsl_program_free(&linked);
+
+	/* Reports why the link failed. */
+	if (status != 0) {
+		if (log[0] == '\0')
+			(void)snprintf(log, PROGRAM_LOG, "out of memory\n");
+		return -1;
+	}
+
+	/* Succeeded: a serial of its own. */
+	program->serial = program_serial++;
+	return 0;
+}
+
+/*
+ * Keeps a linked compute program's shader storage blocks: each at a
+ * binding point a context has, no more than a stage of the device reads.
+ * Returns 0, or -1 with the log.
+ */
+static int
+program_compute_storages(
+	struct gles_state *state,
+	struct gles_program *program,
+	const struct glsl_program *linked,
+	char *log)
+{
+	const struct glsl_storage_info *info;
+	struct gles_storage *storage;
+	const char *name;
+	unsigned index;
+
+	/* No more blocks than a stage of the device reads. */
+	if (linked->storage_count > GLES_STORAGE_BINDINGS ||
+	    linked->storage_count > state->limits.maxPerStageDescriptorStorageBuffers) {
+		(void)snprintf(log, PROGRAM_LOG, "the compute shader has %u buffer blocks, more than %u\n", linked->storage_count,
+			       GLES_STORAGE_BINDINGS);
+		return -1;
+	}
+
+	/* Each block, at a binding point there is. */
+	program->storage_count = 0U;
+	for (index = 0U; index < linked->storage_count; index++) {
+		info = &linked->storages[index];
+		name = "";
+		if (info->name != NULL)
+			name = info->name;
+		if (info->binding >= GLES_STORAGE_BINDINGS) {
+			(void)snprintf(log, PROGRAM_LOG, "buffer block %s is at binding %u, past the last binding point %u\n", name,
+				       info->binding, GLES_STORAGE_BINDINGS - 1U);
+			return -1;
+		}
+
+		/* The block. */
+		storage = &program->storages[program->storage_count];
+		(void)snprintf(storage->name, sizeof(storage->name), "%s", name);
+		storage->binding = info->binding;
+		storage->size = info->size;
+		storage->readonly = (int)info->readonly;
+		program->storage_count++;
+	}
+
+	/* Succeeded: the blocks are kept. */
+	return 0;
+}
+
+/*
+ * Makes a compute program's pipeline from its SPIR-V (the module goes
+ * once the pipeline is made).  Returns 0, or -1 with the log.
+ */
+static int
+program_compute_pipeline(
+	struct gles_state *state,
+	struct gles_program *program,
+	const uint32_t *code,
+	size_t words,
+	char *log)
+{
+	VkComputePipelineCreateInfo create;
+	VkShaderModule module;
+	VkResult result;
+	int status;
+
+	/* The module. */
+	status = program_module(state, code, words, &module);
+	if (status != 0) {
+		(void)snprintf(log, PROGRAM_LOG, "the device refused the compute shader\n");
+		return -1;
+	}
+
+	/* The pipeline over it, with the program's layout. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	create.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	create.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	create.stage.module = module;
+	create.stage.pName = "main";
+	create.layout = program->layout;
+	result = vkCreateComputePipelines(state->device, VK_NULL_HANDLE, 1U, &create, NULL, &program->compute_pipeline);
+	vkDestroyShaderModule(state->device, module, NULL);
+	if (result != VK_SUCCESS) {
+		gles_report("vkCreateComputePipelines", (int)result);
+		program->compute_pipeline = VK_NULL_HANDLE;
+		(void)snprintf(log, PROGRAM_LOG, "the device refused the compute pipeline\n");
+		return -1;
+	}
+
+	/* Succeeded: the pipeline. */
+	return 0;
+}
+
+/* Lets a program's attached shader (NULL: none) go; a deleted shader goes with its last program. */
+static void
+program_let_go(
+	struct gles_state *state,
+	struct gles_shader *shader)
+{
+	/* No shader. */
+	if (shader == NULL)
+		return;
+
+	/* One program fewer. */
+	shader->attached--;
+	if (shader->delete_pending && shader->attached == 0U) {
+		gles_names_remove(&state->objects, shader->name);
+		gles_shader_release(shader);
+	}
 }
 
 /* Keeps what the linked vertex shader captures (transform feedback): each output's name, GL type, size and place, and the link's buffer mode. */
@@ -3018,13 +3269,13 @@ program_merge(
 	return 0;
 }
 
-/* Makes a program's descriptor set layout (the default block, each sampler, each named block) and pipeline layout; nonzero on failure. */
+/* Makes a program's descriptor set layout (the default block, each sampler, each named block, each shader storage block) and pipeline layout; nonzero on failure. */
 static int
 program_layout(
 	struct gles_state *state,
 	struct gles_program *program)
 {
-	VkDescriptorSetLayoutBinding bindings[GLES_UNITS + 2U + GLES_NAMED_BLOCKS];
+	VkDescriptorSetLayoutBinding bindings[GLES_UNITS + 2U + GLES_NAMED_BLOCKS + GLES_STORAGE_BINDINGS];
 	VkDescriptorSetLayoutCreateInfo set;
 	VkPipelineLayoutCreateInfo layout;
 	uint32_t count;
@@ -3074,6 +3325,15 @@ program_layout(
 			continue;
 		bindings[count].binding = program->blocks[index].binding;
 		bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		bindings[count].descriptorCount = 1U;
+		bindings[count].stageFlags = program->stages;
+		count++;
+	}
+
+	/* Each shader storage block of a compute program (ws101-p009). */
+	for (index = 0U; index < program->storage_count; index++) {
+		bindings[count].binding = GLES_STORAGE_FIRST_BINDING + program->storages[index].binding;
+		bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		bindings[count].descriptorCount = 1U;
 		bindings[count].stageFlags = program->stages;
 		count++;
@@ -3146,6 +3406,7 @@ program_unlink(
 	objects.modules[2] = program->vertex_module_fbo;
 	objects.modules[3] = program->geometry_module;
 	objects.modules[4] = program->geometry_module_fbo;
+	objects.pipeline = program->compute_pipeline;
 	gles_garbage_keep(state, &objects);
 
 	/* The tables. */
@@ -3174,6 +3435,10 @@ program_unlink(
 	program->block_count = 0U;
 	program->capture_count = 0U;
 	program->capture_stride = 0U;
+	program->compute_pipeline = VK_NULL_HANDLE;
+	memset(program->local_size, 0, sizeof(program->local_size));
+	memset(program->storages, 0, sizeof(program->storages));
+	program->storage_count = 0U;
 }
 
 /*

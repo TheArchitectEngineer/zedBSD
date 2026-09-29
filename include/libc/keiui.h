@@ -18,8 +18,11 @@
  * unchanged so that an application moved onto the library draws the same
  * pixels as before.  The second (KUI_VERSION 2) is the scroll, the input
  * that finds which part of a frame a pointer, a wheel or a finger meant,
- * and the touch of a view of editable text.  Later versions add the
- * widgets and the window.
+ * and the touch of a view of editable text.  The third (KUI_VERSION 3) is
+ * the window: a Wayland toplevel whose input arrives as a queue of
+ * events, whose CPU-drawn frames are shown through Vulkan or shared
+ * memory, and which holds the clipboard and the primary selection.  Later
+ * versions add the widgets.
  *
  * Times are CLOCK_MONOTONIC microseconds throughout (the clock of
  * libkeiland's touch motion, scroller and gestures).
@@ -41,8 +44,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch). */
-#define KUI_VERSION	2U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection). */
+#define KUI_VERSION	3U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -461,12 +464,19 @@ struct kui_text_touch {
 	size_t anchor;
 	size_t caret;
 
-	/* Whether a finger is selecting, which handle it holds, whether the handles show, and the finger (content coordinates). */
+	/*
+	 * Whether a finger is selecting, which handle it holds, whether the
+	 * handles show, the finger (content coordinates), and how far the finger
+	 * holding a handle is from the middle of its end's caret (subtracted, so
+	 * that the end follows the caret's line, not the knob's below it).
+	 */
 	int selecting;
 	int handle;
 	int handles;
 	double finger_x;
 	double finger_y;
+	double grip_x;
+	double grip_y;
 
 	/* What changed since kui_text_touch_take, and where the context menu was asked for (window coordinates). */
 	unsigned changes;
@@ -560,6 +570,129 @@ void kui_ui_text_region(struct kui_ui *ui, uint32_t id, const struct kui_rect *r
 int kui_ui_end(struct kui_ui *ui, uint64_t now_us);
 int kui_ui_take(struct kui_ui *ui, struct kui_event *event);
 int kui_ui_drag_offset(struct kui_ui *ui, uint64_t now_us, double *dx, double *dy);
+
+/*
+ * The window (window.c, present.c, present-shm.c, clipboard.c,
+ * primary.c; KUI_VERSION 3, plan/ws090/design.md section 5): an
+ * xdg-shell toplevel of its own connection, its seat's input, the frames
+ * the application draws on the CPU, and the clipboard and the primary
+ * selection.
+ *
+ * The input arrives as events in a queue the application takes after
+ * each kui_window_dispatch, in the order they came: the pointer, the
+ * wheel, the keys (a held key repeats: the application calls
+ * kui_window_repeat after the dispatch, so that a release read in the
+ * same dispatch stops it first, BUG-111), the keyboard's focus, the
+ * fingers (their times turned into CLOCK_MONOTONIC microseconds), a new
+ * size and the request to close.  An application posts its own inputs
+ * heard through other objects during a dispatch (a System Menu's shortcut,
+ * a titlebar's control) with kui_window_post, so that they keep their
+ * place among the keys (typed text, then Ctrl+S).  Input on the program's other surfaces
+ * (a file chooser's window) is not the window's and never queued.
+ *
+ * A frame is ordinary memory of premultiplied 0xAARRGGBB words the size
+ * kui_window_present_resize reported.  KUI_PRESENT_VULKAN shows it through
+ * a Vulkan swapchain (see-through when the compositor offers it, the way
+ * zdesktop's glass needs), KUI_PRESENT_SHM through wl_shm buffers (for a
+ * small window of a library, or where Vulkan is missing), and
+ * KUI_PRESENT_NONE leaves the surface to the application's own Vulkan.
+ * The menus, the titlebar's controls and the glass panels stay the
+ * application's (libkeiland), on the objects the accessors give.
+ */
+struct kui_window;
+struct wl_display;
+struct wl_surface;
+struct wl_seat;
+struct xdg_toplevel;
+
+/* How the frames are shown. */
+#define KUI_PRESENT_VULKAN	0U
+#define KUI_PRESENT_SHM		1U
+#define KUI_PRESENT_NONE	2U
+
+/* The kinds of input. */
+#define KUI_WINDOW_MOTION	1U
+#define KUI_WINDOW_LEAVE	2U
+#define KUI_WINDOW_BUTTON	3U
+#define KUI_WINDOW_AXIS		4U
+#define KUI_WINDOW_KEY		5U
+#define KUI_WINDOW_FOCUS	6U
+#define KUI_WINDOW_TOUCH_DOWN	7U
+#define KUI_WINDOW_TOUCH_MOTION	8U
+#define KUI_WINDOW_TOUCH_UP	9U
+#define KUI_WINDOW_TOUCH_CANCEL	10U
+#define KUI_WINDOW_RESIZE	11U
+#define KUI_WINDOW_CLOSE	12U
+#define KUI_WINDOW_POST		13U
+
+/* The evdev codes of the pointer's buttons. */
+#define KUI_BUTTON_LEFT		0x110U
+#define KUI_BUTTON_RIGHT	0x111U
+#define KUI_BUTTON_MIDDLE	0x112U
+
+/*
+ * What a window is made with.  Any pointer may be NULL: display (the
+ * WAYLAND_DISPLAY one), title and application (the app_id).  width and
+ * height are the size asked for until the compositor gives one.
+ */
+struct kui_window_options {
+	const char *display;
+	const char *title;
+	const char *application;
+	uint32_t width;
+	uint32_t height;
+	unsigned present;
+};
+
+/*
+ * One input: its kind (KUI_WINDOW_*), where the pointer or the finger is
+ * (surface pixels), a button's or a key's code and whether it is pressed
+ * (a focus: 1 when it came), whether a key is a repeat, the modifiers held
+ * (KUI_MOD_*), the wheel's distance in pixels, a finger's id and the time
+ * it happened, when it was read, and its serial (a press's, for a popup or
+ * a selection).
+ */
+struct kui_window_event {
+	unsigned kind;
+	double x;
+	double y;
+	uint32_t code;
+	int pressed;
+	int repeated;
+	unsigned modifiers;
+	double dx;
+	double dy;
+	int32_t id;
+	uint64_t time_us;
+	uint64_t arrival_us;
+	uint32_t serial;
+};
+
+struct kui_window *kui_window_open(const struct kui_window_options *options);
+void kui_window_close(struct kui_window *window);
+int kui_window_dispatch(struct kui_window *window, int timeout_ms);
+int kui_window_take(struct kui_window *window, struct kui_window_event *event);
+void kui_window_post(struct kui_window *window, uint32_t code);
+int kui_window_repeat(struct kui_window *window, uint64_t now_us);
+int kui_window_repeat_wait(const struct kui_window *window, uint64_t now_us);
+void kui_window_set_title(struct kui_window *window, const char *title);
+void kui_window_size(const struct kui_window *window, uint32_t *width, uint32_t *height);
+int kui_window_present_resize(struct kui_window *window, uint32_t *width, uint32_t *height);
+int kui_window_present(struct kui_window *window, const uint32_t *pixels, size_t stride);
+int kui_window_see_through(const struct kui_window *window);
+struct wl_display *kui_window_display(const struct kui_window *window);
+struct wl_surface *kui_window_surface(const struct kui_window *window);
+struct xdg_toplevel *kui_window_toplevel(const struct kui_window *window);
+uint32_t kui_window_serial(const struct kui_window *window);
+uint32_t kui_window_press_serial(const struct kui_window *window);
+void kui_window_set_serial(struct kui_window *window, uint32_t serial);
+struct wl_seat *kui_window_seat(const struct kui_window *window);
+void kui_window_copy(struct kui_window *window, const char *text, size_t length);
+size_t kui_window_paste(struct kui_window *window, char *text, size_t size);
+int kui_window_can_paste(const struct kui_window *window);
+void kui_window_select(struct kui_window *window, const char *text, size_t length);
+size_t kui_window_paste_primary(struct kui_window *window, char *text, size_t size);
+uint64_t kui_clock_us(void);
 
 #ifdef __cplusplus
 }
