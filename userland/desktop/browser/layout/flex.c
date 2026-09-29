@@ -166,12 +166,14 @@ layout_flex(
 			end++;
 		}
 
-		/* The automatic minimums of a line that has to shrink, the flexing, then each item laid out at its size. */
+		/* The automatic minimums of a line that has to shrink. */
 		error = flex_auto_minimums(tree, items + start, end - start, available, gap_main);
 		if (error != 0) {
 			free(items);
 			return error;
 		}
+
+		/* The free space shared, then each item laid out at its size. */
 		flex_resolve(items + start, end - start, available, gap_main);
 		line_cross = 0;
 		for (index = start; index < end; index++) {
