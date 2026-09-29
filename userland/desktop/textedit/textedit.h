@@ -419,8 +419,9 @@ struct te_app {
 	double scroll_x;
 	double scroll_y;
 
-	/* The fingers' selection in the text (libkeiui's text view touch: one finger selects, two scroll). */
+	/* The fingers' selection in the text (libkeiui's text view touch: one finger selects, two scroll), and whether its handles are drawn. */
 	struct kui_text_touch touch;
+	int handles_shown;
 
 	/* The keyboard's focus and the cursor's blinking. */
 	int focused;

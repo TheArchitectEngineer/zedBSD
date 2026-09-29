@@ -141,6 +141,11 @@ void kui_window_redraw(struct kui_window *window);       /* 次の frame で lis
 - **Image Viewer・PDF Viewer の画像**: 今の Image Viewer の present（画像の texture、1699 行）のように CPU の canvas の下に GPU の画像の層を置く口
   （`kui_window_set_layer()`）は、Image Viewer を移す Phase で決める（それまで Image Viewer は自分の present を保つ）。
 
+**実装での変更（ws090-p004、2026-09-30）**: 入力は listener（callback）ではなく **event の queue**（`kui_window_take`）にした。今の app は全て
+`te_window_take` のような queue で入力を読み、BUG-111（key の repeat は dispatch の後）の順序を app の loop で決めているため。大きさの変更と close の
+要求も event（`KUI_WINDOW_RESIZE`・`KUI_WINDOW_CLOSE`）。menu・titlebar の選択の serial を selection に使うため `kui_window_set_serial`、context menu の
+ため `kui_window_seat` を足した。library は app の log を出さない（app が呼び出し口で出す）。
+
 ## 6. scroll view（ユーザーの最低限の要望）
 
 - 1 つの `struct kui_scroll` が 1 つの scroll する領域の状態: 位置（x, y）、内容の大きさ、`keiland_scroller`（touch の drag・慣性・rubber band・

@@ -586,6 +586,8 @@ te_app_touch(
 	changes = kui_text_touch_take(&app->touch);
 
 	/* The fingers' selection becomes the editor's. */
+	if (changes != 0U)
+		te_log("TOUCH changes=%u anchor=%lu caret=%lu handles=%d", changes, (unsigned long)app->touch.anchor, (unsigned long)app->touch.caret, app->touch.handles);
 	if ((changes & KUI_TEXT_TOUCH_SELECTION) != 0U) {
 		te_edit_select(app, app->touch.anchor, app->touch.caret);
 		app->dirty = 1;
@@ -594,6 +596,12 @@ te_app_touch(
 	/* The context menu at the finger. */
 	if ((changes & KUI_TEXT_TOUCH_MENU) != 0U && app->host.context_menu != NULL)
 		app->host.context_menu(app->host.data, (int)app->touch.menu_x, (int)app->touch.menu_y);
+
+	/* The handles came or went (a drag's end, a key's selection): the frame shows it. */
+	if (app->touch.handles != app->handles_shown) {
+		app->handles_shown = app->touch.handles;
+		app->dirty = 1;
+	}
 }
 
 /*

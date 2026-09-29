@@ -103,6 +103,7 @@ struct te_glass {
 int te_window_take(struct te_window *window, struct te_event *event);
 struct te_event *te_window_push(struct te_window *window, enum te_event_type type);
 void te_window_action(struct te_window *window, uint32_t action);
+void te_window_act(struct te_window *window, uint32_t action);
 
 /* The menus and the context menu (menu.c). */
 int te_menu_open(struct te_menu *menu, struct te_window *window, const struct te_state *state);

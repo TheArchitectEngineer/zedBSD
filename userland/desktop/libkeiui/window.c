@@ -327,6 +327,26 @@ kui_window_take(
 }
 
 /*
+ * Queues an input of the application's own (a code of its choosing, as a
+ * KUI_WINDOW_POST event) after the inputs queued so far: a choice heard
+ * through another object during the dispatch keeps its place among the
+ * window's keys.
+ */
+void
+kui_window_post(
+	struct kui_window *window,
+	uint32_t code)
+{
+	struct kui_window_event *event;
+
+	/* The input; a full queue drops it. */
+	event = window_push(window, KUI_WINDOW_POST);
+	if (event == NULL)
+		return;
+	event->code = code;
+}
+
+/*
  * Presses the held key again when its repeat is due (the application
  * calls it after a dispatch), and reports in how many milliseconds the
  * next repeat is due (-1 when no key is held).

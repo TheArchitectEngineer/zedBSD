@@ -597,13 +597,13 @@ main_frame(void)
 
 	/* Tries until the frame is shown, remaking a stale swapchain a few times. */
 	for (stale = 0; stale < MAIN_STALE_LIMIT; stale++) {
-		/* The frame on the CPU, and the fingers' handles over the text (within it). */
+		/* The frame on the CPU, and the fingers' handles over the text (within it, and a knob's size around it). */
 		te_draw(&main_app, &main_canvas);
 		te_app_text_rect(&main_app, &text);
-		clip.x = text.x;
+		clip.x = text.x - KUI_TEXT_HANDLE;
 		clip.y = text.y;
-		clip.width = text.width;
-		clip.height = text.height;
+		clip.width = text.width + 2 * KUI_TEXT_HANDLE;
+		clip.height = text.height + KUI_TEXT_HANDLE;
 		kui_canvas_clip_push(&main_handles, &clip);
 		kui_text_touch_draw_handles(&main_app.touch, &main_handles, (double)text.x - main_app.scroll_x, (double)text.y - main_app.scroll_y, kui_theme_default());
 		kui_canvas_clip_pop(&main_handles);
@@ -996,6 +996,7 @@ main_window_event(
 			input->pressed = event->pressed;
 		break;
 	case KUI_WINDOW_TOUCH_DOWN:
+		te_log("TOUCH down id=%d x=%.0f y=%.0f", (int)event->id, event->x, event->y);
 		if (main_input != NULL)
 			(void)kui_ui_touch_down(main_input, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		break;
@@ -1004,6 +1005,7 @@ main_window_event(
 			(void)kui_ui_touch_motion(main_input, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		break;
 	case KUI_WINDOW_TOUCH_UP:
+		te_log("TOUCH up id=%d", (int)event->id);
 		if (main_input != NULL)
 			(void)kui_ui_touch_up(main_input, event->id, event->time_us, event->arrival_us);
 		break;
@@ -1016,6 +1018,10 @@ main_window_event(
 		break;
 	case KUI_WINDOW_CLOSE:
 		main_closed = 1;
+		break;
+	case KUI_WINDOW_POST:
+		/* An action of the menus or the titlebar, in its place among the keys. */
+		te_window_act(&main_window, event->code);
 		break;
 	default:
 		break;

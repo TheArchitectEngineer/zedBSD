@@ -71,11 +71,26 @@ te_window_push(
 }
 
 /*
- * Queues an action of the menus or the titlebar among the inputs, so that
- * it is carried out in the order it came.
+ * Queues an action of the menus or the titlebar among the window's inputs
+ * (libkeiui's queue), so that it is carried out in the order it came: the
+ * menus' shortcuts arrive during the dispatch, while the keys typed before
+ * them wait in the window's queue.
  */
 void
 te_window_action(
+	struct te_window *window,
+	uint32_t action)
+{
+	/* After the window's inputs so far. */
+	kui_window_post(window->kui, action);
+}
+
+/*
+ * Queues an action among the editor's inputs (the main loop's, when the
+ * window's queue hands it over).
+ */
+void
+te_window_act(
 	struct te_window *window,
 	uint32_t action)
 {

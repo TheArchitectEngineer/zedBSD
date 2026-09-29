@@ -464,12 +464,19 @@ struct kui_text_touch {
 	size_t anchor;
 	size_t caret;
 
-	/* Whether a finger is selecting, which handle it holds, whether the handles show, and the finger (content coordinates). */
+	/*
+	 * Whether a finger is selecting, which handle it holds, whether the
+	 * handles show, the finger (content coordinates), and how far the finger
+	 * holding a handle is from the middle of its end's caret (subtracted, so
+	 * that the end follows the caret's line, not the knob's below it).
+	 */
 	int selecting;
 	int handle;
 	int handles;
 	double finger_x;
 	double finger_y;
+	double grip_x;
+	double grip_y;
 
 	/* What changed since kui_text_touch_take, and where the context menu was asked for (window coordinates). */
 	unsigned changes;
@@ -577,7 +584,10 @@ int kui_ui_drag_offset(struct kui_ui *ui, uint64_t now_us, double *dx, double *d
  * kui_window_repeat after the dispatch, so that a release read in the
  * same dispatch stops it first, BUG-111), the keyboard's focus, the
  * fingers (their times turned into CLOCK_MONOTONIC microseconds), a new
- * size and the request to close.  Input on the program's other surfaces
+ * size and the request to close.  An application posts its own inputs
+ * heard through other objects during a dispatch (a System Menu's shortcut,
+ * a titlebar's control) with kui_window_post, so that they keep their
+ * place among the keys (typed text, then Ctrl+S).  Input on the program's other surfaces
  * (a file chooser's window) is not the window's and never queued.
  *
  * A frame is ordinary memory of premultiplied 0xAARRGGBB words the size
@@ -613,6 +623,7 @@ struct xdg_toplevel;
 #define KUI_WINDOW_TOUCH_CANCEL	10U
 #define KUI_WINDOW_RESIZE	11U
 #define KUI_WINDOW_CLOSE	12U
+#define KUI_WINDOW_POST		13U
 
 /* The evdev codes of the pointer's buttons. */
 #define KUI_BUTTON_LEFT		0x110U
@@ -661,6 +672,7 @@ struct kui_window *kui_window_open(const struct kui_window_options *options);
 void kui_window_close(struct kui_window *window);
 int kui_window_dispatch(struct kui_window *window, int timeout_ms);
 int kui_window_take(struct kui_window *window, struct kui_window_event *event);
+void kui_window_post(struct kui_window *window, uint32_t code);
 int kui_window_repeat(struct kui_window *window, uint64_t now_us);
 int kui_window_repeat_wait(const struct kui_window *window, uint64_t now_us);
 void kui_window_set_title(struct kui_window *window, const char *title);
