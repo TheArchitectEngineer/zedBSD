@@ -89,6 +89,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | 4 | WS101 D5: デモの見本は整数だけでよいか（float を GPU に出すには Noct の意味を変える patch が要る） | 整数だけ | ws101-p011 | 同 |
 | 5 | fg010 の台本（S1〜S14）と WS099 の基準 C1〜C10・WS100 の A1〜A7 の数値 | 案のまま | 随時 | 上の表、各 ws.md |
 | 7 | WS099 の C7: 空の一覧の案内（Files の「Files you open appear here.」、比 1.8〜2.0）を contrast の基準に入れるか。副次の文字の色を `0x6b7585` → `0x56606f` に暗くした（main が許可、Settings と Files、2026-09-30 夜） | 案内は基準の外（使えない項目として WCAG の対象外）。色の変更は戻せる | 随時 | ws099-p005 |
+| 8 | WS100: Settings の Sound の頁で音量を変えられるようにするか（p005、基準 A1〜A7 の外） | 入れない（system bar の音量だけ） | WS100 p004 の後 | [WS100 design](ws100/design.md) |
 | 6 | WS099 の C6（窓 10 個で pointer の移動から表示まで中央値 50 ms 以内）: 新しい物差し（`c6.py`、5 run・200 試料）で実機の passthrough の中央値は 121.5 ms・p90 173 ms（compositor 約 9.5 frame/s）。基準を保つか緩めるか | 基準は保ち、frame の長さの主因（1 frame に約 7 run の直列か、client の待ちか）を次の Phase で分析する | 随時 | ws075-p024 の途中報告 |
 
 ## Workstream registry
@@ -194,7 +195,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
 | [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | 2026-09-30: p001・p003・p004・p005・p007・p008・p009 cleared（QEMU）: 基準の一括の試験、BUG-115（試験の待ち）、C1 の起動と Shut Down の試験、C7 の contrast（ガラスの明るさの下限と副次の文字の色、72/72）、BUG-118（cursor の持ち主）、BUG-119 の切り分け、greeter の「Shutting down…」。残り: C5・C6 の実機（WS075 の物差し、C6 は中央値 121.5 ms で未達）、BUG-119 の kernel の電源断（High の担当待ち） |
-| [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | planning | p001（設計、5330 の HDA の legacy の経路の調べ）を Mid のエージェントが実行中（worktree ws100-volume、2026-09-30） |
+| [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | p001（設計）cleared 2026-09-30: audiod の確かめの音と software の音量、libkeiland、zdesktop の volume.c、desktop.conf に保存。5330 の HDA は Linux が legacy の `snd_hda_intel` を選ぶ（DMIC 無し）が codec は未確認。次は p002（audiod） |
 | [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | p001〜p005 cleared 2026-09-30: **i915 の実機（5330 の passthrough）で Vulkan の compute が動いた**（vkcs 9/9: dispatch・ID・right mask・push・uniform・dynamic offset・SSBO の atomic 全種・draw との混在・200 dispatch・spill）。実行器の回帰 vkx・vke1・vke2・vkc PASS。次は p006（SLM・barrier）。試験の kernel が上限 16 MiB の残り 6.7 KB（p006 で試験の build を分ける）。ユーザーの判断 D1〜D5 は「fg010 に必要な判断」 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
