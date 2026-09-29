@@ -297,6 +297,13 @@ struct zwl_object {
 	uint32_t window_height;
 	int32_t window_x;
 	int32_t window_y;
+	/*
+	 * A window that was placed as a window (so window_x and window_y hold a
+	 * place to come back to from fullscreen), and one to be centred at its
+	 * next image of a new size (it left a fullscreen it started in, ws035-p138).
+	 */
+	unsigned placed;
+	unsigned place_pending;
 	/* A surface whose current image has not been shown yet. */
 	unsigned fresh;
 	/* The glass look: the toplevel's title and application ID, and a maximized window's place and size to go back to. */
@@ -994,6 +1001,8 @@ void zwl_damage_commit(struct zwl_server *server, struct zwl_object *surface, st
 void zwl_window_bounds_refresh(struct zwl_server *server);
 int zwl_window_send_configure(struct zwl_object *surface);
 int zwl_window_enter_fullscreen(struct zwl_object *surface);
+int zwl_window_leave_fullscreen(struct zwl_object *surface);
+void zwl_window_centre(struct zwl_server *server, struct zwl_object *surface);
 int zwl_fence_ready(struct zwl_server *server, struct zwl_object *surface);
 int zwl_compose_waiting(struct zwl_server *server);
 void zwl_compose_poll(struct zwl_server *server);
@@ -1001,6 +1010,7 @@ int zwl_glass_button(struct zwl_server *server, uint32_t button, uint32_t state)
 int zwl_glass_motion(struct zwl_server *server);
 void zwl_glass_place(struct zwl_server *server, struct zwl_object *surface, int32_t width, int32_t height, int32_t step);
 void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height);
+void zwl_glass_fit(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
 void zwl_glass_tick(struct zwl_server *server);
 void zwl_glass_prefetch(struct zwl_server *server);
 int zwl_glass_wallpaper(struct zwl_server *server, const char *path);

@@ -236,7 +236,6 @@ static void draw_letter_mark(struct zwl_server *server, VkCommandBuffer command,
 static int32_t title_end(struct zwl_server *server, struct zwl_object *surface, int32_t limit);
 static const char *mark_name(const char *app_id);
 static unsigned window_square(const struct zwl_object *surface);
-static void glass_fit(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
 static int glass_crowd(struct zwl_server *server, struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
 static int glass_top(struct zwl_server *server, struct zwl_object *surface, int32_t *x, int32_t *y);
 static int glass_placed(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *other);
@@ -1248,7 +1247,7 @@ zwl_glass_place(
 	best = 0U;
 	least = -1;
 	for (index = 0U; index < count; index++) {
-		glass_fit(server, width, height, &places[index][0], &places[index][1]);
+		zwl_glass_fit(server, width, height, &places[index][0], &places[index][1]);
 		crowd = glass_crowd(server, surface, places[index][0], places[index][1], width, height);
 		if (least < 0 || crowd < least) {
 			least = crowd;
@@ -1265,41 +1264,6 @@ zwl_glass_place(
 	surface->y = places[best][1];
 }
 
-/*
- * Moves a place so that a body of a size ends inside the glass look's
- * space; a body too large for it starts at the space's top-left corner and
- * overhangs right and down.
- */
-static void
-glass_fit(
-	struct zwl_server *server,
-	int32_t width,
-	int32_t height,
-	int32_t *x,
-	int32_t *y)
-{
-	int32_t space_width;
-	int32_t space_height;
-	int32_t right;
-	int32_t bottom;
-
-	/* Its right edge inside the space. */
-	zwl_glass_space(server, &space_width, &space_height);
-	right = ZWL_GLASS_MARGIN + space_width;
-	if (*x + width > right)
-		*x = right - width;
-
-	/* And its bottom edge. */
-	bottom = ZWL_GLASS_TOP + space_height;
-	if (*y + height > bottom)
-		*y = bottom - height;
-
-	/* Never above the space, nor left of it. */
-	if (*x < ZWL_GLASS_MARGIN)
-		*x = ZWL_GLASS_MARGIN;
-	if (*y < ZWL_GLASS_TOP)
-		*y = ZWL_GLASS_TOP;
-}
 
 /*
  * Counts what a new window at a place would hide of the other windows of
@@ -1433,6 +1397,43 @@ zwl_glass_space(
 	/* Both at once. */
 	*width = space_width;
 	*height = space_height;
+}
+
+/*
+ * Moves a place so that a body of a size ends inside the glass look's
+ * space; a body too large for it starts at the space's top-left corner and
+ * overhangs right and down.  The space starts under the system bar and a
+ * floating title bar, so the title bar is never under the system bar.
+ */
+void
+zwl_glass_fit(
+	struct zwl_server *server,
+	int32_t width,
+	int32_t height,
+	int32_t *x,
+	int32_t *y)
+{
+	int32_t space_width;
+	int32_t space_height;
+	int32_t right;
+	int32_t bottom;
+
+	/* Its right edge inside the space. */
+	zwl_glass_space(server, &space_width, &space_height);
+	right = ZWL_GLASS_MARGIN + space_width;
+	if (*x + width > right)
+		*x = right - width;
+
+	/* And its bottom edge. */
+	bottom = ZWL_GLASS_TOP + space_height;
+	if (*y + height > bottom)
+		*y = bottom - height;
+
+	/* Never above the space, nor left of it. */
+	if (*x < ZWL_GLASS_MARGIN)
+		*x = ZWL_GLASS_MARGIN;
+	if (*y < ZWL_GLASS_TOP)
+		*y = ZWL_GLASS_TOP;
 }
 
 /*
@@ -3152,7 +3153,10 @@ window_undock(
 	if (!surface->maximized)
 		return;
 
-	/* From the docked space to the place asked for, at the size it had. */
+	/* The place asked for, inside the space: its title bar never under the system bar (ws035-p138). */
+	zwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &x, &y);
+
+	/* From the docked space to that place, at the size it had. */
 	docked_rect(server, &from);
 	surface->maximized = 0;
 	surface->x = x;

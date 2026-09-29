@@ -1118,18 +1118,10 @@ shell_request(
 		if (size != 0)
 			return EPROTO;
 
-		/* The window returns to its place and size before fullscreen. */
-		if (surface->fullscreen) {
-			surface->fullscreen = 0;
-			surface->x = surface->window_x;
-			surface->y = surface->window_y;
-			object->client->server->dirty = 1;
-			if (surface->configured) {
-				error = zwl_window_send_configure(surface);
-				if (error != 0)
-					return error;
-			}
-		}
+		/* The window returns to its place and size before fullscreen, or is centred (ws035-p138). */
+		error = zwl_window_leave_fullscreen(surface);
+		if (error != 0)
+			return error;
 
 		/* Succeeded: the window left fullscreen. */
 		break;
@@ -1312,6 +1304,56 @@ zwl_window_enter_fullscreen(
 		return error;
 
 	/* Succeeded: the window is fullscreen and knows it. */
+	return 0;
+}
+
+/*
+ * Takes a window out of fullscreen (the client asks, xdg_toplevel's
+ * unset_fullscreen): back to the place and size it had as a window, kept
+ * inside the space so that its title bar is not under the system bar; a
+ * window that started fullscreen and was never placed is centred in the
+ * space, now at its fullscreen size and again at its first image of
+ * another size (ws035-p138, BUG-114).  A window already configured is told.
+ * Returns 0, or the error of sending the configure.
+ */
+int
+zwl_window_leave_fullscreen(
+	struct zwl_object *surface)
+{
+	struct zwl_server *server;
+	int error;
+
+	/* Not fullscreen: nothing changes. */
+	if (!surface->fullscreen)
+		return 0;
+
+	/* Back to its place, or the space's centre when it never had one. */
+	server = surface->client->server;
+	surface->fullscreen = 0;
+	if (surface->placed) {
+		surface->x = surface->window_x;
+		surface->y = surface->window_y;
+		if (server->glass && surface->window_width != 0U)
+			zwl_glass_fit(server, (int32_t)surface->window_width, (int32_t)surface->window_height, &surface->x, &surface->y);
+	} else {
+		zwl_window_centre(server, surface);
+		surface->place_pending = 1;
+	}
+
+	/* The output is drawn again; the log names where the window went. */
+	server->dirty = 1;
+	printf("ZWL WINDOW unfullscreen surface=%u x=%d y=%d placed=%u\n", surface->id, surface->x, surface->y, surface->placed);
+
+	/* A window not configured yet learns it from its first configure. */
+	if (!surface->configured)
+		return 0;
+
+	/* A window already configured is told now. */
+	error = zwl_window_send_configure(surface);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the window is a window again. */
 	return 0;
 }
 
