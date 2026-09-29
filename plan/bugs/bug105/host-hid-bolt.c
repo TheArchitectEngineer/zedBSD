@@ -1,7 +1,11 @@
 /*
  * BUG-105: parses the three HID report descriptors of the Logi Bolt receiver
  * (046d:c548, captured on the 5330's Linux) with the kernel's HID parser and
- * decodes a mouse report (report ID 2: 16 buttons, 16-bit X/Y, wheel, AC pan).
+ * decodes a mouse report (report ID 2: 16 buttons, 16-bit X/Y, wheel, AC pan)
+ * and a keyboard report (modifiers and a 112-key bitmap in which usages 0x31
+ * and 0x32 both stand for KEY_BACKSLASH).  The third interface is Logitech's
+ * HID++ channel: it has no field the driver publishes, so its parse reports
+ * EOPNOTSUPP and the driver leaves the interface alone (ws073-p032).
  *
  *   plan/bugs/bug105/run-hid-bolt.sh [build-dir]
  *
@@ -13,6 +17,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The kernel's EOPNOTSUPP, which differs from the host's. */
+#define KERNEL_EOPNOTSUPP 21
 
 static int failures;
 
@@ -117,12 +124,36 @@ main(int argc, char **argv)
 			    info.report_count, info.field_count, info.capability_count, info.uses_report_ids);
 		}
 		printf("\n");
-		check(error == 0 || index == 2, "parse the keyboard and mouse interfaces");
+		if (index == 2)
+			check(error == KERNEL_EOPNOTSUPP, "the HID++ interface has nothing to publish");
+		else
+			check(error == 0, "parse the keyboard and mouse interfaces");
 		if (error != 0)
 			layouts[index] = NULL;
 	}
-	if (layouts[1] == NULL)
+	if (layouts[0] == NULL || layouts[1] == NULL)
 		return 1;
+
+	/* A keyboard report: left Shift, A (usage 0x04) and Non-US # (usage 0x32). */
+	{
+		uint8_t keys[16];
+
+		memset(keys, 0, sizeof(keys));
+		keys[0] = 0x02;
+		/* The bitmap starts at byte 1 with usage 0x04. */
+		keys[1 + (0x04 - 0x04) / 8] |= (uint8_t)(1U << ((0x04 - 0x04) % 8));
+		keys[1 + (0x32 - 0x04) / 8] |= (uint8_t)(1U << ((0x32 - 0x04) % 8));
+		error = drv_hid_report_decode(layouts[0], keys, sizeof(keys), &decoded);
+		printf("keyboard decode %d: %zu values\n", error, decoded.value_count);
+		check(error == 0, "decode the keyboard report");
+		value = value_of(&decoded, EV_KEY, KEY_LEFTSHIFT, &found);
+		check(found && value == 1, "KEY_LEFTSHIFT is held");
+		value = value_of(&decoded, EV_KEY, KEY_A, &found);
+		check(found && value == 1, "KEY_A is held");
+		value = value_of(&decoded, EV_KEY, KEY_BACKSLASH, &found);
+		check(found && value == 1, "Non-US # is KEY_BACKSLASH");
+		check(decoded.value_count == 3, "exactly three keys are held");
+	}
 
 	/* A mouse report: ID 2, left button, X +5, Y -3, wheel +1, pan 0. */
 	memset(report, 0, sizeof(report));
@@ -136,7 +167,7 @@ main(int argc, char **argv)
 	printf("decode (9 bytes) %d: %zu values\n", error, decoded.value_count);
 	/* The descriptor's report 2 is 1 + 2 + 4 + 1 + 1 = 9 bytes. */
 	{
-		uint8_t full[9] = { 2, 0x01, 0x00, 5, 0x00, 0xfd, 0xff, 1, 0 };
+		uint8_t full[9] = { 2, 0x01, 0x00, 5, 0x00, 0xfd, 0xff, 1, 0xfe };
 
 		error = drv_hid_report_decode(layouts[1], full, sizeof(full), &decoded);
 		printf("decode %d: %zu values\n", error, decoded.value_count);
@@ -152,6 +183,8 @@ main(int argc, char **argv)
 		check(found && value == 1, "BTN_LEFT is held");
 		value = value_of(&decoded, EV_REL, REL_WHEEL, &found);
 		check(found && value == 1, "REL_WHEEL is +1");
+		value = value_of(&decoded, EV_REL, REL_HWHEEL, &found);
+		check(found && value == -2, "AC Pan is REL_HWHEEL -2");
 	}
 
 	for (index = 0; index < 3; index++) {

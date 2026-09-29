@@ -66,6 +66,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p029](phase029/phase.md) | BUG-102 | ping を setuid root（mode 4755）にし、raw socket を開いた直後に `setuid(getuid())` で権限を落とす（ユーザーの決定、BSD と同じ）。QEMU で kei（uid 1000）から 127.0.0.1・10.0.2.2 へ ping が通る、`PING-USER:PASS` | cleared（2026-09-29） |
 | [ws073-p030](phase030/phase.md) | BUG-051 | sshd-session の子の SIGSEGV: 再現の試み（150 session・bulk 転送で 0）、観測の address を libcrypto の `ChaCha20_ctr32` の `inp` の NULL の読みと特定。原因（呼び出し側か kernel の register・stack の page か）は未確定 | in-progress（2026-09-29、BUG-104 の後に再開） |
 | [ws073-p031](phase031/phase.md) | BUG-104 | less で Ctrl-F・f（1 画面進む）と Ctrl-B（1 画面戻る）。more は不変。host の pty 試験と guest で `PAGER-KEYS:PASS` | cleared（2026-09-29） |
+| [ws073-p032](phase032/phase.md) | BUG-105 | Logi Bolt の受信機（046d:c548）の HID の descriptor を parse する: 同じ key の複数の field（0x31・0x32 → KEY_BACKSLASH）を許し、keyboard の usage を持たない array を読み飛ばし、AC Pan を REL_HWHEEL に。host 試験 PASS、HID の host 試験 3 本の回帰なし、vmunix warning 0、boot test PASS | in-progress（2026-09-29、実機の確認はユーザー待ち） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 
