@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p002（骨格と About）から。p001 は cleared（[design.md](design.md)、main の判断は design.md §9 と [proposed/](proposed/)）。OSC のデモ（fg010）の優先事項
+Resume point: p002（骨格と About）を実行中。次は p003（Network、鍵の入力を含む）。p001 は cleared（[design.md](design.md)、main の判断は design.md §9 と [proposed/](proposed/)）。OSC のデモ（fg010）の優先事項
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -26,10 +26,16 @@ Resume point: p002（骨格と About）から。p001 は cleared（[design.md](d
 - デモの受け入れ（案、p001 で確定）: 起動して項目を選ぶと頁が替わり、少なくとも About（OS の名前・版・機械）、Network（networkd の実際の状態:
   interface・address・Wi-Fi の一覧と接続）、Display（解像度・拡大）、Appearance・Wallpaper（見た目と壁紙の変更が desktop に反映）、Sound（音量、
   audiod）、Mouse・Touchpad（速さ、慣性の scroll の on/off）が実際に働く。それ以外の項目は頁の枠と「準備中」の表示でよい。App Home から起動できる。
-- **受け入れ（p001 で確定、2026-09-29）**: [design.md](design.md) §2 の表。案からの差: Display は読むだけ（拡大の変更は D1）、
-  Appearance は窓の透明度（accent の色は D2）、Storage（読むだけ）と Keyboard（repeat）を足す。Appearance・Wallpaper・Mouse・
-  Keyboard の desktop への反映は p007（main の許可）が要る。**Touchpad は準備中、慣性の on/off は出さない（D9）**。
-  案からの差（D1・D2・D9）はユーザーの確認を待つ既定であり、確認まで受け入れの確定は保留とする。
+- **受け入れ（2026-09-29 確定）**: ユーザーの回答「設定項目は、ネットワークを中心にしてください。ディスプレイはまだスタブでいいです。」と
+  main の判断による。
+  1. 起動して項目を選ぶと頁が替わる（左の項目の pane と右の頁の pane、戻る・進む・breadcrumb）。App Home から起動できる。
+  2. **Network が中心**: 接続の状態、Wi-Fi の一覧と接続・切断（**新しい network への鍵の入力を含む**）、Wi-Fi の入り切り、Ethernet、
+     address・netmask・MAC・DNS、通信量（見本の Network の頁に近い内容）。networkd の protocol に最小の追加が要るなら
+     [proposed/](proposed/) に案を置いてから実装する。
+  3. About（OS の名前・版・機械）。
+  4. Display は stub（読むだけの情報、または準備中）。accent の色と Touchpad は出さない（準備中）。
+  5. Appearance・Wallpaper・Sound・Mouse・Keyboard は Network の後の優先度（p004・p005・p007）。デモの受け入れの必須は 1〜4。
+  6. その他の項目は頁の枠と「準備中」。
 
 ## Phase
 

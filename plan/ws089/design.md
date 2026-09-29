@@ -16,6 +16,10 @@ ws089-p001（2026-09-29）。目標と見本は [ws.md](ws.md)、見本の画像
 
 ## 2. 項目と範囲（デモで働かせる範囲）
 
+**2026-09-29 ユーザーの方針**: 「設定項目は、ネットワークを中心にしてください。ディスプレイはまだスタブでいいです。」main の判断で、
+Wi-Fi の新しい network への鍵の入力も含める（networkd の protocol の最小の追加は案を [proposed/](proposed/) に置いてから）。
+Display は stub、accent と Touchpad は出さない。Appearance・Wallpaper・Sound・Mouse・Keyboard は Network の後（下の表の D7 は取り消し）。
+
 左の pane は見本の群をそのまま使い、群の間に細い区切りを置く。Home（全体の一覧）は titlebar の Home の control で開く。
 
 | 群 | 項目 | デモ（2026-10-17）での扱い | Phase |
@@ -260,7 +264,7 @@ sessiond は変えない。desktop の設定は user の home にあり、zdeskt
 | D4 | 他の WS の source の変更（vmunix.mk の link、libkeiland の追加 4 つ、zdesktop の設定の適用、App Home の歯車） | この WS の Phase で最小の追加として行う（main の許可の後）。`keiland.h`・exports.map・`KEILAND_VERSION` は WS081・WS035 と衝突しうるので、足すたびに main と順序を合わせる | 所有は WS035 等。[proposed/](proposed/) に差分の案 |
 | D5 | canvas・text・icons の共有 | files の source を compile して共有（files は変えない） | 複写 2,500 行を避け、見た目を揃える。F-038 の本当の共有は files の WS の判断 |
 | D6 | 準備中の項目 | 見本の項目を全部出し、働かないものは「準備中」 | ユーザーの見本の構成を保つ |
-| D7 | 新しい Wi-Fi に鍵を打って join | 出さない（保存済みだけ） | networkd の protocol の追加が要る |
+| D7 | 新しい Wi-Fi に鍵を打って join | **2026-09-29 取り消し: 含める**（main の判断、ユーザーの Network 中心の方針） | networkd の protocol の最小の追加は p003 で案を置いてから |
 | D8 | 同梱の壁紙の追加 | 2 枚（今の既定と Kei の画像の PPM）で始める | デモの image の script（`plan/ws075/demo/build-demo-image.sh`）は WS075 の所有 |
 | D9 | Touchpad の頁と慣性の scroll の on/off（ws.md の受け入れ案にある） | Touchpad は準備中、慣性の on/off は出さない | touchpad の driver が無い。慣性はデモの見せ場で、切る設定は 5 つの app の変更 |
 | D10 | デモの image への `settings`・`audiod` の追加 | main に依頼（WS075 の config） | App Home の entry と Sound がデモで働くのに要る |
