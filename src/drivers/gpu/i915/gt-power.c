@@ -377,6 +377,16 @@ drv_i915_rps_start(
 	rps->work_ready = 1;
 	rps->mmio = mmio;
 
+	/*
+	 * Starts from the efficient frequency, or higher, as unpark does,
+	 * before any interrupt can reach the work.
+	 */
+	freq = rps->cur_freq;
+	if (freq < rps->efficient_freq)
+		freq = rps->efficient_freq;
+	i915_rps_set_freq(rps, freq);
+	rps->last_adj = 0;
+
 	/* Clears what the GTPM source may have pending before any of it is enabled (rps_reset_interrupts()). */
 	drv_i915_gt_pm_reset_iir(irq);
 	flags = spin_lock_irqsave(&rps->lock);
@@ -402,13 +412,6 @@ drv_i915_rps_start(
 
 	/* Lets the events through the mask that follows the frequency. */
 	drv_i915_write32(mmio, GEN6_PMINTRMSK, drv_i915_rps_pm_mask(rps, rps->last_freq));
-
-	/* Starts from the efficient frequency, or higher, as unpark does. */
-	freq = rps->cur_freq;
-	if (freq < rps->efficient_freq)
-		freq = rps->efficient_freq;
-	i915_rps_set_freq(rps, freq);
-	rps->last_adj = 0;
 
 	/* The start's report. */
 	kern_logf("i915: rps: started min=%u RPe=%u RP0=%u freq=%u events=0x%x clock=%uHz\n",
