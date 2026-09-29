@@ -256,8 +256,8 @@ te_menu_popup(
 	if (menu->context == NULL || menu->popup != NULL)
 		return;
 
-	/* The menu at the place, for the last input. */
-	menu->popup = keiland_menu_popup(menu->service, menu->context, menu->window->surface, x, y, menu->window->seat, menu->window->serial, &menu_context_listener, menu);
+	/* The menu at the place, for the last press. */
+	menu->popup = keiland_menu_popup(menu->service, menu->context, menu->window->surface, x, y, menu->window->seat, menu->window->press_serial, &menu_context_listener, menu);
 	if (menu->popup == NULL) {
 		te_log("MENU popup-failed errno=%d", errno);
 		return;

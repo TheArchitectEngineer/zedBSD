@@ -785,6 +785,8 @@ window_pointer_button(
 	(void)time;
 	window = data;
 	window->serial = serial;
+	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
+		window->press_serial = serial;
 	event = te_window_push(window, TE_EVENT_BUTTON);
 	if (event == NULL)
 		return;
@@ -1100,11 +1102,15 @@ window_touch_down(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	/* Queued; the window has one surface. */
+	struct te_window *window;
+
+	/* Queued, its serial kept for a long press's context menu; the window has one surface. */
 	(void)touch;
-	(void)serial;
 	(void)surface;
-	window_touch_push(data, TE_TOUCH_DOWN, time, id, x, y);
+	window = data;
+	window->serial = serial;
+	window->press_serial = serial;
+	window_touch_push(window, TE_TOUCH_DOWN, time, id, x, y);
 }
 
 /* A finger lifts. */

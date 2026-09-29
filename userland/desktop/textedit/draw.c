@@ -521,6 +521,7 @@ draw_dialog(
 	static const char *const about[] = { "OK" };
 	struct te_rect buttons[3];
 	struct te_rect card;
+	struct te_rect window_card;
 	const char *const *labels;
 	char title[TE_PATH_MAX + 64];
 	const char *words;
@@ -528,8 +529,9 @@ draw_dialog(
 	int count;
 	int index;
 
-	/* The shade, and the panel. */
-	te_canvas_blend(canvas, 0, 0, canvas->width, canvas->height, DRAW_SHADE);
+	/* The shade over the window's card (the desktop around it stays clear), and the panel. */
+	te_app_card(app, &window_card);
+	te_canvas_round(canvas, window_card.x, window_card.y, window_card.width, window_card.height, TE_CARD_RADIUS, DRAW_SHADE);
 	te_app_dialog_layout(app, &card, buttons, &count);
 	te_canvas_round(canvas, card.x - 1, card.y - 1, card.width + 2, card.height + 2, 15, DRAW_PANEL_EDGE);
 	te_canvas_round(canvas, card.x, card.y, card.width, card.height, 14, DRAW_PANEL);

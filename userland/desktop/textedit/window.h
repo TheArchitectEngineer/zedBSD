@@ -76,11 +76,16 @@ struct te_window {
 	int configured;
 	int closed;
 
-	/* The pointer's place, the modifiers held (TE_MOD_*), and the serial of the last input (for the selections). */
+	/*
+	 * The pointer's place, the modifiers held (TE_MOD_*), the serial of the
+	 * last input (for the selections), and the serial of the last press of
+	 * a button or a finger (a context menu opens for a press).
+	 */
 	int pointer_x;
 	int pointer_y;
 	uint32_t modifiers;
 	uint32_t serial;
+	uint32_t press_serial;
 
 	/* The key held for repeating (0 when none), when it repeats next, and the repeat's delay and interval. */
 	uint32_t repeat_key;
