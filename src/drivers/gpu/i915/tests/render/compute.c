@@ -47,7 +47,23 @@
  *  - ATOMIC-SHARED: shared-memory atomics between barriers;
  *  - LOOP: prefix sums by a loop of six steps with two barriers each;
  *  - REFUSE: shared memory past 16 KiB, a barrier after a return and one in
- *    a loop some invocations skip are refused at vkCreateComputePipelines.
+ *    a loop some invocations skip are refused at vkCreateComputePipelines;
+ *
+ * and the steps of indirect dispatches, run-time arrays and a large grid
+ * (ws101-p007):
+ *
+ *  - INDIRECT: ADD's grid of 16 groups read from a buffer at an offset
+ *    (vkCmdDispatchIndirect);
+ *  - INDIRECT-ID: ID's 3 x 2 x 2 groups read from a buffer, which is also
+ *    what gl_NumWorkGroups reads;
+ *  - INDIRECT-GPU: a dispatch writes the counts, and the indirect dispatch
+ *    after it in the same command buffer reads them;
+ *  - INDIRECT-ZERO: three indirect dispatches with a count of zero write
+ *    nothing (and the GPU goes on);
+ *  - LENGTH: .length() of run-time arrays over the bound ranges;
+ *  - MANY: ADD over n = 4,000,000 in 62,500 groups, the size of Noct's
+ *    demonstration, with three 16 MB buffers of objects of their own; the
+ *    time of the submission is logged.
  *
  * Each step logs "VKCS-<name> PASS" or "FAIL", then the thread logs the
  * verdict and closes the session.
@@ -102,7 +118,12 @@
 #define I915_VKCS_BUF_W			7U
 #define I915_VKCS_BUF_U			8U
 #define I915_VKCS_BUF_S			9U
-#define I915_VKCS_BUFFERS		10U
+#define I915_VKCS_BUF_G			10U
+#define I915_VKCS_BUF_MANY_A		11U
+#define I915_VKCS_BUF_MANY_B		12U
+#define I915_VKCS_BUF_MANY_C		13U
+#define I915_VKCS_BUFFERS		14U
+
 
 /* The compute kernels, as the index of their modules and pipelines. */
 #define I915_VKCS_KERNEL_ONE		0U
@@ -122,7 +143,9 @@
 #define I915_VKCS_KERNEL_REFUSE_BIG	14U
 #define I915_VKCS_KERNEL_REFUSE_RETURN	15U
 #define I915_VKCS_KERNEL_REFUSE_LOOP	16U
-#define I915_VKCS_KERNELS		17U
+#define I915_VKCS_KERNEL_GRID		17U
+#define I915_VKCS_KERNEL_LENGTH		18U
+#define I915_VKCS_KERNELS		19U
 
 /* The steps' sets, one a step that dispatches. */
 #define I915_VKCS_SET_ONE		0U
@@ -135,7 +158,10 @@
 #define I915_VKCS_SET_SPILL		7U
 #define I915_VKCS_SET_TWO		8U
 #define I915_VKCS_SET_THREE		9U
-#define I915_VKCS_SETS			10U
+#define I915_VKCS_SET_GRID		10U
+#define I915_VKCS_SET_LENGTH		11U
+#define I915_VKCS_SET_MANY		12U
+#define I915_VKCS_SETS			13U
 
 /* The identities the wire names the scenario's objects by. */
 #define I915_VKCS_IDENTITY		0x7e5ec50000000000ULL
@@ -166,6 +192,7 @@
 #define I915_VKCS_OP_BIND_VERTEX_BUFFERS	105U
 #define I915_VKCS_OP_DRAW			106U
 #define I915_VKCS_OP_DISPATCH			110U
+#define I915_VKCS_OP_DISPATCH_INDIRECT		111U
 #define I915_VKCS_OP_COPY_IMAGE_TO_BUFFER	116U
 #define I915_VKCS_OP_PUSH_CONSTANTS		132U
 #define I915_VKCS_OP_BEGIN_RENDER_PASS		133U
@@ -207,6 +234,26 @@
 #define I915_VKCS_ODDBAR_GROUPS		10U
 #define I915_VKCS_ATOMSH_GROUPS		16U
 #define I915_VKCS_ATOMSH_WORDS		20U
+
+/*
+ * The indirect steps' counts, as word offsets in G: INDIRECT's at 4 (byte
+ * 16), INDIRECT-ID's at 0, INDIRECT-GPU's at 8 (written by the GPU), and
+ * INDIRECT-ZERO's three grids at 12, 16 and 20.
+ */
+#define I915_VKCS_G_ADD			4U
+#define I915_VKCS_G_IDS			0U
+#define I915_VKCS_G_GPU			8U
+#define I915_VKCS_G_ZERO		12U
+
+/* The LENGTH step's ranges: 100 words of W; T's 8-byte head, 37 structures of 12 bytes and 5 bytes more. */
+#define I915_VKCS_LENGTH_W_RANGE	400U
+#define I915_VKCS_LENGTH_T_RANGE	457U
+
+/* The MANY step: n, its groups of 64, and the bytes of each of its buffers. */
+#define I915_VKCS_MANY_N		4000000U
+#define I915_VKCS_MANY_GROUPS		62500U
+#define I915_VKCS_MANY_BYTES		(I915_VKCS_MANY_N * 4U)
+#define I915_VKCS_MANY_OBJECTS		3U
 
 /* The words of the atomic step's block (atomic.comp's H). */
 #define I915_VKCS_H_BINS		0U
@@ -261,8 +308,18 @@ struct i915_vkcs {
 	struct i915_gfx_pass load_pass;
 	struct i915_gfx_framebuffer framebuffer;
 
-	/* The buffers, one region of the storage each. */
+	/* The buffers, one region of the storage each (the MANY step's in objects of their own). */
 	struct i915_gfx_buffer buffers[I915_VKCS_BUFFERS];
+
+	/*
+	 * The MANY step's three objects of 16 MB (a buffer is at most one
+	 * object, which is contiguous memory), their CPU views and memories;
+	 * nonzero many_ready once all three are bound.
+	 */
+	struct i915_gem_object *many_objects[I915_VKCS_MANY_OBJECTS];
+	uint32_t *many_cpu[I915_VKCS_MANY_OBJECTS];
+	struct i915_gfx_memory many_memory[I915_VKCS_MANY_OBJECTS];
+	int many_ready;
 
 	/* The compute modules (their pipelines are made through the wire), and the mixed step's graphics pipeline. */
 	struct i915_gfx_shader modules[I915_VKCS_KERNELS];
@@ -349,6 +406,19 @@ static const struct i915_vkcs_binding i915_vkcs_bindings[I915_VKCS_SETS][I915_VK
 		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_B, I915_VKCS_REGION_BYTES },
 		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_D, I915_VKCS_REGION_BYTES },
 	},
+	[I915_VKCS_SET_GRID] = {
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_G, I915_VKCS_REGION_BYTES },
+	},
+	[I915_VKCS_SET_LENGTH] = {
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_C, I915_VKCS_REGION_BYTES },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_A, I915_VKCS_LENGTH_W_RANGE },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_B, I915_VKCS_LENGTH_T_RANGE },
+	},
+	[I915_VKCS_SET_MANY] = {
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_MANY_A, I915_VKCS_MANY_BYTES },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_MANY_B, I915_VKCS_MANY_BYTES },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_MANY_C, I915_VKCS_MANY_BYTES },
+	},
 };
 
 /* How many bindings each step's set has. */
@@ -363,6 +433,9 @@ static const uint32_t i915_vkcs_binding_counts[I915_VKCS_SETS] = {
 	[I915_VKCS_SET_SPILL] = 1U,
 	[I915_VKCS_SET_TWO] = 2U,
 	[I915_VKCS_SET_THREE] = 3U,
+	[I915_VKCS_SET_GRID] = 1U,
+	[I915_VKCS_SET_LENGTH] = 3U,
+	[I915_VKCS_SET_MANY] = 3U,
 };
 
 static void i915_vkcs_thread(void *argument);
@@ -370,6 +443,8 @@ static int i915_vkcs_wait_node(struct i915_device *device);
 static int i915_vkcs_setup(struct i915_vkcs *x);
 static void i915_vkcs_teardown(struct i915_vkcs *x);
 static int i915_vkcs_storage_create(struct i915_vkcs *x);
+static int i915_vkcs_many_create(struct i915_vkcs *x);
+static void i915_vkcs_many_destroy(struct i915_vkcs *x);
 static void i915_vkcs_objects_init(struct i915_vkcs *x);
 static void i915_vkcs_layouts_init(struct i915_vkcs *x);
 static void i915_vkcs_layout_init(struct i915_vkcs *x, uint32_t set, const struct i915_vkcs_binding *bindings, uint32_t count);
@@ -391,6 +466,7 @@ static void i915_vkcs_begin(struct i915_vkcs *x);
 static void i915_vkcs_bind_compute(struct i915_vkcs *x, uint32_t kernel, uint32_t set, int dynamic, uint32_t offset);
 static void i915_vkcs_push(struct i915_vkcs *x, const uint32_t *words, uint32_t count);
 static void i915_vkcs_dispatch(struct i915_vkcs *x, uint32_t gx, uint32_t gy, uint32_t gz);
+static void i915_vkcs_dispatch_indirect(struct i915_vkcs *x, uint32_t buffer, uint32_t offset);
 static void i915_vkcs_begin_pass(struct i915_vkcs *x, uint64_t pass);
 static void i915_vkcs_draw(struct i915_vkcs *x, uint32_t buffer);
 static void i915_vkcs_copy_target(struct i915_vkcs *x, uint32_t buffer);
@@ -403,7 +479,7 @@ static int i915_vkcs_ready(struct i915_vkcs *x, uint32_t kernel, const char *wha
 static uint32_t i915_vkcs_hash(uint32_t value);
 static void i915_vkcs_step_one(struct i915_vkcs *x);
 static void i915_vkcs_step_add(struct i915_vkcs *x);
-static void i915_vkcs_step_ids(struct i915_vkcs *x, const char *what, uint32_t kernel, const uint32_t local[3]);
+static void i915_vkcs_step_ids(struct i915_vkcs *x, const char *what, uint32_t kernel, const uint32_t local[3], int indirect);
 static void i915_vkcs_step_push(struct i915_vkcs *x);
 static void i915_vkcs_step_atomic(struct i915_vkcs *x);
 static void i915_vkcs_step_mixed(struct i915_vkcs *x);
@@ -416,6 +492,15 @@ static void i915_vkcs_step_oddbar(struct i915_vkcs *x);
 static void i915_vkcs_step_atomsh(struct i915_vkcs *x);
 static void i915_vkcs_step_scan(struct i915_vkcs *x);
 static void i915_vkcs_step_refuse(struct i915_vkcs *x);
+static void i915_vkcs_add_inputs(struct i915_vkcs *x);
+static void i915_vkcs_add_check(struct i915_vkcs *x, const char *what, uint32_t n);
+static void i915_vkcs_grid(struct i915_vkcs *x, uint32_t at, uint32_t gx, uint32_t gy, uint32_t gz);
+static void i915_vkcs_step_indirect(struct i915_vkcs *x);
+static void i915_vkcs_step_indirect_gpu(struct i915_vkcs *x);
+static void i915_vkcs_step_indirect_zero(struct i915_vkcs *x);
+static void i915_vkcs_step_length(struct i915_vkcs *x);
+static void i915_vkcs_step_big(struct i915_vkcs *x);
+static uint64_t i915_vkcs_now_us(void);
 static int i915_vkcs_run(struct i915_vkcs *x, const char *what, uint32_t kernel, uint32_t set, uint32_t groups);
 
 /*
@@ -485,8 +570,8 @@ i915_vkcs_thread(
 	/* Runs every step, from the single channel outwards; each logs its own verdict. */
 	i915_vkcs_step_one(x);
 	i915_vkcs_step_add(x);
-	i915_vkcs_step_ids(x, "ID", I915_VKCS_KERNEL_IDS, ids_local);
-	i915_vkcs_step_ids(x, "ODD", I915_VKCS_KERNEL_ODD, odd_local);
+	i915_vkcs_step_ids(x, "ID", I915_VKCS_KERNEL_IDS, ids_local, 0);
+	i915_vkcs_step_ids(x, "ODD", I915_VKCS_KERNEL_ODD, odd_local, 0);
 	i915_vkcs_step_push(x);
 	i915_vkcs_step_atomic(x);
 	i915_vkcs_step_mixed(x);
@@ -498,6 +583,14 @@ i915_vkcs_thread(
 	i915_vkcs_step_atomsh(x);
 	i915_vkcs_step_scan(x);
 	i915_vkcs_step_refuse(x);
+
+	/* The indirect dispatches, the run-time arrays and the large grid (ws101-p007). */
+	i915_vkcs_step_indirect(x);
+	i915_vkcs_step_ids(x, "INDIRECT-ID", I915_VKCS_KERNEL_IDS, ids_local, 1);
+	i915_vkcs_step_indirect_gpu(x);
+	i915_vkcs_step_indirect_zero(x);
+	i915_vkcs_step_length(x);
+	i915_vkcs_step_big(x);
 
 	/* Gives everything back and says how the steps went. */
 	i915_vkcs_teardown(x);
@@ -558,6 +651,11 @@ i915_vkcs_setup(
 	error = i915_vkcs_storage_create(x);
 	if (error != 0)
 		return error;
+
+	/* Makes the MANY step's objects; without them only that step fails. */
+	error = i915_vkcs_many_create(x);
+	if (error != 0)
+		kern_logf("i915: vkcs: the MANY step's objects were not made: %d\n", error);
 
 	/* Describes the objects over the storage and publishes them. */
 	i915_vkcs_objects_init(x);
@@ -625,8 +723,9 @@ i915_vkcs_teardown(
 		x->graphics_ready = 0;
 	}
 
-	/* Unbinds and destroys the storage. */
+	/* Unbinds and destroys the MANY step's objects, then the storage. */
 	device = x->device;
+	i915_vkcs_many_destroy(x);
 	if (x->storage != NULL) {
 		mutex_lock(&device->mutex);
 
@@ -683,6 +782,83 @@ i915_vkcs_storage_create(
 }
 
 /*
+ * Makes the MANY step's three objects of 16 MB, bound into the session's
+ * address space (each is contiguous memory, as a Vulkan allocation's
+ * object is); on a failure the ones made so far are destroyed.
+ */
+static int
+i915_vkcs_many_create(
+	struct i915_vkcs *x)
+{
+	struct i915_device *device;
+	uint32_t index;
+	int error;
+
+	/* Each object, created and bound under the device's lock. */
+	device = x->device;
+	error = 0;
+	mutex_lock(&device->mutex);
+	for (index = 0U; index < I915_VKCS_MANY_OBJECTS; index++) {
+		error = drv_i915_gem_create(&device->gem, I915_VKCS_MANY_BYTES, &x->many_objects[index]);
+		if (error != 0) {
+			x->many_objects[index] = NULL;
+			break;
+		}
+
+		/* Bound, or destroyed again. */
+		error = drv_i915_gem_bind_vm(x->session->vm, x->many_objects[index]);
+		if (error != 0) {
+			drv_i915_gem_destroy(&device->gem, x->many_objects[index]);
+			x->many_objects[index] = NULL;
+			break;
+		}
+
+		/* The step writes and reads it through its CPU view. */
+		x->many_cpu[index] = x->many_objects[index]->address;
+	}
+
+	/* The objects are made, or the first failure stopped the loop. */
+	mutex_unlock(&device->mutex);
+
+	/* A failure gives back what was made. */
+	if (error != 0) {
+		i915_vkcs_many_destroy(x);
+		return error;
+	}
+
+	/* Succeeded: the step can run. */
+	x->many_ready = 1;
+	return 0;
+}
+
+/* Unbinds and destroys the MANY step's objects that were made. */
+static void
+i915_vkcs_many_destroy(
+	struct i915_vkcs *x)
+{
+	struct i915_device *device;
+	uint32_t index;
+
+	/* Each object that exists, under the device's lock. */
+	device = x->device;
+	mutex_lock(&device->mutex);
+	for (index = 0U; index < I915_VKCS_MANY_OBJECTS; index++) {
+		if (x->many_objects[index] == NULL)
+			continue;
+		drv_i915_gem_unbind_vm(x->many_objects[index]);
+		drv_i915_gem_destroy(&device->gem, x->many_objects[index]);
+		x->many_objects[index] = NULL;
+		x->many_cpu[index] = NULL;
+	}
+
+	/* The lock goes back. */
+	mutex_unlock(&device->mutex);
+
+	/* Nothing is left for the step. */
+	x->many_ready = 0;
+}
+
+/*
  * Describes every object the steps use over the storage: the target, the
  * passes and the framebuffer, the buffers, the modules, the graphics
  * pipeline and the layouts.
@@ -712,6 +888,8 @@ i915_vkcs_objects_init(
 		{ i915_vkcs_refuse_big_comp, sizeof(i915_vkcs_refuse_big_comp) },
 		{ i915_vkcs_refuse_retbar_comp, sizeof(i915_vkcs_refuse_retbar_comp) },
 		{ i915_vkcs_refuse_loopbar_comp, sizeof(i915_vkcs_refuse_loopbar_comp) },
+		{ i915_vkcs_grid_comp, sizeof(i915_vkcs_grid_comp) },
+		{ i915_vkcs_length_comp, sizeof(i915_vkcs_length_comp) },
 	};
 	struct i915_gfx_pipeline *pipeline;
 	struct i915_gfx_buffer *buffer;
@@ -757,10 +935,25 @@ i915_vkcs_objects_init(
 		buffer->usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
 				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
 				VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+				VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
 				VK_BUFFER_USAGE_TRANSFER_DST_BIT |
 				VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 		buffer->memory = &x->memory;
 		buffer->offset = (uint64_t)(index + 1U) * I915_VKCS_REGION_BYTES;
+	}
+
+	/* The MANY step's buffers: each the whole of its own object (unbound when the objects could not be made). */
+	for (index = 0U; index < I915_VKCS_MANY_OBJECTS; index++) {
+		x->many_memory[index].vk = x->device->vk;
+		x->many_memory[index].identity = I915_VKCS_IDENTITY + 0x500U + index;
+		x->many_memory[index].size = I915_VKCS_MANY_BYTES;
+		x->many_memory[index].object = x->many_objects[index];
+		buffer = &x->buffers[I915_VKCS_BUF_MANY_A + index];
+		buffer->size = I915_VKCS_MANY_BYTES;
+		buffer->memory = NULL;
+		buffer->offset = 0U;
+		if (x->many_ready != 0)
+			buffer->memory = &x->many_memory[index];
 	}
 
 	/* The modules borrow the generated words, which the compiler only reads. */
@@ -1016,8 +1209,10 @@ i915_vkcs_sets_update(
 	uint32_t binding;
 	int error;
 
-	/* Every binding of every set. */
+	/* Every binding of every set (the MANY step's only when its objects were made). */
 	for (set = 0U; set < I915_VKCS_SETS; set++) {
+		if (set == I915_VKCS_SET_MANY && x->many_ready == 0)
+			continue;
 		layout = &x->layouts[set];
 		for (binding = 0U; binding < layout->count; binding++) {
 			/* The write's head: the set, the binding, element 0, one descriptor of the layout's type. */
@@ -1323,6 +1518,19 @@ i915_vkcs_dispatch(
 	i915_vkcs_put32(x, gx);
 	i915_vkcs_put32(x, gy);
 	i915_vkcs_put32(x, gz);
+}
+
+/* Appends vkCmdDispatchIndirect of the counts in one buffer at a byte offset: [buffer][offset] (ws101-p007). */
+static void
+i915_vkcs_dispatch_indirect(
+	struct i915_vkcs *x,
+	uint32_t buffer,
+	uint32_t offset)
+{
+	/* The buffer and the offset of its three counts. */
+	i915_vkcs_record(x, I915_VKCS_OP_DISPATCH_INDIRECT);
+	i915_vkcs_put64(x, I915_VKCS_ID_BUFFER + buffer);
+	i915_vkcs_put64(x, offset);
 }
 
 /*
@@ -1697,14 +1905,16 @@ i915_vkcs_step_add(
  * each invocation writes its local ID, local index, group ID, group
  * counts and global ID at 13 * its global linear index, and counts itself.
  * The words past the last record keep their sentinel, so a channel past
- * the group's invocations that ran would show.
+ * the group's invocations that ran would show.  INDIRECT-ID (indirect set,
+ * ws101-p007) reads the groups from G, and gl_NumWorkGroups with them.
  */
 static void
 i915_vkcs_step_ids(
 	struct i915_vkcs *x,
 	const char *what,
 	uint32_t kernel,
-	const uint32_t local[3])
+	const uint32_t local[3],
+	int indirect)
 {
 	static const uint32_t groups[3] = { 3U, 2U, 2U };
 	const uint32_t *words;
@@ -1727,10 +1937,18 @@ i915_vkcs_step_ids(
 	count[0] = 0U;
 	i915_vkcs_flush(x, I915_VKCS_BUF_B);
 
-	/* Records the pipeline, the set and the groups; runs it. */
+	/* Records the pipeline, the set and the groups (or G's counts); runs it. */
 	i915_vkcs_begin(x);
 	i915_vkcs_bind_compute(x, kernel, I915_VKCS_SET_IDS, 0, 0U);
-	i915_vkcs_dispatch(x, groups[0], groups[1], groups[2]);
+	if (indirect != 0) {
+		i915_vkcs_fill(x, I915_VKCS_BUF_G, 0U);
+		i915_vkcs_grid(x, I915_VKCS_G_IDS, groups[0], groups[1], groups[2]);
+		i915_vkcs_dispatch_indirect(x, I915_VKCS_BUF_G, I915_VKCS_G_IDS * 4U);
+	} else {
+		i915_vkcs_dispatch(x, groups[0], groups[1], groups[2]);
+	}
+
+	/* Runs it. */
 	error = i915_vkcs_finish(x, what);
 	if (error != 0) {
 		i915_vkcs_verdict(x, what, error);
@@ -2468,4 +2686,349 @@ i915_vkcs_step_refuse(
 	i915_vkcs_check(x, "REFUSE", I915_VKCS_KERNEL_REFUSE_RETURN, (uint32_t)x->made[I915_VKCS_KERNEL_REFUSE_RETURN], 0U);
 	i915_vkcs_check(x, "REFUSE", I915_VKCS_KERNEL_REFUSE_LOOP, (uint32_t)x->made[I915_VKCS_KERNEL_REFUSE_LOOP], 0U);
 	i915_vkcs_verdict(x, "REFUSE", i915_vkcs_checked(x, "REFUSE"));
+}
+
+/* Writes ADD's inputs into A and B and fills C with the sentinel (the formulas of the ADD step). */
+static void
+i915_vkcs_add_inputs(
+	struct i915_vkcs *x)
+{
+	uint32_t *a;
+	uint32_t *b;
+	uint32_t index;
+
+	/* A and B from their index, C all sentinel. */
+	a = i915_vkcs_words(x, I915_VKCS_BUF_A);
+	b = i915_vkcs_words(x, I915_VKCS_BUF_B);
+	for (index = 0U; index < I915_VKCS_REGION_WORDS; index++) {
+		a[index] = index * 0x9e3779b9U;
+		b[index] = index ^ 0x5a5a5a5aU;
+	}
+
+	/* Written back for the GPU, C filled. */
+	i915_vkcs_flush(x, I915_VKCS_BUF_A);
+	i915_vkcs_flush(x, I915_VKCS_BUF_B);
+	i915_vkcs_fill(x, I915_VKCS_BUF_C, I915_VKCS_SENTINEL);
+}
+
+/* Checks C after ADD over 16 groups: a + b below n (0: nothing written), the sentinel from n on; logs the verdict. */
+static void
+i915_vkcs_add_check(
+	struct i915_vkcs *x,
+	const char *what,
+	uint32_t n)
+{
+	const uint32_t *a;
+	const uint32_t *b;
+	const uint32_t *c;
+	uint32_t index;
+
+	/* The sums below n, the sentinel from n on, a group past the last. */
+	i915_vkcs_flush(x, I915_VKCS_BUF_C);
+	a = i915_vkcs_words(x, I915_VKCS_BUF_A);
+	b = i915_vkcs_words(x, I915_VKCS_BUF_B);
+	c = i915_vkcs_words(x, I915_VKCS_BUF_C);
+	for (index = 0U; index < I915_VKCS_ADD_GROUPS * 64U + 64U; index++) {
+		if (index < n) {
+			i915_vkcs_check(x, what, index, c[index], a[index] + b[index]);
+		} else {
+			i915_vkcs_check(x, what, index, c[index], I915_VKCS_SENTINEL);
+		}
+	}
+
+	/* The step's verdict. */
+	i915_vkcs_verdict(x, what, i915_vkcs_checked(x, what));
+}
+
+/* Writes three group counts into G at a word, on the CPU, and makes them visible to the GPU. */
+static void
+i915_vkcs_grid(
+	struct i915_vkcs *x,
+	uint32_t at,
+	uint32_t gx,
+	uint32_t gy,
+	uint32_t gz)
+{
+	uint32_t *g;
+
+	/* The counts along x, y and z. */
+	g = i915_vkcs_words(x, I915_VKCS_BUF_G);
+	g[at] = gx;
+	g[at + 1U] = gy;
+	g[at + 2U] = gz;
+	i915_vkcs_flush(x, I915_VKCS_BUF_G);
+}
+
+/*
+ * INDIRECT (ws101-p007): ADD over n = 1000 with its 16 x 1 x 1 groups read
+ * from G at byte 16 by vkCmdDispatchIndirect; the words before and after
+ * the counts are other grids' (zeros), so a read at the wrong place runs
+ * nothing.
+ */
+static void
+i915_vkcs_step_indirect(
+	struct i915_vkcs *x)
+{
+	uint32_t n;
+	int ready;
+	int error;
+
+	/* Needs ADD's pipeline. */
+	ready = i915_vkcs_ready(x, I915_VKCS_KERNEL_ADD, "INDIRECT");
+	if (ready == 0)
+		return;
+
+	/* The inputs, and the counts in G among zeros. */
+	i915_vkcs_add_inputs(x);
+	i915_vkcs_fill(x, I915_VKCS_BUF_G, 0U);
+	i915_vkcs_grid(x, I915_VKCS_G_ADD, I915_VKCS_ADD_GROUPS, 1U, 1U);
+
+	/* Records n, the pipeline, the set and the indirect dispatch; runs it. */
+	n = I915_VKCS_ADD_N;
+	i915_vkcs_begin(x);
+	i915_vkcs_bind_compute(x, I915_VKCS_KERNEL_ADD, I915_VKCS_SET_ADD, 0, 0U);
+	i915_vkcs_push(x, &n, 1U);
+	i915_vkcs_dispatch_indirect(x, I915_VKCS_BUF_G, I915_VKCS_G_ADD * 4U);
+	error = i915_vkcs_finish(x, "INDIRECT");
+	if (error != 0) {
+		i915_vkcs_verdict(x, "INDIRECT", error);
+		return;
+	}
+
+	/* As ADD. */
+	i915_vkcs_add_check(x, "INDIRECT", n);
+}
+
+/*
+ * INDIRECT-GPU (ws101-p007): in one command buffer, GRID writes 16, 1, 1
+ * into G at word 8 on the GPU, and ADD's indirect dispatch reads its counts
+ * there; G starts at zero, so counts read before the GPU wrote them run
+ * nothing and the step fails.
+ */
+static void
+i915_vkcs_step_indirect_gpu(
+	struct i915_vkcs *x)
+{
+	uint32_t grid[4];
+	const uint32_t *g;
+	uint32_t n;
+	int ready;
+	int error;
+
+	/* Needs both pipelines. */
+	ready = i915_vkcs_ready(x, I915_VKCS_KERNEL_GRID, "INDIRECT-GPU");
+	if (ready == 0)
+		return;
+	ready = i915_vkcs_ready(x, I915_VKCS_KERNEL_ADD, "INDIRECT-GPU");
+	if (ready == 0)
+		return;
+
+	/* The inputs, and G all zero. */
+	i915_vkcs_add_inputs(x);
+	i915_vkcs_fill(x, I915_VKCS_BUF_G, 0U);
+
+	/* Records GRID writing the counts, then ADD reading them; runs both. */
+	grid[0] = I915_VKCS_G_GPU;
+	grid[1] = I915_VKCS_ADD_GROUPS;
+	grid[2] = 1U;
+	grid[3] = 1U;
+	n = I915_VKCS_ADD_N;
+	i915_vkcs_begin(x);
+	i915_vkcs_bind_compute(x, I915_VKCS_KERNEL_GRID, I915_VKCS_SET_GRID, 0, 0U);
+	i915_vkcs_push(x, grid, 4U);
+	i915_vkcs_dispatch(x, 1U, 1U, 1U);
+	i915_vkcs_bind_compute(x, I915_VKCS_KERNEL_ADD, I915_VKCS_SET_ADD, 0, 0U);
+	i915_vkcs_push(x, &n, 1U);
+	i915_vkcs_dispatch_indirect(x, I915_VKCS_BUF_G, I915_VKCS_G_GPU * 4U);
+	error = i915_vkcs_finish(x, "INDIRECT-GPU");
+	if (error != 0) {
+		i915_vkcs_verdict(x, "INDIRECT-GPU", error);
+		return;
+	}
+
+	/* The counts GRID wrote, then ADD's words. */
+	i915_vkcs_flush(x, I915_VKCS_BUF_G);
+	g = i915_vkcs_words(x, I915_VKCS_BUF_G);
+	i915_vkcs_check(x, "INDIRECT-GPU", 0x1000U + I915_VKCS_G_GPU, g[I915_VKCS_G_GPU], I915_VKCS_ADD_GROUPS);
+	i915_vkcs_check(x, "INDIRECT-GPU", 0x1001U + I915_VKCS_G_GPU, g[I915_VKCS_G_GPU + 1U], 1U);
+	i915_vkcs_check(x, "INDIRECT-GPU", 0x1002U + I915_VKCS_G_GPU, g[I915_VKCS_G_GPU + 2U], 1U);
+	i915_vkcs_add_check(x, "INDIRECT-GPU", n);
+}
+
+/*
+ * INDIRECT-ZERO (ws101-p007): three indirect dispatches of ADD whose grids
+ * have a zero along x, y and z; C keeps its sentinel, and the command
+ * buffer (and the steps after it) run on.
+ */
+static void
+i915_vkcs_step_indirect_zero(
+	struct i915_vkcs *x)
+{
+	uint32_t n;
+	uint32_t index;
+	int ready;
+	int error;
+
+	/* Needs ADD's pipeline. */
+	ready = i915_vkcs_ready(x, I915_VKCS_KERNEL_ADD, "INDIRECT-ZERO");
+	if (ready == 0)
+		return;
+
+	/* The inputs, and the three grids with a zero each. */
+	i915_vkcs_add_inputs(x);
+	i915_vkcs_fill(x, I915_VKCS_BUF_G, 0U);
+	i915_vkcs_grid(x, I915_VKCS_G_ZERO, 0U, 1U, 1U);
+	i915_vkcs_grid(x, I915_VKCS_G_ZERO + 4U, I915_VKCS_ADD_GROUPS, 0U, 1U);
+	i915_vkcs_grid(x, I915_VKCS_G_ZERO + 8U, I915_VKCS_ADD_GROUPS, 1U, 0U);
+
+	/* Records the three dispatches; runs them. */
+	n = I915_VKCS_ADD_N;
+	i915_vkcs_begin(x);
+	i915_vkcs_bind_compute(x, I915_VKCS_KERNEL_ADD, I915_VKCS_SET_ADD, 0, 0U);
+	i915_vkcs_push(x, &n, 1U);
+	for (index = 0U; index < 3U; index++)
+		i915_vkcs_dispatch_indirect(x, I915_VKCS_BUF_G, (I915_VKCS_G_ZERO + index * 4U) * 4U);
+	error = i915_vkcs_finish(x, "INDIRECT-ZERO");
+	if (error != 0) {
+		i915_vkcs_verdict(x, "INDIRECT-ZERO", error);
+		return;
+	}
+
+	/* Nothing written: every word the sentinel. */
+	i915_vkcs_add_check(x, "INDIRECT-ZERO", 0U);
+}
+
+/*
+ * LENGTH (ws101-p007): length.comp writes the lengths of W's words over a
+ * range of 400 bytes (100) and of T's 12-byte structures after its 8-byte
+ * head over 457 bytes (37: the last 5 bytes are no structure), and a sum of
+ * words read from T (head.x + items[1].b).
+ */
+static void
+i915_vkcs_step_length(
+	struct i915_vkcs *x)
+{
+	uint32_t *t;
+	const uint32_t *o;
+	int ready;
+	int error;
+
+	/* Needs its pipeline. */
+	ready = i915_vkcs_ready(x, I915_VKCS_KERNEL_LENGTH, "LENGTH");
+	if (ready == 0)
+		return;
+
+	/* T's head and structures (T is B), W (A) anything, the output all sentinel. */
+	i915_vkcs_fill(x, I915_VKCS_BUF_A, 0x11111111U);
+	t = i915_vkcs_words(x, I915_VKCS_BUF_B);
+	kern_memset(t, 0, I915_VKCS_REGION_BYTES);
+	t[0] = 1000U;
+	t[2U + 3U + 1U] = 234U;
+	i915_vkcs_flush(x, I915_VKCS_BUF_B);
+	i915_vkcs_fill(x, I915_VKCS_BUF_C, I915_VKCS_SENTINEL);
+
+	/* Records the pipeline, the set and one group; runs it. */
+	i915_vkcs_begin(x);
+	i915_vkcs_bind_compute(x, I915_VKCS_KERNEL_LENGTH, I915_VKCS_SET_LENGTH, 0, 0U);
+	i915_vkcs_dispatch(x, 1U, 1U, 1U);
+	error = i915_vkcs_finish(x, "LENGTH");
+	if (error != 0) {
+		i915_vkcs_verdict(x, "LENGTH", error);
+		return;
+	}
+
+	/* The two lengths, the sum, and nothing after them. */
+	i915_vkcs_flush(x, I915_VKCS_BUF_C);
+	o = i915_vkcs_words(x, I915_VKCS_BUF_C);
+	i915_vkcs_check(x, "LENGTH", 0U, o[0], I915_VKCS_LENGTH_W_RANGE / 4U);
+	i915_vkcs_check(x, "LENGTH", 1U, o[1], (I915_VKCS_LENGTH_T_RANGE - 8U) / 12U);
+	i915_vkcs_check(x, "LENGTH", 2U, o[2], 1234U);
+	i915_vkcs_check(x, "LENGTH", 3U, o[3], I915_VKCS_SENTINEL);
+	i915_vkcs_verdict(x, "LENGTH", i915_vkcs_checked(x, "LENGTH"));
+}
+
+/*
+ * MANY (ws101-p007): ADD over n = 4,000,000 in 62,500 groups of 64 (the
+ * size of Noct's demonstration, design section 4.2), over three buffers
+ * of 16 MB in objects of their own; every word is checked, and the time of
+ * the submission (the recording, the run on the GPU and the wait) is
+ * logged for reference.
+ */
+static void
+i915_vkcs_step_big(
+	struct i915_vkcs *x)
+{
+	uint32_t *a;
+	uint32_t *b;
+	uint32_t *c;
+	uint64_t started;
+	uint64_t elapsed;
+	uint32_t index;
+	uint32_t n;
+	int ready;
+	int error;
+
+	/* Needs ADD's pipeline and the three objects. */
+	ready = i915_vkcs_ready(x, I915_VKCS_KERNEL_ADD, "MANY");
+	if (ready == 0)
+		return;
+	if (x->many_ready == 0) {
+		i915_vkcs_verdict(x, "MANY", ENOMEM);
+		return;
+	}
+
+	/* A and B from their index as ADD's, C all sentinel. */
+	a = x->many_cpu[0];
+	b = x->many_cpu[1];
+	c = x->many_cpu[2];
+	for (index = 0U; index < I915_VKCS_MANY_N; index++) {
+		a[index] = index * 0x9e3779b9U;
+		b[index] = index ^ 0x5a5a5a5aU;
+		c[index] = I915_VKCS_SENTINEL;
+	}
+
+	/* Written back for the GPU. */
+	drv_i915_gt_clflush(a, I915_VKCS_MANY_BYTES);
+	drv_i915_gt_clflush(b, I915_VKCS_MANY_BYTES);
+	drv_i915_gt_clflush(c, I915_VKCS_MANY_BYTES);
+
+	/* Records n, the pipeline, the set and the groups; runs it, timed. */
+	n = I915_VKCS_MANY_N;
+	i915_vkcs_begin(x);
+	i915_vkcs_bind_compute(x, I915_VKCS_KERNEL_ADD, I915_VKCS_SET_MANY, 0, 0U);
+	i915_vkcs_push(x, &n, 1U);
+	i915_vkcs_dispatch(x, I915_VKCS_MANY_GROUPS, 1U, 1U);
+	started = i915_vkcs_now_us();
+	error = i915_vkcs_finish(x, "MANY");
+	elapsed = i915_vkcs_now_us() - started;
+	if (error != 0) {
+		i915_vkcs_verdict(x, "MANY", error);
+		return;
+	}
+
+	/* The time, for reference (the verdict is the words'). */
+	kern_logf("i915: vkcs: MANY: n %u in %u groups, the submission took %u us\n",
+		  n,
+		  I915_VKCS_MANY_GROUPS,
+		  (unsigned)elapsed);
+
+	/* Every sum. */
+	drv_i915_gt_clflush(c, I915_VKCS_MANY_BYTES);
+	for (index = 0U; index < I915_VKCS_MANY_N; index++)
+		i915_vkcs_check(x, "MANY", index, c[index], a[index] + b[index]);
+	i915_vkcs_verdict(x, "MANY", i915_vkcs_checked(x, "MANY"));
+}
+
+/* Reads the time of day in microseconds (the MANY step's timing). */
+static uint64_t
+i915_vkcs_now_us(void)
+{
+	time_t seconds;
+	long nanoseconds;
+
+	/* The real-time clock, to the microsecond. */
+	clock_realtime(&seconds, &nanoseconds);
+
+	/* Succeeded: the microseconds. */
+	return (uint64_t)seconds * 1000000U + (uint64_t)nanoseconds / 1000U;
 }

@@ -893,9 +893,10 @@ stub_allocate(
  */
 #include "../../../src/drivers/gpu/i915/render/compute.h"
 
-/* How many dispatches ran, and the groups of the last one. */
+/* How many dispatches ran, and the groups of the last one (its indirect counts' address, ws101-p007: 0 for none). */
 static unsigned stub_dispatch_calls;
 static uint32_t stub_last_dispatch[3];
+static uint64_t stub_last_indirect_va;
 
 /*
  * Stands in for recording one dispatch: records it and reports success.
@@ -904,14 +905,15 @@ int
 drv_i915_gfx_dispatch(
 	struct i915_render_session *session,
 	const struct i915_gfx_draw_state *state,
-	const uint32_t groups[3])
+	const struct i915_gfx_grid *grid)
 {
 	UNUSED_PARAMETER(session);
 	UNUSED_PARAMETER(state);
 
-	/* Records the groups of the dispatch. */
+	/* Records the grid of the dispatch. */
 	stub_dispatch_calls++;
-	memcpy(stub_last_dispatch, groups, sizeof(stub_last_dispatch));
+	memcpy(stub_last_dispatch, grid->groups, sizeof(stub_last_dispatch));
+	stub_last_indirect_va = grid->indirect_va;
 
 	/* Succeeded: the dispatch counts as recorded. */
 	return 0;

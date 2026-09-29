@@ -796,4 +796,17 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_WALKER_SIMD8			0U
 #define GEN12_WALKER_SIMD_SHIFT			30U
 
+/*
+ * The registers an indirect GPGPU_WALKER takes its group counts from
+ * (ws101-p007): GPGPU_DISPATCHDIMX, _DIMY and _DIMZ of gen120.xml's render
+ * command streamer, which anv loads with MI_LOAD_REGISTER_MEM from the
+ * indirect buffer (genX_cmd_compute.c, compute_load_indirect_params).
+ */
+#define GEN12_GPGPU_DISPATCHDIMX		0x2500U
+#define GEN12_GPGPU_DISPATCHDIMY		0x2504U
+#define GEN12_GPGPU_DISPATCHDIMZ		0x2508U
+
+/* The dwords of MI_LOAD_REGISTER_MEM: the header, the register, the address's two words. */
+#define GEN12_MI_LOAD_REGISTER_MEM_DWORDS	4U
+
 #endif /* DRIVERS_GPU_I915_INTEL_GENXML_H */

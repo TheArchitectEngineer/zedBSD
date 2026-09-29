@@ -19,7 +19,7 @@
  * genxml-check.py decodes with Mesa's genxml and compares field by field
  * (plan/ws101/tests/host/run.sh).
  *
- *   compute-batch-test DIR OUT      DIR holds add.spv, ids.spv and reduce.spv; OUT-add, OUT-ids and OUT-reduce .bin,
+ *   compute-batch-test DIR OUT      DIR holds add.spv, ids.spv and reduce.spv; OUT-add, OUT-ids, OUT-indirect and OUT-reduce .bin,
  *                                   .idd and .expect are written
  */
 
@@ -46,6 +46,7 @@
 #define TEST_WINDOW_VA		0x0000000067800000ULL
 #define TEST_SCRATCH_VA		0x0000000089a00000ULL
 #define TEST_BUFFER_VA		0x0000000400000000ULL
+#define TEST_INDIRECT_VA	0x0000000500000040ULL
 
 /* The stream every command is built in. */
 static struct stub_wire test_wire;
@@ -58,6 +59,7 @@ static struct i915_gfx_pipeline *test_pipeline(const char *name);
 static void test_bind(struct i915_gfx_draw_state *state, struct i915_gfx_dset *set, struct i915_gfx_buffer *buffers, struct i915_gfx_memory *memory, struct i915_gem_object *object);
 static void test_add(void);
 static void test_ids(void);
+static void test_ids_indirect(void);
 static void test_reduce(void);
 
 /* Stand-ins for the parts of draw.c compute.c calls: the host has no GPU session. */
@@ -120,6 +122,7 @@ main(
 
 	test_add();
 	test_ids();
+	test_ids_indirect();
 	test_reduce();
 
 	printf("ws101 compute batch host test PASS\n");
@@ -287,7 +290,7 @@ test_add(void)
 	struct i915_gfx_op_space space;
 	struct i915_gfx_kernels kernels;
 	struct i915_gfx_batch batch;
-	const uint32_t groups[3] = {16U, 1U, 1U};
+	const struct i915_gfx_grid grid = { {16U, 1U, 1U}, 0U };
 	const uint32_t *dynamic;
 	const uint32_t *curbe;
 	const uint32_t *words;
@@ -313,7 +316,7 @@ test_add(void)
 
 	/* Writes the slot. */
 	memset(slot, 0xAB, sizeof(slot));
-	error = drv_i915_gfx_dispatch_write(slot, TEST_SLOT_VA, &state, groups);
+	error = drv_i915_gfx_dispatch_write(slot, TEST_SLOT_VA, &state, &grid);
 	assert(error == 0);
 	dynamic = (const uint32_t *)(const void *)(slot + I915_GFX_DYNAMIC_HEAP);
 
@@ -354,7 +357,7 @@ test_add(void)
 	/* VK_WHOLE_SIZE reaches the buffer's end, and a range past it is cut there (what OpArrayLength reads). */
 	set.slots[1].range = VK_WHOLE_SIZE;
 	set.slots[2].range = 8192U;
-	error = drv_i915_gfx_dispatch_write(slot, TEST_SLOT_VA, &state, groups);
+	error = drv_i915_gfx_dispatch_write(slot, TEST_SLOT_VA, &state, &grid);
 	assert(error == 0);
 	for (index = 0U; index < binary->block_count; index++) {
 		binding = binary->blocks[index].binding;
@@ -375,7 +378,7 @@ test_add(void)
 	batch.count = 0U;
 	batch.capacity = 1024U;
 	batch.overflow = 0;
-	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, groups, 6U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
+	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, &grid, 6U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
 	assert(batch.overflow == 0);
 	curbe_regs = binary->cross_thread_regs + 32U;
 	snprintf(expect, sizeof(expect),
@@ -424,7 +427,7 @@ test_ids(void)
 	struct i915_gfx_op_space space;
 	struct i915_gfx_kernels kernels;
 	struct i915_gfx_batch batch;
-	const uint32_t groups[3] = {3U, 2U, 5U};
+	const struct i915_gfx_grid grid = { {3U, 2U, 5U}, 0U };
 	const uint32_t *curbe;
 	const uint32_t *words;
 	uint32_t index;
@@ -443,7 +446,7 @@ test_ids(void)
 	test_bind(&state, &set, buffers, &memory, &object);
 
 	/* Writes the slot. */
-	error = drv_i915_gfx_dispatch_write(slot, TEST_SLOT_VA, &state, groups);
+	error = drv_i915_gfx_dispatch_write(slot, TEST_SLOT_VA, &state, &grid);
 	assert(error == 0);
 
 	/* The system buffer's register holds the address of the group counts in the slot, 12 bytes. */
@@ -473,7 +476,7 @@ test_ids(void)
 	batch.count = 0U;
 	batch.capacity = 1024U;
 	batch.overflow = 0;
-	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, groups, 4U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
+	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, &grid, 4U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
 	assert(batch.overflow == 0);
 	curbe_regs = binary->cross_thread_regs + 12U;
 	snprintf(expect, sizeof(expect),
@@ -486,6 +489,93 @@ test_ids(void)
 		 binary->cross_thread_regs);
 	test_write("ids", &batch, slot, expect);
 	printf("  ids batch: %u dwords written for genxml-check.py\n", batch.count);
+
+	stub_session_close();
+}
+
+/*
+ * ids.comp dispatched indirectly (ws101-p007): the system storage buffer
+ * points at the indirect buffer's three counts, and the commands load the
+ * walker's registers from them before an indirect walker whose own counts
+ * are zero.
+ */
+static void
+test_ids_indirect(void)
+{
+	static uint8_t slot[I915_GFX_SLOT_BYTES];
+	static uint32_t cmds[1024];
+	struct i915_gfx_draw_state state;
+	struct i915_gfx_dset set;
+	struct i915_gfx_buffer buffers[4];
+	struct i915_gfx_memory memory;
+	struct i915_gem_object object;
+	struct i915_gfx_pipeline *pipeline;
+	const struct i915_shader_binary *binary;
+	struct i915_gfx_op_space space;
+	struct i915_gfx_kernels kernels;
+	struct i915_gfx_batch batch;
+	struct i915_gfx_grid grid;
+	const uint32_t *curbe;
+	const uint32_t *words;
+	uint32_t index;
+	uint32_t systems;
+	char expect[2048];
+	int error;
+
+	stub_session_open(NULL);
+	pipeline = test_pipeline("ids.spv");
+	assert(pipeline != NULL);
+	binary = pipeline->cs_binary;
+
+	/* The counts at an address of the indirect buffer. */
+	memset(&state, 0, sizeof(state));
+	state.compute_pipeline = pipeline;
+	test_bind(&state, &set, buffers, &memory, &object);
+	memset(&grid, 0, sizeof(grid));
+	grid.indirect_va = TEST_INDIRECT_VA;
+
+	/* Writes the slot: the slot's own counts stay as they were cleared. */
+	memset(slot, 0xAB, sizeof(slot));
+	error = drv_i915_gfx_dispatch_write(slot, TEST_SLOT_VA, &state, &grid);
+	assert(error == 0);
+	words = (const uint32_t *)(const void *)(slot + I915_GFX_DYNAMIC_HEAP + I915_GFX_DYN_GROUP_COUNTS);
+	assert(words[0] == 0U && words[1] == 0U && words[2] == 0U);
+
+	/* The system buffer's register holds the indirect counts' address, 12 bytes. */
+	curbe = (const uint32_t *)(const void *)(slot + I915_GFX_DYNAMIC_HEAP + I915_GFX_DYN_CURBE);
+	systems = 0U;
+	for (index = 0U; index < binary->block_count; index++) {
+		if (binary->blocks[index].set != I915_IR_SYSTEM_SET)
+			continue;
+		words = curbe + binary->blocks[index].push_offset / 4U;
+		assert(words[0] == (uint32_t)TEST_INDIRECT_VA);
+		assert(words[1] == (uint32_t)(TEST_INDIRECT_VA >> 32));
+		assert(words[2] == 12U);
+		systems++;
+	}
+	assert(systems == 1U);
+	printf("  ids indirect slot: the system storage buffer points at the indirect counts\n");
+
+	/* The commands. */
+	memset(&space, 0, sizeof(space));
+	space.slot_va = TEST_SLOT_VA;
+	space.window_va = TEST_WINDOW_VA;
+	memset(&kernels, 0, sizeof(kernels));
+	batch.cmds = cmds;
+	batch.count = 0U;
+	batch.capacity = 1024U;
+	batch.overflow = 0;
+	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, &grid, 6U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
+	assert(batch.overflow == 0);
+	snprintf(expect, sizeof(expect),
+		 "first MI_LOAD_REGISTER_MEM RegisterAddress=0x2500 MemoryAddress=0x%llx UseGlobalGTT=0\n"
+		 "last MI_LOAD_REGISTER_MEM RegisterAddress=0x2508 MemoryAddress=0x%llx UseGlobalGTT=0\n"
+		 "exact GPGPU_WALKER IndirectParameterEnable=1 ThreadWidthCounterMaximum=2 ThreadGroupIDXDimension=0 ThreadGroupIDYDimension=0 ThreadGroupIDZDimension=0 RightExecutionMask=0xff BottomExecutionMask=0xffffffff\n"
+		 "tail PIPELINE_SELECT PIPE_CONTROL MEDIA_VFE_STATE MEDIA_STATE_FLUSH MEDIA_CURBE_LOAD MEDIA_INTERFACE_DESCRIPTOR_LOAD MI_LOAD_REGISTER_MEM MI_LOAD_REGISTER_MEM MI_LOAD_REGISTER_MEM GPGPU_WALKER MEDIA_STATE_FLUSH PIPE_CONTROL PIPELINE_SELECT\n",
+		 (unsigned long long)TEST_INDIRECT_VA,
+		 (unsigned long long)(TEST_INDIRECT_VA + 8U));
+	test_write("indirect", &batch, slot, expect);
+	printf("  ids indirect batch: %u dwords written for genxml-check.py\n", batch.count);
 
 	stub_session_close();
 }
@@ -510,7 +600,7 @@ test_reduce(void)
 	struct i915_gfx_op_space space;
 	struct i915_gfx_kernels kernels;
 	struct i915_gfx_batch batch;
-	const uint32_t groups[3] = {4U, 1U, 1U};
+	const struct i915_gfx_grid grid = { {4U, 1U, 1U}, 0U };
 	const uint32_t *dynamic;
 	char expect[512];
 	int error;
@@ -525,7 +615,7 @@ test_reduce(void)
 	memset(&state, 0, sizeof(state));
 	state.compute_pipeline = pipeline;
 	test_bind(&state, &set, buffers, &memory, &object);
-	error = drv_i915_gfx_dispatch_write(slot, TEST_SLOT_VA, &state, groups);
+	error = drv_i915_gfx_dispatch_write(slot, TEST_SLOT_VA, &state, &grid);
 	assert(error == 0);
 	dynamic = (const uint32_t *)(const void *)(slot + I915_GFX_DYNAMIC_HEAP);
 	assert(dynamic[6] == (16U | (1U << 16) | (1U << 21)));
@@ -540,7 +630,7 @@ test_reduce(void)
 	batch.count = 0U;
 	batch.capacity = 1024U;
 	batch.overflow = 0;
-	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, groups, 6U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
+	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, &grid, 6U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
 	assert(batch.overflow == 0);
 	snprintf(expect, sizeof(expect),
 		 "exact GPGPU_WALKER ThreadWidthCounterMaximum=15 ThreadGroupIDXDimension=4 ThreadGroupIDYDimension=1 ThreadGroupIDZDimension=1 RightExecutionMask=0xff BottomExecutionMask=0xffffffff\n"

@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p010（i915 での GLES の compute）cleared（2026-09-30。5330 の passthrough で glescompute の全 step（indirect を除く）と egltest の feedback・queries の回帰 PASS）。次は p011（Noct、D2 の許可待ち）、p007（indirect。その後 i915 で glescompute の indirect を再実行）。判断 D1〜D5 は design.md §7
+Resume point: p007（indirect、G1 の passthrough の受け入れ）cleared（2026-09-30。5330 の passthrough で vkcs 21/21、回帰 vkx・vke1・vke2・vkc PASS、glescompute の indirect も i915 で PASS）。次は p011（Noct、D2 の許可待ち。許可まで始めない）。判断 D1〜D5 は design.md §7
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -61,7 +61,7 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | [ws101-p004](phase004/phase.md) | 実行器の batch: `render/compute.c`（IDD・CURBE・NumWorkgroups の置き場所・VFE・walker・3D への戻り・scratch 768 thread 分）、transfer_pending（dispatch と SSBO を書く draw）、HDC だけの PIPE_CONTROL、storage の range、WS101 の genxml の dumper（design §2.2〜§2.4） | cleared（2026-09-30。host の試験 PASS（Mesa の genxml で batch と IDD を decode）、kernel の build PASS。IDD の SLM・barrier は p006、GPU は p005） | p003 |
 | [ws101-p005](phase005/phase.md) | 実機の bring-up と kernel の試験の場面 `vkcs`（ADD・ID・ODD・PUSH・ATOMIC-SSBO・MIXED・MANYOPS・SPILL）。eu-test の 1 thread の設定から段階的に（design §2.6・§5.1） | cleared（2026-09-30。5330 の passthrough で vkcs 9/9 PASS、回帰 vkx・vke1・vke2・vkc PASS。試験の kernel の大きさの残りが 6.6 KB） | p004 |
 | [ws101-p006](phase006/phase.md) | SLM・barrier・fence・SLM の atomic（IR・parser・EU、barrier の一様性の検査）、binary の SLM・barrier と IDD の field（p004 の XXX）、vkcs の SHARED・REDUCE・ODD-BARRIER・ATOMIC-SHARED・LOOP・REFUSE | cleared（2026-09-30。試験の build の分割（I915_TEST_SET、main の判断）、5330 の passthrough で vkcs 15/15 PASS、回帰 PASS） | p005 |
-| ws101-p007 | vkCmdDispatchIndirect（111）、0 の group、vkcs の INDIRECT・LENGTH・MANY、G1 の passthrough での受け入れの run（design §2.5） | planned | p006 |
+| [ws101-p007](phase007/phase.md) | vkCmdDispatchIndirect（111）、0 の group、vkcs の INDIRECT・LENGTH・MANY、G1 の passthrough での受け入れの run（design §2.5） | cleared（2026-09-30。5330 の passthrough で vkcs 21/21（INDIRECT・INDIRECT-ID・INDIRECT-GPU・INDIRECT-ZERO・LENGTH・MANY N=4,000,000）、回帰 PASS、glescompute の indirect PASS） | p006 |
 | [ws101-p008](phase008/phase.md) | GLSL ES 3.10 の compute（版・stage・SSBO std430・shared・built-in・barrier と規則・atomic・`.length()` → SPIR-V）、Noct の shader の形の fixture。host の試験（design §3.2） | cleared（2026-09-30。host の試験 PASS。WS068 の glsl-host の fail/version.vert（310 es は未対応を期待）の更新を main に依頼） | p001（p002〜p007 と並行できる）、D4（main の記録） |
 | [ws101-p009](phase009/phase.md) | libglesv2・libegl の ES 3.1 の compute の API（design §3.3）、`gl31.h`、export と stub、版の名乗り（D1）、libGL への漏れの分離、GLES の compute の試験の program。Venus で G2 | cleared（2026-09-30。D1 は main の指示で既定の案。Venus で glescompute PASS（surfaceless・default・1000 回）、WS068 の egl-p020・p024・p027・glx-p031・p033 PASS、egl-p030 は版の検査だけ FAIL（egltest の期待が 3.0 固定、main に依頼）） | p008、D1 |
 | [ws101-p010](phase010/phase.md) | GLES の compute の i915 での G2（passthrough）。基本は p005 の後、shared・barrier は p006、indirect は p007 の後 | cleared（2026-09-30。5330 の passthrough で glescompute PASS（indirect は SKIP、p007 の後に再実行）、egl-p030・p027 の場面 PASS） | p009、p005（p006・p007 の分は後） |
