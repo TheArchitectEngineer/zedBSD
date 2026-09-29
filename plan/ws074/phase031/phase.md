@@ -4,7 +4,7 @@
 
 Phase ID: `ws074-p031`
 Parent: [WS074](../ws.md)
-Status: in-progress
+Status: cleared（2026-09-29）
 Phase disposition: normal
 Queue: なし（main の指示でサブエージェントが worktree `wt/ws074-dom`（main 59235c9f から）で実行、2026-09-29）
 依存: p030（DOM の binding）、p077（window の環境と Uncaught の位置）
@@ -106,7 +106,20 @@ exotic object と Symbol の iterator が無い）、dataset の新しい名前�
 - `sessionStorage`・`localStorage`・`Storage`（p064）。
 - destructuring・default・rest、optional chaining（`js/` の側）。
 
-## Resume point
+## guest（QEMU、amd64、worktree の image）
 
-guest の確認（`plan/ws074/tests/build-browser-image.sh build/amd64` の image、`browser-guest.sh plain` で run-dom-tests `--outputs`）と
-boot test。
+- image: `plan/ws074/tests/build-browser-image.sh build/amd64`（clang・libcxx を含まない config。sysroot は main の複写）。
+  browser の compile に warning 0。
+- `browser-guest.sh plain`（GPU なし）で `plan/ws074/tests/dom/` を guest に置き、`browser --run` の出力を
+  `run-dom-tests.py --outputs` → **12/12**（guest の image の font で geometry も一致）。
+- live の `https://www.amazon.co.jp/` の `--run`（取得 1 回）: Uncaught は `TextEncoder is not defined` 1 件だけ
+  （p077 の時の `value is not a function` 4 件と arrow 1 件は無い）。
+- boot test: `OUTPUT=build/p031/boot-test plan/tools/boot-test.sh build/amd64/hdd-image.img` → PASS（login prompt を画面で確認、
+  worktree の `build/p031/boot-test/login.png`）。
+- 実機: 未実施。guest の窓（zdesktop）での live の Amazon の表示は未実施。
+
+## 結果
+
+- cleared。Amazon の top に残っていた DOM の Uncaught（`value is not a function` 4 件）と、その後に出た inline style の
+  `Cannot read properties` が無くなった。Chromium の expected との DOM の試験 4 つを足し、host（plain・ASan）と guest で全て通った。
+- 残り（上の「無いもの」と「Amazon の次の blocker」）は main に計画を依頼する。
