@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: main からの依頼（subagent、worktree `wt/ws086`）
-Resume point: p002（[p001 の設計](phase001/phase.md)の「設計」と「試験の計画」に従って `userland/base/ls/main.c` を実装し、host で GNU ls と byte 単位に比べる）から
+Resume point: p002 の Terminal の画面での確認（[p002](phase002/phase.md) の Resume point）から
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -27,7 +27,7 @@ Resume point: p002（[p001 の設計](phase001/phase.md)の「設計」と「試
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws086-p001](phase001/phase.md) | GNU ls（coreutils）との差の一覧、列の配置の設計、含める option の範囲 | cleared（2026-09-29） | — |
-| ws086-p002 | 実装と host・guest の試験（GNU ls の出力との比較） | planning | p001 |
+| [ws086-p002](phase002/phase.md) | 実装と host・guest の試験（GNU ls の出力との比較） | in-progress | p001 |
 | ws086-p003 | 規約の全文との照合、回帰 | planning | p002 |
 
 ## 判断の既定（p001、2026-09-29）
