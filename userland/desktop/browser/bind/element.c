@@ -957,7 +957,7 @@ image_dimension(
 		return status;
 	text = (const struct vm_string *)vm_value_as_cell(attribute);
 
-	/* The digits after any leading spaces, stopping short of an overflow. */
+	/* Skips the leading spaces. */
 	pixels = 0;
 	index = 0;
 	while (index < text->length) {
@@ -966,12 +966,19 @@ image_dimension(
 			break;
 		index++;
 	}
+
+	/* Accumulates the digits. */
 	for (; index < text->length; index++) {
+		/* The digits end at anything else. */
 		unit = vm_string_at(text, index);
 		if (unit < '0' || unit > '9')
 			break;
+
+		/* A number too large to grow further keeps its value so far. */
 		if (pixels > 100000000)
 			break;
+
+		/* One more decimal place. */
 		pixels = pixels * 10 + (int32_t)(unit - '0');
 	}
 

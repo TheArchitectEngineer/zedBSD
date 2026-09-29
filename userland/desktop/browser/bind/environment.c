@@ -491,6 +491,8 @@ environment_install_performance(
 		if (error != 0)
 			return error;
 	}
+
+	/* The record on performance. */
 	error = js_builtin_value(realm, performance, "timing", vm_value_cell(timing), VM_PROPERTY_DEFAULT);
 	if (error != 0)
 		return error;
