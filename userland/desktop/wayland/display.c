@@ -511,6 +511,10 @@ zwl_top_window(
 				continue;
 			if (surface->desktop != server->desktop || surface->minimized)
 				continue;
+
+			/* The desktop's icons are never a window, so a closed last window does not give them the keyboard (desktop.c). */
+			if (zwl_desktop_is(surface))
+				continue;
 			if (top == NULL || surface->map_order > top->map_order)
 				top = surface;
 		}

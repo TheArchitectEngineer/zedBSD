@@ -46,7 +46,8 @@ compositor の変更は role と重ね順・入力・起動に限る。
 - **popup と DnD**: desktop surface を親にした popup（`keiland_menu_popup` の context menu、名前の変更の field は Files の中で描く）を許す。
   DnD（`wl_data_device`）の enter・motion・drop の対象に desktop surface を含める（窓の無い所へ落とすと desktop へ）。desktop surface からの
   `start_drag` も窓と同じに扱う。
-- **起動**: `--session` の compositor は READY の後に `/bin/files --desktop`（`/etc/keiland/desktop` に `off` と書けば起こさない、J6）を起こす。
+- **起動**: `--session` の compositor は `/etc/keiland/desktop` の最初の語が `on` の時に `/bin/files --desktop` を起こす（p002 から p003 までの既定は
+  起こさない。main の判断 2026-09-30。p003 で Files の `--desktop` ができたら既定を「起こす」に戻し、`off` で止める形にする、J6）。
   落ちたら 2 秒後に起こし直す（1 分に 3 回まで。越えたら log して止める）。`--session` でない試験の compositor は `--desktop-client=PATH` で
   起こすか、試験が自分で `files --desktop` を起こす（token は `--desktop-token=` で固定できる）。
 - **log**: `ZWL DESKTOP role client=… width=… height=…`、`ZWL DESKTOP start pid=…`・`restart`・`gone`（試験は log と画面で判定する）。
@@ -123,7 +124,7 @@ Wiseview・backdrop の該当）も流す。
 | J3 | 配置の保存 | `~/.config/keiland/desktop-layout`（名前と cell） | file の属性（xattr）を使わず、他の folder に影響しない |
 | J4 | 仮想 desktop | 4 つとも同じ icon | `~/Desktop` は 1 つ |
 | J5 | WS090 | 待たない。Files の Phase と WS090 p009・p010 を重ねない | デモに間に合わせる |
-| J6 | 表示の on/off | 既定 on、`/etc/keiland/desktop` に `off` で起こさない | Settings の頁は範囲外 |
+| J6 | 表示の on/off | p003 までは既定 off（`on` で起こす）、p003 から既定 on（`off` で起こさない） | Settings の頁は範囲外。Files の `--desktop` ができるまでは起こさない（main 2026-09-30） |
 | J7 | Change Wallpaper | Settings（WS089）の頁があれば出す | 無い app を menu に出さない |
 
 ## 9. 他の WS との調整（main へ）

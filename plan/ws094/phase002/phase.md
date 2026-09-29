@@ -67,12 +67,14 @@ install・role・refuse・input・home・home-drag・dnd・touch・restart）。
   token を複写してから環境から消す。
 - Wiseview の間は desktop を描かない（design §3 を直した）。一番下の窓の glass は desktop の icon を映さない（backdrop は他の窓の上の窓にだけ作られる。
   design §3 に書いた）。
-- `--session` の compositor は既定で `/bin/files --desktop` を起こす。p003 が入るまでの Files は `--desktop` を知らずに終わるので、4 回起こして
-  `start-limit` で止まる（画面には何も出ない）。p003 と一緒に main に入れるか、それまで session で `/etc/keiland/desktop` を `off` にするかは main の判断。
+- 起動の既定（main の判断、2026-09-30）: `--session` の compositor は `/etc/keiland/desktop` の最初の語が `on` の時だけ `/bin/files --desktop` を起こす
+  （Files の `--desktop` は p003 から。p003 で既定を「起こす」に戻す）。`--desktop-client=` を明示した compositor は常に起こす。
+- WS035 からの引き継ぎ（ws035-p137）: `zwl_top_window()` の候補から desktop の surface を明示で外した（`zwl_desktop_is`）。desktop の surface は
+  もともと `mapped` にならず候補に入らなかったが、暗黙に頼らない。試験 input に「最後の窓を閉じても desktop に focus が移らない」を足した。
+- `plan/ws035/tests/zdesktop-p072.sh` の失敗は BUG-115（WS035 の担当、main が起票）。WS094 の回帰の対象から外す。
 - 観察（1 回、再現せず）: 全ての手順を続けて流した 3 回のうち 1 回、restart の手順で compositor が起こした probe が role を取った後 45 秒の間に
   終わらず、起こし直しが起きなかった。その後の単独の実行と全手順の実行では再現しなかった。compositor は role・ack を正しく扱っており、probe の側
   （timeout の loop）で止まった可能性が高いが、原因は未確認。
-- `plan/ws035/tests/zdesktop-p072.sh` の既存の失敗（最初の client の接続）は WS035 の件（main へ）。
 - 実機は未実施。`--session` での起動（sessiond の下）は未実施（`--desktop-client` で同じ起動の経路を確かめた）。
 
 ## Resume point

@@ -23,6 +23,7 @@ void zwl_desktop_object_gone(struct zwl_object *object);
 void zwl_desktop_tick(struct zwl_server *server);
 void zwl_desktop_draw(struct zwl_server *server, VkCommandBuffer command);
 struct zwl_object *zwl_desktop_surface(struct zwl_server *server);
+int zwl_desktop_is(const struct zwl_object *surface);
 struct zwl_object *zwl_desktop_front(struct zwl_server *server, struct zwl_object *top);
 int zwl_desktop_press(struct zwl_server *server);
 void zwl_desktop_unfocus(struct zwl_server *server);

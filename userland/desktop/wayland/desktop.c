@@ -26,10 +26,11 @@
  * is pressed, raised or mapped.  A finger does the same through the
  * pointer's press, and a drag and drop over no window is the desktop's.
  *
- * A login session starts the desktop program (/bin/files --desktop, or
- * the command --desktop-client gives) with a new token, unless
- * /etc/keiland/desktop says "off", and starts it again two seconds after it
- * ends, at most three times a minute.
+ * A login session starts the desktop program (/bin/files --desktop) with a
+ * new token when /etc/keiland/desktop says "on" (until Files has its
+ * desktop mode, ws094-p003, the default is not to start it), and so does
+ * any compositor that --desktop-client names a program for; it is started
+ * again two seconds after it ends, at most four times a minute.
  */
 
 #include "desktop.h"
@@ -59,7 +60,7 @@
 #define DESKTOP_ERROR_ROLE		0U
 #define DESKTOP_ERROR_TOKEN		1U
 
-/* The program a login session starts, and the file that turns it off. */
+/* The program a login session starts, and the file that turns it on. */
 #define DESKTOP_COMMAND			"/bin/files --desktop"
 #define DESKTOP_SWITCH			"/etc/keiland/desktop"
 
@@ -122,7 +123,7 @@ static void desktop_place(struct zwl_server *server, int32_t *x, int32_t *y, int
 static int desktop_configure(struct zwl_server *server);
 static void desktop_start(struct zwl_server *server);
 static void desktop_watch(struct zwl_server *server);
-static int desktop_switched_off(void);
+static int desktop_switched_on(void);
 static void desktop_new_token(void);
 static uint32_t desktop_word(const unsigned char *bytes, size_t offset);
 
@@ -363,6 +364,22 @@ zwl_desktop_surface(
 
 	/* Succeeded: the surface to show. */
 	return surface;
+}
+
+/*
+ * Tells whether a surface is the desktop's (1) or not (0), whether or not
+ * it has an image yet.
+ */
+int
+zwl_desktop_is(
+	const struct zwl_object *surface)
+{
+	/* Only the surface with the role. */
+	if (surface == NULL || surface != desk.surface)
+		return 0;
+
+	/* It is the desktop's. */
+	return 1;
 }
 
 /*
@@ -639,7 +656,7 @@ desktop_configure(
 
 /*
  * Starts the desktop program when there should be one and none runs: in a
- * login session (unless /etc/keiland/desktop is "off"), or when
+ * login session when /etc/keiland/desktop is "on", or when
  * --desktop-client named one; two seconds after the last one ended, and
  * not more than DESKTOP_STARTS times a minute.
  */
@@ -649,16 +666,16 @@ desktop_start(
 {
 	char line[DESKTOP_LINE_MAX];
 	uint64_t now;
-	int off;
+	int on;
 
 	/* Whether a program is wanted is decided once: the option, else a login session's switch. */
 	if (!desk.decided) {
 		desk.decided = 1;
 		desk.command = NULL;
 		if (server->session) {
-			/* A session shows the desktop unless it is switched off. */
-			off = desktop_switched_off();
-			if (!off)
+			/* A session shows the desktop when it is switched on. */
+			on = desktop_switched_on();
+			if (on)
 				desk.command = DESKTOP_COMMAND;
 		}
 	}
@@ -735,16 +752,16 @@ desktop_watch(
 	desk.gone_ms = zwl_milliseconds();
 }
 
-/* Tells whether /etc/keiland/desktop turns the desktop off (its first word is "off"). */
+/* Tells whether /etc/keiland/desktop turns the desktop on (its first word is "on"). */
 static int
-desktop_switched_off(void)
+desktop_switched_on(void)
 {
 	char text[8];
 	ssize_t count;
 	int descriptor;
 	int match;
 
-	/* Without the file the desktop is on. */
+	/* Without the file the desktop is off. */
 	descriptor = open(DESKTOP_SWITCH, O_RDONLY);
 	if (descriptor < 0)
 		return 0;
@@ -753,15 +770,17 @@ desktop_switched_off(void)
 	memset(text, 0, sizeof(text));
 	count = read(descriptor, text, sizeof(text) - 1U);
 	close(descriptor);
-	if (count < 3)
+	if (count < 2)
 		return 0;
 
-	/* "off" turns it off. */
-	match = strncmp(text, "off", 3U);
+	/* "on", alone on its line or followed by a space, turns it on. */
+	match = strncmp(text, "on", 2U);
 	if (match != 0)
 		return 0;
+	if (text[2] != '\0' && text[2] != '\n' && text[2] != ' ')
+		return 0;
 
-	/* The desktop is switched off. */
+	/* The desktop is switched on. */
 	return 1;
 }
 

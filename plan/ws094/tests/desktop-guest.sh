@@ -7,7 +7,8 @@
 #   refuse    a second probe (the role taken) and one with another token are refused
 #   input     a left press, a right press and a key where no window is reach the probe (focus in, surface-local
 #             places); a Files window over it: a press on the window takes the keyboard back (focus out), and one
-#             beside it gives it to the desktop again; pictures (input.png, window.png)
+#             beside it gives it to the desktop again; the window closed, the desktop does not get the keyboard by itself; pictures
+#             (input.png, window.png)
 #   home      App Home opens with the desktop in the layer that slides aside (home.png), and closes
 #   home-drag a drag from the top-left corner held half way: the yellow square moves and shrinks with the layer (home-drag.png)
 #   dnd       a file dragged out of the Files window and over no window reaches the probe (dnd enter)
@@ -128,6 +129,11 @@ for step in "$@"; do
 		pointer move $((wx + 300)) $((wy + 200)) sleep 300 down sleep 60 up sleep 700
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP unfocus via=press'
 		expect_count /tmp/probe.log 'DESKPROBE focus out' 2
+		# The last window closing does not give the desktop the keyboard (only a press does).
+		guest 'for p in $(ps -A -o pid,args | grep -E "[f]iles" | awk "{print \$1}"); do kill $p; done; sleep 2; echo closed' >/dev/null
+		expect_log /tmp/zdesktop.log 'ZWL UNMAP client=|ZWL CLEANUP client='
+		expect_count /tmp/probe.log 'DESKPROBE focus in' 2
+		expect_count /tmp/zdesktop.log 'ZWL DESKTOP focus client=' 2
 		;;
 	home)
 		pointer move 23 17 sleep 300 down sleep 60 up sleep 1500 move 700 780 sleep 300
