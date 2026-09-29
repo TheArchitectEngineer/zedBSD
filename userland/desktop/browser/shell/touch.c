@@ -101,13 +101,15 @@ shell_touch_layout(
 	double largest,
 	double height)
 {
+	double apart;
 	int elsewhere;
 
 	/* Whether the scroll changed without the fingers. */
 	elsewhere = 0;
+	apart = fabs(scroll - touch->scroll);
 	if (token != touch->token) {
 		elsewhere = 1;
-	} else if (fabs(scroll - touch->scroll) > TOUCH_SCROLL_SLACK) {
+	} else if (apart > TOUCH_SCROLL_SLACK) {
 		elsewhere = 1;
 	}
 
@@ -132,6 +134,8 @@ shell_touch_layout(
 		touch->overscroll = 0.0;
 		touch->changed = 1;
 	}
+
+	/* The scroller is there from now on. */
 	keiland_scroller_set_position(touch->scroller, 0.0, scroll);
 
 	/* A glide stops. */
@@ -197,6 +201,8 @@ shell_touch_event(
 			printf("ZBROWSER TOUCH context x=%.0f y=%.0f\n", (double)touch->press_x, (double)touch->press_y);
 			fflush(stdout);
 		}
+
+		/* Nothing else. */
 		break;
 	case SHELL_TOUCH_CANCEL:
 		/* The compositor took the fingers: whatever they did ends without its lift. */
@@ -454,6 +460,8 @@ touch_place(
 {
 	double scroll;
 	double overscroll;
+	double moved;
+	double stretched;
 
 	/* The scroll within the document. */
 	scroll = y;
@@ -466,9 +474,11 @@ touch_place(
 	overscroll = scroll - y;
 
 	/* A change the main loop takes. */
-	if (fabs(scroll - touch->scroll) >= TOUCH_CHANGE_MIN)
+	moved = fabs(scroll - touch->scroll);
+	stretched = fabs(overscroll - touch->overscroll);
+	if (moved >= TOUCH_CHANGE_MIN)
 		touch->changed = 1;
-	if (fabs(overscroll - touch->overscroll) >= TOUCH_CHANGE_MIN)
+	if (stretched >= TOUCH_CHANGE_MIN)
 		touch->changed = 1;
 	touch->scroll = scroll;
 	touch->overscroll = overscroll;

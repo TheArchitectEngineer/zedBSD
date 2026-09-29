@@ -46,8 +46,10 @@ static int checks;
 /* The number of checks that failed. */
 static int failures;
 
-/* How many wheel events the page wrote to the console, and how many redraws the view asked for. */
+/* How many wheel events the page wrote to the console. */
 static int wheels;
+
+/* How many times the view asked to be drawn again. */
 static int redraws;
 
 /* The drawing of the view. */
@@ -232,12 +234,17 @@ on_console(
 	const char *text,
 	size_t length)
 {
+	int differs;
+
 	UNUSED_PARAMETER(context);
 	UNUSED_PARAMETER(view);
 	UNUSED_PARAMETER(level);
 
 	/* A wheel event's line. */
-	if (length >= 6 && memcmp(text, "wheel ", 6) == 0)
+	if (length < 6)
+		return;
+	differs = memcmp(text, "wheel ", 6);
+	if (differs == 0)
 		wheels++;
 }
 
