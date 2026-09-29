@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p002 cleared（2026-09-29、`libkeiui` KUI_VERSION 1: canvas・text・icons・theme）。次は p003（scroll view・入力の層・`kui_text_touch`）
+Resume point: p003 cleared（2026-09-29、KUI_VERSION 2: `kui_scroll`・`kui_ui`・`kui_text_touch`・`kui_key_character`、host 63/63）。次は p004（`kui_window` と Text Editor の移行、image への登録）。Files の移行（p009・p010）は WS094 の完了の後
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -28,13 +28,13 @@ Resume point: p002 cleared（2026-09-29、`libkeiui` KUI_VERSION 1: canvas・tex
 | --- | --- | --- | --- |
 | [ws090-p001](phase001/phase.md) | 設計（[design.md](design.md)） | cleared（2026-09-29） | — |
 | [ws090-p002](phase002/phase.md) | libkeiui の骨組みと描画の層（canvas・text・icons・theme）（Settings の書き換えは p007 へ） | cleared（2026-09-29。`libkeiui.so` warning 0、host 13/13 で Files・Settings と byte で一致） | p001 |
-| ws090-p003 | scroll view（`kui_scroll`）と入力の層（`kui_ui`）と文字の view の touch（`kui_text_touch`: 1 本指で選択・2 本指で scroll、2026-09-29 ユーザー） | planning | p002 |
-| ws090-p004 | 窓の土台（`kui_window`、Vulkan・shm・無し）、Text Editor の窓・present・touch・clipboard | planning | p003 |
+| [ws090-p003](phase003/phase.md) | scroll view（`kui_scroll`）と入力の層（`kui_ui`）と文字の view の touch（`kui_text_touch`: 1 本指で選択・2 本指で scroll、2026-09-29 ユーザー） | cleared（2026-09-29。KUI_VERSION 2、host 63/63、慣性は scroller と frame ごとに一致。Text Editor への組み込みと QEMU は p004） | p002 |
+| ws090-p004 | 窓の土台（`kui_window`、Vulkan・shm・無し）、Text Editor の窓・present・touch（`kui_text_touch`・`kui_scroll`）・clipboard、image への登録（main 許可済み: config の 3 file） | planning | p003 |
 | ws090-p005 | 部品（button・switch・slider・field・list・sidebar・card・row・header・dialog・chip・progress）と見本の program | planning | p003 |
 | ws090-p006 | file chooser を libkeiui へ、libkeiland から取り除く（KEILAND_VERSION）、Text Editor の chooser・dialog・chip | planning | p004・p005 |
 | ws090-p007 | Settings を libkeiui へ（描画の層の共有の置き換えを含む） | planning | p005、WS089 の完了 |
 | ws090-p008 | PDF Viewer・Image Viewer を移す | planning | p006 |
-| ws090-p009 | Files（その 1）: 描画の層と scroll | planning | p003 |
+| ws090-p009 | Files（その 1）: 描画の層と scroll | planning | p003、**WS094 の完了**（Files に `--desktop` を足している、2026-09-29 main） |
 | ws090-p010 | Files（その 2）: 部品と窓 | planning | p009・p005・p004 |
 | ws090-p011 | Terminal・Notes: 窓（見せ方は無し）と scroll の model | planning | p004 |
 | ws090-p012 | 規約の全文との照合と回帰 | planning | 全て |

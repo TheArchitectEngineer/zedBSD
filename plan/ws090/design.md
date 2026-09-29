@@ -144,7 +144,7 @@ void kui_window_redraw(struct kui_window *window);       /* 次の frame で lis
 ## 6. scroll view（ユーザーの最低限の要望）
 
 - 1 つの `struct kui_scroll` が 1 つの scroll する領域の状態: 位置（x, y）、内容の大きさ、`keiland_scroller`（touch の drag・慣性・rubber band・
-  glide 中の press で止める）、wheel の glide（目標の位置へ時定数 80 ms で近づく、textedit と同じ。Ctrl+wheel は app に渡す）、key（↑↓ 1 行、
+  glide 中の press で止める）、wheel の glide（目標の位置へ時定数 70 ms で近づく、textedit の `APP_GLIDE_MS` と同じ。始めた時刻からの式で、時刻だけで決まる。Ctrl+wheel は app に渡す）、key（↑↓ 1 行、
   PageUp/Down は viewport−1 行、Home・End。list と本文の field が focus の時はそちらが先）、scroll bar（右と下、細い、動いた後 1 秒で薄れる、
   drag できる）、`kui_scroll_reveal(scroll, rect)`（選択を見える所へ）。
 - 描画は `kui_scroll_begin` が canvas の clip と原点を移し、中の部品は内容の座標で描く。`kui_scroll_end` が clip を戻して scroll bar を描く。
@@ -208,7 +208,7 @@ void kui_window_redraw(struct kui_window *window);       /* 次の frame で lis
 | --- | --- | --- | --- |
 | ws090-p001 | 設計（この文書） | 設計の見直しを終えた文書 | — |
 | ws090-p002 | libkeiui の骨組みと描画の層（canvas・text・icons・theme）、build の規則、host の試験（描画を PPM に書いて比べる、Files の実装と同じ絵になること）。**Settings の書き換えは p007 へ**（2026-09-29 main: WS089 が Settings の source を触っている間は変えない） | host 試験（Files の実装との一致と期待の絵）、`libkeiui.so` の build warning 0 | p001 |
-| ws090-p003 | scroll view（`kui_scroll`）と入力の層（`kui_ui`・input）と文字の view の touch（`kui_text_touch`、§6.1）、host の試験（wheel の glide・key・慣性の時刻の列、1 本指と 2 本指の区別・つまみ） | host 試験（scroller の既存の試験と同じ数式）、Text Editor の本文の scroll を `kui_scroll` に替えて QEMU で wheel・touch | p002 |
+| ws090-p003 | scroll view（`kui_scroll`）と入力の層（`kui_ui`・input）と文字の view の touch（`kui_text_touch`、§6.1）、host の試験（wheel の glide・key・慣性の時刻の列、1 本指と 2 本指の区別・つまみ） | host 試験（慣性は libkeiland の scroller と frame ごとに同じ位置）。Text Editor への組み込みと QEMU は p004（image への登録と一緒に。2026-09-29 の実行中に移した） | p002 |
 | ws090-p004 | 窓の土台（`kui_window`、Vulkan・shm・無しの見せ方、clipboard）。Text Editor の窓・present・touch（`kui_text_touch`: 1 本指で選択、2 本指で scroll）・clipboard を移す（dialog・chip は p005 の部品ができてから p006 で） | Text Editor の QEMU の確認（ws092-p005 と同じ項目: touch・PRIMARY・clipboard・Files から開く）、host-core 34/34 | p003 |
 | ws090-p005 | 部品（button・switch・slider・field・list・sidebar・card・row・header・dialog・chip・progress）と見本の program（`/bin/kuidemo`、画面の試験用） | 部品ごとの host 試験、見本の画面、QEMU で pointer・key・touch | p003 |
 | ws090-p006 | file chooser を libkeiui へ（部品と shm の窓で作り直す）、libkeiland から取り除き KEILAND_VERSION を上げる、Text Editor の chooser・dialog・chip を部品に替える | 移した host-chooser の試験、QEMU で Open・Save As・上書き・取り消し | p004・p005 |
