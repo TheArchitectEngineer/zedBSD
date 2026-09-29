@@ -8,8 +8,8 @@ Primary Milestone: MG002
 Related Milestones: MG004, MG006
 Objectives: O1
 Parent: [Master](../master.md)
-Executor: WS073 のサブエージェント（branch `worktree-agent-a4f5b29b09938aa63`。p001・p002 は `worktree-agent-aefedcaf4a52a0507`）。main が merge する
-Resume point: 2026-09-28 の周期の終わり: BUG-075・079〜084・086〜090 を解決（p019〜p027）。次: BUG-093（Noct の patch の mtime）→ BUG-051（sshd-session の SIGSEGV、2 回目の観測あり）→ BUG-039・BUG-031 の確認。BUG-027・033 は低い優先度
+Executor: WS073 のサブエージェント（2026-09-29 から worktree `.claude/worktrees/ws073-bugs`、branch `wt/ws073`。以前は `worktree-agent-a4f5b29b09938aa63`、p001・p002 は `worktree-agent-aefedcaf4a52a0507`）。main が merge する
+Resume point: 2026-09-29: BUG-102 を解決（p029、ping を setuid root）。次: BUG-051（sshd-session の SIGSEGV、2 回目の観測あり）→ BUG-039・BUG-031 の確認。BUG-093（Noct の patch の mtime）は toolchain に触れるので main の許可まで扱わない。BUG-027・033 は低い優先度
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -63,6 +63,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p026](phase026/phase.md) | BUG-090 | libc の qsort・qsort_r を introsort（O(n log n)、word 単位の交換）、heapsort を本物の heapsort、mergesort を安定な merge sort に（新しい `src/libc/sort.c`）。host 試験 plain・ASan・UBSan PASS、guest で n=20000 の random 1819 ms → 11 ms | cleared（2026-09-28） |
 | [ws073-p027](phase027/phase.md) | BUG-089 | 新しい worktree の build が host の LLVM を作り直し共有の build/llvm に書きうる: source・configuration・tblgen・install を identity の内容で受け入れ、tree の外の toolchain の tree への書き込みを拒否（`ZEDBSD_LLVM_ALLOW_FOREIGN=yes`）、package の source の複写を link の中身から（libcxx・clang）。bug089.sh 修正前 8/9 FAIL・修正後 PASS | cleared（2026-09-28） |
 | [ws073-p028](phase028/phase.md) | BUG-100 | Remacs 用 host Noct の重複 build と古い `.nb` 出力名による `make` の失敗を修正。canonical host Noct を使い、取得 source の `.nb` の場合だけ patch。toolchain の Noct smoke 依存を外す | cleared（2026-09-29、q498 で通常の `make` を完走） |
+| [ws073-p029](phase029/phase.md) | BUG-102 | ping を setuid root（mode 4755）にし、raw socket を開いた直後に `setuid(getuid())` で権限を落とす（ユーザーの決定、BSD と同じ）。QEMU で kei（uid 1000）から 127.0.0.1・10.0.2.2 へ ping が通る、`PING-USER:PASS` | cleared（2026-09-29） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 

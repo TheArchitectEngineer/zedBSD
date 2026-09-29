@@ -22,10 +22,10 @@ $cc -m64 -nostdlib -pie -Wl,--no-relax -Wl,--hash-style=sysv,-z,now,-z,relro,-z,
 	-Wl,-z,stack-size=0x100000 -Wl,--dynamic-linker=/lib/ld.so \
 	"$sysroot/usr/lib/crt1.o" "$out/setuid-drop.o" -Lbuild/amd64/dynamic -l:libc.so -o "$out/setuid-drop"
 g() { timeout 300 sh plan/ws073/tests/g.sh "$@" </dev/null; }
-g put "$out/setuid-drop" /var/tmp/setuid-drop
+g put "$out/setuid-drop" /tmp/setuid-drop
 g run 'mkdir -p /home/kei/.ssh && cp /root/.ssh/authorized_keys /home/kei/.ssh/authorized_keys &&
 	chown -R kei:kei /home/kei /home/kei/.ssh && chmod 700 /home/kei/.ssh && chmod 600 /home/kei/.ssh/authorized_keys &&
-	chown root:wheel /var/tmp/setuid-drop && chmod 4755 /var/tmp/setuid-drop && ls -l /var/tmp/setuid-drop'
+	chown root:wheel /tmp/setuid-drop && chmod 4755 /tmp/setuid-drop && ls -l /tmp/setuid-drop'
 port=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["ssh_port"])' "$runtime/session.json")
 kei() {
 	timeout 120 ssh -i plan/tmp/guest/id_ed25519 -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -39,11 +39,11 @@ if kei 'ping -c 3 127.0.0.1' > "$out/kei-ping-lo.txt" 2>&1; then :; else echo "P
 cat "$out/kei-ping-lo.txt"
 if kei 'ping -c 3 10.0.2.2' > "$out/kei-ping-gw.txt" 2>&1; then :; else echo "PING-USER:FAIL gateway"; status=1; fi
 cat "$out/kei-ping-gw.txt"
-kei 'cp /bin/ping /var/tmp/ping-nosuid.$$ && /var/tmp/ping-nosuid.$$ -c 1 127.0.0.1; echo "exit $?"; rm -f /var/tmp/ping-nosuid.$$' \
+kei 'cp /bin/ping /tmp/ping-nosuid.$$ && /tmp/ping-nosuid.$$ -c 1 127.0.0.1; echo "exit $?"; rm -f /tmp/ping-nosuid.$$' \
 	> "$out/kei-ping-nosuid.txt" 2>&1 || true
 cat "$out/kei-ping-nosuid.txt"
 grep -q 'socket: .*not permitted' "$out/kei-ping-nosuid.txt" || { echo "PING-USER:FAIL copy without the bit was not refused"; status=1; }
-kei /var/tmp/setuid-drop > "$out/kei-setuid-drop.txt" 2>&1 || true
+kei /tmp/setuid-drop > "$out/kei-setuid-drop.txt" 2>&1 || true
 cat "$out/kei-setuid-drop.txt"
 grep -q 'SETUID-DROP:PASS' "$out/kei-setuid-drop.txt" || { echo "PING-USER:FAIL privilege drop"; status=1; }
 g run 'ping -c 2 127.0.0.1' > "$out/root-ping-lo.txt" 2>&1 || { echo "PING-USER:FAIL root loopback"; status=1; }
