@@ -124,24 +124,44 @@ kl_chooser_layout(
 	/* The two cards, side by side. */
 	layout = &chooser->layout;
 	draw_set(&layout->sidebar, DRAW_GAP, DRAW_GAP, DRAW_SIDEBAR_WIDTH, chooser->height - 2 * DRAW_GAP);
-	draw_set(&layout->content, 2 * DRAW_GAP + DRAW_SIDEBAR_WIDTH, DRAW_GAP,
-	    chooser->width - 3 * DRAW_GAP - DRAW_SIDEBAR_WIDTH, chooser->height - 2 * DRAW_GAP);
+	draw_set(
+		&layout->content,
+		2 * DRAW_GAP + DRAW_SIDEBAR_WIDTH,
+		DRAW_GAP,
+		chooser->width - 3 * DRAW_GAP - DRAW_SIDEBAR_WIDTH,
+		chooser->height - 2 * DRAW_GAP);
 
 	/* The places, under the sidebar's title. */
 	layout->places_top = layout->sidebar.y + 8 + 30;
 
 	/* The row of the button to the folder above and the location. */
 	draw_set(&layout->up, layout->content.x + DRAW_PAD, layout->content.y + 10, DRAW_LOCATION, DRAW_LOCATION);
-	draw_set(&layout->location, layout->up.x + DRAW_LOCATION + 8, layout->up.y,
-	    layout->content.width - 2 * DRAW_PAD - DRAW_LOCATION - 8, DRAW_LOCATION);
+	draw_set(
+		&layout->location,
+		layout->up.x + DRAW_LOCATION + 8,
+		layout->up.y,
+		layout->content.width - 2 * DRAW_PAD - DRAW_LOCATION - 8,
+		DRAW_LOCATION);
 
 	/* The list's header, the bottom bar, and the list between them. */
-	draw_set(&layout->header, layout->content.x + DRAW_PAD, layout->up.y + DRAW_LOCATION + 8,
-	    layout->content.width - 2 * DRAW_PAD, DRAW_HEADER);
-	draw_set(&layout->bar, layout->header.x, layout->content.y + layout->content.height - DRAW_BAR,
-	    layout->header.width, DRAW_BAR);
-	draw_set(&layout->list, layout->header.x, layout->header.y + DRAW_HEADER,
-	    layout->header.width, layout->bar.y - layout->header.y - DRAW_HEADER - 4);
+	draw_set(
+		&layout->header,
+		layout->content.x + DRAW_PAD,
+		layout->up.y + DRAW_LOCATION + 8,
+		layout->content.width - 2 * DRAW_PAD,
+		DRAW_HEADER);
+	draw_set(
+		&layout->bar,
+		layout->header.x,
+		layout->content.y + layout->content.height - DRAW_BAR,
+		layout->header.width,
+		DRAW_BAR);
+	draw_set(
+		&layout->list,
+		layout->header.x,
+		layout->header.y + DRAW_HEADER,
+		layout->header.width,
+		layout->bar.y - layout->header.y - DRAW_HEADER - 4);
 
 	/* The buttons from the right of the bar, centred in its height. */
 	middle = layout->bar.y + (DRAW_BAR - DRAW_BUTTON) / 2 + 2;
@@ -170,10 +190,18 @@ kl_chooser_layout(
 	}
 
 	/* The question's card in the middle of the content, its buttons at its lower right. */
-	draw_set(&layout->card, layout->content.x + (layout->content.width - DRAW_CARD_WIDTH) / 2,
-	    layout->content.y + (layout->content.height - DRAW_CARD_HEIGHT) / 2, DRAW_CARD_WIDTH, DRAW_CARD_HEIGHT);
-	draw_set(&layout->replace, layout->card.x + layout->card.width - 18 - DRAW_ACCEPT_WIDTH,
-	    layout->card.y + layout->card.height - 16 - DRAW_BUTTON, DRAW_ACCEPT_WIDTH, DRAW_BUTTON);
+	draw_set(
+		&layout->card,
+		layout->content.x + (layout->content.width - DRAW_CARD_WIDTH) / 2,
+		layout->content.y + (layout->content.height - DRAW_CARD_HEIGHT) / 2,
+		DRAW_CARD_WIDTH,
+		DRAW_CARD_HEIGHT);
+	draw_set(
+		&layout->replace,
+		layout->card.x + layout->card.width - 18 - DRAW_ACCEPT_WIDTH,
+		layout->card.y + layout->card.height - 16 - DRAW_BUTTON,
+		DRAW_ACCEPT_WIDTH,
+		DRAW_BUTTON);
 	draw_set(&layout->keep, layout->replace.x - 8 - DRAW_CANCEL_WIDTH, layout->replace.y, DRAW_CANCEL_WIDTH, DRAW_BUTTON);
 }
 

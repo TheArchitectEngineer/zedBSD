@@ -77,8 +77,10 @@ static struct te_present main_present;
 /* The editor: the document and the view, made once the swapchain's size is known. */
 static struct te_app main_app;
 
-/* The text's fonts and the interface's, open for the whole run (without them the frame has no words). */
+/* The text's font (monospaced) and its fallback, open for the whole run (without them the text has no words). */
 static struct te_text main_body;
+
+/* The interface's font and its fallback, open for the whole run (the chips, dialogs and messages). */
 static struct te_text main_ui;
 
 /*
@@ -638,7 +640,9 @@ main_state(
 	state->can_undo = te_undo_can_undo(&main_app.undo);
 	state->can_redo = te_undo_can_redo(&main_app.undo);
 	te_edit_selection(&main_app, &start, &end);
-	state->selected = end > start;
+	state->selected = 0;
+	if (end > start)
+		state->selected = 1;
 	state->modified = te_app_modified(&main_app);
 	state->line_numbers = main_app.line_numbers;
 	state->wrap = main_app.wrap;

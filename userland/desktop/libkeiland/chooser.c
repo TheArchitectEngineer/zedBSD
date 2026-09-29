@@ -151,6 +151,8 @@ struct keiland_file_chooser {
  * destroyed: it answers pings for as long as the process runs.
  */
 static struct xdg_wm_base *chooser_kept_shell;
+
+/* The connection chooser_kept_shell was bound on (a chooser of another connection binds its own). */
 static struct wl_display *chooser_kept_display;
 
 /* What the registry search found: the globals' names and versions (0 for none). */

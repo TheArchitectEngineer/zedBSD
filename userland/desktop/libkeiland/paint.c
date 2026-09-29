@@ -494,6 +494,7 @@ paint_rounded_distance(
 	double qy;
 	double outside_x;
 	double outside_y;
+	double beyond;
 	double inside;
 
 	/* The point folded into one quarter, from the corner circle's centre. */
@@ -517,8 +518,11 @@ paint_rounded_distance(
 	if (inside > 0.0)
 		inside = 0.0;
 
-	/* The distance from the edge. */
-	return sqrt(outside_x * outside_x + outside_y * outside_y) + inside - radius;
+	/* How far beyond the straight edges the point is, round the corner. */
+	beyond = sqrt(outside_x * outside_x + outside_y * outside_y);
+
+	/* Reports the distance from the edge. */
+	return beyond + inside - radius;
 }
 
 /* Blends a colour (not premultiplied) at a coverage (0 to 255) over a premultiplied pixel. */
