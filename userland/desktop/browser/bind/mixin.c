@@ -241,6 +241,8 @@ bind_remove(
 	unsigned count,
 	vm_value *result)
 {
+	struct bind_window *window;
+	struct dom_node *parent;
 	struct dom_node *node;
 	int status;
 
@@ -254,7 +256,14 @@ bind_remove(
 		return status;
 
 	/* Out of its parent, if it has one. */
+	window = bind_window_of(realm);
+	parent = node->parent;
 	dom_remove(node);
+	if (parent != NULL) {
+		status = bind_environment_child_mutation(window, parent, NULL, node);
+		if (status != 0)
+			return status;
+	}
 
 	/* Succeeded: the node is detached. */
 	return 0;

@@ -70,6 +70,7 @@ static void flex_shrink(struct flex_item *items, size_t count, layout_unit avail
 static void flex_resolve(struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static int flex_lay_item(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
 static int flex_lay_sized(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
+static int flex_relay_cross(struct layout_tree *tree, struct layout_box *box, struct flex_item *items, size_t count, int row, layout_unit line_cross, layout_unit percentage_basis);
 static void flex_place_line(struct layout_box *box, struct flex_item *items, size_t count, int row, layout_unit available, layout_unit gap, layout_unit cross_start, layout_unit line_cross);
 static layout_unit flex_cross_outer(const struct layout_box *item, int row);
 static int flex_align_of(const struct layout_box *box, const struct layout_box *item);
@@ -97,6 +98,7 @@ layout_flex(
 	layout_unit line_cross;
 	layout_unit cross_cursor;
 	layout_unit sizing;
+	layout_unit percentage_basis;
 	size_t count;
 	size_t start;
 	size_t end;
@@ -202,6 +204,16 @@ layout_flex(
 		/* A column's single line is as wide as the container. */
 		if (!wrap && !row)
 			line_cross = box->width;
+
+		/* Stretch and a definite percentage cross size must reach the item's descendants too. */
+		percentage_basis = -1;
+		if (!wrap && row && box->style.height.unit == CSS_UNIT_PX)
+			percentage_basis = line_cross;
+		error = flex_relay_cross(tree, box, items + start, end - start, row, line_cross, percentage_basis);
+		if (error != 0) {
+			free(items);
+			return error;
+		}
 
 		/* The items' places along both axes. */
 		if (cross_cursor > 0)
@@ -825,6 +837,103 @@ flex_lay_sized(
 		return error;
 
 	/* Succeeded: the item is laid out. */
+	return 0;
+}
+
+/*
+ * Lays row items out again after the line's used cross size is known.  A
+ * stretched auto-height item used to have only its box height changed at
+ * placement time, after its descendants had been laid out.  Giving the
+ * item a temporary definite height here lets percentage-height descendants
+ * use the stretched size.  A percentage item gets the same treatment when
+ * the flex container has a definite height.
+ */
+static int
+flex_relay_cross(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	struct flex_item *items,
+	size_t count,
+	int row,
+	layout_unit line_cross,
+	layout_unit percentage_basis)
+{
+	struct flex_sizes saved;
+	struct layout_box *child;
+	layout_unit frame;
+	layout_unit height;
+	size_t index;
+	int align;
+	int error;
+
+	/* A column's cross axis is width, which the normal width layout already resolves. */
+	if (!row)
+		return 0;
+
+	/* Each item that needs the definite cross size is laid out again. */
+	for (index = 0; index < count; index++) {
+		child = items[index].box;
+		align = flex_align_of(box, child);
+		frame = child->border[CSS_TOP] + child->padding[CSS_TOP] +
+		    child->padding[CSS_BOTTOM] + child->border[CSS_BOTTOM];
+
+		/* A definite percentage, or an automatic cross size stretched to the line. */
+		if (child->style.height.unit == CSS_UNIT_PERCENT && percentage_basis >= 0) {
+			height = flex_length(&child->style.height, percentage_basis);
+			if (child->style.box_sizing == CSS_BOX_SIZING_BORDER)
+				height -= frame;
+		} else if (child->style.height.unit == CSS_UNIT_AUTO && align == CSS_ALIGN_STRETCH) {
+			height = line_cross - child->margin[CSS_TOP] - child->margin[CSS_BOTTOM] - frame;
+		} else {
+			continue;
+		}
+
+		/* No cross size is negative. */
+		if (height < 0)
+			height = 0;
+
+		/* Keep the flexed content width while giving layout_block a definite content height. */
+		saved.box_sizing = child->style.box_sizing;
+		saved.width = child->style.width;
+		saved.min_width = child->style.min_width;
+		saved.max_width = child->style.max_width;
+		saved.height = child->style.height;
+		saved.min_height = child->style.min_height;
+		saved.max_height = child->style.max_height;
+		memcpy(saved.margin, child->style.margin, sizeof(saved.margin));
+		child->style.box_sizing = CSS_BOX_SIZING_CONTENT;
+		child->style.width.unit = CSS_UNIT_PX;
+		child->style.width.value = layout_to_px(child->width);
+		child->style.width.offset = 0;
+		child->style.min_width.unit = CSS_UNIT_PX;
+		child->style.min_width.value = 0;
+		child->style.max_width.unit = CSS_UNIT_NONE;
+		child->style.margin[CSS_LEFT].unit = CSS_UNIT_PX;
+		child->style.margin[CSS_LEFT].value = layout_to_px(items[index].margin_start);
+		child->style.margin[CSS_LEFT].offset = 0;
+		child->style.margin[CSS_RIGHT].unit = CSS_UNIT_PX;
+		child->style.margin[CSS_RIGHT].value = layout_to_px(items[index].margin_end);
+		child->style.margin[CSS_RIGHT].offset = 0;
+		child->style.height.unit = CSS_UNIT_PX;
+		child->style.height.value = layout_to_px(height);
+		child->style.height.offset = 0;
+		child->style.min_height.unit = CSS_UNIT_PX;
+		child->style.min_height.value = 0;
+		child->style.max_height.unit = CSS_UNIT_NONE;
+		error = layout_block(tree, child, box->width);
+		child->style.box_sizing = saved.box_sizing;
+		child->style.width = saved.width;
+		child->style.min_width = saved.min_width;
+		child->style.max_width = saved.max_width;
+		child->style.height = saved.height;
+		child->style.min_height = saved.min_height;
+		child->style.max_height = saved.max_height;
+		memcpy(child->style.margin, saved.margin, sizeof(saved.margin));
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every applicable item and its descendants use the cross size. */
 	return 0;
 }
 

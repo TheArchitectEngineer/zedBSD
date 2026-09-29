@@ -74,6 +74,8 @@ layout_build(
 	tree->image_context = image_context;
 	tree->viewport_width = (layout_unit)width * LAYOUT_UNIT;
 	tree->viewport_height = (layout_unit)height * LAYOUT_UNIT;
+	tree->containing_height = tree->viewport_height;
+	tree->containing_height_definite = 1;
 	css_engine_set_viewport(css, (float)width, (float)height);
 
 	/* Builds the boxes of the root element. */

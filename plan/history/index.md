@@ -1,8 +1,8 @@
 <!-- awesome-plan project=zedbsd record=past-log -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし（2026-09-27 から subagent の運用）
-Last finished Queue: q498（ws073-p028 cleared）。2026-09-29〜30 は subagent（N=6〜9）の周期で Queue の外。それ以前の作業は下の節
+Active Queue: なし
+Last finished Queue: [q503](queue-q503.md)（ws074-p092 cleared。Amazonの後続script向けWeb API、人間の session）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
@@ -23,6 +23,25 @@ Last finished Queue: q498（ws073-p028 cleared）。2026-09-29〜30 は subagent
 - **基盤**: venus-win32 の取り込み、Kei-nightly.zip の CI、ls（GNU 形式）・sh（履歴・補完・`~`）の WS086・WS087（完了）。
 - **ユーザーの判断**: master の「有効なユーザーの判断」に要約。IME とブラウザは一時的に人間が作業中。
 - **未実施**: 実機での確認の大半（demo-lcd8 でユーザーが確認）。QEMU の証拠と実機の証拠は各 phase.md で分けている。
+## 最新: 2026-09-30 q503
+
+[q503](queue-q503.md): Amazonの後続script向けWeb API、非同期fetch、MutationObserver、有界なsettleを実装。sign-in tooltipの幅とstacking orderも修正し、dynamic topは71.81%/ink 64.58%、約32秒・Uncaught 4。GitHubへは未公開。
+
+## 2026-09-30 q502
+
+[q502](queue-q502.md): DOMへ挿入された外部scriptを非同期取得して一度だけ実行し、load/errorを送る。Chromium fixture、DOM 20/20、ASan。dynamic topはAUI後続scriptへ進み、次のWeb API不足をp092へ分けた。GitHubへは未公開。
+
+## 2026-09-30 q501
+
+[q501](queue-q501.md): percentage heightを確定したcontaining blockで解決し、flex/gridへ高さを伝播、gridの`1fr`行を配分。topは84.06%/ink 80.56%、searchは76.32%/ink 34.48%へ改善。GitHubへは未公開。
+
+## 2026-09-30 q500
+
+[q500](queue-q500.md): Amazonの固定captureをbrowserとChromiumで同条件に描き、入力・実行環境・画像のhashと画素・ink指標をJSONへ残す手順を確立。top 82.96%/ink 79.01%、search 75.85%/ink 32.97%。GitHubへは未公開。
+
+## 2026-09-29〜30 q499
+
+[q499](queue-q499.md): Windows版QEMU/virglrendererのVenus表示とFiles起動停止、Noctの旧path混入を修正。表示と通常makeを確認。vendorのcommit/pushはユーザーreview待ち。GitHubへは未公開。
 
 ## 最新: 2026-09-29 q498
 

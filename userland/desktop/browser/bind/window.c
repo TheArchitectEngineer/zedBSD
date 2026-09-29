@@ -35,6 +35,7 @@ static int window_queue_microtask(struct vm_realm *realm, vm_value this_value, c
 static int window_inner_width(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int window_inner_height(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static void window_report_job(struct vm_realm *realm, vm_value exception, void *context);
+static void window_report_exception(struct bind_window *window, vm_value exception, const char *name);
 static void window_trace(struct vm_heap *heap, void *context);
 
 /*
@@ -107,6 +108,7 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_performance_interface,
 	&bind_location_interface,
 	&bind_html_image_element_interface,
+	&bind_html_script_element_interface,
 	&bind_dom_token_list_interface,
 	&bind_dom_string_map_interface,
 	&bind_dom_rect_interface,
@@ -183,6 +185,7 @@ bind_window_destroy(
 		return;
 
 	/* The realm no longer has a window, and the heap no longer traces it. */
+	bind_environment_release(window);
 	if (window->realm->host == window)
 		window->realm->host = NULL;
 	vm_heap_remove_tracer(window->realm->heap, window_trace, window);
@@ -267,7 +270,7 @@ bind_run_script(
 		wb_buffer_release(&line);
 	} else if (status == VM_THROWN) {
 		/* An exception is reported and cleared. */
-		bind_report_exception(window, window->realm->exception);
+		window_report_exception(window, window->realm->exception, name);
 		window->realm->exception = VM_VALUE_UNDEFINED;
 		status = 0;
 	}
@@ -293,12 +296,34 @@ int
 bind_checkpoint(
 	struct bind_window *window)
 {
+	int queued;
 	int status;
 
-	/* Runs the realm's queue with the console as the report. */
+	/* Runs the jobs already queued by the script. */
 	status = vm_run_jobs(window->realm, window_report_job, window);
 	if (status != 0)
 		return status;
+
+	/* DOM changes notify their observers as microtasks; a callback may make another change. */
+	for (;;) {
+		status = bind_environment_checkpoint(window, &queued);
+		if (status != 0 || !queued)
+			break;
+		status = vm_run_jobs(window->realm, window_report_job, window);
+		if (status != 0)
+			break;
+	}
+
+	/* A callback failure ends the checkpoint. */
+	if (status != 0)
+		return status;
+
+	/* A page may now run tasks queued by DOM changes, but not from a nested script. */
+	if (window->realm->depth == 0 && window->host.checkpoint != NULL) {
+		status = window->host.checkpoint(window->host.context);
+		if (status != 0)
+			return status;
+	}
 
 	/* Succeeded: the queue is empty. */
 	return 0;
@@ -313,6 +338,16 @@ void
 bind_report_exception(
 	struct bind_window *window,
 	vm_value exception)
+{
+	window_report_exception(window, exception, NULL);
+}
+
+/* Reports an exception, including the current script's name when it is known. */
+static void
+window_report_exception(
+	struct bind_window *window,
+	vm_value exception,
+	const char *name)
 {
 	struct wb_buffer line;
 	uint32_t site_line;
@@ -334,7 +369,9 @@ bind_report_exception(
 
 	/* The place the exception was thrown from, which a page's author needs to find the fault. */
 	known = vm_throw_site(window->realm, exception, &site_line, &site_column);
-	if (error == 0 && known)
+	if (error == 0 && known && name != NULL)
+		error = wb_buffer_printf(&line, " (at %s:%u:%u)", name, (unsigned)site_line, (unsigned)site_column);
+	if (error == 0 && known && name == NULL)
 		error = wb_buffer_printf(&line, " (at %u:%u)", (unsigned)site_line, (unsigned)site_column);
 
 	/* Goes to the console as an error. */

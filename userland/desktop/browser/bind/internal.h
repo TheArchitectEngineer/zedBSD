@@ -50,6 +50,7 @@ enum bind_interface_index {
 	BIND_PERFORMANCE,
 	BIND_LOCATION,
 	BIND_HTML_IMAGE_ELEMENT,
+	BIND_HTML_SCRIPT_ELEMENT,
 	BIND_DOM_TOKEN_LIST,
 	BIND_DOM_STRING_MAP,
 	BIND_DOM_RECT,
@@ -126,6 +127,9 @@ struct bind_timer {
 	vm_value arguments;
 };
 
+struct environment_fetch_pending;
+struct environment_mutation_observer;
+
 /*
  * The window of a page: the realm whose global object it is, the
  * document, the host, the prototypes of the interfaces, the window's own
@@ -158,7 +162,17 @@ struct bind_window {
 	double time_origin;
 	struct vm_object *local_storage;
 	struct vm_object *session_storage;
+	struct environment_fetch_pending *fetches;
+	struct environment_mutation_observer *mutation_observers;
 };
+
+void bind_environment_release(struct bind_window *window);
+int bind_environment_checkpoint(struct bind_window *window, int *queued);
+int bind_environment_child_mutation(
+	struct bind_window *window,
+	struct dom_node *parent,
+	struct dom_node *added,
+	struct dom_node *removed);
 
 /*
  * One event listener of a target: its type, its callback (a function or
@@ -247,6 +261,7 @@ extern const struct bind_interface bind_screen_interface;
 extern const struct bind_interface bind_performance_interface;
 extern const struct bind_interface bind_location_interface;
 extern const struct bind_interface bind_html_image_element_interface;
+extern const struct bind_interface bind_html_script_element_interface;
 extern const struct bind_interface bind_dom_token_list_interface;
 extern const struct bind_interface bind_dom_string_map_interface;
 extern const struct bind_interface bind_dom_rect_interface;

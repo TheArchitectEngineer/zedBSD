@@ -29,7 +29,32 @@
 #define SCRIPT_NAME_MAX		200U
 
 /* The most rounds of timers a settling page runs (a page whose timers never stop is cut short). */
-#define SCRIPT_SETTLE_ROUNDS	100000
+#define SCRIPT_SETTLE_ROUNDS	100
+
+/* The deepest inserted subtree searched for scripts. */
+#define SCRIPT_INSERT_DEPTH	512
+
+/* An external script prepared by insertion and waiting for its task or fetch. */
+struct page_script {
+	struct page *page;
+	struct dom_element *element;
+	char *location;
+	struct wb_units source;
+	struct net_request *request;
+	int ready;
+	int failed;
+	int done;
+	int rooted;
+	int ordered;
+};
+
+/* One Fetch API request using the page's asynchronous network loader. */
+struct page_fetch_request {
+	struct page *page;
+	struct net_request *request;
+	bind_fetch_done done;
+	void *done_context;
+};
 
 static void script_console(void *context, int level, const char *text, size_t length);
 static int script_location(void *context, int part, struct wb_buffer *out);
@@ -39,6 +64,56 @@ static int script_type_runs(const struct dom_element *script);
 static int script_attribute(struct page *page, const struct dom_element *element, const char *name, struct dom_attribute **attribute);
 static int script_run_file(struct page *page, const struct vm_string *src);
 static int script_ascii_equal_folded(const struct vm_string *string, const char *ascii);
+static int script_fetch(void *context, const char *href, bind_fetch_done done, void *done_context);
+static int script_fetch_sync(void *context, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
+static void script_fetch_arrived(void *context, struct net_request *request);
+static void script_fetch_remove(struct page_fetch_request *entry);
+static int script_node_inserted(void *context, struct dom_node *node);
+static int script_checkpoint(void *context);
+static int script_walk_inserted(struct page *page, struct dom_node *node, int depth);
+static int script_prepare_dynamic(struct page *page, struct dom_element *script);
+static int script_prepare_external(struct page *page, struct dom_element *script, const struct vm_string *src);
+static int script_decode(struct page_script *entry, const unsigned char *bytes, size_t length);
+static int script_run_ready(struct page *page);
+static int script_finish(struct page_script *entry);
+static void script_arrived(void *context, struct net_request *request);
+static void script_release(struct page_script *entry);
+
+/* Starts the page's list of dynamic external scripts empty. */
+void
+page_scripts_init(
+	struct page *page)
+{
+	wb_vector_init(&page->scripts, sizeof(struct page_script *));
+	wb_vector_init(&page->fetches, sizeof(struct page_fetch_request *));
+}
+
+/* Cancels and frees the page's dynamic external scripts. */
+void
+page_scripts_release(
+	struct page *page)
+{
+	struct page_script *entry;
+	struct page_fetch_request *fetch;
+	size_t index;
+
+	/* Each entry owns a request, a root while pending, its source and location. */
+	for (index = 0; index < page->scripts.count; index++) {
+		entry = *(struct page_script **)wb_vector_at(&page->scripts, index);
+		script_release(entry);
+	}
+
+	/* Fetch API requests have no callback while cancellation frees them. */
+	for (index = 0; index < page->fetches.count; index++) {
+		fetch = *(struct page_fetch_request **)wb_vector_at(&page->fetches, index);
+		net_request_cancel(fetch->request);
+		free(fetch);
+	}
+
+	/* The table itself. */
+	wb_vector_release(&page->scripts);
+	wb_vector_release(&page->fetches);
+}
 
 /*
  * Parses the page's location as a URL: its URL, or file: for the
@@ -151,12 +226,165 @@ page_start_scripts(
 	host.storage = page_storage_calls();
 	host.computed_style = page_computed_style;
 	host.scroll_to = page_scroll_to;
+	host.node_inserted = script_node_inserted;
+	host.checkpoint = script_checkpoint;
+	host.fetch = script_fetch;
+	host.fetch_sync = script_fetch_sync;
+	host.element_at = page_element_at;
 	error = bind_window_create(page->realm, page->document, &host, &page->window);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the page can run scripts. */
 	return 0;
+}
+
+/* Fetches synchronously for legacy synchronous consumers such as the first XHR pass. */
+static int
+script_fetch_sync(
+	void *context,
+	const char *href,
+	struct wb_buffer *bytes,
+	struct wb_buffer *final_url)
+{
+	struct page *page;
+
+	/* The original blocking page fetcher remains available to synchronous XHR. */
+	page = context;
+	if (page->base == NULL)
+		return EINVAL;
+	return page_fetch(page->base, href, bytes, final_url);
+}
+
+/* Fetches bytes for the binding's fetch API, resolved against this page. */
+static int
+script_fetch(
+	void *context,
+	const char *href,
+	bind_fetch_done done,
+	void *done_context)
+{
+	struct page *page;
+	struct page_fetch_request *entry;
+	struct wb_buffer location;
+	struct wb_buffer bytes;
+	struct wb_buffer final_url;
+	const char *response_url;
+	int response_status;
+	int kept;
+	int remote;
+	int error;
+
+	/* Resolve first so remote requests can use the page's non-blocking loader. */
+	page = context;
+	if (page->base == NULL)
+		return EINVAL;
+	wb_buffer_init(&location);
+	error = page_resolve_location(page->base, href, &location);
+	remote = error == 0 && net_loader_takes(wb_buffer_string(&location));
+
+	/* A web resource runs with the same loader as images and inserted scripts. */
+	if (error == 0 && page->loader != NULL && remote) {
+		kept = 0;
+		entry = calloc(1, sizeof(*entry));
+		if (entry == NULL) {
+			error = ENOMEM;
+		} else {
+			entry->page = page;
+			entry->done = done;
+			entry->done_context = done_context;
+			error = wb_vector_push(&page->fetches, &entry);
+			if (error == 0) {
+				kept = 1;
+				error = net_loader_fetch(page->loader, wb_buffer_string(&location),
+				    script_fetch_arrived, entry, &entry->request);
+			}
+
+			/* A request that did not start leaves no table entry. */
+			if (error != 0) {
+				if (kept)
+					page->fetches.count--;
+				free(entry);
+			}
+		}
+
+		/* The loader copied the resolved location. */
+		wb_buffer_release(&location);
+		return error;
+	}
+
+	/* Local and data resources complete in this task. */
+	wb_buffer_init(&bytes);
+	wb_buffer_init(&final_url);
+	if (error == 0)
+		error = page_fetch(page->base, href, &bytes, &final_url);
+	response_status = 0;
+	response_url = NULL;
+	if (error == 0) {
+		response_status = 200;
+		response_url = wb_buffer_string(&final_url);
+	}
+
+	/* The binding copies the bytes before the temporary buffers go away. */
+	done(done_context, error, response_status, bytes.data, bytes.length, response_url);
+	wb_buffer_release(&bytes);
+	wb_buffer_release(&final_url);
+	wb_buffer_release(&location);
+	return 0;
+}
+
+/* Completes one Fetch API request from the asynchronous loader. */
+static void
+script_fetch_arrived(
+	void *context,
+	struct net_request *request)
+{
+	const struct net_response *response;
+	struct page_fetch_request *entry;
+	const char *response_url;
+	int response_status;
+	int error;
+
+	/* The result remains valid for the duration of this loader callback. */
+	entry = context;
+	entry->request = NULL;
+	error = net_request_error(request);
+	response = net_request_response(request);
+	response_status = 0;
+	response_url = NULL;
+	if (error == 0) {
+		response_status = response->status;
+		response_url = wb_buffer_string(&response->url);
+	}
+
+	/* Settlement queues Promise jobs, which this task then runs. */
+	entry->done(entry->done_context, error, response_status,
+	    response->body.data, response->body.length, response_url);
+	(void)bind_checkpoint(entry->page->window);
+	script_fetch_remove(entry);
+}
+
+/* Removes and frees a completed Fetch API request. */
+static void
+script_fetch_remove(
+	struct page_fetch_request *entry)
+{
+	struct page_fetch_request **slot;
+	size_t index;
+
+	/* Completion may have added more requests; find this one in the table. */
+	for (index = 0; index < entry->page->fetches.count; index++) {
+		slot = wb_vector_at(&entry->page->fetches, index);
+		if (*slot != entry)
+			continue;
+		*slot = *(struct page_fetch_request **)wb_vector_at(&entry->page->fetches,
+		    entry->page->fetches.count - 1U);
+		entry->page->fetches.count--;
+		break;
+	}
+
+	/* The table no longer refers to the completed entry. */
+	free(entry);
 }
 
 /*
@@ -179,6 +407,7 @@ page_run_script_element(
 
 	/* A script of another type (a module, data) does not run. */
 	page = context;
+	script->node.flags |= DOM_NODE_SCRIPT_STARTED;
 	runs = script_type_runs(script);
 	if (!runs)
 		return;
@@ -209,6 +438,351 @@ page_run_script_element(
 	if (error == 0)
 		bind_run_script(page->window, text.data, text.length, name);
 	wb_units_release(&text);
+}
+
+/* A DOM operation inserted a subtree; connected script elements in it are prepared in tree order. */
+static int
+script_node_inserted(
+	void *context,
+	struct dom_node *node)
+{
+	struct page *page;
+	struct dom_node *ancestor;
+
+	/* Only insertion into the page's document prepares scripts. */
+	page = context;
+	for (ancestor = node; ancestor != NULL; ancestor = ancestor->parent) {
+		if (ancestor == &page->document->node)
+			return script_walk_inserted(page, node, 0);
+	}
+
+	/* A detached subtree does not prepare its scripts until it is connected. */
+	return 0;
+}
+
+/* Runs external scripts whose local bytes became ready at the last script checkpoint. */
+static int
+script_checkpoint(
+	void *context)
+{
+	return script_run_ready(context);
+}
+
+/* Prepares each unstarted script in an inserted connected subtree. */
+static int
+script_walk_inserted(
+	struct page *page,
+	struct dom_node *node,
+	int depth)
+{
+	struct dom_node *child;
+	int script;
+	int error;
+
+	/* Stops at the parser's maximum nesting. */
+	if (depth > SCRIPT_INSERT_DEPTH)
+		return 0;
+
+	/* The node itself, when it is a script. */
+	script = dom_element_is(node, DOM_NS_HTML, DOM_TAG_SCRIPT);
+	if (script) {
+		error = script_prepare_dynamic(page, (struct dom_element *)node);
+		if (error != 0)
+			return error;
+	}
+
+	/* Then its descendants in tree order. */
+	for (child = node->first_child; child != NULL; child = child->next) {
+		error = script_walk_inserted(page, child, depth + 1);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the subtree's scripts were prepared. */
+	return 0;
+}
+
+/* Prepares one script made by DOM operations: inline now, or an external script asynchronously. */
+static int
+script_prepare_dynamic(
+	struct page *page,
+	struct dom_element *script)
+{
+	struct dom_attribute *src;
+	struct dom_node *child;
+	const struct dom_character_data *data;
+	struct wb_units text;
+	const char *name;
+	int runs;
+	int error;
+
+	/* A prepared script is never prepared again, even when it is moved. */
+	if ((script->node.flags & DOM_NODE_SCRIPT_STARTED) != 0)
+		return 0;
+	script->node.flags |= DOM_NODE_SCRIPT_STARTED;
+
+	/* Modules and data blocks are outside this pass. */
+	runs = script_type_runs(script);
+	if (!runs)
+		return 0;
+
+	/* External dynamic scripts are fetched now and run in a later task. */
+	error = script_attribute(page, script, "src", &src);
+	if (error != 0)
+		return error;
+	if (src != NULL)
+		return script_prepare_external(page, script, src->value);
+
+	/* An inline dynamic script runs synchronously during its insertion. */
+	wb_units_init(&text);
+	error = 0;
+	for (child = script->node.first_child; child != NULL && error == 0; child = child->next) {
+		if (child->type != DOM_TEXT)
+			continue;
+		data = (const struct dom_character_data *)child;
+		error = wb_units_append(&text, data->data.data, data->data.length);
+	}
+
+	/* The inline source runs under the page's name. */
+	name = page->base;
+	if (name == NULL)
+		name = "(inline)";
+	if (error == 0)
+		error = bind_run_script(page->window, text.data, text.length, name);
+	wb_units_release(&text);
+
+	/* Succeeded, or memory ran out. */
+	return error;
+}
+
+/* Makes an entry for an external dynamic script and starts or performs its fetch. */
+static int
+script_prepare_external(
+	struct page *page,
+	struct dom_element *script,
+	const struct vm_string *src)
+{
+	struct page_script *entry;
+	struct wb_buffer href;
+	struct wb_buffer location;
+	struct wb_buffer bytes;
+	struct page_script *last;
+	int remote;
+	int error;
+
+	/* A stable entry owns the source and roots its element while pending. */
+	entry = calloc(1, sizeof(*entry));
+	if (entry == NULL)
+		return ENOMEM;
+	entry->page = page;
+	entry->element = script;
+	entry->ordered = (script->node.flags & DOM_NODE_SCRIPT_ORDERED) != 0;
+	wb_units_init(&entry->source);
+	wb_buffer_init(&href);
+	wb_buffer_init(&location);
+	wb_buffer_init(&bytes);
+
+	/* Resolves the source before keeping the entry. */
+	error = vm_string_to_utf8(src, &href);
+	if (error == 0 && page->base == NULL)
+		error = EINVAL;
+	if (error == 0)
+		error = page_resolve_location(page->base, wb_buffer_string(&href), &location);
+	if (error == 0) {
+		entry->location = strdup(wb_buffer_string(&location));
+		if (entry->location == NULL)
+			error = ENOMEM;
+	}
+
+	/* The table keeps the entry stable, and its element is a root until completion. */
+	if (error == 0)
+		error = wb_vector_push(&page->scripts, &entry);
+	if (error == 0)
+		error = vm_heap_add_root(page->heap, (struct vm_cell **)&entry->element);
+	if (error == 0)
+		entry->rooted = 1;
+	if (error != 0) {
+		last = NULL;
+		if (page->scripts.count != 0)
+			last = *(struct page_script **)wb_vector_at(&page->scripts, page->scripts.count - 1);
+		if (last == entry)
+			page->scripts.count--;
+		wb_buffer_release(&href);
+		wb_buffer_release(&location);
+		wb_buffer_release(&bytes);
+		script_release(entry);
+		return error;
+	}
+
+	/* Web URLs use the page's asynchronous loader; local bytes are ready for the next checkpoint. */
+	remote = net_loader_takes(entry->location);
+	if (page->loader != NULL && remote) {
+		error = net_loader_fetch(page->loader, entry->location, script_arrived, entry, &entry->request);
+	} else {
+		error = page_fetch(page->base, entry->location, &bytes, NULL);
+		if (error == 0)
+			error = script_decode(entry, bytes.data, bytes.length);
+		entry->ready = 1;
+	}
+
+	/* Fetch failures become an error event; only allocation failure aborts the DOM operation. */
+	if (error != 0) {
+		entry->failed = 1;
+		entry->ready = 1;
+		if (error == ENOMEM) {
+			wb_buffer_release(&href);
+			wb_buffer_release(&location);
+			wb_buffer_release(&bytes);
+			return error;
+			}
+		}
+
+	/* The temporary buffers no longer own anything. */
+	wb_buffer_release(&href);
+	wb_buffer_release(&location);
+	wb_buffer_release(&bytes);
+	return 0;
+}
+
+/* Decodes one external script as UTF-8, dropping its byte order mark. */
+static int
+script_decode(
+	struct page_script *entry,
+	const unsigned char *bytes,
+	size_t length)
+{
+	int error;
+
+	/* Drops the UTF-8 byte order mark. */
+	if (length >= 3 && bytes[0] == 0xefU && bytes[1] == 0xbbU && bytes[2] == 0xbfU) {
+		bytes += 3;
+		length -= 3;
+	}
+
+	/* The script engine takes UTF-16 units. */
+	error = wb_utf8_to_units(bytes, length, &entry->source);
+	return error;
+}
+
+/* Runs every ready external script in insertion order. */
+static int
+script_run_ready(
+	struct page *page)
+{
+	struct page_script *entry;
+	size_t index;
+	int ordered_blocked;
+	int error;
+
+	/* A script's checkpoint may recurse while this loop runs. */
+	if (page->scripts_running)
+		return 0;
+
+	/* Each ready entry runs once, in the table's insertion order. */
+	page->scripts_running = 1;
+	error = 0;
+	ordered_blocked = 0;
+	for (index = 0; index < page->scripts.count && error == 0; index++) {
+		entry = *(struct page_script **)wb_vector_at(&page->scripts, index);
+		if (entry->done)
+			continue;
+		if (entry->ordered && !entry->ready) {
+			ordered_blocked = 1;
+			continue;
+		}
+
+		/* Async entries may pass an ordered one that is still waiting. */
+		if (!entry->ready || (entry->ordered && ordered_blocked))
+			continue;
+		entry->ready = 0;
+		error = script_finish(entry);
+	}
+
+	/* Later checkpoints may drain entries that arrive afterwards. */
+	page->scripts_running = 0;
+	return error;
+}
+
+/* Runs a fetched script, fires load or error, and lets its element be collected. */
+static int
+script_finish(
+	struct page_script *entry)
+{
+	const char *event_type;
+	int canceled;
+	int error;
+
+	/* Successful bytes run; a fetch failure skips execution. */
+	error = 0;
+	if (!entry->failed)
+		error = bind_run_script(entry->page->window, entry->source.data, entry->source.length, entry->location);
+	event_type = "load";
+	if (entry->failed)
+		event_type = "error";
+	if (error == 0)
+		error = bind_fire_event(entry->page->window, &entry->element->node, event_type, 0, &canceled);
+
+	/* Completion releases the source and the element's temporary root. */
+	entry->done = 1;
+	vm_heap_remove_root(entry->page->heap, (struct vm_cell **)&entry->element);
+	entry->rooted = 0;
+	entry->element = NULL;
+	wb_units_release(&entry->source);
+	return error;
+}
+
+/* The asynchronous loader completed an external script. */
+static void
+script_arrived(
+	void *context,
+	struct net_request *request)
+{
+	const struct net_response *response;
+	struct page_script *entry;
+	char *location;
+	int error;
+
+	/* The request ended and its response is valid for this callback. */
+	entry = context;
+	entry->request = NULL;
+	error = net_request_error(request);
+	response = net_request_response(request);
+	if (error == 0 && (response->status < 200 || response->status > 299))
+		error = EINVAL;
+	if (error == 0) {
+		location = strdup(wb_buffer_string(&response->url));
+		if (location == NULL) {
+			error = ENOMEM;
+		} else {
+			free(entry->location);
+			entry->location = location;
+		}
+	}
+
+	/* Decodes a successful response, or records a load failure. */
+	if (error == 0)
+		error = script_decode(entry, response->body.data, response->body.length);
+	if (error != 0)
+		entry->failed = 1;
+	entry->ready = 1;
+
+	/* Loader callbacks are task boundaries. */
+	(void)script_run_ready(entry->page);
+}
+
+/* Releases one dynamic script entry. */
+static void
+script_release(
+	struct page_script *entry)
+{
+	if (entry == NULL)
+		return;
+	net_request_cancel(entry->request);
+	if (entry->rooted)
+		vm_heap_remove_root(entry->page->heap, (struct vm_cell **)&entry->element);
+	wb_units_release(&entry->source);
+	free(entry->location);
+	free(entry);
 }
 
 /*

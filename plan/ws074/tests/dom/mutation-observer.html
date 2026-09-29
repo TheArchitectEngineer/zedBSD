@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>mutation observer</title>
+<div id="root"><span id="old"></span></div>
+<script>
+var root = document.getElementById("root");
+var old = document.getElementById("old");
+var added = document.createElement("b");
+var reports = 0;
+var correct = false;
+var listName = "";
+var observer = new MutationObserver(function (records) {
+    reports += records.length;
+    listName = records[0].addedNodes.constructor.name;
+    correct = records.length === 2 && records[0].type === "childList" &&
+        records[0].target === root && records[0].addedNodes[0] === added &&
+        records[1].removedNodes[0] === old;
+});
+observer.observe(root, { childList: true, subtree: true });
+root.appendChild(added);
+root.removeChild(old);
+setTimeout(function () {
+    console.log("mutation", reports, correct, listName);
+    observer.disconnect();
+    root.appendChild(document.createElement("i"));
+    setTimeout(function () {
+        console.log("disconnected", reports, observer.takeRecords().length);
+    }, 0);
+}, 0);
+</script>

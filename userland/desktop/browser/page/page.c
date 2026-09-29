@@ -65,6 +65,7 @@ page_create(
 	page_images_init(created);
 	page_sheets_init(created);
 	page_fonts_init(created);
+	page_scripts_init(created);
 
 	/* Makes the document and keeps it alive as a root. */
 	created->document = dom_document_create(created->heap);
@@ -131,6 +132,7 @@ page_destroy(
 	page_box_index_release(page);
 	page_sheets_release(page);
 	page_fonts_release(page);
+	page_scripts_release(page);
 	bind_window_destroy(page->window);
 	vm_realm_destroy(page->realm);
 	vm_heap_destroy(page->heap);

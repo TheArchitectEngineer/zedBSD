@@ -27,7 +27,9 @@ static layout_unit replaced_content_size(const struct layout_box *box, layout_un
 void
 layout_replaced_size(
 	struct layout_box *box,
-	layout_unit containing_width)
+	layout_unit containing_width,
+	layout_unit containing_height,
+	int height_definite)
 {
 	layout_unit natural_width;
 	layout_unit natural_height;
@@ -63,11 +65,12 @@ layout_replaced_size(
 	if (!width_given && box->control == DOM_CONTROL_NONE)
 		width_given = replaced_attribute(box, "width", &width);
 
-	/* The height: the style's (a percentage needs a known height, which is not there), or the attribute's. */
+	/* The height: the style's (a percentage only with a definite containing height), or the attribute's. */
 	height = 0;
 	height_given = 0;
-	if (box->style.height.unit == CSS_UNIT_PX)
-		height_given = replaced_length(&box->style.height, 0, &height);
+	if (box->style.height.unit == CSS_UNIT_PX ||
+	    (box->style.height.unit == CSS_UNIT_PERCENT && height_definite))
+		height_given = replaced_length(&box->style.height, containing_height, &height);
 	if (height_given)
 		height = replaced_content_size(box, height, CSS_TOP, CSS_BOTTOM);
 	if (!height_given && box->control == DOM_CONTROL_NONE)
@@ -97,8 +100,9 @@ layout_replaced_size(
 
 	/* max-height shrinks a taller box, and its width with it when that was not given. */
 	limited = 0;
-	if (box->style.max_height.unit == CSS_UNIT_PX)
-		limited = replaced_length(&box->style.max_height, 0, &limit);
+	if (box->style.max_height.unit == CSS_UNIT_PX ||
+	    (box->style.max_height.unit == CSS_UNIT_PERCENT && height_definite))
+		limited = replaced_length(&box->style.max_height, containing_height, &limit);
 	if (limited && height > limit) {
 		if (!width_given && height > 0)
 			width = (layout_unit)((int64_t)width * limit / height);

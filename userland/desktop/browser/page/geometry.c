@@ -210,6 +210,34 @@ page_scroll(
 	*y = page->scroll_y;
 }
 
+/* Finds the top element at a point in viewport coordinates. */
+struct dom_node *
+page_element_at(
+	void *context,
+	double x,
+	double y)
+{
+	struct page *page;
+	struct dom_node *node;
+	int laid_out;
+
+	/* Points outside the viewport do not hit the document. */
+	page = context;
+	if (!(x >= 0.0) || !(y >= 0.0) || x >= page->viewport_width || y >= page->viewport_height)
+		return NULL;
+	laid_out = geometry_layout(page);
+	if (!laid_out)
+		return NULL;
+
+	/* Layout uses document coordinates; DOM hit testing returns an element. */
+	x += page->scroll_x;
+	y += page->scroll_y;
+	node = layout_hit_node(&page->layout, (layout_unit)(x * LAYOUT_UNIT), (layout_unit)(y * LAYOUT_UNIT));
+	while (node != NULL && node->type != DOM_ELEMENT)
+		node = node->parent;
+	return node;
+}
+
 /*
  * Computes an element's style (the bind_host's computed_style): its box's
  * when the page lays out and the element has one, otherwise the

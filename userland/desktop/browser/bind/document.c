@@ -31,6 +31,8 @@ static int document_create_element(struct vm_realm *realm, vm_value this_value, 
 static int document_create_text_node(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_create_comment(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_create_fragment(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_element_from_point(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_elements_from_point(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_cookie_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_cookie_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_url(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -87,12 +89,70 @@ static const struct bind_operation document_operations[] = {
 	{ "createTextNode", 1, document_create_text_node },
 	{ "createComment", 1, document_create_comment },
 	{ "createDocumentFragment", 0, document_create_fragment },
+	{ "elementFromPoint", 2, document_element_from_point },
+	{ "elementsFromPoint", 2, document_elements_from_point },
 	{ "append", 0, bind_append },
 	{ "prepend", 0, bind_prepend },
 	{ "querySelector", 1, bind_query_selector },
 	{ "querySelectorAll", 1, bind_query_selector_all },
 	{ NULL, 0, NULL }
 };
+
+/* Finds the top element at a viewport point, or null when none is there. */
+static int
+document_element_from_point(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct dom_document *document;
+	struct dom_node *node;
+	double x;
+	double y;
+	int status;
+
+	/* This must be a Document, and both coordinates use JavaScript's numeric conversion. */
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+	UNUSED_PARAMETER(document);
+	status = vm_to_number(realm, js_argument(args, count, 0), &x);
+	if (status == 0)
+		status = vm_to_number(realm, js_argument(args, count, 1), &y);
+	if (status != 0)
+		return status;
+
+	/* The host owns the current layout and hit testing. */
+	window = bind_window_of(realm);
+	node = NULL;
+	if (window->host.element_at != NULL)
+		node = window->host.element_at(window->host.context, x, y);
+	return bind_wrap_or_null(window, node, result);
+}
+
+/* Reports the top element at a viewport point as the first item of an array. */
+static int
+document_elements_from_point(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	vm_value element;
+	int status;
+
+	/* This first implementation exposes the top painted element. */
+	status = document_element_from_point(realm, this_value, args, count, &element);
+	if (status != 0)
+		return status;
+	if (element == VM_VALUE_NULL)
+		return js_builtin_array(realm, NULL, 0, result);
+	return js_builtin_array(realm, &element, 1, result);
+}
 
 /*
  * The Document interface.

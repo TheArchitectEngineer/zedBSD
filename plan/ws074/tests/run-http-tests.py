@@ -67,6 +67,11 @@ IMAGE_CASES = [
     ("async-sheets", "/pages/sheets.html", ["background=#ffccccff", "background=#ffffddbb", "color=#ff660000"], "style"),
 ]
 
+# Fetch API requests started by a loaded page, through the same asynchronous loader.
+FETCH_CASES = [
+    ("async-fetch", "/pages/fetch.html", ["success=true:200:true", "http=false:404", "network=true"], "dom"),
+]
+
 
 def run_case(program, base, path, expect, guest, ca=None, dump="dom"):
     url = base + path
@@ -143,7 +148,7 @@ def main():
                 passed += 1
             else:
                 print("  " + "\n  ".join(output.splitlines()[-8:]))
-        for name, path, expect, dump in IMAGE_CASES if ASYNC else []:
+        for name, path, expect, dump in (IMAGE_CASES + FETCH_CASES) if ASYNC else []:
             total += 1
             ok, output = run_case(args.program, base, path, expect, args.guest, dump=dump)
             print("%s %s" % ("pass" if ok else "FAIL", name))

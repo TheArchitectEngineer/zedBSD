@@ -65,6 +65,9 @@ struct grid_sizes {
 	struct css_length width;
 	struct css_length min_width;
 	struct css_length max_width;
+	struct css_length height;
+	struct css_length min_height;
+	struct css_length max_height;
 	struct css_length margin[4];
 };
 
@@ -77,6 +80,7 @@ static int grid_size_columns(struct layout_tree *tree, struct layout_box *box, s
 static int grid_item_width(struct layout_tree *tree, struct layout_box *item, layout_unit *width);
 static int grid_lay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width);
 static void grid_size_rows(struct layout_box *box, struct grid_state *grid, layout_unit gap);
+static int grid_relay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, layout_unit height, int align);
 static layout_unit grid_outer_height(const struct layout_box *item);
 static layout_unit grid_track_length(const struct css_length *length, layout_unit whole, int measuring);
 static void grid_release(struct grid_state *grid);
@@ -190,6 +194,9 @@ layout_grid(
 		area_height = row_gap * (layout_unit)(item->row_span - 1);
 		for (position = item->row; position < item->row + item->row_span; position++)
 			area_height += grid.rows[position];
+		area_width = column_gap * (layout_unit)(item->column_span - 1);
+		for (position = item->column; position < item->column + item->column_span; position++)
+			area_width += grid.columns[position];
 
 		/* The item's alignment: its align-self, or the container's align-items (baseline as start). */
 		align = child->style.align_self;
@@ -197,6 +204,13 @@ layout_grid(
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_BASELINE)
 			align = CSS_ALIGN_START;
+
+		/* A definite grid area must reach percentage descendants of a stretched item. */
+		error = grid_relay_item(tree, child, area_width, area_height, align);
+		if (error != 0) {
+			grid_release(&grid);
+			return error;
+		}
 
 		/* A stretching item without a height of its own fills the area's height. */
 		frame = child->border[CSS_TOP] + child->padding[CSS_TOP] + child->padding[CSS_BOTTOM] + child->border[CSS_BOTTOM];
@@ -785,8 +799,12 @@ grid_size_rows(
 {
 	const struct css_track *track;
 	struct grid_item *item;
+	layout_unit available;
 	layout_unit height;
+	layout_unit minimum;
 	layout_unit spanned;
+	layout_unit used;
+	float fr_total;
 	size_t index;
 	int row;
 
@@ -797,20 +815,44 @@ grid_size_rows(
 		return;
 	}
 
-	/* The fixed rows. */
+	/* A pixel height is the definite content height available to the tracks. */
+	available = -1;
+	if (box->style.height.unit == CSS_UNIT_PX) {
+		available = layout_from_px(box->style.height.value);
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER) {
+			available -= box->border[CSS_TOP] + box->padding[CSS_TOP] +
+			    box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+		}
+
+		/* No available content height is negative. */
+		if (available < 0)
+			available = 0;
+	}
+
+	/* The fixed rows, and each fractional row's minimum. */
+	fr_total = 0;
 	for (row = 0; row < grid->row_count && row < box->style.row_count; row++) {
 		track = &box->style.rows[row];
 		if (track->kind == CSS_TRACK_LENGTH)
-			grid->rows[row] = grid_track_length(&track->size, 0, 1);
+			grid->rows[row] = grid_track_length(&track->size, available, available < 0);
+		if (track->kind == CSS_TRACK_FR && available >= 0) {
+			fr_total += track->fr;
+			grid->rows[row] = grid_track_length(&track->minimum, available, 0);
+		}
 	}
 
-	/* The other rows: their one-row items. */
+	/* The auto rows, and fractional rows without a definite height: their one-row items. */
 	for (index = 0; index < grid->item_count; index++) {
 		item = &grid->items[index];
 		if (item->row_span != 1 || item->row >= grid->row_count)
 			continue;
-		if (item->row < box->style.row_count && box->style.rows[item->row].kind == CSS_TRACK_LENGTH)
-			continue;
+		if (item->row < box->style.row_count) {
+			track = &box->style.rows[item->row];
+			if (track->kind == CSS_TRACK_LENGTH || (track->kind == CSS_TRACK_FR && available >= 0))
+				continue;
+		}
+
+		/* The item's outer height raises its auto row. */
 		height = grid_outer_height(item->box);
 		if (height > grid->rows[item->row])
 			grid->rows[item->row] = height;
@@ -829,6 +871,105 @@ grid_size_rows(
 		if (height > spanned && row < grid->row_count)
 			grid->rows[row] += height - spanned;
 	}
+
+	/* Fractional rows share the definite room left after fixed and auto rows and the gaps. */
+	if (fr_total > 0) {
+		used = gap * (layout_unit)(grid->row_count - 1);
+		for (row = 0; row < grid->row_count; row++) {
+			if (row < box->style.row_count && box->style.rows[row].kind == CSS_TRACK_FR)
+					continue;
+				used += grid->rows[row];
+			}
+
+			/* A sum below one leaves the corresponding share unused. */
+			if (fr_total < 1.0f)
+			fr_total = 1.0f;
+		for (row = 0; row < grid->row_count && row < box->style.row_count; row++) {
+			track = &box->style.rows[row];
+			if (track->kind != CSS_TRACK_FR)
+				continue;
+			minimum = (layout_unit)((float)(available - used) * track->fr / fr_total);
+			if (minimum > grid->rows[row])
+				grid->rows[row] = minimum;
+		}
+	}
+}
+
+/*
+ * Lays a grid item out again at the area's definite cross size when it is
+ * stretched, or when its percentage height can use the area.  Placement
+ * used to change only item->height, leaving its percentage descendants at
+ * the intrinsic height from the first pass.
+ */
+static int
+grid_relay_item(
+	struct layout_tree *tree,
+	struct layout_box *item,
+	layout_unit width,
+	layout_unit height,
+	int align)
+{
+	struct grid_sizes saved;
+	layout_unit frame;
+	layout_unit content;
+	int error;
+
+	/* The target content height, from the percentage or the area's stretch. */
+	frame = item->border[CSS_TOP] + item->padding[CSS_TOP] +
+	    item->padding[CSS_BOTTOM] + item->border[CSS_BOTTOM];
+	if (item->style.height.unit == CSS_UNIT_PERCENT) {
+		content = (layout_unit)((float)height * item->style.height.value / 100.0f) +
+		    layout_from_px(item->style.height.offset);
+		if (item->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			content -= frame;
+	} else if (item->style.height.unit == CSS_UNIT_AUTO && align == CSS_ALIGN_STRETCH) {
+		content = height - item->margin[CSS_TOP] - item->margin[CSS_BOTTOM] - frame;
+	} else {
+		return 0;
+	}
+
+	/* No content size is negative. */
+	if (content < 0)
+		content = 0;
+
+	/* Keep the item's style while the definite content box is laid out. */
+	saved.box_sizing = item->style.box_sizing;
+	saved.width = item->style.width;
+	saved.min_width = item->style.min_width;
+	saved.max_width = item->style.max_width;
+	saved.height = item->style.height;
+	saved.min_height = item->style.min_height;
+	saved.max_height = item->style.max_height;
+	memcpy(saved.margin, item->style.margin, sizeof(saved.margin));
+	item->style.box_sizing = CSS_BOX_SIZING_CONTENT;
+	item->style.width.unit = CSS_UNIT_PX;
+	item->style.width.value = layout_to_px(item->width);
+	item->style.width.offset = 0;
+	item->style.min_width.unit = CSS_UNIT_PX;
+	item->style.min_width.value = 0;
+	item->style.max_width.unit = CSS_UNIT_NONE;
+	item->style.height.unit = CSS_UNIT_PX;
+	item->style.height.value = layout_to_px(content);
+	item->style.height.offset = 0;
+	item->style.min_height.unit = CSS_UNIT_PX;
+	item->style.min_height.value = 0;
+	item->style.max_height.unit = CSS_UNIT_NONE;
+	item->style.margin[CSS_LEFT].unit = CSS_UNIT_PX;
+	item->style.margin[CSS_LEFT].value = layout_to_px(item->margin[CSS_LEFT]);
+	item->style.margin[CSS_LEFT].offset = 0;
+	item->style.margin[CSS_RIGHT].unit = CSS_UNIT_PX;
+	item->style.margin[CSS_RIGHT].value = layout_to_px(item->margin[CSS_RIGHT]);
+	item->style.margin[CSS_RIGHT].offset = 0;
+	error = layout_block(tree, item, width);
+	item->style.box_sizing = saved.box_sizing;
+	item->style.width = saved.width;
+	item->style.min_width = saved.min_width;
+	item->style.max_width = saved.max_width;
+	item->style.height = saved.height;
+	item->style.min_height = saved.min_height;
+	item->style.max_height = saved.max_height;
+	memcpy(item->style.margin, saved.margin, sizeof(saved.margin));
+	return error;
 }
 
 /* Measures an item's margin box's height. */
