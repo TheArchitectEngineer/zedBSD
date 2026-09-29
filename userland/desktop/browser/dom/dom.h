@@ -243,6 +243,10 @@ struct dom_node {
 	struct vm_cell *listeners;
 };
 
+/* A script already prepared by the parser or by insertion is never run again. */
+#define DOM_NODE_SCRIPT_STARTED	0x0001U
+#define DOM_NODE_SCRIPT_ORDERED	0x0002U
+
 /*
  * One attribute of an element: its local name (an atom), its namespace and
  * prefix (for attributes of foreign content), and its value.

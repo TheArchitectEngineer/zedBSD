@@ -309,7 +309,7 @@ inline_add_replaced(
 
 	/* Its margins, borders, paddings and size. */
 	layout_box_model(box, cutter->width);
-	layout_replaced_size(box, cutter->width);
+	layout_replaced_size(box, cutter->width, cutter->tree->containing_height, cutter->tree->containing_height_definite);
 	width = box->margin[CSS_LEFT] + box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width +
 	    box->padding[CSS_RIGHT] + box->border[CSS_RIGHT] + box->margin[CSS_RIGHT];
 

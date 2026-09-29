@@ -45,6 +45,12 @@ static int image_height_set(struct vm_realm *realm, vm_value this_value, const v
 static int image_complete(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int image_natural_size(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int image_dimension(struct vm_realm *realm, vm_value this_value, const char *name, vm_value *result);
+static int script_src_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int script_src_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int script_type_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int script_type_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int script_async_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int script_async_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_reflect_get(struct vm_realm *realm, vm_value this_value, const char *name, vm_value *result);
 static int element_reflect_set(struct vm_realm *realm, vm_value this_value, const char *name, const vm_value *args, unsigned count);
 
@@ -171,6 +177,19 @@ static const struct bind_attribute image_attributes[] = {
  */
 const struct bind_interface bind_html_image_element_interface = {
 	"HTMLImageElement", BIND_HTML_ELEMENT, 0, NULL, image_attributes, NULL, NULL
+};
+
+/* The reflected attributes of HTMLScriptElement needed by dynamic loaders. */
+static const struct bind_attribute script_attributes[] = {
+	{ "src", script_src_get, script_src_set },
+	{ "type", script_type_get, script_type_set },
+	{ "async", script_async_get, script_async_set },
+	{ NULL, NULL, NULL }
+};
+
+/* The HTMLScriptElement interface (script elements'). */
+const struct bind_interface bind_html_script_element_interface = {
+	"HTMLScriptElement", BIND_HTML_ELEMENT, 0, NULL, script_attributes, NULL, NULL
 };
 
 /*
@@ -823,6 +842,123 @@ image_src_set(
 		return status;
 
 	/* Succeeded: the attribute is set. */
+	return 0;
+}
+
+/* Reports the script's src attribute. */
+static int
+script_src_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	return image_src_get(realm, this_value, args, count, result);
+}
+
+/* Sets the script's src attribute. */
+static int
+script_src_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	return image_src_set(realm, this_value, args, count, result);
+}
+
+/* Reports the script's type attribute. */
+static int
+script_type_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	return element_reflect_get(realm, this_value, "type", result);
+}
+
+/* Sets the script's type attribute. */
+static int
+script_type_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	*result = VM_VALUE_UNDEFINED;
+	return element_reflect_set(realm, this_value, "type", args, count);
+}
+
+/* Reports whether the script has the async attribute. */
+static int
+script_async_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	vm_value name;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	status = bind_string(realm, "async", &name);
+	if (status != 0)
+		return status;
+	return element_has_attribute(realm, this_value, &name, 1, result);
+}
+
+/* Adds or removes the script's async attribute. */
+static int
+script_async_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	vm_value pair[2];
+	int asynchronous;
+	int status;
+
+	/* The attribute's name and the Boolean value. */
+	*result = VM_VALUE_UNDEFINED;
+	asynchronous = vm_to_boolean(js_argument(args, count, 0));
+	status = bind_string(realm, "async", &pair[0]);
+	if (status == 0)
+		status = bind_string(realm, "", &pair[1]);
+	if (status != 0)
+		return status;
+	if (asynchronous) {
+		status = element_set_attribute(realm, this_value, pair, 2, result);
+	} else {
+		status = element_remove_attribute(realm, this_value, pair, 1, result);
+	}
+
+	/* A failed attribute change leaves the ordering flag alone. */
+	if (status != 0)
+		return status;
+
+	/* The property set to false opts a dynamic script into insertion order. */
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	if (asynchronous) {
+		element->node.flags &= (uint16_t)~DOM_NODE_SCRIPT_ORDERED;
+	} else {
+		element->node.flags |= DOM_NODE_SCRIPT_ORDERED;
+	}
+
+	/* Succeeded: the attribute and ordering state follow the property. */
 	return 0;
 }
 

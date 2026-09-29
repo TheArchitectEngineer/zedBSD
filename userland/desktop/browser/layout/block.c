@@ -42,9 +42,15 @@ layout_block(
 	layout_unit saved_x;
 	layout_unit saved_y;
 	layout_unit height;
+	layout_unit basis;
 	layout_unit sizing;
+	layout_unit specified_height;
+	layout_unit saved_containing_height;
+	struct css_length saved_style_height;
 	int own_context;
 	int intrinsic;
+	int height_definite;
+	int saved_height_definite;
 	int error;
 
 	/* A width of max-content, min-content or fit-content is measured first (ws074-p074). */
@@ -59,7 +65,7 @@ layout_block(
 
 	/* A replaced box (an <img> as a block) is sized by its image, and has no content to lay out. */
 	if (box->replaced) {
-		layout_replaced_size(box, containing_width);
+		layout_replaced_size(box, containing_width, tree->containing_height, tree->containing_height_definite);
 		layout_auto_margins(box, containing_width);
 		box->collapsed_top = box->margin[CSS_TOP];
 		box->collapsed_bottom = box->margin[CSS_BOTTOM];
@@ -68,6 +74,59 @@ layout_block(
 
 	/* The content width. */
 	block_width(box, containing_width);
+
+	/* Under border-box sizing an explicit height includes this vertical frame. */
+	sizing = 0;
+	if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+		sizing = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+
+	/* A pixel height is definite; a percentage is definite only when its containing block's height is. */
+	height_definite = 0;
+	specified_height = 0;
+	if (box->style.height.unit == CSS_UNIT_PX) {
+		specified_height = layout_from_px(box->style.height.value);
+		height_definite = 1;
+	} else if (box->style.height.unit == CSS_UNIT_PERCENT && tree->containing_height_definite) {
+		specified_height = (layout_unit)((float)tree->containing_height * box->style.height.value / 100.0f) +
+		    layout_from_px(box->style.height.offset);
+		height_definite = 1;
+	}
+
+	/* A definite specified size becomes the nonnegative content height. */
+	if (height_definite) {
+		height = specified_height - sizing;
+		if (height < 0)
+			height = 0;
+		specified_height = height;
+	}
+
+	/*
+	 * Children resolve percentage heights against this content height.  An
+	 * inline with block children is represented as a block in this pass, but
+	 * it does not establish a containing block: keep the nearest block
+	 * ancestor's definite height through that generated wrapper.  A flex or
+	 * grid item that started inline is blockified by its container and does
+	 * establish one.
+	 */
+	saved_containing_height = tree->containing_height;
+	saved_height_definite = tree->containing_height_definite;
+	if (!height_definite && box->kind == LAYOUT_BLOCK && box->style.display == CSS_DISPLAY_INLINE &&
+	    box->parent != NULL && box->parent->style.display != CSS_DISPLAY_FLEX &&
+	    box->parent->style.display != CSS_DISPLAY_GRID) {
+		tree->containing_height = saved_containing_height;
+		tree->containing_height_definite = saved_height_definite;
+	} else {
+		tree->containing_height = specified_height;
+		tree->containing_height_definite = height_definite;
+	}
+
+	/* Flex and grid need to see a resolved percentage as a definite pixel height while laying out their contents. */
+	saved_style_height = box->style.height;
+	if (height_definite && saved_style_height.unit == CSS_UNIT_PERCENT) {
+		box->style.height.unit = CSS_UNIT_PX;
+		box->style.height.value = layout_to_px(specified_height + sizing);
+		box->style.height.offset = 0;
+	}
 
 	/* A box that starts a formatting context lays its content out in it; another moves the origin to its content box. */
 	saved_x = tree->origin_x;
@@ -93,34 +152,36 @@ layout_block(
 		layout_context_end(tree, &context);
 	tree->origin_x = saved_x;
 	tree->origin_y = saved_y;
+	tree->containing_height = saved_containing_height;
+	tree->containing_height_definite = saved_height_definite;
+	box->style.height = saved_style_height;
 
 	/* Propagates a content that could not be laid out. */
 	if (error != 0)
 		return error;
 
-	/* Under box-sizing: border-box the given heights size the border box, so the frame comes off them. */
-	sizing = 0;
-	if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
-		sizing = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
-
 	/* An explicit height replaces the content's. */
-	if (box->style.height.unit == CSS_UNIT_PX) {
-		height = layout_from_px(box->style.height.value) - sizing;
-		if (height < 0)
-			height = 0;
-		box->height = height;
-	}
+	if (height_definite)
+		box->height = specified_height;
 
 	/* min-height raises a shorter box. */
-	if (box->style.min_height.unit == CSS_UNIT_PX) {
-		height = layout_from_px(box->style.min_height.value) - sizing;
+	if (box->style.min_height.unit == CSS_UNIT_PX ||
+	    (box->style.min_height.unit == CSS_UNIT_PERCENT && saved_height_definite)) {
+		basis = 0;
+		if (box->style.min_height.unit == CSS_UNIT_PERCENT)
+			basis = saved_containing_height;
+		height = block_resolve(&box->style.min_height, basis) - sizing;
 		if (box->height < height)
 			box->height = height;
 	}
 
 	/* max-height lowers a taller box. */
-	if (box->style.max_height.unit == CSS_UNIT_PX) {
-		height = layout_from_px(box->style.max_height.value) - sizing;
+	if (box->style.max_height.unit == CSS_UNIT_PX ||
+	    (box->style.max_height.unit == CSS_UNIT_PERCENT && saved_height_definite)) {
+		basis = 0;
+		if (box->style.max_height.unit == CSS_UNIT_PERCENT)
+			basis = saved_containing_height;
+		height = block_resolve(&box->style.max_height, basis) - sizing;
 		if (height < 0)
 			height = 0;
 		if (box->height > height)

@@ -290,10 +290,14 @@ bind_insert(
 	struct dom_node *node,
 	struct dom_node *reference)
 {
+	struct bind_window *window;
 	struct dom_node *child;
 	struct dom_element *existing;
 	int ancestor;
 	int status;
+
+	/* The window's host observes successful insertions. */
+	window = bind_window_of(realm);
 
 	/* Only a document, a fragment or an element has children. */
 	if (parent->type != DOM_DOCUMENT &&
@@ -337,13 +341,32 @@ bind_insert(
 
 	/* A fragment's children move, in order; the fragment is left empty. */
 	if (node->type == DOM_DOCUMENT_FRAGMENT) {
-		for (child = node->first_child; child != NULL; child = node->first_child)
+		for (child = node->first_child; child != NULL; child = node->first_child) {
 			dom_insert_before(parent, child, reference);
+			status = bind_environment_child_mutation(window, parent, child, NULL);
+			if (status != 0)
+				return status;
+			if (window->host.node_inserted != NULL) {
+				status = window->host.node_inserted(window->host.context, child);
+				if (status != 0)
+					return status;
+			}
+		}
+
+		/* Succeeded: every child was moved. */
 		return 0;
 	}
 
 	/* Any other node moves from where it was. */
 	dom_insert_before(parent, node, reference);
+	status = bind_environment_child_mutation(window, parent, node, NULL);
+	if (status != 0)
+		return status;
+	if (window->host.node_inserted != NULL) {
+		status = window->host.node_inserted(window->host.context, node);
+		if (status != 0)
+			return status;
+	}
 
 	/* Succeeded: the node is in the parent. */
 	return 0;
@@ -657,7 +680,9 @@ node_text_content_set(
 	unsigned count,
 	vm_value *result)
 {
+	struct bind_window *window;
 	struct dom_node *node;
+	struct dom_node *removed;
 	struct dom_node *text;
 	struct vm_string *string;
 	struct wb_units units;
@@ -669,6 +694,7 @@ node_text_content_set(
 	status = bind_this_node(realm, this_value, &node);
 	if (status != 0)
 		return status;
+	window = bind_window_of(realm);
 
 	/* Character data sets its data, as nodeValue does. */
 	if (node->type == DOM_TEXT || node->type == DOM_COMMENT) {
@@ -694,8 +720,15 @@ node_text_content_set(
 	}
 
 	/* The children go. */
-	while (node->first_child != NULL)
-		dom_remove(node->first_child);
+	while (node->first_child != NULL) {
+		removed = node->first_child;
+		dom_remove(removed);
+		status = bind_environment_child_mutation(window, node, NULL, removed);
+		if (status != 0) {
+			wb_units_release(&units);
+			return status;
+		}
+	}
 
 	/* One text node takes their place, unless the text is empty. */
 	if (units.length != 0) {
@@ -707,6 +740,11 @@ node_text_content_set(
 
 		/* The node holds the text. */
 		dom_append_child(node, text);
+		status = bind_environment_child_mutation(window, node, text, NULL);
+		if (status != 0) {
+			wb_units_release(&units);
+			return status;
+		}
 	}
 
 	/* The text was copied into the node. */
@@ -1081,6 +1119,7 @@ node_remove_child(
 	unsigned count,
 	vm_value *result)
 {
+	struct bind_window *window;
 	struct dom_node *parent;
 	struct dom_node *child;
 	int status;
@@ -1100,7 +1139,11 @@ node_remove_child(
 	}
 
 	/* The removal. */
+	window = bind_window_of(realm);
 	dom_remove(child);
+	status = bind_environment_child_mutation(window, parent, NULL, child);
+	if (status != 0)
+		return status;
 
 	/* Succeeded: the child is reported. */
 	*result = js_argument(args, count, 0);
@@ -1116,6 +1159,7 @@ node_replace_child(
 	unsigned count,
 	vm_value *result)
 {
+	struct bind_window *window;
 	struct dom_node *parent;
 	struct dom_node *node;
 	struct dom_node *child;
@@ -1146,10 +1190,14 @@ node_replace_child(
 	}
 
 	/* The new node goes where the child was, and the child goes. */
+	window = bind_window_of(realm);
 	reference = child->next;
 	if (reference == node)
 		reference = node->next;
 	dom_remove(child);
+	status = bind_environment_child_mutation(window, parent, NULL, child);
+	if (status != 0)
+		return status;
 	status = bind_insert(realm, parent, node, reference);
 	if (status != 0)
 		return status;
@@ -1387,6 +1435,8 @@ node_prototype_index(
 		element = (const struct dom_element *)node;
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG)
 			return BIND_HTML_IMAGE_ELEMENT;
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_SCRIPT)
+			return BIND_HTML_SCRIPT_ELEMENT;
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_TEMPLATE)
 			return BIND_HTML_TEMPLATE_ELEMENT;
 		if (element->ns == DOM_NS_HTML)

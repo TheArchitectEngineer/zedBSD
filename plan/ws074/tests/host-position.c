@@ -45,7 +45,7 @@ main(
 	const struct layout_box *box;
 	const char *name;
 	char path[1024];
-	char sequence[256];
+	char sequence[384];
 	size_t flow_index;
 	size_t index;
 	int error;
@@ -53,6 +53,7 @@ main(
 	/* ws074-p080: localStorage goes under XDG_DATA_HOME; the test keeps it under build/, away from ~/.local/share. */
 	setenv("XDG_DATA_HOME", "build/ws074-host-data", 1);
 
+	/* The page directory and three fonts are required. */
 	if (argc < 5) {
 		fprintf(stderr, "usage: host-position PAGES SANS MONO FALLBACK\n");
 		return 2;
@@ -90,11 +91,19 @@ main(
 	check(box != NULL && box->x == 182 * LAYOUT_UNIT && box->y == 142 * LAYOUT_UNIT, "label: at 182,142");
 	check(box != NULL && box->width > 200 * LAYOUT_UNIT && box->width < 300 * LAYOUT_UNIT, "label: shrinks to its text");
 
+	/* A percentage inline block is indefinite while its absolute parent's shrink-to-fit width is measured. */
+	box = find_class(page->layout.root, "percent-shrink");
+	check(box != NULL && box->width > 150 * LAYOUT_UNIT && box->width < 250 * LAYOUT_UNIT,
+	    "percentage: absolute parent shrinks to intrinsic content");
+	box = find_class(page->layout.root, "percent-button");
+	check(box != NULL && box->parent != NULL && box->width == box->parent->width,
+	    "percentage: inline block fills the final parent width");
+
 	/* The relative paragraph is 30 right and 8 down of where the flow put it (20 + 30, under the stage). */
 	box = find_class(page->layout.root, "shifted");
 	check(box != NULL && box->x == 50 * LAYOUT_UNIT, "shifted: 30 pixels right of its margin");
 
-	/* The painting order: z-index -1, then the flow, then the auto ones in tree order, then 1 and 2. */
+	/* The painting order: z-index -1, then the flow, then the auto and positive levels. */
 	wb_vector_init(&order, sizeof(const struct layout_box *));
 	error = layout_stacking_order(&page->layout, &order, &flow_index);
 	check(error == 0, "order: listed");
@@ -107,9 +116,12 @@ main(
 		strncat(sequence, name, sizeof(sequence) - strlen(sequence) - 1U);
 		strncat(sequence, ";", sizeof(sequence) - strlen(sequence) - 1U);
 	}
+
+	/* A positioned child stays in its explicit parent's stacking level, over the lower sibling. */
 	printf("host-position: order %s\n", sequence);
 	check(strcmp(sequence, "below;|flow|stage;corner top-left;corner top-right;corner bottom-left;corner bottom-right;"
-	    "label;stretch;shifted;middle;over;") == 0, "order: by z-index, then tree order");
+	    "label;stretch;percent-shrink;shifted;middle;over;context-lower;context-high;context-child;") == 0,
+	    "order: nested stacking level stays together");
 	wb_vector_release(&order);
 
 	/* Where z-index 2 overlaps z-index 1, the point hits the higher; beside it, the lower. */
@@ -118,6 +130,7 @@ main(
 	hits(page, 90, 60, "corner top-left");
 	hits(page, 300, 30, "stage");
 	hits(page, 600, 300, "stretch");
+	hits(page, 580, 70, "context-child");
 
 	/* Frees the page. */
 	page_destroy(page);
@@ -151,9 +164,13 @@ find_class(
 {
 	const struct layout_box *child;
 	const struct layout_box *found;
+	const char *class_name;
+	int same;
 
 	/* The box itself. */
-	if (strcmp(class_of(box->node), name) == 0)
+	class_name = class_of(box->node);
+	same = strcmp(class_name, name);
+	if (same == 0)
 		return box;
 
 	/* Its children. */
@@ -221,13 +238,16 @@ placed(
 		check(0, what);
 		return;
 	}
+
+	/* Its outer dimensions. */
 	outer_width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
 	outer_height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
 	check(box->x == x * LAYOUT_UNIT && box->y == y * LAYOUT_UNIT && outer_width == width * LAYOUT_UNIT &&
 	    outer_height == height * LAYOUT_UNIT, what);
-	if (box->x != x * LAYOUT_UNIT || box->y != y * LAYOUT_UNIT || outer_width != width * LAYOUT_UNIT)
+	if (box->x != x * LAYOUT_UNIT || box->y != y * LAYOUT_UNIT || outer_width != width * LAYOUT_UNIT) {
 		printf("  got %.2f,%.2f size %.2fx%.2f\n", (double)layout_to_px(box->x), (double)layout_to_px(box->y),
 		    (double)layout_to_px(outer_width), (double)layout_to_px(outer_height));
+	}
 }
 
 /* Checks which element a point hits. */

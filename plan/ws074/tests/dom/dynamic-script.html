@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>dynamic script</title>
+<script id="parser-script">console.log("parser");</script>
+<body>
+<div id="place"></div>
+<script>
+function inlineScript(text) {
+    var script = document.createElement("script");
+    script.appendChild(document.createTextNode("console.log(\"" + text + "\");"));
+    return script;
+}
+
+console.log("start");
+document.body.appendChild(inlineScript("append-inline"));
+console.log("after-append-inline");
+
+document.body.insertBefore(inlineScript("insert-inline"), document.getElementById("place"));
+console.log("after-insert-inline");
+
+var old = document.createElement("span");
+document.body.appendChild(old);
+document.body.replaceChild(inlineScript("replace-inline"), old);
+console.log("after-replace-inline");
+
+var inert = document.createElement("div");
+inert.innerHTML = "<script>console.log(\"inner-html-ran\");<\/script>";
+document.body.appendChild(inert);
+document.body.appendChild(document.getElementById("parser-script"));
+
+var external = document.createElement("script");
+external.src = "dynamic-script-external.js";
+external.async = false;
+external.addEventListener("load", function () {
+    console.log("external-load");
+    document.head.appendChild(external);
+});
+external.addEventListener("error", function () { console.log("external-unexpected-error"); });
+document.body.appendChild(external);
+
+var missing = document.createElement("script");
+missing.src = "dynamic-script-missing.js";
+missing.async = false;
+missing.addEventListener("load", function () { console.log("missing-unexpected-load"); });
+missing.addEventListener("error", function () { console.log("external-error"); });
+document.body.appendChild(missing);
+console.log("end");
+</script>
+</body>

@@ -201,10 +201,11 @@ js_compile_expression_named(
 	fc->column = saved_column;
 }
 
-/*
- * Reads a name into a register: from its register, its environment's slot,
- * or the global object (a missing global is a ReferenceError).
- */
+static void expr_load_binding_plain(struct js_function_compiler *fc, const uint16_t *name, size_t length, uint32_t target, int typeof_mode);
+static void expr_load_binding_with(struct js_function_compiler *fc, const uint16_t *name, size_t length, uint32_t target, int typeof_mode);
+static void expr_store_binding_plain(struct js_function_compiler *fc, const struct js_node *node, const uint16_t *name, size_t length, uint32_t source);
+
+/* Reads a name, searching active with objects before its static binding. */
 void
 js_load_binding(
 	struct js_function_compiler *fc,
@@ -212,15 +213,31 @@ js_load_binding(
 	size_t length,
 	uint32_t target)
 {
+	expr_load_binding_with(fc, name, length, target, 0);
+}
+
+/* Reads a name from its static binding, optionally allowing a missing global for typeof. */
+static void
+expr_load_binding_plain(
+	struct js_function_compiler *fc,
+	const uint16_t *name,
+	size_t length,
+	uint32_t target,
+	int typeof_mode)
+{
 	struct js_binding *binding;
 	uint32_t hops;
 	uint32_t key;
+	uint32_t opcode;
 
 	/* A global (or a script's top-level let or const, which the global lookup checks). */
 	binding = js_scope_resolve(fc, name, length, &hops);
 	if (binding == NULL) {
 		key = js_constant_key(fc, name, length);
-		js_emit2(fc, VM_OP_GET_GLOBAL, target, key);
+		opcode = VM_OP_GET_GLOBAL;
+		if (typeof_mode)
+			opcode = VM_OP_GET_GLOBAL_TYPEOF;
+		js_emit2(fc, opcode, target, key);
 		return;
 	}
 
@@ -238,6 +255,51 @@ js_load_binding(
 	}
 }
 
+/* Reads a name through the innermost with object that has it, then its static binding. */
+static void
+expr_load_binding_with(
+	struct js_function_compiler *fc,
+	const uint16_t *name,
+	size_t length,
+	uint32_t target,
+	int typeof_mode)
+{
+	struct js_with *active;
+	uint32_t mark;
+	uint32_t key;
+	uint32_t key_value;
+	uint32_t found;
+	uint32_t next;
+	uint32_t end;
+
+	/* Without a with statement, the ordinary static path is enough. */
+	if (fc->with == NULL) {
+		expr_load_binding_plain(fc, name, length, target, typeof_mode);
+		return;
+	}
+
+	/* Each with object is searched from the inside out. */
+	mark = fc->temp_top;
+	key = js_constant_key(fc, name, length);
+	key_value = js_temp(fc);
+	found = js_temp(fc);
+	js_emit2(fc, VM_OP_LOAD_CONST, key_value, key);
+	end = js_label_new(fc);
+	for (active = fc->with; active != NULL; active = active->outer) {
+		next = js_label_new(fc);
+		js_emit3(fc, VM_OP_IN, found, key_value, active->object);
+		js_emit_jump(fc, VM_OP_JUMP_IF_FALSE, found, next);
+		js_emit3(fc, VM_OP_GET_PROP, target, active->object, key);
+		js_emit_jump(fc, VM_OP_JUMP, 0, end);
+		js_label_place(fc, next);
+	}
+
+	/* A name absent from every with object comes from its static binding. */
+	expr_load_binding_plain(fc, name, length, target, typeof_mode);
+	js_label_place(fc, end);
+	fc->temp_top = mark;
+}
+
 /*
  * Writes a register's value to a name: its register, its environment's
  * slot, or the global object.  A named function expression's own name
@@ -247,6 +309,51 @@ js_load_binding(
  */
 void
 js_store_binding(
+	struct js_function_compiler *fc,
+	const struct js_node *node,
+	const uint16_t *name,
+	size_t length,
+	uint32_t source)
+{
+	struct js_with *active;
+	uint32_t mark;
+	uint32_t key;
+	uint32_t key_value;
+	uint32_t found;
+	uint32_t next;
+	uint32_t end;
+
+	/* A matching property of the innermost with object receives the value. */
+	if (fc->with == NULL) {
+		expr_store_binding_plain(fc, node, name, length, source);
+		return;
+	}
+
+	/* The shared key is tested against each active object. */
+	mark = fc->temp_top;
+	key = js_constant_key(fc, name, length);
+	key_value = js_temp(fc);
+	found = js_temp(fc);
+	js_emit2(fc, VM_OP_LOAD_CONST, key_value, key);
+	end = js_label_new(fc);
+	for (active = fc->with; active != NULL; active = active->outer) {
+		next = js_label_new(fc);
+		js_emit3(fc, VM_OP_IN, found, key_value, active->object);
+		js_emit_jump(fc, VM_OP_JUMP_IF_FALSE, found, next);
+		js_emit3(fc, VM_OP_PUT_PROP, active->object, key, source);
+		js_emit_jump(fc, VM_OP_JUMP, 0, end);
+		js_label_place(fc, next);
+	}
+
+	/* A name absent from every with object is written to its static binding. */
+	expr_store_binding_plain(fc, node, name, length, source);
+	js_label_place(fc, end);
+	fc->temp_top = mark;
+}
+
+/* Writes a register to the name's static binding. */
+static void
+expr_store_binding_plain(
 	struct js_function_compiler *fc,
 	const struct js_node *node,
 	const uint16_t *name,
@@ -1588,7 +1695,9 @@ expr_typeof(
 	binding = NULL;
 	if (place->kind == JS_NODE_IDENTIFIER)
 		binding = js_scope_resolve(fc, place->text, place->text_length, &hops);
-	if (place->kind == JS_NODE_IDENTIFIER && binding == NULL) {
+	if (place->kind == JS_NODE_IDENTIFIER && fc->with != NULL) {
+		expr_load_binding_with(fc, place->text, place->text_length, target, 1);
+	} else if (place->kind == JS_NODE_IDENTIFIER && binding == NULL) {
 		key = js_constant_key(fc, place->text, place->text_length);
 		js_emit2(fc, VM_OP_GET_GLOBAL_TYPEOF, target, key);
 	} else {

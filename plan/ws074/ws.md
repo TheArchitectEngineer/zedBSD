@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: 2026-09-29: p076（Date）・p077（window の環境）・p078（let・const・arrow・template）・p079（destructuring・default・rest・spread・optional chaining）cleared。**p085（class）cleared**（test262 21806/47792、新しく落ちた 0。Amazon の Uncaught top 2・search 7）。**p086（async function と generator・Promise）cleared**（test262 24995/47792、Amazon の async の誤り 0、Uncaught top 2・search 3）。**p087（Symbol・iterator・for-of・Map・Set、URI の関数）cleared**（test262 28381/47792、Amazon の search の Uncaught 0、top は DOM の側の `fetch`・`IntersectionObserver`）。JS の側の次は型付き配列（ArrayBuffer・TypedArray・DataView）。デモの目標は amazon.co.jp（[amazon-goal.md](amazon-goal.md)）。計画中の Phase の順（main の指示）: p085 class の確認 → Symbol・iterator の protocol・for-of（p028 の残りから切り出す）→ 型付き配列（ArrayBuffer・TypedArray・DataView、TextEncoder.encode の Uint8Array のため）と p029（generator・Promise・async）。Amazon の次の blocker は async（top 1、search 4）と for-of（各 1）なので、p029 の async を型付き配列より先にするのがよい（判断は次の担当）。Phase の番号は DOM の側（ws074-dom）と衝突しないよう main と合わせる DOM の側（別のエージェント）: p082（getComputedStyle・offset・scroll）cleared、次は p083（DOMException、planned）。
+Queue: なし
+Resume point: 2026-09-30: p092 cleared。Amazonの後続script向けWeb API、非同期fetch、MutationObserver、有界なsettleを実装し、sign-in tooltipの幅とstacking orderを修正した。dynamic topは約32秒・71.81%/ink 64.58%・Uncaught 4、searchは約65秒・73.79%/ink 28.78%・Uncaught 5。次のQueueは未開始。
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -180,12 +180,13 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p085](phase085/phase.md) | class（p028 から分けた。p080〜p084 は DOM の側と衝突しないように空けた）: 宣言と式、constructor（既定を含む）、method・accessor・static、extends・super・new.target、public と private の field・method、static block | **cleared**（2026-09-29。test262 18558 → 21806、新しく落ちた 0。ASan・guest の js・dom の試験・boot 済み。Amazon の class の SyntaxError 2 → 0、Uncaught top 2・search 7、画素は不変） | p078、p079 |
 | [ws074-p086](phase086/phase.md) | async function と、それに要る generator・Promise（p029 から分けた）: generator function と yield（`yield*` を除く）、Promise と組み合わせ、microtask の反応、未処理の reject の報告、async function と await | **cleared**（2026-09-29。test262 21806 → 24995、新しく落ちた 0。Amazon の async の誤り top 1・search 4 → 0、Uncaught search 7 → 3） | p030、p085 |
 | [ws074-p087](phase087/phase.md) | Symbol・iterator の protocol・for-of と Map・Set・WeakMap・WeakSet（p028 から分けた）、symbol を使う操作（toPrimitive・hasInstance・toStringTag・species・RegExp の委譲）、URI の関数 | **cleared**（2026-09-29。test262 24995 → 28381、新しく落ちた 0。Amazon の for-of・`Set`・`encodeURIComponent` の誤り 0、search の Uncaught 0） | p079、p086 |
-| ws074-p088 | 動的に挿入された `<script src>` の取得と実行、script の load・error の event（bind/・page/・dom/）。Amazon の AUI（`P.load.js` が 41 本を挿入）が初めて走る。p084 の調べの案 1（top で約 10〜13 点の見込み、新しい Uncaught と XMLHttpRequest（p064）の不足が出る見込み） | planned（main が 2026-09-29 に計画） | p084 |
-| ws074-p089 | 百分率の高さ（`height`・`max-height` の %、layout 全体で「高さが定まっているか」を渡す。float・inline-block・grid の `1fr` の中を含む）。p084 の案 2（top・search で各 2〜6 点） | planned | p084 |
+| [ws074-p088](phase088/phase.md) | 動的に挿入された `<script src>` の取得と実行、script の load・error の event（bind/・page/・dom/）。Amazon の AUI（`P.load.js` が 41 本を挿入）が初めて走る。p084 の調べの案 1（top で約 10〜13 点の見込み、新しい Uncaught と XMLHttpRequest（p064）の不足が出る見込み） | **cleared**（2026-09-30。dynamic top 69.23%/ink 61.20%、Web API不足をp092へ） | p084 |
+| [ws074-p089](phase089/phase.md) | 百分率の高さ（`height`・`max-height` の %、layout 全体で「高さが定まっているか」を渡す。float・inline-block・grid の `1fr` の中を含む）。p084 の案 2 | **cleared**（2026-09-30。top 82.96%→84.06%、ink 79.01%→80.56%。search 75.85%→76.32%、ink 32.97%→34.48%） | p084 |
 | ws074-p090 | 合成の太字（Latin）の advance を Chromium に合わせる（約 9% 広い）。p084 の案 3（1 点前後） | planned | — |
 | ws074-p091 | flex の残り（overflow で隠れる項目の自動の最小、blockification、column の最小）と CSSOM の小さな不足（`cssFloat` など）。p084 の案 4・5 | planned | p084 |
-| ws074-p092 | DOM の API: `fetch`・`IntersectionObserver`・`document.elementsFromPoint`（p087 の後の Amazon の残りの Uncaught） | planned | p087 |
+| [ws074-p092](phase092/phase.md) | Amazonの後続scriptが使うWeb API: `fetch`・observer・`document.elementsFromPoint`・`atob`/`btoa`と有界なheadless settle | **cleared**（2026-09-30。非同期fetch、MutationObserver、sign-in tooltipの幅とstacking order。top 71.81%/ink 64.58%、約32秒・Uncaught 4） | p087、p088 |
 | ws074-p093 | JS: 型付き配列（ArrayBuffer・TypedArray・DataView） | planned | p087 |
+| [ws074-p094](phase094/phase.md) | Chromiumとの再現可能な比較手順: 固定capture、隔離profile、入力・環境・出力のhash、JSON reportとbaseline回帰 | **cleared**（2026-09-30。top 82.96%/ink 79.01%、search 75.85%/ink 32.97%） | p067 |
 
 ## 後の WS・Future Work の候補
 

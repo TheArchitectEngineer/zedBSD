@@ -26,7 +26,10 @@ while [ $# -gt 0 ]; do
 done
 mkdir -p plan/ws074/tests/golden build/ws074-dumps
 fonts=build/ws035-fonts
-[ -f $fonts/Inter.ttf ] || { echo "golden-dumps: no $fonts (link it from the main checkout's build/)"; exit 1; }
+if [ ! -f $fonts/Inter.ttf ]; then
+	fonts=userland/desktop/fonts
+fi
+[ -f $fonts/Inter.ttf ] || { echo "golden-dumps: comparison fonts were not found"; exit 1; }
 failed=0
 checked=0
 for kind in "$@"; do

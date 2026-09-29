@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし（2026-09-29〜30 はサブエージェントが worktree の branch で Phase を実行し、main が merge した。Queue の記録は各 ws.md と phase.md）。
+Active Queue: なし（人間の session の q503 / ws074-p092 cleared。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md）。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
 Next（2026-09-30 に更新）: 実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）でユーザーが確認。次の周期の候補は下の Upcoming Work Outlook。
 IME（WS095）とブラウザ（WS074）は一時的に人間が作業中（エージェントに割り当てない）。
@@ -166,8 +166,8 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | completed | completed（2026-09-27）: zdesktop-files の最初の版（すりガラスの付箋の pane、タブ、titlebar の CONTROLS、context menu、PNG の thumbnail、DnD、configure_bounds）。残りは Future Work（F-032〜F-041・F-044）、i915 実機は WS075、窓の外への DnD は WS035 |
 | [WS072](ws072/ws.md) | MG004 | write cached の UFS の format の lease（BUG-060）と、NVMe の timeout の後の回復で root の mount が ETIMEDOUT になる（BUG-059）（2026-09-27、サブエージェント） | completed | 2026-09-27 完了（p001 BUG-060: write cached の format の lease、p002 BUG-059: NVMe の timeout の後の再発行） |
 | [WS073](ws073/ws.md) | MG002 | Bug Board の bug の解消（2026-09-27 ユーザー「バグリストに載っているものを解決するサブエージェントを1つ追加しましょう。」）。WS072・WS056（BUG-046）・WS001（BUG-050）の担当と性能の bug（BUG-027・033）を除く | incomplete | 2026-09-29: BUG-100・102（ping）・104（less）・051（signal の frame が amd64 の red zone を壊していた、`src/kern/signal.c`、QEMU で 1092 session 失敗 0）を解決、BUG-105（USB マウスの HID）は実機待ち、BUG-106 は調査中（BUG-051 の現れか）。次: BUG-039・031、BUG-107。BUG-093 は toolchain のため main の許可待ち。2026-09-29 夜: p040（BUG-030）uncleared: `plan/ws073/tests/usb-stress.sh` で起動の途中の BOT CSW の時間切れを再現（TCG 2 回に 1 回）、xHCI の完了の event の取りこぼしを疑う（未確認）。Resume は phase040 の「次にすること」 |
-| [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | 2026-09-29 夜: JS の p085（class）・p086（async・generator・Promise）・p087（Symbol・iterator・for-of・Map・Set・URI、test262 28381/47792）、DOM の p081・p082・p083（DOMException）cleared。Amazon の Uncaught は top 3（fetch 2・IntersectionObserver 1）・search 0、`--render` の search に elementsFromPoint 1: 残りは DOM の側。次: DOM は fetch・IntersectionObserver・elementsFromPoint と画素の差の調べ（途中）、JS は型付き配列 |
-| [WS075](ws075/ws.md) | MG006 | i915 の高度化: 今日のデスクトップ（zdesktop の glass・backdrop のぼかし・タブ）とグラフィックス（GLES 2/3、GL 3.0〜3.2）を Latitude 5330 の i915 のネイティブ実行器で動かす（compiler の inlining・F-022・F-023 の不足、性能と安定）（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」） | incomplete | 2026-09-29 夜: p019（FIFO の先行、58/s）・p020（RPS）・p021（compiler: 分岐の中の texture の send を IF で飛ぶ。10 app の latency 中央値 132 → 32 ms）cleared、いずれも 5330 の passthrough。MAILBOX・IMMEDIATE はデモの後（F-057）。次: p022（encoder の scoreboard の緩和）→ p023（分岐の中の ALU を飛ぶ）。素の 5330 は demo-lcd7 で。デモの image: `plan/ws075/demo/build-demo-image.sh` |
+| [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | 2026-09-30: p092 cleared。後続script向けWeb API、非同期fetch、MutationObserver、有界なsettle、sign-in tooltipを修正。dynamic topは71.81%/ink 64.58%、約32秒・Uncaught 4。次のQueueは未開始 |
+| [WS075](ws075/ws.md) | MG006 | i915 の高度化: 今日のデスクトップ（zdesktop の glass・backdrop のぼかし・タブ）とグラフィックス（GLES 2/3、GL 3.0〜3.2）を Latitude 5330 の i915 のネイティブ実行器で動かす（compiler の inlining・F-022・F-023 の不足、性能と安定）（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」） | incomplete | 2026-09-30: p019〜p021・p023 cleared（p023: panel.frag の分岐の中の計算を IF の囲いで飛ぶ、passthrough の 10 app で compositor の 1 run 9.4 → 6.8 ms、flip 7.8 → 9.5/s、画面は画素で一致）。p022 は uncleared（patch 保留）。次: p024（WS099 C6 の物差しの作り直し、flag の再利用、host の試験 cmd・res・sync・cmdbuf の既存の失敗）。素の 5330 は未実施 |
 | [WS076](ws076/ws.md) | MG002 | libc の libm を自前で正しく書き直す（src/libc、誤差 1 ulp 以内、fmod 等は正確）（2026-09-28 ユーザー「libmは独自に書いてください。libcのツリーに入れてください。」） | completed | 2026-09-28 完了（`src/libc/math/`、群 B は全件で正しく丸め、BUG-078 解決）。F-046・F-047 へ移管 |
 | [WS077](ws077/ws.md) | MG001 | PC-98 の PCI を有効にする（BUG-024、2026-09-28 ユーザー「Bug024は、PCIを有効にします。」） | planning | **優先度を下げた（2026-09-28 ユーザー「Bug024は優先度を下げます。」）**。p001（調査と設計）。HAL の差分は承認が要る。PC-98 の試験が要るので着手の前に確認 |
 | [WS078](ws078/ws.md) | MG006 | Kei Operating System への名前の移行（2026-09-28 ユーザーの決定: OS の名前 Kei、カーネルの内部名 zedbsd、Keiland、`/bin/wayland`・`/bin/xserver`・`/bin/browser`、`KERN_` の接頭辞、ロゴは Kei の 3 文字） | incomplete | 2026-09-28: p002・p003・p006・BUG-080・retro への移動は済み、p004 はほぼ済み。残り: 注釈と log の名前、p005 |
@@ -201,6 +201,8 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 依存による実行順とは別のもの。Queue の権限は変えない。2026-09-28 に整理（それ以前の順は git の履歴にある）。
 
+0. **ユーザーの session の指示**（人間が作業中の WS074）: WS074（Amazon.co.jpのトップがうまく描画できるまで自走、q501）。
+
 **デモまでの期間（2026-09-29 ユーザー）**: 10-10 ごろまで新規実装を進め、10-10 ごろ〜10-17 は bug の修正と実機での調整だけにする。
 
 **優先の調整（2026-09-29 夜 ユーザー）**:「IMEはとりあえず変換できるようになったら、ブラッシュアップは後回しにして、Keilandを優先しましょう。Bug-030も優先です。Settingsはある程度動いたらブラッシュアップは後回しにします。」→ WS035（Keiland）と BUG-030（WS073）を先に。WS095 は p004（変換と確定）で一区切りにし、候補の窓の残り・辞書の拡張（p012）ほかは後回し。WS089 は p006 の後のブラッシュアップを後回し。
@@ -226,7 +228,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・Future Work・
 | 候補 | 理由 | 準備 |
 | --- | --- | --- |
 | 実機の image `build/demo-lcd8` の確認（LCD の takeover、10 app の軽さ、Files → Image Viewer・Text Editor、Settings、デスクトップの icon、Terminal の角、Notes の全画面を解く、USB マウス・sh の履歴・プロンプトの `~`） | デモ | ユーザーが試験 |
-| WS075 p023: compositor の panel.frag の分岐の中の ALU を飛ぶ（見積もり 1 run 8.8 → 4.9 ms）。すりガラスは残す（2026-09-30 ユーザーの決定） | 窓が多いときの軽さ | p023 の計測済み |
+| WS075 p024: C6 の物差し、flag の再利用、host の試験の既存の失敗（p023 は 1 run -28% で cleared） | 窓が多いときの軽さ | 実行中 |
 | fg010 の台本の確定（ユーザー）→ WS099（compositor の基準）・WS100（音量）の p001 | デモ | 台本と基準の案はユーザーの確認待ち |
 | WS073: BUG-030 の受け入れの残り（KVM 2×20・boot test）、BUG-116（EP0 の event の取りこぼし、BUG-036 と同じ系統か） | 安定性 | phase041 |
 | WS094 p004 の残り（保存した場所への配置の guest の確認・回帰・boot test）→ p005〜p007 | デスクトップの icon | phase004 の Resume point |

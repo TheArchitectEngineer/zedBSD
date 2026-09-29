@@ -38,6 +38,7 @@ static int markup_template_content(struct vm_realm *realm, vm_value this_value, 
 static int markup_element_this(struct vm_realm *realm, vm_value this_value, struct dom_element **element);
 static int markup_serialize(struct vm_realm *realm, const struct dom_node *node, int self, vm_value *result);
 static int markup_parse(struct vm_realm *realm, struct dom_element *context, vm_value text, struct dom_node **fragment);
+static void markup_mark_scripts(struct dom_node *node, int depth);
 static int markup_context(struct bind_window *window, struct dom_node *node, struct dom_element **context);
 static int markup_position(struct vm_realm *realm, vm_value value, int *position);
 static int markup_insert(struct vm_realm *realm, struct dom_element *element, int position, struct dom_node *node, int *inserted);
@@ -130,9 +131,11 @@ bind_inner_html_set(
 	unsigned count,
 	vm_value *result)
 {
+	struct bind_window *window;
 	struct dom_element *element;
 	struct dom_node *target;
 	struct dom_node *fragment;
+	struct dom_node *removed;
 	int status;
 
 	/* The element, and the fragment parsed in its context. */
@@ -148,10 +151,16 @@ bind_inner_html_set(
 	status = bind_template_contents(element, &target);
 	if (status != 0)
 		return status;
+	window = bind_window_of(realm);
 
 	/* The old children go. */
-	while (target->first_child != NULL)
-		dom_remove(target->first_child);
+	while (target->first_child != NULL) {
+		removed = target->first_child;
+		dom_remove(removed);
+		status = bind_environment_child_mutation(window, target, NULL, removed);
+		if (status != 0)
+			return status;
+	}
 
 	/* Succeeded: the fragment's nodes are the children. */
 	status = bind_insert(realm, target, fragment, NULL);
@@ -240,6 +249,9 @@ bind_outer_html_set(
 
 	/* Succeeded: the element goes. */
 	dom_remove(&element->node);
+	status = bind_environment_child_mutation(window, parent, NULL, &element->node);
+	if (status != 0)
+		return status;
 	return 0;
 }
 
@@ -549,9 +561,41 @@ markup_parse(
 		dom_insert_before(made, root->node.first_child, NULL);
 	html_parser_destroy(parser);
 
+	/* Fragment-created scripts are inert, including after they are moved later. */
+	markup_mark_scripts(made, 0);
+
 	/* Succeeded: the fragment. */
 	*fragment = made;
 	return 0;
+}
+
+/* Marks every script made by the fragment parser as already started. */
+static void
+markup_mark_scripts(
+	struct dom_node *node,
+	int depth)
+{
+	struct dom_element *element;
+	struct dom_node *child;
+	int script;
+
+	/* Stops at the parser's maximum nesting. */
+	if (depth > 512)
+		return;
+
+	/* A script in the fragment is already started and remains inert. */
+	script = dom_element_is(node, DOM_NS_HTML, DOM_TAG_SCRIPT);
+	if (script)
+		node->flags |= DOM_NODE_SCRIPT_STARTED;
+
+	/* Marks ordinary children, and a template's separate contents. */
+	for (child = node->first_child; child != NULL; child = child->next)
+		markup_mark_scripts(child, depth + 1);
+	if (node->type == DOM_ELEMENT) {
+		element = (struct dom_element *)node;
+		if (element->content != NULL)
+			markup_mark_scripts(element->content, depth + 1);
+	}
 }
 
 /*
