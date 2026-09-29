@@ -21,7 +21,26 @@
 #include <stdint.h>
 #include <uapi/types.h>
 
-#define SOCKET_MAX 32U
+/*
+ * The number of sockets the whole system may hold at once.
+ *
+ * Sockets are allocated one by one, so this is a guard against a runaway
+ * program rather than the size of a table; every socket is also an open
+ * file, and the file pool (2048) stays the larger of the two.  A desktop
+ * session holds many unix sockets and an SSH session three or four
+ * (BUG-107: the former 32 refused the sixth parallel SSH session).
+ */
+#define SOCKET_MAX 1024U
+
+/*
+ * The number of sockets of one broadcast family (raw ICMP, packet, route)
+ * that may exist at once.
+ *
+ * Those families copy every packet or event to each of their sockets
+ * from a snapshot on the kernel stack, so creating one more than the
+ * snapshot holds is refused rather than silently left out of delivery.
+ */
+#define SOCKET_BROADCAST_MAX 32U
 #define SOCKET_RECEIVE_MESSAGES_MAX 8U
 #define SOCKET_BUFFER_DEFAULT (64U * 1024U)
 #define SOCKET_BUFFER_MIN 2048U

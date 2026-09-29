@@ -89,6 +89,13 @@ enum tcp_drain {
 #define TCP_KEEPALIVE_COUNT ((unsigned)CONFIG_TCP_KEEPALIVE_COUNT)
 #define TCP_LISTEN_BACKLOG_MAX 16U
 
+/*
+ * The number of sockets the retransmission timer snapshots on its own
+ * stack.  More registered sockets are snapshotted into an allocated array
+ * sized to them, so the timer reaches every socket (BUG-107).
+ */
+#define TCP_TIMER_STACK_SNAPSHOT 32U
+
 struct tcp_endpoint {
 	struct tcp_socket tcp;
 	struct tcp_endpoint *next;
@@ -265,9 +272,14 @@ tcp_timer_run(
 	void)
 {
 	struct tcp_endpoint *endpoint;
-	struct tcp_endpoint *snapshot[SOCKET_MAX];
+	struct tcp_endpoint *stack_snapshot[TCP_TIMER_STACK_SNAPSHOT];
+	struct tcp_endpoint **snapshot;
+	struct tcp_endpoint **allocated;
+	unsigned registered;
+	unsigned capacity;
 	unsigned count;
 	unsigned index;
+	int referenced;
 	unsigned long irq;
 	uint64_t now;
 	struct socket *socket;
@@ -284,14 +296,55 @@ tcp_timer_run(
 	int probe;
 
 	count = 0;
+	registered = 0;
 	now = sched_ticks();
 
-	/* Snapshots the referenced sockets so no registry lock is held during I/O. */
+	/* Holds the registry still while its sockets are counted. */
+	irq = spin_lock_irqsave(&tcp_registry_lock);
+
+	/* Counts the registered sockets, which sizes the snapshot. */
+	for (endpoint = tcp_sockets; endpoint != NULL; endpoint = endpoint->next)
+		registered++;
+
+	/* Lets sockets be created and closed again while the snapshot is sized. */
+	spin_unlock_irqrestore(&tcp_registry_lock, irq);
+
+	/*
+	 * Uses the stack snapshot, or an allocated one when there are more
+	 * sockets than it holds.  Without memory the stack snapshot serves
+	 * the first sockets now and the others on a later pass.
+	 */
+	snapshot = stack_snapshot;
+	capacity = TCP_TIMER_STACK_SNAPSHOT;
+	allocated = NULL;
+	if (registered > TCP_TIMER_STACK_SNAPSHOT)
+		allocated = kern_calloc(registered, sizeof(*allocated));
+
+	/* Switches to the allocated snapshot when there is one. */
+	if (allocated != NULL) {
+		snapshot = allocated;
+		capacity = registered;
+	}
+
+	/*
+	 * Snapshots the referenced sockets so no registry lock is held during
+	 * I/O.  A socket created since the count waits for the next pass.
+	 */
 	irq = spin_lock_irqsave(&tcp_registry_lock);
 
 	for (endpoint = tcp_sockets; endpoint != NULL; endpoint = endpoint->next) {
-		if (count < SOCKET_MAX && socket_tryref(&endpoint->tcp.inet.socket))
-			snapshot[count++] = endpoint;
+		/* Leaves a socket past the snapshot for the next pass. */
+		if (count >= capacity)
+			break;
+
+		/* Skips a socket whose closing has begun. */
+		referenced = socket_tryref(&endpoint->tcp.inet.socket);
+		if (!referenced)
+			continue;
+
+		/* Keeps the referenced socket in the snapshot. */
+		snapshot[count] = endpoint;
+		count++;
 	}
 
 	spin_unlock_irqrestore(&tcp_registry_lock, irq);
@@ -438,6 +491,10 @@ tcp_timer_run(
 
 		socket_release(socket);
 	}
+
+	/* Frees the allocated snapshot; the references were all released above. */
+	if (allocated != NULL)
+		kern_free(allocated);
 }
 
 /*
