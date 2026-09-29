@@ -359,6 +359,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | venus-win32 の取り込みの条件 | ユーザー:「フォントは、ライセンスが問題なければ、gitに入れてOKです。ライセンスファイルが必要なら置いてください。ライセンスに問題があれば別のフォントに置き換えてください。」「submoduleはミスなのでいらないです。」→ 取り込むとき `.gitmodules` と `vendor/` の submodule を外す。font は license を確かめて git に入れる（Inter・JetBrains Mono は OFL 1.1、Droid Sans Fallback は Apache 2.0 の見込み。license の file は branch にある） | WS085（branch） |
 | ping（決定） | ユーザー:「pingをsetuidにします。これはBSD系OSだからです。」→ ping を setuid root で install し、raw socket を開いた後に権限を落とす | [BUG-102](bugs/BUG-102.md) |
 | Kei-nightly.zip | ユーザー:「~/Kei-nightly.zipを置きました。…Kei-nightly.zipは、clangのキャッシュと同じReleaseにアップロードして再利用して、CIでhdd-image.imgが入ったKei-nightly.zipを配布できるようにしましょう。」 | [WS088](ws088/ws.md) |
+| サブエージェントの運用（2026-09-29 夕） | ユーザー:「サブエージェントを使って作業します。N=6で、6エージェントを起動します。メインエージェントであるあなたは、サブエージェントに依頼して、結果を受け取ってマージする、プランナーです。サブエージェントは、5時間の利用制限に到達したときに強制終了されてしまうので、そのときに作業内容が失われます。そこで、こまめにメインエージェントに依頼して、マージを行います。また、強制終了した場合もサルベージ可能なように、作業ディレクトリを構成します。5時間制限の残り時間と使用率から、N=0からN=6の間で調整していきます。サブエージェントにはラップアップを依頼することで、キリのいいところで終了が可能です。」→ worktree は固定の path と branch（`.claude/worktrees/wsNNN-<名前>`・`wt/wsNNN`、前の枠の 2 つは元の path）、build が通るたびに WIP commit、1 回の依頼は 1 Phase、終わるたびに main が merge して同じエージェントに続きを依頼、強制終了は branch と未 commit の差分から回収 | queue.md |
 
 ### 主な依存関係
 
