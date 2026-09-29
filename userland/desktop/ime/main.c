@@ -32,6 +32,7 @@ static void main_global(void *data, struct wl_registry *registry, uint32_t name,
 static void main_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static int main_engines(struct program *program);
 static void main_user_path(char *path, size_t size);
+static void main_warm(struct program *program, struct ime_engine *engine);
 
 /*
  * The registry's events.
@@ -222,8 +223,40 @@ main_engines(
 
 	program->engine_count = 2;
 
+	/* A first conversion is made and dropped, so that the first key typed does not wait for the code to be read in. */
+	main_warm(program, &program->engines[1]);
+
 	/* Succeeded: the languages are ready. */
 	return 0;
+}
+
+/*
+ * Types a reading into an engine, converts it and drops it: the engine's
+ * code and the dictionaries' pages are read in before the first real key.
+ */
+static void
+main_warm(
+	struct program *program,
+	struct ime_engine *engine)
+{
+	static const char letters[] = "kyouhaiitenkidesu";
+	struct ime_key key;
+	size_t i;
+
+	/* Each letter, then Space to convert. */
+	key.modifiers = 0;
+	for (i = 0; letters[i] != '\0'; i++) {
+		key.code = 30U;
+		key.character = (unsigned char)letters[i];
+		engine->ops->key(engine, &key, program->out);
+	}
+
+	key.code = IME_KEY_SPACE;
+	key.character = ' ';
+	engine->ops->key(engine, &key, program->out);
+
+	/* Nothing of it is kept. */
+	engine->ops->reset(engine, false, program->out);
 }
 
 /*

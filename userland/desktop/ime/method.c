@@ -337,6 +337,7 @@ grab_key(
 			program->passed[key] = 0;
 			zwp_virtual_keyboard_v1_key(program->keyboard, time, key, METHOD_KEY_RELEASED);
 		}
+
 		return;
 	}
 

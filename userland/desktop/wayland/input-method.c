@@ -56,8 +56,9 @@
 #define IME_RESTART_MS			1000U
 #define IME_START_WINDOW_MS		60000U
 
-/* How long a key may go unanswered before the input method is passed by. */
+/* How long a key may go unanswered before the input method is passed by, and an answer noted as slow. */
 #define IME_ANSWER_MS			500U
+#define IME_SLOW_MS			100U
 
 /* The requests of zwp_input_method_manager_v2. */
 #define MANAGER_GET_INPUT_METHOD	0U
@@ -247,12 +248,20 @@ zwl_ime_request(
 {
 	struct zwl_server *server;
 	struct zwl_ime *ime;
+	uint64_t waited;
 	int error;
 
 	/* Any request of the input method is its answer: the watch ends, and a passed-by input method is heard again. */
 	server = object->client->server;
 	ime = server->ime;
 	if (ime != NULL && object->client->ime) {
+		/* A slow answer is noted, to tell a busy machine from a hung input method. */
+		if (ime->watching) {
+			waited = zwl_milliseconds() - ime->watch_ms;
+			if (waited >= IME_SLOW_MS)
+				printf("ZWL IME slow-answer ms=%llu\n", (unsigned long long)waited);
+		}
+
 		ime->watching = 0;
 		if (ime->bypass) {
 			ime->bypass = 0;
@@ -277,6 +286,7 @@ zwl_ime_request(
 			zwl_object_destroy(object);
 			error = 0;
 		}
+
 		break;
 	case ZWL_KEYBOARD_GRAB:
 		/* A grab's only request is release. */
@@ -284,6 +294,7 @@ zwl_ime_request(
 			zwl_object_destroy(object);
 			error = 0;
 		}
+
 		break;
 	case ZWL_VIRTUAL_KEYBOARD:
 		error = ime_keyboard_request(object, opcode, bytes, size);
@@ -335,6 +346,7 @@ zwl_ime_object_gone(
 			ime->activated = 0;
 			ime->active = NULL;
 		}
+
 		break;
 	case ZWL_KEYBOARD_GRAB:
 		/* The keys held for the grab are forgotten; their releases go nowhere. */
@@ -345,6 +357,7 @@ zwl_ime_object_gone(
 					ime->route[i] = ZWL_IME_ROUTE_NONE;
 			}
 		}
+
 		break;
 	case ZWL_VIRTUAL_KEYBOARD:
 		/* The keys it holds down are let go at the application. */
@@ -353,6 +366,7 @@ zwl_ime_object_gone(
 			ime->keyboard = NULL;
 			ime->keyboard_keymap = 0;
 		}
+
 		break;
 	case ZWL_IME_STATUS:
 		if (ime->status == object)
@@ -363,6 +377,7 @@ zwl_ime_object_gone(
 			if (ime->popups[i] == object)
 				ime->popups[i] = NULL;
 		}
+
 		break;
 	default:
 		break;
@@ -738,7 +753,9 @@ ime_connect(
 
 	/* The connection is read without waiting, like every other. */
 	flags = fcntl(descriptor, F_GETFL);
-	if (flags < 0 || fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != 0) {
+	if (flags >= 0)
+		flags = fcntl(descriptor, F_SETFL, flags | O_NONBLOCK);
+	if (flags < 0) {
 		printf("ZWL IME spawn-failed step=nonblock errno=%d\n", errno);
 		close(descriptor);
 		return NULL;
@@ -1045,6 +1062,7 @@ ime_keyboard_request(
 			error = zwl_error_code(keyboard->client, keyboard->id, KEYBOARD_ERROR_NO_KEYMAP, "no keymap was set");
 			return error;
 		}
+
 		return 0;
 	case KEYBOARD_DESTROY:
 		if (size != 0U)
