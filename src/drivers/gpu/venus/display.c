@@ -30,6 +30,7 @@
 #define VENUS_PROTOCOL_SCANOUTS		16U
 #define VENUS_DISPLAY_EXTENT		4096U
 #define VENUS_CONSOLE_STOP_TICKS	(15U * KERN_CLOCK_HZ)
+#define VENUS_DISPLAY_HOLD_TICKS	(10U * KERN_CLOCK_HZ)
 
 /*
  * One validated progressive EDID timing retained until the next topology query.
@@ -91,6 +92,19 @@ struct venus_display_engine {
 	unsigned console_active;
 	unsigned console_observing;
 	volatile unsigned console_stopping;
+
+	/*
+	 * The primary output's last picture, kept after its lease ended (ws035-p126).
+	 *
+	 * On a quiet console the primary output's released blob stays scanned out, with
+	 * its share hold in outputs[0].shared_front and no owner, until the next lease's
+	 * first frame replaces it, the console is revealed, or hold_until passes; then
+	 * the worker withdraws it and paints the console.  hold_since and hold_until are
+	 * scheduler ticks.  The controller mutex protects all three fields.
+	 */
+	uint64_t hold_since;
+	uint64_t hold_until;
+	unsigned holding;
 };
 
 static int display_console_start(struct venus_controller *controller);
@@ -110,6 +124,10 @@ static int display_find(struct venus_controller *controller, uint32_t identifier
 static int display_find_lease(struct venus_controller *controller, struct venus_session *session, uint64_t lease, struct venus_display_output **result);
 static int display_validate_mode(uint32_t width, uint32_t height, uint32_t refresh);
 static int display_release_output(struct venus_controller *controller, struct venus_display_output *output);
+static int display_hold_permitted(struct venus_controller *controller, struct venus_display_output *output);
+static void display_hold_begin(struct venus_controller *controller);
+static void display_hold_replaced(struct venus_controller *controller, struct venus_display_output *output);
+static int display_hold_end(struct venus_controller *controller);
 static int display_prepare(struct venus_controller *controller, struct venus_display_output *output, const struct gpu_display_present *request);
 static int display_frame(struct venus_controller *controller, struct venus_display_output *output, struct venus_resource *source, struct gpu_display_present *request);
 static int display_blob_frame(struct venus_controller *controller, struct venus_display_output *output, struct venus_resource *source, struct gpu_display_present *request);
@@ -322,6 +340,8 @@ int
 drv_venus_display_legacy_available_locked(
 	struct venus_controller *controller)
 {
+	int error;
+
 	/* An uninitialized direct-display engine cannot own a native plane. */
 	if (controller->display == NULL)
 		return 0;
@@ -331,6 +351,11 @@ drv_venus_display_legacy_available_locked(
 		if (controller->display->outputs[0].owner != NULL)
 			return EBUSY;
 	}
+
+	/* A last picture kept from an ended lease leaves scanout zero before the legacy session takes it. */
+	error = display_hold_end(controller);
+	if (error != 0)
+		return error;
 
 	/* A subsequent legacy frame replaces the console even when no text has changed. */
 	controller->display->console_active = 0U;
@@ -526,7 +551,9 @@ display_console_update(
 	struct kern_text_snapshot snapshot;
 	struct gpu_display_present request;
 	uint64_t bytes;
+	uint64_t now;
 	uint32_t generation;
+	int quiet;
 	int error;
 
 	/* Transport failure leaves all display backing quarantined for the existing reset owner. */
@@ -542,6 +569,22 @@ display_console_update(
 	/* No console transfer can overtake a claimed application's next present. */
 	if (engine->outputs[0].owner != NULL || controller->display_owner != NULL)
 		return 0;
+
+	/*
+	 * The last picture of an ended lease stays while the console is quiet and its
+	 * time lasts, so the next lease's first frame follows it with no black between.
+	 * A revealed console or the passed deadline withdraws it for the console.
+	 */
+	if (engine->holding != 0U) {
+		quiet = kern_log_quiet();
+		now = sched_ticks();
+		if (quiet != 0 && now < engine->hold_until)
+			return 0;
+
+		error = display_hold_end(controller);
+		if (error != 0)
+			return error;
+	}
 
 	/* Equality skips an unchanged text image only while the console still owns scanout zero. */
 	generation = kern_text_generation();
@@ -625,6 +668,7 @@ display_console_worker(
 	struct venus_display_engine *engine;
 	unsigned long irq;
 	uint64_t observed;
+	uint64_t deadline;
 	unsigned stopping;
 	int previous_error;
 	int error;
@@ -653,6 +697,13 @@ display_console_worker(
 
 		error = display_console_update(controller);
 
+		/* A held picture without an owner wakes the worker at its deadline; otherwise only changes do. */
+		deadline = 0U;
+		if (engine->holding != 0U) {
+			if (engine->outputs[0].owner == NULL)
+				deadline = engine->hold_until;
+		}
+
 		mutex_unlock(&controller->mutex);
 
 		/* Reports a changed failure once; a transient allocation or absent backend can recover later. */
@@ -668,7 +719,7 @@ display_console_worker(
 		/* A stop after the earlier snapshot must never become an uninterruptible idle sleep. */
 		stopping = __atomic_load_n(&engine->console_stopping, __ATOMIC_ACQUIRE);
 		if (stopping == 0U)
-			(void)waitq_sleep(&engine->console_waiters, &engine->console_lock, observed, 0U, 0U);
+			(void)waitq_sleep(&engine->console_waiters, &engine->console_lock, observed, deadline, 0U);
 
 		spin_unlock_irqrestore(&engine->console_lock, irq);
 	}
@@ -1291,32 +1342,45 @@ display_release_output(
 	struct venus_display_output *output)
 {
 	uint8_t command[48];
+	int hold;
 	int error;
 
-	/* A completed disable ends the display's reference to its front image. */
-	if (output->front != NULL || output->shared_front != NULL) {
-		kern_memset(command, 0, sizeof(command));
-		drv_venus_header(command, 0x0103U, 0U);
-		drv_venus_store32(command + 40U, output->identifier - 1U);
-		error = display_fenced(controller, command, sizeof(command));
-		if (error != 0)
-			return error;
+	/* Decides whether the ended lease's last picture stays on the screen until the next lease's first frame. */
+	hold = display_hold_permitted(controller, output);
 
-		/* A completed disable ends the actual primary scanout independently from pending console redraw. */
-		if (output->identifier == 1U) {
-			controller->primary_scanout = NULL;
-			controller->primary_width = 0U;
-			controller->primary_height = 0U;
+	/* A picture withdrawn here ends any earlier hold of the primary output with it. */
+	if (hold == 0 && output->identifier == 1U)
+		controller->display->holding = 0U;
+
+	/* A completed disable ends the display's reference to its front image; a held picture keeps it. */
+	if (hold == 0) {
+		if (output->front != NULL || output->shared_front != NULL) {
+			kern_memset(command, 0, sizeof(command));
+			drv_venus_header(command, 0x0103U, 0U);
+			drv_venus_store32(command + 40U, output->identifier - 1U);
+			error = display_fenced(controller, command, sizeof(command));
+			if (error != 0)
+				return error;
+
+			/* A completed disable ends the actual primary scanout independently from pending console redraw. */
+			if (output->identifier == 1U) {
+				controller->primary_scanout = NULL;
+				controller->primary_width = 0U;
+				controller->primary_height = 0U;
+			}
+		}
+
+		/* Acknowledged scanout disable makes the shared source reusable by its producer. */
+		if (output->shared_front != NULL) {
+			drv_venus_share_put_locked(controller, output->shared_front);
+			output->shared_front = NULL;
 		}
 	}
 
-	/* Acknowledged scanout disable makes the shared source reusable by its producer. */
-	if (output->shared_front != NULL) {
-		drv_venus_share_put_locked(controller, output->shared_front);
-		output->shared_front = NULL;
-	}
-
-	/* Each successful release consumes exactly one private resource pointer. */
+	/*
+	 * Each successful release consumes exactly one private resource pointer.  A held
+	 * picture is the shared blob, so neither private image is scanned out here.
+	 */
 	if (output->front != NULL) {
 		error = drv_venus_resource_release_locked(controller, output->front);
 		if (error != 0)
@@ -1330,7 +1394,7 @@ display_release_output(
 		output->back = NULL;
 	}
 
-	/* Only fully retired ownership becomes available to another open. */
+	/* Only fully retired ownership becomes available to another open; a held blob has no owner. */
 	output->owner = NULL;
 	output->lease = 0U;
 	output->sequence = 0U;
@@ -1341,11 +1405,166 @@ display_release_output(
 	if (output->identifier == 1U) {
 		controller->display->console_active = 0U;
 
+		/* The held picture's time starts, which the console worker watches. */
+		if (hold != 0)
+			display_hold_begin(controller);
+
 		/* Release wakes the parked console even when retained text has not changed. */
 		drv_venus_display_console_changed_locked(controller);
 	}
 
-	/* Succeeded: no scanout or private image retains this lease. */
+	/* Succeeded: no private image retains this lease, and the scanout is withdrawn or held. */
+	return 0;
+}
+
+/* Reports whether an ended primary lease may leave its last picture on the screen. */
+static int
+display_hold_permitted(
+	struct venus_controller *controller,
+	struct venus_display_output *output)
+{
+	struct venus_display_engine *engine;
+	unsigned failed;
+	unsigned stopping;
+	int quiet;
+
+	/* Only the primary output falls back to the console, whose redraw is what a hold replaces. */
+	if (output->identifier != 1U)
+		return 0;
+	if (output == &controller->display->console)
+		return 0;
+
+	/*
+	 * Only a blob picture is held: its share hold keeps the allocation alive after the
+	 * producing context ends, while a copied front belongs to the owner's context.
+	 */
+	if (output->shared_front == NULL)
+		return 0;
+
+	/* A failed transport cannot keep a picture it can no longer withdraw. */
+	failed = atomic_raw_load_acquire(&controller->transport.failed);
+	if (failed != 0U)
+		return 0;
+
+	/* The console worker ends a hold at its deadline, so it must be there and staying. */
+	engine = controller->display;
+	if (engine->console_worker == NULL)
+		return 0;
+	stopping = __atomic_load_n(&engine->console_stopping, __ATOMIC_ACQUIRE);
+	if (stopping != 0U)
+		return 0;
+
+	/* A console that shows its text gets the screen back at once; a quiet one would be black. */
+	quiet = kern_log_quiet();
+	if (quiet == 0)
+		return 0;
+
+	/* Succeeded: the picture may stay until the next lease presents. */
+	return 1;
+}
+
+/* Starts, or keeps, the hold of the primary output's last picture. */
+static void
+display_hold_begin(
+	struct venus_controller *controller)
+{
+	struct venus_display_engine *engine;
+	uint64_t now;
+
+	/*
+	 * A lease which ended before its first frame leaves the earlier picture held, with
+	 * its first deadline: repeated claims cannot keep an ownerless picture forever.
+	 */
+	engine = controller->display;
+	if (engine->holding != 0U) {
+		kern_logf("venus: lease released before its first frame; the held picture stays\n");
+		return;
+	}
+
+	/* The deadline bounds how long a picture without an owner stays on the screen. */
+	now = sched_ticks();
+	engine->hold_since = now;
+	engine->hold_until = now + VENUS_DISPLAY_HOLD_TICKS;
+	engine->holding = 1U;
+	kern_logf("venus: lease released; holding the last picture\n");
+
+	/* Succeeded: the picture stays until the next lease's first frame or the deadline. */
+	return;
+}
+
+/* Ends the hold when the next lease's frame has replaced the held picture. */
+static void
+display_hold_replaced(
+	struct venus_controller *controller,
+	struct venus_display_output *output)
+{
+	struct venus_display_engine *engine;
+	uint64_t held;
+
+	/* Only an application frame on the primary output replaces the held picture. */
+	engine = controller->display;
+	if (engine->holding == 0U)
+		return;
+	if (output->identifier != 1U || output == &engine->console)
+		return;
+
+	/* The held share was already released by the new selection; the hold is over. */
+	engine->holding = 0U;
+	held = (sched_ticks() - engine->hold_since) * 1000U / KERN_CLOCK_HZ;
+	kern_logf(
+		"venus: the next lease's first frame after holding the last picture for %llu ms\n",
+		(unsigned long long)held);
+
+	/* Succeeded: the new lease's picture follows the held one with nothing between. */
+	return;
+}
+
+/* Withdraws a held picture so the console or a legacy session can use scanout zero. */
+static int
+display_hold_end(
+	struct venus_controller *controller)
+{
+	struct venus_display_engine *engine;
+	struct venus_display_output *output;
+	uint8_t command[48];
+	int error;
+
+	/* Nothing is held unless an ended lease left its blob on the primary output. */
+	engine = controller->display;
+	if (engine->holding == 0U)
+		return 0;
+
+	/* A claimed primary output keeps the picture until the new lease's own first frame replaces it. */
+	output = &engine->outputs[0];
+	if (output->owner != NULL)
+		return 0;
+
+	/* The hold ends first, so a failed withdrawal is not retried by a worker without a deadline. */
+	engine->holding = 0U;
+	kern_logf("venus: the held picture was withdrawn for the console\n");
+
+	/* A hold whose blob was already released has nothing on the screen to withdraw. */
+	if (output->shared_front == NULL)
+		return 0;
+
+	/* A completed disable ends the display's reference to the held image. */
+	kern_memset(command, 0, sizeof(command));
+	drv_venus_header(command, 0x0103U, 0U);
+	drv_venus_store32(command + 40U, 0U);
+	error = display_fenced(controller, command, sizeof(command));
+	if (error != 0)
+		return error;
+
+	/* The primary scanout is empty until the console or the next lease selects an image. */
+	controller->primary_scanout = NULL;
+	controller->primary_width = 0U;
+	controller->primary_height = 0U;
+
+	/* Acknowledged scanout disable makes the held allocation reusable, or retires it. */
+	drv_venus_share_put_locked(controller, output->shared_front);
+	output->shared_front = NULL;
+
+	/* Succeeded: scanout zero holds no picture of an ended lease. */
 	return 0;
 }
 
@@ -1486,6 +1705,9 @@ display_frame(
 		output->shared_front = NULL;
 	}
 
+	/* A picture held from an ended lease has just been replaced by this lease's first frame. */
+	display_hold_replaced(controller, output);
+
 	/* Completes the whole visible update before reporting a reusable source image. */
 	kern_memset(command, 0, 48U);
 	drv_venus_header(command, 0x0104U, 0U);
@@ -1599,6 +1821,9 @@ display_blob_frame(
 	/* Previous producers may reuse their allocation only after it leaves the selected scanout. */
 	if (previous != NULL)
 		drv_venus_share_put_locked(controller, previous);
+
+	/* A picture held from an ended lease has just been replaced by this lease's first frame. */
+	display_hold_replaced(controller, output);
 
 	/* Publish damage for the GPU-resident image without a transfer-to-host command. */
 	kern_memset(command, 0, 48U);
