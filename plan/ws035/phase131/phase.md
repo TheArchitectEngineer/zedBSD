@@ -4,7 +4,7 @@
 
 Phase ID: `ws035-p131`
 Parent: [WS035](../ws.md)
-Status: in-progress（2026-09-29、サブエージェント、worktree `wt/ws035`）
+Status: cleared（2026-09-29、サブエージェント、worktree `wt/ws035`。QEMU の Venus、実機は未実施）
 Phase disposition: normal
 Queue: なし（2026-09-29 main の割り当て「ws035-p131（起動時の 4 つの画像の layout の移行を 1 回の submit と 1 回の wait にまとめる）」。Venus の同期の
 遅さそのものと swapchain の作成は Future Work F-056、WS035 では Keiland の側で同期の回数を減らすことだけ）
@@ -38,8 +38,21 @@ Queue: なし（2026-09-29 main の割り当て「ws035-p131（起動時の 4 �
 
 - 画面: `build/ws035-shots/p131-20260929-desktop-1920.png`（wallpaper・ぼかし・system bar の印と時計の文字、`zdesktop-check.py` PASS）。
 
-（回帰の結果は下に追記）
+回帰（`build/p131-regress.sh`、`build/p131-after.img`、試験ごとに guest を止めて起こし直す）: 全て PASS。
+- `zdesktop-p126.sh` 2 周（1280x800）: login・Log Out の 4 回の替わり目で黒 0・文字 console 0。
+- `zdesktop-p052.sh`（window → fullscreen → window）、`zdesktop-p053.sh`（wl_shm・cursor の形・fullscreen: 起動の後の画像は今までどおりの 1 つずつの経路）。
+- `zdesktop-p128.sh`（1920x1280、Files の四隅と辺の resize）。
+- boot test（`plan/tools/boot-test.sh build/p131-after.img`、GPU の無い q35: greeter は表示が無く終わり console の login）PASS、`build/ws035-shots/p131-20260929-boot-test.png`。
+
+build（worktree の `build/amd64`、graphical の login の image）warning 0、log に `Permission denied` なし。規約: `plan/tools/style-check.py` shm.c・compose.c 0。
+
+未実施: 実機（i915）。
+
+## 残り
+
+- 画像 1 つの作成の残り（image・memory・map・view・descriptor で約 100 ms）と、GO の後の swapchain（600〜700 ms）は Venus の同期の遅さ（Future Work F-056）。
+- wallpaper の ppm の読みと拡縮（約 170 ms、CPU）は未着手（次の候補）。
 
 ## Resume point
 
-2026-09-29: 実装と起動の計測まで。回帰（p126・p052・p053・p128・boot test）を `build/p131-regress.sh` で実行中。
+2026-09-29: cleared。次の候補: wallpaper の ppm の読みと拡縮（約 170 ms）。
