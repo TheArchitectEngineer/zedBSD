@@ -23,8 +23,10 @@ stylesheets and images come from the CDN (m.media-amazon.com) once each.
 """
 
 import argparse
+import datetime
 import hashlib
 import html
+import json
 import os
 import re
 import subprocess
@@ -99,10 +101,10 @@ def localize_page(text, page_url, files):
     """Replaces a page's stylesheets and <img> sources with local copies."""
     def sheet(match):
         tag = match.group(0)
-        href = re.search(r'href="([^"]*)"', tag)
+        href = re.search(r"href=(['\"])(.*?)\1", tag, flags=re.I)
         if "stylesheet" not in tag or href is None:
             return tag
-        url = absolute(href.group(1), page_url)
+        url = absolute(href.group(2), page_url)
         name = local_name(url)
         path = os.path.join(files, name)
         if not os.path.exists(path):
@@ -117,11 +119,11 @@ def localize_page(text, page_url, files):
 
     def image(match):
         tag = match.group(0)
-        tag = re.sub(r'\s(data-)?srcset="[^"]*"', "", tag)
-        src = re.search(r'\ssrc="([^"]*)"', tag)
-        if src is None or src.group(1).startswith("data:"):
+        tag = re.sub(r"\s(data-)?srcset=(['\"]).*?\2", "", tag, flags=re.I)
+        src = re.search(r"\ssrc=(['\"])(.*?)\1", tag, flags=re.I)
+        if src is None or src.group(2).startswith("data:"):
             return tag
-        name = mirror(absolute(src.group(1), page_url), files)
+        name = mirror(absolute(src.group(2), page_url), files)
         if name is None:
             return tag
         return tag.replace(src.group(0), ' src="files/%s"' % name)
@@ -129,15 +131,41 @@ def localize_page(text, page_url, files):
     def style_block(match):
         return match.group(1) + localize_css(match.group(2), page_url, files, "files/") + match.group(3)
 
+    def style_attribute(match):
+        quote = match.group(1)
+        value = localize_css(match.group(2), page_url, files, "files/")
+        return "style=" + quote + value + quote
+
     text = re.sub(r"<link[^>]*>", sheet, text)
+    # Chromium otherwise selects a remote <picture><source srcset> while browser,
+    # which does not implement picture source selection yet, uses the localized
+    # fallback <img>.  Force both engines to consume exactly the same bytes.
+    text = re.sub(r"<source\b[^>]*>", "", text, flags=re.I)
     text = re.sub(r"<img[^>]*>", image, text)
     text = re.sub(r"(<style[^>]*>)(.*?)(</style>)", style_block, text, flags=re.S)
+    text = re.sub(r"\bstyle=(['\"])(.*?)\1", style_attribute, text, flags=re.S | re.I)
     return text
 
 
 def without_scripts(text):
     """Drops the <script> elements of a page."""
-    return re.sub(r"<script\b.*?</script>", "", text, flags=re.S | re.I)
+    text = re.sub(r"<script\b.*?</script>", "", text, flags=re.S | re.I)
+    # browser has no iframe layout.  Removing them keeps Chromium from loading
+    # live advertisements that browser cannot render and makes the capture local.
+    return re.sub(r"<iframe\b.*?</iframe>", "", text, flags=re.S | re.I)
+
+
+def file_record(path, root):
+    """Returns the stable identity of a capture input or generated file."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return {
+        "path": os.path.relpath(path, root),
+        "bytes": os.path.getsize(path),
+        "sha256": digest.hexdigest(),
+    }
 
 
 def main():
@@ -149,11 +177,14 @@ def main():
     files = os.path.join(out, "files")
     os.makedirs(files, exist_ok=True)
     jar = os.path.join(out, "cookies.txt")
+    page_records = []
     for tag, url in PAGES:
         path = os.path.join(out, tag + ".html")
         if args.refetch or not os.path.exists(path):
             status = fetch(url, path, jar)
             print("%s %s %s" % (tag, status, url))
+            if status != "200":
+                raise SystemExit("amazon-capture: %s returned HTTP %s" % (url, status))
             time.sleep(2)
         with open(path, encoding="utf-8", errors="replace") as source:
             text = source.read()
@@ -166,8 +197,27 @@ def main():
         for name, body in variants.items():
             with open(os.path.join(out, name), "w", encoding="utf-8") as target:
                 target.write(body)
+        page_records.append({
+            "tag": tag,
+            "url": url,
+            "fetched_at_utc": datetime.datetime.fromtimestamp(
+                os.path.getmtime(path), datetime.timezone.utc
+            ).isoformat(),
+            "source": file_record(path, out),
+            "variants": [file_record(os.path.join(out, name), out) for name in variants],
+        })
         print("%s: %d bytes, %d stylesheets, %d files" % (tag, len(text), len(re.findall(r"<link[^>]*stylesheet", text)),
                                                          len(os.listdir(files))))
+    assets = [file_record(os.path.join(files, name), out) for name in sorted(os.listdir(files))]
+    manifest = {
+        "schema": 1,
+        "user_agent": AGENT,
+        "pages": page_records,
+        "assets": assets,
+    }
+    with open(os.path.join(out, "capture-manifest.json"), "w", encoding="utf-8") as target:
+        json.dump(manifest, target, ensure_ascii=False, indent=2, sort_keys=True)
+        target.write("\n")
 
 
 if __name__ == "__main__":

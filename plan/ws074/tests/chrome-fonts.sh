@@ -12,6 +12,10 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 root=$(pwd)
 fonts=$(readlink -f build/ws035-fonts)
+if [ ! -f "$fonts/Inter.ttf" ] || [ ! -f "$fonts/JetBrainsMono-Regular.ttf" ] ||
+    [ ! -f "$fonts/DroidSansFallbackFull.ttf" ]; then
+	fonts=$root/userland/desktop/fonts
+fi
 mkdir -p build/ws074-chrome/cache
 cat > build/ws074-chrome/fonts.conf <<EOF
 <?xml version="1.0"?>

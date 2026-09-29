@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: [q499](queue.md) / ws085-p001（Windows Venusの表示と速度、2026-09-29 ユーザー指示。vendor forkの直接変更を追加許可）。
+Active Queue: [q501](queue.md) / ws074-p089（Amazonトップのpercentage height。2026-09-30、Chromiumとの固定比較から最大のlayout差を修正）。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
 Next（2026-09-29 夕に更新）: **素の 5330 で firmware の画面の takeover → 内蔵 LCD の Keiland が動作**（WS084 p001・p002 cleared、image `build/demo-lcd3/hdd-image.img`、ユーザー「完璧です」）。HDMI の LCD はいったん外し LCD のみの構成（demo の既定 `display=edp`）。GT は RP0 の要求で操作中 24.5 present/s（RPS の割込みは F-054）。
 次の周期（demo critical）: WS074 の direction → p072 → p037（[amazon-goal.md](ws074/amazon-goal.md)）、WS079 p009（規約）と CCITTFax・password の入力・thumbnail、
@@ -169,7 +169,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 依存による実行順とは別のもの。Queue の権限は変えない。2026-09-28 に整理（それ以前の順は git の履歴にある）。
 
-0. **現在のユーザー指示**: WS085（Windows hostのVenus、q499）。
+0. **現在のユーザー指示**: WS074（Amazon.co.jpのトップがうまく描画できるまで自走、q501）。
 
 **デモまでの期間（2026-09-29 ユーザー）**: 10-10 ごろまで新規実装を進め、10-10 ごろ〜10-17 は bug の修正と実機での調整だけにする。
 

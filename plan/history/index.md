@@ -1,11 +1,19 @@
 <!-- awesome-plan project=zedbsd record=past-log -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし（2026-09-27 から subagent の運用）
-Last finished Queue: q498（ws073-p028 cleared。Noct smoke を外し `make` が完走）。それ以前の作業は下の節
+Active Queue: [q501](../queue.md) / ws074-p089（Amazonトップのpercentage height）
+Last finished Queue: [q500](queue-q500.md)（ws074-p094 cleared。Chromiumとの固定比較を1 command化）
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-09-30 q500
+
+[q500](queue-q500.md): Amazonの固定captureをbrowserとChromiumで同条件に描き、入力・実行環境・画像のhashと画素・ink指標をJSONへ残す手順を確立。top 82.96%/ink 79.01%、search 75.85%/ink 32.97%。GitHubへは未公開。
+
+## 2026-09-29〜30 q499
+
+[q499](queue-q499.md): Windows版QEMU/virglrendererのVenus表示とFiles起動停止、Noctの旧path混入を修正。表示と通常makeを確認。vendorのcommit/pushはユーザーreview待ち。GitHubへは未公開。
 
 ## 最新: 2026-09-29 q498
 

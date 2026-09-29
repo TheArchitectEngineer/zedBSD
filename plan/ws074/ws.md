@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: 2026-09-29: p076（Date）・p077（window の環境）・p078（let・const・arrow・template）・p079（destructuring・default・rest・spread・optional chaining）cleared。**p085（class）cleared**（test262 21806/47792、新しく落ちた 0。Amazon の Uncaught top 2・search 7）。**p086（async function と generator・Promise）cleared**（test262 24995/47792、Amazon の async の誤り 0、Uncaught top 2・search 3）。**p087（Symbol・iterator・for-of・Map・Set、URI の関数）cleared**（test262 28381/47792、Amazon の search の Uncaught 0、top は DOM の側の `fetch`・`IntersectionObserver`）。JS の側の次は型付き配列（ArrayBuffer・TypedArray・DataView）。デモの目標は amazon.co.jp（[amazon-goal.md](amazon-goal.md)）。計画中の Phase の順（main の指示）: p085 class の確認 → Symbol・iterator の protocol・for-of（p028 の残りから切り出す）→ 型付き配列（ArrayBuffer・TypedArray・DataView、TextEncoder.encode の Uint8Array のため）と p029（generator・Promise・async）。Amazon の次の blocker は async（top 1、search 4）と for-of（各 1）なので、p029 の async を型付き配列より先にするのがよい（判断は次の担当）。Phase の番号は DOM の側（ws074-dom）と衝突しないよう main と合わせる DOM の側（別のエージェント）: p082（getComputedStyle・offset・scroll）cleared、次は p083（DOMException、planned）。
+Queue: q501-i01 / [ws074-p089](phase089/phase.md)
+Resume point: 2026-09-30: p094で固定したAmazon captureとChromium 153の比較を1 command化。topは画素82.96%・ink 79.01%。主なlayout差は2番目のcardの百分率の高さが約200 pxで止まり、Chromiumの約490 pxにならない点。p089でpercentage heightの確定性を追う。
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -186,6 +186,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | ws074-p091 | flex の残り（overflow で隠れる項目の自動の最小、blockification、column の最小）と CSSOM の小さな不足（`cssFloat` など）。p084 の案 4・5 | planned | p084 |
 | ws074-p092 | DOM の API: `fetch`・`IntersectionObserver`・`document.elementsFromPoint`（p087 の後の Amazon の残りの Uncaught） | planned | p087 |
 | ws074-p093 | JS: 型付き配列（ArrayBuffer・TypedArray・DataView） | planned | p087 |
+| [ws074-p094](phase094/phase.md) | Chromiumとの再現可能な比較手順: 固定capture、隔離profile、入力・環境・出力のhash、JSON reportとbaseline回帰 | **cleared**（2026-09-30。top 82.96%/ink 79.01%、search 75.85%/ink 32.97%） | p067 |
 
 ## 後の WS・Future Work の候補
 
