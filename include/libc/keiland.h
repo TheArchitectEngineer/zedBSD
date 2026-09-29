@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures). */
-#define KEILAND_VERSION	10U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys). */
+#define KEILAND_VERSION	11U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -608,6 +608,7 @@ struct keiland_network;
 #define KEILAND_NETWORK_REQUEST_DISCONNECT	3U
 #define KEILAND_NETWORK_REQUEST_WIFI_ON	4U
 #define KEILAND_NETWORK_REQUEST_WIFI_OFF	5U
+#define KEILAND_NETWORK_REQUEST_PROFILES	6U	/* the user's saved networks changed (KEILAND_VERSION 11) */
 
 /*
  * The network as last reported: connected (an interface is up with an
@@ -680,6 +681,73 @@ int keiland_network_request(struct keiland_network *network, unsigned request, c
  * errno value (0 when it succeeded) through *error.
  */
 unsigned keiland_network_get_request(const struct keiland_network *network, int *error);
+
+/*
+ * The network's details for Settings (KEILAND_VERSION 11, ws089-p003): each
+ * interface as the kernel reports it, the DNS servers, and the keys of the
+ * Wi-Fi networks the user has saved.  These read the kernel and the files
+ * directly and do not wait for the daemon.
+ *
+ * A new network is joined with its key in three steps: the key is saved in
+ * the user's credential store (keiland_network_save_key: /etc/wifi.conf for
+ * root, the .wifi.conf of the passwd home otherwise), the daemon is told
+ * the saved networks changed (KEILAND_NETWORK_REQUEST_PROFILES), and the
+ * network is joined (KEILAND_NETWORK_REQUEST_JOIN).  A key is a WPA
+ * passphrase of 8 to 63 characters; the daemon joins with the keys of the
+ * user who turned the Wi-Fi on.
+ */
+
+/* The most interfaces and DNS servers reported, and an IPv4 address's text with its NUL. */
+#define KEILAND_NETWORK_LINKS_MAX	16U
+#define KEILAND_NETWORK_DNS_MAX		4U
+#define KEILAND_NETWORK_ADDRESS_MAX	16U
+
+/* The shortest and the longest key. */
+#define KEILAND_NETWORK_KEY_MIN		8U
+#define KEILAND_NETWORK_KEY_MAX		63U
+
+/*
+ * One interface: its name, whether it is up and has its link, whether it
+ * is the loopback, its IPv4 address and netmask (empty when it has none),
+ * its hardware address and MTU, and the bytes it has received and sent.
+ */
+struct keiland_network_link {
+	char name[KEILAND_NETWORK_NAME_MAX];
+	unsigned up;
+	unsigned running;
+	unsigned loopback;
+	char address[KEILAND_NETWORK_ADDRESS_MAX];
+	char netmask[KEILAND_NETWORK_ADDRESS_MAX];
+	unsigned char hardware[6];
+	unsigned mtu;
+	uint64_t received_bytes;
+	uint64_t sent_bytes;
+};
+
+/*
+ * Copies up to capacity interfaces and returns how many there are (0 when
+ * they cannot be read).
+ */
+size_t keiland_network_get_links(struct keiland_network_link *links, size_t capacity);
+
+/*
+ * Copies up to capacity DNS servers of /etc/resolv.conf (dotted IPv4) and
+ * returns how many were copied.
+ */
+size_t keiland_network_get_dns(char (*servers)[KEILAND_NETWORK_ADDRESS_MAX], size_t capacity);
+
+/*
+ * Saves the key of a Wi-Fi network in the user's credential store (joined
+ * by itself from then on).  Returns 0 or an errno value (EINVAL for an SSID
+ * or a key outside the bounds).
+ */
+int keiland_network_save_key(const char *ssid, const char *key);
+
+/*
+ * Copies up to capacity SSIDs the user has saved keys for and returns how
+ * many there are (0 when none, or the store cannot be read).
+ */
+size_t keiland_network_get_saved(char (*ssids)[KEILAND_NETWORK_SSID_MAX], size_t capacity);
 
 /*
  * The touch motion (WS081, plan/ws081/design.md sections 3 and 6).
