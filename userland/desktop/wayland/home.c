@@ -695,10 +695,10 @@ zwl_home_tick(
 	server->home = server->home_to;
 	if (server->home > 0.0f) {
 		home_layout(server);
-		printf("ZWL HOME opened apps=%u pages=%u page=%u\n", home_shown_count, home_pages, server->home_page + 1U);
+		printf("ZWL HOME opened apps=%u pages=%u page=%u at_ms=%llu\n", home_shown_count, home_pages, server->home_page + 1U, (unsigned long long)zwl_milliseconds());
 		home_log_icons();
 	} else {
-		printf("ZWL HOME closed\n");
+		printf("ZWL HOME closed at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
 	}
 }
 
@@ -1400,7 +1400,7 @@ home_open(
 	server->home_launch_app = -1;
 	server->home_page_press = 0;
 	server->drag = NULL;
-	printf("ZWL HOME open via=%s\n", via);
+	printf("ZWL HOME open via=%s at_ms=%llu\n", via, (unsigned long long)zwl_milliseconds());
 	home_settle(server, from, 1.0f);
 }
 
@@ -1414,7 +1414,7 @@ home_close(
 	/* The search goes with it. */
 	server->home_query_length = 0U;
 	server->home_query[0] = '\0';
-	printf("ZWL HOME close via=%s\n", via);
+	printf("ZWL HOME close via=%s at_ms=%llu\n", via, (unsigned long long)zwl_milliseconds());
 	home_settle(server, from, 0.0f);
 }
 
