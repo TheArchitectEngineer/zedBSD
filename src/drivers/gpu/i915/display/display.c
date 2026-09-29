@@ -602,11 +602,15 @@ drv_i915_display_register(
 
 	/*
 	 * An active crtc at probe time is the firmware display.  The reference
-	 * only logs a failed initial modeset and continues; without the
+	 * only logs a failed initial modeset and continues; when N0 decided the
+	 * takeover (ws084-p001), the resident display start reads it out and
+	 * stops it before its first write, so the start goes on.  Without the
 	 * takeover this start stops here, because it would otherwise leave that
 	 * display untouched and unaccounted for.
 	 */
-	if (dprobe->initial_commit_unimplemented) {
+	if (dprobe->initial_commit_unimplemented && display->n0.takeover)
+		kern_logf("i915: the firmware display (%u active crtc) is left to the resident start's takeover (N1)\n", dprobe->active_crtcs);
+	if (dprobe->initial_commit_unimplemented && !display->n0.takeover) {
 		drv_i915_trace_record(&device->gt.trace, 0U, I915_TRACE_UNIMPLEMENTED, "intel_initial_commit", dprobe->active_crtcs, 0U);
 		device->stage = "intel_initial_commit";
 		return ENOTSUP;
