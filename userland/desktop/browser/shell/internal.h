@@ -23,6 +23,7 @@
 #include <xdg-shell-client-protocol.h>
 
 #include "shell/shell.h"
+#include "shell/touch.h"
 
 #include <keiland.h>
 
@@ -31,6 +32,9 @@
 
 /* How many inputs wait for the main loop at most. */
 #define SHELL_WINDOW_EVENTS	256U
+
+/* How many touch inputs wait for the main loop at most (ws081-p006). */
+#define SHELL_WINDOW_TOUCHES	256U
 
 /* The kinds of input the window queues. */
 enum shell_event_type {
@@ -101,6 +105,7 @@ struct shell_window {
 	struct wl_seat *seat;
 	struct wl_pointer *pointer;
 	struct wl_keyboard *keyboard;
+	struct wl_touch *touch;
 
 	/* The window: its surface and roles. */
 	struct wl_surface *surface;
@@ -137,6 +142,10 @@ struct shell_window {
 	struct shell_event events[SHELL_WINDOW_EVENTS];
 	unsigned event_first;
 	unsigned event_count;
+
+	/* The touch inputs not yet taken by the main loop, oldest first (ws081-p006; a full queue drops the newest). */
+	struct shell_touch_event touches[SHELL_WINDOW_TOUCHES];
+	unsigned touch_count;
 };
 
 /*
