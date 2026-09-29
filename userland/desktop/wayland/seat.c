@@ -467,6 +467,18 @@ zwl_seat_motion_shell(
 	/* The event's time, for whatever measures the pointer's speed (corner.c). */
 	server->input_time = time;
 
+	/*
+	 * A window frame's resize arrow shows only where the glass look's
+	 * windows take the pointer (shell.c): not in fullscreen mode, under a
+	 * popup's grab, on the lock screen, or during a drag and drop.
+	 */
+	if (!server->glass ||
+	    !server->windowed ||
+	    server->popup_grab != NULL ||
+	    server->locked ||
+	    server->dnd_active)
+		zwl_cursor_frame(server, 0U);
+
 	/* The lock screen has the pointer: only its buttons light up (ws035-p102). */
 	server->lock_input_ms = zwl_milliseconds();
 	if (server->locked) {

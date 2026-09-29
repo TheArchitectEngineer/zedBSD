@@ -19,6 +19,7 @@
  */
 
 #include "extras.h"
+#include "toplevel.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -107,6 +108,7 @@ static const int32_t cursor_hotspots[ZWL_CURSOR_IMAGES][2] = {
 static int device_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
 static int device_set_shape(struct zwl_object *device, const unsigned char *bytes, size_t size);
 static unsigned shape_image(uint32_t shape);
+static uint32_t frame_shape(uint32_t edges);
 static void mask_figure(unsigned index, struct cursor_mask *mask);
 static void mask_rectangle(struct cursor_mask *mask, int x0, int y0, int x1, int y1);
 static void mask_arrow_heads(struct cursor_mask *mask, unsigned horizontal);
@@ -218,12 +220,16 @@ zwl_cursor_image(
 	int32_t *hotspot_x,
 	int32_t *hotspot_y)
 {
+	uint32_t shape;
 	unsigned index;
 
-	/* The arrow by default. */
+	/* A window frame's resize arrow comes first, then the client's shape; the arrow by default. */
 	*hotspot_x = 0;
 	*hotspot_y = 0;
-	index = shape_image(server->cursor_shape);
+	shape = server->cursor_shape;
+	if (server->frame_edges != 0U)
+		shape = frame_shape(server->frame_edges);
+	index = shape_image(shape);
 	if (index == IMAGE_NONE || server->cursor_images[index] == NULL)
 		return NULL;
 
@@ -231,6 +237,45 @@ zwl_cursor_image(
 	*hotspot_x = cursor_hotspots[index][0];
 	*hotspot_y = cursor_hotspots[index][1];
 	return server->cursor_images[index];
+}
+
+/*
+ * Shows the resize arrow of a window frame's edges under the pointer (the
+ * glass look's frames, shell.c), or takes it away with no edges.
+ *
+ * The frame's arrow is drawn over whatever the client under the pointer
+ * asked for, its shape or its cursor surface, until the edges are 0 again.
+ */
+void
+zwl_cursor_frame(
+	struct zwl_server *server,
+	uint32_t edges)
+{
+	unsigned index;
+	int error;
+
+	/* An unchanged frame keeps its cursor. */
+	if (server->frame_edges == edges)
+		return;
+
+	/* The arrow's image is made the first time it is needed, like a client's shape's. */
+	if (edges != 0U) {
+		index = shape_image(frame_shape(edges));
+		if (index != IMAGE_NONE &&
+		    server->cursor_images[index] == NULL &&
+		    server->compose != NULL) {
+			error = image_make(server, index);
+			if (error != 0)
+				printf("ZWL CURSOR image=%u errno=%d\n", index, error);
+		}
+	}
+
+	/* The next frame draws the new cursor. */
+	server->frame_edges = edges;
+	server->dirty = 1;
+
+	/* Succeeded: the log line the tests read. */
+	printf("ZWL CURSOR frame edges=%u\n", edges);
 }
 
 /* Makes a pointer's cursor-shape device. */
@@ -367,6 +412,33 @@ shape_image(
 
 	/* Every other shape (default, help, copy, ...) is the arrow. */
 	return IMAGE_NONE;
+}
+
+/* Tells which resize shape a frame's edges show: a side's two-way arrow, a corner's diagonal one. */
+static uint32_t
+frame_shape(
+	uint32_t edges)
+{
+	/* The corners, by the diagonal they drag along. */
+	if (edges == (ZWL_EDGE_TOP | ZWL_EDGE_LEFT))
+		return SHAPE_NW_RESIZE;
+	if (edges == (ZWL_EDGE_BOTTOM | ZWL_EDGE_RIGHT))
+		return SHAPE_SE_RESIZE;
+	if (edges == (ZWL_EDGE_TOP | ZWL_EDGE_RIGHT))
+		return SHAPE_NE_RESIZE;
+	if (edges == (ZWL_EDGE_BOTTOM | ZWL_EDGE_LEFT))
+		return SHAPE_SW_RESIZE;
+
+	/* The sides. */
+	if (edges == ZWL_EDGE_TOP)
+		return SHAPE_N_RESIZE;
+	if (edges == ZWL_EDGE_BOTTOM)
+		return SHAPE_S_RESIZE;
+	if (edges == ZWL_EDGE_LEFT)
+		return SHAPE_W_RESIZE;
+
+	/* The right side, the only one left. */
+	return SHAPE_E_RESIZE;
 }
 
 /* Makes one image's figure. */
