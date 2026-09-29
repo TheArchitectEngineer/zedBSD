@@ -115,6 +115,7 @@ struct kui_ui {
 	struct ui_key released;
 	struct ui_key clicked;
 	int clicked_double;
+	int clicked_touch;
 	struct ui_key last_click;
 	uint64_t last_click_us;
 
@@ -546,6 +547,8 @@ kui_ui_hit(
 		state |= KUI_HIT_CLICKED;
 		if (ui->clicked_double)
 			state |= KUI_HIT_DOUBLE;
+		if (ui->clicked_touch)
+			state |= KUI_HIT_TOUCHED;
 	}
 
 	/* Reports the state. */
@@ -597,7 +600,9 @@ kui_ui_end(
 	struct kui_scroll *scroll;
 	struct kui_event *event;
 	size_t index;
+	unsigned kept;
 	int moving;
+	int delivered;
 	int held;
 	int lit;
 
@@ -612,11 +617,26 @@ kui_ui_end(
 	ui->clicked.valid = 0;
 	ui->released.valid = 0;
 	ui->clicked_double = 0;
+	ui->clicked_touch = 0;
 
-	/* The keys no widget took are the application's. */
+	/*
+	 * The oldest key no widget took is the application's; the keys after
+	 * it wait for the next frame, so that they are carried out after it
+	 * (a letter that selects an item, then Enter that opens it).
+	 */
+	kept = 0;
+	delivered = 0;
 	for (index = 0; index < ui->key_count; index++) {
 		if (ui->keys[index].taken)
 			continue;
+		if (delivered) {
+			ui->keys[kept] = ui->keys[index];
+			kept++;
+			continue;
+		}
+
+		/* The first is the application's. */
+		delivered = 1;
 		event = ui_push(ui, KUI_EVENT_KEY, ui->pointer_x, ui->pointer_y);
 		if (event == NULL)
 			continue;
@@ -624,12 +644,12 @@ kui_ui_end(
 		event->modifiers = ui->keys[index].modifiers;
 	}
 
-	/* The keys are all delivered. */
-	ui->key_count = 0;
+	/* The keys waiting; they want another frame. */
+	ui->key_count = kept;
 
-	/* Fingers down or a drag want frames. */
+	/* Fingers down, a drag or keys waiting want frames. */
 	moving = 0;
-	if (ui->fingers > 0U || ui->drag != UI_DRAG_NONE)
+	if (ui->fingers > 0U || ui->drag != UI_DRAG_NONE || ui->key_count > 0U)
 		moving = 1;
 
 	/* The widget under a still pointer, in the frame drawn (a list scrolled under it); another is lit in the next frame. */
@@ -733,8 +753,8 @@ kui_ui_key(
 			return 1;
 	}
 
-	/* Without a focused widget the key is the application's at once. */
-	if (!ui->focus.valid || ui->key_count == UI_KEYS) {
+	/* Without a focused widget (and no key waiting before it) the key is the application's at once. */
+	if ((!ui->focus.valid && ui->key_count == 0U) || ui->key_count == UI_KEYS) {
 		event = ui_push(ui, KUI_EVENT_KEY, ui->pointer_x, ui->pointer_y);
 		if (event == NULL)
 			return 0;
@@ -868,7 +888,7 @@ keiui_ui_take_key(
 	int wanted;
 	int same;
 
-	/* The oldest key not taken, pressed while the widget had the focus, that it wants. */
+	/* The oldest key not taken, pressed while the widget had the focus; one it does not want stops it (the application has it first, in order). */
 	for (slot = 0; slot < ui->key_count; slot++) {
 		if (ui->keys[slot].taken)
 			continue;
@@ -877,7 +897,7 @@ keiui_ui_take_key(
 			continue;
 		wanted = wants(ui->keys[slot].code, ui->keys[slot].modifiers);
 		if (!wanted)
-			continue;
+			return 0;
 		ui->keys[slot].taken = 1;
 		*code = ui->keys[slot].code;
 		*modifiers = ui->keys[slot].modifiers;
@@ -903,7 +923,7 @@ keiui_ui_take_activate(
 	int pressed;
 	int same;
 
-	/* Each Enter and Space not taken yet, pressed while the widget had the focus. */
+	/* Each Enter and Space not taken yet, pressed while the widget had the focus, up to another key of it (the application's first, in order). */
 	pressed = 0;
 	for (slot = 0; slot < ui->key_count; slot++) {
 		code = ui->keys[slot].code;
@@ -913,7 +933,7 @@ keiui_ui_take_activate(
 		if (!same)
 			continue;
 		if (code != KUI_KEY_ENTER && code != KUI_KEY_KPENTER && code != KUI_KEY_SPACE)
-			continue;
+			break;
 		ui->keys[slot].taken = 1;
 		pressed = 1;
 	}
@@ -1076,6 +1096,7 @@ ui_click(
 	ui->clicked = *key;
 	ui->clicked.valid = 1;
 	ui->clicked_double = twice;
+	ui->clicked_touch = 0;
 
 	/* A double click is used up; a single one may start one. */
 	ui->last_click = *key;
@@ -1199,6 +1220,7 @@ ui_gesture(
 
 			/* And clicked. */
 			ui_click(ui, &ui->touch_hit, twice, now_us);
+			ui->clicked_touch = 1;
 		} else if (ui->touch_has_region && ui->touch_region.kind == UI_KIND_TEXT) {
 			ui_content(ui, gesture->x, gesture->y, &x, &y);
 			kui_text_touch_tap(ui->touch_region.touch, x, y, twice);

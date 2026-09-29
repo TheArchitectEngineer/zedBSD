@@ -219,6 +219,8 @@ kui_list_row(
 		list->selected = (long)index;
 		if ((state & KUI_HIT_DOUBLE) != 0U)
 			changes |= KUI_LIST_ACTIVATED;
+		if ((state & KUI_HIT_TOUCHED) != 0U)
+			changes |= KUI_LIST_TOUCHED;
 	}
 
 	/* The ground: the accent when selected (pale without the keyboard), faint under the pointer. */
