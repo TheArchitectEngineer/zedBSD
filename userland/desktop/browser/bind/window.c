@@ -296,10 +296,25 @@ int
 bind_checkpoint(
 	struct bind_window *window)
 {
+	int queued;
 	int status;
 
-	/* Runs the realm's queue with the console as the report. */
+	/* Runs the jobs already queued by the script. */
 	status = vm_run_jobs(window->realm, window_report_job, window);
+	if (status != 0)
+		return status;
+
+	/* DOM changes notify their observers as microtasks; a callback may make another change. */
+	for (;;) {
+		status = bind_environment_checkpoint(window, &queued);
+		if (status != 0 || !queued)
+			break;
+		status = vm_run_jobs(window->realm, window_report_job, window);
+		if (status != 0)
+			break;
+	}
+
+	/* A callback failure ends the checkpoint. */
 	if (status != 0)
 		return status;
 

@@ -128,6 +128,7 @@ struct bind_timer {
 };
 
 struct environment_fetch_pending;
+struct environment_mutation_observer;
 
 /*
  * The window of a page: the realm whose global object it is, the
@@ -162,9 +163,16 @@ struct bind_window {
 	struct vm_object *local_storage;
 	struct vm_object *session_storage;
 	struct environment_fetch_pending *fetches;
+	struct environment_mutation_observer *mutation_observers;
 };
 
 void bind_environment_release(struct bind_window *window);
+int bind_environment_checkpoint(struct bind_window *window, int *queued);
+int bind_environment_child_mutation(
+	struct bind_window *window,
+	struct dom_node *parent,
+	struct dom_node *added,
+	struct dom_node *removed);
 
 /*
  * One event listener of a target: its type, its callback (a function or

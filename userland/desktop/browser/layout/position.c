@@ -19,10 +19,12 @@
  * absolute one against the viewport's rectangle and scrolls with the page
  * in this pass.
  *
- * The painting order flattens the stacking contexts: the positioned boxes
- * with a negative z-index (lowest first), the normal flow, then the others
- * with z-index auto or 0 in tree order and the positive ones (lowest
- * first), each painted with its descendants that are not positioned.
+ * The painting order lists every positioned box as a layer.  A box under
+ * an ancestor with an explicit z-index stays in that ancestor's outer
+ * stacking level; this keeps the whole subtree above or below the
+ * ancestor's siblings.  Within a level, tree order keeps an ancestor
+ * before its positioned descendants.  The negative levels are painted
+ * first, then the normal flow, then level zero and the positive levels.
  */
 
 #include "layout/layout.h"
@@ -58,7 +60,7 @@ static void position_padding_box(const struct layout_box *box, struct position_b
 static int position_offset(const struct css_length *length, layout_unit size, layout_unit *value);
 static layout_unit position_frame(const struct layout_box *box);
 static layout_unit position_outer_height(const struct layout_box *box);
-static int position_collect(const struct layout_box *box, struct wb_vector *entries, int depth);
+static int position_collect(const struct layout_box *box, struct wb_vector *entries, int depth, int constrained, int outer_z);
 static layout_unit position_inline_floats(const struct layout_box *box, int depth);
 
 /*
@@ -113,7 +115,7 @@ layout_stacking_order(
 	wb_vector_init(&entries, sizeof(struct position_entry));
 	error = 0;
 	if (tree->root != NULL)
-		error = position_collect(tree->root, &entries, 0);
+		error = position_collect(tree->root, &entries, 0, 0, 0);
 	if (error != 0) {
 		wb_vector_release(&entries);
 		return error;
@@ -599,15 +601,25 @@ position_outer_height(
 	return box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
 }
 
-/* Adds the positioned boxes under a box (not the root) to the entries, in tree order. */
+/*
+ * Adds the positioned boxes under a box (not the root) to the entries, in
+ * tree order.  An explicit z-index starts a stacking level: positioned
+ * descendants keep its outer z-index instead of escaping above or below
+ * the level's siblings.
+ */
 static int
 position_collect(
 	const struct layout_box *box,
 	struct wb_vector *entries,
-	int depth)
+	int depth,
+	int constrained,
+	int outer_z)
 {
 	struct position_entry entry;
 	const struct layout_box *child;
+	int child_constrained;
+	int child_outer_z;
+	int child_z;
 	int positioned;
 	int error;
 
@@ -615,21 +627,32 @@ position_collect(
 	if (depth > LAYOUT_DEPTH_MAX)
 		return 0;
 
-	/* Each child: a positioned one is listed with its z-index (auto is 0), then searched. */
+	/* Each child: a positioned one is listed at its outer stacking level, then searched. */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		positioned = layout_is_positioned(child);
+		child_z = child->style.z_index;
+		if (child->style.z_index_auto)
+			child_z = 0;
+		child_constrained = constrained;
+		child_outer_z = outer_z;
 		if (positioned) {
 			entry.box = child;
-			entry.z = child->style.z_index;
-			if (child->style.z_index_auto)
-				entry.z = 0;
+			entry.z = child_z;
+			if (constrained)
+				entry.z = outer_z;
 			error = wb_vector_push(entries, &entry);
 			if (error != 0)
 				return error;
+
+			/* The first explicit z-index contains all the levels below it. */
+			if (!constrained && !child->style.z_index_auto) {
+				child_constrained = 1;
+				child_outer_z = child_z;
+			}
 		}
 
 		/* Its descendants. */
-		error = position_collect(child, entries, depth + 1);
+		error = position_collect(child, entries, depth + 1, child_constrained, child_outer_z);
 		if (error != 0)
 			return error;
 	}

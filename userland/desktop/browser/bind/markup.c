@@ -131,9 +131,11 @@ bind_inner_html_set(
 	unsigned count,
 	vm_value *result)
 {
+	struct bind_window *window;
 	struct dom_element *element;
 	struct dom_node *target;
 	struct dom_node *fragment;
+	struct dom_node *removed;
 	int status;
 
 	/* The element, and the fragment parsed in its context. */
@@ -149,10 +151,16 @@ bind_inner_html_set(
 	status = bind_template_contents(element, &target);
 	if (status != 0)
 		return status;
+	window = bind_window_of(realm);
 
 	/* The old children go. */
-	while (target->first_child != NULL)
-		dom_remove(target->first_child);
+	while (target->first_child != NULL) {
+		removed = target->first_child;
+		dom_remove(removed);
+		status = bind_environment_child_mutation(window, target, NULL, removed);
+		if (status != 0)
+			return status;
+	}
 
 	/* Succeeded: the fragment's nodes are the children. */
 	status = bind_insert(realm, target, fragment, NULL);
@@ -241,6 +249,9 @@ bind_outer_html_set(
 
 	/* Succeeded: the element goes. */
 	dom_remove(&element->node);
+	status = bind_environment_child_mutation(window, parent, NULL, &element->node);
+	if (status != 0)
+		return status;
 	return 0;
 }
 

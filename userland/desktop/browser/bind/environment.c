@@ -86,6 +86,17 @@ struct environment_fetch_pending {
 	struct environment_fetch_pending *next;
 };
 
+/* One MutationObserver and its current target and pending records. */
+struct environment_mutation_observer {
+	struct vm_cell *observer;
+	struct vm_cell *callback;
+	struct vm_cell *target;
+	struct vm_cell *records;
+	int child_list;
+	int subtree;
+	struct environment_mutation_observer *next;
+};
+
 static int environment_install_navigator(struct bind_window *window);
 static int environment_install_screen(struct bind_window *window);
 static int environment_install_performance(struct bind_window *window);
@@ -136,11 +147,17 @@ static int environment_response(struct vm_realm *realm, const struct wb_buffer *
 static int environment_settle_promise(struct vm_realm *realm, vm_value value, int reject, vm_value *result);
 static int environment_observer_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_observer_observe(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int environment_observer_nothing(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_observer_disconnect(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_observer_records(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_observer_entry(struct bind_window *window, vm_value target, int type, vm_value *entry);
 static int environment_observer_rect(struct vm_realm *realm, double x, double y, double width, double height, vm_value *result);
 static int environment_observer_size(struct vm_realm *realm, double width, double height, vm_value *result);
+static int environment_mutation_add(struct bind_window *window, struct vm_object *observer, vm_value callback);
+static struct environment_mutation_observer *environment_mutation_find(struct bind_window *window, vm_value observer);
+static void environment_mutation_clear(struct bind_window *window, struct environment_mutation_observer *observer);
+static int environment_mutation_options(struct vm_realm *realm, vm_value options, int *child_list, int *subtree);
+static int environment_mutation_record(struct bind_window *window, struct environment_mutation_observer *observer, struct dom_node *parent, struct dom_node *added, struct dom_node *removed);
+static int environment_node_list(struct bind_window *window, struct dom_node *node, vm_value *result);
 static int environment_base64_value(uint16_t unit);
 
 /*
@@ -1993,6 +2010,8 @@ void
 bind_environment_release(
 	struct bind_window *window)
 {
+	struct environment_mutation_observer *observer_next;
+	struct environment_mutation_observer *observer;
 	struct environment_fetch_pending *next;
 	struct environment_fetch_pending *pending;
 
@@ -2007,6 +2026,20 @@ bind_environment_release(
 
 	/* The list is empty. */
 	window->fetches = NULL;
+
+	/* Mutation observers retain their objects, callbacks, targets and pending records. */
+	observer = window->mutation_observers;
+	while (observer != NULL) {
+		observer_next = observer->next;
+		environment_mutation_clear(window, observer);
+		vm_heap_remove_root(window->realm->heap, &observer->callback);
+		vm_heap_remove_root(window->realm->heap, &observer->observer);
+		free(observer);
+		observer = observer_next;
+	}
+
+	/* The window no longer owns an observer. */
+	window->mutation_observers = NULL;
 }
 
 /* Makes the small Response object used by fetch. */
@@ -2254,11 +2287,13 @@ environment_observer_construct(
 
 	/* The other methods do not need per-observer state. */
 	if (status == 0)
-		status = js_builtin_method(realm, observer, "unobserve", 1, environment_observer_nothing);
+		status = js_builtin_method(realm, observer, "unobserve", 1, environment_observer_disconnect);
 	if (status == 0)
-		status = js_builtin_method(realm, observer, "disconnect", 0, environment_observer_nothing);
+		status = js_builtin_method(realm, observer, "disconnect", 0, environment_observer_disconnect);
 	if (status == 0)
 		status = js_builtin_method(realm, observer, "takeRecords", 0, environment_observer_records);
+	if (status == 0 && type == 0)
+		status = environment_mutation_add(bind_window_of(realm), observer, callback);
 	if (status != 0)
 		return status;
 
@@ -2276,13 +2311,18 @@ environment_observer_observe(
 	unsigned count,
 	vm_value *result)
 {
+	struct environment_mutation_observer *observer;
 	struct bind_window *window;
+	struct dom_node *node;
 	struct vm_function *callee;
 	struct vm_object *data;
 	vm_value entry;
 	vm_value entries;
 	vm_value callback;
+	vm_value options;
 	vm_value target;
+	int child_list;
+	int subtree;
 	int type;
 	int status;
 
@@ -2294,8 +2334,36 @@ environment_observer_observe(
 	data = (struct vm_object *)vm_value_as_cell(callee->data);
 	callback = data->elements[0];
 	type = vm_value_as_int32(data->elements[1]);
-	if (type == 0)
+	if (type == 0) {
+		/* Mutation observers retain a Node and the requested child-list scope. */
+		child_list = 0;
+		subtree = 0;
+		target = js_argument(args, count, 0);
+		node = bind_node_of(target);
+		if (node == NULL)
+			return vm_throw_type_error(realm, "The observation target is not a Node.");
+		options = js_argument(args, count, 1);
+		status = environment_mutation_options(realm, options, &child_list, &subtree);
+		if (status != 0)
+			return status;
+		observer = environment_mutation_find(bind_window_of(realm), this_value);
+		if (observer == NULL)
+			return bind_throw_illegal(realm);
+
+		/* A second observe call replaces this minimal observer's prior target. */
+		environment_mutation_clear(bind_window_of(realm), observer);
+		observer->target = vm_value_as_cell(target);
+		status = vm_heap_add_root(realm->heap, &observer->target);
+		if (status != 0) {
+			observer->target = NULL;
+			return status;
+		}
+
+		/* The active registration uses the requested scope. */
+		observer->child_list = child_list;
+		observer->subtree = subtree;
 		return 0;
+	}
 
 	/* A layout observation is delivered as one microtask record. */
 	target = js_argument(args, count, 0);
@@ -2308,24 +2376,27 @@ environment_observer_observe(
 	return status;
 }
 
-/* Takes disconnect and unobserve without retaining targets in this first pass. */
+/* Stops a MutationObserver; the layout observers have no retained target. */
 static int
-environment_observer_nothing(
+environment_observer_disconnect(
 	struct vm_realm *realm,
 	vm_value this_value,
 	const vm_value *args,
 	unsigned count,
 	vm_value *result)
 {
-	UNUSED_PARAMETER(realm);
-	UNUSED_PARAMETER(this_value);
+	struct environment_mutation_observer *observer;
+
 	UNUSED_PARAMETER(args);
 	UNUSED_PARAMETER(count);
 	*result = VM_VALUE_UNDEFINED;
+	observer = environment_mutation_find(bind_window_of(realm), this_value);
+	if (observer != NULL)
+		environment_mutation_clear(bind_window_of(realm), observer);
 	return 0;
 }
 
-/* Reports no queued observer records. */
+/* Takes a MutationObserver's pending records, or an empty list. */
 static int
 environment_observer_records(
 	struct vm_realm *realm,
@@ -2334,10 +2405,314 @@ environment_observer_records(
 	unsigned count,
 	vm_value *result)
 {
-	UNUSED_PARAMETER(this_value);
+	struct environment_mutation_observer *observer;
+	struct vm_cell *records;
+
 	UNUSED_PARAMETER(args);
 	UNUSED_PARAMETER(count);
+	observer = environment_mutation_find(bind_window_of(realm), this_value);
+	if (observer != NULL && observer->records != NULL) {
+		records = observer->records;
+		vm_heap_remove_root(realm->heap, &observer->records);
+		observer->records = NULL;
+		*result = vm_value_cell(records);
+		return 0;
+	}
+
+	/* An observer without pending records returns an empty sequence. */
 	return js_builtin_array(realm, NULL, 0, result);
+}
+
+/* Retains one newly constructed MutationObserver and its callback. */
+static int
+environment_mutation_add(
+	struct bind_window *window,
+	struct vm_object *observer,
+	vm_value callback)
+{
+	struct environment_mutation_observer *made;
+	struct environment_mutation_observer **link;
+	int status;
+
+	/* The registered observer remains alive even when the script drops its last reference. */
+	made = calloc(1, sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+	made->observer = &observer->cell;
+	made->callback = vm_value_as_cell(callback);
+	status = vm_heap_add_root(window->realm->heap, &made->observer);
+	if (status == 0)
+		status = vm_heap_add_root(window->realm->heap, &made->callback);
+	if (status != 0) {
+		if (made->observer != NULL)
+			vm_heap_remove_root(window->realm->heap, &made->observer);
+		free(made);
+		return status;
+	}
+
+	/* Registration order is callback delivery order. */
+	link = &window->mutation_observers;
+	while (*link != NULL)
+		link = &(*link)->next;
+	*link = made;
+	return 0;
+}
+
+/* Finds the state belonging to a MutationObserver object. */
+static struct environment_mutation_observer *
+environment_mutation_find(
+	struct bind_window *window,
+	vm_value observer)
+{
+	struct environment_mutation_observer *entry;
+	struct vm_cell *cell;
+	int is_object;
+
+	/* Only the exact object made by this constructor has state. */
+	is_object = vm_value_is_object(observer);
+	if (!is_object)
+		return NULL;
+	cell = vm_value_as_cell(observer);
+	for (entry = window->mutation_observers; entry != NULL; entry = entry->next) {
+		if (entry->observer == cell)
+			return entry;
+	}
+
+	/* No registered observer owns this object. */
+	return NULL;
+}
+
+/* Drops a MutationObserver's target and any records not delivered yet. */
+static void
+environment_mutation_clear(
+	struct bind_window *window,
+	struct environment_mutation_observer *observer)
+{
+	if (observer->target != NULL) {
+		vm_heap_remove_root(window->realm->heap, &observer->target);
+		observer->target = NULL;
+	}
+
+	/* Pending records are discarded by disconnect and a repeated observe. */
+	if (observer->records != NULL) {
+		vm_heap_remove_root(window->realm->heap, &observer->records);
+		observer->records = NULL;
+	}
+
+	/* A later observe call supplies the options again. */
+	observer->child_list = 0;
+	observer->subtree = 0;
+}
+
+/* Reads the MutationObserver options implemented by this pass. */
+static int
+environment_mutation_options(
+	struct vm_realm *realm,
+	vm_value options,
+	int *child_list,
+	int *subtree)
+{
+	vm_value value;
+	int attributes = 0;
+	int character_data = 0;
+	int is_object;
+	int present;
+	int status;
+
+	/* An options dictionary must enable at least one mutation kind. */
+	is_object = vm_value_is_object(options);
+	if (!is_object)
+		return vm_throw_type_error(realm, "MutationObserver options are required.");
+	status = bind_get_option(realm, options, "childList", &present, &value);
+	if (status != 0)
+		return status;
+	*child_list = present && vm_to_boolean(value);
+	status = bind_get_option(realm, options, "subtree", &present, &value);
+	if (status != 0)
+		return status;
+	*subtree = present && vm_to_boolean(value);
+	status = bind_get_option(realm, options, "attributes", &present, &value);
+	if (status != 0)
+		return status;
+	attributes = present && vm_to_boolean(value);
+	status = bind_get_option(realm, options, "characterData", &present, &value);
+	if (status != 0)
+		return status;
+	character_data = present && vm_to_boolean(value);
+	if (!*child_list && !attributes && !character_data)
+		return vm_throw_type_error(realm, "MutationObserver has no enabled mutation type.");
+	return 0;
+}
+
+/* Records one child-list change for every observer whose target contains the parent. */
+int
+bind_environment_child_mutation(
+	struct bind_window *window,
+	struct dom_node *parent,
+	struct dom_node *added,
+	struct dom_node *removed)
+{
+	struct environment_mutation_observer *observer;
+	struct dom_node *target;
+	int matches;
+	int status;
+
+	/* Each observer gets a separate record for the parent in its scope. */
+	for (observer = window->mutation_observers; observer != NULL; observer = observer->next) {
+		if (!observer->child_list || observer->target == NULL)
+			continue;
+		target = bind_node_of(vm_value_cell(observer->target));
+		matches = target == parent;
+		if (!matches && observer->subtree)
+			matches = dom_is_inclusive_ancestor(target, parent);
+		if (!matches)
+			continue;
+		status = environment_mutation_record(window, observer, parent, added, removed);
+		if (status != 0)
+			return status;
+	}
+
+	/* Every matching observer now owns its record. */
+	return 0;
+}
+
+/* Queues callbacks for MutationObservers that have accumulated records. */
+int
+bind_environment_checkpoint(
+	struct bind_window *window,
+	int *queued)
+{
+	struct environment_mutation_observer *observer;
+	struct vm_cell *records;
+	int status;
+
+	/* Each pending array becomes one callback job. */
+	*queued = 0;
+	for (observer = window->mutation_observers; observer != NULL; observer = observer->next) {
+		if (observer->records == NULL)
+			continue;
+		records = observer->records;
+		vm_heap_remove_root(window->realm->heap, &observer->records);
+		observer->records = NULL;
+		status = vm_enqueue_job(window->realm, vm_value_cell(observer->callback), vm_value_cell(records));
+		if (status != 0)
+			return status;
+		*queued = 1;
+	}
+
+	/* All pending arrays are now jobs. */
+	return 0;
+}
+
+/* Appends one childList MutationRecord to an observer's pending array. */
+static int
+environment_mutation_record(
+	struct bind_window *window,
+	struct environment_mutation_observer *observer,
+	struct dom_node *parent,
+	struct dom_node *added,
+	struct dom_node *removed)
+{
+	struct vm_realm *realm;
+	struct vm_object *array;
+	struct vm_object *record;
+	vm_value added_nodes;
+	vm_value removed_nodes;
+	vm_value target;
+	vm_value type;
+	vm_value records;
+	int status;
+
+	/* The first change starts the rooted array for this checkpoint. */
+	realm = window->realm;
+	if (observer->records == NULL) {
+		status = js_builtin_array(realm, NULL, 0, &records);
+		if (status != 0)
+			return status;
+		observer->records = vm_value_as_cell(records);
+		status = vm_heap_add_root(realm->heap, &observer->records);
+		if (status != 0) {
+			observer->records = NULL;
+			return status;
+		}
+	}
+
+	/* The record has the changed parent and NodeList-shaped added and removed sequences. */
+	status = bind_wrap(window, parent, &target);
+	if (status == 0)
+		status = environment_node_list(window, added, &added_nodes);
+	if (status == 0)
+		status = environment_node_list(window, removed, &removed_nodes);
+	if (status == 0)
+		status = bind_string(realm, "childList", &type);
+	if (status != 0)
+		return status;
+	record = vm_object_create(realm->heap, realm->object_prototype);
+	if (record == NULL)
+		return ENOMEM;
+	status = js_builtin_value(realm, record, "type", type, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, record, "target", target, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, record, "addedNodes", added_nodes, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, record, "removedNodes", removed_nodes, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, record, "previousSibling", VM_VALUE_NULL, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, record, "nextSibling", VM_VALUE_NULL, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, record, "attributeName", VM_VALUE_NULL, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, record, "attributeNamespace", VM_VALUE_NULL, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, record, "oldValue", VM_VALUE_NULL, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		return status;
+
+	/* The pending record is kept by the rooted array. */
+	array = (struct vm_object *)observer->records;
+	return vm_object_define(realm->heap, array, vm_value_int32((int32_t)array->length),
+	    vm_value_cell(record), VM_PROPERTY_DEFAULT);
+}
+
+/* Makes a zero- or one-item array whose constructor name is NodeList. */
+static int
+environment_node_list(
+	struct bind_window *window,
+	struct dom_node *node,
+	vm_value *result)
+{
+	struct vm_realm *realm;
+	struct vm_object *constructor;
+	struct vm_object *list;
+	vm_value item;
+	vm_value name;
+	int status;
+
+	/* A MutationRecord uses a NodeList even when it contains no node. */
+	realm = window->realm;
+	if (node == NULL) {
+		status = js_builtin_array(realm, NULL, 0, result);
+	} else {
+		status = bind_wrap(window, node, &item);
+		if (status == 0)
+			status = js_builtin_array(realm, &item, 1, result);
+	}
+
+	/* An allocation failure leaves no usable list. */
+	if (status != 0)
+		return status;
+	list = (struct vm_object *)vm_value_as_cell(*result);
+	constructor = vm_object_create(realm->heap, realm->object_prototype);
+	if (constructor == NULL)
+		return ENOMEM;
+	status = bind_string(realm, "NodeList", &name);
+	if (status == 0)
+		status = js_builtin_value(realm, constructor, "name", name, VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, list, "constructor", vm_value_cell(constructor), VM_PROPERTY_DEFAULT);
+	return status;
 }
 
 /* Makes the initial IntersectionObserver or ResizeObserver entry for a target. */

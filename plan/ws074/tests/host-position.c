@@ -45,7 +45,7 @@ main(
 	const struct layout_box *box;
 	const char *name;
 	char path[1024];
-	char sequence[256];
+	char sequence[384];
 	size_t flow_index;
 	size_t index;
 	int error;
@@ -103,7 +103,7 @@ main(
 	box = find_class(page->layout.root, "shifted");
 	check(box != NULL && box->x == 50 * LAYOUT_UNIT, "shifted: 30 pixels right of its margin");
 
-	/* The painting order: z-index -1, then the flow, then the auto ones in tree order, then 1 and 2. */
+	/* The painting order: z-index -1, then the flow, then the auto and positive levels. */
 	wb_vector_init(&order, sizeof(const struct layout_box *));
 	error = layout_stacking_order(&page->layout, &order, &flow_index);
 	check(error == 0, "order: listed");
@@ -117,10 +117,11 @@ main(
 		strncat(sequence, ";", sizeof(sequence) - strlen(sequence) - 1U);
 	}
 
-	/* The flattened order. */
+	/* A positioned child stays in its explicit parent's stacking level, over the lower sibling. */
 	printf("host-position: order %s\n", sequence);
 	check(strcmp(sequence, "below;|flow|stage;corner top-left;corner top-right;corner bottom-left;corner bottom-right;"
-	    "label;stretch;percent-shrink;shifted;middle;over;") == 0, "order: by z-index, then tree order");
+	    "label;stretch;percent-shrink;shifted;middle;over;context-lower;context-high;context-child;") == 0,
+	    "order: nested stacking level stays together");
 	wb_vector_release(&order);
 
 	/* Where z-index 2 overlaps z-index 1, the point hits the higher; beside it, the lower. */
@@ -129,6 +130,7 @@ main(
 	hits(page, 90, 60, "corner top-left");
 	hits(page, 300, 30, "stage");
 	hits(page, 600, 300, "stretch");
+	hits(page, 580, 70, "context-child");
 
 	/* Frees the page. */
 	page_destroy(page);
