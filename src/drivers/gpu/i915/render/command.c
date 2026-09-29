@@ -196,6 +196,9 @@ static int i915_fill_samples(struct i915_render_session *session, const struct i
 static void i915_sample_rect(const struct i915_gfx_image *image, struct i915_gfx_rect *rect);
 static int i915_execute_buffer_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_draw(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
+static void i915_execute_bind_pipeline(struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
+static void i915_execute_bind_set(struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
+static int i915_execute_dispatch(const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static int i915_command_buffer_execute(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf);
 static int i915_queue_submit(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 
@@ -1430,10 +1433,11 @@ i915_record_bind_descriptor_sets(
 	uint64_t index;
 	uint32_t first;
 	uint32_t first_op;
+	uint32_t bind_point;
 	int error;
 
 	/* Decodes the bind point, the layout, the first set and the number of sets, at most four. */
-	(void)drv_i915_wire_read_u32(reader);
+	bind_point = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	first = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u32(reader);
@@ -1445,6 +1449,7 @@ i915_record_bind_descriptor_sets(
 	first_op = i915_command_op_mark(cmdbuf);
 	for (index = 0U; index < set_count; index++) {
 		op = i915_command_op(cmdbuf, I915_GFX_OP_BIND_DESCRIPTOR_SET);
+		op->u.descriptor.bind_point = bind_point;
 		op->u.descriptor.set = first + (uint32_t)index;
 		identity = drv_i915_wire_read_u64(reader);
 		op->u.descriptor.dset = drv_i915_object_lookup(session, I915_VK_OBJ_DESCRIPTOR_SET, identity);
@@ -1901,6 +1906,13 @@ i915_record_command(
 		op->u.draw.instance_count = drv_i915_wire_read_u32(reader);
 		op->u.draw.first_vertex = drv_i915_wire_read_u32(reader);
 		op->u.draw.first_instance = drv_i915_wire_read_u32(reader);
+		break;
+	case 110U:
+		/* vkCmdDispatch: [groups x][groups y][groups z] (ws101-p003). */
+		op = i915_command_op(cmdbuf, I915_GFX_OP_DISPATCH);
+		op->u.dispatch.groups[0] = drv_i915_wire_read_u32(reader);
+		op->u.dispatch.groups[1] = drv_i915_wire_read_u32(reader);
+		op->u.dispatch.groups[2] = drv_i915_wire_read_u32(reader);
 		break;
 	case 107U:
 		/* vkCmdDrawIndexed: [indices][instances][first index][vertex offset][first instance]. */
@@ -3251,7 +3263,7 @@ i915_command_buffer_execute(
 			state.framebuffer = NULL;
 			break;
 		case I915_GFX_OP_BIND_PIPELINE:
-			state.pipeline = op->u.pipeline;
+			i915_execute_bind_pipeline(&state, op);
 			break;
 		case I915_GFX_OP_BIND_VERTEX_BUFFER:
 			/* A binding past the tracked ones is ignored. */
@@ -3262,18 +3274,7 @@ i915_command_buffer_execute(
 
 			break;
 		case I915_GFX_OP_BIND_DESCRIPTOR_SET:
-			/* A set past the tracked ones is ignored; a bound set brings its dynamic offsets. */
-			if (op->u.descriptor.set < I915_GFX_MAX_SETS) {
-				state.dset[op->u.descriptor.set] = op->u.descriptor.dset;
-				state.dynamic_count[op->u.descriptor.set] = op->u.descriptor.dynamic_count;
-				kern_memcpy(state.dynamic_bindings[op->u.descriptor.set],
-				       op->u.descriptor.dynamic_bindings,
-				       sizeof(state.dynamic_bindings[op->u.descriptor.set]));
-				kern_memcpy(state.dynamic_offsets[op->u.descriptor.set],
-				       op->u.descriptor.dynamic_offsets,
-				       sizeof(state.dynamic_offsets[op->u.descriptor.set]));
-			}
-
+			i915_execute_bind_set(&state, op);
 			break;
 		case I915_GFX_OP_PUSH_CONSTANTS:
 			kern_memcpy(state.push + op->u.push.offset, op->u.push.bytes, op->u.push.size);
@@ -3312,6 +3313,9 @@ i915_command_buffer_execute(
 			break;
 		case I915_GFX_OP_SET_STENCIL:
 			i915_execute_set_stencil(&state, op);
+			break;
+		case I915_GFX_OP_DISPATCH:
+			error = i915_execute_dispatch(&state, op);
 			break;
 		default:
 			error = EINVAL;
@@ -3474,4 +3478,105 @@ i915_execute_set_stencil(
 		if ((op->u.stencil.faces & (1U << face)) != 0U)
 			values[face] = op->u.stencil.value;
 	}
+}
+
+/*
+ * Binds a pipeline at its own bind point: a compute pipeline replaces the
+ * bound compute pipeline and leaves the graphics one bound, as Vulkan keeps
+ * the two apart (ws101-p003).
+ */
+static void
+i915_execute_bind_pipeline(
+	struct i915_gfx_draw_state *state,
+	const struct i915_gfx_op *op)
+{
+	/* A compute pipeline goes to the compute bind point. */
+	if (op->u.pipeline != NULL && op->u.pipeline->bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
+		state->compute_pipeline = op->u.pipeline;
+		return;
+	}
+
+	/* A graphics pipeline, or an unknown one, which unbinds the graphics pipeline as it always has. */
+	state->pipeline = op->u.pipeline;
+}
+
+/*
+ * Binds a descriptor set at the bind point of its recording, with the
+ * dynamic offsets of its buffers; a set past the tracked ones is ignored.
+ */
+static void
+i915_execute_bind_set(
+	struct i915_gfx_draw_state *state,
+	const struct i915_gfx_op *op)
+{
+	uint32_t set;
+
+	/* A set past the tracked ones is ignored. */
+	set = op->u.descriptor.set;
+	if (set >= I915_GFX_MAX_SETS)
+		return;
+
+	/* The compute bind point has its own sets (ws101-p003). */
+	if (op->u.descriptor.bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
+		state->compute_dset[set] = op->u.descriptor.dset;
+		state->compute_dynamic_count[set] = op->u.descriptor.dynamic_count;
+		kern_memcpy(state->compute_dynamic_bindings[set],
+			    op->u.descriptor.dynamic_bindings,
+			    sizeof(state->compute_dynamic_bindings[set]));
+		kern_memcpy(state->compute_dynamic_offsets[set],
+			    op->u.descriptor.dynamic_offsets,
+			    sizeof(state->compute_dynamic_offsets[set]));
+		return;
+	}
+
+	/* Any other bind point is the graphics one; a bound set brings its dynamic offsets. */
+	state->dset[set] = op->u.descriptor.dset;
+	state->dynamic_count[set] = op->u.descriptor.dynamic_count;
+	kern_memcpy(state->dynamic_bindings[set],
+		    op->u.descriptor.dynamic_bindings,
+		    sizeof(state->dynamic_bindings[set]));
+	kern_memcpy(state->dynamic_offsets[set],
+		    op->u.descriptor.dynamic_offsets,
+		    sizeof(state->dynamic_offsets[set]));
+}
+
+/*
+ * Runs a recorded vkCmdDispatch: the bound compute pipeline over the
+ * groups (ws101-p003).
+ *
+ * A dispatch needs a prepared compute pipeline; a dispatch of no group does
+ * nothing.  Returns EINVAL for a dispatch without a pipeline or past the
+ * device's group counts.  XXX: the dispatch's batch is not written yet
+ * (ws101-p004), so any other dispatch is refused with ENOTSUP.
+ */
+static int
+i915_execute_dispatch(
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_op *op)
+{
+	const uint32_t *groups;
+
+	/* Refuses a dispatch with no prepared compute pipeline bound. */
+	if (state->compute_pipeline == NULL || state->compute_pipeline->kernels_ready == 0) {
+		kern_logf("i915: vk: dispatch refused: no compute pipeline is bound\n");
+		return EINVAL;
+	}
+
+	/* Refuses group counts past the device's (maxComputeWorkGroupCount). */
+	groups = op->u.dispatch.groups;
+	if (groups[0] > I915_GFX_MAX_GROUP_COUNT ||
+	    groups[1] > I915_GFX_MAX_GROUP_COUNT ||
+	    groups[2] > I915_GFX_MAX_GROUP_COUNT)
+		return EINVAL;
+
+	/* A dispatch of no group runs nothing. */
+	if (groups[0] == 0U || groups[1] == 0U || groups[2] == 0U)
+		return 0;
+
+	/* XXX: the batch of a dispatch is ws101-p004. */
+	kern_logf("i915: vk: XXX unimplemented path: dispatch of %u x %u x %u groups (the dispatch's batch is not written yet)\n",
+		  groups[0],
+		  groups[1],
+		  groups[2]);
+	return ENOTSUP;
 }

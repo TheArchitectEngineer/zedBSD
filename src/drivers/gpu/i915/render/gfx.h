@@ -69,6 +69,9 @@ struct i915_wire_writer;
 /* The most VUE slots after the position a vertex kernel writes, and fragment inputs a pixel kernel reads. */
 #define I915_GFX_MAX_VARYINGS		16U
 
+/* The most workgroups one dispatch has along each axis (the device reports it as maxComputeWorkGroupCount). */
+#define I915_GFX_MAX_GROUP_COUNT	65535U
+
 /* How many bytes of push constants a command buffer carries. */
 #define I915_GFX_PUSH_BYTES		128U
 
@@ -105,7 +108,8 @@ enum i915_gfx_op_kind {
 	I915_GFX_OP_QUERY_END,
 	I915_GFX_OP_QUERY_RESET,
 	I915_GFX_OP_SET_STENCIL,
-	I915_GFX_OP_RESOLVE_IMAGE
+	I915_GFX_OP_RESOLVE_IMAGE,
+	I915_GFX_OP_DISPATCH
 };
 
 /* An occlusion query pool (fence.c). */
@@ -366,13 +370,19 @@ struct i915_gfx_shader {
 };
 
 /*
- * One graphics VkPipeline: its stages, its fixed-function state and its
- * compiled kernels.
+ * One VkPipeline, graphics or compute: its stages, its fixed-function state
+ * and its compiled kernels.
  *
  * The pipeline owns its kernels; they are made when the pipeline is created
- * and released when it is destroyed.
+ * and released when it is destroyed.  A compute pipeline (bind_point
+ * VK_PIPELINE_BIND_POINT_COMPUTE, ws101-p003) has only its compute stage,
+ * its kernel and the table of its threads' IDs; the graphics fields stay
+ * zero.
  */
 struct i915_gfx_pipeline {
+	/* The bind point the pipeline is bound at: VK_PIPELINE_BIND_POINT_GRAPHICS (zero) or _COMPUTE. */
+	uint32_t bind_point;
+
 	/* The vertex and fragment shader modules; NULL when a stage is absent. */
 	struct i915_gfx_shader *vertex;
 	struct i915_gfx_shader *fragment;
@@ -498,6 +508,21 @@ struct i915_gfx_pipeline {
 	/* The kernels the executor's compiler made; NULL in a reference-kernel build. */
 	struct i915_shader_binary *vs_binary;
 	struct i915_shader_binary *fs_binary;
+
+	/*
+	 * Compute (ws101-p003): the compute stage's module and kernel, and the
+	 * per-thread push data of one workgroup -- for each of its `threads`
+	 * SIMD8 threads, I915_SHADER_PER_THREAD_REGS registers of eight dwords
+	 * (the local IDs x, y, z and the linear index of each channel) -- which
+	 * every dispatch copies behind the cross-thread data.  `right_mask` is
+	 * the channels the last thread runs.  The table is made with the kernel
+	 * and freed with it.
+	 */
+	struct i915_gfx_shader *compute;
+	struct i915_shader_binary *cs_binary;
+	uint32_t *thread_ids;
+	uint32_t threads;
+	uint32_t right_mask;
 };
 
 /*
@@ -609,10 +634,12 @@ struct i915_gfx_op {
 		} vertex;
 
 		/*
-		 * A descriptor set bind, with the binding number and the dynamic
-		 * offset of each dynamic uniform buffer of the set.
+		 * A descriptor set bind at a bind point (VkPipelineBindPoint), with
+		 * the binding number and the dynamic offset of each dynamic uniform
+		 * buffer of the set.
 		 */
 		struct {
+			uint32_t bind_point;
 			uint32_t set;
 			struct i915_gfx_dset *dset;
 			uint32_t dynamic_count;
@@ -667,6 +694,11 @@ struct i915_gfx_op {
 			uint32_t value;
 		} stencil;
 
+		/* A dispatch of groups x by y by z workgroups (ws101-p003). */
+		struct {
+			uint32_t groups[3];
+		} dispatch;
+
 		/* A copy of one region between two buffers. */
 		struct {
 			struct i915_gfx_buffer *src;
@@ -702,8 +734,19 @@ struct i915_gfx_draw_state {
 	struct i915_gfx_pass *pass;
 	struct i915_gfx_framebuffer *framebuffer;
 
-	/* The bound pipeline. */
+	/* The bound graphics pipeline. */
 	struct i915_gfx_pipeline *pipeline;
+
+	/*
+	 * What is bound at the compute bind point (ws101-p003): the pipeline,
+	 * the descriptor sets and their dynamic offsets, apart from the
+	 * graphics ones as Vulkan keeps them.  The push constants are shared.
+	 */
+	struct i915_gfx_pipeline *compute_pipeline;
+	struct i915_gfx_dset *compute_dset[I915_GFX_BOUND_SETS];
+	uint32_t compute_dynamic_count[I915_GFX_BOUND_SETS];
+	uint32_t compute_dynamic_bindings[I915_GFX_BOUND_SETS][I915_GFX_MAX_DYNAMIC_BUFFERS];
+	uint32_t compute_dynamic_offsets[I915_GFX_BOUND_SETS][I915_GFX_MAX_DYNAMIC_BUFFERS];
 
 	/* The bound vertex buffers and their offsets. */
 	struct {
@@ -813,8 +856,9 @@ void drv_i915_gfx_session_close(struct i915_render_session *session);
 /* Frees every object a closing session did not destroy (objects.c). */
 void drv_i915_gfx_objects_release(struct i915_render_session *session);
 
-/* Prepares and releases a pipeline's kernels (pipeline-prepare.c). */
+/* Prepares and releases a pipeline's kernels, a graphics or a compute pipeline's (pipeline-prepare.c). */
 int drv_i915_gfx_pipeline_prepare(struct i915_render_session *session, struct i915_gfx_pipeline *pipeline);
+int drv_i915_gfx_compute_prepare(struct i915_render_session *session, struct i915_gfx_pipeline *pipeline);
 void drv_i915_gfx_pipeline_release(struct i915_gfx_pipeline *pipeline);
 
 /*
