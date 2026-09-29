@@ -383,6 +383,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | 追加の要望（2026-09-29 夜） | ユーザー: widget・control の共有 library（慣性の smooth scroll は少なくとも）、画像 viewer、text editor（simple）、Files から app の起動、desktop の file の icon、IME（Wayland の標準、単一の IME・複数言語、まず日本語、名詞＋助詞・動詞＋送り仮名 程度、REmacs の辞書、足りない分は要相談）、デモの後に Qt6（core・gui・widgets）と GTK4 の完全な書き下ろしの互換（API の interface だけ、zlib）。REmacs の辞書: ユーザー「REmacsは私が著作権者なので、気にしなくていいです。」 | WS090〜WS097 |
 | デモに必須の追加（2026-09-29 夜） | ユーザーの回答: 新しい要望のうちデモ（10/17）に必須は「画像 viewer と text editor」（WS091・WS092、Files からの起動 WS093 を含む）。WS090（widget の library）・WS094（desktop の icon）・WS095（IME）はデモに必須ではない。窓の縁の resize は四隅に加えて辺も入れた（ws035-p128、設計の「枠と角＝resize」どおり） | WS091〜WS093、WS035 |
 | デモまでの進め方（2026-09-29 夜） | ユーザー:「実は、すでにデモに耐えられるだけの完成度にはなっています。…いちおう、当日までOSCでのデモという目標は掲げたままにします。まだ当日まで時間があるので、新規実装をどんどん行って、デモの1週間前くらいから、バグ修正とデモ実機での調整のみの期間に入ろうかなと思っています。」→ fg010 は保つ。**2026-10-10 ごろまでは新規実装**（デモに必須でない WS090・WS094・WS095・WS080 等も進めてよい）、**2026-10-10 ごろ〜10-17 は bug の修正と実機（5330）での調整だけ**（新しい機能は入れない） | WS の優先順位 |
+| 設定のアプリの範囲（2026-09-29 夜） | ws089-p001 の問い（Display の拡大は表示だけ・accent の色は出さない・Touchpad は準備中）にユーザー:「設定項目は、ネットワークを中心にしてください。ディスプレイはまだスタブでいいです。」→ Network（Wi-Fi・Ethernet・状態・新しい Wi-Fi への鍵の入力を含む）を中心に作り込む。Display はスタブ、accent と Touchpad は出さない（準備中） | WS089 |
 
 ### 主な依存関係
 
