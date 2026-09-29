@@ -601,10 +601,10 @@ main(
 		snprintf(config, sizeof(config), "%s/config", root);
 		mkdir(config, 0755);
 		setenv("XDG_CONFIG_HOME", config, 1);
-		snprintf(path, sizeof(path), "%s/config/zdesktop", root);
+		snprintf(path, sizeof(path), "%s/config/keiland", root);
 		mkdir(path, 0755);
 		snprintf(output, sizeof(output), "%s/opened", root);
-		snprintf(path, sizeof(path), "%s/config/zdesktop/open-with", root);
+		snprintf(path, sizeof(path), "%s/config/keiland/open-with", root);
 		{
 			FILE *file = fopen(path, "w");
 			fprintf(file, "# a comment\nmalformed line\ntext/plain, text/csv\tRecord\techo %%f > '%s'\nimage/png\tViewer\tview\n", output);
