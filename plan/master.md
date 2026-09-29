@@ -379,6 +379,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | 窓の四隅のリサイズ（2026-09-29） | ユーザー:「ウィンドウの四隅がリサイズ領域になっていないようです。ウィンドウの四隅でリサイズ可能にしてほしいです。」 | WS035 |
 | 設定のアプリ（2026-09-29） | ユーザー:「これもOSCデモで使う優先事項にしたいですが、設定画面のアプリを作ってほしいです。添付がイメージです。あくまでもイメージなので、この通りでなくていいです。左側に項目のペイン、右側に設定項目。フローティングでセパレート。」 | [WS089](ws089/ws.md) |
 | 追加の要望（2026-09-29 夜） | ユーザー: widget・control の共有 library（慣性の smooth scroll は少なくとも）、画像 viewer、text editor（simple）、Files から app の起動、desktop の file の icon、IME（Wayland の標準、単一の IME・複数言語、まず日本語、名詞＋助詞・動詞＋送り仮名 程度、REmacs の辞書、足りない分は要相談）、デモの後に Qt6（core・gui・widgets）と GTK4 の完全な書き下ろしの互換（API の interface だけ、zlib）。REmacs の辞書: ユーザー「REmacsは私が著作権者なので、気にしなくていいです。」 | WS090〜WS097 |
+| デモに必須の追加（2026-09-29 夜） | ユーザーの回答: 新しい要望のうちデモ（10/17）に必須は「画像 viewer と text editor」（WS091・WS092、Files からの起動 WS093 を含む）。WS090（widget の library）・WS094（desktop の icon）・WS095（IME）はデモに必須ではない。窓の縁の resize は四隅に加えて辺も入れた（ws035-p128、設計の「枠と角＝resize」どおり） | WS091〜WS093、WS035 |
 
 ### 主な依存関係
 
