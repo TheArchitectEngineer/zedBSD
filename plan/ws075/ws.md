@@ -68,7 +68,7 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p016](phase016/phase.md) | lease の替わり目で HDMI を点けたまま（[F-048](../future-work.md) のこの構成の目標）: release で window を出ず最後の絵を次の lease の最初の flip まで保つ（10 秒で期限切れ、PCI shutdown で止める） | cleared（2026-09-28。実機の passthrough で login 6・logout 5 回とも暗 0・黒 0、前は 180〜383 ms と transcoder の停止。Shut Down と期限切れで出力は止まる。実物の LCD の目視は未実施） | p015 |
 | [ws075-p017](phase017/phase.md) | [BUG-058](../bugs/BUG-058.md)（App Home の zgears が最初の frame の前に終わる）の再試験 | uncleared（2026-09-28。6 回の起動で再現せず、原因は未特定） | p016 |
 | [ws075-p018](phase018/phase.md) | 性能 2: 非同期の実行器（ws031-p045）。p008 から分けた | uncleared（2026-09-29 の試み: 着手前の計測で、8 app の遅さは compositor の合成の GPU（占有 90%、1 batch 100 ms）と分かり、非同期化では良くならない見込み。未実装。p021 を提案） | p008 |
-| [ws075-p019](phase019/phase.md) | 性能 3: present mode と vsync（ws031-p027）。p008 から分けた | planning | p008 |
+| [ws075-p019](phase019/phase.md) | 性能 3: present mode と vsync（ws031-p027）。p008 から分けた | uncleared（2026-09-29。FIFO の先行（arm で返り、次の present が latch を待つ）を実装、実機で rate 55.5→57.9/s・latency 同じ・周波数が下がる。MAILBOX・IMMEDIATE は UAPI の提案 [proposed/p019-present-mode.md](proposed/p019-present-mode.md) の承認待ち） | p008 |
 | [ws075-p020](phase020/phase.md) | RPS（GT の周波数）の up/down の割込みと boost（[F-054](../future-work.md)）。今は RP0 固定（ws084-p002） | cleared（2026-09-29。Alder Lake-P では up/down の割込みが来ないので Linux の gen12 と同じ busy の時間の評価と park・unpark に。実機の passthrough で rate 19.7→54.8/s、latency 49.3→32.5 ms、idle は最低の周波数。素の 5330 は未実施） | p008 |
 | [ws075-p021](phase021/phase.md) | 性能: compiler が どの channel も走らない block（まず texture の send）を飛ぶ。p018 の計測から提案 | planning（main の判断待ち） | — |
 

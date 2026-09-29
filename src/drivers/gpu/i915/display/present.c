@@ -31,12 +31,16 @@
  * leave the window, and the panel is stopped through the reference's stop
  * path.
  *
- * A presentation returns once the flip has completed (FIFO), so a wait
- * never waits.  A kernel built with I915_PRESENT_NO_VSYNC set does not wait
- * for the vblank instead: the flip is armed and the presentation returns;
- * a frame that comes before the armed flip has latched is drawn into the
- * buffer that flip shows (the newest frame wins, as in a mailbox), and the
- * copy may meet the latch, which tears.
+ * FIFO (ws075-p019): a presentation returns once its flip is armed, so the
+ * presenting thread draws its next frame while the flip waits for its
+ * vblank; the next presentation first waits for that flip to latch, then
+ * draws into the buffer the panel stopped showing.  Every frame is shown
+ * for at least one vblank and no copy ever meets the scanout, so nothing
+ * tears.  The display wait operation waits for the latch of the newest
+ * flip.  A kernel built with I915_PRESENT_NO_VSYNC set does not wait at
+ * all instead: a frame that comes before the armed flip has latched is
+ * drawn into the buffer that flip shows (the newest frame wins, as in a
+ * mailbox), and the copy may meet the latch, which tears.
  *
  * XXX: one output, one plane, one lease at a time; a requested mode smaller
  * than the panel is shown scaled and centred, the display is never
@@ -125,6 +129,7 @@ static struct i915_scanout *i915_present_target(struct i915_display *display, in
 static int i915_present_flip(struct i915_display *display, int publish);
 static void i915_present_hold_end(struct i915_display *display);
 static void i915_present_clear_stale(struct i915_display *display, struct i915_scanout *back, uint32_t width, uint32_t height, uint32_t scale);
+static int i915_present_latch(struct i915_device *device);
 
 /*
  * Shows a CPU frame on the panel.
@@ -318,6 +323,13 @@ drv_i915_present_display_present(
 		return error;
 	}
 
+	/* FIFO: the flip the previous presentation armed latches before this frame takes the buffer it leaves. */
+	error = i915_present_latch(owner_device);
+	if (error != 0) {
+		mutex_unlock(&rd->mutex);
+		return error;
+	}
+
 	/* The shared route: the GPU copies the imported blob into the panel's back buffer. */
 	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
 		error = i915_present_shared(owner_device, session, object, request);
@@ -372,9 +384,10 @@ drv_i915_present_display_present(
 /*
  * Reports the completed sequence of the lease (the display wait operation).
  *
- * Presentation is synchronous: the newest sequence has completed already.
- * Returns 0, EINVAL for a session that does not hold the lease or a
- * sequence not presented yet, or EAGAIN before the first presentation.
+ * The newest presentation completes when its flip latches: the wait waits
+ * for that (FIFO, ws075-p019).  Returns 0, EINVAL for a session that does
+ * not hold the lease or a sequence not presented yet, EAGAIN before the
+ * first presentation, or EIO when the flip did not latch.
  */
 int
 drv_i915_present_display_wait(
@@ -384,6 +397,7 @@ drv_i915_present_display_wait(
 {
 	struct i915_device *owner_device;
 	struct i915_resident_display *rd;
+	int error;
 
 	owner_device = device;
 	rd = &owner_device->display->rd;
@@ -402,6 +416,13 @@ drv_i915_present_display_wait(
 	if (rd->sequence == 0U) {
 		mutex_unlock(&rd->mutex);
 		return EAGAIN;
+	}
+
+	/* The newest presentation's flip latches; the tick it did so at is its completion. */
+	error = i915_present_latch(owner_device);
+	if (error != 0) {
+		mutex_unlock(&rd->mutex);
+		return error;
 	}
 
 	/* The newest sequence, the tick it completed at, and the generation. */
@@ -998,7 +1019,6 @@ i915_present_shared(
 	struct i915_gem_object *storage;
 	struct i915_present_blit blit;
 	struct i915_worker_present item;
-	uint64_t start;
 	int error;
 
 	owner = session;
@@ -1030,8 +1050,8 @@ i915_present_shared(
 
 	/*
 	 * The worker maps the panel into the session's space and runs the copy
-	 * in its render context, and arms the flip.  A presentation that waits
-	 * for its flip (FIFO) waits here, outside the worker.
+	 * in its render context, and arms the flip.  The flip latches while the
+	 * presenting thread goes on; the next presentation waits for it.
 	 */
 	kern_memset(&item, 0, sizeof(item));
 	item.width = request->width;
@@ -1044,16 +1064,7 @@ i915_present_shared(
 	if (error != 0)
 		return error;
 
-	/* FIFO: the presentation returns once its flip has latched. */
-	if (!I915_PRESENT_NO_VSYNC && device->display->resident_up) {
-		start = drv_i915_perf_now();
-		error = drv_i915_lcd_modeset_flip_wait(device->display);
-		drv_i915_perf_add(&device->perf, I915_PERF_PRESENT_FLIP, start);
-		if (error != 0)
-			return error;
-	}
-
-	/* Succeeded: the frame is on the panel. */
+	/* Succeeded: the frame's flip is armed. */
 	return 0;
 }
 
@@ -1338,4 +1349,36 @@ i915_present_clear_stale(
 	/* Black under the frame, visible to the display and to the GPU's copy. */
 	kern_memset(back->cpu, 0, back->size);
 	drv_i915_scanout_publish(back);
+}
+
+/*
+ * Waits for the flip the last presentation armed to latch, so the buffer it
+ * leaves is free and the frame it shows has completed (FIFO, ws075-p019).
+ * A kernel built with I915_PRESENT_NO_VSYNC set never waits.  The caller
+ * holds the lease mutex.  Returns 0, or EIO when the flip did not latch.
+ */
+static int
+i915_present_latch(
+	struct i915_device *device)
+{
+	uint64_t start;
+	int error;
+
+	/* No wait without the vsync, or before the panel is up. */
+	if (I915_PRESENT_NO_VSYNC)
+		return 0;
+	if (!device->display->resident_up)
+		return 0;
+
+	/* The vblank the armed flip latches at (none armed returns at once), timed. */
+	start = drv_i915_perf_now();
+	error = drv_i915_lcd_modeset_flip_wait(device->display);
+	drv_i915_perf_add(&device->perf, I915_PERF_PRESENT_FLIP, start);
+
+	/* Reports a flip that did not latch. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: no flip is pending any more. */
+	return 0;
 }
