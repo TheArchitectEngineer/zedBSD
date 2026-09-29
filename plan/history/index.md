@@ -2,10 +2,27 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし（2026-09-27 から subagent の運用）
-Last finished Queue: q498（ws073-p028 cleared。Noct smoke を外し `make` が完走）。それ以前の作業は下の節
+Last finished Queue: q498（ws073-p028 cleared）。2026-09-29〜30 は subagent（N=6〜9）の周期で Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-09-29〜30 の周期（subagent N=6〜9、worktree の branch を main が merge、Queue の外）
+
+- **実機（Dell Latitude 5330、内蔵 LCD）**: firmware の画面の takeover の不具合（DPLL の読み出し）を直し、Keiland が起動（WS084）。1 fps → RPS（busy の時間の評価）で
+  約 55 flip/s（ws075-p020）、FIFO の先行で 58/s（p019）、compiler の guard（分岐の中の texture の send を IF で飛ぶ）で 10 app の latency 132 → 32 ms（p021）。
+  すりガラスは遅さの主因でないと計測（p023）、ユーザーの決定で分岐の中の ALU を飛ぶ実装へ。実機の image `build/demo-lcd8`（ロゴ無効）。
+- **新しい app と部品**: Image Viewer（WS091、完了）、Text Editor と共有の file chooser（WS092、完了）、Files からの起動と Always Open With（WS093、完了）、
+  Settings 23 頁・検索・生成の壁紙 5 枚（WS089、ブラッシュアップは後回し）、部品の library `libkeiui`（WS090 p001〜p003、文字の編集の touch は 1 本指で選択・2 本指で scroll）、
+  デスクトップの icon（WS094 p001〜p003、Files `--desktop`）、IME（WS095 p001〜p004、Alt+Space で日本語、kanji → 漢字）。
+- **Keiland**: 起動の短縮（p129〜p133）、BUG-112（xdg_wm_base）、Terminal の本体だけ直角（p134・p136）、Notes の全画面を解く配置（BUG-114）。
+- **ブラウザ**（WS074）: JS に class・async・Promise・generator・Symbol・for-of・Map・Set（test262 21806 → 28381）、DOM に innerHTML・getComputedStyle・scroll・DOMException。
+  Amazon の Uncaught は search 0・top 3（DOM の fetch・IntersectionObserver）。画素の差の原因（動的な script・百分率の高さ）を特定し p088〜p093 に計画。
+- **bug**: BUG-030（usb-storage の flush の待ちで 5 秒の時間切れ → command ごとの timeout、TCG 75 回で 0）、BUG-051・102・104〜111、BUG-105（Logi Bolt の HID、host で確認）。
+  新規 BUG-113（試験の誤り、resolved）・BUG-115・BUG-116。
+- **基盤**: venus-win32 の取り込み、Kei-nightly.zip の CI、ls（GNU 形式）・sh（履歴・補完・`~`）の WS086・WS087（完了）。
+- **ユーザーの判断**: master の「有効なユーザーの判断」に要約。IME とブラウザは一時的に人間が作業中。
+- **未実施**: 実機での確認の大半（demo-lcd8 でユーザーが確認）。QEMU の証拠と実機の証拠は各 phase.md で分けている。
 
 ## 最新: 2026-09-29 q498
 
