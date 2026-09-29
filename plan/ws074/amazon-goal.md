@@ -95,6 +95,7 @@ master.md の決定の行）。この文書は [ws074-p067](phase067/phase.md) �
 | 12e | [ws074-p081](phase081/phase.md) | HTML の断片の parse と直列化（innerHTML・outerHTML・insertAdjacentHTML・insertAdjacentElement・insertAdjacentText、template.content） | **cleared**（2026-09-29。DOM の側の Uncaught は無し。capture の top は async 1・for-of 1、search は async 4・for-of 1・`(at 1:1)` 2（js の側）。画素は不変: top 64.47%、search 76.04%） |
 | 12f | [ws074-p085](phase085/phase.md) | class（p028 から分けた） | **cleared**（2026-09-29。search の class の SyntaxError 2 → 0。Uncaught top 2（async 1・for-of 1）、search 7（async 4・for-of 1・`(at 1:1)` 2: class の中の `async r=>` で止まる連鎖）。画素は不変（top 64.47%、search 76.04%）） |
 | 12g | [ws074-p082](phase082/phase.md) | getComputedStyle、offsetTop・offsetLeft・offsetParent、scrollTo・scrollBy・scroll・scrollIntoView | **cleared**（2026-09-29。DOM の側の Uncaught は無し、Uncaught は top 2・search 7（js の側）のまま。画素は不変: top 64.47%、search 76.04%） |
+| 12h | [ws074-p083](phase083/phase.md) | DOMException（interface・name・code、DOM の操作の例外） | **cleared**（2026-09-29。Amazon の Uncaught は top 2（Set 1・for-of 1）・search 3（for-of）で js の側だけ。画素は不変: top 64.47%、search 76.04%） |
 | 12h | [ws074-p086](phase086/phase.md) | async function と generator・Promise（p029 から分けた） | **cleared**（2026-09-29。async の SyntaxError top 1・search 4 → 0、連鎖の `(at 1:1)` 2 も 0。Uncaught top 2（`Set` 1・for-of 1）、search 3（for-of 3）。画素は不変） |
 
 順の理由: 1 で検索できる（デモの操作）。2〜5 が見た目の大部分（外の CSS、変数と calc と @media、selector、flex）。6〜11 は細部と速さ。
