@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: **2026-09-29（2 人目のサブエージェント）**: p001・p002・p003・**p008** は cleared（p008 は Venus の guest で PASS、commit 済み）。App Home の歯車の絵（`wayland/icons.c`、許可済み D4）も p008 と同時に適用し、App Home で確かめた。次は p007（desktop の設定の仕組み、[案](proposed/desktop-preferences.md)）→ p004 → p005、最後に p006。proposed の状態: networkd の protocol は変えない、libkeiland の network の追加は適用済み（KEILAND_VERSION 11）、desktop-preferences・audio・system は未適用（許可済み D4、p007・p005・About で適用）。試験の手順は各 phase.md と `plan/ws089/tests/`（`build-settings-image.sh`・`settings-guest.sh`・`settings-p002.sh`・`settings-p003.sh`・`settings-p008.sh`・`host-build.sh`）
+Resume point: **2026-09-29（2 人目のサブエージェント）**: p001・p002・p003・p008・**p007** は cleared（p007 は Venus の guest で PASS、commit 済み）。p007 で libkeiland の `keiland_preferences_*`（KEILAND_VERSION 13）と zdesktop の反映（壁紙・透明度・pointer・repeat、1 秒ごと）を入れた。次は p004（Appearance・Wallpaper・Display・Storage の頁）→ p005（Mouse・Keyboard、Sound は audiod の有無の表示だけ）、最後に p006。proposed の状態: desktop-preferences は適用済み、audio・system は未適用（許可済み D4）。試験の手順は各 phase.md と `plan/ws089/tests/`（`build-settings-image.sh`・`settings-guest.sh`・`settings-p002.sh`・`settings-p003.sh`・`settings-p007.sh`・`settings-p008.sh`・`host-build.sh`・`host-preferences.sh`）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -46,7 +46,7 @@ Resume point: **2026-09-29（2 人目のサブエージェント）**: p001・p0
 | [ws089-p001](phase001/phase.md) | 設計: 項目の一覧とデモで働かせる範囲、画面の構成（Files の pane・card の部品の再利用）、各項目の backend（networkd・audiod・sessiond・/dev/system・compositor の設定）との接続の方法、設定の保存先 | cleared（2026-09-29） | — |
 | [ws089-p002](phase002/phase.md) | アプリの骨格: 窓、present、glass の 2 枚の card、titlebar（Back・Forward・Home・Breadcrumb・Sidebar）と履歴、System Menu、左の項目の pane、右の頁の scroll、Home（tile）・About・準備中の頁、App Home の行 | cleared（2026-09-29、Venus の guest） | p001、link の規則（main の許可済み） |
 | [ws089-p008](phase008/phase.md) | 検索（titlebar の欄と結果の頁）と Home の tile の今の状態。App Home の歯車の絵（許可済み D4）も同時に | cleared（2026-09-29、Venus の guest。実機は未実施） | p002 |
-| ws089-p007 | desktop の設定の仕組み: libkeiland の `keiland_preferences_*` と zdesktop の反映（[案](proposed/desktop-preferences.md)、main の許可が要る） | planning | p001、main の許可 |
+| [ws089-p007](phase007/phase.md) | desktop の設定の仕組み: libkeiland の `keiland_preferences_*`（KEILAND_VERSION 13）と zdesktop の反映（[案](proposed/desktop-preferences.md)、許可済み D4） | cleared（2026-09-29、Venus の guest。実機は未実施） | p001、main の許可 |
 | [ws089-p003](phase003/phase.md) | Network・Wi-Fi・Ethernet の頁（networkd の状態、Wi-Fi の一覧・接続・切断・新しい network の鍵、address・DNS・通信量。[案](proposed/libkeiland-network-link.md)、networkd の protocol は変えない） | cleared（2026-09-29、Venus の guest。実機は未実施） | p002 |
 | ws089-p004 | Appearance・Wallpaper・Display・Storage の頁 | planning | p002, p007 |
 | ws089-p005 | Sound・Mouse・Touchpad・Keyboard の頁（音量は [案](proposed/libkeiland-audio.md)） | planning | p002, p007（音量は main の許可） |

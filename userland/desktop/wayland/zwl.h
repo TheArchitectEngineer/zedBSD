@@ -523,6 +523,9 @@ struct zwl_perf {
 
 uint64_t zwl_cycles(void);
 
+/* The user's preferences (libkeiland), opened by preferences.c. */
+struct keiland_preferences;
+
 struct zwl_server {
 	struct zwl_perf perf;
 	int listener;
@@ -619,6 +622,29 @@ struct zwl_server {
 	const char *fallback_font_path;
 	const char *wallpaper_path;
 	float window_opacity;
+	/*
+	 * The user's preferences (preferences.c, ws089-p007): the file, when a
+	 * login's desktop reads it (NULL for the login screen, or no home), and
+	 * the last time it was looked at.  window_opacity_started and
+	 * wallpaper_started are what the command line gave, which a key removed
+	 * returns to; wallpaper_path above is the picture shown, and
+	 * wallpaper_chosen the preferences' (empty for the command line's).  The pointer's speed is a
+	 * percentage of the relative pointer's movement, with the hundredths
+	 * of a pixel carried over; natural turns the wheel round.  The
+	 * keyboards' repeat is what wl_keyboard.repeat_info tells a keyboard
+	 * bound from then on.
+	 */
+	struct keiland_preferences *preferences;
+	uint64_t preferences_checked_ms;
+	float window_opacity_started;
+	const char *wallpaper_started;
+	char wallpaper_chosen[256];
+	int32_t pointer_speed;
+	int32_t pointer_natural;
+	int64_t pointer_remainder_x;
+	int64_t pointer_remainder_y;
+	int32_t repeat_rate;
+	int32_t repeat_delay_ms;
 	struct zwl_object *drag;
 	int32_t drag_dx;
 	int32_t drag_dy;
@@ -952,6 +978,10 @@ int zwl_glass_motion(struct zwl_server *server);
 void zwl_glass_place(struct zwl_server *server, struct zwl_object *surface, int32_t width, int32_t height, int32_t step);
 void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height);
 void zwl_glass_tick(struct zwl_server *server);
+int zwl_glass_wallpaper(struct zwl_server *server, const char *path);
+void zwl_preferences_open(struct zwl_server *server);
+void zwl_preferences_tick(struct zwl_server *server, uint64_t now);
+void zwl_preferences_close(struct zwl_server *server);
 float zwl_home_progress(struct zwl_server *server);
 void zwl_home_layer(struct zwl_server *server, float progress, float *x, float *y, float *scale);
 int zwl_home_button(struct zwl_server *server, uint32_t button, uint32_t state);

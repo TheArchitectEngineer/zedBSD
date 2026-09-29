@@ -12,7 +12,7 @@ LIBZDESKTOP_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/li
 	userland/desktop/libkeiland/gesture.c userland/desktop/libkeiland/network-link.c \
 	userland/desktop/libkeiland/chooser.c userland/desktop/libkeiland/chooser-model.c \
 	userland/desktop/libkeiland/chooser-draw.c userland/desktop/libkeiland/paint.c \
-	userland/desktop/libkeiland/paint-text.c \
+	userland/desktop/libkeiland/paint-text.c userland/desktop/libkeiland/preferences.c \
 	userland/base/net/protocol.c userland/base/net/wifi-conf.c userland/base/net/wifi-store.c
 
 LIBZDESKTOP_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libkeiland.so=$(BUILD)/dynamic/libkeiland.so)

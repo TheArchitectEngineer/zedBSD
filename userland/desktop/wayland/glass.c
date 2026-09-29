@@ -152,9 +152,11 @@ static const unsigned glass_pixels[GLASS_SIZES] = { 14U, 15U, 20U, 36U, 24U };
 static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
 
 static int wallpaper_create(struct zwl_server *server, struct zwl_glass *glass);
+static int wallpaper_fill(struct zwl_server *server, struct zwl_glass *glass, const char *path);
 static void wallpaper_pixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height, float *rgb);
 static float ridge(float x, float base, float amplitude, float phase);
-static int blur_create(struct zwl_server *server, struct zwl_glass *glass, const float *pixels);
+static int blur_create(struct zwl_server *server, struct zwl_glass *glass);
+static int blur_fill(struct zwl_server *server, struct zwl_glass *glass, const float *pixels);
 static void blur_pass(float *pixels, float *scratch, uint32_t width, uint32_t height, int horizontal);
 static uint32_t pack_pixel(const float *rgb);
 static int atlas_create(struct zwl_server *server, struct zwl_glass *glass);
@@ -236,11 +238,88 @@ zwl_glass_close(
 	server->compose->glass = NULL;
 }
 
-/* Draws the wallpaper once, and its blurred copy. */
+/*
+ * Draws another wallpaper into the look (ws089-p007, the desktop's
+ * preferences): a binary PPM, or with path NULL the landscape drawn
+ * here.
+ *
+ * The images keep their size and their descriptors, so only their pixels
+ * change; the device finishes what it is drawing from them first.  The
+ * whole output is drawn again.  Returns 0 or an errno value.
+ */
+int
+zwl_glass_wallpaper(
+	struct zwl_server *server,
+	const char *path)
+{
+	const char *shown;
+	uint64_t started;
+	int error;
+
+	/* Without the look there is no wallpaper. */
+	if (server->compose == NULL || server->compose->glass == NULL)
+		return ENODEV;
+
+	/* The frames in flight read the images; they end first. */
+	started = zwl_milliseconds();
+	(void)vkDeviceWaitIdle(server->compose->device);
+
+	/* The picture asked for. */
+	error = wallpaper_fill(server, server->compose->glass, path);
+	if (error != 0)
+		return error;
+
+	/* Everything on the output stands on it. */
+	server->dirty = 1;
+
+	/* The log names the picture ("-" for the landscape) and how long it took. */
+	shown = "-";
+	if (path != NULL)
+		shown = path;
+	printf("ZWL GLASS wallpaper path=%s ms=%llu\n", shown, (unsigned long long)(zwl_milliseconds() - started));
+
+	/* Succeeded: the new wallpaper is shown from the next frame. */
+	return 0;
+}
+
+/* Makes the wallpaper's image and its blurred copy, and draws them. */
 static int
 wallpaper_create(
 	struct zwl_server *server,
 	struct zwl_glass *glass)
+{
+	VkResult result;
+	int error;
+
+	/* The output-sized image. */
+	result = zwl_host_image_create(server->compose, server->width, server->height, server->compose->sampler, &glass->wallpaper);
+	if (result != VK_SUCCESS)
+		return EIO;
+
+	/* The small image of the frosted glass. */
+	error = blur_create(server, glass);
+	if (error != 0)
+		return error;
+
+	/* The picture in both. */
+	error = wallpaper_fill(server, glass, server->wallpaper_path);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the wallpaper is drawn. */
+	return 0;
+}
+
+/*
+ * Draws a picture (a binary PPM, or the landscape drawn here when path is
+ * NULL or cannot be read) into the wallpaper's image and its blurred
+ * copy, which are mapped, the output's size, and kept for the look's life.
+ */
+static int
+wallpaper_fill(
+	struct zwl_server *server,
+	struct zwl_glass *glass,
+	const char *path)
 {
 	uint32_t *row;
 	float *pixels;
@@ -249,23 +328,17 @@ wallpaper_create(
 	uint32_t x;
 	uint32_t y;
 	uint64_t started;
-	VkResult result;
 	int error;
 
-	/* The output-sized image. */
+	/* The picture given, in floating point and kept for the blur. */
 	started = zwl_milliseconds();
 	width = server->width;
 	height = server->height;
-	result = zwl_host_image_create(server->compose, width, height, server->compose->sampler, &glass->wallpaper);
-	if (result != VK_SUCCESS)
-		return EIO;
-
-	/* The picture given, in floating point and kept for the blur. */
 	pixels = NULL;
-	if (server->wallpaper_path != NULL) {
-		pixels = wallpaper_load(server->wallpaper_path, width, height);
+	if (path != NULL) {
+		pixels = wallpaper_load(path, width, height);
 		if (pixels == NULL)
-			printf("ZWL GLASS no wallpaper: path=%s errno=%d\n", server->wallpaper_path, errno);
+			printf("ZWL GLASS no wallpaper: path=%s errno=%d\n", path, errno);
 	}
 
 	/* Otherwise the landscape drawn here. */
@@ -288,9 +361,13 @@ wallpaper_create(
 
 	/* The frosted glass. */
 	printf("ZWL STARTUP step=wallpaper-picture ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
-	error = blur_create(server, glass, pixels);
+	error = blur_fill(server, glass, pixels);
 	free(pixels);
-	return error;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: both images hold the picture. */
+	return 0;
 }
 
 /*
@@ -444,12 +521,29 @@ ridge(
 	return base - amplitude * wave;
 }
 
+/* Makes the frosted glass's small image, sampled linearly (blur_fill draws it). */
+static int
+blur_create(
+	struct zwl_server *server,
+	struct zwl_glass *glass)
+{
+	VkResult result;
+
+	/* The output's size divided by GLASS_BLUR_SCALE. */
+	result = zwl_host_image_create(server->compose, server->width / GLASS_BLUR_SCALE, server->height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &glass->blurred);
+	if (result != VK_SUCCESS)
+		return EIO;
+
+	/* Succeeded: the image is there. */
+	return 0;
+}
+
 /*
- * Makes the frosted glass: the wallpaper averaged down by GLASS_BLUR_SCALE
+ * Draws the frosted glass: the wallpaper averaged down by GLASS_BLUR_SCALE
  * and blurred by repeated box passes (close to a Gaussian).
  */
 static int
-blur_create(
+blur_fill(
 	struct zwl_server *server,
 	struct zwl_glass *glass,
 	const float *pixels)
@@ -466,14 +560,10 @@ blur_create(
 	uint32_t channel;
 	unsigned pass;
 	size_t at;
-	VkResult result;
 
-	/* The small image, sampled linearly. */
+	/* The small image's size. */
 	width = server->width / GLASS_BLUR_SCALE;
 	height = server->height / GLASS_BLUR_SCALE;
-	result = zwl_host_image_create(server->compose, width, height, server->compose->linear_sampler, &glass->blurred);
-	if (result != VK_SUCCESS)
-		return EIO;
 
 	/* Its working copies. */
 	small = calloc((size_t)width * height * 3U, sizeof(float));

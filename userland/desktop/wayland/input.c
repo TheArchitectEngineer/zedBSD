@@ -728,6 +728,20 @@ apply_frame(
 		y = scale_absolute(device->abs_y, device->abs_y_minimum, device->abs_y_maximum, server->height);
 	}
 
+	/*
+	 * The relative movement at the user's speed (ws089-p007, a percentage),
+	 * the hundredths of a pixel carried to the next report so that a slow
+	 * pointer still moves.
+	 */
+	if (server->pointer_speed != 100 && (delta_x != 0 || delta_y != 0)) {
+		delta_x = delta_x * server->pointer_speed + server->pointer_remainder_x;
+		delta_y = delta_y * server->pointer_speed + server->pointer_remainder_y;
+		server->pointer_remainder_x = delta_x % 100;
+		server->pointer_remainder_y = delta_y % 100;
+		delta_x /= 100;
+		delta_y /= 100;
+	}
+
 	/* The relative movement, kept on the output. */
 	x = clamp_position((int64_t)x + delta_x, server->width);
 	y = clamp_position((int64_t)y + delta_y, server->height);
@@ -774,6 +788,12 @@ apply_frame(
 		/* A keyboard's keys become wl_keyboard keys with their evdev code. */
 		if (device->keyboard)
 			apply_key(server, time, event->code, event->value);
+	}
+
+	/* The user's natural scrolling (ws089-p007) turns the wheel round. */
+	if (server->pointer_natural != 0) {
+		wheel = -wheel;
+		horizontal_wheel = -horizontal_wheel;
 	}
 
 	/* Wheel notches scroll; evdev counts up as positive, Wayland counts down as positive. */
