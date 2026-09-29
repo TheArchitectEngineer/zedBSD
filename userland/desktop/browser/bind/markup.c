@@ -390,6 +390,8 @@ bind_insert_adjacent_text(
 		wb_units_release(&units);
 		return status;
 	}
+
+	/* Made from the units, which are freed. */
 	text = dom_text_create(window->document, units.data, units.length);
 	wb_units_release(&units);
 	if (text == NULL)
@@ -473,6 +475,8 @@ markup_serialize(
 	} else {
 		status = dom_serialize_children(node, 1, &units);
 	}
+
+	/* A failed serialization frees the units. */
 	if (status != 0) {
 		wb_units_release(&units);
 		return status;
@@ -521,6 +525,8 @@ markup_parse(
 		wb_units_release(&units);
 		return status;
 	}
+
+	/* The text goes through it, and its units are freed. */
 	status = html_parser_feed(parser, units.data, units.length);
 	if (status == 0)
 		status = html_parser_finish(parser);
@@ -536,6 +542,8 @@ markup_parse(
 		html_parser_destroy(parser);
 		return ENOMEM;
 	}
+
+	/* The root's children move, and the parser goes. */
 	root = html_parser_fragment_root(parser);
 	while (root->node.first_child != NULL)
 		dom_insert_before(made, root->node.first_child, NULL);
@@ -615,6 +623,8 @@ markup_position(
 				unit = '?';
 			folded[index] = (char)unit;
 		}
+
+		/* The folded word ends. */
 		folded[word->length] = '\0';
 	}
 
