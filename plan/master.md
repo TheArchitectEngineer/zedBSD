@@ -161,6 +161,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS095](ws095/ws.md) | MG006 | IME（Wayland の input-method-v2・text-input-v3、単一の IME・複数言語、まず日本語、REmacs の辞書）（2026-09-29 ユーザー） | incomplete | p001（設計）・p002（日本語の engine、host 142 件）cleared 2026-09-29。ユーザーの判断 D1（REmacs の辞書は zlib で再 license、全体の license の下）・D2（MS-IME の型）・D3（補いの辞書を書き下ろす）・D7（デモ機は US 配列、JIS は後）。切り替えは Alt+Space（2026-09-29 夜 ユーザー「IMEのON/OFFは、ひとまずAlt+Spaceがいいです。」）。5330 の内蔵 keyboard は PS/2（p010 は必要、デモには不要）。次は p003（辞書の package と品質の計測） |
 | [WS096](ws096/ws.md) | MG002 | Qt6（core・gui・widgets）の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
+| [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
