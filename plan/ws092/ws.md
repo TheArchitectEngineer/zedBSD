@@ -9,7 +9,8 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001・p002 cleared（2026-09-29）。次は p003（libkeiland の file chooser、2026-09-29 ユーザーの方針で分けた）→ p004（規約・回帰）
+Resume point: p001・p002 cleared（2026-09-29）。wrap up で引き継ぎ（未完成の差分なし）。次は p003（libkeiland の file chooser、未着手・API 未設計）→ p004（規約・回帰）。
+引き継ぎの詳細（editor 側の受け口 `te_host.choose`・`TE_EVENT_CHOSEN`、p003 で決めること、試験と build の手順）は [p002](phase002/phase.md) の「引き継ぎ」
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）

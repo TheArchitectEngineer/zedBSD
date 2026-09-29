@@ -51,9 +51,30 @@ chooser でこれを満たす）。p002 の間は `choose` が NULL で、Open�
   - App Home の tile（`shot-home.png`）と tile からの起動（Untitled の窓が開いた）。
   - 大きな file（3.9 MB、60001 行、日本語を含む）: 起動から READY まで約 2.5 秒、Ctrl+End と入力が即座に反映（`shot-big.png`）。
 - 未実施: touch（guest で touch の注入ができる image でない。host の gesture の試験も未。実機はユーザー）、wheel の glide の目視、中 click の PRIMARY の貼り付けと
-  他の app（Terminal）との clipboard の往復、View の menu の Line Numbers・Word Wrap の切り替え（menu の click は未）、boot test（下で実施予定）、実機。
+  他の app（Terminal）との clipboard の往復、View の menu の Line Numbers・Word Wrap の切り替え（menu の click は未）、実機。
+- boot test（`OUTPUT=build/ws092/boot-p002 plan/tools/boot-test.sh build/amd64/hdd-image.img`、ssh の image を worktree で build）: PASS。
 
 ## 残り・次
 
 - p003: libkeiland の file chooser（`keiland_file_chooser_*`）と editor の Open・Save As の結線。
 - p004: 規約の全文との照合と回帰。
+
+## 引き継ぎ（2026-09-29、wrap up。以後は別のエージェントが同じ worktree で続ける）
+
+- 状態: p002 は cleared、worktree は全て commit 済み（未完成の差分は無いので `wip.patch` は無い）。
+- **p003（libkeiland の file chooser）は未着手**。API の設計もまだ書いていない。決まっているのは editor 側の受け口だけ:
+  `struct te_host` の `int (*choose)(void *data, int saving, const char *folder, const char *name)`（0 か errno を返し、開いたら editor は
+  `app->choosing` で答えを待つ）と、答えの `TE_EVENT_CHOSEN`（`event.text` に path、取り消しは空文字列。置き換えの確認は chooser 側で済ませて返す）。
+  `userland/desktop/textedit/main.c` の `main_host()` に `choose` を足し、chooser の結果を `te_window_push(window, TE_EVENT_CHOSEN)` で積めば editor は動く
+  （`app.c` の `app_choose`・`app_chosen`）。
+- p003 の設計で決めること（main の指示 2026-09-29）: `keiland_file_chooser_*` の API（開く・名前を付けて保存・folder の移動・sidebar の Home と Desktop 等・
+  拡張子の filter・上書きの確認の結果の返し方）、描画を app の surface に重ねるか、別の xdg の popup・子の窓（`xdg_toplevel_set_parent`、shm と libtruetype で
+  library が自分で描く案が app に依らない）にするか、touch（慣性は libkeiland の scroller）、Kei の見た目（すりガラス、Files の list に揃える）。
+  WS091・WS089・Notes・PDF Viewer が後で使う。`include/libc/keiland.h`・`userland/desktop/libkeiland/exports.map`・`KEILAND_VERSION` は WS089 も足すので、
+  適用の直前に branch を main に合わせ、版は main の最新の次にして報告に明記する。
+- 試験の道具: `plan/ws092/tests/host-core.sh`（host 34/34）、`plan/ws092/tests/qmp-keys.py`（QMP で文字・chord・pointer）、desktop の guest は
+  `build/ws092/zd-start.sh`（main の `build/ws035-sq/hdd-image.img` の複写 `build/ws092/zd/hdd-image.img`、runtime `build/ws092/zd-run`）に
+  `build/amd64/bin/textedit` と `build/amd64/bin/wayland` を `guest.py put` して `/tmp/wayland --glass` と `WAYLAND_DISPLAY=wayland-0 /tmp/textedit FILE` で動かす。
+  textedit の build: `make -j64 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/amd64 build/amd64/bin/textedit`
+  （zdesktop の image 全体の build は libcxx が共有の llvm-source に patch を当てようとして止まるので行わない）。
+- 登録の差分（home.c・icons・apps.conf・2 つの config・vmunix.mk）は WS091・WS089 と衝突しうる（main が merge で解く）。
