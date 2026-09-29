@@ -8,8 +8,9 @@
 /*
  * ACPI events (ACPI 6.5 sections 4.8 and 5.6): the fixed events of the
  * PM1 registers (the power and sleep buttons), the general-purpose events
- * of the GPE blocks and the _Lxx and _Exx methods that handle them, and
- * the switch into ACPI mode.
+ * of the GPE blocks and the _Lxx and _Exx methods that handle them, the
+ * switch into ACPI mode, and the S5 soft-off that turns the power off
+ * (section 7.4 and 16.1).
  *
  * The work is split the way the SCI requires.  drv_acpi_sci_interrupt()
  * runs in the interrupt: it only reads the status registers, masks every
@@ -50,7 +51,14 @@
 #define FADT_X_PM1B_CNT_BLK	184U
 #define FADT_X_GPE0_BLK		220U
 #define FADT_X_GPE1_BLK		232U
+#define FADT_SLEEP_CONTROL_REG	244U
 #define FADT_V1_LENGTH		116U
+
+/*
+ * The length of a Generic Address Structure, and where its address is.
+ */
+#define GAS_LENGTH		12U
+#define GAS_ADDRESS		4U
 
 /*
  * The FADT flags the event code reads.
@@ -71,6 +79,39 @@
  */
 #define PM1_CNT_GBL_RLS		0x0004U
 #define PM1_CNT_SLP_EN		0x2000U
+
+/*
+ * The SLP_TYP field of PM1_CNT: the sleep state the platform enters when
+ * SLP_EN is written, in the platform's own numbering that \_S5 gives.
+ */
+#define PM1_CNT_SLP_TYP_SHIFT	10U
+#define PM1_CNT_SLP_TYP_MASK	0x1c00U
+
+/*
+ * The WAK_STS bit of PM1_STS: set by a wake, written as one to clear it
+ * before a sleep so that the wake is seen.
+ */
+#define PM1_STS_WAK_STS		0x8000U
+
+/*
+ * The sleep control register of a hardware-reduced platform (ACPI 6.5
+ * section 4.8.3.7): SLP_TYP in bits 2 to 4 and SLP_EN in bit 5.
+ */
+#define SLEEP_CONTROL_SLP_TYP_SHIFT	2U
+#define SLEEP_CONTROL_SLP_EN		0x20U
+
+/*
+ * The system state number of the soft-off state, the argument of _PTS.
+ */
+#define SLEEP_STATE_S5		5U
+
+/*
+ * How long the power may take to go after SLP_EN was written, in the
+ * 100-nanosecond units of the interpreter's timer, and how many polls
+ * of the timer bound the wait when the timer does not run.
+ */
+#define POWEROFF_WAIT		30000000ULL
+#define POWEROFF_POLLS		100000000U
 
 /*
  * The address space of a Generic Address Structure that is I/O ports.
@@ -161,7 +202,24 @@ static struct {
 	struct fixed_entry fixed[FIXED_EVENT_COUNT];
 } events;
 
+/*
+ * What the S5 soft-off needs: the SLP_TYP values \_S5 names for the PM1a
+ * and PM1b control registers, and on a hardware-reduced platform the
+ * sleep control register when it is in I/O space.  drv_acpi_events_init()
+ * fills it from the namespace and the FADT, while the machine still runs
+ * AML freely; drv_acpi_poweroff() only reads it.  known is zero until
+ * \_S5 was read, and stays zero on a platform that cannot be turned off.
+ */
+static struct {
+	struct register_block sleep_control;
+	uint8_t type_a;
+	uint8_t type_b;
+	uint8_t reduced;
+	uint8_t known;
+} soft_off;
+
 static uint32_t load_u32(const uint8_t *bytes);
+static void read_soft_off(const uint8_t *fadt, size_t length, uint32_t flags);
 static struct register_block fadt_block(const uint8_t *fadt, size_t length, unsigned legacy, unsigned wide, unsigned block_length);
 static int enable_acpi_mode(void);
 static void gpe_register(unsigned gpe, uint32_t *port, uint8_t *bit);
@@ -170,6 +228,7 @@ static void port_write8(uint32_t port, uint8_t value);
 static uint16_t pm1_read(unsigned offset);
 static void pm1_write(unsigned offset, uint16_t value);
 static void pm1_control_set(const struct register_block *block, uint16_t bits);
+static void pm1_control_sleep(const struct register_block *block, uint8_t type, bool enable);
 static void gpe_set_enable(unsigned gpe, bool enable);
 static void gpe_clear(unsigned gpe);
 static int gpe_method_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
@@ -197,8 +256,11 @@ drv_acpi_events_init(
 		return EINVAL;
 	kern_memset(&events, 0, sizeof(events));
 
-	/* A hardware-reduced platform has no fixed hardware and no GPE blocks. */
+	/* Learns how the power is turned off, while AML still runs freely. */
 	flags = load_u32(fadt + FADT_FLAGS);
+	read_soft_off(fadt, length, flags);
+
+	/* A hardware-reduced platform has no fixed hardware and no GPE blocks. */
 	if ((flags & FADT_FLAG_HW_REDUCED) != 0) {
 		drv_acpi_os_log("ACPI: hardware-reduced platform; no fixed events\n");
 		return ENOTSUP;
@@ -492,6 +554,97 @@ drv_acpi_events_global_release(void)
 	drv_acpi_os_event_unlock(state);
 }
 
+/*
+ * Turns the power off: the S5 soft-off state.
+ *
+ * _PTS(5) tells firmware the transition is coming; then the SLP_TYP values
+ * \_S5 named are written with SLP_EN into the PM1 control registers, or
+ * into the sleep control register of a hardware-reduced platform.  The
+ * write normally does not return.  It reports ENODEV when the platform gave
+ * no way to turn itself off, and ETIMEDOUT when the power stayed on; the
+ * caller halts then.
+ */
+int
+drv_acpi_poweroff(void)
+{
+	struct drv_acpi_object *arguments[1];
+	struct drv_acpi_object *state_number;
+	struct drv_acpi_object *result;
+	unsigned long state;
+	uint64_t start;
+	uint64_t now;
+	unsigned poll;
+	unsigned gpe;
+	uint8_t control;
+	int error;
+
+	/* Refuses a platform whose soft-off state is unknown. */
+	if (!soft_off.known)
+		return ENODEV;
+
+	/* Refuses a platform whose sleep register was not found. */
+	if (soft_off.reduced) {
+		if (soft_off.sleep_control.length == 0)
+			return ENODEV;
+	} else {
+		if (!events.ready || events.pm1a_control.length == 0)
+			return ENODEV;
+	}
+
+	/* Tells firmware with _PTS that S5 is coming; a firmware without _PTS needs no notice. */
+	state_number = drv_acpi_object_integer_new(SLEEP_STATE_S5);
+	if (state_number == NULL)
+		return ENOMEM;
+	arguments[0] = state_number;
+	result = NULL;
+	error = drv_acpi_evaluate(NULL, "\\_PTS", arguments, 1, &result);
+	drv_acpi_object_release(result);
+	drv_acpi_object_release(state_number);
+	if (error != 0 && error != ENOENT)
+		drv_acpi_os_log("ACPI: _PTS(5) failed (error %d); turning off anyway\n", error);
+
+	/*
+	 * From here no event is taken: the event lock keeps the SCI's thread
+	 * out and interrupts off on this CPU until the power goes.
+	 */
+	state = drv_acpi_os_event_lock();
+
+	/* A hardware-reduced platform sleeps through one byte. */
+	if (soft_off.reduced) {
+		control = (uint8_t)(soft_off.type_a << SLEEP_CONTROL_SLP_TYP_SHIFT);
+		control |= SLEEP_CONTROL_SLP_EN;
+		(void)drv_acpi_os_port_write(soft_off.sleep_control.port, 8, control);
+	} else {
+		/* Masks every event, so that nothing wakes the platform, and clears a stale wake. */
+		pm1_write(events.pm1a_event.length / 2U, 0);
+		for (gpe = 0; gpe < events.gpe_count; gpe++)
+			gpe_set_enable(gpe, false);
+		pm1_write(0, PM1_STS_WAK_STS);
+
+		/* Writes the sleep type into both blocks first, then the type with SLP_EN, as ACPICA does. */
+		pm1_control_sleep(&events.pm1a_control, soft_off.type_a, false);
+		if (events.pm1b_control.length != 0)
+			pm1_control_sleep(&events.pm1b_control, soft_off.type_b, false);
+		pm1_control_sleep(&events.pm1a_control, soft_off.type_a, true);
+		if (events.pm1b_control.length != 0)
+			pm1_control_sleep(&events.pm1b_control, soft_off.type_b, true);
+	}
+
+	/* Waits for the power to go: by the timer when it runs, by count otherwise. */
+	start = drv_acpi_os_timer();
+	for (poll = 0; poll < POWEROFF_POLLS; poll++) {
+		/* A platform still running this long after SLP_EN did not turn off. */
+		now = drv_acpi_os_timer();
+		if (now - start >= POWEROFF_WAIT)
+			break;
+	}
+
+	/* Reports a platform that stayed on. */
+	drv_acpi_os_event_unlock(state);
+	drv_acpi_os_log("ACPI: the platform did not turn off\n");
+	return ETIMEDOUT;
+}
+
 /* Reads a little-endian 32-bit value. */
 static uint32_t
 load_u32(
@@ -507,6 +660,64 @@ load_u32(
 
 	/* Reports the value. */
 	return value;
+}
+
+/*
+ * Reads what the S5 soft-off needs: the SLP_TYP values \_S5 names, and on
+ * a hardware-reduced platform the sleep control register of the FADT.
+ */
+static void
+read_soft_off(
+	const uint8_t *fadt,
+	size_t length,
+	uint32_t flags)
+{
+	struct drv_acpi_object *package;
+	struct drv_acpi_object *element;
+	uint8_t types[2];
+	unsigned index;
+	int error;
+
+	/* A hardware-reduced platform sleeps through the sleep control register, when it is in I/O space. */
+	if ((flags & FADT_FLAG_HW_REDUCED) != 0) {
+		soft_off.reduced = 1;
+		if (length >= FADT_SLEEP_CONTROL_REG + GAS_LENGTH && fadt[FADT_SLEEP_CONTROL_REG] == GAS_SPACE_SYSTEM_IO) {
+			soft_off.sleep_control.port = load_u32(fadt + FADT_SLEEP_CONTROL_REG + GAS_ADDRESS);
+			soft_off.sleep_control.length = 1U;
+		}
+		if (soft_off.sleep_control.port == 0) {
+			soft_off.sleep_control.length = 0;
+			drv_acpi_os_log("ACPI: no sleep control register in I/O space; no soft-off\n");
+		}
+	}
+
+	/* \_S5 is a package whose first two integers are SLP_TYPa and SLP_TYPb; without it there is no soft-off. */
+	package = NULL;
+	error = drv_acpi_evaluate(NULL, "\\_S5", NULL, 0, &package);
+	if (error != 0) {
+		drv_acpi_os_log("ACPI: no _S5 (error %d); no soft-off\n", error);
+		return;
+	}
+
+	/* Takes the two sleep types; a package with one integer serves both blocks with it. */
+	types[0] = 0;
+	types[1] = 0;
+	for (index = 0; index < 2U; index++) {
+		/* A missing or non-integer element leaves that type at zero, the value most firmware gives. */
+		element = drv_acpi_object_package_element(package, index);
+		if (element == NULL)
+			continue;
+		if (drv_acpi_object_type(element) != DRV_ACPI_TYPE_INTEGER)
+			continue;
+		types[index] = (uint8_t)(drv_acpi_object_integer(element) & 7U);
+	}
+	drv_acpi_object_release(package);
+
+	/* Remembers them; from now on the soft-off needs no AML but _PTS. */
+	soft_off.type_a = types[0];
+	soft_off.type_b = types[1];
+	soft_off.known = 1;
+	drv_acpi_os_log("ACPI: S5 is SLP_TYP %u/%u\n", types[0], types[1]);
 }
 
 /*
@@ -679,6 +890,31 @@ pm1_control_set(
 
 	/* Writes it back with the bits, and without SLP_EN. */
 	value = (value & ~(uint32_t)PM1_CNT_SLP_EN) | bits;
+	(void)drv_acpi_os_port_write(block->port, 16, value);
+}
+
+/* Writes SLP_TYP, and SLP_EN when asked, into a PM1 control register, keeping its other bits. */
+static void
+pm1_control_sleep(
+	const struct register_block *block,
+	uint8_t type,
+	bool enable)
+{
+	uint32_t value;
+	int error;
+
+	/* Reads the register, so that SCI_EN and the rest stay as they are. */
+	error = drv_acpi_os_port_read(block->port, 16, &value);
+	if (error != 0)
+		return;
+
+	/* Replaces the sleep fields. */
+	value &= ~(uint32_t)(PM1_CNT_SLP_TYP_MASK | PM1_CNT_SLP_EN);
+	value |= (uint32_t)type << PM1_CNT_SLP_TYP_SHIFT;
+	if (enable)
+		value |= PM1_CNT_SLP_EN;
+
+	/* Writes it; with SLP_EN the platform sleeps on this write. */
 	(void)drv_acpi_os_port_write(block->port, 16, value);
 }
 

@@ -424,6 +424,27 @@ kern_platform_halt(
 }
 
 /*
+ * Turns the power off through ACPI's S5 soft-off.
+ *
+ * It returns only the reason the power stayed on: ENODEV from a firmware
+ * without ACPI or without _S5, ETIMEDOUT when the write took no effect.
+ */
+int
+kern_platform_poweroff(
+	void)
+{
+	int error;
+
+	/* Asks the ACPI driver for S5, which normally does not return. */
+	error = drv_acpi_poweroff();
+	if (error != 0)
+		return error;
+
+	/* The driver returned without an error, which it never does. */
+	return EOPNOTSUPP;
+}
+
+/*
  * Reboots the machine through the keyboard controller.
  */
 void

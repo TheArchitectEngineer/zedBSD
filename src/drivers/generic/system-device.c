@@ -20,6 +20,7 @@
 #include "kern/kernel.h"
 #include "kern/kmem.h"
 #include "kern/platform.h"
+#include "kern/klog.h"
 #include "kern/partition.h"
 #include "kern/swap.h"
 #include "kern/uaccess.h"
@@ -197,6 +198,21 @@ system_ioctl(
 			return error;
 		kern_platform_halt();
 		error = 0;
+		break;
+	case KERN_SYSTEM_POWEROFF:
+		/* Only init may turn the machine off. */
+		if (curthread->proc->pid != 1)
+			return EPERM;
+		error = system_shutdown_prepare();
+		if (error != 0)
+			return error;
+
+		/* A platform that could not cut its power answers EOPNOTSUPP, so that init halts it. */
+		error = kern_platform_poweroff();
+		if (error != 0) {
+			kern_logf("system: the power-off failed (error %d); halting instead\n", error);
+			return EOPNOTSUPP;
+		}
 		break;
 	case KERN_SYSTEM_REBOOT:
 		/* Only init may reboot the machine. */

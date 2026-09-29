@@ -49,6 +49,16 @@ void
 kern_platform_reboot(void) __attribute__((noreturn));
 
 /*
+ * Turn the machine's power off.
+ *
+ * It returns only when the platform could not: EOPNOTSUPP when it has no
+ * way to cut its power, or the error the attempt reported.  The caller
+ * then halts instead.
+ */
+int
+kern_platform_poweroff(void);
+
+/*
  * Look up one boot handoff object by name.
  *
  * The object stays owned by the platform. An unknown or unavailable
