@@ -75,6 +75,7 @@ struct inflect_state {
 static const struct inflect_suffix inflect_negative[] = {
 	{ "ない", TAIL_END }, { "なかった", TAIL_END }, { "なかったら", TAIL_END }, { "なくて", TAIL_END },
 	{ "なければ", TAIL_END }, { "なく", TAIL_END }, { "なきゃ", TAIL_END }, { "ず", TAIL_END }, { "ずに", TAIL_END },
+	{ "ないで", TAIL_END }, { "ないでください", TAIL_END },
 	{ "れ", TAIL_ICHIDAN }, { "せ", TAIL_ICHIDAN },
 	{ NULL, TAIL_NONE }
 };
@@ -84,6 +85,7 @@ static const struct inflect_suffix inflect_ichidan[] = {
 	{ "る", TAIL_END }, { "れば", TAIL_END }, { "よう", TAIL_END }, { "ろ", TAIL_END }, { "ながら", TAIL_END },
 	{ "ない", TAIL_END }, { "なかった", TAIL_END }, { "なかったら", TAIL_END }, { "なくて", TAIL_END },
 	{ "なければ", TAIL_END }, { "なく", TAIL_END }, { "ず", TAIL_END }, { "ずに", TAIL_END },
+	{ "ないで", TAIL_END }, { "ないでください", TAIL_END },
 	{ "ます", TAIL_END }, { "ました", TAIL_END }, { "ません", TAIL_END }, { "ませんでした", TAIL_END },
 	{ "ましょう", TAIL_END }, { "まして", TAIL_END },
 	{ "たい", TAIL_END }, { "たかった", TAIL_END }, { "たくない", TAIL_END }, { "たくて", TAIL_END },
@@ -106,7 +108,10 @@ static const struct inflect_suffix inflect_continuative[] = {
 static const struct inflect_suffix inflect_te[] = {
 	{ "い", TAIL_ICHIDAN }, { "る", TAIL_END }, { "た", TAIL_END }, { "ます", TAIL_END }, { "ない", TAIL_END },
 	{ "ました", TAIL_END }, { "ください", TAIL_END }, { "しまう", TAIL_END }, { "しまった", TAIL_END },
-	{ "おく", TAIL_END }, { "みる", TAIL_END },
+	{ "おく", TAIL_END }, { "みる", TAIL_END }, { "も", TAIL_END }, { "は", TAIL_END },
+	{ "きます", TAIL_END }, { "きました", TAIL_END }, { "きた", TAIL_END }, { "くる", TAIL_END },
+	{ "いく", TAIL_END }, { "いきます", TAIL_END }, { "いった", TAIL_END },
+	{ "あります", TAIL_END }, { "ある", TAIL_END }, { "おきます", TAIL_END }, { "みます", TAIL_END },
 	{ NULL, TAIL_NONE }
 };
 
@@ -202,12 +207,12 @@ static const struct inflect_kana_verb inflect_kana_verbs[] = {
  */
 static const char *const inflect_particles[] = {
 	"は", "が", "を", "に", "へ", "と", "で", "も", "の", "や", "か", "ね", "よ", "な", "ば", "わ",
-	"から", "まで", "より", "けど", "けれど", "ので", "のに", "だけ", "しか", "って", "たら", "ても",
+	"から", "まで", "より", "けど", "けれど", "ので", "のに", "だけ", "しか", "って",
 	"でも", "など", "ほど", "くらい", "ぐらい", "ずつ", "こそ", "さえ", "とか", "かも", "ばかり",
 	"には", "では", "へは", "への", "とは", "との", "での", "からは", "からの", "までに", "までの", "にも", "とも",
 	"のは", "のが", "のを", "のも", "だけで", "だけが", "だけを", "しかない", "について", "として", "にとって",
 	"です", "でした", "でしょう", "だ", "だった", "だろう", "じゃ", "じゃない", "ではない", "ではありません",
-	"のです", "のでしょう", "んです", "んだ", "んでしょう",
+	"のです", "のでしょう",
 	NULL
 };
 
@@ -218,15 +223,26 @@ static const char *const inflect_particles[] = {
  */
 static const char *const inflect_final_hosts[] = {
 	"の", "です", "でした", "でしょう", "だ", "だった", "だろう", "じゃない", "ではない", "ではありません", "けど",
-	"のです", "のでしょう", "んです", "んだ", "んでしょう",
+	"のです", "のでしょう", "から", "まで", "だけ",
 	NULL
 };
 
 /*
- * The particles that may end a sentence after one of the hosts above.
+ * The words that may follow one of the hosts above within a sentence
+ * (からです, のですが).
  */
 static const char *const inflect_finals[] = {
-	"ね", "よ", "か", "な", "わ", "よね", "かな", "けど", "が", "から", "ので",
+	"けど", "が", "から", "ので", "です", "でした", "だ", "でしょう",
+	NULL
+};
+
+/*
+ * The particles that end a sentence, after a word, a particle or one of
+ * the hosts above; only at the end of what is typed or before a mark
+ * (行くね, ですか), so that the よ of 予定 is not taken as one (明日のよ).
+ */
+static const char *const inflect_sentence_ends[] = {
+	"ね", "よ", "か", "な", "わ", "よね", "かな", "ですか", "ですね", "でしたか", "だよ",
 	NULL
 };
 
@@ -239,6 +255,7 @@ static const enum inflect_tail inflect_vowel_tails[5] = {
 	TAIL_O_ROW
 };
 
+static void inflect_sentence_end(const struct ja_text *text, size_t start, bool *ends);
 static void inflect_walk(const struct ja_text *text, size_t position, enum inflect_tail tail, bool *ends);
 static const struct inflect_state *inflect_find_state(enum inflect_tail tail);
 static void inflect_godan(const struct ja_text *text, size_t position, char consonant, bool *ends);
@@ -381,6 +398,7 @@ ja_inflect_kana_verb_ends(
 		ends[stem_end] = false;
 	}
 
+	/* Nothing is no form. */
 	ends[start] = false;
 }
 
@@ -441,18 +459,20 @@ ja_particle_ends(
 	bool host;
 	bool same;
 
-	/* No particle at all. */
+	/* No particle at all, or only one that ends the sentence. */
 	ends[start] = true;
+	inflect_sentence_end(text, start, ends);
 
-	/* One particle, and one ending a sentence after it. */
+	/* One particle, what may follow a copula or の, and one ending the sentence. */
 	for (i = 0; inflect_particles[i] != NULL; i++) {
 		matched = ja_text_match(text, start, inflect_particles[i], &end);
 		if (!matched)
 			continue;
 
 		ends[end] = true;
+		inflect_sentence_end(text, end, ends);
 
-		/* A particle ending the sentence follows a copula or の only. */
+		/* What follows within the sentence comes after a copula or の only. */
 		host = false;
 		for (j = 0; inflect_final_hosts[j] != NULL; j++) {
 			same = ja_bytes_equal(inflect_particles[i], strlen(inflect_particles[i]), inflect_final_hosts[j],
@@ -464,12 +484,41 @@ ja_particle_ends(
 		if (!host)
 			continue;
 
-		/* A particle ending the sentence after it. */
+		/* A word following the copula or の, and one ending the sentence after it. */
 		for (j = 0; inflect_finals[j] != NULL; j++) {
 			matched = ja_text_match(text, end, inflect_finals[j], &final_end);
-			if (matched)
-				ends[final_end] = true;
+			if (!matched)
+				continue;
+
+			ends[final_end] = true;
+			inflect_sentence_end(text, final_end, ends);
 		}
+	}
+}
+
+/*
+ * Marks where a particle ending the sentence at a unit ends, when it ends
+ * the text or comes before a mark.
+ */
+static void
+inflect_sentence_end(
+	const struct ja_text *text,
+	size_t start,
+	bool *ends)
+{
+	size_t i;
+	size_t end;
+	bool matched;
+
+	/* Each particle that ends a sentence. */
+	for (i = 0; inflect_sentence_ends[i] != NULL; i++) {
+		matched = ja_text_match(text, start, inflect_sentence_ends[i], &end);
+		if (!matched)
+			continue;
+
+		/* Only at the end of the text or before a literal (a mark). */
+		if (end == text->unit_count || !text->kana[end])
+			ends[end] = true;
 	}
 }
 
