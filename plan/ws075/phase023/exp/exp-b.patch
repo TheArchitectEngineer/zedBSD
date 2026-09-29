@@ -1,0 +1,40 @@
+diff --git a/src/drivers/gpu/i915/render/state.c b/src/drivers/gpu/i915/render/state.c
+index 7d50a5a4..f6f0f129 100644
+--- a/src/drivers/gpu/i915/render/state.c
++++ b/src/drivers/gpu/i915/render/state.c
+@@ -739,7 +739,7 @@ drv_i915_gfx_emit_context_setup(
+ 	instruction = instruction_va;
+ 
+ 	/* Flushes and stalls before the pipeline is switched to 3D. */
+-	drv_i915_batch_pipe_control(batch,
++	if (0) /* ws075-p023 experiment */ drv_i915_batch_pipe_control(batch,
+ 				    PIPE_CONTROL_CS_STALL |
+ 				    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+ 				    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+@@ -783,7 +783,7 @@ drv_i915_gfx_emit_context_setup(
+ 	 * and the vertex fetch cache, which may hold a buffer an earlier draw's
+ 	 * shader wrote (transform feedback) or a copy filled.
+ 	 */
+-	drv_i915_batch_pipe_control(batch,
++	if (0) /* ws075-p023 experiment */ drv_i915_batch_pipe_control(batch,
+ 				    PIPE_CONTROL_CS_STALL |
+ 				    PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+ 				    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+@@ -1734,7 +1734,7 @@ drv_i915_gfx_emit_draw(
+ 	drv_i915_batch_emit(batch, 0U);
+ 
+ 	/* Syncs the pixel pipeline before the primitive. */
+-	drv_i915_batch_pipe_control(batch,
++	if (0) /* ws075-p023 experiment */ drv_i915_batch_pipe_control(batch,
+ 				    PIPE_CONTROL_CS_STALL |
+ 				    PIPE_CONTROL_STALL_AT_SCOREBOARD |
+ 				    PIPE_CONTROL_DEPTH_STALL_ENABLE);
+@@ -1758,7 +1758,7 @@ drv_i915_gfx_emit_draw(
+ 	drv_i915_batch_emit(batch, (uint32_t)primitive->base_vertex);
+ 
+ 	/* Flushes what the primitive wrote. */
+-	drv_i915_batch_pipe_control(batch,
++	if (0) /* ws075-p023 experiment */ drv_i915_batch_pipe_control(batch,
+ 				    PIPE_CONTROL_CS_STALL |
+ 				    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+ 				    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
