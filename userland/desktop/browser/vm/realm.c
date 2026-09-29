@@ -159,7 +159,7 @@ vm_run_jobs(
 		job = *queued;
 		next++;
 
-		/* Runs the job (a promise's, or a function to call); an exception is reported and cleared. */
+		/* A promise's job (ws074-p086) is a cell of its own type rather than a function. */
 		is_promise_job = 0;
 		is_cell = vm_value_is_cell(job.callback);
 		if (is_cell) {
@@ -167,11 +167,15 @@ vm_run_jobs(
 			if (cell->type == &vm_promise_job_type)
 				is_promise_job = 1;
 		}
+
+		/* Runs the job: a promise's, or a function to call. */
 		if (is_promise_job) {
 			status = vm_promise_run_job(realm, job.callback, job.argument);
 		} else {
 			status = vm_call(realm, job.callback, VM_VALUE_UNDEFINED, &job.argument, 1, &ignored);
 		}
+
+		/* An exception is reported and cleared; any other failure ends the checkpoint. */
 		if (status == VM_THROWN) {
 			if (report != NULL)
 				report(realm, realm->exception, context);

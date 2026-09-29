@@ -260,6 +260,8 @@ js_compile_function(
 		js_load_value(fc, result, VM_VALUE_UNDEFINED);
 		js_emit3(fc, VM_OP_SUSPEND, result, result, how);
 	}
+
+	/* The body. */
 	if ((node->flags & JS_FLAG_STATIC_INIT) != 0U) {
 		/* A class's static function: its static fields and blocks. */
 		js_compile_fields(fc, info->class_node, 1);

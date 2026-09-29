@@ -321,6 +321,8 @@ bind_report_exception(
 	} else {
 		error = wb_buffer_append_string(&line, "Uncaught ");
 	}
+
+	/* The exception's text. */
 	if (error == 0)
 		error = js_exception_text(window->realm, exception, &line);
 

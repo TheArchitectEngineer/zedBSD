@@ -71,6 +71,7 @@ int
 vm_value_is_promise(
 	vm_value value)
 {
+	struct vm_cell *cell;
 	int is_cell;
 
 	/* Only a cell can be one. */
@@ -79,7 +80,8 @@ vm_value_is_promise(
 		return 0;
 
 	/* A promise's cell has the promise type. */
-	if (vm_value_as_cell(value)->type == &vm_promise_type)
+	cell = vm_value_as_cell(value);
+	if (cell->type == &vm_promise_type)
 		return 1;
 
 	/* Another cell. */
@@ -305,6 +307,7 @@ vm_promise_await(
 	struct vm_promise_job *job;
 	vm_value promise;
 	vm_value constructor;
+	vm_value intrinsic;
 	vm_value key;
 	int is_promise;
 	int status;
@@ -319,7 +322,10 @@ vm_promise_await(
 		status = vm_get(realm, value, key, &constructor);
 		if (status != 0)
 			return status;
-		if (realm->intrinsics[VM_INTRINSIC_PROMISE] != NULL && constructor == vm_value_cell(realm->intrinsics[VM_INTRINSIC_PROMISE]))
+		intrinsic = VM_VALUE_UNDEFINED;
+		if (realm->intrinsics[VM_INTRINSIC_PROMISE] != NULL)
+			intrinsic = vm_value_cell(realm->intrinsics[VM_INTRINSIC_PROMISE]);
+		if (constructor == intrinsic)
 			promise = value;
 	}
 
@@ -534,6 +540,8 @@ promise_resolve_with(
 		status = promise_settle(realm, promise, VM_PROMISE_REJECTED, reason);
 		return status;
 	}
+
+	/* What failed goes back to the caller. */
 	if (status != 0)
 		return status;
 
@@ -630,6 +638,8 @@ promise_add_job(
 		} else {
 			promise->last->next = job;
 		}
+
+		/* The job is the list's last now. */
 		promise->last = job;
 		return 0;
 	}
@@ -695,6 +705,8 @@ promise_run_reaction(
 		} else {
 			status = vm_promise_resolve(realm, job->derived, value);
 		}
+
+		/* Reports how the settlement went. */
 		return status;
 	}
 
@@ -704,6 +716,8 @@ promise_run_reaction(
 	} else {
 		status = vm_call(realm, job->resolve, VM_VALUE_UNDEFINED, &value, 1, &ignored);
 	}
+
+	/* What failed goes back to the caller. */
 	if (status != 0)
 		return status;
 
@@ -739,6 +753,8 @@ promise_run_thenable(
 		realm->exception = VM_VALUE_UNDEFINED;
 		status = vm_call(realm, functions[1], VM_VALUE_UNDEFINED, &reason, 1, &ignored);
 	}
+
+	/* What failed goes back to the caller. */
 	if (status != 0)
 		return status;
 

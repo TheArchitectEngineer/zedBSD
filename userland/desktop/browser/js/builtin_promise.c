@@ -272,6 +272,8 @@ promise_construct(
 		realm->exception = VM_VALUE_UNDEFINED;
 		status = vm_call(realm, functions[1], VM_VALUE_UNDEFINED, &reason, 1, &ignored);
 	}
+
+	/* What failed goes back to the caller. */
 	if (status != 0)
 		return status;
 
@@ -502,6 +504,8 @@ promise_finally_step(
 	} else {
 		status = promise_data_function(realm, promise_return_data, 0, argument, &pass_on);
 	}
+
+	/* What failed goes back to the caller. */
 	if (status != 0)
 		return status;
 
@@ -701,6 +705,8 @@ promise_race(
 		if (!callable)
 			status = vm_throw_type_error(realm, "Promise resolve is not a function");
 	}
+
+	/* The iteration, unless the lookup failed. */
 	if (status == 0)
 		status = vm_iter_start(realm, js_argument(args, count, 0), &iterator);
 	while (status == 0) {
@@ -720,6 +726,8 @@ promise_race(
 		realm->exception = VM_VALUE_UNDEFINED;
 		status = promise_settle_capability(realm, &capability, 1, reason);
 	}
+
+	/* What failed goes back to the caller. */
 	if (status != 0)
 		return status;
 
@@ -802,6 +810,8 @@ promise_element(
 		if (status != 0)
 			return status;
 	}
+
+	/* The value goes at the element's index. */
 	status = vm_put(realm, combinator->values, vm_value_int32((int32_t)element->index), value);
 	if (status != 0)
 		return status;
@@ -880,6 +890,7 @@ promise_new_capability(
 	vm_value executor;
 	vm_value pair;
 	vm_value empty[2];
+	vm_value intrinsic;
 	int is_constructor;
 	int callable;
 	int status;
@@ -890,7 +901,10 @@ promise_new_capability(
 	capability->reject = VM_VALUE_EMPTY;
 
 	/* Promise itself: a promise of its own, with functions when asked. */
-	if (realm->intrinsics[VM_INTRINSIC_PROMISE] != NULL && constructor == vm_value_cell(realm->intrinsics[VM_INTRINSIC_PROMISE])) {
+	intrinsic = VM_VALUE_UNDEFINED;
+	if (realm->intrinsics[VM_INTRINSIC_PROMISE] != NULL)
+		intrinsic = vm_value_cell(realm->intrinsics[VM_INTRINSIC_PROMISE]);
+	if (constructor == intrinsic) {
 		status = vm_promise_create(realm, NULL, &capability->promise);
 		if (status != 0)
 			return status;
@@ -962,6 +976,8 @@ promise_settle_capability(
 		} else {
 			status = vm_promise_resolve(realm, capability->promise, value);
 		}
+
+		/* What failed goes back to the caller. */
 		if (status != 0)
 			return status;
 		return 0;
@@ -973,6 +989,8 @@ promise_settle_capability(
 	} else {
 		status = vm_call(realm, capability->resolve, VM_VALUE_UNDEFINED, &value, 1, &ignored);
 	}
+
+	/* What failed goes back to the caller. */
 	if (status != 0)
 		return status;
 
@@ -1120,6 +1138,8 @@ promise_combine(
 		realm->exception = VM_VALUE_UNDEFINED;
 		status = promise_settle_capability(realm, &capability, 1, reason);
 	}
+
+	/* What failed goes back to the caller. */
 	if (status != 0)
 		return status;
 
@@ -1211,6 +1231,8 @@ promise_combine_values(
 			if (status != 0)
 				return status;
 		}
+
+		/* allSettled and any record a rejection too. */
 		if (kind == PROMISE_ALL_SETTLED || kind == PROMISE_ANY) {
 			status = promise_element_function(realm, combinator, index, 1, &on_rejected);
 			if (status != 0)
@@ -1344,6 +1366,8 @@ promise_settled_record(
 		if (status == 0)
 			status = js_builtin_value(realm, object, "value", value, VM_PROPERTY_DEFAULT);
 	}
+
+	/* What failed goes back to the caller. */
 	if (status != 0)
 		return status;
 
