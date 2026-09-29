@@ -1108,6 +1108,8 @@ i915_worker_run_sync_item(
 			record->queue_ns += start - item->queued_at;
 			record->round_ns += drv_i915_perf_now() - item->queued_at;
 		}
+
+		/* How it ended. */
 		if (error == 0) {
 			worker->executed++;
 		} else {

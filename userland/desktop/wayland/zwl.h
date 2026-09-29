@@ -644,6 +644,12 @@ struct zwl_server {
 	unsigned awaiting;
 	uint64_t frame_done_ms;
 	uint64_t frame_wait_ms;
+	/*
+	 * Nonzero while a move of the pointer waits for the frame that shows the
+	 * cursor at its new place: that frame does not wait for the windows
+	 * (WS099's C6, the pointer's move to its display; ws075-p026).
+	 */
+	unsigned pointer_moved;
 	/* The glass look: on, its font, the window being moved and where it was taken, the clock's minute. */
 	unsigned glass;
 	const char *font_path;
