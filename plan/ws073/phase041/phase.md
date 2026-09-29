@@ -2,7 +2,7 @@
 
 # ws073-p041: BUG-030（起動時の USB mass storage の CSW の時間切れ）の原因と修正
 
-Status: uncleared（2026-09-30、試験の担当の 2 回目の枠。受け入れ条件（main の判断で「usb-storage の error 0」に絞った）が KVM の 40 回中 1 回で満たせなかった。その 1 回は host の flush の待ちではなく BUG-116 と同じ guest の event の取りこぼし。下の「受け入れの試験の結果（2 回目）」）
+Status: cleared（2026-09-30 main の判断: 受け入れの条件は BUG-030 の形の時間切れ 0。KVM の 1 回は BUG-116 の形で移した）（2026-09-30、試験の担当の 2 回目の枠。受け入れ条件（main の判断で「usb-storage の error 0」に絞った）が KVM の 40 回中 1 回で満たせなかった。その 1 回は host の flush の待ちではなく BUG-116 と同じ guest の event の取りこぼし。下の「受け入れの試験の結果（2 回目）」）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-030](../../bugs/BUG-030.md)
