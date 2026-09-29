@@ -164,6 +164,7 @@ static int i915_record_query(struct i915_render_session *session, struct i915_gf
 static int i915_record_begin_pass(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_vertex(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_descriptor_sets(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
+static void i915_command_unknown_set(uint32_t set, uint64_t identity);
 static int i915_record_dynamic_offsets(struct i915_gfx_cmdbuf *cmdbuf, uint32_t first_op, uint32_t set_count, const uint32_t *offsets, uint32_t offset_count);
 static int i915_record_set_blend_constants(struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_push_constants(struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
@@ -1454,6 +1455,10 @@ i915_record_bind_descriptor_sets(
 		op->u.descriptor.set = first + (uint32_t)index;
 		identity = drv_i915_wire_read_u64(reader);
 		op->u.descriptor.dset = drv_i915_object_lookup(session, I915_VK_OBJ_DESCRIPTOR_SET, identity);
+
+		/* Says so when the identity names no set of the session (BUG-117): the draws that sample it are refused. */
+		if (op->u.descriptor.dset == NULL)
+			i915_command_unknown_set(first + (uint32_t)index, identity);
 	}
 
 	/* Decodes the number of dynamic offsets, at most sixty-four. */
@@ -1479,6 +1484,23 @@ i915_record_bind_descriptor_sets(
 	return 0;
 }
 
+
+/* Logs a bind of an identity that names no descriptor set of the session, the first 16 of them (BUG-117). */
+static void
+i915_command_unknown_set(
+	uint32_t set,
+	uint64_t identity)
+{
+	static unsigned said;
+
+	/* Only the first ones. */
+	if (said >= 16U)
+		return;
+	said++;
+	kern_logf("i915: vk: vkCmdBindDescriptorSets: set %u is 0x%llx, not a descriptor set of the session\n",
+		  set,
+		  (unsigned long long)identity);
+}
 /*
  * Gives each dynamic uniform or storage buffer of the bound sets its dynamic
  * offset.

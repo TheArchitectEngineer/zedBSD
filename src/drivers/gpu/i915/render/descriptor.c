@@ -283,6 +283,46 @@ drv_i915_gfx_update_dsets(
 	return 0;
 }
 
+
+/* Counts the diagnostics below: only the first 16 are logged (BUG-117). */
+static unsigned i915_gfx_update_said;
+
+/* Logs a descriptor write to an identity that names no descriptor set of the session. */
+static void
+i915_gfx_update_unknown_set(
+	uint32_t binding,
+	uint64_t identity)
+{
+	/* Only the first ones. */
+	if (i915_gfx_update_said >= 16U)
+		return;
+	i915_gfx_update_said++;
+	kern_logf("i915: vk: vkUpdateDescriptorSets: 0x%llx (binding %u) is not a descriptor set of the session\n",
+		  (unsigned long long)identity,
+		  binding);
+}
+
+/* Logs an image descriptor whose sampler or view names no object of the session. */
+static void
+i915_gfx_update_unknown_image(
+	uint32_t binding,
+	uint64_t sampler,
+	int sampler_found,
+	uint64_t view,
+	int view_found)
+{
+	/* Only the first ones. */
+	if (i915_gfx_update_said >= 16U)
+		return;
+	i915_gfx_update_said++;
+	kern_logf("i915: vk: vkUpdateDescriptorSets: binding %u: sampler 0x%llx %s, view 0x%llx %s\n",
+		  binding,
+		  (unsigned long long)sampler,
+		  sampler_found ? "found" : "unknown",
+		  (unsigned long long)view,
+		  view_found ? "found" : "unknown");
+}
+
 /*
  * Reads one descriptor write and applies its first image descriptor, or
  * its first buffer descriptor when it is a uniform buffer, plain or
@@ -315,6 +355,10 @@ i915_gfx_update_write(
 	dset = drv_i915_object_lookup(session, I915_VK_OBJ_DESCRIPTOR_SET, dset_id);
 	binding = drv_i915_wire_read_u32(reader);
 
+	/* Says so when the set is not one of the session's (BUG-117): the write is not applied. */
+	if (dset == NULL)
+		i915_gfx_update_unknown_set(binding, dset_id);
+
 	/* Skips dstArrayElement and descriptorCount.  XXX: arrays of descriptors are not laid out. */
 	(void)drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u32(reader);
@@ -342,6 +386,15 @@ i915_gfx_update_write(
 		/* The binding samples this view with this sampler from here on. */
 		dset->slots[binding].sampler = drv_i915_object_lookup(session, I915_VK_OBJ_SAMPLER, sampler);
 		dset->slots[binding].view = drv_i915_object_lookup(session, I915_VK_OBJ_IMAGE_VIEW, view);
+
+		/* Says so when a handle names no object of the session (BUG-117): the draws that sample the binding are refused. */
+		if ((dset->slots[binding].sampler == NULL && sampler != 0U) ||
+		    (dset->slots[binding].view == NULL && view != 0U))
+			i915_gfx_update_unknown_image(binding,
+						      sampler,
+						      dset->slots[binding].sampler != NULL,
+						      view,
+						      dset->slots[binding].view != NULL);
 	}
 
 	/* Reads how many buffer descriptors follow. */

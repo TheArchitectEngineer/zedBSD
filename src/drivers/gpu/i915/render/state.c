@@ -2147,7 +2147,10 @@ i915_state_write_surfaces(
 		if (set == NULL ||
 		    set->slots[binding].view == NULL ||
 		    set->slots[binding].sampler == NULL) {
-			kern_logf("i915: vk: draw refused: set %u binding %u has no image view and sampler\n", set_index, binding);
+			kern_logf("i915: vk: draw refused: set %u binding %u has no image view and sampler (%s)\n",
+				  set_index,
+				  binding,
+				  set == NULL ? "no set bound" : set->slots[binding].view == NULL ? "no view" : "no sampler");
 			return EINVAL;
 		}
 
