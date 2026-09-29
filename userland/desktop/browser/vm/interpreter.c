@@ -14,7 +14,8 @@
  * entered with), where the caller goes on, which function runs, which of
  * the caller's registers takes the result (and whether the frame is a
  * construction, whose result is its this value unless it returns an
- * object), the this value and the number of arguments.  A call from
+ * object), the this value, the number of arguments and new.target
+ * (undefined for a call).  A call from
  * bytecode to bytecode pushes a frame and a return pops it, both inside
  * one loop, so script recursion does not recurse in C; a native function
  * runs as a C call, and when it calls a script function the interpreter is
@@ -32,6 +33,7 @@
 #include "vm/internal.h"
 
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* The header's slots. */
@@ -41,7 +43,8 @@
 #define FRAME_RESULT		3U
 #define FRAME_THIS		4U
 #define FRAME_ARGC		5U
-#define FRAME_HEADER		6U
+#define FRAME_NEW_TARGET	6U
+#define FRAME_HEADER		7U
 
 /* The bit of the result slot that marks a construction's frame. */
 #define FRAME_CONSTRUCT		(1ULL << 32)
@@ -71,7 +74,7 @@ struct interpreter {
 
 static int interpreter_push(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, uint32_t caller, uint32_t return_pc, uint64_t result_slot, uint32_t *base);
 static int interpreter_arguments(struct vm_realm *realm, struct vm_function *function, const vm_value *args, unsigned count, vm_value *arguments);
-static int interpreter_enter(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, uint64_t result_slot, vm_value *result);
+static int interpreter_enter(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, uint64_t result_slot, vm_value new_target, vm_value *result);
 static int interpreter_run(struct interpreter *run);
 static int interpreter_step(struct interpreter *run);
 static int interpreter_step_js(struct interpreter *run, const uint32_t *words, vm_value *registers);
@@ -88,6 +91,8 @@ static int interpreter_return(struct interpreter *run, vm_value value);
 static int interpreter_unwind(struct interpreter *run);
 static int interpreter_throw_error(struct vm_realm *realm, uint32_t kind, vm_value message);
 static int interpreter_spread(struct interpreter *run, const uint32_t *words, vm_value *registers);
+static int interpreter_class(struct interpreter *run, const uint32_t *words, vm_value *registers);
+static int interpreter_super_construct(struct interpreter *run, const vm_value *args, unsigned count, vm_value *result);
 static int interpreter_args_rest(struct vm_realm *realm, vm_value arguments, uint32_t first, vm_value *result);
 static struct vm_function *interpreter_function(const struct vm_realm *realm, uint32_t base);
 static int interpreter_is_strict(const struct interpreter *run);
@@ -111,7 +116,7 @@ vm_interpret(
 	int status;
 
 	/* An ordinary call. */
-	status = interpreter_enter(realm, function, this_value, args, count, 0, result);
+	status = interpreter_enter(realm, function, this_value, args, count, 0, VM_VALUE_UNDEFINED, result);
 	if (status != 0)
 		return status;
 
@@ -121,8 +126,9 @@ vm_interpret(
 
 /*
  * Runs a bytecode function as a construction on the object new made (this
- * value), entering the interpreter from C: the result is that object
- * unless the function returns another object.
+ * value; the empty value for a derived class's constructor, whose super
+ * call makes it) with a new.target, entering the interpreter from C: the
+ * result is that object unless the function returns another object.
  */
 int
 vm_interpret_construct(
@@ -131,12 +137,13 @@ vm_interpret_construct(
 	vm_value this_value,
 	const vm_value *args,
 	unsigned count,
+	vm_value new_target,
 	vm_value *result)
 {
 	int status;
 
 	/* A call whose frame is marked as a construction. */
-	status = interpreter_enter(realm, function, this_value, args, count, FRAME_CONSTRUCT, result);
+	status = interpreter_enter(realm, function, this_value, args, count, FRAME_CONSTRUCT, new_target, result);
 	if (status != 0)
 		return status;
 
@@ -153,6 +160,7 @@ interpreter_enter(
 	const vm_value *args,
 	unsigned count,
 	uint64_t result_slot,
+	vm_value new_target,
 	vm_value *result)
 {
 	struct interpreter run;
@@ -172,6 +180,7 @@ interpreter_enter(
 	status = interpreter_push(realm, function, this_value, args, count, 0, 0, result_slot, &run.base);
 	if (status != 0)
 		return status;
+	realm->stack[run.base + FRAME_NEW_TARGET] = new_target;
 	run.code = function->code;
 	run.pc = 0;
 
@@ -233,6 +242,7 @@ interpreter_push(
 	frame[FRAME_RESULT] = result_slot;
 	frame[FRAME_THIS] = this_value;
 	frame[FRAME_ARGC] = count;
+	frame[FRAME_NEW_TARGET] = VM_VALUE_UNDEFINED;
 
 	/* The registers: the arguments, then undefined. */
 	for (index = 0; index < code->register_count; index++) {
@@ -521,6 +531,15 @@ interpreter_step_js(
 	case VM_OP_CHECK_COERCIBLE:
 	case VM_OP_ARGS_REST:
 		status = interpreter_spread(run, words, registers);
+		return status;
+	case VM_OP_LOAD_NEW_TARGET:
+	case VM_OP_CLASS_SETUP:
+	case VM_OP_DEFINE_METHOD:
+	case VM_OP_LOAD_HOME:
+	case VM_OP_GET_SUPER:
+	case VM_OP_SUPER_CONSTRUCT:
+	case VM_OP_SUPER_CONSTRUCT_ARRAY:
+		status = interpreter_class(run, words, registers);
 		return status;
 	default:
 		break;
@@ -947,8 +966,15 @@ interpreter_scope(
 		status = 0;
 		break;
 	case VM_OP_LOAD_THIS:
-		/* Sloppy code sees the global object for undefined and null, and an object for a primitive. */
+		/* A derived class's constructor has no this before its super call. */
 		value = frame[FRAME_THIS];
+		if (value == VM_VALUE_EMPTY) {
+			status = vm_throw_reference_error(realm,
+			    "Must call super constructor in derived class before accessing 'this' or returning from derived constructor");
+			return status;
+		}
+
+		/* Sloppy code sees the global object for undefined and null, and an object for a primitive. */
 		status = 0;
 		if (!strict && (value == VM_VALUE_UNDEFINED || value == VM_VALUE_NULL)) {
 			value = vm_value_cell(realm->global);
@@ -1143,8 +1169,14 @@ interpreter_call(
 		return status;
 	}
 
-	/* A bytecode function: its frame, whose caller goes on after the call. */
+	/* A class's constructor runs only with new. */
 	function = (struct vm_function *)vm_value_as_cell(callee);
+	if (function->code != NULL && (function->code->flags & VM_CODE_CLASS) != 0U) {
+		status = vm_throw_type_error(run->realm, "Class constructor cannot be invoked without 'new'");
+		return status;
+	}
+
+	/* A bytecode function: its frame, whose caller goes on after the call. */
 	if (function->code != NULL) {
 		status = interpreter_push(run->realm, function, registers[words[3]], &registers[words[4]], words[5], run->base + 1U, next,
 		    words[1], &base);
@@ -1197,16 +1229,22 @@ interpreter_construct(
 		return status;
 	}
 
-	/* A bytecode constructor: the new object, then its frame, marked as a construction. */
+	/* A bytecode constructor: the new object (none for a derived class's), then its frame, marked as a construction. */
 	function = (struct vm_function *)vm_value_as_cell(callee);
 	if (function->code != NULL) {
-		status = vm_construct_this(run->realm, registers[words[3]], &this_value);
-		if (status != 0)
-			return status;
+		this_value = VM_VALUE_EMPTY;
+		if ((function->code->flags & VM_CODE_DERIVED) == 0U) {
+			status = vm_construct_this(run->realm, registers[words[3]], &this_value);
+			if (status != 0)
+				return status;
+		}
+
+		/* The frame, with new.target. */
 		status = interpreter_push(run->realm, function, this_value, &registers[words[4]], words[5], run->base + 1U, next,
 		    words[1] | FRAME_CONSTRUCT, &base);
 		if (status != 0)
 			return status;
+		run->realm->stack[base + FRAME_NEW_TARGET] = registers[words[3]];
 		run->base = base;
 		run->code = function->code;
 		run->pc = 0;
@@ -1269,6 +1307,7 @@ interpreter_return(
 	uint32_t result_register;
 	uint32_t return_pc;
 	int is_object;
+	int status;
 
 	/* The frame's header, read before the frame is popped. */
 	realm = run->realm;
@@ -1281,8 +1320,19 @@ interpreter_return(
 	/* A construction returns its this value unless the code returned an object. */
 	if ((result_slot & FRAME_CONSTRUCT) != 0U) {
 		is_object = vm_value_is_object(value);
+		if (!is_object && value != VM_VALUE_UNDEFINED && (run->code->flags & VM_CODE_DERIVED) != 0U) {
+			status = vm_throw_type_error(realm, "Derived constructors may only return object or undefined");
+			return status;
+		}
 		if (!is_object)
 			value = frame[FRAME_THIS];
+
+		/* A derived class's constructor must have called super. */
+		if (value == VM_VALUE_EMPTY) {
+			status = vm_throw_reference_error(realm,
+			    "Must call super constructor in derived class before accessing 'this' or returning from derived constructor");
+			return status;
+		}
 	}
 
 	/* The frame is popped. */
@@ -1431,6 +1481,126 @@ interpreter_spread(
 
 	/* Succeeded: the value in the first operand's register. */
 	registers[words[1]] = value;
+	return 0;
+}
+
+/* Runs one instruction of classes (ws074-p080). */
+static int
+interpreter_class(
+	struct interpreter *run,
+	const uint32_t *words,
+	vm_value *registers)
+{
+	struct vm_realm *realm;
+	struct vm_function *function;
+	struct vm_object *array;
+	vm_value *args;
+	vm_value value;
+	uint32_t count;
+	uint32_t index;
+	int status;
+
+	/* Each instruction; one that computes a value writes it only when it succeeds. */
+	realm = run->realm;
+	switch (words[0]) {
+	case VM_OP_LOAD_NEW_TARGET:
+		value = realm->stack[run->base + FRAME_NEW_TARGET];
+		status = 0;
+		break;
+	case VM_OP_CLASS_SETUP:
+		status = vm_class_setup(realm, registers[words[2]], registers[words[3]], &value);
+		break;
+	case VM_OP_DEFINE_METHOD:
+		status = vm_define_method(realm, registers[words[1]], registers[words[2]], registers[words[3]], words[4]);
+		return status;
+	case VM_OP_LOAD_HOME:
+		/* The running method's home object, in its function's data. */
+		function = interpreter_function(realm, run->base);
+		value = function->data;
+		status = 0;
+		break;
+	case VM_OP_GET_SUPER:
+		status = vm_get_super(realm, registers[words[2]], registers[words[3]], registers[words[4]], &value);
+		break;
+	case VM_OP_SUPER_CONSTRUCT:
+		status = interpreter_super_construct(run, &registers[words[2]], words[3], &value);
+		break;
+	case VM_OP_SUPER_CONSTRUCT_ARRAY:
+		/* The arguments copied out of the array (it stays in its register). */
+		array = (struct vm_object *)vm_value_as_cell(registers[words[2]]);
+		count = array->length;
+		args = calloc((size_t)count + 1U, sizeof(vm_value));
+		if (args == NULL)
+			return ENOMEM;
+		status = 0;
+		for (index = 0; index < count && status == 0; index++)
+			status = vm_get(realm, registers[words[2]], vm_value_int32((int32_t)index), &args[index]);
+
+		/* The construction with them. */
+		if (status == 0)
+			status = interpreter_super_construct(run, args, count, &value);
+		free(args);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* A failed instruction writes nothing. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the value in the first operand's register. */
+	registers[words[1]] = value;
+	return 0;
+}
+
+/*
+ * Runs super(...) in a derived class's constructor: the parent (the
+ * constructor's own prototype) constructs with the frame's new.target, and
+ * the object it makes becomes this, which may be bound only once.
+ */
+static int
+interpreter_super_construct(
+	struct interpreter *run,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_realm *realm;
+	struct vm_function *function;
+	vm_value parent;
+	vm_value new_target;
+	vm_value made;
+	int is_constructor;
+	int status;
+
+	/* The parent, which must construct. */
+	realm = run->realm;
+	function = interpreter_function(realm, run->base);
+	parent = VM_VALUE_NULL;
+	if (function->object.prototype != NULL)
+		parent = vm_value_cell(function->object.prototype);
+	is_constructor = vm_value_is_constructor(parent);
+	if (!is_constructor) {
+		status = vm_throw_type_error(realm, "Super constructor is not a constructor");
+		return status;
+	}
+
+	/* The construction, with this constructor's new.target. */
+	new_target = realm->stack[run->base + FRAME_NEW_TARGET];
+	status = vm_construct(realm, parent, args, count, new_target, &made);
+	if (status != 0)
+		return status;
+
+	/* this is bound once. */
+	if (realm->stack[run->base + FRAME_THIS] != VM_VALUE_EMPTY) {
+		status = vm_throw_reference_error(realm, "Super constructor may only be called once");
+		return status;
+	}
+	realm->stack[run->base + FRAME_THIS] = made;
+
+	/* Succeeded: super() is this. */
+	*result = made;
 	return 0;
 }
 

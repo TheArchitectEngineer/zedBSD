@@ -132,6 +132,13 @@ enum vm_opcode {
 	VM_OP_CONSTRUCT_ARRAY,	/* R dst, R constructor, R arguments (an array) */
 	VM_OP_CHECK_COERCIBLE,	/* R value: a TypeError for undefined and null (an object pattern's value) */
 	VM_OP_ARGS_REST,	/* R dst, R arguments object, I first: an array of the arguments from the first (a rest parameter) */
+	VM_OP_LOAD_NEW_TARGET,	/* R dst: new.target (undefined in a call, ws074-p080) */
+	VM_OP_CLASS_SETUP,	/* R dst prototype, R constructor, R parent (the empty value without extends) */
+	VM_OP_DEFINE_METHOD,	/* R home object, R key, R function, I kind (0 method, 1 getter, 2 setter) */
+	VM_OP_LOAD_HOME,	/* R dst: the running method's home object */
+	VM_OP_GET_SUPER,	/* R dst, R home object, R key, R this: super[key] with this as the receiver */
+	VM_OP_SUPER_CONSTRUCT,	/* R dst, R first argument, N argument count: super(...), which binds this */
+	VM_OP_SUPER_CONSTRUCT_ARRAY,	/* R dst, R arguments (an array): super(...) with a spread */
 
 	/* Wasm (raw values). */
 	VM_OP_I32_CONST,	/* R dst, I value */
@@ -223,6 +230,12 @@ struct vm_code {
 
 /* The function's length is length, not its parameter count (a default or a rest parameter comes before the end). */
 #define VM_CODE_LENGTH		0x8U
+
+/* A class's constructor: a call without new is a TypeError, and its closure's prototype is made by class_setup. */
+#define VM_CODE_CLASS		0x10U
+
+/* A derived class's constructor: new gives it no this; its super call makes it. */
+#define VM_CODE_DERIVED		0x20U
 
 /*
  * An environment: the variables of one function (or script) that the

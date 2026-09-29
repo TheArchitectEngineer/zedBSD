@@ -732,6 +732,11 @@ int vm_define_global_function(struct vm_realm *realm, vm_value key, vm_value fun
 int vm_delete_global(struct vm_realm *realm, vm_value key, vm_value *result);
 int vm_define_global_lexical(struct vm_realm *realm, vm_value key, int is_const);
 
+/* Classes (class.c). */
+int vm_class_setup(struct vm_realm *realm, vm_value constructor, vm_value parent, vm_value *prototype);
+int vm_define_method(struct vm_realm *realm, vm_value home, vm_value key, vm_value function, uint32_t kind);
+int vm_get_super(struct vm_realm *realm, vm_value home, vm_value key, vm_value this_value, vm_value *result);
+
 /* Spreading and destructuring (spread.c). */
 int vm_iter_start(struct vm_realm *realm, vm_value value, vm_value *iterator);
 int vm_iter_next(struct vm_realm *realm, vm_value iterator, vm_value *value, int *done);
@@ -750,6 +755,6 @@ int vm_for_in_next(struct vm_realm *realm, vm_value iterator, vm_value *key, int
 
 /* The interpreter (interpreter.c). */
 int vm_interpret(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-int vm_interpret_construct(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int vm_interpret_construct(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value new_target, vm_value *result);
 
 #endif

@@ -170,8 +170,8 @@ vm_closure_create(
 		return NULL;
 	function->env = env;
 
-	/* A constructor's prototype object. */
-	if ((code->flags & VM_CODE_CONSTRUCTOR) != 0U) {
+	/* A constructor's prototype object (a class's comes from class_setup). */
+	if ((code->flags & VM_CODE_CONSTRUCTOR) != 0U && (code->flags & VM_CODE_CLASS) == 0U) {
 		error = function_add_prototype(realm, function);
 		if (error != 0)
 			return NULL;
@@ -363,8 +363,12 @@ vm_call(
 		return status;
 	}
 
-	/* A bytecode function runs in the interpreter. */
+	/* A bytecode function runs in the interpreter; a class's constructor only with new. */
 	function = (struct vm_function *)vm_value_as_cell(callee);
+	if (function->code != NULL && (function->code->flags & VM_CODE_CLASS) != 0U) {
+		status = vm_throw_type_error(realm, "Class constructor cannot be invoked without 'new'");
+		return status;
+	}
 	if (function->code != NULL) {
 		status = vm_interpret(function->realm, function, this_value, args, count, result);
 		return status;
@@ -426,14 +430,22 @@ vm_construct(
 		return 0;
 	}
 
-	/* A bytecode one runs on a new object. */
+	/* A derived class's constructor starts without this (its super call makes it). */
+	if ((function->code->flags & VM_CODE_DERIVED) != 0U) {
+		status = vm_interpret_construct(function->realm, function, VM_VALUE_EMPTY, args, count, new_target, result);
+		if (status != 0)
+			return status;
+		return 0;
+	}
+
+	/* Any other bytecode one runs on a new object. */
 	status = vm_construct_prototype(realm, new_target, realm->object_prototype, &prototype);
 	if (status != 0)
 		return status;
 	made = vm_object_create(realm->heap, prototype);
 	if (made == NULL)
 		return ENOMEM;
-	status = vm_interpret_construct(function->realm, function, vm_value_cell(made), args, count, result);
+	status = vm_interpret_construct(function->realm, function, vm_value_cell(made), args, count, new_target, result);
 	if (status != 0)
 		return status;
 
