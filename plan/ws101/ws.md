@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p008（GLSL ES 3.10 の compute、自前の GLSL compiler → SPIR-V）cleared（2026-09-30。host の試験 PASS: spirv-val・i915 の host の compile と disasm/asm・lavapipe の実行・拒否）。次は p009（libglesv2・libegl の ES 3.1 の compute の API。D1 が未決なら既定の案で進める、main の指示）、その後 p007。判断 D1〜D5 は design.md §7
+Resume point: p009（libglesv2 の ES 3.1 の compute の API、D1 の既定の案）cleared（2026-09-30。Venus で glescompute の全 step PASS。egl-p030 の GL_VERSION 3.0 の検査が 3.1 の名乗りで FAIL になるので WS068 の egltest の修正を main に依頼）。次は p010（i915 での GLES の compute）、p007。判断 D1〜D5 は design.md §7
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -63,7 +63,7 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | [ws101-p006](phase006/phase.md) | SLM・barrier・fence・SLM の atomic（IR・parser・EU、barrier の一様性の検査）、binary の SLM・barrier と IDD の field（p004 の XXX）、vkcs の SHARED・REDUCE・ODD-BARRIER・ATOMIC-SHARED・LOOP・REFUSE | cleared（2026-09-30。試験の build の分割（I915_TEST_SET、main の判断）、5330 の passthrough で vkcs 15/15 PASS、回帰 PASS） | p005 |
 | ws101-p007 | vkCmdDispatchIndirect（111）、0 の group、vkcs の INDIRECT・LENGTH・MANY、G1 の passthrough での受け入れの run（design §2.5） | planned | p006 |
 | [ws101-p008](phase008/phase.md) | GLSL ES 3.10 の compute（版・stage・SSBO std430・shared・built-in・barrier と規則・atomic・`.length()` → SPIR-V）、Noct の shader の形の fixture。host の試験（design §3.2） | cleared（2026-09-30。host の試験 PASS。WS068 の glsl-host の fail/version.vert（310 es は未対応を期待）の更新を main に依頼） | p001（p002〜p007 と並行できる）、D4（main の記録） |
-| ws101-p009 | libglesv2・libegl の ES 3.1 の compute の API（design §3.3）、`gl31.h`、export と stub、版の名乗り（D1）、libGL への漏れの分離、GLES の compute の試験の program。Venus で G2 | planned | p008、D1 |
+| [ws101-p009](phase009/phase.md) | libglesv2・libegl の ES 3.1 の compute の API（design §3.3）、`gl31.h`、export と stub、版の名乗り（D1）、libGL への漏れの分離、GLES の compute の試験の program。Venus で G2 | cleared（2026-09-30。D1 は main の指示で既定の案。Venus で glescompute PASS（surfaceless・default・1000 回）、WS068 の egl-p020・p024・p027・glx-p031・p033 PASS、egl-p030 は版の検査だけ FAIL（egltest の期待が 3.0 固定、main に依頼）） | p008、D1 |
 | ws101-p010 | GLES の compute の i915 での G2（passthrough）。基本は p005 の後、shared・barrier は p006、indirect は p007 の後 | planned | p009、p005（p006・p007 の分は後） |
 | ws101-p011 | Noct: toolchain の部分（design §4.1）は main が D2 の許可の後に行う。WS101 の分は G3 の見本（`mix.nct`、N = 4,000,000）、型名と offload の確認、CPU の時間の先の測定、Venus で正しさ、5330 の passthrough で正しさと時間（design §4.2） | planned | p010、D2、D3、D5 |
 | ws101-p012 | 素の 5330: G1 の受け入れの残り、G3 の時間、G4 の fg010 の台本の場面と GPU が固まったときの回復の手順。ユーザーの確認 | planned | p011 |

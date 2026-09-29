@@ -18,9 +18,10 @@
  * Uploads to images go through one command buffer that is submitted and
  * waited for at once.
  *
- * glMapBufferRange hands out the CPU bytes themselves: nothing on the
- * device has to be read back (the GPU never writes a buffer object), and
- * unmapping marks the device copy stale like glBufferSubData.  A vertex
+ * glMapBufferRange hands out the CPU bytes themselves (what the GPU
+ * wrote into the device copy, by transform feedback or a compute shader's
+ * storage blocks, is read back first: gles_buffer_fetch), and unmapping
+ * marks the device copy stale like glBufferSubData.  A vertex
  * array object is a saved copy of the attributes' arrays and the element
  * buffer: binding one saves the context's into the one bound before and
  * loads its own.
@@ -331,11 +332,16 @@ gles_buffer_sync(
 		return 0;
 	}
 
-	/* A new device buffer (for any use a draw makes of a buffer object, texels too), the old one kept for the frame. */
+	/*
+	 * A new device buffer (for any use a draw or a dispatch makes of a
+	 * buffer object: texels, shader storage and dispatch sizes too), the
+	 * old one kept for the frame.
+	 */
 	status = gles_device_buffer(state, buffer->size,
 				    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
 				    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-				    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
+				    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT |
+				    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
 				    &device_buffer, &memory, &mapped);
 	if (status != 0)
 		return -1;
@@ -581,6 +587,18 @@ glDeleteBuffers(
 			if (state->feedback_ranges[binding].buffer == buffer)
 				memset(&state->feedback_ranges[binding], 0, sizeof(state->feedback_ranges[binding]));
 		}
+
+		/* And from OpenGL ES 3.1's shader storage ones (ws101-p009). */
+		for (binding = 0U; binding < GLES_STORAGE_BINDINGS; binding++) {
+			if (state->storage_ranges[binding].buffer == buffer)
+				memset(&state->storage_ranges[binding], 0, sizeof(state->storage_ranges[binding]));
+		}
+
+		/* And from the shader storage and dispatch targets. */
+		if (state->storage_buffer == buffer)
+			state->storage_buffer = NULL;
+		if (state->dispatch_buffer == buffer)
+			state->dispatch_buffer = NULL;
 
 		/*
 		 * Taken out of every vertex array: the bound one's (the
@@ -1362,6 +1380,12 @@ buffer_slot(
 	if (target == GL_TEXTURE_BUFFER && gles_fixed != NULL)
 		return &state->texture_buffer;
 
+	/* OpenGL ES 3.1's shader storage and dispatch targets, in a context that offers compute (ws101-p009). */
+	if (target == GL_SHADER_STORAGE_BUFFER && state->compute)
+		return &state->storage_buffer;
+	if (target == GL_DISPATCH_INDIRECT_BUFFER && state->compute)
+		return &state->dispatch_buffer;
+
 	/* Not a target. */
 	return NULL;
 }
@@ -1479,8 +1503,9 @@ buffer_parameter(
 
 /*
  * Binds a buffer (0: none) or a range of it to an indexed binding point
- * of the uniform or transform feedback target, and the buffer to the
- * target; whole binds all of it (glBindBufferBase).
+ * of the uniform, transform feedback or (OpenGL ES 3.1's compute) shader
+ * storage target, and the buffer to the target; whole binds all of it
+ * (glBindBufferBase).
  */
 static void
 buffer_bind_range(
@@ -1528,6 +1553,15 @@ buffer_bind_range(
 		/* The transform feedback binding point. */
 		range = &state->feedback_ranges[index];
 		alignment = 4U;
+	} else if (target == GL_SHADER_STORAGE_BUFFER && state->compute) {
+		if (index >= GLES_STORAGE_BINDINGS) {
+			gles_error(context, GL_INVALID_VALUE);
+			return;
+		}
+
+		/* The shader storage binding point, at the device's offset alignment (ws101-p009). */
+		range = &state->storage_ranges[index];
+		alignment = (size_t)state->limits.minStorageBufferOffsetAlignment;
 	} else {
 		gles_error(context, GL_INVALID_ENUM);
 		return;
@@ -1571,12 +1605,18 @@ buffer_bind_range(
 	/* The target's own binding follows. */
 	if (target == GL_UNIFORM_BUFFER) {
 		state->uniform_buffer = buffer;
+	} else if (target == GL_SHADER_STORAGE_BUFFER) {
+		state->storage_buffer = buffer;
 	} else {
 		state->feedback_buffer = buffer;
 	}
 }
 
-/* Reads an indexed binding point's buffer name, offset or size; nonzero with the error recorded. */
+/*
+ * Reads an indexed binding point's buffer name, offset or size, or (in a
+ * context that offers compute) a dimension of the largest workgroup count
+ * or size; nonzero with the error recorded.
+ */
 static int
 buffer_indexed(
 	struct zegl_context *context,
@@ -1593,6 +1633,22 @@ buffer_indexed(
 	if (state == NULL)
 		return -1;
 
+	/* The compute limits of each dimension, the device's (ws101-p009). */
+	if (state->compute && (target == GL_MAX_COMPUTE_WORK_GROUP_COUNT || target == GL_MAX_COMPUTE_WORK_GROUP_SIZE)) {
+		if (index >= 3U) {
+			gles_error(context, GL_INVALID_VALUE);
+			return -1;
+		}
+
+		/* The count, or the size. */
+		*value = (GLint64)state->limits.maxComputeWorkGroupCount[index];
+		if (target == GL_MAX_COMPUTE_WORK_GROUP_SIZE)
+			*value = (GLint64)state->limits.maxComputeWorkGroupSize[index];
+		if (*value > INT32_MAX)
+			*value = INT32_MAX;
+		return 0;
+	}
+
 	/* The binding points of the target the name asks about. */
 	switch (target) {
 	case GL_UNIFORM_BUFFER_BINDING:
@@ -1606,6 +1662,19 @@ buffer_indexed(
 	case GL_TRANSFORM_FEEDBACK_BUFFER_SIZE:
 		range = state->feedback_ranges;
 		count = GLES_FEEDBACK_BINDINGS;
+		break;
+	case GL_SHADER_STORAGE_BUFFER_BINDING:
+	case GL_SHADER_STORAGE_BUFFER_START:
+	case GL_SHADER_STORAGE_BUFFER_SIZE:
+		/* OpenGL ES 3.1's, in a context that offers compute. */
+		if (!state->compute) {
+			gles_error(context, GL_INVALID_ENUM);
+			return -1;
+		}
+
+		/* Its binding points. */
+		range = state->storage_ranges;
+		count = GLES_STORAGE_BINDINGS;
 		break;
 	default:
 		gles_error(context, GL_INVALID_ENUM);
@@ -1623,10 +1692,12 @@ buffer_indexed(
 
 	/* The buffer's name, or the range (0 for a whole-buffer binding, as GL reports it). */
 	*value = 0;
-	if (target == GL_UNIFORM_BUFFER_BINDING || target == GL_TRANSFORM_FEEDBACK_BUFFER_BINDING) {
+	if (target == GL_UNIFORM_BUFFER_BINDING || target == GL_TRANSFORM_FEEDBACK_BUFFER_BINDING ||
+	    target == GL_SHADER_STORAGE_BUFFER_BINDING) {
 		if (range->buffer != NULL)
 			*value = (GLint64)range->buffer->name;
-	} else if (target == GL_UNIFORM_BUFFER_START || target == GL_TRANSFORM_FEEDBACK_BUFFER_START) {
+	} else if (target == GL_UNIFORM_BUFFER_START || target == GL_TRANSFORM_FEEDBACK_BUFFER_START ||
+		   target == GL_SHADER_STORAGE_BUFFER_START) {
 		*value = (GLint64)range->offset;
 	} else {
 		*value = (GLint64)range->size;
