@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-09-30: p092 cleared。Amazonの後続script向けWeb API、非同期fetch、MutationObserver、有界なsettleを実装し、sign-in tooltipの幅とstacking orderを修正した。dynamic topは約32秒・71.81%/ink 64.58%・Uncaught 4、searchは約65秒・73.79%/ink 28.78%・Uncaught 5。次のQueueは未開始。
+Resume point: 2026-09-30: p095 cleared。Amazon検索欄のflex itemの高さとform controlの`text-indent`を修正し、検索文字はChromiumと同じ`x=435..574, y=22..36`。topは72.88%/ink 65.76%・Uncaught 4。次のQueueは未開始。
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -187,6 +187,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p092](phase092/phase.md) | Amazonの後続scriptが使うWeb API: `fetch`・observer・`document.elementsFromPoint`・`atob`/`btoa`と有界なheadless settle | **cleared**（2026-09-30。非同期fetch、MutationObserver、sign-in tooltipの幅とstacking order。top 71.81%/ink 64.58%、約32秒・Uncaught 4） | p087、p088 |
 | ws074-p093 | JS: 型付き配列（ArrayBuffer・TypedArray・DataView） | planned | p087 |
 | [ws074-p094](phase094/phase.md) | Chromiumとの再現可能な比較手順: 固定capture、隔離profile、入力・環境・出力のhash、JSON reportとbaseline回帰 | **cleared**（2026-09-30。top 82.96%/ink 79.01%、search 75.85%/ink 32.97%） | p067 |
+| [ws074-p095](phase095/phase.md) | Amazon検索欄の文字の位置: flex itemのcross-axisのbox sizing、form controlの`text-indent` | **cleared**（2026-09-30。検索文字の範囲がChromiumと同じ`x=435..574, y=22..36`） | p035、p032、p092 |
 
 ## 後の WS・Future Work の候補
 

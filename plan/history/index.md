@@ -2,12 +2,16 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q503](queue-q503.md)（ws074-p092 cleared。Amazonの後続script向けWeb API）
+Last finished Queue: [q504](queue-q504.md)（ws074-p095 cleared。Amazon検索欄の文字の位置）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q503
+## 最新: 2026-09-30 q504
+
+[q504](queue-q504.md): flex itemのcross axisで`box-sizing:border-box`を保ち、Amazon検索欄の高さを55pxから38pxへ修正。form controlの`text-indent`も実装し、検索文字の範囲はChromiumと同じ`x=435..574, y=22..36`。GitHubへは未公開。
+
+## 2026-09-30 q503
 
 [q503](queue-q503.md): Amazonの後続script向けWeb API、非同期fetch、MutationObserver、有界なsettleを実装。sign-in tooltipの幅とstacking orderも修正し、dynamic topは71.81%/ink 64.58%、約32秒・Uncaught 4。GitHubへは未公開。
 

@@ -5,7 +5,7 @@
 <!-- awesome-plan-current:start -->
 Status: none active（2026-09-30）
 Active Queue: なし
-Last finished Queue: [q503](history/queue-q503.md)（ws074-p092 cleared。Amazonの後続script向けWeb API）
+Last finished Queue: [q504](history/queue-q504.md)（ws074-p095 cleared。Amazon検索欄の文字の位置）
 Executor: main
 <!-- awesome-plan-current:end -->
 
