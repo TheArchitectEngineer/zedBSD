@@ -855,6 +855,13 @@ struct zwl_server {
 	 */
 	uint32_t cursor_shape;
 	struct zwl_import *cursor_images[ZWL_CURSOR_IMAGES];
+	/*
+	 * The edges of the window frame under the pointer, or of the resize it
+	 * started (the glass look's frames, shell.c; ZWL_EDGE_* bits of
+	 * toplevel.h, 0 over no frame): while not 0 the cursor is that frame's
+	 * resize arrow, over the client's own cursor (cursor.c).
+	 */
+	uint32_t frame_edges;
 	struct zwl_object *resize;
 	int32_t resize_pointer_x;
 	int32_t resize_pointer_y;

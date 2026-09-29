@@ -85,6 +85,15 @@
 #define BUTTON_HEIGHT		28
 
 /*
+ * A floating window's frame (ws035-p128): the band this wide around the
+ * title bar and the body resizes the window by the side it is on, and
+ * within this far of a corner, along either side, by both sides of the
+ * corner (a diagonal resize).
+ */
+#define FRAME_BAND		8
+#define FRAME_CORNER		24
+
+/*
  * Placing a new window (ws035-p092): how far each cascade step moves it
  * (a title bar and its gap, so the title bar under it shows), how many
  * steps are tried each way, and how near another window's corner is too
@@ -170,7 +179,8 @@
 enum shell_hit {
 	HIT_NONE,
 	HIT_TITLE,
-	HIT_BODY
+	HIT_BODY,
+	HIT_FRAME
 };
 
 /*
@@ -239,6 +249,9 @@ static void bar_title_slot(struct zwl_server *server, const struct shell_bar *ba
 static void window_size(const struct zwl_object *surface, int32_t *width, int32_t *height);
 static int damage_near(struct zwl_server *server, struct zwl_object *surface, const struct shell_rect *near);
 static enum shell_hit window_hit(struct zwl_server *server, const struct zwl_object *surface, int32_t x, int32_t y);
+static uint32_t frame_edges(struct zwl_server *server, const struct zwl_object *surface, int32_t x, int32_t y);
+static uint32_t frame_under_pointer(struct zwl_server *server);
+static int glass_motion_take(struct zwl_server *server);
 static int button_at(const struct zwl_object *surface, int32_t x, int32_t y);
 static void button_centre(const struct zwl_object *surface, int button, int32_t *x, int32_t *y);
 static int bar_button_at(const struct shell_bar *bar, int32_t x, int32_t y);
@@ -434,8 +447,10 @@ zwl_glass_button(
 	struct zwl_object *surface;
 	struct zwl_object *cover;
 	enum shell_hit hit;
+	uint32_t edges;
 	unsigned clicks;
 	int pressed;
+	int error;
 	int open;
 
 	/* The login screen takes every button (greeter.c). */
@@ -568,6 +583,15 @@ zwl_glass_button(
 	if (hit == HIT_BODY)
 		return 0;
 
+	/* On the frame a resize by its side or corner starts, until the button is let go (toplevel.c). */
+	if (hit == HIT_FRAME) {
+		edges = frame_edges(server, surface, server->pointer_x, server->pointer_y);
+		error = zwl_toplevel_resize_start(server, surface, edges);
+		if (error != 0)
+			printf("ZWL GLASS frame refused surface=%u edges=%u\n", surface->id, edges);
+		return 1;
+	}
+
 	/* On a button, its action. */
 	pressed = button_at(surface, server->pointer_x, server->pointer_y);
 	if (pressed == BUTTON_CLOSE) {
@@ -622,135 +646,27 @@ zwl_glass_button(
 
 /*
  * Moves the window being moved, or pulls a docked window out of the system
- * bar.  Returns 1 when the motion is zdesktop's.
+ * bar, and shows a window frame's resize arrow where the pointer is on one.
+ * Returns 1 when the motion is zdesktop's.
  */
 int
 zwl_glass_motion(
 	struct zwl_server *server)
 {
-	struct zwl_object *surface;
-	int32_t lowest;
-	int32_t x;
-	int32_t y;
-	int32_t dx;
+	uint32_t edges;
 	int taken;
-	int calm;
 
-	/* The hover of buttons, the dock hint and the moves are redrawn (over a window's own area only the cursor is, damage.c). */
-	calm = zwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
-	if (!calm)
-		server->dirty = 1;
+	/* The glass look's screens, gestures, menus and moves. */
+	taken = glass_motion_take(server);
 
-	/* The login screen lights its buttons under the pointer, and takes the motion. */
-	if (server->greeter) {
-		server->dirty = 1;
-		return 1;
-	}
+	/* Where the motion goes on to the client, a window's frame under the pointer shows its resize arrow. */
+	edges = 0U;
+	if (!taken)
+		edges = frame_under_pointer(server);
+	zwl_cursor_frame(server, edges);
 
-	/* Wiseview follows the gesture, and hears the pointer while it is open; a pressed tile that moves is dragged. */
-	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
-		if (server->wiseview_press != NULL && !server->wiseview_dragging) {
-			x = server->pointer_x - server->wiseview_press_x;
-			y = server->pointer_y - server->wiseview_press_y;
-			if (x * x + y * y >= TILE_DRAG_START * TILE_DRAG_START) {
-				server->wiseview_dragging = 1;
-				printf("ZWL WISEVIEW drag surface=%u\n", server->wiseview_press->id);
-			}
-		}
-
-		/* The motion is Wiseview's. */
-		return 1;
-	}
-
-	/* The top-right corner's swipe follows the pointer (corner.c). */
-	taken = zwl_corner_motion(server);
-	if (taken)
-		return 1;
-
-	/* App Home follows its gesture, and hears the pointer while it shows. */
-	taken = zwl_home_motion(server);
-	if (taken)
-		return 1;
-
-	/* The network's open menu lights the row under the pointer (network.c). */
-	taken = zwl_network_motion(server);
-	if (taken)
-		return 1;
-
-	/* An open menu follows the pointer (menu-shell.c). */
-	taken = zwl_menu_motion(server);
-	if (taken)
-		return 1;
-
-	/* The desktops' swipe: past DESKTOP_START the windows follow the pointer (with resistance where there is no neighbour). */
-	if (server->desktop_press) {
-		dx = server->pointer_x - server->desktop_start_x;
-		if (!server->desktop_dragging && (dx >= DESKTOP_START || dx <= -DESKTOP_START)) {
-			server->desktop_dragging = 1;
-			server->desktop_moving = 0;
-			printf("ZWL GLASS desktop swipe\n");
-		}
-
-		/* The offset follows the pointer. */
-		if (server->desktop_dragging) {
-			server->desktop_offset = dx;
-			if ((dx > 0 && server->desktop == 0U) || (dx < 0 && server->desktop + 1U >= (unsigned)DESKTOPS))
-				server->desktop_offset = dx / 4;
-		}
-
-		/* The motion was the swipe's. */
-		return 1;
-	}
-
-	/* A docked title pulled far enough down comes off under the pointer, and the move goes on. */
-	surface = server->pull;
-	if (surface != NULL) {
-		if (surface->dead || !surface->mapped) {
-			server->pull = NULL;
-			return 1;
-		}
-
-		/* Not far enough yet: the window follows the pull. */
-		server->pull_distance = server->pointer_y - server->pull_start_y;
-		if (server->pull_distance < 0)
-			server->pull_distance = 0;
-		if (server->pull_distance < PULL_DISTANCE)
-			return 1;
-		server->pull_distance = 0;
-
-		/* The same part of the title bar stays under the pointer. */
-		x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
-		y = server->pointer_y + ZWL_GLASS_GAP + ZWL_GLASS_TITLE / 2;
-		window_undock(server, surface, x, y, "pull");
-		server->pull = NULL;
-		server->drag = surface;
-		server->drag_dx = server->pointer_x - x;
-		server->drag_dy = server->pointer_y - y;
-		server->drag_start_x = surface->restore_x;
-		server->drag_start_y = surface->restore_y;
-		return 1;
-	}
-
-	/* Without a move the client hears the motion. */
-	surface = server->drag;
-	if (surface == NULL)
-		return 0;
-
-	/* A window that went away ends the move. */
-	if (surface->dead || !surface->mapped) {
-		server->drag = NULL;
-		return 1;
-	}
-
-	/* The body follows the pointer; the title bar stays below the system bar. */
-	surface->x = server->pointer_x - server->drag_dx;
-	surface->y = server->pointer_y - server->drag_dy;
-	lowest = ZWL_GLASS_BAR + ZWL_GLASS_GAP + ZWL_GLASS_TITLE;
-	if (surface->y < lowest)
-		surface->y = lowest;
-
-	/* Succeeded: the motion was zdesktop's. */
-	return 1;
+	/* Succeeded: whether the motion was zdesktop's. */
+	return taken;
 }
 
 /*
@@ -1536,7 +1452,7 @@ zwl_glass_mapped(
 	server->anim_docking = ANIM_LAUNCH;
 	server->anim_start_ms = zwl_milliseconds();
 	server->dirty = 1;
-	printf("ZWL GLASS launch surface=%u from=%d,%d to=%d,%d\n", surface->id, from[0], from[1], to.x, to.y);
+	printf("ZWL GLASS launch surface=%u from=%d,%d to=%d,%d size=%dx%d\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height);
 }
 
 /*
@@ -2821,7 +2737,7 @@ window_size(
 	*height = (int32_t)surface_height;
 }
 
-/* Tells whether a point is on a window's title bar, its body, or neither (the gap is neither). */
+/* Tells whether a point is on a window's title bar, its body, its frame, or none of them (the gap is none). */
 static enum shell_hit
 window_hit(
 	struct zwl_server *server,
@@ -2830,28 +2746,131 @@ window_hit(
 	int32_t y)
 {
 	struct shell_rect body;
+	uint32_t edges;
 	int32_t top;
 
-	/* Outside the window's columns. */
+	/* Within the window's columns: its body, or its floating title bar (a docked window's title is in the system bar). */
 	body_rect(server, surface, &body);
-	if (x < body.x || x >= body.x + body.width)
-		return HIT_NONE;
+	if (x >= body.x && x < body.x + body.width) {
+		if (y >= body.y && y < body.y + body.height)
+			return HIT_BODY;
+		top = body.y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE;
+		if (!surface->maximized && y >= top && y < top + ZWL_GLASS_TITLE)
+			return HIT_TITLE;
+	}
 
-	/* The body. */
-	if (y >= body.y && y < body.y + body.height)
-		return HIT_BODY;
+	/* The frame around a floating window resizes it. */
+	edges = frame_edges(server, surface, x, y);
+	if (edges != 0U)
+		return HIT_FRAME;
 
-	/* A docked window's title is in the system bar. */
-	if (surface->maximized)
-		return HIT_NONE;
-
-	/* The floating title bar. */
-	top = body.y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE;
-	if (y >= top && y < top + ZWL_GLASS_TITLE)
-		return HIT_TITLE;
-
-	/* Neither. */
+	/* Neither (the gap between the title bar and the body is neither too). */
 	return HIT_NONE;
+}
+
+/*
+ * Tells which edges of a floating window's frame are at a point (ZWL_EDGE_*
+ * bits of toplevel.h: one side, or a corner's two), or 0 off its frame.
+ *
+ * The frame is the band FRAME_BAND wide around the title bar and the body.
+ * On the band above or below them, within FRAME_CORNER of the left or right
+ * end, the side's edge joins the corner's; on the band left or right of
+ * them, within FRAME_CORNER of the top or bottom, likewise.
+ */
+static uint32_t
+frame_edges(
+	struct zwl_server *server,
+	const struct zwl_object *surface,
+	int32_t x,
+	int32_t y)
+{
+	struct shell_rect body;
+	uint32_t edges;
+	int32_t left;
+	int32_t right;
+	int32_t top;
+	int32_t bottom;
+
+	/* Only a floating toplevel window has a frame: not a docked one, nor one moving, animated or without an image. */
+	if (surface->maximized ||
+	    surface->fullscreen ||
+	    surface->role == NULL ||
+	    surface->role->top == NULL ||
+	    surface->current == NULL ||
+	    server->anim == surface)
+		return 0U;
+
+	/* The window's outline: from the title bar's top to the body's bottom. */
+	body_rect(server, surface, &body);
+	left = body.x;
+	right = body.x + body.width;
+	top = body.y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE;
+	bottom = body.y + body.height;
+
+	/* Nothing beyond the band around the outline. */
+	if (x < left - FRAME_BAND || x >= right + FRAME_BAND)
+		return 0U;
+	if (y < top - FRAME_BAND || y >= bottom + FRAME_BAND)
+		return 0U;
+
+	/* Nothing within the outline (the title bar, the body, the gap between them). */
+	if (x >= left && x < right && y >= top && y < bottom)
+		return 0U;
+
+	/* The side the point is beyond, or the two sides at a corner. */
+	edges = 0U;
+	if (x < left)
+		edges |= ZWL_EDGE_LEFT;
+	if (x >= right)
+		edges |= ZWL_EDGE_RIGHT;
+	if (y < top)
+		edges |= ZWL_EDGE_TOP;
+	if (y >= bottom)
+		edges |= ZWL_EDGE_BOTTOM;
+
+	/* Above or below the outline, near its left or right end: that corner. */
+	if ((edges & (ZWL_EDGE_TOP | ZWL_EDGE_BOTTOM)) != 0U) {
+		if (x < left + FRAME_CORNER)
+			edges |= ZWL_EDGE_LEFT;
+		if (x >= right - FRAME_CORNER)
+			edges |= ZWL_EDGE_RIGHT;
+	}
+
+	/* Left or right of the outline, near its top or bottom: that corner. */
+	if ((edges & (ZWL_EDGE_LEFT | ZWL_EDGE_RIGHT)) != 0U) {
+		if (y < top + FRAME_CORNER)
+			edges |= ZWL_EDGE_TOP;
+		if (y >= bottom - FRAME_CORNER)
+			edges |= ZWL_EDGE_BOTTOM;
+	}
+
+	/* A window narrower or shorter than two corners keeps one side of each pair: the right, the bottom. */
+	if ((edges & (ZWL_EDGE_LEFT | ZWL_EDGE_RIGHT)) == (ZWL_EDGE_LEFT | ZWL_EDGE_RIGHT))
+		edges &= ~ZWL_EDGE_LEFT;
+	if ((edges & (ZWL_EDGE_TOP | ZWL_EDGE_BOTTOM)) == (ZWL_EDGE_TOP | ZWL_EDGE_BOTTOM))
+		edges &= ~ZWL_EDGE_TOP;
+
+	/* Succeeded: the frame's edges at the point. */
+	return edges;
+}
+
+/* Tells which frame edges of the top window at the pointer the pointer is on, or 0. */
+static uint32_t
+frame_under_pointer(
+	struct zwl_server *server)
+{
+	struct zwl_object *surface;
+	enum shell_hit hit;
+	uint32_t edges;
+
+	/* The top window at the pointer, when it is its frame that is there. */
+	surface = window_at(server, server->pointer_x, server->pointer_y, &hit);
+	if (surface == NULL || hit != HIT_FRAME)
+		return 0U;
+
+	/* Succeeded: that frame's edges. */
+	edges = frame_edges(server, surface, server->pointer_x, server->pointer_y);
+	return edges;
 }
 
 /* Returns the floating title bar button at a point, or -1. */
@@ -4473,4 +4492,134 @@ desktop_picture_at(
 
 	/* The picture (its gap counts as its own). */
 	return offset / (DESKTOP_WIDTH + DESKTOP_GAP);
+}
+
+/* Follows the pointer for the glass look's screens, gestures, menus and moves; returns 1 when the motion is theirs. */
+static int
+glass_motion_take(
+	struct zwl_server *server)
+{
+	struct zwl_object *surface;
+	int32_t lowest;
+	int32_t x;
+	int32_t y;
+	int32_t dx;
+	int taken;
+	int calm;
+
+	/* The hover of buttons, the dock hint and the moves are redrawn (over a window's own area only the cursor is, damage.c). */
+	calm = zwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
+	if (!calm)
+		server->dirty = 1;
+
+	/* The login screen lights its buttons under the pointer, and takes the motion. */
+	if (server->greeter) {
+		server->dirty = 1;
+		return 1;
+	}
+
+	/* Wiseview follows the gesture, and hears the pointer while it is open; a pressed tile that moves is dragged. */
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
+		if (server->wiseview_press != NULL && !server->wiseview_dragging) {
+			x = server->pointer_x - server->wiseview_press_x;
+			y = server->pointer_y - server->wiseview_press_y;
+			if (x * x + y * y >= TILE_DRAG_START * TILE_DRAG_START) {
+				server->wiseview_dragging = 1;
+				printf("ZWL WISEVIEW drag surface=%u\n", server->wiseview_press->id);
+			}
+		}
+
+		/* The motion is Wiseview's. */
+		return 1;
+	}
+
+	/* The top-right corner's swipe follows the pointer (corner.c). */
+	taken = zwl_corner_motion(server);
+	if (taken)
+		return 1;
+
+	/* App Home follows its gesture, and hears the pointer while it shows. */
+	taken = zwl_home_motion(server);
+	if (taken)
+		return 1;
+
+	/* The network's open menu lights the row under the pointer (network.c). */
+	taken = zwl_network_motion(server);
+	if (taken)
+		return 1;
+
+	/* An open menu follows the pointer (menu-shell.c). */
+	taken = zwl_menu_motion(server);
+	if (taken)
+		return 1;
+
+	/* The desktops' swipe: past DESKTOP_START the windows follow the pointer (with resistance where there is no neighbour). */
+	if (server->desktop_press) {
+		dx = server->pointer_x - server->desktop_start_x;
+		if (!server->desktop_dragging && (dx >= DESKTOP_START || dx <= -DESKTOP_START)) {
+			server->desktop_dragging = 1;
+			server->desktop_moving = 0;
+			printf("ZWL GLASS desktop swipe\n");
+		}
+
+		/* The offset follows the pointer. */
+		if (server->desktop_dragging) {
+			server->desktop_offset = dx;
+			if ((dx > 0 && server->desktop == 0U) || (dx < 0 && server->desktop + 1U >= (unsigned)DESKTOPS))
+				server->desktop_offset = dx / 4;
+		}
+
+		/* The motion was the swipe's. */
+		return 1;
+	}
+
+	/* A docked title pulled far enough down comes off under the pointer, and the move goes on. */
+	surface = server->pull;
+	if (surface != NULL) {
+		if (surface->dead || !surface->mapped) {
+			server->pull = NULL;
+			return 1;
+		}
+
+		/* Not far enough yet: the window follows the pull. */
+		server->pull_distance = server->pointer_y - server->pull_start_y;
+		if (server->pull_distance < 0)
+			server->pull_distance = 0;
+		if (server->pull_distance < PULL_DISTANCE)
+			return 1;
+		server->pull_distance = 0;
+
+		/* The same part of the title bar stays under the pointer. */
+		x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
+		y = server->pointer_y + ZWL_GLASS_GAP + ZWL_GLASS_TITLE / 2;
+		window_undock(server, surface, x, y, "pull");
+		server->pull = NULL;
+		server->drag = surface;
+		server->drag_dx = server->pointer_x - x;
+		server->drag_dy = server->pointer_y - y;
+		server->drag_start_x = surface->restore_x;
+		server->drag_start_y = surface->restore_y;
+		return 1;
+	}
+
+	/* Without a move the client hears the motion. */
+	surface = server->drag;
+	if (surface == NULL)
+		return 0;
+
+	/* A window that went away ends the move. */
+	if (surface->dead || !surface->mapped) {
+		server->drag = NULL;
+		return 1;
+	}
+
+	/* The body follows the pointer; the title bar stays below the system bar. */
+	surface->x = server->pointer_x - server->drag_dx;
+	surface->y = server->pointer_y - server->drag_dy;
+	lowest = ZWL_GLASS_BAR + ZWL_GLASS_GAP + ZWL_GLASS_TITLE;
+	if (surface->y < lowest)
+		surface->y = lowest;
+
+	/* Succeeded: the motion was zdesktop's. */
+	return 1;
 }

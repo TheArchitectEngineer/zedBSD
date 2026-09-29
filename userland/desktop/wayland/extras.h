@@ -23,6 +23,7 @@ int zwl_cursor_shape_request(struct zwl_object *object, uint32_t opcode, const u
 void zwl_cursor_shape_object_gone(struct zwl_object *object);
 void zwl_cursor_images_destroy(struct zwl_server *server);
 const struct zwl_import *zwl_cursor_image(const struct zwl_server *server, int32_t *hotspot_x, int32_t *hotspot_y);
+void zwl_cursor_frame(struct zwl_server *server, uint32_t edges);
 
 int zwl_viewport_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 void zwl_viewport_commit(struct zwl_object *surface);

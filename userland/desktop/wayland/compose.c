@@ -1523,6 +1523,15 @@ compose_cursor(
 	if (server->pointer_unmoved)
 		return;
 
+	/* A window frame's resize arrow, over the client's own cursor (shell.c, cursor.c). */
+	if (server->frame_edges != 0U) {
+		image = zwl_cursor_image(server, &hotspot_x, &hotspot_y);
+		if (image != NULL) {
+			compose_quad(server, command, image, server->pointer_x - hotspot_x, server->pointer_y - hotspot_y);
+			return;
+		}
+	}
+
 	/* The client's surface, when it has an image. */
 	surface = server->cursor_surface;
 	if (surface != NULL && !surface->dead) {
