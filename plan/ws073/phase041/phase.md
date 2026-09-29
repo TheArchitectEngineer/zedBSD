@@ -2,12 +2,12 @@
 
 # ws073-p041: BUG-030（起動時の USB mass storage の CSW の時間切れ）の原因と修正
 
-Status: in-progress（2026-09-30。受け入れの試験は wrap up で途中、下の「受け入れの試験の結果」。元: サブエージェント、worktree `.claude/worktrees/ws073-bugs`、branch `wt/ws073`。原因を特定して修正し、build と短い再現試験と boot test は済み。受け入れの本数の試験は別の担当が行う）
+Status: cleared（2026-09-30 main の判断: 受け入れの条件は BUG-030 の形の時間切れ 0。KVM の 1 回は BUG-116 の形で移した）（2026-09-30、試験の担当の 2 回目の枠。受け入れ条件（main の判断で「usb-storage の error 0」に絞った）が KVM の 40 回中 1 回で満たせなかった。その 1 回は host の flush の待ちではなく BUG-116 と同じ guest の event の取りこぼし。下の「受け入れの試験の結果（2 回目）」）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-030](../../bugs/BUG-030.md)
 Queue: main の依頼（2026-09-29「BUG-030 をなるべく短時間で修正」）。Queue の ID は main が記録する
-Resume point: 2026-09-30 の受け入れの試験（下の「受け入れの試験の結果」）は wrap up で途中。残り: TCG・trace 付き 2 本並列の残り 5 回（35/40 済み）、KVM 2 本並列 × 20（丸読み 1 回を含む、未実施）、回帰の boot test（keyboard）と serial.py の login（未実施）。加えて、受け入れ条件の「`xhci: cancel` 0」は、usb-storage とは別の EP0 の control の時間切れ（修正の前からある、下の結果の 2）で満たせない。受け入れ条件をusb-storage の error に絞るか、EP0 の件を別 bug（BUG-036 の系統）に分けるかは main の判断
+Resume point: BUG-030 の元の原因（SYNCHRONIZE CACHE の flush の待ち）は、修正の後 TCG 75 回・KVM 40 回で一度も出ていない（修正前は TCG 40 回中 7 回）。残る usb-storage の時間切れは [BUG-116](../../bugs/BUG-116.md)（guest の xHCI の event の取りこぼし）の機構で、BUG-116 の修正の後に KVM 2×20 をやり直すか、この 1 回を BUG-116 に移して BUG-030 を resolved にするかは main の判断
 
 ## 範囲
 
@@ -115,6 +115,34 @@ runner は `build/ws073-p041-accept/run.sh`（`usb-stress.sh` を 2 本並列、
 次の手: (a) EP0 の件を別の bug として扱う（BUG-036 に追記するか新しい ticket、main の判断）。gdbstub で `xhci: cancel` の時点の MSI-X の table・PBA と
 CPU の割り込みの状態を見る（IP=1 なのに handler が走っていない理由）。(b) BUG-030 の受け入れ条件を「usb-storage の error 0」に絞るなら、KVM 2×20 と
 boot test を足せば clear できる見込み。
+
+## 受け入れの試験の結果（2 回目、2026-09-30、試験の担当、QEMU）
+
+main の判断（2026-09-30）: 受け入れ条件は「usb-storage の error 0」。EP0 の `xhci: cancel` は [BUG-116](../../bugs/BUG-116.md) として別に扱い、対象外。
+始める前に `git merge main -m WIP`（5dfe65e0）。merge で変わったのは userland の header だけで、kernel の source は同じなので、image は
+`build/ws073-p041/guest.img` のまま（vmunix は通常の config での再 build と `cmp` で同一）。
+
+| 試験 | 結果 |
+| --- | --- |
+| KVM、`usb-stress.sh IMAGE 1 1` を 2 本並列 × 20（`build/ws073-p041-accept/kvm/`、各回 319〜520 秒） | SSH 40/40、丸読みの `dd` 40/40 が 2216689664 bytes。**usb-storage の error 1 回（g2 の 12 回目）**。ほかに EP0 の `xhci: cancel` が 7 回（usb-net 4、keyboard 3、BUG-116）、keyboard の attach の失敗 3 回、列挙の再試行 4 回 |
+| boot test（`BOOT_MODE=uefi-usb`、`build/ws073-p041-accept/boot-test/login.png`） | PASS。画面に usb-hid の attach と login prompt、usb-storage の error なし |
+| `serial.py` の login（mirror 付きの kernel の image `build/ws073-p041-accept/guest-serial.img`、USB の起動 disk、KVM） | root で login でき、`serial.py run` で `id` が uid=0、usb-storage の error 0、usb-hid が attach 済み。注: この image の base（2026-09-26）は root の password が空で、現行の `serial.py login` が送る password「root」では `Login incorrect`（道具と image の年代の差。kernel とは無関係）。Password の prompt に空の password で入った |
+
+usb-storage の 1 回（`g2-b12/dmesg-1.txt`）:
+
+```
+xhci: cancel slot=1 endpoint=3 pending-events=1 first-type=32 iman=2 usbsts=8 erdp=7fe9a358 dequeue=53 polling=0 command-busy=0 irq-busy=0
+xhci: cancelled request slot=1 endpoint=3 completion=1 residual=0
+usb-storage: BOT data dir=in error=42 actual=0 expected=8192
+```
+
+READ の data の段（8192 bytes）が 30 秒の timeout に掛かったが、transfer event は ring にあり（`pending-events=1`）、completion は 1（Success）
+residual=0。つまり controller は転送を終えて event を置いていたのに、guest が 30 秒の間それを取らなかった。BUG-030 の形（`pending-events=0`、completion 26、
+QEMU が CSW を保持）ではなく、BUG-116（EP0 で `pending-events=2`）と同じ guest の取りこぼしで、bulk の endpoint でも起きることを示す。IMAN は 2（IP=0、IE=1）で
+USBSTS.EINT=1（BUG-116 の EP0 の回は IMAN=3）。直前の同じ起動で keyboard の EP0 の取りこぼしも起きている。その後の I/O error（`op=28 ... error=`・`loop0`）は
+無く、reset と再試行で回復した。
+
+判定: 受け入れ条件（usb-storage の error 0）は満たさないので uncleared。ただし BUG-030 の原因（flush の待ち）の再発ではない。
 
 ## 残課題
 

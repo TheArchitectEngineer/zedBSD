@@ -54,6 +54,7 @@
 #define I915_VK_COMMAND_CREATE_SHADER_MODULE		59U
 #define I915_VK_COMMAND_DESTROY_SHADER_MODULE		60U
 #define I915_VK_COMMAND_CREATE_GRAPHICS_PIPELINES	65U
+#define I915_VK_COMMAND_CREATE_COMPUTE_PIPELINES	66U
 #define I915_VK_COMMAND_DESTROY_PIPELINE		67U
 #define I915_VK_COMMAND_CREATE_PIPELINE_LAYOUT		68U
 #define I915_VK_COMMAND_DESTROY_PIPELINE_LAYOUT		69U
@@ -149,6 +150,9 @@ drv_i915_gfx_obj_dispatch(
 		break;
 	case I915_VK_COMMAND_CREATE_GRAPHICS_PIPELINES:
 		error = drv_i915_gfx_create_pipelines(session, reader, reply);
+		break;
+	case I915_VK_COMMAND_CREATE_COMPUTE_PIPELINES:
+		error = drv_i915_gfx_create_compute_pipelines(session, reader, reply);
 		break;
 	case I915_VK_COMMAND_DESTROY_PIPELINE:
 		error = drv_i915_gfx_destroy_pipeline(session, reader);
