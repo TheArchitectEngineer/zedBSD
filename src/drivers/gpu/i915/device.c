@@ -1361,6 +1361,10 @@ i915_start_publish(
 
 	gt->forcewake_held = held;
 
+	/* Lets the GT frequency follow the load from here on (ws075-p020); without it the frequency stays requested. */
+	device->stage = "rps_start";
+	(void)drv_i915_rps_start(&gt->init.rps, &gt->irq, &gt->mmio);
+
 	/* Creates the request worker's state. */
 	device->stage = "worker_create";
 	error = drv_i915_worker_create(device);
@@ -1399,6 +1403,9 @@ i915_stop_gt(
 	int error;
 
 	gt = &device->gt;
+
+	/* Stops the RPS interrupts and work while the domains are still held. */
+	drv_i915_rps_stop(&gt->init.rps);
 
 	/* Gives back the domains the published node held. */
 	i915_forcewake_put_all(gt, gt->forcewake_held);

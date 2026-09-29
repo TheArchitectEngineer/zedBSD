@@ -29,9 +29,15 @@ kernel's log (run.log, the debugcon: every record, also on a quiet boot).
                                   the tablet moves 40 pixels and PLANE_SURFLIVE is read with xp until it changes (or
                                   3 s pass); then 3 s without input count the flips the idle desktop makes.  One line
                                   per trial in latency.log and on the output
-    h4-ctl.py rate PIPE SECONDS   (ws075-p008) the flips per second of PIPE while the pointer keeps moving: the tablet
+    h4-ctl.py rate PIPE SECONDS [X Y]  (ws075-p008; X Y: where the pointer moves, default the centre) the flips per second of PIPE while the pointer keeps moving: the tablet
                                   moves back and forth by 40 pixels every 8 ms for SECONDS, and PLANE_SURFLIVE is read
                                   between the moves; one line in latency.log and on the output
+    h4-ctl.py freq SECONDS MS [move]
+                                  (ws075-p020) the GT frequency every MS milliseconds for SECONDS: the request (RPNSWREQ
+                                  [31:23]) and the actual frequency (CAGF, RPSTAT1 [19:11]), in MHz (16.67 MHz units),
+                                  read with xp through the passthrough BAR; with "move" the tablet moves back and forth
+                                  by 40 pixels between the reads, as rate does.  One line per sample in freq.log, and the
+                                  mean, least and most of both on the output
     h4-ctl.py quit                ends QEMU
 """
 import json
@@ -55,7 +61,7 @@ WATCH = (('transconf', 0x71008), ('plane_ctl', 0x71180), ('surflive', 0x711ac), 
 LOGGED_FLIPS = 3
 PLAIN = {' ': 'spc', '-': 'minus', '=': 'equal', '.': 'dot', '/': 'slash', '\n': 'ret', '\t': 'tab', ';': 'semicolon'}
 # Characters typed with shift on the US layout (ws075-p009: shell redirections in a terminal).
-SHIFTED = {'>': 'dot', '<': 'comma', '|': 'backslash', '&': '7', '_': 'minus', ':': 'semicolon'}
+SHIFTED = {'>': 'dot', '<': 'comma', '|': 'backslash', '&': '7', '_': 'minus', ':': 'semicolon', '*': '8', '"': 'apostrophe'}
 
 
 def qmp_open(name='qmp.sock'):
@@ -377,7 +383,7 @@ def latency(f, pipe, count):
         print(f'latency: {len(done)}/{count} flipped, median {done[len(done) // 2]:.1f} ms, min {done[0]:.1f}, max {done[-1]:.1f}')
 
 
-def rate(f, pipe, seconds):
+def rate(f, pipe, seconds, cx=None, cy=None):
     """Counts the flips of the pipe while the pointer keeps moving (the presentation rate under input)."""
     bar = graphics_bar(f)
     if bar is None:
@@ -391,8 +397,10 @@ def rate(f, pipe, seconds):
     while time.monotonic() - start < seconds:
         now = time.monotonic()
         if now >= next_move:
-            x = width // 2 + (40 if moves % 2 == 0 else -40)
-            tablet(f, x, height // 2, width, height)
+            base_x = width // 2 if cx is None else cx
+            base_y = height // 2 if cy is None else cy
+            x = base_x + (40 if moves % 2 == 0 else -40)
+            tablet(f, x, base_y, width, height)
             moves += 1
             next_move = now + 0.008
         live = surflive(f, bar, pipe)
@@ -403,6 +411,46 @@ def rate(f, pipe, seconds):
     line = f'rate: {flips} flips in {elapsed:.1f} s ({flips / elapsed:.1f}/s) with {moves} pointer moves'
     with open(os.path.join(DIR, 'latency.log'), 'a') as log:
         log.write(f'# rate {time.strftime("%H:%M:%S")} pipe {pipe}\n' + line + '\n')
+    print(line)
+
+
+def read_register(f, bar, offset):
+    """One 32-bit register of the passthrough iGPU, read with xp through its BAR (-1 when unreadable)."""
+    found = re.search(r':\s*(0x[0-9a-f]+)', hmp(f, f'xp /1wx 0x{bar + offset:x}'))
+    return int(found.group(1), 16) if found else -1
+
+
+def freq(f, seconds, interval_ms, move):
+    """Samples the GT's requested and actual frequency (ws075-p020), with the pointer moving or not."""
+    bar = graphics_bar(f)
+    if bar is None:
+        raise SystemExit('h4-ctl: freq: no passthrough graphics BAR')
+    width, height = size()
+    requested = []
+    actual = []
+    moves = 0
+    start = time.monotonic()
+    with open(os.path.join(DIR, 'freq.log'), 'a') as log:
+        log.write(f'# freq {time.strftime("%H:%M:%S")} {seconds} s every {interval_ms} ms move={move}\n')
+        while time.monotonic() - start < seconds:
+            if move:
+                x = width // 2 + (40 if moves % 2 == 0 else -40)
+                tablet(f, x, height // 2, width, height)
+                moves += 1
+            swreq = read_register(f, bar, 0xa008)
+            rpstat = read_register(f, bar, 0x1381b4)
+            req_mhz = ((swreq >> 23) & 0x1ff) * 50.0 / 3.0 if swreq >= 0 else -1.0
+            cagf_mhz = ((rpstat >> 11) & 0x1ff) * 50.0 / 3.0 if rpstat >= 0 else -1.0
+            requested.append(req_mhz)
+            actual.append(cagf_mhz)
+            log.write(f'{(time.monotonic() - start) * 1000.0:.0f} ms: RPNSWREQ 0x{swreq & 0xffffffff:08x} ({req_mhz:.0f} MHz) '
+                      f'RPSTAT1 0x{rpstat & 0xffffffff:08x} (CAGF {cagf_mhz:.0f} MHz)\n')
+            time.sleep(interval_ms / 1000.0)
+    line = (f'freq: {len(requested)} samples move={move}: request mean {sum(requested) / len(requested):.0f} MHz '
+            f'({min(requested):.0f}..{max(requested):.0f}), actual mean {sum(actual) / len(actual):.0f} MHz '
+            f'({min(actual):.0f}..{max(actual):.0f})')
+    with open(os.path.join(DIR, 'freq.log'), 'a') as log:
+        log.write(line + '\n')
     print(line)
 
 
@@ -428,7 +476,12 @@ def main():
     elif command == 'latency':
         latency(f, sys.argv[2], int(sys.argv[3]))
     elif command == 'rate':
-        rate(f, sys.argv[2], float(sys.argv[3]))
+        if len(sys.argv) >= 6:
+            rate(f, sys.argv[2], float(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]))
+        else:
+            rate(f, sys.argv[2], float(sys.argv[3]))
+    elif command == 'freq':
+        freq(f, float(sys.argv[2]), int(sys.argv[3]), len(sys.argv) > 4 and sys.argv[4] == 'move')
     elif command == 'quit':
         print(qmp(f, 'quit'))
     else:

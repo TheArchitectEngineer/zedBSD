@@ -13,6 +13,11 @@
 #   plan/ws075/tests/hdmi-h4-hw.sh stop OUTDIR            ends QEMU if it still runs, fetches, reads the guest's logs
 #                                                         from its disk and gives the machine back
 # I915_HOST names the 5330 (default solaris10-man); H4_MINUTES bounds the QEMU run (default 60).
+# ws075-p018: start waits for the lock as long as another run holds it (do not bound it with timeout: a start killed
+# while waiting leaves the lock to be taken later with no QEMU of its own), and records its OUTDIR in
+# /tmp/i915-h4-owner once it has the lock; ctl and fetch refuse unless that run of this tree holds the lock, so they
+# never drive or read another agent's QEMU on the shared ~/bigbang/h4 (2026-09-29: pointer steps of a start still
+# waiting for the lock went to another agent's run).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -20,6 +25,18 @@ host=${I915_HOST:-solaris10-man}
 remote=bigbang/h4
 command=${1:-}
 [ $# -gt 0 ] && shift
+owner=/tmp/i915-h4-owner
+
+# The run of this tree holds the machine: its OUTDIR is the recorded owner and still has the lock.
+owns_machine() {
+	[ -f "$owner" ] || return 1
+	current=$(cat "$owner")
+	case "$current" in
+	"$(pwd)"/*) ;;
+	*) return 1 ;;
+	esac
+	[ -f "$current/.locked" ]
+}
 
 case "$command" in
 start)
@@ -32,6 +49,7 @@ start)
 	rm -f "$out/.locked"
 	setsid nohup plan/ws075/tests/hdmi/h4-lock.sh "$out" < /dev/null > /dev/null 2>&1 &
 	until [ -f "$out/.locked" ]; do sleep 1; done
+	(cd "$out" && pwd) > "$owner"
 	ssh "$host" bigbang/igpu-mode.sh vfio > /dev/null || { echo "iGPU is not on vfio-pci"; rm -f "$out/.running"; exit 1; }
 	ssh "$host" "mkdir -p $remote && sudo -n rm -rf $remote/shots $remote/load.log $remote/splash.log $remote/watch.log"
 	scp -q "$image" "$host:$remote/guest.img" || { rm -f "$out/.running"; exit 1; }
@@ -41,10 +59,12 @@ start)
 	echo "hdmi-h4-hw: QEMU started on $host at $(date '+%H:%M:%S')"
 	;;
 ctl)
+	owns_machine || { echo "hdmi-h4-hw: this tree's run does not hold the machine; ctl refused"; exit 1; }
 	ssh "$host" "sudo -n python3 $remote/h4-ctl.py $*"
 	;;
 fetch)
 	out=$1
+	owns_machine || { echo "hdmi-h4-hw: this tree's run does not hold the machine; fetch refused"; exit 1; }
 	mkdir -p "$out/shots"
 	ssh "$host" "sudo -n chown -R awe: $remote/shots $remote/load.log $remote/splash.log $remote/watch.log 2>/dev/null; true"
 	scp -q "$host:$remote/run.log" "$out/kernel.log"
@@ -58,6 +78,12 @@ fetch)
 	;;
 stop)
 	out=$1
+	# A run that never got the machine only gives its place in the queue back; the QEMU there is another run's.
+	if ! owns_machine; then
+		rm -f "$out/.running"
+		echo "hdmi-h4-hw: this tree's run does not hold the machine; only the wait for the lock is ended"
+		exit 0
+	fi
 	ssh "$host" "pgrep -f '^qemu-system-x86_64.*$remote' > /dev/null && sudo -n python3 $remote/h4-ctl.py quit; sleep 2; true"
 	"$0" fetch "$out"
 	scp -q plan/ws031/tests/ufs-cat.py tools/build/check-ufs-image.py "$host:bigbang/"
@@ -65,6 +91,7 @@ stop)
 		> "$out/guest-logs.txt" 2>&1
 	rm -f "$out/.running"
 	while [ -f "$out/.locked" ]; do sleep 1; done
+	[ "$(cat "$owner" 2>/dev/null)" = "$(cd "$out" && pwd)" ] && rm -f "$owner"
 	echo "hdmi-h4-hw: machine given back"
 	;;
 *)

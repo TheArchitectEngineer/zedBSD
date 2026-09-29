@@ -125,23 +125,6 @@ kern_rtc_read_counter(
 }
 
 /*
- * Stands in for the tick deadline arithmetic.
- */
-int
-kern_deadline_after(
-	uint64_t now,
-	uint64_t delta,
-	uint64_t *deadline)
-{
-	UNUSED_PARAMETER(now);
-	UNUSED_PARAMETER(delta);
-	UNUSED_PARAMETER(deadline);
-
-	/* Only the delayed works and the slow register wait compute deadlines. */
-	host_unreached("kern_deadline_after");
-}
-
-/*
  * Stands in for the kernel DMA device's address width.
  */
 unsigned

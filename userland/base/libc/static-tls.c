@@ -21,6 +21,19 @@
 
 #define STATIC_TLS_PAGE_SIZE 4096U
 
+/*
+ * Whether every thread of the process has a control block (BUG-110).
+ *
+ * A static program's first thread has one from exec when the program has
+ * PT_TLS, and otherwise from __rtld_thread_attach; every later thread gets
+ * one at thread_create.  Once the first thread is attached (set below, by
+ * that thread, before any other exists), the thread pointer is read from
+ * the processor instead of asking thread_self.  It is never cleared.
+ */
+static unsigned static_tls_everywhere;
+
+static uintptr_t static_thread_pointer(void);
+
 /* Allocate a thread from the immutable executable template, never live TLS. */
 int
 __rtld_thread_alloc(
@@ -129,6 +142,9 @@ __rtld_thread_attach(
 			return -1;
 		}
 
+		/* From now on every thread has a control block. */
+		__atomic_store_n(&static_tls_everywhere, 1U, __ATOMIC_RELEASE);
+
 		/* Reports successful completion. */
 		return 0;
 	}
@@ -138,6 +154,9 @@ __rtld_thread_attach(
 	if (tcb->pthread_private != NULL)
 		return -1;
 	tcb->pthread_private = pthread_private;
+
+	/* From now on every thread has a control block. */
+	__atomic_store_n(&static_tls_everywhere, 1U, __ATOMIC_RELEASE);
 
 	/* Reports successful completion. */
 	return 0;
@@ -150,17 +169,15 @@ void *
 __rtld_pthread_private(
 	void)
 {
-	intptr_t value;
+	uintptr_t value;
 
-	value = __syscall6(KERN_SYS_thread_self,
-				    KERN_THREAD_SELF_GET_TLS, 0, 0, 0, 0, 0);
-
-	/* Validates the current value. */
-	if (value <= 0)
+	/* The calling thread's control block; a thread without one has no pthread record. */
+	value = static_thread_pointer();
+	if (value == 0)
 		return NULL;
 
 	/* Returns the computed result. */
-	return ((struct __rtld_tcb *)(uintptr_t)value)->pthread_private;
+	return ((struct __rtld_tcb *)value)->pthread_private;
 }
 
 /*
@@ -188,4 +205,44 @@ void
 __rtld_fork_child(
 	void)
 {
+}
+
+/*
+ * Reads the calling thread's thread pointer (its control block), or 0 when
+ * it has none (BUG-110).  Once every thread has a control block, amd64
+ * reads the block's first word (kern_tls_prefix.self, its own address) at
+ * FS's base and arm64 reads TPIDR_EL0, as the loader does (src/rtld/rtld.c);
+ * before that, and on other processors, thread_self is asked, since FS may
+ * have no base yet.
+ */
+static uintptr_t
+static_thread_pointer(
+	void)
+{
+	uintptr_t pointer;
+	intptr_t value;
+	unsigned everywhere;
+
+	/* The processor's register, once every thread is known to have a block. */
+	everywhere = __atomic_load_n(&static_tls_everywhere, __ATOMIC_ACQUIRE);
+	if (everywhere != 0U) {
+#if defined(__x86_64__)
+		__asm__ volatile("movq %%fs:0, %0" : "=r"(pointer));
+		return pointer;
+#elif defined(__aarch64__)
+		__asm__ volatile("mrs %0, tpidr_el0" : "=r"(pointer));
+		return pointer;
+#else
+		pointer = 0;
+#endif
+	}
+
+	/* The kernel's record of the thread pointer. */
+	value = __syscall6(KERN_SYS_thread_self, KERN_THREAD_SELF_GET_TLS, 0, 0, 0, 0, 0);
+	if (value <= 0)
+		return 0;
+
+	/* Succeeded: the thread pointer. */
+	pointer = (uintptr_t)value;
+	return pointer;
 }

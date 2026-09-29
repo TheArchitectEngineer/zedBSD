@@ -1462,6 +1462,13 @@ i915_ktest_gt_rps(
 	struct mutex sb_lock;
 	int hysteresis;
 	int request;
+	int up_ei;
+	int up_threshold;
+	int down_ei;
+	int down_threshold;
+	int control;
+	uint32_t freq;
+	int adj;
 
 	/* Prepares the sideband lock the PCODE read of the efficient frequency takes. */
 	(void)mutex_init(&sb_lock, LOCK_RANK_DEVICE, "ktest-gtwa");
@@ -1485,19 +1492,60 @@ i915_ktest_gt_rps(
 		    t->rps.max_freq == 30U,
 		"p6b: P6B-RPS caps are scaled from 50MHz to 16.67MHz units (x3)");
 
-	/* Enables RPS. */
+	/* Enables RPS with a 19.2 MHz command streamer clock. */
 	t->fake.wt_n = 0U;
-	drv_i915_rps_enable(&t->rps, &t->mmio);
+	drv_i915_rps_enable(&t->rps, &t->mmio, 19200000U);
 
-	/* RP_IDLE_HYSTERSIS is programmed, then RPNSWREQ asks for RP0 (ws084: no RPS interrupts raise it). */
+	/*
+	 * RP_IDLE_HYSTERSIS is programmed, then RPNSWREQ asks for the minimum
+	 * (rps_reset(); ws075-p020: the interrupts raise it from the node's
+	 * start), with the LOW_POWER thresholds: 16 ms up at 95 %, 32 ms down
+	 * at 85 %, in units of 16 clocks.
+	 */
 	hysteresis = i915_fake_wt_find(&t->fake, 0xa070U, 0xaU, 0xffffffffU);
-	request = i915_fake_wt_find(&t->fake, 0xa008U, 30U << 23, 0xffffffffU);
+	request = i915_fake_wt_find(&t->fake, 0xa008U, 6U << 23, 0xffffffffU);
+	up_ei = i915_fake_wt_find(&t->fake, 0xa068U, 19200U, 0xffffffffU);
+	up_threshold = i915_fake_wt_find(&t->fake, 0xa02cU, 18240U, 0xffffffffU);
+	down_ei = i915_fake_wt_find(&t->fake, 0xa06cU, 38400U, 0xffffffffU);
+	down_threshold = i915_fake_wt_find(&t->fake, 0xa030U, 32640U, 0xffffffffU);
+	control = i915_fake_wt_find(&t->fake, 0xa024U, 0x592U, 0xffffffffU);
 	drv_i915_ktest_check(
 		ktest,
 		t->rps.enabled == 1 &&
+		    t->rps.cur_freq == 6U &&
+		    t->rps.power_mode == I915_RPS_POWER_LOW &&
 		    hysteresis >= 0 &&
-		    request >= 0,
-		"p6b: P6B-RPS enable programs RP_IDLE_HYSTERSIS then RPNSWREQ=RP0");
+		    request >= 0 &&
+		    up_ei >= 0 &&
+		    up_threshold >= 0 &&
+		    down_ei >= 0 &&
+		    down_threshold >= 0 &&
+		    control >= 0,
+		"p6b: P6B-RPS enable programs RP_IDLE_HYSTERSIS, RPNSWREQ=min and the LOW_POWER thresholds");
+
+	/* The work's decision: up events double the step, a waiting client jumps to RP0, down events step back. */
+	t->rps.cur_freq = 10U;
+	t->rps.last_adj = 2;
+	freq = drv_i915_rps_next_freq(&t->rps, I915_RPS_UP_THRESHOLD, 0, &adj);
+	drv_i915_ktest_check(ktest, freq == 14U && adj == 4, "p6b: P6B-RPS an up event after an up step doubles it");
+	freq = drv_i915_rps_next_freq(&t->rps, 0U, 1, &adj);
+	drv_i915_ktest_check(ktest, freq == 30U && adj == 0, "p6b: P6B-RPS a waiting client jumps to the boost frequency");
+	t->rps.last_adj = 4;
+	freq = drv_i915_rps_next_freq(&t->rps, I915_RPS_DOWN_THRESHOLD, 0, &adj);
+	drv_i915_ktest_check(ktest, freq == 9U && adj == -1, "p6b: P6B-RPS a down event after an up step goes down by one");
+	t->rps.cur_freq = 7U;
+	t->rps.last_adj = -4;
+	freq = drv_i915_rps_next_freq(&t->rps, I915_RPS_DOWN_THRESHOLD, 0, &adj);
+	drv_i915_ktest_check(ktest, freq == 6U && adj == -8, "p6b: P6B-RPS a doubled down step stops at the minimum");
+
+	/* The interrupt mask and limits follow the frequency. */
+	drv_i915_ktest_check(
+		ktest,
+		drv_i915_rps_pm_mask(&t->rps, 6U) == ~(uint32_t)I915_RPS_UP_THRESHOLD &&
+		    drv_i915_rps_pm_mask(&t->rps, 30U) == ~(uint32_t)I915_RPS_DOWN_THRESHOLD &&
+		    drv_i915_rps_limits(&t->rps, 6U) == ((30U << 23) | (6U << 14)) &&
+		    drv_i915_rps_limits(&t->rps, 12U) == (30U << 23),
+		"p6b: P6B-RPS PMINTRMSK and RP_INTERRUPT_LIMITS follow the frequency");
 }
 
 /* Checks the Gen12 forcewake domain map the register access classifies with. */
