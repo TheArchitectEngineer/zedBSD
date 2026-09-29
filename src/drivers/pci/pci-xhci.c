@@ -197,13 +197,12 @@ struct xhci_controller {
 	volatile unsigned command_event_ready;
 	/*
 	 * The interrupter enable (IMAN.IE) the driver wants: on once the
-	 * controller runs and off after quiesce, and masked while command_ex
-	 * polls the event ring itself.  Every IMAN write is made from these
-	 * two flags under event_lock, never by reading IMAN back, so the IRQ
-	 * handler's acknowledgement cannot undo command_ex's restore.
+	 * controller runs and off after quiesce.  Every IMAN write is made
+	 * from this flag under event_lock, never by reading IMAN back, so the
+	 * IRQ handler's acknowledgement cannot enable a quiesced interrupter.
+	 * It is never masked while a command polls (BUG-116).
 	 */
 	unsigned interrupter_enabled;
-	unsigned command_polling;
 
 	/*
 	 * Protected by active_lock.  Each endpoint remains queue-depth one,
@@ -921,8 +920,8 @@ event_unlock(
 /*
  * Writes interrupter 0's IMAN from the driver's own state.
  *
- * IE is on while the controller runs and no command is polling; IP is
- * cleared only when acknowledge is set.  The caller holds event_lock.
+ * IE is on while the controller runs; IP is cleared only when acknowledge
+ * is set.  The caller holds event_lock.
  */
 static void
 xhci_interrupter_write_locked(
@@ -931,9 +930,9 @@ xhci_interrupter_write_locked(
 {
 	uint32_t value;
 
-	/* Enables the interrupter unless it is off or masked for a polling command. */
+	/* Enables the interrupter unless the controller is quiesced. */
 	value = 0U;
-	if (c->interrupter_enabled != 0U && c->command_polling == 0U)
+	if (c->interrupter_enabled != 0U)
 		value |= 2U;
 	if (acknowledge != 0U)
 		value |= 1U;
@@ -1011,15 +1010,15 @@ command_ex(
 	}
 
 	/*
-	 * Interrupter 0 and the polling path share the event-ring consumer, so
-	 * the interrupter is masked while this command polls.  IP is left
-	 * pending: it is write-one-to-clear, and an interrupt raised meanwhile
-	 * must survive until the mask is lifted below.
+	 * The interrupter stays enabled while this command polls.  The poll
+	 * and xhci_irq share the event-ring consumer under event_lock, and
+	 * the handler hands a matching Command Completion over through
+	 * command_event.  Masking IE here and restoring it afterwards lost
+	 * events (BUG-116): an event posted after the last poll left EHB set
+	 * with no interrupt, and QEMU's xHCI unuses the MSI-X vector on IE=0
+	 * and re-raises IP on IE=1 before it uses the vector again, so that
+	 * interrupt was dropped and the ring stalled until the next command.
 	 */
-	event_lock(c);
-	c->command_polling = 1U;
-	xhci_interrupter_write_locked(c, 0U);
-	event_unlock(c);
 	command_address = ring_push(&c->command, parameter, status, control);
 	event_lock(c);
 	c->command_address = command_address;
@@ -1093,19 +1092,14 @@ command_ex(
 	}
 
 	/*
-	 * Lifts the mask without clearing IP.  An event that arrived after the
-	 * last poll set IP and Event Handler Busy while IE was clear; writing
-	 * one to IP here would discard that interrupt, and with EHB still set
-	 * the controller would raise no interrupt for any later event either,
-	 * so the event ring would stall until the next command polled it.
-	 * With IP kept, restoring IE raises the interrupt and the handler
-	 * drains the ring and clears EHB.
+	 * Events left behind the Command Completion stay on the ring for
+	 * xhci_irq: the ERDP write that took the completion made the
+	 * controller raise their interrupt again, and it is served once this
+	 * CPU enables interrupts below.
 	 */
 	event_lock(c);
 	c->command_address = 0;
 	c->command_event_ready = 0;
-	c->command_polling = 0U;
-	xhci_interrupter_write_locked(c, 0U);
 	event_unlock(c);
 
 	/* Checks the operation result. */
@@ -3780,9 +3774,9 @@ xhci_cancel_diagnose(
 
 	kern_logf("xhci: cancel slot=%u endpoint=%u pending-events=%u "
 		   "first-type=%u iman=%x usbsts=%x erdp=%x dequeue=%u "
-		   "polling=%u command-busy=%u irq-busy=%u\n",
+		   "command-busy=%u irq-busy=%u\n",
 		   r->slot, r->dci, pending, first_type, iman, usbsts, erdp,
-		   c->event_dequeue, c->command_polling,
+		   c->event_dequeue,
 		   __atomic_load_n(&c->command_busy, __ATOMIC_ACQUIRE),
 		   __atomic_load_n(&c->irq_busy, __ATOMIC_ACQUIRE));
 }
@@ -5190,7 +5184,6 @@ xhci_start(
 	wr64(c->runtime, 0x38U, c->event_memory.device_address);
 	wr32(c->runtime, 0x24U, KERN_XHCI_IMOD);
 	c->interrupter_enabled = 1U;
-	c->command_polling = 0U;
 	wr32(c->runtime, 0x20U, 2U);
 	wr32(c->operational, XHCI_CONFIG, c->max_slots);
 	wr32(c->operational, XHCI_USBSTS, 0xffffffffU);
