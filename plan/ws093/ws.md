@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: main の依頼（worktree `.claude/worktrees/ws093-open`、branch `wt/ws093`）
-Resume point: p001・p002 cleared（画像・text・HTML の既定、double click・Enter・double tap を QEMU で確認）。次は p003（Always Open With）
+Resume point: p001〜p003 cleared（既定の対応、Always Open With と Use System Default を QEMU で確認）。次は p004（全文の規約と回帰）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -26,5 +26,5 @@ Resume point: p001・p002 cleared（画像・text・HTML の既定、double clic
 | --- | --- | --- | --- |
 | [ws093-p001](phase001/phase.md) | 設計（[design.md](design.md)） | cleared（2026-09-29） | — |
 | [ws093-p002](phase002/phase.md) | 既定の対応: 画像（png・jpeg・gif）→ Image Viewer、text → Text Editor、HTML → Browser（`files/apps.c` の組み込みの表）。host の試験、Venus の guest の double click・Enter・注入の touch の double tap、画面 | cleared（2026-09-29） | p001 |
-| ws093-p003 | 利用者の上書きを画面から: 「Always Open With」の submenu と利用者の一覧（`~/.config/keiland/open-with`）への書き込み・「Use System Default」 | planned | p002 |
+| [ws093-p003](phase003/phase.md) | 利用者の上書きを画面から: 「Always Open With」の submenu と利用者の一覧（`~/.config/keiland/open-with`）への書き込み・「Use System Default」 | cleared（2026-09-29） | p002 |
 | ws093-p004 | 全文の規約と回帰（Files の回帰の該当、boot test） | planned | p003 |

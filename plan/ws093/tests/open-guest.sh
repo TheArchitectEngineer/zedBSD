@@ -6,11 +6,13 @@
 #   mouse   each row double-clicked (the PNG, the JPEG, the GIF, the text, the page, the PDF), and the text again by
 #           Enter: Files logs OPEN with the app and LAUNCH with its command on the path, the app runs (ps), its
 #           window maps; a picture of each
+#   always  the text's context menu Always Open With > Terminal (less) (its default, opened with less, and a double
+#           click opens it so), then File > Always Open With > Use System Default (Text Editor again)
 #   info    the information card (Ctrl+I) of the PNG, the text and the page: their ways, the new default first
 #   touch   (needs the pen image, /bin/touchinject) the PNG and the text double-tapped with the injected touch screen
 # The app's own output goes to /dev/null (files starts it apart), so the steps read Files' log, zdesktop's log and ps
 # through SSH, and the pictures; nothing reads the console.
-#   GUEST_RUNTIME=$PWD/build/ws093-run BIN=build/ws093-amd64 plan/ws093/tests/open-guest.sh OUTDIR mouse|info|touch
+#   GUEST_RUNTIME=$PWD/build/ws093-run BIN=build/ws093-amd64 plan/ws093/tests/open-guest.sh OUTDIR mouse|always|info|touch
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -68,6 +70,29 @@ row_y() { echo $((86 + 28 * $1)); }
 double() {
 	y=$(row_y "$1")
 	pointer move $((wx + 400)) $((wy + y)) sleep 300 down sleep 50 up sleep 80 down sleep 50 up sleep "${2:-900}"
+}
+
+# The middle (y) of the latest popup row of a menu item (zdesktop's log), and the latest popup's left edge.
+menu_row_y() {
+	guest "grep 'MENU row item=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* y=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p' | { read y h; echo $(( ${y:-0} + ${h:-0} / 2 )); }
+}
+menu_x() {
+	guest "grep 'MENU open ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=.*/\1/p'
+}
+
+# Clicks the row of a menu item in the latest popup.
+menu_click() {
+	x=$(( $(menu_x) + 60 ))
+	y=$(menu_row_y "$1")
+	pointer move $((x - 2)) "$y" sleep 150 move "$x" "$y" sleep 300 down sleep 60 up sleep 900
+}
+
+# Opens a top-level menu (its item) from the titlebar's "...", as plan/tools/files/files-p008.sh does.
+menu_top() {
+	set -- "$1" $(guest "grep 'ZWL TITLEBAR control client=1 .* where=floating id=0 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	x=$((${2:-0} + ${4:-0} / 2)); y=$((${3:-0} + ${5:-0} / 2))
+	pointer move $((x - 2)) "$y" sleep 150 move "$x" "$y" sleep 300 down sleep 60 up sleep 900
+	menu_click "$1"
 }
 
 # Checks one opening: Files' OPEN line, the app on the path, a new window; a picture, and the app stops.
@@ -140,6 +165,41 @@ mouse)
 	again=$(guest "grep -c 'ZFILES OPEN path=/tmp/demo/4-notes.txt app=Text Editor' /tmp/f.log" | tail -1)
 	[ "${again:-0}" -gt "${lines:-0}" ] 2>/dev/null && echo "enter: ok" || { echo "enter: MISSING"; status=1; }
 	opened 4-notes.txt 'Text Editor' textedit open-enter.png
+	;;
+always)
+	# The text's context menu: Always Open With > Terminal (less) makes less its default and opens it with less.
+	y=$(row_y 4)
+	pointer move $((wx + 400)) $((wy + y)) sleep 300 down sleep 60 up sleep 800
+	pointer move $((wx + 402)) $((wy + y)) sleep 200 right-down sleep 60 right-up sleep 900
+	expect_log /tmp/zdesktop.log 'MENU row item=104 '
+	shot always-context.png
+	menu_click 104
+	expect_log /tmp/zdesktop.log 'MENU row item=1401 '
+	shot always-submenu.png
+	menu_click 1401
+	expect_log /tmp/f.log 'ZFILES DEFAULT set type=text/plain app=Terminal \(less\) error=0'
+	expect_log /tmp/f.log 'ZFILES LAUNCH name=Terminal \(less\) command=@terminal less ./tmp/demo/4-notes.txt.$'
+	sleep 3
+	shot always-less.png
+	guest "for p in \$(ps -A -o pid,args | grep -E '[t]erminal|[l]ess ' | awk '{print \$1}'); do kill \$p; done; sleep 1" >/dev/null
+	guest 'cat /tmp/fhome/.config/keiland/open-with' > "$out/always-list.txt"
+	# A double click now opens the text with less.
+	before=$(guest "grep -c 'ZFILES OPEN path=/tmp/demo/4-notes.txt app=Terminal (less)' /tmp/f.log" | tail -1)
+	double 4 3000
+	after=$(guest "grep -c 'ZFILES OPEN path=/tmp/demo/4-notes.txt app=Terminal (less)' /tmp/f.log" | tail -1)
+	[ "${after:-0}" -gt "${before:-0}" ] 2>/dev/null && echo "double click: less ok" || { echo "double click: less MISSING"; status=1; }
+	guest "for p in \$(ps -A -o pid,args | grep -E '[t]erminal|[l]ess ' | awk '{print \$1}'); do kill \$p; done; sleep 1" >/dev/null
+	# File > Always Open With shows the choice; Use System Default gives the text back to Text Editor.
+	menu_top 1
+	menu_click 14
+	expect_log /tmp/zdesktop.log 'MENU row item=1450 '
+	shot always-file-menu.png
+	menu_click 1450
+	expect_log /tmp/f.log 'ZFILES DEFAULT clear type=text/plain error=0'
+	shot always-system.png
+	double 4 1500
+	opened 4-notes.txt 'Text Editor' textedit always-back.png
+	guest 'cat /tmp/fhome/.config/keiland/open-with' > "$out/always-list-after.txt"
 	;;
 info)
 	# The information card of the PNG and of the text lists their ways, the new default first.

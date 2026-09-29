@@ -49,6 +49,8 @@ main(
 		fprintf(stderr, "usage: host-default TEMPORARY-FOLDER\n");
 		return 2;
 	}
+
+	/* The configuration folder under it, and where the user's list is. */
 	snprintf(config, sizeof(config), "%s/config", argv[1]);
 	setenv("XDG_CONFIG_HOME", config, 1);
 	snprintf(list, sizeof(list), "%s/keiland/open-with", config);
