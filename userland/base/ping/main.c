@@ -257,9 +257,17 @@ main(
 				received++;
 				total += rtt;
 
-				/* Handles the minimum condition. */
-				if (minimum == 0 || rtt < minimum)
+				/*
+				 * The first reply sets the minimum; a round
+				 * trip of zero is a real measurement, not an
+				 * unset minimum.
+				 */
+				if (received == 1) {
 					minimum = rtt;
+				} else if (rtt < minimum) {
+					/* A faster reply lowers the minimum. */
+					minimum = rtt;
+				}
 
 				/* Handles the rtt condition. */
 				if (rtt > maximum)
