@@ -147,12 +147,23 @@ endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;
 # I915_TEST_ORACLE=y also links the draw readback the pixel oracle reads (slow: it dumps a frame).
+# I915_TEST_SET chooses the scenarios the build links (ws101-p006; the test kernel is near AMD64_KERNEL_MAX_BYTES):
+# "all" (the default) every scenario but vkcs; "compute" the runner and the compute scenario vkcs only (the runner
+# refers to every scenario weakly and says "not linked" for one the set leaves out).
+I915_TEST_SET ?= all
+AMD64_I915_TEST_SET_STAMP :=
 ifeq ($(I915_TESTS),y)
 ifeq ($(I915_TEST_ORACLE),y)
 AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/render/readback.c
 endif
-AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/execution/runner.c src/drivers/gpu/i915/tests/render/executor.c src/drivers/gpu/i915/tests/render/compiler.c src/drivers/gpu/i915/tests/render/features.c src/drivers/gpu/i915/tests/render/generality.c src/drivers/gpu/i915/tests/render/compute.c src/drivers/gpu/i915/tests/execution/ktest.c src/drivers/gpu/i915/tests/execution/ktest-sync.c src/drivers/gpu/i915/tests/execution/ktest-display.c src/drivers/gpu/i915/tests/execution/ktest-display-probe.c src/drivers/gpu/i915/tests/execution/ktest-gt.c src/drivers/gpu/i915/tests/execution/eu-test.c src/drivers/gpu/i915/tests/execution/ppgtt-walk.c src/drivers/gpu/i915/tests/execution/draw-test.c src/drivers/gpu/i915/tests/execution/fhd-render.c src/drivers/gpu/i915/tests/execution/firmware-override.c src/drivers/gpu/i915/tests/fixtures/draw-fixture.c
+ifeq ($(I915_TEST_SET),compute)
+AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/execution/runner.c src/drivers/gpu/i915/tests/render/compute.c src/drivers/gpu/i915/tests/execution/firmware-override.c
+else
+AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/execution/runner.c src/drivers/gpu/i915/tests/render/executor.c src/drivers/gpu/i915/tests/render/compiler.c src/drivers/gpu/i915/tests/render/features.c src/drivers/gpu/i915/tests/render/generality.c src/drivers/gpu/i915/tests/execution/ktest.c src/drivers/gpu/i915/tests/execution/ktest-sync.c src/drivers/gpu/i915/tests/execution/ktest-display.c src/drivers/gpu/i915/tests/execution/ktest-display-probe.c src/drivers/gpu/i915/tests/execution/ktest-gt.c src/drivers/gpu/i915/tests/execution/eu-test.c src/drivers/gpu/i915/tests/execution/ppgtt-walk.c src/drivers/gpu/i915/tests/execution/draw-test.c src/drivers/gpu/i915/tests/execution/fhd-render.c src/drivers/gpu/i915/tests/execution/firmware-override.c src/drivers/gpu/i915/tests/fixtures/draw-fixture.c
 AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/display/lcd-run.c src/drivers/gpu/i915/tests/display/hdmi-output.c src/drivers/gpu/i915/tests/display/lcd-flip.c src/drivers/gpu/i915/tests/display/lcd-opregion.c src/drivers/gpu/i915/tests/display/lcd-gpu.c src/drivers/gpu/i915/tests/display/hdmi-hotplug.c src/drivers/gpu/i915/tests/display/aux.c src/drivers/gpu/i915/tests/display/hpd-model.c src/drivers/gpu/i915/tests/display/display-ktest.c src/drivers/gpu/i915/tests/display/edp-ktest.c src/drivers/gpu/i915/tests/display/edp-sync-ktest.c src/drivers/gpu/i915/tests/display/lcd-modeset-ktest.c src/drivers/gpu/i915/tests/display/scanout-ktest.c src/drivers/gpu/i915/tests/display/lcd-show-ktest.c src/drivers/gpu/i915/tests/display/lcdg-ktest.c src/drivers/gpu/i915/tests/display/opregion-ktest.c src/drivers/gpu/i915/tests/display/hpd-ktest.c src/drivers/gpu/i915/tests/display/dp-fake-hw.c src/drivers/gpu/i915/tests/display/lcd-fake-hw.c
+endif
+# The scenarios linked change with I915_TEST_SET: a content-stable stamp relinks an existing BUILD when it changes.
+AMD64_I915_TEST_SET_STAMP := $(BUILD)/.i915-test-set
 endif
 # The i915 test VBT: I915_TEST_VBT=y builds the captured VBT of the QEMU passthrough test machine
 # (vendor/intel-vbt/) into display/vbt.c, used when the guest has no OpRegion.
@@ -307,6 +318,18 @@ $(BUILD)/kern64/src/kern/vfs.o \
 
 vmunix: $(BUILD)/vmunix
 
+# The i915 test build's scenario set (see I915_TEST_SET), rewritten only when it changes.
+.PHONY: FORCE_AMD64_I915_TEST_SET
+FORCE_AMD64_I915_TEST_SET:
+
+$(BUILD)/.i915-test-set: FORCE_AMD64_I915_TEST_SET
+	@mkdir -p $(dir $@)
+	@value='I915_TEST_SET=$(I915_TEST_SET)'; \
+ if ! test -f $@ || ! grep -Fqx -- "$$value" $@; then \
+ printf '%s\n' "$$value" > $@.tmp; \
+ mv $@.tmp $@; \
+ fi
+
 $(BUILD)/src/hal/amd64/%.o: src/hal/amd64/%.S
 	@mkdir -p $(dir $@)
 	$(CC) $(AMD64_CPPFLAGS) $(AMD64_CFLAGS) -D_ASM_SRC_ -c $< -o $@
@@ -334,7 +357,7 @@ $(BUILD)/kern64/%.o: %.c
 	$(CC) $(AMD64_CPPFLAGS) $(AMD64_KERNEL_LIBC_CFLAGS) -fno-builtin \
  -fno-strict-aliasing $(AMD64_KERNEL_LTO_CFLAGS) -MMD -MP -c $< -o $@
 
-$(BUILD)/vmunix: $(AMD64_VMUNIX_OBJS) $(ZEDBSD_GRAPHICS_CONFIG_STAMP) \
+$(BUILD)/vmunix: $(AMD64_VMUNIX_OBJS) $(ZEDBSD_GRAPHICS_CONFIG_STAMP) $(AMD64_I915_TEST_SET_STAMP) \
 	$(AMD64_PLATFORM)/vmunix.ld \
 	platform/amd64/tools/check-amd64-vmunix.noct \
 	platform/amd64/tools/check-kernel-includes.noct

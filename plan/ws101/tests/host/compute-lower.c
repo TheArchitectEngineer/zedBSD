@@ -9,10 +9,13 @@
  * ws101-p002: the LOWERING of compute shaders (SPIR-V -> scalar IR), run on
  * a small interpreter.
  *
- * Each module of plan/ws101/tests/host/shaders/ is parsed with the i915
+ * Each module of plan/ws101/tests/host/shaders/ (and the shared-memory
+ * modules of the vkcs scenario, ws101-p006) is parsed with the i915
  * compiler's parser and its IR is run for every invocation of a dispatch,
- * one invocation after another (the modules have no barrier and no shared
- * memory, so an order is a valid schedule), against buffers the test fills.
+ * against buffers the test fills.  The invocations of a group run one after
+ * another up to a BARRIER, and only once every one of them has reached it
+ * do they go on (a valid schedule); an invocation that ends while another
+ * waits at a barrier is a failure.  Each group has its own shared memory.
  * The buffers are then compared with what C computes from the same inputs
  * on its own -- never with what the parser says it did.  A load or a store
  * past the end of a buffer by a channel the IR lets run is a failure: it is
@@ -21,7 +24,8 @@
  * Nothing in this file is evidence about GPU execution; the EU code is
  * checked by compute-dump.c and Mesa's disassembler.
  *
- *   compute-lower DIR      DIR holds add.spv, ids.spv, atomic.spv, length.spv, dynamic.spv and noct.spv
+ *   compute-lower DIR      DIR holds add.spv, ids.spv, atomic.spv, length.spv, dynamic.spv and noct.spv,
+ *                          and shared.spv, reduce.spv, scan.spv, oddbar.spv and atomsh.spv (ws101-p006)
  */
 
 #include <limits.h>
@@ -52,6 +56,25 @@ kern_free(
 #define LOWER_MAX_BUFFERS	8U
 #define LOWER_MAX_LOOPS		16U
 
+/* Where an invocation stands between the rounds of its group (ws101-p006). */
+#define LOWER_RUNNING		0
+#define LOWER_AT_BARRIER	1
+#define LOWER_DONE		2
+
+/* What shared memory holds before a group writes it. */
+#define LOWER_SHARED_FILL	0xCDCDCDCDU
+
+/* One invocation of a group: its values, its built-ins, where it is and its loops (ws101-p006). */
+struct lower_thread {
+	uint32_t *values;
+	uint32_t system[I915_IR_SYSTEM_COUNT];
+	uint32_t index;
+	uint32_t loops[LOWER_MAX_LOOPS];
+	uint32_t loop_count;
+	uint32_t steps;
+	int state;
+};
+
 /*
  * One storage buffer of a test, bound at (set, binding): its words and its
  * size in bytes.  The system buffer (the group counts) is set
@@ -75,6 +98,9 @@ struct lower_dispatch {
 	/* The buffer of each uniform of the IR, or NULL. */
 	struct lower_buffer *bound[64];
 
+	/* The shared memory of the group being run (ws101-p006). */
+	uint32_t *shared;
+
 	/* The first failure, for the report. */
 	char failure[160];
 };
@@ -83,8 +109,10 @@ static struct i915_shader_ir *lower_parse(const char *dir, const char *name);
 static struct lower_buffer *lower_buffer_add(struct lower_dispatch *dispatch, uint32_t set, uint32_t binding, uint32_t words, uint32_t fill);
 static int lower_bind(struct lower_dispatch *dispatch);
 static int lower_run(struct lower_dispatch *dispatch);
-static int lower_invocation(struct lower_dispatch *dispatch, uint32_t *values, const uint32_t system[I915_IR_SYSTEM_COUNT]);
+static int lower_group(struct lower_dispatch *dispatch, struct lower_thread *threads, uint32_t count);
+static int lower_invocation(struct lower_dispatch *dispatch, struct lower_thread *thread);
 static uint32_t *lower_word(struct lower_dispatch *dispatch, uint32_t uniform, uint32_t byte);
+static uint32_t *lower_shared_word(struct lower_dispatch *dispatch, uint32_t byte);
 static int lower_atomic(struct lower_dispatch *dispatch, const struct i915_shader_ir_inst *inst, uint32_t *values);
 static int lower_test_add(const char *dir);
 static int lower_test_ids(const char *dir);
@@ -92,6 +120,11 @@ static int lower_test_atomic(const char *dir);
 static int lower_test_length(const char *dir);
 static int lower_test_dynamic(const char *dir);
 static int lower_test_noct(const char *dir);
+static int lower_test_shared(const char *dir);
+static int lower_test_reduce(const char *dir);
+static int lower_test_scan(const char *dir);
+static int lower_test_oddbar(const char *dir);
+static int lower_test_atomsh(const char *dir);
 static int32_t lower_smod(int32_t left, int32_t right);
 
 int
@@ -115,6 +148,11 @@ main(
 	failures += lower_test_length(argv[1]);
 	failures += lower_test_dynamic(argv[1]);
 	failures += lower_test_noct(argv[1]);
+	failures += lower_test_shared(argv[1]);
+	failures += lower_test_reduce(argv[1]);
+	failures += lower_test_scan(argv[1]);
+	failures += lower_test_oddbar(argv[1]);
+	failures += lower_test_atomsh(argv[1]);
 
 	/* Reports the outcome. */
 	if (failures != 0) {
@@ -222,20 +260,20 @@ lower_bind(
 	return 0;
 }
 
-/* Runs every invocation of the dispatch in order. Returns 0 when none fails. */
+/* Runs every group of the dispatch, one after another. Returns 0 when none fails. */
 static int
 lower_run(
 	struct lower_dispatch *dispatch)
 {
-	uint32_t system[I915_IR_SYSTEM_COUNT];
-	uint32_t *values;
+	struct lower_thread *threads;
+	struct lower_buffer *counts;
 	uint32_t *size;
 	uint32_t gx;
 	uint32_t gy;
 	uint32_t gz;
 	uint32_t linear;
 	uint32_t invocations;
-	struct lower_buffer *counts;
+	uint32_t word;
 	int error;
 
 	/* The group counts the system buffer holds. */
@@ -247,32 +285,88 @@ lower_run(
 	if (error != 0)
 		return error;
 
-	/* Every group, every invocation in its linear order. */
+	/* One state per invocation of a group, and the group's shared memory. */
 	size = ((struct i915_shader_ir *)dispatch->ir)->local_size;
 	invocations = size[0] * size[1] * size[2];
-	values = calloc(dispatch->ir->value_count + 1U, sizeof(uint32_t));
-	for (gz = 0U; gz < dispatch->groups[2]; gz++) {
-		for (gy = 0U; gy < dispatch->groups[1]; gy++) {
-			for (gx = 0U; gx < dispatch->groups[0]; gx++) {
+	threads = calloc(invocations, sizeof(*threads));
+	for (linear = 0U; linear < invocations; linear++)
+		threads[linear].values = calloc(dispatch->ir->value_count + 1U, sizeof(uint32_t));
+	dispatch->shared = calloc(dispatch->ir->shared_bytes / 4U + 1U, sizeof(uint32_t));
+
+	/* Every group, its invocations in their linear order. */
+	error = 0;
+	for (gz = 0U; error == 0 && gz < dispatch->groups[2]; gz++) {
+		for (gy = 0U; error == 0 && gy < dispatch->groups[1]; gy++) {
+			for (gx = 0U; error == 0 && gx < dispatch->groups[0]; gx++) {
+				for (word = 0U; word < dispatch->ir->shared_bytes / 4U; word++)
+					dispatch->shared[word] = LOWER_SHARED_FILL;
 				for (linear = 0U; linear < invocations; linear++) {
-					system[I915_IR_SYSTEM_LOCAL_ID_X] = linear % size[0];
-					system[I915_IR_SYSTEM_LOCAL_ID_Y] = (linear / size[0]) % size[1];
-					system[I915_IR_SYSTEM_LOCAL_ID_Z] = linear / (size[0] * size[1]);
-					system[I915_IR_SYSTEM_LOCAL_INDEX] = linear;
-					system[I915_IR_SYSTEM_GROUP_ID_X] = gx;
-					system[I915_IR_SYSTEM_GROUP_ID_Y] = gy;
-					system[I915_IR_SYSTEM_GROUP_ID_Z] = gz;
-					error = lower_invocation(dispatch, values, system);
-					if (error != 0) {
-						free(values);
-						return error;
-					}
+					threads[linear].system[I915_IR_SYSTEM_LOCAL_ID_X] = linear % size[0];
+					threads[linear].system[I915_IR_SYSTEM_LOCAL_ID_Y] = (linear / size[0]) % size[1];
+					threads[linear].system[I915_IR_SYSTEM_LOCAL_ID_Z] = linear / (size[0] * size[1]);
+					threads[linear].system[I915_IR_SYSTEM_LOCAL_INDEX] = linear;
+					threads[linear].system[I915_IR_SYSTEM_GROUP_ID_X] = gx;
+					threads[linear].system[I915_IR_SYSTEM_GROUP_ID_Y] = gy;
+					threads[linear].system[I915_IR_SYSTEM_GROUP_ID_Z] = gz;
 				}
+				error = lower_group(dispatch, threads, invocations);
 			}
 		}
 	}
-	free(values);
-	return 0;
+
+	/* Gives the states back. */
+	for (linear = 0U; linear < invocations; linear++)
+		free(threads[linear].values);
+	free(threads);
+	free(dispatch->shared);
+	dispatch->shared = NULL;
+	return error;
+}
+
+/*
+ * Runs one group: every invocation up to its next barrier or its end, in
+ * rounds, until all have ended.  Returns 0, or 1 with the failure recorded
+ * -- also when some invocations end while others wait at a barrier.
+ */
+static int
+lower_group(
+	struct lower_dispatch *dispatch,
+	struct lower_thread *threads,
+	uint32_t count)
+{
+	uint32_t linear;
+	uint32_t waiting;
+	uint32_t done;
+
+	/* Every invocation starts at the top. */
+	for (linear = 0U; linear < count; linear++) {
+		threads[linear].index = 0U;
+		threads[linear].loop_count = 0U;
+		threads[linear].steps = 0U;
+		threads[linear].state = LOWER_RUNNING;
+	}
+
+	/* Rounds until every invocation has ended. */
+	for (;;) {
+		waiting = 0U;
+		done = 0U;
+		for (linear = 0U; linear < count; linear++) {
+			if (threads[linear].state == LOWER_RUNNING && lower_invocation(dispatch, &threads[linear]) != 0)
+				return 1;
+			if (threads[linear].state == LOWER_AT_BARRIER)
+				waiting++;
+			if (threads[linear].state == LOWER_DONE)
+				done++;
+		}
+		if (done == count)
+			return 0;
+		if (waiting != count) {
+			snprintf(dispatch->failure, sizeof(dispatch->failure), "%u invocations wait at a barrier, %u ended", waiting, done);
+			return 1;
+		}
+		for (linear = 0U; linear < count; linear++)
+			threads[linear].state = LOWER_RUNNING;
+	}
 }
 
 /* Returns the word at byte `byte` of the buffer of uniform `uniform`, or NULL past its end. */
@@ -290,6 +384,17 @@ lower_word(
 	if ((byte & 3U) != 0U || byte >= buffer->bytes)
 		return NULL;
 	return &buffer->words[byte / 4U];
+}
+
+/* Returns the word at byte `byte` of the group's shared memory, or NULL past its end (ws101-p006). */
+static uint32_t *
+lower_shared_word(
+	struct lower_dispatch *dispatch,
+	uint32_t byte)
+{
+	if ((byte & 3U) != 0U || byte >= dispatch->ir->shared_bytes)
+		return NULL;
+	return &dispatch->shared[byte / 4U];
 }
 
 /* Runs one ATOMIC for one invocation. Returns 0, or 1 for a word past the end. */
@@ -311,8 +416,12 @@ lower_atomic(
 	if (inst->component != 0U && values[inst->src[operands]] == 0U)
 		return 0;
 
-	/* The word must be inside the buffer. */
-	word = lower_word(dispatch, inst->location, values[inst->src[0]]);
+	/* The word must be inside the buffer or the shared memory. */
+	if (inst->location == I915_IR_LOCATION_SHARED) {
+		word = lower_shared_word(dispatch, values[inst->src[0]]);
+	} else {
+		word = lower_word(dispatch, inst->location, values[inst->src[0]]);
+	}
 	if (word == NULL) {
 		snprintf(dispatch->failure, sizeof(dispatch->failure), "atomic past the end at byte %u", values[inst->src[0]]);
 		return 1;
@@ -370,16 +479,21 @@ lower_atomic(
 	return 0;
 }
 
-/* Runs the IR once for one invocation. Returns 0, or 1 with the failure recorded. */
+/*
+ * Runs one invocation from where it stands to its next barrier (past which
+ * it then stands, LOWER_AT_BARRIER) or its end (LOWER_DONE).  Returns 0, or
+ * 1 with the failure recorded.
+ */
 static int
 lower_invocation(
 	struct lower_dispatch *dispatch,
-	uint32_t *values,
-	const uint32_t system[I915_IR_SYSTEM_COUNT])
+	struct lower_thread *thread)
 {
 	const struct i915_shader_ir *ir;
 	const struct i915_shader_ir_inst *inst;
-	uint32_t loops[LOWER_MAX_LOOPS];
+	const uint32_t *system;
+	uint32_t *values;
+	uint32_t *loops;
 	uint32_t loop_count;
 	uint32_t index;
 	uint32_t *word;
@@ -388,9 +502,12 @@ lower_invocation(
 	uint32_t steps;
 
 	ir = dispatch->ir;
-	loop_count = 0U;
-	steps = 0U;
-	for (index = 0U; index < ir->instruction_count; index++) {
+	values = thread->values;
+	system = thread->system;
+	loops = thread->loops;
+	loop_count = thread->loop_count;
+	steps = thread->steps;
+	for (index = thread->index; index < ir->instruction_count; index++) {
 		inst = &ir->instructions[index];
 		a = values[inst->src[0] < ir->value_count ? inst->src[0] : 0U];
 		b = values[inst->src[1] < ir->value_count ? inst->src[1] : 0U];
@@ -437,6 +554,34 @@ lower_invocation(
 		case I915_IR_STORAGE_SIZE:
 			values[inst->dst] = dispatch->bound[inst->location]->bytes;
 			break;
+		case I915_IR_LOAD_SHARED:
+			if (inst->component != 0U && b == 0U)
+				break;
+			word = lower_shared_word(dispatch, a);
+			if (word == NULL) {
+				snprintf(dispatch->failure, sizeof(dispatch->failure), "shared load past the end at byte %u", a);
+				return 1;
+			}
+			values[inst->dst] = *word;
+			break;
+		case I915_IR_STORE_SHARED:
+			if (inst->component != 0U && values[inst->src[2]] == 0U)
+				break;
+			word = lower_shared_word(dispatch, a);
+			if (word == NULL) {
+				snprintf(dispatch->failure, sizeof(dispatch->failure), "shared store past the end at byte %u", a);
+				return 1;
+			}
+			*word = b;
+			break;
+		case I915_IR_FENCE:
+			break;
+		case I915_IR_BARRIER:
+			thread->index = index + 1U;
+			thread->loop_count = loop_count;
+			thread->steps = steps;
+			thread->state = LOWER_AT_BARRIER;
+			return 0;
 		case I915_IR_ATOMIC:
 			if (lower_atomic(dispatch, inst, values) != 0)
 				return 1;
@@ -537,6 +682,7 @@ lower_invocation(
 			return 1;
 		}
 	}
+	thread->state = LOWER_DONE;
 	return 0;
 }
 
@@ -889,3 +1035,235 @@ lower_test_noct(
 	printf("noct: 300 lanes of the Noct kernel's shape and the result word's sum as C computes; 20 lanes past the trip change nothing\n");
 	return 0;
 }
+
+/* shared.comp (ws101-p006): a 64 x 64 matrix transposed through 8 x 8 tiles of shared memory, a barrier between. */
+static int
+lower_test_shared(
+	const char *dir)
+{
+	struct lower_dispatch dispatch;
+	struct lower_buffer *m;
+	struct lower_buffer *t;
+	uint32_t r;
+	uint32_t c;
+
+	memset(&dispatch, 0, sizeof(dispatch));
+	dispatch.ir = lower_parse(dir, "shared");
+	if (dispatch.ir == NULL)
+		return 1;
+	m = lower_buffer_add(&dispatch, 0U, 0U, 4096U, 0U);
+	t = lower_buffer_add(&dispatch, 0U, 1U, 4096U, 0xDEADBEEFU);
+	for (r = 0U; r < 4096U; r++)
+		m->words[r] = r * 2654435761U;
+	dispatch.groups[0] = 8U;
+	dispatch.groups[1] = 8U;
+	dispatch.groups[2] = 1U;
+	if (lower_run(&dispatch) != 0) {
+		printf("shared: FAIL %s\n", dispatch.failure);
+		return 1;
+	}
+	for (r = 0U; r < 64U; r++) {
+		for (c = 0U; c < 64U; c++) {
+			if (t->words[r * 64U + c] != m->words[c * 64U + r]) {
+				printf("shared: FAIL t[%u][%u] = 0x%08x, expected 0x%08x\n", r, c, t->words[r * 64U + c], m->words[c * 64U + r]);
+				return 1;
+			}
+		}
+	}
+	printf("shared: a 64 x 64 matrix transposed through 64 groups' 8 x 8 tiles of shared memory (two dynamic indices, a barrier)\n");
+	return 0;
+}
+
+/* reduce.comp (ws101-p006): each group's 128 words summed by a tree in shared memory, a barrier after each halving. */
+static int
+lower_test_reduce(
+	const char *dir)
+{
+	struct lower_dispatch dispatch;
+	struct lower_buffer *v;
+	struct lower_buffer *sums;
+	uint32_t group;
+	uint32_t i;
+	uint32_t sum;
+
+	memset(&dispatch, 0, sizeof(dispatch));
+	dispatch.ir = lower_parse(dir, "reduce");
+	if (dispatch.ir == NULL)
+		return 1;
+	v = lower_buffer_add(&dispatch, 0U, 0U, 512U, 0U);
+	sums = lower_buffer_add(&dispatch, 0U, 1U, 5U, 0xDEADBEEFU);
+	for (i = 0U; i < 512U; i++)
+		v->words[i] = i * 40503U + 7U;
+	dispatch.groups[0] = 4U;
+	dispatch.groups[1] = 1U;
+	dispatch.groups[2] = 1U;
+	if (lower_run(&dispatch) != 0) {
+		printf("reduce: FAIL %s\n", dispatch.failure);
+		return 1;
+	}
+	for (group = 0U; group < 4U; group++) {
+		sum = 0U;
+		for (i = 0U; i < 128U; i++)
+			sum += v->words[group * 128U + i];
+		if (sums->words[group] != sum) {
+			printf("reduce: FAIL group %u sum %u, expected %u\n", group, sums->words[group], sum);
+			return 1;
+		}
+	}
+	if (sums->words[4] != 0xDEADBEEFU) {
+		printf("reduce: FAIL a word past the groups written\n");
+		return 1;
+	}
+	printf("reduce: 4 groups of 128 summed by a tree in shared memory, 8 barriers, 7 of them in a loop\n");
+	return 0;
+}
+
+/* scan.comp (ws101-p006): each group's 64 words' inclusive prefix sums, a loop of six steps with two barriers each. */
+static int
+lower_test_scan(
+	const char *dir)
+{
+	struct lower_dispatch dispatch;
+	struct lower_buffer *v;
+	struct lower_buffer *prefix;
+	uint32_t i;
+	uint32_t sum;
+
+	memset(&dispatch, 0, sizeof(dispatch));
+	dispatch.ir = lower_parse(dir, "scan");
+	if (dispatch.ir == NULL)
+		return 1;
+	v = lower_buffer_add(&dispatch, 0U, 0U, 192U, 0U);
+	prefix = lower_buffer_add(&dispatch, 0U, 1U, 192U, 0xDEADBEEFU);
+	for (i = 0U; i < 192U; i++)
+		v->words[i] = (i * 2246822519U) >> 20;
+	dispatch.groups[0] = 3U;
+	dispatch.groups[1] = 1U;
+	dispatch.groups[2] = 1U;
+	if (lower_run(&dispatch) != 0) {
+		printf("scan: FAIL %s\n", dispatch.failure);
+		return 1;
+	}
+	sum = 0U;
+	for (i = 0U; i < 192U; i++) {
+		if (i % 64U == 0U)
+			sum = 0U;
+		sum += v->words[i];
+		if (prefix->words[i] != sum) {
+			printf("scan: FAIL prefix[%u] = %u, expected %u\n", i, prefix->words[i], sum);
+			return 1;
+		}
+	}
+	printf("scan: 3 groups' prefix sums of 64 words, a loop of six steps with two barriers in each\n");
+	return 0;
+}
+
+/* oddbar.comp (ws101-p006): a 5 x 3 group's words mirrored through shared memory across a barrier. */
+static int
+lower_test_oddbar(
+	const char *dir)
+{
+	struct lower_dispatch dispatch;
+	struct lower_buffer *v;
+	struct lower_buffer *o;
+	uint32_t group;
+	uint32_t l;
+
+	memset(&dispatch, 0, sizeof(dispatch));
+	dispatch.ir = lower_parse(dir, "oddbar");
+	if (dispatch.ir == NULL)
+		return 1;
+	v = lower_buffer_add(&dispatch, 0U, 0U, 45U, 0U);
+	o = lower_buffer_add(&dispatch, 0U, 1U, 46U, 0xDEADBEEFU);
+	for (l = 0U; l < 45U; l++)
+		v->words[l] = l * 1000003U;
+	dispatch.groups[0] = 3U;
+	dispatch.groups[1] = 1U;
+	dispatch.groups[2] = 1U;
+	if (lower_run(&dispatch) != 0) {
+		printf("oddbar: FAIL %s\n", dispatch.failure);
+		return 1;
+	}
+	for (group = 0U; group < 3U; group++) {
+		for (l = 0U; l < 15U; l++) {
+			if (o->words[group * 15U + l] != v->words[group * 15U + 14U - l] * 3U + l) {
+				printf("oddbar: FAIL group %u word %u = %u\n", group, l, o->words[group * 15U + l]);
+				return 1;
+			}
+		}
+	}
+	if (o->words[45] != 0xDEADBEEFU) {
+		printf("oddbar: FAIL a word past the groups written\n");
+		return 1;
+	}
+	printf("oddbar: 3 groups of 5 x 3 mirrored through shared memory across a barrier\n");
+	return 0;
+}
+
+/* atomsh.comp (ws101-p006): shared-memory atomics of 4 groups of 64 between barriers. */
+static int
+lower_test_atomsh(
+	const char *dir)
+{
+	struct lower_dispatch dispatch;
+	struct lower_buffer *v;
+	struct lower_buffer *results;
+	struct lower_buffer *old;
+	uint32_t expected[20];
+	uint32_t seen[64];
+	uint32_t group;
+	uint32_t i;
+	uint32_t x;
+
+	memset(&dispatch, 0, sizeof(dispatch));
+	dispatch.ir = lower_parse(dir, "atomsh");
+	if (dispatch.ir == NULL)
+		return 1;
+	v = lower_buffer_add(&dispatch, 0U, 0U, 256U, 0U);
+	results = lower_buffer_add(&dispatch, 0U, 1U, 80U, 0xDEADBEEFU);
+	old = lower_buffer_add(&dispatch, 0U, 2U, 256U, 0xDEADBEEFU);
+	for (i = 0U; i < 256U; i++)
+		v->words[i] = (i * 2654435761U) >> 22;
+	dispatch.groups[0] = 4U;
+	dispatch.groups[1] = 1U;
+	dispatch.groups[2] = 1U;
+	if (lower_run(&dispatch) != 0) {
+		printf("atomsh: FAIL %s\n", dispatch.failure);
+		return 1;
+	}
+	for (group = 0U; group < 4U; group++) {
+		memset(expected, 0, sizeof(expected));
+		for (i = 0U; i < 64U; i++) {
+			x = v->words[group * 64U + i];
+			expected[x % 16U]++;
+			expected[16] += x;
+			if (x > expected[17])
+				expected[17] = x;
+		}
+		expected[19] = 64U;
+		for (i = 0U; i < 20U; i++) {
+			if (i == 18U)
+				continue;
+			if (results->words[group * 20U + i] != expected[i]) {
+				printf("atomsh: FAIL group %u word %u = %u, expected %u\n", group, i, results->words[group * 20U + i], expected[i]);
+				return 1;
+			}
+		}
+		if (results->words[group * 20U + 18U] == 0U || results->words[group * 20U + 18U] > 64U) {
+			printf("atomsh: FAIL group %u: the compare-exchange left %u\n", group, results->words[group * 20U + 18U]);
+			return 1;
+		}
+		memset(seen, 0, sizeof(seen));
+		for (i = 0U; i < 64U; i++) {
+			x = old->words[group * 64U + i];
+			if (x >= 64U || seen[x] != 0U) {
+				printf("atomsh: FAIL group %u invocation %u: old value %u is not a fresh count\n", group, i, x);
+				return 1;
+			}
+			seen[x] = 1U;
+		}
+	}
+	printf("atomsh: 4 groups' shared histogram, sum, maximum, compare-exchange and counter between barriers\n");
+	return 0;
+}
+

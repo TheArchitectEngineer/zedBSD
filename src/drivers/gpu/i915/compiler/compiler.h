@@ -208,6 +208,14 @@ struct i915_shader_binary {
 	uint32_t local_size[3];
 	uint32_t cross_thread_regs;
 	uint32_t per_thread_regs;
+
+	/*
+	 * Compute (ws101-p006): the bytes of shared memory the workgroup needs
+	 * (0 for none), and nonzero when the kernel waits at a workgroup
+	 * barrier; the dispatch programs both in the interface descriptor.
+	 */
+	uint32_t shared_bytes;
+	uint32_t uses_barrier;
 };
 
 int drv_i915_shader_parse(const uint32_t *words, size_t word_count, enum i915_shader_stage stage, struct i915_shader_ir **out, struct i915_compile_diagnostic *diagnostic);

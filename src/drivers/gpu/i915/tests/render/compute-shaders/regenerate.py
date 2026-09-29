@@ -26,6 +26,15 @@ SHADERS = (
     ('mixed.frag', 'fragment', 'i915_vkcs_mixed_frag', '-O0'),
     ('inc.comp', 'compute', 'i915_vkcs_inc_comp', '-O0'),
     ('spill.comp', 'compute', 'i915_vkcs_spill_comp', '-O'),
+    # ws101-p006: shared memory and barriers, and three modules the compiler must refuse.
+    ('shared.comp', 'compute', 'i915_vkcs_shared_comp', '-O0'),
+    ('reduce.comp', 'compute', 'i915_vkcs_reduce_comp', '-O0'),
+    ('scan.comp', 'compute', 'i915_vkcs_scan_comp', '-O0'),
+    ('oddbar.comp', 'compute', 'i915_vkcs_oddbar_comp', '-O0'),
+    ('atomsh.comp', 'compute', 'i915_vkcs_atomsh_comp', '-O0'),
+    ('refuse/big.comp', 'compute', 'i915_vkcs_refuse_big_comp', '-O0'),
+    ('refuse/retbar.comp', 'compute', 'i915_vkcs_refuse_retbar_comp', '-O0'),
+    ('refuse/loopbar.comp', 'compute', 'i915_vkcs_refuse_loopbar_comp', '-O0'),
 )
 
 # The spill step: this many values live at once, each x * (k + 1) + y; the sum pairs value k with value

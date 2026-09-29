@@ -62,6 +62,28 @@ struct i915_test_scenario {
 void drv_i915_test_after_start(struct i915_device *device);
 
 /*
+ * The execution and render scenarios, and the unit test suite the "ktest"
+ * scenario runs.
+ *
+ * Their files define them.  They are weak because the build's
+ * I915_TEST_SET may leave a file out (ws101-p006: the compute set links the
+ * runner and the compute scenario only); a missing one is a null entry in
+ * the table and is reported as not linked.
+ */
+extern int drv_i915_test_execution_eu(struct i915_device *device) __attribute__((weak));
+extern int drv_i915_test_execution_draw(struct i915_device *device) __attribute__((weak));
+extern int drv_i915_test_execution_r1(struct i915_device *device) __attribute__((weak));
+extern int drv_i915_test_execution_tex(struct i915_device *device) __attribute__((weak));
+extern int drv_i915_test_execution_t3(struct i915_device *device) __attribute__((weak));
+extern int drv_i915_test_execution_bl(struct i915_device *device) __attribute__((weak));
+extern void drv_i915_test_render_executor(struct i915_device *device) __attribute__((weak));
+extern void drv_i915_test_render_compiler(struct i915_device *device) __attribute__((weak));
+extern void drv_i915_test_render_features(struct i915_device *device) __attribute__((weak));
+extern void drv_i915_test_render_generality(struct i915_device *device) __attribute__((weak));
+extern void drv_i915_test_render_compute(struct i915_device *device) __attribute__((weak));
+extern int drv_i915_ktest_run(struct i915_device *device, struct i915_ktest *ktest) __attribute__((weak));
+
+/*
  * The display scenarios.
  *
  * The display tests define them in their own files.  They are weak so that
@@ -160,6 +182,12 @@ drv_i915_test_after_start(
 
 	/* Runs an execution scenario and reports its verdict. */
 	if (scenario->execution != NULL) {
+		/* The unit test suite runs through the runner's own entry, which needs the suite linked. */
+		if (scenario->execution == drv_i915_test_execution_ktest && drv_i915_ktest_run == NULL) {
+			kern_logf("i915: test %s: FAIL (the scenario is not linked: I915_TEST_SET)\n", scenario->name);
+			return;
+		}
+
 		error = scenario->execution(device);
 		if (error != 0) {
 			kern_logf("i915: test %s: FAIL rc=%d\n", scenario->name, error);
@@ -170,9 +198,9 @@ drv_i915_test_after_start(
 		return;
 	}
 
-	/* Refuses a display scenario the display tests do not define. */
+	/* Refuses a scenario the build did not link (a display scenario not yet written, or one I915_TEST_SET left out). */
 	if (scenario->display == NULL) {
-		kern_logf("i915: test %s: FAIL (the display scenario is not linked)\n", scenario->name);
+		kern_logf("i915: test %s: FAIL (the scenario is not linked)\n", scenario->name);
 		return;
 	}
 

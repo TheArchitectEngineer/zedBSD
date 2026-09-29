@@ -382,4 +382,47 @@
 #define EU_DP_ATOMIC_RETURN		(1U << 5)
 #define EU_DESC_TERMINATE		(1U << EU_DESC_MLEN_SHIFT)
 
+/*
+ * Shared memory, fences and the workgroup barrier of compute shaders
+ * (ws101-p006), transcribed from Mesa 25.0.7 (MIT; the release tarball, the
+ * same files as above):
+ *   - brw_eu_defines.h (sha256 12a919edc56a75efe68afffa55ca42278a0cd489efddc8a0915919be756d7abc)
+ *                      BRW_SFID_MESSAGE_GATEWAY (3), BRW_MESSAGE_GATEWAY_SFID_BARRIER_MSG (4),
+ *                      GFX7_SFID_DATAPORT_DATA_CACHE (10), GFX7_DATAPORT_DC_MEMORY_FENCE (7),
+ *                      HSW_DATAPORT_DC_PORT1_UNTYPED_SURFACE_READ (1), _UNTYPED_ATOMIC_OP (2),
+ *                      _UNTYPED_SURFACE_WRITE (9), GFX7_BTI_SLM (254), TGL_SYNC_ALLWR (3), TGL_SYNC_BAR (0xe)
+ *   - brw_eu.h         (sha256 87a58fd1a719122d81539607f0fb72cf0483486ed8aa5540c387c217d337fc1b)
+ *                      brw_dp_untyped_surface_rw_desc(): the channel mask in the control's bits 3:0
+ *                      (0xe for one channel, brw_mdc_cmask()), SIMD8 as 2 in bits 5:4;
+ *                      brw_dp_untyped_atomic_desc(): the operation in bits 3:0, SIMD8 in bit 4, the old
+ *                      value returned in bit 5
+ *   - brw_eu_emit.c    (sha256 7a359df7a0d4fc8085d050e510c34a074ebaccbf6ae826a009ac73875223853d)
+ *                      brw_memory_fence() / brw_set_memory_fence_message(): a SIMD1 NoMask message of r0 with
+ *                      a header, one reply register, the commit bit 5 of the control, the binding table
+ *                      entry 0 (the data cache) or 254 (shared memory); brw_barrier(): a SIMD8 NoMask
+ *                      gateway message of one register without a header
+ *   - brw_fs_nir.cpp   (sha256 2e6116f7818ad378a4ea4d0724b237cec7477940aaa0e19735b32a0c6a4920f8)
+ *                      emit_barrier(): the payload cleared, the barrier ID of r0.2 (bits 30:24) in its
+ *                      dword 2; the fences of nir_intrinsic_barrier before Gfx12.5 with commit on
+ *   - brw_generator.cpp (sha256 0c3f99afe06ae7b651d48ff4966d0f8dabcb744fa3513a7018ee51a1bea90d3b)
+ *                      generate_barrier(): on Gfx12 the gateway message, then sync.bar
+ * The descriptors were checked with Mesa's brw_disasm / brw_asm (--gen=adl) (plan/ws101/design.md section 1.6).
+ */
+#define EU_SFID_GATEWAY			3U
+#define EU_GATEWAY_BARRIER		4U
+#define EU_DP_UNTYPED_READ		1U
+#define EU_DP_UNTYPED_ATOMIC		2U
+#define EU_DP_UNTYPED_WRITE		9U
+#define EU_DP_UNTYPED_ONE_CHANNEL	0x0eU
+#define EU_DP_UNTYPED_SIMD8		(2U << 4)
+#define EU_DP_ATOMIC_SIMD8		(1U << 4)
+#define EU_DP_MEMORY_FENCE		7U
+#define EU_DP_FENCE_COMMIT		(1U << 5)
+#define EU_BTI_DATA_CACHE		0U
+#define EU_BTI_SLM			254U
+#define EU_SYNC_ALLWR			3U
+#define EU_SYNC_BAR			0x0eU
+#define EU_BARRIER_ID_DWORD		2U
+#define EU_BARRIER_ID_MASK		0x7f000000U
+
 #endif /* DRIVERS_GPU_I915_INTEL_EU_ENCODING_GEN12_H */
