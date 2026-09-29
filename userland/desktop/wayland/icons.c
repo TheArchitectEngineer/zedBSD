@@ -242,6 +242,16 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_SEGMENT, 8.5f, 16.5f, 15.5f, 16.5f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
+	/* Image Viewer (ws091): a picture in a frame, a sun over two hills. */
+	{
+		{ ICON_FRAME, 3.0f, 4.5f, 21.0f, 19.5f, 2.5f },
+		{ ICON_DOT, 16.5f, 9.0f, 1.8f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 5.5f, 17.0f, 10.0f, 11.5f, 0.0f },
+		{ ICON_SEGMENT, 10.0f, 11.5f, 14.5f, 17.0f, 0.0f },
+		{ ICON_SEGMENT, 12.8f, 15.0f, 15.5f, 12.5f, 0.0f },
+		{ ICON_SEGMENT, 15.5f, 12.5f, 18.5f, 17.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
 	/* Browser: a globe, its equator and one meridian seen from the side. */
 	{
 		{ ICON_RING, 12.0f, 12.0f, 8.5f, 0.0f, 0.0f },
@@ -316,6 +326,7 @@ static const char *const icon_app_names[GLASS_ICON_APPS] = {
 	"notes",
 	"terminal",
 	"pdf",
+	"image",
 	"browser",
 	"model",
 	"gears",
@@ -330,6 +341,7 @@ static const struct icon_app_id icon_app_ids[] = {
 	{ "notes", GLASS_ICON_APP_NOTES, 0xe0a526U },
 	{ "terminal", GLASS_ICON_APP_TERMINAL, 0x323a4eU },
 	{ "pdfviewer", GLASS_ICON_APP_PDF, 0xd9534fU },
+	{ "imageview", GLASS_ICON_APP_IMAGE, 0x3fa36bU },
 	{ "browser", GLASS_ICON_APP_BROWSER, 0x3a8fd8U },
 	{ "mview", GLASS_ICON_APP_MODEL, 0xe07a5aU },
 	{ "Gears", GLASS_ICON_APP_GEARS, 0xd05a3aU },
