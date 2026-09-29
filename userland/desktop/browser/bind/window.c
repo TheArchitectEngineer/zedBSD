@@ -44,6 +44,10 @@ static void window_trace(struct vm_heap *heap, void *context);
 static const struct bind_attribute window_attributes[] = {
 	{ "innerWidth", window_inner_width, NULL },
 	{ "innerHeight", window_inner_height, NULL },
+	{ "scrollX", bind_window_scroll_x, NULL },
+	{ "scrollY", bind_window_scroll_y, NULL },
+	{ "pageXOffset", bind_window_scroll_x, NULL },
+	{ "pageYOffset", bind_window_scroll_y, NULL },
 	{ NULL, NULL, NULL }
 };
 
@@ -96,7 +100,11 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_screen_interface,
 	&bind_performance_interface,
 	&bind_location_interface,
-	&bind_html_image_element_interface
+	&bind_html_image_element_interface,
+	&bind_dom_token_list_interface,
+	&bind_dom_string_map_interface,
+	&bind_dom_rect_interface,
+	&bind_css_style_declaration_interface
 };
 
 /*
@@ -676,6 +684,16 @@ window_define_globals(
 
 	/* navigator, screen, performance, location, Image and the window's plain properties. */
 	error = bind_environment_install(window);
+	if (error != 0)
+		return error;
+
+	/* DOMRect's members (ws074-p031). */
+	error = bind_geometry_install(window);
+	if (error != 0)
+		return error;
+
+	/* The inline style's accessors (ws074-p031). */
+	error = bind_style_install(window);
 	if (error != 0)
 		return error;
 

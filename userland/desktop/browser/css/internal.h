@@ -574,6 +574,17 @@ struct css_sheet {
 	int origin;
 };
 
+/*
+ * A selector list a script gave (querySelector, matches and closest;
+ * ws074-p031): its selectors and the arena they live in.  The names in it
+ * are atoms, which live as long as the heap, so the list needs no tracing.
+ */
+struct css_query {
+	struct wb_arena arena;
+	struct css_selector *selectors;
+	size_t count;
+};
+
 /* The origins of style sheets. */
 #define CSS_ORIGIN_USER_AGENT	0
 #define CSS_ORIGIN_AUTHOR	1

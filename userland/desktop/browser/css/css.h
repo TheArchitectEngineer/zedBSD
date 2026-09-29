@@ -547,6 +547,20 @@ size_t css_sheet_rule_count(const struct css_sheet *sheet);
 const struct css_media *css_sheet_import_media(const struct css_sheet *sheet, size_t index);
 int css_sheet_resolve_urls(struct css_sheet *sheet, css_url_resolver resolve, void *context);
 
+/*
+ * A selector list a script gave (querySelector and the like), parsed once
+ * and matched against elements (css_query_parse, css_engine_query_matches).
+ */
+struct css_query;
+
+/* The selector lists of scripts (parser.c, cascade.c; ws074-p031). */
+int css_query_parse(struct vm_heap *heap, const uint16_t *units, size_t length, struct css_query **query);
+void css_query_destroy(struct css_query *query);
+
+/* The inline style of scripts (parser.c, values.c; ws074-p031). */
+int css_declaration_valid(struct vm_heap *heap, const uint16_t *units, size_t length, int *valid);
+const char *css_property_name(size_t index);
+
 /* The engine (cascade.c). */
 int css_engine_create(struct css_engine **engine, struct vm_heap *heap);
 void css_engine_destroy(struct css_engine *engine);
@@ -563,5 +577,7 @@ void css_engine_forget_styles(struct css_engine *engine);
 int css_engine_compute(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style);
 int css_engine_compute_pseudo(struct css_engine *engine, struct dom_element *element, int pseudo, const struct css_style *element_style, struct css_style *style);
 void css_initial_style(struct css_style *style);
+void css_engine_query_begin(struct css_engine *engine);
+int css_engine_query_matches(struct css_engine *engine, struct dom_element *element, const struct css_query *query);
 
 #endif

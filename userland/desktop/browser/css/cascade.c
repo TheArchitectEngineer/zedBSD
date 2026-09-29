@@ -726,6 +726,50 @@ cascade_compute(
 }
 
 /*
+ * Starts matching a script's selector lists (querySelector and the like;
+ * ws074-p031) with an engine that outlives one styling.  The class
+ * attributes split before are forgotten: a class a list names became an
+ * atom only when the list was parsed, and a split made before would not
+ * have it.
+ */
+void
+css_engine_query_begin(
+	struct css_engine *engine)
+{
+	/* No class attribute is split any more. */
+	if (engine->class_table != NULL)
+		memset(engine->class_table, 0, engine->class_capacity * sizeof(*engine->class_table));
+	engine->class_count = 0;
+	engine->class_atoms.count = 0;
+}
+
+/*
+ * Tells whether an element matches any selector of a script's list (the
+ * element itself: a selector of a pseudo-element matches nothing).
+ */
+int
+css_engine_query_matches(
+	struct css_engine *engine,
+	struct dom_element *element,
+	const struct css_query *query)
+{
+	const struct css_selector *selector;
+	size_t index;
+	int matches;
+
+	/* Each selector of the list, until one matches. */
+	for (index = 0; index < query->count; index++) {
+		selector = &query->selectors[index];
+		matches = cascade_selector_matches(engine, element, selector, selector->count - 1U, NULL);
+		if (matches)
+			return 1;
+	}
+
+	/* Succeeded: no selector matches. */
+	return 0;
+}
+
+/*
  * Fills a style with the initial values of every property.
  */
 void

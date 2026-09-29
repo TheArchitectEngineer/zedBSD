@@ -27,6 +27,16 @@ TESTS = os.path.join(ROOT, "plan/ws074/tests/dom")
 CONSOLE = re.compile(r':CONSOLE(?:\(\d+\)|:\d+)\] "(.*)", source: ')
 
 
+def fonts():
+    # ws074-p031: the geometry tests need the page laid out, and a host has no fonts at the system's place
+    # (/usr/share/fonts/keiland*.ttf, where the guest has them); the ones of build/ws035-fonts are given when
+    # they are there.  The tests measure only boxes whose place the fonts do not change.
+    sans = os.path.join(ROOT, "build/ws035-fonts/Inter.ttf")
+    if not os.path.exists(sans):
+        return []
+    return ["--font=" + sans]
+
+
 def tests():
     return sorted(glob.glob(os.path.join(TESTS, "*.html")))
 
@@ -86,8 +96,8 @@ def main():
             with open(os.path.join(args.outputs, name + ".out"), errors="replace") as stream:
                 output = stream.read()
         else:
-            run = subprocess.run([args.program, "--run", path], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                 text=True, errors="replace", timeout=120)
+            run = subprocess.run([args.program, "--run"] + fonts() + [path], stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, errors="replace", timeout=120)
             output = run.stdout
             if run.returncode != 0:
                 output += "(exit status %d: %s)\n" % (run.returncode, run.stderr.strip())

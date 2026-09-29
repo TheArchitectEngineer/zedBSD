@@ -75,6 +75,9 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/css/ua.c \
 	$(KEILAND_BROWSER_DIR)/bind/window.c \
 	$(KEILAND_BROWSER_DIR)/bind/environment.c \
+	$(KEILAND_BROWSER_DIR)/bind/query.c \
+	$(KEILAND_BROWSER_DIR)/bind/geometry.c \
+	$(KEILAND_BROWSER_DIR)/bind/style.c \
 	$(KEILAND_BROWSER_DIR)/bind/node.c \
 	$(KEILAND_BROWSER_DIR)/bind/mixin.c \
 	$(KEILAND_BROWSER_DIR)/bind/element.c \
@@ -94,6 +97,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/page/page.c \
 	$(KEILAND_BROWSER_DIR)/page/link.c \
 	$(KEILAND_BROWSER_DIR)/page/script.c \
+	$(KEILAND_BROWSER_DIR)/page/geometry.c \
 	$(KEILAND_BROWSER_DIR)/page/images.c \
 	$(KEILAND_BROWSER_DIR)/page/sheets.c \
 	$(KEILAND_BROWSER_DIR)/page/fonts.c \

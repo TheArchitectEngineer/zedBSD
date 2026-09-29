@@ -1569,8 +1569,9 @@ view_make_page(
 	if (error != 0)
 		return error;
 
-	/* Its scripts see the view's size, write their console through the view, and count time from now. */
+	/* Its scripts see the view's size and its fonts, write their console through the view, and count time from now. */
 	page_set_viewport(made, (int)view->width, (int)view->height);
+	page_set_fonts(made, &view->fonts);
 	page_set_console(made, view_console, view);
 	view->open_epoch = view_clock();
 
@@ -1897,6 +1898,9 @@ view_clamp_scroll(
 		view->scroll_y = limit;
 	if (view->scroll_y < 0)
 		view->scroll_y = 0;
+
+	/* The page's scripts see where the view is (ws074-p031). */
+	page_set_scroll(view->page, 0.0, layout_to_px(view->scroll_y));
 }
 
 /* Takes the page's title again, and tells the caller when it changed. */

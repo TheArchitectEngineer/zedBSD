@@ -128,6 +128,7 @@ page_destroy(
 		text_system_close(&page->text);
 	page_images_release(page);
 	css_engine_destroy(page->css);
+	css_engine_destroy(page->query_css);
 	page_sheets_release(page);
 	page_fonts_release(page);
 	bind_window_destroy(page->window);
@@ -332,8 +333,39 @@ page_set_viewport(
 	int width,
 	int height)
 {
-	/* The window object's size. */
+	/* The size a script's question lays the page out at, and the window object's. */
+	page->viewport_width = width;
+	page->viewport_height = height;
 	bind_window_set_viewport(page->window, width, height);
+}
+
+/*
+ * Tells the page the fonts its view draws with, which a script's question
+ * about the geometry lays the page out with (the paths must outlive the
+ * page).
+ */
+void
+page_set_fonts(
+	struct page *page,
+	const struct text_font_paths *paths)
+{
+	/* The view's paths. */
+	page->font_paths = paths;
+}
+
+/*
+ * Tells the page how far its view is scrolled, in CSS pixels (the
+ * scripts' scrollX, scrollY and client rectangles).
+ */
+void
+page_set_scroll(
+	struct page *page,
+	double x,
+	double y)
+{
+	/* The two distances. */
+	page->scroll_x = x;
+	page->scroll_y = y;
 }
 
 /*
@@ -428,7 +460,9 @@ page_layout(
 	/* The web fonts that arrived join the text system. */
 	page_fonts_install(page);
 
-	/* The window's size for the scripts. */
+	/* The window's size for the scripts, and the size their questions lay the page out at. */
+	page->viewport_width = width;
+	page->viewport_height = height;
 	bind_window_set_viewport(page->window, width, height);
 
 	/* The images the document names, fetched and decoded when they are new. */
