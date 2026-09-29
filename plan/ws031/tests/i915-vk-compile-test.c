@@ -42,6 +42,7 @@ kern_free(void *pointer)
 #include "../../../src/drivers/gpu/i915/compiler/eu.c"
 #include "../../../src/drivers/gpu/i915/compiler/compile.c"
 #include "../../../src/drivers/gpu/i915/tests/fixtures/generality-shaders-gen.inc"
+#include "../../ws075/tests/guard/scoreboard-check.h"
 
 static uint32_t *
 load_spv(const char *name, size_t *words)
@@ -331,9 +332,18 @@ test_vertex_shader_generates_eu(void)
 	assert(drv_i915_shader_compile(ir, &binary) == 0);
 	/*
 	 * one EU instruction to an IR instruction, plus: the prologue (4 header + 4 position + 4 for the one
-	 * varying), a sync.nop after each of the 4 MATHs, and the end -- URB write, sync.nop, handle copy, URB write
+	 * varying) and the end -- URB write, handle copy, URB write; the sync.nops (where the scoreboard pass of
+	 * ws075-p022 put them) are counted apart, and there is at least one, before the MATHs' results are read
 	 */
-	assert(binary->code_bytes == (ir->instruction_count + 12U + 4U + 4U) * 16U);
+	{
+		unsigned index, syncs = 0U;
+
+		for (index = 0U; index < binary->code_bytes / 16U; index++)
+			if (inst_field(binary->code + index * 4U, EU_OPCODE_HI, EU_OPCODE_LO) == EU_OP_SYNC)
+				syncs++;
+		assert(syncs >= 1U);
+		assert(binary->code_bytes / 16U - syncs == ir->instruction_count + 12U + 3U);
+	}
 	assert(binary->grf_used > COMPILE_FIRST_VALUE_GRF && binary->grf_used <= COMPILE_LAST_VALUE_GRF + 1U);
 	assert(binary->dispatch_grf_start == COMPILE_PAYLOAD_GRF && binary->push_regs == 1U);
 	assert(binary->input_count == 2U && binary->input_locations[0] == 0U && binary->input_locations[1] == 1U);
@@ -383,6 +393,9 @@ static unsigned eu_model_divergent_whiles;
 static unsigned eu_model_scratch_writes;
 static unsigned eu_model_scratch_reads;
 static unsigned eu_model_scratch_partial;       /* block writes that ran on some channels only (a loop had stopped others) */
+
+/* how many kernels had their scoreboard checked (ws075-p022) */
+static unsigned eu_model_scoreboard_checks;
 
 struct eu_model {
 	uint32_t grf[128][8];
@@ -667,6 +680,16 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 	unsigned count = binary->code_bytes / 16U, index, channel;
 	unsigned active = m->dispatched;
 	unsigned loop_at[32], parked[32], loops = 0U, passes = 0U;
+
+	/* every kernel the model runs has its scoreboard checked first (ws075-p022) */
+	{
+		int fault = sbc_check(binary->code, count);
+
+		if (fault >= 0)
+			printf("  scoreboard fault at instruction %d of %u\n", fault, count);
+		assert(fault < 0);
+		eu_model_scoreboard_checks++;
+	}
 
 	for (index = 0U; index < count; index++) {
 		const uint32_t *inst = binary->code + index * 4U;
@@ -2050,6 +2073,7 @@ main(void)
 	test_eu_generality_fragment();
 	test_eu_generality_interfaces();
 	assert(fixture_live == 0U);
+	printf("  scoreboard: %u kernels checked (ws075-p022)\n", eu_model_scoreboard_checks);
 	printf("i915 vk compile host test PASS\n");
 	return 0;
 }

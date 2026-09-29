@@ -8,7 +8,9 @@
 /*
  * ws075-p021: compiles one SPIR-V module with the i915 executor's compiler on
  * the host and writes the kernel's EU code to a file, for Mesa's disassembler
- * (plan/ws075/tests/guard/run.sh).
+ * (plan/ws075/tests/guard/run.sh), and checks its scoreboard (scoreboard-check.h, ws075-p022): the kernel
+ * must be sound, and the same kernel with every sync.nop taken out must not be (so the check can fail) when
+ * it has an out-of-order instruction whose result is used.
  *
  *   shader-dump vertex|fragment FILE.spv OUT.bin
  */
@@ -37,6 +39,7 @@ kern_free(
 #include "../../../../src/drivers/gpu/i915/compiler/spirv.c"
 #include "../../../../src/drivers/gpu/i915/compiler/eu.c"
 #include "../../../../src/drivers/gpu/i915/compiler/compile.c"
+#include "scoreboard-check.h"
 
 int
 main(
@@ -84,6 +87,32 @@ main(
 	if (error != 0) {
 		fprintf(stderr, "%s: refused by the compiler: %d\n", argv[2], error);
 		return 1;
+	}
+
+	/* The scoreboard: sound as made, and faulty without its waits (when it has any). */
+	{
+		uint32_t *stripped;
+		unsigned count, index, kept;
+		int fault;
+
+		count = binary->code_bytes / 16U;
+		fault = sbc_check(binary->code, count);
+		if (fault >= 0) {
+			fprintf(stderr, "%s: scoreboard fault at instruction %d\n", argv[2], fault);
+			return 1;
+		}
+		stripped = calloc(count, 16U);
+		kept = 0U;
+		for (index = 0U; index < count; index++) {
+			if (sbc_field(binary->code + index * 4U, 6U, 0U) == 1U)
+				continue;
+			memcpy(stripped + kept * 4U, binary->code + index * 4U, 16U);
+			kept++;
+		}
+		fault = sbc_check(stripped, kept);
+		printf("%s: scoreboard sound; %u sync.nop; without them %s\n", argv[3], count - kept,
+		       fault >= 0 ? "a fault is found" : "no fault");
+		free(stripped);
 	}
 
 	/* Writes the kernel's code. */
