@@ -174,6 +174,27 @@ static const struct inflect_state inflect_states[] = {
 };
 
 /*
+ * A verb usually written in kana: its stem and whether it is ichidan (いる)
+ * or a godan verb of the ら row (ある).  SKK files them under headwords
+ * shared with other verbs (いr is 居る, 要る and 入れる), so they are
+ * known here instead, written as typed.
+ */
+struct inflect_kana_verb {
+	const char *stem;
+	bool ichidan;
+};
+
+/*
+ * The verbs written in kana: いる, ある, なる and できる.
+ */
+static const struct inflect_kana_verb inflect_kana_verbs[] = {
+	{ "い", true },
+	{ "あ", false },
+	{ "な", false },
+	{ "でき", true }
+};
+
+/*
  * The particles and copulas a word may take, the usual pairs (には, では,
  * への) among them as one entry, so that particles do not string together
  * into a segment of their own making (に, の and って would swallow
@@ -186,15 +207,26 @@ static const char *const inflect_particles[] = {
 	"には", "では", "へは", "への", "とは", "との", "での", "からは", "からの", "までに", "までの", "にも", "とも",
 	"のは", "のが", "のを", "のも", "だけで", "だけが", "だけを", "しかない", "について", "として", "にとって",
 	"です", "でした", "でしょう", "だ", "だった", "だろう", "じゃ", "じゃない", "ではない", "ではありません",
+	"のです", "のでしょう", "んです", "んだ", "んでしょう",
 	NULL
 };
 
 /*
- * The particles that may end a sentence after the particle or copula
- * before them (ですね, だよ, のか).
+ * The copulas and the particles after which a particle ending the
+ * sentence may follow (ですね, だよ, のか); after a case particle it may
+ * not (を and か would make をか).
+ */
+static const char *const inflect_final_hosts[] = {
+	"の", "です", "でした", "でしょう", "だ", "だった", "だろう", "じゃない", "ではない", "ではありません", "けど",
+	"のです", "のでしょう", "んです", "んだ", "んでしょう",
+	NULL
+};
+
+/*
+ * The particles that may end a sentence after one of the hosts above.
  */
 static const char *const inflect_finals[] = {
-	"ね", "よ", "か", "な", "わ", "よね", "かな", "けど",
+	"ね", "よ", "か", "な", "わ", "よね", "かな", "けど", "が", "から", "ので",
 	NULL
 };
 
@@ -217,15 +249,18 @@ static uint32_t inflect_code_at(const struct ja_text *text, size_t unit);
  * Marks where the okurigana after a headword's reading can end.
  *
  * The reading ends before unit stem_end, and the headword's last letter
- * is the consonant.  Each unit an okurigana can end before is marked in
- * ends, which has room for every unit and the end, and which the caller
- * has cleared.
+ * is the consonant.  An adjective's headword (高い has たかi and たかk)
+ * takes the adjective's endings alone, so that 辛 (からk) does not take a
+ * verb's (から + きました).  Each unit an okurigana can end before is
+ * marked in ends, which has room for every unit and the end, and which the
+ * caller has cleared.
  */
 void
 ja_inflect_ends(
 	const struct ja_text *text,
 	size_t stem_end,
 	char consonant,
+	bool adjective,
 	bool *ends)
 {
 	uint32_t code;
@@ -236,6 +271,13 @@ ja_inflect_ends(
 	/* No okurigana fits after the last unit. */
 	if (stem_end >= text->unit_count)
 		return;
+
+	/* An adjective ends only as one. */
+	if (adjective) {
+		inflect_walk(text, stem_end, TAIL_ADJECTIVE, ends);
+		ends[stem_end] = false;
+		return;
+	}
 
 	/* The headword's letter as the row of a godan verb (書く, 読む, 買う). */
 	inflect_godan(text, stem_end, consonant, ends);
@@ -309,6 +351,78 @@ ja_inflect_kuru_ends(
 }
 
 /*
+ * Marks where a verb written in kana (いる, ある, なる, できる) beginning at
+ * a unit can end.
+ */
+void
+ja_inflect_kana_verb_ends(
+	const struct ja_text *text,
+	size_t start,
+	bool *ends)
+{
+	size_t i;
+	size_t stem_end;
+	bool matched;
+
+	/* Each verb whose stem is typed here, with its endings. */
+	for (i = 0; i < sizeof(inflect_kana_verbs) / sizeof(inflect_kana_verbs[0]); i++) {
+		matched = ja_text_match(text, start, inflect_kana_verbs[i].stem, &stem_end);
+		if (!matched)
+			continue;
+
+		/* An ichidan verb takes its endings after the stem; a godan one through the ら row. */
+		if (inflect_kana_verbs[i].ichidan) {
+			inflect_walk(text, stem_end, TAIL_ICHIDAN, ends);
+		} else if (stem_end < text->unit_count) {
+			inflect_godan(text, stem_end, 'r', ends);
+		}
+
+		/* The stem alone is no form. */
+		ends[stem_end] = false;
+	}
+
+	ends[start] = false;
+}
+
+/*
+ * Gives where the stem of a verb written in kana ends, when such a verb
+ * beginning at a unit ends at another; the start itself when none does.
+ */
+size_t
+ja_inflect_kana_verb_stem(
+	const struct ja_text *text,
+	size_t start,
+	size_t end)
+{
+	bool ends[JA_UNITS_MAX + 1U];
+	size_t i;
+	size_t stem_end;
+	bool matched;
+
+	/* Tries each verb alone. */
+	for (i = 0; i < sizeof(inflect_kana_verbs) / sizeof(inflect_kana_verbs[0]); i++) {
+		matched = ja_text_match(text, start, inflect_kana_verbs[i].stem, &stem_end);
+		if (!matched)
+			continue;
+
+		/* The verb's endings from its stem. */
+		memset(ends, 0, sizeof(ends));
+		if (inflect_kana_verbs[i].ichidan) {
+			inflect_walk(text, stem_end, TAIL_ICHIDAN, ends);
+		} else if (stem_end < text->unit_count) {
+			inflect_godan(text, stem_end, 'r', ends);
+		}
+
+		/* This verb ends there. */
+		if (stem_end < end && ends[end])
+			return stem_end;
+	}
+
+	/* No verb written in kana ends there. */
+	return start;
+}
+
+/*
  * Marks where the particles after a word beginning at a unit can end: none,
  * one particle (or usual pair), and one particle that ends a sentence
  * after it.  The start itself is marked, for a word that takes none.
@@ -324,6 +438,8 @@ ja_particle_ends(
 	size_t end;
 	size_t final_end;
 	bool matched;
+	bool host;
+	bool same;
 
 	/* No particle at all. */
 	ends[start] = true;
@@ -335,6 +451,18 @@ ja_particle_ends(
 			continue;
 
 		ends[end] = true;
+
+		/* A particle ending the sentence follows a copula or の only. */
+		host = false;
+		for (j = 0; inflect_final_hosts[j] != NULL; j++) {
+			same = ja_bytes_equal(inflect_particles[i], strlen(inflect_particles[i]), inflect_final_hosts[j],
+					      strlen(inflect_final_hosts[j]));
+			if (same)
+				host = true;
+		}
+
+		if (!host)
+			continue;
 
 		/* A particle ending the sentence after it. */
 		for (j = 0; inflect_finals[j] != NULL; j++) {

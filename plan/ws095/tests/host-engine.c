@@ -370,7 +370,7 @@ inflect_case(
 
 	ja_text_build(text, units, count);
 	memset(ends, 0, sizeof(ends));
-	ja_inflect_ends(text, stem_end, consonant, ends);
+	ja_inflect_ends(text, stem_end, consonant, false, ends);
 	check((ends[end] ? 1 : 0) == expected, "inflect %s (stem %zu, %c) %s at %zu", reading, stem_end, consonant,
 	      expected ? "ends" : "does not end", end);
 	free(text);

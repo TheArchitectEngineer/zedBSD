@@ -225,6 +225,8 @@ size_t ja_utf8_encode(uint32_t code, char *out);
 size_t ja_utf8_decode(const char *text, size_t length, uint32_t *code);
 bool ja_bytes_equal(const char *left, size_t left_length, const char *right, size_t right_length);
 bool ja_is_hiragana(uint32_t code);
+bool ja_starts_no_word(uint32_t code);
+bool ja_is_loanword_mark(uint32_t code);
 uint32_t ja_to_katakana(uint32_t code);
 const char *ja_to_half_katakana(uint32_t code);
 uint32_t ja_to_full_ascii(uint32_t code);
@@ -252,9 +254,11 @@ int ja_user_learn(struct ja_user *user, const char *reading, size_t length, cons
 int ja_user_save(const struct ja_user *user);
 
 /* ja-inflect.c */
-void ja_inflect_ends(const struct ja_text *text, size_t stem_end, char consonant, bool *ends);
+void ja_inflect_ends(const struct ja_text *text, size_t stem_end, char consonant, bool adjective, bool *ends);
 void ja_inflect_suru_ends(const struct ja_text *text, size_t start, bool *ends);
 void ja_inflect_kuru_ends(const struct ja_text *text, size_t start, bool *ends);
+void ja_inflect_kana_verb_ends(const struct ja_text *text, size_t start, bool *ends);
+size_t ja_inflect_kana_verb_stem(const struct ja_text *text, size_t start, size_t end);
 void ja_particle_ends(const struct ja_text *text, size_t start, bool *ends);
 bool ja_is_particle(const struct ja_text *text, size_t start, size_t end);
 bool ja_text_match(const struct ja_text *text, size_t start, const char *suffix, size_t *end);
