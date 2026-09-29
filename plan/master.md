@@ -4,7 +4,6 @@
 Active Queue: なし（subagent の運用。実行の状況は [queue.md](queue.md) の Executor の行）。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
 Next（2026-09-29 夕に更新）: **素の 5330 で firmware の画面の takeover → 内蔵 LCD の Keiland が動作**（WS084 p001・p002 cleared、image `build/demo-lcd3/hdd-image.img`、ユーザー「完璧です」）。HDMI の LCD はいったん外し LCD のみの構成（demo の既定 `display=edp`）。GT は RP0 の要求で操作中 24.5 present/s（RPS の割込みは F-054）。
-root の password は `build/demo-hdmi2/demo-accounts/root-password`、QEMU・実機の起動は未実施）。ユーザーが実機で試す（HDMI の LCD での login・logout の目視、touch の USB）。
 次の周期（demo critical）: WS074 の direction → p072 → p037（[amazon-goal.md](ws074/amazon-goal.md)）、WS079 p009（規約）と CCITTFax・password の入力・thumbnail、
 WS075 p007〜p010 と BUG-058（p017 uncleared）、WS035 の F-048。WS082 は study.md §10 の 11 項目のユーザーの判断待ち。WS080 はデモ critical の後。
 <!-- awesome-plan-current:end -->
