@@ -127,6 +127,8 @@ struct bind_timer {
 	vm_value arguments;
 };
 
+struct environment_fetch_pending;
+
 /*
  * The window of a page: the realm whose global object it is, the
  * document, the host, the prototypes of the interfaces, the window's own
@@ -159,7 +161,10 @@ struct bind_window {
 	double time_origin;
 	struct vm_object *local_storage;
 	struct vm_object *session_storage;
+	struct environment_fetch_pending *fetches;
 };
+
+void bind_environment_release(struct bind_window *window);
 
 /*
  * One event listener of a target: its type, its callback (a function or

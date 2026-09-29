@@ -102,6 +102,10 @@ struct bind_storage_calls {
 	int (*clear)(void *context, int area);
 };
 
+/* Completion of a resource fetched for the Fetch API. */
+typedef void (*bind_fetch_done)(void *context, int error, int status,
+	const unsigned char *bytes, size_t length, const char *url);
+
 /*
  * What the window asks of its host: where the console's lines go (one
  * line of UTF-8 text at a level, without its line feed), the User-Agent
@@ -140,7 +144,8 @@ struct bind_host {
 	void (*scroll_to)(void *context, double x, double y);
 	int (*node_inserted)(void *context, struct dom_node *node);
 	int (*checkpoint)(void *context);
-	int (*fetch)(void *context, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
+	int (*fetch)(void *context, const char *href, bind_fetch_done done, void *done_context);
+	int (*fetch_sync)(void *context, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
 	struct dom_node *(*element_at)(void *context, double x, double y);
 };
 

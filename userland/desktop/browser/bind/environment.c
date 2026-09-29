@@ -25,6 +25,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -78,6 +79,13 @@ struct environment_part {
 	int part;
 };
 
+/* A pending Fetch promise, rooted until its host request completes. */
+struct environment_fetch_pending {
+	struct bind_window *window;
+	struct vm_cell *promise;
+	struct environment_fetch_pending *next;
+};
+
 static int environment_install_navigator(struct bind_window *window);
 static int environment_install_screen(struct bind_window *window);
 static int environment_install_performance(struct bind_window *window);
@@ -110,6 +118,7 @@ static int environment_outer_size(struct vm_realm *realm, vm_value this_value, c
 static int environment_atob(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_btoa(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_fetch(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static void environment_fetch_done(void *context, int error, int response_status, const unsigned char *bytes, size_t length, const char *url);
 static int environment_response_text(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_response_json(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_headers_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -123,7 +132,7 @@ static int environment_xhr_nothing(struct vm_realm *realm, vm_value this_value, 
 static int environment_xhr_put(struct vm_realm *realm, vm_value object, const char *name, vm_value value);
 static int environment_xhr_get(struct vm_realm *realm, vm_value object, const char *name, vm_value *value);
 static int environment_xhr_fire(struct vm_realm *realm, vm_value object, const char *type);
-static int environment_response(struct vm_realm *realm, const struct wb_buffer *bytes, const struct wb_buffer *url, vm_value *result);
+static int environment_response(struct vm_realm *realm, const struct wb_buffer *bytes, const struct wb_buffer *url, int response_status, vm_value *result);
 static int environment_settle_promise(struct vm_realm *realm, vm_value value, int reject, vm_value *result);
 static int environment_observer_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_observer_observe(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -850,10 +859,10 @@ environment_xhr_send(
 	wb_buffer_init(&final_url);
 	status = vm_string_to_utf8(url, &href);
 	window = bind_window_of(realm);
-	if (status == 0 && window->host.fetch == NULL)
+	if (status == 0 && window->host.fetch_sync == NULL)
 		status = ENOSYS;
 	if (status == 0)
-		status = window->host.fetch(window->host.context, wb_buffer_string(&href), &bytes, &final_url);
+		status = window->host.fetch_sync(window->host.context, wb_buffer_string(&href), &bytes, &final_url);
 	fetched = status == 0;
 
 	/* A successful response exposes its body and final URL. */
@@ -1871,12 +1880,10 @@ environment_fetch(
 	vm_value *result)
 {
 	struct bind_window *window;
+	struct environment_fetch_pending *pending;
 	struct vm_string *input;
 	struct wb_buffer href;
-	struct wb_buffer bytes;
-	struct wb_buffer final_url;
-	vm_value response;
-	vm_value reason;
+	vm_value promise;
 	int status;
 
 	UNUSED_PARAMETER(this_value);
@@ -1886,33 +1893,120 @@ environment_fetch(
 	if (status != 0)
 		return status;
 	wb_buffer_init(&href);
-	wb_buffer_init(&bytes);
-	wb_buffer_init(&final_url);
 	status = vm_string_to_utf8(input, &href);
 
-	/* The page resolves and fetches it. */
+	/* A pending promise remains alive while the host owns its completion. */
 	window = bind_window_of(realm);
-	if (status == 0 && window->host.fetch == NULL)
-		status = ENOSYS;
-	if (status == 0)
-		status = window->host.fetch(window->host.context, wb_buffer_string(&href), &bytes, &final_url);
-
-	/* A response fulfills; a network failure rejects with a TypeError. */
+	pending = NULL;
 	if (status == 0) {
-		status = environment_response(realm, &bytes, &final_url, &response);
-		if (status == 0)
-			status = environment_settle_promise(realm, response, 0, result);
-	} else if (status != ENOMEM) {
-		status = vm_error_create(realm, VM_ERROR_TYPE, "Failed to fetch", &reason);
-		if (status == 0)
-			status = environment_settle_promise(realm, reason, 1, result);
+		pending = calloc(1, sizeof(*pending));
+		if (pending == NULL)
+			status = ENOMEM;
 	}
 
-	/* The fetch or response copied the temporary buffers. */
+	/* The Promise becomes the pending record's heap root. */
+	if (status == 0)
+		status = vm_promise_create(realm, NULL, &promise);
+	if (status == 0) {
+		pending->window = window;
+		pending->promise = vm_value_as_cell(promise);
+		status = vm_heap_add_root(realm->heap, &pending->promise);
+	}
+
+	/* The window owns the record before the host can complete synchronously. */
+	if (status == 0) {
+		pending->next = window->fetches;
+		window->fetches = pending;
+		*result = promise;
+		if (window->host.fetch == NULL) {
+			status = ENOSYS;
+		} else {
+			status = window->host.fetch(window->host.context, wb_buffer_string(&href),
+			    environment_fetch_done, pending);
+		}
+
+		/* A request that could not start becomes a rejected Promise. */
+		if (status != 0)
+			environment_fetch_done(pending, status, 0, NULL, 0, NULL);
+		status = 0;
+	}
+
+	/* The host copied the URL. */
+	if (status != 0 && pending != NULL)
+		free(pending);
 	wb_buffer_release(&href);
-	wb_buffer_release(&bytes);
-	wb_buffer_release(&final_url);
 	return status;
+}
+
+/* Settles one Fetch promise when the page's loader completes. */
+static void
+environment_fetch_done(
+	void *context,
+	int error,
+	int response_status,
+	const unsigned char *bytes,
+	size_t length,
+	const char *url)
+{
+	struct environment_fetch_pending *pending;
+	struct environment_fetch_pending **link;
+	struct vm_realm *realm;
+	struct wb_buffer body;
+	struct wb_buffer location;
+	vm_value value;
+	int status;
+
+	/* The promise and temporary copies used to make the Response. */
+	pending = context;
+	realm = pending->window->realm;
+	wb_buffer_init(&body);
+	wb_buffer_init(&location);
+	status = error;
+	if (status == 0)
+		status = wb_buffer_append(&body, bytes, length);
+	if (status == 0 && url != NULL)
+		status = wb_buffer_append_string(&location, url);
+	if (status == 0)
+		status = environment_response(realm, &body, &location, response_status, &value);
+	if (status == 0)
+		status = vm_promise_resolve(realm, vm_value_cell(pending->promise), value);
+	if (status != 0 && status != ENOMEM) {
+		status = vm_error_create(realm, VM_ERROR_TYPE, "Failed to fetch", &value);
+		if (status == 0)
+			status = vm_promise_reject(realm, vm_value_cell(pending->promise), value);
+	}
+
+	/* Unlink it after settlement; the host performs the task's microtask checkpoint. */
+	link = &pending->window->fetches;
+	while (*link != NULL && *link != pending)
+		link = &(*link)->next;
+	if (*link == pending)
+		*link = pending->next;
+	vm_heap_remove_root(realm->heap, &pending->promise);
+	wb_buffer_release(&body);
+	wb_buffer_release(&location);
+	free(pending);
+}
+
+/* Drops unfinished Fetch roots after their host requests were cancelled. */
+void
+bind_environment_release(
+	struct bind_window *window)
+{
+	struct environment_fetch_pending *next;
+	struct environment_fetch_pending *pending;
+
+	/* Each remaining host request has already been cancelled by the page. */
+	pending = window->fetches;
+	while (pending != NULL) {
+		next = pending->next;
+		vm_heap_remove_root(window->realm->heap, &pending->promise);
+		free(pending);
+		pending = next;
+	}
+
+	/* The list is empty. */
+	window->fetches = NULL;
 }
 
 /* Makes the small Response object used by fetch. */
@@ -1921,6 +2015,7 @@ environment_response(
 	struct vm_realm *realm,
 	const struct wb_buffer *bytes,
 	const struct wb_buffer *url,
+	int response_status,
 	vm_value *result)
 {
 	struct vm_function *method;
@@ -1929,6 +2024,7 @@ environment_response(
 	struct vm_string *body;
 	struct vm_string *empty;
 	struct vm_string *location;
+	vm_value ok;
 	int status;
 
 	/* The body is decoded as UTF-8 for text() and json(). */
@@ -1954,9 +2050,12 @@ environment_response(
 	response = vm_object_create(realm->heap, realm->object_prototype);
 	if (response == NULL)
 		return ENOMEM;
-	status = js_builtin_value(realm, response, "ok", VM_VALUE_TRUE, VM_PROPERTY_DEFAULT);
+	ok = VM_VALUE_FALSE;
+	if (response_status >= 200 && response_status <= 299)
+		ok = VM_VALUE_TRUE;
+	status = js_builtin_value(realm, response, "ok", ok, VM_PROPERTY_DEFAULT);
 	if (status == 0)
-		status = js_builtin_value(realm, response, "status", vm_value_int32(200), VM_PROPERTY_DEFAULT);
+		status = js_builtin_value(realm, response, "status", vm_value_int32(response_status), VM_PROPERTY_DEFAULT);
 	if (status == 0)
 		status = js_builtin_value(realm, response, "statusText", vm_value_cell(empty), VM_PROPERTY_DEFAULT);
 	if (status == 0)

@@ -108,6 +108,7 @@ struct page {
 	uint32_t sheets_generation;
 	uint32_t styled_sheets;
 	struct wb_vector scripts;
+	struct wb_vector fetches;
 	int scripts_running;
 	struct wb_vector fonts;
 	uint32_t fonts_generation;

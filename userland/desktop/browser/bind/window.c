@@ -185,6 +185,7 @@ bind_window_destroy(
 		return;
 
 	/* The realm no longer has a window, and the heap no longer traces it. */
+	bind_environment_release(window);
 	if (window->realm->host == window)
 		window->realm->host = NULL;
 	vm_heap_remove_tracer(window->realm->heap, window_trace, window);

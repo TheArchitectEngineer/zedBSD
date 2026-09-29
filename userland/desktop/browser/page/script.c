@@ -48,6 +48,14 @@ struct page_script {
 	int ordered;
 };
 
+/* One Fetch API request using the page's asynchronous network loader. */
+struct page_fetch_request {
+	struct page *page;
+	struct net_request *request;
+	bind_fetch_done done;
+	void *done_context;
+};
+
 static void script_console(void *context, int level, const char *text, size_t length);
 static int script_location(void *context, int part, struct wb_buffer *out);
 static int script_cookie_get(void *context, struct wb_buffer *out);
@@ -56,7 +64,10 @@ static int script_type_runs(const struct dom_element *script);
 static int script_attribute(struct page *page, const struct dom_element *element, const char *name, struct dom_attribute **attribute);
 static int script_run_file(struct page *page, const struct vm_string *src);
 static int script_ascii_equal_folded(const struct vm_string *string, const char *ascii);
-static int script_fetch(void *context, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
+static int script_fetch(void *context, const char *href, bind_fetch_done done, void *done_context);
+static int script_fetch_sync(void *context, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
+static void script_fetch_arrived(void *context, struct net_request *request);
+static void script_fetch_remove(struct page_fetch_request *entry);
 static int script_node_inserted(void *context, struct dom_node *node);
 static int script_checkpoint(void *context);
 static int script_walk_inserted(struct page *page, struct dom_node *node, int depth);
@@ -74,6 +85,7 @@ page_scripts_init(
 	struct page *page)
 {
 	wb_vector_init(&page->scripts, sizeof(struct page_script *));
+	wb_vector_init(&page->fetches, sizeof(struct page_fetch_request *));
 }
 
 /* Cancels and frees the page's dynamic external scripts. */
@@ -82,6 +94,7 @@ page_scripts_release(
 	struct page *page)
 {
 	struct page_script *entry;
+	struct page_fetch_request *fetch;
 	size_t index;
 
 	/* Each entry owns a request, a root while pending, its source and location. */
@@ -90,8 +103,16 @@ page_scripts_release(
 		script_release(entry);
 	}
 
+	/* Fetch API requests have no callback while cancellation frees them. */
+	for (index = 0; index < page->fetches.count; index++) {
+		fetch = *(struct page_fetch_request **)wb_vector_at(&page->fetches, index);
+		net_request_cancel(fetch->request);
+		free(fetch);
+	}
+
 	/* The table itself. */
 	wb_vector_release(&page->scripts);
+	wb_vector_release(&page->fetches);
 }
 
 /*
@@ -208,6 +229,7 @@ page_start_scripts(
 	host.node_inserted = script_node_inserted;
 	host.checkpoint = script_checkpoint;
 	host.fetch = script_fetch;
+	host.fetch_sync = script_fetch_sync;
 	host.element_at = page_element_at;
 	error = bind_window_create(page->realm, page->document, &host, &page->window);
 	if (error != 0)
@@ -217,23 +239,152 @@ page_start_scripts(
 	return 0;
 }
 
-/* Fetches bytes for the binding's fetch API, resolved against this page. */
+/* Fetches synchronously for legacy synchronous consumers such as the first XHR pass. */
 static int
-script_fetch(
+script_fetch_sync(
 	void *context,
 	const char *href,
 	struct wb_buffer *bytes,
 	struct wb_buffer *final_url)
 {
 	struct page *page;
-	int error;
 
-	/* The existing page fetcher handles file, data, HTTP and HTTPS locations. */
+	/* The original blocking page fetcher remains available to synchronous XHR. */
 	page = context;
 	if (page->base == NULL)
 		return EINVAL;
-	error = page_fetch(page->base, href, bytes, final_url);
-	return error;
+	return page_fetch(page->base, href, bytes, final_url);
+}
+
+/* Fetches bytes for the binding's fetch API, resolved against this page. */
+static int
+script_fetch(
+	void *context,
+	const char *href,
+	bind_fetch_done done,
+	void *done_context)
+{
+	struct page *page;
+	struct page_fetch_request *entry;
+	struct wb_buffer location;
+	struct wb_buffer bytes;
+	struct wb_buffer final_url;
+	const char *response_url;
+	int response_status;
+	int kept;
+	int remote;
+	int error;
+
+	/* Resolve first so remote requests can use the page's non-blocking loader. */
+	page = context;
+	if (page->base == NULL)
+		return EINVAL;
+	wb_buffer_init(&location);
+	error = page_resolve_location(page->base, href, &location);
+	remote = error == 0 && net_loader_takes(wb_buffer_string(&location));
+
+	/* A web resource runs with the same loader as images and inserted scripts. */
+	if (error == 0 && page->loader != NULL && remote) {
+		kept = 0;
+		entry = calloc(1, sizeof(*entry));
+		if (entry == NULL) {
+			error = ENOMEM;
+		} else {
+			entry->page = page;
+			entry->done = done;
+			entry->done_context = done_context;
+			error = wb_vector_push(&page->fetches, &entry);
+			if (error == 0) {
+				kept = 1;
+				error = net_loader_fetch(page->loader, wb_buffer_string(&location),
+				    script_fetch_arrived, entry, &entry->request);
+			}
+
+			/* A request that did not start leaves no table entry. */
+			if (error != 0) {
+				if (kept)
+					page->fetches.count--;
+				free(entry);
+			}
+		}
+
+		/* The loader copied the resolved location. */
+		wb_buffer_release(&location);
+		return error;
+	}
+
+	/* Local and data resources complete in this task. */
+	wb_buffer_init(&bytes);
+	wb_buffer_init(&final_url);
+	if (error == 0)
+		error = page_fetch(page->base, href, &bytes, &final_url);
+	response_status = 0;
+	response_url = NULL;
+	if (error == 0) {
+		response_status = 200;
+		response_url = wb_buffer_string(&final_url);
+	}
+
+	/* The binding copies the bytes before the temporary buffers go away. */
+	done(done_context, error, response_status, bytes.data, bytes.length, response_url);
+	wb_buffer_release(&bytes);
+	wb_buffer_release(&final_url);
+	wb_buffer_release(&location);
+	return 0;
+}
+
+/* Completes one Fetch API request from the asynchronous loader. */
+static void
+script_fetch_arrived(
+	void *context,
+	struct net_request *request)
+{
+	const struct net_response *response;
+	struct page_fetch_request *entry;
+	const char *response_url;
+	int response_status;
+	int error;
+
+	/* The result remains valid for the duration of this loader callback. */
+	entry = context;
+	entry->request = NULL;
+	error = net_request_error(request);
+	response = net_request_response(request);
+	response_status = 0;
+	response_url = NULL;
+	if (error == 0) {
+		response_status = response->status;
+		response_url = wb_buffer_string(&response->url);
+	}
+
+	/* Settlement queues Promise jobs, which this task then runs. */
+	entry->done(entry->done_context, error, response_status,
+	    response->body.data, response->body.length, response_url);
+	(void)bind_checkpoint(entry->page->window);
+	script_fetch_remove(entry);
+}
+
+/* Removes and frees a completed Fetch API request. */
+static void
+script_fetch_remove(
+	struct page_fetch_request *entry)
+{
+	struct page_fetch_request **slot;
+	size_t index;
+
+	/* Completion may have added more requests; find this one in the table. */
+	for (index = 0; index < entry->page->fetches.count; index++) {
+		slot = wb_vector_at(&entry->page->fetches, index);
+		if (*slot != entry)
+			continue;
+		*slot = *(struct page_fetch_request **)wb_vector_at(&entry->page->fetches,
+		    entry->page->fetches.count - 1U);
+		entry->page->fetches.count--;
+		break;
+	}
+
+	/* The table no longer refers to the completed entry. */
+	free(entry);
 }
 
 /*

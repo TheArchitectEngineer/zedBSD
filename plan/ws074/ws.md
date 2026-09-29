@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: q503-i01 / [ws074-p092](phase092/phase.md)
-Resume point: 2026-09-30: p088で動的な外部scriptを非同期取得・実行し、AmazonのAUI後続scriptまで進んだ。dynamic topは69.23%/ink 61.20%、Uncaught 9。p092でfetch・observer・atob等と長いtimer settleを直す。
+Resume point: 2026-09-30: p092でAmazonの後続script向けAPIを追加し、dynamic topは69.64%/ink 62.10%、約32秒・Uncaught 4。fetchは非同期loaderとPromiseへ接続済み。MutationObserverの変更通知と残る例外を追う。
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -184,7 +184,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p089](phase089/phase.md) | 百分率の高さ（`height`・`max-height` の %、layout 全体で「高さが定まっているか」を渡す。float・inline-block・grid の `1fr` の中を含む）。p084 の案 2 | **cleared**（2026-09-30。top 82.96%→84.06%、ink 79.01%→80.56%。search 75.85%→76.32%、ink 32.97%→34.48%） | p084 |
 | ws074-p090 | 合成の太字（Latin）の advance を Chromium に合わせる（約 9% 広い）。p084 の案 3（1 点前後） | planned | — |
 | ws074-p091 | flex の残り（overflow で隠れる項目の自動の最小、blockification、column の最小）と CSSOM の小さな不足（`cssFloat` など）。p084 の案 4・5 | planned | p084 |
-| [ws074-p092](phase092/phase.md) | Amazonの後続scriptが使うWeb API: `fetch`・observer・`document.elementsFromPoint`・`atob`/`btoa`と有界なheadless settle | in-progress（2026-09-30。基本APIとXHR・`with`、captureのquote修正。top 69.64%/ink 62.10%、32秒・Uncaught 4。非同期loaderとMutation通知が残る） | p087、p088 |
+| [ws074-p092](phase092/phase.md) | Amazonの後続scriptが使うWeb API: `fetch`・observer・`document.elementsFromPoint`・`atob`/`btoa`と有界なheadless settle | in-progress（2026-09-30。基本APIとXHR・`with`、captureのquote修正、fetchの非同期loader接続。top 69.64%/ink 62.10%、32秒・Uncaught 4。Mutation通知と残る例外を追跡中） | p087、p088 |
 | ws074-p093 | JS: 型付き配列（ArrayBuffer・TypedArray・DataView） | planned | p087 |
 | [ws074-p094](phase094/phase.md) | Chromiumとの再現可能な比較手順: 固定capture、隔離profile、入力・環境・出力のhash、JSON reportとbaseline回帰 | **cleared**（2026-09-30。top 82.96%/ink 79.01%、search 75.85%/ink 32.97%） | p067 |
 
