@@ -74,6 +74,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/css/media.c \
 	$(KEILAND_BROWSER_DIR)/css/ua.c \
 	$(KEILAND_BROWSER_DIR)/bind/window.c \
+	$(KEILAND_BROWSER_DIR)/bind/environment.c \
 	$(KEILAND_BROWSER_DIR)/bind/node.c \
 	$(KEILAND_BROWSER_DIR)/bind/mixin.c \
 	$(KEILAND_BROWSER_DIR)/bind/element.c \

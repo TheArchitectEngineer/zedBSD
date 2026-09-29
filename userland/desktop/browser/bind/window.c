@@ -91,7 +91,12 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_custom_event_interface,
 	&bind_keyboard_event_interface,
 	&bind_focus_event_interface,
-	&bind_wheel_event_interface
+	&bind_wheel_event_interface,
+	&bind_navigator_interface,
+	&bind_screen_interface,
+	&bind_performance_interface,
+	&bind_location_interface,
+	&bind_html_image_element_interface
 };
 
 /*
@@ -282,7 +287,8 @@ bind_checkpoint(
 
 /*
  * Reports an uncaught exception to the console ("Uncaught " and the
- * exception's string).
+ * exception's string, then "(at LINE:COLUMN)" in the script it was thrown
+ * from when that place is known).
  */
 void
 bind_report_exception(
@@ -290,6 +296,9 @@ bind_report_exception(
 	vm_value exception)
 {
 	struct wb_buffer line;
+	uint32_t site_line;
+	uint32_t site_column;
+	int known;
 	int error;
 
 	/* The line: the prefix and the exception's text. */
@@ -297,6 +306,11 @@ bind_report_exception(
 	error = wb_buffer_append_string(&line, "Uncaught ");
 	if (error == 0)
 		error = js_exception_text(window->realm, exception, &line);
+
+	/* The place the exception was thrown from, which a page's author needs to find the fault. */
+	known = vm_throw_site(window->realm, exception, &site_line, &site_column);
+	if (error == 0 && known)
+		error = wb_buffer_printf(&line, " (at %u:%u)", (unsigned)site_line, (unsigned)site_column);
 
 	/* Goes to the console as an error. */
 	if (error == 0)
@@ -660,6 +674,11 @@ window_define_globals(
 	if (error != 0)
 		return error;
 
+	/* navigator, screen, performance, location, Image and the window's plain properties. */
+	error = bind_environment_install(window);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the window's properties are defined. */
 	return 0;
 }
@@ -962,9 +981,11 @@ window_trace(
 			vm_heap_mark(heap, &window->prototypes[index]->cell);
 	}
 
-	/* The console, the listeners and the timers. */
+	/* The console, the location, the listeners and the timers. */
 	if (window->console != NULL)
 		vm_heap_mark(heap, &window->console->cell);
+	if (window->location != NULL)
+		vm_heap_mark(heap, &window->location->cell);
 	if (window->listeners != NULL)
 		vm_heap_mark(heap, window->listeners);
 	bind_timers_trace(heap, window);

@@ -565,6 +565,12 @@ compile_statement(
 	struct js_function_compiler *fc,
 	struct js_node *node)
 {
+	uint32_t saved_line;
+	uint32_t saved_column;
+
+	/* The statement's instructions carry its source position. */
+	js_emit_at(fc, node, &saved_line, &saved_column);
+
 	/* Each kind of statement. */
 	switch (node->kind) {
 	case JS_NODE_VARIABLES:
@@ -624,6 +630,10 @@ compile_statement(
 	default:
 		js_compile_unsupported(fc->compiler, node, "modules");
 	}
+
+	/* The enclosing statement's later instructions carry its own position again. */
+	fc->line = saved_line;
+	fc->column = saved_column;
 }
 
 /* Compiles a var statement: each declarator with an initializer assigns it. */

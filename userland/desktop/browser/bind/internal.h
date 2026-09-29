@@ -45,6 +45,11 @@ enum bind_interface_index {
 	BIND_KEYBOARD_EVENT,
 	BIND_FOCUS_EVENT,
 	BIND_WHEEL_EVENT,
+	BIND_NAVIGATOR,
+	BIND_SCREEN,
+	BIND_PERFORMANCE,
+	BIND_LOCATION,
+	BIND_HTML_IMAGE_ELEMENT,
 	BIND_INTERFACES
 };
 
@@ -120,6 +125,9 @@ struct bind_timer {
  *
  * It lives from bind_window_create to bind_window_destroy; its tracer
  * keeps the cells it holds alive.  ready_state is a static string.
+ * location is the window's Location object (document.location reports it
+ * too), and time_origin the moment the window was made, in milliseconds
+ * since 1970 (performance.timeOrigin).
  */
 struct bind_window {
 	struct vm_realm *realm;
@@ -135,6 +143,8 @@ struct bind_window {
 	int viewport_width;
 	int viewport_height;
 	const char *ready_state;
+	struct vm_object *location;
+	double time_origin;
 };
 
 /*
@@ -219,6 +229,16 @@ extern const struct bind_interface bind_custom_event_interface;
 extern const struct bind_interface bind_keyboard_event_interface;
 extern const struct bind_interface bind_focus_event_interface;
 extern const struct bind_interface bind_wheel_event_interface;
+extern const struct bind_interface bind_navigator_interface;
+extern const struct bind_interface bind_screen_interface;
+extern const struct bind_interface bind_performance_interface;
+extern const struct bind_interface bind_location_interface;
+extern const struct bind_interface bind_html_image_element_interface;
+
+/* The window's environment: navigator, screen, performance, location and Image (environment.c). */
+int bind_environment_install(struct bind_window *window);
+double bind_epoch_milliseconds(void);
+int bind_location_part(struct bind_window *window, int part, vm_value *value);
 
 /* The window and the shared helpers (window.c). */
 struct bind_window *bind_window_of(struct vm_realm *realm);

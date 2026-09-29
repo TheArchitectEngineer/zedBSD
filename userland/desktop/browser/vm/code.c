@@ -179,9 +179,60 @@ vm_code_create(
 	if (model->handler_count != 0)
 		memcpy(made->handlers, model->handlers, (size_t)model->handler_count * sizeof(struct vm_handler));
 
+	/* A copy of the source positions (a unit made by hand has none). */
+	made->position_count = model->position_count;
+	made->positions = malloc((size_t)model->position_count * sizeof(struct vm_position) + 1U);
+	if (made->positions == NULL)
+		return ENOMEM;
+	if (model->position_count != 0)
+		memcpy(made->positions, model->positions, (size_t)model->position_count * sizeof(struct vm_position));
+
 	/* Succeeded: the code unit. */
 	*code = made;
 	return 0;
+}
+
+/*
+ * Finds the source position of the instruction at a word offset.
+ *
+ * Returns 1 with the line and the column of the expression or statement
+ * the instruction was compiled from, or 0 when the unit has no position
+ * for it.
+ */
+int
+vm_code_position(
+	const struct vm_code *code,
+	uint32_t offset,
+	uint32_t *line,
+	uint32_t *column)
+{
+	const struct vm_position *found;
+	uint32_t low;
+	uint32_t high;
+	uint32_t middle;
+
+	/* Searches the positions, which are in the order of their offsets, for the last one at or before the offset. */
+	found = NULL;
+	low = 0;
+	high = code->position_count;
+	while (low < high) {
+		middle = low + (high - low) / 2U;
+		if (code->positions[middle].offset <= offset) {
+			found = &code->positions[middle];
+			low = middle + 1U;
+		} else {
+			high = middle;
+		}
+	}
+
+	/* An instruction before the first position has none. */
+	if (found == NULL)
+		return 0;
+
+	/* Succeeded: the position that covers the instruction. */
+	*line = found->line;
+	*column = found->column;
+	return 1;
 }
 
 /*
@@ -268,6 +319,7 @@ code_finalize(
 	free(code->words);
 	free(code->constants);
 	free(code->handlers);
+	free(code->positions);
 	code->words = NULL;
 	code->constants = NULL;
 	code->handlers = NULL;

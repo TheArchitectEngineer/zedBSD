@@ -42,9 +42,6 @@
 /* The largest response a fetch reads, in bytes. */
 #define NET_HTTP_MAX_RESPONSE	((size_t)256U * 1024U * 1024U)
 
-/* The User-Agent the browser sends. */
-#define NET_HTTP_AGENT		"browser/0.1 (Kei)"
-
 /*
  * The other headers of every request: any type (the star, the slash and the star
  * written apart so that they do not read as a comment) and no compression.
@@ -217,7 +214,7 @@ net_http_request_text(
 	if (error == 0 && url->port >= 0)
 		error = wb_buffer_printf(request, ":%d", url->port);
 	if (error == 0)
-		error = wb_buffer_printf(request, "\r\nUser-Agent: %s\r\n%s", NET_HTTP_AGENT, NET_HTTP_HEADERS);
+		error = wb_buffer_printf(request, "\r\nUser-Agent: %s\r\n%s", NET_USER_AGENT, NET_HTTP_HEADERS);
 	if (error == 0 && !keep_alive)
 		error = wb_buffer_append_string(request, "Connection: close\r\n");
 	if (error == 0 && extra != NULL)
