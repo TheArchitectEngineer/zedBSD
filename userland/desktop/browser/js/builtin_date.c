@@ -6,7 +6,7 @@
  */
 
 /*
- * Date (ws074-p065, a part: the Date object Amazon's scripts need first).
+ * Date (ws074-p076: the Date object Amazon's scripts need first).
  *
  * A Date object is an ordinary object of kind VM_KIND_DATE whose internal
  * value is its time value: milliseconds from 1970-01-01T00:00:00Z, or NaN
@@ -44,6 +44,9 @@
 /* The longest date string Date.parse reads. */
 #define DATE_TEXT_MAX		256U
 
+/* Added to a field in a getter's or setter's data: the function works in UTC, not local time. */
+#define DATE_UTC		0x100
+
 /* The fields a getter reads or a setter writes (a function's data; DATE_UTC marks the UTC family). */
 enum date_field {
 	DATE_FIELD_YEAR,
@@ -55,7 +58,18 @@ enum date_field {
 	DATE_FIELD_MS,
 	DATE_FIELD_DAY
 };
-#define DATE_UTC		0x100
+
+/* The forms date_write writes. */
+enum date_form {
+	DATE_FORM_STRING,
+	DATE_FORM_DATE,
+	DATE_FORM_TIME,
+	DATE_FORM_UTC,
+	DATE_FORM_ISO,
+	DATE_FORM_LOCALE,
+	DATE_FORM_LOCALE_DATE,
+	DATE_FORM_LOCALE_TIME
+};
 
 /*
  * The parts of a time value: the year, the month (0 to 11), the day of the
@@ -78,6 +92,33 @@ struct date_entry {
 	unsigned length;
 	vm_native native;
 	int field;
+};
+
+/*
+ * What Date.parse has read of a date string in one of the legacy forms:
+ * up to three numbers of the date (with their digits, which tell a year
+ * from a day), the time, a month's name, AM or PM and a zone.  It lives on
+ * the stack of one parse.
+ */
+struct date_legacy {
+	double numbers[3];
+	int number_digits[3];
+	unsigned count;
+	double hours;
+	double minutes;
+	double seconds;
+	double ms;
+	double offset;
+	int named_month;
+	int meridiem;
+	int has_zone;
+	int after_time;
+};
+
+/* A time zone's abbreviation, as libc names it, and the long name browsers write for it. */
+struct date_zone_name {
+	const char *abbreviation;
+	const char *name;
 };
 
 /* One method with nothing to tell it apart: its name, its length and its native function. */
@@ -111,6 +152,7 @@ static int date_to_locale_time_string(struct vm_realm *realm, vm_value this_valu
 static int date_this_time(struct vm_realm *realm, vm_value this_value, double *time);
 static int date_store(vm_value this_value, double time, vm_value *result);
 static int date_numbers(struct vm_realm *realm, const vm_value *args, unsigned count, unsigned most, double *numbers);
+static int date_from_value(struct vm_realm *realm, vm_value value, double *time);
 static int date_from_parts(struct vm_realm *realm, const vm_value *args, unsigned count, double *time);
 static int date_text(struct vm_realm *realm, const char *text, vm_value *result);
 static int date_format(struct vm_realm *realm, vm_value this_value, int form, vm_value *result);
@@ -130,26 +172,45 @@ static void date_split(double time, struct date_parts *parts);
 static double date_parse(const struct vm_string *string);
 static int date_parse_iso(const char *text, double *time);
 static double date_parse_legacy(const char *text);
+static void date_legacy_comment(const char *text, size_t *index);
+static int date_legacy_word(const char *text, size_t *index, struct date_legacy *state);
+static int date_legacy_is_zone(const char *word);
+static void date_legacy_offset(const char *text, size_t *index, struct date_legacy *state);
+static int date_legacy_number(const char *text, size_t *index, struct date_legacy *state);
+static void date_legacy_time(const char *text, size_t *index, struct date_legacy *state);
+static double date_legacy_value(const struct date_legacy *state);
 static int date_digits(const char *text, size_t *index, unsigned count, double *value);
+static size_t date_fraction(const char *text, size_t *index, double *ms);
 static int date_month_of(const char *word);
 static int date_day_of(const char *word);
-
-/* The forms date_write writes. */
-enum date_form {
-	DATE_FORM_STRING,
-	DATE_FORM_DATE,
-	DATE_FORM_TIME,
-	DATE_FORM_UTC,
-	DATE_FORM_ISO,
-	DATE_FORM_LOCALE,
-	DATE_FORM_LOCALE_DATE,
-	DATE_FORM_LOCALE_TIME
-};
 
 /* The days' and months' short names. */
 static const char *const date_day_names[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 static const char *const date_month_names[] = {
 	"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+};
+
+/*
+ * The long names Chromium writes in toString for common zones whose
+ * abbreviation means one zone only (CST, IST and the like are left out);
+ * any other zone is written by its abbreviation.
+ */
+static const struct date_zone_name date_zone_names[] = {
+	{ "UTC", "Coordinated Universal Time" },
+	{ "UCT", "Coordinated Universal Time" },
+	{ "GMT", "Greenwich Mean Time" },
+	{ "BST", "British Summer Time" },
+	{ "JST", "Japan Standard Time" },
+	{ "KST", "Korean Standard Time" },
+	{ "CET", "Central European Standard Time" },
+	{ "CEST", "Central European Summer Time" },
+	{ "EST", "Eastern Standard Time" },
+	{ "EDT", "Eastern Daylight Time" },
+	{ "MST", "Mountain Standard Time" },
+	{ "MDT", "Mountain Daylight Time" },
+	{ "PST", "Pacific Standard Time" },
+	{ "PDT", "Pacific Daylight Time" },
+	{ NULL, NULL }
 };
 
 /* The getters and setters (the field, with DATE_UTC for the UTC family). */
@@ -314,12 +375,8 @@ date_construct(
 {
 	struct vm_object *prototype;
 	struct vm_object *object;
-	struct vm_object *other;
-	struct vm_string *string;
 	vm_value new_target;
-	vm_value primitive;
 	double time;
-	int is_object;
 	int error;
 
 	/* new.target first (the conversions below may run scripts). */
@@ -328,35 +385,15 @@ date_construct(
 
 	/* The time value from the arguments. */
 	if (count == 0) {
+		/* No argument is the current time. */
 		time = date_now();
 	} else if (count == 1) {
-		/* A Date's time value, or the primitive's: a string is parsed, anything else is a number. */
-		is_object = vm_value_is_object(args[0]);
-		other = NULL;
-		if (is_object) {
-			other = (struct vm_object *)vm_value_as_cell(args[0]);
-			if (other->kind != VM_KIND_DATE)
-				other = NULL;
-		}
-		if (other != NULL) {
-			time = vm_value_as_double(other->internal);
-		} else {
-			error = vm_to_primitive(realm, args[0], VM_HINT_DEFAULT, &primitive);
-			if (error != 0)
-				return error;
-			is_object = vm_value_is_string(primitive);
-			if (is_object) {
-				string = (struct vm_string *)vm_value_as_cell(primitive);
-				time = date_parse(string);
-			} else {
-				error = vm_to_number(realm, primitive, &time);
-				if (error != 0)
-					return error;
-			}
-		}
-		time = date_clip(time);
+		/* One argument is a Date, a date string or a time value. */
+		error = date_from_value(realm, args[0], &time);
+		if (error != 0)
+			return error;
 	} else {
-		/* The parts in local time. */
+		/* More are the parts in local time. */
 		error = date_from_parts(realm, args, count, &time);
 		if (error != 0)
 			return error;
@@ -558,6 +595,8 @@ date_set(
 		*result = vm_value_number(time);
 		return 0;
 	}
+
+	/* Splits the time value into the parts the setter replaces. */
 	if (time != time)
 		time = 0.0;
 	else if (local)
@@ -909,6 +948,7 @@ date_to_json(
 	double number;
 	int is_number;
 	int callable;
+	int finite;
 	int error;
 
 	/* The object's number primitive; one that is not finite is null. */
@@ -924,13 +964,14 @@ date_to_json(
 		error = vm_to_number(realm, primitive, &number);
 		if (error != 0)
 			return error;
-		if (!isfinite(number)) {
+		finite = isfinite(number);
+		if (!finite) {
 			*result = VM_VALUE_NULL;
 			return 0;
 		}
 	}
 
-	/* Its toISOString. */
+	/* Looks up its toISOString, which a script may have replaced. */
 	key = vm_key_from_ascii(realm->heap, "toISOString");
 	if (key == VM_VALUE_EMPTY)
 		return ENOMEM;
@@ -942,6 +983,8 @@ date_to_json(
 		error = vm_throw_type_error(realm, "toISOString is not a function");
 		return error;
 	}
+
+	/* Calls it on the object. */
 	error = vm_call(realm, method, object, NULL, 0, result);
 	if (error != 0)
 		return error;
@@ -1087,6 +1130,58 @@ date_numbers(
 }
 
 /*
+ * Makes the time value of new Date(value): a Date's own time value, or the
+ * primitive's (a string is parsed, anything else is a number), clipped.
+ */
+static int
+date_from_value(
+	struct vm_realm *realm,
+	vm_value value,
+	double *time)
+{
+	struct vm_object *other;
+	struct vm_string *string;
+	vm_value primitive;
+	int is_object;
+	int is_string;
+	int error;
+
+	/* Finds a Date object, whose time value is copied without a conversion. */
+	other = NULL;
+	is_object = vm_value_is_object(value);
+	if (is_object)
+		other = (struct vm_object *)vm_value_as_cell(value);
+
+	/* Copies a Date's time value. */
+	if (other != NULL && other->kind == VM_KIND_DATE) {
+		*time = vm_value_as_double(other->internal);
+		return 0;
+	}
+
+	/* Converts anything else to a primitive, which may run the object's own methods. */
+	error = vm_to_primitive(realm, value, VM_HINT_DEFAULT, &primitive);
+	if (error != 0)
+		return error;
+
+	/* Parses a string as a date. */
+	is_string = vm_value_is_string(primitive);
+	if (is_string) {
+		string = (struct vm_string *)vm_value_as_cell(primitive);
+		*time = date_clip(date_parse(string));
+		return 0;
+	}
+
+	/* Takes any other primitive as a time value. */
+	error = vm_to_number(realm, primitive, time);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the number clipped to the range a Date holds. */
+	*time = date_clip(*time);
+	return 0;
+}
+
+/*
  * Makes a time value from year, month, date, hours, minutes, seconds and
  * ms arguments (the date defaults to 1, the rest to 0; years 0 to 99 are
  * 1900 to 1999), without converting from local time.
@@ -1215,6 +1310,8 @@ date_write(
 		sign = "-";
 		minutes = -minutes;
 	}
+
+	/* The zone's name, which toString and toTimeString write in parentheses. */
 	date_zone(time, zone, sizeof(zone));
 
 	/* The form. */
@@ -1243,6 +1340,8 @@ date_write(
 		} else if (parts.year > 9999.0) {
 			snprintf(year, sizeof(year), "+%06.0f", parts.year);
 		}
+
+		/* The date, the time with milliseconds and Z. */
 		snprintf(out, size, "%s-%02.0f-%02.0fT%02.0f:%02.0f:%02.0f.%03.0fZ", year, parts.month + 1.0, parts.date, parts.hours,
 		    parts.minutes, parts.seconds, parts.ms);
 		break;
@@ -1262,6 +1361,7 @@ date_write(
 			snprintf(out, size, "%.0f/%.0f/%.0f, %d:%02.0f:%02.0f %s", parts.month + 1.0, parts.date, parts.year, hour,
 			    parts.minutes, parts.seconds, meridiem);
 		}
+
 		break;
 	}
 }
@@ -1273,23 +1373,30 @@ date_zone(
 	char *out,
 	size_t size)
 {
+	const struct date_zone_name *entry;
 	struct tm parts;
 	struct tm *found;
 	time_t seconds;
 	const char *name;
+	int differs;
 
-	/* The zone's abbreviation at the moment. */
-	name = "";
+	/* The zone's abbreviation at the moment; a zone libc cannot name is UTC. */
+	name = "UTC";
 	seconds = (time_t)floor(time / DATE_MS_PER_SECOND);
 	found = localtime_r(&seconds, &parts);
-	if (found != NULL && parts.tm_zone != NULL)
+	if (found != NULL && parts.tm_zone != NULL && parts.tm_zone[0] != '\0')
 		name = parts.tm_zone;
 
-	/* The long names of the common ones. */
-	if (strcmp(name, "UTC") == 0 || strcmp(name, "GMT") == 0 || strcmp(name, "UCT") == 0 || name[0] == '\0')
-		name = "Coordinated Universal Time";
-	else if (strcmp(name, "JST") == 0)
-		name = "Japan Standard Time";
+	/* Finds the long name browsers write for a common abbreviation. */
+	for (entry = date_zone_names; entry->abbreviation != NULL; entry++) {
+		differs = strcmp(name, entry->abbreviation);
+		if (differs == 0) {
+			name = entry->name;
+			break;
+		}
+	}
+
+	/* Writes the long name, or the abbreviation when there is none. */
 	snprintf(out, size, "%s", name);
 }
 
@@ -1378,12 +1485,25 @@ date_make_time(
 	double seconds,
 	double ms)
 {
-	/* Every part must be finite. */
-	if (!isfinite(hours) || !isfinite(minutes) || !isfinite(seconds) || !isfinite(ms))
+	double time;
+	int finite;
+
+	/*
+	 * Adds up the whole parts.  A part that is not finite leaves the sum
+	 * infinite or NaN, so the one test below covers every part.
+	 */
+	time = trunc(hours) * DATE_MS_PER_HOUR;
+	time += trunc(minutes) * DATE_MS_PER_MINUTE;
+	time += trunc(seconds) * DATE_MS_PER_SECOND;
+	time += trunc(ms);
+
+	/* A part that is not finite makes no time. */
+	finite = isfinite(time);
+	if (!finite)
 		return NAN;
 
-	/* The whole parts. */
-	return trunc(hours) * DATE_MS_PER_HOUR + trunc(minutes) * DATE_MS_PER_MINUTE + trunc(seconds) * DATE_MS_PER_SECOND + trunc(ms);
+	/* The milliseconds into the day. */
+	return time;
 }
 
 /* Makes a day number from a year, a month (any integer) and a date (MakeDay); NaN when a part is not finite. */
@@ -1395,15 +1515,19 @@ date_make_day(
 {
 	double whole_year;
 	double whole_month;
+	double sum;
+	int finite;
 
-	/* Every part must be finite. */
-	if (!isfinite(year) || !isfinite(month) || !isfinite(date))
+	/* A part that is not finite (which leaves their sum so) makes no day. */
+	sum = year + month + date;
+	finite = isfinite(sum);
+	if (!finite)
 		return NAN;
 
 	/* The month folded into the year; a year far past any date is no day. */
 	whole_year = trunc(year) + floor(trunc(month) / 12.0);
 	whole_month = trunc(month) - floor(trunc(month) / 12.0) * 12.0;
-	if (fabs(whole_year) > 400000.0)
+	if (whole_year > 400000.0 || whole_year < -400000.0)
 		return NAN;
 
 	/* The first of the month, then the date. */
@@ -1417,10 +1541,12 @@ date_make_date(
 	double time)
 {
 	double value;
+	int finite;
 
 	/* The milliseconds, if finite. */
 	value = day * DATE_MS_PER_DAY + time;
-	if (!isfinite(value))
+	finite = isfinite(value);
+	if (!finite)
 		return NAN;
 
 	/* The time value. */
@@ -1432,8 +1558,13 @@ static double
 date_clip(
 	double time)
 {
+	int finite;
+
 	/* NaN and anything beyond 100 000 000 days. */
-	if (!isfinite(time) || fabs(time) > DATE_TIME_MAX)
+	finite = isfinite(time);
+	if (!finite)
+		return NAN;
+	if (time > DATE_TIME_MAX || time < -DATE_TIME_MAX)
 		return NAN;
 
 	/* The whole milliseconds (+0 for -0). */
@@ -1448,9 +1579,11 @@ date_offset_at(
 	struct tm parts;
 	struct tm *found;
 	time_t seconds;
+	int finite;
 
 	/* libc's local time at the moment. */
-	if (!isfinite(time))
+	finite = isfinite(time);
+	if (!finite)
 		return 0.0;
 	seconds = (time_t)floor(time / DATE_MS_PER_SECOND);
 	found = localtime_r(&seconds, &parts);
@@ -1476,9 +1609,11 @@ date_utc(
 	double time)
 {
 	double guess;
+	int finite;
 
 	/* An invalid time stays so. */
-	if (!isfinite(time))
+	finite = isfinite(time);
+	if (!finite)
 		return time;
 
 	/* The offset at the local time taken as UTC, then at the moment that gives. */
@@ -1533,6 +1668,8 @@ date_parse(
 			return NAN;
 		text[index] = (char)unit;
 	}
+
+	/* Ends the copy as a C string. */
 	text[string->length] = '\0';
 
 	/* The ISO format first. */
@@ -1569,6 +1706,7 @@ date_parse_iso(
 	size_t index;
 	size_t digits;
 	int has_time;
+	int has_seconds;
 	int has_zone;
 	int valid;
 
@@ -1586,6 +1724,8 @@ date_parse_iso(
 			*time = NAN;
 			return 1;
 		}
+
+		/* The sign applies to the whole year; -000000 was refused above. */
 		year *= sign;
 	} else {
 		valid = date_digits(text, &index, 4, &year);
@@ -1615,6 +1755,7 @@ date_parse_iso(
 	seconds = 0.0;
 	ms = 0.0;
 	has_time = 0;
+	has_seconds = 0;
 	if (text[index] == 'T' || text[index] == 't') {
 		has_time = 1;
 		index++;
@@ -1630,25 +1771,15 @@ date_parse_iso(
 			valid = date_digits(text, &index, 2, &seconds);
 			if (!valid)
 				return 0;
-			if (text[index] == '.') {
-				/* The fraction's first three digits count. */
-				index++;
-				digits = 0;
-				value = 0.0;
-				while (text[index] >= '0' && text[index] <= '9') {
-					if (digits < 3U)
-						value = value * 10.0 + (double)(text[index] - '0');
-					digits++;
-					index++;
-				}
-				if (digits == 0)
-					return 0;
-				while (digits < 3U) {
-					value *= 10.0;
-					digits++;
-				}
-				ms = value;
-			}
+			has_seconds = 1;
+		}
+
+		/* A fraction follows the seconds only, and needs a digit at least. */
+		if (has_seconds && text[index] == '.') {
+			index++;
+			digits = date_fraction(text, &index, &ms);
+			if (digits == 0)
+				return 0;
 		}
 	}
 
@@ -1688,10 +1819,12 @@ date_parse_iso(
 	if (hours == 24.0 && (minutes != 0.0 || seconds != 0.0 || ms != 0.0))
 		return 1;
 
-	/* A day past its month's end is not a date. */
+	/*
+	 * The day in the month.  A day past the month's end (February 30)
+	 * rolls into the next month, as Chromium reads it, rather than
+	 * making the string invalid.
+	 */
 	value = date_make_day(year, month - 1.0, day);
-	if (date_make_day(year, month, 1.0) <= value)
-		return 1;
 
 	/* The time value: UTC for a date alone or with a zone, local time otherwise. */
 	value = date_make_date(value, date_make_time(hours, minutes, seconds, ms));
@@ -1713,43 +1846,17 @@ static double
 date_parse_legacy(
 	const char *text)
 {
-	char word[16];
-	double numbers[3];
-	int number_digits[3];
-	double hours;
-	double minutes;
-	double seconds;
-	double ms;
-	double value;
-	double year;
-	double month;
-	double day;
-	double offset;
-	double moment;
+	struct date_legacy state;
 	size_t index;
-	size_t length;
-	unsigned count;
-	int digits;
-	int named_month;
-	int meridiem;
-	int has_zone;
-	int after_time;
-	int depth;
-	int found;
+	int valid;
 	char next;
-	int sign;
 
-	/* Each token. */
-	count = 0;
-	hours = -1.0;
-	minutes = 0.0;
-	seconds = 0.0;
-	ms = 0.0;
-	named_month = -1;
-	meridiem = 0;
-	has_zone = 0;
-	after_time = 0;
-	offset = 0.0;
+	/* Nothing read yet: no time, no month's name, no zone. */
+	memset(&state, 0, sizeof(state));
+	state.hours = -1.0;
+	state.named_month = -1;
+
+	/* Reads each token into the state; one that belongs to no date form ends the parse. */
 	index = 0;
 	while (text[index] != '\0') {
 		next = text[index];
@@ -1762,79 +1869,21 @@ date_parse_legacy(
 
 		/* A comment in parentheses. */
 		if (next == '(') {
-			depth = 0;
-			while (text[index] != '\0') {
-				if (text[index] == '(')
-					depth++;
-				if (text[index] == ')')
-					depth--;
-				index++;
-				if (depth == 0)
-					break;
-			}
+			date_legacy_comment(text, &index);
 			continue;
 		}
 
 		/* A word: a month, a day, AM or PM, a zone. */
 		if ((next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z')) {
-			length = 0;
-			while ((text[index] >= 'a' && text[index] <= 'z') || (text[index] >= 'A' && text[index] <= 'Z')) {
-				if (length + 1U < sizeof(word)) {
-					word[length] = (char)(text[index] | 0x20);
-					length++;
-				}
-				index++;
-			}
-			word[length] = '\0';
-			found = date_month_of(word);
-			if (found >= 0) {
-				named_month = found;
-				continue;
-			}
-			if (strcmp(word, "am") == 0 || strcmp(word, "pm") == 0) {
-				meridiem = word[0];
-				continue;
-			}
-			if (strcmp(word, "gmt") == 0 || strcmp(word, "utc") == 0 || strcmp(word, "ut") == 0 || strcmp(word, "z") == 0) {
-				has_zone = 1;
-				after_time = 1;
-				continue;
-			}
-			if (strcmp(word, "t") == 0)
-				continue;
-			found = date_day_of(word);
-			if (found >= 0)
-				continue;
-			return NAN;
+			valid = date_legacy_word(text, &index, &state);
+			if (!valid)
+				return NAN;
+			continue;
 		}
 
-		/* A sign after the time or a zone is an offset: +hhmm, +hh:mm or +hh. */
-		if ((next == '+' || next == '-') && after_time) {
-			sign = 1;
-			if (next == '-')
-				sign = -1;
-			index++;
-			digits = 0;
-			value = 0.0;
-			while (text[index] >= '0' && text[index] <= '9') {
-				value = value * 10.0 + (double)(text[index] - '0');
-				digits++;
-				index++;
-			}
-			if (text[index] == ':') {
-				index++;
-				moment = 0.0;
-				while (text[index] >= '0' && text[index] <= '9') {
-					moment = moment * 10.0 + (double)(text[index] - '0');
-					index++;
-				}
-				offset = sign * (value * 60.0 + moment);
-			} else if (digits <= 2) {
-				offset = sign * value * 60.0;
-			} else {
-				offset = sign * (floor(value / 100.0) * 60.0 + fmod(value, 100.0));
-			}
-			has_zone = 1;
+		/* A sign after the time or a zone is an offset. */
+		if ((next == '+' || next == '-') && state.after_time) {
+			date_legacy_offset(text, &index, &state);
 			continue;
 		}
 
@@ -1846,50 +1895,9 @@ date_parse_legacy(
 
 		/* A number: a time when a : follows, a part of the date otherwise. */
 		if (next >= '0' && next <= '9') {
-			value = 0.0;
-			digits = 0;
-			while (text[index] >= '0' && text[index] <= '9') {
-				value = value * 10.0 + (double)(text[index] - '0');
-				digits++;
-				index++;
-			}
-			if (text[index] == ':' && hours < 0.0) {
-				hours = value;
-				index++;
-				minutes = 0.0;
-				while (text[index] >= '0' && text[index] <= '9') {
-					minutes = minutes * 10.0 + (double)(text[index] - '0');
-					index++;
-				}
-				if (text[index] == ':') {
-					index++;
-					while (text[index] >= '0' && text[index] <= '9') {
-						seconds = seconds * 10.0 + (double)(text[index] - '0');
-						index++;
-					}
-					if (text[index] == '.') {
-						index++;
-						digits = 0;
-						while (text[index] >= '0' && text[index] <= '9') {
-							if (digits < 3)
-								ms = ms * 10.0 + (double)(text[index] - '0');
-							digits++;
-							index++;
-						}
-						while (digits > 0 && digits < 3) {
-							ms *= 10.0;
-							digits++;
-						}
-					}
-				}
-				after_time = 1;
-				continue;
-			}
-			if (count >= 3U)
+			valid = date_legacy_number(text, &index, &state);
+			if (!valid)
 				return NAN;
-			numbers[count] = value;
-			number_digits[count] = digits;
-			count++;
 			continue;
 		}
 
@@ -1897,34 +1905,275 @@ date_parse_legacy(
 		return NAN;
 	}
 
+	/* The time value the tokens name. */
+	return date_legacy_value(&state);
+}
+
+/* Skips a comment in parentheses (they may nest) at an index. */
+static void
+date_legacy_comment(
+	const char *text,
+	size_t *index)
+{
+	int depth;
+
+	/* Counts the parentheses until the one that closes the first. */
+	depth = 0;
+	while (text[*index] != '\0') {
+		if (text[*index] == '(')
+			depth++;
+		if (text[*index] == ')')
+			depth--;
+		(*index)++;
+		if (depth == 0)
+			break;
+	}
+}
+
+/* Reads a word of a date: a month's or a day's name, AM or PM, a zone or T; 0 for any other word. */
+static int
+date_legacy_word(
+	const char *text,
+	size_t *index,
+	struct date_legacy *state)
+{
+	char word[16];
+	size_t length;
+	int found;
+	int differs;
+
+	/* Copies the letters in lower case (a long word is cut, since no name is that long). */
+	length = 0;
+	while ((text[*index] >= 'a' && text[*index] <= 'z') || (text[*index] >= 'A' && text[*index] <= 'Z')) {
+		if (length + 1U < sizeof(word)) {
+			word[length] = (char)(text[*index] | 0x20);
+			length++;
+		}
+
+		/* Letters past the buffer are skipped. */
+		(*index)++;
+	}
+
+	/* Ends the copy as a C string. */
+	word[length] = '\0';
+
+	/* A month's name gives the month. */
+	found = date_month_of(word);
+	if (found >= 0) {
+		state->named_month = found;
+		return 1;
+	}
+
+	/* AM and PM place the hour in the day's half. */
+	if (length == 2U && word[1] == 'm') {
+		if (word[0] == 'a' || word[0] == 'p') {
+			state->meridiem = word[0];
+			return 1;
+		}
+	}
+
+	/* GMT, UTC, UT and Z mean UTC, and an offset may follow. */
+	found = date_legacy_is_zone(word);
+	if (found) {
+		state->has_zone = 1;
+		state->after_time = 1;
+		return 1;
+	}
+
+	/* T between the date and the time. */
+	differs = strcmp(word, "t");
+	if (differs == 0)
+		return 1;
+
+	/* A day's name adds nothing. */
+	found = date_day_of(word);
+	if (found >= 0)
+		return 1;
+
+	/* Any other word is not a date. */
+	return 0;
+}
+
+/* Tells whether a lower-case word names UTC: gmt, utc, ut or z. */
+static int
+date_legacy_is_zone(
+	const char *word)
+{
+	static const char *const names[] = { "gmt", "utc", "ut", "z", NULL };
+	unsigned index;
+	int differs;
+
+	/* Compares the word with each name. */
+	for (index = 0; names[index] != NULL; index++) {
+		differs = strcmp(word, names[index]);
+		if (differs == 0)
+			return 1;
+	}
+
+	/* No zone's name. */
+	return 0;
+}
+
+/* Reads an offset from UTC at a sign: +hhmm, +hh:mm or +hh. */
+static void
+date_legacy_offset(
+	const char *text,
+	size_t *index,
+	struct date_legacy *state)
+{
+	double sign;
+	double value;
+	double minutes;
+	int digits;
+
+	/* The sign. */
+	sign = 1.0;
+	if (text[*index] == '-')
+		sign = -1.0;
+	(*index)++;
+
+	/* The hours, or the hours and minutes run together. */
+	digits = 0;
+	value = 0.0;
+	while (text[*index] >= '0' && text[*index] <= '9') {
+		value = value * 10.0 + (double)(text[*index] - '0');
+		digits++;
+		(*index)++;
+	}
+
+	/* Minutes after a colon, two digits of hours alone, or hhmm. */
+	if (text[*index] == ':') {
+		(*index)++;
+		minutes = 0.0;
+		while (text[*index] >= '0' && text[*index] <= '9') {
+			minutes = minutes * 10.0 + (double)(text[*index] - '0');
+			(*index)++;
+		}
+
+		/* The hours and the minutes after the colon. */
+		state->offset = sign * (value * 60.0 + minutes);
+	} else if (digits <= 2) {
+		state->offset = sign * value * 60.0;
+	} else {
+		state->offset = sign * (floor(value / 100.0) * 60.0 + fmod(value, 100.0));
+	}
+
+	/* The date now has a zone. */
+	state->has_zone = 1;
+}
+
+/* Reads a number: the time h:mm[:ss[.sss]] when a colon follows, a part of the date otherwise; 0 for a fourth part. */
+static int
+date_legacy_number(
+	const char *text,
+	size_t *index,
+	struct date_legacy *state)
+{
+	double value;
+	int digits;
+
+	/* The digits. */
+	value = 0.0;
+	digits = 0;
+	while (text[*index] >= '0' && text[*index] <= '9') {
+		value = value * 10.0 + (double)(text[*index] - '0');
+		digits++;
+		(*index)++;
+	}
+
+	/* The first number with a colon is the time's hour. */
+	if (text[*index] == ':' && state->hours < 0.0) {
+		(*index)++;
+		state->hours = value;
+		date_legacy_time(text, index, state);
+		return 1;
+	}
+
+	/* A date has three numbers at most. */
+	if (state->count >= 3U)
+		return 0;
+
+	/* Succeeded: one more part of the date, with its digits (which tell a year from a day). */
+	state->numbers[state->count] = value;
+	state->number_digits[state->count] = digits;
+	state->count++;
+	return 1;
+}
+
+/* Reads the rest of a time after its hour and colon: mm[:ss[.sss]]. */
+static void
+date_legacy_time(
+	const char *text,
+	size_t *index,
+	struct date_legacy *state)
+{
+	/* The minutes. */
+	state->minutes = 0.0;
+	while (text[*index] >= '0' && text[*index] <= '9') {
+		state->minutes = state->minutes * 10.0 + (double)(text[*index] - '0');
+		(*index)++;
+	}
+
+	/* The seconds after another colon, and their fraction after a dot. */
+	if (text[*index] == ':') {
+		(*index)++;
+		while (text[*index] >= '0' && text[*index] <= '9') {
+			state->seconds = state->seconds * 10.0 + (double)(text[*index] - '0');
+			(*index)++;
+		}
+
+		/* The fraction of the second. */
+		if (text[*index] == '.') {
+			(*index)++;
+			date_fraction(text, index, &state->ms);
+		}
+	}
+
+	/* A sign may now start an offset. */
+	state->after_time = 1;
+}
+
+/* Makes the time value of the tokens a legacy date string gave; NaN when they make no date. */
+static double
+date_legacy_value(
+	const struct date_legacy *state)
+{
+	double year;
+	double month;
+	double day;
+	double hours;
+	double moment;
+
 	/* The date's parts: with a month's name, the day and the year; otherwise m/d/y or y/m/d. */
 	year = NAN;
 	month = NAN;
 	day = 1.0;
-	if (named_month >= 0) {
-		month = (double)named_month;
-		if (count == 2U && (number_digits[0] > 2 || numbers[0] > 31.0)) {
-			year = numbers[0];
-			day = numbers[1];
-		} else if (count == 2U) {
-			day = numbers[0];
-			year = numbers[1];
-		} else if (count == 1U) {
-			day = numbers[0];
+	if (state->named_month >= 0) {
+		month = (double)state->named_month;
+		if (state->count == 2U && (state->number_digits[0] > 2 || state->numbers[0] > 31.0)) {
+			year = state->numbers[0];
+			day = state->numbers[1];
+		} else if (state->count == 2U) {
+			day = state->numbers[0];
+			year = state->numbers[1];
+		} else if (state->count == 1U) {
+			day = state->numbers[0];
 			year = 2001.0;
 		}
-	} else if (count == 3U && number_digits[0] > 2) {
-		year = numbers[0];
-		month = numbers[1] - 1.0;
-		day = numbers[2];
-	} else if (count == 3U) {
-		month = numbers[0] - 1.0;
-		day = numbers[1];
-		year = numbers[2];
-	} else if (count == 2U && number_digits[0] > 2) {
-		year = numbers[0];
-		month = numbers[1] - 1.0;
+	} else if (state->count == 3U && state->number_digits[0] > 2) {
+		year = state->numbers[0];
+		month = state->numbers[1] - 1.0;
+		day = state->numbers[2];
+	} else if (state->count == 3U) {
+		month = state->numbers[0] - 1.0;
+		day = state->numbers[1];
+		year = state->numbers[2];
+	} else if (state->count == 2U && state->number_digits[0] > 2) {
+		year = state->numbers[0];
+		month = state->numbers[1] - 1.0;
 	}
+
+	/* A date needs a year and a month, both in range. */
 	if (year != year || month != month)
 		return NAN;
 	if (month < 0.0 || month > 11.0 || day < 1.0 || day > 31.0)
@@ -1936,24 +2185,31 @@ date_parse_legacy(
 	else if (year < 100.0)
 		year += 1900.0;
 
-	/* The time: 12 AM is midnight, PM the afternoon. */
+	/* The hour: none is midnight, and with AM or PM it must be 1 to 12. */
+	hours = state->hours;
 	if (hours < 0.0)
 		hours = 0.0;
-	if (meridiem != 0 && (hours < 1.0 || hours > 12.0))
-		return NAN;
-	if (meridiem == 'a' && hours == 12.0)
-		hours = 0.0;
-	if (meridiem == 'p' && hours < 12.0)
-		hours += 12.0;
-	if (hours > 24.0 || minutes > 59.0 || seconds > 59.0)
+	if (state->meridiem != 0 && (hours < 1.0 || hours > 12.0))
 		return NAN;
 
-	/* The time value: with a zone its offset, otherwise local time. */
-	moment = date_make_date(date_make_day(year, month, day), date_make_time(hours, minutes, seconds, ms));
-	if (has_zone)
-		moment -= offset * DATE_MS_PER_MINUTE;
+	/* 12 AM is midnight, and PM is the afternoon. */
+	if (state->meridiem == 'a' && hours == 12.0)
+		hours = 0.0;
+	if (state->meridiem == 'p' && hours < 12.0)
+		hours += 12.0;
+
+	/* A time past the day's end is not one. */
+	if (hours > 24.0 || state->minutes > 59.0 || state->seconds > 59.0)
+		return NAN;
+
+	/* The moment in the zone given, or in local time without one. */
+	moment = date_make_date(date_make_day(year, month, day), date_make_time(hours, state->minutes, state->seconds, state->ms));
+	if (state->has_zone)
+		moment -= state->offset * DATE_MS_PER_MINUTE;
 	else
 		moment = date_utc(moment);
+
+	/* Succeeded: the time value, clipped to the range a Date holds. */
 	return date_clip(moment);
 }
 
@@ -1982,17 +2238,53 @@ date_digits(
 	return 1;
 }
 
+/*
+ * Reads the digits of a fraction of a second as milliseconds (the first
+ * three count, fewer are scaled up); the count of digits read.
+ */
+static size_t
+date_fraction(
+	const char *text,
+	size_t *index,
+	double *ms)
+{
+	double value;
+	size_t digits;
+
+	/* Accumulates the first three digits and skips the rest. */
+	value = 0.0;
+	digits = 0;
+	while (text[*index] >= '0' && text[*index] <= '9') {
+		if (digits < 3U)
+			value = value * 10.0 + (double)(text[*index] - '0');
+		digits++;
+		(*index)++;
+	}
+
+	/* Scales tenths and hundredths up to milliseconds. */
+	*ms = value;
+	if (digits == 1U)
+		*ms = value * 100.0;
+	else if (digits == 2U)
+		*ms = value * 10.0;
+
+	/* Succeeded: how many digits there were. */
+	return digits;
+}
+
 /* Finds the day of the week a word names (its first three letters at least); -1 for none. */
 static int
 date_day_of(
 	const char *word)
 {
 	char lower[4];
+	size_t length;
 	int day;
 	int same;
 
 	/* Three letters at least. */
-	if (strlen(word) < 3U)
+	length = strlen(word);
+	if (length < 3U)
 		return -1;
 
 	/* Each day's short name. */
@@ -2016,11 +2308,13 @@ date_month_of(
 	const char *word)
 {
 	char lower[4];
+	size_t length;
 	int month;
 	int same;
 
 	/* Three letters at least. */
-	if (strlen(word) < 3U)
+	length = strlen(word);
+	if (length < 3U)
 		return -1;
 
 	/* Each month's short name. */

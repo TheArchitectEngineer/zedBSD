@@ -119,7 +119,7 @@ vm_to_primitive(
 	if (!is_object)
 		return 0;
 
-	/* A Date's default hint is string, as its @@toPrimitive has it (ws074-p065; there are no symbols yet). */
+	/* A Date's default hint is string, as its @@toPrimitive has it (ws074-p076; there are no symbols yet). */
 	object = (struct vm_object *)vm_value_as_cell(value);
 	if (hint == VM_HINT_DEFAULT && object->kind == VM_KIND_DATE)
 		hint = VM_HINT_STRING;
