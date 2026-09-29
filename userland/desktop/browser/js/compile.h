@@ -225,7 +225,9 @@ struct js_patch {
  * (words, constants, handlers, labels), the registers, where names are
  * looked up, and the statements break, continue and return must leave.
  * line and column are the source position of the expression or statement
- * being compiled, which the next instruction is recorded at (positions).
+ * being compiled, which the next instruction is recorded at (positions);
+ * chain_label is where an optional chain being compiled goes when a
+ * value before ?. is undefined or null (JS_LABEL_UNPLACED outside one).
  *
  * It lives in the arena; its vectors are malloc'd and freed when the
  * function is finished, or by js_compile after a failure (the chain of
@@ -243,6 +245,7 @@ struct js_function_compiler {
 	struct wb_vector positions;
 	uint32_t line;
 	uint32_t column;
+	uint32_t chain_label;
 	uint32_t *constant_index;
 	uint32_t constant_capacity;
 	struct js_scope *scope;

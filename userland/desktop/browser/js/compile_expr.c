@@ -44,6 +44,8 @@ static uint32_t expr_arguments(struct js_function_compiler *fc, struct js_node *
 static void expr_throw_text(struct js_function_compiler *fc, const char *text);
 static struct js_node *expr_unwrap(struct js_node *node);
 static void expr_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_optional_chain(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_optional_check(struct js_function_compiler *fc, const struct js_node *node, uint32_t value);
 static void expr_tagged_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
 static void expr_template_strings(struct js_function_compiler *fc, struct js_node *template, uint32_t target);
 static void expr_unsupported(struct js_function_compiler *fc, struct js_node *node);
@@ -157,6 +159,9 @@ js_compile_expression_named(
 		break;
 	case JS_NODE_TEMPLATE:
 		expr_template(fc, node, target);
+		break;
+	case JS_NODE_OPTIONAL_CHAIN:
+		expr_optional_chain(fc, node, target);
 		break;
 	case JS_NODE_TAGGED_TEMPLATE:
 		expr_tagged_template(fc, node, target);
@@ -372,6 +377,60 @@ js_store_target(
 	object = js_temp(fc);
 	js_compile_expression(fc, place, object);
 	expr_throw_text(fc, "ReferenceError: Invalid left-hand side in assignment");
+	fc->temp_top = mark;
+}
+
+/*
+ * Compiles an optional chain: its value, or undefined when a value before
+ * one of its ?. is undefined or null (the rest of the chain is skipped).
+ */
+static void
+expr_optional_chain(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	uint32_t saved;
+	uint32_t end;
+
+	/* The chain's own place to leave to (a chain inside it has its own). */
+	saved = fc->chain_label;
+	fc->chain_label = js_label_new(fc);
+	end = js_label_new(fc);
+
+	/* The chain's value. */
+	js_compile_expression(fc, node->first, target);
+	js_emit_jump(fc, VM_OP_JUMP, 0, end);
+
+	/* Leaving it early gives undefined. */
+	js_label_place(fc, fc->chain_label);
+	js_load_value(fc, target, VM_VALUE_UNDEFINED);
+	js_label_place(fc, end);
+	fc->chain_label = saved;
+}
+
+/* Leaves the optional chain when a node has ?. and the value before it is undefined or null. */
+static void
+expr_optional_check(
+	struct js_function_compiler *fc,
+	const struct js_node *node,
+	uint32_t value)
+{
+	uint32_t mark;
+	uint32_t test;
+
+	/* Only a node written with ?. inside a chain. */
+	if ((node->flags & JS_FLAG_OPTIONAL) == 0U)
+		return;
+	if (fc->chain_label == JS_LABEL_UNPLACED)
+		return;
+
+	/* == null holds exactly for undefined and null. */
+	mark = fc->temp_top;
+	test = js_temp(fc);
+	js_load_value(fc, test, VM_VALUE_NULL);
+	js_emit3(fc, VM_OP_LOOSE_EQ, test, value, test);
+	js_emit_jump(fc, VM_OP_JUMP_IF_TRUE, test, fc->chain_label);
 	fc->temp_top = mark;
 }
 
@@ -1251,14 +1310,15 @@ expr_member_parts(
 	uint32_t object,
 	uint32_t key)
 {
-	/* Private names come with classes; optional chains later. */
-	if (member->second->kind == JS_NODE_PRIVATE_NAME || (member->flags & JS_FLAG_OPTIONAL) != 0U)
+	/* Private names come with classes. */
+	if (member->second->kind == JS_NODE_PRIVATE_NAME)
 		expr_unsupported(fc, member);
 	if (member->first->kind == JS_NODE_SUPER)
 		js_compile_unsupported(fc->compiler, member->first, "super");
 
-	/* The object, then a computed key. */
+	/* The object (?. leaves the chain when it is undefined or null), then a computed key. */
 	js_compile_expression(fc, member->first, object);
+	expr_optional_check(fc, member, object);
 	if ((member->flags & JS_FLAG_COMPUTED) != 0U)
 		js_compile_expression(fc, member->second, key);
 }
@@ -1340,9 +1400,7 @@ expr_call(
 	uint32_t first;
 	uint32_t count;
 
-	/* Optional calls and super calls come later. */
-	if ((node->flags & JS_FLAG_OPTIONAL) != 0U)
-		js_compile_unsupported(fc->compiler, node, "optional chaining");
+	/* Super calls come later. */
 	callee = expr_unwrap(node->first);
 	if (callee->kind == JS_NODE_SUPER)
 		js_compile_unsupported(fc->compiler, callee, "super");
@@ -1359,6 +1417,9 @@ expr_call(
 		js_compile_expression(fc, node->first, function);
 		js_load_value(fc, this_value, VM_VALUE_UNDEFINED);
 	}
+
+	/* ?.() leaves the chain when the function is undefined or null. */
+	expr_optional_check(fc, node, function);
 
 	/* The arguments, then the call. */
 	first = expr_arguments(fc, node->second, &count);
