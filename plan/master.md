@@ -74,7 +74,8 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | S10 | Terminal | `ls`・矢印の履歴・Tab の補完・`less` | WS086・WS087（完了） |
 | S11 | 窓の操作 | 10 個ほどの窓で移動・resize・Wiseview・最大化 | WS099、WS075 |
 | S12 | 音量 | system bar の音量の icon で音量を変え、確かめの音が鳴る | WS100 |
-| S13 | 終わり | Log Out → greeter、Shut Down | WS099 |
+| S13 | GPU の compute | Noct の見本を GPU と CPU で走らせ、時間を比べる | WS101 |
+| S14 | 終わり | Log Out → greeter、Shut Down | WS099 |
 
 ブラウザ（WS074）と IME（WS095）は人間が作業中。戻ったときに台本に足すかを決める。
 
@@ -186,6 +187,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
 | [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | planning | p001（基準の確定と QEMU の通しの試験） |
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | planning | p001（設計。5330 の HDA 8086:51c8 の実機の出音が前提の危険） |
+| [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | planning | p001（設計）。Noct の accel を有効にする build は toolchain（main の許可） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
