@@ -175,6 +175,16 @@
 #define WISEVIEW_RADIUS		16.0f
 #define WISEVIEW_WINDOWS	64U
 
+/*
+ * The application IDs whose windows keep square corners (ws035-p134, the
+ * user's request of 2026-09-29): a terminal's text runs into its corners,
+ * where the rounding would cut it.  Another (an X terminal) is one more
+ * line here.
+ */
+static const char *const shell_square_apps[] = {
+	"terminal"
+};
+
 /* Where the pointer is over a window. */
 enum shell_hit {
 	HIT_NONE,
@@ -225,6 +235,7 @@ static int draw_picture_mark(struct zwl_server *server, VkCommandBuffer command,
 static void draw_letter_mark(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const char *title, int32_t x, int32_t middle);
 static int32_t title_end(struct zwl_server *server, struct zwl_object *surface, int32_t limit);
 static const char *mark_name(const char *app_id);
+static unsigned window_square(const struct zwl_object *surface);
 static void glass_fit(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
 static int glass_crowd(struct zwl_server *server, struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
 static int glass_top(struct zwl_server *server, struct zwl_object *surface, int32_t *x, int32_t *y);
@@ -1751,6 +1762,8 @@ draw_window_blurred(
 	struct shell_rect body;
 	struct shell_rect panel;
 	struct glass_shape shape;
+	float radius;
+	unsigned square;
 
 	/* The body where it is now (docked, its lower corners below the output). */
 	body_rect(server, surface, &body);
@@ -1758,11 +1771,15 @@ draw_window_blurred(
 	if (surface->maximized)
 		return;
 
-	/* A floating title bar's glass. */
+	/* A floating title bar's glass, square like the body when the window keeps square corners. */
+	radius = GLASS_RADIUS;
+	square = window_square(surface);
+	if (square)
+		radius = 0.0f;
 	floating_title(&body, &panel);
 	glass_shape_init(&shape, (float)panel.x, (float)panel.y, (float)panel.width, (float)panel.height);
 	shape.mode = MODE_GLASS;
-	shape.radius = GLASS_RADIUS;
+	shape.radius = radius;
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
@@ -1867,6 +1884,8 @@ draw_body(
 	int32_t width;
 	int32_t height;
 	float soft;
+	float radius;
+	unsigned square;
 	float scale_x;
 	float scale_y;
 
@@ -1892,6 +1911,12 @@ draw_body(
 		zwl_panels_draw(server, command, surface, place, server->window_opacity, 1U);
 	}
 
+	/* The corners: rounded, or square for a window that keeps them (window_square). */
+	radius = GLASS_RADIUS;
+	square = window_square(surface);
+	if (square)
+		radius = 0.0f;
+
 	/* The shadow, deeper for the focused window. */
 	soft = 22.0f;
 	if (focused)
@@ -1902,7 +1927,7 @@ draw_body(
 	shape.quad[2] += 4.0f * soft;
 	shape.quad[3] += 4.0f * soft;
 	shape.mode = MODE_SHADOW;
-	shape.radius = GLASS_RADIUS;
+	shape.radius = radius;
 	shape.soft = soft;
 	shape.color[0] = 0.10f;
 	shape.color[1] = 0.18f;
@@ -1915,9 +1940,9 @@ draw_body(
 	if (server->window_opacity < 1.0f && panels == 0U) {
 		glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
 		if (docked)
-			shape.box[3] += 2.0f * GLASS_RADIUS;
+			shape.box[3] += 2.0f * radius;
 		shape.mode = MODE_GLASS;
-		shape.radius = GLASS_RADIUS;
+		shape.radius = radius;
 		shape.color[0] = 1.0f;
 		shape.color[1] = 1.0f;
 		shape.color[2] = 1.0f;
@@ -1932,11 +1957,11 @@ draw_body(
 	/* The image (its viewport's source), stretched to the rectangle while it changes, as opaque as asked. */
 	glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
 	if (docked)
-		shape.box[3] += 2.0f * GLASS_RADIUS;
+		shape.box[3] += 2.0f * radius;
 	zwl_viewport_source(surface, shape.uv);
 	shape.opacity = server->window_opacity;
 	shape.mode = MODE_IMAGE;
-	shape.radius = GLASS_RADIUS;
+	shape.radius = radius;
 	shape.set = image->set;
 	if (image->draw == ZWL_DRAW_OPAQUE)
 		shape.opaque = 1.0f;
@@ -1971,8 +1996,16 @@ draw_title_bar(
 	int32_t end;
 	int32_t cx;
 	int32_t cy;
+	float radius;
+	unsigned square;
 	int button;
 	int over;
+
+	/* Its corners: rounded, or square for a window that keeps them (window_square). */
+	radius = GLASS_RADIUS;
+	square = window_square(surface);
+	if (square)
+		radius = 0.0f;
 
 	/* Its shadow. */
 	glass_shape_init(&shape, (float)panel->x, (float)panel->y + 4.0f, (float)panel->width, (float)panel->height);
@@ -1981,7 +2014,7 @@ draw_title_bar(
 	shape.quad[2] += 72.0f;
 	shape.quad[3] += 72.0f;
 	shape.mode = MODE_SHADOW;
-	shape.radius = GLASS_RADIUS;
+	shape.radius = radius;
 	shape.soft = 18.0f;
 	shape.color[0] = 0.10f;
 	shape.color[1] = 0.18f;
@@ -1997,7 +2030,7 @@ draw_title_bar(
 	 */
 	glass_shape_init(&shape, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height);
 	shape.mode = MODE_GLASS;
-	shape.radius = GLASS_RADIUS;
+	shape.radius = radius;
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
@@ -2156,6 +2189,25 @@ draw_letter_mark(
 		letter[0] = (char)(letter[0] - 'a' + 'A');
 	width = glass_text_width(server, SIZE_BAR, letter);
 	glass_draw_text(server, command, SIZE_BAR, x + 10 - width / 2, middle + 5, letter, 20, white);
+}
+
+/* Tells whether a window keeps square corners (its application ID is in shell_square_apps). */
+static unsigned
+window_square(
+	const struct zwl_object *surface)
+{
+	unsigned index;
+	int same;
+
+	/* Each application ID of the list. */
+	for (index = 0; index < sizeof(shell_square_apps) / sizeof(shell_square_apps[0]); index++) {
+		same = strcmp(surface->app_id, shell_square_apps[index]);
+		if (same == 0)
+			return 1U;
+	}
+
+	/* Succeeded: the window's corners are rounded. */
+	return 0U;
 }
 
 /*
@@ -4034,6 +4086,14 @@ draw_tile(
 	int32_t cy;
 	float colour[4];
 	float appear;
+	float radius;
+	unsigned square;
+
+	/* The tile's corners: rounded, or square for a window that keeps them (window_square). */
+	radius = WISEVIEW_RADIUS;
+	square = window_square(surface);
+	if (square)
+		radius = 0.0f;
 
 	/* The shadow, or a blue glow for the window that was on top or is under the pointer. */
 	glass_shape_init(&shape, (float)tile->x, (float)tile->y + 6.0f, (float)tile->width, (float)tile->height);
@@ -4042,7 +4102,7 @@ draw_tile(
 	shape.quad[2] += 96.0f;
 	shape.quad[3] += 96.0f;
 	shape.mode = MODE_SHADOW;
-	shape.radius = WISEVIEW_RADIUS;
+	shape.radius = radius;
 	shape.soft = 24.0f;
 	shape.color[0] = 0.10f;
 	shape.color[1] = 0.18f;
@@ -4079,7 +4139,7 @@ draw_tile(
 	glass_shape_init(&shape, (float)tile->x, (float)tile->y, (float)tile->width, (float)tile->height);
 	zwl_viewport_source(surface, shape.uv);
 	shape.mode = MODE_IMAGE;
-	shape.radius = WISEVIEW_RADIUS;
+	shape.radius = radius;
 	shape.set = image->linear_set;
 	if (shape.set == VK_NULL_HANDLE)
 		shape.set = image->set;
@@ -4095,7 +4155,7 @@ draw_tile(
 		shape.quad[2] += 2.0f;
 		shape.quad[3] += 2.0f;
 		shape.mode = MODE_RING;
-		shape.radius = WISEVIEW_RADIUS + 3.0f;
+		shape.radius = radius + 3.0f;
 		shape.soft = 2.0f;
 		memcpy(shape.color, glow, sizeof(shape.color));
 		shape.color[3] = 0.9f;

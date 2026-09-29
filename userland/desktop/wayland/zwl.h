@@ -978,6 +978,7 @@ int zwl_glass_motion(struct zwl_server *server);
 void zwl_glass_place(struct zwl_server *server, struct zwl_object *surface, int32_t width, int32_t height, int32_t step);
 void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height);
 void zwl_glass_tick(struct zwl_server *server);
+void zwl_glass_prefetch(struct zwl_server *server);
 int zwl_glass_wallpaper(struct zwl_server *server, const char *path);
 void zwl_preferences_open(struct zwl_server *server);
 void zwl_preferences_tick(struct zwl_server *server, uint64_t now);

@@ -122,6 +122,10 @@ main(
 	if (previous_handler == SIG_ERR)
 		return 1;
 
+	/* The wallpaper's file is read on a thread while the device is made (ws035-p133). */
+	if (!server.direct)
+		zwl_glass_prefetch(&server);
+
 	/* Open an independent GPU context before publishing a usable Wayland endpoint (it may take the display's size). */
 	step_start = zwl_milliseconds();
 	error = zwl_gpu_open(&server);
