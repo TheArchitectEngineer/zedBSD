@@ -138,3 +138,12 @@ vblank の配列（停止要因 5〜7）、N0 が active な pipe で止まら�
   perf の行は present 1 回の GPU 約 15 ms、flip 1〜7 ms。
 - 結論: 約 1 秒の遅れは bare metal（takeover の後）だけのもの。GPU の描画や compositor の経路一般の問題ではない。疑い: takeover の後に残る状態
   （INIT の参照を再点灯の前に返す＝DC state、probe 時の sanitize の差、`kmsg` を画面に出す console）。bare metal の `perf:` の行で確かめる。
+
+### bare metal の遅れの切り分け（2026-09-29、demo-lcd2、10.0.30.5）
+
+- 入力: `plan/ws084/tests/evlat.c`（足した。evdev の event ごとに kernel の時刻と読めた時刻）を 90 秒、ユーザーがタッチパッドとキーボードを操作。
+  event0（タッチパッド、PS/2）10443 event・約 7 ms ごと、event1（キーボード）50 event。どちらも kernel の時刻と読めた時刻の差は 0〜1 ms → **入力は遅れていない**。
+  結果 `build/ws084-evlat/`。
+- 表示（同じ時間の `perf:` の行）: present 2〜10/s（多くは 5〜8）、present ごとに submit 2 回、submit ごとの GPU 25〜75 ms（多くは約 30）。present（copy 7・flip 3〜7 ms）は passthrough と同程度。
+  入力なしの frame の submit の GPU は bare metal 約 30 ms、passthrough 約 15 ms（約 2 倍）。
+- 見立て（未確認）: (1) bare metal で GT の周波数（RPS）が上がっていない、(2) 約 140 Hz の入力に約 8 fps の描画が追いつかず frame が積もって約 1 秒遅れて見える。
