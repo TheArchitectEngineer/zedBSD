@@ -31,7 +31,7 @@ wayland・terminal・browser・textedit を変えている最中のため）。�
                                                keiland_ime_status_v1（表示の状態、私的な拡張）
 ```
 
-### 2.1 IME の起動と信頼（R: A5・A6・H3）
+### 2.1 IME の起動と信頼（R: A5・A6・H3。実装は §15）
 
 - zdesktop は session の開始（`main.c` の初期化の後）に IME を起こす。`zwl_spawn()`（`home.c:763-803`）は `/bin/sh -c` で fd 3〜1023 を閉じるので
   使わず、IME 専用の spawn（`input-method.c`）を作る: `socketpair(AF_UNIX, SOCK_STREAM)` の片方を zdesktop の client として登録し、もう片方を
@@ -121,7 +121,7 @@ WS035 等が並行して global を足すので、名前の番号は merge の�
   `leave` を送り、IME には `deactivate` を送る（IME は deactivate で engine を `reset` し、未確定を捨てる。二重の確定にならない）。
   mouse で cursor を動かした時（`text_change_cause` = other の surrounding が来た時）は、IME が今の preedit を確定してから新しい位置で続ける。
 
-### 4.2 key の流れ（R: A1・A2・A3・A10、§14 D5）
+### 4.2 key の流れ（R: A1・A2・A3・A10、§14 D5。実装と変えた点は §15）
 
 `zwl_seat_key()`（`seat.c:830-880`）の今の順は、DnD の Esc → lock（`zwl_greeter_key`）→ Super+L → greeter → glass の時の
 `zwl_home_key`（Home の表示中は全ての key を取る、`home.c:538-548`）→ `zwl_network_key` → `zwl_menu_grab_key` → `zwl_titlebar_key`（field に
@@ -376,7 +376,7 @@ p003 の補いの辞書（D3）で、基本の語（私・この・日本・多�
 - **語尾**: 否定の ないで・ないでください、て形の後の も・は・きます・いく・あります 等を足した。する・来る の 1 字の形は p002 のとおり語にしない。
 - 1 つの助詞だけの文節を ひらがな 先にするのは 1 字の時だけ（くらい が 暗い に勝ったため）。
 
-## 8. 言語の表示と切り替えの指示（私的な拡張 `keiland_ime_status_v1`）
+## 8. 言語の表示と切り替えの指示（私的な拡張 `keiland_ime_status_v1`。p004 の形は §15）
 
 - IME → zdesktop: `language(id, label)`（今の言語。label は "A"・"あ"）、`languages(list)`（切り替えの順）、`composing(0|1)`（preedit が空でないか。
   §4.2 の 3 の shortcut の順の切り替えに使う）。
@@ -533,7 +533,7 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
 | ws095-p002 | 日本語の engine（Wayland 無し）: ローマ字・辞書の読み込み・活用の規則・分割・候補・利用者の辞書、試験用の固定の辞書で host の試験 | `userland/desktop/ime/` の engine の file、`plan/ws095/tests/` | p001 |
 | ws095-p003 | 辞書の package（pin した tarball の取得・検証と install）、100 文での品質の計測、補いの辞書の案（ユーザーと相談） | `userland/desktop/ime/dict/`（Makefile・`SKK-JISYO.kei`）、engine の分割の規則、`plan/ws095/tests/`（100 文・measure） | p002、§14 D1・D3 |
 | ws095-p004 | protocol の client の記述（text-input-v3・input-method-v2・virtual-keyboard-v1・status）、zdesktop の仲介（§2.1 の起動と信頼、§4.1・§4.2 の key の経路、§4.5 の watchdog）、IME の program の骨（直接入力の engine）、ime-probe と guest の試験（protocol・key の経路） | libwayland、`wayland/text-input.c`・`input-method.c`・`seat.c`・`protocol.c`・`main.c`・`zwl.h`、ime の Wayland の部分 | p002。zdesktop を変えている WS035 等と merge の順（main） |
-| ws095-p005 | 候補の窓の合成（§4.3、plain・glass の両経路、全画面）、indicator と status（§8）、日本語の engine の結線、lock・Home での deactivate、guest の試験（変換・候補の窓の画面） | `wayland/compose.c`・`glass.c`・`display.c`・`damage.c`・`shell.c`・`network.c`、ime の `popup.c`・`status.c` | p003（image に辞書）・p004 |
+| ws095-p005 | 候補の窓の合成（§4.3、plain・glass の両経路、全画面）、indicator と status の `languages`（§8）、IME の中の key の repeat、lock・Home での popup の扱い、guest の試験（候補の窓の画面）。日本語の engine の結線は p004 に移した（§15） | `wayland/compose.c`・`glass.c`・`display.c`・`damage.c`・`shell.c`・`network.c`、ime の `popup.c` | p003（image に辞書）・p004 |
 | ws095-p006 | libkeiland の text-input の helper と Terminal の対応（password の検出を含む） | libkeiland、terminal | p004・p005、**Terminal の CJK の fallback の font**（今は無い。WS095 に入れるか別の WS かを main が決める） |
 | ws095-p007 | Text Editor の対応（WS092 の口、preedit の大きさ、cursor の矩形） | textedit | p006、WS092 |
 | ws095-p008 | zdesktop の自前の field（titlebar の検索、§4.4）と Files の field | wayland の titlebar-shell、files | p005・p006 |
@@ -560,3 +560,42 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
 | D12 | 言語の状態を system 全体で 1 つか窓ごとか（レビューで追加） | system 全体で 1 つ | 窓ごと（Windows の旧い既定） |
 | D13 | App Home の検索を IME の対象にするか（レビューで追加） | 最初の版では対象外（ASCII・英語の keyword） | UTF-8 に直して対象にする |
 | D14 | Terminal の CJK の fallback の font（レビューで見つけた隠れた依存） | p006 の前提として WS095 の中で小さく足す案を main に挙げる（Terminal の担当の WS と調整） | Terminal の WS に任せ、p006 はそれを待つ |
+
+## 15. p004 の実装で決めたこと（2026-09-29）
+
+§2〜§5・§8 の設計を実装して、guest で確かめた（[phase004/phase.md](phase004/phase.md)）。設計から変えた点・細部を決めた点:
+
+- **起動と信頼（§2.1）**: `input-method.c` の `zwl_ime_start()`（`listen_socket` の後、login の画面では起こさない）が `/usr/libexec/keiland-ime` を
+  `socketpair` と `fork`・`execl`（sh を挟まない）で起こし、子に `WAYLAND_SOCKET` で fd を渡す。zdesktop の側の端は `zwl_client` を作って
+  `client->ime = 1` の印を付ける。IME の global（名前 14 `zwp_input_method_manager_v2`・15 `zwp_virtual_keyboard_manager_v1`・20
+  `keiland_ime_status_manager_v1`）は `registry_events` と `bind_global` で印の無い client から隠す。13 は `zwp_text_input_manager_v3`（全ての
+  client）。死は接続の切断（`zwl_client_destroy` の hook）で知り、1 秒後に起こし直す。60 秒の間に 3 回を超えたら諦める。子の回収は tick の
+  `waitpid(pid, WNOHANG)`（App Home の `waitpid(-1)` が先に回収したら ECHILD で終わったと見る）。program が無ければ `ZWL IME none` で何もしない。
+- **key の経路（§4.2）**: `seat.c` の `zwl_seat_key()` に hook を 3 つ置いた。(1) lock・greeter の判定の直後で `zwl_ime_key_early()`（Alt+Space、
+  変換・無変換・カタカナ/ひらがな・かな・英数、grab へ送った press の release）、(2) glass の key の後・window の menu の key の前で
+  `zwl_ime_key_grab(..., composing_only=1)`（変換中だけ）、(3) focus の client へ送る直前で `zwl_ime_key_grab(..., 0)`。client への送りは
+  `zwl_seat_key_deliver()` に切り出した。titlebar の field（§4.4）は p008。
+- **modifiers（§4.2 の 6 を変えた）**: client には **いつも物理の modifiers** を送り、virtual keyboard の `modifiers` は受けて捨てる。
+  理由: zdesktop だけが keyboard の源で、IME は物理と違う modifiers を作らない。VK の modifiers を client に流すと IME の死で modifier が押された
+  ままになる危険だけが増える。grab には物理の modifiers を送る（`zwl_seat_modifiers` の hook）。VK の `keymap` は fd を受けて閉じる（§4.2 の 7）。
+- **VK の key**: 変換中でなければ window の menu・tab の key に先に渡し（§4.2 の 4）、取られなければ focus の client へ。押したままの key を覚え、
+  VK・IME が消えた時に release を合成する。focus が移る時は旧い window の leave に任せる。
+- **watchdog（§4.5）**: grab に送った press に 500 ms 答えが無ければ bypass（`ZWL IME bypass`）、IME の次の要求で戻る（`ZWL IME answering`）。
+  100 ms を超えた答えは `ZWL IME slow-answer` と log に出す。guest の最初の試験で、日本語に切り替えた直後の最初の key で 1 回 bypass が起きた
+  （IME が engine の code と辞書に初めて触れる時の遅れと見た）。IME が起動の時に見本の変換を一度流して捨てる（`main_warm`）ようにした後は、
+  2 回の試験で意図しない bypass も 100 ms を超える遅れも出ていない。
+- **text input（§4.1）**: `text-input.c`。secret の field（password・pin・hidden_text・sensitive_data）と、lock・greeter・App Home の表示中は
+  IME に activate しない。focus が移る時、見せていた preedit を旧い text input に確定として送ってから leave（D10）。done の serial は text input
+  ごとの commit の数、IME の commit の serial は見ずに文字を渡す（§3.2）。
+- **私的な拡張 `keiland_ime_status_v1`（§8）**: manager は `destroy`・`get_status(new_id)`。status の要求は `destroy`・`language(id, label)`・
+  `composing(uint)`、event は `next()`・`select(id)`。§8 の `languages(list)` は indicator を作る p005 で足す（version 2）。
+- **日本語の engine の結線を p004 に入れた（§13 の p005 から移した）**: protocol と key の経路を guest で確かめるのに要るため。IME の program は
+  `main.c`・`method.c`・`keys.c`・`program.h`（§5 の `status.c` の役は `method.c`、`popup.c` は p005）。key の press のたびに
+  `set_preedit_string`・`commit` を送る（zdesktop の watchdog への答えを兼ねる）。IME の中の key の repeat（変換中の BackSpace の押しっぱなし）は
+  まだ無い（p005）。
+- **package**: `keiland-ime`（`userland/desktop/ime/Makefile`、`/usr/libexec/keiland-ime`、既定では選ばない、`ime-dict-ja` を REQUIRE）と
+  試験の `ime-probe`（`userland/desktop/ime-probe/`）。Wayland を使う program は `platform/amd64/vmunix.mk` に一つずつ link の規則を持つ決まりなので、
+  2 つを足した（既存の試験の client と同じ形）。既定の image に入れるかは p005 の後に main が決める（入れる image は辞書を取得する）。
+- **気づいたこと（WS095 の外）**: guest の試験で、手前の窓を閉じた後、残った窓に keyboard の focus が戻らなかった（zdesktop の focus の動き。
+  試験は新しい窓を出して進めた）。意図した動きかを main に確かめる。
+

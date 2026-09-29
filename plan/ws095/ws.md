@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p003（辞書の package、100 文の計測 X＋補い 92/100、補いの辞書の案 337 見出し）cleared（2026-09-29）。補いの辞書の語はユーザーと相談中（phase003 の 1〜5）。次: p004（protocol と zdesktop の仲介）
+Resume point: p004（protocol・zdesktop の仲介・IME の program・guest の試験 status=0 を 2 回、boot-test PASS）cleared（2026-09-29）。次: p012（補いの辞書の千語と活用の注釈、held-out）か p005（候補の窓と indicator）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -30,8 +30,8 @@ Resume point: p003（辞書の package、100 文の計測 X＋補い 92/100、�
 | [ws095-p001](phase001/phase.md) | 設計（[design.md](design.md)） | cleared（2026-09-29） | — |
 | [ws095-p002](phase002/phase.md) | 日本語の engine（Wayland 無し）: ローマ字・辞書・活用の規則・分割・候補・利用者の辞書、固定の辞書で host の試験 | cleared（2026-09-29） | p001 |
 | [ws095-p003](phase003/phase.md) | 辞書の package（pin した tarball の取得・検証）、100 文での品質の計測、補いの辞書の案（ユーザーと相談） | cleared（2026-09-29） | p002、D1・D3 |
-| ws095-p004 | protocol の記述、zdesktop の仲介（起動と信頼・key の経路・watchdog）、IME の骨（直接入力）、ime-probe の guest の試験 | planning | p002 |
-| ws095-p005 | 候補の窓の合成、indicator と status、日本語の engine の結線、guest の試験 | planning | p003・p004 |
+| [ws095-p004](phase004/phase.md) | protocol の記述、zdesktop の仲介（起動と信頼・key の経路・Alt+Space・watchdog）、IME の program（日本語の engine の結線を含む）、ime-probe の guest の試験 | cleared（2026-09-29） | p002 |
+| ws095-p005 | 候補の窓の合成、indicator と status の languages、IME の中の key の repeat、guest の試験（日本語の engine の結線は p004 に移した） | planning | p003・p004 |
 | ws095-p006 | libkeiland の text-input の helper と Terminal（password の検出） | planning | p004・p005、Terminal の CJK の font（D14） |
 | ws095-p007 | Text Editor の対応（WS092 の口） | planning | p006、WS092 |
 | ws095-p008 | zdesktop の自前の field（titlebar の検索）と Files の field | planning | p005・p006 |
