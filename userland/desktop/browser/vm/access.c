@@ -413,6 +413,8 @@ vm_instanceof(
 			if (method == builtin)
 				ordinary = 1;
 		}
+
+		/* A method of its own is called, its answer made a boolean. */
 		if (method != VM_VALUE_UNDEFINED && !ordinary) {
 			status = vm_call(realm, method, constructor, &value, 1, &answer);
 			if (status != 0)

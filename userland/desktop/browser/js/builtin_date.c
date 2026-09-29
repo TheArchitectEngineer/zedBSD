@@ -1122,6 +1122,8 @@ date_to_primitive(
 		status = vm_throw_type_error(realm, "Invalid hint");
 		return status;
 	}
+
+	/* valueOf and toString in the hint's order. */
 	status = vm_ordinary_to_primitive(realm, this_value, order, result);
 	if (status != 0)
 		return status;

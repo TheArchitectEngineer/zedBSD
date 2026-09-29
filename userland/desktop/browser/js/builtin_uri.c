@@ -39,6 +39,7 @@ static int uri_encode(struct vm_realm *realm, vm_value value, const char *also, 
 static int uri_decode(struct vm_realm *realm, vm_value value, const char *keep, vm_value *result);
 static int uri_in(uint16_t unit, const char *set);
 static int uri_alphanumeric(uint16_t unit);
+static int uri_kept(uint16_t unit, const char *marks, const char *also);
 static int uri_hex_value(uint16_t unit);
 static int uri_byte_at(const struct vm_string *string, uint32_t index);
 static int uri_append_escape(struct wb_units *units, unsigned byte);
@@ -174,6 +175,7 @@ uri_escape(
 	uint16_t unit;
 	uint16_t text[6];
 	uint32_t index;
+	int kept;
 	int status;
 
 	UNUSED_PARAMETER(this_value);
@@ -188,7 +190,8 @@ uri_escape(
 	wb_units_init(&units);
 	for (index = 0; index < string->length && status == 0; index++) {
 		unit = vm_string_at(string, index);
-		if (uri_alphanumeric(unit) || uri_in(unit, uri_escape_marks)) {
+		kept = uri_kept(unit, uri_escape_marks, "");
+		if (kept) {
 			status = wb_units_append(&units, &unit, 1);
 		} else if (unit < 256U) {
 			status = uri_append_escape(&units, unit);
@@ -203,6 +206,8 @@ uri_escape(
 			status = wb_units_append(&units, text, 6);
 		}
 	}
+
+	/* What failed goes back to the caller with the units let go. */
 	if (status != 0) {
 		wb_units_release(&units);
 		return status;
@@ -225,6 +230,7 @@ uri_unescape(
 	struct vm_string *string;
 	struct wb_units units;
 	uint16_t unit;
+	uint16_t marker;
 	uint32_t index;
 	int digits[4];
 	int status;
@@ -241,7 +247,10 @@ uri_unescape(
 	wb_units_init(&units);
 	for (index = 0; index < string->length && status == 0; index++) {
 		unit = vm_string_at(string, index);
-		if (unit == '%' && index + 5U < string->length && vm_string_at(string, index + 1U) == 'u') {
+		marker = 0;
+		if (index + 1U < string->length)
+			marker = vm_string_at(string, index + 1U);
+		if (unit == '%' && index + 5U < string->length && marker == 'u') {
 			digits[0] = uri_hex_value(vm_string_at(string, index + 2U));
 			digits[1] = uri_hex_value(vm_string_at(string, index + 3U));
 			digits[2] = uri_hex_value(vm_string_at(string, index + 4U));
@@ -258,8 +267,12 @@ uri_unescape(
 				index += 2U;
 			}
 		}
+
+		/* The code unit, escaped or not. */
 		status = wb_units_append(&units, &unit, 1);
 	}
+
+	/* What failed goes back to the caller with the units let go. */
 	if (status != 0) {
 		wb_units_release(&units);
 		return status;
@@ -290,6 +303,7 @@ uri_encode(
 	uint16_t low;
 	unsigned length;
 	unsigned byte;
+	int kept;
 	int status;
 
 	/* The string. */
@@ -304,7 +318,8 @@ uri_encode(
 		unit = vm_string_at(string, index);
 
 		/* A character kept as it is. */
-		if (uri_alphanumeric(unit) || uri_in(unit, uri_marks) || uri_in(unit, also)) {
+		kept = uri_kept(unit, uri_marks, also);
+		if (kept) {
 			status = wb_units_append(&units, &unit, 1);
 			if (status != 0)
 				break;
@@ -317,6 +332,8 @@ uri_encode(
 			status = VM_THROWN;
 			break;
 		}
+
+		/* A high surrogate pairs with the low one after it. */
 		if (unit >= 0xD800U && unit <= 0xDBFFU) {
 			low = 0;
 			if (index + 1U < string->length)
@@ -325,6 +342,8 @@ uri_encode(
 				status = VM_THROWN;
 				break;
 			}
+
+			/* The pair's code point. */
 			code_point = 0x10000U + (((uint32_t)unit - 0xD800U) << 10) + ((uint32_t)low - 0xDC00U);
 			index++;
 		}
@@ -363,6 +382,8 @@ uri_encode(
 		status = vm_throw_error(realm, VM_ERROR_URI, "URI malformed");
 		return status;
 	}
+
+	/* What failed goes back to the caller with the units let go. */
 	if (status != 0) {
 		wb_units_release(&units);
 		return status;
@@ -392,10 +413,12 @@ uri_decode(
 	uint32_t index;
 	uint32_t start;
 	uint16_t unit;
+	uint16_t marker;
 	uint16_t original[3];
 	unsigned length;
 	unsigned more;
 	int byte;
+	int kept;
 	int status;
 
 	/* The string. */
@@ -420,12 +443,15 @@ uri_decode(
 			status = VM_THROWN;
 			break;
 		}
+
+		/* Past the escape's digits. */
 		index += 2U;
 
 		/* A single byte: its character, unless it is one to keep escaped. */
 		if (byte < 0x80) {
 			unit = (uint16_t)byte;
-			if (uri_in(unit, keep)) {
+			kept = uri_in(unit, keep);
+			if (kept) {
 				/* The escape as it was written. */
 				original[0] = vm_string_at(string, start);
 				original[1] = vm_string_at(string, start + 1U);
@@ -434,6 +460,8 @@ uri_decode(
 			} else {
 				status = wb_units_append(&units, &unit, 1);
 			}
+
+			/* The next code unit. */
 			continue;
 		}
 
@@ -459,7 +487,10 @@ uri_decode(
 		for (more = 1; more < length; more++) {
 			index++;
 			byte = -1;
-			if (index < string->length && vm_string_at(string, index) == '%')
+			marker = 0;
+			if (index < string->length)
+				marker = vm_string_at(string, index);
+			if (marker == '%')
 				byte = uri_byte_at(string, index);
 			if (byte < 0 || (byte & 0xC0) != 0x80)
 				break;
@@ -472,6 +503,8 @@ uri_decode(
 			status = VM_THROWN;
 			break;
 		}
+
+		/* The code point, as one or two code units. */
 		status = wb_units_append_code_point(&units, code_point);
 	}
 
@@ -481,6 +514,8 @@ uri_decode(
 		status = vm_throw_error(realm, VM_ERROR_URI, "URI malformed");
 		return status;
 	}
+
+	/* What failed goes back to the caller with the units let go. */
 	if (status != 0) {
 		wb_units_release(&units);
 		return status;
@@ -497,15 +532,46 @@ uri_in(
 	uint16_t unit,
 	const char *set)
 {
+	const char *found;
+
 	/* Only ASCII can be in the set. */
 	if (unit == 0 || unit >= 0x80U)
 		return 0;
 
 	/* The set's characters. */
-	if (strchr(set, (int)unit) != NULL)
+	found = strchr(set, (int)unit);
+	if (found != NULL)
 		return 1;
 
 	/* Not one of them. */
+	return 0;
+}
+
+/* Tells whether an encoding keeps a code unit as it is: a letter, a digit, or one of two sets. */
+static int
+uri_kept(
+	uint16_t unit,
+	const char *marks,
+	const char *also)
+{
+	int kept;
+
+	/* A letter or a digit. */
+	kept = uri_alphanumeric(unit);
+	if (kept)
+		return 1;
+
+	/* One of the marks. */
+	kept = uri_in(unit, marks);
+	if (kept)
+		return 1;
+
+	/* One of the others. */
+	kept = uri_in(unit, also);
+	if (kept)
+		return 1;
+
+	/* Encoded. */
 	return 0;
 }
 

@@ -244,6 +244,8 @@ vm_iter_close(
 		state->done = 1;
 		return 0;
 	}
+
+	/* Closed from now on, whatever return does. */
 	state->done = 1;
 
 	/* The iterator's return method, and its call when there is one. */
@@ -261,6 +263,8 @@ vm_iter_close(
 		realm->exception = saved;
 		return 0;
 	}
+
+	/* A failure of return, or of finding it. */
 	if (status != 0)
 		return status;
 
@@ -694,6 +698,7 @@ spread_is_builtin(
 	vm_value method)
 {
 	struct vm_object *builtin;
+	vm_value expected;
 	int iterable;
 	int is_string;
 
@@ -708,7 +713,8 @@ spread_is_builtin(
 		builtin = realm->intrinsics[VM_INTRINSIC_STRING_ITERATOR];
 		if (builtin == NULL)
 			return 1;
-		if (method == vm_value_cell(builtin))
+		expected = vm_value_cell(builtin);
+		if (method == expected)
 			return 1;
 		return 0;
 	}
@@ -717,7 +723,8 @@ spread_is_builtin(
 	builtin = realm->intrinsics[VM_INTRINSIC_ARRAY_VALUES];
 	if (builtin == NULL)
 		return 1;
-	if (method == vm_value_cell(builtin))
+	expected = vm_value_cell(builtin);
+	if (method == expected)
 		return 1;
 
 	/* A user's iterator. */

@@ -286,6 +286,8 @@ collection_install_one(
 			if (error == 0)
 				error = js_builtin_value(realm, made, "keys", vm_value_cell(function), JS_BUILTIN_METHOD);
 		}
+
+		/* The iterator also under Symbol.iterator, and the constructor's species. */
 		if (error == 0)
 			error = js_builtin_symbol_value(realm, made, VM_SYMBOL_ITERATOR, vm_value_cell(function), JS_BUILTIN_METHOD);
 		if (error == 0)
@@ -442,6 +444,8 @@ collection_fill(
 				if (status == 0)
 					status = vm_get(realm, item, vm_value_int32(1), &pair[1]);
 			}
+
+			/* A Map's adder takes the key and the value. */
 			count = 2;
 		}
 
@@ -452,6 +456,8 @@ collection_fill(
 			vm_iter_close(realm, iterator, 1);
 			return status;
 		}
+
+		/* Any other failure ends the filling. */
 		if (status != 0)
 			return status;
 	}
@@ -497,6 +503,7 @@ collection_set(
 	vm_value *result)
 {
 	struct collection_table *table;
+	struct vm_object *object;
 	vm_value key;
 	int weak_key;
 	int status;
@@ -510,7 +517,8 @@ collection_set(
 	/* A WeakMap's key must be one that can be held weakly. */
 	key = js_argument(args, count, 0);
 	weak_key = collection_weak_key(key);
-	if (((struct vm_object *)vm_value_as_cell(this_value))->kind == VM_KIND_WEAK_MAP && !weak_key) {
+	object = (struct vm_object *)vm_value_as_cell(this_value);
+	if (object->kind == VM_KIND_WEAK_MAP && !weak_key) {
 		status = vm_throw_type_error(realm, "Invalid value used as weak map key");
 		return status;
 	}
@@ -535,6 +543,7 @@ collection_add(
 	vm_value *result)
 {
 	struct collection_table *table;
+	struct vm_object *object;
 	vm_value key;
 	int weak_key;
 	int status;
@@ -548,7 +557,8 @@ collection_add(
 	/* A WeakSet's value must be one that can be held weakly. */
 	key = js_argument(args, count, 0);
 	weak_key = collection_weak_key(key);
-	if (((struct vm_object *)vm_value_as_cell(this_value))->kind == VM_KIND_WEAK_SET && !weak_key) {
+	object = (struct vm_object *)vm_value_as_cell(this_value);
+	if (object->kind == VM_KIND_WEAK_SET && !weak_key) {
 		status = vm_throw_type_error(realm, "Invalid value used in weak set");
 		return status;
 	}
@@ -648,6 +658,8 @@ collection_clear(
 		table->entries[index].key = VM_VALUE_EMPTY;
 		table->entries[index].value = VM_VALUE_UNDEFINED;
 	}
+
+	/* No chain has an entry any more. */
 	for (index = 0; index < table->bucket_count; index++)
 		table->buckets[index] = COLLECTION_NONE;
 	table->size = 0;
@@ -1117,6 +1129,8 @@ collection_grow(
 			table->entries[to] = table->entries[from];
 			to++;
 		}
+
+		/* The live entries are all there is now, with their chains rebuilt. */
 		table->count = to;
 		status = collection_rehash(table, table->bucket_count);
 		if (status != 0)

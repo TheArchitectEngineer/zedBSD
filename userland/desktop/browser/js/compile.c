@@ -1179,6 +1179,8 @@ compile_for_of(
 	} else {
 		js_store_target(fc, left, value);
 	}
+
+	/* The body, then back for the next value. */
 	compile_statement(fc, node->fourth);
 	js_emit_jump(fc, VM_OP_JUMP, 0, target->continue_label);
 	protected_end = js_here(fc);

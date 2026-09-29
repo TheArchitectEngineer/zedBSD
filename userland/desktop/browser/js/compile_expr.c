@@ -1246,6 +1246,8 @@ expr_bind_array(
 		/* The element's target takes it. */
 		js_bind_pattern(fc, element, part, mode);
 	}
+
+	/* The end of what the targets did. */
 	end = js_here(fc);
 
 	/* An iteration the pattern did not finish is closed (ws074-p087). */

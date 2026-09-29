@@ -282,6 +282,8 @@ iterator_array_next(
 		if (status != 0)
 			return status;
 	}
+
+	/* An entry pairs the index with the element. */
 	if (state->kind == JS_ITERATE_ENTRIES) {
 		status = iterator_entry(realm, index, value, &value);
 		if (status != 0)
@@ -333,6 +335,8 @@ iterator_string_next(
 		if (units[1] >= 0xDC00U && units[1] <= 0xDFFFU)
 			length = 2;
 	}
+
+	/* The iterator moves past the code point. */
 	state->index += length;
 
 	/* The code point's string. */
@@ -514,6 +518,8 @@ iterator_string_iterator(
 		status = vm_throw_type_error(realm, "String.prototype[Symbol.iterator] called on null or undefined");
 		return status;
 	}
+
+	/* this as a string. */
 	status = vm_to_string(realm, this_value, &string);
 	if (status != 0)
 		return status;

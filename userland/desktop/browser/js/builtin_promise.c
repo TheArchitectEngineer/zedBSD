@@ -1041,6 +1041,8 @@ promise_species(
 		*constructor = vm_value_cell(realm->intrinsics[VM_INTRINSIC_PROMISE]);
 		return 0;
 	}
+
+	/* A species must be a constructor. */
 	is_constructor = vm_value_is_constructor(species);
 	if (!is_constructor) {
 		status = vm_throw_type_error(realm, "object.constructor[Symbol.species] is not a constructor");
