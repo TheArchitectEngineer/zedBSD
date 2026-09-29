@@ -2,7 +2,9 @@
 # ws075-p018/p021: which GPU sessions keep the render engine busy, on the running H4 run, through QEMU's gdbstub
 # (no kernel log): the worker's per-context engine time (struct i915_worker_context engine_ns / engine_runs, worker.c)
 # is read twice SECONDS apart while h4-ctl.py rate moves the pointer (at RATE_XY "X Y" when set), and each session's
-# runs per second, share of the engine and time per run are printed, then the rate line.  The worker is found at a
+# runs per second, share of the engine and time per run are printed (ws075-p026: with the wait in the worker's queue and
+# the round trip from queue to end of each synchronous submit, and the share of the time the session spends in them),
+# then the rate line.  The worker is found at a
 # hardware breakpoint on i915_worker_run(); the context table's layout (first record, stride, 32 records) is read
 # from VMUNIX's disassembly.
 #   plan/ws075/tests/hdmi/engine-gdb.sh VMUNIX SECONDS
@@ -27,7 +29,7 @@ set \$i = 0
 while \$i < 32
   set \$r = \$w + 0x10 + $stride * \$i
   if *(unsigned long *)\$r != 0
-    printf "CTX %d session=%lx ns=%lu runs=%u\n", \$i, *(unsigned long *)\$r - 0x18, *(unsigned long *)(\$r+8), *(unsigned *)(\$r+0x10)
+    printf "CTX %d session=%lx ns=%lu runs=%u queue=%lu round=%lu\n", \$i, *(unsigned long *)\$r - 0x18, *(unsigned long *)(\$r+8), *(unsigned *)(\$r+0x10), *(unsigned long *)(\$r+0x18), *(unsigned long *)(\$r+0x20)
   end
   set \$i = \$i + 1
 end
@@ -50,19 +52,22 @@ work, elapsed = sys.argv[1], float(sys.argv[3]) - float(sys.argv[2])
 def read(path):
     table = {}
     for line in open(path):
-        m = re.search(r'CTX (\d+) session=(\w+) ns=(\d+) runs=(\d+)', line)
+        m = re.search(r'CTX (\d+) session=(\w+) ns=(\d+) runs=(\d+)(?: queue=(\d+) round=(\d+))?', line)
         if m:
-            table[m.group(2)] = (int(m.group(3)), int(m.group(4)))
+            table[m.group(2)] = (int(m.group(3)), int(m.group(4)), int(m.group(5) or 0), int(m.group(6) or 0))
     return table
 first, second = read(work + '/eng1.txt'), read(work + '/eng2.txt')
 total = 0
-for session, (ns, runs) in second.items():
+for session, (ns, runs, queue, round_) in second.items():
     if session not in first:
         continue
     dn, dr = ns - first[session][0], runs - first[session][1]
+    dq, dt = queue - first[session][2], round_ - first[session][3]
     total += dn
     if dr:
-        print(f'session {session}: {dr / elapsed:.1f} runs/s, engine {dn / 1e7 / elapsed:.1f}%, {dn / 1e6 / dr:.2f} ms/run')
+        # ws075-p026: of a submit whose caller sleeps, the wait in the worker's queue and the time from queue to end
+        print(f'session {session}: {dr / elapsed:.1f} runs/s, engine {dn / 1e7 / elapsed:.1f}%, {dn / 1e6 / dr:.2f} ms/run, '
+              f'queue {dq / 1e6 / dr:.2f} ms/run, round {dt / 1e6 / dr:.2f} ms/run, round {dt / 1e7 / elapsed:.1f}% of the time')
 print(f'elapsed {elapsed:.1f} s, engine busy {total / 1e7 / elapsed:.1f}%')
 PY
 sleep 5
