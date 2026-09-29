@@ -383,7 +383,7 @@ main_loop(
 		due = iv_app_tick(&main_app, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
-		due = iv_window_repeat(&main_window, now);
+		due = iv_window_repeat_wait(&main_window, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
 		due = iv_touch_tick(&main_touch, &main_app, iv_touch_clock());

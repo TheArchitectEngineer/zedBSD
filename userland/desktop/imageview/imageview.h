@@ -100,7 +100,8 @@ enum iv_event_type {
 /*
  * One input: where the pointer was, what happened, the modifiers held and
  * when (milliseconds of the monotonic clock).  Only the fields of its type
- * are meaningful.
+ * are meaningful; repeat says a key press is the window's repeat of a key
+ * held, not a press of its own.
  */
 struct iv_event {
 	enum iv_event_type type;
@@ -108,6 +109,7 @@ struct iv_event {
 	int y;
 	uint32_t button;
 	int pressed;
+	int repeat;
 	int scroll;
 	uint32_t key;
 	uint32_t modifiers;
@@ -244,14 +246,19 @@ struct iv_chooser {
 /*
  * Where the image is drawn in the window this frame: the window pixel of
  * each of its corners (in the image's own order: top left, top right,
- * bottom left, bottom right, before any turn), the level whose texture is
- * drawn, and whether it is sampled to the nearest texel (a large
- * enlargement) rather than smoothly.  visible is 0 when no image is drawn.
+ * bottom left, bottom right, before any turn), the rectangle it is clipped
+ * to (the area), the level whose texture is drawn, and whether it is
+ * sampled to the nearest texel (a large enlargement) rather than smoothly.
+ * visible is 0 when no image is drawn.
  */
 struct iv_quad {
 	int visible;
 	float x[4];
 	float y[4];
+	int clip_x;
+	int clip_y;
+	int clip_width;
+	int clip_height;
 	size_t level;
 	int nearest;
 };

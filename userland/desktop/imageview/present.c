@@ -1216,6 +1216,7 @@ present_record(
 	VkClearValue clear;
 	VkViewport viewport;
 	VkRect2D scissor;
+	VkRect2D clip;
 	VkDeviceSize offset;
 	VkDescriptorSet set;
 	uint32_t barrier_count;
@@ -1293,8 +1294,21 @@ present_record(
 	vkCmdBindPipeline(present->command, VK_PIPELINE_BIND_POINT_GRAPHICS, present->pipeline);
 	vkCmdBindVertexBuffers(present->command, 0U, 1U, &present->vertices, &offset);
 
-	/* The image's quad: window pixels divided by the window's size, the level smooth or to the nearest texel. */
+	/* The image's quad, within its clip: window pixels divided by the window's size, the level smooth or to the nearest texel. */
 	if (level != NULL) {
+		clip.offset.x = quad->clip_x;
+		clip.offset.y = quad->clip_y;
+		clip.extent.width = (uint32_t)quad->clip_width;
+		clip.extent.height = (uint32_t)quad->clip_height;
+		if (clip.offset.x < 0)
+			clip.offset.x = 0;
+		if (clip.offset.y < 0)
+			clip.offset.y = 0;
+		if ((uint32_t)clip.offset.x + clip.extent.width > present->extent.width)
+			clip.extent.width = present->extent.width - (uint32_t)clip.offset.x;
+		if ((uint32_t)clip.offset.y + clip.extent.height > present->extent.height)
+			clip.extent.height = present->extent.height - (uint32_t)clip.offset.y;
+		vkCmdSetScissor(present->command, 0U, 1U, &clip);
 		set = level->smooth_set;
 		if (quad->nearest || !present->smooth)
 			set = level->nearest_set;
@@ -1307,7 +1321,8 @@ present_record(
 		vkCmdDraw(present->command, PRESENT_VERTICES, 1U, PRESENT_VERTICES, 0U);
 	}
 
-	/* The canvas's quad: the unit square's corners divided by one, so it spans the viewport. */
+	/* The canvas's quad over the whole image: the unit square's corners divided by one, so it spans the viewport. */
+	vkCmdSetScissor(present->command, 0U, 1U, &scissor);
 	size[0] = 1.0f;
 	size[1] = 1.0f;
 	size[2] = 0.0f;

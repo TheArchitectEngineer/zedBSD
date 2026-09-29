@@ -361,6 +361,7 @@ iv_window_repeat(
 	if (event != NULL) {
 		event->key = window->repeat_key;
 		event->pressed = 1;
+		event->repeat = 1;
 	}
 
 	/* The next repeat is one interval later. */
@@ -368,6 +369,29 @@ iv_window_repeat(
 
 	/* Reports the wait until the next repeat. */
 	return (int)window->repeat_interval;
+}
+
+/*
+ * Reports in how many milliseconds the held key's repeat is due (0: now,
+ * -1 when no key is held), without pressing it: the loop waits that long,
+ * and reads the compositor's events (a release among them) before the
+ * repeat is pressed.
+ */
+int
+iv_window_repeat_wait(
+	const struct iv_window *window,
+	uint64_t now)
+{
+	/* No key held. */
+	if (window->repeat_key == 0U)
+		return -1;
+
+	/* Due already. */
+	if (now >= window->repeat_at)
+		return 0;
+
+	/* Reports the wait until it is due. */
+	return (int)(window->repeat_at - now);
 }
 
 /*

@@ -107,10 +107,12 @@ iv_image_load(
 	int max_dimension)
 {
 	struct image_picture picture;
+	uint64_t started;
 	int kind;
 	int error;
 
-	/* Nothing decoded yet; the path is kept even when decoding fails. */
+	/* Nothing decoded yet; the path is kept even when decoding fails.  The time it takes is logged. */
+	started = iv_clock();
 	memset(image, 0, sizeof(*image));
 	snprintf(image->path, sizeof(image->path), "%s", path);
 	memset(&picture, 0, sizeof(picture));
@@ -165,8 +167,9 @@ iv_image_load(
 	}
 
 	/* Succeeded: the image can be shown. */
-	iv_log("IMAGE path=%s format=%s width=%d height=%d file=%dx%d levels=%lu frames=%lu", image->path, image->format, image->width,
-	    image->height, image->file_width, image->file_height, (unsigned long)image->level_count, (unsigned long)image->frame_count);
+	iv_log("IMAGE path=%s format=%s width=%d height=%d file=%dx%d levels=%lu frames=%lu ms=%llu", image->path, image->format, image->width,
+	    image->height, image->file_width, image->file_height, (unsigned long)image->level_count, (unsigned long)image->frame_count,
+	    (unsigned long long)(iv_clock() - started));
 	return 0;
 }
 

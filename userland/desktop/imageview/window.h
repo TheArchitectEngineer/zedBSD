@@ -256,6 +256,7 @@ int iv_window_dispatch(struct iv_window *window, int timeout);
 int iv_window_take(struct iv_window *window, struct iv_event *event);
 int iv_window_take_touch(struct iv_window *window, struct iv_touch_event *event);
 int iv_window_repeat(struct iv_window *window, uint64_t now);
+int iv_window_repeat_wait(const struct iv_window *window, uint64_t now);
 void iv_window_action(struct iv_window *window, uint32_t action);
 void iv_window_title(struct iv_window *window, const char *title);
 void iv_window_fullscreen(struct iv_window *window, int fullscreen);

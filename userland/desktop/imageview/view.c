@@ -93,6 +93,7 @@ static double view_top(const struct iv_app *app);
 static double view_min_scale(const struct iv_app *app);
 static void view_key(struct iv_app *app, const struct iv_event *event);
 static void view_pan_key(struct iv_app *app, double dx, double dy, int direction);
+static int view_toggle_key(uint32_t key);
 static void view_button(struct iv_app *app, const struct iv_event *event);
 static void view_motion(struct iv_app *app, const struct iv_event *event);
 static void view_axis(struct iv_app *app, const struct iv_event *event);
@@ -658,8 +659,12 @@ iv_app_quad(
 	if (level >= image->level_count)
 		level = image->level_count - 1U;
 
-	/* The quad, sampled to the nearest texel when it is much enlarged. */
+	/* The quad, clipped to the area, sampled to the nearest texel when it is much enlarged. */
 	quad->visible = 1;
+	quad->clip_x = app->area_x;
+	quad->clip_y = app->area_y;
+	quad->clip_width = app->area_width;
+	quad->clip_height = app->area_height;
 	quad->level = level;
 	quad->nearest = 0;
 	if (app->scale >= VIEW_NEAREST_SCALE)
@@ -888,7 +893,10 @@ iv_app_action(
 		if (app->has_image && app->current != NULL && app->current->frame_count > 1U) {
 			app->playing = !app->playing;
 			app->frame_due = app->now + app->current->delays[app->frame];
-			iv_app_message(app, app->playing ? "Playing" : "Paused", 1200U);
+			if (app->playing)
+				iv_app_message(app, "Playing", 1200U);
+			else
+				iv_app_message(app, "Paused", 1200U);
 		}
 
 		break;
@@ -951,6 +959,7 @@ iv_app_tick(
 		if (progress >= 1.0) {
 			progress = 1.0;
 			app->sliding = 0;
+			iv_log("SLIDE done");
 		}
 
 		/* The swipe's remaining distance, eased. */
@@ -1467,9 +1476,21 @@ view_key(
 {
 	int control;
 	int shift;
+	int toggle;
 
-	/* Only presses (and repeats) do anything. */
+	/* Only presses (and repeats) do anything; each is logged for the tests. */
 	if (!event->pressed)
+		return;
+	iv_log("KEY key=%u modifiers=%u repeat=%d time=%llu", event->key, event->modifiers, event->repeat, (unsigned long long)event->time);
+
+	/*
+	 * A key held repeats only where more of the same makes sense (moving,
+	 * zooming, going through the images); a toggle does not, since a late
+	 * release (the compositor busy changing to the full screen) would
+	 * toggle it back.
+	 */
+	toggle = view_toggle_key(event->key);
+	if (event->repeat && toggle)
 		return;
 
 	/* The chooser takes the keys while it is open. */
@@ -1511,7 +1532,12 @@ view_key(
 		iv_app_action(app, IV_ACTION_ACTUAL);
 		break;
 	case IV_KEY_R:
-		iv_app_action(app, shift ? IV_ACTION_ROTATE_LEFT : IV_ACTION_ROTATE_RIGHT);
+		/* Shift+R turns the other way. */
+		if (shift)
+			iv_app_action(app, IV_ACTION_ROTATE_LEFT);
+		else
+			iv_app_action(app, IV_ACTION_ROTATE_RIGHT);
+
 		break;
 	case IV_KEY_F:
 	case IV_KEY_F11:
@@ -1557,6 +1583,36 @@ view_key(
 	default:
 		break;
 	}
+}
+
+/* Tells whether a key toggles something (the full screen, the fit, a turn, the chooser...), so that it never repeats. */
+static int
+view_toggle_key(
+	uint32_t key)
+{
+	/* The keys whose repeat would undo or overdo what they did. */
+	switch (key) {
+	case IV_KEY_ESCAPE:
+	case IV_KEY_F:
+	case IV_KEY_F11:
+	case IV_KEY_R:
+	case IV_KEY_0:
+	case IV_KEY_1:
+	case IV_KEY_O:
+	case IV_KEY_W:
+	case IV_KEY_Q:
+	case IV_KEY_SPACE:
+	case IV_KEY_ENTER:
+	case IV_KEY_KP_ENTER:
+	case IV_KEY_HOME:
+	case IV_KEY_END:
+		return 1;
+	default:
+		break;
+	}
+
+	/* The rest may repeat. */
+	return 0;
 }
 
 /*
