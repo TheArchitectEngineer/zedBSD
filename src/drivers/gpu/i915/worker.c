@@ -52,8 +52,17 @@
 
 #include "intel/commands.h"
 
-/* How many session contexts of the render engine can be live at once. */
-#define I915_WORKER_CONTEXTS		8U
+/*
+ * How many session contexts of the render engine can be live at once.
+ *
+ * Every open of the node is a session with one render context: the
+ * compositor, each Vulkan, EGL or GLX application, and the X server of an
+ * X application.  The demonstration's desktop with every application of App
+ * Home open needs more than eight (ws075-p009: Gears and Browser could not
+ * start); a live record costs its context image, a 16 KiB ring and a
+ * timeline page, and a free one only its entry in this table.
+ */
+#define I915_WORKER_CONTEXTS		32U
 
 /* The ring size of a session context. */
 #define I915_WORKER_RING_BYTES		16384U
