@@ -5,7 +5,7 @@
 Phase ID: `ws074-p085`（p080 は DOM の側の TextEncoder 等の Phase が使ったので、衝突を避けて 085 にした。p081〜p084 は DOM の側の
 ために空けてある）
 Parent: [WS074](../ws.md)
-Status: in-progress（2026-09-29。実装と host の回帰は済み、確認の残りがある。下の Resume point）
+Status: **cleared**（2026-09-29）
 Phase disposition: normal
 Queue: なし（サブエージェントが worktree の branch で実行。main の指示「p028 の残りを class → Symbol・iterator・for-of の順に」）
 依存: p078（let・const）、p079（destructuring・rest）
@@ -63,13 +63,32 @@ accessor、static、`#x in o`）、class の名前の内側の const。class の
   2 件はまだ残る（async は p029）。search の Uncaught: async 4、for-of 1、`TextEncoder` 1（この branch に DOM の p080 がまだ無い時点）、
   `Cannot read properties` 3。top: async 1、for-of 1、`TextEncoder` 1。
 
-## Resume point（2026-09-29、wrap up）
+## 確認の続き（2026-09-29、引き継いだエージェント。host は Debian の cc、guest は QEMU。実機は未実施）
 
-- 全ての差分は commit 済み（wip.patch は無い）。build は通る。
-- 残りの確認（この順）: (1) test262 の全体を流して p079 の failures（`build/ws074-test262-failures.txt` を前の run と比べる手順は
-  p079 の phase.md）と比べ、新しく落ちた試験 0 を確かめる。(2) ASan の driver で `language/statements/class`・`expressions/class`・
-  `expressions/super` の数が plain と同じか。(3) `live-compare.py` で Amazon の top-local・search-local を撮る（`--shots
-  /home/awe/zedBSD-rpi4/build/ws074-shots --tag p085-…`）と ASan の `--render`。(4) guest: `make ZEDBSD_CONFIG=plan/ws074/tests/config-amd64-browser.mk
-  build/amd64/bin/browser`、`sh plan/ws074/tests/build-browser-image.sh`（clang・libcxx を含まない config）、headless の guest で
-  run-js-tests と run-dom-tests の `--outputs`（手順は p079 の phase.md）。(5) `sh plan/ws074/tests/boot-check.sh p085`。
-  (6) この phase.md を cleared にし、ws.md の表と amazon-goal.md に自分の行を足す。
+- test262 の全体: **21806 / 47792**（ES5 7748 / 8087）。p079 の終わりの commit（`a02f6b0e`、vm/spread.c を足した commit）を
+  scratch に `git archive` して host-js を build し、同じ runner で全体を流した（18558）。失敗の一覧を比べて**新しく落ちた試験 0**。
+  新しい失敗の一覧を `build/ws074-test262-failures.txt` に置いた（次の Phase の比較の基準）。全体の実行は 64 CPU で約 45 s。
+- ASan の driver: `language/statements/class` 2035/4355、`expressions/class` 1820/4049、`expressions/super` 49/94、
+  `expressions/new.target` 11/14。plain と同じ数で、やり直しの chunk（crash・sanitizer の報告）なし。
+- 回帰（plain と ASan、同じ結果）: golden 76/76、host-view 59/59、host-form 28/28、host-link 22/22、host-position 19/19、host-text
+  20/20、host-relayout 161/161、host-base 2038・heap 31・interp 45・number 71・object 98（0 failed）、run-dom-tests 14/14（DOM の側の
+  試験が増えた）、run-js-tests 12/12、run-loader-tests 11/11、run-http-tests 14/14・`--async` 17/17、run-font-tests 8/8。
+  （host-base は plain と ASan を同じ scratch の directory で同時に走らせた時に 2 failed、別々の directory で各 0 failed。試験の
+  directory の衝突で、engine の誤りではない。）
+- Amazon（script 付きの capture、host、main の DOM の p080 を merge した後）: Uncaught top **2**（async 1、for-of 1）、search **7**
+  （async 4、for-of 1、`Cannot read properties of undefined or null (at 1:1)` 2: class の中の `async r=>` で script が止まる連鎖）。
+  画素は不変（top 64.47%・ink 57.66%、search 76.04%・ink 33.01%）。ASan の `--render`（top・search）で sanitizer の報告 0。
+- guest（QEMU、`config-amd64-browser.mk` の image、headless の guest）: browser の build の warning 0。run-js-tests `--outputs`
+  12/12、run-dom-tests `--outputs` 14/14（guest で `--js`・`--run` を走らせ、出力を scp で持ち帰って比べた）。
+- `boot-check.sh p085`: PASS、login prompt を画面で確認（`/home/awe/zedBSD-rpi4/build/ws074-shots/p085-20260929-boot-login.png`）。
+
+## 写真
+
+- host: `/home/awe/zedBSD-rpi4/build/ws074-shots/p085-20260929-amazon-top-local.png`・`…-search-local.png`（見た目は p079 と同じ）。
+
+## 未実施・制限・残り
+
+- 実機は未実施。guest の窓での確認は未実施。live の amazon.co.jp は取得しなかった（capture で比べた）。
+- 範囲の節の「この Phase に無いもの」（arrow の中の `super()`・`new.target`、`super.x = v`、object literal の method の `super`、
+  eval の中の class の要素、Symbol が要る試験）。
+- Amazon の次の blocker: async function（top 1、search 4）→ p086 以降、for-of（各 1）。
