@@ -271,6 +271,13 @@ int bind_session_storage(struct vm_realm *realm, vm_value this_value, const vm_v
 
 /* The inline style (style.c, ws074-p031). */
 int bind_style_install(struct bind_window *window);
+
+/* The computed style (computed.c, ws074-p082). */
+int bind_get_computed_style(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_computed_element(vm_value value, struct dom_element **element);
+int bind_computed_value(struct vm_realm *realm, struct dom_element *element, const struct vm_string *name, vm_value *result);
+size_t bind_computed_count(void);
+const char *bind_computed_name(size_t index);
 int bind_style(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_style_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
@@ -295,9 +302,18 @@ int bind_scroll_width(struct vm_realm *realm, vm_value this_value, const vm_valu
 int bind_scroll_height(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_scroll_top(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_scroll_left(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_scroll_top_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_scroll_position_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_offset_width(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_offset_height(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_offset_parent(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_offset_top(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_offset_left(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_window_scroll_to(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_window_scroll_by(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_element_scroll_to(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_element_scroll_by(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_scroll_into_view(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_window_scroll_x(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_window_scroll_y(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 

@@ -17,14 +17,24 @@
  * nodes no boxes.  The selectors are matched with a style engine of their
  * own, which lives as long as the page: the styling's engine is made anew
  * at each change of the document.
+ *
+ * For ws074-p082 a script also asks for an element's computed style (its
+ * box's, or the cascade's from the root down when it has no box: display
+ * none, or no layout) and moves the scroll (kept inside the laid out
+ * document; the view takes it as its own).
  */
 
 #include "page/page.h"
 
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
+/* The deepest element whose style is computed without a box. */
+#define GEOMETRY_STYLE_DEPTH	512
+
 static int geometry_layout(struct page *page);
+static int geometry_cascade(struct page *page, struct dom_element *element, struct css_style *style);
 
 /*
  * Finds the style engine a script's selectors are matched with (the
@@ -110,6 +120,18 @@ page_node_box(
 		box->border_left = layout_to_px(first->border[3]);
 	}
 
+	/* Its used margins and paddings. */
+	if (first != NULL) {
+		box->margin_top = layout_to_px(first->margin[0]);
+		box->margin_right = layout_to_px(first->margin[1]);
+		box->margin_bottom = layout_to_px(first->margin[2]);
+		box->margin_left = layout_to_px(first->margin[3]);
+		box->padding_top = layout_to_px(first->padding[0]);
+		box->padding_right = layout_to_px(first->padding[1]);
+		box->padding_bottom = layout_to_px(first->padding[2]);
+		box->padding_left = layout_to_px(first->padding[3]);
+	}
+
 	/* Succeeded: the node has a box. */
 	return 1;
 }
@@ -160,6 +182,87 @@ page_scroll(
 }
 
 /*
+ * Computes an element's style (the bind_host's computed_style): its box's
+ * when the page lays out and the element has one, otherwise the
+ * cascade's.  Reports ENOENT for an element outside the document.
+ */
+int
+page_computed_style(
+	void *context,
+	struct dom_element *element,
+	struct css_style *style)
+{
+	const struct layout_box *box;
+	const struct dom_node *walk;
+	struct page *page;
+	int laid_out;
+	int error;
+
+	/* An element outside the document has no style. */
+	page = context;
+	for (walk = &element->node; walk->parent != NULL; walk = walk->parent)
+		continue;
+	if (walk != &page->document->node)
+		return ENOENT;
+
+	/* The box's style, when the element has a box. */
+	laid_out = geometry_layout(page);
+	box = NULL;
+	if (laid_out)
+		box = layout_box_of(&page->layout, &element->node);
+	if (box != NULL) {
+		*style = box->style;
+		return 0;
+	}
+
+	/* Otherwise the cascade's. */
+	error = geometry_cascade(page, element, style);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the style. */
+	return 0;
+}
+
+/*
+ * Moves the page's scroll where a script asks (the bind_host's
+ * scroll_to), kept inside the laid out document: the page does not scroll
+ * sideways, and not past the last view's worth of the document.
+ */
+void
+page_scroll_to(
+	void *context,
+	double x,
+	double y)
+{
+	struct page *page;
+	double limit;
+	int laid_out;
+
+	UNUSED_PARAMETER(x);
+
+	/* The document's height less the view's is the furthest down. */
+	page = context;
+	limit = 0.0;
+	laid_out = geometry_layout(page);
+	if (laid_out)
+		limit = layout_to_px(page->layout.document_height) - page->viewport_height;
+	if (limit < 0.0)
+		limit = 0.0;
+
+	/* The place, within the limits (a number that is not one is the top). */
+	if (!(y >= 0.0))
+		y = 0.0;
+	if (y > limit)
+		y = limit;
+
+	/* Succeeded: the view takes it. */
+	page->scroll_x = 0.0;
+	page->scroll_y = y;
+	page->scroll_requested = 1;
+}
+
+/*
  * Lays the page out at its view's size when it changed since the last
  * layout; reports whether the page is laid out (it cannot be without the
  * view's fonts and size, or when the fonts do not open).
@@ -194,4 +297,66 @@ geometry_layout(
 
 	/* Succeeded: the page is laid out. */
 	return 1;
+}
+
+/*
+ * Computes an element's style with the cascade, from the root element
+ * down to it (an element without a box has no style of its own kept).
+ */
+static int
+geometry_cascade(
+	struct page *page,
+	struct dom_element *element,
+	struct css_style *style)
+{
+	struct dom_element **chain;
+	struct css_style *parent;
+	const struct css_style *inherited;
+	struct dom_node *walk;
+	size_t count;
+	size_t index;
+	int error;
+
+	/* The styles as the document and its sheets are now. */
+	error = page_update_styles(page);
+	if (error != 0)
+		return error;
+
+	/* The element's ancestors that are elements, it first. */
+	chain = malloc(GEOMETRY_STYLE_DEPTH * sizeof(*chain));
+	if (chain == NULL)
+		return ENOMEM;
+	count = 0;
+	for (walk = &element->node; walk != NULL && walk->type == DOM_ELEMENT && count < GEOMETRY_STYLE_DEPTH; walk = walk->parent) {
+		chain[count] = (struct dom_element *)walk;
+		count++;
+	}
+
+	/* The parent's style, which each step computes the next one from. */
+	parent = malloc(sizeof(*parent));
+	if (parent == NULL) {
+		free(chain);
+		return ENOMEM;
+	}
+
+	/* Each one from the root down; the last is the element's. */
+	inherited = NULL;
+	for (index = count; index > 0; index--) {
+		error = css_engine_compute(page->css, chain[index - 1U], inherited, style);
+		if (error != 0)
+			break;
+
+		/* The next one inherits from this one. */
+		*parent = *style;
+		inherited = parent;
+	}
+
+	/* The chain and the copy are no longer needed. */
+	free(parent);
+	free(chain);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the style. */
+	return 0;
 }

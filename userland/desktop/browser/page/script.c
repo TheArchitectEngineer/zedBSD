@@ -149,6 +149,8 @@ page_start_scripts(
 	host.document_size = page_document_size;
 	host.scroll = page_scroll;
 	host.storage = page_storage_calls();
+	host.computed_style = page_computed_style;
+	host.scroll_to = page_scroll_to;
 	error = bind_window_create(page->realm, page->document, &host, &page->window);
 	if (error != 0)
 		return error;

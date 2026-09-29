@@ -28,7 +28,6 @@
 #define PAGE_DUMP_DEPTH		512
 
 static int page_gather_styles(struct page *page);
-static int page_update_styles(struct page *page);
 static int page_container_size(void *context, const struct dom_element *container, float *width, float *height);
 static int page_containers_moved(const struct page *page);
 static int page_text_of(const struct dom_node *node, struct wb_units *units);
@@ -734,7 +733,7 @@ page_container_size(
  * Gathers the style sheets again when a script changed the document, or
  * a fetched sheet arrived, since they were last gathered.
  */
-static int
+int
 page_update_styles(
 	struct page *page)
 {

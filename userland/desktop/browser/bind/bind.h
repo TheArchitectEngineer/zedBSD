@@ -46,13 +46,15 @@ enum bind_console_level {
 #define BIND_EVENT_DOCUMENT	0x4U
 
 struct css_engine;
+struct css_style;
 
 /*
  * Where a node is on the laid out page, for the geometry scripts ask for
  * (getBoundingClientRect, clientWidth and the like; ws074-p031), in CSS
  * pixels from the document's top left: the union of the node's boxes,
  * whether its first box is a block (an inline element has no client area
- * of its own), and that box's border widths.
+ * of its own), and that box's border widths; for ws074-p082 also that
+ * box's used margins and paddings (getComputedStyle's resolved values).
  */
 struct bind_box {
 	double x;
@@ -64,6 +66,14 @@ struct bind_box {
 	double border_right;
 	double border_bottom;
 	double border_left;
+	double margin_top;
+	double margin_right;
+	double margin_bottom;
+	double margin_left;
+	double padding_top;
+	double padding_right;
+	double padding_bottom;
+	double padding_left;
 };
 
 /*
@@ -104,7 +114,12 @@ struct bind_storage_calls {
  * page out first when it changed, and reports whether the node has a box;
  * document_size gives the laid out document's width and height), and how
  * far the viewport is scrolled; for ws074-p080 the storage areas (NULL:
- * scripts get storage that holds nothing).  A NULL callback reads as nothing and
+ * scripts get storage that holds nothing).  For ws074-p082 it computes an
+ * element's style (computed_style: the style of its box when the page is
+ * laid out and the element has one, otherwise the cascade's; 0, ENOENT
+ * for an element not in the document, or ENOMEM), and takes a scroll a
+ * script asks for (scroll_to, in CSS pixels; the host keeps it inside the
+ * document, and scroll reports where it went).  A NULL callback reads as nothing and
  * writes nothing: no engine matches nothing, and no layout has no boxes.
  */
 struct bind_host {
@@ -119,6 +134,8 @@ struct bind_host {
 	void (*document_size)(void *context, double *width, double *height);
 	void (*scroll)(void *context, double *x, double *y);
 	const struct bind_storage_calls *storage;
+	int (*computed_style)(void *context, struct dom_element *element, struct css_style *style);
+	void (*scroll_to)(void *context, double x, double y);
 };
 
 /*
