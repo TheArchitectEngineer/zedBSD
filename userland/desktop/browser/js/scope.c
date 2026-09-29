@@ -31,6 +31,7 @@
 
 #include "js/compile.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /* The length of the name arguments. */
@@ -63,6 +64,9 @@ static void scope_visit_block(struct js_compiler *compiler, struct js_scope *sco
 static void scope_visit_for(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
 static void scope_visit_switch(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
 static int scope_is_lexical(const struct js_node *node);
+static void scope_redeclared(struct js_compiler *compiler, const struct js_node *target);
+static void scope_check_vars(struct js_compiler *compiler, const struct js_scope *block, struct js_node *list, int direct);
+static void scope_check_var_target(struct js_compiler *compiler, const struct js_scope *block, struct js_node *target);
 static void scope_block_function(struct js_compiler *compiler, struct js_scope *block, struct js_node *node);
 
 /*
@@ -671,14 +675,18 @@ scope_declare_lexical(
 	struct js_node *target,
 	int kind)
 {
+	struct js_binding *declared;
 	struct js_node *element;
 
 	/* Nothing to declare. */
 	if (target == NULL)
 		return;
 
-	/* A name. */
+	/* A name, which the scope may not declare already (a parameter, a var, a function or another let or const). */
 	if (target->kind == JS_NODE_IDENTIFIER) {
+		declared = scope_find(scope, target->text, target->text_length);
+		if (declared != NULL)
+			scope_redeclared(compiler, target);
 		scope_declare(compiler, scope, target->text, target->text_length, kind);
 		return;
 	}
@@ -702,10 +710,25 @@ scope_global_lexical(
 	int is_const)
 {
 	struct js_global_lexical *lexical;
+	struct js_global_lexical *listed;
+	struct js_global_name *global;
+	int same;
 
 	/* Only a name is listed. */
 	if (target == NULL || target->kind != JS_NODE_IDENTIFIER)
 		return;
+
+	/* The script may not declare the name twice, nor as a var or a function too. */
+	for (listed = info->global_lexicals; listed != NULL; listed = listed->next) {
+		same = js_text_equal(listed->name, listed->length, target->text, target->text_length);
+		if (same)
+			scope_redeclared(compiler, target);
+	}
+	for (global = info->global_vars; global != NULL; global = global->next) {
+		same = js_text_equal(global->name, global->length, target->text, target->text_length);
+		if (same)
+			scope_redeclared(compiler, target);
+	}
 
 	/* The entry, at the front of the list (the order does not matter). */
 	lexical = wb_arena_zalloc(compiler->arena, sizeof(*lexical));
@@ -751,6 +774,14 @@ scope_lexical_block(
 	/* A scope that declares nothing is not needed (it stays on the function's list, empty). */
 	if (!any)
 		return parent;
+
+	/* A var inside the block, or a function declared in it, may not have the name of one of its let or const. */
+	if (switch_cases) {
+		for (clause = list; clause != NULL; clause = clause->next)
+			scope_check_vars(compiler, block, clause->second, 1);
+	} else {
+		scope_check_vars(compiler, block, list, 1);
+	}
 
 	/* Succeeded: the block's scope. */
 	return block;
@@ -860,6 +891,129 @@ scope_is_lexical(
 
 	/* let or const. */
 	return 1;
+}
+
+/*
+ * Fails the compilation when a var in a list of statements (down through
+ * blocks, not into functions), or a function declared directly in it
+ * (direct), has the name of a let or const of a block scope.
+ */
+static void
+scope_check_vars(
+	struct js_compiler *compiler,
+	const struct js_scope *block,
+	struct js_node *list,
+	int direct)
+{
+	struct js_node *node;
+	struct js_node *declarator;
+	struct js_binding *declared;
+
+	/* Each statement by its kind. */
+	for (node = list; node != NULL; node = node->next) {
+		switch (node->kind) {
+		case JS_NODE_VARIABLES:
+			/* A var's names (a let or const was checked when declared). */
+			if (node->op != JS_P_VAR)
+				break;
+			for (declarator = node->first; declarator != NULL; declarator = declarator->next)
+				scope_check_var_target(compiler, block, declarator->first);
+			break;
+		case JS_NODE_FUNCTION_DECLARATION:
+			/* A function declared in the block itself. */
+			if (!direct)
+				break;
+			declared = scope_find(block, node->text, node->text_length);
+			if (declared != NULL)
+				scope_redeclared(compiler, node);
+			break;
+		case JS_NODE_BLOCK:
+			scope_check_vars(compiler, block, node->first, 0);
+			break;
+		case JS_NODE_IF:
+			scope_check_vars(compiler, block, node->second, 0);
+			scope_check_vars(compiler, block, node->third, 0);
+			break;
+		case JS_NODE_FOR:
+		case JS_NODE_FOR_IN:
+		case JS_NODE_FOR_OF:
+			scope_check_vars(compiler, block, node->first, 0);
+			scope_check_vars(compiler, block, node->fourth, 0);
+			break;
+		case JS_NODE_WHILE:
+		case JS_NODE_DO_WHILE:
+		case JS_NODE_WITH:
+		case JS_NODE_LABELED:
+			scope_check_vars(compiler, block, node->fourth, 0);
+			break;
+		case JS_NODE_TRY:
+			scope_check_vars(compiler, block, node->first, 0);
+			scope_check_vars(compiler, block, node->third, 0);
+			scope_check_vars(compiler, block, node->fourth, 0);
+			break;
+		case JS_NODE_SWITCH:
+			for (declarator = node->second; declarator != NULL; declarator = declarator->next)
+				scope_check_vars(compiler, block, declarator->second, 0);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+/* Fails the compilation when a var's target (a name, or the names of a pattern) names a let or const of a block scope. */
+static void
+scope_check_var_target(
+	struct js_compiler *compiler,
+	const struct js_scope *block,
+	struct js_node *target)
+{
+	struct js_binding *declared;
+	struct js_node *element;
+
+	/* Nothing to check. */
+	if (target == NULL)
+		return;
+
+	/* A name. */
+	if (target->kind == JS_NODE_IDENTIFIER) {
+		declared = scope_find(block, target->text, target->text_length);
+		if (declared != NULL)
+			scope_redeclared(compiler, target);
+		return;
+	}
+
+	/* A pattern's elements. */
+	for (element = target->first; element != NULL; element = element->next) {
+		if (element->kind == JS_NODE_PROPERTY) {
+			scope_check_var_target(compiler, block, element->second);
+		} else {
+			scope_check_var_target(compiler, block, element);
+		}
+	}
+}
+
+/* Fails the compilation with the SyntaxError of a name a scope declares twice. */
+static void
+scope_redeclared(
+	struct js_compiler *compiler,
+	const struct js_node *target)
+{
+	char message[200];
+	char name[128];
+	size_t index;
+
+	/* The name in ASCII (other characters as ?), cut short when long. */
+	for (index = 0; index < target->text_length && index + 1U < sizeof(name); index++) {
+		name[index] = '?';
+		if (target->text[index] < 0x80U)
+			name[index] = (char)target->text[index];
+	}
+	name[index] = '\0';
+
+	/* The early error, as Chromium words it. */
+	snprintf(message, sizeof(message), "Identifier '%s' has already been declared", name);
+	js_compile_fail(compiler, target, message);
 }
 
 /* Lists a function declaration a block makes when it is entered. */
