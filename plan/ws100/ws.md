@@ -3,7 +3,7 @@
 # WS100: system bar の音量（icon・slider・確かめの音）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2
