@@ -204,6 +204,7 @@ home_state(
 	const struct keiland_network_state *state;
 	const char *address;
 	char free_text[32];
+	int running;
 	int live;
 
 	/* No dot unless a connection is described. */
@@ -269,6 +270,31 @@ home_state(
 			return 0;
 		se_bytes_text(app->look.volumes[0].available, free_text, sizeof(free_text));
 		(void)snprintf(text, size, "%s available", free_text);
+		return 1;
+	case SE_PAGE_SOUND:
+		/* Whether the sound service runs. */
+		running = se_look_sound();
+		if (running != 0) {
+			(void)snprintf(text, size, "%s", "Sound service running");
+		} else {
+			(void)snprintf(text, size, "%s", "No sound service");
+		}
+
+		/* The state is in the text. */
+		return 1;
+	case SE_PAGE_MOUSE:
+		/* The pointer's speed, and natural scrolling when on. */
+		if (app->look.pointer_natural != 0) {
+			(void)snprintf(text, size, "Speed %d%% \xc2\xb7 natural scrolling", app->look.pointer_speed);
+		} else {
+			(void)snprintf(text, size, "Speed %d%%", app->look.pointer_speed);
+		}
+
+		/* The state is in the text. */
+		return 1;
+	case SE_PAGE_KEYBOARD:
+		/* The repeat. */
+		(void)snprintf(text, size, "Repeat %d a second after %d ms", app->look.repeat_rate, app->look.repeat_delay);
 		return 1;
 	case SE_PAGE_ABOUT:
 		/* The name of the system and the machine, when known. */

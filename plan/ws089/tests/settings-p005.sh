@@ -1,23 +1,24 @@
 #!/bin/sh
-# ws089-p004: the look's pages of Settings on the Venus guest (the lean image with the test pictures, build-settings-image.sh
-# after make-wallpapers.py).  zdesktop --glass at 1280x800 with the session's wallpaper; Settings and zdesktop share
-# root's home (/root/.config/keiland/desktop.conf, removed before and after).
-#  1. Wallpaper: three tiles (Kei (default), Dusk, Mist) (wallpaper.png); a click on Dusk writes the key
-#     (LOOK set key=wallpaper value=.../Dusk.ppm) and zdesktop shows it (ZWL PREFERENCES key=wallpaper applied)
-#     (wallpaper-dusk.png); a click on the default removes the key and zdesktop goes back (wallpaper-default.png).
-#  2. Appearance: the slider dragged to the left end writes window.opacity=85 and zdesktop applies it
-#     (appearance-85.png); dragged to the right end removes the key (opacity 100 again).
-#  3. Display (display.png) and Storage (storage.png) are shown; Home's tiles show the look's state (home.png).
+# ws089-p005: the input and sound pages of Settings on the Venus guest (the lean image, build-settings-image.sh).
+# zdesktop --glass at 1280x800; Settings and zdesktop share root's home (/root/.config/keiland/desktop.conf, removed
+# before and after).  The test waits for the guest's SSH and for zdesktop's READY first (settings-wait.sh).
+#  1. Mouse: the speed's slider dragged to the right end writes pointer.speed=300 and zdesktop applies it; the switch
+#     of natural scrolling writes pointer.natural=1 and zdesktop applies it (mouse.png); back to the middle (100: the
+#     key removed) and the switch off.
+#  2. Keyboard: the rate's slider to the right end (60) and the delay's to the left end (150) are written and
+#     applied (keyboard.png).
+#  3. Sound: the lean image has no audiod; the page says the service is not running (sound.png).  Home (home.png).
 #  4. No ERROR line in zdesktop's log.
+# The QEMU guest's pointer is a tablet (absolute), so the speed's effect on a relative mouse is not seen here.
 #
-#   plan/ws089/tests/settings-guest.sh start     (the guest must be up)
-#   plan/ws089/tests/settings-p004.sh [OUTDIR]   (default build/ws089-shots/p004)
+#   plan/ws089/tests/settings-guest.sh start     (the guest may still be booting)
+#   plan/ws089/tests/settings-p005.sh [OUTDIR]   (default build/ws089-shots/p005)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
 GUEST_RUNTIME="${GUEST_RUNTIME:-$(pwd)/build/ws089-run}"
 export GUEST_RUNTIME
-out=${1:-build/ws089-shots/p004}
+out=${1:-build/ws089-shots/p005}
 mkdir -p "$out"
 guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
@@ -73,9 +74,9 @@ control() {
 	pointer move $((cx - 2)) "$cy" sleep 150 move "$cx" "$cy" sleep 300 down sleep 60 up sleep 1200
 }
 
-# Drags the slider (control 1) from its middle to one end (left or right).
+# Drags a slider (its control) from its middle to one end (left, right) or back to the middle (middle).
 slide() {
-	find_control 1
+	find_control "$1"
 	if [ -z "$cx0" ]; then
 		echo "slider: not found"
 		status=1
@@ -83,7 +84,8 @@ slide() {
 	fi
 	cy=$((wy + cy0 + ch / 2)); start=$((wx + cx0 + cw / 2))
 	end=$((wx + cx0 + 4))
-	[ "$1" = right ] && end=$((wx + cx0 + cw - 4))
+	[ "$2" = right ] && end=$((wx + cx0 + cw - 4))
+	[ "$2" = middle ] && { start=$((wx + cx0 + 4)); end=$((wx + cx0 + 12 + (cw - 24) * 75 / 275)); }
 	pointer move "$start" "$cy" sleep 200 down sleep 100 move $(((start + end) / 2)) "$cy" sleep 100 move "$end" "$cy" sleep 200 up sleep 1500
 }
 
@@ -94,48 +96,49 @@ shot() {
 	echo "shot: $out/$1"
 }
 
-# 1. Wallpaper (once the guest answers, and zdesktop is ready).
+# 1. Mouse (once the guest answers, and zdesktop is ready).
 wait_guest
 guest "$stop_all" >/dev/null
 guest "rm -f $conf" >/dev/null
 guest "$start_desktop" >/dev/null
 wait_desktop
-start_settings wallpaper
-expect_log /tmp/s.log 'ZSETTINGS LOOK pictures count=3'
-expect_log /tmp/s.log 'ZSETTINGS CONTROL index=102 '
-shot wallpaper.png
-control 101
-expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value=/usr/share/keiland/wallpapers/Dusk.ppm error=0'
-expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpapers/Dusk.ppm'
+start_settings mouse
+expect_log /tmp/s.log 'ZSETTINGS CONTROL index=3 '
+slide 2 right
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=pointer.speed value=300 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.speed applied value=300'
+control 3
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=pointer.natural value=1 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.natural applied value=1'
 guest "cat $conf"
-shot wallpaper-dusk.png
-control 100
-expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value= error=0'
-expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpaper.ppm'
-shot wallpaper-default.png
+shot mouse.png
+slide 2 middle
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=pointer.speed value=100 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.speed applied value=100'
+control 3
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=pointer.natural value=0 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.natural applied value=0'
 
-# 2. Appearance.
+# 2. Keyboard.
 guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null
 sleep 1
-start_settings appearance
-expect_log /tmp/s.log 'ZSETTINGS CONTROL index=1 '
-slide left
-expect_log /tmp/s.log 'ZSETTINGS LOOK set key=window.opacity value=85 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=85'
-shot appearance-85.png
-slide right
-expect_log /tmp/s.log 'ZSETTINGS LOOK set key=window.opacity value=100 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=100'
+start_settings keyboard
+expect_log /tmp/s.log 'ZSETTINGS CONTROL index=5 '
+slide 4 right
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=keyboard.repeat.rate value=60 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=keyboard.repeat.rate applied value=60'
+slide 5 left
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=keyboard.repeat.delay value=150 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=keyboard.repeat.delay applied value=150'
+shot keyboard.png
 
-# 3. Display, Storage and Home.
+# 3. Sound and Home.
 guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null
 sleep 1
-start_settings display
-shot display.png
-guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null
-sleep 1
-start_settings storage
-shot storage.png
+running=$(guest 'ls -l /run/audiod.sock 2>/dev/null | grep -c "^s"' | tail -1)
+echo "audiod socket: ${running:-0}"
+start_settings sound
+shot sound.png
 guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null
 sleep 1
 start_settings ""
@@ -145,8 +148,8 @@ shot home.png
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
 guest 'cat /tmp/s.log' > "$out/settings.log"
-guest 'grep -E "PREFERENCES|GLASS wallpaper" /tmp/zdesktop.log' > "$out/zdesktop-preferences.log"
+guest 'grep -E "PREFERENCES" /tmp/zdesktop.log' > "$out/zdesktop-preferences.log"
 guest "$stop_all" >/dev/null
 guest "rm -f $conf" >/dev/null
-[ $status = 0 ] && echo "settings-p004: PASS" || echo "settings-p004: FAIL"
+[ $status = 0 ] && echo "settings-p005: PASS" || echo "settings-p005: FAIL"
 exit $status
