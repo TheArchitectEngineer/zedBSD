@@ -44,6 +44,7 @@ struct flex_item {
 	layout_unit minimum;
 	layout_unit maximum;
 	int auto_minimum;
+	int frozen;
 };
 
 /*
@@ -65,6 +66,7 @@ static int flex_collect(struct layout_box *box, struct flex_item **items, size_t
 static int flex_base_size(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row, layout_unit available);
 static int flex_auto_minimums(struct layout_tree *tree, struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static int flex_min_content(struct layout_tree *tree, struct layout_box *box, layout_unit *width);
+static void flex_shrink(struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static void flex_resolve(struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static int flex_lay_item(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
 static int flex_lay_sized(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
@@ -452,6 +454,85 @@ flex_base_size(
 }
 
 /*
+ * Shrinks the items of a line that do not fit (CSS Flexbox 9.7): the
+ * space missing is taken from the items that are not frozen, in
+ * proportion to their flex-shrink times their base; an item that would go
+ * below its minimum is held there and frozen, and the rest share what is
+ * still missing, until no item goes below its minimum.
+ */
+static void
+flex_shrink(
+	struct flex_item *items,
+	size_t count,
+	layout_unit available,
+	layout_unit gap)
+{
+	layout_unit used;
+	layout_unit missing;
+	layout_unit share;
+	float total;
+	float weight;
+	size_t index;
+	size_t round;
+	int violated;
+
+	/* No item is frozen yet. */
+	for (index = 0; index < count; index++)
+		items[index].frozen = 0;
+
+	/* At most one round per item, as each round freezes one at least. */
+	for (round = 0; round <= count; round++) {
+		/* The space the frozen items take at their sizes and the others at their bases. */
+		used = 0;
+		total = 0;
+		for (index = 0; index < count; index++) {
+			used += items[index].frame + items[index].margin_start + items[index].margin_end;
+			if (items[index].frozen) {
+				used += items[index].size;
+			} else {
+				used += items[index].base;
+				total += items[index].box->style.flex_shrink * (float)items[index].base;
+			}
+		}
+
+		/* The gaps take room too, and the rest is what is missing. */
+		if (count > 1)
+			used += gap * (layout_unit)(count - 1U);
+		missing = used - available;
+
+		/* Enough room now, or nothing left that shrinks: the others keep their bases. */
+		if (missing <= 0 || total <= 0) {
+			for (index = 0; index < count; index++) {
+				if (!items[index].frozen)
+					items[index].size = items[index].base;
+			}
+
+			/* The sizes stand. */
+			return;
+		}
+
+		/* Each other item's part of the missing space; the ones below their minimums are held and frozen. */
+		violated = 0;
+		for (index = 0; index < count; index++) {
+			if (items[index].frozen)
+				continue;
+			weight = items[index].box->style.flex_shrink * (float)items[index].base;
+			share = (layout_unit)((float)missing * weight / total);
+			items[index].size = items[index].base - share;
+			if (items[index].size < items[index].minimum) {
+				items[index].size = items[index].minimum;
+				items[index].frozen = 1;
+				violated = 1;
+			}
+		}
+
+		/* No item held: the sizes stand. */
+		if (!violated)
+			return;
+	}
+}
+
+/*
  * Finds the automatic minimum size of the items of a line whose items do
  * not fit (the others keep a minimum of zero, as they do not shrink): the
  * content's min-content width, or the width given in pixels when that is
@@ -604,21 +685,9 @@ flex_resolve(
 		}
 	}
 
-	/* Too little room: the items shrink in proportion to their factors times their bases. */
-	if (free_space < 0) {
-		total = 0;
-		for (index = 0; index < count; index++)
-			total += items[index].box->style.flex_shrink * (float)items[index].base;
-		if (total > 0) {
-			for (index = 0; index < count; index++) {
-				weight = items[index].box->style.flex_shrink * (float)items[index].base;
-				share = (layout_unit)((float)(-free_space) * weight / total);
-				items[index].size -= share;
-				if (items[index].size < items[index].minimum)
-					items[index].size = items[index].minimum;
-			}
-		}
-	}
+	/* Too little room: the items shrink in proportion to their factors times their bases, those held at their minimums frozen. */
+	if (free_space < 0)
+		flex_shrink(items, count, available, gap);
 
 	/* What is still free goes to the auto margins. */
 	used = 0;
