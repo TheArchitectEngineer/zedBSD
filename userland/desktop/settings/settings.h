@@ -506,6 +506,14 @@ struct se_app {
 	struct se_hit hits[SE_HITS];
 	int hit_count;
 
+	/*
+	 * The page's controls as the log last listed them (a new frame whose
+	 * controls moved, came or went lists them again, so that a test can
+	 * find them).
+	 */
+	struct se_hit logged[SE_HITS];
+	int logged_count;
+
 	/* The region under the pointer (lit), and the one a press started on (a click lands on the same one). */
 	unsigned hover_kind;
 	int hover_index;

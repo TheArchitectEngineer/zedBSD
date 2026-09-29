@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p003（Network、鍵の入力を含む）から。p002 は cleared（Venus の guest で PASS）。p001 は cleared（[design.md](design.md)、main の判断は design.md §9 と [proposed/](proposed/)）。OSC のデモ（fg010）の優先事項
+Resume point: **引き継ぎ（2026-09-29 wrap up）**: p001・p002・p003 は cleared（p003 は Venus の guest で PASS、commit 済み、未 commit の差分と wip.patch は無い）。次は p008（検索と Home の tile の状態）か、Network の後の優先度の p007（desktop の設定の仕組み）→ p004・p005、最後に p006。App Home の歯車の絵（`wayland/icons.c`、許可済み D4）は区切りのよい時に。proposed の状態: networkd の protocol は変えない（既存の set-key の流れで足りた）、libkeiland の network の追加は適用済み（KEILAND_VERSION 11、merge で main が番号を調整）、desktop-preferences・audio・system は未適用（許可済み D4、p007・p005・About で適用）。試験の手順は各 phase.md と `plan/ws089/tests/`（`build-settings-image.sh`・`settings-guest.sh`・`settings-p002.sh`・`settings-p003.sh`・`host-build.sh`）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）

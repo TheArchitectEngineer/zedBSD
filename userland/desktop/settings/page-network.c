@@ -395,7 +395,7 @@ network_status_card(
 	if (network->state.reachable == 0) {
 		network_tile(app, canvas, x + NETWORK_PAD, y, tile_width, SE_GLYPH_GLOBE, "Internet", "Unknown", "The network service is not running", 0);
 	} else if (network->state.connected != 0) {
-		network_tile(app, canvas, x + NETWORK_PAD, y, tile_width, SE_GLYPH_GLOBE, "Internet", "Connected", "Everything looks good", 1);
+		network_tile(app, canvas, x + NETWORK_PAD, y, tile_width, SE_GLYPH_GLOBE, "Internet", "Connected", "Online", 1);
 	} else {
 		network_tile(app, canvas, x + NETWORK_PAD, y, tile_width, SE_GLYPH_GLOBE, "Internet", "Not connected", "No network in use", -1);
 	}
