@@ -154,7 +154,7 @@ static int list_control_shown(const struct layout_box *box, struct dom_element *
 static int list_caret_offset(struct list_walk *walk, const struct text_font *font, const struct layout_box *box, struct dom_element *element, struct dom_control *control, layout_unit *offset);
 static void list_textarea(struct list_walk *walk, const struct layout_box *box, struct dom_element *element, const struct list_area *content, const struct text_font *font, layout_unit line, layout_unit ascent);
 static void list_select(struct list_walk *walk, const struct layout_box *box, struct dom_element *element, const struct list_area *content, const struct text_font *font, layout_unit line, layout_unit ascent);
-static void list_control_record(struct list_walk *walk, const struct layout_box *box, struct dom_control *control, const struct list_area *content, const struct text_font *font, layout_unit caret_x, layout_unit line_top, layout_unit ascent);
+static void list_control_record(struct list_walk *walk, const struct layout_box *box, struct dom_control *control, const struct list_area *content, const struct text_font *font, layout_unit text_x, layout_unit caret_x, layout_unit line_top, layout_unit ascent);
 static void list_style_font(struct list_walk *walk, const struct css_style *style, struct text_font *font);
 static void list_text_run(struct list_walk *walk, const struct text_font *font, uint32_t color, const uint16_t *units, size_t length, layout_unit x, layout_unit baseline);
 static void list_image_item(struct list_walk *walk, const struct img_bitmap *image, layout_unit x, layout_unit y, layout_unit width, layout_unit height);
@@ -1157,6 +1157,7 @@ list_control_text(
 	layout_unit ascent;
 	layout_unit width;
 	layout_unit caret;
+	layout_unit indent;
 	layout_unit left;
 	layout_unit top;
 	uint32_t color;
@@ -1173,6 +1174,11 @@ list_control_text(
 	content.y = box->y + box->border[CSS_TOP] + box->padding[CSS_TOP];
 	content.width = box->width;
 	content.height = box->height;
+	indent = layout_from_px(box->style.text_indent.value);
+	if (box->style.text_indent.unit == CSS_UNIT_PERCENT) {
+		indent = (layout_unit)((float)content.width * box->style.text_indent.value / 100.0f) +
+		    layout_from_px(box->style.text_indent.offset);
+	}
 
 	/* The font and the line the text is set in. */
 	list_style_font(walk, &box->style, &font);
@@ -1224,9 +1230,9 @@ list_control_text(
 
 	/* A button's label is placed by text-align (centered by the user agent's sheet). */
 	if (!editable) {
-		left = content.x;
+		left = content.x + indent;
 		if (box->style.text_align == CSS_TEXT_ALIGN_CENTER)
-			left = content.x + (content.width - width) / 2;
+			left = content.x + indent + (content.width - indent - width) / 2;
 		if (box->style.text_align == CSS_TEXT_ALIGN_RIGHT)
 			left = content.x + content.width - width;
 		list_text_run(walk, &font, color, shown.data, shown.length, left, top + ascent);
@@ -1243,19 +1249,21 @@ list_control_text(
 	}
 
 	/* The scroll keeps the caret inside the content box, and no more of the box empty than it must. */
-	if (caret - control->scroll_x > content.width - LAYOUT_UNIT)
-		control->scroll_x = caret - content.width + LAYOUT_UNIT;
-	if (caret < control->scroll_x)
-		control->scroll_x = caret;
-	if (control->scroll_x > 0 && width - control->scroll_x < content.width - LAYOUT_UNIT) {
-		control->scroll_x = width - content.width + LAYOUT_UNIT;
+	if (indent + caret - control->scroll_x > content.width - LAYOUT_UNIT)
+		control->scroll_x = indent + caret - content.width + LAYOUT_UNIT;
+	if (indent + caret < control->scroll_x)
+		control->scroll_x = indent + caret;
+	if (control->scroll_x < 0)
+		control->scroll_x = 0;
+	if (control->scroll_x > 0 && indent + width - control->scroll_x < content.width - LAYOUT_UNIT) {
+		control->scroll_x = indent + width - content.width + LAYOUT_UNIT;
 		if (control->scroll_x < 0)
 			control->scroll_x = 0;
 	}
 
 	/* The text, scrolled and clipped to the content box. */
 	list_clip_rect(walk, &content);
-	list_text_run(walk, &font, color, shown.data, shown.length, content.x - control->scroll_x, top + ascent);
+	list_text_run(walk, &font, color, shown.data, shown.length, content.x + indent - control->scroll_x, top + ascent);
 	list_unclip(walk);
 	wb_units_release(&shown);
 
@@ -1263,7 +1271,8 @@ list_control_text(
 	 * What the page needs of this drawing: drawn says the rest is current,
 	 * and the caret stands at its offset, as tall as the font's glyphs.
 	 */
-	list_control_record(walk, box, control, &content, &font, content.x + caret - control->scroll_x, top, ascent);
+	list_control_record(walk, box, control, &content, &font, content.x + indent,
+	    content.x + indent + caret - control->scroll_x, top, ascent);
 }
 
 /*
@@ -1460,7 +1469,7 @@ list_textarea(
 	wb_units_release(&value);
 
 	/* What the page needs for the caret. */
-	list_control_record(walk, box, control, content, font, caret_x, caret_top, ascent);
+	list_control_record(walk, box, control, content, font, content->x, caret_x, caret_top, ascent);
 }
 
 /*
@@ -1533,6 +1542,7 @@ list_control_record(
 	struct dom_control *control,
 	const struct list_area *content,
 	const struct text_font *font,
+	layout_unit text_x,
 	layout_unit caret_x,
 	layout_unit line_top,
 	layout_unit ascent)
@@ -1552,7 +1562,7 @@ list_control_record(
 	 * it stays set as long as the control keeps a box.
 	 */
 	control->drawn = 1;
-	control->content_x = content->x;
+	control->content_x = text_x;
 	control->content_y = content->y;
 	control->content_width = content->width;
 	control->content_height = content->height;

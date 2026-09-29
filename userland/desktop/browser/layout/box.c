@@ -1219,6 +1219,7 @@ box_anonymous_style(
 	style->family_count = parent->family_count;
 	style->line_height = parent->line_height;
 	style->text_align = parent->text_align;
+	style->text_indent = parent->text_indent;
 	style->direction = parent->direction;
 	style->white_space = parent->white_space;
 	style->visibility = parent->visibility;

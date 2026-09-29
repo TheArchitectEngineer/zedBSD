@@ -112,6 +112,8 @@ main(
 	/* 1. The controls are drawn: the fields' values, the placeholder, the labels, the chosen option. */
 	check(paint_has(view, "\"kei\""), "draw: the query's value");
 	check(paint_has(view, "\"Type here\""), "draw: the placeholder");
+	check(paint_has(view, "text 50.58 120.00 13px face 0 bold 0 #ff757575 \"Type here\""),
+	    "draw: text-indent moves the placeholder");
 	check(paint_has(view, "\"Search\""), "draw: a submit button's label");
 	check(paint_has(view, "\"Books and more\""), "draw: the select's chosen option");
 	check(paint_has(view, "\"first line\""), "draw: the textarea's first line");

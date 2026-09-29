@@ -609,6 +609,7 @@ cascade_compute(
 		style->family_count = parent->family_count;
 		style->line_height = parent->line_height;
 		style->text_align = parent->text_align;
+		style->text_indent = parent->text_indent;
 		style->direction = parent->direction;
 		style->border_spacing[0] = parent->border_spacing[0];
 		style->border_spacing[1] = parent->border_spacing[1];
@@ -2751,7 +2752,7 @@ cascade_apply(
 	if (value->kind == CSS_VALUE_INHERIT || value->kind == CSS_VALUE_UNSET) {
 		inherited = property == CSS_PROP_COLOR || property == CSS_PROP_FONT_SIZE || property == CSS_PROP_FONT_WEIGHT ||
 		    property == CSS_PROP_FONT_STYLE || property == CSS_PROP_FONT_FAMILY || property == CSS_PROP_LINE_HEIGHT ||
-		    property == CSS_PROP_TEXT_ALIGN || property == CSS_PROP_WHITE_SPACE || property == CSS_PROP_VISIBILITY ||
+		    property == CSS_PROP_TEXT_ALIGN || property == CSS_PROP_TEXT_INDENT || property == CSS_PROP_WHITE_SPACE || property == CSS_PROP_VISIBILITY ||
 		    property == CSS_PROP_DIRECTION || property == CSS_PROP_BORDER_SPACING_X || property == CSS_PROP_BORDER_SPACING_Y ||
 		    property == CSS_PROP_BORDER_COLLAPSE ||
 		    property == CSS_PROP_LIST_STYLE_TYPE;
@@ -2936,6 +2937,9 @@ cascade_apply(
 		break;
 	case CSS_PROP_TEXT_ALIGN:
 		style->text_align = value->keyword;
+		break;
+	case CSS_PROP_TEXT_INDENT:
+		style->text_indent = cascade_length(engine, value, style->font_size);
 		break;
 	case CSS_PROP_DIRECTION:
 		style->direction = value->keyword;
@@ -3314,6 +3318,9 @@ cascade_inherit(
 		break;
 	case CSS_PROP_TEXT_ALIGN:
 		style->text_align = parent->text_align;
+		break;
+	case CSS_PROP_TEXT_INDENT:
+		style->text_indent = parent->text_indent;
 		break;
 	case CSS_PROP_DIRECTION:
 		style->direction = parent->direction;

@@ -2,7 +2,7 @@
 <html><head><title>computed</title>
 <style>
 body { margin: 8px; }
-#box { width: 100px; height: 40px; padding: 10px 4px; border: 2px solid red; margin: 5px 7px; opacity: 0.5; font-size: 20px; line-height: 1.5; }
+#box { width: 100px; height: 40px; padding: 10px 4px; border: 2px solid red; margin: 5px 7px; opacity: 0.5; font-size: 20px; line-height: 1.5; text-indent: 8px; }
 #sized { box-sizing: border-box; width: 100px; height: 30px; padding: 5px; border: 1px solid rgba(0, 0, 255, 0.3); }
 #hidden { display: none; width: 50px; }
 .fonts { font-family: Arial, "Amazon Ember", sans-serif; font-weight: bold; font-style: italic; visibility: hidden; float: left; overflow-x: hidden; overflow-y: auto; }
@@ -23,7 +23,7 @@ body { margin: 8px; }
 function $(id) { return document.getElementById(id); }
 var cs = getComputedStyle($("box"));
 console.log("box " + [cs.width, cs.height, cs.paddingTop, cs.paddingLeft, cs.marginRight, cs.borderTopWidth, cs.borderTopStyle, cs.borderTopColor].join(" "));
-console.log("box2 " + [cs.display, cs.position, cs.opacity, cs.zIndex, cs.color, cs.backgroundColor, cs.fontSize, cs.lineHeight].join(" "));
+console.log("box2 " + [cs.display, cs.position, cs.opacity, cs.zIndex, cs.color, cs.backgroundColor, cs.fontSize, cs.lineHeight, cs.textIndent].join(" "));
 console.log("names " + [cs.getPropertyValue("font-size"), cs.getPropertyValue("margin-bottom"), cs["border-left-width"], cs.getPropertyValue("no-such-thing") === ""].join(" "));
 var sized = getComputedStyle($("sized"));
 console.log("sized " + [sized.width, sized.height, sized.boxSizing, sized.borderTopColor].join(" "));
