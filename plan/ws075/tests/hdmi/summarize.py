@@ -26,8 +26,12 @@ def summary(path):
                 re.findall(r'([\d.]+) runs/s, engine ([\d.]+)%, ([\d.]+) ms/run', engine)]
     busiest = max(sessions) if sessions else (0.0, 0.0, 0.0)
     total = re.search(r'engine busy ([\d.]+)%', engine)
+    # ws075-p024: WS099's C6 (h4-ctl.py c6), when the run measured it.
+    c6 = re.search(r'c6: (\d+)/(\d+) shown, median ([\d.]+) ms, p90 ([\d.]+) ms', apps)
+    c6 = f' | c6 {c6.group(3)} ms p90 {c6.group(4)} ms ({c6.group(1)}/{c6.group(2)})' if c6 else ''
     return (f'{path}: desktop {rate(desktop)}/s {median(desktop)} ms | apps {rate(apps)}/s {median(apps)} ms | '
-            f'compositor {busiest[0]}% {busiest[2]} ms/run {busiest[1]} run/s | engine {total.group(1) if total else "-"}%')
+            f'compositor {busiest[0]}% {busiest[2]} ms/run {busiest[1]} run/s | engine {total.group(1) if total else "-"}%'
+            + c6)
 
 
 for directory in sys.argv[1:]:

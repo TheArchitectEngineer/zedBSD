@@ -66,13 +66,14 @@ fetch)
 	out=$1
 	owns_machine || { echo "hdmi-h4-hw: this tree's run does not hold the machine; fetch refused"; exit 1; }
 	mkdir -p "$out/shots"
-	ssh "$host" "sudo -n chown -R awe: $remote/shots $remote/load.log $remote/splash.log $remote/watch.log 2>/dev/null; true"
+	ssh "$host" "sudo -n chown -R awe: $remote/shots $remote/load.log $remote/splash.log $remote/watch.log $remote/c6.log 2>/dev/null; true"
 	scp -q "$host:$remote/run.log" "$out/kernel.log"
 	scp -q "$host:$remote/serial.log" "$out/serial.log"
 	scp -q "$host:$remote/qemu.log" "$out/qemu.log"
 	scp -q "$host:$remote/load.log" "$out/load.log" 2>/dev/null
 	scp -q "$host:$remote/splash.log" "$out/splash.log" 2>/dev/null
 	scp -q "$host:$remote/watch.log" "$out/watch.log" 2>/dev/null
+	scp -q "$host:$remote/c6.log" "$out/c6.log" 2>/dev/null
 	rsync -a "$host:$remote/shots/" "$out/shots/" 2>/dev/null || scp -qr "$host:$remote/shots/." "$out/shots/"
 	python3 plan/ws075/tests/hdmi/h4-png.py "$out/shots"
 	;;
