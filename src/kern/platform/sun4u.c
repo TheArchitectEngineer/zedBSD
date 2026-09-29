@@ -137,6 +137,17 @@ kern_platform_halt(
 }
 
 /*
+ * Reports that sun4u power-off is not implemented; the caller halts.
+ */
+int
+kern_platform_poweroff(
+	void)
+{
+	/* The HAL's hal_poweroff() is a fatal stub on sparcv9, so it is not called. */
+	return EOPNOTSUPP;
+}
+
+/*
  * Reboots the machine.
  */
 void
