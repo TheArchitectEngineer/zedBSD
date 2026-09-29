@@ -26,3 +26,5 @@ size_t keiland_network_get_dns(char (*servers)[16], size_t capacity);
 - `userland/desktop/libkeiland/network.c` に約 150 行（または新しい file `link.c`）、keiland.h の構造体と 2 つの宣言。exports.map は既存の
   `keiland_network_*` で足りる。
 - 既存の `keiland_network_*` の振る舞いは変えない。
+- link の速さと DHCP・static の別は kernel の `if_data` に無いので含めない。
+- `KEILAND_VERSION` を 1 つ上げる。`keiland.h` は WS081・WS035 と衝突しうるので、適用の前に main と順序を合わせる。

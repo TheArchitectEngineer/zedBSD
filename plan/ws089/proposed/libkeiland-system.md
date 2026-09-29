@@ -17,3 +17,5 @@ int keiland_system_get_info(struct keiland_system_info *info);	/* 0 or an errno 
 - 新しい file `userland/desktop/libkeiland/system.c`（約 80 行、`/dev/system` の `KERN_SYSTEM_IOC` の vm_statistics）、keiland.h の節、
   exports.map の `keiland_system_*`。
 - uptime は `clock_gettime(CLOCK_MONOTONIC)`（POSIX）で足りるので含めない（p002 で boot からの時間と一致するか確かめる）。
+- 一般の user（session の user）が `/dev/system` の vm_statistics を読めるかは未確認。読めなければ `EACCES` を返し、About は行を出さない。
+- `KEILAND_VERSION` を 1 つ上げる（他の追加と一緒にしてよい）。

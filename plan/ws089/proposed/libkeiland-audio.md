@@ -32,3 +32,5 @@ int keiland_audio_set_volume(struct keiland_audio *audio, unsigned left, unsigne
 
 - 新しい file `userland/desktop/libkeiland/audio.c`（約 300 行）、keiland.h の節、exports.map の `keiland_audio_*`、Makefile の source。
 - 試しの音（stream）は含めない。要るなら別の追加。
+- `KEILAND_VERSION` を 1 つ上げる。`keiland.h`・exports.map・Makefile は WS081・WS035 と衝突しうるので、適用の前に main と順序を合わせる。
+- 装置が無いとき audiod の get は常に 100・非 mute を返すので、`device` が 0 なら Settings は slider を無効にする。
