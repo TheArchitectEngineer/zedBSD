@@ -92,6 +92,7 @@ struct zwl_object;
 struct zwl_compose;
 struct zwl_import;
 struct zwl_panels;
+struct zwl_ime;
 
 /* Each live protocol identity has one immutable interface and negotiated version. */
 enum zwl_kind {
@@ -143,6 +144,17 @@ enum zwl_kind {
 	ZWL_TABLET,
 	ZWL_TABLET_TOOL,
 	ZWL_TOUCH,
+	/* The text input and input method protocols (text-input.c, input-method.c, ws095-p004). */
+	ZWL_TEXT_INPUT_MANAGER,
+	ZWL_TEXT_INPUT,
+	ZWL_INPUT_METHOD_MANAGER,
+	ZWL_INPUT_METHOD,
+	ZWL_INPUT_POPUP,
+	ZWL_KEYBOARD_GRAB,
+	ZWL_VIRTUAL_KEYBOARD_MANAGER,
+	ZWL_VIRTUAL_KEYBOARD,
+	ZWL_IME_STATUS_MANAGER,
+	ZWL_IME_STATUS,
 };
 
 /*
@@ -496,6 +508,12 @@ struct zwl_client {
 	 * the compositor makes for this client (a wl_data_offer, data.c).
 	 */
 	uint32_t server_id_next;
+	/*
+	 * Nonzero for the connection of the system's input method, which
+	 * zdesktop made itself (input-method.c, ws095-p004): only it sees and
+	 * binds the input method's globals.
+	 */
+	unsigned ime;
 };
 
 /* The compositor alone owns the GPU context and the currently scanned-out image. */
@@ -903,6 +921,12 @@ struct zwl_server {
 	int32_t resize_pointer_y;
 	int32_t resize_width;
 	int32_t resize_height;
+	/*
+	 * The system's input method and the text inputs it serves
+	 * (input-method.c, text-input.c, ws095-p004); NULL until
+	 * zwl_ime_start makes it.
+	 */
+	struct zwl_ime *ime;
 };
 
 uint64_t zwl_milliseconds(void);
@@ -1039,6 +1063,7 @@ void zwl_seat_button_deliver(struct zwl_server *server, uint32_t time, uint32_t 
 void zwl_seat_axis(struct zwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal);
 void zwl_seat_frame(struct zwl_server *server);
 void zwl_seat_key(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
+void zwl_seat_key_deliver(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
 void zwl_seat_modifiers(struct zwl_server *server);
 void zwl_input_scan(struct zwl_server *server);
 int zwl_input_attach(struct zwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, const struct input_absinfo *x, const struct input_absinfo *y);
