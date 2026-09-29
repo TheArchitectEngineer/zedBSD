@@ -85,7 +85,7 @@ static void pointer_enter(struct zwl_object *pointer, struct zwl_object *surface
 static void keyboard_enter(struct zwl_object *keyboard, struct zwl_object *surface, uint32_t serial);
 static void keyboard_modifiers(struct zwl_object *keyboard, uint32_t serial);
 static void send_leave(struct zwl_object *surface);
-static void set_cursor(struct zwl_server *server, struct zwl_object *surface, const unsigned char *bytes);
+static void set_cursor(struct zwl_server *server, struct zwl_client *client, struct zwl_object *surface, const unsigned char *bytes);
 static void send_enter(struct zwl_object *surface);
 static void report_seat(struct zwl_client *client);
 static int keyboard_keymap(struct zwl_object *keyboard);
@@ -196,7 +196,7 @@ zwl_seat_request(
 			if (error == 0 &&
 			    object->client->server->pointer_surface != NULL &&
 			    object->client->server->pointer_surface->client == object->client)
-				set_cursor(object->client->server, surface, bytes);
+				set_cursor(object->client->server, object->client, surface, bytes);
 		} else if (opcode == 1U && size == 0 && object->version >= RELEASE_VERSION) {
 			/* release exists from version 3. */
 			zwl_object_destroy(object);
@@ -240,6 +240,7 @@ zwl_cursor_default(
 	server->cursor_surface = NULL;
 	server->cursor_hidden = 0;
 	server->cursor_shape = 0;
+	server->cursor_client = NULL;
 	server->dirty = 1;
 }
 
@@ -1250,6 +1251,7 @@ keyboard_keymap(
 static void
 set_cursor(
 	struct zwl_server *server,
+	struct zwl_client *client,
 	struct zwl_object *surface,
 	const unsigned char *bytes)
 {
@@ -1262,6 +1264,7 @@ set_cursor(
 	/* A cursor surface (or none) replaces a shape the client asked for; no surface hides the cursor. */
 	server->dirty = 1;
 	server->cursor_shape = 0;
+	server->cursor_client = client;
 	if (surface == NULL) {
 		server->cursor_surface = NULL;
 		server->cursor_hidden = 1;

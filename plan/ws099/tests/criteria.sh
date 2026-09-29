@@ -21,8 +21,8 @@ export C7_MIN_CONTRAST=${C7_MIN_CONTRAST:-4.5}
 export C10_SECONDS=${C10_SECONDS:-3600}
 export C10_MAX_ERRORS=${C10_MAX_ERRORS:-0}
 C1_CYCLES=${C1_CYCLES:-2}
-# The zdesktop regressions of C9 (plan/ws035/tests/zdesktop-NAME.sh) and the output size each is written for.
-C9_TESTS=${C9_TESTS:-"p052 p053 p072 p076 p126 p128 p134 p137 p138"}
+# The zdesktop regressions of C9: NAME for plan/ws035/tests/zdesktop-NAME.sh, or a path (plan/ws099/tests/...).
+C9_TESTS=${C9_TESTS:-"p052 p053 p072 p076 p126 p128 p134 p137 p138 plan/ws099/tests/cursor-owner.sh"}
 
 image=${1:-build/ws099-criteria.img}
 out=${2:-build/ws099-criteria}
@@ -86,7 +86,10 @@ for criterion in $criteria; do
 		for test in $C9_TESTS; do
 			size=1280x800
 			[ "$test" = p128 ] && size=1920x1280
-			run C9 "$test" "$size" sh "plan/ws035/tests/zdesktop-$test.sh" "$out/c9-$test"
+			case $test in
+			*/*) name=$(basename "$test" .sh); run C9 "$name" "$size" sh "$test" "$out/c9-$name" ;;
+			*) run C9 "$test" "$size" sh "plan/ws035/tests/zdesktop-$test.sh" "$out/c9-$test" ;;
+			esac
 		done
 		;;
 	C10) run C10 c10-soak 1280x800 sh plan/ws099/tests/c10-soak.sh "$out/c10" ;;
