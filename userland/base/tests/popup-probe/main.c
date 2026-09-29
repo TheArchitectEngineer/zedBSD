@@ -23,9 +23,15 @@
  * answers the last one when pressed again.  Every event is one line:
  * POPUPPROBE <what> ..., with the surface named window, menu or submenu.
  *
- *   popup-probe [--wide] [--timeout-s=N] [--token=NAME]
- *     --wide  menus 360 pixels wide, so that a submenu near the output's
- *             right edge must flip to the left
+ *   popup-probe [--wide] [--wm-probe] [--timeout-s=N] [--token=NAME]
+ *     --wide      menus 360 pixels wide, so that a submenu near the output's
+ *                 right edge must flip to the left
+ *     --wm-probe  checks xdg_wm_base.destroy (WS035 p132, BUG-112) and exits:
+ *                 a second binding with no xdg_surface of its own is destroyed
+ *                 while the window (of the first) lives, which must not be an
+ *                 error; then the first is destroyed under its window, which
+ *                 must be (defunct_surfaces).  It prints WM-PROBE:PASS or
+ *                 WM-PROBE:FAIL.
  */
 
 #include <wayland-client.h>
@@ -90,6 +96,9 @@
 /* The xdg_wm_base version the probe asks for (3 has xdg_popup.reposition). */
 #define PROBE_SHELL_VERSION	3U
 
+/* xdg_wm_base's error for a binding destroyed under its own live xdg_surfaces. */
+#define PROBE_WM_ERROR_DEFUNCT_SURFACES	1U
+
 struct probe;
 
 /*
@@ -127,6 +136,8 @@ struct probe {
 	struct wl_compositor *compositor;
 	struct wl_shm *shm;
 	struct xdg_wm_base *shell;
+	uint32_t shell_name;
+	uint32_t shell_version;
 	struct wl_seat *seat;
 	struct wl_pointer *pointer;
 	struct wl_keyboard *keyboard;
@@ -143,10 +154,12 @@ struct probe {
 	uint32_t unanswered;
 	uint32_t reposition_token;
 	const char *token;
+	int wm_probe;
 };
 
 static int probe_options(int count, char **arguments, struct probe *probe, unsigned *timeout);
 static int probe_connect(struct probe *probe);
+static int probe_wm_check(struct probe *probe);
 static int probe_attach(struct probe *probe, struct probe_surface *surface);
 static void probe_release(struct probe_surface *surface);
 static int probe_shared_memory(size_t size, void **map);
@@ -263,7 +276,7 @@ main(
 	memset(&probe, 0, sizeof(probe));
 	error = probe_options(count, arguments, &probe, &timeout);
 	if (error != 0) {
-		fprintf(stderr, "usage: popup-probe [--wide] [--timeout-s=N] [--token=NAME]\n");
+		fprintf(stderr, "usage: popup-probe [--wide] [--wm-probe] [--timeout-s=N] [--token=NAME]\n");
 		return 2;
 	}
 
@@ -272,6 +285,16 @@ main(
 	if (error != 0) {
 		printf("POPUPPROBE FAILED run=%s setup errno=%d\n", probe.token, error);
 		return 1;
+	}
+
+	/* The xdg_wm_base.destroy check runs instead of the events. */
+	if (probe.wm_probe) {
+		error = probe_wm_check(&probe);
+		if (error != 0)
+			return 1;
+
+		/* Succeeded: both steps behaved as xdg-shell says. */
+		return 0;
 	}
 
 	/* The events, until the window is closed or the time is up. */
@@ -308,7 +331,7 @@ main(
 	return 0;
 }
 
-/* Reads the options: --wide, --timeout-s=N (default 120) and --token=NAME. */
+/* Reads the options: --wide, --wm-probe, --timeout-s=N (default 120) and --token=NAME. */
 static int
 probe_options(
 	int count,
@@ -332,6 +355,13 @@ probe_options(
 		same = strcmp(arguments[index], "--wide");
 		if (same == 0) {
 			probe->menu_width = 360;
+			continue;
+		}
+
+		/* The xdg_wm_base.destroy check. */
+		same = strcmp(arguments[index], "--wm-probe");
+		if (same == 0) {
+			probe->wm_probe = 1;
 			continue;
 		}
 
@@ -411,6 +441,74 @@ probe_connect(
 	/* Succeeded: the log line the test waits for. */
 	printf("POPUPPROBE ready run=%s\n", probe->token);
 	fflush(stdout);
+	return 0;
+}
+
+/*
+ * Checks xdg_wm_base.destroy with the window up (made from the first
+ * binding): destroying a second binding, which made no xdg_surface, keeps
+ * the connection; destroying the first under its window is a protocol error.
+ */
+static int
+probe_wm_check(
+	struct probe *probe)
+{
+	struct xdg_wm_base *other;
+	const struct wl_interface *interface;
+	uint32_t object;
+	uint32_t code;
+	int status;
+	int error;
+
+	/* A second binding of the shell, answering pings like the first. */
+	other = wl_registry_bind(probe->registry, probe->shell_name, &xdg_wm_base_interface, probe->shell_version);
+	xdg_wm_base_add_listener(other, &shell_listener, probe);
+	status = wl_display_roundtrip(probe->display);
+	if (status < 0) {
+		printf("WM-PROBE bind failed errno=%d\nWM-PROBE:FAIL\n", errno);
+		fflush(stdout);
+		return EIO;
+	}
+
+	/* The second binding goes; the window of the first still lives. */
+	xdg_wm_base_destroy(other);
+	status = wl_display_roundtrip(probe->display);
+	error = wl_display_get_error(probe->display);
+	if (status < 0 || error != 0) {
+		printf("WM-PROBE other-binding error=%d\nWM-PROBE:FAIL\n", error);
+		fflush(stdout);
+		return EPROTO;
+	}
+
+	/* The first step passed. */
+	printf("WM-PROBE other-binding ok\n");
+	fflush(stdout);
+
+	/* The first binding goes under its window: the compositor must refuse. */
+	xdg_wm_base_destroy(probe->shell);
+	probe->shell = NULL;
+	status = wl_display_roundtrip(probe->display);
+	error = wl_display_get_error(probe->display);
+	if (status >= 0 || error != EPROTO) {
+		printf("WM-PROBE same-binding status=%d error=%d\nWM-PROBE:FAIL\n", status, error);
+		fflush(stdout);
+		return EPROTO;
+	}
+
+	/* The error names the xdg_wm_base and its defunct_surfaces code. */
+	code = wl_display_get_protocol_error(probe->display, &interface, &object);
+	if (interface == NULL || code != PROBE_WM_ERROR_DEFUNCT_SURFACES) {
+		printf("WM-PROBE same-binding code=%u\nWM-PROBE:FAIL\n", code);
+		fflush(stdout);
+		return EPROTO;
+	}
+
+	/* The second step passed, and so the check. */
+	printf("WM-PROBE same-binding error ok interface=%s code=%u\n", interface->name, code);
+	printf("WM-PROBE:PASS\n");
+	fflush(stdout);
+
+	/* Succeeded: both steps behaved as xdg-shell says. */
 	return 0;
 }
 
@@ -807,6 +905,8 @@ registry_global(
 		shell_version = version;
 		if (shell_version > PROBE_SHELL_VERSION)
 			shell_version = PROBE_SHELL_VERSION;
+		probe->shell_name = name;
+		probe->shell_version = shell_version;
 		probe->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, shell_version);
 		xdg_wm_base_add_listener(probe->shell, &shell_listener, probe);
 	}

@@ -29,6 +29,9 @@
 #define OUTPUT_NAME		4U
 #define OUTPUT_DESCRIPTION	5U
 
+/* xdg_wm_base's error for a binding destroyed under its own live xdg_surfaces. */
+#define WM_ERROR_DEFUNCT_SURFACES	1U
+
 /* The registry advertises only implemented interfaces and their actual versions. */
 struct zwl_global {
 	uint32_t name;
@@ -902,8 +905,10 @@ shell_request(
 			for (other = object->client->objects; other != NULL; other = other->next) {
 				if (other->kind == ZWL_XDG_SURFACE &&
 				    !other->dead &&
-				    other->wm_base == object)
-					return EPROTO;
+				    other->wm_base == object) {
+					error = zwl_error_code(object->client, object->id, WM_ERROR_DEFUNCT_SURFACES, "xdg_surfaces of this binding live");
+					return error;
+				}
 			}
 
 			/* This binding no longer has live shell children. */
