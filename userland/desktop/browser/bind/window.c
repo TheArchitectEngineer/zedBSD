@@ -109,7 +109,8 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_css_style_declaration_interface,
 	&bind_text_encoder_interface,
 	&bind_text_decoder_interface,
-	&bind_storage_interface
+	&bind_storage_interface,
+	&bind_html_template_element_interface
 };
 
 /*

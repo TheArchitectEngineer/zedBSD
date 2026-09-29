@@ -20,7 +20,7 @@
 #   chooser      Ctrl+O (chooser.png), Escape
 # Every step's pictures go to OUTDIR.  The steps read the program's own log lines (IMAGEVIEW ..., ZWL ...) through
 # SSH; nothing reads the console.
-#   GUEST_RUNTIME=... BIN=build/ws091-amd64 plan/ws091/tests/imageview-guest.sh OUTDIR STEP...
+#   GUEST_RUNTIME=... BIN=build/ws091-amd64 plan/tools/imageview/imageview-guest.sh OUTDIR STEP...
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -66,7 +66,7 @@ viewer() {
 for step in "$@"; do
 	case "$step" in
 	install)
-		python3 plan/ws091/tests/make-images.py build/ws091-images >/dev/null
+		python3 plan/tools/imageview/make-images.py build/ws091-images >/dev/null
 		put "$bin/bin/imageview" /tmp/imageview
 		put "$bin/bin/wayland" /tmp/wayland
 		for library in libkeiland libvulkan libwayland-client libtruetype libpng-compat libjpeg-compat libgif-compat libz-compat; do

@@ -18,6 +18,7 @@
 
 static int element_this(struct vm_realm *realm, vm_value this_value, struct dom_element **element);
 static int element_tag_name(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_namespace_uri(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_local_name(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_id_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_id_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -54,6 +55,7 @@ static int element_reflect_set(struct vm_realm *realm, vm_value this_value, cons
 static const struct bind_attribute element_attributes[] = {
 	{ "tagName", element_tag_name, NULL },
 	{ "localName", element_local_name, NULL },
+	{ "namespaceURI", element_namespace_uri, NULL },
 	{ "id", element_id_get, element_id_set },
 	{ "className", element_class_name_get, element_class_name_set },
 	{ "children", bind_children, NULL },
@@ -71,6 +73,8 @@ static const struct bind_attribute element_attributes[] = {
 	{ "scrollHeight", bind_scroll_height, NULL },
 	{ "scrollTop", bind_scroll_top, bind_scroll_position_set },
 	{ "scrollLeft", bind_scroll_left, bind_scroll_position_set },
+	{ "innerHTML", bind_inner_html_get, bind_inner_html_set },
+	{ "outerHTML", bind_outer_html_get, bind_outer_html_set },
 	{ NULL, NULL, NULL }
 };
 
@@ -95,6 +99,9 @@ static const struct bind_operation element_operations[] = {
 	{ "closest", 1, bind_closest },
 	{ "getBoundingClientRect", 0, bind_get_bounding_client_rect },
 	{ "getClientRects", 0, bind_get_client_rects },
+	{ "insertAdjacentHTML", 2, bind_insert_adjacent_html },
+	{ "insertAdjacentElement", 2, bind_insert_adjacent_element },
+	{ "insertAdjacentText", 2, bind_insert_adjacent_text },
 	{ NULL, 0, NULL }
 };
 
@@ -333,6 +340,44 @@ element_local_name(
 
 	/* Succeeded: the name's atom is the string. */
 	*result = vm_value_cell(element->local_name);
+	return 0;
+}
+
+/* Reports the URL of the element's namespace (namespaceURI). */
+static int
+element_namespace_uri(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	static const char *const urls[] = {
+		[DOM_NS_HTML] = "http://www.w3.org/1999/xhtml",
+		[DOM_NS_SVG] = "http://www.w3.org/2000/svg",
+		[DOM_NS_MATHML] = "http://www.w3.org/1998/Math/MathML"
+	};
+	struct dom_element *element;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The element. */
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+
+	/* An element has one of the three namespaces, or none (null). */
+	if (element->ns >= sizeof(urls) / sizeof(urls[0]) || urls[element->ns] == NULL) {
+		*result = VM_VALUE_NULL;
+		return 0;
+	}
+
+	/* Succeeded: the namespace's URL. */
+	status = bind_string(realm, urls[element->ns], result);
+	if (status != 0)
+		return status;
 	return 0;
 }
 

@@ -59,15 +59,18 @@ iv_folder_read(
 	/* The old list goes. */
 	iv_folder_release(folder);
 
-	/* The folder: the path itself when it is one, otherwise the folder it is in. */
-	name = "";
+	/* Whether the path names a folder (a path that cannot be read is taken for a file). */
 	is_directory = 0;
 	error = stat(path, &status);
 	if (error == 0)
 		is_directory = S_ISDIR(status.st_mode);
+
+	/* The folder: the path itself when it is one, otherwise the folder it is in, and the file's name. */
+	name = "";
 	if (is_directory) {
 		snprintf(directory, sizeof(directory), "%s", path);
 	} else {
+		/* The part before the last slash is the folder; a name without one is in the current folder. */
 		snprintf(directory, sizeof(directory), "%s", path);
 		slash = strrchr(directory, '/');
 		if (slash == NULL) {
@@ -104,6 +107,8 @@ iv_folder_read(
 		/* Hidden files and files of other kinds are left out. */
 		if (entry->d_name[0] == '.')
 			continue;
+
+		/* Only the names of the kinds shown join. */
 		match = iv_image_is_name(entry->d_name);
 		if (!match)
 			continue;
@@ -139,6 +144,7 @@ iv_folder_read(
 	folder->modified = status.st_mtime;
 	folder->index = 0;
 	for (index = 0; index < folder->count; index++) {
+		/* The path's own name is its place. */
 		match = strcmp(folder->names[index], name);
 		if (match == 0) {
 			folder->index = index;
@@ -183,10 +189,13 @@ iv_folder_path(
 
 	/* The folder and the name, without doubling the root's slash. */
 	root = strcmp(folder->directory, "/");
-	if (root == 0)
+	if (root == 0) {
 		length = snprintf(path, size, "/%s", folder->names[index]);
-	else
+	} else {
 		length = snprintf(path, size, "%s/%s", folder->directory, folder->names[index]);
+	}
+
+	/* A path that did not fit is refused rather than cut. */
 	if (length < 0 || (size_t)length >= size)
 		return ENAMETOOLONG;
 
@@ -229,6 +238,8 @@ iv_folder_compare(
 			difference = folder_lower(left_character) - folder_lower(right_character);
 			if (difference != 0)
 				return difference;
+
+			/* The characters are alike; the next pair decides. */
 			left++;
 			right++;
 			continue;
@@ -250,6 +261,8 @@ iv_folder_compare(
 		difference = strncmp(left, right, left_length);
 		if (difference != 0)
 			return difference;
+
+		/* The numbers are equal; the characters after them decide. */
 		left += left_length;
 		right += right_length;
 	}
@@ -275,10 +288,10 @@ folder_sort(
 {
 	int order;
 
-	/* The viewer's order of the two names. */
+	/* Compares the two names of the list, each a row of the names table. */
 	order = iv_folder_compare((const char *)left, (const char *)right);
 
-	/* Reports it. */
+	/* Reports which name comes first. */
 	return order;
 }
 
@@ -320,6 +333,8 @@ folder_skip_zeros(
 		next = folder_digit((unsigned char)digits[1]);
 		if (!next)
 			break;
+
+		/* The zero counts for nothing. */
 		digits++;
 	}
 
@@ -341,6 +356,8 @@ folder_run(
 		digit = folder_digit((unsigned char)digits[length]);
 		if (!digit)
 			break;
+
+		/* One more digit of the run. */
 		length++;
 	}
 

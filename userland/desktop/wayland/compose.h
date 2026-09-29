@@ -129,6 +129,7 @@ struct zwl_compose {
 	VkFence fence;
 	VkSemaphore acquired;
 	struct vkdemo_display output;
+	unsigned output_prepared;
 	unsigned output_open;
 	VkFormat format;
 	VkImageView views[ZWL_SWAPCHAIN_MAX];

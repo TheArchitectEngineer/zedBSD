@@ -356,6 +356,7 @@ static void loader_lock(void);
 static uintptr_t current_tid(void);
 static void loader_unlock(void);
 static void *allocate_tls_block(const struct rtld_tls_module *module);
+static uintptr_t thread_pointer(void);
 static void layout_static_tls(void);
 #if defined(HAL_ARCH_AMD64)
 static uintptr_t static_tls_displacement(const struct rtld_object *owner);
@@ -694,17 +695,15 @@ __attribute__((visibility("default"))) void *
 __rtld_pthread_private(
 	void)
 {
-	intptr_t value;
+	uintptr_t value;
 
-	value = syscall6(KERN_SYS_thread_self,
-				  KERN_THREAD_SELF_GET_TLS, 0, 0, 0, 0, 0);
-
-	/* Handles an operation failure. */
-	if (raw_error(value) || value == 0)
+	/* The calling thread's control block; a thread without one has no pthread record. */
+	value = thread_pointer();
+	if (value == 0)
 		return NULL;
 
 	/* Returns the computed result. */
-	return ((struct __rtld_tcb *)(uintptr_t)value)->pthread_private;
+	return ((struct __rtld_tcb *)value)->pthread_private;
 }
 
 /*
@@ -723,11 +722,10 @@ __tls_get_addr(
 	if (index == NULL || index->module == 0 ||
 	    index->module > tls_module_count)
 		rtld_fatal("invalid TLS index");
-	value = syscall6(KERN_SYS_thread_self, KERN_THREAD_SELF_GET_TLS, 0,
-			 0, 0, 0, 0);
 
-	/* Handles an operation failure. */
-	if (raw_error(value) || value == 0)
+	/* The calling thread's control block, read without a system call where the processor holds it (BUG-110). */
+	value = (intptr_t)thread_pointer();
+	if (value == 0)
 		rtld_fatal("thread has no TLS control block");
 	tcb = (struct __rtld_tcb *)(uintptr_t)value;
 	module = &tls_modules[index->module];
@@ -772,7 +770,7 @@ d_tlsdesc_resolve(
 	const struct rtld_tlsdesc *descriptor)
 {
 	const struct __tls_index *index;
-	intptr_t thread_pointer;
+	intptr_t base;
 	void *address;
 
 	/* Handles the descriptor availability. */
@@ -780,15 +778,14 @@ d_tlsdesc_resolve(
 		rtld_fatal("invalid TLSDESC argument");
 	index = (const struct __tls_index *)descriptor->argument;
 	address = __tls_get_addr(index);
-	thread_pointer = syscall6(KERN_SYS_thread_self,
-				  KERN_THREAD_SELF_GET_TLS, 0, 0, 0, 0, 0);
 
-	/* Handles an operation failure. */
-	if (raw_error(thread_pointer) || thread_pointer == 0)
+	/* The base the descriptor's offset is from: the calling thread's pointer. */
+	base = (intptr_t)thread_pointer();
+	if (base == 0)
 		rtld_fatal("thread has no TLSDESC base");
 
 	/* Returns the computed result. */
-	return (uintptr_t)address - (uintptr_t)thread_pointer;
+	return (uintptr_t)address - (uintptr_t)base;
 }
 #endif
 
@@ -5220,4 +5217,55 @@ setup_premapped_object(
 	for (i = 0; i < phnum; i++)
 		object->phdr[i] = phdr[i];
 	parse_dynamic(object);
+}
+
+/*
+ * Reads the calling thread's thread pointer, the address of its control
+ * block (struct __rtld_tcb), or 0 when it has none (BUG-110; on amd64 a
+ * thread without one faults instead, as FS then has no base to read at).
+ *
+ * The kernel keeps the pointer a thread installs (thread_self's SET_TLS, a
+ * new thread's thread_create, exec's initial one) in the register the
+ * processor gives user TLS, and restores it at every switch, in signal
+ * handlers too.  On amd64 that is FS's base, which user code cannot read
+ * directly, but every control block begins with its own address
+ * (kern_tls_prefix.self, set by exec, by this loader and by the static C
+ * library), so %fs:0 is the pointer; on arm64 TPIDR_EL0 is the pointer.
+ * Elsewhere thread_self is asked.  Reading the register costs nothing,
+ * where the system call cost every global-dynamic TLS access about 200 ns.
+ * The dynamic process always has a control block before its first code
+ * runs: this loader installs one before the entry point, and a new thread
+ * gets one at thread_create.
+ */
+static uintptr_t
+thread_pointer(
+	void)
+{
+#if defined(HAL_ARCH_AMD64)
+	uintptr_t value;
+
+	/* The control block's first word, its own address. */
+	__asm__ volatile("movq %%fs:0, %0" : "=r"(value));
+
+	/* Succeeded: the thread pointer. */
+	return value;
+#elif defined(HAL_ARCH_ARM64)
+	uintptr_t value;
+
+	/* The thread pointer register. */
+	__asm__ volatile("mrs %0, tpidr_el0" : "=r"(value));
+
+	/* Succeeded: the thread pointer. */
+	return value;
+#else
+	intptr_t value;
+
+	/* The kernel's record of the thread pointer. */
+	value = syscall6(KERN_SYS_thread_self, KERN_THREAD_SELF_GET_TLS, 0, 0, 0, 0, 0);
+	if (raw_error(value))
+		return 0;
+
+	/* Succeeded: the thread pointer, 0 when the thread has none. */
+	return (uintptr_t)value;
+#endif
 }

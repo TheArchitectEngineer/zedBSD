@@ -95,6 +95,26 @@
 #define GEN9_FREQUENCY(frequency)		((uint32_t)(frequency) << 23)
 #define GEN6_RP_IDLE_HYSTERSIS			0xa070U
 
+/* The frequency limits the interrupts are given between, and the RP control. */
+#define GEN6_RP_INTERRUPT_LIMITS		0xa014U
+#define GEN6_RP_CONTROL				0xa024U
+#define GEN6_RP_MEDIA_HW_NORMAL_MODE		(2U << 9)
+#define GEN6_RP_MEDIA_IS_GFX			(1U << 8)
+#define GEN6_RP_ENABLE				(1U << 7)
+#define GEN6_RP_UP_BUSY_AVG			(0x2U << 3)
+#define GEN6_RP_DOWN_IDLE_AVG			(0x2U << 0)
+
+/* The up and down busyness thresholds and their evaluation intervals. */
+#define GEN6_RP_UP_THRESHOLD			0xa02cU
+#define GEN6_RP_DOWN_THRESHOLD			0xa030U
+#define GEN6_RP_UP_EI				0xa068U
+#define GEN6_RP_DOWN_EI				0xa06cU
+
+/* The actual GT frequency (CAGF), in 16.67 MHz units, for the diagnostics. */
+#define GEN12_RPSTAT1				0x1381b4U
+#define GEN12_CAGF_SHIFT			11U
+#define GEN12_CAGF_MASK				(0x1ffU << 11)
+
 /* The PCODE mailbox command that reports the efficient frequency. */
 #define HSW_PCODE_DYNAMIC_DUTY_CYCLE_CONTROL	0x1aU
 

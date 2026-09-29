@@ -30,6 +30,10 @@ import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 
+# ws074-p080: localStorage goes under XDG_DATA_HOME; the browsers this tool starts keep theirs under build/,
+# away from the user's ~/.local/share.
+os.environ["XDG_DATA_HOME"] = os.path.join(ROOT, "build/ws074-host-data")
+
 CASES = [
     ("length", "/pages/first.html", "browser: the first page"),
     ("chunked", "/chunked", '"second part"'),

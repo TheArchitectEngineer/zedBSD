@@ -28,6 +28,9 @@
 
 struct truetype_face;
 
+/* Marks a parameter a callback's signature requires but the viewer does not use. */
+#define UNUSED_PARAMETER(name)	((void)(name))
+
 /* The window's size when it opens. */
 #define IV_WIDTH		1000U
 #define IV_HEIGHT		720U
@@ -443,8 +446,6 @@ int iv_chooser_path(const struct iv_chooser *chooser, size_t index, char *path, 
 void iv_canvas_fill(struct iv_canvas *canvas, int x, int y, int width, int height, uint32_t color);
 void iv_canvas_blend(struct iv_canvas *canvas, int x, int y, int width, int height, uint32_t color);
 void iv_canvas_round(struct iv_canvas *canvas, int x, int y, int width, int height, int radius, uint32_t color);
-void iv_canvas_copy(struct iv_canvas *canvas, int x, int y, const uint32_t *pixels, int width, int height);
-void iv_canvas_stretch(struct iv_canvas *canvas, int x, int y, int width, int height, const uint32_t *pixels, int source_width, int source_height);
 void iv_canvas_mask(struct iv_canvas *canvas, int x, int y, const unsigned char *mask, int width, int height, uint32_t color);
 
 /* The text (text.c). */

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Makes the pictures the guest test of Image Viewer shows (ws091-p002).
 
-    plan/ws091/tests/make-images.py OUTDIR
+    plan/tools/imageview/make-images.py OUTDIR
 
 From the Kei splash in the tree (userland/desktop/artwork/kei-boot-splash.png) and drawn shapes:
 01-splash.png (the splash as it is), 02-landscape.jpg (the splash enlarged to 4032x2268, a phone

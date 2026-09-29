@@ -95,3 +95,12 @@ event、UTF-8 以外の encoding、他の tab との sessionStorage の分離（
 
 - cleared。Amazon の `TextEncoder is not defined` と `sessionStorage` の `Cannot read properties` が無くなり、guest の live の top は
   Uncaught 0。Chromium と一致する試験 2 つを足した。
+
+## 追記（2026-09-29、main の回答の (3)）
+
+- script を走らせる WS074 の host の道具も localStorage を `build/` の下に置くようにした: `live-compare.py`・`gpu-compare.py`・
+  `render-compare.py`・`run-http-tests.py`・`run-font-tests.py`・`run-loader-tests.py` は `XDG_DATA_HOME=build/ws074-host-data` を
+  自分の環境に置き、`golden-dumps.sh` は export し、`host-view`・`host-form`・`host-link`・`host-position`・`host-relayout` は `main` の
+  最初に `setenv`（repository の root から走らせる前提の相対 path）。run-dom-tests は前から `build/ws074-dom-tests/data`。
+- 確認: 外から `XDG_DATA_HOME` を与えずに回帰（golden・host-*・run-*）を流し、全て前と同じ結果で、`~/.local/share/keiland/` に
+  `browser` が作られず、`build/ws074-host-data/keiland/browser/local-storage/` に file: の origin の file ができた。

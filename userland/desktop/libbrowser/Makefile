@@ -32,6 +32,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/vm/operation.c \
 	$(KEILAND_BROWSER_DIR)/vm/access.c \
 	$(KEILAND_BROWSER_DIR)/vm/spread.c \
+	$(KEILAND_BROWSER_DIR)/vm/class.c \
 	$(KEILAND_BROWSER_DIR)/vm/interpreter.c \
 	$(KEILAND_BROWSER_DIR)/js/lexer.c \
 	$(KEILAND_BROWSER_DIR)/js/parser.c \
@@ -67,6 +68,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/dom/node.c \
 	$(KEILAND_BROWSER_DIR)/dom/names.c \
 	$(KEILAND_BROWSER_DIR)/dom/control.c \
+	$(KEILAND_BROWSER_DIR)/dom/serialize.c \
 	$(KEILAND_BROWSER_DIR)/css/tokenizer.c \
 	$(KEILAND_BROWSER_DIR)/css/parser.c \
 	$(KEILAND_BROWSER_DIR)/css/values.c \
@@ -81,6 +83,7 @@ LIBBROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/base/arena.c \
 	$(KEILAND_BROWSER_DIR)/bind/style.c \
 	$(KEILAND_BROWSER_DIR)/bind/encoding.c \
 	$(KEILAND_BROWSER_DIR)/bind/storage.c \
+	$(KEILAND_BROWSER_DIR)/bind/markup.c \
 	$(KEILAND_BROWSER_DIR)/bind/node.c \
 	$(KEILAND_BROWSER_DIR)/bind/mixin.c \
 	$(KEILAND_BROWSER_DIR)/bind/element.c \

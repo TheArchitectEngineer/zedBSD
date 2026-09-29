@@ -44,6 +44,14 @@ static uint32_t expr_arguments(struct js_function_compiler *fc, struct js_node *
 static void expr_throw_text(struct js_function_compiler *fc, const char *text);
 static struct js_node *expr_unwrap(struct js_node *node);
 static void expr_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_this(struct js_function_compiler *fc, uint32_t target);
+static void expr_home(struct js_function_compiler *fc, const struct js_node *node, uint32_t target);
+static void expr_super_call(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_new_target(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_class_method(struct js_function_compiler *fc, struct js_node *member, uint32_t constructor, uint32_t prototype);
+static void expr_private_names(struct js_function_compiler *fc, struct js_node *class_node);
+static void expr_private_key(struct js_function_compiler *fc, struct js_node *name, uint32_t target);
+static int expr_private_seen(const struct js_node *class_node, const struct js_node *member);
 static void expr_bind_leaf(struct js_function_compiler *fc, struct js_node *target, uint32_t value, int mode);
 static void expr_bind_default(struct js_function_compiler *fc, struct js_node *pattern, uint32_t value, int mode);
 static void expr_bind_object(struct js_function_compiler *fc, struct js_node *pattern, uint32_t value, int mode);
@@ -112,14 +120,13 @@ js_compile_expression_named(
 		js_load_value(fc, target, VM_VALUE_NULL);
 		break;
 	case JS_NODE_THIS:
-		/* An arrow function reads the this of the function around it. */
-		if ((fc->info->node->flags & JS_FLAG_ARROW) != 0U && !fc->info->program) {
-			js_load_binding(fc, js_this_name, JS_THIS_NAME_LENGTH, target);
-			break;
-		}
-
-		/* Any other function its own. */
-		js_emit1(fc, VM_OP_LOAD_THIS, target);
+		expr_this(fc, target);
+		break;
+	case JS_NODE_CLASS:
+		js_compile_class(fc, node, target, name, length);
+		break;
+	case JS_NODE_META_PROPERTY:
+		expr_new_target(fc, node, target);
 		break;
 	case JS_NODE_IDENTIFIER:
 		js_load_binding(fc, node->text, node->text_length, target);
@@ -349,6 +356,189 @@ js_bind_pattern(
 }
 
 /*
+ * Compiles a class (a declaration's or an expression's) into a register:
+ * its constructor with its prototype, its methods and accessors, its own
+ * name for a named expression, then its static fields and blocks; name
+ * is the name an anonymous class takes.
+ */
+void
+js_compile_class(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target,
+	const uint16_t *name,
+	size_t length)
+{
+	struct js_scope *saved_scope;
+	struct vm_code *code;
+	struct js_node *member;
+	uint32_t saved_env;
+	uint32_t mark;
+	uint32_t parent;
+	uint32_t constructor;
+	uint32_t prototype;
+	uint32_t statics;
+	uint32_t constant;
+
+	/* The heritage, or the empty value without one. */
+	mark = fc->temp_top;
+	parent = js_temp(fc);
+	constructor = js_temp(fc);
+	prototype = js_temp(fc);
+	statics = js_temp(fc);
+	if (node->first != NULL) {
+		js_compile_expression(fc, node->first, parent);
+	} else {
+		js_emit1(fc, VM_OP_LOAD_EMPTY, parent);
+	}
+
+	/* A named class expression's scope, with its own name. */
+	saved_scope = fc->scope;
+	saved_env = fc->env_register;
+	if (node->scope != NULL)
+		js_scope_enter(fc, node->scope, &saved_scope, &saved_env);
+
+	/* The private names, each a new one at each evaluation of the class. */
+	expr_private_names(fc, node);
+
+	/* The constructor, named after the class. */
+	if (node->text != NULL) {
+		name = node->text;
+		length = node->text_length;
+	}
+
+	/* The constructor's code. */
+	code = js_compile_function(fc->compiler, fc, node->third, name, length);
+	constant = js_constant(fc, vm_value_cell(code));
+	js_emit3(fc, VM_OP_NEW_CLOSURE, constructor, constant, fc->env_register);
+
+	/* The prototype from the heritage, and the constructor's own prototype. */
+	js_emit3(fc, VM_OP_CLASS_SETUP, prototype, constructor, parent);
+
+	/* In order: the methods and accessors (on the prototype or, static, on the constructor) and the computed field names. */
+	for (member = node->second; member != NULL; member = member->next) {
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_COMPUTED) != 0U) {
+			js_compile_expression(fc, member->first, statics);
+			js_emit2(fc, VM_OP_TO_PROPERTY_KEY, statics, statics);
+			js_init_binding(fc, member->raw, member->raw_length, statics);
+			continue;
+		}
+
+		/* Only methods are left (the constructor was made above). */
+		if (member->kind != JS_NODE_METHOD || member->op == JS_PROPERTY_CONSTRUCTOR)
+			continue;
+		expr_class_method(fc, member, constructor, prototype);
+	}
+
+	/* A named class's own inner name takes the class. */
+	if (node->text != NULL)
+		js_init_binding(fc, node->text, node->text_length, constructor);
+
+	/* The static fields and blocks run with the class as this. */
+	if (node->fourth != NULL) {
+		code = js_compile_function(fc->compiler, fc, node->fourth, NULL, 0);
+		constant = js_constant(fc, vm_value_cell(code));
+		js_emit3(fc, VM_OP_NEW_CLOSURE, statics, constant, fc->env_register);
+		js_emit5(fc, VM_OP_CALL, statics, statics, constructor, fc->temp_top, 0);
+	}
+
+	/* The class is the value; the scope around it again. */
+	js_emit2(fc, VM_OP_MOV, target, constructor);
+	if (node->scope != NULL)
+		js_scope_leave(fc, saved_scope, saved_env);
+	fc->temp_top = mark;
+}
+
+/*
+ * Defines a class's fields on this: the instance fields in a constructor,
+ * or (statics) the static fields in the static function, where the static
+ * blocks run in order among them.
+ */
+void
+js_compile_fields(
+	struct js_function_compiler *fc,
+	struct js_node *class_node,
+	int statics)
+{
+	struct js_node *member;
+	uint32_t mark;
+	uint32_t object;
+	uint32_t value;
+	uint32_t key;
+	uint32_t constant;
+	int is_static;
+	int seen;
+
+	/* this, the object the fields go on. */
+	mark = fc->temp_top;
+	object = js_temp(fc);
+	value = js_temp(fc);
+	key = js_temp(fc);
+	expr_this(fc, object);
+
+	/* An instance first gets the private methods and accessors the prototype (the constructor's home object) keeps. */
+	for (member = class_node->second; member != NULL && !statics; member = member->next) {
+		if (member->kind != JS_NODE_METHOD || (member->flags & JS_FLAG_STATIC) != 0U)
+			continue;
+		if (member->first->kind != JS_NODE_PRIVATE_NAME)
+			continue;
+		seen = expr_private_seen(class_node, member);
+		if (seen)
+			continue;
+		expr_private_key(fc, member->first, key);
+		js_emit1(fc, VM_OP_LOAD_HOME, value);
+		js_emit3(fc, VM_OP_PRIVATE_COPY, object, value, key);
+	}
+
+	/* Each field (and static block) of the kind asked for, in order. */
+	for (member = class_node->second; member != NULL; member = member->next) {
+		is_static = 0;
+		if ((member->flags & JS_FLAG_STATIC) != 0U || member->kind == JS_NODE_STATIC_BLOCK)
+			is_static = 1;
+		if (is_static != statics)
+			continue;
+
+		/* A static block's statements. */
+		if (member->kind == JS_NODE_STATIC_BLOCK) {
+			js_compile_statements(fc, member->first);
+			continue;
+		}
+
+		/* Only fields are left. */
+		if (member->kind != JS_NODE_FIELD)
+			continue;
+
+		/* The value (an anonymous function takes the field's name), or undefined. */
+		if (member->second != NULL) {
+			js_compile_expression_named(fc, member->second, value, member->first->text, member->first->text_length);
+		} else {
+			js_load_value(fc, value, VM_VALUE_UNDEFINED);
+		}
+
+		/* A computed name's field: the key the class evaluated. */
+		if ((member->flags & JS_FLAG_COMPUTED) != 0U) {
+			js_load_binding(fc, member->raw, member->raw_length, key);
+			js_emit3(fc, VM_OP_DEFINE_ELEM, object, key, value);
+			continue;
+		}
+
+		/* A private field on this. */
+		if (member->first->kind == JS_NODE_PRIVATE_NAME) {
+			expr_private_key(fc, member->first, key);
+			js_emit3(fc, VM_OP_PRIVATE_DEFINE, object, key, value);
+			continue;
+		}
+
+		/* A data property on this. */
+		constant = expr_property_key(fc, member->first);
+		js_emit3(fc, VM_OP_DEFINE_PROP, object, constant, value);
+	}
+
+	/* The temporaries are free again. */
+	fc->temp_top = mark;
+}
+
+/*
  * Throws a new error of a kind (enum vm_error_kind) with a message when
  * the code runs.
  */
@@ -416,6 +606,239 @@ js_store_target(
 	object = js_temp(fc);
 	js_compile_expression(fc, place, object);
 	expr_throw_text(fc, "ReferenceError: Invalid left-hand side in assignment");
+	fc->temp_top = mark;
+}
+
+/* Reads this: an arrow function's is the one of the function around it (its hidden binding). */
+static void
+expr_this(
+	struct js_function_compiler *fc,
+	uint32_t target)
+{
+	/* An arrow function reads the this of the function around it. */
+	if ((fc->info->node->flags & JS_FLAG_ARROW) != 0U && !fc->info->program) {
+		js_load_binding(fc, js_this_name, JS_THIS_NAME_LENGTH, target);
+		return;
+	}
+
+	/* Any other function its own. */
+	js_emit1(fc, VM_OP_LOAD_THIS, target);
+}
+
+/* Reads the home object for super: a method's own, or for an arrow function the method's around it. */
+static void
+expr_home(
+	struct js_function_compiler *fc,
+	const struct js_node *node,
+	uint32_t target)
+{
+	UNUSED_PARAMETER(node);
+
+	/* An arrow function reads the hidden binding of the method around it. */
+	if ((fc->info->node->flags & JS_FLAG_ARROW) != 0U && !fc->info->program) {
+		js_load_binding(fc, js_home_name, JS_HOME_NAME_LENGTH, target);
+		return;
+	}
+
+	/* A method its own. */
+	js_emit1(fc, VM_OP_LOAD_HOME, target);
+}
+
+/*
+ * Compiles super(...) in a derived class's constructor: the parent
+ * constructs, the object becomes this (and the hidden this of the arrow
+ * functions inside), then the instance fields are defined on it.
+ */
+static void
+expr_super_call(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	struct js_binding *binding;
+	uint32_t mark;
+	uint32_t arguments;
+	uint32_t first;
+	uint32_t count;
+	uint32_t hops;
+	int spread;
+
+	/* Only a derived class's constructor itself (an arrow function's super call comes later). */
+	if (fc->info->class_node == NULL || fc->info->class_node->first == NULL)
+		js_compile_unsupported(fc->compiler, node, "super outside a derived class's constructor");
+
+	/* The construction, with the arguments in registers or, with a spread, an array. */
+	mark = fc->temp_top;
+	spread = expr_has_spread(node->second);
+	if (spread) {
+		arguments = js_temp(fc);
+		expr_spread_list(fc, node->second, arguments);
+		js_emit2(fc, VM_OP_SUPER_CONSTRUCT_ARRAY, target, arguments);
+	} else {
+		first = expr_arguments(fc, node->second, &count);
+		js_emit3(fc, VM_OP_SUPER_CONSTRUCT, target, first, count);
+	}
+
+	/* The temporaries are free again. */
+	fc->temp_top = mark;
+
+	/* The arrow functions inside read this through the hidden binding, set now. */
+	binding = js_scope_resolve(fc, js_this_name, JS_THIS_NAME_LENGTH, &hops);
+	if (binding != NULL && binding->kind == JS_BINDING_THIS)
+		js_store_binding(fc, node, js_this_name, JS_THIS_NAME_LENGTH, target);
+
+	/* The instance fields, on the object just made. */
+	js_compile_fields(fc, fc->info->class_node, 0);
+}
+
+/* Reads new.target (import.meta comes with modules). */
+static void
+expr_new_target(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	int is_target;
+
+	/* Only new.target, in a function that is not an arrow function. */
+	is_target = js_text_is(node->text, node->text_length, "target");
+	if (!is_target)
+		expr_unsupported(fc, node);
+	if ((fc->info->node->flags & JS_FLAG_ARROW) != 0U || fc->info->program)
+		js_compile_unsupported(fc->compiler, node, "new.target outside a function");
+
+	/* The frame's new.target. */
+	js_emit1(fc, VM_OP_LOAD_NEW_TARGET, target);
+}
+
+/* Makes a class's private names (one per name, shared by a getter and a setter) and binds them. */
+static void
+expr_private_names(
+	struct js_function_compiler *fc,
+	struct js_node *class_node)
+{
+	struct js_node *member;
+	const uint16_t *text;
+	size_t length;
+	uint32_t mark;
+	uint32_t made;
+	uint32_t constant;
+	int seen;
+
+	/* Each member with a private name not seen before it. */
+	mark = fc->temp_top;
+	made = js_temp(fc);
+	for (member = class_node->second; member != NULL; member = member->next) {
+		if (member->kind != JS_NODE_METHOD && member->kind != JS_NODE_FIELD)
+			continue;
+		if (member->first->kind != JS_NODE_PRIVATE_NAME)
+			continue;
+		seen = expr_private_seen(class_node, member);
+		if (seen)
+			continue;
+
+		/* A new private name described as #x, bound to the hidden const. */
+		text = js_private_name(fc->compiler, member->first, &length);
+		constant = js_constant_string(fc, text, length);
+		js_emit2(fc, VM_OP_NEW_PRIVATE_NAME, made, constant);
+		js_init_binding(fc, text, length, made);
+	}
+
+	/* The temporaries are free again. */
+	fc->temp_top = mark;
+}
+
+/* Loads a private name's key (the value of its class's hidden const) into a register. */
+static void
+expr_private_key(
+	struct js_function_compiler *fc,
+	struct js_node *name,
+	uint32_t target)
+{
+	const uint16_t *text;
+	size_t length;
+
+	/* The hidden binding "#x". */
+	text = js_private_name(fc->compiler, name, &length);
+	js_load_binding(fc, text, length, target);
+}
+
+/* Tells whether a class member's private name was declared by an earlier member (a getter and its setter). */
+static int
+expr_private_seen(
+	const struct js_node *class_node,
+	const struct js_node *member)
+{
+	const struct js_node *earlier;
+	int same;
+
+	/* Each member before it with a private name. */
+	for (earlier = class_node->second; earlier != member; earlier = earlier->next) {
+		if (earlier->kind != JS_NODE_METHOD && earlier->kind != JS_NODE_FIELD)
+			continue;
+		if (earlier->first->kind != JS_NODE_PRIVATE_NAME)
+			continue;
+		same = js_text_equal(earlier->first->text, earlier->first->text_length, member->first->text, member->first->text_length);
+		if (same)
+			return 1;
+	}
+
+	/* None has it. */
+	return 0;
+}
+
+/* Compiles one method, getter or setter of a class onto its prototype or (static) its constructor. */
+static void
+expr_class_method(
+	struct js_function_compiler *fc,
+	struct js_node *member,
+	uint32_t constructor,
+	uint32_t prototype)
+{
+	struct vm_code *code;
+	const uint16_t *name;
+	size_t length;
+	uint32_t mark;
+	uint32_t key;
+	uint32_t function;
+	uint32_t home;
+	uint32_t kind;
+	uint32_t constant;
+
+	/* The key: computed into a register, or a constant loaded into it. */
+	mark = fc->temp_top;
+	key = js_temp(fc);
+	function = js_temp(fc);
+	name = NULL;
+	length = 0;
+	if ((member->flags & JS_FLAG_COMPUTED) != 0U) {
+		js_compile_expression(fc, member->first, key);
+		js_emit2(fc, VM_OP_TO_PROPERTY_KEY, key, key);
+	} else if (member->first->kind == JS_NODE_PRIVATE_NAME) {
+		expr_private_key(fc, member->first, key);
+		name = js_private_name(fc->compiler, member->first, &length);
+	} else {
+		constant = expr_property_key(fc, member->first);
+		js_emit2(fc, VM_OP_LOAD_CONST, key, constant);
+		name = member->first->text;
+		length = member->first->text_length;
+	}
+
+	/* The function, named after a plain key. */
+	code = js_compile_function(fc->compiler, fc, member->second, name, length);
+	constant = js_constant(fc, vm_value_cell(code));
+	js_emit3(fc, VM_OP_NEW_CLOSURE, function, constant, fc->env_register);
+
+	/* Where it goes, and what it is. */
+	home = prototype;
+	if ((member->flags & JS_FLAG_STATIC) != 0U)
+		home = constructor;
+	kind = 0;
+	if (member->op == JS_PROPERTY_GET)
+		kind = 1;
+	else if (member->op == JS_PROPERTY_SET)
+		kind = 2;
+	js_emit4(fc, VM_OP_DEFINE_METHOD, home, key, function, kind);
 	fc->temp_top = mark;
 }
 
@@ -1163,7 +1586,9 @@ expr_delete(
 	/* A property. */
 	place = expr_unwrap(operand);
 	if (place->kind == JS_NODE_MEMBER) {
-		if (place->second->kind == JS_NODE_PRIVATE_NAME || (place->flags & JS_FLAG_OPTIONAL) != 0U)
+		if (place->second->kind == JS_NODE_PRIVATE_NAME)
+			js_compile_fail(fc->compiler, place, "Private fields can not be deleted");
+		if ((place->flags & JS_FLAG_OPTIONAL) != 0U)
 			expr_unsupported(fc, place);
 		mark = fc->temp_top;
 		object = js_temp(fc);
@@ -1343,9 +1768,20 @@ expr_binary(
 	uint32_t opcode;
 	int negate;
 
-	/* The operator (#x in o, with private names, comes with classes). */
+	/* #x in o: whether the object has the private member. */
+	if (node->first->kind == JS_NODE_PRIVATE_NAME) {
+		mark = fc->temp_top;
+		right = js_temp(fc);
+		expr_private_key(fc, node->first, target);
+		js_compile_expression(fc, node->second, right);
+		js_emit3(fc, VM_OP_PRIVATE_IN, target, target, right);
+		fc->temp_top = mark;
+		return;
+	}
+
+	/* The operator. */
 	opcode = expr_binary_opcode(node->op, &negate);
-	if (opcode == VM_OPCODE_COUNT || node->first->kind == JS_NODE_PRIVATE_NAME)
+	if (opcode == VM_OPCODE_COUNT)
 		expr_unsupported(fc, node);
 
 	/* The operands in order. */
@@ -1584,17 +2020,27 @@ expr_member_parts(
 	uint32_t object,
 	uint32_t key)
 {
-	/* Private names come with classes. */
-	if (member->second->kind == JS_NODE_PRIVATE_NAME)
-		expr_unsupported(fc, member);
-	if (member->first->kind == JS_NODE_SUPER)
-		js_compile_unsupported(fc->compiler, member->first, "super");
+	/* super: the object is this, and the key is always in its register. */
+	if (member->first->kind == JS_NODE_SUPER) {
+		expr_this(fc, object);
+		if ((member->flags & JS_FLAG_COMPUTED) != 0U) {
+			js_compile_expression(fc, member->second, key);
+			js_emit2(fc, VM_OP_TO_PROPERTY_KEY, key, key);
+		} else {
+			js_emit2(fc, VM_OP_LOAD_CONST, key, js_constant_key(fc, member->second->text, member->second->text_length));
+		}
 
-	/* The object (?. leaves the chain when it is undefined or null), then a computed key. */
+		/* super's key is ready. */
+		return;
+	}
+
+	/* The object (?. leaves the chain when it is undefined or null), then a computed key or a private name's. */
 	js_compile_expression(fc, member->first, object);
 	expr_optional_check(fc, member, object);
 	if ((member->flags & JS_FLAG_COMPUTED) != 0U)
 		js_compile_expression(fc, member->second, key);
+	if (member->second->kind == JS_NODE_PRIVATE_NAME)
+		expr_private_key(fc, member->second, key);
 }
 
 /* Reads a property whose object and key are in registers. */
@@ -1607,6 +2053,24 @@ expr_member_get(
 	uint32_t target)
 {
 	uint32_t constant;
+	uint32_t mark;
+	uint32_t home;
+
+	/* super: the property of the home object's prototype, with this (the object) as the receiver. */
+	if (member->first->kind == JS_NODE_SUPER) {
+		mark = fc->temp_top;
+		home = js_temp(fc);
+		expr_home(fc, member, home);
+		js_emit4(fc, VM_OP_GET_SUPER, target, home, key, object);
+		fc->temp_top = mark;
+		return;
+	}
+
+	/* A private member: only the object's own. */
+	if (member->second->kind == JS_NODE_PRIVATE_NAME) {
+		js_emit3(fc, VM_OP_PRIVATE_GET, target, object, key);
+		return;
+	}
 
 	/* A computed key is in its register; a name is a constant. */
 	if ((member->flags & JS_FLAG_COMPUTED) != 0U) {
@@ -1629,6 +2093,16 @@ expr_member_put(
 	uint32_t source)
 {
 	uint32_t constant;
+
+	/* Assigning through super comes later. */
+	if (member->first->kind == JS_NODE_SUPER)
+		js_compile_unsupported(fc->compiler, member->first, "assignment to a super property");
+
+	/* A private member: only the object's own. */
+	if (member->second->kind == JS_NODE_PRIVATE_NAME) {
+		js_emit3(fc, VM_OP_PRIVATE_SET, object, key, source);
+		return;
+	}
 
 	/* A computed key is in its register; a name is a constant. */
 	if ((member->flags & JS_FLAG_COMPUTED) != 0U) {
@@ -1679,10 +2153,12 @@ expr_call(
 	uint32_t end;
 	int spread;
 
-	/* Super calls come later. */
+	/* super(...) constructs with the parent. */
 	callee = expr_unwrap(node->first);
-	if (callee->kind == JS_NODE_SUPER)
-		js_compile_unsupported(fc->compiler, callee, "super");
+	if (callee->kind == JS_NODE_SUPER) {
+		expr_super_call(fc, node, target);
+		return;
+	}
 
 	/* The function and this: a property's object, or undefined. */
 	mark = fc->temp_top;

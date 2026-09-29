@@ -60,12 +60,11 @@ static void compile_try(struct js_function_compiler *fc, struct js_node *node);
 static void compile_catch(struct js_function_compiler *fc, struct js_node *node, uint32_t start, uint32_t after);
 static void compile_finally_dispatch(struct js_function_compiler *fc, struct js_finally *handler);
 static void compile_dispatch_case(struct js_function_compiler *fc, uint32_t kind_register, int code, uint32_t skip);
-static void compile_scope_enter(struct js_function_compiler *fc, struct js_scope *scope, struct js_scope **saved_scope, uint32_t *saved_env);
-static void compile_scope_leave(struct js_function_compiler *fc, struct js_scope *saved_scope, uint32_t saved_env);
 static void compile_lexicals_empty(struct js_function_compiler *fc, struct js_scope *scope);
 static void compile_scope_renew(struct js_function_compiler *fc, struct js_scope *scope, uint32_t outer_env);
 static void compile_block(struct js_function_compiler *fc, struct js_node *node);
 static void compile_parameters(struct js_function_compiler *fc);
+static void compile_class_declaration(struct js_function_compiler *fc, struct js_node *node);
 
 /*
  * Compiles a parsed program into a function of a realm (the program's code
@@ -254,7 +253,10 @@ js_compile_function(
 
 	/* The registers and the environment, the prologue, then the body. */
 	compile_prepare(fc);
-	if (info->program) {
+	if ((node->flags & JS_FLAG_STATIC_INIT) != 0U) {
+		/* A class's static function: its static fields and blocks. */
+		js_compile_fields(fc, info->class_node, 1);
+	} else if (info->program) {
 		js_compile_statements(fc, node->first);
 	} else if ((node->flags & JS_FLAG_EXPRESSION_BODY) != 0U) {
 		/* An arrow function's expression body is its return value. */
@@ -326,6 +328,64 @@ js_emit_return(
 	js_emit2(fc, VM_OP_MOV, handler->value_register, value_register);
 	js_emit2(fc, VM_OP_LOAD_INT, handler->kind_register, JS_COMPLETION_RETURN);
 	js_emit_jump(fc, VM_OP_JUMP, 0, handler->entry_label);
+}
+
+/*
+ * Enters the scope of a block, a for statement's head or a switch's
+ * cases: its environment when it has one (on top of the running one), its
+ * let and const not usable yet, and the function declarations it makes.
+ * The scope and the environment register before are kept for
+ * js_scope_leave.
+ */
+void
+js_scope_enter(
+	struct js_function_compiler *fc,
+	struct js_scope *scope,
+	struct js_scope **saved_scope,
+	uint32_t *saved_env)
+{
+	struct js_hoisted *entry;
+	struct vm_code *code;
+	uint32_t mark;
+	uint32_t closure;
+	uint32_t constant;
+
+	/* What the code around it uses. */
+	*saved_scope = fc->scope;
+	*saved_env = fc->env_register;
+
+	/* The block's environment, made at each entry, holds its captured bindings. */
+	if (scope->has_env) {
+		js_emit3(fc, VM_OP_NEW_ENV, scope->env_register, fc->env_register, scope->env_count);
+		fc->env_register = scope->env_register;
+	}
+
+	/* The names resolve from the block now, and its let and const wait for their declarations. */
+	fc->scope = scope;
+	compile_lexicals_empty(fc, scope);
+
+	/* Each function declared in the block: its closure sees the block, and its var takes it (Annex B). */
+	mark = fc->temp_top;
+	for (entry = scope->functions; entry != NULL; entry = entry->next) {
+		code = js_compile_function(fc->compiler, fc, entry->node, NULL, 0);
+		constant = js_constant(fc, vm_value_cell(code));
+		closure = js_temp(fc);
+		js_emit3(fc, VM_OP_NEW_CLOSURE, closure, constant, fc->env_register);
+		js_store_binding(fc, entry->node, entry->node->text, entry->node->text_length, closure);
+		fc->temp_top = mark;
+	}
+}
+
+/* Leaves a scope js_scope_enter entered: the scope and the environment around it again. */
+void
+js_scope_leave(
+	struct js_function_compiler *fc,
+	struct js_scope *saved_scope,
+	uint32_t saved_env)
+{
+	/* The code after the block resolves and captures as before it. */
+	fc->scope = saved_scope;
+	fc->env_register = saved_env;
 }
 
 /* Marks the constants of every code unit being written. */
@@ -486,6 +546,7 @@ compile_prologue(
 	struct js_binding *binding;
 	uint32_t this_value;
 	uint32_t callee;
+	uint32_t opcode;
 
 	/* The environment of the code around it, then its own on top when it has captured bindings. */
 	info = fc->info;
@@ -493,17 +554,25 @@ compile_prologue(
 	if (info->has_env)
 		js_emit3(fc, VM_OP_NEW_ENV, fc->env_register, fc->env_register, env_count);
 
-	/* The hidden binding of this, which the arrow functions inside read. */
+	/* The hidden bindings of this and of the home object, which the arrow functions inside read. */
 	for (binding = info->scope->bindings; binding != NULL; binding = binding->next) {
-		if (binding->kind != JS_BINDING_THIS)
+		if (binding->kind != JS_BINDING_THIS && binding->kind != JS_BINDING_HOME)
+			continue;
+		opcode = VM_OP_LOAD_THIS;
+		if (binding->kind == JS_BINDING_HOME)
+			opcode = VM_OP_LOAD_HOME;
+
+		/* A derived class's constructor has no this yet: its super call stores it (compile_super_this). */
+		if (opcode == VM_OP_LOAD_THIS && info->class_node != NULL && info->class_node->first != NULL &&
+		    (info->node->flags & JS_FLAG_STATIC_INIT) == 0U)
 			continue;
 		if (binding->in_env) {
 			this_value = js_temp(fc);
-			js_emit1(fc, VM_OP_LOAD_THIS, this_value);
+			js_emit1(fc, opcode, this_value);
 			js_emit4(fc, VM_OP_PUT_ENV, fc->env_register, 0, binding->location, this_value);
 			fc->temp_top--;
 		} else {
-			js_emit1(fc, VM_OP_LOAD_THIS, binding->location);
+			js_emit1(fc, opcode, binding->location);
 		}
 	}
 
@@ -539,6 +608,10 @@ compile_prologue(
 
 	/* The parameters that are defaults, patterns or a rest take their arguments. */
 	compile_parameters(fc);
+
+	/* A base class's constructor defines the instance fields first (a derived one after its super call). */
+	if (info->class_node != NULL && info->class_node->first == NULL && (info->node->flags & JS_FLAG_STATIC_INIT) == 0U)
+		js_compile_fields(fc, info->class_node, 0);
 
 	/* The function declarations, made before anything runs. */
 	compile_hoisted(fc);
@@ -615,6 +688,13 @@ compile_flags(
 	if (!info->simple_parameters)
 		flags |= VM_CODE_LENGTH;
 
+	/* A class's constructor (not its static function) is one only new may run, derived when the class extends. */
+	if (info->class_node != NULL && (info->node->flags & JS_FLAG_STATIC_INIT) == 0U) {
+		flags |= VM_CODE_CLASS | VM_CODE_CONSTRUCTOR;
+		if (info->class_node->first != NULL)
+			flags |= VM_CODE_DERIVED;
+	}
+
 	/* An ordinary function (not the program, not a method, an accessor or an arrow function) can be called with new. */
 	if (!info->program && (info->node->flags & (JS_FLAG_METHOD | JS_FLAG_ARROW)) == 0U)
 		flags |= VM_CODE_CONSTRUCTOR;
@@ -686,7 +766,8 @@ compile_statement(
 		compile_try(fc, node);
 		break;
 	case JS_NODE_CLASS_DECLARATION:
-		js_compile_unsupported(fc->compiler, node, "classes");
+		compile_class_declaration(fc, node);
+		break;
 	case JS_NODE_FOR_OF:
 		js_compile_unsupported(fc->compiler, node, "for-of");
 	case JS_NODE_WITH:
@@ -873,7 +954,7 @@ compile_for(
 	saved_scope = fc->scope;
 	saved_env = fc->env_register;
 	if (node->scope != NULL)
-		compile_scope_enter(fc, node->scope, &saved_scope, &saved_env);
+		js_scope_enter(fc, node->scope, &saved_scope, &saved_env);
 
 	/* The initialization: a declaration or an expression. */
 	mark = fc->temp_top;
@@ -919,7 +1000,7 @@ compile_for(
 	js_emit_jump(fc, VM_OP_JUMP, 0, head);
 	compile_target_pop(fc, target);
 	if (node->scope != NULL)
-		compile_scope_leave(fc, saved_scope, saved_env);
+		js_scope_leave(fc, saved_scope, saved_env);
 }
 
 /* Compiles a for-in statement: the body runs once for each enumerable key, assigned to the left side. */
@@ -968,7 +1049,7 @@ compile_for_in(
 	saved_scope = fc->scope;
 	saved_env = fc->env_register;
 	if (node->scope != NULL)
-		compile_scope_enter(fc, node->scope, &saved_scope, &saved_env);
+		js_scope_enter(fc, node->scope, &saved_scope, &saved_env);
 
 	/* The head: the next key, or out of the loop. */
 	target = compile_target_push(fc, 1);
@@ -992,7 +1073,7 @@ compile_for_in(
 	js_emit_jump(fc, VM_OP_JUMP, 0, target->continue_label);
 	compile_target_pop(fc, target);
 	if (node->scope != NULL)
-		compile_scope_leave(fc, saved_scope, saved_env);
+		js_scope_leave(fc, saved_scope, saved_env);
 	fc->temp_top = mark;
 }
 
@@ -1217,7 +1298,7 @@ compile_switch(
 	saved_scope = fc->scope;
 	saved_env = fc->env_register;
 	if (node->scope != NULL)
-		compile_scope_enter(fc, node->scope, &saved_scope, &saved_env);
+		js_scope_enter(fc, node->scope, &saved_scope, &saved_env);
 	target = compile_target_push(fc, 0);
 
 	/* A label for each clause's body, made in order (their numbers follow each other). */
@@ -1259,7 +1340,7 @@ compile_switch(
 	/* The end, where break lands, outside the cases' scope. */
 	compile_target_pop(fc, target);
 	if (node->scope != NULL)
-		compile_scope_leave(fc, saved_scope, saved_env);
+		js_scope_leave(fc, saved_scope, saved_env);
 	fc->temp_top = mark;
 }
 
@@ -1464,63 +1545,7 @@ compile_dispatch_case(
 	fc->temp_top = mark;
 }
 
-/*
- * Enters the scope of a block, a for statement's head or a switch's
- * cases: its environment when it has one (on top of the running one), its
- * let and const not usable yet, and the function declarations it makes.
- * The scope and the environment register before are kept for
- * compile_scope_leave.
- */
-static void
-compile_scope_enter(
-	struct js_function_compiler *fc,
-	struct js_scope *scope,
-	struct js_scope **saved_scope,
-	uint32_t *saved_env)
-{
-	struct js_hoisted *entry;
-	struct vm_code *code;
-	uint32_t mark;
-	uint32_t closure;
-	uint32_t constant;
 
-	/* What the code around it uses. */
-	*saved_scope = fc->scope;
-	*saved_env = fc->env_register;
-
-	/* The block's environment, made at each entry, holds its captured bindings. */
-	if (scope->has_env) {
-		js_emit3(fc, VM_OP_NEW_ENV, scope->env_register, fc->env_register, scope->env_count);
-		fc->env_register = scope->env_register;
-	}
-
-	/* The names resolve from the block now, and its let and const wait for their declarations. */
-	fc->scope = scope;
-	compile_lexicals_empty(fc, scope);
-
-	/* Each function declared in the block: its closure sees the block, and its var takes it (Annex B). */
-	mark = fc->temp_top;
-	for (entry = scope->functions; entry != NULL; entry = entry->next) {
-		code = js_compile_function(fc->compiler, fc, entry->node, NULL, 0);
-		constant = js_constant(fc, vm_value_cell(code));
-		closure = js_temp(fc);
-		js_emit3(fc, VM_OP_NEW_CLOSURE, closure, constant, fc->env_register);
-		js_store_binding(fc, entry->node, entry->node->text, entry->node->text_length, closure);
-		fc->temp_top = mark;
-	}
-}
-
-/* Leaves a scope compile_scope_enter entered: the scope and the environment around it again. */
-static void
-compile_scope_leave(
-	struct js_function_compiler *fc,
-	struct js_scope *saved_scope,
-	uint32_t saved_env)
-{
-	/* The code after the block resolves and captures as before it. */
-	fc->scope = saved_scope;
-	fc->env_register = saved_env;
-}
 
 /* Marks each let and const of a scope as not usable before its declaration runs (the empty value). */
 static void
@@ -1599,9 +1624,9 @@ compile_block(
 	}
 
 	/* The scope around the statements. */
-	compile_scope_enter(fc, node->scope, &saved_scope, &saved_env);
+	js_scope_enter(fc, node->scope, &saved_scope, &saved_env);
 	js_compile_statements(fc, node->first);
-	compile_scope_leave(fc, saved_scope, saved_env);
+	js_scope_leave(fc, saved_scope, saved_env);
 }
 
 /*
@@ -1641,4 +1666,23 @@ compile_parameters(
 			js_bind_pattern(fc, parameter, index, JS_BIND_VAR);
 		index++;
 	}
+}
+
+/* Compiles a class declaration: the class, then its name's binding takes it. */
+static void
+compile_class_declaration(
+	struct js_function_compiler *fc,
+	struct js_node *node)
+{
+	uint32_t mark;
+	uint32_t value;
+
+	/* The class, named after the declaration. */
+	mark = fc->temp_top;
+	value = js_temp(fc);
+	js_compile_class(fc, node, value, node->text, node->text_length);
+
+	/* The declaration of its name runs. */
+	js_init_binding(fc, node->text, node->text_length, value);
+	fc->temp_top = mark;
 }

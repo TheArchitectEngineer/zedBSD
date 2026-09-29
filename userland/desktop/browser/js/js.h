@@ -134,6 +134,7 @@ enum js_node_kind {
 #define JS_FLAG_INVALID_COOKED	0x8000U
 #define JS_FLAG_METHOD		0x10000U
 #define JS_FLAG_BLOCK_FUNCTION	0x20000U	/* set by the compiler: a function declaration made when its block is entered */
+#define JS_FLAG_STATIC_INIT	0x40000U	/* made by the compiler: the function that runs a class's static fields and blocks */
 
 /* The kinds of property and method (op of JS_NODE_PROPERTY and JS_NODE_METHOD). */
 enum js_property_kind {

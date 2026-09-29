@@ -24,6 +24,7 @@
 #include "page/page.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -51,6 +52,9 @@ main(
 	int argument;
 	int same;
 	int error;
+
+	/* ws074-p080: localStorage goes under XDG_DATA_HOME; the test keeps it under build/, away from ~/.local/share. */
+	setenv("XDG_DATA_HOME", "build/ws074-host-data", 1);
 
 	if (argc < 5) {
 		fprintf(stderr, "usage: host-relayout SANS MONO FALLBACK PAGE...\n");

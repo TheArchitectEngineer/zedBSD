@@ -536,8 +536,8 @@ drv_i915_gt_resume(
 	/* Programs the GT workarounds and MOCS (intel_gt_init_hw()). */
 	drv_i915_gt_init_hw_core(gi, gt, mmio);
 
-	/* Enables RPS. */
-	drv_i915_rps_enable(&gi->rps, mmio);
+	/* Enables RPS at the minimum, its thresholds counted in the GT's clock (the node's start raises it). */
+	drv_i915_rps_enable(&gi->rps, mmio, gt->clock_frequency);
 
 	/* Resumes every engine (intel_engine_resume()). */
 	for (index = 0U; index < es->n; index++) {
