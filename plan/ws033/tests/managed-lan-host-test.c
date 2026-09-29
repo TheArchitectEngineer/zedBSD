@@ -282,6 +282,33 @@ main(
 				      sizeof(address)) == 0 &&
 	      strcmp(address, "169.254.254.86") == 0);
 
+	/*
+	 * An interface the configuration does not name (2026-09-29): a wired
+	 * one takes DHCP by itself, a wireless one is left to its manager.
+	 */
+	networkd_lan_init(&lan);
+	check("an empty policy is accepted",
+	      networkd_lan_set_policy(&lan, table, 0U) == 0);
+	check("enable works without a policy", networkd_lan_enable(&lan) == 0);
+	check("enabling asks for a snapshot",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_RESNAPSHOT);
+	networkd_lan_snapshot_begin(&lan);
+	(void)networkd_lan_observe(&lan, "wlan0", 1U, 1U, 1);
+	(void)networkd_lan_observe(&lan, "ue0", 2U, 1U, 1);
+	networkd_lan_snapshot_end(&lan);
+	check("an unnamed cabled wired interface takes dhcp",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_CONFIGURE &&
+	      strcmp(work.interface, "ue0") == 0 &&
+	      work.policy.mode == NETWORKD_LAN_MODE_DHCP &&
+	      work.policy.dhcp_timeout != 0U);
+	check("configuring the unnamed interface is recorded",
+	      networkd_lan_configured(&lan, "ue0", 1) == 0);
+	check("an unnamed wireless interface is left alone",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_NONE);
+
 	/* Reports the outcome. */
 	if (failures != 0) {
 		printf("MLAN-T001 managed-lan: FAIL (%d)\n", failures);
