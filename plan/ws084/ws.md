@@ -147,3 +147,7 @@ vblank の配列（停止要因 5〜7）、N0 が active な pipe で止まら�
 - 表示（同じ時間の `perf:` の行）: present 2〜10/s（多くは 5〜8）、present ごとに submit 2 回、submit ごとの GPU 25〜75 ms（多くは約 30）。present（copy 7・flip 3〜7 ms）は passthrough と同程度。
   入力なしの frame の submit の GPU は bare metal 約 30 ms、passthrough 約 15 ms（約 2 倍）。
 - 見立て（未確認）: (1) bare metal で GT の周波数（RPS）が上がっていない、(2) 約 140 Hz の入力に約 8 fps の描画が追いつかず frame が積もって約 1 秒遅れて見える。
+- 原因（コード）: `gt-power.c` `drv_i915_rps_enable` が Linux の `rps_reset()` どおり最低の周波数（min=6、RP0=72）を要求し、周波数を上げる RPS の割込みは移植されていない
+  （RPNSWREQ を書くのはここだけ）。GT は RP0 の 1/12 のまま。
+- 修正: RP0 を要求する（Linux との差。RPS の割込みを移植するまで。PCODE が下げることはある）。`tests/execution/ktest-gt.c` の期待値を RPNSWREQ=RP0 に。
+  image `build/demo-lcd3/hdd-image.img`（demo-lcd2 と同じ引数）、build（warning 0）、QEMU の boot test PASS。ktest は build の道具が無く未実施。実機: 未実施。
