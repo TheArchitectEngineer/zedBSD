@@ -179,6 +179,7 @@ zwl_glass_open(
 	struct zwl_server *server)
 {
 	struct zwl_glass *glass;
+	uint64_t started;
 	int error;
 
 	/* The look's state lives as long as window mode's device. */
@@ -188,14 +189,18 @@ zwl_glass_open(
 	server->compose->glass = glass;
 
 	/* The wallpaper and the frosted glass made from it. */
+	started = zwl_milliseconds();
 	error = wallpaper_create(server, glass);
 	if (error != 0)
 		return error;
+	printf("ZWL STARTUP step=wallpaper ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 
 	/* The glyphs; the look is drawn without text when the font cannot be read. */
+	started = zwl_milliseconds();
 	error = atlas_create(server, glass);
 	if (error != 0)
 		printf("ZWL GLASS no text: font=%s errno=%d\n", server->font_path, error);
+	printf("ZWL STARTUP step=glyphs ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 
 	/* Succeeded. */
 	printf("ZWL GLASS ready text=%u\n", glass->text);
@@ -243,10 +248,12 @@ wallpaper_create(
 	uint32_t height;
 	uint32_t x;
 	uint32_t y;
+	uint64_t started;
 	VkResult result;
 	int error;
 
 	/* The output-sized image. */
+	started = zwl_milliseconds();
 	width = server->width;
 	height = server->height;
 	result = zwl_host_image_create(server->compose, width, height, server->compose->sampler, &glass->wallpaper);
@@ -280,6 +287,7 @@ wallpaper_create(
 	}
 
 	/* The frosted glass. */
+	printf("ZWL STARTUP step=wallpaper-picture ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 	error = blur_create(server, glass, pixels);
 	free(pixels);
 	return error;
@@ -641,9 +649,11 @@ atlas_fill(
 	unsigned size;
 	unsigned index;
 	unsigned id;
+	uint64_t started;
 	int error;
 
 	/* The pen starts at the top left; each row is as tall as its tallest glyph. */
+	started = zwl_milliseconds();
 	memset(glass->atlas.map, 0, glass->atlas.row_pitch * GLASS_ATLAS_HEIGHT);
 	pen_x = 0;
 	pen_y = 0;
@@ -715,15 +725,20 @@ atlas_fill(
 	}
 
 	/* The icons in the rows after the glyphs. */
+	printf("ZWL STARTUP step=glyphs-text ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	started = zwl_milliseconds();
 	pen_y += line + 1U;
 	error = atlas_icons(glass, &pen_y);
 	if (error != 0)
 		return error;
+	printf("ZWL STARTUP step=glyphs-icons ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	started = zwl_milliseconds();
 
 	/* The Kei mark's layers in the row after them. */
 	error = atlas_mark(glass, &pen_y);
 	if (error != 0)
 		return error;
+	printf("ZWL STARTUP step=glyphs-mark ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 
 	/* The cache's cells in the rest of the atlas. */
 	glass->cache_top = pen_y;

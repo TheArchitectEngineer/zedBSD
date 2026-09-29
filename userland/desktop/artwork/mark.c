@@ -81,6 +81,7 @@ struct mark_leaf {
 static void mark_leaf_circles(struct mark_leaf *leaf);
 static float mark_bar_depth(float u, float v);
 static float mark_corner_depth(float u, float v, float cx, float cy, float radius);
+static float mark_circle_depth(float dx, float dy, float radius);
 static float mark_leaf_depth(const struct mark_leaf *leaf, float u, float v);
 static float mark_leaf_along(float u, float v);
 static float mark_rim(float depth);
@@ -210,14 +211,52 @@ mark_corner_depth(
 {
 	float dx;
 	float dy;
-	float distance;
+	float depth;
 
-	/* The distance from the corner's centre. */
+	/* The depth under the rounding, from the offset to the corner's centre. */
 	dx = u - cx;
 	dy = v - cy;
-	distance = sqrtf(dx * dx + dy * dy);
+	depth = mark_circle_depth(dx, dy, radius);
 
 	/* Reports the depth under the rounding. */
+	return depth;
+}
+
+/*
+ * Reports how far a point at an offset from a circle's centre is inside
+ * the circle, negative outside, as far as the layers need it.
+ *
+ * The layers read a depth only for its sign and, within MARK_RIM_WIDTH of
+ * the edge, for the edge's light.  Outside the circle the depth reported is
+ * -1, and deeper in than the rim's band it is the radius (at least the true
+ * depth's band); only a point in the band takes the square root, which is
+ * slow in the C library (ws035-p129: the compositor spent 1.4 s of its start
+ * on the mark's square roots).
+ */
+static float
+mark_circle_depth(
+	float dx,
+	float dy,
+	float radius)
+{
+	float squared;
+	float inner;
+	float distance;
+
+	/* Outside the circle only the sign matters. */
+	squared = dx * dx + dy * dy;
+	if (squared >= radius * radius)
+		return -1.0f;
+
+	/* Deeper than the rim's band only that matters. */
+	inner = radius - MARK_RIM_WIDTH;
+	if (inner > 0.0f && squared < inner * inner)
+		return radius;
+
+	/* In the band, the true depth. */
+	distance = sqrtf(squared);
+
+	/* Reports the depth under the edge. */
 	return radius - distance;
 }
 
@@ -239,12 +278,12 @@ mark_leaf_depth(
 	/* The depth in the upper side's circle. */
 	dx = u - leaf->centre_a[0];
 	dy = v - leaf->centre_a[1];
-	depth_a = leaf->radius_a - sqrtf(dx * dx + dy * dy);
+	depth_a = mark_circle_depth(dx, dy, leaf->radius_a);
 
 	/* The depth in the lower side's circle. */
 	dx = u - leaf->centre_b[0];
 	dy = v - leaf->centre_b[1];
-	depth_b = leaf->radius_b - sqrtf(dx * dx + dy * dy);
+	depth_b = mark_circle_depth(dx, dy, leaf->radius_b);
 
 	/* The lower side's circle is the shallower one here. */
 	if (depth_b < depth_a)

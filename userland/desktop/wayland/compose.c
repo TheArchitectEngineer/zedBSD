@@ -55,6 +55,7 @@ zwl_compose_open(
 	struct zwl_server *server)
 {
 	struct zwl_compose *compose;
+	uint64_t started;
 	VkResult result;
 	int error;
 
@@ -65,11 +66,14 @@ zwl_compose_open(
 	server->compose = compose;
 
 	/* The instance, the device and its graphics queue. */
+	started = zwl_milliseconds();
 	result = compose_device(compose);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=device result=%d\n", (int)result);
 		return EIO;
 	}
+	printf("ZWL STARTUP step=vulkan-device ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	started = zwl_milliseconds();
 
 	/* The layouts, sampler, pools and synchronization of a frame. */
 	result = compose_objects(compose);
@@ -86,6 +90,7 @@ zwl_compose_open(
 	}
 
 	/* The glass look's wallpaper and glyphs; without them the plain look is drawn. */
+	printf("ZWL STARTUP step=vulkan-objects-arrow ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 	if (server->glass) {
 		error = zwl_glass_open(server);
 		if (error != 0) {

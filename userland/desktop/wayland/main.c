@@ -40,6 +40,7 @@ static int accept_client(struct zwl_server *server);
 static void zwl_perf_report(struct zwl_server *server, uint64_t now);
 static int event_loop(struct zwl_server *server);
 static void service_cleanup(struct zwl_server *server);
+static uint64_t startup_step(const char *step, uint64_t since);
 
 /*
  * Runs one bounded fullscreen compositor instance and cleans up its own resources.
@@ -54,6 +55,7 @@ main(
 	int error;
 	int keymap_error;
 	int cleanup_failed;
+	uint64_t step_start;
 
 	/* Every descriptor starts invalid so partial initialization can use ordinary cleanup. */
 	memset(&server, 0, sizeof(server));
@@ -110,7 +112,9 @@ main(
 		return 1;
 
 	/* Open an independent GPU context before publishing a usable Wayland endpoint (it may take the display's size). */
+	step_start = zwl_milliseconds();
 	error = zwl_gpu_open(&server);
+	step_start = startup_step("gpu", step_start);
 
 	/* The pointer starts in the middle of the output, its arrow not shown until it moves. */
 	server.pointer_x = (int32_t)(server.width / 2U);
@@ -125,6 +129,7 @@ main(
 			zwl_compose_close(&server);
 			error = 0;
 		}
+		step_start = startup_step("compose", step_start);
 	}
 
 	/* The login screen is drawn with Vulkan only: without it there is no login screen. */
@@ -132,8 +137,10 @@ main(
 		error = ENODEV;
 
 	/* Input devices are found before READY; a seat without devices is still valid. */
-	if (error == 0)
+	if (error == 0) {
 		zwl_input_scan(&server);
+		step_start = startup_step("input", step_start);
+	}
 
 	/* The keyboards' XKB keymap (keymap.c); without it they say there is none. */
 	if (error == 0) {
@@ -143,6 +150,7 @@ main(
 		} else {
 			printf("ZWL KEYMAP format=none errno=%d\n", keymap_error);
 		}
+		step_start = startup_step("keymap", step_start);
 	}
 
 	/* The login screen's users and sessiond's answers (greeter.c). */
@@ -150,8 +158,10 @@ main(
 		error = zwl_greeter_open(&server);
 
 	/* The endpoint is published last; the login screen has none. */
-	if (error == 0 && !server.greeter)
+	if (error == 0 && !server.greeter) {
 		error = listen_socket(&server);
+		(void)startup_step("socket", step_start);
+	}
 
 	/* READY appears only after the hardware contract and socket namespace are both usable. */
 	if (error == 0) {
@@ -974,4 +984,23 @@ zwl_perf_report(
 	memset(perf, 0, sizeof(*perf));
 	perf->window_start_ms = now;
 	perf->window_start_cycles = zwl_cycles();
+}
+
+/*
+ * Reports how long one step of the start took, and when it ended (the
+ * diagnostic line ZWL STARTUP, ws035-p129); returns the time it ended.
+ */
+static uint64_t
+startup_step(
+	const char *step,
+	uint64_t since)
+{
+	uint64_t now;
+
+	/* The step's length, and the monotonic time the hand-over's lines use too. */
+	now = zwl_milliseconds();
+	printf("ZWL STARTUP step=%s ms=%llu at_ms=%llu\n", step, (unsigned long long)(now - since), (unsigned long long)now);
+
+	/* Succeeded: the next step starts now. */
+	return now;
 }
