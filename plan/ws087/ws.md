@@ -3,13 +3,14 @@
 # WS087: /bin/sh の対話の行編集（矢印キーの履歴と Tab の補完）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG002
 Related Milestones: MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（BUG-103 の原因と、補完の設計）から
+Resume point: p001 cleared（2026-09-29）。p002（履歴の file）は sh だけで始められる。libedit の `stifle_history`（p002）と Tab の補完（p003）は
+`userland/base/libedit/` を変える許可を main に依頼中。ユーザーへの質問（5330 で同じ窓でも上が効かなかったか）も依頼中。設計は [p001](phase001/phase.md)
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -26,7 +27,7 @@ Resume point: p001（BUG-103 の原因と、補完の設計）から
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws087-p001 | BUG-103 の原因（line editor が有効になる条件、Terminal の送る escape）と、Tab の補完の設計 | planning | — |
-| ws087-p002 | 矢印キーの履歴（BUG-103 の修正） | planning | p001 |
-| ws087-p003 | Tab の補完 | planning | p001 |
+| [ws087-p001](phase001/phase.md) | BUG-103 の原因（line editor が有効になる条件、Terminal の送る escape）と、Tab の補完の設計 | cleared（2026-09-29。同じ shell の中の矢印は QEMU の Terminal・ssh・serial で動く。shell ごとに履歴が空から始まる（`HISTFILE` が無い）のが有力な原因） | — |
+| ws087-p002 | 矢印キーの履歴（BUG-103 の修正）: 履歴の file（`HISTFILE`、既定 `~/.sh_history`）の読み込みと追記、libedit の履歴の大きさを `HISTSIZE` に（`stifle_history`、libedit の許可が要る） | planning | p001 |
+| ws087-p003 | Tab の補完（libedit に GNU Readline と同じ名前の補完の hook と一覧、sh に `complete.c`。libedit の許可が要る） | planning | p001 |
 | ws087-p004 | 規約の全文との照合、回帰（WS042 の sh の試験） | planning | p002・p003 |

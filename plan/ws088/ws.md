@@ -3,13 +3,13 @@
 # WS088: Windows で動く Kei-nightly.zip を CI で配布する
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG001
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（元の zip の整理と license）から。WS085（venus-win32 の取り込み）に依存
+Resume point: p001 の draft の base の zip（`tools/release/make-kei-nightly-base.py`）まで済み。fork の commit（ユーザー）と中身の確認を待つ。並行して p003 の準備（`make kei-nightly-zip`）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -42,7 +42,7 @@ ZIPで配布しようと思います。Kei-nightly.zipは、clangのキャッシ
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws088-p001 | 元の zip の整理: license の file と source の案内（`LICENSES/`・README）、使わない exe の削除、README の Linux の例の修正。ユーザーが中身を確認 | planning | — |
+| [ws088-p001](phase001/phase.md) | 元の zip の整理: license の file と source の案内（`LICENSES/`・README）、使わない exe の削除、README の Linux の例の修正。ユーザーが中身を確認 | uncleared（draft まで。fork の commit とユーザーの確認待ち） | — |
 | ws088-p002 | 元の zip を `rev-0` の Release に upload し、名前と SHA-256 を固定する（**外部への公開。ユーザーの承認の後**） | planning | p001 |
 | ws088-p003 | `make kei-nightly-zip`（取得・検証・展開・image の追加・zip）と host での確認（zip の中身、Linux の QEMU で展開した image の起動） | planning | p002、WS085 の取り込み |
 | ws088-p004 | CI への組み込み（build の job と nightly の Release の files）。push はユーザー | planning | p003 |
