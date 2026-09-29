@@ -38,8 +38,27 @@ Queue: main が WS073 のサブエージェント（`wt/ws073`）に割り当て
   割り込み・切り替えの戻りで 0 にした、(c) stack の page（`-0xd0(%rbp)` の slot）が 0 の page に置き換わった（fault-around・COW・TLB）。
   2 つの異なる build の userland・kernel で同じ関数の同じ変数だけが NULL になっていることから、(b)(c) の kernel の側の疑いが残る。
 
+### 再開（2026-09-29 の 2 回目）
+
+- (b) の probe [tests/regcheck.S](../tests/regcheck.S)・[tests/regcheck.c](../tests/regcheck.c): 全 GPR（%rsp 以外）・xmm0〜15・stack の 8 slot に既知の値を置いて回し毎回検査。
+  同時に SIGUSR1（handler が xmm を全て壊す）を 0.2 ms ごと、fork と exit、4 MB の mmap・touch・munmap。self test（`-DREGCHECK_SELFTEST` で %rsi を 0 に）は slot 5 で FAIL を出す。
+  guest（4 CPU）で 300 s・8 checker: 約 14 万 pass・85 万 signal で **変化 0**（`REGCHECK:PASS`）。単独の process の register・stack は保たれる。
+- 別の発見（BUG-051 とは別の bug、未起票・未修正）: SSH の session を 6 本並列にすると sshd が `reexec socketpair: Too many open files in system`、
+  sshd-session が `monitor_openfds: socketpair: ... in system` で失敗し、OpenSSH の PerSourcePenalties で host からの接続が一時止まる。原因は
+  `include/kern/net/socket.h` の `SOCKET_MAX 32U`（system 全体の socket の数の上限、`src/kern/net/socket.c` の `socket_create` が ENFILE）。
+  静かな guest で socket 9、session 1 つで約 3〜4 使う。[tests/resources.c](../tests/resources.c)（`KERN_SYSTEM_GET_RESOURCES`）で数えた。
+- 短い session の大量の試行: 2 本並列 × 150（chacha20-poly1305）= 300 session、失敗 0・落ち 0。
+- **再現**: regcheck の負荷（`/tmp/regcheck 240 6`、4 CPU を飽和）の中で 2 本並列の SSH の session（chacha20、`dd` の 256 KB を読む）を回すと、
+  99 s の間に 2 つの process が落ちた:
+  - `pid 12`（**sshd の listener**）`at 0x1002d287d, address 0xe0` → libcrypto + 0x21287d = `AES_encrypt`（`mov -0x60(%rbp),%r9; xor 0x20(%r9,%r10),%edi`、r9 = 0）。
+    sshd が死に、以後の session は全て失敗（297 本）。
+  - `pid 27804 at 0x100435ead, address 0` → libcrypto + 0x375ead = `sha512_block_data_order`（`mov -0xf8(%rbp),%rax; mov %r12,(%rax)`、rax = 0）。
+  - この image の layout（2 つ目の guest で `libmap`、`build/ws073-p030/libmap-wt.txt`）: libcrypto 0x1000c0000。
+- 4 回の落ちの共通の形: **直前に stack の slot（`%rbp` の負の offset）から load した pointer が 0**。ChaCha20（`-0xd0(%rbp)`）、AES（`-0x60(%rbp)`）、
+  SHA-512（`-0xf8(%rbp)`）。どれも fork を繰り返す process（sshd の listener・privsep の子）で、register の probe（fork しない checker）では出ない。
+  → (c) stack の page の中身が 0 に見える（fork の COW・fault-around・TLB の失効）が最有力。
+
 ## Resume point
 
-BUG-104 を先に片付けた後に再開。次の手: (1) user の register を割り込みの前後で検査する probe（全 GPR・xmm に既知の値を置いて回す loop、
-複数 CPU・負荷）で (b) を試す、(2) SSH の短い session を ChaCha20 の小さな packet で大量に（`ssh -c chacha20-poly1305@openssh.com` の多数の短い command）、
-(3) 再現したら gdbstub で `exit1_signal`（rdi = 11）に止め、落ちた thread の `%rbp - 0xd0` の slot と page の対応（`info tlb`・`xp`）を見る。
+同じ負荷（regcheck ＋ 2 本並列の session）で再現し、gdbstub で `exit1_signal`（rdi = 11）に止める。落ちた thread の trap frame から user の %rbp を取り、
+`%rbp - off` の slot を今の page table で読む（0 か、正しい pointer か）。正しい値なら fault の時に古い TLB・別の page を読んだ、0 なら page の中身が失われた。
