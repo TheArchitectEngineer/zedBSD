@@ -894,6 +894,12 @@ ZEDBSD_ROOTFS_DEVELOPMENT ?= y
 # amd64 native zedbsd.cfg gets; the same lines can be edited on a machine's
 # ESP afterwards (docs/reference/kernel-boot-parameters.md).
 ZEDBSD_GRAPHICAL_BOOT ?= y
+# 2026-09-29 user decision: whether the kernel's messages are shown on the
+# screen at boot is a build menu choice of its own ("Show kernel messages at
+# boot").  n writes kmsg=quiet (dmesg keeps them); y leaves them on the
+# screen, also under the graphical boot.  A config that does not name it keeps
+# the old behaviour: quiet with the graphical boot, shown without it.
+ZEDBSD_BOOT_KERNEL_MESSAGES ?= $(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),n,y)
 # A target without a sysroot has no development files.
 ifeq ($(strip $(ZEDBSD_TARGET_SYSROOT)),)
 override ZEDBSD_ROOTFS_DEVELOPMENT := n
