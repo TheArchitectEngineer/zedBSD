@@ -2,10 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし（2026-09-27 から subagent の運用）
-Last finished Queue: q496（ws073-p028 cleared。Remacs 用 Noct の build）。それ以前の作業は下の節
+Last finished Queue: q497（ws073-p028 の再試行 cleared。Remacs の patch の再適用を防ぐ）。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-09-29 q497
+
+[q497](queue-q497.md): q496 の修正後、すでに `.nbc` に直した Remacs source への patch 再適用が失敗。patch rule を適用済みなら通すよう修正し、未適用の source と既適用の source の両方で確認。全体の `make` は未実施。GitHub へは未公開。
 
 ## 最新: 2026-09-29 q496
 

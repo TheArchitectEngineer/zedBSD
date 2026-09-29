@@ -41,7 +41,16 @@ $(REMACS_SOURCE_STAMP):
 	@git -C $(REMACS_SOURCE_DIR) rev-parse HEAD > $@
 
 $(REMACS_PATCH_STAMP): $(REMACS_SOURCE_STAMP) $(REMACS_PATCH)
-	patch --batch --forward --fuzz=0 -d $(REMACS_SOURCE_DIR) -p1 < $(REMACS_PATCH)
+	@set -eu; \
+	script='$(REMACS_SOURCE_DIR)/tools/build-nap.sh'; \
+	if grep -Fqx 'mv "$$OUT/remacs-all.nbc" "$$OUT/remacs.nap"' "$$script"; then \
+		:; \
+	elif grep -Fqx 'mv "$$OUT/remacs-all.nb" "$$OUT/remacs.nap"' "$$script"; then \
+		patch --batch --forward --fuzz=0 -d $(REMACS_SOURCE_DIR) -p1 < $(REMACS_PATCH); \
+	else \
+		echo 'Remacs: unexpected bytecode output rule in tools/build-nap.sh' >&2; \
+		exit 1; \
+	fi
 	@touch $@
 
 $(REMACS_NAP): $(REMACS_PATCH_STAMP) $(NOCT_HOST_BUILD_STAMP)

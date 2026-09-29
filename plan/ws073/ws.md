@@ -62,7 +62,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p025](phase025/phase.md) | BUG-087 | 新しい build の最初の image に clang の resource の header が入らない: 原因を確認、修正は `plan/bugs/BUG-087-wip.patch`（未検証） | uncleared（2026-09-28） |
 | [ws073-p026](phase026/phase.md) | BUG-090 | libc の qsort・qsort_r を introsort（O(n log n)、word 単位の交換）、heapsort を本物の heapsort、mergesort を安定な merge sort に（新しい `src/libc/sort.c`）。host 試験 plain・ASan・UBSan PASS、guest で n=20000 の random 1819 ms → 11 ms | cleared（2026-09-28） |
 | [ws073-p027](phase027/phase.md) | BUG-089 | 新しい worktree の build が host の LLVM を作り直し共有の build/llvm に書きうる: source・configuration・tblgen・install を identity の内容で受け入れ、tree の外の toolchain の tree への書き込みを拒否（`ZEDBSD_LLVM_ALLOW_FOREIGN=yes`）、package の source の複写を link の中身から（libcxx・clang）。bug089.sh 修正前 8/9 FAIL・修正後 PASS | cleared（2026-09-28） |
-| [ws073-p028](phase028/phase.md) | BUG-100 | Remacs 用 host Noct の重複 build と古い `.nb` 出力名による `make` の失敗を修正。canonical host Noct を使い、取得 source に patch | cleared（2026-09-29） |
+| [ws073-p028](phase028/phase.md) | BUG-100 | Remacs 用 host Noct の重複 build と古い `.nb` 出力名による `make` の失敗を修正。canonical host Noct を使い、取得 source の `.nb` の場合だけ patch | cleared（2026-09-29、q497 で再確認） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 
