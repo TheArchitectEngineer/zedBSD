@@ -45,7 +45,7 @@ icon() {
 # 30 applications: Terminal, 28 fillers, and a real one on page 2.
 guest "$stop_all" >/dev/null
 guest 'mkdir -p /etc/keiland; { echo "Terminal|/bin/terminal|term|323a4e"; i=2; while [ $i -le 29 ]; do echo "App $i|/bin/true|filler|$(printf "%02x%02x%02x" $((i*8)) $((200-i*4)) $((80+i*5)))"; i=$((i+1)); done; echo "Second page shm|/bin/wlshm --size=420x280 --color=ff5a8de0 --frames=20000|shm page|5aa87a"; } > /etc/keiland/apps.conf; wc -l < /etc/keiland/apps.conf'
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/wlshm --size=520x340 --color=ffe8eef8 --frames=20000 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 
 # 1. Home on page 1 of 2.

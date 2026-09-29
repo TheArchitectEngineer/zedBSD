@@ -44,7 +44,7 @@ wait_for() {
 # Starts the compositor, client a with the given hold, then client b.
 start() {
 	guest "$stop_all" >/dev/null
-	guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=120 --width=1280 --height=800 --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 3
+	guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=120 --width=1280 --height=800 --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/acquire-fence-test --size=400x300 --color=ff0000 --held-color=0000ff --frames=10 --hold-ms='"$1"' --linger-ms=15000 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 1
 /bin/wltest --windowed --size=300x200 --color=00ff00 --frames=3000 --token=b > /tmp/b.log 2>&1 </dev/null & echo started' >/dev/null
 }
@@ -86,7 +86,7 @@ guest 'grep -E "ERROR|FAILED" /tmp/zdesktop.log /tmp/a.log /tmp/b.log' | tee "$o
 
 # 4: presents of a window alone, 300 frames without delay.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=120 --width=1280 --height=800 > /tmp/zdesktop.log 2>&1 </dev/null & sleep 3
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=120 --width=1280 --height=800 > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 start=$(date +%s); /bin/wltest --windowed --size=400x300 --color=ff0000 --frames=300 --delay-ms=0 --token=p > /tmp/p.log 2>&1 </dev/null; end=$(date +%s)
 grep -E "PRESENT|FAILED" /tmp/p.log; echo "seconds=$((end - start))"' | tee "$out/presents.txt"
 guest "$stop_all" >/dev/null
