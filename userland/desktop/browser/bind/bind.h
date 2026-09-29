@@ -67,6 +67,32 @@ struct bind_box {
 };
 
 /*
+ * The two storage areas of a window (ws074-p080): sessionStorage's and
+ * localStorage's.
+ */
+enum bind_storage_area {
+	BIND_STORAGE_SESSION,
+	BIND_STORAGE_LOCAL
+};
+
+/*
+ * What the window asks of its host for Web Storage (ws074-p080): the
+ * items of a storage area of the page's origin, keys and values in UTF-16.
+ * key reports the index-th key in the host's order (found is 0 past the
+ * last); get reports a key's value (found is 0 for a key not there); set
+ * reports ENOSPC when the item would take the origin past its quota; each
+ * reports ENOMEM when memory runs out.
+ */
+struct bind_storage_calls {
+	int (*length)(void *context, int area, size_t *count);
+	int (*key)(void *context, int area, size_t index, struct wb_units *key, int *found);
+	int (*get)(void *context, int area, const uint16_t *key, size_t key_length, struct wb_units *value, int *found);
+	int (*set)(void *context, int area, const uint16_t *key, size_t key_length, const uint16_t *value, size_t value_length);
+	int (*remove)(void *context, int area, const uint16_t *key, size_t key_length);
+	int (*clear)(void *context, int area);
+};
+
+/*
  * What the window asks of its host: where the console's lines go (one
  * line of UTF-8 text at a level, without its line feed), the User-Agent
  * navigator reports, the parts of the document's location (a
@@ -77,7 +103,8 @@ struct bind_box {
  * where a node is on the page laid out as it is now (node_box lays the
  * page out first when it changed, and reports whether the node has a box;
  * document_size gives the laid out document's width and height), and how
- * far the viewport is scrolled.  A NULL callback reads as nothing and
+ * far the viewport is scrolled; for ws074-p080 the storage areas (NULL:
+ * scripts get storage that holds nothing).  A NULL callback reads as nothing and
  * writes nothing: no engine matches nothing, and no layout has no boxes.
  */
 struct bind_host {
@@ -91,6 +118,7 @@ struct bind_host {
 	int (*node_box)(void *context, struct dom_node *node, struct bind_box *box);
 	void (*document_size)(void *context, double *width, double *height);
 	void (*scroll)(void *context, double *x, double *y);
+	const struct bind_storage_calls *storage;
 };
 
 /*

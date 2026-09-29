@@ -96,8 +96,10 @@ def main():
             with open(os.path.join(args.outputs, name + ".out"), errors="replace") as stream:
                 output = stream.read()
         else:
+            # ws074-p080: localStorage is kept under XDG_DATA_HOME; the tests keep theirs apart from the user's.
+            environment = dict(os.environ, XDG_DATA_HOME=os.path.join(ROOT, "build/ws074-dom-tests/data"))
             run = subprocess.run([args.program, "--run"] + fonts() + [path], stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE, text=True, errors="replace", timeout=120)
+                                 stderr=subprocess.PIPE, text=True, errors="replace", timeout=120, env=environment)
             output = run.stdout
             if run.returncode != 0:
                 output += "(exit status %d: %s)\n" % (run.returncode, run.stderr.strip())

@@ -35,11 +35,45 @@ static void script_console(void *context, int level, const char *text, size_t le
 static int script_location(void *context, int part, struct wb_buffer *out);
 static int script_cookie_get(void *context, struct wb_buffer *out);
 static int script_cookie_set(void *context, const char *text, size_t length);
-static int script_url(const struct page *page, struct net_url *url);
 static int script_type_runs(const struct dom_element *script);
 static int script_attribute(struct page *page, const struct dom_element *element, const char *name, struct dom_attribute **attribute);
 static int script_run_file(struct page *page, const struct vm_string *src);
 static int script_ascii_equal_folded(const struct vm_string *string, const char *ascii);
+
+/*
+ * Parses the page's location as a URL: its URL, or file: for the
+ * absolute path of a file.  Returns EINVAL for a page without a location.
+ */
+int
+page_url(
+	const struct page *page,
+	struct net_url *url)
+{
+	struct wb_buffer text;
+	int error;
+
+	/* A page without a location. */
+	if (page->base == NULL)
+		return EINVAL;
+
+	/* A path becomes a file: URL. */
+	wb_buffer_init(&text);
+	if (page->base[0] == '/') {
+		error = wb_buffer_printf(&text, "file://%s", page->base);
+	} else {
+		error = wb_buffer_append_string(&text, page->base);
+	}
+
+	/* The URL. */
+	if (error == 0)
+		error = net_url_parse(wb_buffer_string(&text), text.length, NULL, url);
+	wb_buffer_release(&text);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller releases the URL. */
+	return 0;
+}
 
 /*
  * The part of a URL (a NET_URL_*) each part of the window's location
@@ -114,6 +148,7 @@ page_start_scripts(
 	host.node_box = page_node_box;
 	host.document_size = page_document_size;
 	host.scroll = page_scroll;
+	host.storage = page_storage_calls();
 	error = bind_window_create(page->realm, page->document, &host, &page->window);
 	if (error != 0)
 		return error;
@@ -350,7 +385,7 @@ script_location(
 		return 0;
 
 	/* The page's URL. */
-	error = script_url(context, &url);
+	error = page_url(context, &url);
 	if (error == ENOMEM)
 		return error;
 	if (error != 0) {
@@ -379,7 +414,7 @@ script_cookie_get(
 	int error;
 
 	/* A page without a URL has no cookies. */
-	error = script_url(context, &url);
+	error = page_url(context, &url);
 	if (error == ENOMEM)
 		return error;
 	if (error != 0)
@@ -406,7 +441,7 @@ script_cookie_set(
 	int error;
 
 	/* A page without a URL keeps no cookies. */
-	error = script_url(context, &url);
+	error = page_url(context, &url);
 	if (error == ENOMEM)
 		return error;
 	if (error != 0)
@@ -419,41 +454,6 @@ script_cookie_set(
 		return error;
 
 	/* Succeeded: the cookie is kept (or refused). */
-	return 0;
-}
-
-/*
- * Parses the page's location as a URL: its URL, or file: for the
- * absolute path of a file.  Returns EINVAL for a page without a location.
- */
-static int
-script_url(
-	const struct page *page,
-	struct net_url *url)
-{
-	struct wb_buffer text;
-	int error;
-
-	/* A page without a location. */
-	if (page->base == NULL)
-		return EINVAL;
-
-	/* A path becomes a file: URL. */
-	wb_buffer_init(&text);
-	if (page->base[0] == '/') {
-		error = wb_buffer_printf(&text, "file://%s", page->base);
-	} else {
-		error = wb_buffer_append_string(&text, page->base);
-	}
-
-	/* The URL. */
-	if (error == 0)
-		error = net_url_parse(wb_buffer_string(&text), text.length, NULL, url);
-	wb_buffer_release(&text);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the caller releases the URL. */
 	return 0;
 }
 

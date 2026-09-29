@@ -161,7 +161,9 @@ void page_fonts_install(struct page *page);
 void page_fonts_release(struct page *page);
 
 /* Scripts, events and time (script.c). */
+struct net_url;
 int page_start_scripts(struct page *page);
+int page_url(const struct page *page, struct net_url *url);
 void page_run_script_element(void *context, struct dom_element *script);
 int page_fire_load(struct page *page);
 int page_set_time(struct page *page, double now);
@@ -218,6 +220,9 @@ struct css_engine *page_selector_engine(void *context);
 int page_node_box(void *context, struct dom_node *node, struct bind_box *box);
 void page_document_size(void *context, double *width, double *height);
 void page_scroll(void *context, double *x, double *y);
+
+/* Web Storage (storage.c, ws074-p080). */
+const struct bind_storage_calls *page_storage_calls(void);
 void page_set_console(struct page *page, page_console console, void *context);
 const char *page_failure_reason(void);
 const struct img_bitmap *page_image_of(void *context, const struct dom_element *element);
