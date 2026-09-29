@@ -344,9 +344,9 @@ bind_dataset(
 		if (attribute->ns != DOM_NS_NONE)
 			continue;
 
-		/* Only a name that goes on after the prefix. */
+		/* Only a name that starts with the prefix (which may be all of it). */
 		prefixed = 0;
-		if (attribute->name->length > QUERY_DATA_PREFIX_LENGTH)
+		if (attribute->name->length >= QUERY_DATA_PREFIX_LENGTH)
 			prefixed = query_has_prefix(attribute->name, QUERY_DATA_PREFIX);
 		if (!prefixed)
 			continue;

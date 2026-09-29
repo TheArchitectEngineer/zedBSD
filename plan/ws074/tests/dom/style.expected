@@ -1,0 +1,10 @@
+red 10px important 3 3 color: red; --sg-x: 3; width: 10px !important;
+color width true true
+--sg-x: 3; width: 10px !important; background-color: blue; margin-top: 5px;
+--sg-x: 3; width: 10px !important; background-color: blue; margin-top: 5px; --y: 2; display: none !important; none true
+undefined string string blue
+margin: 1px; color: blue;
+opacity: 0.5; 0.5
+true 0 false
+display: none;
+true 0

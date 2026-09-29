@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Selectors</title></head>
+<body>
+<div id="outer" class="box first">
+  <ul id="list"><li class="item">a</li><li class="item odd">b</li><li class="item">c</li><li class="item odd" data-kind="last">d</li></ul>
+  <p class="note">text <span id="inner" class="note">inner</span></p>
+</div>
+<div id="second" class="box"><a href="#x" id="link">link</a><input type="checkbox" id="check" checked></div>
+<script>
+// ws074-p031: querySelector, querySelectorAll, matches, webkitMatchesSelector and closest.
+function ids(list) { var out = []; for (var i = 0; i < list.length; i++) out.push(list[i].id || list[i].tagName); return out.join(","); }
+console.log(document.querySelector(".box").id, document.querySelector("#inner").tagName, document.querySelector(".missing"));
+console.log(document.querySelectorAll(".box").length, ids(document.querySelectorAll("div, a")), document.querySelectorAll("li.odd").length);
+console.log(document.querySelectorAll("#list > li:nth-child(2n+1)").length, document.querySelector("li:last-child").textContent);
+console.log(document.querySelector("[data-kind=last]").textContent, document.querySelector("li:not(.odd)").textContent);
+console.log(document.querySelector("p > .note").id, document.querySelector("ul + p").tagName, document.querySelectorAll("ul ~ *").length);
+console.log(document.querySelector("a[href]").id, document.querySelector("input:checked").id, document.querySelector(":root").tagName);
+var outer = document.getElementById("outer");
+console.log(outer.querySelectorAll("li").length, outer.querySelector(".note").tagName, outer.querySelector("#second"));
+console.log(outer.querySelectorAll("div li").length, outer.querySelectorAll("body li").length);
+var inner = document.getElementById("inner");
+console.log(inner.matches("span.note"), inner.matches("div span"), inner.matches("li"), inner.webkitMatchesSelector("#inner"));
+console.log(inner.closest(".box").id, inner.closest("p").className, inner.closest("span") === inner, inner.closest("ul"));
+var fragment = document.createDocumentFragment();
+var made = document.createElement("div");
+made.className = "made";
+made.appendChild(document.createElement("em"));
+fragment.appendChild(made);
+console.log(fragment.querySelector(".made em").tagName, fragment.querySelectorAll("*").length, document.querySelector(".made"));
+var threw = [];
+["", "!!", "a[", "div >"].forEach(function (text) {
+  try { document.querySelector(text); threw.push("no"); } catch (error) { threw.push("yes"); }
+});
+console.log(threw.join(","));
+try { inner.matches("::"); console.log("no"); } catch (error) { console.log("matches threw"); }
+console.log(document.querySelector("p::before"), document.querySelectorAll("li:hover").length);
+var all = document.querySelectorAll("li");
+document.getElementById("list").appendChild(document.createElement("li"));
+console.log(all.length, document.querySelectorAll("li").length);
+</script>
+</body>
+</html>

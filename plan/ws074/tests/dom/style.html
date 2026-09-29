@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Inline style</title></head>
+<body>
+<div id="d" style="color: red; --sg-x:3;WIDTH:10px !important"></div>
+<div id="e"></div>
+<script>
+// ws074-p031: the style attribute as a CSSStyleDeclaration (values kept as they are written).
+var d = document.getElementById("d");
+var s = d.style;
+console.log(s.color, s.width, s.getPropertyPriority("width"), s.getPropertyValue("--sg-x"), s.length, s.cssText);
+console.log(s.item(0), s.item(2), s.item(9) === "", s instanceof CSSStyleDeclaration);
+s.backgroundColor = "blue";
+s.color = "";
+s.width = "abc";
+s.marginTop = "5px";
+console.log(d.getAttribute("style"));
+s.setProperty("--y", "2");
+s.setProperty("display", "none", "important");
+console.log(s.cssText, s.removeProperty("display"), s.getPropertyValue("display") === "");
+console.log(typeof s.MozTransition, typeof s.webkitBoxShadow, typeof s.WebkitBoxShadow, s["background-color"]);
+s.cssText = "color:green;foo:bar;margin:1px;color:blue";
+console.log(s.cssText);
+d.style = "opacity: 0.5";
+console.log(d.getAttribute("style"), d.style.opacity);
+var e = document.getElementById("e");
+console.log(e.style.cssText === "", e.style.length, e.hasAttribute("style"));
+e.style.display = "none";
+console.log(e.getAttribute("style"));
+e.style.display = null;
+console.log(e.getAttribute("style") === "", e.style.length);
+</script>
+</body>
+</html>
