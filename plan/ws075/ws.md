@@ -69,7 +69,7 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p017](phase017/phase.md) | [BUG-058](../bugs/BUG-058.md)（App Home の zgears が最初の frame の前に終わる）の再試験 | uncleared（2026-09-28。6 回の起動で再現せず、原因は未特定） | p016 |
 | [ws075-p018](phase018/phase.md) | 性能 2: 非同期の実行器（ws031-p045）。p008 から分けた | planning | p008 |
 | [ws075-p019](phase019/phase.md) | 性能 3: present mode と vsync（ws031-p027）。p008 から分けた | planning | p008 |
-| [ws075-p020](phase020/phase.md) | RPS（GT の周波数）の up/down の割込みと boost（[F-054](../future-work.md)）。今は RP0 固定（ws084-p002） | in-progress（2026-09-29） | p008 |
+| [ws075-p020](phase020/phase.md) | RPS（GT の周波数）の up/down の割込みと boost（[F-054](../future-work.md)）。今は RP0 固定（ws084-p002） | cleared（2026-09-29。Alder Lake-P では up/down の割込みが来ないので Linux の gen12 と同じ busy の時間の評価と park・unpark に。実機の passthrough で rate 19.7→54.8/s、latency 49.3→32.5 ms、idle は最低の周波数。素の 5330 は未実施） | p008 |
 
 各 Phase の受け入れは、host の survey（`plan/ws075/tests/shader-survey/run.sh`）の該当の不足が 0 になることと、実機の capture
 （egltest・glxtest の場面の capture の scenario は p003 で足す）。
