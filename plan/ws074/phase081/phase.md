@@ -4,7 +4,7 @@
 
 Phase ID: `ws074-p081`
 Parent: [WS074](../ws.md)
-Status: in-progress
+Status: cleared（2026-09-29）
 Phase disposition: normal
 Queue: なし（main の指示でサブエージェントが worktree `wt/ws074-dom` で実行、2026-09-29）
 依存: p005（tree builder）、p030（DOM の binding）、p031
@@ -41,32 +41,65 @@ UA で取得、`build/p081/js/`）と inline script での使われ方:
 
 この Phase に無いもの: `DOMParser`、`Range.createContextualFragment`、`document.write`、XML の直列化。
 
-## 進み具合（2026-09-29、wrap up で引き継ぎ。main の指示で browser の作業は別のエージェントへ）
+## 設計と実装
 
-済み（commit 済み、host の build は plain で warning 0）:
 - `html/parser.c`・`parser.h`・`html.h`: `html_parser_create_fragment`・`html_parser_fragment_root`（context による tokenizer の状態、
   root の html 要素、template の mode、insertion mode の reset、form の pointer）。template の context は form の pointer について
   template の中身として扱う（`tb_template_contents`、`body.c` の form の 3 箇所）。context の名前を last start tag にしない（html5lib の
   期待どおり、raw text の中の同名の end tag は文字）。
+- `dom/serialize.c`（新）: `dom_serialize_children`・`dom_serialize_node`（HTML の直列化。属性の値の `<`・`>` も escape: Chromium 153 と
+  同じ。tag の名前は `serialize_tag_name`、属性の名前は `serialize_attribute_name` に分け、各 append の失敗をその場で調べる）。
+- `bind/markup.c`（新）: `innerHTML`・`outerHTML`（読み書き）、`insertAdjacentHTML`・`insertAdjacentElement`・`insertAdjacentText`、
+  `HTMLTemplateElement`（`content`）。template の中身は `bind_template_contents` が探し、script が作った・複写した template には
+  最初に要る時に作る（`innerHTML` の書き込みと `content`）。
+- `bind/node.c`: template の prototype を `HTMLTemplateElement` に、`cloneNode(true)` は template の中身も複写。
+- `bind/element.c`: `Element.namespaceURI`（Amazon の script に 13 箇所。試験の foreign の行で要った）。
+- `bind/internal.h`・`window.c`（interface の表）、`libbrowser/Makefile`。`js/`・`vm/` は変えていない。
+
+## 試験
+
 - `plan/ws074/tests/host-tree.c`・`run-html5lib-tree.py`: fragment の case も走らせる（`SCRIPTING\tNS:NAME\tINPUT`）。
-  **html5lib（WPT 2d66b9b7）の tree construction: 1854/1959、fragment 206/206**（前は document 1648/1753 で fragment は走らせず。
-  document の数は不変）。suite は worktree の `build/ws074-suites/wpt`（`fetch-suites.sh wpt` で取得）。
-- `dom/serialize.c`（新）: `dom_serialize_children`・`dom_serialize_node`（HTML の直列化。属性の値の `<`・`>` も escape: Chromium 153 と同じ）。
-- `bind/markup.c`（新）: `innerHTML`・`outerHTML`（読み書き）、`insertAdjacentHTML`・`insertAdjacentElement`・`insertAdjacentText`。
-  `element.c` の表、`internal.h`、`libbrowser/Makefile`。
-- 確認（host、plain）: 回帰は全て前と同じ（golden 76、host-* 全て 0 failed、run-dom 14/14、run-js 11/11、loader 11/11、http 14・17、
-  font 8）。worktree の `build/p031/t5.html`（innerHTML・insertAdjacent*・outerHTML・table の中の tr・script が走らないこと）を
-  Chromium と比べ、`template.content` の行以外は一致。
+- `plan/ws074/tests/dom/markup.html`（24 行、新）と Chromium 153 の expected（`run-dom-tests.py --reference`、他の expected は不変）:
+  直列化（属性と text の escape、void、raw text、svg、noscript、template）、`innerHTML` の読み書き（script は走らない）、
+  `insertAdjacent*`（位置の大文字小文字、親の無い要素、誤った位置）、table・select の context、`outerHTML` の書き込み（親の無い要素、
+  document の子）、`template.content`（script が作ったものと parse したもの、`cloneNode`）、pre・textarea・listing の先頭の改行、
+  MathML・SVG、空の文字列、誤りのある断片。DOMException の `name` は出さない（下の制限）。
 
-残り（次のエージェント）:
-1. `HTMLTemplateElement.content` の binding（`t.content` が undefined。上の比較で唯一違った行）。
-2. `plan/ws074/tests/dom/markup.html` と Chromium の expected（`build/p031/t4.html`・`t5.html` を元に。`run-dom-tests.py --reference`）。
-3. ASan の build と回帰、style-check（`bind/markup.c`・`dom/serialize.c`・`html/parser.c` の新しい部分: 複合の条件の中の呼び出し、
-   閉じ括弧の後の空行など、まだ直していない）、guest（`build-browser-image.sh`、run-dom-tests `--outputs`、live の Amazon）、boot test。
-4. Amazon の capture の `--run` の Uncaught と `live-compare.py` の画素の比較（p080 の後: top 64.47%、search 76.04%）。
-5. phase.md を cleared の形にして ws.md の p081 の行を足す。
+## 確認（host は Debian の cc と Chromium 153。guest は QEMU。実機は未実施）
 
-その次の Phase（予定の p082、上の表の順）: `getComputedStyle`（computed の値の直列化）、`offsetTop`・`offsetLeft`・`offsetParent`
-（layout の box の位置と positioned の祖先）、`scrollTo`・`scrollBy`・`scroll`・`scrollIntoView`（view への scroll の要求の host callback）。
+- host の build（plain と ASan、-Werror）warning 0。style-check（`plan/tools/style-check.py`）: `bind/markup.c`・`dom/serialize.c`・
+  `bind/element.c`・`bind/node.c`・`html/parser.c`・`html/body.c` に指摘 0。
+- 回帰（plain と ASan、同じ結果）: golden 76/76、host-view 59/59、host-form 28/28、host-link 22/22、host-position 19/19、
+  host-text 20/20、host-relayout 161/161、host-base 2038・heap 31・interp 45・number 71・object 98（全て 0 failed）、run-dom-tests
+  **15/15**（markup を追加）、run-js-tests 12/12、run-loader-tests 11/11、run-http-tests 14/14・`--async` 17/17、run-font-tests 8/8、
+  **html5lib（WPT 2d66b9b7）の tree construction 1854/1959、fragment 206/206**（前は document 1648/1753 で fragment は走らせず。document の
+  数は不変）。main（p085 class）を取り込んだ後にも plain で全て同じ結果。ASan の `--render`（top-local・search-local）に報告 0。
+- Amazon（capture、`--run`、main の p085 の後）: top-local の Uncaught 2（async 1・for-of 1）、search-local 7（async 4・for-of 1・
+  `(at 1:1)` の `Cannot read properties` 2）。DOM の側の Uncaught は無い（p080 の後と同じ種類。class が async に置き換わった）。
+- `live-compare.py`（script 付き）: top-local 画素 64.47%・ink 57.66%、search-local 76.04%・ink 33.01%（不変）。
+- guest（QEMU、worktree の image を作り直した（main の p085 の取り込みの前）。clang・libcxx を含まない config、browser の compile に
+  warning 0）: run-dom-tests `--outputs` **15/15**（`XDG_DATA_HOME=/tmp/xdg`）。live の `https://www.amazon.co.jp/` の `--run`（取得 1 回）:
+  Uncaught 0（console の出力 0 行）、`--dump=dom`（取得 1 回）で 921 KB の DOM（`nav-search` 22 箇所）を確かめた。
+- boot test: PASS（worktree の `build/p081/boot-test/login.png`）。
+- 実機: 未実施。guest の窓（zdesktop）での表示: 未実施。
 
-patch は無い（全て commit 済み）。
+## 写真
+
+- host: worktree の `build/ws074-shots/p081-20260929-amazon-top-local-side.png`・`…-search-local-side.png`。
+
+## 残り・制限
+
+- DOMException が無い: `bind_throw_dom` は `Error`（message が「名前: 文」）を投げ、`e.name` は "Error"（Chromium は "SyntaxError" 等）。
+  DOM の全体に関わるので別の Phase（main に計画を依頼）。
+- `DOMParser`、`Range.createContextualFragment`、`document.write`、XML の直列化、`ShadowRoot`・`DocumentFragment` の `innerHTML`。
+- 画素の一致は不変: Amazon の表示の差は innerHTML ではなく、script の残り（async・for-of）と layout の側。
+
+## 結果
+
+- cleared。Amazon の script で最も多い DOM の API（innerHTML・outerHTML・insertAdjacentHTML）と `template.content` が入り、
+  Chromium と一致する試験 1 つと html5lib の fragment 206 case を足した。host（plain・ASan）と guest で全て通った。
+
+## 経緯（2026-09-29、前任の wrap up の時の記録）
+
+- 前任は断片の parse・直列化・binding を commit して引き継いだ。残り（template.content、試験の頁、ASan・style-check・guest・boot、
+  Amazon、記録）をこのエージェントが仕上げた。

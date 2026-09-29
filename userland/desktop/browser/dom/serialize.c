@@ -29,6 +29,8 @@
 static int serialize_node(const struct dom_node *node, int scripting, struct wb_units *out);
 static int serialize_children(const struct dom_node *node, int scripting, struct wb_units *out);
 static int serialize_element(const struct dom_element *element, int scripting, struct wb_units *out);
+static int serialize_tag_name(const struct dom_element *element, struct wb_units *out);
+static int serialize_attribute_name(const struct dom_attribute *attribute, struct wb_units *out);
 static int serialize_attribute(const struct dom_attribute *attribute, struct wb_units *out);
 static int serialize_escaped(const struct vm_string *string, int attribute, struct wb_units *out);
 static int serialize_units(const uint16_t *units, size_t length, int attribute, struct wb_units *out);
@@ -129,29 +131,37 @@ serialize_node(
 		raw = 0;
 		if (node->parent != NULL)
 			raw = serialize_is_raw_text(node->parent, scripting);
+
+		/* Written by the parent's kind. */
 		if (raw) {
 			error = wb_units_append(out, data->data.data, data->data.length);
 		} else {
 			error = serialize_units(data->data.data, data->data.length, 0, out);
 		}
+
+		/* Reports the writing. */
 		return error;
 	case DOM_COMMENT:
 		/* A comment, its data as it is. */
 		data = (const struct dom_character_data *)node;
 		error = serialize_ascii("<!--", out);
-		if (error == 0)
-			error = wb_units_append(out, data->data.data, data->data.length);
-		if (error == 0)
-			error = serialize_ascii("-->", out);
+		if (error != 0)
+			return error;
+		error = wb_units_append(out, data->data.data, data->data.length);
+		if (error != 0)
+			return error;
+		error = serialize_ascii("-->", out);
 		return error;
 	case DOM_DOCUMENT_TYPE:
 		/* A DOCTYPE, by its name. */
 		doctype = (const struct dom_doctype *)node;
 		error = serialize_ascii("<!DOCTYPE ", out);
-		if (error == 0)
-			error = serialize_string(doctype->name, out);
-		if (error == 0)
-			error = serialize_ascii(">", out);
+		if (error != 0)
+			return error;
+		error = serialize_string(doctype->name, out);
+		if (error != 0)
+			return error;
+		error = serialize_ascii(">", out);
 		return error;
 	default:
 		break;
@@ -177,19 +187,23 @@ serialize_element(
 	int is_void;
 	int error;
 
-	/* The start tag with the attributes. */
+	/* The start tag's name. */
 	error = serialize_ascii("<", out);
-	if (error == 0 && element->prefix != NULL && element->ns != DOM_NS_HTML && element->ns != DOM_NS_SVG && element->ns != DOM_NS_MATHML) {
-		error = serialize_string(element->prefix, out);
-		if (error == 0)
-			error = serialize_ascii(":", out);
-	}
-	if (error == 0)
-		error = serialize_string(element->local_name, out);
-	for (index = 0; index < element->attribute_count && error == 0; index++)
+	if (error != 0)
+		return error;
+	error = serialize_tag_name(element, out);
+	if (error != 0)
+		return error;
+
+	/* Each attribute. */
+	for (index = 0; index < element->attribute_count; index++) {
 		error = serialize_attribute(&element->attributes[index], out);
-	if (error == 0)
-		error = serialize_ascii(">", out);
+		if (error != 0)
+			return error;
+	}
+
+	/* The start tag ends. */
+	error = serialize_ascii(">", out);
 	if (error != 0)
 		return error;
 
@@ -205,19 +219,53 @@ serialize_element(
 
 	/* The end tag. */
 	error = serialize_ascii("</", out);
-	if (error == 0 && element->prefix != NULL && element->ns != DOM_NS_HTML && element->ns != DOM_NS_SVG && element->ns != DOM_NS_MATHML) {
-		error = serialize_string(element->prefix, out);
-		if (error == 0)
-			error = serialize_ascii(":", out);
-	}
-	if (error == 0)
-		error = serialize_string(element->local_name, out);
-	if (error == 0)
-		error = serialize_ascii(">", out);
+	if (error != 0)
+		return error;
+	error = serialize_tag_name(element, out);
+	if (error != 0)
+		return error;
+	error = serialize_ascii(">", out);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the element is written. */
+	return 0;
+}
+
+/*
+ * Writes an element's name in a tag: its local name, after its prefix
+ * for an element of a namespace other than HTML's, SVG's and MathML's.
+ */
+static int
+serialize_tag_name(
+	const struct dom_element *element,
+	struct wb_units *out)
+{
+	int prefixed;
+	int error;
+
+	/* Only an element of another namespace keeps its prefix. */
+	prefixed = 0;
+	if (element->prefix != NULL &&
+	    element->ns != DOM_NS_HTML &&
+	    element->ns != DOM_NS_SVG &&
+	    element->ns != DOM_NS_MATHML)
+		prefixed = 1;
+
+	/* The prefix and its colon. */
+	if (prefixed) {
+		error = serialize_string(element->prefix, out);
+		if (error != 0)
+			return error;
+		error = serialize_ascii(":", out);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the local name. */
+	error = serialize_string(element->local_name, out);
+	if (error != 0)
+		return error;
 	return 0;
 }
 
@@ -229,35 +277,70 @@ serialize_attribute(
 {
 	int error;
 
-	/* The space and the name's prefix for the XML, XMLNS and XLink namespaces. */
+	/* The space and the name. */
 	error = serialize_ascii(" ", out);
-	if (error == 0) {
-		if (attribute->ns == DOM_NS_XML) {
-			error = serialize_ascii("xml:", out);
-		} else if (attribute->ns == DOM_NS_XLINK) {
-			error = serialize_ascii("xlink:", out);
-		} else if (attribute->ns == DOM_NS_XMLNS && !vm_string_equal_ascii(attribute->name, "xmlns")) {
-			error = serialize_ascii("xmlns:", out);
-		} else if (attribute->ns != DOM_NS_NONE && attribute->ns != DOM_NS_XMLNS && attribute->prefix != NULL) {
-			error = serialize_string(attribute->prefix, out);
-			if (error == 0)
-				error = serialize_ascii(":", out);
-		}
-	}
+	if (error != 0)
+		return error;
+	error = serialize_attribute_name(attribute, out);
+	if (error != 0)
+		return error;
 
-	/* The name, then the value. */
-	if (error == 0)
-		error = serialize_string(attribute->name, out);
-	if (error == 0)
-		error = serialize_ascii("=\"", out);
-	if (error == 0)
-		error = serialize_escaped(attribute->value, 1, out);
-	if (error == 0)
-		error = serialize_ascii("\"", out);
+	/* The value in double quotes. */
+	error = serialize_ascii("=\"", out);
+	if (error != 0)
+		return error;
+	error = serialize_escaped(attribute->value, 1, out);
+	if (error != 0)
+		return error;
+	error = serialize_ascii("\"", out);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the attribute is written. */
+	return 0;
+}
+
+/*
+ * Writes an attribute's serialized name: its local name, after xml:,
+ * xlink: or xmlns: for those namespaces (not for xmlns itself), or after
+ * its own prefix for another namespace.
+ */
+static int
+serialize_attribute_name(
+	const struct dom_attribute *attribute,
+	struct wb_units *out)
+{
+	int xmlns;
+	int error;
+
+	/* Whether the name is xmlns itself, which takes no prefix. */
+	xmlns = vm_string_equal_ascii(attribute->name, "xmlns");
+
+	/* The prefix by the namespace. */
+	error = 0;
+	if (attribute->ns == DOM_NS_XML) {
+		error = serialize_ascii("xml:", out);
+	} else if (attribute->ns == DOM_NS_XLINK) {
+		error = serialize_ascii("xlink:", out);
+	} else if (attribute->ns == DOM_NS_XMLNS && !xmlns) {
+		error = serialize_ascii("xmlns:", out);
+	} else if (attribute->ns != DOM_NS_NONE &&
+		   attribute->ns != DOM_NS_XMLNS &&
+		   attribute->prefix != NULL) {
+		/* Another namespace's own prefix and its colon. */
+		error = serialize_string(attribute->prefix, out);
+		if (error == 0)
+			error = serialize_ascii(":", out);
+	}
+
+	/* A failed prefix. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the local name. */
+	error = serialize_string(attribute->name, out);
+	if (error != 0)
+		return error;
 	return 0;
 }
 
@@ -274,8 +357,13 @@ serialize_escaped(
 	/* The string's units. */
 	wb_units_init(&units);
 	error = vm_string_append_units(string, &units);
-	if (error == 0)
-		error = serialize_units(units.data, units.length, attribute, out);
+	if (error != 0) {
+		wb_units_release(&units);
+		return error;
+	}
+
+	/* Escaped, and the units are freed. */
+	error = serialize_units(units.data, units.length, attribute, out);
 	wb_units_release(&units);
 	if (error != 0)
 		return error;
@@ -315,13 +403,16 @@ serialize_units(
 		} else if (units[index] == '"' && attribute) {
 			entity = "&quot;";
 		}
+
+		/* A character that needs nothing continues the run. */
 		if (entity == NULL)
 			continue;
 
 		/* The run before it, and the entity. */
 		error = wb_units_append(out, units + start, index - start);
-		if (error == 0)
-			error = serialize_ascii(entity, out);
+		if (error != 0)
+			return error;
+		error = serialize_ascii(entity, out);
 		if (error != 0)
 			return error;
 		start = index + 1U;

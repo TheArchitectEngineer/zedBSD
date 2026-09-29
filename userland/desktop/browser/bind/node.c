@@ -1324,6 +1324,7 @@ node_clone_tree(
 	struct dom_doctype *doctype;
 	struct dom_node *child;
 	struct dom_node *child_copy;
+	struct dom_node *contents;
 	size_t index;
 	int status;
 
@@ -1378,6 +1379,19 @@ node_clone_tree(
 		dom_append_child(*clone, child_copy);
 	}
 
+	/* A template's copy gets copies of its contents' children too. */
+	if (node->type == DOM_ELEMENT && ((struct dom_element *)node)->content != NULL) {
+		status = bind_template_contents((struct dom_element *)*clone, &contents);
+		if (status != 0)
+			return status;
+		for (child = ((struct dom_element *)node)->content->first_child; child != NULL; child = child->next) {
+			status = node_clone_tree(realm, child, deep, depth + 1, &child_copy);
+			if (status != 0)
+				return status;
+			dom_append_child(contents, child_copy);
+		}
+	}
+
 	/* Succeeded: the copy is made. */
 	return 0;
 }
@@ -1395,6 +1409,8 @@ node_prototype_index(
 		element = (const struct dom_element *)node;
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG)
 			return BIND_HTML_IMAGE_ELEMENT;
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_TEMPLATE)
+			return BIND_HTML_TEMPLATE_ELEMENT;
 		if (element->ns == DOM_NS_HTML)
 			return BIND_HTML_ELEMENT;
 		return BIND_ELEMENT;

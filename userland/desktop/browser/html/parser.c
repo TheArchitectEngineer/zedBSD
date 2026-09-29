@@ -106,6 +106,7 @@ html_parser_create_fragment(
 	struct dom_element *root;
 	struct dom_node *walk;
 	int state;
+	int form;
 	int error;
 
 	/* A parser of the context's document. */
@@ -130,6 +131,8 @@ html_parser_create_fragment(
 		html_parser_destroy(p);
 		return ENOMEM;
 	}
+
+	/* It is the fragment's root and the stack's bottom. */
 	p->fragment_root = root;
 	tb_push(p, root);
 
@@ -144,7 +147,8 @@ html_parser_create_fragment(
 	for (walk = &context->node; walk != NULL; walk = walk->parent) {
 		if (walk->type != DOM_ELEMENT)
 			continue;
-		if (dom_element_is(walk, DOM_NS_HTML, DOM_TAG_FORM)) {
+		form = dom_element_is(walk, DOM_NS_HTML, DOM_TAG_FORM);
+		if (form) {
 			p->form = (struct dom_element *)walk;
 			break;
 		}
