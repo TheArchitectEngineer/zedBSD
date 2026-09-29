@@ -455,10 +455,12 @@ menu_always(
 	int count;
 	int error;
 
-	/* Only an item of the listing, and not a folder. */
+	/* Only an item of the listing. */
 	tab = fm_ui_tab(app);
 	if (item < 0 || (size_t)item >= tab->listing.count)
 		return;
+
+	/* The item, which must not be a folder (a folder opens in the window). */
 	entry = &tab->listing.entries[item];
 	if (entry->folder != 0)
 		return;
@@ -499,10 +501,12 @@ menu_system_default(
 	char message[192];
 	int error;
 
-	/* Only an item of the listing, and not a folder. */
+	/* Only an item of the listing. */
 	tab = fm_ui_tab(app);
 	if (item < 0 || (size_t)item >= tab->listing.count)
 		return;
+
+	/* The item, which must not be a folder (a folder opens in the window). */
 	entry = &tab->listing.entries[item];
 	if (entry->folder != 0)
 		return;

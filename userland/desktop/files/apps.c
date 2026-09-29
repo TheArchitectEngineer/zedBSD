@@ -46,6 +46,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+/* Marks a parameter a function's signature requires but it does not use. */
+#define UNUSED_PARAMETER(name)	((void)(name))
+
 /* The system's list, and the user's under the configuration folder. */
 #define APPS_SYSTEM_LIST	"/etc/keiland/open-with"
 #define APPS_USER_LIST		"keiland/open-with"
@@ -145,8 +148,9 @@ fm_apps_for(
 	int found;
 	int error;
 
+	UNUSED_PARAMETER(path);
+
 	/* A program runs in a terminal first. */
-	(void)path;
 	count = 0;
 	regular = S_ISREG(mode);
 	if (regular != 0 && (mode & 0111) != 0)
@@ -438,6 +442,8 @@ apps_rewrite(
 	error = apps_user_list(list, sizeof(list));
 	if (error != 0)
 		return error;
+
+	/* The new list's name: the list's with a suffix (the buffer holds both). */
 	snprintf(fresh, sizeof(fresh), "%s%s", list, APPS_NEW_SUFFIX);
 
 	/* The folders the list lives in, made when they are not there. */
@@ -622,6 +628,8 @@ apps_make_folders(
 		error = mkdir(folder, 0755);
 		if (error != 0 && errno != EEXIST)
 			return errno;
+
+		/* The path back to the list's folder. */
 		*slash = '/';
 	}
 
