@@ -72,6 +72,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p032](phase032/phase.md) | BUG-105 | Logi Bolt の受信機（046d:c548）の HID の descriptor を parse する: 同じ key の複数の field（0x31・0x32 → KEY_BACKSLASH）を許し、keyboard の usage を持たない array を読み飛ばし、AC Pan を REL_HWHEEL に。host 試験 PASS、HID の host 試験 3 本の回帰なし、vmunix warning 0、boot test PASS | in-progress（2026-09-29、実機の確認はユーザー待ち） |
 | [ws073-p033](phase033/phase.md) | BUG-106 | `ssh -tt` の最後の命令の出力の欠け: kernel の pty と OpenSSH の終わりの順を読み（出力を捨てる経路なし）、pen の image で約 500 回（欠け 0。0 byte の 1 回は sshd の listener の SIGSEGV と同時で BUG-051 の種類）。原因未確定、修正なし | uncleared（2026-09-29、WS081 のサブエージェントが main の依頼で実施、60 分で区切った） |
 | [ws073-p037](phase037/phase.md) | BUG-109 | libm の `sqrt`・`sqrtf` を amd64 の `sqrtsd`・`sqrtss`、arm64 の `fsqrt` に（kernel・i386 は整数の平方根のまま、`FE_INEXACT` は根の 2 乗の検査）。host の libm の試験の出力が変更前と同じ、bit・errno・例外の比較 PASS、guest の libm の試験 PASS、`sqrtf` 347.5 → 220.5 ns、boot test PASS、arm64 は build だけ（WS035 のエージェントが main の依頼で実施） | cleared（2026-09-29） |
+| [ws073-p038](phase038/phase.md) | BUG-110 | TLS の thread pointer を processor から読む: rtld の `__tls_get_addr`・TLSDESC・`__rtld_pthread_private` は amd64 `%fs:0`・arm64 `TPIDR_EL0`、static の libc も main thread の attach の後は同じ（i386 等は syscall のまま）。errno 1 回 204 → 7.5 ns、複数 thread と signal の TLS の試験（dynamic・static）・dyntest・libm・desktop・boot test PASS、arm64 は build だけ（WS035 のエージェントが main の依頼で実施） | cleared（2026-09-29） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 
