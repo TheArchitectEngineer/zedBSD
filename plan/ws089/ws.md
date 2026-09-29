@@ -3,13 +3,13 @@
 # WS089: 設定のアプリ（Settings）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から。OSC のデモ（fg010）の優先事項
+Resume point: p002（骨格と About）から。p001 は cleared（[design.md](design.md)、main の判断は design.md §9 と [proposed/](proposed/)）。OSC のデモ（fg010）の優先事項
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -26,14 +26,22 @@ Resume point: p001（設計）から。OSC のデモ（fg010）の優先事項
 - デモの受け入れ（案、p001 で確定）: 起動して項目を選ぶと頁が替わり、少なくとも About（OS の名前・版・機械）、Network（networkd の実際の状態:
   interface・address・Wi-Fi の一覧と接続）、Display（解像度・拡大）、Appearance・Wallpaper（見た目と壁紙の変更が desktop に反映）、Sound（音量、
   audiod）、Mouse・Touchpad（速さ、慣性の scroll の on/off）が実際に働く。それ以外の項目は頁の枠と「準備中」の表示でよい。App Home から起動できる。
+- **受け入れ（p001 で確定、2026-09-29）**: [design.md](design.md) §2 の表。案からの差: Display は読むだけ（拡大の変更は D1）、
+  Appearance は窓の透明度（accent の色は D2）、Storage（読むだけ）と Keyboard（repeat）を足す。Appearance・Wallpaper・Mouse・
+  Keyboard の desktop への反映は p007（main の許可）が要る。**Touchpad は準備中、慣性の on/off は出さない（D9）**。
+  案からの差（D1・D2・D9）はユーザーの確認を待つ既定であり、確認まで受け入れの確定は保留とする。
 
-## Phase（案）
+## Phase
+
+設計は [design.md](design.md)。他の WS の source への変更の案は [proposed/](proposed/)（main の許可が要る）。
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws089-p001 | 設計: 項目の一覧とデモで働かせる範囲、画面の構成（Files の pane・card の部品の再利用）、各項目の backend（networkd・audiod・sessiond・/dev/system・compositor の設定）との接続の方法、設定の保存先 | planning | — |
-| ws089-p002 | アプリの骨格: 窓、左の項目の pane、右の頁、戻る・進む・breadcrumb・検索、About の頁 | planning | p001 |
-| ws089-p003 | Network の頁（networkd の状態と Wi-Fi の接続） | planning | p002 |
-| ws089-p004 | Appearance・Wallpaper・Display の頁 | planning | p002 |
-| ws089-p005 | Sound・Mouse・Touchpad・Keyboard の頁 | planning | p002 |
-| ws089-p006 | 規約の全文との照合、回帰、デモの通し | planning | p003〜p005 |
+| [ws089-p001](phase001/phase.md) | 設計: 項目の一覧とデモで働かせる範囲、画面の構成（Files の pane・card の部品の再利用）、各項目の backend（networkd・audiod・sessiond・/dev/system・compositor の設定）との接続の方法、設定の保存先 | cleared（2026-09-29） | — |
+| ws089-p002 | アプリの骨格: 窓、present、glass の 2 枚の card、titlebar（Back・Forward・Home・Breadcrumb・Sidebar）と履歴、System Menu、左の項目の pane、右の頁の scroll、About と準備中の頁、App Home の行 | planned | p001、link の規則（[案](proposed/vmunix-link.md)、main の許可） |
+| ws089-p008 | 検索（titlebar の欄と結果の頁）と Home の頁（tile と今の状態） | planning | p002 |
+| ws089-p007 | desktop の設定の仕組み: libkeiland の `keiland_preferences_*` と zdesktop の反映（[案](proposed/desktop-preferences.md)、main の許可が要る） | planning | p001、main の許可 |
+| ws089-p003 | Network・Wi-Fi・Ethernet の頁（networkd の状態と Wi-Fi の接続、link の詳細は [案](proposed/libkeiland-network-link.md)） | planning | p002（link の詳細は main の許可） |
+| ws089-p004 | Appearance・Wallpaper・Display・Storage の頁 | planning | p002, p007 |
+| ws089-p005 | Sound・Mouse・Touchpad・Keyboard の頁（音量は [案](proposed/libkeiland-audio.md)） | planning | p002, p007（音量は main の許可） |
+| ws089-p006 | 規約の全文との照合、回帰、デモの通し、App Home の絵とデモの image（[案](proposed/app-home-icon.md)、main の許可） | planning | p003〜p005, p008 |
