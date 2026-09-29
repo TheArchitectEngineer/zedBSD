@@ -61,7 +61,7 @@ static int i915_draw_writes_storage(const struct i915_gfx_kernels *kernels);
 static int i915_draw_scratch_grow(struct i915_render_session *session, struct i915_gfx_session *work, const struct i915_gfx_kernels *kernels);
 static void i915_draw_object_destroy(struct i915_render_session *session, struct i915_gem_object *object);
 static int i915_draw_build_batch(struct i915_gfx_batch *batch, const struct i915_gfx_op_space *space, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, const struct i915_gfx_image *depth, uint32_t mocs, const struct i915_gfx_draw_args *args);
-static void i915_gfx_frame_stat(struct i915_gfx_session *work);
+static void i915_gfx_frame_stat(struct i915_render_session *session, struct i915_gfx_session *work);
 
 /*
  * Returns the objects the session's draws and rectangles share, making them
@@ -216,7 +216,7 @@ drv_i915_gfx_submit_end(
 	work->open = 0;
 
 	/* Counts the submission in the session's frame timing, logged every five seconds. */
-	i915_gfx_frame_stat(work);
+	i915_gfx_frame_stat(session, work);
 
 	/* Counts the submission's time and logs the timing once a window is over. */
 	device = session->vk->i915;
@@ -427,6 +427,7 @@ drv_i915_gfx_flush(
 	work->stat_run_ns += drv_i915_perf_now() - start;
 	work->stat_runs++;
 	work->stat_ops += work->ops_pending;
+	work->stat_ops_now += work->ops_pending;
 
 	/* Empties the batch: its operations have run, or failed, and every slot is free. */
 	work->cursor.count = 0U;
@@ -1108,6 +1109,7 @@ drv_i915_gfx_object_destroy(
  */
 static void
 i915_gfx_frame_stat(
+	struct i915_render_session *session,
 	struct i915_gfx_session *work)
 {
 	uint64_t now;
@@ -1120,6 +1122,9 @@ i915_gfx_frame_stat(
 		work->stat_start = work->submit_start;
 	work->stat_submits++;
 	work->stat_submit_ns += now - work->submit_start;
+	if (work->stat_ops_now > work->stat_ops_max)
+		work->stat_ops_max = work->stat_ops_now;
+	work->stat_ops_now = 0U;
 
 	/* A window shorter than five seconds is not logged yet. */
 	window = now - work->stat_start;
@@ -1129,12 +1134,14 @@ i915_gfx_frame_stat(
 	/* The busy sessions' line: per submission, in microseconds. */
 	if (work->stat_submits >= 50U) {
 		per = work->stat_submits;
-		kern_logf("i915: vk: frames %u in %u ms: per submit %u runs (%u full) %u ops, in submit %u us (runs %u, record %u), between %u us\n",
+		kern_logf("i915: vk: session %u: frames %u in %u ms: per submit %u runs (%u full) %u ops (most %u), in submit %u us (runs %u, record %u), between %u us\n",
+			  session->gpu->identifier,
 			  work->stat_submits,
 			  (unsigned)(window / 1000000U),
 			  (unsigned)((work->stat_runs + per / 2U) / per),
 			  work->stat_full,
 			  (unsigned)(work->stat_ops / per),
+			  work->stat_ops_max,
 			  (unsigned)(work->stat_submit_ns / per / 1000U),
 			  (unsigned)(work->stat_run_ns / per / 1000U),
 			  (unsigned)((work->stat_submit_ns - work->stat_run_ns) / per / 1000U),
@@ -1147,6 +1154,7 @@ i915_gfx_frame_stat(
 	work->stat_runs = 0U;
 	work->stat_ops = 0U;
 	work->stat_full = 0U;
+	work->stat_ops_max = 0U;
 	work->stat_submit_ns = 0U;
 	work->stat_run_ns = 0U;
 }

@@ -120,6 +120,8 @@ struct i915_gfx_session {
 	uint32_t stat_runs;
 	uint32_t stat_ops;
 	uint32_t stat_full;
+	uint32_t stat_ops_now;
+	uint32_t stat_ops_max;
 	uint64_t stat_submit_ns;
 	uint64_t stat_run_ns;
 };
