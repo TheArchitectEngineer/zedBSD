@@ -199,6 +199,8 @@ context_items(
 	context_submenu(context, CONTEXT_ALWAYS_WITH, "Always Open With", openable);
 	for (index = 0; index < state->opener_count; index++)
 		context_add(context, CONTEXT_ALWAYS_WITH, FM_ROW_ITEM, state->openers[index], FM_ACTION_ALWAYS_WITH_FIRST + (unsigned)index, 1);
+
+	/* A line, then Use System Default, enabled when the user chose a default for the type. */
 	context_add(context, CONTEXT_ALWAYS_WITH, FM_ROW_LINE, "", 0U, 1);
 	context_add(context, CONTEXT_ALWAYS_WITH, FM_ROW_ITEM, "Use System Default", FM_ACTION_USE_SYSTEM_DEFAULT, state->user_default);
 
