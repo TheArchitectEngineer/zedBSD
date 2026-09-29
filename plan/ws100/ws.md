@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から。基準の案はユーザーの確認待ち
+Resume point: p001（設計）cleared（2026-09-30）。次は p002（audiod）。基準の案はユーザーの確認待ち
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -62,4 +62,10 @@ legacy の HDA が 5330 の firmware の設定で無効にされていないか�
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws100-p001 | 設計: system bar の icon と popup（zdesktop）、audiod の音量の interface、確かめの音、設定の保存、QEMU の音の試験の方法、5330 の HDA の経路の調べ（codec の有無、legacy の HDA で鳴るか） | planning | — |
+| [ws100-p001](phase001/phase.md) | 設計（[design.md](design.md)）: icon と popup、audiod の音量と確かめの音、保存、QEMU の音の試験、5330 の HDA の調べ | cleared（2026-09-30: 5330 は Linux も legacy の HDA を選ぶ（DMIC なし）が codec は未確認） | — |
+| ws100-p002（案） | audiod: `AUDIOD_FEEDBACK`（約 100 ms の内蔵の音、重ならない）と、amplifier の無い device の software の音量。audiod-client と QEMU の wav | planning | p001 |
+| ws100-p003（案） | libkeiland: `keiland_audio_*`（WS089 の案 + `keiland_audio_feedback`）、KEILAND_VERSION 15、host の試験 | planning | p002 |
+| ws100-p004（案） | zdesktop: icon・popup・wheel・確かめの音・設定の保存（`sound.volume`・`sound.muted`）、QEMU の試験（A1〜A6）、WS099 の C9 | planning | p003、seat.c の hook を main と確認 |
+| ws100-p005（案） | Settings の Sound の頁に slider と mute（基準の外、ユーザーの判断） | planning | p003 |
+| ws100-p006（案） | 5330: Kei を直に起動して pci-hda の codec と pin を読み、鳴るかをユーザーが聞く（A7、デモに必須ではない） | planning | p002、実機 |
+| ws100-p007（案） | 規約（coding-style の全文）への合わせと全体の確かめ | planning | p002〜p006 |
