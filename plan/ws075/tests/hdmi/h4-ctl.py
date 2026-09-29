@@ -29,7 +29,7 @@ kernel's log (run.log, the debugcon: every record, also on a quiet boot).
                                   the tablet moves 40 pixels and PLANE_SURFLIVE is read with xp until it changes (or
                                   3 s pass); then 3 s without input count the flips the idle desktop makes.  One line
                                   per trial in latency.log and on the output
-    h4-ctl.py rate PIPE SECONDS   (ws075-p008) the flips per second of PIPE while the pointer keeps moving: the tablet
+    h4-ctl.py rate PIPE SECONDS [X Y]  (ws075-p008; X Y: where the pointer moves, default the centre) the flips per second of PIPE while the pointer keeps moving: the tablet
                                   moves back and forth by 40 pixels every 8 ms for SECONDS, and PLANE_SURFLIVE is read
                                   between the moves; one line in latency.log and on the output
     h4-ctl.py quit                ends QEMU
@@ -55,7 +55,7 @@ WATCH = (('transconf', 0x71008), ('plane_ctl', 0x71180), ('surflive', 0x711ac), 
 LOGGED_FLIPS = 3
 PLAIN = {' ': 'spc', '-': 'minus', '=': 'equal', '.': 'dot', '/': 'slash', '\n': 'ret', '\t': 'tab', ';': 'semicolon'}
 # Characters typed with shift on the US layout (ws075-p009: shell redirections in a terminal).
-SHIFTED = {'>': 'dot', '<': 'comma', '|': 'backslash', '&': '7', '_': 'minus', ':': 'semicolon'}
+SHIFTED = {'>': 'dot', '<': 'comma', '|': 'backslash', '&': '7', '_': 'minus', ':': 'semicolon', '*': '8', '"': 'apostrophe'}
 
 
 def qmp_open(name='qmp.sock'):
@@ -377,7 +377,7 @@ def latency(f, pipe, count):
         print(f'latency: {len(done)}/{count} flipped, median {done[len(done) // 2]:.1f} ms, min {done[0]:.1f}, max {done[-1]:.1f}')
 
 
-def rate(f, pipe, seconds):
+def rate(f, pipe, seconds, cx=None, cy=None):
     """Counts the flips of the pipe while the pointer keeps moving (the presentation rate under input)."""
     bar = graphics_bar(f)
     if bar is None:
@@ -391,8 +391,10 @@ def rate(f, pipe, seconds):
     while time.monotonic() - start < seconds:
         now = time.monotonic()
         if now >= next_move:
-            x = width // 2 + (40 if moves % 2 == 0 else -40)
-            tablet(f, x, height // 2, width, height)
+            base_x = width // 2 if cx is None else cx
+            base_y = height // 2 if cy is None else cy
+            x = base_x + (40 if moves % 2 == 0 else -40)
+            tablet(f, x, base_y, width, height)
             moves += 1
             next_move = now + 0.008
         live = surflive(f, bar, pipe)
@@ -428,7 +430,10 @@ def main():
     elif command == 'latency':
         latency(f, sys.argv[2], int(sys.argv[3]))
     elif command == 'rate':
-        rate(f, sys.argv[2], float(sys.argv[3]))
+        if len(sys.argv) >= 6:
+            rate(f, sys.argv[2], float(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]))
+        else:
+            rate(f, sys.argv[2], float(sys.argv[3]))
     elif command == 'quit':
         print(qmp(f, 'quit'))
     else:
