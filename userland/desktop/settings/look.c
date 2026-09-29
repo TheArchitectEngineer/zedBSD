@@ -534,6 +534,10 @@ look_thumbnail(
 	unsigned dx;
 	unsigned dy;
 	unsigned channel;
+	unsigned crop_width;
+	unsigned crop_height;
+	unsigned crop_left;
+	unsigned crop_top;
 	int error;
 
 	/* The file. */
@@ -562,6 +566,22 @@ look_thumbnail(
 		return error;
 	}
 
+	/*
+	 * The middle of the picture in the tile's proportions (16:10): a wider
+	 * picture loses its sides, a taller one its top and bottom.
+	 */
+	crop_width = width;
+	crop_height = height;
+	if ((uint64_t)width * LOOK_THUMB_HEIGHT > (uint64_t)height * LOOK_THUMB_WIDTH) {
+		crop_width = (unsigned)((uint64_t)height * LOOK_THUMB_WIDTH / LOOK_THUMB_HEIGHT);
+	} else {
+		crop_height = (unsigned)((uint64_t)width * LOOK_THUMB_HEIGHT / LOOK_THUMB_WIDTH);
+	}
+
+	/* The crop's corner, in the middle. */
+	crop_left = (width - crop_width) / 2U;
+	crop_top = (height - crop_height) / 2U;
+
 	/* The small image. */
 	error = fm_image_create(image, LOOK_THUMB_WIDTH, LOOK_THUMB_HEIGHT);
 	if (error != 0) {
@@ -578,8 +598,8 @@ look_thumbnail(
 			samples = 0;
 			for (dy = 0; dy < 3U; dy++) {
 				for (dx = 0; dx < 3U; dx++) {
-					source_x = (unsigned)(((uint64_t)x * 3U + dx) * width / (LOOK_THUMB_WIDTH * 3U));
-					source_y = (unsigned)(((uint64_t)y * 3U + dy) * height / (LOOK_THUMB_HEIGHT * 3U));
+					source_x = crop_left + (unsigned)(((uint64_t)x * 3U + dx) * crop_width / (LOOK_THUMB_WIDTH * 3U));
+					source_y = crop_top + (unsigned)(((uint64_t)y * 3U + dy) * crop_height / (LOOK_THUMB_HEIGHT * 3U));
 					pixel = data + at + ((size_t)source_y * width + source_x) * 3U;
 					for (channel = 0; channel < 3U; channel++)
 						sums[channel] += pixel[channel];

@@ -2,7 +2,8 @@
 # ws075-p013 (H4): builds the demonstration image (plan/ws075/demo/config-demo-hdmi.mk): the graphical boot to the
 # greeter and the session on the HDMI display (display=hdmi), App Home with the demonstration's applications
 # (plan/ws035/demo/apps.conf: Files, Notes, Terminal, PDF Viewer, Browser, Model viewer, Gears, X terminal), and the
-# wallpaper, which is not in git (build/ws035-wallpaper/).  The demonstration's accounts
+# wallpaper, which is not in git (build/ws035-wallpaper/), with the wallpapers Settings offers, drawn by
+# userland/desktop/wallpapers/generate.py.  The demonstration's accounts
 # (ws035-p120, plan/ws035/demo/demo-accounts.sh): the person kei, shown as "Kei", logs in without a password (Enter
 # the passwords are root and kei); kei is logged in by itself at boot.  sessiond waits for the i915's GPU node while the kernel reports the device still attaching
 # (hw.gpu.attaching, BUG-092).
@@ -30,6 +31,11 @@ extra="--file /etc/keiland/apps.conf=plan/ws035/demo/apps.conf"
 # The fonts and their licenses come with the compositor's package (userland/desktop/fonts/).
 [ -f build/ws035-wallpaper/wallpaper-1080.ppm ] && extra="$extra --file /usr/share/keiland/wallpaper.ppm=build/ws035-wallpaper/wallpaper-1080.ppm"
 mkdir -p "$build"
+# ws089-p009: the wallpapers Settings offers, drawn now (not in git), in /usr/share/keiland/wallpapers.
+python3 userland/desktop/wallpapers/generate.py "$build/wallpapers" >/dev/null
+for picture in "$build"/wallpapers/*.ppm; do
+	extra="$extra --file /usr/share/keiland/wallpapers/$(basename "$picture")=$picture"
+done
 accounts=$build/demo-accounts
 plan/ws035/demo/demo-accounts.sh "$accounts"
 # The guest harness's public key lets plan/tools/guest/guest.sh-style ssh reach root on the machine.
