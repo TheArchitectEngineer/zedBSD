@@ -592,6 +592,7 @@ int kui_ui_drag_offset(struct kui_ui *ui, uint64_t now_us, double *dx, double *d
 struct kui_window;
 struct wl_display;
 struct wl_surface;
+struct wl_seat;
 struct xdg_toplevel;
 
 /* How the frames are shown. */
@@ -672,6 +673,8 @@ struct wl_surface *kui_window_surface(const struct kui_window *window);
 struct xdg_toplevel *kui_window_toplevel(const struct kui_window *window);
 uint32_t kui_window_serial(const struct kui_window *window);
 uint32_t kui_window_press_serial(const struct kui_window *window);
+void kui_window_set_serial(struct kui_window *window, uint32_t serial);
+struct wl_seat *kui_window_seat(const struct kui_window *window);
 void kui_window_copy(struct kui_window *window, const char *text, size_t length);
 size_t kui_window_paste(struct kui_window *window, char *text, size_t size);
 int kui_window_can_paste(const struct kui_window *window);

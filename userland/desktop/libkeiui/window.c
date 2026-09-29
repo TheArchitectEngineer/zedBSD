@@ -564,6 +564,31 @@ kui_window_press_serial(
 }
 
 /*
+ * Takes the serial of an input the application heard through another
+ * object (a System Menu's or a titlebar's choice), so that a selection set
+ * in answer carries it.
+ */
+void
+kui_window_set_serial(
+	struct kui_window *window,
+	uint32_t serial)
+{
+	/* The latest input's serial. */
+	window->serial = serial;
+}
+
+/*
+ * Reports the window's seat (for a context menu's popup).
+ */
+struct wl_seat *
+kui_window_seat(
+	const struct kui_window *window)
+{
+	/* The seat. */
+	return window->seat;
+}
+
+/*
  * Reports the monotonic clock in microseconds (the clock of the library's
  * times).
  */

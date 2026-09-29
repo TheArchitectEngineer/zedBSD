@@ -172,7 +172,7 @@ te_menu_open(
 	menu->window = window;
 
 	/* The connection's menu service; a compositor without one leaves the editor without menus. */
-	menu->service = keiland_menu_service_open(window->display);
+	menu->service = keiland_menu_service_open(kui_window_display(window->kui));
 	if (menu->service == NULL) {
 		te_log("MENU none errno=%d", errno);
 		return 0;
@@ -184,7 +184,7 @@ te_menu_open(
 		return errno;
 
 	/* The window's place for a menu, which tells the editor what is chosen. */
-	menu->window_menu = keiland_window_menu_create(menu->service, window->toplevel, &menu_listener, menu);
+	menu->window_menu = keiland_window_menu_create(menu->service, kui_window_toplevel(window->kui), &menu_listener, menu);
 	if (menu->window_menu == NULL)
 		return errno;
 
@@ -257,7 +257,7 @@ te_menu_popup(
 		return;
 
 	/* The menu at the place, for the last press. */
-	menu->popup = keiland_menu_popup(menu->service, menu->context, menu->window->surface, x, y, menu->window->seat, menu->window->press_serial, &menu_context_listener, menu);
+	menu->popup = keiland_menu_popup(menu->service, menu->context, kui_window_surface(menu->window->kui), x, y, kui_window_seat(menu->window->kui), kui_window_press_serial(menu->window->kui), &menu_context_listener, menu);
 	if (menu->popup == NULL) {
 		te_log("MENU popup-failed errno=%d", errno);
 		return;
@@ -307,7 +307,7 @@ menu_activated(
 
 	/* The log line the tests read, and the action. */
 	te_log("MENU item=%u action=%u serial=%u", item, action, serial);
-	menu->window->serial = serial;
+	kui_window_set_serial(menu->window->kui, serial);
 	te_window_action(menu->window, action);
 }
 
@@ -326,7 +326,7 @@ menu_context_activated(
 	(void)context_menu;
 	menu = data;
 	te_log("MENU context item=%u action=%u", item, action);
-	menu->window->serial = serial;
+	kui_window_set_serial(menu->window->kui, serial);
 	te_window_action(menu->window, action);
 }
 

@@ -30,19 +30,19 @@ int
 te_glass_open(
 	struct te_glass *glass,
 	struct te_window *window,
-	const struct te_present *present)
+	int see_through)
 {
 	/* Nothing sent yet. */
 	memset(glass, 0, sizeof(*glass));
 
 	/* A frame that zdesktop does not blend cannot let the desktop through. */
-	if (present->premultiplied == 0) {
+	if (!see_through) {
 		te_log("GLASS off reason=opaque");
 		return 0;
 	}
 
 	/* zdesktop's glass for the window's surface. */
-	glass->glass = keiland_glass_create(window->display, window->surface);
+	glass->glass = keiland_glass_create(kui_window_display(window->kui), kui_window_surface(window->kui));
 	if (glass->glass == NULL) {
 		te_log("GLASS off reason=compositor errno=%d", errno);
 		return 0;
