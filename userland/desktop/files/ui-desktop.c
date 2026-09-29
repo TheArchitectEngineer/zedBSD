@@ -6,7 +6,7 @@
  */
 
 /*
- * The desktop's icons (files --desktop, ws094-p003, p004,
+ * The desktop's icons (files --desktop, ws094-p003 to p005,
  * plan/ws094/design.md §4): the items of ~/Desktop drawn on zdesktop's
  * desktop surface, over the wallpaper, in the cells desktop-layout.c gives
  * them, and what the pointer and the keys do to them.
@@ -19,7 +19,12 @@
  * what it touches, a double click or Enter opens (a file with its default
  * way, WS093; a folder in a new Files window), the arrows move the
  * selection to the nearest item that way, Ctrl+A selects all and Esc
- * nothing.  The rest of the surface is clear.
+ * nothing.  A right press opens the context menu of the items under it or
+ * of the empty desktop (ui-context.c; its actions, ui-desktop-actions.c).
+ * A name being changed is a field in place of the name.  The file
+ * manager's messages show in a pill at the bottom, and its questions (a
+ * name taken by a paste) on a card in the middle, over the dimmed desktop.
+ * The rest of the surface is clear.
  */
 
 #include "files.h"
@@ -45,6 +50,15 @@
 #define DESKTOP_BAND_FILL	FM_RGBA(0x2f7cf6, 40)
 #define DESKTOP_BAND_EDGE	FM_RGBA(0x2f7cf6, 160)
 
+/* The field of a name being changed: its height and how far it is under the icon. */
+#define DESKTOP_FIELD_HEIGHT	22
+#define DESKTOP_FIELD_TOP	(DESKTOP_ICON + 10)
+
+/* The message's pill: its height, text size and distance from the bottom. */
+#define DESKTOP_PILL_HEIGHT	28
+#define DESKTOP_PILL_TEXT_SIZE	12U
+#define DESKTOP_PILL_BOTTOM	56
+
 /* A second click this soon after the first on the same item is a double click, in milliseconds. */
 #define DESKTOP_DOUBLE_CLICK_MS	400U
 
@@ -67,6 +81,11 @@
 static void desktop_layout(struct fm_app *app, int width, int height);
 static void desktop_item(struct fm_app *app, struct fm_canvas *canvas, const struct fm_entry *entry, const struct fm_rect *cell);
 static void desktop_name(struct fm_app *app, struct fm_canvas *canvas, const char *name, const struct fm_rect *cell, int selected);
+static void desktop_field(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *cell);
+static void desktop_message(struct fm_app *app, struct fm_canvas *canvas);
+static int desktop_renaming(const struct fm_app *app, const struct fm_entry *entry);
+static uint32_t desktop_names_hash(const struct fm_tab *tab);
+static void desktop_context(struct fm_app *app, const struct fm_event *event);
 static void desktop_band_rect(const struct fm_desktop *desk, struct fm_rect *rect);
 static void desktop_band_select(struct fm_app *app);
 static void desktop_press(struct fm_app *app, const struct fm_event *event);
@@ -100,6 +119,11 @@ fm_desktop_draw(
 	desk = &app->desk;
 	desktop_layout(app, canvas->width, canvas->height);
 
+	/* The frame's size, and no clickable part yet (a question's card records its buttons). */
+	app->width = canvas->width;
+	app->height = canvas->height;
+	app->hit_count = 0;
+
 	/* The layout is logged when the number of items changed (the tests read it). */
 	logging = 0;
 	if (desk->logged != (int)tab->listing.count + 1)
@@ -129,6 +153,10 @@ fm_desktop_draw(
 		fm_canvas_round_border(canvas, (float)band.x, (float)band.y, (float)band.width, (float)band.height, 0.0f, 1.0f, DESKTOP_BAND_EDGE);
 	}
 
+	/* The file manager's message, and its question over everything. */
+	desktop_message(app, canvas);
+	fm_overlay_draw(app, canvas);
+
 	/* The summary line, once for the layout. */
 	if (logging) {
 		fm_log("DESKTOP ready items=%lu cells=%d width=%d height=%d", (unsigned long)tab->listing.count, cells, canvas->width, canvas->height);
@@ -150,14 +178,27 @@ fm_desktop_event(
 {
 	struct fm_desktop *desk;
 
-	/* The pointer's place, for the rubber band. */
+	/* A question takes the pointer and the keys until it is answered (its card is the file manager's). */
 	desk = &app->desk;
+	if (app->dialog != FM_DIALOG_NONE && event->type != FM_EVENT_ACTION) {
+		fm_ui_event(app, event);
+		return;
+	}
+
+	/* The pointer's place, for the rubber band. */
 	desk->pointer_x = event->x;
 	desk->pointer_y = event->y;
 
 	/* Each kind of input. */
 	switch (event->type) {
 	case FM_EVENT_BUTTON:
+		/* The right button: the context menu of what it is on. */
+		if (event->button == FM_BUTTON_RIGHT) {
+			if (event->pressed)
+				desktop_context(app, event);
+			break;
+		}
+
 		/* The left button: a press selects, opens or starts a band; its release ends the band. */
 		if (event->button != FM_BUTTON_LEFT)
 			break;
@@ -186,6 +227,10 @@ fm_desktop_event(
 		/* A key press. */
 		if (event->pressed)
 			desktop_key(app, event);
+		break;
+	case FM_EVENT_ACTION:
+		/* A choice of the context menu. */
+		fm_desktop_action(app, event->action);
 		break;
 	default:
 		break;
@@ -251,7 +296,12 @@ fm_desktop_item_at(
 	return -1;
 }
 
-/* Works out the items' places for the desktop's size and listing when either changed (the saved places read once). */
+/*
+ * Works out the items' places for the desktop's size and listing when
+ * either changed (the saved places read once): the saved places first,
+ * then the places the items were shown at, so that a new item takes a free
+ * cell and the others stay.
+ */
 static void
 desktop_layout(
 	struct fm_app *app,
@@ -259,11 +309,14 @@ desktop_layout(
 	int height)
 {
 	struct fm_desktop_place *places;
+	struct fm_desktop_saved *known;
 	struct fm_desktop *desk;
 	struct fm_tab *tab;
 	const char **names;
 	char path[FM_PATH_MAX];
+	size_t known_count;
 	size_t index;
+	uint32_t names_hash;
 	int error;
 
 	/* The saved places, once. */
@@ -277,11 +330,15 @@ desktop_layout(
 		fm_log("DESKTOP layout saved=%lu error=%d", (unsigned long)desk->saved_count, error);
 	}
 
+	/* The listing's names in order, as a hash (a rename changes it without changing the count). */
+	names_hash = desktop_names_hash(tab);
+
 	/* An unchanged size and listing keep their places. */
 	if (desk->width == width &&
 	    desk->height == height &&
 	    desk->laid_count == tab->listing.count &&
 	    desk->laid_modified == tab->listing.modified &&
+	    desk->laid_names == names_hash &&
 	    desk->place_count == tab->listing.count)
 		return;
 
@@ -294,18 +351,39 @@ desktop_layout(
 	if (names == NULL)
 		return;
 
+	/* The places known: the saved ones, then those shown. */
+	known_count = desk->saved_count + desk->shown_count;
+	known = malloc((known_count + 1U) * sizeof(known[0]));
+	if (known == NULL) {
+		free(names);
+		return;
+	}
+
+	/* Copied in that order (the first place of a name is the one kept). */
+	if (desk->saved_count != 0U)
+		memcpy(known, desk->saved, desk->saved_count * sizeof(known[0]));
+	if (desk->shown_count != 0U)
+		memcpy(known + desk->saved_count, desk->shown, desk->shown_count * sizeof(known[0]));
+
 	/* The names in the listing's order, placed. */
 	for (index = 0; index < tab->listing.count; index++)
 		names[index] = tab->listing.entries[index].name;
-	fm_desktop_arrange(names, tab->listing.count, desk->saved, desk->saved_count, width, height, desk->places);
+	fm_desktop_arrange(names, tab->listing.count, known, known_count, width, height, desk->places);
+	free(known);
+
+	/* The places shown now, remembered for the next layout. */
+	desk->place_count = tab->listing.count;
+	error = fm_desktop_remember(desk, names, tab->listing.count);
+	if (error != 0)
+		fm_log("DESKTOP remember error=%d", error);
 	free(names);
 
 	/* The places are for this size and listing. */
-	desk->place_count = tab->listing.count;
 	desk->width = width;
 	desk->height = height;
 	desk->laid_count = tab->listing.count;
 	desk->laid_modified = tab->listing.modified;
+	desk->laid_names = names_hash;
 	desk->logged = 0;
 }
 
@@ -319,6 +397,7 @@ desktop_item(
 {
 	float left;
 	float top;
+	int renaming;
 
 	/* The icon's place, centred across the cell, a little under its top. */
 	left = (float)cell->x + (float)(cell->width - DESKTOP_ICON) / 2.0f;
@@ -328,9 +407,18 @@ desktop_item(
 	if (entry->selected)
 		fm_canvas_round(canvas, left - 6.0f, top - 4.0f, (float)DESKTOP_ICON + 12.0f, (float)DESKTOP_ICON + 8.0f, 10.0f, DESKTOP_GROUND_COLOR);
 
-	/* The icon, and the name under it. */
+	/* The icon, faded when the item is cut. */
 	fm_grid_entry_icon(app, canvas, entry, left, top, (float)DESKTOP_ICON);
-	desktop_name(app, canvas, entry->name, cell, entry->selected);
+	if (entry->cut != 0)
+		fm_canvas_round(canvas, left, top, (float)DESKTOP_ICON, (float)DESKTOP_ICON, 8.0f, FM_RGBA(0xffffff, 150));
+
+	/* The name under it, or the field of the name being changed. */
+	renaming = desktop_renaming(app, entry);
+	if (renaming) {
+		desktop_field(app, canvas, cell);
+	} else {
+		desktop_name(app, canvas, entry->name, cell, entry->selected);
+	}
 }
 
 /*
@@ -382,6 +470,164 @@ desktop_name(
 
 	/* The text over it. */
 	(void)fm_text_draw_fit(app->text, canvas, left, baseline, name, DESKTOP_TEXT, 0, available, DESKTOP_TEXT_COLOR);
+}
+
+/* Draws the field of the name being changed under an item's icon: white, with the accent's edge, as wide as the name (up to two cells). */
+static void
+desktop_field(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	const struct fm_rect *cell)
+{
+	struct fm_rect field;
+	int width;
+
+	/* As wide as the name and a little room, at least the cell and at most two cells. */
+	width = fm_text_width(app->text, app->rename.text, app->rename.length, DESKTOP_TEXT, 0) + 24;
+	if (width < cell->width - 4)
+		width = cell->width - 4;
+	if (width > 2 * cell->width)
+		width = 2 * cell->width;
+
+	/* Centred under the icon, kept on the desktop. */
+	field.x = cell->x + (cell->width - width) / 2;
+	if (field.x + width > canvas->width - 4)
+		field.x = canvas->width - 4 - width;
+	field.y = cell->y + DESKTOP_FIELD_TOP;
+	field.width = width;
+	field.height = DESKTOP_FIELD_HEIGHT;
+	fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, FM_COLOR_PANEL);
+	fm_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, 1.5f, FM_COLOR_ACCENT);
+
+	/* The text in it, a little in from its edges. */
+	field.x += 5;
+	field.width -= 10;
+	fm_field_draw(app, canvas, &app->rename, &field, DESKTOP_TEXT, NULL);
+}
+
+/* Draws the file manager's message, or else a running operation's progress, in a dark pill at the bottom of the desktop. */
+static void
+desktop_message(
+	struct fm_app *app,
+	struct fm_canvas *canvas)
+{
+	char text[256];
+	int width;
+	int x;
+	int y;
+
+	/* A message while it lasts, or the first operation's progress. */
+	text[0] = '\0';
+	if (app->message[0] != '\0' && app->now < app->message_until)
+		snprintf(text, sizeof(text), "%s", app->message);
+	if (text[0] == '\0' && app->task_count > 0)
+		fm_task_text(app->tasks[0], text, sizeof(text));
+
+	/* Nothing to say. */
+	if (text[0] == '\0')
+		return;
+
+	/* The pill, centred at the bottom, and the text on it. */
+	width = fm_text_width(app->text, text, strlen(text), DESKTOP_PILL_TEXT_SIZE, 0) + 32;
+	x = (canvas->width - width) / 2;
+	y = canvas->height - DESKTOP_PILL_BOTTOM;
+	fm_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, (float)DESKTOP_PILL_HEIGHT, 14.0f, 8.0f, FM_COLOR_SHADOW);
+	fm_canvas_round(canvas, (float)x, (float)y, (float)width, (float)DESKTOP_PILL_HEIGHT, 14.0f, FM_RGBA(0x2a3345, 225));
+	(void)fm_text_draw(app->text, canvas, x + 16, fm_text_center(DESKTOP_PILL_TEXT_SIZE, y, DESKTOP_PILL_HEIGHT), text, strlen(text), DESKTOP_PILL_TEXT_SIZE, 0, FM_RGB(0xffffff));
+}
+
+/* Hashes the names of the tab's listing in their order (FNV-1a, with a zero byte after each name). */
+static uint32_t
+desktop_names_hash(
+	const struct fm_tab *tab)
+{
+	const unsigned char *name;
+	uint32_t hash;
+	size_t index;
+
+	/* Each name's bytes and its end, in order. */
+	hash = 2166136261U;
+	for (index = 0; index < tab->listing.count; index++) {
+		/* The name's bytes. */
+		for (name = (const unsigned char *)tab->listing.entries[index].name;
+		     *name != '\0';
+		     name++) {
+			hash ^= (uint32_t)*name;
+			hash *= 16777619U;
+		}
+
+		/* The end of the name, so that "ab","c" and "a","bc" differ. */
+		hash *= 16777619U;
+	}
+
+	/* The listing's hash. */
+	return hash;
+}
+
+/* Tells whether an item's name is the one being changed. */
+static int
+desktop_renaming(
+	const struct fm_app *app,
+	const struct fm_entry *entry)
+{
+	int differs;
+
+	/* No name is being changed. */
+	if (app->focus != FM_FOCUS_RENAME)
+		return 0;
+
+	/* The item is the one whose path the change keeps. */
+	differs = strcmp(entry->path, app->rename_path);
+	if (differs != 0)
+		return 0;
+
+	/* It is this item's name. */
+	return 1;
+}
+
+/*
+ * Handles a right press: an item under it is selected (the selection
+ * stays when the item is part of it) and the items' context menu opens;
+ * where no item is, the selection goes and the empty desktop's menu
+ * opens.  A name being changed ends first, keeping what was typed.
+ */
+static void
+desktop_context(
+	struct fm_app *app,
+	const struct fm_event *event)
+{
+	struct fm_tab *tab;
+	int index;
+
+	/* The name being changed ends, and the items are placed again for the listing it left. */
+	if (app->focus == FM_FOCUS_RENAME) {
+		fm_desktop_rename_end(app, 1);
+		desktop_layout(app, app->desk.width, app->desk.height);
+	}
+
+	/* The press's place, which the menu opens at, and the item there. */
+	tab = fm_ui_tab(app);
+	app->context_x = event->x;
+	app->context_y = event->y;
+	app->context_place = -1;
+	app->dirty = 1;
+	index = fm_desktop_item_at(app, event->x, event->y);
+
+	/* An item: selected unless it already is, and the items' menu. */
+	if (index >= 0 && (size_t)index < tab->listing.count) {
+		if (tab->listing.entries[index].selected == 0)
+			fm_select_only(tab, index);
+		app->context_where = FM_CONTEXT_ITEMS;
+		app->request = FM_REQUEST_CONTEXT;
+		fm_log("DESKTOP context name=%s", tab->listing.entries[index].name);
+		return;
+	}
+
+	/* The empty desktop: nothing stays selected, and its menu. */
+	fm_select_none(tab);
+	app->context_where = FM_CONTEXT_EMPTY;
+	app->request = FM_REQUEST_CONTEXT;
+	fm_log("DESKTOP context empty x=%d y=%d", event->x, event->y);
 }
 
 /* Works out the rubber band's rectangle, from where it started to the pointer. */
@@ -448,6 +694,7 @@ desktop_press(
 {
 	struct fm_desktop *desk;
 	struct fm_tab *tab;
+	int renaming;
 	int index;
 
 	/* The item under the press. */
@@ -455,6 +702,20 @@ desktop_press(
 	tab = fm_ui_tab(app);
 	index = fm_desktop_item_at(app, event->x, event->y);
 	app->dirty = 1;
+
+	/* A press on the item whose name is being changed keeps the change; elsewhere it ends, keeping what was typed. */
+	if (app->focus == FM_FOCUS_RENAME) {
+		renaming = 0;
+		if (index >= 0)
+			renaming = desktop_renaming(app, &tab->listing.entries[index]);
+		if (renaming)
+			return;
+
+		/* The change ends, and the items are placed again for the listing it left. */
+		fm_desktop_rename_end(app, 1);
+		desktop_layout(app, desk->width, desk->height);
+		index = fm_desktop_item_at(app, event->x, event->y);
+	}
 
 	/* No item: the selection goes (Ctrl keeps it) and a rubber band starts. */
 	if (index < 0) {
@@ -501,10 +762,27 @@ desktop_key(
 	const struct fm_event *event)
 {
 	struct fm_tab *tab;
+	unsigned result;
+	int handled;
 
-	/* Each key. */
+	/* The name being changed takes the keys: Enter renames, Esc gives up. */
 	tab = fm_ui_tab(app);
 	app->dirty = 1;
+	if (app->focus == FM_FOCUS_RENAME) {
+		result = fm_field_key(&app->rename, event->key, event->modifiers);
+		if (result == FM_FIELD_ENTER)
+			fm_desktop_rename_end(app, 1);
+		else if (result == FM_FIELD_CANCEL)
+			fm_desktop_rename_end(app, 0);
+		return;
+	}
+
+	/* The keys of the file operations (Delete, F2, the clipboard, undo, a new folder). */
+	handled = fm_desktop_operation_key(app, event);
+	if (handled)
+		return;
+
+	/* Each other key. */
 	switch (event->key) {
 	case DESKTOP_KEY_ENTER:
 	case DESKTOP_KEY_KPENTER:

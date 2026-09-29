@@ -3,7 +3,7 @@
 # WS100: system bar の音量（icon・slider・確かめの音）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2
@@ -17,7 +17,7 @@ Resume point: p007（規約と全体）cleared（2026-09-30）。A1〜A6 は QEM
 「音声については、サウンドの音量を右上の通知領域にアイコンとして追加し、ボリュームを調整できるようにしたいです。また、動画再生はOSCデモの
 あとで実装するとして、ボリューム調整のフィードバックの音だけは鳴るとうれしいです。」
 
-## 達成基準（案、2026-09-30 main。ユーザーの確認待ち）
+## 達成基準（2026-09-30 main の案、同日朝ユーザーが「案のまま確定」。p005 の Sound の頁も入れる）
 
 | # | 基準 | 確かめ方 |
 | --- | --- | --- |

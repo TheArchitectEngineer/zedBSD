@@ -26,6 +26,7 @@
  * the rows keeps it, and one that removes the item drops it.
  */
 
+#include "desktop.h"
 #include "menu.h"
 #include "popup.h"
 #include "titlebar.h"
@@ -143,10 +144,16 @@ struct shell_logged {
  * context is the xdg_context_menu_v1 whose menu is open at a point of the
  * window (ws071-p009), NULL for the window's own menu: its model is the
  * context menu's, its choice and its end go to it, and it has no bar.
+ *
+ * desktop_top is the window that was on top when a context menu opened on
+ * the desktop surface (ws094-p005; NULL for none, and for any other menu):
+ * the desktop is never the window on top, so its menu stays open while
+ * that window stays on top and closes when another comes up or maps.
  */
 struct shell_menu {
 	struct zwl_object *surface;
 	struct zwl_object *context;
+	struct zwl_object *desktop_top;
 	unsigned docked;
 	unsigned depth;
 	struct shell_popup popups[SHELL_DEPTH];
@@ -767,6 +774,7 @@ zwl_menu_tick(
 	const struct zwl_menu_model *model;
 	const struct zwl_menu_item *item;
 	struct zwl_object *surface;
+	struct zwl_object *desktop;
 	struct zwl_object *place;
 	struct zwl_object *top;
 	unsigned level;
@@ -784,6 +792,17 @@ zwl_menu_tick(
 	model = shell_model(surface, &place);
 	home = zwl_home_progress(server);
 	top = zwl_top_window(server);
+
+	/*
+	 * The desktop surface is never the window on top (desktop.c): its
+	 * context menu stays open while the window on top is the one that was
+	 * when it opened (ws094-p005).
+	 */
+	desktop = zwl_desktop_surface(server);
+	if (surface == desktop && top == shell_menu.desktop_top)
+		top = surface;
+
+	/* The menu's window must still be the one on top, as it was, with nothing over it. */
 	if (model == NULL ||
 	    surface != top ||
 	    surface->maximized != shell_menu.docked ||
@@ -894,6 +913,13 @@ zwl_menu_forget(
 	if (surface == NULL)
 		return;
 
+	/* A desktop's context menu is told done when the window that was on top goes (ws094-p005). */
+	if (shell_menu.desktop_top != NULL && object == shell_menu.desktop_top) {
+		shell_menu.desktop_top = NULL;
+		shell_close_from(server, 0U, 1U);
+		return;
+	}
+
 	/* A context menu that goes closes without being told; one whose menu goes is told done. */
 	if (shell_menu.context != NULL && object == shell_menu.context) {
 		shell_menu.context = NULL;
@@ -951,6 +977,7 @@ zwl_menu_open_context(
 	const struct zwl_menu_item *rows[SHELL_ROWS];
 	const struct zwl_menu_model *model;
 	struct shell_popup *popup;
+	struct zwl_object *desktop;
 	int32_t left;
 	int32_t top;
 	unsigned count;
@@ -975,9 +1002,13 @@ zwl_menu_open_context(
 	if (server->glass)
 		(void)zwl_glass_body_origin(server, surface, &left, &top);
 
-	/* The popup at the point, with the context menu's rows. */
+	/* The popup at the point, with the context menu's rows; on the desktop, the window on top then. */
 	shell_menu.surface = surface;
 	shell_menu.context = context;
+	shell_menu.desktop_top = NULL;
+	desktop = zwl_desktop_surface(server);
+	if (surface == desktop)
+		shell_menu.desktop_top = zwl_top_window(server);
 	shell_menu.docked = surface->maximized;
 	shell_menu.depth = 1;
 	shell_menu.pressing = 0;

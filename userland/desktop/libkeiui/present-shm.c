@@ -179,6 +179,7 @@ shm_make(
 	}
 
 	/* The compositor says when it gives the buffer back. */
+	buffer->window = window;
 	(void)wl_buffer_add_listener(buffer->buffer, &shm_listener, buffer);
 
 	/* Succeeded: the buffer, free to draw into. */
@@ -215,4 +216,7 @@ shm_release(
 	(void)buffer;
 	owned = data;
 	owned->busy = 0;
+
+	/* A window on another's connection draws a frame that waited for it. */
+	keiui_window_wake(owned->window);
 }

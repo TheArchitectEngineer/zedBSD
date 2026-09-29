@@ -139,6 +139,7 @@ static unsigned main_touch_area(int x, int y);
 static void main_touch_pointer(const struct fm_touch_pointer *made);
 static int main_desktop_prepare(struct main_options *options);
 static int main_open_decorations(void);
+static void main_open_context_menus(void);
 
 /*
  * Runs the file manager.
@@ -218,9 +219,11 @@ main(
 	if (options.wallpaper != NULL)
 		snprintf(main_app.wallpaper, sizeof(main_app.wallpaper), "%s", options.wallpaper);
 
-	/* The desktop has no glass, menus or titlebar: its icons are drawn on the clear surface (ui-desktop.c). */
+	/* The desktop has no glass, window menus or titlebar: its icons are drawn on the clear surface (ui-desktop.c), and it has context menus. */
 	main_app.desktop = options.desktop;
-	if (!options.desktop) {
+	if (options.desktop) {
+		main_open_context_menus();
+	} else {
 		/* A window's glass, menus and titlebar; without zdesktop's titlebar the file manager does not start. */
 		status = main_open_decorations();
 		if (status != 0) {
@@ -506,10 +509,8 @@ main_loop(
 		/* Time passes for the file manager. */
 		fm_ui_tick(&main_app, now);
 
-		/* The menus show the state after input at once, and otherwise now and then (a task's end changes it); the desktop has none. */
-		if (main_app.desktop) {
-			menu_checked_at = now;
-		} else if (inputs != 0 || now - menu_checked_at >= MAIN_MENU_CHECK_MS) {
+		/* The menus show the state after input at once, and otherwise now and then (a task's end changes it); the desktop's context menu goes when it closed. */
+		if (inputs != 0 || now - menu_checked_at >= MAIN_MENU_CHECK_MS) {
 			main_menu_update();
 			menu_checked_at = now;
 		}
@@ -886,11 +887,7 @@ main_menu_update(void)
 	fm_ui_titlebar_state(&main_app, &main_titlebar_state);
 	fm_titlebar_refresh(&main_titlebar, &main_titlebar_state);
 
-	/* Without menus there is nothing more to tell. */
-	if (main_menu.menu == NULL)
-		return;
-
-	/* The menus' state now, sent when it differs from what they show. */
+	/* The menus' state now, sent when it differs from what they show (a closed context menu goes, also on the desktop, which has no window's menus). */
 	fm_ui_menu_state(&main_app, &state);
 	fm_menu_refresh(&main_menu, &state);
 }
@@ -1145,4 +1142,20 @@ main_open_decorations(void)
 
 	/* Succeeded: the window has its glass, menus and titlebar. */
 	return 0;
+}
+
+/* Gives the desktop the service its context menus open with (ws094-p005); without it a right press shows none. */
+static void
+main_open_context_menus(void)
+{
+	struct fm_menu_state state;
+	int error;
+
+	/* The service, with no window's menus. */
+	fm_ui_menu_state(&main_app, &state);
+	error = fm_menu_open(&main_menu, &main_window, &state);
+	if (error != 0) {
+		fm_log("MENU failed errno=%d", error);
+		fm_menu_close(&main_menu);
+	}
 }

@@ -3,7 +3,7 @@
 # WS099: Keiland の compositor（zdesktop）のデモの基準
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2
@@ -18,7 +18,7 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 満たす、という明確なゴールを設定したいです。ソフトごとにそれをWSで作りましょう」→ デモの台本は fg010 に移した（master）。この WS の対象は
 **compositor の zdesktop**（`/bin/wayland`、`userland/desktop/wayland/`）と、それが起こす greeter・session の遷移だけ。
 
-## 達成基準（案、2026-09-30 main。ユーザーの確認待ち）
+## 達成基準（2026-09-30 main の案、同日朝ユーザーが「案のまま確定」）
 
 全て QEMU の Venus の自動の試験で確かめ、印の付いたものは 5330 の実機でも確かめる（実機）。
 

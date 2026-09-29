@@ -21,8 +21,11 @@
  * and the touch of a view of editable text.  The third (KUI_VERSION 3) is
  * the window: a Wayland toplevel whose input arrives as a queue of
  * events, whose CPU-drawn frames are shown through Vulkan or shared
- * memory, and which holds the clipboard and the primary selection.  Later
- * versions add the widgets.
+ * memory, and which holds the clipboard and the primary selection.  The
+ * fourth (KUI_VERSION 4) is the widgets: buttons, switches, sliders, text
+ * fields, lists, sidebars, cards and their rows, dialogs, chips and
+ * progress bars, drawn in the Kei look of Files and Settings, and the
+ * keyboard's focus among them.
  *
  * Times are CLOCK_MONOTONIC microseconds throughout (the clock of
  * libkeiland's touch motion, scroller and gestures).
@@ -44,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection). */
-#define KUI_VERSION	3U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows). */
+#define KUI_VERSION	5U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -304,6 +307,24 @@ struct kui_theme {
 	unsigned text_body;
 	unsigned text_small;
 	unsigned text_title;
+
+	/*
+	 * KUI_VERSION 4 (Settings' values, plan/ws089): a card within a page
+	 * and its edge, the line between a card's rows, a control's ground and
+	 * edge, a switch's track when off, good and bad news, a control's
+	 * height, and a switch's size.
+	 */
+	kui_color card;
+	kui_color card_edge;
+	kui_color row_separator;
+	kui_color control;
+	kui_color control_edge;
+	kui_color track;
+	kui_color good;
+	kui_color bad;
+	int control_height;
+	int switch_width;
+	int switch_height;
 };
 
 /* The theme (theme.c). */
@@ -526,6 +547,8 @@ struct kui_ui;
 #define KUI_HIT_ACTIVE		2U	/* a press on it is held */
 #define KUI_HIT_CLICKED	4U	/* pressed and released on it since the last frame */
 #define KUI_HIT_DOUBLE		8U	/* the click was the second of a double click or tap */
+#define KUI_HIT_FOCUSED	16U	/* it has the keyboard's focus (a widget that takes the keyboard) */
+#define KUI_HIT_TOUCHED	32U	/* KUI_VERSION 5: the click was a finger's tap */
 
 /* The input no part took. */
 #define KUI_EVENT_PRESS		1U
@@ -551,6 +574,8 @@ struct kui_event {
 	double dy;
 	unsigned fingers;
 	uint32_t region;
+	uint32_t code;
+	unsigned modifiers;
 };
 
 struct kui_ui *kui_ui_create(void);
@@ -693,6 +718,197 @@ int kui_window_can_paste(const struct kui_window *window);
 void kui_window_select(struct kui_window *window, const char *text, size_t length);
 size_t kui_window_paste_primary(struct kui_window *window, char *text, size_t size);
 uint64_t kui_clock_us(void);
+
+/*
+ * The widgets (widgets.c, field.c, list.c, cards.c; KUI_VERSION 4,
+ * plan/ws090/design.md section 3): each is drawn by one call during a
+ * frame, which also records where it is for the input and reports what
+ * the input did to it since the last frame (the immediate way of section
+ * 2).  What a widget remembers between frames -- a field's text, a list's
+ * selection and scroll -- is the application's, in a small struct it
+ * keeps.  A widget draws with a style: the canvas of the frame, the text,
+ * the theme, and whether the window stands on glass.
+ *
+ * The keyboard's focus is on one widget at a time (by id and index).  A
+ * click or a tap on a widget that takes the keyboard gives it the focus;
+ * Tab and Shift+Tab move it through those widgets in the order they were
+ * drawn.  The keys a focused widget does not take, and every key while no
+ * widget has the focus, are the application's (KUI_EVENT_KEY).
+ */
+struct kui_style {
+	struct kui_canvas *canvas;
+	struct kui_text *text;
+	const struct kui_theme *theme;
+	int glass;
+};
+
+/* A key no widget took (an event's kind; kui_event's code and modifiers name it). */
+#define KUI_EVENT_KEY		9U
+
+/* A button's look and state (bits). */
+#define KUI_BUTTON_PRIMARY	1U
+#define KUI_BUTTON_DANGER	2U
+#define KUI_BUTTON_DISABLED	4U
+
+/* What a text field reports (bits). */
+#define KUI_FIELD_CHANGED	1U
+#define KUI_FIELD_SUBMITTED	2U
+#define KUI_FIELD_CANCELLED	4U
+
+/* What a list reports (bits). */
+#define KUI_LIST_SELECTED	1U
+#define KUI_LIST_ACTIVATED	2U
+#define KUI_LIST_TOUCHED	4U	/* KUI_VERSION 5: the row was chosen by a finger's tap */
+
+/* The longest text a field holds, with its NUL. */
+#define KUI_FIELD_MAX		512U
+
+/*
+ * A one-line text field's state: its UTF-8 text, the caret and the other
+ * end of the selection (byte offsets on character boundaries), how far the
+ * text is scrolled across, and whether its characters are shown as dots.
+ */
+struct kui_field {
+	char text[KUI_FIELD_MAX];
+	size_t length;
+	size_t caret;
+	size_t anchor;
+	int scroll;
+	int secret;
+};
+
+/*
+ * A list's state: how many items it has, the one selected (-1 for none),
+ * and its scroll.
+ */
+struct kui_list {
+	size_t count;
+	long selected;
+	struct kui_scroll scroll;
+};
+
+/* The keyboard's focus, and where the pointer is for a widget that follows it. */
+int kui_ui_key(struct kui_ui *ui, uint32_t key, int pressed, unsigned modifiers);
+void kui_ui_set_focus(struct kui_ui *ui, uint32_t id, uint32_t index);
+void kui_ui_clear_focus(struct kui_ui *ui);
+int kui_ui_has_focus(const struct kui_ui *ui, uint32_t id, uint32_t index);
+void kui_ui_pointer(const struct kui_ui *ui, double *x, double *y);
+
+/* The widgets, each drawn and asked by one call during a frame. */
+int kui_button(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *rect, const char *label, unsigned flags);
+int kui_button_width(const struct kui_style *style, const char *label);
+int kui_switch(struct kui_ui *ui, const struct kui_style *style, uint32_t id, int x, int y, int *on, unsigned flags);
+int kui_slider(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *rect, double minimum, double maximum, double step, double *value);
+void kui_field_set(struct kui_field *field, const char *text);
+unsigned kui_field(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *rect, struct kui_field *field, const char *placeholder);
+int kui_list_init(struct kui_list *list);
+void kui_list_release(struct kui_list *list);
+unsigned kui_list_begin(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *rect, struct kui_list *list, size_t count, size_t *first, size_t *last);
+unsigned kui_list_row(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *rect, struct kui_list *list, size_t index, struct kui_rect *row, kui_color *ink);
+void kui_list_end(struct kui_ui *ui, const struct kui_style *style, const struct kui_rect *rect, struct kui_list *list);
+int kui_sidebar_section(const struct kui_style *style, int x, int y, int width, const char *title);
+int kui_sidebar_item(struct kui_ui *ui, const struct kui_style *style, uint32_t id, uint32_t index, const struct kui_rect *rect, enum kui_icon icon, const char *label, int current);
+void kui_panel(const struct kui_style *style, const struct kui_rect *rect, int sidebar);
+int kui_card(const struct kui_style *style, const struct kui_rect *rect, const char *title, const char *subtitle);
+int kui_row(const struct kui_style *style, int x, int y, int width, const char *label, const char *value, int last);
+int kui_header(const struct kui_style *style, int x, int y, int width, const char *title, const char *summary);
+int kui_dialog(struct kui_ui *ui, const struct kui_style *style, uint32_t id, const struct kui_rect *area, const char *title, const char *body, const char *const *labels, int count);
+void kui_chip(const struct kui_style *style, int centre_x, int bottom, const char *message);
+void kui_progress(const struct kui_style *style, const struct kui_rect *rect, double fraction, uint64_t now_us);
+
+/*
+ * The file chooser (KUI_VERSION 5; libkeiland's keiland_file_chooser of
+ * KEILAND_VERSION 12, moved here by ws090-p006 and made of the widgets):
+ * the Open and Save As window every application shares.  It shows the
+ * folders and files of a folder, the sidebar's places (Recent, Home and
+ * its usual folders, Computer), the filter chosen, and in Save mode takes
+ * a name and asks before a file is replaced.  The answer comes once,
+ * through the listener, while the application dispatches its default
+ * Wayland queue; the application then destroys the chooser.  The
+ * application keeps running meanwhile, and should take no input of its
+ * own until the answer comes.
+ *
+ * The chooser is a window of its own on the application's connection, with
+ * its own wl_seat objects.  Wayland sends a client's pointer, keyboard and
+ * touch events to all of its objects of a seat, so an application ignores
+ * the enter, key and touch events of surfaces that are not its own (as
+ * kui_window does).
+ */
+struct kui_file_chooser;
+
+/* What the chooser asks for: an existing file to open, or a folder and a name to save as. */
+#define KUI_FILE_CHOOSER_OPEN		0U
+#define KUI_FILE_CHOOSER_SAVE		1U
+
+/* How it ended: a path was chosen, or the user cancelled. */
+#define KUI_FILE_CHOOSER_CHOSEN		0U
+#define KUI_FILE_CHOOSER_CANCELLED	1U
+
+/* The most filters one chooser offers. */
+#define KUI_FILE_CHOOSER_FILTERS_MAX	16U
+
+/*
+ * One filter: the label it is shown by, and the file name extensions it
+ * shows, separated by spaces and without their dots ("txt md c h"),
+ * compared without regard to case.  NULL or empty extensions show every
+ * file.  Folders are always shown.
+ */
+struct kui_file_filter {
+	const char *label;
+	const char *extensions;
+};
+
+/*
+ * What a chooser starts with.  Any pointer may be NULL.
+ *
+ * mode: KUI_FILE_CHOOSER_OPEN or _SAVE.  title: the window's title ("Open"
+ * or "Save As" when NULL).  application: the app_id the window gets, so
+ * that zdesktop shows it as the application's.  folder: where it starts
+ * (the home folder when NULL or not a folder).  name: the name Save starts
+ * with, selected up to its extension.  filters, filter_count and filter:
+ * the filters offered (at most KUI_FILE_CHOOSER_FILTERS_MAX) and the one
+ * chosen first; without filters every file is shown.  font and
+ * fallback_font: the interface's font and the one for characters it lacks
+ * (the system's when NULL).
+ */
+struct kui_file_chooser_options {
+	unsigned mode;
+	const char *title;
+	const char *application;
+	const char *folder;
+	const char *name;
+	const struct kui_file_filter *filters;
+	size_t filter_count;
+	size_t filter;
+	const char *font;
+	const char *fallback_font;
+};
+
+/*
+ * What a chooser tells the application, once and last: how it ended
+ * (KUI_FILE_CHOOSER_*), the absolute path chosen (empty when cancelled),
+ * and the filter chosen last.  In Save mode the user has already agreed to
+ * replace a file that exists.  The chooser's window is closed by then; the
+ * application destroys the chooser, from the callback or later.
+ */
+struct kui_file_chooser_listener {
+	void (*done)(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+};
+
+/*
+ * Opens a file chooser over an application's window (parent may be NULL)
+ * on the application's connection.
+ *
+ * Returns NULL with errno set: EINVAL (an unknown mode, too many filters,
+ * a filter number past them, no listener), ENOTSUP (a compositor without
+ * wl_shm or xdg_wm_base), an errno value of opening the font, ENOMEM.
+ */
+struct kui_file_chooser *kui_file_chooser_open(struct wl_display *display, struct xdg_toplevel *parent, const struct kui_file_chooser_options *options, const struct kui_file_chooser_listener *listener, void *data);
+
+/*
+ * Closes a chooser; one still open closes without telling.
+ */
+void kui_file_chooser_destroy(struct kui_file_chooser *chooser);
 
 #ifdef __cplusplus
 }

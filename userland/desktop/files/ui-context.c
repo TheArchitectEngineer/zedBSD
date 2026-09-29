@@ -9,7 +9,9 @@
  * The context menus of files (spec §15, design §10.2): what a
  * right press offers, on the selected items, on the empty part of a
  * folder, in the trash, or on a place of the sidebar, and the actions only
- * a context menu has.
+ * a context menu has.  The desktop (files --desktop, ws094-p005) has the
+ * items' menu without what needs a window (a new tab, the information card)
+ * and with Show in Files, and a menu of its own for the empty desktop.
  *
  * zdesktop draws the menu at the press (menu.c); this part works out its
  * rows from the window's state and knows nothing of Wayland, so the host's
@@ -34,6 +36,7 @@
 static void context_items(struct fm_app *app, const struct fm_menu_state *state, struct fm_context *context);
 static void context_trash(const struct fm_menu_state *state, struct fm_context *context);
 static void context_empty(const struct fm_menu_state *state, struct fm_context *context);
+static void context_desktop(const struct fm_menu_state *state, struct fm_context *context);
 static void context_place(struct fm_app *app, struct fm_context *context);
 static void context_drop(struct fm_context *context);
 static void context_add(struct fm_context *context, unsigned parent, unsigned kind, const char *label, unsigned action, int enabled);
@@ -65,6 +68,18 @@ fm_ui_context(
 	/* A place of the sidebar. */
 	if (app->context_where == FM_CONTEXT_PLACE) {
 		context_place(app, context);
+		return;
+	}
+
+	/* The empty desktop, or its items. */
+	if (app->desktop) {
+		if (app->context_where == FM_CONTEXT_EMPTY || state.selection == 0) {
+			context_desktop(&state, context);
+		} else {
+			context_items(app, &state, context);
+		}
+
+		/* The desktop's menu is worked out. */
 		return;
 	}
 
@@ -184,10 +199,15 @@ context_items(
 		single = 1;
 	folder = context_folder(app);
 
-	/* Opening: the default way, in a new tab (a folder), and the other ways. */
+	/* Opening: the default way, and a folder in a new tab (not on the desktop, which has no tabs). */
 	context_add(context, 0U, FM_ROW_ITEM, "Open", FM_ACTION_OPEN, 1);
-	if (single != 0 && folder != 0)
+	if (single != 0 &&
+	    folder != 0 &&
+	    app->desktop == 0) {
 		context_add(context, 0U, FM_ROW_ITEM, "Open in New Tab", FM_ACTION_OPEN_IN_NEW_TAB, state->tabs < FM_TABS);
+	}
+
+	/* The other ways to open, in a submenu. */
 	context_submenu(context, CONTEXT_OPEN_WITH, "Open With", state->opener_count > 0);
 	for (index = 0; index < state->opener_count; index++)
 		context_add(context, CONTEXT_OPEN_WITH, FM_ROW_ITEM, state->openers[index], FM_ACTION_OPEN_WITH_FIRST + (unsigned)index, 1);
@@ -225,9 +245,12 @@ context_items(
 		context_check(context, CONTEXT_TAGS, state->tags[index], FM_ACTION_TAG_FIRST + (unsigned)index, checked);
 	}
 
-	/* The information, and the trash. */
+	/* The information (on the desktop, which has no card for it: the desktop's folder in Files), and the trash. */
 	context_add(context, 0U, FM_ROW_LINE, "", 0U, 1);
-	context_add(context, 0U, FM_ROW_ITEM, "Get Info", FM_ACTION_GET_INFO, 1);
+	if (app->desktop)
+		context_add(context, 0U, FM_ROW_ITEM, "Show in Files", FM_ACTION_SHOW_IN_FILES, 1);
+	else
+		context_add(context, 0U, FM_ROW_ITEM, "Get Info", FM_ACTION_GET_INFO, 1);
 	context_add(context, 0U, FM_ROW_ITEM, "Move to Trash", FM_ACTION_TRASH, 1);
 }
 
@@ -280,6 +303,35 @@ context_empty(
 
 	/* The hidden files. */
 	context_check(context, 0U, "Show Hidden Files", FM_ACTION_SHOW_HIDDEN, state->hidden);
+}
+
+/*
+ * Works out the rows for the empty desktop: a new folder and the
+ * clipboard's items, the items put back in order, the desktop's folder in
+ * Files, and the wallpaper (when Settings is there to change it).
+ */
+static void
+context_desktop(
+	const struct fm_menu_state *state,
+	struct fm_context *context)
+{
+	int wallpaper;
+
+	/* New items and the clipboard's. */
+	context_add(context, 0U, FM_ROW_ITEM, "New Folder", FM_ACTION_NEW_FOLDER, 1);
+	context_add(context, 0U, FM_ROW_ITEM, "Paste", FM_ACTION_PASTE, state->can_paste);
+
+	/* The items' order, and the folder in a window. */
+	context_add(context, 0U, FM_ROW_LINE, "", 0U, 1);
+	context_add(context, 0U, FM_ROW_ITEM, "Clean Up", FM_ACTION_CLEAN_UP, 1);
+	context_add(context, 0U, FM_ROW_ITEM, "Show Desktop in Files", FM_ACTION_SHOW_IN_FILES, 1);
+
+	/* The wallpaper, only when Settings can change it. */
+	wallpaper = fm_desktop_can_change_wallpaper();
+	if (wallpaper) {
+		context_add(context, 0U, FM_ROW_LINE, "", 0U, 1);
+		context_add(context, 0U, FM_ROW_ITEM, "Change Wallpaper\xe2\x80\xa6", FM_ACTION_CHANGE_WALLPAPER, 1);
+	}
 }
 
 /* Works out the rows for a place of the sidebar. */

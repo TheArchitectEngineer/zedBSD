@@ -75,22 +75,23 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | S11 | 窓の操作 | 10 個ほどの窓で移動・resize・Wiseview・最大化 | WS099、WS075 |
 | S12 | 音量 | system bar の音量の icon で音量を変え、確かめの音が鳴る | WS100 |
 | S13 | GPU の compute | Noct の見本を GPU と CPU で走らせ、時間を比べる | WS101 |
-| S14 | 終わり | Log Out → greeter、Shut Down | WS099 |
+| S14 | スクリーンキーボード | 右下の角の swipe で flick（日本語）、左下の角の swipe で QWERTY と手書きの面、Text Editor に打つ | WS102 |
+| S15 | 終わり | Log Out → greeter、Shut Down | WS099 |
 
 ブラウザ（WS074）と IME（WS095）は人間が作業中。戻ったときに台本に足すかを決める。
 
-### fg010 に必要な判断（2026-09-30 夜の自走で出たもの。ユーザーの朝の確認待ち）
+### fg010 に必要な判断（2026-09-30 夜の自走で出たもの。2026-09-30 朝に全て決定）
 
 | # | 判断 | 既定の案（判断まで、これで進める） | 要る時期 | 出典 |
 | --- | --- | --- | --- | --- |
-| 1 | WS101 D1: libglesv2 が「OpenGL ES 3.1」を名乗るか（3.1 の全体は実装しない） | compute を持つ device では名乗り、未実装の 3.1 の関数は error の stub。Noct は 3.1 未満だと GPU を使わない | ws101-p009 の前 | [WS101 design](ws101/design.md) |
-| 2 | WS101 D2: Noct の build の変更（toolchain）: accel を ON にする | 構成の `ZEDBSD_NOCT_ACCEL := y` の amd64 の `/bin/noct` だけ ON（代案: 別の `/bin/noct-gpu`） | ws101-p011 の前 | 同 §4.1 |
-| 3 | WS101 D3: G3 の見本の大きさ N = 4,000,000 と、CPU との倍率の目標 3 倍以上（伸ばせれば 10 倍） | 案のまま | ws101-p011 | 同 |
-| 4 | WS101 D5: デモの見本は整数だけでよいか（float を GPU に出すには Noct の意味を変える patch が要る） | 整数だけ | ws101-p011 | 同 |
-| 5 | fg010 の台本（S1〜S14）と WS099 の基準 C1〜C10・WS100 の A1〜A7 の数値 | 案のまま | 随時 | 上の表、各 ws.md |
-| 7 | WS099 の C7: 空の一覧の案内（Files の「Files you open appear here.」、比 1.8〜2.0）を contrast の基準に入れるか。副次の文字の色を `0x6b7585` → `0x56606f` に暗くした（main が許可、Settings と Files、2026-09-30 夜） | 案内は基準の外（使えない項目として WCAG の対象外）。色の変更は戻せる | 随時 | ws099-p005 |
-| 8 | WS100: Settings の Sound の頁で音量を変えられるようにするか（p005、基準 A1〜A7 の外） | 入れない（system bar の音量だけ） | WS100 p004 の後 | [WS100 design](ws100/design.md) |
-| 6 | WS099 の C6（窓 10 個で pointer の移動から表示まで中央値 50 ms 以内）: 新しい物差し（`c6.py`、5 run・200 試料）で実機の passthrough の中央値は 121.5 ms・p90 173 ms（compositor 約 9.5 frame/s）。基準を保つか緩めるか | 基準は保ち、frame の長さの主因（1 frame に約 7 run の直列か、client の待ちか）を次の Phase で分析する | 随時 | ws075-p024 の途中報告 |
+| 1 | WS101 D1: libglesv2 が「OpenGL ES 3.1」を名乗るか | **決定（2026-09-30 朝 ユーザー「名乗ってOKです」）**: compute を持つ device では名乗り、未実装の 3.1 の関数は error の stub（WS068 の「実装した版を名乗る」方針の例外） | — | [WS101 design](ws101/design.md) |
+| 2 | WS101 D2: Noct の build の変更（toolchain）: accel を ON にする | **決定（2026-09-30 朝 ユーザー「許可、構成で選ぶ」）**: 構成の `ZEDBSD_NOCT_ACCEL := y` の amd64 の `/bin/noct` だけ ON。toolchain の変更は main が lock を外して行う | — | 同 §4.1 |
+| 3 | WS101 D3: G3 の見本の大きさ N = 4,000,000 と、CPU との倍率の目標 3 倍以上（伸ばせれば 10 倍） | **決定（2026-09-30 朝 ユーザー「このまま」）**。CPU の時間を測ってから見直す | — | 同 |
+| 4 | WS101 D5: デモの見本は整数だけでよいか | **決定（2026-09-30 朝 ユーザー「整数だけでよい」）**。Noct の意味は変えない | — | 同 |
+| 5 | fg010 の台本（S1〜S14）と WS099 の基準 C1〜C10・WS100 の A1〜A7 の数値 | **決定（2026-09-30 朝）**: ユーザー「案のまま確定」。台本 S1〜S14、WS099 の C1〜C10（C6 は 50 ms を保つ）、WS100 の A1〜A7 | — | 上の表、各 ws.md |
+| 7 | WS099 の C7: 空の一覧の案内（Files の「Files you open appear here.」、比 1.8〜2.0）を contrast の基準に入れるか。副次の文字の色を `0x6b7585` → `0x56606f` に暗くした（main が許可、Settings と Files、2026-09-30 夜） | **決定（2026-09-30 朝）**: ユーザー「このままでよい」。副次の文字の色 `0x56606f` を保ち、空の一覧の案内は基準の外 | — | ws099-p005 |
+| 8 | WS100: Settings の Sound の頁で音量を変えられるようにするか（p005、基準 A1〜A7 の外） | **決定（2026-09-30 朝）**: ユーザー「入れる」。WS100 p005 で Sound の頁に slider と mute を置き、system bar と同じ設定を共有する | — | [WS100 design](ws100/design.md) |
+| 6 | WS099 の C6（窓 10 個で pointer の移動から表示まで中央値 50 ms 以内）: 新しい物差し（`c6.py`、5 run・200 試料）で実機の passthrough の中央値は 121.5 ms・p90 173 ms（compositor 約 9.5 frame/s）。基準を保つか緩めるか | **決定（2026-09-30 朝 ユーザー「50 ms を保つ」）**: 基準は保ち、WS075 p026 の分析と直しで近づける。届かなければ 10/10 に見直す | — | ws075-p024 の途中報告 |
 
 ## Workstream registry
 
@@ -185,18 +186,19 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS087](ws087/ws.md) | MG002 | /bin/sh の対話の行編集: 矢印キーの履歴（BUG-103）と Tab の補完（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU・host）: 履歴の file（~/.sh_history）、矢印の履歴の上限、PS/2 の E0 の key の capability（矢印が届かなかった原因）、prompt の ~、Tab の補完（GNU Readline の名前で libedit に）。実機の確認と BUG-103 の resolved は実機の後 |
 | [WS088](ws088/ws.md) | MG006 | Windows で動く Kei-nightly.zip を CI で配布する（元の zip を clang の cache と同じ Release `rev-0` に置いて再利用し、CI が hdd-image.img を入れる）（2026-09-29 ユーザー） | incomplete | 2026-09-29: p001 は draft（整理した元の zip 56 MB、LICENSES・THIRD-PARTY、DLL は MSYS2 と一致）。fork の commit と zip の中身の確認がユーザー待ち。次: p003 の準備 |
 | [WS089](ws089/ws.md) | MG006 | 設定のアプリ（Settings: 左に項目の pane、右に設定、浮いたすりガラスの pane）（2026-09-29 ユーザー、デモの優先事項） | incomplete | 2026-09-29: p001〜p009 cleared（QEMU。23 頁、検索、Home の状態、desktop の設定の file、Appearance・Wallpaper（生成の壁紙 5 枚）・Display・Storage・Mouse・Keyboard・Sound、規約と回帰とデモの通し）。受け入れ 1〜6 は QEMU で満たす、実機は未実施。ユーザーの指示でブラッシュアップは後回し（ws.md の「後回しの候補」）。完了の処理（試験の plan/tools/settings への移動）は再開の時に。その後 WS090 の p007（Settings の libkeiui への移行）が始められる |
-| [WS090](ws090/ws.md) | MG006 | widget・control の共有 library（少なくとも慣性の smooth scroll、独自の部品）（2026-09-29 ユーザー） | incomplete | p001〜p004 cleared 2026-09-30: `libkeiui`（KUI_VERSION 3）の描画・scroll view・入力・窓の土台（event の queue、Vulkan と wl_shm の見せ方、clipboard と PRIMARY）。**Text Editor を移した**（1 本指の drag で選択・2 本指で scroll・つまみ、QEMU の注入の touch で確認、`/bin/textedit` 137 → 88 KB）。次は p005（部品と見本の program）。Settings の移行は WS089 の後、Files の移行は WS094 の後 |
+| [WS090](ws090/ws.md) | MG006 | widget・control の共有 library（少なくとも慣性の smooth scroll、独自の部品）（2026-09-29 ユーザー） | incomplete | p001〜p004 cleared 2026-09-30: `libkeiui`（KUI_VERSION 3）の描画・scroll view・入力・窓の土台（event の queue、Vulkan と wl_shm の見せ方、clipboard と PRIMARY）。**Text Editor を移した**（1 本指の drag で選択・2 本指で scroll・つまみ、QEMU の注入の touch で確認、`/bin/textedit` 137 → 88 KB）。p005（部品 13 種・keyboard の focus と Tab・見本の `/bin/kuidemo`、KUI_VERSION 4、host 94/94）cleared。p006（file chooser を `kui_file_chooser_*` へ、KEILAND_VERSION 16・KUI_VERSION 5、BUG-112 の回避を外した）cleared。次は p007（Settings、WS089 の完了の後）・p008。Settings の移行は WS089 の後、Files の移行は WS094 の後 |
 | [WS091](ws091/ws.md) | MG006 | 画像 viewer（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU）: `/bin/imageview`、PNG・JPEG（EXIF の向き）・GIF（動く）、fit・拡大・pan・pinch・慣性、前後の画像、全画面。Files からの起動は WS093、実機の確認は残り |
 | [WS092](ws092/ws.md) | MG006 | text editor（simple）（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU）: `/bin/textedit`、共有の file chooser（libkeiland、KEILAND_VERSION 12）、touch・PRIMARY・clipboard・Files からの起動。実機は未実施。touch の drag での選択は無し |
 | [WS093](ws093/ws.md) | MG006 | Files から app の起動（画像・text の double click、file の種類と app の対応）（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU）: Files の double click・Enter・double tap で png・jpeg・gif → Image Viewer、text 系 → Text Editor、html → Browser、pdf → PDF Viewer。Always Open With と Use System Default（`~/.config/keiland/open-with`）。実機は未実施 |
-| [WS094](ws094/ws.md) | MG006 | desktop の file の icon（`~/Desktop`）（2026-09-29 ユーザー） | incomplete | p001〜p004 cleared 2026-09-30（QEMU）: compositor の desktop の層、Files `--desktop` が `~/Desktop` の icon を右上から並べる、選択（click・Ctrl・Shift・rubber band・矢印）、double click と Enter で開く、配置の保存。次は p005（context menu・名前の変更・Trash） |
+| [WS094](ws094/ws.md) | MG006 | desktop の file の icon（`~/Desktop`）（2026-09-29 ユーザー） | incomplete | p001〜p005 cleared 2026-09-30（QEMU）: compositor の desktop の層、Files `--desktop`、選択・開く・配置の保存、右 click の menu（項目・空き）・名前の変更・Paste・Trash・Clean Up。次は p006（drag と touch）→ p007（規約） |
 | [WS095](ws095/ws.md) | MG006 | IME（Wayland の input-method-v2・text-input-v3、単一の IME・複数言語、まず日本語、REmacs の辞書）（2026-09-29 ユーザー） | incomplete | p001〜p004 cleared 2026-09-29（設計、日本語の engine、辞書の package、zdesktop の仲介と IME の program: QEMU で Alt+Space → kanji → 漢字 → 確定）。p005（候補の窓と indicator）は書きかけで uncleared（`plan/ws095/p005-wip.patch`）。ユーザーの指示でブラッシュアップ（p005 の残り・p012 の辞書の拡張・p006〜p011）は後回し。既定の image には未登録 |
 | [WS096](ws096/ws.md) | MG002 | Qt6（core・gui・widgets）の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
 | [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | 2026-09-30: p001・p003・p004・p005・p007・p008・p009 cleared（QEMU）: 基準の一括の試験、BUG-115（試験の待ち）、C1 の起動と Shut Down の試験、C7 の contrast（ガラスの明るさの下限と副次の文字の色、72/72）、BUG-118（cursor の持ち主）、BUG-119 の切り分け、greeter の「Shutting down…」。残り: C5・C6 の実機（WS075 の物差し、C6 は中央値 121.5 ms で未達）、BUG-119 の kernel の電源断（High の担当待ち） |
-| [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | p001〜p004・p007 cleared 2026-09-30（QEMU）: audiod の確かめの音と software の音量、libkeiland の `keiland_audio_*`（KEILAND_VERSION 15）、system bar の音量の icon・slider・mute・wheel・保存（A1〜A6 PASS）、規約の照合。残り: p006（5330 の実機の音、A7、ユーザー）、p005 は判断待ち。completed は A7 の扱いが決まってから |
+| [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | p001〜p004・p007 cleared 2026-09-30（QEMU）: audiod の確かめの音と software の音量、libkeiland の `keiland_audio_*`（KEILAND_VERSION 15）、system bar の音量の icon・slider・mute・wheel・保存（A1〜A6 PASS）、規約の照合。残り: p006（5330 の実機の音、A7、ユーザー）、p005（Settings の Sound の頁、ユーザー「入れる」）。completed は A7 の扱いが決まってから |
 | [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | p001〜p006 cleared 2026-09-30: **i915 の実機（5330 の passthrough）で Vulkan の compute が動く**（vkcs 15/15: dispatch・ID・push・uniform・SSBO と shared memory の atomic・barrier・fence・reduce・prefix sum・断るべき shader）。実行器の回帰 PASS。試験の build は `I915_TEST_SET` で分けた。p008（GLSL ES 3.10 の compute、host と lavapipe で照合）cleared。p009（libglesv2 の OpenGL ES 3.1 の compute、Venus で PASS。D1 は既定の案で名乗る）cleared。p010（**i915 の実機（passthrough）で GLES 3.1 の compute が動いた**: glescompute の indirect 以外の全 step、egltest の回帰 PASS）cleared。次は p007（indirect）、p011（Noct、D2 の許可待ち）。ユーザーの判断 D1〜D5 は「fg010 に必要な判断」 |
+| [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | planning | p001（設計）から。デモの台本 S14 に入れる、WS101 の後に始める（2026-09-30 朝 ユーザー）。IME（人間が作業中）の file を変えない形を先に |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -268,7 +270,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・Future Work・
 | ls の GNU との比較（[tools/ls](tools/ls/)、WS086 から移した） | `compare-gnu.py OUR_LS [--gnu /bin/ls]`（host で GNU ls と byte 単位、端末の幅と pipe、locale、環境変数）、`guest-compare.py`（guest の ls を `ssh -tt` と pipe で GNU と比べる）、`tty-run.py COLUMNS CMD`（指定の幅の擬似端末で byte のまま取る） | `python3 plan/tools/ls/compare-gnu.py build/.../ls` |
 | sh の対話の試験（[tools/sh](tools/sh/)、WS087 から移した） | host の pty で sh の行編集を試す: `history-host.py`（履歴の file と矢印）、`complete-host.py`（Tab の補完）、`prompt-host.py`（prompt の ~）、`pty-keys.py`（ssh -tt で guest の sh に key を送る）。既存の `vi-host.py`・`sh-interactive.py` と同じ場所 | `python3 plan/tools/sh/complete-host.py` |
 | 画像 viewer の試験（[tools/imageview](tools/imageview/)、WS091 から移した） | `run-host.sh`（host: 復号の画素を PIL と比べる、folder の順、view の計算）、`imageview-guest.sh OUTDIR STEP...`（Venus の guest、`make-images.py` の画像）、`touch-guest.sh`（注入の touch: pinch・flick・double tap・swipe・長押し）、`style-extra.py`（style-check が見ない規則の候補の発見的な走査） | `sh plan/tools/imageview/run-host.sh` |
-| 共有の file chooser の試験（[tools/keiland](tools/keiland/)、WS092 から移した） | `host-chooser.sh`: libkeiland の `keiland_file_chooser_*` の model と描画の host 試験（75 件）、絵は `build/keiland-shots/` | `sh plan/tools/keiland/host-chooser.sh` |
+| 共有の file chooser の試験（[tools/keiui](tools/keiui/)、WS092 から移し ws090-p006 で libkeiui へ） | `host-chooser.sh`: libkeiui の `kui_file_chooser_*` の model と描画・`kui_ui` を通した key・click・tap の host 試験（85 件）、絵は `build/keiui-shots/` | `sh plan/tools/keiui/host-chooser.sh` |
 | Text Editor の試験（[tools/textedit](tools/textedit/)、WS092 から移した） | `host-core.sh`: 文書・undo・file・表示の行・検索・編集の host 試験（34 件）。`qmp-keys.py`: QMP で文字列・key の組・pointer を guest に送る（US の配列） | `sh plan/tools/textedit/host-core.sh` |
 | i915 の実機の計測（WS075） | `plan/ws075/tests/hdmi/measure-apps.sh`（lock の下で 1 回の計測の run、WS099 の C6 の試料を含む）、`c6.py OUTDIR...`（5 run 以上をまとめた C6 の判定: pointer を動かしてから cursor が行き先に出る flip まで、中央値・p90・run の幅）、`engine-gdb.sh`（session ごとの engine の時間を gdb で読む）、`h4-ctl.py`（latency・rate・freq・c6）、`stress-117.sh`（10 app の上で Model viewer の開閉を繰り返し、描画の停止と descriptor の消失を数える）。compiler の guard の host 試験 `plan/ws075/tests/guard/run.sh`（Mesa の brw_asm・brw_disasm と byte で比べる） | 各 script の先頭の使い方 |
 | GPU の compute の compiler の host 試験（WS101） | `plan/ws101/tests/host/run.sh`: compute の module の compile、scoreboard、descriptor の応答の bit、EOT、Mesa 25.0.7 の brw_disasm・brw_asm との byte の照合、拒否すべき shader、IR の interpreter での結果の照合（add・ids・atomic・length・dynamic・noct）、実行器の compute の object の試験（executor-test）、p004 の dispatch の batch の試験と genxml の照合（Mesa の genxml を使う。既定は `/home/awe/p014-c/mesa/src/intel/genxml`） | `sh plan/ws101/tests/host/run.sh` |

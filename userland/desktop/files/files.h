@@ -253,10 +253,6 @@ struct fm_visit {
 };
 
 /*
- * One tab: its history (like a browser's), the place it shows now and
- * where in it the user is.
- */
-/*
  * One item's place on the desktop (ws094-p004): its cell, the column
  * counted from the right edge (0 the rightmost) and the row from the top;
  * column -1 when the desktop has no cell left for it.
@@ -277,11 +273,14 @@ struct fm_desktop_saved {
 };
 
 /*
- * The desktop's state (files --desktop, ws094-p004): each item's place
- * (places, one an entry of the tab's listing, remade when the listing or
- * the size changes), the saved places read from the layout file (loaded
- * says they were read), the size laid out
- * for, the listing laid out (its count and time), the rubber band being
+ * The desktop's state (files --desktop, ws094-p004, p005): each item's
+ * place (places, one an entry of the tab's listing, remade when the
+ * listing or the size changes), the saved places read from the layout file
+ * (loaded says they were read), the places the items were shown at by name
+ * (shown, so that a new item takes a free cell without moving the others;
+ * only in memory), the size laid out
+ * for, the listing laid out (its count, time and a hash of its names in
+ * order, which a rename changes), the rubber band being
  * dragged (band, from its start to the pointer), the last left click (for
  * a double click: its item and time), and the number of items the last
  * logged layout had plus one (0 before the first).
@@ -291,11 +290,14 @@ struct fm_desktop {
 	size_t place_count;
 	struct fm_desktop_saved *saved;
 	size_t saved_count;
+	struct fm_desktop_saved *shown;
+	size_t shown_count;
 	int loaded;
 	int width;
 	int height;
 	size_t laid_count;
 	time_t laid_modified;
+	uint32_t laid_names;
 	int band;
 	int band_x;
 	int band_y;
@@ -306,6 +308,10 @@ struct fm_desktop {
 	int logged;
 };
 
+/*
+ * One tab: its history (like a browser's), the place it shows now and
+ * where in it the user is.
+ */
 struct fm_tab {
 	struct fm_visit history[FM_HISTORY];
 	int history_count;
@@ -784,6 +790,9 @@ enum fm_action {
 	FM_ACTION_DROP_COPY,
 	FM_ACTION_DROP_LINK,
 	FM_ACTION_DROP_CANCEL,
+	FM_ACTION_SHOW_IN_FILES,
+	FM_ACTION_CLEAN_UP,
+	FM_ACTION_CHANGE_WALLPAPER,
 	FM_ACTION_COLUMN_FIRST = 100,
 	FM_ACTION_OPEN_WITH_FIRST = 200,
 	FM_ACTION_TAG_FIRST = 300,
@@ -1267,6 +1276,12 @@ void fm_desktop_event(struct fm_app *app, const struct fm_event *event);
 void fm_desktop_open_selected(struct fm_app *app);
 int fm_desktop_item_at(struct fm_app *app, int x, int y);
 
+/* The desktop's context menus' actions and its keys for the file operations (ui-desktop-actions.c, ws094-p005). */
+void fm_desktop_action(struct fm_app *app, unsigned action);
+int fm_desktop_operation_key(struct fm_app *app, const struct fm_event *event);
+void fm_desktop_rename_end(struct fm_app *app, int commit);
+int fm_desktop_can_change_wallpaper(void);
+
 /* The desktop's grid and its layout file (desktop-layout.c, ws094-p004). */
 void fm_desktop_grid(int width, int height, int *columns, int *rows);
 int fm_desktop_cell_rect(int column, int row, int width, int height, struct fm_rect *rect);
@@ -1276,6 +1291,8 @@ int fm_desktop_layout_read(const char *path, struct fm_desktop_saved **saved, si
 int fm_desktop_layout_write(const char *path, const struct fm_desktop_saved *saved, size_t count);
 int fm_desktop_layout_set(struct fm_desktop *desk, const char *name, int column, int row);
 int fm_desktop_clean_up(struct fm_desktop *desk);
+int fm_desktop_layout_rename(struct fm_desktop *desk, const char *old_name, const char *new_name);
+int fm_desktop_remember(struct fm_desktop *desk, const char *const *names, size_t count);
 void fm_desktop_release(struct fm_desktop *desk);
 void fm_ui_hit(struct fm_app *app, const struct fm_rect *rect, unsigned kind, int index);
 size_t fm_ui_panels(struct fm_app *app, struct fm_panel *panels, size_t capacity);
