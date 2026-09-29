@@ -365,6 +365,10 @@ struct dom_document {
 	uint32_t generation;
 };
 
+/* The HTML serialization of nodes (serialize.c, ws074-p081). */
+int dom_serialize_children(const struct dom_node *node, int scripting, struct wb_units *out);
+int dom_serialize_node(const struct dom_node *node, int scripting, struct wb_units *out);
+
 /* Documents and nodes (node.c). */
 struct dom_document *dom_document_create(struct vm_heap *heap);
 struct dom_element *dom_element_create(struct dom_document *document, int ns, struct vm_string *local_name, struct vm_string *prefix);

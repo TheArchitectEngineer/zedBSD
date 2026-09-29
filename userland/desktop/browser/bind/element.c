@@ -71,6 +71,8 @@ static const struct bind_attribute element_attributes[] = {
 	{ "scrollHeight", bind_scroll_height, NULL },
 	{ "scrollTop", bind_scroll_top, bind_scroll_position_set },
 	{ "scrollLeft", bind_scroll_left, bind_scroll_position_set },
+	{ "innerHTML", bind_inner_html_get, bind_inner_html_set },
+	{ "outerHTML", bind_outer_html_get, bind_outer_html_set },
 	{ NULL, NULL, NULL }
 };
 
@@ -95,6 +97,9 @@ static const struct bind_operation element_operations[] = {
 	{ "closest", 1, bind_closest },
 	{ "getBoundingClientRect", 0, bind_get_bounding_client_rect },
 	{ "getClientRects", 0, bind_get_client_rects },
+	{ "insertAdjacentHTML", 2, bind_insert_adjacent_html },
+	{ "insertAdjacentElement", 2, bind_insert_adjacent_element },
+	{ "insertAdjacentText", 2, bind_insert_adjacent_text },
 	{ NULL, 0, NULL }
 };
 
