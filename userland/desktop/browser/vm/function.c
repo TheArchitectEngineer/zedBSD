@@ -101,6 +101,7 @@ vm_function_create(
 	struct vm_function *function;
 	vm_value key;
 	vm_value name;
+	uint32_t length;
 	int error;
 
 	/* The cell, an object whose prototype is Function.prototype, running the code. */
@@ -115,12 +116,14 @@ vm_function_create(
 	function->object.kind = VM_KIND_FUNCTION;
 	function->data = VM_VALUE_UNDEFINED;
 
-	/* Its length: how many parameters it declares. */
+	/* Its length: how many parameters it declares (those before a default or a rest when the code says so). */
+	length = code->parameter_count;
+	if ((code->flags & VM_CODE_LENGTH) != 0U)
+		length = code->length;
 	key = vm_key_from_ascii(realm->heap, "length");
 	if (key == VM_VALUE_EMPTY)
 		return NULL;
-	error = vm_object_define(realm->heap, &function->object, key, vm_value_int32((int32_t)code->parameter_count),
-	    VM_PROPERTY_CONFIGURABLE);
+	error = vm_object_define(realm->heap, &function->object, key, vm_value_int32((int32_t)length), VM_PROPERTY_CONFIGURABLE);
 	if (error != 0)
 		return NULL;
 

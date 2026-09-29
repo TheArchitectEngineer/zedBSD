@@ -64,6 +64,7 @@ static void scope_visit_block(struct js_compiler *compiler, struct js_scope *sco
 static void scope_visit_for(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
 static void scope_visit_switch(struct js_compiler *compiler, struct js_scope *scope, struct js_node *node);
 static int scope_is_lexical(const struct js_node *node);
+static void scope_visit_parameters(struct js_compiler *compiler, struct js_function_info *info);
 static void scope_redeclared(struct js_compiler *compiler, const struct js_node *target);
 static void scope_check_vars(struct js_compiler *compiler, const struct js_scope *block, struct js_node *list, int direct);
 static void scope_check_var_target(struct js_compiler *compiler, const struct js_scope *block, struct js_node *target);
@@ -154,6 +155,7 @@ scope_function(
 	struct js_binding *binding;
 	uint32_t index;
 	int expression;
+	int counting;
 
 	/* The information. */
 	info = wb_arena_zalloc(compiler->arena, sizeof(*info));
@@ -187,17 +189,41 @@ scope_function(
 		scope_block_function(compiler, parent, node);
 	}
 
-	/* The parameters, in order (a repeated name is the last one's); other forms are left for the code pass to refuse. */
+	/*
+	 * The parameters, in order (a repeated name is the last one's).  A
+	 * plain name is bound to its argument; the names of a default, a
+	 * pattern or a rest are vars the prologue binds (ws074-p079).  The
+	 * length counts the parameters before the first default or rest.
+	 */
 	index = 0;
+	info->simple_parameters = 1;
+	info->length = 0;
+	counting = 1;
 	parameter = NULL;
 	if (!program)
 		parameter = node->first;
 	for (;
 	     parameter != NULL;
 	     parameter = parameter->next) {
+		/* A rest takes the arguments left; it is not one of the arguments' registers. */
+		if (parameter->kind == JS_NODE_REST) {
+			info->simple_parameters = 0;
+			info->rest = parameter;
+			counting = 0;
+			scope_declare_target(compiler, info, parameter->first);
+			continue;
+		}
+
+		/* The length stops at the first default. */
+		if (parameter->kind == JS_NODE_ASSIGNMENT_PATTERN)
+			counting = 0;
+		if (counting)
+			info->length++;
+
+		/* A default or a pattern: its names are vars. */
 		if (parameter->kind != JS_NODE_IDENTIFIER) {
-			if (info->unsupported == NULL)
-				info->unsupported = parameter;
+			info->simple_parameters = 0;
+			scope_declare_target(compiler, info, parameter);
 			index++;
 			continue;
 		}
@@ -215,11 +241,13 @@ scope_function(
 		scope_visit_list(compiler, info->scope, node->first);
 	} else if ((node->flags & JS_FLAG_EXPRESSION_BODY) != 0U) {
 		scope_arguments_var(info);
+		scope_visit_parameters(compiler, info);
 		scope_visit(compiler, info->scope, node->second);
 	} else {
 		scope_declarations(compiler, info, node->second);
 		scope_declare_lexicals(compiler, info->scope, node->second);
 		scope_arguments_var(info);
+		scope_visit_parameters(compiler, info);
 		scope_visit_list(compiler, info->scope, node->second);
 	}
 
@@ -890,6 +918,25 @@ scope_visit_switch(
 		if (clause->first != NULL)
 			scope_visit(compiler, cases, clause->first);
 		scope_visit_list(compiler, cases, clause->second);
+	}
+}
+
+/* Resolves the names of the defaults and patterns of a function's parameters (plain names need nothing). */
+static void
+scope_visit_parameters(
+	struct js_compiler *compiler,
+	struct js_function_info *info)
+{
+	struct js_node *parameter;
+
+	/* A list of plain names. */
+	if (info->simple_parameters)
+		return;
+
+	/* Each parameter that is not a plain name. */
+	for (parameter = info->node->first; parameter != NULL; parameter = parameter->next) {
+		if (parameter->kind != JS_NODE_IDENTIFIER)
+			scope_visit(compiler, info->scope, parameter);
 	}
 }
 

@@ -173,6 +173,7 @@ vm_code_create(
 	made->handler_count = model->handler_count;
 	made->flags = model->flags;
 	made->arguments_register = model->arguments_register;
+	made->length = model->length;
 	made->name = model->name;
 
 	/* A copy of the words. */

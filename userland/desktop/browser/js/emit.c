@@ -622,6 +622,7 @@ js_emit_finish(
 	model.position_count = (uint32_t)fc->positions.count;
 	model.flags = flags;
 	model.arguments_register = fc->arguments_register;
+	model.length = fc->info->length;
 	model.name = string;
 
 	/* The checked unit (a unit that fails the check is the compiler's fault). */

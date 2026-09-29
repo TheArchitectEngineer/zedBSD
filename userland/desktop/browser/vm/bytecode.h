@@ -208,7 +208,7 @@ struct vm_code {
 	uint32_t position_count;
 	uint32_t flags;
 	uint32_t arguments_register;
-	uint32_t reserved;
+	uint32_t length;
 	struct vm_string *name;
 };
 
@@ -220,6 +220,9 @@ struct vm_code {
 
 /* The function can be called with new: its closures get a prototype object. */
 #define VM_CODE_CONSTRUCTOR	0x4U
+
+/* The function's length is length, not its parameter count (a default or a rest parameter comes before the end). */
+#define VM_CODE_LENGTH		0x8U
 
 /*
  * An environment: the variables of one function (or script) that the

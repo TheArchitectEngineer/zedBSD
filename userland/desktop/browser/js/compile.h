@@ -166,7 +166,9 @@ struct js_function_info {
 	struct js_global_name *global_vars;
 	struct js_global_name *global_vars_last;
 	struct js_global_lexical *global_lexicals;
-	struct js_node *unsupported;
+	struct js_node *rest;
+	int simple_parameters;
+	uint32_t length;
 	int program;
 	int strict;
 	int has_env;

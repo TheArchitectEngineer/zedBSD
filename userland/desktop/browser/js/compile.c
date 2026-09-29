@@ -65,6 +65,7 @@ static void compile_scope_leave(struct js_function_compiler *fc, struct js_scope
 static void compile_lexicals_empty(struct js_function_compiler *fc, struct js_scope *scope);
 static void compile_scope_renew(struct js_function_compiler *fc, struct js_scope *scope, uint32_t outer_env);
 static void compile_block(struct js_function_compiler *fc, struct js_node *node);
+static void compile_parameters(struct js_function_compiler *fc);
 
 /*
  * Compiles a parsed program into a function of a realm (the program's code
@@ -239,8 +240,6 @@ js_compile_function(
 		js_compile_unsupported(compiler, node, "generators");
 	if ((node->flags & JS_FLAG_ASYNC) != 0U)
 		js_compile_unsupported(compiler, node, "async functions");
-	if (info->unsupported != NULL)
-		js_compile_unsupported(compiler, info->unsupported, "destructuring, default and rest parameters");
 
 	/* The function's state, in the arena, the innermost being compiled. */
 	fc = wb_arena_zalloc(compiler->arena, sizeof(*fc));
@@ -386,8 +385,10 @@ compile_prepare(
 		parameter = info->node->first;
 	for (;
 	     parameter != NULL;
-	     parameter = parameter->next)
-		fc->parameter_count++;
+	     parameter = parameter->next) {
+		if (parameter->kind != JS_NODE_REST)
+			fc->parameter_count++;
+	}
 	fc->local_count = fc->parameter_count;
 
 	/* Every binding of every scope of the function gets its place, and a block with an environment a register to hold it. */
@@ -399,6 +400,12 @@ compile_prepare(
 			scope->env_register = fc->local_count;
 			fc->local_count++;
 		}
+	}
+
+	/* A rest parameter reads the arguments object, which needs a register when the code does not name arguments. */
+	if (info->rest != NULL && info->arguments == NULL) {
+		fc->arguments_register = fc->local_count;
+		fc->local_count++;
 	}
 
 	/* The program's completion value (the last expression statement's), the environment's register, then the temporaries. */
@@ -528,6 +535,9 @@ compile_prologue(
 	/* The let and const of the body cannot be used before their declarations run. */
 	compile_lexicals_empty(fc, info->scope);
 
+	/* The parameters that are defaults, patterns or a rest take their arguments. */
+	compile_parameters(fc);
+
 	/* The function declarations, made before anything runs. */
 	compile_hoisted(fc);
 }
@@ -595,9 +605,13 @@ compile_flags(
 	if (info->strict)
 		flags |= VM_CODE_STRICT;
 
-	/* A function that uses its arguments object. */
-	if (info->arguments != NULL)
+	/* A function that uses its arguments object (a rest parameter reads it too). */
+	if (info->arguments != NULL || info->rest != NULL)
 		flags |= VM_CODE_ARGUMENTS;
+
+	/* A default or a rest makes the length shorter than the parameters. */
+	if (!info->simple_parameters)
+		flags |= VM_CODE_LENGTH;
 
 	/* An ordinary function (not the program, not a method, an accessor or an arrow function) can be called with new. */
 	if (!info->program && (info->node->flags & (JS_FLAG_METHOD | JS_FLAG_ARROW)) == 0U)
@@ -1586,4 +1600,43 @@ compile_block(
 	compile_scope_enter(fc, node->scope, &saved_scope, &saved_env);
 	js_compile_statements(fc, node->first);
 	compile_scope_leave(fc, saved_scope, saved_env);
+}
+
+/*
+ * Binds the parameters that are not plain names: a default or a pattern
+ * from its argument's register, a rest from the arguments object.
+ */
+static void
+compile_parameters(
+	struct js_function_compiler *fc)
+{
+	struct js_function_info *info;
+	struct js_node *parameter;
+	uint32_t mark;
+	uint32_t rest;
+	uint32_t index;
+
+	/* A list of plain names needs nothing. */
+	info = fc->info;
+	if (info->program || info->simple_parameters)
+		return;
+
+	/* Each parameter in order, the n-th argument in register n. */
+	index = 0;
+	mark = fc->temp_top;
+	for (parameter = info->node->first; parameter != NULL; parameter = parameter->next) {
+		/* A rest: the arguments from its place on. */
+		if (parameter->kind == JS_NODE_REST) {
+			rest = js_temp(fc);
+			js_emit3(fc, VM_OP_ARGS_REST, rest, fc->arguments_register, index);
+			js_bind_pattern(fc, parameter->first, rest, JS_BIND_VAR);
+			fc->temp_top = mark;
+			continue;
+		}
+
+		/* A default or a pattern takes its argument. */
+		if (parameter->kind != JS_NODE_IDENTIFIER)
+			js_bind_pattern(fc, parameter, index, JS_BIND_VAR);
+		index++;
+	}
 }
