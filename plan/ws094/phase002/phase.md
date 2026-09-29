@@ -30,7 +30,7 @@ log。試験用の probe。受け入れ: probe で上を QEMU の Venus で確�
 | file | 差し込み |
 | --- | --- |
 | `zwl.h` | object の種類 `ZWL_DESKTOP_MANAGER`・`ZWL_DESKTOP_SURFACE`（2 行） |
-| `protocol.c` | global 20 `keiland_desktop_manager_v1`、request の振り分け（case 2 つ） |
+| `protocol.c` | global 21 `keiland_desktop_manager_v1`（20 は WS095 の IME）、request の振り分け（case 2 つ） |
 | `objects.c` | surface・desktop surface が消える時の `zwl_desktop_object_gone` |
 | `display.c` | pass ごとの `zwl_desktop_tick`、focus を `zwl_desktop_front(server, top)` に |
 | `shell.c` | 壁紙の後・窓の前の `zwl_desktop_draw`（Wiseview の間は描かない）、backdrop の壁紙の後にも、`zwl_glass_button` で窓の無い所の press を `zwl_desktop_press` に、窓の press で `zwl_desktop_unfocus` |
@@ -56,6 +56,8 @@ install・role・refuse・input・home・home-drag・dnd・touch・restart）。
 | WS035 の回帰 | `plan/ws035/tests/zdesktop-p052.sh`（2 つの mode）・`p053`（wl_shm と cursor）・`p057`（backdrop） | PASS |
 | WS035 の回帰 | `zdesktop-p072.sh`（最小化・Wiseview・仮想 desktop） | FAIL: 最初の client（wlshm a）が接続で `setup errno=5` になり b の窓が無い。**main の compositor に入れ替えても同じく FAIL**（既存。WS094 の変更と無関係） |
 | boot | `plan/tools/boot-test.sh build/ws094-run/disk.img`（この compositor と library を入れた disk） | PASS（`build/ws094-shots/p002/boot-login.png`） |
+
+| main の取り込みの後（WS095 の IME と同じ file の衝突を解決: zwl.h の種類・Makefile・protocol.c の global は両方を残し、desktop は 21 に） | build し直して `desktop-guest.sh … install role refuse input home-drag dnd restart`、WS035 の `p052`・`p053`・`p057`、boot test | desktop PASS、p052・p053・p057 PASS、boot PASS、build の warning 0 |
 
 - 判定は zdesktop と probe の log（SSH）と画面。console・serial は読んでいない。
 
