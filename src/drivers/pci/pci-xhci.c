@@ -306,6 +306,7 @@ static void xhci_operation_leave(struct xhci_controller *c);
 static void xhci_submission_leave(struct xhci_controller *c);
 static int xhci_urb_enqueue(struct drv_usb_hcd *h, struct drv_usb_urb *u);
 static int xhci_cancel_request(struct xhci_controller *c, struct xhci_device *d, struct xhci_request *r);
+static void xhci_cancel_diagnose(struct xhci_controller *c, const struct xhci_request *r);
 static int xhci_urb_dequeue(struct drv_usb_hcd *h, struct drv_usb_urb *u);
 static int xhci_endpoint_quiesce(struct xhci_controller *c, struct xhci_device *d, unsigned dci);
 static int xhci_device_quiesce(struct drv_usb_hcd *h, struct drv_usb_device *u);
@@ -2230,6 +2231,16 @@ transfer_claim(
 		request->completion_code = code;
 		spin_unlock_irqrestore(&c->active_lock, irq);
 
+		/*
+		 * A completion that reaches a request already being cancelled
+		 * for a timeout tells whether the controller had finished the
+		 * transfer (success or short) or only stopped it (BUG-030).
+		 */
+		kern_logf("xhci: cancelled request slot=%u endpoint=%u "
+			   "completion=%u residual=%u\n",
+			   request->slot, request->dci, code,
+			   (unsigned)residual);
+
 		/* Reports operation failure. */
 		return 1;
 	}
@@ -3726,6 +3737,56 @@ xhci_endpoint_state(
 }
 
 /* Stops one outstanding request and takes it off its ring. */
+/*
+ * Logs what the event ring and interrupter 0 hold when a transfer is
+ * cancelled, normally for a timeout.  Unprocessed events with the driver's
+ * cycle bit mean the completion was posted but never taken (BUG-030).
+ */
+static void
+xhci_cancel_diagnose(
+	struct xhci_controller *c,
+	const struct xhci_request *r)
+{
+	unsigned pending, index, cycle, first_type;
+	uint32_t control, iman, usbsts, erdp;
+
+	/* Counts the events the controller posted that nobody has taken yet. */
+	event_lock(c);
+
+	pending = 0;
+	first_type = 0;
+	index = c->event_dequeue;
+	cycle = c->event_cycle;
+	for (;;) {
+		control = c->events[index].control;
+		if ((control & 1U) != cycle)
+			break;
+		if (pending == 0)
+			first_type = (control >> 10) & 0x3fU;
+		pending++;
+		if (++index == XHCI_RING_TRBS) {
+			index = 0;
+			cycle ^= 1U;
+		}
+		if (pending == XHCI_RING_TRBS)
+			break;
+	}
+
+	iman = rd32(c->runtime, 0x20U);
+	erdp = rd32(c->runtime, 0x38U);
+	usbsts = rd32(c->operational, XHCI_USBSTS);
+
+	event_unlock(c);
+
+	kern_logf("xhci: cancel slot=%u endpoint=%u pending-events=%u "
+		   "first-type=%u iman=%x usbsts=%x erdp=%x dequeue=%u "
+		   "polling=%u command-busy=%u irq-busy=%u\n",
+		   r->slot, r->dci, pending, first_type, iman, usbsts, erdp,
+		   c->event_dequeue, c->command_polling,
+		   __atomic_load_n(&c->command_busy, __ATOMIC_ACQUIRE),
+		   __atomic_load_n(&c->irq_busy, __ATOMIC_ACQUIRE));
+}
+
 static int
 xhci_cancel_request(
 	struct xhci_controller *c,
@@ -3944,6 +4005,9 @@ xhci_urb_dequeue(
 	r->cancelling = 1U;
 
 	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Records the event ring and interrupter state the cancel starts from. */
+	xhci_cancel_diagnose(c, r);
 
 	/* Obtains the xhci cancel request result. */
 	error = xhci_cancel_request(c, d, r);
