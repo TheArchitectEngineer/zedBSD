@@ -156,12 +156,29 @@ struct i915_rps {
 	struct i915_work work;
 	int work_ready;
 
+	/*
+	 * The idle check that stands in for Linux's park (ws075-p020): the
+	 * timer queue that fires it on the work's queue (timers_ready says it
+	 * exists), and the count of the GT's activity (engine interrupts, up
+	 * events and boosts) it last saw.  Unchanged activity with no waiter
+	 * counts as the GT idle: the frequency drops to the efficient one,
+	 * then to the minimum.
+	 */
+	struct i915_timer_queue timers;
+	struct i915_delayed_work idle_work;
+	int timers_ready;
+	unsigned long idle_seen;
+
 	/* What happened, for the diagnostics: events, boosts, work runs and frequency changes. */
 	volatile unsigned up_events;
 	volatile unsigned down_events;
 	volatile unsigned boosts;
 	volatile unsigned work_runs;
 	volatile unsigned changes;
+	volatile unsigned idle_drops;
+
+	/* How many frequency changes the log has reported (the first few only). */
+	unsigned logged;
 };
 
 void drv_i915_rc6_init(struct i915_rc6 *rc6, struct i915_mmio *mmio);

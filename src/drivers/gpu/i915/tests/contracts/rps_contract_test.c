@@ -14,9 +14,10 @@
  * efficient frequency, the interrupt that masks its events and queues the
  * work, the work that steps up (doubling) and down, switches the power mode
  * and keeps PMINTRMSK and RP_INTERRUPT_LIMITS with the frequency, the boost
- * of a waiting client, and the stop.  The work queue's thread never runs on
- * the host, so the checks run the queued work's callback themselves.  It
- * proves the contract, not the hardware.
+ * of a waiting client, the idle check that lowers an idle GT, and the stop.
+ * The work queue's and the timer's threads never run on the host, so the
+ * checks run the callbacks themselves.  It proves the contract, not the
+ * hardware.
  */
 
 #include "contract.h"
@@ -72,6 +73,7 @@ static void rps_check_start(void);
 static void rps_check_up(void);
 static void rps_check_down(void);
 static void rps_check_boost(void);
+static void rps_check_idle(void);
 static void rps_check_stop(void);
 static void rps_check_interval(void);
 static void rps_run_work(void);
@@ -104,6 +106,7 @@ main(void)
 	rps_check_up();
 	rps_check_down();
 	rps_check_boost();
+	rps_check_idle();
 	rps_check_stop();
 	rps_check_interval();
 
@@ -198,7 +201,8 @@ rps_check_start(void)
 
 	/* The start. */
 	error = drv_i915_rps_start(&rps, &irq, &mmio);
-	contract_check(error == 0 && rps.work_ready == 1, "the work queue exists");
+	contract_check(error == 0 && rps.work_ready == 1 && rps.timers_ready == 1, "the work queue and the idle timer exist");
+	contract_check(rps.idle_work.armed == 1, "above the minimum the idle check is armed");
 	contract_check(irq.pm_handler == drv_i915_rps_irq && irq.pm_context == &rps, "the handler is registered with its state");
 	contract_check(reset_iir_calls == 1, "the pending GTPM source was cleared first");
 	contract_check(mock_mmio_peek(&mock, RPS_GPM_ENABLE) == 0x30U << 16, "the up and down events are enabled in the upper half");
@@ -319,6 +323,42 @@ rps_check_boost(void)
 	contract_check(rps.cur_freq == 71U, "then a down event lowers it");
 }
 
+/* Checks the idle check: no activity lowers to the efficient frequency, then the minimum; activity or a waiter keeps it. */
+static void
+rps_check_idle(void)
+{
+	contract_section("idle: an idle GT drops to the efficient frequency, then to the minimum");
+
+	/* Up to RP0 with a boost, which is activity: the first check keeps the frequency. */
+	drv_i915_rps_boost_begin(&rps);
+	rps_run_work();
+	drv_i915_rps_boost_end(&rps);
+	contract_check(rps.cur_freq == 72U, "a boost raised it to RP0");
+	rps.idle_work.work.function(rps.idle_work.work.context);
+	contract_check(rps.cur_freq == 72U && rps.idle_drops == 0U, "a check after activity keeps the frequency");
+
+	/* A waiting client keeps it too. */
+	drv_i915_rps_boost_begin(&rps);
+	rps.idle_seen = 0UL;
+	rps.idle_work.work.function(rps.idle_work.work.context);
+	rps.idle_work.work.function(rps.idle_work.work.context);
+	contract_check(rps.cur_freq == 72U, "a check while a client waits keeps the frequency");
+	drv_i915_rps_boost_end(&rps);
+
+	/* Nothing happened since: the efficient frequency, then the minimum, then the check stops. */
+	rps.idle_work.work.function(rps.idle_work.work.context);
+	contract_check(rps.cur_freq == 18U && rps.idle_drops == 1U, "an idle GT drops to the efficient frequency");
+	contract_check(mock_mmio_peek(&mock, RPS_RPNSWREQ) == 18U << 23, "RPNSWREQ follows");
+	rps.idle_work.work.function(rps.idle_work.work.context);
+	contract_check(rps.cur_freq == 6U && rps.idle_drops == 2U, "then to the minimum");
+
+	/* Activity (an engine interrupt) before the next event keeps the minimum anyway. */
+	irq.engine_wakeups++;
+	rps_event(I915_RPS_UP_THRESHOLD);
+	rps_run_work();
+	contract_check(rps.cur_freq == 7U, "an up event from the minimum steps up again");
+}
+
 /* Checks the stop: the handler goes, the events are disabled and masked, the queue goes. */
 static void
 rps_check_stop(void)
@@ -326,17 +366,18 @@ rps_check_stop(void)
 	contract_section("stop: handler removed, events disabled and masked");
 
 	/*
-	 * The work queue's thread never ran on the host, so it is marked as
-	 * gone for the destroy, which waits for it.
+	 * The work queue's and the timer's threads never ran on the host, so
+	 * they are marked as gone for the destroys, which wait for them.
 	 */
 	rps.workqueue.worker_alive = 0;
+	rps.timers.alive = 0;
 	drv_i915_rps_stop(&rps);
 	contract_check(irq.pm_handler == NULL && irq.pm_context == NULL && rps.irq == NULL, "the handler is removed");
-	contract_check(rps.work_ready == 0 && reset_iir_calls == 2, "the queue is gone and the source cleared");
+	contract_check(rps.work_ready == 0 && rps.timers_ready == 0 && reset_iir_calls == 2, "the queue and the timer are gone and the source cleared");
 	contract_check(mock_mmio_peek(&mock, RPS_GPM_ENABLE) == 0U, "the events are disabled");
 	contract_check(mock_mmio_peek(&mock, RPS_GPM_MASK) == 0xffff0000U, "and masked");
 	contract_check(mock_mmio_peek(&mock, RPS_PMINTRMSK) == 0xffffffffU, "PMINTRMSK masks everything");
-	contract_check(mock_mmio_peek(&mock, RPS_RPNSWREQ) == 71U << 23, "the last request stays");
+	contract_check(mock_mmio_peek(&mock, RPS_RPNSWREQ) == 7U << 23, "the last request stays");
 }
 
 /* Checks the conversion to the PM evaluation units, which rounds up twice. */

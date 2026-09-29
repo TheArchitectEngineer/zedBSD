@@ -13,6 +13,7 @@
 #include "contract.h"
 #include "host_kernel.h"
 
+#include <kern/clock.h>
 #include <kern/klog.h>
 #include <kern/lock.h>
 #include <kern/sched.h>
@@ -21,6 +22,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -296,6 +298,30 @@ sched_ticks(void)
 {
 	/* Reports the tick the last sleep left. */
 	return host_ticks;
+}
+
+/*
+ * Computes a tick deadline as the kernel does (src/kern/clock.c): the sum,
+ * or EOVERFLOW past the tick range.  The delayed works compute theirs with
+ * it (ws075-p020: the RPS idle check arms one).
+ */
+int
+kern_deadline_after(
+	uint64_t now,
+	uint64_t delta,
+	uint64_t *deadline)
+{
+	/* Rejects a missing result. */
+	if (deadline == NULL)
+		return EINVAL;
+
+	/* Rejects a deadline beyond the tick range. */
+	if (now > UINT64_MAX - delta)
+		return EOVERFLOW;
+	*deadline = now + delta;
+
+	/* Reports the computed deadline. */
+	return 0;
 }
 
 /*
