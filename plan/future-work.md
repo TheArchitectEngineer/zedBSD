@@ -60,3 +60,4 @@ Future Work は実行を許可しない。
 | F-051 | libpdf の保存の圧縮（FlateDecode） | Notes の PDF は今は非圧縮で保存する（libz-compat は inflate だけ）。libz-compat に deflate を足し、libpdf の content・metadata の stream を圧縮する | ws079-p004（2026-09-28 main の判断） | deferred | PDF の大きさが問題になったとき | [p004](ws079/phase004/phase.md) |
 | F-052 | µs の分解能の CLOCK_MONOTONIC | 今の CLOCK_MONOTONIC は ms の分解能。touch の補間の設計（ws081 design §4）では µs にしても judder は 0.7 point しか改善しないので見送り。高い率の touch・pen や計測の用途で要る | ws081-p001（2026-09-29 main が受け入れ） | deferred | 120 Hz 以上の入力 device、または µs の計測の要求 | [WS081](ws081/design.md) |
 | F-053 | 入力の長さの単位の mm 化 | 補間・慣性の係数は今 px。画面の dpi が違う機種で手触りを揃えるには物理の長さ（mm）で係数を持つ | ws081-p001（2026-09-29 main が受け入れ） | deferred | dpi の大きく違う画面への対応 | [WS081](ws081/design.md) |
+| F-054 | i915 の RPS の割込み | 負荷に応じて GT の周波数を上げ下げする Linux の RPS の up/down の割込みと boost を移植する。今は起動時に RP0 を要求したまま（ws084 p002、消費電力と発熱が大きい） | ws084 p002 | deferred | 電池での運用、発熱、デモの後 | [WS084](ws084/ws.md) |

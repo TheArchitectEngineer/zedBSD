@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし（main が実装、2026-09-29 ユーザーの指示）
-Resume point: 2026-09-29 demo-lcd2 で素の 5330 が起動し LCD に表示（ユーザー「起動しました！ですが、1fpsくらいしか出ないです。」）。次: 1 fps の原因（dmesg の perf の行が要る）、parity との乖離 1〜3 の整理
+Resume point: 2026-09-29 素の 5330（demo-lcd3）で takeover → LCD の desktop が動き、ユーザー「完璧です」。残り: parity との乖離 1〜3 の整理（今は実害なし）、demo の既定の image への反映、RPS の割込み（F-054）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -27,8 +27,8 @@ Resume point: 2026-09-29 demo-lcd2 で素の 5330 が起動し LCD に表示（�
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws084-p002 | bare metal の log（ユーザーが ssh で dmesg、下）で見つかった組み込みの不足を直す | incomplete（実装済み、実機は未実施） | p001 |
-| ws084-p001 | N0 が active な pipe で止まらず `takeover` の印を付け、resident の display の開始が最初の書き込みの前に N1（readout + sanitize、`intel_crtc_disable_noatomic`、release）を走らせる。以前の parity の N1 の実機の手順（`4ab09939` の `parity_lcd_kernel.c`: 画面の object を仮の framebuffer で prepare → PLL の pool を空に → readout → takeover → release）に合わせる | incomplete（実装済み、実機は未実施） | — |
+| ws084-p002 | bare metal の log（ユーザーが ssh で dmesg、下）で見つかった組み込みの不足を直す | cleared（2026-09-29。素の 5330 で takeover → LCD の desktop、操作中 24.5 present/s。下の記録） | p001 |
+| ws084-p001 | N0 が active な pipe で止まらず `takeover` の印を付け、resident の display の開始が最初の書き込みの前に N1（readout + sanitize、`intel_crtc_disable_noatomic`、release）を走らせる。以前の parity の N1 の実機の手順（`4ab09939` の `parity_lcd_kernel.c`: 画面の object を仮の framebuffer で prepare → PLL の pool を空に → readout → takeover → release）に合わせる | cleared（2026-09-29。p002 の修正と合わせて素の 5330 で動作） | — |
 
 ## p001 の記録（2026-09-29 main）
 
@@ -151,3 +151,9 @@ vblank の配列（停止要因 5〜7）、N0 が active な pipe で止まら�
   （RPNSWREQ を書くのはここだけ）。GT は RP0 の 1/12 のまま。
 - 修正: RP0 を要求する（Linux との差。RPS の割込みを移植するまで。PCODE が下げることはある）。`tests/execution/ktest-gt.c` の期待値を RPNSWREQ=RP0 に。
   image `build/demo-lcd3/hdd-image.img`（demo-lcd2 と同じ引数）、build（warning 0）、QEMU の boot test PASS。ktest は build の道具が無く未実施。実機: 未実施。
+
+### 実機の結果（2026-09-29、demo-lcd3）
+
+- ユーザー:「完璧です。」 dmesg（10.0.30.5）: takeover rc=0、preflight 通過、picture up。操作中の窓 5105 ms で 125 presents（24.48/s）、submit ごとの GPU 6.33 ms、
+  present ごと 11.34 ms（copy 1.15、flip 5.08）。入力なしの submit の GPU 2.9 ms（demo-lcd2 は約 30 ms）。
+- p001・p002 を cleared。HDMI の LCD はユーザーの判断でこの WS の外（WS075）。RPS の割込み（負荷に応じた上げ下げ）は F-054。
