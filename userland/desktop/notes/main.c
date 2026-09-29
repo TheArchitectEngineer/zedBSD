@@ -1013,6 +1013,8 @@ app_action(
 		} else {
 			app_status(app, "Fingers scroll and zoom");
 		}
+
+		/* Nothing else. */
 		break;
 	default:
 		break;

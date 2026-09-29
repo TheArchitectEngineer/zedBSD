@@ -200,6 +200,8 @@ notes_touch_event(
 			touch_write_motion(touch, event);
 			break;
 		}
+
+		/* Any other finger the gestures follow. */
 		finger = touch_finger(touch, event->id);
 		if (finger != NULL && finger->followed)
 			(void)keiland_gesture_motion(touch->gesture, event->id, time, event->arrival, event->x, event->y);
@@ -235,6 +237,8 @@ notes_touch_event(
 			printf("NOTES TOUCH write abort reason=cancel\n");
 			fflush(stdout);
 		}
+
+		/* The gestures forget every finger. */
 		keiland_gesture_cancel(touch->gesture);
 		for (index = 0; index < NOTES_TOUCH_FINGERS; index++) {
 			touch->fingers[index].used = 0;
@@ -574,6 +578,7 @@ touch_down(
 	uint64_t time;
 	unsigned index;
 	int palm;
+	int young;
 	int error;
 
 	/* A free slot; a finger past the last is left alone. */
@@ -603,14 +608,18 @@ touch_down(
 	}
 
 	/* A second finger while one writes: a line only just begun is taken back and both scroll and zoom; otherwise it is left alone. */
-	if (touch->writing) {
-		if (!touch_write_young(touch, event->arrival)) {
-			printf("NOTES TOUCH write keep\n");
-			fflush(stdout);
-			return;
-		}
-		touch_write_handover(touch, event->arrival);
+	young = 0;
+	if (touch->writing)
+		young = touch_write_young(touch, event->arrival);
+	if (touch->writing && !young) {
+		printf("NOTES TOUCH write keep\n");
+		fflush(stdout);
+		return;
 	}
+
+	/* The line just begun is taken back, and its finger joins the gestures. */
+	if (touch->writing)
+		touch_write_handover(touch, event->arrival);
 
 	/* While writing with a finger is on, the first finger on the page writes. */
 	if (touch->write_mode &&
