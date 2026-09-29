@@ -212,7 +212,9 @@ static const struct keiland_context_menu_listener menu_context_listener = {
  * Gives zdesktop the window's menus, showing a state.
  *
  * Returns 0, also when the compositor has no System Menu (the window then
- * has no menus), or an errno value when the menus could not be made.
+ * has no menus), or an errno value when the menus could not be made.  The
+ * desktop's surface, which is not a window, gets only the service its
+ * context menus open with.
  */
 int
 fm_menu_open(
@@ -230,6 +232,12 @@ fm_menu_open(
 	menu->service = keiland_menu_service_open(window->display);
 	if (menu->service == NULL) {
 		fm_log("MENU none errno=%d", errno);
+		return 0;
+	}
+
+	/* The desktop (files --desktop) has no window's menus, only the context menus the service shows. */
+	if (window->toplevel == NULL) {
+		fm_log("MENU context-only");
 		return 0;
 	}
 
