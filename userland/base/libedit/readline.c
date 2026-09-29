@@ -222,6 +222,12 @@ static const char *completion_prompt;
 static int completion_previous_tab;
 static int completion_this_tab;
 
+/*
+ * Set by a Tab that rings the bell; readline() rings it after the line is
+ * drawn, so that the bell follows what the Tab changed.
+ */
+static int completion_bell;
+
 static void history_drop_oldest(void);
 static int history_grow(void);
 static char *duplicate(const char *text);
@@ -533,6 +539,7 @@ readline(
 		line_changed_from = (size_t)-1;
 		completion_previous_tab = completion_this_tab;
 		completion_this_tab = 0;
+		completion_bell = 0;
 		if (rl_editing_mode == 0) {
 			result = vi_key(&edit, byte);
 		} else {
@@ -544,6 +551,8 @@ readline(
 		rl_point = (int)point;
 		rl_end = (int)length;
 		update_display(line, old_length, old_point, length, point, line_changed_from);
+		if (completion_bell)
+			write_bell();
 
 		/* Any result but going on ends the line. */
 		if (result != LINE_CONTINUE)
@@ -1114,7 +1123,8 @@ cursor_step(
  * One match replaces the word and is followed by the append character.
  * Several put what they have in common in its place; when that leaves the
  * line as it was and the key before was a Tab too, they are listed.  The
- * bell rings for no match and for matches not listed.
+ * bell rings (after the line is drawn) for no match and for matches not
+ * listed.
  */
 static enum line_result
 complete_key(
@@ -1155,14 +1165,14 @@ complete_key(
 
 	/* No match: only the bell. */
 	if (matches == NULL) {
-		write_bell();
+		completion_bell = 1;
 		return LINE_CONTINUE;
 	}
 
 	/* An empty array is no match either. */
 	if (matches[0] == NULL) {
 		complete_free(matches);
-		write_bell();
+		completion_bell = 1;
 		return LINE_CONTINUE;
 	}
 
@@ -1186,7 +1196,7 @@ complete_key(
 	if (!changed && previous_tab) {
 		complete_list(edit, matches);
 	} else {
-		write_bell();
+		completion_bell = 1;
 	}
 
 	/* Succeeded: the matches are no longer needed. */
