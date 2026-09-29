@@ -75,6 +75,7 @@ Queue: main の割り当て（2026-09-30、サブエージェント `wt/ws101`�
 | 10 | 誤り | MIXED の step の「draw の結果を SSBO として読む」は image を buffer として読めない | draw → `vkCmdCopyImageToBuffer` → dispatch → draw の形に（§5.1） |
 | 11 | 確認 | 引いた値（sync の function、gateway の subfunction の位置、SFID）を Mesa で確かめた | `tgl_sync_function`（NOP 0・ALLRD 2・ALLWR 3・BAR 0xe）、`gateway_subfuncid` = descriptor の bit 2:0、SFID 3・7・10・12 を design に明記 |
 | 12 | 確認 | SSBO の binding 56〜63 が既存の binding（0 既定の uniform、1〜16 sampler、32〜55 uniform block、48 capture）とぶつからないか | ぶつからない。i915 の実行器の binding の上限 64 の中 |
+| 14 | 確認 | 計算した message の descriptor が正しいか | scratchpad の host の program（既存の `eu.c` を include）で SLM の read・write・atomic、A64 の atomic、fence、gateway の barrier の send を作り、Mesa 25.0.7 の `brw_disasm --gen=adl` が意図どおりに読み、`brw_asm` で組み直して 256 bytes が同じ。eu-test の参照の kernel の EOT（thread spawner、0x02000000）も同じ disassembler で読んだ。design §1.6 の表に値を書いた |
 | 13 | 確認 | PPGTT の範囲外の読みが fault になるか | `ppgtt.c` の scratch tower（Linux の gen8_init_scratch と同じ）があり、読みは scratch page になる。load の predicate は安全のためで、必須は store と atomic |
 
 ## 敵対的レビュー（design-reviewer）
@@ -84,7 +85,8 @@ Queue: main の割り当て（2026-09-30、サブエージェント `wt/ws101`�
 ## 未実施の確認
 
 - 設計の Phase なので build・host の試験・QEMU・実機は走らせていない。
-- 値は Mesa 25.0.7 の source と genxml で読んだ。Mesa の assembler での照合と実機での確認は p002 以降。
+- 値は Mesa 25.0.7 の source と genxml で読んだ。message の descriptor 8 種は scratchpad の host の program と Mesa の disassembler・assembler で
+  照合した（見直し #14。repo に試験としては置いていない。p002・p005 で試験にする）。packet（VFE・IDD・CURBE・walker）の照合と実機での確認は p003 以降。
 - PRM そのものは読んでいない（Mesa と anv の引用による）。§2.5 の順序と §2.3 の atomic の MOCS は未確認として記録した。
 
 ## 残課題とユーザー・main の判断

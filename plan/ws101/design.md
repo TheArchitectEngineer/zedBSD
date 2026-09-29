@@ -132,7 +132,23 @@ message の descriptor は `brw_message_desc`（mlen 28:25、rlen 24:20、header
 | `ATOMIC`（SSBO） | SFID 12、A64 untyped atomic（型 0x12）、control = aop \| 応答（bit 5）、BTI 253、mlen 2（A64 の address の組。今の `i915_compile_storage` の組み立てを使う）、ex_mlen 1・2、rlen 1 か 0 |
 | `FENCE` | acquire なら `sync.allwr`。global: SFID 10、MEMORY_FENCE（型 7）、control bit 5（commit）、BTI 0、mlen 1（r0）、rlen 1、header。SLM: 同じく BTI 254。exec size 1、NoMask。その後 fence の dst の完了を待つ（`sync.nop` に SBID の dst の wait） |
 | `BARRIER` | 前に immediate の fence。`mov(8)` tmp 0（NoMask）、`and(1)` tmp.2 r0.2 0x7f000000（NoMask）、`send(8)` null tmp SFID 3（gateway）、descriptor の bit 2:0 に subfunction 4（barrier。Mesa の `brw_eu_inst.h` の `gateway_subfuncid` = MD12(2..0)）、mlen 1、rlen 0、header なし、NoMask。続けて `sync.bar`。group の invocation が 8 以下なら何も出さない |
-| thread の終わり | `mov(8)` r127 r0（NoMask）、`send(8)` null r127 SFID 7、mlen 1、EOT |
+| thread の終わり | `mov(8)` r127 r0（NoMask）、`send(8)` null r127 SFID 7（thread spawner）、descriptor 0x02000000（mlen 1）、ex_desc 0、NoMask、EOT。eu-test の実機で動いた kernel の最後の 2 命令を Mesa 25.0.7 の `brw_disasm --gen=adl` で読んで確かめた（2026-09-30）: `mov(8) g127<1>UD g0<8,8,1>UD {WE_all}`、`send(8) nullUD g127UD nullUD 0x02000000 0x00000000 thread_spawner mlen 1 {WE_all EOT}` |
+
+**確かめた descriptor**（2026-09-30、p001 の中で。scratchpad の host の program が既存の `eu.c` の `drv_i915_eu_send` で次の send を作り、
+Mesa 25.0.7 の `brw_disasm --gen=adl` が意図どおりに読み、`brw_asm` で組み直して同じ bytes になった。repo には置いていない。p002・p005 は
+この値を encoding の header に写し、試験に同じ照合を入れる）:
+
+| message | SFID | descriptor | ex_desc | brw_disasm の読み |
+| --- | --- | --- | --- | --- |
+| SLM の read | 12 | 0x02106efe | 0 | untyped surface read, Surface = 254, SIMD8, Mask = 0xe, mlen 1 rlen 1 |
+| SLM の write | 12 | 0x02026efe | 0x40 | DC untyped surface write, Surface = 254, SIMD8, Mask = 0xe, mlen 1 ex_mlen 1 |
+| SLM の atomic add（応答あり） | 12 | 0x0210b7fe | 0x40 | DC untyped atomic op, Surface = 254, SIMD8, add, rlen 1 |
+| A64 の atomic add（応答あり・なし） | 12 | 0x0414a7fd・0x0404a7fd | 0x40 | DC A64 untyped atomic op, Surface = 253, add, mlen 2 |
+| fence（global・SLM） | 10 | 0x0219e000・0x0219e0fe | 0 | DC mfence, bti 0・254, commit, mlen 1 rlen 1 |
+| gateway の barrier | 3 | 0x02000004 | 0 | gateway barrier msg, mlen 1 |
+| thread の終わり | 7 | 0x02000000 | 0 | thread_spawner, mlen 1, EOT（eu-test の kernel） |
+
+Mesa は fence を exec size 1 で出す（`brw_memory_fence`）。上の照合は exec size 8 の NoMask で作ったので、exec size 1 の形は p005 で足して同じく照合する。
 
 aop（`BRW_AOP_*`）: AND 1、OR 2、XOR 3、MOV 4、INC 5、DEC 6、ADD 7、SUB 8、IMAX 10、IMIN 11、UMAX 12、UMIN 13、CMPWR 14。
 CMPXCHG の 2 つの値の順（Mesa の `MEMORY_LOGICAL_DATA0`・`DATA1` と `atomic_comp_swap` の割り当て）は p005 で Mesa を読み、brw_asm で確かめる。
