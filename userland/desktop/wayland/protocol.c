@@ -29,6 +29,9 @@
 #define OUTPUT_NAME		4U
 #define OUTPUT_DESCRIPTION	5U
 
+/* xdg_wm_base's error for a binding destroyed under its own live xdg_surfaces. */
+#define WM_ERROR_DEFUNCT_SURFACES	1U
+
 /* The registry advertises only implemented interfaces and their actual versions. */
 struct zwl_global {
 	uint32_t name;
@@ -891,16 +894,24 @@ shell_request(
 
 	/* The global shell creates one xdg role for an existing role-free surface. */
 	if (object->kind == ZWL_WM) {
-		/* The binding may retire only when its client has no surviving shell roles. */
+		/*
+		 * The binding may retire only when no live xdg_surface was made
+		 * from it (xdg-shell's defunct_surfaces, BUG-112): xdg_surfaces of
+		 * the client's other bindings (a library's own, a chooser's) do
+		 * not keep it.
+		 */
 		if (opcode == 0 && size == 0) {
-			/* A wm_base cannot disappear while this client still owns xdg surfaces. */
+			/* Each live role of this binding still depends on it. */
 			for (other = object->client->objects; other != NULL; other = other->next) {
-				/* A live role still depends on its global shell contract. */
-				if (other->kind == ZWL_XDG_SURFACE && !other->dead)
-					return EPROTO;
+				if (other->kind == ZWL_XDG_SURFACE &&
+				    !other->dead &&
+				    other->wm_base == object) {
+					error = zwl_error_code(object->client, object->id, WM_ERROR_DEFUNCT_SURFACES, "xdg_surfaces of this binding live");
+					return error;
+				}
 			}
 
-			/* This global binding no longer has live shell children. */
+			/* This binding no longer has live shell children. */
 			zwl_object_destroy(object);
 			return 0;
 		}
@@ -940,8 +951,9 @@ shell_request(
 		if (created == NULL)
 			return EPROTO;
 
-		/* The surface owns no additional memory reference to its protocol role. */
+		/* The surface owns no additional memory reference to its protocol role; the role remembers its binding. */
 		created->surface = surface;
+		created->wm_base = object;
 		surface->role = created;
 		return 0;
 	}
