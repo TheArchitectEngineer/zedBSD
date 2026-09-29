@@ -65,6 +65,15 @@ struct main_options {
  * the window's input queue and the app are too large for the stack.
  */
 static struct fm_window main_window;
+
+/*
+ * The touch screen (touch.c, ws081-p010): the fingers' gestures and
+ * scroller, made with the window (without them fingers do nothing).
+ */
+static struct fm_touch main_touch;
+
+/* In how many milliseconds the fingers want the next round (-1: none). */
+static int main_touch_due = -1;
 static struct fm_present main_present;
 static struct fm_app main_app;
 static struct fm_text main_text;
@@ -114,6 +123,9 @@ static void main_new_window(const struct main_options *options);
 static void main_drag_out(void);
 static void main_drop(void);
 static void main_menu_update(void);
+static void main_touch_round(void);
+static unsigned main_touch_area(int x, int y);
+static void main_touch_pointer(const struct fm_touch_pointer *made);
 
 /*
  * Runs the file manager.
@@ -150,6 +162,11 @@ main(
 		fm_text_close(&main_text);
 		return 1;
 	}
+
+	/* The fingers; without memory for them they do nothing. */
+	error = fm_touch_open(&main_touch);
+	if (error != 0)
+		fm_log("TOUCH none error=%d", error);
 
 	/* The presenter. */
 	result = fm_present_open(&main_present, &main_window);
@@ -213,6 +230,7 @@ main(
 	fm_canvas_release(&main_canvas);
 	free(main_pixels);
 	fm_present_close(&main_present);
+	fm_touch_close(&main_touch);
 	fm_window_close(&main_window);
 	fm_text_close(&main_text);
 
@@ -428,6 +446,12 @@ main_loop(
 			inputs++;
 		}
 
+		/* The fingers: what they scroll, and the pointer's clicks and presses they make (ws081-p010). */
+		main_app.now = now;
+		if (main_window.touch_count != 0U)
+			inputs++;
+		main_touch_round();
+
 		/* What was done with the titlebar, oldest first, at the time now. */
 		main_app.now = now;
 		for (;;) {
@@ -591,11 +615,13 @@ main_timeout(
 	int limit;
 	int busy;
 
-	/* The idle limit, shortened while the file manager has work waiting. */
+	/* The idle limit, shortened while the file manager has work waiting, or the fingers want their next round. */
 	limit = MAIN_IDLE_MS;
 	busy = fm_ui_wait(&main_app);
 	if (busy >= 0 && busy < limit)
 		limit = busy;
+	if (main_touch_due >= 0 && main_touch_due < limit)
+		limit = main_touch_due;
 
 	/* No key is held: the limit. */
 	if (main_window.repeat_key == 0U)
@@ -835,4 +861,149 @@ main_menu_update(void)
 	/* The menus' state now, sent when it differs from what they show. */
 	fm_ui_menu_state(&main_app, &state);
 	fm_menu_refresh(&main_menu, &state);
+}
+
+/*
+ * Runs the fingers for one round (ws081-p010): gives them the scrolled
+ * areas as they are, takes their events (finding what is under a new
+ * finger), sets the scroll they moved to, and hands the pointer's events
+ * they made to the file manager.
+ */
+static void
+main_touch_round(void)
+{
+	struct fm_touch_pointer made;
+	struct fm_touch_event *event;
+	struct fm_touch_area area;
+	struct fm_tab *tab;
+	unsigned index;
+	unsigned which;
+	int scroll;
+	int moved;
+	int taken;
+
+	/* The items' scroll: the tab's (another tab or folder is another thing shown). */
+	tab = fm_ui_tab(&main_app);
+	area.token = tab;
+	area.scroll = tab->scroll;
+	area.largest = main_app.layout.content_height - main_app.layout.content.height;
+	area.height = main_app.layout.content.height;
+	fm_touch_layout(&main_touch, FM_TOUCH_CONTENT, &area);
+
+	/* The sidebar's. */
+	area.token = &main_app.places;
+	area.scroll = main_app.sidebar_scroll;
+	area.largest = main_app.layout.sidebar_height - main_app.layout.sidebar.height;
+	area.height = main_app.layout.sidebar.height;
+	fm_touch_layout(&main_touch, FM_TOUCH_SIDEBAR, &area);
+
+	/* The fingers' events, a new finger with what is under it. */
+	for (index = 0U; index < main_window.touch_count; index++) {
+		event = &main_window.touches[index];
+		if (event->type == FM_TOUCH_DOWN)
+			event->area = main_touch_area((int)event->x, (int)event->y);
+		fm_touch_event(&main_touch, event);
+	}
+	main_window.touch_count = 0U;
+
+	/* Time moves on for them; a new scroll is shown. */
+	main_touch_due = fm_touch_tick(&main_touch, fm_touch_clock());
+	moved = fm_touch_scroll(&main_touch, &which, &scroll);
+	if (moved && which == FM_TOUCH_CONTENT) {
+		tab->scroll = scroll;
+		main_app.dirty = 1;
+	}
+	if (moved && which == FM_TOUCH_SIDEBAR) {
+		main_app.sidebar_scroll = scroll;
+		main_app.dirty = 1;
+	}
+
+	/* The pointer's events they made, in order. */
+	for (;;) {
+		taken = fm_touch_take_pointer(&main_touch, &made);
+		if (!taken)
+			break;
+		main_touch_pointer(&made);
+	}
+}
+
+/*
+ * Tells what is under a new finger: the items (the content) or the sidebar,
+ * which it scrolls, or something else (a button, a tab, a field, a dialog,
+ * Quick Look, the information card), which it clicks.
+ */
+static unsigned
+main_touch_area(
+	int x,
+	int y)
+{
+	unsigned kind;
+	int index;
+
+	/* A dialog, Quick Look or the information card over everything takes the finger as the pointer. */
+	if (main_app.dialog != 0U || main_app.quicklook != 0 || main_app.info_open != 0)
+		return FM_TOUCH_OTHER;
+
+	/* What the last frame drew there: a button, a tab, a header or a region over the window is clicked. */
+	(void)fm_input_hit_at(&main_app, x, y, &kind, &index);
+	if (kind == FM_HIT_OVERLAY || kind == FM_HIT_BUTTON || kind == FM_HIT_TAB || kind == FM_HIT_TAB_CLOSE ||
+	    kind == FM_HIT_SCOPE || kind == FM_HIT_HEADER || kind == FM_HIT_SECTION)
+		return FM_TOUCH_OTHER;
+
+	/* The sidebar, or the content. */
+	if (x >= main_app.layout.sidebar.x && x < main_app.layout.sidebar.x + main_app.layout.sidebar.width &&
+	    y >= main_app.layout.sidebar.y && y < main_app.layout.sidebar.y + main_app.layout.sidebar.height)
+		return FM_TOUCH_SIDEBAR;
+	if (x >= main_app.layout.content.x && x < main_app.layout.content.x + main_app.layout.content.width &&
+	    y >= main_app.layout.content.y && y < main_app.layout.content.y + main_app.layout.content.height)
+		return FM_TOUCH_CONTENT;
+
+	/* Anything else is clicked. */
+	return FM_TOUCH_OTHER;
+}
+
+/*
+ * Hands one pointer event the fingers made to the file manager: a press
+ * carries the touch's serial (a context menu or a drag and drop names it,
+ * ws081-p014); a release while zdesktop carries a drag and drop the finger
+ * started is not the file manager's.
+ */
+static void
+main_touch_pointer(
+	const struct fm_touch_pointer *made)
+{
+	struct fm_event event;
+
+	/* A release after the finger went to zdesktop's drag is dropped (the drag's end comes as FM_EVENT_DRAG_DONE). */
+	if (made->kind == FM_TOUCH_POINTER_RELEASE && main_window.drag_source != NULL)
+		return;
+
+	/* The event at the finger's place and time. */
+	memset(&event, 0, sizeof(event));
+	event.type = FM_EVENT_MOTION;
+	event.x = made->x;
+	event.y = made->y;
+	event.modifiers = main_window.modifiers;
+	event.time = made->time;
+
+	/* A press or a release of its button. */
+	if (made->kind != FM_TOUCH_POINTER_MOTION) {
+		event.type = FM_EVENT_BUTTON;
+		event.button = FM_BUTTON_LEFT;
+		if (made->button == FM_TOUCH_RIGHT)
+			event.button = FM_BUTTON_RIGHT;
+		event.pressed = 0;
+		if (made->kind == FM_TOUCH_POINTER_PRESS)
+			event.pressed = 1;
+		event.serial = made->serial;
+	}
+
+	/* A press's serial is the window's last press's (context menus and drags name it). */
+	if (made->kind == FM_TOUCH_POINTER_PRESS)
+		main_window.button_serial = made->serial;
+
+	/* The file manager takes it. */
+	main_window.pointer_x = made->x;
+	main_window.pointer_y = made->y;
+	fm_ui_event(&main_app, &event);
 }

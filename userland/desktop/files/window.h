@@ -15,6 +15,7 @@
 #define KEILAND_FILES_WINDOW_H
 
 #include "files.h"
+#include "touch.h"
 
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
@@ -24,6 +25,9 @@
 
 /* How many inputs wait for the main loop at most. */
 #define FM_WINDOW_EVENTS	256U
+
+/* How many touch inputs wait for the main loop at most (ws081-p010). */
+#define FM_WINDOW_TOUCHES	256U
 
 /*
  * The Wayland window: its globals, its surface and roles, the size the
@@ -40,6 +44,11 @@ struct fm_window {
 	struct wl_seat *seat;
 	struct wl_pointer *pointer;
 	struct wl_keyboard *keyboard;
+	struct wl_touch *touch;
+
+	/* The touch inputs not yet taken by the main loop, oldest first (ws081-p010; a full queue drops the newest). */
+	struct fm_touch_event touches[FM_WINDOW_TOUCHES];
+	unsigned touch_count;
 
 	/*
 	 * Drag and drop (dnd.c, ws035-p084): the data device manager and the

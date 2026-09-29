@@ -12,7 +12,9 @@
  *
  * zdesktop does not repeat keys, so a key held past the repeat delay is
  * pressed again on each interval.  The pointer's buttons carry their
- * serial, which a context menu is opened with.
+ * serial, which a context menu is opened with.  ws081-p010: the seat's
+ * touch screen queues its wl_touch events for touch.c (a window with
+ * wl_touch hears fingers only by it).
  */
 
 #include "window.h"
@@ -100,9 +102,21 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 	window_toplevel_configure, window_toplevel_close, window_toplevel_bounds
 };
 
+static void window_touch_push(struct fm_window *window, unsigned type, uint32_t time, uint32_t serial, int32_t id, wl_fixed_t x, wl_fixed_t y);
+static void window_touch_down(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
+static void window_touch_up(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, int32_t id);
+static void window_touch_motion(void *data, struct wl_touch *touch, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
+static void window_touch_frame(void *data, struct wl_touch *touch);
+static void window_touch_cancel(void *data, struct wl_touch *touch);
+
 /* The seat's devices and name. */
 static const struct wl_seat_listener seat_listener = {
 	window_seat_capabilities, window_seat_name
+};
+
+/* The touch screen's events of versions 1 to 5 (shape and orientation, of version 6, are never called). */
+static const struct wl_touch_listener touch_listener = {
+	window_touch_down, window_touch_up, window_touch_motion, window_touch_frame, window_touch_cancel, NULL, NULL
 };
 
 /* The pointer's events of versions 1 to 5 (the later members are never called). */
@@ -407,6 +421,8 @@ fm_window_close(
 	fm_dnd_close(window);
 
 	/* The devices and the seat. */
+	if (window->touch != NULL)
+		wl_touch_destroy(window->touch);
 	if (window->pointer != NULL)
 		wl_pointer_destroy(window->pointer);
 	if (window->keyboard != NULL)
@@ -681,6 +697,13 @@ window_seat_capabilities(
 		window->keyboard = wl_seat_get_keyboard(seat);
 		if (window->keyboard != NULL)
 			(void)wl_keyboard_add_listener(window->keyboard, &keyboard_listener, window);
+	}
+
+	/* A touch screen, once (ws081-p010). */
+	if ((capabilities & WL_SEAT_CAPABILITY_TOUCH) != 0U && window->touch == NULL) {
+		window->touch = wl_seat_get_touch(seat);
+		if (window->touch != NULL)
+			(void)wl_touch_add_listener(window->touch, &touch_listener, window);
 	}
 }
 
@@ -1092,4 +1115,105 @@ window_has_state(
 
 	/* Not among them. */
 	return 0;
+}
+
+/* Queues a touch input with the time the window read it; a full queue drops it. */
+static void
+window_touch_push(
+	struct fm_window *window,
+	unsigned type,
+	uint32_t time,
+	uint32_t serial,
+	int32_t id,
+	wl_fixed_t x,
+	wl_fixed_t y)
+{
+	struct fm_touch_event *event;
+
+	/* A full queue drops the input (the fingers are far ahead of the program). */
+	if (window->touch_count >= FM_WINDOW_TOUCHES)
+		return;
+
+	/* The input, after the ones before it (what is under a finger is the main loop's to find). */
+	event = &window->touches[window->touch_count];
+	window->touch_count++;
+	memset(event, 0, sizeof(*event));
+	event->type = type;
+	event->id = id;
+	event->x = (float)wl_fixed_to_double(x);
+	event->y = (float)wl_fixed_to_double(y);
+	event->time = time;
+	event->serial = serial;
+	event->area = FM_TOUCH_OTHER;
+	event->arrival = fm_touch_clock();
+}
+
+/* A finger touches the window. */
+static void
+window_touch_down(
+	void *data,
+	struct wl_touch *touch,
+	uint32_t serial,
+	uint32_t time,
+	struct wl_surface *surface,
+	int32_t id,
+	wl_fixed_t x,
+	wl_fixed_t y)
+{
+	/* Queued with its serial; the window has one surface. */
+	(void)touch;
+	(void)surface;
+	window_touch_push(data, FM_TOUCH_DOWN, time, serial, id, x, y);
+}
+
+/* A finger lifts. */
+static void
+window_touch_up(
+	void *data,
+	struct wl_touch *touch,
+	uint32_t serial,
+	uint32_t time,
+	int32_t id)
+{
+	/* Queued, with no place. */
+	(void)touch;
+	(void)serial;
+	window_touch_push(data, FM_TOUCH_UP, time, 0U, id, 0, 0);
+}
+
+/* A finger moves. */
+static void
+window_touch_motion(
+	void *data,
+	struct wl_touch *touch,
+	uint32_t time,
+	int32_t id,
+	wl_fixed_t x,
+	wl_fixed_t y)
+{
+	/* Queued. */
+	(void)touch;
+	window_touch_push(data, FM_TOUCH_MOTION, time, 0U, id, x, y);
+}
+
+/* The end of a frame of touch events: each event was queued as it came. */
+static void
+window_touch_frame(
+	void *data,
+	struct wl_touch *touch)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)touch;
+}
+
+/* The compositor took the fingers (a drag and drop they started among them). */
+static void
+window_touch_cancel(
+	void *data,
+	struct wl_touch *touch)
+{
+	/* Queued, for every finger. */
+	(void)touch;
+	window_touch_push(data, FM_TOUCH_CANCEL, 0U, 0U, -1, 0, 0);
 }
