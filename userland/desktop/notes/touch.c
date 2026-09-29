@@ -13,8 +13,10 @@
  * The page's place is a function of the zoom and the scroll: on an axis
  * where the zoomed page (with its margin) fits the room it is centred as
  * the whole page is, otherwise the scroll moves it.  At the zoom of 1 the
- * place is the whole page's (notes_view_layout).  The lines starting with
- * "NOTES TOUCH" are what the tests read.
+ * place is the whole page's (notes_view_layout).  While writing with a
+ * finger is on (ws081-p015), the first finger on the page is not given to
+ * the gestures: its events wait for the main loop as a line's.  The lines
+ * starting with "NOTES TOUCH" are what the tests read.
  */
 
 #include "touch.h"
@@ -55,6 +57,12 @@ static void touch_extent(const struct notes_touch *touch, double *largest_x, dou
 static void touch_bounds(struct notes_touch *touch);
 static void touch_zoom_about(struct notes_touch *touch, float zoom, float anchor_x, float anchor_y, float x, float y);
 static void touch_place(struct notes_touch *touch);
+static void touch_stop(struct notes_touch *touch, uint64_t now);
+static void touch_write_push(struct notes_touch *touch, unsigned kind, uint64_t time);
+static void touch_write_begin(struct notes_touch *touch, const struct notes_touch_event *event);
+static void touch_write_motion(struct notes_touch *touch, const struct notes_touch_event *event);
+static int touch_write_young(const struct notes_touch *touch, uint64_t now);
+static void touch_write_handover(struct notes_touch *touch, uint64_t now);
 
 /*
  * Makes the gestures and the scroller, at the whole page.
@@ -187,11 +195,24 @@ notes_touch_event(
 		touch_down(touch, event);
 		break;
 	case NOTES_TOUCH_MOTION:
+		/* The writing finger draws on; a followed finger moves through the gestures. */
+		if (touch->writing && event->id == touch->writer_id) {
+			touch_write_motion(touch, event);
+			break;
+		}
 		finger = touch_finger(touch, event->id);
 		if (finger != NULL && finger->followed)
 			(void)keiland_gesture_motion(touch->gesture, event->id, time, event->arrival, event->x, event->y);
 		break;
 	case NOTES_TOUCH_UP:
+		/* The writing finger's lift ends its line where it last was. */
+		if (touch->writing && event->id == touch->writer_id) {
+			touch->writing = 0;
+			touch_write_push(touch, NOTES_TOUCH_WRITE_END, time);
+			printf("NOTES TOUCH write end path=%.0f\n", (double)touch->writer_path);
+			fflush(stdout);
+		}
+
 		/* A followed finger lifts through the gestures; every finger leaves its slot. */
 		finger = touch_finger(touch, event->id);
 		if (finger == NULL)
@@ -207,7 +228,13 @@ notes_touch_event(
 		finger->followed = 0;
 		break;
 	case NOTES_TOUCH_CANCEL:
-		/* The compositor took every finger. */
+		/* The compositor took every finger: a line being written is taken back. */
+		if (touch->writing) {
+			touch->writing = 0;
+			touch_write_push(touch, NOTES_TOUCH_WRITE_ABORT, touch->writer_time_us);
+			printf("NOTES TOUCH write abort reason=cancel\n");
+			fflush(stdout);
+		}
 		keiland_gesture_cancel(touch->gesture);
 		for (index = 0; index < NOTES_TOUCH_FINGERS; index++) {
 			touch->fingers[index].used = 0;
@@ -249,18 +276,19 @@ notes_touch_pen(
 		touch_gestures(touch, now);
 	}
 
-	/* A page gliding under the pen stops where it is (within its edges), so that the pen writes where it points. */
+	/* The pen came near a finger writing: the finger was a palm, and its line is taken back. */
 	if (near &&
 	    !touch->pen_near &&
-	    touch->moving &&
-	    !touch->pressed) {
-		keiland_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
-		touch->moving = 0;
-		(void)keiland_scroller_step(touch->scroller, now, &touch->scroll_x, &touch->scroll_y);
-		touch_place(touch);
-		printf("NOTES TOUCH stop x=%.1f y=%.1f\n", touch->scroll_x, touch->scroll_y);
+	    touch->writing) {
+		touch->writing = 0;
+		touch_write_push(touch, NOTES_TOUCH_WRITE_ABORT, now);
+		printf("NOTES TOUCH palm cancel writing\n");
 		fflush(stdout);
 	}
+
+	/* A page gliding under the pen stops where it is (within its edges), so that the pen writes where it points. */
+	if (near && !touch->pen_near)
+		touch_stop(touch, now);
 
 	/* When it left, for the time a palm is still expected. */
 	if (!near && touch->pen_near)
@@ -393,6 +421,57 @@ notes_touch_take_tap(
 }
 
 /*
+ * Turns writing with a finger on or off.  Turned off while a finger
+ * writes, the line ends where the finger last was and the finger is left
+ * alone until it lifts.
+ */
+void
+notes_touch_write_mode(
+	struct notes_touch *touch,
+	int on,
+	uint64_t now)
+{
+	/* A line under way is kept. */
+	if (!on && touch->writing) {
+		touch->writing = 0;
+		touch_write_push(touch, NOTES_TOUCH_WRITE_END, now);
+		printf("NOTES TOUCH write end path=%.0f\n", (double)touch->writer_path);
+	}
+
+	/* The mode, logged for the tests. */
+	touch->write_mode = on;
+	printf("NOTES TOUCH write-mode on=%d\n", on);
+	fflush(stdout);
+}
+
+/*
+ * Takes the oldest event of a writing finger not yet taken.  Returns 1
+ * with one, 0 when there is none.
+ */
+int
+notes_touch_take_write(
+	struct notes_touch *touch,
+	struct notes_touch_write *write)
+{
+	unsigned index;
+
+	/* None waits. */
+	if (touch->write_count == 0U)
+		return 0;
+
+	/* The oldest, and the rest move up. */
+	*write = touch->writes[0];
+	for (index = 1; index < touch->write_count; index++)
+		touch->writes[index - 1U] = touch->writes[index];
+
+	/* One fewer waits. */
+	touch->write_count--;
+
+	/* Succeeded: one taken. */
+	return 1;
+}
+
+/*
  * Scrolls to the top of the page (another page is shown), keeping the zoom
  * and the scroll across.
  */
@@ -520,6 +599,24 @@ touch_down(
 	if (palm) {
 		printf("NOTES TOUCH palm x=%.0f y=%.0f\n", (double)event->x, (double)event->y);
 		fflush(stdout);
+		return;
+	}
+
+	/* A second finger while one writes: a line only just begun is taken back and both scroll and zoom; otherwise it is left alone. */
+	if (touch->writing) {
+		if (!touch_write_young(touch, event->arrival)) {
+			printf("NOTES TOUCH write keep\n");
+			fflush(stdout);
+			return;
+		}
+		touch_write_handover(touch, event->arrival);
+	}
+
+	/* While writing with a finger is on, the first finger on the page writes. */
+	if (touch->write_mode &&
+	    touch->followed == 0U &&
+	    event->y >= touch->top) {
+		touch_write_begin(touch, event);
 		return;
 	}
 
@@ -693,9 +790,10 @@ touch_double_tap(
 	float x;
 	float y;
 
-	/* Nothing on the toolbar, or after a catch. */
+	/* Nothing on the toolbar, after a catch, or while a finger writes (its taps are dots). */
 	if (touch->toolbar ||
-	    touch->caught)
+	    touch->caught ||
+	    touch->write_mode)
 		return;
 
 	/* Zoomed: the whole page again. */
@@ -949,4 +1047,161 @@ touch_place(
 
 	/* The scale. */
 	touch->view_scale = scale;
+}
+
+/* Stops a page gliding by itself where it is now (within its edges); a page held or at rest stays as it is. */
+static void
+touch_stop(
+	struct notes_touch *touch,
+	uint64_t now)
+{
+	/* Only a page that glides with no finger on it. */
+	if (!touch->moving)
+		return;
+	if (touch->pressed)
+		return;
+
+	/* The scroller holds the page where it was last placed. */
+	keiland_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
+	touch->moving = 0;
+	(void)keiland_scroller_step(touch->scroller, now, &touch->scroll_x, &touch->scroll_y);
+	touch_place(touch);
+
+	/* The tests' line. */
+	printf("NOTES TOUCH stop x=%.1f y=%.1f\n", touch->scroll_x, touch->scroll_y);
+	fflush(stdout);
+}
+
+/*
+ * Queues an event of the writing finger at its last place and a time (in
+ * microseconds).  A motion leaves the queue's last place for the end or
+ * the take-back that follows it; a full queue drops the event.
+ */
+static void
+touch_write_push(
+	struct notes_touch *touch,
+	unsigned kind,
+	uint64_t time)
+{
+	struct notes_touch_write *write;
+	unsigned limit;
+
+	/* Room for it. */
+	limit = NOTES_TOUCH_WRITES;
+	if (kind == NOTES_TOUCH_WRITE_MOTION)
+		limit--;
+	if (touch->write_count >= limit)
+		return;
+
+	/* The event, after the ones before it. */
+	write = &touch->writes[touch->write_count];
+	touch->write_count++;
+	write->kind = kind;
+	write->x = touch->writer_x;
+	write->y = touch->writer_y;
+	write->time_ms = (uint32_t)(time / 1000U);
+}
+
+/* The first finger on the page, while writing with a finger is on, begins a line (a gliding page stops under it). */
+static void
+touch_write_begin(
+	struct notes_touch *touch,
+	const struct notes_touch_event *event)
+{
+	/* The page stays where the finger writes on it. */
+	touch_stop(touch, event->arrival);
+
+	/* The writing finger, where and when it touched. */
+	touch->writing = 1;
+	touch->writer_id = event->id;
+	touch->writer_down_us = event->arrival;
+	touch->writer_time_us = touch_time(event);
+	touch->writer_x = event->x;
+	touch->writer_y = event->y;
+	touch->writer_path = 0.0f;
+	touch->toolbar = 0;
+	touch->caught = 0;
+
+	/* The line begins there. */
+	touch_write_push(touch, NOTES_TOUCH_WRITE_BEGIN, touch->writer_time_us);
+	printf("NOTES TOUCH write begin x=%.0f y=%.0f\n", (double)event->x, (double)event->y);
+	fflush(stdout);
+}
+
+/* The writing finger moves: every report is a point of the line, and the way it went is measured. */
+static void
+touch_write_motion(
+	struct notes_touch *touch,
+	const struct notes_touch_event *event)
+{
+	float dx;
+	float dy;
+
+	/* How far it moved since its last report. */
+	dx = event->x - touch->writer_x;
+	dy = event->y - touch->writer_y;
+	touch->writer_path += sqrtf(dx * dx + dy * dy);
+
+	/* Its new place and time, a point of the line. */
+	touch->writer_x = event->x;
+	touch->writer_y = event->y;
+	touch->writer_time_us = touch_time(event);
+	touch_write_push(touch, NOTES_TOUCH_WRITE_MOTION, touch->writer_time_us);
+}
+
+/*
+ * Tells whether the line being written has only just begun: a second
+ * finger now takes it back (two fingers put down one a moment after the
+ * other scroll and zoom).
+ */
+static int
+touch_write_young(
+	const struct notes_touch *touch,
+	uint64_t now)
+{
+	/* Touched a moment ago. */
+	if (now < touch->writer_down_us + (uint64_t)NOTES_TOUCH_WRITE_GRACE_MS * 1000U)
+		return 1;
+
+	/* Barely moved. */
+	if (touch->writer_path < NOTES_TOUCH_WRITE_SLOP)
+		return 1;
+
+	/* A line under way. */
+	return 0;
+}
+
+/*
+ * Takes back the line just begun and gives its finger to the gestures,
+ * where it is now: with the second finger it scrolls and zooms.
+ */
+static void
+touch_write_handover(
+	struct notes_touch *touch,
+	uint64_t now)
+{
+	struct notes_touch_finger *finger;
+	int error;
+
+	/* The line is taken back. */
+	touch->writing = 0;
+	touch_write_push(touch, NOTES_TOUCH_WRITE_ABORT, touch->writer_time_us);
+	printf("NOTES TOUCH write abort reason=fingers\n");
+	fflush(stdout);
+
+	/* The finger presses the scroller, as the first finger on the page does. */
+	touch->toolbar = 0;
+	touch_press(touch, now);
+
+	/* The gestures follow it from where it is. */
+	finger = touch_finger(touch, touch->writer_id);
+	error = keiland_gesture_down(touch->gesture, touch->writer_id, touch->writer_time_us, now, touch->writer_x, touch->writer_y);
+	if (error != 0)
+		return;
+
+	/* It is followed from now on (its slot is still held). */
+	if (finger == NULL)
+		return;
+	finger->followed = 1;
+	touch->followed++;
 }
