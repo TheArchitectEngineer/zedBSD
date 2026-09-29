@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし（main が実装、2026-09-29 ユーザーの指示）
-Resume point: demo-lcd1 は実機でフリーズ（GOP の LCD のまま、network も不通）→ 原因を直した image `build/demo-lcd2/hdd-image.img`（logo と kmsg=quiet を外し、login=graphical は残す）。実機の再試験はユーザー待ち
+Resume point: 2026-09-29 demo-lcd2 で素の 5330 が起動し LCD に表示（ユーザー「起動しました！ですが、1fpsくらいしか出ないです。」）。次: 1 fps の原因（dmesg の perf の行が要る）、parity との乖離 1〜3 の整理
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -120,3 +120,9 @@ vblank の配列（停止要因 5〜7）、N0 が active な pipe で止まら�
 4. **readout の PLL**: parity も `intel_ddi_get_config` を結び、`icl_set_active_port_dpll` は空の step（`n1_compat.h`）で、readout は PLL を持たなかった。
    今は p002 で Linux どおり PLL を読む（parity より参照に近いが、実機で未確認の経路。demo-lcd1 のフリーズはこの経路の空の step）。
 5. 再点灯の中身: parity は firmware の framebuffer を import して readout の pipe に点けた。今は resident の run（自前の buffer、pipe A）。readout の pipe は 0 で同じ。
+
+### 実機の結果（2026-09-29、demo-lcd2）
+
+- ユーザー:「起動しました！ですが、1fpsくらいしか出ないです。」→ takeover と再点灯は実機で動いた（firmware の画面から LCD の表示へ）。性能は約 1 fps。
+- 原因は未特定。flip の完了の待ちは 100 ms で打ち切る（`I915_LCD_FLIP_EVENT_MS`）ので、毎回 timeout しても約 10 fps のはずで合わない。GPU の実行の時間か present の経路の待ちを疑う。
+  main の端末から 10.0.30.3 に届かない（No route to host）ので、dmesg の `perf:` の行をユーザーに依頼した。
