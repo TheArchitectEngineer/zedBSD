@@ -2118,6 +2118,7 @@ i915_state_write_surfaces(
 	uint32_t rss;
 	uint32_t border;
 	int error;
+	const char *missing;
 
 	/* Points the render targets' binding table entries at the levels and layers their views write. */
 	error = i915_state_write_targets(surface, state, target, mocs);
@@ -2147,10 +2148,18 @@ i915_state_write_surfaces(
 		if (set == NULL ||
 		    set->slots[binding].view == NULL ||
 		    set->slots[binding].sampler == NULL) {
+			missing = "no sampler";
+			if (set == NULL) {
+				missing = "no set bound";
+			} else if (set->slots[binding].view == NULL) {
+				missing = "no view";
+			}
+
+			/* Says which of the three is missing (BUG-117). */
 			kern_logf("i915: vk: draw refused: set %u binding %u has no image view and sampler (%s)\n",
 				  set_index,
 				  binding,
-				  set == NULL ? "no set bound" : set->slots[binding].view == NULL ? "no view" : "no sampler");
+				  missing);
 			return EINVAL;
 		}
 

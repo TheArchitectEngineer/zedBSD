@@ -40,6 +40,8 @@
 #define I915_GFX_MAX_UPDATE_ITEMS	64U
 
 static int i915_gfx_update_write(struct i915_render_session *session, struct i915_wire_reader *reader);
+static void i915_gfx_update_unknown_set(uint32_t binding, uint64_t identity);
+static void i915_gfx_update_unknown_image(uint32_t binding, uint64_t sampler, int sampler_found, uint64_t view, int view_found);
 static int i915_dset_of_pool(void *object, void *argument);
 static void i915_dpool_sets_free(struct i915_render_session *session, void *pool);
 
@@ -311,16 +313,25 @@ i915_gfx_update_unknown_image(
 	uint64_t view,
 	int view_found)
 {
+	const char *sampler_state;
+	const char *view_state;
+
 	/* Only the first ones. */
 	if (i915_gfx_update_said >= 16U)
 		return;
 	i915_gfx_update_said++;
+	sampler_state = "unknown";
+	if (sampler_found)
+		sampler_state = "found";
+	view_state = "unknown";
+	if (view_found)
+		view_state = "found";
 	kern_logf("i915: vk: vkUpdateDescriptorSets: binding %u: sampler 0x%llx %s, view 0x%llx %s\n",
 		  binding,
 		  (unsigned long long)sampler,
-		  sampler_found ? "found" : "unknown",
+		  sampler_state,
 		  (unsigned long long)view,
-		  view_found ? "found" : "unknown");
+		  view_state);
 }
 
 /*

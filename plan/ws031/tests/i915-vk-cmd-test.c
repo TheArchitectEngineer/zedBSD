@@ -136,6 +136,42 @@ drv_i915_gt_clflush(const volatile void *address, size_t bytes)
 	(void)bytes;
 }
 
+/* The executor's mutexes (ws075-p025): one thread, so nothing waits, but a mutex taken twice or given back unheld fails. */
+static struct mutex *fixture_mutexes_held[8];
+
+int
+mutex_init(struct mutex *mutex, enum lock_rank rank, const char *name)
+{
+	(void)mutex;
+	(void)rank;
+	(void)name;
+	return 0;
+}
+
+void
+mutex_lock(struct mutex *mutex)
+{
+	unsigned index;
+
+	for (index = 0U; index < 8U; index++)
+		assert(fixture_mutexes_held[index] != mutex);
+	for (index = 0U; index < 8U && fixture_mutexes_held[index] != NULL; index++)
+		;
+	assert(index < 8U);
+	fixture_mutexes_held[index] = mutex;
+}
+
+void
+mutex_unlock(struct mutex *mutex)
+{
+	unsigned index;
+
+	for (index = 0U; index < 8U && fixture_mutexes_held[index] != mutex; index++)
+		;
+	assert(index < 8U);
+	fixture_mutexes_held[index] = NULL;
+}
+
 /* A session blob's physical address is its host pointer in this fixture. */
 void *
 kern_pmem_to_kernel(hal_physaddr_t address)
