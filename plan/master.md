@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: [q499](queue.md) / ws085-p001（Windows Venusの表示、2026-09-29 ユーザー指示）。
+Active Queue: [q499](queue.md) / ws085-p001（Windows Venusの表示と速度、2026-09-29 ユーザー指示。vendor forkの直接変更を追加許可）。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
 Next（2026-09-29 に整理。main d1c3f097 で build と boot test PASS（batch119、QEMU）。batch116・117 は `include/libc/pdf.h` と UAPI の input の追加で sysroot と clang・libcxx 等の package を再 build し、warning は外部の package の source だけ。共有の toolchain の tree は lock のまま、llvm-source の manifest 一致）: 実機の USB の demo の image を新しくした（`build/demo-hdmi2/hdd-image.img`、main 2b07ca13 の時点、
 root の password は `build/demo-hdmi2/demo-accounts/root-password`、QEMU・実機の起動は未実施）。ユーザーが実機で試す（HDMI の LCD での login・logout の目視、touch の USB）。
@@ -149,7 +149,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS082](ws082/ws.md) | MG002 | Linux の `/dev/kvm` の移植の検討（eventfd 等の非 POSIX の fd の代わりに unix socket の message で MMIO・IRQ の通知。ioctl を直接の移植・別の仕組みでの代替・実装不能に分類）（2026-09-28 ユーザー） | incomplete | p001 cleared（[study.md](ws082/study.md)）。§10 の 11 項目のユーザーの判断待ち |
 | [WS083](ws083/ws.md) | MG006 | Vulkan Video の拡張（`VK_KHR_video_queue`・`video_decode_queue`・`video_decode_h264`）と i915 の VCS・MFX の対応、最初の目標は H.264 の decode（2026-09-28 ユーザー。OSC のデモには必須ではない） | planning | p001（設計）から。デモの後 |
 | [WS084](ws084/ws.md) | MG006 | i915 の firmware の画面の引き継ぎ（素の実機の UEFI の起動で GOP が点けた pipe を N1 で止めて driver のものにし、デスクトップを出す）（2026-09-29 ユーザー、main が実装） | incomplete | p001 実装済み、素の 5330 での試験待ち |
-| [WS085](ws085/ws.md) | MG006 | Windows版WINQ-EMUのVenusでデスクトップを表示する（2026-09-29 ユーザー） | incomplete | p001 実行中。strict7とcopy表示でデスクトップ・メニューが表示。終了時の停止とcopyの遅さが残る |
+| [WS085](ws085/ws.md) | MG006 | Windows版WINQ-EMUのVenusでデスクトップを表示する（2026-09-29 ユーザー） | incomplete | p001 実行中。mapped blob scanoutでデスクトップを表示。SDL→仮想USB HIDタッチを実装しQMP 2指注入でメニューを確認。Files起動停止の共有画像通信を修正し開閉・再起動とTerminal同時起動を確認。物理タッチと表示所有者切替は未試験 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 

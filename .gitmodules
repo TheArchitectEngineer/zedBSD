@@ -1,3 +1,9 @@
 [submodule "vendor/raspberrypi-firmware"]
 	path = vendor/raspberrypi-firmware
 	url = https://github.com/raspberrypi/firmware.git
+[submodule "vendor/winq-emu-qemu"]
+	path = vendor/winq-emu-qemu
+	url = git@github.com:awemorris/qemu-win32-vulkan.git
+[submodule "vendor/winq-emu-virglrenderer"]
+	path = vendor/winq-emu-virglrenderer
+	url = git@github.com:awemorris/virglrenderer.git

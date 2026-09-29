@@ -29,6 +29,7 @@
 #define VULKAN_VENDOR_CAPSET_OPAQUE 1U
 #define VULKAN_VENDOR_CAPSET_STRICT_QUEUE 2U
 #define VULKAN_VENDOR_CAPSET_QUIESCE 4U
+#define VULKAN_VENDOR_CAPSET_HOST_SCANOUT 8U
 
 /* Retains mapped transport backing through growth, rollback and descriptor close. */
 struct vulkan_transport_storage {
@@ -173,19 +174,26 @@ vulkan_context_open(
 			/* Only known exact paired contracts may select native OPAQUE allocation sharing. */
 			if (vendor_flags == VULKAN_VENDOR_CAPSET_OPAQUE ||
 			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE) ||
-			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE)) {
+			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE) ||
+			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE | VULKAN_VENDOR_CAPSET_HOST_SCANOUT)) {
 				context->external_memory_type = VULKAN_EXTERNAL_MEMORY_OPAQUE;
 			}
 
 			/* Device creation additionally requires success-only completion of its exact native fence. */
 			if (vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE) ||
-			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE)) {
+			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE) ||
+			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE | VULKAN_VENDOR_CAPSET_HOST_SCANOUT)) {
 				context->strict_queue = VK_TRUE;
 			}
 
 			/* Only this exact profile can retire raw native work without failing unrelated sessions. */
-			if (vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE))
+			if (vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE) ||
+			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE | VULKAN_VENDOR_CAPSET_HOST_SCANOUT))
 				context->native_quiescence = VK_TRUE;
+
+			if (context->xml_version == VULKAN_WINQ_XML_VERSION &&
+			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE | VULKAN_VENDOR_CAPSET_HOST_SCANOUT))
+				context->copy_display = VK_FALSE;
 		}
 	}
 
