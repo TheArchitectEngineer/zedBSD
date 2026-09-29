@@ -214,6 +214,7 @@ struct shell_bar {
 	int32_t clock_x;
 	int32_t battery_x;
 	int32_t signal_x;
+	int32_t volume_x;
 	int32_t status_line;
 	int32_t desktops_x;
 	int32_t desktops_width;
@@ -436,6 +437,9 @@ zwl_glass_draw(
 	/* The network's menu, when open (network.c). */
 	zwl_network_draw_menu(server, command);
 
+	/* The volume's popup, when open (volume.c). */
+	zwl_volume_draw_popup(server, command);
+
 	/* The top-right corner's hint, while its swipe is followed or settles (corner.c). */
 	zwl_corner_draw(server, command);
 
@@ -509,6 +513,14 @@ zwl_glass_button(
 	/* A button Home took goes no further. */
 	if (pressed)
 		return 1;
+
+	/* The volume takes a press on its icon, and every button while its popup is open (volume.c). */
+	open = zwl_volume_is_open();
+	if (cover == NULL || open) {
+		pressed = zwl_volume_button(server, button, state);
+		if (pressed)
+			return 1;
+	}
 
 	/* The network takes a press on its icon, and every button while its menu is open (network.c). */
 	open = zwl_network_is_open();
@@ -931,6 +943,9 @@ zwl_glass_title_at(
 	open = zwl_network_is_open();
 	if (open)
 		return NULL;
+	open = zwl_volume_is_open();
+	if (open)
+		return NULL;
 	open = zwl_menu_is_open();
 	if (open)
 		return NULL;
@@ -1048,6 +1063,9 @@ zwl_glass_still(
 	if (open)
 		return 0;
 	open = (unsigned)zwl_network_is_open();
+	if (open)
+		return 0;
+	open = (unsigned)zwl_volume_is_open();
 	if (open)
 		return 0;
 
@@ -1497,6 +1515,12 @@ zwl_glass_key(
 	int showing;
 	int target;
 	int step;
+	int taken;
+
+	/* The volume's open popup takes every key (volume.c). */
+	taken = zwl_volume_key(server, key, state);
+	if (taken)
+		return 1;
 
 	/* Wiseview, open or opening, takes every key (ws035-p014). */
 	showing = wiseview_showing(server);
@@ -1586,6 +1610,9 @@ zwl_glass_tick(
 	/* What the network watch brought (network.c). */
 	zwl_network_tick(server);
 
+	/* What audiod reported, and the volume's sends held back (volume.c). */
+	zwl_volume_tick(server);
+
 	/* The desktops' slide draws every frame until it is done. */
 	if (server->desktop_moving) {
 		server->dirty = 1;
@@ -1653,7 +1680,8 @@ bar_layout(
 	/* The battery and the signal left of it, and a line. */
 	bar->battery_x = bar->clock_x - 44;
 	bar->signal_x = bar->battery_x - 36;
-	bar->status_line = bar->signal_x - 18;
+	bar->volume_x = bar->signal_x - 34;
+	bar->status_line = bar->volume_x - 16;
 
 	/* The desktops, and a line. */
 	bar->desktops_width = DESKTOPS * DESKTOP_WIDTH + (DESKTOPS - 1) * DESKTOP_GAP + 12;
@@ -2591,6 +2619,9 @@ draw_status(
 
 	/* The network: Wi-Fi's bars or the wired tree, which opens its menu (network.c). */
 	zwl_network_draw_icon(server, command, bar->signal_x, ink);
+
+	/* The volume's speaker, which opens its popup (volume.c, ws100-p004). */
+	zwl_volume_draw_icon(server, command, bar->volume_x, ink);
 }
 
 /*
@@ -4627,6 +4658,11 @@ glass_motion_take(
 
 	/* The network's open menu lights the row under the pointer (network.c). */
 	taken = zwl_network_motion(server);
+	if (taken)
+		return 1;
+
+	/* The volume's open popup follows a drag of its slider (volume.c). */
+	taken = zwl_volume_motion(server);
 	if (taken)
 		return 1;
 

@@ -205,6 +205,64 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_DOT, 18.0f, 12.0f, 1.9f, 0.0f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
+	/* Volume 0: a speaker (ws100-p004). */
+	{
+		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Volume 1: a speaker and one wave. */
+	{
+		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 3.5f, 315.0f, 90.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Volume 2: a speaker and two waves. */
+	{
+		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 3.5f, 315.0f, 90.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 6.5f, 315.0f, 90.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Volume 3: a speaker and three waves. */
+	{
+		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 3.5f, 315.0f, 90.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 6.5f, 315.0f, 90.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 9.5f, 315.0f, 90.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Volume muted: a speaker and a cross. */
+	{
+		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
+		{ ICON_SEGMENT, 15.0f, 9.0f, 21.0f, 15.0f, 0.0f },
+		{ ICON_SEGMENT, 21.0f, 9.0f, 15.0f, 15.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
 	/* Files: a folder, its tab on the upper left. */
 	{
 		{ ICON_FRAME, 3.0f, 8.5f, 21.0f, 19.5f, 2.2f },

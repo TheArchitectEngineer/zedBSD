@@ -714,6 +714,11 @@ zwl_seat_axis(
 	if (taken)
 		return;
 
+	/* The volume's icon (and its open popup) takes the wheel (volume.c, ws100-p004). */
+	taken = zwl_volume_axis(server, vertical, horizontal);
+	if (taken)
+		return;
+
 	/* A tab strip under the pointer scrolls with it (titlebar-shell.c). */
 	if (server->glass) {
 		taken = zwl_titlebar_axis(server, vertical, horizontal);
