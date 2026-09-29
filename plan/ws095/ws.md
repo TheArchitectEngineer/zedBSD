@@ -3,13 +3,13 @@
 # WS095: IME（Wayland の標準の方法、まず日本語）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete（p001 cleared）
 Primary Milestone: MG006
 Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）の design.md を全節書いた（2026-09-29、wrap up で中断）。次: design.md の review と §14 の判断の提示（phase001 の「残り」）
+Resume point: p001（設計）cleared（2026-09-29、レビューを反映、判断 D1〜D14 は既定で進めユーザーの答えで直す）。次: ws095-p002（日本語の engine、host の試験）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -27,12 +27,14 @@ Resume point: p001（設計）の design.md を全節書いた（2026-09-29、wr
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws095-p001](phase001/phase.md) | 設計（[design.md](design.md)） | in-progress（design.md 全節、review と判断の提示が残り） | — |
-| ws095-p002 | 日本語の engine（Wayland 無し）: ローマ字・辞書・分割・候補・利用者の辞書、host の試験 | planning | p001 |
-| ws095-p003 | 辞書の package（X の取得と install、LICENSE）、変換の品質の計測と補いの辞書の案（ユーザーと相談） | planning | p002 |
-| ws095-p004 | protocol の client の記述と zdesktop の仲介、IME の program（候補の窓・indicator）、ime-probe の guest の試験 | planning | p002 |
-| ws095-p005 | libkeiland の text-input の helper と Terminal の対応 | planning | p004 |
-| ws095-p006 | Text Editor の対応（WS092 の口） | planning | p004・p005、WS092 |
-| ws095-p007 | zdesktop の自前の field（App Home・titlebar の検索）と Files の field | planning | p004 |
-| ws095-p008 | Browser の text field | planning | p004・p005 |
-| ws095-p009 | 全体の規約の適合、guest の回帰、実機の確認 | planning | p002〜p008 |
+| [ws095-p001](phase001/phase.md) | 設計（[design.md](design.md)） | cleared（2026-09-29） | — |
+| ws095-p002 | 日本語の engine（Wayland 無し）: ローマ字・辞書・活用の規則・分割・候補・利用者の辞書、固定の辞書で host の試験 | planning | p001 |
+| ws095-p003 | 辞書の package（pin した tarball の取得・検証、LICENSE）、X での品質の計測と補いの辞書の案（ユーザーと相談） | planning | p002、D1・D3 |
+| ws095-p004 | protocol の記述、zdesktop の仲介（起動と信頼・key の経路・watchdog）、IME の骨（直接入力）、ime-probe の guest の試験 | planning | p002 |
+| ws095-p005 | 候補の窓の合成、indicator と status、日本語の engine の結線、guest の試験 | planning | p003・p004 |
+| ws095-p006 | libkeiland の text-input の helper と Terminal（password の検出） | planning | p004・p005、Terminal の CJK の font（D14） |
+| ws095-p007 | Text Editor の対応（WS092 の口） | planning | p006、WS092 |
+| ws095-p008 | zdesktop の自前の field（titlebar の検索）と Files の field | planning | p005・p006 |
+| ws095-p009 | Browser の text field | planning | p006 |
+| ws095-p010 | PS/2 の日本語の key の写し（5330 の内蔵 keyboard が PS/2 の JIS の時だけ） | planning | 5330 の確認（人） |
+| ws095-p011 | 全体の規約の適合、guest の回帰（実機の確認は別に記録） | planning | p002〜p009 |
