@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: 2026-09-28 の夜: p001〜p006 は実機で確認（MRT・query・SSBO・stencil・multisample・transform feedback）。HDMI の主出力 p011〜p013、BUG-091（p014）は cleared。p015（BUG-085 の再試験）は cleared: BUG-094 の原因（HAL の APIC timer の較正と AP の timecounter の probe が vCPU の停止で狂う）を直し、修正の後の 10 回で BUG-085・BUG-094 とも 0。p016（lease の替わり目で HDMI を点けたまま）は cleared: login・logout の 暗転 0（実機の passthrough の register）。p017（BUG-058）は 6 回で再現せず uncleared。BUG-095（capture の image の power-off）を起票。次: 実物の LCD での login・logout の目視（ユーザー）→ p007〜p010
+Resume point: 2026-09-29: p008（性能）を 3 つに分け（p008 完了待ちの割込み・p018 非同期の実行器・p019 present mode）、p008 を実施中。その前、2026-09-28 の夜: p001〜p006 は実機で確認（MRT・query・SSBO・stencil・multisample・transform feedback）。HDMI の主出力 p011〜p013、BUG-091（p014）は cleared。p015（BUG-085 の再試験）は cleared: BUG-094 の原因（HAL の APIC timer の較正と AP の timecounter の probe が vCPU の停止で狂う）を直し、修正の後の 10 回で BUG-085・BUG-094 とも 0。p016（lease の替わり目で HDMI を点けたまま）は cleared: login・logout の 暗転 0（実機の passthrough の register）。p017（BUG-058）は 6 回で再現せず uncleared。BUG-095（capture の image の power-off）を起票。次: 実物の LCD での login・logout の目視（ユーザー）→ p007〜p010
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -57,7 +57,7 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p005](phase005/phase.md) | texture の種類: compiler の texelFetch（OpImage・OpImageFetch）・textureSize、shadow（Dref）、integer sampler、cube・配列・3D の sampler。実行器の cube・配列・3D の image、mip level・layer への描画（ws031-p030）、depth の copy、sampler の compare 等（ws031-p034）、descriptor 配列（ws031-p035） | cleared（2026-09-28。実機 egltest の glsl・glsl3・fbo・cube・es3・formats・volumes が failures 0、vke1 6/6・vke2 17/17・vkx 9/9・vkc 9/9、zdesktop・files PASS） | p004 |
 | [ws075-p006](phase006/phase.md) | 実行器と compiler: MRT（ws031-p031）、occlusion query（sync の module）、texel buffer（buffer view）、storage buffer（transform feedback の VS の store）、stencil、multisample の image と resolve | in-progress（増分 1〜5 済み、後退を修正。増分 6 は実機が未実施） | p005 |
 | ws075-p007 | GL 3.2 の stage: geometry shader（compiler の stage と 3DSTATE_GS）、gl_Layer と layered の描画、PrimitiveId。着手前に分ける | planning | p006 |
-| ws075-p008 | 性能: 完了待ちを割込みへ（ws031-p044）、非同期の実行器（ws031-p045）、present mode と vsync（ws031-p027） | planning | p002 |
+| [ws075-p008](phase008/phase.md) | 性能 1: 完了待ちを割込みへ（ws031-p044）。2026-09-29 に 3 つに分けた（p018・p019） | in-progress | p002 |
 | ws075-p009 | 安定: BUG-056・BUG-057（実機の zgears の止まり）ほか p002〜p008 で出た bug | planning | p002 |
 | ws075-p010 | 規約の全文との照合、統合回帰（最後） | planning | 全 Phase |
 | [ws075-p011](phase011/phase.md) | HDMI の主出力の実機の事前調査（[hdmi-main-output.md](hdmi-main-output.md) の H1）: EDID、点く mode、DVI、HDMI の前後の USB | cleared（2026-09-28。EDID は読める、native は 1920x1280。pipe B・DVI で 720p・1080p・1920x1280 を出力。touch の USB は 5330 に現れない。絵の目視は未実施） | — |
@@ -67,6 +67,8 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p015](phase015/phase.md) | [BUG-085](../bugs/BUG-085.md) の再試験（BUG-091 の修正の後）、`h4-ctl.py shot` の live buffer の選択、[BUG-094](../bugs/BUG-094.md) の原因 | cleared（2026-09-28 の再開。BUG-094 = HAL の起動時の時間の測定が vCPU の停止で狂う（`lapic.c` の較正を gate の縁で括り 3 窓の最短、`timecounter.c` の AP の probe を最低 2 秒）。修正の後の egltest6・p005 の各 5 回で BUG-085・BUG-094 とも 0、shot の live は register（PLANE_SURFLIVE）で選べた。GPU の無い boot test PASS） | p014 |
 | [ws075-p016](phase016/phase.md) | lease の替わり目で HDMI を点けたまま（[F-048](../future-work.md) のこの構成の目標）: release で window を出ず最後の絵を次の lease の最初の flip まで保つ（10 秒で期限切れ、PCI shutdown で止める） | cleared（2026-09-28。実機の passthrough で login 6・logout 5 回とも暗 0・黒 0、前は 180〜383 ms と transcoder の停止。Shut Down と期限切れで出力は止まる。実物の LCD の目視は未実施） | p015 |
 | [ws075-p017](phase017/phase.md) | [BUG-058](../bugs/BUG-058.md)（App Home の zgears が最初の frame の前に終わる）の再試験 | uncleared（2026-09-28。6 回の起動で再現せず、原因は未特定） | p016 |
+| [ws075-p018](phase018/phase.md) | 性能 2: 非同期の実行器（ws031-p045）。p008 から分けた | planning | p008 |
+| [ws075-p019](phase019/phase.md) | 性能 3: present mode と vsync（ws031-p027）。p008 から分けた | planning | p008 |
 
 各 Phase の受け入れは、host の survey（`plan/ws075/tests/shader-survey/run.sh`）の該当の不足が 0 になることと、実機の capture
 （egltest・glxtest の場面の capture の scenario は p003 で足す）。
@@ -102,7 +104,7 @@ i915 の executor の試験（vkx・vke1・vke2・vkc、gentool、capture の場
 
 | WS031 | 移した先 |
 | --- | --- |
-| ws031-p027（present mode・vsync） | p008 |
+| ws031-p027（present mode・vsync） | p008 → p019（2026-09-29 に分けた） |
 | ws031-p030（mip level・layer への描画） | p005 |
 | ws031-p031（MRT） | p006 |
 | ws031-p034（sampler） | p005 |
@@ -111,4 +113,4 @@ i915 の executor の試験（vkx・vke1・vke2・vkc、gentool、capture の場
 | ws031-p040（local の配列・構造体） | p004 |
 | ws031-p041（OpSwitch・関数呼出し） | p004（今の corpus には無い。client は glslc -O で inline 化される。GL の shader で要るとき） |
 | ws031-p044（完了の割込み） | p008 |
-| ws031-p045（非同期の実行器） | p008 |
+| ws031-p045（非同期の実行器） | p008 → p018（2026-09-29 に分けた） |

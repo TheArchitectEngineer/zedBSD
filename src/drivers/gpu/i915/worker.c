@@ -13,9 +13,11 @@
  * end, and delivers the result.  A request is written as the reference's
  * execbuf writes one: the initial breadcrumb (gen8_emit_init_breadcrumb()),
  * the batch start (gen8_emit_bb_start()) unless the request is a marker, and
- * the final breadcrumb the request add writes.  Its end is found by polling
- * the context status buffer, as the reference's wait path does when it runs
- * the submission tasklet inline.
+ * the final breadcrumb the request add writes.  Its end is found by
+ * processing the context status buffer, as the reference's wait path does
+ * when it runs the submission tasklet inline; between two looks the worker
+ * sleeps until the engine's next interrupt (the final breadcrumb's user
+ * interrupt, or a context switch).
  */
 
 #include "context.h"
@@ -24,6 +26,7 @@
 #include "engine.h"
 #include "ggtt.h"
 #include "i915.h"
+#include "irq.h"
 #include "memory.h"
 #include "ppgtt.h"
 #include "request-queue.h"
@@ -58,9 +61,15 @@
 /* How long a request may run before it is failed as a hang. */
 #define I915_WORKER_TIMEOUT_MS		10000U
 
-/* The pause between two polls of the context status buffer, and how many polls make the timeout. */
+/*
+ * The longest sleep between two looks at the context status buffer, in
+ * scheduler ticks.  The engine's interrupt normally ends it; the bound only
+ * keeps a lost interrupt from costing more than this.
+ */
+#define I915_WORKER_WAIT_TICKS		1U
+
+/* The pause between two polls of the context status buffer when no interrupt handler is attached. */
 #define I915_WORKER_POLL_US		50U
-#define I915_WORKER_POLLS		(I915_WORKER_TIMEOUT_MS * 20U)
 
 /* The ring room a request needs at most; a ring with less left is rewound. */
 #define I915_WORKER_REQUEST_ROOM	512U
@@ -181,6 +190,13 @@ struct i915_worker {
 	/* How many context records are in use, and how many were ever filled. */
 	unsigned live_contexts;
 	unsigned contexts_ever;
+
+	/*
+	 * How the sleeps between two looks at the context status buffer ended:
+	 * woken by an engine interrupt, or run out (the bound).
+	 */
+	unsigned wait_interrupts;
+	unsigned wait_timeouts;
 };
 
 static int i915_worker_loop(struct i915_worker *worker, int in_display);
@@ -276,7 +292,7 @@ drv_i915_worker_serve(
 		return error;
 	}
 
-	kern_logf("i915: resident: GPU node published; serving (RCS0, one request at a time, CSB polling) on cpu %u\n", (unsigned)hal_cpu_current());
+	kern_logf("i915: resident: GPU node published; serving (RCS0, one request at a time, woken by the engine interrupt) on cpu %u\n", (unsigned)hal_cpu_current());
 
 	/*
 	 * Runs the queued work until a stop is asked for.  The first
@@ -292,10 +308,12 @@ drv_i915_worker_serve(
 		drv_i915_present_window(device);
 	}
 
-	kern_logf("i915: resident: stopping (executed=%u failed=%u presented=%u)\n",
+	kern_logf("i915: resident: stopping (executed=%u failed=%u presented=%u; waits woken by the engine interrupt %u, run out %u)\n",
 	    worker->executed,
 	    worker->failed,
-	    drv_i915_present_count(device));
+	    drv_i915_present_count(device),
+	    worker->wait_interrupts,
+	    worker->wait_timeouts);
 
 	/* Withdraws the node; open sessions keep it, and the device stop runs anyway. */
 	error = drv_i915_unpublish(device);
@@ -1216,7 +1234,13 @@ i915_worker_emit(
 	return 0;
 }
 
-/* Polls the context status buffer until a submitted request has ended, or times out. */
+/*
+ * Waits until a submitted request has ended, or times out.
+ *
+ * The context status buffer is processed, and between two looks the worker
+ * sleeps until the engine's next interrupt, one tick at most.  Without an
+ * interrupt handler it polls every 50 microseconds instead.
+ */
 static int
 i915_worker_wait(
 	struct i915_worker *worker,
@@ -1227,7 +1251,9 @@ i915_worker_wait(
 	struct i915_device *device;
 	struct i915_gt_engine *ge;
 	struct i915_execlists *el;
-	unsigned poll;
+	uint64_t deadline;
+	uint64_t observed;
+	uint64_t now;
 	int completed;
 	int error;
 
@@ -1235,8 +1261,12 @@ i915_worker_wait(
 	ge = &device->gt.engines.ge[worker->render_index];
 	el = &device->gt.engines.el[worker->render_index];
 
-	/* Processes the status buffer every 50 microseconds, for at most the timeout. */
-	for (poll = 0U; poll < I915_WORKER_POLLS; poll++) {
+	/* Looks at the status buffer until the request ends, for at most the timeout. */
+	deadline = sched_ticks() + KERN_MS_TO_TICKS(I915_WORKER_TIMEOUT_MS);
+	for (;;) {
+		/* Notes the engine interrupts so far before the look, so one during the look is not missed. */
+		observed = drv_i915_irq_engine_sequence(&device->gt.irq);
+
 		/* Applies what the engine reported. */
 		(void)drv_i915_execlists_process_csb(ge, el, &device->gt.mmio);
 
@@ -1261,7 +1291,25 @@ i915_worker_wait(
 				return 0;
 		}
 
-		/* Pauses before the next poll; a failed time base fails the request. */
+		/* The timeout is over. */
+		now = sched_ticks();
+		if (now >= deadline)
+			break;
+
+		/* Sleeps until the engine's next interrupt, or one tick at most. */
+		error = drv_i915_irq_engine_wait(&device->gt.irq, observed, I915_WORKER_WAIT_TICKS);
+		if (error == 0) {
+			worker->wait_interrupts++;
+			continue;
+		}
+
+		/* The bound ran out: a lost interrupt costs one tick, not the request. */
+		if (error == ETIMEDOUT) {
+			worker->wait_timeouts++;
+			continue;
+		}
+
+		/* No handler: pauses before the next poll; a failed time base fails the request. */
 		error = drv_i915_udelay(I915_WORKER_POLL_US);
 		if (error != 0)
 			return EIO;

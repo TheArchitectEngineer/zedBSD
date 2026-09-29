@@ -24,6 +24,9 @@
 
 #include <hal/hal.h>
 #include <kern/klog.h>
+#include <kern/lock.h>
+#include <kern/sched.h>
+#include <kern/waitq.h>
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -67,6 +70,7 @@ static uint32_t i915_master_intr_disable(struct i915_irq_dev *irq);
 static void i915_master_intr_enable(struct i915_irq_dev *irq);
 static uint32_t i915_gt_engine_identity(struct i915_irq_dev *irq, unsigned bank, unsigned bit);
 static void i915_gt_engine_irq(struct i915_irq_dev *irq, uint32_t iir);
+static void i915_engine_wake(struct i915_irq_dev *irq);
 static int i915_gt_engine_known(struct i915_irq_dev *irq, unsigned engine_class, unsigned instance);
 static void i915_gt_identity_handler(struct i915_irq_dev *irq, uint32_t identity);
 static void i915_gt_bank_handler(struct i915_irq_dev *irq, unsigned bank);
@@ -93,6 +97,16 @@ drv_i915_irq_install(
 	 */
 	irq->irqs_enabled = 1;
 	irq->irq_enabled = 1;
+
+	/*
+	 * Prepares the queue the engine interrupts wake, once for the device's
+	 * life, before the handler that wakes it can run.
+	 */
+	if (irq->engine_wait_ready == 0) {
+		spin_init(&irq->engine_lock, LOCK_RANK_DEVICE, "i915 engine irq");
+		waitq_init(&irq->engine_waitq, "i915 engine irq");
+		irq->engine_wait_ready = 1;
+	}
 
 	/*
 	 * Without a display table no display source is reset, enabled or
@@ -235,6 +249,71 @@ drv_i915_synchronize_irq(
 	    irq->handler_exits);
 
 	return ETIMEDOUT;
+}
+
+/*
+ * Reads the sequence of the engine interrupts.
+ *
+ * A waiter reads it before it looks at the engine and hands it to
+ * drv_i915_irq_engine_wait(), so an interrupt that comes between the look
+ * and the sleep ends the sleep at once instead of being missed.
+ */
+uint64_t
+drv_i915_irq_engine_sequence(
+	struct i915_irq_dev *irq)
+{
+	uint64_t sequence;
+
+	/* Reads the sequence each engine interrupt advances. */
+	sequence = waitq_sequence(&irq->engine_waitq);
+
+	/* Succeeded: reports the sequence. */
+	return sequence;
+}
+
+/*
+ * Sleeps until an engine interrupt comes after the observed sequence, or
+ * until a number of scheduler ticks has passed.
+ *
+ * Returns 0 once an interrupt came, also one that came before the sleep
+ * started; ETIMEDOUT when the ticks passed without one; or ENODEV when the
+ * handler is not attached, so no interrupt will come and the caller polls
+ * instead.
+ */
+int
+drv_i915_irq_engine_wait(
+	struct i915_irq_dev *irq,
+	uint64_t observed,
+	unsigned ticks)
+{
+	unsigned long flags;
+	uint64_t deadline;
+	int error;
+
+	/* Without the handler no engine interrupt wakes the queue. */
+	if (irq->engine_wait_ready == 0 || irq->handler_attached == 0)
+		return ENODEV;
+
+	/* The sleep ends at this tick at the latest. */
+	deadline = sched_ticks() + ticks;
+
+	/* Sleeps on the queue unless an interrupt came since the observation. */
+	flags = spin_lock_irqsave(&irq->engine_lock);
+
+	error = waitq_sleep(&irq->engine_waitq, &irq->engine_lock, observed, deadline, 0U);
+
+	spin_unlock_irqrestore(&irq->engine_lock, flags);
+
+	/* An interrupt that came before the sleep started is an interrupt too. */
+	if (error == EAGAIN)
+		return 0;
+
+	/* Reports a sleep that ran out, or that could not start. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: an engine interrupt came, or the sleep ended early. */
+	return 0;
 }
 
 /*
@@ -590,8 +669,9 @@ i915_gt_engine_identity(
  *
  * This is the decode of execlists_irq_handler().  The bottom halves
  * (RING_EIR handling, the semaphore yield, the CSB tasklet, the breadcrumb
- * signal) belong to the submission backend; here each source is counted
- * and the handler stays a pure acknowledge.
+ * signal) belong to the submission backend; here each source is counted,
+ * and a user interrupt or a context switch wakes the threads waiting for an
+ * engine (the request worker), which read the CSB themselves.
  */
 static void
 i915_gt_engine_irq(
@@ -613,6 +693,30 @@ i915_gt_engine_irq(
 	/* A user interrupt completed a request. */
 	if ((iir & GT_RENDER_USER_INTERRUPT) != 0U)
 		irq->gt_user_intr++;
+
+	/* Wakes a thread waiting for a request's end or for new status entries. */
+	if ((iir & (GT_RENDER_USER_INTERRUPT | GT_CONTEXT_SWITCH_INTERRUPT)) != 0U)
+		i915_engine_wake(irq);
+}
+
+/* Wakes every thread sleeping on the engine interrupts; runs in the handler. */
+static void
+i915_engine_wake(
+	struct i915_irq_dev *irq)
+{
+	unsigned long flags;
+
+	/* The queue is not prepared before install. */
+	if (irq->engine_wait_ready == 0)
+		return;
+
+	/* Advances the sequence and wakes the sleepers under the queue's condition lock. */
+	flags = spin_lock_irqsave(&irq->engine_lock);
+
+	irq->engine_wakeups++;
+	waitq_wake_all(&irq->engine_waitq);
+
+	spin_unlock_irqrestore(&irq->engine_lock, flags);
 }
 
 /* Reports nonzero when an engine of this class and instance exists. */
