@@ -125,10 +125,12 @@ complete_attempt(
 	struct complete_list list;
 	char **matches;
 	char *word;
+	const char *found;
 	int quoted;
 	int command;
 	int slash;
 
+	/* The word ends at the cursor, where text already ends. */
 	(void)end;
 
 	/* A word inside an open quote is not completed. */
@@ -139,8 +141,9 @@ complete_attempt(
 	/* The word as the shell will read it, and whether a command name stands there. */
 	word = complete_unquote(text);
 	command = complete_command_position(rl_line_buffer, start);
+	found = strchr(word, '/');
 	slash = 0;
-	if (strchr(word, '/') != NULL)
+	if (found != NULL)
 		slash = 1;
 
 	/* A command name without a slash is looked for as a command; anything else as a path. */
@@ -243,6 +246,7 @@ complete_command_position(
 	int redirect;
 	int single;
 	int double_quote;
+	const char *separator;
 	char character;
 
 	/* The line starts where a command name stands, with no word open. */
@@ -256,12 +260,14 @@ complete_command_position(
 	for (index = 0; index < end; index++) {
 		character = line[index];
 
-		/* Quoted text is part of the word it is in. */
+		/* Quoted text is part of the word it is in: single quotes end only at a single quote. */
 		if (single) {
 			if (character == '\'')
 				single = 0;
 			continue;
 		}
+
+		/* In double quotes a backslash still quotes the next character. */
 		if (double_quote) {
 			if (character == '\\')
 				index++;
@@ -278,7 +284,8 @@ complete_command_position(
 		}
 
 		/* An operator that ends a command puts a command name next. */
-		if (strchr(COMPLETE_SEPARATORS, character) != NULL) {
+		separator = strchr(COMPLETE_SEPARATORS, character);
+		if (separator != NULL) {
 			complete_word_ended(line, word_start, index, &command, &redirect);
 			word_start = -1;
 			command = 1;
@@ -585,6 +592,8 @@ complete_directory(
 	int found;
 	int is_directory;
 	int executable;
+	int runnable;
+	mode_t kind;
 
 	/* A directory that cannot be read has no entries to offer. */
 	stream = opendir(directory);
@@ -611,12 +620,22 @@ complete_directory(
 		path = sh_malloc(length);
 		snprintf(path, length, "%s/%s", directory, entry->d_name);
 		found = stat(path, &status);
+		kind = 0;
+		if (found == 0)
+			kind = status.st_mode & S_IFMT;
 		is_directory = 0;
-		executable = 0;
-		if (found == 0 && S_ISDIR(status.st_mode))
+		if (kind == S_IFDIR)
 			is_directory = 1;
-		if (found == 0 && S_ISREG(status.st_mode) && access(path, X_OK) == 0)
-			executable = 1;
+
+		/* A regular file the shell may run is executable. */
+		executable = 0;
+		if (kind == S_IFREG) {
+			runnable = access(path, X_OK);
+			if (runnable == 0)
+				executable = 1;
+		}
+
+		/* The path was needed only to look at the entry. */
 		free(path);
 
 		/* A command on PATH is an executable file. */
@@ -646,6 +665,8 @@ complete_directory(
 			snprintf(text, length, "%s%s", typed, entry->d_name);
 			snprintf(shown, length, "%s", entry->d_name);
 		}
+
+		/* The candidate takes both strings. */
 		complete_add(list, text, shown, is_directory);
 	}
 
@@ -780,8 +801,12 @@ complete_result(
 			free(list->items[index].shown);
 			continue;
 		}
+
+		/* A new name moves down next to the last kept one. */
 		list->items[unique++] = list->items[index];
 	}
+
+	/* Only the kept names count. */
 	list->count = unique;
 
 	/* One match goes in whole, followed by a blank unless it is a directory. */
@@ -802,6 +827,8 @@ complete_result(
 			if (list->items[index].text[position] != list->items[0].text[position])
 				break;
 		}
+
+		/* The common part ends where this match differs. */
 		common = position;
 	}
 
@@ -845,6 +872,7 @@ complete_quote(
 	const char *text,
 	size_t length)
 {
+	const char *special;
 	char *quoted;
 	size_t from;
 	size_t to;
@@ -853,7 +881,8 @@ complete_quote(
 	quoted = sh_malloc(length * 2U + 1U);
 	to = 0;
 	for (from = 0; from < length; from++) {
-		if (strchr(COMPLETE_SPECIAL, text[from]) != NULL)
+		special = strchr(COMPLETE_SPECIAL, text[from]);
+		if (special != NULL)
 			quoted[to++] = '\\';
 		quoted[to++] = text[from];
 	}
@@ -875,6 +904,8 @@ complete_list_free(
 		free(list->items[index].text);
 		free(list->items[index].shown);
 	}
+
+	/* The list is empty again. */
 	free(list->items);
 	list->items = NULL;
 	list->count = 0;

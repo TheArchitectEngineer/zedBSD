@@ -780,6 +780,8 @@ keyboard_build_capabilities(
 					break;
 				}
 			}
+
+			/* A key already in the set is not added twice. */
 			if (duplicate)
 				continue;
 
