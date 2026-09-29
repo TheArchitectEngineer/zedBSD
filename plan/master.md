@@ -98,7 +98,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS032](ws032/ws.md) | MG002 | 外部 package のクロスビルド（clang・OpenSSL・OpenSSH） | completed | — |
 | [WS033](ws033/ws.md) | MG005 | networking サービスと有線インタフェースの管理 | incomplete | 抜き差しの実機確認 |
 | [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | incomplete | package の導入 |
-| [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | incomplete | 2026-09-29: p129〜p132 cleared（起動の準備を READY の前に、起動時の画像の layout をまとめる: compose 1511 → 1235 ms・login の READY 1740 → 1515 ms、BUG-112 の xdg_wm_base.destroy を binding ごとに）。次: p133（wallpaper の ppm の読みと拡縮、約 170 ms）。Venus の同期の遅さは F-056。エージェントは Mid（2026-09-29 ユーザー） |
+| [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | incomplete | 2026-09-29: p129〜p134 cleared（起動の準備を READY の前に、起動時の画像の layout をまとめる、BUG-112、壁紙の先読みと拡縮の中間の削減: wallpaper-picture 165 → 40 ms、Terminal の窓の角を直角に（ユーザー））。p135（暗い壁紙の上の glass の文字の contrast）はすりガラスの扱いの判断まで保留。Venus の同期の遅さは F-056。エージェントは Mid |
 | [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | completed | 2026-09-27 完了（p021 全 platform の回帰と規約、p026〜p029、p027 は案 A: boot の parameter の parser を緩めた）。実機は未実施。toolchain の cache（zedbsd8）は 2026-09-27 に rev-0 へ upload 済み |
 | [WS037](ws037/ws.md) | MG006 | NVIDIA GPU（予約） | planning | 番号のみ |
 | [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | planning | 番号のみ |
