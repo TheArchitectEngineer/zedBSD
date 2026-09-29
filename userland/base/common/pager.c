@@ -28,6 +28,13 @@
 
 #define PIPE_LIMIT (256U * 1024U)
 #define LINE_READ_MAX 8192U
+
+/*
+ * The control keys less takes for a whole screen: Ctrl-F moves forward and
+ * Ctrl-B moves back, as in the other less programs.
+ */
+#define PAGER_KEY_SCREEN_FORWARD 0x06
+#define PAGER_KEY_SCREEN_BACK 0x02
 struct document {
 	int fd, owned, seekable;
 	off_t size;
@@ -533,6 +540,21 @@ interactive(
 		/* Handles the selected key. */
 		if (key == 'q')
 			break;
+
+		/*
+		 * less also takes Ctrl-F and f for a screen forward and Ctrl-B
+		 * for a screen back, the keys of the other less programs; more
+		 * keeps the keys it has always taken.
+		 */
+		if (style == PAGER_LESS) {
+			if (key == PAGER_KEY_SCREEN_FORWARD || key == 'f') {
+				/* A screen forward is what the space bar does. */
+				key = ' ';
+			} else if (key == PAGER_KEY_SCREEN_BACK) {
+				/* A screen back is what b does. */
+				key = 'b';
+			}
+		}
 
 		/* Handles the selected key. */
 		if (key == ' ' || key == 'j') {
