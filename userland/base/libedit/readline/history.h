@@ -36,4 +36,10 @@ HIST_ENTRY *current_history(void);
 HIST_ENTRY *previous_history(void);
 HIST_ENTRY *next_history(void);
 
+/*
+ * Keeps at most max entries from now on, dropping the oldest ones over it.
+ * Until it is called the history keeps its default number of lines.
+ */
+void stifle_history(int max);
+
 #endif

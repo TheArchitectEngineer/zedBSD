@@ -12,7 +12,12 @@
  * (POSIX XCU fc): list, edit and run again the commands typed.
  *
  * The line editor keeps its own history for recalling lines with the arrow
- * keys; this list numbers the same lines for fc.  HISTSIZE bounds it.
+ * keys; this list numbers the same lines for fc.  HISTSIZE bounds both.
+ *
+ * An interactive shell reading a terminal also keeps the lines in a file
+ * (HISTFILE, or $HOME/.sh_history when it is unset; an empty HISTFILE keeps
+ * none): it reads the file when it starts, so a new shell can recall what
+ * earlier ones ran, and adds each line to the file as soon as it is read.
  */
 
 #include "userland/base/sh/shell.h"
@@ -34,6 +39,12 @@
 
 /* How much of the edited file is read at a time. */
 #define HISTORY_READ_CHUNK 512
+
+/* The history file in the home directory when HISTFILE is unset. */
+#define HISTORY_FILE_NAME ".sh_history"
+
+/* How many HISTSIZEs of lines the history file may grow to before it is cut down. */
+#define HISTORY_FILE_SLACK 2
 
 /*
  * One line of the history, with the number fc names it by.
@@ -58,7 +69,18 @@ static int history_capacity;
 /* The number the next line gets; it only grows. */
 static int history_next = 1;
 
+/*
+ * Set once sh_history_load() has run: the shell is interactive on a
+ * terminal, and each line it reads goes to the history file.  A shell that
+ * never loads the file (a script, -c, input that is no terminal) never
+ * writes it either.
+ */
+static int history_file_enabled;
+
 static int history_limit(void);
+static char *history_file_path(void);
+static char *history_file_read(const char *path, size_t *length);
+static void history_file_rewrite(const char *path);
 static int history_find(const char *text, int *found);
 static int history_range(int argc, char **argv, int index, int default_first, int *first, int *last);
 static void history_drop_fc(void);
@@ -110,6 +132,160 @@ sh_history_add(
 	history_entries[history_count].number = history_next++;
 	history_entries[history_count].text = sh_strndup(line, length);
 	history_count++;
+}
+
+/*
+ * Reads the history file into both histories, for an interactive shell on a
+ * terminal, and turns on adding each line read to the file.
+ *
+ * Only the newest HISTSIZE lines are kept; a file that has grown past twice
+ * that is cut down to them.  A missing or unreadable file is no error.
+ */
+void
+sh_history_load(
+	void)
+{
+	char *path;
+	char *text;
+	char *line;
+	char *end;
+	size_t length;
+	size_t position;
+	int lines;
+	int skip;
+	int limit;
+
+	/* The line editor keeps as many lines as the fc list, and lines are saved from now on. */
+	limit = history_limit();
+	stifle_history(limit);
+	history_file_enabled = 1;
+
+	/* No HISTFILE and no home directory, or an empty HISTFILE, is no file. */
+	path = history_file_path();
+	if (path == NULL)
+		return;
+
+	/* The whole file; one that cannot be read gives nothing. */
+	text = history_file_read(path, &length);
+	if (text == NULL) {
+		free(path);
+		return;
+	}
+
+	/* Counts the lines, so that only the newest ones are added. */
+	lines = 0;
+	for (position = 0; position < length; position++) {
+		if (text[position] == '\n')
+			lines++;
+	}
+
+	/* A last line the file does not end is a line too. */
+	if (length > 0 && text[length - 1] != '\n')
+		lines++;
+
+	/* The lines older than the newest HISTSIZE are passed over. */
+	skip = 0;
+	if (lines > limit)
+		skip = lines - limit;
+
+	/* Each line after them goes into both histories. */
+	line = text;
+	while (line < text + length) {
+		end = memchr(line, '\n', (size_t)(text + length - line));
+		if (end == NULL)
+			end = text + length;
+		*end = '\0';
+
+		/* A passed-over line only counts down. */
+		if (skip > 0) {
+			skip--;
+		} else {
+			sh_history_add(line);
+			add_history(line);
+		}
+
+		/* The next line starts after the newline. */
+		line = end + 1;
+	}
+
+	/* A file past twice the limit is cut down to the lines kept. */
+	if (lines > HISTORY_FILE_SLACK * limit)
+		history_file_rewrite(path);
+
+	/* The file's text and name are no longer needed. */
+	free(text);
+	free(path);
+}
+
+/*
+ * Adds a line read from the terminal to the end of the history file, when
+ * the shell keeps one.  A file that cannot be written is left as it is.
+ */
+void
+sh_history_save(
+	const char *line)
+{
+	char *path;
+	char *record;
+	size_t length;
+	ssize_t written;
+	int descriptor;
+
+	/* Only a shell that loaded the file writes it. */
+	if (!history_file_enabled)
+		return;
+
+	/* A blank line is not kept, as sh_history_add does not keep it. */
+	length = strlen(line);
+	while (length > 0 && line[length - 1] == '\n')
+		length--;
+	if (length == 0)
+		return;
+
+	/* No file is kept without a HISTFILE or a home directory. */
+	path = history_file_path();
+	if (path == NULL)
+		return;
+
+	/* The line with its newline, so that one write adds all of it. */
+	record = sh_malloc(length + 1U);
+	memcpy(record, line, length);
+	record[length] = '\n';
+
+	/* Appends it, making the file readable by its owner only. */
+	descriptor = open(path, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0600);
+	free(path);
+	if (descriptor < 0) {
+		free(record);
+		return;
+	}
+
+	/* One write, so that lines from shells running side by side do not mix. */
+	do
+		written = write(descriptor, record, length + 1U);
+	while (written < 0 && errno == EINTR);
+	(void)close(descriptor);
+	free(record);
+}
+
+/*
+ * Tells the line editor that HISTSIZE changed, so that it keeps as many
+ * lines as the fc list does.
+ */
+void
+sh_history_size_changed(
+	const char *name)
+{
+	int limit;
+
+	/* The editor follows only once the shell keeps a history at all. */
+	(void)name;
+	if (!history_file_enabled)
+		return;
+
+	/* The editor keeps the new number of lines. */
+	limit = history_limit();
+	stifle_history(limit);
 }
 
 /*
@@ -237,6 +413,147 @@ history_limit(
 
 	/* Succeeded: the limit. */
 	return limit;
+}
+
+/*
+ * Returns the history file's path in allocated memory, or NULL when there
+ * is none: HISTFILE is empty, or it is unset and HOME is unset or empty.
+ */
+static char *
+history_file_path(
+	void)
+{
+	const char *file;
+	const char *home;
+	char *path;
+	size_t length;
+
+	/* HISTFILE names the file; set but empty, it asks for none. */
+	file = sh_var_get("HISTFILE");
+	if (file != NULL) {
+		if (file[0] == '\0')
+			return NULL;
+		path = sh_strdup(file);
+		return path;
+	}
+
+	/* Without it, the file is in the home directory. */
+	home = sh_var_get("HOME");
+	if (home == NULL || home[0] == '\0')
+		return NULL;
+
+	/* The home directory, a slash and the file's name. */
+	length = strlen(home) + strlen(HISTORY_FILE_NAME) + 2U;
+	path = sh_malloc(length);
+	snprintf(path, length, "%s/%s", home, HISTORY_FILE_NAME);
+
+	/* Succeeded: the path, which the caller frees. */
+	return path;
+}
+
+/*
+ * Reads a whole file into allocated memory and gives its length; returns
+ * NULL when it cannot be opened or read.
+ */
+static char *
+history_file_read(
+	const char *path,
+	size_t *length)
+{
+	char *text;
+	size_t capacity;
+	ssize_t count;
+	int descriptor;
+
+	/* Opens it for reading. */
+	descriptor = open(path, O_RDONLY | O_CLOEXEC);
+	if (descriptor < 0)
+		return NULL;
+
+	/* Reads all of it, growing the buffer as it fills. */
+	capacity = HISTORY_READ_CHUNK;
+	*length = 0;
+	text = sh_malloc(capacity);
+	for (;;) {
+		/* A full buffer doubles before the next read. */
+		if (*length == capacity) {
+			capacity *= 2U;
+			text = sh_realloc(text, capacity);
+		}
+
+		/* The next part of the file, retrying an interrupted read. */
+		do
+			count = read(descriptor, text + *length, capacity - *length);
+		while (count < 0 && errno == EINTR);
+		if (count <= 0)
+			break;
+		*length += (size_t)count;
+	}
+
+	/* The file is read; a failed read gives nothing. */
+	(void)close(descriptor);
+	if (count < 0) {
+		free(text);
+		return NULL;
+	}
+
+	/* Succeeded: the text, which the caller frees. */
+	return text;
+}
+
+/*
+ * Replaces the history file with the lines the fc list kept, through a new
+ * file renamed over it so that the old file stays whole if writing fails.
+ */
+static void
+history_file_rewrite(
+	const char *path)
+{
+	char *temporary;
+	char *record;
+	size_t size;
+	size_t length;
+	ssize_t written;
+	int descriptor;
+	int index;
+	int renamed;
+
+	/* The new file sits next to the old one, named after this shell. */
+	size = strlen(path) + 32U;
+	temporary = sh_malloc(size);
+	snprintf(temporary, size, "%s.%ld", path, (long)getpid());
+	descriptor = open(temporary, O_WRONLY | O_CREAT | O_EXCL | O_TRUNC | O_CLOEXEC, 0600);
+	if (descriptor < 0) {
+		free(temporary);
+		return;
+	}
+
+	/* Each line the fc list kept, which are the newest of the file, with its newline. */
+	for (index = 0; index < history_count; index++) {
+		length = strlen(history_entries[index].text);
+		record = sh_malloc(length + 1U);
+		memcpy(record, history_entries[index].text, length);
+		record[length] = '\n';
+		do
+			written = write(descriptor, record, length + 1U);
+		while (written < 0 && errno == EINTR);
+		free(record);
+
+		/* A failed or short write leaves the old file in place. */
+		if (written != (ssize_t)(length + 1U)) {
+			(void)close(descriptor);
+			(void)unlink(temporary);
+			free(temporary);
+			return;
+		}
+	}
+
+	/* The new file takes the old one's place. */
+	(void)close(descriptor);
+	renamed = rename(temporary, path);
+	if (renamed != 0)
+		(void)unlink(temporary);
+	free(temporary);
 }
 
 /*

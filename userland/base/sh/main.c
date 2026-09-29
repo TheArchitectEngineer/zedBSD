@@ -90,6 +90,7 @@ main(
 	sh_var_import_environment(environ);
 	sh_var_hook("PATH", sh_path_changed);
 	sh_var_hook("OPTIND", sh_getopts_reset);
+	sh_var_hook("HISTSIZE", sh_history_size_changed);
 	if (argc > 0 && argv[0] != NULL)
 		sh_arg0 = argv[0];
 
@@ -153,8 +154,15 @@ main(
 	if (sh_option[SH_OPT_INTERACTIVE] && environment_file != NULL)
 		run_profile(environment_file);
 
-	/* Commands from the terminal have a loop of their own. */
+	/*
+	 * Commands from the terminal have a loop of their own.  On a terminal
+	 * it starts with the lines earlier shells kept in the history file,
+	 * after the profiles, which may set HISTFILE and HISTSIZE.
+	 */
 	if (command == NULL && script == NULL && sh_option[SH_OPT_INTERACTIVE]) {
+		input_terminal = isatty(0);
+		if (input_terminal)
+			sh_history_load();
 		status = run_interactive();
 		sh_exit(status);
 	}

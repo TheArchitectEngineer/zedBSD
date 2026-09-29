@@ -18,6 +18,9 @@ implementation.
   `k - j + G`, and `#`.  History search (`/ ? n N`), `f F t T ; ,`, `.`,
   `v` and completion are not implemented.
 
+The history keeps the last 32 lines the caller adds, or as many as the
+caller names with `stifle_history()` (`/bin/sh` passes `HISTSIZE`).
+
 Redrawing uses the small ANSI/VT100 baseline provided by zedBSD's console
 TTY (`CSI n C` and `CSI n D`, and spaces over a shortened line).  No termcap
 or terminfo database is required.
