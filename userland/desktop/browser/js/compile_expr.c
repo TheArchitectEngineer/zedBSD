@@ -1663,6 +1663,7 @@ expr_call(
 	uint32_t target)
 {
 	struct js_node *callee;
+	struct js_node *chained;
 	uint32_t mark;
 	uint32_t function;
 	uint32_t this_value;
@@ -1670,6 +1671,8 @@ expr_call(
 	uint32_t first;
 	uint32_t count;
 	uint32_t arguments;
+	uint32_t saved_chain;
+	uint32_t end;
 	int spread;
 
 	/* Super calls come later. */
@@ -1681,10 +1684,27 @@ expr_call(
 	mark = fc->temp_top;
 	function = js_temp(fc);
 	this_value = js_temp(fc);
+	chained = NULL;
+	if (callee->kind == JS_NODE_OPTIONAL_CHAIN)
+		chained = expr_unwrap(callee->first);
 	if (callee->kind == JS_NODE_MEMBER) {
 		key = js_temp(fc);
 		expr_member_parts(fc, callee, this_value, key);
 		expr_member_get(fc, callee, this_value, key, function);
+	} else if (chained != NULL && chained->kind == JS_NODE_MEMBER) {
+		/* (a?.b)(): the chain's property keeps its object as this; a chain that stopped calls undefined. */
+		key = js_temp(fc);
+		saved_chain = fc->chain_label;
+		fc->chain_label = js_label_new(fc);
+		end = js_label_new(fc);
+		expr_member_parts(fc, chained, this_value, key);
+		expr_member_get(fc, chained, this_value, key, function);
+		js_emit_jump(fc, VM_OP_JUMP, 0, end);
+		js_label_place(fc, fc->chain_label);
+		js_load_value(fc, function, VM_VALUE_UNDEFINED);
+		js_load_value(fc, this_value, VM_VALUE_UNDEFINED);
+		js_label_place(fc, end);
+		fc->chain_label = saved_chain;
 	} else {
 		js_compile_expression(fc, node->first, function);
 		js_load_value(fc, this_value, VM_VALUE_UNDEFINED);
