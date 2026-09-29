@@ -19,6 +19,7 @@
 #include "extras.h"
 #include "panels.h"
 #include "tablet.h"
+#include "ime.h"
 #include "touch.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -321,6 +322,10 @@ zwl_object_destroy(
 	    object->kind == ZWL_TITLEBAR)
 		zwl_data_object_gone(object);
 
+	/* The text input and input method objects stop being named (text-input.c, input-method.c). */
+	if (object->kind >= ZWL_TEXT_INPUT_MANAGER && object->kind <= ZWL_IME_STATUS)
+		zwl_ime_object_gone(object);
+
 	/* A primary selection source leaves the selection and its offers (primary.c). */
 	if (object->kind == ZWL_PRIMARY_SOURCE)
 		zwl_primary_object_gone(object);
@@ -452,6 +457,9 @@ zwl_client_destroy(
 	/* A frame in flight may hold this client's buffers and callbacks; it finishes first. */
 	server = client->server;
 	zwl_compose_quiesce(server);
+
+	/* The input method's connection lets go of what it held (input-method.c). */
+	zwl_ime_client_gone(client);
 
 	/* Fatal status suppresses events while destructors unwind dependent objects. */
 	client->fatal = 1;

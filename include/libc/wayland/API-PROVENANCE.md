@@ -13,6 +13,9 @@ against the following pinned primary interface descriptions on 2026-09-13:
 | [xdg-shell protocol](https://gitlab.freedesktop.org/wayland/wayland-protocols/-/raw/1.36/stable/xdg-shell/xdg-shell.xml) | wayland-protocols 1.36 | `454c96a942bfd7b21acdceb74d189cee85858afb7e7d2274964c94f13616f69f` |
 | primary-selection-unstable-v1.xml (`unstable/primary-selection/`, the Debian package wayland-protocols 1.44-1 on the build host, 2026-09-28) | wayland-protocols 1.44 | `d568482ba84df6e531698b1f531810860995ca24d69495427fe43aee6017f52c` |
 | tablet-unstable-v2.xml (`unstable/tablet/`, the same Debian package, 2026-09-28) | wayland-protocols 1.44 | `db291b574adb2d42d27f3d01a77723bb3350a7a32e6d33de16513521b42294a9` |
+| text-input-unstable-v3.xml (`unstable/text-input/`, the same Debian package, 2026-09-29; interface version 1) | wayland-protocols 1.44 | `49048087a67011a8840bca889cd2b0ba374382be1ed54ec98adf7837fdca1982` |
+| [input-method-unstable-v2.xml](https://gitlab.freedesktop.org/wlroots/wlroots/-/raw/a047c2a33ff7724a476892cc4fe5dcb803607ef5/protocol/input-method-unstable-v2.xml) (MIT) | wlroots 0.19.2 (`a047c2a33ff7724a476892cc4fe5dcb803607ef5`) | `99414dbad9458e71aa1fa01bc45f94ca6685787bfcb4d98948f72c1b45b60703` |
+| [virtual-keyboard-unstable-v1.xml](https://gitlab.freedesktop.org/wlroots/wlroots/-/raw/a047c2a33ff7724a476892cc4fe5dcb803607ef5/protocol/virtual-keyboard-unstable-v1.xml) (MIT) | wlroots 0.19.2 (`a047c2a33ff7724a476892cc4fe5dcb803607ef5`) | `7ad7870003ecd592cae47dc19d277a609b7f18fd7b7be012623cf3225a7294f5` |
 
 The [client ABI](https://gitlab.freedesktop.org/wayland/wayland/-/blob/1.23.1/src/wayland-client-core.h),
 [client API contract](https://wayland.freedesktop.org/docs/html/apb.html), and

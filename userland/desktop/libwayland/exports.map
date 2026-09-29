@@ -9,6 +9,12 @@
 		keiland_glass_v1_*;
 		zwp_primary_selection_*;
 		zwp_tablet_*;
+		zwp_text_input_*;
+		zwp_input_method_*;
+		zwp_input_popup_surface_*;
+		zwp_virtual_keyboard_*;
+		keiland_ime_status_manager_v1_*;
+		keiland_ime_status_v1_*;
 	local:
 		*;
 };

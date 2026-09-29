@@ -19,6 +19,7 @@
 #include "extras.h"
 #include "panels.h"
 #include "tablet.h"
+#include "ime.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -54,10 +55,14 @@ static const struct zwl_global globals[] = {
 	{ 10, "zxdg_decoration_manager_v1", 1, ZWL_DECORATION_MANAGER },
 	{ 11, "wp_cursor_shape_manager_v1", 1, ZWL_CURSOR_SHAPE_MANAGER },
 	{ 12, "wp_viewporter", 1, ZWL_VIEWPORTER },
+	{ 13, "zwp_text_input_manager_v3", 1, ZWL_TEXT_INPUT_MANAGER },
+	{ 14, "zwp_input_method_manager_v2", 1, ZWL_INPUT_METHOD_MANAGER },
+	{ 15, "zwp_virtual_keyboard_manager_v1", 1, ZWL_VIRTUAL_KEYBOARD_MANAGER },
 	{ 16, "keiland_titlebar_manager_v1", 2, ZWL_TITLEBAR_MANAGER },
 	{ 17, "keiland_glass_manager_v1", 1, ZWL_GLASS_MANAGER },
 	{ 18, "zwp_primary_selection_device_manager_v1", 1, ZWL_PRIMARY_MANAGER },
 	{ 19, "zwp_tablet_manager_v2", 1, ZWL_TABLET_MANAGER },
+	{ 20, "keiland_ime_status_manager_v1", 1, ZWL_IME_STATUS_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -260,6 +265,22 @@ zwl_dispatch(
 		/* wl_subsurface (subsurface.c). */
 		error = zwl_subsurface_request(object, opcode, bytes, size);
 		break;
+	case ZWL_TEXT_INPUT_MANAGER:
+	case ZWL_TEXT_INPUT:
+		/* The text input protocol (text-input.c). */
+		error = zwl_text_input_request(object, opcode, bytes, size);
+		break;
+	case ZWL_INPUT_METHOD_MANAGER:
+	case ZWL_INPUT_METHOD:
+	case ZWL_INPUT_POPUP:
+	case ZWL_KEYBOARD_GRAB:
+	case ZWL_VIRTUAL_KEYBOARD_MANAGER:
+	case ZWL_VIRTUAL_KEYBOARD:
+	case ZWL_IME_STATUS_MANAGER:
+	case ZWL_IME_STATUS:
+		/* The input method's protocols (input-method.c). */
+		error = zwl_ime_request(object, opcode, bytes, size);
+		break;
 	case ZWL_TABLET_MANAGER:
 	case ZWL_TABLET_SEAT:
 	case ZWL_TABLET:
@@ -358,9 +379,15 @@ registry_events(
 	size_t length;
 	size_t offset;
 	int error;
+	int visible;
 
 	/* Each global event carries name, interface string and supported version. */
 	for (index = 0; index < sizeof(globals) / sizeof(globals[0]); index++) {
+		/* The input method's globals are shown to the input method alone (input-method.c). */
+		visible = zwl_ime_global_visible(registry->client, globals[index].kind);
+		if (!visible)
+			continue;
+
 		/* Encode this advertised interface as one canonical registry global event. */
 		memset(payload, 0, sizeof(payload));
 		word = globals[index].name;
@@ -495,6 +522,7 @@ bind_global(
 	size_t index;
 	int error;
 	int same;
+	int visible;
 
 	/* The dynamic bind signature contains a name followed by string/version/new_id. */
 	if (size < 16U)
@@ -521,6 +549,11 @@ bind_global(
 		/* Names, interface strings and negotiated versions are checked together. */
 		same = strcmp(interface, globals[index].interface);
 		if (same != 0 || version == 0 || version > globals[index].version)
+			return EPROTO;
+
+		/* A global the connection was not shown cannot be bound (the input method's, input-method.c). */
+		visible = zwl_ime_global_visible(registry->client, globals[index].kind);
+		if (!visible)
 			return EPROTO;
 
 		/* A successful binding creates exactly one independent client-side object. */

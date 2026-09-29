@@ -12,6 +12,7 @@
 #include "zwl.h"
 #include "toplevel.h"
 #include "keymap.h"
+#include "ime.h"
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -181,6 +182,10 @@ main(
 		error = listen_socket(&server);
 		(void)startup_step("socket", step_start);
 	}
+
+	/* The system's input method starts on a connection of its own (input-method.c). */
+	if (error == 0)
+		zwl_ime_start(&server);
 
 	/* READY appears only after the hardware contract and socket namespace are both usable. */
 	if (error == 0) {
@@ -656,6 +661,9 @@ event_loop(
 
 		/* The user's preferences, when they changed, apply now (preferences.c looks once a second). */
 		zwl_preferences_tick(server, now);
+
+		/* The input method is looked after: started again, passed by when it does not answer (input-method.c). */
+		zwl_ime_tick(server, now);
 
 		/* Allocate exactly enough poll storage for the presently live client and device set. */
 		count = 1;
