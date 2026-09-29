@@ -393,28 +393,6 @@ bind_array_push_node(
 }
 
 /*
- * Throws the error of a DOM operation that is not allowed: an Error whose
- * message starts with the DOM's name for the failure (the DOMException
- * interface comes later).
- */
-int
-bind_throw_dom(
-	struct vm_realm *realm,
-	const char *name,
-	const char *message)
-{
-	char text[256];
-	int status;
-
-	/* The name and the message. */
-	snprintf(text, sizeof(text), "%s: %s", name, message);
-	status = vm_throw_error(realm, VM_ERROR_PLAIN, text);
-
-	/* Reports the throw. */
-	return status;
-}
-
-/*
  * Reports the node after a node in tree order within root's subtree, or
  * NULL at its end.
  */

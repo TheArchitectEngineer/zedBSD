@@ -114,7 +114,8 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_text_encoder_interface,
 	&bind_text_decoder_interface,
 	&bind_storage_interface,
-	&bind_html_template_element_interface
+	&bind_html_template_element_interface,
+	&bind_dom_exception_interface
 };
 
 /*
@@ -614,6 +615,10 @@ window_make_interface(
 	parent = realm->object_prototype;
 	if (table->parent != BIND_NO_PARENT)
 		parent = window->prototypes[table->parent];
+
+	/* DOMException's inherits from Error.prototype (ws074-p083), when the realm has it. */
+	if (index == BIND_DOM_EXCEPTION && realm->intrinsics[VM_INTRINSIC_ERROR_PROTOTYPE] != NULL)
+		parent = realm->intrinsics[VM_INTRINSIC_ERROR_PROTOTYPE];
 	prototype = vm_object_create(realm->heap, parent);
 	if (prototype == NULL)
 		return ENOMEM;

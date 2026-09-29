@@ -58,6 +58,7 @@ enum bind_interface_index {
 	BIND_TEXT_DECODER,
 	BIND_STORAGE,
 	BIND_HTML_TEMPLATE_ELEMENT,
+	BIND_DOM_EXCEPTION,
 	BIND_INTERFACES
 };
 
@@ -254,6 +255,7 @@ extern const struct bind_interface bind_text_encoder_interface;
 extern const struct bind_interface bind_text_decoder_interface;
 extern const struct bind_interface bind_storage_interface;
 extern const struct bind_interface bind_html_template_element_interface;
+extern const struct bind_interface bind_dom_exception_interface;
 
 /* Markup (markup.c, ws074-p081). */
 int bind_template_contents(struct dom_element *element, struct dom_node **contents);

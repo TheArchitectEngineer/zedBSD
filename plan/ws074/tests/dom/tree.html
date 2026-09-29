@@ -59,12 +59,12 @@ console.log("remove2", names(root.childNodes));
 try {
   root.appendChild(document.body);
 } catch (e) {
-  console.log("hierarchy", e instanceof Error);
+  console.log("hierarchy", e instanceof Error, e instanceof DOMException, e.name, e.code);
 }
 try {
   root.removeChild(document.body);
 } catch (e) {
-  console.log("not a child", e instanceof Error);
+  console.log("not a child", e instanceof Error, e instanceof DOMException, e.name, e.code);
 }
 try {
   root.appendChild("text");
