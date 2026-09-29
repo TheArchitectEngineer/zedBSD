@@ -403,27 +403,33 @@ parse_options(
 			options->format_given = 1;
 			break;
 		case 'w':
-			/* A width too large to hold is no limit, as GNU ls takes it. */
+			/* The width must be a count. */
 			parsed = parse_count(scan.value, &options->line_width);
 			if (parsed < 0) {
 				fprintf(stderr, "ls: invalid line width: '%s'\n", scan.value);
 				return LS_STATUS_INVALID_VALUE;
 			}
+
+			/* A width too large to hold is no limit, as GNU ls takes it. */
 			if (parsed > 0)
 				options->line_width = 0;
 			options->width_given = 1;
 			break;
 		case 'T':
-			/* A tab size must be a count that fits. */
+			/* The tab size must be a count. */
 			parsed = parse_count(scan.value, &options->tab_size);
 			if (parsed < 0) {
 				fprintf(stderr, "ls: invalid tab size: '%s'\n", scan.value);
 				return LS_STATUS_INVALID_VALUE;
 			}
+
+			/* A tab size too large to hold is refused, as GNU ls refuses it. */
 			if (parsed > 0) {
 				fprintf(stderr, "ls: invalid tab size: '%s': %s\n", scan.value, strerror(EOVERFLOW));
 				return LS_STATUS_INVALID_VALUE;
 			}
+
+			/* The tab size is settled. */
 			options->tab_given = 1;
 			break;
 		default:
@@ -1221,6 +1227,8 @@ print_entries(
 		fprintf(stderr, "ls: out of memory\n");
 		return 0;
 	}
+
+	/* Their serial numbers and quotes count as the group's own. */
 	if (measured_layout.inode_width > layout.inode_width)
 		layout.inode_width = measured_layout.inode_width;
 	if (measured_layout.some_quoted)
@@ -1354,6 +1362,8 @@ print_long_entries(
 		} else {
 			snprintf(total_text, sizeof(total_text), "%llu", (blocks + 1ULL) / 2ULL);
 		}
+
+		/* The line of the total. */
 		printf("total %s\n", total_text);
 	}
 
@@ -1481,6 +1491,8 @@ fit_columns(
 		free(fits);
 		return 0;
 	}
+
+	/* One block for them, which the first candidate's widths point to. */
 	slots = candidates * (candidates + 1U) / 2U;
 	widths = malloc(slots * sizeof(*widths));
 	if (widths == NULL) {
@@ -1924,7 +1936,7 @@ quote_shell(
 	int double_quotes;
 	int apostrophe;
 	int printable;
-	int listed;
+	const char *listed;
 
 	/* What each character asks: quotes, and whether double quotes could hold it. */
 	needs_quotes = 0;
@@ -1955,6 +1967,8 @@ quote_shell(
 				needs_quotes = 1;
 				double_quotes = 0;
 			}
+
+			/* A printable character asks nothing. */
 			break;
 		default:
 			/* The shell acts on it, and double quotes would not keep it plain. */
@@ -1964,13 +1978,11 @@ quote_shell(
 		}
 
 		/* A character the caller lists needs quotes too. */
-		if (!needs_quotes && bytes == 1U && quoted_too != NULL) {
-			listed = 0;
-			if (name[at] != '\0' && strchr(quoted_too, name[at]) != NULL)
-				listed = 1;
-			if (listed)
-				needs_quotes = 1;
-		}
+		listed = NULL;
+		if (!needs_quotes && bytes == 1U && quoted_too != NULL && name[at] != '\0')
+			listed = strchr(quoted_too, name[at]);
+		if (listed != NULL)
+			needs_quotes = 1;
 
 		/* The next character. */
 		at += bytes;
@@ -2214,12 +2226,15 @@ hide_unprintable(
 			at++;
 			continue;
 		}
+
+		/* A character cut off by the end of the name is a ?. */
 		if (bytes == (size_t)-2) {
-			/* A character cut off by the end of the name is a ?. */
 			write_char(writer, '?');
 			*width += 1U;
 			break;
 		}
+
+		/* A null character, which a name cannot hold, would still be one byte. */
 		if (bytes == 0)
 			bytes = 1;
 
@@ -2232,6 +2247,8 @@ hide_unprintable(
 			write_char(writer, '?');
 			*width += 1U;
 		}
+
+		/* The next character. */
 		at += bytes;
 	}
 }
@@ -2272,10 +2289,14 @@ character_length(
 		*printable = 0;
 		return 1;
 	}
+
+	/* A character cut off by the end takes the rest of the text. */
 	if (bytes == (size_t)-2) {
 		*printable = 0;
 		return length - at;
 	}
+
+	/* A null character, which a name cannot hold, would still be one byte. */
 	if (bytes == 0)
 		bytes = 1;
 
@@ -2332,6 +2353,8 @@ display_width(
 			/* A byte that starts no character, or a character cut off by the end. */
 			return (size_t)-1;
 		}
+
+		/* A null character, which a name cannot hold, would still be one byte. */
 		if (bytes == 0)
 			bytes = 1;
 
@@ -2339,6 +2362,8 @@ display_width(
 		columns = wcwidth(character);
 		if (columns < 0)
 			return (size_t)-1;
+
+		/* The character's columns, and the next character. */
 		width += (size_t)columns;
 		at += bytes;
 	}
@@ -2895,5 +2920,7 @@ free_entries(
 		free(items[index].name);
 		free(items[index].shown);
 	}
+
+	/* The array itself. */
 	free(items);
 }
