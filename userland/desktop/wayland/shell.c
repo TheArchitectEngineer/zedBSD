@@ -176,10 +176,10 @@
 #define WISEVIEW_WINDOWS	64U
 
 /*
- * The application IDs whose windows keep square corners (ws035-p134, the
- * user's request of 2026-09-29): a terminal's text runs into its corners,
- * where the rounding would cut it.  Another (an X terminal) is one more
- * line here.
+ * The application IDs whose window bodies keep square corners (ws035-p134,
+ * p136, the user's requests of 2026-09-29): a terminal's text runs into its
+ * corners, where the rounding would cut it.  Their floating title bars stay
+ * rounded.  Another (an X terminal) is one more line here.
  */
 static const char *const shell_square_apps[] = {
 	"terminal"
@@ -1762,8 +1762,6 @@ draw_window_blurred(
 	struct shell_rect body;
 	struct shell_rect panel;
 	struct glass_shape shape;
-	float radius;
-	unsigned square;
 
 	/* The body where it is now (docked, its lower corners below the output). */
 	body_rect(server, surface, &body);
@@ -1771,15 +1769,11 @@ draw_window_blurred(
 	if (surface->maximized)
 		return;
 
-	/* A floating title bar's glass, square like the body when the window keeps square corners. */
-	radius = GLASS_RADIUS;
-	square = window_square(surface);
-	if (square)
-		radius = 0.0f;
+	/* A floating title bar's glass (rounded even on a window whose body keeps square corners). */
 	floating_title(&body, &panel);
 	glass_shape_init(&shape, (float)panel.x, (float)panel.y, (float)panel.width, (float)panel.height);
 	shape.mode = MODE_GLASS;
-	shape.radius = radius;
+	shape.radius = GLASS_RADIUS;
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
@@ -1996,16 +1990,8 @@ draw_title_bar(
 	int32_t end;
 	int32_t cx;
 	int32_t cy;
-	float radius;
-	unsigned square;
 	int button;
 	int over;
-
-	/* Its corners: rounded, or square for a window that keeps them (window_square). */
-	radius = GLASS_RADIUS;
-	square = window_square(surface);
-	if (square)
-		radius = 0.0f;
 
 	/* Its shadow. */
 	glass_shape_init(&shape, (float)panel->x, (float)panel->y + 4.0f, (float)panel->width, (float)panel->height);
@@ -2014,7 +2000,7 @@ draw_title_bar(
 	shape.quad[2] += 72.0f;
 	shape.quad[3] += 72.0f;
 	shape.mode = MODE_SHADOW;
-	shape.radius = radius;
+	shape.radius = GLASS_RADIUS;
 	shape.soft = 18.0f;
 	shape.color[0] = 0.10f;
 	shape.color[1] = 0.18f;
@@ -2030,7 +2016,7 @@ draw_title_bar(
 	 */
 	glass_shape_init(&shape, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height);
 	shape.mode = MODE_GLASS;
-	shape.radius = radius;
+	shape.radius = GLASS_RADIUS;
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
@@ -2191,7 +2177,7 @@ draw_letter_mark(
 	glass_draw_text(server, command, SIZE_BAR, x + 10 - width / 2, middle + 5, letter, 20, white);
 }
 
-/* Tells whether a window keeps square corners (its application ID is in shell_square_apps). */
+/* Tells whether a window's body keeps square corners (its application ID is in shell_square_apps). */
 static unsigned
 window_square(
 	const struct zwl_object *surface)

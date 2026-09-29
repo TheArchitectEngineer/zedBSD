@@ -1,15 +1,16 @@
 #!/bin/sh
-# ws035-p134: the terminal's window keeps square corners (its text runs into them), other windows stay rounded,
+# ws035-p134, p136: the terminal's window body keeps square corners (its text runs into them) while its floating
+# title bar stays rounded (p136, the user's request); other windows keep both rounded,
 # on the Venus guest.  zdesktop --glass at 1280x800 with the wallpaper; /bin/terminal (app_id "terminal") filled
 # with text to its edges, then /bin/popup-probe (no app_id, 400x300) beside it.
-#  1. terminal.png: the terminal's four body corners are square (p134-corners.py: each corner pixel is the
-#     window's, like the middle of its edge).
+#  1. terminal.png: the terminal's four body corners are square, its title bar's four rounded (p134-corners.py:
+#     each corner pixel is like the rectangle's inside, or like what is outside it).
 #  2. both.png: the probe opens over the terminal (seen in the picture: square and rounded side by side).
 #  3. wiseview.png: Super+Tab opens Wiseview; the terminal's tile is square, the probe's rounded (seen in the picture).
 #  4. maximized.png: the probe closed, a double click on the terminal's title bar docks it; the docked body's
-#     corners are square.  restored.png: a double click on the title in the bar undocks it, square again.
-#  5. probe.png: the terminal closed, the probe opened alone: its four corners are rounded (the wallpaper or the
-#     shadow shows at each).
+#     corners are square.  restored.png: a double click on the title in the bar undocks it: body square, title bar
+#     rounded again.
+#  5. probe.png: the terminal closed, the probe opened alone: its body's and its title bar's corners are rounded.
 #
 #   plan/ws035/tests/zdesktop-guest.sh start IMAGE     (the guest must be up)
 #   plan/ws035/tests/zdesktop-p134.sh [OUTDIR]
@@ -24,7 +25,9 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null;
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; sleep 0.8; }
-corners() { python3 plan/ws035/tests/p134-corners.py "$@" || status=1; }
+corners() { python3 plan/ws035/tests/p134-corners.py "$@" | tail -1; python3 plan/ws035/tests/p134-corners.py "$@" >/dev/null || status=1; }
+# A floating title bar is ZWL_GLASS_TITLE (44) high, ZWL_GLASS_GAP (8) above the body.
+title_y() { echo $(($1 - 8 - 44)); }
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[t]erminal|[p]opup-probe" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[t]erminal|[p]opup-probe" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
@@ -68,7 +71,8 @@ keys "clear; i=0; while [ \$i -lt 60 ]; do printf '%${columns}s' '' | tr ' ' '#'
 sleep 2
 pointer move 5 790 sleep 600
 check "$out/terminal.png" >/dev/null
-corners "$out/terminal.png" "$tx" "$ty" "$tw" "$th" square
+corners "$out/terminal.png" "$tx" "$ty" "$tw" "$th" square terminal-body
+corners "$out/terminal.png" "$tx" "$(title_y "$ty")" "$tw" 44 round terminal-title
 
 # 2. The probe over it (its corners are checked alone, in 5).
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/popup-probe --timeout-s=300 --token=p > /tmp/p.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
@@ -97,14 +101,15 @@ echo "docked at $dx,$dy size ${dw}x$dh"
 sleep 1.5
 pointer move 1200 400 sleep 600
 check "$out/maximized.png" >/dev/null
-corners "$out/maximized.png" "$dx" "$dy" "$dw" $((800 - dy)) square
+corners "$out/maximized.png" "$dx" "$dy" "$dw" $((800 - dy)) square docked-body
 set -- $(guest "grep 'ZWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* title=\([0-9]*\) .*/\1/p')
 double_click $((${1:-400} + 20)) 17
 expect_log /tmp/zdesktop.log 'ZWL GLASS undock surface=[0-9]+ via='
 sleep 1.5
 pointer move 5 790 sleep 600
 check "$out/restored.png" >/dev/null
-corners "$out/restored.png" "$tx" "$ty" "$tw" "$th" square
+corners "$out/restored.png" "$tx" "$ty" "$tw" "$th" square restored-body
+corners "$out/restored.png" "$tx" "$(title_y "$ty")" "$tw" 44 round restored-title
 
 # 5. The probe alone: rounded.
 guest 'for p in $(ps -A -o pid,args | grep "[t]erminal" | awk "{print \$1}"); do kill $p; done; sleep 1
@@ -115,12 +120,13 @@ qx=${1:-0}; qy=${2:-0}
 echo "probe alone at $qx,$qy size 400x300"
 pointer move 5 790 sleep 600
 check "$out/probe.png" >/dev/null
-corners "$out/probe.png" "$qx" "$qy" 400 300 round
+corners "$out/probe.png" "$qx" "$qy" 400 300 round probe-body
+corners "$out/probe.png" "$qx" "$(title_y "$qy")" 400 44 round probe-title
 
 # Nothing failed.
 guest 'grep -E "ERROR|FAILED|protocol error" /tmp/zdesktop.log /tmp/t.log /tmp/p.log /tmp/q.log' | tee "$out/errors.txt"
 [ -s "$out/errors.txt" ] && status=1
 guest 'grep -E "MAP|GLASS (dock|undock)|WISEVIEW (opening|close)" /tmp/zdesktop.log' > "$out/zdesktop.log"
 guest "$stop_all" >/dev/null
-[ $status -eq 0 ] && echo "p134: PASS" || echo "p134: FAIL"
+[ $status -eq 0 ] && echo "p134/p136: PASS" || echo "p134/p136: FAIL"
 exit $status
