@@ -1,0 +1,9 @@
+#version 450
+// ws101-p002: a compute shader has no textures.
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0) uniform sampler2D s;
+layout(std430, binding = 1) buffer O { vec4 o[]; };
+void main()
+{
+	o[gl_GlobalInvocationID.x] = textureLod(s, vec2(0.5), 0.0);
+}

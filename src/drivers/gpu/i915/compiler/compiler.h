@@ -65,6 +65,16 @@
 #define I915_SHADER_LOCATION_POINT_COORD	68U
 
 /*
+ * Compute: the registers of per-thread push data after the cross-thread
+ * data, in this order -- LocalInvocationID x, y, z and LocalInvocationIndex
+ * of the thread's eight channels, a dword each (ws101-p002).
+ */
+#define I915_SHADER_PER_THREAD_REGS	4U
+
+/* Compute: the most invocations one workgroup may have (the device reports it as maxComputeWorkGroupInvocations). */
+#define I915_SHADER_MAX_GROUP_INVOCATIONS	128U
+
+/*
  * Why a SPIR-V module was refused.
  *
  * `reason` is a static string; `opcode` and `word_offset` name the refused
@@ -183,6 +193,21 @@ struct i915_shader_binary {
 	 * thread the stage may run at once, in 3DSTATE_VS / PS.
 	 */
 	uint32_t scratch_bytes;
+
+	/*
+	 * Compute (ws101-p002): the workgroup's size along x, y and z, and the
+	 * payload the dispatch delivers after r0 -- `cross_thread_regs`
+	 * registers of push data every thread of a group reads (the push
+	 * constants and the blocks above, from r1), then `per_thread_regs`
+	 * registers of its own: the x, y and z of each channel's invocation in
+	 * the group and its linear index, one register each
+	 * (I915_SHADER_PER_THREAD_REGS).  A block whose set is
+	 * I915_IR_SYSTEM_SET takes the address of the three group counts.
+	 * Zero for another stage.
+	 */
+	uint32_t local_size[3];
+	uint32_t cross_thread_regs;
+	uint32_t per_thread_regs;
 };
 
 int drv_i915_shader_parse(const uint32_t *words, size_t word_count, enum i915_shader_stage stage, struct i915_shader_ir **out, struct i915_compile_diagnostic *diagnostic);

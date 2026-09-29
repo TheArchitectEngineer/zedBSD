@@ -360,4 +360,26 @@
 #define EU_SWSB_SYNC_DST(id)		(0x20U | (uint32_t)(id))
 #define EU_SWSB_SYNC_SRC(id)		(0x30U | (uint32_t)(id))
 
+/*
+ * The messages of compute shaders (ws101-p002), transcribed from Mesa 25.0.7
+ * (MIT; the release tarball, the same files as above):
+ *   - brw_eu_defines.h (sha256 12a919edc56a75efe68afffa55ca42278a0cd489efddc8a0915919be756d7abc)
+ *                      BRW_SFID_THREAD_SPAWNER (7), HSW_SFID_DATAPORT_DATA_CACHE_1 (12),
+ *                      GFX8_DATAPORT_DC_PORT1_A64_UNTYPED_ATOMIC_OP (0x12)
+ *   - brw_eu.h         (sha256 87a58fd1a719122d81539607f0fb72cf0483486ed8aa5540c387c217d337fc1b)
+ *                      brw_dp_a64_untyped_atomic_desc(): the operation in the message control's
+ *                      bits 3:0, bit 4 for 64-bit data, bit 5 when the old value is returned;
+ *                      binding table entry 253
+ *   - brw_fs_visitor.cpp (sha256 b20de8d3a514c81de03f2de615abcabfa99c1d84e4c5d6496491116dd67e64ec)
+ *                      emit_cs_terminate(): before Gfx12.5 a compute thread ends with a one-register
+ *                      message of r0 to the thread spawner, descriptor 0, from g112 .. g127
+ * The descriptors were checked with Mesa's brw_disasm / brw_asm (--gen=adl) and against the end of
+ * the compute test's kernel, which ran on the Latitude 5330 (tests/execution/eu-test.c).
+ */
+#define EU_SFID_THREAD_SPAWNER		7U
+#define EU_SFID_DATA_CACHE_1		12U
+#define EU_DP_A64_UNTYPED_ATOMIC	0x12U
+#define EU_DP_ATOMIC_RETURN		(1U << 5)
+#define EU_DESC_TERMINATE		(1U << EU_DESC_MLEN_SHIFT)
+
 #endif /* DRIVERS_GPU_I915_INTEL_EU_ENCODING_GEN12_H */

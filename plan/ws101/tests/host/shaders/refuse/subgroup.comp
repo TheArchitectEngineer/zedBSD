@@ -1,0 +1,9 @@
+#version 450
+#extension GL_KHR_shader_subgroup_basic : require
+// ws101-p002: subgroup built-ins are out of the scope.
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer O { uint o[]; };
+void main()
+{
+	o[gl_GlobalInvocationID.x] = gl_SubgroupSize;
+}
