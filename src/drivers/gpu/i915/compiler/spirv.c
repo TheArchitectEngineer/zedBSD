@@ -257,6 +257,7 @@
 #define SC_FUNCTION 7U
 #define SC_PUSH_CONSTANT 9U
 #define SC_STORAGE_BUFFER 12U
+#define SC_WORKGROUP 4U
 
 /* Decorations (SPIR-V spec, section 3.20). */
 #define DEC_RELAXED_PRECISION 0U
@@ -440,6 +441,7 @@
 #define PTR_UBO 7U
 #define PTR_SSBO 8U	/* a storage buffer: words in memory at offsets the shader computes */
 #define PTR_SYSTEM 9U	/* a compute shader's built-in input: the dispatch's values (ws101-p002) */
+#define PTR_SHARED 10U	/* a compute shader's Workgroup variable: words of the group's shared memory (ws101-p006) */
 
 /* What the scalars of a value are, as a type says. */
 #define SCALAR_NONE 0U
@@ -798,6 +800,13 @@ struct i915_spirv_parser {
 	uint32_t local_size_id[3];
 	int local_size_by_id;
 	uint32_t system_uniform;
+
+	/*
+	 * Compute (ws101-p006): nonzero once an OpReturn was lowered, after
+	 * which a workgroup barrier is refused (a thread whose channels all
+	 * returned would not wait at it the same number of times).
+	 */
+	int returned;
 };
 
 static int i915_spirv_pass_declarations(struct i915_spirv_parser *parser);
@@ -945,9 +954,15 @@ static uint32_t i915_spirv_system_uniform(struct i915_spirv_parser *parser);
 static int i915_spirv_lower_atomic(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_atomic_access(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_atomic_pointer(struct i915_spirv_parser *parser, uint32_t pointer_id, struct i915_spirv_id **pointer, struct i915_spirv_id **variable, uint32_t opcode, uint32_t offset);
-static int i915_spirv_atomic_relaxed(struct i915_spirv_parser *parser, uint32_t semantics_id, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_array_length(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static const char *i915_spirv_compute_refusal(uint32_t opcode);
+static int i915_spirv_declare_shared(struct i915_spirv_parser *parser, struct i915_spirv_id *record, uint32_t opcode, uint32_t offset);
+static uint32_t i915_spirv_shared_bytes(struct i915_spirv_parser *parser, uint32_t type_id);
+static int i915_spirv_chain_shared(struct i915_spirv_parser *parser, struct i915_spirv_id *record, struct i915_spirv_id *pointee, struct i915_spirv_id *index_record, uint32_t index_id, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_shared(struct i915_spirv_parser *parser, const uint32_t *word, const struct i915_spirv_id *pointer, const uint32_t *scalars, uint32_t components, uint32_t opcode, uint32_t offset);
+static int i915_spirv_semantics(struct i915_spirv_parser *parser, uint32_t semantics_id, uint32_t *fences, uint32_t opcode, uint32_t offset);
+static void i915_spirv_fence(struct i915_spirv_parser *parser, uint32_t fences);
+static int i915_spirv_lower_barrier(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 
 /*
  * Parses SPIR-V words into the scalar IR of one stage.
@@ -1817,6 +1832,10 @@ i915_spirv_declare_variable(
 		record->ptr_kind = PTR_UBO;
 		record->uniform = parser->ir->uniform_count;
 		i915_spirv_add_uniform(parser, word[2], I915_IR_UNIFORM_BLOCK);
+	} else if (storage == SC_WORKGROUP && parser->ir->stage == I915_STAGE_COMPUTE) {
+		error = i915_spirv_declare_shared(parser, record, opcode, offset);
+		if (error != 0)
+			return error;
 	} else {
 		return i915_spirv_refuse(parser, opcode, offset, "variable in a storage class that is not lowered");
 	}
@@ -2232,6 +2251,10 @@ i915_spirv_lower(
 	case OP_ARRAY_LENGTH:
 		return i915_spirv_lower_array_length(parser, word, count, opcode, offset);
 
+	case OP_CONTROL_BARRIER:
+	case OP_MEMORY_BARRIER:
+		return i915_spirv_lower_barrier(parser, word, count, opcode, offset);
+
 	case OP_FADD:
 	case OP_FSUB:
 	case OP_FMUL:
@@ -2465,6 +2488,8 @@ i915_spirv_lower_access_chain(
 			error = i915_spirv_chain_block(parser, record, pointee, index_record, word[index], opcode, offset);
 		} else if (record->ptr_kind == PTR_SYSTEM) {
 			error = i915_spirv_chain_system(parser, record, pointee, index_record, opcode, offset);
+		} else if (record->ptr_kind == PTR_SHARED) {
+			error = i915_spirv_chain_shared(parser, record, pointee, index_record, word[index], opcode, offset);
 		} else {
 			error = i915_spirv_chain_scalars(parser, record, pointee, index_record, word[index], opcode, offset);
 		}
@@ -2830,6 +2855,8 @@ i915_spirv_lower_load(
 		error = i915_spirv_lower_storage(parser, word, base, variable, NULL, components, opcode, offset);
 	} else if (base->ptr_kind == PTR_SYSTEM) {
 		error = i915_spirv_lower_load_system(parser, word, base, variable, components, opcode, offset);
+	} else if (base->ptr_kind == PTR_SHARED) {
+		error = i915_spirv_lower_shared(parser, word, base, NULL, components, opcode, offset);
 	} else {
 		return i915_spirv_refuse(parser, opcode, offset, "load through a pointer that is not an input, push constant, uniform block, sampler or local");
 	}
@@ -3442,6 +3469,8 @@ i915_spirv_lower_store(
 		error = i915_spirv_lower_store_output(parser, base, variable, scalars, components, opcode, offset);
 	} else if (base->ptr_kind == PTR_SSBO) {
 		error = i915_spirv_lower_storage(parser, word, base, variable, scalars, components, opcode, offset);
+	} else if (base->ptr_kind == PTR_SHARED) {
+		error = i915_spirv_lower_shared(parser, word, base, scalars, components, opcode, offset);
 	} else {
 		return i915_spirv_refuse(parser, opcode, offset, "store through a pointer that is not an output, a local or a storage buffer");
 	}
@@ -7784,6 +7813,9 @@ i915_spirv_lower_return(
 	/* Every open construct loses the returning channels. */
 	for (index = 0U; index < parser->depth; index++)
 		parser->constructs[index].leaky = 1;
+
+	/* From here on a workgroup barrier is refused (ws101-p006). */
+	parser->returned = 1;
 
 	/* The block ends here. */
 	parser->terminated = 1;

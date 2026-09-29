@@ -109,6 +109,24 @@
 #define I915_IR_ATOMIC_PREDICATED	1U
 
 /*
+ * The `location` of an ATOMIC instruction on a word of the workgroup's
+ * shared memory rather than of a storage buffer (ws101-p006).
+ */
+#define I915_IR_LOCATION_SHARED		0xFFFFFFFDU
+
+/*
+ * The memory a FENCE orders, and whether it acquires, as bits of its
+ * `immediate`; a BARRIER's `immediate` names the fences before it
+ * (ws101-p006).
+ */
+#define I915_IR_FENCE_GLOBAL		1U
+#define I915_IR_FENCE_SHARED		2U
+#define I915_IR_FENCE_ACQUIRE		4U
+
+/* The most bytes of shared memory a workgroup has (the device reports it as maxComputeSharedMemorySize). */
+#define I915_IR_MAX_SHARED_BYTES	16384U
+
+/*
  * The sampler messages of a TEXTURE instruction, numbered as the message
  * type field of the descriptor takes them (Mesa brw_eu_defines.h,
  * GFX5_SAMPLER_MESSAGE_*, HSW_SAMPLER_MESSAGE_SAMPLE_DERIV_COMPARE), each
@@ -440,6 +458,36 @@ enum i915_shader_ir_op {
 	 */
 	I915_IR_STORAGE_SIZE,
 
+	/*
+	 * dst = the word at byte offset src[0] of the workgroup's shared memory;
+	 * with `component` 1 read only where the Boolean src[1] holds, the
+	 * other channels keeping whatever their register held (ws101-p006).
+	 */
+	I915_IR_LOAD_SHARED,
+
+	/*
+	 * The word at byte offset src[0] of the workgroup's shared memory =
+	 * src[1]; with `component` 1 only where the Boolean src[2] holds
+	 * (ws101-p006).
+	 */
+	I915_IR_STORE_SHARED,
+
+	/*
+	 * Every invocation of the workgroup waits here until all have come
+	 * (a workgroup execution barrier), after the fences `immediate` names
+	 * (I915_IR_FENCE_*) (ws101-p006).  Every thread of the group must reach
+	 * it the same number of times: the parser refuses one after a return
+	 * and one in a loop not every invocation enters.
+	 */
+	I915_IR_BARRIER,
+
+	/*
+	 * The memory accesses before it are done, and visible to the others
+	 * that use the memory, before any after it (a memory fence of the
+	 * memory `immediate` names, I915_IR_FENCE_*) (ws101-p006).
+	 */
+	I915_IR_FENCE,
+
 	I915_IR_OP_COUNT
 };
 
@@ -531,6 +579,14 @@ struct i915_shader_ir {
 	 * the LocalSize or LocalSizeId execution mode; zero for another stage.
 	 */
 	uint32_t local_size[3];
+
+	/*
+	 * Compute (ws101-p006): the bytes of shared memory the workgroup's
+	 * Workgroup variables take, and nonzero when the shader has a
+	 * workgroup barrier.
+	 */
+	uint32_t shared_bytes;
+	uint32_t uses_barrier;
 };
 
 #endif /* DRIVERS_GPU_I915_COMPILER_IR_H */

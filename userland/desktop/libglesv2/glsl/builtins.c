@@ -33,11 +33,12 @@
 
 #include <string.h>
 
-/* The stages a built-in exists in (BI_BOTH: every stage). */
+/* The stages a built-in exists in (BI_BOTH: every stage, the compute stage of ws101-p008 among them). */
 #define BI_VERTEX		1U
 #define BI_FRAGMENT		2U
 #define BI_GEOMETRY		4U
-#define BI_BOTH			7U
+#define BI_COMPUTE		8U
+#define BI_BOTH			15U
 
 /* The SPIR-V opcodes of the built-ins that are one instruction. */
 #define BI_OP_ANY		154U
@@ -300,7 +301,34 @@ static const struct glsl_builtin builtins_table[] = {
 
 	/* A geometry shader's vertices and primitives (desktop GLSL 1.50). */
 	{ "EmitVertex", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_EMIT_VERTEX, BI_GEOMETRY, GLSL_IN_150_UP },
-	{ "EndPrimitive", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_END_PRIMITIVE, BI_GEOMETRY, GLSL_IN_150_UP }
+	{ "EndPrimitive", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_END_PRIMITIVE, BI_GEOMETRY, GLSL_IN_150_UP },
+
+	/*
+	 * GLSL ES 3.10's atomic memory functions on a buffer or shared
+	 * variable's int or uint (the checker requires such a variable as
+	 * the first argument), and the compute shader's barriers (ws101-p008).
+	 */
+	{ "atomicAdd", "uuu", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_ADD, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicAdd", "iii", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_ADD, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicMin", "uuu", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_MIN, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicMin", "iii", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_MIN, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicMax", "uuu", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_MAX, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicMax", "iii", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_MAX, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicAnd", "uuu", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_AND, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicAnd", "iii", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_AND, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicOr", "uuu", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_OR, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicOr", "iii", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_OR, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicXor", "uuu", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_XOR, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicXor", "iii", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_XOR, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicExchange", "uuu", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_EXCHANGE, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicExchange", "iii", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_EXCHANGE, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicCompSwap", "uuuu", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_COMP_SWAP, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "atomicCompSwap", "iiii", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_COMP_SWAP, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "barrier", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_BARRIER, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "memoryBarrier", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_MEMORY_BARRIER, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "memoryBarrierBuffer", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_MEMORY_BARRIER_BUFFER, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "memoryBarrierShared", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_MEMORY_BARRIER_SHARED, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "groupMemoryBarrier", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_GROUP_MEMORY_BARRIER, BI_COMPUTE, GLSL_IN_ES310 }
 };
 
 /*
@@ -342,6 +370,7 @@ static int builtins_accepts(const struct glsl_type *parameter, const struct glsl
 static int builtins_sampler_code(char code, const struct glsl_type *argument);
 static void builtins_variable(struct glsl_shader *shader, const char *name, const struct glsl_type *type, unsigned where, unsigned builtin);
 static void builtins_geometry(struct glsl_shader *shader);
+static void builtins_compute(struct glsl_shader *shader);
 
 /*
  * Returns the first built-in function of a name, or NULL.
@@ -419,6 +448,8 @@ glsl_builtin_match(
 		stage = BI_FRAGMENT;
 	if (shader->stage == GLSL_STAGE_GEOMETRY)
 		stage = BI_GEOMETRY;
+	if (shader->stage == GLSL_STAGE_COMPUTE)
+		stage = BI_COMPUTE;
 	if ((builtin->stages & stage) == 0U)
 		return 0;
 
@@ -486,6 +517,12 @@ glsl_builtin_variables(
 	/* The geometry stage: its input vertices and primitive's number, and what it emits. */
 	if (shader->stage == GLSL_STAGE_GEOMETRY) {
 		builtins_geometry(shader);
+		return;
+	}
+
+	/* The compute stage (ws101-p008): its invocation's and group's places, and the workgroup size. */
+	if (shader->stage == GLSL_STAGE_COMPUTE) {
+		builtins_compute(shader);
 		return;
 	}
 
@@ -851,4 +888,39 @@ builtins_geometry(
 	builtins_variable(shader, "gl_PointSize", float_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_POINT_SIZE);
 	builtins_variable(shader, "gl_PrimitiveID", int_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_PRIMITIVE_ID);
 	builtins_variable(shader, "gl_Layer", int_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_LAYER);
+}
+
+/*
+ * Declares a compute shader's built-ins (ws101-p008): the uvec3 inputs
+ * gl_GlobalInvocationID, gl_LocalInvocationID, gl_WorkGroupID and
+ * gl_NumWorkGroups, the uint gl_LocalInvocationIndex, and the const uvec3
+ * gl_WorkGroupSize, whose value the local_size layout gives (1, 1, 1 until
+ * it does).
+ */
+static void
+builtins_compute(
+	struct glsl_shader *shader)
+{
+	const struct glsl_type *uvec3;
+	struct glsl_symbol *symbol;
+	struct glsl_constant *value;
+	unsigned axis;
+
+	/* The inputs. */
+	uvec3 = glsl_type_vector(GLSL_BASE_UINT, 3U);
+	builtins_variable(shader, "gl_GlobalInvocationID", uvec3, GLSL_VAR_INPUT, GLSL_BUILTIN_GLOBAL_INVOCATION_ID);
+	builtins_variable(shader, "gl_LocalInvocationID", uvec3, GLSL_VAR_INPUT, GLSL_BUILTIN_LOCAL_INVOCATION_ID);
+	builtins_variable(shader, "gl_WorkGroupID", uvec3, GLSL_VAR_INPUT, GLSL_BUILTIN_WORK_GROUP_ID);
+	builtins_variable(shader, "gl_NumWorkGroups", uvec3, GLSL_VAR_INPUT, GLSL_BUILTIN_NUM_WORK_GROUPS);
+	builtins_variable(shader, "gl_LocalInvocationIndex", glsl_type_scalar(GLSL_BASE_UINT), GLSL_VAR_INPUT, GLSL_BUILTIN_LOCAL_INVOCATION_INDEX);
+
+	/* The workgroup size, a constant the layout fills. */
+	value = glsl_constant_new(&shader->arena, uvec3);
+	for (axis = 0U; axis < 3U; axis++)
+		value->values[axis].u = 1U;
+	symbol = glsl_declare(shader, "gl_WorkGroupSize", GLSL_SYMBOL_VARIABLE, 0U);
+	symbol->type = uvec3;
+	symbol->storage = GLSL_STORAGE_CONST;
+	symbol->where = GLSL_VAR_CONST;
+	symbol->constant = value;
 }

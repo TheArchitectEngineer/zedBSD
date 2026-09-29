@@ -282,7 +282,9 @@ unsigned
 glsl_version_mask(
 	const struct glsl_shader *shader)
 {
-	/* OpenGL ES 1.00 and 3.00. */
+	/* OpenGL ES 1.00, 3.00, and 3.10 (everything of 3.00 and its own, ws101-p008). */
+	if (shader->es && shader->version >= GLSL_VERSION_ES310)
+		return GLSL_IN_ES300 | GLSL_IN_ES310;
 	if (shader->es && shader->version >= GLSL_VERSION_ES300)
 		return GLSL_IN_ES300;
 	if (shader->es)
@@ -793,4 +795,117 @@ types_round(
 {
 	/* The next multiple. */
 	return (value + alignment - 1U) & ~(alignment - 1U);
+}
+
+/*
+ * Returns a type's base alignment in a std430 block (ws101-p008): as
+ * std140's, but an array's and a struct's are not rounded up to 16.  A
+ * matrix is an array of its columns.
+ */
+unsigned
+glsl_std430_alignment(
+	const struct glsl_type *type)
+{
+	unsigned alignment;
+	unsigned member;
+	unsigned index;
+
+	/* Scalars 4, two-vectors 8, three- and four-vectors 16. */
+	switch (type->kind) {
+	case GLSL_KIND_SCALAR:
+		return 4U;
+	case GLSL_KIND_VECTOR:
+		if (type->components == 2U)
+			return 8U;
+		return 16U;
+	case GLSL_KIND_MATRIX:
+		if (type->components == 2U)
+			return 8U;
+		return 16U;
+	case GLSL_KIND_ARRAY:
+		return glsl_std430_alignment(type->element);
+	case GLSL_KIND_STRUCT:
+		alignment = 4U;
+		for (index = 0U; index < type->field_count; index++) {
+			member = glsl_std430_alignment(type->fields[index].type);
+			if (member > alignment)
+				alignment = member;
+		}
+
+		/* The largest member's. */
+		return alignment;
+	default:
+		break;
+	}
+
+	/* Anything else is not in a block. */
+	return 4U;
+}
+
+/*
+ * Returns a type's size in a std430 block (ws101-p008): a struct's
+ * rounded up to its alignment; a run-time array (length 0) has none.
+ */
+unsigned
+glsl_std430_size(
+	const struct glsl_type *type)
+{
+	unsigned offset;
+	unsigned alignment;
+	unsigned index;
+
+	/* The kinds of types. */
+	switch (type->kind) {
+	case GLSL_KIND_SCALAR:
+		return 4U;
+	case GLSL_KIND_VECTOR:
+		return 4U * type->components;
+	case GLSL_KIND_MATRIX:
+		return glsl_std430_column_stride(type) * type->columns;
+	case GLSL_KIND_ARRAY:
+		return glsl_std430_stride(type) * type->length;
+	case GLSL_KIND_STRUCT:
+		offset = 0U;
+		for (index = 0U; index < type->field_count; index++) {
+			alignment = glsl_std430_alignment(type->fields[index].type);
+			offset = types_round(offset, alignment);
+			offset += glsl_std430_size(type->fields[index].type);
+		}
+
+		/* The end rounded to the struct's alignment. */
+		alignment = glsl_std430_alignment(type);
+		return types_round(offset, alignment);
+	default:
+		break;
+	}
+
+	/* Anything else is not in a block. */
+	return 0U;
+}
+
+/* Returns the std430 stride of an array type's elements: the element's size rounded up to its alignment (ws101-p008). */
+unsigned
+glsl_std430_stride(
+	const struct glsl_type *type)
+{
+	unsigned size;
+	unsigned alignment;
+
+	/* The element's size and alignment. */
+	size = glsl_std430_size(type->element);
+	alignment = glsl_std430_alignment(type->element);
+
+	/* Succeeded: the stride. */
+	return types_round(size, alignment);
+}
+
+/* Returns the std430 stride of a column-major matrix's columns: 8 for two rows, 16 for three or four (ws101-p008). */
+unsigned
+glsl_std430_column_stride(
+	const struct glsl_type *type)
+{
+	/* A column is a vector of the rows. */
+	if (type->components == 2U)
+		return 8U;
+	return 16U;
 }

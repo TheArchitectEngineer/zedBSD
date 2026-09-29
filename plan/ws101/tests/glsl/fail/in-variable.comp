@@ -1,0 +1,7 @@
+#version 310 es
+// expect: a compute shader has no inputs or outputs
+layout(local_size_x = 1) in;
+in vec4 position;
+void main()
+{
+}

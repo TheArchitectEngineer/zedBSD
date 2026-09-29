@@ -1,0 +1,8 @@
+#version 310 es
+// expect: 'atomicAdd' needs a buffer or shared variable as its first argument
+layout(local_size_x = 64) in;
+void main()
+{
+	uint x = 0u;
+	atomicAdd(x, 1u);
+}

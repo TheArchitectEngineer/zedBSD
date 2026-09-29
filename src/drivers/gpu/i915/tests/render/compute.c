@@ -34,7 +34,20 @@
  *  - MANYOPS: 200 dispatches of a recurrence in one submission, more than
  *    a batch holds;
  *  - SPILL: a kernel that spills to scratch memory over enough groups to
- *    fill every thread of the GPU.
+ *    fill every thread of the GPU;
+ *
+ * and the steps of shared memory and the workgroup barrier (ws101-p006):
+ *
+ *  - SHARED: a 64 x 64 matrix transposed through 8 x 8 tiles of shared
+ *    memory (two dynamic indices), a barrier between the write and the read;
+ *  - REDUCE: 64 groups of 128 summed by a tree in shared memory, a barrier
+ *    after each of the seven halvings;
+ *  - ODD-BARRIER: groups of 5 x 3 (two threads, the last channel off)
+ *    mirrored through shared memory across a barrier;
+ *  - ATOMIC-SHARED: shared-memory atomics between barriers;
+ *  - LOOP: prefix sums by a loop of six steps with two barriers each;
+ *  - REFUSE: shared memory past 16 KiB, a barrier after a return and one in
+ *    a loop some invocations skip are refused at vkCreateComputePipelines.
  *
  * Each step logs "VKCS-<name> PASS" or "FAIL", then the thread logs the
  * verdict and closes the session.
@@ -101,7 +114,15 @@
 #define I915_VKCS_KERNEL_MIXED		6U
 #define I915_VKCS_KERNEL_INC		7U
 #define I915_VKCS_KERNEL_SPILL		8U
-#define I915_VKCS_KERNELS		9U
+#define I915_VKCS_KERNEL_SHARED		9U
+#define I915_VKCS_KERNEL_REDUCE		10U
+#define I915_VKCS_KERNEL_SCAN		11U
+#define I915_VKCS_KERNEL_ODDBAR		12U
+#define I915_VKCS_KERNEL_ATOMSH		13U
+#define I915_VKCS_KERNEL_REFUSE_BIG	14U
+#define I915_VKCS_KERNEL_REFUSE_RETURN	15U
+#define I915_VKCS_KERNEL_REFUSE_LOOP	16U
+#define I915_VKCS_KERNELS		17U
 
 /* The steps' sets, one a step that dispatches. */
 #define I915_VKCS_SET_ONE		0U
@@ -112,7 +133,9 @@
 #define I915_VKCS_SET_MIXED		5U
 #define I915_VKCS_SET_INC		6U
 #define I915_VKCS_SET_SPILL		7U
-#define I915_VKCS_SETS			8U
+#define I915_VKCS_SET_TWO		8U
+#define I915_VKCS_SET_THREE		9U
+#define I915_VKCS_SETS			10U
 
 /* The identities the wire names the scenario's objects by. */
 #define I915_VKCS_IDENTITY		0x7e5ec50000000000ULL
@@ -179,6 +202,11 @@
 #define I915_VKCS_MANY_DISPATCHES	200U
 #define I915_VKCS_SPILL_GROUPS		256U
 #define I915_VKCS_RECORD_WORDS		13U
+#define I915_VKCS_REDUCE_GROUPS		64U
+#define I915_VKCS_SCAN_GROUPS		32U
+#define I915_VKCS_ODDBAR_GROUPS		10U
+#define I915_VKCS_ATOMSH_GROUPS		16U
+#define I915_VKCS_ATOMSH_WORDS		20U
 
 /* The words of the atomic step's block (atomic.comp's H). */
 #define I915_VKCS_H_BINS		0U
@@ -312,6 +340,15 @@ static const struct i915_vkcs_binding i915_vkcs_bindings[I915_VKCS_SETS][I915_VK
 	[I915_VKCS_SET_SPILL] = {
 		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_S, I915_VKCS_REGION_BYTES },
 	},
+	[I915_VKCS_SET_TWO] = {
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_A, I915_VKCS_REGION_BYTES },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_C, I915_VKCS_REGION_BYTES },
+	},
+	[I915_VKCS_SET_THREE] = {
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_A, I915_VKCS_REGION_BYTES },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_B, I915_VKCS_REGION_BYTES },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, I915_VKCS_BUF_D, I915_VKCS_REGION_BYTES },
+	},
 };
 
 /* How many bindings each step's set has. */
@@ -324,6 +361,8 @@ static const uint32_t i915_vkcs_binding_counts[I915_VKCS_SETS] = {
 	[I915_VKCS_SET_MIXED] = 3U,
 	[I915_VKCS_SET_INC] = 1U,
 	[I915_VKCS_SET_SPILL] = 1U,
+	[I915_VKCS_SET_TWO] = 2U,
+	[I915_VKCS_SET_THREE] = 3U,
 };
 
 static void i915_vkcs_thread(void *argument);
@@ -371,6 +410,13 @@ static void i915_vkcs_step_mixed(struct i915_vkcs *x);
 static void i915_vkcs_step_many(struct i915_vkcs *x);
 static void i915_vkcs_step_spill(struct i915_vkcs *x);
 static uint32_t i915_vkcs_spill_word(uint32_t invocation);
+static void i915_vkcs_step_shared(struct i915_vkcs *x);
+static void i915_vkcs_step_reduce(struct i915_vkcs *x);
+static void i915_vkcs_step_oddbar(struct i915_vkcs *x);
+static void i915_vkcs_step_atomsh(struct i915_vkcs *x);
+static void i915_vkcs_step_scan(struct i915_vkcs *x);
+static void i915_vkcs_step_refuse(struct i915_vkcs *x);
+static int i915_vkcs_run(struct i915_vkcs *x, const char *what, uint32_t kernel, uint32_t set, uint32_t groups);
 
 /*
  * Starts the compute scenario.
@@ -446,6 +492,12 @@ i915_vkcs_thread(
 	i915_vkcs_step_mixed(x);
 	i915_vkcs_step_many(x);
 	i915_vkcs_step_spill(x);
+	i915_vkcs_step_shared(x);
+	i915_vkcs_step_reduce(x);
+	i915_vkcs_step_oddbar(x);
+	i915_vkcs_step_atomsh(x);
+	i915_vkcs_step_scan(x);
+	i915_vkcs_step_refuse(x);
 
 	/* Gives everything back and says how the steps went. */
 	i915_vkcs_teardown(x);
@@ -652,6 +704,14 @@ i915_vkcs_objects_init(
 		{ i915_vkcs_mixed_comp, sizeof(i915_vkcs_mixed_comp) },
 		{ i915_vkcs_inc_comp, sizeof(i915_vkcs_inc_comp) },
 		{ i915_vkcs_spill_comp, sizeof(i915_vkcs_spill_comp) },
+		{ i915_vkcs_shared_comp, sizeof(i915_vkcs_shared_comp) },
+		{ i915_vkcs_reduce_comp, sizeof(i915_vkcs_reduce_comp) },
+		{ i915_vkcs_scan_comp, sizeof(i915_vkcs_scan_comp) },
+		{ i915_vkcs_oddbar_comp, sizeof(i915_vkcs_oddbar_comp) },
+		{ i915_vkcs_atomsh_comp, sizeof(i915_vkcs_atomsh_comp) },
+		{ i915_vkcs_refuse_big_comp, sizeof(i915_vkcs_refuse_big_comp) },
+		{ i915_vkcs_refuse_retbar_comp, sizeof(i915_vkcs_refuse_retbar_comp) },
+		{ i915_vkcs_refuse_loopbar_comp, sizeof(i915_vkcs_refuse_loopbar_comp) },
 	};
 	struct i915_gfx_pipeline *pipeline;
 	struct i915_gfx_buffer *buffer;
@@ -2139,4 +2199,273 @@ i915_vkcs_spill_word(
 
 	/* Succeeded: the word the invocation writes. */
 	return s + a + b;
+}
+
+/*
+ * Records the binds of a step's pipeline and set and a dispatch of `groups`
+ * along x, and runs it (ws101-p006).  Returns 0, or the error with the
+ * step's verdict already logged; a step without its pipeline fails here.
+ */
+static int
+i915_vkcs_run(
+	struct i915_vkcs *x,
+	const char *what,
+	uint32_t kernel,
+	uint32_t set,
+	uint32_t groups)
+{
+	int error;
+
+	/* Needs its pipeline. */
+	if (i915_vkcs_ready(x, kernel, what) == 0)
+		return ENOENT;
+
+	/* Records and runs. */
+	i915_vkcs_begin(x);
+	i915_vkcs_bind_compute(x, kernel, set, 0, 0U);
+	i915_vkcs_dispatch(x, groups, 1U, 1U);
+	error = i915_vkcs_finish(x, what);
+	if (error != 0) {
+		i915_vkcs_verdict(x, what, error);
+		return error;
+	}
+
+	/* Succeeded: the dispatch ran. */
+	return 0;
+}
+
+/*
+ * SHARED: shared.comp over 8 x 8 groups of 8 x 8; C must be A transposed,
+ * every word (ws101-p006).
+ */
+static void
+i915_vkcs_step_shared(
+	struct i915_vkcs *x)
+{
+	const uint32_t *t;
+	uint32_t *m;
+	uint32_t row;
+	uint32_t column;
+	int error;
+
+	/* Needs its pipeline. */
+	if (i915_vkcs_ready(x, I915_VKCS_KERNEL_SHARED, "SHARED") == 0)
+		return;
+
+	/* The matrix, and C all sentinel. */
+	m = i915_vkcs_words(x, I915_VKCS_BUF_A);
+	for (row = 0U; row < 4096U; row++)
+		m[row] = i915_vkcs_hash(row + 0x20000U);
+	i915_vkcs_flush(x, I915_VKCS_BUF_A);
+	i915_vkcs_fill(x, I915_VKCS_BUF_C, I915_VKCS_SENTINEL);
+
+	/* Records the pipeline, the set and 8 x 8 groups; runs it. */
+	i915_vkcs_begin(x);
+	i915_vkcs_bind_compute(x, I915_VKCS_KERNEL_SHARED, I915_VKCS_SET_TWO, 0, 0U);
+	i915_vkcs_dispatch(x, 8U, 8U, 1U);
+	error = i915_vkcs_finish(x, "SHARED");
+	if (error != 0) {
+		i915_vkcs_verdict(x, "SHARED", error);
+		return;
+	}
+
+	/* The transpose, and the sentinel after it. */
+	i915_vkcs_flush(x, I915_VKCS_BUF_C);
+	t = i915_vkcs_words(x, I915_VKCS_BUF_C);
+	for (row = 0U; row < 64U; row++) {
+		for (column = 0U; column < 64U; column++)
+			i915_vkcs_check(x, "SHARED", row * 64U + column, t[row * 64U + column], m[column * 64U + row]);
+	}
+	for (row = 4096U; row < 4096U + 64U; row++)
+		i915_vkcs_check(x, "SHARED", row, t[row], I915_VKCS_SENTINEL);
+	i915_vkcs_verdict(x, "SHARED", i915_vkcs_checked(x, "SHARED"));
+}
+
+/* REDUCE: reduce.comp over 64 groups of 128; C's word g must be the sum of group g's words (ws101-p006). */
+static void
+i915_vkcs_step_reduce(
+	struct i915_vkcs *x)
+{
+	const uint32_t *sums;
+	uint32_t *v;
+	uint32_t group;
+	uint32_t index;
+	uint32_t sum;
+
+	/* The words, and C all sentinel. */
+	v = i915_vkcs_words(x, I915_VKCS_BUF_A);
+	for (index = 0U; index < I915_VKCS_REDUCE_GROUPS * 128U; index++)
+		v[index] = i915_vkcs_hash(index + 0x30000U) >> 8;
+	i915_vkcs_flush(x, I915_VKCS_BUF_A);
+	i915_vkcs_fill(x, I915_VKCS_BUF_C, I915_VKCS_SENTINEL);
+
+	/* Runs the groups. */
+	if (i915_vkcs_run(x, "REDUCE", I915_VKCS_KERNEL_REDUCE, I915_VKCS_SET_TWO, I915_VKCS_REDUCE_GROUPS) != 0)
+		return;
+
+	/* Each group's sum, and the sentinel after them. */
+	i915_vkcs_flush(x, I915_VKCS_BUF_C);
+	sums = i915_vkcs_words(x, I915_VKCS_BUF_C);
+	for (group = 0U; group < I915_VKCS_REDUCE_GROUPS; group++) {
+		sum = 0U;
+		for (index = 0U; index < 128U; index++)
+			sum += v[group * 128U + index];
+		i915_vkcs_check(x, "REDUCE", group, sums[group], sum);
+	}
+	for (group = I915_VKCS_REDUCE_GROUPS; group < I915_VKCS_REDUCE_GROUPS + 64U; group++)
+		i915_vkcs_check(x, "REDUCE", group, sums[group], I915_VKCS_SENTINEL);
+	i915_vkcs_verdict(x, "REDUCE", i915_vkcs_checked(x, "REDUCE"));
+}
+
+/* ODD-BARRIER: oddbar.comp over 10 groups of 5 x 3; o[g * 15 + l] = 3 v[g * 15 + 14 - l] + l (ws101-p006). */
+static void
+i915_vkcs_step_oddbar(
+	struct i915_vkcs *x)
+{
+	const uint32_t *o;
+	uint32_t *v;
+	uint32_t group;
+	uint32_t index;
+
+	/* The words, and C all sentinel. */
+	v = i915_vkcs_words(x, I915_VKCS_BUF_A);
+	for (index = 0U; index < I915_VKCS_ODDBAR_GROUPS * 15U; index++)
+		v[index] = i915_vkcs_hash(index + 0x40000U);
+	i915_vkcs_flush(x, I915_VKCS_BUF_A);
+	i915_vkcs_fill(x, I915_VKCS_BUF_C, I915_VKCS_SENTINEL);
+
+	/* Runs the groups. */
+	if (i915_vkcs_run(x, "ODD-BARRIER", I915_VKCS_KERNEL_ODDBAR, I915_VKCS_SET_TWO, I915_VKCS_ODDBAR_GROUPS) != 0)
+		return;
+
+	/* Each group's mirrored words, and the sentinel after them. */
+	i915_vkcs_flush(x, I915_VKCS_BUF_C);
+	o = i915_vkcs_words(x, I915_VKCS_BUF_C);
+	for (group = 0U; group < I915_VKCS_ODDBAR_GROUPS; group++) {
+		for (index = 0U; index < 15U; index++)
+			i915_vkcs_check(x, "ODD-BARRIER", group * 15U + index, o[group * 15U + index], v[group * 15U + 14U - index] * 3U + index);
+	}
+	for (index = I915_VKCS_ODDBAR_GROUPS * 15U; index < I915_VKCS_ODDBAR_GROUPS * 15U + 64U; index++)
+		i915_vkcs_check(x, "ODD-BARRIER", index, o[index], I915_VKCS_SENTINEL);
+	i915_vkcs_verdict(x, "ODD-BARRIER", i915_vkcs_checked(x, "ODD-BARRIER"));
+}
+
+/*
+ * ATOMIC-SHARED: atomsh.comp over 16 groups of 64.  Each group's 20 words:
+ * its histogram of v % 16, its sum, its maximum, the compare-exchange's
+ * winner (some invocation's index plus one, whichever came first), the
+ * counter (64); and each group's old counter values once each (ws101-p006).
+ */
+static void
+i915_vkcs_step_atomsh(
+	struct i915_vkcs *x)
+{
+	uint32_t expected[I915_VKCS_ATOMSH_WORDS];
+	uint8_t seen[64];
+	const uint32_t *results;
+	const uint32_t *old;
+	uint32_t *v;
+	uint32_t group;
+	uint32_t index;
+	uint32_t value;
+
+	/* The words, the results and the old values all sentinel. */
+	v = i915_vkcs_words(x, I915_VKCS_BUF_A);
+	for (index = 0U; index < I915_VKCS_ATOMSH_GROUPS * 64U; index++)
+		v[index] = i915_vkcs_hash(index + 0x50000U) >> 20;
+	i915_vkcs_flush(x, I915_VKCS_BUF_A);
+	i915_vkcs_fill(x, I915_VKCS_BUF_B, I915_VKCS_SENTINEL);
+	i915_vkcs_fill(x, I915_VKCS_BUF_D, I915_VKCS_SENTINEL);
+
+	/* Runs the groups. */
+	if (i915_vkcs_run(x, "ATOMIC-SHARED", I915_VKCS_KERNEL_ATOMSH, I915_VKCS_SET_THREE, I915_VKCS_ATOMSH_GROUPS) != 0)
+		return;
+
+	/* Each group's results and its old values. */
+	i915_vkcs_flush(x, I915_VKCS_BUF_B);
+	i915_vkcs_flush(x, I915_VKCS_BUF_D);
+	results = i915_vkcs_words(x, I915_VKCS_BUF_B);
+	old = i915_vkcs_words(x, I915_VKCS_BUF_D);
+	for (group = 0U; group < I915_VKCS_ATOMSH_GROUPS; group++) {
+		kern_memset(expected, 0, sizeof(expected));
+		for (index = 0U; index < 64U; index++) {
+			value = v[group * 64U + index];
+			expected[value % 16U]++;
+			expected[16] += value;
+			if (value > expected[17])
+				expected[17] = value;
+		}
+		expected[19] = 64U;
+		for (index = 0U; index < I915_VKCS_ATOMSH_WORDS; index++) {
+			if (index == 18U)
+				continue;
+			i915_vkcs_check(x, "ATOMIC-SHARED", group * I915_VKCS_ATOMSH_WORDS + index, results[group * I915_VKCS_ATOMSH_WORDS + index], expected[index]);
+		}
+		value = results[group * I915_VKCS_ATOMSH_WORDS + 18U];
+		if (value == 0U || value > 64U)
+			i915_vkcs_check(x, "ATOMIC-SHARED", group * I915_VKCS_ATOMSH_WORDS + 18U, value, 1U);
+		kern_memset(seen, 0, sizeof(seen));
+		for (index = 0U; index < 64U; index++) {
+			value = old[group * 64U + index];
+			if (value >= 64U || seen[value] != 0U) {
+				i915_vkcs_check(x, "ATOMIC-SHARED", 0x1000U + group * 64U + index, value, 0xffffffffU);
+				continue;
+			}
+			seen[value] = 1U;
+		}
+	}
+	i915_vkcs_verdict(x, "ATOMIC-SHARED", i915_vkcs_checked(x, "ATOMIC-SHARED"));
+}
+
+/* LOOP: scan.comp over 32 groups of 64; each group's inclusive prefix sums (ws101-p006). */
+static void
+i915_vkcs_step_scan(
+	struct i915_vkcs *x)
+{
+	const uint32_t *prefix;
+	uint32_t *v;
+	uint32_t index;
+	uint32_t sum;
+
+	/* The words, and C all sentinel. */
+	v = i915_vkcs_words(x, I915_VKCS_BUF_A);
+	for (index = 0U; index < I915_VKCS_SCAN_GROUPS * 64U; index++)
+		v[index] = i915_vkcs_hash(index + 0x60000U) >> 12;
+	i915_vkcs_flush(x, I915_VKCS_BUF_A);
+	i915_vkcs_fill(x, I915_VKCS_BUF_C, I915_VKCS_SENTINEL);
+
+	/* Runs the groups. */
+	if (i915_vkcs_run(x, "LOOP", I915_VKCS_KERNEL_SCAN, I915_VKCS_SET_TWO, I915_VKCS_SCAN_GROUPS) != 0)
+		return;
+
+	/* The prefix sums, starting afresh at each group, and the sentinel after them. */
+	i915_vkcs_flush(x, I915_VKCS_BUF_C);
+	prefix = i915_vkcs_words(x, I915_VKCS_BUF_C);
+	sum = 0U;
+	for (index = 0U; index < I915_VKCS_SCAN_GROUPS * 64U; index++) {
+		if (index % 64U == 0U)
+			sum = 0U;
+		sum += v[index];
+		i915_vkcs_check(x, "LOOP", index, prefix[index], sum);
+	}
+	for (index = I915_VKCS_SCAN_GROUPS * 64U; index < I915_VKCS_SCAN_GROUPS * 64U + 64U; index++)
+		i915_vkcs_check(x, "LOOP", index, prefix[index], I915_VKCS_SENTINEL);
+	i915_vkcs_verdict(x, "LOOP", i915_vkcs_checked(x, "LOOP"));
+}
+
+/*
+ * REFUSE: the three modules the compiler must refuse -- shared memory past
+ * 16 KiB, a barrier after a return, a barrier in a loop some invocations
+ * skip -- made no pipeline at vkCreateComputePipelines (the setup tried;
+ * the executor logged each reason) (ws101-p006).
+ */
+static void
+i915_vkcs_step_refuse(
+	struct i915_vkcs *x)
+{
+	/* None of the three was made. */
+	i915_vkcs_check(x, "REFUSE", I915_VKCS_KERNEL_REFUSE_BIG, (uint32_t)x->made[I915_VKCS_KERNEL_REFUSE_BIG], 0U);
+	i915_vkcs_check(x, "REFUSE", I915_VKCS_KERNEL_REFUSE_RETURN, (uint32_t)x->made[I915_VKCS_KERNEL_REFUSE_RETURN], 0U);
+	i915_vkcs_check(x, "REFUSE", I915_VKCS_KERNEL_REFUSE_LOOP, (uint32_t)x->made[I915_VKCS_KERNEL_REFUSE_LOOP], 0U);
+	i915_vkcs_verdict(x, "REFUSE", i915_vkcs_checked(x, "REFUSE"));
 }

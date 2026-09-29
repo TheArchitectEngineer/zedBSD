@@ -1,0 +1,6 @@
+#version 300 es
+// expect: syntax error: expected a type before 'buffer'
+layout(std430) buffer A { uint words[]; };
+void main()
+{
+}

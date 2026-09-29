@@ -32,6 +32,22 @@
 #define GLSL_STAGE_FRAGMENT	1U
 #define GLSL_STAGE_GEOMETRY	2U
 
+/* A compute shader (GLSL ES 3.10, ws101-p008): linked alone by glsl_link_compute. */
+#define GLSL_STAGE_COMPUTE	3U
+
+/* The stages of a program's SPIR-V (glsl_program.code). */
+#define GLSL_STAGES		4U
+
+/*
+ * The descriptor binding of a shader storage block's GL binding n (layout(
+ * binding = n) buffer B { ... }): set 0, GLSL_STORAGE_FIRST_BINDING + n
+ * (0 is the default uniform block, 1 to 16 the samplers, 32 to 55 the
+ * uniform blocks, 48 the transform feedback capture; ws101-p008), for n
+ * below GLSL_STORAGE_BINDINGS.
+ */
+#define GLSL_STORAGE_FIRST_BINDING 56U
+#define GLSL_STORAGE_BINDINGS	8U
+
 /* The scalar kinds of an interface variable (the same numbers as libGLESv2's gles_uniform.base). */
 #define GLSL_INFO_FLOAT		0U
 #define GLSL_INFO_INT		1U
@@ -135,13 +151,39 @@ struct glsl_capture_info {
 };
 
 /*
+ * One shader storage block of a linked compute program (ws101-p008): its
+ * name, its GL binding (its descriptor binding is GLSL_STORAGE_FIRST_BINDING
+ * more), the bytes before its run-time array (the whole block without one),
+ * a run-time array's stride (0 without one), and whether the shader only
+ * reads it (readonly) -- a buffer it may write is one the device writes.
+ */
+struct glsl_storage_info {
+	char *name;
+	unsigned binding;
+	unsigned size;
+	unsigned array_stride;
+	unsigned readonly;
+};
+
+/*
  * A linked program: the SPIR-V of its stages and what the API says of
  * the uniforms.  glsl_program_free releases it.
  */
 struct glsl_program {
-	/* The SPIR-V words of the vertex, the fragment and (NULL without one) the geometry stage (GLSL_STAGE_*). */
-	uint32_t *code[3];
-	size_t words[3];
+	/*
+	 * The SPIR-V words of the vertex, the fragment and (NULL without one)
+	 * the geometry stage, or of a compute program's one stage
+	 * (GLSL_STAGE_*).
+	 */
+	uint32_t *code[GLSL_STAGES];
+	size_t words[GLSL_STAGES];
+
+	/* A compute program's workgroup size (ws101-p008); 0s for another. */
+	unsigned local_size[3];
+
+	/* A compute program's shader storage blocks, by binding (ws101-p008). */
+	struct glsl_storage_info *storages;
+	unsigned storage_count;
 
 	/* The active uniforms: the default block's leaves and the samplers, then the named blocks' members. */
 	struct glsl_uniform_info *uniforms;
@@ -183,7 +225,7 @@ void glsl_shader_free(struct glsl_shader *shader);
 /* Reports a compiled shader's stage. */
 unsigned glsl_shader_stage(const struct glsl_shader *shader);
 
-/* Reports a compiled shader's GLSL version (100, 110 .. 330, 300) and whether it is OpenGL ES's language. */
+/* Reports a compiled shader's GLSL version (100, 110 .. 330, 300, 310) and whether it is OpenGL ES's language. */
 unsigned glsl_shader_version(const struct glsl_shader *shader, int *es);
 
 /*
@@ -207,6 +249,19 @@ int glsl_link_captured(const struct glsl_shader *vertex, const struct glsl_shade
  * *log a malloc'ed info log saying why.
  */
 int glsl_link_stages(const struct glsl_shader *vertex, const struct glsl_shader *geometry, const struct glsl_shader *fragment, const struct glsl_binding *bindings, unsigned binding_count, const char *const *captures, unsigned capture_count, struct glsl_program *program, char **log);
+
+/*
+ * Links a compute shader (GLSL_STAGE_COMPUTE) alone into SPIR-V
+ * (ws101-p008).  Returns 0 and fills *program, or -1 with *log a
+ * malloc'ed info log saying why.
+ */
+int glsl_link_compute(const struct glsl_shader *compute, struct glsl_program *program, char **log);
+
+/*
+ * Reports a compiled compute shader's workgroup size (its local_size
+ * layout); all 0 for another stage.
+ */
+void glsl_compute_layout(const struct glsl_shader *shader, unsigned size[3]);
 
 /*
  * Reports a compiled geometry shader's primitives as GL names them: the

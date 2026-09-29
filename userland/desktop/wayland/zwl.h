@@ -1065,6 +1065,13 @@ int zwl_network_button(struct zwl_server *server, uint32_t button, uint32_t stat
 int zwl_network_key(struct zwl_server *server, uint32_t key, uint32_t state);
 int zwl_network_motion(struct zwl_server *server);
 int zwl_network_is_open(void);
+void zwl_volume_tick(struct zwl_server *server);
+void zwl_volume_preferences(struct zwl_server *server);
+int zwl_volume_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_volume_key(struct zwl_server *server, uint32_t key, uint32_t state);
+int zwl_volume_motion(struct zwl_server *server);
+int zwl_volume_axis(struct zwl_server *server, int32_t vertical, int32_t horizontal);
+int zwl_volume_is_open(void);
 
 /* What a toplevel asks the glass look's shell to do (xdg_toplevel requests, ws035-p076). */
 #define ZWL_TOPLEVEL_MOVE		1

@@ -526,8 +526,10 @@ pp_version(
 		}
 	}
 
-	/* OpenGL ES's languages: 1.00 (no profile) and 3.00 es. */
-	if ((version == GLSL_VERSION_ES100 && es == 0U) || (version == GLSL_VERSION_ES300 && es != 0U)) {
+	/* OpenGL ES's languages: 1.00 (no profile), 3.00 es and 3.10 es (ws101-p008). */
+	if ((version == GLSL_VERSION_ES100 && es == 0U) ||
+	    (version == GLSL_VERSION_ES300 && es != 0U) ||
+	    (version == GLSL_VERSION_ES310 && es != 0U)) {
 		shader->version = version;
 		shader->es = 1U;
 		return;
@@ -551,7 +553,7 @@ pp_version(
 	}
 
 	/* Any other version is not taken (yet). */
-	glsl_error(shader, directive_line, "GLSL version %u is not supported (100, 300 es, and 110 to 330 are)", version);
+	glsl_error(shader, directive_line, "GLSL version %u is not supported (100, 300 es, 310 es, and 110 to 330 are)", version);
 }
 
 /* Carries out #define: an object-like or function-like macro. */

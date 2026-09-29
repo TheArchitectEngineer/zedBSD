@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: main の依頼（worktree `.claude/worktrees/ws094-desktop`、branch `wt/ws094`）
-Resume point: p004 の途中（実装・host・guest の選択と開くと token の確認は済み。残り: guest での保存の場所・band の画面・回帰・boot test。phase004 の Resume point）
+Resume point: p005（context menu・名前の変更・Trash・Copy・Paste・New Folder・Show in Files）。p004 は 2026-09-30 に cleared
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -26,7 +26,7 @@ Resume point: p004 の途中（実装・host・guest の選択と開くと token
 | [ws094-p001](phase001/phase.md) | 設計（[design.md](design.md)、J1〜J7 は既定: Files が背景の層の client として描く） | cleared（2026-09-29） | — |
 | [ws094-p002](phase002/phase.md) | compositor: `keiland_desktop_v1`（role・token・configure）、重ね順・合成・入力・focus・popup・DnD の対象、`--session` での起動と起こし直し、probe | cleared（2026-09-30） | p001、main の許可（WS035 の source） |
 | [ws094-p003](phase003/phase.md) | libkeiland の client の API と Files の `--desktop` の骨組み（`~/Desktop` の icon を右上から描く、監視） | cleared（2026-09-30） | p002、main の許可（libkeiland） |
-| [ws094-p004](phase004/phase.md) | 選択・開く（WS093）・keyboard・配置の保存と Clean Up | uncleared（2026-09-30、ラップアップで途中。実装と host・guest の主な確認は済み、残りは phase.md の Resume point） | p003 |
+| [ws094-p004](phase004/phase.md) | 選択・開く（WS093）・keyboard・配置の保存と Clean Up | cleared（2026-09-30、2 回目: 保存した場所への配置 PASS、band の撮り直し、回帰（probe・files-open・host）と boot test PASS。probe の試験の順の誤りを直した） | p003 |
 | ws094-p005 | context menu（項目・空いた所）・名前の変更・Trash・Copy・Paste・New Folder・Show in Files | planned | p004 |
 | ws094-p006 | drag（desktop の中・folder へ・Files の窓との DnD）と touch | planned | p005 |
 | ws094-p007 | 全文の規約と回帰 | planned | p006 |

@@ -18,13 +18,33 @@
 
 #include "userland/base/audiod/audiod.h"
 
+#include <stdlib.h>
 #include <string.h>
+
+/* The feedback sound (ws100-p002): its pitch, its length and rise in milliseconds, and its peak (-12 dBFS of the mix's scale). */
+#define FEEDBACK_HZ		880.0
+#define FEEDBACK_MS		100U
+#define FEEDBACK_RISE_MS	5U
+#define FEEDBACK_PEAK		536870912.0
+
+/*
+ * The device volume audiod applies itself, per percent: a 60 dB range in
+ * even steps (0.6 dB a percent, each step 10^(-0.03) of the one above, in
+ * 1/65536), 0 silent (ws100-p002).
+ */
+#define SOFT_UNITY		65536U
+#define SOFT_STEP		61162U
 
 static void fetch(const struct audiod_stream *stream, uint64_t position, int64_t sample[2]);
 static void store(struct audiod_stream *stream, uint64_t position, const int64_t sample[2]);
 static int32_t clamp32(int64_t value);
 static void audiod_played_store(struct audiod_shm_header *shm, uint64_t position, int64_t time_ns);
 static void device_to_stereo(const struct audiod_device *device, const uint8_t *in, uint32_t frames, int32_t *out);
+static void feedback_mix(struct audiod_device *device, int64_t *mix, uint32_t frames);
+static void soft_volume(const struct audiod_device *device, int64_t *mix, uint32_t frames);
+static uint32_t soft_gain(uint32_t percent);
+static double series_cos(double x);
+static double series_sin(double x);
 
 /* Reports the bytes of one frame. */
 uint32_t
@@ -62,6 +82,68 @@ audiod_stream_rates(
 }
 
 /*
+ * Makes the feedback sound for the device's rate (ws100-p002): FEEDBACK_MS
+ * of a FEEDBACK_HZ sine that rises over FEEDBACK_RISE_MS and falls away to
+ * nothing, the same on both channels, at FEEDBACK_PEAK.  The sine comes
+ * from a two-term recurrence (no libm).  Returns 0, or -1 without memory
+ * (then no feedback sound plays).
+ */
+int
+audiod_feedback_make(
+	struct audiod_device *device)
+{
+	int32_t *frames;
+	double coefficient;
+	double previous;
+	double current;
+	double next;
+	double envelope;
+	double left;
+	uint32_t length;
+	uint32_t rise;
+	uint32_t index;
+
+	/* Its length and rise in frames. */
+	length = device->rate * FEEDBACK_MS / 1000U;
+	rise = device->rate * FEEDBACK_RISE_MS / 1000U;
+	if (length == 0U || rise == 0U || rise >= length)
+		return -1;
+
+	/* Room for it as stereo frames. */
+	frames = malloc((size_t)length * 2U * sizeof(*frames));
+	if (frames == NULL)
+		return -1;
+
+	/* The recurrence sin((n + 1) w) = 2 cos(w) sin(n w) - sin((n - 1) w), from sin(0) and sin(w). */
+	coefficient = 2.0 * series_cos(2.0 * 3.14159265358979323846 * FEEDBACK_HZ / (double)device->rate);
+	previous = 0.0;
+	current = series_sin(2.0 * 3.14159265358979323846 * FEEDBACK_HZ / (double)device->rate);
+
+	/* Each frame: the sine under its envelope, a straight rise and then a square fall to nothing. */
+	for (index = 0U; index < length; index++) {
+		if (index < rise) {
+			envelope = (double)index / (double)rise;
+		} else {
+			left = 1.0 - (double)(index - rise) / (double)(length - rise);
+			envelope = left * left;
+		}
+
+		/* The sample on both channels, and the next sine. */
+		frames[index * 2U] = (int32_t)(previous * envelope * FEEDBACK_PEAK);
+		frames[index * 2U + 1U] = frames[index * 2U];
+		next = coefficient * current - previous;
+		previous = current;
+		current = next;
+	}
+
+	/* Succeeded: the sound is kept, not playing until asked for. */
+	device->feedback = frames;
+	device->feedback_length = length;
+	device->feedback_next = length;
+	return 0;
+}
+
+/*
  * Mixes one device period of every running playback stream into out, in
  * the device's format.  A stream that has less than the period plays what
  * it has and silence after it; a stream whose shared memory faults is
@@ -89,12 +171,16 @@ audiod_mix_period(
 	uint32_t i;
 	uint32_t channel;
 	uint32_t volume[2];
+	int16_t sample16;
+	int32_t sample32;
 	int missing;
 
+	/* The period, started from silence. */
 	frames = device->period_frames;
 	mix = device->mix;
 	memset(mix, 0, (size_t)frames * 2U * sizeof(*mix));
 
+	/* Every running playback stream of every client. */
 	for (client = audiod_clients; client != NULL; client = client->next) {
 		for (stream = client->streams; stream != NULL; stream = stream->next) {
 			if (stream->direction != AUDIOD_PLAYBACK ||
@@ -102,12 +188,19 @@ audiod_mix_period(
 				continue;
 			shm = stream->shm;
 
-			/* A fault in memory the client shrank ends this stream only. */
+			/*
+			 * A fault in memory the client shrank ends this stream only.
+			 * sigsetjmp stays in the condition: the C standard allows it
+			 * only there or as a statement of its own, not in an
+			 * assignment (an exception to the call-in-condition rule).
+			 */
 			if (sigsetjmp(audiod_bus_jump, 1) != 0) {
 				audiod_bus_armed = 0;
 				stream->broken = 1;
 				continue;
 			}
+
+			/* From here a fault jumps back above. */
 			audiod_bus_armed = 1;
 
 			/* The client's position is checked, not trusted. */
@@ -122,8 +215,15 @@ audiod_mix_period(
 				continue;
 			}
 
-			volume[0] = stream->muted ? 0U : stream->volume_left;
-			volume[1] = stream->muted ? 0U : stream->volume_right;
+			/* The stream's volume; muted is silence. */
+			volume[0] = stream->volume_left;
+			volume[1] = stream->volume_right;
+			if (stream->muted) {
+				volume[0] = 0U;
+				volume[1] = 0U;
+			}
+
+			/* Each frame of the period, while the stream has one (interpolated between two when the rates differ). */
 			missing = 0;
 			for (i = 0; i < frames; i++) {
 				index = stream->phase >> 32;
@@ -132,19 +232,28 @@ audiod_mix_period(
 					missing = 1;
 					break;
 				}
+
+				/* The frame, and the next one's share of it. */
 				fetch(stream, read_position + index, a);
 				if (fraction != 0) {
 					fetch(stream, read_position + index + 1, b);
-					for (channel = 0; channel < 2; channel++)
+					for (channel = 0; channel < 2; channel++) {
 						a[channel] += ((b[channel] - a[channel]) *
 						    (int64_t)(fraction >> 16)) >> 16;
+					}
 				}
+
+				/* Added to the mix at the stream's volume. */
 				for (channel = 0; channel < 2; channel++) {
 					value = (a[channel] * (int64_t)volume[channel]) >> 16;
 					mix[i * 2 + channel] += value;
 				}
+
+				/* On through the stream. */
 				stream->phase += stream->step;
 			}
+
+			/* The stream's memory is no longer touched. */
 			audiod_bus_armed = 0;
 
 			/* Gives the consumed frames back to the client. */
@@ -191,24 +300,26 @@ audiod_mix_period(
 		}
 	}
 
+	/* The feedback sound over the streams, then the volume audiod applies itself (ws100-p002). */
+	feedback_mix(device, mix, frames);
+	soft_volume(device, mix, frames);
+
 	/* Writes the mix in the device's format, saturating. */
 	for (i = 0; i < frames * 2U; i++) {
 		value = mix[i];
 		if (device->format == AUDIOD_FORMAT_S16_LE) {
-			int16_t sample;
-
+			/* S16: the top 16 bits, saturated. */
 			value >>= 16;
 			if (value > 32767)
 				value = 32767;
 			if (value < -32768)
 				value = -32768;
-			sample = (int16_t)value;
-			memcpy(out + i * 2U, &sample, 2);
+			sample16 = (int16_t)value;
+			memcpy(out + i * 2U, &sample16, 2);
 		} else {
-			int32_t sample;
-
-			sample = clamp32(value);
-			memcpy(out + i * 4U, &sample, 4);
+			/* S32: saturated. */
+			sample32 = clamp32(value);
+			memcpy(out + i * 4U, &sample32, 4);
 		}
 	}
 }
@@ -441,4 +552,119 @@ device_to_stereo(
 			}
 		}
 	}
+}
+
+/* Adds the playing part of the feedback sound to one period of the mix, and moves on. */
+static void
+feedback_mix(
+	struct audiod_device *device,
+	int64_t *mix,
+	uint32_t frames)
+{
+	uint32_t index;
+
+	/* Only while it plays. */
+	if (device->feedback == NULL)
+		return;
+
+	/* Each frame of the period, while the sound lasts. */
+	for (index = 0U; index < frames && device->feedback_next < device->feedback_length; index++) {
+		mix[index * 2U] += device->feedback[device->feedback_next * 2U];
+		mix[index * 2U + 1U] += device->feedback[device->feedback_next * 2U + 1U];
+		device->feedback_next++;
+	}
+}
+
+/* Applies the device volume audiod keeps itself (when the device has none) to one period of the mix. */
+static void
+soft_volume(
+	const struct audiod_device *device,
+	int64_t *mix,
+	uint32_t frames)
+{
+	uint32_t gain[2];
+	uint32_t index;
+
+	/* Only when the device does not take the volume. */
+	if (!device->soft)
+		return;
+
+	/* Each channel's factor; muted is silence. */
+	gain[0] = soft_gain(device->soft_left);
+	gain[1] = soft_gain(device->soft_right);
+	if (device->soft_muted) {
+		gain[0] = 0U;
+		gain[1] = 0U;
+	}
+
+	/* Every sample of the period. */
+	for (index = 0U; index < frames; index++) {
+		mix[index * 2U] = (mix[index * 2U] * (int64_t)gain[0]) >> 16;
+		mix[index * 2U + 1U] = (mix[index * 2U + 1U] * (int64_t)gain[1]) >> 16;
+	}
+}
+
+/* Gives the factor (in 1/65536) of a volume in percent: SOFT_STEP less per percent below 100, 0 at 0. */
+static uint32_t
+soft_gain(
+	uint32_t percent)
+{
+	uint32_t gain;
+	uint32_t step;
+
+	/* Silence, and full. */
+	if (percent == 0U)
+		return 0U;
+	if (percent >= 100U)
+		return SOFT_UNITY;
+
+	/* Down from full, one step a percent. */
+	gain = SOFT_UNITY;
+	for (step = percent; step < 100U; step++)
+		gain = (uint32_t)(((uint64_t)gain * SOFT_STEP) >> 16);
+
+	/* Succeeded: the factor. */
+	return gain;
+}
+
+/* Gives cos(x) for a small x (under 1) by its series, to x^14. */
+static double
+series_cos(
+	double x)
+{
+	double term;
+	double sum;
+	unsigned n;
+
+	/* Each term from the one before: -x^2 / ((2n - 1) 2n). */
+	term = 1.0;
+	sum = 1.0;
+	for (n = 1U; n <= 7U; n++) {
+		term = -term * x * x / (double)((2U * n - 1U) * 2U * n);
+		sum += term;
+	}
+
+	/* Succeeded: the sum. */
+	return sum;
+}
+
+/* Gives sin(x) for a small x (under 1) by its series, to x^15. */
+static double
+series_sin(
+	double x)
+{
+	double term;
+	double sum;
+	unsigned n;
+
+	/* Each term from the one before: -x^2 / (2n (2n + 1)). */
+	term = x;
+	sum = x;
+	for (n = 1U; n <= 7U; n++) {
+		term = -term * x * x / (double)(2U * n * (2U * n + 1U));
+		sum += term;
+	}
+
+	/* Succeeded: the sum. */
+	return sum;
 }

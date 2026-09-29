@@ -1165,6 +1165,62 @@ drv_i915_eu_send_all_end(
 }
 
 /*
+ * Encodes a message to a shared function on the first channel alone,
+ * regardless of the execution mask (a SIMD1 NoMask SEND).
+ *
+ * The operands are those of drv_i915_eu_send().  Mesa sends a memory fence
+ * this way (brw_memory_fence(), brw_eu_emit.c): one message for the thread,
+ * whose one-register reply says the fence is done (ws101-p006).
+ */
+void
+drv_i915_eu_send_scalar(
+	struct i915_eu_buf *buffer,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	uint32_t sfid,
+	uint32_t descriptor)
+{
+	/* Encodes the message for the first channel, outside the mask. */
+	i915_eu_send_common(buffer,
+			    0,
+			    I915_EU_FLAG_F0_0,
+			    I915_EU_SCOPE_SCALAR,
+			    dst,
+			    src0,
+			    drv_i915_eu_null(),
+			    sfid,
+			    descriptor,
+			    0U,
+			    0,
+			    0);
+}
+
+/*
+ * Encodes a sync of function `function` (EU_SYNC_*) with no dependency:
+ * sync.bar waits until the thread's workgroup barrier message is answered
+ * (Mesa's generate_barrier() on Gfx12, brw_generator.cpp), sync.allwr until
+ * every write the thread sent is done (ws101-p006).
+ */
+void
+drv_i915_eu_sync_function(
+	struct i915_eu_buf *buffer,
+	uint32_t function)
+{
+	uint32_t *inst;
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes a SIMD1 sync of the function, outside the channel mask, with no scoreboard dependency. */
+	i915_eu_set(inst, EU_OPCODE_HI, EU_OPCODE_LO, EU_OP_SYNC);
+	i915_eu_set(inst, EU_COND_MODIFIER_HI, EU_COND_MODIFIER_LO, function);
+	i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
+	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
+}
+
+/*
  * Encodes a no-op.
  */
 void

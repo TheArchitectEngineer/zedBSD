@@ -415,14 +415,28 @@ handle_message(
 		break;
 
 	case AUDIOD_DEVICE_VOLUME:
+		/* A whole request, 0..100 on each channel. */
 		if (length != sizeof(request.volume) ||
 		    request.volume.left > 100U || request.volume.right > 100U) {
 			error = EINVAL;
 			break;
 		}
+
+		/* The device's volume (or audiod's own), told to every subscriber. */
 		audiod_device_set_volume(&audiod_device, request.volume.left,
 		    request.volume.right, request.volume.muted != 0);
 		broadcast_volume();
+		break;
+
+	case AUDIOD_FEEDBACK:
+		/* The short feedback sound, from its start (ws100-p002); the header only. */
+		if (length != sizeof(request.header)) {
+			error = EINVAL;
+			break;
+		}
+
+		/* Played by the mix from the next period. */
+		audiod_device_feedback(&audiod_device);
 		break;
 
 	case AUDIOD_SUBSCRIBE:
@@ -623,11 +637,14 @@ send_volume(
 {
 	struct audiod_volume volume;
 
+	/* VOLUME_CHANGED with the volume in force. */
 	memset(&volume, 0, sizeof(volume));
 	volume.header.type = AUDIOD_VOLUME_CHANGED;
 	volume.header.length = sizeof(volume);
 	audiod_device_get_volume(&audiod_device, &volume.left, &volume.right,
 	    &volume.muted);
+
+	/* Sent without a descriptor. */
 	send_message(client, &volume, sizeof(volume), -1);
 }
 
@@ -638,6 +655,7 @@ broadcast_volume(
 {
 	struct audiod_client *client;
 
+	/* Each client that subscribed. */
 	for (client = audiod_clients; client != NULL; client = client->next) {
 		if (client->subscribed)
 			send_volume(client);

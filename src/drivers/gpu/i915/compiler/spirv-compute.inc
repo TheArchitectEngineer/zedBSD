@@ -18,6 +18,16 @@
  * I915_IR_SYSTEM_SET, so the code generator reads them as it reads any
  * storage buffer.
  *
+ * A Workgroup variable is shared memory (ws101-p006): the parser lays the
+ * variables out one after the other in a natural layout of its own (a
+ * scalar 4 bytes, a vector 4 n, an array its elements one after the other,
+ * a structure its members in order: SPIR-V gives Workgroup variables no
+ * Offset or ArrayStride), and every access is a LOAD_SHARED, STORE_SHARED
+ * or ATOMIC of the group's memory -- never forwarded, since another
+ * invocation may have written the word.  OpControlBarrier of the workgroup
+ * is a BARRIER after the fences its semantics ask for; OpMemoryBarrier and
+ * the ordering semantics of an atomic are FENCEs.
+ *
  * The file is part of spirv.c's translation unit: it uses that file's types,
  * constants and helpers, and its functions are declared with the others at
  * the top of spirv.c.
@@ -42,6 +52,19 @@
 
 /* The byte offsets of gl_NumWorkGroups' x, y and z in their storage buffer. */
 #define SYSTEM_GROUP_COUNT_BYTES	4U
+
+/* The storage-class bits of memory semantics: UniformMemory (buffers) and WorkgroupMemory (shared memory). */
+#define MEMORY_SEMANTICS_UNIFORM	0x40U
+#define MEMORY_SEMANTICS_WORKGROUP	0x100U
+
+/* The Acquire and AcquireRelease / SequentiallyConsistent bits, which order the accesses after. */
+#define MEMORY_SEMANTICS_ACQUIRING	0x1AU
+
+/* The largest size shared memory's layout measures, so no sum overflows; the declaration refuses past the device's. */
+#define SHARED_MEASURE_LIMIT		0x40000000U
+
+/* The execution scope of a workgroup barrier (SPIR-V spec, section 3.27, Scope). */
+#define SCOPE_WORKGROUP			2U
 
 /*
  * Records one execution mode of the entry point.
@@ -390,6 +413,8 @@ i915_spirv_lower_atomic(
 	uint32_t value_comp[4];
 	uint32_t compare_comp[4];
 	uint32_t components;
+	uint32_t fences;
+	uint32_t unequal;
 	uint32_t operation;
 	uint32_t operands;
 	uint32_t value_word;
@@ -457,17 +482,18 @@ i915_spirv_lower_atomic(
 	if (count < operands)
 		return EINVAL;
 
-	/* Refuses an atomic that orders other accesses: its fence is not lowered yet. */
-	error = i915_spirv_atomic_relaxed(parser, word[5], opcode, offset);
+	/* The fences the semantics ask for around the atomic (ws101-p006); both of a compare and exchange's. */
+	error = i915_spirv_semantics(parser, word[5], &fences, opcode, offset);
 	if (error != 0)
 		return error;
 	if (opcode == OP_ATOMIC_COMPARE_EXCHANGE) {
-		error = i915_spirv_atomic_relaxed(parser, word[6], opcode, offset);
+		error = i915_spirv_semantics(parser, word[6], &unequal, opcode, offset);
 		if (error != 0)
 			return error;
+		fences |= unequal;
 	}
 
-	/* Resolves the word the atomic works on: a 32-bit integer of a storage buffer. */
+	/* Resolves the word the atomic works on: a 32-bit integer of a storage buffer or of shared memory. */
 	error = i915_spirv_atomic_pointer(parser, word[3], &pointer, &variable, opcode, offset);
 	if (error != 0)
 		return error;
@@ -493,7 +519,7 @@ i915_spirv_lower_atomic(
 		compare = compare_comp[0];
 	}
 
-	/* The word's byte offset in the buffer. */
+	/* The word's byte offset in the buffer or in shared memory. */
 	place = i915_spirv_storage_offset(parser, pointer, pointer->byte_offset);
 
 	/* Names the result: the word's value before the operation. */
@@ -502,12 +528,17 @@ i915_spirv_lower_atomic(
 		return EINVAL;
 	dst = record->comp[0];
 
+	/* An ordering atomic is fenced on both sides (ws101-p006): before for a release, after for an acquire. */
+	i915_spirv_fence(parser, fences);
+
 	/* Emits the operation on the word. */
 	inst = i915_spirv_emit(parser, I915_IR_ATOMIC, dst, place, value);
 	if (inst == NULL)
 		return parser->error;
 	inst->immediate = operation;
 	inst->location = variable->uniform;
+	if (pointer->ptr_kind == PTR_SHARED)
+		inst->location = I915_IR_LOCATION_SHARED;
 	if (compare != NO_VALUE)
 		inst->src[2] = compare;
 
@@ -520,6 +551,8 @@ i915_spirv_lower_atomic(
 			inst->src[2] = parser->predicate;
 		}
 	}
+
+	i915_spirv_fence(parser, fences);
 
 	/* A value the parser could not make fails the atomic. */
 	if (parser->error != 0)
@@ -548,6 +581,7 @@ i915_spirv_lower_atomic_access(
 	uint32_t components;
 	uint32_t pointer_id;
 	uint32_t semantics_id;
+	uint32_t fences;
 	int error;
 
 	/* A load names a result type, a result, the pointer, a scope and semantics; a store the pointer, a scope, semantics and the value. */
@@ -563,29 +597,39 @@ i915_spirv_lower_atomic_access(
 		semantics_id = word[3];
 	}
 
-	/* Refuses an access that orders other accesses: its fence is not lowered yet. */
-	error = i915_spirv_atomic_relaxed(parser, semantics_id, opcode, offset);
+	/* The fences the semantics ask for around the access (ws101-p006). */
+	error = i915_spirv_semantics(parser, semantics_id, &fences, opcode, offset);
 	if (error != 0)
 		return error;
 
-	/* Resolves the storage buffer word. */
+	/* Resolves the word of a storage buffer or of shared memory. */
 	error = i915_spirv_atomic_pointer(parser, pointer_id, &pointer, &variable, opcode, offset);
 	if (error != 0)
 		return error;
 
-	/* A load reads the word as any load of a storage buffer does. */
+	/* A load reads the word as any load of its memory does, fenced after for an acquire. */
 	if (opcode == OP_ATOMIC_LOAD) {
-		error = i915_spirv_lower_storage(parser, word, pointer, variable, NULL, 1U, opcode, offset);
+		if (pointer->ptr_kind == PTR_SHARED) {
+			error = i915_spirv_lower_shared(parser, word, pointer, NULL, 1U, opcode, offset);
+		} else {
+			error = i915_spirv_lower_storage(parser, word, pointer, variable, NULL, 1U, opcode, offset);
+		}
 		if (error != 0)
 			return error;
-		return 0;
+		i915_spirv_fence(parser, fences);
+		return parser->error;
 	}
 
-	/* A store writes the one scalar value it names. */
+	/* A store writes the one scalar value it names, fenced before for a release. */
 	components = i915_spirv_operand(parser, word[4], scalars);
 	if (components != 1U)
 		return i915_spirv_refuse(parser, opcode, offset, "atomic store of something that is not a scalar");
-	error = i915_spirv_lower_storage(parser, word, pointer, variable, scalars, 1U, opcode, offset);
+	i915_spirv_fence(parser, fences);
+	if (pointer->ptr_kind == PTR_SHARED) {
+		error = i915_spirv_lower_shared(parser, word, pointer, scalars, 1U, opcode, offset);
+	} else {
+		error = i915_spirv_lower_storage(parser, word, pointer, variable, scalars, 1U, opcode, offset);
+	}
 	if (error != 0)
 		return error;
 
@@ -594,8 +638,9 @@ i915_spirv_lower_atomic_access(
 }
 
 /*
- * Resolves the pointer of an atomic: it must lead into a storage buffer.
- * Returns 0 with the pointer and its variable, or the refusal.
+ * Resolves the pointer of an atomic: it must lead into a storage buffer or
+ * into shared memory.  Returns 0 with the pointer and its variable, or the
+ * refusal.
  */
 static int
 i915_spirv_atomic_pointer(
@@ -619,9 +664,9 @@ i915_spirv_atomic_pointer(
 	if (owner == NULL)
 		return EINVAL;
 
-	/* Only a storage buffer's words are changed atomically here; shared memory is not lowered yet. */
-	if (base->ptr_kind != PTR_SSBO)
-		return i915_spirv_refuse(parser, opcode, offset, "atomic on something that is not a storage buffer");
+	/* Only the words of a storage buffer or of shared memory are changed atomically. */
+	if (base->ptr_kind != PTR_SSBO && base->ptr_kind != PTR_SHARED)
+		return i915_spirv_refuse(parser, opcode, offset, "atomic on something that is not a storage buffer or shared memory");
 
 	/* Succeeded: the atomic works on a storage buffer word. */
 	*pointer = base;
@@ -630,30 +675,395 @@ i915_spirv_atomic_pointer(
 }
 
 /*
- * Checks that the memory semantics of an atomic order nothing around it.
- * Returns 0 when they do not, or the refusal.
+ * Reads the memory semantics of an atomic or a barrier: the fences
+ * (I915_IR_FENCE_*) an ordering (Acquire, Release, AcquireRelease,
+ * SequentiallyConsistent) asks for, of the memory its storage-class bits
+ * name -- buffers (UniformMemory), shared memory (WorkgroupMemory), or both
+ * when it names neither -- and none for relaxed semantics.  Returns 0, or
+ * the refusal of semantics that are not a constant.
  */
 static int
-i915_spirv_atomic_relaxed(
+i915_spirv_semantics(
 	struct i915_spirv_parser *parser,
 	uint32_t semantics_id,
+	uint32_t *fences,
 	uint32_t opcode,
 	uint32_t offset)
 {
 	struct i915_spirv_id *semantics;
+	uint32_t bits;
 
 	/* The semantics must be a constant. */
 	semantics = i915_spirv_id(parser, semantics_id);
 	if (semantics == NULL)
 		return EINVAL;
 	if (semantics->kind != ID_CONSTANT)
-		return i915_spirv_refuse(parser, opcode, offset, "atomic whose memory semantics are not a constant");
+		return i915_spirv_refuse(parser, opcode, offset, "memory semantics that are not a constant");
 
-	/* Refuses an atomic that orders other accesses: its memory fence is not lowered yet. */
-	if ((semantics->constant & MEMORY_SEMANTICS_ORDERING) != 0U)
-		return i915_spirv_refuse(parser, opcode, offset, "atomic with acquire or release semantics (the fence is not lowered)");
+	/* Relaxed semantics order nothing. */
+	bits = semantics->constant;
+	*fences = 0U;
+	if ((bits & MEMORY_SEMANTICS_ORDERING) == 0U)
+		return 0;
 
-	/* Succeeded: the atomic is relaxed. */
+	/* The memory the ordering is about: what the storage-class bits name, or all of it. */
+	if ((bits & MEMORY_SEMANTICS_UNIFORM) != 0U)
+		*fences |= I915_IR_FENCE_GLOBAL;
+	if ((bits & MEMORY_SEMANTICS_WORKGROUP) != 0U)
+		*fences |= I915_IR_FENCE_SHARED;
+	if (*fences == 0U)
+		*fences = I915_IR_FENCE_GLOBAL | I915_IR_FENCE_SHARED;
+
+	/* An acquire also waits for the writes before it. */
+	if ((bits & MEMORY_SEMANTICS_ACQUIRING) != 0U)
+		*fences |= I915_IR_FENCE_ACQUIRE;
+
+	/* Succeeded: the fences are known. */
+	return 0;
+}
+
+/* Emits a FENCE of the memory `fences` names; nothing when it names none. */
+static void
+i915_spirv_fence(
+	struct i915_spirv_parser *parser,
+	uint32_t fences)
+{
+	struct i915_shader_ir_inst *inst;
+
+	/* Relaxed semantics need no fence. */
+	if ((fences & (I915_IR_FENCE_GLOBAL | I915_IR_FENCE_SHARED)) == 0U)
+		return;
+
+	/* The fence orders the memory it names. */
+	inst = i915_spirv_emit(parser, I915_IR_FENCE, 0U, 0U, 0U);
+	if (inst != NULL)
+		inst->immediate = fences;
+}
+
+/*
+ * Lowers OpControlBarrier and OpMemoryBarrier (ws101-p006).
+ *
+ * A control barrier of the workgroup is a BARRIER after the fences its
+ * semantics ask for; one of a narrower scope (a subgroup, an invocation) is
+ * its fences only, as is a memory barrier.  A workgroup barrier every
+ * thread of the group might not reach the same number of times is refused:
+ * one after a return (a thread whose channels all returned leaves the
+ * loops early) and one in a loop that not every invocation enters.
+ */
+static int
+i915_spirv_lower_barrier(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_shader_ir_inst *inst;
+	struct i915_spirv_id *scope;
+	uint32_t fences;
+	uint32_t level;
+	int error;
+
+	/* A memory barrier: its scope and its semantics, which give the fences. */
+	if (opcode == OP_MEMORY_BARRIER) {
+		if (count < 3U)
+			return EINVAL;
+		error = i915_spirv_semantics(parser, word[2], &fences, opcode, offset);
+		if (error != 0)
+			return error;
+		i915_spirv_fence(parser, fences);
+		return parser->error;
+	}
+
+	/* A control barrier: the execution scope, the memory scope and the semantics. */
+	if (count < 4U)
+		return EINVAL;
+	scope = i915_spirv_id(parser, word[1]);
+	if (scope == NULL)
+		return EINVAL;
+	if (scope->kind != ID_CONSTANT)
+		return i915_spirv_refuse(parser, opcode, offset, "barrier whose execution scope is not a constant");
+	error = i915_spirv_semantics(parser, word[3], &fences, opcode, offset);
+	if (error != 0)
+		return error;
+
+	/* A barrier of a narrower scope than the workgroup is its fences: the channels of a thread run together. */
+	if (scope->constant != SCOPE_WORKGROUP) {
+		i915_spirv_fence(parser, fences);
+		return parser->error;
+	}
+
+	/* Refuses a barrier some thread might not reach as often as the others. */
+	if (parser->returned != 0)
+		return i915_spirv_refuse(parser, opcode, offset, "workgroup barrier after a return");
+	for (level = 0U; level < parser->loop_depth; level++) {
+		if (parser->loops[level].entry_predicate != PREDICATE_ALWAYS)
+			return i915_spirv_refuse(parser, opcode, offset, "workgroup barrier in a loop not every invocation enters");
+	}
+
+	/* The barrier, after its fences. */
+	inst = i915_spirv_emit(parser, I915_IR_BARRIER, 0U, 0U, 0U);
+	if (inst != NULL)
+		inst->immediate = fences & (I915_IR_FENCE_GLOBAL | I915_IR_FENCE_SHARED);
+	parser->ir->uses_barrier = 1U;
+
+	/* A value the parser could not make fails the barrier. */
+	if (parser->error != 0)
+		return parser->error;
+
+	/* Succeeded: the barrier is lowered. */
+	return 0;
+}
+
+/*
+ * Declares a Workgroup variable of a compute shader (ws101-p006): the next
+ * bytes of the group's shared memory, as many as its natural layout takes
+ * (i915_spirv_shared_bytes()).  Refuses a type the layout does not cover
+ * and a total past I915_IR_MAX_SHARED_BYTES.
+ */
+static int
+i915_spirv_declare_shared(
+	struct i915_spirv_parser *parser,
+	struct i915_spirv_id *record,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	uint32_t bytes;
+
+	/* The bytes the variable takes. */
+	bytes = i915_spirv_shared_bytes(parser, record->pointee);
+	if (bytes == 0U)
+		return i915_spirv_refuse(parser, opcode, offset, "Workgroup variable of a type shared memory does not lay out");
+
+	/* Refuses more shared memory than the device has. */
+	if (bytes > I915_IR_MAX_SHARED_BYTES || parser->ir->shared_bytes > I915_IR_MAX_SHARED_BYTES - bytes)
+		return i915_spirv_refuse(parser, opcode, offset, "Workgroup variables larger than the shared memory");
+
+	/* The variable starts where the ones before it end. */
+	record->ptr_kind = PTR_SHARED;
+	record->byte_offset = parser->ir->shared_bytes;
+	record->component_stride = 4U;
+	parser->ir->shared_bytes += bytes;
+
+	/* Succeeded: the variable has its bytes. */
+	return 0;
+}
+
+/*
+ * Returns the bytes of a type in shared memory's natural layout: 4 for a
+ * 32-bit integer or float, 4 n for a vector of n, a column's bytes times the
+ * columns for a matrix, the element's times the length for an array, the
+ * members' in order for a structure.  0 for anything else (a Boolean, a
+ * run-time array, a width other than 32 bits, more than
+ * SHARED_MEASURE_LIMIT bytes), which is refused.
+ */
+static uint32_t
+i915_spirv_shared_bytes(
+	struct i915_spirv_parser *parser,
+	uint32_t type_id)
+{
+	struct i915_spirv_id *type;
+	uint32_t total;
+	uint32_t part;
+	uint32_t member;
+
+	/* Measures by the kind of type. */
+	type = i915_spirv_id(parser, type_id);
+	if (type == NULL)
+		return 0U;
+	switch (type->kind) {
+	case ID_TYPE_INT:
+	case ID_TYPE_FLOAT:
+		/* A 32-bit scalar. */
+		if (type->width != 32U)
+			return 0U;
+		return 4U;
+
+	case ID_TYPE_VECTOR:
+	case ID_TYPE_MATRIX:
+		/* Its components or columns one after the other. */
+		part = i915_spirv_shared_bytes(parser, type->type);
+		return part * type->count;
+
+	case ID_TYPE_ARRAY:
+		/* Its elements one after the other; a run-time array has no size, and a size past 1 GiB is not measured. */
+		part = i915_spirv_shared_bytes(parser, type->type);
+		if (type->length == 0U || part == 0U || type->length > SHARED_MEASURE_LIMIT / part)
+			return 0U;
+		return part * type->length;
+
+	case ID_TYPE_STRUCT:
+		/* Its members in order. */
+		total = 0U;
+		for (member = 0U; member < type->count; member++) {
+			part = i915_spirv_shared_bytes(parser, type->member_type[member]);
+			if (part == 0U || part > SHARED_MEASURE_LIMIT - total)
+				return 0U;
+			total += part;
+		}
+		return total;
+
+	default:
+		break;
+	}
+
+	/* Anything else is not laid out. */
+	return 0U;
+}
+
+/*
+ * Steps a pointer into shared memory one index down, in the natural layout
+ * (ws101-p006): a member after the members before it, an element by the
+ * element's bytes, a column by the column's bytes, a component by 4.  Any
+ * number of dynamic indices add up to one byte offset, as a storage
+ * buffer's do.
+ */
+static int
+i915_spirv_chain_shared(
+	struct i915_spirv_parser *parser,
+	struct i915_spirv_id *record,
+	struct i915_spirv_id *pointee,
+	struct i915_spirv_id *index_record,
+	uint32_t index_id,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	uint32_t scalars[MAX_COMPONENTS];
+	uint32_t scalar_count;
+	uint32_t selected;
+	uint32_t stride;
+	uint32_t before;
+	uint32_t after;
+	uint32_t member;
+	int constant;
+
+	/* A constant index names its part now; any other is an IR integer. */
+	constant = 0;
+	selected = 0U;
+	if (index_record->kind == ID_CONSTANT) {
+		constant = 1;
+		selected = index_record->constant;
+	}
+
+	/* A structure's member: after the members before it; only a constant selects one. */
+	if (pointee->kind == ID_TYPE_STRUCT) {
+		if (constant == 0)
+			return i915_spirv_refuse(parser, opcode, offset, "access chain with a dynamic index into a structure");
+		if (selected >= pointee->count)
+			return EINVAL;
+		for (member = 0U; member < selected; member++)
+			record->byte_offset += i915_spirv_shared_bytes(parser, pointee->member_type[member]);
+		record->pointee = pointee->member_type[selected];
+		return 0;
+	}
+
+	/* An array's element, a matrix's column or a vector's component: the part's bytes apart. */
+	if (pointee->kind != ID_TYPE_ARRAY && pointee->kind != ID_TYPE_MATRIX && pointee->kind != ID_TYPE_VECTOR)
+		return i915_spirv_refuse(parser, opcode, offset, "access chain into a scalar");
+	stride = i915_spirv_shared_bytes(parser, pointee->type);
+	if (stride == 0U)
+		return EINVAL;
+	record->pointee = pointee->type;
+
+	/* A constant index moves the byte offset. */
+	if (constant != 0) {
+		if (pointee->kind == ID_TYPE_ARRAY && selected >= pointee->length)
+			return EINVAL;
+		if (pointee->kind != ID_TYPE_ARRAY && selected >= pointee->count)
+			return EINVAL;
+		record->byte_offset += selected * stride;
+		return 0;
+	}
+
+	/* A dynamic index: an integer scalar, folded with any earlier one into bytes. */
+	scalar_count = i915_spirv_operand(parser, index_id, scalars);
+	if (scalar_count != 1U)
+		return i915_spirv_refuse(parser, opcode, offset, "dynamic index that is not an integer scalar");
+	if (record->dynamic_index != NO_VALUE) {
+		before = i915_spirv_emit_value(parser, I915_IR_IMUL, record->dynamic_index, i915_spirv_integer_constant(parser, record->dynamic_stride));
+		after = i915_spirv_emit_value(parser, I915_IR_IMUL, scalars[0], i915_spirv_integer_constant(parser, stride));
+		record->dynamic_index = i915_spirv_emit_value(parser, I915_IR_IADD, before, after);
+		record->dynamic_stride = 1U;
+	} else {
+		record->dynamic_index = scalars[0];
+		record->dynamic_stride = stride;
+	}
+	record->dynamic_length = 0U;
+
+	/* A value the parser could not make fails the step. */
+	if (parser->error != 0)
+		return parser->error;
+
+	/* Succeeded: the pointer addresses the selected part. */
+	return 0;
+}
+
+/*
+ * Lowers a load from (`scalars` NULL) or a store to (`scalars` the stored
+ * values) shared memory (ws101-p006): one LOAD_SHARED or STORE_SHARED of
+ * each scalar of a scalar or a vector, 4 bytes apart from the pointer's
+ * byte offset plus the dynamic index times its stride, under the block's
+ * predicate.  Never forwarded: another invocation may have written the word.
+ */
+static int
+i915_spirv_lower_shared(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	const struct i915_spirv_id *pointer,
+	const uint32_t *scalars,
+	uint32_t components,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	struct i915_spirv_id *type;
+	struct i915_shader_ir_inst *inst;
+	uint32_t index;
+	uint32_t place;
+	uint32_t value;
+
+	/* Only a scalar or a vector is moved at once. */
+	type = i915_spirv_id(parser, pointer->pointee);
+	if (type == NULL)
+		return EINVAL;
+	if (type->kind != ID_TYPE_INT && type->kind != ID_TYPE_FLOAT && type->kind != ID_TYPE_VECTOR)
+		return i915_spirv_refuse(parser, opcode, offset, "load or store of something that is not a scalar or a vector in shared memory");
+
+	/* A load's result names fresh scalars. */
+	record = NULL;
+	if (scalars == NULL) {
+		record = i915_spirv_result(parser, word[2], word[1], components, 0);
+		if (record == NULL)
+			return EINVAL;
+	}
+
+	/* Each scalar at its byte, under the block's predicate. */
+	for (index = 0U; index < components; index++) {
+		place = i915_spirv_storage_offset(parser, pointer, pointer->byte_offset + index * 4U);
+		if (scalars == NULL) {
+			value = i915_spirv_new_value(parser);
+			inst = i915_spirv_emit(parser, I915_IR_LOAD_SHARED, value, place, 0U);
+			record->comp[index] = value;
+			if (inst != NULL && parser->predicate != PREDICATE_ALWAYS) {
+				inst->src[1] = parser->predicate;
+				inst->component = 1U;
+			}
+			continue;
+		}
+
+		/* A store. */
+		inst = i915_spirv_emit(parser, I915_IR_STORE_SHARED, 0U, place, scalars[index]);
+		if (inst != NULL && parser->predicate != PREDICATE_ALWAYS) {
+			inst->src[2] = parser->predicate;
+			inst->component = 1U;
+		}
+	}
+
+	/* A value the parser could not make fails the lowering. */
+	if (parser->error != 0)
+		return parser->error;
+
+	/* Succeeded: the words are loaded or stored. */
 	return 0;
 }
 
@@ -745,7 +1155,7 @@ i915_spirv_lower_array_length(
 /*
  * Returns why a compute shader's instruction is refused before it is
  * lowered, or NULL when it may be: images and samplers (the dispatch binds
- * none), workgroup barriers and memory barriers (not lowered yet).
+ * none).
  */
 static const char *
 i915_spirv_compute_refusal(
@@ -754,10 +1164,6 @@ i915_spirv_compute_refusal(
 	/* An image of any kind: the dispatch gives a compute shader no binding table. */
 	if (opcode >= OP_IMAGE_SAMPLE_IMPLICIT_LOD && opcode <= OP_IMAGE_QUERY_LEVELS)
 		return "image or sampler access in a compute shader";
-
-	/* A barrier needs the gateway message and fences, which are not lowered yet. */
-	if (opcode == OP_CONTROL_BARRIER || opcode == OP_MEMORY_BARRIER)
-		return "barrier in a compute shader (not lowered yet)";
 
 	/* Succeeded: nothing refuses the instruction here. */
 	return NULL;

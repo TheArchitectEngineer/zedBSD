@@ -1202,8 +1202,15 @@ shutdown_system(
 	printf("init: executing system action %s\n", action_name);
 	(void)fflush(stdout);
 
-	system_action = action == INIT_ACTION_REBOOT ? KERN_SYSTEM_REBOOT
-						     : KERN_SYSTEM_HALT;
+	/* A power-off asks the kernel to cut the power; a halt and a reboot ask for those. */
+	if (action == INIT_ACTION_REBOOT) {
+		system_action = KERN_SYSTEM_REBOOT;
+	} else if (action == INIT_ACTION_POWEROFF) {
+		system_action = KERN_SYSTEM_POWEROFF;
+	} else {
+		system_action = KERN_SYSTEM_HALT;
+	}
+
 	/* Keeps the requested action pending while storage can still recover. */
 	for (;;) {
 		system_descriptor = open("/dev/system", O_RDONLY);
@@ -1211,6 +1218,14 @@ shutdown_system(
 			if (ioctl(system_descriptor, system_action) == 0) {
 				(void)close(system_descriptor);
 				break;
+			}
+
+			/* A kernel or a machine that cannot cut its power is halted instead. */
+			if (system_action == KERN_SYSTEM_POWEROFF && errno == EOPNOTSUPP) {
+				fprintf(stderr, "init: the machine cannot turn its power off; halting\n");
+				system_action = KERN_SYSTEM_HALT;
+				(void)close(system_descriptor);
+				continue;
 			}
 		}
 		fprintf(stderr, "init: final system action failed: %s; retrying in 5 seconds\n",

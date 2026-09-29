@@ -9,6 +9,8 @@
 #   input     click, arrow, Enter (the started program has no token), a double click on a folder (a new window), a
 #             rubber band (selected.png, folder.png, band.png)
 #   window    a Files window opens over the icons (window.png)
+#   saved     (ws094-p004) the layout file placed before the desktop starts puts notes.txt at column 2 row 3 (its saved
+#             place), the other items in the free cells (saved.png)
 # The steps read zdesktop's log (Files, started by zdesktop, writes there too) through SSH, and the pictures; nothing
 # reads the console.
 #   GUEST_RUNTIME=$PWD/build/ws094-run BIN=build/ws094-amd64 plan/ws094/tests/files-desktop-guest.sh OUTDIR STEP...
@@ -115,7 +117,9 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		keys '<ctrl-w>'
 		sleep 1
 		# A rubber band from empty desktop over the first column selects its items.
-		pointer move 1100 60 sleep 300 down sleep 100 move 1150 200 sleep 100 move 1260 330 sleep 400
+		# The picture is taken after one more small move and a rest, so that the band's last frame is shown (the
+		# first p004 picture was one frame behind the pointer).
+		pointer move 1100 60 sleep 300 down sleep 100 move 1150 200 sleep 100 move 1260 330 sleep 400 move 1261 331 sleep 1200
 		shot band.png
 		pointer up sleep 500
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP band start x=1100 y=26'
@@ -127,6 +131,21 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		expect_log /tmp/zdesktop.log 'ZWL MAP client=[0-9]+ '
 		pointer move 640 760 sleep 300
 		shot window.png
+		;;
+	saved)
+		# notes.txt kept at column 2, row 3 before Files starts; the compositor started again with Files.
+		guest "$stop_all" >/dev/null
+		guest 'mkdir -p /tmp/dhome/.config/keiland; printf "notes.txt\t2\t3\n" > /tmp/dhome/.config/keiland/desktop-layout' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
+i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=notes.txt column=2 row=3 '
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=Projects column=0 row=0 '
+		pointer move 640 600 sleep 300
+		sleep 2
+		shot saved.png
+		guest "grep -a 'ZFILES DESKTOP place' /tmp/zdesktop.log" > "$out/saved-places.txt"
+		guest 'rm -f /tmp/dhome/.config/keiland/desktop-layout' >/dev/null
 		;;
 	stop)
 		guest "$stop_all" >/dev/null

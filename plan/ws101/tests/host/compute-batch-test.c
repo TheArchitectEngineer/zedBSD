@@ -19,7 +19,8 @@
  * genxml-check.py decodes with Mesa's genxml and compares field by field
  * (plan/ws101/tests/host/run.sh).
  *
- *   compute-batch-test DIR OUT      DIR holds add.spv and ids.spv; OUT-add and OUT-ids .bin, .idd and .expect are written
+ *   compute-batch-test DIR OUT      DIR holds add.spv, ids.spv and reduce.spv; OUT-add, OUT-ids and OUT-reduce .bin,
+ *                                   .idd and .expect are written
  */
 
 #include "../../../ws031/tests/i915-vk-render-stubs.inc"
@@ -57,6 +58,7 @@ static struct i915_gfx_pipeline *test_pipeline(const char *name);
 static void test_bind(struct i915_gfx_draw_state *state, struct i915_gfx_dset *set, struct i915_gfx_buffer *buffers, struct i915_gfx_memory *memory, struct i915_gem_object *object);
 static void test_add(void);
 static void test_ids(void);
+static void test_reduce(void);
 
 /* Stand-ins for the parts of draw.c compute.c calls: the host has no GPU session. */
 int
@@ -118,6 +120,7 @@ main(
 
 	test_add();
 	test_ids();
+	test_reduce();
 
 	printf("ws101 compute batch host test PASS\n");
 	return 0;
@@ -483,6 +486,68 @@ test_ids(void)
 		 binary->cross_thread_regs);
 	test_write("ids", &batch, slot, expect);
 	printf("  ids batch: %u dwords written for genxml-check.py\n", batch.count);
+
+	stub_session_close();
+}
+
+/*
+ * reduce.comp (ws101-p006): 512 bytes of shared memory and a barrier over a
+ * group of 128 in 16 threads; the interface descriptor asks for 1 KiB of
+ * shared local memory (the encoding 1) and the barrier.
+ */
+static void
+test_reduce(void)
+{
+	static uint8_t slot[I915_GFX_SLOT_BYTES];
+	static uint32_t cmds[1024];
+	struct i915_gfx_draw_state state;
+	struct i915_gfx_dset set;
+	struct i915_gfx_buffer buffers[4];
+	struct i915_gfx_memory memory;
+	struct i915_gem_object object;
+	struct i915_gfx_pipeline *pipeline;
+	const struct i915_shader_binary *binary;
+	struct i915_gfx_op_space space;
+	struct i915_gfx_kernels kernels;
+	struct i915_gfx_batch batch;
+	const uint32_t groups[3] = {4U, 1U, 1U};
+	const uint32_t *dynamic;
+	char expect[512];
+	int error;
+
+	stub_session_open(NULL);
+	pipeline = test_pipeline("reduce.spv");
+	assert(pipeline != NULL && pipeline->threads == 16U);
+	binary = pipeline->cs_binary;
+	assert(binary->shared_bytes == 512U && binary->uses_barrier == 1U);
+
+	/* The slot: the descriptor's word 6 has the threads, 1 KiB of shared local memory and the barrier. */
+	memset(&state, 0, sizeof(state));
+	state.compute_pipeline = pipeline;
+	test_bind(&state, &set, buffers, &memory, &object);
+	error = drv_i915_gfx_dispatch_write(slot, TEST_SLOT_VA, &state, groups);
+	assert(error == 0);
+	dynamic = (const uint32_t *)(const void *)(slot + I915_GFX_DYNAMIC_HEAP);
+	assert(dynamic[6] == (16U | (1U << 16) | (1U << 21)));
+	printf("  reduce slot: 16 threads, 1 KiB of shared local memory, the barrier\n");
+
+	/* The commands. */
+	memset(&space, 0, sizeof(space));
+	space.slot_va = TEST_SLOT_VA;
+	space.window_va = TEST_WINDOW_VA;
+	memset(&kernels, 0, sizeof(kernels));
+	batch.cmds = cmds;
+	batch.count = 0U;
+	batch.capacity = 1024U;
+	batch.overflow = 0;
+	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, groups, 6U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
+	assert(batch.overflow == 0);
+	snprintf(expect, sizeof(expect),
+		 "exact GPGPU_WALKER ThreadWidthCounterMaximum=15 ThreadGroupIDXDimension=4 ThreadGroupIDYDimension=1 ThreadGroupIDZDimension=1 RightExecutionMask=0xff BottomExecutionMask=0xffffffff\n"
+		 "idd ThreadPreemptionDisable=1 ConstantURBEntryReadLength=4 NumberofThreadsinGPGPUThreadGroup=16 SharedLocalMemorySize=1 BarrierEnable=1 CrossThreadConstantDataReadLength=%u\n",
+		 binary->cross_thread_regs);
+	test_write("reduce", &batch, slot, expect);
+	printf("  reduce batch: %u dwords written for genxml-check.py\n", batch.count);
 
 	stub_session_close();
 }

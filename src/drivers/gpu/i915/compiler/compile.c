@@ -552,6 +552,11 @@ static void i915_compile_storage_size(struct i915_compile_state *state, const st
 static int i915_compile_storage_block(struct i915_compile_state *state, uint32_t uniform, uint32_t *block);
 static void i915_compile_terminate_compute(struct i915_compile_state *state);
 static void i915_compile_describe_compute(const struct i915_compile_state *state, struct i915_shader_binary *binary);
+static void i915_compile_shared(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static void i915_compile_atomic_shared(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static void i915_compile_fence(struct i915_compile_state *state, uint32_t fences);
+static void i915_compile_barrier(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static int i915_compile_group_threads(const struct i915_compile_state *state);
 
 /*
  * Compiles one shader IR into a Gen12 EU binary.
@@ -903,7 +908,8 @@ i915_compile_operands(
 		return 1U;
 
 	case I915_IR_LOAD_STORAGE:
-		/* The offset, and the predicate of a predicated load (ws101-p002). */
+	case I915_IR_LOAD_SHARED:
+		/* The offset, and the predicate of a predicated load (ws101-p002, ws101-p006). */
 		return 1U + inst->component;
 
 	case I915_IR_ATOMIC:
@@ -956,6 +962,7 @@ i915_compile_operands(
 		return inst->src[1];
 
 	case I915_IR_STORE_STORAGE:
+	case I915_IR_STORE_SHARED:
 		/* The offset and the word, and the predicate of a predicated store. */
 		return 2U + inst->component;
 
@@ -1007,6 +1014,9 @@ i915_compile_results(
 
 	case I915_IR_STORE_OUTPUT:
 	case I915_IR_STORE_STORAGE:
+	case I915_IR_STORE_SHARED:
+	case I915_IR_BARRIER:
+	case I915_IR_FENCE:
 	case I915_IR_KILL:
 	case I915_IR_NOP:
 	case I915_IR_LOOP_BEGIN:
@@ -1758,6 +1768,19 @@ i915_compile_instruction(
 
 	case I915_IR_STORAGE_SIZE:
 		i915_compile_storage_size(state, inst, payload_inputs);
+		break;
+
+	case I915_IR_LOAD_SHARED:
+	case I915_IR_STORE_SHARED:
+		i915_compile_shared(state, inst);
+		break;
+
+	case I915_IR_FENCE:
+		i915_compile_fence(state, inst->immediate);
+		break;
+
+	case I915_IR_BARRIER:
+		i915_compile_barrier(state, inst);
 		break;
 
 	case I915_IR_STORE_OUTPUT:
@@ -3639,9 +3662,11 @@ i915_compile_skips(
  * selection only where it takes the garbage, an AND only where the other
  * side is true, an OR only where it is false).  A value whose garbage is
  * confined to channels inside P is clean.  The region may not be skipped
- * when garbage outside P could reach an output, a storage store, a discard,
- * a loop move, a loop end or another region's predicate, or when its body
- * has an effect that is not under P.  Returns 1 when it may be skipped.
+ * when garbage outside P could reach an output, a storage or shared-memory
+ * store, an atomic, a discard, a loop move, a loop end or another region's
+ * predicate, or when its body has an effect that is not under P or a
+ * workgroup barrier or a fence (every thread of the group must reach a
+ * barrier, ws101-p006).  Returns 1 when it may be skipped.
  */
 static int
 i915_compile_skip_region(
@@ -3679,11 +3704,17 @@ i915_compile_skip_region(
 	for (index = begin + 1U; index < end; index++) {
 		inst = &ir->instructions[index];
 
-		/* A loop, a loop move or an output write inside is not skipped over. */
+		/*
+		 * A loop, a loop move or an output write inside is not skipped
+		 * over; nor a workgroup barrier, which every thread of the group
+		 * must reach, nor a fence (ws101-p006).
+		 */
 		if (inst->op == I915_IR_LOOP_BEGIN ||
 		    inst->op == I915_IR_LOOP_END ||
 		    inst->op == I915_IR_MOVE ||
-		    inst->op == I915_IR_STORE_OUTPUT)
+		    inst->op == I915_IR_STORE_OUTPUT ||
+		    inst->op == I915_IR_BARRIER ||
+		    inst->op == I915_IR_FENCE)
 			return 0;
 
 		/* A discard must be under P. */
@@ -3696,8 +3727,8 @@ i915_compile_skip_region(
 				return 0;
 		}
 
-		/* A storage store must be predicated on something under P. */
-		if (inst->op == I915_IR_STORE_STORAGE) {
+		/* A storage or shared-memory store must be predicated on something under P. */
+		if (inst->op == I915_IR_STORE_STORAGE || inst->op == I915_IR_STORE_SHARED) {
 			if (inst->component == 0U)
 				return 0;
 			known = i915_compile_bool_table(state, inst->src[2], table, 0U);
@@ -3747,6 +3778,7 @@ i915_compile_skip_region(
 		if (!clean &&
 		    (inst->op == I915_IR_STORE_OUTPUT ||
 		     inst->op == I915_IR_STORE_STORAGE ||
+		     inst->op == I915_IR_STORE_SHARED ||
 		     inst->op == I915_IR_ATOMIC ||
 		     inst->op == I915_IR_KILL ||
 		     inst->op == I915_IR_MOVE ||

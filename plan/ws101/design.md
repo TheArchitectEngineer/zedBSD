@@ -70,7 +70,7 @@ hardware の事実（field の位置と値、message の型、register の番号
 - **barrier の一様性**: if 変換では選択の中の barrier も全 thread が実行するので、それ自体は hang しない。危ないのは、ある thread の全
   channel が return した後、その thread だけ loop を早く抜け、loop の中の barrier の数が thread ごとに違う場合（GPU が固まる）。
   parser は、leaky な return（`constructs[].leaky`）の後の `BARRIER` と、入口の predicate が ALWAYS でない loop の中の `BARRIER` を断る
-  （hang を compile の error に変える）。GLSL ES 3.10 の規則（制御の中と return の後の `barrier()` の禁止）は GLSL の front-end でも検査する（§3.2）。
+  （hang を compile の error に変える）。**p006 の実装**: return の後は leaky かどうかに依らず全ての `BARRIER` を断る（phase006 の「決めたこと」）。GLSL ES 3.10 の規則（制御の中と return の後の `barrier()` の禁止）は GLSL の front-end でも検査する（§3.2）。
 
 ### 1.3 IR の追加（`compiler/ir.h`）
 

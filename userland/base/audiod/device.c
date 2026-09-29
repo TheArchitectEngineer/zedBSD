@@ -52,7 +52,9 @@ audiod_device_open(
 	struct audio_space space;
 	uint32_t bits;
 	void *map;
+	int error;
 
+	/* The defaults without a device: 48 kHz stereo S16, 8 fragments of 4096 bytes. */
 	memset(device, 0, sizeof(*device));
 	device->dsp = -1;
 	device->mixer = -1;
@@ -68,8 +70,10 @@ audiod_device_open(
 	 */
 	device->dsp = open("/dev/dsp0", O_RDWR | O_NONBLOCK);
 	if (device->dsp >= 0) {
-		if (ioctl(device->dsp, KERN_AUDIO_GET_FORMAT, &format) == 0 &&
-		    format.channels != 2U) {
+		/* Its format; one that is not stereo is asked for S16 stereo at 48 kHz. */
+		memset(&format, 0, sizeof(format));
+		error = ioctl(device->dsp, KERN_AUDIO_GET_FORMAT, &format);
+		if (error == 0 && format.channels != 2U) {
 			format.format = KERN_AUDIO_FORMAT_S16_LE;
 			format.channels = 2;
 			format.rate = 48000;
@@ -77,8 +81,14 @@ audiod_device_open(
 			(void)ioctl(device->dsp, KERN_AUDIO_SET_FORMAT, &format);
 			(void)ioctl(device->dsp, KERN_AUDIO_GET_FORMAT, &format);
 		}
-		if (format.channels != 2U ||
-		    ioctl(device->dsp, KERN_AUDIO_GET_BUFFER, &info) != 0) {
+
+		/* Its buffer, asked for only when it is stereo. */
+		error = -1;
+		if (format.channels == 2U)
+			error = ioctl(device->dsp, KERN_AUDIO_GET_BUFFER, &info);
+
+		/* A device that is not stereo, or has no buffer, is not used. */
+		if (error != 0) {
 			close(device->dsp);
 			device->dsp = -1;
 		} else {
@@ -86,18 +96,25 @@ audiod_device_open(
 			device->rate = format.rate;
 			device->fragment_bytes = info.fragment_bytes;
 			device->fragment_count = info.fragment_count;
-			device->capture = ioctl(device->dsp, KERN_AUDIO_GET_ISPACE, &space) == 0;
+			error = ioctl(device->dsp, KERN_AUDIO_GET_ISPACE, &space);
+			device->capture = 0;
+			if (error == 0)
+				device->capture = 1;
 		}
 	}
+
+	/* The frame and period sizes, and the buffers for them. */
 	device->frame_bytes = audiod_frame_bytes(device->format, device->channels);
 	device->period_frames = device->fragment_bytes / device->frame_bytes;
-	if (allocate_buffers(device) != 0)
+	error = allocate_buffers(device);
+	if (error != 0)
 		return -1;
 
 	/* Maps the playback ring when the device can, and starts it. */
-	if (device->dsp >= 0 &&
-	    ioctl(device->dsp, KERN_AUDIO_GET_CAPS, &caps) == 0 &&
-	    (caps.caps & KERN_AUDIO_CAP_MMAP) != 0) {
+	error = -1;
+	if (device->dsp >= 0)
+		error = ioctl(device->dsp, KERN_AUDIO_GET_CAPS, &caps);
+	if (error == 0 && (caps.caps & KERN_AUDIO_CAP_MMAP) != 0) {
 		map = mmap(NULL, caps.mmap_bytes, PROT_READ | PROT_WRITE,
 		    MAP_SHARED, device->dsp, 0);
 		if (map != MAP_FAILED) {
@@ -105,16 +122,30 @@ audiod_device_open(
 			device->map_bytes = caps.mmap_bytes;
 			device->lead_bytes = caps.mmap_lead_bytes;
 			fill_mapped(device);
+
+			/* Started; a device that cannot start is written to instead. */
 			bits = KERN_AUDIO_TRIGGER_OUTPUT;
-			if (ioctl(device->dsp, KERN_AUDIO_SET_TRIGGER, &bits) != 0) {
+			error = ioctl(device->dsp, KERN_AUDIO_SET_TRIGGER, &bits);
+			if (error != 0) {
 				munmap(device->map, device->map_bytes);
 				device->map = NULL;
 			}
 		}
 	}
 
+	/* The volume node, and the clock of a device-less run. */
 	device->mixer = open("/dev/mixer0", O_RDWR);
 	device->timer_next_ns = audiod_now_ns();
+
+	/* The volume audiod applies itself until the device takes one (ws100-p002): full and unmuted. */
+	device->soft_left = 100U;
+	device->soft_right = 100U;
+	device->soft_muted = 0U;
+
+	/* The feedback sound for the device's rate; without it AUDIOD_FEEDBACK plays nothing. */
+	(void)audiod_feedback_make(device);
+
+	/* Succeeded: the device (or the clock without one) is ready. */
 	return 0;
 }
 
@@ -204,7 +235,11 @@ audiod_device_start_capture(
 	read_capture(device);
 }
 
-/* Sets the device volume, in percent. */
+/*
+ * Sets the device volume, in percent: the device's own volume when it has
+ * one, otherwise audiod applies it to what it mixes (ws100-p002; before, a
+ * device without a volume ignored the request).
+ */
 void
 audiod_device_set_volume(
 	struct audiod_device *device,
@@ -213,14 +248,31 @@ audiod_device_set_volume(
 	uint32_t muted)
 {
 	struct audio_volume volume;
+	int error;
 
-	if (device->mixer < 0)
+	/* Kept for audiod's own volume and for the reports. */
+	device->soft_left = left;
+	device->soft_right = right;
+	device->soft_muted = muted;
+
+	/* The device's own volume, when it takes one. */
+	error = -1;
+	if (device->mixer >= 0) {
+		volume.left = left;
+		volume.right = right;
+		volume.muted = muted;
+		volume.reserved = 0;
+		error = ioctl(device->mixer, KERN_AUDIO_SET_VOLUME, &volume);
+	}
+
+	/* Taken: audiod leaves what it mixes as it is. */
+	if (error == 0) {
+		device->soft = 0;
 		return;
-	volume.left = left;
-	volume.right = right;
-	volume.muted = muted;
-	volume.reserved = 0;
-	(void)ioctl(device->mixer, KERN_AUDIO_SET_VOLUME, &volume);
+	}
+
+	/* Otherwise audiod applies it. */
+	device->soft = 1;
 }
 
 /* Reads the device volume, in percent; full and unmuted without a mixer. */
@@ -232,16 +284,47 @@ audiod_device_get_volume(
 	uint32_t *muted)
 {
 	struct audio_volume volume;
+	int error;
 
+	/* Full and unmuted, unless something says otherwise. */
 	*left = 100;
 	*right = 100;
 	*muted = 0;
-	if (device->mixer >= 0 &&
-	    ioctl(device->mixer, KERN_AUDIO_GET_VOLUME, &volume) == 0) {
+
+	/* The volume audiod applies itself is the one in force (ws100-p002). */
+	if (device->soft) {
+		*left = device->soft_left;
+		*right = device->soft_right;
+		*muted = device->soft_muted;
+		return;
+	}
+
+	/* Otherwise the device's own, when it reports one. */
+	if (device->mixer < 0)
+		return;
+	error = ioctl(device->mixer, KERN_AUDIO_GET_VOLUME, &volume);
+	if (error == 0) {
 		*left = volume.left;
 		*right = volume.right;
 		*muted = volume.muted;
 	}
+}
+
+/*
+ * Plays the feedback sound from its start (AUDIOD_FEEDBACK, ws100-p002):
+ * a sound still playing starts again, so quick changes never overlap.
+ * Without a device, or without the sound, nothing plays.
+ */
+void
+audiod_device_feedback(
+	struct audiod_device *device)
+{
+	/* Nothing to play, or nowhere to play it. */
+	if (device->feedback == NULL || device->dsp < 0)
+		return;
+
+	/* From its first frame, mixed from the next period on (mix.c). */
+	device->feedback_next = 0;
 }
 
 /*

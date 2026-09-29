@@ -90,6 +90,26 @@ struct audiod_device {
 	uint32_t capture_fill;		/* bytes of it gathered so far */
 	int64_t *mix;			/* one period, two channels */
 	int32_t *capture_frames;	/* one captured period as stereo int32 */
+
+	/*
+	 * The device volume audiod applies itself when the device has no
+	 * volume of its own (no /dev/mixer0, or one that refuses a set): 0 to
+	 * 100 per channel and muted, with soft set while audiod applies it
+	 * (ws100-p002).
+	 */
+	int soft;
+	uint32_t soft_left;
+	uint32_t soft_right;
+	uint32_t soft_muted;
+
+	/*
+	 * The feedback sound (AUDIOD_FEEDBACK): its frames as stereo samples of
+	 * the mix's scale, made once for the device's rate, how many there are,
+	 * and the next one to play (feedback_length when it is not playing).
+	 */
+	int32_t *feedback;
+	uint32_t feedback_length;
+	uint32_t feedback_next;
 };
 
 extern struct audiod_client *audiod_clients;
@@ -106,6 +126,7 @@ uint32_t audiod_frame_bytes(uint32_t format, uint32_t channels);
 void audiod_mix_period(struct audiod_device *device, uint8_t *out);
 void audiod_capture_period(struct audiod_device *device, const uint8_t *in);
 void audiod_stream_rates(struct audiod_stream *stream, const struct audiod_device *device);
+int audiod_feedback_make(struct audiod_device *device);
 
 /* device.c */
 int audiod_device_open(struct audiod_device *device);
@@ -115,5 +136,6 @@ void audiod_device_service(struct audiod_device *device, short revents);
 void audiod_device_start_capture(struct audiod_device *device);
 void audiod_device_set_volume(struct audiod_device *device, uint32_t left, uint32_t right, uint32_t muted);
 void audiod_device_get_volume(struct audiod_device *device, uint32_t *left, uint32_t *right, uint32_t *muted);
+void audiod_device_feedback(struct audiod_device *device);
 
 #endif

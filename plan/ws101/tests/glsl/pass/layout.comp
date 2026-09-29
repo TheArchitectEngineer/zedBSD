@@ -1,0 +1,25 @@
+#version 310 es
+// ws101-p008: std430 offsets: a vec3 then a float in its fourth word, a vec2 array of stride 8, a mat2 of
+// column stride 8, a struct array; bools stored as uints; a local struct copied into the buffer.
+layout(local_size_x = 1) in;
+struct P { vec3 p; float w; };
+layout(std430, binding = 0) buffer L {
+	vec3 v;
+	float f;
+	vec2 pair[3];
+	mat2 m;
+	P points[2];
+	bool flag;
+	ivec4 last;
+} l;
+void main()
+{
+	P q = P(vec3(1.0, 2.0, 3.0), 4.0);
+	l.v = vec3(0.5);
+	l.f = 2.5;
+	l.pair[1] = vec2(6.0, 7.0);
+	l.m = mat2(1.0, 2.0, 3.0, 4.0);
+	l.points[1] = q;
+	l.flag = true;
+	l.last = ivec4(l.pair[1].yx, int(l.m[1].y), l.flag ? 1 : 0);
+}

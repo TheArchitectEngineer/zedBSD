@@ -135,6 +135,21 @@
 #define SPV_OP_RETURN			253U
 #define SPV_OP_UNREACHABLE		255U
 
+/* A compute shader's (ws101-p008): a run-time array's length, the barriers and the atomics. */
+#define SPV_OP_ARRAY_LENGTH		68U
+#define SPV_OP_CONTROL_BARRIER		224U
+#define SPV_OP_MEMORY_BARRIER		225U
+#define SPV_OP_ATOMIC_EXCHANGE		229U
+#define SPV_OP_ATOMIC_COMPARE_EXCHANGE	230U
+#define SPV_OP_ATOMIC_I_ADD		234U
+#define SPV_OP_ATOMIC_S_MIN		236U
+#define SPV_OP_ATOMIC_U_MIN		237U
+#define SPV_OP_ATOMIC_S_MAX		238U
+#define SPV_OP_ATOMIC_U_MAX		239U
+#define SPV_OP_ATOMIC_AND		240U
+#define SPV_OP_ATOMIC_OR		241U
+#define SPV_OP_ATOMIC_XOR		242U
+
 /* Decorations. */
 #define SPV_DECORATION_BLOCK		2U
 #define SPV_DECORATION_BUFFER_BLOCK	3U
@@ -151,6 +166,11 @@
 #define SPV_DECORATION_BINDING		33U
 #define SPV_DECORATION_DESCRIPTOR_SET	34U
 #define SPV_DECORATION_OFFSET		35U
+#define SPV_DECORATION_RESTRICT		19U
+#define SPV_DECORATION_VOLATILE		21U
+#define SPV_DECORATION_COHERENT		23U
+#define SPV_DECORATION_NON_WRITABLE	24U
+#define SPV_DECORATION_NON_READABLE	25U
 
 /* Built-ins. */
 #define SPV_BUILT_IN_POSITION		0U
@@ -163,6 +183,11 @@
 #define SPV_BUILT_IN_FRAG_DEPTH		22U
 #define SPV_BUILT_IN_VERTEX_INDEX	42U
 #define SPV_BUILT_IN_INSTANCE_INDEX	43U
+#define SPV_BUILT_IN_NUM_WORKGROUPS	24U
+#define SPV_BUILT_IN_WORKGROUP_ID	26U
+#define SPV_BUILT_IN_LOCAL_INVOCATION_ID 27U
+#define SPV_BUILT_IN_GLOBAL_INVOCATION_ID 28U
+#define SPV_BUILT_IN_LOCAL_INVOCATION_INDEX 29U
 
 /* Storage classes. */
 #define SPV_STORAGE_UNIFORM_CONSTANT	0U
@@ -170,6 +195,14 @@
 #define SPV_STORAGE_UNIFORM		2U
 #define SPV_STORAGE_OUTPUT		3U
 #define SPV_STORAGE_FUNCTION		7U
+#define SPV_STORAGE_WORKGROUP		4U
+
+/* Scopes and memory semantics of the barriers and atomics (ws101-p008). */
+#define SPV_SCOPE_DEVICE		1U
+#define SPV_SCOPE_WORKGROUP		2U
+#define SPV_SEMANTICS_ACQUIRE_RELEASE	0x8U
+#define SPV_SEMANTICS_UNIFORM_MEMORY	0x40U
+#define SPV_SEMANTICS_WORKGROUP_MEMORY	0x100U
 
 /* Capabilities, execution models and modes, image operands. */
 #define SPV_CAPABILITY_SHADER		1U
@@ -179,6 +212,8 @@
 #define SPV_MODEL_VERTEX		0U
 #define SPV_MODEL_GEOMETRY		3U
 #define SPV_MODEL_FRAGMENT		4U
+#define SPV_MODEL_GL_COMPUTE		5U
+#define SPV_MODE_LOCAL_SIZE		17U
 #define SPV_MODE_INVOCATIONS		0U
 #define SPV_MODE_ORIGIN_UPPER_LEFT	7U
 #define SPV_MODE_DEPTH_REPLACING	12U
@@ -268,7 +303,12 @@ struct emit_value {
  * access chain into it, and a swizzle of the vector at the end.
  */
 struct emit_path {
-	/* The variable, its storage class, and whether it is the default uniform block. */
+	/*
+	 * The variable, its storage class, and the layout its memory has:
+	 * EMIT_LAYOUT_STD140 (a uniform block, the default one or a named
+	 * one), EMIT_LAYOUT_STD430 (a shader storage block, ws101-p008), 0
+	 * (a variable of the local types).
+	 */
 	uint32_t base;
 	unsigned storage;
 	int block;
@@ -283,6 +323,10 @@ struct emit_path {
 	unsigned swizzle_count;
 	const struct glsl_type *vector;
 };
+
+/* The layouts of emit_path.block. */
+#define EMIT_LAYOUT_STD140	1
+#define EMIT_LAYOUT_STD430	2
 
 /*
  * A construct break and continue can leave: a loop, a switch (a loop
@@ -344,10 +388,11 @@ struct emit_state {
 	struct glsl_link_uniform *uniforms;
 	unsigned uniform_count;
 
-	/* The GLSL types given ids so far: plain ones and the block's laid-out ones. */
+	/* The GLSL types given ids so far: plain ones, the std140 laid-out ones and the std430 ones (ws101-p008). */
 	const struct glsl_type **type_keys;
 	uint32_t *type_ids;
 	uint32_t *layout_ids;
+	uint32_t *layout430_ids;
 	unsigned type_count;
 	unsigned type_capacity;
 
