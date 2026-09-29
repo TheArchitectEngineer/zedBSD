@@ -366,6 +366,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | 替わり目の画の保持（2026-09-29） | ws035-p126 の問い「kernel の message を画面に出す構成でも前の画を保つか」にユーザーが「quiet のときだけ」→ 今の形（kmsg=quiet のときだけ保つ）で確定 | WS035 p126、F-048 |
 | Kei-nightly.zip の base（2026-09-29） | ユーザー:「今の下書きを今すぐ upload」→ draft の base（`kei-nightly-base-winq-a10-1.zip`、SHA-256 81120981…）を rev-0 に upload（main が読み戻しで一致を確認）、`KEI_NIGHTLY_ALLOW_DRAFT ?= 1`。fork の commit が確定したら作り直して差し替える | WS088 |
 | sh のプロンプト（2026-09-29） | ユーザー:「/bin/shで、ホームディレクトリにいるときにプロンプトに /home/kei と表示されるので、これを ~ にできるようにしたいです。」→ 既定のプロンプトで `$HOME` を `~` に（bash の `\w` と同じ） | WS087 |
+| 窓の四隅のリサイズ（2026-09-29） | ユーザー:「ウィンドウの四隅がリサイズ領域になっていないようです。ウィンドウの四隅でリサイズ可能にしてほしいです。」 | WS035 |
 
 ### 主な依存関係
 
