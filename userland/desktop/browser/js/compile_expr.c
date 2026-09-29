@@ -526,6 +526,8 @@ expr_template_strings(
 			constant = js_constant_string(fc, part->text, part->text_length);
 			js_emit2(fc, VM_OP_LOAD_CONST, value, constant);
 		}
+
+		/* At the end of the strings. */
 		js_emit2(fc, VM_OP_ARRAY_PUSH, target, value);
 
 		/* The raw text. */

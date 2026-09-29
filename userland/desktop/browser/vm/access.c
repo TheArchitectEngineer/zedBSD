@@ -502,6 +502,8 @@ vm_get_global(
 		status = vm_throw_uninitialized(realm, key);
 		return status;
 	}
+
+	/* An initialized one is read from the record. */
 	if (found) {
 		*result = *property.value;
 		return 0;
@@ -546,10 +548,14 @@ vm_put_global(
 		status = vm_throw_uninitialized(realm, key);
 		return status;
 	}
+
+	/* A const keeps its value. */
 	if (found && (property.attributes & VM_PROPERTY_WRITABLE) == 0U) {
 		status = vm_throw_type_error(realm, "Assignment to constant variable.");
 		return status;
 	}
+
+	/* A let takes the new one. */
 	if (found) {
 		*property.value = value;
 		return 0;

@@ -724,6 +724,8 @@ scope_global_lexical(
 		if (same)
 			scope_redeclared(compiler, target);
 	}
+
+	/* The script's vars and functions. */
 	for (global = info->global_vars; global != NULL; global = global->next) {
 		same = js_text_equal(global->name, global->length, target->text, target->text_length);
 		if (same)
@@ -1009,6 +1011,8 @@ scope_redeclared(
 		if (target->text[index] < 0x80U)
 			name[index] = (char)target->text[index];
 	}
+
+	/* Ends the copy as a C string. */
 	name[index] = '\0';
 
 	/* The early error, as Chromium words it. */

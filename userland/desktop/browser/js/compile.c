@@ -710,6 +710,8 @@ compile_variables(
 			} else {
 				js_load_value(fc, value, VM_VALUE_UNDEFINED);
 			}
+
+			/* The binding takes it; the temporary is free again. */
 			js_init_binding(fc, target->text, target->text_length, value);
 			fc->temp_top = mark;
 			continue;
@@ -957,6 +959,8 @@ compile_for_in(
 	} else {
 		js_store_target(fc, left, key);
 	}
+
+	/* The body, then back for the next key; break lands after, outside the left side's scope. */
 	compile_statement(fc, node->fourth);
 	js_emit_jump(fc, VM_OP_JUMP, 0, target->continue_label);
 	compile_target_pop(fc, target);
