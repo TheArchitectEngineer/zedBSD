@@ -455,6 +455,9 @@ eu_model_init(struct eu_model *m)
 		for (c = 0U; c < 8U; c++)
 			mset(m, r, c, -1000.0f - (float)(r * 8U + c));
 	m->dispatched = 0xFFU;
+	/* the flags are undefined when a thread starts: all set, so a kernel that trusts a bit it did not write is caught (ws075-p023) */
+	for (r = 0U; r < 4U; r++)
+		m->flag[r] = 0xFFFFU;
 	m->grf[0][3] = EU_MODEL_R0_3;
 	m->grf[0][5] = EU_MODEL_R0_5 | 0x2A5U;
 	for (r = 0U; r < EU_MODEL_SCRATCH_BYTES / 4U; r++)
@@ -746,7 +749,6 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 			continue;
 		}
 
-
 		/* the flag's channel bits into a general register's dword (the any-channel IF, ws075-p023) */
 		if (opcode == EU_OP_MOV && exec == EU_EXEC_SIZE_1 && dst_file == 1U &&
 		    inst_bit(inst, EU_SRC0_REG_FILE_BIT) == 0U && inst_bit(inst, EU_SRC0_IS_IMM_BIT) == 0U) {
@@ -757,6 +759,8 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 			assert(src_nr == EU_ARF_FLAG || src_nr == EU_ARF_FLAG + 1U);
 			assert(dst_type == EU_TYPE_UD && (subnr % 4U) == 0U);
 			m->grf[dst][subnr / 4U] = m->flag[(src_nr - EU_ARF_FLAG) * 2U + src_sub / 2U];
+			/* only the active channels' bits: the others are stale, and one would take the IF for nothing */
+			assert((m->grf[dst][subnr / 4U] & ~active) == 0U);
 			continue;
 		}
 

@@ -3922,8 +3922,9 @@ i915_compile_if_any(
 	uint32_t temporary;
 	uint32_t position;
 
-	/* f0.0 where the predicate is true (not zero). */
+	/* f0.0 where the predicate is true (not zero); cleared first, since the comparison leaves the bits of inactive channels as they were. */
 	predicate_grf = i915_compile_grf(state, predicate);
+	drv_i915_eu_flag_clear(&state->code, I915_EU_FLAG_F0_0);
 	null = drv_i915_eu_null();
 	null.type = COMPILE_TYPE_D;
 	drv_i915_eu_cmp(&state->code,

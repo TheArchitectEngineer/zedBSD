@@ -877,6 +877,52 @@ drv_i915_eu_flag_load(
 }
 
 /*
+ * Clears a flag subregister: a SIMD1 move of 0 outside the channel mask.
+ *
+ * A comparison writes only the bits of the channels it runs on, so the bits
+ * of the others stay what they were; Mesa clears the flag this way before
+ * the comparison of an "any" vote (brw_lower_subgroup_ops.cpp, the "any" vote).
+ */
+void
+drv_i915_eu_flag_clear(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_flag flag)
+{
+	struct i915_eu_reg dst;
+	struct i915_eu_reg src;
+	uint32_t *inst;
+
+	/* A flag outside the two flag registers is refused. */
+	if (flag >= I915_EU_FLAG_COUNT) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* The flag register and the byte of its subregister, as a 16-bit destination. */
+	kern_memset(&dst, 0, sizeof(dst));
+	dst.file = EU_FILE_ARF;
+	dst.nr = EU_ARF_FLAG + (uint32_t)flag / 2U;
+	dst.subnr = ((uint32_t)flag % 2U) * 2U;
+	dst.type = EU_TYPE_UW;
+
+	/* A 16-bit zero. */
+	src = drv_i915_eu_imm_ud(0U);
+	src.type = EU_TYPE_UW;
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes an in-order move, then narrows it to one channel outside the mask. */
+	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
+	i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
+	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
+	i915_eu_dst(inst, dst);
+	i915_eu_src0(inst, src);
+}
+
+/*
  * Refuses a multiply-add: the three-source operand layout is not encoded.
  */
 void

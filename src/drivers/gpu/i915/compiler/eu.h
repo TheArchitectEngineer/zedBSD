@@ -180,6 +180,7 @@ void drv_i915_eu_cmp(struct i915_eu_buf *buffer, enum i915_eu_cond cond, enum i9
 void drv_i915_eu_minmax(struct i915_eu_buf *buffer, enum i915_eu_cond cond, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
 void drv_i915_eu_select(struct i915_eu_buf *buffer, enum i915_eu_flag flag, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
 void drv_i915_eu_flag_load(struct i915_eu_buf *buffer, enum i915_eu_flag flag, uint32_t nr, uint32_t subnr);
+void drv_i915_eu_flag_clear(struct i915_eu_buf *buffer, enum i915_eu_flag flag);
 void drv_i915_eu_flag_store(struct i915_eu_buf *buffer, enum i915_eu_flag flag, uint32_t nr, uint32_t subnr);
 void drv_i915_eu_mad(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, struct i915_eu_reg src2);
 void drv_i915_eu_math(struct i915_eu_buf *buffer, enum i915_eu_math func, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
