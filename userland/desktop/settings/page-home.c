@@ -231,7 +231,9 @@ home_state(
 	case SE_PAGE_NETWORK:
 		/* Online with the address in use, or offline. */
 		address = home_address(&app->network, state->interface);
-		if (state->reachable != 0 && state->connected != 0 && address != NULL) {
+		if (state->reachable != 0 &&
+		    state->connected != 0 &&
+		    address != NULL) {
 			(void)snprintf(text, size, "Online \xc2\xb7 %s", address);
 			*dot = 1;
 		} else if (state->reachable != 0 && state->connected != 0) {

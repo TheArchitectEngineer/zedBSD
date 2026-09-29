@@ -13,7 +13,11 @@ LIBWAYLAND_SOURCES := userland/desktop/libwayland/client.c \
 	userland/desktop/libwayland/data-device-protocol.c \
 	userland/desktop/libwayland/primary-selection-protocol.c \
 	userland/desktop/libwayland/tablet-protocol.c \
-	userland/desktop/libwayland/touch-protocol.c
+	userland/desktop/libwayland/touch-protocol.c \
+	userland/desktop/libwayland/text-input-protocol.c \
+	userland/desktop/libwayland/input-method-protocol.c \
+	userland/desktop/libwayland/virtual-keyboard-protocol.c \
+	userland/desktop/libwayland/ime-status-protocol.c
 
 # The public SONAME follows the standard client library spelling.
 LIBWAYLAND_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libwayland-client.so=$(BUILD)/dynamic/libwayland-client.so)

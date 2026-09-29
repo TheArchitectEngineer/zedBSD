@@ -269,7 +269,9 @@ keiland_preferences_get_int(
 	/* A whole number, and nothing after it. */
 	errno = 0;
 	number = strtol(value, &end, 10);
-	if (end == value || *end != '\0' || errno != 0)
+	if (end == value ||
+	    *end != '\0' ||
+	    errno != 0)
 		return fallback;
 
 	/* Below the range. */
@@ -347,7 +349,9 @@ preferences_home(
 	if (given == NULL || given[0] != '/') {
 		/* Else the home the password file gives the user. */
 		user = getpwuid(getuid());
-		if (user == NULL || user->pw_dir == NULL || user->pw_dir[0] != '/')
+		if (user == NULL ||
+		    user->pw_dir == NULL ||
+		    user->pw_dir[0] != '/')
 			return ENOENT;
 		given = user->pw_dir;
 	}
@@ -674,7 +678,9 @@ preferences_compose(
 	}
 
 	/* A key the file did not have goes at its end. */
-	if (error == 0 && written == 0 && value != NULL) {
+	if (error == 0 &&
+	    written == 0 &&
+	    value != NULL) {
 		error = preferences_append(text, capacity, length, key, strlen(key));
 		if (error == 0)
 			error = preferences_append(text, capacity, length, "=", 1U);
@@ -879,7 +885,9 @@ preferences_key_valid(
 			continue;
 		if (character >= '0' && character <= '9')
 			continue;
-		if (character == '.' || character == '_' || character == '-')
+		if (character == '.' ||
+		    character == '_' ||
+		    character == '-')
 			continue;
 		return 0;
 	}

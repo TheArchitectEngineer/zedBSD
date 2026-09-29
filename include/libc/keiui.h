@@ -16,8 +16,13 @@
  * Kei look.  It began as the file manager's drawing surface (Files'
  * canvas.c, text.c and icons.c) and Settings' line pictures, moved here
  * unchanged so that an application moved onto the library draws the same
- * pixels as before.  Later versions add the input, the scroll view, the
+ * pixels as before.  The second (KUI_VERSION 2) is the scroll, the input
+ * that finds which part of a frame a pointer, a wheel or a finger meant,
+ * and the touch of a view of editable text.  Later versions add the
  * widgets and the window.
+ *
+ * Times are CLOCK_MONOTONIC microseconds throughout (the clock of
+ * libkeiland's touch motion, scroller and gestures).
  *
  * Nothing in this layer knows about Wayland or Vulkan.  A window's frame
  * is drawn into a canvas and handed to its presenter, and host tests draw
@@ -36,8 +41,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme). */
-#define KUI_VERSION	1U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch). */
+#define KUI_VERSION	2U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -306,6 +311,255 @@ void kui_icon_draw(struct kui_canvas *canvas, enum kui_icon icon, float x, float
 void kui_icon_folder(struct kui_canvas *canvas, float x, float y, float size, kui_color tint);
 void kui_icon_file(struct kui_canvas *canvas, struct kui_text *text, float x, float y, float size, kui_color band, const char *label);
 void kui_icon_tag(struct kui_canvas *canvas, float cx, float cy, float radius, kui_color color);
+
+/*
+ * The scroll (scroll.c, KUI_VERSION 2): the state of one part of a window
+ * whose content is larger than the part, which an application keeps and
+ * draws its content at (x, y) of.
+ *
+ * The wheel and the keys glide the content to where they send it (the
+ * distance left shrinks by e every KUI_SCROLL_GLIDE_US); a finger drags it
+ * and lets it fly on with libkeiland's scroller (the inertia and the
+ * rubber band past an end are the scroller's).  Outside a finger's hold
+ * the position stays within 0..content-viewport on each axis that
+ * scrolls.  The scroll bars show while the content moves and fade out
+ * over KUI_SCROLL_FADE_US after it stops.
+ *
+ * The fields are read by the application (x and y above all); they are
+ * written only through the calls.  Nothing here draws but
+ * kui_scroll_draw_bars, so a program that draws its own content with
+ * Vulkan (Terminal, Notes) uses the same scroll without the canvas.
+ */
+struct keiland_scroller;
+
+/* The axes a scroll moves along. */
+#define KUI_SCROLL_X		1U
+#define KUI_SCROLL_Y		2U
+
+/* How quickly a glide closes on its target (the time constant), and how long the bars take to fade. */
+#define KUI_SCROLL_GLIDE_US	70000U
+#define KUI_SCROLL_FADE_US	1000000U
+
+struct kui_scroll {
+	/* The axes it moves along, the position drawn, and the sizes of the content and of the part that shows it. */
+	unsigned axes;
+	double x;
+	double y;
+	double content_width;
+	double content_height;
+	double viewport_width;
+	double viewport_height;
+
+	/* A glide of the wheel or the keys: where it started, where it goes, and when it started. */
+	int gliding;
+	double from_x;
+	double from_y;
+	double to_x;
+	double to_y;
+	uint64_t glide_us;
+
+	/* The finger's scroller, whether it owns the content (a finger holds it or it flies on), and whether the finger has lifted. */
+	struct keiland_scroller *scroller;
+	int touched;
+	int released;
+
+	/* When the content last moved (for the bars), 0 before it ever moved. */
+	uint64_t moved_us;
+};
+
+int kui_scroll_init(struct kui_scroll *scroll, unsigned axes);
+void kui_scroll_release(struct kui_scroll *scroll);
+void kui_scroll_set_size(struct kui_scroll *scroll, double content_width, double content_height, double viewport_width, double viewport_height);
+void kui_scroll_wheel(struct kui_scroll *scroll, double dx, double dy, uint64_t now_us);
+void kui_scroll_move_to(struct kui_scroll *scroll, double x, double y, int glide, uint64_t now_us);
+void kui_scroll_reveal(struct kui_scroll *scroll, const struct kui_rect *rect, uint64_t now_us);
+int kui_scroll_key(struct kui_scroll *scroll, uint32_t key, unsigned modifiers, double line, uint64_t now_us);
+int kui_scroll_press(struct kui_scroll *scroll, uint64_t now_us);
+void kui_scroll_drag(struct kui_scroll *scroll, double dx, double dy);
+void kui_scroll_fling(struct kui_scroll *scroll, double vx, double vy, uint64_t now_us);
+void kui_scroll_cancel(struct kui_scroll *scroll, uint64_t now_us);
+int kui_scroll_step(struct kui_scroll *scroll, uint64_t now_us);
+double kui_scroll_limit_x(const struct kui_scroll *scroll);
+double kui_scroll_limit_y(const struct kui_scroll *scroll);
+int kui_scroll_draw_bars(const struct kui_scroll *scroll, struct kui_canvas *canvas, const struct kui_rect *viewport, const struct kui_theme *theme, uint64_t now_us);
+
+/*
+ * The keys (input.c, KUI_VERSION 2).  zdesktop forwards evdev key codes
+ * with no keymap; the library carries the US layout, as the desktop's
+ * programs do, until an input method arrives (WS095).
+ */
+#define KUI_KEY_ESC		1U
+#define KUI_KEY_BACKSPACE	14U
+#define KUI_KEY_TAB		15U
+#define KUI_KEY_ENTER		28U
+#define KUI_KEY_SPACE		57U
+#define KUI_KEY_KPENTER	96U
+#define KUI_KEY_HOME		102U
+#define KUI_KEY_UP		103U
+#define KUI_KEY_PAGEUP		104U
+#define KUI_KEY_LEFT		105U
+#define KUI_KEY_RIGHT		106U
+#define KUI_KEY_END		107U
+#define KUI_KEY_DOWN		108U
+#define KUI_KEY_PAGEDOWN	109U
+#define KUI_KEY_DELETE		111U
+
+/* The modifiers held. */
+#define KUI_MOD_SHIFT		1U
+#define KUI_MOD_CTRL		2U
+#define KUI_MOD_ALT		4U
+#define KUI_MOD_SUPER		8U
+
+uint32_t kui_key_character(uint32_t key, unsigned modifiers);
+
+/*
+ * The touch of a view of editable text (text-touch.c, KUI_VERSION 2,
+ * plan/ws090/design.md section 6.1): in a text editor's body and a text
+ * field, one finger's drag selects and two fingers scroll.
+ *
+ * A tap puts the caret, a double tap selects a word, one finger's drag
+ * selects from where it touched (the content scrolls by itself while the
+ * finger is near the view's edge), and a long press asks for the context
+ * menu.  A selection made by touch shows a handle at each end; dragging a
+ * handle moves that end.  Two fingers are the scroll's (kui_ui gives them
+ * to it).
+ *
+ * The view gives three answers in its content's coordinates (the scroll
+ * already undone): the text position nearest a point, the caret's
+ * rectangle at a position, and the word around a position.  Positions are
+ * whatever the view counts in (byte offsets in Text Editor).
+ */
+struct kui_text_view {
+	size_t (*position_at)(void *data, double x, double y);
+	void (*caret_rect)(void *data, size_t position, struct kui_rect *rect);
+	void (*word_at)(void *data, size_t position, size_t *start, size_t *end);
+};
+
+/* What the fingers changed, for kui_text_touch_take. */
+#define KUI_TEXT_TOUCH_SELECTION	1U
+#define KUI_TEXT_TOUCH_MENU		2U
+
+/* The handles: their drawn diameter and the diameter a finger finds them within. */
+#define KUI_TEXT_HANDLE		12
+#define KUI_TEXT_HANDLE_REACH	44
+
+/* How near the view's edge a selecting finger scrolls the content, and how fast at the edge (pixels a second). */
+#define KUI_TEXT_EDGE		24
+#define KUI_TEXT_EDGE_SPEED	1200.0
+
+/* Which end of the selection a handle drag moves. */
+#define KUI_TEXT_HANDLE_NONE	0
+#define KUI_TEXT_HANDLE_ANCHOR	1
+#define KUI_TEXT_HANDLE_CARET	2
+
+struct kui_text_touch {
+	/* The view's answers and their data. */
+	const struct kui_text_view *view;
+	void *data;
+
+	/* The selection: from the anchor to the caret (equal: only a caret). */
+	size_t anchor;
+	size_t caret;
+
+	/* Whether a finger is selecting, which handle it holds, whether the handles show, and the finger (content coordinates). */
+	int selecting;
+	int handle;
+	int handles;
+	double finger_x;
+	double finger_y;
+
+	/* What changed since kui_text_touch_take, and where the context menu was asked for (window coordinates). */
+	unsigned changes;
+	double menu_x;
+	double menu_y;
+};
+
+void kui_text_touch_init(struct kui_text_touch *touch, const struct kui_text_view *view, void *data);
+void kui_text_touch_set_selection(struct kui_text_touch *touch, size_t anchor, size_t caret);
+void kui_text_touch_tap(struct kui_text_touch *touch, double x, double y, int twice);
+void kui_text_touch_long_press(struct kui_text_touch *touch, double window_x, double window_y);
+void kui_text_touch_drag_begin(struct kui_text_touch *touch, double x, double y);
+void kui_text_touch_drag(struct kui_text_touch *touch, double x, double y);
+void kui_text_touch_drag_end(struct kui_text_touch *touch);
+int kui_text_touch_edge(const struct kui_text_touch *touch, const struct kui_scroll *scroll, double *vx, double *vy);
+unsigned kui_text_touch_take(struct kui_text_touch *touch);
+void kui_text_touch_draw_handles(const struct kui_text_touch *touch, struct kui_canvas *canvas, double origin_x, double origin_y, const struct kui_theme *theme);
+
+/*
+ * The input of a window (ui.c, KUI_VERSION 2, design section 4): which
+ * part of a frame a pointer, the wheel or a finger meant.
+ *
+ * While a frame is drawn, each part that takes input is recorded: a
+ * widget (kui_ui_hit, by an id the application chooses and an index), a
+ * scroll's viewport (kui_ui_scroll_region) and a view of editable text
+ * (kui_ui_text_region).  Input that arrives before the next frame is
+ * resolved against the parts of the frame last drawn, the latest recorded
+ * first (on top): a press and a release on the same widget click it (twice
+ * within 400 ms: a double click), the wheel goes to the scroll under the
+ * pointer, and a finger goes by libkeiland's gestures: a tap to the widget
+ * it touched (else to the text view there), a drag to the scroll or text
+ * view it touched (a widget such as a list's row inside a scroll does not
+ * take a drag; the scroll does).  In a text view one finger's drag selects
+ * and two fingers' drag scrolls (kui_text_touch).  Input that meets no
+ * part is kept for the application (kui_ui_take; a drag's distance from
+ * kui_ui_drag_offset).  Each input call returns 1 when the window must
+ * draw again.
+ *
+ * A scroll or a text touch given to kui_ui_scroll_region or
+ * kui_ui_text_region must live until the next frame is drawn (the input
+ * in between reaches it).
+ */
+struct kui_ui;
+
+/* What a widget's record reports of the input (bits). */
+#define KUI_HIT_HOT		1U	/* the pointer is over it */
+#define KUI_HIT_ACTIVE		2U	/* a press on it is held */
+#define KUI_HIT_CLICKED	4U	/* pressed and released on it since the last frame */
+#define KUI_HIT_DOUBLE		8U	/* the click was the second of a double click or tap */
+
+/* The input no part took. */
+#define KUI_EVENT_PRESS		1U
+#define KUI_EVENT_RELEASE	2U
+#define KUI_EVENT_WHEEL		3U
+#define KUI_EVENT_TAP		4U
+#define KUI_EVENT_DOUBLE_TAP	5U
+#define KUI_EVENT_LONG_PRESS	6U
+#define KUI_EVENT_DRAG_BEGIN	7U
+#define KUI_EVENT_DRAG_END	8U
+
+/*
+ * One input no part took: its kind, where (window coordinates), the
+ * wheel's distance or a drag's velocity, the fingers down, and the id of
+ * the region it happened over (a long press over a text view: that view's
+ * id, 0 over none).
+ */
+struct kui_event {
+	unsigned kind;
+	double x;
+	double y;
+	double dx;
+	double dy;
+	unsigned fingers;
+	uint32_t region;
+};
+
+struct kui_ui *kui_ui_create(void);
+void kui_ui_destroy(struct kui_ui *ui);
+int kui_ui_pointer_motion(struct kui_ui *ui, double x, double y);
+int kui_ui_pointer_leave(struct kui_ui *ui);
+int kui_ui_pointer_button(struct kui_ui *ui, int pressed, uint64_t now_us);
+int kui_ui_wheel(struct kui_ui *ui, double dx, double dy, uint64_t now_us);
+int kui_ui_touch_down(struct kui_ui *ui, int32_t id, uint64_t time_us, uint64_t now_us, double x, double y);
+int kui_ui_touch_motion(struct kui_ui *ui, int32_t id, uint64_t time_us, uint64_t now_us, double x, double y);
+int kui_ui_touch_up(struct kui_ui *ui, int32_t id, uint64_t time_us, uint64_t now_us);
+int kui_ui_touch_cancel(struct kui_ui *ui, uint64_t now_us);
+void kui_ui_begin(struct kui_ui *ui, uint64_t now_us);
+unsigned kui_ui_hit(struct kui_ui *ui, uint32_t id, uint32_t index, const struct kui_rect *rect);
+void kui_ui_scroll_region(struct kui_ui *ui, uint32_t id, const struct kui_rect *rect, struct kui_scroll *scroll);
+void kui_ui_text_region(struct kui_ui *ui, uint32_t id, const struct kui_rect *rect, struct kui_scroll *scroll, struct kui_text_touch *touch);
+int kui_ui_end(struct kui_ui *ui, uint64_t now_us);
+int kui_ui_take(struct kui_ui *ui, struct kui_event *event);
+int kui_ui_drag_offset(struct kui_ui *ui, uint64_t now_us, double *dx, double *dy);
 
 #ifdef __cplusplus
 }

@@ -476,7 +476,10 @@ se_clock(void)
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
 }
 
-/* Queues a new input of a kind at the pointer's place with the modifiers held; NULL when the queue is full. */
+/*
+ * Queues a new input of a kind at the pointer's place with the modifiers
+ * held.  Returns the input to fill in, or NULL when the queue is full.
+ */
 struct se_event *
 se_window_push(
 	struct se_window *window,

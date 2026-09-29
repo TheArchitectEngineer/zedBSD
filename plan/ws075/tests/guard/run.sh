@@ -5,7 +5,8 @@
 # sampler send of a module whose sends are all in branches must be inside an IF (panel.frag of the compositor, the
 # browser's display.frag); a module whose blocks every channel runs (quad.frag) must have none, and switch.frag
 # (no texture, branches only) must still pass the disassembler.  loop.frag has a guarded send inside a loop: its
-# ENDIF's JIP must point at the loop's WHILE (checked in the disassembly).
+# ENDIF's JIP must point at the loop's WHILE (checked in the disassembly).  ws075-p022: every kernel's scoreboard
+# is checked by scoreboard-check.h (shader-dump.c), which must also find a fault with the sync.nops taken out.
 #   plan/ws075/tests/guard/run.sh           (BRW_TOOLS: a Mesa build's src/intel/compiler, default below)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -30,7 +31,13 @@ cp "$repo/plan/ws075/tests/switch/switch.frag.spv" "$repo/plan/ws075/tests/switc
 	"$repo/plan/ws075/tests/guard/loop.frag.spv" "$work/"
 status=0
 for module in zwl_panel_frag zwl_quad_frag paint_display_frag switch.frag switch-O.frag loop.frag; do
-	"$work/dump" fragment "$work/$module.spv" "$work/$module.bin" > /dev/null
+	"$work/dump" fragment "$work/$module.spv" "$work/$module.bin" > "$work/$module.dump" || { echo "$module: FAIL"; cat "$work/$module.dump"; status=1; continue; }
+	# ws075-p022: the scoreboard is sound, and the checker finds a fault once the waits are taken out.
+	grep -q 'scoreboard sound' "$work/$module.dump" || { echo "$module: FAIL scoreboard"; status=1; continue; }
+	if grep -q 'sync.nop; without them no fault' "$work/$module.dump" && ! grep -q ' 0 sync.nop' "$work/$module.dump"; then
+		echo "$module: FAIL the scoreboard check does not see the missing waits"; status=1
+	fi
+	sed 's/^[^:]*: /'"$module"': /' "$work/$module.dump"
 	"$tools/brw_disasm" --gen=adl --input-path="$work/$module.bin" > "$work/$module.asm" 2>&1
 	if grep -q 'ERROR\|illegal' "$work/$module.asm"; then
 		echo "$module: FAIL the disassembler rejects an instruction"; status=1; continue

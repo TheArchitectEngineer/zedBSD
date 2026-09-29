@@ -480,6 +480,8 @@ main_frame(void)
 		/* A slow frame is logged (a diagnostic: where the time of a frame goes). */
 		if (shown - started > MAIN_SLOW_FRAME_MS)
 			se_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u", (unsigned long)(drawn - started), (unsigned long)(shown - drawn), main_present.copy_ms, main_present.acquire_ms, main_present.present_ms, main_present.wait_ms);
+
+		/* Succeeded: the frame is shown (the retries below are for a stale swapchain only). */
 		if (result == VK_SUCCESS)
 			return 0;
 

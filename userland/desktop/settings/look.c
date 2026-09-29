@@ -21,11 +21,14 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <time.h>
+#include <unistd.h>
 
 /* How often the preferences are read again, in milliseconds. */
 #define LOOK_CHECK_MS		1000U
@@ -56,8 +59,9 @@
 #define LOOK_THUMB_WIDTH	240
 #define LOOK_THUMB_HEIGHT	150
 
-/* The largest picture file read (a 4K PPM is 25 MB). */
-#define LOOK_PICTURE_MAX	(64U * 1024U * 1024U)
+/* The bytes of a PPM's header read at most, and the widest picture read. */
+#define LOOK_HEADER_MAX		64U
+#define LOOK_WIDTH_MAX		8192U
 
 /* The places the Storage page looks at (a place on the same file system as one before it is not shown again). */
 static const char *const look_places[] = { "/", "/home", "/usr", "/var", "/tmp", "/boot" };
@@ -67,7 +71,6 @@ static int look_write(struct se_app *app, const char *key, const char *value);
 static void look_add_picture(struct se_app *app, const char *path, const char *name);
 static int look_thumbnail(const char *path, struct fm_image *image);
 static int look_ppm_number(const unsigned char *data, size_t size, size_t *at, unsigned *number);
-static unsigned char *look_file(const char *path, size_t *size);
 static int look_compare_names(const void *left, const void *right);
 
 /*
@@ -492,6 +495,9 @@ look_add_picture(
 	const char *name)
 {
 	struct se_wallpaper *wallpaper;
+	struct timespec started;
+	struct timespec finished;
+	long milliseconds;
 	int error;
 
 	/* A full list keeps the pictures it has. */
@@ -504,24 +510,37 @@ look_add_picture(
 	(void)snprintf(wallpaper->path, sizeof(wallpaper->path), "%s", path);
 	(void)snprintf(wallpaper->name, sizeof(wallpaper->name), "%s", name);
 
-	/* Its small copy. */
+	/* Its small copy, timed for the log (a slow disk shows as a long first frame of the page). */
+	(void)clock_gettime(CLOCK_MONOTONIC, &started);
 	error = look_thumbnail(path, &wallpaper->thumbnail);
 	if (error == 0)
 		wallpaper->read = 1;
-	se_log("LOOK picture path=%s error=%d", path, error);
+	(void)clock_gettime(CLOCK_MONOTONIC, &finished);
+	milliseconds = (long)(finished.tv_sec - started.tv_sec) * 1000L + (finished.tv_nsec - started.tv_nsec) / 1000000L;
+	se_log("LOOK picture path=%s error=%d ms=%ld", path, error, milliseconds);
 	app->look.wallpaper_count++;
 }
 
-/* Reads a binary PPM into a small copy (LOOK_THUMB_WIDTH by LOOK_THUMB_HEIGHT, averaged); returns 0 or an errno value. */
+/*
+ * Reads a binary PPM into a small copy (LOOK_THUMB_WIDTH by
+ * LOOK_THUMB_HEIGHT, the middle of the picture in the tile's proportions,
+ * each small pixel the average of 3 by 3 samples).  Only the rows the
+ * samples fall on are read, one at a time into a buffer a row long: a
+ * large picture is not held whole.  Returns 0 or an errno value.
+ */
 static int
 look_thumbnail(
 	const char *path,
 	struct fm_image *image)
 {
-	unsigned char *data;
+	unsigned char header[LOOK_HEADER_MAX];
+	unsigned char *row;
 	const unsigned char *pixel;
-	size_t size;
+	struct stat status;
+	ssize_t count;
 	size_t at;
+	size_t row_bytes;
+	off_t offset;
 	unsigned width;
 	unsigned height;
 	unsigned maximum;
@@ -529,74 +548,141 @@ look_thumbnail(
 	unsigned y;
 	unsigned source_x;
 	unsigned source_y;
-	unsigned sums[3];
-	unsigned samples;
+	unsigned sums[LOOK_THUMB_WIDTH][3];
 	unsigned dx;
 	unsigned dy;
 	unsigned channel;
+	unsigned crop_width;
+	unsigned crop_height;
+	unsigned crop_left;
+	unsigned crop_top;
+	int descriptor;
+	int result;
 	int error;
 
-	/* The file. */
-	data = look_file(path, &size);
-	if (data == NULL)
+	/* The file, and its header's bytes. */
+	descriptor = open(path, O_RDONLY);
+	if (descriptor < 0)
 		return errno;
+	count = read(descriptor, header, sizeof(header));
+	if (count < 0) {
+		error = errno;
+		(void)close(descriptor);
+		return error;
+	}
 
 	/* The header: P6, the width, the height and the largest value (255), one space before the pixels. */
 	at = 2;
+	width = 0;
+	height = 0;
+	maximum = 0;
 	error = EINVAL;
-	if (size > 2U && data[0] == 'P' && data[1] == '6')
+	if (count > 2 &&
+	    header[0] == 'P' &&
+	    header[1] == '6')
 		error = 0;
 	if (error == 0)
-		error = look_ppm_number(data, size, &at, &width);
+		error = look_ppm_number(header, (size_t)count, &at, &width);
 	if (error == 0)
-		error = look_ppm_number(data, size, &at, &height);
+		error = look_ppm_number(header, (size_t)count, &at, &height);
 	if (error == 0)
-		error = look_ppm_number(data, size, &at, &maximum);
-	if (error == 0 && (maximum != 255U || width == 0U || height == 0U))
+		error = look_ppm_number(header, (size_t)count, &at, &maximum);
+	if (error == 0 &&
+	    (maximum != 255U ||
+	     width == 0U ||
+	     height == 0U ||
+	     width > LOOK_WIDTH_MAX))
 		error = EINVAL;
 	at++;
-	if (error == 0 && (size < at || (size - at) / 3U / width < height))
+
+	/* The file must hold every row the header promises. */
+	row_bytes = (size_t)width * 3U;
+	result = fstat(descriptor, &status);
+	if (error == 0 && result != 0)
+		error = errno;
+	if (error == 0 &&
+	    (uint64_t)status.st_size < (uint64_t)at + (uint64_t)row_bytes * height)
 		error = EINVAL;
 	if (error != 0) {
-		free(data);
+		(void)close(descriptor);
 		return error;
+	}
+
+	/*
+	 * The middle of the picture in the tile's proportions (16:10): a wider
+	 * picture loses its sides, a taller one its top and bottom.
+	 */
+	crop_width = width;
+	crop_height = height;
+	if ((uint64_t)width * LOOK_THUMB_HEIGHT > (uint64_t)height * LOOK_THUMB_WIDTH) {
+		crop_width = (unsigned)((uint64_t)height * LOOK_THUMB_WIDTH / LOOK_THUMB_HEIGHT);
+	} else {
+		crop_height = (unsigned)((uint64_t)width * LOOK_THUMB_HEIGHT / LOOK_THUMB_WIDTH);
+	}
+
+	/* The crop's corner, in the middle. */
+	crop_left = (width - crop_width) / 2U;
+	crop_top = (height - crop_height) / 2U;
+
+	/* A buffer one row long. */
+	row = malloc(row_bytes);
+	if (row == NULL) {
+		(void)close(descriptor);
+		return ENOMEM;
 	}
 
 	/* The small image. */
 	error = fm_image_create(image, LOOK_THUMB_WIDTH, LOOK_THUMB_HEIGHT);
 	if (error != 0) {
-		free(data);
+		free(row);
+		(void)close(descriptor);
 		return error;
 	}
 
-	/* Each small pixel averages a few of the picture's (a grid of 3 by 3 samples of its area). */
-	for (y = 0; y < (unsigned)LOOK_THUMB_HEIGHT; y++) {
-		for (x = 0; x < (unsigned)LOOK_THUMB_WIDTH; x++) {
-			sums[0] = 0;
-			sums[1] = 0;
-			sums[2] = 0;
-			samples = 0;
-			for (dy = 0; dy < 3U; dy++) {
-				for (dx = 0; dx < 3U; dx++) {
-					source_x = (unsigned)(((uint64_t)x * 3U + dx) * width / (LOOK_THUMB_WIDTH * 3U));
-					source_y = (unsigned)(((uint64_t)y * 3U + dy) * height / (LOOK_THUMB_HEIGHT * 3U));
-					pixel = data + at + ((size_t)source_y * width + source_x) * 3U;
-					for (channel = 0; channel < 3U; channel++)
-						sums[channel] += pixel[channel];
-					samples++;
-				}
+	/* Each small row averages the samples of three source rows, each row read once. */
+	for (y = 0; error == 0 && y < (unsigned)LOOK_THUMB_HEIGHT; y++) {
+		memset(sums, 0, sizeof(sums));
+		for (dy = 0; dy < 3U; dy++) {
+			/* The source row this sample row falls on. */
+			source_y = crop_top + (unsigned)(((uint64_t)y * 3U + dy) * crop_height / (LOOK_THUMB_HEIGHT * 3U));
+			offset = (off_t)at + (off_t)source_y * (off_t)row_bytes;
+			count = pread(descriptor, row, row_bytes, offset);
+			if (count != (ssize_t)row_bytes) {
+				error = EIO;
+				break;
 			}
 
-			/* Opaque, in the canvas's order (0xAARRGGBB). */
+			/* Three samples across for each small pixel. */
+			for (x = 0; x < (unsigned)LOOK_THUMB_WIDTH; x++) {
+				for (dx = 0; dx < 3U; dx++) {
+					source_x = crop_left + (unsigned)(((uint64_t)x * 3U + dx) * crop_width / (LOOK_THUMB_WIDTH * 3U));
+					pixel = row + (size_t)source_x * 3U;
+					for (channel = 0; channel < 3U; channel++)
+						sums[x][channel] += pixel[channel];
+				}
+			}
+		}
+
+		/* The row's pixels, opaque, in the canvas's order (0xAARRGGBB). */
+		for (x = 0; error == 0 && x < (unsigned)LOOK_THUMB_WIDTH; x++) {
 			image->pixels[(size_t)y * image->stride + x] = 0xff000000U |
-			    ((sums[0] / samples) << 16) |
-			    ((sums[1] / samples) << 8) |
-			    (sums[2] / samples);
+			    ((sums[x][0] / 9U) << 16) |
+			    ((sums[x][1] / 9U) << 8) |
+			    (sums[x][2] / 9U);
 		}
 	}
 
+	/* The buffer and the file are not needed any more. */
+	free(row);
+	(void)close(descriptor);
+
+	/* A row that could not be read spoils the copy. */
+	if (error != 0) {
+		fm_image_release(image);
+		return error;
+	}
+
 	/* Succeeded: the small copy is made. */
-	free(data);
 	return 0;
 }
 
@@ -615,7 +701,10 @@ look_ppm_number(
 		if (data[*at] == '#') {
 			while (*at < size && data[*at] != '\n')
 				(*at)++;
-		} else if (data[*at] == ' ' || data[*at] == '\t' || data[*at] == '\n' || data[*at] == '\r') {
+		} else if (data[*at] == ' ' ||
+			   data[*at] == '\t' ||
+			   data[*at] == '\n' ||
+			   data[*at] == '\r') {
 			(*at)++;
 		} else {
 			break;
@@ -625,7 +714,10 @@ look_ppm_number(
 	/* The digits, at most seven. */
 	*number = 0;
 	digits = 0;
-	while (*at < size && data[*at] >= '0' && data[*at] <= '9' && digits < 7U) {
+	while (*at < size &&
+	       data[*at] >= '0' &&
+	       data[*at] <= '9' &&
+	       digits < 7U) {
 		*number = *number * 10U + (unsigned)(data[*at] - '0');
 		(*at)++;
 		digits++;
@@ -637,57 +729,6 @@ look_ppm_number(
 
 	/* Succeeded: the number is read. */
 	return 0;
-}
-
-/* Reads a whole file (at most LOOK_PICTURE_MAX bytes); NULL with errno set when it cannot be read. */
-static unsigned char *
-look_file(
-	const char *path,
-	size_t *size)
-{
-	unsigned char *data;
-	FILE *file;
-	long length;
-	size_t count;
-	int status;
-
-	/* The file. */
-	file = fopen(path, "rb");
-	if (file == NULL)
-		return NULL;
-
-	/* Its length, within the limit. */
-	status = fseek(file, 0L, SEEK_END);
-	length = ftell(file);
-	if (status != 0 || length <= 0 || (unsigned long)length > LOOK_PICTURE_MAX) {
-		(void)fclose(file);
-		errno = EFBIG;
-		return NULL;
-	}
-
-	/* Back to the start for the reading. */
-	rewind(file);
-
-	/* Every byte. */
-	data = malloc((size_t)length);
-	if (data == NULL) {
-		(void)fclose(file);
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	/* The bytes, and the file closed. */
-	count = fread(data, 1U, (size_t)length, file);
-	(void)fclose(file);
-	if (count != (size_t)length) {
-		free(data);
-		errno = EIO;
-		return NULL;
-	}
-
-	/* Succeeded: the file's bytes. */
-	*size = count;
-	return data;
 }
 
 /* Orders two names as strcmp does (for qsort). */

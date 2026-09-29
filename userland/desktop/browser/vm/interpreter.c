@@ -94,6 +94,7 @@ static int interpreter_step_wasm(struct interpreter *run, const uint32_t *words,
 static int interpreter_call(struct interpreter *run, const uint32_t *words, vm_value *registers, uint32_t next);
 static int interpreter_construct(struct interpreter *run, const uint32_t *words, vm_value *registers, uint32_t next);
 static int interpreter_for_in_next(struct interpreter *run, const uint32_t *words, vm_value *registers, uint32_t next);
+static int interpreter_for_of_next(struct interpreter *run, const uint32_t *words, vm_value *registers, uint32_t next);
 static int interpreter_return(struct interpreter *run, vm_value value);
 static int interpreter_unwind(struct interpreter *run);
 static int interpreter_throw_error(struct vm_realm *realm, uint32_t kind, vm_value message);
@@ -448,6 +449,14 @@ interpreter_arguments(
 	if (error != 0)
 		return error;
 
+	/* Symbol.iterator: Array.prototype.values, once the built-ins exist (ws074-p087). */
+	if (realm->intrinsics[VM_INTRINSIC_ARRAY_VALUES] != NULL) {
+		error = vm_object_define(realm->heap, object, vm_symbol_key(realm, VM_SYMBOL_ITERATOR),
+		    vm_value_cell(realm->intrinsics[VM_INTRINSIC_ARRAY_VALUES]), VM_PROPERTY_WRITABLE | VM_PROPERTY_CONFIGURABLE);
+		if (error != 0)
+			return error;
+	}
+
 	/* callee: the function for sloppy code, an accessor that throws for strict code (once the realm has one). */
 	key = vm_key_from_ascii(realm->heap, "callee");
 	if (key == VM_VALUE_EMPTY)
@@ -563,6 +572,9 @@ interpreter_step(
 	case VM_OP_FOR_IN_NEXT:
 		status = interpreter_for_in_next(run, words, registers, next);
 		return status;
+	case VM_OP_FOR_OF_NEXT:
+		status = interpreter_for_of_next(run, words, registers, next);
+		return status;
 	case VM_OP_RETURN:
 		status = interpreter_return(run, registers[words[1]]);
 		return status;
@@ -664,6 +676,7 @@ interpreter_step_js(
 	case VM_OP_ITER_START:
 	case VM_OP_ITER_NEXT:
 	case VM_OP_ITER_REST:
+	case VM_OP_ITER_CLOSE:
 	case VM_OP_ARRAY_SPREAD:
 	case VM_OP_COPY_DATA:
 	case VM_OP_OBJECT_REST:
@@ -1454,6 +1467,35 @@ interpreter_for_in_next(
 	return 0;
 }
 
+/* Moves a for-of loop to its iteration's next value, or jumps when the iteration has ended. */
+static int
+interpreter_for_of_next(
+	struct interpreter *run,
+	const uint32_t *words,
+	vm_value *registers,
+	uint32_t next)
+{
+	vm_value value;
+	int done;
+	int status;
+
+	/* The next value. */
+	status = vm_iter_next(run->realm, registers[words[2]], &value, &done);
+	if (status != 0)
+		return status;
+
+	/* No value left: the loop ends. */
+	if (done) {
+		run->pc += words[3];
+		return 0;
+	}
+
+	/* Succeeded: the value in the register, and the body runs. */
+	registers[words[1]] = value;
+	run->pc = next;
+	return 0;
+}
+
 /* Returns from the running frame: to its caller's register, or out of the run from the entry frame. */
 static int
 interpreter_return(
@@ -1657,6 +1699,9 @@ interpreter_spread(
 	case VM_OP_ITER_REST:
 		status = vm_iter_rest(realm, registers[words[2]], &value);
 		break;
+	case VM_OP_ITER_CLOSE:
+		status = vm_iter_close(realm, registers[words[1]], (int)words[2]);
+		return status;
 	case VM_OP_ARRAY_SPREAD:
 		status = vm_array_spread(realm, registers[words[1]], registers[words[2]]);
 		return status;

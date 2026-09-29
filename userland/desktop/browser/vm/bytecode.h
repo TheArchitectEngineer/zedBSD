@@ -145,6 +145,8 @@ enum vm_opcode {
 	VM_OP_PRIVATE_DEFINE,	/* R object, R private name, R value: a private field */
 	VM_OP_PRIVATE_COPY,	/* R object, R source, R private name: a private method the prototype keeps, onto an instance */
 	VM_OP_PRIVATE_IN,	/* R dst, R private name, R object: #x in object */
+	VM_OP_FOR_OF_NEXT,	/* R dst, R iteration, J target when it has ended: a for-of loop's next value (ws074-p087) */
+	VM_OP_ITER_CLOSE,	/* R iteration, I quiet: an iteration left early is closed (quiet when leaving by an exception) */
 	VM_OP_SUSPEND,		/* R value, R sent, R how: a generator yields (an async function awaits) the value; resumed, sent and how (VM_RESUME_*) hold what came (ws074-p086) */
 
 	/* Wasm (raw values). */

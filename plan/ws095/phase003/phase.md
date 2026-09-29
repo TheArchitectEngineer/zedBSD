@@ -20,8 +20,7 @@ Queue: main が割り当て（2026-09-29、worktree `.claude/worktrees/ws095-ime
 - **D1（ユーザー、2026-09-29、main 経由）**: 「私が著作権者なので、zlibライセンスで改めてライセンスします。特別に権利を主張したい気持ちもないので、
   プロジェクト全体のライセンスファイルの影響下ということで問題ないです。」→ 辞書用の LICENSE は作らず、辞書の header の GPL の記述との関係を
   Makefile の注釈と design §9.1 に出典と日付つきで記録した。
-- **5330 の内蔵 keyboard は PS/2**（ユーザーの回答）: p010 は main の指示で「必要」にした（design §13、ws.md）。気づいた点: D7 で配列は US で、
-  US 配列の PS/2 keyboard には 変換・無変換・かな の key が無いので、p010 はデモでは効かない（main に確認を依頼）。
+- **5330 の内蔵 keyboard は PS/2**（ユーザーの回答）: p010 は一度「必要」にしたが、US 配列の PS/2 には日本語の key が無い点を報告し、main の判断（2026-09-29）で「JIS の PS/2 keyboard の利用者が出た時（F-058 と一緒）」の条件付きに戻した。
 - JIS の配列の件は main が Future Work に登録する。
 - **切り替えの key（ユーザーの指示、2026-09-29 夜、main 経由）**: 「IMEのON/OFFは、ひとまずAlt+Spaceがいいです。」→ D7 の Super+Space を Alt+Space に
   置き換えた（design §10.1・§14 D7）。衝突を source で確かめた: zdesktop・Files・Text Editor・PDF Viewer・Settings・Browser・app の menu に

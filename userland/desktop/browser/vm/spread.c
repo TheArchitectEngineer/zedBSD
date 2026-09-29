@@ -11,11 +11,13 @@
  * for an object spread and an object pattern's rest, and calling with the
  * elements of an array as the arguments.
  *
- * Iteration here is the built-in iteration of the values that have it
- * without a user's iterator: an array, an arguments object (their elements
- * by index, the length read at each step) and a string (by code point).
- * Anything else is a TypeError ("is not iterable") until Symbol.iterator
- * arrives (ws074-p028), which will widen vm_iter_start.
+ * Iteration follows the iterator protocol (ws074-p087): the value's
+ * Symbol.iterator method makes an iterator whose next is called for each
+ * value, and a loop left early calls its return.  An array, an arguments
+ * object and a string whose Symbol.iterator is still the built-in one are
+ * iterated directly instead (their elements by index, the length read at
+ * each step; a string by code point), which is what the built-in iterator
+ * would do.
  */
 
 #include "vm/internal.h"
@@ -29,19 +31,27 @@
 
 /*
  * The state of one iteration of a value: the value, the next index (an
- * element's, or a string's code unit), and whether it has ended.  It is a
- * cell so that a register can hold it while the code between steps runs.
+ * element's, or a string's code unit), and whether it has ended.  An
+ * iteration by the protocol (protocol set) keeps the iterator and its next
+ * method instead.  It is a cell so that a register can hold it while the
+ * code between steps runs.
  */
 struct spread_iterator {
 	struct vm_cell cell;
 	vm_value source;
+	vm_value iterator;
+	vm_value next;
 	uint32_t index;
 	int done;
+	int protocol;
+	int reserved;
 };
 
 static void spread_iterator_trace(struct vm_heap *heap, struct vm_cell *cell);
 static int spread_length(struct vm_realm *realm, vm_value source, uint32_t *length);
 static int spread_iterable(vm_value value);
+static int spread_is_builtin(struct vm_realm *realm, vm_value value, vm_value method);
+static int spread_protocol_next(struct vm_realm *realm, struct spread_iterator *state, vm_value *value, int *done);
 static int spread_copy(struct vm_realm *realm, struct vm_object *target, vm_value source, vm_value excluded);
 static int spread_is_excluded(struct vm_realm *realm, vm_value excluded, vm_value key, int *found);
 
@@ -61,14 +71,20 @@ vm_iter_start(
 	vm_value *iterator)
 {
 	struct spread_iterator *state;
-	int iterable;
+	vm_value method;
+	vm_value made;
+	vm_value key;
+	int builtin;
+	int callable;
+	int is_object;
 	int status;
 
-	/* Only the values with a built-in iteration. */
-	iterable = spread_iterable(value);
-	if (!iterable) {
-		status = vm_throw_type_error(realm, "value is not iterable");
-		return status;
+	/* The value's Symbol.iterator method (undefined and null have none). */
+	method = VM_VALUE_UNDEFINED;
+	if (value != VM_VALUE_UNDEFINED && value != VM_VALUE_NULL) {
+		status = vm_get(realm, value, vm_symbol_key(realm, VM_SYMBOL_ITERATOR), &method);
+		if (status != 0)
+			return status;
 	}
 
 	/* The state, from the first element. */
@@ -76,8 +92,45 @@ vm_iter_start(
 	if (state == NULL)
 		return ENOMEM;
 	state->source = value;
+	state->iterator = VM_VALUE_UNDEFINED;
+	state->next = VM_VALUE_UNDEFINED;
 	state->index = 0;
 	state->done = 0;
+	state->protocol = 0;
+
+	/* A value iterated by the built-in iteration needs nothing more. */
+	builtin = spread_is_builtin(realm, value, method);
+	if (builtin) {
+		*iterator = vm_value_cell(state);
+		return 0;
+	}
+
+	/* Anything else needs a method to make its iterator. */
+	callable = vm_value_is_callable(method);
+	if (!callable) {
+		status = vm_throw_type_error(realm, "value is not iterable");
+		return status;
+	}
+
+	/* The iterator, which must be an object. */
+	status = vm_call(realm, method, value, NULL, 0, &made);
+	if (status != 0)
+		return status;
+	is_object = vm_value_is_object(made);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Result of the Symbol.iterator method is not an object");
+		return status;
+	}
+
+	/* Its next method, read once. */
+	key = vm_key_from_ascii(realm->heap, "next");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	state->iterator = made;
+	state->protocol = 1;
+	status = vm_get(realm, made, key, &state->next);
+	if (status != 0)
+		return status;
 
 	/* Succeeded: the iteration's state. */
 	*iterator = vm_value_cell(state);
@@ -108,6 +161,14 @@ vm_iter_next(
 	*done = 1;
 	if (state->done)
 		return 0;
+
+	/* An iteration by the protocol calls the iterator's next. */
+	if (state->protocol) {
+		status = spread_protocol_next(realm, state, value, done);
+		if (status != 0)
+			return status;
+		return 0;
+	}
 
 	/* A string: the next code point (a surrogate pair together). */
 	is_string = vm_value_is_string(state->source);
@@ -154,6 +215,71 @@ vm_iter_next(
 	/* Succeeded: the next value. */
 	state->index++;
 	*done = 0;
+	return 0;
+}
+
+/*
+ * Closes an iteration left before its end (IteratorClose): an iterator of
+ * the protocol has its return method called.  quiet is for a loop left by
+ * an exception, which keeps its own: whatever return does is ignored.
+ * Returns 0, VM_THROWN or an errno value.
+ */
+int
+vm_iter_close(
+	struct vm_realm *realm,
+	vm_value iterator,
+	int quiet)
+{
+	struct spread_iterator *state;
+	vm_value saved;
+	vm_value method;
+	vm_value result;
+	vm_value key;
+	int is_object;
+	int status;
+
+	/* An iteration that ended, or a built-in one, has nothing to close. */
+	state = (struct spread_iterator *)vm_value_as_cell(iterator);
+	if (state->done || !state->protocol) {
+		state->done = 1;
+		return 0;
+	}
+
+	/* Closed from now on, whatever return does. */
+	state->done = 1;
+
+	/* The iterator's return method, and its call when there is one. */
+	saved = realm->exception;
+	result = VM_VALUE_UNDEFINED;
+	key = vm_key_from_ascii(realm->heap, "return");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_get_method(realm, state->iterator, key, &method);
+	if (status == 0 && method != VM_VALUE_UNDEFINED)
+		status = vm_call(realm, method, state->iterator, NULL, 0, &result);
+
+	/* Leaving by an exception: that exception stays, and what return did does not matter. */
+	if (quiet && (status == 0 || status == VM_THROWN)) {
+		realm->exception = saved;
+		return 0;
+	}
+
+	/* A failure of return, or of finding it. */
+	if (status != 0)
+		return status;
+
+	/* Without a method there is nothing to check. */
+	if (method == VM_VALUE_UNDEFINED)
+		return 0;
+
+	/* What return gave must be an object. */
+	is_object = vm_value_is_object(result);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Iterator result is not an object");
+		return status;
+	}
+
+	/* Succeeded: the iterator is closed. */
 	return 0;
 }
 
@@ -354,9 +480,11 @@ spread_iterator_trace(
 {
 	struct spread_iterator *state;
 
-	/* The value. */
+	/* The value, and the iterator and its next method. */
 	state = (struct spread_iterator *)cell;
 	vm_heap_mark_value(heap, state->source);
+	vm_heap_mark_value(heap, state->iterator);
+	vm_heap_mark_value(heap, state->next);
 }
 
 /* Reads the length of an array or an arguments object. */
@@ -555,5 +683,103 @@ spread_is_excluded(
 	}
 
 	/* Succeeded: not listed. */
+	return 0;
+}
+
+/*
+ * Tells whether a value is iterated by the built-in iteration: an array,
+ * an arguments object or a string whose Symbol.iterator is still the
+ * built-in one (any of them before the built-ins exist).
+ */
+static int
+spread_is_builtin(
+	struct vm_realm *realm,
+	vm_value value,
+	vm_value method)
+{
+	struct vm_object *builtin;
+	vm_value expected;
+	int iterable;
+	int is_string;
+
+	/* Only the values with a built-in iteration. */
+	iterable = spread_iterable(value);
+	if (!iterable)
+		return 0;
+
+	/* A string: String.prototype's own iterator. */
+	is_string = vm_value_is_string(value);
+	if (is_string) {
+		builtin = realm->intrinsics[VM_INTRINSIC_STRING_ITERATOR];
+		if (builtin == NULL)
+			return 1;
+		expected = vm_value_cell(builtin);
+		if (method == expected)
+			return 1;
+		return 0;
+	}
+
+	/* An array or an arguments object: Array.prototype.values. */
+	builtin = realm->intrinsics[VM_INTRINSIC_ARRAY_VALUES];
+	if (builtin == NULL)
+		return 1;
+	expected = vm_value_cell(builtin);
+	if (method == expected)
+		return 1;
+
+	/* A user's iterator. */
+	return 0;
+}
+
+/*
+ * Takes the next value of an iteration by the protocol: the iterator's
+ * next called, its result's done and value read.  Whatever throws ends the
+ * iteration (a loop does not close an iterator whose next failed).
+ */
+static int
+spread_protocol_next(
+	struct vm_realm *realm,
+	struct spread_iterator *state,
+	vm_value *value,
+	int *done)
+{
+	vm_value result;
+	vm_value flag;
+	vm_value key;
+	int is_object;
+	int status;
+
+	/* The call of next. */
+	state->done = 1;
+	status = vm_call(realm, state->next, state->iterator, NULL, 0, &result);
+	if (status != 0)
+		return status;
+	is_object = vm_value_is_object(result);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Iterator result is not an object");
+		return status;
+	}
+
+	/* Its done. */
+	key = vm_key_from_ascii(realm->heap, "done");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_get(realm, result, key, &flag);
+	if (status != 0)
+		return status;
+	*done = vm_to_boolean(flag);
+	if (*done)
+		return 0;
+
+	/* Its value. */
+	key = vm_key_from_ascii(realm->heap, "value");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_get(realm, result, key, value);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the iteration goes on. */
+	state->done = 0;
 	return 0;
 }

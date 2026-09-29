@@ -1010,6 +1010,8 @@ promise_species(
 	vm_value promise,
 	vm_value *constructor)
 {
+	vm_value species;
+	int is_constructor;
 	int is_object;
 	int status;
 
@@ -1031,7 +1033,24 @@ promise_species(
 		return status;
 	}
 
-	/* Succeeded: the constructor. */
+	/* Its Symbol.species: undefined or null give Promise, anything else must construct (ws074-p087). */
+	status = vm_get(realm, *constructor, vm_symbol_key(realm, VM_SYMBOL_SPECIES), &species);
+	if (status != 0)
+		return status;
+	if (species == VM_VALUE_UNDEFINED || species == VM_VALUE_NULL) {
+		*constructor = vm_value_cell(realm->intrinsics[VM_INTRINSIC_PROMISE]);
+		return 0;
+	}
+
+	/* A species must be a constructor. */
+	is_constructor = vm_value_is_constructor(species);
+	if (!is_constructor) {
+		status = vm_throw_type_error(realm, "object.constructor[Symbol.species] is not a constructor");
+		return status;
+	}
+
+	/* Succeeded: the species. */
+	*constructor = species;
 	return 0;
 }
 

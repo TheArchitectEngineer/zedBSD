@@ -26,6 +26,7 @@
 #include "data.h"
 #include "extras.h"
 #include "keymap.h"
+#include "ime.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -250,6 +251,7 @@ zwl_seat_focus(
 	struct zwl_server *server)
 {
 	struct zwl_object *target;
+	struct zwl_object *previous;
 
 	/* A dying surface or a failed client cannot take focus. */
 	target = server->front_surface;
@@ -264,6 +266,7 @@ zwl_seat_focus(
 
 	/* A new focus: the old surface's keyboards hear leave before the new one's hear enter; the arrow comes back. */
 	if (target != server->focus) {
+		previous = server->focus;
 		if (server->focus != NULL)
 			send_leave(server->focus);
 		zwl_cursor_default(server);
@@ -278,6 +281,9 @@ zwl_seat_focus(
 			zwl_primary_focus(server, target);
 			send_enter(target);
 		}
+
+		/* The text inputs and the input method follow the focus (input-method.c). */
+		zwl_ime_focus(server, previous);
 	}
 
 	/* Succeeded: the pointer follows (the focused window, or the surface of it under the pointer). */
@@ -809,8 +815,6 @@ zwl_seat_key(
 	uint32_t key,
 	uint32_t state)
 {
-	struct zwl_object *object;
-	uint32_t words[4];
 	int taken;
 
 	/*
@@ -819,7 +823,10 @@ zwl_seat_key(
 	 * keyboard (titlebar-shell.c); zdesktop's shortcuts come next
 	 * (shell.c), then the focused window's menu: F10 and its shortcuts,
 	 * then the keys of its tabs (titlebar-shell.c).  Esc gives up a drag
-	 * and drop first (data.c).
+	 * and drop first (data.c).  The input method (input-method.c) takes
+	 * Alt+Space before all of these, and the keys of a text input it
+	 * serves after zdesktop's shortcuts (before the menu's while text is
+	 * being composed).
 	 */
 	if (server->dnd_active && key == SEAT_KEY_ESC && state != 0U) {
 		zwl_data_drag_cancel(server);
@@ -846,6 +853,11 @@ zwl_seat_key(
 		return;
 	}
 
+	/* The input method's keys come first: Alt+Space, and a release whose press went to it (input-method.c). */
+	taken = zwl_ime_key_early(server, time, key, state);
+	if (taken)
+		return;
+
 	/* The glass look's own keys, in that order. */
 	if (server->glass) {
 		taken = zwl_home_key(server, key, state);
@@ -863,6 +875,9 @@ zwl_seat_key(
 		taken = zwl_glass_key(server, key, state);
 		if (taken)
 			return;
+		taken = zwl_ime_key_grab(server, time, key, state, 1);
+		if (taken)
+			return;
 		taken = zwl_menu_key(server, key, state);
 		if (taken)
 			return;
@@ -870,6 +885,28 @@ zwl_seat_key(
 		if (taken)
 			return;
 	}
+
+	/* The input method takes the key while it serves a text input (input-method.c). */
+	taken = zwl_ime_key_grab(server, time, key, state, 0);
+	if (taken)
+		return;
+
+	/* The focused client hears the key. */
+	zwl_seat_key_deliver(server, time, key, state);
+}
+
+/*
+ * Sends one key press or release to the focused client's keyboards.
+ */
+void
+zwl_seat_key_deliver(
+	struct zwl_server *server,
+	uint32_t time,
+	uint32_t key,
+	uint32_t state)
+{
+	struct zwl_object *object;
+	uint32_t words[4];
 
 	/* A key without focus reaches nobody. */
 	if (server->focus == NULL)
@@ -902,6 +939,9 @@ zwl_seat_modifiers(
 {
 	struct zwl_object *object;
 	uint32_t serial;
+
+	/* The input method's keyboard grab hears the modifiers too (input-method.c). */
+	zwl_ime_modifiers(server);
 
 	/* A modifier change without focus reaches nobody; enter will carry it later. */
 	if (server->focus == NULL)

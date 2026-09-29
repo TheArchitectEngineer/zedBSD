@@ -1172,9 +1172,13 @@ object_to_string(
 	vm_value *result)
 {
 	struct vm_object *object;
+	struct vm_string *text_string;
 	vm_value value;
+	vm_value named;
+	vm_value prefix;
 	char text[64];
 	const char *tag;
+	int is_string;
 	int status;
 
 	UNUSED_PARAMETER(args);
@@ -1192,6 +1196,28 @@ object_to_string(
 			return status;
 		object = (struct vm_object *)vm_value_as_cell(value);
 		tag = object_tag(value, object);
+
+		/* A string Symbol.toStringTag names it instead (ws074-p087). */
+		status = vm_get(realm, value, vm_symbol_key(realm, VM_SYMBOL_TO_STRING_TAG), &named);
+		if (status != 0)
+			return status;
+		is_string = vm_value_is_string(named);
+		if (is_string) {
+			status = js_builtin_string(realm, "[object ", &prefix);
+			if (status != 0)
+				return status;
+			text_string = vm_string_concat(realm->heap, (struct vm_string *)vm_value_as_cell(prefix), (struct vm_string *)vm_value_as_cell(named));
+			if (text_string == NULL)
+				return ENOMEM;
+			status = js_builtin_string(realm, "]", &prefix);
+			if (status != 0)
+				return status;
+			text_string = vm_string_concat(realm->heap, text_string, (struct vm_string *)vm_value_as_cell(prefix));
+			if (text_string == NULL)
+				return ENOMEM;
+			*result = vm_value_cell(text_string);
+			return 0;
+		}
 	}
 
 	/* Succeeded: the text. */
@@ -1954,12 +1980,6 @@ object_tag(
 		return "Date";
 	case VM_KIND_REGEXP:
 		return "RegExp";
-	case VM_KIND_PROMISE:
-		/* Promise.prototype[Symbol.toStringTag] until Symbol arrives. */
-		return "Promise";
-	case VM_KIND_GENERATOR:
-		/* %GeneratorPrototype%[Symbol.toStringTag] until Symbol arrives. */
-		return "Generator";
 	default:
 		break;
 	}

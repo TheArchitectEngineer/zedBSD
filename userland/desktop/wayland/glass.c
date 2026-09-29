@@ -37,9 +37,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -91,7 +93,33 @@
 #define GLASS_BLUR_RADIUS	6U
 #define GLASS_BLUR_PASSES	3U
 
-/* One glyph's place in the atlas and its metrics in pixels. */
+/*
+ * A binary PPM read for the wallpaper (ws035-p133): the file's bytes, where
+ * its pixels (three bytes each) start in them, and its size in pixels.
+ */
+struct wallpaper_picture {
+	unsigned char *data;
+	size_t pixels;
+	uint32_t width;
+	uint32_t height;
+};
+
+/*
+ * The wallpaper's file read ahead on a thread of its own (ws035-p133), so
+ * that the disk works while the Vulkan device is made: the path, the bytes
+ * and their size (NULL when the read failed), and whether the thread runs or
+ * has not been joined yet.  Only the main thread starts and joins it; the
+ * thread writes data and size before it ends, and pthread_join makes them
+ * visible to the main thread.
+ */
+struct glass_prefetch {
+	pthread_t thread;
+	const char *path;
+	unsigned char *data;
+	size_t size;
+	int started;
+};
+
 struct glass_glyph {
 	uint32_t x;
 	uint32_t y;
@@ -156,7 +184,11 @@ static int wallpaper_fill(struct zwl_server *server, struct zwl_glass *glass, co
 static void wallpaper_pixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height, float *rgb);
 static float ridge(float x, float base, float amplitude, float phase);
 static int blur_create(struct zwl_server *server, struct zwl_glass *glass);
-static int blur_fill(struct zwl_server *server, struct zwl_glass *glass, const float *pixels);
+static void wallpaper_row(const struct wallpaper_picture *picture, const uint32_t *columns, uint32_t source_y, uint32_t *line, uint32_t width);
+static void landscape_row(uint32_t y, uint32_t width, uint32_t height, uint32_t *line);
+static void blur_add(const uint32_t *line, uint32_t *sums, uint32_t small_width);
+static void blur_average(uint32_t *sums, float *small, uint32_t small_width);
+static int blur_fill(struct zwl_server *server, struct zwl_glass *glass, float *small);
 static void blur_pass(float *pixels, float *scratch, uint32_t width, uint32_t height, int horizontal);
 static uint32_t pack_pixel(const float *rgb);
 static int atlas_create(struct zwl_server *server, struct zwl_glass *glass);
@@ -170,8 +202,40 @@ static const struct glass_glyph *glass_cache_glyph(struct zwl_glass *glass, enum
 static uint32_t glass_utf8_next(const char **text);
 static void glass_draw_glyph_at(struct zwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
 static void *file_read(const char *path, size_t *size);
-static float *wallpaper_load(const char *path, uint32_t width, uint32_t height);
+static int wallpaper_load(const char *path, struct wallpaper_picture *picture);
 static int ppm_number(const unsigned char *data, size_t size, size_t *at, uint32_t *number);
+static void *prefetch_run(void *argument);
+static unsigned char *prefetch_take(const char *path, size_t *size);
+
+/* The wallpaper read ahead, when zwl_glass_prefetch started it (only the main thread starts and takes it). */
+static struct glass_prefetch glass_prefetch;
+
+/*
+ * Starts reading the wallpaper's file on a thread (ws035-p133), before the
+ * Vulkan device is made; the look takes the bytes when it draws the
+ * wallpaper.  Without a thread the look reads the file itself.
+ */
+void
+zwl_glass_prefetch(
+	struct zwl_server *server)
+{
+	int error;
+
+	/* Only the glass look with a picture reads one. */
+	if (!server->glass || server->wallpaper_path == NULL)
+		return;
+
+	/* The thread; without it the file is read when the wallpaper is drawn. */
+	glass_prefetch.path = server->wallpaper_path;
+	error = pthread_create(&glass_prefetch.thread, NULL, prefetch_run, NULL);
+	if (error != 0) {
+		printf("ZWL GLASS prefetch unavailable errno=%d\n", error);
+		return;
+	}
+
+	/* The thread runs until the look takes its bytes. */
+	glass_prefetch.started = 1;
+}
 
 /*
  * Makes the wallpaper, its blurred copy and the glyph atlas.
@@ -314,6 +378,12 @@ wallpaper_create(
  * Draws a picture (a binary PPM, or the landscape drawn here when path is
  * NULL or cannot be read) into the wallpaper's image and its blurred
  * copy, which are mapped, the output's size, and kept for the look's life.
+ *
+ * The picture is made one output row at a time (ws035-p133): each row is
+ * packed, copied into the image (which is only written, never read), and
+ * added to the frosted glass's block averages, so no output-sized copy of
+ * the picture is kept.  Both the start and a wallpaper chosen later
+ * (zwl_glass_wallpaper) come here.
  */
 static int
 wallpaper_fill(
@@ -321,53 +391,146 @@ wallpaper_fill(
 	struct zwl_glass *glass,
 	const char *path)
 {
+	struct wallpaper_picture picture;
+	uint32_t *columns;
+	uint32_t *line;
+	uint32_t *sums;
 	uint32_t *row;
-	float *pixels;
+	float *small;
 	uint32_t width;
 	uint32_t height;
+	uint32_t small_width;
+	uint32_t small_height;
 	uint32_t x;
 	uint32_t y;
+	uint32_t source_y;
+	uint32_t made_y;
 	uint64_t started;
 	int error;
 
-	/* The picture given, in floating point and kept for the blur. */
+	/* The sizes: the output's, and the frosted glass's. */
 	started = zwl_milliseconds();
 	width = server->width;
 	height = server->height;
-	pixels = NULL;
+	small_width = width / GLASS_BLUR_SCALE;
+	small_height = height / GLASS_BLUR_SCALE;
+
+	/* The picture given, when it can be read; otherwise the landscape drawn here. */
+	memset(&picture, 0, sizeof(picture));
 	if (path != NULL) {
-		pixels = wallpaper_load(path, width, height);
-		if (pixels == NULL)
-			printf("ZWL GLASS no wallpaper: path=%s errno=%d\n", path, errno);
+		error = wallpaper_load(path, &picture);
+		if (error != 0)
+			printf("ZWL GLASS no wallpaper: path=%s errno=%d\n", path, error);
 	}
 
-	/* Otherwise the landscape drawn here. */
-	if (pixels == NULL) {
-		pixels = malloc((size_t)width * height * 3U * sizeof(float));
-		if (pixels == NULL)
-			return ENOMEM;
-		for (y = 0; y < height; y++) {
-			for (x = 0; x < width; x++)
-				wallpaper_pixel(x, y, width, height, &pixels[((size_t)y * width + x) * 3U]);
-		}
+	/* One output row, each output column's source column, a block row's sums, and the small image. */
+	line = malloc((size_t)width * sizeof(*line));
+	columns = malloc((size_t)width * sizeof(*columns));
+	sums = calloc((size_t)small_width * 3U, sizeof(*sums));
+	small = calloc((size_t)small_width * small_height * 3U, sizeof(*small));
+	if (line == NULL || columns == NULL || sums == NULL || small == NULL) {
+		free(line);
+		free(columns);
+		free(sums);
+		free(small);
+		free(picture.data);
+		return ENOMEM;
 	}
 
-	/* Into the image. */
-	for (y = 0; y < height; y++) {
-		row = (uint32_t *)((unsigned char *)glass->wallpaper.map + y * glass->wallpaper.row_pitch);
+	/* Each output column takes the source column it falls on (the nearest pixel), as a byte offset. */
+	if (picture.data != NULL) {
 		for (x = 0; x < width; x++)
-			row[x] = pack_pixel(&pixels[((size_t)y * width + x) * 3U]);
+			columns[x] = (uint32_t)((uint64_t)x * picture.width / width) * 3U;
 	}
+
+	/*
+	 * Each output row: made (a row that falls on the same source row as
+	 * the one above is that row again), copied into the image, and added to
+	 * the block of the frosted glass it lies in.
+	 */
+	made_y = UINT32_MAX;
+	for (y = 0; y < height; y++) {
+		if (picture.data != NULL) {
+			/* The picture's row, unless the line already holds it. */
+			source_y = (uint32_t)((uint64_t)y * picture.height / height);
+			if (source_y != made_y)
+				wallpaper_row(&picture, columns, source_y, line, width);
+			made_y = source_y;
+		} else {
+			/* The landscape's row. */
+			landscape_row(y, width, height, line);
+		}
+
+		/* Into the image. */
+		row = (uint32_t *)((unsigned char *)glass->wallpaper.map + (size_t)y * glass->wallpaper.row_pitch);
+		memcpy(row, line, (size_t)width * sizeof(*line));
+
+		/* Rows below the last whole block are not in the frosted glass. */
+		if (y >= small_height * GLASS_BLUR_SCALE)
+			continue;
+
+		/* Into its block; a block's last row makes that row of the small image. */
+		blur_add(line, sums, small_width);
+		if (y % GLASS_BLUR_SCALE == GLASS_BLUR_SCALE - 1U)
+			blur_average(sums, &small[(size_t)(y / GLASS_BLUR_SCALE) * small_width * 3U], small_width);
+	}
+
+	/* The rows are made; the file and the working rows are no longer needed. */
+	free(line);
+	free(columns);
+	free(sums);
+	free(picture.data);
+	printf("ZWL STARTUP step=wallpaper-picture ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 
 	/* The frosted glass. */
-	printf("ZWL STARTUP step=wallpaper-picture ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
-	error = blur_fill(server, glass, pixels);
-	free(pixels);
+	error = blur_fill(server, glass, small);
+	free(small);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: both images hold the picture. */
 	return 0;
+}
+
+/* Packs one output row from a source row of the picture, each column from its source column. */
+static void
+wallpaper_row(
+	const struct wallpaper_picture *picture,
+	const uint32_t *columns,
+	uint32_t source_y,
+	uint32_t *line,
+	uint32_t width)
+{
+	const unsigned char *source;
+	const unsigned char *pixel;
+	uint32_t x;
+
+	/* The source row's first byte. */
+	source = picture->data + picture->pixels + (size_t)source_y * picture->width * 3U;
+
+	/* Each pixel as opaque BGRA (A, R, G, B from the top byte), as pack_pixel would make it. */
+	for (x = 0; x < width; x++) {
+		pixel = source + columns[x];
+		line[x] = 0xff000000U | ((uint32_t)pixel[0] << 16) | ((uint32_t)pixel[1] << 8) | (uint32_t)pixel[2];
+	}
+}
+
+/* Packs one output row of the landscape drawn here. */
+static void
+landscape_row(
+	uint32_t y,
+	uint32_t width,
+	uint32_t height,
+	uint32_t *line)
+{
+	float rgb[3];
+	uint32_t x;
+
+	/* Each pixel colored, then packed. */
+	for (x = 0; x < width; x++) {
+		wallpaper_pixel(x, y, width, height, rgb);
+		line[x] = pack_pixel(rgb);
+	}
 }
 
 /*
@@ -539,57 +702,32 @@ blur_create(
 }
 
 /*
- * Draws the frosted glass: the wallpaper averaged down by GLASS_BLUR_SCALE
- * and blurred by repeated box passes (close to a Gaussian).
+ * Draws the frosted glass from its small image (the wallpaper averaged down
+ * by GLASS_BLUR_SCALE, blur_average): blurred by repeated box passes (close
+ * to a Gaussian) in place, then packed into the image.
  */
 static int
 blur_fill(
 	struct zwl_server *server,
 	struct zwl_glass *glass,
-	const float *pixels)
+	float *small)
 {
 	uint32_t *row;
-	float *small;
 	float *scratch;
 	uint32_t width;
 	uint32_t height;
 	uint32_t x;
 	uint32_t y;
-	uint32_t dx;
-	uint32_t dy;
-	uint32_t channel;
 	unsigned pass;
-	size_t at;
 
 	/* The small image's size. */
 	width = server->width / GLASS_BLUR_SCALE;
 	height = server->height / GLASS_BLUR_SCALE;
 
-	/* Its working copies. */
-	small = calloc((size_t)width * height * 3U, sizeof(float));
+	/* The passes' working copy. */
 	scratch = calloc((size_t)width * height * 3U, sizeof(float));
-	if (small == NULL || scratch == NULL) {
-		free(small);
-		free(scratch);
+	if (scratch == NULL)
 		return ENOMEM;
-	}
-
-	/* Each small pixel is the average of the block it covers. */
-	for (y = 0; y < height; y++) {
-		for (x = 0; x < width; x++) {
-			for (dy = 0; dy < GLASS_BLUR_SCALE; dy++) {
-				for (dx = 0; dx < GLASS_BLUR_SCALE; dx++) {
-					at = ((size_t)(y * GLASS_BLUR_SCALE + dy) * server->width + x * GLASS_BLUR_SCALE + dx) * 3U;
-					for (channel = 0; channel < 3U; channel++)
-						small[((size_t)y * width + x) * 3U + channel] += pixels[at + channel];
-				}
-			}
-
-			/* The sum becomes the average. */
-			for (channel = 0; channel < 3U; channel++)
-				small[((size_t)y * width + x) * 3U + channel] /= (float)(GLASS_BLUR_SCALE * GLASS_BLUR_SCALE);
-		}
-	}
 
 	/* Box passes across and down. */
 	for (pass = 0; pass < GLASS_BLUR_PASSES; pass++) {
@@ -605,9 +743,46 @@ blur_fill(
 	}
 
 	/* Succeeded. */
-	free(small);
 	free(scratch);
 	return 0;
+}
+
+/* Adds a packed output row to the sums of the blocks it crosses (three channels a block, red first). */
+static void
+blur_add(
+	const uint32_t *line,
+	uint32_t *sums,
+	uint32_t small_width)
+{
+	uint32_t pixel;
+	uint32_t x;
+	uint32_t dx;
+
+	/* Each block's GLASS_BLUR_SCALE pixels of this row. */
+	for (x = 0; x < small_width; x++) {
+		for (dx = 0; dx < GLASS_BLUR_SCALE; dx++) {
+			pixel = line[x * GLASS_BLUR_SCALE + dx];
+			sums[x * 3U] += (pixel >> 16) & 0xffU;
+			sums[x * 3U + 1U] += (pixel >> 8) & 0xffU;
+			sums[x * 3U + 2U] += pixel & 0xffU;
+		}
+	}
+}
+
+/* Makes one row of the small image from a block row's sums (0..1 each), and clears the sums for the next. */
+static void
+blur_average(
+	uint32_t *sums,
+	float *small,
+	uint32_t small_width)
+{
+	uint32_t index;
+
+	/* Each channel of each block: the average of its GLASS_BLUR_SCALE squared pixels. */
+	for (index = 0; index < small_width * 3U; index++) {
+		small[index] = (float)sums[index] / (255.0f * (float)(GLASS_BLUR_SCALE * GLASS_BLUR_SCALE));
+		sums[index] = 0;
+	}
 }
 
 /* Averages each pixel with its GLASS_BLUR_RADIUS neighbours on each side, across or down (clamped at the edges). */
@@ -847,32 +1022,52 @@ file_read(
 	const char *path,
 	size_t *size)
 {
+	struct stat status;
 	unsigned char *data;
 	ssize_t count;
+	size_t capacity;
 	size_t length;
 	int descriptor;
+	int error;
 
 	/* The file. */
 	descriptor = open(path, O_RDONLY | O_CLOEXEC);
 	if (descriptor < 0)
 		return NULL;
 
-	/* Its bytes, up to GLASS_FILE_MAX. */
-	data = malloc(GLASS_FILE_MAX);
+	/* Its size, bounded by GLASS_FILE_MAX (ws035-p133: the buffer is as large as the file). */
+	error = fstat(descriptor, &status);
+	if (error != 0) {
+		close(descriptor);
+		return NULL;
+	}
+
+	/* A file larger than the bound is read to the bound. */
+	capacity = GLASS_FILE_MAX;
+	if (status.st_size >= 0 && (uint64_t)status.st_size < GLASS_FILE_MAX)
+		capacity = (size_t)status.st_size;
+	if (capacity == 0U) {
+		close(descriptor);
+		errno = EINVAL;
+		return NULL;
+	}
+
+	/* Its bytes. */
+	data = malloc(capacity);
 	if (data == NULL) {
 		close(descriptor);
 		errno = ENOMEM;
 		return NULL;
 	}
 
-	/* Read to the end or the bound. */
+	/* Read to the end or the bound: normally one read. */
 	length = 0;
 	for (;;) {
-		count = read(descriptor, data + length, GLASS_FILE_MAX - length);
+		count = read(descriptor, data + length, capacity - length);
 		if (count <= 0)
 			break;
 		length += (size_t)count;
-		if (length == GLASS_FILE_MAX)
+		if (length == capacity)
 			break;
 	}
 
@@ -892,36 +1087,34 @@ file_read(
 }
 
 /*
- * Reads a binary PPM (P6, maximum 255) as the wallpaper, scaled to the
- * output by the nearest pixel.  Returns the colors (0..1, three per pixel),
- * or NULL with errno set.
+ * Reads a binary PPM (P6, maximum 255) for the wallpaper: its file's bytes
+ * and header, kept in a picture that wallpaper_row scales from.  Returns 0,
+ * or an errno value with nothing kept.
  */
-static float *
+static int
 wallpaper_load(
 	const char *path,
-	uint32_t width,
-	uint32_t height)
+	struct wallpaper_picture *picture)
 {
-	const unsigned char *pixel;
 	unsigned char *data;
-	float *pixels;
 	uint32_t source_width;
 	uint32_t source_height;
 	uint32_t maximum;
-	uint32_t x;
-	uint32_t y;
 	size_t size;
 	size_t at;
 	int error;
 
-	/* The file, with the P6 magic. */
-	data = file_read(path, &size);
+	/* The file, read ahead when the prefetch read this path, otherwise now. */
+	data = prefetch_take(path, &size);
 	if (data == NULL)
-		return NULL;
+		data = file_read(path, &size);
+	if (data == NULL)
+		return errno;
+
+	/* The P6 magic. */
 	if (size < 2U || data[0] != 'P' || data[1] != '6') {
 		free(data);
-		errno = EINVAL;
-		return NULL;
+		return EINVAL;
 	}
 
 	/* The width, the height and the maximum value. */
@@ -933,39 +1126,22 @@ wallpaper_load(
 		error = ppm_number(data, size, &at, &maximum);
 	if (error != 0 || maximum != 255U || source_width == 0U || source_height == 0U) {
 		free(data);
-		errno = EINVAL;
-		return NULL;
+		return EINVAL;
 	}
 
 	/* One whitespace byte, then three bytes a pixel. */
 	at++;
 	if (at > size || (size - at) / 3U / source_width < source_height) {
 		free(data);
-		errno = EINVAL;
-		return NULL;
+		return EINVAL;
 	}
 
-	/* The output's pixels, each from the nearest source pixel. */
-	pixels = malloc((size_t)width * height * 3U * sizeof(float));
-	if (pixels == NULL) {
-		free(data);
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	/* Each output pixel takes the source pixel it falls on. */
-	for (y = 0; y < height; y++) {
-		for (x = 0; x < width; x++) {
-			pixel = data + at + ((size_t)(y * source_height / height) * source_width + (size_t)(x * source_width / width)) * 3U;
-			pixels[((size_t)y * width + x) * 3U] = (float)pixel[0] / 255.0f;
-			pixels[((size_t)y * width + x) * 3U + 1U] = (float)pixel[1] / 255.0f;
-			pixels[((size_t)y * width + x) * 3U + 2U] = (float)pixel[2] / 255.0f;
-		}
-	}
-
-	/* Succeeded. */
-	free(data);
-	return pixels;
+	/* Succeeded: the picture is kept for its rows. */
+	picture->data = data;
+	picture->pixels = at;
+	picture->width = source_width;
+	picture->height = source_height;
+	return 0;
 }
 
 /* Reads one decimal number of a PPM header, after whitespace and comments. */
@@ -1009,6 +1185,55 @@ ppm_number(
 	/* Succeeded. */
 	*number = value;
 	return 0;
+}
+
+/* Reads the wallpaper's file on the prefetch's thread; the result is taken after the join. */
+static void *
+prefetch_run(
+	void *argument)
+{
+	(void)argument;
+
+	/* The bytes, or NULL (the look then reads the file again and reports why). */
+	glass_prefetch.data = file_read(glass_prefetch.path, &glass_prefetch.size);
+
+	/* Succeeded: the thread ends; its result waits for the join. */
+	return NULL;
+}
+
+/*
+ * Takes the bytes the prefetch read, when it read this path: waits for its
+ * thread first.  Returns NULL (and frees what it read for another path) when
+ * the caller must read the file itself.
+ */
+static unsigned char *
+prefetch_take(
+	const char *path,
+	size_t *size)
+{
+	unsigned char *data;
+	int same;
+
+	/* No thread was started, or it was taken already. */
+	if (!glass_prefetch.started)
+		return NULL;
+
+	/* The thread's end makes its result visible here. */
+	(void)pthread_join(glass_prefetch.thread, NULL);
+	glass_prefetch.started = 0;
+	data = glass_prefetch.data;
+	glass_prefetch.data = NULL;
+
+	/* Bytes of another picture (the preferences chose one since) are not this one. */
+	same = strcmp(path, glass_prefetch.path);
+	if (same != 0) {
+		free(data);
+		return NULL;
+	}
+
+	/* Succeeded: the caller owns the bytes (NULL when the read failed). */
+	*size = glass_prefetch.size;
+	return data;
 }
 
 /* Starts a shape over a box: the quad is the box, with no image and no color. */

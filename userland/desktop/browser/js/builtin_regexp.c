@@ -60,6 +60,12 @@ struct regexp_flag {
 
 static void regexp_state_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void regexp_state_finalize(struct vm_heap *heap, struct vm_cell *cell);
+static int regexp_symbol_method(struct vm_realm *realm, struct vm_object *prototype, int which, const char *name, unsigned length, vm_native native);
+static int regexp_symbol_match_method(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int regexp_symbol_replace_method(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int regexp_symbol_search_method(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int regexp_symbol_split_method(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int regexp_symbol_string(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, struct vm_string **string);
 static int regexp_call(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int regexp_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int regexp_exec(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -168,6 +174,17 @@ js_builtin_install_regexp(
 		error = js_builtin_accessor(realm, prototype, "source", regexp_get_source, NULL);
 	for (flag = regexp_flags; error == 0 && flag->name != NULL; flag++)
 		error = js_builtin_accessor(realm, prototype, flag->name, flag->getter, NULL);
+	if (error != 0)
+		return error;
+
+	/* The methods String.prototype's match, replace, search and split call (ws074-p087). */
+	error = regexp_symbol_method(realm, prototype, VM_SYMBOL_MATCH, "[Symbol.match]", 1, regexp_symbol_match_method);
+	if (error == 0)
+		error = regexp_symbol_method(realm, prototype, VM_SYMBOL_REPLACE, "[Symbol.replace]", 2, regexp_symbol_replace_method);
+	if (error == 0)
+		error = regexp_symbol_method(realm, prototype, VM_SYMBOL_SEARCH, "[Symbol.search]", 1, regexp_symbol_search_method);
+	if (error == 0)
+		error = regexp_symbol_method(realm, prototype, VM_SYMBOL_SPLIT, "[Symbol.split]", 2, regexp_symbol_split_method);
 	if (error != 0)
 		return error;
 
@@ -2300,5 +2317,156 @@ regexp_escape_source(
 		return error;
 
 	/* Succeeded: the source. */
+	return 0;
+}
+
+/* Defines a method of RegExp.prototype keyed by a well-known symbol. */
+static int
+regexp_symbol_method(
+	struct vm_realm *realm,
+	struct vm_object *prototype,
+	int which,
+	const char *name,
+	unsigned length,
+	vm_native native)
+{
+	struct vm_function *function;
+	int error;
+
+	/* The function. */
+	error = js_builtin_function(realm, name, length, native, NULL, &function);
+	if (error != 0)
+		return error;
+
+	/* The property. */
+	error = js_builtin_symbol_value(realm, prototype, which, vm_value_cell(function), JS_BUILTIN_METHOD);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the method is defined. */
+	return 0;
+}
+
+/* Checks a symbol method's this (an object) and makes its first argument a string. */
+static int
+regexp_symbol_string(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	struct vm_string **string)
+{
+	int is_object;
+	int status;
+
+	/* this must be an object. */
+	is_object = vm_value_is_object(this_value);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "RegExp.prototype method called on incompatible receiver");
+		return status;
+	}
+
+	/* The string. */
+	status = vm_to_string(realm, js_argument(args, count, 0), string);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the string. */
+	return 0;
+}
+
+/* RegExp.prototype[Symbol.match](string). */
+static int
+regexp_symbol_match_method(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *string;
+	int status;
+
+	/* The string, then the matches. */
+	*result = VM_VALUE_UNDEFINED;
+	status = regexp_symbol_string(realm, this_value, args, count, &string);
+	if (status == 0)
+		status = js_regexp_symbol_match(realm, this_value, string, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the result. */
+	return 0;
+}
+
+/* RegExp.prototype[Symbol.replace](string, replacement). */
+static int
+regexp_symbol_replace_method(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *string;
+	int status;
+
+	/* The string, then the replacement. */
+	*result = VM_VALUE_UNDEFINED;
+	status = regexp_symbol_string(realm, this_value, args, count, &string);
+	if (status == 0)
+		status = js_regexp_symbol_replace(realm, this_value, string, js_argument(args, count, 1), result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the result. */
+	return 0;
+}
+
+/* RegExp.prototype[Symbol.search](string). */
+static int
+regexp_symbol_search_method(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *string;
+	int status;
+
+	/* The string, then the search. */
+	*result = VM_VALUE_UNDEFINED;
+	status = regexp_symbol_string(realm, this_value, args, count, &string);
+	if (status == 0)
+		status = js_regexp_symbol_search(realm, this_value, string, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the index. */
+	return 0;
+}
+
+/* RegExp.prototype[Symbol.split](string, limit). */
+static int
+regexp_symbol_split_method(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *string;
+	int status;
+
+	/* The string, then the parts. */
+	*result = VM_VALUE_UNDEFINED;
+	status = regexp_symbol_string(realm, this_value, args, count, &string);
+	if (status == 0)
+		status = js_regexp_symbol_split(realm, this_value, string, js_argument(args, count, 1), result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the parts. */
 	return 0;
 }

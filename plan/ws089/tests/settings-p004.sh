@@ -1,10 +1,9 @@
 #!/bin/sh
-# ws089-p004: the look's pages of Settings on the Venus guest (the lean image with the test pictures, build-settings-image.sh
-# after make-wallpapers.py).  zdesktop --glass at 1280x800 with the session's wallpaper; Settings and zdesktop share
+# ws089-p004: the look's pages of Settings on the Venus guest (the lean image with the generated wallpapers, build-settings-image.sh).  zdesktop --glass at 1280x800 with the session's wallpaper; Settings and zdesktop share
 # root's home (/root/.config/keiland/desktop.conf, removed before and after).
-#  1. Wallpaper: three tiles (Kei (default), Dusk, Mist) (wallpaper.png); a click on Dusk writes the key
-#     (LOOK set key=wallpaper value=.../Dusk.ppm) and zdesktop shows it (ZWL PREFERENCES key=wallpaper applied)
-#     (wallpaper-dusk.png); a click on the default removes the key and zdesktop goes back (wallpaper-default.png).
+#  1. Wallpaper: six tiles (Kei (default) and the five of generate.py) (wallpaper.png); a click on Aurora writes the key
+#     (LOOK set key=wallpaper value=.../Aurora.ppm) and zdesktop shows it (ZWL PREFERENCES key=wallpaper applied)
+#     (wallpaper-aurora.png); a click on the default removes the key and zdesktop goes back (wallpaper-default.png).
 #  2. Appearance: the slider dragged to the left end writes window.opacity=85 and zdesktop applies it
 #     (appearance-85.png); dragged to the right end removes the key (opacity 100 again).
 #  3. Display (display.png) and Storage (storage.png) are shown; Home's tiles show the look's state (home.png).
@@ -101,14 +100,14 @@ guest "rm -f $conf" >/dev/null
 guest "$start_desktop" >/dev/null
 wait_desktop
 start_settings wallpaper
-expect_log /tmp/s.log 'ZSETTINGS LOOK pictures count=3'
+expect_log /tmp/s.log 'ZSETTINGS LOOK pictures count=6'
 expect_log /tmp/s.log 'ZSETTINGS CONTROL index=102 '
 shot wallpaper.png
 control 101
-expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value=/usr/share/keiland/wallpapers/Dusk.ppm error=0'
-expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpapers/Dusk.ppm'
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value=/usr/share/keiland/wallpapers/Aurora.ppm error=0'
+expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpapers/Aurora.ppm'
 guest "cat $conf"
-shot wallpaper-dusk.png
+shot wallpaper-aurora.png
 control 100
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value= error=0'
 expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpaper.ppm'
