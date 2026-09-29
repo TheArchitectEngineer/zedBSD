@@ -1,0 +1,10 @@
+#version 450
+// ws101-p002: barriers are lowered in p006; until then they are refused.
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer O { uint o[]; };
+void main()
+{
+	o[gl_GlobalInvocationID.x] = 1u;
+	memoryBarrierBuffer();
+	barrier();
+}

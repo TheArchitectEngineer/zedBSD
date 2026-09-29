@@ -62,6 +62,53 @@
 #define I915_IR_UNIFORM_STORAGE		3U
 
 /*
+ * The set of the storage buffer a compute shader reads gl_NumWorkGroups
+ * from (ws101-p002): a uniform of kind I915_IR_UNIFORM_STORAGE with this
+ * set and binding 0 names three words -- the group counts x, y, z -- that
+ * the dispatch places and whose address it delivers like any other storage
+ * buffer's.  No descriptor set of a pipeline layout has this number.
+ */
+#define I915_IR_SYSTEM_SET		0xFFFFFFFFU
+
+/*
+ * The built-in values of a compute invocation a LOAD_SYSTEM reads, as its
+ * `component` (ws101-p002): the invocation's place in its workgroup (x, y,
+ * z and the linear index) and the workgroup's place in the dispatch.
+ */
+#define I915_IR_SYSTEM_LOCAL_ID_X	0U
+#define I915_IR_SYSTEM_LOCAL_ID_Y	1U
+#define I915_IR_SYSTEM_LOCAL_ID_Z	2U
+#define I915_IR_SYSTEM_LOCAL_INDEX	3U
+#define I915_IR_SYSTEM_GROUP_ID_X	4U
+#define I915_IR_SYSTEM_GROUP_ID_Y	5U
+#define I915_IR_SYSTEM_GROUP_ID_Z	6U
+#define I915_IR_SYSTEM_COUNT		7U
+
+/*
+ * The operations of an ATOMIC instruction, as its `immediate`
+ * (ws101-p002): the value numbers of the data port's atomic operations
+ * (Mesa brw_eu_defines.h, BRW_AOP_*), so the code generator passes them
+ * through.  An increment and a decrement are ADD and SUB of one.
+ */
+#define I915_IR_ATOMIC_AND		1U
+#define I915_IR_ATOMIC_OR		2U
+#define I915_IR_ATOMIC_XOR		3U
+#define I915_IR_ATOMIC_XCHG		4U
+#define I915_IR_ATOMIC_ADD		7U
+#define I915_IR_ATOMIC_SUB		8U
+#define I915_IR_ATOMIC_SMAX		10U
+#define I915_IR_ATOMIC_SMIN		11U
+#define I915_IR_ATOMIC_UMAX		12U
+#define I915_IR_ATOMIC_UMIN		13U
+#define I915_IR_ATOMIC_CMPXCHG		14U
+
+/*
+ * The `component` of an ATOMIC instruction that is predicated: its last
+ * source is the Boolean of the channels that run it.
+ */
+#define I915_IR_ATOMIC_PREDICATED	1U
+
+/*
  * The sampler messages of a TEXTURE instruction, numbered as the message
  * type field of the descriptor takes them (Mesa brw_eu_defines.h,
  * GFX5_SAMPLER_MESSAGE_*, HSW_SAMPLER_MESSAGE_SAMPLE_DERIV_COMPARE), each
@@ -102,7 +149,8 @@
 enum i915_shader_stage {
 	I915_STAGE_VERTEX = 0,
 	I915_STAGE_FRAGMENT = 1,
-	I915_STAGE_COUNT = 2
+	I915_STAGE_COMPUTE = 2,
+	I915_STAGE_COUNT = 3
 };
 
 /*
@@ -342,7 +390,9 @@ enum i915_shader_ir_op {
 
 	/*
 	 * dst = the word at byte offset src[0] (a value) of storage buffer
-	 * `location` (an index of the uniform list), read from memory.
+	 * `location` (an index of the uniform list), read from memory; with
+	 * `component` 1 only where the Boolean src[1] (the predicate of the
+	 * block the load is in) holds, the other channels' dst left as it was.
 	 */
 	I915_IR_LOAD_STORAGE,
 
@@ -365,6 +415,30 @@ enum i915_shader_ir_op {
 
 	/* The end of a skippable block. */
 	I915_IR_SKIP_END,
+
+	/*
+	 * dst = the compute built-in value `component` (I915_IR_SYSTEM_*) of
+	 * the channel's invocation (ws101-p002).
+	 */
+	I915_IR_LOAD_SYSTEM,
+
+	/*
+	 * dst = the value the word at byte offset src[0] of storage buffer
+	 * `location` held, which the operation `immediate` (I915_IR_ATOMIC_*)
+	 * of it and src[1] replaces in one indivisible step; a compare and
+	 * exchange writes src[1] only where the word equals src[2].  The
+	 * Boolean predicate is the source after the values (src[2], or src[3]
+	 * for a compare and exchange) when `component` is
+	 * I915_IR_ATOMIC_PREDICATED.  The code generator asks the memory for
+	 * the old value only when an instruction reads dst (ws101-p002).
+	 */
+	I915_IR_ATOMIC,
+
+	/*
+	 * dst = the bytes of storage buffer `location` its descriptor gives the
+	 * shader, the range an OpArrayLength divides (ws101-p002).
+	 */
+	I915_IR_STORAGE_SIZE,
 
 	I915_IR_OP_COUNT
 };
@@ -451,6 +525,12 @@ struct i915_shader_ir {
 
 	/* Bytes of push constants the shader reads. */
 	uint32_t push_bytes;
+
+	/*
+	 * Compute: the workgroup's size in invocations along x, y and z, from
+	 * the LocalSize or LocalSizeId execution mode; zero for another stage.
+	 */
+	uint32_t local_size[3];
 };
 
 #endif /* DRIVERS_GPU_I915_COMPILER_IR_H */

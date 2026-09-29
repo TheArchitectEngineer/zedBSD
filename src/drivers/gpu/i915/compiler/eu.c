@@ -1136,6 +1136,35 @@ drv_i915_eu_send_all(
 }
 
 /*
+ * Encodes the message that ends the thread for all eight channels, outside
+ * the mask.
+ *
+ * A compute thread ends this way: a one-register message with no
+ * destination to the thread spawner (ws101-p002).
+ */
+void
+drv_i915_eu_send_all_end(
+	struct i915_eu_buf *buffer,
+	struct i915_eu_reg src0,
+	uint32_t sfid,
+	uint32_t descriptor)
+{
+	/* Encodes the message for all eight channels, outside the mask, with the end-of-thread bit. */
+	i915_eu_send_common(buffer,
+			    0,
+			    I915_EU_FLAG_F0_0,
+			    I915_EU_SCOPE_ALL,
+			    drv_i915_eu_null(),
+			    src0,
+			    drv_i915_eu_null(),
+			    sfid,
+			    descriptor,
+			    0U,
+			    0,
+			    1);
+}
+
+/*
  * Encodes a no-op.
  */
 void

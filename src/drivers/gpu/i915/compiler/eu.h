@@ -187,6 +187,7 @@ void drv_i915_eu_math(struct i915_eu_buf *buffer, enum i915_eu_math func, struct
 void drv_i915_eu_send(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor, int conditional, int end_of_thread);
 void drv_i915_eu_send_masked(struct i915_eu_buf *buffer, enum i915_eu_flag flag, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor, int conditional, int end_of_thread);
 void drv_i915_eu_send_all(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor);
+void drv_i915_eu_send_all_end(struct i915_eu_buf *buffer, struct i915_eu_reg src0, uint32_t sfid, uint32_t descriptor);
 void drv_i915_eu_nop(struct i915_eu_buf *buffer);
 uint32_t drv_i915_eu_position(const struct i915_eu_buf *buffer);
 void drv_i915_eu_while(struct i915_eu_buf *buffer, enum i915_eu_flag flag, uint32_t target);

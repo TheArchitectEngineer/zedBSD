@@ -228,6 +228,27 @@
 #define OP_NO_LINE 317U
 #define OP_MODULE_PROCESSED 330U
 
+/* Opcodes of compute shaders (ws101-p002, spirv-compute.inc). */
+#define OP_ARRAY_LENGTH 68U
+#define OP_CONTROL_BARRIER 224U
+#define OP_MEMORY_BARRIER 225U
+#define OP_ATOMIC_LOAD 227U
+#define OP_ATOMIC_STORE 228U
+#define OP_ATOMIC_EXCHANGE 229U
+#define OP_ATOMIC_COMPARE_EXCHANGE 230U
+#define OP_ATOMIC_I_INCREMENT 232U
+#define OP_ATOMIC_I_DECREMENT 233U
+#define OP_ATOMIC_I_ADD 234U
+#define OP_ATOMIC_I_SUB 235U
+#define OP_ATOMIC_S_MIN 236U
+#define OP_ATOMIC_U_MIN 237U
+#define OP_ATOMIC_S_MAX 238U
+#define OP_ATOMIC_U_MAX 239U
+#define OP_ATOMIC_AND 240U
+#define OP_ATOMIC_OR 241U
+#define OP_ATOMIC_XOR 242U
+#define OP_EXECUTION_MODE_ID 331U
+
 /* Storage classes (SPIR-V spec, section 3.7). */
 #define SC_UNIFORM_CONSTANT 0U
 #define SC_INPUT 1U
@@ -256,6 +277,12 @@
 #define DEC_NON_WRITABLE 24U
 #define DEC_NON_READABLE 25U
 
+/* Decorations of a storage buffer's accesses that change nothing the lowering does (ws101-p002). */
+#define DEC_RESTRICT 19U
+#define DEC_ALIASED 20U
+#define DEC_VOLATILE 21U
+#define DEC_COHERENT 23U
+
 /* BuiltIn values (SPIR-V spec, section 3.21). */
 #define BUILTIN_POSITION 0U
 #define BUILTIN_POINT_SIZE 1U
@@ -265,9 +292,17 @@
 #define BUILTIN_VERTEX_INDEX 42U
 #define BUILTIN_INSTANCE_INDEX 43U
 
+/* The built-in inputs of a compute shader (ws101-p002). */
+#define BUILTIN_NUM_WORKGROUPS 24U
+#define BUILTIN_WORKGROUP_ID 26U
+#define BUILTIN_LOCAL_INVOCATION_ID 27U
+#define BUILTIN_GLOBAL_INVOCATION_ID 28U
+#define BUILTIN_LOCAL_INVOCATION_INDEX 29U
+
 /* Execution models (SPIR-V spec, section 3.3). */
 #define EM_VERTEX 0U
 #define EM_FRAGMENT 4U
+#define EM_GL_COMPUTE 5U
 
 /* GLSL.std.450 extended instruction numbers. */
 #define GLSL_ROUND 1U
@@ -404,6 +439,7 @@
 #define PTR_LOCAL 6U
 #define PTR_UBO 7U
 #define PTR_SSBO 8U	/* a storage buffer: words in memory at offsets the shader computes */
+#define PTR_SYSTEM 9U	/* a compute shader's built-in input: the dispatch's values (ws101-p002) */
 
 /* What the scalars of a value are, as a type says. */
 #define SCALAR_NONE 0U
@@ -752,6 +788,16 @@ struct i915_spirv_parser {
 
 	/* The entries the interface lists (ir->inputs, ir->outputs) have room for. */
 	uint32_t io_capacity;
+
+	/*
+	 * Compute: the constants a LocalSizeId execution mode names, resolved
+	 * after the declarations when local_size_by_id is nonzero, and the
+	 * index plus one of the system storage buffer in the uniform list, zero
+	 * until gl_NumWorkGroups is read (spirv-compute.inc).
+	 */
+	uint32_t local_size_id[3];
+	int local_size_by_id;
+	uint32_t system_uniform;
 };
 
 static int i915_spirv_pass_declarations(struct i915_spirv_parser *parser);
@@ -888,6 +934,20 @@ static uint32_t i915_spirv_operand_wide(struct i915_spirv_parser *parser, uint32
 static int i915_spirv_escaped(struct i915_spirv_parser *parser, uint32_t value);
 static uint32_t i915_spirv_constant_operand(struct i915_spirv_parser *parser, struct i915_spirv_id *record, uint32_t comp[MAX_COMPONENTS]);
 static struct i915_spirv_id *i915_spirv_result(struct i915_spirv_parser *parser, uint32_t id, uint32_t type_id, uint32_t count, int fresh);
+static int i915_spirv_declare_execution_mode(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_compute_declared(struct i915_spirv_parser *parser);
+static int i915_spirv_declare_system(struct i915_spirv_parser *parser, struct i915_spirv_id *record, uint32_t opcode, uint32_t offset);
+static int i915_spirv_chain_system(struct i915_spirv_parser *parser, struct i915_spirv_id *record, struct i915_spirv_id *pointee, struct i915_spirv_id *index_record, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_load_system(struct i915_spirv_parser *parser, const uint32_t *word, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t components, uint32_t opcode, uint32_t offset);
+static uint32_t i915_spirv_system_component(struct i915_spirv_parser *parser, uint32_t builtin, uint32_t component);
+static uint32_t i915_spirv_load_system(struct i915_spirv_parser *parser, uint32_t which);
+static uint32_t i915_spirv_system_uniform(struct i915_spirv_parser *parser);
+static int i915_spirv_lower_atomic(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_atomic_access(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_atomic_pointer(struct i915_spirv_parser *parser, uint32_t pointer_id, struct i915_spirv_id **pointer, struct i915_spirv_id **variable, uint32_t opcode, uint32_t offset);
+static int i915_spirv_atomic_relaxed(struct i915_spirv_parser *parser, uint32_t semantics_id, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_array_length(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static const char *i915_spirv_compute_refusal(uint32_t opcode);
 
 /*
  * Parses SPIR-V words into the scalar IR of one stage.
@@ -983,6 +1043,10 @@ drv_i915_shader_parse(
 
 	/* The first pass records types, constants, decorations and interface variables. */
 	error = i915_spirv_pass_declarations(&parser);
+
+	/* A compute shader's workgroup size is settled once every constant is declared. */
+	if (error == 0)
+		error = i915_spirv_compute_declared(&parser);
 
 	/*
 	 * The stream starts with room for the common lowerings and grows for the
@@ -1194,9 +1258,13 @@ i915_spirv_declare(
 	case OP_CAPABILITY:
 	case OP_EXTENSION:
 	case OP_MEMORY_MODEL:
-	case OP_EXECUTION_MODE:
 		/* Module-level instructions without execution semantics. */
 		return 0;
+
+	case OP_EXECUTION_MODE:
+	case OP_EXECUTION_MODE_ID:
+		/* A compute shader's workgroup size; any other literal mode has no effect. */
+		return i915_spirv_declare_execution_mode(parser, word, count, opcode, offset);
 
 	default:
 		break;
@@ -1219,13 +1287,15 @@ i915_spirv_declare_entry_point(
 	if (count < 3U)
 		return EINVAL;
 
-	/* Only vertex and fragment shaders are lowered. */
+	/* Vertex, fragment and compute shaders are lowered. */
 	if (word[1] == EM_VERTEX) {
 		parser->ir->stage = I915_STAGE_VERTEX;
 	} else if (word[1] == EM_FRAGMENT) {
 		parser->ir->stage = I915_STAGE_FRAGMENT;
+	} else if (word[1] == EM_GL_COMPUTE) {
+		parser->ir->stage = I915_STAGE_COMPUTE;
 	} else {
-		return i915_spirv_refuse(parser, opcode, offset, "execution model other than Vertex / Fragment");
+		return i915_spirv_refuse(parser, opcode, offset, "execution model other than Vertex / Fragment / GLCompute");
 	}
 
 	/* Succeeded: the stage is known. */
@@ -1311,6 +1381,17 @@ i915_spirv_decoration_ignored(
 	if (decoration == DEC_NON_WRITABLE || decoration == DEC_NON_READABLE)
 		return 1;
 
+	/*
+	 * Nor do its coherence and aliasing qualifiers: the code generator never
+	 * reorders a memory access, and every access goes to memory uncached
+	 * (ws101-p002).
+	 */
+	if (decoration == DEC_COHERENT ||
+	    decoration == DEC_VOLATILE ||
+	    decoration == DEC_RESTRICT ||
+	    decoration == DEC_ALIASED)
+		return 1;
+
 	/* Anything else has an effect. */
 	return 0;
 }
@@ -1332,6 +1413,7 @@ i915_spirv_declare_member_decoration(
 {
 	struct i915_spirv_id *record;
 	uint32_t member;
+	int ignored;
 
 	/* Resolves the decorated structure type. */
 	record = NULL;
@@ -1362,9 +1444,11 @@ i915_spirv_declare_member_decoration(
 		record->member_flat[member] = 1U;
 	} else if (word[3] == DEC_NO_PERSPECTIVE) {
 		record->member_noperspective[member] = 1U;
-	} else if (word[3] != DEC_RELAXED_PRECISION && word[3] != DEC_CENTROID &&
-		   word[3] != DEC_NON_WRITABLE && word[3] != DEC_NON_READABLE) {
-		return i915_spirv_refuse(parser, opcode, offset, "member decoration that is not interpreted");
+	} else {
+		/* A decoration without effect (RelaxedPrecision, Centroid, the access qualifiers), or one that is refused. */
+		ignored = i915_spirv_decoration_ignored(word[3]);
+		if (ignored == 0)
+			return i915_spirv_refuse(parser, opcode, offset, "member decoration that is not interpreted");
 	}
 
 	/* Succeeded: the decoration is recorded or has no effect. */
@@ -1704,7 +1788,11 @@ i915_spirv_declare_variable(
 	}
 
 	/* The storage class, and a location, decide what the variable is to the shader. */
-	if (storage == SC_INPUT && record->has_location != 0U) {
+	if (storage == SC_INPUT && record->has_builtin != 0U && parser->ir->stage == I915_STAGE_COMPUTE) {
+		error = i915_spirv_declare_system(parser, record, opcode, offset);
+		if (error != 0)
+			return error;
+	} else if (storage == SC_INPUT && record->has_location != 0U) {
 		record->ptr_kind = PTR_INPUT;
 		error = i915_spirv_add_io(parser, word[2], 1, opcode, offset);
 		if (error != 0)
@@ -1993,6 +2081,7 @@ i915_spirv_lower(
 	uint32_t offset)
 {
 	struct i915_spirv_loop *loop;
+	const char *refusal;
 
 	/* Debug instructions carry no execution semantics, wherever they sit. */
 	if (opcode == OP_NOP || opcode == OP_LINE || opcode == OP_NO_LINE)
@@ -2022,6 +2111,13 @@ i915_spirv_lower(
 		loop = &parser->loops[parser->loop_depth - 1U];
 		if (loop->begun == 0 && loop->header == parser->block)
 			i915_spirv_loop_begin(parser, loop);
+	}
+
+	/* A compute shader refuses what its dispatch cannot give it. */
+	if (parser->ir->stage == I915_STAGE_COMPUTE) {
+		refusal = i915_spirv_compute_refusal(opcode);
+		if (refusal != NULL)
+			return i915_spirv_refuse(parser, opcode, offset, refusal);
 	}
 
 	/* Dispatches on the instruction. */
@@ -2113,6 +2209,28 @@ i915_spirv_lower(
 
 	case OP_STORE:
 		return i915_spirv_lower_store(parser, word, count, opcode, offset);
+
+	case OP_ATOMIC_EXCHANGE:
+	case OP_ATOMIC_COMPARE_EXCHANGE:
+	case OP_ATOMIC_I_INCREMENT:
+	case OP_ATOMIC_I_DECREMENT:
+	case OP_ATOMIC_I_ADD:
+	case OP_ATOMIC_I_SUB:
+	case OP_ATOMIC_S_MIN:
+	case OP_ATOMIC_U_MIN:
+	case OP_ATOMIC_S_MAX:
+	case OP_ATOMIC_U_MAX:
+	case OP_ATOMIC_AND:
+	case OP_ATOMIC_OR:
+	case OP_ATOMIC_XOR:
+		return i915_spirv_lower_atomic(parser, word, count, opcode, offset);
+
+	case OP_ATOMIC_LOAD:
+	case OP_ATOMIC_STORE:
+		return i915_spirv_lower_atomic_access(parser, word, count, opcode, offset);
+
+	case OP_ARRAY_LENGTH:
+		return i915_spirv_lower_array_length(parser, word, count, opcode, offset);
 
 	case OP_FADD:
 	case OP_FSUB:
@@ -2342,9 +2460,11 @@ i915_spirv_lower_access_chain(
 		if (index_record == NULL || pointee == NULL)
 			return EINVAL;
 
-		/* Memory the draw delivers is addressed in bytes; anything else in scalars. */
+		/* Memory the draw delivers is addressed in bytes; a compute built-in by component; anything else in scalars. */
 		if (record->ptr_kind == PTR_PUSH || record->ptr_kind == PTR_UBO || record->ptr_kind == PTR_SSBO) {
 			error = i915_spirv_chain_block(parser, record, pointee, index_record, word[index], opcode, offset);
+		} else if (record->ptr_kind == PTR_SYSTEM) {
+			error = i915_spirv_chain_system(parser, record, pointee, index_record, opcode, offset);
 		} else {
 			error = i915_spirv_chain_scalars(parser, record, pointee, index_record, word[index], opcode, offset);
 		}
@@ -2378,6 +2498,8 @@ i915_spirv_chain_block(
 	uint32_t scalars[MAX_COMPONENTS];
 	uint32_t scalar_count;
 	uint32_t selected;
+	uint32_t before;
+	uint32_t after;
 	int constant;
 
 	/* A constant index names its element now; any other is an IR integer. */
@@ -2417,8 +2539,12 @@ i915_spirv_chain_block(
 				return EINVAL;
 			record->byte_offset += selected * pointee->stride;
 		} else {
-			/* One dynamic index, over an array short enough to select from (a storage buffer's is an address). */
-			if (record->dynamic_index != NO_VALUE)
+			/*
+			 * One dynamic index, over an array short enough to select
+			 * from; a storage buffer's is an address, so any number of
+			 * them add up to one byte offset.
+			 */
+			if (record->dynamic_index != NO_VALUE && record->ptr_kind != PTR_SSBO)
 				return i915_spirv_refuse(parser, opcode, offset, "access chain with more than one dynamic index");
 			if (record->ptr_kind != PTR_SSBO &&
 			    (pointee->length == 0U || pointee->length > MAX_DYNAMIC_ELEMENTS))
@@ -2426,9 +2552,19 @@ i915_spirv_chain_block(
 			scalar_count = i915_spirv_operand(parser, index_id, scalars);
 			if (scalar_count != 1U)
 				return i915_spirv_refuse(parser, opcode, offset, "dynamic index that is not an integer scalar");
-			record->dynamic_index = scalars[0];
-			record->dynamic_stride = pointee->stride;
-			record->dynamic_length = pointee->length;
+
+			/* A storage buffer's second dynamic index folds the first into bytes, and itself after it (ws101-p002). */
+			if (record->dynamic_index != NO_VALUE) {
+				before = i915_spirv_emit_value(parser, I915_IR_IMUL, record->dynamic_index, i915_spirv_integer_constant(parser, record->dynamic_stride));
+				after = i915_spirv_emit_value(parser, I915_IR_IMUL, scalars[0], i915_spirv_integer_constant(parser, pointee->stride));
+				record->dynamic_index = i915_spirv_emit_value(parser, I915_IR_IADD, before, after);
+				record->dynamic_stride = 1U;
+				record->dynamic_length = 0U;
+			} else {
+				record->dynamic_index = scalars[0];
+				record->dynamic_stride = pointee->stride;
+				record->dynamic_length = pointee->length;
+			}
 		}
 
 		/* What follows the element is addressed from it. */
@@ -2692,6 +2828,8 @@ i915_spirv_lower_load(
 		error = i915_spirv_lower_load_block(parser, word, base, variable, opcode, offset);
 	} else if (base->ptr_kind == PTR_SSBO) {
 		error = i915_spirv_lower_storage(parser, word, base, variable, NULL, components, opcode, offset);
+	} else if (base->ptr_kind == PTR_SYSTEM) {
+		error = i915_spirv_lower_load_system(parser, word, base, variable, components, opcode, offset);
 	} else {
 		return i915_spirv_refuse(parser, opcode, offset, "load through a pointer that is not an input, push constant, uniform block, sampler or local");
 	}
@@ -3184,6 +3322,18 @@ i915_spirv_lower_storage(
 			if (inst != NULL)
 				inst->location = variable->uniform;
 			record->comp[index] = value;
+
+			/*
+			 * A compute shader's load reads only for the block's channels
+			 * (ws101-p002): a channel outside it may hold an offset past the
+			 * buffer, as after `if (i >= n) return;`.
+			 */
+			if (inst != NULL &&
+			    parser->ir->stage == I915_STAGE_COMPUTE &&
+			    parser->predicate != PREDICATE_ALWAYS) {
+				inst->src[1] = parser->predicate;
+				inst->component = 1U;
+			}
 			continue;
 		}
 
@@ -8884,3 +9034,6 @@ i915_spirv_result(
 	/* Succeeded: the result is declared. */
 	return record;
 }
+
+/* The compute part of the parser (ws101-p002). */
+#include "spirv-compute.inc"

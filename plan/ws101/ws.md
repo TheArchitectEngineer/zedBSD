@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）cleared（2026-09-30、[design.md](design.md)）。次は p002（compiler の核）と p008（GLSL ES 3.10 の compute）を並行で。判断 D1〜D5 は design.md §7
+Resume point: p002（compiler の核）cleared（2026-09-30）。次は p003（実行器の object と記録）と p008（GLSL ES 3.10 の compute）。判断 D1〜D5 は design.md §7
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -56,7 +56,7 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws101-p001](phase001/phase.md) | 設計: compiler（GLCompute・ID・SLM・barrier・atomic）、実行器（PIPELINE_SELECT GPGPU・MEDIA_VFE_STATE・interface descriptor・CURBE・GPGPU_WALKER・indirect）、GLES 3.1 の compute、Noct の accel を有効にする build の変更の案、試験と G3 の見本と N・倍率 | cleared（2026-09-30。[design.md](design.md)） | — |
-| ws101-p002 | compiler の核: GLCompute、LocalSize・LocalSizeId、built-in（LOAD_SYSTEM、GlobalInvocationID、NumWorkgroups の A64 の読み）、compute の register の約束と binary、thread spawner への EOT、LOAD_STORAGE の predicate、効果なしの decoration、OpArrayLength、stage の分岐の見直し、SSBO の A64 の atomic、複数の動的な index、拒否（design §1） | planned | p001 |
+| [ws101-p002](phase002/phase.md) | compiler の核: GLCompute、LocalSize・LocalSizeId、built-in（LOAD_SYSTEM、GlobalInvocationID、NumWorkgroups の A64 の読み）、compute の register の約束と binary、thread spawner への EOT、LOAD_STORAGE の predicate、効果なしの decoration、OpArrayLength、stage の分岐の見直し、SSBO の A64 の atomic、複数の動的な index、拒否（design §1） | cleared（2026-09-30。host の試験 PASS、kernel の build PASS。GPU は p005） | p001 |
 | ws101-p003 | 実行器の object と記録: vkCreateComputePipelines（66）、bind point の分離、vkCmdDispatch（110）の記録（design §2.1） | planned | p002 |
 | ws101-p004 | 実行器の batch: `render/compute.c`（IDD・CURBE・NumWorkgroups の置き場所・VFE・walker・3D への戻り・scratch 768 thread 分）、transfer_pending（dispatch と SSBO を書く draw）、HDC だけの PIPE_CONTROL、storage の range、WS101 の genxml の dumper（design §2.2〜§2.4） | planned | p003 |
 | ws101-p005 | 実機の bring-up と kernel の試験の場面 `vkcs`（ADD・ID・ODD・PUSH・ATOMIC-SSBO・MIXED・MANYOPS・SPILL）。eu-test の 1 thread の設定から段階的に（design §2.6・§5.1） | planned | p004 |

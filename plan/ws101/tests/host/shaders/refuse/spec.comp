@@ -1,0 +1,8 @@
+#version 450
+// ws101-p002: a workgroup size from a specialization constant is refused.
+layout(local_size_x_id = 0) in;
+layout(std430, binding = 0) buffer O { uint o[]; };
+void main()
+{
+	o[gl_GlobalInvocationID.x] = 1u;
+}
