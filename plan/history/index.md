@@ -1,13 +1,17 @@
 <!-- awesome-plan project=zedbsd record=past-log -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: [q503](../queue.md) / ws074-p092（Amazonの後続scriptが使うWeb API）
-Last finished Queue: [q502](queue-q502.md)（ws074-p088 cleared。動的な外部script）
+Active Queue: なし
+Last finished Queue: [q503](queue-q503.md)（ws074-p092 cleared。Amazonの後続script向けWeb API）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q502
+## 最新: 2026-09-30 q503
+
+[q503](queue-q503.md): Amazonの後続script向けWeb API、非同期fetch、MutationObserver、有界なsettleを実装。sign-in tooltipの幅とstacking orderも修正し、dynamic topは71.81%/ink 64.58%、約32秒・Uncaught 4。GitHubへは未公開。
+
+## 2026-09-30 q502
 
 [q502](queue-q502.md): DOMへ挿入された外部scriptを非同期取得して一度だけ実行し、load/errorを送る。Chromium fixture、DOM 20/20、ASan。dynamic topはAUI後続scriptへ進み、次のWeb API不足をp092へ分けた。GitHubへは未公開。
 
