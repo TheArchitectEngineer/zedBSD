@@ -34,7 +34,16 @@
 #define BOT_CBW_SIGNATURE		0x43425355U
 #define BOT_CSW_SIGNATURE		0x53425355U
 #define BOT_DIRECTION_IN		0x80U
-#define BOT_TIMEOUT_MS			5000U
+/*
+ * Timeouts of one BOT stage (the CBW, the data or the CSW transfer).  A
+ * device returns the CSW only when the command itself is done, so the CSW
+ * stage waits for the whole command: the SCSI disk convention of 30 s per
+ * command applies, and SYNCHRONIZE CACHE gets 60 s because writing back the
+ * device's cache (for an emulated disk, fdatasync of the host image) can
+ * take many seconds (BUG-030).
+ */
+#define BOT_TIMEOUT_MS			30000U
+#define BOT_FLUSH_TIMEOUT_MS		60000U
 #define STORAGE_CONTROL_POLL_MS		1000U
 #define STORAGE_CONTROL_STOP_MS		20000U
 
@@ -128,6 +137,7 @@ static int storage_urbs_alloc(struct usb_storage *storage);
 static int storage_transfer_reserve(struct usb_storage *storage);
 static void storage_urbs_free(struct usb_storage *storage);
 static int bot_reset(struct usb_storage *storage);
+static unsigned bot_stage_timeout(const void *cdb, size_t cdb_length);
 static int bot_command_locked(struct usb_storage *storage, const void *cdb, size_t cdb_length, void *buffer, size_t length, int input, size_t *transferred, int *command_failed, int report_command_failed);
 static int request_sense_locked(struct usb_storage *storage, struct drv_usb_scsi_sense *decoded);
 static int storage_reconfigure_locked(struct usb_storage *storage);
@@ -621,6 +631,24 @@ bot_reset(
 }
 
 /* Runs one command, with the device lock held. */
+/*
+ * Reports the timeout of each BOT stage of a command.
+ */
+static unsigned
+bot_stage_timeout(
+	const void *cdb,
+	size_t cdb_length)
+{
+	const uint8_t *opcode = cdb;
+
+	/* A cache flush may write back the device's whole cache first. */
+	if (cdb_length != 0 && opcode[0] == SCSI_SYNCHRONIZE_CACHE_10)
+		return BOT_FLUSH_TIMEOUT_MS;
+
+	/* Every other command gets the SCSI disk convention. */
+	return BOT_TIMEOUT_MS;
+}
+
 static int
 bot_command_locked(
 	struct usb_storage *storage,
@@ -643,6 +671,7 @@ bot_command_locked(
 	enum drv_usb_bot_csw_result csw_result;
 	uint32_t residue, tag;
 	size_t actual, data_actual = 0, processed;
+	unsigned stage_timeout;
 	int error;
 
 	storage->transport_error = 0;
@@ -674,6 +703,9 @@ bot_command_locked(
 	cbw.command_length = (uint8_t)cdb_length;
 	kern_memcpy(cbw.command, cdb, cdb_length);
 
+	/* Chooses the timeout each stage of this command waits. */
+	stage_timeout = bot_stage_timeout(cdb, cdb_length);
+
 	/* Validates the current input. */
 	if (input != 0 && ((const uint8_t *)cdb)[0] == SCSI_READ_10 &&
 	    cdb_length >= 10U) {
@@ -697,7 +729,7 @@ bot_command_locked(
 
 	/* Checks the operation status. */
 	error = storage_bulk(storage, storage->bulk_out, &cbw, sizeof(cbw),
-			     BOT_TIMEOUT_MS, &actual, NULL);
+			     stage_timeout, &actual, NULL);
 	if (error != 0 || actual != sizeof(cbw)) {
 		kern_logf(
 			"usb-storage: BOT CBW error=%d actual=%u expected=%u\n",
@@ -712,7 +744,7 @@ bot_command_locked(
 
 		actual = 0;
 		error = storage_bulk(storage, endpoint, buffer, length,
-				     BOT_TIMEOUT_MS, &actual, checkpoint);
+				     stage_timeout, &actual, checkpoint);
 		data_actual = actual;
 
 		/* Checks the operation status. */
@@ -741,13 +773,13 @@ bot_command_locked(
 
 	/* Checks the operation status. */
 	error = storage_bulk(storage, storage->bulk_in, &csw, sizeof(csw),
-			     BOT_TIMEOUT_MS, &actual, NULL);
+			     stage_timeout, &actual, NULL);
 	if (error == EPIPE) {
 		/* Checks the operation status. */
 		error = drv_usb_endpoint_clear_halt(storage->bulk_in);
 		if (error == 0) {
 			error = storage_bulk(storage, storage->bulk_in, &csw,
-					     sizeof(csw), BOT_TIMEOUT_MS,
+					     sizeof(csw), stage_timeout,
 					     &actual, NULL);
 		}
 	}
@@ -974,7 +1006,9 @@ bot_command_sense_locked(
 	kern_memcpy(retry_cdb, cdb, cdb_length);
 	cdb = retry_cdb;
 
-	storage->command_deadline = now + kern_ms_to_ticks(3U * BOT_TIMEOUT_MS);
+	/* Budgets the command, its reset and one retry from the stage timeout. */
+	storage->command_deadline =
+		now + kern_ms_to_ticks(3U * bot_stage_timeout(cdb, cdb_length));
 
 	/* Handles the sense availability. */
 	if (sense == NULL)

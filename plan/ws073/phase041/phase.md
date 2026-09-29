@@ -1,0 +1,102 @@
+<!-- awesome-plan project=zedbsd record=ws073-p041 -->
+
+# ws073-p041: BUG-030（起動時の USB mass storage の CSW の時間切れ）の原因と修正
+
+Status: in-progress（2026-09-30、サブエージェント、worktree `.claude/worktrees/ws073-bugs`、branch `wt/ws073`。原因を特定して修正し、build と短い再現試験と boot test は済み。受け入れの本数の試験は別の担当が行う）
+Disposition: normal
+Parent: [WS073](../ws.md)
+Bug: [BUG-030](../../bugs/BUG-030.md)
+Queue: main の依頼（2026-09-29「BUG-030 をなるべく短時間で修正」）。Queue の ID は main が記録する
+Resume point: 下の「試験の担当への引き継ぎ」
+
+## 範囲
+
+[ws073-p040](../phase040/phase.md) の再現（起動の途中の `BOT CSW error=42`）の原因を、xHCI の event の処理を読み、QEMU の debug の機能で切り分けて直す。
+受け入れの本数の試験（TCG・KVM で各 20 回以上）は別の Phase・担当が行う。
+
+## 原因
+
+**guest 側の event の取りこぼしではない。** 起動時の `SYNCHRONIZE CACHE(10)`（0x35）に対して、QEMU の usb-storage が host の disk image の
+flush（`fdatasync`）を待って CSW を返さず、usb-storage driver の CSW の段の 5 秒の時間切れ（`BOT_TIMEOUT_MS`）に掛かっていた。
+
+切り分けの証拠（QEMU、TCG、`tests/usb-stress.sh` を 2 台並列、起動だけ。再現は 6 回中 6 回（QEMU の trace 付き）、3 回中 1 回（trace なし））:
+
+1. xHCI の driver に診断を入れた（cancel の直前に event ring の未処理の event の数と IMAN・USBSTS・ERDP、cancel 中の request に届いた completion code を log）。
+   時間切れの時点で毎回 `pending-events=0 iman=2 usbsts=0 erdp=...b0`（未処理の event なし、IE=1・IP=0・EHB=0）、Stop Endpoint の後の completion は
+   **26（Stopped）residual=13**。つまり controller（QEMU）はその TD をまだ実行中で、guest は何も取りこぼしていない。
+2. QEMU の trace（`-trace enable=usb_msd_*,usb_xhci_xfer_*,usb_xhci_ep_*,scsi_req_*`、`build/ws073-p041/before-fix/trace*/qemu.log`）で、時間切れの
+   command は 6 回とも **tag 0x13f = SYNCHRONIZE CACHE(10)（`scsi_req_parsed ... command 53`、data 無し）**。`usb_msd_cmd_submit` の後に CSW の
+   packet が `usb_msd_packet_async`（`s->req` が未完了）になり、`usb_msd_cmd_complete` が来ないまま guest の `usb_xhci_ep_stop` → `scsi_req_cancel` →
+   `usb_msd_cmd_cancel`。QEMU の scsi-disk の SYNCHRONIZE CACHE は `blk_aio_flush` = host の image の `fdatasync` で、完了までの時間は host の
+   dirty page の量と disk の速さで決まる。
+3. 起動時だけ出る理由: `guest.py`（と `boot-test.sh`）は起動の直前に image を `cp --reflink=auto` で複写する。build の directory は ext4（reflink なし）なので
+   2.2 GB の実複写になり、host の page cache に 2.2 GB の dirty page が残ったまま guest が起動する。guest の root の journal の commit が出す最初の方の
+   SYNCHRONIZE CACHE がその書き戻しを全部待つ（2 台並列なら 4.4 GB、他の agent の QEMU の I/O も重なる）。起動の後の丸読み（READ(10) だけ）で
+   出ないのは flush が無いから。TCG・KVM の違いではなく host の書き戻しの遅さで決まる（p017 の KVM 60 回 0 は host が空いていた）。
+   BUG-030 の ticket の `BOT data dir=in error=42`（p005）も同じ host の I/O の遅さ（書き戻し中の read）と見られる（未検証）。
+
+xHCI の event ring・IMAN・EHB の扱いは QEMU 10.0 の `hcd-xhci.c` の実装と突き合わせて整合していた（`command_ex` の polling 中の IE=0 と IP を残した
+復帰、`event_take` の ERDP の EHB clear、`xhci_irq` の USBSTS.EINT の扱い）。取りこぼしの経路は見つからず、診断もそれを裏付けた。
+
+## 修正
+
+`src/drivers/usb/usb-storage.c`: BOT の段（CBW・data・CSW）ごとの timeout を command で決める `bot_stage_timeout()` を足した。CSW は command が終わる
+まで返らないので、段の timeout は command の timeout である。SCSI disk の慣例（Linux の sd と同じ）に合わせ、
+
+- `BOT_TIMEOUT_MS`: 5000 → **30000**（READ/WRITE など）
+- `BOT_FLUSH_TIMEOUT_MS`: **60000**（SYNCHRONIZE CACHE(10)。device の cache 全体の書き戻し）
+- command 全体の予算（reset と 1 回の再試行を含む `command_deadline`）は従来どおり段の timeout の 3 倍（90 秒、flush は 180 秒）。
+
+これは根の修正である（host の flush が遅いことを transport の failure と誤認していた driver 側の timeout の問題）。安全網（event ring の poll）は要らず、
+入れていない。副作用: 本当に応答しない device の failure が 5 秒ではなく 30 秒（flush 60 秒）で出る。disconnect は URB が DISCONNECTED で即時に返るので
+待たない。
+
+`src/drivers/pci/pci-xhci.c`: 診断の log を残した（cancel の直前の event ring・interrupter の状態 `xhci: cancel ...` と、cancel 中の request に届いた
+completion `xhci: cancelled request ...`）。時間切れの時だけ出る。次に同種の時間切れが出たとき、guest の取りこぼしか controller 側かを 1 行で
+切り分けられる。
+
+`plan/ws073/tests/usb-stress.sh`: 毎回の `dmesg` を `GUEST_RUNTIME/dmesg-N.txt` に保存し、xHCI の診断の行も拾う。`QEMU_EXTRA` で QEMU の引数
+（`-trace`）を足せる。`PASSES=0`（第 3 引数 0）で丸読みを省く。
+
+## 確かめたこと（QEMU。実機は未実施）
+
+- build: `make -j16 ZEDBSD_CONFIG=/home/awe/zedBSD-rpi4/config.mk BUILD=build/amd64 vmunix`（worktree の `build/amd64`）rc=0、warning 0
+  （`build/ws073-p041/kernel.log`）。image は `tests/kernel-image.sh` で `build/ws073-p041/guest.img`。
+- clang-format: 未実施（host にも `build/llvm/bin` にも無い）。`git diff --check` は通る。
+- 修正前（診断だけの kernel）: TCG 2 台並列・起動だけ、trace なし 6 回中 2 回、trace 付き 6 回中 6 回、全て SYNCHRONIZE CACHE の CSW の時間切れ
+  （`build/ws073-p041/before-fix/`）。
+- 修正後: 同じ条件（TCG 2 台並列、trace 付き、起動だけ）で 4 回中 4 回 error 0（`dmesg` に `error=`・`xhci: cancel` なし）。QEMU の trace では
+  6 回とも時間切れになっていた tag 0x13f の SYNCHRONIZE CACHE が毎回 `usb_msd_cmd_complete status 0, tag 0x13f` まで届き、`usb_msd_cmd_cancel` は 0
+  （`build/ws073-p041/trace{1,2}-{1,2}/`）。本数は少ない（受け入れの本数は引き継ぎ）。
+- boot test（`plan/tools/boot-test.sh`、`BOOT_MODE=uefi-usb`、`build/ws073-p041/guest.img`、host は stress と並行で負荷あり）: PASS、
+  `build/ws073-p041/boot-test/login.png`（画面に usb-storage の error なし、sshd・getty が起動し login prompt）。
+
+## 試験の担当への引き継ぎ（受け入れ）
+
+kernel は `wt/ws073` の最後の commit（この Phase の diff は `src/drivers/usb/usb-storage.c`・`src/drivers/pci/pci-xhci.c`・`plan/ws073/tests/usb-stress.sh`）。
+image は `sh plan/ws073/tests/kernel-image.sh build/amd64/vmunix build/<dir>/guest.img`。
+
+1. 再現の条件で 0 回: `MODE=tcg sh plan/ws073/tests/usb-stress.sh IMAGE 20 0` を 2 本並列（`GUEST_RUNTIME` を分ける）→ 各 20 回以上、
+   `dmesg` の `error=`・`xhci: cancel` の行が 0。QEMU の trace を足すと再現率が上がるので、`QEMU_EXTRA="-trace enable=usb_msd_*"` 付きでも同じ本数。
+   host に書き戻しの負荷がある状態（image の複写の直後）で走らせること。
+2. KVM: `sh plan/ws073/tests/usb-stress.sh IMAGE 20 1` を 2 本並列 → 各 20 回以上、error 0（丸読み 1 回を含む）。
+3. 回帰: (a) USB の disk の丸読み（上の 2 の `dd` が 2216689664 bytes で終わる）、(b) usb-net（SSH が毎回つながる = 上の試験そのもの）、
+   (c) keyboard（`plan/tools/boot-test.sh` `BOOT_MODE=uefi-usb` で login prompt、`plan/tools/guest/serial.py` で login できる）。
+4. 受け入れ: 1・2 で error 0、3 が通る。そのうえで BUG-030 を resolved にし、この Phase を cleared にする。
+5. 時間切れが出た場合: `dmesg` の `xhci: cancel ... pending-events=N` と `xhci: cancelled request ... completion=C` を見る。N>0 なら guest の取りこぼし
+   （この Phase の結論が覆る）、N=0 かつ C=26 なら controller/QEMU 側で、QEMU の trace で command を特定する。
+
+## 残課題
+
+- `src/drivers/usb/usb-uas-disk.c` の UAS の command も 5000 ms の timeout で、同じ host の flush の遅さに掛かりうる（QEMU の harness は BOT なので
+  未再現）。UAS を扱う WS で同じ慣例（30 秒・flush 60 秒）に揃える。
+- `plan/tools/guest/guest.py`・`boot-test.sh` の image の複写を reflink の効く FS か `dd oflag=direct`＋`sync` にすると、起動の flush の遅さ自体を
+  減らせる（試験の道具の改善、任意）。
+- 実機（USB stick）での確認は未実施。実機の stick の SYNCHRONIZE CACHE も秒単位のことがあり、この修正はそこにも効くはず（未検証）。
+
+## 試験の道具と成果物
+
+- `plan/ws073/tests/usb-stress.sh`（p040 で足し、この Phase で拡張）。並列の起動は `build/ws073-p041/stress-tcg.sh`・`stress-trace.sh`（git の外）。
+- 修正前の証拠: `build/ws073-p041/before-fix/`（`trace*.txt`、各起動の `dmesg-1.txt`・`qemu.log`）。修正後: `build/ws073-p041/trace*`、boot test は
+  `build/ws073-p041/boot-test/login.png`。
+- QEMU 10.0 の `hcd-xhci.c`・`dev-storage.c` は突き合わせのために読んだだけで、tree には入れていない。

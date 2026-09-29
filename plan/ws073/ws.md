@@ -9,7 +9,7 @@ Related Milestones: MG004, MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Executor: WS073 のサブエージェント（2026-09-29 から worktree `.claude/worktrees/ws073-bugs`、branch `wt/ws073`。以前は `worktree-agent-a4f5b29b09938aa63`、p001・p002 は `worktree-agent-aefedcaf4a52a0507`）。main が merge する
-Resume point: 2026-09-29 夜: ws073-p040（BUG-030）は wrap up で uncleared。再現の道具 `tests/usb-stress.sh`（TCG・並列で起動時の CSW の時間切れが出る）。次: 時間切れの時の xHCI の event ring の未処理の event を見る（phase040 の「次にすること」）。その前、2026-09-29: BUG-102（p029）・BUG-104（p031）・BUG-051（p030）・BUG-107（p034）・BUG-108（p035）を解決、BUG-031 を resolved・BUG-039 は確認のみ（p036）。次は main の指示を待つ（残り: BUG-036・030・041 の再現、BUG-039 は host 試験の土台の WS、BUG-093 は toolchain、BUG-027・033 は低い優先度）
+Resume point: 2026-09-30: ws073-p041（BUG-030）で原因を特定して修正（usb-storage の BOT の段の timeout を 30 秒・flush 60 秒に）。受け入れの本数の試験（p041 の「試験の担当への引き継ぎ」: TCG・KVM 各 20 回以上 error 0、丸読み・usb-net・keyboard の回帰）が残り、通れば BUG-030 を resolved・p041 を cleared にする。その前、2026-09-29 夜: ws073-p040（BUG-030）は wrap up で uncleared（再現の道具 `tests/usb-stress.sh`）。2026-09-29: BUG-102（p029）・BUG-104（p031）・BUG-051（p030）・BUG-107（p034）・BUG-108（p035）を解決、BUG-031 を resolved・BUG-039 は確認のみ（p036）。次は main の指示を待つ（残り: BUG-036・041 の再現、BUG-039 は host 試験の土台の WS、BUG-093 は toolchain、BUG-027・033 は低い優先度）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -70,6 +70,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p036](phase036/phase.md) | BUG-039・BUG-031 | BUG-039: 状態は 09-27 と同じ（VFS PASS、overlay の link 125 未定義、UFS の断片が作れない）、host 試験の土台の WS へ。BUG-031: 起動の途中の画面を撮る試験（`console-midboot.py`）が修正の無い kernel で 10/10 検出、今の kernel で 21 起動 0 → resolved | cleared（2026-09-29） |
 | [ws073-p039](phase039/phase.md) | BUG-106 | `ssh -tt 'cd /bin && ls'` を修正ありの kernel で 800 回（負荷なし 300・負荷あり 500）欠け 0、red zone の修正を外した kernel では 17 回欠け（全て rc 255 ＋ SIGSEGV）→ BUG-051 の duplicate | cleared（2026-09-29） |
 | [ws073-p040](phase040/phase.md) | BUG-030 | 起動時の USB mass storage の読み取りの ETIMEDOUT の再現と原因（TCG と KVM、disk の丸読み） | uncleared（2026-09-29、wrap up。再現した（TCG 2 回に 1 回、並列の KVM 3 回に 1 回、起動の途中の CSW の時間切れだけ）、原因は未特定） |
+| [ws073-p041](phase041/phase.md) | BUG-030 | 原因の特定と修正: guest の event の取りこぼしではなく、起動時の SYNCHRONIZE CACHE に QEMU が host の image の fdatasync を待って CSW を返さず、usb-storage の CSW の 5 秒の時間切れに掛かっていた（xHCI の診断と QEMU の trace で 6 回中 6 回同じ）。BOT の段の timeout を SCSI disk の慣例（30 秒、flush 60 秒）にした | in-progress（2026-09-30。修正・build・短い再現試験（TCG 4 回中 4 回 error 0）・boot test PASS は済み。受け入れの本数の試験（TCG・KVM 各 20 回以上、回帰）は別の担当） |
 | [ws073-p031](phase031/phase.md) | BUG-104 | less で Ctrl-F・f（1 画面進む）と Ctrl-B（1 画面戻る）。more は不変。host の pty 試験と guest で `PAGER-KEYS:PASS` | cleared（2026-09-29） |
 | [ws073-p032](phase032/phase.md) | BUG-105 | Logi Bolt の受信機（046d:c548）の HID の descriptor を parse する: 同じ key の複数の field（0x31・0x32 → KEY_BACKSLASH）を許し、keyboard の usage を持たない array を読み飛ばし、AC Pan を REL_HWHEEL に。host 試験 PASS、HID の host 試験 3 本の回帰なし、vmunix warning 0、boot test PASS | in-progress（2026-09-29、実機の確認はユーザー待ち） |
 | [ws073-p033](phase033/phase.md) | BUG-106 | `ssh -tt` の最後の命令の出力の欠け: kernel の pty と OpenSSH の終わりの順を読み（出力を捨てる経路なし）、pen の image で約 500 回（欠け 0。0 byte の 1 回は sshd の listener の SIGSEGV と同時で BUG-051 の種類）。原因未確定、修正なし | uncleared（2026-09-29、WS081 のサブエージェントが main の依頼で実施、60 分で区切った） |
