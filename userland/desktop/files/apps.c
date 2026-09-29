@@ -25,6 +25,13 @@
  *
  * The lists are read each time a file is opened, so an edit takes effect
  * at once, and nothing of them is kept between openings.
+ *
+ * Always Open With (ws093-p003) writes the user's list: a line for one
+ * type, after a "# set by Files" comment, at the top of the list, so that
+ * it is the type's default.  Files changes only the lines it wrote that
+ * way (one a type); the lines the user wrote stay as they are.  The list
+ * is written to a new file beside it and renamed over it, so that a
+ * failure part-way leaves the old list whole.
  */
 
 #include "files.h"
@@ -51,6 +58,10 @@
 /* The longest line of a list, and the longest command once the path is put in. */
 #define APPS_LINE		1024
 #define APPS_EXPANDED		(FM_OPENER_COMMAND + 4 * FM_PATH_MAX)
+
+/* The comment Files puts before a line it wrote, and the suffix of the new list it writes before the rename. */
+#define APPS_MARK		"# set by Files"
+#define APPS_NEW_SUFFIX		".new"
 
 /* How many descriptors a started program closes before it runs (all the window may have open). */
 #define APPS_DESCRIPTORS	1024
@@ -96,6 +107,12 @@ static const struct apps_builtin apps_builtins[] = {
 /* The folders a needed program is looked for in. */
 static const char *const apps_program_folders[] = { "/bin", "/usr/bin", "/usr/local/bin" };
 
+static int apps_user_list(char *list, size_t size);
+static int apps_rewrite(const char *type, const struct fm_opener *opener);
+static int apps_copy_list(FILE *old, FILE *new, const char *type);
+static int apps_is_mark(const char *line);
+static int apps_is_type_line(const char *line, const char *type);
+static int apps_make_folders(const char *list);
 static void apps_read_list(const char *path, const char *type, struct fm_opener *openers, int capacity, int *count);
 static int apps_parse_line(char *line, char **patterns, char **name, char **command);
 static int apps_matches(const char *patterns, const char *type);
@@ -121,12 +138,12 @@ fm_apps_for(
 	int capacity)
 {
 	char list[FM_PATH_MAX];
-	const char *config;
 	size_t index;
 	int regular;
 	int matched;
 	int count;
 	int found;
+	int error;
 
 	/* A program runs in a terminal first. */
 	(void)path;
@@ -135,19 +152,9 @@ fm_apps_for(
 	if (regular != 0 && (mode & 0111) != 0)
 		apps_add(openers, capacity, &count, "Run in Terminal", "@terminal %f");
 
-	/* The user's list, under $XDG_CONFIG_HOME or ~/.config. */
-	config = getenv("XDG_CONFIG_HOME");
-	list[0] = '\0';
-	if (config != NULL && config[0] != '\0') {
-		snprintf(list, sizeof(list), "%s/%s", config, APPS_USER_LIST);
-	} else {
-		config = getenv("HOME");
-		if (config != NULL && config[0] != '\0')
-			snprintf(list, sizeof(list), "%s/.config/%s", config, APPS_USER_LIST);
-	}
-
 	/* The user's list, when there is a place for it. */
-	if (list[0] != '\0')
+	error = apps_user_list(list, sizeof(list));
+	if (error == 0)
 		apps_read_list(list, mime->type, openers, capacity, &count);
 
 	/* The system's list. */
@@ -266,6 +273,364 @@ fm_apps_spawn(
 	fm_log("SPAWN program=%s", arguments[0]);
 
 	/* Succeeded: the program is on its way. */
+	return 0;
+}
+
+/*
+ * Makes a way the default for one type: the user's list gets the way's line
+ * for exactly that type at its top, in place of the one Files wrote before.
+ *
+ * Returns 0, or an errno value (ENOENT without a home or configuration
+ * folder) with the list as it was.
+ */
+int
+fm_apps_set_default(
+	const char *type,
+	const struct fm_opener *opener)
+{
+	int error;
+
+	/* The list rewritten with the way's line first. */
+	error = apps_rewrite(type, opener);
+	fm_log("DEFAULT set type=%s app=%s error=%d", type, opener->name, error);
+
+	/* Reports why the default could not be changed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the way opens the type from now on. */
+	return 0;
+}
+
+/*
+ * Gives one type back to the system's default: the line Files wrote for it
+ * leaves the user's list (the user's own lines stay).
+ *
+ * Returns 0, or an errno value with the list as it was.
+ */
+int
+fm_apps_clear_default(
+	const char *type)
+{
+	int error;
+
+	/* The list rewritten without Files' line for the type. */
+	error = apps_rewrite(type, NULL);
+	fm_log("DEFAULT clear type=%s error=%d", type, error);
+
+	/* Reports why the default could not be given back. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the type opens with the system's default again. */
+	return 0;
+}
+
+/*
+ * Tells whether the user's list has a line Files wrote for a type (the
+ * type has a default the user chose): 1 when it has, 0 when not.
+ */
+int
+fm_apps_has_default(
+	const char *type)
+{
+	char list[FM_PATH_MAX];
+	char line[APPS_LINE];
+	char *read;
+	FILE *file;
+	int after_mark;
+	int is_mark;
+	int is_type;
+	int error;
+
+	/* The user's list; without one there is no choice of the user's. */
+	error = apps_user_list(list, sizeof(list));
+	if (error != 0)
+		return 0;
+
+	/* The list, when there is one. */
+	file = fopen(list, "r");
+	if (file == NULL)
+		return 0;
+
+	/* Looks for Files' comment followed by the type's line. */
+	after_mark = 0;
+	for (;;) {
+		/* The next line, until the list ends. */
+		read = fgets(line, sizeof(line), file);
+		if (read == NULL)
+			break;
+
+		/* A line of the type right after Files' comment is the user's choice. */
+		if (after_mark) {
+			is_type = apps_is_type_line(line, type);
+			if (is_type) {
+				fclose(file);
+				return 1;
+			}
+		}
+
+		/* Whether this line is Files' comment, for the next one. */
+		is_mark = apps_is_mark(line);
+		after_mark = is_mark;
+	}
+
+	/* The list is done with. */
+	fclose(file);
+
+	/* No line of Files' for the type. */
+	return 0;
+}
+
+/* Finds the user's list: under $XDG_CONFIG_HOME, or ~/.config; ENOENT when neither is set. */
+static int
+apps_user_list(
+	char *list,
+	size_t size)
+{
+	const char *config;
+	const char *home;
+	int written;
+
+	/* $XDG_CONFIG_HOME, when it is set. */
+	config = getenv("XDG_CONFIG_HOME");
+	if (config != NULL && config[0] != '\0') {
+		written = snprintf(list, size, "%s/%s", config, APPS_USER_LIST);
+		if (written < 0 || (size_t)written >= size)
+			return ENAMETOOLONG;
+
+		/* Succeeded: the list under the configuration folder. */
+		return 0;
+	}
+
+	/* Otherwise ~/.config; without a home there is no user's list. */
+	home = getenv("HOME");
+	if (home == NULL || home[0] == '\0')
+		return ENOENT;
+
+	/* The list under the home's configuration folder. */
+	written = snprintf(list, size, "%s/.config/%s", home, APPS_USER_LIST);
+	if (written < 0 || (size_t)written >= size)
+		return ENAMETOOLONG;
+
+	/* Succeeded: the list under ~/.config. */
+	return 0;
+}
+
+/*
+ * Writes the user's list anew: Files' line for the type first (none when
+ * opener is NULL), then every line of the old list but the one Files wrote
+ * for the type and its comment.  The new list is renamed over the old one.
+ */
+static int
+apps_rewrite(
+	const char *type,
+	const struct fm_opener *opener)
+{
+	char list[FM_PATH_MAX];
+	char fresh[FM_PATH_MAX + sizeof(APPS_NEW_SUFFIX)];
+	FILE *old;
+	FILE *new;
+	int written;
+	int error;
+
+	/* The user's list, and the new list beside it. */
+	error = apps_user_list(list, sizeof(list));
+	if (error != 0)
+		return error;
+	snprintf(fresh, sizeof(fresh), "%s%s", list, APPS_NEW_SUFFIX);
+
+	/* The folders the list lives in, made when they are not there. */
+	error = apps_make_folders(list);
+	if (error != 0)
+		return error;
+
+	/* The new list. */
+	new = fopen(fresh, "w");
+	if (new == NULL)
+		return errno;
+
+	/* The way's line first, after Files' comment. */
+	if (opener != NULL) {
+		written = fprintf(new, "%s\n%s\t%s\t%s\n", APPS_MARK, type, opener->name, opener->command);
+		if (written < 0) {
+			fclose(new);
+			(void)unlink(fresh);
+			return EIO;
+		}
+	}
+
+	/* The old list's lines but Files' line for the type, when there is an old list. */
+	old = fopen(list, "r");
+	if (old != NULL) {
+		error = apps_copy_list(old, new, type);
+		fclose(old);
+		if (error != 0) {
+			fclose(new);
+			(void)unlink(fresh);
+			return error;
+		}
+	}
+
+	/* The new list, complete on the disk. */
+	error = fclose(new);
+	if (error != 0) {
+		(void)unlink(fresh);
+		return EIO;
+	}
+
+	/* The new list takes the old one's place at once. */
+	error = rename(fresh, list);
+	if (error != 0) {
+		error = errno;
+		(void)unlink(fresh);
+		return error;
+	}
+
+	/* Succeeded: the list is written. */
+	return 0;
+}
+
+/* Copies a list's lines but Files' line for a type and the comment before it; returns 0 or EIO. */
+static int
+apps_copy_list(
+	FILE *old,
+	FILE *new,
+	const char *type)
+{
+	char line[APPS_LINE];
+	char *read;
+	int held;
+	int is_mark;
+	int is_type;
+	int written;
+
+	/* Each line; Files' comment is held until the line after it says whether it goes. */
+	held = 0;
+	for (;;) {
+		/* The next line, until the list ends. */
+		read = fgets(line, sizeof(line), old);
+		if (read == NULL)
+			break;
+
+		/* A held comment goes with the type's line after it, and the line goes too. */
+		if (held) {
+			held = 0;
+			is_type = apps_is_type_line(line, type);
+			if (is_type)
+				continue;
+
+			/* The comment belongs to another line, and stays. */
+			written = fprintf(new, "%s\n", APPS_MARK);
+			if (written < 0)
+				return EIO;
+		}
+
+		/* Files' comment is held for the line after it. */
+		is_mark = apps_is_mark(line);
+		if (is_mark) {
+			held = 1;
+			continue;
+		}
+
+		/* Any other line stays as it was. */
+		written = fputs(line, new);
+		if (written < 0)
+			return EIO;
+	}
+
+	/* A comment at the list's end stays. */
+	if (held) {
+		written = fprintf(new, "%s\n", APPS_MARK);
+		if (written < 0)
+			return EIO;
+	}
+
+	/* Succeeded: every line that stays is copied. */
+	return 0;
+}
+
+/* Tells whether a line of a list (with its end) is the comment Files puts before its own lines. */
+static int
+apps_is_mark(
+	const char *line)
+{
+	size_t length;
+	int differs;
+
+	/* The comment, followed by the line's end or nothing. */
+	length = strlen(APPS_MARK);
+	differs = strncmp(line, APPS_MARK, length);
+	if (differs != 0)
+		return 0;
+
+	/* Nothing else may follow on the line. */
+	if (line[length] == '\0')
+		return 1;
+	if (line[length] == '\n')
+		return 1;
+	if (line[length] == '\r')
+		return 1;
+
+	/* A longer comment is the user's. */
+	return 0;
+}
+
+/* Tells whether a line of a list (with its end) is a way for exactly one type: its patterns are that type. */
+static int
+apps_is_type_line(
+	const char *line,
+	const char *type)
+{
+	size_t length;
+	int differs;
+
+	/* The patterns are the type, ended by the first tab. */
+	length = strlen(type);
+	differs = strncmp(line, type, length);
+	if (differs != 0)
+		return 0;
+
+	/* The type alone, not the start of a longer pattern. */
+	if (line[length] != '\t')
+		return 0;
+
+	/* It is the type's line. */
+	return 1;
+}
+
+/* Makes the folders a list lives in (the configuration folder and its keiland folder) when they are not there. */
+static int
+apps_make_folders(
+	const char *list)
+{
+	char folder[FM_PATH_MAX];
+	char *slash;
+	int error;
+
+	/* The list's folder, and the configuration folder above it. */
+	snprintf(folder, sizeof(folder), "%s", list);
+	slash = strrchr(folder, '/');
+	if (slash == NULL)
+		return 0;
+	*slash = '\0';
+
+	/* The configuration folder first (~/.config may not be there yet). */
+	slash = strrchr(folder, '/');
+	if (slash != NULL && slash != folder) {
+		*slash = '\0';
+		error = mkdir(folder, 0755);
+		if (error != 0 && errno != EEXIST)
+			return errno;
+		*slash = '/';
+	}
+
+	/* Then the keiland folder in it. */
+	error = mkdir(folder, 0755);
+	if (error != 0 && errno != EEXIST)
+		return errno;
+
+	/* Succeeded: the list's folder is there. */
 	return 0;
 }
 

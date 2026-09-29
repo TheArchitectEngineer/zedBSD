@@ -26,6 +26,7 @@
 #define CONTEXT_TAGS		101U
 #define CONTEXT_VIEW		102U
 #define CONTEXT_SORT		103U
+#define CONTEXT_ALWAYS_WITH	104U
 
 /* The number of a row that carries out an action: the action's, moved past the others. */
 #define CONTEXT_ACTION_ID	1000U
@@ -174,6 +175,7 @@ context_items(
 	int single;
 	int folder;
 	int checked;
+	int openable;
 	int index;
 
 	/* One item selected, and whether it is a folder. */
@@ -189,6 +191,16 @@ context_items(
 	context_submenu(context, CONTEXT_OPEN_WITH, "Open With", state->opener_count > 0);
 	for (index = 0; index < state->opener_count; index++)
 		context_add(context, CONTEXT_OPEN_WITH, FM_ROW_ITEM, state->openers[index], FM_ACTION_OPEN_WITH_FIRST + (unsigned)index, 1);
+
+	/* The ways that can become the default of the selection's type, and the way back to the system's (ws093-p003). */
+	openable = 0;
+	if (state->opener_count > 0)
+		openable = 1;
+	context_submenu(context, CONTEXT_ALWAYS_WITH, "Always Open With", openable);
+	for (index = 0; index < state->opener_count; index++)
+		context_add(context, CONTEXT_ALWAYS_WITH, FM_ROW_ITEM, state->openers[index], FM_ACTION_ALWAYS_WITH_FIRST + (unsigned)index, 1);
+	context_add(context, CONTEXT_ALWAYS_WITH, FM_ROW_LINE, "", 0U, 1);
+	context_add(context, CONTEXT_ALWAYS_WITH, FM_ROW_ITEM, "Use System Default", FM_ACTION_USE_SYSTEM_DEFAULT, state->user_default);
 
 	/* The clipboard. */
 	context_add(context, 0U, FM_ROW_LINE, "", 0U, 1);

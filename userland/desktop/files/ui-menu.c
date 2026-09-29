@@ -29,6 +29,8 @@ static void menu_go_kind(struct fm_app *app, unsigned kind, const char *path);
 static void menu_openers(struct fm_app *app, struct fm_menu_state *state);
 static void menu_tags(struct fm_app *app, struct fm_menu_state *state);
 static int menu_in_field(struct fm_app *app);
+static void menu_always(struct fm_app *app, int item, int opener);
+static void menu_system_default(struct fm_app *app, int item);
 
 /*
  * Carries out an action of the menus.
@@ -58,6 +60,20 @@ fm_ui_action(
 	if (action >= FM_ACTION_OPEN_WITH_FIRST && action < FM_ACTION_OPEN_WITH_FIRST + FM_OPENERS) {
 		item = fm_preview_item(app);
 		fm_open_entry(app, item, (int)(action - FM_ACTION_OPEN_WITH_FIRST));
+		return;
+	}
+
+	/* A way made the default of the selection's type, and the selection opened with it (ws093-p003). */
+	if (action >= FM_ACTION_ALWAYS_WITH_FIRST && action < FM_ACTION_ALWAYS_WITH_FIRST + FM_OPENERS) {
+		item = fm_preview_item(app);
+		menu_always(app, item, (int)(action - FM_ACTION_ALWAYS_WITH_FIRST));
+		return;
+	}
+
+	/* The selection's type given back to the system's default. */
+	if (action == FM_ACTION_USE_SYSTEM_DEFAULT) {
+		item = fm_preview_item(app);
+		menu_system_default(app, item);
 		return;
 	}
 
@@ -362,12 +378,14 @@ menu_openers(
 	if (match != 0 || entry->modified != app->menu_openers_modified) {
 		mime = fm_mime_sniff(entry->path, entry->mime);
 		app->menu_opener_count = fm_apps_for(entry->path, mime, entry->mode, app->menu_openers, FM_OPENERS);
+		app->menu_user_default = fm_apps_has_default(mime->type);
 		snprintf(app->menu_openers_path, sizeof(app->menu_openers_path), "%s", entry->path);
 		app->menu_openers_modified = entry->modified;
 	}
 
 	/* Their names. */
 	state->opener_count = app->menu_opener_count;
+	state->user_default = app->menu_user_default;
 	for (index = 0; index < app->menu_opener_count; index++)
 		snprintf(state->openers[index], sizeof(state->openers[index]), "%s", app->menu_openers[index].name);
 }
@@ -417,4 +435,90 @@ menu_in_field(
 
 	/* The content has the keyboard. */
 	return 0;
+}
+
+/*
+ * Makes one of an item's ways the default of the item's type (Always Open
+ * With), then opens the item with it; the status pill says what changed.
+ */
+static void
+menu_always(
+	struct fm_app *app,
+	int item,
+	int opener)
+{
+	struct fm_opener openers[FM_OPENERS];
+	const struct fm_mime *mime;
+	struct fm_entry *entry;
+	struct fm_tab *tab;
+	char message[192];
+	int count;
+	int error;
+
+	/* Only an item of the listing, and not a folder. */
+	tab = fm_ui_tab(app);
+	if (item < 0 || (size_t)item >= tab->listing.count)
+		return;
+	entry = &tab->listing.entries[item];
+	if (entry->folder != 0)
+		return;
+
+	/* The item's type and its ways, of which the one chosen. */
+	mime = fm_mime_sniff(entry->path, entry->mime);
+	count = fm_apps_for(entry->path, mime, entry->mode, openers, FM_OPENERS);
+	if (opener < 0 || opener >= count)
+		return;
+
+	/* The way becomes the type's default; a list that cannot be written says so. */
+	error = fm_apps_set_default(mime->type, &openers[opener]);
+	if (error != 0) {
+		fm_ui_message(app, "Couldn't change the default app.");
+		return;
+	}
+
+	/* The menus read the ways again. */
+	app->menu_openers_path[0] = '\0';
+
+	/* The item opens with its new default, now the first of its ways. */
+	fm_open_entry(app, item, 0);
+
+	/* The pill says which files open with the way from now on. */
+	snprintf(message, sizeof(message), "%s files now open with %s", mime->kind, openers[opener].name);
+	fm_ui_message(app, message);
+}
+
+/* Gives an item's type back to the system's default app (Use System Default); the pill says so. */
+static void
+menu_system_default(
+	struct fm_app *app,
+	int item)
+{
+	const struct fm_mime *mime;
+	struct fm_entry *entry;
+	struct fm_tab *tab;
+	char message[192];
+	int error;
+
+	/* Only an item of the listing, and not a folder. */
+	tab = fm_ui_tab(app);
+	if (item < 0 || (size_t)item >= tab->listing.count)
+		return;
+	entry = &tab->listing.entries[item];
+	if (entry->folder != 0)
+		return;
+
+	/* The user's choice for the item's type leaves the list; a list that cannot be written says so. */
+	mime = fm_mime_sniff(entry->path, entry->mime);
+	error = fm_apps_clear_default(mime->type);
+	if (error != 0) {
+		fm_ui_message(app, "Couldn't change the default app.");
+		return;
+	}
+
+	/* The menus read the ways again. */
+	app->menu_openers_path[0] = '\0';
+
+	/* The pill says the type opens as the system has it. */
+	snprintf(message, sizeof(message), "%s files open with the system's default again", mime->kind);
+	fm_ui_message(app, message);
 }

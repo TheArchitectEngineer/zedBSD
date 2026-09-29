@@ -736,7 +736,9 @@ enum fm_action {
 	FM_ACTION_DROP_CANCEL,
 	FM_ACTION_COLUMN_FIRST = 100,
 	FM_ACTION_OPEN_WITH_FIRST = 200,
-	FM_ACTION_TAG_FIRST = 300
+	FM_ACTION_TAG_FIRST = 300,
+	FM_ACTION_ALWAYS_WITH_FIRST = 400,
+	FM_ACTION_USE_SYSTEM_DEFAULT = 450
 };
 
 /*
@@ -833,6 +835,7 @@ struct fm_menu_state {
 	int tabs;
 	int opener_count;
 	char openers[FM_OPENERS][FM_OPENER_NAME];
+	int user_default;
 	int tag_count;
 	char tags[FM_TAGS][48];
 	unsigned tags_checked;
@@ -1153,6 +1156,9 @@ struct fm_app {
 	int menu_opener_count;
 	char menu_openers_path[FM_PATH_MAX];
 	time_t menu_openers_modified;
+
+	/* Whether the user chose the default of that file's type (Always Open With), kept with its ways. */
+	int menu_user_default;
 };
 
 /*
@@ -1350,6 +1356,9 @@ int fm_preview_item(struct fm_app *app);
 /* The applications that open files (apps.c). */
 int fm_apps_for(const char *path, const struct fm_mime *mime, mode_t mode, struct fm_opener *openers, int capacity);
 int fm_apps_is_quicklook(const struct fm_opener *opener);
+int fm_apps_set_default(const char *type, const struct fm_opener *opener);
+int fm_apps_clear_default(const char *type);
+int fm_apps_has_default(const char *type);
 int fm_apps_launch(const struct fm_opener *opener, const char *path);
 int fm_apps_spawn(char *const arguments[]);
 
