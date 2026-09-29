@@ -3338,11 +3338,13 @@ i915_compile_loop_end(
 			continue;
 		}
 
+		/* An ENDIF of an outer loop stays for that loop's WHILE. */
 		state->endif_position[kept] = state->endif_position[index];
 		state->endif_depth[kept] = state->endif_depth[index];
 		kept++;
 	}
 
+	/* The list holds the outer loops' ENDIFs only. */
 	state->endif_count = kept;
 }
 

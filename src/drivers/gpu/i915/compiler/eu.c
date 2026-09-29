@@ -1269,13 +1269,15 @@ drv_i915_eu_patch_if(
 {
 	uint32_t *inst;
 	uint32_t jump;
+	uint32_t end;
 
 	/* A poisoned buffer encoded neither instruction. */
 	if (buffer->error != 0)
 		return;
 
 	/* The ENDIF comes after its IF, and both are in the buffer. */
-	if (endif_position <= if_position || endif_position >= drv_i915_eu_position(buffer)) {
+	end = drv_i915_eu_position(buffer);
+	if (endif_position <= if_position || endif_position >= end) {
 		buffer->error = 1;
 		return;
 	}
@@ -1298,13 +1300,15 @@ drv_i915_eu_patch_endif(
 	uint32_t target)
 {
 	uint32_t *inst;
+	uint32_t end;
 
 	/* A poisoned buffer encoded neither instruction. */
 	if (buffer->error != 0)
 		return;
 
 	/* The target comes after the ENDIF, and both are in the buffer. */
-	if (target <= endif_position || target >= drv_i915_eu_position(buffer)) {
+	end = drv_i915_eu_position(buffer);
+	if (target <= endif_position || target >= end) {
 		buffer->error = 1;
 		return;
 	}
