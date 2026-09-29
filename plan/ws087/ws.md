@@ -47,7 +47,7 @@ Resume point: なし（新しい要求は新しい WS として立てる。こ�
 - 補完しないもの: 開いた引用符の中、変数名（`$HO`）、`~user` の user 名。一覧の幅は byte 数（UTF-8 の名前は列がずれうる）。画面の幅を超える行の再描画は
   libedit の既存の制限。vi の command mode の補完は F-006。
 - guest の WS042 の差分試験（guest-batches）と aarch64 の build は行っていない（変更は対話の経路だけ、試験は amd64 だけの指示）。
-- 試験は `plan/ws087/tests/` に残した（`complete-host.py`・`history-host.py`・`prompt-host.py`・`pty-keys.py`）。`plan/tools/sh/` への移動と
+- 試験は `plan/tools/sh/` に残した（`complete-host.py`・`history-host.py`・`prompt-host.py`・`pty-keys.py`）。`plan/tools/sh/` への移動と
   master の Tools 節への登録は main に依頼した（subagent の範囲外）。
 - 補完の設計は libedit の `readline/readline.h` の comment と `userland/base/sh/complete.c` の冒頭にある。
 
