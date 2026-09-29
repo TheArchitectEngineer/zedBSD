@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: main からの依頼（subagent、worktree `wt/ws086`）
-Resume point: p003（規約の全文との照合と回帰）から
+Resume point: Phase は全て cleared。WS の完了の判断と完了の形への書き直し・試験の `plan/tools/` への移動（main）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -28,7 +28,7 @@ Resume point: p003（規約の全文との照合と回帰）から
 | --- | --- | --- | --- |
 | [ws086-p001](phase001/phase.md) | GNU ls（coreutils）との差の一覧、列の配置の設計、含める option の範囲 | cleared（2026-09-29） | — |
 | [ws086-p002](phase002/phase.md) | 実装と host・guest の試験（GNU ls の出力との比較） | cleared（2026-09-29） | p001 |
-| ws086-p003 | 規約の全文との照合、回帰 | planning | p002 |
+| [ws086-p003](phase003/phase.md) | 規約の全文との照合、回帰 | cleared（2026-09-29） | p002 |
 
 ## 判断の既定（p001、2026-09-29）
 

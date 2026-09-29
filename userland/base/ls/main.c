@@ -19,11 +19,12 @@
  *
  * Written to a terminal, the names go in columns filled down the page
  * (-C) as wide as the terminal, quoted as a shell would need them;
- * written anywhere else, one to a line (-1) as they are.  Names are taken
- * as UTF-8 in any locale, unlike GNU ls, which escapes every byte past
- * ASCII in the C locale.  -x fills the
+ * written anywhere else, one to a line (-1) as they are.  -x fills the
  * columns across, -m separates the names with commas and -l writes the
  * long format; the last of these on the command line wins.
+ *
+ * Names are taken as UTF-8 in any locale, unlike GNU ls, which escapes
+ * every byte past ASCII in the C locale.
  */
 
 #include "userland/base/common/command.h"
@@ -98,6 +99,7 @@ enum ls_shell_class {
 	LS_SHELL_SPECIAL,	/* a character the shell acts on, such as $ or * */
 	LS_SHELL_LEADING,	/* # and ~, which the shell acts on at the start of a word */
 	LS_SHELL_ALONE,		/* { and }, which the shell acts on as a whole word */
+	LS_SHELL_BARE,		/* # and ~ later in a word, { and } in a longer one: left alone, but not put in double quotes */
 	LS_SHELL_APOSTROPHE,	/* ', which single quotes cannot hold */
 	LS_SHELL_CONTROL,	/* a control character with a C escape, such as \t */
 	LS_SHELL_OTHER		/* anything else: printable or not by the locale */
@@ -242,6 +244,10 @@ static void free_entries(struct entry *items, size_t count);
 
 /*
  * The long forms of the options, which GNU ls also takes.
+ *
+ * command_options_next() reads it for every --name on the command line;
+ * each entry reports the letter of the short form, so both forms share one
+ * case of parse_options().  It is constant for the whole run.
  */
 static const struct command_long_option ls_long_options[] = {
 	{"all", COMMAND_VALUE_NONE, 'a'},
@@ -260,7 +266,7 @@ static const struct command_long_option ls_long_options[] = {
 };
 
 /*
- * Runs ls.
+ * Runs ls: lists the operands, or the current directory without one.
  */
 int
 main(
@@ -281,24 +287,25 @@ main(
 	 */
 	(void)setlocale(LC_CTYPE, "C.UTF-8");
 
-	/* The options, from the command line and then the environment. */
+	/* The options from the command line; a bad one ends the run. */
 	failed = parse_options(argc, argv, &options, &operands, &operand_count);
 	if (failed != 0)
 		return failed;
+
+	/* What the command line left to the output and the environment. */
 	settle_layout(&options);
 
-	/* No operand lists the current directory. */
+	/* No operand lists the current directory; otherwise files first as one sorted group, then each directory. */
 	if (operand_count == 0) {
 		listed = list_operand(".", &options, options.recursive);
 		failed = 1;
 		if (listed)
 			failed = 0;
-		failed = finish_output(failed);
-		return failed;
+	} else {
+		failed = list_operands(operand_count, operands, &options);
 	}
 
-	/* The operands: files first as one sorted group, then each directory. */
-	failed = list_operands(operand_count, operands, &options);
+	/* A failed write fails the run too. */
 	failed = finish_output(failed);
 
 	/* Reports a failure, which the status already says. */
@@ -413,6 +420,8 @@ parse_options(
 			/* A width too large to hold is no limit, as GNU ls takes it. */
 			if (parsed > 0)
 				options->line_width = 0;
+
+			/* The width is settled. */
 			options->width_given = 1;
 			break;
 		case 'T':
@@ -460,24 +469,29 @@ settle_layout(
 	int width_known;
 	int uses_width;
 
-	/* A terminal gets columns, quoting and ? for what it cannot show. */
+	/* A terminal gets columns unless the command line chose the format. */
 	terminal = isatty(STDOUT_FILENO);
 	if (!options->format_given && terminal)
 		options->format = LS_FORMAT_COLUMNS;
+
+	/* A terminal gets ? for what it cannot show, as -q asks. */
 	if (terminal)
 		options->hide_control = 1;
+
+	/* A terminal gets names quoted as a shell needs them, unless -N. */
 	options->quoting = LS_QUOTING_LITERAL;
 	if (terminal && !options->literal)
 		options->quoting = LS_QUOTING_SHELL;
 
 	/* Only the formats that fill a line look for its width and the tab size. */
 	uses_width = 0;
-	if (options->format == LS_FORMAT_COLUMNS)
+	if (options->format == LS_FORMAT_COLUMNS) {
 		uses_width = 1;
-	if (options->format == LS_FORMAT_ACROSS)
+	} else if (options->format == LS_FORMAT_ACROSS) {
 		uses_width = 1;
-	if (options->format == LS_FORMAT_COMMAS)
+	} else if (options->format == LS_FORMAT_COMMAS) {
 		uses_width = 1;
+	}
 
 	/* The width: -w, then the terminal's, then COLUMNS, then 80. */
 	width_known = options->width_given;
@@ -495,9 +509,11 @@ settle_layout(
 		variable = getenv("COLUMNS");
 	if (variable != NULL && variable[0] != '\0') {
 		parsed = parse_count(variable, &options->line_width);
-		if (parsed > 0)
+		if (parsed > 0) {
+			/* Too large to hold: no limit. */
 			options->line_width = 0;
-		if (parsed < 0) {
+		} else if (parsed < 0) {
+			/* Not a count: said, and the default kept. */
 			fprintf(stderr, "ls: ignoring invalid width in environment variable COLUMNS: '%s'\n", variable);
 			options->line_width = LS_DEFAULT_LINE_WIDTH;
 		}
@@ -545,10 +561,14 @@ parse_count(
 	char *end;
 	unsigned long long count;
 
-	/* Blanks may come first, as strtoull takes them, but not a sign. */
+	/* Blanks may come first, as strtoull takes them. */
 	start = text;
-	while (*start == ' ' || (*start >= '\t' && *start <= '\r'))
+	while (*start == ' ' ||
+	       (*start >= '\t' &&
+		*start <= '\r'))
 		start++;
+
+	/* A sign or nothing at all is not a count. */
 	if (*start == '-' || *start == '\0')
 		return -1;
 
@@ -558,7 +578,7 @@ parse_count(
 	if (end == start || *end != '\0')
 		return -1;
 
-	/* A count past what the type holds. */
+	/* A count past what strtoull holds, or past what a size holds. */
 	if (errno == ERANGE)
 		return 1;
 	if (count > (unsigned long long)(size_t)-1)
@@ -622,13 +642,18 @@ list_operands(
 	int header;
 	int listed;
 
-	/* Room for every operand in either group. */
+	/* Room for every operand among the files. */
 	files = calloc((size_t)count, sizeof(*files));
+	if (files == NULL) {
+		fprintf(stderr, "ls: out of memory\n");
+		return 1;
+	}
+
+	/* And among the directories. */
 	directories = calloc((size_t)count, sizeof(*directories));
-	if (files == NULL || directories == NULL) {
+	if (directories == NULL) {
 		fprintf(stderr, "ls: out of memory\n");
 		free(files);
-		free(directories);
 		return 1;
 	}
 
@@ -656,8 +681,23 @@ list_operands(
 			file_count++;
 		}
 
-		/* The entry, with the status already read. */
+		/* The entry's name; without memory the operand is left out. */
 		entry->name = copy_string(names[index]);
+		if (entry->name == NULL) {
+			/* The place in the group is given back. */
+			if (directory) {
+				directory_count--;
+			} else {
+				file_count--;
+			}
+
+			/* The failure is said, and the next operand taken. */
+			fprintf(stderr, "ls: out of memory\n");
+			failed = 1;
+			continue;
+		}
+
+		/* Its status, read already. */
 		entry->status = status;
 		entry->status_valid = 1;
 	}
@@ -674,16 +714,21 @@ list_operands(
 			failed = 1;
 	}
 
-	/* Each directory, after a blank line when something came before it, with a header among several or with -R. */
+	/* The directories, sorted, each under its name among several operands or with -R. */
 	sort_entries(directories, directory_count, options);
 	header = 0;
-	if (count > 1)
+	if (count > 1) {
 		header = 1;
-	if (options->recursive)
+	} else if (options->recursive) {
 		header = 1;
+	}
+
+	/* Each directory, after a blank line when something came before it. */
 	for (index = 0; index < directory_count; index++) {
 		if (file_count > 0 || index > 0)
 			putchar('\n');
+
+		/* Its listing. */
 		listed = list_directory(directories[index].name, options, header, 0);
 		if (!listed && failed == 0)
 			failed = 1;
@@ -801,6 +846,8 @@ list_operand(
 		listed = list_directory(path, options, header, 0);
 		if (!listed)
 			return 0;
+
+		/* Succeeded: the contents are listed. */
 		return 1;
 	}
 
@@ -852,10 +899,12 @@ list_directory(
 		return 0;
 	}
 
-	/* The header, then the entries with the total of their blocks. */
-	ok = 1;
+	/* The header, when asked for. */
 	if (header)
 		print_header(path, options);
+
+	/* The entries, with the total of their blocks. */
+	ok = 1;
 	printed = print_entries(path, items, count, NULL, 0, options, 1);
 	if (!printed)
 		ok = 0;
@@ -1035,7 +1084,9 @@ read_entries(
 			/* With -a, . and .. have been listed already. */
 			dot_name = strcmp(name, ".");
 			dot_dot_name = strcmp(name, "..");
-			if (options->all && (dot_name == 0 || dot_dot_name == 0))
+			if (options->all &&
+			    (dot_name == 0 ||
+			     dot_dot_name == 0))
 				continue;
 		}
 
@@ -1171,7 +1222,9 @@ compare(
 	int order;
 
 	/* -t, when both times are known: newer first, then by name. */
-	if (options->time_sort && left->status_valid && right->status_valid) {
+	if (options->time_sort &&
+	    left->status_valid &&
+	    right->status_valid) {
 		if (left->status.st_mtime > right->status.st_mtime) {
 			order = -1;
 		} else if (left->status.st_mtime < right->status.st_mtime) {
@@ -1290,7 +1343,7 @@ prepare_names(
 	const char *quoted_too;
 	size_t length;
 	size_t index;
-	int quoted;
+	int written;
 
 	/* -F marks names with characters that a name containing them must be quoted for. */
 	quoted_too = NULL;
@@ -1303,8 +1356,13 @@ prepare_names(
 	for (index = 0; index < count; index++) {
 		free(items[index].shown);
 		items[index].shown = NULL;
-		quoted = quote_name(items[index].name, options, quoted_too, &items[index].shown, &items[index].shown_width, &items[index].quoted);
-		if (!quoted)
+		written = quote_name(items[index].name,
+				     options,
+				     quoted_too,
+				     &items[index].shown,
+				     &items[index].shown_width,
+				     &items[index].quoted);
+		if (!written)
 			return 0;
 
 		/* A quoted name makes the others line up behind a space. */
@@ -1675,7 +1733,8 @@ print_separated(
 			fits = 0;
 			if (options->line_width == 0) {
 				fits = 1;
-			} else if (position + length + 2U < options->line_width && position <= (size_t)-1 - length - 2U) {
+			} else if (position + length + 2U < options->line_width &&
+				   position <= (size_t)-1 - length - 2U) {
 				/* The sum is also checked for wrapping, as GNU ls checks it. */
 				fits = 1;
 			}
@@ -1887,10 +1946,12 @@ quote_name(
 	struct text_writer writer;
 	size_t length;
 
-	/* Room for the longest text: a name of escapes is 7 bytes for each of its bytes. */
+	/* A name too long to reserve room for is refused like a failed allocation. */
 	length = strlen(name);
 	if (length > ((size_t)-1 - 8U) / 8U)
 		return 0;
+
+	/* Room for the longest text: a name of escapes is 7 bytes for each of its bytes. */
 	writer.text = malloc(length * 8U + 8U);
 	if (writer.text == NULL)
 		return 0;
@@ -1954,7 +2015,14 @@ quote_shell(
 		case LS_SHELL_PLAIN:
 			break;
 		case LS_SHELL_SPACE:
+		case LS_SHELL_LEADING:
+		case LS_SHELL_ALONE:
+			/* Quotes, which may be double quotes. */
 			needs_quotes = 1;
+			break;
+		case LS_SHELL_BARE:
+			/* No quotes, but GNU ls does not use double quotes for a name with it. */
+			double_quotes = 0;
 			break;
 		case LS_SHELL_APOSTROPHE:
 			needs_quotes = 1;
@@ -1979,7 +2047,10 @@ quote_shell(
 
 		/* A character the caller lists needs quotes too. */
 		listed = NULL;
-		if (!needs_quotes && bytes == 1U && quoted_too != NULL && name[at] != '\0')
+		if (!needs_quotes &&
+		    bytes == 1U &&
+		    quoted_too != NULL &&
+		    name[at] != '\0')
 			listed = strchr(quoted_too, name[at]);
 		if (listed != NULL)
 			needs_quotes = 1;
@@ -2020,15 +2091,18 @@ shell_class(
 	unsigned char byte;
 	int alphanumeric;
 
-	/* Letters and digits are plain. */
+	/* Letters and digits of ASCII, whatever the locale says. */
 	byte = (unsigned char)name[at];
 	alphanumeric = 0;
-	if (byte >= 'a' && byte <= 'z')
+	if (byte >= 'a' && byte <= 'z') {
 		alphanumeric = 1;
-	if (byte >= 'A' && byte <= 'Z')
+	} else if (byte >= 'A' && byte <= 'Z') {
 		alphanumeric = 1;
-	if (byte >= '0' && byte <= '9')
+	} else if (byte >= '0' && byte <= '9') {
 		alphanumeric = 1;
+	}
+
+	/* They are plain. */
 	if (alphanumeric)
 		return LS_SHELL_PLAIN;
 
@@ -2053,13 +2127,13 @@ shell_class(
 		/* Only a word's first character starts a comment or a home directory. */
 		if (at == 0)
 			return LS_SHELL_LEADING;
-		return LS_SHELL_PLAIN;
+		return LS_SHELL_BARE;
 	case '{':
 	case '}':
 		/* Only a word of just the brace is a brace group. */
 		if (length == 1U)
 			return LS_SHELL_ALONE;
-		return LS_SHELL_PLAIN;
+		return LS_SHELL_BARE;
 	case '!':
 	case '"':
 	case '$':
@@ -2521,7 +2595,9 @@ uid_name(
 	/* The name from the user database. */
 	found = NULL;
 	error = getpwuid_r(id, &record, buffer, sizeof(buffer), &found);
-	if (error == 0 && found != NULL && found->pw_name != NULL) {
+	if (error == 0 &&
+	    found != NULL &&
+	    found->pw_name != NULL) {
 		snprintf(out, 24, "%s", found->pw_name);
 		return out;
 	}
@@ -2545,7 +2621,9 @@ gid_name(
 	/* The name from the group database. */
 	found = NULL;
 	error = getgrgid_r(id, &record, buffer, sizeof(buffer), &found);
-	if (error == 0 && found != NULL && found->gr_name != NULL) {
+	if (error == 0 &&
+	    found != NULL &&
+	    found->gr_name != NULL) {
 		snprintf(out, 24, "%s", found->gr_name);
 		return out;
 	}
@@ -2671,11 +2749,13 @@ print_link_target(
 		return;
 	target[length] = '\0';
 
-	/* The target as a name is written; without memory, as it is. */
+	/* The arrow. */
+	fputs(" -> ", stdout);
+
+	/* The target as a name is written, with -F's marks quoted; without memory, as it is. */
 	quoted_too = NULL;
 	if (options->classify)
 		quoted_too = LS_CLASSIFY_QUOTED;
-	fputs(" -> ", stdout);
 	shown = NULL;
 	written = quote_name(target, options, quoted_too, &shown, &width, &quoted);
 	if (written) {
@@ -2825,11 +2905,15 @@ ls_time(
 		month++;
 	}
 
-	/* A recent time shows the hour and minute, and any other the year. */
+	/* A time more than six months ago or an hour ahead is not recent; any time is when the clock is unknown. */
 	now = time(NULL);
 	recent = 1;
-	if (now != (time_t)-1 && (value < now - LS_RECENT_SECONDS || value > now + 3600))
+	if (now != (time_t)-1 &&
+	    (value < now - LS_RECENT_SECONDS ||
+	     value > now + 3600))
 		recent = 0;
+
+	/* A recent time shows the hour and minute, and any other the year. */
 	if (recent) {
 		snprintf(out, 32, "%s %2d %02lld:%02lld", month_names[month], (int)days + 1, seconds / 3600, (seconds / 60) % 60);
 	} else {
