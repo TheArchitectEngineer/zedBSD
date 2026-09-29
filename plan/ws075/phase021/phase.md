@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p021`
 Parent: [WS075](../ws.md)
-Status: planning（2026-09-29 提案、[ws075-p018](../phase018/phase.md) の計測から。main の判断待ち）
+Status: in-progress（2026-09-29 main の判断「p021 を先に進めてください」）
 Phase disposition: normal
 
 ## 動機
@@ -24,3 +24,27 @@ Phase disposition: normal
 ## 依存
 
 なし（p008・p009 の後の tree）。p018 は p021 の後に計り直して要否を決める。
+
+## 設計（2026-09-29、段 1 を実装）
+
+- IR（`compiler/ir.h`）: `struct i915_shader_ir_inst` に `guard`（texture の命令の結果を使う channel の Boolean の値 + 1、0 は全 channel）。
+  parser（`spirv.c` の `i915_spirv_guard()`）が SAMPLE・SAMPLE_BIAS・SAMPLE_LOD・TEXTURE を emit するとき、block の predicate が
+  PREDICATE_ALWAYS でなければ付ける。predicate の外の channel はその結果を predicate による選択（store・phi・後の block の edge）でしか
+  見ないので、message は predicate の channel にだけ要る。
+- code generator（`compile.c` の `i915_compile_guarded_texture()`）: `cmp.nz f0.0 guard, 0` → `(+f0.0) if(8)` → message（payload・send・
+  sync.nop）→ `endif(8)`。guard は source として liveness と spill の fill に数える（`i915_compile_sources()` の最後の source）。
+  loop の中の ENDIF の JIP は loop の WHILE（Mesa の `brw_set_uip_jip()`）、外は次の命令。1 shader の guard は最大 256（超えた分は今までどおり）。
+- encoder（`eu.c`）: `drv_i915_eu_if()`・`drv_i915_eu_endif()`・`drv_i915_eu_patch_if()`・`drv_i915_eu_patch_endif()`（Mesa の brw_IF・
+  brw_ENDIF・patch_IF_ELSE の Gen12 の形）。`intel/eu-encoding-gen12.h` に IF=34・ENDIF=37 と UIP の bit（95:64）。
+- 算術（全ての mode の ALU）は今までどおり全 pixel で走る（段 2 は要否を測ってから）。
+
+効果の見込み: compositor の `panel.frag` は 8 つの sampler の send が全て mode の分岐の中にあり、mode は draw の中で一様。1 つの draw では
+1 つ（blur は 5）の send だけが走り、残りは IF で飛ぶ。今の encoder は send ごとに結果を待つ（`eu.c` の scoreboard: send の後の sync.nop）ので、
+send の数がそのまま thread の待ちの長さになる。
+
+## 検証（実施中）
+
+- host: `plan/ws075/tests/guard/run.sh`（新規）: panel.frag・quad.frag・browser の display.frag・switch.frag・loop.frag（loop の中の guard、新規）を
+  compile、Mesa の brw_disasm で読み brw_asm で戻して同じ byte、IF と ENDIF の対、分岐の中の send が全て IF の中、loop の中の ENDIF の JIP が
+  WHILE。PASS。IF・ENDIF の encoding は Mesa の assembler と bit まで一致（試しの program）。
+- host: `run-vk-host-tests.sh` の spirv・lower・eu・compile・pipe・resdispatch PASS、`run-vk-gentool-test.sh`（BRW_TOOLS=Mesa 25.0 の build）PASS。
