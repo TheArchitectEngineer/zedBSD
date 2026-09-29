@@ -61,6 +61,16 @@
 /* How much the time behind the frame may change in one call, in microseconds. */
 #define MOTION_BEHIND_STEP		500.0
 
+/*
+ * The longest delay the time behind the frame allows for: a period, or
+ * this many microseconds when that is more (ws081-p010).  A longer delay is
+ * the reader's (a program that read late, busy drawing), not the panel's
+ * transport, and drawing further back than that only adds lag -- and puts
+ * the drawn time where the fitted curve bends away from a finger that has
+ * just started moving.
+ */
+#define MOTION_DELAY_LONGEST		25000.0
+
 /* After this long without reports a motion forgets them, in microseconds. */
 #define MOTION_FORGET			1000000U
 
@@ -524,6 +534,7 @@ keiland_motion_point(
 	const struct motion_report *last;
 	double interval;
 	double delay;
+	double longest;
 	double wanted;
 	double target;
 	double limit;
@@ -562,9 +573,14 @@ keiland_motion_point(
 	if (motion->count == 1U)
 		return 0;
 
-	/* The period and the delay, the stroke's own once it has them. */
+	/* The period and the delay (no more than a period, or MOTION_DELAY_LONGEST), the stroke's own once it has them. */
 	interval = stroke_interval(motion, &measured);
 	delay = stroke_delay(motion);
+	longest = interval;
+	if (longest < MOTION_DELAY_LONGEST)
+		longest = MOTION_DELAY_LONGEST;
+	if (delay > longest)
+		delay = longest;
 
 	/*
 	 * Far enough behind the frame that the usual report needs no more than

@@ -23,5 +23,5 @@ KEILAND_FILES_SOURCES := userland/desktop/files/main.c \
 	userland/desktop/files/menu.c userland/desktop/files/titlebar.c \
 	userland/desktop/files/ui-titlebar.c userland/desktop/files/glass.c \
 	userland/desktop/files/ui-context.c userland/desktop/files/ui-drag.c \
-	userland/desktop/artwork/mark.c
+	userland/desktop/files/touch.c userland/desktop/artwork/mark.c
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,files,File manager,amd64,y,basic,$(KEILAND_FILES_SOURCES),y,desktop,desktop/files,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libtruetype base/libz-compat base/libpng-compat,0755,program,,,bin))

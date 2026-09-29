@@ -49,6 +49,7 @@ static void test_misc(void);
 static int gestures(struct keiland_gesture *gesture, double t, struct keiland_gesture_event *events, int capacity);
 static void test_taps(void);
 static void test_drag(void);
+static void test_late_reader(void);
 
 /*
  * Runs every test and reports the result.
@@ -64,6 +65,7 @@ main(void)
 	test_misc();
 	test_taps();
 	test_drag();
+	test_late_reader();
 
 	/* Reports a failure. */
 	if (failures != 0) {
@@ -610,5 +612,48 @@ test_drag(void)
 	check(count == 1 && events[0].kind == KEILAND_GESTURE_DRAG_END && fabs(events[0].vy + 2000.0) < 200.0 && fabs(events[0].vx) < 50.0,
 	      "DRAG_END with the flick's velocity (%.0f, %.0f)", events[0].vx, events[0].vy);
 	check(keiland_gesture_drag_offset(gesture, at(0.6), &dx, &dy) == ENOENT, "no drag after the lift");
+	keiland_gesture_destroy(gesture);
+}
+
+/*
+ * A program that reads the reports 100 ms late (busy drawing, ws081-p010):
+ * after strokes that taught the device that delay, a finger that rests and
+ * then moves up is never drawn moving down.
+ */
+static void
+test_late_reader(void)
+{
+	struct keiland_gesture *gesture;
+	struct keiland_gesture_event events[8];
+	double dx;
+	double dy;
+	double worst;
+	double t;
+	int stroke_index;
+	int error;
+	int k;
+
+	/* One recognizer; each stroke rests 100 ms, then moves up 150 px in 100 ms, read 100 ms late. */
+	gesture = keiland_gesture_create();
+	worst = 0.0;
+	for (stroke_index = 0; stroke_index < 6; stroke_index++) {
+		t = 10.0 * stroke_index;
+		(void)keiland_gesture_down(gesture, 1, at(t), at(t + 0.1), 400.0, 500.0);
+		for (k = 1; k <= 12; k++) {
+			(void)keiland_gesture_motion(gesture, 1, at(t + 0.0167 * k), at(t + 0.0167 * k + 0.1), 400.0,
+						     k <= 6 ? 500.0 : 500.0 - 25.0 * (k - 6));
+			(void)gestures(gesture, t + 0.0167 * k + 0.1, events, 8);
+
+			/* The drag's offset at a frame drawn when the report was read. */
+			error = keiland_gesture_drag_offset(gesture, at(t + 0.0167 * k + 0.1), &dx, &dy);
+			if (error == 0 && dy > worst)
+				worst = dy;
+		}
+		(void)keiland_gesture_up(gesture, 1, at(t + 0.3));
+		(void)gestures(gesture, t + 0.4, events, 8);
+	}
+
+	/* The result. */
+	check(worst <= 1.0, "a late reader's drag up is never drawn down: %.1f px", worst);
 	keiland_gesture_destroy(gesture);
 }
