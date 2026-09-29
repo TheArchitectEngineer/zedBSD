@@ -548,7 +548,7 @@ main(
 		check(fm_image_load(path, &image) == EINVAL, "picture: a huge width refused");
 		snprintf(path, sizeof(path), "%s/a.png", root);
 		make_file(path, "\x89PNG\r\n\x1a\n....");
-		check(fm_image_load(path, &image) == ENOTSUP, "picture: PNG not read yet (ENOTSUP)");
+		check(fm_image_load(path, &image) == EINVAL, "picture: a damaged PNG refused");
 
 		header = snprintf((char *)big, sizeof(big), "P6\n300 200\n255\n");
 		memset(big + header, 0x40, 300 * 200 * 3);
