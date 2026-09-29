@@ -106,20 +106,25 @@ zwl_compose_open(
 }
 
 /*
- * Creates the display surface and its swapchain for window mode, and the
- * render pass and pipelines the first time the output's format is known.
+ * Creates window mode's display surface, and the render pass and pipelines
+ * for its format the first time, without taking the display (ws035-p130).
+ *
+ * A surface and its format need no lease (only a swapchain claims the
+ * display), so this is done before READY, while another compositor (the
+ * greeter, or the session before a Log Out) still shows its picture, and
+ * the hand-over waits only for the swapchain.
  */
 int
-zwl_compose_output_open(
+zwl_compose_output_prepare(
 	struct zwl_server *server)
 {
 	struct zwl_compose *compose;
 	uint64_t started;
 	VkResult result;
 
-	/* An open output needs nothing. */
+	/* A prepared or open output needs nothing. */
 	compose = server->compose;
-	if (compose->output_open)
+	if (compose == NULL || compose->output_prepared)
 		return 0;
 
 	/* The display plane's surface at the compositor's size. */
@@ -127,23 +132,21 @@ zwl_compose_output_open(
 	result = vkdemo_display_open(compose->instance, compose->physical, server->width, server->height, &compose->output);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=display result=%d\n", (int)result);
-		return EIO;
-	}
-
-	/* Its FIFO swapchain. */
-	printf("ZWL STARTUP step=output-display ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
-	started = zwl_milliseconds();
-	result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
-	if (result != VK_SUCCESS ||
-	    compose->output.image_count > ZWL_SWAPCHAIN_MAX) {
-		printf("ZWL VULKAN_ERROR operation=swapchain result=%d images=%u\n", (int)result, compose->output.image_count);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
 		return EIO;
 	}
 
-	/* The pass and pipelines follow the output's format, which does not change. */
-	printf("ZWL STARTUP step=output-swapchain ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	/* The swapchain's format, which the pass and pipelines follow. */
+	printf("ZWL STARTUP step=output-display ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 	started = zwl_milliseconds();
+	result = vkdemo_display_choose_format(compose->physical, &compose->output);
+	if (result != VK_SUCCESS) {
+		printf("ZWL VULKAN_ERROR operation=format result=%d\n", (int)result);
+		vkdemo_display_close(compose->instance, compose->device, &compose->output);
+		return EIO;
+	}
+
+	/* The pass and pipelines, made once: the output's format does not change. */
 	if (compose->pass == VK_NULL_HANDLE) {
 		compose->format = compose->output.format;
 		result = compose_pass(compose);
@@ -154,14 +157,56 @@ zwl_compose_output_open(
 		}
 	}
 
-	/* A view, framebuffer and semaphore for each swapchain image. */
+	/* Succeeded: only the swapchain is left, which claims the display. */
+	compose->output_prepared = 1;
 	printf("ZWL STARTUP step=output-pipelines ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	return 0;
+}
+
+/*
+ * Creates the swapchain of window mode's display surface (preparing the
+ * surface first when that was not done), which claims the display.
+ */
+int
+zwl_compose_output_open(
+	struct zwl_server *server)
+{
+	struct zwl_compose *compose;
+	uint64_t started;
+	VkResult result;
+	int error;
+
+	/* An open output needs nothing. */
+	compose = server->compose;
+	if (compose->output_open)
+		return 0;
+
+	/* The surface, and the pass and pipelines for its format. */
+	error = zwl_compose_output_prepare(server);
+	if (error != 0)
+		return error;
+
+	/* Its FIFO swapchain, in the format the pipelines were made for. */
+	started = zwl_milliseconds();
+	result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
+	if (result != VK_SUCCESS ||
+	    compose->output.image_count > ZWL_SWAPCHAIN_MAX ||
+	    compose->output.format != compose->format) {
+		printf("ZWL VULKAN_ERROR operation=swapchain result=%d images=%u format=%d\n", (int)result, compose->output.image_count, (int)compose->output.format);
+		vkdemo_display_close(compose->instance, compose->device, &compose->output);
+		compose->output_prepared = 0;
+		return EIO;
+	}
+
+	/* A view, framebuffer and semaphore for each swapchain image. */
+	printf("ZWL STARTUP step=output-swapchain ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 	started = zwl_milliseconds();
 	result = compose_targets(compose);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=targets result=%d\n", (int)result);
 		compose_targets_destroy(compose);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
+		compose->output_prepared = 0;
 		return EIO;
 	}
 
@@ -188,8 +233,16 @@ zwl_compose_output_close(
 
 	/* A closed output has nothing to destroy. */
 	compose = server->compose;
-	if (compose == NULL || !compose->output_open)
+	if (compose == NULL)
 		return;
+
+	/* A surface prepared but never given a swapchain goes on its own. */
+	if (!compose->output_open) {
+		if (compose->output_prepared)
+			vkdemo_display_close(compose->instance, compose->device, &compose->output);
+		compose->output_prepared = 0;
+		return;
+	}
 
 	/* No frame may still use the swapchain's images. */
 	(void)vkDeviceWaitIdle(compose->device);
@@ -198,6 +251,7 @@ zwl_compose_output_close(
 	zwl_backdrop_destroy(compose);
 	compose_targets_destroy(compose);
 	vkdemo_display_close(compose->instance, compose->device, &compose->output);
+	compose->output_prepared = 0;
 	compose->output_open = 0;
 	printf("ZWL OUTPUT closed\n");
 }

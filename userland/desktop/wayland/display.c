@@ -727,6 +727,13 @@ enter_window_mode(
 	if (error != 0)
 		return error;
 
+	/*
+	 * The display surface and the pipelines need no lease, so they are made
+	 * while the display is still another's (ws035-p130); a failure is tried
+	 * again below, after the hand-over.
+	 */
+	(void)zwl_compose_output_prepare(server);
+
 	/* The first time, sessiond hands the display over (the greeter goes first). */
 	zwl_handoff_wait(server);
 
