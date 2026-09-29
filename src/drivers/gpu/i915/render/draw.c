@@ -852,7 +852,7 @@ i915_draw_scratch_grow(
 	work->scratch_offset[I915_DRAW_SCRATCH_PIXEL] = pixel_offset;
 	work->scratch_per_thread[I915_DRAW_SCRATCH_COMPUTE] = compute_bytes;
 	work->scratch_offset[I915_DRAW_SCRATCH_COMPUTE] = compute_offset;
-	kern_logf("i915: vk: scratch: %llu bytes at 0x%llx: vertex %u bytes a thread for %u ids at +0x%x, pixel %u for %llu ids at +0x%llx\n",
+	kern_logf("i915: vk: scratch: %llu bytes at 0x%llx: vertex %u bytes a thread for %u ids at +0x%x, pixel %u for %llu ids at +0x%llx, compute %u for %u ids at +0x%llx\n",
 		  (unsigned long long)bytes,
 		  (unsigned long long)object->va,
 		  vertex_bytes,
@@ -860,7 +860,10 @@ i915_draw_scratch_grow(
 		  I915_GFX_SCRATCH_GUARD,
 		  pixel_bytes,
 		  (unsigned long long)pixel_ids,
-		  (unsigned long long)pixel_offset);
+		  (unsigned long long)pixel_offset,
+		  compute_bytes,
+		  I915_GFX_CS_SCRATCH_IDS,
+		  (unsigned long long)compute_offset);
 
 	/* Succeeded: the buffer has room for every kernel. */
 	return 0;
