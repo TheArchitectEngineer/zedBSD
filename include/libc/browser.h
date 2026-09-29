@@ -72,7 +72,7 @@ extern "C" {
  * each view it makes; a library of another version refuses the view
  * (ENOTSUP) rather than read options laid out differently.
  */
-#define BROWSER_API_VERSION		1
+#define BROWSER_API_VERSION		2
 
 /* A view, opaque to the program. */
 struct browser_view;
@@ -249,6 +249,25 @@ void browser_view_process(struct browser_view *view, const struct pollfd *fds, s
 
 /* How far the page is scrolled, in pixels. */
 double browser_view_scroll_y(const struct browser_view *view);
+
+/*
+ * The scroll placed by the program (version 2, ws081-p006: a touch
+ * screen's scroller that glides after a flick and stretches past an end).
+ * browser_view_scroll_to places the scroll at a point of the document in
+ * pixels, kept inside the document, with no wheel event to the page (the
+ * page gets no scroll event yet, as for the wheel and the keys);
+ * browser_view_scroll_range reports how far the page scrolls at most, the
+ * document as it is laid out now less the view; browser_view_set_overscroll
+ * draws the content shifted by a distance (positive down) without moving
+ * the scroll, the gap showing the page's canvas color, at most the view's
+ * height either way; the pointer's places do not follow the shift, and a
+ * new page starts without it.  The page does not scroll sideways yet: x
+ * and dx are not used and the sideways range is 0.  A change calls the
+ * redraw callback.  The first two report ENOENT when no page is shown.
+ */
+int browser_view_scroll_to(struct browser_view *view, double x, double y);
+int browser_view_scroll_range(struct browser_view *view, double *largest_x, double *largest_y);
+int browser_view_set_overscroll(struct browser_view *view, double dx, double dy);
 
 /*
  * Input, in the view's pixels from its top left, with the modifiers held
