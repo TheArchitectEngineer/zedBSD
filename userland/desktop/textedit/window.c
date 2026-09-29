@@ -85,6 +85,7 @@ static void window_touch_up(void *data, struct wl_touch *touch, uint32_t serial,
 static void window_touch_motion(void *data, struct wl_touch *touch, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_frame(void *data, struct wl_touch *touch);
 static void window_touch_cancel(void *data, struct wl_touch *touch);
+static int window_touch_foreign(struct te_window *window, int32_t id, int forget);
 
 /* The registry's callbacks, for as long as the registry lives. */
 static const struct wl_registry_listener registry_listener = {
@@ -719,10 +720,15 @@ window_pointer_enter(
 {
 	struct te_window *window;
 
-	/* The pointer's place, as a motion. */
+	/* Another surface of the program (the file chooser's) is not the editor's. */
 	(void)pointer;
-	(void)surface;
 	window = data;
+	window->pointer_ours = 0;
+	if (surface == NULL || surface != window->surface)
+		return;
+	window->pointer_ours = 1;
+
+	/* The pointer's place, as a motion. */
 	window->serial = serial;
 	window->pointer_x = wl_fixed_to_int(x);
 	window->pointer_y = wl_fixed_to_int(y);
@@ -739,11 +745,15 @@ window_pointer_leave(
 {
 	struct te_window *window;
 
-	/* The view hears that the pointer left. */
+	/* Only leaving the editor's own surface matters. */
 	(void)pointer;
 	(void)serial;
-	(void)surface;
 	window = data;
+	if (surface == NULL || surface != window->surface)
+		return;
+	window->pointer_ours = 0;
+
+	/* The view hears that the pointer left. */
 	(void)te_window_push(window, TE_EVENT_LEAVE);
 }
 
@@ -758,10 +768,14 @@ window_pointer_motion(
 {
 	struct te_window *window;
 
-	/* The new place, as a motion. */
+	/* Only over the editor's own surface. */
 	(void)pointer;
 	(void)time;
 	window = data;
+	if (!window->pointer_ours)
+		return;
+
+	/* The new place, as a motion. */
 	window->pointer_x = wl_fixed_to_int(x);
 	window->pointer_y = wl_fixed_to_int(y);
 	(void)te_window_push(window, TE_EVENT_MOTION);
@@ -780,10 +794,14 @@ window_pointer_button(
 	struct te_window *window;
 	struct te_event *event;
 
-	/* The button as an input; its serial may set a selection. */
+	/* Only over the editor's own surface. */
 	(void)pointer;
 	(void)time;
 	window = data;
+	if (!window->pointer_ours)
+		return;
+
+	/* The button as an input; its serial may set a selection. */
 	window->serial = serial;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
 		window->press_serial = serial;
@@ -808,10 +826,14 @@ window_pointer_axis(
 	struct te_window *window;
 	struct te_event *event;
 
-	/* The distance, scaled to the window's pixels, on its axis. */
+	/* Only over the editor's own surface. */
 	(void)pointer;
 	(void)time;
 	window = data;
+	if (!window->pointer_ours)
+		return;
+
+	/* The distance, scaled to the window's pixels, on its axis. */
 	event = te_window_push(window, TE_EVENT_AXIS);
 	if (event == NULL)
 		return;
@@ -907,11 +929,16 @@ window_keyboard_enter(
 
 	/* Keys already held when focus came are not pressed again. */
 	(void)keyboard;
-	(void)surface;
 	(void)keys;
 	window = data;
-	window->serial = serial;
 	window->repeat_key = 0U;
+
+	/* Another surface of the program (the file chooser's) has the keys, not the editor. */
+	window->keyboard_ours = 0;
+	if (surface == NULL || surface != window->surface)
+		return;
+	window->keyboard_ours = 1;
+	window->serial = serial;
 
 	/* The focus came. */
 	event = te_window_push(window, TE_EVENT_FOCUS);
@@ -929,11 +956,15 @@ window_keyboard_leave(
 {
 	struct te_window *window;
 
-	/* The held key stops repeating, and modifiers are forgotten. */
+	/* Only leaving the editor's own surface matters. */
 	(void)keyboard;
 	(void)serial;
-	(void)surface;
 	window = data;
+	if (surface == NULL || surface != window->surface)
+		return;
+	window->keyboard_ours = 0;
+
+	/* The held key stops repeating, and modifiers are forgotten. */
 	window->repeat_key = 0U;
 	window->modifiers = 0U;
 
@@ -955,10 +986,14 @@ window_keyboard_key(
 	struct te_event *event;
 	int modifier;
 
-	/* The key as an input; its serial may set a selection. */
+	/* Only while the editor's own surface has the keys. */
 	(void)keyboard;
 	(void)time;
 	window = data;
+	if (!window->keyboard_ours)
+		return;
+
+	/* The key as an input; its serial may set a selection. */
 	window->serial = serial;
 	event = te_window_push(window, TE_EVENT_KEY);
 	if (event != NULL) {
@@ -1104,10 +1139,18 @@ window_touch_down(
 {
 	struct te_window *window;
 
-	/* Queued, its serial kept for a long press's context menu; the window has one surface. */
+	/* A finger on another surface of the program (the file chooser's) is remembered and left alone. */
 	(void)touch;
-	(void)surface;
 	window = data;
+	if (surface == NULL || surface != window->surface) {
+		if (window->foreign_touch_count < TE_WINDOW_FOREIGN_TOUCHES) {
+			window->foreign_touches[window->foreign_touch_count] = id;
+			window->foreign_touch_count++;
+		}
+		return;
+	}
+
+	/* Queued, its serial kept for a long press's context menu. */
 	window->serial = serial;
 	window->press_serial = serial;
 	window_touch_push(window, TE_TOUCH_DOWN, time, id, x, y);
@@ -1122,9 +1165,16 @@ window_touch_up(
 	uint32_t time,
 	int32_t id)
 {
-	/* Queued, with no place. */
+	int foreign;
+
+	/* A finger of another surface is forgotten, not queued. */
 	(void)touch;
 	(void)serial;
+	foreign = window_touch_foreign(data, id, 1);
+	if (foreign)
+		return;
+
+	/* Queued, with no place. */
 	window_touch_push(data, TE_TOUCH_UP, time, id, 0, 0);
 }
 
@@ -1138,8 +1188,15 @@ window_touch_motion(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	/* Queued. */
+	int foreign;
+
+	/* A finger of another surface is not the editor's. */
 	(void)touch;
+	foreign = window_touch_foreign(data, id, 0);
+	if (foreign)
+		return;
+
+	/* Queued. */
 	window_touch_push(data, TE_TOUCH_MOTION, time, id, x, y);
 }
 
@@ -1160,7 +1217,37 @@ window_touch_cancel(
 	void *data,
 	struct wl_touch *touch)
 {
-	/* Queued, for every finger. */
+	struct te_window *window;
+
+	/* Every finger goes, the other surfaces' too; the editor's are cancelled. */
 	(void)touch;
+	window = data;
+	window->foreign_touch_count = 0;
 	window_touch_push(data, TE_TOUCH_CANCEL, 0, -1, 0, 0);
+}
+
+/* Tells whether a finger is down on another surface of the program, and forgets it when asked (its lift). */
+static int
+window_touch_foreign(
+	struct te_window *window,
+	int32_t id,
+	int forget)
+{
+	unsigned index;
+
+	/* Each finger of the other surfaces. */
+	for (index = 0; index < window->foreign_touch_count; index++) {
+		if (window->foreign_touches[index] != id)
+			continue;
+
+		/* Found: forgotten at its lift, the last one taking its slot. */
+		if (forget) {
+			window->foreign_touch_count--;
+			window->foreign_touches[index] = window->foreign_touches[window->foreign_touch_count];
+		}
+		return 1;
+	}
+
+	/* One of the editor's own. */
+	return 0;
 }

@@ -108,6 +108,25 @@ static struct te_canvas main_canvas;
 /* The title the window shows now, to set it again only when it changes. */
 static char main_title[MAIN_TITLE_MAX];
 
+/*
+ * The file chooser open for Open or Save As (libkeiland's), or NULL.  It
+ * is destroyed when it answers, and by the main loop when the editor stops
+ * waiting for it (Quit while it is open).
+ */
+static struct keiland_file_chooser *main_chooser;
+
+/* The interface's font, which the chooser draws its words with too. */
+static const char *main_ui_font;
+
+/*
+ * The filters the chooser offers: the kinds of files that are plain text,
+ * and every file.
+ */
+static const struct keiland_file_filter main_filters[] = {
+	{ "Text Files", "txt text md markdown rst c h cc cpp hpp py sh mk conf cfg ini json xml html css js log csv tsv yaml yml toml" },
+	{ "All Files", NULL }
+};
+
 static int main_parse(int argc, char **argv, struct main_options *options);
 static const char *main_value(const char *argument, const char *name);
 static int main_number(const char *text, unsigned maximum, unsigned *value);
@@ -124,6 +143,8 @@ static void main_select(void *data, const char *text, size_t length);
 static size_t main_paste_primary(void *data, char *text, size_t size);
 static void main_context_menu(void *data, int x, int y);
 static void main_find_focus(void *data);
+static int main_choose(void *data, int saving, const char *folder, const char *name);
+static void main_chosen(void *data, struct keiland_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 
 /*
  * Runs Text Editor.
@@ -153,6 +174,9 @@ main(
 	error = te_text_open(&main_ui, options.ui_font, options.fallback);
 	if (error != 0)
 		te_log("FONT missing path=%s error=%d", options.ui_font, error);
+
+	/* The chooser draws with the interface's font. */
+	main_ui_font = options.ui_font;
 
 	/* The window. */
 	status = te_window_open(&main_window, options.display, options.width, options.height, "Text Editor", MAIN_APPLICATION);
@@ -204,7 +228,9 @@ main(
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
-	/* Everything goes, the titlebar, the menus and the editor before the window they belong to. */
+	/* Everything goes, the chooser, the titlebar, the menus and the editor before the window they belong to. */
+	keiland_file_chooser_destroy(main_chooser);
+	main_chooser = NULL;
 	te_titlebar_close(&main_titlebar);
 	te_menu_close(&main_menu);
 	te_touch_close(&main_touch);
@@ -469,6 +495,12 @@ main_loop(
 			te_touch_event(&main_touch, &main_app, &touch);
 		}
 
+		/* A chooser the editor no longer waits for (Quit came meanwhile) closes. */
+		if (main_chooser != NULL && !main_app.choosing) {
+			keiland_file_chooser_destroy(main_chooser);
+			main_chooser = NULL;
+		}
+
 		/* The close button asks like File > Close (unsaved changes are asked about). */
 		if (main_window.closed != 0) {
 			main_window.closed = 0;
@@ -673,6 +705,7 @@ main_host(
 	app->host.paste_primary = main_paste_primary;
 	app->host.context_menu = main_context_menu;
 	app->host.find_focus = main_find_focus;
+	app->host.choose = main_choose;
 }
 
 /* Copies text to the clipboard. */
@@ -749,4 +782,76 @@ main_find_focus(
 	/* Asked of the titlebar. */
 	(void)data;
 	main_titlebar.want_focus = 1;
+}
+
+/*
+ * Opens the file chooser to open a file or to save as a name in a folder;
+ * its answer comes back as a TE_EVENT_CHOSEN.  Returns 0 or an errno value.
+ */
+static int
+main_choose(
+	void *data,
+	int saving,
+	const char *folder,
+	const char *name)
+{
+	struct keiland_file_chooser_options options;
+	static const struct keiland_file_chooser_listener listener = {
+		main_chosen
+	};
+	struct te_window *window;
+
+	/* A chooser left open goes first (one at a time). */
+	window = data;
+	keiland_file_chooser_destroy(main_chooser);
+	main_chooser = NULL;
+
+	/* Open or Save As, at the document's folder, with the text files shown first. */
+	memset(&options, 0, sizeof(options));
+	options.mode = KEILAND_FILE_CHOOSER_OPEN;
+	if (saving) {
+		options.mode = KEILAND_FILE_CHOOSER_SAVE;
+		options.name = name;
+	}
+	options.application = MAIN_APPLICATION;
+	options.folder = folder;
+	options.filters = main_filters;
+	options.filter_count = sizeof(main_filters) / sizeof(main_filters[0]);
+	options.filter = 0;
+	options.font = main_ui_font;
+
+	/* The chooser's window over the editor's. */
+	main_chooser = keiland_file_chooser_open(window->display, window->toplevel, &options, &listener, window);
+	if (main_chooser == NULL)
+		return errno;
+
+	/* Succeeded: the answer comes while the loop dispatches. */
+	return 0;
+}
+
+/* The chooser answered: the path (empty when cancelled) goes to the editor, and the chooser goes. */
+static void
+main_chosen(
+	void *data,
+	struct keiland_file_chooser *chooser,
+	unsigned result,
+	const char *path,
+	size_t filter)
+{
+	struct te_event *event;
+
+	/* The answer as an input of the editor. */
+	(void)filter;
+	event = te_window_push(data, TE_EVENT_CHOSEN);
+	if (event != NULL) {
+		event->text[0] = '\0';
+		if (result == KEILAND_FILE_CHOOSER_CHOSEN)
+			snprintf(event->text, sizeof(event->text), "%s", path);
+	}
+	te_log("CHOSEN result=%u path=%s", result, path);
+
+	/* The chooser is spent. */
+	keiland_file_chooser_destroy(chooser);
+	if (chooser == main_chooser)
+		main_chooser = NULL;
 }

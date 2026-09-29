@@ -19,6 +19,7 @@
 		keiland_motion_*;
 		keiland_scroller_*;
 		keiland_gesture_*;
+		keiland_file_chooser_*;
 	local:
 		*;
 };

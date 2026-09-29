@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys). */
-#define KEILAND_VERSION	11U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser). */
+#define KEILAND_VERSION	12U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1047,6 +1047,105 @@ int keiland_gesture_drag_offset(struct keiland_gesture *gesture, uint64_t now_us
  * Returns ENOENT unless two fingers are down.
  */
 int keiland_gesture_pinch(struct keiland_gesture *gesture, uint64_t now_us, double *scale, double *x, double *y);
+
+/*
+ * The file chooser (KEILAND_VERSION 12, ws092-p003): the Open and Save As
+ * window every application shares, so that choosing a file looks and
+ * works the same everywhere.
+ *
+ * The chooser is a window of its own, made and drawn by the library (it
+ * says which window it belongs to with xdg_toplevel.set_parent).  It lists
+ * one folder at a time with a sidebar of places (Recent for Open, Home,
+ * Desktop, Documents, Downloads, Computer), shows only the files of the
+ * filter chosen, and in Save mode takes a name and asks before a file is
+ * replaced.  The answer comes once, through the listener, while the
+ * application dispatches its default Wayland queue; the application then
+ * destroys the chooser.  The application keeps running meanwhile, and
+ * should take no input of its own until the answer comes.
+ *
+ * The chooser has its own wl_seat objects.  Wayland sends a client's
+ * pointer, keyboard and touch events to all of its objects of a seat, so
+ * an application ignores the enter, key and touch events of surfaces that
+ * are not its own (as every Wayland client with more than one surface
+ * does).
+ */
+struct keiland_file_chooser;
+
+/* What the chooser asks for: an existing file to open, or a folder and a name to save as. */
+#define KEILAND_FILE_CHOOSER_OPEN	0U
+#define KEILAND_FILE_CHOOSER_SAVE	1U
+
+/* How it ended: a path was chosen, or the user cancelled. */
+#define KEILAND_FILE_CHOOSER_CHOSEN	0U
+#define KEILAND_FILE_CHOOSER_CANCELLED	1U
+
+/* The most filters one chooser offers. */
+#define KEILAND_FILE_CHOOSER_FILTERS_MAX	16U
+
+/*
+ * One filter: the label it is shown by, and the file name extensions it
+ * shows, separated by spaces and without their dots ("txt md c h"),
+ * compared without regard to case.  NULL or empty extensions show every
+ * file.  Folders are always shown.
+ */
+struct keiland_file_filter {
+	const char *label;
+	const char *extensions;
+};
+
+/*
+ * What a chooser starts with.  Any pointer may be NULL.
+ *
+ * mode: KEILAND_FILE_CHOOSER_OPEN or _SAVE.  title: the window's title
+ * ("Open" or "Save As" when NULL).  application: the app_id the window
+ * gets, so that zdesktop shows it as the application's.  folder: where it
+ * starts (the home folder when NULL or not a folder).  name: the name Save
+ * starts with, selected up to its extension.  filters, filter_count and
+ * filter: the filters offered (at most KEILAND_FILE_CHOOSER_FILTERS_MAX)
+ * and the one chosen first; without filters every file is shown.  font
+ * and fallback_font: the interface's font and the one for characters it
+ * lacks (the system's when NULL).
+ */
+struct keiland_file_chooser_options {
+	unsigned mode;
+	const char *title;
+	const char *application;
+	const char *folder;
+	const char *name;
+	const struct keiland_file_filter *filters;
+	size_t filter_count;
+	size_t filter;
+	const char *font;
+	const char *fallback_font;
+};
+
+/*
+ * What a chooser tells the application, once and last: how it ended
+ * (KEILAND_FILE_CHOOSER_*), the absolute path chosen (empty when
+ * cancelled), and the filter chosen last.  In Save mode the user has
+ * already agreed to replace a file that exists.  The chooser's window is
+ * closed by then; the application destroys the chooser, from the callback
+ * or later.
+ */
+struct keiland_file_chooser_listener {
+	void (*done)(void *data, struct keiland_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+};
+
+/*
+ * Opens a file chooser over an application's window (parent may be NULL).
+ *
+ * Returns NULL with errno set: EINVAL (an unknown mode, too many filters,
+ * a filter number past them, no listener), ENOTSUP (a compositor without
+ * wl_shm or xdg_wm_base), an errno value of opening the font, ENOMEM.
+ */
+struct keiland_file_chooser *keiland_file_chooser_open(struct wl_display *display, struct xdg_toplevel *parent,
+							    const struct keiland_file_chooser_options *options,
+							    const struct keiland_file_chooser_listener *listener, void *data);
+
+/*
+ * Closes a chooser; one still open closes without telling.
+ */
+void keiland_file_chooser_destroy(struct keiland_file_chooser *chooser);
 
 #ifdef __cplusplus
 }
