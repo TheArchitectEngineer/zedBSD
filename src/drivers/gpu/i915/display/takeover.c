@@ -2664,18 +2664,16 @@ drv_i915_native_decide(
 		r->conditions |= I915_N0_C_VBT_DIFFERS;
 
 	/*
-	 * Takes the first stop in decision order.
-	 *
-	 * XXX: the takeover test build did not stop on an active pipe (and
-	 * then gave the reason that the takeover runs it); that switch is not
-	 * carried, so in production an active pipe is the first stop.
+	 * Takes the first stop in decision order.  An active pipe is not a stop
+	 * (2026-09-29 user decision): a UEFI boot's GOP leaves the panel lit,
+	 * and the display start reads it out and stops it (N1:
+	 * intel_modeset_setup_hw_state() and intel_crtc_disable_noatomic()) before
+	 * its first write.  Every other condition still stops.
 	 */
 	r->proceed = 0;
+	r->takeover = 0;
 	r->primary_stop = 0U;
-	if ((r->conditions & I915_N0_C_ACTIVE_PIPE) != 0U) {
-		r->primary_stop = I915_N0_C_ACTIVE_PIPE;
-		r->reason = "a pipe is active (firmware display): the takeover (N1: readout + crtc_disable_noatomic) is not ported";
-	} else if ((r->conditions & I915_N0_C_PIPE_READ_ERROR) != 0U) {
+	if ((r->conditions & I915_N0_C_PIPE_READ_ERROR) != 0U) {
 		r->primary_stop = I915_N0_C_PIPE_READ_ERROR;
 		r->reason = "a pipe's power state / registers did not read as register values: not shown inactive";
 	} else if ((r->conditions & I915_N0_C_GGTT_OVERLAP) != 0U) {
@@ -2690,12 +2688,17 @@ drv_i915_native_decide(
 	} else if (r->hypervisor != 0) {
 		/* A guest sees the host's unit; the host owns it. */
 		r->proceed = 1;
-		r->reason = "start conditions match the prepared path (no active pipe, no overlap; VT-d: guest view, "
-			"the host owns the unit)";
+		r->reason = "start conditions match the prepared path (no overlap; VT-d: guest view, the host owns the unit)";
 	} else {
 		/* Native, with DMA untranslated. */
 		r->proceed = 1;
-		r->reason = "start conditions match the prepared path (no active pipe, no overlap, DMA untranslated)";
+		r->reason = "start conditions match the prepared path (no overlap, DMA untranslated)";
+	}
+
+	/* A firmware display the start takes over before its first write. */
+	if (r->proceed && (r->conditions & I915_N0_C_ACTIVE_PIPE) != 0U) {
+		r->takeover = 1;
+		r->reason = "a pipe is active (firmware display): the start takes it over (N1: readout + crtc_disable_noatomic) before its first write";
 	}
 }
 

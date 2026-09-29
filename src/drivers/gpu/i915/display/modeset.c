@@ -55,6 +55,7 @@
 #include "present.h"
 #include "scanout.h"
 #include "state.h"
+#include "takeover.h"
 #include "vblank.h"
 #include "vbt-parse.h"
 #include "watermark.h"
@@ -172,6 +173,7 @@ static int i915_resident_window(void *ctx, struct i915_lcd_observer *o);
 static uint32_t i915_resident_verify(void *ctx, const struct i915_scanout *so);
 static int i915_resident_buffers(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_lcd_state *lcd);
 static void i915_resident_hdmi_params(struct i915_display *display, struct i915_lcd_run_params *params);
+static int i915_resident_takeover(struct i915_display *display, struct i915_lcd_kernel *k);
 static void i915_resident_hdmi_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, struct i915_lcd_modeset_cfg *cfg);
 static int i915_resident_release(struct i915_display *display, const struct i915_lcd_show_report *rep);
 static int i915_resident_passed(const struct i915_lcd_show_report *rep);
@@ -1692,6 +1694,7 @@ drv_i915_lcd_kernel_resident_run(
 	int buffers_error;
 	int preflight_error;
 	int fill_error;
+	int takeover_error;
 	unsigned domain;
 
 	k = &display->lk;
@@ -1723,6 +1726,18 @@ drv_i915_lcd_kernel_resident_run(
 	k->locks = display->lcdb_locks;
 	k->d = d;
 	drv_i915_lcd_kernel_bind_ops(k);
+
+	/*
+	 * The display a UEFI boot's firmware left lit (N0 found an active
+	 * pipe): read out and stopped before this run writes (N1).
+	 */
+	if (display->n0.takeover) {
+		takeover_error = i915_resident_takeover(display, k);
+		if (takeover_error != 0) {
+			k->p = NULL;
+			return EIO;
+		}
+	}
 
 	/*
 	 * The HDMI display in the panel's place (ws075-p012): the run's
@@ -3618,6 +3633,87 @@ i915_resident_passed(
 
 	/* Passed. */
 	return 1;
+}
+
+/*
+ * Takes over the display the firmware left running (2026-09-29, the
+ * sequence the N1 parity run proved on the machine): the panel's screen
+ * objects are built with a placeholder framebuffer (the readout asks their
+ * encoder), the PLL pool starts empty so the readout fills it from the
+ * hardware, the readout and sanitize run (intel_modeset_setup_hw_state()),
+ * every active crtc is stopped (intel_crtc_disable_noatomic()), and the
+ * registry is released.  The PLL pool and the DBUF state start empty again
+ * for the run's own commit.  The firmware's framebuffer is never written.
+ * Returns 0, or the errno of the step that failed (logged).
+ */
+static int
+i915_resident_takeover(
+	struct i915_display *display,
+	struct i915_lcd_kernel *k)
+{
+	const struct i915_lcd_kernel_deps *d;
+	struct i915_lcd_modeset_cfg cfg;
+	struct i915_n1_report report;
+	int error;
+
+	d = k->d;
+
+	/* The panel's configuration, with a framebuffer that is never shown. */
+	kern_memset(&cfg, 0, sizeof(cfg));
+	error = drv_i915_lcd_kernel_fill_cfg(k, &cfg);
+	if (error != 0) {
+		kern_logf("i915: takeover: the panel's configuration could not be filled rc=%d\n", error);
+		return error;
+	}
+	cfg.fb_fourcc = I915_FOURCC_XRGB8888;
+	cfg.fb_modifier = I915_MOD_LINEAR;
+	cfg.fb_width = 640U;
+	cfg.fb_height = 480U;
+	cfg.fb_pitch = 640U * 4U;
+	cfg.fb_surf = 0U;
+
+	/* The screen objects the readout asks; nothing is written. */
+	error = drv_i915_lcd_modeset_prepare(display, &d->edp->lcd, &cfg, &k->ops);
+	if (error != 0) {
+		kern_logf("i915: takeover: the screen objects could not be built rc=%d\n", error);
+		return error;
+	}
+
+	/* The readout fills the PLL pool from the hardware. */
+	drv_i915_lcd_dplls_reset(display->lcd_world);
+
+	/* The readout and the sanitize. */
+	kern_memset(&report, 0, sizeof(report));
+	error = drv_i915_n1_readout(display, &cfg, &k->ops, &report);
+	if (error != 0) {
+		kern_logf("i915: takeover: the readout was refused rc=%d\n", error);
+		drv_i915_n1_release(display);
+		return error;
+	}
+	kern_logf("i915: takeover: readout: active pipes 0x%x, pipe %d transcoder %d DPLL%d port %d, mode %ux%u %u kHz, plane visible=%u\n",
+	    report.active_pipes,
+	    report.pipe,
+	    report.cpu_transcoder,
+	    report.dpll_id,
+	    report.port,
+	    report.mode_h,
+	    report.mode_v,
+	    report.clock_khz,
+	    report.plane_visible);
+
+	/* Stops every crtc the firmware left running. */
+	error = drv_i915_n1_takeover(display, &report);
+	drv_i915_n1_release(display);
+	kern_logf("i915: takeover: rc=%d, crtcs stopped %u, still active 0x%x\n", error, report.takeovers, report.still_active);
+	if (error != 0)
+		return error;
+
+	/* The run's own commit starts from an empty PLL pool and DBUF state. */
+	drv_i915_lcd_dplls_reset(display->lcd_world);
+	drv_i915_lcd_dbuf_forget(display->wm_world);
+
+	/* Succeeded: the firmware's display is stopped and the pipes are the driver's. */
+	return 0;
 }
 
 /*

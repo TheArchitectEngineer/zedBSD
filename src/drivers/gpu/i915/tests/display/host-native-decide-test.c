@@ -51,10 +51,11 @@ main(void)
 	r.fb_ggtt_pages = 2025U;
 	drv_i915_native_decide(&r);
 	named = i915_native_reason_has(&r, "active");
-	i915_host_check(r.proceed == 0 &&
+	i915_host_check(r.proceed != 0 &&
+			r.takeover != 0 &&
 			named != 0 &&
 			r.overlap == 0,
-			"GOP-LIT native: STOP before any display write, reason = active pipe (takeover not ported); no GGTT overlap");
+			"GOP-LIT native: PROCEED with the takeover (N1) first, reason = active pipe; no GGTT overlap");
 
 	/* A firmware scanout inside the GGTT pages the driver writes. */
 	i915_native_base(&r);
