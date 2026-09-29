@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001 in-progress（2026-09-30、サブエージェント）: C1〜C9 を実行し C10（1 時間）を実行中。FAIL は C5（QEMU）、範囲の不足は C1・C7、C6 は実機。直す Phase の案 p002〜p006 を下の表に。基準の案はユーザーの確認待ち
+Resume point: p001 cleared（2026-09-30）: 一括の試験 `plan/ws099/tests/criteria.sh`。FAIL は C5（QEMU）、範囲の不足は C1・C7、C6 は実機。直す Phase の案 p002〜p006 を下の表に。基準の案はユーザーの確認待ち
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -49,7 +49,7 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws099-p001](phase001/phase.md) | C1〜C10 を確かめる一括の試験（`plan/ws099/tests/criteria.sh`、新しい C2・C5・C7・C10）、今の状態での実行と不足の一覧、BUG-115 の切り分け | in-progress（2026-09-30: C1〜C4・C7〜C9 PASS（C1・C7 は範囲が一部）、C5 FAIL（QEMU）、C6 未実施（実機）、C10 実行中） | — |
+| [ws099-p001](phase001/phase.md) | C1〜C10 を確かめる一括の試験（`plan/ws099/tests/criteria.sh`、新しい C2・C5・C7・C10）、今の状態での実行と不足の一覧、BUG-115 の切り分け | cleared（2026-09-30、QEMU の Venus: C1〜C4・C7〜C10 PASS（C1・C7 は範囲が一部）、C5 FAIL（最初の frame まで 102〜215 ms）、C6 未実施（実機）。BUG-115 は試験の固定の待ち（古い image の起動 6 秒超）） | — |
 | ws099-p002（案） | C5: App Home と Wiseview の開閉の最初の frame を早める（QEMU で要求から最初の frame まで 102〜215 ms、frame の間隔 約 130〜140 ms）。まず実機（WS075）で測り、100 ms を超えるなら、開閉の要求を受けた pass で frame を出す（次の frame の pacing を待たない）など。QEMU の数を基準にするかはユーザーの判断 | planning | p001 |
 | ws099-p003（案） | BUG-115: `zdesktop-p072.sh` と同じ固定の `sleep 4` の試験を、socket（`/tmp/wayland-0`）か `ZWL READY` を待つ形にする（試験の側の直し） | planning | p001 |
 | ws099-p004（案） | C1 の残り: 起動から greeter と Shut Down の替わり目を撮る試験を足す（p126 の撮り方）。実機はユーザーの目視 | planning | p001 |

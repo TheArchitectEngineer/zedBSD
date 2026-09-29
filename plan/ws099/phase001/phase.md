@@ -4,7 +4,7 @@
 
 Phase ID: `ws099-p001`
 Parent: [WS099](../ws.md)
-Status: in-progress（2026-09-30、サブエージェント、worktree `wt/ws035`（ws035-keiland））
+Status: cleared（2026-09-30、サブエージェント、worktree `wt/ws035`（ws035-keiland）。QEMU の Venus、実機は未実施）
 Phase disposition: normal
 Queue: なし（2026-09-30 main の割り当て「ws099-p001 を実行。基準 C1〜C10 を確かめる一括の試験の script（既存の zdesktop の試験を束ね、
 足りない C2・C5・C7・C10 を足す）、今の main での実行と基準ごとの PASS・FAIL と数値の表、FAIL の基準ごとの直す Phase の案。直すのは p002 以降。
@@ -51,7 +51,7 @@ App Home と Wiseview の開閉の log には時刻が無かったので、次�
 | C7 | PASS（範囲は一部） | 6 枚 × 2（時計・窓の題）の 12 点が全て 4.5 以上。最小 **5.48**（Aurora の system bar の時計、ガラスの輝度 0.345）、次に 6.24（Twilight の時計）。窓の title は 9.07 以上。**client が描くガラスの上の文字（Settings の頁の説明、Files の文字）は測っていない**（旧 ws035-p135 の懸念はこちら） |
 | C8 | PASS | p134: Terminal の本体 4/4 直角・title bar 丸い、dock・戻しも同じ、他の窓は両方丸い |
 | C9 | PASS | p052・p053・p072・p076・p126・p128・p134・p137・p138 の 9 本が全て PASS（新しい guest で 1 本ずつ） |
-| C10 | （実行中） | |
+| C10 | PASS | 3602 秒で 169 周（1 周 約 21 秒: 窓 3 つの開閉、drag、Wiseview と App Home の開閉、最大化と戻し、close button と kill）。compositor は最後まで生存、`ZWL ERROR`・`ZWL FAILED` 0（`build/ws099-criteria-c10/c10/`: 20 周ごとと最後の画面、`errors.txt`・`zdesktop-tail.log`） |
 
 画面: `build/ws099-criteria/`（c1〜c9 の各 directory）、`build/ws099-criteria-c2/c2/`（opened・after-*・moved・maximized・restored・minimized・unminimized）、
 `build/ws099-criteria-c10/c7/`（壁紙 6 枚）、`build/ws099-shots/c5/`（windows・wiseview・home）。
@@ -75,6 +75,11 @@ App Home と Wiseview の開閉の log には時刻が無かったので、次�
 - C9 の試験の一覧は、基準に直接関わるもの 9 本に絞った（`plan/ws035/tests/zdesktop-p*.sh` の全て（約 70 本）ではない。古い試験には別の image
   （files の image、`build/ws071-run`）や前提が要るものがある）。
 
+まとめ: PASS 8（C1・C2・C3・C4・C7・C8・C9・C10。C1 と C7 は範囲が一部）、FAIL 1（C5、QEMU の frame の間隔）、未実施 1（C6、実機）。
+直す Phase の案は [ws.md](../ws.md) の表（p002〜p006）。
+
+build: `plan/ws099/tests/build-criteria-image.sh build/amd64`（`build/ws099-build.sh`）exit 0、desktop の warning 0、`Permission denied` なし。
+
 ## Resume point
 
-2026-09-30: C1〜C9 の実行と BUG-115 の切り分けまで済み。C10（1 時間、`build/ws099-criteria-c10/`）の結果を待って表に書き、ws.md に直す Phase の案を並べる。
+2026-09-30: cleared。次は ws099-p002 以降（ws.md の案、main とユーザーの判断で選ぶ）。基準の数値が変わったら `criteria.sh` の先頭の変数を直して再実行する。
