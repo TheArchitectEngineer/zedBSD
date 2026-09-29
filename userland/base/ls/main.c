@@ -191,7 +191,7 @@ static void settle_layout(struct options *options);
 static int parse_count(const char *text, size_t *value);
 static int finish_output(int failed);
 static int list_operands(int count, char **names, const struct options *options);
-static int operand_status(const char *name, const struct options *options, struct stat *status);
+static int operand_status(const char *name, const struct options *options, int command_line, struct stat *status);
 static int list_operand(const char *path, const struct options *options, int header);
 static int list_directory(const char *path, const struct options *options, int header, int depth);
 static int list_subdirectories(const char *path, const struct entry *items, size_t count, const struct options *options, int depth);
@@ -201,9 +201,10 @@ static char *copy_string(const char *text);
 static int join_path(const char *directory, const char *name, char *out, size_t capacity);
 static void sort_entries(struct entry *items, size_t count, const struct options *options);
 static int compare(const struct entry *left, const struct entry *right, const struct options *options);
-static int print_entries(const char *path, struct entry *items, size_t count, const struct options *options, int total);
+static int print_entries(const char *path, struct entry *items, size_t count, struct entry *measured_too, size_t measured_count, const struct options *options, int total);
 static int prepare_names(struct entry *items, size_t count, const struct options *options, struct name_layout *layout);
-static int print_long_entries(const char *path, struct entry *items, size_t count, const struct options *options, const struct name_layout *layout, int total);
+static int follows_operand_links(const struct options *options);
+static int print_long_entries(const char *path, struct entry *items, size_t count, const struct entry *measured_too, size_t measured_count, const struct options *options, const struct name_layout *layout, int total);
 static void print_one_per_line(const struct entry *items, size_t count, const struct options *options, const struct name_layout *layout);
 static int print_columns(const struct entry *items, size_t count, const struct options *options, const struct name_layout *layout, int down);
 static int fit_columns(const struct entry *items, size_t count, const struct options *options, const struct name_layout *layout, int down, struct column_fit **result, size_t *result_columns);
@@ -288,7 +289,7 @@ main(
 
 	/* No operand lists the current directory. */
 	if (operand_count == 0) {
-		listed = list_operand(".", &options, 0);
+		listed = list_operand(".", &options, options.recursive);
 		failed = 1;
 		if (listed)
 			failed = 0;
@@ -630,7 +631,7 @@ list_operands(
 	file_count = 0;
 	directory_count = 0;
 	for (index = 0; index < (size_t)count; index++) {
-		error = operand_status(names[index], options, &status);
+		error = operand_status(names[index], options, 1, &status);
 		if (error != 0) {
 			command_error("ls", names[index]);
 			failed = 2;
@@ -655,18 +656,24 @@ list_operands(
 		entry->status_valid = 1;
 	}
 
-	/* The files, sorted together; in the long format without a total. */
+	/*
+	 * The files, sorted together; in the long format without a total.
+	 * The directories are measured with them, as GNU ls reads every
+	 * operand before it sets the directories aside.
+	 */
 	sort_entries(files, file_count, options);
 	if (file_count > 0) {
-		listed = print_entries("", files, file_count, options, 0);
+		listed = print_entries("", files, file_count, directories, directory_count, options, 0);
 		if (!listed && failed == 0)
 			failed = 1;
 	}
 
-	/* Each directory, after a blank line when something came before it. */
+	/* Each directory, after a blank line when something came before it, with a header among several or with -R. */
 	sort_entries(directories, directory_count, options);
 	header = 0;
 	if (count > 1)
+		header = 1;
+	if (options->recursive)
 		header = 1;
 	for (index = 0; index < directory_count; index++) {
 		if (file_count > 0 || index > 0)
@@ -691,21 +698,42 @@ list_operands(
 /*
  * Reads the status of a path: of what a symbolic link points to with -L,
  * and of the link itself otherwise; with -L a dangling link is still
- * listed as a link.  Returns 0 or -1.
+ * listed as a link.  A link named on the command line (command_line) that
+ * points to a directory is followed too, unless -d, -F or -l, as POSIX
+ * and GNU ls have it.  Returns 0 or -1.
  */
 static int
 operand_status(
 	const char *name,
 	const struct options *options,
+	int command_line,
 	struct stat *status)
 {
 	int error;
+	int follows;
+	int directory;
 
 	/* -L follows the link when it leads somewhere. */
 	if (options->follow) {
 		error = stat(name, status);
 		if (error == 0)
 			return 0;
+	}
+
+	/* An operand is followed when it leads to a directory. */
+	follows = 0;
+	if (command_line && !options->follow)
+		follows = follows_operand_links(options);
+	if (follows) {
+		error = stat(name, status);
+		if (error == 0) {
+			directory = S_ISDIR(status->st_mode);
+			if (directory)
+				return 0;
+		} else if (errno != ENOENT && errno != ELOOP) {
+			/* Only a link leading nowhere is listed as itself; any other failure is reported. */
+			return -1;
+		}
 	}
 
 	/* The entry itself. */
@@ -715,6 +743,27 @@ operand_status(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Returns 1 when a symbolic link named on the command line that points to
+ * a directory is listed as the directory: unless -d, -F or -l asks about
+ * the link itself.
+ */
+static int
+follows_operand_links(
+	const struct options *options)
+{
+	/* The options that list the link itself. */
+	if (options->directory)
+		return 0;
+	if (options->classify)
+		return 0;
+	if (options->format == LS_FORMAT_LONG)
+		return 0;
+
+	/* Succeeded: the link is followed. */
+	return 1;
 }
 
 /*
@@ -754,7 +803,7 @@ list_operand(
 	item.name = (char *)path;
 	item.status = status;
 	item.status_valid = 1;
-	listed = print_entries("", &item, 1, options, 0);
+	listed = print_entries("", &item, 1, NULL, 0, options, 0);
 	free(item.shown);
 
 	/* Reports an entry that could not be listed. */
@@ -801,7 +850,7 @@ list_directory(
 	ok = 1;
 	if (header)
 		print_header(path, options);
-	printed = print_entries(path, items, count, options, 1);
+	printed = print_entries(path, items, count, NULL, 0, options, 1);
 	if (!printed)
 		ok = 0;
 
@@ -1005,7 +1054,7 @@ read_entries(
 		(*items)[*count].status_valid = 0;
 		joined = join_path(path, name, child, sizeof(child));
 		if (joined) {
-			error = operand_status(child, options, &(*items)[*count].status);
+			error = operand_status(child, options, 0, &(*items)[*count].status);
 			if (error == 0)
 				(*items)[*count].status_valid = 1;
 		}
@@ -1139,17 +1188,23 @@ compare(
 /*
  * Writes a group of entries in the chosen format; in the long format a
  * directory's entries (total set) come after the total of their blocks.
- * Returns 1, or 0 when an entry could not be listed.
+ * The entries measured_too are not written but measured with the group:
+ * they widen the columns of the long format and the serial numbers and
+ * can make its names line up behind a space.  Returns 1, or 0 when an
+ * entry could not be listed.
  */
 static int
 print_entries(
 	const char *path,
 	struct entry *items,
 	size_t count,
+	struct entry *measured_too,
+	size_t measured_count,
 	const struct options *options,
 	int total)
 {
 	struct name_layout layout;
+	struct name_layout measured_layout;
 	int prepared;
 	int printed;
 
@@ -1160,9 +1215,20 @@ print_entries(
 		return 0;
 	}
 
+	/* What the entries measured with them add. */
+	prepared = prepare_names(measured_too, measured_count, options, &measured_layout);
+	if (!prepared) {
+		fprintf(stderr, "ls: out of memory\n");
+		return 0;
+	}
+	if (measured_layout.inode_width > layout.inode_width)
+		layout.inode_width = measured_layout.inode_width;
+	if (measured_layout.some_quoted)
+		layout.some_quoted = 1;
+
 	/* The long format, which also writes a total for an empty directory. */
 	if (options->format == LS_FORMAT_LONG) {
-		printed = print_long_entries(path, items, count, options, &layout, total);
+		printed = print_long_entries(path, items, count, measured_too, measured_count, options, &layout, total);
 		if (!printed)
 			return 0;
 		return 1;
@@ -1258,6 +1324,8 @@ print_long_entries(
 	const char *path,
 	struct entry *items,
 	size_t count,
+	const struct entry *measured_too,
+	size_t measured_count,
 	const struct options *options,
 	const struct name_layout *layout,
 	int total)
@@ -1270,7 +1338,9 @@ print_long_entries(
 	int ok;
 
 	/* The widths of the columns, and the blocks the entries take. */
+	memset(&widths, 0, sizeof(widths));
 	measure_long(items, count, options, &widths);
+	measure_long(measured_too, measured_count, options, &widths);
 	blocks = 0;
 	for (index = 0; index < count; index++) {
 		if (items[index].status_valid && items[index].status.st_blocks > 0)
@@ -1593,7 +1663,8 @@ print_separated(
 			fits = 0;
 			if (options->line_width == 0) {
 				fits = 1;
-			} else if (position + length + 2U < options->line_width) {
+			} else if (position + length + 2U < options->line_width && position <= (size_t)-1 - length - 2U) {
+				/* The sum is also checked for wrapping, as GNU ls checks it. */
 				fits = 1;
 			}
 
@@ -2217,9 +2288,12 @@ character_length(
 }
 
 /*
- * Returns the columns of a terminal a text takes, as GNU ls counts them:
- * a character by its width, a control character none, and a byte that
- * starts no character one.
+ * Returns the columns of a terminal a text takes, as GNU ls counts them: a
+ * character by its width.  A text with a character that cannot be shown
+ * or a byte that starts no character has no width GNU ls can count, and
+ * it takes (size_t)-1, which GNU ls then adds up as it is: such a name
+ * ends its line with -m and leaves no blanks after it with -C.  In a
+ * locale of single bytes each printable byte takes a column.
  */
 static size_t
 display_width(
@@ -2234,7 +2308,6 @@ display_width(
 	size_t bytes;
 	int columns;
 	int printing;
-	int control;
 
 	/* In a locale of single bytes, each printable byte takes a column. */
 	width = 0;
@@ -2255,29 +2328,18 @@ display_width(
 	while (at < length) {
 		memset(&state, 0, sizeof(state));
 		bytes = mbrtowc(&character, text + at, length - at, &state);
-		if (bytes == (size_t)-1) {
-			/* A byte that starts no character takes a column. */
-			width++;
-			at++;
-			continue;
-		}
-		if (bytes == (size_t)-2) {
-			/* So does a character cut off by the end. */
-			width++;
-			break;
+		if (bytes == (size_t)-1 || bytes == (size_t)-2) {
+			/* A byte that starts no character, or a character cut off by the end. */
+			return (size_t)-1;
 		}
 		if (bytes == 0)
 			bytes = 1;
 
-		/* A character by its width; one without a width takes a column unless it is a control. */
+		/* A character by its width; one without a width cannot be shown. */
 		columns = wcwidth(character);
-		if (columns >= 0) {
-			width += (size_t)columns;
-		} else {
-			control = iswcntrl((wint_t)character);
-			if (!control)
-				width++;
-		}
+		if (columns < 0)
+			return (size_t)-1;
+		width += (size_t)columns;
 		at += bytes;
 	}
 
@@ -2308,7 +2370,7 @@ write_char(
 	writer->length++;
 }
 
-/* Finds the widths of the columns of the long format for a group of entries. */
+/* Widens the columns of the long format to what a group of entries needs. */
 static void
 measure_long(
 	const struct entry *items,
@@ -2326,7 +2388,6 @@ measure_long(
 	size_t index;
 
 	/* Each entry whose status is known widens the columns it needs to. */
-	memset(widths, 0, sizeof(*widths));
 	for (index = 0; index < count; index++) {
 		if (!items[index].status_valid)
 			continue;
