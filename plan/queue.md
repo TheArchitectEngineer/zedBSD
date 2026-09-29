@@ -1,17 +1,17 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# Queue q501: Amazonトップのpercentage height
+# Queue q502: 動的に挿入された外部script
 
 <!-- awesome-plan-current:start -->
 Status: active（2026-09-30）
-Active Queue: q501-i01 / [ws074-p089](ws074/phase089/phase.md)
-Last finished Queue: [q500](history/queue-q500.md)（ws074-p094 cleared。Chromiumとの固定比較を1 command化）
+Active Queue: q502-i01 / [ws074-p088](ws074/phase088/phase.md)
+Last finished Queue: [q501](history/queue-q501.md)（ws074-p089 cleared。percentage heightとgrid `1fr`）
 Executor: main
 Approval: ユーザー「Amazon.co.jpのトップページがうまくレンダリングできるようになるまで、自走をお願いします。」
 <!-- awesome-plan-current:end -->
 
-## q501-i01
+## q502-i01
 
-Amazonトップの2番目のcardがChromiumの約490 pxに対して約200 pxで終わる差を、percentage heightの確定性をlayoutへ渡して修正する。小さいfixture、ASan、p094の固定captureで確認し、topの画素・ink一致率を低下させない。
+DOMへ挿入された外部`script src`を非同期に取得・一度だけ実行し、load/error eventを送る。小さいChromium fixture、host ASan、Amazonの動的比較で確認する。
 
-Upcoming Work Outlook: p089の後は固定比較で最大の残差を選び、既存のp090（合成太字）、p091（flex/CSSOM）、p088（動的script）、p092（DOM）から1 PhaseずつQueueへ入れる。
+Upcoming Work Outlook: p088の結果から不足するWeb APIを特定し、p092（fetch・IntersectionObserver・elementsFromPoint）またはp064（XHR）を1 PhaseずつQueueへ入れる。

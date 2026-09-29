@@ -119,7 +119,7 @@ def localize_page(text, page_url, files):
 
     def image(match):
         tag = match.group(0)
-        tag = re.sub(r"\s(data-)?srcset=(['\"]).*?\2", "", tag, flags=re.I)
+        tag = re.sub(r"\s(data-)?srcset=(['\"]).*?\2", "", tag, flags=re.I | re.S)
         src = re.search(r"\ssrc=(['\"])(.*?)\1", tag, flags=re.I)
         if src is None or src.group(2).startswith("data:"):
             return tag

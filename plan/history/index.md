@@ -1,13 +1,17 @@
 <!-- awesome-plan project=zedbsd record=past-log -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: [q501](../queue.md) / ws074-p089（Amazonトップのpercentage height）
-Last finished Queue: [q500](queue-q500.md)（ws074-p094 cleared。Chromiumとの固定比較を1 command化）
+Active Queue: [q502](../queue.md) / ws074-p088（動的に挿入された外部script）
+Last finished Queue: [q501](queue-q501.md)（ws074-p089 cleared。percentage heightとgrid `1fr`）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q500
+## 最新: 2026-09-30 q501
+
+[q501](queue-q501.md): percentage heightを確定したcontaining blockで解決し、flex/gridへ高さを伝播、gridの`1fr`行を配分。topは84.06%/ink 80.56%、searchは76.32%/ink 34.48%へ改善。GitHubへは未公開。
+
+## 2026-09-30 q500
 
 [q500](queue-q500.md): Amazonの固定captureをbrowserとChromiumで同条件に描き、入力・実行環境・画像のhashと画素・ink指標をJSONへ残す手順を確立。top 82.96%/ink 79.01%、search 75.85%/ink 32.97%。GitHubへは未公開。
 
