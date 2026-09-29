@@ -55,6 +55,29 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 デモの platform は amd64 の実機（Dell Latitude 5330、HDMI + USB、2026-09-28 ユーザーの回答）。開発の試験は QEMU（amd64）で行い、実機の証拠と分けて書く。以前の focus（fg004 インストーラの実機、
 fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残すが、現在は優先しない。
 
+### fg010 の達成基準: デモの台本（2026-09-30 ユーザー「WS099のゴールも、明確な達成基準がないような気がします。それはFGに入れて、WSでは、このソフトがこういう基準を満たす、という明確なゴールを設定したいです。ソフトごとにそれをWSで作りましょう」）
+
+下の全ての場面が、Dell Latitude 5330 の実機（内蔵 LCD、`display=edp`、デモの image）で、崩れ・止まり・読めない文字・操作できない所なく通ること。
+各場面を支えるソフトの WS が、それぞれの達成基準を持つ（WS の欄）。案は 2026-09-30 main、ユーザーの確認待ち。
+
+| # | 場面 | 見せること | 支える WS |
+| --- | --- | --- | --- |
+| S1 | 起動 | 電源から Kei の起動画面、greeter | WS084（i915 の引き継ぎ）、WS099 |
+| S2 | login | kei で login、デスクトップ（壁紙・system bar・デスクトップの icon） | WS099、WS094 |
+| S3 | App Home | 左上から App Home、app の一覧、検索 | WS099 |
+| S4 | Files | folder の移動、表示の切り替え、scroll（mouse・touch） | WS093・WS071 の後継（必要なら新しい WS）、WS081 |
+| S5 | 画像 | Files から png・jpg → Image Viewer、拡大・pan・前後 | WS091（完了） |
+| S6 | text | Files から txt → Text Editor、編集・保存（Save As） | WS092（完了）、WS090 |
+| S7 | Settings | 壁紙の差し替え、窓の透明度、検索 | WS089 |
+| S8 | Notes | 右上の角の swipe で Notes、pen で書く、Esc で窓に | WS079、WS099 |
+| S9 | PDF Viewer | PDF の頁送り・拡大 | WS079 |
+| S10 | Terminal | `ls`・矢印の履歴・Tab の補完・`less` | WS086・WS087（完了） |
+| S11 | 窓の操作 | 10 個ほどの窓で移動・resize・Wiseview・最大化 | WS099、WS075 |
+| S12 | 音量 | system bar の音量の icon で音量を変え、確かめの音が鳴る | WS100 |
+| S13 | 終わり | Log Out → greeter、Shut Down | WS099 |
+
+ブラウザ（WS074）と IME（WS095）は人間が作業中。戻ったときに台本に足すかを決める。
+
 ### fg010 に必要な判断
 
 なし（2026-09-28 の時点）。合成の設計（p051）は承認済み、HAL の quiet console の diff は 2026-09-28 に承認・適用済み。
@@ -161,7 +184,8 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS096](ws096/ws.md) | MG002 | Qt6（core・gui・widgets）の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
-| [WS099](ws099/ws.md) | MG006 | Keiland のデモの仕上げ: デモの台本（S1 起動〜S12 終わり）の全場面が 5330 の実機で崩れず通る（2026-09-30 ユーザー、WS035 の後継、10/10 まで） | planning | p001（台本の確定、案はユーザーの確認待ち） |
+| [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | planning | p001（基準の確定と QEMU の通しの試験） |
+| [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | planning | p001（設計。5330 の HDA 8086:51c8 の実機の出音が前提の危険） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -195,7 +219,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・Future Work・
 | --- | --- | --- |
 | 実機の image `build/demo-lcd8` の確認（LCD の takeover、10 app の軽さ、Files → Image Viewer・Text Editor、Settings、デスクトップの icon、Terminal の角、Notes の全画面を解く、USB マウス・sh の履歴・プロンプトの `~`） | デモ | ユーザーが試験 |
 | WS075 p023: compositor の panel.frag の分岐の中の ALU を飛ぶ（見積もり 1 run 8.8 → 4.9 ms）。すりガラスは残す（2026-09-30 ユーザーの決定） | 窓が多いときの軽さ | p023 の計測済み |
-| WS099（WS035 の後継）: 台本の確定 → 場面ごとの直し（暗い壁紙の上の文字、BUG-115 ほか） | Keiland のデモ | 台本の案はユーザーの確認待ち |
+| fg010 の台本の確定（ユーザー）→ WS099（compositor の基準）・WS100（音量）の p001 | デモ | 台本と基準の案はユーザーの確認待ち |
 | WS073: BUG-030 の受け入れの残り（KVM 2×20・boot test）、BUG-116（EP0 の event の取りこぼし、BUG-036 と同じ系統か） | 安定性 | phase041 |
 | WS094 p004 の残り（保存した場所への配置の guest の確認・回帰・boot test）→ p005〜p007 | デスクトップの icon | phase004 の Resume point |
 | WS090 p004（窓の土台と Text Editor の libkeiui への移行、文字の編集の touch） | 共通の部品 | p003 cleared |

@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws099 -->
 
-# WS099: Keiland のデモの仕上げ（5330、2026-10-10 まで）
+# WS099: Keiland の compositor（zdesktop）のデモの基準
 
 <!-- awesome-plan-current:start -->
 Status: planning
@@ -9,48 +9,44 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（台本の確定）から。台本の案はユーザーの確認待ち
+Resume point: p001（基準の確定と QEMU の通しの試験）から。基準の案はユーザーの確認待ち
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
 
-WS035 を閉じるときのユーザーの判断:「閉じて新しい WS（Keiland のデモの仕上げ、10/10 まで）」。
-ユーザーの指摘:「WS035は、あまりゴールが明確でないのに延々と作業している気がします。」→ この WS はゴールを**デモの台本**に限る。
+WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達成基準がないような気がします。それはFGに入れて、WSでは、このソフトがこういう基準を
+満たす、という明確なゴールを設定したいです。ソフトごとにそれをWSで作りましょう」→ デモの台本は fg010 に移した（master）。この WS の対象は
+**compositor の zdesktop**（`/bin/wayland`、`userland/desktop/wayland/`）と、それが起こす greeter・session の遷移だけ。
 
-**完了の条件**: 下の台本の全ての場面が、**Dell Latitude 5330 の実機**（内蔵 LCD、`display=edp`、デモの image）で、崩れ・止まり・読めない文字・
-操作できない所なく通る。各場面の受け入れの証拠は、QEMU の自動の通しの試験と、実機でのユーザーの確認（またはユーザーが撮った画面）。
-台本に無いものはこの WS で作らない（見つけたら Future Work か Bug Board）。期限は 2026-10-10 ごろ（それ以降は bug の修正と実機の調整だけ、master の判断）。
+## 達成基準（案、2026-09-30 main。ユーザーの確認待ち）
 
-## 台本（案、2026-09-30 main。ユーザーの確認待ち）
+全て QEMU の Venus の自動の試験で確かめ、印の付いたものは 5330 の実機でも確かめる（実機）。
 
-| # | 場面 | 見せること | 受け入れ |
-| --- | --- | --- | --- |
-| S1 | 起動 | 電源から Kei の起動画面、greeter | 黒・文字の console が出ずに greeter まで。時間を記録 |
-| S2 | login | kei で login、デスクトップ | 壁紙・system bar・デスクトップの icon が出る |
-| S3 | App Home | 左上から App Home、app の一覧、検索 | 開閉が滑らか、icon が崩れない |
-| S4 | Files | Files を開き、folder を移動、表示の切り替え | 文字が読める、scroll が滑らか（mouse・touch） |
-| S5 | 画像 | Files から png・jpg を double click → Image Viewer、拡大・pan・前後 | 開く、操作に追従する |
-| S6 | text | Files から txt → Text Editor、編集・保存（Save As のファイル選択の窓） | 開く、保存できる |
-| S7 | Settings | 壁紙の差し替え、窓の透明度、検索 | 変更がすぐ当たる、暗い壁紙でも文字が読める |
-| S8 | Notes | 右上の角の swipe で Notes（全画面）、pen で書く、Esc で窓に | 書ける、全画面を解いて窓を動かせる |
-| S9 | PDF Viewer | PDF を開き、頁送り・拡大 | 開く、操作に追従する |
-| S10 | Terminal | `ls`・矢印の履歴・Tab の補完・`less` | 本体の角が直角、文字が欠けない |
-| S11 | 窓の操作 | 10 個ほどの窓で移動・resize（四隅と辺）・Wiseview・最大化 | 操作が軽い（目安: 入力から表示 50 ms 以内） |
-| S12 | 終わり | Log Out → greeter、Shut Down | 黒・止まりなく戻る・切れる |
-
-ブラウザ（Amazon）と IME は、今は人間が作業中（master の判断）。戻ったときに台本に足すかをユーザーと決める。
-
-## 既知の項目（p001 で台本の場面に割り当てる）
-
-| 項目 | 場面 | 出所 |
+| # | 基準 | 確かめ方 |
 | --- | --- | --- |
-| 暗い壁紙の上のすりガラスの文字の contrast（旧 ws035-p135） | S7 | WS089 の p009、すりガラスを残す決定（2026-09-30） |
-| [BUG-115](../bugs/BUG-115.md): zdesktop-p072 の試験の失敗（最初の client の setup errno=5） | 回帰 | ws094-p002 |
-| 窓 10 個の軽さ（WS075 p023: 分岐の中の ALU を飛ぶ） | S11 | WS075（この WS の外で進む） |
-| 実機の確認の結果（`build/demo-lcd8`） | 全て | ユーザー |
+| C1 | 起動から greeter、login からデスクトップ、Log Out から greeter、Shut Down の各遷移で、黒い画面と文字の console が 0 枚（実機） | p126 の替わり目の試験、実機はユーザーの目視 |
+| C2 | 窓の移動、四隅と四辺の resize、最大化と戻し、最小化と戻しが、どれも意図した位置と大きさになる | 自動の試験で位置と大きさを log と画面で比べる |
+| C3 | 全画面・最大化を解いた窓は、title bar が system bar に重ならず、drag できる（BUG-114 の形） | 自動の試験（Notes の swipe → Esc を含む） |
+| C4 | 窓を閉じたとき、同じ desktop の次の窓に keyboard の focus が移る。desktop の層には移らない | p137 の試験 |
+| C5 | App Home と Wiseview の開閉が、窓 10 個でも途中で止まらない。開閉の最初の frame まで 100 ms 以内（実機） | 計測の log、実機は WS075 の計測 |
+| C6 | 窓 10 個で、pointer の移動から表示まで中央値 50 ms 以内（実機）。compositor の GPU は WS075 の p023 が担う | WS075 の measure-apps.sh |
+| C7 | すりガラスの上の文字の contrast が、既定と生成の 5 枚の壁紙の全てで 4.5:1 以上（WCAG AA） | 撮った画面の文字と背景の画素から計算する試験 |
+| C8 | Terminal の窓は本体の四隅が直角、title bar は丸い。他の窓は両方丸い | p134 の試験 |
+| C9 | zdesktop の回帰の試験（`plan/ws035/tests/zdesktop-p*.sh` のうち基準の一覧に載せたもの）が全て PASS（[BUG-115](../bugs/BUG-115.md) の p072 を含む） | 一括の回帰の script |
+| C10 | 1 時間の連続の操作（窓の開閉を繰り返す試験）で zdesktop が落ちず、`ZWL ERROR` が 0 | 長時間の自動の試験 |
+
+基準に無いものはこの WS で作らない（見つけたら Future Work か Bug Board）。期限は 2026-10-10 ごろ。
+
+## 既知の項目
+
+| 項目 | 基準 |
+| --- | --- |
+| 暗い壁紙の上のすりガラスの文字（旧 ws035-p135） | C7 |
+| [BUG-115](../bugs/BUG-115.md): p072 の試験の失敗 | C9 |
+| BUG-114（直った）・BUG-113（試験の誤り）の試験を回帰に入れる | C3・C4 |
 
 ## Phase（案）
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws099-p001 | 台本の確定（ユーザー）と、QEMU の通しの自動試験（S1〜S12 の各場面を撮る script）。既知の項目を場面に割り当て、足りないものを Phase にする | planning | — |
+| ws099-p001 | 基準の確定（ユーザー）、C1〜C10 を確かめる一括の試験の script（既存の試験をまとめ、足りない C2・C5・C7・C10 を足す）、今の状態での実行と不足の一覧 | planning | — |
