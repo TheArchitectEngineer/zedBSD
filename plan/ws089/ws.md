@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p002（骨格と About）から。p001 は cleared（[design.md](design.md)、main の判断は design.md §9 と [proposed/](proposed/)）。OSC のデモ（fg010）の優先事項
+Resume point: p003（Network、鍵の入力を含む）から。p002 は cleared（Venus の guest で PASS）。p001 は cleared（[design.md](design.md)、main の判断は design.md §9 と [proposed/](proposed/)）。OSC のデモ（fg010）の優先事項
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -26,10 +26,16 @@ Resume point: p002（骨格と About）から。p001 は cleared（[design.md](d
 - デモの受け入れ（案、p001 で確定）: 起動して項目を選ぶと頁が替わり、少なくとも About（OS の名前・版・機械）、Network（networkd の実際の状態:
   interface・address・Wi-Fi の一覧と接続）、Display（解像度・拡大）、Appearance・Wallpaper（見た目と壁紙の変更が desktop に反映）、Sound（音量、
   audiod）、Mouse・Touchpad（速さ、慣性の scroll の on/off）が実際に働く。それ以外の項目は頁の枠と「準備中」の表示でよい。App Home から起動できる。
-- **受け入れ（p001 で確定、2026-09-29）**: [design.md](design.md) §2 の表。案からの差: Display は読むだけ（拡大の変更は D1）、
-  Appearance は窓の透明度（accent の色は D2）、Storage（読むだけ）と Keyboard（repeat）を足す。Appearance・Wallpaper・Mouse・
-  Keyboard の desktop への反映は p007（main の許可）が要る。**Touchpad は準備中、慣性の on/off は出さない（D9）**。
-  案からの差（D1・D2・D9）はユーザーの確認を待つ既定であり、確認まで受け入れの確定は保留とする。
+- **受け入れ（2026-09-29 確定）**: ユーザーの回答「設定項目は、ネットワークを中心にしてください。ディスプレイはまだスタブでいいです。」と
+  main の判断による。
+  1. 起動して項目を選ぶと頁が替わる（左の項目の pane と右の頁の pane、戻る・進む・breadcrumb）。App Home から起動できる。
+  2. **Network が中心**: 接続の状態、Wi-Fi の一覧と接続・切断（**新しい network への鍵の入力を含む**）、Wi-Fi の入り切り、Ethernet、
+     address・netmask・MAC・DNS、通信量（見本の Network の頁に近い内容）。networkd の protocol に最小の追加が要るなら
+     [proposed/](proposed/) に案を置いてから実装する。
+  3. About（OS の名前・版・機械）。
+  4. Display は stub（読むだけの情報、または準備中）。accent の色と Touchpad は出さない（準備中）。
+  5. Appearance・Wallpaper・Sound・Mouse・Keyboard は Network の後の優先度（p004・p005・p007）。デモの受け入れの必須は 1〜4。
+  6. その他の項目は頁の枠と「準備中」。
 
 ## Phase
 
@@ -38,8 +44,8 @@ Resume point: p002（骨格と About）から。p001 は cleared（[design.md](d
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws089-p001](phase001/phase.md) | 設計: 項目の一覧とデモで働かせる範囲、画面の構成（Files の pane・card の部品の再利用）、各項目の backend（networkd・audiod・sessiond・/dev/system・compositor の設定）との接続の方法、設定の保存先 | cleared（2026-09-29） | — |
-| ws089-p002 | アプリの骨格: 窓、present、glass の 2 枚の card、titlebar（Back・Forward・Home・Breadcrumb・Sidebar）と履歴、System Menu、左の項目の pane、右の頁の scroll、About と準備中の頁、App Home の行 | planned | p001、link の規則（[案](proposed/vmunix-link.md)、main の許可） |
-| ws089-p008 | 検索（titlebar の欄と結果の頁）と Home の頁（tile と今の状態） | planning | p002 |
+| [ws089-p002](phase002/phase.md) | アプリの骨格: 窓、present、glass の 2 枚の card、titlebar（Back・Forward・Home・Breadcrumb・Sidebar）と履歴、System Menu、左の項目の pane、右の頁の scroll、Home（tile）・About・準備中の頁、App Home の行 | cleared（2026-09-29、Venus の guest） | p001、link の規則（main の許可済み） |
+| ws089-p008 | 検索（titlebar の欄と結果の頁）と Home の tile の今の状態（Home の tile の頁は p002 で済み） | planning | p002 |
 | ws089-p007 | desktop の設定の仕組み: libkeiland の `keiland_preferences_*` と zdesktop の反映（[案](proposed/desktop-preferences.md)、main の許可が要る） | planning | p001、main の許可 |
 | ws089-p003 | Network・Wi-Fi・Ethernet の頁（networkd の状態と Wi-Fi の接続、link の詳細は [案](proposed/libkeiland-network-link.md)） | planning | p002（link の詳細は main の許可） |
 | ws089-p004 | Appearance・Wallpaper・Display・Storage の頁 | planning | p002, p007 |
