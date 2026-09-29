@@ -385,6 +385,7 @@ js_compile_class(
 	parent = js_temp(fc);
 	constructor = js_temp(fc);
 	prototype = js_temp(fc);
+	statics = js_temp(fc);
 	if (node->first != NULL) {
 		js_compile_expression(fc, node->first, parent);
 	} else {
@@ -412,8 +413,14 @@ js_compile_class(
 	/* The prototype from the heritage, and the constructor's own prototype. */
 	js_emit3(fc, VM_OP_CLASS_SETUP, prototype, constructor, parent);
 
-	/* The methods and accessors, on the prototype or, static, on the constructor. */
+	/* In order: the methods and accessors (on the prototype or, static, on the constructor) and the computed field names. */
 	for (member = node->second; member != NULL; member = member->next) {
+		if (member->kind == JS_NODE_FIELD && (member->flags & JS_FLAG_COMPUTED) != 0U) {
+			js_compile_expression(fc, member->first, statics);
+			js_emit2(fc, VM_OP_TO_PROPERTY_KEY, statics, statics);
+			js_init_binding(fc, member->raw, member->raw_length, statics);
+			continue;
+		}
 		if (member->kind != JS_NODE_METHOD || member->op == JS_PROPERTY_CONSTRUCTOR)
 			continue;
 		expr_class_method(fc, member, constructor, prototype);
@@ -425,7 +432,6 @@ js_compile_class(
 
 	/* The static fields and blocks run with the class as this. */
 	if (node->fourth != NULL) {
-		statics = js_temp(fc);
 		code = js_compile_function(fc->compiler, fc, node->fourth, NULL, 0);
 		constant = js_constant(fc, vm_value_cell(code));
 		js_emit3(fc, VM_OP_NEW_CLOSURE, statics, constant, fc->env_register);
@@ -492,17 +498,22 @@ js_compile_fields(
 			continue;
 		}
 
-		/* Only fields are left; a computed name comes later. */
+		/* Only fields are left. */
 		if (member->kind != JS_NODE_FIELD)
 			continue;
-		if ((member->flags & JS_FLAG_COMPUTED) != 0U)
-			js_compile_unsupported(fc->compiler, member, "computed class field names");
 
 		/* The value (an anonymous function takes the field's name), or undefined. */
 		if (member->second != NULL) {
 			js_compile_expression_named(fc, member->second, value, member->first->text, member->first->text_length);
 		} else {
 			js_load_value(fc, value, VM_VALUE_UNDEFINED);
+		}
+
+		/* A computed name's field: the key the class evaluated. */
+		if ((member->flags & JS_FLAG_COMPUTED) != 0U) {
+			js_load_binding(fc, member->raw, member->raw_length, key);
+			js_emit3(fc, VM_OP_DEFINE_ELEM, object, key, value);
+			continue;
 		}
 
 		/* A private field on this. */
@@ -1567,7 +1578,9 @@ expr_delete(
 	/* A property. */
 	place = expr_unwrap(operand);
 	if (place->kind == JS_NODE_MEMBER) {
-		if (place->second->kind == JS_NODE_PRIVATE_NAME || (place->flags & JS_FLAG_OPTIONAL) != 0U)
+		if (place->second->kind == JS_NODE_PRIVATE_NAME)
+			js_compile_fail(fc->compiler, place, "Private fields can not be deleted");
+		if ((place->flags & JS_FLAG_OPTIONAL) != 0U)
 			expr_unsupported(fc, place);
 		mark = fc->temp_top;
 		object = js_temp(fc);
