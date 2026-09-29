@@ -4080,4 +4080,3 @@ emit_main_once(
 	/* Back outside the frame: main returns after the loop. */
 	state->frame = NULL;
 }
-

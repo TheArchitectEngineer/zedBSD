@@ -3642,4 +3642,3 @@ check_buffer_readonly(
 		return 1;
 	return 0;
 }
-

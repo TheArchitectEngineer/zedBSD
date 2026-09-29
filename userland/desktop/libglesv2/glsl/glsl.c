@@ -182,4 +182,3 @@ glsl_compute_layout(
 			size[axis] = shader->local_size[axis];
 	}
 }
-

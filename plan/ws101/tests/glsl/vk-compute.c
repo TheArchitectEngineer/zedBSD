@@ -911,4 +911,3 @@ test_loopret(void)
 	printf("loopret: 128 invocations each returning from inside its loop\n");
 	return 0;
 }
-

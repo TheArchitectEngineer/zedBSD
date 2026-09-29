@@ -909,4 +909,3 @@ glsl_std430_column_stride(
 		return 8U;
 	return 16U;
 }
-

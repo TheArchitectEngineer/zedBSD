@@ -1425,4 +1425,3 @@ link_storages(
 		program->storage_count++;
 	}
 }
-

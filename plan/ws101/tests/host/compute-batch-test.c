@@ -551,4 +551,3 @@ test_reduce(void)
 
 	stub_session_close();
 }
-

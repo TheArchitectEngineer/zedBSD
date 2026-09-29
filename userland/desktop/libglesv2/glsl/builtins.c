@@ -924,4 +924,3 @@ builtins_compute(
 	symbol->where = GLSL_VAR_CONST;
 	symbol->constant = value;
 }
-

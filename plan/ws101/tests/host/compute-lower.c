@@ -1266,4 +1266,3 @@ lower_test_atomsh(
 	printf("atomsh: 4 groups' shared histogram, sum, maximum, compare-exchange and counter between barriers\n");
 	return 0;
 }
-

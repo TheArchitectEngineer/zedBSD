@@ -2469,4 +2469,3 @@ i915_vkcs_step_refuse(
 	i915_vkcs_check(x, "REFUSE", I915_VKCS_KERNEL_REFUSE_LOOP, (uint32_t)x->made[I915_VKCS_KERNEL_REFUSE_LOOP], 0U);
 	i915_vkcs_verdict(x, "REFUSE", i915_vkcs_checked(x, "REFUSE"));
 }
-
