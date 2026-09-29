@@ -59,6 +59,7 @@ static void window_global(void *data, struct wl_registry *registry, uint32_t nam
 static void window_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void window_ping(void *data, struct xdg_wm_base *shell, uint32_t serial);
 static void window_configure(void *data, struct xdg_surface *surface, uint32_t serial);
+static void window_desktop_configure(void *data, struct keiland_desktop *desktop, uint32_t serial, int32_t x, int32_t y, int32_t width, int32_t height);
 static void window_toplevel_configure(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height, struct wl_array *states);
 static void window_toplevel_close(void *data, struct xdg_toplevel *toplevel);
 static void window_toplevel_bounds(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height);
@@ -95,6 +96,11 @@ static const struct xdg_wm_base_listener shell_listener = {
 /* The configure acknowledgement of the window's role. */
 static const struct xdg_surface_listener surface_listener = {
 	window_configure
+};
+
+/* The desktop surface's place and size (files --desktop, ws094-p003). */
+static const struct keiland_desktop_listener desktop_listener = {
+	window_desktop_configure
 };
 
 /* The size the compositor gives the window, its request to close, and the largest size it may choose. */
@@ -230,6 +236,84 @@ fm_window_open(
 	fm_dnd_open(window);
 
 	/* Succeeded: the window can be drawn into. */
+	window->resized = 0;
+	return 0;
+}
+
+/*
+ * Connects to the compositor and gives a surface the desktop's role with
+ * the token zdesktop gave the program (files --desktop, ws094-p003): the
+ * surface over the wallpaper and under the windows, of the size the
+ * compositor configures.
+ *
+ * Returns 0 once the first configure is acknowledged, or -1 with errno set
+ * (ENOTSUP for a compositor without the desktop).
+ */
+int
+fm_window_open_desktop(
+	struct fm_window *window,
+	const char *display,
+	const char *token)
+{
+	int status;
+
+	/* No size until the compositor gives one; the desktop has the keyboard when it is pressed. */
+	memset(window, 0, sizeof(*window));
+	window->repeat_delay = WINDOW_REPEAT_DELAY;
+	window->repeat_interval = WINDOW_REPEAT_INTERVAL;
+	window->activated = 1;
+
+	/* The connection. */
+	window->display = wl_display_connect(display);
+	if (window->display == NULL)
+		return -1;
+
+	/* The globals: the compositor and the seat. */
+	window->registry = wl_display_get_registry(window->display);
+	if (window->registry == NULL)
+		return -1;
+
+	/* Listens for the globals the compositor announces. */
+	status = wl_registry_add_listener(window->registry, &registry_listener, window);
+	if (status != 0)
+		return -1;
+
+	/* Waits until every global has been announced. */
+	status = wl_display_roundtrip(window->display);
+	if (status < 0)
+		return -1;
+
+	/* A desktop needs a compositor. */
+	if (window->compositor == NULL) {
+		errno = EOPNOTSUPP;
+		return -1;
+	}
+
+	/* The surface. */
+	window->surface = wl_compositor_create_surface(window->compositor);
+	if (window->surface == NULL)
+		return -1;
+
+	/* The desktop's role, with the token. */
+	window->desktop = keiland_desktop_create(window->display, window->surface, token, &desktop_listener, window);
+	if (window->desktop == NULL)
+		return -1;
+
+	/* The configure (and the seat's devices) before anything is drawn. */
+	status = wl_display_roundtrip(window->display);
+	if (status < 0)
+		return -1;
+
+	/* A compositor that did not configure the surface cannot take its images. */
+	if (window->configured == 0) {
+		errno = EPROTO;
+		return -1;
+	}
+
+	/* Drag and drop, when the compositor has it (dnd.c). */
+	fm_dnd_open(window);
+
+	/* Succeeded: the desktop can be drawn into. */
 	window->resized = 0;
 	return 0;
 }
@@ -431,6 +515,8 @@ fm_window_close(
 		wl_seat_destroy(window->seat);
 
 	/* The roles before the surface, the surface before the globals that made it. */
+	if (window->desktop != NULL)
+		keiland_desktop_destroy(window->desktop);
 	if (window->toplevel != NULL)
 		xdg_toplevel_destroy(window->toplevel);
 	if (window->role != NULL)
@@ -589,6 +675,38 @@ window_configure(
 	window = data;
 	xdg_surface_ack_configure(surface, serial);
 	window->configured = 1;
+}
+
+/* Takes the desktop surface's size from its configure, and acknowledges it (ws094-p003). */
+static void
+window_desktop_configure(
+	void *data,
+	struct keiland_desktop *desktop,
+	uint32_t serial,
+	int32_t x,
+	int32_t y,
+	int32_t width,
+	int32_t height)
+{
+	struct fm_window *window;
+
+	/* The acknowledgement comes before any image of the new size. */
+	window = data;
+	keiland_desktop_ack(desktop, serial);
+	window->configured = 1;
+	fm_log("DESKTOP configure x=%d y=%d width=%d height=%d", x, y, width, height);
+
+	/* A new width marks the surface resized. */
+	if (width > 0 && (uint32_t)width != window->width) {
+		window->width = (uint32_t)width;
+		window->resized = 1;
+	}
+
+	/* And so does a new height. */
+	if (height > 0 && (uint32_t)height != window->height) {
+		window->height = (uint32_t)height;
+		window->resized = 1;
+	}
 }
 
 /* Takes the size and the states the compositor gives; a zero size keeps the window's own. */

@@ -946,6 +946,15 @@ struct fm_app {
 	 */
 	int glass;
 
+	/*
+	 * The desktop mode (files --desktop, ws094-p003): the icons of the tab's
+	 * folder (~/Desktop) on zdesktop's desktop surface instead of the
+	 * window; desktop_logged is one more than the number of items the last
+	 * logged layout had (0 before the first; a changed count logs it again).
+	 */
+	int desktop;
+	int desktop_logged;
+
 	/* Whether the window is docked (maximized): its panels keep a gap from the screen's edges on glass. */
 	int docked;
 
@@ -1201,6 +1210,10 @@ void fm_app_release(struct fm_app *app);
 void fm_ui_event(struct fm_app *app, const struct fm_event *event);
 void fm_ui_tick(struct fm_app *app, uint64_t now);
 void fm_ui_draw(struct fm_app *app, struct fm_canvas *canvas);
+
+/* The desktop's icons (ui-desktop.c, ws094-p003). */
+void fm_desktop_draw(struct fm_app *app, struct fm_canvas *canvas);
+int fm_desktop_cell(int index, int width, int height, int *column, int *row, struct fm_rect *rect);
 void fm_ui_hit(struct fm_app *app, const struct fm_rect *rect, unsigned kind, int index);
 size_t fm_ui_panels(struct fm_app *app, struct fm_panel *panels, size_t capacity);
 struct fm_tab *fm_ui_tab(struct fm_app *app);

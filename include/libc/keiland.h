@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser; 13: the desktop's preferences). */
-#define KEILAND_VERSION	13U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser; 13: the desktop's preferences; 14: the desktop surface). */
+#define KEILAND_VERSION	14U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1213,6 +1213,46 @@ int keiland_preferences_set(struct keiland_preferences *preferences, const char 
  * no error.  Returns 0, EINVAL, E2BIG or an errno value of writing.
  */
 int keiland_preferences_unset(struct keiland_preferences *preferences, const char *key);
+
+/*
+ * The desktop surface (KEILAND_VERSION 14, ws094-p003).
+ *
+ * zdesktop starts the program that shows the icons of ~/Desktop with a
+ * token in its environment (KEILAND_DESKTOP_TOKEN); with the token, the
+ * program's surface lies over the wallpaper and under every window, on
+ * every virtual desktop, has no window of its own and hears the pointer,
+ * the keyboard, the touch screen and drag and drop where no window is.
+ * The program copies the token and takes it out of its environment before
+ * it starts anything, so that no program it starts can take the role.
+ */
+struct keiland_desktop;
+
+/*
+ * What the desktop surface hears: configure, the place on the output
+ * (x, y) and the size the surface is to have; the program acknowledges it
+ * (keiland_desktop_ack) and draws at that size.
+ */
+struct keiland_desktop_listener {
+	void (*configure)(void *data, struct keiland_desktop *desktop, uint32_t serial, int32_t x, int32_t y, int32_t width, int32_t height);
+};
+
+/*
+ * Gives a surface the desktop's role with the token.  Returns NULL with
+ * errno set: EINVAL without a token, ENOTSUP for a compositor without the
+ * desktop, ENOMEM.  A token the compositor does not know ends the
+ * connection.
+ */
+struct keiland_desktop *keiland_desktop_create(struct wl_display *display, struct wl_surface *surface, const char *token, const struct keiland_desktop_listener *listener, void *data);
+
+/*
+ * Acknowledges a configure: the next commit is drawn for it.
+ */
+void keiland_desktop_ack(struct keiland_desktop *desktop, uint32_t serial);
+
+/*
+ * Gives the desktop's role up.
+ */
+void keiland_desktop_destroy(struct keiland_desktop *desktop);
 
 #ifdef __cplusplus
 }

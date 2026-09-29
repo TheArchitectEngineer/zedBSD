@@ -76,6 +76,9 @@ struct fm_window {
 	struct xdg_surface *role;
 	struct xdg_toplevel *toplevel;
 
+	/* The desktop surface's role instead of the window's (files --desktop, ws094-p003); NULL for a window. */
+	struct keiland_desktop *desktop;
+
 	/* The size the compositor asked for, and whether it changed since it was last taken. */
 	uint32_t width;
 	uint32_t height;
@@ -224,6 +227,7 @@ struct fm_present {
 
 /* The window (window.c). */
 int fm_window_open(struct fm_window *window, const char *display, uint32_t width, uint32_t height, const char *title, const char *application);
+int fm_window_open_desktop(struct fm_window *window, const char *display, const char *token);
 int fm_window_dispatch(struct fm_window *window, int timeout);
 int fm_window_take(struct fm_window *window, struct fm_event *event);
 int fm_window_repeat(struct fm_window *window, uint64_t now);

@@ -26,10 +26,9 @@
  * is pressed, raised or mapped.  A finger does the same through the
  * pointer's press, and a drag and drop over no window is the desktop's.
  *
- * A login session starts the desktop program (/bin/files --desktop) with a
- * new token when /etc/keiland/desktop says "on" (until Files has its
- * desktop mode, ws094-p003, the default is not to start it), and so does
- * any compositor that --desktop-client names a program for; it is started
+ * A login session starts the desktop program (/bin/files --desktop, ws094-p003)
+ * with a new token unless /etc/keiland/desktop says "off", and so does any
+ * compositor that --desktop-client names a program for; it is started
  * again two seconds after it ends, at most four times a minute.
  */
 
@@ -60,7 +59,7 @@
 #define DESKTOP_ERROR_ROLE		0U
 #define DESKTOP_ERROR_TOKEN		1U
 
-/* The program a login session starts, and the file that turns it on. */
+/* The program a login session starts, and the file that turns it off. */
 #define DESKTOP_COMMAND			"/bin/files --desktop"
 #define DESKTOP_SWITCH			"/etc/keiland/desktop"
 
@@ -123,7 +122,7 @@ static void desktop_place(struct zwl_server *server, int32_t *x, int32_t *y, int
 static int desktop_configure(struct zwl_server *server);
 static void desktop_start(struct zwl_server *server);
 static void desktop_watch(struct zwl_server *server);
-static int desktop_switched_on(void);
+static int desktop_switched_off(void);
 static void desktop_new_token(void);
 static uint32_t desktop_word(const unsigned char *bytes, size_t offset);
 
@@ -656,7 +655,7 @@ desktop_configure(
 
 /*
  * Starts the desktop program when there should be one and none runs: in a
- * login session when /etc/keiland/desktop is "on", or when
+ * login session unless /etc/keiland/desktop is "off", or when
  * --desktop-client named one; two seconds after the last one ended, and
  * not more than DESKTOP_STARTS times a minute.
  */
@@ -666,16 +665,16 @@ desktop_start(
 {
 	char line[DESKTOP_LINE_MAX];
 	uint64_t now;
-	int on;
+	int off;
 
 	/* Whether a program is wanted is decided once: the option, else a login session's switch. */
 	if (!desk.decided) {
 		desk.decided = 1;
 		desk.command = NULL;
 		if (server->session) {
-			/* A session shows the desktop when it is switched on. */
-			on = desktop_switched_on();
-			if (on)
+			/* A session shows the desktop unless it is switched off. */
+			off = desktop_switched_off();
+			if (!off)
 				desk.command = DESKTOP_COMMAND;
 		}
 	}
@@ -752,16 +751,16 @@ desktop_watch(
 	desk.gone_ms = zwl_milliseconds();
 }
 
-/* Tells whether /etc/keiland/desktop turns the desktop on (its first word is "on"). */
+/* Tells whether /etc/keiland/desktop turns the desktop off (its first word is "off"). */
 static int
-desktop_switched_on(void)
+desktop_switched_off(void)
 {
 	char text[8];
 	ssize_t count;
 	int descriptor;
 	int match;
 
-	/* Without the file the desktop is off. */
+	/* Without the file the desktop is on. */
 	descriptor = open(DESKTOP_SWITCH, O_RDONLY);
 	if (descriptor < 0)
 		return 0;
@@ -770,17 +769,17 @@ desktop_switched_on(void)
 	memset(text, 0, sizeof(text));
 	count = read(descriptor, text, sizeof(text) - 1U);
 	close(descriptor);
-	if (count < 2)
+	if (count < 3)
 		return 0;
 
-	/* "on", alone on its line or followed by a space, turns it on. */
-	match = strncmp(text, "on", 2U);
+	/* "off", alone on its line or followed by a space, turns it off. */
+	match = strncmp(text, "off", 3U);
 	if (match != 0)
 		return 0;
-	if (text[2] != '\0' && text[2] != '\n' && text[2] != ' ')
+	if (text[3] != '\0' && text[3] != '\n' && text[3] != ' ')
 		return 0;
 
-	/* The desktop is switched on. */
+	/* The desktop is switched off. */
 	return 1;
 }
 

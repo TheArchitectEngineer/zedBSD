@@ -21,6 +21,7 @@
 		keiland_gesture_*;
 		keiland_file_chooser_*;
 		keiland_preferences_*;
+		keiland_desktop_*;
 	local:
 		*;
 };

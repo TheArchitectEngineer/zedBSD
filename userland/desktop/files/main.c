@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 /* The fonts used unless told otherwise (the fallback is optional). */
 #define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
@@ -58,7 +59,17 @@ struct main_options {
 	unsigned width;
 	unsigned height;
 	unsigned timeout;
+	int desktop;
 };
+
+/*
+ * The desktop mode (files --desktop, ws094-p003): the token zdesktop gave
+ * the program, copied before it leaves the environment (unsetenv frees the
+ * environment's string), and the folder shown (~/Desktop).  Empty outside
+ * the desktop mode.
+ */
+static char main_desktop_token[128];
+static char main_desktop_folder[FM_PATH_MAX];
 
 /*
  * The program's parts, for the whole run.  They are file-scope because
@@ -126,6 +137,8 @@ static void main_menu_update(void);
 static void main_touch_round(void);
 static unsigned main_touch_area(int x, int y);
 static void main_touch_pointer(const struct fm_touch_pointer *made);
+static int main_desktop_prepare(struct main_options *options);
+static int main_open_decorations(void);
 
 /*
  * Runs the file manager.
@@ -136,7 +149,6 @@ main(
 	char **argv)
 {
 	struct main_options options;
-	struct fm_menu_state state;
 	VkResult result;
 	int status;
 	int error;
@@ -144,8 +156,17 @@ main(
 	/* The command line. */
 	status = main_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: files [--display=NAME] [--font=PATH] [--fallback-font=PATH] [--width=N] [--height=N] [--wallpaper=PATH] [--token=NAME] [--timeout-s=N] [FOLDER]\n");
+		fprintf(stderr, "usage: files [--display=NAME] [--font=PATH] [--fallback-font=PATH] [--width=N] [--height=N] [--wallpaper=PATH] [--token=NAME] [--timeout-s=N] [--desktop] [FOLDER]\n");
 		return 2;
+	}
+
+	/* The desktop mode: its token out of the environment, its folder. */
+	if (options.desktop) {
+		error = main_desktop_prepare(&options);
+		if (error != 0) {
+			fprintf(stderr, "ZFILES FAILED operation=desktop error=%d\n", error);
+			return 1;
+		}
 	}
 
 	/* The fonts. */
@@ -155,8 +176,12 @@ main(
 		return 1;
 	}
 
-	/* The window. */
-	status = fm_window_open(&main_window, options.display, options.width, options.height, "Files", "files");
+	/* The window, or the desktop surface in the desktop mode. */
+	if (options.desktop) {
+		status = fm_window_open_desktop(&main_window, options.display, main_desktop_token);
+	} else {
+		status = fm_window_open(&main_window, options.display, options.width, options.height, "Files", "files");
+	}
 	if (status != 0) {
 		fprintf(stderr, "ZFILES FAILED operation=window error=%d\n", errno);
 		fm_text_close(&main_text);
@@ -189,34 +214,22 @@ main(
 		return 1;
 	}
 
-	/* Glass when zdesktop can show the window see-through (the frame's ground is then left clear). */
-	main_app.glass = fm_glass_open(&main_glass, &main_window, &main_present);
-
 	/* The dashboard's picture, when another was asked for. */
 	if (options.wallpaper != NULL)
 		snprintf(main_app.wallpaper, sizeof(main_app.wallpaper), "%s", options.wallpaper);
 
-	/* The menus; a window whose menus cannot be made goes on without them. */
-	fm_ui_menu_state(&main_app, &state);
-	error = fm_menu_open(&main_menu, &main_window, &state);
-	if (error != 0) {
-		fm_log("MENU failed errno=%d", error);
-		fm_menu_close(&main_menu);
-	}
-
-	/* The titlebar's controls; without zdesktop's titlebar the file manager does not start. */
-	fm_ui_titlebar_state(&main_app, &main_titlebar_state);
-	error = fm_titlebar_open(&main_titlebar, &main_window, &main_titlebar_state);
-	if (error != 0) {
-		fprintf(stderr, "ZFILES FAILED operation=titlebar errno=%d\n", error);
-		fm_titlebar_close(&main_titlebar);
-		fm_menu_close(&main_menu);
-		fm_glass_close(&main_glass);
-		fm_app_release(&main_app);
-		fm_present_close(&main_present);
-		fm_window_close(&main_window);
-		fm_text_close(&main_text);
-		return 1;
+	/* The desktop has no glass, menus or titlebar: its icons are drawn on the clear surface (ui-desktop.c). */
+	main_app.desktop = options.desktop;
+	if (!options.desktop) {
+		/* A window's glass, menus and titlebar; without zdesktop's titlebar the file manager does not start. */
+		status = main_open_decorations();
+		if (status != 0) {
+			fm_app_release(&main_app);
+			fm_present_close(&main_present);
+			fm_window_close(&main_window);
+			fm_text_close(&main_text);
+			return 1;
+		}
 	}
 
 	/* The loop, until the window closes. */
@@ -315,6 +328,13 @@ main_parse(
 			status = main_number(value, 8192U, &options->height);
 			if (status != 0)
 				return status;
+			continue;
+		}
+
+		/* The desktop mode: the icons of ~/Desktop on zdesktop's desktop surface (ws094-p003). */
+		status = strcmp(argv[index], "--desktop");
+		if (status == 0) {
+			options->desktop = 1;
 			continue;
 		}
 
@@ -434,7 +454,7 @@ main_loop(
 			return 0;
 		}
 
-		/* The held key's repeat, and every input queued (the menus' choices among them). */
+		/* The held key's repeat, and every input queued (the menus' choices among them); the desktop takes none yet (ws094-p004). */
 		now = fm_clock();
 		(void)fm_window_repeat(&main_window, now);
 		inputs = 0;
@@ -442,7 +462,8 @@ main_loop(
 			taken = fm_window_take(&main_window, &event);
 			if (taken == 0)
 				break;
-			fm_ui_event(&main_app, &event);
+			if (!main_app.desktop)
+				fm_ui_event(&main_app, &event);
 			inputs++;
 		}
 
@@ -481,8 +502,10 @@ main_loop(
 		/* Time passes for the file manager. */
 		fm_ui_tick(&main_app, now);
 
-		/* The menus show the state after input at once, and otherwise now and then (a task's end changes it). */
-		if (inputs != 0 || now - menu_checked_at >= MAIN_MENU_CHECK_MS) {
+		/* The menus show the state after input at once, and otherwise now and then (a task's end changes it); the desktop has none. */
+		if (main_app.desktop) {
+			menu_checked_at = now;
+		} else if (inputs != 0 || now - menu_checked_at >= MAIN_MENU_CHECK_MS) {
 			main_menu_update();
 			menu_checked_at = now;
 		}
@@ -540,11 +563,16 @@ main_frame(void)
 		/* The frame on the CPU, laid out for a docked or a floating window. */
 		started = fm_clock();
 		main_app.docked = main_window.maximized;
-		fm_ui_draw(&main_app, &main_canvas);
+		if (main_app.desktop) {
+			fm_desktop_draw(&main_app, &main_canvas);
+		} else {
+			fm_ui_draw(&main_app, &main_canvas);
+		}
 		drawn = fm_clock();
 
-		/* The frame's glass panels, sent to take effect with it. */
-		fm_glass_refresh(&main_glass, &main_app);
+		/* The frame's glass panels, sent to take effect with it (the desktop has none). */
+		if (!main_app.desktop)
+			fm_glass_refresh(&main_glass, &main_app);
 
 		/* Shown in the window. */
 		result = fm_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width);
@@ -1030,4 +1058,87 @@ main_touch_pointer(
 	main_window.pointer_x = made->x;
 	main_window.pointer_y = made->y;
 	fm_ui_event(&main_app, &event);
+}
+
+/*
+ * Prepares the desktop mode: the token zdesktop gave (KEILAND_DESKTOP_TOKEN)
+ * is copied and taken out of the environment, so that no program the
+ * desktop starts can take the role, and the folder shown is ~/Desktop
+ * (made when it is not there).  Returns 0 or an errno value.
+ */
+static int
+main_desktop_prepare(
+	struct main_options *options)
+{
+	const char *token;
+	const char *home;
+	int written;
+	int error;
+
+	/* The token, copied before the environment's string is freed. */
+	token = getenv("KEILAND_DESKTOP_TOKEN");
+	if (token == NULL || token[0] == '\0')
+		return EINVAL;
+	written = snprintf(main_desktop_token, sizeof(main_desktop_token), "%s", token);
+	if (written < 0 || (size_t)written >= sizeof(main_desktop_token))
+		return ENAMETOOLONG;
+
+	/* Nothing the desktop starts inherits it. */
+	(void)unsetenv("KEILAND_DESKTOP_TOKEN");
+
+	/* The folder: the one asked for, else ~/Desktop. */
+	if (options->start != NULL)
+		return 0;
+	home = getenv("HOME");
+	if (home == NULL || home[0] == '\0')
+		return ENOENT;
+	written = snprintf(main_desktop_folder, sizeof(main_desktop_folder), "%s/Desktop", home);
+	if (written < 0 || (size_t)written >= sizeof(main_desktop_folder))
+		return ENAMETOOLONG;
+
+	/* ~/Desktop, made when it is not there. */
+	error = mkdir(main_desktop_folder, 0755);
+	if (error != 0 && errno != EEXIST)
+		return errno;
+
+	/* Succeeded: the desktop shows ~/Desktop. */
+	options->start = main_desktop_folder;
+	return 0;
+}
+
+/*
+ * Opens a window's glass, menus and titlebar.  A window whose menus cannot
+ * be made goes on without them; without zdesktop's titlebar the file
+ * manager does not start.  Returns 0, or -1 with the three closed.
+ */
+static int
+main_open_decorations(void)
+{
+	struct fm_menu_state state;
+	int error;
+
+	/* Glass when zdesktop can show the window see-through (the frame's ground is then left clear). */
+	main_app.glass = fm_glass_open(&main_glass, &main_window, &main_present);
+
+	/* The menus. */
+	fm_ui_menu_state(&main_app, &state);
+	error = fm_menu_open(&main_menu, &main_window, &state);
+	if (error != 0) {
+		fm_log("MENU failed errno=%d", error);
+		fm_menu_close(&main_menu);
+	}
+
+	/* The titlebar's controls. */
+	fm_ui_titlebar_state(&main_app, &main_titlebar_state);
+	error = fm_titlebar_open(&main_titlebar, &main_window, &main_titlebar_state);
+	if (error != 0) {
+		fprintf(stderr, "ZFILES FAILED operation=titlebar errno=%d\n", error);
+		fm_titlebar_close(&main_titlebar);
+		fm_menu_close(&main_menu);
+		fm_glass_close(&main_glass);
+		return -1;
+	}
+
+	/* Succeeded: the window has its glass, menus and titlebar. */
+	return 0;
 }

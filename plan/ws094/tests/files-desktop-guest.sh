@@ -1,0 +1,110 @@
+#!/bin/sh
+# ws094-p003: Files' desktop mode (files --desktop) on zdesktop's desktop surface, on the Venus guest.  The running
+# guest gets this worktree's compositor, files and libraries (BIN); HOME is /tmp/dhome with a Desktop folder of a
+# folder, a text, a picture, a PDF and a script.  zdesktop --glass at 1280x800 starts /bin/files --desktop itself
+# (--desktop-client), with the token in its environment.
+#   show      the desktop: the role taken, configured 1280x766, the five items laid out from the top-right corner down
+#             (ZFILES DESKTOP place/ready), a picture (desktop.png)
+#   watch     a file added to ~/Desktop appears within a few seconds (items=6, added.png), and goes when it is removed
+#   window    a Files window opens over the icons (window.png)
+# The steps read zdesktop's log (Files, started by zdesktop, writes there too) through SSH, and the pictures; nothing
+# reads the console.
+#   GUEST_RUNTIME=$PWD/build/ws094-run BIN=build/ws094-amd64 plan/ws094/tests/files-desktop-guest.sh OUTDIR STEP...
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+set -u
+cd "$(dirname -- "$0")/../../.."
+export GUEST_RUNTIME="${GUEST_RUNTIME:-$PWD/build/ws094-run}"
+bin=${BIN:-build/ws094-amd64}
+out=$1
+shift
+mkdir -p "$out"
+status=0
+guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null; }
+put() { timeout 120 python3 plan/tools/guest/guest.py put "$1" "$2" >/dev/null 2>&1 </dev/null || { echo "put $1: FAILED"; status=1; }; }
+pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
+shot() {
+	python3 plan/ws035/tests/zdesktop-check.py "$out/$1" --runtime "$GUEST_RUNTIME" >/dev/null
+	echo "shot $1"
+}
+stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[f]iles" | awk "{print \$1}"); do kill $p; done; sleep 1'
+
+# Fails the run unless a log has a line matching a pattern (within a few seconds).
+expect_log() {
+	tries=0
+	found=0
+	while [ $tries -lt 10 ]; do
+		found=$(guest "grep -acE '$2' $1" | tail -1)
+		[ "${found:-0}" -gt 0 ] 2>/dev/null && break
+		tries=$((tries + 1))
+		sleep 1
+	done
+	if [ "${found:-0}" -gt 0 ] 2>/dev/null; then
+		echo "log: $2 ok"
+	else
+		echo "log: $2 MISSING"
+		status=1
+	fi
+}
+
+for step in "$@"; do
+	case "$step" in
+	install)
+		python3 plan/tools/imageview/make-images.py build/ws094-images >/dev/null
+		put "$bin/bin/wayland" /bin/wayland
+		put "$bin/bin/files" /bin/files
+		for library in $(cd "$bin/dynamic" && ls *.so | grep -vE '^(libc|ld)\.so$'); do
+			put "$bin/dynamic/$library" "/lib/$library"
+		done
+		guest 'chmod 755 /bin/wayland /bin/files; rm -rf /tmp/dhome; mkdir -p /tmp/dhome/Desktop/Projects; printf "Meeting notes\n" > /tmp/dhome/Desktop/notes.txt; printf "#!/bin/sh\necho hi\n" > /tmp/dhome/Desktop/script.sh; chmod 755 /tmp/dhome/Desktop/script.sh' >/dev/null
+		put build/ws094-images/01-splash.png /tmp/dhome/Desktop/photo.png
+		python3 plan/ws081/tests/make-touch-pdf.py build/ws094-images/report.pdf >/dev/null
+		put build/ws094-images/report.pdf /tmp/dhome/Desktop/report.pdf
+		;;
+	show)
+		guest "$stop_all" >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
+i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
+		expect_log /tmp/zdesktop.log 'ZWL DESKTOP start pid=[0-9]+ command=/bin/files --desktop'
+		expect_log /tmp/zdesktop.log 'ZWL DESKTOP role client=[0-9]+ surface=[0-9]+ x=0 y=34 width=1280 height=766'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP configure x=0 y=34 width=1280 height=766'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=5 cells=5 width=1280 height=766'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=[^ ]+ column=0 row=0 x=1168 y=16'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=[^ ]+ column=0 row=4 x=1168 y=432'
+		pointer move 640 600 sleep 300
+		sleep 2
+		shot desktop.png
+		guest "grep -a 'ZFILES DESKTOP place' /tmp/zdesktop.log" > "$out/places.txt"
+		;;
+	watch)
+		guest 'printf "added\n" > /tmp/dhome/Desktop/added.txt' >/dev/null
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=6 cells=6'
+		sleep 1
+		shot added.png
+		guest 'rm -f /tmp/dhome/Desktop/added.txt' >/dev/null
+		sleep 3
+		found=$(guest "grep -ac 'ZFILES DESKTOP ready items=5' /tmp/zdesktop.log" | tail -1)
+		[ "${found:-0}" -ge 2 ] 2>/dev/null && echo "removed: ok" || { echo "removed: MISSING"; status=1; }
+		;;
+	window)
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; /bin/files --token=w --timeout-s=800 --width=800 --height=560 /tmp/dhome/Desktop > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
+		expect_log /tmp/zdesktop.log 'ZWL MAP client=[0-9]+ '
+		pointer move 640 760 sleep 300
+		shot window.png
+		;;
+	stop)
+		guest "$stop_all" >/dev/null
+		;;
+	*)
+		echo "unknown step $step"
+		status=1
+		;;
+	esac
+done
+errors=$(guest "grep -ac ERROR /tmp/zdesktop.log" | tail -1)
+[ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
+failed=$(guest "grep -ac 'ZFILES FAILED' /tmp/zdesktop.log" | tail -1)
+[ "${failed:-1}" = 0 ] && echo "files: no FAILED" || { echo "files: FAILED lines"; status=1; }
+guest 'grep -a "DESKTOP" /tmp/zdesktop.log' > "$out/desktop-log.txt"
+[ $status = 0 ] && echo "files-desktop-guest: PASS" || echo "files-desktop-guest: FAIL"
+exit $status
