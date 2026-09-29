@@ -262,6 +262,9 @@ keiland_network_request(
 	case KEILAND_NETWORK_REQUEST_WIFI_OFF:
 		opcode = NETWORKD_OP_WIFI_DISABLE;
 		break;
+	case KEILAND_NETWORK_REQUEST_PROFILES:
+		opcode = NETWORKD_OP_WIFI_PROFILES_CHANGED;
+		break;
 	default:
 		return EINVAL;
 	}

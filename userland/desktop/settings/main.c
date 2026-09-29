@@ -154,6 +154,9 @@ main(
 	main_about_window();
 	se_ui_init(&main_app, &main_text, options.page);
 
+	/* The network's watch (a daemon not running yet is found later). */
+	se_network_open(&main_app);
+
 	/* Glass when zdesktop can show the window see-through (the frame's ground is then left clear). */
 	main_app.glass = se_glass_open(&main_glass, &main_window, &main_present);
 
@@ -182,7 +185,8 @@ main(
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
-	/* Everything goes, the titlebar, the menus and the glass before the window they belong to. */
+	/* Everything goes, the network's watch, then the titlebar, the menus and the glass before the window they belong to. */
+	se_network_close(&main_app);
 	se_titlebar_close(&main_titlebar);
 	se_menu_close(&main_menu);
 	se_glass_close(&main_glass);
@@ -397,8 +401,11 @@ main_loop(
 		/* What the window was asked to do: minimizing, zooming, closing. */
 		main_request();
 
-		/* Time passes for the interface (the minute About shows). */
+		/* Time passes for the interface (the minute About shows), and the network reports. */
 		se_ui_tick(&main_app, now);
+		se_network_poll(&main_app, now);
+		if (main_app.dirty != 0)
+			inputs++;
 
 		/* The titlebar and the menus show the state after input. */
 		if (inputs != 0)
@@ -529,14 +536,22 @@ main_timeout(
 	uint64_t now)
 {
 	uint64_t wait;
+	int network;
+	int limit;
 
 	/* A frame the last one asked for (a scroll it corrected) is drawn at once. */
 	if (main_app.dirty != 0)
 		return 0;
 
-	/* No key is held: the idle limit. */
+	/* The idle limit, shortened while the network wants polls. */
+	limit = MAIN_IDLE_MS;
+	network = se_network_wait(&main_app);
+	if (network >= 0 && network < limit)
+		limit = network;
+
+	/* No key is held: the limit. */
 	if (main_window.repeat_key == 0U)
-		return MAIN_IDLE_MS;
+		return limit;
 
 	/* A repeat already due is due now. */
 	if (main_window.repeat_at <= now)
@@ -544,11 +559,11 @@ main_timeout(
 
 	/* A held key repeats soon. */
 	wait = main_window.repeat_at - now;
-	if (wait < (uint64_t)MAIN_IDLE_MS)
+	if (wait < (uint64_t)limit)
 		return (int)wait;
 
-	/* Otherwise the idle limit. */
-	return MAIN_IDLE_MS;
+	/* Otherwise the limit. */
+	return limit;
 }
 
 /* Carries out what the window was asked to do by an action, once. */

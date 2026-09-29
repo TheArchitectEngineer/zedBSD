@@ -4,3 +4,5 @@
 #   plan/ws089/tests/build-settings-image.sh [BUILD]
 include plan/tools/files/config-amd64-files.mk
 ZEDBSD_USER_PROGRAMS += settings
+# ws089-p003: the networkd stand-in with a Wi-Fi radio (QEMU has none), for the Wi-Fi page.
+ZEDBSD_USER_PROGRAMS += network-probe

@@ -61,6 +61,7 @@
 static void ui_layout(struct se_app *app);
 static void ui_draw_sidebar(struct se_app *app, struct fm_canvas *canvas);
 static void ui_reveal(struct se_app *app, const struct fm_rect *current);
+static void ui_log_controls(struct se_app *app);
 static void ui_draw_page(struct se_app *app, struct fm_canvas *canvas);
 static int ui_hit_at(struct se_app *app, int x, int y, unsigned *kind, int *index);
 static void ui_motion(struct se_app *app, const struct se_event *event);
@@ -297,6 +298,9 @@ se_ui_draw(
 	if (app->show_sidebar != 0)
 		ui_draw_sidebar(app, canvas);
 	ui_draw_page(app, canvas);
+
+	/* The page's controls, in the log when they changed. */
+	ui_log_controls(app);
 }
 
 /*
@@ -880,10 +884,22 @@ ui_key(
 	const struct se_event *event)
 {
 	const struct fm_rect *pane;
+	const struct se_page *page;
+	int used;
 
 	/* Only a press does anything. */
 	if (event->pressed == 0)
 		return;
+
+	/* The page takes the key first (a text field that has the keyboard). */
+	page = &se_pages[app->page];
+	if (page->key != NULL) {
+		used = page->key(app, event);
+		if (used != 0) {
+			app->dirty = 1;
+			return;
+		}
+	}
 
 	/* Alt with the arrows walks the history. */
 	if ((event->modifiers & SE_MOD_ALT) != 0U) {
@@ -1032,4 +1048,54 @@ ui_clamp(
 
 	/* Within it. */
 	return value;
+}
+
+/*
+ * Lists the page's controls in the log when they differ from the last
+ * list ("ZSETTINGS CONTROL index=N x= y= width= height=", window
+ * coordinates), so that a test finds a control it is to click.
+ */
+static void
+ui_log_controls(
+	struct se_app *app)
+{
+	const struct se_hit *hit;
+	int count;
+	int index;
+	int same;
+	int differs;
+
+	/* The controls of this frame, gathered at the front of the list kept. */
+	count = 0;
+	same = 1;
+	for (index = 0; index < app->hit_count; index++) {
+		hit = &app->hits[index];
+		if (hit->kind != SE_HIT_CONTROL)
+			continue;
+
+		/* A control past the logged ones, or that differs from the one logged at its place. */
+		if (count >= app->logged_count) {
+			same = 0;
+		} else {
+			differs = memcmp(&app->logged[count], hit, sizeof(*hit));
+			if (differs != 0)
+				same = 0;
+		}
+
+		/* It is kept for the next frame. */
+		app->logged[count] = *hit;
+		count++;
+	}
+
+	/* Nothing moved, came or went. */
+	if (same != 0 && count == app->logged_count)
+		return;
+
+	/* The new list. */
+	app->logged_count = count;
+	se_log("LAYOUT page=%s controls=%d", se_pages[app->page].word, count);
+	for (index = 0; index < count; index++) {
+		hit = &app->logged[index];
+		se_log("CONTROL index=%d x=%d y=%d width=%d height=%d", hit->index, hit->rect.x, hit->rect.y, hit->rect.width, hit->rect.height);
+	}
 }

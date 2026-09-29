@@ -11,7 +11,8 @@ KEILAND_SETTINGS_SOURCES := userland/desktop/settings/main.c \
 	userland/desktop/settings/widgets.c userland/desktop/settings/glyphs.c \
 	userland/desktop/settings/pages.c userland/desktop/settings/about.c \
 	userland/desktop/settings/page-home.c userland/desktop/settings/page-about.c \
-	userland/desktop/settings/page-soon.c \
+	userland/desktop/settings/page-soon.c userland/desktop/settings/page-network.c \
+	userland/desktop/settings/network.c \
 	userland/desktop/files/canvas.c userland/desktop/files/text.c \
 	userland/desktop/files/icons.c userland/desktop/artwork/mark.c
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,settings,Settings,amd64,y,basic,$(KEILAND_SETTINGS_SOURCES),y,desktop,desktop/settings,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libtruetype,0755,program,,,bin))

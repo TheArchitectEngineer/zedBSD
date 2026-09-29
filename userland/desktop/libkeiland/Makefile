@@ -8,8 +8,8 @@ LIBZDESKTOP_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/li
 	userland/desktop/libkeiland/recent.c userland/desktop/libkeiland/titlebar.c \
 	userland/desktop/libkeiland/glass.c userland/desktop/libkeiland/network.c \
 	userland/desktop/libkeiland/motion.c userland/desktop/libkeiland/scroll.c \
-	userland/desktop/libkeiland/gesture.c \
-	userland/base/net/protocol.c
+	userland/desktop/libkeiland/gesture.c userland/desktop/libkeiland/network-link.c \
+	userland/base/net/protocol.c userland/base/net/wifi-conf.c userland/base/net/wifi-store.c
 
 LIBZDESKTOP_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libkeiland.so=$(BUILD)/dynamic/libkeiland.so)
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,libkeiland,Desktop system library,amd64,y,library,$(LIBZDESKTOP_SOURCES),y,desktop,desktop/libkeiland,desktop/libwayland,,shared-library,$(LIBZDESKTOP_IMAGE_DATA),,lib))

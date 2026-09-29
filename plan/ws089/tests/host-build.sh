@@ -4,7 +4,8 @@
 # The model and the drawing of Settings (settings.h: ui, widgets, glyphs, pages, about) and the
 # file manager's canvas, text and icons it shares are built without Wayland and Vulkan (main.c,
 # window.c, present.c, menu.c, titlebar.c and glass.c stay out); libtruetype from its sources.
-#   settings-render   draws the interface's frames into PPM pictures (host-render.c)
+#   settings-render   draws the interface's frames into PPM pictures (host-render.c), with a network of
+#                     made-up states in place of the daemon (host-network.c)
 #
 #   plan/ws089/tests/host-build.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -14,6 +15,7 @@ out=build/ws089-host
 src=userland/desktop/settings
 mkdir -p "$out/include" "$out/obj"
 ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
+ln -sf "$(pwd)/include/libc/keiland.h" "$out/include/keiland.h"
 cc=${CC:-cc}
 flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src"
 
@@ -32,12 +34,13 @@ for file in userland/desktop/files/canvas.c userland/desktop/files/text.c userla
 done
 for file in $src/*.c; do
 	case $(basename "$file") in
-	main.c|window.c|present.c|menu.c|titlebar.c|glass.c) continue ;;
+	main.c|window.c|present.c|menu.c|titlebar.c|glass.c|network.c) continue ;;
 	esac
 	object="$out/obj/settings-$(basename "$file" .c).o"
 	"$cc" $flags -c "$file" -o "$object"
 	objects="$objects $object"
 done
 "$cc" $flags -c plan/ws089/tests/host-render.c -o "$out/obj/host-render.o"
-"$cc" -o "$out/settings-render" "$out/obj/host-render.o" $objects -lm
+"$cc" $flags -c plan/ws089/tests/host-network.c -o "$out/obj/host-network.o"
+"$cc" -o "$out/settings-render" "$out/obj/host-render.o" "$out/obj/host-network.o" $objects -lm
 echo "built $out/settings-render"
