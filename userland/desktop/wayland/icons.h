@@ -39,6 +39,12 @@ enum glass_icon {
 	GLASS_ICON_PLUS,
 	GLASS_ICON_CLOSE,
 	GLASS_ICON_OVERFLOW,
+	/* The system bar's volume (ws100-p004): a speaker with no, one, two or three waves, and muted. */
+	GLASS_ICON_VOLUME_0,
+	GLASS_ICON_VOLUME_1,
+	GLASS_ICON_VOLUME_2,
+	GLASS_ICON_VOLUME_3,
+	GLASS_ICON_VOLUME_MUTED,
 	GLASS_ICON_APP_FILES,
 	GLASS_ICON_APP_NOTES,
 	GLASS_ICON_APP_TERMINAL,
