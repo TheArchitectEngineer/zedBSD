@@ -88,6 +88,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | 3 | WS101 D3: G3 の見本の大きさ N = 4,000,000 と、CPU との倍率の目標 3 倍以上（伸ばせれば 10 倍） | 案のまま | ws101-p011 | 同 |
 | 4 | WS101 D5: デモの見本は整数だけでよいか（float を GPU に出すには Noct の意味を変える patch が要る） | 整数だけ | ws101-p011 | 同 |
 | 5 | fg010 の台本（S1〜S14）と WS099 の基準 C1〜C10・WS100 の A1〜A7 の数値 | 案のまま | 随時 | 上の表、各 ws.md |
+| 7 | WS099 の C7: 空の一覧の案内（Files の「Files you open appear here.」、比 1.8〜2.0）を contrast の基準に入れるか。副次の文字の色を `0x6b7585` → `0x56606f` に暗くした（main が許可、Settings と Files、2026-09-30 夜） | 案内は基準の外（使えない項目として WCAG の対象外）。色の変更は戻せる | 随時 | ws099-p005 |
 | 6 | WS099 の C6（窓 10 個で pointer の移動から表示まで中央値 50 ms 以内）: 新しい物差し（cursor が行き先に出る flip まで）で実機の passthrough の中央値は約 121〜131 ms・p90 約 180〜240 ms（compositor 約 9.5 frame/s）。基準を保つか緩めるか | 基準は保ち、frame の長さの主因（1 frame に約 7 run の直列か、client の待ちか）を次の Phase で分析する | 随時 | ws075-p024 の途中報告 |
 
 ## Workstream registry
