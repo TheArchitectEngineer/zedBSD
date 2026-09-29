@@ -25,6 +25,11 @@
  * leave uncanceled: scrolling, following a link clicked or activated with
  * Enter, moving the focus with Tab, and the history's, reloading's and
  * stopping's keys and buttons.
+ *
+ * ws081-p006: the caller may also place the scroll itself (a touch
+ * screen's scroller, which glides after a flick), learn how far the page
+ * scrolls, and have the content drawn shifted past an end of the document
+ * (the overscroll of a rubber band), the gap showing the page's canvas.
  */
 
 #include "net/net.h"
@@ -64,6 +69,9 @@
 
 /* How much room is kept around an element the focus scrolls into view, in pixels. */
 #define VIEW_FOCUS_MARGIN	16
+
+/* How far past an end the caller may shift the content, as a share of the view's height. */
+#define VIEW_OVERSCROLL_MAX	1.0f
 
 /* Where a scroll to an end of the document goes. */
 #define VIEW_SCROLL_TOP		0
@@ -125,6 +133,8 @@ struct browser_offscreen {
 /*
  * A view: the page shown and its location, the history of locations
  * (index is the one shown), how far the page is scrolled (layout units),
+ * how far the caller shifts the content past an end (overscroll_y, layout
+ * units, positive down; the drawing's alone, zero on a new page),
  * the view's size and whether the page was laid out at another size
  * (resized), the fonts, the stack frame the pages' heaps scan up to, the
  * clock's time when the page shown (page_epoch) and the page being made
@@ -150,6 +160,7 @@ struct browser_view {
 	size_t history_count;
 	size_t history_index;
 	layout_unit scroll_y;
+	layout_unit overscroll_y;
 	unsigned width;
 	unsigned height;
 	int resized;
@@ -241,6 +252,7 @@ static int view_activate(struct browser_view *view);
 static int view_scroll_into_view(struct browser_view *view);
 static void view_scroll_pages(struct browser_view *view, int pages);
 static void view_scroll_to(struct browser_view *view, int place);
+static layout_unit view_drawn_scroll(const struct browser_view *view);
 
 /* Makes a view with its loader and no page. */
 int
@@ -621,6 +633,124 @@ browser_view_scroll_y(
 	return (double)layout_to_px(view->scroll_y);
 }
 
+/*
+ * Places the scroll at a point of the document, in pixels, kept inside the
+ * document (the page does not scroll sideways yet: x is not used).  The
+ * page gets no wheel event; a change is drawn again.  Reports ENOENT when
+ * no page is shown, or the layout's error.
+ */
+int
+browser_view_scroll_to(
+	struct browser_view *view,
+	double x,
+	double y)
+{
+	layout_unit before;
+	int error;
+
+	UNUSED_PARAMETER(x);
+
+	/* No page, no scroll. */
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The document as it is laid out now, which the scroll stays inside. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The new place, within the document. */
+	before = view->scroll_y;
+	view->scroll_y = layout_from_px((float)y);
+	view_clamp_scroll(view);
+
+	/* A change is drawn again. */
+	if (view->scroll_y != before)
+		view_redraw(view);
+
+	/* Succeeded: the scroll is placed. */
+	return 0;
+}
+
+/*
+ * Reports how far the page scrolls at most, in pixels: the document as it
+ * is laid out now less the view (0 when it fits; sideways always 0, the
+ * page does not scroll sideways yet).  Reports ENOENT when no page is
+ * shown, or the layout's error.
+ */
+int
+browser_view_scroll_range(
+	struct browser_view *view,
+	double *largest_x,
+	double *largest_y)
+{
+	layout_unit limit;
+	int error;
+
+	/* Nothing scrolls without a page. */
+	*largest_x = 0.0;
+	*largest_y = 0.0;
+	if (view->page == NULL)
+		return ENOENT;
+
+	/* The document as it is laid out now. */
+	error = view_update(view);
+	if (error != 0)
+		return error;
+
+	/* The document's height less the view's. */
+	limit = view->page->layout.document_height - (layout_unit)view->height * LAYOUT_UNIT;
+	if (limit < 0)
+		limit = 0;
+	*largest_y = (double)layout_to_px(limit);
+
+	/* Succeeded: the range is reported. */
+	return 0;
+}
+
+/*
+ * Draws the content shifted by a distance in pixels (positive down and
+ * right) without moving the scroll: a rubber band past an end of the
+ * document, the gap showing the page's canvas.  The shift is at most the
+ * view's height either way (the page does not scroll sideways yet: dx is
+ * not used), is the drawing's alone (the pointer and the page's events
+ * are placed without it), and goes with the page (a new page starts
+ * without it).  A change is drawn again.
+ */
+int
+browser_view_set_overscroll(
+	struct browser_view *view,
+	double dx,
+	double dy)
+{
+	layout_unit shift;
+	float limit;
+	float distance;
+
+	UNUSED_PARAMETER(dx);
+
+	/* At most the view's height either way. */
+	limit = (float)view->height * VIEW_OVERSCROLL_MAX;
+	distance = (float)dy;
+	if (distance > limit)
+		distance = limit;
+	if (distance < -limit)
+		distance = -limit;
+	shift = layout_from_px(distance);
+
+	/* The same shift needs nothing. */
+	if (shift == view->overscroll_y)
+		return 0;
+
+	/* The new shift, drawn. */
+	view->overscroll_y = shift;
+	if (view->page != NULL)
+		view_redraw(view);
+
+	/* Succeeded: the content is drawn shifted. */
+	return 0;
+}
+
 /* The pointer moves over the view: its place is kept for the wheel and the buttons. */
 int
 browser_view_pointer_move(
@@ -990,7 +1120,7 @@ browser_view_draw_pixels(
 		bitmap.pixels = pixels;
 		bitmap.width = (int)width;
 		bitmap.height = (int)height;
-		error = paint_software(&view->page->paint, &view->page->text, view->scroll_y, &bitmap);
+		error = paint_software(&view->page->paint, &view->page->text, view_drawn_scroll(view), &bitmap);
 		if (error != 0)
 			return error;
 
@@ -1002,7 +1132,7 @@ browser_view_draw_pixels(
 	error = paint_bitmap_create(&bitmap, (int)width, (int)height);
 	if (error != 0)
 		return error;
-	error = paint_software(&view->page->paint, &view->page->text, view->scroll_y, &bitmap);
+	error = paint_software(&view->page->paint, &view->page->text, view_drawn_scroll(view), &bitmap);
 	if (error != 0) {
 		paint_bitmap_release(&bitmap);
 		return error;
@@ -1177,7 +1307,7 @@ browser_view_draw(
 	/* The drawing, submitted and waited for. */
 	extent.width = target->width;
 	extent.height = target->height;
-	result = paint_gpu_draw(&view->gpu, &view->page->paint, &view->page->text, view->scroll_y, framebuffer, extent, wait, signal);
+	result = paint_gpu_draw(&view->gpu, &view->page->paint, &view->page->text, view_drawn_scroll(view), framebuffer, extent, wait, signal);
 	if (result != VK_SUCCESS) {
 		error = view_gpu_failed(view, view->gpu.operation, result);
 		return error;
@@ -1223,7 +1353,7 @@ browser_view_record(
 	/* The frame's instances and atlas, written by the host now. */
 	extent.width = target->width;
 	extent.height = target->height;
-	result = paint_gpu_prepare(&view->gpu, &view->page->paint, &view->page->text, view->scroll_y, extent);
+	result = paint_gpu_prepare(&view->gpu, &view->page->paint, &view->page->text, view_drawn_scroll(view), extent);
 	if (result != VK_SUCCESS) {
 		error = view_gpu_failed(view, view->gpu.operation, result);
 		return error;
@@ -1523,6 +1653,7 @@ view_show_page(
 	free(view->path);
 	view->path = copy;
 	view->scroll_y = 0;
+	view->overscroll_y = 0;
 
 	/* A new step drops the steps after the one shown, and the oldest when the history is full. */
 	if (step == VIEW_STEP_NEW) {
@@ -2450,4 +2581,13 @@ view_scroll_to(
 		view_scroll(view, -view->scroll_y);
 	else
 		view_scroll(view, view->page->layout.document_height);
+}
+
+/* Reports the scroll the page is drawn at: the scroll less the caller's shift past an end (a shift down shows the document from higher up). */
+static layout_unit
+view_drawn_scroll(
+	const struct browser_view *view)
+{
+	/* The scroll with the shift. */
+	return view->scroll_y - view->overscroll_y;
 }
