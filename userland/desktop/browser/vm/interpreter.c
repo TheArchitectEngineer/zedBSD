@@ -539,6 +539,12 @@ interpreter_step_js(
 	case VM_OP_GET_SUPER:
 	case VM_OP_SUPER_CONSTRUCT:
 	case VM_OP_SUPER_CONSTRUCT_ARRAY:
+	case VM_OP_NEW_PRIVATE_NAME:
+	case VM_OP_PRIVATE_GET:
+	case VM_OP_PRIVATE_SET:
+	case VM_OP_PRIVATE_DEFINE:
+	case VM_OP_PRIVATE_COPY:
+	case VM_OP_PRIVATE_IN:
 		status = interpreter_class(run, words, registers);
 		return status;
 	default:
@@ -1494,6 +1500,7 @@ interpreter_class(
 	struct vm_realm *realm;
 	struct vm_function *function;
 	struct vm_object *array;
+	struct vm_symbol *symbol;
 	vm_value *args;
 	vm_value value;
 	uint32_t count;
@@ -1540,6 +1547,30 @@ interpreter_class(
 		if (status == 0)
 			status = interpreter_super_construct(run, args, count, &value);
 		free(args);
+		break;
+	case VM_OP_NEW_PRIVATE_NAME:
+		/* A symbol marked as a private name, described by the constant. */
+		symbol = vm_symbol_create(realm->heap, run->code->constants[words[2]]);
+		if (symbol == NULL)
+			return ENOMEM;
+		symbol->private_name = 1;
+		value = vm_value_cell(symbol);
+		status = 0;
+		break;
+	case VM_OP_PRIVATE_GET:
+		status = vm_private_get(realm, registers[words[2]], registers[words[3]], &value);
+		break;
+	case VM_OP_PRIVATE_SET:
+		status = vm_private_set(realm, registers[words[1]], registers[words[2]], registers[words[3]]);
+		return status;
+	case VM_OP_PRIVATE_DEFINE:
+		status = vm_private_define(realm, registers[words[1]], registers[words[2]], registers[words[3]]);
+		return status;
+	case VM_OP_PRIVATE_COPY:
+		status = vm_private_copy(realm, registers[words[1]], registers[words[2]], registers[words[3]]);
+		return status;
+	case VM_OP_PRIVATE_IN:
+		status = vm_private_in(realm, registers[words[2]], registers[words[3]], &value);
 		break;
 	default:
 		return EINVAL;

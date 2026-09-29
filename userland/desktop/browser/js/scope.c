@@ -155,6 +155,39 @@ js_scope_resolve(
 	return NULL;
 }
 
+/*
+ * Reports the name of the hidden binding that holds a private name's key:
+ * "#" and the name (the node's text is without it), made once and kept in
+ * the node's raw text.
+ */
+const uint16_t *
+js_private_name(
+	struct js_compiler *compiler,
+	struct js_node *node,
+	size_t *length)
+{
+	uint16_t *text;
+
+	/* Made already. */
+	if (node->raw != NULL) {
+		*length = node->raw_length;
+		return node->raw;
+	}
+
+	/* "#" and the name, in the arena. */
+	text = wb_arena_alloc(compiler->arena, (node->text_length + 1U) * sizeof(uint16_t));
+	if (text == NULL)
+		js_compile_out_of_memory(compiler);
+	text[0] = '#';
+	memcpy(text + 1, node->text, node->text_length * sizeof(uint16_t));
+	node->raw = text;
+	node->raw_length = node->text_length + 1U;
+
+	/* Succeeded: the binding's name. */
+	*length = node->raw_length;
+	return text;
+}
+
 /* Makes the information of a function (or the program): its scopes, its declarations, and the resolution of its names. */
 static struct js_function_info *
 scope_function(
@@ -534,6 +567,9 @@ scope_visit(
 	struct js_scope *scope,
 	struct js_node *node)
 {
+	const uint16_t *private_text;
+	size_t private_length;
+
 	/* The kinds whose children are not all names in use. */
 	switch (node->kind) {
 	case JS_NODE_IDENTIFIER:
@@ -568,9 +604,9 @@ scope_visit(
 		scope_visit_switch(compiler, scope, node);
 		return;
 	case JS_NODE_MEMBER:
-		/* The object; the property only when computed. */
+		/* The object; the property only when computed or private. */
 		scope_visit(compiler, scope, node->first);
-		if ((node->flags & JS_FLAG_COMPUTED) != 0U)
+		if ((node->flags & JS_FLAG_COMPUTED) != 0U || node->second->kind == JS_NODE_PRIVATE_NAME)
 			scope_visit(compiler, scope, node->second);
 		return;
 	case JS_NODE_PROPERTY:
@@ -583,6 +619,10 @@ scope_visit(
 			scope_visit(compiler, scope, node->second);
 		return;
 	case JS_NODE_PRIVATE_NAME:
+		/* #x (in #x in o, or a member's key): its class's hidden binding. */
+		private_text = js_private_name(compiler, node, &private_length);
+		scope_reference(compiler, scope, private_text, private_length);
+		return;
 	case JS_NODE_META_PROPERTY:
 	case JS_NODE_IMPORT_SPECIFIER:
 	case JS_NODE_EXPORT_SPECIFIER:
@@ -1163,19 +1203,42 @@ scope_visit_class(
 	struct js_node *constructor;
 	struct js_node *statics;
 	struct js_function_info *info;
+	const uint16_t *private_text;
+	size_t private_length;
 	int has_static;
+	int has_private;
+	int named;
 
 	/* The heritage, in the scope around the class. */
 	if (node->first != NULL)
 		scope_visit(compiler, scope, node->first);
 
-	/* A named class expression sees its own name as a const. */
+	/* A named class expression sees its own name as a const, and the class's code its private names. */
 	inner = scope;
 	node->scope = NULL;
-	if (node->kind == JS_NODE_CLASS && node->text != NULL) {
+	named = 0;
+	if (node->kind == JS_NODE_CLASS && node->text != NULL)
+		named = 1;
+	has_private = 0;
+	for (member = node->second; member != NULL; member = member->next) {
+		if ((member->kind == JS_NODE_METHOD || member->kind == JS_NODE_FIELD) && member->first->kind == JS_NODE_PRIVATE_NAME)
+			has_private = 1;
+	}
+	if (named || has_private) {
 		inner = scope_new(compiler, scope, scope->function, JS_SCOPE_BLOCK);
-		scope_declare(compiler, inner, node->text, node->text_length, JS_BINDING_CONST);
 		node->scope = inner;
+	}
+	if (named)
+		scope_declare(compiler, inner, node->text, node->text_length, JS_BINDING_CONST);
+
+	/* Each private name is a const of the class's scope (a getter and a setter share one). */
+	for (member = node->second; member != NULL && has_private; member = member->next) {
+		if (member->kind != JS_NODE_METHOD && member->kind != JS_NODE_FIELD)
+			continue;
+		if (member->first->kind != JS_NODE_PRIVATE_NAME)
+			continue;
+		private_text = js_private_name(compiler, member->first, &private_length);
+		scope_declare(compiler, inner, private_text, private_length, JS_BINDING_CONST);
 	}
 
 	/* Each method (a computed key in the class's scope), and the constructor found. */

@@ -139,6 +139,12 @@ enum vm_opcode {
 	VM_OP_GET_SUPER,	/* R dst, R home object, R key, R this: super[key] with this as the receiver */
 	VM_OP_SUPER_CONSTRUCT,	/* R dst, R first argument, N argument count: super(...), which binds this */
 	VM_OP_SUPER_CONSTRUCT_ARRAY,	/* R dst, R arguments (an array): super(...) with a spread */
+	VM_OP_NEW_PRIVATE_NAME,	/* R dst, C description: a class's new private name */
+	VM_OP_PRIVATE_GET,	/* R dst, R object, R private name */
+	VM_OP_PRIVATE_SET,	/* R object, R private name, R value */
+	VM_OP_PRIVATE_DEFINE,	/* R object, R private name, R value: a private field */
+	VM_OP_PRIVATE_COPY,	/* R object, R source, R private name: a private method the prototype keeps, onto an instance */
+	VM_OP_PRIVATE_IN,	/* R dst, R private name, R object: #x in object */
 
 	/* Wasm (raw values). */
 	VM_OP_I32_CONST,	/* R dst, I value */

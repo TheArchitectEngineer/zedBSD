@@ -21,6 +21,8 @@
 #include <errno.h>
 #include <string.h>
 
+static int class_private_find(struct vm_realm *realm, vm_value object, vm_value key, struct vm_property *property, int *found);
+
 /*
  * Sets up a class: its prototype object (whose prototype is the parent's
  * prototype, Object.prototype without a heritage, or null for extends
@@ -223,5 +225,234 @@ vm_get_super(
 		return status;
 
 	/* Succeeded: the getter's value. */
+	return 0;
+}
+
+/*
+ * Reads a private member (obj.#x): only the object's own, a getter called
+ * with the object; a TypeError when the object does not have it (its class
+ * did not make it).
+ */
+int
+vm_private_get(
+	struct vm_realm *realm,
+	vm_value object,
+	vm_value key,
+	vm_value *result)
+{
+	struct vm_property property;
+	struct vm_accessor *accessor;
+	int found;
+	int status;
+
+	/* The object's own member. */
+	*result = VM_VALUE_UNDEFINED;
+	status = class_private_find(realm, object, key, &property, &found);
+	if (status != 0)
+		return status;
+	if (!found) {
+		status = vm_throw_type_error(realm, "Cannot read private member from an object whose class did not declare it");
+		return status;
+	}
+
+	/* A field's or a method's value. */
+	if ((property.attributes & VM_PROPERTY_ACCESSOR) == 0U) {
+		*result = *property.value;
+		return 0;
+	}
+
+	/* An accessor without a getter cannot be read. */
+	accessor = (struct vm_accessor *)vm_value_as_cell(*property.value);
+	if (accessor->getter == VM_VALUE_UNDEFINED) {
+		status = vm_throw_type_error(realm, "'#' accessor was defined without a getter");
+		return status;
+	}
+
+	/* The getter's value. */
+	status = vm_call(realm, accessor->getter, object, NULL, 0, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the member's value. */
+	return 0;
+}
+
+/*
+ * Writes a private member (obj.#x = value): a field takes it, a setter is
+ * called; a method, an accessor without a setter or a member the object
+ * does not have is a TypeError.
+ */
+int
+vm_private_set(
+	struct vm_realm *realm,
+	vm_value object,
+	vm_value key,
+	vm_value value)
+{
+	struct vm_property property;
+	struct vm_accessor *accessor;
+	vm_value ignored;
+	int found;
+	int status;
+
+	/* The object's own member. */
+	status = class_private_find(realm, object, key, &property, &found);
+	if (status != 0)
+		return status;
+	if (!found) {
+		status = vm_throw_type_error(realm, "Cannot write private member to an object whose class did not declare it");
+		return status;
+	}
+
+	/* A field takes the value; a method cannot be assigned. */
+	if ((property.attributes & VM_PROPERTY_ACCESSOR) == 0U) {
+		if ((property.attributes & VM_PROPERTY_WRITABLE) == 0U) {
+			status = vm_throw_type_error(realm, "Private method is not writable");
+			return status;
+		}
+		*property.value = value;
+		return 0;
+	}
+
+	/* An accessor without a setter cannot be written. */
+	accessor = (struct vm_accessor *)vm_value_as_cell(*property.value);
+	if (accessor->setter == VM_VALUE_UNDEFINED) {
+		status = vm_throw_type_error(realm, "'#' accessor was defined without a setter");
+		return status;
+	}
+
+	/* The setter. */
+	status = vm_call(realm, accessor->setter, object, &value, 1, &ignored);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the member is written. */
+	return 0;
+}
+
+/* Adds a private field to an object (its class's field initializer); one it has already is a TypeError. */
+int
+vm_private_define(
+	struct vm_realm *realm,
+	vm_value object,
+	vm_value key,
+	vm_value value)
+{
+	struct vm_property property;
+	int found;
+	int status;
+
+	/* An object that has it already. */
+	status = class_private_find(realm, object, key, &property, &found);
+	if (status != 0)
+		return status;
+	if (found) {
+		status = vm_throw_type_error(realm, "Cannot initialize private field twice on the same object");
+		return status;
+	}
+
+	/* A writable member, never enumerable. */
+	status = vm_object_define(realm->heap, (struct vm_object *)vm_value_as_cell(object), key, value, VM_PROPERTY_WRITABLE);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the field is added. */
+	return 0;
+}
+
+/*
+ * Gives an instance a private method or accessor its class keeps on the
+ * prototype (the source), with the same attributes; an instance that has
+ * it already is a TypeError.
+ */
+int
+vm_private_copy(
+	struct vm_realm *realm,
+	vm_value target,
+	vm_value source,
+	vm_value key)
+{
+	struct vm_property property;
+	struct vm_object *holder;
+	int found;
+	int status;
+
+	/* An instance that has it already (constructed twice). */
+	status = class_private_find(realm, target, key, &property, &found);
+	if (status != 0)
+		return status;
+	if (found) {
+		status = vm_throw_type_error(realm, "Cannot initialize private methods twice on the same object");
+		return status;
+	}
+
+	/* The prototype's member. */
+	holder = (struct vm_object *)vm_value_as_cell(source);
+	found = vm_object_get_own(holder, key, &property);
+	if (!found)
+		return EINVAL;
+
+	/* The same value (a method, or the accessor pair) and attributes on the instance. */
+	status = vm_object_define(realm->heap, (struct vm_object *)vm_value_as_cell(target), key, *property.value, property.attributes);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the instance has the member. */
+	return 0;
+}
+
+/* Tells whether an object has a private member (#x in object); anything but an object is a TypeError. */
+int
+vm_private_in(
+	struct vm_realm *realm,
+	vm_value key,
+	vm_value object,
+	vm_value *result)
+{
+	struct vm_property property;
+	int is_object;
+	int found;
+	int status;
+
+	/* Only an object can be asked. */
+	is_object = vm_value_is_object(object);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Cannot use 'in' operator to search for a private field in a value that is not an object");
+		return status;
+	}
+
+	/* Its own member. */
+	found = vm_object_get_own((struct vm_object *)vm_value_as_cell(object), key, &property);
+	*result = VM_VALUE_FALSE;
+	if (found)
+		*result = VM_VALUE_TRUE;
+
+	/* Succeeded: whether it has it. */
+	return 0;
+}
+
+/* Finds an object's own private member; a value that is not an object has none. */
+static int
+class_private_find(
+	struct vm_realm *realm,
+	vm_value object,
+	vm_value key,
+	struct vm_property *property,
+	int *found)
+{
+	int is_object;
+
+	UNUSED_PARAMETER(realm);
+
+	/* A primitive has no private members. */
+	*found = 0;
+	is_object = vm_value_is_object(object);
+	if (!is_object)
+		return 0;
+
+	/* Only the object's own (never its prototypes'). */
+	*found = vm_object_get_own((struct vm_object *)vm_value_as_cell(object), key, property);
+
+	/* Succeeded: whether it has it. */
 	return 0;
 }

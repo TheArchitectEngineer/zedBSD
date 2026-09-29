@@ -347,6 +347,7 @@ void js_compile_class(struct js_function_compiler *fc, struct js_node *node, uin
 void js_compile_fields(struct js_function_compiler *fc, struct js_node *class_node, int statics);
 void js_scope_enter(struct js_function_compiler *fc, struct js_scope *scope, struct js_scope **saved_scope, uint32_t *saved_env);
 void js_scope_leave(struct js_function_compiler *fc, struct js_scope *saved_scope, uint32_t saved_env);
+const uint16_t *js_private_name(struct js_compiler *compiler, struct js_node *node, size_t *length);
 void js_emit_throw_error(struct js_function_compiler *fc, int kind, const char *text);
 void js_store_target(struct js_function_compiler *fc, struct js_node *target, uint32_t source);
 

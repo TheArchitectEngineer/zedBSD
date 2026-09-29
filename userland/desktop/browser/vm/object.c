@@ -345,6 +345,7 @@ vm_symbol_create(
 	if (symbol == NULL)
 		return NULL;
 	symbol->description = description;
+	symbol->private_name = 0;
 
 	/* Succeeded: the symbol. */
 	return symbol;
@@ -787,12 +788,14 @@ vm_object_own_keys(
 			if (is_index)
 				continue;
 
-			/* Strings in the first pass, symbols in the second. */
+			/* Strings in the first pass, symbols in the second; a private name never. */
 			cell = vm_value_as_cell(named_keys[index]);
 			is_symbol = 0;
 			if (cell->type == &vm_symbol_type)
 				is_symbol = 1;
 			if (is_symbol != pass)
+				continue;
+			if (is_symbol && ((struct vm_symbol *)cell)->private_name)
 				continue;
 			error = wb_vector_push(keys, &named_keys[index]);
 		}
