@@ -195,6 +195,32 @@
  */
 #define COMPILE_MAX_GUARDS	256U
 
+/*
+ * The most IR instructions a shader may have for its skippable regions to be
+ * checked (ws075-p023); a longer one runs every region.  The check walks the
+ * rest of the shader once per region.
+ */
+#define COMPILE_MAX_SKIP_CHECK	16384U
+
+/* How deep i915_compile_bool_table() follows ANDs, ORs and NOTs. */
+#define COMPILE_IMPLIES_DEPTH	16U
+
+/*
+ * The Booleans a region check works out truth tables over, at most, and the
+ * 64-bit words of one table (one entry per assignment of the atoms).
+ */
+#define COMPILE_SKIP_ATOMS	8U
+#define COMPILE_SKIP_WORDS	4U
+
+/*
+ * The IR instructions a region needs for its IF: the IF costs six EU
+ * instructions (clearing the flag, two comparisons, the flag's store, IF and
+ * ENDIF) and a jump, more than a shorter region saves (the compositor's
+ * panel.frag: the next comparison of an else-if chain, two instructions, and
+ * the selects of a merge, four; ws075-p023).
+ */
+#define COMPILE_SKIP_MIN_INSTRUCTIONS	6U
+
 /* The VUE slots a URB write carries at most: eight registers of a SIMD8 VUE. */
 #define COMPILE_URB_WRITE_SLOTS	2U
 
@@ -405,11 +431,44 @@ struct i915_compile_state {
 
 	/* How many texture messages were guarded; past COMPILE_MAX_GUARDS they are not. */
 	uint32_t guards;
+
+	/*
+	 * Per IR instruction: nonzero for a SKIP_BEGIN whose region is really
+	 * skipped (i915_compile_skips()).  Filled once before the attempts, in
+	 * the maps' allocation; `skip_taint` and `skip_def` are its scratch (per
+	 * value: made inside the region being checked, or from such a value; and
+	 * the instruction that defines the value, plus one).
+	 */
+	uint32_t *skip_ok;
+	uint32_t *skip_taint;
+	uint32_t *skip_def;
+
+	/*
+	 * The region check's truth tables: per value, the channels it may be
+	 * garbage on (COMPILE_SKIP_WORDS words each, allocated for the check
+	 * only), and the atoms the tables are over.
+	 */
+	uint64_t *skip_garbage;
+	uint32_t skip_atoms[COMPILE_SKIP_ATOMS];
+	uint32_t skip_atom_count;
+
+	/* While a skipped region is lowered: nonzero, and its IF's position. */
+	int skip_active;
+	uint32_t skip_if;
 };
 
 static uint32_t i915_compile_sources(const struct i915_shader_ir_inst *inst);
 static uint32_t i915_compile_operands(const struct i915_shader_ir_inst *inst);
 static void i915_compile_guarded_texture(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static void i915_compile_skips(struct i915_compile_state *state);
+static int i915_compile_skip_region(struct i915_compile_state *state, uint32_t begin, uint32_t end);
+static int i915_compile_skip_garbage(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint64_t garbage[COMPILE_SKIP_WORDS]);
+static const uint64_t *i915_compile_skip_value_garbage(const struct i915_compile_state *state, uint32_t value);
+static int i915_compile_bool_table(struct i915_compile_state *state, uint32_t value, uint64_t table[COMPILE_SKIP_WORDS], uint32_t depth);
+static int i915_compile_table_within(const uint64_t table[COMPILE_SKIP_WORDS], const uint64_t within[COMPILE_SKIP_WORDS]);
+static void i915_compile_skip_begin(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static uint32_t i915_compile_if_any(struct i915_compile_state *state, uint32_t predicate);
+static void i915_compile_skip_end(struct i915_compile_state *state);
 static uint32_t i915_compile_source(const struct i915_shader_ir_inst *inst, uint32_t index);
 static uint32_t i915_compile_results(const struct i915_shader_ir_inst *inst);
 static int i915_compile_attempt(struct i915_compile_state *state);
@@ -513,12 +572,13 @@ drv_i915_shader_compile(
 	state.ir = ir;
 	drv_i915_eu_init(&state.code);
 
-	/* The register, last-use and definition maps and the scratch slots share one allocation. */
-	if (ir->value_count == 0U) {
+	/*
+	 * The register, last-use and definition maps, the scratch slots and the
+	 * skippable regions' marks and scratch share one allocation.
+	 */
+	map_entries = 6U * (size_t)ir->value_count + (size_t)ir->instruction_count;
+	if (map_entries == 0U)
 		map_entries = 4U;
-	} else {
-		map_entries = 4U * (size_t)ir->value_count;
-	}
 
 	/* The maps start every value without a register and outside scratch memory. */
 	state.value_grf = kern_calloc(map_entries, sizeof(uint32_t));
@@ -529,6 +589,12 @@ drv_i915_shader_compile(
 	state.last_use = state.value_grf + ir->value_count;
 	state.def_index = state.last_use + ir->value_count;
 	state.spill_slot = state.def_index + ir->value_count;
+	state.skip_taint = state.spill_slot + ir->value_count;
+	state.skip_def = state.skip_taint + ir->value_count;
+	state.skip_ok = state.skip_def + ir->value_count;
+
+	/* Decides once which skippable regions are really skipped. */
+	i915_compile_skips(&state);
 
 	/*
 	 * Lowers the shader until its values fit the registers: a vertex shader
@@ -705,6 +771,7 @@ i915_compile_reset(
 	const struct i915_shader_ir *ir;
 	uint32_t *value_grf;
 	uint32_t *spill_slot;
+	uint32_t *skip_ok;
 	uint32_t spill_count;
 	uint32_t value;
 	int late_vue;
@@ -715,6 +782,7 @@ i915_compile_reset(
 	spill_slot = state->spill_slot;
 	spill_count = state->spill_count;
 	late_vue = state->late_vue;
+	skip_ok = state->skip_ok;
 
 	/* Drops the previous attempt's code and clears everything else. */
 	drv_i915_eu_free(&state->code);
@@ -729,6 +797,9 @@ i915_compile_reset(
 	state->spill_slot = spill_slot;
 	state->spill_count = spill_count;
 	state->late_vue = late_vue;
+	state->skip_ok = skip_ok;
+	state->skip_taint = spill_slot + ir->value_count;
+	state->skip_def = state->skip_taint + ir->value_count;
 
 	/* No value has a register or a reader yet. */
 	for (value = 0U; value < ir->value_count; value++) {
@@ -808,6 +879,7 @@ i915_compile_operands(
 	case I915_IR_DDY_FINE:
 	case I915_IR_UNPACK_HALF:
 	case I915_IR_LOAD_STORAGE:
+	case I915_IR_SKIP_BEGIN:
 		return 1U;
 
 	case I915_IR_FADD:
@@ -909,6 +981,8 @@ i915_compile_results(
 	case I915_IR_NOP:
 	case I915_IR_LOOP_BEGIN:
 	case I915_IR_LOOP_END:
+	case I915_IR_SKIP_BEGIN:
+	case I915_IR_SKIP_END:
 		return 0U;
 
 	default:
@@ -1759,6 +1833,14 @@ i915_compile_instruction(
 
 	case I915_IR_LOOP_BEGIN:
 		i915_compile_loop_begin(state);
+		break;
+
+	case I915_IR_SKIP_BEGIN:
+		i915_compile_skip_begin(state, inst);
+		break;
+
+	case I915_IR_SKIP_END:
+		i915_compile_skip_end(state);
 		break;
 
 	case I915_IR_LOOP_END:
@@ -3349,10 +3431,11 @@ i915_compile_loop_end(
 }
 
 /*
- * Lowers a texture message under an IF on its guard (ws075-p021): f0.0 set
- * where the guard holds, the IF, the message, the ENDIF.  The message then
- * runs for the guard's channels, and a thread none of whose channels is in
- * the guard jumps over it.  The channels outside the guard read its result
+ * Lowers a texture message under an IF on its guard (ws075-p021): an IF that
+ * every channel takes when any channel is in the guard (i915_compile_if_any(),
+ * so the derivatives of the message's coordinates see every pixel of the
+ * quad), the message, the ENDIF.  A thread none of whose channels is in the
+ * guard jumps over the message.  The channels outside the guard read its result
  * only in selections that take something else (struct i915_shader_ir_inst).
  * An unguarded message, or one past COMPILE_MAX_GUARDS, is lowered as it is.
  */
@@ -3361,31 +3444,19 @@ i915_compile_guarded_texture(
 	struct i915_compile_state *state,
 	const struct i915_shader_ir_inst *inst)
 {
-	struct i915_eu_reg null;
-	uint32_t guard_grf;
 	uint32_t if_position;
 	uint32_t endif_position;
 	int guarded;
 
-	/* A guard, and room to remember its ENDIF, make the message guarded. */
+	/* A guard, and room to remember its ENDIF, make the message guarded; inside a skipped region the region's IF guards it already. */
 	guarded = 0;
-	if (inst->guard != 0U && state->guards < COMPILE_MAX_GUARDS)
+	if (inst->guard != 0U && state->guards < COMPILE_MAX_GUARDS && !state->skip_active)
 		guarded = 1;
 
-	/* Sets f0.0 where the guard is true (not zero), and opens the IF on it. */
+	/* Opens an IF that every channel takes when any is in the guard. */
 	if_position = 0U;
 	if (guarded) {
-		guard_grf = i915_compile_grf(state, inst->guard - 1U);
-		null = drv_i915_eu_null();
-		null.type = COMPILE_TYPE_D;
-		drv_i915_eu_cmp(&state->code,
-				I915_EU_COND_NE,
-				I915_EU_FLAG_F0_0,
-				0,
-				null,
-				drv_i915_eu_grf_d(guard_grf),
-				drv_i915_eu_imm_d(0U));
-		if_position = drv_i915_eu_if(&state->code, I915_EU_FLAG_F0_0);
+		if_position = i915_compile_if_any(state, inst->guard - 1U);
 		state->guards++;
 	}
 
@@ -3410,6 +3481,550 @@ i915_compile_guarded_texture(
 	}
 }
 
+
+/*
+ * Decides which skippable regions (SKIP_BEGIN .. SKIP_END, one block of the
+ * parser each) are really skipped (ws075-p023): each is checked by
+ * i915_compile_skip_region().  A shader longer than COMPILE_MAX_SKIP_CHECK
+ * skips none.
+ */
+static void
+i915_compile_skips(
+	struct i915_compile_state *state)
+{
+	const struct i915_shader_ir *ir;
+	const struct i915_shader_ir_inst *inst;
+	uint32_t index;
+	uint32_t end;
+	uint32_t value;
+	uint32_t results;
+	int sound;
+
+	/* The shader being compiled. */
+	ir = state->ir;
+
+	/* Nothing is skipped until proven safe. */
+	for (index = 0U; index < ir->instruction_count; index++)
+		state->skip_ok[index] = 0U;
+
+	/* A long shader is not checked. */
+	if (ir->instruction_count > COMPILE_MAX_SKIP_CHECK)
+		return;
+
+	/* The garbage tables; without them nothing is skipped. */
+	state->skip_garbage = kern_calloc((size_t)ir->value_count * COMPILE_SKIP_WORDS + 1U, sizeof(uint64_t));
+	if (state->skip_garbage == NULL)
+		return;
+
+	/* The instruction that defines each value, plus one (zero for none). */
+	for (value = 0U; value < ir->value_count; value++)
+		state->skip_def[value] = 0U;
+	for (index = 0U; index < ir->instruction_count; index++) {
+		inst = &ir->instructions[index];
+		results = i915_compile_results(inst);
+		for (value = inst->dst; results != 0U && value < ir->value_count; value++, results--) {
+			if (state->skip_def[value] == 0U)
+				state->skip_def[value] = index + 1U;
+		}
+	}
+
+	/* Checks each region: from its SKIP_BEGIN to the next SKIP_END. */
+	for (index = 0U; index < ir->instruction_count; index++) {
+		if (ir->instructions[index].op != I915_IR_SKIP_BEGIN)
+			continue;
+
+		/* Its end; a region without one is not skipped. */
+		for (end = index + 1U; end < ir->instruction_count; end++) {
+			if (ir->instructions[end].op == I915_IR_SKIP_END)
+				break;
+			if (ir->instructions[end].op == I915_IR_SKIP_BEGIN)
+				break;
+		}
+
+		/* A region is a SKIP_BEGIN closed by its own SKIP_END, with nothing opened in between. */
+		if (end >= ir->instruction_count || ir->instructions[end].op != I915_IR_SKIP_END)
+			continue;
+
+		/* Skipped only when what leaves it is proven masked. */
+		sound = i915_compile_skip_region(state, index, end);
+		if (sound)
+			state->skip_ok[index] = 1U;
+	}
+
+	/* The tables are needed no more. */
+	kern_free(state->skip_garbage);
+	state->skip_garbage = NULL;
+}
+
+/*
+ * Reports whether the region from SKIP_BEGIN `begin` to SKIP_END `end` may be
+ * skipped: when a thread skips it, no channel is in its predicate P, so a
+ * channel where P holds does not exist, and a value the region would have
+ * made may only be seen on such channels.
+ *
+ * Booleans are worked out as truth tables over the comparisons and other
+ * Booleans they are made of (at most COMPILE_SKIP_ATOMS "atoms").  Each
+ * value made in the region is garbage on every channel; each value made
+ * from garbage records the table of the channels it may be garbage on (a
+ * selection only where it takes the garbage, an AND only where the other
+ * side is true, an OR only where it is false).  A value whose garbage is
+ * confined to channels inside P is clean.  The region may not be skipped
+ * when garbage outside P could reach an output, a storage store, a discard,
+ * a loop move, a loop end or another region's predicate, or when its body
+ * has an effect that is not under P.  Returns 1 when it may be skipped.
+ */
+static int
+i915_compile_skip_region(
+	struct i915_compile_state *state,
+	uint32_t begin,
+	uint32_t end)
+{
+	const struct i915_shader_ir *ir;
+	const struct i915_shader_ir_inst *inst;
+	uint64_t inside[COMPILE_SKIP_WORDS];
+	uint64_t garbage[COMPILE_SKIP_WORDS];
+	uint64_t table[COMPILE_SKIP_WORDS];
+	uint32_t index;
+	uint32_t value;
+	uint32_t results;
+	int known;
+	int clean;
+	int word;
+
+	/* The shader being compiled. */
+	ir = state->ir;
+
+	/* No atom yet, nothing garbage yet. */
+	state->skip_atom_count = 0U;
+	for (value = 0U; value < ir->value_count; value++)
+		state->skip_taint[value] = 0U;
+
+	/* The channels of P. */
+	known = i915_compile_bool_table(state, ir->instructions[begin].src[0], inside, 0U);
+	if (!known)
+		return 0;
+
+	/* The body: effects only under P, and every value it makes is garbage everywhere. */
+	for (index = begin + 1U; index < end; index++) {
+		inst = &ir->instructions[index];
+
+		/* A loop, a loop move or an output write inside is not skipped over. */
+		if (inst->op == I915_IR_LOOP_BEGIN ||
+		    inst->op == I915_IR_LOOP_END ||
+		    inst->op == I915_IR_MOVE ||
+		    inst->op == I915_IR_STORE_OUTPUT)
+			return 0;
+
+		/* A discard must be under P. */
+		if (inst->op == I915_IR_KILL) {
+			known = i915_compile_bool_table(state, inst->src[0], table, 0U);
+			if (!known)
+				return 0;
+			clean = i915_compile_table_within(table, inside);
+			if (!clean)
+				return 0;
+		}
+
+		/* A storage store must be predicated on something under P. */
+		if (inst->op == I915_IR_STORE_STORAGE) {
+			if (inst->component == 0U)
+				return 0;
+			known = i915_compile_bool_table(state, inst->src[2], table, 0U);
+			if (!known)
+				return 0;
+			clean = i915_compile_table_within(table, inside);
+			if (!clean)
+				return 0;
+		}
+
+		/* Marks what it makes as garbage on every channel. */
+		results = i915_compile_results(inst);
+		for (value = inst->dst; results != 0U && value < ir->value_count; value++, results--) {
+			state->skip_taint[value] = 1U;
+			for (word = 0; word < (int)COMPILE_SKIP_WORDS; word++)
+				state->skip_garbage[(size_t)value * COMPILE_SKIP_WORDS + (size_t)word] = ~(uint64_t)0;
+		}
+	}
+
+	/* After it: follows the garbage in order. */
+	for (index = end + 1U; index < ir->instruction_count; index++) {
+		inst = &ir->instructions[index];
+
+		/* Where the instruction's results may be garbage; nothing when it reads none. */
+		known = i915_compile_skip_garbage(state, inst, garbage);
+		results = i915_compile_results(inst);
+
+		/* Garbage confined to P's channels does not exist: the results are clean. */
+		clean = 1;
+		if (known)
+			clean = i915_compile_table_within(garbage, inside);
+
+		/* Garbage that could be seen must not reach an effect or control. */
+		if (!clean &&
+		    (inst->op == I915_IR_STORE_OUTPUT ||
+		     inst->op == I915_IR_STORE_STORAGE ||
+		     inst->op == I915_IR_KILL ||
+		     inst->op == I915_IR_MOVE ||
+		     inst->op == I915_IR_LOOP_END ||
+		     inst->op == I915_IR_SKIP_BEGIN))
+			return 0;
+
+		/* Records the results' garbage (a loop move may make a value clean again). */
+		for (value = inst->dst; results != 0U && value < ir->value_count; value++, results--) {
+			state->skip_taint[value] = 0U;
+			if (clean)
+				continue;
+			state->skip_taint[value] = 1U;
+			for (word = 0; word < (int)COMPILE_SKIP_WORDS; word++)
+				state->skip_garbage[(size_t)value * COMPILE_SKIP_WORDS + (size_t)word] = garbage[word];
+		}
+	}
+
+	/* Succeeded: nothing the region makes is seen where it could exist. */
+	return 1;
+}
+
+/*
+ * Works out where an instruction's results may be garbage, from the garbage
+ * of what it reads.  Returns 0 when it reads no garbage (clean), 1 with the
+ * table in `garbage` otherwise.
+ */
+static int
+i915_compile_skip_garbage(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst,
+	uint64_t garbage[COMPILE_SKIP_WORDS])
+{
+	uint64_t condition[COMPILE_SKIP_WORDS];
+	uint64_t other[COMPILE_SKIP_WORDS];
+	const uint64_t *first;
+	const uint64_t *second;
+	uint32_t sources;
+	uint32_t source;
+	uint32_t read;
+	int tainted;
+	int known;
+	int word;
+
+	/* Nothing garbage until a source is. */
+	tainted = 0;
+	for (word = 0; word < (int)COMPILE_SKIP_WORDS; word++)
+		garbage[word] = 0U;
+
+	/* A selection by a clean condition: the garbage of each side where it is taken. */
+	if (inst->op == I915_IR_SELECT && state->skip_taint[inst->src[0]] == 0U) {
+		first = i915_compile_skip_value_garbage(state, inst->src[1]);
+		second = i915_compile_skip_value_garbage(state, inst->src[2]);
+		if (first == NULL && second == NULL)
+			return 0;
+
+		/* The condition's channels; an unknown condition takes either side anywhere. */
+		known = i915_compile_bool_table(state, inst->src[0], condition, 0U);
+		for (word = 0; word < (int)COMPILE_SKIP_WORDS; word++) {
+			if (!known)
+				condition[word] = ~(uint64_t)0;
+			if (first != NULL)
+				garbage[word] |= first[word] & condition[word];
+			if (!known)
+				condition[word] = 0U;
+			if (second != NULL)
+				garbage[word] |= second[word] & ~condition[word];
+		}
+
+		/* Garbage where the chosen side's is. */
+		return 1;
+	}
+
+	/* An AND is garbage only where the other side is true; an OR only where it is false. */
+	if ((inst->op == I915_IR_AND || inst->op == I915_IR_OR) &&
+	    (state->skip_taint[inst->src[0]] == 0U || state->skip_taint[inst->src[1]] == 0U)) {
+		first = i915_compile_skip_value_garbage(state, inst->src[0]);
+		read = inst->src[1];
+		if (first == NULL) {
+			first = i915_compile_skip_value_garbage(state, inst->src[1]);
+			read = inst->src[0];
+		}
+
+		/* Neither side garbage: the result is clean. */
+		if (first == NULL)
+			return 0;
+
+		/* The clean side's channels; an unknown one leaves the garbage everywhere. */
+		known = i915_compile_bool_table(state, read, other, 0U);
+		for (word = 0; word < (int)COMPILE_SKIP_WORDS; word++) {
+			if (!known) {
+				garbage[word] = first[word];
+			} else if (inst->op == I915_IR_AND) {
+				garbage[word] = first[word] & other[word];
+			} else {
+				garbage[word] = first[word] & ~other[word];
+			}
+		}
+
+		/* Garbage where the garbage side decides. */
+		return 1;
+	}
+
+	/* Anything else is garbage wherever a source is. */
+	sources = i915_compile_sources(inst);
+	for (source = 0U; source < sources; source++) {
+		read = i915_compile_source(inst, source);
+		first = i915_compile_skip_value_garbage(state, read);
+		if (first == NULL)
+			continue;
+		tainted = 1;
+		for (word = 0; word < (int)COMPILE_SKIP_WORDS; word++)
+			garbage[word] |= first[word];
+	}
+
+	/* Reports whether it read garbage. */
+	return tainted;
+}
+
+/* Returns the garbage table of a value, or NULL for a clean one (or one outside the IR). */
+static const uint64_t *
+i915_compile_skip_value_garbage(
+	const struct i915_compile_state *state,
+	uint32_t value)
+{
+	/* A value outside the IR, or a clean one, has no garbage. */
+	if (value >= state->ir->value_count)
+		return NULL;
+	if (state->skip_taint[value] == 0U)
+		return NULL;
+
+	/* Succeeded: its table. */
+	return &state->skip_garbage[(size_t)value * COMPILE_SKIP_WORDS];
+}
+
+/*
+ * Works out the truth table of a clean Boolean over the atoms of the region
+ * check: an AND, OR or NOT of Booleans is combined, a constant is all true
+ * or all false, and any other Boolean is an atom (a new one while there is
+ * room).  Returns 0 when the table cannot be made (too many atoms, too deep,
+ * or a value outside the IR).
+ */
+static int
+i915_compile_bool_table(
+	struct i915_compile_state *state,
+	uint32_t value,
+	uint64_t table[COMPILE_SKIP_WORDS],
+	uint32_t depth)
+{
+	const struct i915_shader_ir_inst *inst;
+	uint64_t left[COMPILE_SKIP_WORDS];
+	uint64_t right[COMPILE_SKIP_WORDS];
+	uint32_t def;
+	uint32_t atom;
+	uint32_t entry;
+	int known;
+	int word;
+
+	/* Too deep, or a value outside the IR. */
+	if (depth >= COMPILE_IMPLIES_DEPTH || value >= state->ir->value_count)
+		return 0;
+
+	/* A Boolean made by an AND, OR, NOT or constant is combined. */
+	def = state->skip_def[value];
+	inst = NULL;
+	if (def != 0U)
+		inst = &state->ir->instructions[def - 1U];
+
+	/* A constant: all true or all false. */
+	if (inst != NULL && inst->op == I915_IR_BOOL) {
+		for (word = 0; word < (int)COMPILE_SKIP_WORDS; word++) {
+			table[word] = 0U;
+			if (inst->immediate != 0U)
+				table[word] = ~(uint64_t)0;
+		}
+
+		/* The constant's table is known. */
+		return 1;
+	}
+
+	/* NOT, AND and OR of their operands' tables. */
+	if (inst != NULL && (inst->op == I915_IR_NOT || inst->op == I915_IR_AND || inst->op == I915_IR_OR)) {
+		known = i915_compile_bool_table(state, inst->src[0], left, depth + 1U);
+		if (!known)
+			return 0;
+		if (inst->op != I915_IR_NOT) {
+			known = i915_compile_bool_table(state, inst->src[1], right, depth + 1U);
+			if (!known)
+				return 0;
+		}
+
+		/* Combined channel by channel. */
+		for (word = 0; word < (int)COMPILE_SKIP_WORDS; word++) {
+			if (inst->op == I915_IR_NOT) {
+				table[word] = ~left[word];
+			} else if (inst->op == I915_IR_AND) {
+				table[word] = left[word] & right[word];
+			} else {
+				table[word] = left[word] | right[word];
+			}
+		}
+
+		/* The combination's table is known. */
+		return 1;
+	}
+
+	/* Any other Boolean is an atom: found, or added while there is room. */
+	for (atom = 0U; atom < state->skip_atom_count; atom++) {
+		if (state->skip_atoms[atom] == value)
+			break;
+	}
+
+	/* A new atom takes the next slot; more than the tables hold is unknown. */
+	if (atom == state->skip_atom_count) {
+		if (state->skip_atom_count >= COMPILE_SKIP_ATOMS)
+			return 0;
+		state->skip_atoms[atom] = value;
+		state->skip_atom_count++;
+	}
+
+	/* The atom is true on the table's entries whose bit `atom` is set. */
+	for (word = 0; word < (int)COMPILE_SKIP_WORDS; word++)
+		table[word] = 0U;
+	for (entry = 0U; entry < 64U * COMPILE_SKIP_WORDS; entry++) {
+		if (((entry >> atom) & 1U) != 0U)
+			table[entry / 64U] |= (uint64_t)1 << (entry % 64U);
+	}
+
+	/* Succeeded: the atom's table. */
+	return 1;
+}
+
+/* Reports whether every entry true in `table` is also true in `within`. */
+static int
+i915_compile_table_within(
+	const uint64_t table[COMPILE_SKIP_WORDS],
+	const uint64_t within[COMPILE_SKIP_WORDS])
+{
+	int word;
+
+	/* An entry of the table outside `within` breaks it. */
+	for (word = 0; word < (int)COMPILE_SKIP_WORDS; word++) {
+		if ((table[word] & ~within[word]) != 0U)
+			return 0;
+	}
+
+	/* Succeeded: the table is within. */
+	return 1;
+}
+
+/*
+ * Opens an IF on "any channel's `predicate` is true" and returns its
+ * position: f0.0 set per channel, its sixteen bits copied into a temporary
+ * register's dword, and f0.0 set again on every channel where that dword is
+ * not zero.  Every channel the execution mask enables then runs the IF's body
+ * or none does, so a body with derivatives (a sample, DDX) sees its whole
+ * quad, and a thread with no channel in the predicate jumps to the ENDIF.
+ */
+static uint32_t
+i915_compile_if_any(
+	struct i915_compile_state *state,
+	uint32_t predicate)
+{
+	struct i915_eu_reg null;
+	struct i915_eu_reg word;
+	uint32_t predicate_grf;
+	uint32_t temporary;
+	uint32_t position;
+
+	/* f0.0 where the predicate is true (not zero); cleared first, since the comparison leaves the bits of inactive channels as they were. */
+	predicate_grf = i915_compile_grf(state, predicate);
+	drv_i915_eu_flag_clear(&state->code, I915_EU_FLAG_F0_0);
+	null = drv_i915_eu_null();
+	null.type = COMPILE_TYPE_D;
+	drv_i915_eu_cmp(&state->code,
+			I915_EU_COND_NE,
+			I915_EU_FLAG_F0_0,
+			0,
+			null,
+			drv_i915_eu_grf_d(predicate_grf),
+			drv_i915_eu_imm_d(0U));
+
+	/* The flag's bits as one dword, then f0.0 on every channel when any bit is set. */
+	temporary = i915_compile_temporary(state);
+	drv_i915_eu_flag_store(&state->code, I915_EU_FLAG_F0_0, temporary, 0U);
+	word = drv_i915_eu_grf_scalar(temporary, 0U);
+	word.type = EU_TYPE_UD;
+	null.type = EU_TYPE_UD;
+	drv_i915_eu_cmp(&state->code,
+			I915_EU_COND_NE,
+			I915_EU_FLAG_F0_0,
+			0,
+			null,
+			word,
+			drv_i915_eu_imm_ud(0U));
+	state->grf_busy[temporary] = 0U;
+
+	/* The IF on it. */
+	position = drv_i915_eu_if(&state->code, I915_EU_FLAG_F0_0);
+
+	/* Succeeded: the IF waits for its ENDIF. */
+	return position;
+}
+
+/*
+ * Lowers a SKIP_BEGIN: for a region that is really skipped (while there is
+ * room to remember its ENDIF, and long enough to be worth it), an IF every
+ * channel takes when any channel is in the predicate (i915_compile_if_any());
+ * the region's body then runs for every channel, as it would without the IF,
+ * and a thread none of whose channels is in it jumps to the ENDIF.
+ */
+static void
+i915_compile_skip_begin(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	uint32_t length;
+
+	/* A region the check did not prove, or one past the room for ENDIFs, runs as it is. */
+	if (state->skip_ok[state->index] == 0U)
+		return;
+	if (state->guards >= COMPILE_MAX_GUARDS || state->skip_active)
+		return;
+
+	/* So does one too short to be worth its IF. */
+	length = 0U;
+	while (state->index + 1U + length < state->ir->instruction_count &&
+	       state->ir->instructions[state->index + 1U + length].op != I915_IR_SKIP_END)
+		length++;
+	if (length < COMPILE_SKIP_MIN_INSTRUCTIONS)
+		return;
+
+	/* Opens an IF that every channel takes when any is in the predicate. */
+	state->skip_if = i915_compile_if_any(state, inst->src[0]);
+
+	/* The region is being skipped; it counts against the ENDIFs' room. */
+	state->skip_active = 1;
+	state->guards++;
+}
+
+/* Lowers a SKIP_END: the ENDIF of a skipped region, its IF pointed at it, and an ENDIF in a loop kept for the WHILE. */
+static void
+i915_compile_skip_end(
+	struct i915_compile_state *state)
+{
+	uint32_t endif_position;
+
+	/* A region that runs as it is has no ENDIF. */
+	if (!state->skip_active)
+		return;
+
+	/* Closes the IF and points it at its ENDIF. */
+	endif_position = drv_i915_eu_endif(&state->code);
+	drv_i915_eu_patch_if(&state->code, state->skip_if, endif_position);
+	state->skip_active = 0;
+
+	/* An ENDIF inside a loop is pointed at the loop's WHILE when it is placed. */
+	if (state->loop_depth != 0U) {
+		state->endif_position[state->endif_count] = endif_position;
+		state->endif_depth[state->endif_count] = state->loop_depth;
+		state->endif_count++;
+	}
+}
 
 /* Reports whether the IR input of a location is Flat. */
 static int
