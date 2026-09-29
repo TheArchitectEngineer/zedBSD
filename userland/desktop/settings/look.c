@@ -573,6 +573,9 @@ look_thumbnail(
 
 	/* The header: P6, the width, the height and the largest value (255), one space before the pixels. */
 	at = 2;
+	width = 0;
+	height = 0;
+	maximum = 0;
 	error = EINVAL;
 	if (count > 2 &&
 	    header[0] == 'P' &&
