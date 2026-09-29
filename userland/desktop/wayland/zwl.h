@@ -251,6 +251,13 @@ struct zwl_object {
 	struct zwl_object *surface;
 	struct zwl_object *role;
 	struct zwl_object *top;
+	/*
+	 * An xdg_surface's xdg_wm_base, the binding get_xdg_surface was asked
+	 * of (ws035-p132, BUG-112): only its own live xdg_surfaces keep that
+	 * binding from being destroyed.  Compared, never followed: a binding
+	 * outlives every live xdg_surface made from it.
+	 */
+	struct zwl_object *wm_base;
 	struct zwl_object *pending;
 	struct zwl_object *queued;
 	struct zwl_object *current;
