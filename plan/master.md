@@ -97,7 +97,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS032](ws032/ws.md) | MG002 | 外部 package のクロスビルド（clang・OpenSSL・OpenSSH） | completed | — |
 | [WS033](ws033/ws.md) | MG005 | networking サービスと有線インタフェースの管理 | incomplete | 抜き差しの実機確認 |
 | [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | incomplete | package の導入 |
-| [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | incomplete | 2026-09-29: p129〜p134 cleared（起動の準備を READY の前に、起動時の画像の layout をまとめる、BUG-112、壁紙の先読みと拡縮の中間の削減: wallpaper-picture 165 → 40 ms、Terminal の窓の角を直角に（ユーザー））。p135（暗い壁紙の上の glass の文字の contrast）はすりガラスの扱いの判断まで保留。Venus の同期の遅さは F-056。エージェントは Mid |
+| [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | completed | 2026-09-30 ユーザーの判断で閉じた（目標が 2026-09-23 のまま古く、ゴールが不明確）。p001〜p138: compositor・sessiond・greeter・lock・Keiland の app・audiod・起動の短縮ほか。Chromium は取り消し（ユーザー「独自にBrowserを書いているから」）。デモまでの仕上げは WS099。`plan/ws035/tests/` は共有の道具として残す（plan/tools への移動は後の整理） |
 | [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | completed | 2026-09-27 完了（p021 全 platform の回帰と規約、p026〜p029、p027 は案 A: boot の parameter の parser を緩めた）。実機は未実施。toolchain の cache（zedbsd8）は 2026-09-27 に rev-0 へ upload 済み |
 | [WS037](ws037/ws.md) | MG006 | NVIDIA GPU（予約） | planning | 番号のみ |
 | [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | planning | 番号のみ |
@@ -161,6 +161,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS096](ws096/ws.md) | MG002 | Qt6（core・gui・widgets）の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
+| [WS099](ws099/ws.md) | MG006 | Keiland のデモの仕上げ: デモの台本（S1 起動〜S12 終わり）の全場面が 5330 の実機で崩れず通る（2026-09-30 ユーザー、WS035 の後継、10/10 まで） | planning | p001（台本の確定、案はユーザーの確認待ち） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -194,7 +195,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・Future Work・
 | --- | --- | --- |
 | 実機の image `build/demo-lcd8` の確認（LCD の takeover、10 app の軽さ、Files → Image Viewer・Text Editor、Settings、デスクトップの icon、Terminal の角、Notes の全画面を解く、USB マウス・sh の履歴・プロンプトの `~`） | デモ | ユーザーが試験 |
 | WS075 p023: compositor の panel.frag の分岐の中の ALU を飛ぶ（見積もり 1 run 8.8 → 4.9 ms）。すりガラスは残す（2026-09-30 ユーザーの決定） | 窓が多いときの軽さ | p023 の計測済み |
-| WS035: BUG-115（p072 の errno=5）、p135（暗い壁紙の上の glass の文字、すりガラスを残すと決まったので再開できる）、ぼかしの pass（約 80 ms） | Keiland | 各 ticket |
+| WS099（WS035 の後継）: 台本の確定 → 場面ごとの直し（暗い壁紙の上の文字、BUG-115 ほか） | Keiland のデモ | 台本の案はユーザーの確認待ち |
 | WS073: BUG-030 の受け入れの残り（KVM 2×20・boot test）、BUG-116（EP0 の event の取りこぼし、BUG-036 と同じ系統か） | 安定性 | phase041 |
 | WS094 p004 の残り（保存した場所への配置の guest の確認・回帰・boot test）→ p005〜p007 | デスクトップの icon | phase004 の Resume point |
 | WS090 p004（窓の土台と Text Editor の libkeiui への移行、文字の編集の touch） | 共通の部品 | p003 cleared |

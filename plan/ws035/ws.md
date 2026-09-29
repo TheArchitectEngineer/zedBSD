@@ -11,7 +11,7 @@
 - **結果**（p001〜p138、QEMU の Venus と一部は実機の 5330 の passthrough）: Wayland の compositor（zdesktop、2 つのモード、glass、App Home、
   Wiseview、system bar、窓の管理と装飾、touch・pen）、sessiond・greeter・lock・login、Files・Terminal・Notes 等の Keiland の app、
   audiod、libz・libpng の互換、X server（Xwayland 相当）、起動の短縮（p129〜p133）、BUG-112・BUG-114、Terminal の本体の角（p136）。
-- **やらなかったこと**: Chromium の移植（WS074 の自前のブラウザに置き換わった）、音量の UI。
+- **やらなかったこと**: Chromium の移植は**取り消し**（2026-09-30 ユーザー「Chromiumはキャンセルします。独自にBrowserを書いているからです。」、WS074 の自前のブラウザ）。音量の UI。
 - **移管**:
   - デモまでの仕上げ → [WS099](../ws099/ws.md)（p135 の暗い壁紙の上の文字、[BUG-115](../bugs/BUG-115.md) を含む）。
   - ぼかしの pass の短縮（約 80 ms、CPU）→ Future Work F-060。
