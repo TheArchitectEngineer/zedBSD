@@ -53,7 +53,9 @@ SURFLIVE = {'A': 0x701ac, 'B': 0x711ac}
 WATCH = (('transconf', 0x71008), ('plane_ctl', 0x71180), ('surflive', 0x711ac), ('frame', 0x71040))
 # The kernel logs the first three flips of a lease only.
 LOGGED_FLIPS = 3
-PLAIN = {' ': 'spc', '-': 'minus', '=': 'equal', '.': 'dot', '/': 'slash', '\n': 'ret', '\t': 'tab'}
+PLAIN = {' ': 'spc', '-': 'minus', '=': 'equal', '.': 'dot', '/': 'slash', '\n': 'ret', '\t': 'tab', ';': 'semicolon'}
+# Characters typed with shift on the US layout (ws075-p009: shell redirections in a terminal).
+SHIFTED = {'>': 'dot', '<': 'comma', '|': 'backslash', '&': '7', '_': 'minus', ':': 'semicolon'}
 
 
 def qmp_open(name='qmp.sock'):
@@ -247,6 +249,8 @@ def keys(f, text):
     for character in text.replace('\\n', '\n'):
         if character.isalnum():
             code, shifted = character.lower(), character.isupper()
+        elif character in SHIFTED:
+            code, shifted = SHIFTED[character], True
         else:
             code, shifted = PLAIN[character], False
         for down in (True, False):
