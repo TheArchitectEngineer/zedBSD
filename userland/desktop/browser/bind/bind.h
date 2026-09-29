@@ -45,14 +45,40 @@ enum bind_console_level {
 #define BIND_EVENT_CANCELABLE	0x2U
 #define BIND_EVENT_DOCUMENT	0x4U
 
+struct css_engine;
+
+/*
+ * Where a node is on the laid out page, for the geometry scripts ask for
+ * (getBoundingClientRect, clientWidth and the like; ws074-p031), in CSS
+ * pixels from the document's top left: the union of the node's boxes,
+ * whether its first box is a block (an inline element has no client area
+ * of its own), and that box's border widths.
+ */
+struct bind_box {
+	double x;
+	double y;
+	double width;
+	double height;
+	int block;
+	double border_top;
+	double border_right;
+	double border_bottom;
+	double border_left;
+};
+
 /*
  * What the window asks of its host: where the console's lines go (one
  * line of UTF-8 text at a level, without its line feed), the User-Agent
  * navigator reports, the parts of the document's location (a
  * BIND_LOCATION_*, written as UTF-8), and document.cookie's reading and
  * writing (the cookies a script may see, and one cookie set in the form
- * of a Set-Cookie header).  A NULL callback reads as nothing and writes
- * nothing.
+ * of a Set-Cookie header).  For ws074-p031 it also gives the style engine
+ * a script's selectors are matched with (querySelector and the like),
+ * where a node is on the page laid out as it is now (node_box lays the
+ * page out first when it changed, and reports whether the node has a box;
+ * document_size gives the laid out document's width and height), and how
+ * far the viewport is scrolled.  A NULL callback reads as nothing and
+ * writes nothing: no engine matches nothing, and no layout has no boxes.
  */
 struct bind_host {
 	void *context;
@@ -61,6 +87,10 @@ struct bind_host {
 	int (*location)(void *context, int part, struct wb_buffer *out);
 	int (*cookie_get)(void *context, struct wb_buffer *out);
 	int (*cookie_set)(void *context, const char *text, size_t length);
+	struct css_engine *(*selector_engine)(void *context);
+	int (*node_box)(void *context, struct dom_node *node, struct bind_box *box);
+	void (*document_size)(void *context, double *width, double *height);
+	void (*scroll)(void *context, double *x, double *y);
 };
 
 /*

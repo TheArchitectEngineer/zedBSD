@@ -89,6 +89,8 @@ static const struct bind_operation document_operations[] = {
 	{ "createDocumentFragment", 0, document_create_fragment },
 	{ "append", 0, bind_append },
 	{ "prepend", 0, bind_prepend },
+	{ "querySelector", 1, bind_query_selector },
+	{ "querySelectorAll", 1, bind_query_selector_all },
 	{ NULL, 0, NULL }
 };
 

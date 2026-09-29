@@ -845,6 +845,27 @@ static const struct values_color values_colors[] = {
 };
 
 /*
+ * Reports the name of the index-th property this pass knows (a longhand
+ * or a shorthand), or NULL past the last one: the names the inline style
+ * of scripts has members for (ws074-p031).
+ */
+const char *
+css_property_name(
+	size_t index)
+{
+	size_t at;
+
+	/* Counts up to the index, stopping at the table's end. */
+	for (at = 0; at < index; at++) {
+		if (values_names[at].name == NULL)
+			return NULL;
+	}
+
+	/* Succeeded: the name, or NULL at the end. */
+	return values_names[index].name;
+}
+
+/*
  * Finds a property's number by its name, or -1 for an unknown property.
  */
 int

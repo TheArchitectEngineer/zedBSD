@@ -290,6 +290,109 @@ css_sheet_destroy(
 }
 
 /*
+ * Parses a selector list a script gave (querySelector, matches and
+ * closest).  Returns 0 with a list the caller frees with
+ * css_query_destroy, EINVAL when the text is not a selector list (the
+ * script's SyntaxError), or ENOMEM.
+ */
+int
+css_query_parse(
+	struct vm_heap *heap,
+	const uint16_t *units,
+	size_t length,
+	struct css_query **query)
+{
+	struct css_query *made;
+	struct css_token *tokens;
+	struct token_range range;
+	size_t count;
+	int error;
+
+	/* The list, with its own arena. */
+	made = calloc(1, sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+	wb_arena_init(&made->arena, 0);
+
+	/* The text's tokens, without the end-of-file token. */
+	error = css_tokenize(&made->arena, units, length, &tokens, &count);
+	if (error != 0) {
+		css_query_destroy(made);
+		return error;
+	}
+	if (count > 0)
+		count--;
+
+	/* The selectors, as a rule's prelude is read; nothing but whitespace is no list. */
+	range.tokens = tokens;
+	range.count = count;
+	range = parser_trim(range);
+	if (range.count == 0) {
+		css_query_destroy(made);
+		return EINVAL;
+	}
+
+	/* A list that does not parse is the script's syntax error. */
+	error = parser_selectors(heap, &made->arena, range, &made->selectors, &made->count);
+	if (error != 0) {
+		css_query_destroy(made);
+		return error;
+	}
+
+	/* Succeeded: the list is the caller's. */
+	*query = made;
+	return 0;
+}
+
+/*
+ * Tells whether a declaration's text ("name: value") is one this pass
+ * reads, a known property with a value it takes, or a custom property
+ * (the inline style of scripts keeps only those, as other browsers keep
+ * only what they read).  Reports 0 with the answer in *valid, or ENOMEM.
+ */
+int
+css_declaration_valid(
+	struct vm_heap *heap,
+	const uint16_t *units,
+	size_t length,
+	int *valid)
+{
+	struct css_declaration *declarations;
+	struct wb_arena arena;
+	size_t count;
+	int error;
+
+	/* The declarations, in an arena of their own. */
+	*valid = 0;
+	wb_arena_init(&arena, 0);
+	error = css_parse_declarations(heap, &arena, units, length, &declarations, &count);
+	wb_arena_release(&arena);
+	if (error == ENOMEM)
+		return error;
+
+	/* Succeeded: a declaration that parses leaves at least one behind. */
+	if (error == 0 && count > 0)
+		*valid = 1;
+	return 0;
+}
+
+/*
+ * Frees a selector list made by css_query_parse.
+ */
+void
+css_query_destroy(
+	struct css_query *query)
+{
+	/* A NULL list is nothing to free. */
+	if (query == NULL)
+		return;
+
+	/* Its arena, then the list. */
+	wb_arena_release(&query->arena);
+	free(query);
+}
+
+/*
  * Tells how many sheets a sheet's @import rules name.
  */
 size_t

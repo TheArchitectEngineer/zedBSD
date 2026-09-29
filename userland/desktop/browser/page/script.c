@@ -110,6 +110,10 @@ page_start_scripts(
 	host.location = script_location;
 	host.cookie_get = script_cookie_get;
 	host.cookie_set = script_cookie_set;
+	host.selector_engine = page_selector_engine;
+	host.node_box = page_node_box;
+	host.document_size = page_document_size;
+	host.scroll = page_scroll;
 	error = bind_window_create(page->realm, page->document, &host, &page->window);
 	if (error != 0)
 		return error;

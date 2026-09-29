@@ -50,6 +50,10 @@ enum bind_interface_index {
 	BIND_PERFORMANCE,
 	BIND_LOCATION,
 	BIND_HTML_IMAGE_ELEMENT,
+	BIND_DOM_TOKEN_LIST,
+	BIND_DOM_STRING_MAP,
+	BIND_DOM_RECT,
+	BIND_CSS_STYLE_DECLARATION,
 	BIND_INTERFACES
 };
 
@@ -234,6 +238,42 @@ extern const struct bind_interface bind_screen_interface;
 extern const struct bind_interface bind_performance_interface;
 extern const struct bind_interface bind_location_interface;
 extern const struct bind_interface bind_html_image_element_interface;
+extern const struct bind_interface bind_dom_token_list_interface;
+extern const struct bind_interface bind_dom_string_map_interface;
+extern const struct bind_interface bind_dom_rect_interface;
+extern const struct bind_interface bind_css_style_declaration_interface;
+
+/* The inline style (style.c, ws074-p031). */
+int bind_style_install(struct bind_window *window);
+int bind_style(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_style_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+
+/* The Selectors API, classList and dataset (query.c, ws074-p031). */
+int bind_query_selector(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_query_selector_all(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_matches(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_closest(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_class_list(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_dataset(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_split_classes(struct vm_realm *realm, const struct vm_string *classes, struct vm_object *names);
+
+/* The geometry of elements and the window's scrolling (geometry.c, ws074-p031). */
+int bind_geometry_install(struct bind_window *window);
+int bind_get_bounding_client_rect(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_get_client_rects(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_client_width(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_client_height(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_client_top(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_client_left(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_scroll_width(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_scroll_height(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_scroll_top(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_scroll_left(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_scroll_position_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_offset_width(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_offset_height(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_window_scroll_x(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_window_scroll_y(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
 /* The window's environment: navigator, screen, performance, location and Image (environment.c). */
 int bind_environment_install(struct bind_window *window);

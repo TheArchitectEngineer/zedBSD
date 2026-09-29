@@ -62,6 +62,15 @@ static const struct bind_attribute element_attributes[] = {
 	{ "childElementCount", bind_child_element_count, NULL },
 	{ "previousElementSibling", bind_previous_element_sibling, NULL },
 	{ "nextElementSibling", bind_next_element_sibling, NULL },
+	{ "classList", bind_class_list, NULL },
+	{ "clientWidth", bind_client_width, NULL },
+	{ "clientHeight", bind_client_height, NULL },
+	{ "clientTop", bind_client_top, NULL },
+	{ "clientLeft", bind_client_left, NULL },
+	{ "scrollWidth", bind_scroll_width, NULL },
+	{ "scrollHeight", bind_scroll_height, NULL },
+	{ "scrollTop", bind_scroll_top, bind_scroll_position_set },
+	{ "scrollLeft", bind_scroll_left, bind_scroll_position_set },
 	{ NULL, NULL, NULL }
 };
 
@@ -79,6 +88,13 @@ static const struct bind_operation element_operations[] = {
 	{ "append", 0, bind_append },
 	{ "prepend", 0, bind_prepend },
 	{ "remove", 0, bind_remove },
+	{ "querySelector", 1, bind_query_selector },
+	{ "querySelectorAll", 1, bind_query_selector_all },
+	{ "matches", 1, bind_matches },
+	{ "webkitMatchesSelector", 1, bind_matches },
+	{ "closest", 1, bind_closest },
+	{ "getBoundingClientRect", 0, bind_get_bounding_client_rect },
+	{ "getClientRects", 0, bind_get_client_rects },
 	{ NULL, 0, NULL }
 };
 
@@ -96,6 +112,10 @@ const struct bind_interface bind_element_interface = {
 static const struct bind_attribute html_element_attributes[] = {
 	{ "title", element_title_get, element_title_set },
 	{ "hidden", element_hidden_get, element_hidden_set },
+	{ "dataset", bind_dataset, NULL },
+	{ "style", bind_style, bind_style_set },
+	{ "offsetWidth", bind_offset_width, NULL },
+	{ "offsetHeight", bind_offset_height, NULL },
 	{ NULL, NULL, NULL }
 };
 

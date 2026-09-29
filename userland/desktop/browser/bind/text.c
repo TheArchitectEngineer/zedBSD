@@ -119,6 +119,8 @@ static const struct bind_attribute fragment_attributes[] = {
 static const struct bind_operation fragment_operations[] = {
 	{ "append", 0, bind_append },
 	{ "prepend", 0, bind_prepend },
+	{ "querySelector", 1, bind_query_selector },
+	{ "querySelectorAll", 1, bind_query_selector_all },
 	{ NULL, 0, NULL }
 };
 

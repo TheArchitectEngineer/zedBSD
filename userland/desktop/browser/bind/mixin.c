@@ -20,7 +20,6 @@
 static int mixin_insert_values(struct vm_realm *realm, struct dom_node *parent, const vm_value *args, unsigned count, struct dom_node *reference);
 static int mixin_element_link(struct vm_realm *realm, struct dom_node *node, vm_value *result);
 static int mixin_name_matches(const struct dom_element *element, const struct vm_string *name, const struct vm_string *lower);
-static int mixin_split_classes(struct vm_realm *realm, const struct vm_string *classes, struct vm_object *names);
 
 /*
  * Reports a parent's element children as an array (children).
@@ -426,7 +425,7 @@ bind_get_elements_by_class_name(
 	status = bind_array_create(realm, &names);
 	if (status != 0)
 		return status;
-	status = mixin_split_classes(realm, classes, names);
+	status = bind_split_classes(realm, classes, names);
 	if (status != 0)
 		return status;
 	status = bind_array_create(realm, &array);
@@ -461,6 +460,73 @@ bind_get_elements_by_class_name(
 
 	/* Succeeded: the list is reported. */
 	*result = vm_value_cell(array);
+	return 0;
+}
+
+/*
+ * Adds the atoms of the space-separated class names in a string to an
+ * array (getElementsByClassName's names, and classList's tokens).
+ */
+int
+bind_split_classes(
+	struct vm_realm *realm,
+	const struct vm_string *classes,
+	struct vm_object *names)
+{
+	struct vm_string *atom;
+	struct wb_units units;
+	size_t start;
+	size_t index;
+	uint16_t unit;
+	int space;
+	int status;
+
+	/* The string's units. */
+	wb_units_init(&units);
+	status = vm_string_append_units(classes, &units);
+	if (status != 0) {
+		wb_units_release(&units);
+		return status;
+	}
+
+	/* Cuts the units at ASCII whitespace; each piece is a name. */
+	start = 0;
+	for (index = 0; index <= units.length; index++) {
+		/* The end of the string ends the last piece. */
+		space = 1;
+		if (index < units.length) {
+			unit = units.data[index];
+			space = 0;
+			if (unit == 0x20U || unit == 0x09U || unit == 0x0aU || unit == 0x0cU || unit == 0x0dU)
+				space = 1;
+		}
+
+		/* A character of a name goes on to the next. */
+		if (!space)
+			continue;
+
+		/* A piece between two spaces is a name. */
+		if (index > start) {
+			atom = vm_atom_from_units(realm->heap, &units.data[start], index - start);
+			if (atom == NULL) {
+				wb_units_release(&units);
+				return ENOMEM;
+			}
+
+			/* The name at the array's end. */
+			status = vm_object_define(realm->heap, names, vm_value_int32((int32_t)names->length), vm_value_cell(atom), VM_PROPERTY_DEFAULT);
+			if (status != 0) {
+				wb_units_release(&units);
+				return status;
+			}
+		}
+
+		/* The next name starts after the space. */
+		start = index + 1U;
+	}
+
+	/* Succeeded: the names are in the array. */
+	wb_units_release(&units);
 	return 0;
 }
 
@@ -555,68 +621,4 @@ mixin_name_matches(
 
 	/* Other elements match the name as it is. */
 	return element->local_name == name;
-}
-
-/* Adds the atoms of the space-separated class names in a string to an array. */
-static int
-mixin_split_classes(
-	struct vm_realm *realm,
-	const struct vm_string *classes,
-	struct vm_object *names)
-{
-	struct vm_string *atom;
-	struct wb_units units;
-	size_t start;
-	size_t index;
-	uint16_t unit;
-	int space;
-	int status;
-
-	/* The string's units. */
-	wb_units_init(&units);
-	status = vm_string_append_units(classes, &units);
-	if (status != 0) {
-		wb_units_release(&units);
-		return status;
-	}
-
-	/* Cuts the units at ASCII whitespace; each piece is a name. */
-	start = 0;
-	for (index = 0; index <= units.length; index++) {
-		/* The end of the string ends the last piece. */
-		space = 1;
-		if (index < units.length) {
-			unit = units.data[index];
-			space = 0;
-			if (unit == 0x20U || unit == 0x09U || unit == 0x0aU || unit == 0x0cU || unit == 0x0dU)
-				space = 1;
-		}
-
-		/* A character of a name goes on to the next. */
-		if (!space)
-			continue;
-
-		/* A piece between two spaces is a name. */
-		if (index > start) {
-			atom = vm_atom_from_units(realm->heap, &units.data[start], index - start);
-			if (atom == NULL) {
-				wb_units_release(&units);
-				return ENOMEM;
-			}
-
-			/* The name at the array's end. */
-			status = vm_object_define(realm->heap, names, vm_value_int32((int32_t)names->length), vm_value_cell(atom), VM_PROPERTY_DEFAULT);
-			if (status != 0) {
-				wb_units_release(&units);
-				return status;
-			}
-		}
-
-		/* The next name starts after the space. */
-		start = index + 1U;
-	}
-
-	/* Succeeded: the names are in the array. */
-	wb_units_release(&units);
-	return 0;
 }

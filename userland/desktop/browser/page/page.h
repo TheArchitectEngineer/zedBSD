@@ -66,6 +66,14 @@ typedef void (*page_request_done)(void *context, struct net_request *request);
  * the view has the focus of its program.  focus_generation counts the
  * changes of the three, and painted_focus is its value when the display
  * list was made, so a change paints the page again without a new layout.
+ *
+ * The geometry scripts ask for (geometry.c, ws074-p031): query_css is the
+ * style engine their selectors are matched with (made when first needed,
+ * apart from the styling's engine, which is made anew at each change);
+ * font_paths are the fonts the view gives (NULL until it does), and
+ * viewport_width and viewport_height its size, with which a script's
+ * question lays the page out when it changed; scroll_x and scroll_y are
+ * how far the view is scrolled, in CSS pixels.
  */
 struct page {
 	struct vm_heap *heap;
@@ -103,6 +111,12 @@ struct page {
 	int window_focused;
 	uint32_t focus_generation;
 	uint32_t painted_focus;
+	struct css_engine *query_css;
+	const struct text_font_paths *font_paths;
+	int viewport_width;
+	int viewport_height;
+	double scroll_x;
+	double scroll_y;
 };
 
 /*
@@ -196,6 +210,14 @@ void page_net_cancel(struct net_request *request);
 int page_net_result(const struct net_request *request, const unsigned char **bytes, size_t *length, const char **url);
 int page_load_images(struct page *page);
 void page_set_viewport(struct page *page, int width, int height);
+void page_set_fonts(struct page *page, const struct text_font_paths *paths);
+void page_set_scroll(struct page *page, double x, double y);
+
+/* The geometry and the selectors of scripts (geometry.c, ws074-p031). */
+struct css_engine *page_selector_engine(void *context);
+int page_node_box(void *context, struct dom_node *node, struct bind_box *box);
+void page_document_size(void *context, double *width, double *height);
+void page_scroll(void *context, double *x, double *y);
 void page_set_console(struct page *page, page_console console, void *context);
 const char *page_failure_reason(void);
 const struct img_bitmap *page_image_of(void *context, const struct dom_element *element);
