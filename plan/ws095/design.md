@@ -36,9 +36,34 @@ wayland・terminal・browser・textedit を変えている最中のため）。�
 
 ## 3. protocol（client の library と compositor の両方）
 
-text-input-unstable-v3・input-method-unstable-v2・virtual-keyboard-unstable-v1 の XML を pin し（build の host の wayland-protocols の package、
-wlroots の `protocol/` の revision と SHA-256 を `include/libc/wayland/API-PROVENANCE.md` に記録）、今までと同じく **手で書いた記述**にする
-（scanner の出力は入れない）。
+text-input-unstable-v3・input-method-unstable-v2・virtual-keyboard-unstable-v1 の XML を pin し（入手元・revision・SHA-256 を
+`include/libc/wayland/API-PROVENANCE.md` に記録）、今までと同じく **手で書いた記述**にする（scanner の出力は入れない。XML も tree には入れない）。
+
+### 3.1 入手元と pin（2026-09-29 に確かめた）
+
+| XML | 入手元（pin） | SHA-256 | license | 使う版 |
+| --- | --- | --- | --- | --- |
+| text-input-unstable-v3.xml | build の host の Debian の package wayland-protocols 1.44-1（`/usr/share/wayland-protocols/unstable/text-input/`）。既存の primary-selection・tablet と同じ入手元 | `49048087a67011a8840bca889cd2b0ba374382be1ed54ec98adf7837fdca1982` | HPND 型（Intel・Red Hat・Purism の permission notice。MIT 系、再配布と改変の自由） | interface の version 1 |
+| input-method-unstable-v2.xml | wlroots の git の tag `0.19.2`（commit `a047c2a33ff7724a476892cc4fe5dcb803607ef5`）の `protocol/input-method-unstable-v2.xml` | `99414dbad9458e71aa1fa01bc45f94ca6685787bfcb4d98948f72c1b45b60703` | MIT（Høgsberg・Intel・Collabora・Red Hat・Purism） | version 1 |
+| virtual-keyboard-unstable-v1.xml | 同じ wlroots `0.19.2` の `protocol/virtual-keyboard-unstable-v1.xml` | `7ad7870003ecd592cae47dc19d277a609b7f18fd7b7be012623cf3225a7294f5` | MIT（Høgsberg・Intel・Collabora・Purism） | version 1 |
+
+- 確かめた事実: build の host の wayland-protocols 1.44 には input-method の v2 と virtual-keyboard が **無い**（`unstable/input-method/` は
+  v1 だけ）。wlroots の XML は gitlab.freedesktop.org の raw（上の commit）から取得して hash を取った。記述は手書きなので build は XML を要らず、
+  API-PROVENANCE.md の記録（URL・commit・hash）で足りる。
+- text-input-v3 の version: `build/distfiles/wayland-protocols-1.49.tar.xz`（別の package が取得済み、SHA-256 `ec4c8f74…b14`）の版は
+  `zwp_text_input_v3` **version 2**（`action`・`language`・`preedit_hint` の event、`set_available_actions`・`show_input_panel`、
+  content_hint の `preedit_shown` 等、そして「text_input.commit の値は次の `wl_surface.commit` で適用」の二段の適用）を持つ。1.44 は version 1 で、
+  1.49 の中の v1 の部分は 1.44 と同じ意味。zdesktop は manager を **version 1 で広告**し、v2 の二段の適用（surface の commit との同期）は
+  この WS では入れない。`preedit_hint`（注目の文節を示せる）は v2 の利点なので、§7.2 の cursor の範囲で示す方法が足りなければ後で v2 に上げる
+  （Future Work の候補）。
+- 同じ 1.49 の `experimental/xx-input-method/xx-input-method-v2.xml`（`xx_input_method_v1` version 4、keyboard grab が無く popup の positioner を持つ）と
+  `xx-text-input-v3.xml` は、input-method-v2 を wayland-protocols に入れる途中の実験の版で「後方互換の無い変更が予想される、opt-in なしに出すのは
+  勧めない」と書かれている。既存の IME（fcitx5・squeekboard 等）と wlroots・KWin が実装する `zwp_input_method_v2` を選び、xx は使わない。
+- 手書きの記述が protocol に合わせる点（XML から確かめた）: input_method_v2 の `commit(serial)` は「今までの `done` の数」と一致しない時は状態を
+  変えない（zdesktop は done の数を数える）。`set_preedit_string`・`commit_string` の文字列は 4000 byte 以内。1 つの seat に 2 つ目の
+  input_method が作られたら、それには `unavailable` だけを送る。virtual keyboard は **`keymap` の request の前に `key`・`modifiers` を送ると
+  `no_keymap` の protocol error**（IME は grab の `keymap` の event で受けた fd をそのまま virtual keyboard の `keymap` で送る。§4.2）。
+  virtual_keyboard_manager の `unauthorized` の error は §2 の「IME 以外の client」に使う。
 
 | 置き場所 | 内容 |
 | --- | --- |
@@ -75,7 +100,9 @@ wlroots の `protocol/` の revision と SHA-256 を `include/libc/wayland/API-P
    **grab へ**送る（focus の client へは送らない）。
 3. IME は使わない key（直接入力の時の全ての key、変換中でない時の矢印・Ctrl の組み合わせ等）を `zwp_virtual_keyboard_v1.key`・`modifiers` で戻す。
    zdesktop は virtual keyboard の key を **grab を通さずに** focus の client へ送る（zdesktop の shortcut も通さない。二重の処理を防ぐ）。
-   virtual keyboard の keymap は zdesktop の keymap（`keymap.c`）と同じものを使わせ、IME の keymap の差し替えは受けない。
+   protocol は `key` の前に virtual keyboard の `keymap` を要求する（§3.1）ので、IME は grab の `keymap` の event で受けた fd をそのまま送る。
+   zdesktop はその request を受けるが、focus の client への `wl_keyboard.keymap` の再送はせず、zdesktop の keymap（`keymap.c`）を使い続ける
+   （IME による keymap の差し替えは受けない）。
 4. key の repeat は今どおり client の側（`wl_keyboard.repeat_info`）。grab にも repeat_info を送り、IME は変換中の BackSpace・矢印を自分で repeat する。
 
 直接入力の言語の時も key は IME を一度通る（IME が素通しで戻す）。遅延は 1 往復の socket で、zdesktop・IME とも同じ機械の中なので小さいと見込む
