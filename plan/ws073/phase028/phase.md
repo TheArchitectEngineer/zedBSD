@@ -4,7 +4,7 @@ Status: cleared（2026-09-29）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-100](../../bugs/BUG-100.md)
-Queue: [q496](../../history/queue-q496.md)、q496-i01 → [q497](../../history/queue-q497.md)、q497-i01 → [q498](../../history/queue-q498.md)、q498-i01
+Queue: [q496](../../history/queue-q496.md)、q496-i01 → [q497](../../history/queue-q497.md)、q497-i01 → [q498](../../history/queue-q498.md)、q498-i01 → [q499](../../queue.md)、q499-i02
 
 ## 範囲と受け入れ
 
@@ -30,3 +30,7 @@ Resume: 全体 build が必要な時に継続。Noct と Remacs の対象は確�
 ユーザーの指示で `noct-toolchain-smoke` を `toolchain` の依存から外した。`make toolchain-cache` は `accepted build/llvm is already present`。通常の `make` がビルドしていたのは image に入るゲスト用 clang（ユーザーはソースビルドを続けると決定）で、ホスト用 toolchain の再ビルドではない。
 
 `make -j16` はゲスト用 clang の build と stage を終え、`check-amd64-native-image: ...: OK` で完走（`build/codex-make/make-resume.log`）。続く通常の `make` も同じ image の検査まで PASS（`build/codex-make/make-second.log`）。Noct と Remacs の失敗は再発しなかった。外部 LLVM/LLDB source の warning と、未追跡の `userland/noct/` の `clean` rule の重複 warning が残る。QEMU と実機は未実施。q498-i01 cleared。
+
+## 2026-09-29 の旧 Noct checkout 整理（q499-i02）
+
+ユーザーは userland/base/noct/ を正規の場所として再確認。旧 userland/noct/ が残ると、トップレベル Makefile の三階層 wildcard が userland/noct/apps/remacs/Makefile を読み、clean のレシピ衝突 warning を起こした。USERLAND_PACKAGE_MAKEFILES から旧パスを除外し、変更のない旧 submodule checkout を削除した。canonical な target source は userland/base/noct/noct、host source は build/NoctLang。make -qp の展開に旧パスはなく、通常 make PASS、warning なし、git diff --check PASS。既存の host/target Noct 実行ファイルを確認。
