@@ -320,6 +320,8 @@ css_query_parse(
 		css_query_destroy(made);
 		return error;
 	}
+
+	/* The last token is the end of the file. */
 	if (count > 0)
 		count--;
 

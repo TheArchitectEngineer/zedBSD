@@ -835,6 +835,8 @@ geometry_rect_of(
 		status = bind_throw_illegal(realm);
 		return status;
 	}
+
+	/* One the binding made. */
 	object = (struct vm_object *)vm_value_as_cell(value);
 	if (object->kind != VM_KIND_PLATFORM) {
 		status = bind_throw_illegal(realm);
@@ -847,6 +849,8 @@ geometry_rect_of(
 		status = bind_throw_illegal(realm);
 		return status;
 	}
+
+	/* A cell of a rectangle's type. */
 	cell = vm_value_as_cell(object->internal);
 	if (cell->type != &geometry_rect_type) {
 		status = bind_throw_illegal(realm);

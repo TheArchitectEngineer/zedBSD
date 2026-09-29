@@ -49,6 +49,8 @@ static int style_element(struct vm_realm *realm, vm_value this_value, struct dom
 static int style_read(struct vm_realm *realm, struct dom_element *element, struct style_list *list);
 static int style_parse(struct vm_realm *realm, const uint16_t *units, size_t length, struct style_list *list);
 static int style_parse_one(struct vm_realm *realm, const uint16_t *units, size_t start, size_t end, struct style_list *list);
+static void style_trim(const uint16_t *units, size_t *start, size_t *end);
+static int style_strip_important(const uint16_t *units, size_t start, size_t *end);
 static int style_write(struct vm_realm *realm, struct dom_element *element, const struct style_list *list);
 static int style_serialize(const struct style_list *list, struct wb_units *units);
 static int style_find(const struct style_list *list, const struct vm_string *name, uint32_t *index);
@@ -243,6 +245,8 @@ style_element(
 		status = bind_throw_illegal(realm);
 		return status;
 	}
+
+	/* One the binding made. */
 	object = (struct vm_object *)vm_value_as_cell(this_value);
 	if (object->kind != VM_KIND_PLATFORM) {
 		status = bind_throw_illegal(realm);
@@ -370,19 +374,16 @@ style_parse_one(
 	size_t end,
 	struct style_list *list)
 {
-	static const char important_word[] = "important";
 	struct vm_string *name;
 	struct vm_string *value;
 	struct wb_units lower;
 	size_t colon;
+	size_t name_start;
 	size_t name_end;
 	size_t value_start;
-	size_t bang;
 	size_t index;
-	uint16_t unit;
 	int important;
 	int custom;
-	int space;
 	int status;
 
 	/* The colon between the name and the value. */
@@ -392,81 +393,36 @@ style_parse_one(
 	if (colon >= end)
 		return 0;
 
-	/* The name, whitespace trimmed. */
-	while (start < colon) {
-		space = style_is_space(units[start]);
-		if (!space)
-			break;
-		start++;
-	}
+	/* The name and the value, whitespace trimmed, the value without its !important. */
+	name_start = start;
 	name_end = colon;
-	while (name_end > start) {
-		space = style_is_space(units[name_end - 1U]);
-		if (!space)
-			break;
-		name_end--;
-	}
-
-	/* The value, whitespace trimmed. */
+	style_trim(units, &name_start, &name_end);
 	value_start = colon + 1U;
-	while (value_start < end) {
-		space = style_is_space(units[value_start]);
-		if (!space)
-			break;
-		value_start++;
-	}
-	while (end > value_start) {
-		space = style_is_space(units[end - 1U]);
-		if (!space)
-			break;
-		end--;
-	}
-
-	/* A value that ends in !important is important, and loses it. */
-	important = 0;
-	if (end - value_start >= sizeof(important_word)) {
-		bang = end - (sizeof(important_word) - 1U);
-		important = 1;
-		for (index = 0; index + 1U < sizeof(important_word); index++) {
-			unit = units[bang + index];
-			if (unit >= 'A' && unit <= 'Z')
-				unit = (uint16_t)(unit + 0x20U);
-			if (unit != (uint16_t)important_word[index])
-				important = 0;
-		}
-
-		/* The "!" before the word, after optional whitespace. */
-		if (important) {
-			while (bang > value_start && style_is_space(units[bang - 1U]))
-				bang--;
-			if (bang > value_start && units[bang - 1U] == '!') {
-				end = bang - 1U;
-				while (end > value_start && style_is_space(units[end - 1U]))
-					end--;
-			} else {
-				important = 0;
-			}
-		}
-	}
+	style_trim(units, &value_start, &end);
+	important = style_strip_important(units, value_start, &end);
 
 	/* Nothing on either side is no declaration. */
-	if (name_end == start || end == value_start)
+	if (name_end == name_start || end == value_start)
 		return 0;
 
-	/* The name in lower case, but a custom property's as it is. */
-	custom = 0;
-	if (name_end - start >= 2U && units[start] == '-' && units[start + 1U] == '-')
-		custom = 1;
+	/* The name's characters. */
 	wb_units_init(&lower);
-	status = wb_units_append(&lower, units + start, name_end - start);
+	status = wb_units_append(&lower, units + name_start, name_end - name_start);
 	if (status != 0) {
 		wb_units_release(&lower);
 		return status;
 	}
+
+	/* In lower case, but a custom property's as it is. */
+	custom = 0;
+	if (lower.length >= 2U && lower.data[0] == '-' && lower.data[1] == '-')
+		custom = 1;
 	for (index = 0; !custom && index < lower.length; index++) {
 		if (lower.data[index] >= 'A' && lower.data[index] <= 'Z')
 			lower.data[index] = (uint16_t)(lower.data[index] + 0x20U);
 	}
+
+	/* The name's atom. */
 	name = vm_atom_from_units(realm->heap, lower.data, lower.length);
 	wb_units_release(&lower);
 	if (name == NULL)
@@ -482,6 +438,76 @@ style_parse_one(
 	if (status != 0)
 		return status;
 	return 0;
+}
+
+/* Moves the start of a run of characters past its leading whitespace and its end before its trailing whitespace. */
+static void
+style_trim(
+	const uint16_t *units,
+	size_t *start,
+	size_t *end)
+{
+	int space;
+
+	/* The leading whitespace. */
+	while (*start < *end) {
+		space = style_is_space(units[*start]);
+		if (!space)
+			break;
+		(*start)++;
+	}
+
+	/* The trailing whitespace. */
+	while (*end > *start) {
+		space = style_is_space(units[*end - 1U]);
+		if (!space)
+			break;
+		(*end)--;
+	}
+}
+
+/*
+ * Tells whether a trimmed value ends in "!important" (the word in any
+ * case, whitespace allowed after the "!"), and if it does moves its end
+ * before the "!" and the whitespace before it.
+ */
+static int
+style_strip_important(
+	const uint16_t *units,
+	size_t start,
+	size_t *end)
+{
+	static const char word[] = "important";
+	size_t length;
+	size_t bang;
+	size_t index;
+	uint16_t unit;
+
+	/* The value must be long enough for the word and a "!". */
+	length = sizeof(word) - 1U;
+	if (*end - start < length + 1U)
+		return 0;
+
+	/* The word at the end, in any case. */
+	bang = *end - length;
+	for (index = 0; index < length; index++) {
+		unit = units[bang + index];
+		if (unit >= 'A' && unit <= 'Z')
+			unit = (uint16_t)(unit + 0x20U);
+		if (unit != (uint16_t)word[index])
+			return 0;
+	}
+
+	/* The "!" before it, after optional whitespace. */
+	style_trim(units, &start, &bang);
+	if (bang == start || units[bang - 1U] != '!')
+		return 0;
+
+	/* Succeeded: the value ends before the "!" and the whitespace before it. */
+	bang--;
+	style_trim(units, &start, &bang);
+	*end = bang;
+	return 1;
 }
 
 /* Writes declarations to an element's style attribute as other browsers serialize them. */
@@ -503,6 +529,8 @@ style_write(
 		wb_units_release(&units);
 		return status;
 	}
+
+	/* As a string. */
 	text = vm_string_from_units(realm->heap, units.data, units.length);
 	wb_units_release(&units);
 	if (text == NULL)
@@ -1038,6 +1066,8 @@ style_css_text_get(
 		wb_units_release(&units);
 		return status;
 	}
+
+	/* As a string. */
 	text = vm_string_from_units(realm->heap, units.data, units.length);
 	wb_units_release(&units);
 	if (text == NULL)
@@ -1256,13 +1286,19 @@ style_get_property_priority(
 	if (present)
 		important = vm_to_boolean(list.priorities->elements[index]);
 
-	/* Succeeded: the priority's word. */
+	/* The priority's word. */
 	if (important) {
 		status = bind_string(realm, "important", result);
 	} else {
 		status = bind_string(realm, "", result);
 	}
-	return status;
+
+	/* A string that could not be made. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the word. */
+	return 0;
 }
 
 /*
@@ -1408,6 +1444,7 @@ style_member_set(
 	struct vm_string *name;
 	struct vm_string *value;
 	vm_value old_value;
+	vm_value given;
 	int status;
 
 	/* The element and the property. */
@@ -1419,13 +1456,14 @@ style_member_set(
 	name = (struct vm_string *)vm_value_as_cell(callee->data);
 
 	/* Null removes the property, as the empty string does. */
-	if (js_argument(args, count, 0) == VM_VALUE_NULL) {
+	given = js_argument(args, count, 0);
+	if (given == VM_VALUE_NULL) {
 		status = style_remove(realm, element, name, &old_value);
 		return status;
 	}
 
 	/* The value. */
-	status = bind_to_string(realm, js_argument(args, count, 0), &value);
+	status = bind_to_string(realm, given, &value);
 	if (status != 0)
 		return status;
 

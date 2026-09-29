@@ -250,6 +250,8 @@ bind_closest(
 		/* The parent. */
 		walk = walk->parent;
 	}
+
+	/* The list is done with. */
 	css_query_destroy(query);
 
 	/* None matches. */
@@ -441,6 +443,8 @@ query_find(
 		/* The next node. */
 		walk = bind_following(walk, root);
 	}
+
+	/* The list is done with. */
 	css_query_destroy(query);
 
 	/* querySelectorAll's list. */
@@ -552,6 +556,8 @@ query_root(
 		status = bind_throw_illegal(realm);
 		return status;
 	}
+
+	/* A node of another kind has no descendants to search. */
 	if (node->type != DOM_DOCUMENT &&
 	    node->type != DOM_DOCUMENT_FRAGMENT &&
 	    node->type != DOM_ELEMENT) {
@@ -604,6 +610,8 @@ token_list_element(
 		status = bind_throw_illegal(realm);
 		return status;
 	}
+
+	/* One the binding made. */
 	object = (struct vm_object *)vm_value_as_cell(this_value);
 	if (object->kind != VM_KIND_PLATFORM) {
 		status = bind_throw_illegal(realm);
@@ -699,6 +707,8 @@ token_list_write(
 		if (status == 0)
 			status = vm_string_append_units(word, &units);
 	}
+
+	/* A text that could not grow. */
 	if (status != 0) {
 		wb_units_release(&units);
 		return status;
@@ -1177,6 +1187,8 @@ token_list_toggle(
 	} else {
 		status = token_list_remove_at(realm, tokens, index);
 	}
+
+	/* A change that failed. */
 	if (status != 0)
 		return status;
 
@@ -1246,6 +1258,8 @@ token_list_replace(
 		if (new_present && new_index > old_index)
 			status = token_list_remove_at(realm, tokens, new_index);
 	}
+
+	/* A change that failed. */
 	if (status != 0)
 		return status;
 
@@ -1339,6 +1353,8 @@ string_map_name(
 		status = wb_units_append(&units, &unit, 1);
 		index++;
 	}
+
+	/* A name that could not grow. */
 	if (status != 0) {
 		wb_units_release(&units);
 		return status;
@@ -1472,10 +1488,12 @@ query_has_prefix(
 	const char *ascii)
 {
 	size_t index;
+	size_t length;
 	uint16_t unit;
 
 	/* A string shorter than the prefix cannot start with it. */
-	if (string->length < strlen(ascii))
+	length = strlen(ascii);
+	if (string->length < length)
 		return 0;
 
 	/* Each character of the prefix. */
