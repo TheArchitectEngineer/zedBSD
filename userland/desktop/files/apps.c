@@ -55,6 +55,9 @@
 /* How many descriptors a started program closes before it runs (all the window may have open). */
 #define APPS_DESCRIPTORS	1024
 
+/* The picture types Image Viewer reads (it tells them by their first bytes, and reads no others). */
+#define APPS_IMAGE_TYPES	"image/png,image/jpeg,image/gif"
+
 /* The types that read as text for the viewers, beyond text/ itself. */
 #define APPS_TEXT_TYPES		"text/" "*,application/json,application/xml,application/x-shellscript,application/javascript"
 
@@ -71,13 +74,19 @@ struct apps_builtin {
 };
 
 /*
- * The built-in ways, after the lists of the user and the system.  A PDF opens
- * in PDF Viewer (ws079-p006) when it is installed.  Anything the others do
- * not fit is shown by less in a terminal.
+ * The built-in ways, after the lists of the user and the system: the
+ * system's defaults.  Each application opens the kinds it reads when it is
+ * installed (ws093-p002): a PDF in PDF Viewer (ws079-p006), a PNG, JPEG or
+ * GIF picture in Image Viewer (which reads no other kind; the others stay
+ * with Quick Look), an HTML page in the Browser, and text in Text Editor.
+ * Anything the others do not fit is shown by less in a terminal.
  */
 static const struct apps_builtin apps_builtins[] = {
 	{ "application/pdf", "PDF Viewer", "/bin/pdfviewer %f", "pdfviewer" },
+	{ APPS_IMAGE_TYPES, "Image Viewer", "/bin/imageview %f", "imageview" },
 	{ "image/" "*", "Quick Look", "@quicklook", NULL },
+	{ "text/html", "Browser", "/bin/browser %f", "browser" },
+	{ APPS_TEXT_TYPES, "Text Editor", "/bin/textedit %f", "textedit" },
 	{ APPS_TEXT_TYPES, "Terminal (less)", "@terminal less %f", NULL },
 	{ APPS_TEXT_TYPES, "Remacs", "@terminal remacs %f", "remacs" },
 	{ APPS_TEXT_TYPES, "Terminal (ed)", "@terminal ed %f", "ed" },
