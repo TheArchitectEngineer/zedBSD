@@ -7,6 +7,7 @@
 # The compute scenario vkcs is built with I915_TEST_SET=compute (the runner and vkcs only: the test kernel with every
 # scenario is at AMD64_KERNEL_MAX_BYTES), every other scenario with the default set; I915_TEST_SET overrides both.
 # The set goes to both makes (the prebuild and the one inside the lock), or the second would relink the other set.
+# Each run's time limit includes the wait for the lock, which another WS may hold for a while (hence an hour).
 #
 #   plan/ws101/tests/hw/run-hw.sh TAG SCENARIO...        OUT (default build/ws101-hw), I915_HOST (default solaris10-man)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -37,6 +38,6 @@ for s in "$@"; do
 	set=all
 	[ "$s" = vkcs ] && set=compute
 	BUILD=$O/$s I915_HOST=$host I915_TEST_SET=${I915_TEST_SET:-$set} \
-		timeout 1200 plan/ws075/tests/test-hw.sh "$s" "$O/hw-$s-$tag" || status=1
+		timeout 3600 plan/ws075/tests/test-hw.sh "$s" "$O/hw-$s-$tag" || status=1
 done
 exit $status
