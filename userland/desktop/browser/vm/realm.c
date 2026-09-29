@@ -200,6 +200,11 @@ realm_fill(
 	if (realm->array_prototype == NULL)
 		return ENOMEM;
 
+	/* The record of the scripts' top-level let and const, which inherits nothing. */
+	realm->lexicals = vm_object_create(realm->heap, NULL);
+	if (realm->lexicals == NULL)
+		return ENOMEM;
+
 	/* The global object, and globalThis on it. */
 	realm->global = vm_object_create(realm->heap, realm->object_prototype);
 	if (realm->global == NULL)
@@ -258,6 +263,8 @@ realm_trace(
 		vm_heap_mark(heap, &realm->global->cell);
 	vm_heap_mark_value(heap, realm->exception);
 	vm_heap_mark_value(heap, realm->throw_value);
+	if (realm->lexicals != NULL)
+		vm_heap_mark(heap, &realm->lexicals->cell);
 	vm_heap_mark_value(heap, realm->callee);
 	vm_heap_mark_value(heap, realm->new_target);
 

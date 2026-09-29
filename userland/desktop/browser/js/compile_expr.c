@@ -43,6 +43,9 @@ static void expr_new(struct js_function_compiler *fc, struct js_node *node, uint
 static uint32_t expr_arguments(struct js_function_compiler *fc, struct js_node *list, uint32_t *count);
 static void expr_throw_text(struct js_function_compiler *fc, const char *text);
 static struct js_node *expr_unwrap(struct js_node *node);
+static void expr_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_tagged_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_template_strings(struct js_function_compiler *fc, struct js_node *template, uint32_t target);
 static void expr_unsupported(struct js_function_compiler *fc, struct js_node *node);
 
 /*
@@ -144,6 +147,12 @@ js_compile_expression_named(
 		break;
 	case JS_NODE_MEMBER:
 		expr_member(fc, node, target);
+		break;
+	case JS_NODE_TEMPLATE:
+		expr_template(fc, node, target);
+		break;
+	case JS_NODE_TAGGED_TEMPLATE:
+		expr_tagged_template(fc, node, target);
 		break;
 	case JS_NODE_SEQUENCE:
 		/* Each expression in order; the last one's value stays. */
@@ -279,6 +288,171 @@ js_store_target(
 	object = js_temp(fc);
 	js_compile_expression(fc, place, object);
 	expr_throw_text(fc, "ReferenceError: Invalid left-hand side in assignment");
+	fc->temp_top = mark;
+}
+
+/*
+ * Compiles a template literal: its strings and its substitutions (each
+ * converted with ToString) joined in order.
+ */
+static void
+expr_template(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	struct js_node *part;
+	uint32_t mark;
+	uint32_t joined;
+	uint32_t piece;
+	uint32_t constant;
+	int first;
+
+	/* The text so far and the next piece, in temporaries of their own. */
+	mark = fc->temp_top;
+	joined = js_temp(fc);
+	piece = js_temp(fc);
+
+	/* Each part in turn: a string as it is, a substitution converted to a string. */
+	first = 1;
+	for (part = node->first; part != NULL; part = part->next) {
+		if (part->kind == JS_NODE_TEMPLATE_STRING) {
+			constant = js_constant_string(fc, part->text, part->text_length);
+			js_emit2(fc, VM_OP_LOAD_CONST, piece, constant);
+		} else {
+			js_compile_expression(fc, part, piece);
+			js_emit2(fc, VM_OP_TO_STRING, piece, piece);
+		}
+
+		/* The first piece starts the text; each later one is joined to it. */
+		if (first) {
+			js_emit2(fc, VM_OP_MOV, joined, piece);
+			first = 0;
+		} else {
+			js_emit3(fc, VM_OP_ADD, joined, joined, piece);
+		}
+	}
+
+	/* A template without parts is the empty string. */
+	if (first) {
+		constant = js_constant_string(fc, node->text, 0);
+		js_emit2(fc, VM_OP_LOAD_CONST, joined, constant);
+	}
+
+	/* The text is the value. */
+	js_emit2(fc, VM_OP_MOV, target, joined);
+	fc->temp_top = mark;
+}
+
+/*
+ * Compiles a tagged template: the tag is called (with a property's object
+ * as this) with the array of the strings, whose raw property is the array
+ * of their raw texts, and then each substitution's value.
+ */
+static void
+expr_tagged_template(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	struct js_node *tag;
+	struct js_node *part;
+	uint32_t mark;
+	uint32_t function;
+	uint32_t this_value;
+	uint32_t key;
+	uint32_t first;
+	uint32_t count;
+
+	/* The function and this: a property's object, or undefined. */
+	mark = fc->temp_top;
+	function = js_temp(fc);
+	this_value = js_temp(fc);
+	tag = expr_unwrap(node->first);
+	if (tag->kind == JS_NODE_MEMBER) {
+		key = js_temp(fc);
+		expr_member_parts(fc, tag, this_value, key);
+		expr_member_get(fc, tag, this_value, key, function);
+	} else {
+		js_compile_expression(fc, node->first, function);
+		js_load_value(fc, this_value, VM_VALUE_UNDEFINED);
+	}
+
+	/* The arguments' registers, which follow each other: the strings, then one per substitution. */
+	first = fc->temp_top;
+	count = 1;
+	js_temp(fc);
+	for (part = node->second->first; part != NULL; part = part->next) {
+		if (part->kind == JS_NODE_TEMPLATE_STRING)
+			continue;
+		js_temp(fc);
+		count++;
+	}
+
+	/* The strings, then each substitution's value. */
+	expr_template_strings(fc, node->second, first);
+	count = 1;
+	for (part = node->second->first; part != NULL; part = part->next) {
+		if (part->kind == JS_NODE_TEMPLATE_STRING)
+			continue;
+		js_compile_expression(fc, part, first + count);
+		count++;
+	}
+
+	/* The call. */
+	js_emit5(fc, VM_OP_CALL, target, function, this_value, first, count);
+	fc->temp_top = mark;
+}
+
+/*
+ * Makes a tagged template's array of strings: the cooked strings
+ * (undefined for one whose escapes are not valid), with the array of the
+ * raw texts as its raw property.  A new array is made at each call (the
+ * standard keeps one per place in the source, frozen).
+ */
+static void
+expr_template_strings(
+	struct js_function_compiler *fc,
+	struct js_node *template,
+	uint32_t target)
+{
+	static const uint16_t raw_name[] = { 'r', 'a', 'w' };
+	struct js_node *part;
+	uint32_t mark;
+	uint32_t raw;
+	uint32_t value;
+	uint32_t constant;
+
+	/* The two arrays. */
+	mark = fc->temp_top;
+	raw = js_temp(fc);
+	value = js_temp(fc);
+	js_emit1(fc, VM_OP_NEW_ARRAY, target);
+	js_emit1(fc, VM_OP_NEW_ARRAY, raw);
+
+	/* Each string's cooked and raw text. */
+	for (part = template->first; part != NULL; part = part->next) {
+		if (part->kind != JS_NODE_TEMPLATE_STRING)
+			continue;
+
+		/* The cooked text, or undefined. */
+		if ((part->flags & JS_FLAG_INVALID_COOKED) != 0U) {
+			js_load_value(fc, value, VM_VALUE_UNDEFINED);
+		} else {
+			constant = js_constant_string(fc, part->text, part->text_length);
+			js_emit2(fc, VM_OP_LOAD_CONST, value, constant);
+		}
+		js_emit2(fc, VM_OP_ARRAY_PUSH, target, value);
+
+		/* The raw text. */
+		constant = js_constant_string(fc, part->raw, part->raw_length);
+		js_emit2(fc, VM_OP_LOAD_CONST, value, constant);
+		js_emit2(fc, VM_OP_ARRAY_PUSH, raw, value);
+	}
+
+	/* The raw texts on the strings. */
+	constant = js_constant_key(fc, raw_name, 3);
+	js_emit3(fc, VM_OP_DEFINE_PROP, target, constant, raw);
 	fc->temp_top = mark;
 }
 

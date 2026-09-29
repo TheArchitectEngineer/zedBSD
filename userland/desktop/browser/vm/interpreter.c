@@ -86,6 +86,7 @@ static int interpreter_construct(struct interpreter *run, const uint32_t *words,
 static int interpreter_for_in_next(struct interpreter *run, const uint32_t *words, vm_value *registers, uint32_t next);
 static int interpreter_return(struct interpreter *run, vm_value value);
 static int interpreter_unwind(struct interpreter *run);
+static int interpreter_throw_error(struct vm_realm *realm, uint32_t kind, vm_value message);
 static struct vm_function *interpreter_function(const struct vm_realm *realm, uint32_t base);
 static int interpreter_is_strict(const struct interpreter *run);
 static double interpreter_f64(vm_value bits);
@@ -503,6 +504,8 @@ interpreter_step_js(
 	case VM_OP_FOR_IN_START:
 	case VM_OP_TO_PROPERTY_KEY:
 	case VM_OP_NEW_REGEXP:
+	case VM_OP_TO_STRING:
+	case VM_OP_LOAD_EMPTY:
 		status = interpreter_property(run, words, registers);
 		return status;
 	default:
@@ -685,6 +688,7 @@ interpreter_property(
 {
 	struct vm_realm *realm;
 	struct vm_object *object;
+	struct vm_string *string;
 	vm_value literal[2];
 	vm_value value;
 	vm_value key;
@@ -813,6 +817,17 @@ interpreter_property(
 		literal[1] = run->code->constants[words[3]];
 		status = vm_construct(realm, value, literal, 2, value, &value);
 		break;
+	case VM_OP_TO_STRING:
+		/* ToString: a template's substitution. */
+		status = vm_to_string(realm, registers[words[2]], &string);
+		if (status == 0)
+			value = vm_value_cell(string);
+		break;
+	case VM_OP_LOAD_EMPTY:
+		/* The mark of a let or const binding whose declaration has not run. */
+		value = VM_VALUE_EMPTY;
+		status = 0;
+		break;
 	default:
 		return EINVAL;
 	}
@@ -866,6 +881,24 @@ interpreter_scope(
 	case VM_OP_DELETE_GLOBAL:
 		status = vm_delete_global(realm, run->code->constants[words[2]], &value);
 		break;
+	case VM_OP_CHECK_INIT:
+		/* A let or const binding read or written before its declaration ran. */
+		if (registers[words[1]] == VM_VALUE_EMPTY) {
+			status = vm_throw_uninitialized(realm, run->code->constants[words[2]]);
+			return status;
+		}
+
+		/* An initialized binding goes on. */
+		return 0;
+	case VM_OP_THROW_ERROR:
+		status = interpreter_throw_error(realm, words[1], run->code->constants[words[2]]);
+		return status;
+	case VM_OP_DEFINE_GLOBAL_LEXICAL:
+		status = vm_define_global_lexical(realm, run->code->constants[words[1]], words[2] != 0U);
+		return status;
+	case VM_OP_INIT_GLOBAL_LEXICAL:
+		status = vm_init_global_lexical(realm, run->code->constants[words[1]], registers[words[2]]);
+		return status;
 	case VM_OP_NEW_ENV:
 		/* The parent is an environment or undefined. */
 		status = interpreter_env(registers[words[2]], 0, 0, &place);
@@ -1321,6 +1354,32 @@ interpreter_unwind(
 		function = interpreter_function(realm, run->base);
 		run->code = function->code;
 	}
+}
+
+/* Throws a new error of a kind (enum vm_error_kind) with a message (a string constant). */
+static int
+interpreter_throw_error(
+	struct vm_realm *realm,
+	uint32_t kind,
+	vm_value message)
+{
+	struct wb_buffer text;
+	int status;
+
+	/* The message as UTF-8. */
+	wb_buffer_init(&text);
+	status = vm_string_to_utf8((struct vm_string *)vm_value_as_cell(message), &text);
+	if (status != 0) {
+		wb_buffer_release(&text);
+		return status;
+	}
+
+	/* The error. */
+	status = vm_throw_error(realm, (int)kind, wb_buffer_string(&text));
+	wb_buffer_release(&text);
+
+	/* Reports the throw. */
+	return status;
 }
 
 /* Reports the function a frame runs. */

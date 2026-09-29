@@ -54,6 +54,7 @@ static int operation_compare(struct vm_realm *realm, vm_value left, vm_value rig
 static int operation_throw_text(struct vm_realm *realm, const char *text);
 static double operation_power(double base, double exponent);
 static int32_t operation_shift_signed(int32_t number, uint32_t count);
+static int operation_name_message(vm_value key, const char *format, char *text, size_t size);
 
 /*
  * Converts a value to a truth value (ToBoolean).
@@ -951,30 +952,60 @@ vm_throw_not_defined(
 	struct vm_realm *realm,
 	vm_value key)
 {
-	struct wb_buffer name;
-	struct vm_string *string;
 	char text[200];
-	int is_string;
 	int status;
 
-	/* The name as UTF-8 (a key here is a name, never a symbol). */
-	wb_buffer_init(&name);
-	is_string = vm_value_is_string(key);
-	if (is_string) {
-		string = (struct vm_string *)vm_value_as_cell(key);
-		status = vm_string_to_utf8(string, &name);
-		if (status != 0) {
-			wb_buffer_release(&name);
-			return status;
-		}
-	}
-
-	/* The message, the name cut short when it is long. */
-	snprintf(text, sizeof(text), "%.120s is not defined", wb_buffer_string(&name));
-	wb_buffer_release(&name);
-	status = vm_throw_reference_error(realm, text);
+	/* The message with the name. */
+	status = operation_name_message(key, "%.120s is not defined", text, sizeof(text));
+	if (status != 0)
+		return status;
 
 	/* Reports the throw. */
+	status = vm_throw_reference_error(realm, text);
+	return status;
+}
+
+/*
+ * Throws the ReferenceError of a let or const binding (a name, the key)
+ * read or written before its declaration ran.
+ */
+int
+vm_throw_uninitialized(
+	struct vm_realm *realm,
+	vm_value key)
+{
+	char text[200];
+	int status;
+
+	/* The message with the name, as Chromium writes it. */
+	status = operation_name_message(key, "Cannot access '%.120s' before initialization", text, sizeof(text));
+	if (status != 0)
+		return status;
+
+	/* Reports the throw. */
+	status = vm_throw_reference_error(realm, text);
+	return status;
+}
+
+/*
+ * Throws the SyntaxError of a let or const declaring a name a script has
+ * declared already (a name, the key).
+ */
+int
+vm_throw_redeclared(
+	struct vm_realm *realm,
+	vm_value key)
+{
+	char text[200];
+	int status;
+
+	/* The message with the name, as Chromium writes it. */
+	status = operation_name_message(key, "Identifier '%.120s' has already been declared", text, sizeof(text));
+	if (status != 0)
+		return status;
+
+	/* Reports the throw. */
+	status = vm_throw_error(realm, VM_ERROR_SYNTAX, text);
 	return status;
 }
 
@@ -1429,4 +1460,37 @@ operation_throw_text(
 
 	/* Reports the throw. */
 	return status;
+}
+
+/* Writes a message that names a variable (the key, a string) into text with a format that has one %s. */
+static int
+operation_name_message(
+	vm_value key,
+	const char *format,
+	char *text,
+	size_t size)
+{
+	struct wb_buffer name;
+	struct vm_string *string;
+	int is_string;
+	int status;
+
+	/* The name as UTF-8 (a key here is a name, never a symbol). */
+	wb_buffer_init(&name);
+	is_string = vm_value_is_string(key);
+	if (is_string) {
+		string = (struct vm_string *)vm_value_as_cell(key);
+		status = vm_string_to_utf8(string, &name);
+		if (status != 0) {
+			wb_buffer_release(&name);
+			return status;
+		}
+	}
+
+	/* The message, the name cut short when it is long. */
+	snprintf(text, size, format, wb_buffer_string(&name));
+	wb_buffer_release(&name);
+
+	/* Succeeded: the message is written. */
+	return 0;
 }
