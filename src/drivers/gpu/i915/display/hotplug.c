@@ -694,6 +694,8 @@ drv_i915_hpd_probe_connector(
 {
 	struct i915_hpd_world *world;
 	struct intel_connector *ic;
+	u32 pin_bit;
+	u32 isr;
 	int status;
 
 	/* Refuses a path that is not running and a connector it does not have. */
@@ -710,6 +712,17 @@ drv_i915_hpd_probe_connector(
 	status = i915_hpd_drm_helper_probe_detect(&ic->base, NULL, false);
 	if (!ic->base.force)
 		ic->base.status = status;
+
+	/*
+	 * The live status the detection went by (ws084: on bare metal the HDMI
+	 * sink was not found while the passthrough guest found it).
+	 */
+	isr = drv_i915_hpd_read(world, I915_HPD_REG_SDEISR);
+	pin_bit = 0u;
+	if (ic->encoder != NULL)
+		pin_bit = world->hpd_i915.display.hotplug.pch_hpd[ic->encoder->hpd_pin];
+	kern_logf("i915: hpd probe %s: status %d, SDEISR 0x%08x (pin bit 0x%08x: %s)\n",
+	    world->hpd_conn_names[idx], status, isr, pin_bit, (isr & pin_bit) != 0u ? "live" : "not live");
 
 	mutex_unlock(&world->hpd_i915.drm.mode_config.mutex);
 

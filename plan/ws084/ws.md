@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし（main が実装、2026-09-29 ユーザーの指示）
-Resume point: p002（2026-09-29 午後）の修正を実装、image `build/demo-hdmi4/hdd-image.img`。実機の再試験はユーザー待ち
+Resume point: p002 の 2 回目の修正（combo PHY の PLL の readout、HDMI の live status の log）、image `build/demo-hdmi5/hdd-image.img`。実機の再試験はユーザー待ち
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -67,3 +67,14 @@ HDMI の LCD に出る。
 - `output.c`: `display=hdmi` のとき、未接続（EAGAIN）なら 250 ms ごとに最大 6 秒 probe をやり直す（USB 給電の LCD の controller が EDID に答えるまで）。`display=auto` は待たない。
 - 検証: kernel と image の build（warning 0）、`plan/ws075/tests/hdmi/host-output-test.sh` 80 checks 0 failures（host の `<time.h>` を先に読む flag を足した）、
   QEMU の boot test PASS（`build/ws084-boot-test/login.png`、sshd 起動）。実機: 未実施。
+
+### p002 の 2 回目（2026-09-29、demo-hdmi4 の実機の dmesg）
+
+- well は残った（P7 で `DDI_IO_A hw_enabled=1`）が、takeover の stop はまだ `pipe_off wait timed out`、readout は `DPLL-1 ... 0 kHz`。
+  原因: takeover の readout が encoder に `intel_ddi_get_config` を結び、combo PHY の `icl_ddi_combo_get_config`（PLL を読む）を結んでいなかった
+  （`ddi.c` の「XXX: never bound」）。crtc の state に PLL が無いので sanitize が firmware の DPLL1 を止め、clock を失った pipe A が止まれない。
+  parity の実機の run は preflight が RUNNING を通していたので表に出なかったと見る（推測）。
+- 修正: `ddi.c` `drv_i915_lcd_ms_bind_readout` が combo PHY の port に `i915_icl_ddi_combo_get_config` を結ぶ（Linux の intel_ddi_init と同じ）。
+- HDMI: 6 秒の再試験でも未接続。hotplug の割込みは DDI A だけで DDI B は無い。`hotplug.c` `drv_i915_hpd_probe_connector` が毎回 SDEISR と pin の bit を log に出す
+  （live status が立たないのか、EDID が読めないのかを分ける）。
+- 検証: build（warning 0）、QEMU の boot test PASS（`build/ws084-boot-test5/login.png`）。kernel 内の hotplug の試験（`tests/display/hpd-ktest.c` 等）は build の道具が無く未実施。実機: 未実施。
