@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p006（SLM・barrier・fence・SLM の atomic、試験の build の分割 I915_TEST_SET）cleared（2026-09-30。vkcs 15/15、回帰 vkx・vke1・vke2・vkc PASS）。次は p007（indirect・0 の group・LENGTH・MANY）と p008（GLSL ES 3.10）。判断 D1〜D5 は design.md §7
+Resume point: p008（GLSL ES 3.10 の compute、自前の GLSL compiler → SPIR-V）cleared（2026-09-30。host の試験 PASS: spirv-val・i915 の host の compile と disasm/asm・lavapipe の実行・拒否）。次は p009（libglesv2・libegl の ES 3.1 の compute の API。D1 が未決なら既定の案で進める、main の指示）、その後 p007。判断 D1〜D5 は design.md §7
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -62,7 +62,7 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | [ws101-p005](phase005/phase.md) | 実機の bring-up と kernel の試験の場面 `vkcs`（ADD・ID・ODD・PUSH・ATOMIC-SSBO・MIXED・MANYOPS・SPILL）。eu-test の 1 thread の設定から段階的に（design §2.6・§5.1） | cleared（2026-09-30。5330 の passthrough で vkcs 9/9 PASS、回帰 vkx・vke1・vke2・vkc PASS。試験の kernel の大きさの残りが 6.6 KB） | p004 |
 | [ws101-p006](phase006/phase.md) | SLM・barrier・fence・SLM の atomic（IR・parser・EU、barrier の一様性の検査）、binary の SLM・barrier と IDD の field（p004 の XXX）、vkcs の SHARED・REDUCE・ODD-BARRIER・ATOMIC-SHARED・LOOP・REFUSE | cleared（2026-09-30。試験の build の分割（I915_TEST_SET、main の判断）、5330 の passthrough で vkcs 15/15 PASS、回帰 PASS） | p005 |
 | ws101-p007 | vkCmdDispatchIndirect（111）、0 の group、vkcs の INDIRECT・LENGTH・MANY、G1 の passthrough での受け入れの run（design §2.5） | planned | p006 |
-| ws101-p008 | GLSL ES 3.10 の compute（版・stage・SSBO std430・shared・built-in・barrier と規則・atomic・`.length()` → SPIR-V）、Noct の shader の形の fixture。host の試験（design §3.2） | planned | p001（p002〜p007 と並行できる）、D4（main の記録） |
+| [ws101-p008](phase008/phase.md) | GLSL ES 3.10 の compute（版・stage・SSBO std430・shared・built-in・barrier と規則・atomic・`.length()` → SPIR-V）、Noct の shader の形の fixture。host の試験（design §3.2） | cleared（2026-09-30。host の試験 PASS。WS068 の glsl-host の fail/version.vert（310 es は未対応を期待）の更新を main に依頼） | p001（p002〜p007 と並行できる）、D4（main の記録） |
 | ws101-p009 | libglesv2・libegl の ES 3.1 の compute の API（design §3.3）、`gl31.h`、export と stub、版の名乗り（D1）、libGL への漏れの分離、GLES の compute の試験の program。Venus で G2 | planned | p008、D1 |
 | ws101-p010 | GLES の compute の i915 での G2（passthrough）。基本は p005 の後、shared・barrier は p006、indirect は p007 の後 | planned | p009、p005（p006・p007 の分は後） |
 | ws101-p011 | Noct: toolchain の部分（design §4.1）は main が D2 の許可の後に行う。WS101 の分は G3 の見本（`mix.nct`、N = 4,000,000）、型名と offload の確認、CPU の時間の先の測定、Venus で正しさ、5330 の passthrough で正しさと時間（design §4.2） | planned | p010、D2、D3、D5 |

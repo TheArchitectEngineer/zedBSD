@@ -1,0 +1,50 @@
+#version 310 es
+precision highp float;
+precision highp int;
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// ws101-p008: the other shapes of Noct's accel_shader_source.c (GLES target): a kernel reading the
+// result word an earlier kernel summed into, unsigned and signed arithmetic, shifts and bit operations,
+// the six signed comparisons into bools and selections by them.
+layout(std430, binding = 0) buffer NoctBuffer0 { uint word[]; } noct_buffer_0;
+layout(std430, binding = 1) buffer NoctBuffer1 { uint word[]; } noct_buffer_1;
+layout(std430, binding = 2) readonly buffer NoctScalarBlock { uint word[]; } noct_scalar;
+layout(std430, binding = 3) coherent buffer NoctResultBlock { uint word[]; } noct_result;
+
+void main(void)
+{
+	uint noct_lane = gl_GlobalInvocationID.x;
+	uint noct_start = noct_scalar.word[1u];
+	uint noct_trip = noct_scalar.word[2u];
+	if (noct_lane >= noct_trip)
+		return;
+	// noct_start is supplied for the shared start/trip ABI; typed IR uses the lane.
+	uint v0 = noct_lane;
+	uint v1 = noct_buffer_0.word[v0];
+	uint v2 = noct_result.word[0u];
+	uint v3 = noct_scalar.word[0u];
+	uint v4 = v1 + v2;
+	uint v5 = v4 - v3;
+	uint v6 = v5 * 0x9E3779B1u;
+	uint v7 = v6 / v3;
+	uint v8 = v6 % v3;
+	uint v9 = v6 << 3u;
+	uint v10 = v6 >> 7u;
+	uint v11 = (v9 & v10) | (v9 ^ v8);
+	uint v12 = uint(int(v11) / int(v3));
+	uint v13 = uint(int(v11) % int(v3));
+	bool v14 = int(v12) < int(v13);
+	bool v15 = int(v12) <= int(v7);
+	bool v16 = int(v11) > int(v1);
+	bool v17 = int(v11) >= int(v2);
+	bool v18 = v8 == v13;
+	bool v19 = v7 != v12;
+	uint v20 = v14 ? v12 : v13;
+	uint v21 = v15 ? 1u : 0u;
+	uint v22 = v16 ? 2u : 0u;
+	uint v23 = v17 ? 4u : 0u;
+	uint v24 = v18 ? 8u : 0u;
+	uint v25 = v19 ? 16u : 0u;
+	noct_buffer_1.word[v0] = v20 ^ (v21 | v22 | v23 | v24 | v25);
+	atomicAdd(noct_result.word[1u], v21 + v22 + v23 + v24 + v25);
+}

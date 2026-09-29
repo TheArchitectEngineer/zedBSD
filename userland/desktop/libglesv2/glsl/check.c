@@ -55,6 +55,11 @@ static void check_interface(struct glsl_shader *shader, struct glsl_node *node);
 static void check_default_layout(struct glsl_shader *shader, struct glsl_node *node);
 static const struct glsl_type *check_geometry_input(struct glsl_shader *shader, const struct glsl_type *type, unsigned line);
 static void check_uniform_block(struct glsl_shader *shader, struct glsl_node *node);
+static void check_storage_block(struct glsl_shader *shader, struct glsl_node *node);
+static void check_local_size(struct glsl_shader *shader, struct glsl_node *node);
+static void check_compute_call(struct glsl_shader *shader, struct glsl_node *node);
+static struct glsl_symbol *check_memory_root(struct glsl_node *node);
+static int check_buffer_readonly(const struct glsl_symbol *symbol);
 static const struct glsl_type *check_block_type(struct glsl_shader *shader, struct glsl_node *node, unsigned storage);
 static void check_block_variable(struct glsl_shader *shader, const char *name, const struct glsl_type *type, unsigned where, unsigned interpolation, unsigned line);
 static void check_location(struct glsl_shader *shader, struct glsl_node *type_node, struct glsl_symbol *symbol, unsigned line);
@@ -149,6 +154,10 @@ glsl_check(
 
 	/* Succeeded: main. */
 	shader->main = function;
+
+	/* A compute shader says its workgroup size (ws101-p008). */
+	if (shader->stage == GLSL_STAGE_COMPUTE && shader->local_size[0] == 0U)
+		glsl_error(shader, 0U, "a compute shader needs its workgroup size ('layout(local_size_x = 64) in;')");
 
 	/* A geometry shader says its primitives and how many vertices it emits. */
 	if (shader->stage == GLSL_STAGE_GEOMETRY) {
@@ -445,6 +454,12 @@ check_interface(
 		return;
 	}
 
+	/* A shader storage block (ws101-p008). */
+	if (storage == GLSL_STORAGE_BUFFER) {
+		check_storage_block(shader, node);
+		return;
+	}
+
 	/* in and out blocks came with desktop GLSL 1.50: out of the vertex shader, into the fragment shader. */
 	allowed = glsl_since(shader, GLSL_VERSION_150, 0U);
 	if (!allowed) {
@@ -512,8 +527,14 @@ check_default_layout(
 	struct glsl_symbol *in;
 	unsigned primitive;
 
-	/* A layout of primitives or vertices, in a geometry shader. */
+	/* A compute shader's workgroup size (ws101-p008). */
 	type_node = node->child[0];
+	if ((type_node->layout & GLSL_LAYOUT_LOCAL_SIZE) != 0U) {
+		check_local_size(shader, node);
+		return;
+	}
+
+	/* A layout of primitives or vertices, in a geometry shader. */
 	if ((type_node->layout & (GLSL_LAYOUT_PRIMITIVE | GLSL_LAYOUT_MAX_VERTICES)) == 0U)
 		return;
 	if (shader->stage != GLSL_STAGE_GEOMETRY) {
@@ -735,8 +756,20 @@ check_block_type(
 			has_sampler = glsl_type_contains_sampler(field_type);
 			if (has_sampler)
 				glsl_error(shader, variable->line, "samplers cannot be block members");
-			if (storage != GLSL_STORAGE_UNIFORM && field_type->kind != GLSL_KIND_ARRAY && field_type->base == GLSL_BASE_BOOL)
+			if (storage != GLSL_STORAGE_UNIFORM &&
+			    storage != GLSL_STORAGE_BUFFER &&
+			    field_type->kind != GLSL_KIND_ARRAY &&
+			    field_type->base == GLSL_BASE_BOOL)
 				glsl_error(shader, variable->line, "inputs and outputs cannot be bools");
+
+			/* A run-time array only as a storage block's last member (ws101-p008). */
+			if (field_type->kind == GLSL_KIND_ARRAY && field_type->length == 0U &&
+			    (storage != GLSL_STORAGE_BUFFER || variable->next != NULL || member->next != NULL))
+				glsl_error(shader, variable->line, "only a storage block's last member can be an array without a size");
+
+			/* Memory qualifiers qualify the block, not its members (ws101-p008). */
+			if (member->child[0]->memory != 0U)
+				glsl_error(shader, variable->line, "memory qualifiers on block members are not supported (qualify the block)");
 			if (storage == GLSL_STORAGE_IN &&
 			    shader->stage == GLSL_STAGE_FRAGMENT &&
 			    field_type->kind != GLSL_KIND_ARRAY &&
@@ -1147,6 +1180,29 @@ check_where(
 		return GLSL_VAR_LOCAL;
 	}
 
+	/* Memory qualifiers and a binding are for storage blocks (ws101-p008). */
+	if (type_node->memory != 0U)
+		glsl_error(shader, line, "memory qualifiers apply to buffer blocks");
+	if ((type_node->layout & GLSL_LAYOUT_BINDING) != 0U)
+		glsl_error(shader, line, "layout(binding) is supported on buffer blocks only");
+
+	/* A compute shader's shared variable (ws101-p008); a compute shader has no inputs or outputs of its own. */
+	if (storage == GLSL_STORAGE_SHARED) {
+		if (shader->stage != GLSL_STAGE_COMPUTE)
+			glsl_error(shader, line, "shared variables exist only in compute shaders");
+		if (glsl_type_contains_sampler(type))
+			glsl_error(shader, line, "a shared variable cannot hold a sampler");
+		return GLSL_VAR_SHARED;
+	}
+	if (storage == GLSL_STORAGE_BUFFER) {
+		glsl_error(shader, line, "buffer variables must be members of a buffer block");
+		return GLSL_VAR_GLOBAL;
+	}
+	if (shader->stage == GLSL_STAGE_COMPUTE && (storage == GLSL_STORAGE_IN || storage == GLSL_STORAGE_OUT)) {
+		glsl_error(shader, line, "a compute shader has no inputs or outputs");
+		return GLSL_VAR_GLOBAL;
+	}
+
 	/* The storage qualifiers at global scope. */
 	switch (storage) {
 	case GLSL_STORAGE_NONE:
@@ -1258,6 +1314,12 @@ check_initializer(
 	/* Inputs and outputs have none; uniforms from desktop 1.20. */
 	if (symbol->where == GLSL_VAR_INPUT || symbol->where == GLSL_VAR_OUTPUT) {
 		glsl_error(shader, variable->line, "inputs and outputs cannot be initialized");
+		return;
+	}
+
+	/* Nor have shared variables (ws101-p008). */
+	if (symbol->where == GLSL_VAR_SHARED) {
+		glsl_error(shader, variable->line, "shared variables cannot be initialized");
 		return;
 	}
 
@@ -1593,17 +1655,23 @@ check_statement(
 		break;
 	case GLSL_N_IF:
 		check_condition(shader, node->child[0]);
+		shader->control_depth++;
 		check_scoped(shader, node->child[1], breakables);
 		if (node->child[2] != NULL)
 			check_scoped(shader, node->child[2], breakables);
+		shader->control_depth--;
 		break;
 	case GLSL_N_FOR:
 	case GLSL_N_WHILE:
 	case GLSL_N_DO:
+		shader->control_depth++;
 		check_loop(shader, node, breakables);
+		shader->control_depth--;
 		break;
 	case GLSL_N_SWITCH:
+		shader->control_depth++;
 		check_switch(shader, node, breakables);
+		shader->control_depth--;
 		break;
 	case GLSL_N_CASE:
 	case GLSL_N_DEFAULT:
@@ -1839,6 +1907,10 @@ check_return(
 		glsl_error(shader, node->line, "return outside a function");
 		return;
 	}
+
+	/* A barrier() after a return of main is an error (ws101-p008). */
+	if (strcmp(shader->current->name, "main") == 0)
+		shader->returned = 1U;
 
 	/* The function's return type. */
 	expected = shader->current->return_type;
@@ -2871,9 +2943,10 @@ check_builtin_call(
 			if (!matched)
 				continue;
 
-			/* The built-in, its arguments converted. */
+			/* The built-in, its arguments converted; a compute shader's atomics and barriers have rules of their own. */
 			node->builtin = builtin;
 			check_convert_arguments(shader, node, parameters);
+			check_compute_call(shader, node);
 			return result;
 		}
 	}
@@ -3055,6 +3128,10 @@ check_length(
 		return glsl_type_error();
 	}
 
+	/* A run-time array's length is known when the shader runs: an int, not a constant (ws101-p008). */
+	if (type->length == 0U)
+		return glsl_type_scalar(GLSL_BASE_INT);
+
 	/* The length as a constant. */
 	value = glsl_constant_new(&shader->arena, glsl_type_scalar(GLSL_BASE_INT));
 	value->values[0].u = type->length;
@@ -3209,6 +3286,12 @@ check_lvalue(
 		return -1;
 	}
 
+	/* Nor is a readonly storage block (ws101-p008). */
+	if ((symbol->where == GLSL_VAR_BUFFER || symbol->where == GLSL_VAR_BUFFER_MEMBER) && check_buffer_readonly(symbol)) {
+		glsl_error(shader, node->line, "%s cannot write '%s', which is in a readonly buffer", what, symbol->name);
+		return -1;
+	}
+
 	/* Nor are sampler parameters. */
 	if (symbol->where == GLSL_VAR_PARAMETER && symbol->type->kind == GLSL_KIND_SAMPLER) {
 		glsl_error(shader, node->line, "%s cannot write sampler '%s'", what, symbol->name);
@@ -3323,3 +3406,240 @@ check_use_function(
 	function->visiting = 0U;
 	function->visited = 1U;
 }
+
+/*
+ * Checks a shader storage block (GLSL ES 3.10, ws101-p008): a compute
+ * shader's, std430 (the only layout), its binding below
+ * GLSL_STORAGE_BINDINGS, and its instance name or its members as names of
+ * their own, as a uniform block's.
+ */
+static void
+check_storage_block(
+	struct glsl_shader *shader,
+	struct glsl_node *node)
+{
+	struct glsl_node *type_node;
+	struct glsl_node *instance;
+	struct glsl_symbol *block;
+	struct glsl_symbol *member;
+	const struct glsl_type *type;
+	unsigned binding;
+	unsigned index;
+	int allowed;
+
+	/* OpenGL ES 3.10's, in a compute shader. */
+	type_node = node->child[0];
+	allowed = glsl_since(shader, 0U, GLSL_VERSION_ES310);
+	if (!allowed) {
+		glsl_error(shader, node->line, "buffer blocks need OpenGL ES 3.10");
+		return;
+	}
+	if (shader->stage != GLSL_STAGE_COMPUTE) {
+		glsl_error(shader, node->line, "buffer blocks are supported in compute shaders only");
+		return;
+	}
+
+	/* std430 (the default of a buffer block), not std140, shared or packed, and no row-major matrices. */
+	if ((type_node->layout & (GLSL_LAYOUT_STD140 | GLSL_LAYOUT_SHARED | GLSL_LAYOUT_PACKED)) != 0U)
+		glsl_error(shader, node->line, "buffer blocks are laid out std430 only");
+	if ((type_node->layout & GLSL_LAYOUT_ROW_MAJOR) != 0U)
+		glsl_error(shader, node->line, "row-major matrices in buffer blocks are not supported");
+
+	/* The binding, 0 unless the layout gives one. */
+	binding = 0U;
+	if ((type_node->layout & GLSL_LAYOUT_BINDING) != 0U)
+		binding = type_node->binding;
+	if (binding >= GLSL_STORAGE_BINDINGS) {
+		glsl_error(shader, node->line, "a buffer block's binding must be below %u", GLSL_STORAGE_BINDINGS);
+		return;
+	}
+
+	/* The struct, and no arrays of blocks. */
+	type = check_block_type(shader, node, GLSL_STORAGE_BUFFER);
+	instance = node->child[2];
+	if (instance != NULL && (instance->flags & GLSL_NODE_ARRAY) != 0U) {
+		glsl_error(shader, node->line, "arrays of buffer blocks are not supported");
+		return;
+	}
+	for (index = 0U; index < type->field_count; index++) {
+		if (type->fields[index].row_major)
+			glsl_error(shader, node->line, "row-major matrices in buffer blocks are not supported");
+	}
+
+	/* The block's symbol: the instance, or one without a scope named by the block. */
+	if (instance != NULL) {
+		check_reserved_name(shader, instance->name, node->line);
+		block = glsl_declare(shader, instance->name, GLSL_SYMBOL_VARIABLE, node->line);
+		if (block->type != NULL)
+			return;
+	} else {
+		block = glsl_alloc(&shader->arena, sizeof(*block));
+		block->name = node->name;
+		block->kind = GLSL_SYMBOL_VARIABLE;
+		block->line = node->line;
+		block->explicit_location = GLSL_NO_LOCATION;
+	}
+
+	/* A buffer at its binding, with its memory qualifiers. */
+	block->type = type;
+	block->where = GLSL_VAR_BUFFER;
+	block->storage = GLSL_STORAGE_BUFFER;
+	block->memory = type_node->memory;
+	block->layout_binding = binding;
+	glsl_add_global(shader, block);
+	if (instance != NULL)
+		return;
+
+	/* Each member a name of its own, in the block. */
+	for (index = 0U; index < type->field_count; index++) {
+		check_reserved_name(shader, type->fields[index].name, node->line);
+		member = glsl_declare(shader, type->fields[index].name, GLSL_SYMBOL_VARIABLE, node->line);
+		if (member->type != NULL)
+			continue;
+		member->type = type->fields[index].type;
+		member->where = GLSL_VAR_BUFFER_MEMBER;
+		member->storage = GLSL_STORAGE_BUFFER;
+		member->block = block;
+		member->member = index;
+	}
+}
+
+/*
+ * Checks "layout(local_size_x = X, local_size_y = Y, local_size_z = Z)
+ * in;" (ws101-p008): a compute shader's, each size at least 1 (1 when not
+ * given) and at most OpenGL ES 3.10's guaranteed 128, 128 and 64 with 128
+ * invocations in all, declared once (or again the same); gl_WorkGroupSize
+ * takes it.
+ */
+static void
+check_local_size(
+	struct glsl_shader *shader,
+	struct glsl_node *node)
+{
+	static const unsigned limits[3] = { 128U, 128U, 64U };
+	struct glsl_node *type_node;
+	struct glsl_symbol *size;
+	unsigned values[3];
+	unsigned axis;
+
+	/* A compute shader's input layout. */
+	type_node = node->child[0];
+	if (shader->stage != GLSL_STAGE_COMPUTE || type_node->storage != GLSL_STORAGE_IN) {
+		glsl_error(shader, node->line, "a workgroup size is a compute shader's input layout ('layout(local_size_x = 64) in;')");
+		return;
+	}
+
+	/* Each size, 1 unless given, within the limits. */
+	for (axis = 0U; axis < 3U; axis++) {
+		values[axis] = type_node->local_size[axis];
+		if (values[axis] == 0U)
+			values[axis] = 1U;
+		if (values[axis] > limits[axis]) {
+			glsl_error(shader, node->line, "a workgroup size along an axis is at most 128, 128 and 64");
+			return;
+		}
+	}
+	if (values[0] * values[1] * values[2] > 128U) {
+		glsl_error(shader, node->line, "a workgroup has at most 128 invocations");
+		return;
+	}
+
+	/* Declared once, or again the same. */
+	if (shader->local_size[0] != 0U &&
+	    (shader->local_size[0] != values[0] || shader->local_size[1] != values[1] || shader->local_size[2] != values[2])) {
+		glsl_error(shader, node->line, "the workgroup size is declared twice, differently");
+		return;
+	}
+
+	/* The size, and gl_WorkGroupSize's value. */
+	for (axis = 0U; axis < 3U; axis++)
+		shader->local_size[axis] = values[axis];
+	size = check_lookup(shader, "gl_WorkGroupSize");
+	if (size != NULL && size->constant != NULL && size->constant->count >= 3U) {
+		for (axis = 0U; axis < 3U; axis++)
+			size->constant->values[axis].u = values[axis];
+	}
+}
+
+/*
+ * Checks the rules of a compute shader's built-in calls (ws101-p008): an
+ * atomic function's first argument is an int or uint of a buffer block or
+ * a shared variable, which it writes; barrier() is called in main, outside
+ * every selection, loop and switch, and before any return.
+ */
+static void
+check_compute_call(
+	struct glsl_shader *shader,
+	struct glsl_node *node)
+{
+	struct glsl_symbol *root;
+	unsigned special;
+	int status;
+
+	/* Only the specials of GLSL ES 3.10. */
+	if (node->builtin == NULL || node->builtin->operation != GLSL_BI_SPECIAL)
+		return;
+	special = node->builtin->number;
+	if (special < GLSL_SPECIAL_ATOMIC_ADD || special > GLSL_SPECIAL_GROUP_MEMORY_BARRIER)
+		return;
+
+	/* barrier(): in main, outside control flow, before any return. */
+	if (special == GLSL_SPECIAL_BARRIER) {
+		if (shader->current == NULL || strcmp(shader->current->name, "main") != 0)
+			glsl_error(shader, node->line, "barrier() is allowed only in main");
+		else if (shader->control_depth != 0U)
+			glsl_error(shader, node->line, "barrier() is not allowed inside a selection, a loop or a switch");
+		else if (shader->returned != 0U)
+			glsl_error(shader, node->line, "barrier() is not allowed after a return");
+		return;
+	}
+
+	/* The other barriers have no argument. */
+	if (special > GLSL_SPECIAL_ATOMIC_COMP_SWAP)
+		return;
+
+	/* An atomic's memory: a variable of a buffer block or a shared variable, which it writes. */
+	root = check_memory_root(node->child[1]);
+	if (root == NULL ||
+	    (root->where != GLSL_VAR_BUFFER && root->where != GLSL_VAR_BUFFER_MEMBER && root->where != GLSL_VAR_SHARED)) {
+		glsl_error(shader, node->line, "'%s' needs a buffer or shared variable as its first argument", node->name);
+		return;
+	}
+	status = check_lvalue(shader, node->child[1], node->name);
+	if (status != 0)
+		return;
+
+	/* The call writes memory. */
+	node->flags |= GLSL_NODE_SIDE_EFFECTS;
+}
+
+/* Returns the variable an expression is a part of (a member, element or swizzle of it), or NULL for any other expression (ws101-p008). */
+static struct glsl_symbol *
+check_memory_root(
+	struct glsl_node *node)
+{
+	/* Down the members, elements and swizzles. */
+	while (node != NULL && (node->kind == GLSL_N_FIELD || node->kind == GLSL_N_INDEX))
+		node = node->child[0];
+
+	/* A variable. */
+	if (node == NULL || node->kind != GLSL_N_IDENTIFIER)
+		return NULL;
+	return node->symbol;
+}
+
+/* Reports whether a storage block, or the block of a member without an instance name, is readonly (ws101-p008). */
+static int
+check_buffer_readonly(
+	const struct glsl_symbol *symbol)
+{
+	/* A member's block. */
+	if (symbol->where == GLSL_VAR_BUFFER_MEMBER && symbol->block != NULL)
+		symbol = symbol->block;
+
+	/* Succeeded: the block's qualifier. */
+	if ((symbol->memory & GLSL_MEMORY_READONLY) != 0U)
+		return 1;
+	return 0;
+}
+

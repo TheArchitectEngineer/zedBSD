@@ -1,0 +1,8 @@
+#version 310 es
+// expect: buffer blocks are laid out std430 only
+layout(local_size_x = 1) in;
+layout(std140, binding = 0) buffer A { uint words[]; };
+void main()
+{
+	words[0] = 1u;
+}

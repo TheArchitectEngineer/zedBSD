@@ -1,0 +1,16 @@
+#version 310 es
+// ws101-p008: an 8 x 8 tile transposed through shared memory, a barrier between (the compiler has no arrays of arrays).
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(std430, binding = 0) readonly buffer M { uint m[]; };
+layout(std430, binding = 1) writeonly buffer T { uint t[]; };
+shared uint tile[64];
+void main()
+{
+	uint lx = gl_LocalInvocationID.x;
+	uint ly = gl_LocalInvocationID.y;
+	uint gx = gl_WorkGroupID.x;
+	uint gy = gl_WorkGroupID.y;
+	tile[ly * 8u + lx] = m[(gy * 8u + ly) * 64u + gx * 8u + lx];
+	barrier();
+	t[(gx * 8u + ly) * 64u + gy * 8u + lx] = tile[lx * 8u + ly];
+}

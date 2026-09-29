@@ -1,0 +1,6 @@
+#version 310 es
+// expect: a workgroup has at most 128 invocations
+layout(local_size_x = 16, local_size_y = 16) in;
+void main()
+{
+}

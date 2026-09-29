@@ -1,0 +1,15 @@
+#version 310 es
+// ws101-p008: a return from inside a loop; the compiler runs such a main as a loop that runs once
+// (i915 takes no OpReturn in a loop).
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer O { uint o[]; };
+void main()
+{
+	uint i = gl_GlobalInvocationID.x;
+	for (uint k = 0u; k < 8u; k++) {
+		if (k == i % 8u)
+			return;
+		o[i] += k + 1u;
+	}
+	o[i] = 0xffffffffu;
+}

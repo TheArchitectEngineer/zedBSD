@@ -83,6 +83,7 @@ static unsigned link_capture_words(const struct glsl_type *type);
 static void link_capture_infos(struct link_state *state, struct glsl_program *program);
 static char *link_name(struct link_state *state, const char *name);
 static uint32_t *link_copy(const uint32_t *code, size_t words);
+static void link_storages(struct link_state *state, struct glsl_shader *compute, struct glsl_program *program);
 
 /*
  * Links a vertex and a fragment shader into SPIR-V.
@@ -273,7 +274,7 @@ glsl_program_free(
 	unsigned index;
 
 	/* The SPIR-V of each stage. */
-	for (index = 0U; index < 3U; index++) {
+	for (index = 0U; index < GLSL_STAGES; index++) {
 		free(program->code[index]);
 		program->code[index] = NULL;
 		program->words[index] = 0U;
@@ -300,6 +301,13 @@ glsl_program_free(
 	program->captures = NULL;
 	program->capture_count = 0U;
 	program->capture_stride = 0U;
+
+	/* A compute program's storage blocks' names and the list (ws101-p008). */
+	for (index = 0U; index < program->storage_count; index++)
+		free(program->storages[index].name);
+	free(program->storages);
+	program->storages = NULL;
+	program->storage_count = 0U;
 }
 
 /* Reports a link error in the log. */
@@ -1282,3 +1290,139 @@ link_copy(
 	/* Succeeded: the copy. */
 	return copy;
 }
+
+/*
+ * Links a compute shader alone into SPIR-V (ws101-p008): its default
+ * uniform block and uniform blocks are laid out as a draw program's, its
+ * storage blocks take their descriptor bindings from their layouts, and
+ * the one stage is emitted.
+ */
+int
+glsl_link_compute(
+	const struct glsl_shader *compute_shader,
+	struct glsl_program *program,
+	char **log)
+{
+	struct link_state *volatile state;
+	struct glsl_shader *compute;
+	struct glsl_shader *stages[1];
+	uint32_t *code;
+	size_t words;
+
+	/* Nothing yet. */
+	*log = NULL;
+	memset(program, 0, sizeof(*program));
+	state = calloc(1U, sizeof(*state));
+	if (state == NULL)
+		return -1;
+	state->arena.failure = &state->failure;
+	compute = (struct glsl_shader *)compute_shader;
+
+	/*
+	 * Out of memory comes back here.  setjmp is the whole controlling
+	 * expression, the form C allows it in.
+	 */
+	switch (setjmp(state->failure)) {
+	case 0:
+		break;
+	default:
+		/* The link failed: what it made goes, and the log (if any) tells why. */
+		glsl_program_free(program);
+		glsl_arena_free(&state->arena);
+		*log = state->log.data;
+		free(state);
+		return -1;
+	}
+
+	/* A compute shader alone. */
+	if (compute->stage != GLSL_STAGE_COMPUTE)
+		link_error(state, "a compute program needs a compute shader and no other");
+	if (state->errors != 0U)
+		longjmp(state->failure, 1);
+
+	/* The uniforms and uniform blocks, laid out; the storage blocks, bound. */
+	stages[0] = compute;
+	link_uniforms(state, compute);
+	link_layout(state);
+	link_blocks(state, stages, 1U);
+	link_storages(state, compute, program);
+	if (state->errors != 0U)
+		longjmp(state->failure, 1);
+
+	/* The stage's SPIR-V, copied out of the arena, and its workgroup size. */
+	code = glsl_emit(compute, &state->arena, state->uniforms, state->uniform_count, NULL, 0U, 0U, &words);
+	program->code[GLSL_STAGE_COMPUTE] = link_copy(code, words);
+	program->words[GLSL_STAGE_COMPUTE] = words;
+	if (program->code[GLSL_STAGE_COMPUTE] == NULL)
+		longjmp(state->failure, 1);
+	program->local_size[0] = compute->local_size[0];
+	program->local_size[1] = compute->local_size[1];
+	program->local_size[2] = compute->local_size[2];
+
+	/* What the API reports of the uniforms and the uniform blocks. */
+	link_info(state, program);
+	link_block_infos(state, compute, GLSL_STAGE_COMPUTE, program);
+
+	/* Succeeded: the program. */
+	glsl_arena_free(&state->arena);
+	free(state->log.data);
+	free(state);
+	return 0;
+}
+
+/*
+ * Binds a compute shader's storage blocks (ws101-p008): each at set 0,
+ * GLSL_STORAGE_FIRST_BINDING plus its layout's binding, one block a
+ * binding; lists them for the API: name, binding, the bytes before a
+ * run-time array, its stride, and whether it is readonly.
+ */
+static void
+link_storages(
+	struct link_state *state,
+	struct glsl_shader *compute,
+	struct glsl_program *program)
+{
+	struct glsl_storage_info *infos;
+	struct glsl_storage_info *info;
+	struct glsl_symbol *symbol;
+	const struct glsl_type *type;
+	const struct glsl_type *last;
+	unsigned taken;
+
+	/* Room for every binding. */
+	infos = calloc(GLSL_STORAGE_BINDINGS, sizeof(*infos));
+	if (infos == NULL)
+		longjmp(state->failure, 1);
+	program->storages = infos;
+
+	/* Each block the code uses. */
+	taken = 0U;
+	for (symbol = compute->globals; symbol != NULL; symbol = symbol->next_global) {
+		if (!symbol->used || symbol->where != GLSL_VAR_BUFFER)
+			continue;
+
+		/* One block a binding. */
+		if ((taken & (1U << symbol->layout_binding)) != 0U) {
+			link_error(state, "two buffer blocks at binding %u", symbol->layout_binding);
+			continue;
+		}
+		taken |= 1U << symbol->layout_binding;
+		symbol->binding = GLSL_STORAGE_FIRST_BINDING + symbol->layout_binding;
+
+		/* What the API reports of it. */
+		type = symbol->type;
+		info = &infos[program->storage_count];
+		info->name = link_name(state, type->name);
+		info->binding = symbol->layout_binding;
+		info->size = glsl_std430_size(type);
+		info->array_stride = 0U;
+		if (type->field_count != 0U) {
+			last = type->fields[type->field_count - 1U].type;
+			if (last->kind == GLSL_KIND_ARRAY && last->length == 0U)
+				info->array_stride = glsl_std430_stride(last);
+		}
+		info->readonly = ((symbol->memory & GLSL_MEMORY_READONLY) != 0U);
+		program->storage_count++;
+	}
+}
+

@@ -1,0 +1,15 @@
+#version 310 es
+// ws101-p008: .length() of run-time arrays after a header, of words and of 12-byte structs (std430: a
+// struct of three uints has stride 12), and of a sized array.
+layout(local_size_x = 1) in;
+struct S { uint a; uint b; uint c; };
+layout(std430, binding = 0) buffer W { uint head; uint words[]; } w;
+layout(std430, binding = 1) buffer T { S triples[]; };
+layout(std430, binding = 2) buffer O { int o[4]; };
+void main()
+{
+	o[0] = w.words.length();
+	o[1] = triples.length();
+	o[2] = o.length();
+	w.head = 5u;
+}

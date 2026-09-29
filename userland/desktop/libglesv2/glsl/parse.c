@@ -79,6 +79,13 @@ static const struct parse_keyword parse_keywords[] = {
 	{ "smooth", GLSL_K_SMOOTH, GLSL_IN_130_UP },
 	{ "noperspective", GLSL_K_NOPERSPECTIVE, GLSL_IN_DESKTOP_130_UP },
 	{ "layout", GLSL_K_LAYOUT, GLSL_IN_140_UP },
+	{ "buffer", GLSL_K_BUFFER, GLSL_IN_ES310 },
+	{ "shared", GLSL_K_SHARED, GLSL_IN_ES310 },
+	{ "coherent", GLSL_K_COHERENT, GLSL_IN_ES310 },
+	{ "volatile", GLSL_K_VOLATILE, GLSL_IN_ES310 },
+	{ "restrict", GLSL_K_RESTRICT, GLSL_IN_ES310 },
+	{ "readonly", GLSL_K_READONLY, GLSL_IN_ES310 },
+	{ "writeonly", GLSL_K_WRITEONLY, GLSL_IN_ES310 },
 	{ "attribute", GLSL_K_RESERVED, GLSL_IN_ES300 },
 	{ "varying", GLSL_K_RESERVED, GLSL_IN_ES300 },
 	{ "noperspective", GLSL_K_RESERVED, GLSL_IN_ES300 },
@@ -188,6 +195,7 @@ static struct glsl_node *parse_fully_specified_type(struct glsl_shader *shader);
 static void parse_qualifiers(struct glsl_shader *shader, struct glsl_node *type);
 static void parse_layout(struct glsl_shader *shader, struct glsl_node *type);
 static unsigned parse_primitive(const struct glsl_token *token);
+static unsigned parse_local_size(const struct glsl_token *token);
 static int parse_starts_block(struct glsl_shader *shader);
 static struct glsl_node *parse_interface(struct glsl_shader *shader);
 static void parse_type_specifier(struct glsl_shader *shader, struct glsl_node *type);
@@ -650,6 +658,13 @@ parse_is_qualifier(
 	case GLSL_K_LOWP:
 	case GLSL_K_MEDIUMP:
 	case GLSL_K_HIGHP:
+	case GLSL_K_BUFFER:
+	case GLSL_K_SHARED:
+	case GLSL_K_COHERENT:
+	case GLSL_K_VOLATILE:
+	case GLSL_K_RESTRICT:
+	case GLSL_K_READONLY:
+	case GLSL_K_WRITEONLY:
 		return 1;
 	default:
 		break;
@@ -893,6 +908,27 @@ parse_qualifiers(
 		case GLSL_K_HIGHP:
 			type->precision = GLSL_PRECISION_HIGH;
 			break;
+		case GLSL_K_BUFFER:
+			storage = GLSL_STORAGE_BUFFER;
+			break;
+		case GLSL_K_SHARED:
+			storage = GLSL_STORAGE_SHARED;
+			break;
+		case GLSL_K_COHERENT:
+			type->memory |= GLSL_MEMORY_COHERENT;
+			break;
+		case GLSL_K_VOLATILE:
+			type->memory |= GLSL_MEMORY_VOLATILE;
+			break;
+		case GLSL_K_RESTRICT:
+			type->memory |= GLSL_MEMORY_RESTRICT;
+			break;
+		case GLSL_K_READONLY:
+			type->memory |= GLSL_MEMORY_READONLY;
+			break;
+		case GLSL_K_WRITEONLY:
+			type->memory |= GLSL_MEMORY_WRITEONLY;
+			break;
 		case GLSL_K_LAYOUT:
 			parse_layout(shader, type);
 			continue;
@@ -918,8 +954,9 @@ parse_qualifiers(
 
 /*
  * Parses "layout ( qualifier [= value], ... )" into a type node: the
- * block layouts, the matrix orders, a location, and a geometry shader's
- * primitives and most vertices.
+ * block layouts, the matrix orders, a location, a geometry shader's
+ * primitives and most vertices, and GLSL ES 3.10's std430, binding and a
+ * compute shader's workgroup size (ws101-p008).
  */
 static void
 parse_layout(
@@ -935,8 +972,11 @@ parse_layout(
 	int is_column;
 	int is_location;
 	int is_max;
+	int is_std430;
+	int is_binding;
 	int closes;
 	unsigned primitive;
+	unsigned axis;
 
 	/* The keyword and "(". */
 	(void)parse_take(shader);
@@ -956,8 +996,29 @@ parse_layout(
 		is_column = glsl_token_is(token, "column_major");
 		is_location = glsl_token_is(token, "location");
 		is_max = glsl_token_is(token, "max_vertices");
+		is_std430 = glsl_token_is(token, "std430");
+		is_binding = glsl_token_is(token, "binding");
+		axis = parse_local_size(token);
 		primitive = parse_primitive(token);
-		if (primitive != GLSL_PRIMITIVE_NONE) {
+		if (axis < 3U) {
+			/* local_size_x, _y or _z = an integer (ws101-p008). */
+			parse_expect(shader, GLSL_P_ASSIGN, "'='");
+			value = parse_take(shader);
+			if (value->kind != GLSL_TOKEN_INT && value->kind != GLSL_TOKEN_UINT)
+				glsl_fatal(shader, value->line, "a workgroup size must be an integer");
+			type->layout |= GLSL_LAYOUT_LOCAL_SIZE;
+			type->local_size[axis] = value->integer;
+		} else if (is_binding) {
+			/* binding = an integer (ws101-p008). */
+			parse_expect(shader, GLSL_P_ASSIGN, "'='");
+			value = parse_take(shader);
+			if (value->kind != GLSL_TOKEN_INT && value->kind != GLSL_TOKEN_UINT)
+				glsl_fatal(shader, value->line, "a layout binding must be an integer");
+			type->layout |= GLSL_LAYOUT_BINDING;
+			type->binding = value->integer;
+		} else if (is_std430) {
+			type->layout |= GLSL_LAYOUT_STD430;
+		} else if (primitive != GLSL_PRIMITIVE_NONE) {
 			/* A geometry shader's input or output primitive. */
 			type->layout |= GLSL_LAYOUT_PRIMITIVE;
 			type->primitive = primitive;
@@ -1000,6 +1061,28 @@ parse_layout(
 
 	/* The ")". */
 	(void)parse_take(shader);
+}
+
+/* Returns the axis (0 x, 1 y, 2 z) a workgroup size layout qualifier names, 3 for another qualifier (ws101-p008). */
+static unsigned
+parse_local_size(
+	const struct glsl_token *token)
+{
+	int same;
+
+	/* local_size_x, local_size_y, local_size_z. */
+	same = glsl_token_is(token, "local_size_x");
+	if (same)
+		return 0U;
+	same = glsl_token_is(token, "local_size_y");
+	if (same)
+		return 1U;
+	same = glsl_token_is(token, "local_size_z");
+	if (same)
+		return 2U;
+
+	/* Not a workgroup size. */
+	return 3U;
 }
 
 /* Returns the geometry primitive (GLSL_PRIMITIVE_*) a layout qualifier names, GLSL_PRIMITIVE_NONE for another qualifier. */

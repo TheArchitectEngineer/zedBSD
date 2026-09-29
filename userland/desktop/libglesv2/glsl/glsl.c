@@ -163,3 +163,23 @@ glsl_give_log(
 	shader->log.length = 0U;
 	shader->log.capacity = 0U;
 }
+
+/*
+ * Reports a compiled compute shader's workgroup size (ws101-p008); all 0
+ * for another stage.
+ */
+void
+glsl_compute_layout(
+	const struct glsl_shader *shader,
+	unsigned size[3])
+{
+	unsigned axis;
+
+	/* The layout's size, 0s for another stage. */
+	for (axis = 0U; axis < 3U; axis++) {
+		size[axis] = 0U;
+		if (shader->stage == GLSL_STAGE_COMPUTE)
+			size[axis] = shader->local_size[axis];
+	}
+}
+

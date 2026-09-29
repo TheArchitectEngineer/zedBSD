@@ -1,0 +1,9 @@
+#version 310 es
+// expect: barrier() is not allowed inside a selection, a loop or a switch
+layout(local_size_x = 64) in;
+shared uint s[64];
+void main()
+{
+	if (gl_LocalInvocationIndex < 32u)
+		barrier();
+}

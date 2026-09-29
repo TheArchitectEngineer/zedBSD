@@ -1,0 +1,11 @@
+#version 310 es
+// expect: barrier() is allowed only in main
+layout(local_size_x = 64) in;
+void wait()
+{
+	barrier();
+}
+void main()
+{
+	wait();
+}

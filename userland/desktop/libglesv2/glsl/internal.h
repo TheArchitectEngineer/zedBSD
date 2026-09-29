@@ -38,6 +38,7 @@
 #define GLSL_VERSION_150	150U
 #define GLSL_VERSION_ES300	300U
 #define GLSL_VERSION_330	330U
+#define GLSL_VERSION_ES310	310U
 
 /* The kinds of tokens. */
 #define GLSL_TOKEN_EOF		0U
@@ -137,7 +138,16 @@ enum glsl_keyword {
 	GLSL_K_SMOOTH,
 	GLSL_K_NOPERSPECTIVE,
 	GLSL_K_CENTROID,
-	GLSL_K_LAYOUT
+	GLSL_K_LAYOUT,
+
+	/* GLSL ES 3.10's storage and memory qualifiers (ws101-p008). */
+	GLSL_K_BUFFER,
+	GLSL_K_SHARED,
+	GLSL_K_COHERENT,
+	GLSL_K_VOLATILE,
+	GLSL_K_RESTRICT,
+	GLSL_K_READONLY,
+	GLSL_K_WRITEONLY
 };
 
 /* The kinds of types. */
@@ -167,6 +177,17 @@ enum glsl_keyword {
 #define GLSL_STORAGE_OUT	6U
 #define GLSL_STORAGE_INOUT	7U
 
+/* A shader storage block, and a workgroup's shared variable (GLSL ES 3.10, ws101-p008). */
+#define GLSL_STORAGE_BUFFER	8U
+#define GLSL_STORAGE_SHARED	9U
+
+/* The memory qualifiers of a shader storage block or its member (GLSL ES 3.10, ws101-p008). */
+#define GLSL_MEMORY_COHERENT	0x01U
+#define GLSL_MEMORY_VOLATILE	0x02U
+#define GLSL_MEMORY_RESTRICT	0x04U
+#define GLSL_MEMORY_READONLY	0x08U
+#define GLSL_MEMORY_WRITEONLY	0x10U
+
 /* The interpolation qualifiers. */
 #define GLSL_INTERP_NONE	0U
 #define GLSL_INTERP_SMOOTH	1U
@@ -190,6 +211,14 @@ enum glsl_keyword {
 #define GLSL_VAR_BLOCK		7U
 #define GLSL_VAR_BLOCK_MEMBER	8U
 
+/*
+ * A shader storage block (by its instance name), a member of one without
+ * an instance name, and a workgroup's shared variable (ws101-p008).
+ */
+#define GLSL_VAR_BUFFER		9U
+#define GLSL_VAR_BUFFER_MEMBER	10U
+#define GLSL_VAR_SHARED		11U
+
 /* The built-in variables (0: a variable the shader declared). */
 #define GLSL_BUILTIN_NONE	0U
 #define GLSL_BUILTIN_POSITION	1U
@@ -206,6 +235,13 @@ enum glsl_keyword {
 #define GLSL_BUILTIN_PRIMITIVE_ID_IN 12U
 #define GLSL_BUILTIN_PRIMITIVE_ID 13U
 #define GLSL_BUILTIN_LAYER	14U
+
+/* A compute shader's built-in inputs (ws101-p008). */
+#define GLSL_BUILTIN_GLOBAL_INVOCATION_ID 15U
+#define GLSL_BUILTIN_LOCAL_INVOCATION_ID 16U
+#define GLSL_BUILTIN_WORK_GROUP_ID 17U
+#define GLSL_BUILTIN_NUM_WORK_GROUPS 18U
+#define GLSL_BUILTIN_LOCAL_INVOCATION_INDEX 19U
 
 /*
  * A geometry shader's primitives (the layouts "in" and "out" give), and
@@ -457,6 +493,11 @@ struct glsl_node {
 	unsigned primitive;
 	unsigned max_vertices;
 
+	/* GLSL ES 3.10 (ws101-p008): the memory qualifiers (GLSL_MEMORY_*), a layout's binding and workgroup size. */
+	unsigned memory;
+	unsigned binding;
+	unsigned local_size[3];
+
 	/* The type: a type specifier's built-in type as parsed, an expression's once checked. */
 	const struct glsl_type *type;
 
@@ -519,6 +560,10 @@ struct glsl_symbol {
 	/* A uniform block's member without an instance name: the block's symbol and the member's index. */
 	struct glsl_symbol *block;
 	unsigned member;
+
+	/* A shader storage block's memory qualifiers and the binding its layout gave (ws101-p008). */
+	unsigned memory;
+	unsigned layout_binding;
 
 	/* What the link gave: an input's or output's location, a uniform's index among the program's uniforms, a block's binding. */
 	unsigned location;
@@ -588,6 +633,12 @@ struct glsl_builtin {
 #define GLSL_IN_330		0x080U
 #define GLSL_IN_ES300		0x100U
 
+/*
+ * OpenGL ES 3.10 (ws101-p008): a 3.10 shader's version mask has both
+ * GLSL_IN_ES300 and this bit, so it has everything 3.00 has.
+ */
+#define GLSL_IN_ES310		0x200U
+
 /* The versions that share a feature. */
 #define GLSL_IN_ALL		0x1efU
 #define GLSL_IN_DESKTOP		0x0eeU
@@ -638,6 +689,21 @@ struct glsl_builtin {
 #define GLSL_SPECIAL_EMIT_VERTEX 28U
 #define GLSL_SPECIAL_END_PRIMITIVE 29U
 
+/* GLSL ES 3.10's atomic memory functions and barriers (ws101-p008). */
+#define GLSL_SPECIAL_ATOMIC_ADD	30U
+#define GLSL_SPECIAL_ATOMIC_MIN	31U
+#define GLSL_SPECIAL_ATOMIC_MAX	32U
+#define GLSL_SPECIAL_ATOMIC_AND	33U
+#define GLSL_SPECIAL_ATOMIC_OR	34U
+#define GLSL_SPECIAL_ATOMIC_XOR	35U
+#define GLSL_SPECIAL_ATOMIC_EXCHANGE 36U
+#define GLSL_SPECIAL_ATOMIC_COMP_SWAP 37U
+#define GLSL_SPECIAL_BARRIER	38U
+#define GLSL_SPECIAL_MEMORY_BARRIER 39U
+#define GLSL_SPECIAL_MEMORY_BARRIER_BUFFER 40U
+#define GLSL_SPECIAL_MEMORY_BARRIER_SHARED 41U
+#define GLSL_SPECIAL_GROUP_MEMORY_BARRIER 42U
+
 /* The layout qualifiers of a declaration (glsl_node.layout). */
 #define GLSL_LAYOUT_STD140	0x01U
 #define GLSL_LAYOUT_SHARED	0x02U
@@ -647,6 +713,11 @@ struct glsl_builtin {
 #define GLSL_LAYOUT_LOCATION	0x20U
 #define GLSL_LAYOUT_PRIMITIVE	0x40U
 #define GLSL_LAYOUT_MAX_VERTICES 0x80U
+
+/* GLSL ES 3.10's layouts (ws101-p008): std430, binding, a compute shader's workgroup size. */
+#define GLSL_LAYOUT_STD430	0x100U
+#define GLSL_LAYOUT_BINDING	0x200U
+#define GLSL_LAYOUT_LOCAL_SIZE	0x400U
 
 /* No location given. */
 #define GLSL_NO_LOCATION	0xffffffffU
@@ -681,6 +752,16 @@ struct glsl_shader {
 	unsigned geometry_vertices;
 	unsigned geometry_output;
 	unsigned max_vertices;
+
+	/*
+	 * A compute shader (ws101-p008): its workgroup size (0s until its
+	 * layout), and while main is checked, how many selections, loops and
+	 * switches the statement is inside and whether main returned before
+	 * it (a barrier() needs neither).
+	 */
+	unsigned local_size[3];
+	unsigned control_depth;
+	unsigned returned;
 
 	/* The preprocessed tokens, and the parser's position in them. */
 	struct glsl_token *tokens;
@@ -768,6 +849,10 @@ unsigned glsl_std140_size(const struct glsl_type *type);
 unsigned glsl_std140_stride(const struct glsl_type *type);
 unsigned glsl_std140_member_size(const struct glsl_type *type, unsigned row_major);
 unsigned glsl_std140_member_stride(const struct glsl_type *type, unsigned row_major);
+unsigned glsl_std430_alignment(const struct glsl_type *type);
+unsigned glsl_std430_size(const struct glsl_type *type);
+unsigned glsl_std430_stride(const struct glsl_type *type);
+unsigned glsl_std430_column_stride(const struct glsl_type *type);
 
 /* builtins.c: built-in functions, variables and constants. */
 const struct glsl_builtin *glsl_builtin_first(const char *name);

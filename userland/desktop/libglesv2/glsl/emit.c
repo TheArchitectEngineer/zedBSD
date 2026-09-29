@@ -92,6 +92,15 @@ static unsigned emit_scalars(struct emit_state *state, struct emit_value value, 
 static struct emit_value emit_matrix_resize(struct emit_state *state, struct emit_value value, const struct glsl_type *type);
 static struct emit_value emit_inline(struct emit_state *state, struct glsl_node *node);
 static struct emit_value emit_value_of(uint32_t id, const struct glsl_type *type);
+static uint32_t emit_layout430_type(struct emit_state *state, const struct glsl_type *type);
+static void emit_storage_block(struct emit_state *state, struct glsl_symbol *symbol);
+static void emit_shared(struct emit_state *state, struct glsl_symbol *symbol);
+static void emit_store_block(struct emit_state *state, const struct emit_path *path, struct emit_value value);
+static struct emit_value emit_array_length(struct emit_state *state, struct glsl_node *node);
+static struct emit_value emit_compute_call(struct emit_state *state, struct glsl_node *node);
+static uint32_t emit_uint(struct emit_state *state, uint32_t value);
+static int emit_returns_in_loop(const struct glsl_node *node, int in_loop);
+static void emit_main_once(struct emit_state *state, struct glsl_node *body);
 
 /*
  * Emits one linked stage of a shader as a SPIR-V module (in the arena),
@@ -152,7 +161,11 @@ glsl_emit(
 	emit_globals(state);
 	if (state->capture_count != 0U)
 		emit_capture_buffer(state);
-	emit_statements(state, shader->main->body->child[0]);
+	if (shader->stage == GLSL_STAGE_COMPUTE && emit_returns_in_loop(shader->main->body->child[0], 0)) {
+		emit_main_once(state, shader->main->body->child[0]);
+	} else {
+		emit_statements(state, shader->main->body->child[0]);
+	}
 
 	/* main ends with a return when its last block is still open, having captured its outputs. */
 	if (!state->terminated) {
@@ -169,6 +182,8 @@ glsl_emit(
 		operands[0] = SPV_MODEL_FRAGMENT;
 	if (shader->stage == GLSL_STAGE_GEOMETRY)
 		operands[0] = SPV_MODEL_GEOMETRY;
+	if (shader->stage == GLSL_STAGE_COMPUTE)
+		operands[0] = SPV_MODEL_GL_COMPUTE;
 	operands[1] = main_id;
 	operands[2] = 0x6e69616dU;
 	operands[3] = 0U;
@@ -178,6 +193,16 @@ glsl_emit(
 	/* A geometry shader's capability, primitives, most vertices and one invocation. */
 	if (shader->stage == GLSL_STAGE_GEOMETRY)
 		emit_geometry_modes(state, main_id);
+
+	/* A compute shader's workgroup size (ws101-p008). */
+	if (shader->stage == GLSL_STAGE_COMPUTE) {
+		operands[0] = main_id;
+		operands[1] = SPV_MODE_LOCAL_SIZE;
+		operands[2] = shader->local_size[0];
+		operands[3] = shader->local_size[1];
+		operands[4] = shader->local_size[2];
+		glsl_words_add(module, &module->modes, SPV_OP_EXECUTION_MODE, operands, 5U);
+	}
 
 	/* A fragment shader's origin, and depth replacing when it writes gl_FragDepth. */
 	if (shader->stage == GLSL_STAGE_FRAGMENT) {
@@ -484,6 +509,10 @@ glsl_emit_expression(
 	case GLSL_N_CALL:
 		value = emit_call(state, node);
 		return value;
+	case GLSL_N_LENGTH:
+		/* The length of a run-time array (ws101-p008): the others are constants. */
+		value = emit_array_length(state, node);
+		return value;
 	default:
 		break;
 	}
@@ -683,6 +712,7 @@ emit_type_slot(
 	const struct glsl_type **keys;
 	uint32_t *ids;
 	uint32_t *layouts;
+	uint32_t *layouts430;
 	unsigned capacity;
 	unsigned index;
 
@@ -700,16 +730,19 @@ emit_type_slot(
 		keys = glsl_alloc(state->module->arena, capacity * sizeof(*keys));
 		ids = glsl_alloc(state->module->arena, capacity * sizeof(*ids));
 		layouts = glsl_alloc(state->module->arena, capacity * sizeof(*layouts));
+		layouts430 = glsl_alloc(state->module->arena, capacity * sizeof(*layouts430));
 		if (state->type_count != 0U) {
 			memcpy(keys, state->type_keys, state->type_count * sizeof(*keys));
 			memcpy(ids, state->type_ids, state->type_count * sizeof(*ids));
 			memcpy(layouts, state->layout_ids, state->type_count * sizeof(*layouts));
+			memcpy(layouts430, state->layout430_ids, state->type_count * sizeof(*layouts430));
 		}
 
 		/* The larger tables replace the old ones. */
 		state->type_keys = keys;
 		state->type_ids = ids;
 		state->layout_ids = layouts;
+		state->layout430_ids = layouts430;
 		state->type_capacity = capacity;
 	}
 
@@ -717,6 +750,7 @@ emit_type_slot(
 	state->type_keys[state->type_count] = type;
 	state->type_ids[state->type_count] = 0U;
 	state->layout_ids[state->type_count] = 0U;
+	state->layout430_ids[state->type_count] = 0U;
 	state->type_count++;
 	return state->type_count - 1U;
 }
@@ -1017,6 +1051,12 @@ emit_globals(
 		case GLSL_VAR_BLOCK:
 			emit_uniform_block(state, symbol);
 			break;
+		case GLSL_VAR_BUFFER:
+			emit_storage_block(state, symbol);
+			break;
+		case GLSL_VAR_SHARED:
+			emit_shared(state, symbol);
+			break;
 		case GLSL_VAR_GLOBAL:
 			/* A plain global is a variable of main, stored first with its value or zero. */
 			symbol->id = emit_variable(state, symbol->type);
@@ -1193,6 +1233,21 @@ emit_interface_decorations(
 	case GLSL_BUILTIN_LAYER:
 		value = SPV_BUILT_IN_LAYER;
 		emit_capability(state, SPV_CAPABILITY_GEOMETRY, &state->module->geometry);
+		break;
+	case GLSL_BUILTIN_GLOBAL_INVOCATION_ID:
+		value = SPV_BUILT_IN_GLOBAL_INVOCATION_ID;
+		break;
+	case GLSL_BUILTIN_LOCAL_INVOCATION_ID:
+		value = SPV_BUILT_IN_LOCAL_INVOCATION_ID;
+		break;
+	case GLSL_BUILTIN_WORK_GROUP_ID:
+		value = SPV_BUILT_IN_WORKGROUP_ID;
+		break;
+	case GLSL_BUILTIN_NUM_WORK_GROUPS:
+		value = SPV_BUILT_IN_NUM_WORKGROUPS;
+		break;
+	case GLSL_BUILTIN_LOCAL_INVOCATION_INDEX:
+		value = SPV_BUILT_IN_LOCAL_INVOCATION_INDEX;
 		break;
 	case GLSL_BUILTIN_PER_VERTEX:
 		/* gl_in: its block's members are the built-ins; the array has no location. */
@@ -2103,7 +2158,25 @@ emit_path(
 		if (symbol->where == GLSL_VAR_BLOCK) {
 			path->base = symbol->id;
 			path->storage = SPV_STORAGE_UNIFORM;
-			path->block = 1;
+			path->block = EMIT_LAYOUT_STD140;
+			return 0;
+		}
+
+		/* A storage block (by its instance name), a std430 struct (ws101-p008). */
+		if (symbol->where == GLSL_VAR_BUFFER) {
+			path->base = symbol->id;
+			path->storage = SPV_STORAGE_UNIFORM;
+			path->block = EMIT_LAYOUT_STD430;
+			return 0;
+		}
+
+		/* A member of a storage block without an instance name (ws101-p008). */
+		if (symbol->where == GLSL_VAR_BUFFER_MEMBER) {
+			path->base = symbol->block->id;
+			path->storage = SPV_STORAGE_UNIFORM;
+			path->block = EMIT_LAYOUT_STD430;
+			path->indices[0] = glsl_emit_int(state, (int32_t)symbol->member);
+			path->index_count = 1U;
 			return 0;
 		}
 
@@ -2111,7 +2184,7 @@ emit_path(
 		if (symbol->where == GLSL_VAR_BLOCK_MEMBER) {
 			path->base = symbol->block->id;
 			path->storage = SPV_STORAGE_UNIFORM;
-			path->block = 1;
+			path->block = EMIT_LAYOUT_STD140;
 			path->indices[0] = glsl_emit_int(state, (int32_t)symbol->member);
 			path->index_count = 1U;
 			return 0;
@@ -2121,7 +2194,7 @@ emit_path(
 		if (symbol->where == GLSL_VAR_UNIFORM && symbol->type->kind != GLSL_KIND_SAMPLER) {
 			path->base = state->block;
 			path->storage = SPV_STORAGE_UNIFORM;
-			path->block = 1;
+			path->block = EMIT_LAYOUT_STD140;
 			path->indices[0] = glsl_emit_int(state, state->members[symbol->uniform]);
 			path->index_count = 1U;
 			return 0;
@@ -2190,7 +2263,9 @@ emit_chain(
 		return path->base;
 
 	/* The type reached, as the storage holds it. */
-	if (path->block) {
+	if (path->block == EMIT_LAYOUT_STD430) {
+		target = emit_layout430_type(state, path->type);
+	} else if (path->block) {
 		target = emit_layout_type(state, path->type);
 	} else {
 		target = glsl_emit_type(state, path->type);
@@ -2258,9 +2333,11 @@ emit_load_block(
 	unsigned count;
 	unsigned index;
 
-	/* A leaf: loaded, a bool from its uint. */
+	/* A leaf: loaded, a bool from its uint (a storage block's matrix is read column by column, ws101-p008). */
 	type = path->type;
-	if (type->kind == GLSL_KIND_SCALAR || type->kind == GLSL_KIND_VECTOR || type->kind == GLSL_KIND_MATRIX) {
+	if (type->kind == GLSL_KIND_SCALAR ||
+	    type->kind == GLSL_KIND_VECTOR ||
+	    (type->kind == GLSL_KIND_MATRIX && path->block != EMIT_LAYOUT_STD430)) {
 		pointer = emit_chain(state, path);
 		stored = type;
 		if (type->base == GLSL_BASE_BOOL)
@@ -2280,6 +2357,8 @@ emit_load_block(
 	count = type->length;
 	if (type->kind == GLSL_KIND_STRUCT)
 		count = type->field_count;
+	if (type->kind == GLSL_KIND_MATRIX)
+		count = type->columns;
 	if (count > EMIT_MAX_PARTS)
 		count = EMIT_MAX_PARTS;
 	for (index = 0U; index < count; index++) {
@@ -2290,6 +2369,8 @@ emit_load_block(
 		part.index_count++;
 		if (type->kind == GLSL_KIND_STRUCT) {
 			part.type = type->fields[index].type;
+		} else if (type->kind == GLSL_KIND_MATRIX) {
+			part.type = glsl_type_column(type);
 		} else {
 			part.type = type->element;
 		}
@@ -2319,6 +2400,12 @@ emit_store(
 	unsigned component;
 	unsigned index;
 
+	/* A storage block's memory takes its own layout (ws101-p008). */
+	if (path->block == EMIT_LAYOUT_STD430 && path->swizzle_count == 0U) {
+		emit_store_block(state, path, value);
+		return;
+	}
+
 	/* No swizzle: a store through the chain. */
 	if (path->swizzle_count == 0U) {
 		pointer = emit_chain(state, path);
@@ -2338,6 +2425,10 @@ emit_store(
 		whole.indices[whole.index_count] = glsl_emit_int(state, (int32_t)path->swizzle[0]);
 		whole.index_count++;
 		whole.type = path->type;
+		if (whole.block == EMIT_LAYOUT_STD430) {
+			emit_store_block(state, &whole, value);
+			return;
+		}
 		pointer = emit_chain(state, &whole);
 		operands[0] = pointer;
 		operands[1] = value.id;
@@ -2362,6 +2453,10 @@ emit_store(
 	old = emit_value_of(glsl_emit_op(state, SPV_OP_VECTOR_SHUFFLE, glsl_emit_type(state, vector), operands, 2U + vector->components), vector);
 
 	/* The vector written back. */
+	if (whole.block == EMIT_LAYOUT_STD430) {
+		emit_store_block(state, &whole, old);
+		return;
+	}
 	pointer = emit_chain(state, &whole);
 	operands[0] = pointer;
 	operands[1] = old.id;
@@ -3145,6 +3240,15 @@ emit_call(
 		return result;
 	}
 
+	/* A compute shader's atomics and barriers (ws101-p008): an atomic's first argument is its memory, not a value. */
+	if (node->builtin != NULL &&
+	    node->builtin->operation == GLSL_BI_SPECIAL &&
+	    node->builtin->number >= GLSL_SPECIAL_ATOMIC_ADD &&
+	    node->builtin->number <= GLSL_SPECIAL_GROUP_MEMORY_BARRIER) {
+		result = emit_compute_call(state, node);
+		return result;
+	}
+
 	/* A built-in: its arguments in order, then its instructions. */
 	count = 0U;
 	for (argument = node->child[1]; argument != NULL && count < 8U; argument = argument->next) {
@@ -3499,3 +3603,481 @@ emit_value_of(
 	/* Succeeded: the value. */
 	return value;
 }
+
+/*
+ * Returns the type a GLSL type has inside a shader storage block (std430,
+ * ws101-p008): bools as uints, arrays with their std430 stride (a
+ * run-time array, length 0, as OpTypeRuntimeArray), structs with their
+ * std430 offsets and column-major matrices' column strides.
+ */
+static uint32_t
+emit_layout430_type(
+	struct emit_state *state,
+	const struct glsl_type *type)
+{
+	uint32_t operands[GLSL_MAX_OPERANDS];
+	const struct glsl_type *field;
+	const struct glsl_type *element;
+	uint32_t stride;
+	uint32_t id;
+	uint32_t offset;
+	unsigned slot;
+	unsigned index;
+	unsigned alignment;
+
+	/* Scalars, vectors and matrices are the local types, but bools are uints. */
+	if (type->kind == GLSL_KIND_SCALAR || type->kind == GLSL_KIND_VECTOR || type->kind == GLSL_KIND_MATRIX) {
+		if (type->base == GLSL_BASE_BOOL)
+			type = glsl_type_with_base(type, GLSL_BASE_UINT);
+		id = glsl_emit_type(state, type);
+		return id;
+	}
+
+	/* A layout given before. */
+	slot = emit_type_slot(state, type);
+	if (state->layout430_ids[slot] != 0U)
+		return state->layout430_ids[slot];
+
+	/* An array: its element's layout, its length (none for a run-time array), its stride. */
+	operands[0] = 0U;
+	if (type->kind == GLSL_KIND_ARRAY) {
+		operands[1] = emit_layout430_type(state, type->element);
+		if (type->length == 0U) {
+			id = glsl_module_declare(state->module, SPV_OP_TYPE_RUNTIME_ARRAY, operands, 2U, 1);
+		} else {
+			operands[2] = emit_uint(state, type->length);
+			id = glsl_module_declare(state->module, SPV_OP_TYPE_ARRAY, operands, 3U, 1);
+		}
+		stride = glsl_std430_stride(type);
+		glsl_module_decorate(state->module, id, SPV_DECORATION_ARRAY_STRIDE, &stride, 1U);
+		slot = emit_type_slot(state, type);
+		state->layout430_ids[slot] = id;
+		return id;
+	}
+
+	/* A struct: its members' layouts, a type of its own. */
+	for (index = 0U; index < type->field_count && index + 1U < GLSL_MAX_OPERANDS; index++)
+		operands[index + 1U] = emit_layout430_type(state, type->fields[index].type);
+	id = glsl_module_declare(state->module, SPV_OP_TYPE_STRUCT, operands, type->field_count + 1U, 1);
+
+	/* Each member's offset and name, and a matrix's column-major stride. */
+	offset = 0U;
+	for (index = 0U; index < type->field_count; index++) {
+		field = type->fields[index].type;
+		alignment = glsl_std430_alignment(field);
+		offset = (offset + alignment - 1U) & ~(alignment - 1U);
+		glsl_module_member_decorate(state->module, id, index, SPV_DECORATION_OFFSET, offset);
+		glsl_module_member_name(state->module, id, index, type->fields[index].name);
+		element = field;
+		while (element->kind == GLSL_KIND_ARRAY)
+			element = element->element;
+		if (element->kind == GLSL_KIND_MATRIX) {
+			glsl_module_member_decorate(state->module, id, index, SPV_DECORATION_COL_MAJOR, 0xffffffffU);
+			glsl_module_member_decorate(state->module, id, index, SPV_DECORATION_MATRIX_STRIDE, glsl_std430_column_stride(element));
+		}
+		offset += glsl_std430_size(field);
+	}
+
+	/* Succeeded: the struct's layout type, remembered. */
+	slot = emit_type_slot(state, type);
+	state->layout430_ids[slot] = id;
+	return id;
+}
+
+/*
+ * Declares a shader storage block (ws101-p008): its std430 struct, a
+ * BufferBlock (SPIR-V 1.0's storage buffer: Uniform storage) with its
+ * memory qualifiers on every member, at set 0 and the link's binding.
+ */
+static void
+emit_storage_block(
+	struct emit_state *state,
+	struct glsl_symbol *symbol)
+{
+	uint32_t operands[3];
+	uint32_t structure;
+	uint32_t value;
+	unsigned index;
+
+	/* The struct, a BufferBlock named by the block. */
+	structure = emit_layout430_type(state, symbol->type);
+	glsl_module_decorate(state->module, structure, SPV_DECORATION_BUFFER_BLOCK, NULL, 0U);
+	glsl_module_name(state->module, structure, symbol->type->name);
+
+	/* The block's memory qualifiers, on each member. */
+	for (index = 0U; index < symbol->type->field_count; index++) {
+		if ((symbol->memory & GLSL_MEMORY_READONLY) != 0U)
+			glsl_module_member_decorate(state->module, structure, index, SPV_DECORATION_NON_WRITABLE, 0xffffffffU);
+		if ((symbol->memory & GLSL_MEMORY_WRITEONLY) != 0U)
+			glsl_module_member_decorate(state->module, structure, index, SPV_DECORATION_NON_READABLE, 0xffffffffU);
+		if ((symbol->memory & GLSL_MEMORY_COHERENT) != 0U)
+			glsl_module_member_decorate(state->module, structure, index, SPV_DECORATION_COHERENT, 0xffffffffU);
+		if ((symbol->memory & GLSL_MEMORY_VOLATILE) != 0U)
+			glsl_module_member_decorate(state->module, structure, index, SPV_DECORATION_VOLATILE, 0xffffffffU);
+		if ((symbol->memory & GLSL_MEMORY_RESTRICT) != 0U)
+			glsl_module_member_decorate(state->module, structure, index, SPV_DECORATION_RESTRICT, 0xffffffffU);
+	}
+
+	/* The variable: set 0, the link's binding. */
+	symbol->id = glsl_module_id(state->module);
+	symbol->id_storage = SPV_STORAGE_UNIFORM;
+	operands[0] = glsl_emit_pointer(state, SPV_STORAGE_UNIFORM, structure);
+	operands[1] = symbol->id;
+	operands[2] = SPV_STORAGE_UNIFORM;
+	glsl_words_add(state->module, &state->module->globals, SPV_OP_VARIABLE, operands, 3U);
+	value = 0U;
+	glsl_module_decorate(state->module, symbol->id, SPV_DECORATION_DESCRIPTOR_SET, &value, 1U);
+	value = symbol->binding;
+	glsl_module_decorate(state->module, symbol->id, SPV_DECORATION_BINDING, &value, 1U);
+	glsl_module_name(state->module, symbol->id, symbol->type->name);
+}
+
+/* Declares a compute shader's shared variable: a Workgroup variable of its type, named (ws101-p008). */
+static void
+emit_shared(
+	struct emit_state *state,
+	struct glsl_symbol *symbol)
+{
+	uint32_t operands[3];
+
+	/* The variable, which every invocation of the group shares. */
+	symbol->id = glsl_module_id(state->module);
+	symbol->id_storage = SPV_STORAGE_WORKGROUP;
+	operands[0] = glsl_emit_pointer(state, SPV_STORAGE_WORKGROUP, glsl_emit_type(state, symbol->type));
+	operands[1] = symbol->id;
+	operands[2] = SPV_STORAGE_WORKGROUP;
+	glsl_words_add(state->module, &state->module->globals, SPV_OP_VARIABLE, operands, 3U);
+	glsl_module_name(state->module, symbol->id, symbol->name);
+}
+
+/*
+ * Writes a value through a path into a shader storage block (ws101-p008):
+ * a leaf through its chain (a bool as its uint), an aggregate part by part
+ * (a matrix column by column: i915 moves scalars and vectors of memory).
+ */
+static void
+emit_store_block(
+	struct emit_state *state,
+	const struct emit_path *path,
+	struct emit_value value)
+{
+	const struct glsl_type *type;
+	const struct glsl_type *stored;
+	struct emit_path part;
+	struct emit_value element;
+	uint32_t operands[3];
+	uint32_t pointer;
+	unsigned count;
+	unsigned index;
+
+	/* A leaf: stored, a bool as a uint. */
+	type = path->type;
+	if (type->kind == GLSL_KIND_SCALAR || type->kind == GLSL_KIND_VECTOR) {
+		if (type->base == GLSL_BASE_BOOL) {
+			stored = glsl_type_with_base(type, GLSL_BASE_UINT);
+			operands[0] = value.id;
+			operands[1] = glsl_emit_splat(state, emit_uint(state, 1U), stored);
+			operands[2] = glsl_emit_splat(state, emit_uint(state, 0U), stored);
+			value = emit_value_of(glsl_emit_op(state, SPV_OP_SELECT, glsl_emit_type(state, stored), operands, 3U), stored);
+		}
+		pointer = emit_chain(state, path);
+		operands[0] = pointer;
+		operands[1] = value.id;
+		glsl_words_add(state->module, &state->module->body, SPV_OP_STORE, operands, 2U);
+		return;
+	}
+
+	/* An aggregate: each part taken from the value and stored on its own. */
+	count = type->length;
+	if (type->kind == GLSL_KIND_STRUCT)
+		count = type->field_count;
+	if (type->kind == GLSL_KIND_MATRIX)
+		count = type->columns;
+	for (index = 0U; index < count && index < EMIT_MAX_PARTS; index++) {
+		part = *path;
+		if (part.index_count == 16U)
+			return;
+		part.indices[part.index_count] = glsl_emit_int(state, (int32_t)index);
+		part.index_count++;
+		if (type->kind == GLSL_KIND_STRUCT) {
+			part.type = type->fields[index].type;
+		} else if (type->kind == GLSL_KIND_MATRIX) {
+			part.type = glsl_type_column(type);
+		} else {
+			part.type = type->element;
+		}
+		element = emit_value_of(glsl_emit_extract(state, value, index), part.type);
+		emit_store_block(state, &part, element);
+	}
+}
+
+/*
+ * Emits .length() of a storage block's run-time array (ws101-p008): its
+ * block's OpArrayLength, as an int.  The array is the block's last member:
+ * "instance.member" or a member without an instance name.
+ */
+static struct emit_value
+emit_array_length(
+	struct emit_state *state,
+	struct glsl_node *node)
+{
+	struct glsl_node *array;
+	struct glsl_symbol *block;
+	struct emit_value value;
+	uint32_t operands[3];
+	uint32_t member;
+	uint32_t length;
+
+	/* The block and the member. */
+	array = node->child[0];
+	block = NULL;
+	member = 0U;
+	if (array->kind == GLSL_N_IDENTIFIER && array->symbol != NULL && array->symbol->where == GLSL_VAR_BUFFER_MEMBER) {
+		block = array->symbol->block;
+		member = array->symbol->member;
+	} else if (array->kind == GLSL_N_FIELD &&
+		   array->child[0]->kind == GLSL_N_IDENTIFIER &&
+		   array->child[0]->symbol != NULL &&
+		   array->child[0]->symbol->where == GLSL_VAR_BUFFER) {
+		block = array->child[0]->symbol;
+		member = array->field;
+	}
+
+	/* Anything else has a constant length the checker gave. */
+	if (block == NULL) {
+		value = emit_value_of(emit_zero(state, node->type), node->type);
+		return value;
+	}
+
+	/* OpArrayLength of the block's member, as an int. */
+	operands[0] = block->id;
+	operands[1] = member;
+	length = glsl_emit_op(state, SPV_OP_ARRAY_LENGTH, glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_UINT)), operands, 2U);
+	operands[0] = length;
+	value = emit_value_of(glsl_emit_op(state, SPV_OP_BITCAST, glsl_emit_type(state, node->type), operands, 1U), node->type);
+	return value;
+}
+
+/*
+ * Emits a compute shader's atomic function or barrier (ws101-p008).
+ *
+ * An atomic works on the word its first argument's path leads to (a
+ * buffer's at Device scope, a shared variable's at Workgroup scope),
+ * relaxed, and gives the old value; atomicCompSwap(mem, compare, data)
+ * is OpAtomicCompareExchange with data as the value and compare as the
+ * comparator.  barrier() is OpControlBarrier of the workgroup, acquiring
+ * and releasing shared memory (as glslang emits it); the memory barriers
+ * are OpMemoryBarrier of the memory they name.
+ */
+static struct emit_value
+emit_compute_call(
+	struct emit_state *state,
+	struct glsl_node *node)
+{
+	struct emit_path path;
+	struct emit_value arguments[2];
+	struct glsl_node *argument;
+	uint32_t operands[8];
+	uint32_t opcode;
+	uint32_t type;
+	uint32_t pointer;
+	uint32_t scope;
+	unsigned special;
+	unsigned count;
+	int status;
+	int is_signed;
+
+	/* The barriers: scope and semantics. */
+	special = node->builtin->number;
+	switch (special) {
+	case GLSL_SPECIAL_BARRIER:
+		operands[0] = emit_uint(state, SPV_SCOPE_WORKGROUP);
+		operands[1] = emit_uint(state, SPV_SCOPE_WORKGROUP);
+		operands[2] = emit_uint(state, SPV_SEMANTICS_ACQUIRE_RELEASE | SPV_SEMANTICS_WORKGROUP_MEMORY);
+		glsl_words_add(state->module, &state->module->body, SPV_OP_CONTROL_BARRIER, operands, 3U);
+		return emit_value_of(0U, node->type);
+	case GLSL_SPECIAL_MEMORY_BARRIER:
+		operands[0] = emit_uint(state, SPV_SCOPE_DEVICE);
+		operands[1] = emit_uint(state, SPV_SEMANTICS_ACQUIRE_RELEASE | SPV_SEMANTICS_UNIFORM_MEMORY | SPV_SEMANTICS_WORKGROUP_MEMORY);
+		glsl_words_add(state->module, &state->module->body, SPV_OP_MEMORY_BARRIER, operands, 2U);
+		return emit_value_of(0U, node->type);
+	case GLSL_SPECIAL_MEMORY_BARRIER_BUFFER:
+		operands[0] = emit_uint(state, SPV_SCOPE_DEVICE);
+		operands[1] = emit_uint(state, SPV_SEMANTICS_ACQUIRE_RELEASE | SPV_SEMANTICS_UNIFORM_MEMORY);
+		glsl_words_add(state->module, &state->module->body, SPV_OP_MEMORY_BARRIER, operands, 2U);
+		return emit_value_of(0U, node->type);
+	case GLSL_SPECIAL_MEMORY_BARRIER_SHARED:
+		operands[0] = emit_uint(state, SPV_SCOPE_WORKGROUP);
+		operands[1] = emit_uint(state, SPV_SEMANTICS_ACQUIRE_RELEASE | SPV_SEMANTICS_WORKGROUP_MEMORY);
+		glsl_words_add(state->module, &state->module->body, SPV_OP_MEMORY_BARRIER, operands, 2U);
+		return emit_value_of(0U, node->type);
+	case GLSL_SPECIAL_GROUP_MEMORY_BARRIER:
+		operands[0] = emit_uint(state, SPV_SCOPE_WORKGROUP);
+		operands[1] = emit_uint(state, SPV_SEMANTICS_ACQUIRE_RELEASE | SPV_SEMANTICS_UNIFORM_MEMORY | SPV_SEMANTICS_WORKGROUP_MEMORY);
+		glsl_words_add(state->module, &state->module->body, SPV_OP_MEMORY_BARRIER, operands, 2U);
+		return emit_value_of(0U, node->type);
+	default:
+		break;
+	}
+
+	/* An atomic: the pointer to its word, then the values after it. */
+	argument = node->child[1];
+	status = emit_path(state, argument, &path);
+	if (status != 0 || path.swizzle_count > 1U)
+		return emit_value_of(emit_zero(state, node->type), node->type);
+	if (path.swizzle_count == 1U) {
+		path.indices[path.index_count] = glsl_emit_int(state, (int32_t)path.swizzle[0]);
+		path.index_count++;
+		path.swizzle_count = 0U;
+	}
+	pointer = emit_chain(state, &path);
+	count = 0U;
+	for (argument = argument->next; argument != NULL && count < 2U; argument = argument->next) {
+		arguments[count] = glsl_emit_expression(state, argument);
+		count++;
+	}
+
+	/* The operation, signed or unsigned. */
+	is_signed = (node->type->base == GLSL_BASE_INT);
+	switch (special) {
+	case GLSL_SPECIAL_ATOMIC_ADD:
+		opcode = SPV_OP_ATOMIC_I_ADD;
+		break;
+	case GLSL_SPECIAL_ATOMIC_MIN:
+		opcode = is_signed ? SPV_OP_ATOMIC_S_MIN : SPV_OP_ATOMIC_U_MIN;
+		break;
+	case GLSL_SPECIAL_ATOMIC_MAX:
+		opcode = is_signed ? SPV_OP_ATOMIC_S_MAX : SPV_OP_ATOMIC_U_MAX;
+		break;
+	case GLSL_SPECIAL_ATOMIC_AND:
+		opcode = SPV_OP_ATOMIC_AND;
+		break;
+	case GLSL_SPECIAL_ATOMIC_OR:
+		opcode = SPV_OP_ATOMIC_OR;
+		break;
+	case GLSL_SPECIAL_ATOMIC_XOR:
+		opcode = SPV_OP_ATOMIC_XOR;
+		break;
+	case GLSL_SPECIAL_ATOMIC_EXCHANGE:
+		opcode = SPV_OP_ATOMIC_EXCHANGE;
+		break;
+	default:
+		opcode = SPV_OP_ATOMIC_COMPARE_EXCHANGE;
+		break;
+	}
+
+	/* The scope of the memory, relaxed semantics, the value (and a compare and exchange's comparator). */
+	scope = SPV_SCOPE_DEVICE;
+	if (path.storage == SPV_STORAGE_WORKGROUP)
+		scope = SPV_SCOPE_WORKGROUP;
+	type = glsl_emit_type(state, node->type);
+	operands[0] = pointer;
+	operands[1] = emit_uint(state, scope);
+	operands[2] = emit_uint(state, 0U);
+	if (opcode == SPV_OP_ATOMIC_COMPARE_EXCHANGE && count == 2U) {
+		operands[3] = emit_uint(state, 0U);
+		operands[4] = arguments[1].id;
+		operands[5] = arguments[0].id;
+		return emit_value_of(glsl_emit_op(state, opcode, type, operands, 6U), node->type);
+	}
+	operands[3] = arguments[0].id;
+	return emit_value_of(glsl_emit_op(state, opcode, type, operands, 4U), node->type);
+}
+
+/* Returns the id of a 32-bit unsigned constant (ws101-p008). */
+static uint32_t
+emit_uint(
+	struct emit_state *state,
+	uint32_t value)
+{
+	/* The constant of the uint type. */
+	return glsl_module_constant(state->module, glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_UINT)), value);
+}
+
+/*
+ * Reports whether a list of statements returns from inside a loop
+ * (ws101-p008): i915's native compiler takes no OpReturn in a loop, so a
+ * compute shader's main that does so runs as an inlined function with
+ * early returns does.
+ */
+static int
+emit_returns_in_loop(
+	const struct glsl_node *node,
+	int in_loop)
+{
+	int inside;
+	int found;
+	unsigned index;
+
+	/* Each statement, and the statements below it. */
+	for (; node != NULL; node = node->next) {
+		if (node->kind == GLSL_N_RETURN && in_loop)
+			return 1;
+		if (node->kind < GLSL_N_BLOCK)
+			continue;
+		inside = in_loop || node->kind == GLSL_N_FOR || node->kind == GLSL_N_WHILE || node->kind == GLSL_N_DO;
+		for (index = 0U; index < 4U; index++) {
+			if (node->child[index] == NULL)
+				continue;
+			found = emit_returns_in_loop(node->child[index], inside);
+			if (found)
+				return 1;
+		}
+	}
+
+	/* No return inside a loop. */
+	return 0;
+}
+
+/*
+ * Emits a compute shader's main body inside a loop that runs once
+ * (ws101-p008): a return says so in a flag and leaves the innermost
+ * construct, loops leave on the flag, and main returns once after the
+ * loop, as an inlined function with early returns does.
+ */
+static void
+emit_main_once(
+	struct emit_state *state,
+	struct glsl_node *body)
+{
+	struct emit_frame *frame;
+	uint32_t operands[2];
+	uint32_t header;
+	uint32_t body_label;
+	uint32_t continue_label;
+	uint32_t merge;
+
+	/* The frame and its flag. */
+	frame = glsl_alloc(state->module->arena, sizeof(*frame));
+	frame->function = state->shader->main;
+	frame->returned = emit_variable(state, glsl_type_scalar(GLSL_BASE_BOOL));
+	operands[0] = frame->returned;
+	operands[1] = glsl_module_bool(state->module, glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_BOOL)), 0);
+	glsl_words_add(state->module, &state->module->body, SPV_OP_STORE, operands, 2U);
+	state->frame = frame;
+
+	/* The loop that runs once. */
+	header = glsl_module_id(state->module);
+	body_label = glsl_module_id(state->module);
+	continue_label = glsl_module_id(state->module);
+	merge = glsl_module_id(state->module);
+	emit_branch(state, header);
+	emit_label(state, header);
+	emit_loop_merge(state, merge, continue_label);
+	emit_branch(state, body_label);
+	emit_label(state, body_label);
+	emit_push_target(state, EMIT_TARGET_FRAME, merge, continue_label);
+	frame->target = state->target_count;
+
+	/* The body, then the loop's end (its continue block is never reached). */
+	emit_statements(state, body);
+	emit_branch(state, merge);
+	emit_pop_target(state);
+	emit_label(state, continue_label);
+	emit_branch(state, header);
+	emit_label(state, merge);
+
+	/* Back outside the frame: main returns after the loop. */
+	state->frame = NULL;
+}
+
