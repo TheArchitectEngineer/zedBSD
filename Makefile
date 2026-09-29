@@ -941,6 +941,7 @@ endef
 ifneq ($(strip $(ZEDBSD_PLATFORM)),)
 include $(PLATFORM_MAKEFILE)
 endif
+include tools/release/kei-nightly.mk
 
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)
 # The kernel needs the target tools only: it reads no C library header, so
