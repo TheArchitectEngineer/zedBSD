@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: 2026-09-29: p008（性能）を 3 つに分け（p008 完了待ちの割込み・p018 非同期の実行器・p019 present mode）、p008・p009 は cleared。p018 は着手前の計測で uncleared（8 app の遅さは compositor の GPU の合成、占有 90%）。提案: p021（compiler が走らない block の texture の send を飛ぶ）を先に。main の判断待ち。F-054 は別の agent の p020。その前、2026-09-28 の夜: p001〜p006 は実機で確認（MRT・query・SSBO・stencil・multisample・transform feedback）。HDMI の主出力 p011〜p013、BUG-091（p014）は cleared。p015（BUG-085 の再試験）は cleared: BUG-094 の原因（HAL の APIC timer の較正と AP の timecounter の probe が vCPU の停止で狂う）を直し、修正の後の 10 回で BUG-085・BUG-094 とも 0。p016（lease の替わり目で HDMI を点けたまま）は cleared: login・logout の 暗転 0（実機の passthrough の register）。p017（BUG-058）は 6 回で再現せず uncleared。BUG-095（capture の image の power-off）を起票。次: 実物の LCD での login・logout の目視（ユーザー）→ p007〜p010
+Resume point: 2026-09-29: p008（性能）を 3 つに分け（p008 完了待ちの割込み・p018 非同期の実行器・p019 present mode）、p008・p009 は cleared。p018 は着手前の計測で uncleared（8 app の遅さは compositor の GPU の合成、占有 90%）。p021（compiler: 分岐の中の texture の send を IF で飛ぶ）を実施中（実装と host 試験は済み、実機の確認中）。その後 p018 を計り直す。p019 と F-054（p020）は RPS の agent。その前、2026-09-28 の夜: p001〜p006 は実機で確認（MRT・query・SSBO・stencil・multisample・transform feedback）。HDMI の主出力 p011〜p013、BUG-091（p014）は cleared。p015（BUG-085 の再試験）は cleared: BUG-094 の原因（HAL の APIC timer の較正と AP の timecounter の probe が vCPU の停止で狂う）を直し、修正の後の 10 回で BUG-085・BUG-094 とも 0。p016（lease の替わり目で HDMI を点けたまま）は cleared: login・logout の 暗転 0（実機の passthrough の register）。p017（BUG-058）は 6 回で再現せず uncleared。BUG-095（capture の image の power-off）を起票。次: 実物の LCD での login・logout の目視（ユーザー）→ p007〜p010
 <!-- awesome-plan-current:end -->
 
 ## 目標
