@@ -189,6 +189,12 @@
 /* The deepest nesting of loops the code generator follows. */
 #define COMPILE_MAX_LOOPS	16U
 
+/*
+ * The most texture messages of one shader that run under an IF on their
+ * guard (ws075-p021); the ones past it run unguarded, as before.
+ */
+#define COMPILE_MAX_GUARDS	256U
+
 /* The VUE slots a URB write carries at most: eight registers of a SIMD8 VUE. */
 #define COMPILE_URB_WRITE_SLOTS	2U
 
@@ -386,9 +392,24 @@ struct i915_compile_state {
 	/* The instruction position of each loop being lowered, innermost last. */
 	uint32_t loop_tops[COMPILE_MAX_LOOPS];
 	uint32_t loop_depth;
+
+	/*
+	 * The ENDIFs of guarded texture messages inside loops whose WHILE is
+	 * not placed yet: the position of each and the loop depth it is at.
+	 * The WHILE of that depth points their JIP at itself, and they leave
+	 * the list; the ENDIFs outside every loop keep the next instruction.
+	 */
+	uint32_t endif_position[COMPILE_MAX_GUARDS];
+	uint32_t endif_depth[COMPILE_MAX_GUARDS];
+	uint32_t endif_count;
+
+	/* How many texture messages were guarded; past COMPILE_MAX_GUARDS they are not. */
+	uint32_t guards;
 };
 
 static uint32_t i915_compile_sources(const struct i915_shader_ir_inst *inst);
+static uint32_t i915_compile_operands(const struct i915_shader_ir_inst *inst);
+static void i915_compile_guarded_texture(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static uint32_t i915_compile_source(const struct i915_shader_ir_inst *inst, uint32_t index);
 static uint32_t i915_compile_results(const struct i915_shader_ir_inst *inst);
 static int i915_compile_attempt(struct i915_compile_state *state);
@@ -729,9 +750,30 @@ i915_compile_reset(
 		state->output_value[value] = COMPILE_NO_VALUE;
 }
 
-/* Returns how many of an instruction's src[] name values. */
+/*
+ * Returns how many values an instruction reads: its operands, and the guard
+ * of a guarded texture message after them (see i915_compile_source()).
+ */
 static uint32_t
 i915_compile_sources(
+	const struct i915_shader_ir_inst *inst)
+{
+	uint32_t operands;
+
+	/* The operands the operation names. */
+	operands = i915_compile_operands(inst);
+
+	/* A guard is read last. */
+	if (inst->guard != 0U)
+		return operands + 1U;
+
+	/* Succeeded: only the operands. */
+	return operands;
+}
+
+/* Returns how many of an instruction's src[] name values. */
+static uint32_t
+i915_compile_operands(
 	const struct i915_shader_ir_inst *inst)
 {
 	/* The operation decides how many sources it reads. */
@@ -825,13 +867,21 @@ i915_compile_sources(
 
 /*
  * Returns the value an instruction reads as its index-th source: src[index],
- * or for a texture message the index-th value of its run.
+ * or for a texture message the index-th value of its run; the source after
+ * the operands is a guard.
  */
 static uint32_t
 i915_compile_source(
 	const struct i915_shader_ir_inst *inst,
 	uint32_t index)
 {
+	uint32_t operands;
+
+	/* The source after the operands is the guard, stored plus one. */
+	operands = i915_compile_operands(inst);
+	if (inst->guard != 0U && index == operands)
+		return inst->guard - 1U;
+
 	/* A texture message's parameters are consecutive values from src[0]. */
 	if (inst->op == I915_IR_TEXTURE)
 		return inst->src[0] + index;
@@ -1659,11 +1709,8 @@ i915_compile_instruction(
 	case I915_IR_SAMPLE:
 	case I915_IR_SAMPLE_BIAS:
 	case I915_IR_SAMPLE_LOD:
-		i915_compile_sample(state, inst);
-		break;
-
 	case I915_IR_TEXTURE:
-		i915_compile_texture(state, inst);
+		i915_compile_guarded_texture(state, inst);
 		break;
 
 	case I915_IR_IADD:
@@ -3242,6 +3289,7 @@ i915_compile_loop_begin(
  * Lowers the end of a loop: f0.0 set where the Boolean holds, then a WHILE
  * on it back to the loop's first instruction.  The channels whose Boolean
  * is false stop running the loop; the loop ends when none goes round again.
+ * The guarded-texture ENDIFs of the loop's body are pointed at the WHILE.
  */
 static void
 i915_compile_loop_end(
@@ -3250,6 +3298,9 @@ i915_compile_loop_end(
 {
 	struct i915_eu_reg null;
 	uint32_t condition_grf;
+	uint32_t here;
+	uint32_t kept;
+	uint32_t index;
 
 	/* A loop end with no loop open was refused by the liveness pass. */
 	if (state->loop_depth == 0U) {
@@ -3273,7 +3324,90 @@ i915_compile_loop_end(
 
 	/* Jumps back for those channels, and closes the loop. */
 	state->loop_depth--;
+	here = drv_i915_eu_position(&state->code);
 	drv_i915_eu_while(&state->code, I915_EU_FLAG_F0_0, state->loop_tops[state->loop_depth]);
+
+	/*
+	 * Points the JIP of the loop body's guarded-texture ENDIFs at the WHILE
+	 * (Mesa's brw_set_uip_jip()), and drops them from the list.
+	 */
+	kept = 0U;
+	for (index = 0U; index < state->endif_count; index++) {
+		if (state->endif_depth[index] == state->loop_depth + 1U) {
+			drv_i915_eu_patch_endif(&state->code, state->endif_position[index], here);
+			continue;
+		}
+
+		/* An ENDIF of an outer loop stays for that loop's WHILE. */
+		state->endif_position[kept] = state->endif_position[index];
+		state->endif_depth[kept] = state->endif_depth[index];
+		kept++;
+	}
+
+	/* The list holds the outer loops' ENDIFs only. */
+	state->endif_count = kept;
+}
+
+/*
+ * Lowers a texture message under an IF on its guard (ws075-p021): f0.0 set
+ * where the guard holds, the IF, the message, the ENDIF.  The message then
+ * runs for the guard's channels, and a thread none of whose channels is in
+ * the guard jumps over it.  The channels outside the guard read its result
+ * only in selections that take something else (struct i915_shader_ir_inst).
+ * An unguarded message, or one past COMPILE_MAX_GUARDS, is lowered as it is.
+ */
+static void
+i915_compile_guarded_texture(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	struct i915_eu_reg null;
+	uint32_t guard_grf;
+	uint32_t if_position;
+	uint32_t endif_position;
+	int guarded;
+
+	/* A guard, and room to remember its ENDIF, make the message guarded. */
+	guarded = 0;
+	if (inst->guard != 0U && state->guards < COMPILE_MAX_GUARDS)
+		guarded = 1;
+
+	/* Sets f0.0 where the guard is true (not zero), and opens the IF on it. */
+	if_position = 0U;
+	if (guarded) {
+		guard_grf = i915_compile_grf(state, inst->guard - 1U);
+		null = drv_i915_eu_null();
+		null.type = COMPILE_TYPE_D;
+		drv_i915_eu_cmp(&state->code,
+				I915_EU_COND_NE,
+				I915_EU_FLAG_F0_0,
+				0,
+				null,
+				drv_i915_eu_grf_d(guard_grf),
+				drv_i915_eu_imm_d(0U));
+		if_position = drv_i915_eu_if(&state->code, I915_EU_FLAG_F0_0);
+		state->guards++;
+	}
+
+	/* Lowers the message itself. */
+	if (inst->op == I915_IR_TEXTURE) {
+		i915_compile_texture(state, inst);
+	} else {
+		i915_compile_sample(state, inst);
+	}
+
+	/* An unguarded message is done. */
+	if (!guarded)
+		return;
+
+	/* Closes the IF, points it at its ENDIF, and keeps an ENDIF inside a loop for the loop's WHILE. */
+	endif_position = drv_i915_eu_endif(&state->code);
+	drv_i915_eu_patch_if(&state->code, if_position, endif_position);
+	if (state->loop_depth != 0U) {
+		state->endif_position[state->endif_count] = endif_position;
+		state->endif_depth[state->endif_count] = state->loop_depth;
+		state->endif_count++;
+	}
 }
 
 

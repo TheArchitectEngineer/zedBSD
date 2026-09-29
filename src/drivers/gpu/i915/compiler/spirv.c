@@ -849,6 +849,7 @@ static uint32_t i915_spirv_shared_constant(struct i915_spirv_parser *parser, uin
 static uint32_t i915_spirv_float_constant(struct i915_spirv_parser *parser, uint32_t bits);
 static uint32_t i915_spirv_integer_constant(struct i915_spirv_parser *parser, uint32_t bits);
 static uint32_t i915_spirv_select_value(struct i915_spirv_parser *parser, uint32_t condition, uint32_t taken, uint32_t other);
+static void i915_spirv_guard(struct i915_spirv_parser *parser, struct i915_shader_ir_inst *inst);
 static uint32_t i915_spirv_move_value(struct i915_spirv_parser *parser, uint32_t destination, uint32_t source);
 static int i915_spirv_refuse(struct i915_spirv_parser *parser, uint32_t opcode, uint32_t word_offset, const char *reason);
 static struct i915_spirv_id *i915_spirv_id(struct i915_spirv_parser *parser, uint32_t id);
@@ -5820,6 +5821,7 @@ i915_spirv_lower_sample(
 		inst->component = texel_offset;
 		if (op != I915_IR_SAMPLE)
 			inst->src[2] = level;
+		i915_spirv_guard(parser, inst);
 	}
 
 	/* Succeeded: the sample is lowered. */
@@ -5964,6 +5966,7 @@ i915_spirv_emit_texture(
 		inst->immediate = image->binding;
 		inst->location = image->set;
 		inst->component = message | (texel_offset << 8);
+		i915_spirv_guard(parser, inst);
 	}
 
 	/* Succeeded unless the emit failed, which the parser latched. */
@@ -7768,6 +7771,26 @@ i915_spirv_shared_constant(
 
 	/* Succeeded: the constant's value. */
 	return *slot;
+}
+
+/*
+ * Guards a texture instruction with the predicate of the block it is in: the
+ * channels outside the predicate meet its result only in a selection by the
+ * predicate (a store, a phi, a later block's edge), so the message is needed
+ * for the predicate's channels alone.  A block every channel runs needs no
+ * guard.
+ */
+static void
+i915_spirv_guard(
+	struct i915_spirv_parser *parser,
+	struct i915_shader_ir_inst *inst)
+{
+	/* Every channel runs the block: the message is needed for all. */
+	if (parser->predicate == PREDICATE_ALWAYS)
+		return;
+
+	/* The block's predicate, plus one (zero means no guard). */
+	inst->guard = parser->predicate + 1U;
 }
 
 /* Emits a float constant of the given bits and returns its value. */
