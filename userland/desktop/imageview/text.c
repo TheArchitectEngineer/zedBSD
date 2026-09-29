@@ -6,7 +6,7 @@
  */
 
 /*
- * The text of Image Viewer's own interface (the page indicator, the
+ * The text of Image Viewer's own interface (the chip, the cards, the
  * messages, the file chooser), drawn with libtruetype from the desktop's
  * font.
  *
@@ -49,20 +49,26 @@ iv_text_open(
 	/* Nothing is open yet. */
 	memset(text, 0, sizeof(*text));
 
-	/* Reads the whole file. */
+	/* Opens the file. */
 	file = fopen(path, "rb");
 	if (file == NULL)
 		return errno;
+
+	/* Goes to its end, to learn its size. */
 	status = fseek(file, 0, SEEK_END);
-	size = ftell(file);
-	if (status != 0 ||
-	    size <= 0 ||
-	    (size_t)size > TEXT_FILE_MAX) {
+	if (status != 0) {
 		fclose(file);
 		return EINVAL;
 	}
 
-	/* Reads the bytes from the start. */
+	/* The size: a file empty, unreadable or larger than a font is refused. */
+	size = ftell(file);
+	if (size <= 0 || (size_t)size > TEXT_FILE_MAX) {
+		fclose(file);
+		return EINVAL;
+	}
+
+	/* Room for the bytes, read from the start. */
 	rewind(file);
 	text->data = malloc((size_t)size);
 	if (text->data == NULL) {
@@ -103,6 +109,8 @@ iv_text_close(
 	/* The face before the bytes it reads. */
 	if (text->face != NULL)
 		truetype_close(text->face);
+
+	/* The bytes and the glyphs' scratch; nothing is open any more. */
 	free(text->data);
 	free(text->scratch);
 	memset(text, 0, sizeof(*text));
@@ -133,6 +141,7 @@ iv_text_width(
 	width = 0;
 	index = 0;
 	while (string[index] != '\0') {
+		/* The character's glyph and its metrics; a glyph without metrics adds nothing. */
 		codepoint = next_codepoint(string, &index);
 		glyph = truetype_glyph_index(text->face, codepoint);
 		error = truetype_glyph_metrics(text->face, glyph, &metrics);
@@ -173,6 +182,7 @@ iv_text_draw(
 	/* Draws each character and moves the pen past it. */
 	index = 0;
 	while (string[index] != '\0') {
+		/* The character's glyph and its metrics; a glyph without metrics is passed over. */
 		codepoint = next_codepoint(string, &index);
 		glyph = truetype_glyph_index(text->face, codepoint);
 		error = truetype_glyph_metrics(text->face, glyph, &metrics);
@@ -185,12 +195,15 @@ iv_text_draw(
 			grown = realloc(text->scratch, needed);
 			if (grown == NULL)
 				return;
+
+			/* The grown bitmap is the scratch from now on. */
 			text->scratch = grown;
 			text->scratch_size = needed;
 		}
 
 		/* Draws the glyph's coverage and blends it in the colour. */
 		if (needed > 0) {
+			/* The coverage, blended only when the glyph could be drawn. */
 			error = truetype_render_glyph(text->face, glyph, &metrics, text->scratch, metrics.width, text->scratch_size);
 			if (error == 0)
 				iv_canvas_mask(canvas, x + metrics.left, baseline - metrics.top, text->scratch, (int)metrics.width, (int)metrics.height, color);
@@ -236,17 +249,20 @@ next_codepoint(
 
 	/* The continuation bytes; a missing one ends the character early. */
 	for (part = 1; part < length; part++) {
+		/* A byte that does not continue the character ends it as U+FFFD. */
 		if ((bytes[part] & 0xc0U) != 0x80U) {
 			*index += part;
 			return 0xfffdU;
 		}
 
-		/*  (bytes[part] & 0x3fU);|Its six bits. */
+		/* The byte's six bits of the character. */
 		codepoint = (codepoint << 6) | (bytes[part] & 0x3fU);
 	}
 
-	/* Succeeded: the character. */
+	/* The string moves on past the character. */
 	*index += length;
+
+	/* Succeeded: the character. */
 	return codepoint;
 }
 
@@ -270,6 +286,8 @@ set_size(
 	error = truetype_set_pixel_size(text->face, pixels);
 	if (error != 0)
 		return error;
+
+	/* The size the face is set to now. */
 	text->pixels = pixels;
 
 	/* Succeeded: the face is at the size. */

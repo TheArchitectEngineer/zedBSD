@@ -50,6 +50,7 @@ iv_canvas_fill(
 
 	/* Writes each pixel. */
 	for (line = 0; line < height; line++) {
+		/* The row's pixels in the rectangle. */
 		row = canvas->pixels + (size_t)(y + line) * canvas->stride + (size_t)x;
 		for (column = 0; column < width; column++)
 			row[column] = premultiplied;
@@ -77,6 +78,7 @@ iv_canvas_blend(
 
 	/* Blends each pixel. */
 	for (line = 0; line < height; line++) {
+		/* The row's pixels in the rectangle. */
 		row = canvas->pixels + (size_t)(y + line) * canvas->stride + (size_t)x;
 		for (column = 0; column < width; column++)
 			row[column] = over(row[column], color, 255U);
@@ -105,7 +107,7 @@ iv_canvas_round(
 	int pixel_x;
 	int pixel_y;
 
-	/* The radius fits the rectangle. */
+	/* The radius fits the rectangle, across and down. */
 	if (radius * 2 > width)
 		radius = width / 2;
 	if (radius * 2 > height)
@@ -113,26 +115,34 @@ iv_canvas_round(
 
 	/* Each pixel of the rectangle, covered fully except in the corners. */
 	for (line = 0; line < height; line++) {
+		/* A row off the canvas is not drawn. */
 		pixel_y = y + line;
 		if (pixel_y < 0 || pixel_y >= canvas->height)
 			continue;
+
+		/* Each pixel of the row. */
 		for (column = 0; column < width; column++) {
+			/* A pixel off the canvas is not drawn. */
 			pixel_x = x + column;
 			if (pixel_x < 0 || pixel_x >= canvas->width)
 				continue;
 
-			/* The corner's circle decides a corner pixel's coverage. */
+			/* The centre of the corner's circle across, when the pixel is in a corner's column. */
 			coverage = 1.0;
 			centre_x = -1.0;
-			centre_y = -1.0;
 			if (column < radius)
 				centre_x = (double)radius;
 			if (column >= width - radius)
 				centre_x = (double)(width - radius);
+
+			/* And down, when it is in a corner's row. */
+			centre_y = -1.0;
 			if (line < radius)
 				centre_y = (double)radius;
 			if (line >= height - radius)
 				centre_y = (double)(height - radius);
+
+			/* The corner's circle decides a corner pixel's coverage; a pixel outside it is not drawn. */
 			if (centre_x >= 0.0 && centre_y >= 0.0) {
 				distance = sqrt(((double)column + 0.5 - centre_x) * ((double)column + 0.5 - centre_x) +
 				    ((double)line + 0.5 - centre_y) * ((double)line + 0.5 - centre_y));
@@ -146,98 +156,6 @@ iv_canvas_round(
 			/* Blends the pixel by its coverage. */
 			canvas->pixels[(size_t)pixel_y * canvas->stride + (size_t)pixel_x] =
 			    over(canvas->pixels[(size_t)pixel_y * canvas->stride + (size_t)pixel_x], color, (unsigned)(coverage * 255.0 + 0.5));
-		}
-	}
-}
-
-/*
- * Copies opaque pixels (a page's raster, width words a row) with their
- * top left at a place.
- */
-void
-iv_canvas_copy(
-	struct iv_canvas *canvas,
-	int x,
-	int y,
-	const uint32_t *pixels,
-	int width,
-	int height)
-{
-	uint32_t *row;
-	const uint32_t *source;
-	int first_x;
-	int first_y;
-	int shown_width;
-	int shown_height;
-	int line;
-	int column;
-
-	/* The part of the pixels within the canvas. */
-	first_x = x;
-	first_y = y;
-	shown_width = width;
-	shown_height = height;
-	clip_span(canvas, &first_x, &first_y, &shown_width, &shown_height);
-
-	/* Copies each row of that part. */
-	for (line = 0; line < shown_height; line++) {
-		row = canvas->pixels + (size_t)(first_y + line) * canvas->stride + (size_t)first_x;
-		source = pixels + (size_t)(first_y + line - y) * (size_t)width + (size_t)(first_x - x);
-		for (column = 0; column < shown_width; column++)
-			row[column] = source[column];
-	}
-}
-
-/*
- * Copies opaque pixels (source_width words a row) stretched or shrunk to a
- * width and a height with their top left at a place: each pixel takes the
- * source pixel under its centre (ws081-p012, a page while two fingers
- * zoom, until it is drawn again at the new scale).
- */
-void
-iv_canvas_stretch(
-	struct iv_canvas *canvas,
-	int x,
-	int y,
-	int width,
-	int height,
-	const uint32_t *pixels,
-	int source_width,
-	int source_height)
-{
-	uint32_t *row;
-	const uint32_t *source;
-	long source_x;
-	long source_y;
-	int first_x;
-	int first_y;
-	int shown_width;
-	int shown_height;
-	int line;
-	int column;
-
-	/* Nothing to stretch from or to. */
-	if (width <= 0 ||
-	    height <= 0 ||
-	    source_width <= 0 ||
-	    source_height <= 0)
-		return;
-
-	/* The part of the stretched pixels within the canvas. */
-	first_x = x;
-	first_y = y;
-	shown_width = width;
-	shown_height = height;
-	clip_span(canvas, &first_x, &first_y, &shown_width, &shown_height);
-
-	/* Each pixel of that part takes the source pixel under its centre. */
-	for (line = 0; line < shown_height; line++) {
-		source_y = ((long)(first_y + line - y) * 2L + 1L) * (long)source_height / (2L * (long)height);
-		row = canvas->pixels + (size_t)(first_y + line) * canvas->stride + (size_t)first_x;
-		source = pixels + (size_t)source_y * (size_t)source_width;
-		for (column = 0; column < shown_width; column++) {
-			source_x = ((long)(first_x + column - x) * 2L + 1L) * (long)source_width / (2L * (long)width);
-			row[column] = source[source_x];
 		}
 	}
 }
@@ -263,14 +181,22 @@ iv_canvas_mask(
 
 	/* Each covered pixel within the canvas. */
 	for (line = 0; line < height; line++) {
+		/* A row off the canvas is not drawn. */
 		if (y + line < 0 || y + line >= canvas->height)
 			continue;
+
+		/* Each pixel of the row. */
 		for (column = 0; column < width; column++) {
+			/* A pixel off the canvas is not drawn. */
 			if (x + column < 0 || x + column >= canvas->width)
 				continue;
+
+			/* A pixel the mask does not cover is left as it is. */
 			coverage = mask[(size_t)line * (size_t)width + (size_t)column];
 			if (coverage == 0U)
 				continue;
+
+			/* The colour over the pixel by the mask's coverage. */
 			pixel = canvas->pixels + (size_t)(y + line) * canvas->stride + (size_t)(x + column);
 			*pixel = over(*pixel, color, coverage);
 		}
@@ -286,7 +212,7 @@ clip_span(
 	int *width,
 	int *height)
 {
-	/* The left and top edges. */
+	/* The left edge. */
 	if (*x < 0) {
 		*width += *x;
 		*x = 0;
@@ -298,15 +224,19 @@ clip_span(
 		*y = 0;
 	}
 
-	/* The right and bottom edges. */
+	/* The right edge. */
 	if (*x + *width > canvas->width)
 		*width = canvas->width - *x;
+
+	/* The bottom edge. */
 	if (*y + *height > canvas->height)
 		*height = canvas->height - *y;
 
-	/* Nothing left is an empty rectangle. */
+	/* Nothing left across is an empty rectangle. */
 	if (*width < 0)
 		*width = 0;
+
+	/* Nor down. */
 	if (*height < 0)
 		*height = 0;
 }
@@ -338,8 +268,11 @@ over(
 
 	/* Each channel: the source over what stays of the pixel. */
 	for (index = 0; index < 4; index++) {
+		/* The channel of the pixel, alpha first. */
 		shift = (unsigned)(24 - index * 8);
 		channel = (pixel >> shift) & 0xffU;
+
+		/* The sum, which rounding may carry past the channel's largest. */
 		result[index] = source[index] + channel * keep / 255U;
 		if (result[index] > 255U)
 			result[index] = 255U;

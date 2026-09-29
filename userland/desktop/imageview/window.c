@@ -85,7 +85,8 @@ static void window_touch_cancel(void *data, struct wl_touch *touch);
 
 /* The registry's callbacks, for as long as the registry lives. */
 static const struct wl_registry_listener registry_listener = {
-	window_global, window_global_remove
+	window_global,
+	window_global_remove
 };
 
 /* The shell's liveness check. */
@@ -100,30 +101,51 @@ static const struct xdg_surface_listener surface_listener = {
 
 /* The size the compositor gives the window, its request to close, and the largest size it may choose. */
 static const struct xdg_toplevel_listener toplevel_listener = {
-	window_toplevel_configure, window_toplevel_close, window_toplevel_bounds
+	window_toplevel_configure,
+	window_toplevel_close,
+	window_toplevel_bounds
 };
 
 /* The seat's devices and name. */
 static const struct wl_seat_listener seat_listener = {
-	window_seat_capabilities, window_seat_name
+	window_seat_capabilities,
+	window_seat_name
 };
 
 /* The touch screen's events of versions 1 to 5 (shape and orientation, of version 6, are never called). */
 static const struct wl_touch_listener touch_listener = {
-	window_touch_down, window_touch_up, window_touch_motion, window_touch_frame, window_touch_cancel, NULL, NULL
+	window_touch_down,
+	window_touch_up,
+	window_touch_motion,
+	window_touch_frame,
+	window_touch_cancel,
+	NULL,
+	NULL
 };
 
 /* The pointer's events of versions 1 to 5 (the later members are never called). */
 static const struct wl_pointer_listener pointer_listener = {
-	window_pointer_enter, window_pointer_leave, window_pointer_motion, window_pointer_button,
-	window_pointer_axis, window_pointer_frame, window_pointer_axis_source, window_pointer_axis_stop,
-	window_pointer_axis_discrete, NULL, NULL
+	window_pointer_enter,
+	window_pointer_leave,
+	window_pointer_motion,
+	window_pointer_button,
+	window_pointer_axis,
+	window_pointer_frame,
+	window_pointer_axis_source,
+	window_pointer_axis_stop,
+	window_pointer_axis_discrete,
+	NULL,
+	NULL
 };
 
 /* The keyboard's events of versions 1 to 5. */
 static const struct wl_keyboard_listener keyboard_listener = {
-	window_keyboard_keymap, window_keyboard_enter, window_keyboard_leave,
-	window_keyboard_key, window_keyboard_modifiers, window_keyboard_repeat
+	window_keyboard_keymap,
+	window_keyboard_enter,
+	window_keyboard_leave,
+	window_keyboard_key,
+	window_keyboard_modifiers,
+	window_keyboard_repeat
 };
 
 /*
@@ -219,8 +241,10 @@ iv_window_open(
 		return -1;
 	}
 
-	/* Succeeded: the window can be drawn into. */
+	/* The first configure's size is the window's size, not a change of it. */
 	window->resized = 0;
+
+	/* Succeeded: the window can be drawn into. */
 	return 0;
 }
 
@@ -409,6 +433,8 @@ iv_window_action(
 	event = window_push(window, IV_EVENT_ACTION);
 	if (event == NULL)
 		return;
+
+	/* The action the input carries. */
 	event->action = action;
 }
 
@@ -559,10 +585,9 @@ window_global_remove(
 	struct wl_registry *registry,
 	uint32_t name)
 {
-	/* Nothing to do. */
-	(void)data;
-	(void)registry;
-	(void)name;
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(registry);
+	UNUSED_PARAMETER(name);
 }
 
 /* Answers the compositor's liveness check. */
@@ -572,8 +597,9 @@ window_ping(
 	struct xdg_wm_base *shell,
 	uint32_t serial)
 {
+	UNUSED_PARAMETER(data);
+
 	/* The same serial back. */
-	(void)data;
 	xdg_wm_base_pong(shell, serial);
 }
 
@@ -606,13 +632,15 @@ window_toplevel_configure(
 	size_t count;
 	size_t index;
 
+	UNUSED_PARAMETER(toplevel);
+
 	/* Whether the compositor made the window fullscreen. */
-	(void)toplevel;
 	window = data;
 	window->fullscreen = 0;
 	state = states->data;
 	count = states->size / sizeof(uint32_t);
 	for (index = 0; index < count; index++) {
+		/* The fullscreen state among the window's states. */
 		if (state[index] == XDG_TOPLEVEL_STATE_FULLSCREEN)
 			window->fullscreen = 1;
 	}
@@ -652,8 +680,9 @@ window_toplevel_close(
 {
 	struct iv_window *window;
 
+	UNUSED_PARAMETER(toplevel);
+
 	/* The main loop ends the program. */
-	(void)toplevel;
 	window = data;
 	window->closed = 1;
 }
@@ -668,8 +697,9 @@ window_toplevel_bounds(
 {
 	struct iv_window *window;
 
+	UNUSED_PARAMETER(toplevel);
+
 	/* The width, when known. */
-	(void)toplevel;
 	window = data;
 	window->bounds_width = 0U;
 	if (width > 0)
@@ -720,10 +750,9 @@ window_seat_name(
 	struct wl_seat *seat,
 	const char *name)
 {
-	/* Nothing to do. */
-	(void)data;
-	(void)seat;
-	(void)name;
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(seat);
+	UNUSED_PARAMETER(name);
 }
 
 /* The pointer comes over the window: a motion to where it is. */
@@ -738,10 +767,11 @@ window_pointer_enter(
 {
 	struct iv_window *window;
 
+	UNUSED_PARAMETER(pointer);
+	UNUSED_PARAMETER(serial);
+	UNUSED_PARAMETER(surface);
+
 	/* The pointer's place, as a motion. */
-	(void)pointer;
-	(void)serial;
-	(void)surface;
 	window = data;
 	window->pointer_x = wl_fixed_to_int(x);
 	window->pointer_y = wl_fixed_to_int(y);
@@ -758,10 +788,11 @@ window_pointer_leave(
 {
 	struct iv_window *window;
 
+	UNUSED_PARAMETER(pointer);
+	UNUSED_PARAMETER(serial);
+	UNUSED_PARAMETER(surface);
+
 	/* The view hears that the pointer left. */
-	(void)pointer;
-	(void)serial;
-	(void)surface;
 	window = data;
 	(void)window_push(window, IV_EVENT_LEAVE);
 }
@@ -777,9 +808,10 @@ window_pointer_motion(
 {
 	struct iv_window *window;
 
+	UNUSED_PARAMETER(pointer);
+	UNUSED_PARAMETER(time);
+
 	/* The new place, as a motion. */
-	(void)pointer;
-	(void)time;
 	window = data;
 	window->pointer_x = wl_fixed_to_int(x);
 	window->pointer_y = wl_fixed_to_int(y);
@@ -799,9 +831,10 @@ window_pointer_button(
 	struct iv_window *window;
 	struct iv_event *event;
 
+	UNUSED_PARAMETER(pointer);
+	UNUSED_PARAMETER(time);
+
 	/* A press's serial is kept for a context menu. */
-	(void)pointer;
-	(void)time;
 	window = data;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
 		window->press_serial = serial;
@@ -810,6 +843,8 @@ window_pointer_button(
 	event = window_push(window, IV_EVENT_BUTTON);
 	if (event == NULL)
 		return;
+
+	/* The button, and whether it went down or up. */
 	event->button = button;
 	event->pressed = 0;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
@@ -828,17 +863,20 @@ window_pointer_axis(
 	struct iv_window *window;
 	struct iv_event *event;
 
+	UNUSED_PARAMETER(pointer);
+	UNUSED_PARAMETER(time);
+
 	/* Only the vertical axis scrolls the view. */
-	(void)pointer;
-	(void)time;
 	window = data;
 	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
 		return;
 
-	/* The distance, scaled to the window's pixels. */
+	/* The wheel as an input; a full queue drops it. */
 	event = window_push(window, IV_EVENT_AXIS);
 	if (event == NULL)
 		return;
+
+	/* The distance, scaled to the window's pixels. */
 	event->scroll = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
 }
 
@@ -848,9 +886,8 @@ window_pointer_frame(
 	void *data,
 	struct wl_pointer *pointer)
 {
-	/* Nothing to do. */
-	(void)data;
-	(void)pointer;
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(pointer);
 }
 
 /* The source of scrolling is not used. */
@@ -860,10 +897,9 @@ window_pointer_axis_source(
 	struct wl_pointer *pointer,
 	uint32_t source)
 {
-	/* Nothing to do. */
-	(void)data;
-	(void)pointer;
-	(void)source;
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(pointer);
+	UNUSED_PARAMETER(source);
 }
 
 /* The end of scrolling is not used. */
@@ -874,11 +910,10 @@ window_pointer_axis_stop(
 	uint32_t time,
 	uint32_t axis)
 {
-	/* Nothing to do. */
-	(void)data;
-	(void)pointer;
-	(void)time;
-	(void)axis;
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(pointer);
+	UNUSED_PARAMETER(time);
+	UNUSED_PARAMETER(axis);
 }
 
 /* The wheel's notches are not used (the axis value already says how far). */
@@ -889,11 +924,10 @@ window_pointer_axis_discrete(
 	uint32_t axis,
 	int32_t discrete)
 {
-	/* Nothing to do. */
-	(void)data;
-	(void)pointer;
-	(void)axis;
-	(void)discrete;
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(pointer);
+	UNUSED_PARAMETER(axis);
+	UNUSED_PARAMETER(discrete);
 }
 
 /* Closes the keymap file: keys arrive as evdev codes and the viewer knows the ones it needs. */
@@ -905,11 +939,12 @@ window_keyboard_keymap(
 	int32_t fd,
 	uint32_t size)
 {
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(keyboard);
+	UNUSED_PARAMETER(format);
+	UNUSED_PARAMETER(size);
+
 	/* The descriptor is the window's to close. */
-	(void)data;
-	(void)keyboard;
-	(void)format;
-	(void)size;
 	if (fd >= 0)
 		(void)close(fd);
 }
@@ -925,11 +960,12 @@ window_keyboard_enter(
 {
 	struct iv_window *window;
 
+	UNUSED_PARAMETER(keyboard);
+	UNUSED_PARAMETER(serial);
+	UNUSED_PARAMETER(surface);
+	UNUSED_PARAMETER(keys);
+
 	/* Keys already held when focus came are not pressed again. */
-	(void)keyboard;
-	(void)serial;
-	(void)surface;
-	(void)keys;
 	window = data;
 	window->repeat_key = 0U;
 }
@@ -944,10 +980,11 @@ window_keyboard_leave(
 {
 	struct iv_window *window;
 
+	UNUSED_PARAMETER(keyboard);
+	UNUSED_PARAMETER(serial);
+	UNUSED_PARAMETER(surface);
+
 	/* The held key stops repeating, and modifiers are forgotten. */
-	(void)keyboard;
-	(void)serial;
-	(void)surface;
 	window = data;
 	window->repeat_key = 0U;
 	window->modifiers = 0U;
@@ -967,10 +1004,11 @@ window_keyboard_key(
 	struct iv_event *event;
 	int modifier;
 
+	UNUSED_PARAMETER(keyboard);
+	UNUSED_PARAMETER(serial);
+	UNUSED_PARAMETER(time);
+
 	/* The key as an input. */
-	(void)keyboard;
-	(void)serial;
-	(void)time;
 	window = data;
 	event = window_push(window, IV_EVENT_KEY);
 	if (event != NULL) {
@@ -1008,12 +1046,13 @@ window_keyboard_modifiers(
 {
 	struct iv_window *window;
 
+	UNUSED_PARAMETER(keyboard);
+	UNUSED_PARAMETER(serial);
+	UNUSED_PARAMETER(latched);
+	UNUSED_PARAMETER(locked);
+	UNUSED_PARAMETER(group);
+
 	/* Only the held modifiers count; zdesktop latches and locks nothing. */
-	(void)keyboard;
-	(void)serial;
-	(void)latched;
-	(void)locked;
-	(void)group;
 	window = data;
 	window->modifiers = 0U;
 	if ((depressed & WINDOW_WAYLAND_SHIFT) != 0U)
@@ -1036,8 +1075,9 @@ window_keyboard_repeat(
 {
 	struct iv_window *window;
 
+	UNUSED_PARAMETER(keyboard);
+
 	/* A positive rate is keys per second. */
-	(void)keyboard;
 	window = data;
 	if (rate > 0)
 		window->repeat_interval = 1000U / (uint32_t)rate;
@@ -1116,9 +1156,10 @@ window_touch_down(
 {
 	struct iv_window *window;
 
+	UNUSED_PARAMETER(touch);
+	UNUSED_PARAMETER(surface);
+
 	/* The finger's serial is kept for a context menu (a long press). */
-	(void)touch;
-	(void)surface;
 	window = data;
 	window->press_serial = serial;
 
@@ -1135,9 +1176,10 @@ window_touch_up(
 	uint32_t time,
 	int32_t id)
 {
+	UNUSED_PARAMETER(touch);
+	UNUSED_PARAMETER(serial);
+
 	/* Queued, with no place. */
-	(void)touch;
-	(void)serial;
 	window_touch_push(data, IV_TOUCH_UP, time, id, 0, 0);
 }
 
@@ -1151,8 +1193,9 @@ window_touch_motion(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
+	UNUSED_PARAMETER(touch);
+
 	/* Queued. */
-	(void)touch;
 	window_touch_push(data, IV_TOUCH_MOTION, time, id, x, y);
 }
 
@@ -1162,9 +1205,8 @@ window_touch_frame(
 	void *data,
 	struct wl_touch *touch)
 {
-	/* Nothing to do. */
-	(void)data;
-	(void)touch;
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(touch);
 }
 
 /* The compositor took the fingers. */
@@ -1173,7 +1215,8 @@ window_touch_cancel(
 	void *data,
 	struct wl_touch *touch)
 {
+	UNUSED_PARAMETER(touch);
+
 	/* Queued, for every finger. */
-	(void)touch;
 	window_touch_push(data, IV_TOUCH_CANCEL, 0, -1, 0, 0);
 }

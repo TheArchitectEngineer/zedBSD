@@ -63,11 +63,20 @@ static const struct titlebar_control titlebar_controls[] = {
 
 static void titlebar_activated(void *data, struct keiland_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
 static int titlebar_build(struct iv_titlebar *titlebar);
+static int titlebar_build_controls(struct keiland_titlebar *object);
 static int titlebar_state(struct iv_titlebar *titlebar, const struct iv_state *state);
+static int titlebar_state_controls(struct keiland_titlebar *object, const struct iv_state *state);
 
 /* What the titlebar tells the viewer: the controls chosen. */
 static const struct keiland_titlebar_listener titlebar_listener = {
-	titlebar_activated, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	titlebar_activated,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL
 };
 
 /*
@@ -105,8 +114,10 @@ iv_titlebar_open(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the titlebar is zdesktop's to show. */
+	/* Logs the titlebar for the tests. */
 	iv_log("TITLEBAR ready controls=%u", (unsigned)(sizeof(titlebar_controls) / sizeof(titlebar_controls[0])));
+
+	/* Succeeded: the titlebar is zdesktop's to show. */
 	return 0;
 }
 
@@ -146,6 +157,8 @@ iv_titlebar_close(
 	/* The titlebar object, when there is one. */
 	if (titlebar->titlebar != NULL)
 		keiland_titlebar_destroy(titlebar->titlebar);
+
+	/* Nothing of the titlebar is left. */
 	memset(titlebar, 0, sizeof(*titlebar));
 }
 
@@ -162,18 +175,22 @@ titlebar_activated(
 	struct iv_titlebar *titlebar;
 	size_t index;
 
+	UNUSED_PARAMETER(object);
+	UNUSED_PARAMETER(detail);
+	UNUSED_PARAMETER(seat);
+	UNUSED_PARAMETER(serial);
+
 	/* The titlebar whose control was chosen. */
-	(void)object;
-	(void)detail;
-	(void)seat;
-	(void)serial;
 	titlebar = data;
 	iv_log("TITLEBAR control=%u", id);
 
 	/* The control's action, when it has one. */
 	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
+		/* Another control's entry. */
 		if (titlebar_controls[index].id != id)
 			continue;
+
+		/* The chosen control's action, unless it has none (the place). */
 		if (titlebar_controls[index].action != IV_ACTION_NONE)
 			iv_window_action(titlebar->window, titlebar_controls[index].action);
 		return;
@@ -185,25 +202,15 @@ static int
 titlebar_build(
 	struct iv_titlebar *titlebar)
 {
-	const struct titlebar_control *control;
-	size_t index;
 	int error;
 
-	/* The transaction and the presentation. */
+	/* The transaction. */
 	error = keiland_titlebar_begin(titlebar->titlebar);
 	if (error != 0)
 		return error;
-	error = keiland_titlebar_set_mode(titlebar->titlebar, KEILAND_TITLEBAR_CONTROLS);
 
-	/* Each control. */
-	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
-		if (error != 0)
-			break;
-		control = &titlebar_controls[index];
-		error = keiland_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, control->group, control->label);
-	}
-
-	/* A refused control still ends the transaction. */
+	/* The presentation and the controls; a refused one still ends the transaction. */
+	error = titlebar_build_controls(titlebar->titlebar);
 	if (error != 0) {
 		(void)keiland_titlebar_commit(titlebar->titlebar);
 		return error;
@@ -218,6 +225,33 @@ titlebar_build(
 	return 0;
 }
 
+/* Sets the controls presentation and adds each control inside an open transaction; stops at the first refusal. */
+static int
+titlebar_build_controls(
+	struct keiland_titlebar *object)
+{
+	const struct titlebar_control *control;
+	size_t index;
+	int error;
+
+	/* The controls presentation, which zdesktop draws as pills that give way when the room runs short. */
+	error = keiland_titlebar_set_mode(object, KEILAND_TITLEBAR_CONTROLS);
+	if (error != 0)
+		return error;
+
+	/* Each control, in its order. */
+	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
+		/* The control with its role, priority, group and label. */
+		control = &titlebar_controls[index];
+		error = keiland_titlebar_add_control(object, control->id, control->role, control->priority, control->group, control->label);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every control is added. */
+	return 0;
+}
+
 /*
  * Shows a state in one transaction: where the image is in its folder, the
  * controls that need an image or another image enabled, the fit and the
@@ -229,23 +263,7 @@ titlebar_state(
 	const struct iv_state *state)
 {
 	struct keiland_titlebar *object;
-	char label[64];
-	int can_previous;
-	int can_next;
 	int error;
-
-	/* Where the image is in the folder, as the controls show it. */
-	can_previous = 0;
-	if (state->has_image && state->index > 0)
-		can_previous = 1;
-	can_next = 0;
-	if (state->has_image && state->index + 1 < state->count)
-		can_next = 1;
-
-	/* The image's place in its folder. */
-	snprintf(label, sizeof(label), "No image");
-	if (state->has_image)
-		snprintf(label, sizeof(label), "%lu / %lu", (unsigned long)(state->index + 1), (unsigned long)state->count);
 
 	/* The transaction. */
 	object = titlebar->titlebar;
@@ -253,26 +271,8 @@ titlebar_state(
 	if (error != 0)
 		return error;
 
-	/* The place's text and the controls' states. */
-	error = keiland_titlebar_set_control_label(object, CONTROL_PLACE, label);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_PREVIOUS, can_previous, 0);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_NEXT, can_next, 0);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_PLACE, state->has_image, 0);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_ZOOM_OUT, state->can_show, 0);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_ZOOM_IN, state->can_show, 0);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_FIT, state->can_show, state->fit);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_ROTATE, state->can_show, 0);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_FULLSCREEN, 1, state->fullscreen);
-
-	/* A refused change still ends the transaction. */
+	/* The controls' states; a refused change still ends the transaction. */
+	error = titlebar_state_controls(object, state);
 	if (error != 0) {
 		(void)keiland_titlebar_commit(object);
 		return error;
@@ -283,8 +283,87 @@ titlebar_state(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the titlebar shows the state. */
+	/* The titlebar shows this state from now on. */
 	titlebar->shown = *state;
 	titlebar->sent = 1;
+
+	/* Succeeded: the titlebar shows the state. */
+	return 0;
+}
+
+/* Sets the place's text and each control's state inside an open transaction; stops at the first refusal. */
+static int
+titlebar_state_controls(
+	struct keiland_titlebar *object,
+	const struct iv_state *state)
+{
+	char label[64];
+	int can_previous;
+	int can_next;
+	int error;
+
+	/* There is an image before the one shown. */
+	can_previous = 0;
+	if (state->has_image && state->index > 0)
+		can_previous = 1;
+
+	/* There is an image after it. */
+	can_next = 0;
+	if (state->has_image && state->index + 1 < state->count)
+		can_next = 1;
+
+	/* The image's place in its folder, or that there is none. */
+	if (state->has_image) {
+		snprintf(label, sizeof(label), "%lu / %lu", (unsigned long)(state->index + 1), (unsigned long)state->count);
+	} else {
+		snprintf(label, sizeof(label), "No image");
+	}
+
+	/* The place's text. */
+	error = keiland_titlebar_set_control_label(object, CONTROL_PLACE, label);
+	if (error != 0)
+		return error;
+
+	/* The previous image, when there is one. */
+	error = keiland_titlebar_set_control_state(object, CONTROL_PREVIOUS, can_previous, 0);
+	if (error != 0)
+		return error;
+
+	/* The next image, when there is one. */
+	error = keiland_titlebar_set_control_state(object, CONTROL_NEXT, can_next, 0);
+	if (error != 0)
+		return error;
+
+	/* The place, while an image is shown. */
+	error = keiland_titlebar_set_control_state(object, CONTROL_PLACE, state->has_image, 0);
+	if (error != 0)
+		return error;
+
+	/* Zooming out needs an image that can be shown. */
+	error = keiland_titlebar_set_control_state(object, CONTROL_ZOOM_OUT, state->can_show, 0);
+	if (error != 0)
+		return error;
+
+	/* So does zooming in. */
+	error = keiland_titlebar_set_control_state(object, CONTROL_ZOOM_IN, state->can_show, 0);
+	if (error != 0)
+		return error;
+
+	/* So does the fit, checked while the image follows the window. */
+	error = keiland_titlebar_set_control_state(object, CONTROL_FIT, state->can_show, state->fit);
+	if (error != 0)
+		return error;
+
+	/* So does a turn. */
+	error = keiland_titlebar_set_control_state(object, CONTROL_ROTATE, state->can_show, 0);
+	if (error != 0)
+		return error;
+
+	/* The full screen is always there, checked while the window fills it. */
+	error = keiland_titlebar_set_control_state(object, CONTROL_FULLSCREEN, 1, state->fullscreen);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: every control shows the state. */
 	return 0;
 }
