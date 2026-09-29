@@ -79,9 +79,15 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 ブラウザ（WS074）と IME（WS095）は人間が作業中。戻ったときに台本に足すかを決める。
 
-### fg010 に必要な判断
+### fg010 に必要な判断（2026-09-30 夜の自走で出たもの。ユーザーの朝の確認待ち）
 
-なし（2026-09-28 の時点）。合成の設計（p051）は承認済み、HAL の quiet console の diff は 2026-09-28 に承認・適用済み。
+| # | 判断 | 既定の案（判断まで、これで進める） | 要る時期 | 出典 |
+| --- | --- | --- | --- | --- |
+| 1 | WS101 D1: libglesv2 が「OpenGL ES 3.1」を名乗るか（3.1 の全体は実装しない） | compute を持つ device では名乗り、未実装の 3.1 の関数は error の stub。Noct は 3.1 未満だと GPU を使わない | ws101-p009 の前 | [WS101 design](ws101/design.md) |
+| 2 | WS101 D2: Noct の build の変更（toolchain）: accel を ON にする | 構成の `ZEDBSD_NOCT_ACCEL := y` の amd64 の `/bin/noct` だけ ON（代案: 別の `/bin/noct-gpu`） | ws101-p011 の前 | 同 §4.1 |
+| 3 | WS101 D3: G3 の見本の大きさ N = 4,000,000 と、CPU との倍率の目標 3 倍以上（伸ばせれば 10 倍） | 案のまま | ws101-p011 | 同 |
+| 4 | WS101 D5: デモの見本は整数だけでよいか（float を GPU に出すには Noct の意味を変える patch が要る） | 整数だけ | ws101-p011 | 同 |
+| 5 | fg010 の台本（S1〜S14）と WS099 の基準 C1〜C10・WS100 の A1〜A7 の数値 | 案のまま | 随時 | 上の表、各 ws.md |
 
 ## Workstream registry
 
