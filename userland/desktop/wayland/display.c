@@ -524,6 +524,45 @@ zwl_top_window(
 	return top;
 }
 
+/*
+ * Centres a window at its current size: in the glass look in the space
+ * under the system bar and a title bar (kept inside it), otherwise on the
+ * output (ws035-p138).
+ */
+void
+zwl_window_centre(
+	struct zwl_server *server,
+	struct zwl_object *surface)
+{
+	int32_t space_width;
+	int32_t space_height;
+	uint32_t width;
+	uint32_t height;
+
+	/* Its size: its image's (a viewport's), else the output's. */
+	width = server->width;
+	height = server->height;
+	if (surface->current != NULL)
+		zwl_surface_size(surface, &width, &height);
+
+	/* The glass look: the space's centre, the title bar under the system bar. */
+	if (server->glass) {
+		zwl_glass_space(server, &space_width, &space_height);
+		surface->x = ((int32_t)server->width - (int32_t)width) / 2;
+		surface->y = ZWL_GLASS_TOP + (space_height - (int32_t)height) / 2;
+		zwl_glass_fit(server, (int32_t)width, (int32_t)height, &surface->x, &surface->y);
+		return;
+	}
+
+	/* Otherwise the output's centre, not above or left of it. */
+	surface->x = ((int32_t)server->width - (int32_t)width) / 2;
+	surface->y = ((int32_t)server->height - (int32_t)height) / 2;
+	if (surface->x < 0)
+		surface->x = 0;
+	if (surface->y < 0)
+		surface->y = 0;
+}
+
 /* Presents queued commits fairly after the current batch of client requests is decoded (no Vulkan). */
 static void
 schedule_direct(
@@ -587,6 +626,8 @@ adopt_commit(
 	struct zwl_object *surface)
 {
 	struct zwl_object *previous;
+	uint32_t new_width;
+	uint32_t new_height;
 
 	/* The queued image becomes current; a wl_shm image is copied before the next frame; its window is drawn again (damage.c). */
 	previous = surface->current;
@@ -635,6 +676,21 @@ adopt_commit(
 		printf("ZWL UNMAP client=%llu surface=%u\n", (unsigned long long)surface->client->number, surface->id);
 	}
 
+	/*
+	 * A window that left a fullscreen it started in is centred at its first
+	 * image of a size other than the output's (the client draws its window
+	 * size after the configure; ws035-p138).
+	 */
+	if (surface->place_pending && surface->mapped && !surface->fullscreen && surface->current != NULL) {
+		zwl_surface_size(surface, &new_width, &new_height);
+		if (new_width != server->width || new_height != server->height) {
+			surface->place_pending = 0;
+			zwl_window_centre(server, surface);
+			surface->placed = 1;
+			printf("ZWL WINDOW centred surface=%u x=%d y=%d width=%u height=%u\n", surface->id, surface->x, surface->y, new_width, new_height);
+		}
+	}
+
 	/* A window resized from its left or top edge keeps its other edges where they were (toplevel.c). */
 	zwl_toplevel_committed(server, surface);
 
@@ -673,9 +729,10 @@ place_window(
 		height = (int32_t)buffer_height;
 	}
 
-	/* The cascade step of this window. */
+	/* The cascade step of this window, which now has a place to come back to from fullscreen. */
 	step = ZWL_CASCADE_STEP * (int32_t)(server->windows % 8U);
 	server->windows++;
+	surface->placed = 1;
 
 	/* The glass look keeps the space of the system bar and a title bar free. */
 	if (server->glass) {
