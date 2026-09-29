@@ -3,13 +3,13 @@
 # WS101: GPU の compute（i915 の Vulkan の compute、GLES 3.1 の compute、Noct の自動並列化が 5330 の GPU で動く）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から
+Resume point: p001（設計）cleared（2026-09-30、[design.md](design.md)）。次は p002（compiler の核）と p007（GLSL ES 3.10 の compute）を並行で。判断 D1〜D4 は design.md §7
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -52,4 +52,24 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws101-p001 | 設計: compiler（GLCompute・ID・SLM・barrier・atomic）、実行器（PIPELINE_SELECT GPGPU・MEDIA_VFE_STATE・interface descriptor・CURBE・GPGPU_WALKER・indirect）、GLES 3.1 の compute、Noct の accel を有効にする build の変更の案、試験と G3 の見本と N・倍率 | planning | — |
+| [ws101-p001](phase001/phase.md) | 設計: compiler（GLCompute・ID・SLM・barrier・atomic）、実行器（PIPELINE_SELECT GPGPU・MEDIA_VFE_STATE・interface descriptor・CURBE・GPGPU_WALKER・indirect）、GLES 3.1 の compute、Noct の accel を有効にする build の変更の案、試験と G3 の見本と N・倍率 | cleared（2026-09-30。[design.md](design.md)） | — |
+| ws101-p002 | compiler の核: GLCompute、LocalSize・LocalSizeId、built-in（LOAD_SYSTEM、GlobalInvocationID の展開）、compute の register の約束と binary の field、thread spawner への EOT、LOAD_STORAGE の predicate、効果なしの decoration、OpArrayLength（design §1） | planned | p001 |
+| ws101-p003 | 実行器の dispatch: vkCreateComputePipelines（66）、bind point の分離、vkCmdDispatch（110）、`render/compute.c`（IDD・CURBE・per-thread の ID の表・VFE・walker・3D への戻り・scratch）、transfer_pending、HDC だけの PIPE_CONTROL、storage の range（design §2） | planned | p002 |
+| ws101-p004 | 実機の bring-up と kernel の試験の場面 `vkcs`（ADD・ID・PUSH・MIXED・SPILL）。eu-test の 1 thread の設定から段階的に（design §2.6・§5.1） | planned | p003 |
+| ws101-p005 | SLM・barrier・fence・atomic（IR・parser・EU）、vkcs の SHARED・REDUCE・ATOMIC・LOOP（design §1.3〜§1.6） | planned | p004 |
+| ws101-p006 | vkCmdDispatchIndirect（111）、0 の group、vkcs の INDIRECT・LENGTH・MANY、G1 の受け入れの run（design §2.5） | planned | p005 |
+| ws101-p007 | GLSL ES 3.10 の compute（版・stage・SSBO std430・shared・built-in・barrier・atomic・`.length()` → SPIR-V）。host の試験（design §3.2） | planned | p001（p002〜p006 と並行できる）、D4（main の記録） |
+| ws101-p008 | libglesv2・libegl の ES 3.1 の compute の API、`gl31.h`、export と stub、版の名乗り（D1）、GLES の compute の試験。Venus と i915 で G2（design §3.3・§3.4） | planned | p007、p004（i915 の基本の分。shared・atomic・indirect の GLES の試験の i915 の分は p005・p006 の後）、D1 |
+| ws101-p009 | Noct の accel の有効化（D2 の許可の後）と G3 の見本（`mix.nct`、N = 2^22）: Venus で正しさ、5330 で正しさと時間（design §4） | planned | p008、D2、D3 |
+| ws101-p010 | G4: fg010 の台本の場面（CPU と GPU の時間を並べる）、素の 5330 でのユーザーの確認 | planned | p009 |
+| ws101-p011 | 規約の全文との照合（WS101 の全ての変更）と回帰（host、vkx・vke1・vke2・vkc・vkcs・GLES、boot test） | planned | p002〜p010 |
+
+依存の図と日程の目安は [design.md](design.md) §6。G3 に要るのは p002〜p004・p007〜p009（Noct は shared・barrier・indirect を使わない）ので、
+p005・p006 が遅れたら G3 の経路（p007〜p009）を先にする。
+
+## ユーザーと main の判断（design.md §7）
+
+- D1: GLES の「OpenGL ES 3.1」の名乗り（ES 3.1 の全体は実装しない）。既定の案: compute を持つ device で名乗り、未実装の 3.1 の関数は error の stub。p008 の前。
+- D2: Noct の build の変更（toolchain の変更。main とユーザーの許可）。既定の案: amd64 で libegl・libglesv2 を選んだ構成の `/bin/noct` だけ accel を ON。代案: 別の `/bin/noct-gpu`。p009 の前。
+- D3: G3 の N = 2^22 と倍率（素の 5330 で GPU が 3 倍以上、伸び 10 倍）の確認。
+- D4（main）: ws068 の ws.md の p035 の行に、GLES 3.1 の compute の部分集合を WS101 へ移したと記録する。
