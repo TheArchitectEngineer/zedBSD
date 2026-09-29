@@ -35,6 +35,20 @@
 #define SIGNAL_VALID_MASK	((sigset_t)(UINT64_MAX >> 1U))
 #define SIGNAL_TIMER_COMPLETION_MAX (SIGNAL_QUEUE_MAX + NSIG)
 
+/*
+ * The bytes below the interrupted stack pointer that the user ABI lets a
+ * function keep data in without moving the pointer: the System V amd64
+ * red zone.  A signal frame pushed on the interrupted stack goes below
+ * them, or it overwrites live locals of the interrupted function (a leaf
+ * function built without -mno-red-zone, such as OpenSSL's, found them
+ * zeroed after its handler returned).  The other user ABIs have none.
+ */
+#if defined(HAL_ARCH_AMD64)
+#define SIGNAL_USER_RED_ZONE 128U
+#else
+#define SIGNAL_USER_RED_ZONE 0U
+#endif
+
 struct signal_timer_completion {
 	unsigned slot;
 	uint32_t generation;
@@ -934,8 +948,11 @@ retry:
 				      &interrupted_return) != 0)
 		exit1_signal(SIGSEGV);
 
-	/* Switches to the alternate stack when the handler asked for it. */
-	sp = interrupted_sp;
+	/*
+	 * Starts below the red zone of the interrupted stack, or switches to
+	 * the alternate stack when the handler asked for it.
+	 */
+	sp = interrupted_sp - SIGNAL_USER_RED_ZONE;
 	if ((action.flags & SA_ONSTACK) != 0 &&
 	    (thread->signal_altstack_flags & SS_DISABLE) == 0 &&
 	    thread->signal_on_altstack_depth == 0) {
