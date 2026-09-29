@@ -389,8 +389,9 @@ test_stage_mismatch(void)
  * Recording: vkCmdBindPipeline of a compute pipeline, vkCmdBindDescriptorSets
  * at the compute bind point and vkCmdDispatch are recorded as they came; a
  * compute pipeline and set bind at the compute bind point only, and a
- * dispatch needs a compute pipeline, runs nothing for zero groups and is
- * refused with ENOTSUP until the dispatch's batch exists (ws101-p004).
+ * dispatch needs a compute pipeline, runs nothing for zero groups and
+ * otherwise goes to drv_i915_gfx_dispatch() with its groups (ws101-p004; the
+ * stand-in records the call).
  */
 static void
 test_recording(void)
@@ -505,30 +506,32 @@ test_recording(void)
 	assert(state.dset[3] == &set && state.compute_dset[3] == NULL);
 	printf("  bind points: a compute pipeline and set leave the graphics ones bound, and the reverse\n");
 
-	/* A dispatch: refused without a compute pipeline, nothing for zero groups, not yet run otherwise. */
+	/* A dispatch: refused without a compute pipeline, nothing for zero groups, recorded otherwise. */
 	memset(&op, 0, sizeof(op));
 	op.kind = I915_GFX_OP_DISPATCH;
 	op.u.dispatch.groups[0] = 1U;
 	op.u.dispatch.groups[1] = 1U;
 	op.u.dispatch.groups[2] = 1U;
 	state.compute_pipeline = NULL;
-	error = i915_execute_dispatch(&state, &op);
+	error = i915_execute_dispatch(stub_session, &state, &op);
 	assert(error == EINVAL);
 	state.compute_pipeline = compute;
 	op.u.dispatch.groups[1] = I915_GFX_MAX_GROUP_COUNT + 1U;
-	error = i915_execute_dispatch(&state, &op);
+	error = i915_execute_dispatch(stub_session, &state, &op);
 	assert(error == EINVAL);
+	stub_dispatch_calls = 0U;
 	op.u.dispatch.groups[1] = 0U;
-	error = i915_execute_dispatch(&state, &op);
-	assert(error == 0);
+	error = i915_execute_dispatch(stub_session, &state, &op);
+	assert(error == 0 && stub_dispatch_calls == 0U);
 	op.u.dispatch.groups[1] = 1U;
-	error = i915_execute_dispatch(&state, &op);
-	assert(error == ENOTSUP);
+	error = i915_execute_dispatch(stub_session, &state, &op);
+	assert(error == 0 && stub_dispatch_calls == 1U);
 
-	/* The whole command buffer stops at its dispatch with ENOTSUP until the dispatch's batch exists. */
+	/* The whole command buffer runs its dispatch of 4 x 2 x 1 groups. */
 	error = i915_command_buffer_execute(stub_session, cmdbuf);
-	assert(error == ENOTSUP);
+	assert(error == 0 && stub_dispatch_calls == 2U);
+	assert(stub_last_dispatch[0] == 4U && stub_last_dispatch[1] == 2U && stub_last_dispatch[2] == 1U);
 	stub_session_close();
 	assert(stub_live_since(mark) == 0U);
-	printf("  dispatch: refused without a compute pipeline or past 65535 groups, nothing for zero groups, ENOTSUP until ws101-p004\n");
+	printf("  dispatch: refused without a compute pipeline or past 65535 groups, nothing for zero groups, otherwise dispatched with its groups\n");
 }

@@ -10,13 +10,18 @@
 # 4. compute-lower.c runs each module's IR on a small interpreter, dispatch by dispatch, and compares the buffers with
 #    what C computes on its own.
 # 5. executor-test.c (ws101-p003) creates compute pipelines and records dispatches through the executor's wire.
+# 6. compute-batch-test.c (ws101-p004) writes dispatches' slots and commands (render/compute.c) and checks the slots;
+#    genxml-check.py decodes the commands and the interface descriptors with Mesa's genxml (gen120.xml) and checks
+#    their fields.
 #
-#   plan/ws101/tests/host/run.sh        (BRW_TOOLS: a Mesa 25.0.7 build's src/intel/compiler, default below)
+#   plan/ws101/tests/host/run.sh        (BRW_TOOLS: a Mesa 25.0.7 build's src/intel/compiler, default below;
+#                                        GENXML: a Mesa 25.0.7 tree's src/intel/genxml, default below)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../../.." && pwd)
 here=$repo/plan/ws101/tests/host
 tools=${BRW_TOOLS:-/home/awe/p014-c/mesa/build-asm/src/intel/compiler}
+genxml=${GENXML:-/home/awe/p014-c/mesa/src/intel/genxml}
 work=$(mktemp -d "${TMPDIR:-/tmp}/ws101-host.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT HUP INT TERM
 status=0
@@ -76,6 +81,15 @@ cp "$repo/userland/desktop/vkdemo/shaders/cuboid.vert.spv" "$repo/userland/deskt
 cc -std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_ABI_LP64 -DVK_REPO="\"$repo\"" \
 	-I"$repo/include" -I"$repo" -idirafter "$repo/include/libc" -o "$work/executor" "$here/executor-test.c" $executor -lm || exit 1
 "$work/executor" "$work" || status=1
+
+# ws101-p004: the dispatch's slot and commands, compute.c inside the test itself, on the same stand-ins.
+cc -std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_ABI_LP64 -DVK_REPO="\"$repo\"" \
+	-I"$repo/include" -I"$repo" -idirafter "$repo/include/libc" -o "$work/batch" "$here/compute-batch-test.c" \
+	$executor "$driver/render/command.c" -lm || exit 1
+"$work/batch" "$work" "$work/dispatch" || status=1
+for name in add ids; do
+	python3 "$here/genxml-check.py" "$genxml" "$work/dispatch-$name" || status=1
+done
 
 [ $status = 0 ] && echo "ws101 host test PASS"
 exit $status
