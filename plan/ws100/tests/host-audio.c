@@ -124,9 +124,12 @@ check(
 {
 	/* One more, and whether it held. */
 	checks++;
-	if (ok)
+	if (ok) {
 		passed++;
-	printf("%s: %s\n", ok ? "ok" : "FAIL", what);
+		printf("ok: %s\n", what);
+	} else {
+		printf("FAIL: %s\n", what);
+	}
 }
 
 /* Starts a pretend audiod in a child with a device (0 or 1) and a volume; returns its pid. */
@@ -138,6 +141,7 @@ pretend_start(
 	struct sockaddr_un address;
 	pid_t child;
 	int listener;
+	int error;
 
 	/* The socket, listening before the child is started. */
 	unlink(AUDIO_SOCKET_PATH);
@@ -145,7 +149,10 @@ pretend_start(
 	memset(&address, 0, sizeof(address));
 	address.sun_family = AF_UNIX;
 	snprintf(address.sun_path, sizeof(address.sun_path), "%s", AUDIO_SOCKET_PATH);
-	if (bind(listener, (struct sockaddr *)&address, sizeof(address)) != 0 || listen(listener, 4) != 0) {
+	error = bind(listener, (struct sockaddr *)&address, sizeof(address));
+	if (error == 0)
+		error = listen(listener, 4);
+	if (error != 0) {
 		perror("pretend audiod");
 		exit(2);
 	}
@@ -156,6 +163,8 @@ pretend_start(
 		pretend_serve(listener, device, volume);
 		_exit(0);
 	}
+
+	/* The parent's copy of the socket. */
 	close(listener);
 
 	/* Succeeded: the child's pid. */
@@ -172,6 +181,7 @@ pretend_serve(
 	struct audiod_welcome welcome;
 	struct audiod_volume request;
 	struct audiod_header header;
+	ssize_t count;
 	int fd;
 
 	/* Each client. */
@@ -181,7 +191,12 @@ pretend_serve(
 			return;
 
 		/* Each request: the header, then the rest of its length. */
-		while (recv(fd, &header, sizeof(header), MSG_WAITALL) == (ssize_t)sizeof(header)) {
+		for (;;) {
+			count = recv(fd, &header, sizeof(header), MSG_WAITALL);
+			if (count != (ssize_t)sizeof(header))
+				break;
+
+			/* The rest of the request. */
 			memset(&request, 0, sizeof(request));
 			request.header = header;
 			if (header.length > sizeof(header) && header.length <= sizeof(request))
@@ -208,6 +223,8 @@ pretend_serve(
 				pretend_reply(fd, AUDIOD_ERROR, header.serial, EINVAL);
 			}
 		}
+
+		/* The client went. */
 		close(fd);
 	}
 }

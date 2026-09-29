@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p004（zdesktop、A1〜A6）cleared（2026-09-30）。次は p006（5330 の実機、A7）か p007（規約と全体）。p005 はユーザーの判断基準の案はユーザーの確認待ち
+Resume point: p007（規約と全体）cleared（2026-09-30）。A1〜A6 は QEMU で満たす。残りは p006（5330 の実機、A7、ユーザーが起きてから）と p005（ユーザーの判断、既定は入れない）基準の案はユーザーの確認待ち
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -68,4 +68,4 @@ legacy の HDA が 5330 の firmware の設定で無効にされていないか�
 | [ws100-p004](phase004/phase.md) | zdesktop: icon・popup・wheel・確かめの音・設定の保存（`sound.volume`・`sound.muted`）、QEMU の試験（A1〜A6）、WS099 の C9 | cleared（2026-09-30: `volume-p004.sh` PASS（A1〜A6）、WS099 の C7・C8・C9 PASS） | p003 |
 | ws100-p005（案） | Settings の Sound の頁に slider と mute（基準の外、ユーザーの判断） | planning | p003 |
 | ws100-p006（案） | 5330: Kei を直に起動して pci-hda の codec と pin を読み、鳴るかをユーザーが聞く（A7、デモに必須ではない） | planning | p002、実機 |
-| ws100-p007（案） | 規約（coding-style の全文）への合わせと全体の確かめ | planning | p002〜p006 |
+| [ws100-p007](phase007/phase.md) | 規約（coding-style の全文）への合わせと全体の確かめ（audiod は WS100 で変えた関数とその周りだけ） | cleared（2026-09-30: 変えた関数と新しい code は style-check 0（sigsetjmp の例外 1）、audiod の残り 89 件は一覧、audiod-qemu・volume-p004・host-audio PASS） | p002〜p004 |
