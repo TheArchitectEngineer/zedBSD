@@ -52,6 +52,6 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 | [ws099-p001](phase001/phase.md) | C1〜C10 を確かめる一括の試験（`plan/ws099/tests/criteria.sh`、新しい C2・C5・C7・C10）、今の状態での実行と不足の一覧、BUG-115 の切り分け | cleared（2026-09-30、QEMU の Venus: C1〜C4・C7〜C10 PASS（C1・C7 は範囲が一部）、C5 FAIL（最初の frame まで 102〜215 ms）、C6 未実施（実機）。BUG-115 は試験の固定の待ち（古い image の起動 6 秒超）） | — |
 | ws099-p002（案） | C5: App Home と Wiseview の開閉の最初の frame を早める（QEMU で要求から最初の frame まで 102〜215 ms、frame の間隔 約 130〜140 ms）。まず実機（WS075）で測り、100 ms を超えるなら、開閉の要求を受けた pass で frame を出す（次の frame の pacing を待たない）など。QEMU の数を基準にするかはユーザーの判断 | planning | p001 |
 | [ws099-p003](phase003/phase.md) | BUG-115: `plan/ws035/tests/` の固定の `sleep N`（42 本・43 箇所）を、compositor の log の `ZWL READY` を待つ形に（試験の側の直し） | cleared（2026-09-30: 古い image で p072 PASS（前は FAIL）、C9 の 9 本 PASS） | p001 |
-| ws099-p004（案） | C1 の残り: 起動から greeter と Shut Down の替わり目を撮る試験を足す（p126 の撮り方）。実機はユーザーの目視 | planning | p001 |
+| [ws099-p004](phase004/phase.md) | C1 の残り: 起動と Shut Down の替わり目を両方の画面（VGA と Venus）で撮る試験（`c1-watch.py`・`c1-boot-shutdown.sh`）、criteria.sh の C1 に入れ、p126 に `--no-black` | cleared（2026-09-30: 起動・Shut Down とも黒 0・文字 0、Shut Down の後は greeter の絵のまま機械が止まる） | p001 |
 | ws099-p005（案） | C7 の残り: client が描くガラスの上の文字（Settings の頁の説明、Files）の contrast を 6 枚の壁紙で測る。暗い壁紙（Aurora・Twilight）で 4.5 を割るなら直す（旧 ws035-p135。すりガラスをやめるかのユーザーの判断（WS075 の計測）の後） | planning | p001 |
 | ws099-p006（案） | C6: 実機（5330）の pointer の遅延の計測（WS075 の measure-apps.sh）。WS075 の p023 と合わせる | planning | p001・WS075 |
