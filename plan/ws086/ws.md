@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: main からの依頼（subagent、worktree `wt/ws086`）
-Resume point: p002 の Terminal の画面での確認（[p002](phase002/phase.md) の Resume point）から
+Resume point: p003（規約の全文との照合と回帰）から
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -27,16 +27,18 @@ Resume point: p002 の Terminal の画面での確認（[p002](phase002/phase.md
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws086-p001](phase001/phase.md) | GNU ls（coreutils）との差の一覧、列の配置の設計、含める option の範囲 | cleared（2026-09-29） | — |
-| [ws086-p002](phase002/phase.md) | 実装と host・guest の試験（GNU ls の出力との比較） | in-progress | p001 |
+| [ws086-p002](phase002/phase.md) | 実装と host・guest の試験（GNU ls の出力との比較） | cleared（2026-09-29） | p001 |
 | ws086-p003 | 規約の全文との照合、回帰 | planning | p002 |
 
 ## 判断の既定（p001、2026-09-29）
 
-- locale に従う（GNU と同じ）。guest の session に `LANG` が無いので、端末では UTF-8 の名前が escape される。`LANG=C.UTF-8` の設定は
-  範囲外で、main に判断を依頼した。
+- locale に従う（GNU と同じ）を既定にしたが、ユーザーの決定（2026-09-29、p002 に記録）で、locale に関わらず名前を UTF-8 として扱う
+  （C locale の GNU との差）。
 - 色（`--color`）は含めない（GNU の既定は色なし）。含めない option の一覧は [p001](phase001/phase.md)。
 - option は GNU の順（operand の後も読む。`POSIXLY_CORRECT` で POSIX の順）。
 
 ## 試験
 
 - [tests/tty-run.py](tests/tty-run.py): 指定の幅の擬似端末に出力をつないで byte のまま取る（host）。
+- [tests/compare-gnu.py](tests/compare-gnu.py): host で GNU ls と byte 単位に比べる（3362 件、p002）。
+- [tests/guest-compare.py](tests/guest-compare.py): guest（SSH）の ls と host の GNU ls を比べる（180 件、p002）。

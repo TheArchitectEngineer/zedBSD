@@ -2,7 +2,7 @@
 
 # ws086-p002: 実装と host・guest の試験（GNU ls の出力との比較）
 
-Status: in-progress
+Status: cleared
 Disposition: normal
 Parent: [WS086](../ws.md)
 Queue: main が subagent（worktree `wt/ws086`）へ依頼（2026-09-29、p001 の merge の後）
@@ -78,7 +78,19 @@ Approval: ユーザー（2026-09-29）「lsの結果が1つずつ改行されて
 - `-L` で dangling link: GNU は `cannot access` を出して `l?????????` の行、終了状態 1。我々は link として列挙（旧 ls の意図した振る舞い）。
 - message の文: `cannot access 'x'` の形、UTF-8 の locale での `‘’` の quote、不明な option の終了状態 2。
 
-## Resume point
+### Terminal（QEMU、amd64、Venus の desktop）
 
-Terminal の画面での確認（`plan/tools/titlebar/build-menu-image.sh build/amd64` で lean な desktop の image を build し、
-`menu-guest.sh start`、wayland と terminal を起こして `ls` を打ち、画面を撮る）。その後 phase.md の結果と ws.md を更新して報告。
+- image: `plan/tools/titlebar/build-menu-image.sh build/amd64`（lean な desktop。font と wallpaper は main の `build/ws035-fonts`・
+  `build/ws035-wallpaper` への読み取り専用の symlink）。`GUEST_RUNTIME=build/ws086/desk plan/tools/titlebar/menu-guest.sh start`、
+  wayland と terminal を起こし、`qmp-keys.py` で打ち、`zdesktop-check.py` で撮った。
+- `build/ws086-shots/terminal-ls.png`: Terminal（90 桁、`stty size` は `28 90`）で `ls` が縦の順の 8 列に並ぶ。
+- `build/ws086-shots/terminal-odd.png`: `ls -x | head -2`（pipe でも `-x` は 80 桁の列）、`ls -F`（`beta*`・`sub/`・`link@`）、quote の要る名前の
+  一覧（`'with space'`、`"it's"`、`'ctl'$'\001''x'`、quote されない名前の前の空白）。日本語の名前は escape されずに出る（この lean な image の
+  font に CJK の字形が無いので豆腐の四角で描かれる。font の問題で ls の外）。
+- `build/ws086-shots/terminal-bin.png`: `/bin` の 150 余りの名前が 7 列に並ぶ。
+- 実機: 未実施。
+
+## 結果
+
+- cleared。受け入れ（host で GNU と一致、回帰、guest の端末と Terminal）を満たした。
+- 次: ws086-p003（規約の全文との照合、回帰）。
