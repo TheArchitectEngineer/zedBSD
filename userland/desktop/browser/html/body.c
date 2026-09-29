@@ -192,7 +192,7 @@ body_start_tag(
 		return;
 	case DOM_TAG_FORM:
 		/* One form at a time outside templates. */
-		template_open = tb_template_on_stack(p);
+		template_open = tb_template_contents(p);
 		if (p->form != NULL && !template_open) {
 			tb_error(p);
 			return;
@@ -203,7 +203,7 @@ body_start_tag(
 		if (in_scope)
 			tb_close_p(p);
 		element = tb_insert_element(p, token, DOM_NS_HTML);
-		template_open = tb_template_on_stack(p);
+		template_open = tb_template_contents(p);
 		if (!template_open)
 			p->form = element;
 		return;
@@ -560,7 +560,7 @@ body_end_tag(
 			tb_process(p, token);
 		return;
 	case DOM_TAG_FORM:
-		template_open = tb_template_on_stack(p);
+		template_open = tb_template_contents(p);
 		if (!template_open) {
 			/* The form pointer's form is closed wherever it is. */
 			node = p->form;

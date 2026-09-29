@@ -253,6 +253,15 @@ extern const struct bind_interface bind_text_encoder_interface;
 extern const struct bind_interface bind_text_decoder_interface;
 extern const struct bind_interface bind_storage_interface;
 
+/* Markup (markup.c, ws074-p081). */
+int bind_inner_html_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_inner_html_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_outer_html_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_outer_html_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_insert_adjacent_html(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_insert_adjacent_element(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_insert_adjacent_text(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+
 /* Web Storage (storage.c, ws074-p080). */
 int bind_local_storage(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_session_storage(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
