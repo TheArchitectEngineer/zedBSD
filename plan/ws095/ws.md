@@ -3,13 +3,13 @@
 # WS095: IME（Wayland の標準の方法、まず日本語）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p001 cleared）
+Status: incomplete（p001〜p004 cleared、p005 uncleared で中断）
 Primary Milestone: MG006
 Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p004（protocol・zdesktop の仲介・IME の program・guest の試験 status=0 を 2 回、boot-test PASS）cleared（2026-09-29）。次: p012（補いの辞書の千語と活用の注釈、held-out）か p005（候補の窓と indicator）
+Resume point: 2026-09-29 ユーザーの指示でブラッシュアップ（p005 の残り・p012 の辞書の拡張・p006〜p011）は後回し、Keiland を優先。IME は p004 で変換（kanji → 漢字、確定）まで guest で動く。再開は p005（phase005 の Resume point、書きかけは plan/ws095/p005-wip.patch）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -31,7 +31,7 @@ Resume point: p004（protocol・zdesktop の仲介・IME の program・guest の
 | [ws095-p002](phase002/phase.md) | 日本語の engine（Wayland 無し）: ローマ字・辞書・活用の規則・分割・候補・利用者の辞書、固定の辞書で host の試験 | cleared（2026-09-29） | p001 |
 | [ws095-p003](phase003/phase.md) | 辞書の package（pin した tarball の取得・検証）、100 文での品質の計測、補いの辞書の案（ユーザーと相談） | cleared（2026-09-29） | p002、D1・D3 |
 | [ws095-p004](phase004/phase.md) | protocol の記述、zdesktop の仲介（起動と信頼・key の経路・Alt+Space・watchdog）、IME の program（日本語の engine の結線を含む）、ime-probe の guest の試験 | cleared（2026-09-29） | p002 |
-| ws095-p005 | 候補の窓の合成、indicator と status の languages、IME の中の key の repeat、guest の試験（日本語の engine の結線は p004 に移した） | planning | p003・p004 |
+| [ws095-p005](phase005/phase.md) | 候補の窓の合成と IME の描画、indicator、IME の中の key の repeat、guest の画面の確認 | uncleared（2026-09-29、ユーザーの指示で中断。書きかけは `p005-wip.patch`） | p003・p004 |
 | ws095-p006 | libkeiland の text-input の helper と Terminal（password の検出） | planning | p004・p005、Terminal の CJK の font（D14） |
 | ws095-p007 | Text Editor の対応（WS092 の口） | planning | p006、WS092 |
 | ws095-p008 | zdesktop の自前の field（titlebar の検索）と Files の field | planning | p005・p006 |

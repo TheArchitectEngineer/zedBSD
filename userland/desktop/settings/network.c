@@ -338,10 +338,12 @@ network_read_links(
 		count = SE_NETWORK_LINKS;
 	network->link_count = count;
 
-	/* Interfaces that came or went, or an address that changed, count as moved. */
+	/* Interfaces that came or went count as moved. */
 	moved = 0;
 	if (count != old_count)
 		moved = 1;
+
+	/* So does an address that changed. */
 	for (index = 0; moved == 0 && index < count; index++) {
 		differs = strcmp(addresses[index], network->links[index].address);
 		if (differs != 0)

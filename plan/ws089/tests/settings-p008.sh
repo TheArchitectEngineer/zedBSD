@@ -4,7 +4,7 @@
 #  1. Home: the tiles show the state now (Ethernet "Connected · <if>", Network "Online · <address>", Wi-Fi
 #     "No Wi-Fi radio", About "Kei · x86_64") (home.png).
 #  2. Ctrl+F (the Edit menu's Find, taken by zdesktop's menus) gives the titlebar's search field the keyboard
-#     (ZSETTINGS SEARCH focus, TITLEBAR state ... focus=1); "wi" typed lists 3 results (search-wi.png); Enter opens
+#     (ZSETTINGS SEARCH focus, TITLEBAR state ... focus=1); "wi" typed lists 4 results (Wi-Fi, Ethernet, Wi-Fi radio, and ws089-p004's Window opacity) (search-wi.png); Enter opens
 #     the first (SEARCH open page=wifi).
 #  3. Ctrl+F, "dns" typed (2 results: the Network page and its "DNS servers"); a click on the second opens the
 #     Network page (SEARCH open page=network) (search-dns.png, search-dns-open.png).
@@ -90,7 +90,7 @@ keys '<ctrl-f>'
 expect_log /tmp/s.log 'ZSETTINGS SEARCH focus'
 expect_log /tmp/s.log 'ZSETTINGS TITLEBAR state .*focus=1'
 keys 'wi'
-expect_log /tmp/s.log 'ZSETTINGS SEARCH query=wi results=3'
+expect_log /tmp/s.log 'ZSETTINGS SEARCH query=wi results=4'
 shot search-wi.png
 keys '<ret>'
 expect_log /tmp/s.log 'ZSETTINGS SEARCH open page=wifi'

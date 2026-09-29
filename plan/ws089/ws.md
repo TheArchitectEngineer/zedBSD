@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: **2026-09-29（2 人目のサブエージェント）**: p001〜p005・p007・p008・**p009** は cleared（p009 は Venus の guest で PASS、デモの script は `make -n` で確認、commit 済み）。次は最後の **p006**（規約の全文との照合、回帰、デモの通し）。proposed の状態: desktop-preferences は適用済み（p007）、audio は適用しない、system は未適用。試験の手順は各 phase.md と `plan/ws089/tests/`（`build-settings-image.sh`・`settings-guest.sh`・`settings-wait.sh`・`settings-p002.sh`〜`p005.sh`・`settings-p007.sh`〜`p009.sh`・`host-build.sh`・`host-preferences.sh`）。壁紙の生成は `userland/desktop/wallpapers/generate.py`
+Resume point: **2026-09-29 ユーザーの指示でブラッシュアップは後回し**（「Settingsはある程度動いたらブラッシュアップは後回しにします。」main 経由）。p001〜p009 は cleared（p006 で規約の照合・回帰（8 つの guest の試験が PASS）・デモの通しを終えた）。新しい Phase は始めない。残りの候補は下の「後回しの候補」。WS の完了の処理（受け入れの確認、試験の plan/tools への移し、Phase の directory の削除）は main の判断。完了の後、Settings の libkeiui への移行（WS090 の p007）が始められる。試験の手順は各 phase.md と `plan/ws089/tests/`（`settings-regress.sh` が guest の試験の全部）。壁紙の生成は `userland/desktop/wallpapers/generate.py`
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -51,7 +51,7 @@ Resume point: **2026-09-29（2 人目のサブエージェント）**: p001〜p0
 | [ws089-p004](phase004/phase.md) | Appearance・Wallpaper・Display・Storage の頁 | cleared（2026-09-29、Venus の guest。実機は未実施） | p002, p007 |
 | [ws089-p005](phase005/phase.md) | Mouse・Keyboard の頁と Sound（audiod の有無の表示だけ、main の依頼）。Touchpad は準備中のまま | cleared（2026-09-29、Venus の guest。実機は未実施） | p002, p007 |
 | [ws089-p009](phase009/phase.md) | 生成の壁紙（5 枚、1920x1080、`userland/desktop/wallpapers/generate.py`）を build の時に作り、デモの image に同梱（2026-09-29 ユーザーの D8 の判断、main の許可） | cleared（2026-09-29、Venus の guest。デモの image は `make -n`。実機は未実施） | p004 |
-| ws089-p006 | 規約の全文との照合、回帰、デモの通し、App Home の絵とデモの image（[案](proposed/app-home-icon.md)、main の許可） | planning | p003〜p005, p008 |
+| [ws089-p006](phase006/phase.md) | 規約の全文との照合、回帰、デモの通し（App Home の絵は p008、デモの image の壁紙は p009） | cleared（2026-09-29、Venus の guest。実機は未実施） | p003〜p005, p008 |
 
 ## ユーザーの判断（2026-09-29 に master から移した）
 
@@ -59,3 +59,35 @@ Resume point: **2026-09-29（2 人目のサブエージェント）**: p001〜p0
 | --- | --- | --- |
 | 設定のアプリ（2026-09-29） | ユーザー:「これもOSCデモで使う優先事項にしたいですが、設定画面のアプリを作ってほしいです。添付がイメージです。あくまでもイメージなので、この通りでなくていいです。左側に項目のペイン、右側に設定項目。フローティングでセパレート。」 | [WS089](ws089/ws.md) |
 | 設定のアプリの範囲（2026-09-29 夜） | ws089-p001 の問い（Display の拡大は表示だけ・accent の色は出さない・Touchpad は準備中）にユーザー:「設定項目は、ネットワークを中心にしてください。ディスプレイはまだスタブでいいです。」→ Network（Wi-Fi・Ethernet・状態・新しい Wi-Fi への鍵の入力を含む）を中心に作り込む。Display はスタブ、accent と Touchpad は出さない（準備中） | WS089 |
+
+## 後回しの候補（2026-09-29 ユーザーの指示「Settingsはある程度動いたらブラッシュアップは後回しにします。」）
+
+新しい WS か、この WS の再開で扱う。どれも未着手。
+
+| 候補 | 内容 | 要るもの |
+| --- | --- | --- |
+| Touchpad | 頁（速さ・tap・慣性の scroll） | kernel の touchpad の driver（D9） |
+| 音量 | Sound の頁の出力の音量・mute（今は audiod の有無の表示だけ） | [proposed/libkeiland-audio.md](proposed/libkeiland-audio.md)（libkeiland の追加）、HDA の driver、デモの image の audiod |
+| Display の変更 | 解像度・拡大の変更（今は読むだけ） | zdesktop の出力の scale（D1） |
+| accent の色・dark | Appearance の色の選択 | zdesktop と各 app の固定の色を preferences から読む（D2） |
+| 暗い壁紙の上の文字 | Aurora・Twilight の上ですりガラスの上の文字の contrast が下がる | zdesktop の glass の tint（main が WS035 に回した） |
+| About の memory | memory の行 | [proposed/libkeiland-system.md](proposed/libkeiland-system.md) |
+| 準備中の頁 | Bluetooth・VPN・Notifications・Battery・Printers・Sharing・Users・Privacy・Security・Accessibility・Updates | 各機能の backend |
+| 通信量の履歴 | 24 時間の graph（今は窓を開いてから） | daemon の記録 |
+| 検索の key 操作 | 結果の上下の選択 | settings の中だけ |
+| touch の drag の scroll | 頁の pane の drag（`keiland_scroller`） | settings の中だけ |
+| 単一の instance | 二つ目の起動で既存の窓を前に | settings の中だけ |
+| 日本語の UI | files の F-041 と一緒に | text の翻訳の仕組み |
+
+## WS の完了の処理に要ること（main の判断）
+
+- 受け入れ（上の「受け入れ（2026-09-29 確定）」1〜6）は QEMU で満たした。実機の確認は未実施（main の判断で実機の確認に回す）。
+- 試験の移し先の候補（`plan/tools/settings/` として Tools 節に登録）: `settings-regress.sh`・`settings-wait.sh`・`settings-guest.sh`・
+  `build-settings-image.sh`・`config-amd64-settings.mk`・`settings-p002.sh`〜`p009.sh`（名前を役割の名前に変える）・`host-build.sh`・
+  `host-render.c`・`host-network.c`・`host-preferences.c`・`host-preferences.sh`。network-probe（WS035 の試験 program）の stand-in の振る舞いは
+  `settings-p003.sh` が使う。
+- proposed の整理: desktop-preferences・libkeiland-network-link・vmunix-link・app-home-icon は適用済み、libkeiland-audio・libkeiland-system は
+  未適用（後回しの候補）。
+- 完了の後、Settings を libkeiui に移す作業（WS090 の p007）が始められる。settings は files の canvas・text・icons を source で共有して
+  いる（`userland/desktop/files/canvas.c`・`text.c`・`icons.c` と `artwork/mark.c`、Makefile と host-build.sh）。
+

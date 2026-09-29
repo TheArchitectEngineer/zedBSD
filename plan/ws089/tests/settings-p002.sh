@@ -84,7 +84,7 @@ echo "settings: window at $wx,$wy"
 
 # 1. Home.
 expect_log /tmp/s.log 'ZSETTINGS READY width=[0-9]+ height=[0-9]+ glass=1 page=home'
-expect_log /tmp/s.log 'ZSETTINGS TITLEBAR ready controls=5'
+expect_log /tmp/s.log 'ZSETTINGS TITLEBAR ready controls=6'
 expect_log /tmp/s.log 'ZSETTINGS MENU ready'
 expect_log /tmp/s.log 'ZSETTINGS GLASS panels count=2'
 guest "grep -E 'READY|ABOUT' /tmp/s.log"
@@ -107,11 +107,11 @@ keys '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<d
 expect_log /tmp/s.log 'ZSETTINGS PAGE about$'
 shot about.png
 
-# 5. The list hidden and shown by the Sidebar control.
-control 5
+# 5. The list hidden and shown by the Sidebar control (ID 6 since ws089-p008 put Search at 5).
+control 6
 expect_log /tmp/s.log 'ZSETTINGS SIDEBAR shown=0'
 shot nosidebar.png
-control 5
+control 6
 expect_log /tmp/s.log 'ZSETTINGS SIDEBAR shown=1'
 
 # 6. The breadcrumb's first part goes Home; Home's first tile (Wi-Fi) opens its page.

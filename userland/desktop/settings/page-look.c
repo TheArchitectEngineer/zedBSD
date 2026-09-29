@@ -352,7 +352,9 @@ look_tile(
 	/* Whether this is the picture shown: the default when no key is set, else the one whose path is the key. */
 	wallpaper = &app->look.wallpapers[index];
 	chosen = 0;
-	if (index == 0U && app->look.has_default != 0 && app->look.wallpaper[0] == '\0')
+	if (index == 0U &&
+	    app->look.has_default != 0 &&
+	    app->look.wallpaper[0] == '\0')
 		chosen = 1;
 	if (app->look.wallpaper[0] != '\0') {
 		differs = strcmp(app->look.wallpaper, wallpaper->path);
