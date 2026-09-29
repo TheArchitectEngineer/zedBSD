@@ -2270,8 +2270,17 @@ i915_driver_register(
 	/*
 	 * intel_power_domains_enable(): the INIT reference taken during
 	 * init_hw is released, and every well nothing references powers down.
+	 * With the firmware display left to the takeover, nothing references
+	 * its wells yet (the reference's intel_initial_commit() has taken them
+	 * over by now), so the INIT reference is kept until the takeover
+	 * (ws084, as the N1 parity run on the machine).
 	 */
-	drv_i915_power_domains_enable(p, &display->dcore);
+	if (display->n0.takeover) {
+		p->power_domains_enable_deferred = 1;
+		kern_logf("i915: P7 power_domains_enable: deferred (the INIT reference is kept until the takeover)\n");
+	} else {
+		drv_i915_power_domains_enable(p, &display->dcore);
+	}
 
 	/* intel_runtime_pm_enable(): the probe reference the PCI core took goes back. */
 	drv_i915_rpm_put(&device->gt.probe_pm);

@@ -2227,8 +2227,19 @@ drv_i915_modeset_sanitize_hw_state(
 	/* intel_wm_get_hw_state(): skl_wm_get_hw_state + skl_wm_sanitize. */
 	d->wm_hw_state_read = 1;
 
-	/* Turns off the power wells the firmware left on and nothing references. */
-	i915_nogem_power_domains_sanitize_state(d, pd, pwc);
+	/*
+	 * Turns off the power wells the firmware left on and nothing references.
+	 * This readout takes no reference on the domains of an active pipe
+	 * (the reference's get_encoder_power_domains() does), so with the
+	 * firmware display still lit its DDI IO and AUX wells would look unused
+	 * and go off under the running pipe, which then cannot be stopped
+	 * (ws084: pipe_off and DDI BUF idle time out).  They are kept for the
+	 * takeover (N1), whose own readout references them.
+	 */
+	if (d->active_pipes != 0U)
+		kern_logf("i915: P5d power wells: kept (active pipes 0x%x: the firmware display is left to the takeover)\n", d->active_pipes);
+	else
+		i915_nogem_power_domains_sanitize_state(d, pd, pwc);
 
 	/* The sanitize is complete. */
 	d->sanitize_done = 1;

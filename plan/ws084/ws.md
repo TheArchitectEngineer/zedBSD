@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし（main が実装、2026-09-29 ユーザーの指示）
-Resume point: 2026-09-29 午後: ユーザーの実機の報告「LCD の scanout が有効にならない、テスト用の sshd が起動しない、ping は通る」。ユーザー:「takeover のコードは残っているが組み込み方が甘い」。sshd は demo の config に openssh が無かったのが原因 → `config-demo-hdmi.mk` に openssl・openssh、root に harness の鍵（`build-demo-image.sh`）。image `build/demo-hdmi3/hdd-image.img`（main e2c7f29e + この変更、p001 を含む）。次: その image で ssh して dmesg の `i915: N0`・`takeover:`・`resident display` を読み、組み込みを直す
+Resume point: p002（2026-09-29 午後）の修正を実装、image `build/demo-hdmi4/hdd-image.img`。実機の再試験はユーザー待ち
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -27,6 +27,7 @@ HDMI の LCD に出る。
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
+| ws084-p002 | bare metal の log（ユーザーが ssh で dmesg、下）で見つかった組み込みの不足を直す | incomplete（実装済み、実機は未実施） | p001 |
 | ws084-p001 | N0 が active な pipe で止まらず `takeover` の印を付け、resident の display の開始が最初の書き込みの前に N1（readout + sanitize、`intel_crtc_disable_noatomic`、release）を走らせる。以前の parity の N1 の実機の手順（`4ab09939` の `parity_lcd_kernel.c`: 画面の object を仮の framebuffer で prepare → PLL の pool を空に → readout → takeover → release）に合わせる | incomplete（実装済み、実機は未実施） | — |
 
 ## p001 の記録（2026-09-29 main）
@@ -48,3 +49,21 @@ HDMI の LCD に出る。
   run は `LCD-B preflight` の log で止まる（そのときは takeover の後の power の扱いを直す）。
 - display の core の初期化（CDCLK 等）は N0 の後、takeover の前に走る。parity の N1 も同じ順で実機で動いた。
 - HDMI の主出力（display=auto で HDMI が見つかる）では、firmware の pipe A（eDP）を止めてから pipe B の HDMI を点ける。
+
+## p002 の記録（2026-09-29 main）
+
+ユーザーの実機（bare metal、`build/demo-hdmi3`）の dmesg:
+- `N0 decision: PROCEED`、takeover の readout は `active pipes 0x1 ... DPLL-1 ... 0 kHz`、stop で `pipe_off wait timed out`・`Timeout waiting for DDI BUF to get idle`、
+  preflight で `TRANSCONF 0x40000000`（enable は落ちたが state が active）→ `resident display: not started`。
+- その前の P5 で `BIOS left unused DDI_IO_A power well enabled, disabling it`。parity の N1 の実機の記録（`4ab09939` の
+  `plan/ws031/handover/notes/n1-implementation-state.md` の停止要因 1・4）と同じ: nogem の readout は動いている pipe の電源ドメインに参照を取らないので、
+  firmware の画面の DDI IO・AUX の well が未使用に見えて落ち、pipe が止まれなくなる。P7 の `intel_power_domains_enable` の INIT の返却も同じ well を落とし得る。
+- `display output: eDP panel (display=hdmi, but no HDMI sink is connected at boot: rc=13)`: HDMI の probe（EDID）が起動時の 1 回で未接続。
+
+修正:
+- `takeover.c` `drv_i915_modeset_sanitize_hw_state`: active な pipe があるとき well の sanitize をしない（takeover の readout が参照を取る）。
+- `display.c` `i915_driver_register`: `n0.takeover` のとき `power_domains_enable` を遅らせる（`dprobe.power_domains_enable_deferred`、以前から宣言だけあった）。
+- `modeset.c` resident の開始: takeover の成功の後に遅らせた `power_domains_enable` を行い、`n0.takeover` を消す（2 回目の lease で takeover をやり直さない）。
+- `output.c`: `display=hdmi` のとき、未接続（EAGAIN）なら 250 ms ごとに最大 6 秒 probe をやり直す（USB 給電の LCD の controller が EDID に答えるまで）。`display=auto` は待たない。
+- 検証: kernel と image の build（warning 0）、`plan/ws075/tests/hdmi/host-output-test.sh` 80 checks 0 failures（host の `<time.h>` を先に読む flag を足した）、
+  QEMU の boot test PASS（`build/ws084-boot-test/login.png`、sshd 起動）。実機: 未実施。

@@ -30,6 +30,7 @@
 #include "state.h"
 
 #include <kern/boot.h>
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 
@@ -43,6 +44,14 @@
 
 /* The reference clock the WRPLL is computed from when the CDCLK state has none (kHz, non-SSC). */
 #define I915_OUTPUT_REF_KHZ		38400
+
+/*
+ * With display=hdmi the sink is asked again for this long before the panel
+ * takes its place: on bare metal the probe runs a few seconds after power-on,
+ * before a USB-powered LCD's controller answers the EDID read (ws084).
+ */
+#define I915_OUTPUT_HDMI_WAIT_MS	6000U
+#define I915_OUTPUT_HDMI_RETRY_MS	250U
 
 /* The highest TMDS clock this path drives: HDMI 1.4 without scrambling (kHz). */
 #define I915_OUTPUT_MAX_CLOCK_KHZ	340000
@@ -170,6 +179,7 @@ drv_i915_display_output_select(
 	const char *reason;
 	const char *wanted;
 	uint32_t refresh;
+	unsigned waited_ms;
 	int compared;
 	int error;
 
@@ -195,6 +205,19 @@ drv_i915_display_output_select(
 	/* HDMI when a sink is connected and its mode can be driven; the panel otherwise. */
 	reason = NULL;
 	error = i915_output_hdmi(display, &reason);
+
+	/* display=hdmi waits a while for a sink that is not answering yet. */
+	compared = kern_strcmp(wanted, "hdmi");
+	waited_ms = 0U;
+	while (error == EAGAIN && compared == 0 && waited_ms < I915_OUTPUT_HDMI_WAIT_MS) {
+		kern_usleep_range(I915_OUTPUT_HDMI_RETRY_MS * 1000U, I915_OUTPUT_HDMI_RETRY_MS * 1000U);
+		waited_ms += I915_OUTPUT_HDMI_RETRY_MS;
+		kern_memset(&display->output, 0, sizeof(display->output));
+		error = i915_output_hdmi(display, &reason);
+	}
+	if (waited_ms != 0U)
+		kern_logf("i915: display output: waited %u ms for the HDMI sink (rc=%d)\n", waited_ms, error);
+
 	if (error != 0) {
 		kern_memset(&display->output, 0, sizeof(display->output));
 		kern_logf("i915: display output: eDP panel (display=%s, but %s: rc=%d)\n", wanted, reason, error);
@@ -587,7 +610,7 @@ i915_output_hdmi(
 #endif
 	if (status != I915_OUTPUT_CONNECTED) {
 		*reason = "no HDMI sink is connected at boot";
-		return ENODEV;
+		return EAGAIN;
 	}
 
 	/* The EDID the detection read, if it read one. */

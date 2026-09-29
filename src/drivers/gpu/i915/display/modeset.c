@@ -1737,6 +1737,16 @@ drv_i915_lcd_kernel_resident_run(
 			k->p = NULL;
 			return EIO;
 		}
+
+		/* Taken over once: a later run starts from the driver's own display. */
+		display->n0.takeover = 0;
+
+		/* The INIT reference the probe kept for the takeover goes back now (intel_power_domains_enable()). */
+		if (display->dprobe.power_domains_enable_deferred) {
+			display->dprobe.power_domains_enable_deferred = 0;
+			drv_i915_power_domains_enable(&display->dprobe, &display->dcore);
+			kern_logf("i915: takeover: power_domains_enable: wells_on %u -> %u\n", display->dprobe.wells_on_before, display->dprobe.wells_on_after);
+		}
 	}
 
 	/*
