@@ -33,7 +33,7 @@ double click・Enter・double tap で既定の way）の上に足した。
   「このアプリで開く」（Open With）は WS071 の menu がそのまま担う。
 - 規約: `plan/coding-style.md` の全文と照合（p004）、style-check 0 件。
 
-確認（すべて QEMU、Venus）: host の `plan/ws093/tests/host-default.sh`（21 件）・`plan/tools/files/host-model.sh` PASS、build の warning 0、guest の
+確認（すべて QEMU、Venus）: host の `plan/tools/files/host-default.sh`（21 件）・`plan/tools/files/host-model.sh` PASS、build の warning 0、guest の
 `open-guest.sh` の mouse（全ての種類の double click と Enter）・always・info・注入の touch の double tap、boot test PASS。画面は worktree の
 `build/ws093-shots/`（p004 の回帰は `p004/`）。
 

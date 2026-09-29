@@ -12,7 +12,7 @@
 #   touch   (needs the pen image, /bin/touchinject) the PNG and the text double-tapped with the injected touch screen
 # The app's own output goes to /dev/null (files starts it apart), so the steps read Files' log, zdesktop's log and ps
 # through SSH, and the pictures; nothing reads the console.
-#   GUEST_RUNTIME=$PWD/build/ws093-run BIN=build/ws093-amd64 plan/ws093/tests/open-guest.sh OUTDIR mouse|always|info|touch
+#   GUEST_RUNTIME=$PWD/build/ws093-run BIN=build/ws093-amd64 plan/tools/files/files-open.sh OUTDIR mouse|always|info|touch
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
