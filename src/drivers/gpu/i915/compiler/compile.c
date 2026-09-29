@@ -212,6 +212,15 @@
 #define COMPILE_SKIP_ATOMS	8U
 #define COMPILE_SKIP_WORDS	4U
 
+/*
+ * The IR instructions a region needs for its IF: the IF costs six EU
+ * instructions (clearing the flag, two comparisons, the flag's store, IF and
+ * ENDIF) and a jump, more than a shorter region saves (the compositor's
+ * panel.frag: the next comparison of an else-if chain, two instructions, and
+ * the selects of a merge, four; ws075-p023).
+ */
+#define COMPILE_SKIP_MIN_INSTRUCTIONS	6U
+
 /* The VUE slots a URB write carries at most: eight registers of a SIMD8 VUE. */
 #define COMPILE_URB_WRITE_SLOTS	2U
 
@@ -3958,21 +3967,31 @@ i915_compile_if_any(
 }
 
 /*
- * Lowers a SKIP_BEGIN: for a region that is really skipped (and while there
- * is room to remember its ENDIF), an IF every channel takes when any channel
- * is in the predicate (i915_compile_if_any()); the region's body then runs
- * for every channel, as it would without the IF, and a thread none of whose
- * channels is in it jumps to the ENDIF.
+ * Lowers a SKIP_BEGIN: for a region that is really skipped (while there is
+ * room to remember its ENDIF, and long enough to be worth it), an IF every
+ * channel takes when any channel is in the predicate (i915_compile_if_any());
+ * the region's body then runs for every channel, as it would without the IF,
+ * and a thread none of whose channels is in it jumps to the ENDIF.
  */
 static void
 i915_compile_skip_begin(
 	struct i915_compile_state *state,
 	const struct i915_shader_ir_inst *inst)
 {
+	uint32_t length;
+
 	/* A region the check did not prove, or one past the room for ENDIFs, runs as it is. */
 	if (state->skip_ok[state->index] == 0U)
 		return;
 	if (state->guards >= COMPILE_MAX_GUARDS || state->skip_active)
+		return;
+
+	/* So does one too short to be worth its IF. */
+	length = 0U;
+	while (state->index + 1U + length < state->ir->instruction_count &&
+	       state->ir->instructions[state->index + 1U + length].op != I915_IR_SKIP_END)
+		length++;
+	if (length < COMPILE_SKIP_MIN_INSTRUCTIONS)
 		return;
 
 	/* Opens an IF that every channel takes when any is in the predicate. */
