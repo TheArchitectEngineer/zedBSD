@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: main の依頼（worktree `.claude/worktrees/ws094-desktop`、branch `wt/ws094`）
-Resume point: L3 の計測（p008）は 2026-09-30 に cleared。基準値は (a) 2908 ms（目標 1500）・(b) 1094 ms（2500）・(c) 95 ms（50）・SLOW-FRAME 0。p009 は 2026-09-30 に uncleared: (a) 1954 ms（画面に出るまで 2973）、(c) 90 ms、(b) 1344、SLOW-FRAME 0。残りは zdesktop の import（WS035）と QEMU の Venus の呼び出し 1 回約 10 ms で、進め方は main の判断待ち（phase009 の「残り」）。段の計画は下の「段（L1〜L5）」
+Resume point: L3 の計測（p008）は 2026-09-30 に cleared。基準値は (a) 2908 ms（目標 1500）・(b) 1094 ms（2500）・(c) 95 ms（50）・SLOW-FRAME 0。p009 は 2026-09-30 に uncleared: (a) 1954 ms（画面に出るまで 2973）、(c) 90 ms、(b) 1344、SLOW-FRAME 0。残りは zdesktop の import（WS035）と QEMU の Venus の呼び出し 1 回約 10 ms で、進め方は main の判断待ち（phase009 の「残り」）。p013（jpg・gif の thumbnail）は 2026-09-30 に cleared（Image Viewer と共有の decoder `userland/desktop/picture/`）。段の計画は下の「段（L1〜L5）」
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -31,7 +31,7 @@ Resume point: L3 の計測（p008）は 2026-09-30 に cleared。基準値は (a
 | [ws094-p006](phase006/phase.md) | drag（desktop の中・folder へ・Files の窓との DnD）と touch | cleared（2026-09-30: drag・touch の手順 PASS、p003〜p005 の手順・files-open・host・boot test PASS。probe の restart は試験の probe が時々終わらない（下の注）） | p005 |
 | [ws094-p008](phase008/phase.md) | L3a: 100 項目の計測の道具と基準値（計測だけ） | cleared（2026-09-30、QEMU。(a) 2908 ms・(b) 1094 ms・(c) 95 ms・SLOW-FRAME 0） | p006 |
 | [ws094-p009](phase009/phase.md) | L3b: 100 項目で L3 の数値目標に入れる | uncleared（2026-09-30、QEMU。(a) 1954・(c) 90 ms で超過。残りは zdesktop の import と Venus の 10 ms、main の判断待ち） | p008 |
-| ws094-p013 | L3c: jpg と gif の thumbnail（`fm_image_load` が PPM・PGM・PNG だけ。Image Viewer と同じ libjpeg-compat（EXIF の向き）・libgif-compat（最初の frame）で読む）。100 項目の画像に jpg・gif を混ぜて thumbnail が出る | planned | p009 |
+| [ws094-p013](phase013/phase.md) | L3c: jpg と gif の thumbnail（`fm_image_load` が PPM・PGM・PNG だけ。Image Viewer と同じ libjpeg-compat（EXIF の向き）・libgif-compat（最初の frame）で読む）。100 項目の画像に jpg・gif を混ぜて thumbnail が出る | cleared（2026-09-30、host と QEMU。decoder を `userland/desktop/picture/` に共有） | p009 |
 | ws094-p010 | L4a: 長い名前（2 行、中を省く）と画面の大きさの変更 | planned | p006 |
 | ws094-p011 | L4b: 置き場の溢れ（grid より多い項目）と、無い名前の保存の行の掃除 | planned | p010 |
 | ws094-p012 | L5: 実機（5330）での L1〜L3 の確認 | planned | p009、実機 |

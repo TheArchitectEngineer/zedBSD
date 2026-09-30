@@ -33,8 +33,13 @@ done
 # The C library's SHA-2 (the information's checksum), which the host's C library does not have.
 "$cc" $flags -c src/libc/openbsd-sha2.c -o "$out/obj/libc-sha2.o"
 objects="$objects $out/obj/libc-sha2.o"
-# libz-compat and libpng-compat (the PNG thumbnails).
-for file in userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c; do
+# libz-compat and libpng-compat (the PNG thumbnails); libjpeg-compat, libgif-compat and the decoding shared with Image
+# Viewer (the JPEG and GIF thumbnails, ws094-p013).
+for file in userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c \
+    userland/base/libjpeg-compat/decompress.c userland/base/libjpeg-compat/error.c userland/base/libjpeg-compat/huffman.c \
+    userland/base/libjpeg-compat/idct.c userland/base/libjpeg-compat/marker.c userland/base/libjpeg-compat/memory.c \
+    userland/base/libjpeg-compat/source.c userland/base/libgif-compat/decode.c userland/base/libgif-compat/lzw.c \
+    userland/desktop/picture/picture.c; do
 	object="$out/obj/compat-$(basename "$file" .c).o"
 	"$cc" $flags -c "$file" -o "$object"
 	objects="$objects $object"

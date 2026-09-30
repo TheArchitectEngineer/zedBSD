@@ -96,11 +96,19 @@ expect_log() {
 for step in "$@"; do
 	case "$step" in
 	install)
-		# The greeter's compositor of a graphical image holds /bin/wayland open (ws094-p008).
+		# The greeter's compositor of a graphical image holds /bin/wayland open (ws094-p008); just after the boot it may
+		# still be ending, so the two programs are tried a few times (ws094-p013).
 		guest "$stop_all" >/dev/null
 		python3 plan/tools/imageview/make-images.py build/ws094-images >/dev/null
-		put "$bin/bin/wayland" /bin/wayland
-		put "$bin/bin/files" /bin/files
+		for program in wayland files; do
+			tries=0
+			until timeout 120 python3 plan/tools/guest/guest.py put "$bin/bin/$program" "/bin/$program" >/dev/null 2>&1 </dev/null; do
+				tries=$((tries + 1))
+				[ $tries -lt 3 ] || { echo "put $bin/bin/$program: FAILED"; status=1; break; }
+				guest "$stop_all" >/dev/null
+				sleep 3
+			done
+		done
 		for library in $(cd "$bin/dynamic" && ls *.so | grep -vE '^(libc|ld)\.so$'); do
 			put "$bin/dynamic/$library" "/lib/$library"
 		done
