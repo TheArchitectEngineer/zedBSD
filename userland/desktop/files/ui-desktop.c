@@ -82,6 +82,11 @@
 #define DESKTOP_FILES		"/bin/files"
 
 static void desktop_layout(struct fm_app *app, int width, int height);
+static int desktop_over(const struct fm_app *app);
+static int desktop_partial(struct fm_app *app, struct fm_canvas *canvas);
+static void desktop_painted_record(struct fm_app *app, const struct fm_entry *entry, size_t index, struct fm_desktop_painted *painted);
+static void desktop_painted_keep(struct fm_app *app, struct fm_canvas *canvas);
+static void desktop_clear_rect(struct fm_canvas *canvas, const struct fm_rect *rect);
 static void desktop_item(struct fm_app *app, struct fm_canvas *canvas, const struct fm_entry *entry, const struct fm_rect *cell);
 static void desktop_name(struct fm_app *app, struct fm_canvas *canvas, const char *name, const struct fm_rect *cell, int selected);
 static void desktop_field(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *cell);
@@ -102,7 +107,9 @@ static int desktop_rects_meet(const struct fm_rect *a, const struct fm_rect *b);
 /*
  * Draws the desktop: clear, with each item of the tab's folder in its cell
  * and the rubber band over them.  The layout is logged when the number of
- * items changes.
+ * items changes.  When the canvas keeps the last frame and only some cells
+ * changed (a click's selection), only those cells are drawn again
+ * (ws094-p009).
  */
 void
 fm_desktop_draw(
@@ -117,9 +124,9 @@ fm_desktop_draw(
 	int placed;
 	int cells;
 	int logging;
+	int partial;
 
-	/* Clear, so that the wallpaper shows; the places for this size and listing. */
-	fm_canvas_clear(canvas);
+	/* The places for this size and listing. */
 	tab = fm_ui_tab(app);
 	desk = &app->desk;
 	desktop_layout(app, canvas->width, canvas->height);
@@ -133,6 +140,18 @@ fm_desktop_draw(
 	logging = 0;
 	if (desk->logged != (int)tab->listing.count + 1)
 		logging = 1;
+
+	/* Only the changed cells, when the kept frame allows. */
+	if (!logging) {
+		partial = desktop_partial(app, canvas);
+		if (partial) {
+			app->dirty = 0;
+			return;
+		}
+	}
+
+	/* Clear, so that the wallpaper shows. */
+	fm_canvas_clear(canvas);
 
 	/* Each item in its cell; an item without a cell is not shown. */
 	cells = 0;
@@ -172,8 +191,211 @@ fm_desktop_draw(
 		desk->logged = (int)tab->listing.count + 1;
 	}
 
-	/* The frame is drawn. */
+	/* What the cells were drawn with, for the next frame; the frame is drawn. */
+	desktop_painted_keep(app, canvas);
 	app->dirty = 0;
+}
+
+/* Forgets the frame kept in the canvas: the next frame is drawn whole (a new canvas). */
+void
+fm_desktop_repaint(
+	struct fm_desktop *desk)
+{
+	desk->painted = 0;
+}
+
+/*
+ * Tells whether something is drawn over the items or across cells: the
+ * rubber band, a drag or a drop, a message or an operation's progress, a
+ * question, or a name's field.
+ */
+static int
+desktop_over(
+	const struct fm_app *app)
+{
+	/* The band, the desktop's own drag, a drop over it. */
+	if (app->desk.band || app->desk.dragging || app->drop_active)
+		return 1;
+
+	/* A question, or a name being changed. */
+	if (app->dialog != FM_DIALOG_NONE || app->focus == FM_FOCUS_RENAME)
+		return 1;
+
+	/* A message while it lasts, or an operation's progress. */
+	if (app->message[0] != '\0' && app->now < app->message_until)
+		return 1;
+	if (app->task_count > 0)
+		return 1;
+
+	/* Nothing over the items. */
+	return 0;
+}
+
+/*
+ * Draws again only the cells whose record changed, when the canvas holds
+ * the last whole frame of the same listing and size and nothing was or is
+ * over the items.  Returns 1 when the frame is done so, 0 when it must be
+ * drawn whole.
+ */
+static int
+desktop_partial(
+	struct fm_app *app,
+	struct fm_canvas *canvas)
+{
+	struct fm_desktop_painted now;
+	struct fm_desktop_painted *before;
+	struct fm_desktop *desk;
+	struct fm_rect cell;
+	struct fm_tab *tab;
+	size_t index;
+	int placed;
+	int over;
+	int differs;
+
+	/* The kept frame, of this size and listing, with nothing over it now. */
+	desk = &app->desk;
+	tab = fm_ui_tab(app);
+	over = desktop_over(app);
+	if (!desk->painted || over)
+		return 0;
+	if (desk->painted_width != canvas->width || desk->painted_height != canvas->height)
+		return 0;
+	if (desk->painted_count != tab->listing.count || desk->place_count != tab->listing.count)
+		return 0;
+	if (desk->painted_modified != desk->laid_modified || desk->painted_names != desk->laid_names)
+		return 0;
+
+	/* An item moved to another cell: the whole frame (its old cell is cleared with it). */
+	for (index = 0; index < tab->listing.count; index++) {
+		before = &desk->painted_cells[index];
+		if (before->column != desk->places[index].column || before->row != desk->places[index].row)
+			return 0;
+	}
+
+	/* Each cell whose record changed: cleared and drawn again, inside it. */
+	for (index = 0; index < tab->listing.count; index++) {
+		desktop_painted_record(app, &tab->listing.entries[index], index, &now);
+		before = &desk->painted_cells[index];
+		differs = memcmp(&now, before, sizeof(now));
+		if (differs == 0)
+			continue;
+		*before = now;
+
+		/* An item without a cell is not shown. */
+		placed = fm_desktop_cell_rect(desk->places[index].column, desk->places[index].row, canvas->width, canvas->height, &cell);
+		if (!placed)
+			continue;
+
+		/* The cell again. */
+		desktop_clear_rect(canvas, &cell);
+		fm_canvas_clip_push(canvas, &cell);
+		desktop_item(app, canvas, &tab->listing.entries[index], &cell);
+		fm_canvas_clip_pop(canvas);
+	}
+
+	/* Succeeded: the frame is the kept one with its changed cells. */
+	return 1;
+}
+
+/* Records what an item's cell is drawn with now. */
+static void
+desktop_painted_record(
+	struct fm_app *app,
+	const struct fm_entry *entry,
+	size_t index,
+	struct fm_desktop_painted *painted)
+{
+	/* Zeroed first, so that records compare whole. */
+	memset(painted, 0, sizeof(*painted));
+	painted->column = app->desk.places[index].column;
+	painted->row = app->desk.places[index].row;
+	painted->selected = entry->selected;
+	painted->cut = entry->cut;
+
+	/* A picture's thumbnail, once made (fm_grid_entry_icon draws it). */
+	if (entry->folder == 0 && entry->path != NULL && entry->mime->category == FM_CATEGORY_IMAGE)
+		painted->thumb = fm_thumb_get(app, entry->path, entry->modified);
+}
+
+/*
+ * Keeps what a whole frame's cells were drawn with, and whether the next
+ * frame may draw only the changed ones (not after something was drawn over
+ * the items, nor when there is no memory for the records).
+ */
+static void
+desktop_painted_keep(
+	struct fm_app *app,
+	struct fm_canvas *canvas)
+{
+	struct fm_desktop_painted *cells;
+	struct fm_desktop *desk;
+	struct fm_tab *tab;
+	size_t index;
+	int over;
+
+	/* Nothing kept until the records are made. */
+	desk = &app->desk;
+	tab = fm_ui_tab(app);
+	desk->painted = 0;
+
+	/* A frame with something over the items, or items without places, is not kept. */
+	over = desktop_over(app);
+	if (over || desk->place_count != tab->listing.count)
+		return;
+
+	/* Room for a record per item. */
+	cells = realloc(desk->painted_cells, (tab->listing.count + 1U) * sizeof(cells[0]));
+	if (cells == NULL)
+		return;
+	desk->painted_cells = cells;
+
+	/* Each item's record. */
+	for (index = 0; index < tab->listing.count; index++)
+		desktop_painted_record(app, &tab->listing.entries[index], index, &cells[index]);
+
+	/* The frame is kept, for this size and listing. */
+	desk->painted = 1;
+	desk->painted_width = canvas->width;
+	desk->painted_height = canvas->height;
+	desk->painted_count = tab->listing.count;
+	desk->painted_modified = desk->laid_modified;
+	desk->painted_names = desk->laid_names;
+}
+
+/* Makes a rectangle of the canvas clear (transparent), within the canvas. */
+static void
+desktop_clear_rect(
+	struct fm_canvas *canvas,
+	const struct fm_rect *rect)
+{
+	uint32_t *row;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int y;
+
+	/* The rectangle inside the canvas. */
+	left = rect->x;
+	if (left < 0)
+		left = 0;
+	top = rect->y;
+	if (top < 0)
+		top = 0;
+	right = rect->x + rect->width;
+	if (right > canvas->width)
+		right = canvas->width;
+	bottom = rect->y + rect->height;
+	if (bottom > canvas->height)
+		bottom = canvas->height;
+	if (right <= left || bottom <= top)
+		return;
+
+	/* Each row's part, zero (transparent black, premultiplied). */
+	for (y = top; y < bottom; y++) {
+		row = canvas->pixels + (size_t)y * canvas->stride;
+		memset(row + left, 0, sizeof(row[0]) * (size_t)(right - left));
+	}
 }
 
 /*
@@ -468,6 +690,8 @@ desktop_name(
 	int available;
 	int width;
 	int left;
+	int pill_left;
+	int pill_right;
 	int baseline;
 	int dx;
 	int dy;
@@ -482,9 +706,15 @@ desktop_name(
 	left = cell->x + (cell->width - width) / 2;
 	baseline = cell->y + DESKTOP_TEXT_BASELINE;
 
-	/* A selected name: white on its pill. */
+	/* A selected name: white on its pill, which stays in the cell (a cell is drawn again alone, ws094-p009). */
 	if (selected) {
-		fm_canvas_round(canvas, (float)left - 5.0f, (float)baseline - 13.0f, (float)width + 10.0f, 18.0f, 9.0f, DESKTOP_PILL_COLOR);
+		pill_left = left - 5;
+		if (pill_left < cell->x)
+			pill_left = cell->x;
+		pill_right = left + width + 5;
+		if (pill_right > cell->x + cell->width)
+			pill_right = cell->x + cell->width;
+		fm_canvas_round(canvas, (float)pill_left, (float)baseline - 13.0f, (float)(pill_right - pill_left), 18.0f, 9.0f, DESKTOP_PILL_COLOR);
 		(void)fm_text_draw_fit(app->text, canvas, left, baseline, name, DESKTOP_TEXT, 0, available, DESKTOP_PILL_TEXT);
 		return;
 	}

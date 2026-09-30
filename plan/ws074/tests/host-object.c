@@ -250,6 +250,7 @@ test_arrays(
 {
 	struct vm_heap *heap;
 	struct vm_object *array;
+	struct vm_object *object;
 	struct vm_property property;
 	vm_value value;
 	int found;
@@ -300,6 +301,22 @@ test_arrays(
 	check(!found, "array: element past the length is gone");
 	found = vm_object_get_own(array, vm_value_int32(9), &property);
 	check(found, "array: element before the length stays");
+
+	/*
+	 * A plain object's sparse index stays in a slot without expanding the
+	 * dense range; a nearby sparse index must not become a giant array.
+	 */
+	object = vm_object_create(heap, NULL);
+	for (index = 0; index < 6; index++)
+		vm_object_define(heap, object, vm_value_int32(index), vm_value_int32(index), VM_PROPERTY_DEFAULT);
+	vm_object_define(heap, object, vm_value_int32(35691), vm_value_int32(7), VM_PROPERTY_DEFAULT);
+	vm_object_define(heap, object, vm_value_int32(36000), vm_value_int32(8), VM_PROPERTY_DEFAULT);
+	vm_object_get(object, vm_value_int32(35691), &value);
+	check(value == vm_value_int32(7) && object->length == 6 && object->element_capacity == 8,
+	    "object: sparse index leaves dense range");
+	vm_object_get(object, vm_value_int32(36000), &value);
+	check(value == vm_value_int32(8) && object->element_capacity == 8,
+	    "object: later sparse index stays sparse");
 }
 
 /* Keys: canonical index strings, and the order of own keys. */

@@ -10,7 +10,7 @@ URL is a live http or https page, or a saved capture under build/ (a file's path
 demo's pages are iterated on without asking the site again.  browser runs `--render` with the fonts of
 build/ws035-fonts;
 Chromium (headless, the same fonts through build/ws074-chrome/fonts.conf from chrome-fonts.sh) takes a
-screenshot with browser's own User-Agent, so both get the same variant of the page, and runs the page's
+screenshot with the fixed Chrome User-Agent, so both get the same variant of the page, and runs the page's
 scripts for five seconds of virtual time.  Both pictures and a side-by-side picture (ours | Chromium |
 differing pixels in red) go to DIR (default build/ws074-live).  A pixel agrees when no channel differs by
 more than 16; prints the share of all pixels that agree and the share of the pixels that are not white in
@@ -28,13 +28,15 @@ import sys
 
 from PIL import Image, ImageChops
 
+from comparison_config import CHROME_USER_AGENT
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 
 # ws074-p080: localStorage goes under XDG_DATA_HOME; the browsers this tool starts keep theirs under build/,
 # away from the user's ~/.local/share.
 os.environ["XDG_DATA_HOME"] = os.path.join(ROOT, "build/ws074-host-data")
 THRESHOLD = 16
-AGENT = "browser/0.1 (Kei)"
+AGENT = CHROME_USER_AGENT
 
 
 def render_ours(program, url, width, height, out):
@@ -55,7 +57,7 @@ def render_ours(program, url, width, height, out):
 
 
 def render_chromium(url, width, height, out):
-    """Takes Chromium's screenshot of the page with browser's User-Agent and fonts."""
+    """Takes Chromium's screenshot of the page with the fixed Chrome User-Agent and fonts."""
     fonts = os.path.join(ROOT, "build/ws074-chrome/fonts.conf")
     if not os.path.exists(fonts):
         subprocess.run(["sh", os.path.join(ROOT, "plan/ws074/tests/chrome-fonts.sh")], check=True)

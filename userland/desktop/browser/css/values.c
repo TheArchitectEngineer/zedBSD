@@ -190,6 +190,7 @@ static const struct values_name values_names[] = {
 	{ "font-family", CSS_PROP_FONT_FAMILY },
 	{ "line-height", CSS_PROP_LINE_HEIGHT },
 	{ "text-align", CSS_PROP_TEXT_ALIGN },
+	{ "text-indent", CSS_PROP_TEXT_INDENT },
 	{ "white-space", CSS_PROP_WHITE_SPACE },
 	{ "text-decoration-line", CSS_PROP_TEXT_DECORATION_LINE },
 	{ "list-style-type", CSS_PROP_LIST_STYLE_TYPE },
@@ -1642,8 +1643,9 @@ values_single(
 		return 0;
 	}
 
-	/* outline-offset and border-spacing: a length. */
-	if (property == CSS_PROP_OUTLINE_OFFSET || property == CSS_PROP_BORDER_SPACING_X || property == CSS_PROP_BORDER_SPACING_Y)
+	/* text-indent, outline-offset and border-spacing: a length. */
+	if (property == CSS_PROP_TEXT_INDENT || property == CSS_PROP_OUTLINE_OFFSET ||
+	    property == CSS_PROP_BORDER_SPACING_X || property == CSS_PROP_BORDER_SPACING_Y)
 		return values_length(&tokens[0], 0, value);
 
 	/* flex-grow and flex-shrink: a number that is not negative. */
@@ -2797,6 +2799,7 @@ values_takes_length(
 	case CSS_PROP_LEFT:
 	case CSS_PROP_FONT_SIZE:
 	case CSS_PROP_LINE_HEIGHT:
+	case CSS_PROP_TEXT_INDENT:
 	case CSS_PROP_ROW_GAP:
 	case CSS_PROP_COLUMN_GAP:
 	case CSS_PROP_FLEX_BASIS:

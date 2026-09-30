@@ -154,7 +154,43 @@ struct cascade_match {
 	uint64_t order;
 };
 
+/* One legacy keyword and the declaration it stands for. */
+struct cascade_hint_keyword {
+	const char *keyword;
+	const char *declaration;
+};
+
+/* The legacy align and valign keyword mappings. */
+static const struct cascade_hint_keyword cascade_table_align[] = {
+	{ "center", "margin-left:auto;margin-right:auto;" },
+	{ "left", "float:left;" },
+	{ "right", "float:right;" },
+	{ NULL, NULL }
+};
+
+static const struct cascade_hint_keyword cascade_text_align[] = {
+	{ "left", "text-align:left;" },
+	{ "right", "text-align:right;" },
+	{ "center", "text-align:center;" },
+	{ "justify", "text-align:justify;" },
+	{ NULL, NULL }
+};
+
+static const struct cascade_hint_keyword cascade_vertical_align[] = {
+	{ "top", "vertical-align:top;" },
+	{ "middle", "vertical-align:middle;" },
+	{ "bottom", "vertical-align:bottom;" },
+	{ "baseline", "vertical-align:baseline;" },
+	{ NULL, NULL }
+};
+
 static int cascade_collect(struct css_engine *engine, struct dom_element *element, struct wb_vector *matches, struct wb_arena *scratch);
+static int cascade_presentational(struct css_engine *engine, struct dom_element *element, struct wb_vector *matches, struct wb_arena *scratch);
+static int cascade_hint_ascii(struct wb_units *units, const char *text);
+static int cascade_hint_length(struct wb_units *units, const char *property, const struct vm_string *value);
+static int cascade_hint_color(struct wb_units *units, const char *property, const struct vm_string *value);
+static int cascade_hint_equal(const struct vm_string *value, const char *keyword);
+static int cascade_hint_keywords(struct wb_units *units, const struct vm_string *value, const struct cascade_hint_keyword *keywords);
 static int cascade_element_keys(struct css_engine *engine, struct dom_element *element, struct vm_string **id);
 static int cascade_add_bucket(struct css_engine *engine, const struct css_rule_index *index, const struct css_index_bucket *bucket);
 static int cascade_collect_sheet(struct css_engine *engine, struct dom_element *element, const struct css_sheet *sheet, uint64_t sheet_number, struct vm_string *id, struct wb_vector *matches);
@@ -609,6 +645,7 @@ cascade_compute(
 		style->family_count = parent->family_count;
 		style->line_height = parent->line_height;
 		style->text_align = parent->text_align;
+		style->text_indent = parent->text_indent;
 		style->direction = parent->direction;
 		style->border_spacing[0] = parent->border_spacing[0];
 		style->border_spacing[1] = parent->border_spacing[1];
@@ -852,6 +889,13 @@ cascade_collect(
 	int holds;
 	int error;
 
+	/* HTML's presentational hints precede the author's sheets at specificity zero. */
+	if (engine->pseudo_wanted == CSS_PSEUDO_ELEMENT_NONE) {
+		error = cascade_presentational(engine, element, matches, scratch);
+		if (error != 0)
+			return error;
+	}
+
 	/* The keys the rule indexes are searched by: the element's id, classes and type. */
 	error = cascade_element_keys(engine, element, &id);
 	if (error != 0)
@@ -902,6 +946,340 @@ cascade_collect(
 		return error;
 
 	/* Succeeded: every applying declaration is gathered. */
+	return 0;
+}
+
+/*
+ * Adds the common HTML presentational hints as author declarations of
+ * specificity zero.  They therefore win over the user agent sheet and lose
+ * to an author's rule, including a universal selector later in the source.
+ */
+static int
+cascade_presentational(
+	struct css_engine *engine,
+	struct dom_element *element,
+	struct wb_vector *matches,
+	struct wb_arena *scratch)
+{
+	struct css_declaration *declarations;
+	const struct vm_string *value;
+	struct wb_units units;
+	size_t declaration_count;
+	int table;
+	int cell;
+	int row;
+	int row_group;
+	int text_align;
+	int font;
+	int error;
+
+	/* Classifies the elements that accept each old HTML attribute. */
+	table = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_TABLE);
+	cell = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_TD) ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_TH);
+	row = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_TR);
+	row_group = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_THEAD) ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_TBODY) ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_TFOOT);
+	text_align = cell || row ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_DIV) ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_P) ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_H1) ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_H2) ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_H3) ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_H4) ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_H5) ||
+	    dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_H6);
+	font = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_FONT);
+
+	/* Width applies to tables and cells. */
+	wb_units_init(&units);
+	error = 0;
+	if (table || cell) {
+		value = dom_attribute_ascii(element, "width");
+		if (value != NULL)
+			error = cascade_hint_length(&units, "width", value);
+	}
+
+	/* Height applies to tables, rows and cells. */
+	if (error == 0 && (table || cell || row)) {
+		value = dom_attribute_ascii(element, "height");
+		if (value != NULL)
+			error = cascade_hint_length(&units, "height", value);
+	}
+
+	/* cellspacing becomes the table's border spacing. */
+	if (error == 0 && table) {
+		value = dom_attribute_ascii(element, "cellspacing");
+		if (value != NULL)
+			error = cascade_hint_length(&units, "border-spacing", value);
+	}
+
+	/* A table's align moves the table; the other old align attributes align text. */
+	value = dom_attribute_ascii(element, "align");
+	if (error == 0 && table && value != NULL)
+		error = cascade_hint_keywords(&units, value, cascade_table_align);
+	else if (error == 0 && text_align && value != NULL)
+		error = cascade_hint_keywords(&units, value, cascade_text_align);
+
+	/* Table groups, rows and cells accept their legacy vertical alignment. */
+	value = dom_attribute_ascii(element, "valign");
+	if (error == 0 && (cell || row || row_group) && value != NULL)
+		error = cascade_hint_keywords(&units, value, cascade_vertical_align);
+
+	/* Legacy table colors and font colors are still used by simple pages. */
+	value = dom_attribute_ascii(element, "bgcolor");
+	if (error == 0 && (table || cell || row || row_group) && value != NULL)
+		error = cascade_hint_color(&units, "background-color", value);
+	value = dom_attribute_ascii(element, "color");
+	if (error == 0 && font && value != NULL)
+		error = cascade_hint_color(&units, "color", value);
+
+	/* A cell's bare nowrap attribute preserves its spaces and lines. */
+	value = dom_attribute_ascii(element, "nowrap");
+	if (error == 0 && cell && value != NULL)
+		error = cascade_hint_ascii(&units, "white-space:nowrap;");
+	if (error != 0) {
+		wb_units_release(&units);
+		return error;
+	}
+
+	/* An element without a recognized hint contributes no declaration. */
+	if (units.length == 0) {
+		wb_units_release(&units);
+		return 0;
+	}
+
+	/* Parse the sanitized declarations in the same scratch arena as style=. */
+	error = css_parse_declarations(engine->heap, scratch, units.data,
+	    units.length, &declarations, &declaration_count);
+	wb_units_release(&units);
+	if (error == ENOMEM)
+		return error;
+	if (error != 0)
+		return 0;
+	return cascade_add_declarations(matches, declarations, declaration_count,
+	    CSS_ORIGIN_AUTHOR, 0, 0);
+}
+
+/* Appends an ASCII fragment to a declaration being made. */
+static int
+cascade_hint_ascii(
+	struct wb_units *units,
+	const char *text)
+{
+	size_t index;
+	int error;
+
+	/* Copies the fragment one ASCII character at a time. */
+	error = 0;
+	for (index = 0; text[index] != '\0' && error == 0; index++)
+		error = wb_units_append_code_point(units, (unsigned char)text[index]);
+	return error;
+}
+
+/* Appends a nonnegative integer HTML dimension as px or a percentage. */
+static int
+cascade_hint_length(
+	struct wb_units *units,
+	const char *property,
+	const struct vm_string *value)
+{
+	size_t first;
+	size_t last;
+	size_t index;
+	uint16_t unit;
+	int percent;
+	int error;
+
+	/* Skips the leading ASCII whitespace. */
+	index = 0;
+	while (index < value->length) {
+		unit = vm_string_at(value, index);
+		if (unit != ' ' && unit != '\t' && unit != '\n' && unit != '\r' && unit != '\f')
+			break;
+		index++;
+	}
+
+	/* Takes the run of decimal digits. */
+	first = index;
+	while (index < value->length) {
+		unit = vm_string_at(value, index);
+		if (unit < '0' || unit > '9')
+			break;
+		index++;
+	}
+
+	/* A dimension without a number is not a hint. */
+	last = index;
+	if (last == first)
+		return 0;
+
+	/* Skips spaces between the number and an optional percent sign. */
+	while (index < value->length) {
+		unit = vm_string_at(value, index);
+		if (unit != ' ')
+			break;
+		index++;
+	}
+
+	/* Takes the percent sign when one is present. */
+	percent = 0;
+	if (index < value->length) {
+		unit = vm_string_at(value, index);
+		if (unit == '%') {
+			percent = 1;
+			index++;
+		}
+	}
+
+	/* Only spaces may follow the value. */
+	while (index < value->length) {
+		unit = vm_string_at(value, index);
+		if (unit != ' ')
+			break;
+		index++;
+	}
+
+	/* Rejects anything other than the parsed dimension. */
+	if (index != value->length)
+		return 0;
+
+	/* Writes the property, the sanitized number and its unit. */
+	error = cascade_hint_ascii(units, property);
+	if (error == 0)
+		error = cascade_hint_ascii(units, ":");
+	for (index = first; index < last && error == 0; index++)
+		error = wb_units_append_code_point(units, vm_string_at(value, index));
+	if (error == 0 && percent)
+		error = cascade_hint_ascii(units, "%;");
+	if (error == 0 && !percent)
+		error = cascade_hint_ascii(units, "px;");
+
+	/* Reports whether the declaration was written. */
+	return error;
+}
+
+/* Appends a legacy named or hexadecimal color, excluding CSS punctuation. */
+static int
+cascade_hint_color(
+	struct wb_units *units,
+	const char *property,
+	const struct vm_string *value)
+{
+	size_t first;
+	size_t last;
+	size_t index;
+	uint16_t unit;
+	int allowed;
+	int error;
+
+	/* Trims spaces around the color. */
+	first = 0;
+	while (first < value->length) {
+		unit = vm_string_at(value, first);
+		if (unit != ' ')
+			break;
+		first++;
+	}
+
+	/* Trims the trailing spaces. */
+	last = value->length;
+	while (last > first) {
+		unit = vm_string_at(value, last - 1U);
+		if (unit != ' ')
+			break;
+		last--;
+	}
+
+	/* An empty value is not a color hint. */
+	if (first == last)
+		return 0;
+
+	/* Rejects punctuation which could add another declaration. */
+	for (index = first; index < last; index++) {
+		unit = vm_string_at(value, index);
+		allowed = unit == '#' || (unit >= '0' && unit <= '9') ||
+		    (unit >= 'A' && unit <= 'Z') || (unit >= 'a' && unit <= 'z');
+		if (!allowed)
+			return 0;
+	}
+
+	/* Writes the safe color declaration. */
+	error = cascade_hint_ascii(units, property);
+	if (error == 0)
+		error = cascade_hint_ascii(units, ":");
+	for (index = first; index < last && error == 0; index++)
+		error = wb_units_append_code_point(units, vm_string_at(value, index));
+	if (error == 0)
+		error = cascade_hint_ascii(units, ";");
+
+	/* Reports whether the declaration was written. */
+	return error;
+}
+
+/* Compares a legacy keyword after trimming ASCII whitespace, ignoring case. */
+static int
+cascade_hint_equal(
+	const struct vm_string *value,
+	const char *keyword)
+{
+	size_t first;
+	size_t last;
+	size_t index;
+	uint16_t unit;
+	unsigned char expected;
+
+	/* Trims spaces around the old keyword. */
+	first = 0;
+	while (first < value->length) {
+		unit = vm_string_at(value, first);
+		if (unit != ' ')
+			break;
+		first++;
+	}
+
+	/* Trims the trailing spaces. */
+	last = value->length;
+	while (last > first) {
+		unit = vm_string_at(value, last - 1U);
+		if (unit != ' ')
+			break;
+		last--;
+	}
+
+	/* Compares its ASCII letters without case. */
+	for (index = 0; first + index < last && keyword[index] != '\0'; index++) {
+		unit = vm_string_at(value, first + index);
+		expected = (unsigned char)keyword[index];
+		if (unit >= 'A' && unit <= 'Z')
+			unit = (uint16_t)(unit - 'A' + 'a');
+		if (unit != expected)
+			return 0;
+	}
+
+	/* Both strings must end together. */
+	return first + index == last && keyword[index] == '\0';
+}
+
+/* Appends the declaration of a recognized legacy keyword. */
+static int
+cascade_hint_keywords(
+	struct wb_units *units,
+	const struct vm_string *value,
+	const struct cascade_hint_keyword *keywords)
+{
+	size_t index;
+	int same;
+
+	/* Uses the first matching keyword from the small fixed table. */
+	for (index = 0; keywords[index].keyword != NULL; index++) {
+		same = cascade_hint_equal(value, keywords[index].keyword);
+		if (same)
+			return cascade_hint_ascii(units, keywords[index].declaration);
+	}
+
+	/* An unknown value contributes no declaration. */
 	return 0;
 }
 
@@ -2751,7 +3129,7 @@ cascade_apply(
 	if (value->kind == CSS_VALUE_INHERIT || value->kind == CSS_VALUE_UNSET) {
 		inherited = property == CSS_PROP_COLOR || property == CSS_PROP_FONT_SIZE || property == CSS_PROP_FONT_WEIGHT ||
 		    property == CSS_PROP_FONT_STYLE || property == CSS_PROP_FONT_FAMILY || property == CSS_PROP_LINE_HEIGHT ||
-		    property == CSS_PROP_TEXT_ALIGN || property == CSS_PROP_WHITE_SPACE || property == CSS_PROP_VISIBILITY ||
+		    property == CSS_PROP_TEXT_ALIGN || property == CSS_PROP_TEXT_INDENT || property == CSS_PROP_WHITE_SPACE || property == CSS_PROP_VISIBILITY ||
 		    property == CSS_PROP_DIRECTION || property == CSS_PROP_BORDER_SPACING_X || property == CSS_PROP_BORDER_SPACING_Y ||
 		    property == CSS_PROP_BORDER_COLLAPSE ||
 		    property == CSS_PROP_LIST_STYLE_TYPE;
@@ -2936,6 +3314,9 @@ cascade_apply(
 		break;
 	case CSS_PROP_TEXT_ALIGN:
 		style->text_align = value->keyword;
+		break;
+	case CSS_PROP_TEXT_INDENT:
+		style->text_indent = cascade_length(engine, value, style->font_size);
 		break;
 	case CSS_PROP_DIRECTION:
 		style->direction = value->keyword;
@@ -3315,6 +3696,9 @@ cascade_inherit(
 	case CSS_PROP_TEXT_ALIGN:
 		style->text_align = parent->text_align;
 		break;
+	case CSS_PROP_TEXT_INDENT:
+		style->text_indent = parent->text_indent;
+		break;
 	case CSS_PROP_DIRECTION:
 		style->direction = parent->direction;
 		break;
@@ -3560,6 +3944,7 @@ cascade_font_size(
 	if (value->kind == CSS_VALUE_LENGTH && value->unit == CSS_DUNIT_FONT_KEYWORD)
 		return value->number;
 
+	/* Resolves every other length and accepts only a pixel result. */
 	length = cascade_length(engine, value, parent_size);
 	if (length.unit != CSS_UNIT_PX)
 		return parent_size;

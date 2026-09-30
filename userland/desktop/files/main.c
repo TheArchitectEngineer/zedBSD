@@ -122,6 +122,24 @@ static struct fm_titlebar_state main_titlebar_state;
 static uint32_t *main_pixels;
 static struct fm_canvas main_canvas;
 
+/*
+ * The times of the steps of the start, in fm_clock()'s milliseconds, logged
+ * once with the first frame in the desktop mode (ws094-p009).
+ */
+struct main_startup {
+	uint64_t entered;	/* main() entered */
+	uint64_t fonts;		/* the fonts read */
+	uint64_t instance;	/* the desktop's Vulkan instance made (before its surface) */
+	uint64_t window;	/* the window or desktop surface open */
+	uint64_t present;	/* the presenter open */
+	uint64_t app;		/* the file manager (its first listing) made */
+	uint64_t canvas;	/* the first canvas made */
+	uint64_t draw_ms;	/* the first frame's drawing */
+	uint64_t shown;		/* the first frame shown */
+	uint64_t menus;		/* the desktop's context menus open, after the first frame */
+};
+static struct main_startup main_startup;
+
 static int main_parse(int argc, char **argv, struct main_options *options);
 static const char *main_value(const char *argument, const char *name);
 static int main_number(const char *text, unsigned maximum, unsigned *value);
@@ -156,6 +174,7 @@ main(
 	int error;
 
 	/* The command line. */
+	main_startup.entered = fm_clock();
 	status = main_parse(argc, argv, &options);
 	if (status != 0) {
 		fprintf(stderr, "usage: files [--display=NAME] [--font=PATH] [--fallback-font=PATH] [--width=N] [--height=N] [--wallpaper=PATH] [--token=NAME] [--timeout-s=N] [--desktop] [FOLDER]\n");
@@ -178,6 +197,23 @@ main(
 		return 1;
 	}
 
+	/* The fonts' time (the desktop's start is logged in steps). */
+	main_startup.fonts = fm_clock();
+
+	/*
+	 * The desktop's Vulkan instance first: zdesktop, which started it, is
+	 * still opening its output and answers the surface's requests only
+	 * after that (ws094-p009).  A failure is tried again with the window.
+	 */
+	if (options.desktop) {
+		result = fm_present_instance(&main_present);
+		if (result != VK_SUCCESS)
+			main_present.instance = VK_NULL_HANDLE;
+	}
+
+	/* The instance's time. */
+	main_startup.instance = fm_clock();
+
 	/* The window, or the desktop surface in the desktop mode. */
 	if (options.desktop) {
 		status = fm_window_open_desktop(&main_window, options.display, main_desktop_token);
@@ -189,6 +225,9 @@ main(
 		fm_text_close(&main_text);
 		return 1;
 	}
+
+	/* The window's time. */
+	main_startup.window = fm_clock();
 
 	/* The fingers; without memory for them they do nothing. */
 	error = fm_touch_open(&main_touch);
@@ -206,7 +245,8 @@ main(
 	}
 
 	/* The file manager itself. */
-	main_app.now = fm_clock();
+	main_startup.present = fm_clock();
+	main_app.now = main_startup.present;
 	error = fm_app_init(&main_app, &main_text, options.start);
 	if (error != 0) {
 		fprintf(stderr, "ZFILES FAILED operation=app error=%d\n", error);
@@ -217,14 +257,18 @@ main(
 	}
 
 	/* The dashboard's picture, when another was asked for. */
+	main_startup.app = fm_clock();
 	if (options.wallpaper != NULL)
 		snprintf(main_app.wallpaper, sizeof(main_app.wallpaper), "%s", options.wallpaper);
 
-	/* The desktop has no glass, window menus or titlebar: its icons are drawn on the clear surface (ui-desktop.c), and it has context menus. */
+	/*
+	 * The desktop has no glass, window menus or titlebar: its icons are
+	 * drawn on the clear surface (ui-desktop.c), and its context menus open
+	 * after the first frame (main_loop; the service's search waits for
+	 * zdesktop, which is importing the surface's images then, ws094-p009).
+	 */
 	main_app.desktop = options.desktop;
-	if (options.desktop) {
-		main_open_context_menus();
-	} else {
+	if (!options.desktop) {
 		/* A window's glass, menus and titlebar; without zdesktop's titlebar the file manager does not start. */
 		status = main_open_decorations();
 		if (status != 0) {
@@ -436,9 +480,23 @@ main_loop(
 	}
 
 	/* The first frame. */
+	main_startup.canvas = fm_clock();
 	status = main_frame();
 	if (status != 0)
 		return -1;
+	main_startup.shown = fm_clock();
+
+	/* The desktop's context menus, and the steps of its start from main() (the tests read them). */
+	if (main_app.desktop) {
+		main_open_context_menus();
+		main_startup.menus = fm_clock();
+		fm_log("DESKTOP startup entered_ms=%llu fonts=%lu instance=%lu window=%lu present=%lu app=%lu canvas=%lu draw=%lu shown=%lu menus=%lu",
+		    (unsigned long long)main_startup.entered, (unsigned long)(main_startup.fonts - main_startup.entered),
+		    (unsigned long)(main_startup.instance - main_startup.fonts), (unsigned long)(main_startup.window - main_startup.instance), (unsigned long)(main_startup.present - main_startup.window),
+		    (unsigned long)(main_startup.app - main_startup.present), (unsigned long)(main_startup.canvas - main_startup.app),
+		    (unsigned long)main_startup.draw_ms, (unsigned long)(main_startup.shown - main_startup.canvas - main_startup.draw_ms),
+		    (unsigned long)(main_startup.menus - main_startup.shown));
+	}
 
 	/* The log line the tests wait for. */
 	token = "-";
@@ -571,6 +629,8 @@ main_frame(void)
 			fm_ui_draw(&main_app, &main_canvas);
 		}
 		drawn = fm_clock();
+		if (main_startup.draw_ms == 0U)
+			main_startup.draw_ms = drawn - started;
 
 		/* The frame's glass panels, sent to take effect with it (the desktop has none). */
 		if (!main_app.desktop)
@@ -582,7 +642,9 @@ main_frame(void)
 
 		/* The desktop's selection shown: the time from the press that selected (ws094-p008). */
 		if (main_app.desktop && main_app.desk.select_ms != 0U && result == VK_SUCCESS) {
-			fm_log("DESKTOP select-frame ms=%lu", (unsigned long)(shown - main_app.desk.select_ms));
+			fm_log("DESKTOP select-frame ms=%lu before=%lu draw=%lu copy=%u acquire=%u submit=%u queue=%u wait=%u", (unsigned long)(shown - main_app.desk.select_ms),
+			    (unsigned long)(started - main_app.desk.select_ms), (unsigned long)(drawn - started), main_present.copy_ms, main_present.acquire_ms, main_present.submit_ms,
+			    main_present.present_ms, main_present.wait_ms);
 			main_app.desk.select_ms = 0U;
 		}
 
@@ -623,9 +685,10 @@ main_canvas_make(void)
 	size_t count;
 	int error;
 
-	/* The old canvas and memory go. */
+	/* The old canvas and memory go, and with them the desktop's kept frame. */
 	fm_canvas_release(&main_canvas);
 	free(main_pixels);
+	fm_desktop_repaint(&main_app.desk);
 
 	/* Memory for the swapchain's size. */
 	count = (size_t)main_present.extent.width * (size_t)main_present.extent.height;

@@ -13,6 +13,8 @@ body { margin: 0; }
 #place { position: absolute; left: 200px; top: 300px; width: 17px; height: 9px; border-left: 4px solid blue; }
 #gone { display: none; }
 #sized { box-sizing: border-box; width: 60px; height: 30px; padding: 4px; border: 2px solid; }
+#control-row { position: absolute; left: 300px; top: 200px; display: flex; width: 200px; }
+#control-field { display: flex; flex: 1 1 0px; box-sizing: border-box; width: 100%; height: 38px; padding: 7px 10px 10px 0; margin: 0; border: 0; font: 15px/15px sans-serif; text-indent: 8px; }
 </style>
 </head>
 <body>
@@ -23,6 +25,7 @@ body { margin: 0; }
 <div id="place"></div>
 <div id="gone"><div id="inside"></div></div>
 <div id="sized"></div>
+<div id="control-row"><input id="control-field" type="text" placeholder="Search"></div>
 <script>
 // ws074-p031: getBoundingClientRect, getClientRects, DOMRect and the client, offset and scroll sizes.
 // Only boxes whose place does not depend on the viewport's size or the fonts are measured.
@@ -40,6 +43,7 @@ console.log("row", rect("first"), "|", rect("second"));
 console.log("place", rect("place"), "|", sizes("place"));
 console.log("gone", rect("gone"), "|", rect("inside"), "|", sizes("gone"));
 console.log("sized", rect("sized"), "|", sizes("sized"));
+console.log("control", rect("control-field"), "|", sizes("control-field"));
 var box = document.getElementById("box");
 console.log(box.getClientRects().length, document.getElementById("gone").getClientRects().length, box.getClientRects()[0].width);
 var r = box.getBoundingClientRect();

@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-09-30: p092 cleared。Amazonの後続script向けWeb API、非同期fetch、MutationObserver、有界なsettleを実装し、sign-in tooltipの幅とstacking orderを修正した。dynamic topは約32秒・71.81%/ink 64.58%・Uncaught 4、searchは約65秒・73.79%/ink 28.78%・Uncaught 5。次のQueueは未開始。
+Resume point: 2026-09-30: p097 cleared。10公開siteの固定画像・box・DOM比較、現実的な2 viewport、WPT reftest、Acid2・Acid3を記録し、Amazonのscript有効なguest full-screen取得も安定化した。次の作業は別session。Queueは未選択で、ユーザー指定の順はp099（Acid2 100%）→p100（Acid3 100%）→p101（WPT CSS2 reftest 100%）。次sessionはp099のPhase詳細とQueueを作ってから着手する。既存のp098（ES module script）はこの3 Phaseの後へ延期。
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -82,6 +82,26 @@ libpng-compat の `from_memory`、libtruetype の拡張、libjpeg-compat の API
 2026-09-28 ユーザー:「ブラウザは、現在の方法で進めてください。文字の表は、生成した表をコミットしていいてす。」→ D1〜D3・D5・D9〜D11 は
 今の既定のまま。D4 は生成した表を commit する（2026-09-28 に切り替えた、p030 の phase.md）。
 
+## 2026-09-30 ラップアップと次の作業
+
+- [p097](phase097/phase.md) と q506 は cleared。固定WPT commit `2d66b9b7998bb58c336138c178323ddee857b586`で、
+  CSS2 reftestの固定sampleは44/100、Acid2はexact pixel不合格・90.56%、Acid3は9/100・pixel agreement 40.35%。
+  数値は [results/acid.txt](results/acid.txt) と [results/wpt-reftest.txt](results/wpt-reftest.txt) に残した。
+- Amazonのscript有効なguest版は、plain objectの疎な数値keyをdense arrayの`length`として扱っていたVMの不具合を直し、
+  70秒後までprocess生存・追加SIGSEGVなしを確認した。最後の実装修正はcommit `6184fb12`。
+- active Queueは無い。次のsessionで次の順を変えず、一つずつQueueへ選ぶ。
+
+1. **ws074-p099: Acid2 100%** — p097の同じharness、viewport、font、固定WPT版を使う。`exact-pixel-pass 1`かつ
+   pixel agreement 100.00%、crash・timeout 0をPhaseの完了条件にする。差分画像を分類し、修正ごとに絞った回帰を残す。
+2. **ws074-p100: Acid3 100%** — p099の後。履歴的Acid3が画面上で100/100を返し、Uncaught・crash・timeoutが無いことを
+   完了条件にする。pixel agreementは補助診断として同時に記録する。
+3. **ws074-p101: WPT CSS2 reftest 100%** — p100の後。固定commitで現runnerが列挙するscriptなしCSS2 reftest全5904件を
+   対象にし、sample 100件ではなく全件でpass 100%、error 0を完了条件にする。manifestと分母を着手時に固定し、
+   WPT metadataに基づかない任意の除外はしない。長時間実行はshard・途中再開・失敗cluster別のreportを使う。
+
+既存のp098（ES module script）は削除・再採番せずp101の後へ延期する。p036のCSS2全件部分はp101へ分け、
+p036はその後のflexbox・backgrounds・values・selectorsの拡張suiteに絞る。p047（DOM testharness）も今回の3 Phaseの後まで候補のまま残す。
+
 ## Phase 一覧
 
 p001 で分け直した（2026-09-27。p002〜p013 の案は実行前の案だったので、同じ番号を新しい分割に使う）。各 Phase は 1〜3 時間を目標にし、
@@ -133,7 +153,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | ws074-p033 | Wasm: decoder・validator・共通 bytecode への compiler、JS API、spec test の runner（wabt の wast2json） | planned | p029 |
 | ws074-p034 | Wasm の MVP の後: bulk memory、reference types、multi-value、sign-ext、非 trap の変換、SIMD。**M2 の計測** | planned | p033、p032 |
 | [ws074-p035](phase035/phase.md) | flexbox（最小） | cleared（2026-09-29。ASan・guest（QEMU、live の Amazon の検索）を通し、入れ子の flex の測定で % の幅が測定の幅になる不具合を直した） | p013 |
-| ws074-p036 | CSS の段階 M3-1: WPT CSS2・flexbox・backgrounds・values・selectors を測り、失敗の多い塊を直す | planned | p034、p035 |
+| ws074-p036 | CSS の段階 M3-1（2026-09-30にCSS2全件をp101へ分割）: WPT flexbox・backgrounds・values・selectorsの拡張suiteを測り、失敗の多い塊を直す | planned（p101後） | p034、p035、p101 |
 | [ws074-p037](phase037/phase.md) | table の layout（最小。CSS2 の auto layout、border-collapse は近似） | cleared（2026-09-29、amazon-goal の「最小」の範囲。test page 60/73 box、Amazon のトップの footer が Chromium と同じ 4 列。rowspan・fixed・collapse の解決・column の box は残り） | p036（デモの列の判断で先に最小） |
 | ws074-p038 | transform（2D）、transition・animation、gradient、box-shadow、角丸の clip、opacity、`@font-face`（TTF/OTF） | planned | p036 |
 | ws074-p039 | grid | planned | p036 |
@@ -187,6 +207,13 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p092](phase092/phase.md) | Amazonの後続scriptが使うWeb API: `fetch`・observer・`document.elementsFromPoint`・`atob`/`btoa`と有界なheadless settle | **cleared**（2026-09-30。非同期fetch、MutationObserver、sign-in tooltipの幅とstacking order。top 71.81%/ink 64.58%、約32秒・Uncaught 4） | p087、p088 |
 | ws074-p093 | JS: 型付き配列（ArrayBuffer・TypedArray・DataView） | planned | p087 |
 | [ws074-p094](phase094/phase.md) | Chromiumとの再現可能な比較手順: 固定capture、隔離profile、入力・環境・出力のhash、JSON reportとbaseline回帰 | **cleared**（2026-09-30。top 82.96%/ink 79.01%、search 75.85%/ink 32.97%） | p067 |
+| [ws074-p095](phase095/phase.md) | Amazon検索欄の文字の位置: flex itemのcross-axisのbox sizing、form controlの`text-indent` | **cleared**（2026-09-30。検索文字の範囲がChromiumと同じ`x=435..574, y=22..36`） | p035、p032、p092 |
+| [ws074-p096](phase096/phase.md) | 公開サイトの固定比較corpus: Mozilla日本語topから同一originのpageをたどり、固定Chrome User-AgentでChromiumと比較して一般化できる差を最大2件修正 | **cleared**（2026-09-30。4 page、`@supports`、button空白。top 78.23%/ink 69.54%） | p094、p095 |
+| [ws074-p097](phase097/phase.md) | 指定10公開siteの画像・box・DOM tree比較、阿部寛のホームページのguest full-screenデモ、WPT reftestとAcid、一般化できる差を最大4件修正 | **cleared**（2026-09-30。WPT 44/100、Acid2 90.56%、Acid3 9/100。`postMessage`、table rowspan、presentational hint、intrinsic auto margin） | p094、p096 |
+| ws074-p098 | ES module scriptのgraph取得・link・評価、`import`・`export`、GitHubのhydration比較 | planned（2026-09-30ユーザー指定によりp101後へ延期） | p087、p088、p097 |
+| ws074-p099 | Acid2 100%: 固定harnessでexact pixel一致、crash・timeout 0 | planned（次のPhase） | p097 |
+| ws074-p100 | Acid3 100%: 履歴的Acid3で100/100、Uncaught・crash・timeout 0 | planned（p099の次） | p099 |
+| ws074-p101 | WPT CSS2 reftest 100%: 固定commitのscriptなし全5904件でpass 100%、error 0 | planned（p100の次） | p100 |
 
 ## 後の WS・Future Work の候補
 

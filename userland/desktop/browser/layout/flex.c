@@ -788,17 +788,25 @@ flex_lay_sized(
 	int row)
 {
 	struct layout_box *child;
+	layout_unit size;
 	int align;
 	int error;
 
-	/* The size is the content box's; the limits are applied already. */
+	/*
+	 * The flexed size is the content box's and its limits are applied
+	 * already.  Keep the item's box sizing so that its untouched cross
+	 * size retains the author's meaning; express the main size as a border
+	 * box when that is what layout_block will consume.
+	 */
 	child = item->box;
-	child->style.box_sizing = CSS_BOX_SIZING_CONTENT;
+	size = item->size;
+	if (child->style.box_sizing == CSS_BOX_SIZING_BORDER)
+		size += item->frame;
 
 	/* A row's item: its width and its horizontal margins. */
 	if (row) {
 		child->style.width.unit = CSS_UNIT_PX;
-		child->style.width.value = layout_to_px(item->size);
+		child->style.width.value = layout_to_px(size);
 		child->style.width.offset = 0;
 		child->style.min_width.unit = CSS_UNIT_PX;
 		child->style.min_width.value = 0;
@@ -815,7 +823,7 @@ flex_lay_sized(
 
 	/* A column's item: its height, its vertical margins, and its width by its alignment. */
 	child->style.height.unit = CSS_UNIT_PX;
-	child->style.height.value = layout_to_px(item->size);
+	child->style.height.value = layout_to_px(size);
 	child->style.min_height.unit = CSS_UNIT_PX;
 	child->style.min_height.value = 0;
 	child->style.max_height.unit = CSS_UNIT_NONE;

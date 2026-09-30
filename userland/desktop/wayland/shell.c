@@ -239,6 +239,7 @@ static int32_t title_end(struct zwl_server *server, struct zwl_object *surface, 
 static const char *mark_name(const char *app_id);
 static unsigned window_square(const struct zwl_object *surface);
 static int glass_crowd(struct zwl_server *server, struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
+static void glass_clear_edges(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
 static int glass_top(struct zwl_server *server, struct zwl_object *surface, int32_t *x, int32_t *y);
 static int glass_placed(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *other);
 static void shown_title(const struct zwl_object *surface, char *title, size_t size);
@@ -1322,6 +1323,7 @@ zwl_glass_place(
 	least = -1;
 	for (index = 0U; index < count; index++) {
 		zwl_glass_fit(server, width, height, &places[index][0], &places[index][1]);
+		glass_clear_edges(server, width, height, &places[index][0], &places[index][1]);
 		crowd = glass_crowd(server, surface, places[index][0], places[index][1], width, height);
 		if (least < 0 || crowd < least) {
 			least = crowd;
@@ -1336,6 +1338,50 @@ zwl_glass_place(
 	/* Succeeded: the place. */
 	surface->x = places[best][0];
 	surface->y = places[best][1];
+}
+
+/*
+ * Moves a new window's place so that its frame is clear of the screen's
+ * edge gestures, which take a press before any frame (frame_under_pointer):
+ * its bottom band above Wiseview's edge and its side bands inside the
+ * desktops' edges, so each side and corner can be dragged (BUG-121: a
+ * window placed down to the bottom margin could not be resized from its
+ * bottom corners, and dragging one opened Wiseview).  A window too large
+ * for that keeps the place it has.
+ */
+static void
+glass_clear_edges(
+	struct zwl_server *server,
+	int32_t width,
+	int32_t height,
+	int32_t *x,
+	int32_t *y)
+{
+	int32_t lowest;
+	int32_t leftmost;
+	int32_t rightmost;
+
+	/* The bottom band above Wiseview's edge, unless the title bar would go under the system bar. */
+	lowest = (int32_t)server->height - WISEVIEW_EDGE - FRAME_BAND - height;
+	if (*y > lowest && lowest >= ZWL_GLASS_TOP)
+		*y = lowest;
+
+	/* The side bands inside the desktops' edges. */
+	leftmost = DESKTOP_EDGE + FRAME_BAND;
+	rightmost = (int32_t)server->width - DESKTOP_EDGE - FRAME_BAND - width;
+
+	/* A window too wide for both keeps its place across. */
+	if (rightmost < leftmost)
+		return;
+
+	/* Otherwise it comes in from whichever side it was over. */
+	if (*x < leftmost)
+		*x = leftmost;
+	if (*x > rightmost)
+		*x = rightmost;
+
+	/* Succeeded: the place clears the edges it can. */
+	return;
 }
 
 

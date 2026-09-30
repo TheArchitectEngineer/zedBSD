@@ -86,6 +86,7 @@ enum computed_property {
 	COMPUTED_FONT_FAMILY,
 	COMPUTED_LINE_HEIGHT,
 	COMPUTED_TEXT_ALIGN,
+	COMPUTED_TEXT_INDENT,
 	COMPUTED_DIRECTION,
 	COMPUTED_WHITE_SPACE,
 	COMPUTED_VERTICAL_ALIGN,
@@ -204,6 +205,7 @@ static const struct computed_entry computed_entries[] = {
 	{ "font-family", COMPUTED_FONT_FAMILY },
 	{ "line-height", COMPUTED_LINE_HEIGHT },
 	{ "text-align", COMPUTED_TEXT_ALIGN },
+	{ "text-indent", COMPUTED_TEXT_INDENT },
 	{ "direction", COMPUTED_DIRECTION },
 	{ "white-space", COMPUTED_WHITE_SPACE },
 	{ "vertical-align", COMPUTED_VERTICAL_ALIGN },
@@ -763,6 +765,9 @@ computed_write_keyword(
 		break;
 	case COMPUTED_TEXT_ALIGN:
 		error = computed_name(computed_text_aligns, 6, style->text_align, out);
+		break;
+	case COMPUTED_TEXT_INDENT:
+		error = computed_length(&style->text_indent, out);
 		break;
 	case COMPUTED_DIRECTION:
 		error = computed_name(computed_directions, 2, style->direction, out);

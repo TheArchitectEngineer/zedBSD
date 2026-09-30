@@ -396,6 +396,7 @@ zwl_titlebar_button(
 {
 	const struct shell_hit *hit;
 	struct shell_hit pressed;
+	struct zwl_object *top;
 
 	/* Only the left button. */
 	if (button != ZWL_BUTTON_LEFT)
@@ -423,6 +424,19 @@ zwl_titlebar_button(
 
 	/* A press on a control is taken. */
 	hit = shell_hit_at(server->pointer_x, server->pointer_y);
+
+	/*
+	 * A floating titlebar's control counts only where its window is the one
+	 * on top: another window's title bar, body or frame over it takes the
+	 * press (BUG-121: the frame's band of a window above, where the pointer
+	 * shows the resize arrow, raised the window under it instead).
+	 */
+	if (hit != NULL && hit->docked == 0U) {
+		top = zwl_glass_window_at(server, server->pointer_x, server->pointer_y);
+		if (top != hit->surface)
+			hit = NULL;
+	}
+
 	if (hit == NULL) {
 		/* A press anywhere but on the field ends its editing, and goes on to what it is on. */
 		if (shell_titlebar.field.surface != NULL)

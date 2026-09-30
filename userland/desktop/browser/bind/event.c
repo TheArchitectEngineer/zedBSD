@@ -46,6 +46,7 @@ static void event_forget_listener(struct bind_listeners *listeners, size_t index
 static int event_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_mouse(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_custom(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_construct_message(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_type(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_target(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_current_target(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -64,6 +65,10 @@ static int event_page_x(struct vm_realm *realm, vm_value this_value, const vm_va
 static int event_page_y(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_button(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_detail(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_message_origin(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_message_last_id(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_message_source(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_message_ports(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_build_path(struct bind_window *window, vm_value target, const struct bind_event *event, struct vm_object *path);
 static int event_invoke(struct bind_window *window, vm_value current, vm_value event_value, int phase, unsigned kinds);
 static int event_call_listener(struct bind_window *window, vm_value callback, vm_value current, vm_value event_value, vm_value *returned);
@@ -192,6 +197,25 @@ const struct bind_interface bind_custom_event_interface = {
 };
 
 /*
+ * The attributes of MessageEvent.  data shares the event state's generic
+ * detail slot; the remaining values are kept separately because pages use
+ * them to distinguish messages from different browsing contexts.
+ */
+static const struct bind_attribute message_event_attributes[] = {
+	{ "data", event_detail, NULL },
+	{ "origin", event_message_origin, NULL },
+	{ "lastEventId", event_message_last_id, NULL },
+	{ "source", event_message_source, NULL },
+	{ "ports", event_message_ports, NULL },
+	{ NULL, NULL, NULL }
+};
+
+/* The MessageEvent interface. */
+const struct bind_interface bind_message_event_interface = {
+	"MessageEvent", BIND_EVENT, 1, event_construct_message, message_event_attributes, NULL, NULL
+};
+
+/*
  * Reports the state of the event an Event object stands for, or NULL
  * when the value is not an Event.
  */
@@ -247,6 +271,8 @@ bind_event_create(
 	state->target = VM_VALUE_NULL;
 	state->current_target = VM_VALUE_NULL;
 	state->detail = VM_VALUE_NULL;
+	state->source = VM_VALUE_NULL;
+	state->ports = VM_VALUE_NULL;
 	state->time_stamp = window->now;
 
 	/* The object with the interface's prototype. */
@@ -706,14 +732,20 @@ event_trace(
 {
 	struct bind_event *event;
 
-	/* The type, the targets and the detail. */
+	/* The type, the targets and the values carried by an event. */
 	event = (struct bind_event *)cell;
 	if (event->type != NULL)
 		vm_heap_mark(heap, &event->type->cell);
 	vm_heap_mark_value(heap, event->target);
 	vm_heap_mark_value(heap, event->current_target);
 	vm_heap_mark_value(heap, event->detail);
+	vm_heap_mark_value(heap, event->source);
+	vm_heap_mark_value(heap, event->ports);
 	vm_heap_mark_value(heap, event->target_override);
+	if (event->origin != NULL)
+		vm_heap_mark(heap, &event->origin->cell);
+	if (event->last_event_id != NULL)
+		vm_heap_mark(heap, &event->last_event_id->cell);
 
 	/* A key event's key and code. */
 	if (event->key != NULL)
@@ -1115,6 +1147,78 @@ event_construct_custom(
 		return status;
 	if (present)
 		event->detail = value;
+
+	/* Succeeded: the event is made. */
+	return 0;
+}
+
+/* Makes a MessageEvent (new MessageEvent(type, init)) with its message fields. */
+static int
+event_construct_message(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	struct vm_string *text;
+	vm_value value;
+	int present;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+
+	/* The event with its type and common init. */
+	status = bind_event_construct(realm, BIND_MESSAGE_EVENT, args, count, result, &event);
+	if (status != 0)
+		return status;
+
+	/* Its cloned value (the constructor keeps the value itself). */
+	status = bind_get_option(realm, js_argument(args, count, 1), "data", &present, &value);
+	if (status != 0)
+		return status;
+	if (present)
+		event->detail = value;
+
+	/* The origin and the last event id are strings. */
+	status = bind_get_option(realm, js_argument(args, count, 1), "origin", &present, &value);
+	if (status != 0)
+		return status;
+	if (present) {
+		status = bind_to_string(realm, value, &text);
+		if (status != 0)
+			return status;
+		event->origin = text;
+	}
+
+	/* The second string follows the same conversion. */
+	status = bind_get_option(realm, js_argument(args, count, 1), "lastEventId", &present, &value);
+	if (status != 0)
+		return status;
+	if (present) {
+		status = bind_to_string(realm, value, &text);
+		if (status != 0)
+			return status;
+		event->last_event_id = text;
+	}
+
+	/* The sending context and transferred ports. */
+	status = bind_get_option(realm, js_argument(args, count, 1), "source", &present, &value);
+	if (status != 0)
+		return status;
+	if (present)
+		event->source = value;
+	status = bind_get_option(realm, js_argument(args, count, 1), "ports", &present, &value);
+	if (status != 0)
+		return status;
+	if (present) {
+		event->ports = value;
+	} else {
+		status = js_builtin_array(realm, NULL, 0, &event->ports);
+		if (status != 0)
+			return status;
+	}
 
 	/* Succeeded: the event is made. */
 	return 0;
@@ -1574,6 +1678,96 @@ event_detail(
 
 	/* Succeeded: the detail is reported. */
 	*result = event->detail;
+	return 0;
+}
+
+/* Reports the origin of a message (origin). */
+static int
+event_message_origin(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	status = event_this(realm, this_value, &event);
+	if (status != 0)
+		return status;
+	if (event->origin == NULL)
+		return bind_string(realm, "", result);
+	*result = vm_value_cell(event->origin);
+	return 0;
+}
+
+/* Reports a message's last event id (lastEventId). */
+static int
+event_message_last_id(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	status = event_this(realm, this_value, &event);
+	if (status != 0)
+		return status;
+	if (event->last_event_id == NULL)
+		return bind_string(realm, "", result);
+	*result = vm_value_cell(event->last_event_id);
+	return 0;
+}
+
+/* Reports the context that sent a message (source). */
+static int
+event_message_source(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	status = event_this(realm, this_value, &event);
+	if (status != 0)
+		return status;
+	*result = event->source;
+	return 0;
+}
+
+/* Reports the ports transferred with a message (ports). */
+static int
+event_message_ports(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	status = event_this(realm, this_value, &event);
+	if (status != 0)
+		return status;
+	if (event->ports == VM_VALUE_NULL)
+		return js_builtin_array(realm, NULL, 0, result);
+	*result = event->ports;
 	return 0;
 }
 

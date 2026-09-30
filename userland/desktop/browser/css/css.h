@@ -457,6 +457,7 @@ struct css_style {
 	/* The text. */
 	struct css_length line_height;
 	int text_align;
+	struct css_length text_indent;
 	int direction;
 	int container_type;
 

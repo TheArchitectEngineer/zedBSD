@@ -217,10 +217,11 @@ struct fm_present {
 	VkFence fence;
 	VkSemaphore acquired;
 
-	/* The Vulkan call that failed last, for the error line; the last frame's copy, acquire, present and wait times (milliseconds). */
+	/* The Vulkan call that failed last, for the error line; the last frame's copy, acquire, record and submit, present and wait times (milliseconds). */
 	const char *operation;
 	unsigned copy_ms;
 	unsigned acquire_ms;
+	unsigned submit_ms;
 	unsigned present_ms;
 	unsigned wait_ms;
 };
@@ -274,6 +275,7 @@ void fm_glass_refresh(struct fm_glass *glass, struct fm_app *app);
 void fm_glass_close(struct fm_glass *glass);
 
 /* The presenter (present.c). */
+VkResult fm_present_instance(struct fm_present *present);
 VkResult fm_present_open(struct fm_present *present, struct fm_window *window);
 VkResult fm_present_resize(struct fm_present *present, uint32_t width, uint32_t height);
 VkResult fm_present_frame(struct fm_present *present, const uint32_t *pixels, size_t stride);

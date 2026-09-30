@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p010（BUG-122）cleared（2026-09-30）。L1（QEMU の基準と落ちた後の回復）がそろった（下の「段の計画」）。次は L2（BUG-121・C5・C1 の実機・BUG-119）
+Resume point: p011（BUG-121）cleared（2026-09-30、5330 で 20 回・消失 0）。次は p015（全画面の常時合成と下からの swipe、ユーザーの判断）と L2 の残り（C5・C1 の実機・BUG-119）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -59,7 +59,9 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 | [ws099-p009](phase009/phase.md) | greeter の Shut Down・Restart で「Shutting down...」「Restarting...」と spinner を出し、その絵の後に POWER を送る。c1-boot-shutdown.sh に最後の絵の判定と QEMU の終わりの判定（今は WARN） | cleared（2026-09-30: 変更前 FAIL・変更後 PASS、C9 PASS（p076 は 1 回の不安定さの後 2 回 PASS）） | p008 |
 | ws099-p006（案） | C6: 実機（5330）の pointer の遅延の計測（WS075 の measure-apps.sh）。WS075 の p023 と合わせる | planning | p001・WS075 |
 | [ws099-p010](phase010/phase.md) | BUG-122: compositor が落ちた後に greeter が 3 回の失敗で文字の console に落ちる。sessiond の起こし直しを延ばす（6 回、待ちを 1〜16 秒に伸ばす）、失敗の理由を sessiond の log に。試験 `bug122-recovery.sh` | cleared（2026-09-30: `bug122-recovery.sh` 直しの前 FAIL・後 PASS、C1 PASS、boot PASS。5330 は未確認） | p001 |
+| [ws099-p011](phase011/phase.md) | BUG-121: 窓の角の drag で窓が消える。試験 `resize-stress.sh`（QEMU、角の drag 100 回）・`resize-hw.sh`（5330 の passthrough、20 回）。原因は上の窓の frame の帯の press を下の窓の title bar の control が取って下の窓を前に出したこと（`titlebar-shell.c`）と、端の帯が frame を覆う置き場所（`shell.c`）。client を外す log `ZWL CLIENT gone` | cleared（2026-09-30: 5330 直しの前 20 回中 6 回消失 → 後 0、QEMU Model viewer・wlshm 各 100 回 0、C2・C9 PASS、boot PASS。QEMU の Venus の swapchain の失敗は別件） | p010 |
 | ws099-p015 | 全画面を常に合成する（全画面の直の scanout（`display.c` の fullscreen mode）を使わない）、全画面の窓を下の端から上への swipe で窓に戻す（pointer と touch。全画面の間は下の端の swipe を Wiseview より先に全画面の解除に使う。下の左右の角は WS102 の keyboard のまま）。C3 の試験に swipe の解除を足す | planned | p010 |
+| ws099-p016 | zdesktop の buffer の import の短縮（ws094-p009 の発見: 1 枚約 210 ms、うち layout の変更の submit と `vkQueueWaitIdle` が 100 ms。次の合成の command buffer の barrier にまとめる）。app の起動から最初の frame まで（C5 と WS094 の (a')）を前後で測る。QEMU と 5330 | planned | p015 |
 
 ## 段の計画（2026-09-30 main 経由のユーザーの方針「広く浅く」: まず動く段をそろえ、磨き込みは段ごとの数値目標の小さな Phase）
 

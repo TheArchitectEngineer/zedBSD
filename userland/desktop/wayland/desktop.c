@@ -87,6 +87,8 @@
  * (NULL: none), token the token it is given (fixed says --desktop-token
  * chose it), pid the program running (0: none), gone_ms when it ended,
  * starts and starts_ms how many starts the minute since starts_ms has had.
+ * drawn says the program's first image was drawn since its start (logged
+ * once with its time, ws094-p009).
  */
 struct desktop_state {
 	struct zwl_object *surface;
@@ -107,6 +109,7 @@ struct desktop_state {
 	unsigned starts;
 	uint64_t starts_ms;
 	int limited;
+	int drawn;
 };
 
 /*
@@ -312,6 +315,12 @@ zwl_desktop_draw(
 	image = zwl_compose_surface_image(surface);
 	if (image == NULL)
 		return;
+
+	/* The first image since the program started, with its time (the tests read it). */
+	if (!desk.drawn) {
+		desk.drawn = 1;
+		printf("ZWL DESKTOP drawn at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+	}
 
 	/* Its size (its viewport's, else its image's). */
 	zwl_surface_size(surface, &width, &height);
@@ -718,7 +727,8 @@ desktop_start(
 		return;
 	}
 
-	/* The log the tests read. */
+	/* The log the tests read; its first image is logged when drawn. */
+	desk.drawn = 0;
 	printf("ZWL DESKTOP start pid=%d command=%s at_ms=%llu\n", (int)desk.pid, desk.command, (unsigned long long)zwl_milliseconds());
 }
 

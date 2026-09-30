@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし（人間の session の q503 / ws074-p092 cleared。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md）。
+Active Queue: なし。Last finished Queue: q506（人間の session、ws074-p097 cleared: 公開 site の比較、WPT reftest、Acid2・Acid3）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
 Next（2026-09-30 に更新）: 実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）でユーザーが確認。次の周期の候補は下の Upcoming Work Outlook。
 IME（WS095）とブラウザ（WS074）は一時的に人間が作業中（エージェントに割り当てない）。
@@ -170,7 +170,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | completed | completed（2026-09-27）: zdesktop-files の最初の版（すりガラスの付箋の pane、タブ、titlebar の CONTROLS、context menu、PNG の thumbnail、DnD、configure_bounds）。残りは Future Work（F-032〜F-041・F-044）、i915 実機は WS075、窓の外への DnD は WS035 |
 | [WS072](ws072/ws.md) | MG004 | write cached の UFS の format の lease（BUG-060）と、NVMe の timeout の後の回復で root の mount が ETIMEDOUT になる（BUG-059）（2026-09-27、サブエージェント） | completed | 2026-09-27 完了（p001 BUG-060: write cached の format の lease、p002 BUG-059: NVMe の timeout の後の再発行） |
 | [WS073](ws073/ws.md) | MG002 | Bug Board の bug の解消（2026-09-27 ユーザー「バグリストに載っているものを解決するサブエージェントを1つ追加しましょう。」）。WS072・WS056（BUG-046）・WS001（BUG-050）の担当と性能の bug（BUG-027・033）を除く | incomplete | 2026-09-29: BUG-100・102（ping）・104（less）・051（signal の frame が amd64 の red zone を壊していた、`src/kern/signal.c`、QEMU で 1092 session 失敗 0）を解決、BUG-105（USB マウスの HID）は実機待ち、BUG-106 は調査中（BUG-051 の現れか）。次: BUG-039・031、BUG-107。BUG-093 は toolchain のため main の許可待ち。2026-09-29 夜: p040（BUG-030）uncleared: `plan/ws073/tests/usb-stress.sh` で起動の途中の BOT CSW の時間切れを再現（TCG 2 回に 1 回）、xHCI の完了の event の取りこぼしを疑う（未確認）。Resume は phase040 の「次にすること」 |
-| [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | 2026-09-30: p092 cleared。後続script向けWeb API、非同期fetch、MutationObserver、有界なsettle、sign-in tooltipを修正。dynamic topは71.81%/ink 64.58%、約32秒・Uncaught 4。次のQueueは未開始 |
+| [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | 2026-09-30: p097 cleared（q506）。10公開siteを2 viewportで固定比較。WPT reftest 44/100、Acid2 90.56%、Acid3 9/100。GitHubのES module実行はp098候補 |
 | [WS075](ws075/ws.md) | MG006 | i915 の高度化: 今日のデスクトップ（zdesktop の glass・backdrop のぼかし・タブ）とグラフィックス（GLES 2/3、GL 3.0〜3.2）を Latitude 5330 の i915 のネイティブ実行器で動かす（compiler の inlining・F-022・F-023 の不足、性能と安定）（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」） | incomplete | 2026-09-30: L1 を満たした（p027、5330 の passthrough: stress-117 の 100 回で停止 0、C6 は 5 run の中央値 91.3 ms・p90 135.9 ms）。次は L2 の p028（backdrop の割合の計測と 2 つの実験） |
 | [WS076](ws076/ws.md) | MG002 | libc の libm を自前で正しく書き直す（src/libc、誤差 1 ulp 以内、fmod 等は正確）（2026-09-28 ユーザー「libmは独自に書いてください。libcのツリーに入れてください。」） | completed | 2026-09-28 完了（`src/libc/math/`、群 B は全件で正しく丸め、BUG-078 解決）。F-046・F-047 へ移管 |
 | [WS077](ws077/ws.md) | MG001 | PC-98 の PCI を有効にする（BUG-024、2026-09-28 ユーザー「Bug024は、PCIを有効にします。」） | planning | **優先度を下げた（2026-09-28 ユーザー「Bug024は優先度を下げます。」）**。p001（調査と設計）。HAL の差分は承認が要る。PC-98 の試験が要るので着手の前に確認 |
@@ -190,12 +190,12 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS091](ws091/ws.md) | MG006 | 画像 viewer（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU）: `/bin/imageview`、PNG・JPEG（EXIF の向き）・GIF（動く）、fit・拡大・pan・pinch・慣性、前後の画像、全画面。Files からの起動は WS093、実機の確認は残り |
 | [WS092](ws092/ws.md) | MG006 | text editor（simple）（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU）: `/bin/textedit`、共有の file chooser（libkeiland、KEILAND_VERSION 12）、touch・PRIMARY・clipboard・Files からの起動。実機は未実施。touch の drag での選択は無し |
 | [WS093](ws093/ws.md) | MG006 | Files から app の起動（画像・text の double click、file の種類と app の対応）（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU）: Files の double click・Enter・double tap で png・jpeg・gif → Image Viewer、text 系 → Text Editor、html → Browser、pdf → PDF Viewer。Always Open With と Use System Default（`~/.config/keiland/open-with`）。実機は未実施 |
-| [WS094](ws094/ws.md) | MG006 | desktop の file の icon（`~/Desktop`）（2026-09-29 ユーザー） | incomplete | 2026-09-30: L1・L2 済み。L3 の計測 p008（QEMU、100 項目）: 起動から ready 2908 ms（目標 1500）、追加から表示 1094 ms（2500）、選択の frame 95 ms（50）。100 項目のうち 91 だけが画面に出る（配置の判断待ち）。次は p009 |
+| [WS094](ws094/ws.md) | MG006 | desktop の file の icon（`~/Desktop`）（2026-09-29 ユーザー） | incomplete | 2026-09-30: L1・L2 済み。L3 の p008（計測）cleared、p009 uncleared（QEMU: 起動から ready 2908 → 1954 ms、選択の frame 131 → 90 ms。残りは zdesktop の import（WS099 p016 へ）と Venus の 10 ms の刻み（F-064）。L3 の合否は実機で）。溢れた icon は「今のまま」（ユーザー）。次は p013（jpg・gif の thumbnail、P4） |
 | [WS095](ws095/ws.md) | MG006 | IME（Wayland の input-method-v2・text-input-v3、単一の IME・複数言語、まず日本語、REmacs の辞書）（2026-09-29 ユーザー） | incomplete | p001〜p004 cleared 2026-09-29（設計、日本語の engine、辞書の package、zdesktop の仲介と IME の program: QEMU で Alt+Space → kanji → 漢字 → 確定）。p005（候補の窓と indicator）は書きかけで uncleared（`plan/ws095/p005-wip.patch`）。ユーザーの指示でブラッシュアップ（p005 の残り・p012 の辞書の拡張・p006〜p011）は後回し。既定の image には未登録 |
 | [WS096](ws096/ws.md) | MG002 | Qt6（core・gui・widgets）の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
-| [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | 2026-09-30: 段 L1（QEMU の基準 C1〜C4・C7〜C10、BUG-115・118・122）を満たした。L2（BUG-121、C5 の実機、C1 の実機の目視）・L3（C6・C10 の実機）は広く浅くの順で後 |
+| [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | 2026-09-30: L1 がそろった。L2 の p011（BUG-121）cleared: 5330 の passthrough の角の drag 20 回で窓の消失 6 → 0（下の窓の title bar の control が press を取っていた、画面の端の帯が frame を覆っていた）。次は p015（全画面を常に合成、下からの swipe で解除） |
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | p001〜p005・p007 cleared 2026-09-30（QEMU）: 段 L1（system bar の音量の icon・slider・mute・wheel・確かめの音・保存、Settings の Sound の頁、両者の同期）を満たした。次の段 L2（5330 の実機で鳴る、p006-a〜c）・L3（確かめの音の遅れ 50 ms・音量の曲線 ±3 dB、ユーザーが確定） |
 | [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | p001〜p011・p015 cleared 2026-09-30: i915 の実機（passthrough）で Vulkan・GLES 3.1 の compute、Noct の GPU の自動並列化（G3）が CPU と一致。**デモの image で S13 が通った**（CPU 9 ms・GPU 249 ms、「The CPU is 27.7 times as fast」）。L1 で区切り。最適化（p016・p017）はユーザーの判断で優先を下げた |
 | [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | incomplete | 2026-09-30: L1 を満たした（p002〜p005、QEMU: 右下の swipe 10/10・真上 0/10、「aiueO123」「あいうえおかが」、C9 10 本、1920x1080）。L2 は p006（QWERTY）から。右の列の道具の面（編集・直前の app・履歴・色付きの絵文字・変換候補）と inset の知らせを設計に追加（design.md §2.8・§2.10） |
@@ -206,7 +206,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 依存による実行順とは別のもの。Queue の権限は変えない。2026-09-28 に整理（それ以前の順は git の履歴にある）。
 
-0. **ユーザーの session の指示**（人間が作業中の WS074）: WS074（Amazon.co.jpのトップがうまく描画できるまで自走、q501）。
+0. **ユーザーの session の指示**（人間が作業中の WS074）: WS074（q506 / p097）は cleared。公開 site の比較、WPT reftest、Acid2・Acid3 まで記録した。次の Queue は未選択で、候補は p036・p047・p098。
 
 **デモまでの期間（2026-09-29 ユーザー）**: 10-10 ごろまで新規実装を進め、10-10 ごろ〜10-17 は bug の修正と実機での調整だけにする。
 
@@ -214,7 +214,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 **WS101 の最適化の優先を下げる（2026-09-30 ユーザー）**:「WS101ですが、GPUでは疎通できたので、最適化の優先度を下げます。優先リストにはあるものの、その中では優先度が低いことにしてスケジューリングしてください。」→ WS101 は p015（S13 を demo の image で通す）までを済ませ、L2（p016 の内訳・p017 の 3 倍）以降はデモ critical の中で一番低い優先にする。
 
-**エージェントの呼称（2026-09-30 ユーザー）**: メインのエージェントは **Q1**（クイーン 1）、サブエージェントは **P1**・**P2**…（ポーン）。2026-09-30 の割り当て: P1 = WS075（i915、High）、P2 = WS101（High、p015 で終了）、P3 = WS102（スクリーンキーボード、Mid）、P4 = WS079 L2（Mid）、P5 = WS099 の BUG-121（Mid、P2 の後継）。新しいサブエージェントは次の番号から。
+**エージェントの呼称（2026-09-30 ユーザー）**: メインのエージェントは **Q1**（クイーン 1）、サブエージェントは **P1**・**P2**…（ポーン）。2026-09-30 の割り当て: P1 = WS075（i915、High）、P2 = WS101（High、p015 で終了）、P3 = WS102（スクリーンキーボード、Mid）、P4 = WS079 L2 → WS081 → WS094（Mid）、P5 = WS099 の BUG-121（Mid、P2 の後継、p011 で終了）、P6 = WS099 の p015（Mid、P5 の後継）。新しいサブエージェントは次の番号から。
 
 **広く浅く進める（2026-09-30 朝 ユーザー）**:「デモcriticalなWSについては、幅広く設計を進めて、広く浅く実装をすすめて、ブラッシュアップも段階的に具体的な数値目標を設定しておくことでphaseをたくさんわけておき、広く浅く全体を改善していくことにしたいです。Claudeのトークンになるべく多く課金して実装を進めたいですが、途中で資金が尽きてもデモ全体への影響を小さくしたいからです。」→ デモ critical の WS は、(1) 設計を全体に先に広げる、(2) 各 WS を「まず動く」の段まで浅く実装してそろえる、(3) 磨き込みは段（L1・L2・L3…）ごとに具体的な数値目標を持つ小さな Phase に分け、全 WS の同じ段をそろえてから次の段へ進む。1 つの WS を深く掘り続けない。どこで止まっても、デモの全場面がその時点の段で動いている状態を保つ。
 

@@ -6,7 +6,7 @@
 
   amazon-capture.py [--out DIR] [--refetch]
 
-Fetches the top page and the search results for "kei" with browser's own User-Agent (one request
+Fetches the top page and the search results for "kei" with the fixed Chrome User-Agent (one request
 each, with a cookie jar), then makes the variants the comparisons use, all under DIR (default
 build/ws074-amazon; nothing goes into the source tree):
 
@@ -33,12 +33,14 @@ import subprocess
 import sys
 import time
 
-AGENT = "browser/0.1 (Kei)"
+from comparison_config import CHROME_USER_AGENT
+
+AGENT = CHROME_USER_AGENT
 PAGES = [("top", "https://www.amazon.co.jp/"), ("search", "https://www.amazon.co.jp/s?k=kei")]
 
 
 def fetch(url, path, jar=None):
-    """Fetches one URL into a file with browser's User-Agent; returns the HTTP status."""
+    """Fetches one URL into a file with the fixed Chrome User-Agent; returns the HTTP status."""
     command = ["curl", "-s", "-L", "--max-time", "60", "-o", path, "-w", "%{http_code}", "-A", AGENT,
                "-H", "Accept-Encoding: identity"]
     if jar is not None:
