@@ -3,13 +3,13 @@
 # WS103: compositor を libvulkan だけにする（GPU の UAPI の直の ioctl を無くす）
 
 <!-- awesome-plan-current:start -->
-Status: planning（p001 実行中）
+Status: planning（p001 cleared、p002〜p007 planned）
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q508（ws103-p001）
-Resume point: 2026-09-30 に立てた。**始める時期はユーザーが指示する**（2026-09-30 ユーザー「この標準Vulkan化の作業は、タイミングを見て実行を指示させてください。WSとして作成しておいてください。」）。指示の後は p001（調査と設計、High）から。2026-09-30 夜 ユーザーが最優先の WS にした（master の優先順位の節）。実行の指示（Queue の承認）はまだ
+Queue: なし（q508 finished）
+Resume point: 2026-09-30 夜 p001 cleared（q508、[design.md](design.md) 改訂 3）。次は p002（起動の問い合わせを VK_KHR_display へ、`--direct` の削除）か、独立の p003・p005。実行は Queue の承認の後。V1・V4 の言い回しの改訂はユーザーの確認待ち
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -69,5 +69,10 @@ client と compositor の間は全 OS で我々の独自の protocol 1 本で、
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws103-p001](phase001/phase.md) | 調査と設計（D1〜D3 の上で）: 各 ioctl の置き換え（起動の問い合わせ → VK_KHR_display、記述の照合 → libvulkan の bind、fence → import と状態、`--direct` の削除）、fence の世代の照合を libvulkan の import に移す方法と i915 の native の external fence の有無、OS の backend の境界の形（protocol・import・fence の組、F-065 の Linux の組が後で入る形）、macro を外した build の確かめ方（Linux の build は無いので host の compile だけ等）、buffer ごとの import の費用（V4）。Phase の分け方。design-reviewer のレビュー | in-progress（q508） | — |
-| ws103-p002 以降 | p001 で決める（例: 起動の問い合わせ → fence → import の確かめ → 表示の受け渡し → 予備の経路の削除 → 試験と 5330） | planning | p001 |
+| [ws103-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)） | cleared（q508） | — |
+| ws103-p002 | compositor: 起動の問い合わせを VK_KHR_display へ、`--direct` の削除（design §2.1・2.2） | planned | — |
+| ws103-p003 | libvulkan: dedicated allocation と import の記述の照合、bind の守り（§2.3） | planned | — |
+| ws103-p004 | compositor: dedicated の import、wire の値の確かめ、`RESOURCE_IMPORT`・`DESTROY` を消す、`gpu-zedbsd.c` の buffer の部分（§2.3・2.5） | planned | p002、p003 |
+| ws103-p005 | libvulkan: WSI が Wayland の present ごとに新しい fence を送る（§2.4） | planned | — |
+| ws103-p006 | compositor: fence を poll だけに、`/dev/gpu0` と `--gpu` を消す、UAPI の型を閉じる、`v1-check.sh`（§2.4〜2.6） | planned | p004、p005 |
+| ws103-p007 | 規約の全文、回帰、5330、V4 の計測（§3） | planned | p002〜p006 |

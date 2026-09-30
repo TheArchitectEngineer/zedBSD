@@ -1,14 +1,7 @@
-<!-- awesome-plan project=zedbsd record=queue -->
+<!-- awesome-plan project=zedbsd record=q508 -->
 
-# Queue
+# q508（finished 2026-09-30）
 
-<!-- awesome-plan-current:start -->
-Status: idle（2026-09-30）
-Active Queue: なし
-Last finished Queue: [q508](history/queue-q508.md)（ws103-p001 cleared。WS103 の設計 design.md 改訂 3）
-<!-- awesome-plan-current:end -->
-
-## q508
 
 - Purpose: WS103（compositor を libvulkan だけにする）の調査と設計。
 - Timebox: この session。
@@ -25,6 +18,10 @@ Last finished Queue: [q508](history/queue-q508.md)（ws103-p001 cleared。WS103 
 
 Dependency graph: `q508-i01/ws103-p001`（外部の前提なし）。
 
-## Upcoming Work Outlook
 
-WS103 の p002（起動の問い合わせと `--direct` の削除）、独立の p003（libvulkan の import の照合）・p005（WSI の fence）が候補。どれも Queue で承認が要る。
+## Outcome
+
+- q508-i01 / ws103-p001: **cleared**。[design.md](../ws103/design.md)（改訂 3、design-reviewer 2 回）。p002〜p007 を planned にした。
+- 決定の具体化: D3 は dedicated の import で照らし bind でも守る形に。fence は WSI が present ごとに新しい fence を送り、compositor は poll だけ（protocol・kernel は不変）。
+- ユーザーの確認待ち: ws.md の V1・V4 の言い回しの改訂（module の入れ替え、前後の比較）。
+- 未実施: code・build・QEMU・実機（設計の Phase）。GitHub へは未公開。

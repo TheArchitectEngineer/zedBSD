@@ -2,12 +2,18 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q507](queue-q507.md)（ws074-p099 cleared。Acid2 100.00% exact pixel match）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q508](queue-q508.md)（ws103-p001 cleared。WS103 の設計）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q507
+## 最新: 2026-09-30 q508
+
+[q508](queue-q508.md): WS103（compositor を libvulkan だけに）の p001 cleared。GPU の直の ioctl の置き換えを設計した（起動の問い合わせ → VK_KHR_display、`--direct` の削除、
+buffer の記述の照合 → libvulkan の dedicated の import、fence → present ごとに新しい fence と poll）。design-reviewer 2 回。同日、優先順位の書き直し（WS103 が最優先）と
+Keiland の Linux・FreeBSD の構成（F-065）を記録。code の変更なし。GitHub へは未公開。
+
+## 2026-09-30 q507
 
 [q507](queue-q507.md): WS074 p099 cleared。固定 WPT の Acid2 を 90.56% から byte-identical な 100.00% へ改善。一般化した CSS・layout・object image/Adam7・paint order・border・compositing の修正を plain/ASan と focused regression で確認。Acid3 は p100 に残し、GitHub へは未公開。
 
