@@ -100,3 +100,10 @@ Resume point: L1 を満たした。L2 の p006・p008 cleared 2026-09-30。次�
 - **L4 の作業像**: Windows の QEMU（WS085 の boot.bat と usb-multitouch）で、ユーザーが台本 S14 を 3 回通す。エージェントは手順の 1 枚を用意する。
   WS081 の L2（物理の touch が届くことの確認）が先に済んでいる必要がある。
 - **危険の早めの確かめ**: 下の角と Wiseview・desktop の swipe の衝突（D3）は p002 の回帰で先に見る。ここで問題が出ると角の位置の設計を変えるため。
+
+### Q1 の判断（2026-09-30、p008 の L2 の (c)）
+
+- QEMU の guest は 7 枚/秒前後しか描けないので、線の遅れの 17 ms（60 Hz の 1 frame）は QEMU では測れない。L2 の (c) は QEMU では
+  「どの点も入力の後の最初の frame で描かれる」（p008: 9 frame 中 9）で満たしたとし、17 ms の数値は L3 の p010 で 5330 の実機か Windows の QEMU で
+  同じ log（`hand frame lag_ms`）を使って測る。WS094 の判断（QEMU の値は参考、合否は実機）と同じ扱い。
+
