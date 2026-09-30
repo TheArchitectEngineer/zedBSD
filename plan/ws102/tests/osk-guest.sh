@@ -20,6 +20,10 @@
 #             "aiueO123"; in ime-probe (a text input) the kana face's あ い う え お and か with the voice key (が)
 #             as commits: its text is "あいうえおかが" with a deletion of 3 bytes before が; in wltest (no text input)
 #             a kana is refused; in Text Editor a kana (WS090's text input) is also tried, and noted
+#   close     (p005) the title band dragged 100 px right closes the flick panel, 100 px down the QWERTY panel; App
+#             Home and Wiseview close an open panel (the lock screen needs a session's compositor: not checked here)
+#   large     (p005; the guest started with VENUS_SIZE=1920x1080, OSK_WIDTH=1920 OSK_HEIGHT=1080) the flick panel is
+#             414x450 at 1494,618 (keys 96 px), the QWERTY panel 1896x410 at 12,658 (large-flick.png, large-qwerty.png)
 #   touch     (p002; the pen image) 10 injected swipes from the bottom-right corner open and close the panel 10 times
 #             (5 opens, 5 closes); 10 straight-up strokes from the corner open nothing
 #   OUTDIR is the first argument:  GUEST_RUNTIME=... BIN=build/ws102-amd64 plan/ws102/tests/osk-guest.sh OUTDIR STEP...
@@ -34,7 +38,7 @@ mkdir -p "$out"
 status=0
 guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null; }
 put() { timeout 120 python3 plan/tools/guest/guest.py put "$1" "$2" >/dev/null 2>&1 </dev/null || { echo "put $1: FAILED"; status=1; }; }
-pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
+pointer() { python3 plan/ws035/tests/qmp-pointer.py --width "${OSK_WIDTH:-1280}" --height "${OSK_HEIGHT:-800}" "$GUEST_RUNTIME/qmp.sock" "$@"; }
 shot() {
 	python3 plan/ws035/tests/zdesktop-check.py "$out/$1" --runtime "$GUEST_RUNTIME" >/dev/null
 	echo "shot $1"
@@ -96,11 +100,11 @@ expect_count() {
 	fi
 }
 
-# Starts zdesktop afresh: glass, 1280x800, no client.
+# Starts zdesktop afresh: glass, 1280x800 (OSK_WIDTH and OSK_HEIGHT for another size), no client.
 compositor() {
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --timeout=900 --width=${OSK_WIDTH:-1280} --height=${OSK_HEIGHT:-800} --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -q 'ZWL OSK zone' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 1; echo started" >/dev/null
 }
 
@@ -275,6 +279,40 @@ hold 800'
 		sleep 2
 		guest 'cat /root/osk2.txt' > "$out/osk2.txt"
 		grep -qF 'あい' "$out/osk2.txt" && echo "note: Text Editor took あい by its text input" || echo "note: Text Editor did not take the kana ($(cat "$out/osk2.txt"))"
+		;;
+	close)
+		compositor
+		# The flick panel's band dragged right, the QWERTY panel's band dragged down.
+		swipe 1272 792 1130 650
+		pointer move 1000 452 sleep 200 down sleep 60 move 1050 452 sleep 60 move 1100 452 sleep 80 up sleep 600
+		expect_log 'ZWL OSK close kind=flick reason=swipe'
+		swipe 6 792 150 650
+		pointer move 400 500 sleep 200 down sleep 60 move 400 550 sleep 60 move 400 600 sleep 80 up sleep 600
+		expect_log 'ZWL OSK close kind=qwerty reason=swipe'
+		# App Home (the launcher) closes the panel; Home closes by Esc.
+		swipe 1272 792 1130 650
+		pointer move 20 17 sleep 200 down sleep 60 up sleep 1200
+		expect_log 'ZWL OSK close kind=flick reason=home'
+		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<esc>' >/dev/null
+		sleep 1.5
+		# Wiseview (the bottom edge's swipe) closes it; a press closes Wiseview.
+		swipe 1272 792 1130 650
+		expect_count 'ZWL OSK open kind=flick' 3
+		swipe 640 796 640 480
+		expect_log 'ZWL OSK close kind=flick reason=wiseview'
+		pointer move 640 400 sleep 200 down sleep 60 up sleep 1200
+		# (The lock screen, Super+L, locks only a session's compositor (--session, sessiond); this one is not.)
+		;;
+	large)
+		compositor
+		swipe 1912 1072 1770 930
+		expect_log 'ZWL OSK open kind=flick x=1494 y=618 width=414 height=450'
+		pointer move 900 400 sleep 400
+		shot large-flick.png
+		swipe 6 1072 150 930
+		expect_log 'ZWL OSK open kind=qwerty x=12 y=658 width=1896 height=410'
+		pointer move 900 300 sleep 400
+		shot large-qwerty.png
 		;;
 	edges)
 		compositor

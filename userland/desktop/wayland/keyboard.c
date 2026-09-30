@@ -22,7 +22,10 @@
  * (shell.c asks the keyboard first), so those gestures start outside them.
  *
  * The same swipe again closes the panel it opened; the other corner's
- * swipe changes panels; the panel's close key closes it.  A contact is the
+ * swipe changes panels; the panel's close key closes it, and so does a
+ * drag of its title band KEYBOARD_SWIPE_CLOSE pixels towards its edge (the
+ * flick panel's right, the QWERTY panel's bottom).  The login and lock
+ * screens, App Home and Wiseview close it (ws102-p005).  A contact is the
  * pointer's left button or a finger, which touch.c passes through the shell
  * as the pointer (server->shell_source says which).
  *
@@ -112,6 +115,9 @@
 /* The close key's side, at the right of the title band. */
 #define KEYBOARD_CLOSE		28
 
+/* How far the title band is dragged towards the panel's edge to close it. */
+#define KEYBOARD_SWIPE_CLOSE	80
+
 /* A key's corner radius, and a petal's side as a share of a key's (in tenths). */
 #define KEYBOARD_KEY_RADIUS	10.0f
 #define KEYBOARD_PETAL_TENTHS	8
@@ -167,7 +173,9 @@ struct keyboard_contact {
  * places have been logged (once, for the tests), the flick panel's face
  * (ZWL_FLICK_*), the key held (key_active: its row and column, where
  * the press began and where the pointer is now), and the last character
- * sent and how (KEYBOARD_SENT_*), which the voice and case keys change.
+ * sent and how (KEYBOARD_SENT_*), which the voice and case keys change,
+ * and a press held on the title band (where it began), which closes the
+ * panel when dragged far enough towards its edge.
  */
 struct keyboard_state {
 	struct keyboard_contact contact;
@@ -185,6 +193,9 @@ struct keyboard_state {
 	int32_t key_y;
 	char last[KEYBOARD_LAST];
 	unsigned last_sent;
+	unsigned band_active;
+	int32_t band_x;
+	int32_t band_y;
 };
 
 /*
@@ -218,6 +229,7 @@ static void keyboard_draw_keys(struct zwl_server *server, VkCommandBuffer comman
 static void keyboard_draw_key(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, const char *label, const float *ground, const float *ink, enum glass_size size);
 static void keyboard_draw_petals(struct zwl_server *server, VkCommandBuffer command);
 static unsigned keyboard_characters(const char *text);
+static int keyboard_band_swiped(int32_t x, int32_t y);
 static void keyboard_send(struct zwl_server *server, const char *text);
 static int keyboard_send_key(struct zwl_server *server, unsigned code, int shift);
 static int keyboard_send_commit(struct zwl_server *server, const char *text, uint32_t before);
@@ -312,6 +324,7 @@ zwl_keyboard_tick(
 {
 	int32_t rect[4];
 	uint64_t now;
+	float home;
 	int same;
 
 	/* The corners' places, once, for the tests. */
@@ -342,9 +355,27 @@ zwl_keyboard_tick(
 		printf("ZWL OSK cancel reason=timeout\n");
 	}
 
-	/* The open panel's place for the screen's size now. */
+	/* Nothing more without an open panel. */
 	if (keyboard.open == PANEL_NONE)
 		return;
+
+	/* The login and lock screens, App Home and Wiseview close it. */
+	home = zwl_home_progress(server);
+	if (server->greeter) {
+		zwl_keyboard_close(server, "greeter");
+		return;
+	} else if (server->locked) {
+		zwl_keyboard_close(server, "lock");
+		return;
+	} else if (home > 0.0f || server->home_to > 0.0f) {
+		zwl_keyboard_close(server, "home");
+		return;
+	} else if (server->wiseview > 0.0f || server->wiseview_gesture || server->wiseview_moving) {
+		zwl_keyboard_close(server, "wiseview");
+		return;
+	}
+
+	/* The open panel's place for the screen's size now. */
 	keyboard_place(server, keyboard.open, rect);
 	same = memcmp(rect, keyboard.panel, sizeof(rect));
 	if (same != 0) {
@@ -414,6 +445,7 @@ zwl_keyboard_close(
 	keyboard.open = PANEL_NONE;
 	keyboard.pressing = 0;
 	keyboard.key_active = 0;
+	keyboard.band_active = 0;
 	server->dirty = 1;
 }
 
@@ -847,6 +879,7 @@ keyboard_panel_button(
 	int32_t close[4];
 	unsigned row;
 	unsigned column;
+	int swiped;
 	int inside;
 	int found;
 
@@ -856,6 +889,16 @@ keyboard_panel_button(
 		if (!keyboard.pressing)
 			return 0;
 		keyboard.pressing = 0;
+
+		/* The title band dragged far enough towards the panel's edge closes it. */
+		if (keyboard.band_active) {
+			keyboard.band_active = 0;
+			swiped = keyboard_band_swiped(server->pointer_x, server->pointer_y);
+			if (swiped) {
+				zwl_keyboard_close(server, "swipe");
+				return 1;
+			}
+		}
 
 		/* A key held: what the release means. */
 		if (keyboard.key_active) {
@@ -878,9 +921,15 @@ keyboard_panel_button(
 	if (!inside)
 		return 0;
 
-	/* The press is the panel's until its release. */
+	/* The press is the panel's until its release; one on the title band may close it by a drag. */
 	keyboard.pressing = 1;
 	keyboard.key_active = 0;
+	keyboard.band_active = 0;
+	if (server->pointer_y < keyboard.panel[1] + KEYBOARD_BAND) {
+		keyboard.band_active = 1;
+		keyboard.band_x = server->pointer_x;
+		keyboard.band_y = server->pointer_y;
+	}
 
 	/* On a key of the flick panel, the key is held (its petals show). */
 	found = 0;
@@ -1516,6 +1565,27 @@ keyboard_remember(
 	/* The character (cut to the room) and the way. */
 	(void)snprintf(keyboard.last, sizeof(keyboard.last), "%s", text);
 	keyboard.last_sent = sent;
+}
+
+/*
+ * Tells whether the title band's drag ended far enough towards the
+ * panel's edge: the flick panel's right, the QWERTY panel's bottom.
+ */
+static int
+keyboard_band_swiped(
+	int32_t x,
+	int32_t y)
+{
+	/* The flick panel: to the right. */
+	if (keyboard.open == PANEL_FLICK && x - keyboard.band_x >= KEYBOARD_SWIPE_CLOSE)
+		return 1;
+
+	/* The QWERTY panel: down. */
+	if (keyboard.open == PANEL_QWERTY && y - keyboard.band_y >= KEYBOARD_SWIPE_CLOSE)
+		return 1;
+
+	/* Not far enough. */
+	return 0;
 }
 
 /* Counts the characters of a UTF-8 text (the bytes that do not continue one). */
