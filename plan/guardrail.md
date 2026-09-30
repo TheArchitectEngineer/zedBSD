@@ -23,7 +23,7 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 - **compositor は libvulkan だけを使う（2026-09-30 ユーザー）**: Keiland の compositor（zdesktop、`userland/desktop/wayland/`）は、GPU と表示を
   libvulkan（Vulkan の API と拡張）だけで扱い、GPU の UAPI（`include/uapi/gpu*.h`）を ioctl で直接呼ばない。入力の device の evdev の ioctl は
   対象の外。今残る直の ioctl（起動時の表示の問い合わせ、buffer の import の確かめ、fence の問い合わせ、表示の claim・release、Vulkan の無い
-  予備の表示）は [WS103](ws103/ws.md) で移す。ユーザーの問い「私はKeilandコンポジターがlibvulkanのみを使用していると思っていたのですが、
+  予備の表示）は [WS103](ws103/ws.md) で移した（2026-10-01 完了。OS 固有の部分は macro でなく OS ごとの module `gpu-zedbsd.c` に閉じた（V1 の改訂、2026-09-30 夜 ユーザー承認）。確かめは `plan/tools/gpu-boundary/v1-check.sh`）。ユーザーの問い「私はKeilandコンポジターがlibvulkanのみを使用していると思っていたのですが、
   ioctlを使ってしまっているのですか？」への Q1 の説明の後、「規則にして今移す」を選んだ。
   同日の補い（ユーザー）:「どうしても最適化に必要なところは、opt-outできるようにマクロで囲めますか？必須機能では使っていない気がします。」→
   必須の機能は libvulkan だけで動かす。最適化のためにどうしても要る直の ioctl だけは、compositor の build の macro（例 `ZWL_GPU_DIRECT`、既定は有効）で

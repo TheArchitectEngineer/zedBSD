@@ -2,12 +2,19 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q513](queue-q513.md)（ws103-p006 cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q514](queue-q514.md)（ws103-p007 cleared、WS103 完了）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-10-01 q513
+## 最新: 2026-10-01 q514（WS103 完了）
+
+[q514](queue-q514.md): WS103 p007 cleared、**WS103 完了**。Keiland の compositor は GPU を Vulkan（libvulkan）だけで扱う: GPU の直の ioctl 0、GPU の fd なし、GPU の UAPI は
+OS の backend の `gpu-zedbsd.c` だけ（V1）。client の buffer は dedicated の import で libvulkan が kernel の記述と照らし（V3）、fence は WSI が present ごとに新しく送り compositor は poll だけ。
+規約の全文の見直し、回帰（C1・C2・C9・Notes・forge・fence・p054・boot test・5330）PASS、V4（QEMU の起動は遅くならず、5330 の C6 はばらつきの内）。q508〜q514 の 7 Queue、
+p005〜p007 はユーザーの自走の指示。Linux・FreeBSD の backend は F-065。GitHub へは未公開。
+
+## 2026-10-01 q513
 
 [q513](queue-q513.md): WS103 p006 cleared。compositor は GPU の fd を持たず、fence は poll だけ、GPU の UAPI は `gpu-zedbsd.c` だけ（V1 の `v1-check.sh` PASS）。
 fence・p054・forge・Notes・C1・C2・boot test・5330 PASS。GitHub へは未公開。
