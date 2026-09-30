@@ -207,7 +207,7 @@ key は 4 列 × 4 行。左の 3 列が 12 key、右の列が ⌫・空白・�
 - バックスペース
 - Unicode の絵文字
 - 直前の app に切り替える窓の操作（app をまたいだコピーと貼り付けのため）
-- Termux のような補助の key（Esc・Tab・Ctrl・`|`・`~`・矢印）は QWERTY の面に置く（「Termuxの補助キーは、QWERTYの方がいいかも。」）
+- Termux のような補助の key（Esc・Tab・Ctrl・`|`・`~`・矢印）は QWERTY の面に置く（「Termuxの補助キーは、AWERTYの方がいいかも。」、AWERTY は QWERTY の意）
 
 | 部品 | 中身 | 仕組み |
 | --- | --- | --- |
