@@ -72,3 +72,12 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 - L2 以降は実機とユーザーの時間が要る。各 Phase は前の段がそろってから Queue に入れる。
 - BUG-122 の 5330 での元の失敗（`ZWL EXIT error=21`、EOPNOTSUPP）の原因は QEMU では再現できない（i915 の GPU の状態）。p010 は起こし直しを延ばして
   理由を log に残す。5330 で再び起きたら、sessiond の log の `SESSIOND GREETER failed reason=` を読んで L2 で直す。
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- **L2 の作業像**: 実機の分は、P1（WS075）の実機の passthrough の harness（`plan/ws075/tests/hdmi-h4-hw.sh`、`h4-ctl.py`、`measure-apps.sh`）を
+  使い回す。C5 は `h4-ctl.py` に「App Home を開く要求から最初の flip まで」を測る命令を足し、WS075 の lock の下で測る。
+- **BUG-121**: まず QEMU で resize の stress（`plan/ws099/tests/` に 100 回の角の drag）を作り、Model viewer（Vulkan の app）と wl_shm の app の
+  両方で消えるかを見る。QEMU で出なければ passthrough で 20 回。消えたときに compositor と app のどちらの log が先に途切れたかで切り分ける。
+- **C1 の実機**は、ユーザーに demo の image で起動・login・Log Out・Shut Down を 1 回通してもらう（BUG-119 の電源断もここで確かめる）。
+- **C6**は WS075 の段（100 → 75 → 50 ms）に従う。WS099 では測った値の記録だけ。
