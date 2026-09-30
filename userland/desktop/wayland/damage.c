@@ -38,6 +38,9 @@ zwl_damage_pointer(
 {
 	int calm;
 
+	/* The next frame shows the move without waiting for the windows (frame pacing, display.c). */
+	server->pointer_moved = 1U;
+
 	/* A client's own cursor surface may be of any size, and so may a drag's icon. */
 	if (server->cursor_surface != NULL || server->dnd_active) {
 		server->dirty = 1;

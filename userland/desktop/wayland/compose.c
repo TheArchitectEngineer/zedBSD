@@ -292,6 +292,9 @@ zwl_compose_draw(
 	if (compose->in_flight || !compose->output_open)
 		return 0;
 
+	/* The frame shows the pointer where it is now. */
+	server->pointer_moved = 0U;
+
 	/* The windows to draw, bottom to top. */
 	compose->frame_start_cycles = zwl_cycles();
 	compose->frame_start_ms = zwl_milliseconds();

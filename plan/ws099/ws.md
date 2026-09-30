@@ -59,6 +59,7 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 | [ws099-p009](phase009/phase.md) | greeter の Shut Down・Restart で「Shutting down...」「Restarting...」と spinner を出し、その絵の後に POWER を送る。c1-boot-shutdown.sh に最後の絵の判定と QEMU の終わりの判定（今は WARN） | cleared（2026-09-30: 変更前 FAIL・変更後 PASS、C9 PASS（p076 は 1 回の不安定さの後 2 回 PASS）） | p008 |
 | ws099-p006（案） | C6: 実機（5330）の pointer の遅延の計測（WS075 の measure-apps.sh）。WS075 の p023 と合わせる | planning | p001・WS075 |
 | [ws099-p010](phase010/phase.md) | BUG-122: compositor が落ちた後に greeter が 3 回の失敗で文字の console に落ちる。sessiond の起こし直しを延ばす（6 回、待ちを 1〜16 秒に伸ばす）、失敗の理由を sessiond の log に。試験 `bug122-recovery.sh` | cleared（2026-09-30: `bug122-recovery.sh` 直しの前 FAIL・後 PASS、C1 PASS、boot PASS。5330 は未確認） | p001 |
+| ws099-p015 | 全画面を常に合成する（全画面の直の scanout（`display.c` の fullscreen mode）を使わない）、全画面の窓を下の端から上への swipe で窓に戻す（pointer と touch。全画面の間は下の端の swipe を Wiseview より先に全画面の解除に使う。下の左右の角は WS102 の keyboard のまま）。C3 の試験に swipe の解除を足す | planned | p010 |
 
 ## 段の計画（2026-09-30 main 経由のユーザーの方針「広く浅く」: まず動く段をそろえ、磨き込みは段ごとの数値目標の小さな Phase）
 
@@ -72,6 +73,14 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 - L2 以降は実機とユーザーの時間が要る。各 Phase は前の段がそろってから Queue に入れる。
 - BUG-122 の 5330 での元の失敗（`ZWL EXIT error=21`、EOPNOTSUPP）の原因は QEMU では再現できない（i915 の GPU の状態）。p010 は起こし直しを延ばして
   理由を log に残す。5330 で再び起きたら、sessiond の log の `SESSIOND GREETER failed reason=` を読んで L2 で直す。
+
+### ユーザーの判断（2026-09-30 昼、Notes の全画面の出口）
+
+- 「画面を下からSwipeで戻しましょう。また、全画面でコンポジット無効のモードになっているなら、それは使わないように修正して、コンポジットを有効にした上で、
+  スワイプ操作を可能にします。」→ ws099-p015。今の zdesktop は全画面の窓の最新の image を直に scanout する（`display.c` の fullscreen mode、
+  WS035 の D0）。これを止め、全画面の窓も window mode で合成する。台本 S8 は swipe で窓に戻す（Esc も残す）。
+- 性能の注意: 直の scanout を止めると、全画面の app でも合成の費用が掛かる。p015 で全画面の Notes の pen の線の遅れと frame の間隔を前後で測り、
+  WS079 の L2 の値（頁送り 142 ms）を悪くしないことを確かめる。
 
 ### 進め方とハーネス（2026-09-30 Q1 の補足）
 

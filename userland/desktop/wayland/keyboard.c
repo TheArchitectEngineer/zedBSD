@@ -1,0 +1,1648 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The on-screen keyboard (ws102-p002, plan/ws102/design.md): drawn by the
+ * compositor itself, opened by a swipe from a bottom corner.
+ *
+ * A contact that starts in the bottom-right corner and moves towards the
+ * top left opens the flick panel at the right side of the screen; one that
+ * starts in the bottom-left corner and moves towards the top right opens
+ * the QWERTY panel along the bottom.  The recogniser has corner.c's numbers
+ * (the top-right corner's swipe to Notes): a contact that begins in a
+ * corner belongs to the keyboard until it ends; it arms once it has moved
+ * KEYBOARD_ARM each way within KEYBOARD_ARM_MS; it commits when it ends
+ * near the diagonal, far enough along it (KEYBOARD_COMMIT) or quickly
+ * enough (KEYBOARD_FLICK_DISTANCE at KEYBOARD_FLICK_SPEED).  The corners are the
+ * keyboard's before Wiseview's bottom edge and the desktops' side edges
+ * (shell.c asks the keyboard first), so those gestures start outside them.
+ *
+ * The same swipe again closes the panel it opened; the other corner's
+ * swipe changes panels; the panel's close key closes it, and so does a
+ * drag of its title band KEYBOARD_SWIPE_CLOSE pixels towards its edge (the
+ * flick panel's right, the QWERTY panel's bottom).  The login and lock
+ * screens, App Home and Wiseview close it (ws102-p005).  A contact is the
+ * pointer's left button or a finger, which touch.c passes through the shell
+ * as the pointer (server->shell_source says which).
+ *
+ * The flick panel has the faces of keyboard-layout.c (ws102-p003): a press
+ * on a key shows its characters around it as petals, the one the movement
+ * points at lit, and the release types that character (the face key goes
+ * to the next face).  The QWERTY panel's keys and the work area come in
+ * later phases.
+ *
+ * What a key types goes to the focused application (ws102-p004, design
+ * §2.5) by one of two ways, without the input method's own files changing:
+ * a character of the US layout (letters, digits, ASCII symbols, space,
+ * enter, delete) as the key's press and release (zwl_seat_key_deliver,
+ * Shift held around it when needed), which every application hears; any
+ * other character (kana, full-width signs) as the commit of the focused
+ * field's text input (text-input-v3, zwl_text_input_current and
+ * zwl_text_input_deliver of ime.h).  A field without a text input cannot
+ * take such a character, nor can one the input method is composing in;
+ * the keyboard then says so in the log and sends nothing.  The voice key
+ * replaces the kana it sent last by its next form (the text input deletes
+ * the one before and commits the other), the case key the letter it sent
+ * last (delete, then the other case).
+ */
+
+#include "glass.h"
+#include "ime.h"
+#include "keyboard.h"
+#include "menu.h"
+
+#include <stdio.h>
+#include <string.h>
+
+/* The corners a contact starts in: this many pixels from the bottom and from the side (zwl.h). */
+#define KEYBOARD_ZONE		ZWL_KEYBOARD_ZONE
+
+/* How far a contact moves each way (inwards and up) before it is the gesture, and how soon. */
+#define KEYBOARD_ARM		14
+#define KEYBOARD_ARM_MS		1500U
+
+/*
+ * The diagonal: the shorter of the two movements must be at least
+ * KEYBOARD_CONE_NUMERATOR / KEYBOARD_CONE_DENOMINATOR of the longer, which
+ * keeps the contact within 25 degrees of the 45-degree line.
+ */
+#define KEYBOARD_CONE_NUMERATOR		9
+#define KEYBOARD_CONE_DENOMINATOR	25
+
+/* How far along the diagonal a letting go commits, and the distance the hint grows over. */
+#define KEYBOARD_COMMIT		108.0f
+#define KEYBOARD_DISTANCE	216.0f
+
+/* A flick: at least this far along the diagonal, at this speed (pixels a millisecond) over the last KEYBOARD_FLICK_MS. */
+#define KEYBOARD_FLICK_DISTANCE	40.0f
+#define KEYBOARD_FLICK_SPEED	0.8f
+#define KEYBOARD_FLICK_MS	100U
+
+/* How many recent points of the contact are kept for its speed. */
+#define KEYBOARD_SAMPLES	16U
+
+/* The panels' margin from the screen's edges, the corner radius and the title band's height. */
+#define KEYBOARD_MARGIN		12
+#define KEYBOARD_RADIUS		18.0f
+#define KEYBOARD_BAND		36
+
+/* The flick panel's keys: a key's side (a share of the screen's height, within limits) and the gap. */
+#define KEYBOARD_KEY_DIVISOR	11
+#define KEYBOARD_KEY_MIN	64
+#define KEYBOARD_KEY_MAX	96
+#define KEYBOARD_KEY_GAP	6
+#define KEYBOARD_FLICK_COLUMNS	4
+#define KEYBOARD_FLICK_ROWS	4
+
+/* The QWERTY panel's height: a share of the screen's height (in hundredths), within limits. */
+#define KEYBOARD_QWERTY_SHARE	38
+#define KEYBOARD_QWERTY_MIN	260
+#define KEYBOARD_QWERTY_MAX	420
+
+/* The longest text the keyboard remembers as the last it sent (one character), and the ways it was sent. */
+#define KEYBOARD_LAST		16
+#define KEYBOARD_SENT_NONE	0U
+#define KEYBOARD_SENT_KEY	1U
+#define KEYBOARD_SENT_COMMIT	2U
+
+/* The Shift bit of the depressed modifiers (server->modifiers). */
+#define KEYBOARD_SHIFT		1U
+
+/* The close key's side, at the right of the title band. */
+#define KEYBOARD_CLOSE		28
+
+/* How far the title band is dragged towards the panel's edge to close it. */
+#define KEYBOARD_SWIPE_CLOSE	80
+
+/* A key's corner radius, and a petal's side as a share of a key's (in tenths). */
+#define KEYBOARD_KEY_RADIUS	10.0f
+#define KEYBOARD_PETAL_TENTHS	8
+
+/*
+ * Which panel: none, the flick panel at the right side (the bottom-right
+ * corner's), or the QWERTY panel along the bottom (the bottom-left
+ * corner's).
+ */
+enum keyboard_kind {
+	PANEL_NONE,
+	PANEL_FLICK,
+	PANEL_QWERTY
+};
+
+/*
+ * One point a contact passed through, and when (the input event's time in
+ * wrapping milliseconds); the recent points give its speed at the end.
+ */
+struct keyboard_sample {
+	int32_t x;
+	int32_t y;
+	uint32_t time;
+};
+
+/*
+ * The contact the gesture follows, from its start in a corner to its end:
+ * the corner (the panel it would open), its source, where and when it
+ * started (the event's time and the compositor's clock), where it is, and
+ * whether it armed or ran out of time.  Only one contact is followed.
+ */
+struct keyboard_contact {
+	unsigned active;
+	enum keyboard_kind corner;
+	enum zwl_contact_source source;
+	int32_t start_x;
+	int32_t start_y;
+	uint32_t start_time;
+	uint64_t start_clock_ms;
+	int32_t x;
+	int32_t y;
+	unsigned armed;
+	unsigned expired;
+	struct keyboard_sample samples[KEYBOARD_SAMPLES];
+	unsigned sample_next;
+	unsigned sample_count;
+};
+
+/*
+ * The keyboard's whole state: the contact of the corner's gesture, the
+ * panel open (and its rectangle on the output), a press that began on the
+ * panel (it is the panel's until its release), whether the corners'
+ * places have been logged (once, for the tests), the flick panel's face
+ * (ZWL_FLICK_*), the key held (key_active: its row and column, where
+ * the press began and where the pointer is now), and the last character
+ * sent and how (KEYBOARD_SENT_*), which the voice and case keys change,
+ * and a press held on the title band (where it began), which closes the
+ * panel when dragged far enough towards its edge.
+ */
+struct keyboard_state {
+	struct keyboard_contact contact;
+	enum keyboard_kind open;
+	int32_t panel[4];
+	unsigned pressing;
+	unsigned zones_logged;
+	unsigned face;
+	unsigned key_active;
+	unsigned key_row;
+	unsigned key_column;
+	int32_t key_start_x;
+	int32_t key_start_y;
+	int32_t key_x;
+	int32_t key_y;
+	char last[KEYBOARD_LAST];
+	unsigned last_sent;
+	unsigned band_active;
+	int32_t band_x;
+	int32_t band_y;
+};
+
+/*
+ * The keyboard of the one compositor in this process.
+ *
+ * It is zero (no contact, no panel) at start-up.  The compositor's single
+ * thread is the only one that reads or changes it: the input handlers, the
+ * clock and the drawing.
+ */
+static struct keyboard_state keyboard;
+
+static int keyboard_contact_begin(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
+static int keyboard_contact_move(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
+static int keyboard_contact_end(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
+static enum keyboard_kind keyboard_corner_at(struct zwl_server *server, int32_t x, int32_t y);
+static void keyboard_travel(int32_t *inwards, int32_t *upwards);
+static void keyboard_sample(int32_t x, int32_t y, uint32_t time);
+static float keyboard_speed(void);
+static int keyboard_on_diagonal(int32_t inwards, int32_t upwards);
+static void keyboard_commit(struct zwl_server *server, const char *via, float progress);
+static void keyboard_open(struct zwl_server *server, enum keyboard_kind kind);
+static void keyboard_place(struct zwl_server *server, enum keyboard_kind kind, int32_t *rect);
+static int keyboard_panel_button(struct zwl_server *server, uint32_t button, uint32_t state);
+static int keyboard_contains(const int32_t *rect, int32_t x, int32_t y);
+static int keyboard_key_size(struct zwl_server *server);
+static void keyboard_key_rect(struct zwl_server *server, unsigned row, unsigned column, int32_t *rect);
+static int keyboard_key_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *row, unsigned *column);
+static unsigned keyboard_key_direction(struct zwl_server *server);
+static void keyboard_key_release(struct zwl_server *server);
+static void keyboard_draw_keys(struct zwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_key(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, const char *label, const float *ground, const float *ink, enum glass_size size);
+static void keyboard_draw_petals(struct zwl_server *server, VkCommandBuffer command);
+static unsigned keyboard_characters(const char *text);
+static int keyboard_band_swiped(int32_t x, int32_t y);
+static void keyboard_send(struct zwl_server *server, const char *text);
+static int keyboard_send_key(struct zwl_server *server, unsigned code, int shift);
+static int keyboard_send_commit(struct zwl_server *server, const char *text, uint32_t before);
+static void keyboard_voice(struct zwl_server *server);
+static void keyboard_case(struct zwl_server *server);
+static void keyboard_remember(const char *text, unsigned sent);
+static void keyboard_close_rect(int32_t *rect);
+static void keyboard_draw_panel(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, float opacity);
+static void keyboard_draw_hint(struct zwl_server *server, VkCommandBuffer command);
+static const char *keyboard_kind_name(enum keyboard_kind kind);
+static const char *keyboard_source_name(enum zwl_contact_source source);
+
+/*
+ * Feeds the left pointer button (the mouse's, or a finger's passed as the
+ * pointer) to the keyboard: a press in a bottom corner begins the corner's
+ * gesture, a press on the open panel is the panel's, and a release ends
+ * whichever began.  Returns 1 when the button is the keyboard's.
+ */
+int
+zwl_keyboard_button(
+	struct zwl_server *server,
+	uint32_t button,
+	uint32_t state)
+{
+	int taken;
+
+	/* Only the left button. */
+	if (button != ZWL_BUTTON_LEFT)
+		return 0;
+
+	/* A release ends the corner's contact, when it is the keyboard's. */
+	if (state == 0) {
+		taken = keyboard_contact_end(server, server->pointer_x, server->pointer_y, server->input_time);
+		if (taken)
+			return 1;
+
+		/* Or the press on the panel. */
+		taken = keyboard_panel_button(server, button, state);
+		return taken;
+	}
+
+	/* A press on the open panel is the panel's. */
+	taken = keyboard_panel_button(server, button, state);
+	if (taken)
+		return 1;
+
+	/* Succeeded: a press may begin the corner's gesture. */
+	taken = keyboard_contact_begin(server, server->pointer_x, server->pointer_y, server->input_time);
+	return taken;
+}
+
+/*
+ * Feeds the pointer's movement to the keyboard while the corner's contact
+ * is followed (only the source that began it moves it).  Returns 1 when the
+ * movement is the keyboard's.
+ */
+int
+zwl_keyboard_motion(
+	struct zwl_server *server)
+{
+	int taken;
+
+	/* A press held on the panel keeps the pointer's movement; a key held follows it (its petals). */
+	if (keyboard.pressing) {
+		if (keyboard.key_active) {
+			keyboard.key_x = server->pointer_x;
+			keyboard.key_y = server->pointer_y;
+			server->dirty = 1;
+		}
+
+		/* The movement is the panel's. */
+		return 1;
+	}
+
+	/* Only the contact of the source moving the pointer now. */
+	if (!keyboard.contact.active || keyboard.contact.source != server->shell_source)
+		return 0;
+
+	/* Succeeded: the contact moves with the pointer. */
+	taken = keyboard_contact_move(server, server->pointer_x, server->pointer_y, server->input_time);
+	return taken;
+}
+
+/*
+ * Keeps the keyboard's time: the corners' places are logged once, a
+ * contact whose release never came ends, and one that does not arm in time
+ * is let go.  The panel follows a change of the screen's size.
+ */
+void
+zwl_keyboard_tick(
+	struct zwl_server *server)
+{
+	int32_t rect[4];
+	uint64_t now;
+	float home;
+	int same;
+
+	/* The corners' places, once, for the tests. */
+	if (!keyboard.zones_logged && server->width > 0U) {
+		keyboard.zones_logged = 1;
+		printf("ZWL OSK zone kind=flick x=%d y=%d size=%d\n", (int)server->width - KEYBOARD_ZONE, (int)server->height - KEYBOARD_ZONE, KEYBOARD_ZONE);
+		printf("ZWL OSK zone kind=qwerty x=0 y=%d size=%d\n", (int)server->height - KEYBOARD_ZONE, KEYBOARD_ZONE);
+	}
+
+	/* A contact whose release never came (its device went away with the button held) ends. */
+	if (keyboard.contact.active && (server->buttons_down & 1U) == 0U) {
+		keyboard.contact.active = 0;
+		server->dirty = 1;
+		printf("ZWL OSK cancel reason=lost\n");
+	}
+
+	/* So does a press on the panel. */
+	if (keyboard.pressing && (server->buttons_down & 1U) == 0U)
+		keyboard.pressing = 0;
+
+	/* A contact still waiting to arm times out. */
+	now = zwl_milliseconds();
+	if (keyboard.contact.active &&
+	    !keyboard.contact.armed &&
+	    !keyboard.contact.expired &&
+	    now - keyboard.contact.start_clock_ms > KEYBOARD_ARM_MS) {
+		keyboard.contact.expired = 1;
+		printf("ZWL OSK cancel reason=timeout\n");
+	}
+
+	/* Nothing more without an open panel. */
+	if (keyboard.open == PANEL_NONE)
+		return;
+
+	/* The login and lock screens, App Home and Wiseview close it. */
+	home = zwl_home_progress(server);
+	if (server->greeter) {
+		zwl_keyboard_close(server, "greeter");
+		return;
+	} else if (server->locked) {
+		zwl_keyboard_close(server, "lock");
+		return;
+	} else if (home > 0.0f || server->home_to > 0.0f) {
+		zwl_keyboard_close(server, "home");
+		return;
+	} else if (server->wiseview > 0.0f || server->wiseview_gesture || server->wiseview_moving) {
+		zwl_keyboard_close(server, "wiseview");
+		return;
+	}
+
+	/* The open panel's place for the screen's size now. */
+	keyboard_place(server, keyboard.open, rect);
+	same = memcmp(rect, keyboard.panel, sizeof(rect));
+	if (same != 0) {
+		memcpy(keyboard.panel, rect, sizeof(rect));
+		server->dirty = 1;
+		printf("ZWL OSK place kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(keyboard.open), rect[0], rect[1], rect[2], rect[3]);
+	}
+}
+
+/*
+ * Tells whether the keyboard shows something over the windows: an open
+ * panel, or the hint of an armed contact.  While it does, the output is
+ * composed, even over a fullscreen window.
+ */
+int
+zwl_keyboard_showing(
+	void)
+{
+	/* An open panel. */
+	if (keyboard.open != PANEL_NONE)
+		return 1;
+
+	/* An armed contact that has not timed out. */
+	if (keyboard.contact.active &&
+	    keyboard.contact.armed &&
+	    !keyboard.contact.expired)
+		return 1;
+
+	/* Nothing shows. */
+	return 0;
+}
+
+/*
+ * Tells whether a point of the output is on the open panel (a press there
+ * is the keyboard's, not a window's).
+ */
+int
+zwl_keyboard_at(
+	int32_t x,
+	int32_t y)
+{
+	int inside;
+
+	/* No panel. */
+	if (keyboard.open == PANEL_NONE)
+		return 0;
+
+	/* Succeeded: whether the point is on it. */
+	inside = keyboard_contains(keyboard.panel, x, y);
+	return inside;
+}
+
+/*
+ * Closes the open panel, saying why in the log.
+ */
+void
+zwl_keyboard_close(
+	struct zwl_server *server,
+	const char *reason)
+{
+	/* No panel. */
+	if (keyboard.open == PANEL_NONE)
+		return;
+
+	/* The panel goes. */
+	printf("ZWL OSK close kind=%s reason=%s\n", keyboard_kind_name(keyboard.open), reason);
+	keyboard.open = PANEL_NONE;
+	keyboard.pressing = 0;
+	keyboard.key_active = 0;
+	keyboard.band_active = 0;
+	server->dirty = 1;
+}
+
+/*
+ * Draws the keyboard over everything else: the open panel, and the hint of
+ * an armed contact growing from its corner.
+ */
+void
+zwl_keyboard_draw(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	/* The open panel. */
+	if (keyboard.open != PANEL_NONE)
+		keyboard_draw_panel(server, command, keyboard.panel, 1.0f);
+
+	/* The hint of an armed contact. */
+	if (keyboard.contact.active &&
+	    keyboard.contact.armed &&
+	    !keyboard.contact.expired)
+		keyboard_draw_hint(server, command);
+}
+
+/*
+ * Starts following a contact that begins in a bottom corner.  Returns 1
+ * when the contact is the keyboard's.
+ */
+static int
+keyboard_contact_begin(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	uint32_t time)
+{
+	enum keyboard_kind corner;
+	float home;
+	int open;
+
+	/* The login and lock screens, App Home and Wiseview have no keyboard. */
+	if (server->greeter || server->locked)
+		return 0;
+	home = zwl_home_progress(server);
+	if (home > 0.0f || server->home_to > 0.0f)
+		return 0;
+	if (server->wiseview > 0.0f || server->wiseview_gesture || server->wiseview_moving)
+		return 0;
+
+	/* A contact already followed keeps the gesture. */
+	if (keyboard.contact.active)
+		return 0;
+
+	/* Only a contact in a bottom corner. */
+	corner = keyboard_corner_at(server, x, y);
+	if (corner == PANEL_NONE)
+		return 0;
+
+	/* An open menu closes on a press anywhere, the corners too, before the gesture could start. */
+	open = zwl_network_is_open();
+	if (open)
+		return 0;
+	open = zwl_menu_is_open();
+	if (open)
+		return 0;
+	open = zwl_volume_is_open();
+	if (open)
+		return 0;
+
+	/* The contact from its start; it is not armed yet. */
+	memset(&keyboard.contact, 0, sizeof(keyboard.contact));
+	keyboard.contact.active = 1;
+	keyboard.contact.corner = corner;
+	keyboard.contact.source = server->shell_source;
+	keyboard.contact.start_x = x;
+	keyboard.contact.start_y = y;
+	keyboard.contact.start_time = time;
+	keyboard.contact.start_clock_ms = zwl_milliseconds();
+	keyboard.contact.x = x;
+	keyboard.contact.y = y;
+	keyboard_sample(x, y, time);
+
+	/* Succeeded: the contact is the keyboard's. */
+	printf("ZWL OSK press corner=%s source=%s x=%d y=%d\n", keyboard_kind_name(corner), keyboard_source_name(server->shell_source), x, y);
+	return 1;
+}
+
+/*
+ * Follows the corner's contact to a new point: it arms once it has moved
+ * far enough inwards and up in time.  Returns 1 when it is the keyboard's.
+ */
+static int
+keyboard_contact_move(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	uint32_t time)
+{
+	uint32_t elapsed;
+	int32_t inwards;
+	int32_t upwards;
+
+	/* A contact the keyboard does not have goes on. */
+	if (!keyboard.contact.active)
+		return 0;
+
+	/* The point, for the hint and for the speed at the end. */
+	keyboard.contact.x = x;
+	keyboard.contact.y = y;
+	keyboard_sample(x, y, time);
+
+	/* A contact that timed out stays the keyboard's until it ends, without effect. */
+	if (keyboard.contact.expired)
+		return 1;
+
+	/* An armed contact redraws the hint. */
+	if (keyboard.contact.armed) {
+		server->dirty = 1;
+		return 1;
+	}
+
+	/* Too late to arm: the contact is let go (still the keyboard's until it ends). */
+	elapsed = time - keyboard.contact.start_time;
+	if (elapsed > KEYBOARD_ARM_MS) {
+		keyboard.contact.expired = 1;
+		printf("ZWL OSK cancel reason=timeout\n");
+		return 1;
+	}
+
+	/* It arms once it has moved far enough inwards and far enough up. */
+	keyboard_travel(&inwards, &upwards);
+	if (inwards < KEYBOARD_ARM || upwards < KEYBOARD_ARM)
+		return 1;
+
+	/* Succeeded: the contact is armed, and the hint shows from now on. */
+	keyboard.contact.armed = 1;
+	server->dirty = 1;
+	printf("ZWL OSK armed corner=%s ms=%u\n", keyboard_kind_name(keyboard.contact.corner), elapsed);
+	return 1;
+}
+
+/*
+ * Ends the corner's contact: it commits when it ended near the diagonal,
+ * far enough along it or quickly enough, and is let go otherwise.  Returns
+ * 1 when the contact was the keyboard's.
+ */
+static int
+keyboard_contact_end(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	uint32_t time)
+{
+	int32_t inwards;
+	int32_t upwards;
+	int diagonal;
+	float progress;
+	float speed;
+
+	/* A contact the keyboard does not have goes on. */
+	if (!keyboard.contact.active)
+		return 0;
+
+	/* The last point, which the speed is measured to. */
+	keyboard.contact.x = x;
+	keyboard.contact.y = y;
+	keyboard_sample(x, y, time);
+	server->dirty = 1;
+
+	/* A contact that timed out ends without effect (its cancel was logged then). */
+	if (keyboard.contact.expired) {
+		keyboard.contact.active = 0;
+		return 1;
+	}
+
+	/* A contact that never armed ends without effect, like a tap in the corner. */
+	if (!keyboard.contact.armed) {
+		keyboard.contact.active = 0;
+		printf("ZWL OSK cancel reason=unarmed\n");
+		return 1;
+	}
+
+	/* A contact that ends off the diagonal is let go. */
+	keyboard_travel(&inwards, &upwards);
+	diagonal = keyboard_on_diagonal(inwards, upwards);
+	if (!diagonal) {
+		keyboard.contact.active = 0;
+		printf("ZWL OSK cancel reason=direction\n");
+		return 1;
+	}
+
+	/* Far enough along the diagonal commits. */
+	progress = ((float)inwards + (float)upwards) * 0.5f;
+	if (progress >= KEYBOARD_COMMIT) {
+		keyboard_commit(server, "distance", progress);
+		return 1;
+	}
+
+	/* A quick flick commits after a shorter way. */
+	speed = keyboard_speed();
+	if (progress >= KEYBOARD_FLICK_DISTANCE && speed >= KEYBOARD_FLICK_SPEED) {
+		keyboard_commit(server, "flick", progress);
+		return 1;
+	}
+
+	/* Succeeded: too short and too slow, the contact is let go. */
+	keyboard.contact.active = 0;
+	printf("ZWL OSK cancel reason=short progress=%.0f speed=%.2f\n", (double)progress, (double)speed);
+	return 1;
+}
+
+/* Finds the bottom corner a point is in: the flick panel's (right), the QWERTY panel's (left), or none. */
+static enum keyboard_kind
+keyboard_corner_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y)
+{
+	/* Only the bottom strip. */
+	if (y < (int32_t)server->height - KEYBOARD_ZONE)
+		return PANEL_NONE;
+
+	/* The right corner. */
+	if (x >= (int32_t)server->width - KEYBOARD_ZONE)
+		return PANEL_FLICK;
+
+	/* The left corner. */
+	if (x < KEYBOARD_ZONE)
+		return PANEL_QWERTY;
+
+	/* Between them. */
+	return PANEL_NONE;
+}
+
+/* Works out how far the contact has moved inwards (away from its corner's side) and up. */
+static void
+keyboard_travel(
+	int32_t *inwards,
+	int32_t *upwards)
+{
+	/* Leftwards from the right corner, rightwards from the left one. */
+	*inwards = keyboard.contact.x - keyboard.contact.start_x;
+	if (keyboard.contact.corner == PANEL_FLICK)
+		*inwards = keyboard.contact.start_x - keyboard.contact.x;
+
+	/* Up from either. */
+	*upwards = keyboard.contact.start_y - keyboard.contact.y;
+}
+
+/* Keeps a point of the contact among the recent ones. */
+static void
+keyboard_sample(
+	int32_t x,
+	int32_t y,
+	uint32_t time)
+{
+	struct keyboard_sample *sample;
+
+	/* The next place of the ring. */
+	sample = &keyboard.contact.samples[keyboard.contact.sample_next];
+	sample->x = x;
+	sample->y = y;
+	sample->time = time;
+	keyboard.contact.sample_next = (keyboard.contact.sample_next + 1U) % KEYBOARD_SAMPLES;
+	if (keyboard.contact.sample_count < KEYBOARD_SAMPLES)
+		keyboard.contact.sample_count++;
+}
+
+/*
+ * Measures the contact's speed along the diagonal over the last
+ * KEYBOARD_FLICK_MS, in pixels a millisecond (0 without two points).
+ */
+static float
+keyboard_speed(
+	void)
+{
+	const struct keyboard_sample *last;
+	const struct keyboard_sample *first;
+	const struct keyboard_sample *sample;
+	uint32_t elapsed;
+	unsigned index;
+	unsigned count;
+	float inwards;
+	float upwards;
+
+	/* The newest point. */
+	if (keyboard.contact.sample_count < 2U)
+		return 0.0f;
+	index = (keyboard.contact.sample_next + KEYBOARD_SAMPLES - 1U) % KEYBOARD_SAMPLES;
+	last = &keyboard.contact.samples[index];
+
+	/* The oldest point within the window, walking back. */
+	first = last;
+	for (count = 1U; count < keyboard.contact.sample_count; count++) {
+		index = (index + KEYBOARD_SAMPLES - 1U) % KEYBOARD_SAMPLES;
+		sample = &keyboard.contact.samples[index];
+		if (last->time - sample->time > KEYBOARD_FLICK_MS)
+			break;
+		first = sample;
+	}
+
+	/* No time between them: no speed. */
+	elapsed = last->time - first->time;
+	if (elapsed == 0U)
+		return 0.0f;
+
+	/* The movement inwards and up, along the diagonal. */
+	inwards = (float)(last->x - first->x);
+	if (keyboard.contact.corner == PANEL_FLICK)
+		inwards = -inwards;
+	upwards = (float)(first->y - last->y);
+
+	/* Succeeded: the speed. */
+	return (inwards + upwards) * 0.5f / (float)elapsed;
+}
+
+/* Tells whether a movement (inwards, up) is within the cone around the diagonal. */
+static int
+keyboard_on_diagonal(
+	int32_t inwards,
+	int32_t upwards)
+{
+	/* Both ways must be positive. */
+	if (inwards <= 0 || upwards <= 0)
+		return 0;
+
+	/* The shorter way against the longer. */
+	if (inwards * KEYBOARD_CONE_DENOMINATOR < upwards * KEYBOARD_CONE_NUMERATOR)
+		return 0;
+	if (upwards * KEYBOARD_CONE_DENOMINATOR < inwards * KEYBOARD_CONE_NUMERATOR)
+		return 0;
+
+	/* On the diagonal. */
+	return 1;
+}
+
+/*
+ * Acts on a committed swipe: the corner's panel opens, or closes when it
+ * is the one open (the same swipe again).
+ */
+static void
+keyboard_commit(
+	struct zwl_server *server,
+	const char *via,
+	float progress)
+{
+	enum keyboard_kind corner;
+
+	/* The contact is over. */
+	corner = keyboard.contact.corner;
+	keyboard.contact.active = 0;
+	printf("ZWL OSK commit corner=%s via=%s progress=%.0f\n", keyboard_kind_name(corner), via, (double)progress);
+
+	/* The same panel again closes it. */
+	if (keyboard.open == corner) {
+		zwl_keyboard_close(server, "gesture");
+		return;
+	}
+
+	/* Otherwise the corner's panel opens (in place of the other one). */
+	keyboard_open(server, corner);
+}
+
+/* Opens a panel at its place for the screen's size. */
+static void
+keyboard_open(
+	struct zwl_server *server,
+	enum keyboard_kind kind)
+{
+	/* The panel and its rectangle. */
+	keyboard.open = kind;
+	keyboard.pressing = 0;
+	keyboard_place(server, kind, keyboard.panel);
+	server->dirty = 1;
+
+	/* The log line the tests read. */
+	printf("ZWL OSK open kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(kind), keyboard.panel[0], keyboard.panel[1], keyboard.panel[2], keyboard.panel[3]);
+}
+
+/*
+ * Works out a panel's rectangle (x, y, width, height) for the screen's
+ * size: the flick panel at the bottom of the right side, its keys a share
+ * of the height; the QWERTY panel along the bottom, a share of the height.
+ */
+static void
+keyboard_place(
+	struct zwl_server *server,
+	enum keyboard_kind kind,
+	int32_t *rect)
+{
+	int32_t width;
+	int32_t height;
+	int32_t key;
+
+	/* The screen. */
+	width = (int32_t)server->width;
+	height = (int32_t)server->height;
+
+	/* The QWERTY panel: the full width within the margins, a share of the height. */
+	if (kind == PANEL_QWERTY) {
+		rect[3] = height * KEYBOARD_QWERTY_SHARE / 100;
+		if (rect[3] < KEYBOARD_QWERTY_MIN)
+			rect[3] = KEYBOARD_QWERTY_MIN;
+		if (rect[3] > KEYBOARD_QWERTY_MAX)
+			rect[3] = KEYBOARD_QWERTY_MAX;
+		rect[2] = width - 2 * KEYBOARD_MARGIN;
+		rect[0] = KEYBOARD_MARGIN;
+		rect[1] = height - KEYBOARD_MARGIN - rect[3];
+		return;
+	}
+
+	/* The flick panel's key side. */
+	key = keyboard_key_size(server);
+
+	/* Its keys and gaps, the title band above them, at the bottom right. */
+	rect[2] = KEYBOARD_FLICK_COLUMNS * key + (KEYBOARD_FLICK_COLUMNS + 1) * KEYBOARD_KEY_GAP;
+	rect[3] = KEYBOARD_BAND + KEYBOARD_FLICK_ROWS * key + (KEYBOARD_FLICK_ROWS + 1) * KEYBOARD_KEY_GAP;
+	rect[0] = width - KEYBOARD_MARGIN - rect[2];
+	rect[1] = height - KEYBOARD_MARGIN - rect[3];
+}
+
+/*
+ * Handles the left button on the open panel: a press on it is the
+ * panel's (the close key's press closes it at the release); its release
+ * ends it.  Returns 1 when the button was the panel's.
+ */
+static int
+keyboard_panel_button(
+	struct zwl_server *server,
+	uint32_t button,
+	uint32_t state)
+{
+	int32_t close[4];
+	unsigned row;
+	unsigned column;
+	int swiped;
+	int inside;
+	int found;
+
+	/* The release of a press the panel took: a key held acts, the close key closes. */
+	(void)button;
+	if (state == 0) {
+		if (!keyboard.pressing)
+			return 0;
+		keyboard.pressing = 0;
+
+		/* The title band dragged far enough towards the panel's edge closes it. */
+		if (keyboard.band_active) {
+			keyboard.band_active = 0;
+			swiped = keyboard_band_swiped(server->pointer_x, server->pointer_y);
+			if (swiped) {
+				zwl_keyboard_close(server, "swipe");
+				return 1;
+			}
+		}
+
+		/* A key held: what the release means. */
+		if (keyboard.key_active) {
+			keyboard.key_x = server->pointer_x;
+			keyboard.key_y = server->pointer_y;
+			keyboard_key_release(server);
+			return 1;
+		}
+
+		/* On the close key, the panel closes. */
+		keyboard_close_rect(close);
+		inside = keyboard_contains(close, server->pointer_x, server->pointer_y);
+		if (inside)
+			zwl_keyboard_close(server, "key");
+		return 1;
+	}
+
+	/* A press off the panel is not the panel's. */
+	inside = zwl_keyboard_at(server->pointer_x, server->pointer_y);
+	if (!inside)
+		return 0;
+
+	/* The press is the panel's until its release; one on the title band may close it by a drag. */
+	keyboard.pressing = 1;
+	keyboard.key_active = 0;
+	keyboard.band_active = 0;
+	if (server->pointer_y < keyboard.panel[1] + KEYBOARD_BAND) {
+		keyboard.band_active = 1;
+		keyboard.band_x = server->pointer_x;
+		keyboard.band_y = server->pointer_y;
+	}
+
+	/* On a key of the flick panel, the key is held (its petals show). */
+	found = 0;
+	if (keyboard.open == PANEL_FLICK)
+		found = keyboard_key_at(server, server->pointer_x, server->pointer_y, &row, &column);
+	if (found) {
+		keyboard.key_active = 1;
+		keyboard.key_row = row;
+		keyboard.key_column = column;
+		keyboard.key_start_x = server->pointer_x;
+		keyboard.key_start_y = server->pointer_y;
+		keyboard.key_x = server->pointer_x;
+		keyboard.key_y = server->pointer_y;
+		server->dirty = 1;
+	}
+
+	/* Succeeded: the press is the panel's. */
+	printf("ZWL OSK panel-press x=%d y=%d key=%d\n", server->pointer_x, server->pointer_y, found);
+	return 1;
+}
+
+/* Tells whether a point is in a rectangle (x, y, width, height). */
+static int
+keyboard_contains(
+	const int32_t *rect,
+	int32_t x,
+	int32_t y)
+{
+	/* Left or right of it. */
+	if (x < rect[0] || x >= rect[0] + rect[2])
+		return 0;
+
+	/* Above or below it. */
+	if (y < rect[1] || y >= rect[1] + rect[3])
+		return 0;
+
+	/* In it. */
+	return 1;
+}
+
+/* Works out the close key's rectangle, at the right of the open panel's title band. */
+static void
+keyboard_close_rect(
+	int32_t *rect)
+{
+	/* A square in the band, a margin from the panel's right edge. */
+	rect[2] = KEYBOARD_CLOSE;
+	rect[3] = KEYBOARD_CLOSE;
+	rect[0] = keyboard.panel[0] + keyboard.panel[2] - KEYBOARD_MARGIN - KEYBOARD_CLOSE;
+	rect[1] = keyboard.panel[1] + (KEYBOARD_BAND - KEYBOARD_CLOSE) / 2 + 4;
+}
+
+/*
+ * Draws a panel: its shadow, the white glass (as the volume's popup), the
+ * title at the left of the band and the close key at its right.
+ */
+static void
+keyboard_draw_panel(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	const int32_t *rect,
+	float opacity)
+{
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float key[4] = { 0.12f, 0.16f, 0.24f, 0.08f };
+	struct glass_shape shape;
+	int32_t close[4];
+	int32_t advance;
+	const char *title;
+
+	/* The shadow. */
+	glass_shape_init(&shape, (float)rect[0], (float)rect[1] + 6.0f, (float)rect[2], (float)rect[3]);
+	shape.quad[0] -= 40.0f;
+	shape.quad[1] -= 40.0f;
+	shape.quad[2] += 80.0f;
+	shape.quad[3] += 80.0f;
+	shape.mode = MODE_SHADOW;
+	shape.radius = KEYBOARD_RADIUS;
+	shape.soft = 18.0f;
+	shape.color[0] = 0.10f;
+	shape.color[1] = 0.18f;
+	shape.color[2] = 0.35f;
+	shape.color[3] = 0.24f;
+	shape.opacity = opacity;
+	glass_shape_draw(server, command, &shape);
+
+	/* The glass, as white as the volume's popup. */
+	glass_shape_init(&shape, (float)rect[0], (float)rect[1], (float)rect[2], (float)rect[3]);
+	shape.mode = MODE_GLASS;
+	shape.radius = KEYBOARD_RADIUS;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.86f;
+	shape.edge = 0.85f;
+	shape.opacity = opacity;
+	glass_shape_draw(server, command, &shape);
+
+	/* The hint draws the glass alone. */
+	if (opacity < 1.0f)
+		return;
+
+	/* The title at the left of the band: the flick panel's face, or the keyboard. */
+	title = "かな";
+	if (keyboard.face == ZWL_FLICK_ALPHA)
+		title = "ABC";
+	if (keyboard.face == ZWL_FLICK_NUMBER)
+		title = "123";
+	if (keyboard.open == PANEL_QWERTY)
+		title = "Keyboard";
+	glass_draw_text(server, command, SIZE_TITLE, rect[0] + KEYBOARD_MARGIN + 4, rect[1] + KEYBOARD_BAND - 6, title, rect[2] - 3 * KEYBOARD_MARGIN - KEYBOARD_CLOSE, dark);
+
+	/* The flick panel's keys, and the held key's petals over them. */
+	if (keyboard.open == PANEL_FLICK) {
+		keyboard_draw_keys(server, command);
+		keyboard_draw_petals(server, command);
+	}
+
+	/* The close key: a pale round key with the multiplication sign. */
+	keyboard_close_rect(close);
+	glass_draw_solid(server, command, (float)close[0], (float)close[1], (float)close[2], (float)close[3], (float)close[2] / 2.0f, key);
+	advance = glass_glyph_advance(server, SIZE_SIGN, GLASS_CLOSE_GLYPH);
+	glass_draw_glyph(server, command, SIZE_SIGN, GLASS_CLOSE_GLYPH, close[0] + (close[2] - advance) / 2, close[1] + close[3] / 2 + 7, dark);
+}
+
+/*
+ * Draws the hint of an armed contact: the corner's panel, faint, its
+ * opacity growing with how far the contact has come along the diagonal.
+ */
+static void
+keyboard_draw_hint(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	int32_t rect[4];
+	int32_t inwards;
+	int32_t upwards;
+	float progress;
+
+	/* How far along the diagonal. */
+	keyboard_travel(&inwards, &upwards);
+	progress = ((float)inwards + (float)upwards) * 0.5f / KEYBOARD_DISTANCE;
+	if (progress < 0.0f)
+		progress = 0.0f;
+	if (progress > 1.0f)
+		progress = 1.0f;
+
+	/* The corner's panel at its place, faint. */
+	keyboard_place(server, keyboard.contact.corner, rect);
+	keyboard_draw_panel(server, command, rect, 0.2f + 0.6f * progress);
+}
+
+/* Works out the flick panel's key side for the screen's height (a share of it, within limits). */
+static int
+keyboard_key_size(
+	struct zwl_server *server)
+{
+	int key;
+
+	/* A share of the height. */
+	key = (int)server->height / KEYBOARD_KEY_DIVISOR;
+	if (key < KEYBOARD_KEY_MIN)
+		key = KEYBOARD_KEY_MIN;
+	if (key > KEYBOARD_KEY_MAX)
+		key = KEYBOARD_KEY_MAX;
+
+	/* The side. */
+	return key;
+}
+
+/* Works out a key's rectangle on the open flick panel, under its title band. */
+static void
+keyboard_key_rect(
+	struct zwl_server *server,
+	unsigned row,
+	unsigned column,
+	int32_t *rect)
+{
+	int key;
+
+	/* The key's side, and its place in the grid. */
+	key = keyboard_key_size(server);
+	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)column * (key + KEYBOARD_KEY_GAP);
+	rect[1] = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP + (int32_t)row * (key + KEYBOARD_KEY_GAP);
+	rect[2] = key;
+	rect[3] = key;
+}
+
+/* Finds the flick panel's key at a point.  Returns 1 with its row and column, or 0 (a gap, the band). */
+static int
+keyboard_key_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	unsigned *row,
+	unsigned *column)
+{
+	int32_t rect[4];
+	unsigned r;
+	unsigned c;
+	int inside;
+
+	/* Each key of the grid. */
+	for (r = 0; r < ZWL_FLICK_ROWS; r++) {
+		for (c = 0; c < ZWL_FLICK_COLUMNS; c++) {
+			/* The point on this key. */
+			keyboard_key_rect(server, r, c, rect);
+			inside = keyboard_contains(rect, x, y);
+			if (!inside)
+				continue;
+
+			/* Succeeded: the key. */
+			*row = r;
+			*column = c;
+			return 1;
+		}
+	}
+
+	/* No key there. */
+	return 0;
+}
+
+/* Works out the direction the held key's press has moved (the flick), from where it began. */
+static unsigned
+keyboard_key_direction(
+	struct zwl_server *server)
+{
+	unsigned direction;
+	int dx;
+	int dy;
+	int key;
+
+	/* The movement from the press, and the key's side. */
+	dx = keyboard.key_x - keyboard.key_start_x;
+	dy = keyboard.key_y - keyboard.key_start_y;
+	key = keyboard_key_size(server);
+
+	/* The flick's direction (keyboard-layout.c). */
+	direction = zwl_flick_direction(dx, dy, key);
+	return direction;
+}
+
+/*
+ * Acts on the release of the held key: the face key goes to the next
+ * face, delete sends the delete key, the voice and case keys change the
+ * last character, and any other key sends its character in the flick's
+ * direction (none where the direction has none).
+ */
+static void
+keyboard_key_release(
+	struct zwl_server *server)
+{
+	const struct zwl_flick_key *key;
+	const char *text;
+	const char *shown;
+	unsigned direction;
+	int newline;
+	int sent;
+
+	/* The key and the flick's direction. */
+	keyboard.key_active = 0;
+	server->dirty = 1;
+	key = zwl_flick_key(keyboard.face, keyboard.key_row, keyboard.key_column);
+	if (key == NULL)
+		return;
+	direction = keyboard_key_direction(server);
+
+	/* The character in that direction (a newline is logged as \n), for the log line the tests read. */
+	text = zwl_flick_text(key, direction);
+	shown = text;
+	if (shown == NULL)
+		shown = "";
+	newline = strcmp(shown, "\n");
+	if (newline == 0)
+		shown = "\\n";
+	printf("ZWL OSK key face=%s row=%u column=%u dir=%s action=%u text=%s\n", zwl_flick_face_name(keyboard.face), keyboard.key_row, keyboard.key_column, zwl_flick_direction_name(direction), key->action, shown);
+
+	/* What the key does. */
+	switch (key->action) {
+	case ZWL_FLICK_FACE:
+		/* The next face. */
+		keyboard.face = zwl_flick_face_next(keyboard.face);
+		printf("ZWL OSK face name=%s\n", zwl_flick_face_name(keyboard.face));
+		break;
+	case ZWL_FLICK_BACKSPACE:
+		/* The delete key; the last character is gone. */
+		sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		if (sent)
+			keyboard_remember("", KEYBOARD_SENT_NONE);
+		break;
+	case ZWL_FLICK_VOICE:
+		keyboard_voice(server);
+		break;
+	case ZWL_FLICK_CASE:
+		keyboard_case(server);
+		break;
+	default:
+		/* A character, when the direction has one. */
+		if (text != NULL)
+			keyboard_send(server, text);
+		break;
+	}
+}
+
+/* Draws the flick panel's keys: character keys pale white, the fixed keys a little darker, the held one blue. */
+static void
+keyboard_draw_keys(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
+	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	const struct zwl_flick_key *key;
+	const float *ground;
+	const float *ink;
+	enum glass_size size;
+	int32_t rect[4];
+	unsigned characters;
+	unsigned row;
+	unsigned column;
+
+	/* Each key of the face. */
+	for (row = 0; row < ZWL_FLICK_ROWS; row++) {
+		for (column = 0; column < ZWL_FLICK_COLUMNS; column++) {
+			/* The key, its place, its colours: the held one blue, the acting ones grey. */
+			key = zwl_flick_key(keyboard.face, row, column);
+			keyboard_key_rect(server, row, column, rect);
+			ground = white;
+			ink = dark;
+			if (key->action != ZWL_FLICK_TYPE)
+				ground = grey;
+			if (keyboard.key_active && keyboard.key_row == row && keyboard.key_column == column) {
+				ground = blue;
+				ink = light;
+			}
+
+			/* A single character large, a longer label a size smaller (the same for all of them). */
+			size = SIZE_SEARCH;
+			characters = keyboard_characters(key->label);
+			if (characters > 1U)
+				size = SIZE_SIGN;
+			keyboard_draw_key(server, command, rect, key->label, ground, ink, size);
+		}
+	}
+}
+
+/* Draws one key: its rounded ground and its label in the middle. */
+static void
+keyboard_draw_key(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	const int32_t *rect,
+	const char *label,
+	const float *ground,
+	const float *ink,
+	enum glass_size size)
+{
+	int32_t width;
+	int32_t baseline;
+
+	/* The ground. */
+	glass_draw_solid(server, command, (float)rect[0], (float)rect[1], (float)rect[2], (float)rect[3], KEYBOARD_KEY_RADIUS, ground);
+
+	/* The label, centred (the baseline a little under the middle). */
+	width = glass_text_width(server, size, label);
+	baseline = rect[1] + rect[3] / 2 + 8;
+	if (size == SIZE_SIGN)
+		baseline = rect[1] + rect[3] / 2 + 7;
+	glass_draw_text(server, command, size, rect[0] + (rect[2] - width) / 2, baseline, label, rect[2], ink);
+}
+
+/*
+ * Draws the held key's petals: its characters to the left, above, to the
+ * right and below it, the one the flick points at blue (the key itself is
+ * blue while the press has not moved far enough).
+ */
+static void
+keyboard_draw_petals(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	struct glass_shape shape;
+	const struct zwl_flick_key *key;
+	const char *text;
+	unsigned direction;
+	unsigned side;
+	int32_t rect[4];
+	int32_t petal[4];
+	int32_t size;
+
+	/* Only a held character key. */
+	if (!keyboard.key_active)
+		return;
+	key = zwl_flick_key(keyboard.face, keyboard.key_row, keyboard.key_column);
+	if (key == NULL || key->action != ZWL_FLICK_TYPE)
+		return;
+
+	/* The key, the petals' side and the direction pointed at. */
+	keyboard_key_rect(server, keyboard.key_row, keyboard.key_column, rect);
+	size = rect[2] * KEYBOARD_PETAL_TENTHS / 10;
+	direction = keyboard_key_direction(server);
+
+	/* Each side's petal that has a character. */
+	for (side = ZWL_FLICK_LEFT; side < ZWL_FLICK_DIRECTIONS; side++) {
+		/* A side without a character has no petal. */
+		text = zwl_flick_text(key, side);
+		if (text == NULL)
+			continue;
+
+		/* The petal next to the key on that side, centred on it. */
+		petal[2] = size;
+		petal[3] = size;
+		petal[0] = rect[0] + (rect[2] - size) / 2;
+		petal[1] = rect[1] + (rect[3] - size) / 2;
+		if (side == ZWL_FLICK_LEFT)
+			petal[0] = rect[0] - size - 2;
+		else if (side == ZWL_FLICK_RIGHT)
+			petal[0] = rect[0] + rect[2] + 2;
+		else if (side == ZWL_FLICK_UP)
+			petal[1] = rect[1] - size - 2;
+		else
+			petal[1] = rect[1] + rect[3] + 2;
+
+		/* A soft shadow under it, so it stands out from the keys it covers. */
+		glass_shape_init(&shape, (float)petal[0], (float)petal[1] + 3.0f, (float)petal[2], (float)petal[3]);
+		shape.quad[0] -= 16.0f;
+		shape.quad[1] -= 16.0f;
+		shape.quad[2] += 32.0f;
+		shape.quad[3] += 32.0f;
+		shape.mode = MODE_SHADOW;
+		shape.radius = KEYBOARD_KEY_RADIUS;
+		shape.soft = 8.0f;
+		shape.color[0] = 0.10f;
+		shape.color[1] = 0.18f;
+		shape.color[2] = 0.35f;
+		shape.color[3] = 0.30f;
+		glass_shape_draw(server, command, &shape);
+
+		/* Blue when the flick points at it. */
+		if (side == direction) {
+			keyboard_draw_key(server, command, petal, text, blue, light, SIZE_SEARCH);
+		} else {
+			keyboard_draw_key(server, command, petal, text, white, dark, SIZE_SEARCH);
+		}
+	}
+}
+
+/*
+ * Sends a character to the focused application: as the key of the US
+ * layout that types it, else as the commit of the focused field's text
+ * input.  The character is remembered for the voice and case keys.
+ */
+static void
+keyboard_send(
+	struct zwl_server *server,
+	const char *text)
+{
+	unsigned code;
+	int shift;
+	int found;
+	int sent;
+
+	/* A character of the US layout: its key. */
+	found = zwl_flick_us_key(text, &code, &shift);
+	if (found) {
+		sent = keyboard_send_key(server, code, shift);
+		if (sent)
+			keyboard_remember(text, KEYBOARD_SENT_KEY);
+		return;
+	}
+
+	/* Any other: the text input's commit. */
+	sent = keyboard_send_commit(server, text, 0);
+	if (sent)
+		keyboard_remember(text, KEYBOARD_SENT_COMMIT);
+}
+
+/*
+ * Sends a key's press and release to the focused application, Shift held
+ * around them when asked (the physical modifiers are restored after).
+ * Returns 1 when there was an application to hear it.
+ */
+static int
+keyboard_send_key(
+	struct zwl_server *server,
+	unsigned code,
+	int shift)
+{
+	uint32_t modifiers;
+	uint32_t time;
+
+	/* Without a focused application the key reaches nobody. */
+	if (server->focus == NULL) {
+		printf("ZWL OSK refused reason=no-focus code=%u\n", code);
+		return 0;
+	}
+
+	/* Shift, held for the key when it needs it (only while not already held). */
+	modifiers = server->modifiers;
+	if (shift && (modifiers & KEYBOARD_SHIFT) == 0U) {
+		server->modifiers = modifiers | KEYBOARD_SHIFT;
+		zwl_seat_modifiers(server);
+	}
+
+	/* The press and the release, at the compositor's time. */
+	time = (uint32_t)zwl_milliseconds();
+	zwl_seat_key_deliver(server, time, code, 1U);
+	zwl_seat_key_deliver(server, time, code, 0U);
+
+	/* The modifiers as they were. */
+	if (server->modifiers != modifiers) {
+		server->modifiers = modifiers;
+		zwl_seat_modifiers(server);
+	}
+
+	/* Succeeded: the key was sent. */
+	printf("ZWL OSK send via=key code=%u shift=%d\n", code, shift);
+	return 1;
+}
+
+/*
+ * Commits a text to the focused field's text input, deleting some bytes
+ * before the cursor first (the voice key's replacement).  A field without
+ * a text input, or one the input method is composing in, takes nothing.
+ * Returns 1 when the text was committed.
+ */
+static int
+keyboard_send_commit(
+	struct zwl_server *server,
+	const char *text,
+	uint32_t before)
+{
+	struct zwl_text_input *input;
+
+	/* The focused field's text input. */
+	input = zwl_text_input_current(server);
+	if (input == NULL) {
+		printf("ZWL OSK refused reason=no-text-input text=%s\n", text);
+		return 0;
+	}
+
+	/* A composition of the input method is left alone (its preedit would be lost). */
+	if (server->ime != NULL && server->ime->composing) {
+		printf("ZWL OSK refused reason=composing text=%s\n", text);
+		return 0;
+	}
+
+	/* The deletion and the commit, applied together. */
+	zwl_text_input_deliver(input, NULL, 0, 0, text, before, 0U);
+
+	/* Succeeded: the field has the text. */
+	printf("ZWL OSK send via=commit text=%s before=%u\n", text, before);
+	return 1;
+}
+
+/* Replaces the last kana sent (committed) by its next voiced, half-voiced or small form. */
+static void
+keyboard_voice(
+	struct zwl_server *server)
+{
+	char next[KEYBOARD_LAST];
+	int found;
+	int sent;
+
+	/* Only a kana that was committed. */
+	if (keyboard.last_sent != KEYBOARD_SENT_COMMIT) {
+		printf("ZWL OSK voice none\n");
+		return;
+	}
+
+	/* Its next form, if it has one. */
+	found = zwl_flick_voice(keyboard.last, next, sizeof(next));
+	if (!found) {
+		printf("ZWL OSK voice none\n");
+		return;
+	}
+
+	/* The kana before the cursor replaced by it. */
+	sent = keyboard_send_commit(server, next, (uint32_t)strlen(keyboard.last));
+	if (sent)
+		keyboard_remember(next, KEYBOARD_SENT_COMMIT);
+}
+
+/* Replaces the last letter sent (as a key) by its other case: the delete key, then the letter's key. */
+static void
+keyboard_case(
+	struct zwl_server *server)
+{
+	char next[KEYBOARD_LAST];
+	unsigned code;
+	int shift;
+	int found;
+	int sent;
+
+	/* Only a letter that was sent as a key. */
+	if (keyboard.last_sent != KEYBOARD_SENT_KEY) {
+		printf("ZWL OSK case none\n");
+		return;
+	}
+
+	/* Its other case, if it is a letter. */
+	found = zwl_flick_case(keyboard.last, next, sizeof(next));
+	if (!found) {
+		printf("ZWL OSK case none\n");
+		return;
+	}
+
+	/* The letter before the cursor deleted, and the other one typed. */
+	sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+	if (!sent)
+		return;
+	found = zwl_flick_us_key(next, &code, &shift);
+	if (!found)
+		return;
+	sent = keyboard_send_key(server, code, shift);
+	if (sent)
+		keyboard_remember(next, KEYBOARD_SENT_KEY);
+}
+
+/* Remembers the last character sent and how, for the voice and case keys. */
+static void
+keyboard_remember(
+	const char *text,
+	unsigned sent)
+{
+	/* The character (cut to the room) and the way. */
+	(void)snprintf(keyboard.last, sizeof(keyboard.last), "%s", text);
+	keyboard.last_sent = sent;
+}
+
+/*
+ * Tells whether the title band's drag ended far enough towards the
+ * panel's edge: the flick panel's right, the QWERTY panel's bottom.
+ */
+static int
+keyboard_band_swiped(
+	int32_t x,
+	int32_t y)
+{
+	/* The flick panel: to the right. */
+	if (keyboard.open == PANEL_FLICK && x - keyboard.band_x >= KEYBOARD_SWIPE_CLOSE)
+		return 1;
+
+	/* The QWERTY panel: down. */
+	if (keyboard.open == PANEL_QWERTY && y - keyboard.band_y >= KEYBOARD_SWIPE_CLOSE)
+		return 1;
+
+	/* Not far enough. */
+	return 0;
+}
+
+/* Counts the characters of a UTF-8 text (the bytes that do not continue one). */
+static unsigned
+keyboard_characters(
+	const char *text)
+{
+	const unsigned char *byte;
+	unsigned count;
+
+	/* Each byte that starts a character. */
+	count = 0;
+	for (byte = (const unsigned char *)text;
+	     *byte != '\0';
+	     byte++) {
+		if ((*byte & 0xc0U) != 0x80U)
+			count++;
+	}
+
+	/* The characters. */
+	return count;
+}
+
+/* Names a panel (or a corner) for the log. */
+static const char *
+keyboard_kind_name(
+	enum keyboard_kind kind)
+{
+	/* Each kind. */
+	switch (kind) {
+	case PANEL_FLICK:
+		return "flick";
+	case PANEL_QWERTY:
+		return "qwerty";
+	default:
+		break;
+	}
+
+	/* None. */
+	return "none";
+}
+
+/* Names a contact's source for the log. */
+static const char *
+keyboard_source_name(
+	enum zwl_contact_source source)
+{
+	/* Each source. */
+	switch (source) {
+	case ZWL_CONTACT_TOUCH:
+		return "touch";
+	case ZWL_CONTACT_PEN:
+		return "pen";
+	default:
+		break;
+	}
+
+	/* The pointer. */
+	return "pointer";
+}

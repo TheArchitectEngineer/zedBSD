@@ -444,6 +444,9 @@ zwl_glass_draw(
 	/* The top-right corner's hint, while its swipe is followed or settles (corner.c). */
 	zwl_corner_draw(server, command);
 
+	/* The on-screen keyboard over everything (keyboard.c, ws102). */
+	zwl_keyboard_draw(server, command);
+
 	/* A frame of the animation. */
 	if (server->anim != NULL && server->log_frames)
 		printf("ZWL GLASS anim surface=%u docking=%u t=%.2f\n", server->anim->id, server->anim_docking, (double)animation_progress(server));
@@ -490,6 +493,16 @@ zwl_glass_button(
 	 * that it works over Home too (its corner is not Home's).
 	 */
 	pressed = zwl_corner_button(server, button, state);
+	if (pressed)
+		return 1;
+
+	/*
+	 * The on-screen keyboard (keyboard.c, ws102) takes a press on its
+	 * panel and one in a bottom corner (its swipe), before Wiseview's
+	 * bottom edge and the desktops' side edges, which start outside the
+	 * corners.
+	 */
+	pressed = zwl_keyboard_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -739,6 +752,11 @@ zwl_glass_edge_button(
 	if (pressed)
 		return 1;
 
+	/* The on-screen keyboard's panel and its bottom corners' swipe (keyboard.c). */
+	pressed = zwl_keyboard_button(server, button, state);
+	if (pressed)
+		return 1;
+
 	/* App Home, when it shows or follows a press of its own, has the button as in window mode. */
 	home = zwl_home_progress(server);
 	if (home > 0.0f ||
@@ -796,6 +814,11 @@ zwl_glass_edge_motion(
 	if (taken)
 		return 1;
 
+	/* The on-screen keyboard's swipe and a press on its panel (keyboard.c). */
+	taken = zwl_keyboard_motion(server);
+	if (taken)
+		return 1;
+
 	/* App Home's gesture from the top-left corner (home.c). */
 	taken = zwl_home_motion(server);
 	if (taken)
@@ -823,6 +846,11 @@ zwl_glass_overlay(
 
 	/* The top-right corner's hint (corner.c). */
 	showing = zwl_corner_showing();
+	if (showing)
+		return 1;
+
+	/* The on-screen keyboard's panel or its swipe's hint (keyboard.c). */
+	showing = zwl_keyboard_showing();
 	if (showing)
 		return 1;
 
@@ -940,6 +968,14 @@ zwl_glass_title_at(
 	if (home > 0.0f || server->home_to > 0.0f)
 		return NULL;
 
+	/* The on-screen keyboard's panel and its bottom corners are the keyboard's (keyboard.c). */
+	open = zwl_keyboard_at(x, y);
+	if (open)
+		return NULL;
+	if (y >= (int32_t)server->height - ZWL_KEYBOARD_ZONE &&
+	    (x < ZWL_KEYBOARD_ZONE || x >= (int32_t)server->width - ZWL_KEYBOARD_ZONE))
+		return NULL;
+
 	/* An open menu closes on a press anywhere. */
 	open = zwl_network_is_open();
 	if (open)
@@ -1049,6 +1085,11 @@ zwl_glass_still(
 
 	/* The top-right corner's hint (corner.c). */
 	open = (unsigned)zwl_corner_showing();
+	if (open)
+		return 0;
+
+	/* The on-screen keyboard (keyboard.c). */
+	open = (unsigned)zwl_keyboard_showing();
 	if (open)
 		return 0;
 
@@ -1643,6 +1684,9 @@ zwl_glass_tick(
 
 	/* The top-right corner's swipe: its time limit, its hint settling, and Notes being waited for (corner.c). */
 	zwl_corner_tick(server);
+
+	/* The on-screen keyboard's swipe and its panel's place (keyboard.c). */
+	zwl_keyboard_tick(server);
 
 	/* A finger on a title bar that has waited long enough for a second one, or two that did not flick in time (touch.c). */
 	zwl_touch_tick(server);
@@ -4694,6 +4738,11 @@ glass_motion_take(
 
 	/* The top-right corner's swipe follows the pointer (corner.c). */
 	taken = zwl_corner_motion(server);
+	if (taken)
+		return 1;
+
+	/* The on-screen keyboard's swipe and a press on its panel (keyboard.c). */
+	taken = zwl_keyboard_motion(server);
 	if (taken)
 		return 1;
 

@@ -107,6 +107,7 @@ static const char *main_value(const char *argument, const char *name);
 static int main_number(const char *text, unsigned maximum, unsigned *value);
 static int main_loop(const struct main_options *options);
 static int main_frame(void);
+static void main_turn_frame(uint64_t started, uint64_t shown);
 static int main_canvas_make(void);
 static void main_state(struct pv_state *state);
 static void main_opened(void);
@@ -493,16 +494,22 @@ static int
 main_frame(void)
 {
 	VkResult result;
+	uint64_t started;
+	uint64_t shown;
 	unsigned stale;
 	int status;
 
 	/* Tries until the frame is shown, remaking a stale swapchain a few times. */
 	for (stale = 0; stale < MAIN_STALE_LIMIT; stale++) {
 		/* The frame on the CPU, shown in the window. */
+		started = pv_clock();
 		pv_draw(&main_app, &main_canvas);
 		result = pv_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width);
-		if (result == VK_SUCCESS)
+		if (result == VK_SUCCESS) {
+			shown = pv_clock();
+			main_turn_frame(started, shown);
 			return 0;
+		}
 
 		/* Anything but a stale swapchain is a failure. */
 		if (result != VK_ERROR_OUT_OF_DATE_KHR) {
@@ -527,6 +534,38 @@ main_frame(void)
 	/* The swapchain stayed out of date. */
 	fprintf(stderr, "PDFVIEWER FAILED operation=stale-swapchain\n");
 	return -1;
+}
+
+/*
+ * Follows a page turn's frames (ws079-p016): the longest frame while the
+ * page changes, and once it rests, the time from the action to its frame
+ * shown ("TURN done", which the demo's test reads).
+ */
+static void
+main_turn_frame(
+	uint64_t started,
+	uint64_t shown)
+{
+	static uint64_t longest;
+	uint64_t took;
+
+	/* No turn going on. */
+	if (main_app.turn_at == 0U)
+		return;
+
+	/* The longest frame of the turn. */
+	took = shown - started;
+	if (took > longest)
+		longest = took;
+
+	/* Still sliding: more frames come. */
+	if (main_app.turning)
+		return;
+
+	/* The page rests: the whole turn and its longest frame. */
+	pv_log("TURN done page=%lu ms=%lu frame_ms=%lu", (unsigned long)pv_app_current_page(&main_app), (unsigned long)(shown - main_app.turn_at), (unsigned long)longest);
+	main_app.turn_at = 0U;
+	longest = 0U;
 }
 
 /* Makes the frame's memory and canvas at the swapchain's size; nonzero when memory runs out. */

@@ -719,7 +719,7 @@ desktop_start(
 	}
 
 	/* The log the tests read. */
-	printf("ZWL DESKTOP start pid=%d command=%s\n", (int)desk.pid, desk.command);
+	printf("ZWL DESKTOP start pid=%d command=%s at_ms=%llu\n", (int)desk.pid, desk.command, (unsigned long long)zwl_milliseconds());
 }
 
 /* Notices that the desktop program ended (its own wait, or App Home's collecting every child). */

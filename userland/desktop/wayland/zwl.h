@@ -644,6 +644,12 @@ struct zwl_server {
 	unsigned awaiting;
 	uint64_t frame_done_ms;
 	uint64_t frame_wait_ms;
+	/*
+	 * Nonzero while a move of the pointer waits for the frame that shows the
+	 * cursor at its new place: that frame does not wait for the windows
+	 * (WS099's C6, the pointer's move to its display; ws075-p026).
+	 */
+	unsigned pointer_moved;
 	/* The glass look: on, its font, the window being moved and where it was taken, the clock's minute. */
 	unsigned glass;
 	const char *font_path;
@@ -1049,6 +1055,19 @@ int zwl_corner_button(struct zwl_server *server, uint32_t button, uint32_t state
 int zwl_corner_motion(struct zwl_server *server);
 void zwl_corner_tick(struct zwl_server *server);
 int zwl_corner_showing(void);
+
+/*
+ * The on-screen keyboard (keyboard.c, ws102; the drawing is in glass.h):
+ * its bottom corners' swipe, its panel, and the side of the square in each
+ * bottom corner where the swipe starts.
+ */
+#define ZWL_KEYBOARD_ZONE	28
+int zwl_keyboard_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_keyboard_motion(struct zwl_server *server);
+void zwl_keyboard_tick(struct zwl_server *server);
+int zwl_keyboard_showing(void);
+int zwl_keyboard_at(int32_t x, int32_t y);
+void zwl_keyboard_close(struct zwl_server *server, const char *reason);
 
 /* The edge gestures over a fullscreen window, and whether one needs the output composed (shell.c). */
 int zwl_glass_edge_button(struct zwl_server *server, uint32_t button, uint32_t state);

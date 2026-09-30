@@ -107,6 +107,23 @@ struct i915_gfx_session {
 	struct i915_gem_object *scratch;
 	uint32_t scratch_per_thread[3];
 	uint64_t scratch_offset[3];
+
+	/*
+	 * The session's frame timing over a window of five seconds, logged
+	 * when the window ends (ws075-p026): the submissions, the runs they
+	 * took and the operations the runs held, the runs forced by a full
+	 * batch (no slot left), the time inside the submissions and in their
+	 * runs, in nanoseconds, and when the window started.
+	 */
+	uint64_t stat_start;
+	uint32_t stat_submits;
+	uint32_t stat_runs;
+	uint32_t stat_ops;
+	uint32_t stat_full;
+	uint32_t stat_ops_now;
+	uint32_t stat_ops_max;
+	uint64_t stat_submit_ns;
+	uint64_t stat_run_ns;
 };
 
 /*

@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: 2026-09-30: p025（BUG-117）は cleared（executor の object 表の lock）。次の候補: compositor の frame の長さの分析（C6）、GPU の object の 128 の枠。以下は前の記録: 2026-09-30: p024 は cleared（C6 の物差しを作り直し、10 app で中央値約 120 ms と判明）。次は p025（BUG-117、最優先）。以下は前の記録: 2026-09-30: p023 は cleared（分岐の中の ALU を飛ぶ。compositor の 1 run 9.3〜9.7 → 6.7〜6.8 ms、flip の率 7.7 → 9.5/s。latency の C6（50 ms 以下）は 2 回のうち 1 回）。次の候補: 同じ predicate の flag の作り直しの削減、draw ごとの停止（(b)）、素の 5330 での計測。以下は前の記録: 2026-09-30 wrap up: p023 の計測は済み（(a) 分岐の中の ALU が一番効く、(b) 効かない、(c) すりガラスは 1 run を変えず flip の率 +25%、すりガラスの扱いはユーザーの判断）。次は p023 の実装（分岐の中の ALU を飛ぶ）。2026-09-29 夜: p021（compiler の guard）・p020（RPS）・p019（FIFO の先行）は cleared。MAILBOX・IMMEDIATE はユーザーの判断でデモの後（F-057）。次の候補は compiler の段 2（分岐の中の ALU を飛ぶ）か encoder の scoreboard の緩和（main の判断）。以下は前の記録: 2026-09-29: p008（性能）を 3 つに分け（p008 完了待ちの割込み・p018 非同期の実行器・p019 present mode）、p008・p009 は cleared。p018 は着手前の計測で uncleared（8 app の遅さは compositor の GPU の合成、占有 90%）。p021（compiler: 分岐の中の texture の send を IF で飛ぶ）は cleared（10 app の latency 132 → 32 ms）。p018 は計り直しで効果が小さい見込み（要否は main の判断）。p019 と F-054（p020）は RPS の agent。その前、2026-09-28 の夜: p001〜p006 は実機で確認（MRT・query・SSBO・stencil・multisample・transform feedback）。HDMI の主出力 p011〜p013、BUG-091（p014）は cleared。p015（BUG-085 の再試験）は cleared: BUG-094 の原因（HAL の APIC timer の較正と AP の timecounter の probe が vCPU の停止で狂う）を直し、修正の後の 10 回で BUG-085・BUG-094 とも 0。p016（lease の替わり目で HDMI を点けたまま）は cleared: login・logout の 暗転 0（実機の passthrough の register）。p017（BUG-058）は 6 回で再現せず uncleared。BUG-095（capture の image の power-off）を起票。次: 実物の LCD での login・logout の目視（ユーザー）→ p007〜p010
+Resume point: 2026-09-30（P1）: p027 で L1 を満たした（C6 中央値 91.3 ms、stress 100 回で停止 0）。WS075 は L1 で区切り、L2（p028・p029）は全 WS が L1 にそろってから（Q1）。以下は前の記録: 2026-09-30: ユーザーの方針「広く浅く」で段の計画（下の節）を立てた。p026 は cleared（C6 中央値 92.3 ms、L1 の C6 は満たす）。次は L1 の残り（p027: 最終の image で stress 100 回と C6 の 5 run）。以下は前の記録: 2026-09-30: p025（BUG-117）は cleared（executor の object 表の lock）。次の候補: compositor の frame の長さの分析（C6）、GPU の object の 128 の枠。以下は前の記録: 2026-09-30: p024 は cleared（C6 の物差しを作り直し、10 app で中央値約 120 ms と判明）。次は p025（BUG-117、最優先）。以下は前の記録: 2026-09-30: p023 は cleared（分岐の中の ALU を飛ぶ。compositor の 1 run 9.3〜9.7 → 6.7〜6.8 ms、flip の率 7.7 → 9.5/s。latency の C6（50 ms 以下）は 2 回のうち 1 回）。次の候補: 同じ predicate の flag の作り直しの削減、draw ごとの停止（(b)）、素の 5330 での計測。以下は前の記録: 2026-09-30 wrap up: p023 の計測は済み（(a) 分岐の中の ALU が一番効く、(b) 効かない、(c) すりガラスは 1 run を変えず flip の率 +25%、すりガラスの扱いはユーザーの判断）。次は p023 の実装（分岐の中の ALU を飛ぶ）。2026-09-29 夜: p021（compiler の guard）・p020（RPS）・p019（FIFO の先行）は cleared。MAILBOX・IMMEDIATE はユーザーの判断でデモの後（F-057）。次の候補は compiler の段 2（分岐の中の ALU を飛ぶ）か encoder の scoreboard の緩和（main の判断）。以下は前の記録: 2026-09-29: p008（性能）を 3 つに分け（p008 完了待ちの割込み・p018 非同期の実行器・p019 present mode）、p008・p009 は cleared。p018 は着手前の計測で uncleared（8 app の遅さは compositor の GPU の合成、占有 90%）。p021（compiler: 分岐の中の texture の send を IF で飛ぶ）は cleared（10 app の latency 132 → 32 ms）。p018 は計り直しで効果が小さい見込み（要否は main の判断）。p019 と F-054（p020）は RPS の agent。その前、2026-09-28 の夜: p001〜p006 は実機で確認（MRT・query・SSBO・stencil・multisample・transform feedback）。HDMI の主出力 p011〜p013、BUG-091（p014）は cleared。p015（BUG-085 の再試験）は cleared: BUG-094 の原因（HAL の APIC timer の較正と AP の timecounter の probe が vCPU の停止で狂う）を直し、修正の後の 10 回で BUG-085・BUG-094 とも 0。p016（lease の替わり目で HDMI を点けたまま）は cleared: login・logout の 暗転 0（実機の passthrough の register）。p017（BUG-058）は 6 回で再現せず uncleared。BUG-095（capture の image の power-off）を起票。次: 実物の LCD での login・logout の目視（ユーザー）→ p007〜p010
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -55,8 +55,8 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p003](phase003/phase.md) | 実行器: primitive topology（triangle strip・fan、line list・strip、point list。今は triangle list だけ）、幅 1 以外の線、index の型、vkFreeDescriptorSets（F-023）。GL の app の大半が要る | cleared（2026-09-27。strip・fan・line・point を描く、実機の vkx 9/9。幅・PointSize・vkFreeDescriptorSets は後） | p001 |
 | [ws075-p004](phase004/phase.md) | compiler（GLES 2 の核）: 補間の Flat・NoPerspective・Centroid、input builtin（FragCoord・FrontFacing・PointCoord・VertexIndex・InstanceIndex）、output PointSize、texture() の bias・offset と textureLod、local・interface の配列・struct と配列の定数、微分、Determinant・MatrixInverse・pack half、8・16 bit の vertex format | cleared（2026-09-27。実機 vke2 17/17・vke1 4/4・vkx 9/9・vkc 9/9、zdesktop・x11 の capture 6/6。Grad・fine の y 微分は p005） | p001 |
 | [ws075-p005](phase005/phase.md) | texture の種類: compiler の texelFetch（OpImage・OpImageFetch）・textureSize、shadow（Dref）、integer sampler、cube・配列・3D の sampler。実行器の cube・配列・3D の image、mip level・layer への描画（ws031-p030）、depth の copy、sampler の compare 等（ws031-p034）、descriptor 配列（ws031-p035） | cleared（2026-09-28。実機 egltest の glsl・glsl3・fbo・cube・es3・formats・volumes が failures 0、vke1 6/6・vke2 17/17・vkx 9/9・vkc 9/9、zdesktop・files PASS） | p004 |
-| [ws075-p006](phase006/phase.md) | 実行器と compiler: MRT（ws031-p031）、occlusion query（sync の module）、texel buffer（buffer view）、storage buffer（transform feedback の VS の store）、stencil、multisample の image と resolve | in-progress（増分 1〜5 済み、後退を修正。増分 6 は実機が未実施） | p005 |
-| ws075-p007 | GL 3.2 の stage: geometry shader（compiler の stage と 3DSTATE_GS）、gl_Layer と layered の描画、PrimitiveId。着手前に分ける | planning | p006 |
+| [ws075-p006](phase006/phase.md) | 実行器と compiler: MRT（ws031-p031）、occlusion query（sync の module）、texel buffer（buffer view）、storage buffer（transform feedback の VS の store）、stencil、multisample の image と resolve | in-progress（増分 1〜5 済み、後退を修正。増分 6 は実機が未実施）。2026-09-30 段の外（後回し、下の段の計画） | p005 |
+| ws075-p007 | GL 3.2 の stage: geometry shader（compiler の stage と 3DSTATE_GS）、gl_Layer と layered の描画、PrimitiveId。着手前に分ける | planning（2026-09-30 段の外、後回し） | p006 |
 | [ws075-p008](phase008/phase.md) | 性能 1: 完了待ちを割込みへ（ws031-p044）。2026-09-29 に 3 つに分けた（p018・p019） | cleared（2026-09-29。worker は engine の割込みで起きる。実機の passthrough で request の終わりの 149/150 が割込みの直後、latency 49.3 ms・20 flip/s は前と同じ、vkx 9/9） | p002 |
 | [ws075-p009](phase009/phase.md) | 安定: BUG-056・BUG-057（実機の zgears の止まり）ほか p002〜p008 で出た bug | cleared（2026-09-29。render の context の上限 8 → 32 と compiler の OpSwitch を直し、App Home の 8 app が全て起動、20 分の負荷で failed 0。BUG-094 resolved） | p002 |
 | ws075-p010 | 規約の全文との照合、統合回帰（最後） | planning | 全 Phase |
@@ -76,11 +76,46 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | （候補） | draw ごとの pipeline の停止と flush の削減（p023 の (b)、今の compositor では効かなかった） | planning | — |
 | [ws075-p024](phase024/phase.md) | C6 を判定できる物差し（cursor が出る flip まで、5 run 以上をまとめる）・select の flag の再利用・host の fixture の既存の失敗 | cleared（2026-09-30。10 app の C6 は中央値 121.5 ms・p90 173.0 ms（5 run、200 試料）で 50 ms を満たさない。旧い latency は pointer を含まない flip で止まり小さく出ていた。flag の再利用で 1 run -3%、C6 は変わらず。host の fixture は全 10 個 PASS） | p023 |
 | [ws075-p025](phase025/phase.md) | [BUG-117](../bugs/BUG-117.md): 窓の多いとき executor が set 0 binding 0 の view・sampler の無い draw を拒み compositor の描画が止まる | cleared（2026-09-30。executor の object 表を複数の session が lock 無しに同時に変え、compositor の descriptor set が消えていた。表と allocation の list に mutex。実機の passthrough の stress 100 回で set の消失 2 → 0 件、vkx・vke1・vke2・vkc PASS） | p024 |
-| （候補） | compositor の frame の長さの主因の分析（C6: 10 app で約 120 ms、1 frame ≒ 100 ms。1 frame あたり約 7 run の直列の実行か client を待つのか）。BUG-117 の後 | planning | p025 |
+| [ws075-p026](phase026/phase.md) | compositor の frame の長さの主因の分析と、縮める手（C6） | cleared（2026-09-30。主因は executor の同期の run（1 frame 約 58 ms、739 draw を 5〜7 run）と frame pacing の待ち（約 31 ms）。pointer が動いた frame は pacing を待たない（compositor）: C6 中央値 121.1 → 92.3 ms・p90 191.7 → 140.8 ms（5 run）、flip 9.5 → 14/s。段の L1 の C6 は満たす） | p025 |
+| [ws075-p027](phase027/phase.md) | L1 の判定: 最終の image で stress-117 の 100 回（停止 0・消失 0）と C6 の 5 run（中央値 100 ms 以内） | cleared（2026-09-30、P1。L1 を満たす: C6 中央値 91.3 ms・p90 135.9 ms（5 run）、stress 100 回で停止 0・拒否 0・消失 0。素の 5330 は未実施） | p026 |
+| ws075-p028 | L2 の計測: 1 frame の draw のうち backdrop の割合、slot を 512 にした 1 run の実験、backdrop を使い回した 1 run の実験 | planning | p027 |
+| ws075-p029 | L2 の実装: p028 で効いた方（C6 中央値 75 ms 以内を 5 run で） | planning | p028 |
+| ws075-p030 | L3 の計測と手の選択（L2 の後の frame の内訳） | planning | p029 |
 | （候補） | GPU の object の枠（128）が 30 窓で尽きる（`gt memory: object pool exhausted`、p025 で観測） | planning | — |
 
 各 Phase の受け入れは、host の survey（`plan/ws075/tests/shader-survey/run.sh`）の該当の不足が 0 になることと、実機の capture
 （egltest・glxtest の場面の capture の scenario は p003 で足す）。
+
+
+## 段の計画（2026-09-30、ユーザーの方針「広く浅く」）
+
+ユーザーの方針（2026-09-30 朝、Q1 経由）: デモ critical の WS は各 WS を「まず動く」の段までそろえ、磨き込みは段（L1・L2・L3…）ごとに
+数値目標を持つ小さな Phase（1〜2 時間）に分ける。どこで止まってもデモの全場面がその時点の段で動く。1 つの WS を深く掘り続けない。
+
+WS075 の段の数値目標は、デモの S11（窓 10 個の操作）の応答（WS099 の C6: 窓 10 個で pointer の移動から表示までの中央値）と
+止まらないこと。どの段も測り方は同じ:
+
+- C6: 5330 の passthrough で `plan/ws075/tests/hdmi/measure-apps.sh` を同じ image で 5 run、`plan/ws075/tests/hdmi/c6.py` のまとめた
+  中央値（p90 も記録）。
+- 止まらないこと: `plan/ws075/tests/hdmi/stress-117.sh 100`（10 app の上で Model viewer の開閉 100 回、毎回 flip を数える）で描画の停止 0、
+  kernel log の `draw refused`・`not a descriptor set` 0。
+- 回帰: `test-hw.sh` の vkx・vke1・vke2・vkc、host の `run-vk-host-tests.sh`（全 10 個）、QEMU の boot test、画面の画素の比較（各 app の撮影）。
+- 素の 5330 での確認は段ごとに 1 回（ユーザーの実機、未実施のものは未実施と書く）。
+
+| 段 | 数値目標 | 今（2026-09-30） | 何を直せば届く見込みか | Phase（各 1〜2 時間） |
+| --- | --- | --- | --- | --- |
+| L0 | 窓 10 個が開き、描画が続く | 済み（p021〜p025） | — | — |
+| L1 | C6 中央値 100 ms 以内・描画の停止 0（stress 100 回） | **済み（p027）**: C6 91.3 ms（5 run）、stress 100 回で停止 0 | 確かめるだけ | p027: 最終の image で stress 100 回と C6 の 5 run（L1 の判定） |
+| L2 | C6 中央値 75 ms 以内 | 92.3 ms | frame の GPU の時間（約 58 ms、1 frame 739 draw）を半分に。draw の数は窓ごとの backdrop（下の scene を 1/8 で描き直して blur）で窓の数の 2 乗に増える。(a) 下が変わらない窓の backdrop を使い回す（compositor、backdrop.c・shell.c）、または (b) slot を増やし（128 → 512）run の数を 5〜7 → 1〜2 に（executor、heap.h）。(a) は絵を変えない範囲で。まず (a)・(b) の効きを 1 run ずつの実験で測ってから 1 つ実装 | p028: 計測（backdrop の draw の割合、slot を増やした 1 run の実験）。p029: 効く方を実装し C6 の 5 run |
+| L3 | C6 中央値 50 ms 以内（WS099 の C6） | — | frame を約 30 ms に: L2 の後の残りの GPU の時間（draw ごとの固定の費用: slot ごとの状態の書き直し、context setup）と、同期の run の間の CPU の空き（非同期の実行器、p018）。L2 の結果で決める | p030: L2 の後の frame の内訳の計測と手の選択。p031〜: 1 つずつ（各 1〜2 時間） |
+
+段の外（後回し、デモの台本に要らない。必要になったら段の計画に入れる）:
+
+- p006 の残り（GL の MRT・occlusion query・texel buffer・transform feedback・stencil・multisample の実機の増分 6）、p007（GL 3.2 の
+  geometry shader など）。デモの台本は GL 3.2 の機能を使わない（zgears・glxtest の基本は p005 まで）。
+- p017（BUG-058 の再試験）、p022（scoreboard の緩和、効かなかった）、draw ごとの pipeline の停止の削減（p023 の (b)、効かなかった）。
+- GPU の object の枠（128）が 30 窓で尽きる（BUG-120、tracking）。デモの S11 は窓 10 個。
+- p010（規約の全文との照合、統合回帰）は WS の完了の条件として最後に行う（段とは別）。
 
 
 ## files の実機の場面（main の依頼、2026-09-28）
@@ -123,3 +158,12 @@ i915 の executor の試験（vkx・vke1・vke2・vkc、gentool、capture の場
 | ws031-p041（OpSwitch・関数呼出し） | p004（今の corpus には無い。client は glslc -O で inline 化される。GL の shader で要るとき） |
 | ws031-p044（完了の割込み） | p008 |
 | ws031-p045（非同期の実行器） | p008 → p018（2026-09-29 に分けた） |
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- 広く浅くの方針で、L1（p027 の確かめ）の後は他の WS へ回り、L2（p028・p029）は全 WS が L1 にそろってから。
+- **L2 の作業像**: p028 は 2 つの手を 1 run ずつの実験の build で比べるだけ（source は main に出さない）。(a) backdrop の使い回しは、
+  下の scene の damage が無い窓の blur を前の frame の結果で済ませる。(b) slot 512 は executor の heap の大きさの変更。効きの大きい方だけを
+  p029 で実装する。どちらも「画面が画素まで同じ」が必須。
+- **ハーネス**: `measure-apps.sh` 5 run と `c6.py`、`stress-117.sh` 100 回、test-hw（vkx・vke1・vke2・vkc）、`engine-gdb.sh` と kernel log の frame の内訳
+  （p026 で常設）。実機の passthrough の lock は WS099（P5）・WS101 と共有。

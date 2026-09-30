@@ -120,6 +120,15 @@ struct i915_worker_context {
 	uint32_t engine_runs;
 
 	/*
+	 * Of the synchronous batches (the executor's submits, whose caller
+	 * sleeps): how long they waited in the queue before the worker took
+	 * them, and how long from the queue to their end, in nanoseconds
+	 * (ws075-p026).  Read the same way.
+	 */
+	uint64_t queue_ns;
+	uint64_t round_ns;
+
+	/*
 	 * The address space the logical ring context names.  Only top_pd_dma is
 	 * read: it is the top table of the session's own address space.
 	 */
@@ -156,6 +165,9 @@ struct i915_worker_sync {
 
 	/* A presentation: the frame, read by the worker while the caller sleeps. */
 	const struct i915_worker_present *present;
+
+	/* When the item was queued (drv_i915_perf_now()), for the context's queue and round times. */
+	uint64_t queued_at;
 
 	/* Nonzero once the worker ran the batch, and how it ended. */
 	int done;
@@ -659,6 +671,7 @@ drv_i915_worker_run_sync(
 
 	/* Queues the batch and sleeps until it has run; the whole round trip is timed. */
 	start = drv_i915_perf_now();
+	item.queued_at = start;
 	error = i915_worker_queue_sync(device, &item);
 	drv_i915_perf_add(&device->perf, I915_PERF_RUN, start);
 	if (error != 0)
@@ -1074,6 +1087,7 @@ i915_worker_run_sync_item(
 	int in_display)
 {
 	struct i915_device *device;
+	struct i915_worker_context *record;
 	unsigned long irq;
 	uint64_t start;
 	int error;
@@ -1087,6 +1101,15 @@ i915_worker_run_sync_item(
 		start = drv_i915_perf_now();
 		error = i915_worker_run(worker, item->context, item->batch_va, 1, 0U);
 		drv_i915_perf_add(&device->perf, I915_PERF_GPU, start);
+
+		/* The context's time in the queue and to the end (ws075-p026). */
+		record = i915_worker_find(worker, item->context);
+		if (record != NULL && item->queued_at != 0U) {
+			record->queue_ns += start - item->queued_at;
+			record->round_ns += drv_i915_perf_now() - item->queued_at;
+		}
+
+		/* How it ended. */
 		if (error == 0) {
 			worker->executed++;
 		} else {

@@ -315,6 +315,7 @@ struct fm_desktop {
 	int click_index;
 	uint64_t click_ms;
 	int logged;
+	uint64_t select_ms;
 	int pressing;
 	int press_alone;
 	int press_index;

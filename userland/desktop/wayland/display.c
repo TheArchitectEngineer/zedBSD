@@ -458,9 +458,9 @@ zwl_schedule(
 	/* wl_shm images are copied, and their buffers released, while no frame is in flight. */
 	(void)zwl_shm_upload(server);
 
-	/* The windows the last frame told get a moment to commit (frame pacing). */
+	/* The windows the last frame told get a moment to commit (frame pacing), unless the pointer moved and waits to be shown. */
 	now = zwl_milliseconds();
-	if (server->awaiting != 0 && now - server->frame_done_ms < server->frame_wait_ms)
+	if (server->awaiting != 0 && !server->pointer_moved && now - server->frame_done_ms < server->frame_wait_ms)
 		return;
 
 	/* Window mode draws when something changed (all of it, or a part) and no frame is in flight. */
