@@ -18,16 +18,20 @@
  * gets is opaque.  A still image then gets its levels of halves, each the
  * box average of the one before, down to a side of IV_LEVEL_SMALLEST, for
  * showing it small without shimmering.
+ *
+ * The JPEG decoding, the EXIF orientation and the drawing of a GIF's frame
+ * are shared with the file manager's thumbnails (userland/desktop/picture,
+ * ws094-p013).
  */
 
 #include "imageview.h"
 
+#include "../picture/picture.h"
+
 #include <compat/gif_lib.h>
-#include <compat/jpeglib.h>
 #include <compat/png/png.h>
 
 #include <errno.h>
-#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,13 +48,6 @@
 /* The shortest frame an animated GIF is shown for, and what a shorter delay is taken for, in milliseconds (as browsers do). */
 #define IMAGE_DELAY_SHORTEST	20U
 #define IMAGE_DELAY_DEFAULT	100U
-
-/* The EXIF orientation tag, and the kinds of TIFF value it may come in. */
-#define IMAGE_EXIF_ORIENTATION	0x0112U
-#define IMAGE_TIFF_SHORT	3U
-
-/* The JPEG APP1 marker, which carries EXIF. */
-#define IMAGE_JPEG_APP1		(JPEG_APP0 + 1)
 
 /* The longest side any decoder accepts before the image is refused as too large. */
 #define IMAGE_SIDE_MAX		32768U
@@ -69,45 +66,17 @@ enum image_kind {
 	IMAGE_KIND_GIF
 };
 
-/*
- * A JPEG being read: libjpeg's error manager, which jumps back here
- * instead of ending the program, and where it jumps to.
- */
-struct image_jpeg_error {
-	struct jpeg_error_mgr manager;
-	jmp_buf back;
-};
-
-/*
- * A decoded picture before it becomes an image: its premultiplied pixels,
- * its size and whether any pixel is not opaque.
- */
-struct image_picture {
-	uint32_t *pixels;
-	int width;
-	int height;
-	int has_alpha;
-};
-
 static enum image_kind image_kind(const char *path, const char **format, int *error);
-static int image_png(struct iv_image *image, struct image_picture *picture);
-static int image_jpeg(struct iv_image *image, struct image_picture *picture);
-static void image_jpeg_exit(j_common_ptr info);
-static void image_jpeg_quiet(j_common_ptr info, int level);
-static int image_jpeg_orientation(j_decompress_ptr info);
-static int image_gif(struct iv_image *image, struct image_picture *picture);
+static int image_png(struct iv_image *image, struct keiland_picture *picture);
+static int image_jpeg(struct iv_image *image, struct keiland_picture *picture);
+static int image_gif(struct iv_image *image, struct keiland_picture *picture);
 static int image_gif_frames(struct iv_image *image, GifFileType *gif, uint32_t *screen);
-static void image_gif_draw(GifFileType *gif, int index, int transparent, uint32_t *screen);
 static void image_gif_clear(GifFileType *gif, int index, uint32_t *screen);
-static uint32_t image_premultiply(unsigned red, unsigned green, unsigned blue, unsigned alpha);
-static int image_orient(struct image_picture *picture, int orientation);
 static int image_halve(const uint32_t *pixels, int width, int height, uint32_t **result, int *result_width, int *result_height);
-static int image_fit(struct iv_image *image, struct image_picture *picture, int max_dimension);
+static int image_fit(struct iv_image *image, struct keiland_picture *picture, int max_dimension);
 static void image_checker(uint32_t *pixels, int width, int height);
 static int image_levels(struct iv_image *image);
 static void image_refuse(struct iv_image *image, int error, const char *reason);
-static unsigned image_read16(const unsigned char *data, int big_endian);
-static unsigned long image_read32(const unsigned char *data, int big_endian);
 
 /*
  * Decodes the image in a file, making it no larger than max_dimension on
@@ -123,7 +92,7 @@ iv_image_load(
 	const char *path,
 	int max_dimension)
 {
-	struct image_picture picture;
+	struct keiland_picture picture;
 	enum image_kind kind;
 	uint64_t started;
 	uint64_t elapsed;
@@ -255,81 +224,11 @@ iv_image_orientation(
 	const unsigned char *data,
 	size_t size)
 {
-	const unsigned char *tiff;
-	unsigned long directory;
-	unsigned long offset;
-	size_t tiff_size;
-	unsigned count;
-	unsigned index;
-	unsigned tag;
-	unsigned type;
-	unsigned value;
-	int big_endian;
-	int match;
+	int orientation;
 
-	/* A block too short for the "Exif" header and a TIFF header has no orientation. */
-	if (size < 14U)
-		return 1;
-
-	/* The block starts "Exif" and two zeros, then the TIFF header. */
-	match = memcmp(data, "Exif\0\0", 6U);
-	if (match != 0)
-		return 1;
-
-	/* The TIFF header and the rest of the block, which the offsets count from. */
-	tiff = data + 6;
-	tiff_size = size - 6U;
-
-	/* The byte order: II (little-endian) or MM (big-endian), then 42. */
-	if (tiff[0] == 'I' && tiff[1] == 'I') {
-		big_endian = 0;
-	} else if (tiff[0] == 'M' && tiff[1] == 'M') {
-		big_endian = 1;
-	} else {
-		return 1;
-	}
-
-	/* The magic 42 confirms the header. */
-	value = image_read16(tiff + 2, big_endian);
-	if (value != 42U)
-		return 1;
-
-	/* The first directory, which must hold its count. */
-	directory = image_read32(tiff + 4, big_endian);
-	if (directory > tiff_size - 2U)
-		return 1;
-
-	/* The number of entries in the directory. */
-	count = image_read16(tiff + directory, big_endian);
-
-	/* Looks through the directory's entries (twelve bytes each) for the orientation. */
-	for (index = 0; index < count; index++) {
-		/* An entry past the end of the block ends the search. */
-		offset = directory + 2U + (unsigned long)index * 12U;
-		if (offset > tiff_size - 12U)
-			return 1;
-
-		/* Another tag is passed over. */
-		tag = image_read16(tiff + offset, big_endian);
-		if (tag != IMAGE_EXIF_ORIENTATION)
-			continue;
-
-		/* A SHORT value sits at the start of the entry's value field. */
-		type = image_read16(tiff + offset + 2U, big_endian);
-		if (type != IMAGE_TIFF_SHORT)
-			return 1;
-
-		/* The value, which must be one of the eight orientations. */
-		value = image_read16(tiff + offset + 8U, big_endian);
-		if (value < 1U || value > 8U)
-			return 1;
-
-		/* Reports the orientation the file gives. */
-		return (int)value;
-	}
-
-	/* No orientation: the image is shown as stored. */
-	return 1;
+	/* The shared reading (userland/desktop/picture). */
+	orientation = keiland_picture_exif_orientation(data, size);
+	return orientation;
 }
 
 /*
@@ -421,7 +320,7 @@ image_kind(
 static int
 image_png(
 	struct iv_image *image,
-	struct image_picture *picture)
+	struct keiland_picture *picture)
 {
 	png_image png;
 	const char *interlaced;
@@ -494,7 +393,7 @@ image_png(
 
 	/* Each pixel's straight RGBA into a premultiplied word. */
 	for (index = 0; index < count; index++) {
-		picture->pixels[index] = image_premultiply(bytes[index * 4U], bytes[index * 4U + 1U], bytes[index * 4U + 2U], bytes[index * 4U + 3U]);
+		picture->pixels[index] = keiland_picture_premultiply(bytes[index * 4U], bytes[index * 4U + 1U], bytes[index * 4U + 2U], bytes[index * 4U + 3U]);
 
 		/* A pixel that lets anything through makes the picture need the checkerboard. */
 		if (bytes[index * 4U + 3U] != 255U)
@@ -514,21 +413,9 @@ image_png(
 static int
 image_jpeg(
 	struct iv_image *image,
-	struct image_picture *picture)
+	struct keiland_picture *picture)
 {
-	struct jpeg_decompress_struct info;
-	struct image_jpeg_error failure;
-	unsigned char *volatile row;
 	int orientation;
-	JSAMPROW rows[1];
-	unsigned char *line;
-	unsigned cyan;
-	unsigned magenta;
-	unsigned yellow;
-	unsigned black;
-	unsigned x;
-	int inverted;
-	int cmyk;
 	int error;
 	FILE *file;
 
@@ -542,128 +429,30 @@ image_jpeg(
 		return error;
 	}
 
-	/* A decompressor whose errors come back here. */
-	memset(&info, 0, sizeof(info));
-	info.err = jpeg_std_error(&failure.manager);
-	failure.manager.error_exit = image_jpeg_exit;
-	failure.manager.emit_message = image_jpeg_quiet;
-	row = NULL;
-
-	/*
-	 * An error in libjpeg comes back here (setjmp must stand in the
-	 * condition itself); row is volatile so that it survives the jump.
-	 */
-	if (setjmp(failure.back) != 0) {
-		jpeg_destroy_decompress(&info);
-		fclose(file);
-		free(row);
-		free(picture->pixels);
-		picture->pixels = NULL;
+	/* The picture as stored and its orientation (the shared decoding, userland/desktop/picture). */
+	error = keiland_picture_jpeg(file, NULL, 0U, IMAGE_SIDE_MAX, 0UL, picture, &orientation);
+	fclose(file);
+	if (error == EINVAL) {
 		image_refuse(image, EINVAL, "The JPEG image is damaged or of a kind not supported");
 		return EINVAL;
 	}
 
-	/* The decompressor, reading the file. */
-	jpeg_create_decompress(&info);
-	jpeg_stdio_src(&info, file);
-
-	/* The header, with APP1 (EXIF) kept for the orientation. */
-	jpeg_save_markers(&info, IMAGE_JPEG_APP1, 0xffffU);
-	(void)jpeg_read_header(&info, TRUE);
-	orientation = image_jpeg_orientation(&info);
-
-	/* RGB out, except CMYK, which is turned into RGB here. */
-	if (info.jpeg_color_space == JCS_CMYK || info.jpeg_color_space == JCS_YCCK) {
-		info.out_color_space = JCS_CMYK;
-		cmyk = 1;
-	} else {
-		info.out_color_space = JCS_RGB;
-		cmyk = 0;
-	}
-
-	/* The decoding starts; Adobe's marker says whether CMYK is stored inverted. */
-	inverted = info.saw_Adobe_marker;
-	(void)jpeg_start_decompress(&info);
-
-	/* A size the viewer can hold at all. */
-	if (info.output_width == 0U ||
-	    info.output_height == 0U ||
-	    info.output_width > IMAGE_SIDE_MAX ||
-	    info.output_height > IMAGE_SIDE_MAX) {
-		jpeg_destroy_decompress(&info);
-		fclose(file);
+	/* One too large to hold. */
+	if (error == E2BIG) {
 		image_refuse(image, E2BIG, "The image is too large");
 		return E2BIG;
 	}
 
-	/* The picture's size; a JPEG is always opaque. */
-	picture->width = (int)info.output_width;
-	picture->height = (int)info.output_height;
-	picture->has_alpha = 0;
-
-	/* Room for the picture's pixels. */
-	picture->pixels = malloc((size_t)picture->width * (size_t)picture->height * sizeof(uint32_t));
-	if (picture->pixels == NULL) {
-		jpeg_destroy_decompress(&info);
-		fclose(file);
-		image_refuse(image, ENOMEM, "There is not enough memory for this image");
-		return ENOMEM;
+	/* Memory ran out. */
+	if (error != 0) {
+		image_refuse(image, error, "There is not enough memory for this image");
+		return error;
 	}
-
-	/* Room for one row of samples as libjpeg gives them. */
-	row = malloc((size_t)picture->width * (size_t)info.output_components);
-	if (row == NULL) {
-		jpeg_destroy_decompress(&info);
-		fclose(file);
-		image_refuse(image, ENOMEM, "There is not enough memory for this image");
-		return ENOMEM;
-	}
-
-	/* Each row, into opaque words. */
-	line = row;
-	while (info.output_scanline < info.output_height) {
-		rows[0] = line;
-		(void)jpeg_read_scanlines(&info, rows, 1U);
-
-		/* Turns the row's samples into the picture's row. */
-		for (x = 0; x < info.output_width; x++) {
-			/* A CMYK row has four samples a pixel, an RGB row three. */
-			if (cmyk) {
-				/* The pixel's four inks as libjpeg gives them. */
-				cyan = line[x * 4U];
-				magenta = line[x * 4U + 1U];
-				yellow = line[x * 4U + 2U];
-				black = line[x * 4U + 3U];
-
-				/* Adobe's CMYK is stored inverted; plain CMYK is not, and is inverted here. */
-				if (!inverted) {
-					cyan = 255U - cyan;
-					magenta = 255U - magenta;
-					yellow = 255U - yellow;
-					black = 255U - black;
-				}
-
-				/* The inks, now as light, into the picture. */
-				picture->pixels[(size_t)(info.output_scanline - 1U) * (size_t)picture->width + x] =
-				    image_premultiply(cyan * black / 255U, magenta * black / 255U, yellow * black / 255U, 255U);
-			} else {
-				/* The RGB pixel into the picture. */
-				picture->pixels[(size_t)(info.output_scanline - 1U) * (size_t)picture->width + x] =
-				    image_premultiply(line[x * 3U], line[x * 3U + 1U], line[x * 3U + 2U], 255U);
-			}
-		}
-	}
-
-	/* The decompressor and the file are done with. */
-	(void)jpeg_finish_decompress(&info);
-	jpeg_destroy_decompress(&info);
-	fclose(file);
-	free(row);
 
 	/* The picture turned upright. */
 	image->file_width = picture->width;
 	image->file_height = picture->height;
-	error = image_orient(picture, orientation);
+	error = keiland_picture_orient(picture, orientation);
 	if (error != 0) {
 		image_refuse(image, error, "There is not enough memory for this image");
 		return error;
@@ -679,60 +468,11 @@ image_jpeg(
 	return 0;
 }
 
-/* Ends a JPEG's decoding at an error: back to image_jpeg(). */
-static void
-image_jpeg_exit(
-	j_common_ptr info)
-{
-	struct image_jpeg_error *failure;
-
-	/* The error manager is the first member of image_jpeg_error. */
-	failure = (struct image_jpeg_error *)(void *)info->err;
-	longjmp(failure->back, 1);
-}
-
-/* Keeps libjpeg's warnings off the standard error (the viewer's log). */
-static void
-image_jpeg_quiet(
-	j_common_ptr info,
-	int level)
-{
-	/* A warning changes nothing the viewer shows, so it is dropped. */
-	UNUSED_PARAMETER(info);
-	UNUSED_PARAMETER(level);
-}
-
-/* Reads a JPEG's orientation from its saved APP1 markers (1 when there is none). */
-static int
-image_jpeg_orientation(
-	j_decompress_ptr info)
-{
-	jpeg_saved_marker_ptr marker;
-	int orientation;
-
-	/* The first APP1 that is EXIF gives it. */
-	for (marker = info->marker_list;
-	     marker != NULL;
-	     marker = marker->next) {
-		/* Another kind of marker says nothing of the orientation. */
-		if (marker->marker != IMAGE_JPEG_APP1)
-			continue;
-
-		/* A readable orientation other than the default. */
-		orientation = iv_image_orientation(marker->data, marker->data_length);
-		if (orientation != 1)
-			return orientation;
-	}
-
-	/* The image as stored. */
-	return 1;
-}
-
 /* Decodes a GIF into a picture: its first frame, and every frame of an animated one into the image's frames. */
 static int
 image_gif(
 	struct iv_image *image,
-	struct image_picture *picture)
+	struct keiland_picture *picture)
 {
 	GifFileType *gif;
 	uint32_t *screen;
@@ -845,7 +585,7 @@ image_gif_frames(
 		memset(&control, 0, sizeof(control));
 		control.TransparentColor = NO_TRANSPARENT_COLOR;
 		(void)DGifSavedExtensionToGCB(gif, 0, &control);
-		image_gif_draw(gif, 0, control.TransparentColor, screen);
+		keiland_picture_gif_draw(gif, 0, control.TransparentColor, screen);
 
 		/* Succeeded: one frame on the screen. */
 		return 0;
@@ -882,7 +622,7 @@ image_gif_frames(
 			memcpy(saved, screen, count * sizeof(uint32_t));
 
 		/* The frame over what the frames before it left. */
-		image_gif_draw(gif, index, control.TransparentColor, screen);
+		keiland_picture_gif_draw(gif, index, control.TransparentColor, screen);
 
 		/* The composed frame over the checkerboard. */
 		image->frames[index] = malloc(count * sizeof(uint32_t));
@@ -915,57 +655,6 @@ image_gif_frames(
 	return 0;
 }
 
-/* Draws one frame of a GIF onto the screen, leaving its transparent colour's pixels as they are. */
-static void
-image_gif_draw(
-	GifFileType *gif,
-	int index,
-	int transparent,
-	uint32_t *screen)
-{
-	const SavedImage *frame;
-	const ColorMapObject *map;
-	const GifColorType *colour;
-	unsigned value;
-	int screen_x;
-	int screen_y;
-	int x;
-	int y;
-
-	/* The frame's colour map: its own, or the screen's. */
-	frame = &gif->SavedImages[index];
-	map = frame->ImageDesc.ColorMap;
-	if (map == NULL)
-		map = gif->SColorMap;
-
-	/* A frame without colours or pixels draws nothing. */
-	if (map == NULL || frame->RasterBits == NULL)
-		return;
-
-	/* Each pixel of the frame that falls on the screen. */
-	for (y = 0; y < frame->ImageDesc.Height; y++) {
-		screen_y = frame->ImageDesc.Top + y;
-		if (screen_y < 0 || screen_y >= gif->SHeight)
-			continue;
-
-		/* The row's pixels. */
-		for (x = 0; x < frame->ImageDesc.Width; x++) {
-			screen_x = frame->ImageDesc.Left + x;
-			if (screen_x < 0 || screen_x >= gif->SWidth)
-				continue;
-
-			/* A transparent pixel, or a colour the map lacks, leaves the screen as it is. */
-			value = frame->RasterBits[(size_t)y * (size_t)frame->ImageDesc.Width + (size_t)x];
-			if ((int)value == transparent || (int)value >= map->ColorCount)
-				continue;
-
-			/* The map's colour, opaque, onto the screen. */
-			colour = &map->Colors[value];
-			screen[(size_t)screen_y * (size_t)gif->SWidth + (size_t)screen_x] = image_premultiply(colour->Red, colour->Green, colour->Blue, 255U);
-		}
-	}
-}
-
 /* Clears a frame's rectangle of the screen to transparent (DISPOSE_BACKGROUND, as browsers treat it). */
 static void
 image_gif_clear(
@@ -990,113 +679,6 @@ image_gif_clear(
 				screen[(size_t)y * (size_t)gif->SWidth + (size_t)x] = 0U;
 		}
 	}
-}
-
-/* Makes a premultiplied 0xAARRGGBB word of straight components. */
-static uint32_t
-image_premultiply(
-	unsigned red,
-	unsigned green,
-	unsigned blue,
-	unsigned alpha)
-{
-	uint32_t word;
-
-	/* Each colour scaled by the alpha, rounded. */
-	red = (red * alpha + 127U) / 255U;
-	green = (green * alpha + 127U) / 255U;
-	blue = (blue * alpha + 127U) / 255U;
-	word = (uint32_t)alpha << 24;
-	word |= (uint32_t)red << 16;
-	word |= (uint32_t)green << 8;
-	word |= (uint32_t)blue;
-
-	/* Reports the premultiplied pixel. */
-	return word;
-}
-
-/*
- * Turns a picture as an EXIF orientation says (2 to 8; 1 leaves it):
- * mirrored, turned, or both, so that it shows upright.
- */
-static int
-image_orient(
-	struct image_picture *picture,
-	int orientation)
-{
-	uint32_t *turned;
-	int width;
-	int height;
-	int source_x;
-	int source_y;
-	int x;
-	int y;
-
-	/* Upright already, or an orientation that is not one. */
-	if (orientation <= 1 || orientation > 8)
-		return 0;
-
-	/* The turned picture's size: 5 to 8 swap the sides. */
-	width = picture->width;
-	height = picture->height;
-	if (orientation >= 5) {
-		width = picture->height;
-		height = picture->width;
-	}
-
-	/* Room for the turned picture. */
-	turned = malloc((size_t)width * (size_t)height * sizeof(uint32_t));
-	if (turned == NULL)
-		return ENOMEM;
-
-	/* Each pixel of the turned picture, from where the orientation says it was. */
-	for (y = 0; y < height; y++) {
-		for (x = 0; x < width; x++) {
-			/* The source pixel of this orientation. */
-			switch (orientation) {
-			case 2:
-				source_x = picture->width - 1 - x;
-				source_y = y;
-				break;
-			case 3:
-				source_x = picture->width - 1 - x;
-				source_y = picture->height - 1 - y;
-				break;
-			case 4:
-				source_x = x;
-				source_y = picture->height - 1 - y;
-				break;
-			case 5:
-				source_x = y;
-				source_y = x;
-				break;
-			case 6:
-				source_x = y;
-				source_y = picture->height - 1 - x;
-				break;
-			case 7:
-				source_x = picture->width - 1 - y;
-				source_y = picture->height - 1 - x;
-				break;
-			default:
-				source_x = picture->width - 1 - y;
-				source_y = x;
-				break;
-			}
-
-			/* The pixel into its turned place. */
-			turned[(size_t)y * (size_t)width + (size_t)x] = picture->pixels[(size_t)source_y * (size_t)picture->width + (size_t)source_x];
-		}
-	}
-
-	/* The turned picture replaces the stored one. */
-	free(picture->pixels);
-	picture->pixels = turned;
-	picture->width = width;
-	picture->height = height;
-
-	/* Succeeded: the picture is upright. */
-	return 0;
 }
 
 /* Makes a picture of half the size (rounded up), each pixel the average of the two by two it covers. */
@@ -1180,7 +762,7 @@ image_halve(
 static int
 image_fit(
 	struct iv_image *image,
-	struct image_picture *picture,
+	struct keiland_picture *picture,
 	int max_dimension)
 {
 	uint32_t *half;
@@ -1348,35 +930,4 @@ image_refuse(
 	image->error = error;
 	snprintf(image->reason, sizeof(image->reason), "%s", reason);
 	iv_log("IMAGE refused path=%s error=%d reason=%s", image->path, error, reason);
-}
-
-/* Reads a 16-bit number in a byte order. */
-static unsigned
-image_read16(
-	const unsigned char *data,
-	int big_endian)
-{
-	/* The most significant byte first, or last. */
-	if (big_endian)
-		return ((unsigned)data[0] << 8) | (unsigned)data[1];
-
-	/* Reports the little-endian number. */
-	return ((unsigned)data[1] << 8) | (unsigned)data[0];
-}
-
-/* Reads a 32-bit number in a byte order. */
-static unsigned long
-image_read32(
-	const unsigned char *data,
-	int big_endian)
-{
-	/* The most significant byte first, or last. */
-	if (big_endian) {
-		return ((unsigned long)data[0] << 24) | ((unsigned long)data[1] << 16) |
-		    ((unsigned long)data[2] << 8) | (unsigned long)data[3];
-	}
-
-	/* Reports the little-endian number. */
-	return ((unsigned long)data[3] << 24) | ((unsigned long)data[2] << 16) |
-	    ((unsigned long)data[1] << 8) | (unsigned long)data[0];
 }

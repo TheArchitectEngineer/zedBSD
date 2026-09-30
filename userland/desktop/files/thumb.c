@@ -10,6 +10,10 @@
  * PGM), their thumbnails for the icons and the preview, and the fitting
  * of a picture into a box.
  *
+ * JPEG (turned as its EXIF orientation says) and GIF (its first frame)
+ * are decoded the way Image Viewer decodes them, by the code the two
+ * share (userland/desktop/picture, ws094-p013).
+ *
  * Thumbnails are made when an item is drawn and not yet kept: the drawing
  * asks, one thumbnail is made each round of the main loop (reading a large
  * picture takes a moment, and the window keeps answering meanwhile), and
@@ -19,6 +23,8 @@
  */
 
 #include "files.h"
+
+#include "../picture/picture.h"
 
 #include <compat/png/png.h>
 #include <errno.h>
@@ -36,12 +42,22 @@
 #define THUMB_SIDE_MAX		8192
 #define THUMB_PIXELS_MAX	(16UL * 1024UL * 1024UL)
 
+/* The first bytes of a JPEG (its start of image and a marker) and of the two kinds of GIF. */
+#define THUMB_JPEG_SIGNATURE	"\xff\xd8\xff"
+#define THUMB_GIF87_SIGNATURE	"GIF87a"
+#define THUMB_GIF89_SIGNATURE	"GIF89a"
+
 /* The largest number a PPM header is read up to (larger ones are refused). */
 #define THUMB_NUMBER_MAX	100000
 
 static int thumb_read_file(const char *path, unsigned char **data, size_t *size);
 static int thumb_ppm(const unsigned char *data, size_t size, struct fm_image *image);
 static int thumb_png(const unsigned char *data, size_t size, struct fm_image *image);
+static int thumb_signed(const unsigned char *data, size_t size, const char *signature, size_t length);
+static int thumb_jpeg(const unsigned char *data, size_t size, struct fm_image *image);
+static int thumb_gif(const unsigned char *data, size_t size, struct fm_image *image);
+static int thumb_gif_read(GifFileType *gif, GifByteType *bytes, int count);
+static void thumb_adopt(struct keiland_picture *picture, struct fm_image *image);
 static int thumb_number(const unsigned char *data, size_t size, size_t *at);
 static int thumb_space(unsigned char byte);
 static struct fm_thumb *thumb_find(struct fm_app *app, const char *path, time_t modified);
@@ -50,8 +66,9 @@ static struct fm_thumb *thumb_slot(struct fm_app *app);
 /*
  * Reads a picture file into an image of opaque pixels.
  *
- * Returns 0, ENOTSUP for a format that is not read, EINVAL for a damaged
- * picture, or another errno value.
+ * Returns 0, ENOTSUP for a format that is not read (PPM, PGM, PNG, JPEG
+ * and GIF are), EINVAL for a damaged picture, EFBIG for one too large, or
+ * another errno value.
  */
 int
 fm_image_load(
@@ -60,6 +77,7 @@ fm_image_load(
 {
 	unsigned char *data;
 	size_t size;
+	int signed_as;
 	int error;
 
 	/* The whole file. */
@@ -78,6 +96,18 @@ fm_image_load(
 	/* A PNG by its signature. */
 	if (size > 8U && data[0] == 0x89U && data[1] == 'P' && data[2] == 'N' && data[3] == 'G')
 		error = thumb_png(data, size, image);
+
+	/* A JPEG by its start of image and first marker (ws094-p013). */
+	signed_as = thumb_signed(data, size, THUMB_JPEG_SIGNATURE, sizeof(THUMB_JPEG_SIGNATURE) - 1U);
+	if (signed_as)
+		error = thumb_jpeg(data, size, image);
+
+	/* A GIF by its signature, GIF87a or GIF89a. */
+	signed_as = thumb_signed(data, size, THUMB_GIF87_SIGNATURE, sizeof(THUMB_GIF87_SIGNATURE) - 1U);
+	if (!signed_as)
+		signed_as = thumb_signed(data, size, THUMB_GIF89_SIGNATURE, sizeof(THUMB_GIF89_SIGNATURE) - 1U);
+	if (signed_as)
+		error = thumb_gif(data, size, image);
 
 	/* The file's bytes are not needed any more. */
 	free(data);
@@ -594,4 +624,145 @@ thumb_slot(
 
 	/* Reports the slot. */
 	return &app->thumbs[oldest];
+}
+
+/* Tells whether a file's bytes start with a signature (and have more after it). */
+static int
+thumb_signed(
+	const unsigned char *data,
+	size_t size,
+	const char *signature,
+	size_t length)
+{
+	int differs;
+
+	/* A file no longer than the signature is not a picture. */
+	if (size <= length)
+		return 0;
+
+	/* The first bytes. */
+	differs = memcmp(data, signature, length);
+	return differs == 0;
+}
+
+/*
+ * Decodes a JPEG, turned upright as its EXIF orientation says; returns 0,
+ * EINVAL (damaged, or a kind not supported), EFBIG or ENOMEM.
+ */
+static int
+thumb_jpeg(
+	const unsigned char *data,
+	size_t size,
+	struct fm_image *image)
+{
+	struct keiland_picture picture;
+	int orientation;
+	int error;
+
+	/* The picture as stored, within the sizes the thumbnails take. */
+	error = keiland_picture_jpeg(NULL, data, size, THUMB_SIDE_MAX, THUMB_PIXELS_MAX, &picture, &orientation);
+	if (error == E2BIG)
+		return EFBIG;
+	if (error != 0)
+		return error;
+
+	/* Turned upright. */
+	error = keiland_picture_orient(&picture, orientation);
+	if (error != 0) {
+		free(picture.pixels);
+		return error;
+	}
+
+	/* Succeeded: the picture is the image's. */
+	thumb_adopt(&picture, image);
+	return 0;
+}
+
+/*
+ * The GIF being read from memory: its bytes and how far they were read
+ * (thumb_gif_read).
+ */
+struct thumb_gif_source {
+	const unsigned char *data;
+	size_t size;
+	size_t at;
+};
+
+/* Decodes a GIF's first frame; returns 0, EINVAL (damaged), EFBIG or ENOMEM. */
+static int
+thumb_gif(
+	const unsigned char *data,
+	size_t size,
+	struct fm_image *image)
+{
+	struct thumb_gif_source source;
+	struct keiland_picture picture;
+	GifFileType *gif;
+	int status;
+	int error;
+
+	/* The file's records, read from the bytes. */
+	source.data = data;
+	source.size = size;
+	source.at = 0;
+	error = 0;
+	gif = DGifOpen(&source, thumb_gif_read, &error);
+	if (gif == NULL)
+		return EINVAL;
+
+	/* Every frame's record at once (the first is drawn). */
+	status = DGifSlurp(gif);
+	if (status != GIF_OK) {
+		(void)DGifCloseFile(gif, &error);
+		return EINVAL;
+	}
+
+	/* The first frame on its clear screen, within the sizes the thumbnails take. */
+	error = keiland_picture_gif_first(gif, THUMB_SIDE_MAX, THUMB_PIXELS_MAX, &picture);
+	(void)DGifCloseFile(gif, &status);
+	if (error == E2BIG)
+		return EFBIG;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the picture is the image's. */
+	thumb_adopt(&picture, image);
+	return 0;
+}
+
+/* Gives libgif-compat up to a count of the GIF's bytes; returns how many were given. */
+static int
+thumb_gif_read(
+	GifFileType *gif,
+	GifByteType *bytes,
+	int count)
+{
+	struct thumb_gif_source *source;
+	size_t left;
+
+	/* The bytes not read yet, no more than asked for. */
+	source = gif->UserData;
+	left = source->size - source->at;
+	if (count < 0)
+		return 0;
+	if ((size_t)count < left)
+		left = (size_t)count;
+
+	/* Copied out, and the place moves on. */
+	memcpy(bytes, source->data + source->at, left);
+	source->at += left;
+	return (int)left;
+}
+
+/* Makes a decoded picture the image (the same pixels, freed by fm_image_release). */
+static void
+thumb_adopt(
+	struct keiland_picture *picture,
+	struct fm_image *image)
+{
+	image->pixels = picture->pixels;
+	image->width = picture->width;
+	image->height = picture->height;
+	image->stride = (size_t)picture->width;
+	picture->pixels = NULL;
 }
