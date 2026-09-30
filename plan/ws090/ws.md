@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p006 cleared（2026-09-30、KUI_VERSION 5: `kui_file_chooser_*`、libkeiland は KEILAND_VERSION 16 で chooser を除いた、Text Editor の dialog・chip は部品）。次は p007（WS089 の完了の後）・p008
+Resume point: p013（text-input-v3 の受け口、KUI_VERSION 6）cleared（2026-09-30）。次は p007（WS089 の完了の後）・p008
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -37,6 +37,7 @@ Resume point: p006 cleared（2026-09-30、KUI_VERSION 5: `kui_file_chooser_*`、
 | ws090-p009 | Files（その 1）: 描画の層と scroll | planning | p003、**WS094 の完了**（Files に `--desktop` を足している、2026-09-29 main） |
 | ws090-p010 | Files（その 2）: 部品と窓 | planning | p009・p005・p004 |
 | ws090-p011 | Terminal・Notes: 窓（見せ方は無し）と scroll の model | planning | p004 |
+| [ws090-p013](phase013/phase.md) | `kui_window` の text-input-v3 の受け口と Text Editor（WS102 の D1、2026-09-30 ユーザー） | cleared（2026-09-30。KUI_VERSION 6、QEMU の IME で `漢字`・`かな` が Text Editor に入り保存、host の回帰、boot PASS。WS102 の keyboard は未 merge で未実施） | p004 |
 | ws090-p012 | 規約の全文との照合と回帰 | planning | 全て |
 
 p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 までに移し終えたものだけ残す（design.md J5）。

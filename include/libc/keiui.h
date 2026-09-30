@@ -47,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows). */
-#define KUI_VERSION	5U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends). */
+#define KUI_VERSION	6U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -650,6 +650,23 @@ struct xdg_toplevel;
 #define KUI_WINDOW_CLOSE	12U
 #define KUI_WINDOW_POST		13U
 
+/*
+ * KUI_VERSION 6: the text an input method or zdesktop's on-screen keyboard
+ * sends through the text input (text-input-unstable-v3), while the window
+ * asks for it (kui_window_text_input): text to insert at the caret in place
+ * of the selection (text), the text being composed to show at the caret
+ * until it is committed or replaced (text, empty when it goes; begin and end
+ * are its cursor's byte offsets, -1 when hidden), and bytes to delete
+ * before and after the caret first (before, after).  They come in the order
+ * of the protocol's done: delete, commit, preedit.
+ */
+#define KUI_WINDOW_TEXT_COMMIT	14U
+#define KUI_WINDOW_TEXT_PREEDIT	15U
+#define KUI_WINDOW_TEXT_DELETE	16U
+
+/* The longest text one input carries, with its NUL (a longer one is cut at a character's start). */
+#define KUI_WINDOW_TEXT_MAX	256U
+
 /* The evdev codes of the pointer's buttons. */
 #define KUI_BUTTON_LEFT		0x110U
 #define KUI_BUTTON_RIGHT	0x111U
@@ -675,7 +692,8 @@ struct kui_window_options {
  * (a focus: 1 when it came), whether a key is a repeat, the modifiers held
  * (KUI_MOD_*), the wheel's distance in pixels, a finger's id and the time
  * it happened, when it was read, and its serial (a press's, for a popup or
- * a selection).
+ * a selection); for the text input's (KUI_VERSION 6), its text, the
+ * composed text's cursor, and the bytes to delete around the caret.
  */
 struct kui_window_event {
 	unsigned kind;
@@ -691,6 +709,11 @@ struct kui_window_event {
 	uint64_t time_us;
 	uint64_t arrival_us;
 	uint32_t serial;
+	char text[KUI_WINDOW_TEXT_MAX];
+	int32_t begin;
+	int32_t end;
+	uint32_t before;
+	uint32_t after;
 };
 
 struct kui_window *kui_window_open(const struct kui_window_options *options);
@@ -715,6 +738,8 @@ struct wl_seat *kui_window_seat(const struct kui_window *window);
 void kui_window_copy(struct kui_window *window, const char *text, size_t length);
 size_t kui_window_paste(struct kui_window *window, char *text, size_t size);
 int kui_window_can_paste(const struct kui_window *window);
+void kui_window_text_input(struct kui_window *window, int enabled);
+void kui_window_text_cursor(struct kui_window *window, int x, int y, int width, int height);
 void kui_window_select(struct kui_window *window, const char *text, size_t length);
 size_t kui_window_paste_primary(struct kui_window *window, char *text, size_t size);
 uint64_t kui_clock_us(void);

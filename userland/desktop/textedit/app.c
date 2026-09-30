@@ -61,6 +61,7 @@ static void app_drag(struct te_app *app);
 static void app_wheel(struct te_app *app, const struct te_event *event);
 static size_t app_view_position(void *data, double x, double y);
 static void app_view_caret(void *data, size_t position, struct kui_rect *rect);
+static void app_text(struct te_app *app, const struct te_event *event);
 static void app_view_word(void *data, size_t position, size_t *start, size_t *end);
 static void app_key(struct te_app *app, const struct te_event *event);
 static void app_find_text(struct te_app *app, const struct te_event *event);
@@ -305,6 +306,10 @@ te_app_event(
 		break;
 	case TE_EVENT_CHOSEN:
 		app_chosen(app, event);
+		break;
+	case TE_EVENT_TEXT:
+	case TE_EVENT_TEXT_DELETE:
+		app_text(app, event);
 		break;
 	}
 
@@ -1632,4 +1637,74 @@ app_view_word(
 {
 	/* The editor's word (a run of one kind of character). */
 	te_edit_word(data, position, start, end);
+}
+
+/*
+ * Reports the caret's rectangle in the window (a row tall), where an input
+ * method's candidates and the text being composed are shown.
+ */
+void
+te_app_caret_rect(
+	const struct te_app *app,
+	struct te_rect *rect)
+{
+	struct kui_rect caret;
+	struct te_rect text;
+
+	/* The caret in the text's content, then moved by the view's place and scroll. */
+	app_view_caret((void *)app, app->cursor, &caret);
+	te_app_text_rect(app, &text);
+	rect->x = text.x + caret.x - (int)app->scroll_x;
+	rect->y = text.y + caret.y - (int)app->scroll_y;
+	rect->width = caret.width;
+	rect->height = caret.height;
+}
+
+/*
+ * Takes text from the window's text input (an input method, the on-screen
+ * keyboard, ws090-p013): bytes around the caret deleted, or text inserted
+ * in place of the selection, as typing is.
+ */
+static void
+app_text(
+	struct te_app *app,
+	const struct te_event *event)
+{
+	size_t length;
+	size_t start;
+	size_t end;
+	size_t total;
+	int error;
+
+	/* Not while a dialog or the chooser asks. */
+	if (app->dialog != TE_DIALOG_NONE || app->choosing)
+		return;
+
+	/* Bytes before and after the caret: selected, then deleted. */
+	if (event->type == TE_EVENT_TEXT_DELETE) {
+		total = te_buffer_length(&app->buffer);
+		start = 0;
+		if (app->cursor > (size_t)event->key)
+			start = app->cursor - (size_t)event->key;
+		end = app->cursor + (size_t)event->button;
+		if (end > total)
+			end = total;
+		te_edit_select(app, start, end);
+		(void)te_edit_insert_text(app, "", 0U, TE_MERGE_NONE);
+		te_edit_reveal(app);
+		app->dirty = 1;
+		te_log("TEXT delete before=%u after=%u", (unsigned)event->key, (unsigned)event->button);
+		return;
+	}
+
+	/* The text, in place of the selection. */
+	length = strlen(event->text);
+	if (length == 0U)
+		return;
+	error = te_edit_insert_text(app, event->text, length, TE_MERGE_NONE);
+	if (error != 0)
+		te_app_message(app, "Not enough memory.");
+	te_edit_reveal(app);
+	app->dirty = 1;
+	te_log("TEXT commit bytes=%lu text=%s", (unsigned long)length, event->text);
 }
