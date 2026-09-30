@@ -158,3 +158,12 @@ i915 の executor の試験（vkx・vke1・vke2・vkc、gentool、capture の場
 | ws031-p041（OpSwitch・関数呼出し） | p004（今の corpus には無い。client は glslc -O で inline 化される。GL の shader で要るとき） |
 | ws031-p044（完了の割込み） | p008 |
 | ws031-p045（非同期の実行器） | p008 → p018（2026-09-29 に分けた） |
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- 広く浅くの方針で、L1（p027 の確かめ）の後は他の WS へ回り、L2（p028・p029）は全 WS が L1 にそろってから。
+- **L2 の作業像**: p028 は 2 つの手を 1 run ずつの実験の build で比べるだけ（source は main に出さない）。(a) backdrop の使い回しは、
+  下の scene の damage が無い窓の blur を前の frame の結果で済ませる。(b) slot 512 は executor の heap の大きさの変更。効きの大きい方だけを
+  p029 で実装する。どちらも「画面が画素まで同じ」が必須。
+- **ハーネス**: `measure-apps.sh` 5 run と `c6.py`、`stress-117.sh` 100 回、test-hw（vkx・vke1・vke2・vkc）、`engine-gdb.sh` と kernel log の frame の内訳
+  （p026 で常設）。実機の passthrough の lock は WS099（P5）・WS101 と共有。
