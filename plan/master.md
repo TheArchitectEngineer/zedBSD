@@ -5,6 +5,7 @@ Active Queue: なし。Last finished Queue: q507（ws074-p099 cleared: Acid2 100
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
 Next（2026-09-30 夕に更新）: 週間の使用量のためサブエージェントは全てラップアップ（N=0）。統合の試験（demo-s8-s9.sh、QEMU、`build/integ-0930/`）PASS。次の候補: 5330 の実機の新しい demo の image（今日の変更を全て入れる）、ユーザーの実機の確認、WS103（ユーザーの指示の後）。 実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）のユーザー確認も残る。
 IME（WS095）は一時的に人間が作業中（エージェントに割り当てない）。WS074 は 2026-09-30 のユーザー指示「Run ws074」で再開し、p099まで cleared。
+優先順位（2026-09-30 夜 ユーザー）: WS101 が最優先、次に WS099・WS079・WS090・WS089・WS094・WS100・WS078・WS102、WS074 はデモ critical の中位。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -197,7 +198,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
 | [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | 2026-09-30: L1 がそろった。L2: p011（BUG-121、5330 の角の drag 20 回で消失 6 → 0）、p015（全画面を常に合成、下からの swipe で窓に戻す）、p016（import の待ちを無くす）、p002（C5: 5330 の実機で App Home・Wiseview の開閉の最初の frame 34 回とも ≤ 100 ms、最大 55 ms）cleared。L2 の残りは C1 の実機の目視（ユーザー）。L3 は C6（WS075）・C10 の実機の 1 時間 |
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | 2026-09-30: L1 がそろった（A1〜A6、Settings の Sound の頁）。L2 は 5330 の実機（A7、ユーザー）。L3 の p008 cleared: 確かめの音の遅れは QEMU の guest の中で中央値 31〜37 ms（≤ 50 ms、合否は実機で）。kernel の fragment を小さくする直しは実機で 50 ms を超えたとき |
-| [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | 2026-09-30: L1 で S13 が 5330 で通った。L2: p016（時間の分解）cleared、p017（buffer の使い回しと copy の削減、QEMU の GPU の call 835 → 212 ms、CPU の 10.6 倍遅い）uncleared。ユーザーの判断「今のまま」で S13 は今の見本、最適化はここで止める（5330 の p017 の値は P1 が追記） |
+| [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | 2026-09-30: L1 で S13 が 5330 で通った。L2: p016（時間の分解）cleared、p017（buffer の使い回しと copy の削減、QEMU の GPU の call 835 → 212 ms、CPU の 10.6 倍遅い）uncleared。ユーザーの判断「今のまま」で S13 は今の見本、最適化はここで止める（5330 の p017 の値は P1 が追記）。**2026-09-30 夜 ユーザーの指示で最優先に**（優先順位の節） |
 | [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | incomplete | 2026-09-30: L1 を満たした。L2: p006・p007・p008・p009・p015・p016（右の列の道具の面）・p017・p018・p020・p021・p023・p024（履歴の tab。受け入れの手順だけ PASS、全手順の回帰・C9・boot test は未実施）、L3 の p019（色付きの絵文字）cleared（QEMU）。ユーザーの指示で優先を下げてラップアップ（2026-09-30 夕）。保留: p022（絵文字の tab）・BUG-125・p010・p011（速さ）・p012（IME、人間） |
 | [WS103](ws103/ws.md) | MG006 | compositor を libvulkan だけにする: GPU の UAPI の直の ioctl（起動時の表示の問い合わせ・buffer の import の確かめ・fence・表示の claim と release・Vulkan の無い予備の表示）を libvulkan の API と拡張へ移す（2026-09-30 ユーザー「規則にして今移す」、規則は Guardrail） | planning | 2026-09-30 に立てた。**始める時期はユーザーが指示する**（「タイミングを見て実行を指示させてください」）。指示の後は p001（調査と設計、High） |
 
@@ -207,13 +208,15 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 依存による実行順とは別のもの。Queue の権限は変えない。2026-09-28 に整理（それ以前の順は git の履歴にある）。
 
-0. **ユーザーの session の指示**（WS074）: q507 / p099 は cleared。Acid2 は固定 WPT で 90.56% から 100.00% exact match。次の候補は p100（Acid3）だが Queue は未選択。
+**優先順位の変更（2026-09-30 夜 ユーザー）**:「ws035は完了なので、書き直しが必要です。ブラウザはある程度動くようになっており、最優先ではなく、デモcriticalな中では中程度です。
+最優先はws101に変更します。ws099,ws079,ws090,ws089,ws094,ws100,ws078,ws102をその次に優先します。」→ 下の番号の一覧を書き直した。WS101 を最優先にし、
+同日の「WS101 の最適化の優先を下げる」と「今のまま」（p017 で止める）を置き換える。WS074 はデモ critical の中位。WS035（完了）の名指しは後継の WS099 に。
 
 **デモまでの期間（2026-09-29 ユーザー）**: 10-10 ごろまで新規実装を進め、10-10 ごろ〜10-17 は bug の修正と実機での調整だけにする。
 
 **優先の調整（2026-09-29 夜 ユーザー）**:「IMEはとりあえず変換できるようになったら、ブラッシュアップは後回しにして、Keilandを優先しましょう。Bug-030も優先です。Settingsはある程度動いたらブラッシュアップは後回しにします。」→ WS035（Keiland）と BUG-030（WS073）を先に。WS095 は p004（変換と確定）で一区切りにし、候補の窓の残り・辞書の拡張（p012）ほかは後回し。WS089 は p006 の後のブラッシュアップを後回し。
 
-**WS101 の最適化の優先を下げる（2026-09-30 ユーザー）**:「WS101ですが、GPUでは疎通できたので、最適化の優先度を下げます。優先リストにはあるものの、その中では優先度が低いことにしてスケジューリングしてください。」→ WS101 は p015（S13 を demo の image で通す）までを済ませ、L2（p016 の内訳・p017 の 3 倍）以降はデモ critical の中で一番低い優先にする。
+**WS101 の最適化の優先を下げる（2026-09-30 ユーザー。同日夜の優先順位の変更で置き換えた）**:「WS101ですが、GPUでは疎通できたので、最適化の優先度を下げます。優先リストにはあるものの、その中では優先度が低いことにしてスケジューリングしてください。」→ WS101 は p015（S13 を demo の image で通す）までを済ませ、L2（p016 の内訳・p017 の 3 倍）以降はデモ critical の中で一番低い優先にする。
 
 **描画の高速化の優先を下げ、機能の実装に（2026-09-30 午後 ユーザー）**:「では、いったん描画の高速化はラップアップして、優先度が高いWSやPhaseの中では優先順位を下げ、機能性の実装にフォーカスしましょう。」→ WS075 の L3（p031 は中断、C6 は L2 の 67.3 ms で止める）、WS102 の L3 の速さ（p010・p011）、WS081 の L3、WS079・WS099 の速さの残りは、デモの critical の中で後ろに回す。空いた枠は、ユーザーの選択で WS090（libkeiui への移行: p008 PDF Viewer・Image Viewer → p011 Terminal・Notes → p009・p010 Files）。WS102 の機能（p007・p009・p017 → p016・p018・p019）は続ける。
 
@@ -230,14 +233,19 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 **運用（ユーザー、2026-09-27〜30）**: 作業用のサブエージェントを N=0〜9（2026-09-29 は N=9、1 時間に 5 時間の枠の約 25%）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
 N=0 になったら実装をまとめて計画（master・ws.md・Future Work・Bug Board）を整理する。試験は amd64 だけ、Phase の終わりに。effort は判断の表の「サブエージェントの effort」。
 
-1. **Keiland と名前**: WS035（Keiland の compositor・システムバー・login・lock）、WS078（Kei Operating System への改名）、 **WS079**（手書きの Notes・PDF Viewer・スワイプ）も Keiland の優先に入れる。
-   WS071（File Manager、完了。続きは WS035 の Phase と Future Work）。
-2. **デモ critical（2026-09-28 ユーザー）**: WS075（5330 + HDMI の LCD の安定: BUG-085/094・lease の切り替えの黒）、WS079（PDF Viewer・Notes）、
-   WS035（Keiland の仕上げ）、WS074（ブラウザ、**デモの目標を決めて**そこまで）。WS068（GL 3.2 まで。3.3 以降は保留）。
-3. **WS080（ld.coff）**: デモ critical の後に loader（p001〜p008）を早めに仕上げる。互換の DLL（kernel32 以降）は下位のモデルの subagent に継続して実装させる。
-4. **bug**: WS073（BUG-093・BUG-051・BUG-039・BUG-031）。BUG-027・033 は低い優先度（計測して閉じる）。
-5. **ACPI（WS049〜WS052）と Arm64（WS044・WS048・WS036）**: デスクトップが片付くか limit が余るとき。
-6. **WS001** はユーザーが指示したときだけ。WS077（PC-98 の PCI）・WS066（ld.so の最適化）は低い優先度。
+1. **最優先: WS101**（GPU の compute、台本 S13）。2026-09-30 夜 ユーザー。次の Phase（uncleared の p017 の続きか L2 の別の Phase か）は選ぶときに ws.md で確かめる。
+2. **デモ critical の上位**（この順、2026-09-30 夜 ユーザー）: WS099（Keiland の compositor、WS035 の後継）、WS079（Notes・PDF Viewer）、WS090（libkeiui）、
+   WS089（Settings）、WS094（デスクトップの icon）、WS100（音量）、WS078（Kei への改名）、WS102（スクリーンキーボード）。
+3. **デモ critical の中位**: WS074（ブラウザ。ある程度動く。p100 Acid3 が次の候補）。
+4. **デモ critical の残り**（ユーザーの順位の指定は無く、Q1 が中位の後に置いた）: WS084（i915 の画面の引き継ぎ）、WS075（i915。描画の高速化は止めたまま）、
+   WS081（touch の質。L3 は後ろ）、WS085（Windows の QEMU の Venus。デモの touch の土台）、WS068（GL 3.2 まで。3.3 以降は保留）。
+5. **WS080（ld.coff）**: デモ critical の後に loader（p001〜p008）を早めに仕上げる。互換の DLL（kernel32 以降）は下位のモデルの subagent に継続して実装させる。
+6. **bug**: WS073（BUG-030・BUG-039・BUG-031・BUG-107、BUG-093 は toolchain の許可待ち）。BUG-027・033 は低い優先度（計測して閉じる）。
+7. **ACPI（WS049〜WS052）と Arm64（WS044・WS048）**: デスクトップが片付くか limit が余るとき。
+8. **WS001** はユーザーが指示したときだけ。WS077（PC-98 の PCI）・WS066（ld.so の最適化）は低い優先度。
+9. **時期がユーザー次第**: WS103（始める時期はユーザーが指示）、WS095（人間が作業中）、WS098（WS095 の後）。
+
+上に無い未完了の WS（WS004・005・007・009・014・017・026〜029・031・033・034・045〜047・061・082・083・088・096・097、予約の WS037〜039、保留の WS013・015）は順位を定めていない。
 
 ## Upcoming Work Outlook
 
