@@ -11,7 +11,7 @@
 |       "tables"
 |     "
 "
-|     <!--  ws074-p037: the least of tables: automatic column widths, colspan, border-spacing, captions, row groups, vertical-align in cells, anonymous boxes.  -->
+|     <!--  ws074-p037/p097: automatic column widths, spans, spacing, captions, row groups, alignment and anonymous boxes.  -->
 |     "
 "
 |     <style>
@@ -254,6 +254,35 @@ th { background: #cde; }
 |             "narrow cells: Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua"
 |           <td>
 |             "Ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure"
+|         "
+"
+|     "
+
+"
+|     <table>
+|       align="center"
+|       width="70%"
+|       cellspacing="5"
+|       bgcolor="#eef5ff"
+|       "
+"
+|       <tbody>
+|         <tr>
+|           <td>
+|             rowspan="2"
+|             width="90"
+|             valign="bottom"
+|             bgcolor="#ffddee"
+|             "two rows"
+|           <td>
+|             "top right"
+|         "
+"
+|         <tr>
+|           <td>
+|             height="45"
+|             align="right"
+|             "bottom right"
 |         "
 "
 |     "

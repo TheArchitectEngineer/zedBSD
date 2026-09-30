@@ -1,12 +1,11 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# Queue: none active
+# Queue
 
 <!-- awesome-plan-current:start -->
-Status: none active（2026-09-30）
+Status: idle（2026-09-30）
 Active Queue: なし
-Last finished Queue: [q503](history/queue-q503.md)（ws074-p092 cleared。Amazonの後続script向けWeb API）
-Executor: main
+Last finished Queue: [q506](history/queue-q506.md)（ws074-p097 cleared。公開site比較、WPT reftest、Acid2・Acid3）
 <!-- awesome-plan-current:end -->
 
-Upcoming Work Outlook: WS074を再開する場合は、p092に残った例外を調べ、typed array（p093）またはXHRの残り（p064）を1 PhaseずつQueueへ入れる。
+次のQueueは未選択。WS074の候補はp036（CSS2 reftestの修正）、p047（DOM testharness）、p098（ES module scriptとGitHub hydration）。自動では開始しない。

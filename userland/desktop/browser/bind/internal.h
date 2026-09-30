@@ -42,6 +42,7 @@ enum bind_interface_index {
 	BIND_UI_EVENT,
 	BIND_MOUSE_EVENT,
 	BIND_CUSTOM_EVENT,
+	BIND_MESSAGE_EVENT,
 	BIND_KEYBOARD_EVENT,
 	BIND_FOCUS_EVENT,
 	BIND_WHEEL_EVENT,
@@ -215,7 +216,11 @@ struct bind_event {
 	vm_value target;
 	vm_value current_target;
 	vm_value detail;
+	vm_value source;
+	vm_value ports;
 	vm_value target_override;
+	struct vm_string *origin;
+	struct vm_string *last_event_id;
 	int phase;
 	int bubbles;
 	int cancelable;
@@ -253,6 +258,7 @@ extern const struct bind_interface bind_event_interface;
 extern const struct bind_interface bind_ui_event_interface;
 extern const struct bind_interface bind_mouse_event_interface;
 extern const struct bind_interface bind_custom_event_interface;
+extern const struct bind_interface bind_message_event_interface;
 extern const struct bind_interface bind_keyboard_event_interface;
 extern const struct bind_interface bind_focus_event_interface;
 extern const struct bind_interface bind_wheel_event_interface;

@@ -82,6 +82,19 @@ try {
 var mouse = new MouseEvent("click", { clientX: 5, clientY: 7, button: 1 });
 console.log("mouse", mouse.clientX, mouse.clientY, mouse.button, mouse instanceof UIEvent, mouse.bubbles);
 console.log("phases", Event.NONE, Event.CAPTURING_PHASE, Event.AT_TARGET, Event.BUBBLING_PHASE);
+
+console.log("--- MessageEvent and postMessage");
+var madeMessage = new MessageEvent("made", {
+  data: { n: 9 }, origin: "https://example.test", lastEventId: "id", source: window, ports: []
+});
+console.log("made", madeMessage.data.n, madeMessage.origin, madeMessage.lastEventId,
+            madeMessage.source === window, Array.isArray(madeMessage.ports), madeMessage instanceof Event);
+window.addEventListener("message", function (e) {
+  console.log("posted", e.data.n, e.source === window, typeof e.origin,
+              Array.isArray(e.ports), e instanceof MessageEvent);
+}, { once: true });
+parent.postMessage({ n: 7 }, "*");
+console.log("queued");
 </script>
 </body>
 </html>

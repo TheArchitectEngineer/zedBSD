@@ -45,3 +45,7 @@ no type true
 not an event true
 mouse 5 7 1 true false
 phases 0 1 2 3
+--- MessageEvent and postMessage
+made 9 https://example.test id true true true
+queued
+posted 7 true string true true

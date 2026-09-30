@@ -289,11 +289,11 @@ enum dom_control_kind {
  * checked attribute.
  *
  * The rest is what the display list last drew (drawn says it did), in
- * layout units in the document's coordinates: the content box the text was
- * drawn in, how far the text was scrolled to the left to keep the caret in
- * view, where the caret goes (its left, its top and its height) and its
- * color (0xAARRGGBB).  The page draws the caret and turns a click into an
- * offset with them.
+ * layout units in the document's coordinates: the text's unscrolled origin
+ * and the content box's other dimensions, how far the text was scrolled to
+ * the left to keep the caret in view, where the caret goes (its left, its
+ * top and its height) and its color (0xAARRGGBB).  The page draws the caret
+ * and turns a click into an offset with them.
  */
 struct dom_control {
 	struct wb_units value;

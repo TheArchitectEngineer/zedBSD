@@ -2,7 +2,7 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q503](queue-q503.md)（ws074-p092 cleared。Amazonの後続script向けWeb API、人間の session）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q506](queue-q506.md)（ws074-p097 cleared。公開site比較、WPT reftest、Acid2・Acid3、人間の session）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
@@ -23,7 +23,20 @@ Last finished Queue: [q503](queue-q503.md)（ws074-p092 cleared。Amazonの後�
 - **基盤**: venus-win32 の取り込み、Kei-nightly.zip の CI、ls（GNU 形式）・sh（履歴・補完・`~`）の WS086・WS087（完了）。
 - **ユーザーの判断**: master の「有効なユーザーの判断」に要約。IME とブラウザは一時的に人間が作業中。
 - **未実施**: 実機での確認の大半（demo-lcd8 でユーザーが確認）。QEMU の証拠と実機の証拠は各 phase.md で分けている。
-## 最新: 2026-09-30 q503
+
+## 最新: 2026-09-30 q506
+
+[q506](queue-q506.md): 9公開siteを固定Chrome User-Agentと現実的な2 viewportで画像・box・DOM比較し、Mediumのchallengeを記録。intrinsic auto margin、HTML presentational hint、table rowspan、非同期`postMessage`を修正した。WPT CSS2 reftestは44/100、Acid2は90.56%、Acid3は9/100。GitHubのES module実行はp098候補。GitHubへは未公開。
+
+## 2026-09-30 q505
+
+[q505](queue-q505.md): Mozilla日本語topと直接linkされた3 pageを固定Chrome User-Agentでcaptureし、Chromiumと比較。custom-propertyの`@supports`とbutton内の空白を修正し、topは70.71%/ink 62.52%から78.23%/ink 69.54%へ改善。GitHubへは未公開。
+
+## 2026-09-30 q504
+
+[q504](queue-q504.md): flex itemのcross axisで`box-sizing:border-box`を保ち、Amazon検索欄の高さを55pxから38pxへ修正。form controlの`text-indent`も実装し、検索文字の範囲はChromiumと同じ`x=435..574, y=22..36`。GitHubへは未公開。
+
+## 2026-09-30 q503
 
 [q503](queue-q503.md): Amazonの後続script向けWeb API、非同期fetch、MutationObserver、有界なsettleを実装。sign-in tooltipの幅とstacking orderも修正し、dynamic topは71.81%/ink 64.58%、約32秒・Uncaught 4。GitHubへは未公開。
 

@@ -1,5 +1,5 @@
 box 100px 40px 10px 4px 7px 2px solid rgb(255, 0, 0)
-box2 block static 0.5 auto rgb(0, 0, 0) rgba(0, 0, 0, 0) 20px 30px
+box2 block static 0.5 auto rgb(0, 0, 0) rgba(0, 0, 0, 0) 20px 30px 8px
 names 20px 5px 2px true
 sized 100px 30px border-box rgba(0, 0, 255, 0.3)
 hidden none 50px

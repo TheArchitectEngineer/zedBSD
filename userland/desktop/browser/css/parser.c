@@ -922,6 +922,7 @@ parser_supports_group(
 	size_t index;
 	size_t made;
 	int is_selector;
+	int custom;
 	int property;
 	int holds;
 	int error;
@@ -949,9 +950,15 @@ parser_supports_group(
 		return holds;
 	}
 
-	/* A declaration: a property this pass knows and a value it reads. */
+	/*
+	 * A declaration: a property this pass knows and a value it reads.
+	 * Custom properties are supported too; sites use (--css: variables)
+	 * as the feature query for CSS variables.
+	 */
+	custom = inner[index].length > 2U &&
+	    inner[index].text[0] == '-' && inner[index].text[1] == '-';
 	property = css_property_lookup(&inner[index]);
-	if (property < 0)
+	if (property < 0 && !custom)
 		return 0;
 	index++;
 	while (index < inner_count && inner[index].type == CSS_TOKEN_WHITESPACE)
@@ -961,6 +968,8 @@ parser_supports_group(
 	value.tokens = inner + index + 1U;
 	value.count = inner_count - index - 1U;
 	value = parser_trim(value);
+	if (custom)
+		return value.count > 0;
 
 	/* Parses the value; a calculation it makes stays in the sheet's arena. */
 	parse.heap = state->heap;

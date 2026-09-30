@@ -85,7 +85,7 @@ for suite in "$@"; do
 		# The 3-Clause BSD licence (LICENSE.md).
 		fetch_git wpt https://github.com/web-platform-tests/wpt \
 			2d66b9b7998bb58c336138c178323ddee857b586 LICENSE.md "BSD" \
-			/css/ /url/ /dom/ /html/syntax/ /encoding/ /resources/ /fonts/ /common/ /fetch/data-urls/
+			/acid/ /css/ /url/ /dom/ /html/syntax/ /encoding/ /resources/ /fonts/ /common/ /fetch/data-urls/
 		;;
 	test262)
 		# The 3-Clause BSD licence (Ecma International).

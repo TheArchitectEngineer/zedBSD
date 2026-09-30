@@ -32,6 +32,8 @@ static int window_console_warn(struct vm_realm *realm, vm_value this_value, cons
 static int window_console_error(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int window_console_debug(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int window_queue_microtask(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int window_post_message(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int window_deliver_message(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int window_inner_width(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int window_inner_height(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static void window_report_job(struct vm_realm *realm, vm_value exception, void *context);
@@ -66,6 +68,7 @@ static const struct bind_operation window_operations[] = {
 	{ "requestAnimationFrame", 1, bind_request_animation_frame },
 	{ "cancelAnimationFrame", 1, bind_clear_timer },
 	{ "queueMicrotask", 1, window_queue_microtask },
+	{ "postMessage", 1, window_post_message },
 	{ "getComputedStyle", 1, bind_get_computed_style },
 	{ "scrollTo", 0, bind_window_scroll_to },
 	{ "scroll", 0, bind_window_scroll_to },
@@ -100,6 +103,7 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_ui_event_interface,
 	&bind_mouse_event_interface,
 	&bind_custom_event_interface,
+	&bind_message_event_interface,
 	&bind_keyboard_event_interface,
 	&bind_focus_event_interface,
 	&bind_wheel_event_interface,
@@ -976,6 +980,128 @@ window_queue_microtask(
 		return status;
 
 	/* Succeeded: the microtask waits for the next checkpoint. */
+	return 0;
+}
+
+/*
+ * Queues a same-page message (postMessage).  Frames and separate browsing
+ * contexts are not present yet, so parent, top and frames all name this
+ * window.  Delivery is still a later task, as it is in a browser.
+ */
+static int
+window_post_message(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct bind_event *event;
+	struct vm_function *deliver;
+	struct vm_string *type;
+	struct vm_string *target_origin;
+	struct vm_string *origin;
+	vm_value option;
+	vm_value origin_value;
+	vm_value event_value;
+	vm_value timer_args[2];
+	vm_value ignored;
+	int present;
+	int is_object;
+	int allowed;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+
+	/* The optional target origin is a string, or the field of the options overload. */
+	*result = VM_VALUE_UNDEFINED;
+	window = bind_window_of(realm);
+	option = js_argument(args, count, 1);
+	target_origin = NULL;
+	is_object = vm_value_is_object(option);
+	if (count >= 2U && option != VM_VALUE_UNDEFINED && is_object) {
+		status = bind_get_option(realm, option, "targetOrigin", &present, &option);
+		if (status != 0)
+			return status;
+		if (!present)
+			option = VM_VALUE_UNDEFINED;
+	}
+
+	/* The string overload and the options field use the same origin syntax. */
+	if (option != VM_VALUE_UNDEFINED) {
+		status = bind_to_string(realm, option, &target_origin);
+		if (status != 0)
+			return status;
+	}
+
+	/* '*' and '/' allow this window; an exact origin does too. */
+	status = bind_location_part(window, BIND_LOCATION_ORIGIN, &origin_value);
+	if (status != 0)
+		return status;
+	origin = (struct vm_string *)vm_value_as_cell(origin_value);
+	allowed = target_origin == NULL || vm_string_equal_ascii(target_origin, "*") ||
+	    vm_string_equal_ascii(target_origin, "/") || vm_string_equal(target_origin, origin);
+	if (!allowed)
+		return 0;
+
+	/* The message event carries the value in this realm and names this page as its source. */
+	type = vm_atom_from_ascii(realm->heap, "message");
+	if (type == NULL)
+		return ENOMEM;
+	status = bind_event_create(window, BIND_MESSAGE_EVENT, type, &event_value, &event);
+	if (status != 0)
+		return status;
+	event->detail = js_argument(args, count, 0);
+	event->origin = origin;
+	event->source = vm_value_cell(realm->global);
+	event->trusted = 1;
+	status = js_builtin_array(realm, NULL, 0, &event->ports);
+	if (status != 0)
+		return status;
+
+	/* A zero-delay timer supplies the task boundary and keeps the event alive. */
+	deliver = vm_function_create_native(realm, "deliver message", 0, window_deliver_message);
+	if (deliver == NULL)
+		return ENOMEM;
+	deliver->data = event_value;
+	timer_args[0] = vm_value_cell(deliver);
+	timer_args[1] = vm_value_int32(0);
+	status = bind_set_timeout(realm, vm_value_cell(realm->global), timer_args, 2, &ignored);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the message is waiting in the task queue. */
+	return 0;
+}
+
+/* Dispatches the MessageEvent kept by a postMessage task. */
+static int
+window_deliver_message(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	vm_value event_value;
+	int canceled;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The timer callback's private value is the event made by postMessage. */
+	*result = VM_VALUE_UNDEFINED;
+	window = bind_window_of(realm);
+	event_value = js_builtin_callee(realm)->data;
+	status = bind_dispatch(window, vm_value_cell(realm->global), event_value, &canceled);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: every listener has seen the message. */
 	return 0;
 }
 

@@ -17,7 +17,7 @@
 Each case loads a URL with `--dump=dom` and checks that the tree has a text (and, for a failure, that the program
 says why).  The cases: a page with Content-Length, a chunked page, a page ended by closing the connection, six
 redirects of three kinds, cookies set on a redirect and sent back (only those whose path fits), a script loaded by a
-relative src over http, a 404 page, and a refused connection.  Over HTTPS (with --ca-file): a page with Content-Length,
+relative src over http, the fixed Chrome User-Agent, a 404 page, and a refused connection.  Over HTTPS (with --ca-file): a page with Content-Length,
 a chunked page, an http page redirected to https, a Secure cookie not sent back over http; and the failures: the
 test CA not trusted (no --ca-file) and a certificate for another name.
 """
@@ -28,6 +28,8 @@ import subprocess
 import sys
 import time
 
+from comparison_config import CHROME_USER_AGENT
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 
 # ws074-p080: localStorage goes under XDG_DATA_HOME; the browsers this tool starts keep theirs under build/,
@@ -36,6 +38,7 @@ os.environ["XDG_DATA_HOME"] = os.path.join(ROOT, "build/ws074-host-data")
 
 CASES = [
     ("length", "/pages/first.html", "browser: the first page"),
+    ("user-agent", "/user-agent", '"' + CHROME_USER_AGENT + '"'),
     ("chunked", "/chunked", '"second part"'),
     ("close", "/close", '"ended by closing"'),
     ("redirects", "/redirect/6", "browser: the first page"),

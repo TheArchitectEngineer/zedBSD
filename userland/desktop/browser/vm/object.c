@@ -532,8 +532,13 @@ vm_object_define(
 	if (error != 0)
 		return error;
 
-	/* An array's length reaches past an index kept in a slot. */
-	if (is_index && index >= object->length) {
+	/*
+	 * An array's length reaches past an index kept in a slot.  A plain
+	 * object's sparse numeric slot must not move its dense-elements watermark.
+	 */
+	if (is_index &&
+	    (object->flags & VM_OBJECT_ARRAY) != 0U &&
+	    index >= object->length) {
 		object->length = index + 1U;
 		object_sync_length(heap, object);
 	}
