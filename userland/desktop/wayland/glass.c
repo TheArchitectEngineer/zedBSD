@@ -1322,11 +1322,13 @@ glass_shape_draw(
 	constants[23] = shape->opacity;
 
 	/*
-	 * A shape without an image of its own is given the blurred wallpaper
-	 * (only the glass samples it; the glass does not show the windows under
-	 * it, the user's decision of 2026-09-30, ws075-p029).
+	 * A shape without an image of its own is given the blurred scene under
+	 * the window being drawn when there is one (backdrop.c), else the
+	 * blurred wallpaper (only the glass samples it).
 	 */
 	set = shape->set;
+	if (set == VK_NULL_HANDLE)
+		set = compose->backdrop_set;
 	if (set == VK_NULL_HANDLE)
 		set = compose->glass->blurred.set;
 

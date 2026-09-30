@@ -258,10 +258,8 @@ zwl_compose_output_close(
 	/* No frame may still use the swapchain's images. */
 	(void)vkDeviceWaitIdle(compose->device);
 
-	/* The pass that keeps the pixels (made again with the next output), the targets, then the swapchain and surface. */
-	if (compose->pass_load != VK_NULL_HANDLE)
-		vkDestroyRenderPass(compose->device, compose->pass_load, NULL);
-	compose->pass_load = VK_NULL_HANDLE;
+	/* The backdrop, the targets, then the swapchain and surface. */
+	zwl_backdrop_destroy(compose);
 	compose_targets_destroy(compose);
 	vkdemo_display_close(compose->instance, compose->device, &compose->output);
 	compose->output_prepared = 0;
@@ -1519,6 +1517,8 @@ compose_record(
 	if (region != NULL)
 		pass.renderPass = compose->pass_load;
 	pass.framebuffer = compose->framebuffers[image];
+	compose->framebuffer_now = compose->framebuffers[image];
+	compose->backdrop_set = VK_NULL_HANDLE;
 	pass.renderArea.extent.width = compose->output.width;
 	pass.renderArea.extent.height = compose->output.height;
 	pass.clearValueCount = 1U;
@@ -1805,67 +1805,4 @@ compose_hold(
 		*tail = surface->committed_callbacks;
 		surface->committed_callbacks = NULL;
 	}
-}
-
-/*
- * Makes, the first time, the output's pass that keeps the image's pixels:
- * a frame drawn only in its damage.  The image is presented as before.
- */
-VkResult
-zwl_compose_load_pass(
-	struct zwl_compose *compose)
-{
-	VkAttachmentDescription attachment;
-	VkAttachmentReference reference;
-	VkSubpassDescription subpass;
-	VkSubpassDependency dependency;
-	VkRenderPassCreateInfo pass;
-	VkResult result;
-
-	/* Made already. */
-	if (compose->pass_load != VK_NULL_HANDLE)
-		return VK_SUCCESS;
-
-	/* The output's color attachment, loaded and presented. */
-	memset(&attachment, 0, sizeof(attachment));
-	attachment.format = compose->format;
-	attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-	attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachment.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	memset(&reference, 0, sizeof(reference));
-	reference.attachment = 0U;
-	reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	memset(&subpass, 0, sizeof(subpass));
-	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass.colorAttachmentCount = 1U;
-	subpass.pColorAttachments = &reference;
-
-	/* Written after the earlier writes of the frame. */
-	memset(&dependency, 0, sizeof(dependency));
-	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependency.dstSubpass = 0U;
-	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-	/* The pass. */
-	memset(&pass, 0, sizeof(pass));
-	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	pass.attachmentCount = 1U;
-	pass.pAttachments = &attachment;
-	pass.subpassCount = 1U;
-	pass.pSubpasses = &subpass;
-	pass.dependencyCount = 1U;
-	pass.pDependencies = &dependency;
-	result = vkCreateRenderPass(compose->device, &pass, NULL, &compose->pass_load);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* Succeeded. */
-	return VK_SUCCESS;
 }

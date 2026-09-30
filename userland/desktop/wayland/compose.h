@@ -72,6 +72,30 @@ struct zwl_import {
 /* The glass look's images and glyphs (glass.c). */
 struct zwl_glass;
 
+/* One small image of the backdrop (backdrop.c): drawn into by the small pass, and sampled linearly. */
+struct zwl_backdrop_target {
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView view;
+	VkFramebuffer framebuffer;
+	VkDescriptorSet set;
+};
+
+/*
+ * The backdrop of the glass (backdrop.c, ws035-p057): the scene under a
+ * window drawn small and blurred.  state says whether it was tried, is
+ * ready or cannot be made on this device; the two images take turns in the
+ * blur; pass draws them (compose->pass_load takes the output's pass up again).  It is
+ * made the first time a frame needs it and lives as long as the output.
+ */
+struct zwl_backdrop {
+	unsigned state;
+	uint32_t width;
+	uint32_t height;
+	VkRenderPass pass;
+	struct zwl_backdrop_target targets[2];
+};
+
 /* How many frames' damage is kept, for images that missed that many frames. */
 #define ZWL_DAMAGE_HISTORY	8U
 
@@ -137,6 +161,15 @@ struct zwl_compose {
 	uint64_t frame_start_cycles;
 	uint64_t frame_start_ms;
 	/*
+	 * The backdrop (backdrop.c); the framebuffer of the frame being
+	 * recorded, which its pass is taken up again on; and the blurred scene
+	 * the glass samples from now on in the frame (VK_NULL_HANDLE: the
+	 * blurred wallpaper).
+	 */
+	struct zwl_backdrop backdrop;
+	VkFramebuffer framebuffer_now;
+	VkDescriptorSet backdrop_set;
+	/*
 	 * The damage (ws035-p055): the frame number each swapchain image was
 	 * last drawn in (0: never since the output opened); each recent
 	 * frame's damage (left, top, right, bottom) or the whole output; the
@@ -169,8 +202,14 @@ void zwl_compose_set_put(struct zwl_compose *compose, VkDescriptorSet set);
 /* Gives an image a second, linearly sampled descriptor set (compose.c). */
 VkResult zwl_compose_linear_set(struct zwl_compose *compose, struct zwl_import *import);
 
-/* The output's pass that keeps its pixels (compose.c). */
+/* The output's pass that keeps its pixels (backdrop.c). */
 VkResult zwl_compose_load_pass(struct zwl_compose *compose);
+
+/* The backdrop of the glass (backdrop.c). */
+int zwl_backdrop_begin(struct zwl_server *server, VkCommandBuffer command);
+void zwl_backdrop_end(struct zwl_server *server, VkCommandBuffer command);
+void zwl_backdrop_reset(struct zwl_server *server);
+void zwl_backdrop_destroy(struct zwl_compose *compose);
 
 /* The image window mode samples for a surface (compose.c). */
 const struct zwl_import *zwl_compose_surface_image(const struct zwl_object *surface);
