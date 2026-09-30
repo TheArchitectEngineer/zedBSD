@@ -23,6 +23,8 @@
 #             drag-moved.png); photo.png onto the folder Projects (moved into it); a Files window's note.txt out to the
 #             desktop (moved into ~/Desktop, placed at the cell of the drop; drop-in.png); the desktop's report.pdf onto the
 #             Files window (moved into its folder; drop-out.png)
+#   perf100   (ws094-p008, L3) the desktop with 100 items: start to ready, a file added to shown, a click to the selection's
+#             frame, three rounds (perf100.txt: the rounds, the medians against the targets; perf100.png)
 #   touch     (ws094-p006, after show; the pen image, /bin/touchinject) a double tap on Projects opens it, a long press on
 #             report.pdf opens its context menu (touch-menu.png), a long press that moves drags script.sh to an empty cell
 #             (touch-moved.png)
@@ -93,6 +95,8 @@ expect_log() {
 for step in "$@"; do
 	case "$step" in
 	install)
+		# The greeter's compositor of a graphical image holds /bin/wayland open (ws094-p008).
+		guest "$stop_all" >/dev/null
 		python3 plan/tools/imageview/make-images.py build/ws094-images >/dev/null
 		put "$bin/bin/wayland" /bin/wayland
 		put "$bin/bin/files" /bin/files
@@ -402,6 +406,71 @@ hold 2000'
 		;;
 	stop)
 		guest "$stop_all" >/dev/null
+		;;
+	perf100)
+		# ws094-p008 (L3): the desktop with 100 items (20 pictures, 10 folders, 70 texts in /tmp/dhome100/Desktop), three
+		# rounds, each on a compositor started afresh: (a) zdesktop's start of files --desktop (ZWL DESKTOP start at_ms)
+		# to ZFILES DESKTOP ready items=100 (at_ms); (b) a file added to the ready desktop: the age of the newest item when
+		# it is shown (ready items=101 newest_age_ms); (c) three clicks on items: the press to the selection's frame
+		# (DESKTOP select-frame ms).  The medians against L3's targets (PERF_START_MS, PERF_ADDED_MS, PERF_SELECT_MS),
+		# and the SLOW-FRAME lines counted (perf100.txt, perf100.png).
+		start_limit=${PERF_START_MS:-1500}; added_limit=${PERF_ADDED_MS:-2500}; select_limit=${PERF_SELECT_MS:-50}
+		python3 plan/tools/imageview/make-images.py build/ws094-images >/dev/null
+		guest 'rm -rf /tmp/dhome100; mkdir -p /tmp/dhome100/Desktop /tmp/p100' >/dev/null
+		for picture in 01-splash.png 02-landscape.jpg 03-portrait.jpg 04-mark.png 05-anim.gif 06-pixels.png; do
+			put "build/ws094-images/$picture" "/tmp/p100/$picture"
+		done
+		guest 'cd /tmp/p100; n=1; while [ $n -le 20 ]; do for f in *; do [ $n -le 20 ] || break; e=${f##*.}; cp "$f" /tmp/dhome100/Desktop/picture-$n.$e; n=$((n+1)); done; done
+n=1; while [ $n -le 10 ]; do mkdir /tmp/dhome100/Desktop/folder-$n; n=$((n+1)); done
+n=1; while [ $n -le 70 ]; do printf "note %d\n" $n > /tmp/dhome100/Desktop/note-$n.txt; n=$((n+1)); done
+ls /tmp/dhome100/Desktop | wc -l' | tail -1 | sed 's/^/items made: /'
+		: > "$out/perf100.txt"
+		for round in 1 2 3; do
+			guest "$stop_all" >/dev/null
+			guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome100; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
+i=0; while ! grep -aq 'ZFILES DESKTOP ready items=100 ' /tmp/zdesktop.log && [ \$i -lt 120 ]; do sleep 0.25; i=\$((i+1)); done; sleep 3; echo started" >/dev/null
+			began=$(guest "grep -a 'ZWL DESKTOP start ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
+			ready=$(guest "grep -a 'ZFILES DESKTOP ready items=100 ' /tmp/zdesktop.log | head -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
+			start_ms=$(( ${ready:-0} - ${began:-0} ))
+			[ -n "$began" ] && [ -n "$ready" ] || start_ms=-1
+			guest "printf 'new\n' > /tmp/dhome100/Desktop/added-$round.txt" >/dev/null
+			tries=0; line=
+			while [ $tries -lt 20 ] && [ -z "$line" ]; do
+				sleep 0.5; tries=$((tries + 1))
+				line=$(guest "grep -a 'ZFILES DESKTOP ready items=101 ' /tmp/zdesktop.log | head -1")
+			done
+			added_ms=$(printf '%s\n' "$line" | sed -n 's/.* newest_age_ms=\([-0-9]*\).*/\1/p')
+			[ -n "$added_ms" ] || added_ms=-1
+			selects=""
+			for y in 90 194 298; do
+				pointer move 1216 $y sleep 300 down sleep 60 up sleep 800
+			done
+			sleep 1
+			selects=$(guest "grep -a 'ZFILES DESKTOP select-frame ms=' /tmp/zdesktop.log" | sed -n 's/.* ms=\([0-9]*\).*/\1/p' | tr '\n' ' ')
+			slow=$(guest "grep -ac 'ZFILES SLOW-FRAME' /tmp/zdesktop.log" | tail -1)
+			echo "round=$round start_ms=$start_ms added_ms=$added_ms select_ms=$selects slow_frames=${slow:-?}" | tee -a "$out/perf100.txt"
+			[ $round = 1 ] && shot perf100.png
+			guest "grep -a 'SLOW-FRAME' /tmp/zdesktop.log" >> "$out/perf100-slow.txt"
+			guest "rm -f /tmp/dhome100/Desktop/added-$round.txt" >/dev/null
+		done
+		# The medians of the rounds (for (c), of every click) against the targets.
+		python3 - "$out/perf100.txt" "$start_limit" "$added_limit" "$select_limit" <<'PY' | tee -a "$out/perf100.txt"
+import re, statistics, sys
+text = open(sys.argv[1]).read()
+starts = [int(v) for v in re.findall(r"start_ms=(-?\d+)", text)]
+added = [int(v) for v in re.findall(r"added_ms=(-?\d+)", text)]
+selects = [int(v) for part in re.findall(r"select_ms=([\d ]*) slow", text) for v in part.split()]
+slow = sum(int(v) for v in re.findall(r"slow_frames=(\d+)", text))
+def median(values):
+    return int(statistics.median(values)) if values and min(values) >= 0 else -1
+a, b, c = median(starts), median(added), median(selects)
+limits = [int(v) for v in sys.argv[2:5]]
+print("RESULT start_ms=%d added_ms=%d select_ms=%d slow_frames=%d (targets %d %d %d, slow 0)" % (a, b, c, slow, *limits))
+for name, value, limit in (("a start", a, limits[0]), ("b added", b, limits[1]), ("c select", c, limits[2])):
+    print("L3 %s: %d ms %s" % (name, value, "within" if 0 <= value <= limit else "OVER"))
+print("L3 slow frames: %d %s" % (slow, "none" if slow == 0 else "SOME"))
+PY
 		;;
 	*)
 		echo "unknown step $step"

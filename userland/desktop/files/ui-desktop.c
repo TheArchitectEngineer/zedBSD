@@ -33,6 +33,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 
 /* A cell's icon, how far it is under the cell's top, and the name's size and baseline. */
 #define DESKTOP_ICON		64
@@ -89,6 +91,8 @@ static uint32_t desktop_names_hash(const struct fm_tab *tab);
 static void desktop_context(struct fm_app *app, const struct fm_event *event);
 static void desktop_band_rect(const struct fm_desktop *desk, struct fm_rect *rect);
 static void desktop_band_select(struct fm_app *app);
+static long long desktop_newest_age(const struct fm_tab *tab);
+static uint64_t desktop_clock(void);
 static void desktop_press(struct fm_app *app, const struct fm_event *event);
 static void desktop_key(struct fm_app *app, const struct fm_event *event);
 static void desktop_arrow(struct fm_app *app, int dx, int dy);
@@ -161,9 +165,10 @@ fm_desktop_draw(
 	desktop_message(app, canvas);
 	fm_overlay_draw(app, canvas);
 
-	/* The summary line, once for the layout. */
+	/* The summary line, once for the layout, with its time and the age of the newest item (ws094-p008). */
 	if (logging) {
-		fm_log("DESKTOP ready items=%lu cells=%d width=%d height=%d", (unsigned long)tab->listing.count, cells, canvas->width, canvas->height);
+		fm_log("DESKTOP ready items=%lu cells=%d width=%d height=%d at_ms=%llu newest_age_ms=%lld", (unsigned long)tab->listing.count, cells, canvas->width, canvas->height,
+		       (unsigned long long)desktop_clock(), desktop_newest_age(tab));
 		desk->logged = (int)tab->listing.count + 1;
 	}
 
@@ -785,8 +790,9 @@ desktop_press(
 		fm_select_only(tab, index);
 	}
 
-	/* The log line the tests read. */
+	/* The log line the tests read, and the time main.c measures the selection's frame from (ws094-p008). */
 	fm_log("DESKTOP select name=%s selected=%d", tab->listing.entries[index].name, tab->listing.entries[index].selected);
+	desk->select_ms = desktop_clock();
 
 	/* A press held on a selected item may become a drag of the selection. */
 	if (tab->listing.entries[index].selected != 0)
@@ -964,4 +970,52 @@ desktop_rects_meet(
 
 	/* They meet. */
 	return 1;
+}
+
+/* Reports how long ago (milliseconds) the newest item of the listing was changed, by the real clock (-1 without items). */
+static long long
+desktop_newest_age(
+	const struct fm_tab *tab)
+{
+	struct timespec now;
+	struct stat status;
+	long long newest;
+	long long changed;
+	size_t index;
+	int error;
+
+	/* The newest change among the items. */
+	newest = -1;
+	for (index = 0; index < tab->listing.count; index++) {
+		error = stat(tab->listing.entries[index].path, &status);
+		if (error != 0)
+			continue;
+		changed = (long long)status.st_mtim.tv_sec * 1000LL + (long long)(status.st_mtim.tv_nsec / 1000000L);
+		if (changed > newest)
+			newest = changed;
+	}
+
+	/* No item. */
+	if (newest < 0)
+		return -1;
+
+	/* Its age now. */
+	error = clock_gettime(CLOCK_REALTIME, &now);
+	if (error != 0)
+		return -1;
+	return (long long)now.tv_sec * 1000LL + (long long)(now.tv_nsec / 1000000L) - newest;
+}
+
+/* Reports the monotonic clock in milliseconds (main.c's fm_clock, which the frames are timed by). */
+static uint64_t
+desktop_clock(void)
+{
+	struct timespec now;
+	int error;
+
+	/* The monotonic clock. */
+	error = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (error != 0)
+		return 0U;
+	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
 }
