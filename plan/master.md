@@ -3,7 +3,7 @@
 <!-- awesome-plan-current:start -->
 Active Queue: なし。Last finished Queue: q507（ws074-p099 cleared: Acid2 100.00% exact rendering）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
-Next（2026-09-30 に更新）: WS074 p100（Acid3 100/100）は次の候補だが未選択・未承認。実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）のユーザー確認も残る。
+Next（2026-09-30 夕に更新）: 週間の使用量のためサブエージェントは全てラップアップ（N=0）。統合の試験（demo-s8-s9.sh、QEMU、`build/integ-0930/`）PASS。次の候補: 5330 の実機の新しい demo の image（今日の変更を全て入れる）、ユーザーの実機の確認、WS103（ユーザーの指示の後）。 実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）のユーザー確認も残る。
 IME（WS095）は一時的に人間が作業中（エージェントに割り当てない）。WS074 は 2026-09-30 のユーザー指示「Run ws074」で再開し、p099まで cleared。
 <!-- awesome-plan-current:end -->
 
