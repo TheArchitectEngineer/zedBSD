@@ -24,3 +24,6 @@ ZEDBSD_USER_PROGRAMS += settings audiod
 # ws090-p004 (main's permission 2026-09-29): the desktop's shared widgets (libkeiui), which Text Editor's window,
 # scroll and touch come from.
 ZEDBSD_USER_PROGRAMS += libkeiui
+# ws101-p011 (D2, the user's permission 2026-09-30): /bin/noct with its OpenGL ES accelerator (Noct's automatic
+# parallelization on the GPU, --gpu); the image has libegl and libglesv2 (config-zdesktop-hw.mk).
+ZEDBSD_NOCT_ACCEL := y
