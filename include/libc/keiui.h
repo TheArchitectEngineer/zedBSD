@@ -47,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight). */
-#define KUI_VERSION	7U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight; 8: the window's full screen, asked for and as configured). */
+#define KUI_VERSION	8U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -767,6 +767,14 @@ typedef int (*kui_keyboard_inset_fn)(void *data, int right, int bottom, unsigned
 void kui_window_on_keyboard_inset(struct kui_window *window, kui_keyboard_inset_fn callback, void *data);
 void kui_window_keyboard_inset(const struct kui_window *window, int *right, int *bottom);
 size_t kui_window_paste_primary(struct kui_window *window, char *text, size_t size);
+
+/*
+ * KUI_VERSION 8 (ws090-p008, Image Viewer): the full screen.  An
+ * application asks the compositor for it (or out of it), and learns from
+ * the configure whether the window is fullscreen.
+ */
+void kui_window_set_fullscreen(struct kui_window *window, int fullscreen);
+int kui_window_fullscreen(const struct kui_window *window);
 uint64_t kui_clock_us(void);
 
 /*

@@ -602,6 +602,36 @@ kui_window_toplevel(
 }
 
 /*
+ * Asks the compositor to make the window fullscreen (on the output it is
+ * on), or to take it out of the full screen (KUI_VERSION 8).  The answer
+ * is a configure: kui_window_fullscreen tells once it came.
+ */
+void
+kui_window_set_fullscreen(
+	struct kui_window *window,
+	int fullscreen)
+{
+	/* The request, sent with the next flush. */
+	if (fullscreen) {
+		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
+	} else {
+		xdg_toplevel_unset_fullscreen(window->toplevel);
+	}
+}
+
+/*
+ * Reports whether the compositor's last configure made the window
+ * fullscreen (KUI_VERSION 8).
+ */
+int
+kui_window_fullscreen(
+	const struct kui_window *window)
+{
+	/* The state as last configured. */
+	return window->fullscreen;
+}
+
+/*
  * Reports the serial of the window's last input.
  */
 uint32_t
@@ -1241,12 +1271,22 @@ window_toplevel_configure(
 	struct wl_array *states)
 {
 	struct kui_window *window;
+	const uint32_t *state;
+	size_t count;
+	size_t index;
 	int resized;
 
-	/* The states change nothing here. */
+	/* Whether the compositor made the window fullscreen (the other states change nothing here). */
 	(void)toplevel;
-	(void)states;
 	window = data;
+	window->fullscreen = 0;
+	state = states->data;
+	count = states->size / sizeof(uint32_t);
+	for (index = 0; index < count; index++) {
+		/* The fullscreen state among the window's states. */
+		if (state[index] == XDG_TOPLEVEL_STATE_FULLSCREEN)
+			window->fullscreen = 1;
+	}
 
 	/* A width left to the window is the one it would like, within the compositor's bounds. */
 	if (width <= 0) {

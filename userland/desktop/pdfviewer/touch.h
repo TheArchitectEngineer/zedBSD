@@ -23,31 +23,7 @@
 #include "viewer.h"
 
 #include <keiland.h>
-
-/*
- * The kinds of touch input the window queues.
- */
-enum pv_touch_type {
-	PV_TOUCH_DOWN = 0,
-	PV_TOUCH_MOTION,
-	PV_TOUCH_UP,
-	PV_TOUCH_CANCEL
-};
-
-/*
- * One touch input: its kind, the finger (wl_touch's id), where in the
- * window (surface pixels; not for UP and CANCEL), the compositor's time
- * (milliseconds of CLOCK_MONOTONIC, the low 32 bits; not for CANCEL), and
- * when the window read it (microseconds of the same clock).
- */
-struct pv_touch_event {
-	enum pv_touch_type type;
-	int32_t id;
-	double x;
-	double y;
-	uint32_t time;
-	uint64_t arrival;
-};
+#include <keiui.h>
 
 /*
  * The fingers and what they are doing: the gestures of the pages, the
@@ -97,8 +73,7 @@ struct pv_touch {
 /* The touch screen (touch.c). */
 int pv_touch_open(struct pv_touch *touch);
 void pv_touch_close(struct pv_touch *touch);
-void pv_touch_event(struct pv_touch *touch, struct pv_app *app, const struct pv_touch_event *event);
+void pv_touch_event(struct pv_touch *touch, struct pv_app *app, const struct kui_window_event *event);
 int pv_touch_tick(struct pv_touch *touch, struct pv_app *app, uint64_t now);
-uint64_t pv_touch_clock(void);
 
 #endif

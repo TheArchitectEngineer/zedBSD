@@ -268,6 +268,10 @@ struct pv_chooser {
  * after them (touch.c), and zooming that two fingers are changing the zoom:
  * while zooming, the frame shows the pages' rasters stretched to the new
  * scale instead of drawing them again, until the fingers stop.
+ *
+ * ws090-p008: keyboard_right and keyboard_bottom are how much of the
+ * window the on-screen keyboard covers from its right and its bottom edge
+ * (0 without it); the password card stays in the part it leaves.
  */
 struct pv_app {
 	struct pv_document document;
@@ -326,6 +330,8 @@ struct pv_app {
 	struct pv_text *text;
 	int touching;
 	int zooming;
+	int keyboard_right;
+	int keyboard_bottom;
 };
 
 /*

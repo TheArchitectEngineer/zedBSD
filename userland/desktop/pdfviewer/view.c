@@ -893,7 +893,8 @@ pv_thumbnail_place(
 }
 
 /*
- * Places the password card in the middle of the window.
+ * Places the password card in the middle of the window, or of the part
+ * of it the on-screen keyboard leaves (ws090-p008).
  */
 void
 pv_password_layout(
@@ -903,15 +904,26 @@ pv_password_layout(
 	int *width,
 	int *height)
 {
-	/* The card's size, within the window less a margin. */
+	int shown_width;
+	int shown_height;
+
+	/* The part of the window the on-screen keyboard leaves (all of it without the keyboard). */
+	shown_width = app->window_width - app->keyboard_right;
+	shown_height = app->height - app->keyboard_bottom;
+	if (shown_width < PV_PASSWORD_WIDTH / 2)
+		shown_width = app->window_width;
+	if (shown_height < PV_PASSWORD_HEIGHT)
+		shown_height = app->height;
+
+	/* The card's size, within that part less a margin. */
 	*width = PV_PASSWORD_WIDTH;
-	if (*width > app->window_width - 24)
-		*width = app->window_width - 24;
+	if (*width > shown_width - 24)
+		*width = shown_width - 24;
 	*height = PV_PASSWORD_HEIGHT;
 
-	/* In the middle. */
-	*x = (app->window_width - *width) / 2;
-	*y = (app->height - *height) / 2;
+	/* In its middle. */
+	*x = (shown_width - *width) / 2;
+	*y = (shown_height - *height) / 2;
 }
 
 /*

@@ -14,6 +14,8 @@
  * shows it), and a move made elsewhere in the meantime (a key, the wheel,
  * an action, a resize) is taken over rather than undone.  The view is
  * placed at the frame's time, from the fingers' motion resampled for it.
+ * The fingers come from libkeiui's window (ws090-p008), their times already
+ * turned into microseconds of CLOCK_MONOTONIC.
  */
 
 #include "touch.h"
@@ -21,7 +23,6 @@
 #include <errno.h>
 #include <math.h>
 #include <string.h>
-#include <time.h>
 
 /* What a drag does: nothing yet, scroll the view, or swipe the page mode's page. */
 #define TOUCH_DRAG_NONE		0
@@ -34,9 +35,6 @@
 /* How often the view is placed while fingers are down or the content glides, in milliseconds. */
 #define TOUCH_TICK_MS		16
 
-/* The oldest a wl_touch time may be and still be taken (older is another clock), in milliseconds. */
-#define TOUCH_TIME_BEHIND	2000U
-
 /* How much a double tap zooms in. */
 #define TOUCH_DOUBLE_TAP_ZOOM	2.0
 
@@ -46,9 +44,8 @@
 /* The share a swipe keeps of the finger's movement past the first and the last page (as the pointer's). */
 #define TOUCH_SWIPE_RESIST	3.0
 
-static uint64_t touch_time(const struct pv_touch_event *event);
-static int touch_for_pointer(const struct pv_app *app, const struct pv_touch_event *event);
-static void touch_pointer(struct pv_touch *touch, struct pv_app *app, const struct pv_touch_event *event);
+static int touch_for_pointer(const struct pv_app *app, const struct kui_window_event *event);
+static void touch_pointer(struct pv_touch *touch, struct pv_app *app, const struct kui_window_event *event);
 static void touch_press(struct pv_touch *touch, struct pv_app *app, uint64_t now);
 static void touch_gestures(struct pv_touch *touch, struct pv_app *app, uint64_t now);
 static void touch_drag_begin(struct pv_touch *touch, struct pv_app *app, uint64_t now);
@@ -113,7 +110,7 @@ void
 pv_touch_event(
 	struct pv_touch *touch,
 	struct pv_app *app,
-	const struct pv_touch_event *event)
+	const struct kui_window_event *event)
 {
 	uint64_t time;
 	double x;
@@ -133,7 +130,7 @@ pv_touch_event(
 
 	/* A first finger over the sidebar, the chooser or the card starts playing the pointer. */
 	for_pointer = touch_for_pointer(app, event);
-	if (event->type == PV_TOUCH_DOWN &&
+	if (event->kind == KUI_WINDOW_TOUCH_DOWN &&
 	    touch->fingers == 0U &&
 	    for_pointer) {
 		touch_pointer(touch, app, event);
@@ -141,37 +138,37 @@ pv_touch_event(
 	}
 
 	/* The event's time, and the place over the pages (right of the sidebar). */
-	time = touch_time(event);
+	time = event->time_us;
 	sidebar = pv_app_sidebar_width(app);
 	x = event->x - (double)sidebar;
 
 	/* Hands the finger to the gestures. */
-	switch (event->type) {
-	case PV_TOUCH_DOWN:
+	switch (event->kind) {
+	case KUI_WINDOW_TOUCH_DOWN:
 		/* The first finger presses the scroller. */
 		if (touch->fingers == 0U)
-			touch_press(touch, app, event->arrival);
-		error = keiland_gesture_down(touch->gesture, event->id, time, event->arrival, x, event->y);
+			touch_press(touch, app, event->arrival_us);
+		error = keiland_gesture_down(touch->gesture, event->id, time, event->arrival_us, x, event->y);
 		if (error == 0)
 			touch->fingers++;
 		break;
-	case PV_TOUCH_MOTION:
-		(void)keiland_gesture_motion(touch->gesture, event->id, time, event->arrival, x, event->y);
+	case KUI_WINDOW_TOUCH_MOTION:
+		(void)keiland_gesture_motion(touch->gesture, event->id, time, event->arrival_us, x, event->y);
 		break;
-	case PV_TOUCH_UP:
+	case KUI_WINDOW_TOUCH_UP:
 		error = keiland_gesture_up(touch->gesture, event->id, time);
 		if (error == 0 &&
 		    touch->fingers > 0U)
 			touch->fingers--;
 		break;
-	case PV_TOUCH_CANCEL:
+	case KUI_WINDOW_TOUCH_CANCEL:
 		keiland_gesture_cancel(touch->gesture);
 		touch->fingers = 0;
 		break;
 	}
 
 	/* What the fingers mean so far. */
-	touch_gestures(touch, app, event->arrival);
+	touch_gestures(touch, app, event->arrival_us);
 }
 
 /*
@@ -307,51 +304,11 @@ pv_touch_tick(
 	return -1;
 }
 
-/*
- * Reports the monotonic clock in microseconds, the clock of the touch
- * events' arrival and of pv_touch_tick.
- */
-uint64_t
-pv_touch_clock(void)
-{
-	struct timespec now;
-
-	/* The monotonic clock. */
-	(void)clock_gettime(CLOCK_MONOTONIC, &now);
-
-	/* Reports it in microseconds. */
-	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
-}
-
-/*
- * Turns a wl_touch time (the compositor's milliseconds, the low 32 bits)
- * into microseconds of the full clock, by the time the event was read; a
- * time far behind or ahead of that is taken as the reading's time.
- */
-static uint64_t
-touch_time(
-	const struct pv_touch_event *event)
-{
-	uint64_t arrival_ms;
-	uint32_t behind;
-
-	/* How far the event's time is behind its reading, modulo 2^32 milliseconds. */
-	arrival_ms = event->arrival / 1000U;
-	behind = (uint32_t)arrival_ms - event->time;
-
-	/* Another clock, or a time ahead: the reading's time. */
-	if (behind > TOUCH_TIME_BEHIND)
-		return event->arrival;
-
-	/* Reports the event's time. */
-	return (arrival_ms - behind) * 1000U;
-}
-
 /* Tells whether a finger touches where the pointer's button is the way in: the card, the chooser, the sidebar. */
 static int
 touch_for_pointer(
 	const struct pv_app *app,
-	const struct pv_touch_event *event)
+	const struct kui_window_event *event)
 {
 	int sidebar;
 
@@ -379,13 +336,13 @@ static void
 touch_pointer(
 	struct pv_touch *touch,
 	struct pv_app *app,
-	const struct pv_touch_event *event)
+	const struct kui_window_event *event)
 {
 	struct pv_event pointer;
 
 	/* Only the finger that plays it, once it plays it. */
 	if (touch->pointer &&
-	    event->type != PV_TOUCH_CANCEL &&
+	    event->kind != KUI_WINDOW_TOUCH_CANCEL &&
 	    event->id != touch->pointer_id)
 		return;
 
@@ -393,8 +350,8 @@ touch_pointer(
 	memset(&pointer, 0, sizeof(pointer));
 	pointer.x = touch->pointer_x;
 	pointer.y = touch->pointer_y;
-	if (event->type == PV_TOUCH_DOWN ||
-	    event->type == PV_TOUCH_MOTION) {
+	if (event->kind == KUI_WINDOW_TOUCH_DOWN ||
+	    event->kind == KUI_WINDOW_TOUCH_MOTION) {
 		pointer.x = (int)floor(event->x);
 		pointer.y = (int)floor(event->y);
 		touch->pointer_x = pointer.x;
@@ -403,11 +360,11 @@ touch_pointer(
 
 	/* The left button, at the time the finger was read. */
 	pointer.button = PV_BUTTON_LEFT;
-	pointer.time = event->arrival / 1000U;
+	pointer.time = event->arrival_us / 1000U;
 
 	/* Plays the pointer by the kind of touch. */
-	switch (event->type) {
-	case PV_TOUCH_DOWN:
+	switch (event->kind) {
+	case KUI_WINDOW_TOUCH_DOWN:
 		/* The pointer comes, and presses. */
 		touch->pointer = 1;
 		touch->pointer_id = event->id;
@@ -417,17 +374,17 @@ touch_pointer(
 		pointer.pressed = 1;
 		pv_app_event(app, &pointer);
 		break;
-	case PV_TOUCH_MOTION:
+	case KUI_WINDOW_TOUCH_MOTION:
 		pointer.type = PV_EVENT_MOTION;
 		pv_app_event(app, &pointer);
 		break;
-	case PV_TOUCH_UP:
+	case KUI_WINDOW_TOUCH_UP:
 		/* Released where the finger last was. */
 		touch->pointer = 0;
 		pointer.type = PV_EVENT_BUTTON;
 		pv_app_event(app, &pointer);
 		break;
-	case PV_TOUCH_CANCEL:
+	case KUI_WINDOW_TOUCH_CANCEL:
 		/* Let go without a release, so that nothing is clicked. */
 		touch->pointer = 0;
 		app->pressed = 0;
