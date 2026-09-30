@@ -1,14 +1,19 @@
-zedBSD
-=====
+Kei/zedBSD
+==========
 
-`zedBSD` is a modern, re-designed BSD-based kernel and base system
-aiming to implement all `POSIX.1-2024` and `Single UNIX Specification
-version 4 (SUSv4)` features with a sophisticated architecture. It is
-designed and directed by a human developer, and implemented by using
-AI coding agents.
+`zedBSD` is a modern, redesigned BSD-based kernel and base system that
+aims to implement all `POSIX.1-2024` and `Single UNIX Specification
+version 4 (SUSv4)` features with a sophisticated architecture.
 
-It runs on the latest computers. The current focused target is 64-bit
-x86 PC and Raspberry Pi series.
+`Kei` is a zedBSD-based operating system with the `Keiland` desktop
+environment. `Keiland` consists of a Wayland compositor and its client
+applications, designed for computers with touch displays.
+
+Both `zedBSD` and `Kei` are designed and directed by a single human
+developer and implemented with AI coding agents.
+
+`Kei` runs on modern computers. The current targets are 64-bit x86 PCs
+and the Raspberry Pi series.
 
 ## Design Architecture
 
@@ -16,7 +21,7 @@ x86 PC and Raspberry Pi series.
 +----------------------------------------------------------------+
 | Official Packages (/usr)                                       |
 +----------------------------------------------------------------+
-| Wayland desktop (/bin/wayland, ...)                                |
+| Wayland desktop (/bin/wayland, ...)                            |
 +----------------------------------------------------------------+
 | Base programs (/bin, /lib)                                     |
 +----------------------------------------------------------------+
@@ -89,7 +94,7 @@ make help              # show a short command summary
 | `userland/`          | Userland programs                                      |
 | `userland/base/`     | Base programs and libraries (`/bin`, `/lib`)           |
 | `userland/comp/`     | Compilers                                              |
-| `userland/desktop/`  | Wayland and X11 programs                               |
+| `userland/desktop/`  | Keiland programs                                       |
 | `userland/firmware/` | Optional per-device firmware packages                  |
 | `userland/packages/` | Third-party packages (`/usr`)                          |
 | `platform/`          | Target Makefiles and tools                             |
@@ -99,4 +104,4 @@ make help              # show a short command summary
 
 ## License
 
-- `zedBSD` is distributed under the zlib License (see `LICENSE`).
+- `Kei`, `Keiland`, and `zedBSD` are distributed under the zlib License (see `LICENSE`).
