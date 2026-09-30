@@ -2,12 +2,18 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q510](queue-q510.md)（ws103-p003 cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q511](queue-q511.md)（ws103-p004 cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q510
+## 最新: 2026-09-30 q511
+
+[q511](queue-q511.md): WS103 p004 cleared。compositor の client の buffer の取り込みを dedicated の import にし、`GPU_RESOURCE_IMPORT`・`GPU_RESOURCE_DESTROY` を削除。
+OS の backend（`gpu-zedbsd.c`・`zwl-gpu.h`）で wire の値を確かめる。libvulkan は dedicated の無い import と allocation の capability の dedicated の import を拒む（実行の前に見つけた穴）。
+偽の buffer の probe（`/bin/gpu-forge-test`）は断られ、compositor は動き続けた。C1・C2・boot test・5330 の smoke PASS。GitHub へは未公開。
+
+## 2026-09-30 q510
 
 [q510](queue-q510.md): WS103 p003 cleared。libvulkan に VK_KHR_get_memory_requirements2・VK_KHR_dedicated_allocation を足し、image の capability の dedicated の
 import で kernel の記述と image を照らす（host の試験 18 件）。QEMU の C1・C2・boot test と 5330 の passthrough の smoke PASS。準備として別の checkout を指す
