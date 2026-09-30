@@ -42,7 +42,7 @@
 /* How many pixels one unit of scrolling moves (zdesktop sends 15 units a wheel notch). */
 #define WINDOW_SCROLL_SCALE	4.0
 
-/* The oldest a wl_touch time may be and still be taken (older is another clock), in milliseconds. */
+/* The oldest a compositor's input time may be and still be taken (older is another clock), in milliseconds. */
 #define WINDOW_TOUCH_BEHIND	2000U
 
 /* The modifier bits of wl_keyboard.modifiers as zdesktop reports them. */
@@ -88,6 +88,7 @@ static void window_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, 
 static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
 static int window_modifier_key(uint32_t key);
 static void window_touch_push(struct kui_window *window, unsigned kind, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
+static void window_stamp(struct kui_window_event *event, uint32_t time);
 static void window_touch_down(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_up(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, int32_t id);
 static void window_touch_motion(void *data, struct wl_touch *touch, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
@@ -286,8 +287,41 @@ kui_window_dispatch(
 	struct kui_window *window,
 	int timeout_ms)
 {
-	struct pollfd descriptor;
 	int status;
+
+	/* The compositor alone. */
+	status = kui_window_dispatch_fds(window, NULL, 0U, timeout_ms, NULL);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: the events so far have run. */
+	return 0;
+}
+
+/*
+ * Waits up to a timeout (milliseconds, -1 for ever) for the compositor's
+ * events or for other descriptors of the application (a terminal's
+ * shells), and runs the compositor's events (KUI_VERSION 11).
+ *
+ * ready[i] is set to 1 when fds[i] has bytes to read or its other end has
+ * gone, 0 otherwise.  Returns 0, or -1 when the connection is broken.
+ */
+int
+kui_window_dispatch_fds(
+	struct kui_window *window,
+	const int *fds,
+	unsigned count,
+	int timeout_ms,
+	int *ready)
+{
+	struct pollfd descriptors[1U + KUI_WINDOW_FDS_MAX];
+	unsigned index;
+	unsigned used;
+	int status;
+
+	/* No other descriptor is ready until the poll says so. */
+	for (index = 0; index < count; index++)
+		ready[index] = 0;
 
 	/* The editing state as it is now goes out with what is flushed (edit.c). */
 	keiui_edit_update(window);
@@ -319,14 +353,23 @@ kui_window_dispatch(
 	if (window->event_count != 0U)
 		timeout_ms = 0;
 
-	/* Waits for the compositor. */
-	descriptor.fd = wl_display_get_fd(window->display);
-	descriptor.events = POLLIN;
-	descriptor.revents = 0;
-	status = poll(&descriptor, 1, timeout_ms);
+	/* The compositor's descriptor, then each other one (at most KUI_WINDOW_FDS_MAX). */
+	descriptors[0].fd = wl_display_get_fd(window->display);
+	descriptors[0].events = POLLIN;
+	descriptors[0].revents = 0;
+	used = 1U;
+	for (index = 0; index < count && index < KUI_WINDOW_FDS_MAX; index++) {
+		descriptors[used].fd = fds[index];
+		descriptors[used].events = POLLIN;
+		descriptors[used].revents = 0;
+		used++;
+	}
+
+	/* Waits for any of them. */
+	status = poll(descriptors, (nfds_t)used, timeout_ms);
 
 	/* Reads the compositor's events, or gives the reservation back. */
-	if (status > 0 && (descriptor.revents & POLLIN) != 0) {
+	if (status > 0 && (descriptors[0].revents & POLLIN) != 0) {
 		status = wl_display_read_events(window->display);
 		if (status < 0)
 			return -1;
@@ -336,8 +379,15 @@ kui_window_dispatch(
 			return -1;
 
 		/* A hung-up connection has no more events. */
-		if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+		if ((descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
 			return -1;
+	}
+
+	/* Each other descriptor that has bytes, or whose other end has gone. */
+	for (index = 1U; index < used; index++) {
+		/* A descriptor that is not ready stays not ready. */
+		if ((descriptors[index].revents & (POLLIN | POLLHUP | POLLERR)) != 0)
+			ready[index - 1U] = 1;
 	}
 
 	/* Runs the events read. */
@@ -874,6 +924,10 @@ window_setup(
 		xdg_toplevel_set_title(window->toplevel, options->title);
 	if (options->application != NULL)
 		xdg_toplevel_set_app_id(window->toplevel, options->application);
+
+	/* The full screen from the first configure, when asked (KUI_VERSION 11). */
+	if (options->fullscreen)
+		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
 
 	/* The on-screen keyboard's inset, where the compositor tells it (KUI_VERSION 7; NULL otherwise, and nothing is told). */
 	window->inset = keiland_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
@@ -1469,18 +1523,20 @@ window_pointer_motion(
 	wl_fixed_t y)
 {
 	struct kui_window *window;
+	struct kui_window_event *event;
 
 	/* Only over the window's own surface. */
 	(void)pointer;
-	(void)time;
 	window = data;
 	if (!window->pointer_ours)
 		return;
 
-	/* The new place, as a motion. */
+	/* The new place, as a motion at the compositor's time (KUI_VERSION 11: a stroke's samples keep their times). */
 	window->pointer_x = wl_fixed_to_double(x);
 	window->pointer_y = wl_fixed_to_double(y);
-	(void)window_push(window, KUI_WINDOW_MOTION);
+	event = window_push(window, KUI_WINDOW_MOTION);
+	if (event != NULL)
+		window_stamp(event, time);
 }
 
 /* A pointer button is pressed or let go. */
@@ -1498,18 +1554,18 @@ window_pointer_button(
 
 	/* Only over the window's own surface. */
 	(void)pointer;
-	(void)time;
 	window = data;
 	if (!window->pointer_ours)
 		return;
 
-	/* The button as an input; its serial may set a selection. */
+	/* The button as an input at the compositor's time; its serial may set a selection. */
 	window->serial = serial;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
 		window->press_serial = serial;
 	event = window_push(window, KUI_WINDOW_BUTTON);
 	if (event == NULL)
 		return;
+	window_stamp(event, time);
 	event->code = button;
 	event->pressed = 0;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
@@ -1807,8 +1863,6 @@ window_touch_push(
 	wl_fixed_t y)
 {
 	struct kui_window_event *event;
-	uint64_t arrival_ms;
-	uint32_t behind;
 
 	/* The input; a full queue drops it. */
 	event = window_push(window, kind);
@@ -1818,12 +1872,35 @@ window_touch_push(
 	event->x = wl_fixed_to_double(x);
 	event->y = wl_fixed_to_double(y);
 
-	/* The event's time: the compositor's milliseconds (the low 32 bits) behind the reading, else the reading's time. */
+	/* The event's time (a cancel has none: the reading's). */
+	if (kind != KUI_WINDOW_TOUCH_CANCEL)
+		window_stamp(event, time);
+}
+
+/*
+ * Sets an input's time from the compositor's (milliseconds of the
+ * monotonic clock, the low 32 bits) by how far it is behind the reading;
+ * a time far behind or ahead of it is another clock's, and the reading's
+ * time stays.
+ */
+static void
+window_stamp(
+	struct kui_window_event *event,
+	uint32_t time)
+{
+	uint64_t arrival_ms;
+	uint32_t behind;
+
+	/* How far the compositor's time is behind the reading, modulo 2^32 milliseconds. */
 	arrival_ms = event->arrival_us / 1000U;
 	behind = (uint32_t)arrival_ms - time;
-	event->time_us = event->arrival_us;
-	if (kind != KUI_WINDOW_TOUCH_CANCEL && behind <= WINDOW_TOUCH_BEHIND)
-		event->time_us = (arrival_ms - behind) * 1000U;
+
+	/* Another clock, or a time ahead: the reading's time stays. */
+	if (behind > WINDOW_TOUCH_BEHIND)
+		return;
+
+	/* The compositor's time, in microseconds of the full clock. */
+	event->time_us = (arrival_ms - behind) * 1000U;
 }
 
 /* A finger touches the window. */

@@ -13,7 +13,7 @@
  * keys.c turns the compositor's key codes into the bytes a shell reads;
  * font.c draws the glyphs of a monospaced TrueType font into an atlas;
  * render.c draws the grid from that atlas; window.c holds the Wayland
- * window and its keyboard; menu.c gives zdesktop the window's menus
+ * window (libkeiui's) and turns its input into the terminal's; menu.c gives zdesktop the window's menus
  * (Shell, Edit, View, Session, Help) through libkeiland; tabs.c gives it
  * the window's tabs (the titlebar's TABS mode, ws035-p086); main.c runs a
  * shell on a pseudo-terminal for each tab and ties them together.
@@ -27,6 +27,7 @@
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 #include <keiland.h>
+#include <keiui.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -376,18 +377,23 @@ struct terminal_renderer {
 };
 
 /*
- * The Wayland window, its keyboard and the key being repeated.
+ * The Wayland window: libkeiui's window (ws090-p011: the toplevel, the
+ * seat's input and the key repeat; the terminal draws on its surface with
+ * its own Vulkan), and what its input has left for the main loop.
  */
 struct terminal_window {
-	/* The connection and the globals bound from it. */
+	/*
+	 * libkeiui's window, and the objects it owns that the terminal's parts
+	 * use (borrowed, never destroyed here): the connection, the seat, the
+	 * surface and its toplevel.  The registry is the terminal's own, for
+	 * the clipboard's and the primary selection's managers.
+	 */
+	struct kui_window *kui;
 	struct wl_display *display;
 	struct wl_registry *registry;
-	struct wl_compositor *compositor;
-	struct xdg_wm_base *shell;
 	struct wl_seat *seat;
-	struct wl_keyboard *keyboard;
-	struct wl_pointer *pointer;
-	struct wl_touch *touch;
+	struct wl_surface *surface;
+	struct xdg_toplevel *toplevel;
 
 	/* The touch inputs not yet taken by the main loop, oldest first (ws081-p011; a full queue drops the newest). */
 	struct terminal_touch_event touches[TERMINAL_TOUCH_EVENTS];
@@ -399,21 +405,15 @@ struct terminal_window {
 	struct terminal_pointer_event pointer_events[TERMINAL_POINTER_EVENTS];
 	unsigned pointer_event_count;
 
-	/* The window: its surface and roles. */
-	struct wl_surface *surface;
-	struct xdg_surface *role;
-	struct xdg_toplevel *toplevel;
-
 	/* The size the compositor asked for, and whether it changed since it was last taken. */
 	uint32_t width;
 	uint32_t height;
 	int resized;
 
-	/* Whether the first configure arrived, and whether the compositor asked the window to close. */
-	int configured;
+	/* Whether the compositor asked the window to close. */
 	int closed;
 
-	/* The modifiers held, as wl_keyboard.modifiers reports them. */
+	/* The modifiers held, in the bits of wl_keyboard.modifiers (TERMINAL_MODIFIER_*). */
 	uint32_t modifiers;
 
 	/* The bytes the keys pressed since the last read produced, for the shell. */
@@ -424,27 +424,14 @@ struct terminal_window {
 	 * The view's scrolling the main loop has not yet carried out
 	 * (ws035-p114): wheel notches and Shift+Page Up or Down pages, each
 	 * positive going back into the scrollback and negative toward the live
-	 * screen.
+	 * screen; wheel is the wheel's distance not yet a whole notch.
 	 */
 	int scroll_notches;
 	int scroll_pages;
-
-	/* The key held for repeating (0 when none) and when it repeats next, in milliseconds. */
-	uint32_t repeat_key;
-	uint64_t repeat_at;
-
-	/* The repeat's first delay and its interval, in milliseconds (wl_keyboard.repeat_info). */
-	uint32_t repeat_delay;
-	uint32_t repeat_interval;
+	double wheel;
 
 	/* Whether the compositor last configured the window fullscreen. */
 	int fullscreen;
-
-	/* The largest size the window may choose (xdg-shell's bounds; 0 when not known), and the size it would like. */
-	uint32_t bounds_width;
-	uint32_t bounds_height;
-	uint32_t preferred_width;
-	uint32_t preferred_height;
 
 	/*
 	 * The tabs in the titlebar (tabs.c): zdesktop's titlebar (NULL without
@@ -575,6 +562,7 @@ void terminal_renderer_close(struct terminal_renderer *renderer);
 int terminal_window_open(struct terminal_window *window, const char *display, uint32_t width, uint32_t height);
 int terminal_window_dispatch(struct terminal_window *window, const int *others, unsigned count, int timeout, int *ready);
 void terminal_window_repeat(struct terminal_window *window, uint64_t now);
+int terminal_window_repeat_wait(const struct terminal_window *window);
 void terminal_window_close(struct terminal_window *window);
 void terminal_window_type(struct terminal_window *window, const char *bytes, size_t length);
 void terminal_window_set_fullscreen(struct terminal_window *window, int fullscreen);

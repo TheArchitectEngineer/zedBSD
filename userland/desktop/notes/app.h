@@ -20,6 +20,7 @@
 #include <xdg-shell-client-protocol.h>
 #include <tablet-unstable-v2-client-protocol.h>
 #include <keiland.h>
+#include <keiui.h>
 
 #include "notes.h"
 #include "touch.h"
@@ -164,27 +165,26 @@ struct notes_tablet_tool {
 /*
  * The Wayland window, its seat and what arrived for the main loop.
  *
- * The pointer's left button is turned into NOTES_SOURCE_POINTER input
- * events (window.c); a tablet's tools add pen and eraser events with their
- * pressure and tilt through notes_window_input() (tablet.c).  ws081-p013:
- * the touch screen's wl_touch events wait in a queue of their own for
- * touch.c (a window with wl_touch hears fingers only by it, so a finger no
- * longer writes as the pointer).
+ * The window is libkeiui's (ws090-p011: the toplevel and the seat's input;
+ * Notes draws on its surface with its own Vulkan).  The pointer's left
+ * button is turned into NOTES_SOURCE_POINTER input events (window.c); a
+ * tablet's tools add pen and eraser events with their pressure and tilt
+ * through notes_window_input() (tablet.c).  ws081-p013: the touch screen's
+ * events wait in a queue of their own for touch.c (a window with wl_touch
+ * hears fingers only by it, so a finger no longer writes as the pointer).
  */
 struct notes_window {
-	/* The connection and the globals bound from it. */
+	/*
+	 * libkeiui's window, and the objects it owns that Notes' parts use
+	 * (borrowed, never destroyed here): the connection, the seat, the
+	 * surface and its toplevel.  The registry is Notes' own, for the tablet
+	 * manager.
+	 */
+	struct kui_window *kui;
 	struct wl_display *display;
 	struct wl_registry *registry;
-	struct wl_compositor *compositor;
-	struct xdg_wm_base *shell;
 	struct wl_seat *seat;
-	struct wl_keyboard *keyboard;
-	struct wl_pointer *pointer;
-	struct wl_touch *touch;
-
-	/* The window: its surface and roles. */
 	struct wl_surface *surface;
-	struct xdg_surface *role;
 	struct xdg_toplevel *toplevel;
 
 	/* The size the compositor gave, whether it changed since taken, and whether the window is fullscreen. */
@@ -193,17 +193,10 @@ struct notes_window {
 	int resized;
 	int fullscreen;
 
-	/* The largest size the window may choose (xdg-shell's bounds; 0 when not known), and the size it would like. */
-	uint32_t bounds_width;
-	uint32_t bounds_height;
-	uint32_t preferred_width;
-	uint32_t preferred_height;
-
-	/* Whether the first configure arrived, and whether the compositor asked the window to close. */
-	int configured;
+	/* Whether the compositor asked the window to close. */
 	int closed;
 
-	/* The pointer's place (surface pixels), whether its left button is held down, and the modifiers held. */
+	/* The pointer's place (surface pixels), whether its left button is held down, and the modifiers held (NOTES_MODIFIER_*). */
 	float pointer_x;
 	float pointer_y;
 	int pointer_down;

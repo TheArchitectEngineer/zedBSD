@@ -530,6 +530,7 @@ main_loop(
 	int ready[TERMINAL_TABS];
 	int status;
 	int timeout;
+	int repeat_wait;
 
 	/* One round per event: wait, read the shell, send the keys, redraw what changed. */
 	started = terminal_clock();
@@ -538,11 +539,9 @@ main_loop(
 		/* Waits for the compositor or the shell, or until the held key repeats. */
 		timeout = 1000;
 		now = terminal_clock();
-		if (main_window.repeat_key != 0U) {
-			timeout = 0;
-			if (main_window.repeat_at > now)
-				timeout = (int)(main_window.repeat_at - now);
-		}
+		repeat_wait = terminal_window_repeat_wait(&main_window);
+		if (repeat_wait >= 0)
+			timeout = repeat_wait;
 
 		/* The fingers' next round, when it comes first (ws081-p011). */
 		if (main_touch_due >= 0 && main_touch_due < timeout)

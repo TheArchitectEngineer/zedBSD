@@ -6,119 +6,50 @@
  */
 
 /*
- * The Wayland window of Notes: an xdg-shell toplevel, the seat's pointer
- * and keyboard, and the queue of input events the main loop draws from.
+ * The Wayland window of Notes: libkeiui's window (ws090-p011), whose
+ * surface Notes draws on with its own Vulkan (KUI_PRESENT_NONE), and the
+ * queue of input events the main loop draws from.
  *
  * The pointer's left button draws: its press, the motions while it is
  * held, and its release become NOTES_INPUT_DOWN, _MOTION and _UP events
- * from NOTES_SOURCE_POINTER with a fixed pressure.  Every motion is kept,
- * not only the last of a frame, because each one is a sample of the stroke.
- * A pen tablet's tools (tablet.c, the tablet protocol) feed the same queue
- * through notes_window_input() with the pen's own pressure and tilt; a pen
- * without the tablet protocol arrives as the pointer.  ws081-p013: the
- * seat's touch screen queues its wl_touch events for touch.c.
+ * from NOTES_SOURCE_POINTER with a fixed pressure, at the compositor's
+ * time.  Every motion is kept, not only the last of a frame, because each
+ * one is a sample of the stroke.  A pen tablet's tools (tablet.c, the
+ * tablet protocol, bound from a registry of Notes' own on the window's
+ * seat) feed the same queue through notes_window_input() with the pen's
+ * own pressure and tilt; a pen without the tablet protocol arrives as the
+ * pointer.  Keys are queued as pressed (Notes does not repeat them).
+ * ws081-p013: the touch screen's events queue for touch.c.
  */
 
 #include "app.h"
 
 #include <errno.h>
-#include <poll.h>
-#include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
-
-/* The seat version the window understands. */
-#define WINDOW_SEAT_VERSION	5U
-
-/* The xdg_toplevel state that says the window is fullscreen. */
-#define WINDOW_STATE_FULLSCREEN	2U
 
 /* The evdev code of the left button. */
 #define WINDOW_BUTTON_LEFT	0x110U
 
 static void window_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void window_global_remove(void *data, struct wl_registry *registry, uint32_t name);
-static void window_ping(void *data, struct xdg_wm_base *shell, uint32_t serial);
-static void window_configure(void *data, struct xdg_surface *surface, uint32_t serial);
-static void window_toplevel_configure(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height, struct wl_array *states);
-static void window_toplevel_close(void *data, struct xdg_toplevel *toplevel);
-static void window_toplevel_bounds(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height);
-static void window_seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities);
-static void window_seat_name(void *data, struct wl_seat *seat, const char *name);
-static void window_keyboard_keymap(void *data, struct wl_keyboard *keyboard, uint32_t format, int32_t fd, uint32_t size);
-static void window_keyboard_enter(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys);
-static void window_keyboard_leave(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface);
-static void window_keyboard_key(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state);
-static void window_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
-static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
-static void window_pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y);
-static void window_pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface);
-static void window_pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t x, wl_fixed_t y);
-static void window_pointer_button(void *data, struct wl_pointer *pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state);
-static void window_pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis, wl_fixed_t value);
-static void window_pointer_frame(void *data, struct wl_pointer *pointer);
-static void window_pointer_axis_source(void *data, struct wl_pointer *pointer, uint32_t source);
-static void window_pointer_axis_stop(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis);
-static void window_pointer_axis_discrete(void *data, struct wl_pointer *pointer, uint32_t axis, int32_t discrete);
-static void window_pointer_event(struct notes_window *window, unsigned kind, uint32_t time);
-static int window_state_fullscreen(struct wl_array *states);
-static void window_touch_push(struct notes_window *window, unsigned type, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
-static void window_touch_down(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
-static void window_touch_up(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, int32_t id);
-static void window_touch_motion(void *data, struct wl_touch *touch, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
-static void window_touch_frame(void *data, struct wl_touch *touch);
-static void window_touch_cancel(void *data, struct wl_touch *touch);
+static void window_take(struct notes_window *window);
+static void window_event(struct notes_window *window, const struct kui_window_event *event);
+static void window_button(struct notes_window *window, const struct kui_window_event *event);
+static void window_key(struct notes_window *window, const struct kui_window_event *event);
+static void window_pointer_event(struct notes_window *window, unsigned kind, const struct kui_window_event *event);
+static void window_touch_push(struct notes_window *window, unsigned type, const struct kui_window_event *event);
+static uint32_t window_modifiers(unsigned modifiers);
 
-/* The registry's callbacks, for as long as the registry lives. */
+/* Notes' registry: the tablet manager. */
 static const struct wl_registry_listener registry_listener = {
 	window_global, window_global_remove
 };
 
-/* The shell's liveness check. */
-static const struct xdg_wm_base_listener shell_listener = {
-	window_ping
-};
-
-/* The configure acknowledgement of the window's role. */
-static const struct xdg_surface_listener surface_listener = {
-	window_configure
-};
-
-/* The size and states the compositor gives the window, and its request to close. */
-static const struct xdg_toplevel_listener toplevel_listener = {
-	window_toplevel_configure, window_toplevel_close, window_toplevel_bounds
-};
-
-/* The pointer's events of versions 1 to 5. */
-static const struct wl_pointer_listener pointer_listener = {
-	window_pointer_enter, window_pointer_leave, window_pointer_motion,
-	window_pointer_button, window_pointer_axis, window_pointer_frame,
-	window_pointer_axis_source, window_pointer_axis_stop, window_pointer_axis_discrete, NULL, NULL
-};
-
-/* The touch screen's events of versions 1 to 5 (shape and orientation, of version 6, are never called). */
-static const struct wl_touch_listener touch_listener = {
-	window_touch_down, window_touch_up, window_touch_motion, window_touch_frame, window_touch_cancel, NULL, NULL
-};
-
-/* The seat's devices and name. */
-static const struct wl_seat_listener seat_listener = {
-	window_seat_capabilities, window_seat_name
-};
-
-/* The keyboard's events of versions 1 to 5. */
-static const struct wl_keyboard_listener keyboard_listener = {
-	window_keyboard_keymap, window_keyboard_enter, window_keyboard_leave,
-	window_keyboard_key, window_keyboard_modifiers, window_keyboard_repeat
-};
-
 /*
- * Connects to the compositor and makes the toplevel window.
- *
- * A fullscreen window asks for it before its first commit, so that it is
- * mapped fullscreen.  Returns 0 once the first configure is acknowledged,
- * or -1 with errno set.
+ * Connects to the compositor and makes a toplevel window of a size,
+ * mapped fullscreen when asked.  Returns 0 once the first configure is
+ * acknowledged, or -1 with errno set.
  */
 int
 notes_window_open(
@@ -127,21 +58,33 @@ notes_window_open(
 	uint32_t height,
 	int fullscreen)
 {
+	struct kui_window_options options;
 	int status;
 
-	/* The size the window asks for until the compositor gives one. */
+	/* Nothing held yet. */
 	memset(window, 0, sizeof(*window));
-	window->width = width;
-	window->height = height;
-	window->preferred_width = width;
-	window->preferred_height = height;
 
-	/* The connection. */
-	window->display = wl_display_connect(NULL);
-	if (window->display == NULL)
+	/* libkeiui's window: the title, the application's identity (the gesture finds Notes by it), the size and the full screen asked for. */
+	memset(&options, 0, sizeof(options));
+	options.title = "Notes";
+	options.application = "notes";
+	options.width = width;
+	options.height = height;
+	options.present = KUI_PRESENT_NONE;
+	options.fullscreen = fullscreen;
+	window->kui = kui_window_open(&options);
+	if (window->kui == NULL)
 		return -1;
 
-	/* The globals. */
+	/* The window's objects Notes' parts use, and the size and the full screen it was given. */
+	window->display = kui_window_display(window->kui);
+	window->seat = kui_window_seat(window->kui);
+	window->surface = kui_window_surface(window->kui);
+	window->toplevel = kui_window_toplevel(window->kui);
+	kui_window_size(window->kui, &window->width, &window->height);
+	window->fullscreen = kui_window_fullscreen(window->kui);
+
+	/* Notes' registry, for the tablet manager. */
 	window->registry = wl_display_get_registry(window->display);
 	if (window->registry == NULL)
 		return -1;
@@ -156,66 +99,20 @@ notes_window_open(
 	if (status < 0)
 		return -1;
 
-	/* A window needs a compositor and a shell. */
-	if (window->compositor == NULL || window->shell == NULL) {
-		errno = EOPNOTSUPP;
-		return -1;
-	}
-
 	/* The seat's tablets, when the compositor has the tablet protocol. */
 	notes_tablet_start(window);
 
-	/* The surface. */
-	window->surface = wl_compositor_create_surface(window->compositor);
-	if (window->surface == NULL)
-		return -1;
-
-	/* The surface becomes an xdg surface. */
-	window->role = xdg_wm_base_get_xdg_surface(window->shell, window->surface);
-	if (window->role == NULL)
-		return -1;
-
-	/* Listens for its configures. */
-	status = xdg_surface_add_listener(window->role, &surface_listener, window);
-	if (status != 0)
-		return -1;
-
-	/* The xdg surface becomes a toplevel window. */
-	window->toplevel = xdg_surface_get_toplevel(window->role);
-	if (window->toplevel == NULL)
-		return -1;
-
-	/* Listens for its size and its close request. */
-	status = xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window);
-	if (status != 0)
-		return -1;
-
-	/* The title, the application's identity (the gesture finds Notes by it), and fullscreen when asked. */
-	xdg_toplevel_set_title(window->toplevel, "Notes");
-	xdg_toplevel_set_app_id(window->toplevel, "notes");
-	if (fullscreen)
-		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
-	wl_surface_commit(window->surface);
-
-	/* The first configure (and the seat's devices) before anything is drawn. */
-	status = wl_display_roundtrip(window->display);
-	if (status < 0)
-		return -1;
-
-	/* A compositor that did not configure the window cannot take its images. */
-	if (window->configured == 0) {
-		errno = EPROTO;
-		return -1;
-	}
+	/* What the first configure left in the window's queue (its size is already known). */
+	window_take(window);
+	window->resized = 0;
 
 	/* Succeeded: the window can be drawn into. */
-	window->resized = 0;
 	return 0;
 }
 
 /*
  * Waits for the compositor's events, at most a timeout in milliseconds
- * (-1: for ever), and runs them.
+ * (-1: for ever), runs them and takes the window's input.
  *
  * Returns 0, or -1 when the connection is broken.
  */
@@ -224,31 +121,7 @@ notes_window_dispatch(
 	struct notes_window *window,
 	int timeout)
 {
-	struct pollfd descriptor;
 	int status;
-
-	/* Runs what is queued until a read of new events can be reserved. */
-	for (;;) {
-		status = wl_display_dispatch_pending(window->display);
-		if (status < 0)
-			return -1;
-
-		/* A reserved read means nothing is queued any more. */
-		status = wl_display_prepare_read(window->display);
-		if (status == 0)
-			break;
-
-		/* EAGAIN asks for another dispatch; anything else is a broken connection. */
-		if (errno != EAGAIN)
-			return -1;
-	}
-
-	/* Sends what the window asked for. */
-	status = wl_display_flush(window->display);
-	if (status < 0 && errno != EAGAIN) {
-		wl_display_cancel_read(window->display);
-		return -1;
-	}
 
 	/* Nothing to wait for when events are already queued for the main loop. */
 	if (window->input_count != 0U ||
@@ -256,31 +129,13 @@ notes_window_dispatch(
 	    window->action_count != 0U)
 		timeout = 0;
 
-	/* Waits for the compositor. */
-	descriptor.fd = wl_display_get_fd(window->display);
-	descriptor.events = POLLIN;
-	descriptor.revents = 0;
-	status = poll(&descriptor, 1U, timeout);
-
-	/* Reads the compositor's events, or gives the reservation back. */
-	if (status > 0 && (descriptor.revents & POLLIN) != 0) {
-		status = wl_display_read_events(window->display);
-		if (status < 0)
-			return -1;
-	} else {
-		wl_display_cancel_read(window->display);
-		if (status < 0 && errno != EINTR)
-			return -1;
-
-		/* A hung-up connection has no more events. */
-		if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
-			return -1;
-	}
-
-	/* Runs the events read. */
-	status = wl_display_dispatch_pending(window->display);
-	if (status < 0)
+	/* The compositor's events. */
+	status = kui_window_dispatch(window->kui, timeout);
+	if (status != 0)
 		return -1;
+
+	/* The input they queued. */
+	window_take(window);
 
 	/* Succeeded: the events so far have run. */
 	return 0;
@@ -297,40 +152,18 @@ notes_window_close(
 	notes_menu_close(window);
 	notes_tablet_close(window);
 
-	/* The keyboard, the pointer, the touch screen and the seat. */
-	if (window->touch != NULL)
-		wl_touch_destroy(window->touch);
-	if (window->keyboard != NULL)
-		wl_keyboard_destroy(window->keyboard);
-	if (window->pointer != NULL)
-		wl_pointer_destroy(window->pointer);
-	if (window->seat != NULL)
-		wl_seat_destroy(window->seat);
-
-	/* The roles before the surface, the surface before the globals that made it. */
-	if (window->toplevel != NULL)
-		xdg_toplevel_destroy(window->toplevel);
-	if (window->role != NULL)
-		xdg_surface_destroy(window->role);
-	if (window->surface != NULL)
-		wl_surface_destroy(window->surface);
-	if (window->shell != NULL)
-		xdg_wm_base_destroy(window->shell);
-	if (window->compositor != NULL)
-		wl_compositor_destroy(window->compositor);
+	/* Notes' registry, then the window and its connection. */
 	if (window->registry != NULL)
 		wl_registry_destroy(window->registry);
-
-	/* The connection last. */
-	if (window->display != NULL)
-		wl_display_disconnect(window->display);
+	if (window->kui != NULL)
+		kui_window_close(window->kui);
 	memset(window, 0, sizeof(*window));
 }
 
 /*
  * Queues an input event for the main loop.
  *
- * The pointer's events come through here, and so will a pen tablet's.  A
+ * The pointer's events come through here, and so do a pen tablet's.  A
  * full queue drops a motion but keeps room for the contact's end, so that
  * a stroke is always finished.
  */
@@ -359,7 +192,7 @@ notes_window_set_title(
 	const char *title)
 {
 	/* The toplevel's title. */
-	xdg_toplevel_set_title(window->toplevel, title);
+	kui_window_set_title(window->kui, title);
 }
 
 /*
@@ -372,10 +205,7 @@ notes_window_set_fullscreen(
 	int fullscreen)
 {
 	/* On the default output, or back to a window. */
-	if (fullscreen)
-		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
-	else
-		xdg_toplevel_unset_fullscreen(window->toplevel);
+	kui_window_set_fullscreen(window->kui, fullscreen);
 }
 
 /*
@@ -396,7 +226,7 @@ notes_clock(void)
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
 }
 
-/* Binds the compositor, the shell and the first seat. */
+/* Binds the tablet manager (the window has the rest). */
 static void
 window_global(
 	void *data,
@@ -408,39 +238,9 @@ window_global(
 	struct notes_window *window;
 	int match;
 
-	/* The compositor makes surfaces; version 4 is enough. */
-	window = data;
-	match = strcmp(interface, "wl_compositor");
-	if (match == 0 && window->compositor == NULL) {
-		if (version > 4U)
-			version = 4U;
-		window->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, version);
-		return;
-	}
-
-	/* The shell gives the surface its window role. */
-	match = strcmp(interface, "xdg_wm_base");
-	if (match == 0 && window->shell == NULL) {
-		if (version > 4U)
-			version = 4U;
-		window->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, version);
-		if (window->shell != NULL)
-			(void)xdg_wm_base_add_listener(window->shell, &shell_listener, window);
-		return;
-	}
-
-	/* The seat gives the pointer and the keyboard. */
-	match = strcmp(interface, "wl_seat");
-	if (match == 0 && window->seat == NULL) {
-		if (version > WINDOW_SEAT_VERSION)
-			version = WINDOW_SEAT_VERSION;
-		window->seat = wl_registry_bind(registry, name, &wl_seat_interface, version);
-		if (window->seat != NULL)
-			(void)wl_seat_add_listener(window->seat, &seat_listener, window);
-		return;
-	}
-
 	/* The tablet manager gives the pen with its pressure and tilt (tablet.c). */
+	(void)version;
+	window = data;
 	match = strcmp(interface, "zwp_tablet_manager_v2");
 	if (match == 0)
 		notes_tablet_bind(window, registry, name);
@@ -459,451 +259,120 @@ window_global_remove(
 	(void)name;
 }
 
-/* Answers the compositor's liveness check. */
+/* Takes every input the window queued, and its full screen as the compositor left it. */
 static void
-window_ping(
-	void *data,
-	struct xdg_wm_base *shell,
-	uint32_t serial)
+window_take(
+	struct notes_window *window)
 {
-	/* The same serial back. */
-	(void)data;
-	xdg_wm_base_pong(shell, serial);
+	struct kui_window_event event;
+	int taken;
+
+	/* Each input, oldest first. */
+	for (;;) {
+		taken = kui_window_take(window->kui, &event);
+		if (taken == 0)
+			break;
+		window_event(window, &event);
+	}
+
+	/* Whether the compositor made the window fullscreen. */
+	window->fullscreen = kui_window_fullscreen(window->kui);
 }
 
-/* Acknowledges a configure; the next frame is drawn at the size it gave. */
+/* Turns one input of the window into Notes'. */
 static void
-window_configure(
-	void *data,
-	struct xdg_surface *surface,
-	uint32_t serial)
+window_event(
+	struct notes_window *window,
+	const struct kui_window_event *event)
 {
-	struct notes_window *window;
+	/* Every input carries the modifiers held. */
+	window->modifiers = window_modifiers(event->modifiers);
 
-	/* The acknowledgement comes before any image of the new state. */
-	window = data;
-	xdg_surface_ack_configure(surface, serial);
-	window->configured = 1;
-}
-
-/* Takes the size and the fullscreen state the compositor gives; a zero size keeps the window's own. */
-static void
-window_toplevel_configure(
-	void *data,
-	struct xdg_toplevel *toplevel,
-	int32_t width,
-	int32_t height,
-	struct wl_array *states)
-{
-	struct notes_window *window;
-	int fullscreen;
-
-	/* The fullscreen state, which the toolbar and the menu show. */
-	(void)toplevel;
-	window = data;
-	fullscreen = window_state_fullscreen(states);
-	if (fullscreen != window->fullscreen) {
-		window->fullscreen = fullscreen;
+	/* What it is. */
+	switch (event->kind) {
+	case KUI_WINDOW_MOTION:
+		/* The pointer's place; while the button is held, a sample of the contact. */
+		window->pointer_x = (float)event->x;
+		window->pointer_y = (float)event->y;
+		if (window->pointer_down)
+			window_pointer_event(window, NOTES_INPUT_MOTION, event);
+		break;
+	case KUI_WINDOW_BUTTON:
+		window_button(window, event);
+		break;
+	case KUI_WINDOW_KEY:
+		window_key(window, event);
+		break;
+	case KUI_WINDOW_TOUCH_DOWN:
+		window_touch_push(window, NOTES_TOUCH_DOWN, event);
+		break;
+	case KUI_WINDOW_TOUCH_MOTION:
+		window_touch_push(window, NOTES_TOUCH_MOTION, event);
+		break;
+	case KUI_WINDOW_TOUCH_UP:
+		window_touch_push(window, NOTES_TOUCH_UP, event);
+		break;
+	case KUI_WINDOW_TOUCH_CANCEL:
+		window_touch_push(window, NOTES_TOUCH_CANCEL, event);
+		break;
+	case KUI_WINDOW_RESIZE:
+		/* The size the compositor gave, drawn at from the next frame. */
+		kui_window_size(window->kui, &window->width, &window->height);
 		window->resized = 1;
+		break;
+	case KUI_WINDOW_CLOSE:
+		/* The main loop ends Notes. */
+		window->closed = 1;
+		break;
+	default:
+		break;
 	}
-
-	/* A width left to the window is the one it would like, within the compositor's bounds. */
-	if (width <= 0) {
-		width = (int32_t)window->preferred_width;
-		if (window->bounds_width > 0U && window->preferred_width > window->bounds_width)
-			width = (int32_t)window->bounds_width;
-	}
-
-	/* And so is a height. */
-	if (height <= 0) {
-		height = (int32_t)window->preferred_height;
-		if (window->bounds_height > 0U && window->preferred_height > window->bounds_height)
-			height = (int32_t)window->bounds_height;
-	}
-
-	/* A new width marks the window resized. */
-	if (width > 0 && (uint32_t)width != window->width) {
-		window->width = (uint32_t)width;
-		window->resized = 1;
-	}
-
-	/* And so does a new height. */
-	if (height > 0 && (uint32_t)height != window->height) {
-		window->height = (uint32_t)height;
-		window->resized = 1;
-	}
-}
-
-/* The compositor asks the window to close (its close button). */
-static void
-window_toplevel_close(
-	void *data,
-	struct xdg_toplevel *toplevel)
-{
-	struct notes_window *window;
-
-	/* The main loop saves and ends Notes. */
-	(void)toplevel;
-	window = data;
-	window->closed = 1;
-}
-
-/*
- * Keeps the largest size the compositor lets the window choose (xdg-shell
- * version 4); the configure that follows applies it.  A zero is a size the
- * compositor does not know.
- */
-static void
-window_toplevel_bounds(
-	void *data,
-	struct xdg_toplevel *toplevel,
-	int32_t width,
-	int32_t height)
-{
-	struct notes_window *window;
-
-	/* The width, when known. */
-	(void)toplevel;
-	window = data;
-	window->bounds_width = 0U;
-	if (width > 0)
-		window->bounds_width = (uint32_t)width;
-
-	/* The height, when known. */
-	window->bounds_height = 0U;
-	if (height > 0)
-		window->bounds_height = (uint32_t)height;
-}
-
-/* Takes the seat's keyboard, pointer and touch screen when it has them. */
-static void
-window_seat_capabilities(
-	void *data,
-	struct wl_seat *seat,
-	uint32_t capabilities)
-{
-	struct notes_window *window;
-
-	/* A keyboard, once. */
-	window = data;
-	if ((capabilities & WL_SEAT_CAPABILITY_KEYBOARD) != 0U && window->keyboard == NULL) {
-		window->keyboard = wl_seat_get_keyboard(seat);
-		if (window->keyboard != NULL)
-			(void)wl_keyboard_add_listener(window->keyboard, &keyboard_listener, window);
-	}
-
-	/* A pointer, once. */
-	if ((capabilities & WL_SEAT_CAPABILITY_POINTER) != 0U && window->pointer == NULL) {
-		window->pointer = wl_seat_get_pointer(seat);
-		if (window->pointer != NULL)
-			(void)wl_pointer_add_listener(window->pointer, &pointer_listener, window);
-	}
-
-	/* A touch screen, once (ws081-p013). */
-	if ((capabilities & WL_SEAT_CAPABILITY_TOUCH) != 0U && window->touch == NULL) {
-		window->touch = wl_seat_get_touch(seat);
-		if (window->touch != NULL)
-			(void)wl_touch_add_listener(window->touch, &touch_listener, window);
-	}
-}
-
-/* The seat's name is not used. */
-static void
-window_seat_name(
-	void *data,
-	struct wl_seat *seat,
-	const char *name)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)seat;
-	(void)name;
-}
-
-/* Closes the keymap file: keys arrive as evdev codes, which Notes reads directly. */
-static void
-window_keyboard_keymap(
-	void *data,
-	struct wl_keyboard *keyboard,
-	uint32_t format,
-	int32_t fd,
-	uint32_t size)
-{
-	/* The descriptor is the window's to close. */
-	(void)data;
-	(void)keyboard;
-	(void)format;
-	(void)size;
-	if (fd >= 0)
-		(void)close(fd);
-}
-
-/* Focus arrives; keys already held are not pressed for Notes. */
-static void
-window_keyboard_enter(
-	void *data,
-	struct wl_keyboard *keyboard,
-	uint32_t serial,
-	struct wl_surface *surface,
-	struct wl_array *keys)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)keyboard;
-	(void)serial;
-	(void)surface;
-	(void)keys;
-}
-
-/* Focus leaves: the modifiers are forgotten. */
-static void
-window_keyboard_leave(
-	void *data,
-	struct wl_keyboard *keyboard,
-	uint32_t serial,
-	struct wl_surface *surface)
-{
-	struct notes_window *window;
-
-	/* No modifier is held as far as Notes knows. */
-	(void)keyboard;
-	(void)serial;
-	(void)surface;
-	window = data;
-	window->modifiers = 0U;
-}
-
-/* Queues a pressed key with the modifiers held; releases do nothing. */
-static void
-window_keyboard_key(
-	void *data,
-	struct wl_keyboard *keyboard,
-	uint32_t serial,
-	uint32_t time,
-	uint32_t key,
-	uint32_t state)
-{
-	struct notes_window *window;
-
-	/* Only presses, while the queue has room. */
-	(void)keyboard;
-	(void)serial;
-	(void)time;
-	window = data;
-	if (state != WL_KEYBOARD_KEY_STATE_PRESSED || window->key_count >= NOTES_KEYS)
-		return;
-
-	/* Succeeded: queued. */
-	window->keys[window->key_count].key = key;
-	window->keys[window->key_count].modifiers = window->modifiers;
-	window->key_count++;
-}
-
-/* Keeps the modifiers held, which the shortcuts need. */
-static void
-window_keyboard_modifiers(
-	void *data,
-	struct wl_keyboard *keyboard,
-	uint32_t serial,
-	uint32_t depressed,
-	uint32_t latched,
-	uint32_t locked,
-	uint32_t group)
-{
-	struct notes_window *window;
-
-	/* Only the held modifiers count. */
-	(void)keyboard;
-	(void)serial;
-	(void)latched;
-	(void)locked;
-	(void)group;
-	window = data;
-	window->modifiers = depressed;
-}
-
-/* Notes does not repeat keys. */
-static void
-window_keyboard_repeat(
-	void *data,
-	struct wl_keyboard *keyboard,
-	int32_t rate,
-	int32_t delay)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)keyboard;
-	(void)rate;
-	(void)delay;
-}
-
-/* The pointer comes over the window: where it is. */
-static void
-window_pointer_enter(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t serial,
-	struct wl_surface *surface,
-	wl_fixed_t x,
-	wl_fixed_t y)
-{
-	struct notes_window *window;
-
-	/* Its place. */
-	(void)pointer;
-	(void)serial;
-	(void)surface;
-	window = data;
-	window->pointer_x = (float)wl_fixed_to_double(x);
-	window->pointer_y = (float)wl_fixed_to_double(y);
-}
-
-/* The pointer leaves the window; a drag in progress keeps its press. */
-static void
-window_pointer_leave(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t serial,
-	struct wl_surface *surface)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)pointer;
-	(void)serial;
-	(void)surface;
-}
-
-/* The pointer moves: its place, and a motion of the stroke while the button is held. */
-static void
-window_pointer_motion(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t time,
-	wl_fixed_t x,
-	wl_fixed_t y)
-{
-	struct notes_window *window;
-
-	/* Its place. */
-	(void)pointer;
-	window = data;
-	window->pointer_x = (float)wl_fixed_to_double(x);
-	window->pointer_y = (float)wl_fixed_to_double(y);
-
-	/* A motion without the button is only a place. */
-	if (!window->pointer_down)
-		return;
-
-	/* A sample of the contact. */
-	window_pointer_event(window, NOTES_INPUT_MOTION, time);
 }
 
 /* The left button starts and ends a contact. */
 static void
-window_pointer_button(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t serial,
-	uint32_t time,
-	uint32_t button,
-	uint32_t state)
+window_button(
+	struct notes_window *window,
+	const struct kui_window_event *event)
 {
-	struct notes_window *window;
-
 	/* Only the left button draws. */
-	(void)pointer;
-	(void)serial;
-	window = data;
-	if (button != WINDOW_BUTTON_LEFT)
+	if (event->code != WINDOW_BUTTON_LEFT)
 		return;
 
 	/* A press starts the contact, a release ends it. */
-	if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
+	if (event->pressed) {
 		window->pointer_down = 1;
-		window_pointer_event(window, NOTES_INPUT_DOWN, time);
+		window_pointer_event(window, NOTES_INPUT_DOWN, event);
 	} else if (window->pointer_down) {
 		window->pointer_down = 0;
-		window_pointer_event(window, NOTES_INPUT_UP, time);
+		window_pointer_event(window, NOTES_INPUT_UP, event);
 	}
 }
 
-/* The wheel is not used. */
+/* Queues a pressed key with the modifiers held; releases and a held key's repeats do nothing. */
 static void
-window_pointer_axis(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t time,
-	uint32_t axis,
-	wl_fixed_t value)
+window_key(
+	struct notes_window *window,
+	const struct kui_window_event *event)
 {
-	/* Nothing to do. */
-	(void)data;
-	(void)pointer;
-	(void)time;
-	(void)axis;
-	(void)value;
+	/* Only first presses, while the queue has room. */
+	if (!event->pressed || event->repeated)
+		return;
+	if (window->key_count >= NOTES_KEYS)
+		return;
+
+	/* Succeeded: queued. */
+	window->keys[window->key_count].key = event->code;
+	window->keys[window->key_count].modifiers = window->modifiers;
+	window->key_count++;
 }
 
-/* A frame groups nothing Notes needs. */
-static void
-window_pointer_frame(
-	void *data,
-	struct wl_pointer *pointer)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)pointer;
-}
-
-/* The wheel is not used. */
-static void
-window_pointer_axis_source(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t source)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)pointer;
-	(void)source;
-}
-
-/* The wheel is not used. */
-static void
-window_pointer_axis_stop(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t time,
-	uint32_t axis)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)pointer;
-	(void)time;
-	(void)axis;
-}
-
-/* The wheel is not used. */
-static void
-window_pointer_axis_discrete(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t axis,
-	int32_t discrete)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)pointer;
-	(void)axis;
-	(void)discrete;
-}
-
-/* Queues a pointer event at the pointer's place, with the pointer's fixed pressure and no tilt. */
+/* Queues a pointer event at the pointer's place, with the pointer's fixed pressure and no tilt, at the compositor's time. */
 static void
 window_pointer_event(
 	struct notes_window *window,
 	unsigned kind,
-	uint32_t time)
+	const struct kui_window_event *event)
 {
 	struct notes_input input;
 
@@ -914,133 +383,53 @@ window_pointer_event(
 	input.x = window->pointer_x;
 	input.y = window->pointer_y;
 	input.pressure = NOTES_POINTER_PRESSURE;
-	input.time_ms = time;
+	input.time_ms = (uint32_t)(event->time_us / 1000U);
 
 	/* Queues it like any other source's. */
 	notes_window_input(window, &input);
 }
 
-/* Tells whether a configure's states include fullscreen. */
-static int
-window_state_fullscreen(
-	struct wl_array *states)
-{
-	const uint32_t *state;
-	size_t count;
-	size_t index;
-
-	/* No array, no states. */
-	if (states == NULL || states->data == NULL)
-		return 0;
-
-	/* The states are 32-bit values. */
-	state = states->data;
-	count = states->size / sizeof(uint32_t);
-	for (index = 0; index < count; index++) {
-		/* Fullscreen is among them. */
-		if (state[index] == WINDOW_STATE_FULLSCREEN)
-			return 1;
-	}
-
-	/* Not fullscreen. */
-	return 0;
-}
-
-/* Queues a touch input with the time the window read it; a full queue drops it. */
+/* Queues a touch input for touch.c; a full queue drops it. */
 static void
 window_touch_push(
 	struct notes_window *window,
 	unsigned type,
-	uint32_t time,
-	int32_t id,
-	wl_fixed_t x,
-	wl_fixed_t y)
+	const struct kui_window_event *event)
 {
-	struct notes_touch_event *event;
+	struct notes_touch_event *kept;
 
 	/* A full queue drops the input (the fingers are far ahead of the program). */
 	if (window->touch_count >= NOTES_TOUCH_EVENTS)
 		return;
 
-	/* The input, after the ones before it. */
-	event = &window->touches[window->touch_count];
+	/* The input, after the ones before it: its time as the compositor's milliseconds, and when it was read. */
+	kept = &window->touches[window->touch_count];
 	window->touch_count++;
-	memset(event, 0, sizeof(*event));
-	event->type = type;
-	event->id = id;
-	event->x = (float)wl_fixed_to_double(x);
-	event->y = (float)wl_fixed_to_double(y);
-	event->time = time;
-	event->arrival = notes_touch_clock();
+	memset(kept, 0, sizeof(*kept));
+	kept->type = type;
+	kept->id = event->id;
+	kept->x = (float)event->x;
+	kept->y = (float)event->y;
+	kept->time = (uint32_t)(event->time_us / 1000U);
+	kept->arrival = event->arrival_us;
 }
 
-/* A finger touches the window. */
-static void
-window_touch_down(
-	void *data,
-	struct wl_touch *touch,
-	uint32_t serial,
-	uint32_t time,
-	struct wl_surface *surface,
-	int32_t id,
-	wl_fixed_t x,
-	wl_fixed_t y)
+/* Turns libkeiui's modifier bits into wl_keyboard's, which the shortcuts read. */
+static uint32_t
+window_modifiers(
+	unsigned modifiers)
 {
-	/* Queued; the window has one surface. */
-	(void)touch;
-	(void)serial;
-	(void)surface;
-	window_touch_push(data, NOTES_TOUCH_DOWN, time, id, x, y);
-}
+	uint32_t bits;
 
-/* A finger lifts. */
-static void
-window_touch_up(
-	void *data,
-	struct wl_touch *touch,
-	uint32_t serial,
-	uint32_t time,
-	int32_t id)
-{
-	/* Queued, with no place. */
-	(void)touch;
-	(void)serial;
-	window_touch_push(data, NOTES_TOUCH_UP, time, id, 0, 0);
-}
+	/* Shift, Control and Alt. */
+	bits = 0U;
+	if ((modifiers & KUI_MOD_SHIFT) != 0U)
+		bits |= NOTES_MODIFIER_SHIFT;
+	if ((modifiers & KUI_MOD_CTRL) != 0U)
+		bits |= NOTES_MODIFIER_CONTROL;
+	if ((modifiers & KUI_MOD_ALT) != 0U)
+		bits |= NOTES_MODIFIER_ALT;
 
-/* A finger moves. */
-static void
-window_touch_motion(
-	void *data,
-	struct wl_touch *touch,
-	uint32_t time,
-	int32_t id,
-	wl_fixed_t x,
-	wl_fixed_t y)
-{
-	/* Queued. */
-	(void)touch;
-	window_touch_push(data, NOTES_TOUCH_MOTION, time, id, x, y);
-}
-
-/* The end of a frame of touch events: each event was queued as it came. */
-static void
-window_touch_frame(
-	void *data,
-	struct wl_touch *touch)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)touch;
-}
-
-/* The compositor took the fingers. */
-static void
-window_touch_cancel(
-	void *data,
-	struct wl_touch *touch)
-{
-	/* Queued, for every finger. */
-	(void)touch;
-	window_touch_push(data, NOTES_TOUCH_CANCEL, 0, -1, 0, 0);
+	/* Reports them. */
+	return bits;
 }

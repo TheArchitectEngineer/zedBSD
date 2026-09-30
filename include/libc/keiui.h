@@ -47,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight; 8: the editing operations of the on-screen keyboard's buttons; 9: colour emoji from the emoji font, a third face; 10: the window's full screen, asked for and as configured). */
-#define KUI_VERSION	10U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight; 8: the editing operations of the on-screen keyboard's buttons; 9: colour emoji from the emoji font, a third face; 10: the window's full screen, asked for and as configured; 11: waiting for other descriptors with the compositor, the pointer's input at the compositor's time, and a window made fullscreen). */
+#define KUI_VERSION	11U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -686,6 +686,8 @@ struct xdg_toplevel;
  * What a window is made with.  Any pointer may be NULL: display (the
  * WAYLAND_DISPLAY one), title and application (the app_id).  width and
  * height are the size asked for until the compositor gives one.
+ * fullscreen (KUI_VERSION 11) asks for the full screen before the window
+ * is first configured, so that its first configure is the full screen's.
  */
 struct kui_window_options {
 	const char *display;
@@ -694,6 +696,7 @@ struct kui_window_options {
 	uint32_t width;
 	uint32_t height;
 	unsigned present;
+	int fullscreen;
 };
 
 /*
@@ -701,7 +704,9 @@ struct kui_window_options {
  * (surface pixels), a button's or a key's code and whether it is pressed
  * (a focus: 1 when it came), whether a key is a repeat, the modifiers held
  * (KUI_MOD_*), the wheel's distance in pixels, a finger's id and the time
- * it happened, when it was read, and its serial (a press's, for a popup or
+ * it happened (a finger's, and since KUI_VERSION 11 the pointer's motions and
+ * buttons, from the compositor's time; otherwise when it was read), when it
+ * was read, and its serial (a press's, for a popup or
  * a selection); for the text input's (KUI_VERSION 6), its text, the
  * composed text's cursor, and the bytes to delete around the caret.
  */
@@ -817,6 +822,15 @@ size_t kui_window_paste_primary(struct kui_window *window, char *text, size_t si
  */
 void kui_window_set_fullscreen(struct kui_window *window, int fullscreen);
 int kui_window_fullscreen(const struct kui_window *window);
+
+/*
+ * KUI_VERSION 11 (ws090-p011, Terminal): an application that waits for
+ * other descriptors too (a terminal's shells) waits for them with the
+ * compositor, at most KUI_WINDOW_FDS_MAX of them; ready[i] says fds[i] has
+ * something to read or has hung up.
+ */
+#define KUI_WINDOW_FDS_MAX	16U
+int kui_window_dispatch_fds(struct kui_window *window, const int *fds, unsigned count, int timeout_ms, int *ready);
 uint64_t kui_clock_us(void);
 
 /*
