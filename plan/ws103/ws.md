@@ -17,6 +17,13 @@ Resume point: 2026-09-30 に立てた。次は p001（調査と設計）
 ユーザー:「私はKeilandコンポジターがlibvulkanのみを使用していると思っていたのですが、ioctlを使ってしまっているのですか？」→ Q1 が残っている直の ioctl を
 説明し、「規則にして今移す」を選んだ。規則は [Guardrail](../guardrail.md)。
 
+## 背景: Linux と FreeBSD への移植（2026-09-30 ユーザー）
+
+ユーザー:「Keilandデスクトップ一式を、LinuxとFreeBSDでも動くようにしようと思っているからです。」→ WS103 の設計（p001）は、Linux・FreeBSD の
+Mesa の Vulkan でも同じ code が動く形を前提にする。zedBSD の libvulkan に独自の拡張を足して逃げず、Mesa が持つ標準の拡張
+（VK_KHR_display、VK_KHR_external_memory_fd と VK_EXT_external_memory_dma_buf・VK_EXT_image_drm_format_modifier、VK_KHR_external_fence_fd・
+VK_KHR_external_semaphore_fd、VK_EXT_acquire_drm_display など）の範囲で設計し、zedBSD の libvulkan に足りない物はその標準の拡張として足す。
+
 ## 今の直の ioctl（2026-09-30 main の調べ）
 
 | 何のために | ioctl | 場所 |
