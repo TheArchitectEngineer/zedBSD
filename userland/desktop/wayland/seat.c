@@ -462,6 +462,7 @@ zwl_seat_motion_shell(
 	struct zwl_server *server,
 	uint32_t time)
 {
+	int fullscreen;
 	int taken;
 
 	/* The event's time, for whatever measures the pointer's speed (corner.c). */
@@ -469,7 +470,7 @@ zwl_seat_motion_shell(
 
 	/*
 	 * A window frame's resize arrow shows only where the glass look's
-	 * windows take the pointer (shell.c): not in fullscreen mode, under a
+	 * windows take the pointer (shell.c): not before window mode, under a
 	 * popup's grab, on the lock screen, or during a drag and drop.
 	 */
 	if (!server->glass ||
@@ -497,16 +498,17 @@ zwl_seat_motion_shell(
 	if (taken)
 		return 1;
 
-	/* In the glass look a window being moved takes the motion (not while a popup holds the grab). */
+	/* The glass look takes the motion it follows (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
-		taken = zwl_glass_motion(server);
-		if (taken)
-			return 1;
-	}
-
-	/* Over a fullscreen window only the edges' gestures are zdesktop's (shell.c). */
-	if (server->glass && !server->windowed && server->popup_grab == NULL) {
-		taken = zwl_glass_edge_motion(server);
+		fullscreen = zwl_glass_fullscreen_input(server);
+		if (fullscreen) {
+			/* Over a fullscreen window only the edges' gestures are zdesktop's, and no frame shows its arrow (shell.c). */
+			zwl_cursor_frame(server, 0U);
+			taken = zwl_glass_edge_motion(server);
+		} else {
+			/* Elsewhere its windows' moves, screens, gestures and menus. */
+			taken = zwl_glass_motion(server);
+		}
 		if (taken)
 			return 1;
 	}
@@ -584,6 +586,7 @@ zwl_seat_button_shell(
 	uint32_t state)
 {
 	uint32_t bit;
+	int fullscreen;
 	int taken;
 
 	/* The event's time, for whatever measures the pointer's speed (corner.c). */
@@ -623,16 +626,16 @@ zwl_seat_button_shell(
 	if (taken)
 		return 1;
 
-	/* In the glass look the title bars and the desktop take their buttons (not while a popup holds the grab). */
+	/* The glass look takes the buttons it acts on (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
-		taken = zwl_glass_button(server, button, state);
-		if (taken)
-			return 1;
-	}
-
-	/* Over a fullscreen window only the edges' gestures take their buttons (shell.c). */
-	if (server->glass && !server->windowed && server->popup_grab == NULL) {
-		taken = zwl_glass_edge_button(server, button, state);
+		fullscreen = zwl_glass_fullscreen_input(server);
+		if (fullscreen) {
+			/* Over a fullscreen window only the edges' gestures take their buttons (shell.c). */
+			taken = zwl_glass_edge_button(server, button, state);
+		} else {
+			/* Elsewhere the title bars, the frames and the desktop. */
+			taken = zwl_glass_button(server, button, state);
+		}
 		if (taken)
 			return 1;
 	}

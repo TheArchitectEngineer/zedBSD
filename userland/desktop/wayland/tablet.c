@@ -1143,6 +1143,10 @@ send_axes(
 		words[0] = device->place_x - device->focus->x * 256;
 		words[1] = device->place_y - device->focus->y * 256;
 		send_tool(device, TOOL_MOTION, words, sizeof(words));
+
+		/* The time the place went out, when the per-frame lines were asked for (ws099-p015's pen latency). */
+		if (device->focus->client->server->log_frames)
+			printf("ZWL LAT pen surface=%u at_us=%llu\n", device->focus->id, (unsigned long long)zwl_microseconds());
 	}
 
 	/* The pressure, 0..65535, when it differs from what was sent. */

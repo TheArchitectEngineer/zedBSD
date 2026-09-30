@@ -43,6 +43,26 @@ zwl_milliseconds(
 }
 
 /*
+ * Reads the monotonic clock in microseconds, for the per-frame lines that
+ * time the pen's input to the frame that shows it (ws099-p015).
+ */
+uint64_t
+zwl_microseconds(
+	void)
+{
+	struct timespec now;
+	int error;
+
+	/* A clock that fails reads as zero. */
+	error = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: the time. */
+	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
+}
+
+/*
  * Queues one aligned protocol event without blocking the other clients.
  */
 int

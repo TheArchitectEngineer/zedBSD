@@ -10,9 +10,8 @@
  *
  * The device, pipelines and descriptor pool live as long as the compositor.
  * The display surface and its swapchain (vkdemo's standard display-plane
- * selection, userland/desktop/vkdemo/display.c) exist only in window mode: entering
- * fullscreen mode destroys them, which returns the display lease to the
- * compositor's own GPU_DISPLAY_CLAIM.  One frame is in flight at a time; its
+ * selection, userland/desktop/vkdemo/display.c) exist in window mode; closing
+ * them (the greeter's hand-over, the exit) returns the display lease.  One frame is in flight at a time; its
  * fence is exported as an fd the event loop polls, and the buffers and frame
  * callbacks the frame used are held until it signals.
  */
