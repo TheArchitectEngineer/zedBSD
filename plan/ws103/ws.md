@@ -24,7 +24,7 @@ Mesa の Vulkan でも同じ code が動く形を前提にする。zedBSD の li
 （VK_KHR_display、VK_KHR_external_memory_fd と VK_EXT_external_memory_dma_buf・VK_EXT_image_drm_format_modifier、VK_KHR_external_fence_fd・
 VK_KHR_external_semaphore_fd、VK_EXT_acquire_drm_display など）の範囲で設計し、zedBSD の libvulkan に足りない物はその標準の拡張として足す。
 
-2026-09-30 夜の更新: Linux・FreeBSD の構成はユーザーの決定で [F-065](../future/F-065-keiland-portable.md) に記録した。app は我々の WSI を持つ libvulkan を使い、後段の Mesa に chain する（Mesa の WSI は使わない）。
+2026-09-30 夜の更新: Linux・FreeBSD の構成はユーザーの決定で [F-065](../future/F-065-keiland-portable.md) に記録した。app は我々の WSI を持つ libvulkan を使い、後段の system の libvulkan（Mesa やベンダーの物）に chain する（後段の WSI は使わない）。
 client と compositor の間は全 OS で我々の独自の protocol 1 本で、運ぶ中身（zedBSD は kernel handle、Linux・FreeBSD は dma-buf と sync_file）だけが OS で変わる。
 このため上の「Mesa の標準の拡張の範囲」は、compositor の buffer・fence の受け側を OS の backend の境界の後ろに置く、という形で p001 の設計に反映する（p001 で見直す）。
 
