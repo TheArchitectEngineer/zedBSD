@@ -220,7 +220,7 @@ key は 4 列 × 4 行。左の 3 列が 12 key、右の列が ⌫・空白・�
 | 変換候補 | 縦の列に 8〜10 候補、tap で確定 | 独自の拡張（例 `keiland_input_method_candidates_v1`: IME が候補の一覧と選択を compositor へ送り、compositor が選択を返す。keyboard が出ている間は IME の popup を出さない）。**IME（WS095）は人間の作業中**なので、設計だけ先に置き、実装は IME を戻してから D2 と一緒に（p012） |
 
 - 特許: 画面の keyboard の矢印・Home・End の key は古くから広くある（例: Windows XP Tablet PC Edition の入力 panel、X の xvkbd、GNOME の onboard）。特定の gesture（空白の長押しで trackpad など）は避け、普通の button にする。法的な判断ではない。
-- 絵文字の font（判断待ち）: 白黒の Noto Emoji（OFL-1.1、今の libtruetype で描ける）か、色付き（Noto Color Emoji の CBDT、または COLRv1。libtruetype と各 app の文字の描画に色の glyph の対応が要る）。
+- 絵文字の font（2026-09-30 ユーザーの判断「色付きにする」）: 色付きの絵文字の font（候補 Noto Color Emoji、OFL-1.1。CBDT の bitmap 版と COLRv1 の版がある）を入れ、libtruetype に色の glyph の対応を足し、keyboard の panel と libkeiui の文字の描画（app の側）で色の絵文字を描く。どちらの形式を取るかと、license の監査は p019 の最初に決める。
 
 ### 2.9 試験（QEMU、Windows の QEMU）
 

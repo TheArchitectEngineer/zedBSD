@@ -66,7 +66,7 @@ Resume point: L1 を満たした（p002〜p005 cleared 2026-09-30）。次は L2
 | ws102-p016 | L2 | 右の列の全体の panel と道具の面の枠（design.md §2.10）、編集の面（矢印・行頭行末・頁・BS を key で、選択の toggle は Shift）、直前の app の button。Text Editor で「選択 → → ×5 → コピー → 直前の app → 貼り付け」で同じ文字が別の app に入る（3/3） | planning | p007 |
 | ws102-p017 | L2 | 編集の操作の拡張 `keiland_edit_v1`（libkeiland・libkeiui の `kui_text`、状態で button を灰色に）、拡張の無い窓の key への落とし（Terminal は app の表） | planning | p016 |
 | ws102-p018 | L3 | クリップボードの履歴（記憶の中だけ、10 件、password の欄は残さない、lock・Log Out で消す） | planning | p016 |
-| ws102-p019 | L3 | 絵文字の面（font の選定と license の監査、text-input の commit） | planning | p016、絵文字の font の判断 |
+| ws102-p019 | L3 | 色付きの絵文字（2026-09-30 ユーザー「色付きにする」）: font の選定（Noto Color Emoji の CBDT か COLRv1）と license の監査、libtruetype の色の glyph、keyboard の絵文字の面、libkeiui の文字の描画、text-input の commit。大きいので始める前に分ける | planning | p016 |
 | ws102-p020 | L2 | QWERTY の面の補助の key の列（Esc・Tab・Ctrl・`|`・`~`・矢印、一度だけ効く修飾） | planning | p006 |
 | ws102-p014 | — | 全文の規約と回帰（WS の最後） | planned | 最後の段 |
 
