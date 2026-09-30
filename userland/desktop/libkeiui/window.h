@@ -35,6 +35,7 @@
 
 struct zwp_primary_selection_device_manager_v1;
 struct keiland_keyboard_inset;
+struct keiland_edit;
 struct zwp_primary_selection_device_v1;
 struct zwp_primary_selection_source_v1;
 struct zwp_primary_selection_offer_v1;
@@ -259,6 +260,19 @@ struct kui_window {
 	int inset_bottom;
 	kui_keyboard_inset_fn inset_callback;
 	void *inset_data;
+
+	/*
+	 * The editing operations (KUI_VERSION 8, ws102-p017, edit.c):
+	 * libkeiland's object (NULL with a compositor without it), whether a
+	 * selection is being made, the state the application told and whether
+	 * it did, and the application's callback.
+	 */
+	struct keiland_edit *edit;
+	int selecting;
+	int edit_told;
+	unsigned edit_state;
+	kui_edit_fn edit_callback;
+	void *edit_data;
 };
 
 /* A window on the application's connection, and its owner's wake-up (window.c). */
@@ -292,5 +306,11 @@ void keiui_text_input_bind(struct kui_window *window, struct wl_registry *regist
 void keiui_text_input_start(struct kui_window *window);
 void keiui_text_input_close(struct kui_window *window);
 struct kui_window_event *keiui_window_push(struct kui_window *window, unsigned kind);
+
+/* The editing operations (edit.c): made with the window, the state sent before each wait, a key moved with Shift while selecting, and the end. */
+void keiui_edit_start(struct kui_window *window);
+void keiui_edit_update(struct kui_window *window);
+void keiui_edit_key(struct kui_window *window, struct kui_window_event *event);
+void keiui_edit_close(struct kui_window *window);
 
 #endif

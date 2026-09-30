@@ -47,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight). */
-#define KUI_VERSION	7U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight; 8: the editing operations of the on-screen keyboard's buttons). */
+#define KUI_VERSION	8U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -766,6 +766,38 @@ void kui_window_select(struct kui_window *window, const char *text, size_t lengt
 typedef int (*kui_keyboard_inset_fn)(void *data, int right, int bottom, unsigned reason);
 void kui_window_on_keyboard_inset(struct kui_window *window, kui_keyboard_inset_fn callback, void *data);
 void kui_window_keyboard_inset(const struct kui_window *window, int *right, int *bottom);
+
+/*
+ * KUI_VERSION 8 (ws102-p017, plan/ws102/design.md section 2.10): the
+ * editing operations the on-screen keyboard's buttons ask for.  A window
+ * tells zdesktop it carries all of them out and its state, and hears them.
+ * By default each becomes the keys it stands for, queued as the window's
+ * own key inputs (copy Ctrl+C, cut Ctrl+X, paste Ctrl+V, undo Ctrl+Z, redo
+ * Ctrl+Shift+Z, select all Ctrl+A), and select_begin and select_end start
+ * and end a selection: while it is made, the keys that move the caret
+ * (the arrows, Home, End, Page Up and Page Down) come with Shift, and a
+ * copy or a cut ends it.  An application that knows its state tells it
+ * (kui_window_edit_state: KUI_EDIT_HAS_SELECTION ...); otherwise a
+ * selection, undo and redo are taken to be there and paste follows the
+ * clipboard.  The application may hear an operation first: its callback
+ * returns 1 when it carried it out itself (the default is skipped).
+ */
+#define KUI_EDIT_COPY		0U
+#define KUI_EDIT_CUT		1U
+#define KUI_EDIT_PASTE		2U
+#define KUI_EDIT_UNDO		3U
+#define KUI_EDIT_REDO		4U
+#define KUI_EDIT_SELECT_ALL	5U
+#define KUI_EDIT_SELECT_BEGIN	6U
+#define KUI_EDIT_SELECT_END	7U
+#define KUI_EDIT_HAS_SELECTION	1U
+#define KUI_EDIT_CAN_PASTE	2U
+#define KUI_EDIT_CAN_UNDO	4U
+#define KUI_EDIT_CAN_REDO	8U
+typedef int (*kui_edit_fn)(void *data, unsigned operation);
+void kui_window_on_edit(struct kui_window *window, kui_edit_fn callback, void *data);
+void kui_window_edit_state(struct kui_window *window, unsigned state);
+int kui_window_selecting(const struct kui_window *window);
 size_t kui_window_paste_primary(struct kui_window *window, char *text, size_t size);
 uint64_t kui_clock_us(void);
 
