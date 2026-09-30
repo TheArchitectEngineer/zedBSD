@@ -29,6 +29,7 @@ static int face_keys(unsigned face);
 static int qwerty_has(const char *text);
 static int qwerty_keys(void);
 static int qwerty_widths(void);
+static void check_hand(void);
 
 /* The 46 plain kana (UTF-8, three bytes each). */
 static const char host_kana[] = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
@@ -188,6 +189,9 @@ main(void)
 	check(missing == 0, "QWERTY: every character has a key of the US layout");
 	missing = qwerty_widths();
 	check(missing == 0, "QWERTY: no row wider than 40 quarters, at most 12 keys");
+
+	/* The handwriting's ink and the stub recognizer (ws102-p008). */
+	check_hand();
 
 	/* The outcome. */
 	if (failures != 0) {
@@ -413,4 +417,51 @@ qwerty_widths(void)
 
 	/* The wrong rows. */
 	return wrong;
+}
+
+/* Checks the handwriting's ink (strokes, points, limits, bounds) and the stub recognizer (ws102-p008). */
+static void
+check_hand(void)
+{
+	static struct zwl_hand_ink ink;
+	struct zwl_hand_result result;
+	int32_t rect[4];
+	unsigned index;
+	int kept;
+
+	/* No ink: no candidates, empty bounds. */
+	zwl_hand_clear(&ink);
+	zwl_hand_recognize(&ink, &result);
+	zwl_hand_bounds(&ink, rect);
+	check(result.count == 0U && rect[2] == 0 && rect[3] == 0, "no ink: no candidates, no bounds");
+	kept = zwl_hand_add(&ink, 1, 1);
+	check(kept == 0, "no point without a stroke");
+
+	/* A stroke of three points, a point that does not move is not kept. */
+	kept = zwl_hand_begin(&ink, 10, 20);
+	kept &= zwl_hand_add(&ink, 30, 25);
+	kept &= zwl_hand_add(&ink, 50, 60);
+	check(kept == 1, "a stroke's points kept");
+	kept = zwl_hand_add(&ink, 50, 60);
+	check(kept == 0 && zwl_hand_points(&ink) == 3U, "a point that does not move is not kept");
+
+	/* A second stroke; the bounds cover both. */
+	(void)zwl_hand_begin(&ink, 5, 70);
+	(void)zwl_hand_add(&ink, 8, 90);
+	zwl_hand_bounds(&ink, rect);
+	check(ink.count == 2U && rect[0] == 5 && rect[1] == 20 && rect[2] == 46 && rect[3] == 71, "bounds of two strokes 5,20 46x71");
+
+	/* The stub: three candidates (あ first) and its note. */
+	zwl_hand_recognize(&ink, &result);
+	check(result.count == 3U && strcmp(result.candidates[0], "あ") == 0 && strcmp(result.note, "認識はまだ") == 0, "stub: あ い う and its note");
+
+	/* The limits: a stroke keeps ZWL_HAND_POINTS points, the ink ZWL_HAND_STROKES strokes. */
+	zwl_hand_clear(&ink);
+	(void)zwl_hand_begin(&ink, 0, 0);
+	for (index = 1; index < ZWL_HAND_POINTS + 10U; index++)
+		(void)zwl_hand_add(&ink, (int32_t)index, 0);
+	check(ink.strokes[0].count == ZWL_HAND_POINTS, "a stroke keeps 512 points");
+	for (index = 1; index < ZWL_HAND_STROKES + 5U; index++)
+		(void)zwl_hand_begin(&ink, 0, (int32_t)index);
+	check(ink.count == ZWL_HAND_STROKES, "the ink keeps 64 strokes");
 }

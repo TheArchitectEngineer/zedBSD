@@ -28,6 +28,11 @@
 #             by Shift on the digits and by the symbols face) tapped into Text Editor within 6 s (5 characters a second,
 #             qwerty-plan.py), saved by Ctrl+S: the file is the text; Shift twice locks it (ABC typed as capitals);
 #             an arrow key moves the caret (qwerty.png, qwerty-symbols.png)
+#   hand      (p008) the QWERTY panel's band button (1132,492 84x28) opens the handwriting face (writing area 938x256 at
+#             18,526): two strokes of the pointer and one of a finger are drawn (hand.png), the stub recognizes them
+#             600 ms after the last (3 candidates, あ first, its note); every frame that draws new points does so within
+#             17 ms of their input (the lag logged by zdesktop); the candidate あ is sent to ime-probe; clear empties the
+#             ink; the band button goes back to the keys
 #   touch     (p002; the pen image) 10 injected swipes from the bottom-right corner open and close the panel 10 times
 #             (5 opens, 5 closes); 10 straight-up strokes from the corner open nothing
 #   OUTDIR is the first argument:  GUEST_RUNTIME=... BIN=build/ws102-amd64 plan/ws102/tests/osk-guest.sh OUTDIR STEP...
@@ -391,6 +396,54 @@ hold 800'
 		sleep 2
 		saved=$(guest 'cat /root/q.txt' | tail -1)
 		[ "$saved" = "${text}ABC" ] && echo "qwerty: Shift locked: ABC ok" || { echo "qwerty: ($saved) MISSING"; status=1; }
+		;;
+	hand)
+		compositor
+		guest 'rm -f /tmp/ime-probe.log' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/ime-probe --log=/tmp/ime-probe.log --seconds=300 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+		swipe 6 792 150 650
+		expect_log 'ZWL OSK open kind=qwerty x=12 y=484 width=1256 height=304'
+		pointer move 1174 506 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK hand on area=18,526,938,256'
+		# Two strokes of the pointer, moving every 16 ms.
+		pointer move 200 580 sleep 150 down sleep 16 move 220 590 sleep 16 move 240 600 sleep 16 move 260 612 sleep 16 move 280 625 sleep 16 \
+			move 300 640 sleep 16 move 320 655 sleep 16 move 340 668 sleep 16 move 360 680 sleep 16 move 380 690 sleep 16 move 400 700 sleep 60 up sleep 150
+		pointer move 420 560 sleep 150 down sleep 16 move 418 580 sleep 16 move 416 600 sleep 16 move 414 620 sleep 16 move 412 640 sleep 16 \
+			move 410 660 sleep 16 move 408 680 sleep 16 move 406 700 sleep 16 move 404 720 sleep 16 move 402 740 sleep 60 up sleep 150
+		# A stroke of a finger.
+		touch_replay stroke 'size 1279 799 2
+wait 2600
+down 1 500 600
+swipe 150 60 15 16
+up 1
+hold 1500'
+		expect_log 'ZWL OSK hand stroke-end strokes=3 '
+		expect_text 'ZWL OSK hand recognize strokes=3 '
+		expect_text 'candidates=3 first=あ note=認識はまだ'
+		pointer move 700 300 sleep 300
+		shot hand.png
+		# Every frame that drew new points came within one frame of their input: its lag is shorter than the time since
+		# the frame before (the guest's frame interval; 17 ms would need 60 frames a second, which this guest's
+		# software Vulkan does not draw -- the numbers are kept for the record).
+		guest "grep -a 'ZWL OSK hand frame' /tmp/zdesktop.log" > "$out/hand-frames.txt"
+		frames=$(grep -c 'lag_ms=' "$out/hand-frames.txt")
+		late=$(sed -n 's/.*lag_ms=\([0-9]*\) gap_ms=\([0-9]*\).*/\1 \2/p' "$out/hand-frames.txt" | awk '$1 > $2 { n++ } END { print n + 0 }')
+		worst=$(sed -n 's/.*lag_ms=\([0-9]*\).*/\1/p' "$out/hand-frames.txt" | sort -n | tail -1)
+		gaps=$(sed -n 's/.*gap_ms=\([0-9]*\).*/\1/p' "$out/hand-frames.txt" | sort -n | awk '{ a[NR] = $1 } END { print a[int((NR + 1) / 2)] }')
+		[ "${frames:-0}" -ge 5 ] && [ "${late:-1}" = 0 ] && echo "hand: $frames frames, each within one frame of its input (worst lag $worst ms, median frame interval $gaps ms) ok" || { echo "hand: $frames frames, $late late (worst lag $worst ms, median interval $gaps ms) MISSING"; status=1; }
+		# The candidate あ (1010,591) to ime-probe; the ink is cleared.
+		pointer move 1010 591 sleep 200 down sleep 60 up sleep 800
+		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe-hand.log"
+		grep -qF 'PROBE TEXT text=あ' "$out/ime-probe-hand.log" && echo "hand: あ sent ok" || { echo "hand: あ MISSING"; status=1; }
+		# A stroke, then clear (1035,668): no recognition follows.
+		recognized=$(count 'ZWL OSK hand recognize')
+		pointer move 300 600 sleep 150 down sleep 16 move 330 610 sleep 16 move 360 620 sleep 60 up sleep 150
+		pointer move 1035 668 sleep 200 down sleep 60 up sleep 1200
+		expect_log 'ZWL OSK hand clear'
+		expect_count 'ZWL OSK hand recognize' "$recognized"
+		# Back to the keys.
+		pointer move 1174 506 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK hand off'
 		;;
 	edges)
 		compositor

@@ -8,14 +8,17 @@
 /*
  * The on-screen keyboard's layouts (keyboard-layout.c, ws102-p003): the
  * flick panel's faces and keys, which character a flick in a direction
- * types, and the voiced and small forms of the kana.  It knows nothing of
- * Wayland or drawing, so the host's tests read it directly.
+ * types, and the voiced and small forms of the kana; the QWERTY panel's
+ * rows (p006); and the handwriting face's ink and recognizer
+ * (keyboard-hand.c, p008).  It knows nothing of Wayland or drawing, so the
+ * host's tests read it directly.
  */
 
 #ifndef ZWL_KEYBOARD_H
 #define ZWL_KEYBOARD_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 /* The flick panel's grid: four columns (the last is the fixed keys) and four rows. */
 #define ZWL_FLICK_COLUMNS	4U
@@ -103,6 +106,50 @@ struct zwl_qwerty_key {
 	unsigned width;
 };
 
+/*
+ * Handwriting (keyboard-hand.c, ws102-p008): the most strokes and points
+ * a written character keeps, the most candidates a recognizer returns, and
+ * the longest candidate (UTF-8, with its end).
+ */
+#define ZWL_HAND_STROKES	64U
+#define ZWL_HAND_POINTS		512U
+#define ZWL_HAND_CANDIDATES	4U
+#define ZWL_HAND_TEXT		32U
+
+/* One point of a stroke, in output pixels. */
+struct zwl_hand_point {
+	int16_t x;
+	int16_t y;
+};
+
+/*
+ * One stroke of the pen or finger, from its press to its release: its
+ * points in order (the last ones dropped past ZWL_HAND_POINTS).
+ */
+struct zwl_hand_stroke {
+	unsigned count;
+	struct zwl_hand_point points[ZWL_HAND_POINTS];
+};
+
+/*
+ * The ink written on the handwriting face since it was last cleared: its
+ * strokes in order (a stroke past ZWL_HAND_STROKES is not kept).
+ */
+struct zwl_hand_ink {
+	unsigned count;
+	struct zwl_hand_stroke strokes[ZWL_HAND_STROKES];
+};
+
+/*
+ * What a recognizer answers: its candidates (UTF-8, the likeliest first)
+ * and a note to show over them (empty for none).
+ */
+struct zwl_hand_result {
+	unsigned count;
+	char candidates[ZWL_HAND_CANDIDATES][ZWL_HAND_TEXT];
+	char note[ZWL_HAND_TEXT];
+};
+
 const struct zwl_flick_key *zwl_flick_key(unsigned face, unsigned row, unsigned column);
 const char *zwl_flick_face_name(unsigned face);
 unsigned zwl_flick_face_next(unsigned face);
@@ -114,6 +161,12 @@ const char *zwl_flick_direction_name(unsigned direction);
 int zwl_flick_us_key(const char *text, unsigned *code, int *shift);
 const struct zwl_qwerty_key *zwl_qwerty_row(unsigned face, unsigned row, unsigned *count);
 const char *zwl_qwerty_face_name(unsigned face);
+void zwl_hand_clear(struct zwl_hand_ink *ink);
+int zwl_hand_begin(struct zwl_hand_ink *ink, int32_t x, int32_t y);
+int zwl_hand_add(struct zwl_hand_ink *ink, int32_t x, int32_t y);
+unsigned zwl_hand_points(const struct zwl_hand_ink *ink);
+void zwl_hand_bounds(const struct zwl_hand_ink *ink, int32_t *rect);
+void zwl_hand_recognize(const struct zwl_hand_ink *ink, struct zwl_hand_result *result);
 
 
 #endif

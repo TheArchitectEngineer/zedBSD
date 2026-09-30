@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: L1 を満たした。L2 の p006 cleared 2026-09-30。次は L2 の他の Phase（main の判断）
+Resume point: L1 を満たした。L2 の p006・p008 cleared 2026-09-30。次は p021（縁に組み込んだ見た目）、その後 p020
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -57,7 +57,7 @@ Resume point: L1 を満たした。L2 の p006 cleared 2026-09-30。次は L2 �
 | [ws102-p006](phase006/phase.md) | L2 | QWERTY の面と左下の gesture | cleared（2026-09-30: 注入の 30 文字「Hello, World! Kei 2026 (a+b)=c」を 4.9 秒で Text Editor に誤り 0（L2 の (a)）、Shift の lock・矢印、C9（10 本）・WS079-p010・boot test PASS） | p005 |
 | ws102-p007 | L2 | 作業の領域（design.md §2.8、2026-09-30 ユーザーの方針: flick・QWERTY のどちらでも縮める、最大化の窓は animation で縮めて戻す、浮いた窓は大きさを変えず animation で収まる位置へ動かし、はみ出た分はそのまま） | planned | p006 |
 | ws102-p015 | L2 | keyboard の inset の知らせ（design.md §2.8、2026-09-30 ユーザー）: Keiland の独自の protocol で、keyboard のために大きさ・位置を変える窓へ configure の前に知らせ、libkeiui が caret の行を見える範囲の中央に寄せる。Text Editor の長い文書で QWERTY を開き、caret が keyboard の上の範囲の中央付近（±1 行）に見える | planned | p007 |
-| ws102-p008 | L2 | 手書きの面（線・stub の認識・候補） | planned | p006 |
+| [ws102-p008](phase008/phase.md) | L2 | 手書きの面（線・stub の認識・候補） | cleared（2026-09-30: 手書きの面・線・stub の認識・候補の送出、guest PASS。(c): 点は入力の後の最初の frame で描かれる（9/9、lag 20〜51 ms）。QEMU の frame の間隔は 130〜143 ms で、60 Hz の 17 ms は実機か Windows の QEMU で測る） | p006 |
 | ws102-p009 | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | planned | p006 |
 | ws102-p010 | L3 | 計測の道具と基準値（遅れ・開く動き） | planned | p009 |
 | ws102-p011 | L3 | 数値目標への直し | planned | p010 |
