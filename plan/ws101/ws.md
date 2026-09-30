@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p011（L1、Noct と G3）in-progress（2026-09-30）: toolchain の差分を `plan/ws101/p011-toolchain/` に用意して main に報告。main の適用と build の後に、WS101 の分（`mix.nct`、測り方、script）と p014（G3 が passthrough で CPU と一致）。段の計画は下の「段（L1〜L3）の計画」
+Resume point: p011（L1）cleared（2026-09-30）: 5330 の passthrough で G3（N = 4,000,000）が CPU と全要素一致、GPU の dispatch の証拠、S13 の script が通る。**時間は CPU 10 ms、GPU 260 ms（GPU が 26 倍遅い）**。次は L1 の残り p014・p015（demo の image への gpudemo の追加は main）、その後 L2 の p016（260 ms の内訳）。D3 の見直しが要るかもしれない
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -65,9 +65,9 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | [ws101-p008](phase008/phase.md) | GLSL ES 3.10 の compute（版・stage・SSBO std430・shared・built-in・barrier と規則・atomic・`.length()` → SPIR-V）、Noct の shader の形の fixture。host の試験（design §3.2） | cleared（2026-09-30。host の試験 PASS。WS068 の glsl-host の fail/version.vert（310 es は未対応を期待）の更新を main に依頼） | p001（p002〜p007 と並行できる）、D4（main の記録） |
 | [ws101-p009](phase009/phase.md) | libglesv2・libegl の ES 3.1 の compute の API（design §3.3）、`gl31.h`、export と stub、版の名乗り（D1）、libGL への漏れの分離、GLES の compute の試験の program。Venus で G2 | cleared（2026-09-30。D1 は main の指示で既定の案。Venus で glescompute PASS（surfaceless・default・1000 回）、WS068 の egl-p020・p024・p027・glx-p031・p033 PASS、egl-p030 は版の検査だけ FAIL（egltest の期待が 3.0 固定、main に依頼）） | p008、D1 |
 | [ws101-p010](phase010/phase.md) | GLES の compute の i915 での G2（passthrough）。基本は p005 の後、shared・barrier は p006、indirect は p007 の後 | cleared（2026-09-30。5330 の passthrough で glescompute PASS（indirect は SKIP、p007 の後に再実行）、egl-p030・p027 の場面 PASS） | p009、p005（p006・p007 の分は後） |
-| [ws101-p011](phase011/phase.md) | **L1** Noct の toolchain の差分（design §4.1、D2 の形: target だけの patch の一覧と level、`ZEDBSD_NOCT_ACCEL`）を `plan/ws101/p011-toolchain/` に用意し main が当てる。WS101 の分: G3 の見本 `mix.nct`（N = 4,000,000、整数）、型名と offload の確認の方法、CPU と GPU の時間の測り方、試験の script | in-progress（2026-09-30。toolchain の差分と README を用意、main へ報告。main の適用と build の後に WS101 の分） | p010、D2・D3・D5（決定済み） |
-| ws101-p014 | **L1** G3 が動く: 5330 の passthrough で `noct --gpu mix.nct` の結果が CPU の run と全要素で一致し、offload が起きた（DECLINED で CPU に戻っていない）証拠がある。Venus でも一致 | planned | p011（main の適用） |
-| ws101-p015 | **L1** デモの場面 S13: デモの image（`ZEDBSD_NOCT_ACCEL := y`）の Terminal から、CPU と GPU の run を 1 つの手順で走らせて時間を並べて出す script（`/usr/share/…/s13.sh` 等）が passthrough で通る | planned | p014 |
+| [ws101-p011](phase011/phase.md) | **L1** Noct の toolchain の差分（design §4.1、D2 の形: target だけの patch の一覧と level、`ZEDBSD_NOCT_ACCEL`）を `plan/ws101/p011-toolchain/` に用意し main が当てる。WS101 の分: G3 の見本 `mix.nct`（N = 4,000,000、整数）、型名と offload の確認の方法、CPU と GPU の時間の測り方、試験の script | cleared（2026-09-30。main が当てた（189c3bf1）。5330 の passthrough で G3 が CPU と全要素一致・dispatch 8・S13 の script PASS、Venus も一致。時間: CPU 10 ms、GPU 260 ms） | p010、D2・D3・D5（決定済み） |
+| ws101-p014 | **L1** G3 が動く: 5330 の passthrough で `noct --gpu mix.nct` の結果が CPU の run と全要素で一致し、offload が起きた（DECLINED で CPU に戻っていない）証拠がある。Venus でも一致 | p011 の中で満たした（2026-09-30、[phase011](phase011/phase.md)）。残りは無い | p011（main の適用） |
+| ws101-p015 | **L1** デモの場面 S13: デモの image（`ZEDBSD_NOCT_ACCEL := y`、main が構成に `gpudemo` を足す）の Terminal から `sh /usr/share/gpudemo/s13.sh` が passthrough で通る（script は p011 で作り、試験の image で通った） | planned | p011、main の構成の変更 |
 | ws101-p016 | **L2** 時間の分解: CPU の run と GPU の run の各部分（EGL の初期化、shader の compile、upload、dispatch、readback）を passthrough と素の 5330 で測り、3 倍に何が足りないかを出す | planned | p015 |
 | ws101-p017 | **L2** 3 倍: p016 で最も大きい 1 つか 2 つを直す（例: 呼び出しごとの buffer の作り直し、readback の経路、barrier の数）。素の 5330 で GPU の中央値 ≤ CPU の中央値 / 3 | planned | p016 |
 | ws101-p012 | **L3** 素の 5330: G1 の受け入れの残り（vkcs 21 step を素の機械で）、G3 の時間、GPU が固まったときの回復の手順。ユーザーの確認 | planned | p017 |
