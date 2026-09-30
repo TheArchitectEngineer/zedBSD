@@ -70,7 +70,9 @@ zwl_fence_ready(
 		ready = poll(&check, 1U, 0);
 
 		/* Still rendering: nothing to report yet (an interrupted poll is asked again on a later pass). */
-		if (ready == 0 || (ready < 0 && errno == EINTR)) {
+		if (ready == 0 ||
+		    (ready < 0 &&
+		     errno == EINTR)) {
 			surface->fences[kept] = surface->fences[index];
 			kept++;
 			continue;

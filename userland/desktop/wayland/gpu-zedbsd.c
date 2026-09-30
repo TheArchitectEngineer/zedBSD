@@ -51,6 +51,7 @@ zwl_gpu_buffer_decode(
 	struct zwl_buffer_layout *layout)
 {
 	struct gpu_image_descriptor image;
+	VkFormat format;
 	uint64_t row_bytes;
 	uint64_t rows_bytes;
 	uint64_t end;
@@ -58,6 +59,8 @@ zwl_gpu_buffer_decode(
 	/* The description is exactly the kernel's record. */
 	if (size != sizeof(image))
 		return EINVAL;
+
+	/* Copies the record out of the (possibly unaligned) wire bytes. */
 	memcpy(&image, bytes, sizeof(image));
 
 	/* A record of this interface's revision and length. */
@@ -78,9 +81,9 @@ zwl_gpu_buffer_decode(
 
 	/* One of the two four-channel formats, in its byte order. */
 	if (image.format == GPU_PIXEL_BGRA8888) {
-		layout->format = VK_FORMAT_B8G8R8A8_UNORM;
+		format = VK_FORMAT_B8G8R8A8_UNORM;
 	} else if (image.format == GPU_PIXEL_RGBA8888) {
-		layout->format = VK_FORMAT_R8G8B8A8_UNORM;
+		format = VK_FORMAT_R8G8B8A8_UNORM;
 	} else {
 		return EINVAL;
 	}
@@ -107,6 +110,7 @@ zwl_gpu_buffer_decode(
 	/* The layout the compositor makes its image of. */
 	layout->width = image.width;
 	layout->height = image.height;
+	layout->format = format;
 	layout->stride = image.stride;
 	layout->offset = image.offset;
 	layout->allocation_bytes = image.allocation_bytes;

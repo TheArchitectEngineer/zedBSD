@@ -189,8 +189,23 @@ vkGetImageMemoryRequirements(
 	VkImage image,
 	VkMemoryRequirements *pMemoryRequirements)
 {
+	struct vulkan_image *object;
+
+	/* An image asked before answers from what it kept. */
+	object = vulkan_image(image);
+	if (object != NULL && object->requirements_known) {
+		*pMemoryRequirements = object->requirements;
+		return;
+	}
+
 	/* Native tiling, mip levels, layers, samples, and formats determine these requirements. */
 	resource_requirements(vulkan_device(device), (uint64_t)image, VULKAN_OPCODE_vkGetImageMemoryRequirements, pMemoryRequirements);
+
+	/* A complete answer (a failed one is all zero) is kept for the next question. */
+	if (object != NULL && pMemoryRequirements->size != 0U) {
+		object->requirements = *pMemoryRequirements;
+		object->requirements_known = VK_TRUE;
+	}
 
 	/* Succeeded: the output retains the renderer's original memory type indices. */
 	return;
@@ -207,11 +222,29 @@ vkGetImageSubresourceLayout(
 	VkSubresourceLayout *pLayout)
 {
 	struct VkDevice_T *owner;
+	struct vulkan_image *object;
 	struct vulkan_writer writer;
 	struct vulkan_reader reader;
 	VkSubresourceLayout layout;
 	VkResult status;
 	VkBool32 present;
+	VkBool32 first_color;
+
+	/* The first color subresource, whose answer an image keeps. */
+	object = vulkan_image(image);
+	first_color = VK_FALSE;
+	if (pSubresource->aspectMask == VK_IMAGE_ASPECT_COLOR_BIT &&
+	    pSubresource->mipLevel == 0U &&
+	    pSubresource->arrayLayer == 0U)
+		first_color = VK_TRUE;
+
+	/* An image asked before about that subresource answers from what it kept. */
+	if (object != NULL &&
+	    first_color &&
+	    object->color_layout_known) {
+		*pLayout = object->color_layout;
+		return;
+	}
 
 	/* Requests the selected aspect, mip level, and array layer from the real native image. */
 	owner = vulkan_device(device);
@@ -237,6 +270,14 @@ vkGetImageSubresourceLayout(
 	status = vulkan_reply_finish(owner->object.context, &reader, status);
 	if (status != VK_SUCCESS)
 		memset(&layout, 0, sizeof(layout));
+
+	/* A complete answer about the first color subresource is kept for the next question. */
+	if (status == VK_SUCCESS &&
+	    object != NULL &&
+	    first_color) {
+		object->color_layout = layout;
+		object->color_layout_known = VK_TRUE;
+	}
 
 	/* Publishes the complete native subresource layout in the public ABI. */
 	*pLayout = layout;
@@ -462,8 +503,10 @@ vkGetImageSparseMemoryRequirements2KHR(
 	for (index = 0U; index < count; index++)
 		pSparseMemoryRequirements[index].memoryRequirements = plain[index];
 
-	/* The number written, and the gathering storage goes. */
+	/* Reports how many answers were written. */
 	*pSparseMemoryRequirementCount = count;
+
+	/* Frees the gathering storage. */
 	vulkan_free(&owner->object.allocator, plain);
 
 	/* Succeeded: the caller's array holds the written answers. */
@@ -850,7 +893,9 @@ resource_dedicated_requirements(
 	VkMemoryDedicatedRequirements *dedicated;
 
 	/* Fills every dedicated-requirements structure in the output chain. */
-	for (chain = next; chain != NULL; chain = chain->pNext) {
+	for (chain = next;
+	     chain != NULL;
+	     chain = chain->pNext) {
 		/* Other output structures are not known to this query. */
 		if (chain->sType != VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS)
 			continue;

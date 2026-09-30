@@ -36,6 +36,7 @@ main(
 	struct gpu_image_descriptor image;
 	int failures;
 
+	/* No case has failed yet. */
 	failures = 0;
 
 	/* A 800x600 BGRA image in its own allocation. */
@@ -157,6 +158,9 @@ decode_base(
 	image->allocation_bytes = 3200U * 600U;
 	image->memory_type = 1U;
 	image->tiling = GPU_IMAGE_LINEAR;
+
+	/* Succeeded: the description is one Vulkan can take. */
+	return;
 }
 
 /* Runs one case against a device of 16384-pixel images and 4 memory types; returns 1 when the verdict is not the expected one. */

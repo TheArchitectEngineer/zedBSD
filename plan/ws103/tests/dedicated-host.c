@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* One case: its name, and whether the check must accept it. */
+/* One import, exact or forged in one value, that the check must decide. */
 struct dedicated_case {
 	const char *name;
 	int accept;
@@ -44,6 +44,7 @@ main(
 	struct dedicated_case item;
 	int failures;
 
+	/* No case has failed yet. */
 	failures = 0;
 
 	/* The description as the kernel gives it for the image the importer made. */
@@ -195,6 +196,9 @@ dedicated_base(
 	item->described.memory_type = 1U;
 	item->described.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 	item->described.tiling = GPU_IMAGE_LINEAR;
+
+	/* Succeeded: the case is an exact import. */
+	return;
 }
 
 /* Runs one case; returns 1 when its verdict is not the expected one. */

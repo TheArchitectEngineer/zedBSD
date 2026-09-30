@@ -590,8 +590,8 @@ struct keiland_preferences;
 /*
  * The compositor: one per process, alive from start to exit.
  *
- * It alone owns its GPU context, its Vulkan output and the connections of
- * its clients.
+ * It alone owns its Vulkan device and output and the connections of its
+ * clients.
  */
 struct zwl_server {
 	struct zwl_perf perf;

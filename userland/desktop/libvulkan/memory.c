@@ -744,8 +744,15 @@ memory_import_fd(
 	 * only an image capability is taken for it (ws103-p004).
 	 */
 	dedicated = memory_dedicated_image(info);
-	if (dedicated != VK_NULL_HANDLE)
-		return memory_import_image_fd(device, info, allocator, fd, memory);
+	if (dedicated != VK_NULL_HANDLE) {
+		/* Imports the image capability for the named image. */
+		status = memory_import_image_fd(device, info, allocator, fd, memory);
+		if (status != VK_SUCCESS)
+			return status;
+
+		/* Succeeded: the checked image capability is imported. */
+		return VK_SUCCESS;
+	}
 
 	/* Resolve the receiver's actual device/driver before attaching any foreign resource. */
 
@@ -943,6 +950,8 @@ memory_import_image_fd(
 
 	/* Only the checked image may be bound to a dedicated import (resource_bind). */
 	storage->dedicated_image = (uint64_t)dedicated;
+
+	/* Consumes the caller's fd now that the import owns its reference. */
 	error = close(fd);
 	(void)error;
 
@@ -1528,7 +1537,9 @@ memory_dedicated_image(
 
 	/* The last dedicated-allocation entry of the chain names the image. */
 	image = VK_NULL_HANDLE;
-	for (next = info->pNext; next != NULL; next = next->pNext) {
+	for (next = info->pNext;
+	     next != NULL;
+	     next = next->pNext) {
 		/* Other entries do not name the imported image. */
 		if (next->sType != VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO)
 			continue;

@@ -79,9 +79,11 @@ main(
 	struct gpu_image_descriptor described;
 	struct wl_array metadata;
 	struct wl_buffer *buffer;
+	void *slot;
 	int fd;
 	int error;
 	int status;
+	int refused;
 
 	/* The compositor and its GPU buffer factory. */
 	memset(&wayland, 0, sizeof(wayland));
@@ -115,22 +117,34 @@ main(
 	described.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	described.tiling = GPU_IMAGE_LINEAR;
 
-	/* The buffer, sent with the description. */
+	/* Makes room for the description in the request's array. */
 	wl_array_init(&metadata);
-	if (wl_array_add(&metadata, sizeof(described)) == NULL) {
+	slot = wl_array_add(&metadata, sizeof(described));
+	if (slot == NULL) {
 		printf("gpu-forge: FAIL (no memory)\n");
 		return 1;
 	}
-	memcpy(metadata.data, &described, sizeof(described));
+
+	/* Copies the claimed description into the request. */
+	memcpy(slot, &described, sizeof(described));
+
+	/* Sends the forged buffer; the compositor answers on the next round trip. */
 	buffer = keiland_gpu_buffer_v1_create_buffer(wayland.factory, fd, &metadata);
-	wl_array_release(&metadata);
-	close(fd);
 	(void)buffer;
 
-	/* The compositor's answer: a refusal ends the connection with a protocol error. */
+	/* Drops the local copies of the array and the fd (the request holds its own). */
+	wl_array_release(&metadata);
+	close(fd);
+
+	/* Waits for the compositor's answer: a refusal ends the connection with a protocol error. */
 	status = wl_display_roundtrip(wayland.display);
 	error = wl_display_get_error(wayland.display);
-	printf("GPUFORGE RESULT refused=%d error=%d\n", status < 0 ? 1 : 0, error);
+
+	/* Reports whether the connection was ended. */
+	refused = 0;
+	if (status < 0)
+		refused = 1;
+	printf("GPUFORGE RESULT refused=%d error=%d\n", refused, error);
 
 	/* An accepted forgery fails the test. */
 	if (status >= 0) {
@@ -165,6 +179,9 @@ registry_global(
 
 	/* Revision one has create_buffer. */
 	wayland->factory = wl_registry_bind(registry, name, &keiland_gpu_buffer_v1_interface, 1U);
+
+	/* Succeeded: the factory is bound. */
+	return;
 }
 
 /* Ignores globals that go away. */
@@ -177,6 +194,9 @@ registry_remove(
 	(void)data;
 	(void)registry;
 	(void)name;
+
+	/* Succeeded: nothing the test uses goes away. */
+	return;
 }
 
 /* Connects to the compositor and binds its GPU buffer factory; returns an errno value. */
@@ -191,11 +211,13 @@ forge_connect(
 	if (wayland->display == NULL)
 		return ECONNREFUSED;
 
-	/* Its registry, and one round trip for the globals. */
+	/* Its registry. */
 	wayland->registry = wl_display_get_registry(wayland->display);
 	if (wayland->registry == NULL)
 		return ENOMEM;
-	wl_registry_add_listener(wayland->registry, &registry_listener, wayland);
+
+	/* Listens for the globals, and waits one round trip for them. */
+	(void)wl_registry_add_listener(wayland->registry, &registry_listener, wayland);
 	status = wl_display_roundtrip(wayland->display);
 	if (status < 0)
 		return EPROTO;
@@ -248,16 +270,22 @@ forge_export(
 	/* The first physical device. */
 	count = 1U;
 	result = vkEnumeratePhysicalDevices(vulkan->instance, &count, &vulkan->physical);
-	if ((result != VK_SUCCESS && result != VK_INCOMPLETE) || count == 0U)
+	if (result != VK_SUCCESS && result != VK_INCOMPLETE)
 		return ENODEV;
 
-	/* A device with external memory fds and one queue of family 0. */
+	/* A system without a device cannot run the test. */
+	if (count == 0U)
+		return ENODEV;
+
+	/* One queue of family 0. */
 	priority = 1.0f;
 	memset(&queue, 0, sizeof(queue));
 	queue.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 	queue.queueFamilyIndex = 0U;
 	queue.queueCount = 1U;
 	queue.pQueuePriorities = &priority;
+
+	/* A device with external memory fds and that queue. */
 	memset(&device, 0, sizeof(device));
 	device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	device.queueCreateInfoCount = 1U;
@@ -268,10 +296,12 @@ forge_export(
 	if (result != VK_SUCCESS)
 		return ENODEV;
 
-	/* A 64x64 linear BGRA image that may be shared. */
+	/* The image may be shared through an fd. */
 	memset(&external, 0, sizeof(external));
 	external.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
 	external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+	/* A 64x64 linear BGRA image. */
 	memset(&image, 0, sizeof(image));
 	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image.pNext = &external;
@@ -291,21 +321,33 @@ forge_export(
 	if (result != VK_SUCCESS)
 		return ENODEV;
 
-	/* Its memory requirements, the first type it may use, and its rows. */
+	/* Reads the image's memory requirements. */
 	vkGetImageMemoryRequirements(vulkan->device, vulkan->image, &vulkan->requirements);
+
+	/* Finds the first memory type the image may use. */
 	vulkan->memory_type = 0U;
-	while (vulkan->memory_type < 32U && (vulkan->requirements.memoryTypeBits & (1U << vulkan->memory_type)) == 0U)
+	while (vulkan->memory_type < 32U) {
+		/* A type the image may use ends the search. */
+		if ((vulkan->requirements.memoryTypeBits & (1U << vulkan->memory_type)) != 0U)
+			break;
 		vulkan->memory_type++;
+	}
+
+	/* An image that may use no memory type cannot be allocated. */
 	if (vulkan->memory_type == 32U)
 		return ENODEV;
+
+	/* Reads the row layout of the one color subresource. */
 	memset(&subresource, 0, sizeof(subresource));
 	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	vkGetImageSubresourceLayout(vulkan->device, vulkan->image, &subresource, &vulkan->layout);
 
-	/* An exportable allocation of the image's size. */
+	/* The allocation may be exported as an fd. */
 	memset(&export, 0, sizeof(export));
 	export.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
 	export.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+	/* An allocation of the image's size. */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocate.pNext = &export;
@@ -315,10 +357,12 @@ forge_export(
 	if (result != VK_SUCCESS)
 		return ENOTSUP;
 
-	/* The allocation's fd (an allocation capability, not an image capability). */
+	/* Finds the extension's export entry point. */
 	get_memory_fd = (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(vulkan->device, "vkGetMemoryFdKHR");
 	if (get_memory_fd == NULL)
 		return ENOTSUP;
+
+	/* Exports the allocation's fd (an allocation capability, not an image capability). */
 	memset(&get_fd, 0, sizeof(get_fd));
 	get_fd.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
 	get_fd.memory = vulkan->memory;

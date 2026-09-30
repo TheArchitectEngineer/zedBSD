@@ -853,7 +853,7 @@ compose_refresh(
 		}
 	}
 
-	/* The mode handles stay valid after their parameters are freed. */
+	/* Frees the mode list; the refresh was copied out of it. */
 	free(modes);
 
 	/* A zero refresh is no refresh to tell the clients. */

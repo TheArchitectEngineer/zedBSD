@@ -189,6 +189,18 @@ struct vulkan_image {
 	VkImageTiling tiling;
 	VkSharingMode sharing_mode;
 	VkBool32 swapchain_owned;
+	/*
+	 * The renderer's answers about this image, kept after the first query:
+	 * its memory requirements, and the layout of its first color
+	 * subresource (level 0, layer 0).  An image's answers never change, and
+	 * an importer asks them twice (itself, then libvulkan's check of a
+	 * dedicated import), which on a remote renderer is a round trip each
+	 * (ws103-p007).
+	 */
+	VkBool32 requirements_known;
+	VkMemoryRequirements requirements;
+	VkBool32 color_layout_known;
+	VkSubresourceLayout color_layout;
 };
 
 /* Renderer external-storage declaration; never exposed as a guest fd ABI. */
