@@ -32,6 +32,14 @@
 /* The vertices of a quad: two triangles of a triangle list. */
 #define ZWL_QUAD_VERTICES	6U
 
+/*
+ * The text batches (ws075-p031): the glyphs a frame may batch (more are
+ * drawn one by one), and the floats of a glyph's corner in the vertex
+ * buffer: its place (2), its place in the atlas (2), color (4), opacity (1).
+ */
+#define ZWL_TEXT_GLYPHS		8192U
+#define ZWL_TEXT_FLOATS		9U
+
 /* The glass look's push constants: six vec4 (see shaders/panel.frag). */
 #define ZWL_PANEL_CONSTANTS	24U
 
@@ -125,6 +133,20 @@ struct zwl_compose {
 	/* The glass look's pipeline (shapes, glass, text) and the sampler of its blurred wallpaper. */
 	VkPipelineLayout panel_layout;
 	VkPipeline panel_pipeline;
+	/*
+	 * The glass look's text in batches (ws075-p031): the text pipeline
+	 * (panel.frag's text mode for many glyphs in one draw), the vertex
+	 * buffer the frame's glyphs are written into (mapped for good, room
+	 * for ZWL_TEXT_GLYPHS glyphs), how many the frame has written, and
+	 * where the glyphs waiting to be drawn start and how many there are.
+	 */
+	VkPipeline text_pipeline;
+	VkBuffer text_buffer;
+	VkDeviceMemory text_memory;
+	float *text_map;
+	uint32_t text_used;
+	uint32_t text_first;
+	uint32_t text_pending;
 	VkSampler linear_sampler;
 	struct zwl_glass *glass;
 	VkDescriptorPool descriptors;
@@ -214,6 +236,10 @@ void zwl_compose_set_put(struct zwl_compose *compose, VkDescriptorSet set);
 
 /* Gives an image a second, linearly sampled descriptor set (compose.c). */
 VkResult zwl_compose_linear_set(struct zwl_compose *compose, struct zwl_import *import);
+
+/* The glass look's text in batches (glass.c, ws075-p031): a frame's start, and the waiting glyphs drawn. */
+void zwl_text_frame(struct zwl_compose *compose);
+void zwl_text_flush(struct zwl_server *server, VkCommandBuffer command);
 
 /* The output's pass that keeps its pixels (backdrop.c). */
 VkResult zwl_compose_load_pass(struct zwl_compose *compose);

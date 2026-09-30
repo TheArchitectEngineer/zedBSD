@@ -200,6 +200,7 @@ static int glass_open_face(struct zwl_glass *glass, const char *path);
 static const struct glass_glyph *glass_glyph_of(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
 static const struct glass_glyph *glass_cache_glyph(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
 static uint32_t glass_utf8_next(const char **text);
+static int glass_text_batch(struct zwl_compose *compose, const struct glass_shape *shape, const float *constants);
 static void glass_draw_glyph_at(struct zwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
 static void *file_read(const char *path, size_t *size);
 static int wallpaper_load(const char *path, struct wallpaper_picture *picture);
@@ -1277,6 +1278,7 @@ glass_shape_draw(
 	float width;
 	float height;
 	VkDescriptorSet set;
+	int batched;
 
 	/*
 	 * The quad and the box, moved and scaled when the desktop layer is
@@ -1320,6 +1322,12 @@ glass_shape_draw(
 	constants[21] = height;
 	constants[22] = shape->edge;
 	constants[23] = shape->opacity;
+
+	/* Text from the atlas waits to be drawn with the glyphs next to it; anything else draws them first (ws075-p031). */
+	batched = glass_text_batch(compose, shape, constants);
+	if (batched)
+		return;
+	zwl_text_flush(server, command);
 
 	/*
 	 * A shape without an image of its own is given the blurred scene under
@@ -2192,4 +2200,104 @@ glass_draw_glyph_at(
 	memcpy(shape.color, color, sizeof(shape.color));
 	shape.set = glass->atlas.set;
 	glass_shape_draw(server, command, &shape);
+}
+
+/*
+ * The glass look's text in batches (ws075-p031).  A glyph (a shape of the
+ * text mode that samples the atlas) is not drawn when it is recorded: its
+ * two triangles are written into the frame's vertex buffer, and every glyph
+ * waiting is drawn with one draw of the text pipeline (text.frag: panel.frag's
+ * text mode, the same arithmetic) before anything else is drawn, a pass
+ * ends, or the frame ends.  The order of what is drawn is kept, so the
+ * picture is the same as drawing each glyph alone; a frame of more glyphs
+ * than the buffer holds draws the rest one by one.
+ */
+
+/* Starts a frame: no glyph written, none waiting. */
+void
+zwl_text_frame(
+	struct zwl_compose *compose)
+{
+	/* The buffer is the frame's again (the frame before has completed). */
+	compose->text_used = 0U;
+	compose->text_first = 0U;
+	compose->text_pending = 0U;
+}
+
+/*
+ * Writes a shape into the batch when it is a glyph and there is room: its
+ * six corners (the quad's corners in normalized device coordinates, as the
+ * panel's vertex shader places them, and the atlas's) with its color and
+ * opacity.  Returns 1 when it waits in the batch, 0 when it is to be drawn
+ * alone.
+ */
+static int
+glass_text_batch(
+	struct zwl_compose *compose,
+	const struct glass_shape *shape,
+	const float *constants)
+{
+	/* The corners of the two triangles: (0,0) (1,0) (0,1) (0,1) (1,0) (1,1). */
+	static const unsigned corners[ZWL_QUAD_VERTICES][2] = {
+		{ 0U, 0U }, { 1U, 0U }, { 0U, 1U }, { 0U, 1U }, { 1U, 0U }, { 1U, 1U }
+	};
+	float *vertex;
+	unsigned corner;
+
+	/* Only the atlas's text, with the buffer made and room in it. */
+	if (shape->mode != MODE_TEXT || compose->glass == NULL || shape->set != compose->glass->atlas.set)
+		return 0;
+	if (compose->text_map == NULL || compose->text_pipeline == VK_NULL_HANDLE)
+		return 0;
+	if (compose->text_used >= ZWL_TEXT_GLYPHS)
+		return 0;
+
+	/* Each corner: the place (x from constants 0 or 2, y from 1 or 3), the atlas's (uv 0 or 2, 1 or 3), the color and opacity. */
+	vertex = compose->text_map + (size_t)compose->text_used * ZWL_QUAD_VERTICES * ZWL_TEXT_FLOATS;
+	for (corner = 0; corner < ZWL_QUAD_VERTICES; corner++) {
+		vertex[0] = constants[corners[corner][0] * 2U];
+		vertex[1] = constants[1U + corners[corner][1] * 2U];
+		vertex[2] = shape->uv[corners[corner][0] * 2U];
+		vertex[3] = shape->uv[1U + corners[corner][1] * 2U];
+		memcpy(&vertex[4], shape->color, 4U * sizeof(float));
+		vertex[8] = shape->opacity;
+		vertex += ZWL_TEXT_FLOATS;
+	}
+
+	/* One more glyph written and waiting. */
+	compose->text_used++;
+	compose->text_pending++;
+	return 1;
+}
+
+/* Draws the glyphs waiting, with one draw, and puts the quad's corners back for the shapes after them. */
+void
+zwl_text_flush(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	struct zwl_compose *compose;
+	VkDescriptorSet set;
+	VkDeviceSize offset;
+
+	/* Nothing waiting. */
+	compose = server->compose;
+	if (compose == NULL || compose->text_pending == 0U)
+		return;
+
+	/* The text pipeline, the atlas, and the waiting glyphs' corners. */
+	set = compose->glass->atlas.set;
+	offset = (VkDeviceSize)compose->text_first * ZWL_QUAD_VERTICES * ZWL_TEXT_FLOATS * sizeof(float);
+	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->text_pipeline);
+	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->panel_layout, 0U, 1U, &set, 0U, NULL);
+	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->text_buffer, &offset);
+	vkCmdDraw(command, compose->text_pending * ZWL_QUAD_VERTICES, 1U, 0U, 0U);
+
+	/* The quad's corners again, for every other shape. */
+	offset = 0U;
+	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->corners, &offset);
+
+	/* Nothing waiting now. */
+	compose->text_first = compose->text_used;
+	compose->text_pending = 0U;
 }
