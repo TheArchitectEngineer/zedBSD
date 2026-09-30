@@ -784,6 +784,14 @@ wl_display_read_events(
 
 /*
  * Waits for and dispatches events belonging only to one selected event queue.
+ *
+ * As in the standard library, one wait and one read of the socket at most:
+ * the call returns how many events it dispatched, which is 0 when what it
+ * read held none for this queue (a delete_id, events of another queue or of
+ * a destroyed object, part of a message).  A caller that polls the socket
+ * with a timeout and then dispatches relies on this: a call that waited on
+ * until an event of its queue came would not return to the caller's timeout
+ * (BUG-123).
  */
 int
 wl_display_dispatch_queue(
@@ -793,41 +801,41 @@ wl_display_dispatch_queue(
 	int dispatched;
 	int error;
 
-	/* Rechecks pending events after every coordinated socket read or race. */
-	while (1) {
-		/* Dispatches already-received events before polling the descriptor. */
-		dispatched = wl_display_dispatch_queue_pending(display, queue);
-		if (dispatched < 0)
-			return -1;
+	/* Dispatches already-received events before polling the descriptor. */
+	dispatched = wl_display_dispatch_queue_pending(display, queue);
+	if (dispatched < 0)
+		return -1;
 
-		/* A nonempty selected queue satisfies this dispatch call immediately. */
-		if (dispatched != 0)
-			return dispatched;
+	/* A nonempty selected queue satisfies this dispatch call immediately. */
+	if (dispatched != 0)
+		return dispatched;
 
-		/* Prevents a different queue reader from consuming readiness unnoticed. */
-		error = wl_display_prepare_read_queue(display, queue);
-		if (error != 0) {
-			/* Newly queued events are dispatched at the start of the next pass. */
-			if (errno == EAGAIN)
-				continue;
+	/* Prevents a different queue reader from consuming readiness unnoticed. */
+	error = wl_display_prepare_read_queue(display, queue);
+	if (error != 0) {
+		/* Events queued meanwhile are dispatched now. */
+		if (errno == EAGAIN)
+			return wl_display_dispatch_queue_pending(display, queue);
 
-			return -1;
-		}
-
-		/* Flushes requests and waits outside the connection mutex. */
-		error = wlc_display_wait(display);
-		if (error != 0) {
-			error = errno;
-			wl_display_cancel_read(display);
-			errno = error;
-			return -1;
-		}
-
-		/* The coordinated read never dispatches a different queue's listeners. */
-		error = wl_display_read_events(display);
-		if (error != 0)
-			return -1;
+		return -1;
 	}
+
+	/* Flushes requests and waits outside the connection mutex. */
+	error = wlc_display_wait(display);
+	if (error != 0) {
+		error = errno;
+		wl_display_cancel_read(display);
+		errno = error;
+		return -1;
+	}
+
+	/* The coordinated read never dispatches a different queue's listeners. */
+	error = wl_display_read_events(display);
+	if (error != 0)
+		return -1;
+
+	/* Succeeded: what the read queued for this queue, possibly nothing. */
+	return wl_display_dispatch_queue_pending(display, queue);
 }
 
 /*
