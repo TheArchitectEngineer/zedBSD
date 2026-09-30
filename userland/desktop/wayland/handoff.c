@@ -136,8 +136,7 @@ zwl_handoff_release(
 {
 	int descriptor;
 
-	/* A directly shown image, then window mode's swapchain and its lease. */
-	(void)zwl_unscan(server);
+	/* Window mode's swapchain goes, and with it the display's lease. */
 	zwl_compose_output_close(server);
 
 	/* sessiond hears it (when it started zdesktop). */

@@ -277,7 +277,7 @@ zwl_callbacks_done(
 }
 
 /*
- * Retires a protocol object while preserving any outstanding scanout ownership.
+ * Retires a protocol object and detaches everything that names it.
  */
 void
 zwl_object_destroy(
@@ -285,7 +285,6 @@ zwl_object_destroy(
 {
 	struct zwl_server *server;
 	unsigned index;
-	int error;
 
 	/* Repeated cleanup of an already-dead buffer changes no ownership. */
 	if (object == NULL || object->dead)
@@ -371,18 +370,8 @@ zwl_object_destroy(
 	if (object->id < ZWL_SERVER_ID_FIRST)
 		zwl_delete_id(object->client, object->id);
 
-	/* A surface's scanout must be disabled before its imported buffers can retire. */
+	/* A surface's shell objects stop referring to it before its storage goes. */
 	if (object->kind == ZWL_SURFACE) {
-		/* The owning front must stop scanout before this surface loses its references. */
-		if (server->front_surface == object) {
-			/* Native release establishes that current storage can retire safely. */
-			error = zwl_unscan(server);
-			if (error != 0) {
-				printf("ZWL FAILED site=surface_unscan errno=%d\n", error);
-				server->failed = 1;
-			}
-		}
-
 		/* Detach surviving shell objects before this surface storage disappears. */
 		if (object->role != NULL) {
 			object->role->surface = NULL;

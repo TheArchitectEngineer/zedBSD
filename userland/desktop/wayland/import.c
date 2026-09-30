@@ -44,10 +44,8 @@ zwl_import_create(
 	int copy;
 	VkResult result;
 
-	/* Without window mode there is nothing to import into. */
+	/* The compositor's Vulkan device the image is imported into. */
 	compose = buffer->client->server->compose;
-	if (compose == NULL)
-		return 0;
 
 	/* The import record, owned by the buffer. */
 	import = calloc(1, sizeof(*import));
@@ -80,7 +78,7 @@ zwl_import_create(
 /*
  * Sets how window mode draws a GPU buffer's image: covering what is under
  * it (alpha 0) or blended by its premultiplied alpha (alpha 1).  A buffer
- * with no image (the compositor without Vulkan) has nothing to change.
+ * without an image has nothing to change.
  */
 void
 zwl_import_set_alpha(

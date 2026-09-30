@@ -30,6 +30,8 @@
 #include <unistd.h>
 
 static VkResult compose_device(struct zwl_compose *compose);
+static VkResult compose_display(struct zwl_server *server);
+static VkResult compose_refresh(struct zwl_server *server, VkDisplayKHR display, uint32_t *refresh);
 static VkResult compose_objects(struct zwl_compose *compose);
 static VkResult compose_pass(struct zwl_compose *compose);
 static VkResult compose_pipeline(struct zwl_compose *compose, enum zwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, VkPipeline *pipeline);
@@ -71,6 +73,13 @@ zwl_compose_open(
 	result = compose_device(compose);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=device result=%d\n", (int)result);
+		return EIO;
+	}
+
+	/* The display's size (unless --width and --height chose one) and refresh, before anything is drawn at that size. */
+	result = compose_display(server);
+	if (result != VK_SUCCESS) {
+		printf("ZWL VULKAN_ERROR operation=display result=%d\n", (int)result);
 		return EIO;
 	}
 
@@ -660,6 +669,166 @@ compose_device(
 
 	/* Succeeded: the queue the frames are submitted to. */
 	vkGetDeviceQueue(compose->device, compose->family, 0U, &compose->queue);
+	return VK_SUCCESS;
+}
+
+/*
+ * Takes the output's size and refresh from the display that window mode
+ * will use (the first one that shows an unrotated image, as
+ * vkdemo_display_open chooses): its native resolution when no size was
+ * given, and the refresh of the mode at the output's size.
+ */
+static VkResult
+compose_display(
+	struct zwl_server *server)
+{
+	struct zwl_compose *compose;
+	VkDisplayPropertiesKHR *properties;
+	VkPhysicalDeviceProperties device;
+	VkDisplayKHR display;
+	VkExtent2D resolution;
+	VkResult result;
+	uint32_t count;
+	uint32_t index;
+	uint32_t refresh;
+
+	/* Counts the displays before their properties are read. */
+	compose = server->compose;
+	count = 0;
+	result = vkGetPhysicalDeviceDisplayPropertiesKHR(compose->physical, &count, NULL);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Without a display there is nothing to show windows on. */
+	if (count == 0U)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* The properties of every display. */
+	properties = calloc(count, sizeof(*properties));
+	if (properties == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Reads the displays, which a hot-plug may have changed since they were counted. */
+	result = vkGetPhysicalDeviceDisplayPropertiesKHR(compose->physical, &count, properties);
+	if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+		free(properties);
+		return result;
+	}
+
+	/* The first display that shows an unrotated image is the one window mode opens. */
+	display = VK_NULL_HANDLE;
+	resolution.width = 0U;
+	resolution.height = 0U;
+	for (index = 0U; index < count; index++) {
+		/* A display that cannot show the image unrotated is passed over, as vkdemo_display_open does. */
+		if ((properties[index].supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) == 0U)
+			continue;
+
+		/* This display, and its native resolution. */
+		display = properties[index].display;
+		resolution = properties[index].physicalResolution;
+		break;
+	}
+
+	/* The display handle stays valid after its properties are freed. */
+	free(properties);
+
+	/* Without such a display there is nothing to show windows on. */
+	if (display == VK_NULL_HANDLE)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/*
+	 * Without --width and --height the output takes the display's native
+	 * resolution (a login's session and screen); a display that does not know
+	 * its resolution keeps the default size.
+	 */
+	if (!server->size_given &&
+	    resolution.width != 0U &&
+	    resolution.height != 0U) {
+		server->width = resolution.width;
+		server->height = resolution.height;
+	}
+
+	/* The refresh of the mode at the output's size, which wl_output tells the clients. */
+	result = compose_refresh(server, display, &refresh);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* wl_output tells the clients this refresh. */
+	server->refresh = refresh;
+
+	/* The machine log names the device and the output the compositor will open. */
+	vkGetPhysicalDeviceProperties(compose->physical, &device);
+	printf("ZWL DISPLAY device=%s width=%u height=%u refresh_mhz=%u\n", device.deviceName, server->width, server->height, server->refresh);
+
+	/* Succeeded: the output's size and refresh are known. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Finds the refresh of a display's mode at the output's size, or, when the
+ * display has no such mode (vkdemo_display_open then asks for one), the
+ * refresh of its first mode, which that request uses.
+ */
+static VkResult
+compose_refresh(
+	struct zwl_server *server,
+	VkDisplayKHR display,
+	uint32_t *refresh)
+{
+	struct zwl_compose *compose;
+	VkDisplayModePropertiesKHR *modes;
+	VkResult result;
+	uint32_t count;
+	uint32_t index;
+	uint32_t width;
+	uint32_t height;
+
+	/* Counts the display's modes. */
+	compose = server->compose;
+	count = 0U;
+	result = vkGetDisplayModePropertiesKHR(compose->physical, display, &count, NULL);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* A display without modes has no refresh to take. */
+	if (count == 0U)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* The modes' parameters. */
+	modes = calloc(count, sizeof(*modes));
+	if (modes == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Reads the modes, which may have changed since they were counted. */
+	result = vkGetDisplayModePropertiesKHR(compose->physical, display, &count, modes);
+	if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+		free(modes);
+		return result;
+	}
+
+	/* The first mode's refresh, unless a mode has the output's size. */
+	*refresh = modes[0].parameters.refreshRate;
+	for (index = 0U; index < count; index++) {
+		/* The mode's visible size. */
+		width = modes[index].parameters.visibleRegion.width;
+		height = modes[index].parameters.visibleRegion.height;
+
+		/* A mode at the output's size gives its own refresh. */
+		if (width == server->width && height == server->height) {
+			*refresh = modes[index].parameters.refreshRate;
+			break;
+		}
+	}
+
+	/* The mode handles stay valid after their parameters are freed. */
+	free(modes);
+
+	/* A zero refresh is no refresh to tell the clients. */
+	if (*refresh == 0U)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Succeeded: the refresh is known. */
 	return VK_SUCCESS;
 }
 

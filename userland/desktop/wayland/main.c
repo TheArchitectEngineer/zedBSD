@@ -81,7 +81,7 @@ main(
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: wayland [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--keyboard-blur] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: wayland [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
 		return 2;
 	}
 
@@ -126,35 +126,30 @@ main(
 		return 1;
 
 	/* The wallpaper's file is read on a thread while the device is made (ws035-p133). */
-	if (!server.direct)
-		zwl_glass_prefetch(&server);
+	zwl_glass_prefetch(&server);
 
-	/* Open an independent GPU context before publishing a usable Wayland endpoint (it may take the display's size). */
+	/* Open an independent GPU context before publishing a usable Wayland endpoint (client images are checked in it). */
 	step_start = zwl_milliseconds();
 	error = zwl_gpu_open(&server);
 	step_start = startup_step("gpu", step_start);
 
-	/* The pointer starts in the middle of the output, its arrow not shown until it moves. */
-	server.pointer_x = (int32_t)(server.width / 2U);
-	server.pointer_y = (int32_t)(server.height / 2U);
-	server.pointer_unmoved = 1U;
-
-	/* Window mode's Vulkan device; without one (or with --direct) one surface is shown directly. */
-	if (error == 0 && !server.direct) {
+	/*
+	 * Window mode's Vulkan device, which also gives the display's size and
+	 * refresh.  Without it nothing can be shown, so zdesktop does not start.
+	 */
+	if (error == 0) {
 		error = zwl_compose_open(&server);
-		if (error != 0) {
-			printf("ZWL COMPOSE unavailable errno=%d: showing one surface directly\n", error);
-			zwl_compose_close(&server);
-			error = 0;
-		}
+		if (error != 0)
+			printf("ZWL COMPOSE unavailable errno=%d\n", error);
 
 		/* How long the device, the wallpaper and the glyphs took (ZWL STARTUP). */
 		step_start = startup_step("compose", step_start);
 	}
 
-	/* The login screen is drawn with Vulkan only: without it there is no login screen. */
-	if (error == 0 && server.greeter && server.compose == NULL)
-		error = ENODEV;
+	/* The pointer starts in the middle of the output, its arrow not shown until it moves. */
+	server.pointer_x = (int32_t)(server.width / 2U);
+	server.pointer_y = (int32_t)(server.height / 2U);
+	server.pointer_unmoved = 1U;
 
 	/* Input devices are found before READY; a seat without devices is still valid. */
 	if (error == 0) {
@@ -347,13 +342,6 @@ parse_options(
 		match = strcmp(argument, "--log-frames");
 		if (match == 0) {
 			server->log_frames = 1;
-			continue;
-		}
-
-		/* No window mode: one surface is shown directly (the compositor before WS035). */
-		match = strcmp(argument, "--direct");
-		if (match == 0) {
-			server->direct = 1;
 			continue;
 		}
 
@@ -641,7 +629,6 @@ event_loop(
 	int waiting;
 	unsigned slot;
 	uint64_t mark;
-	uint32_t presents;
 	int timeout;
 	int ready;
 	int flushed;
@@ -882,8 +869,7 @@ event_loop(
 		if (error != 0)
 			return error;
 
-		/* The scheduler presents at most one latest per-surface queued image this pass. */
-		presents = server->perf.presents;
+		/* The scheduler takes the committed images and draws a frame when one is due. */
 		zwl_schedule(server);
 
 		/*
@@ -902,10 +888,8 @@ event_loop(
 			}
 		}
 
-		/* The pass's work, and for a presenting pass the time from the wake to the flushed callback. */
+		/* The pass's work. */
 		server->perf.work_cycles += zwl_cycles() - mark;
-		if (server->perf.presents != presents)
-			server->perf.present_to_flush_cycles += zwl_cycles() - mark;
 		zwl_perf_report(server, now);
 	}
 
@@ -922,19 +906,12 @@ static void
 service_cleanup(
 	struct zwl_server *server)
 {
-	int error;
-
 	/* No new client should observe a service whose cleanup has begun. */
 	unlink_socket(server);
 	if (server->listener >= 0) {
 		close(server->listener);
 		server->listener = -1;
 	}
-
-	/* Hardware stops borrowing front storage before any client import is destroyed. */
-	error = zwl_unscan(server);
-	if (error != 0)
-		server->failed = 1;
 
 	/* Window mode's frame in flight finishes before the clients it holds go. */
 	zwl_compose_quiesce(server);
@@ -986,8 +963,6 @@ zwl_perf_report(
 	struct zwl_perf *perf;
 	uint64_t cycles;
 	double per_ms;
-	double present_ms;
-	double flush_ms;
 
 	/* The first call starts the window. */
 	perf = &server->perf;
@@ -1005,24 +980,13 @@ zwl_perf_report(
 	cycles = zwl_cycles() - perf->window_start_cycles;
 	per_ms = (double)cycles / (double)(now - perf->window_start_ms);
 
-	/* A present's costs, when there were presents. */
-	present_ms = 0.0;
-	flush_ms = 0.0;
-	if (perf->presents != 0U) {
-		present_ms = (double)perf->present_cycles / per_ms / (double)perf->presents;
-		flush_ms = (double)perf->present_to_flush_cycles / per_ms / (double)perf->presents;
-	}
-
 	/* The loop's line. */
-	printf("ZWL PERF %llums: passes=%u timeouts=%u presents=%u | poll %.1f%% work %.1f%% | per present ms: ioctl %.2f wake-to-flush %.2f\n",
+	printf("ZWL PERF %llums: passes=%u timeouts=%u | poll %.1f%% work %.1f%%\n",
 	    (unsigned long long)(now - perf->window_start_ms),
 	    perf->passes,
 	    perf->timeouts,
-	    perf->presents,
 	    100.0 * (double)perf->poll_cycles / (double)cycles,
-	    100.0 * (double)perf->work_cycles / (double)cycles,
-	    present_ms,
-	    flush_ms);
+	    100.0 * (double)perf->work_cycles / (double)cycles);
 
 	/* Window mode's frames: how many, the CPU time to record and submit one, and the time until its fence. */
 	if (perf->compose_frames != 0) {

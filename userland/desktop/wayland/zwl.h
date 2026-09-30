@@ -41,7 +41,6 @@
 #define ZWL_H
 
 #include <uapi/gpu.h>
-#include <uapi/gpu-display.h>
 #include <uapi/gpu-fence.h>
 #include <uapi/input.h>
 #include <stdint.h>
@@ -564,18 +563,14 @@ struct zwl_client {
 	unsigned ime;
 };
 
-/* The compositor alone owns the GPU context and the currently scanned-out image. */
 /* Cycle counts of the event loop, reported every few seconds (ZWL PERF). */
 struct zwl_perf {
 	uint64_t window_start_ms;
 	uint64_t window_start_cycles;
 	uint64_t poll_cycles;
 	uint64_t work_cycles;
-	uint64_t present_cycles;
-	uint64_t present_to_flush_cycles;
 	uint32_t passes;
 	uint32_t timeouts;
-	uint32_t presents;
 	/* Window mode: frames completed, and their time from the start of drawing to the fence. */
 	uint32_t compose_frames;
 	uint64_t compose_cycles;
@@ -592,6 +587,12 @@ uint64_t zwl_cycles(void);
 /* The user's preferences (libkeiland), opened by preferences.c. */
 struct keiland_preferences;
 
+/*
+ * The compositor: one per process, alive from start to exit.
+ *
+ * It alone owns its GPU context, its Vulkan output and the connections of
+ * its clients.
+ */
 struct zwl_server {
 	struct zwl_perf perf;
 	int listener;
@@ -602,23 +603,19 @@ struct zwl_server {
 	ino_t socket_inode;
 	unsigned socket_owned;
 	struct zwl_client *clients;
-	struct zwl_object *front;
 	struct zwl_object *front_surface;
-	struct gpu_display_info display;
-	uint64_t lease;
 	uint64_t frame;
 	uint64_t commit_order;
 	uint64_t client_serial;
 	uint32_t serial;
 	uint32_t width;
 	uint32_t height;
+	/* The display mode's refresh in millihertz (from Vulkan, compose.c), told to clients by wl_output. */
 	uint32_t refresh;
 	uint64_t timeout_ms;
 	uint64_t max_frames;
 	/* Nonzero with --log-frames: every presentation and buffer release is printed (for the tests that read them). */
 	unsigned log_frames;
-	/* Nonzero with --direct: no window mode; one surface is shown directly, as before WS035. */
-	unsigned direct;
 	/*
 	 * The graphical login (ws035-p095): with --greeter zdesktop draws the
 	 * login screen (greeter.c), opens no socket and asks sessiond on
@@ -1038,8 +1035,6 @@ void zwl_buffer_size(const struct zwl_object *buffer, uint32_t *width, uint32_t 
 void zwl_callbacks_done(struct zwl_object **callbacks);
 int zwl_gpu_open(struct zwl_server *server);
 int zwl_gpu_import(struct zwl_object *buffer, int descriptor, const struct gpu_image_descriptor *image);
-int zwl_present(struct zwl_object *surface);
-int zwl_unscan(struct zwl_server *server);
 void zwl_schedule(struct zwl_server *server);
 void zwl_transition_request(struct zwl_server *server, const char *what);
 void zwl_frame_done(struct zwl_server *server);
