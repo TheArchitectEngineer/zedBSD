@@ -87,6 +87,7 @@ text 333.67 241.00 16px face 0 bold 0 #ff202833 "padding"
 text 25.00 261.00 16px face 0 bold 0 #ff202833 "edge."
 unclip
 rect 168.00 316.00 840.00 52.00 #fff3e3a2
+rect 16.00 316.00 140.00 110.00 #ff9fd5b4
 clip 168.00 316.00 840.00 52.00
 text 174.00 338.00 16px face 0 bold 0 #ff202833 "This"
 text 206.12 338.00 16px face 0 bold 0 #ff202833 " "
@@ -166,7 +167,6 @@ unclip
 text 168.00 384.00 16px face 0 bold 0 #ff202833 "After"
 text 205.56 384.00 16px face 0 bold 0 #ff202833 " "
 text 210.06 384.00 16px face 0 bold 0 #ff202833 "them."
-rect 16.00 316.00 140.00 110.00 #ff9fd5b4
 clip 19.00 219.00 272.00 82.00
 rect 225.00 295.00 120.00 40.00 #ffb388d6
 text 225.00 311.00 16px face 0 bold 0 #ff202833 "relative"

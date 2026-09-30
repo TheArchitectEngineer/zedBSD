@@ -1,10 +1,10 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし。Last finished Queue: q506（人間の session、ws074-p097 cleared: 公開 site の比較、WPT reftest、Acid2・Acid3）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
+Active Queue: なし。Last finished Queue: q507（ws074-p099 cleared: Acid2 100.00% exact rendering）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
-Next（2026-09-30 に更新）: 実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）でユーザーが確認。次の周期の候補は下の Upcoming Work Outlook。
-IME（WS095）とブラウザ（WS074）は一時的に人間が作業中（エージェントに割り当てない）。
+Next（2026-09-30 に更新）: WS074 p100（Acid3 100/100）は次の候補だが未選択・未承認。実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）のユーザー確認も残る。
+IME（WS095）は一時的に人間が作業中（エージェントに割り当てない）。WS074 は 2026-09-30 のユーザー指示「Run ws074」で再開し、p099まで cleared。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -78,7 +78,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | S14 | スクリーンキーボード | 右下の角の swipe で flick（日本語）、左下の角の swipe で QWERTY と手書きの面、Text Editor に打つ | WS102 |
 | S15 | 終わり | Log Out → greeter、Shut Down | WS099 |
 
-ブラウザ（WS074）と IME（WS095）は人間が作業中。戻ったときに台本に足すかを決める。
+ブラウザ（WS074）はユーザー指示で再開して p099 まで cleared。IME（WS095）は人間が作業中。ブラウザを台本に足すかは引き続き判断待ち。
 
 ### fg010 に必要な判断（2026-09-30 夜の自走で出たもの。2026-09-30 朝に全て決定）
 
@@ -206,7 +206,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 依存による実行順とは別のもの。Queue の権限は変えない。2026-09-28 に整理（それ以前の順は git の履歴にある）。
 
-0. **ユーザーの session の指示**（人間が作業中の WS074）: WS074（q506 / p097）は cleared。公開 site の比較、WPT reftest、Acid2・Acid3 まで記録した。次の Queue は未選択で、候補は p036・p047・p098。
+0. **ユーザーの session の指示**（WS074）: q507 / p099 は cleared。Acid2 は固定 WPT で 90.56% から 100.00% exact match。次の候補は p100（Acid3）だが Queue は未選択。
 
 **デモまでの期間（2026-09-29 ユーザー）**: 10-10 ごろまで新規実装を進め、10-10 ごろ〜10-17 は bug の修正と実機での調整だけにする。
 
@@ -220,7 +220,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 **デモの touch（2026-09-30 朝 ユーザー）**:「タッチはWindows上のQEMUでやります。外付けタッチLCDは間に合えば別途計画を立てます。」→ touch の場面（WS081・WS102・WS090 の文字の編集の touch・WS094 の touch）は、Windows の host の QEMU（WS085 の Venus、WINQ-EMU）の上で見せる。5330 の実機は mouse と keyboard。外付けの touch LCD は間に合えば別の計画。
 
-**一時的に人間が作業（2026-09-30 ユーザー）**:「IMEとブラウザの作業は一時的に、人間が作業するので、作業しないでください。でも一時的です。」→ WS095（IME）と WS074（ブラウザ）はエージェントに割り当てない。その source（`userland/desktop/ime/`・`ime-probe/`、zdesktop の `ime.h`・`text-input.c`・`input-method.c`、`userland/desktop/browser/`・`libbrowser/`）と `plan/ws095/`・`plan/ws074/` を他の WS のエージェントも変えない。ユーザーが戻すと言うまで。
+**一時的に人間が作業（2026-09-30 ユーザー）**:「IMEとブラウザの作業は一時的に、人間が作業するので、作業しないでください。でも一時的です。」→ 当初は WS095（IME）と WS074（ブラウザ）をエージェントに割り当てない判断だった。WS074 は同日のユーザー指示「Run ws074」で解除・再開。WS095 とその source の保護はユーザーが戻すと言うまで継続。
 
 **運用（ユーザー、2026-09-27〜30）**: 作業用のサブエージェントを N=0〜9（2026-09-29 は N=9、1 時間に 5 時間の枠の約 25%）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
 N=0 になったら実装をまとめて計画（master・ws.md・Future Work・Bug Board）を整理する。試験は amd64 だけ、Phase の終わりに。effort は判断の表の「サブエージェントの effort」。
@@ -246,7 +246,8 @@ N=0 になったら実装をまとめて計画（master・ws.md・Future Work・
 | WS073: BUG-030 の受け入れの残り（KVM 2×20・boot test）、BUG-116（EP0 の event の取りこぼし、BUG-036 と同じ系統か） | 安定性 | phase041 |
 | WS094 p004 の残り（保存した場所への配置の guest の確認・回帰・boot test）→ p005〜p007 | デスクトップの icon | phase004 の Resume point |
 | WS090 p004（窓の土台と Text Editor の libkeiui への移行、文字の編集の touch） | 共通の部品 | p003 cleared |
-| WS074（ブラウザ）p088〜p093、WS095（IME）p005〜: **一時的に人間が作業中** | — | ユーザーが戻すと言うまで |
+| WS074 p100（Acid3 100/100） | p099 cleared 後の固定順 | Queue 未選択、承認待ち |
+| WS095（IME）p005〜: **一時的に人間が作業中** | — | ユーザーが戻すと言うまで |
 | WS098（IME のニューラル化）: 学習の corpus と license の判断から | IME の最後の仕上げ | WS095 の辞書の後 |
 | WS080: p001（ld.coff の設計） | デモ critical の後 | spec.md |
 

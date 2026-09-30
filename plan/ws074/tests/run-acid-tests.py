@@ -156,6 +156,19 @@ def dump_dom(program, font_dir, width, height, data_home, url):
     return result.stdout, result.stderr.splitlines()
 
 
+def dump_page(program, font_dir, width, height, data_home, url, kind, output):
+    command, environment = command_base(
+        program, font_dir, width, height, data_home, "--dump=" + kind
+    )
+    command.append(url)
+    result = subprocess.run(
+        command, capture_output=True, text=True, timeout=90, env=environment,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip()[-1200:])
+    output.write_text(result.stdout, encoding="utf-8")
+
+
 def image_result(test_path, reference_path, side_path):
     with Image.open(test_path) as source:
         test = source.convert("RGB")
@@ -247,6 +260,16 @@ def main():
                 args.out / "acid2-test.png", args.out / "acid2-reference.png",
                 args.out / "acid2-side.png",
             )
+            for kind in ("dom", "style", "layout", "paint"):
+                dump_page(
+                    args.program, font_dir, 400, 300, data_home, acid2_url,
+                    kind, args.out / ("acid2-test." + kind),
+                )
+                dump_page(
+                    args.program, font_dir, 400, 300, data_home,
+                    acid2_reference_url, kind,
+                    args.out / ("acid2-reference." + kind),
+                )
 
             acid3_url = base + "acid/acid3/test.html"
             acid3_reference_url = base + quote(

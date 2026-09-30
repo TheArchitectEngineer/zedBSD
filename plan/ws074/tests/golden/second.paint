@@ -1,4 +1,9 @@
 canvas 1024.00 x 768.00 #ffeaf1f4
+rect 8.00 117.88 1008.00 38.00 #ffffffff
+rect 8.00 117.88 1008.00 1.00 #ff99bbbb
+rect 8.00 154.88 1008.00 1.00 #ff99bbbb
+rect 8.00 118.88 1.00 36.00 #ff99bbbb
+rect 1015.00 118.88 1.00 36.00 #ff99bbbb
 text 8.00 52.44 32px face 0 bold 1 #ff1f5e4e "The"
 text 69.23 52.44 32px face 0 bold 1 #ff1f5e4e " "
 text 79.23 52.44 32px face 0 bold 1 #ff1f5e4e "second"
@@ -27,11 +32,6 @@ text 388.83 97.88 16px face 0 bold 0 #ff222222 " "
 text 393.33 97.88 16px face 0 bold 0 #ff222222 "first"
 text 422.84 97.88 16px face 0 bold 0 #ff222222 " "
 text 427.34 97.88 16px face 0 bold 0 #ff222222 "page."
-rect 8.00 117.88 1008.00 38.00 #ffffffff
-rect 8.00 117.88 1008.00 1.00 #ff99bbbb
-rect 8.00 154.88 1008.00 1.00 #ff99bbbb
-rect 8.00 118.88 1.00 36.00 #ff99bbbb
-rect 1015.00 118.88 1.00 36.00 #ff99bbbb
 text 21.00 142.88 16px face 0 bold 0 #ff222222 "Go"
 text 42.53 142.88 16px face 0 bold 0 #ff222222 " "
 text 47.03 142.88 16px face 0 bold 0 #ff0000ee "back"

@@ -1,16 +1,14 @@
 canvas 1024.00 x 768.00 #ffeef2f7
-text 32.00 49.00 26px face 0 bold 1 #ff1d2433 "Scripts"
-text 124.77 49.00 26px face 0 bold 1 #ff1d2433 " "
-text 133.08 49.00 26px face 0 bold 1 #ff1d2433 "in"
-text 156.73 49.00 26px face 0 bold 1 #ff1d2433 " "
-text 165.05 49.00 26px face 0 bold 1 #ff1d2433 "the"
-text 207.08 49.00 26px face 0 bold 1 #ff1d2433 " "
-text 215.39 49.00 26px face 0 bold 1 #ff1d2433 "page"
 rect 32.00 67.00 960.00 170.00 #ffffffff
 rect 32.00 67.00 960.00 1.00 #ffc9d3e0
 rect 32.00 236.00 960.00 1.00 #ffc9d3e0
 rect 32.00 68.00 1.00 168.00 #ffc9d3e0
 rect 991.00 68.00 1.00 168.00 #ffc9d3e0
+rect 49.00 132.00 232.00 40.00 #ff2f6fdd
+rect 49.00 132.00 232.00 2.00 #ff1b4fa8
+rect 49.00 170.00 232.00 2.00 #ff1b4fa8
+rect 49.00 134.00 2.00 36.00 #ff1b4fa8
+rect 279.00 134.00 2.00 36.00 #ff1b4fa8
 text 49.00 112.00 16px face 0 bold 0 #ff1d2433 "The"
 text 78.12 112.00 16px face 0 bold 0 #ff1d2433 " "
 text 82.62 112.00 16px face 0 bold 0 #ff1d2433 "script"
@@ -34,11 +32,6 @@ text 390.58 112.00 16px face 0 bold 0 #ff1d2433 " "
 text 395.08 112.00 16px face 0 bold 0 #ff1d2433 "list"
 text 416.52 112.00 16px face 0 bold 0 #ff1d2433 " "
 text 421.02 112.00 16px face 0 bold 0 #ff1d2433 "below."
-rect 49.00 132.00 232.00 40.00 #ff2f6fdd
-rect 49.00 132.00 232.00 2.00 #ff1b4fa8
-rect 49.00 170.00 232.00 2.00 #ff1b4fa8
-rect 49.00 134.00 2.00 36.00 #ff1b4fa8
-rect 279.00 134.00 2.00 36.00 #ff1b4fa8
 text 65.00 158.00 16px face 0 bold 0 #ffffffff "Click"
 text 102.36 158.00 16px face 0 bold 0 #ffffffff " "
 text 106.86 158.00 16px face 0 bold 0 #ffffffff "me"
@@ -84,3 +77,10 @@ text 201.88 442.00 16px face 0 bold 0 #ff1d2433 "counts"
 text 253.22 442.00 16px face 0 bold 0 #ff1d2433 " "
 text 257.72 442.00 16px face 0 bold 0 #ff1d2433 "clicks"
 text 75.50 442.00 16px face 0 bold 0 #ff1d2433 "•"
+text 32.00 49.00 26px face 0 bold 1 #ff1d2433 "Scripts"
+text 124.77 49.00 26px face 0 bold 1 #ff1d2433 " "
+text 133.08 49.00 26px face 0 bold 1 #ff1d2433 "in"
+text 156.73 49.00 26px face 0 bold 1 #ff1d2433 " "
+text 165.05 49.00 26px face 0 bold 1 #ff1d2433 "the"
+text 207.08 49.00 26px face 0 bold 1 #ff1d2433 " "
+text 215.39 49.00 26px face 0 bold 1 #ff1d2433 "page"

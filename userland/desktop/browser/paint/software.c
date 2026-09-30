@@ -29,7 +29,7 @@
 static void software_rect(struct paint_bitmap *bitmap, const struct paint_item *item, layout_unit scroll_y, const struct paint_clip *clip);
 static int software_text(struct paint_bitmap *bitmap, struct text_system *text, const struct paint_item *item, layout_unit scroll_y, const struct paint_clip *clip);
 static void software_image(struct paint_bitmap *bitmap, const struct paint_item *item, layout_unit scroll_y, const struct paint_clip *clip);
-static void software_blend(struct paint_bitmap *bitmap, int x, int y, uint32_t color, float coverage);
+static void software_blend(struct paint_bitmap *bitmap, int x, int y, uint32_t color, float coverage, int nearest);
 static float software_overlap(float start, float end, int pixel);
 
 /*
@@ -147,7 +147,7 @@ paint_canvas_pixel(
 	pixel.pixels = &value;
 	pixel.width = 1;
 	pixel.height = 1;
-	software_blend(&pixel, 0, 0, color, 1.0f);
+	software_blend(&pixel, 0, 0, color, 1.0f, 1);
 
 	/* Reports the blended pixel. */
 	return value;
@@ -257,7 +257,7 @@ software_rect(
 		coverage_y = software_overlap(top, bottom, y);
 		for (x = first_x; x < last_x; x++) {
 			coverage_x = software_overlap(left, right, x);
-			software_blend(bitmap, x, y, item->color, coverage_x * coverage_y);
+			software_blend(bitmap, x, y, item->color, coverage_x * coverage_y, 1);
 		}
 	}
 }
@@ -350,7 +350,7 @@ software_image(
 			if (u > image->width - 1)
 				u = image->width - 1;
 			texel = image->pixels[(size_t)v * (size_t)image->width + (size_t)u];
-			software_blend(bitmap, x, y, texel, coverage_x * coverage_y);
+			software_blend(bitmap, x, y, texel, coverage_x * coverage_y, 0);
 		}
 	}
 }
@@ -400,7 +400,7 @@ software_text(
 					continue;
 				coverage = (float)glyph.bitmap[(size_t)row * (size_t)glyph.width + (size_t)column] / 255.0f;
 				if (coverage > 0.0f)
-					software_blend(bitmap, origin_x + column, origin_y + row, item->color, coverage);
+					software_blend(bitmap, origin_x + column, origin_y + row, item->color, coverage, 1);
 			}
 		}
 	}
@@ -416,12 +416,16 @@ software_blend(
 	int x,
 	int y,
 	uint32_t color,
-	float coverage)
+	float coverage,
+	int nearest)
 {
 	uint32_t *pixel;
 	float alpha;
 	float source;
 	float target;
+	uint32_t alpha_byte;
+	uint32_t source_byte;
+	uint32_t target_byte;
 	uint32_t blended;
 	int shift;
 
@@ -440,10 +444,23 @@ software_blend(
 	pixel = &bitmap->pixels[(size_t)y * (size_t)bitmap->width + (size_t)x];
 	blended = 0xff000000U;
 	for (shift = 0; shift <= 16; shift += 8) {
+		/* Whole image texels follow the integer premultiplied blend used by image compositors. */
+		if (!nearest && coverage >= 1.0f) {
+			alpha_byte = color >> 24;
+			source_byte = (color >> shift) & 0xffU;
+			target_byte = (*pixel >> shift) & 0xffU;
+			source_byte = source_byte * alpha_byte / 255U;
+			target_byte = target_byte * (255U - alpha_byte) / 255U;
+			blended |= (source_byte + target_byte) << shift;
+			continue;
+		}
+
+		/* Shapes and partial image coverage use the renderer's nearest integer coverage. */
 		source = (float)((color >> shift) & 0xffU);
 		target = (float)((*pixel >> shift) & 0xffU);
 		target = source * alpha + target * (1.0f - alpha);
-		blended |= (uint32_t)(target + 0.5f) << shift;
+		target += 0.5f;
+		blended |= (uint32_t)target << shift;
 	}
 
 	/* Stores the mixed pixel. */

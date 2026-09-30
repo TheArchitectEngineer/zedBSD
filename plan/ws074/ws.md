@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: なし
-Resume point: 2026-09-30: p097 cleared。10公開siteの固定画像・box・DOM比較、現実的な2 viewport、WPT reftest、Acid2・Acid3を記録し、Amazonのscript有効なguest full-screen取得も安定化した。次の作業は別session。Queueは未選択で、ユーザー指定の順はp099（Acid2 100%）→p100（Acid3 100%）→p101（WPT CSS2 reftest 100%）。次sessionはp099のPhase詳細とQueueを作ってから着手する。既存のp098（ES module script）はこの3 Phaseの後へ延期。
+Queue: なし（last: q507-i01 cleared）
+Resume point: 2026-09-30: p099 cleared. The pinned Acid2 result improved from 90.56% to a byte-identical 100.00% match through general CSS, layout, object-image/Adam7, paint-order, border, and compositing corrections. Plain and ASan host builds and focused regressions pass. The fixed order remains p100 → p101; neither is currently authorized.
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -89,10 +89,13 @@ libpng-compat の `from_memory`、libtruetype の拡張、libjpeg-compat の API
   数値は [results/acid.txt](results/acid.txt) と [results/wpt-reftest.txt](results/wpt-reftest.txt) に残した。
 - Amazonのscript有効なguest版は、plain objectの疎な数値keyをdense arrayの`length`として扱っていたVMの不具合を直し、
   70秒後までprocess生存・追加SIGSEGVなしを確認した。最後の実装修正はcommit `6184fb12`。
-- active Queueは無い。次のsessionで次の順を変えず、一つずつQueueへ選ぶ。
+- q507 で [p099](phase099/phase.md) を cleared。Acid2 は同じ固定条件で
+  90.56% から byte-identical な 100.00% になり、plain/ASan と focused
+  regression が通った。active Queue は無い。次は p100 から順を変えず、
+  一つずつ Queue へ選ぶ。
 
-1. **ws074-p099: Acid2 100%** — p097の同じharness、viewport、font、固定WPT版を使う。`exact-pixel-pass 1`かつ
-   pixel agreement 100.00%、crash・timeout 0をPhaseの完了条件にする。差分画像を分類し、修正ごとに絞った回帰を残す。
+1. **ws074-p099: Acid2 100% — cleared（q507）**。p097 と同じ harness、viewport、font、固定 WPT 版で
+   `exact-pixel-pass 1`、pixel agreement 100.00%、crash・timeout 0。差分を一般化した focused regression を残した。
 2. **ws074-p100: Acid3 100%** — p099の後。履歴的Acid3が画面上で100/100を返し、Uncaught・crash・timeoutが無いことを
    完了条件にする。pixel agreementは補助診断として同時に記録する。
 3. **ws074-p101: WPT CSS2 reftest 100%** — p100の後。固定commitで現runnerが列挙するscriptなしCSS2 reftest全5904件を
@@ -211,7 +214,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p096](phase096/phase.md) | 公開サイトの固定比較corpus: Mozilla日本語topから同一originのpageをたどり、固定Chrome User-AgentでChromiumと比較して一般化できる差を最大2件修正 | **cleared**（2026-09-30。4 page、`@supports`、button空白。top 78.23%/ink 69.54%） | p094、p095 |
 | [ws074-p097](phase097/phase.md) | 指定10公開siteの画像・box・DOM tree比較、阿部寛のホームページのguest full-screenデモ、WPT reftestとAcid、一般化できる差を最大4件修正 | **cleared**（2026-09-30。WPT 44/100、Acid2 90.56%、Acid3 9/100。`postMessage`、table rowspan、presentational hint、intrinsic auto margin） | p094、p096 |
 | ws074-p098 | ES module scriptのgraph取得・link・評価、`import`・`export`、GitHubのhydration比較 | planned（2026-09-30ユーザー指定によりp101後へ延期） | p087、p088、p097 |
-| ws074-p099 | Acid2 100%: 固定harnessでexact pixel一致、crash・timeout 0 | planned（次のPhase） | p097 |
+| [ws074-p099](phase099/phase.md) | Acid2 100%: 固定harnessでexact pixel一致、crash・timeout 0 | **cleared**（2026-09-30、q507。90.56% → 100.00%、plain/ASan） | p097 |
 | ws074-p100 | Acid3 100%: 履歴的Acid3で100/100、Uncaught・crash・timeout 0 | planned（p099の次） | p099 |
 | ws074-p101 | WPT CSS2 reftest 100%: 固定commitのscriptなし全5904件でpass 100%、error 0 | planned（p100の次） | p100 |
 

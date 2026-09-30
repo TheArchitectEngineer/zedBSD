@@ -6,7 +6,7 @@
  */
 
 /*
- * A page's images: the <img> elements' sources fetched and decoded before
+ * A page's images: the <img> sources and <object> data fetched and decoded before
  * the page is laid out, and the background images when the layout asks
  * for them, kept by their location for the life of the page (a source
  * that could not be fetched or decoded is remembered as failed, and not
@@ -43,7 +43,7 @@ struct page_image {
 	struct net_request *request;
 };
 
-static int images_walk(struct page *page, const struct dom_node *node, const struct vm_string *src, int depth);
+static int images_walk(struct page *page, const struct dom_node *node, const struct vm_string *src, const struct vm_string *data, int depth);
 static int images_source(struct page *page, const struct dom_element *element, const struct vm_string *src, struct wb_buffer *location, int *found);
 static struct page_image *images_find(const struct page *page, const char *location);
 static int images_load(struct page *page, const struct dom_element *element, const struct vm_string *src);
@@ -70,15 +70,19 @@ page_load_images(
 	struct page *page)
 {
 	struct vm_string *src;
+	struct vm_string *data;
 	int error;
 
-	/* The attribute's name, as the atom the elements keep. */
+	/* The attributes' names, as the atoms the elements keep. */
 	src = vm_atom_from_ascii(page->heap, "src");
 	if (src == NULL)
 		return ENOMEM;
+	data = vm_atom_from_ascii(page->heap, "data");
+	if (data == NULL)
+		return ENOMEM;
 
-	/* Every element of the document. */
-	error = images_walk(page, &page->document->node, src, 0);
+	/* Every image and object element of the document. */
+	error = images_walk(page, &page->document->node, src, data, 0);
 	if (error != 0)
 		return error;
 
@@ -98,18 +102,22 @@ page_image_of(
 {
 	struct page *page;
 	struct page_image *image;
-	struct vm_string *src;
+	struct vm_string *source;
+	const char *source_name;
 	struct wb_buffer location;
 	int found;
 	int error;
 
-	/* The element's source, resolved against the page's location. */
+	/* The element's source or data, resolved against the page's location. */
 	page = context;
-	src = vm_atom_from_ascii(page->heap, "src");
-	if (src == NULL)
+	source_name = "src";
+	if (element->tag == DOM_TAG_OBJECT)
+		source_name = "data";
+	source = vm_atom_from_ascii(page->heap, source_name);
+	if (source == NULL)
 		return NULL;
 	wb_buffer_init(&location);
-	error = images_source(page, element, src, &location, &found);
+	error = images_source(page, element, source, &location, &found);
 	if (error != 0 || !found) {
 		wb_buffer_release(&location);
 		return NULL;
@@ -193,12 +201,13 @@ page_images_release(
 	wb_vector_release(&page->images);
 }
 
-/* Loads the images of a node's element descendants (and its own, when it is an <img>). */
+/* Loads the images of a node's element descendants (and its own, when it is an <img> or <object>). */
 static int
 images_walk(
 	struct page *page,
 	const struct dom_node *node,
 	const struct vm_string *src,
+	const struct vm_string *data,
 	int depth)
 {
 	const struct dom_element *element;
@@ -209,7 +218,7 @@ images_walk(
 	if (depth > IMAGES_DEPTH)
 		return 0;
 
-	/* An HTML <img> loads its source. */
+	/* An HTML <img> loads its source; an <object> tries its data as an image for replaced rendering. */
 	if (node->type == DOM_ELEMENT) {
 		element = (const struct dom_element *)node;
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG) {
@@ -217,11 +226,18 @@ images_walk(
 			if (error != 0)
 				return error;
 		}
+
+		/* An object tries its data as an image independently of an image before it. */
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_OBJECT) {
+			error = images_load(page, element, data);
+			if (error != 0)
+				return error;
+		}
 	}
 
 	/* The children, in document order. */
 	for (child = node->first_child; child != NULL; child = child->next) {
-		error = images_walk(page, child, src, depth + 1);
+		error = images_walk(page, child, src, data, depth + 1);
 		if (error != 0)
 			return error;
 	}
@@ -297,7 +313,7 @@ images_find(
 }
 
 /*
- * Loads an <img>'s source into the table, unless it is there already: its
+ * Loads an element's image location into the table, unless it is there already: its
  * bytes fetched and decoded, or the failure remembered.
  */
 static int
